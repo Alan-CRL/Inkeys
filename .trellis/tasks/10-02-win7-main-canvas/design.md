@@ -58,3 +58,5 @@ IdtMain WindowSpec / Window Service
 2026-10-09：用户授权开始修复已证实部分；按 research/formal-warp-plan-20261009.md 将实际 Win7 WARP 的默认 PS 改为已实测的完整 guarded 字节码，诊断显式 0/1 保留原版对照；荧光定格偶发与 Win7 Hardware 保留待验证，任务不结束、不提交。
 
 2026-10-09：正式Win7 WARP默认完整shader选择已实现；两架构完整Solution、420 GPU、27策略/后端、Headless及WinPS ProbeOnly/50mock通过，2171字节与87不可变文件保持。新ZIP与EXE身份见research/verification-formal-warp-20261009.md。旧EXE同shader已在Aero两条件验收，新EXE普通启动/HW/定格偶发/PPT仍待验证；任务in_progress，无commit/push。
+
+2026-10-10 收尾：实际 WARP 和 VMware Hardware FL11_0 的原版/完整候选对照及直接双击正常启动验收已完成，默认仅实际 Win7 WARP 选择完整兼容 PS 的设计保持。用户批准本任务结项；后续输入/定格观察与主画布修复范围分开，详见 closure-20261010.md。

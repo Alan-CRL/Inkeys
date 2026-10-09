@@ -594,6 +594,8 @@ Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW 
 ### 1. Scope / Trigger
 实际 Aero 开启/关闭 Win7 现场均证明原完整 PS 最终输出透明，数学完整的正向尾部隔离恢复画布。12 个有效参考图逐通道零差，6 个 Cursor 参考不可用，不称 18 个全部等价。只将已验证的候选用于默认 Win7 WARP；旧 WARP 内部唯一 opcode、Win7 Hardware 和一次荧光笔定格变深尚未定位/验收。
 
+2026-10-10 验收更新：同一新 EXE（SHA256 `2CDE02EDEE54AECDC08825C8557D792E956CFC0DEEA646ECF29974E2EF6108D8`）在实际 Win7 WARP 与 VMware Hardware FL11_0 上完成对照；Hardware 原版/完整候选正常，105 项 PASS、18 有效参考逐通道零差，WARP 原版仍失败而候选 18 项 PASS。用户另确认直接双击 EXE 两种后端均正常，这项人工正常启动证据与 CMD 的 0/0/1 对照日志分别记录。荧光定格异常本次未复现；新光标横向卡住须按原始输入另查。
+
 ### 2. Signatures
 - `InkRenderer::Init` 接受设备创建时的实际 `D3D_DRIVER_TYPE`；由 `TransparentPresentationController` 传递 `GraphicsDeviceResources.driverType`。测试调用同样传真实驱动；不按 adapter 名或 vendor 猜测。
 - OS 复用 `GetWindowsVersion()` 的动态 RtlGetVersion，不依赖 manifest 的 GetVersion 返回或尚未初始化全局版本。
@@ -627,4 +629,5 @@ Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW 
 
 ### 7. Wrong vs Correct
 - Wrong：Part2仍故障就称默认修复失败，或者把DXGI创建成功与GPU非透明像素/最终桌面可见混为一项。
-- Correct：Part2显式guard0保留原版，普通启动按auto；核实际所选byte SHA、GPU源/DIB和人工观察。现场验证的是旧EXE的同一完整候选，正式新EXE未上Win7不得冒称已实测；Hardware/定格残留使原任务继续in_progress。
+- Correct：Part2显式guard0保留原版，普通启动按auto；核实际所选byte SHA、GPU源/DIB和人工观察。`completed-with-failures` 包含刻意运行的原版 WARP 失败，不代替独立 `guarded-status` 和实际画布验收。2026-10-10 用户已确认新 EXE 两种后端普通启动正常；仍将偶发输入、定格观察与主画布修复验收分开记录。
+- 输入坐标边界：先解码 `mouse-source` 的原始 `lParam`，再对照 `mouse event`、sample 和 laser-tip。连续原消息 X 已为 0 且 accepted=1 时，不能把横向卡住归因于 shader/ULW；若没有系统 `GetCursorPos`、裁剪范围或虚拟机鼠标接管证据，也不能仅凭 Ctrl+Alt 恢复唯一归因 VMware。

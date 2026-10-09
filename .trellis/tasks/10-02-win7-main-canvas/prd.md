@@ -23,12 +23,12 @@
 
 ## Acceptance Criteria
 
-- [ ] 记录并保留初始 HEAD、工作区、既有构建产物、测试包 EXE/DLL 身份；不 reset、clean、commit、push 或覆盖用户未提交文件。
-- [ ] 证据能区分窗口未创建/销毁/隐藏/尺寸异常、首帧或门控未达成、目标选择错误、主画布 renderer/presenter 提交失败及成功 API 提交但窗口仍不可见。
-- [ ] 已复现根因时，先有失败证据，修补后相同自动检查通过；没有可复现根因时，只交付本问题诊断候选及 Win7 步骤，不宣称已修复。
-- [ ] 对改动执行足以验证的完整 `InkeysRepo.sln Debug|ARM64` 构建和适用的 `InkeysHeadlessTests.exe --no-window` 回归；保留旧发布包和现有现场产物。
-- [ ] Win7 SP1 + 仅 KB2670838 实机结果逐项记录：启动可见、首笔可见、选择穿透、定格切换/返回后继续可用。尚未执行项写“待用户实测”。
-- [ ] PPT 仅确认既有人工作验结果未倒退；C10 旧断言、长路径、UI3 More 矩形重叠和 Release 性能对照仍为后续事项。
+- [x] 记录并保留初始 HEAD、工作区、既有构建产物、测试包 EXE/DLL 身份；不 reset、clean、push 或覆盖用户未提交文件；commit 仅按用户明确授权执行。
+- [x] 证据能区分窗口未创建/销毁/隐藏/尺寸异常、首帧或门控未达成、目标选择错误、主画布 renderer/presenter 提交失败及成功 API 提交但窗口仍不可见。
+- [x] 已复现根因时，先有失败证据，修补后相同自动检查通过；没有可复现根因时，只交付本问题诊断候选及 Win7 步骤，不宣称已修复。
+- [x] 对改动执行足以验证的完整 `InkeysRepo.sln Debug|ARM64` 构建和适用的 `InkeysHeadlessTests.exe --no-window` 回归；保留旧发布包和现有现场产物。
+- [x] Win7 SP1 + 仅 KB2670838 实机结果逐项记录：启动可见、首笔可见、选择穿透、定格切换/返回后继续可用。尚未执行项写“待用户实测”。
+- [ ] PPT 仅确认既有人工作验结果未倒退；C10 旧断言、长路径、UI3 More 矩形重叠和 Release 性能对照仍为后续事项。（后续项：本轮未新增 PPT 实测，不记 PASS；用户于 2026-10-10 明确按主画布修复验收结项，保留此边界。）
 
 ## Out of Scope
 
@@ -41,3 +41,5 @@
 2026-10-09：用户授权开始修复已证实部分；按 research/formal-warp-plan-20261009.md 将实际 Win7 WARP 的默认 PS 改为已实测的完整 guarded 字节码，诊断显式 0/1 保留原版对照；荧光定格偶发与 Win7 Hardware 保留待验证，任务不结束、不提交。
 
 2026-10-09：正式Win7 WARP默认完整shader选择已实现；两架构完整Solution、420 GPU、27策略/后端、Headless及WinPS ProbeOnly/50mock通过，2171字节与87不可变文件保持。新ZIP与EXE身份见research/verification-formal-warp-20261009.md。旧EXE同shader已在Aero两条件验收，新EXE普通启动/HW/定格偶发/PPT仍待验证；任务in_progress，无commit/push。
+
+2026-10-10 结项：本次两份真实 Win7 WARP / VMware Hardware FL11_0 对照资料通过独立核验，用户另确认直接双击新 EXE 两种后端均正常，并明确要求记录、结束任务及提交 commit。主画布不出墨/工具光标不可见修复验收完成；原 WARP 内部唯一 opcode、偶发横向输入及未复现荧光定格不扩充为本任务完成条件。详见 closure-20261010.md。

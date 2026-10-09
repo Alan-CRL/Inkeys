@@ -168,3 +168,7 @@ WinPS5.1真实wWinMain参数dumper证明Start-Process给单参数附加U+0020，
 2026-10-09：用户授权开始修复已证实部分；按 research/formal-warp-plan-20261009.md 将实际 Win7 WARP 的默认 PS 改为已实测的完整 guarded 字节码，诊断显式 0/1 保留原版对照；荧光定格偶发与 Win7 Hardware 保留待验证，任务不结束、不提交。
 
 2026-10-09：正式Win7 WARP默认完整shader选择已实现；两架构完整Solution、420 GPU、27策略/后端、Headless及WinPS ProbeOnly/50mock通过，2171字节与87不可变文件保持。新ZIP与EXE身份见research/verification-formal-warp-20261009.md。旧EXE同shader已在Aero两条件验收，新EXE普通启动/HW/定格偶发/PPT仍待验证；任务in_progress，无commit/push。
+
+2026-10-10：核验 20261009-233116-241 WARP / 234725-021 HARDWARE 的 42 份完整资料及身份。WARP 原87=28PASS/59FAIL，完整候选18PASS（12有效参考delta0）；真实 VMware Hardware FL11_0 的105项全部PASS、18有效参考delta0。四应用阶段145份限频ULW采样全部success/fullOverride0；WARP原版32全透明，完整候选55/57有色；Hardware原版24/26、候选27/30有色。用户另确认直接双击新EXE两种后端正常，主画布/橡皮/激光不可见问题本次通过。新增laser横向卡住已定位为连续25.366秒1104条原WM鼠标消息X=0且全部接受，具体上游尚未唯一归因；不改生产代码。荧光定格本次未复现，任务继续in_progress，不自动commit/push/archive。见research/check-capture-233116-234725-20261010.md、capture-233116-234725-summary-20261010.md与新hash/laser JSON。
+
+2026-10-10 结项授权：用户明确要求记录工作、完成收尾、结束任务并 commit。依照 closure-20261010.md 完成验收记录、原任务归档及会话日志；只提交 Win7 所属内容，不 push、不合并其他开发工作。残留观察留档，不宣称已修复。

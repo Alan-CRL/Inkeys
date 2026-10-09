@@ -15,12 +15,12 @@
   "branch": "chore/publish",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "12d82884cf09928c2ae22eda2fe8851ac8581c9b",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-10-10 用户确认新EXE在Win7 WARP/Hardware正常启动均正常，并授权结项与commit；完整主画布修复验收完成。偶发原鼠标X=0、未复现荧光定格与未新增PPT专项实测作为后续边界留档，见closure-20261010.md。",
   "meta": {}
 }

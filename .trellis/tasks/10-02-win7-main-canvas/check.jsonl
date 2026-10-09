@@ -31,3 +31,5 @@
 {"file": ".trellis/tasks/10-02-win7-main-canvas/research/check-formal-warp-20261009.md", "reason": "Independent formal automatic Win7 WARP static audit; final raw gate pending"}
 {"file": ".trellis/tasks/10-02-win7-main-canvas/research/quality-formal-warp-20261009.md", "reason": "Frozen independent local FINAL PASS; target newEXE Win7 default/HW/freeze boundaries open"}
 {"file": ".trellis/tasks/10-02-win7-main-canvas/research/verification-formal-warp-20261009.md", "reason": "Formal default fix package identity and local verification with real Win7 prior shader acceptance"}
+{"file": ".trellis/tasks/10-02-win7-main-canvas/closure-20261010.md", "reason": "Final user-approved scope, identity, real Win7 acceptance, residual boundaries and archival quality gate"}
+{"file": ".trellis/tasks/10-02-win7-main-canvas/research/check-capture-233116-234725-20261010.md", "reason": "Independent actual WARP/Hardware and normal startup evidence"}
