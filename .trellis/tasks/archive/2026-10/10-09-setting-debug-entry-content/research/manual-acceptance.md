@@ -7,3 +7,5 @@
 据此确认本轮调试入口与内容调整获用户接受，并明确授权本地实现提交、子任务归档和收尾提交，不push。用户未提供逐项GUI操作矩阵；不补写拖动/贴靠/跨屏DPI的实测结果。代理不启动GUI/Computer Use。仅结束本调试子任务，设置重建父任务继续in_progress。
 
 后续版本号颜色与汉堡按钮反馈是新的小修改，默认不自动提交；本次commit授权不延续。此前最终完整Debug|ARM64 Solution及完整--no-window、i18n/格式/独立检查通过，见verification.md。
+
+实现 commit：926db4d0426400f045ea6bc5f880f6c658dda250（feat(settings): move debug entry to titlebar and group diagnostics）。
