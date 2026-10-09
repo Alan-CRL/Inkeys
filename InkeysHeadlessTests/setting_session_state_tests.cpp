@@ -144,7 +144,7 @@ namespace
 				"blank caption and outer corners retain full system-height top resize grips")) ++failures;
 			const auto title = ResolveTitleBarGeometry(static_cast<float>(client.Width()),
 				1.0F, 46.0F, 100.0F, 120.0F);
-			for (const auto& control : { title.themeToggle, title.version, title.minimize, title.maximize, title.close })
+			for (const auto& control : { title.themeToggle, title.debug, title.version, title.minimize, title.maximize, title.close })
 			{
 				const int x = client.left + static_cast<int>((control.left + control.right) * 0.5F);
 				for (const int y : { client.top, client.top + 1, gripBottom - 1 })
@@ -225,9 +225,14 @@ namespace
 				if (!Expect(title.themeToggle.Width() > 0.0F && title.themeToggle.Contains(x, y)
 					&& !title.drag.Contains(x, y) && !title.minimize.Contains(x, y)
 					&& !title.maximize.Contains(x, y) && !title.close.Contains(x, y)
-					&& title.themeToggle.right < title.minimize.left
+					&& title.themeToggle.right < title.debug.left
+					&& std::abs(title.themeToggle.Width() - 32.0F * scale) < 0.001F
+					&& std::abs(title.debug.Width() - 32.0F * scale) < 0.001F
+					&& title.debug.right < title.minimize.left
+					&& title.debug.Contains(title.debug.left + 16.0F * scale, y)
+					&& !title.drag.Contains(title.debug.left + 16.0F * scale, y)
 					&& (!title.versionVisible || title.version.right < title.themeToggle.left),
-					"theme caption button remains an independent non-drag client target")) ++failures;
+					"theme and debug caption buttons retain independent 32 DIP non-drag client targets")) ++failures;
 			}
 		return failures;
 	}

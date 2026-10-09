@@ -21,7 +21,8 @@
   "children": [
     "10-08-setting-publish-baseline-sync",
     "10-08-setting-sidebar-style-hover",
-    "10-08-setting-multiline-card-layout"
+    "10-08-setting-multiline-card-layout",
+    "10-09-setting-debug-entry-content"
   ],
   "parent": null,
   "relatedFiles": [],

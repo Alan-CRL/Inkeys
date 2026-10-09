@@ -210,6 +210,20 @@ namespace Inkeys::UI::Setting::Design
 		ImGui::Dummy({ width, height });
 	}
 
+	void RenderEdidCard(const char* text)
+	{
+		const float width = ImGui::GetContentRegionAvail().x;
+		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
+		const float textWidth = (std::max)(1.0F, width - padding * 2.0F);
+		const float textHeight = TextHeight(text, textWidth);
+		const float height = std::ceil(textHeight + padding * 2.0F);
+		// 显式约束当前排版的完整高度，避免 AutoResizeY 使用上一帧测量。
+		ImGui::SetNextWindowSizeConstraints({ 0.0F, height }, { FLT_MAX, height });
+		ImGui::SetNextWindowContentSize({ 0.0F, textHeight });
+		if (BeginCard("##display-edid", { width, height })) Text(text);
+		EndCard();
+	}
+
 	void PageHeader(const char* title, const char* description)
 	{
 		Text(title, ImFluentTextStyle_Title);

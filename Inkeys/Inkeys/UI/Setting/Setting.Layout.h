@@ -44,6 +44,7 @@ namespace Inkeys::UI::Setting
 		LayoutRect drag;
 		LayoutRect version;
 		LayoutRect themeToggle;
+		LayoutRect debug;
 		LayoutRect minimize;
 		LayoutRect maximize;
 		LayoutRect close;
@@ -256,8 +257,11 @@ namespace Inkeys::UI::Setting
 		result.icon = { inset, (height - iconSize) * 0.5F,
 			inset + iconSize, (height + iconSize) * 0.5F };
 
-		// 主题入口始终保留，窗口变窄时先让版本信息和标题文字让位。
-		const float themeRight = (std::max)(0.0F, captionStart - rightHeaderSpacing);
+		// 主题与调试入口始终保留，窄窗先让版本和标题文字让位。
+		const float debugRight = (std::max)(0.0F, captionStart - rightHeaderSpacing);
+		result.debug = { (std::max)(0.0F,
+			debugRight - TitleBarThemeButtonWidthDip * scale), 0.0F, debugRight, height };
+		const float themeRight = (std::max)(0.0F, result.debug.left - rightHeaderSpacing);
 		result.themeToggle = { (std::max)(0.0F,
 			themeRight - TitleBarThemeButtonWidthDip * scale), 0.0F, themeRight, height };
 		const float identityLeft = result.icon.right + spacing;
@@ -269,8 +273,10 @@ namespace Inkeys::UI::Setting
 		result.identity = { result.icon.left, 0.0F,
 			(std::min)(identityDesiredRight, identityMaximumRight), height };
 
-		const float dragStart = (std::max)(result.icon.right + spacing,
-			result.identity.right);
+		// 极窄预算下标题已让位，缩短图标后空白以保留最小系统拖动区。
+		const float dragStart = (std::max)(result.icon.right, (std::min)(
+			(std::max)(identityLeft, result.identity.right), rightHeaderEnd - minimumDragWidth));
+		result.identity.right = (std::min)(result.identity.right, dragStart);
 		result.versionVisible = versionTextWidthPixels > 0.0F
 			&& rightHeaderEnd - dragStart >= minimumDragWidth + versionWidth;
 		if (result.versionVisible)

@@ -1,0 +1,41 @@
+{
+  "id": "setting-debug-entry-content",
+  "name": "setting-debug-entry-content",
+  "title": "调试入口迁移与调试页内容调整",
+  "description": "将调试入口迁至标题栏，迁移四个控制台开关，增加完整自适应EDID卡片，并修正Debug切换时的侧栏蓝条状态。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-09",
+  "completedAt": null,
+  "branch": "fluent",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-06-setting-winui3-design-rebuild",
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Design.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Layout.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "InkeysHeadlessTests/setting_design_tests.cpp",
+    "InkeysHeadlessTests/setting_session_state_tests.cpp"
+  ],
+  "notes": "2026-10-09已在fluent完成调试入口迁移、四控制台开关及动态EDID卡片。最终完整ARM64 Solution和完整--no-window exit0，独立检查无未解决本轮问题；见verification.md。父子任务保持in_progress，人工窗口验收待完成，不GUI/commit/push/归档。 2026-10-09用户确认本轮满意并授权实现commit及结束/收尾commit，不push；后续两处小修改独立保留。",
+  "meta": {
+    "implementation_verified": true,
+    "independent_review": "passed",
+    "manual_window_acceptance": "user_accepted_scope",
+    "validation_record": ".trellis/tasks/10-09-setting-debug-entry-content/verification.md",
+    "closure_authorized": true
+  }
+}

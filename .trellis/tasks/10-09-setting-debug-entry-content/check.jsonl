@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "桌面边界及Quality Check"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "最小diff、编码换行、显示快照"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Setting真实字体/布局/动画；文件较大需主动读取相关段落"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "国际化与配置保存保持"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整Solution与原生ARM64构建"}
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/scroll-sponsor-validation.md", "reason": "既有indicator连续帧真实绘制验证及构建方式；历史commit授权不延续"}

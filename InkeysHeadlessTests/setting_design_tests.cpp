@@ -139,7 +139,7 @@ namespace
 					if (state.Expanded() != expanded) state.Toggle();
 					const auto shell = Design::ResolveShellGeometry(size.x, size.y, state);
 					const auto regions = Design::ResolveNavigationPaneGeometry(
-						shell.pane.Width(), shell.pane.Height(), state.Expanded());
+						shell.pane.Width(), shell.pane.Height());
 					const LayoutRect pane{ 0, 0, shell.pane.Width(), shell.pane.Height() };
 					checks.Expect(regions.fits && Contains(pane, regions.top) && Contains(pane, regions.middle)
 						&& Contains(pane, regions.footer) && Disjoint(regions.top, regions.middle)
@@ -160,18 +160,15 @@ namespace
 					for (const auto& divider : regions.separators)
 						checks.Expect(Contains(pane, divider) && Near(divider.Height(), 1),
 							"separators stay within the pane and one DIP thick");
-					checks.Expect(regions.debugVisible == expanded && (expanded
-						? Contains(regions.footer, regions.debug) && Near(regions.debug.Height(), 28)
-							&& Near(regions.debug.Width(), 72) && Near(regions.debug.left + regions.debug.Width() / 2, pane.Width() / 2)
-							&& regions.debug.top > regions.footerItems[3].bottom
-						: Near(regions.debug.Width(), 0) && Near(regions.debug.Height(), 0)),
-						"debug is centered natural-width/28 DIP only in desktop or overlay expansion");
+					checks.Expect(Near(regions.footer.bottom - regions.footerItems[3].bottom, 8)
+						&& Near(regions.footer.Height(), 184),
+						"footer ends after close action with only its original bottom inset and no debug reservation");
 					checks.Expect(Near(regions.middleContentHeight, 236)
 						&& Near(regions.top.Height() + regions.middle.Height() + regions.footer.Height(), pane.Height())
 						&& (size.y != 520 || regions.middleContentHeight > regions.middle.Height()),
 						"remaining height alone budgets the six-root middle with overflow at minimum size");
 				}
-		const auto shortPane = Design::ResolveNavigationPaneGeometry(248, 240, true);
+		const auto shortPane = Design::ResolveNavigationPaneGeometry(248, 240);
 		checks.Expect(!shortPane.fits && Near(shortPane.middle.Height(), 0)
 			&& Disjoint(shortPane.top, shortPane.footer),
 			"abnormally short existing client explicitly reports insufficient height without fixed-region overlap");
@@ -1465,7 +1462,7 @@ namespace
 			std::array<ImVec2, 2> fixedOrigins{};
 			float paneWidth = 0, scroll = 0, maximumScroll = 0, contentAlpha = 1;
 			unsigned int glyphAlpha = 0, flatAlpha = 0;
-			LayoutRect body;
+			LayoutRect body, debug;
 			int vertices = 0;
 		};
 		auto& io = ImGui::GetIO();
@@ -1502,6 +1499,13 @@ namespace
 				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar
 				| ImGuiWindowFlags_NoScrollWithMouse);
 			ImFluent::PushFont(ImFluentTextStyle_Body);
+			const auto title = ResolveTitleBarGeometry(size.x * scale, scale, 46 * scale, 100 * scale, 80 * scale);
+			frame.debug = title.debug;
+			if (Design::RenderDebugButton(title.debug, selected.page == PageId::Debug, state))
+			{
+				if (selected.page != PageId::Debug) ++navigations;
+				selected = { PageId::Debug }; Design::NotifyNavigationDestination(state, selected);
+			}
 			// 同产品一样先提交一份正文；菜单关闭的鼠标释放由导航屏障阻止穿透。
 			ImGui::SetCursorScreenPos(ImVec2((frame.shell.content.left + 64) * scale, 180 * scale));
 			ImGui::BeginChild("##hierarchy-body", ImVec2(320 * scale, 100 * scale), ImGuiChildFlags_None,
@@ -2118,9 +2122,132 @@ namespace
 				"the actual sponsor row navigates to its existing page and keeps the normal selected background");
 			expectAttached(frame, state.footerBounds[1]);
 		}
+		const int debugStart = frames;
+		for (bool debugDark : { false, true })
+		for (int mode : { 0, 1, 2 })
+		for (bool debugAnimated : { false, true })
+		{
+			dark = debugDark; animated = debugAnimated; requestedScroll = -1;
+			size = ImVec2(mode == 2 ? 720.0F : 960.0F, 700.0F); state.Resize(size.x);
+			state.desktopCompact = mode == 1; state.overlayOpen = mode == 2;
+			selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected); frame = idle(20);
+			selected = { PageId::Draw }; Design::NotifyNavigationDestination(state, selected); frame = idle(1);
+			// 真正按下标题栏入口，包含普通选中条尚在移动时的进入。
+			frame = click(frame.debug);
+			checks.Expect(selected.page == PageId::Debug && !frame.indicatorDrawn && !state.indicatorInitialized
+				&& state.indicatorItemId == 0 && state.indicatorWindowId == 0
+				&& !state.indicatorX.Active() && !state.indicatorY.Active() && !state.overlayOpen,
+				"actual titlebar debug click hides the blue bar and drops its anchor and motion in the activation frame");
+			const int beforeRepeat = navigations; frame = click(frame.debug);
+			checks.Expect(navigations == beforeRepeat && !frame.indicatorDrawn && selected.page == PageId::Debug,
+				"repeating the actual debug button keeps the page without a stray selection bar");
+			if (mode == 2)
+			{
+				state.Toggle(); frame = idle(20);
+				checks.Expect(state.overlayOpen && state.Expanded() && !frame.indicatorDrawn,
+					"debug page can reopen the narrow overlay without destination synchronization closing it");
+			}
+			frame = click(state.middleBounds[2]);
+			checks.Expect(selected.page == PageId::Plugins && !state.indicatorY.Active(),
+				"return from debug binds the selected row directly instead of sliding from an old blue-bar anchor");
+			frame = draw(outside, false); expectAttached(frame, state.middleBounds[2]);
+			selected = { PageId::Draw }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
+			checks.Expect(state.indicatorY.Active() == animated,
+				"ordinary destinations resume their configured blue-bar transition after leaving debug");
+			selected = { PageId::Debug }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
+			checks.Expect(!frame.indicatorDrawn && !state.indicatorY.Active(), "rapid reversal to debug suppresses blue-bar motion immediately");
+			selected = { PageId::Plugins }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
+			expectAttached(frame, state.middleBounds[2]);
+		}
+		// 紧凑轨道的真实模态子菜单不能吞掉标题栏 Debug；它只继续隔离正文。
+		animated = true; size = ImVec2(960, 700); state.desktopCompact = true; state.overlayOpen = false;
+		selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected); frame = idle(20);
+		click(state.parentBounds); frame = idle(12);
+		click(state.parentBounds); frame = idle(12);
+		checks.Expect(state.flyoutOpen && state.IsFlyoutOpen(), "real compact parent opens the navigation modal before debug activation");
+		frame = click(frame.debug);
+		checks.Expect(selected.page == PageId::Debug && !state.IsFlyoutOpen() && !frame.indicatorDrawn,
+			"titlebar debug remains actionable over the real navigation modal and closes it on activation");
+		std::cout << "[DebugNavigationDrawData] scale=" << scale << " frames=" << frames - debugStart << '\n';
 		std::cout << "[IndicatorSponsorDrawData] scale=" << scale << " frames=" << frames - originalFrames << '\n';
 		io.ConfigFlags = previousFlags;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
+		Design::ApplyPalette(false);
+	}
+
+	void CheckEdidCard(Checks& checks, ImFont* regular, ImFont* strong, float scale)
+	{
+		Design::BindTextFonts(regular, strong);
+		auto& io = ImGui::GetIO();
+		const std::string single = "Topology: Single | Monitor count: 1\n\nMonitor 1 (Primary): Screen | Windows DISPLAY1 | 2880x1920 px | DPI 144x144 | Physical 28.000000x18.000000 cm | EDID Valid, raw 28x18 cm";
+		std::string multiple = "Topology: Extended | Monitor count: 8";
+		for (int index = 1; index <= 8; ++index)
+			multiple += "\n\nMonitor " + std::to_string(index) + ": Extremely long monitor friendly name with repeated model identifiers ABCDEFGHIJKLMNOPQRSTUVWXYZ | Windows DISPLAY" + std::to_string(index)
+				+ " | 3840x2160 px | DPI 144x144 | Physical unavailable (EDID Read failed) | EDID Read failed, raw 0x0 cm";
+		int frames = 0, outlineBoundarySamples = 0;
+		for (bool dark : { false, true })
+		{
+			Design::ApplyPalette(dark);
+			std::array<float, 5> heights{};
+			for (int sample = 0; sample < 5; ++sample)
+			{
+				const char* text = sample == 0 ? "显示快照不可用" : sample == 1 || sample == 4 ? single.c_str() : multiple.c_str();
+				const float width = (sample == 3 ? 230.0F : 620.0F) * scale;
+				float pageScroll = 0;
+				for (int pass = 0; pass < 4; ++pass)
+				{
+					io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
+					io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+					ImGui::NewFrame();
+					ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize({ width + 80 * scale, 400 * scale });
+					ImGui::Begin("##edid-card-cpu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+					ImGui::SetNextWindowScroll({ 0, pass == 3 ? pageScroll : 0 });
+					ImGui::BeginChild("##edid-page", { width, 300 * scale });
+					auto* page = ImGui::GetCurrentWindow();
+					ImGui::BeginChild("##edid-page-content", { ImGui::GetContentRegionAvail().x, 0 }, ImGuiChildFlags_AutoResizeY);
+					auto* body = ImGui::GetCurrentWindow();
+					Design::RenderEdidCard(text);
+					ImGuiWindow* card = body->DC.ChildWindows.empty() ? nullptr : body->DC.ChildWindows.back();
+					checks.Expect(card && card->Size.y > 0 && Near(card->Scroll.y, 0) && Near(card->ScrollMax.y, 0)
+						&& !card->ScrollbarY && !card->ScrollbarX,
+						"actual EDID card has complete height with no internal scrollbar on its first frame and every width/text change");
+					if (card)
+					{
+						heights[sample] = card->Size.y;
+						checks.Expect(card->DC.CursorMaxPos.y <= card->Pos.y + card->Size.y - card->WindowPadding.y + 1,
+							"real EDID text layout including the final line stays inside the full measured card");
+						const auto white = io.Fonts->TexUvWhitePixel;
+						int glyphs = 0; float glyphBottom = -FLT_MAX;
+						for (const auto& vertex : card->DrawList->VtxBuffer)
+						{
+							// 卡片边框也会使用 atlas 中的线纹理，只取实际正文颜色的字形。
+							if (vertex.col != Design::TextPrimary || (vertex.uv.x == white.x && vertex.uv.y == white.y))
+							{
+								if (vertex.pos.y < card->Pos.y || vertex.pos.y > card->Pos.y + card->Size.y + 1) ++outlineBoundarySamples;
+								continue;
+							}
+							++glyphs; glyphBottom = (std::max)(glyphBottom, vertex.pos.y);
+							checks.Expect(vertex.pos.x >= card->Pos.x && vertex.pos.x <= card->Pos.x + card->Size.x + 1
+								&& vertex.pos.y >= card->Pos.y && vertex.pos.y <= card->Pos.y + card->Size.y + 1,
+								"actual EDID glyph vertices remain bounded by their themed card");
+						}
+						if (pass == 3) checks.Expect(glyphs > 0 && glyphBottom > card->Pos.y + card->Size.y - card->WindowPadding.y - 24 * scale,
+							"scrolling the outer page exposes the final actual EDID glyphs without scrolling the card");
+					}
+					ImGui::EndChild();
+					if (pass == 2) pageScroll = page->ScrollMax.y;
+					if (pass >= 2) checks.Expect(Near(body->ScrollMax.y, 0) && Near(body->Scroll.y, 0)
+						&& ((sample == 2 || sample == 3) ? page->ScrollMax.y > 0 : Near(page->ScrollMax.y, 0)),
+						"long EDID content scrolls at the outer page while the auto-height page body remains fully expanded");
+					ImGui::EndChild(); ImGui::PopStyleVar(); ImGui::End(); ImGui::Render(); ++frames;
+					checks.Expect(ImGui::GetDrawData()->Valid && ImGui::GetDrawData()->TotalVtxCount > 0, "EDID regression submits real DrawData");
+				}
+			}
+			checks.Expect(heights[1] > heights[0] && heights[2] > heights[1] && heights[3] > heights[2]
+				&& Near(heights[4], heights[1], 1), "actual card grows for multiple monitors and narrow wrapping and shrinks immediately with shorter text");
+		}
+		std::cout << "[EdidCardDrawData] scale=" << scale << " frames=" << frames << " outlineBoundarySamples=" << outlineBoundarySamples << '\n';
 		Design::ApplyPalette(false);
 	}
 
@@ -2138,8 +2265,7 @@ namespace
 				Design::NavigationState state; state.Resize(size.x);
 				if (state.Expanded() != expanded) state.Toggle();
 				const auto shell = Design::ResolveShellGeometry(size.x, size.y, state);
-				const float debugWidth = Design::TextWidth("调试软件", ImFluentTextStyle_Caption) / scale + 24;
-				const auto regions = Design::ResolveNavigationPaneGeometry(shell.pane.Width(), shell.pane.Height(), expanded, 36, debugWidth);
+				const auto regions = Design::ResolveNavigationPaneGeometry(shell.pane.Width(), shell.pane.Height(), 36);
 				std::array<ImVec2, 2> fixedOrigins{};
 				float maximumScroll = 0;
 				for (int pass = 0; pass < 3; ++pass)
@@ -2201,16 +2327,6 @@ namespace
 								"real close text/icon uses the light/dark critical foreground without changing its background");
 						} else ImFluent::NavItemEx("item", "Fixed action", false, nullptr, !expanded);
 						ImGui::PopID();
-					}
-					if (regions.debugVisible) {
-						position(regions.debug, regions.footer.top); auto* list = ImGui::GetWindowDrawList(); const int first = list->VtxBuffer.Size;
-						checks.Expect(!Design::CaptionNavigationButton("debug", "调试软件", false,
-							ImVec2(regions.debug.Width() * scale, regions.debug.Height() * scale)), "idle debug has no action");
-						const auto actual = ImGui::GetItemRectSize(); int glyphVertices = 0;
-						const auto white = ImGui::GetIO().Fonts->TexUvWhitePixel;
-						for (int v = first; v < list->VtxBuffer.Size; ++v) if (list->VtxBuffer[v].uv.x != white.x || list->VtxBuffer[v].uv.y != white.y) ++glyphVertices;
-						checks.Expect(Near(actual.y, 28 * scale, 1.0F) && Near(actual.x, debugWidth * scale, 1.0F) && glyphVertices == 16,
-							"actual debug wrapper draws only four caption glyphs with natural width and 28 DIP height");
 					}
 					checks.Expect(Near(ImGui::GetScrollY(), 0) && (pass == 0 || Near(ImGui::GetScrollMaxY(), 0)), "actual fixed footer child has no scroll range"); end();
 					if (pass == 0) fixedOrigins = { topOrigin, footerOrigin };
@@ -2406,6 +2522,7 @@ int RunSettingDesignTests()
 		CheckDrawData(checks);
 		CheckMultilineRowAnimations(checks, fonts, fontDirectory, scale);
 		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);
+		CheckEdidCard(checks, fonts[0], fonts[1], scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 			CheckGeneralSections(checks, fonts[0], fonts[1], fonts.back(), scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)

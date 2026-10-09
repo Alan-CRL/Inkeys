@@ -1698,9 +1698,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Setting 创建时 owner 为 null，运行时 owner 遵守发布分支的受控切换；style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`；保留 caption/sizing/system menu 的标准桌面窗口语义，自绘内容替换原生标题区域。ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口保留箭头光标、大小图标和任务栏按钮，普通关闭映射 Hide，只有进程退出时销毁 HWND。WindowSpec 宽高表示客户区，创建时只外扩真实 sizing frame，不重复加入原生 caption 高度，outer rect 夹紧到工作区。
 - Setting 的 sizing frame 仍由 QuerySettingFrameThickness 按系统 DPI 查询，不乘用户 UI 倍率；创建/NCCALCSIZE 用 QuerySettingClientFrameInsets 决定客户区内缩。DWM 开启且恢复态时，只有 top 使用 DWMWA_VISIBLE_FRAME_BORDER_THICKNESS 的实际可见描边，左右/下仍保留完整系统 sizing frame；最大化或 composition 关闭时四边都保持完整 frame。属性不可用使用系统细边框回退，不改变其他窗口角色。DWM 顶部没有左右/下边那段不可见外扩，不能把完整 sizing 高度画成标题栏上方宽带。composition 改变后立即 FRAMECHANGED。自绘标题栏/图标/caption cell/glyph 仍为 32/16/46/10 DIP。
 - 创建前尚无 HWND，SM_CYBORDER 细边框回退可能与实际 DWM 描边不同（本机 192 DPI 为 1px/2px）。只在 Setting 的首次 FRAMECHANGED 后读取实际 outer/client 差，用 ResolveWindowFrameCreationCorrection 恢复请求的客户区尺寸，并按原请求中心和当前工作区夹紧；仅尺寸确有差异时校正一次。不用猜测分数 DPI 下 DWM 的取整，不修改其他窗口角色或最大化字段。
-- WM_NCPAINT/WM_NCACTIVATE 保持默认处理。NCHITTEST 使用实际 screen-space outer/client：只有空白 HTCAPTION 的最上方允许补足系统 sizing 高度，外侧顶角同样保持完整可操作高度；先保护 close/max/min、主题、版本和系统菜单的整个客户区矩形，其余 client（特别是右侧 scrollbar）不增加 resize 区。左右/下的 resize 仍完全位于 client 外；最大化不返回 resize，outer 外返回 HTNOWHERE。caption button 仍投递标准 WM_SYSCOMMAND，关闭映射 Hide。
+- WM_NCPAINT/WM_NCACTIVATE 保持默认处理。NCHITTEST 使用实际 screen-space outer/client：只有空白 HTCAPTION 的最上方允许补足系统 sizing 高度，外侧顶角同样保持完整可操作高度；先保护 close/max/min、主题、Debug、版本和系统菜单的整个客户区矩形，其余 client（特别是右侧 scrollbar）不增加 resize 区。左右/下的 resize 仍完全位于 client 外；最大化不返回 resize，outer 外返回 HTNOWHERE。caption button 仍投递标准 WM_SYSCOMMAND，关闭映射 Hide。
 - 系统 modal loop 使用原子 `None/Move/Size` 状态：`WM_NCLBUTTONDOWN` 根据 `HTCAPTION`/八方向 hit 分类，`WM_SYSCOMMAND` 补充 `SC_MOVE/SC_SIZE` 键盘路径，未知 `WM_ENTERSIZEMOVE` 默认为 Size。只有 Move 允许 Settings 回调在 swap-chain 操作与 Present 前返回 `Idle`；Size 中的每个非最小化 `WM_SIZE` 都覆盖 latest resize 并 `Request(Settings)`，渲染线程按自身节拍执行 `ResizeBuffers -> Render -> Present`。`WM_EXITSIZEMOVE`、Hide/Shutdown 清除状态并保证最终请求。
-- RightHeader 显示真实 editionVersion 并路由到 tab6，其右侧是 32 DIP 主题按钮，再接 caption cells。空间不足先隐藏版本入口，保留主题按钮、caption、identity 和至少 96 DIP 拖拽区。活动/非活动标题、版本和 caption glyph 保持状态差异；关闭 hover/pressed 为 critical red，其余按钮使用 Fluent subtle fill。
+- RightHeader 显示真实 editionVersion 并路由到 tab6，其右侧依次为 32 DIP 主题按钮、32 DIP Debug Bug图标按钮，再接 caption cells。Debug路由到现有调试页，入口包括IDT_RELEASE始终可见；主题/Debug不提供悬停文字提示，保留hover/pressed，Debug选中有subtle底色。新增Debug槽位只让版本/主题向左让位，caption位置保持。空间不足先隐藏版本入口并让标题文字让位；极窄预算可缩减图标后空白，保留主题/Debug按钮、caption、identity 和至少 96 DIP 拖拽区。活动/非活动标题、版本和 caption glyph 保持状态差异；关闭 hover/pressed 为 critical red，其余按钮使用 Fluent subtle fill。
 - 默认客户区约 960×700 DIP；WM_GETMINMAXINFO 只经 ApplyWindowFrameMinimumTrack 修改约 720×520 DIP client 加一次系统 frame 的最小 track size，工作区过小时限制到可用尺寸。USER32 预填的 ptMaxPosition/ptMaxSize/ptMaxTrackSize 保持不变：它们使用 primary-monitor 协议，系统会向实际显示器补偿，不能直接回填目标 workarea 尺寸导致二次放大。标准 overlapped style 的默认最大化保留任务栏；WM_DPICHANGED 接受建议矩形，Hide/Show 在进程内保留 bounds/最大化状态。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
@@ -1718,7 +1718,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | 指针位于 Setting 边角/边缘 | 恢复态返回对应 resize；仅顶部空白 caption 可补足 sizing 高度，标题控件优先保护；最大化不返回 resize |
 | 指针位于右侧 scrollbar 整个轨道 | 始终 client，不被 resize 热区截走 |
 | 指针位于 Setting 最大化格 | 返回 `HTMAXBUTTON`，由 `DefWindowProcW` 保留最大化/还原和 Windows 11 Snap Layout |
-| 指针位于版本 RightHeader / 主题按钮 | 返回 HTCLIENT，分别进入 tab6 / 请求换色，不触发窗口拖动 |
+| 指针位于版本 RightHeader / 主题 / Debug按钮 | 返回 HTCLIENT，分别进入 tab6 / 请求换色 / 进入调试页，不触发窗口拖动 |
 | DWM composition 可用 | 系统管理真实 sizing frame、阴影与圆角；应用设置与当前浅深主题一致的中性边框色 |
 | DWM composition 不可用或属性不受支持 | 默认 non-client paint 继续处理保留的 frame，自绘当前主题 caption 不变 |
 | `WM_NCMOUSEMOVE` 的 hit 为 `HTCAPTION` | 直接进入系统 move loop，不请求 Settings 渲染帧；只有 caption button hover/leave 需要刷新 |
@@ -1768,7 +1768,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
-- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption/RightHeader/主题/拖拽互斥、窄宽版本隐藏、八方向 frame 与整个 scrollbar client 区、不同 DPI 的最小尺寸、创建估计/实际边框差一像素时的客户区校正与工作区夹紧、真实 MINMAXINFO 的 max 字段保留，以及 DPI 建议矩形与响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
+- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption/RightHeader/主题/Debug/拖拽互斥、窄宽版本隐藏、八方向 frame 与整个 scrollbar client 区、不同 DPI 的最小尺寸、创建估计/实际边框差一像素时的客户区校正与工作区夹紧、真实 MINMAXINFO 的 max 字段保留，以及 DPI 建议矩形与响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
 - 静态审查必须确认仅 Move guard 位于 swap-chain create/probe/resize 与 coroutine resume/Present 之前；Size 不经过该 guard，`WM_SIZE` 仍 `QueueResize + Request`。真实 resize 流畅度、Snap Layout、active/accent border 和多显示器 DPI 仍只能在允许 GUI 的阶段人工验收。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
 - Window 测试还需覆盖持久 `SetOverlayTopmost`、白板专用 `SetOverlayFullscreen`、Whiteboard activation style 和 group minimize/restore；fullscreen 不得自行改变 topmost 位，退出白板或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。静态审查需确认 `IdtFreezeFrame` 的桌面定格路径不调用 `SetOverlayFullscreen`。
@@ -1956,18 +1956,20 @@ ImFontConfig HarmonyFontConfig(float rasterizerDensity);
 float TextHeight(const char*, float widthPixels, ImFluentTextStyle);
 void TextAt(const char*, ImVec2, float widthPixels, ImFluentTextStyle, ImU32);
 HomeAction RenderHome(const HomeContent&);
+void RenderEdidCard(const char* text);
 GeneralEvents RenderGeneral(GeneralDraft&);
 }
 ```
 
 #### 3. Contracts
 
-- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定，中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/交互与安全/存储与配置，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭/调试固定。三处1 DIP细线替代分组标题；Debug只展开显示（含overlay），无图标、居中自然宽、Caption12 DIP、28 DIP高。ResolveNavigationPaneGeometry先测固定行/分割带/Debug，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
+- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定，中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/交互与安全/存储与配置，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭固定。三处1 DIP细线替代分组标题；Debug使用标题栏Bug图标入口，侧栏不再绘制或预留调试行。ResolveNavigationPaneGeometry先测固定行/分割带，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
 - RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。设置卡片默认标题＋完整多行说明，action 按实际宽度靠右。按当前内容宽度及 action 自然宽度动态判断文字预算：说明区不足280 DIP时采用标题/action在上、说明下方通栏，返回行内保留16 DIP余量；标题区不足160 DIP时沿用极窄控件换行。以上是项目预算，不是WinUI官方断点，不以控件数量/固定单行判断代替测量，不缩小字号、截断或默认折叠完整说明。长文行高由实际字体测量而来；测量不运行 action，一帧只在实际控件绘制时产生事件。
 - 多行说明布局的补间使用当前ImGui窗口与稳定行ID的StateStorage，随context释放；复用NavigationTween、160ms/已有动画速率和设置帧时钟。先使说明下移避开操作，再扩宽；反向先收窄再上移。首次出现按当前预算直接到位，缺席/隐藏后首帧不累计休眠时间，关闭动画即时到位。卡片及下一行的真实ItemSize包含当前换行包络；说明行数随真实宽度离散变化，不靠裁切换取高度平滑，不绘制两套可交互控件或增加配置/线程。置顶间隔完整说明常驻同一卡片，不另设“详细说明”展开块。
 - 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
 - 旧 ImFontMain/Strong 保留给标题栏边界；校准 regular/strong 和独立 icon face 常驻同一 atlas/session，全部内容页和导航使用统一文字角色，离开内容区后恢复原角色。禁止重新引入按页面分支选择旧字体。正文/说明/标题保持14/20、12/16、28/36，字面按1.213×TextOpticalScale（当前0.97）校准；控件文字单独使用ControlText（当前13/20）。
-- 所有普通控件通过 Design 的13 DIP字体wrapper；ButtonWidth与默认Button/AccentButton使用同一天然宽公式，显式尺寸仍由调用者决定。ButtonGroupRow先测各按钮自然宽，再按可用预算换行且每行靠右；Action只在实际绘制时执行。导航Debug文字按钮是Caption12 DIP例外；赞助复用普通NavItemEx背景与输入，文字和图标均用与选中条相同的AccentFillDefault亮蓝主题色，选中条统一处理，关闭只覆盖浅深主题criticalText语义色，保持普通背景交互。
+- 所有普通控件通过 Design 的13 DIP字体wrapper；ButtonWidth与默认Button/AccentButton使用同一天然宽公式，显式尺寸仍由调用者决定。ButtonGroupRow先测各按钮自然宽，再按可用预算换行且每行靠右；Action只在实际绘制时执行。赞助复用普通NavItemEx背景与输入，文字和图标均用与选中条相同的AccentFillDefault亮蓝主题色，选中条统一处理，关闭只覆盖浅深主题criticalText语义色，保持普通背景交互。
+- 调试页“控制台输出”完整迁入TouchArea/PptCOM/Draw3/Cursor四项，原国际化/稳定ID/字段/FIFO保存保持，IDT_RELEASE不隐藏入口或四项；实验页其余条目及其他诊断宏保持。下方RenderEdidCard接收同一Display快照生成的完整诊断文本，保留拓扑和所有监视器字段及不可用原因；按实际内宽、字体换行和padding确定完整高度，不被父可见区域限制成内部滚动框。卡片与当前主题一致，内部ScrollMax为0，超屏由整页滚动承载；宽度/倍率/文本变化重新测量，快照不可用在卡片内提示。
 - Page/Section/SettingRow/Details/Card/Notice/NavigationRow共用文本行框和尾部占位，旧34%操作列禁止恢复。PPT两组缩放等独特内容可专用组合，但仍使用公共控件和真实action测量；缩放按发布行为即时应用、松手保存，同步方向只由本帧真实编辑或加入同步事件决定，不以尚未保存的 Record 值推断。插件详情各自用稳定子页ID保存滚动/展开状态。
 - 滚动条由ApplyScrollbars集中设置：8 DIP命中轨道、2 DIPpadding、透明背景和低对比灰thumb，hover/drag增强；每次从DIP重算，不能反复ScaleAllSizes。SetAccentColor会重建ImFluent预设，必须先调用再覆写项目token，否则先写入的项目样式会被预设覆盖。
 - SetIconFont/DrawIcon 与 NavItemEx 是有 UPSTREAM 记录的 ImFluent 小扩展；图标用其真实 glyph bounds 在固定槽内居中，不混入正文基线。
@@ -1975,7 +1977,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 - Setting用户倍率松手应用后只投递私有ensure-minimum消息；HWND所属线程用最新倍率、既有720×520逻辑minimum及实际outer/client差值，只必要时扩展普通窗并夹紧workarea，不改公开接口、owner/style、最大化几何及原DPI建议路径。最大化/最小化时仅由HWND线程保留pending，恢复普通窗后一次投递重试。工作区小于逻辑最小尺寸时存在物理容纳限制，不能把无窗口几何通过当作全部固定项实机可见。
 - SettingRow 必须用真正 item（Dummy/ItemSize）登记完整卡片和尾部 gap；仅 SetCursorScreenPos 到下一行会在 ImGui 1.92 的末项 End/EndChild 时触发边界断言。最终 cursor 必须与 ImGui ItemSize 使用一致的物理像素取整，避免 1.875 等分数倍率下半像素越过 CursorMaxPos。
 - 分层导航使用稳定复合目的地，旧Configuration/HotKeys分别映射通用Storage/Interaction，PageId编号不变。新会话子列表默认折叠（groupReveal同步为0）；父行点击在开合间切换，展开时进入最近子页（首次Basic），收起只保留当前正文/最近子页且不重启正文淡入；窄窗父行展开保留overlay，真正选择叶页才关闭overlay。箭头只切展开；紧凑父项首次进入、再次弹出子项；Hide/Show不清空已选择的展开偏好。浮层优先下方、夹紧客户区，关闭点击和鼠标释放期间保持输入屏障，焦点回父项；固定区不随中段滚动。无窗口菜单外点击测试必须确认真实点击点在浮层之外，并断言业务值、目的地、最近子页和导航次数都不变，不能只看菜单关闭。
-- 导航/子列表/浮层/正文/选中条由设置渲染线程推进；动画进度按dt/duration累计，速率中途变化不得回跳，反向从当前可见值开始。同一选中锚点的滚动/布局位移必须同步平移标记坐标与正在运行的补间，不重置进度；真正选中锚点切换才重定向过渡。选中条保持3×16 DIP，用上下半宽圆弧形成完整圆头；ImGui PathRect会将窄条圆角钳制到半宽减1px，不能只设置半宽radius；圆角几何和浅深主题赞助图标/文字颜色用实际DrawData验证。隐藏/跳过绘制后的首帧时钟重基准，低帧率仍按限幅dt推进。子列表动画按实际裁剪与几何命中，正文只运行一套控件并对实际顶点alpha淡入，不混改RGB。
+- 导航/子列表/浮层/正文/选中条由设置渲染线程推进；动画进度按dt/duration累计，速率中途变化不得回跳，反向从当前可见值开始。同一选中锚点的滚动/布局位移必须同步平移标记坐标与正在运行的补间，不重置进度；真正选中锚点切换才重定向过渡。Debug选中时不绘制侧栏蓝条，并清除旧item/window锚点、停止X/Y补间；返回普通页的首个锚点直接Reset归位，之后普通页之间继续既有切项动画。标题栏点击Debug复用导航流程并关闭overlay/flyout，重复点击不重启切页；Debug页后续可重新展开导航，不能在每帧同步目的地时强制关闭浮层。选中条保持3×16 DIP，用上下半宽圆弧形成完整圆头；ImGui PathRect会将窄条圆角钳制到半宽减1px，不能只设置半宽radius；圆角几何和浅深主题赞助图标/文字颜色用实际DrawData验证。隐藏/跳过绘制后的首帧时钟重基准，低帧率仍按限幅dt推进。子列表动画按实际裁剪与几何命中，正文只运行一套控件并对实际顶点alpha淡入，不混改RGB。
 - 通用各子页仅处理可见控件事件，隐藏字段不从缓存写回。路由切换完成已有滑块待提交值，沿用实时预览/松手保存/FIFO。各子页和插件详情分别用稳定ID保留滚动。
 - GeneralDraft 是 UI 副本，事件由 Setting.cpp 原 coroutine/FIFO 宏域处理。主栏倍率实时通知并松手保存；设置倍率松手才重建字体；置顶/安全模式仍保存原索引并发原运行时通知。页文件不得直接照抄被宏重定向的 ShellExecuteW/WriteSetting/RestartProgram 名称。
 - Home 所有入口连接真实路由/原外链；非简中 Community 的主页 GitHub discussions 与 footer en.inkeys.top/community.html 差异保留。教程展开使用既有图像纹理；不虚构教程 URL。
@@ -1992,6 +1994,8 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 | 最后一张 SettingRow 后直接 EndChild | 无 SetCursor 扩边断言，滚动范围包含整卡与尾 gap |
 | expander 标题过长或 body 被裁剪 | 标题不占用 chevron，完整标题可获知，Begin/End 栈匹配 |
 | 页面重排但无交互 | 不写盘、不发送业务事件 |
+| 普通页 → Debug → 普通页，含动画中途切换 | Debug无侧栏蓝条；返回蓝条首帧直接归位，随后正常切页动画保留 |
+| EDID卡片文本超过视口 | 卡片容纳完整换行文本且内部无滚动；整页可滚动，宽度/字体/数量变化重新测量 |
 
 #### 5. Good / Base / Bad Cases
 
@@ -2001,7 +2005,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 
 #### 6. Tests Required
 
-`RunSettingDesignTests` 复用实际 Design/Typography/Controls 和 ImGui/ImFluent CPU core，无 HWND、无 DX11 backend。多行说明回归用实际简/繁/英资源、浅深主题和六倍率连续帧，包含真实滑动条、按钮加下拉框、较高自然宽换行组及下一张卡片。说明顶点在action回调入口截取；Combo箭头也使用TextSecondary，不能在整卡结束后仅按颜色采样冒充说明字形。覆盖导航往返与 overlay、真实中英文测量、action 右锚/重排、SC/TC regular/bold 字形与多行 TextAt 顶点、NavItemEx 图标轴、真实控件 DrawData、末项 SettingRow 后 End。动态 atlas 纹理仅在 CPU 测试中模拟完成，不将测试纹理 ID 传入产品。完整 Solution Debug|ARM64 后运行 `InkeysHeadlessTests.exe --no-window`，仍不声称验证了实际 DX11 呈现或窗口交互。
+`RunSettingDesignTests` 复用实际 Design/Typography/Controls 和 ImGui/ImFluent CPU core，无 HWND、无 DX11 backend。多行说明回归用实际简/繁/英资源、浅深主题和六倍率连续帧，包含真实滑动条、按钮加下拉框、较高自然宽换行组及下一张卡片。说明顶点在action回调入口截取；Combo箭头也使用TextSecondary，不能在整卡结束后仅按颜色采样冒充说明字形。覆盖导航往返与 overlay、真实中英文测量、action 右锚/重排、SC/TC regular/bold 字形与多行 TextAt 顶点、NavItemEx 图标轴、真实控件 DrawData、末项 SettingRow 后 End。动态 atlas 纹理仅在 CPU 测试中模拟完成，不将测试纹理 ID 传入产品。EDID卡片回归须验证首次帧、文本/宽度变化及超视口完整高度、内部ScrollMax为0和整页滚动；字形采样同时限定实际TextPrimary颜色与字体纹理，纹理化抗锯齿卡片边框不能仅按非whiteUV当作字形。完整 Solution Debug|ARM64 后运行 `InkeysHeadlessTests.exe --no-window`，仍不声称验证了实际 DX11 呈现或窗口交互。
 
 #### 7. Wrong vs Correct
 

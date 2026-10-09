@@ -1,5 +1,6 @@
 #include "Setting.Pages.h"
 #include "imfluent/imfluent_internal.h"
+#include "imfluent/imfluent_icons.h"
 #include "imgui/imgui_internal.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
@@ -48,6 +49,42 @@ namespace Inkeys::UI::Setting::Design
 		}
 	}
 
+	bool RenderDebugButton(const LayoutRect& bounds, bool selected, NavigationState& state, float foregroundAlpha)
+	{
+		const ImVec2 origin = ImGui::GetWindowPos();
+		const ImVec2 minimum{ origin.x + bounds.left, origin.y + bounds.top };
+		const ImVec2 maximum{ origin.x + bounds.right, origin.y + bounds.bottom };
+		ImGui::SetCursorScreenPos(minimum);
+		auto& context = *GImGui;
+		ImGuiWindow* previousHovered = context.HoveredWindow;
+		const bool flyout = state.IsFlyoutOpen();
+		// 导航模态浮层仍隔离正文，但标题栏入口可以结束该浮层。
+		if (flyout && ImRect(minimum, maximum).Contains(ImGui::GetIO().MousePos))
+			context.HoveredWindow = ImGui::GetCurrentWindow();
+		ImGui::PushItemFlag(ImGuiItemFlags_NoWindowHoverableCheck, flyout);
+		const bool pressed = ImGui::InvisibleButton("##setting-debug", { bounds.Width(), bounds.Height() },
+			ImGuiButtonFlags_EnableNav | (flyout ? ImGuiButtonFlags_NoFocus : 0));
+		ImGui::PopItemFlag();
+		const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+		context.HoveredWindow = previousHovered;
+		if (selected || pressed || hovered)
+		{
+			const float inset = Pixels(4.0F);
+			ImGui::GetWindowDrawList()->AddRectFilled({ minimum.x, minimum.y + inset },
+				{ maximum.x, maximum.y - inset }, ImFluent::GetColorU32(ImGui::IsItemActive()
+					? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
+		}
+		ImVec4 foreground = ImGui::ColorConvertU32ToFloat4(ImFluent::GetColorU32(ImFluentCol_TextPrimary));
+		foreground.w *= foregroundAlpha;
+		ImFluent::DrawIcon(ImFluentIcon_Bug, minimum, maximum, NavigationGlyphSize, ImGui::GetColorU32(foreground));
+		if (pressed)
+		{
+			state.CloseFlyout(); state.DismissOverlay(); state.flyoutReveal.Reset(0.0F);
+			state.ClearIndicator();
+		}
+		return pressed;
+	}
+
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
 		NavigationState& state, NavigationDestination selected)
 	{
@@ -55,13 +92,11 @@ namespace Inkeys::UI::Setting::Design
 		const auto& pane = geometry.pane;
 		const float scale = Pixels(1.0F);
 		const bool expanded = pane.Width() > CompactPaneWidth + 0.01F;
-		const float fraction = std::clamp((pane.Width() - CompactPaneWidth) / (OpenPaneWidth - CompactPaneWidth), 0.0F, 1.0F);
 		const float childReveal = state.animationsInitialized ? state.groupReveal.value
 			: (state.Expanded() && state.generalExpanded ? 1.0F : 0.0F);
-		const std::string debugLabel = IA(I18nKey.SettingsUI.DebugSoftware.N);
-		const float debugWidth = TextWidth(debugLabel.c_str(), ImFluentTextStyle_Caption) / scale + 24.0F;
-		const auto sections = ResolveNavigationPaneGeometry(pane.Width(), pane.Height(), expanded,
-			ImFluent::GetStyle().NavItemHeight, debugWidth, fraction);
+		if (selected.page == PageId::Debug) state.ClearIndicator();
+		const auto sections = ResolveNavigationPaneGeometry(pane.Width(), pane.Height(),
+			ImFluent::GetStyle().NavItemHeight);
 		NavigationAction result;
 		const bool wasInlineChildFocused = state.inlineChildFocused;
 		state.inlineChildFocused = false;
@@ -383,14 +418,6 @@ namespace Inkeys::UI::Setting::Design
 			if (navItem("##exit", IA(I18nKey.SettingsUI.ExitSoftware.N).c_str(), false, "\ue711", !expanded))
 				result.kind = NavigationActionKind::Exit;
 			state.footerBounds[3] = ItemBounds(); ImFluent::PopStyleColor();
-			if (sections.debugVisible)
-			{
-				setPosition(sections.debug, footerTop); ImGui::PushID(static_cast<int>(PageId::Debug));
-				const bool debugSelected = selected.page == PageId::Debug;
-				if (CaptionNavigationButton("page", debugLabel.c_str(), debugSelected,
-					{ Pixels(sections.debug.Width()), Pixels(sections.debug.Height()) })) navigate({ PageId::Debug });
-				markSelected(debugSelected); ImGui::PopID();
-			}
 		}
 		ImGui::EndChild();
 		ImGui::PopStyleVar(); ImGui::EndChild();

@@ -452,7 +452,7 @@ namespace
 		if (geometry.close.Contains(x, y)) return HTCLOSE;
 		if (geometry.maximize.Contains(x, y)) return HTMAXBUTTON;
 		if (geometry.minimize.Contains(x, y)) return HTMINBUTTON;
-		if (geometry.themeToggle.Contains(x, y)
+		if (geometry.themeToggle.Contains(x, y) || geometry.debug.Contains(x, y)
 			|| (geometry.versionVisible && geometry.version.Contains(x, y)))
 			return HTCLIENT;
 		if (geometry.icon.Contains(x, y)) return HTSYSMENU;
@@ -2191,10 +2191,11 @@ SettingSessionCoroutine RunSettingSession()
 							origin.y + titleBarGeometry.height };
 						const ImU32 titleColor = SettingChromeColor(
 							ImFluentCol_TextPrimary, active ? 1.0F : 0.55F);
-						drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
-							{ origin.x + titleLeft,
-								origin.y + (titleBarGeometry.height - ImGui::GetFontSize()) * 0.5F },
-							titleColor, titleText.c_str(), nullptr, 0.0F, &titleClip);
+						if (titleBarGeometry.identity.right > titleLeft)
+							drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+								{ origin.x + titleLeft,
+									origin.y + (titleBarGeometry.height - ImGui::GetFontSize()) * 0.5F },
+								titleColor, titleText.c_str(), nullptr, 0.0F, &titleClip);
 						ImFluent::PopFont();
 
 						if (titleBarGeometry.versionVisible)
@@ -2248,13 +2249,13 @@ SettingSessionCoroutine RunSettingSession()
 								{ themeBounds.Max.x, themeBounds.Max.y - inset },
 								SettingChromeColor(ImGui::IsItemActive()
 									? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
-							ImGui::SetTooltip("%s", IA(Design::IsDarkMode()
-								? I18nKey.SettingsUI.Design.SwitchToLight
-								: I18nKey.SettingsUI.Design.SwitchToDark).c_str());
 						}
 						ImFluent::DrawIcon(Design::IsDarkMode() ? "\xee\x9c\x86" : "\xee\x9c\x88",
 							themeBounds.Min, themeBounds.Max, Design::NavigationGlyphSize,
 							SettingChromeColor(ImFluentCol_TextPrimary, active ? 1.0F : 0.55F));
+
+						if (Design::RenderDebugButton(titleBarGeometry.debug, destination.page == Design::PageId::Debug,
+							navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Debug });
 
 						ImFluent::PushFont(ImFluentTextStyle_Body);
 						RenderSettingCaptionButton(drawList, setting_window, origin,
@@ -3559,27 +3560,6 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					Design::PageHeader("实验室");
 					Design::SectionHeader("Inkeys3");
-					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
-						bool& value, auto& saved)
-					{
-						if (Design::ToggleRow(id, title, description, "\ue756", value))
-						{
-							saved = value;
-							QueueConfigWrite();
-						}
-					};
-					consoleToggle("##console-touch-area", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.TouchArea.N).c_str(),
-						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.TouchArea.E).c_str(),
-						Experimental.Inkeys3.TouchAreaConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea);
-					consoleToggle("##console-ppt-com", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.PptCOM.N).c_str(),
-						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.PptCOM.E).c_str(),
-						Experimental.Inkeys3.PptCOMConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM);
-					consoleToggle("##console-draw3", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Draw3.N).c_str(),
-						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Draw3.E).c_str(),
-						Experimental.Inkeys3.Draw3ConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3);
-					consoleToggle("##console-cursor", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N).c_str(),
-						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E).c_str(),
-						Experimental.Inkeys3.CursorConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor);
 					if (Design::ToggleRow("##experimental-dcomp", "在支持的设备上启动 DComp",
 						"重启软件后生效；关闭后使用 ULW 进行测试。", "\ue7f4", Experimental.Inkeys3.EnableDirectComposition))
 					{
@@ -3628,7 +3608,28 @@ SettingSessionCoroutine RunSettingSession()
 				case settingTabEnum::tab9:
 				{
 					Design::PageHeader(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str());
-					Design::SectionHeader("显示器与 EDID");
+					Design::SectionHeader("控制台输出");
+					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
+						bool& value, auto& saved)
+					{
+						if (Design::ToggleRow(id, title, description, "\ue756", value))
+						{
+							saved = value;
+							QueueConfigWrite();
+						}
+					};
+					consoleToggle("##console-touch-area", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.TouchArea.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.TouchArea.E).c_str(),
+						Experimental.Inkeys3.TouchAreaConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea);
+					consoleToggle("##console-ppt-com", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.PptCOM.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.PptCOM.E).c_str(),
+						Experimental.Inkeys3.PptCOMConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM);
+					consoleToggle("##console-draw3", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Draw3.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Draw3.E).c_str(),
+						Experimental.Inkeys3.Draw3ConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3);
+					consoleToggle("##console-cursor", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E).c_str(),
+						Experimental.Inkeys3.CursorConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					const auto diagnosticText = [](const char* format, auto... values)
 					{
@@ -3754,17 +3755,18 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::Separator();ImGui::Spacing();
 					}
 #endif
+					Design::SectionHeader("显示器与 EDID");
+					std::string edidText;
 					if (!displaySnapshot)
 					{
-						Design::Text("显示快照不可用");
+						edidText = "显示快照不可用";
 					}
 					else
 					{
 						std::wstring summary = L"活动拓扑：";
 						summary += Inkeys::Display::DisplayTopologyText(displaySnapshot->topology);
 						summary += L" | 监视器数量：" + std::to_wstring(displaySnapshot->monitors.size());
-						Design::Text(utf16ToUtf8(summary).c_str());
-						ImGui::Spacing();
+						edidText = utf16ToUtf8(summary);
 
 						for (std::size_t monitorIndex = 0; monitorIndex < displaySnapshot->monitors.size(); ++monitorIndex)
 						{
@@ -3802,10 +3804,10 @@ SettingSessionCoroutine RunSettingSession()
 							line += L"，原始 " + std::to_wstring(monitor.edid.rawPhysicalWidthCm) + L"x" +
 								std::to_wstring(monitor.edid.rawPhysicalHeightCm) + L" cm";
 
-							Design::Text(utf16ToUtf8(line).c_str());
-							if (monitorIndex + 1 < displaySnapshot->monitors.size()) ImGui::Spacing();
+							edidText += "\n\n" + utf16ToUtf8(line);
 						}
 					}
+					Design::RenderEdidCard(edidText.c_str());
 
 					break;
 				}

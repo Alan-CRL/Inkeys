@@ -137,6 +137,14 @@ namespace Inkeys::UI::Setting::Design
 		std::uint32_t childWindowItemId = 0;
 		bool inlineChildFocused = false;
 
+		void ClearIndicator() noexcept
+		{
+			// 调试入口不属于侧栏；返回普通页时重新绑定锚点并直接归位。
+			indicatorInitialized = false;
+			indicatorItemId = indicatorWindowId = 0;
+			indicatorAnchorX = indicatorAnchorY = indicatorWindowX = indicatorWindowY = 0.0F;
+			indicatorX.Reset(0.0F); indicatorY.Reset(0.0F);
+		}
 		void CloseFlyout() noexcept
 		{
 			if (IsFlyoutOpen()) restoreParentFocus = true;
@@ -245,7 +253,6 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	inline constexpr float NavigationRowHeight = 36.0F;
-	inline constexpr float NavigationDebugHeight = 28.0F;
 	inline constexpr float NavigationSeparatorBand = 12.0F;
 	inline constexpr size_t NavigationMiddleItemCount = 6;
 
@@ -258,18 +265,14 @@ namespace Inkeys::UI::Setting::Design
 		std::array<LayoutRect, 2> topItems;
 		std::array<LayoutRect, 4> footerItems; // 社区、赞助、重启、关闭。
 		std::array<LayoutRect, 3> separators;
-		LayoutRect debug;
 		float middleContentHeight = 0.0F;
 		float minimumHeight = 0.0F;
-		bool debugVisible = false;
 		bool fits = false;
 	};
 
-	// 先测固定行、分割线和调试按钮，再给中段剩余高度；所有坐标相对 pane，单位为 DIP。
+	// 先测固定行和分割线，再给中段剩余高度；所有坐标相对 pane，单位为 DIP。
 	[[nodiscard]] inline NavigationPaneGeometry ResolveNavigationPaneGeometry(
-		float widthDip, float heightDip, bool expanded,
-		float rowHeightDip = NavigationRowHeight, float debugWidthDip = 72.0F,
-		float expandedFraction = -1.0F) noexcept
+		float widthDip, float heightDip, float rowHeightDip = NavigationRowHeight) noexcept
 	{
 		const float width = std::isfinite(widthDip) ? (std::max)(0.0F, widthDip) : 0.0F;
 		const float height = std::isfinite(heightDip) ? (std::max)(0.0F, heightDip) : 0.0F;
@@ -280,15 +283,11 @@ namespace Inkeys::UI::Setting::Design
 		constexpr float headerHeight = 8.0F + NavigationRowHeight + 12.0F;
 		const float pairHeight = rowHeight * 2.0F + RowGap;
 		const float topHeight = headerHeight + pairHeight + NavigationSeparatorBand;
-		const float debugFraction = expandedFraction >= 0.0F
-			? std::clamp(expandedFraction, 0.0F, 1.0F) : (expanded ? 1.0F : 0.0F);
-		const float footerHeight = pairHeight * 2.0F + NavigationSeparatorBand * 2.0F
-			+ 8.0F + (8.0F + NavigationDebugHeight) * debugFraction;
+		const float footerHeight = pairHeight * 2.0F + NavigationSeparatorBand * 2.0F + 8.0F;
 
 		NavigationPaneGeometry result;
 		result.minimumHeight = topHeight + footerHeight;
 		result.fits = height >= result.minimumHeight;
-		result.debugVisible = expanded && debugFraction > 0.001F;
 		// 不够高的既有窗口由 HWND 最小尺寸合同扩展；此处仍保持固定区互不覆盖。
 		const float footerTop = (std::max)(topHeight, height - footerHeight);
 		result.menu = { inset, 8.0F, (std::min)(right, inset + 40.0F),
@@ -315,15 +314,6 @@ namespace Inkeys::UI::Setting::Design
 		result.footerItems[2] = { inset, actionsTop, right, actionsTop + rowHeight };
 		result.footerItems[3] = { inset, actionsTop + rowHeight + RowGap, right,
 			actionsTop + pairHeight };
-		if (result.debugVisible)
-		{
-			const float debugWidth = std::isfinite(debugWidthDip)
-				? std::clamp(debugWidthDip, 0.0F, right - inset) : 0.0F;
-			const float debugLeft = (width - debugWidth) * 0.5F;
-			const float debugTop = actionsTop + pairHeight + 8.0F;
-			result.debug = { debugLeft, debugTop, debugLeft + debugWidth,
-				debugTop + NavigationDebugHeight };
-		}
 		result.middleContentHeight = rowHeight * static_cast<float>(NavigationMiddleItemCount)
 			+ RowGap * static_cast<float>(NavigationMiddleItemCount - 1);
 		return result;

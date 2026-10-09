@@ -49,6 +49,7 @@ namespace Inkeys::UI::Setting::Design
 		destination = NormalizeDestination(destination);
 		if (destination.page == PageId::General) state.lastGeneralSection = destination.section;
 		if (state.contentPage == static_cast<int>(destination.page) && state.contentSection == destination.section) return;
+		if (destination.page == PageId::Debug) state.ClearIndicator();
 		state.contentPage = static_cast<int>(destination.page);
 		state.contentSection = destination.section;
 		state.contentReveal.Reset(state.animationsEnabled ? 0.0F : 1.0F);
@@ -113,5 +114,7 @@ namespace Inkeys::UI::Setting::Design
 	// >=0 是 PageId；-1 无事件，-2 社区，-3 重启，-4 退出。
 	int RenderNavigationPane(const ShellGeometry& geometry,
 		NavigationState& state, int selectedPage);
+	bool RenderDebugButton(const LayoutRect& bounds, bool selected, NavigationState& state, float foregroundAlpha = 1.0F);
+	void RenderEdidCard(const char* text);
 	void BindTextFonts(ImFont* regular, ImFont* strong);
 }
