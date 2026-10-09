@@ -1514,3 +1514,69 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 沿用设置重建父任务处理版本文字色和汉堡反馈，不GUI，不自动commit/push
+
+
+## Session 54: 标题栏版本同色与汉堡反馈
+<!-- trellis-session: v=2 fp=2f1640d98bc6b72e -->
+
+**Date**: 2026-10-09
+**Task**: 标题栏版本同色与汉堡反馈
+**Branch**: `fluent`
+
+### Summary
+
+在已提交归档的调试子任务之后完成两处小修；新改动未提交，父任务继续进行中。
+
+### Main Changes
+
+- 版本文字采用相邻图标的TextPrimary，汉堡局部使用subtleHover/subtlePressed，保留原按钮动画与开合逻辑。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64 exit0/23.697秒；完整--no-window exit0/120.048秒、stderr空；新增汉堡三倍率各546帧/18场景；i18n、格式与编码通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 新改动保留未提交，不push/GUI；最终窗口观感待人工验收，父任务保持in_progress。
+
+
+## Session 55: 提交版本同色与汉堡反馈增量
+<!-- trellis-session: v=2 fp=25453b3d3602faa7 -->
+
+**Date**: 2026-10-09
+**Task**: 提交版本同色与汉堡反馈增量
+**Branch**: `fluent`
+
+### Summary
+
+用户授权提交本轮已验证改动；实现和规范已提交，父任务继续进行中，不push。
+
+### Main Changes
+
+- 提交版本文字TextPrimary与汉堡subtleHover/subtlePressed局部反馈、真实DrawData测试和规范/验证记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `636c93d5` | fix(settings): align titlebar version color and restore menu feedback |
+
+### Testing
+
+- [OK] 复核已通过的完整Debug|ARM64构建、完整--no-window及独立审查；提交前diff --check通过，源码未再变更，无需重复编译。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 父任务继续in_progress，保留其他验收工作；未执行push或GUI。
