@@ -15,3 +15,4 @@
 {"file": ".trellis/tasks/archive/2026-10/08-13-setting-fluent2-responsive-ui/implement.md", "reason": "首轮迁移与resident/DWM验证证据；当前范围以接管记录为准"}
 {"file": ".trellis/tasks/archive/2026-10/08-13-unified-render-pipeline-setting/prd.md", "reason": "已完成共享渲染合同及自动化验收基线"}
 {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-hierarchical-nav.md", "reason": "当前用户批准的分类、交互、动画与禁止GUI/commit范围；优先于历史授权"}
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-titlebar-menu-feedback.md", "reason": "2026-10-09当前增量：版本文字与按钮同色、汉堡hover/pressed；优先于历史GUI/commit授权，不提交新修改"}

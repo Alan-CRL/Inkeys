@@ -1458,7 +1458,9 @@ namespace
 			bool indicatorDrawn = false;
 			std::vector<ImVec2> indicatorPoints;
 			int sponsorBlueText = 0, sponsorOtherIcon = 0, sponsorBlueIcon = 0;
-			FlatSample sponsorFill;
+			FlatSample sponsorFill, menuFill;
+			LayoutRect menu;
+			ImGuiWindow* top = nullptr; unsigned int menuAlpha = 0;
 			std::array<ImVec2, 2> fixedOrigins{};
 			float paneWidth = 0, scroll = 0, maximumScroll = 0, contentAlpha = 1;
 			unsigned int glyphAlpha = 0, flatAlpha = 0;
@@ -1545,7 +1547,7 @@ namespace
 					frame.list = window; frame.scroll = window->Scroll.y; frame.maximumScroll = window->ScrollMax.y;
 					if (requestedScroll >= 0) ImGui::SetScrollY(window, requestedScroll);
 				}
-				else if (name.find("##settings-nav-top") != std::string::npos) frame.fixedOrigins[0] = window->Pos;
+				else if (name.find("##settings-nav-top") != std::string::npos) { frame.fixedOrigins[0] = window->Pos; frame.top = window; }
 				else if (name.find("##settings-nav-footer") != std::string::npos)
 				{ frame.fixedOrigins[1] = window->Pos; frame.footer = window; }
 				else if (name.find("##settings-pane") != std::string::npos) frame.paneWidth = window->Size.x;
@@ -1579,6 +1581,18 @@ namespace
 					frame.indicator.right = (std::max)(frame.indicator.right, vertex.pos.x);
 					frame.indicator.bottom = (std::max)(frame.indicator.bottom, vertex.pos.y);
 				}
+			}
+			if (frame.top)
+			{
+				const auto regions = Design::ResolveNavigationPaneGeometry(frame.shell.pane.Width(), frame.shell.pane.Height(), 36);
+				const auto origin = frame.top->Pos;
+				frame.menu = { origin.x + regions.menu.left * scale, origin.y + regions.menu.top * scale,
+					origin.x + regions.menu.right * scale, origin.y + regions.menu.bottom * scale };
+				frame.menuFill = SampleFlatDrawData({ frame.menu.left + 29.37F * scale, frame.menu.top + 4.61F * scale },
+					frame.top->DrawList, 0, frame.top->DrawList->VtxBuffer.Size, Design::AppBase);
+				for (const auto& vertex : frame.top->DrawList->VtxBuffer)
+					if (vertex.uv.x == white.x && vertex.uv.y == white.y && frame.menu.Contains(vertex.pos.x, vertex.pos.y))
+						frame.menuAlpha = (std::max)(frame.menuAlpha, (vertex.col >> IM_COL32_A_SHIFT) & 0xff);
 			}
 			if (frame.footer)
 			{
@@ -2170,6 +2184,61 @@ namespace
 			"titlebar debug remains actionable over the real navigation modal and closes it on activation");
 		std::cout << "[DebugNavigationDrawData] scale=" << scale << " frames=" << frames - debugStart << '\n';
 		std::cout << "[IndicatorSponsorDrawData] scale=" << scale << " frames=" << frames - originalFrames << '\n';
+		const int menuStart = frames;
+		for (bool menuDark : { false, true })
+		for (int mode : { 0, 1, 2 })
+		{
+			Design::NavigationState menuState; state = menuState; dark = menuDark; animated = false;
+			size = ImVec2(mode == 2 ? 720.0F : 960.0F, 700.0F); state.Resize(size.x);
+			state.desktopCompact = mode == 1; state.overlayOpen = mode == 2;
+			selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected);
+			frame = idle(20);
+			auto sameMenuColor = [&](ImU32 target) {
+				const auto expected = ImGui::ColorConvertU32ToFloat4(target);
+				// Fluent渐近混色按8位量化，稳定端点允许3LSB误差，三种反馈仍明确分开。
+				const bool matches = Near(frame.menuFill.visible.x, expected.x, 3.01F / 255)
+					&& Near(frame.menuFill.visible.y, expected.y, 3.01F / 255)
+					&& Near(frame.menuFill.visible.z, expected.z, 3.01F / 255);
+				if (!matches) std::cerr << "[HamburgerColor] scale=" << scale << " mode=" << mode
+					<< " dark=" << dark << " actual=" << frame.menuFill.visible.x << ','
+					<< frame.menuFill.visible.y << ',' << frame.menuFill.visible.z << " expected="
+					<< expected.x << ',' << expected.y << ',' << expected.z << '\n';
+				return matches;
+			};
+			checks.Expect(frame.top && Near(frame.menu.Width(), 40 * scale)
+				&& Near(frame.menu.Height(), 36 * scale) && sameMenuColor(Design::AppBase) && frame.menuAlpha <= 3,
+				"actual hamburger starts transparent with the same hit size in expanded, compact and overlay panes");
+			const auto mouse = center(frame.menu);
+			for (int index = 0; index < 20; ++index) frame = draw(mouse, false);
+			checks.Expect(frame.menuFill.triangles > 0 && sameMenuColor(Design::GetPalette().subtleHover),
+				"actual hamburger DrawData reaches the sidebar hover fill in both themes");
+			const ImVec4 hoveredMenuColor = frame.menuFill.visible;
+			const bool wasCompact = state.desktopCompact, wasOverlay = state.overlayOpen;
+			const int beforeMenuNavigation = navigations, beforeMenuBusiness = businessActions;
+			for (int index = 0; index < 20; ++index)
+			{
+				frame = draw(mouse, true);
+				checks.Expect(state.desktopCompact == wasCompact && state.overlayOpen == wasOverlay,
+					"holding the actual hamburger preserves the pane target until release");
+			}
+			const auto pressedTarget = ImGui::ColorConvertU32ToFloat4(Design::GetPalette().subtlePressed);
+			auto pressedDistance = [&](ImVec4 value) { return std::abs(value.x - pressedTarget.x)
+				+ std::abs(value.y - pressedTarget.y) + std::abs(value.z - pressedTarget.z); };
+			checks.Expect(sameMenuColor(Design::GetPalette().subtlePressed)
+				&& pressedDistance(frame.menuFill.visible) < pressedDistance(hoveredMenuColor),
+				"actual held hamburger approaches the pressed fill and is distinct from its preceding hover fill");
+			std::cout << "[HamburgerColors] scale=" << scale << " mode=" << mode << " dark=" << dark
+				<< " hover=" << hoveredMenuColor.x * 255 << " held=" << frame.menuFill.visible.x * 255;
+			// 用真实按下/释放确认只切换一次，随后移出应恢复透明，不改变页面或业务动作。
+			frame = draw(mouse, false); frame = idle(30);
+			checks.Expect(state.desktopCompact == (mode == 2 ? wasCompact : !wasCompact)
+				&& state.overlayOpen == (mode == 2 ? !wasOverlay : wasOverlay)
+				&& navigations == beforeMenuNavigation && businessActions == beforeMenuBusiness
+				&& sameMenuColor(Design::AppBase) && frame.menuAlpha <= 3,
+				"actual hamburger release toggles the pane once and mouse leave restores its transparent fill");
+			std::cout << " leave=" << frame.menuFill.visible.x * 255 << " alpha=" << frame.menuAlpha << '\n';
+		}
+		std::cout << "[HamburgerDrawData] scale=" << scale << " frames=" << frames - menuStart << '\n';
 		io.ConfigFlags = previousFlags;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
 		Design::ApplyPalette(false);

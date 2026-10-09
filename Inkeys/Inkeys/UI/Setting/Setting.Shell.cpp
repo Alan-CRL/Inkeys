@@ -205,11 +205,14 @@ namespace Inkeys::UI::Setting::Design
 			setPosition(sections.menu);
 			const ImVec2 menuOrigin = ImGui::GetCursorScreenPos();
 			ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
+			// 汉堡使用侧栏的浅深反馈色，避免普通按钮近白填色与侧栏底色混淆。
+			ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, GetPalette().subtleHover);
+			ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, GetPalette().subtlePressed);
 			ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
 			ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
 			ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
 			toggled = Button("##pane-toggle", { Pixels(sections.menu.Width()), Pixels(sections.menu.Height()) });
-			ImFluent::PopStyleColor(4);
+			ImFluent::PopStyleColor(6);
 			ImFluent::DrawIcon("\ue700", menuOrigin,
 				{ menuOrigin.x + Pixels(sections.menu.Width()), menuOrigin.y + Pixels(sections.menu.Height()) },
 				NavigationGlyphSize, TextPrimary);

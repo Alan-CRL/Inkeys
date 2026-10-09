@@ -2226,7 +2226,7 @@ SettingSessionCoroutine RunSettingSession()
 							drawList->AddText({
 								versionBounds.Min.x + (versionBounds.GetWidth() - versionSize.x) * 0.5F,
 								versionBounds.Min.y + (versionBounds.GetHeight() - versionSize.y) * 0.5F },
-								SettingChromeColor(ImFluentCol_TextSecondary,
+								SettingChromeColor(ImFluentCol_TextPrimary,
 									active ? 1.0F : 0.55F), versionLabel.c_str());
 							ImFluent::PopFont();
 						}
