@@ -1146,6 +1146,41 @@ Clear 与正式 Draw 的对比会定位设备/读回、生产管线或产品实�
 - 等待同Win7现有Run-Win7-PixelTest.cmd六例；如全部通过，再单变量核对生产预热/Grip/dirty Copy。任务保持in_progress。
 
 
+## Session 38: Win7新设备GPU与ULW分界及诊断候选
+<!-- trellis-session: v=2 fp=620bbc65f6574b02 -->
+
+**Date**: 2026-10-04
+**Task**: Win7新设备GPU与ULW分界及诊断候选
+**Branch**: `chore/publish`
+
+### Summary
+
+继续原任务：WARP独立Draw透明；VMware硬件源/DIB有墨但切橡皮才刷新。交付分段shader与全量ULW对照，Win7恢复尚待实测。
+
+### Main Changes
+
+- 保留正式输入、shader与FLIP，新增显式独立上传/PS诊断、ULW控制与阶段耗时、系统DLL文件版本采集。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整ARM64 Debug和x64 Release、两架构13例像素自检与Headless、ARM64 ULW copy、实际WinPS collector、独立审查通过。
+- [OK] 橡皮隐藏测试首次因隔离cwd缺Build而保存失败；预建Build后同EXE默认/全量各exit0，保留原失败输出。
+- [OK] 原六采集、八CSO、旧ZIP共15项hash保持；新包CRC/逐文件核验通过，EXE A18828...EE5D、ZIP 604118...E2B9。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 同Win7运行Run-Win7-PixelTest.cmd；VMware设备对比Collect-Win7.cmd与Run-Win7-Full-ULW.cmd，回传完整目录及切橡皮前后是否可见。
+- 任务保持in_progress；未commit、push、archive，原始现场和旧包保留。
+
+
 ## Session 39: Pen width DIP policy implemented and automatically verified
 <!-- trellis-session: v=2 fp=1714360cd827bc94 -->
 
@@ -1279,6 +1314,72 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 
 - Task completed and archived; release parent and Win7 task remain active. No push or PR.
 
+
+## Session 43: Win7 Collect实测确认完整PS与精简PS分界
+<!-- trellis-session: v=2 fp=8cfe32e4d40f7f7c -->
+
+**Date**: 2026-10-05
+**Task**: Win7 Collect实测确认完整PS与精简PS分界
+**Branch**: `chore/publish`
+
+### Summary
+
+Collect自动跑齐13例；7项新控制全通过，正式PS仍透明。正常程序走WARP，ULW源42次全零。当前设备无需重复旧测试，原任务继续。
+
+### Main Changes
+
+- 仅只读调查和保存原任务研究报告；不修改产品代码或其它任务。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 核对A18828...EE5D候选身份、七控制PASS、完整PS四DrawFAIL及正常输入/像素/耗时证据；原六文件SHA保持，无构建/EXE/GUI运行。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 新探针在对照后恢复完整原PS做交错重复，先排序列效应，再做单变量PS路由分解。
+- 此前硬件非零源VMware设备才补同候选普通/Full-ULW视觉对照；Win7唯一shader指令根因与真实恢复未证明，任务in_progress，无commit/push/archive。
+
+
+## Session 44: Win7 单CMD三阶段诊断候选交付
+<!-- trellis-session: v=2 fp=b9520405f92a989e -->
+
+**Date**: 2026-10-05
+**Task**: Win7 单CMD三阶段诊断候选交付
+**Branch**: `chore/publish`
+
+### Summary
+
+继续Win7主画布任务，交付单CMD候选；18项完整PS序列和普通/完整ULW对照，本机验证通过，Win7视觉待测。
+
+### Main Changes
+
+- 追加原PS反向复验及三个完整PS诊断变体，仅自检使用；单CMD统一probe/普通/full ULW，临时Draw3/Cursor日志。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 两架构完整solution及18项pixel/Headless通过；实际WinPS ProbeOnly、11项mock、2项CMD和独立FXC/review PASS；正式资源、16项资料、ZIP逐文件保持。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 两台Win7各运行Run-Win7-Diagnostics.cmd并回传整个时间目录。任务保持in_progress；无commit/push/archive。
+
+
 ## Session 45: 首发规范审查及最终Release验证收口
 <!-- trellis-session: v=2 fp=63d61fa7f586876f -->
 
@@ -1310,6 +1411,70 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 0811通知遮挡的新配对与共同Present/光学延迟缺口保留；Win7由独立任务处理后需实际最终源码重建与目标机验收，正式CI/签名/上传未执行。不自动追加优化或全仓审查。
+
+
+## Session 46: Win7 224620完整PS失败进一步定位
+<!-- trellis-session: v=2 fp=6d84ff506e42d853 -->
+
+**Date**: 2026-10-06
+**Task**: Win7 224620完整PS失败进一步定位
+**Branch**: `chore/publish`
+
+### Summary
+
+新OneClick EXE日志18项完整：7诊断通过/5sequence全失败；WARP输入保存正常而源透明，完整PS故障边界在ULW之前，仍无唯一opcode。
+
+### Main Changes
+
+- 只读六文件与真实DXBC，保存shader/normal研究和总结；规范记录入口哨兵仍位于typeguard、资源绑定未隔离边界。未改产品或制造新版本。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 现场EXE身份匹配，18项与六文件hash保持；normal 411mouse/9对RTS及10源样本0独立核验；静态实际字节码/资源范围检查，无编译或GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 待微型整数路由与同原PS分组typed绑定反向对照；另台VMware仍缺同包普通/full三阶段及观察。任务in_progress，无commit/push/archive。
+
+
+## Session 47: Win7全面双后端87项单CMD诊断候选
+<!-- trellis-session: v=2 fp=39e5a50ff9762a55 -->
+
+**Date**: 2026-10-06
+**Task**: Win7全面双后端87项单CMD诊断候选
+**Branch**: `chore/publish`
+
+### Summary
+
+继续原任务；完成路由/资源/功能群矩阵和三阶段单入口，Win11检查通过，Win7修复待实测
+
+### Main Changes
+
+- 87项/driver矩阵、Hardware早退与schema/manifest严格采集身份；正式shader保持
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug ARM64 + Release x64 solution、4x87 GPU、Headless、WinPS ProbeOnly/argv/mock、字节与ZIP核验通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 两台Win7各一次完整根目录及两轮视觉观察；不归档、不声明恢复
 
 
 ## Session 48: 0811自动窗口对照与有限证据收尾
@@ -1409,3 +1574,193 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 本任务结束，Win7修复与正式发布执行独立处理
+
+
+## Session 51: Win7 flip与双源诊断公开证据交叉核验
+<!-- trellis-session: v=2 fp=82023c0927324be3 -->
+
+**Date**: 2026-10-07
+**Task**: Win7 flip与双源诊断公开证据交叉核验
+**Branch**: `chore/publish`
+
+### Summary
+
+公共mpv证据成立但UAV修复不适用；诊断双输出/noBlend合规，新增非零底图Retain覆盖边界，原87包保留待Win7
+
+### Main Changes
+
+- 仅研究与spec判断边界；未修改产品代码、新包、构建或GUI
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 只读源码/DXBC/当前包来源hash、公开原始提交/日志及独立窄审查
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 等两台Win7现有87包三阶段/观察后按可恢复因果修复；任务in_progress
+
+
+## Session 52: Win7全面87项回传定位DefaultInk代码群
+<!-- trellis-session: v=2 fp=cf9bce7abc586b48 -->
+
+**Date**: 2026-10-08
+**Task**: Win7全面87项回传定位DefaultInk代码群
+**Branch**: `chore/publish`
+
+### Summary
+
+真实21文件完整，WARP87项28PASS59FAIL，DefaultInk加入/移除双向分界；正常/full源62采样全零。独立静态候选GuardedDefaultOutput及FullNoThin编译通过，未改生产，Win7修复待验。
+
+### Main Changes
+
+- 记录原始哈希、逐项矩阵、两轮输入/ULW及独立源码DXBC分析，更新现有任务上下文/spec；继续in_progress
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 原始及副本21文件SHA一致，生产HLSL/CSO/probe header保持冻结SHA；FXC两候选成功，JSON及git diff --check --ignore-submodules通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 只隔离DefaultInk尾部控制/薄线输入，验证真实type0/3与非零底图Retain；VMware硬件光学分界仍待该机日志
+
+
+## Session 53: Win7完整guarded shader同EXE原版候选验证包
+<!-- trellis-session: v=2 fp=a5709aa49587677e -->
+
+**Date**: 2026-10-08
+**Task**: Win7完整guarded shader同EXE原版候选验证包
+**Branch**: `chore/publish`
+
+### Summary
+
+交付单CMD完整效果候选；双架构双后端420项、72对照像素delta0、Headless、采集器和ZIP身份通过，Win7验收待用户实测；原任务继续in_progress，不提交。
+
+### Main Changes
+
+# Win7 完整 guarded shader 单入口包验证（2026-10-08）
+
+继续10-02-win7-main-canvas。用户明确要求 shader 效果不变，故候选保留全部数学/细笔补偿/变粗细/AA/光影/所有功能/双源输出，只有 DefaultInk 尾部正向控制块变化。正式 HLSL/CSO及301–304资源不变；旧删除组诊断只在永不显示的fixture运行，正常两轮从不选择。
+
+## 可交付身份
+
+- ZIP：`C:\Users\alan-\.codex\visualizations\2026\10\03\01a100c6-aa67-7cc3-9d01-6cda328f70c3\win7-guarded-20261008\Inkeys-Win7-Guarded-x64-Release.zip`，29300415 bytes，SHA256 `07B744726DE1B3BA8E04AE20F026AF01B2FAE67B03BBAFEB80573DD9D65902A4`。
+- EXE：SHA256 `23D6E5F811821A4E27CFDCD18A00BDF1B996886F2DE1AAE48154D40D63F0C547`；Release|x64，baseline HEAD cdc39044bb35fca6ffbdd176e7ff51a81cc0a481+本任务未提交工作区；没有commit/push。
+- candidate PS：28980 bytes，SHA256 `2171DDA6E709A3F4CD444E6281AB64635C3F969CD71722662B04DA0DD8055384`，实际header字节存在EXE；全部数学、未知type原d=0行为、ISGN/OSGN、17资源声明保持。相关DefaultInk导数/细笔/discard实际在正向if内。
+- 9文件、1CMD；ZIP CRC和逐文件相等核验PASS，旧包不覆盖；diagnostic-manifest记录实际EXE/source/formalresource/verification/质量报告身份。
+
+## 验证证据
+
+- ARM64原生MSBuild完整InkeysRepo.sln Debug|ARM64、Release|x64均exit0，最终增量18.55s/50.61s，900s预算。首次ARM64新增测试代码std::max遇Windows宏，机械括号修正；首轮x64完整224.95s。无shader或工程配置绕过。日志pwsh不存在来自既有vcpkg探测，目标有系统PowerShell回退，未触发双方失败warning；编译退出0并实际CLI运行。
+- 两架构WARP/独立Hardware各105唯一用例PASS，共420；旧matrix69、sequence5、diagnostic7、production4保持。每后端guarded18 reference可用、独立公式正确、全图逐通道max_delta=0，共72次对照；原版效果图没有变化。
+- 两架构Headless --no-window exit0、stderr空；首轮系统TMP中7个atomic/config文件操作失败，root helper只重定向子进程TEMP/TMP到短可写隔离目录后通过，产品代码不改，首轮raw保留。
+- 首轮cursor新增oracle错误把灰描边当全白，使原版/候选均报396formula errors。保留失败raw，仅将fixture独立CPU期望改为正式signed-distance/outer+inner/灰描边+白填充/Retain四通道公式，容差1.01，重编后全PASS。shader/candidate字节未改。
+- 38个formal/旧包/原21份capture资料前后SHA相同；旧23诊断shader数组逐项字节长度/hash相同；两架构EXE正式SHADER301–304逐字节匹配当前正式CSO。
+- 实际Windows PowerShell5.1最终x64EXE ProbeOnly，两后端105/18 PASS、guarded reference_unavailable0、exit0，完整双流和identity，没有启动正常产品GUI或加载普通产品配置。root verifier误把reference_unavailable=0子串当hardware不可用，按identity精确exit3修正后仅重解析已有真实raw，未重跑产品。
+- collector实际WinPS mock47项+冻结3复验PASS，含身份拒绝/异常缺失重复/reference比较矛盾/失败继续/大双流/空格路径/唯一CMD/环境恢复；实际自有child900000ms截止注入，精确PID结束、等待5000ms、Dispose、后续硬件检查继续。不是实际等15min。
+- minimal diff/原编码换行/git diff --check PASS。PRD/design原有LF保留；其他修改保持原BOM和CRLF。task validate通过，旧大input spec自动注入32KiB限制仍有告警，新增报告/合同已明确上下文引用。
+
+## Win7 验收与边界
+
+唯一入口Run-Win7-Diagnostics.cmd，同EXE三阶段：01-pixel-probe（诊断1、guard空、full空）、02-original-shader（guard空）、03-guarded-shader（guard1）；两正常应用都关闭full覆盖。wrapper最终恢复调用者全部三个环境值。创建候选失败不会回退冒充成功。正常启动LoadShaders guarded分支未在本机打开GUI运行，靠源、环境隔离、EXE字节/实际GPU输出及Win7后续初始化日志证明实际选择。
+
+每驱动105=旧87+新增18，查询最坏约618s，collector截止900000ms/15min。Win7原版FAIL仍如实记录并继续两应用阶段；guarded独立PASS不能当采集或真实画布已恢复。105 probe验证直接创建候选和production resolve公式，不覆盖产品MAX/MIN多层累积全部历史；实际撤回重做/定格等必须人工观察。
+
+WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变化、荧光笔、橡皮/激光、撤回重做、选择穿透和定格返回。用户此前VMware硬件非零像素但切橡皮才刷新仍是另一路径，不能用WARP候选通过宣称它已修。分别返回两设备完整Win7-Diagnostics时间目录。
+
+本机为Win11 ARM64；WinPS5.1/mock不是Win7 PS2与光学验收。Task继续in_progress，不archive；下步依据Win7原版/guarded选择日志、18项输出与实际ULW source/DIB及用户观察决定最小生产修复，不删任何效果。
+
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 55: Win7 WARP 主画布默认完整 shader 修复
+<!-- trellis-session: v=2 fp=3c2f3c387aee632c -->
+
+**Date**: 2026-10-09
+**Task**: Win7 WARP 主画布默认完整 shader 修复
+**Branch**: `chore/publish`
+
+### Summary
+
+两Aero真实Win7候选恢复证据与原像素保持；正常OS6.1+WARP自动启用2171完整shader，诊断0/0/1保留原版；完整两架构构建与GPU/headless/PS采集通过，新包已交付，任务in_progress。
+
+### Main Changes
+
+- 传实际D3D_DRIVER_TYPE并复用RtlGetVersion，默认Win7WARP选择同一完整现场字节；正式shader数学/资源保持
+- 保留两份42raw日志，新增现场/VMware路线/实现/独立check/质量门与包身份记录
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug ARM64 / Release x64完整solution exit0；420GPU+108策略及Headless通过；实际WinPS双105+27，50mock PASS，87不可变和8其他任务文件保持
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 新EXE在Win7普通双击默认启动回归；VMware克隆升级v18+/适配Tools与SHA2后独立Hardware；继续定位偶发荧光定格变深及PPT有限回归
+
+
+## Session 59: Win7 主画布修复验收并归档
+<!-- trellis-session: v=2 fp=a87fce144ca57040 -->
+
+**Date**: 2026-10-10
+**Task**: Win7 主画布修复验收并归档
+**Branch**: `chore/publish`
+
+### Summary
+
+真实Win7 WARP/Hardware及正常双击验收通过，完整shader效果保持；完成证据/规范、结项归档及签名提交，残留输入和定格观察独立留档。
+
+### Main Changes
+
+- 完成Win7像素输出分层定位、完整兼容PS自动选择与单CMD原版对照；记录用户正式启动验收。
+- 保存42资料身份及独立实测/收尾审查，归档原任务并修正当前context自路径。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `12d82884cf09928c2ae22eda2fe8851ac8581c9b` | fix: restore Draw3 output on Windows 7 WARP |
+| `4011594d103f5b95e77ec923f54058593ce7e549` | docs: record Win7 WARP and hardware acceptance |
+
+### Testing
+
+- [OK] 既有完整Solution Debug ARM64/Release x64、GPU/共享策略/Headless与collector质量门通过。
+- [OK] 本次真实Win7 54候选PASS、Hardware105PASS、108策略PASS、145限频ULW成功，用户正常启动两后端均正常。
+- [OK] 本轮无产品源码修改；文档diff-check/JSON/context/hash保留与最终独立review通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务已completed；偶发原鼠标X0、未复现荧光定格及未新增PPT专项实测按closure记录后续观察，不自动重开或创建任务。
