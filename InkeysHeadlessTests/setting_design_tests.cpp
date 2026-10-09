@@ -15,6 +15,7 @@
 
 #include <array>
 #include <cfloat>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -1479,6 +1480,7 @@ namespace
 		bool animated = false, dark = false;
 		float rate = 1;
 		float frameDelta = 1.0F / 60.0F;
+		float constrainedFlyoutBottom = 0;
 		int frames = 0, navigations = 0, businessActions = 0, bodyActions = 0, bodyDraws = 0;
 		float requestedScroll = -1;
 		const ImVec2 outside(-100, -100);
@@ -1493,6 +1495,7 @@ namespace
 			state.Resize(size.x);
 			Design::AdvanceNavigationAnimations(state, io.DeltaTime, animated, rate);
 			Frame frame; frame.shell = Design::ResolveShellGeometry(size.x, size.y, state);
+			if (constrainedFlyoutBottom > 0) frame.shell.content.bottom = constrainedFlyoutBottom;
 			frame.contentAlpha = Design::ContentAlpha(state);
 			ImGui::NewFrame();
 			ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(io.DisplaySize);
@@ -1553,7 +1556,8 @@ namespace
 				else if (name.find("##settings-pane") != std::string::npos) frame.paneWidth = window->Size.x;
 			}
 			frame.parentWindow = frame.list;
-			ImFluent::PopFont(); ImGui::End(); ImGui::PopStyleVar(); ImGui::Render();
+			ImFluent::PopFont(); ImGui::End(); ImGui::PopStyleVar();
+			Design::ApplyDragScrolling(state); ImGui::Render();
 			++frames; frame.vertices = ImGui::GetDrawData()->TotalVtxCount;
 			checks.Expect(ImGui::GetDrawData()->Valid && frame.vertices > 0,
 				"production hierarchy renders real controls every CPU frame");
@@ -1580,6 +1584,29 @@ namespace
 					frame.indicator.top = (std::min)(frame.indicator.top, vertex.pos.y);
 					frame.indicator.right = (std::max)(frame.indicator.right, vertex.pos.x);
 					frame.indicator.bottom = (std::max)(frame.indicator.bottom, vertex.pos.y);
+				}
+			}
+			if (frame.list)
+			{
+				const auto track = ImGui::GetWindowScrollbarRect(frame.list, ImGuiAxis_Y);
+				const float right = frame.list->ScrollbarY ? track.Min.x - Design::RowGap * scale : frame.list->ContentRegionRect.Max.x;
+				bool separated = !frame.list->ScrollbarX;
+				for (const auto& bounds : state.middleBounds) separated &= bounds.right <= right + 1;
+				if (state.chevronBounds.Width() > 0) separated &= state.chevronBounds.right <= right + 1;
+				if (frame.group) for (const auto& bounds : state.childBounds) separated &= bounds.right <= right + 1;
+				checks.Expect(separated, "all production middle roots, arrows and inline children leave the actual scrollbar hit track and gap clear");
+				checks.Expect(Near(state.middleBounds.back().right, frame.list->ContentRegionRect.Max.x, 1),
+					"navigation hit rectangles use the same current-frame available width with or without the scrollbar");
+				if (frame.list->ScrollbarY)
+				{
+					bool thumb = false;
+					for (auto* list : ImGui::GetDrawData()->CmdLists)
+						for (const auto& vertex : list->VtxBuffer)
+							if (vertex.pos.x >= track.Min.x && vertex.pos.x <= track.Max.x && vertex.pos.y >= track.Min.y && vertex.pos.y <= track.Max.y
+								&& (vertex.col == ImGui::GetColorU32(ImGuiCol_ScrollbarGrab) || vertex.col == ImGui::GetColorU32(ImGuiCol_ScrollbarGrabHovered)
+									|| vertex.col == ImGui::GetColorU32(ImGuiCol_ScrollbarGrabActive))) thumb = true;
+					checks.Expect(thumb && Near(track.GetWidth(), Design::ScrollbarTrackSize * scale, 1),
+						"actual production navigation draws the shared themed thumb inside its scaled vertical track");
 				}
 			}
 			if (frame.top)
@@ -2239,9 +2266,269 @@ namespace
 			std::cout << " leave=" << frame.menuFill.visible.x * 255 << " alpha=" << frame.menuAlpha << '\n';
 		}
 		std::cout << "[HamburgerDrawData] scale=" << scale << " frames=" << frames - menuStart << '\n';
+		const int scrollbarStart = frames;
+		for (bool theme : { false, true }) for (int mode : { 0, 1, 2 })
+		{
+			Design::NavigationState next; state = next; dark = theme; animated = false;
+			size = ImVec2(mode == 2 ? 720.0F : 960.0F, 600); state.Resize(size.x);
+			state.desktopCompact = mode == 1; state.overlayOpen = mode == 2;
+			selected = { PageId::Home }; state.generalExpanded = false; frame = idle(4);
+			checks.Expect(frame.list && !frame.list->ScrollbarY && Near(frame.maximumScroll, 0), "collapsed navigation hides the vertical bar when its real middle fits");
+			state.generalExpanded = true; frame = idle(4);
+			checks.Expect(frame.list->ScrollbarY == state.Expanded(), "expanding the real inline group shows the bar only in expanded and overlay modes");
+			size.y = 520; frame = idle(4);
+			checks.Expect(frame.list->ScrollbarY && frame.maximumScroll > 0, "minimum-height navigation overflows in every pane mode");
+			if (mode == 1)
+			{
+				focusParent(frame); frame = idle(2); const auto track = ImGui::GetWindowScrollbarRect(frame.list, ImGuiAxis_Y);
+				const auto white = io.Fonts->TexUvWhitePixel; bool glyphsClear = true; int glyphs = 0;
+				for (const auto& vertex : frame.list->DrawList->VtxBuffer)
+					if ((vertex.uv.x != white.x || vertex.uv.y != white.y) && vertex.col == Design::TextPrimary
+						&& vertex.pos.y >= frame.list->InnerClipRect.Min.y && vertex.pos.y <= frame.list->InnerClipRect.Max.y)
+					{ ++glyphs; glyphsClear &= vertex.pos.x < track.Min.x; }
+				checks.Expect(glyphs > 0 && glyphsClear && GImGui->NavId == state.parentItemId,
+					"compact real focused icon glyphs stay to the left of the visible scrollbar track");
+			}
+			const int before = navigations, beforeTrackBusiness = businessActions; const auto destination = selected;
+			const auto origins = frame.fixedOrigins; const bool groupOpen = state.generalExpanded;
+			const auto track = ImGui::GetWindowScrollbarRect(frame.list, ImGuiAxis_Y);
+			const ImVec2 trackPoint(track.GetCenter().x, track.Max.y - 12 * scale);
+			const float beforeTrackScroll = frame.scroll;
+			draw(trackPoint, false); frame = draw(trackPoint, true);
+			const float seekScroll = frame.scroll;
+			checks.Expect(GImGui->ActiveId == ImGui::GetWindowScrollbarID(frame.list, ImGuiAxis_Y), "pressing the real navigation track keeps scrollbar ownership");
+			checks.Expect(seekScroll > beforeTrackScroll, "pressing the real navigation track changes Scroll.y with the default page seek policy");
+			LayoutRect thumb{ FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX };
+			for (auto* list : ImGui::GetDrawData()->CmdLists) for (const auto& vertex : list->VtxBuffer)
+				if (vertex.col == ImGui::GetColorU32(ImGuiCol_ScrollbarGrabActive) && track.Contains(vertex.pos))
+				{ thumb.left = (std::min)(thumb.left, vertex.pos.x); thumb.right = (std::max)(thumb.right, vertex.pos.x);
+					thumb.top = (std::min)(thumb.top, vertex.pos.y); thumb.bottom = (std::max)(thumb.bottom, vertex.pos.y); }
+			checks.Expect(thumb.Width() > 0 && thumb.Height() > 0, "actual active thumb DrawData supplies its drag hit point");
+			draw(trackPoint, false); const auto grab = center(thumb); draw(grab, false); frame = draw(grab, true);
+			const float beforeThumbDrag = frame.scroll; frame = draw({ grab.x, grab.y - 25 * scale }, true);
+			checks.Expect(frame.scroll < beforeThumbDrag && GImGui->ActiveId == ImGui::GetWindowScrollbarID(frame.list, ImGuiAxis_Y),
+				"holding the actual rendered thumb reverses Scroll.y while retaining scrollbar ownership");
+			draw({ grab.x, grab.y - 25 * scale }, false);
+			checks.Expect(navigations == before && businessActions == beforeTrackBusiness && selected == destination && state.generalExpanded == groupOpen,
+				"scrollbar press and drag cannot activate a navigation root, chevron or footer action");
+			// 实际行右端到轨道之间的空白可以沿用旧 void 拖动，但不会点击导航。
+			requestedScroll = 0; frame = idle(3); requestedScroll = -1;
+			const ImVec2 gap(track.Min.x - 2 * scale, frame.list->InnerClipRect.GetCenter().y);
+			for (auto source : { ImGuiMouseSource_Mouse, ImGuiMouseSource_TouchScreen })
+			{
+				io.AddMouseSourceEvent(source); draw(gap, false); draw(gap, true);
+				const float initial = frame.list->Scroll.y;
+				frame = draw({ gap.x, gap.y - 20 * scale }, true); frame = draw({ gap.x, gap.y - 20 * scale }, true);
+				checks.Expect(frame.scroll > initial && navigations == before && businessActions == beforeTrackBusiness && selected == destination,
+					"mouse and touch-source holding navigation gap scrolls the real list without route or business actions");
+				frame = draw({ gap.x, gap.y - 5 * scale }, true); frame = draw({ gap.x, gap.y - 5 * scale }, false);
+				checks.Expect(Near(frame.fixedOrigins[0].y, origins[0].y) && Near(frame.fixedOrigins[1].y, origins[1].y), "dragging middle content keeps top and footer fixed");
+			}
+			io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); state.generalExpanded = false; size.y = 900; frame = idle(4);
+			checks.Expect(!frame.list->ScrollbarY && Near(frame.scroll, 0), "fold and resize remove the actual bar and clamp the old scroll position");
+		}
+		// 子列表固定 child 的 padding 仍由 nav-list 消费，选中蓝条跟随下一 Begin 的真实位置。
+		Design::NavigationState inlineState; state = inlineState; size = ImVec2(960, 520); animated = false; dark = false;
+		state.generalExpanded = true; selected = { PageId::General, GeneralSection::Appearance }; frame = idle(4);
+		requestedScroll = 0; frame = idle(3); requestedScroll = -1;
+		if (frame.group)
+		{
+			const ImVec2 padding(frame.group->InnerClipRect.Min.x + 2 * scale, center(state.childBounds[1]).y);
+			const float beforeInlineScroll = frame.scroll; const int beforeInlineNavigation = navigations;
+			draw(padding, false); draw(padding, true); draw({ padding.x, padding.y - 15 * scale }, true); frame = draw({ padding.x, padding.y - 15 * scale }, true);
+			checks.Expect(Near(frame.scroll - beforeInlineScroll, 15 * scale, 1) && Near(frame.group->Scroll.y, 0) && navigations == beforeInlineNavigation,
+				"actual inline child padding drag scrolls navigation once while its fixed clip child stays at zero");
+			expectAttached(frame, state.childBounds[1]); draw(padding, false); frame = idle();
+		}
+		// 正常最小窗的四项浮层可完整容纳；再给真实 renderer 更短客户裁剪，覆盖其溢出分支。
+		Design::NavigationState flyoutState; state = flyoutState; size = ImVec2(960, 520); dark = false; animated = true;
+		state.desktopCompact = true; selected = { PageId::General }; frame = idle(20);
+		state.flyoutOpen = true; frame = idle(20);
+		auto* flyout = ImGui::FindWindowByID(state.flyoutWindowId);
+		checks.Expect(flyout && Near(flyout->ScrollMax.y, 0), "real navigation flyout fits its four entries at the normal minimum client size");
+		constrainedFlyoutBottom = 180; frame = idle(4); flyout = ImGui::FindWindowByID(state.flyoutWindowId);
+		checks.Expect(flyout && flyout->ScrollbarY && flyout->ScrollMax.y > 0, "actual production flyout clamp creates a scroll owner for constrained client bounds");
+		if (flyout)
+		{
+			const ImVec2 padding(flyout->InnerClipRect.Min.x + 1, flyout->InnerClipRect.GetCenter().y);
+			const int beforeFlyoutNavigation = navigations, beforeFlyoutBusiness = businessActions;
+			const float middleBefore = frame.scroll, initial = flyout->Scroll.y;
+			draw(padding, false); draw(padding, true); draw({ padding.x, padding.y - 15 * scale }, true); frame = draw({ padding.x, padding.y - 15 * scale }, true);
+			checks.Expect(flyout->Scroll.y > initial && Near(frame.scroll, middleBefore) && navigations == beforeFlyoutNavigation && businessActions == beforeFlyoutBusiness,
+				"actual navigation popup padding drag consumes one delta without scrolling middle navigation or choosing a child");
+			state.CloseFlyout(); frame = draw({ padding.x, padding.y - 30 * scale }, true);
+			checks.Expect(state.IsFlyoutOpen() && !state.flyoutOpen && flyout->ScrollTarget.y == FLT_MAX,
+				"already ended disabled navigation flyout does not consume drag during its close animation");
+			draw(outside, false); frame = idle(20);
+			checks.Expect(!state.IsFlyoutOpen() && GImGui->OpenPopupStack.empty(), "navigation fade completes popup closure and its drag ownership together");
+		}
+		constrainedFlyoutBottom = 0;
+		std::cout << "[NavigationScrollbarDragDrawData] scale=" << scale << " frames=" << frames - scrollbarStart << '\n';
 		io.ConfigFlags = previousFlags;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
 		Design::ApplyPalette(false);
+	}
+
+	void CheckDragScrolling(Checks& checks, ImFont* regular, ImFont* strong, float scale)
+	{
+		auto& io = ImGui::GetIO(); io.ConfigInputTrickleEventQueue = false;
+		Design::BindTextFonts(regular, strong); Design::ApplyPalette(false);
+		Design::NavigationState state;
+		struct Frame { ImGuiWindow* page = nullptr; ImGuiWindow* inner = nullptr; ImGuiWindow* popup = nullptr;
+			ImGuiID active = 0; ImRect button, slider, text, combo; float pageScroll = 0, innerScroll = 0; };
+		int mode = 0, frames = 0, buttons = 0, selected = 0, movingFrames = 0; bool closePopup = false, omitPopup = false;
+		float reset = -1, sliderValue = 0.5F; char text[64] = "Original text";
+		std::vector<std::string> options; for (int index = 0; index < 40; ++index) options.push_back("Option " + std::to_string(index));
+		auto draw = [&](ImVec2 mouse, bool down) {
+			io.DisplaySize = { 800 * scale, 560 * scale }; io.DeltaTime = 1.0F / 60;
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down); ImGui::NewFrame();
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			// 与产品相同的固定 root flags，不能用测试独有 NoMove 隐藏空白 child 的移动风险。
+			ImGui::Begin("##drag-scroll-production-root", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);
+			ImGui::SetCursorPos({ 40 * scale, 50 * scale });
+			ImGui::SetNextWindowContentSize({ 0, 1100 * scale });
+			ImGui::BeginChild("##drag-scroll-page", { 430 * scale, 240 * scale });
+			Frame frame; frame.page = ImGui::GetCurrentWindow(); if (reset >= 0) ImGui::SetScrollY(reset);
+			if (mode == 1)
+				ImGui::BeginChild("##drag-scroll-auto-body", { 0, 0 }, ImGuiChildFlags_AutoResizeY);
+			if (mode == 2 || mode == 3)
+			{
+				ImGui::SetNextWindowContentSize({ 0, 600 * scale });
+				ImGui::BeginChild("##drag-scroll-nested", { 340 * scale, 140 * scale }, ImGuiChildFlags_None,
+					mode == 3 ? ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse : ImGuiWindowFlags_None);
+				frame.inner = ImGui::GetCurrentWindow(); if (reset >= 0) ImGui::SetScrollY(reset);
+				ImGui::Dummy({ 0, 600 * scale }); ImGui::EndChild();
+			}
+			else
+			{
+				buttons += Design::Button("Drag test button", { 170 * scale, 32 * scale }) ? 1 : 0;
+				frame.button = { ImGui::GetItemRectMin(), ImGui::GetItemRectMax() };
+				ImGui::SetNextItemWidth(170 * scale); ImGui::SliderFloat("##drag-test-slider", &sliderValue, 0, 1);
+				frame.slider = { ImGui::GetItemRectMin(), ImGui::GetItemRectMax() };
+				ImGui::SetNextItemWidth(170 * scale); Design::TextBox("##drag-test-text", text, sizeof(text));
+				frame.text = { ImGui::GetItemRectMin(), ImGui::GetItemRectMax() };
+				if (!omitPopup) { ImGui::SetNextItemWidth(170 * scale); Design::ComboBox("##drag-test-combo", &selected, options);
+					frame.combo = { ImGui::GetItemRectMin(), ImGui::GetItemRectMax() }; }
+				ImGui::Dummy({ 0, 900 * scale });
+			}
+			if (mode == 1) ImGui::EndChild();
+			ImGui::EndChild(); ImGui::End();
+			for (const auto& popup : GImGui->OpenPopupStack) if (popup.Window && popup.Window->Active) frame.popup = popup.Window;
+			if (closePopup && frame.popup) ImGui::ClosePopupToLevel(0, false);
+			auto& g = *GImGui; auto* previous = g.CurrentWindow; auto* stack = g.StackSizesInBeginForCurrentWindow;
+			auto* table = g.CurrentTable; auto* font = g.Font; const float fontSize = g.FontSize;
+			const float dpi = g.CurrentDpiScale, density = g.FontRasterizerDensity;
+			const auto last = g.LastItemData; const int depth = g.CurrentWindowStack.Size;
+			const auto pageClip = frame.page->ClipRect; const auto innerClip = frame.inner ? frame.inner->ClipRect : ImRect();
+			const int vertices = frame.page->DrawList->VtxBuffer.Size, commands = frame.page->DrawList->CmdBuffer.Size;
+			Design::ApplyDragScrolling(state);
+			checks.Expect(g.CurrentWindow == previous && g.StackSizesInBeginForCurrentWindow == stack && g.CurrentTable == table
+				&& g.Font == font && g.FontSize == fontSize && g.CurrentDpiScale == dpi && g.FontRasterizerDensity == density
+				&& g.CurrentWindowStack.Size == depth && std::memcmp(&last, &g.LastItemData, sizeof(last)) == 0,
+				"frame-end drag deployment restores current window, font, table, DPI, stack and last actual item");
+			checks.Expect(frame.page->ClipRect.Min.x == pageClip.Min.x && frame.page->ClipRect.Min.y == pageClip.Min.y && frame.page->ClipRect.Max.x == pageClip.Max.x && frame.page->ClipRect.Max.y == pageClip.Max.y
+				&& (!frame.inner || (frame.inner->ClipRect.Min.x == innerClip.Min.x && frame.inner->ClipRect.Min.y == innerClip.Min.y && frame.inner->ClipRect.Max.x == innerClip.Max.x && frame.inner->ClipRect.Max.y == innerClip.Max.y))
+				&& frame.page->DrawList->VtxBuffer.Size == vertices && frame.page->DrawList->CmdBuffer.Size == commands,
+				"drag deployment restores End-popped clips and adds no drawing or clip-stack commands");
+			frame.active = g.ActiveId; frame.pageScroll = frame.page->Scroll.y; frame.innerScroll = frame.inner ? frame.inner->Scroll.y : 0;
+			ImGui::Render(); ++frames; movingFrames += g.MovingWindow ? 1 : 0;
+			checks.Expect(Near(frame.page->RootWindow->Pos.x, 0) && Near(frame.page->RootWindow->Pos.y, 0), "actual fixed product root stays positioned during child void fallback");
+			checks.Expect(ImGui::GetDrawData()->Valid && ImGui::GetDrawData()->TotalVtxCount > 0, "drag regression renders real production controls and DrawData");
+			return frame;
+		};
+		const ImVec2 outside(-100, -100);
+		auto idle = [&](int count = 3) { Frame frame; for (int index = 0; index < count; ++index) frame = draw(outside, false); return frame; };
+		auto center = [](const ImRect& rect) { return rect.GetCenter(); };
+		Frame frame;
+		for (auto source : { ImGuiMouseSource_Mouse, ImGuiMouseSource_TouchScreen }) for (mode = 0; mode < 4; ++mode)
+		{
+			io.AddMouseSourceEvent(source); reset = 100 * scale; frame = idle(4); reset = -1;
+			const ImVec2 point = mode >= 2 ? ImVec2(frame.inner->InnerClipRect.Max.x - 14 * scale, frame.inner->InnerClipRect.GetCenter().y)
+				: ImVec2(frame.page->InnerClipRect.Max.x - 30 * scale, frame.page->InnerClipRect.GetCenter().y);
+			draw(point, false); frame = draw(point, true);
+			const float originalPage = frame.pageScroll, originalInner = frame.innerScroll;
+			frame = draw({ point.x, point.y - 30 * scale }, true);
+			// 旧 SetScrollTarget 在下一 Begin 生效；只检查真实 owner，不能给父子各执行一次算法。
+			frame = draw({ point.x, point.y - 30 * scale }, true);
+			checks.Expect(mode == 2 ? Near(frame.pageScroll, originalPage, 1) && Near(frame.innerScroll - originalInner, 30 * scale, 1)
+				: Near(frame.pageScroll - originalPage, 30 * scale, 1) && (!frame.inner || Near(frame.innerScroll, originalInner, 1)),
+				"mouse and touch source drag once at the nearest real scroll owner, including auto-height and fixed children");
+			frame = draw({ point.x, point.y - 10 * scale }, true); frame = draw({ point.x, point.y - 10 * scale }, true);
+			checks.Expect(mode == 2 ? Near(frame.innerScroll - originalInner, 10 * scale, 1) : Near(frame.pageScroll - originalPage, 10 * scale, 1),
+				"reversing a held drag uses physical MouseDelta once without multiplying DPI again");
+			frame = draw({ point.x, point.y - 10 * scale }, false); const float released = mode == 2 ? frame.innerScroll : frame.pageScroll;
+			frame = draw({ point.x, point.y - 40 * scale }, false); frame = draw(outside, false);
+			checks.Expect(Near(mode == 2 ? frame.innerScroll : frame.pageScroll, released, 1), "release stops content scrolling immediately");
+			if (mode == 0)
+			{
+				reset = 100 * scale; frame = idle(); reset = -1; draw(point, false); frame = draw(point, true);
+				const auto id = frame.page->GetID("##scrolldraggingoverlay");
+				checks.Expect(frame.active == id, "void dragging retains the exact historical overlay identity");
+				frame = draw({ 780 * scale, point.y - 40 * scale }, true); frame = draw({ 780 * scale, point.y - 40 * scale }, true);
+				checks.Expect(frame.active == id && frame.pageScroll > 100 * scale, "captured historical overlay stays alive and scrolls after the pointer leaves its window");
+				draw(outside, false); frame = idle();
+			}
+		}
+		io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); mode = 0; reset = 0; frame = idle(); reset = -1;
+		const ImVec2 edgePoint(frame.page->InnerClipRect.Max.x - 30 * scale, frame.page->InnerClipRect.GetCenter().y);
+		draw(edgePoint, false); draw(edgePoint, true); draw({ edgePoint.x, edgePoint.y + 100 * scale }, true);
+		frame = draw({ edgePoint.x, edgePoint.y + 100 * scale }, true);
+		checks.Expect(Near(frame.pageScroll, 0), "historical drag target clamps at the top boundary on next Begin");
+		draw(outside, false); reset = 100 * scale; frame = idle(); reset = -1;
+		draw(edgePoint, false); draw(edgePoint, true); draw({ edgePoint.x, edgePoint.y - 2000 * scale }, true);
+		frame = draw({ edgePoint.x, edgePoint.y - 2000 * scale }, true);
+		checks.Expect(Near(frame.pageScroll, frame.page->ScrollMax.y, 1), "captured historical drag clamps at bottom without an internal alternate gesture");
+		draw({ edgePoint.x, edgePoint.y + 1000 * scale }, true); frame = draw({ edgePoint.x, edgePoint.y + 1000 * scale }, true);
+		checks.Expect(Near(frame.pageScroll, 0), "rapid captured reversal from bottom clamps back to top without accumulated delta");
+		draw(outside, false); reset = 100 * scale; frame = idle(); reset = -1;
+		const float beforeExternalDown = frame.pageScroll;
+		draw({ edgePoint.x, edgePoint.y + 20 * scale }, false); draw(outside, true);
+		frame = draw(edgePoint, true);
+		std::cout << "[HeldEnterDrag] scale=" << scale << " delta=" << io.MouseDelta.y << " target=" << frame.page->ScrollTarget.y
+			<< " owned=" << io.MouseDownOwned[0] << " active=" << GImGui->ActiveId << " hovered=" << (GImGui->HoveredWindow ? GImGui->HoveredWindow->Name : "none") << '\n';
+		frame = draw({ edgePoint.x, edgePoint.y - 20 * scale }, true); frame = draw({ edgePoint.x, edgePoint.y - 20 * scale }, true);
+		// 库拒绝整个 viewport 外开始的未归属按下，不能把原 child fallback 扩大成外部手势。
+		checks.Expect(!io.MouseDownOwned[0] && !GImGui->HoveredWindow && Near(frame.pageScroll, beforeExternalDown, 1),
+			"unowned mouse-down outside the viewport stays excluded after entering content, preserving the original ImGui input ownership");
+		draw(outside, false); reset = 0; frame = idle(); reset = -1;
+		const int before = buttons; auto button = center(frame.button); draw(button, false); frame = draw(button, true);
+		const auto buttonId = frame.active; const float scroll = frame.pageScroll;
+		frame = draw({ button.x, button.y + 8 * scale }, true); frame = draw({ button.x, button.y + 8 * scale }, true);
+		checks.Expect(frame.active == buttonId && Near(frame.pageScroll, scroll), "holding a real button prevents the old void overlay from stealing its ActiveId");
+		draw(button, false); frame = idle(); checks.Expect(buttons == before + 1, "ordinary real button release still clicks exactly once");
+		auto slider = center(frame.slider); draw(slider, false); frame = draw(slider, true); const auto sliderId = frame.active;
+		frame = draw({ slider.x + 20 * scale, slider.y + 4 * scale }, true); frame = draw({ slider.x + 20 * scale, slider.y + 4 * scale }, true);
+		checks.Expect(frame.active == sliderId && Near(frame.pageScroll, 0) && sliderValue != 0.5F, "real slider retains dragging and does not scroll its page");
+		draw(slider, false); frame = idle(); auto textbox = center(frame.text); draw(textbox, false); frame = draw(textbox, true); const auto textId = frame.active;
+		frame = draw({ textbox.x, textbox.y + 5 * scale }, true); frame = draw({ textbox.x, textbox.y + 5 * scale }, true);
+		checks.Expect(frame.active == textId && Near(frame.pageScroll, 0) && std::string(text) == "Original text", "real text input selection retains ownership and content");
+		draw(textbox, false); frame = idle(); ImGui::ClearActiveID();
+		// 长 Combo 使用真实生产控件的内部 Popup；从非条目 padding 起拖保留旧 OnVoid 规则。
+		auto combo = center(frame.combo); draw(combo, false); draw(combo, true); frame = draw(combo, false); frame = idle(3);
+		checks.Expect(frame.popup && frame.popup->ScrollbarY && frame.popup->ScrollMax.y > 0, "long real Combo creates an actually scrollable internal popup");
+		if (frame.popup)
+		{
+			const ImVec2 padding(frame.popup->InnerClipRect.Min.x + 1, frame.popup->InnerClipRect.GetCenter().y);
+			const float pageBefore = frame.pageScroll, popupBefore = frame.popup->Scroll.y;
+			draw(padding, false); draw(padding, true); frame = draw({ padding.x, padding.y - 35 * scale }, true); frame = draw({ padding.x, padding.y - 35 * scale }, true);
+			checks.Expect(frame.popup && frame.popup->Scroll.y > popupBefore && Near(frame.pageScroll, pageBefore) && selected == 0,
+				"dragging actual Combo popup padding scrolls only its popup without selecting a row");
+			auto* submittedPopup = frame.popup; const float hiddenTarget = submittedPopup->ScrollTarget.y;
+			omitPopup = true; frame = draw({ padding.x, padding.y - 45 * scale }, true); omitPopup = false;
+			checks.Expect(!submittedPopup->Active && submittedPopup->ScrollTarget.y == hiddenTarget,
+				"a popup omitted from the current frame cannot reuse its previous Active state or consume captured dragging");
+			frame = draw({ padding.x, padding.y - 45 * scale }, true);
+			closePopup = true; const float closedTarget = submittedPopup->ScrollTarget.y; frame = draw({ padding.x, padding.y - 60 * scale }, true); closePopup = false;
+			checks.Expect(GImGui->OpenPopupStack.empty() && (!frame.popup || frame.popup->ScrollTarget.y == closedTarget), "already submitted closed popup cannot consume another drag delta");
+			draw(outside, false); omitPopup = true; frame = idle(); omitPopup = false;
+		}
+		state.mouseReleaseBarrier = true; reset = 100 * scale; frame = idle(); reset = -1;
+		const ImVec2 blank(frame.page->InnerClipRect.Max.x - 25 * scale, frame.page->InnerClipRect.GetCenter().y);
+		draw(blank, false); draw(blank, true); draw({ blank.x, blank.y - 30 * scale }, true); frame = draw({ blank.x, blank.y - 30 * scale }, true);
+		checks.Expect(Near(frame.pageScroll, 100 * scale, 1), "ended disabled scopes cannot bypass the navigation release input barrier at frame end");
+		draw(outside, false); state.mouseReleaseBarrier = false; idle();
+		std::cout << "[DragScrollDrawData] scale=" << scale << " frames=" << frames << " rootMovingFrames=" << movingFrames << '\n';
 	}
 
 	void CheckEdidCard(Checks& checks, ImFont* regular, ImFont* strong, float scale)
@@ -2595,7 +2882,10 @@ int RunSettingDesignTests()
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 			CheckGeneralSections(checks, fonts[0], fonts[1], fonts.back(), scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
+		{
 			CheckHierarchicalNavigation(checks, fonts[0], fonts[1], fonts.back(), scale);
+			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
+		}
 		if (scale == 1.0F || scale == 1.875F) CheckAnimatedColors(checks, fonts[0], scale);
 	}
 	return checks.failures;

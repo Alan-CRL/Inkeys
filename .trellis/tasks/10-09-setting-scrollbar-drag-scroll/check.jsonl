@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "设置所属边界与质量要求"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "原文件风格/中文注释/模块边界"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整Solution与ARM64原生构建"}
+{"file": ".trellis/tasks/10-09-setting-scrollbar-drag-scroll/research/spec-boundaries.md", "reason": "相关渲染/UI规范的完整局部摘录避免大文件注入截断"}
+{"file": ".trellis/tasks/10-09-setting-scrollbar-drag-scroll/research/sidebar-scrollbar.md", "reason": "真实中段scrollbar/按钮命中与连续帧研究"}
+{"file": ".trellis/tasks/10-09-setting-scrollbar-drag-scroll/research/settingui2-drag-scroll.md", "reason": "原拖动代码与所有scroll owner部署研究"}

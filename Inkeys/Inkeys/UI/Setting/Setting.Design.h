@@ -136,6 +136,8 @@ namespace Inkeys::UI::Setting::Design
 		std::uint32_t childFocusId = 0;
 		std::uint32_t childWindowItemId = 0;
 		bool inlineChildFocused = false;
+		// 本帧滚动/浮层宿主身份供旧拖动调用仲裁，不跨 ImGui session 保存指针。
+		std::uint32_t navigationScrollWindowId = 0, flyoutWindowId = 0;
 
 		void ClearIndicator() noexcept
 		{
@@ -178,6 +180,9 @@ namespace Inkeys::UI::Setting::Design
 				|| IsFlyoutOpen() || mouseReleaseBarrier;
 		}
 	};
+
+	// 全部设置 UI 提交后调用一次；旧算法仅交给最近的实际可滚窗口。
+	void ApplyDragScrolling(const NavigationState& state);
 
 	// 产品与无窗口测试共用推进入口；渲染线程每帧调用一次，不跨线程保存 UI 指针。
 	inline void AdvanceNavigationAnimations(NavigationState& state, float delta,

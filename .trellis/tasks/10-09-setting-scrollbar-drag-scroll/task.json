@@ -1,0 +1,41 @@
+{
+  "id": "setting-scrollbar-drag-scroll",
+  "name": "setting-scrollbar-drag-scroll",
+  "title": "设置侧栏滚动条与旧版按住拖动复用",
+  "description": "为设置侧栏中段增加统一样式且按溢出显示的垂直滚动条，预留按钮间距；在可滚动区域原样复用settingui2的触摸/鼠标按住内容拖动实现。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-09",
+  "completedAt": null,
+  "branch": "fluent",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-06-setting-winui3-design-rebuild",
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Setting/Setting.Design.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "InkeysHeadlessTests/setting_design_tests.cpp",
+    ".trellis/spec/native-desktop/rendering-and-ui.md"
+  ],
+  "notes": "2026-10-09用户授权创建父任务子任务；旧代码及侧栏布局研究、prd/design/implement与jsonl上下文已准备，待用户审查确认后start并派发实施。父任务继续进行中；不GUI/commit/push。 2026-10-09用户明确回复“批准并开始实现。”，规划审查完成，已start并派发trellis-implement；当前直接fluent实施，不GUI/commit/push。 实施与独立自动验证已完成：最终完整ARM64 Solution退出0/25.915秒，正常用户完整--no-window退出0/122.897秒、stderr空，i18n/格式/编码通过。新改动未提交，不GUI/commit/push；真实桌面触摸与视觉待人工验收，子任务不自动归档。",
+  "meta": {
+    "planning_review_required": false,
+    "implementation_approved_at": "2026-10-09",
+    "delivery_worktree": "D:/Project/Inkeys/Repo/Inkeys",
+    "implementation_verified": true,
+    "manual_acceptance_pending": true,
+    "implementation_validation": ".trellis/tasks/10-09-setting-scrollbar-drag-scroll/research/implementation-validation.md",
+    "independent_review": ".trellis/tasks/10-09-setting-scrollbar-drag-scroll/research/final-review.md"
+  }
+}

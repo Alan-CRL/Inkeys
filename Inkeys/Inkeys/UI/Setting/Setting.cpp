@@ -3859,6 +3859,9 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::End();
 			}
 
+			// 复用旧设置拖动算法，正文、导航和弹层的位移每帧只交给一个宿主。
+			Design::ApplyDragScrolling(navigationState);
+
 			// 渲染
 			ImFluent::PopFluentStyle();
 			ImGui::EndFrame();

@@ -210,6 +210,58 @@ namespace Inkeys::UI::Setting::Design
 		ImGui::Dummy({ width, height });
 	}
 
+	// 原样复用 settingui2 的 ScrollWhenDraggingOnVoid，保留原 ID、held 与 child fallback。
+	void ScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button)
+	{
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+		ImGuiWindow* window = g.CurrentWindow;
+		bool hovered = false;
+		bool held = false;
+		ImGuiID id = window->GetID("##scrolldraggingoverlay");
+		ImGui::KeepAliveID(id);
+
+		ImGui::ButtonBehavior(window->Rect(), id, &hovered, &held, mouse_button);
+		if (!held && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseDown(mouse_button))
+			held = true;
+
+		if (held && delta.x != 0.0f) ImGui::SetScrollX(window, window->Scroll.x + delta.x);
+		if (held && delta.y != 0.0f) ImGui::SetScrollY(window, window->Scroll.y + delta.y);
+	}
+
+	void ApplyDragScrolling(const NavigationState& state)
+	{
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+		auto eligible = [&](ImGuiWindow* window) {
+			if (!window || !window->Active || window->Hidden || window->SkipItems || window->ScrollMax.y <= 0.0F
+				|| (window->Flags & (ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_Tooltip))) return false;
+			// 已绘制却已关闭的 Popup、淡出导航及释放屏障都不能继续消费正文输入。
+			for (auto* ancestor = window; ancestor; ancestor = ancestor->ParentWindow)
+				if ((ancestor->Flags & ImGuiWindowFlags_Popup)
+					&& !ImGui::IsPopupOpen(ancestor->PopupId, ImGuiPopupFlags_AnyPopupLevel)) return false;
+			if (window->ID == state.flyoutWindowId)
+				return state.flyoutOpen && !state.mouseReleaseBarrier;
+			if (state.BlockContentInput()) return window->ID == state.navigationScrollWindowId && !state.mouseReleaseBarrier;
+			return true;
+		};
+		ImGuiWindow* owner = nullptr;
+		// overlay 抓取后即使移出也继续 KeepAlive；先选唯一指针，避免 FocusWindow 重排窗口列表。
+		if (eligible(g.ActiveIdWindow) && g.ActiveId == g.ActiveIdWindow->GetID("##scrolldraggingoverlay"))
+			owner = g.ActiveIdWindow;
+		if (!owner)
+			for (auto* window = g.HoveredWindow; window; window = window->ParentWindow)
+				if (eligible(window)) { owner = window; break; }
+		if (!owner) return;
+		// End 已弹出内裁剪；局部恢复原调用环境，helper 不绘制，不改变字体/表格或 Begin 栈。
+		ImGuiWindow* previous = g.CurrentWindow;
+		const ImRect previousClip = owner->ClipRect;
+		g.CurrentWindow = owner;
+		owner->ClipRect = owner->InnerClipRect;
+		ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+		ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+		owner->ClipRect = previousClip;
+		g.CurrentWindow = previous;
+	}
+
 	void RenderEdidCard(const char* text)
 	{
 		const float width = ImGui::GetContentRegionAvail().x;

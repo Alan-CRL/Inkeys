@@ -124,6 +124,7 @@ namespace Inkeys::UI::Setting::Design
 		state.parentBounds = state.chevronBounds = {};
 		state.childBounds = {}; state.flyoutChildBounds = {};
 		state.middleBounds = {}; state.footerBounds = {};
+		state.navigationScrollWindowId = state.flyoutWindowId = 0;
 		if (state.mouseReleaseBarrier && !ImGui::IsMouseDown(ImGuiMouseButton_Left)
 			&& !ImGui::IsMouseClicked(ImGuiMouseButton_Left)) state.mouseReleaseBarrier = false;
 		struct Entry { PageId page; const char* key; const char* glyph; };
@@ -232,9 +233,16 @@ namespace Inkeys::UI::Setting::Design
 		{
 			setPosition(sections.middle);
 			if (ImGui::BeginChild("##settings-nav-list", { 0.0F, Pixels(sections.middle.Height()) },
-				childFlags, ImGuiWindowFlags_NoScrollbar))
+				childFlags, ImGuiWindowFlags_None))
 			{
 				parentWindow = ImGui::GetCurrentWindow();
+				state.navigationScrollWindowId = parentWindow->ID;
+				// ImGui 已预留轨道宽；仅追加内容间距，让背景、命中与子列表一起避让。
+				if (parentWindow->ScrollbarY)
+				{
+					parentWindow->WorkRect.Max.x -= Pixels(RowGap);
+					parentWindow->ContentRegionRect.Max.x -= Pixels(RowGap);
+				}
 				ImGui::PushID(static_cast<int>(PageId::General));
 				const ImVec2 origin = ImGui::GetCursorScreenPos();
 				const float right = parentWindow->WorkRect.Max.x;
@@ -506,6 +514,7 @@ namespace Inkeys::UI::Setting::Design
 			if (ImGui::BeginPopupModal(popupId, nullptr, popupFlags))
 			{
 				auto* popupWindow = ImGui::GetCurrentWindow();
+				state.flyoutWindowId = popupWindow->ID;
 				state.flyoutBounds = { popupWindow->Pos.x, popupWindow->Pos.y,
 					popupWindow->Pos.x + popupWindow->Size.x, popupWindow->Pos.y + popupWindow->Size.y };
 				const ImVec2 mouse = ImGui::GetIO().MousePos;

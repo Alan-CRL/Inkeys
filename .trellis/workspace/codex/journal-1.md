@@ -1580,3 +1580,35 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 父任务继续in_progress，保留其他验收工作；未执行push或GUI。
+
+
+## Session 56: 侧栏统一滚动条与旧内容拖动复用
+<!-- trellis-session: v=2 fp=a8d7682b1e680703 -->
+
+**Date**: 2026-10-09
+**Task**: 侧栏统一滚动条与旧内容拖动复用
+**Branch**: `fluent`
+
+### Summary
+
+新子任务按用户批准方案实施并完成自动验证；父子任务继续进行中，修改未提交。
+
+### Main Changes
+
+- 中段自动主题滚动条与4DIP按钮命中间距；原ScrollWhenDraggingOnVoid正文保持，正文/导航/实际可滚浮层和Combo唯一owner接入，保留原输入消息与控件行为。
+
+### Git Commits
+
+(No commits - implementation verified; manual acceptance pending)
+
+### Testing
+
+- [OK] 完整Debug|ARM64 Solution exit0/25.915秒；正常用户完整--no-window exit0/122.897秒/stderr空；三倍率nav各317帧、generic各208帧；i18n、UTF8/BOM/CRLF、diff检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 独立审查记录与规范已同步；真实桌面触摸/观感待人工验收，不GUI/commit/push，不自动归档。
