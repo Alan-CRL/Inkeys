@@ -1647,3 +1647,38 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 真实触屏、鼠标跟手感及DX11视觉待人工验收，父子任务不自动归档；本轮授权提交包含代码、规范与记录，不push。
+
+
+## Session 58: 结束并归档滚动条与内容拖动子任务
+<!-- trellis-session: v=2 fp=1180fd3a3d7908b2 -->
+
+**Date**: 2026-10-09
+**Task**: 结束并归档滚动条与内容拖动子任务
+**Branch**: `fluent`
+
+### Summary
+
+用户明确授权结束子任务并提交收尾；子任务已completed并归档，父任务继续in_progress，不push。
+
+### Main Changes
+
+- 归档10-09-setting-scrollbar-drag-scroll至archive/2026-10，登记实现commit与结束授权，修复归档后jsonl及验证记录路径；父任务保留其他工作。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4df1f0b6` | fix(settings): animate scrollbars and improve content drag response |
+| `c45bcd64` | chore(trellis): archive setting scrollbar and drag scroll task |
+
+### Testing
+
+- [OK] 归档上下文implement/check各6条PASS，18份文件checkout编码/BOM/CRLF/末换行检查通过，git暂存diff --check通过；产品代码未改，沿用完整ARM64与no-window既有通过结果。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本子任务已结束；父任务继续进行中。没有新增实机鼠标/触屏/DX11验证，不GUI/Computer Use/push。
