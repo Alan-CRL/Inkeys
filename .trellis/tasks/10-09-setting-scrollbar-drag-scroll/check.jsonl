@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/native-desktop/index.md", "reason": "设置所属边界与质量要求"}
-{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "原文件风格/中文注释/模块边界"}
-{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整Solution与ARM64原生构建"}
-{"file": ".trellis/tasks/10-09-setting-scrollbar-drag-scroll/research/spec-boundaries.md", "reason": "相关渲染/UI规范的完整局部摘录避免大文件注入截断"}
-{"file": ".trellis/tasks/10-09-setting-scrollbar-drag-scroll/research/followup-research.md", "reason": "当前后续：真实RenderHome/全部竖直宿主、原生padding间距与显隐动画部署证据"}
-{"file": ".trellis/tasks/10-09-setting-scrollbar-drag-scroll/research/performance-research.md", "reason": "第4点性能授权优先于严格旧正文：1.92.7官方滚动时序/低延迟与真实性能验证"}
