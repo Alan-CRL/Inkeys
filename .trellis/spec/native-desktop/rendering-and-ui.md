@@ -1957,7 +1957,8 @@ float TextHeight(const char*, float widthPixels, ImFluentTextStyle);
 void TextAt(const char*, ImVec2, float widthPixels, ImFluentTextStyle, ImU32);
 HomeAction RenderHome(const HomeContent&);
 void RenderEdidCard(const char* text);
-void ApplyDragScrolling(const NavigationState&); // 设置 session 本帧 UI 提交后一次
+void BeginDragScrolling(const NavigationState&); // NewFrame 后、任何窗口首次 Begin 前一次
+void ApplyDragScrolling(const NavigationState&); // 本帧 UI 提交后仅捕获/释放
 GeneralEvents RenderGeneral(GeneralDraft&);
 }
 ```
@@ -1972,8 +1973,8 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 - 所有普通控件通过 Design 的13 DIP字体wrapper；ButtonWidth与默认Button/AccentButton使用同一天然宽公式，显式尺寸仍由调用者决定。ButtonGroupRow先测各按钮自然宽，再按可用预算换行且每行靠右；Action只在实际绘制时执行。赞助复用普通NavItemEx背景与输入，文字和图标均用与选中条相同的AccentFillDefault亮蓝主题色，选中条统一处理，关闭只覆盖浅深主题criticalText语义色，保持普通背景交互。
 - 调试页“控制台输出”完整迁入TouchArea/PptCOM/Draw3/Cursor四项，原国际化/稳定ID/字段/FIFO保存保持，IDT_RELEASE不隐藏入口或四项；实验页其余条目及其他诊断宏保持。下方RenderEdidCard接收同一Display快照生成的完整诊断文本，保留拓扑和所有监视器字段及不可用原因；按实际内宽、字体换行和padding确定完整高度，不被父可见区域限制成内部滚动框。卡片与当前主题一致，内部ScrollMax为0，超屏由整页滚动承载；宽度/倍率/文本变化重新测量，快照不可用在卡片内提示。
 - Page/Section/SettingRow/Details/Card/Notice/NavigationRow共用文本行框和尾部占位，旧34%操作列禁止恢复。PPT两组缩放等独特内容可专用组合，但仍使用公共控件和真实action测量；缩放按发布行为即时应用、松手保存，同步方向只由本帧真实编辑或加入同步事件决定，不以尚未保存的 Record 值推断。插件详情各自用稳定子页ID保存滚动/展开状态。
-- 滚动条由ApplyScrollbars集中设置：8 DIP命中轨道、2 DIPpadding、透明背景和低对比灰thumb，hover/drag增强；每次从DIP重算，不能反复ScaleAllSizes。SetAccentColor会重建ImFluent预设，必须先调用再覆写项目token，否则先写入的项目样式会被预设覆盖。侧栏中段使用原ImGui自动竖直滚动条；按当帧ScrollbarY在已扣轨道的可用右边界额外留RowGap(4 DIP)，WorkRect/ContentRegionRect同步，根项、父项箭头及内联子项真实绘制与命中一同缩短，无条时恢复；不重复减8 DIP、不强制常驻条，动态内容显隐允许原测量帧收敛，固定顶部/底部不变。
-- 设置内容拖动原样复用历史ScrollWhenDraggingOnVoid正文（稳定##scrolldraggingoverlay、KeepAliveID、ButtonBehavior与ChildWindows fallback、SetScrollX/Y），不新增阈值、惯性、点击取消、MouseSource或Win32触摸适配。ApplyDragScrolling在本设置context全部UI提交后、EndFrame/Render前只选唯一实际活动可滚宿主：优先原overlay捕获续接，其次hover父链最近合格窗口；固定NoScrollWithMouse、NoMouseInputs、tooltip、隐藏及已关闭Popup排除，精确PopupId开放态与导航关闭/释放/正文门禁保持。正文、导航中段、实际溢出flyout与Combo均覆盖；父子不能双重消费同一MouseDelta。局部恢复CurrentWindow和End前InnerClipRect调用环境后原样还原，不伪造Begin/End栈或改字体/表格；不调用私有SetCurrentWindow。沿用(0,-MouseDelta.y)物理像素，SetScrollTarget由下一Begin消费，不直接改当帧Scroll或已生成蓝条顶点；原ActiveId控件操作保持；整个ImGui区域外按下时MouseDownOwned=false，移入仍由原库抑制HoveredWindow，不强制获取其输入；root MoveId出现不等于原生HWND移动，是否新增NoMove必须有实际边界证据。
+- 滚动条由ApplyScrollbars集中设置：8 DIP完整命中轨道、2 DIPpadding、透明背景和低对比灰thumb，hover/drag增强；每次从DIP重算，不能反复ScaleAllSizes。SetAccentColor后再覆写项目token。设置全部实际竖直滚动宿主共用本地Begin部署，原生ScrollbarSize和thumb三态alpha按window Storage显隐进度过渡，真实溢出决定目标，复用160ms/现有动画开关与速度。正文、导航中段、可滚Card/Details/flyout/Combo必须在items提交前获得同一可用宽和裁剪；固定顶部/底部不变。侧栏native右padding已有4 DIP，不能再叠加RowGap；按钮、父项箭头和内联子项的真实绘制/命中均避让当帧轨道。消失尾帧保留渐退宽与无输入装饰，最终零留白；反向从当前值续接，关闭动画立即归位，不强制常驻条、不重复扣轨道、不产生横条。native child装饰可写parent DrawList，不能靠事后改全页顶点或只读child DrawList实现显隐；退出thumb只做必要常数几何处理，避免全顶点扫描。本地Begin只备份/恢复ScrollbarSize、ScrollbarPadding和三态颜色实际字段，不夹用跨Card/Details vendor Begin/End的Push/Pop栈；Details scope须在content回调前恢复，防止嵌套条进度相乘。
+- 设置内容拖动由BeginDragScrolling/ApplyDragScrolling分阶段接入当前ImGui1.92.7：首次按下在控件提交后确定唯一实际可滚宿主；已取得overlay捕获后于NewFrame后、宿主首次Begin前投递ScrollTarget，使用上一帧有效态与稳定ID校验，让正常Begin同帧更新Scroll/cursor/clip/items/DrawData及蓝条。不能在帧末才投递持续位移或Render后挪顶点；无输入快速返回，持续捕获不重复ButtonBehavior/FocusWindow或全窗口遍历，不引入Win32触摸适配、默认惯性或额外滚动补间。父子只消费一次物理MouseDelta，边界/低速累计/外部scroll目标与反向重基准须验证。主页真实features/common链接Card与长列表Selectable可登记稳定item/host作为内容拖动候选，使用ImGui原有拖动阈值，轻点保留动作、超过阈值转移capture并取消该次点击；Slider/InputText及native scrollbar保持控制权。storage键以稳定window seed计算，不随当前PushID栈变化。固定NoScrollWithMouse、NoMouseInputs、tooltip、隐藏/未提交及关闭Popup排除，精确PopupId和导航关闭/释放/正文门禁保持；整个ImGui外未归属Down移入不强制捕获。状态随context释放，不保留跨session裸window指针。旧ScrollWhenDraggingOnVoid仅为已提交历史基线，本轮用户已授权优化，不能用其ChildWindows fallback与不可改正文限制替代完整主页回归。
 - SetIconFont/DrawIcon 与 NavItemEx 是有 UPSTREAM 记录的 ImFluent 小扩展；图标用其真实 glyph bounds 在固定槽内居中，不混入正文基线。
 - ImFluent共享颜色动画在RGB插值时按两端alpha加权，最终仍返回普通RGBA供现有绘制混合；不能把透明黑/白端点的无效RGB直接参与可见色插值，也不能靠关闭动画或改浅目标色规避。保持原时长/状态/目标，UPSTREAM记录本地补丁；回归须用真实控件连续帧DrawData合成取样，覆盖导航/按钮/Combo主体和选项、进出/按下/弹层重开/主题切换。
 - Setting用户倍率松手应用后只投递私有ensure-minimum消息；HWND所属线程用最新倍率、既有720×520逻辑minimum及实际outer/client差值，只必要时扩展普通窗并夹紧workarea，不改公开接口、owner/style、最大化几何及原DPI建议路径。最大化/最小化时仅由HWND线程保留pending，恢复普通窗后一次投递重试。工作区小于逻辑最小尺寸时存在物理容纳限制，不能把无窗口几何通过当作全部固定项实机可见。
@@ -1999,7 +2000,8 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 | 普通页 → Debug → 普通页，含动画中途切换 | Debug无侧栏蓝条；返回蓝条首帧直接归位，随后正常切页动画保留 |
 | EDID卡片文本超过视口 | 卡片容纳完整换行文本且内部无滚动；整页可滚动，宽度/字体/数量变化重新测量 |
 | 侧栏中段溢出/折叠/resize | 自动条与当帧真实按钮命中留间距，普通/父箭头/子项一起避让；轨道有实际滚动且不路由，紧凑glyph/focus与固定区正确 |
-| 鼠标/触摸来源按住内容拖动 | 原helper正文不变，唯一宿主/捕获/释放/上下边界及Popup门禁正确，正文嵌套不双滚，蓝条随下一Begin的实际滚动同步 |
+| 鼠标/触摸来源按住内容拖动 | 真实Home/Card/Combo轻点与拖动仲裁正确，稳定capture单宿主；持续输入同帧实际Scroll/items/顶点同步，低速/反向/边界/释放及Popup门禁正确 |
+| 竖直条显隐/快速反向/动画关闭 | 实际width和thumb alpha连续过渡，4DIP间距及真实hit/clip正确，退出无输入且最终无留白；全部竖直宿主与动画速率变化覆盖 |
 
 #### 5. Good / Base / Bad Cases
 
@@ -2011,7 +2013,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 
 `RunSettingDesignTests` 复用实际 Design/Typography/Controls 和 ImGui/ImFluent CPU core，无 HWND、无 DX11 backend。多行说明回归用实际简/繁/英资源、浅深主题和六倍率连续帧，包含真实滑动条、按钮加下拉框、较高自然宽换行组及下一张卡片。说明顶点在action回调入口截取；Combo箭头也使用TextSecondary，不能在整卡结束后仅按颜色采样冒充说明字形。覆盖导航往返与 overlay、真实中英文测量、action 右锚/重排、SC/TC regular/bold 字形与多行 TextAt 顶点、NavItemEx 图标轴、真实控件 DrawData、末项 SettingRow 后 End。动态 atlas 纹理仅在 CPU 测试中模拟完成，不将测试纹理 ID 传入产品。EDID卡片回归须验证首次帧、文本/宽度变化及超视口完整高度、内部ScrollMax为0和整页滚动；字形采样同时限定实际TextPrimary颜色与字体纹理，纹理化抗锯齿卡片边框不能仅按非whiteUV当作字形。完整 Solution Debug|ARM64 后运行 `InkeysHeadlessTests.exe --no-window`，仍不声称验证了实际 DX11 呈现或窗口交互。
 
-新增内容拖动/中段条回归使用生产ApplyDragScrolling和RenderNavigationPane，观察真实ScrollbarRect、ItemBounds、thumb DrawData、Scroll/ScrollTarget及ActiveId；Mouse与TouchScreen来源都通过既有ImGui输入队列，不声称实机触屏已验收。覆盖三pane模式/浅深/倍率/动态显隐、轨道与gap不路由、正文AutoResize与双range/固定child单消费、flyout/长Combo/已关闭Popup与释放屏障、上下边界/反向/离窗/释放、控件所有权、context/clip恢复，以及生产root flags。不能在headless额外NoMove掩盖嵌套void的原MoveId行为，也不能只检查样式值声称实际滚动成功。
+新增内容拖动/竖直条回归使用生产BeginDragScrolling/ApplyDragScrolling、RenderHome、RenderNavigationPane及本地滚动Begin/Combo/Details，观察真实ScrollbarRect、ItemBounds、thumb DrawData、Scroll/ScrollTarget、ActiveId/key owner和输入队列。Mouse/TouchScreen经既有ImGui输入队列，不声称实机触屏已验收。覆盖三pane模式/浅深/倍率/动态显隐与边缘稳定性、轨道及gap不路由、正文AutoResize与双range/fixed child、flyout/长Combo/已关闭Popup/释放屏障、主页header/hero/features/common/author跨child拖动和真实轻点业务、低速位移/上下界/快速反向/离窗/释放、Slider/Input/native轨道所有权，以及生产root flags。动画必须取实际DrawData alpha和item可用宽全过程，不能只查style值；性能用真实基线与当前输入到绘制帧对照及准确CPU采样，绝对耗时不作脆弱门槛，不因测到ScrollTarget就声称视觉已更新。不得在headless添加产品没有的NoMove或复制算法替身声称通过。
 
 #### 7. Wrong vs Correct
 

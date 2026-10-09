@@ -15,6 +15,7 @@
 
 #include <array>
 #include <cfloat>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -859,6 +860,23 @@ namespace
 				const float available = ImGui::GetContentRegionAvail().x;
 				const float fontSize = ImGui::GetFontSize();
 				int contentCalls = 0;
+				const auto containerBase = ImGui::GetStyle(); const int containerVars = GImGui->StyleVarStack.Size, containerColors = GImGui->ColorStack.Size;
+				auto checkContainer = [&](bool card) {
+					const auto& fluent = ImFluent::GetStyle(); const auto& current = ImGui::GetStyle();
+					if (verify) checks.Expect(Near(current.WindowPadding.x, ImFluent::FluentDpx(card ? fluent.CardPadding : fluent.SpacingXLarge))
+						&& Near(current.WindowPadding.y, ImFluent::FluentDpx(card ? fluent.CardPadding : fluent.SpacingLarge))
+						&& ImGui::GetColorU32(ImGuiCol_ChildBg) == ImFluent::GetColorU32(ImFluentCol_CardBgDefault)
+						&& GImGui->StyleVarStack.Size == containerVars + (card ? 3 : 2) && GImGui->ColorStack.Size == containerColors + (card ? 2 : 1)
+						&& current.ScrollbarSize == containerBase.ScrollbarSize && current.ScrollbarPadding == containerBase.ScrollbarPadding
+						&& std::memcmp(&current.Colors[ImGuiCol_ScrollbarGrab], &containerBase.Colors[ImGuiCol_ScrollbarGrab], sizeof(ImVec4) * 3) == 0,
+						"inside real Card/Details content the vendor padding/background stacks and independent scrollbar fields remain intact");
+				};
+				auto nestedContainer = [&](bool card) {
+					checkContainer(card);
+					Design::BeginScrollChild("##container-scroll", { 0, 60 * scale });
+					ImGui::Dummy({ 0, 120 * scale }); ImGui::EndChild();
+					checkContainer(card);
+				};
 				bool activated = false;
 				if (kind == 0)
 				{
@@ -879,6 +897,7 @@ namespace
 						[&]
 						{
 							++contentCalls;
+							nestedContainer(false);
 							const auto textOrigin = ImGui::GetCursorScreenPos();
 							const float textWidth = ImGui::GetContentRegionAvail().x;
 							const float measured = Design::TextHeight(description, textWidth, ImFluentTextStyle_Caption);
@@ -912,6 +931,7 @@ namespace
 					if (Design::BeginCard("card"))
 					{
 						++contentCalls;
+						nestedContainer(true);
 						Design::Text(description);
 					}
 					Design::EndCard();
@@ -1497,7 +1517,8 @@ namespace
 			Frame frame; frame.shell = Design::ResolveShellGeometry(size.x, size.y, state);
 			if (constrainedFlyoutBottom > 0) frame.shell.content.bottom = constrainedFlyoutBottom;
 			frame.contentAlpha = Design::ContentAlpha(state);
-			ImGui::NewFrame();
+			ImGui::NewFrame(); Design::BeginDragScrolling(state);
+			Design::ConfigureRowAnimations(io.DeltaTime, animated, rate);
 			ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(io.DisplaySize);
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 			ImGui::Begin("##hierarchical-navigation-cpu", nullptr, ImGuiWindowFlags_NoDecoration
@@ -1597,16 +1618,15 @@ namespace
 				checks.Expect(separated, "all production middle roots, arrows and inline children leave the actual scrollbar hit track and gap clear");
 				checks.Expect(Near(state.middleBounds.back().right, frame.list->ContentRegionRect.Max.x, 1),
 					"navigation hit rectangles use the same current-frame available width with or without the scrollbar");
-				if (frame.list->ScrollbarY)
+				if (frame.list->ScrollbarY && track.GetWidth() > 0.0F)
 				{
-					bool thumb = false;
-					for (auto* list : ImGui::GetDrawData()->CmdLists)
-						for (const auto& vertex : list->VtxBuffer)
-							if (vertex.pos.x >= track.Min.x && vertex.pos.x <= track.Max.x && vertex.pos.y >= track.Min.y && vertex.pos.y <= track.Max.y
-								&& (vertex.col == ImGui::GetColorU32(ImGuiCol_ScrollbarGrab) || vertex.col == ImGui::GetColorU32(ImGuiCol_ScrollbarGrabHovered)
-									|| vertex.col == ImGui::GetColorU32(ImGuiCol_ScrollbarGrabActive))) thumb = true;
-					checks.Expect(thumb && Near(track.GetWidth(), Design::ScrollbarTrackSize * scale, 1),
-						"actual production navigation draws the shared themed thumb inside its scaled vertical track");
+					unsigned alpha = 0;
+					for (auto* list : ImGui::GetDrawData()->CmdLists) for (const auto& vertex : list->VtxBuffer)
+						if (vertex.pos.x >= track.Min.x && vertex.pos.x <= track.Max.x && vertex.pos.y >= track.Min.y && vertex.pos.y <= track.Max.y)
+							for (auto color : { ImGuiCol_ScrollbarGrab, ImGuiCol_ScrollbarGrabHovered, ImGuiCol_ScrollbarGrabActive })
+								if ((vertex.col & ~IM_COL32_A_MASK) == (ImGui::GetColorU32(color) & ~IM_COL32_A_MASK)) alpha = (std::max)(alpha, (vertex.col >> IM_COL32_A_SHIFT) & 255);
+					checks.Expect(alpha > 0 && track.GetWidth() <= Design::ScrollbarTrackSize * scale + 1,
+						"actual production navigation draws the themed thumb at its current animated track width and alpha");
 				}
 			}
 			if (frame.top)
@@ -2278,6 +2298,8 @@ namespace
 			checks.Expect(frame.list->ScrollbarY == state.Expanded(), "expanding the real inline group shows the bar only in expanded and overlay modes");
 			size.y = 520; frame = idle(4);
 			checks.Expect(frame.list->ScrollbarY && frame.maximumScroll > 0, "minimum-height navigation overflows in every pane mode");
+			const auto gapTrack = ImGui::GetWindowScrollbarRect(frame.list, ImGuiAxis_Y);
+			checks.Expect(Near(gapTrack.Min.x - state.middleBounds.back().right, 4 * scale, 1), "actual navigation leaves exactly its original padding gap instead of double reservation");
 			if (mode == 1)
 			{
 				focusParent(frame); frame = idle(2); const auto track = ImGui::GetWindowScrollbarRect(frame.list, ImGuiAxis_Y);
@@ -2363,6 +2385,35 @@ namespace
 			checks.Expect(!state.IsFlyoutOpen() && GImGui->OpenPopupStack.empty(), "navigation fade completes popup closure and its drag ownership together");
 		}
 		constrainedFlyoutBottom = 0;
+		for (bool theme : { false, true }) for (int mode : { 0, 1, 2 })
+		{
+			Design::NavigationState fresh; state = fresh; dark = theme; animated = true; rate = 1;
+			size = { mode == 2 ? 720.0F : 960.0F, 900 }; state.Resize(size.x); state.desktopCompact = mode == 1; state.overlayOpen = mode == 2;
+			selected = { PageId::Home }; frame = idle(24); const float fullWidth = state.middleBounds.back().Width();
+			size.y = 520; bool partial = false;
+			for (int index = 0; index < 18; ++index)
+			{
+				frame = draw(outside, false); const float width = frame.list->ScrollbarSizes.x;
+				if (frame.list->ScrollbarY && width > 0 && width < 7.99F * scale)
+				{ partial = true; checks.Expect(state.middleBounds.back().Width() < fullWidth && state.middleBounds.back().Width() > fullWidth - 8 * scale - 1,
+					"actual navigation row background and hit rectangle continuously shrink through scrollbar appearance"); }
+			}
+			checks.Expect(partial && Near(frame.list->ScrollbarSizes.x, 8 * scale, 1), "every pane mode has a partial native scrollbar transition followed by its full 8 DIP endpoint");
+			const int routeBefore = navigations; const float initial = frame.scroll;
+			const auto point = center(state.middleBounds[1]); draw(point, false); draw(point, true);
+			frame = draw({ point.x, point.y - 15 * scale }, true);
+			checks.Expect(frame.scroll > initial && navigations == routeBefore, "dragging actual navigation row content crosses native threshold and scrolls in that input frame");
+			draw({ point.x, point.y - 15 * scale }, false); checks.Expect(navigations == routeBefore, "navigation content drag cancels route release while ordinary taps retain routing");
+			size.y = 900; bool fading = false;
+			for (int index = 0; index < 18; ++index)
+			{
+				frame = draw(outside, false); const float width = frame.list->ScrollbarSizes.x;
+				if (!frame.list->ScrollbarY && width > 0 && width < 7.99F * scale)
+				{ fading = true; checks.Expect(state.middleBounds.back().Width() > fullWidth - 8 * scale - 1 && state.middleBounds.back().Width() < fullWidth,
+					"actual navigation hit width expands while its rail exits without a full-width input overlap"); }
+			}
+			checks.Expect(fading && frame.list->ScrollbarSizes.x == 0 && Near(state.middleBounds.back().Width(), fullWidth, 1), "navigation exit reaches zero rail reservation and restores its normal gap and width");
+		}
 		std::cout << "[NavigationScrollbarDragDrawData] scale=" << scale << " frames=" << frames - scrollbarStart << '\n';
 		io.ConfigFlags = previousFlags;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
@@ -2377,25 +2428,26 @@ namespace
 		struct Frame { ImGuiWindow* page = nullptr; ImGuiWindow* inner = nullptr; ImGuiWindow* popup = nullptr;
 			ImGuiID active = 0; ImRect button, slider, text, combo; float pageScroll = 0, innerScroll = 0; };
 		int mode = 0, frames = 0, buttons = 0, selected = 0, movingFrames = 0; bool closePopup = false, omitPopup = false;
-		float reset = -1, sliderValue = 0.5F; char text[64] = "Original text";
+		float reset = -1, sliderValue = 0.5F; bool comboAnimated = false, nativeCombo = false; int comboCount = 40; char text[64] = "Original text";
 		std::vector<std::string> options; for (int index = 0; index < 40; ++index) options.push_back("Option " + std::to_string(index));
 		auto draw = [&](ImVec2 mouse, bool down) {
 			io.DisplaySize = { 800 * scale, 560 * scale }; io.DeltaTime = 1.0F / 60;
-			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down); ImGui::NewFrame();
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down); ImGui::NewFrame(); Design::BeginDragScrolling(state);
+			Design::ConfigureRowAnimations(io.DeltaTime, comboAnimated, 1);
 			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
 			// 与产品相同的固定 root flags，不能用测试独有 NoMove 隐藏空白 child 的移动风险。
 			ImGui::Begin("##drag-scroll-production-root", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
 				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);
 			ImGui::SetCursorPos({ 40 * scale, 50 * scale });
 			ImGui::SetNextWindowContentSize({ 0, 1100 * scale });
-			ImGui::BeginChild("##drag-scroll-page", { 430 * scale, 240 * scale });
+			Design::BeginScrollChild("##drag-scroll-page", { 430 * scale, 240 * scale });
 			Frame frame; frame.page = ImGui::GetCurrentWindow(); if (reset >= 0) ImGui::SetScrollY(reset);
 			if (mode == 1)
-				ImGui::BeginChild("##drag-scroll-auto-body", { 0, 0 }, ImGuiChildFlags_AutoResizeY);
+				Design::BeginScrollChild("##drag-scroll-auto-body", { 0, 0 }, ImGuiChildFlags_AutoResizeY);
 			if (mode == 2 || mode == 3)
 			{
 				ImGui::SetNextWindowContentSize({ 0, 600 * scale });
-				ImGui::BeginChild("##drag-scroll-nested", { 340 * scale, 140 * scale }, ImGuiChildFlags_None,
+				Design::BeginScrollChild("##drag-scroll-nested", { 340 * scale, 140 * scale }, ImGuiChildFlags_None,
 					mode == 3 ? ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse : ImGuiWindowFlags_None);
 				frame.inner = ImGui::GetCurrentWindow(); if (reset >= 0) ImGui::SetScrollY(reset);
 				ImGui::Dummy({ 0, 600 * scale }); ImGui::EndChild();
@@ -2408,7 +2460,15 @@ namespace
 				frame.slider = { ImGui::GetItemRectMin(), ImGui::GetItemRectMax() };
 				ImGui::SetNextItemWidth(170 * scale); Design::TextBox("##drag-test-text", text, sizeof(text));
 				frame.text = { ImGui::GetItemRectMin(), ImGui::GetItemRectMax() };
-				if (!omitPopup) { ImGui::SetNextItemWidth(170 * scale); Design::ComboBox("##drag-test-combo", &selected, options);
+				if (!omitPopup) { ImGui::SetNextItemWidth(170 * scale);
+					if (nativeCombo)
+					{
+						ImFluent::PushFont(ImFluentTextStyle_Body, Design::ControlText.size);
+						std::vector<const char*> items; for (int index = 0; index < comboCount; ++index) items.push_back(options[index].c_str());
+						ImFluent::ComboBox("##drag-test-combo", &selected, items.data(), comboCount);
+						ImFluent::PopFont();
+					}
+					else Design::ComboBox("##drag-test-combo", &selected, std::vector<std::string>(options.begin(), options.begin() + comboCount));
 					frame.combo = { ImGui::GetItemRectMin(), ImGui::GetItemRectMax() }; }
 				ImGui::Dummy({ 0, 900 * scale });
 			}
@@ -2449,7 +2509,7 @@ namespace
 			draw(point, false); frame = draw(point, true);
 			const float originalPage = frame.pageScroll, originalInner = frame.innerScroll;
 			frame = draw({ point.x, point.y - 30 * scale }, true);
-			// 旧 SetScrollTarget 在下一 Begin 生效；只检查真实 owner，不能给父子各执行一次算法。
+			// 已抓取位移在当前 Begin 生效；零位移续帧不能给父子再次应用。
 			frame = draw({ point.x, point.y - 30 * scale }, true);
 			checks.Expect(mode == 2 ? Near(frame.pageScroll, originalPage, 1) && Near(frame.innerScroll - originalInner, 30 * scale, 1)
 				: Near(frame.pageScroll - originalPage, 30 * scale, 1) && (!frame.inner || Near(frame.innerScroll, originalInner, 1)),
@@ -2523,12 +2583,317 @@ namespace
 			checks.Expect(GImGui->OpenPopupStack.empty() && (!frame.popup || frame.popup->ScrollTarget.y == closedTarget), "already submitted closed popup cannot consume another drag delta");
 			draw(outside, false); omitPopup = true; frame = idle(); omitPopup = false;
 		}
+		// 真实长下拉列表从条目本身起拖，随后缩短内容验证退出宽度在提交条目前完成。
+		comboAnimated = true; frame = idle(12); auto opening = center(frame.combo);
+		draw(opening, false); draw(opening, true); frame = draw(opening, false); frame = idle(24);
+		checks.Expect(frame.popup && Near(frame.popup->ScrollbarSizes.x, 8 * scale, 1), "real long Combo reaches its full animated native scrollbar endpoint");
+		if (frame.popup)
+		{
+			const ImVec2 row(frame.popup->WorkRect.Min.x + 40 * scale, frame.popup->WorkRect.Min.y + 16 * scale);
+			draw(row, false); frame = draw(row, true); const auto rowId = frame.active; const float popupBefore = frame.popup->Scroll.y;
+			frame = draw({ row.x, row.y - 20 * scale }, true);
+			checks.Expect(frame.popup && rowId && frame.active != rowId && frame.popup->Scroll.y > popupBefore && selected == 0,
+				"drag from a real Combo Selectable transfers its owned press at the native threshold and scrolls without selecting it");
+			frame = draw({ row.x, row.y - 20 * scale }, false);
+			checks.Expect(frame.popup && selected == 0, "releasing a Combo content drag keeps its popup and value");
+			comboCount = 2; bool fade = false;
+			for (int index = 0; index < 24; ++index)
+			{
+				frame = draw(outside, false);
+				if (frame.popup && !frame.popup->ScrollbarY && frame.popup->ScrollbarSizes.x > 0 && frame.popup->ScrollbarSizes.x < 7.99F * scale)
+				{
+					fade = true;
+					checks.Expect(Near(frame.popup->DC.CursorMaxPos.x, frame.popup->ContentRegionRect.Max.x, 1), "actual shortened Combo row draw/hit width is submitted after the shared fading reservation");
+				}
+			}
+			if (frame.popup) std::cout << "[ComboShortEndpoint] scale=" << scale << " fade=" << fade << " bar=" << frame.popup->ScrollbarY
+				<< " reserve=" << frame.popup->ScrollbarSizes.x << " max=" << frame.popup->ScrollMax.y << " content=" << frame.popup->ContentSize.y
+				<< " inner=" << frame.popup->InnerRect.GetHeight() << " size=" << frame.popup->Size.y << " padding=" << frame.popup->WindowPadding.y << '\n';
+			const bool shortBar = frame.popup && frame.popup->ScrollbarY;
+			const float shortReserve = frame.popup ? frame.popup->ScrollbarSizes.x : -1, shortMax = frame.popup ? frame.popup->ScrollMax.y : -1;
+			if (!shortBar) checks.Expect(fade && shortReserve == 0 && shortMax == 0,
+				"a fitting real two-row Combo releases its full native rail after its exit transition");
+			// 1.875 倍的原生 auto-size 截断会留下 0.5px 真溢出，先与未修改 vendor 严格对照。
+			nativeCombo = true; frame = idle(24); nativeCombo = false;
+			checks.Expect(frame.popup && frame.popup->ScrollbarY == shortBar && frame.popup->ScrollbarSizes.x == shortReserve && frame.popup->ScrollMax.y == shortMax,
+				"short real Combo scrollbar visibility and range exactly match the same-version native vendor at fractional DPI");
+			if (frame.popup) std::cout << "[ComboNativeShortEndpoint] scale=" << scale << " bar=" << frame.popup->ScrollbarY
+				<< " reserve=" << frame.popup->ScrollbarSizes.x << " max=" << frame.popup->ScrollMax.y << " content=" << frame.popup->ContentSize.y
+				<< " inner=" << frame.popup->InnerRect.GetHeight() << " size=" << frame.popup->Size.y << " padding=" << frame.popup->WindowPadding.y << '\n';
+			comboCount = 40; frame = idle(24); comboCount = 0; bool emptyFade = false;
+			for (int index = 0; index < 24; ++index)
+			{
+				frame = draw(outside, false);
+				emptyFade |= frame.popup && !frame.popup->ScrollbarY && frame.popup->ScrollbarSizes.x > 0 && frame.popup->ScrollbarSizes.x < 7.99F * scale;
+			}
+			// 空列表的原生圆角最小高度足以容纳 padding，是所有倍率都真实零溢出的 fixture。
+			checks.Expect(emptyFade && frame.popup && !frame.popup->ScrollbarY && frame.popup->ScrollbarSizes.x == 0 && frame.popup->ScrollMax.y == 0,
+				"a genuinely fitting empty real Combo releases its native rail and has zero scrolling range at every scale");
+			if (frame.popup) std::cout << "[ComboEmptyEndpoint] scale=" << scale << " bar=" << frame.popup->ScrollbarY
+				<< " reserve=" << frame.popup->ScrollbarSizes.x << " max=" << frame.popup->ScrollMax.y << '\n';
+			if (frame.popup)
+			{
+				const float pageBefore = frame.pageScroll; const ImVec2 pad(frame.popup->InnerRect.Min.x + 1, frame.popup->InnerRect.GetCenter().y);
+				draw(pad, false); draw(pad, true); frame = draw({ pad.x, pad.y - 12 * scale }, true); draw(outside, false);
+				checks.Expect(Near(frame.pageScroll, pageBefore), "a no-range Combo cannot propagate its content drag to the background page");
+			}
+			closePopup = true; frame = idle(1); closePopup = false; comboCount = 40; frame = idle(4);
+			opening = center(frame.combo); draw(opening, false); draw(opening, true); frame = draw(opening, false);
+			checks.Expect(frame.popup && frame.popup->ScrollbarSizes.x < 7.99F * scale, "closed Combo reopens with a new visibility transition rather than stale full-width decoration");
+			frame = idle(24); closePopup = true; frame = idle(1); closePopup = false;
+		}
+		comboAnimated = false; frame = idle();
 		state.mouseReleaseBarrier = true; reset = 100 * scale; frame = idle(); reset = -1;
 		const ImVec2 blank(frame.page->InnerClipRect.Max.x - 25 * scale, frame.page->InnerClipRect.GetCenter().y);
 		draw(blank, false); draw(blank, true); draw({ blank.x, blank.y - 30 * scale }, true); frame = draw({ blank.x, blank.y - 30 * scale }, true);
 		checks.Expect(Near(frame.pageScroll, 100 * scale, 1), "ended disabled scopes cannot bypass the navigation release input barrier at frame end");
 		draw(outside, false); state.mouseReleaseBarrier = false; idle();
 		std::cout << "[DragScrollDrawData] scale=" << scale << " frames=" << frames << " rootMovingFrames=" << movingFrames << '\n';
+	}
+
+	// b8beea0b 的实际旧部署，仅用于同一真实主页输入/CPU对照，不作为新算法测试替身。
+	void LegacyScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button)
+	{
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+		ImGuiWindow* window = g.CurrentWindow;
+		bool hovered = false;
+		bool held = false;
+		ImGuiID id = window->GetID("##scrolldraggingoverlay");
+		ImGui::KeepAliveID(id);
+
+		ImGui::ButtonBehavior(window->Rect(), id, &hovered, &held, mouse_button);
+		if (!held && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseDown(mouse_button))
+			held = true;
+
+		if (held && delta.x != 0.0f) ImGui::SetScrollX(window, window->Scroll.x + delta.x);
+		if (held && delta.y != 0.0f) ImGui::SetScrollY(window, window->Scroll.y + delta.y);
+	}
+
+	void ApplyLegacyDragScrolling(const Design::NavigationState& state)
+	{
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+		auto eligible = [&](ImGuiWindow* window) {
+			if (!window || !window->Active || window->Hidden || window->SkipItems || window->ScrollMax.y <= 0.0F
+				|| (window->Flags & (ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_Tooltip))) return false;
+			// 已绘制却已关闭的 Popup、淡出导航及释放屏障都不能继续消费正文输入。
+			for (auto* ancestor = window; ancestor; ancestor = ancestor->ParentWindow)
+				if ((ancestor->Flags & ImGuiWindowFlags_Popup)
+					&& !ImGui::IsPopupOpen(ancestor->PopupId, ImGuiPopupFlags_AnyPopupLevel)) return false;
+			if (window->ID == state.flyoutWindowId)
+				return state.flyoutOpen && !state.mouseReleaseBarrier;
+			if (state.BlockContentInput()) return window->ID == state.navigationScrollWindowId && !state.mouseReleaseBarrier;
+			return true;
+		};
+		ImGuiWindow* owner = nullptr;
+		// overlay 抓取后即使移出也继续 KeepAlive；先选唯一指针，避免 FocusWindow 重排窗口列表。
+		if (eligible(g.ActiveIdWindow) && g.ActiveId == g.ActiveIdWindow->GetID("##scrolldraggingoverlay"))
+			owner = g.ActiveIdWindow;
+		if (!owner)
+			for (auto* window = g.HoveredWindow; window; window = window->ParentWindow)
+				if (eligible(window)) { owner = window; break; }
+		if (!owner) return;
+		// End 已弹出内裁剪；局部恢复原调用环境，helper 不绘制，不改变字体/表格或 Begin 栈。
+		ImGuiWindow* previous = g.CurrentWindow;
+		const ImRect previousClip = owner->ClipRect;
+		g.CurrentWindow = owner;
+		owner->ClipRect = owner->InnerClipRect;
+		ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+		LegacyScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+		owner->ClipRect = previousClip;
+		g.CurrentWindow = previous;
+	}
+
+
+	void CheckHomeScrollFollowup(Checks& checks, ImFont* regular, ImFont* strong, float scale)
+	{
+		Design::BindTextFonts(regular, strong); Design::ApplyPalette(false);
+		auto& io = ImGui::GetIO(); io.ConfigInputTrickleEventQueue = false;
+		Design::NavigationState state; bool animated = false, dark = false;
+		float viewport = 380, rate = 1, requested = -1, lateTarget = -1; ImGuiWindow* lateOwner = nullptr;
+		int frames = 0, actions = 0; bool legacyMode = false, benchmarking = false;
+		std::array<std::array<std::vector<double>, 2>, 2> samples;
+		struct Frame { ImGuiWindow* outer = nullptr; ImGuiWindow* body = nullptr; ImGuiWindow* author = nullptr;
+			float scroll = 0, width = 0, reserve = 0, glyphY = FLT_MAX, authorGlyphY = FLT_MAX;
+			ImGuiWindow* common = nullptr; ImRect feature{ { FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX } };
+			ImVec2 text; ImGuiID active = 0; bool bar = false; unsigned alpha = 0; };
+		const ImVec2 outside(-100, -100);
+		auto draw = [&](ImVec2 mouse, bool down) {
+			Design::ApplyPalette(dark); io.DisplaySize = { 1000 * scale, 1000 * scale }; io.DeltaTime = 1.0F / 60;
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down); ImGui::NewFrame();
+			const auto begin = std::chrono::steady_clock::now(); if (!legacyMode) Design::BeginDragScrolling(state);
+			Design::ConfigureRowAnimations(io.DeltaTime, animated, rate);
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##home-scroll-production-root", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);
+			ImGui::SetCursorPos({ 40 * scale, 50 * scale });
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 28 * scale, 28 * scale });
+			if (lateTarget >= 0 && lateOwner) ImGui::SetScrollY(lateOwner, lateTarget);
+			Design::BeginScrollChild("##setting-content", { 850 * scale, viewport * scale }, ImGuiChildFlags_AlwaysUseWindowPadding);
+			ImGui::PopStyleVar(); Frame frame; frame.outer = ImGui::GetCurrentWindow();
+			if (requested >= 0) ImGui::SetScrollY(requested);
+			const float available = ImGui::GetContentRegionAvail().x;
+			const float pageWidth = (std::min)(available, Design::Pixels(Design::PageMaximumWidth));
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (available - pageWidth) * 0.5F);
+			Design::BeginScrollChild("##setting-page-content", { pageWidth, 0 }, ImGuiChildFlags_AutoResizeY);
+			frame.body = ImGui::GetCurrentWindow(); frame.text = ImGui::GetCursorScreenPos();
+			const auto styleBefore = ImGui::GetStyle(); const int colorsBefore = GImGui->ColorStack.Size, varsBefore = GImGui->StyleVarStack.Size;
+			actions += Design::RenderHome({ 0, 1.0F, "3.0.0-dev.3981", 0, 0, 1.0F }) != Design::HomeAction::None;
+			checks.Expect(ImGui::GetStyle().ScrollbarSize == styleBefore.ScrollbarSize && ImGui::GetStyle().ScrollbarPadding == styleBefore.ScrollbarPadding
+				&& ImGui::GetStyle().WindowPadding.x == styleBefore.WindowPadding.x && ImGui::GetStyle().WindowPadding.y == styleBefore.WindowPadding.y
+				&& std::memcmp(ImGui::GetStyle().Colors, styleBefore.Colors, sizeof(styleBefore.Colors)) == 0
+				&& GImGui->ColorStack.Size == colorsBefore && GImGui->StyleVarStack.Size == varsBefore,
+				"actual Home Card/child scopes restore scrollbar fields, padding, all colors and vendor style stack depths exactly");
+			ImGui::EndChild(); ImGui::EndChild(); ImGui::End();
+			for (auto* window : GImGui->Windows) if (window->Active)
+			{
+				const std::string name(window->Name);
+				if (name.find("##author_") != std::string::npos) frame.author = window;
+				if (name.find("##home-common_") != std::string::npos) frame.common = window;
+			}
+			if (legacyMode) ApplyLegacyDragScrolling(state); else Design::ApplyDragScrolling(state); frame.active = GImGui->ActiveId;
+			frame.scroll = frame.outer->Scroll.y + frame.body->Scroll.y;
+			frame.width = frame.outer->ContentRegionRect.GetWidth(); frame.reserve = frame.outer->ScrollbarSizes.x; frame.bar = frame.outer->ScrollbarY;
+			ImGui::Render(); ++frames;
+			if (benchmarking && (!down || !io.MouseClicked[0]))
+				samples[legacyMode ? 1 : 0][down ? 1 : 0].push_back(std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - begin).count());
+			const auto white = io.Fonts->TexUvWhitePixel;
+			for (const auto& vertex : frame.body->DrawList->VtxBuffer)
+			{
+				if (frame.glyphY == FLT_MAX && vertex.col == Design::TextPrimary && (vertex.uv.x != white.x || vertex.uv.y != white.y)) frame.glyphY = vertex.pos.y;
+				if (vertex.col == Design::GetPalette().featureTint[0]) frame.feature.Add(vertex.pos);
+			}
+			if (frame.author) for (const auto& vertex : frame.author->DrawList->VtxBuffer)
+				if (frame.authorGlyphY == FLT_MAX && vertex.col == Design::TextPrimary && (vertex.uv.x != white.x || vertex.uv.y != white.y)) frame.authorGlyphY = vertex.pos.y;
+			checks.Expect(ImGui::GetDrawData()->Valid && ImGui::GetDrawData()->TotalVtxCount > 0, "actual production Home draws cards and controls every input frame");
+			const ImRect rail = ImGui::GetWindowScrollbarRect(frame.outer, ImGuiAxis_Y);
+			for (const auto* list : ImGui::GetDrawData()->CmdLists) for (const auto& vertex : list->VtxBuffer)
+				if (vertex.pos.x >= rail.Min.x && vertex.pos.x <= rail.Max.x && vertex.pos.y >= rail.Min.y && vertex.pos.y <= rail.Max.y
+					&& (vertex.col & ~IM_COL32_A_MASK) == (Design::GetPalette().scrollbar & ~IM_COL32_A_MASK))
+					frame.alpha = (std::max)(frame.alpha, (vertex.col >> IM_COL32_A_SHIFT) & 255);
+			return frame;
+		};
+		auto idle = [&](int count = 4) { Frame frame; for (int index = 0; index < count; ++index) frame = draw(outside, false); return frame; };
+		Frame frame = idle(8);
+		checks.Expect(frame.outer->ScrollbarY && frame.outer->ScrollMax.y > 0, "actual Home content exceeds its real production viewport");
+		for (auto source : { ImGuiMouseSource_Mouse, ImGuiMouseSource_TouchScreen })
+		{
+			io.AddMouseSourceEvent(source); requested = 0; frame = idle(); requested = -1;
+			const ImVec2 hero(frame.text.x + 400 * scale, frame.text.y + 140 * scale);
+			draw(hero, false); frame = draw(hero, true); const float before = frame.scroll, textBefore = frame.text.y, glyphBefore = frame.glyphY;
+			frame = draw({ hero.x, hero.y - 20 * scale }, true);
+			checks.Expect(Near(frame.scroll - before, 20 * scale, 1) && Near(textBefore - frame.text.y, 20 * scale, 1) && Near(glyphBefore - frame.glyphY, 20 * scale, 1),
+				"Home hero drag updates actual Scroll and production content position in the movement frame without an extra frame");
+			const auto capture = frame.active;
+			frame = draw({ hero.x - 300 * scale, hero.y - 45 * scale }, true);
+			checks.Expect(capture && frame.active == capture && Near(frame.scroll - before, 45 * scale, 1), "Home captured drag crosses noninteractive content and sibling regions without losing ownership");
+			draw(outside, false); requested = 170 * scale; frame = idle(); requested = -1;
+			// 真实 feature card 位于 hero 后；用其绘制文本/图标区域起拖，而非空窗口。
+			checks.Expect(frame.feature.GetWidth() > 0 && frame.feature.GetHeight() > 0, "actual Home feature tint geometry is present in production DrawData");
+			const ImVec2 feature = frame.feature.GetCenter();
+			draw(feature, false); frame = draw(feature, true); const float cardBefore = frame.scroll; const auto cardId = frame.active;
+			const int actionBefore = actions;
+			frame = draw({ feature.x, feature.y - 25 * scale }, true);
+			checks.Expect(cardId && frame.active != cardId && Near(frame.scroll - cardBefore, 25 * scale, 1), "actual Home feature content card crosses the native drag threshold and transfers its stable ActiveId to scrolling");
+			draw({ feature.x, feature.y - 25 * scale }, false); frame = idle();
+			checks.Expect(actions == actionBefore, "dragging Home content card cancels its navigation click exactly once");
+			requested = frame.outer->ScrollMax.y; frame = idle(); requested = -1;
+			checks.Expect(frame.common && frame.author && frame.authorGlyphY != FLT_MAX, "real Home author/card and common siblings are visible at the bottom");
+			if (frame.common && frame.author)
+			{
+				const ImVec2 author(frame.author->WorkRect.Min.x + scale, frame.author->WorkRect.Min.y + 10 * scale);
+				draw(author, false); frame = draw(author, true); const float previous = frame.scroll, authorGlyph = frame.authorGlyphY;
+				frame = draw({ author.x, author.y + 20 * scale }, true); const auto ownerId = frame.active;
+				checks.Expect(Near(previous - frame.scroll, 20 * scale, 1) && Near(frame.authorGlyphY - authorGlyph, 20 * scale, 1),
+					"drag from actual nested Home author card updates ancestor Scroll and actual author glyph vertices in the same movement frame");
+				frame = draw({ frame.common->WorkRect.Min.x + 20 * scale, author.y + 30 * scale }, true);
+				checks.Expect(ownerId && frame.active == ownerId && Near(previous - frame.scroll, 30 * scale, 1), "captured author drag crosses to the actual common sibling without losing or doubling its owner");
+				draw(outside, false); frame = idle(); requested = frame.outer->ScrollMax.y; frame = idle(); requested = -1;
+				const ImVec2 common(frame.common->WorkRect.Min.x + 100 * scale, frame.common->WorkRect.Min.y + 50 * scale);
+				draw(common, false); frame = draw(common, true); const float commonBefore = frame.scroll; const auto commonId = frame.active;
+				frame = draw({ common.x, common.y + 20 * scale }, true);
+				checks.Expect(commonId && frame.active != commonId && Near(commonBefore - frame.scroll, 20 * scale, 1), "actual common settings entry transfers its real ActiveId to its nearest scrolling ancestor after the native threshold");
+				draw(outside, false); checks.Expect(actions == actionBefore, "nested common/author dragging does not invoke Home actions");
+			}
+
+		}
+		io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); requested = 0; frame = idle(); requested = -1;
+		legacyMode = true; requested = 0; frame = idle(); requested = -1;
+		const ImVec2 baselinePoint(frame.outer->InnerRect.Min.x + 2 * scale, frame.outer->InnerRect.GetCenter().y);
+		draw(baselinePoint, false); frame = draw(baselinePoint, true); const float legacyBefore = frame.scroll, legacyGlyph = frame.glyphY;
+		frame = draw({ baselinePoint.x, baselinePoint.y - 20 * scale }, true);
+		checks.Expect(Near(frame.scroll, legacyBefore) && Near(frame.glyphY, legacyGlyph), "exact accepted legacy helper leaves actual Home Scroll and glyphs one frame behind the movement input");
+		frame = draw({ baselinePoint.x, baselinePoint.y - 20 * scale }, true);
+		checks.Expect(Near(frame.scroll - legacyBefore, 20 * scale, 1) && Near(legacyGlyph - frame.glyphY, 20 * scale, 1), "exact legacy helper updates real Home only at the next native Begin");
+		draw(outside, false); legacyMode = false; requested = 0; frame = idle(); requested = -1;
+		const ImVec2 precise(frame.outer->InnerRect.Min.x + 2 * scale, frame.outer->InnerRect.GetCenter().y);
+		draw(precise, false); frame = draw(precise, true); const float preciseBefore = frame.scroll;
+		float actualDelta = 0;
+		for (int index = 1; index <= 20; ++index)
+		{ frame = draw({ precise.x, precise.y - index * 0.25F }, true); actualDelta -= io.MouseDelta.y; }
+		checks.Expect(Near(frame.scroll - preciseBefore, actualDelta, 1), "high-frequency quarter-pixel events use the real ImGui-quantized MouseDelta without lost or repeated motion");
+		ImGui::SetScrollY(frame.outer, frame.outer->Scroll.y + 13 * scale); frame = draw({ precise.x, precise.y - 8 }, true);
+		checks.Expect(Near(frame.outer->Scroll.y - preciseBefore - actualDelta, 13 * scale, 1), "an existing native external scroll target retains priority over captured content dragging");
+		const float lateBefore = frame.scroll; lateOwner = frame.outer; lateTarget = frame.outer->Scroll.y + 9 * scale;
+		frame = draw({ precise.x, precise.y - 11 }, true); lateTarget = -1;
+		checks.Expect(Near(frame.scroll - lateBefore, 9 * scale, 1), "an external target posted after drag sampling but before the actual Begin is not overwritten by pending content motion");
+		const float resumed = frame.scroll; frame = draw({ precise.x, precise.y - 14 }, true);
+		checks.Expect(Near(frame.scroll - resumed, 3, 1), "captured motion rebases from the actual consumed external target on its next frame");
+		draw(outside, false); requested = 170 * scale; frame = idle(); requested = -1;
+		io.ConfigInputTrickleEventQueue = true; const auto tap = frame.feature.GetCenter(); const int tapsBefore = actions;
+		draw(tap, false); io.AddMouseButtonEvent(0, true); io.AddMouseButtonEvent(0, false);
+		draw(tap, false); frame = draw(tap, false); frame = idle(2);
+		checks.Expect(actions == tapsBefore + 1, "a quick real Home card tap with default input trickling invokes exactly one original navigation action");
+		io.ConfigInputTrickleEventQueue = false; requested = 0; frame = idle(); requested = -1;
+		// 原生末帧目标的对照：真实 SetScrollY 不改变已提交内容，新部署在下一帧 Begin 前消费。
+		const float oldScroll = frame.outer->Scroll.y; ImGui::SetScrollY(frame.outer, oldScroll + 18 * scale);
+		checks.Expect(Near(frame.outer->Scroll.y, oldScroll), "native frame-end SetScrollY baseline leaves the already-rendered frame unchanged");
+		frame = idle(1); checks.Expect(Near(frame.outer->Scroll.y - oldScroll, 18 * scale, 1), "native baseline applies only at the following Begin, unlike the held production drag movement frame");
+		requested = 0; frame = idle(); requested = -1;
+		for (bool theme : { false, true })
+		{
+			dark = theme; animated = true; viewport = 1200; frame = idle(24);
+			checks.Expect(!frame.bar && frame.reserve == 0, "Home overflow removal completes with no permanent scrollbar reservation");
+			const float fullWidth = frame.width; viewport = 380;
+			for (int index = 0; index < 12; ++index) { frame = draw(outside, false);
+				std::cout << "[HomeScrollbarEnter] scale=" << scale << " step=" << index << " bar=" << frame.bar << " reserve=" << frame.reserve << " width=" << frame.width << " alpha=" << frame.alpha << '\n';
+				if (frame.bar && frame.reserve > 0 && frame.reserve < 7.99F * scale) break; }
+			checks.Expect(frame.bar && frame.reserve > 0 && frame.reserve < Design::Pixels(Design::ScrollbarTrackSize), "actual Home native scrollbar appears with a partial animated width");
+			checks.Expect(frame.width < fullWidth && frame.width > fullWidth - Design::Pixels(Design::ScrollbarTrackSize), "actual Home content width continuously shrinks with its native rail");
+			checks.Expect(frame.alpha > 0 && frame.alpha < ((Design::GetPalette().scrollbar >> IM_COL32_A_SHIFT) & 255), "actual Home thumb DrawData fades in together with its width");
+			frame = idle(24); const float settled = frame.reserve;
+			viewport = 1200;
+			for (int index = 0; index < 12; ++index) { frame = draw(outside, false);
+				std::cout << "[HomeScrollbarExit] scale=" << scale << " step=" << index << " bar=" << frame.bar << " reserve=" << frame.reserve << " width=" << frame.width << " alpha=" << frame.alpha << '\n';
+				if (!frame.bar && frame.reserve > 0 && frame.reserve < settled - 0.01F) break; }
+			checks.Expect(!frame.bar && frame.reserve > 0 && frame.reserve < settled, "native hidden Home rail retains only fading decoration and smoothly releases its content width");
+			checks.Expect(frame.alpha > 0, "hidden Home rail has actual fading thumb vertices");
+			const float reversing = frame.reserve; viewport = 380; frame = draw(outside, false);
+			checks.Expect(frame.reserve <= reversing + 0.1F * scale, "quick overflow reversal continues from the currently visible scrollbar width");
+			rate = 2.5F; frame = idle(16); viewport = 1200; animated = false; frame = idle(2);
+			checks.Expect(!frame.bar && frame.reserve == 0 && Near(frame.width, fullWidth, 1), "animation disable restores full native content width with zero hidden input reservation");
+		}
+		animated = false; dark = false; viewport = 380; rate = 1;
+		for (bool baseline : { true, false })
+		{
+			legacyMode = baseline; requested = 100 * scale; frame = idle(12); requested = -1;
+			benchmarking = true; frame = idle(100); benchmarking = false;
+			const ImVec2 point(frame.outer->InnerRect.Min.x + 2 * scale, frame.outer->InnerRect.GetCenter().y);
+			draw(point, false); frame = draw(point, true); const float before = frame.scroll;
+			benchmarking = true;
+			for (int index = 1; index <= 100; ++index) frame = draw({ point.x, point.y - index }, true);
+			benchmarking = false; frame = draw({ point.x, point.y - 100 }, true);
+			checks.Expect(Near(frame.scroll - before, 100, 1), "both warmed legacy and new CPU samples actually scroll the same production Home by the same total input");
+			draw(outside, false); frame = idle();
+		}
+		for (int baseline = 0; baseline < 2; ++baseline) for (int held = 0; held < 2; ++held)
+		{
+			auto values = samples[baseline][held]; std::sort(values.begin(), values.end());
+			checks.Expect(values.size() == 100, "Home CPU timing separates exactly 100 warmed idle or captured frames per actual implementation");
+			if (!values.empty()) std::cout << "[HomeCpuSubmission] scale=" << scale << " legacy=" << baseline << " held=" << held << " samples=" << values.size()
+				<< " medianUs=" << values[values.size() / 2] << " p95Us=" << values[values.size() * 95 / 100] << '\n';
+		}
+		std::cout << "[HomeScrollFollowup] scale=" << scale << " frames=" << frames << '\n';
+		Design::ConfigureRowAnimations(0, false, 1); Design::ApplyPalette(false);
 	}
 
 	void CheckEdidCard(Checks& checks, ImFont* regular, ImFont* strong, float scale)
@@ -2885,6 +3250,7 @@ int RunSettingDesignTests()
 		{
 			CheckHierarchicalNavigation(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
+			CheckHomeScrollFollowup(checks, fonts[0], fonts[1], scale);
 		}
 		if (scale == 1.0F || scale == 1.875F) CheckAnimatedColors(checks, fonts[0], scale);
 	}

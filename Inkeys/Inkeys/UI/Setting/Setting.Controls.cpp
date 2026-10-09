@@ -210,56 +210,242 @@ namespace Inkeys::UI::Setting::Design
 		ImGui::Dummy({ width, height });
 	}
 
-	// 原样复用 settingui2 的 ScrollWhenDraggingOnVoid，保留原 ID、held 与 child fallback。
-	void ScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button)
+	namespace
 	{
-		ImGuiContext& g = *ImGui::GetCurrentContext();
-		ImGuiWindow* window = g.CurrentWindow;
-		bool hovered = false;
-		bool held = false;
-		ImGuiID id = window->GetID("##scrolldraggingoverlay");
-		ImGui::KeepAliveID(id);
+		bool DragEligible(ImGuiWindow* window, const NavigationState& state, bool submitted)
+		{
+			if (!window || (submitted ? !window->Active : !window->WasActive) || window->Hidden
+				|| window->ScrollMax.y <= 0.0F
+				|| (window->Flags & (ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_Tooltip))) return false;
+			for (auto* ancestor = window; ancestor; ancestor = ancestor->ParentWindow)
+				if ((ancestor->Flags & ImGuiWindowFlags_Popup)
+					&& !ImGui::IsPopupOpen(ancestor->PopupId, ImGuiPopupFlags_AnyPopupLevel)) return false;
+			if (window->ID == state.flyoutWindowId) return state.flyoutOpen && !state.mouseReleaseBarrier;
+			return !state.BlockContentInput() || (window->ID == state.navigationScrollWindowId && !state.mouseReleaseBarrier);
+		}
 
-		ImGui::ButtonBehavior(window->Rect(), id, &hovered, &held, mouse_button);
-		if (!held && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseDown(mouse_button))
-			held = true;
+		void CaptureDrag(ImGuiWindow* owner)
+		{
+			ImGuiContext& g = *GImGui;
+			ImGui::SetActiveID(owner->GetID("##scrolldraggingoverlay"), owner);
+			g.ActiveIdMouseButton = ImGuiMouseButton_Left;
+			g.MovingWindow = nullptr;
+			owner->StateStorage.SetFloat(owner->GetID("##drag-scroll-position"), owner->Scroll.y);
+		}
 
-		if (held && delta.x != 0.0f) ImGui::SetScrollX(window, window->Scroll.x + delta.x);
-		if (held && delta.y != 0.0f) ImGui::SetScrollY(window, window->Scroll.y + delta.y);
+		ImGuiWindow* ChildWindow(const char* id)
+		{
+			auto* parent = ImGui::GetCurrentWindow();
+			char name[512];
+			ImFormatString(name, sizeof(name), "%s/%s_%08X", parent->Name, id, parent->GetID(id));
+			return ImGui::FindWindowByName(name);
+		}
+
+		// 每个 ImGui window 的 storage 随 session 释放，快速反向不复用旧端点。
+		class ScrollbarStyleScope
+		{
+			ImGuiWindow* window;
+			float phase, previousSize, previousPadding;
+			ImVec4 previousColors[3];
+		public:
+			explicit ScrollbarStyleScope(ImGuiWindow* existing, bool input = true) : window(existing), phase(0.0F)
+			{
+				previousSize = ImGui::GetStyle().ScrollbarSize;
+				previousPadding = ImGui::GetStyle().ScrollbarPadding;
+				for (int index = 0; index < 3; ++index) previousColors[index] = ImGui::GetStyle().Colors[ImGuiCol_ScrollbarGrab + index];
+				// 只在本帧真正提交此宿主时消费；未提交/关闭的旧 Popup 不留下 target。
+				if (input && window && GImGui->ActiveIdWindow == window && GImGui->ActiveId == window->GetID("##scrolldraggingoverlay")
+					&& window->StateStorage.GetInt(window->GetID("##drag-scroll-frame"), -2) == GImGui->FrameCount)
+				{
+					if (window->ScrollTarget.y == FLT_MAX)
+						ImGui::SetScrollY(window, window->StateStorage.GetFloat(window->GetID("##drag-scroll-position")));
+					else window->StateStorage.SetInt(window->GetID("##drag-scroll-rebase"), 1);
+					window->StateStorage.SetInt(window->GetID("##drag-scroll-frame"), -2);
+				}
+				if (window)
+				{
+					auto& storage = window->StateStorage;
+					NavigationTween tween(storage.GetFloat(window->GetID("##scrollbar-value")));
+					tween.target = storage.GetFloat(window->GetID("##scrollbar-target"));
+					tween.start = storage.GetFloat(window->GetID("##scrollbar-start"));
+					tween.progress = storage.GetFloat(window->GetID("##scrollbar-progress"));
+					const int last = storage.GetInt(window->GetID("##scrollbar-frame"), -2);
+					// 关闭/未提交后重开从不可见状态开始，不复用旧条的退出装饰。
+					if (last != GImGui->FrameCount && last != GImGui->FrameCount - 1) tween.Reset(0.0F);
+					if (last != GImGui->FrameCount)
+						tween.Advance(last == GImGui->FrameCount - 1 ? rowAnimationDelta : 0.0F, 0.160F / rowAnimationRate, rowAnimationsEnabled);
+					phase = tween.value;
+					storage.SetFloat(window->GetID("##scrollbar-value"), tween.value);
+					storage.SetFloat(window->GetID("##scrollbar-target"), tween.target);
+					storage.SetFloat(window->GetID("##scrollbar-start"), tween.start);
+					storage.SetFloat(window->GetID("##scrollbar-progress"), tween.progress);
+				}
+				// 关闭动画时首帧也使用完整 native 轨道；开启时由零宽开始。
+				if (!rowAnimationsEnabled) phase = 1.0F;
+				ImGui::GetStyle().ScrollbarSize = Pixels(ScrollbarTrackSize) * phase;
+				ImGui::GetStyle().ScrollbarPadding = Pixels(ScrollbarPadding) * phase;
+				for (auto color : { ImGuiCol_ScrollbarGrab, ImGuiCol_ScrollbarGrabHovered, ImGuiCol_ScrollbarGrabActive })
+				{
+					ImVec4 value = ImGui::GetStyle().Colors[color]; value.w *= phase;
+					ImGui::GetStyle().Colors[color] = value;
+				}
+			}
+			void Finish(ImGuiWindow* actual)
+			{
+				if (!actual || !actual->Active || actual->SkipItems) return;
+				window = actual;
+				auto& storage = window->StateStorage;
+				const float target = window->ScrollbarY ? 1.0F : 0.0F;
+				const float oldTarget = storage.GetFloat(window->GetID("##scrollbar-target"));
+				if (target != oldTarget)
+				{
+					storage.SetFloat(window->GetID("##scrollbar-start"), phase);
+					storage.SetFloat(window->GetID("##scrollbar-progress"), 0.0F);
+				}
+				storage.SetFloat(window->GetID("##scrollbar-target"), target);
+				storage.SetInt(window->GetID("##scrollbar-frame"), GImGui->FrameCount);
+				if (!rowAnimationsEnabled) phase = target;
+				storage.SetFloat(window->GetID("##scrollbar-value"), phase);
+				if (window->ScrollbarY && phase > 0.0F)
+				{
+					// 与本库 ScrollbarEx 的几何保持一致；只缓存退出装饰，不扫描正文顶点。
+					ImRect rail = ImGui::GetWindowScrollbarRect(window, ImGuiAxis_Y);
+					const float padding = ImTrunc((std::min)(ImGui::GetStyle().ScrollbarPadding, (std::min)(rail.GetWidth(), rail.GetHeight()) * 0.5F));
+					rail.Expand(-padding);
+					const float visible = static_cast<float>(static_cast<ImS64>(window->InnerRect.GetHeight()));
+					const float total = static_cast<float>(static_cast<ImS64>(window->ContentSize.y + window->WindowPadding.y * 2.0F));
+					const float height = static_cast<float>(static_cast<int>(std::clamp(rail.GetHeight() * visible / (std::max)(1.0F, (std::max)(visible, total)),
+						(std::min)(rail.GetHeight(), ImGui::GetStyle().GrabMinSize), rail.GetHeight())));
+					const float ratio = std::clamp(static_cast<float>(static_cast<ImS64>(window->Scroll.y)) / (std::max)(1.0F, total - visible), 0.0F, 1.0F);
+					const float top = rail.Min.y + ratio * (rail.GetHeight() - height);
+					storage.SetFloat(window->GetID("##scrollbar-thumb-top"), (top - window->Pos.y) / Pixels(1.0F));
+					storage.SetFloat(window->GetID("##scrollbar-thumb-bottom"), (top + height - window->Pos.y) / Pixels(1.0F));
+					const ImGuiID scrollbarId = ImGui::GetWindowScrollbarID(window, ImGuiAxis_Y);
+					storage.SetInt(window->GetID("##scrollbar-thumb-state"), GImGui->ActiveId == scrollbarId ? 2 : GImGui->HoveredId == scrollbarId ? 1 : 0);
+				}
+				else if (!window->ScrollbarY && phase > 0.0001F)
+				{
+					const float reserve = Pixels(ScrollbarTrackSize) * phase;
+					window->ScrollbarSizes.x = reserve;
+					window->DecoOuterSizeX2 += reserve;
+					window->InnerRect.Max.x -= reserve;
+					if (window->ContentSizeExplicit.x == 0.0F)
+					{
+						window->WorkRect.Max.x -= reserve;
+						window->ParentWorkRect.Max.x -= reserve;
+						window->ContentRegionRect.Max.x -= reserve;
+					}
+					window->InnerClipRect.Max.x = (std::min)(window->InnerClipRect.Max.x,
+						ImFloor(window->InnerRect.Max.x - window->WindowBorderSize * 0.5F));
+					const float top = window->Pos.y + Pixels(storage.GetFloat(window->GetID("##scrollbar-thumb-top")));
+					const float bottom = (std::min)(window->Pos.y + window->Size.y,
+						window->Pos.y + Pixels(storage.GetFloat(window->GetID("##scrollbar-thumb-bottom"))));
+					window->DrawList->PushClipRect(window->OuterRectClipped.Min, window->OuterRectClipped.Max, false);
+					if (bottom > top && reserve > 0.0F)
+						window->DrawList->AddRectFilled({ window->InnerRect.Max.x + ImTrunc(Pixels(ScrollbarPadding) * phase), top },
+							{ window->Pos.x + window->Size.x - ImTrunc(Pixels(ScrollbarPadding) * phase), bottom },
+							ImGui::GetColorU32(static_cast<ImGuiCol>(ImGuiCol_ScrollbarGrab + storage.GetInt(window->GetID("##scrollbar-thumb-state")))), Pixels(2.0F));
+					window->DrawList->PopClipRect();
+					// Begin 已压入 inner clip，内容绘制与真正 item 可用宽一起过渡。
+					if (GImGui->CurrentWindow == window)
+					{
+						ImGui::PopClipRect(); ImGui::PushClipRect(window->InnerClipRect.Min, window->InnerClipRect.Max, true);
+					}
+				}
+			}
+			~ScrollbarStyleScope()
+			{
+				// Card/Expander 持有自己的 padding/bg 栈；独立滚动字段直接恢复，保持其 LIFO。
+				ImGui::GetStyle().ScrollbarSize = previousSize;
+				ImGui::GetStyle().ScrollbarPadding = previousPadding;
+				for (int index = 0; index < 3; ++index) ImGui::GetStyle().Colors[ImGuiCol_ScrollbarGrab + index] = previousColors[index];
+			}
+		};
+	}
+
+	void AllowContentDrag()
+	{
+		// 仅登记内容型点击项；越过原生阈值才转抓，滑块/输入等保持原操作。
+		auto* window = ImGui::GetCurrentWindow();
+		if (GImGui->ActiveId == GImGui->LastItemData.ID)
+			window->StateStorage.SetInt(ImHashStr("##content-drag-button", 0, window->ID), static_cast<int>(GImGui->ActiveId));
+	}
+
+	void BeginDragScrolling(const NavigationState& state)
+	{
+		ImGuiContext& g = *GImGui;
+		auto* owner = g.ActiveIdWindow;
+		if (!g.IO.MouseDown[0] || !g.IO.MouseDownOwned[0]) return;
+		if (owner && g.ActiveId && g.ActiveId == static_cast<ImGuiID>(owner->StateStorage.GetInt(ImHashStr("##content-drag-button", 0, owner->ID)))
+			&& ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+		{
+			while (owner && !DragEligible(owner, state, false))
+			{
+				if (owner->Flags & ImGuiWindowFlags_Popup) { owner = nullptr; break; }
+				owner = owner->ParentWindow;
+			}
+			if (owner) CaptureDrag(owner);
+		}
+		if (!DragEligible(owner, state, false) || g.ActiveId != owner->GetID("##scrolldraggingoverlay")) return;
+		ImGui::KeepAliveID(g.ActiveId);
+		if (g.IO.MouseDelta.y == 0.0F) return;
+		const ImGuiID sampledId = owner->GetID("##drag-scroll-sampled-frame");
+		if (owner->StateStorage.GetInt(sampledId, -2) == g.FrameCount) return;
+		owner->StateStorage.SetInt(sampledId, g.FrameCount);
+		// 原生滚轮/键盘已有目标时先让它消费，本帧不覆盖它，下一帧从真实 Scroll 重基准。
+		const ImGuiID rebaseId = owner->GetID("##drag-scroll-rebase");
+		if (owner->ScrollTarget.y < FLT_MAX) { owner->StateStorage.SetInt(rebaseId, 1); return; }
+		const ImGuiID positionId = owner->GetID("##drag-scroll-position");
+		float position = owner->StateStorage.GetFloat(positionId, owner->Scroll.y);
+		if (owner->StateStorage.GetInt(rebaseId) || std::abs((std::min)(ImRound64(position), owner->ScrollMax.y) - owner->Scroll.y) > 0.01F) position = owner->Scroll.y;
+		owner->StateStorage.SetInt(rebaseId, 0);
+		position = std::clamp(position - g.IO.MouseDelta.y, 0.0F, owner->ScrollMax.y);
+		owner->StateStorage.SetFloat(positionId, position);
+		// 暂存单宿主意图；实际首次 Begin 前投递原生目标，不后移光标或顶点。
+		owner->StateStorage.SetInt(owner->GetID("##drag-scroll-frame"), g.FrameCount);
 	}
 
 	void ApplyDragScrolling(const NavigationState& state)
 	{
-		ImGuiContext& g = *ImGui::GetCurrentContext();
-		auto eligible = [&](ImGuiWindow* window) {
-			if (!window || !window->Active || window->Hidden || window->SkipItems || window->ScrollMax.y <= 0.0F
-				|| (window->Flags & (ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_Tooltip))) return false;
-			// 已绘制却已关闭的 Popup、淡出导航及释放屏障都不能继续消费正文输入。
-			for (auto* ancestor = window; ancestor; ancestor = ancestor->ParentWindow)
-				if ((ancestor->Flags & ImGuiWindowFlags_Popup)
-					&& !ImGui::IsPopupOpen(ancestor->PopupId, ImGuiPopupFlags_AnyPopupLevel)) return false;
-			if (window->ID == state.flyoutWindowId)
-				return state.flyoutOpen && !state.mouseReleaseBarrier;
-			if (state.BlockContentInput()) return window->ID == state.navigationScrollWindowId && !state.mouseReleaseBarrier;
-			return true;
-		};
-		ImGuiWindow* owner = nullptr;
-		// overlay 抓取后即使移出也继续 KeepAlive；先选唯一指针，避免 FocusWindow 重排窗口列表。
-		if (eligible(g.ActiveIdWindow) && g.ActiveId == g.ActiveIdWindow->GetID("##scrolldraggingoverlay"))
-			owner = g.ActiveIdWindow;
-		if (!owner)
-			for (auto* window = g.HoveredWindow; window; window = window->ParentWindow)
-				if (eligible(window)) { owner = window; break; }
-		if (!owner) return;
-		// End 已弹出内裁剪；局部恢复原调用环境，helper 不绘制，不改变字体/表格或 Begin 栈。
-		ImGuiWindow* previous = g.CurrentWindow;
-		const ImRect previousClip = owner->ClipRect;
-		g.CurrentWindow = owner;
-		owner->ClipRect = owner->InnerClipRect;
-		ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
-		ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
-		owner->ClipRect = previousClip;
-		g.CurrentWindow = previous;
+		ImGuiContext& g = *GImGui;
+		auto* captured = g.ActiveIdWindow;
+		if (captured && g.ActiveId == captured->GetID("##scrolldraggingoverlay"))
+		{
+			if (!g.IO.MouseDown[0] || !DragEligible(captured, state, true)) ImGui::ClearActiveID();
+			else ImGui::KeepAliveID(g.ActiveId);
+			return;
+		}
+		if (!g.IO.MouseClicked[0] || !g.IO.MouseDownOwned[0] || !g.HoveredWindow) return;
+		// 真正业务控件的 ActiveId 保留；child/root 的 MoveId 属于可抓取内容空白。
+		if (g.ActiveId && g.ActiveId != g.HoveredWindow->MoveId
+			&& g.ActiveId != g.HoveredWindow->RootWindow->MoveId) return;
+		auto* owner = g.HoveredWindow;
+		while (owner && !DragEligible(owner, state, true))
+		{
+			// 无滚动范围的浮层不向其背景页面传播拖动。
+			if (owner->Flags & ImGuiWindowFlags_Popup) { owner = nullptr; break; }
+			owner = owner->ParentWindow;
+		}
+		if (owner) CaptureDrag(owner);
+	}
+
+	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags)
+	{
+		ScrollbarStyleScope scrollbar(ChildWindow(id), !(flags & ImGuiWindowFlags_NoMouseInputs));
+		const bool visible = ImGui::BeginChild(id, size, childFlags, flags);
+		scrollbar.Finish(ImGui::GetCurrentWindow());
+		return visible;
+	}
+
+	bool BeginScrollPopupModal(const char* id, ImGuiWindowFlags flags)
+	{
+		const ImGuiID popupId = ImGui::GetID(id);
+		ImGuiWindow* window = nullptr;
+		for (const auto& popup : GImGui->OpenPopupStack) if (popup.PopupId == popupId) window = popup.Window;
+		ScrollbarStyleScope scrollbar(window);
+		const bool visible = ImGui::BeginPopupModal(id, nullptr, flags);
+		if (visible) scrollbar.Finish(ImGui::GetCurrentWindow());
+		return visible;
 	}
 
 	void RenderEdidCard(const char* text)
@@ -506,10 +692,333 @@ namespace Inkeys::UI::Setting::Design
 		return ImFluent::ToggleSwitch(label, value, onText, offText);
 	}
 
-	bool ComboBox(const char* label, int* value, const char* const items[], int count, ImGuiComboFlags flags)
+	// 本地保留当前 Fluent Combo 外观；Popup 在真实条目提交前接入共享滚动机制。
+	namespace
 	{
-		ControlFontScope font;
-		return ImFluent::ComboBox(label, value, items, count, flags);
+		using namespace ImFluent;
+	    static void RenderElevationBorder( ImDrawList * dl, const ImRect & bb, float rounding, ImU32 sides, ImU32 bottom, float bottom_thickness )
+	    {
+	        dl->AddRect( bb.Min, bb.Max, sides, rounding, 0, 1.f );
+
+	        const float t = ( bottom_thickness > 0.f ) ? bottom_thickness : 1.f;
+	        dl->AddRectFilled( ImVec2( bb.Min.x + rounding, bb.Max.y - t ), ImVec2( bb.Max.x - rounding, bb.Max.y ), bottom );
+	    }
+
+	    static void PushOverlayWindowStyle( float padding_x, float padding_y )
+	    {
+	        using namespace ImFluent;
+	        const ImFluentStyle & style = ImFluent::GetStyle();
+	        ImGui::PushStyleColor( ImGuiCol_PopupBg, ImFluent::GetColorU32( ImFluentCol_SolidBgQuarternary ) );
+	        ImGui::PushStyleColor( ImGuiCol_Border, ImFluent::GetColorU32( ImFluentCol_SurfaceStrokeFlyout ) );
+	        ImGui::PushStyleVar( ImGuiStyleVar_PopupRounding, FluentDpx( style.OverlayCornerRadius ) );
+	        ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( FluentDpx( padding_x ), FluentDpx( padding_y ) ) );
+	    }
+
+	    static void PopOverlayWindowStyle()
+	    {
+	        ImGui::PopStyleVar( 2 );
+	        ImGui::PopStyleColor( 2 );
+	    }
+
+	    static int ResolveComboPopupMaxItems( ImGuiComboFlags flags )
+	    {
+	        if ( flags & ImGuiComboFlags_HeightSmall )
+	            return 4;
+	        if ( flags & ImGuiComboFlags_HeightLarge )
+	            return 20;
+	        if ( flags & ImGuiComboFlags_HeightLargest )
+	            return -1;
+	        return 8;
+	    }
+
+	    static float CalcComboPopupMaxHeight( int max_items, float row_h )
+	    {
+	        if ( max_items <= 0 )
+	            return FLT_MAX;
+	        const ImFluentStyle & style = ImFluent::GetStyle();
+	        const float spacing_y       = ImGui::GetStyle().ItemSpacing.y;
+	        const float padding_y       = ImFluent::FluentDpx( style.SpacingXSmall );
+	        return row_h * max_items + spacing_y * ImMax( 0, max_items - 1 ) + padding_y * 2.f;
+	    }
+
+	    static const ImU32 kAnimSeed = 0xF1ECF1ECu;
+
+	    static inline ImU32 LerpColorU32( ImU32 a, ImU32 b, float t )
+	    {
+	        if ( t <= 0.f )
+	            return a;
+	        if ( t >= 1.f )
+	            return b;
+	        // INKEYS PATCH: 先按透明度加权，避免透明黑到浅色的中间帧合成出暗色；输出仍为普通 RGBA。
+	        const float aa = ( float )( ( a >> 24 ) & 0xFF );
+	        const float ba = ( float )( ( b >> 24 ) & 0xFF );
+	        const float wa = aa * ( 1.f - t );
+	        const float wb = ba * t;
+	        const float alpha = wa + wb;
+	        if ( alpha <= 0.f )
+	            return 0;
+	        ImU32 result = ( ImU32 )( alpha + 0.5f ) << 24;
+	        for ( int shift = 0; shift < 24; shift += 8 )
+	        {
+	            const float channel = ( ( float )( ( a >> shift ) & 0xFF ) * wa
+	                + ( float )( ( b >> shift ) & 0xFF ) * wb ) / alpha;
+	            result |= ( ImU32 )( channel + 0.5f ) << shift;
+	        }
+	        return result;
+	    }
+
+	    static bool AnimFrameContiguous( ImGuiStorage * s, ImGuiID frame_key )
+	    {
+	        const int currentFrame = ImGui::GetFrameCount();
+	        const bool contiguous  = ( s->GetInt( frame_key, -1 ) == currentFrame - 1 );
+	        s->SetInt( frame_key, currentFrame );
+	        return contiguous;
+	    }
+
+	    static ImGuiID AnimStateKey( ImGuiID id, int channel, bool & out_continuous, ImGuiStorage *& out_storage )
+	    {
+	        ImGuiStorage * s  = ImGui::GetStateStorage();
+	        const ImGuiID kId = id ^ kAnimSeed ^ ( ( ImGuiID )channel * 0x9E3779B9u );
+	        out_continuous    = AnimFrameContiguous( s, kId + 1 );
+	        out_storage       = s;
+	        return kId;
+	    }
+
+	    static ImU32 AnimateColorU32( ImGuiID id, ImU32 target, float seconds = 0.083f, int channel = 0 )
+	    {
+	        bool continuous;
+	        ImGuiStorage * s;
+	        const ImGuiID kId = AnimStateKey( id, channel, continuous, s );
+	        if ( !continuous )
+	        {
+	            s->SetInt( kId, ( int )target );
+	            return target;
+	        }
+	        ImU32 cur = ( ImU32 )s->GetInt( kId, ( int )target );
+	        if ( cur == target )
+	            return target;
+	        const float dt = ImGui::GetIO().DeltaTime;
+	        const float t  = ( seconds <= 0.f ) ? 1.f : 1.f - expf( -dt / seconds );
+	        cur            = LerpColorU32( cur, target, t );
+	        s->SetInt( kId, ( int )cur );
+	        return cur;
+	    }
+
+	    static float AnimateFloat( ImGuiID id, float target, float seconds = 0.20f, int channel = 0 )
+	    {
+	        bool continuous;
+	        ImGuiStorage * s;
+	        const ImGuiID kId = AnimStateKey( id, channel, continuous, s );
+	        if ( !continuous )
+	        {
+	            s->SetFloat( kId, target );
+	            return target;
+	        }
+	        float cur = s->GetFloat( kId, target );
+	        if ( cur == target )
+	            return target;
+	        const float dt = ImGui::GetIO().DeltaTime;
+	        const float tt = ( seconds <= 0.f ) ? 1.f : 1.f - expf( -dt / seconds );
+	        cur            = cur + ( target - cur ) * tt;
+	        s->SetFloat( kId, cur );
+	        return cur;
+	    }
+
+	    static void RenderChevronLerp( ImDrawList * dl, float cx, float cy, float L, float t, ImU32 col, float th, bool point_up_at_zero = false )
+	    {
+	        const float s = point_up_at_zero ? -1.f : 1.f;
+	        const ImVec2 a( cx - L, cy + s * ( -L * 0.5f + t * L ) );
+	        const ImVec2 b( cx, cy + s * ( L * 0.5f - t * L ) );
+	        const ImVec2 c( cx + L, cy + s * ( -L * 0.5f + t * L ) );
+	        dl->AddLine( a, b, col, th );
+	        dl->AddLine( b, c, col, th );
+	    }
+
+	    static void RenderComboChevron( ImDrawList * dl, const ImRect & chev_bb, ImU32 col, ImGuiID anim_id, bool open )
+	    {
+	        const ImFluentStyle & style = ImFluent::GetStyle();
+	        const float L               = ImFluent::FluentDpx( style.ChevronGlyphSize );
+	        const float th              = ImFluent::FluentDpx( style.StrokeMedium );
+	        const float t               = AnimateFloat( anim_id, open ? 1.f : 0.f, 0.20f );
+	        const float cx              = ( chev_bb.Min.x + chev_bb.Max.x ) * 0.5f;
+	        const float cy              = ( chev_bb.Min.y + chev_bb.Max.y ) * 0.5f;
+	        RenderChevronLerp( dl, cx, cy, L, t, col, th );
+	    }
+
+	    static bool IsItemFocused( ImGuiID id )
+	    {
+	        ImGuiContext & g = *ImGui::GetCurrentContext();
+	        return g.NavId == id && g.NavCursorVisible;
+	    }
+
+	    static void RenderNavFocusRing( const ImRect & bb, float rounding )
+	    {
+	        const ImFluentStyle & style = ImFluent::GetStyle();
+	        const float outer           = FluentDpx( style.FocusStrokeThicknessOuter );
+	        const float inner           = FluentDpx( style.FocusStrokeThicknessInner );
+	        const float pad             = outer;
+
+	        ImDrawList * dl = ImGui::GetForegroundDrawList();
+
+	        dl->AddRect( bb.Min, bb.Max, ImFluent::GetColorU32( ImFluentCol_FocusStrokeInner ), rounding, 0, inner );
+
+	        dl->AddRect( ImVec2( bb.Min.x - pad, bb.Min.y - pad ), ImVec2( bb.Max.x + pad, bb.Max.y + pad ), ImFluent::GetColorU32( ImFluentCol_FocusStrokeOuter ), rounding + pad, 0, outer );
+	    }
+
+	    static void RenderComboFocus(ImGuiID id, const ImRect& bounds, float radius)
+	    {
+	        if (IsItemFocused(id)) RenderNavFocusRing(bounds, radius);
+	    }
+
+	}
+
+	bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags )
+	{
+	    ControlFontScope font;
+	    using namespace ImFluent;
+	    ImGuiWindow * w = ImGui::GetCurrentWindow();
+	    if ( w->SkipItems )
+	    {
+	        return false;
+	    }
+
+	    IM_ASSERT( ( flags & ( ImGuiComboFlags_NoArrowButton | ImGuiComboFlags_NoPreview ) ) != ( ImGuiComboFlags_NoArrowButton | ImGuiComboFlags_NoPreview ) );
+
+	    const ImFluentStyle & style = ImFluent::GetStyle();
+	    const float h               = FluentDpx( style.ControlHeight );
+	    const float r               = FluentDpx( style.ControlCornerRadius );
+	    const float chev_w          = ( flags & ImGuiComboFlags_NoArrowButton ) ? 0.f : h;
+	    const char * preview        = ( current_item && *current_item >= 0 && *current_item < items_count ) ? items[ *current_item ] : "";
+
+	    float full_w;
+	    if ( flags & ImGuiComboFlags_NoPreview )
+	        full_w = chev_w;
+	    else if ( flags & ImGuiComboFlags_WidthFitPreview )
+	        full_w = chev_w + ( preview && *preview ? ImGui::CalcTextSize( preview ).x : 0.f ) + FluentDpx( style.SpacingLarge ) * 2.f;
+	    else
+	        full_w = ImGui::CalcItemWidth();
+
+	    const ImVec2 pos = w->DC.CursorPos;
+	    const ImRect bb( pos, ImVec2( pos.x + full_w, pos.y + h ) );
+
+	    const ImGuiID id = w->GetID( label );
+	    ImGui::ItemSize( bb );
+	    if ( !ImGui::ItemAdd( bb, id ) )
+	    {
+	        return false;
+	    }
+
+	    ImGuiContext & gctx = *ImGui::GetCurrentContext();
+	    bool hovered = false, held = false;
+	    ImGui::ButtonBehavior( bb, id, &hovered, &held );
+	    const bool disabled = ( GImGui->LastItemData.ItemFlags & ImGuiItemFlags_Disabled );
+
+	    const ImGuiID popup_id = ImHashStr( "##fl_cb_popup", 0, id );
+	    const bool popup_open = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
+
+	    const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsMouseHoveringRect( bb.Min, bb.Max, false );
+	    const bool nav_activate = ( gctx.NavActivateId == id );
+	    const bool toggle       = ( click_in_bb || nav_activate ) && !disabled;
+
+	    if ( toggle )
+	    {
+	        if ( popup_open )
+	        {
+	            for ( int index = 0; index < gctx.OpenPopupStack.Size; ++index )
+	                if ( gctx.OpenPopupStack[index].PopupId == popup_id ) { ImGui::ClosePopupToLevel(index, true); break; }
+	        }
+	        else
+	        {
+	            ImGui::OpenPopupEx( popup_id, ImGuiPopupFlags_None );
+	        }
+	    }
+
+	    ImDrawList * dl = w->DrawList;
+	    ImU32 fill_target;
+	    if ( disabled )
+	        fill_target = ImFluent::GetColorU32( ImFluentCol_ControlFillDisabled );
+	    else if ( held || popup_open )
+	        fill_target = ImFluent::GetColorU32( ImFluentCol_ControlFillTertiary );
+	    else if ( hovered )
+	        fill_target = ImFluent::GetColorU32( ImFluentCol_ControlFillSecondary );
+	    else
+	        fill_target = ImFluent::GetColorU32( ImFluentCol_ControlFillDefault );
+	    const ImU32 fill = AnimateColorU32( id, fill_target );
+	    dl->AddRectFilled( bb.Min, bb.Max, fill, r );
+
+	    const ImU32 stroke     = ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault );
+	    const ImU32 stroke_bot = ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom );
+	    if ( !held && !popup_open && !disabled )
+	        RenderElevationBorder( dl, bb, r, stroke, stroke_bot, 1.f );
+	    else
+	        dl->AddRect( bb.Min, bb.Max, stroke, r, 0, 1.f );
+
+	    const ImU32 text_col = ImFluent::GetColorU32( disabled ? ImFluentCol_TextDisabled : ImFluentCol_TextPrimary );
+	    if ( !( flags & ImGuiComboFlags_NoPreview ) && preview && *preview )
+	    {
+	        const float pad_x = FluentDpx( style.SpacingLarge );
+	        ImFluentStackGuard g;
+	        g.PushStyleColor( ImGuiCol_Text, text_col );
+	        const ImVec2 tmin( bb.Min.x + pad_x, bb.Min.y );
+	        const ImVec2 tmax( bb.Max.x - chev_w, bb.Max.y );
+	        const ImRect text_clip( tmin, tmax );
+	        ImGui::RenderTextClipped( tmin, tmax, preview, ImGui::FindRenderedTextEnd( preview ), NULL, ImVec2( 0.f, 0.5f ), &text_clip );
+	    }
+
+	    if ( chev_w > 0.f )
+	    {
+	        const ImRect chev_bb( ImVec2( bb.Max.x - chev_w, bb.Min.y ), bb.Max );
+	        const ImU32 chev_col = ImFluent::GetColorU32( disabled ? ImFluentCol_TextDisabled : ImFluentCol_TextSecondary );
+	        RenderComboChevron( dl, chev_bb, chev_col, id ^ 0xCAFEu, popup_open );
+	    }
+
+	    RenderComboFocus( id, bb, r );
+
+	    bool changed              = false;
+	    const int popup_max_items = ResolveComboPopupMaxItems( flags );
+	    const float popup_max_h   = CalcComboPopupMaxHeight( popup_max_items, h );
+	    ImGui::SetNextWindowPos( ImVec2( bb.Min.x, bb.Max.y + FluentDpx( style.SpacingXSmall ) ) );
+	    ImGui::SetNextWindowSizeConstraints( ImVec2( bb.GetWidth(), 0.f ), ImVec2( bb.GetWidth(), popup_max_h ) );
+
+	    PushOverlayWindowStyle( style.SpacingXSmall, style.SpacingXSmall );
+	    const ImGuiWindowFlags cb_wflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+	    ImGuiWindow* popup_window = nullptr;
+	    for ( const auto& popup : GImGui->OpenPopupStack ) if ( popup.PopupId == popup_id ) popup_window = popup.Window;
+	    {
+	    ScrollbarStyleScope scrollbar(popup_window);
+	    if ( ImGui::BeginPopupEx( popup_id, cb_wflags ) )
+	    {
+	        scrollbar.Finish(ImGui::GetCurrentWindow());
+	        const float row_advance = h + ImGui::GetStyle().ItemSpacing.y;
+	        ImGuiListClipper clipper;
+	        clipper.Begin( items_count, row_advance );
+	        if ( current_item && *current_item >= 0 && *current_item < items_count )
+	            clipper.IncludeItemByIndex( *current_item );
+	        while ( clipper.Step() )
+	        {
+	            for ( int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i )
+	            {
+	                if ( !items[ i ] )
+	                    continue;
+	                ImGui::PushID( i );
+	                const bool sel = ( current_item && *current_item == i );
+	                if ( ImFluent::Selectable( items[ i ], sel, NULL, h ) )
+	                {
+	                    if ( current_item )
+	                        *current_item = i;
+	                    changed = true;
+	                    ImGui::CloseCurrentPopup();
+	                }
+	                AllowContentDrag();
+	                ImGui::PopID();
+	            }
+	        }
+	        ImGui::EndPopup();
+	    }
+	    }
+	    PopOverlayWindowStyle();
+
+	    return changed;
 	}
 
 	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items)
@@ -554,7 +1063,10 @@ namespace Inkeys::UI::Setting::Design
 
 	bool BeginCard(const char* id, const ImVec2& size, ImFluentCardStyle style)
 	{
-		return ImFluent::BeginCard(id, size, style);
+		ScrollbarStyleScope scrollbar(ChildWindow(id));
+		const bool visible = ImFluent::BeginCard(id, size, style);
+		scrollbar.Finish(ImGui::GetCurrentWindow());
+		return visible;
 	}
 
 	void EndCard() { ImFluent::EndCard(); }
@@ -565,7 +1077,13 @@ namespace Inkeys::UI::Setting::Design
 		bool expanded = ImGui::GetStateStorage()->GetBool(ImGui::GetID("##open"));
 		const std::string label = std::string(title) + "###details";
 		ControlFontScope font;
-		if (ImFluent::BeginExpander(label.c_str(), &expanded))
+		const bool visible = [&] {
+			ScrollbarStyleScope scrollbar(ChildWindow(label.c_str()));
+			const bool open = ImFluent::BeginExpander(label.c_str(), &expanded);
+			if (open) scrollbar.Finish(ImGui::GetCurrentWindow());
+			return open;
+		}();
+		if (visible)
 		{
 			content();
 			ImFluent::EndExpander();

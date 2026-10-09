@@ -35,3 +35,12 @@
 ## 回退边界
 
 只回退本子任务新增的中段条/宽度调整、旧helper部署和对应测试/文档差异；不触及此前已提交的Debug、版本色或汉堡反馈。出现环境问题保留源码与诊断证据，不升级依赖或更换构建系统。
+
+## 后续执行（2026-10-09）
+
+1. 已完成用户授权的上一轮 commit b8beea0b，继续沿用活动子任务。
+2. trellis-research 只读核对主页遗漏、全设置实际竖直条宿主、过大间距和显隐动画部署依据，主会话将结果注入。
+3. trellis-implement 负责必要设置内部源文件及现有真实 headless 回归；按最新授权优化拖动部署/算法，保持原编码/BOM/CRLF并添加简短中文边界注释。最小实现完整要求，不添加 vendor/message 适配。
+4. 独立 trellis-check 核对生产 RenderHome 的真实输入、全部竖直条覆盖、实际图形与点击间距、显隐连续帧宽度/alpha、反向与动画开关，并修复必要问题。
+5. 主会话动态定位原生 ARM64 MSBuild，同 PowerShell PATH workaround；完整 solution Debug|ARM64 与 --no-window 各1800秒deadline、准确退出码/输出；国际化、checkout编码/换行、tracked及新增文档 diff检查。
+6. 更新相关规范与实施/审查结果，记录第一笔commit及新增验证，按用户授权再次commit；签名失败停止，不绕过，不push。父任务继续in_progress，不将自动回归表述为真实触屏/视觉验收。

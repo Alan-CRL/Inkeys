@@ -2096,6 +2096,7 @@ SettingSessionCoroutine RunSettingSession()
 			ImGui_ImplDX11_NewFrame();
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
+			Design::BeginDragScrolling(navigationState);
 			// 所有页面默认使用 ImFluent Body 字体，局部字号只通过 scoped PushFont 切换。
 			ImFluent::PushFluentStyle();
 			EnableAutoUpdate = GetEnableAutoUpdate();
@@ -2286,7 +2287,7 @@ SettingSessionCoroutine RunSettingSession()
 				// 插件详情及通用子页各自保存滚动/展开状态，标签翻译不参与窗口标识。
 				ImGui::PushID(settingTab == settingTabEnum::tab4 ? settingPlugInTab
 					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section) : 0);
-				ImGui::BeginChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
+				Design::BeginScrollChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
 					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None);
 				ImGuiWindow* contentWindow = ImGui::GetCurrentWindow();
@@ -2300,7 +2301,7 @@ SettingSessionCoroutine RunSettingSession()
 					Widgets::Dip(Inkeys::UI::Setting::Design::PageMaximumWidth));
 				const float pageOffset = max(0.0F, (availablePageWidth - pageWidth) * 0.5F);
 				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + pageOffset);
-				(void)ImGui::BeginChild("##setting-page-content", { pageWidth, 0.0F },
+				(void)Design::BeginScrollChild("##setting-page-content", { pageWidth, 0.0F },
 					ImGuiChildFlags_AutoResizeY);
 
 				// 页面只提交内容与业务事件，尺寸及文本对齐由 Design 层负责。

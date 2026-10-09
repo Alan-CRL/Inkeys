@@ -35,3 +35,22 @@
 真实ImGui CPU连续帧/DrawData验证统一条的实际绘制、显隐、命中间距、末项可达、3种pane模式、多倍率与快速折叠/resize，确保轨道/间距点击不路由。拖动验证mouse/touch MouseSource、上下边界、反向、释放、离开、滚动条与滚轮兼容、真实控件ActiveId行为及单宿主/不双滚。正文/导航/flyout/Combo分别覆盖并核对context字段恢复；保留所有既有导航/蓝条/Debug/EDID/汉堡回归。
 
 实际完整ARM64 Solution、--no-window和国际化/编码/差异检查后trellis-check独立审查。GUI与真实触摸呈现单独留待人工验收，不自动commit/push。实现文件格式和中文边界注释遵守根AGENTS。
+
+## 后续设计约束（2026-10-09）
+
+第一笔实现已提交 b8beea0b。先通过生产 RenderHome、内容容器、实际滚动宿主与原 helper 调用环境定位主页遗漏；用户追加性能优化授权：允许按当前 ImGui 1.92.7 接口优化旧 helper 及部署，优先减少额外帧延迟和热路径开销，保留控件输入与单宿主规则；不引入新的 Win32/触摸消息或默认惯性。
+
+侧栏间距以真实窗口 padding、ScrollbarSizes、WorkRect/ContentRegionRect、原按钮绘制与命中边界测量为准，修正重复空白。不能只改测试预期或裁切背景。
+
+为设置滚动宿主建立必要的本 session/context 动画状态，复用已有 tween、动画开关及速度；显隐判定继续由真实 ImGui 溢出结果决定，不复制页面高度公式。内容可用宽与实际按钮范围同源过渡，条透明度独立保留退出阶段。处理出现首帧、消失尾帧、反向、缩放、浮层关闭、session重建，以及动画关闭即时归位。保持 native 滚动条的实际滚动/命中行为，vendor只读。
+
+具体 API/调用时机和实测原因记录 research/followup-research.md，实施代理据此选择最小可行部署并记录。产品范围仍限设置内部及现有无窗口测试，不重构其他页面。
+
+### 已收敛的实施部署
+
+- 共享本地滚动 Begin 包装在原生 Begin 前按实际窗口 Storage 的显隐进度设置 ScrollbarSize 与三态thumb alpha，保留原生溢出测量/轨道分页/thumb输入及几何。出现阶段内容与命中使用同一native宽度；消失阶段只保留渐退宽度和无输入装饰，内容必须在真实items提交前使用该宽度。
+- 子窗口装饰可能合并到parent DrawList，因此退出thumb不得每帧全页顶点扫描；必要缓存只含稳定几何，按当前theme/DPI重绘，实际DrawData验证与native相符。
+- Combo/Expander若现有vendor调用把Begin与items封装在一起，仅为在真实item提交前接入共享动画，采用必要的设置内部局部提交包装，保留Fluent外观/稳定ID/键盘/点击/滚动语义，不修改vendor或复制无关控件实现。
+- 已捕获拖动在NewFrame后、首次Begin前使用稳定host/overlay身份与上一帧有效态投递ScrollTarget；正常Begin同帧更新Scroll/cursor/clip/items/蓝条，不在Render后平移顶点。零输入不遍历窗口；首次点击在控件提交后判断归属。
+- 主页大面积链接Card和长列表Selectable通过稳定item/宿主ID登记允许内容拖动，使用ImGui已有MouseDragThreshold仲裁，轻点保留动作，超过阈值移交唯一滚动capture并取消该次点击；Slider/InputText及native scrollbar保持原控制权。
+- 低速累计使用实际物理位移一次，验证整数取整、小位移、外部wheel/target与边界反向，不向内容滚动增加宽度动画之外的插值或惯性。性能报告将当帧反馈与CPU采样分开，不能将约60Hz推断当成实机端到端测量。

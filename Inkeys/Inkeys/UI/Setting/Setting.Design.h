@@ -181,7 +181,9 @@ namespace Inkeys::UI::Setting::Design
 		}
 	};
 
-	// 全部设置 UI 提交后调用一次；旧算法仅交给最近的实际可滚窗口。
+	// 帧开始投递已抓取位移，控件提交后只仲裁新抓取；不引入额外一帧延迟。
+	void BeginDragScrolling(const NavigationState& state);
+	void AllowContentDrag();
 	void ApplyDragScrolling(const NavigationState& state);
 
 	// 产品与无窗口测试共用推进入口；渲染线程每帧调用一次，不跨线程保存 UI 指针。

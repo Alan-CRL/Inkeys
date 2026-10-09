@@ -206,6 +206,7 @@ namespace Inkeys::UI::Setting::Design
 			ImGui::PushID(static_cast<int>(index));
 			ImGui::SetCursorScreenPos(origin);
 			if (Button("##feature", { featureWidth, featureHeight })) action = feature.action;
+			AllowContentDrag();
 			draw->AddRectFilled({ origin.x + 1.0F, origin.y + 1.0F }, { origin.x + featureWidth - 1.0F, origin.y + Pixels(84.0F) }, feature.tint, Pixels(4.0F));
 			ImFluent::DrawIcon(feature.icon, origin, { origin.x + featureWidth, origin.y + Pixels(84.0F) }, 36.0F, feature.ink);
 			TextAt(IA(feature.title).c_str(), { origin.x + Pixels(16.0F), origin.y + Pixels(100.0F) }, featureWidth - Pixels(48.0F), ImFluentTextStyle_BodyStrong);
@@ -220,7 +221,7 @@ namespace Inkeys::UI::Setting::Design
 		const ImVec2 bottomOrigin(featureOrigin.x, ImGui::GetCursorScreenPos().y + Pixels(24.0F));
 		const float commonWidth = bottomColumns ? (width - Pixels(20.0F)) * (1.2F / 2.2F) : width;
 		ImGui::SetCursorScreenPos(bottomOrigin);
-		ImGui::BeginChild("##home-common", { commonWidth, 0.0F }, ImGuiChildFlags_AutoResizeY);
+		BeginScrollChild("##home-common", { commonWidth, 0.0F }, ImGuiChildFlags_AutoResizeY);
 		Text(IA(I18nKey.SettingsUI.Design.CommonSettings).c_str(), ImFluentTextStyle_BodyStrong);
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(4.0F));
 		auto entry = [&](const char* id, const char* title, const char* description, const char* icon, HomeAction target)
@@ -233,6 +234,7 @@ namespace Inkeys::UI::Setting::Design
 			const float height = (std::max)(Pixels(60.0F), titleHeight + descriptionHeight + Pixels(24.0F));
 			ImGui::PushID(id);
 			if (Button("##entry", { entryWidth, height })) action = target;
+			AllowContentDrag();
 			ImFluent::DrawIcon(icon, { origin.x + Pixels(12.0F), origin.y }, { origin.x + Pixels(40.0F), origin.y + height }, 20.0F, TextPrimary);
 			const float textY = origin.y + (height - titleHeight - descriptionHeight) * 0.5F;
 			TextAt(title, { origin.x + Pixels(52.0F), textY }, copyWidth);
@@ -249,7 +251,7 @@ namespace Inkeys::UI::Setting::Design
 		ImGui::SetCursorScreenPos({ bottomColumns ? bottomOrigin.x + commonWidth + Pixels(20.0F) : bottomOrigin.x,
 			bottomColumns ? bottomOrigin.y : commonBottom + Pixels(24.0F) });
 		const float authorWidth = bottomColumns ? width - commonWidth - Pixels(20.0F) : width;
-		ImGui::BeginChild("##home-author-section", { authorWidth, 0.0F }, ImGuiChildFlags_AutoResizeY);
+		BeginScrollChild("##home-author-section", { authorWidth, 0.0F }, ImGuiChildFlags_AutoResizeY);
 		Text(IA(I18nKey.SettingsUI.Design.Improve).c_str(), ImFluentTextStyle_BodyStrong);
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(4.0F));
 		const bool authorVisible = BeginCard("##author");

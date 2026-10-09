@@ -168,6 +168,7 @@ namespace Inkeys::UI::Setting::Design
 			ImFluent::PushStyleColor(ImFluentCol_AccentFillDefault, IM_COL32(0, 0, 0, 0));
 			const bool pressed = ImFluent::NavItemEx(id, label, isSelected, glyph, compact);
 			ImFluent::PopStyleColor();
+			AllowContentDrag();
 			return pressed;
 		};
 		auto renderEntry = [&](const Entry& entry) {
@@ -232,17 +233,12 @@ namespace Inkeys::UI::Setting::Design
 		if (sections.middle.Height() > 0.0F)
 		{
 			setPosition(sections.middle);
-			if (ImGui::BeginChild("##settings-nav-list", { 0.0F, Pixels(sections.middle.Height()) },
+			if (BeginScrollChild("##settings-nav-list", { 0.0F, Pixels(sections.middle.Height()) },
 				childFlags, ImGuiWindowFlags_None))
 			{
 				parentWindow = ImGui::GetCurrentWindow();
 				state.navigationScrollWindowId = parentWindow->ID;
-				// ImGui 已预留轨道宽；仅追加内容间距，让背景、命中与子列表一起避让。
-				if (parentWindow->ScrollbarY)
-				{
-					parentWindow->WorkRect.Max.x -= Pixels(RowGap);
-					parentWindow->ContentRegionRect.Max.x -= Pixels(RowGap);
-				}
+				// native WindowPadding 已提供统一 4 DIP 间距，不再额外扣除一次。
 				ImGui::PushID(static_cast<int>(PageId::General));
 				const ImVec2 origin = ImGui::GetCursorScreenPos();
 				const float right = parentWindow->WorkRect.Max.x;
@@ -511,7 +507,7 @@ namespace Inkeys::UI::Setting::Design
 			ImGui::PushStyleColor(ImGuiCol_Border, Stroke);
 			ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, IM_COL32(0, 0, 0, 0));
 			const auto popupFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-			if (ImGui::BeginPopupModal(popupId, nullptr, popupFlags))
+			if (BeginScrollPopupModal(popupId, popupFlags))
 			{
 				auto* popupWindow = ImGui::GetCurrentWindow();
 				state.flyoutWindowId = popupWindow->ID;
@@ -536,6 +532,7 @@ namespace Inkeys::UI::Setting::Design
 					const bool isSelected = selected.page == PageId::General && selected.section == static_cast<GeneralSection>(index);
 					if (ImFluent::NavItemEx("##general-child", IA(childKeys[index]).c_str(), isSelected, childGlyphs[index], false))
 						navigate({ PageId::General, static_cast<GeneralSection>(index) });
+					AllowContentDrag();
 					state.flyoutChildBounds[index] = ItemBounds();
 					if (isSelected) ImGui::SetItemDefaultFocus();
 					ImGui::PopID();

@@ -1612,3 +1612,38 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 独立审查记录与规范已同步；真实桌面触摸/观感待人工验收，不GUI/commit/push，不自动归档。
+
+
+## Session 57: 设置滚动条动画与内容拖动同帧响应
+<!-- trellis-session: v=2 fp=92ef85d0d624629e -->
+
+**Date**: 2026-10-09
+**Task**: 设置滚动条动画与内容拖动同帧响应
+**Branch**: `fluent`
+
+### Summary
+
+先完成用户授权的上一轮基线提交b8beea0b；本轮四项增量已验证，纳入同批授权commit，不push/GUI，父子继续in_progress。
+
+### Main Changes
+
+- 真实Home及全部实际竖直宿主支持按住内容拖动；移除重复4DIP gap，统一原生条width/alpha显隐；首次Begin前提交持续位移，真实DrawData减少一绘制帧。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b8beea0b` | feat(settings): add navigation scrollbar and reuse content drag scrolling |
+
+### Testing
+
+- [OK] 完整Solution Debug ARM64 exit0/65.726秒，完整--no-window exit0/125.807秒/stderr空；浅深/三倍率真实Home/Nav/Combo/Card/Details连续帧及legacy对照通过；i18n370/370、格式和独立审查通过。
+- [OK] 整页CPU100 idle及100 held样本/路径/倍率，无一致CPU下降结论；原生1.875倍率0.5px真溢出保留，独立empty fixture严格zero endpoint通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 真实触屏、鼠标跟手感及DX11视觉待人工验收，父子任务不自动归档；本轮授权提交包含代码、规范与记录，不push。
