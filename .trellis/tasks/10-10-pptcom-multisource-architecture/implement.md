@@ -1,10 +1,10 @@
 # 后续实施分期与验证计划
 
-> 2026-10-10用户已批准实施，当前仅授权P0。P0子任务为`10-10-pptcom-p0-baseline`；P1-P5保留为后续路线，不在本轮执行。
+> 2026-10-10用户已批准实施，P0已完成；现授权P1及必要阶段commit。P0子任务为`10-10-pptcom-p0-baseline`；P1子任务已完成纯逻辑与fake验证，P2-P5保留为后续路线，不在本轮执行。
 
 ## 分期与进入条件
 
-总体范围已确认并创建P0子任务；后续独立交付按下表显式依赖逐阶段拆分，不靠子任务树顺序表示。本轮仅执行P0。
+总体范围已确认并创建P0子任务；后续独立交付按下表显式依赖逐阶段拆分，不靠子任务树顺序表示。P0/P1已完成，本轮止于P1。
 
 | 阶段 | 交付与依赖 | 验收/回滚锚点 |
 | --- | --- | --- |
@@ -39,7 +39,7 @@
 | 运行基线 | 类库/helper在Win7 SP1/.NET4运行验证，具体目标架构分别记录；ARM64在现有Windows11设备验证，不把Win7测试要求与ARM64组合混淆 |
 | 延迟/资源 | 既有基线 vs 迁移后：事件→源纯值→仲裁→target→Present→UI ack，退出完成、句柄/引用趋势；单个采样不宣称P95或所有版本性能 |
 
-原规划轮仅检查文档、链接与状态；当前用户批准的P0增加隔离无窗口探针与既有managed测试。后续真实Office/WPS或窗口测试须用户明确授权GUI；默认只运行无窗口验证，未执行项标NOT VERIFIED，不能自动启动产品/浏览器。
+原规划轮仅检查文档、链接与状态；P0完成了隔离无窗口探针与既有managed测试；当前P1增加纯值服务、fake合同和headless测试。后续真实Office/WPS或窗口测试须用户明确授权GUI；默认只运行无窗口验证，未执行项标NOT VERIFIED，不能自动启动产品/浏览器。
 
 ## 后续命令与构建纪律
 
@@ -65,21 +65,29 @@ $env:MSBUILDDISABLENODEREUSE = '1'
 
 新增protocol/arbitration测试应并入适合的既有测试入口；依阶段选足够最小范围，不为纯文档运行工程构建。构建失败首先区分代码与SDK/依赖/PATH/runner环境；不改代码绕过环境错误。所有已有文件保持原BOM/编码/CRLF；完成核查git diff。不自动commit/push。
 
-## 本轮完成与后续门禁
+## 规划与P0完成记录
 
 - [x] 用户明确授权创建planning任务。
 - [x] 已核查现有COM、native、token、测试和官方ZMQ/runtime约束。
 - [x] PRD、design、implement和research均形成草案；context manifests收录真实spec/research。
 - [x] 用户确认活动放映优先，补充普通主程序启动管理员helper及Win7 SP1/net40通信约束。
 - [x] 已做无损PRD收敛，消除阻塞产品问题，更新架构/验收/研究并呈现最终规划。
-- [x] 用户随后明确批准最终规划进入实施，本轮只执行P0。
-- [x] 已创建、激活并完成P0子任务，经全范围check后归档；无生产逻辑改造，无commit/push。
+- [x] 用户随后明确批准最终规划进入实施，当时只执行P0。
+- [x] 已创建、激活并完成P0子任务，经全范围check后归档；当时无生产逻辑改造、无commit/push；随后本轮开始前已提交P0。
 
 ## P0 已完成（2026-10-10）
 
-- [阶段验证记录](../archive/2026-10/10-10-pptcom-p0-baseline/validation.md)与[最终复核](../archive/2026-10/10-10-pptcom-p0-baseline/check-report.md)均通过P0交付范围；子任务已归档，整体P1-P5未实施。
+- [阶段验证记录](../archive/2026-10/10-10-pptcom-p0-baseline/validation.md)与[最终复核](../archive/2026-10/10-10-pptcom-p0-baseline/check-report.md)均通过P0交付范围；P0子任务已归档；P1本轮已完成，P2-P5未实施。
 - 首发helper通道选定本机双向命名管道，见[依赖决策](../archive/2026-10/10-10-pptcom-p0-baseline/research/transport-decision.md)。内置共享状态/类库接口设计保持。
 - 原26个生产源码/随附资源散列一致，PptCOM.Tests实际重建与运行exit0；最终net40引用编译与独立探针11/11通过，历史3轮10/10另存。
 - 真实Win7/原版.NET4、双向跨权限/不同管理员凭据、生产ACL及remote/peer验证、损坏COM/Office实际释放、端到端延迟和最终防抖参数仍为后续实机门禁，未把本机通过当作它们已通过。
 - P0补充了现有owner/直接命令/事件COM路径、ROT单赢家和新session自动Focus证据；后续旁路/接管须保留原线程/释放并避免来源切换重复focus。
-- 下一阶段为P1通用合同与仲裁纯逻辑。本轮未创建/激活P1，按后续用户指示继续。
+- 下一阶段为P1通用合同与仲裁纯逻辑。P0归档时未创建/激活P1；随后已获用户指示进入P1。
+
+## P1 源码与验收已完成，待签名收尾（2026-10-10）
+
+用户明确指示开始下一步并确认创建P1子任务；按既有P1合同执行，P2-P5不在本轮。P0签名commit为6d4931b7。新增纯值Business服务与headless，未接管生产链路。
+
+[阶段验证记录](../10-10-pptcom-p1-contract-arbitration/validation.md)和[最终独立复核](../10-10-pptcom-p1-contract-arbitration/check-report.md)：修后完整InkeysRepo.sln Debug ARM64及fresh headless均exit0，P1为138 checks/0 failures。COM基线25项完全一致，唯一预期变化为native工程3行文件登记；dynamic/ROT/旧线程及释放、ABI、随附DLL/TLB未改。活动优先、弱证据回滞、最新确认与单路命令均为纯逻辑交付；Win7/双向权限/损坏COM/实际Draw3与时延门禁仍待后续。下一阶段为P2，本轮未启动。
+
+P1收尾状态：源码与138项fake验收已通过；本轮SSH签名提交因1Password错误退出1，P1尚未提交或归档，待恢复签名后收尾，P2未启动。

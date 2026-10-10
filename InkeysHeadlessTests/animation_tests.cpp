@@ -47,6 +47,7 @@ int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
 int RunPptUiTests();
 int RunPptSessionTests();
+int RunPresentationLinkTests();
 int RunPageControlTests();
 int RunWhiteboardUiTests();
 int RunFreezeStateTests();
@@ -1681,6 +1682,7 @@ int main(int argc, char** argv)
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
 	failureCount += RunPptSessionTests();
+	failureCount += RunPresentationLinkTests();
 	failureCount += RunPageControlTests();
 	failureCount += RunWhiteboardUiTests();
 	failureCount += RunFreezeStateTests();

@@ -2,7 +2,7 @@
   "id": "pptcom-multisource-architecture",
   "name": "pptcom-multisource-architecture",
   "title": "PptCOM 独立进程与多来源联动抽象层规划",
-  "description": "保留dynamic COM兼容与释放，设计双向权限helper、Win7 SP1/.NET4兼容IPC与活动优先仲裁；用户已批准本轮仅执行P0兼容基线与通信选型。",
+  "description": "保留dynamic COM兼容与释放，规划双向权限helper及活动优先仲裁；P0已完成，P1纯值合同/仲裁及验收通过，待签名提交与归档。",
   "status": "planning",
   "dev_type": null,
   "scope": null,
@@ -19,19 +19,26 @@
   "pr_url": null,
   "subtasks": [],
   "children": [
-    "10-10-pptcom-p0-baseline"
+    "10-10-pptcom-p0-baseline",
+    "10-10-pptcom-p1-contract-arbitration"
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-10：本轮批准的P0已完成本机基线/探针/选型与全范围复核并归档；首发helper通道为命名管道。整体P1-P5仍未实施，下一阶段P1需后续明确指示；Win7/跨权限/真实Office门禁未验。",
+  "notes": "2026-10-10：P0签名提交6d4931b7；本轮授权P1已完成纯值合同、仲裁与fake验证，修后完整solution及138项P1检查通过。P2-P5未实施；Win7/跨权限/真实Office未验。 P1签名commit因1Password错误退出1；暂存成果保留，尚未提交/归档/journal，P1收尾待恢复签名后继续。",
   "meta": {
     "approvedImplementationPhases": [
-      "P0"
+      "P0",
+      "P1"
     ],
     "completedPhases": [
       "P0"
     ],
     "nextPhase": "P1",
-    "helperTransport": "windows-named-pipe"
+    "helperTransport": "windows-named-pipe",
+    "verifiedPhases": [
+      "P0",
+      "P1"
+    ],
+    "pendingFinalizationPhase": "P1"
   }
 }

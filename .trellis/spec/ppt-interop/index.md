@@ -16,6 +16,8 @@
 
 详细 ABI 见 [com-contract.md](com-contract.md)；当前生产会话、位置保存、页码/输入门禁和主栏确认见 [native-session-ui3.md](native-session-ui3.md)。
 
+P1新增标准库纯值目录、仲裁与命令合同见 [multisource-service.md](multisource-service.md)。当前尚未接入生产COM/Draw3消费者，后续adapter需保持旧合同并应用新的epoch/route/target校验。
+
 ## 当前端到端数据流
 
 ~~~text

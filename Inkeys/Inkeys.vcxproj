@@ -494,6 +494,8 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
     <ClInclude Include="Inkeys\Business\PptSession.h" />
+    <ClInclude Include="Inkeys\Business\PresentationLinkContracts.h" />
+    <ClInclude Include="Inkeys\Business\PresentationLinkService.h" />
     <ClInclude Include="PptSettingsPersistence.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
@@ -1110,6 +1112,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />
     <ClCompile Include="Inkeys\Business\PptSession.cpp" />
+    <ClCompile Include="Inkeys\Business\PresentationLinkService.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp" />
   </ItemGroup>
   <ItemGroup>

@@ -4,3 +4,4 @@
 {"file": ".trellis/tasks/10-10-pptcom-multisource-architecture/research/current-contracts.md", "reason": "本任务代码证据、单赢家局限、token启动及ZMQ/net40约束"}
 {"file": ".trellis/tasks/archive/2026-10/10-10-pptcom-p0-baseline/research/com-baseline.md", "reason": "P0固定的真实线程/owner/Focus与释放和产物基线"}
 {"file": ".trellis/tasks/archive/2026-10/10-10-pptcom-p0-baseline/research/transport-decision.md", "reason": "P0首发命名管道选择与尚未通过的实机门禁"}
+{"file": ".trellis/spec/ppt-interop/multisource-service.md", "reason": "P1已定义的纯值API、仲裁/命令与验证边界"}
