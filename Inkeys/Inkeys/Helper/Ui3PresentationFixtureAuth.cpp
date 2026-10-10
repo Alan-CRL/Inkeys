@@ -2,9 +2,12 @@
 #define NOMINMAX
 #endif
 #include "Ui3PresentationFixtureAuth.h"
+#include <shellapi.h>
+#include <cwchar>
+
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 #include "ShutdownSupervisor.h"
 
-#include <shellapi.h>
 #include <objbase.h>
 #include <winioctl.h>
 
@@ -13,28 +16,39 @@
 #include <climits>
 #include <cstdio>
 #include <cstring>
-#include <cwchar>
 #include <iterator>
 #include <initializer_list>
 #include <limits>
 #include <utility>
 #include <vector>
+#endif
 
 #pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "Ole32.lib")
 
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 import Inkeys.UI.RenderPipeline;
+#endif
 
 namespace Inkeys::UI::Bar
 {
 	namespace
 	{
-		namespace Process = Inkeys::Shutdown::DiagnosticsProcess;
 		constexpr wchar_t kChildMode[] = L"--inkeys-internal-ui3-fixture-child-v1";
 		constexpr wchar_t kBenchmarkMode[] = L"--ui3-presentation-benchmark";
 		constexpr wchar_t kAuthTestMode[] = L"--ui3-fixture-auth-tests";
+		constexpr int kArgumentsRejected = 81;
+	}
+}
+
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+namespace Inkeys::UI::Bar
+{
+	namespace
+	{
+		namespace Process = Inkeys::Shutdown::DiagnosticsProcess;
 		constexpr DWORD kChildBudget = 300000, kHandshakeBudget = 3000, kCleanupBudget = 5000;
-		constexpr int kArgumentsRejected = 81, kNumberRejected = 82, kPacketRejected = 83;
+		constexpr int kNumberRejected = 82, kPacketRejected = 83;
 		constexpr int kIdentityRejected = 84, kAckRejected = 85, kFixtureFailed = 90;
 
 		struct Handle
@@ -790,6 +804,17 @@ namespace Inkeys::UI::Bar
 		}
 	}
 
+}
+#else
+namespace Inkeys::UI::Bar
+{
+	// 关闭 Harness 的构建没有可安装的授权能力。
+	bool IsAuthorizedUi3Fixture(const Ui3FixtureAuthorization&) noexcept { return false; }
+}
+#endif
+
+namespace Inkeys::UI::Bar
+{
 	namespace
 	{
 		bool ModeWord(const wchar_t* argument, const wchar_t* mode) noexcept
@@ -819,13 +844,14 @@ namespace Inkeys::UI::Bar
 			return rawMode;
 		}
 		// 内部word即使因错误引用被并入其它argv也拒绝；不能凭解析成功落入普通Main。
-		bool recognized = RawModeWord(fullCommandLine, kChildMode);
+		bool recognized = RawModeWord(fullCommandLine, kChildMode) || RawModeWord(fullCommandLine, kBenchmarkMode) || RawModeWord(fullCommandLine, kAuthTestMode);
 		for (int index = 0; index < argc; ++index)
 			if (ModeWord(argv[index], kChildMode) || ModeWord(argv[index], kBenchmarkMode) || ModeWord(argv[index], kAuthTestMode))
 				recognized = true;
 		if (recognized)
 		{
 			exitCode = kArgumentsRejected;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 			try
 			{
 				const wchar_t* mode = argc > 1 ? argv[1] : L"";
@@ -838,6 +864,7 @@ namespace Inkeys::UI::Bar
 				else if (wcscmp(mode, kAuthTestMode) == 0 && argc == 2) exitCode = RunAuthTests();
 			}
 			catch (...) { exitCode = kFixtureFailed; }
+#endif
 		}
 		LocalFree(argv);
 		return recognized; // 任一位置出现内部word却形状不符也early拒绝，不掉入普通GUI。

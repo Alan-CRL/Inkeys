@@ -78,7 +78,7 @@ JSON schema version 1 恰含 `schemaVersion/provider/status/fullName/presentatio
 
 - managed fake COM ledger 覆盖 PowerPoint/WPS 值差异、重复扫描、每个异常点、busy HRESULT、缺失 SlideID、重复/非法 topology、borrowed root 零释放、temporary 恰好一次且子先父后。
 - native parser/身份测试覆盖 Unicode 路径、provider-independent stable identity、含 binding revision 的 process-local identity、payload/string/page 上限、重复 ID、同 binding stale/busy 保留及新 binding busy 隔离。
-- 完整 `InkeysRepo.sln Debug|x64` 构建必须重新生成 DLL/TLB，并核对 interface GUID 不变、新 getter 只在末尾追加。真实 PowerPoint/WPS 放映、busy/损坏、切文稿和进程退出必须另行设备验收。
+- `PptCOM/PptCOM.csproj Release|AnyCPU` 必须重新生成 DLL/TLB；构建不自动复制，接口变更时显式同步同次产物到 Inkeys 后，再按 AGENTS 验证完整 Solution 的当前原生架构 Debug。核对 interface GUID 不变、新 getter 只在末尾追加。真实 PowerPoint/WPS 放映、busy/损坏、切文稿和进程退出必须另行设备验收。
 
 ### 7. Wrong vs Correct
 
@@ -189,5 +189,5 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 2. 使用 TLB 可稳定表达且 C#/native 宽度一致的参数；unsafe 指针变化需单独审查生命周期与同步。
 3. 由 `PptCOM.csproj` 重新生成 TLB，不手工修改生成包装或复制产物。
 4. 明确 `CheckCOM` 是信息标识还是强制版本门，再决定常量和 native 行为；不要假装当前已有比较策略。
-5. 按 `AGENTS.md` 使用完整 `InkeysRepo.sln` 验证 DLL/TLB 生成、复制和 native `#import`。
+5. DLL/TLB 在 PptCOM 自身输出目录生成，工程间无依赖和自动复制。接口变更须显式交接同次 DLL/TLB，再按 `AGENTS.md` 使用完整 `InkeysRepo.sln` 验证 native `#import`；发布 CI 的 artifact 交接合同见 [build-and-compatibility.md](../native-desktop/build-and-compatibility.md)。
 6. PowerPoint、WPS、busy、结束/重开、切文档和 Inkeys 退出是建议验证范围；正式支持矩阵仍由维护者确认。

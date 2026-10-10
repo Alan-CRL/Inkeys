@@ -7,7 +7,7 @@
 ## 文档索引
 
 - [directory-structure.md](directory-structure.md)：Solution、目录、文件归属与第三方边界。
-- [build-and-compatibility.md](build-and-compatibility.md)：构建入口、配置、依赖和 Windows 兼容约束。
+- [build-and-compatibility.md](build-and-compatibility.md)：构建入口、Harness 发布边界、artifact 交接合同和 Windows 兼容约束。
 - [cpp-conventions.md](cpp-conventions.md)：命名、模块、注释、共享状态和并发习惯。
 - [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
@@ -44,7 +44,7 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 - 设置窗口的已编译产品实现是普通 Win32 顶层窗口上的 Dear ImGui + Direct3D 11；它复用 RenderPipeline 的 WARP device/immediate context，并独占 discard swap chain、RTV、图片 SRV 和 ImGui session。
 - RTS 笔/触摸与鼠标回退都构造 TouchMode 记录，并写入 TouchPos、TouchList、TouchTemp 等共享状态。
 - 画布合成、撤销历史和按 PPT 页保存的墨迹彼此有关，不能只验证屏幕上的即时笔迹。
-- 主 Solution 中 Inkeys 依赖 PptCOM；Timeout 属于另一个 Solution，且本次未发现主产品引用。
+- 主 Solution 中 Inkeys 与 PptCOM 无项目依赖或自动复制，DLL/TLB 保持跟踪供本地独立构建；发布 CI 交接同次 artifacts。Timeout 属于另一个 Solution，且本次未发现主产品引用。
 - `InkeysHeadlessTests` 覆盖 Surface、HiMsg、窗口合同和 UI3 算法；受限环境必须用 `--no-window` 跳过会创建 HWND 的窗口测试。
 
 ## 历史/兼容与待确认

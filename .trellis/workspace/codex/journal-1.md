@@ -1798,3 +1798,40 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 任务已completed；偶发原鼠标X0、未复现荧光定格及未新增PPT专项实测按closure记录后续观察，不自动重开或创建任务。
+
+
+## Session 60: Windows 发布流水线拆分与 Win32 Harness 修复
+<!-- trellis-session: v=2 fp=dff3e14f3b026a17 -->
+
+**Date**: 2026-10-10
+**Task**: Windows 发布流水线拆分与 Win32 Harness 修复
+**Branch**: `dev`
+
+### Summary
+
+完成独立 PptCOM 构建和产物交接；修复 Win32 Harness 构建；保留用户手动维护的已跟踪 DLL/TLB。
+
+### Main Changes
+
+- Release 默认关闭内嵌 Harness，Debug 与显式开启构建保留；独立 native 构建保持资源路径。
+- Windows 2022 PptCOM → native matrix → Package 流水线，按当前运行的精确 artifact ID 传递和清理。
+- 同步编译文档和 Trellis 规范；DLL/TLB 保持跟踪且本地内容未改变。
+
+### Git Commits
+
+收尾阶段用户已授权本次提交，实际 commit 见 git log。
+
+### Testing
+
+- [OK] 独立 PptCOM Release/AnyCPU、Win32 Release 默认关闭及显式开启 Harness、完整 Debug/ARM64 solution 均通过。
+- [OK] ARM64 headless --no-window、工作流及工程静态检查、产物校验和清理模拟全部通过。
+
+- [OK] 最终 PptCOM Release/AnyCPU 完整 Rebuild，0 warnings / 0 errors；新 DLL/TLB 已手动同步到 Inkeys，哈希一致。确定性构建结果与此前字节相同。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在 Actions 验收真实 Windows 2022 三架构链路。

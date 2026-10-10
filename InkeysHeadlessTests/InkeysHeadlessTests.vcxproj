@@ -135,6 +135,13 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Helper\FailedCleanupDeadline.cpp" />
+	<!-- 直接验证发布构建的提前拒绝入口，不启动产品窗口或授权 runner。 -->
+	<ClCompile Include="..\Inkeys\Inkeys\Helper\Ui3PresentationFixtureAuth.cpp">
+	  <PreprocessorDefinitions>INKEYS_ENABLE_UI3_PRESENTATION_HARNESS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
+	<ClCompile Include="ui3_harness_disabled_tests.cpp">
+	  <PreprocessorDefinitions>INKEYS_ENABLE_UI3_PRESENTATION_HARNESS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationProbe.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Presentation.Source.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />

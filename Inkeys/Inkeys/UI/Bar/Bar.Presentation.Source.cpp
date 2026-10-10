@@ -1,5 +1,7 @@
 #include "Bar.Presentation.Source.h"
 
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+
 #include <bit>
 #include <chrono>
 #include <climits>
@@ -162,3 +164,4 @@ namespace Inkeys::UI::Bar
 			&& a.x == b.x && a.y == b.y && a.wheel == b.wheel;
 	}
 }
+#endif
