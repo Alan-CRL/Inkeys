@@ -84,8 +84,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.3981";		// 程序发布版本
-wstring editionDate = L"3.0.0-20260811a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.9039";		// 程序发布版本
+wstring editionDate = L"3.0.0-20261010a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -210,29 +210,29 @@ namespace
 		{
 			if (path.empty()) return false;
 			const std::string report = std::string(passed ? "PASS\r\n" : "FAIL\r\n")
-			+ "totalWidthDip=" + std::to_string(preview.totalWidthDip) + "\r\n"
-			+ "previewFirstAlpha0Committed=" + (preview.firstFrameCommitted ? "1\r\n" : "0\r\n")
-			+ "previewFadeOutCommitted=" + (preview.previewFadeOutCommitted ? "1\r\n" : "0\r\n")
-			+ "barAlpha0Committed=" + (preview.barAlpha0Committed
-				&& alpha.transparentCommitted ? "1\r\n" : "0\r\n")
-			+ "barAlpha255Committed=" + (preview.barAlpha255Committed
-				&& alpha.opaqueCommitted ? "1\r\n" : "0\r\n")
-			+ "automaticStopPosted=" + (preview.automaticStopPosted ? "1\r\n" : "0\r\n")
-			+ "ownerThreadExited=" + (preview.ownerThreadExited ? "1\r\n" : "0\r\n")
-			+ "previewInactive=" + (preview.previewInactive ? "1\r\n" : "0\r\n")
-			+ "recovery=" + (passed ? "visible\r\n"
-				: (!preview.firstFrameCommitted ? "bypassed\r\n" : "fatal\r\n"))
-			+ "requestedAlpha=" + std::to_string(alpha.requested) + "\r\n"
-			+ "committedAlpha=" + std::to_string(alpha.committed) + "\r\n";
-		HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
-			CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (file == INVALID_HANDLE_VALUE) return false;
-		DWORD written = 0;
-		const bool succeeded = WriteFile(file, report.data(),
-			static_cast<DWORD>(report.size()), &written, nullptr) != FALSE
-			&& written == report.size() && FlushFileBuffers(file) != FALSE;
-		CloseHandle(file);
-		return succeeded;
+				+ "totalWidthDip=" + std::to_string(preview.totalWidthDip) + "\r\n"
+				+ "previewFirstAlpha0Committed=" + (preview.firstFrameCommitted ? "1\r\n" : "0\r\n")
+				+ "previewFadeOutCommitted=" + (preview.previewFadeOutCommitted ? "1\r\n" : "0\r\n")
+				+ "barAlpha0Committed=" + (preview.barAlpha0Committed
+					&& alpha.transparentCommitted ? "1\r\n" : "0\r\n")
+				+ "barAlpha255Committed=" + (preview.barAlpha255Committed
+					&& alpha.opaqueCommitted ? "1\r\n" : "0\r\n")
+				+ "automaticStopPosted=" + (preview.automaticStopPosted ? "1\r\n" : "0\r\n")
+				+ "ownerThreadExited=" + (preview.ownerThreadExited ? "1\r\n" : "0\r\n")
+				+ "previewInactive=" + (preview.previewInactive ? "1\r\n" : "0\r\n")
+				+ "recovery=" + (passed ? "visible\r\n"
+					: (!preview.firstFrameCommitted ? "bypassed\r\n" : "fatal\r\n"))
+				+ "requestedAlpha=" + std::to_string(alpha.requested) + "\r\n"
+				+ "committedAlpha=" + std::to_string(alpha.committed) + "\r\n";
+			HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+				CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (file == INVALID_HANDLE_VALUE) return false;
+			DWORD written = 0;
+			const bool succeeded = WriteFile(file, report.data(),
+				static_cast<DWORD>(report.size()), &written, nullptr) != FALSE
+				&& written == report.size() && FlushFileBuffers(file) != FALSE;
+			CloseHandle(file);
+			return succeeded;
 		}
 		catch (...)
 		{
@@ -288,7 +288,7 @@ void SetOffSignal(int signal)
 	Inkeys::Window::GetService().BeginShutdown();
 	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
 		signal == 2 ? Inkeys::Shutdown::Intent::Restart
-			: Inkeys::Shutdown::Intent::Close);
+		: Inkeys::Shutdown::Intent::Close);
 	const DWORD supervisorError = GetLastError();
 	offSignal.store(signal, std::memory_order_release);
 	if (supervisor == Inkeys::Shutdown::ArmResult::Failed)
@@ -297,7 +297,7 @@ void SetOffSignal(int signal)
 		Inkeys::UI::RenderPipeline::WakeForStop();
 		Inkeys::Shutdown::EnforceFailedShutdownDeadline(
 			signal == 2 ? Inkeys::Shutdown::Intent::Restart
-				: Inkeys::Shutdown::Intent::Close);
+			: Inkeys::Shutdown::Intent::Close);
 	}
 	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
 	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
@@ -482,17 +482,17 @@ namespace
 			const auto mainConfig = root / "Inkeys" / "Config" / "main.json";
 			const auto writeBytes = [](const std::filesystem::path& path,
 				const std::string& bytes)
-			{
-				std::ofstream file(path, std::ios::binary | std::ios::trunc);
-				file.write(bytes.data(), bytes.size());
-				return file.good();
-			};
+				{
+					std::ofstream file(path, std::ios::binary | std::ios::trunc);
+					file.write(bytes.data(), bytes.size());
+					return file.good();
+				};
 			const auto readBytes = [](const std::filesystem::path& path)
-			{
-				std::ifstream file(path, std::ios::binary);
-				return std::string(std::istreambuf_iterator<char>(file),
-					std::istreambuf_iterator<char>());
-			};
+				{
+					std::ifstream file(path, std::ios::binary);
+					return std::string(std::istreambuf_iterator<char>(file),
+						std::istreambuf_iterator<char>());
+				};
 			if (!writeBytes(deploy, "{broken") ||
 				!writeBytes(pptConfig, "{broken") ||
 				!writeBytes(mainConfig, "{broken")) return 1;
@@ -745,7 +745,7 @@ namespace
 	{
 		Inkeys::Shutdown::FailedCleanupDeadline firstHostCleanup(
 			observation ? &Inkeys::Shutdown::PublishAuthorizedCleanupFatal
-				: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
+			: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
 		firstHostCleanup.PrepareOrFatal();
 		const auto firstHostFailure = firstHostCleanup.Signal();
 		draw3StartOptions.failedCleanup = firstHostFailure;
@@ -787,7 +787,7 @@ namespace
 			{
 				Inkeys::Shutdown::FailedCleanupDeadline ulwHostCleanup(
 					observation ? &Inkeys::Shutdown::PublishAuthorizedCleanupFatal
-				: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
+					: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
 				ulwHostCleanup.PrepareOrFatal();
 				draw3StartOptions.failedCleanup = ulwHostCleanup.Signal();
 				draw3StartOptions.allowDirectComposition = false;
@@ -828,17 +828,17 @@ namespace Inkeys::Shutdown
 		auto& packet = *launch.packet;
 		auto& service = Inkeys::Window::GetService();
 		const auto fail = [&](DWORD error) noexcept
-		{
-			InterlockedExchange(&packet.header.error, error);
-			InterlockedExchange(&packet.header.result, 2);
-			PublishCleanupRealStage(packet, CleanupRealStage::PrerequisiteFailed);
-			SetOffSignal(1); // 错误清理也先走正式15秒保护，不返回释放仍活owner的context。
-			StopProduct();
-			service.StopAndJoin();
-			for (HANDLE owner : oldOwners) if (owner) CloseHandle(owner);
-			oldOwners.fill(nullptr);
-			return static_cast<int>(error);
-		};
+			{
+				InterlockedExchange(&packet.header.error, error);
+				InterlockedExchange(&packet.header.result, 2);
+				PublishCleanupRealStage(packet, CleanupRealStage::PrerequisiteFailed);
+				SetOffSignal(1); // 错误清理也先走正式15秒保护，不返回释放仍活owner的context。
+				StopProduct();
+				service.StopAndJoin();
+				for (HANDLE owner : oldOwners) if (owner) CloseHandle(owner);
+				oldOwners.fill(nullptr);
+				return static_cast<int>(error);
+			};
 		try
 		{
 			if (!ShouldPreconfigureNoRedirectionBitmap()) return fail(91);
@@ -863,61 +863,61 @@ namespace Inkeys::Shutdown
 				spec.bindMessages = false;
 				spec.visible = false;
 				spec.created = [state, i](HWND window)
-				{
-					state->windows[i].store(window, std::memory_order_release);
-					state->created[i].fetch_add(1, std::memory_order_acq_rel);
-					if (state->generation.load(std::memory_order_acquire) == 1)
-						state->packet->trace.ownerThreadIds[i] = GetCurrentThreadId();
-				};
+					{
+						state->windows[i].store(window, std::memory_order_release);
+						state->created[i].fetch_add(1, std::memory_order_acq_rel);
+						if (state->generation.load(std::memory_order_acquire) == 1)
+							state->packet->trace.ownerThreadIds[i] = GetCurrentThreadId();
+					};
 				spec.destroyed = [state, i]
-				{
-					state->destroyed[i].fetch_add(1, std::memory_order_acq_rel);
-					state->windows[i].store(nullptr, std::memory_order_release);
-				};
+					{
+						state->destroyed[i].fetch_add(1, std::memory_order_acq_rel);
+						state->windows[i].store(nullptr, std::memory_order_release);
+					};
 				specs.push_back(std::move(spec));
 			}
 			HWND drawpad = nullptr;
 			const auto startWindows = [&]
-			{
-				const unsigned generation = state->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
-				FailedCleanupDeadline scope(&PublishAuthorizedCleanupFatal);
-				scope.PrepareOrFatal();
-				const bool started = service.Start(specs, scope.Signal());
-				scope.CompleteOrFatal();
-				if (!started) return false;
-				drawpad = service.Handle(Role::Drawpad);
-				const HWND presentation = service.Handle(Role::DrawpadPresentation);
-				for (unsigned i = 0; i != roles.size(); ++i)
 				{
-					const HWND window = service.Handle(roles[i]);
-					DWORD pid = 0;
-					const DWORD tid = GetWindowThreadProcessId(window, &pid);
-					if (!window || !tid || pid != GetCurrentProcessId() || IsWindowVisible(window)) return false;
+					const unsigned generation = state->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+					FailedCleanupDeadline scope(&PublishAuthorizedCleanupFatal);
+					scope.PrepareOrFatal();
+					const bool started = service.Start(specs, scope.Signal());
+					scope.CompleteOrFatal();
+					if (!started) return false;
+					drawpad = service.Handle(Role::Drawpad);
+					const HWND presentation = service.Handle(Role::DrawpadPresentation);
+					for (unsigned i = 0; i != roles.size(); ++i)
+					{
+						const HWND window = service.Handle(roles[i]);
+						DWORD pid = 0;
+						const DWORD tid = GetWindowThreadProcessId(window, &pid);
+						if (!window || !tid || pid != GetCurrentProcessId() || IsWindowVisible(window)) return false;
+						if (generation == 1)
+						{
+							oldOwners[i] = OpenThread(SYNCHRONIZE, FALSE, tid);
+							if (!oldOwners[i]) return false;
+						}
+					}
 					if (generation == 1)
 					{
-						oldOwners[i] = OpenThread(SYNCHRONIZE, FALSE, tid);
-						if (!oldOwners[i]) return false;
+						packet.trace.oldGeneration = generation;
+						packet.trace.oldDrawpad = reinterpret_cast<ULONG_PTR>(drawpad);
+						packet.trace.oldPresentation = reinterpret_cast<ULONG_PTR>(presentation);
 					}
-				}
-				if (generation == 1)
-				{
-					packet.trace.oldGeneration = generation;
-					packet.trace.oldDrawpad = reinterpret_cast<ULONG_PTR>(drawpad);
-					packet.trace.oldPresentation = reinterpret_cast<ULONG_PTR>(presentation);
-				}
-				else
-				{
-					for (unsigned i = 0; i != roles.size(); ++i)
-						if (WaitForSingleObject(oldOwners[i], 0) != WAIT_OBJECT_0
-							|| state->created[i].load(std::memory_order_acquire) != 2
-							|| state->destroyed[i].load(std::memory_order_acquire) != 1) return false;
-					packet.trace.newGeneration = generation;
-					packet.trace.newDrawpad = reinterpret_cast<ULONG_PTR>(drawpad);
-					packet.trace.newPresentation = reinterpret_cast<ULONG_PTR>(presentation);
-				}
-				PublishCleanupRealStage(packet, CleanupRealStage::WindowReady);
-				return drawpad && presentation;
-			};
+					else
+					{
+						for (unsigned i = 0; i != roles.size(); ++i)
+							if (WaitForSingleObject(oldOwners[i], 0) != WAIT_OBJECT_0
+								|| state->created[i].load(std::memory_order_acquire) != 2
+								|| state->destroyed[i].load(std::memory_order_acquire) != 1) return false;
+						packet.trace.newGeneration = generation;
+						packet.trace.newDrawpad = reinterpret_cast<ULONG_PTR>(drawpad);
+						packet.trace.newPresentation = reinterpret_cast<ULONG_PTR>(presentation);
+					}
+					PublishCleanupRealStage(packet, CleanupRealStage::WindowReady);
+					return drawpad && presentation;
+				};
 			if (!startWindows()) return fail(90);
 			const HostStyleCallbacks styles{ state.get(), [](void* context, DWORD set, DWORD clear) -> bool
 			{
@@ -941,21 +941,21 @@ namespace Inkeys::Shutdown
 			options.enableHiddenTestContactInjection = true;
 			options.startupContext = state.get();
 			options.startupMilestone = [](void* context, HostStartupStage stage) noexcept
-			{
-				if (stage == HostStartupStage::GraphicsReady)
-					static_cast<State*>(context)->graphicsReady.fetch_add(1, std::memory_order_acq_rel);
-			};
+				{
+					if (stage == HostStartupStage::GraphicsReady)
+						static_cast<State*>(context)->graphicsReady.fetch_add(1, std::memory_order_acq_rel);
+				};
 			if (!StartDraw3ProductWithFallback(service, specs, drawpad, styles, options, {}, true, startWindows, &packet)) return fail(90);
 			InterlockedExchange(&packet.trace.startReturned, 1);
 			if (!state->styleRejected.load(std::memory_order_acquire) || state->graphicsReady.load(std::memory_order_acquire) < 2
 				|| !packet.trace.firstStartFalseTick || !packet.trace.oldSignalCancelled || !packet.trace.oldChainDestroyed
 				|| packet.trace.newGeneration != 2 || InterlockedCompareExchange(GetOffSignalInteropPointer(), 0, 0)) return fail(90);
 			const auto wait = [](auto&& predicate, ULONGLONG milliseconds)
-			{
-				const ULONGLONG start = GetTickCount64();
-				do { if (predicate()) return true; Sleep(10); } while (GetTickCount64() - start < milliseconds);
-				return predicate();
-			};
+				{
+					const ULONGLONG start = GetTickCount64();
+					do { if (predicate()) return true; Sleep(10); } while (GetTickCount64() - start < milliseconds);
+					return predicate();
+				};
 			Bridge::ProductState product;
 			product.tool = Bridge::Tool::Pen;
 			product.widthDip = 6.0f; product.colorRgba = 0xFF3050A0u;
@@ -963,14 +963,14 @@ namespace Inkeys::Shutdown
 			product.workspace = Bridge::Workspace::Desktop;
 			PublishProductState(product);
 			const auto ready = []
-			{
-				const auto value = ProductRuntimeSnapshot();
-				return value.running && value.firstFrameReady && value.lastPresentSucceeded && !value.selectionMode
-					&& value.presentationMode == HostPresentationMode::UlwDirtyRect
-					&& value.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad
-					&& value.readyOutputTarget == value.requestedOutputTarget && value.readyOutputRevision == value.requestedOutputRevision
-					&& value.presentedContentRevision == value.contentRevision;
-			};
+				{
+					const auto value = ProductRuntimeSnapshot();
+					return value.running && value.firstFrameReady && value.lastPresentSucceeded && !value.selectionMode
+						&& value.presentationMode == HostPresentationMode::UlwDirtyRect
+						&& value.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad
+						&& value.readyOutputTarget == value.requestedOutputTarget && value.readyOutputRevision == value.requestedOutputRevision
+						&& value.presentedContentRevision == value.contentRevision;
+				};
 			if (!wait(ready, 5000) || (static_cast<DWORD>(GetWindowLongPtrW(drawpad, GWL_EXSTYLE))
 				& (WS_EX_NOREDIRECTIONBITMAP | WS_EX_TRANSPARENT))) return fail(90);
 			packet.trace.firstSuccessTick = GetTickCount64();
@@ -980,28 +980,28 @@ namespace Inkeys::Shutdown
 			if (InterlockedCompareExchange(GetOffSignalInteropPointer(), 0, 0) || !ready()) return fail(90);
 			const auto before = ProductRuntimeSnapshot();
 			const auto post = [&](HiddenTestContactPhase phase, int x, int y)
-			{
-				DWORD pid = 0;
-				return GetWindowThreadProcessId(drawpad, &pid) && pid == GetCurrentProcessId() && !IsWindowVisible(drawpad)
-					&& PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
-						static_cast<WPARAM>(phase) | kHiddenTestIntegratedPenFlag, MAKELPARAM(x, y));
-			};
+				{
+					DWORD pid = 0;
+					return GetWindowThreadProcessId(drawpad, &pid) && pid == GetCurrentProcessId() && !IsWindowVisible(drawpad)
+						&& PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
+							static_cast<WPARAM>(phase) | kHiddenTestIntegratedPenFlag, MAKELPARAM(x, y));
+				};
 			if (!post(HiddenTestContactPhase::Down, 20, 40) || !wait([&]
 				{ const auto value = ProductRuntimeSnapshot(); return value.inputDownPublished == before.inputDownPublished + 1
-					&& value.pen.active && value.pen.inputSequence > before.pen.inputSequence; }, 2000)) return fail(90);
+				&& value.pen.active && value.pen.inputSequence > before.pen.inputSequence; }, 2000)) return fail(90);
 			const auto stroke = ProductRuntimeSnapshot().pen.strokeId;
 			for (int i = 1; i <= 16; ++i)
 			{
 				const auto previous = ProductRuntimeSnapshot();
 				if (!post(HiddenTestContactPhase::Move, 20 + i * 4, 40 + (i % 5) * 3) || !wait([&]
 					{ const auto value = ProductRuntimeSnapshot(); return value.inputMovePublished == previous.inputMovePublished + 1
-						&& value.pen.strokeId == stroke && value.pen.inputSequence > previous.pen.inputSequence; }, 2000)) return fail(90);
+					&& value.pen.strokeId == stroke && value.pen.inputSequence > previous.pen.inputSequence; }, 2000)) return fail(90);
 			}
 			if (!post(HiddenTestContactPhase::Up, 84, 43) || !wait([&]
 				{ const auto value = ProductRuntimeSnapshot(); return value.inputTerminalPublished == before.inputTerminalPublished + 1
-					&& value.inputRecycled >= before.inputRecycled + 1 && value.currentPageHasContent
-					&& value.completedStrokeKind == Bridge::CompletedStrokeKind::Drawing
-					&& value.successfulPresentCount > before.successfulPresentCount && ready(); }, 5000)) return fail(90);
+				&& value.inputRecycled >= before.inputRecycled + 1 && value.currentPageHasContent
+				&& value.completedStrokeKind == Bridge::CompletedStrokeKind::Drawing
+				&& value.successfulPresentCount > before.successfulPresentCount && ready(); }, 5000)) return fail(90);
 			packet.trace.postGraceStrokeTick = GetTickCount64();
 			packet.trace.afterGraceSuccessPresents = ProductRuntimeSnapshot().successfulPresentCount;
 			if (!RunAuthorizedCleanupClose(launch)) return fail(90);
@@ -1450,22 +1450,22 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					if (!parsed || !updateVal.isObject()) { flag = false; }
 					else
 					{
-					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("representation") && updateVal["representation"].isString()) representation = utf8ToUtf16(updateVal["representation"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
-					{
-						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+						if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
 						else flag = false;
-						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
-						else flag = false;
-					}
-					else flag = false;
 
-					if (updateVal.isMember("old_name") && updateVal["old_name"].isString()) old_name = utf8ToUtf16(updateVal["old_name"].asString());
+						if (updateVal.isMember("representation") && updateVal["representation"].isString()) representation = utf8ToUtf16(updateVal["representation"].asString());
+						else flag = false;
+
+						if (updateVal.isMember("hash") && updateVal["hash"].isObject())
+						{
+							if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+							else flag = false;
+							if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
+							else flag = false;
+						}
+						else flag = false;
+
+						if (updateVal.isMember("old_name") && updateVal["old_name"].isString()) old_name = utf8ToUtf16(updateVal["old_name"].asString());
 					}
 				}
 				catch (const std::exception&) { flag = false; }
@@ -1680,23 +1680,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					if (!parsed || !updateVal.isObject()) { flag = false; }
 					else
 					{
-					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("path") && updateVal["path"].isString()) path = utf8ToUtf16(updateVal["path"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
-					{
-						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+						if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
 						else flag = false;
-						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
-						else flag = false;
-					}
-					else flag = false;
 
-					if (updateVal.isMember("MandatoryUpdate") && updateVal["MandatoryUpdate"].isBool())
-						mandatoryUpdate = updateVal["MandatoryUpdate"].asBool();
+						if (updateVal.isMember("path") && updateVal["path"].isString()) path = utf8ToUtf16(updateVal["path"].asString());
+						else flag = false;
+
+						if (updateVal.isMember("hash") && updateVal["hash"].isObject())
+						{
+							if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+							else flag = false;
+							if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
+							else flag = false;
+						}
+						else flag = false;
+
+						if (updateVal.isMember("MandatoryUpdate") && updateVal["MandatoryUpdate"].isBool())
+							mandatoryUpdate = updateVal["MandatoryUpdate"].asBool();
 					}
 				}
 				catch (const std::exception&) { flag = false; }
@@ -1744,28 +1744,28 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						(installerAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) flag = false;
 					if (flag)
 					{
-					wchar_t temporaryPath[MAX_PATH]{};
-					if (!GetTempFileNameW(installerPath.c_str(), L"IKJ", 0,
+						wchar_t temporaryPath[MAX_PATH]{};
+						if (!GetTempFileNameW(installerPath.c_str(), L"IKJ", 0,
 							temporaryPath)) flag = false;
-					if (flag)
-					{
-						const HANDLE temporary = CreateFileW(temporaryPath, GENERIC_WRITE,
-							0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-						if (temporary == INVALID_HANDLE_VALUE) flag = false;
-						else
-					{
-							DWORD bytesWritten = 0;
-							flag = WriteFile(temporary, nextJson.data(),
-								static_cast<DWORD>(nextJson.size()), &bytesWritten, nullptr) &&
-								bytesWritten == nextJson.size() && FlushFileBuffers(temporary);
-							if (!CloseHandle(temporary)) flag = false;
+						if (flag)
+						{
+							const HANDLE temporary = CreateFileW(temporaryPath, GENERIC_WRITE,
+								0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+							if (temporary == INVALID_HANDLE_VALUE) flag = false;
+							else
+							{
+								DWORD bytesWritten = 0;
+								flag = WriteFile(temporary, nextJson.data(),
+									static_cast<DWORD>(nextJson.size()), &bytesWritten, nullptr) &&
+									bytesWritten == nextJson.size() && FlushFileBuffers(temporary);
+								if (!CloseHandle(temporary)) flag = false;
+							}
+							// 同目录临时指令完整落盘后才替换旧指令；失败保留上次有效文件。
+							if (flag) flag = MoveFileExW(temporaryPath,
+								(globalPath + L"installer\\update.json").c_str(),
+								MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+							if (!flag) DeleteFileW(temporaryPath);
 						}
-						// 同目录临时指令完整落盘后才替换旧指令；失败保留上次有效文件。
-						if (flag) flag = MoveFileExW(temporaryPath,
-							(globalPath + L"installer\\update.json").c_str(),
-							MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
-						if (!flag) DeleteFileW(temporaryPath);
-					}
 					}
 				}
 
@@ -2029,7 +2029,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		previewOptions.cachedWidthDip =
 			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
 				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.
-					CachedStartupBarWidthDip);
+				CachedStartupBarWidthDip);
 		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom;
 		previewOptions.dpi = startupDpi;
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
