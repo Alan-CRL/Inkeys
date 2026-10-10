@@ -84,8 +84,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.9039";		// 程序发布版本
-wstring editionDate = L"3.0.0-20261010a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.9040";		// 程序发布版本
+wstring editionDate = L"3.0.0-20261010b";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
