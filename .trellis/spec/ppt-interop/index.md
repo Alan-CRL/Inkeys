@@ -7,7 +7,7 @@
 | 路径 | 证据级别与职责 |
 | --- | --- |
 | `PptCOM/PptCOM.cs` | `【直接确认】` 定义 COM-visible `IPptCOMServer`/`PptCOMServer`，连接 PowerPoint/WPS、读取放映状态、控制翻页和窗口 |
-| `PptCOM/PptCOM.csproj` | `【直接确认】` .NET Framework 4.0/AnyCPU，Office Interop 引用，AfterBuild 运行 `TlbExp` 并复制 DLL/TLB |
+| `PptCOM/PptCOM.csproj` | `【直接确认】` .NET Framework 4.0/AnyCPU，Office Interop 引用，构建后 `ExportTlb` 生成自身输出目录 TLB，无 DLL/TLB 自动复制 |
 | `PptCOM/PptCOM.manifest` | `【直接确认】` 被 native 启动路径作为 activation-context manifest 资源/文件使用 |
 | `Inkeys/IdtMain.cpp::wWinMain` | `【直接确认】` 初始化 COM，准备 DLL/TLB/manifest，创建/激活 activation context 并加载 PptCOM DLL |
 | `Inkeys/IdtPlug-in.cpp::CheckPptCom/GetPptState/PPTLinkageMain` | `【直接确认】` `#import` TLB、创建服务、传入 native 状态地址、运行服务/控件线程和命令包装 |
@@ -53,4 +53,4 @@ IdtMain: COM + activation context + PptCOM.dll
 2. 若改变 `Initialization` 或共享状态，核对 native/C# 整数宽度、地址稳定性、读写同步和退出后解引用。
 3. 若改变绑定/恢复，分别检查 PowerPoint 与 WPS、事件与轮询、busy、放映结束、文档切换和 Office 退出。
 4. 若改变页码语义，追踪 `COM session/descriptor → native target → Draw3 Present → PptInfoStateBuffer → PPT UI commit → input ready`，不能只验证控件文字。
-5. 按 `AGENTS.md` 用完整 `InkeysRepo.sln` 验证 DLL/TLB 生成与复制；静态文档审计不能替代该构建。
+5. PptCOM 独立生成 DLL/TLB，接口变更时维护者手动同步至 Inkeys，再按 `AGENTS.md` 用完整 `InkeysRepo.sln` 验证 native；静态文档审计不能替代该构建。

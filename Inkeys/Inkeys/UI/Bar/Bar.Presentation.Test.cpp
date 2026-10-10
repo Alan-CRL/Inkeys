@@ -1,5 +1,9 @@
 module;
 
+#include "Bar.Presentation.Source.h"
+
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+
 #include "../../../IdtMain.h"
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtI18n.h"
@@ -9,8 +13,6 @@ module;
 #include "../../Helper/ShutdownSupervisor.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
-#include "Bar.Presentation.Source.h"
-
 #include <algorithm>
 #include <bit>
 #include <chrono>
@@ -22,7 +24,10 @@ module;
 #include <streambuf>
 #include <thread>
 
+#endif
+
 module Inkeys.UI.Bar;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 import :Main;
 import :Theme;
 import Inkeys.Other.Config;
@@ -1462,3 +1467,25 @@ namespace Inkeys::UI::Bar
 		return passed ? 0 : 90;
 	}
 }
+#else
+namespace Inkeys::UI::Bar
+{
+	// 产品连接保持“未安装 fixture”分支；不提供 runner 或虚假的测试成功结果。
+	bool AuthorizedUi3FixtureSourceInstalled() noexcept { return false; }
+	bool AuthorizedFixtureEquivalenceReady(const Ui3FixtureAuthorization&) noexcept { return false; }
+	void EnterAuthorizedFixtureInteraction() noexcept {}
+	void LeaveAuthorizedFixtureInteraction() noexcept {}
+	bool ReceiveAuthorizedFixtureIndex(HWND, WPARAM, LPARAM, Ui3FixtureWireValue&) noexcept { return false; }
+	void FinishAuthorizedFixtureEnqueue(std::uint32_t, bool) noexcept {}
+	bool ObserveAuthorizedFixtureDequeue(const Ui3FixtureWireValue&) noexcept { return true; }
+	void ObserveAuthorizedFixtureClear(BYTE, std::size_t) noexcept {}
+	void RejectAuthorizedFixtureSource(Ui3FixtureSourceFailure) noexcept {}
+	Ui3FixturePointResult ReadFixturePointerForCurrentOwner(POINT&, bool&) noexcept
+	{
+		return Ui3FixturePointResult::NotInstalled;
+	}
+	bool PermitAuthorizedFixtureAction(Ui3FiniteScene, Ui3FixtureActionPoint) noexcept { return true; }
+	bool PermitAuthorizedFixturePointerStages(const Ui3FiniteSignature&) noexcept { return true; }
+	bool AuthorizedFixtureWindowMessageMustBeHandled(HWND, UINT, WPARAM, LPARAM, LRESULT&) noexcept { return false; }
+}
+#endif

@@ -43,6 +43,7 @@ int RunStartupProgressTests();
 int RunStartupPreviewStateTests();
 int RunConfigMetadataTests();
 int RunBarPresentationAlphaTests();
+int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
 int RunPptUiTests();
 int RunPptSessionTests();
@@ -1676,6 +1677,7 @@ int main(int argc, char** argv)
 	failureCount += RunStartupPreviewStateTests();
 	failureCount += RunConfigMetadataTests();
 	failureCount += RunBarPresentationAlphaTests();
+	failureCount += RunUi3HarnessDisabledTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
 	failureCount += RunPptSessionTests();

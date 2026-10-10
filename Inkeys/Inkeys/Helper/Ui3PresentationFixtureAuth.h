@@ -1,5 +1,10 @@
 #pragma once
 
+// 独立算法测试保持原行为；产品工程始终显式定义为 0 或 1。
+#ifndef INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+#define INKEYS_ENABLE_UI3_PRESENTATION_HARNESS 1
+#endif
+
 #include <Windows.h>
 
 #include <cstddef>
