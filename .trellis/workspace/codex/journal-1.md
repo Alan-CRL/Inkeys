@@ -1695,6 +1695,40 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 [OK] **Completed**
 
 
+## Session 54: H 实时绑定与更新请求元数据完成
+<!-- trellis-session: v=2 fp=db8c1fd6ff3df9f0 -->
+
+**Date**: 2026-10-08
+**Task**: H 实时绑定与更新请求元数据完成
+**Branch**: `chore/publish`
+
+### Summary
+
+用户批准实施。H 支持固定/地址/带锁来源，文件和 Referer 独立输出；ev 落盘，id 去括号上报，ch 实时上报并保存至 main.json，deploy.json 原保存入口继续存在；版本检查 UA 统一为 Inkeys-Updater/3.0。
+
+### Main Changes
+
+- 仅修改 Config 来源/schema/处理器/复制、更新检查 UA、新增 headless 回归及必要登记；记录配置合同。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 正常主机 ARM64 headless build exit0；--no-window exit0，Config metadata tests 0 failures，全部 suite PASS。
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 ARM64-native MSBuild exit0，146 warnings/0 errors；本次 Config/下载源码无 warning。
+- [OK] scoped git diff --check、磁盘 BOM/CRLF 基线核对与 task validate 通过。受限 runner 的 PDB/临时文件环境失败原始证据保留，主机原样通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本任务验收完成，按用户规则保留未提交变更；Win7 ULW 任务继续独立进行。123 CDN 实际请求日志未测试。
+
+
 ## Session 55: Win7 WARP 主画布默认完整 shader 修复
 <!-- trellis-session: v=2 fp=3c2f3c387aee632c -->
 

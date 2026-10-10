@@ -518,6 +518,12 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			AssignConfigValue(value, defaultValue);
 		}
 
+		template <typename T>
+		void HandleHiddenValue(const char*, Inkeys::ConfigDetail::ConfigReadOnlyValue<T>&, bool, bool, const char*)
+		{
+			// H 只用于输出，不从文件或默认值覆盖来源。
+		}
+
 	private:
 		const std::vector<std::string>& selectedPaths;
 		std::vector<std::string> groupPath;
@@ -554,6 +560,12 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			AssignConfigValue(value, loadedValue);
 		}
 
+		template <typename T>
+		void HandleHiddenValue(const char*, Inkeys::ConfigDetail::ConfigReadOnlyValue<T>&, bool, bool, const char*)
+		{
+			// H 只用于输出，不从文件或默认值覆盖来源。
+		}
+
 	private:
 		const Json::Value& root;
 		const std::vector<std::string>& selectedPaths;
@@ -584,6 +596,16 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			parent[name] = JsonValueCodec<T>::ToJson(value);
 		}
 
+		template <typename T>
+		void HandleHiddenValue(const char* name, Inkeys::ConfigDetail::ConfigReadOnlyValue<T>& value, bool writeFile, bool, const char*)
+		{
+			Json::Value& parent = EnsureObjectPath(root, groupPath);
+			// 关闭输出时不取来源快照，不占用来源锁。
+			Json::Value snapshot;
+			if (writeFile) snapshot = JsonValueCodec<T>::ToJson(value.Snapshot());
+			Inkeys::ConfigDetail::WriteHiddenConfigValue(parent, name, snapshot, writeFile);
+		}
+
 	private:
 		Json::Value& root;
 		std::vector<std::string> groupPath;
@@ -608,13 +630,17 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			if (uploadMode != Inkeys::ConfigUploadMode::Upload) return;
 
 			std::string valueText = JsonValueToUploadText(JsonValueCodec<T>::ToJson(value));
-			MakeUploadTextSingleLine(valueText);
-			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
+			AppendUploadText(name, std::move(valueText), uploadName);
+		}
 
-			result += StringToUrlencode(keyText);
-			result += '=';
-			result += StringToUrlencode(valueText);
-			result += ';';
+		template <typename T>
+		void HandleHiddenValue(const char* name, Inkeys::ConfigDetail::ConfigReadOnlyValue<T>& value, bool, bool writeReferer, const char* uploadName)
+		{
+			if (!writeReferer) return;
+			T snapshot = value.Snapshot();
+			std::string valueText = JsonValueToUploadText(JsonValueCodec<T>::ToJson(snapshot));
+			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
+			Inkeys::ConfigDetail::AppendConfigUploadValue(result, keyText, std::move(valueText), writeReferer, JoinPath(groupPath, name) == "Info.UserId");
 		}
 
 		const std::string& GetResult() const
@@ -623,9 +649,38 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 		}
 
 	private:
+		void AppendUploadText(const char* name, std::string valueText, const char* uploadName)
+		{
+			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
+			Inkeys::ConfigDetail::AppendConfigUploadValue(result, keyText, std::move(valueText), true);
+		}
+
 		std::string result;
 		std::vector<std::string> groupPath;
 	};
+}
+
+namespace Inkeys::ConfigDetail
+{
+	void WriteHiddenConfigValue(Json::Value& parent, const char* name, const Json::Value& value, bool writeFile)
+	{
+		// AutoClean 关闭时也不能保留明确禁止输出的已知 H 键。
+		if (writeFile) parent[name] = value;
+		else parent.removeMember(name);
+	}
+
+	void AppendConfigUploadValue(std::string& result, const std::string& key, std::string value, bool writeReferer, bool stripGuidBraces)
+	{
+		if (!writeReferer) return;
+		// 只规范化发送副本，磁盘和来源中的 GUID 仍保留花括号。
+		if (stripGuidBraces)
+			std::erase_if(value, [](char ch) { return ch == '{' || ch == '}'; });
+		MakeUploadTextSingleLine(value);
+		result += StringToUrlencode(key);
+		result += '=';
+		result += StringToUrlencode(value);
+		result += ';';
+	}
 }
 
 namespace Inkeys

@@ -136,6 +136,7 @@ std::string GetEditionInformation(std::string referer)
 	{
 		{ "Cache-Control", "no-cache" },
 		{ "Pragma", "no-cache" },
+		{ "User-Agent", "Inkeys-Updater/3.0" },
 		{ "Referer", referer.c_str() }
 	};
 

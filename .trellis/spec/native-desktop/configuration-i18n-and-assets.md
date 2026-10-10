@@ -352,3 +352,52 @@ I18nKey.Dialogs.Common.OK;
 - shader、字体和图像是否全部可重建、哪些随发布包解包，需结合 `vcxproj`、`.rc`、打包脚本逐项确认，不能由目录名外推。
 
 涉及这些文件时应核对来源/许可、架构、配置条件、工程/资源登记和可重建性。`Build/`、`Inkeys/Cache/`、`VcpkgInstalled/`、`PptCOM/obj/` 是生成输出，不进入产品文档变更。
+
+## H 实时信息来源与更新 Referer 合同
+
+### 1. Scope / Trigger
+
+修改 H 来源、输出或 Config 复制时适用。
+
+### 2. Signatures
+
+```cpp
+H(writeFile, writeReferer, refererName, valueType, valueName, source)
+ConfigDetail::ConfigReadOnlyValue<T>::Snapshot() const -> T
+ConfigDetail::BindConfigSource(const T*, std::shared_mutex*)
+```
+
+### 3. Contracts
+
+- H 接受固定值、const T* 或带锁地址。构造不解引用；地址/锁须覆盖使用期，空地址抛 invalid_argument。构造 explicit，普通 T 赋值不能替换绑定。
+- ReadAll/ReadMini/Reset/ApplyDocument 不覆盖 H。Config 复制 X 状态和 H 描述符/固定值，不读写外部来源；configOnce 的 H 仍实时取值。
+- 两开关独立。关闭文件输出须移除已知键，未知键策略不变。Snapshot 仅持共享锁复制；锁序 Config rwMutex -> 来源锁，调用 Config 前须释放来源锁，编码/I/O 不持来源锁。
+- `$Info` 保存原六项及 UpdateChannel。Referer 为 id/ed/pa/we/ch，不含 ev；仅发送副本去 UserId 花括号，再 URL 编码，文件保留原值。
+- ch 绑定 setlist.UpdateChannel/setlistUpdateMutex，main.json 保存副本，deploy.json 沿用原入口；两个更新 GET UA 均为 Inkeys-Updater/3.0。
+
+### 4. Validation & Error Matrix
+
+| 来源/输出 | 行为 |
+| --- | --- |
+| 固定/地址 | 固定值/输出时最新值 |
+| 空地址 | 拒绝，不解引用 |
+| file/referer | 四组合独立，禁用输出不取快照 |
+| 读/重置/复制 | 不写穿来源 |
+
+### 5. Good / Base / Bad Cases
+
+Good：改通道后下次输出即更新。Base：固定 H、普通 X 各自状态。Bad：初始化缓存或回写来源。
+
+### 6. Tests Required
+
+真实 Config headless 覆盖来源、四组合、GUID/ev/ch、读/重置/复制与 X 回归；合成 ID、私有临时目录、并发同锁。完整 solution Debug|ARM64 与 --no-window，不请求真实服务器。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：启动缓存
+H(true, true, "ch", std::string, UpdateChannel, ::setlist.UpdateChannel)
+// Correct：输出时加锁复制
+H(true, true, "ch", std::string, UpdateChannel,
+    ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex))
+```

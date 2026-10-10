@@ -41,6 +41,7 @@ int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
 int RunStartupProgressTests();
 int RunStartupPreviewStateTests();
+int RunConfigMetadataTests();
 int RunBarPresentationAlphaTests();
 int RunSettingSessionStateTests();
 int RunPptUiTests();
@@ -1673,6 +1674,7 @@ int main(int argc, char** argv)
 	failureCount += RunRenderSchedulerTests();
 	failureCount += RunStartupProgressTests();
 	failureCount += RunStartupPreviewStateTests();
+	failureCount += RunConfigMetadataTests();
 	failureCount += RunBarPresentationAlphaTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();

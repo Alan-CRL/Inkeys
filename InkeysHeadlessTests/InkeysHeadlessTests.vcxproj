@@ -147,6 +147,9 @@
 	<ClCompile Include="render_scheduler_tests.cpp" />
 	<ClCompile Include="startup_progress_tests.cpp" />
 	<ClCompile Include="startup_preview_state_tests.cpp" />
+	<ClCompile Include="config_metadata_tests.cpp">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
 	<ClCompile Include="bar_presentation_alpha_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
 	<ClCompile Include="ppt_ui_tests.cpp" />
