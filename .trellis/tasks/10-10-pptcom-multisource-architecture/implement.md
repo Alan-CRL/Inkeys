@@ -88,6 +88,8 @@ $env:MSBUILDDISABLENODEREUSE = '1'
 
 用户明确指示开始下一步并确认创建P1子任务；按既有P1合同执行，P2-P5不在本轮。P0签名commit为6d4931b7。新增纯值Business服务与headless，未接管生产链路。
 
-[阶段验证记录](../10-10-pptcom-p1-contract-arbitration/validation.md)和[最终独立复核](../10-10-pptcom-p1-contract-arbitration/check-report.md)：修后完整InkeysRepo.sln Debug ARM64及fresh headless均exit0，P1为138 checks/0 failures。COM基线25项完全一致，唯一预期变化为native工程3行文件登记；dynamic/ROT/旧线程及释放、ABI、随附DLL/TLB未改。活动优先、弱证据回滞、最新确认与单路命令均为纯逻辑交付；Win7/双向权限/损坏COM/实际Draw3与时延门禁仍待后续。下一阶段为P2，本轮未启动。
+[阶段验证记录](../archive/2026-10/10-10-pptcom-p1-contract-arbitration/validation.md)和[最终独立复核](../archive/2026-10/10-10-pptcom-p1-contract-arbitration/check-report.md)：修后完整InkeysRepo.sln Debug ARM64及fresh headless均exit0，P1为138 checks/0 failures。COM基线25项完全一致，唯一预期变化为native工程3行文件登记；dynamic/ROT/旧线程及释放、ABI、随附DLL/TLB未改。活动优先、弱证据回滞、最新确认与单路命令均为纯逻辑交付；Win7/双向权限/损坏COM/实际Draw3与时延门禁仍待后续。下一阶段为P2，本轮未启动。
 
 P1收尾状态：源码与138项fake验收已通过；本轮SSH签名提交因1Password错误退出1，P1尚未提交或归档，待恢复签名后收尾，P2未启动。
+
+签名重试后P1已提交 0b968e2b6ad2d1f50ea48025308f505fd001f8ae，归档收尾完成；前述签名阻塞为历史记录，下一阶段P2尚未开始。

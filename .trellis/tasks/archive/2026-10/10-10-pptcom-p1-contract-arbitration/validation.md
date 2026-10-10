@@ -61,3 +61,7 @@ Win7 SP1 x86/x64原版.NET4、管理员/普通用户双向 helper、真实 Offic
 用户已授权必要阶段commit。P0已成功提交6d4931b7；P1功能提交尝试沿原SSH签名配置，实际exit1：1Password: failed to fill whole buffer，Git随后failed to write commit object。没有创建P1 commit，没有绕过签名/修改配置/重试/push。P1代码与测试已暂存，质量门禁仍PASS_P1_SCOPE；提交失败是本机签名问题，不是编译或测试失败。
 
 按仓库签名失败即停止及trellis-finish-work先工作提交后归档的规则，P1仍in_progress，待签名提交恢复后归档和记录journal；P2未开始。失败说明属于任务记录，尚未暂存。本轮未改动其他任务或旧journal。
+
+## 签名重试成功
+
+用户明确要求重新尝试提交后，沿原SSH签名配置成功创建P1工作提交 0b968e2b6ad2d1f50ea48025308f505fd001f8ae；提交对象含SSH签名。前述失败为历史记录，现继续完成归档/journal；未push，未开始P2。

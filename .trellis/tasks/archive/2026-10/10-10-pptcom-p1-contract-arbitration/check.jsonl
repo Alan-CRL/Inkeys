@@ -10,4 +10,4 @@
 {"file": ".trellis/tasks/archive/2026-10/10-10-pptcom-p0-baseline/research/com-baseline.md", "reason": "COM与Focus基线"}
 {"file": ".trellis/tasks/archive/2026-10/10-10-pptcom-p0-baseline/research/transport-decision.md", "reason": "平台未验门禁"}
 {"file": ".trellis/spec/ppt-interop/multisource-service.md", "reason": "P1已定义的纯值API、仲裁/命令与验证边界"}
-{"file": ".trellis/tasks/10-10-pptcom-p1-contract-arbitration/research/review-scenarios.md", "reason": "主会话指出的状态机边界，依最终实现逐项独立核实"}
+{"file": ".trellis/tasks/archive/2026-10/10-10-pptcom-p1-contract-arbitration/research/review-scenarios.md", "reason": "主会话指出的状态机边界，依最终实现逐项独立核实"}

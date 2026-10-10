@@ -9,7 +9,7 @@
 7. [x] 本次InkeysHeadlessTests.exe --no-window，记录exit/关键输出；不启动Office/GUI/UAC。
 8. [x] 独立Trellis check全范围P1-AC1..10，必要修复/测试后最终检查。
 9. [x] 主会话更新真实合同spec/父进度，核对COM及产物基线与工程diff；P0工程文件允许已声明新增登记，COM不变。
-10. [ ] 用户授权必要阶段commit，保留SSH签名；失败停止提交，不绕过，不push。通过后归档/journal禁自动commit，不启动P2。
+10. [x] 用户授权必要阶段commit，保留SSH签名；失败停止提交，不绕过，不push。通过后归档/journal禁自动commit，不启动P2。
 
 ## 回滚与限制
 
