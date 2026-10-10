@@ -3,6 +3,7 @@
 #endif
 #include <Windows.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -241,7 +242,7 @@ namespace
 		Check(!TryBeginBarBottomDockFrameTransition(serial, 2, true)
 			&& serial.load() == 2, "held tracker owns phase even when render serial is current");
 		std::atomic<int> first{ 0 }, second{ 0 };
-		std::atomic<bool> doneA{ false }, doneB{ false };
+		std::atomic<bool> doneA{ false }, doneB{ false }, acceptedPublished{ false };
 		auto Publish = [&](int sign, std::atomic<bool>& done)
 			{
 				for (int i = 1; i <= 200; ++i)
@@ -250,25 +251,71 @@ namespace
 					first.store(sign * i, std::memory_order_relaxed);
 					second.store(-sign * i, std::memory_order_relaxed);
 					FinishBarBottomDockTransition(serial, deferred, i % 2 == 0);
+					// 首个稳定发布等待读端确认，避免线程调度跳过整个并发采样窗口。
+					if (i == 1)
+						while (!acceptedPublished.load(std::memory_order_acquire))
+							std::this_thread::yield();
+					if ((i & 7) == 0) std::this_thread::yield();
 				}
 				done.store(true);
 			};
 		std::thread a([&] { Publish(1, doneA); });
 		std::thread b([&] { Publish(-1, doneB); });
 		bool completeTuples = true;
-		while (!doneA.load() || !doneB.load())
+		unsigned int mixedPairCount = 0, futureBarrierCount = 0, acceptedSamples = 0;
+		struct FailedSnapshot
+		{
+			unsigned long long before = 0, after = 0, barrier = 0;
+			int x = 0, y = 0;
+		};
+		FailedSnapshot firstFailure{};
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		while ((!doneA.load() || !doneB.load())
+			&& std::chrono::steady_clock::now() < deadline)
 		{
 			const auto before = serial.load(std::memory_order_acquire);
 			if ((before & 1ULL) != 0) continue;
 			const int x = first.load(std::memory_order_relaxed), y = second.load(std::memory_order_relaxed);
 			const auto barrier = deferred.load(std::memory_order_relaxed);
-			if (serial.load(std::memory_order_acquire) == before)
-				completeTuples &= x + y == 0 && barrier <= before && (barrier & 1ULL) == 0;
+			std::atomic_thread_fence(std::memory_order_acquire);
+			const auto after = serial.load(std::memory_order_acquire);
+			if (after == before)
+			{
+				if (before > 2)
+				{
+					++acceptedSamples;
+					acceptedPublished.store(true, std::memory_order_release);
+				}
+				const bool paired = x + y == 0;
+				const bool stableBarrier = barrier <= before && (barrier & 1ULL) == 0;
+				if (!paired) ++mixedPairCount;
+				if (!stableBarrier) ++futureBarrierCount;
+				if (completeTuples && (!paired || !stableBarrier))
+					firstFailure = { before, after, barrier, x, y };
+				completeTuples &= paired && stableBarrier;
+			}
 		}
+		const bool deadlineExpired = !doneA.load() || !doneB.load();
+		acceptedPublished.store(true, std::memory_order_release);
 		a.join();
 		b.join();
-		Check(completeTuples && serial.load() == 802,
+		const auto finalSerial = serial.load();
+		if (!completeTuples || acceptedSamples == 0 || deadlineExpired
+			|| finalSerial != 802)
+			std::cerr << "[BottomDockPublish] mixed_pairs=" << mixedPairCount
+				<< " future_barriers=" << futureBarrierCount
+				<< " accepted_samples=" << acceptedSamples
+				<< " deadline_expired=" << deadlineExpired
+				<< " final_serial=" << finalSerial
+				<< " first={before=" << firstFailure.before
+				<< ",after=" << firstFailure.after
+				<< ",x=" << firstFailure.x << ",y=" << firstFailure.y
+				<< ",barrier=" << firstFailure.barrier << "}\n";
+		Check(completeTuples && finalSerial == 802,
 			"competing input and external publishers expose only complete paired tuples and barriers");
+		Check(acceptedSamples > 0,
+			"competing publishers produce at least one verified published snapshot");
+		Check(!deadlineExpired, "competing publisher test completes before its deadline");
 		Check(!TryBeginBarBottomDockFrameTransition(serial, 2, false),
 			"stale release or automatic-center frame cannot overwrite a newer fold or display tuple");
 	}

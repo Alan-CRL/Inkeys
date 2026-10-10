@@ -14,6 +14,7 @@
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
+- [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。
 - [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
 - [eraser-attributes.md](eraser-attributes.md)：UI3橡皮属性、全局尺寸/灵敏度、五入口事务及Clear回撤/重做合同。
 - [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
@@ -38,7 +39,7 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 ## 已直接确认的边界
 
 - wWinMain 位于 Inkeys/IdtMain.cpp。新增其他入口会改变现有进程模型，属于架构变更，而不是本 Spec 已批准的路线。
-- Draw3 由唯一 Host/RTS 绑定 Window Service 已创建的主 `WindowRole::Drawpad` HWND；同一 Host 可把 `WindowRole::DrawpadPresentation` 前置表面作为 selection-only ULW 呈现目标，但辅助窗不绑定输入、document 或第二套 runtime。Draw3 的 D3D11.1 device、swap chain 和 DComp/DWM/ULW presenter 均独立于 `Inkeys.UI.RenderPipeline`，资源 ID 301-304 由 `draw3-integration.md` 统一维护。
+- Draw3 由唯一 Host/RTS 绑定 Window Service 已创建的主 `WindowRole::Drawpad` HWND；同一 Host 可把 `WindowRole::DrawpadPresentation` 前置表面作为 selection-only ULW 呈现目标，但辅助窗不绑定输入、document 或第二套 runtime。Draw3 的 D3D11.1 device、swap chain 和 presenter 均独立于 `Inkeys.UI.RenderPipeline`；首发目标仅允许 DComp/ULW，两种 DWM 实现禁用。H0 曾未对齐，2026-09-27 工作区已做源码修补，真实 Win7 与运行期故障仍待验证。资源 ID 301-304 由 `draw3-integration.md` 统一维护。
 - `Inkeys.UI.RenderPipeline` 在 UI 客户端启动前创建共享 D3D11 WARP、D2D 1.1 factory/device 和 DWrite 对象；UI3 Bar、`Inkeys.UI.PageControl` 的四个分页客户端、Whiteboard Freeze 与 Setting 共享同一 device epoch 和唯一串行渲染线程。
 - 设置窗口的已编译产品实现是普通 Win32 顶层窗口上的 Dear ImGui + Direct3D 11；它复用 RenderPipeline 的 WARP device/immediate context，并独占 discard swap chain、RTV、图片 SRV 和 ImGui session。
 - RTS 笔/触摸与鼠标回退都构造 TouchMode 记录，并写入 TouchPos、TouchList、TouchTemp 等共享状态。

@@ -12,6 +12,8 @@ float2 position + float radius + float time = 16 bytes
 
 C++ 用 `static_assert(sizeof(InkPoint) == 16)`，D3D buffer 的 `StructureByteStride` 使用 `sizeof(InkPoint)`，HLSL 在 `t0` 读取。
 
+`t0 InkData` 是绑定为 SRV 的动态结构化缓冲区。`D3D11_MAP_WRITE_NO_OVERWRITE` 对这种缓冲区是 D3D11.1 可选设备能力，不能仅凭 FL11.0 或 Platform Update 假定可用；renderer 初始化时查询 `D3D11_FEATURE_D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，查询失败按不支持处理。支持时保持现有环形写入/越界 DISCARD；不支持时每批 `WRITE_DISCARD` 并把 `m_bufferHead` 与 VS `globalBufferOffset` 同步置零，普通笔和 Shape 都适用。荧光笔及 Laser 的现有 DISCARD 路径不因该门禁改动。Win7 SP1+仅 KB2670838 的 Hardware FL11.0/WARP 两格仍需真机验证，不得以 Win11 WARP 测试替代。
+
 ### ShapePrimitive
 
 Shape 不新增 buffer、texture 或 SRV；每项直接占用 `t0 InkData` 中两个连续 `InkPoint` 槽：

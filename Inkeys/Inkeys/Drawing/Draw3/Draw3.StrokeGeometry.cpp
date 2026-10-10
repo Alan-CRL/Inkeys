@@ -1308,7 +1308,7 @@ namespace Inkeys::Drawing::Draw3
 		stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height, shape);
 	}
 
-	RECT CommitStablePrefixToL1(ActiveStroke& stroke, double liveTipDurationSeconds,
+	LiveRasterSubmission CommitStablePrefixToL1(ActiveStroke& stroke, double liveTipDurationSeconds,
 		double predictionDurationSeconds, DirectX::XMFLOAT4 color, StrokeShape shape,
 		InkRenderer& renderer, int width, int height)
 	{
@@ -1326,8 +1326,8 @@ namespace Inkeys::Drawing::Draw3
 		if (stroke.highlighter)
 		{
 			RebuildHighlighterGeometry(stablePoints, stroke.l0HighlighterGeometry);
-			renderer.DrawHighlighterPrimitives(
-				stroke.l0HighlighterGeometry.primitives, color);
+			if (renderer.DrawHighlighterPrimitives(
+				stroke.l0HighlighterGeometry.primitives, color) < 0) return { {}, false };
 			if (!stroke.l0HighlighterGeometry.primitives.empty())
 			{
 				// 只缓存已经提交到 L1 的稳定前缀，Up 时直接重放。
@@ -1347,19 +1347,21 @@ namespace Inkeys::Drawing::Draw3
 		}
 		else
 		{
-			renderer.DrawStrokeOrDot(stablePoints, color, shape);
+			if (renderer.DrawStrokeOrDot(stablePoints, color, shape) < 0)
+				return { {}, false };
 			dirty = RectFromStrokePoints(stablePoints, width, height, shape);
 		}
 		stroke.committedIndex = protectedStartIndex; // 推进提交游标，后续帧不重复提交稳定前缀。
 		stroke.hasCommittedGeometry = true;
-		return dirty;
+		return { dirty, true };
 	}
 
-	RECT CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
+	LiveRasterSubmission CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
 		InkRenderer& renderer, int width, int height)
 	{
 		std::array<InkPoint, 1> fallbackPoint = {};
 		std::span<const InkPoint> newPoints;
+		size_t latestIndex = stroke.committedIndex;
 		if (stroke.realPoints.empty())
 		{
 			if (stroke.hasCommittedGeometry || !stroke.hasInputStartPoint) return {};
@@ -1368,32 +1370,33 @@ namespace Inkeys::Drawing::Draw3
 		}
 		else
 		{
-			const size_t latestIndex = stroke.realPoints.size() - 1;
+			latestIndex = stroke.realPoints.size() - 1;
 			if (stroke.hasCommittedGeometry && latestIndex <= stroke.committedIndex) return {};
 			const size_t startIndex = stroke.hasCommittedGeometry ? stroke.committedIndex : 0;
 			newPoints = std::span<const InkPoint>(stroke.realPoints).subspan(startIndex);
-			stroke.committedIndex = latestIndex;
 		}
 
 		renderer.SetOperatorTarget(renderer.layerL1);
-		renderer.DrawStrokeOrDot(newPoints, kTransparentLayerClearColor, shape, InkOperatorKind::Erase);
+		if (renderer.DrawStrokeOrDot(newPoints, kTransparentLayerClearColor,
+			shape, InkOperatorKind::Erase) < 0) return { {}, false };
+		if (!stroke.realPoints.empty()) stroke.committedIndex = latestIndex;
 		stroke.hasCommittedGeometry = true;
-		return RectFromStrokePoints(newPoints, width, height, shape);
+		return { RectFromStrokePoints(newPoints, width, height, shape), true };
 	}
 
-	void DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
+	bool DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkRenderer& renderer, bool clearLayer)
 	{
 		if (clearLayer) renderer.ClearOperatorLayer(renderer.layerL0); // 多 contact 帧由调用方只清一次共享 L0。
 		if (stroke.highlighter)
 		{
-			if (stroke.l0HighlighterGeometry.primitives.empty()) return;
+			if (stroke.l0HighlighterGeometry.primitives.empty()) return true;
 			renderer.SetOperatorTarget(renderer.layerL0);
-			renderer.DrawHighlighterPrimitives(stroke.l0HighlighterGeometry.primitives, color);
-			return;
+			return renderer.DrawHighlighterPrimitives(
+				stroke.l0HighlighterGeometry.primitives, color) >= 0;
 		}
-		if (stroke.l0DrawPoints.empty()) return;
+		if (stroke.l0DrawPoints.empty()) return true;
 		renderer.SetOperatorTarget(renderer.layerL0);
-		renderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shape);
+		return renderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shape) >= 0;
 	}
 }

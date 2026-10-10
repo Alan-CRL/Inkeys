@@ -1,0 +1,60 @@
+{
+  "preexisting_changed": [],
+  "format": [
+    {
+      "path": "Inkeys/IdtConfiguration.cpp",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/IdtConfiguration.h",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.Interaction.cpp",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.Layout.cppm",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/src/i18n/en-US.jsonc",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/src/i18n/zh-CN.jsonc",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/src/i18n/zh-TW.jsonc",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "InkeysHeadlessTests/animation_tests.cpp",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Scripts/i18n.zh-CN.snapshot.jsonc",
+      "bom_preserved": true,
+      "bareLF": 0
+    }
+  ]
+}

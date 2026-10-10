@@ -276,11 +276,11 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
-	void InkRenderer::ResolveLaserStrokeCoverage(
+	bool InkRenderer::ResolveLaserStrokeCoverage(
 		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
 	{
-		if (!laserStrokeCoverage.srv) return;
-		DrawLaserRectPass(dstRTV, rect, opacity, 8.0f,
+		if (!laserStrokeCoverage.srv) return false;
+		return DrawLaserRectPass(dstRTV, rect, opacity, 8.0f,
 			laserStrokeCoverage.srv.Get(), 7, operatorResolveBlendState.Get());
 	}
 
@@ -293,18 +293,18 @@ namespace Inkeys::Drawing::Draw3
 			laserLiveCoverage.srv.Get(), 9);
 	}
 
-	void InkRenderer::ResolveLaserCompositedColor(
+	bool InkRenderer::ResolveLaserCompositedColor(
 		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
 	{
-		if (!laserCompositedColor.srv) return;
-		DrawLaserRectPass(dstRTV, rect, opacity, 11.0f,
+		if (!laserCompositedColor.srv) return false;
+		return DrawLaserRectPass(dstRTV, rect, opacity, 11.0f,
 			laserCompositedColor.srv.Get(), 6, operatorResolveBlendState.Get());
 	}
 
-	void InkRenderer::ClearLaserCoverageRect(RECT rect)
+	bool InkRenderer::ClearLaserCoverageRect(RECT rect)
 	{
-		if (!laserStrokeCoverage.rtv) return;
-		DrawLaserRectPass(laserStrokeCoverage.rtv.Get(), rect, 1.0f,
+		if (!laserStrokeCoverage.rtv) return false;
+		return DrawLaserRectPass(laserStrokeCoverage.rtv.Get(), rect, 1.0f,
 			12.0f, nullptr, 0, nullptr);
 	}
 

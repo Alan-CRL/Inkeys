@@ -139,19 +139,19 @@ int RunPresentationDescriptorTests()
 		upgraded.bindingMode = Bridge::SlideBindingMode::StableSlideId;
 		upgraded.slideIds = { 11, 22 };
 		upgraded.slideId = 11;
-		if (!Expect(CanUpgradePresentationBindingByOrdinal(
+		if (!Expect(!CanUpgradePresentationBindingByOrdinal(
 			*fallbackTarget, upgraded, 3),
-			"same binding can upgrade all ordinal pages to stable SlideIDs"))
+			"legacy ordinal pages cannot prove Stable SlideID identity"))
 			++failures;
-		if (!Expect(CanReusePresentationDocumentSlot(
+		if (!Expect(!CanReusePresentationDocumentSlot(
 			*fallbackTarget, upgraded, 3),
-			"parked fallback slots accept the same proven ordinal upgrade"))
+			"fallback and Stable use separate document lanes"))
 			++failures;
 		upgraded.bindingToken += ":other";
 		upgraded.bindingRevision += 1;
-		if (!Expect(CanUpgradePresentationBindingByOrdinal(
+		if (!Expect(!CanUpgradePresentationBindingByOrdinal(
 			*fallbackTarget, upgraded, 3),
-			"a saved-path fallback can upgrade after slideshow re-entry")) ++failures;
+			"a new slideshow cannot infer old ordinal SlideIDs")) ++failures;
 		Bridge::PresentationTarget otherFallback = *fallbackTarget;
 		otherFallback.bindingRevision += 1;
 		otherFallback.bindingToken += ":other";

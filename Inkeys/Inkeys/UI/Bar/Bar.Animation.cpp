@@ -127,16 +127,18 @@ BarUiAnimationAdvanceResultClass BarUiAdvanceAnimation(
 	double startValue = value.startV;
 	double duration = value.dur;
 
-	if (context.forceReplace || mode == BarUiValueModeEnum::Once
+	if (context.forceReplace || !context.animationEnabled
+		|| mode == BarUiValueModeEnum::Once
 		|| !isfinite(targetValue) || !isfinite(startValue)
 		|| (value.hasMiddleV && !isfinite(static_cast<double>(value.middleV)))
 		|| !isfinite(duration) || duration <= 0.0
-		|| !isfinite(context.speedRate) || context.speedRate <= 0.0
-		|| context.dtSeconds <= 0.0)
+		|| !isfinite(context.speedRate) || context.speedRate <= 0.0)
 	{
 		FinishValue(value, targetValue);
 		return { previousValue != static_cast<double>(value.val), false };
 	}
+	// idle 唤醒帧没有经过的动画时间，保留目标并等待下一帧。
+	if (context.dtSeconds <= 0.0) return { false, true };
 
 	double progress = clamp(static_cast<double>(value.progress)
 		+ context.dtSeconds * context.speedRate / duration, 0.0, 1.0);
@@ -188,13 +190,16 @@ BarUiAnimationAdvanceResultClass BarUiAdvanceAnimation(
 	double duration = color.dur;
 	double speedRate = !context.animationEnabled && color.animateWhenDisabled
 		? 1.0 : context.speedRate;
-	if (context.forceReplace || startColor == targetColor
+	if (context.forceReplace
+		|| (!context.animationEnabled && !color.animateWhenDisabled)
+		|| startColor == targetColor
 		|| !isfinite(duration) || duration <= 0.0
-		|| !isfinite(speedRate) || speedRate <= 0.0 || context.dtSeconds <= 0.0)
+		|| !isfinite(speedRate) || speedRate <= 0.0)
 	{
 		FinishColor(color, targetColor);
 		return { previousColor != targetColor, false };
 	}
+	if (context.dtSeconds <= 0.0) return { false, true };
 
 	double progress = clamp(static_cast<double>(color.progress)
 		+ context.dtSeconds * speedRate / duration, 0.0, 1.0);
@@ -224,14 +229,17 @@ BarUiAnimationAdvanceResultClass BarUiAdvanceAnimation(
 	double duration = pct.dur;
 	double speedRate = !context.animationEnabled && pct.animateWhenDisabled
 		? 1.0 : context.speedRate;
-	if (context.forceReplace || !isfinite(targetPct) || !isfinite(startPct)
+	if (context.forceReplace
+		|| (!context.animationEnabled && !pct.animateWhenDisabled)
+		|| !isfinite(targetPct) || !isfinite(startPct)
 		|| (!pct.hasMiddleV && abs(targetPct - startPct) <= pctEpsilon)
 		|| !isfinite(duration) || duration <= 0.0
-		|| !isfinite(speedRate) || speedRate <= 0.0 || context.dtSeconds <= 0.0)
+		|| !isfinite(speedRate) || speedRate <= 0.0)
 	{
 		FinishPct(pct, targetPct);
 		return { previousPct != static_cast<double>(pct.val), false };
 	}
+	if (context.dtSeconds <= 0.0) return { false, true };
 
 	double progress = clamp(static_cast<double>(pct.progress)
 		+ context.dtSeconds * speedRate / duration, 0.0, 1.0);

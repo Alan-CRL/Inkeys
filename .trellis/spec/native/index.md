@@ -2,6 +2,8 @@
 
 本层覆盖 `inkStrokeModelerTest/main.cpp` 与 `inkStrokeModelerTest/draw3/` 的 C++20/Win32/D3D11 实现。
 
+**集成后的主产品边界：** `Inkeys/Inkeys/Drawing/Draw3/` 按 [native-desktop/draw3-integration.md](../native-desktop/draw3-integration.md) 与 [build-and-compatibility.md](../native-desktop/build-and-compatibility.md) 验证。这里的线程、资源和 CPU/GPU 不变量仍可复用，独立 demo 的 Solution、CLI、窗口 bootstrap 与性能阈值不能替代主产品 `InkeysRepo.sln` 和真实 Host 测试；主产品与 demo 的结果分别记录。
+
 ## Guides
 
 | Guide | Content |

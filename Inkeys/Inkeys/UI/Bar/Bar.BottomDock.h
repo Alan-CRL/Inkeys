@@ -1327,7 +1327,11 @@ namespace Inkeys::UI::Bar
 		{
 			if ((expected & 1ULL) == 0 && serial.compare_exchange_weak(
 				expected, expected + 1, std::memory_order_acq_rel, std::memory_order_acquire))
+			{
+				// 奇数所有权先于后续 relaxed 载荷发布，配对读端的校验前 acquire 栅栏。
+				std::atomic_thread_fence(std::memory_order_release);
 				return;
+			}
 			expected = serial.load(std::memory_order_acquire);
 		}
 	}
@@ -1338,8 +1342,10 @@ namespace Inkeys::UI::Bar
 	{
 		// 渲染帧只能归位自己消费过的非拖动状态；不能替更新的抓取或捕获确认屏障。
 		if (dragActive || (consumedSerial & 1ULL) != 0) return false;
-		return serial.compare_exchange_strong(consumedSerial, consumedSerial + 1,
-			std::memory_order_acq_rel, std::memory_order_acquire);
+		if (!serial.compare_exchange_strong(consumedSerial, consumedSerial + 1,
+			std::memory_order_acq_rel, std::memory_order_acquire)) return false;
+		std::atomic_thread_fence(std::memory_order_release);
+		return true;
 	}
 
 	inline unsigned long long FinishBarBottomDockTransition(

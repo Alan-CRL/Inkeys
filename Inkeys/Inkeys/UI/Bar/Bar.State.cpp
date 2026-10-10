@@ -54,11 +54,12 @@ void BarStateClass::PositionUpdate(double tarZoom)
 }
 void BarStateClass::ThicknessDisplayUpdate()
 {
-	int penThickness = static_cast<int>(GetPenWidth());
-	int displayedThickness = clamp(penThickness, 0, 999);
-	wstring tar = Inkeys::UI::Bar::Detail::FormatThicknessText(
-		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat),
-		displayedThickness);
+	ThicknessDisplayUpdate(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip);
+}
+void BarStateClass::ThicknessDisplayUpdate(double penWidth)
+{
+	wstring tar = Inkeys::UI::Bar::Detail::FormatWidthDipText(
+		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat), penWidth);
 
 	barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->content.SetTar(tar);
 }

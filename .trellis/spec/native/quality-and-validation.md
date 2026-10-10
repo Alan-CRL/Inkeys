@@ -1,5 +1,7 @@
 # Quality and Validation
 
+本页构建命令与 `inkStrokeModelerTestTests` / `--metrics-output` / `--strict-metrics` 指向独立 demo。集成后的 `Inkeys/Inkeys/Drawing/Draw3/` 必须使用 [主产品构建合同](../native-desktop/build-and-compatibility.md) 与 [Draw3 集成合同](../native-desktop/draw3-integration.md)：完整 `InkeysRepo.sln Debug|原生架构`，真实主产品 CLI/Host、严格 Headless 与 PptCOM 分开验证。旧 demo 的固定 landing 阈值不是首发性能验收门，不能用它的成功替代生产成功 Present、Move/Up、工具与恢复证据。
+
 ## Scope Discipline
 
 - 只修改任务要求的最小范围。

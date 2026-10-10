@@ -1304,7 +1304,12 @@ namespace Inkeys::Drawing::Draw3
 		bool foundFreeSlot = false;
 		const size_t representableCapacity = (std::min)(capacity,
 			static_cast<size_t>((std::numeric_limits<uint32_t>::max)()));
-		for (size_t candidate = 0; candidate < representableCapacity; ++candidate)
+		// 缩预算时高槽的 pin 仍可能保留，只计入当前可用范围内的槽。
+		const bool usableSlotsFull = entries_.size() >= representableCapacity &&
+			static_cast<size_t>(std::count_if(entries_.begin(), entries_.end(),
+				[&](const ResidentEntry& entry) { return entry.slot.value < representableCapacity; }))
+				== representableCapacity;
+		for (size_t candidate = 0; !usableSlotsFull && candidate < representableCapacity; ++candidate)
 		{
 			const bool used = std::any_of(entries_.begin(), entries_.end(),
 				[&](const ResidentEntry& entry) { return entry.slot.value == candidate; });

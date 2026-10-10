@@ -75,6 +75,9 @@ namespace Inkeys::UI::RenderPipeline
 		{
 			out << "attempt=" << sample.presentAttempted << ",ulwAttempt=" << sample.ulwAttempted
 				<< ",ulwSuccess=" << sample.ulwSucceeded << ",commit=" << sample.presentCommitted
+				<< ",barStamp=" << sample.hasBarCommitStamp << ",barCommitTicks=" << sample.barCommitTicks
+				<< ",barAttemptSerial=" << sample.barAttemptSerial << ",barCommitEpoch=" << sample.barCommitEpoch
+				<< ",presentAttemptFrameSerial=" << sample.presentAttemptFrameSerial
 				<< ",deferred=" << sample.presentDeferred << ",failed=" << sample.presentFailed
 				<< ",advanced=" << sample.animationAdvanced << ",backoffSkip=" << sample.backoffSkipped
 				<< ",reset=" << sample.failureRecoveryReset << ",exception=" << sample.callbackException
@@ -103,7 +106,10 @@ namespace Inkeys::UI::RenderPipeline
 			static constexpr const char* clientNames[]{ "Bar", "StartupPreview", "PptBottomLeft",
 				"PptBottomRight", "PptMiddleLeft", "PptMiddleRight", "Settings", "WhiteboardFreeze" };
 			static constexpr const char* resultNames[]{ "idle", "continue", "retry", "deviceLost", "stop" };
-			static constexpr const char* stageNames[]{ "presentLockWait", "draw", "getDC", "ULW", "releaseDC", "endDraw" };
+			static constexpr const char* stageNames[]{ "presentLockWait", "draw", "getDC", "ULW", "releaseDC", "endDraw",
+				"wakeAndSnapshot", "displayTransition", "submitTargetsAndLayout",
+				"advanceAnimationsAndDeriveLayout", "prepareLightingAndDemand", "dirtyAndPrepare", "resources" };
+			static_assert(sizeof(stageNames) / sizeof(stageNames[0]) == static_cast<std::size_t>(FrameStage::Count));
 			static constexpr const char* fallbackNames[]{ "transform", "sizeBudget", "warming", "createFailure",
 				"other", "unavailable", "geometryScale", "quantizedRadius", "dpi", "alignment" };
 			const auto& summary = diagnostics.Summary();
@@ -278,9 +284,25 @@ namespace Inkeys::UI::RenderPipeline
 
 	FrameDiagnostics* CurrentFrameDiagnostics() noexcept { return currentDiagnostics; }
 
+	void StampBarCommit(FrameDiagnostics* diagnostics, bool committed,
+		std::uint64_t attemptSerial, std::uint64_t epoch, BarCommitClock clock) noexcept
+	{
+		// 旧异常诊断或测试 clock 不授权真戳；仅显式采样的完整事务首次确认读钟。
+		if (!diagnostics || !diagnostics->detailedCaptureEnabled
+			|| !committed || diagnostics->hasBarCommitStamp) return;
+		diagnostics->barCommitTicks = clock ? clock()
+			: std::chrono::steady_clock::now().time_since_epoch().count();
+		diagnostics->barAttemptSerial = attemptSerial;
+		diagnostics->barCommitEpoch = epoch;
+		diagnostics->hasBarCommitStamp = true;
+	}
+
 	FrameStageTimer::FrameStageTimer(FrameDiagnostics* diagnostics, FrameStage stage) noexcept
 		: diagnostics_(diagnostics), stage_(stage)
 	{
+		// 原六段仍服务异常 sink；新七段仅在真正 detailed capture 时读钟/写样本。
+		if (diagnostics_ && stage_ >= FrameStage::WakeAndSnapshot
+			&& !diagnostics_->detailedCaptureEnabled) diagnostics_ = nullptr;
 		if (diagnostics_) start_ = std::chrono::steady_clock::now();
 	}
 
@@ -347,6 +369,157 @@ namespace Inkeys::UI::RenderPipeline
 
 	struct Scheduler::Impl
 	{
+		enum class RawPhase : std::uint8_t { Empty, Reserved, Prepared, Releasing };
+
+		struct RawActivity
+		{
+			std::uint64_t generation = 0, epoch = 0, segment = 0;
+			std::int64_t callbackTicks = 0, commitTicks = 0, trueBarCommitTicks = 0;
+			bool initialized = false, active = false, commitActive = false, trueBarCommitActive = false;
+		};
+
+		[[nodiscard]] static std::int64_t Ticks(std::chrono::steady_clock::time_point time) noexcept
+		{
+			return time.time_since_epoch().count();
+		}
+
+		void RawMarkIdle() noexcept
+		{
+			if (!rawActive || rawIdle) return;
+			rawIdle = true;
+			++rawActive->idleTransitions;
+			for (auto& activity : rawActivity)
+			{
+				activity.active = false;
+				activity.commitActive = false;
+				activity.trueBarCommitActive = false;
+			}
+		}
+
+		void RawBeginBatch(std::chrono::steady_clock::time_point frameTime,
+			ClientMask registered, ClientMask work) noexcept
+		{
+			if (!rawActive) return;
+			rawIdle = false;
+			rawBatch = {};
+			rawBatch.runSerial = rawActive->runSerial;
+			rawBatch.batchSerial = ++rawBatchSerial;
+			rawBatch.frameTimeTicks = Ticks(frameTime);
+			rawBatch.beginTicks = Ticks(std::chrono::steady_clock::now());
+			rawBatch.registered = registered;
+			rawBatch.work = work;
+		}
+
+		void RawEndBatch(std::chrono::steady_clock::time_point end,
+			ClientMask requested, ClientMask continued, ClientMask retried) noexcept
+		{
+			if (!rawActive) return;
+			rawBatch.endTicks = Ticks(end);
+			rawBatch.requested = requested;
+			rawBatch.continued = continued;
+			rawBatch.retried = retried;
+			rawBatch.validTime = DiagnosticsDetail::RawBatchTimeValid(rawBatch);
+			if (!rawBatch.validTime) ++rawActive->invalidBatches;
+			++rawActive->batchSeen;
+			if (rawActive->batchRetained < rawActive->capacity)
+				rawActive->batches[rawActive->batchRetained++] = rawBatch;
+			else ++rawActive->batchDropped;
+		}
+
+		void RawRecordCallback(Client client, std::uint64_t generation,
+			const FrameContext& context, std::chrono::steady_clock::time_point frameTime,
+			FrameResult result, const FrameDiagnostics& frame,
+			std::chrono::steady_clock::time_point start,
+			std::chrono::steady_clock::time_point end,
+			ClientMask requested, ClientMask continued, ClientMask retried) noexcept
+		{
+			if (!rawActive) return;
+			RawCallbackSample sample;
+			sample.runSerial = rawActive->runSerial;
+			sample.batchSerial = rawBatch.batchSerial;
+			sample.callbackSerial = ++rawCallbackSerial;
+			sample.client = client;
+			sample.callbackGeneration = generation;
+			sample.contextEpoch = context.epoch.generation;
+			sample.backend = context.epoch.backend;
+			sample.featureLevel = context.epoch.featureLevel;
+			sample.schedulerIdleEpoch = rawActive->idleTransitions;
+			sample.result = result;
+			const auto bit = Mask(client);
+			sample.requested = (requested & bit) != 0;
+			sample.continued = (continued & bit) != 0;
+			sample.retried = (retried & bit) != 0;
+			sample.frameTimeTicks = Ticks(frameTime);
+			sample.startTicks = Ticks(start);
+			sample.endTicks = Ticks(end);
+			sample.frame = frame;
+			auto& activity = rawActivity[Index(client)];
+			if (!activity.initialized || !activity.active || activity.generation != generation
+				|| activity.epoch != context.epoch.generation)
+			{
+				++activity.segment;
+				activity.active = false;
+				activity.commitActive = false;
+				activity.trueBarCommitActive = false;
+			}
+			sample.activitySegment = activity.segment;
+			sample.hasPreviousActiveCallback = activity.active;
+			if (activity.active) sample.previousActiveCallbackTicks = activity.callbackTicks;
+			sample.hasPreviousActiveCommit = activity.commitActive;
+			if (activity.commitActive) sample.previousActiveCommitTicks = activity.commitTicks;
+			sample.validTime = DiagnosticsDetail::RawCallbackTimeValid(sample);
+			if (!sample.validTime) ++rawActive->invalidCallbacks;
+			sample.hasPreviousTrueBarCommit = activity.trueBarCommitActive;
+			if (activity.trueBarCommitActive) sample.previousTrueBarCommitTicks = activity.trueBarCommitTicks;
+			sample.barCommitStatus = DiagnosticsDetail::ClassifyBarCommitStamp(sample);
+			const bool trueBarCommitted = sample.barCommitStatus == BarCommitStampStatus::Valid;
+			const bool unverifiedBarCommit = sample.barCommitStatus == BarCommitStampStatus::Unverified;
+			const bool invalidBarCommitStamp = sample.barCommitStatus == BarCommitStampStatus::Invalid;
+			// 成功序号独立于回调/退避/尝试；满容量后仍保留真实分母。
+			if (trueBarCommitted) sample.barSuccessSerial = ++rawBarSuccessSerial;
+			rawActive->trueBarCommits += trueBarCommitted;
+			rawActive->unverifiedBarCommits += unverifiedBarCommit;
+			rawActive->invalidBarCommitStamps += invalidBarCommitStamp;
+			auto& counters = rawActive->clients[Index(client)];
+			++counters.seen;
+			counters.advanced += frame.animationAdvanced;
+			counters.attempts += frame.presentAttempted;
+			counters.commits += frame.presentCommitted;
+			counters.failures += DiagnosticsDetail::FrameFailed(result, frame);
+			counters.idle += result == FrameResult::Idle;
+			counters.retries += result == FrameResult::Retry;
+			counters.trueBarCommits += trueBarCommitted;
+			counters.unverifiedBarCommits += unverifiedBarCommit;
+			counters.invalidBarCommitStamps += invalidBarCommitStamp;
+			++rawActive->callbackSeen;
+			if (rawActive->callbackRetained < rawActive->capacity)
+				rawActive->callbacks[rawActive->callbackRetained++] = sample;
+			else ++rawActive->callbackDropped;
+			activity.initialized = true;
+			activity.generation = generation;
+			activity.epoch = context.epoch.generation;
+			activity.active = result == FrameResult::Continue || result == FrameResult::Retry;
+			activity.callbackTicks = sample.startTicks;
+			if (frame.presentCommitted)
+			{
+				activity.commitActive = activity.active;
+				activity.commitTicks = sample.endTicks;
+			}
+			if (!activity.active) activity.commitActive = false;
+			if (trueBarCommitted)
+			{
+				activity.trueBarCommitActive = activity.active;
+				activity.trueBarCommitTicks = frame.barCommitTicks;
+			}
+			else if (unverifiedBarCommit || invalidBarCommitStamp)
+			{
+				// 缺失或矛盾戳不成为成功，也不能假定其两侧为连续真提交。
+				activity.trueBarCommitActive = false;
+			}
+			if (!activity.active) activity.trueBarCommitActive = false;
+			rawBatch.executed |= bit;
+		}
+
 		Impl() { wakeEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr); }
 		~Impl()
 		{
@@ -368,6 +541,15 @@ namespace Inkeys::UI::RenderPipeline
 				diagnosticsSink = {};
 				pendingDiagnosticsSink.reset();
 				diagnostics.Reset();
+				// joined 之后才封口，renderThread 早发布 running=false 不代表记录已完整。
+				if (rawActive)
+				{
+					rawActive->sealed = true;
+					sealedReport = std::move(rawActive);
+					rawActive.reset();
+				}
+				rawThreadJoined = true;
+				++rawLifecycleEpoch;
 			}
 			if (wakeEvent) ResetEvent(wakeEvent);
 			running.store(false, std::memory_order_release);
@@ -398,6 +580,15 @@ namespace Inkeys::UI::RenderPipeline
 		DiagnosticsSink diagnosticsSink;
 		std::optional<DiagnosticsSink> pendingDiagnosticsSink;
 		DiagnosticsDetail::DiagnosticsAccumulator diagnostics;
+		std::atomic<RawPhase> rawPhase = RawPhase::Empty;
+		std::uint64_t rawReservationToken = 0, rawLifecycleEpoch = 0, rawRunSerial = 0;
+		bool rawThreadJoined = true, rawIdle = true;
+		std::optional<RawCaptureReport> rawPrepared, rawActive, sealedReport;
+		RawCaptureTestHook rawTestHook = nullptr;
+		void* rawTestContext = nullptr;
+		std::array<RawActivity, ClientCount> rawActivity{};
+		RawBatchSample rawBatch;
+		std::uint64_t rawBatchSerial = 0, rawCallbackSerial = 0, rawBarSuccessSerial = 0;
 		std::mutex callbackMutex;
 		std::condition_variable callbackCondition;
 		std::array<RenderCallback, ClientCount> callbacks{};
@@ -427,17 +618,35 @@ namespace Inkeys::UI::RenderPipeline
 		DeviceRecoveryCallback deviceRecovery,
 		ControlCallback controlCallback)
 	{
-		if (!impl_ || !impl_->wakeEvent
-			|| impl_->running.exchange(true, std::memory_order_acq_rel)) return false;
+		if (!impl_ || !impl_->wakeEvent) return false;
+		// 自然 Stop 结果也必须先 join 封口，不能让下一轮覆盖仍在退出的 raw owner。
+		if (!impl_->running.load(std::memory_order_acquire) && impl_->renderThread.joinable())
+			impl_->Stop();
+		if (impl_->running.exchange(true, std::memory_order_acq_rel)) return false;
 		impl_->stopRequested.store(false, std::memory_order_release);
 		{
 			std::scoped_lock lock(impl_->callbackMutex);
 			impl_->contextProvider = std::move(contextProvider);
 			impl_->deviceRecovery = std::move(deviceRecovery);
 			impl_->controlCallback = std::move(controlCallback);
+			// Start/Stop 的单 owner 生命周期与配置预约分开；旧锁外候选不能跨越一次启动后发布。
+			++impl_->rawLifecycleEpoch;
+			impl_->rawThreadJoined = false;
+			++impl_->rawRunSerial;
+			if (impl_->rawPhase.load(std::memory_order_acquire) == Impl::RawPhase::Prepared)
+			{
+				impl_->rawActive = std::move(impl_->rawPrepared);
+				impl_->rawPrepared.reset();
+				impl_->rawPhase.store(Impl::RawPhase::Empty, std::memory_order_release);
+				impl_->rawActive->runSerial = impl_->rawRunSerial;
+				impl_->rawActive->originTicks = Impl::Ticks(std::chrono::steady_clock::now());
+				impl_->rawActivity = {};
+				impl_->rawBatchSerial = impl_->rawCallbackSerial = impl_->rawBarSuccessSerial = 0;
+				impl_->rawIdle = true;
+			}
 		}
 
-		impl_->renderThread = std::jthread([this]
+		try { impl_->renderThread = std::jthread([this]
 			{
 				auto registeredMask = [this]() -> ClientMask
 					{
@@ -506,6 +715,7 @@ namespace Inkeys::UI::RenderPipeline
 						if (pending == 0)
 						{
 							if (impl_->stopRequested.load(std::memory_order_acquire)) break;
+							impl_->RawMarkIdle();
 							DWORD waitMs = INFINITE;
 							if (impl_->diagnosticsSink)
 							{
@@ -542,22 +752,37 @@ namespace Inkeys::UI::RenderPipeline
 					pending &= registered;
 					if (pending == 0) continue;
 					const bool diagnosticActive = static_cast<bool>(impl_->diagnosticsSink);
+					const bool rawActive = static_cast<bool>(impl_->rawActive);
+					const bool frameSampleActive = diagnosticActive || rawActive;
 					if (diagnosticActive) impl_->diagnostics.BeginBatch(frameTime);
+					if (rawActive) impl_->RawBeginBatch(frameTime, registered, pending);
 					if (recoveryPending)
 					{
 						// 恢复失败保留同一批 registered 客户端，下一节拍继续恢复而不使用旧 epoch。
-						const auto recoveryStart = diagnosticActive
+						const auto recoveryStart = frameSampleActive
 							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 						const bool recovered = deviceRecovery && deviceRecovery();
+						const auto recoveryEnd = frameSampleActive
+							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+						if (rawActive)
+						{
+							impl_->rawBatch.recoveryAttempted = true;
+							impl_->rawBatch.recoverySucceeded = recovered;
+							impl_->rawBatch.recoveryStartTicks = Impl::Ticks(recoveryStart);
+							impl_->rawBatch.recoveryEndTicks = Impl::Ticks(recoveryEnd);
+						}
 						if (diagnosticActive)
 							impl_->diagnostics.AddRecovery(recovered, DiagnosticsDetail::Milliseconds(
-								std::chrono::steady_clock::now() - recoveryStart));
+								recoveryEnd - recoveryStart));
 						if (!recovered)
 						{
 							pending |= registered;
+							const auto end = frameSampleActive
+								? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+							if (rawActive) impl_->RawEndBatch(end, requested, continued, retried);
 							if (diagnosticActive)
 							{
-								impl_->diagnostics.EndBatch(std::chrono::steady_clock::now(), requested, continued, retried);
+								impl_->diagnostics.EndBatch(end, requested, continued, retried);
 								impl_->EmitDiagnostics();
 							}
 							continue;
@@ -570,6 +795,12 @@ namespace Inkeys::UI::RenderPipeline
 					std::array<FrameResult, ClientCount> results{};
 					results.fill(FrameResult::Idle);
 					const auto work = std::exchange(pending, 0);
+					if (rawActive)
+					{
+						impl_->rawBatch.work = work;
+						impl_->rawBatch.contextValid = true;
+						impl_->rawBatch.contextEpoch = context.epoch.generation;
+					}
 					const auto requestedWork = requested & work;
 					const auto continuedWork = continued & work;
 					const auto retriedWork = retried & work;
@@ -582,23 +813,24 @@ namespace Inkeys::UI::RenderPipeline
 						{
 							std::scoped_lock lock(impl_->callbackMutex);
 							callback = impl_->callbacks[Index(client)];
-							if (diagnosticActive) callbackGeneration = impl_->callbackGenerations[Index(client)];
+							if (frameSampleActive) callbackGeneration = impl_->callbackGenerations[Index(client)];
 							if (callback) ++impl_->activeCallbacks[Index(client)];
 						}
 						if (!callback) continue;
 						std::optional<FrameDiagnostics> sample;
-						if (diagnosticActive)
+						if (frameSampleActive)
 						{
-							if (callbackGeneration != impl_->diagnosticGenerations[Index(client)])
+							if (diagnosticActive && callbackGeneration != impl_->diagnosticGenerations[Index(client)])
 							{
 								impl_->diagnostics.ResetClientActivity(client);
 								impl_->diagnosticGenerations[Index(client)] = callbackGeneration;
 							}
 							sample.emplace();
+							sample->detailedCaptureEnabled = rawActive;
 							sample->epoch = context.epoch.generation;
 							sample->backend = context.epoch.backend;
 						}
-						const auto callbackStart = diagnosticActive
+						const auto callbackStart = frameSampleActive
 							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 						{
 							CallbackDiagnosticsScope diagnosticsScope(sample ? &*sample : nullptr);
@@ -609,9 +841,15 @@ namespace Inkeys::UI::RenderPipeline
 								if (sample) sample->callbackException = true;
 							}
 						}
-						if (sample)
+						const auto callbackEnd = frameSampleActive
+							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+						if (sample && rawActive)
+							impl_->RawRecordCallback(client, callbackGeneration, context, frameTime,
+								results[Index(client)], *sample, callbackStart, callbackEnd,
+								requestedWork, continuedWork, retriedWork);
+						if (sample && diagnosticActive)
 							impl_->diagnostics.AddClient(client, results[Index(client)], *sample,
-								callbackStart, std::chrono::steady_clock::now(), requestedWork, continuedWork, retriedWork);
+								callbackStart, callbackEnd, requestedWork, continuedWork, retriedWork);
 						{
 							std::scoped_lock lock(impl_->callbackMutex);
 							--impl_->activeCallbacks[Index(client)];
@@ -625,9 +863,17 @@ namespace Inkeys::UI::RenderPipeline
 					// 回调执行期间可能注册新客户端；用最新掩码保留其首次请求。
 					registered = registeredMask();
 					const auto decision = impl_->dispatch.Complete(work, registered, results);
+					const auto batchEnd = frameSampleActive
+						? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+					if (rawActive)
+					{
+						impl_->rawBatch.deviceLost = decision.rebuildSharedDevice;
+						impl_->rawBatch.stopped = decision.stop;
+						impl_->RawEndBatch(batchEnd, requestedWork, continuedWork, retriedWork);
+					}
 					if (diagnosticActive)
 					{
-						impl_->diagnostics.EndBatch(std::chrono::steady_clock::now(), requestedWork, continuedWork, retriedWork);
+						impl_->diagnostics.EndBatch(batchEnd, requestedWork, continuedWork, retriedWork);
 						impl_->EmitDiagnostics();
 					}
 					if (decision.stop) break;
@@ -661,7 +907,12 @@ namespace Inkeys::UI::RenderPipeline
 					try { task(); }
 					catch (...) {}
 				}
-			});
+			}); }
+		catch (...)
+		{
+			impl_->Stop();
+			return false;
+		}
 		return true;
 	}
 
@@ -737,6 +988,116 @@ namespace Inkeys::UI::RenderPipeline
 		}
 		if (impl_->wakeEvent) SetEvent(impl_->wakeEvent);
 		return true;
+	}
+
+	bool Scheduler::ConfigureRawCapture(std::size_t capacity)
+	{
+		if (!impl_ || capacity > 65536) return false;
+		constexpr std::size_t MaxRawBytes = 64ull * 1024 * 1024;
+		constexpr std::size_t PerEntryBytes = sizeof(RawCallbackSample) + sizeof(RawBatchSample);
+		static_assert(32768 <= MaxRawBytes / PerEntryBytes);
+		if (capacity != 0 && capacity > MaxRawBytes / PerEntryBytes) return false;
+		std::uint64_t epoch = 0, token = 0;
+		RawCaptureTestHook hook = nullptr;
+		void* hookContext = nullptr;
+		std::optional<RawCaptureReport> released;
+		{
+			std::unique_lock lock(impl_->callbackMutex, std::try_to_lock);
+			if (!lock || impl_->running.load(std::memory_order_acquire)
+				|| !impl_->rawThreadJoined || impl_->rawActive) return false;
+			const auto phase = impl_->rawPhase.load(std::memory_order_acquire);
+			if (phase == Impl::RawPhase::Reserved || phase == Impl::RawPhase::Releasing) return false;
+			if (capacity == 0)
+			{
+				if (phase != Impl::RawPhase::Prepared) return true;
+				released = std::move(impl_->rawPrepared);
+				impl_->rawPrepared.reset();
+				impl_->rawPhase.store(Impl::RawPhase::Releasing, std::memory_order_release);
+				hook = impl_->rawTestHook;
+				hookContext = impl_->rawTestContext;
+			}
+			else
+			{
+				if (phase != Impl::RawPhase::Empty || impl_->sealedReport) return false;
+				epoch = impl_->rawLifecycleEpoch;
+				token = ++impl_->rawReservationToken;
+				impl_->rawPhase.store(Impl::RawPhase::Reserved, std::memory_order_release);
+				hook = impl_->rawTestHook;
+				hookContext = impl_->rawTestContext;
+			}
+		}
+		if (capacity == 0)
+		{
+			try { if (hook) hook(RawCaptureTestPoint::BeforeRelease, hookContext); }
+			catch (...) {}
+			released.reset();
+			auto expected = Impl::RawPhase::Releasing;
+			impl_->rawPhase.compare_exchange_strong(expected, Impl::RawPhase::Empty,
+				std::memory_order_acq_rel);
+			return true;
+		}
+
+		std::optional<RawCaptureReport> candidate;
+		try
+		{
+			candidate.emplace();
+			candidate->capacity = capacity;
+			candidate->allocatedBytes = capacity * PerEntryBytes;
+			candidate->callbacks.resize(capacity);
+			candidate->batches.resize(capacity);
+			if (hook) hook(RawCaptureTestPoint::AfterAllocation, hookContext);
+		}
+		catch (...)
+		{
+			candidate.reset();
+			auto expected = Impl::RawPhase::Reserved;
+			impl_->rawPhase.compare_exchange_strong(expected, Impl::RawPhase::Empty,
+				std::memory_order_acq_rel);
+			return false;
+		}
+		{
+			std::unique_lock lock(impl_->callbackMutex, std::try_to_lock);
+			if (lock && !impl_->running.load(std::memory_order_acquire)
+				&& impl_->rawThreadJoined && impl_->rawLifecycleEpoch == epoch
+				&& impl_->rawReservationToken == token
+				&& impl_->rawPhase.load(std::memory_order_acquire) == Impl::RawPhase::Reserved
+				&& !impl_->sealedReport)
+			{
+				impl_->rawPrepared = std::move(candidate);
+				impl_->rawPhase.store(Impl::RawPhase::Prepared, std::memory_order_release);
+				return true;
+			}
+		}
+		// 候选释放完成前保持 Reserved，防止并发配置峰值超过单份预算。
+		candidate.reset();
+		auto expected = Impl::RawPhase::Reserved;
+		impl_->rawPhase.compare_exchange_strong(expected, Impl::RawPhase::Empty,
+			std::memory_order_acq_rel);
+		return false;
+	}
+
+	std::optional<RawCaptureReport> Scheduler::TakeRawCapture() noexcept
+	{
+		if (!impl_) return std::nullopt;
+		std::optional<RawCaptureReport> report;
+		{
+			std::unique_lock lock(impl_->callbackMutex, std::try_to_lock);
+			if (!lock || !impl_->rawThreadJoined || impl_->running.load(std::memory_order_acquire)
+				|| !impl_->sealedReport) return std::nullopt;
+			report = std::move(impl_->sealedReport);
+			impl_->sealedReport.reset();
+		}
+		report->callbacks.resize(static_cast<std::size_t>(report->callbackRetained));
+		report->batches.resize(static_cast<std::size_t>(report->batchRetained));
+		return report;
+	}
+
+	void Scheduler::SetRawCaptureTestHookForTests(RawCaptureTestHook hook, void* context) noexcept
+	{
+		if (!impl_) return;
+		std::scoped_lock lock(impl_->callbackMutex);
+		impl_->rawTestHook = hook;
+		impl_->rawTestContext = context;
 	}
 
 	void Scheduler::WakeForStop() noexcept
@@ -894,5 +1255,7 @@ namespace Inkeys::UI::RenderPipeline
 	void Request(ClientMask mask) noexcept { scheduler.Request(mask); }
 	bool PostControl(ControlTask task) { return scheduler.PostControl(std::move(task)); }
 	void WakeForStop() noexcept { scheduler.WakeForStop(); }
+	bool ConfigureRawCapture(std::size_t capacity) { return scheduler.ConfigureRawCapture(capacity); }
+	std::optional<RawCaptureReport> TakeRawCapture() noexcept { return scheduler.TakeRawCapture(); }
 	bool SetDiagnosticsSink(DiagnosticsSink sink) { return scheduler.SetDiagnosticsSink(std::move(sink)); }
 }

@@ -2,6 +2,8 @@ module;
 
 #include <windows.h>
 
+#include "../Helper/FailedCleanupDeadline.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -115,10 +117,12 @@ export namespace Inkeys::Window
 		Service(Service&&) = delete;
 		Service& operator=(Service&&) = delete;
 
-		[[nodiscard]] bool Start(std::vector<WindowSpec> specs);
+		[[nodiscard]] bool Start(std::vector<WindowSpec> specs,
+			Shutdown::FailedCleanupSignal failedCleanup = {});
 		void StopAndJoin() noexcept;
 		void Stop() noexcept;
 		[[nodiscard]] bool Running() const noexcept;
+		void BeginShutdown() noexcept;
 
 		[[nodiscard]] HWND Handle(WindowRole role) const noexcept;
 		[[nodiscard]] bool Ready(WindowRole role) const noexcept;
@@ -136,6 +140,8 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool Show(WindowRole role);
 		[[nodiscard]] bool Hide(WindowRole role);
 		[[nodiscard]] bool HideAllUserWindows();
+		// 受控退出用：只投递给各 HWND owner，不等待可能已经卡住的 owner 完成。
+		[[nodiscard]] bool RequestHideAllUserWindows();
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
 			DrawpadSurfaceVisibility visibility,
 			std::function<bool()> stillDesired = {});

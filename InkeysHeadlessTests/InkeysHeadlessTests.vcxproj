@@ -70,7 +70,7 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-	  <PreprocessorDefinitions>INKEYS_MESSAGE_BOX_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	  <PreprocessorDefinitions>INKEYS_MESSAGE_BOX_TESTING;DRAW3_CONTACT_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
@@ -134,6 +134,9 @@
     <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Helper\FailedCleanupDeadline.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationProbe.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Presentation.Source.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
     <ClCompile Include="animation_tests.cpp" />
@@ -144,6 +147,9 @@
 	<ClCompile Include="render_scheduler_tests.cpp" />
 	<ClCompile Include="startup_progress_tests.cpp" />
 	<ClCompile Include="startup_preview_state_tests.cpp" />
+	<ClCompile Include="config_metadata_tests.cpp">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
 	<ClCompile Include="bar_presentation_alpha_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
 	<ClCompile Include="ppt_ui_tests.cpp" />
@@ -156,7 +162,9 @@
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
 	<ClCompile Include="draw3_bridge_tests.cpp" />
 	<ClCompile Include="draw3_contact_tests.cpp" />
+	<ClCompile Include="update_security_tests.cpp" />
 	<ClCompile Include="speed_eraser_tests.cpp" />
+	<ClCompile Include="pen_width_tests.cpp" />
 	<ClCompile Include="eraser_attribute_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />

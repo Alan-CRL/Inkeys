@@ -249,22 +249,58 @@ namespace Inkeys::UI::Bar
 		return snapshot;
 	}
 
+	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage)
+	{
+		if (!hoverPct || !hoverFill || !hoverStage) return false;
+		hoverPct->animateWhenDisabled = true;
+		hoverFill->animateWhenDisabled = true;
+		const BarUiCurveSpecClass curve{
+			BarUiCurveEnum::EaseOutSine,
+			BarUiCurveEnum::EaseOutSine, 0.0, false };
+		hoverFill->SetTar(GetThemeColor(BarThemeColorEnum::PressedFill),
+			BarButtonHoverTransitionDuration, curve);
+		hoverPct->SetTar(BarButtonHoverOpacity,
+			BarButtonHoverTransitionDuration, std::nullopt, true, curve);
+		*hoverStage = BarButtonHoverStageEnum::Showing;
+		return true;
+	}
+
+	bool StopBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage, bool immediate, bool preserveVisual)
+	{
+		if (!hoverPct || !hoverStage) return false;
+		if (immediate)
+		{
+			*hoverStage = BarButtonHoverStageEnum::None;
+			// 按下时保留当前视觉值交给按压态续接，隐藏等场景仍立即清零。
+			if (!preserveVisual) hoverPct->SetDirect(0.0);
+			hoverPct->animateWhenDisabled = false;
+			if (hoverFill) hoverFill->animateWhenDisabled = false;
+		}
+		else
+		{
+			// 离开后保持背景颜色，透明度自然降为零后再结束悬停。
+			hoverPct->animateWhenDisabled = true;
+			if (hoverFill) hoverFill->animateWhenDisabled = true;
+			*hoverStage = BarButtonHoverStageEnum::Fading;
+			const BarUiCurveSpecClass curve{
+				BarUiCurveEnum::EaseOutSine,
+				BarUiCurveEnum::EaseOutSine, 0.0, false };
+			hoverPct->SetTar(0.0,
+				BarButtonHoverTransitionDuration,
+				std::nullopt, true, curve);
+		}
+		return true;
+	}
+
 	bool StartBarButtonHoverVisual(BarButtonClass& button) noexcept
 	{
 		if (button.preset == BarButtonPresetEnum::Divider
 			|| !button.button.fill.has_value()) return false;
-		button.button.pct.animateWhenDisabled = true;
-		button.button.fill->animateWhenDisabled = true;
-		const BarUiCurveSpecClass curve{
-			BarUiCurveEnum::EaseOutSine,
-			BarUiCurveEnum::EaseOutSine, 0.0, false };
-		button.button.fill->SetTar(
-			GetThemeColor(BarThemeColorEnum::PressedFill),
-			BarButtonHoverTransitionDuration, curve);
-		button.button.pct.SetTar(BarButtonHoverOpacity,
-			BarButtonHoverTransitionDuration, std::nullopt, true, curve);
-		button.hoverStage = BarButtonHoverStageEnum::Showing;
-		return true;
+		// 属性面板的 Shape 与完整按钮共用悬停动画，按钮仅保留自身门控。
+		return StartBarButtonHoverVisual(&button.button.pct,
+			&button.button.fill.value(), &button.hoverStage);
 	}
 
 	bool StopBarButtonHoverVisual(BarButtonClass& button, bool immediate,
@@ -281,26 +317,8 @@ namespace Inkeys::UI::Bar
 			return true;
 		}
 		if (!button.button.fill.has_value()) return false;
-		if (immediate)
-		{
-			button.hoverStage = BarButtonHoverStageEnum::None;
-			if (!preserveVisual) button.button.pct.SetDirect(0.0);
-			button.button.pct.animateWhenDisabled = false;
-			button.button.fill->animateWhenDisabled = false;
-		}
-		else
-		{
-			button.button.pct.animateWhenDisabled = true;
-			button.button.fill->animateWhenDisabled = true;
-			button.hoverStage = BarButtonHoverStageEnum::Fading;
-			const BarUiCurveSpecClass curve{
-				BarUiCurveEnum::EaseOutSine,
-				BarUiCurveEnum::EaseOutSine, 0.0, false };
-			button.button.pct.SetTar(0.0,
-				BarButtonHoverTransitionDuration,
-				std::nullopt, true, curve);
-		}
-		return true;
+		return StopBarButtonHoverVisual(&button.button.pct,
+			&button.button.fill.value(), &button.hoverStage, immediate, preserveVisual);
 	}
 
 	bool UpdateBarButtonHoverVisual(BarButtonClass& button, bool visible,
@@ -733,6 +751,17 @@ namespace Inkeys::UI::Bar
 			for (const auto& widget : widgets)
 				if (widget.spec.id == id) return &widget;
 			return nullptr;
+		}
+
+		void ResetWidgetDeviceCachesLocked() noexcept
+		{
+			// Scene 的稳定按钮不在 rendererOwner 的注册表中，设备切换时需单独丢弃上传位图。
+			for (auto& widget : widgets)
+			{
+				if (!widget.button) continue;
+				widget.button->icon.ResetCache();
+				widget.button->pngIcon.ResetCache();
+			}
 		}
 
 		bool ApplySharedLightingLocked(
@@ -1949,6 +1978,7 @@ namespace Inkeys::UI::Bar
 	{
 		std::lock_guard lock(impl_->mutex);
 		impl_->rendererOwner.spec.DiscardDeviceResources();
+		impl_->ResetWidgetDeviceCachesLocked();
 	}
 
 	void BarSurfaceScene::Invalidate() noexcept
@@ -2025,7 +2055,17 @@ namespace Inkeys::UI::Bar
 		UINT width, UINT height)
 	{
 		std::lock_guard lock(impl_->mutex);
-		return impl_->rendererOwner.spec.EnsureDeviceResources(epoch, width, height);
+		auto& renderer = impl_->rendererOwner.spec;
+		const auto targetSize = renderer.GetTargetBitmapSize();
+		// 与 renderer 的复用条件一致；仅成功重建后丢弃 Scene 自持的上传缓存。
+		const bool needsRecreation = renderer.GetDeviceGeneration() != epoch.generation
+			|| !renderer.GetDeviceContext() || !renderer.GetTargetBitmap()
+			|| !renderer.GetGdiInteropRenderTarget()
+			|| targetSize.width != width || targetSize.height != height;
+		const HRESULT result = renderer.EnsureDeviceResources(epoch, width, height);
+		if (SUCCEEDED(result) && needsRecreation)
+			impl_->ResetWidgetDeviceCachesLocked();
+		return result;
 	}
 
 	ID2D1DeviceContext* BarSurfaceScene::DeviceContext() const noexcept

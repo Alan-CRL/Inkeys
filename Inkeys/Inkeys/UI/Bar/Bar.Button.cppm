@@ -1,6 +1,7 @@
 module;
 
 #include "../../../IdtMain.h"
+#include "../../../IdtState.h"
 
 #include <string>
 #include <unordered_map>
@@ -237,6 +238,7 @@ bool RegisterButton(
 		void PresetInitialization();
 		void RegisterBuiltInComponents();
 		void StateUpdate();
+		void StateUpdate(const StateModeClass& stateMode);
 		void UpdateDrawButtonStyle();
 		void UpdateWhiteboardButtonStyle();
 		void ExecuteClearClick(bool doubleClickContinuation);
@@ -246,10 +248,11 @@ bool RegisterButton(
 		void ResetIconCaches();
 
 	protected:
-		void UpdateEraserButtonStyle();
-		void UpdateGeometryButtonStyle();
-		void PresetHoming();
-		void CalcState();
+		void UpdateDrawButtonStyle(const StateModeClass& stateMode);
+		void UpdateEraserButtonStyle(const StateModeClass& stateMode);
+		void UpdateGeometryButtonStyle(const StateModeClass& stateMode);
+		void PresetHoming(const StateModeClass& stateMode);
+		void CalcState(const StateModeClass& stateMode);
 		static Inkeys::BarButtonSizeKind ToConfigSize(BarButtonSizeEnum size);
 		static BarButtonSizeEnum ToRuntimeSize(Inkeys::BarButtonSizeKind size);
 		static bool IsExactFixedZonePermutation(

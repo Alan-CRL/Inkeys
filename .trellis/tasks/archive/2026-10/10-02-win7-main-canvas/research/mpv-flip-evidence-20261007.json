@@ -1,0 +1,66 @@
+{
+  "source": {
+    "file": "video/out/gpu/d3d11_helpers.c",
+    "ref": "f4210f84906c3b00a65fba198c8127b6757b9350",
+    "description_check_lines": [
+      "                                opts->configured_csp);",
+      "",
+      "    DXGI_SWAP_CHAIN_DESC scd = {0};",
+      "    IDXGISwapChain_GetDesc(swapchain, &scd);",
+      "    if (scd.SwapEffect == DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL ||",
+      "        scd.SwapEffect == DXGI_SWAP_EFFECT_FLIP_DISCARD)",
+      "    {",
+      "        mp_verbose(log, \"Using flip-model presentation\\n\");",
+      "    } else {",
+      "        mp_verbose(log, \"Using bitblt-model presentation\\n\");",
+      "    }",
+      "",
+      "    *swapchain_out = swapchain;",
+      "    swapchain = NULL;",
+      "    success = true;",
+      "",
+      "done:"
+    ]
+  },
+  "log": {
+    "url": "https://github.com/mpv-player/mpv/files/12449003/output.txt",
+    "matched_lines": [
+      "[   0.029][v][vo/gpu-next/d3d11] Using Direct3D 11 feature level 11_0",
+      "[   0.074][v][vo/gpu-next/d3d11] Disabling UNORDERED_ACCESS for flip-model swapchain backbuffers in Windows 7",
+      "[   0.090][v][vo/gpu-next/d3d11] Using flip-model presentation",
+      "[   0.090][v][vo/gpu-next/libplacebo] Using Direct3D 11 feature level 11_0",
+      "[   0.090][v][vo/gpu-next/libplacebo]     Driver version: 10.18.14.5180",
+      "[   0.091][v][vo/gpu-next/libplacebo] Using flip-model presentation"
+    ]
+  },
+  "commits": [
+    {
+      "files": [
+        {
+          "filename": "DOCS/man/options.rst",
+          "patch": "@@ -4384,8 +4384,21 @@ The following video options are currently all specific to ``--vo=opengl`` and\n     chain will be used for D3D9. This option is mainly for debugging purposes,\n     in case the custom swap chain has poor performance or does not work.\n \n-    If set to ``yes``, the ``--angle-max-frame-latency`` and\n-    ``--angle-swapchain-length`` options will have no effect.\n+    If set to ``yes``, the ``--angle-max-frame-latency``,\n+    ``--angle-swapchain-length`` and ``--angle-flip`` options will have no\n+    effect.\n+\n+    Windows with ANGLE only.\n+\n+``--angle-flip=<yes|no>``\n+    Enable flip-model presentation, which avoids unnecessarily copying the\n+    backbuffer by sharing surfaces with the DWM (default: yes). This may cause\n+    performance issues with older drivers. If flip-model presentation is not\n+    supported (for example, on Windows 7 without the platform update), mpv will\n+    automatically fall back to the older bitblt presentation model.\n+\n+    If set to ``no``, the ``--angle-swapchain-length`` option will have no\n+    effect.\n \n     Windows with ANGLE only.\n "
+        },
+        {
+          "filename": "video/out/opengl/context_angle.c",
+          "patch": "@@ -56,6 +56,7 @@ struct angle_opts {\n     int egl_windowing;\n     int swapchain_length; // Currently only works with DXGI 1.2+\n     int max_frame_latency;\n+    int flip;\n };\n \n #define OPT_BASE_STRUCT struct angle_opts\n@@ -80,6 +81,7 @@ const struct m_sub_options angle_conf = {\n                     {\"yes\", 1})),\n         OPT_INTRANGE(\"angle-swapchain-length\", swapchain_length, 0, 2, 16),\n         OPT_INTRANGE(\"angle-max-frame-latency\", max_frame_latency, 0, 1, 16),\n+        OPT_FLAG(\"angle-flip\", flip, 0),\n         {0}\n     },\n     .defaults = &(const struct angle_opts) {\n@@ -89,6 +91,7 @@ const struct m_sub_options angle_conf = {\n         .egl_windowing = -1,\n         .swapchain_length = 6,\n         .max_frame_latency = 3,\n+        .flip = 1,\n     },\n     .size = sizeof(struct angle_opts),\n };\n@@ -383,13 +386,28 @@ static bool d3d11_swapchain_create_1_2(MPGLContext *ctx, int flags)\n         .SampleDesc = { .Count = 1 },\n         .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT |\n                        DXGI_USAGE_SHADER_INPUT,\n-        .BufferCount = p->opts->swapchain_length,\n-        .SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,\n     };\n \n+    if (p->opts->flip) {\n+        desc1.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;\n+        desc1.BufferCount = p->opts->swapchain_length;\n+    } else {\n+        desc1.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;\n+        desc1.BufferCount = 1;\n+    }\n+\n     hr = IDXGIFactory2_CreateSwapChainForHwnd(p->dxgi_factory2,\n         (IUnknown*)p->d3d11_device, vo_w32_hwnd(vo), &desc1, NULL, NULL,\n         &p->dxgi_swapchain1);\n+    if (FAILED(hr) && p->opts->flip) {\n+        // Try again without DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL\n+        desc1.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;\n+        desc1.BufferCount = 1;\n+\n+        hr = IDXGIFactory2_CreateSwapChainForHwnd(p->dxgi_factory2,\n+            (IUnknown*)p->d3d11_device, vo_w32_hwnd(vo), &desc1, NULL, NULL,\n+            &p->dxgi_swapchain1);\n+    }\n     if (FAILED(hr)) {\n         MP_FATAL(vo, \"Couldn't create DXGI 1.2+ swap chain: %s\\n\",\n                  mp_HRESULT_to_str(hr));\n@@ -670,6 +688,14 @@ static int angle_init(struct MPGLContext *ctx, int flags)\n         if (surface_ok) {\n             if (p->dxgi_swapchain1) {\n                 MP_VERBOSE(vo, \"Using DXGI 1.2+\\n\");\n+\n+                DXGI_SWAP_CHAIN_DESC1 scd = {0};\n+                IDXGISwapChain1_GetDesc1(p->dxgi_swapchain1, &scd);\n+                if (scd.SwapEffect == DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL) {\n+                    MP_VERBOSE(vo, \"Using flip-model presentation\\n\");\n+                } else {\n+                    MP_VERBOSE(vo, \"Using bitblt-model presentation\\n\");\n+                }\n             } else {\n                 MP_VERBOSE(vo, \"Using DXGI 1.1\\n\");\n             }"
+        }
+      ],
+      "sha": "439e2b43c33f48fe380d8c43c39836ec9a96064b",
+      "url": "https://github.com/mpv-player/mpv/commit/439e2b43c33f48fe380d8c43c39836ec9a96064b",
+      "message": "vo_opengl: angle: add --angle-flip to set the present model\n\nDXGI_SWAP_EFFECT_FLIP_SEQUENTIAL might be buggy on some hardware.\nAdditionaly DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL might be supported on some\nWindows 7 systems with the platform update, but it might have poor\nperformance. In these cases, the user might want to disable the use of\nDXGI_SWAP_EFFECT_FLIP_SEQUENTIAL swap chains with --angle-flip=no."
+    },
+    {
+      "files": [
+        {
+          "filename": "video/out/gpu/d3d11_helpers.c",
+          "patch": "@@ -630,6 +630,16 @@ static HRESULT create_swapchain_1_2(ID3D11Device *dev, IDXGIFactory2 *factory,\n     };\n \n     if (flip) {\n+        // UNORDERED_ACCESS with FLIP_SEQUENTIAL seems to be buggy with\n+        // Windows 7 drivers\n+        if ((desc.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS) &&\n+            !IsWindows8OrGreater())\n+        {\n+            mp_verbose(log, \"Disabling UNORDERED_ACCESS for flip-model \"\n+                            \"swapchain backbuffers in Windows 7\\n\");\n+            desc.BufferUsage &= ~DXGI_USAGE_UNORDERED_ACCESS;\n+        }\n+\n         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;\n         desc.BufferCount = opts->length;\n     } else {"
+        }
+      ],
+      "sha": "4629fe577fa2adf2267bbf12bad29293d9ad61b3",
+      "url": "https://github.com/mpv-player/mpv/commit/4629fe577fa2adf2267bbf12bad29293d9ad61b3",
+      "message": "vo_gpu: d3d11_helpers: don't create UNORDERED_ACCESS backbuffers in Win7\n\nWe're getting bug reports that the recent change to add extra usage\nflags to swapchain buffers (for gpu-next) breaks mpv on some Windows 7\nsystems, and it seems like this is only happening with flip-model\nswapchains.\n\nCreating swapchains with DXGI_USAGE_UNORDERED_ACCESS should be valid. At\nleast, it's not specifically disallowed, unlike some other flags[1]. So,\njust disable it for flip-model swapchains in Windows 7, rather than\ndisabling it everywhere.\n\n[1]: https://docs.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-usage"
+    }
+  ],
+  "date": "2026-10-07",
+  "method": "read-only GitHub API and public attachment"
+}

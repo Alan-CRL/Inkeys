@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Draw3.SpeedEraser.h"
+#include "../../Business/PenWidthPolicy.hpp"
 
 #include <array>
 #include <compare>
@@ -193,7 +194,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 		Tool tool = Tool::Pen;
 		std::uint32_t colorRgba = 0x000000FFu;
-		float widthDip = 2.0f;
+		double widthDip = 2.0;
+		Inkeys::Business::PenWidth::Context penWidthContext;
 		int paintDevice = 1; // 0 大屏，1 笔电；沿用已有绘图设备选项。
 		SpeedEraser::InputSettings eraserInputs;
 		bool selectionMode = true;

@@ -11,7 +11,7 @@
 - `Ppt::PublishSession(uint64_t,bool,HWND)`、`PublishPageState(int,int,uint64_t targetRevision=0)`、`ResetPositions()`；业务回执 `pagePresented(session,target,current,total)`。
 - `PublishProductPresentationUiReady(PresentationReadyIdentity)`、`SetProductPresentationInputSuspended(expectedIdentity,bool)`；target/ready 均含 `sessionRevision` 与 `PresentationPageKind`。Slide 用真实 `pageIndex<N`/SlideID；EndScreen 用内部 `pageIndex=N`、无 SlideID，`totalPages=N` 不变。
 - `MessageBox::FallbackPolicy.enabled` 默认true，本入口置false；`MessageBox::IsShowing()` 覆盖排队/模态及回退调用期。`Bar::SetEndShowRequestCallback(function<void(uint64_t)>)` 与 `CompleteEndShowRequest(requestId)` 按请求配对。
-- `TracePptTiming(stage,session,target,observedQpc=0)`；环境变量 `INKEYS_PPT_TIMING=1` 开启，默认关闭。
+- `TracePptTiming(stage,session,target,observedQpc=0)`；环境变量 `INKEYS_PPT_TIMING=1` 开启，默认关闭。原生 `[PptGate]` 仅输出数字/布尔：`sessionActive` 是活动状态、`sessionId` 是 `localSession`、`trustedTarget` 是可信目标布尔；`publish_accepted/document_ready/page_ui_ready` 用同 `sessionId` 与 target revision 关联。日志不写文稿路径、标题或墨迹，单次阶段差不是光学或 P95。
 - 真退出收尾使用 `StateModeTransitionRevision()` 与 `ChangeStateModeToSelectionIfRevision(expected)`；窗口事务使用 `Window::Service::SetDrawpadSurfaceVisibility(visibility, stillDesired={})`。`stillDesired` 在窗口 owner thread、释放 Drawpad capture/更改显隐之前同时校验 bridge revision 与工具模式 revision；false 不触碰 HWND，调用方按最新状态重试。`INKEYS_PPT_EXIT_TRACE=1` 开启限频退出诊断，默认关闭。
 
 ## 3. Contracts

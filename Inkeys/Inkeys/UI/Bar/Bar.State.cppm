@@ -48,9 +48,9 @@ public:
 		IdtAtomic<bool> thicknessPreviewDragging = false;
 		IdtAtomic<bool> thicknessSliderPressed = false;
 		IdtAtomic<bool> thicknessSliderCapture = false;
-		IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
+		IdtAtomic<double> thicknessSliderCandidateWidth = 0.0;
 		// FineDial 只共享渲染所需快照；运动阶段、速度和采样环留在交互线程。
-		IdtAtomic<float> thicknessFineDialVisualWidth = 0.0f;
+		IdtAtomic<double> thicknessFineDialVisualWidth = 0.0;
 		IdtAtomic<bool> thicknessFineDialCandidateActive = false;
 		IdtAtomic<bool> thicknessFineDialDragging = false;
 		IdtAtomic<bool> thicknessFineDialPhysicsActive = false;
@@ -60,7 +60,7 @@ public:
 		IdtAtomic<bool> thicknessFineDialActivationPreviewActive = false;
 		IdtAtomic<bool> thicknessFineDialActivationDwellActive = false;
 		IdtAtomic<float> thicknessFineDialActivationPreviewProgress = 0.0f;
-		IdtAtomic<float> thicknessFineDialActivationPreviewVisualWidth = 0.0f;
+		IdtAtomic<double> thicknessFineDialActivationPreviewVisualWidth = 0.0;
 		// 仅正常 FineDial -> Preview 退出请求渲染侧锁存 Popup 当前位置。
 		IdtAtomic<bool> thicknessFineDialPopupExitLatchRequested = false;
 		// 拖动改值后静止保持：提示/进度/锁定，跨交互与渲染线程共享。
@@ -116,6 +116,7 @@ public:
 
 	void PositionUpdate(double tarZoom);
 	void ThicknessDisplayUpdate();
+	void ThicknessDisplayUpdate(double penWidth);
 };
 class BarStyleClass
 {

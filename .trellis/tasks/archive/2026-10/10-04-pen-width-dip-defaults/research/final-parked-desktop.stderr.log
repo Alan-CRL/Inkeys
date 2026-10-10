@@ -1,0 +1,10 @@
+[Draw3DesktopExit] PASS: production Desktop Exit source and snapshot
+[Draw3FatalClosing] PASS: real Closing does not wait at fatal exit
+[Draw3FatalActiveInk] PASS: production CPU seal and Exit snapshot
+[Draw3LaserIgnoredTouch] PASS: ignored Touch route lifetime
+[Draw3InitRejection] PASS: shared production failure cleanup identity and lifetime
+[Draw3Metrics] PASS: production Session pending, bounded outcomes and report contract
+[Draw3ContentProof] N1 frame=368 progress=2048 controller=49912 maxWith64KiB=53553 eventCapacity=0
+[Draw3ContentProof] payload: session=161824 auxiliary=49168 commonBudget=33554432
+[Draw3ContentProof] runtimeState=49912
+[Draw3ContentProof] PASS: production content assembler contract

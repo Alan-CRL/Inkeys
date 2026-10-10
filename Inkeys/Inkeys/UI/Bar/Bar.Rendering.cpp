@@ -18,6 +18,8 @@ module;
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <bit>
+#include "Bar.PresentationProbe.h"
 
 #pragma comment(lib, "dxguid.lib")
 
@@ -37,6 +39,39 @@ import Inkeys.Window;
 
 namespace
 {
+	void ObserveSvgRectClip(ID2D1DeviceContext* context, const D2D1_RECT_F& rect) noexcept
+	{
+		if (!Inkeys::UI::Bar::CurrentUi3SvgScope()) return;
+		D2D1_MATRIX_3X2_F matrix; context->GetTransform(&matrix);
+		const std::uint32_t rectBits[4]{ std::bit_cast<std::uint32_t>(rect.left), std::bit_cast<std::uint32_t>(rect.top),
+			std::bit_cast<std::uint32_t>(rect.right), std::bit_cast<std::uint32_t>(rect.bottom) };
+		const std::uint32_t matrixBits[6]{ std::bit_cast<std::uint32_t>(matrix._11), std::bit_cast<std::uint32_t>(matrix._12),
+			std::bit_cast<std::uint32_t>(matrix._21), std::bit_cast<std::uint32_t>(matrix._22),
+			std::bit_cast<std::uint32_t>(matrix._31), std::bit_cast<std::uint32_t>(matrix._32) };
+		Inkeys::UI::Bar::ObserveUi3SvgClipPush(context, rectBits, matrixBits);
+	}
+	void ObserveNonSvgRectWrite(ID2D1DeviceContext* context, const D2D1_RECT_F& rect, FLOAT outset = 0.0F) noexcept
+	{
+		auto* scope = Inkeys::UI::Bar::CurrentUi3SvgScope();
+		if (!scope || !scope->probe) return;
+		D2D1_MATRIX_3X2_F matrix; context->GetTransform(&matrix);
+		const std::uint32_t rectBits[4]{ std::bit_cast<std::uint32_t>(rect.left - outset), std::bit_cast<std::uint32_t>(rect.top - outset),
+			std::bit_cast<std::uint32_t>(rect.right + outset), std::bit_cast<std::uint32_t>(rect.bottom + outset) };
+		const std::uint32_t matrixBits[6]{ std::bit_cast<std::uint32_t>(matrix._11), std::bit_cast<std::uint32_t>(matrix._12),
+			std::bit_cast<std::uint32_t>(matrix._21), std::bit_cast<std::uint32_t>(matrix._22),
+			std::bit_cast<std::uint32_t>(matrix._31), std::bit_cast<std::uint32_t>(matrix._32) };
+		scope->probe->ObserveNonSvgWrite(context, rectBits, matrixBits);
+	}
+	void ObserveNonSvgGeometryWrite(ID2D1DeviceContext* context, ID2D1Geometry* geometry, FLOAT stroke = 0.0F) noexcept
+	{
+		if (!Inkeys::UI::Bar::CurrentUi3SvgScope()) return;
+		D2D1_RECT_F bounds{};
+		const HRESULT result = stroke > 0.0F
+			? geometry->GetWidenedBounds(stroke, nullptr, nullptr, D2D1_DEFAULT_FLATTENING_TOLERANCE, &bounds)
+			: geometry->GetBounds(nullptr, &bounds);
+		if (FAILED(result)) { Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(context); return; }
+		ObserveNonSvgRectWrite(context, bounds, D2D1_DEFAULT_FLATTENING_TOLERANCE);
+	}
 	[[nodiscard]] auto SharedD2DFactory()
 	{
 		return Inkeys::UI::RenderPipeline::D2DFactory();
@@ -236,6 +271,7 @@ void BarUIRendering::PushFrameDirtyClip(
 	frameDirtyClipRect = dirtyRect;
 	deviceContext->PushAxisAlignedClip(
 		dirtyRect, D2D1_ANTIALIAS_MODE_ALIASED);
+	ObserveSvgRectClip(deviceContext, dirtyRect);
 	frameDirtyClipActive = true;
 }
 
@@ -243,6 +279,7 @@ void BarUIRendering::PopFrameDirtyClip(ID2D1DeviceContext* deviceContext)
 {
 	if (!deviceContext || !frameDirtyClipActive) return;
 	deviceContext->PopAxisAlignedClip();
+	Inkeys::UI::Bar::ObserveUi3SvgClipPop(deviceContext);
 	frameDirtyClipActive = false;
 }
 
@@ -1217,14 +1254,14 @@ void BarUIRendering::DrawProgressRing(ID2D1DeviceContext* deviceContext,
 	D2D1_ELLIPSE ellipse = D2D1::Ellipse(center, radius, radius);
 	if (auto trackBrush = GetFrameSolidColorBrush(
 		deviceContext, trackColor, trackOpacity))
-		deviceContext->DrawEllipse(&ellipse, trackBrush, strokeWidth);
+		(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawEllipse(&ellipse, trackBrush, strokeWidth);
 	if (progress <= 0.000001F) return;
 	if (auto progressBrush = GetFrameSolidColorBrush(
 		deviceContext, progressColor, progressOpacity))
 	{
 		if (progress >= 0.999F)
 		{
-			deviceContext->DrawEllipse(&ellipse, progressBrush, strokeWidth);
+			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawEllipse(&ellipse, progressBrush, strokeWidth);
 			return;
 		}
 
@@ -1250,7 +1287,7 @@ void BarUIRendering::DrawProgressRing(ID2D1DeviceContext* deviceContext,
 		sink->AddArc(arc);
 		sink->EndFigure(D2D1_FIGURE_END_OPEN);
 		if (SUCCEEDED(sink->Close()))
-			deviceContext->DrawGeometry(path.Get(), progressBrush, strokeWidth);
+			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawGeometry(path.Get(), progressBrush, strokeWidth);
 	}
 }
 
@@ -1578,10 +1615,10 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 	if (SUCCEEDED(hr))
 		hr = frameMaskDeviceContext->CreateBitmap(
 			pixelSize, nullptr, 0, bitmapProperties, &outputBitmap);
-	ComPtr<ID2D1SolidColorBrush> sourceBrush;
-	if (SUCCEEDED(hr))
+	// 所有父遮罩与精确遮罩共用恒白画刷，资源重建时随遮罩上下文统一释放。
+	if (SUCCEEDED(hr) && !frameDiffuseExactMaskBrush)
 		hr = frameMaskDeviceContext->CreateSolidColorBrush(
-			D2D1::ColorF(D2D1::ColorF::White), &sourceBrush);
+			D2D1::ColorF(D2D1::ColorF::White), &frameDiffuseExactMaskBrush);
 	if (SUCCEEDED(hr))
 		hr = frameGaussianBlurEffect->SetValue(
 			D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION,
@@ -1604,7 +1641,7 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 		frameMaskDeviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 		frameMaskDeviceContext->Clear(&transparent);
 		frameMaskDeviceContext->DrawRoundedRectangle(
-			&localRoundedRect, sourceBrush.Get(), cachedStrokeWidth);
+			&localRoundedRect, frameDiffuseExactMaskBrush.Get(), cachedStrokeWidth);
 		hr = frameMaskDeviceContext->EndDraw();
 		frameMaskDeviceContext->SetTarget(nullptr);
 
@@ -1655,6 +1692,7 @@ unsigned int BarUIRendering::FillRoundedRectDiffuseMaskSlices(
 {
 	if (!deviceContext || !bitmap || !brush || !sourceX || !sourceY
 		|| !destinationX || !destinationY || segmentCount <= 0) return 0;
+	// 此私有入口只使用本renderer由几何生成的A8遮罩，不能给任意旧SVG bitmap同样资格。
 	unsigned int fillCount = 0;
 	for (int y = 0; y < segmentCount; y++)
 	{
@@ -1668,7 +1706,7 @@ unsigned int BarUIRendering::FillRoundedRectDiffuseMaskSlices(
 			D2D1_RECT_F sourceRect = D2D1::RectF(
 				sourceX[x], sourceY[y],
 				sourceX[x + 1], sourceY[y + 1]);
-			deviceContext->FillOpacityMask(
+			(ObserveNonSvgRectWrite(deviceContext, destinationRect), deviceContext)->FillOpacityMask(
 				bitmap, brush, &destinationRect, &sourceRect);
 			++fillCount;
 		}
@@ -2013,7 +2051,7 @@ void BarUIRendering::DrawRoundedRectDiffuseMask(ID2D1DeviceContext* deviceContex
 			0.0F, 0.0F,
 			static_cast<FLOAT>(exactMask.cache->key.width),
 			static_cast<FLOAT>(exactMask.cache->key.height));
-		deviceContext->FillOpacityMask(
+		(ObserveNonSvgRectWrite(deviceContext, exactMask.destination), deviceContext)->FillOpacityMask(
 			exactMask.cache->bitmap.Get(), brush,
 			&exactMask.destination, &sourceRect);
 		if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
@@ -2181,10 +2219,10 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 	if (SUCCEEDED(hr))
 		hr = frameMaskDeviceContext->CreateBitmap(
 			pixelSize, nullptr, 0, bitmapProperties, &outputBitmap);
-	ComPtr<ID2D1SolidColorBrush> sourceBrush;
-	if (SUCCEEDED(hr))
+	// 与精确遮罩烘焙共用恒白画刷，随当前设备资源统一释放，避免每次 miss 重建。
+	if (SUCCEEDED(hr) && !frameDiffuseExactMaskBrush)
 		hr = frameMaskDeviceContext->CreateSolidColorBrush(
-			D2D1::ColorF(D2D1::ColorF::White), &sourceBrush);
+			D2D1::ColorF(D2D1::ColorF::White), &frameDiffuseExactMaskBrush);
 	if (SUCCEEDED(hr))
 		hr = frameGaussianBlurEffect->SetValue(
 			D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION,
@@ -2203,7 +2241,7 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 		frameMaskDeviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 		frameMaskDeviceContext->Clear(&transparent);
 		frameMaskDeviceContext->DrawGeometry(
-			geometry, sourceBrush.Get(), cachedStrokeWidth);
+			geometry, frameDiffuseExactMaskBrush.Get(), cachedStrokeWidth);
 		hr = frameMaskDeviceContext->EndDraw();
 		frameMaskDeviceContext->SetTarget(nullptr);
 
@@ -2259,7 +2297,7 @@ void BarUIRendering::DrawGeometryDiffuseMask(ID2D1DeviceContext* deviceContext,
 	brush->SetOpacity(clamp(opacity, 0.0F, 1.0F));
 	D2D1_ANTIALIAS_MODE originalAntialiasMode = deviceContext->GetAntialiasMode();
 	deviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
-	deviceContext->FillOpacityMask(
+	(ObserveNonSvgRectWrite(deviceContext, destinationRect), deviceContext)->FillOpacityMask(
 		mask.bitmap.Get(), brush, &destinationRect, &sourceRect);
 	if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
 		++diagnostics->light.slices;
@@ -2348,15 +2386,15 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		{
 			if (!brush || intensity <= 0.0F) return;
 			brush->SetOpacity(clamp(lightOpacity * intensity, 0.0F, 1.0F));
-			if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, brush, width);
-			else deviceContext->DrawGeometry(geometry, brush, width);
+			if (roundedRect) (ObserveNonSvgRectWrite(deviceContext, roundedRect->rect, width * 0.5F), deviceContext)->DrawRoundedRectangle(roundedRect, brush, width);
+			else (ObserveNonSvgGeometryWrite(deviceContext, geometry, width), deviceContext)->DrawGeometry(geometry, brush, width);
 		};
 	deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	// 点光范围之外仍完整保留原边框，光源只在基础灰边上增加强调。
 	if (baseFrameBrush)
 	{
-		if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, baseFrameBrush, strokeWidth);
-		else deviceContext->DrawGeometry(geometry, baseFrameBrush, strokeWidth);
+		if (roundedRect) (ObserveNonSvgRectWrite(deviceContext, roundedRect->rect, strokeWidth * 0.5F), deviceContext)->DrawRoundedRectangle(roundedRect, baseFrameBrush, strokeWidth);
+		else (ObserveNonSvgGeometryWrite(deviceContext, geometry, strokeWidth), deviceContext)->DrawGeometry(geometry, baseFrameBrush, strokeWidth);
 	}
 
 	if (drawPrimaryLight || drawCursorLight)
@@ -2475,7 +2513,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			GetFrameSolidColorBrush(deviceContext, RGB(0, 0, 0), 0.0);
 		if (!fillBrush) return false;
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-		deviceContext->FillRoundedRectangle(&roundedRect, fillBrush);
+		(ObserveNonSvgRectWrite(deviceContext, roundedRect.rect), deviceContext)->FillRoundedRectangle(&roundedRect, fillBrush);
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 	// 渲染到 DC
@@ -2487,7 +2525,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, tarPct);
 			if (!fillBrush) return false;
-			deviceContext->FillRoundedRectangle(&roundedRect, fillBrush);
+			(ObserveNonSvgRectWrite(deviceContext, roundedRect.rect), deviceContext)->FillRoundedRectangle(&roundedRect, fillBrush);
 		}
 		// 渲染边框
 		if (shape.frame.has_value())
@@ -2520,7 +2558,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 					ID2D1SolidColorBrush* borderBrush =
 						GetFrameSolidColorBrush(deviceContext, frame, tarFramePct);
 					if (!borderBrush) return false;
-					deviceContext->DrawRoundedRectangle(
+					(ObserveNonSvgRectWrite(deviceContext, roundedRect.rect, strokeWidth * 0.5F), deviceContext)->DrawRoundedRectangle(
 						&roundedRect, borderBrush, strokeWidth);
 				}
 			}
@@ -2665,7 +2703,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			GetFrameSolidColorBrush(deviceContext, RGB(0, 0, 0), 0.0);
 		if (!fillBrush) return false;
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-		deviceContext->FillGeometry(geometry, fillBrush);
+		(ObserveNonSvgGeometryWrite(deviceContext, geometry), deviceContext)->FillGeometry(geometry, fillBrush);
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 
@@ -2678,7 +2716,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, tarPct);
 			if (!fillBrush) return false;
-			deviceContext->FillGeometry(geometry, fillBrush);
+			(ObserveNonSvgGeometryWrite(deviceContext, geometry), deviceContext)->FillGeometry(geometry, fillBrush);
 		}
 		// 渲染边框
 		if (superellipse.frame.has_value())
@@ -2711,7 +2749,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 					ID2D1SolidColorBrush* borderBrush =
 						GetFrameSolidColorBrush(deviceContext, frame, tarFramePct);
 					if (!borderBrush) return false;
-					deviceContext->DrawGeometry(geometry, borderBrush, strokeWidth);
+					(ObserveNonSvgGeometryWrite(deviceContext, geometry, strokeWidth), deviceContext)->DrawGeometry(geometry, borderBrush, strokeWidth);
 				}
 			}
 		}
@@ -2722,14 +2760,20 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 }
 bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh)
 {
+	auto* observationScope = Inkeys::UI::Bar::CurrentUi3SvgScope();
+	auto RejectObserved = [&](Inkeys::UI::Bar::Ui3SvgFailure failure = Inkeys::UI::Bar::Ui3SvgFailure::DrawRejected)
+	{
+		if (observationScope && observationScope->probe) observationScope->probe->ObserveRejected(svg.ObservationState(), failure);
+		return false;
+	};
 	// 判断是否启用
-	if (!deviceContext || svg.enable.val == false) return false;
-	if (frameZoom <= 0.0) return false;
-	if (svg.w.val <= 0 || svg.h.val <= 0) return false;
+	if (!deviceContext || svg.enable.val == false) return RejectObserved();
+	if (frameZoom <= 0.0) return RejectObserved();
+	if (svg.w.val <= 0 || svg.h.val <= 0) return RejectObserved();
 	double contentScale = svg.contentScale;
 	double contentPct = svg.contentPct;
-	if (!isfinite(contentScale) || contentScale <= 0.0) return false;
-	if (!isfinite(contentPct) || svg.pct.val * contentPct <= 0.0) return false;
+	if (!isfinite(contentScale) || contentScale <= 0.0) return RejectObserved();
+	if (!isfinite(contentPct) || svg.pct.val * contentPct <= 0.0) return RejectObserved();
 
 	// 初始化绘制量
 	double tarZoom = frameZoom;
@@ -2746,6 +2790,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 
 	// 尺寸与内容缩放动画只改变目标矩形，SVG 位图尽量复用到稳定帧。
 	ComPtr<ID2D1Bitmap> d2dBitmap;
+	bool observedQualityFallback = false;
 	{
 		bool colorChanged =
 			(svg.color1.has_value() && svg.cColor1 != svg.color1.value().val)
@@ -2762,6 +2807,8 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 		bool needUpdate = !svg.cacheBitmap || colorChanged
 			|| (!transformAnimating && sizeChanged)
 			|| (transformAnimating && materiallyUpscaled);
+		if (observationScope && observationScope->probe)
+			observationScope->probe->NoteLookup(needUpdate, svg.ObservedBitmapProof().ready && svg.ObservedBitmapProof().semanticKnown);
 		if (needUpdate)
 		{
 			double rasterW = baseW;
@@ -2780,12 +2827,13 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 			if (!svg.CacheBitmap(deviceContext, rasterW, rasterH))
 			{
 				// 质量刷新失败时保留已有内容；内容/颜色失效则不能显示旧语义。
-				if (!svg.cacheBitmap || colorChanged) return false;
+				if (!svg.cacheBitmap || colorChanged) return RejectObserved(svg.ObservationState().lastFailure);
+				observedQualityFallback = true;
 			}
 		}
 		d2dBitmap = svg.cacheBitmap.Get();
 	}
-	if (!d2dBitmap) return false;
+	if (!d2dBitmap) return RejectObserved();
 
 	// 渲染到 DC
 	{
@@ -2806,6 +2854,23 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 						static_cast<FLOAT>(tarY + tarH / 2.0)))
 				* originalTransform);
 		}
+		if (observationScope && observationScope->probe)
+		{
+			Inkeys::UI::Bar::Ui3SvgDrawObservation observed;
+			observed.used = svg.ObservedBitmapProof(); observed.qualityMatches = !observedQualityFallback;
+			observed.use = observedQualityFallback ? Inkeys::UI::Bar::Ui3SvgUse::QualityFallback : Inkeys::UI::Bar::Ui3SvgUse::Unverified;
+			observed.failure = observedQualityFallback ? svg.ObservationState().lastFailure : Inkeys::UI::Bar::Ui3SvgFailure::None;
+			const float dest[4]{ destRect.left, destRect.top, destRect.right, destRect.bottom };
+			D2D1_MATRIX_3X2_F effective; deviceContext->GetTransform(&effective);
+			const float matrix[6]{ effective._11, effective._12, effective._21, effective._22, effective._31, effective._32 };
+			for (unsigned i = 0; i < 4; ++i) observed.destBits[i] = std::bit_cast<std::uint32_t>(dest[i]);
+			for (unsigned i = 0; i < 6; ++i) observed.transformBits[i] = std::bit_cast<std::uint32_t>(matrix[i]);
+			observed.finalOpacityBits = std::bit_cast<std::uint32_t>(static_cast<FLOAT>(tarPct));
+			observationScope->probe->ObserveDraw(deviceContext, svg.ObservationState(), observed);
+		}
+		{
+		Inkeys::UI::Bar::Ui3SvgStageTimer timer(Inkeys::UI::Bar::Ui3SvgStage::Draw);
+		Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Draw, Inkeys::UI::Bar::Ui3SvgOperation::Begin);
 		deviceContext->DrawBitmap(
 			d2dBitmap.Get(),
 			destRect,								// 目标矩形
@@ -2813,6 +2878,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 			D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
 			nullptr									// 源rect, null表示全部
 		);
+		}
 		if (transformChanged) deviceContext->SetTransform(originalTransform);
 	}
 
@@ -2850,7 +2916,7 @@ bool BarUIRendering::Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, 
 			* originalTransform);
 	}
 
-	deviceContext->DrawBitmap(
+	(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawBitmap(
 		png.cacheBitmap.Get(),
 		D2D1::RectF(
 			static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY),
@@ -2941,7 +3007,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 			GetFrameSolidColorBrush(deviceContext, color, tarPct);
 		if (!fillBrush) return false;
 
-		deviceContext->DrawTextW(
+		(ObserveNonSvgRectWrite(deviceContext, layoutRect), deviceContext)->DrawTextW(
 			tarContent.c_str(),
 			wcslen(tarContent.c_str()),
 			textFormat,

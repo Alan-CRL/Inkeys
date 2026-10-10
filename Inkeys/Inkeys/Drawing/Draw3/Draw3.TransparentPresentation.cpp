@@ -5,6 +5,8 @@
 #endif
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdint>
 #include <cstring>
 #include <cwchar>
 #include <dcomp.h>
@@ -13,10 +15,16 @@
 #include <dwmapi.h>
 #include <dxgi1_2.h>
 #include <dxgi1_3.h>
+#include <exception>
+#include <initializer_list>
 #include <iostream>
+#include <optional>
+#include <sstream>
 #include <vector>
 #include <windows.h>
 #include <wrl/client.h>
+
+#include "../../Helper/FailedCleanupDeadline.h"
 
 #pragma comment(lib, "dwmapi.lib")
 
@@ -89,8 +97,6 @@ namespace Inkeys::Drawing::Draw3
 
 		constexpr TransparentPresentMode kTransparentPresentModes[] = {
 			TransparentPresentMode::DirectCompositionVisualTree,
-			TransparentPresentMode::DwmBlurBehind2,
-			TransparentPresentMode::DwmBlurBehind,
 			TransparentPresentMode::UlwDirtyRect
 		};
 
@@ -130,8 +136,116 @@ namespace Inkeys::Drawing::Draw3
 			return callbacks.setExtendedStyleFlags(callbacks.context, setMask, clearMask);
 		}
 
+		struct UlwDirtyCopyResult
+		{
+			bool allZeroAlpha = true;
+			bool premultipliedAlphaValid = true;
+			bool fullFrameAllZeroAlpha = false;
+		};
+
+		struct UlwPixelStatistics
+		{
+			size_t alphaNonzero = 0;
+			size_t rgbNonzero = 0;
+			BYTE maxBgra[4]{};
+			RECT alphaBounds{}; // 非零 alpha 的半开区间；全零时保持空矩形。
+			bool premultipliedAlphaValid = true;
+
+			void Include(const BYTE* pixel, LONG x, LONG y)
+			{
+				if (pixel[3] != 0)
+				{
+					if (alphaNonzero++ == 0) alphaBounds = RECT{ x, y, x + 1, y + 1 };
+					else
+					{
+						alphaBounds.left = std::min(alphaBounds.left, x);
+						alphaBounds.top = std::min(alphaBounds.top, y);
+						alphaBounds.right = std::max(alphaBounds.right, x + 1);
+						alphaBounds.bottom = std::max(alphaBounds.bottom, y + 1);
+					}
+				}
+				if (pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0) ++rgbNonzero;
+				for (size_t channel = 0; channel < 4; ++channel)
+					maxBgra[channel] = std::max(maxBgra[channel], pixel[channel]);
+				premultipliedAlphaValid = premultipliedAlphaValid &&
+					pixel[0] <= pixel[3] && pixel[1] <= pixel[3] && pixel[2] <= pixel[3];
+			}
+		};
+
+		struct UlwPixelDiagnostic
+		{
+			size_t pixelCount = 0;
+			UlwPixelStatistics source;
+			UlwPixelStatistics finalDib;
+			POINT samplePosition{};
+			BYTE sampleSourceBgra[4]{};
+			BYTE sampleFinalBgra[4]{};
+		};
+
+		constexpr BYTE ComposePrimaryHitUnderlayAlpha(BYTE sourceAlpha) noexcept
+		{
+			const unsigned int alpha = sourceAlpha;
+			return static_cast<BYTE>(alpha + ((255u - alpha) + 127u) / 255u);
+		}
+
+		template <bool InspectPixels = false, typename AfterCopy>
+		UlwDirtyCopyResult CopyAndInspectUlwDirtyRows(const BYTE* mapped, size_t rowPitch,
+			BYTE* dib, int dibWidth, int dibHeight, RECT dirty, bool presentFull,
+			bool applyPrimaryHitUnderlay, AfterCopy afterCopy, UlwPixelDiagnostic* diagnostic = nullptr)
+		{
+			const size_t pixelCount = static_cast<size_t>(dirty.right - dirty.left);
+			const size_t copyBytes = pixelCount * 4;
+			const BYTE* source = mapped + static_cast<size_t>(dirty.top) * rowPitch +
+				static_cast<size_t>(dirty.left) * 4;
+			BYTE* destination = dib + static_cast<size_t>(dirty.top) *
+				static_cast<size_t>(dibWidth) * 4 + static_cast<size_t>(dirty.left) * 4;
+			UlwDirtyCopyResult result;
+			for (LONG y = dirty.top; y < dirty.bottom; ++y)
+			{
+				const size_t row = static_cast<size_t>(y - dirty.top);
+				const BYTE* sourceRow = source + row * rowPitch;
+				BYTE* destinationRow = destination + row * static_cast<size_t>(dibWidth) * 4;
+				std::memcpy(destinationRow, sourceRow, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
+				for (size_t x = 0; x < pixelCount; ++x)
+				{
+					BYTE* pixel = destinationRow + x * 4;
+					const BYTE sourceAlpha = sourceRow[x * 4 + 3];
+					result.allZeroAlpha = result.allZeroAlpha && sourceAlpha == 0;
+					if (applyPrimaryHitUnderlay)
+					{
+						// 黑色底层不改 RGB；按预乘 alpha 的 OVER 公式计算最终 8-bit alpha。
+						pixel[3] = ComposePrimaryHitUnderlayAlpha(sourceAlpha);
+					}
+					if constexpr (InspectPixels)
+					{
+						// 原始 BGRA 在命中底层合成前的 staging 中读取，不能拿 alpha=1 当成出墨证据。
+						const BYTE* sourcePixel = sourceRow + x * 4;
+						const LONG canvasX = dirty.left + static_cast<LONG>(x);
+						diagnostic->source.Include(sourcePixel, canvasX, y);
+						diagnostic->finalDib.Include(pixel, canvasX, y);
+						if (diagnostic->pixelCount++ == 0 || sourceAlpha > diagnostic->sampleSourceBgra[3])
+						{
+							diagnostic->samplePosition = POINT{ canvasX, y };
+							std::memcpy(diagnostic->sampleSourceBgra, sourcePixel, 4);
+							std::memcpy(diagnostic->sampleFinalBgra, pixel, 4);
+						}
+					}
+					const BYTE alpha = pixel[3];
+					result.premultipliedAlphaValid = result.premultipliedAlphaValid &&
+						pixel[0] <= alpha && pixel[1] <= alpha && pixel[2] <= alpha;
+				}
+			}
+			afterCopy(); // 最终像素检查完成后立即 Unmap staging texture。
+			result.fullFrameAllZeroAlpha = presentFull && result.allZeroAlpha &&
+				dirty.left == 0 && dirty.top == 0 && dirty.right == dibWidth &&
+				dirty.bottom == dibHeight;
+			return result;
+		}
+
 		struct UlwDirtyRectPresenter
 		{
+			const char* diagnosticRole = "Drawpad";
+			bool applyPrimaryHitUnderlay = false;
 			HWND window = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11Device> device;
 			Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
@@ -144,7 +258,100 @@ namespace Inkeys::Drawing::Draw3
 			void* dibBits = nullptr;
 			int dibWidth = 0;
 			int dibHeight = 0;
+			UINT finalTextureWidth = 0;
+			UINT finalTextureHeight = 0;
 			TransparentPresentObservation lastObservation{};
+			bool presentSuccessLogged = false;
+			bool presentFailureLogged = false;
+			bool pixelDiagnosticLogged = false;
+			bool forceFullUlwUpdate = false;
+			ULONGLONG lastPixelDiagnosticTick = 0;
+			POINT lastDestination{};
+			SIZE lastDestinationSize{};
+			POINT lastSource{};
+			BLENDFUNCTION lastBlend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+			DWORD lastUpdateFlags = ULW_ALPHA;
+
+			void LogPresentEvent(const char* eventName, RECT dirty, bool presentFull,
+				DWORD error = ERROR_SUCCESS, HRESULT hresult = S_OK)
+			{
+				if (!eventName) return;
+				RECT windowRect = {};
+				const BOOL rectOk = window && GetWindowRect(window, &windowRect);
+				const BOOL valid = window && IsWindow(window);
+				const BOOL visible = valid && IsWindowVisible(window);
+				std::cout << "[Draw3Diag][ulw] event=" << eventName
+					<< " role=" << diagnosticRole
+					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
+					<< " valid=" << std::dec << (valid ? 1 : 0)
+					<< " visible=" << (visible ? 1 : 0)
+					<< " style=0x" << std::hex
+					<< static_cast<unsigned long>(valid ? GetWindowLongPtrW(window, GWL_STYLE) : 0)
+					<< " exStyle=0x" << static_cast<unsigned long>(valid ? GetWindowLongPtrW(window, GWL_EXSTYLE) : 0)
+					<< std::dec << " windowRectOk=" << (rectOk ? 1 : 0)
+					<< " window=(" << windowRect.left << "," << windowRect.top << ","
+					<< windowRect.right << "," << windowRect.bottom << ")"
+					<< " dib=" << dibWidth << "x" << dibHeight
+					<< " staging=" << stagingWidth << "x" << stagingHeight
+					<< " texture=" << finalTextureWidth << "x" << finalTextureHeight
+					<< " dirty=(" << dirty.left << "," << dirty.top << ","
+					<< dirty.right << "," << dirty.bottom << ")"
+					<< " full=" << (presentFull ? 1 : 0)
+					<< " dirtyParameter=" << (presentFull || forceFullUlwUpdate ? "null" : "rect")
+					<< " fullUpdateOverride=" << (forceFullUlwUpdate ? 1 : 0)
+					<< " dst=(" << lastDestination.x << "," << lastDestination.y << ")"
+					<< " dstSize=" << lastDestinationSize.cx << "x" << lastDestinationSize.cy
+					<< " src=(" << lastSource.x << "," << lastSource.y << ")"
+					<< " blend=" << static_cast<unsigned>(lastBlend.BlendOp) << ","
+					<< static_cast<unsigned>(lastBlend.BlendFlags) << ","
+					<< static_cast<unsigned>(lastBlend.SourceConstantAlpha) << ","
+					<< static_cast<unsigned>(lastBlend.AlphaFormat)
+					<< " hdcSrc=0x" << std::hex << reinterpret_cast<UINT_PTR>(memoryDC)
+					<< " flags=0x" << std::hex << lastUpdateFlags << std::dec
+					<< " hresult=0x" << std::hex << static_cast<unsigned long>(hresult)
+					<< std::dec << " error=" << error << std::endl;
+			}
+
+			void LogPixelDiagnostic(const UlwPixelDiagnostic& pixels, ULONGLONG tick,
+				RECT dirty, bool presentFull, BOOL updated, DWORD error,
+				ULONGLONG copyMapMs, ULONGLONG rowsMs, ULONGLONG ulwMs)
+			{
+				std::ostringstream line;
+				line << "[Draw3Diag][ulw-pixels] role=" << diagnosticRole
+					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window) << std::dec
+					<< " tick=" << tick << " dirty=(" << dirty.left << "," << dirty.top << ","
+					<< dirty.right << "," << dirty.bottom << ") full=" << (presentFull ? 1 : 0)
+					<< " dirtyParameter=" << (presentFull || forceFullUlwUpdate ? "null" : "rect")
+					<< " fullUpdateOverride=" << (forceFullUlwUpdate ? 1 : 0)
+					<< " copy_map_ms=" << copyMapMs << " rows_ms=" << rowsMs << " ulw_ms=" << ulwMs
+					<< " api=" << (updated ? "success" : "failed") << " error=" << error
+					<< " underlay=" << (applyPrimaryHitUnderlay ? 1 : 0) << " pixels=" << pixels.pixelCount;
+				const auto writeStatistics = [&](const char* name, const UlwPixelStatistics& stats)
+				{
+					line << " " << name << "AlphaNonzero=" << stats.alphaNonzero
+						<< " " << name << "RgbNonzero=" << stats.rgbNonzero
+						<< " " << name << "MaxBgra=(" << static_cast<unsigned>(stats.maxBgra[0]) << ","
+						<< static_cast<unsigned>(stats.maxBgra[1]) << ","
+						<< static_cast<unsigned>(stats.maxBgra[2]) << ","
+						<< static_cast<unsigned>(stats.maxBgra[3]) << ")"
+						<< " " << name << "AlphaBounds=(" << stats.alphaBounds.left << ","
+						<< stats.alphaBounds.top << "," << stats.alphaBounds.right << ","
+						<< stats.alphaBounds.bottom << ") " << name << "Premul="
+						<< (stats.premultipliedAlphaValid ? 1 : 0);
+				};
+				writeStatistics("source", pixels.source);
+				writeStatistics("finalDib", pixels.finalDib);
+				line << " samplePos=(" << pixels.samplePosition.x << "," << pixels.samplePosition.y << ")";
+				const auto writeSample = [&](const char* name, const BYTE* bgra)
+				{
+					line << " " << name << "=(" << static_cast<unsigned>(bgra[0]) << ","
+						<< static_cast<unsigned>(bgra[1]) << "," << static_cast<unsigned>(bgra[2]) << ","
+						<< static_cast<unsigned>(bgra[3]) << ")";
+				};
+				writeSample("sampleSourceBgra", pixels.sampleSourceBgra);
+				writeSample("sampleFinalBgra", pixels.sampleFinalBgra);
+				std::cout << line.str() << std::endl; // 只输出提交证据，不等同于桌面实际可见。
+			}
 
 			void ReleaseDib()
 			{
@@ -169,6 +376,11 @@ namespace Inkeys::Drawing::Draw3
 				stagingHeight = 0;
 				window = nullptr;
 				lastObservation = {};
+				presentSuccessLogged = false;
+				presentFailureLogged = false;
+				pixelDiagnosticLogged = false;
+				forceFullUlwUpdate = false;
+				lastPixelDiagnosticTick = 0;
 			}
 
 			bool CreateStagingTexture(UINT width, UINT height)
@@ -185,7 +397,17 @@ namespace Inkeys::Drawing::Draw3
 				description.SampleDesc.Count = 1;
 				description.Usage = D3D11_USAGE_STAGING; // ULW 需要 CPU 读回像素。
 				description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-				if (FAILED(device->CreateTexture2D(&description, nullptr, stagingTexture.ReleaseAndGetAddressOf()))) return false;
+				const HRESULT createResult = device->CreateTexture2D(&description, nullptr,
+					stagingTexture.ReleaseAndGetAddressOf());
+				if (FAILED(createResult))
+				{
+					std::cout << "[Draw3Diag][ulw-init] role=" << diagnosticRole
+						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
+						<< std::dec << " stage=CreateTexture2D size=" << width << "x" << height
+						<< " hresult=0x" << std::hex
+						<< static_cast<unsigned long>(createResult) << std::dec << std::endl;
+					return false;
+				}
 				stagingWidth = width;
 				stagingHeight = height;
 				return true;
@@ -224,8 +446,9 @@ namespace Inkeys::Drawing::Draw3
 				}
 				dibWidth = width;
 				dibHeight = height;
-				// 未绘制像素保持零 alpha，避免 ULW 把整窗当成不透明遮挡层。
-				std::fill_n(static_cast<DWORD*>(dibBits), static_cast<size_t>(width) * height, 0u);
+				// 仅 Primary 需要命中底层；Selection 初始仍全透明并保持穿透。
+				std::fill_n(static_cast<DWORD*>(dibBits), static_cast<size_t>(width) * height,
+					applyPrimaryHitUnderlay ? 0x01000000u : 0u);
 				return true;
 			}
 
@@ -235,6 +458,13 @@ namespace Inkeys::Drawing::Draw3
 				window = inputWindow;
 				device = inputDevice;
 				context = inputContext;
+				// 显式诊断对照只控制 USER32 的 dirty 参数；不扩大 GPU copy 或改变帧调度。
+				wchar_t fullUpdateValue[2] = {};
+				forceFullUlwUpdate = GetEnvironmentVariableW(L"INKEYS_DRAW3_ULW_FULL_UPDATE",
+					fullUpdateValue, ARRAYSIZE(fullUpdateValue)) == 1 && fullUpdateValue[0] == L'1';
+				if (forceFullUlwUpdate)
+					std::cout << "[Draw3Diag][ulw-control] role=" << diagnosticRole
+						<< " INKEYS_DRAW3_ULW_FULL_UPDATE=1 dirtyParameter=null" << std::endl;
 				return window && device && context && Resize(width, height);
 			}
 
@@ -247,76 +477,107 @@ namespace Inkeys::Drawing::Draw3
 			{
 				lastObservation = {};
 				lastObservation.ulw = true;
-				lastObservation.usedDirtyRect = !presentFull;
-				if (!context || !stagingTexture || !finalTexture || !EnsureWindowDib()) return false;
+				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
+				const auto fail = [&](const char* stage, DWORD error = ERROR_SUCCESS,
+					HRESULT hresult = S_OK)
+				{
+					if (!presentFailureLogged)
+					{
+						std::cout << "[Draw3Diag][ulw] stage=" << stage
+							<< " result=failed hresult=0x" << std::hex
+							<< static_cast<unsigned long>(hresult) << std::dec << std::endl;
+						LogPresentEvent("failure", dirty, presentFull, error, hresult);
+						presentFailureLogged = true;
+					}
+					return false;
+				};
+				if (!context || !stagingTexture || !finalTexture)
+					return fail("resource");
+				if (!EnsureWindowDib())
+				{
+					const DWORD error = GetLastError();
+					return fail("window-dib", error,
+						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+				}
 				D3D11_TEXTURE2D_DESC finalDescription = {};
 				finalTexture->GetDesc(&finalDescription);
+				finalTextureWidth = finalDescription.Width;
+				finalTextureHeight = finalDescription.Height;
 				// Resize 可与本帧交错：拷贝范围必须同时受 GPU 两端纹理和当前 DIB 限制。
 				const LONG copyWidth = std::min({ static_cast<LONG>(stagingWidth), static_cast<LONG>(dibWidth),
 					static_cast<LONG>(finalDescription.Width) });
 				const LONG copyHeight = std::min({ static_cast<LONG>(stagingHeight), static_cast<LONG>(dibHeight),
 					static_cast<LONG>(finalDescription.Height) });
-				if (copyWidth <= 0 || copyHeight <= 0) return false;
+				if (copyWidth <= 0 || copyHeight <= 0) return fail("empty-size");
 				if (presentFull) dirty = RECT{ 0, 0, copyWidth, copyHeight }; // 全量呈现时忽略传入脏区。
 				dirty.left = std::max(0L, dirty.left);
 				dirty.top = std::max(0L, dirty.top);
 				dirty.right = std::min(copyWidth, dirty.right);
 				dirty.bottom = std::min(copyHeight, dirty.bottom);
-				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return true;
+				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom)
+				{
+					if (!presentSuccessLogged)
+					{
+						LogPresentEvent("success-empty", dirty, presentFull);
+						presentSuccessLogged = true;
+					}
+					presentFailureLogged = false;
+					return true;
+				}
 
 				D3D11_BOX sourceRegion = {
 					static_cast<UINT>(dirty.left), static_cast<UINT>(dirty.top), 0,
 					static_cast<UINT>(dirty.right), static_cast<UINT>(dirty.bottom), 1
 				};
+				const bool diagnosticsEnabled = StartupEnvironmentDiagnosticsEnabled();
+				const ULONGLONG copyStartedTick = diagnosticsEnabled ? GetTickCount64() : 0;
 				context->CopySubresourceRegion(stagingTexture.Get(), 0, static_cast<UINT>(dirty.left),
 					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从 GPU backbuffer 拷到可读纹理。
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
-				if (FAILED(context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
-
-				const size_t pixelCount = static_cast<size_t>(dirty.right - dirty.left);
-				const size_t copyBytes = pixelCount * 4;
-				const BYTE* source = static_cast<const BYTE*>(mapped.pData) +
-					static_cast<size_t>(dirty.top) * mapped.RowPitch + static_cast<size_t>(dirty.left) * 4;
-				BYTE* destination = static_cast<BYTE*>(dibBits) +
-					static_cast<size_t>(dirty.top) * static_cast<size_t>(dibWidth) * 4 + static_cast<size_t>(dirty.left) * 4;
-				for (LONG y = dirty.top; y < dirty.bottom; ++y)
+				const HRESULT mapResult = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+				if (FAILED(mapResult)) return fail("map", ERROR_SUCCESS, mapResult);
+				const ULONGLONG diagnosticTick = diagnosticsEnabled ? GetTickCount64() : 0;
+				const bool inspectPixels = diagnosticsEnabled &&
+					(!pixelDiagnosticLogged || diagnosticTick - lastPixelDiagnosticTick >= 1000);
+				std::optional<UlwPixelDiagnostic> pixels;
+				if (inspectPixels) pixels.emplace();
+				const auto copyRows = [&]<bool InspectPixels>()
 				{
-					const size_t row = static_cast<size_t>(y - dirty.top);
-					const BYTE* sourceRow = source + row * mapped.RowPitch;
-					BYTE* destinationRow = destination + row * static_cast<size_t>(dibWidth) * 4;
-					std::memcpy(destinationRow, sourceRow, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
-				}
-				context->Unmap(stagingTexture.Get(), 0);
-
-				// 验收路径直接检查提交给 ULW 的 BGRA 像素，防止 alpha 或预乘语义回归。
-				bool allZeroAlpha = true;
-				bool premultipliedAlphaValid = true;
-				const BYTE* dib = static_cast<const BYTE*>(dibBits);
-				for (LONG y = dirty.top; y < dirty.bottom; ++y)
+					return CopyAndInspectUlwDirtyRows<InspectPixels>(
+						static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
+						static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
+						applyPrimaryHitUnderlay, [&] { context->Unmap(stagingTexture.Get(), 0); },
+						InspectPixels ? &*pixels : nullptr);
+				};
+				// 非采样帧使用原扫描的模板实例，不执行任何诊断像素统计。
+				const UlwDirtyCopyResult copyResult = inspectPixels ?
+					copyRows.operator()<true>() : copyRows.operator()<false>();
+				const ULONGLONG rowsFinishedTick = inspectPixels ? GetTickCount64() : 0;
+				if (inspectPixels)
 				{
-					const BYTE* row = dib + static_cast<size_t>(y) *
-						static_cast<size_t>(dibWidth) * 4;
-					for (LONG x = dirty.left; x < dirty.right; ++x)
-					{
-						const BYTE* pixel = row + static_cast<size_t>(x) * 4;
-						const BYTE alpha = pixel[3];
-						allZeroAlpha = allZeroAlpha && alpha == 0;
-						premultipliedAlphaValid = premultipliedAlphaValid &&
-							pixel[0] <= alpha && pixel[1] <= alpha && pixel[2] <= alpha;
-					}
+					pixelDiagnosticLogged = true;
+					lastPixelDiagnosticTick = diagnosticTick;
 				}
-				lastObservation.premultipliedAlphaValid = premultipliedAlphaValid;
-				lastObservation.updatedRegionAllZeroAlpha = allZeroAlpha;
-				lastObservation.fullFrameAllZeroAlpha = presentFull && allZeroAlpha &&
-					dirty.left == 0 && dirty.top == 0 && dirty.right == dibWidth &&
-					dirty.bottom == dibHeight;
+				lastObservation.premultipliedAlphaValid = copyResult.premultipliedAlphaValid;
+				lastObservation.updatedRegionAllZeroAlpha = copyResult.allZeroAlpha;
+				lastObservation.fullFrameAllZeroAlpha = copyResult.fullFrameAllZeroAlpha;
 
 				RECT windowRect = {};
-				if (!GetWindowRect(window, &windowRect)) return false;
+				if (!GetWindowRect(window, &windowRect))
+				{
+					const DWORD error = GetLastError();
+					return fail("window-rect", error,
+						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+				}
 				POINT destinationPoint = { windowRect.left, windowRect.top };
 				SIZE destinationSize = { dibWidth, dibHeight };
 				POINT sourcePoint = { 0, 0 };
 				BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+				lastDestination = destinationPoint;
+				lastDestinationSize = destinationSize;
+				lastSource = sourcePoint;
+				lastBlend = blend;
+				lastUpdateFlags = ULW_ALPHA;
 				UPDATELAYEREDWINDOWINFO update = {};
 				update.cbSize = sizeof(update);
 				update.pptDst = &destinationPoint;
@@ -325,8 +586,24 @@ namespace Inkeys::Drawing::Draw3
 				update.pptSrc = &sourcePoint;
 				update.pblend = &blend;
 				update.dwFlags = ULW_ALPHA;
-				update.prcDirty = presentFull ? nullptr : &dirty; // 非全量时让 USER32 只更新改变区域。
-				return UpdateLayeredWindowIndirect(window, &update) != FALSE;
+				update.prcDirty = presentFull || forceFullUlwUpdate ? nullptr : &dirty;
+				const ULONGLONG ulwStartedTick = inspectPixels ? GetTickCount64() : 0;
+				const BOOL updated = UpdateLayeredWindowIndirect(window, &update);
+				const DWORD error = updated ? ERROR_SUCCESS : GetLastError(); // 日志前锁存本次 API 错误。
+				if (inspectPixels) LogPixelDiagnostic(*pixels, diagnosticTick, dirty, presentFull, updated, error,
+					diagnosticTick - copyStartedTick, rowsFinishedTick - diagnosticTick, GetTickCount64() - ulwStartedTick);
+				if (!updated)
+				{
+					return fail("UpdateLayeredWindowIndirect", error,
+						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+				}
+				if (!presentSuccessLogged || presentFailureLogged)
+				{
+					LogPresentEvent(presentFailureLogged ? "recovery" : "success", dirty, presentFull);
+					presentSuccessLogged = true;
+				}
+				presentFailureLogged = false;
+				return true;
 			}
 		};
 
@@ -483,6 +760,8 @@ namespace Inkeys::Drawing::Draw3
 		UINT width = 0;
 		UINT height = 0;
 		bool presentFailureLogged = false;
+		bool presentSuccessLogged = false;
+		TransparentOutputTarget lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		bool recoveryPending = false;
 		HRESULT lastFailure = S_OK;
 		TransparentPresentationOptions options = {};
@@ -504,6 +783,8 @@ namespace Inkeys::Drawing::Draw3
 			dwmBlurPresenter.Reset();
 			dwmExtendedPresenter.Reset();
 			presentFailureLogged = false;
+			presentSuccessLogged = false;
+			lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		}
 
 		HRESULT DeviceFailureOr(HRESULT fallback) const noexcept
@@ -645,6 +926,10 @@ namespace Inkeys::Drawing::Draw3
 
 		bool InitializePresenter()
 		{
+			primaryUlwPresenter.diagnosticRole = "Drawpad";
+			primaryUlwPresenter.applyPrimaryHitUnderlay = true;
+			selectionUlwPresenter.diagnosticRole = "DrawpadPresentation";
+			selectionUlwPresenter.applyPrimaryHitUnderlay = false;
 			bool primaryInitialized = false;
 			switch (activeMode)
 			{
@@ -667,36 +952,69 @@ namespace Inkeys::Drawing::Draw3
 				graphics->device.Get(), graphics->context.Get(), width, height);
 		}
 
-		bool TryInitialize(TransparentPresentMode mode)
+		bool TryInitialize(TransparentPresentMode mode,
+			Shutdown::FailedCleanupSignal releaseSignal = {},
+			Shutdown::FailedCleanupSignal terminalOuterSignal = {})
 		{
+			const auto beginFailure = [&]() noexcept
+			{
+				const ULONGLONG deadline = releaseSignal.BeginKnownFailure();
+				terminalOuterSignal.BeginKnownFailure(deadline);
+			};
 			ReleaseAttempt(); // 每次尝试前清掉上一条路径留下的交换链和 presenter。
+			// 自动、强制及恢复共用此入口；首发禁用两种历史 DWM 透明模式。
+			if (!IsDirectCompositionMode(mode) && !IsUlwMode(mode))
+			{
+				beginFailure();
+				std::cout << "Transparent present mode " << TransparentPresentModeName(mode)
+					<< " is disabled." << std::endl;
+				return false;
+			}
+			// Win7 无 DComp 时直接尝试 ULW，避免先改动主 HWND 的创建期样式合同。
+			if (IsDirectCompositionMode(mode) && !IsDirectCompositionApiAvailable())
+			{
+				beginFailure();
+				return false;
+			}
 			activeMode = mode;
 			std::cout << "Trying transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			if (!ConfigureWindow(mode))
 			{
+				const DWORD initializeError = GetLastError();
+				beginFailure();
 				std::cout << "ConfigureWindow failed in mode " << TransparentPresentModeName(mode)
 					<< " exStyle=0x" << std::hex
 					<< static_cast<unsigned long>(GetWindowLongPtrW(primaryWindow, GWL_EXSTYLE))
-					<< std::dec << " lastError=" << GetLastError() << std::endl;
+					<< std::dec << " lastError=" << initializeError << std::endl;
 				return false;
 			}
 			if (!CreateSwapChain(mode))
 			{
+				const DWORD initializeError = GetLastError();
+				beginFailure();
 				std::cout << "CreateSwapChain failed in mode " << TransparentPresentModeName(mode)
-					<< " lastError=" << GetLastError() << std::endl;
+					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
+			// DComp 和 ULW 都输出实际 swapchain 描述，包含普通回退的 flags/effect/size。
+			LogSwapChainRuntimeDescription(TransparentPresentModeName(mode),
+				swapChain.Get(), "Draw3 created");
 
-			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height))
+			// 传递实际创建后端，不用适配器名称或 vendor 猜测 WARP。
+			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height, graphics->driverType))
 			{
+				const DWORD initializeError = GetLastError();
+				beginFailure();
 				std::cout << "Renderer initialization failed in mode " << TransparentPresentModeName(mode)
-					<< " lastError=" << GetLastError() << std::endl;
+					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
 			if (!InitializePresenter())
 			{
+				const DWORD initializeError = GetLastError();
+				beginFailure();
 				std::cout << "Presenter initialization failed in mode " << TransparentPresentModeName(mode)
-					<< " lastError=" << GetLastError() << std::endl;
+					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
 			std::cout << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
@@ -745,6 +1063,9 @@ namespace Inkeys::Drawing::Draw3
 		impl_->lastObservation = {};
 		impl_->recoveryPending = false;
 		impl_->lastFailure = S_OK;
+		impl_->presentFailureLogged = false;
+		impl_->presentSuccessLogged = false;
+		impl_->lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 	}
 
 	bool TransparentPresentationController::Initialize(HWND primaryWindow, HWND selectionWindow,
@@ -765,26 +1086,58 @@ namespace Inkeys::Drawing::Draw3
 		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		impl_->requestedOutputRevision = 0;
 		impl_->lastObservation = {};
+		impl_->presentFailureLogged = false;
+		impl_->presentSuccessLogged = false;
+		impl_->lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		if (!primaryWindow || !selectionWindow || !IsWindow(primaryWindow) ||
-			!IsWindow(selectionWindow)) return false;
-		if (options.requireMode)
+			!IsWindow(selectionWindow))
 		{
-			const bool initialized = impl_->TryInitialize(options.requiredMode);
-			if (!initialized) impl_->ReleaseAttempt();
-			return initialized;
+			options.failedCleanup.BeginKnownFailure();
+			return false;
 		}
+		const auto tryStartupMode = [&](TransparentPresentMode mode, bool terminal)
+		{
+			Shutdown::FailedCleanupDeadline releaseCleanup(options.failedCleanup.Publisher());
+			if (options.failedCleanup.HasPublisher()) releaseCleanup.PrepareOrFatal();
+			const auto releaseSignal = releaseCleanup.Signal();
+			const auto outerSignal = terminal ? options.failedCleanup : Shutdown::FailedCleanupSignal{};
+			bool initialized = false;
+			try
+			{
+				initialized = impl_->TryInitialize(mode, releaseSignal, outerSignal);
+				if (!initialized)
+				{
+					outerSignal.BeginKnownFailure(releaseSignal.BeginKnownFailure());
+					impl_->ReleaseAttempt();
+					if (!terminal)
+					{
+						const size_t nextIndex = TransparentPresentModeIndex(mode) + 1;
+						std::cout << "Transparent present mode " << TransparentPresentModeName(mode)
+							<< " failed; fallback to " << TransparentPresentModeName(kTransparentPresentModes[nextIndex]) << "." << std::endl;
+					}
+				}
+			}
+			catch (...)
+			{
+				// 异常已终止整个 startup，Host 后续释放继承本次局部失败的原 tick。
+				options.failedCleanup.BeginKnownFailure(releaseSignal.BeginKnownFailure());
+				throw;
+			}
+			// 下一模式是新的普通初始化；前一失败释放必须完成并真正 join 后才继续。
+			// 默认 empty Signal 不 Prepare，不增加 monitor 线程。
+			releaseCleanup.CompleteOrFatal();
+			return initialized;
+		};
+		if (options.requireMode)
+			return tryStartupMode(options.requiredMode, true);
 		const size_t modeCount = ARRAYSIZE(kTransparentPresentModes);
 		const size_t beginIndex = options.allowDirectComposition ? 0 : 1;
 		for (size_t index = beginIndex; index < modeCount; ++index)
 		{
-			if (impl_->TryInitialize(kTransparentPresentModes[index])) return true; // 按优先级选第一个可用透明呈现路径。
-			impl_->ReleaseAttempt();
-			if (index + 1 < modeCount)
-			{
-				std::cout << "Transparent present mode " << TransparentPresentModeName(kTransparentPresentModes[index])
-					<< " failed; fallback to " << TransparentPresentModeName(kTransparentPresentModes[index + 1]) << "." << std::endl;
-			}
+			if (tryStartupMode(kTransparentPresentModes[index], index + 1 == modeCount))
+				return true; // 按优先级选第一个可用透明呈现路径。
 		}
+		options.failedCleanup.BeginKnownFailure();
 		std::cout << "All transparent present modes failed." << std::endl;
 		return false;
 	}
@@ -797,6 +1150,13 @@ namespace Inkeys::Drawing::Draw3
 		impl_->requestedOutputTarget = target;
 		if (++impl_->requestedOutputRevision == 0)
 			++impl_->requestedOutputRevision;
+		if (StartupEnvironmentDiagnosticsEnabled())
+		{
+			std::cout << "[Draw3Diag][target] requested="
+				<< (target == TransparentOutputTarget::SelectionUlw
+					? "DrawpadPresentation" : "Drawpad")
+				<< " revision=" << impl_->requestedOutputRevision << std::endl;
+		}
 		return impl_->requestedOutputRevision;
 	}
 
@@ -918,6 +1278,26 @@ namespace Inkeys::Drawing::Draw3
 			const HRESULT result = impl_->PresentSwapChain(dirty, presentFull); // GPU 路径直接 Present1，DWM 读取 alpha。
 			succeeded = SUCCEEDED(result);
 			impl_->lastObservation = {};
+			if (!succeeded || impl_->presentFailureLogged || !impl_->presentSuccessLogged ||
+				impl_->lastLoggedOutputTarget != target)
+			{
+				if (!succeeded || StartupEnvironmentDiagnosticsEnabled())
+				{
+					std::cout << "[Draw3Diag][present] mode="
+						<< TransparentPresentModeName(impl_->activeMode)
+						<< " target="
+						<< (target == TransparentOutputTarget::SelectionUlw
+							? "DrawpadPresentation" : "Drawpad")
+						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(impl_->primaryWindow)
+						<< " size=" << std::dec << impl_->width << "x" << impl_->height
+						<< " dirty=(" << dirty.left << "," << dirty.top << ","
+						<< dirty.right << "," << dirty.bottom << ")"
+						<< " full=" << (presentFull ? 1 : 0)
+						<< " result=0x" << std::hex << static_cast<unsigned long>(result)
+						<< std::dec << std::endl;
+				}
+				impl_->lastLoggedOutputTarget = target;
+			}
 			if (!succeeded) impl_->SetFailure(result);
 		}
 		impl_->lastObservation.outputTarget = target;
@@ -928,7 +1308,11 @@ namespace Inkeys::Drawing::Draw3
 			std::cout << "Present failed in mode " << TransparentPresentModeName(impl_->activeMode) << std::endl;
 			impl_->presentFailureLogged = true;
 		}
-		if (succeeded) impl_->presentFailureLogged = false;
+		if (succeeded)
+		{
+			impl_->presentFailureLogged = false;
+			impl_->presentSuccessLogged = true;
+		}
 		return succeeded;
 	}
 
@@ -974,5 +1358,333 @@ namespace Inkeys::Drawing::Draw3
 	IDXGISwapChain1* TransparentPresentationController::SwapChain() const
 	{
 		return impl_->swapChain.Get();
+	}
+
+	int RunUlwDirtyCopyBenchmark() noexcept
+	{
+		try
+		{
+			constexpr BYTE inputAlphas[] = { 0, 127, 128, 254, 255 };
+			constexpr BYTE expectedAlphas[] = { 1, 128, 128, 254, 255 };
+			for (size_t index = 0; index < ARRAYSIZE(inputAlphas); ++index)
+			{
+				if (ComposePrimaryHitUnderlayAlpha(inputAlphas[index]) != expectedAlphas[index])
+				{
+					std::fputs("UlwDirtyCopyBenchmark hit-underlay alpha formula mismatch\n", stderr);
+					return 1;
+				}
+			}
+
+			// 验证首帧、dirty 绘制/擦除/再落笔和 DIB 重建；选择输出不合成命中底层。
+			std::vector<BYTE> sequenceSource(2 * 4, 0);
+			std::vector<BYTE> sequenceDib(2 * 4, 0);
+			const auto copySequence = [](const std::vector<BYTE>& source, std::vector<BYTE>& dib,
+				int width, RECT dirty, bool presentFull, bool applyPrimaryHitUnderlay)
+			{
+				return CopyAndInspectUlwDirtyRows(source.data(), static_cast<size_t>(width) * 4,
+					dib.data(), width, 1, dirty, presentFull, applyPrimaryHitUnderlay, [] {});
+			};
+			const UlwDirtyCopyResult initialClear = copySequence(sequenceSource, sequenceDib,
+				2, RECT{ 0, 0, 2, 1 }, true, true);
+			if (!initialClear.allZeroAlpha || !initialClear.fullFrameAllZeroAlpha ||
+				sequenceDib[3] != 1 || sequenceDib[7] != 1)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary full clear mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource[0] = 32;
+			sequenceSource[3] = 64;
+			const UlwDirtyCopyResult firstStroke = copySequence(sequenceSource, sequenceDib,
+				2, RECT{ 0, 0, 1, 1 }, false, true);
+			if (firstStroke.allZeroAlpha || sequenceDib[0] != 32 || sequenceDib[3] != 65 ||
+				sequenceDib[7] != 1)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary dirty stroke mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource[0] = 0;
+			sequenceSource[3] = 0;
+			const UlwDirtyCopyResult erasedStroke = copySequence(sequenceSource, sequenceDib,
+				2, RECT{ 0, 0, 1, 1 }, false, true);
+			if (!erasedStroke.allZeroAlpha || sequenceDib[3] != 1)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary dirty erase mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource[0] = 24;
+			sequenceSource[3] = 127;
+			const UlwDirtyCopyResult redrawnAfterErase = copySequence(sequenceSource, sequenceDib,
+				2, RECT{ 0, 0, 1, 1 }, false, true);
+			if (redrawnAfterErase.allZeroAlpha || sequenceDib[0] != 24 ||
+				sequenceDib[3] != 128 || sequenceDib[7] != 1 ||
+				sequenceSource[3] != 127)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary redraw after erase mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource.assign(3 * 4, 0);
+			sequenceDib.assign(3 * 4, 0); // 模拟 resize 后重建的 DIB。
+			const UlwDirtyCopyResult resizedClear = copySequence(sequenceSource, sequenceDib,
+				3, RECT{ 0, 0, 3, 1 }, true, true);
+			if (!resizedClear.fullFrameAllZeroAlpha || sequenceDib[3] != 1 ||
+				sequenceDib[7] != 1 || sequenceDib[11] != 1)
+			{
+				std::fputs("UlwDirtyCopyBenchmark resized primary clear mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource[8] = 255;
+			sequenceSource[11] = 255;
+			copySequence(sequenceSource, sequenceDib, 3, RECT{ 2, 0, 3, 1 }, false, true);
+			if (sequenceDib[8] != 255 || sequenceDib[11] != 255)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary redraw after resize mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource.assign(3 * 4, 0);
+			sequenceDib.assign(3 * 4, 0);
+			copySequence(sequenceSource, sequenceDib, 3, RECT{ 0, 0, 3, 1 }, true, false);
+			if (sequenceDib[3] != 0 || sequenceDib[7] != 0 || sequenceDib[11] != 0)
+			{
+				std::fputs("UlwDirtyCopyBenchmark selection transparency mismatch\n", stderr);
+				return 1;
+			}
+
+			// 诊断只统计非原点脏区，忽略 RowPitch padding 与区外像素；覆盖黑墨/白光标及底层 alpha。
+			constexpr int diagnosticWidth = 5;
+			constexpr int diagnosticHeight = 4;
+			constexpr size_t diagnosticPitch = diagnosticWidth * 4 + 8;
+			const RECT diagnosticDirty{ 1, 1, 3, 3 };
+			const auto rectEquals = [](RECT actual, RECT expected)
+			{
+				return actual.left == expected.left && actual.top == expected.top &&
+					actual.right == expected.right && actual.bottom == expected.bottom;
+			};
+			for (int pattern = 0; pattern < 4; ++pattern)
+			{
+				std::vector<BYTE> source(diagnosticPitch * diagnosticHeight, 0xC7);
+				for (LONG y = diagnosticDirty.top; y < diagnosticDirty.bottom; ++y)
+					std::memset(source.data() + static_cast<size_t>(y) * diagnosticPitch + 4, 0, 8);
+				const auto setPixel = [&](LONG x, LONG y, BYTE color, BYTE alpha)
+				{
+					BYTE* pixel = source.data() + static_cast<size_t>(y) * diagnosticPitch + x * 4;
+					pixel[0] = pixel[1] = pixel[2] = color;
+					pixel[3] = alpha;
+				};
+				if (pattern == 1) setPixel(2, 1, 0, 127); // 黑色笔迹：RGB 全零不能代表没有笔迹。
+				if (pattern == 2)
+				{
+					setPixel(1, 2, 127, 127);
+					setPixel(2, 2, 255, 255); // 白色光标最高 alpha 样本。
+				}
+				if (pattern == 3) setPixel(1, 1, 1, 0); // 底层可能修正最终预乘合法性，原始异常仍需可见。
+				const std::vector<BYTE> originalSource = source;
+				for (bool underlay : { false, true })
+				{
+					std::vector<BYTE> dib(diagnosticWidth * diagnosticHeight * 4, 0xA5);
+					std::vector<BYTE> withoutDiagnostic = dib;
+					UlwPixelDiagnostic pixels;
+					bool unmapped = false;
+					const UlwDirtyCopyResult result = CopyAndInspectUlwDirtyRows<true>(source.data(),
+						diagnosticPitch, dib.data(), diagnosticWidth, diagnosticHeight, diagnosticDirty,
+						false, underlay, [&] { unmapped = true; }, &pixels);
+					const UlwDirtyCopyResult plain = CopyAndInspectUlwDirtyRows(source.data(),
+						diagnosticPitch, withoutDiagnostic.data(), diagnosticWidth, diagnosticHeight,
+						diagnosticDirty, false, underlay, [] {});
+					const size_t sourceNonzero = pattern == 1 ? 1 : (pattern == 2 ? 2 : 0);
+					const size_t rgbNonzero = pattern == 2 ? 2 : (pattern == 3 ? 1 : 0);
+					const BYTE sourceMaxAlpha = pattern == 1 ? 127 : (pattern == 2 ? 255 : 0);
+					const BYTE maxColor = pattern == 2 ? 255 : (pattern == 3 ? 1 : 0);
+					const RECT sourceBounds = pattern == 1 ? RECT{ 2, 1, 3, 2 } :
+						(pattern == 2 ? RECT{ 1, 2, 3, 3 } : RECT{});
+					const POINT sample = pattern == 1 ? POINT{ 2, 1 } :
+						(pattern == 2 ? POINT{ 2, 2 } : POINT{ 1, 1 });
+					const BYTE finalMaxAlpha = underlay ? ComposePrimaryHitUnderlayAlpha(sourceMaxAlpha) : sourceMaxAlpha;
+					const size_t sourceOffset = static_cast<size_t>(sample.y) * diagnosticPitch + sample.x * 4;
+					const size_t finalOffset = (static_cast<size_t>(sample.y) * diagnosticWidth + sample.x) * 4;
+					if (!unmapped || pixels.pixelCount != 4 ||
+						pixels.source.alphaNonzero != sourceNonzero ||
+						pixels.finalDib.alphaNonzero != (underlay ? 4 : sourceNonzero) ||
+						pixels.source.rgbNonzero != rgbNonzero || pixels.finalDib.rgbNonzero != rgbNonzero ||
+						pixels.source.maxBgra[3] != sourceMaxAlpha || pixels.finalDib.maxBgra[3] != finalMaxAlpha ||
+						!rectEquals(pixels.source.alphaBounds, sourceBounds) ||
+						!rectEquals(pixels.finalDib.alphaBounds, underlay ? diagnosticDirty : sourceBounds) ||
+						pixels.source.premultipliedAlphaValid != (pattern != 3) ||
+						pixels.finalDib.premultipliedAlphaValid != (pattern != 3 || underlay) ||
+						pixels.samplePosition.x != sample.x || pixels.samplePosition.y != sample.y ||
+						std::memcmp(pixels.sampleSourceBgra, source.data() + sourceOffset, 4) != 0 ||
+						std::memcmp(pixels.sampleFinalBgra, dib.data() + finalOffset, 4) != 0 ||
+						source != originalSource || dib != withoutDiagnostic ||
+						result.allZeroAlpha != (sourceNonzero == 0) || result.fullFrameAllZeroAlpha ||
+						result.allZeroAlpha != plain.allZeroAlpha ||
+						result.premultipliedAlphaValid != plain.premultipliedAlphaValid ||
+						result.fullFrameAllZeroAlpha != plain.fullFrameAllZeroAlpha)
+					{
+						std::fprintf(stderr, "UlwDirtyCopyBenchmark pixel diagnostic mismatch pattern=%d underlay=%d\n",
+							pattern, underlay ? 1 : 0);
+						return 1;
+					}
+					for (size_t channel = 0; channel < 3; ++channel)
+					{
+						if (pixels.source.maxBgra[channel] != maxColor || pixels.finalDib.maxBgra[channel] != maxColor)
+						{
+							std::fputs("UlwDirtyCopyBenchmark diagnostic color maxima mismatch\n", stderr);
+							return 1;
+						}
+					}
+				}
+			}
+			std::fputs("UlwDirtyCopyBenchmark pixel_diagnostics=PASS cases=8\n", stdout);
+
+			enum class PixelPattern { Mixed, Transparent, Half, InvalidAlpha };
+			struct Scenario
+			{
+				const char* name;
+				int width;
+				int height;
+				RECT dirty;
+				bool presentFull;
+				PixelPattern pattern;
+				bool applyPrimaryHitUnderlay;
+				bool allZeroAlpha;
+				bool premultipliedAlphaValid;
+				bool fullFrameAllZeroAlpha;
+			};
+			constexpr Scenario scenarios[] = {
+				{ "full_mixed", 1920, 1080, { 0, 0, 1920, 1080 }, true,
+					PixelPattern::Mixed, true, false, true, false },
+				{ "partial_256", 1920, 1080, { 480, 304, 736, 560 }, false,
+					PixelPattern::Mixed, true, false, true, false },
+				{ "narrow_long", 1920, 1080, { 951, 0, 959, 1080 }, false,
+					PixelPattern::Mixed, false, false, true, false },
+				{ "full_transparent", 1920, 1080, { 0, 0, 1920, 1080 }, true,
+					PixelPattern::Transparent, true, true, true, true },
+				{ "partial_transparent", 1920, 1080, { 480, 304, 736, 560 }, false,
+					PixelPattern::Transparent, false, true, true, false },
+				{ "partial_half", 1920, 1080, { 480, 304, 736, 560 }, false,
+					PixelPattern::Half, true, false, true, false },
+				{ "partial_invalid_alpha", 1920, 1080, { 480, 304, 736, 560 }, false,
+					PixelPattern::InvalidAlpha, true, false, false, false },
+			};
+			constexpr int warmupBlocks = 16;
+			constexpr int measuredBlocks = 128;
+			LARGE_INTEGER frequency = {};
+			if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) return 1;
+			std::fprintf(stdout,
+				"UlwDirtyCopyBenchmark variant=separate_dib_scan metric=cpu_copy_plus_alpha_scan sample=single_call warmup_blocks=%d measured_blocks=%d qpc_frequency=%lld\n",
+				warmupBlocks, measuredBlocks, static_cast<long long>(frequency.QuadPart));
+
+			for (const Scenario& scenario : scenarios)
+			{
+				const size_t dibStride = static_cast<size_t>(scenario.width) * 4;
+				const size_t rowPitch = dibStride + 64; // 固定 padding 覆盖 staging RowPitch 与 DIB stride 不同的情况。
+				std::vector<BYTE> source(rowPitch * static_cast<size_t>(scenario.height), 0xC7);
+				std::vector<BYTE> initial(dibStride * static_cast<size_t>(scenario.height));
+				std::vector<BYTE> expected(initial.size());
+				std::vector<BYTE> dib(initial.size());
+				for (size_t offset = 0; offset < initial.size(); offset += 4)
+				{
+					initial[offset] = 0xA5;
+					initial[offset + 1] = 0x5A;
+					initial[offset + 2] = 0x3C;
+					initial[offset + 3] = 0; // 脏区外故意留无效预乘色，发现误扫全 DIB。
+				}
+				for (int y = 0; y < scenario.height; ++y)
+				{
+					for (int x = 0; x < scenario.width; ++x)
+					{
+						BYTE* pixel = source.data() + static_cast<size_t>(y) * rowPitch +
+							static_cast<size_t>(x) * 4;
+						const BYTE alpha = scenario.pattern == PixelPattern::Transparent ? 0 :
+							(scenario.pattern == PixelPattern::Mixed ? static_cast<BYTE>(64 + (x + y) % 192) : 128);
+						pixel[3] = alpha;
+						pixel[0] = static_cast<BYTE>((x * 13 + y * 7) % (alpha + 1));
+						pixel[1] = static_cast<BYTE>((x * 5 + y * 11) % (alpha + 1));
+						pixel[2] = static_cast<BYTE>((x * 3 + y * 17) % (alpha + 1));
+						if (scenario.pattern == PixelPattern::InvalidAlpha &&
+							x == (scenario.dirty.left + scenario.dirty.right) / 2 &&
+							y == (scenario.dirty.top + scenario.dirty.bottom) / 2)
+							pixel[0] = 129;
+					}
+				}
+				expected = initial;
+				const size_t copyBytes = static_cast<size_t>(scenario.dirty.right - scenario.dirty.left) * 4;
+				for (LONG y = scenario.dirty.top; y < scenario.dirty.bottom; ++y)
+				{
+					const size_t sourceOffset = static_cast<size_t>(y) * rowPitch +
+						static_cast<size_t>(scenario.dirty.left) * 4;
+					const size_t destinationOffset = static_cast<size_t>(y) * dibStride +
+						static_cast<size_t>(scenario.dirty.left) * 4;
+					std::memcpy(expected.data() + destinationOffset, source.data() + sourceOffset, copyBytes);
+					if (scenario.applyPrimaryHitUnderlay)
+					{
+						for (LONG x = scenario.dirty.left; x < scenario.dirty.right; ++x)
+						{
+							BYTE* pixel = expected.data() + destinationOffset +
+								static_cast<size_t>(x - scenario.dirty.left) * 4;
+							pixel[3] = ComposePrimaryHitUnderlayAlpha(pixel[3]);
+						}
+					}
+				}
+
+				for (int block = 0; block < warmupBlocks + measuredBlocks; ++block)
+				{
+					std::copy(initial.begin(), initial.end(), dib.begin());
+					UlwDirtyCopyResult result;
+					ULONG64 startCycles = 0;
+					ULONG64 stopCycles = 0;
+					bool cyclesAvailable = QueryThreadCycleTime(GetCurrentThread(), &startCycles) != FALSE;
+					LARGE_INTEGER start = {};
+					LARGE_INTEGER stop = {};
+					if (!QueryPerformanceCounter(&start)) return 1;
+					result = CopyAndInspectUlwDirtyRows(source.data(), rowPitch, dib.data(),
+						scenario.width, scenario.height, scenario.dirty, scenario.presentFull,
+						scenario.applyPrimaryHitUnderlay, [] {});
+					if (!QueryPerformanceCounter(&stop)) return 1;
+					cyclesAvailable = cyclesAvailable &&
+						QueryThreadCycleTime(GetCurrentThread(), &stopCycles) != FALSE;
+					if (result.allZeroAlpha != scenario.allZeroAlpha ||
+						result.premultipliedAlphaValid != scenario.premultipliedAlphaValid ||
+						result.fullFrameAllZeroAlpha != scenario.fullFrameAllZeroAlpha ||
+						std::memcmp(dib.data(), expected.data(), dib.size()) != 0)
+					{
+						std::fprintf(stderr, "UlwDirtyCopyBenchmark mismatch scenario=%s block=%d\n",
+							scenario.name, block);
+						return 1;
+					}
+					if (block < warmupBlocks) continue;
+					std::uint64_t hash = 14695981039346656037ull;
+					for (BYTE value : dib) hash = (hash ^ value) * 1099511628211ull;
+					for (BYTE flag : { static_cast<BYTE>(result.allZeroAlpha),
+						static_cast<BYTE>(result.premultipliedAlphaValid),
+						static_cast<BYTE>(result.fullFrameAllZeroAlpha) })
+						hash = (hash ^ flag) * 1099511628211ull;
+					std::fprintf(stdout,
+						"UlwDirtyCopyBenchmark scenario=%s block=%d iterations=1 qpc_ticks=%lld cycles_available=%d thread_cycles=%llu hash=%016llx all_zero=%d premul_valid=%d full_zero=%d\n",
+						scenario.name, block - warmupBlocks + 1,
+						static_cast<long long>(stop.QuadPart - start.QuadPart), cyclesAvailable ? 1 : 0,
+						static_cast<unsigned long long>(cyclesAvailable ? stopCycles - startCycles : 0),
+						static_cast<unsigned long long>(hash), result.allZeroAlpha ? 1 : 0,
+						result.premultipliedAlphaValid ? 1 : 0, result.fullFrameAllZeroAlpha ? 1 : 0);
+				}
+			}
+			std::fflush(stdout);
+			return 0;
+		}
+		catch (const std::exception& error)
+		{
+			std::fprintf(stderr, "UlwDirtyCopyBenchmark exception: %s\n", error.what());
+			return 2;
+		}
+		catch (...)
+		{
+			std::fputs("UlwDirtyCopyBenchmark unknown exception\n", stderr);
+			return 2;
+		}
 	}
 }

@@ -4,6 +4,8 @@ module;
 
 #include <d2d1_1.h>
 #include <wrl/client.h>
+#include <bit>
+#include "Bar.PresentationProbe.h"
 
 #define STBI_ONLY_PNG
 #define STBI_NO_STDIO
@@ -330,7 +332,11 @@ bool BarUiSVGClass::AdvanceContentTransition(double dt, double speedRate)
 	if (snapshot->applyContent)
 	{
 		// SVG 解析可能较重，先对快照目标解析，再凭代次提交短状态。
+		Inkeys::UI::Bar::Ui3SvgStageTimer timer(Inkeys::UI::Bar::Ui3SvgStage::Parse);
+		Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Parse, Inkeys::UI::Bar::Ui3SvgOperation::Begin);
 		auto document = lunasvg::Document::loadFromData(utf16ToUtf8(snapshot->target));
+		Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Parse,
+			document ? Inkeys::UI::Bar::Ui3SvgOperation::Success : Inkeys::UI::Bar::Ui3SvgOperation::Failure);
 		if (document)
 			targetSize = { static_cast<double>(document->width()),
 				static_cast<double>(document->height()) };
@@ -365,9 +371,59 @@ bool BarUiSVGClass::AdvanceContentTransition(double dt, double speedRate)
 	if (contentCommitted)
 	{
 		// cache 只由渲染线程持有，不扩大时间线锁的临界区。
+		NotifyObservedContentValueWrite();
 		ResetCache();
 	}
 	return true;
+}
+bool BarUiSVGClass::IsContentTransitionActive()
+{
+	return contentTransitionTimeline.Transaction(
+		[](BarUiKeyframeTimelineClass::LockedView& timeline) { return timeline.IsActive(); });
+}
+bool BarUiSVGClass::BindObservationTag(std::uint32_t tag) noexcept
+{
+	auto* scope = Inkeys::UI::Bar::CurrentUi3SvgScope();
+	if (!scope || !scope->probe) return false;
+	// 拷贝对象不能继承另一个对象的known-owned初始化资格。
+	if (observedInitializationObject_ != this) observed_.initializedObserved = false;
+	const auto size = cacheBitmap ? cacheBitmap->GetPixelSize() : D2D1::SizeU(0, 0);
+	return scope->probe->Bind(observed_, this, tag, cacheBitmap != nullptr, size.width, size.height);
+}
+void BarUiSVGClass::NotifyObservedContentValueWrite() noexcept
+{
+	if (auto* scope = Inkeys::UI::Bar::CurrentUi3SvgScope(); scope && scope->probe)
+	{
+		if (scope->ownedInitialization) observedInitializationObject_ = this;
+		scope->probe->NoteValueWrite(observed_, scope->ownedInitialization);
+	}
+	else if (observed_.ownerSerial != 0) observed_.semanticKnown = false;
+}
+Inkeys::UI::Bar::Ui3SvgBitmapProof BarUiSVGClass::ObservedBitmapProof() const noexcept
+{
+	auto proof = observed_.bitmap;
+	const auto* scope = Inkeys::UI::Bar::CurrentUi3SvgScope();
+	proof.semanticKnown &= scope && scope->probe && observed_.ownerSerial == scope->probe->OwnerSerial()
+		&& observed_.semanticKnown && observedInitializationObject_ == this && observedBitmapObject_ == cacheBitmap.Get();
+	proof.ready &= cacheBitmap != nullptr;
+	return proof;
+}
+void BarUiSVGClass::ObserveFiniteRequirement(bool domainRelevant) noexcept
+{
+	auto* scope = Inkeys::UI::Bar::CurrentUi3SvgScope();
+	if (!scope || !scope->probe || !domainRelevant) return;
+	const bool visible = enable.val && w.val > 0.0 && h.val > 0.0 && pct.val * static_cast<double>(contentPct) > 0.0;
+	const bool potentiallyVisible = (enable.val || enable.tar) && (pct.val > 0.0 || pct.tar > 0.0);
+	if (!potentiallyVisible && !scope->probe->NeedsHiddenProof(observed_.tag)) return;
+	Inkeys::UI::Bar::Ui3SvgBitmapProof expected;
+	expected.tag = observed_.tag; expected.flags = 1u; // 尺寸此时为DIP，真实frameZoom在原Draw准备点锁存。
+	expected.valueRevision = observed_.valueRevision; expected.semanticKnown = observed_.semanticKnown;
+	expected.requestedWBits = std::bit_cast<std::uint64_t>(static_cast<double>(w.val));
+	expected.requestedHBits = std::bit_cast<std::uint64_t>(static_cast<double>(h.val));
+	if (color1) { expected.colorMask |= 1; expected.color1Rgb = static_cast<COLORREF>(color1->val) & 0xFFFFFFu; }
+	if (color2) { expected.colorMask |= 2; expected.color2Rgb = static_cast<COLORREF>(color2->val) & 0xFFFFFFu; }
+	const float opacity = static_cast<float>(clamp(static_cast<double>(pct.val) * static_cast<double>(contentPct), 0.0, 1.0));
+	scope->probe->Require(this, observed_, expected, visible, svg.IsSame() && !IsContentTransitionActive(), std::bit_cast<std::uint32_t>(opacity));
 }
 void BarUiSVGClass::CancelContentTransition()
 {
@@ -386,6 +442,10 @@ void BarUiSVGClass::CancelContentTransition()
 }
 void BarUiSVGClass::ResetCache()
 {
+	if (auto* scope = Inkeys::UI::Bar::CurrentUi3SvgScope(); scope && scope->probe)
+		scope->probe->NoteCacheReset(observed_, cacheBitmap != nullptr);
+	else if (observed_.ownerSerial != 0) observed_.bitmap.semanticKnown = observed_.bitmap.ready = false;
+	observedBitmapObject_ = nullptr;
 	cacheBitmap.Reset();
 	cW = cH = 0.0;
 	cColor1 = cColor2 = RGB(0, 0, 0);
@@ -393,12 +453,31 @@ void BarUiSVGClass::ResetCache()
 void BarUiSVGClass::ApplyContentDirect(const wstring& valT)
 {
 	svg.Initialization(valT);
+	NotifyObservedContentValueWrite();
 	ResetCache();
 	auto temp = CalcWH();
 	rW = temp.first, rH = temp.second;
 }
 bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, double tarH)
 {
+	auto* observationScope = Inkeys::UI::Bar::CurrentUi3SvgScope();
+	Inkeys::UI::Bar::Ui3SvgBitmapProof plannedProof;
+	if (observationScope && observationScope->probe)
+	{
+		observationScope->probe->NoteCacheAttempt(observed_);
+		plannedProof.tag = observed_.tag; plannedProof.valueRevision = observed_.valueRevision;
+		plannedProof.semanticKnown = observed_.semanticKnown && observed_.ownerSerial == observationScope->probe->OwnerSerial()
+			&& observedInitializationObject_ == this;
+		plannedProof.epoch = observationScope->probe->Target().epoch;
+		plannedProof.surfaceSerial = observationScope->probe->Target().surfaceSerial;
+		plannedProof.dpi = observationScope->probe->Target().dpi;
+		plannedProof.requestedWBits = std::bit_cast<std::uint64_t>(tarW);
+		plannedProof.requestedHBits = std::bit_cast<std::uint64_t>(tarH);
+	}
+	auto NoteFailure = [&](Inkeys::UI::Bar::Ui3SvgFailure failure)
+	{
+		if (observationScope && observationScope->probe) observationScope->probe->NoteCacheResult(observed_, {}, failure);
+	};
 	// 初始化解析
 	string svgContent;
 	unique_ptr<lunasvg::Document> document;
@@ -407,7 +486,7 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 		// 替换颜色，如果有
 		if (color1.has_value() || color2.has_value())
 		{
-			auto SvgReplaceColor = [](const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2) -> string
+			auto SvgReplaceColor = [&](const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2) -> string
 				{
 					auto colorref_to_rgb = [](COLORREF c) -> string
 						{
@@ -424,6 +503,7 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 					if (color1.has_value())
 					{
 						col1 = color1.value().val;
+						if (observationScope) { plannedProof.colorMask |= 1; plannedProof.color1Rgb = col1 & 0xFFFFFFu; }
 
 						size_t pos = 0;
 						const string tag = "rgba(10,0,7,0)";
@@ -437,6 +517,7 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 					if (color2.has_value())
 					{
 						col2 = color2.value().val;
+						if (observationScope) { plannedProof.colorMask |= 2; plannedProof.color2Rgb = col2 & 0xFFFFFFu; }
 
 						size_t pos = 0;
 						const string tag = "rgba(9,0,2,0)";
@@ -455,26 +536,53 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 		}
 
 		// 解析SVG
-		document = lunasvg::Document::loadFromData(svgContent);
-		if (!document) return false; // 解析失败
+		{
+			Inkeys::UI::Bar::Ui3SvgStageTimer timer(Inkeys::UI::Bar::Ui3SvgStage::Parse);
+			Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Parse, Inkeys::UI::Bar::Ui3SvgOperation::Begin);
+			document = lunasvg::Document::loadFromData(svgContent);
+			Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Parse,
+				document ? Inkeys::UI::Bar::Ui3SvgOperation::Success : Inkeys::UI::Bar::Ui3SvgOperation::Failure);
+		}
+		if (!document) { NoteFailure(Inkeys::UI::Bar::Ui3SvgFailure::Parse); return false; } // 解析失败
 	}
 
 	// 绘制到离屏位图
-	lunasvg::Bitmap bitmap = document->renderToBitmap(static_cast<int>(tarW), static_cast<int>(tarH));
+	lunasvg::Bitmap bitmap = [&]()
 	{
-		if (bitmap.width() == 0 || bitmap.height() == 0 || !bitmap.data()) return false;
+		Inkeys::UI::Bar::Ui3SvgStageTimer timer(Inkeys::UI::Bar::Ui3SvgStage::Raster);
+		Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Raster, Inkeys::UI::Bar::Ui3SvgOperation::Begin);
+		auto value = document->renderToBitmap(static_cast<int>(tarW), static_cast<int>(tarH));
+		// 仅显式离屏probe可拒绝已完成的真实raster结果；不是自然OOM/provider失败。
+		if (observationScope && observationScope->probe && observationScope->probe->OffscreenFault() == Inkeys::UI::Bar::Ui3SvgOffscreenFault::RejectRasterResult)
+			value = lunasvg::Bitmap();
+		Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Raster,
+			value.width() != 0 && value.height() != 0 && value.data() ? Inkeys::UI::Bar::Ui3SvgOperation::Success : Inkeys::UI::Bar::Ui3SvgOperation::Failure);
+		return value;
+	}();
+	{
+		if (bitmap.width() == 0 || bitmap.height() == 0 || !bitmap.data()) { NoteFailure(Inkeys::UI::Bar::Ui3SvgFailure::Raster); return false; }
 
 		D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+		// 固定非法alpha交给真正CreateBitmap返回HRESULT，尺寸仍是本次小位图。
+		if (observationScope && observationScope->probe && observationScope->probe->OffscreenFault() == Inkeys::UI::Bar::Ui3SvgOffscreenFault::InvalidUploadAlpha)
+			props.pixelFormat.alphaMode = static_cast<D2D1_ALPHA_MODE>(0xFFFFFFFFu);
 		Microsoft::WRL::ComPtr<ID2D1Bitmap> newBitmap;
 		// lunasvg 文档声明：数据为BGRA，8bits每通道，正好适配D2D位图
-		HRESULT hr = deviceContext->CreateBitmap(
+		HRESULT hr;
+		{
+		Inkeys::UI::Bar::Ui3SvgStageTimer timer(Inkeys::UI::Bar::Ui3SvgStage::Upload);
+		Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Upload, Inkeys::UI::Bar::Ui3SvgOperation::Begin);
+		hr = deviceContext->CreateBitmap(
 			D2D1::SizeU(bitmap.width(), bitmap.height()),
 			bitmap.data(),
 			bitmap.width() * 4, // stride
 			props,
 			newBitmap.GetAddressOf());
+		Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Upload,
+			SUCCEEDED(hr) && newBitmap ? Inkeys::UI::Bar::Ui3SvgOperation::Success : Inkeys::UI::Bar::Ui3SvgOperation::Failure);
+		}
 
-		if (FAILED(hr) || !newBitmap) return false;
+		if (FAILED(hr) || !newBitmap) { NoteFailure(Inkeys::UI::Bar::Ui3SvgFailure::Upload); return false; }
 
 		cacheBitmap = newBitmap;
 	}
@@ -484,6 +592,15 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 		cW = tarW, cH = tarH;
 		if (color1.has_value()) cColor1 = color1.value().val;
 		if (color2.has_value()) cColor2 = color2.value().val;
+	}
+	if (observationScope && observationScope->probe)
+	{
+		plannedProof.ready = true; plannedProof.pixelWidth = bitmap.width(); plannedProof.pixelHeight = bitmap.height();
+		plannedProof.semanticKnown &= observed_.valueRevision == plannedProof.valueRevision
+			&& (!(plannedProof.colorMask & 1) || plannedProof.color1Rgb == (cColor1 & 0xFFFFFFu))
+			&& (!(plannedProof.colorMask & 2) || plannedProof.color2Rgb == (cColor2 & 0xFFFFFFu));
+		observedBitmapObject_ = cacheBitmap.Get();
+		observationScope->probe->NoteCacheResult(observed_, plannedProof, Inkeys::UI::Bar::Ui3SvgFailure::None);
 	}
 
 	return true;
@@ -525,7 +642,11 @@ bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT)
 pair<double, double> BarUiSVGClass::CalcWH()
 {
 	// 解析SVG
+	Inkeys::UI::Bar::Ui3SvgStageTimer timer(Inkeys::UI::Bar::Ui3SvgStage::Parse);
+	Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Parse, Inkeys::UI::Bar::Ui3SvgOperation::Begin);
 	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(utf16ToUtf8(svg.GetTar()));
+	Inkeys::UI::Bar::ObserveUi3SvgOperation(Inkeys::UI::Bar::Ui3SvgStage::Parse,
+		document ? Inkeys::UI::Bar::Ui3SvgOperation::Success : Inkeys::UI::Bar::Ui3SvgOperation::Failure);
 	if (!document) return make_pair(0, 0); // 解析失败
 
 	double w = static_cast<double>(document->width());

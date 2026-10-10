@@ -100,7 +100,31 @@ export namespace Inkeys::Drawing::Draw3
 		std::uint32_t writeDelayMilliseconds = 0;
 		bool failUInkWrite = false;
 		bool failIndexCommit = false;
+		// 仅隔离 fixture 到达证据；借用到 worker join/死亡，零 delay 不触发。
+		void* enteringWriteDelayEvent = nullptr;
+		// 只供验真fixture定位真实索引阶段；仅SetEvent，不改变保存结果/等待。
+		void* enteringIndexMutexEvent = nullptr;
+		void* indexMutexAcquiredEvent = nullptr;
+		void* indexReadCompletedEvent = nullptr;
+		// 只供授权 fixture 的私有日志定位真实 I/O 失败；普通默认不输出。
+		bool logIndexCommitDiagnostics = false;
 	};
+
+	// 仅显式隔离 CLI 的严格磁盘读者，不开放普通业务冷恢复或注入 records。
+	struct DesktopAutoSaveFixtureReadReceipt
+	{
+		DesktopPersistenceStatus status = DesktopPersistenceStatus::Invalid;
+		std::string localDate, storageSession;
+		std::uint64_t sequenceInSession = 0, dailySequence = 0;
+		draw3::uink::UInkGuid fileGuid;
+		std::wstring relativePath;
+		DesktopAutoSaveTrigger trigger = DesktopAutoSaveTrigger::Clear;
+		std::shared_ptr<const draw3::uink::Draw3UInkExportSnapshot> loadedSnapshot;
+		std::optional<draw3::uink::UInkSourceRevision> sourceRevision;
+		std::string indexBytes;
+	};
+	DesktopAutoSaveFixtureReadReceipt ReadLastCommittedDesktopAutoSaveFixture(
+		const std::wstring& ownedRoot, const std::string& localDate) noexcept;
 
 	DesktopAutoSaveTimestamp CaptureDesktopAutoSaveTimestamp() noexcept;
 	std::wstring BuildDesktopAutoSaveFileName(

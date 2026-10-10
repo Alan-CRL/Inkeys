@@ -91,6 +91,7 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::ProductState merged = productHost.ProductBridge().Snapshot();
 		merged.tool = state.tool;
 		merged.widthDip = state.widthDip;
+		merged.penWidthContext = state.penWidthContext;
 		merged.colorRgba = state.colorRgba;
 		merged.paintDevice = state.paintDevice;
 		merged.eraserInputs = state.eraserInputs;
@@ -182,7 +183,8 @@ namespace Inkeys::Drawing::Draw3
 		if (productStopping.load(std::memory_order_acquire))
 			return Bridge::CommandResult::NotRunning;
 		std::scoped_lock callLock(productCallMutex);
-		if (productStopping.load(std::memory_order_acquire))
+		if (productStopping.load(std::memory_order_acquire) ||
+			!productHost.Running())
 			return Bridge::CommandResult::NotRunning;
 		return productHost.PublishCommand(command);
 	}

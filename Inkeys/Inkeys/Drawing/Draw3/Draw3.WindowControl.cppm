@@ -79,7 +79,8 @@ export namespace Inkeys::Drawing::Draw3
 	struct ProductVisualStyle
 	{
 		uint32_t colorRgba = 0x000000FFu;
-		float widthDip = 2.0f;
+		double widthDip = 2.0;
+		Inkeys::Business::PenWidth::Context penWidthContext;
 	};
 
 	enum class CanvasCommandType : uint8_t
@@ -142,6 +143,8 @@ export namespace Inkeys::Drawing::Draw3
 		void CommitSize(int width, int height);
 		// 按真实按键发布顺序消费低频画布命令。
 		bool TryDequeueCanvasCommand(CanvasCommand& command);
+		// 控制 marker 边界只读查询；不弹出队列，也不触碰 HWND。
+		bool HasPendingCanvasCommand() noexcept;
 		// 消费一次窗口缩放请求并返回目标尺寸。
 		bool ConsumeResizeRequest(WindowSize& size);
 		// 消费一次全画布呈现请求。
@@ -185,8 +188,9 @@ export namespace Inkeys::Drawing::Draw3
 		SpeedEraser::DisplayScale SpeedEraserDisplayScaleSnapshot() const;
 		void SetSpeedEraserDeviceMode(SpeedEraser::DeviceMode mode);
 		SpeedEraser::DeviceMode SpeedEraserDeviceModeSnapshot() const;
-		// 产品状态只发布原子样式快照，实际绘制仍由绘制线程消费。
-		void SetProductVisualStyle(uint32_t colorRgba, float widthDip) noexcept;
+		// 宽度和显示上下文同锁发布，实际绘制仍由绘制线程消费。
+		void SetProductVisualStyle(uint32_t colorRgba, double widthDip,
+			const Inkeys::Business::PenWidth::Context& context = {}) noexcept;
 		ProductVisualStyle ProductVisualStyleSnapshot() const noexcept;
 		void EnqueueCanvasCommand(CanvasCommand command);
 		void RequestExit() noexcept;
@@ -302,8 +306,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<SpeedEraser::EraserToolPolicy> eraserToolPolicy_ = SpeedEraser::EraserToolPolicy::ByEntry;
 		SpeedEraser::DeviceMode speedEraserDeviceMode_ = SpeedEraser::DeviceMode::Laptop;
 		// 产品颜色按 0xRRGGBBAA 保存，默认使用不透明黑色。
-		std::atomic<uint32_t> productColorRgba_ = 0x000000FFu;
-		std::atomic<float> productWidthDip_ = 2.0f;
+		mutable std::mutex productVisualStyleMutex_;
+		ProductVisualStyle productVisualStyle_;
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
 		std::atomic<DrawingCursorPointerAuthority> cursorOwner_ =
 			DrawingCursorPointerAuthority::Unknown;

@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <json/json.h>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -145,10 +146,24 @@ namespace Inkeys::PptSettings
 			std::error_code error;
 			std::filesystem::create_directories(path.parent_path(), error);
 			if (error) return false;
-			const std::wstring temporary = path.wstring() + L".tmp."
-				+ std::to_wstring(GetCurrentProcessId());
-			const HANDLE file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0,
-				nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			static std::atomic_uint64_t nextTemporary{ 0 };
+			std::wstring temporary;
+			HANDLE file = INVALID_HANDLE_VALUE;
+			for (int attempt = 0; attempt < 16; ++attempt)
+			{
+				temporary = path.wstring() + L".tmp."
+					+ std::to_wstring(GetCurrentProcessId()) + L"."
+					+ std::to_wstring(GetCurrentThreadId()) + L"."
+					+ std::to_wstring(GetTickCount64()) + L"."
+					+ std::to_wstring(nextTemporary.fetch_add(1,
+						std::memory_order_relaxed));
+				// CREATE_NEW 拒绝现存同名文件或 reparse 点，绝不覆写未知临时路径。
+				file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0,
+					nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (file != INVALID_HANDLE_VALUE) break;
+				if (GetLastError() != ERROR_FILE_EXISTS &&
+					GetLastError() != ERROR_ALREADY_EXISTS) return false;
+			}
 			if (file == INVALID_HANDLE_VALUE) return false;
 			DWORD written = 0;
 			const bool writtenOk = content.size() <= MAXDWORD

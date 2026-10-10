@@ -1,6 +1,7 @@
 ﻿module;
 
 #include "../../../IdtMain.h"
+#include "../../../IdtState.h"
 
 #include <d2d1_1.h>
 #include <dwrite_1.h>
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "Bar.PresentationProbe.h"
 #include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
 
 export module Inkeys.UI.Bar:Main;
@@ -79,7 +81,8 @@ public:
 	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
 		RECT workArea, POINT origin, double rigidX, double rigidY,
 		const BarUiTimelineClass* parentTimeline = nullptr,
-		bool dragPlacementLocked = false);
+		bool dragPlacementLocked = false,
+		std::optional<bool> eraserSelected = std::nullopt);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
@@ -133,6 +136,11 @@ private:
 namespace Inkeys::UI::Bar
 {
 	// Main Bar 与跨 HWND surface 共用这些行为入口，调用方只保留资源和拓扑。
+	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage);
+	bool StopBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage, bool immediate,
+		bool preserveVisual = false);
 	bool StartBarButtonHoverVisual(BarButtonClass& button) noexcept;
 	bool StopBarButtonHoverVisual(BarButtonClass& button, bool immediate,
 		bool preserveVisual = false) noexcept;
@@ -472,6 +480,7 @@ public:
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
+	Inkeys::UI::Bar::Ui3FiniteSignature ReadFiniteSignature(const StateModeVersionedSnapshot& tool);
 	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
 	void CollapseAuxiliaryPanels(bool cancelCapture = true);
 	void StartDisplayTracking();
@@ -618,6 +627,7 @@ public:
 			snapshot.transitionSerial =
 				bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
 			snapshot.serial = serialBefore;
+			std::atomic_thread_fence(std::memory_order_acquire);
 			if (bottomDockPresentedMappingSerial.load(memory_order_acquire)
 				== serialBefore) return snapshot;
 		}
@@ -796,6 +806,7 @@ protected:
 		directWindowPresentedTranslationY.store(
 			directTranslation.y, memory_order_relaxed);
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_acq_rel);
+		std::atomic_thread_fence(std::memory_order_release);
 		bottomDockPresentedDirectTranslationX.store(
 			directTranslation.x, memory_order_relaxed);
 		bottomDockPresentedDirectTranslationY.store(
@@ -979,6 +990,7 @@ namespace Inkeys::UI::Bar
 
 	export WNDPROC WindowProc() noexcept;
 	export int RunEraserAttributeOffscreenTest();
+	export int RunThicknessFineDialProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization();

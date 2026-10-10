@@ -12,11 +12,14 @@ module;
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
@@ -87,7 +90,11 @@ export namespace Inkeys::UI::RenderPipeline
 
 	enum class FrameStage : std::uint8_t
 	{
-		PresentLockWait, Draw, GetDC, ULW, ReleaseDC, EndDraw, Count,
+		PresentLockWait, Draw, GetDC, ULW, ReleaseDC, EndDraw,
+		// 原六项序号保留；Resources 是 DirtyAndPrepare 的包含子段。
+		WakeAndSnapshot, DisplayTransition, SubmitTargetsAndLayout,
+		AdvanceAnimationsAndDeriveLayout, PrepareLightingAndDemand,
+		DirtyAndPrepare, Resources, Count,
 	};
 
 	enum class ExactFallback : std::uint8_t
@@ -108,7 +115,7 @@ export namespace Inkeys::UI::RenderPipeline
 			exactFallback{};
 	};
 
-	// 仅当前渲染回调写入；无 sink / 非调度上下文时访问器返回 nullptr。
+	// 仅当前渲染回调写入；无诊断消费者 / 非调度上下文时访问器返回 nullptr。
 	struct FrameDiagnostics
 	{
 		bool barSampled = false, animationAdvanced = false;
@@ -116,6 +123,14 @@ export namespace Inkeys::UI::RenderPipeline
 		bool presentDeferred = false, backoffSkipped = false;
 		bool failureRecoveryReset = false, presentFailed = false;
 		bool callbackException = false;
+		// 只由真正 raw capture 启用；旧异常 sink/TLS 不授权新七阶段与真戳。
+		bool detailedCaptureEnabled = false;
+		// 四阶段成功事务的软件确认时刻；不表示光学像素可见。
+		bool hasBarCommitStamp = false;
+		std::int64_t barCommitTicks = 0;
+		std::uint64_t barAttemptSerial = 0, barCommitEpoch = 0;
+		// 原回调/退避序号，不作为成功次数。
+		std::uint64_t presentAttemptFrameSerial = 0;
 		double rawDtSeconds = 0.0, animationDtSeconds = 0.0;
 		std::array<double, static_cast<std::size_t>(FrameStage::Count)> stageMs{};
 		HRESULT resourceResult = S_OK, getDcResult = S_OK;
@@ -133,6 +148,12 @@ export namespace Inkeys::UI::RenderPipeline
 		std::uint32_t lightFlags = 0;
 		LightingDiagnostics light;
 	};
+
+	using BarCommitClock = std::int64_t (*)() noexcept;
+	// 默认读 steady_clock；可选时钟只供无窗口合同测试，nullptr/失败/重复戳均不读钟。
+	void StampBarCommit(FrameDiagnostics* diagnostics, bool committed,
+		std::uint64_t attemptSerial, std::uint64_t epoch,
+		BarCommitClock clock = nullptr) noexcept;
 
 	class FrameStageTimer
 	{
@@ -159,6 +180,69 @@ export namespace Inkeys::UI::RenderPipeline
 	using DeviceRecoveryCallback = std::function<bool()>;
 	using ControlCallback = std::function<bool()>;
 	using ControlTask = std::function<void()>;
+
+	enum class BarCommitStampStatus : std::uint8_t { Absent, Unverified, Valid, Invalid };
+
+	struct RawCallbackSample
+	{
+		std::uint64_t runSerial = 0, batchSerial = 0, callbackSerial = 0;
+		Client client = Client::Bar;
+		std::uint64_t callbackGeneration = 0, contextEpoch = 0;
+		Backend backend = Backend::Warp;
+		D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+		std::uint64_t schedulerIdleEpoch = 0, activitySegment = 0;
+		FrameResult result = FrameResult::Idle;
+		bool requested = false, continued = false, retried = false;
+		bool validTime = true, hasPreviousActiveCallback = false, hasPreviousActiveCommit = false;
+		std::int64_t frameTimeTicks = 0, startTicks = 0, endTicks = 0;
+		std::int64_t previousActiveCallbackTicks = 0, previousActiveCommitTicks = 0;
+		BarCommitStampStatus barCommitStatus = BarCommitStampStatus::Absent;
+		bool hasPreviousTrueBarCommit = false;
+		std::int64_t previousTrueBarCommitTicks = 0;
+		std::uint64_t barSuccessSerial = 0;
+		FrameDiagnostics frame;
+	};
+
+	struct RawBatchSample
+	{
+		std::uint64_t runSerial = 0, batchSerial = 0;
+		std::int64_t frameTimeTicks = 0, beginTicks = 0, endTicks = 0;
+		std::int64_t recoveryStartTicks = 0, recoveryEndTicks = 0;
+		ClientMask work = 0, requested = 0, continued = 0, retried = 0;
+		ClientMask registered = 0, executed = 0;
+		std::uint64_t contextEpoch = 0;
+		bool contextValid = false, recoveryAttempted = false, recoverySucceeded = false;
+		bool deviceLost = false, stopped = false, validTime = true;
+	};
+
+	struct RawClientCounters
+	{
+		std::uint64_t seen = 0, advanced = 0, attempts = 0, commits = 0;
+		std::uint64_t failures = 0, idle = 0, retries = 0;
+		std::uint64_t trueBarCommits = 0, unverifiedBarCommits = 0, invalidBarCommitStamps = 0;
+	};
+
+	// 原始 tick 属于 steady_clock；旧链是 callback-end 代理，真 Bar 事务另存软件确认戳。
+	struct RawCaptureReport
+	{
+		std::uint32_t schemaVersion = 2;
+		std::uint64_t runSerial = 0;
+		std::size_t capacity = 0, allocatedBytes = 0;
+		std::int64_t clockPeriodNum = std::chrono::steady_clock::period::num;
+		std::int64_t clockPeriodDen = std::chrono::steady_clock::period::den;
+		std::int64_t originTicks = 0;
+		bool sealed = false;
+		std::uint64_t callbackSeen = 0, callbackRetained = 0, callbackDropped = 0;
+		std::uint64_t batchSeen = 0, batchRetained = 0, batchDropped = 0;
+		std::uint64_t invalidCallbacks = 0, invalidBatches = 0, idleTransitions = 0;
+		std::uint64_t trueBarCommits = 0, unverifiedBarCommits = 0, invalidBarCommitStamps = 0;
+		std::array<RawClientCounters, static_cast<std::size_t>(Client::Count)> clients{};
+		std::vector<RawCallbackSample> callbacks;
+		std::vector<RawBatchSample> batches;
+	};
+
+	enum class RawCaptureTestPoint : std::uint8_t { AfterAllocation, BeforeRelease };
+	using RawCaptureTestHook = void (*)(RawCaptureTestPoint, void*);
 
 	[[nodiscard]] constexpr ClientMask Mask(Client client) noexcept
 	{
@@ -232,6 +316,11 @@ export namespace Inkeys::UI::RenderPipeline
 		void WakeForStop() noexcept;
 		// 可在 Start 前或运行中注册；Stop drain 后释放，不影响其他 Scheduler。
 		[[nodiscard]] bool SetDiagnosticsSink(DiagnosticsSink sink);
+		// 只在停止且渲染线程已 join 后配置；0 禁用下一轮，报告仍可在 Stop 后取走。
+		[[nodiscard]] bool ConfigureRawCapture(std::size_t capacity = 32768);
+		[[nodiscard]] std::optional<RawCaptureReport> TakeRawCapture() noexcept;
+		// 默认空；仅无窗口竞态测试在非回调线程使用。
+		void SetRawCaptureTestHookForTests(RawCaptureTestHook hook, void* context) noexcept;
 
 	private:
 		struct Impl;
@@ -262,4 +351,6 @@ export namespace Inkeys::UI::RenderPipeline
 	[[nodiscard]] bool PostControl(ControlTask task);
 	void WakeForStop() noexcept;
 	[[nodiscard]] bool SetDiagnosticsSink(DiagnosticsSink sink);
+	[[nodiscard]] bool ConfigureRawCapture(std::size_t capacity = 32768);
+	[[nodiscard]] std::optional<RawCaptureReport> TakeRawCapture() noexcept;
 }

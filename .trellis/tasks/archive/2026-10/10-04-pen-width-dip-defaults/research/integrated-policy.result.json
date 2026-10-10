@@ -1,0 +1,10 @@
+{
+  "command": [
+    "Build/ARM64/Debug/InkeysHeadlessTests.exe",
+    "--pen-width-only",
+    "--no-window"
+  ],
+  "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw",
+  "exit": 0,
+  "seconds": 0.18209380000007513
+}

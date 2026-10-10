@@ -48,7 +48,7 @@
 
 ### 3. Contracts
 
-- `Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。
+- `Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。退休 `Preset` 的宽度/记忆字段可按 [pen-width.md](pen-width.md) 仅为保存兼容数据解码、保留迁移证据；当前发布启动读取/恢复已注释禁用，残留旧default/Startup/memory不能覆盖Medium，不得恢复旧设置页或重复按px解释新DIP。
 - PPT `FixedHandWriting` 已退出活动配置合同；PPT 捕获函数构造新对象，省略该字段即完成下一次写回清理。
 - `Save.Enable` 不是废弃键：它继续控制 Draw3 桌面画布在清空和退出时保存非空画布，设置文案必须说明该真实语义。
 - 删除 UI 不等于删除当前结构体中的所有历史成员；只要成员仍被未编译兼容源码引用，可以保留为非持久化占位，但活动代码不得再读取或写入对应配置。
@@ -352,3 +352,52 @@ I18nKey.Dialogs.Common.OK;
 - shader、字体和图像是否全部可重建、哪些随发布包解包，需结合 `vcxproj`、`.rc`、打包脚本逐项确认，不能由目录名外推。
 
 涉及这些文件时应核对来源/许可、架构、配置条件、工程/资源登记和可重建性。`Build/`、`Inkeys/Cache/`、`VcpkgInstalled/`、`PptCOM/obj/` 是生成输出，不进入产品文档变更。
+
+## H 实时信息来源与更新 Referer 合同
+
+### 1. Scope / Trigger
+
+修改 H 来源、输出或 Config 复制时适用。
+
+### 2. Signatures
+
+```cpp
+H(writeFile, writeReferer, refererName, valueType, valueName, source)
+ConfigDetail::ConfigReadOnlyValue<T>::Snapshot() const -> T
+ConfigDetail::BindConfigSource(const T*, std::shared_mutex*)
+```
+
+### 3. Contracts
+
+- H 接受固定值、const T* 或带锁地址。构造不解引用；地址/锁须覆盖使用期，空地址抛 invalid_argument。构造 explicit，普通 T 赋值不能替换绑定。
+- ReadAll/ReadMini/Reset/ApplyDocument 不覆盖 H。Config 复制 X 状态和 H 描述符/固定值，不读写外部来源；configOnce 的 H 仍实时取值。
+- 两开关独立。关闭文件输出须移除已知键，未知键策略不变。Snapshot 仅持共享锁复制；锁序 Config rwMutex -> 来源锁，调用 Config 前须释放来源锁，编码/I/O 不持来源锁。
+- `$Info` 保存原六项及 UpdateChannel。Referer 为 id/ed/pa/we/ch，不含 ev；仅发送副本去 UserId 花括号，再 URL 编码，文件保留原值。
+- ch 绑定 setlist.UpdateChannel/setlistUpdateMutex，main.json 保存副本，deploy.json 沿用原入口；两个更新 GET UA 均为 Inkeys-Updater/3.0。
+
+### 4. Validation & Error Matrix
+
+| 来源/输出 | 行为 |
+| --- | --- |
+| 固定/地址 | 固定值/输出时最新值 |
+| 空地址 | 拒绝，不解引用 |
+| file/referer | 四组合独立，禁用输出不取快照 |
+| 读/重置/复制 | 不写穿来源 |
+
+### 5. Good / Base / Bad Cases
+
+Good：改通道后下次输出即更新。Base：固定 H、普通 X 各自状态。Bad：初始化缓存或回写来源。
+
+### 6. Tests Required
+
+真实 Config headless 覆盖来源、四组合、GUID/ev/ch、读/重置/复制与 X 回归；合成 ID、私有临时目录、并发同锁。完整 solution Debug|ARM64 与 --no-window，不请求真实服务器。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：启动缓存
+H(true, true, "ch", std::string, UpdateChannel, ::setlist.UpdateChannel)
+// Correct：输出时加锁复制
+H(true, true, "ch", std::string, UpdateChannel,
+    ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex))
+```

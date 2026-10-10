@@ -5,6 +5,10 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#if defined(DRAW3_TESTING)
+#include <aclapi.h>
+#pragma comment(lib, "advapi32.lib")
+#endif
 
 #include <algorithm>
 #include <array>
@@ -2085,6 +2089,1015 @@ namespace
 		}
 	}
 
+	void TestSiblingMaxPathSave(TestState& state)
+	{
+		// 新建私有目录并保留证据；不复用 TempDirectory 的枚举删除，也不改旧测试数据。
+		std::array<wchar_t, MAX_PATH + 1> baseBuffer{};
+		const DWORD baseLength = GetFullPathNameW(L"TestResults\\release-hardening",
+			static_cast<DWORD>(baseBuffer.size()), baseBuffer.data(), nullptr);
+		UINK_CHECK(state, baseLength > 0 && baseLength < baseBuffer.size());
+		if (!baseLength || baseLength >= baseBuffer.size()) return;
+		const std::wstring base(baseBuffer.data(), baseLength);
+		UINK_CHECK(state, base.size() >= 3 && base[1] == L':' && base[2] == L'\\');
+		if (base.size() < 3 || base[1] != L':' || base[2] != L'\\') return;
+		struct DirectoryLeases
+		{
+			std::vector<HANDLE> values;
+			~DirectoryLeases() { for (HANDLE value : values) CloseHandle(value); }
+		} leases;
+		const auto leaseDirectory = [&leases](const std::wstring& path)
+		{
+			const HANDLE handle = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
+				nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+			BY_HANDLE_FILE_INFORMATION info{};
+			if (handle == INVALID_HANDLE_VALUE) return false;
+			if (GetFileType(handle) != FILE_TYPE_DISK || !GetFileInformationByHandle(handle, &info) ||
+				!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+			{
+				CloseHandle(handle);
+				return false;
+			}
+			try { leases.values.push_back(handle); }
+			catch (...) { CloseHandle(handle); throw; }
+			return true;
+		};
+		const bool driveLeased = leaseDirectory(base.substr(0, 3));
+		UINK_CHECK(state, driveLeased);
+		if (!driveLeased) return;
+		for (size_t begin = 3; begin < base.size();)
+		{
+			const size_t next = base.find(L'\\', begin);
+			const size_t end = next == std::wstring::npos ? base.size() : next;
+			const bool leased = leaseDirectory(base.substr(0, end));
+			UINK_CHECK(state, leased);
+			if (!leased) return;
+			begin = end + 1;
+		}
+		const auto rootGuid = CreateUInkGuid();
+		const auto fileGuid = CreateUInkGuid();
+		const auto nameGuid = CreateUInkGuid();
+		UINK_CHECK(state, rootGuid && fileGuid && nameGuid);
+		if (!rootGuid || !fileGuid || !nameGuid) return;
+		const std::string rootToken = FormatUInkGuid(*rootGuid);
+		const std::wstring root = base + L"\\uink-maxpath-" + std::wstring(rootToken.begin(), rootToken.end());
+		const bool rootCreated = CreateDirectoryW(root.c_str(), nullptr) != FALSE;
+		UINK_CHECK(state, rootCreated);
+		if (!rootCreated) return;
+		const bool rootLeased = leaseDirectory(root);
+		UINK_CHECK(state, rootLeased);
+		if (!rootLeased) return;
+		std::wstring parent = root + L"\\目录 空格-";
+		UINK_CHECK(state, parent.size() < 151);
+		if (parent.size() >= 151) return;
+		parent.append(151 - parent.size(), L'p');
+		const bool parentCreated = CreateDirectoryW(parent.c_str(), nullptr) != FALSE;
+		UINK_CHECK(state, parentCreated);
+		if (!parentCreated) return;
+		const bool parentLeased = leaseDirectory(parent);
+		UINK_CHECK(state, parentLeased);
+		if (!parentLeased) return;
+		const std::wstring prefix = parent + L"\\";
+		const std::string leaf = FormatUInkGuid(*fileGuid) + "_" + FormatUInkGuid(*nameGuid) + ".uink";
+		const std::wstring path = prefix + std::wstring(leaf.begin(), leaf.end());
+		UINK_CHECK(state, path.size() == 230 && leaf.size() == 78 && prefix.size() == 152);
+		UINK_CHECK(state, GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES);
+		// 明确输出 UTF-8，避免 C locale 的 wcout 在中文路径处丢失后续证据。
+		const int targetBytes = WideCharToMultiByte(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), nullptr, 0, nullptr, nullptr);
+		std::string targetUtf8(targetBytes > 0 ? static_cast<size_t>(targetBytes) : 0, '\0');
+		const bool targetPrinted = targetBytes > 0 && WideCharToMultiByte(CP_UTF8, 0, path.data(), static_cast<int>(path.size()),
+			targetUtf8.data(), targetBytes, nullptr, nullptr) == targetBytes;
+		UINK_CHECK(state, targetPrinted);
+		if (!targetPrinted) return;
+		std::cout << "UInk sibling-maxpath target=" << targetUtf8 << std::endl;
+		std::cout << "UInk sibling-maxpath lengths target=" << path.size() << " parent_prefix=" << prefix.size()
+			<< " old_tmp=" << path.size() + 41 << " new_tmp=" << prefix.size() + 40
+			<< " new_bak=" << prefix.size() + 40 << " new_recovery=" << prefix.size() + 49 << std::endl;
+		const std::wstring unknownPath = prefix + L"unrelated-unknown.bin";
+		const std::vector<std::byte> unknownBytes{ std::byte{ 0x71 }, std::byte{ 0x22 }, std::byte{ 0x19 } };
+		UINK_CHECK(state, WriteBytes(unknownPath, unknownBytes));
+		UInkEditingSession initial;
+		initial.document = MakeBasicDocument();
+		initial.document.header.guid = *fileGuid;
+		UInkSaveOptions create;
+		create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+		const UInkSaveResult firstSave = SaveUInkFile(path, initial, create);
+		std::cout << "UInk sibling-maxpath first_save_status=" << static_cast<unsigned>(firstSave.status)
+			<< " system_error=" << firstSave.systemError << std::endl;
+		UINK_CHECK(state, firstSave.status == UInkSaveStatus::Committed);
+		if (firstSave.status != UInkSaveStatus::Committed)
+		{
+			const auto failure = std::find_if(firstSave.diagnostics.begin(), firstSave.diagnostics.end(),
+				[](const auto& value) { return value.code == UInkDiagnosticCode::WriteFailed && value.fieldPath == "temp"; });
+			UINK_CHECK(state, firstSave.status == UInkSaveStatus::IoError && firstSave.systemError == ERROR_PATH_NOT_FOUND);
+			UINK_CHECK(state, failure != firstSave.diagnostics.end() && failure->systemError == ERROR_PATH_NOT_FOUND);
+			UINK_CHECK(state, GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES);
+			UINK_CHECK(state, ReadBytes(unknownPath) == unknownBytes);
+			std::cout << "UInk sibling-maxpath SKIPPED update/recovery: first save failed." << std::endl;
+			return;
+		}
+		const UInkReadResult firstRead = ReadUInkFile(path);
+		UINK_CHECK(state, firstRead.status == UInkReadStatus::Complete && firstRead.document && firstRead.sourceRevision);
+		UINK_CHECK(state, firstSave.revision && firstRead.sourceRevision == firstSave.revision);
+		UINK_CHECK(state, firstRead.document && firstRead.document->header.guid == *fileGuid && firstRead.document->canvases.size() == 1);
+		if (!firstRead.document || !firstRead.sourceRevision || firstRead.document->canvases.size() != 1) return;
+		UINK_CHECK(state, firstRead.document->canvases[0].content.size() == 1);
+		auto editing = CreateUInkEditingSession(firstRead, UInkEditingSource::ApplicationOwned);
+		UINK_CHECK(state, editing.has_value());
+		if (!editing) return;
+		UInkInk addedInk = MakeInk(1, 1);
+		addedInk.color.fallbackRgb = 0xaa4422;
+		editing->document.canvases[0].content.push_back(addedInk);
+		const UInkSaveResult update = SaveUInkFile(path, *editing);
+		UINK_CHECK(state, update.status == UInkSaveStatus::Committed && update.revision);
+		if (update.status != UInkSaveStatus::Committed || !update.revision)
+		{
+			std::cout << "UInk sibling-maxpath SKIPPED recovery: update failed." << std::endl;
+			return;
+		}
+		const UInkReadResult updated = ReadUInkFile(path);
+		UINK_CHECK(state, updated.status == UInkReadStatus::Complete && updated.document && updated.sourceRevision == update.revision);
+		UINK_CHECK(state, updated.document && updated.document->canvases.size() == 1);
+		if (!updated.document || !updated.sourceRevision || updated.document->canvases.size() != 1) return;
+		UINK_CHECK(state, updated.document->header.guid == *fileGuid);
+		UINK_CHECK(state, updated.document->canvases[0].pageGuid == firstRead.document->canvases[0].pageGuid);
+		UINK_CHECK(state, updated.document->canvases[0].content.size() == 2);
+		UINK_CHECK(state, *updated.sourceRevision != *firstRead.sourceRevision);
+		UINK_CHECK(state, updated.sourceRevision->sha256 != firstRead.sourceRevision->sha256);
+		if (updated.document->canvases[0].content.size() == 2)
+		{
+			const auto* actualInk = std::get_if<UInkInk>(&updated.document->canvases[0].content[1]);
+			UINK_CHECK(state, actualInk && actualInk->color.fallbackRgb == addedInk.color.fallbackRgb &&
+				actualInk->points.size() == addedInk.points.size() && NearlyEqual(actualInk->points[1].x, addedInk.points[1].x));
+		}
+		const std::vector<std::byte> predecessor = ReadBytes(path);
+		auto recoverySession = CreateUInkEditingSession(updated, UInkEditingSource::ApplicationOwned);
+		UINK_CHECK(state, recoverySession.has_value());
+		if (!recoverySession) return;
+		recoverySession->document.canvases[0].content.push_back(MakeInk(2, 2));
+		UInkFileTestFaultInjection faults;
+		faults.failCommittedRevisionValidation = true;
+		UInkSaveResult recovery;
+		{
+			FaultScope scope(faults);
+			recovery = SaveUInkFile(path, *recoverySession);
+		}
+		UINK_CHECK(state, recovery.status == UInkSaveStatus::PartialCommitRequiresRecovery && !recovery.recoveryPath.empty());
+		// 只使用生产返回的 opaque locator，不根据最终 basename 猜备份名字。
+		UINK_CHECK(state, recovery.recoveryPath.starts_with(prefix) && recovery.recoveryPath.size() < MAX_PATH);
+		UINK_CHECK(state, ReadBytes(recovery.recoveryPath) == predecessor);
+		const UInkReadResult recovered = ReadUInkFile(recovery.recoveryPath);
+		UINK_CHECK(state, recovered.status == UInkReadStatus::Complete && recovered.document && recovered.sourceRevision);
+		UINK_CHECK(state, recovered.sourceRevision && recovered.sourceRevision->sha256 == updated.sourceRevision->sha256);
+		UINK_CHECK(state, recovered.document && recovered.document->header.guid == *fileGuid &&
+			recovered.document->canvases.size() == 1 && recovered.document->canvases[0].content.size() == 2);
+		UINK_CHECK(state, ReadBytes(unknownPath) == unknownBytes);
+		std::cout << "UInk sibling-maxpath update/recovery completed." << std::endl;
+	}
+
+#if defined(DRAW3_TESTING)
+	class CleanupDeleteDeny
+	{
+		struct Entry
+		{
+			HANDLE handle = INVALID_HANDLE_VALUE;
+			PSECURITY_DESCRIPTOR original = nullptr;
+			PACL dacl = nullptr;
+			bool applied = false;
+			bool protectedDacl = false;
+		};
+		std::array<Entry, 2> entries_{};
+
+	public:
+		~CleanupDeleteDeny()
+		{
+			(void)Restore();
+			for (auto& entry : entries_)
+			{
+				if (entry.original) LocalFree(entry.original);
+				if (entry.handle != INVALID_HANDLE_VALUE) CloseHandle(entry.handle);
+			}
+		}
+		bool Deny(size_t index, const std::wstring& path, bool directory, DWORD rights)
+		{
+			auto& entry = entries_[index];
+			entry.handle = CreateFileW(path.c_str(), READ_CONTROL | WRITE_DAC,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0), nullptr);
+			if (entry.handle == INVALID_HANDLE_VALUE ||
+				GetSecurityInfo(entry.handle, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+					nullptr, nullptr, &entry.dacl, nullptr, &entry.original) != ERROR_SUCCESS || !entry.dacl) return false;
+			SECURITY_DESCRIPTOR_CONTROL control = 0;
+			DWORD revision = 0;
+			if (!GetSecurityDescriptorControl(entry.original, &control, &revision)) return false;
+			entry.protectedDacl = (control & SE_DACL_PROTECTED) != 0;
+			// 只对当前测试进程的 TokenUser 加 deny ACE；取不到自身 SID 即前提失败。
+			HANDLE token = nullptr;
+			if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+			struct TokenCloser { HANDLE value; ~TokenCloser() { CloseHandle(value); } } tokenCloser{ token };
+			DWORD tokenBytes = 0;
+			if (GetTokenInformation(token, TokenUser, nullptr, 0, &tokenBytes) ||
+				GetLastError() != ERROR_INSUFFICIENT_BUFFER || tokenBytes < sizeof(TOKEN_USER)) return false;
+			std::vector<std::byte> tokenUserBytes(tokenBytes);
+			if (!GetTokenInformation(token, TokenUser, tokenUserBytes.data(), tokenBytes, &tokenBytes)) return false;
+			const PSID sid = reinterpret_cast<TOKEN_USER*>(tokenUserBytes.data())->User.Sid;
+			if (!IsValidSid(sid)) return false;
+			ACL_SIZE_INFORMATION info{};
+			if (!GetAclInformation(entry.dacl, &info, sizeof(info), AclSizeInformation)) return false;
+			const DWORD size = info.AclBytesInUse + sizeof(ACCESS_DENIED_ACE) - sizeof(DWORD) + GetLengthSid(sid);
+			std::vector<std::byte> storage(size);
+			PACL denied = reinterpret_cast<PACL>(storage.data());
+			const DWORD aclRevision = entry.dacl->AclRevision;
+			if (!InitializeAcl(denied, size, aclRevision) ||
+				!AddAccessDeniedAce(denied, aclRevision, rights, sid)) return false;
+			for (DWORD ace = 0; ace < info.AceCount; ++ace)
+			{
+				void* originalAce = nullptr;
+				if (!GetAce(entry.dacl, ace, &originalAce) ||
+					!AddAce(denied, aclRevision, MAXDWORD, originalAce, static_cast<ACE_HEADER*>(originalAce)->AceSize)) return false;
+			}
+			entry.applied = SetSecurityInfo(entry.handle, SE_FILE_OBJECT,
+				DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+				nullptr, nullptr, denied, nullptr) == ERROR_SUCCESS;
+			return entry.applied;
+		}
+		bool Restore() noexcept
+		{
+			bool restored = true;
+			for (auto& entry : entries_)
+			{
+				if (!entry.applied) continue;
+				const DWORD flags = DACL_SECURITY_INFORMATION |
+					(entry.protectedDacl ? PROTECTED_DACL_SECURITY_INFORMATION : UNPROTECTED_DACL_SECURITY_INFORMATION);
+				if (SetSecurityInfo(entry.handle, SE_FILE_OBJECT, flags, nullptr, nullptr, entry.dacl, nullptr) == ERROR_SUCCESS)
+					entry.applied = false;
+				else restored = false;
+			}
+			return restored;
+		}
+	};
+
+	struct CleanupActorContext
+	{
+		enum class Mode
+		{
+			Observe, OccupyBeforeCreate, ReplaceAfterWrite, RewriteAfterWrite,
+			BackupForeignBeforeReplace, BackupReplaceBeforeCleanup, BackupRewriteBeforeCleanup,
+			RecoveryOwn, RecoveryReplace, RecoveryRewrite, PartialForeign, PartialUnreadable,
+			ThrowAfterReplace, ThrowAfterRecovery, DenyTempDelete, DenyBackupDelete, ReadOnlyBackup,
+			MultiLinkTemp, SharingTemp, MultiLinkBackup
+		};
+		Mode mode = Mode::Observe;
+		std::wstring prefix, target, heldPath, candidate, backup, recovery, linkPath;
+		bool failed = false, actorDone = false, ntfs = false, deleteProbeOpened = false;
+		DWORD deleteProbeError = ERROR_SUCCESS;
+		uint32_t beforeCreate = 0, writerClosed = 0, beforeCleanup = 0, backupBefore = 0;
+		uint32_t replaceFinished = 0, recoveryMoves = 0, backupCleanup = 0, recoveryCleanup = 0;
+		BY_HANDLE_FILE_INFORMATION originalInfo{}, foreignInfo{}, tempInfo{};
+		HANDLE originalPin = INVALID_HANDLE_VALUE, blocking = INVALID_HANDLE_VALUE;
+		CleanupDeleteDeny denied;
+		std::vector<std::byte> tempBytes, originalBytes, changedBytes;
+		~CleanupActorContext()
+		{
+			CloseBlocking();
+			if (originalPin != INVALID_HANDLE_VALUE) CloseHandle(originalPin);
+		}
+		void CloseBlocking() noexcept
+		{
+			if (blocking != INVALID_HANDLE_VALUE) CloseHandle(blocking);
+			blocking = INVALID_HANDLE_VALUE;
+		}
+		const std::vector<std::byte> foreignBytes{ std::byte{ 0x46 }, std::byte{ 0x4f }, std::byte{ 0x52 } };
+		static bool SameIdentity(const BY_HANDLE_FILE_INFORMATION& left, const BY_HANDLE_FILE_INFORMATION& right) noexcept
+		{
+			return left.dwVolumeSerialNumber == right.dwVolumeSerialNumber && left.nFileIndexHigh == right.nFileIndexHigh &&
+				left.nFileIndexLow == right.nFileIndexLow;
+		}
+		bool OrdinaryNtfs(HANDLE file, BY_HANDLE_FILE_INFORMATION& info) noexcept
+		{
+			wchar_t filesystem[32]{};
+			const bool valid = GetFileType(file) == FILE_TYPE_DISK && GetFileInformationByHandle(file, &info) &&
+				!(info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) &&
+				info.nNumberOfLinks == 1 && info.dwVolumeSerialNumber && (info.nFileIndexHigh || info.nFileIndexLow) &&
+				GetVolumeInformationByHandleW(file, nullptr, 0, nullptr, nullptr, nullptr, filesystem, 32) &&
+				wcscmp(filesystem, L"NTFS") == 0;
+			ntfs = ntfs || valid;
+			return valid;
+		}
+		bool Inspect(const std::wstring& path, BY_HANDLE_FILE_INFORMATION& info) noexcept
+		{
+			const HANDLE file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			const bool ok = file != INVALID_HANDLE_VALUE && OrdinaryNtfs(file, info);
+			if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+			return ok;
+		}
+		bool PinOriginal(const std::wstring& path) noexcept
+		{
+			if (originalPin != INVALID_HANDLE_VALUE) CloseHandle(originalPin);
+			originalPin = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			return originalPin != INVALID_HANDLE_VALUE && OrdinaryNtfs(originalPin, originalInfo);
+		}
+		bool CreateForeign(const std::wstring& path) noexcept
+		{
+			const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+				nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			if (file == INVALID_HANDLE_VALUE) return false;
+			DWORD written = 0;
+			const bool ok = WriteFile(file, foreignBytes.data(), static_cast<DWORD>(foreignBytes.size()), &written, nullptr) &&
+				written == foreignBytes.size() && FlushFileBuffers(file) && OrdinaryNtfs(file, foreignInfo);
+			CloseHandle(file);
+			return ok;
+		}
+		bool ReplaceWithForeign(const std::wstring& path)
+		{
+			return PinOriginal(path) && MoveFileExW(path.c_str(), heldPath.c_str(), MOVEFILE_WRITE_THROUGH) &&
+				CreateForeign(path) && !SameIdentity(originalInfo, foreignInfo);
+		}
+		bool RewriteSameObject(const std::wstring& path)
+		{
+			if (!PinOriginal(path)) return false;
+			originalBytes = ReadBytes(path);
+			if (originalBytes.empty()) return false;
+			changedBytes = originalBytes;
+			changedBytes.back() ^= std::byte{ 1 }; // 保持 size/ID，强制只有内容见证能拒绝清理。
+			if (!WriteBytes(path, changedBytes) || !Inspect(path, foreignInfo)) return false;
+			return SameIdentity(originalInfo, foreignInfo) && originalInfo.nFileSizeHigh == foreignInfo.nFileSizeHigh &&
+				originalInfo.nFileSizeLow == foreignInfo.nFileSizeLow && changedBytes != originalBytes;
+		}
+		bool CorruptBackup(const std::wstring& path)
+		{
+			BY_HANDLE_FILE_INFORMATION info{};
+			return Inspect(path, info) && WriteBytes(path, foreignBytes);
+		}
+		void ProbeDelete(const std::wstring& path) noexcept
+		{
+			const HANDLE probe = CreateFileW(path.c_str(), DELETE | GENERIC_READ | FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			deleteProbeOpened = probe != INVALID_HANDLE_VALUE;
+			deleteProbeError = deleteProbeOpened ? ERROR_SUCCESS : GetLastError();
+			if (deleteProbeOpened) CloseHandle(probe);
+		}
+		bool DenyDelete(const std::wstring& path)
+		{
+			if (!PinOriginal(path)) { failed = true; return false; }
+			originalBytes = ReadBytes(path);
+			// 仅本轮私有 case 父目录及已创建文件；同时拒绝两条删除权限，避免父权限绕过。
+			if (!denied.Deny(0, prefix.substr(0, prefix.size() - 1), true, FILE_DELETE_CHILD) ||
+				!denied.Deny(1, path, false, DELETE)) { failed = true; return false; }
+			ProbeDelete(path);
+			const bool refused = !deleteProbeOpened && deleteProbeError == ERROR_ACCESS_DENIED;
+			if (!refused) failed = true;
+			return refused;
+		}
+		bool AddSecondLink(const std::wstring& path)
+		{
+			if (!PinOriginal(path)) return false;
+			originalBytes = ReadBytes(path);
+			linkPath = prefix + L"second-link.uink";
+			if (!CreateHardLinkW(linkPath.c_str(), path.c_str(), nullptr)) return false;
+			BY_HANDLE_FILE_INFORMATION info{};
+			return GetFileInformationByHandle(originalPin, &info) && info.nNumberOfLinks == 2 && SameIdentity(info, originalInfo);
+		}
+		static UInkCleanupTestAction Hook(UInkCleanupTestStage stage, const std::wstring& path, void* context) noexcept
+		{
+			auto& value = *static_cast<CleanupActorContext*>(context);
+			try
+			{
+				if (!path.starts_with(value.prefix)) { value.failed = true; return UInkCleanupTestAction::None; }
+				if (stage == UInkCleanupTestStage::TempBeforeCreate)
+				{
+					++value.beforeCreate; value.candidate = path;
+					if (value.mode == Mode::OccupyBeforeCreate)
+						value.actorDone = value.CreateForeign(path);
+				}
+				else if (stage == UInkCleanupTestStage::TempWriterClosed)
+				{
+					++value.writerClosed;
+					value.tempBytes = ReadBytes(path);
+					if (!value.Inspect(path, value.tempInfo)) value.failed = true;
+					if (value.mode == Mode::ReplaceAfterWrite) value.actorDone = value.ReplaceWithForeign(path);
+					if (value.mode == Mode::RewriteAfterWrite) value.actorDone = value.RewriteSameObject(path);
+				}
+				else if (stage == UInkCleanupTestStage::BackupBeforeReplace)
+				{
+					++value.backupBefore; value.backup = path;
+					if (value.mode == Mode::BackupForeignBeforeReplace) value.actorDone = value.CreateForeign(path);
+					if (value.mode == Mode::PartialForeign || value.mode == Mode::PartialUnreadable)
+					{
+						value.actorDone = value.CreateForeign(path) && value.RewriteSameObject(value.target);
+						if (value.mode == Mode::PartialUnreadable && value.actorDone)
+						{
+							value.blocking = CreateFileW(path.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
+								FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+							value.actorDone = value.blocking != INVALID_HANDLE_VALUE;
+						}
+					}
+				}
+				else if (stage == UInkCleanupTestStage::ReplaceFinished)
+				{
+					++value.replaceFinished;
+					if (value.mode == Mode::ThrowAfterReplace)
+					{
+						value.actorDone = value.CreateForeign(value.candidate);
+						if (!value.actorDone) value.failed = true;
+						return UInkCleanupTestAction::ThrowBadAlloc;
+					}
+					if (value.mode == Mode::RecoveryOwn || value.mode == Mode::RecoveryReplace ||
+						value.mode == Mode::RecoveryRewrite || value.mode == Mode::ThrowAfterRecovery)
+						value.actorDone = value.CorruptBackup(path);
+				}
+				else if (stage == UInkCleanupTestStage::RecoveryMovesFinished)
+				{
+					++value.recoveryMoves; value.recovery = path;
+					if (value.mode == Mode::RecoveryReplace) value.actorDone = value.actorDone && value.ReplaceWithForeign(path);
+					if (value.mode == Mode::RecoveryRewrite) value.actorDone = value.actorDone && value.RewriteSameObject(path);
+					if (value.mode == Mode::ThrowAfterRecovery) return UInkCleanupTestAction::ThrowBadAlloc;
+				}
+				else if (stage == UInkCleanupTestStage::BeforeCleanup)
+				{
+					if (path == value.candidate)
+					{
+						++value.beforeCleanup;
+						BY_HANDLE_FILE_INFORMATION info{};
+						if (!value.Inspect(path, info)) value.failed = true;
+						if (value.mode == Mode::DenyTempDelete) value.actorDone = value.DenyDelete(path);
+						if (value.mode == Mode::MultiLinkTemp) value.actorDone = value.AddSecondLink(path);
+						if (value.mode == Mode::SharingTemp)
+						{
+							value.originalBytes = ReadBytes(path);
+							value.actorDone = value.PinOriginal(path);
+							value.blocking = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE,
+								FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+							value.actorDone = value.actorDone && value.blocking != INVALID_HANDLE_VALUE;
+							value.ProbeDelete(path);
+							value.actorDone = value.actorDone && !value.deleteProbeOpened && value.deleteProbeError == ERROR_SHARING_VIOLATION;
+						}
+					}
+					else if (path == value.backup)
+					{
+						++value.backupCleanup;
+						if (value.mode == Mode::BackupReplaceBeforeCleanup) value.actorDone = value.ReplaceWithForeign(path);
+						if (value.mode == Mode::BackupRewriteBeforeCleanup) value.actorDone = value.RewriteSameObject(path);
+						if (value.mode == Mode::DenyBackupDelete) value.actorDone = value.DenyDelete(path);
+						if (value.mode == Mode::MultiLinkBackup) value.actorDone = value.AddSecondLink(path);
+						if (value.mode == Mode::ReadOnlyBackup)
+						{
+							value.actorDone = value.PinOriginal(path);
+							value.originalBytes = ReadBytes(path);
+							const DWORD attributes = GetFileAttributesW(path.c_str());
+							value.actorDone = value.actorDone && attributes != INVALID_FILE_ATTRIBUTES &&
+								SetFileAttributesW(path.c_str(), attributes | FILE_ATTRIBUTE_READONLY);
+							value.ProbeDelete(path);
+							value.actorDone = value.actorDone && value.deleteProbeOpened;
+						}
+					}
+					else if (path == value.recovery) ++value.recoveryCleanup;
+				}
+			}
+			catch (...) { value.failed = true; } // actor失败只记前提，不跨noexcept触发terminate。
+			return UInkCleanupTestAction::None;
+		}
+	};
+
+	class CleanupHookScope
+	{
+	public:
+		explicit CleanupHookScope(CleanupActorContext& context) { SetUInkCleanupTestHook(CleanupActorContext::Hook, &context); }
+		~CleanupHookScope() { SetUInkCleanupTestHook(nullptr, nullptr); }
+		CleanupHookScope(const CleanupHookScope&) = delete;
+		CleanupHookScope& operator=(const CleanupHookScope&) = delete;
+	};
+
+	void TestCleanupOwnership(TestState& state)
+	{
+		// 独立GUID树只用于同步真实Save/actor；保留失败证据，不枚举清旧目录。
+		std::array<wchar_t, MAX_PATH + 1> baseBuffer{};
+		const DWORD length = GetFullPathNameW(L"TestResults\\release-hardening", static_cast<DWORD>(baseBuffer.size()), baseBuffer.data(), nullptr);
+		UINK_CHECK(state, length > 0 && length < baseBuffer.size());
+		if (!length || length >= baseBuffer.size()) return;
+		const std::wstring base(baseBuffer.data(), length);
+		UINK_CHECK(state, base.size() >= 3 && base[1] == L':' && base[2] == L'\\');
+		if (base.size() < 3 || base[1] != L':' || base[2] != L'\\') return;
+		struct DirectoryLeases { std::vector<HANDLE> values; ~DirectoryLeases() { for (HANDLE value : values) CloseHandle(value); } } leases;
+		const auto lease = [&leases](const std::wstring& path)
+		{
+			const HANDLE file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ, nullptr,
+				OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+			BY_HANDLE_FILE_INFORMATION info{};
+			if (file == INVALID_HANDLE_VALUE) return false;
+			if (GetFileType(file) != FILE_TYPE_DISK || !GetFileInformationByHandle(file, &info) ||
+				!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+				{ CloseHandle(file); return false; }
+			try { leases.values.push_back(file); } catch (...) { CloseHandle(file); throw; }
+			return true;
+		};
+		const bool driveLeased = lease(base.substr(0, 3)); UINK_CHECK(state, driveLeased); if (!driveLeased) return;
+		for (size_t begin = 3; begin < base.size();)
+		{
+			const size_t next = base.find(L'\\', begin); const size_t end = next == std::wstring::npos ? base.size() : next;
+			const bool acquired = lease(base.substr(0, end)); UINK_CHECK(state, acquired); if (!acquired) return;
+			begin = end + 1;
+		}
+		const auto rootGuid = CreateUInkGuid(); UINK_CHECK(state, rootGuid); if (!rootGuid) return;
+		const std::string token = FormatUInkGuid(*rootGuid);
+		const std::wstring root = base + L"\\uink-cleanup-" + std::wstring(token.begin(), token.end());
+		const bool rootCreated = CreateDirectoryW(root.c_str(), nullptr) != FALSE;
+		UINK_CHECK(state, rootCreated); if (!rootCreated) return;
+		const bool rootLeased = lease(root); UINK_CHECK(state, rootLeased); if (!rootLeased) return;
+		std::cout << "UInk cleanup private_root_token=" << token << std::endl;
+		const std::wstring unknown = root + L"\\unrelated-unknown.bin";
+		const std::vector<std::byte> unknownBytes{ std::byte{ 0x91 }, std::byte{ 0x72 }, std::byte{ 0x33 } };
+		UINK_CHECK(state, WriteBytes(unknown, unknownBytes));
+		const auto run = [&](const wchar_t* caseName, CleanupActorContext::Mode mode,
+			const UInkFileTestFaultInjection& faults, UInkSaveStatus expected, DWORD expectedError)
+		{
+			const std::wstring folder = root + L"\\" + caseName;
+			const bool created = CreateDirectoryW(folder.c_str(), nullptr) != FALSE;
+			UINK_CHECK(state, created); if (!created) return;
+			const bool folderLeased = lease(folder); UINK_CHECK(state, folderLeased); if (!folderLeased) return;
+			const std::wstring target = folder + L"\\target.uink";
+			CleanupActorContext actor; actor.mode = mode; actor.prefix = folder + L"\\"; actor.heldPath = folder + L"\\held-original.uink";
+			UInkEditingSession session; session.document = MakeBasicDocument();
+			UInkSaveOptions options; options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+			UInkSaveResult result;
+			{
+				FaultScope faultScope(faults);
+				CleanupHookScope hookScope(actor);
+				result = SaveUInkFile(target, session, options);
+			}
+			std::cout << "UInk cleanup stage mode=" << static_cast<unsigned>(mode) << " action=" << actor.actorDone
+				<< " before=" << actor.beforeCreate << " writer_closed=" << actor.writerClosed << " cleanup=" << actor.beforeCleanup
+				<< " ntfs=" << actor.ntfs << " failed=" << actor.failed << " status=" << static_cast<unsigned>(result.status)
+				<< " error=" << result.systemError << std::endl;
+			UINK_CHECK(state, !actor.failed && actor.ntfs && actor.beforeCreate == 1 && !actor.candidate.empty());
+			// GREEN 的未创建分支不应尝试cleanup；不能把旧guard事件次数当正确语义。
+			if (mode == CleanupActorContext::Mode::OccupyBeforeCreate) UINK_CHECK(state, actor.writerClosed == 0 && actor.beforeCleanup <= 1);
+			else UINK_CHECK(state, actor.beforeCleanup == 1);
+			UINK_CHECK(state, result.status == expected && result.systemError == expectedError);
+			UINK_CHECK(state, GetFileAttributesW(target.c_str()) == INVALID_FILE_ATTRIBUTES);
+			if (mode != CleanupActorContext::Mode::Observe)
+			{
+				UINK_CHECK(state, actor.actorDone);
+				const UInkDiagnosticCode wanted = mode == CleanupActorContext::Mode::OccupyBeforeCreate
+					? UInkDiagnosticCode::WriteFailed : UInkDiagnosticCode::SelfValidationFailed;
+				UINK_CHECK(state, std::any_of(result.diagnostics.begin(), result.diagnostics.end(),
+					[&](const auto& value) { return value.code == wanted && value.fieldPath == "temp" && value.systemError == expectedError; }));
+				if (mode == CleanupActorContext::Mode::ReplaceAfterWrite)
+				{
+					const UInkReadResult held = ReadUInkFile(actor.heldPath);
+					UINK_CHECK(state, actor.writerClosed == 1 && held.status == UInkReadStatus::Complete && held.document && held.sourceRevision);
+					UINK_CHECK(state, held.document && held.document->header.guid == session.document.header.guid && held.document->canvases.size() == 1);
+					UINK_CHECK(state, held.sourceRevision && held.sourceRevision->volumeSerial == actor.originalInfo.dwVolumeSerialNumber &&
+						held.sourceRevision->fileIndex == ((static_cast<uint64_t>(actor.originalInfo.nFileIndexHigh) << 32) | actor.originalInfo.nFileIndexLow));
+				}
+				BY_HANDLE_FILE_INFORMATION retainedInfo{};
+				const HANDLE retained = CreateFileW(actor.candidate.c_str(), FILE_READ_ATTRIBUTES,
+					FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+				const bool sameForeign = retained != INVALID_HANDLE_VALUE && GetFileInformationByHandle(retained, &retainedInfo) &&
+					retainedInfo.dwVolumeSerialNumber == actor.foreignInfo.dwVolumeSerialNumber && retainedInfo.nFileIndexHigh == actor.foreignInfo.nFileIndexHigh &&
+					retainedInfo.nFileIndexLow == actor.foreignInfo.nFileIndexLow;
+				if (retained != INVALID_HANDLE_VALUE) CloseHandle(retained);
+				// 原cleanup按路径删异物时，此唯一保留断言真实RED；不把Save失败当安全PASS。
+				UINK_CHECK(state, sameForeign && ReadBytes(actor.candidate) == actor.foreignBytes);
+			}
+			else UINK_CHECK(state, GetFileAttributesW(actor.candidate.c_str()) == INVALID_FILE_ATTRIBUTES);
+			UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
+		};
+		run(L"precreate-foreign", CleanupActorContext::Mode::OccupyBeforeCreate, {}, UInkSaveStatus::IoError, ERROR_FILE_EXISTS);
+		run(L"temp-replaced", CleanupActorContext::Mode::ReplaceAfterWrite, {}, UInkSaveStatus::SelfValidationFailed, ERROR_SUCCESS);
+		UInkFileTestFaultInjection faults; faults.failWriteAfterBytes = 1;
+		run(L"ours-write", CleanupActorContext::Mode::Observe, faults, UInkSaveStatus::IoError, ERROR_WRITE_FAULT);
+		faults = {}; faults.failFlush = true;
+		run(L"ours-flush", CleanupActorContext::Mode::Observe, faults, UInkSaveStatus::IoError, ERROR_WRITE_FAULT);
+		faults = {}; faults.failSelfValidation = true;
+		run(L"ours-selfvalidate", CleanupActorContext::Mode::Observe, faults, UInkSaveStatus::SelfValidationFailed, ERROR_SUCCESS);
+		faults = {}; faults.failCommit = true;
+		run(L"ours-commit", CleanupActorContext::Mode::Observe, faults, UInkSaveStatus::IoError, ERROR_ACCESS_DENIED);
+
+		const auto expandedFolder = [&](const wchar_t* name)
+		{
+			const std::wstring folder = root + L"\\" + name;
+			const bool created = CreateDirectoryW(folder.c_str(), nullptr) != FALSE;
+			UINK_CHECK(state, created); if (!created) return std::wstring{};
+			const bool acquired = lease(folder); UINK_CHECK(state, acquired); if (!acquired) return std::wstring{};
+			return folder;
+		};
+		const auto report = [](const CleanupActorContext& actor, const UInkSaveResult& result, bool restored)
+		{
+			std::cout << "UInk cleanup expanded mode=" << static_cast<unsigned>(actor.mode) << " action=" << actor.actorDone
+				<< " before=" << actor.beforeCreate << " writer_closed=" << actor.writerClosed << " temp_cleanup=" << actor.beforeCleanup
+				<< " backup_before=" << actor.backupBefore << " replaced_stage=" << actor.replaceFinished
+				<< " backup_cleanup=" << actor.backupCleanup << " recovery_moves=" << actor.recoveryMoves << " recovery_cleanup=" << actor.recoveryCleanup
+				<< " ntfs=" << actor.ntfs << " failed=" << actor.failed << " restored=" << restored
+				<< " delete_probe_opened=" << actor.deleteProbeOpened << " delete_probe_error=" << actor.deleteProbeError
+				<< " status=" << static_cast<unsigned>(result.status) << " error=" << result.systemError
+				<< " temp_id=" << actor.tempInfo.nFileIndexHigh << ":" << actor.tempInfo.nFileIndexLow
+				<< " original_id=" << actor.originalInfo.nFileIndexHigh << ":" << actor.originalInfo.nFileIndexLow
+				<< " foreign_id=" << actor.foreignInfo.nFileIndexHigh << ":" << actor.foreignInfo.nFileIndexLow;
+			for (const auto* path : { &actor.candidate, &actor.backup, &actor.recovery })
+			{
+				if (path->starts_with(actor.prefix))
+				{
+					const std::wstring leaf = path->substr(actor.prefix.size());
+					std::cout << " artifact_leaf=" << std::string(leaf.begin(), leaf.end());
+				}
+			}
+			std::cout << std::endl;
+		};
+		const auto retainedIdentity = [](const std::wstring& path, const BY_HANDLE_FILE_INFORMATION& expected, DWORD links = 1)
+		{
+			const HANDLE file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			BY_HANDLE_FILE_INFORMATION info{};
+			const bool same = file != INVALID_HANDLE_VALUE && GetFileInformationByHandle(file, &info) &&
+				info.nNumberOfLinks == links && CleanupActorContext::SameIdentity(info, expected);
+			if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+			return same;
+		};
+		const auto missing = [](const std::wstring& path)
+		{
+			const DWORD attributes = GetFileAttributesW(path.c_str());
+			const DWORD error = attributes == INVALID_FILE_ATTRIBUTES ? GetLastError() : ERROR_SUCCESS;
+			return attributes == INVALID_FILE_ATTRIBUTES && (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND);
+		};
+		const auto runTempRetention = [&](const wchar_t* name, CleanupActorContext::Mode mode)
+		{
+			const std::wstring folder = expandedFolder(name); if (folder.empty()) return;
+			CleanupActorContext actor; actor.mode = mode; actor.prefix = folder + L"\\";
+			actor.target = folder + L"\\target.uink";
+			UInkEditingSession session; session.document = MakeBasicDocument();
+			UInkSaveOptions options; options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+			UInkFileTestFaultInjection faults;
+			faults.failSelfValidation = mode != CleanupActorContext::Mode::RewriteAfterWrite;
+			UInkSaveResult result;
+			{
+				FaultScope faultScope(faults); CleanupHookScope hookScope(actor);
+				result = SaveUInkFile(actor.target, session, options);
+			}
+			actor.CloseBlocking();
+			const bool restored = actor.denied.Restore();
+			report(actor, result, restored);
+			UINK_CHECK(state, restored && !actor.failed && actor.actorDone && actor.ntfs &&
+				actor.beforeCreate == 1 && actor.writerClosed == 1 && actor.beforeCleanup == 1);
+			UINK_CHECK(state, result.status == UInkSaveStatus::SelfValidationFailed && result.systemError == ERROR_SUCCESS);
+			UINK_CHECK(state, missing(actor.target));
+			const bool rewritten = mode == CleanupActorContext::Mode::RewriteAfterWrite;
+			UINK_CHECK(state, ReadBytes(actor.candidate) == (rewritten ? actor.changedBytes : actor.originalBytes));
+			const DWORD links = mode == CleanupActorContext::Mode::MultiLinkTemp ? 2 : 1;
+			UINK_CHECK(state, retainedIdentity(actor.candidate, actor.originalInfo, links));
+			if (rewritten)
+				UINK_CHECK(state, actor.changedBytes.size() == actor.originalBytes.size() && actor.changedBytes != actor.originalBytes);
+			else
+			{
+				const auto kept = ReadUInkFile(actor.candidate);
+				UINK_CHECK(state, kept.status == UInkReadStatus::Complete && kept.document && kept.sourceRevision);
+			}
+			if (mode == CleanupActorContext::Mode::DenyTempDelete)
+				UINK_CHECK(state, !actor.deleteProbeOpened && actor.deleteProbeError == ERROR_ACCESS_DENIED);
+			if (mode == CleanupActorContext::Mode::SharingTemp)
+				UINK_CHECK(state, !actor.deleteProbeOpened && actor.deleteProbeError == ERROR_SHARING_VIOLATION);
+			if (links == 2)
+				UINK_CHECK(state, retainedIdentity(actor.linkPath, actor.originalInfo, 2) && ReadBytes(actor.linkPath) == actor.originalBytes);
+			UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
+		};
+		runTempRetention(L"temp-same-id-content", CleanupActorContext::Mode::RewriteAfterWrite);
+		runTempRetention(L"temp-delete-dacl", CleanupActorContext::Mode::DenyTempDelete);
+		runTempRetention(L"temp-two-links", CleanupActorContext::Mode::MultiLinkTemp);
+		runTempRetention(L"temp-write-sharing", CleanupActorContext::Mode::SharingTemp);
+
+		const auto runUpdate = [&](const wchar_t* name, CleanupActorContext::Mode mode)
+		{
+			const std::wstring folder = expandedFolder(name); if (folder.empty()) return;
+			const std::wstring target = folder + L"\\target.uink";
+			UInkEditingSession initial; initial.document = MakeBasicDocument();
+			UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+			const UInkSaveResult seeded = SaveUInkFile(target, initial, create);
+			UINK_CHECK(state, seeded.status == UInkSaveStatus::Committed); if (seeded.status != UInkSaveStatus::Committed) return;
+			const std::vector<std::byte> predecessor = ReadBytes(target);
+			const auto source = ReadUInkFile(target);
+			auto editing = CreateUInkEditingSession(source, UInkEditingSource::ApplicationOwned);
+			UINK_CHECK(state, source.status == UInkReadStatus::Complete && source.sourceRevision && editing);
+			if (!source.sourceRevision || !editing) return;
+			editing->document.canvases[0].content.push_back(MakeInk(1, 1));
+			CleanupActorContext actor; actor.mode = mode; actor.target = target; actor.prefix = folder + L"\\";
+			actor.heldPath = folder + L"\\held-original.uink";
+			UInkFileTestFaultInjection faults;
+			faults.failCommit = mode == CleanupActorContext::Mode::BackupForeignBeforeReplace ||
+				mode == CleanupActorContext::Mode::PartialForeign || mode == CleanupActorContext::Mode::PartialUnreadable;
+			UInkSaveResult result;
+			{
+				FaultScope faultScope(faults); CleanupHookScope hookScope(actor);
+				result = SaveUInkFile(target, *editing);
+			}
+			if (mode == CleanupActorContext::Mode::PartialUnreadable)
+				UINK_CHECK(state, actor.blocking != INVALID_HANDLE_VALUE && ReadUInkFile(result.recoveryPath).status == UInkReadStatus::IoError);
+			actor.CloseBlocking();
+			const bool restored = actor.denied.Restore();
+			report(actor, result, restored);
+			UINK_CHECK(state, restored && !actor.failed && actor.ntfs && actor.beforeCreate == 1 && actor.writerClosed == 1 &&
+				actor.backupBefore == 1 && actor.replaceFinished == 1 && !actor.tempBytes.empty());
+			if (mode != CleanupActorContext::Mode::Observe) UINK_CHECK(state, actor.actorDone);
+			const bool partial = mode == CleanupActorContext::Mode::PartialForeign || mode == CleanupActorContext::Mode::PartialUnreadable;
+			const bool recovery = mode == CleanupActorContext::Mode::RecoveryOwn || mode == CleanupActorContext::Mode::RecoveryReplace ||
+				mode == CleanupActorContext::Mode::RecoveryRewrite || mode == CleanupActorContext::Mode::ThrowAfterRecovery;
+			const bool throwing = mode == CleanupActorContext::Mode::ThrowAfterReplace || mode == CleanupActorContext::Mode::ThrowAfterRecovery;
+			if (partial)
+			{
+				// 真正 Partial 选择 foreign/不可读 backup；保留原已自验证 temp，不能用副本替代。
+				UINK_CHECK(state, result.status == UInkSaveStatus::PartialCommitRequiresRecovery &&
+					result.systemError == ERROR_UNABLE_TO_MOVE_REPLACEMENT && result.recoveryPath == actor.backup);
+				UINK_CHECK(state, actor.beforeCleanup == 0 && actor.backupCleanup == 0 && actor.recoveryMoves == 0);
+				UINK_CHECK(state, ReadBytes(actor.candidate) == actor.tempBytes && ReadBytes(target) == actor.changedBytes);
+				const auto kept = ReadUInkFile(actor.candidate);
+				UINK_CHECK(state, kept.status == UInkReadStatus::Complete && kept.document &&
+					kept.document->header.guid == editing->document.header.guid && kept.document->canvases[0].content.size() == 2);
+				UINK_CHECK(state, ReadBytes(actor.backup) == actor.foreignBytes);
+			}
+			else if (mode == CleanupActorContext::Mode::BackupForeignBeforeReplace)
+			{
+				UINK_CHECK(state, result.status == UInkSaveStatus::IoError && result.systemError == ERROR_UNABLE_TO_MOVE_REPLACEMENT);
+				UINK_CHECK(state, actor.beforeCleanup == 1 && actor.backupCleanup == 1 && actor.recoveryMoves == 0);
+				UINK_CHECK(state, missing(actor.candidate) && ReadBytes(target) == predecessor &&
+					ReadBytes(actor.backup) == actor.foreignBytes && retainedIdentity(actor.backup, actor.foreignInfo));
+			}
+			else if (throwing)
+			{
+				// callback 返回有限动作，真实 cpp postmutation 抛错并走原 catch/guard 展开。
+				UINK_CHECK(state, result.status == UInkSaveStatus::InvalidModel && result.systemError == ERROR_SUCCESS);
+				UINK_CHECK(state, actor.beforeCleanup == 0 && actor.backupCleanup == 0 && actor.recoveryCleanup == 0);
+				if (mode == CleanupActorContext::Mode::ThrowAfterReplace)
+				{
+					UINK_CHECK(state, actor.recoveryMoves == 0 && ReadBytes(target) == actor.tempBytes && ReadBytes(actor.backup) == predecessor);
+					UINK_CHECK(state, retainedIdentity(actor.candidate, actor.foreignInfo) && ReadBytes(actor.candidate) == actor.foreignBytes);
+				}
+				else
+					UINK_CHECK(state, actor.recoveryMoves == 1 && ReadBytes(actor.recovery) == actor.tempBytes && ReadBytes(target) == actor.foreignBytes);
+			}
+			else if (recovery)
+			{
+				UINK_CHECK(state, result.status == UInkSaveStatus::SourceChanged && result.systemError == ERROR_SUCCESS);
+				UINK_CHECK(state, actor.recoveryMoves == 1 && actor.recoveryCleanup == 1 && missing(actor.candidate) &&
+					missing(actor.backup) && ReadBytes(target) == actor.foreignBytes);
+				if (mode == CleanupActorContext::Mode::RecoveryOwn) UINK_CHECK(state, missing(actor.recovery));
+				else
+				{
+					UINK_CHECK(state, CleanupActorContext::SameIdentity(actor.originalInfo, actor.tempInfo));
+					UINK_CHECK(state, retainedIdentity(actor.recovery, actor.foreignInfo));
+					if (mode == CleanupActorContext::Mode::RecoveryReplace)
+					{
+						UINK_CHECK(state, ReadBytes(actor.recovery) == actor.foreignBytes && ReadBytes(actor.heldPath) == actor.tempBytes);
+						const auto held = ReadUInkFile(actor.heldPath);
+						UINK_CHECK(state, held.status == UInkReadStatus::Complete && held.document && held.document->canvases[0].content.size() == 2);
+					}
+					else UINK_CHECK(state, ReadBytes(actor.recovery) == actor.changedBytes && actor.changedBytes.size() == actor.tempBytes.size());
+				}
+			}
+			else
+			{
+				UINK_CHECK(state, result.status == UInkSaveStatus::Committed && result.systemError == ERROR_SUCCESS);
+				UINK_CHECK(state, actor.beforeCleanup == 0 && actor.backupCleanup == 1 && actor.recoveryMoves == 0 &&
+					missing(actor.candidate) && ReadBytes(target) == actor.tempBytes);
+				if (mode == CleanupActorContext::Mode::Observe)
+					UINK_CHECK(state, result.recoveryPath.empty() && missing(actor.backup));
+				else
+				{
+					UINK_CHECK(state, result.recoveryPath == actor.backup);
+					const auto warning = std::find_if(result.diagnostics.begin(), result.diagnostics.end(), [](const auto& value)
+					{
+						return value.code == UInkDiagnosticCode::IoError && value.severity == UInkDiagnosticSeverity::Warning &&
+							value.fieldPath == "backup.cleanup" && value.systemError != ERROR_SUCCESS;
+					});
+					UINK_CHECK(state, warning != result.diagnostics.end());
+					if (warning != result.diagnostics.end()) std::cout << "UInk cleanup warning mode=" << static_cast<unsigned>(mode) << " error=" << warning->systemError << std::endl;
+					if (mode == CleanupActorContext::Mode::BackupReplaceBeforeCleanup)
+						UINK_CHECK(state, retainedIdentity(actor.backup, actor.foreignInfo) && ReadBytes(actor.backup) == actor.foreignBytes &&
+							ReadBytes(actor.heldPath) == predecessor);
+					else if (mode == CleanupActorContext::Mode::BackupRewriteBeforeCleanup)
+						UINK_CHECK(state, retainedIdentity(actor.backup, actor.originalInfo) && ReadBytes(actor.backup) == actor.changedBytes &&
+							actor.changedBytes.size() == predecessor.size() && actor.changedBytes != predecessor);
+					else
+					{
+						const DWORD links = mode == CleanupActorContext::Mode::MultiLinkBackup ? 2 : 1;
+						UINK_CHECK(state, retainedIdentity(actor.backup, actor.originalInfo, links) && ReadBytes(actor.backup) == predecessor);
+						if (links == 2)
+							UINK_CHECK(state, retainedIdentity(actor.linkPath, actor.originalInfo, 2) && ReadBytes(actor.linkPath) == predecessor);
+					}
+					if (mode == CleanupActorContext::Mode::DenyBackupDelete)
+						UINK_CHECK(state, !actor.deleteProbeOpened && actor.deleteProbeError == ERROR_ACCESS_DENIED &&
+							warning != result.diagnostics.end() && warning->systemError == ERROR_ACCESS_DENIED);
+					if (mode == CleanupActorContext::Mode::ReadOnlyBackup)
+						UINK_CHECK(state, actor.deleteProbeOpened && (GetFileAttributesW(actor.backup.c_str()) & FILE_ATTRIBUTE_READONLY));
+					if (mode == CleanupActorContext::Mode::MultiLinkBackup)
+						UINK_CHECK(state, warning != result.diagnostics.end() && warning->systemError == ERROR_NOT_SUPPORTED);
+				}
+				const auto published = ReadUInkFile(target);
+				UINK_CHECK(state, published.status == UInkReadStatus::Complete && published.document && published.sourceRevision &&
+					published.document->canvases[0].content.size() == 2 && published.document->header.guid == editing->document.header.guid);
+			}
+			UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
+		};
+		runUpdate(L"normal-update-owned", CleanupActorContext::Mode::Observe);
+		runUpdate(L"backup-failed-foreign", CleanupActorContext::Mode::BackupForeignBeforeReplace);
+		runUpdate(L"backup-replaced", CleanupActorContext::Mode::BackupReplaceBeforeCleanup);
+		runUpdate(L"backup-same-id-content", CleanupActorContext::Mode::BackupRewriteBeforeCleanup);
+		runUpdate(L"recovery-owned", CleanupActorContext::Mode::RecoveryOwn);
+		runUpdate(L"recovery-replaced", CleanupActorContext::Mode::RecoveryReplace);
+		runUpdate(L"recovery-same-id-content", CleanupActorContext::Mode::RecoveryRewrite);
+		runUpdate(L"partial-foreign-backup", CleanupActorContext::Mode::PartialForeign);
+		runUpdate(L"partial-unreadable-backup", CleanupActorContext::Mode::PartialUnreadable);
+		runUpdate(L"exception-after-replace", CleanupActorContext::Mode::ThrowAfterReplace);
+		runUpdate(L"exception-after-recovery", CleanupActorContext::Mode::ThrowAfterRecovery);
+		runUpdate(L"backup-delete-dacl", CleanupActorContext::Mode::DenyBackupDelete);
+		runUpdate(L"backup-readonly-disposition", CleanupActorContext::Mode::ReadOnlyBackup);
+		runUpdate(L"backup-two-links", CleanupActorContext::Mode::MultiLinkBackup);
+
+		static_assert(!std::is_copy_constructible_v<UInkOwnedVersion> && !std::is_copy_assignable_v<UInkOwnedVersion>);
+		static_assert(std::is_nothrow_move_constructible_v<UInkOwnedVersion> && std::is_nothrow_move_assignable_v<UInkOwnedVersion>);
+		const auto makeOwned = [&](const std::wstring& path, UInkOwnedVersion& owned)
+		{
+			UInkEditingSession session; session.document = MakeBasicDocument();
+			UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+			const auto saved = SaveUInkFileWithOwnedVersion(path, session, owned, create);
+			UINK_CHECK(state, saved.status == UInkSaveStatus::Committed && saved.revision && owned);
+			return saved.status == UInkSaveStatus::Committed && static_cast<bool>(owned);
+		};
+		{
+			const std::wstring folder = expandedFolder(L"cap-owned-move-remove");
+			if (!folder.empty())
+			{
+				const std::wstring path = folder + L"\\version.uink";
+				UInkOwnedVersion original;
+				uint32_t error = ERROR_SUCCESS;
+				UINK_CHECK(state, !original && !TryRemoveOwnedUInkVersion(original, error) && error == ERROR_INVALID_HANDLE);
+				if (makeOwned(path, original))
+				{
+					const auto bytes = ReadBytes(path);
+					UInkOwnedVersion moved(std::move(original)), final;
+					final = std::move(moved);
+					UINK_CHECK(state, !original && !moved && final);
+					UINK_CHECK(state, !TryRemoveOwnedUInkVersion(original, error) && error == ERROR_INVALID_HANDLE && ReadBytes(path) == bytes);
+					UINK_CHECK(state, TryRemoveOwnedUInkVersion(final, error) && error == ERROR_SUCCESS && !final && missing(path));
+					UINK_CHECK(state, !TryRemoveOwnedUInkVersion(final, error) && error == ERROR_INVALID_HANDLE && missing(path));
+					std::cout << "UInk CAP authority move/owned-remove/empty-consumed verified." << std::endl;
+				}
+			}
+		}
+		const auto refuseChangedOwned = [&](const wchar_t* name, bool sameId)
+		{
+			const std::wstring folder = expandedFolder(name); if (folder.empty()) return;
+			const std::wstring path = folder + L"\\version.uink";
+			UInkOwnedVersion owned; if (!makeOwned(path, owned)) return;
+			const auto bytes = ReadBytes(path);
+			CleanupActorContext actor; actor.prefix = folder + L"\\";
+			actor.heldPath = folder + L"\\held-owned.uink";
+			const bool changed = sameId ? actor.RewriteSameObject(path) : actor.ReplaceWithForeign(path);
+			UINK_CHECK(state, changed && actor.ntfs); if (!changed) return;
+			uint32_t error = ERROR_SUCCESS;
+			UINK_CHECK(state, !TryRemoveOwnedUInkVersion(owned, error) && error == ERROR_FILE_INVALID && owned);
+			UINK_CHECK(state, retainedIdentity(path, actor.foreignInfo) &&
+				ReadBytes(path) == (sameId ? actor.changedBytes : actor.foreignBytes));
+			owned = UInkOwnedVersion{}; // 回收失败释放权限句柄，保留磁盘材料，不累积失败 lease。
+			UINK_CHECK(state, !owned && ReadBytes(path) == (sameId ? actor.changedBytes : actor.foreignBytes));
+			if (sameId) UINK_CHECK(state, actor.changedBytes.size() == bytes.size() && actor.changedBytes != bytes);
+			else UINK_CHECK(state, retainedIdentity(actor.heldPath, actor.originalInfo) && ReadBytes(actor.heldPath) == bytes);
+			std::cout << "UInk CAP authority changed-object same_id=" << sameId << " retained error=" << error << std::endl;
+		};
+		refuseChangedOwned(L"cap-owned-foreign", false);
+		refuseChangedOwned(L"cap-owned-same-id-content", true);
+		{
+			const std::wstring folder = expandedFolder(L"cap-owned-reset-destruct");
+			if (!folder.empty())
+			{
+				const std::wstring path = folder + L"\\version.uink";
+				std::vector<std::byte> bytes;
+				{
+					UInkOwnedVersion owned;
+					if (makeOwned(path, owned))
+					{
+						bytes = ReadBytes(path);
+						owned = UInkOwnedVersion{};
+						UINK_CHECK(state, !owned && ReadBytes(path) == bytes);
+					}
+				}
+				UINK_CHECK(state, !bytes.empty() && ReadBytes(path) == bytes && ReadUInkFile(path).status == UInkReadStatus::Complete);
+				const std::wstring destructorPath = folder + L"\\destructor-version.uink";
+				{
+					UInkOwnedVersion owned; (void)makeOwned(destructorPath, owned);
+				}
+				UINK_CHECK(state, ReadUInkFile(destructorPath).status == UInkReadStatus::Complete);
+				std::cout << "UInk CAP authority reset/destructor retains bytes." << std::endl;
+			}
+		}
+		{
+			const std::wstring folder = expandedFolder(L"cap-owned-no-reauthorize");
+			if (!folder.empty())
+			{
+				const std::wstring path = folder + L"\\version.uink";
+				UInkOwnedVersion owned;
+				if (makeOwned(path, owned))
+				{
+					const auto before = ReadBytes(path);
+					UInkEditingSession duplicate; duplicate.document = MakeBasicDocument();
+					UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+					const auto conflict = SaveUInkFileWithOwnedVersion(path, duplicate, owned, create);
+					UINK_CHECK(state, conflict.status == UInkSaveStatus::SourceChanged && !owned && ReadBytes(path) == before);
+					auto editing = CreateUInkEditingSession(ReadUInkFile(path), UInkEditingSource::ApplicationOwned);
+					UINK_CHECK(state, editing);
+					if (editing)
+					{
+						editing->document.canvases[0].content.push_back(MakeInk(1, 1));
+						const auto updated = SaveUInkFileWithOwnedVersion(path, *editing, owned);
+						UINK_CHECK(state, updated.status == UInkSaveStatus::Committed && updated.revision && !owned);
+						const auto after = ReadBytes(path);
+						const auto read = ReadUInkFile(path);
+						uint32_t error = ERROR_SUCCESS;
+						UINK_CHECK(state, after != before && read.status == UInkReadStatus::Complete && read.document &&
+							read.document->canvases[0].content.size() == 2);
+						UINK_CHECK(state, !TryRemoveOwnedUInkVersion(owned, error) && error == ERROR_INVALID_HANDLE && ReadBytes(path) == after);
+					}
+				}
+				const std::wstring partialPath = folder + L"\\partial-version.uink";
+				UInkEditingSession partial; partial.document = MakeBasicDocument();
+				UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+				UInkFileTestFaultInjection faults; faults.failCommittedRevisionValidation = true;
+				UInkSaveResult saved;
+				{
+					FaultScope faultScope(faults);
+					saved = SaveUInkFileWithOwnedVersion(partialPath, partial, owned, create);
+				}
+				const auto retained = ReadBytes(partialPath);
+				uint32_t error = ERROR_SUCCESS;
+				UINK_CHECK(state, saved.status == UInkSaveStatus::PartialCommitRequiresRecovery && !owned &&
+					saved.recoveryPath == partialPath && !retained.empty() && ReadUInkFile(partialPath).status == UInkReadStatus::Complete);
+				UINK_CHECK(state, !TryRemoveOwnedUInkVersion(owned, error) && error == ERROR_INVALID_HANDLE && ReadBytes(partialPath) == retained);
+				std::cout << "UInk CAP authority SourceChanged/update/partial grants none." << std::endl;
+			}
+		}
+
+		class OwnedPrepFailureScope
+		{
+		public:
+			OwnedPrepFailureScope() { SetUInkOwnedVersionPrepFailureForTesting(true); }
+			~OwnedPrepFailureScope() { SetUInkOwnedVersionPrepFailureForTesting(false); }
+		};
+		const auto runPrepFailure = [&](const wchar_t* name, bool invalidModel, bool partial)
+		{
+			const std::wstring folder = expandedFolder(name); if (folder.empty()) return;
+			const std::wstring path = folder + L"\\version.uink";
+			UInkEditingSession session; session.document = MakeBasicDocument();
+			if (invalidModel) session.document.header.guid = UInkGuid{};
+			UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+			UInkFileTestFaultInjection faults; faults.failCommittedRevisionValidation = partial;
+			CleanupActorContext actor; actor.prefix = folder + L"\\";
+			UInkOwnedVersion owned;
+			UInkSaveResult saved;
+			{
+				FaultScope faultScope(faults); CleanupHookScope hookScope(actor); OwnedPrepFailureScope prepScope;
+				saved = SaveUInkFileWithOwnedVersion(path, session, owned, create);
+			}
+			const auto expected = invalidModel ? UInkSaveStatus::InvalidModel :
+				(partial ? UInkSaveStatus::PartialCommitRequiresRecovery : UInkSaveStatus::Committed);
+			std::cout << "UInk CAP prep-failure invalid_model=" << invalidModel << " partial=" << partial
+				<< " before=" << actor.beforeCreate << " writer_closed=" << actor.writerClosed
+				<< " status=" << static_cast<unsigned>(saved.status) << " owned=" << static_cast<bool>(owned) << std::endl;
+			UINK_CHECK(state, !actor.failed && !owned && saved.status == expected);
+			if (invalidModel)
+				UINK_CHECK(state, actor.beforeCreate == 0 && actor.writerClosed == 0 && missing(path));
+			else
+			{
+				const auto read = ReadUInkFile(path);
+				UINK_CHECK(state, actor.ntfs && actor.beforeCreate == 1 && actor.writerClosed == 1 && ReadBytes(path) == actor.tempBytes &&
+					read.status == UInkReadStatus::Complete && read.document && read.sourceRevision &&
+					read.document->header.guid == session.document.header.guid && read.document->canvases[0].content.size() == 1);
+				if (partial) UINK_CHECK(state, saved.systemError == ERROR_FILE_INVALID && saved.recoveryPath == path);
+				else
+				{
+					UINK_CHECK(state, saved.revision && saved.systemError == ERROR_SUCCESS);
+					const auto original = ReadBytes(path);
+					CleanupActorContext duplicateActor; duplicateActor.prefix = actor.prefix;
+					UInkSaveResult conflict;
+					{
+						CleanupHookScope hookScope(duplicateActor); OwnedPrepFailureScope prepScope;
+						conflict = SaveUInkFileWithOwnedVersion(path, session, owned, create);
+					}
+					UINK_CHECK(state, !owned && !duplicateActor.failed && duplicateActor.beforeCreate == 1 &&
+						duplicateActor.writerClosed == 1 && conflict.status == UInkSaveStatus::SourceChanged &&
+						conflict.systemError == ERROR_FILE_EXISTS && ReadBytes(path) == original);
+					std::cout << "UInk CAP prep-failure SourceChanged preserves original bytes; single transaction." << std::endl;
+				}
+			}
+			UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
+		};
+		runPrepFailure(L"cap-prep-failed-committed", false, false);
+		runPrepFailure(L"cap-prep-failed-invalid-model", true, false);
+		runPrepFailure(L"cap-prep-failed-partial", false, true);
+		UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
+	}
+#endif
+
 	void TestAppendTransactions(TestState& state)
 	{
 		TempDirectory temporary;
@@ -2723,6 +3736,10 @@ int RunUInkTests()
 	TestEncoderTopologyValidation(state);
 	TestReadLimits(state);
 	TestFullFileSave(state);
+	TestSiblingMaxPathSave(state);
+#if defined(DRAW3_TESTING)
+	TestCleanupOwnership(state);
+#endif
 	TestAppendTransactions(state);
 	TestMediaFilePolicy(state);
 	TestAppendAnalysisRejections(state);

@@ -2,22 +2,41 @@
 #include "Draw3.Product.h"
 #include "Draw3.Presentation.h"
 #include "Draw3.PresentationState.h"
+#include "Draw3.PixelDiagnosticShaders.h"
+#include "Draw3.Win7GuardedShader.h"
+#include "Draw3.ShaderCompatibility.h"
 
 import Inkeys.Window;
+import Inkeys.Drawing.Draw3.renderer;
+import Inkeys.Drawing.Draw3.pen_cursor;
+import Inkeys.Drawing.Draw3.diagnostics;
+import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.ink_prediction;
 import draw3.uink_file;
 import draw3.uink_draw3_import;
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <crtdbg.h>
+#include <cstring>
+#include <d3d11.h>
+#include <dxgi1_2.h>
 #include <filesystem>
+#include <fstream>
+#include <json/json.h>
+#include <span>
 #include <string>
+#include <tchar.h>
+#include <tpcshrd.h>
 #include <thread>
 #include <vector>
 #include <variant>
+#include <wrl/client.h>
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -845,6 +864,37 @@ namespace Inkeys::Drawing::Draw3
 			options.enableHiddenTestContactInjection = exerciseCommands || exerciseEraser;
 			options.allowDirectComposition = allowDirectComposition;
 			options.requirePresentationUiReady = true;
+			if (exerciseCommands)
+			{
+				// PPT 命令必须经过真实异步加载；缺少 root 会让 Controller 按设计阻止输入。
+				wchar_t imagePath[32768]{};
+				const DWORD imageLength = GetModuleFileNameW(nullptr, imagePath, 32768);
+				if (!Check(imageLength > 0 && imageLength < 32768,
+					"resolve hidden command persistence directory", failures)) return false;
+				LARGE_INTEGER started{};
+				if (!Check(QueryPerformanceCounter(&started) != FALSE,
+					"identify hidden command persistence run", failures)) return false;
+				const auto parent = std::filesystem::path(imagePath).parent_path() /
+					L"Draw3HiddenPptCommands";
+				std::error_code directoryError;
+				std::filesystem::create_directories(parent, directoryError);
+				const DWORD parentAttributes = GetFileAttributesW(parent.c_str());
+				if (!Check(!directoryError && parentAttributes != INVALID_FILE_ATTRIBUTES &&
+					(parentAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+					(parentAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0,
+					"create non-reparse hidden command persistence parent", failures)) return false;
+				const auto root = parent / (std::to_wstring(GetCurrentProcessId()) +
+					L"-" + std::to_wstring(started.QuadPart));
+				const bool created = std::filesystem::create_directory(root, directoryError);
+				const DWORD rootAttributes = GetFileAttributesW(root.c_str());
+				if (!Check(created && !directoryError && rootAttributes != INVALID_FILE_ATTRIBUTES &&
+					(rootAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+					(rootAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0,
+					"create unique non-reparse hidden command persistence root", failures)) return false;
+				options.autoSaveRoot = root.wstring();
+				std::fprintf(stderr, "[Draw3Hidden] command_persistence_root=%ls\n",
+					options.autoSaveRoot.c_str());
+			}
 			if(exerciseEraser)
 			{
 				// 隐藏 HWND 位于屏幕外；注入明确的逻辑像素表面，不伪造 EDID 或实测物理尺寸。
@@ -865,6 +915,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			bool modeSucceeded = true;
 			auto snapshot = ProductHost().RuntimeSnapshot();
+			const auto modeDownBaseline=snapshot.inputDownPublished;
+			const auto modeRecycledBaseline=snapshot.inputRecycled;
 			modeSucceeded &= Check(snapshot.running && snapshot.firstFrameReady &&
 				snapshot.lastPresentSucceeded && snapshot.successfulPresentCount >= 1,
 				"first transparent frame", failures);
@@ -872,8 +924,11 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(snapshot.presentationMode == requiredMode,
 					"forced presenter used the requested real backend", failures);
 			else
-				modeSucceeded &= Check(snapshot.presentationMode != HostPresentationMode::Automatic,
-					"automatic fallback selected a real backend", failures);
+				modeSucceeded &= Check(
+					snapshot.presentationMode == HostPresentationMode::UlwDirtyRect ||
+					(allowDirectComposition && snapshot.presentationMode ==
+						HostPresentationMode::DirectCompositionVisualTree),
+					"automatic fallback selected only DComp or ULW", failures);
 			modeSucceeded &= CheckPresentationStyle(drawpad, snapshot.presentationMode, failures);
 			modeSucceeded &= CheckPresentationWindowStyle(presentation, failures);
 			modeSucceeded &= Check(SendMessageW(drawpad, WM_MOUSEACTIVATE,
@@ -1528,29 +1583,34 @@ namespace Inkeys::Drawing::Draw3
 
 				modeSucceeded &= Check(large.eraser.cursorDiameterPx>large.eraser.dpiX/96*70 &&
 					large.eraser.effectiveDiameterDip>70,"actual contact cursor reaches sweep size",failures);
-				const auto moveCount=large.inputMovePublished;
-				const auto pointCount=large.eraser.realPointCount;
 				// 完全停止所有Move，包括光标消息；只让真实绘制线程的时钟运行。
-				modeSucceeded &= Check(WaitUntil([moveCount]
+				modeSucceeded &= Check(WaitUntil([]
 				{
 					const auto s=ProductHost().RuntimeSnapshot();
-					return s.inputMovePublished==moveCount && s.eraser.active &&
+					return s.eraser.active &&
 						s.eraser.idleSeconds>=1.0 && s.eraser.cursorDiameterPx>0 &&
 						s.eraser.cursorDiameterPx<=s.eraser.dpiX/96*18 &&
 						s.eraser.nextRadiusPx<=s.eraser.dpiX/96*9.0f;
 				},4s),"no Move: final contact cursor and next geometry visibly shrink",failures);
 				const auto quiet=ProductHost().RuntimeSnapshot();
-				modeSucceeded &= Check(quiet.inputMovePublished==moveCount &&
-					quiet.eraser.realPointCount==pointCount &&
-					quiet.eraser.historyRadiusPx>quiet.eraser.nextRadiusPx*1.5f,
-					"idle does not rewrite historical width or submit fake points",failures);
+				// 已观测到实际 idle 后再锁存无输入基线；PostMessage 只保证进入 owner 队列。
+				const auto moveCount=quiet.inputMovePublished;
+				const auto pointCount=quiet.eraser.realPointCount;
+				modeSucceeded &= Check(quiet.eraser.historyRadiusPx>quiet.eraser.nextRadiusPx*1.5f,
+					"idle preserves historical width",failures);
 				modeSucceeded &= Check(WaitUntil([]
 				{
 					return ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.001f;
 				},3s),"effective size settles at exact minimum",failures);
 				const auto stopped=ProductHost().RuntimeSnapshot().eraser.frameSequence;
 				std::this_thread::sleep_for(250ms);
-				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.frameSequence<=stopped+2,
+				const auto settled=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(settled.inputMovePublished==moveCount &&
+					settled.eraser.realPointCount==pointCount,
+					"idle does not submit fake points after settling",failures);
+				modeSucceeded &= Check(std::abs(settled.eraser.historyRadiusPx-quiet.eraser.historyRadiusPx)<0.001f,
+					"idle does not rewrite historical width after settling",failures);
+				modeSucceeded &= Check(settled.eraser.frameSequence<=stopped+2,
 					"settled held eraser stops idle frames",failures);
 				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Move,lastX+4,84),
 					"resume with one short real Move",failures);
@@ -1681,17 +1741,25 @@ namespace Inkeys::Drawing::Draw3
 					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::LargeScreen &&
 						std::abs(d.largeTargetSpeed-1300)<0.01f;}),
 					"active Touch keeps its latched scene after product setting changes",failures);
-				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,classroomLastX+2,120);
-				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
-					"manual classroom contact closes before scene change",failures);
+				const auto beforeClassroomUp=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,classroomLastX+2,120),
+					"post classroom Touch Up",failures);
+				modeSucceeded &= Check(WaitUntil([beforeClassroomUp]{const auto s=ProductHost().RuntimeSnapshot();
+					return !s.eraser.active && s.inputTerminalPublished>beforeClassroomUp.inputTerminalPublished &&
+						s.inputRecycled>beforeClassroomUp.inputRecycled;}),
+					"manual classroom contact closes and retires before scene change",failures);
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,120);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::Laptop &&
 						std::abs(d.largeTargetSpeed-512.5f)<0.01f;}),
 					"next Touch contact receives explicit Laptop cap with the same manual scale",failures);
-				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,120);
-				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
-					"manual scene probe cancels without leaking contact",failures);
+				const auto beforeSceneCancel=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,120),
+					"post manual scene Touch Cancel",failures);
+				modeSucceeded &= Check(WaitUntil([beforeSceneCancel]{const auto s=ProductHost().RuntimeSnapshot();
+					return !s.eraser.active && s.inputTerminalPublished>beforeSceneCancel.inputTerminalPublished &&
+						s.inputRecycled>beforeSceneCancel.inputRecycled;}),
+					"manual scene probe cancels and retires old route before the next Touch",failures);
 				ProductHost().SetEraserDevelopmentOptions({});
 				// 面积辅助通过真实 mailbox、控制器、光标、模型和保存链路验收。
 				const auto areaProbe=[&](const char* label)
@@ -1732,19 +1800,46 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(convertedArea.units==SpeedEraser::ContactAreaUnits::CanvasPixels &&
 					std::abs(convertedArea.widthPx-30)<0.001f && std::abs(convertedArea.heightPx-20)<0.001f,
 					"synthetic metadata uses the product relative-length converter before eraser ingress",failures);
+				modeSucceeded &= Check(WaitUntil([modeDownBaseline,modeRecycledBaseline]{
+					const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputDownPublished>=modeDownBaseline &&
+						s.inputRecycled>=modeRecycledBaseline &&
+						s.inputDownPublished-modeDownBaseline==s.inputRecycled-modeRecycledBaseline;}),
+					"all current-run contact routes retire before area Touch Down",failures);
 				ProductHost().SetHiddenTestContactArea(convertedArea);
-				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,140);
-				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
-					return d.active && d.inputType==0 && d.contactArea.enabled;}),"real Touch receives latched area option",failures);
+				const auto beforeAreaDown=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,140),
+					"post area Touch Down",failures);
+				modeSucceeded &= Check(WaitUntil([beforeAreaDown]{const auto s=ProductHost().RuntimeSnapshot();
+					const auto& d=s.eraser;
+					return s.inputDownPublished>beforeAreaDown.inputDownPublished && d.active &&
+						d.inputType==0 && d.contactArea.enabled && d.contactGeneration>0 &&
+						d.inputPositionValid && std::abs(d.inputCanvasYpx-140)<0.01f;}),
+					"real area Touch Down reaches this contact generation",failures);
 				std::this_thread::sleep_for(120ms);
 				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.01f,
 					"Touch Down with a large reported finger still starts small",failures);
 				int areaX=60;
+				const auto areaMovesBefore=ProductHost().RuntimeSnapshot().inputMovePublished;
+				bool areaMovesPosted=true;
 				for(int i=1;i<=35;++i)
 				{
-					areaX=60+i;postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX,140);
+					areaX=60+i;areaMovesPosted &= postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX,140);
 					std::this_thread::sleep_for(30ms);
 				}
+				modeSucceeded &= Check(areaMovesPosted,"post all slow area Touch Moves",failures);
+				const auto areaIngress=ProductHost().RuntimeSnapshot();
+				std::fprintf(stderr,"[AreaIngress] mode=%u movesPublishedSoFar=%llu generation=%llu active=%d areaEnabled=%d sampleValid=%d referenceReady=%d areaActive=%d diameter=%.3f target=%.3f floor=%.3f idleMs=%.1f points=%llu\n",
+					static_cast<unsigned>(requiredMode),
+					static_cast<unsigned long long>(areaIngress.inputMovePublished-areaMovesBefore),
+					static_cast<unsigned long long>(areaIngress.eraser.contactGeneration),
+					areaIngress.eraser.active,areaIngress.eraser.contactArea.enabled,
+					areaIngress.eraser.contactArea.sampleValid,
+					areaIngress.eraser.contactArea.referenceReady,
+					areaIngress.eraser.contactArea.active,
+					areaIngress.eraser.effectiveDiameterDip,areaIngress.eraser.targetDiameterDip,
+					areaIngress.eraser.contactArea.activeFloorDip,areaIngress.eraser.idleSeconds*1000,
+					static_cast<unsigned long long>(areaIngress.eraser.realPointCount));
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && d.contactArea.active && d.effectiveDiameterDip>38.5f && d.effectiveDiameterDip<40.0f &&
 					std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),"slow Touch drag has matching area-assisted cursor and geometry",failures);
@@ -2047,6 +2142,1591 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	// 独立前缀不计入 105 个 GPU 用例；使用正式选择函数检查推广边界和精确诊断覆盖。
+	static bool CheckShaderSelectionPolicy() noexcept
+	{
+		struct PolicyCase
+		{
+			const char* name;
+			int major, minor;
+			D3D_DRIVER_TYPE driver;
+			bool diagnostics;
+			std::wstring_view guardedOverride;
+			bool expected;
+		};
+		constexpr PolicyCase cases[] = {
+			{ "win7.warp.auto", 6, 1, D3D_DRIVER_TYPE_WARP, false, L"", true },
+			{ "win7.hardware.auto", 6, 1, D3D_DRIVER_TYPE_HARDWARE, false, L"", false },
+			{ "win7.unknown.auto", 6, 1, D3D_DRIVER_TYPE_UNKNOWN, false, L"", false },
+			{ "win7.reference.auto", 6, 1, D3D_DRIVER_TYPE_REFERENCE, false, L"", false },
+			{ "win11.warp.auto", 10, 0, D3D_DRIVER_TYPE_WARP, false, L"", false },
+			{ "win8.warp.auto", 6, 2, D3D_DRIVER_TYPE_WARP, false, L"", false },
+			{ "vista.warp.auto", 6, 0, D3D_DRIVER_TYPE_WARP, false, L"", false },
+			{ "unknown.version", 0, 0, D3D_DRIVER_TYPE_WARP, false, L"", false },
+			{ "win7.warp.ignore0", 6, 1, D3D_DRIVER_TYPE_WARP, false, L"0", true },
+			{ "win7.hardware.ignore1", 6, 1, D3D_DRIVER_TYPE_HARDWARE, false, L"1", false },
+			{ "win11.warp.ignore1", 10, 0, D3D_DRIVER_TYPE_WARP, false, L"1", false },
+			{ "win7.warp.diagnostic.auto", 6, 1, D3D_DRIVER_TYPE_WARP, true, L"", true },
+			{ "win7.warp.diagnostic.original", 6, 1, D3D_DRIVER_TYPE_WARP, true, L"0", false },
+			{ "win7.warp.diagnostic.guarded", 6, 1, D3D_DRIVER_TYPE_WARP, true, L"1", true },
+			{ "win7.hardware.diagnostic.auto", 6, 1, D3D_DRIVER_TYPE_HARDWARE, true, L"", false },
+			{ "win7.hardware.diagnostic.original", 6, 1, D3D_DRIVER_TYPE_HARDWARE, true, L"0", false },
+			{ "win7.hardware.diagnostic.guarded", 6, 1, D3D_DRIVER_TYPE_HARDWARE, true, L"1", true },
+			{ "win11.warp.diagnostic.guarded", 10, 0, D3D_DRIVER_TYPE_WARP, true, L"1", true },
+			{ "win11.warp.diagnostic.original", 10, 0, D3D_DRIVER_TYPE_WARP, true, L"0", false },
+			{ "win7.warp.invalid01", 6, 1, D3D_DRIVER_TYPE_WARP, true, L"01", true },
+			{ "win11.warp.invalid01", 10, 0, D3D_DRIVER_TYPE_WARP, true, L"01", false },
+			{ "win7.warp.invalidWord", 6, 1, D3D_DRIVER_TYPE_WARP, true, L"true", true },
+			{ "win11.warp.invalidWord", 10, 0, D3D_DRIVER_TYPE_WARP, true, L"true", false },
+			{ "win7.warp.invalidSpace", 6, 1, D3D_DRIVER_TYPE_WARP, true, L"1 ", true },
+			{ "win11.warp.invalidSpace", 10, 0, D3D_DRIVER_TYPE_WARP, true, L"1 ", false },
+			{ "win7.warp.invalid00", 6, 1, D3D_DRIVER_TYPE_WARP, true, L"00", true },
+			{ "win11.warp.invalid00", 10, 0, D3D_DRIVER_TYPE_WARP, true, L"00", false }
+		};
+		unsigned failures = 0;
+		for (const auto& item : cases)
+		{
+			const bool actual = shader_compatibility::UseGuardedPixelShader(
+				item.major, item.minor, item.driver, item.diagnostics, item.guardedOverride);
+			const bool passed = actual == item.expected;
+			if (!passed) ++failures;
+			std::fprintf(stderr, "[Draw3ShaderPolicyTest] case=%s expected=%s actual=%s result=%s\n",
+				item.name, item.expected ? "guarded" : "original", actual ? "guarded" : "original",
+				passed ? "PASS" : "FAIL");
+		}
+		std::fprintf(stderr, "[Draw3ShaderPolicyTest] cases=%zu failures=%u\n", std::size(cases), failures);
+		return failures == 0;
+	}
+
+	static int RunRendererPixelTestForDriver(D3D_DRIVER_TYPE driver) noexcept
+	{
+		using Microsoft::WRL::ComPtr;
+		constexpr UINT size = 128;
+		int failures = 0;
+		unsigned productionCases = 0;
+		unsigned diagnosticCases = 0, diagnosticFailures = 0;
+		unsigned sequenceCases = 0, sequenceFailures = 0;
+		unsigned matrixCases = 0, matrixFailures = 0;
+		unsigned guardedCases = 0, guardedFailures = 0, referenceUnavailable = 0;
+		const char* driverName = driver == D3D_DRIVER_TYPE_HARDWARE ? "hardware" : "warp";
+		std::fprintf(stderr, "[Draw3PixelTest] probe_schema=guarded-20261008 driver=%s expected_cases=105 matrix_expected=69 guarded_expected=18\n",
+			driver == D3D_DRIVER_TYPE_HARDWARE ? "Hardware" : "WARP");
+		std::fprintf(stderr, "[Draw3PixelTest] driver=%s requested=%s\n", driverName, driverName);
+		const auto logResult = [&](const char* stage, HRESULT result)
+		{
+			std::fprintf(stderr, "[Draw3PixelTest] stage=%s hr=0x%08X\n",
+				stage, static_cast<unsigned int>(result));
+			return SUCCEEDED(result);
+		};
+		try
+		{
+			if (!CheckShaderSelectionPolicy()) return 1;
+			// 自动修复启用后，仍明确强制原版基线；两项父环境在所有返回/异常路径恢复。
+			struct ShaderEnvironmentRestore
+			{
+				const wchar_t* name;
+				std::wstring value;
+				bool present = false;
+				explicit ShaderEnvironmentRestore(const wchar_t* inputName) : name(inputName)
+				{
+					SetLastError(ERROR_SUCCESS);
+					const DWORD count = GetEnvironmentVariableW(name, nullptr, 0);
+					// 空字符串与未定义变量分别保存，不能把存在但为空的父值删掉。
+					present = count != 0 || GetLastError() == ERROR_SUCCESS;
+					if (count)
+					{
+						value.resize(count);
+						SetLastError(ERROR_SUCCESS);
+						const DWORD copied = GetEnvironmentVariableW(name, value.data(), count);
+						present = copied < count && (copied != 0 || GetLastError() == ERROR_SUCCESS);
+						value.resize(present ? copied : 0);
+					}
+				}
+				~ShaderEnvironmentRestore()
+				{
+					SetEnvironmentVariableW(name, present ? value.c_str() : nullptr);
+				}
+			} diagnosticsEnvironmentRestore{ L"INKEYS_DRAW3_WIN7_DIAGNOSTICS" },
+				guardedEnvironmentRestore{ L"INKEYS_DRAW3_WIN7_GUARDED_SHADER" };
+			if (!SetEnvironmentVariableW(L"INKEYS_DRAW3_WIN7_DIAGNOSTICS", L"1") ||
+				!SetEnvironmentVariableW(L"INKEYS_DRAW3_WIN7_GUARDED_SHADER", L"0"))
+			{
+				logResult("SetOriginalProbeEnvironment", HRESULT_FROM_WIN32(GetLastError()));
+				return 1;
+			}
+			// 测试入口不读取产品配置；显式打开既有 Draw3 诊断以捕获正式 Cursor Map 失败。
+			const bool savedDiagnostics = StartupEnvironmentDiagnosticsEnabled();
+			SetStartupEnvironmentDiagnosticsEnabled(true);
+			struct DiagnosticsRestore
+			{
+				bool enabled;
+				~DiagnosticsRestore() { SetStartupEnvironmentDiagnosticsEnabled(enabled); }
+			} diagnosticsRestore{ savedDiagnostics };
+			struct HiddenWindowOwner
+			{
+				HWND window = nullptr;
+				~HiddenWindowOwner() { if (window) DestroyWindow(window); }
+			} owner;
+			// 与产品普通 HWND swapchain 同类，但永不 Show/激活，不创建产品主窗或写配置。
+			owner.window = CreateWindowExW(WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+				L"STATIC", L"Inkeys Draw3 pixel probe", WS_POPUP,
+				-32000, -32000, size, size, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+			if (!owner.window)
+			{
+				logResult("CreateHiddenWindow", HRESULT_FROM_WIN32(GetLastError()));
+				return 1;
+			}
+			std::fprintf(stderr, "[Draw3PixelTest] hidden_hwnd=%p visible=%d size=%u\n",
+				static_cast<void*>(owner.window), IsWindowVisible(owner.window), size);
+			ComPtr<ID3D11Device> device;
+			ComPtr<ID3D11DeviceContext> context;
+			D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+			constexpr D3D_FEATURE_LEVEL requestedLevel[] = { D3D_FEATURE_LEVEL_11_0 };
+			const HRESULT deviceResult = D3D11CreateDevice(nullptr, driver, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+				requestedLevel, ARRAYSIZE(requestedLevel), D3D11_SDK_VERSION,
+				device.GetAddressOf(), &actualLevel, context.GetAddressOf());
+			logResult(driver == D3D_DRIVER_TYPE_HARDWARE ? "D3D11CreateDevice.Hardware.FL11_0" : "D3D11CreateDevice.WARP.FL11_0", deviceResult);
+			if (FAILED(deviceResult) || !device || !context)
+			{
+				// 硬件探针不暗中回退 WARP；只有明确不可用的 HRESULT 才返回独立 exit=3。
+				const bool unavailable = driver == D3D_DRIVER_TYPE_HARDWARE &&
+					(deviceResult == DXGI_ERROR_UNSUPPORTED || deviceResult == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE);
+				std::fprintf(stderr, "[Draw3PixelTest] driver=%s status=%s hr=0x%08X reason=%s\n", driverName,
+					unavailable ? "unavailable" : "init-error", static_cast<unsigned int>(deviceResult),
+					unavailable ? "hardware-fl11-unavailable" : "device-initialization-failed");
+				return unavailable ? 3 : 1;
+			}
+			std::fprintf(stderr, "[Draw3PixelTest] driver=%s status=ready feature=0x%X\n", driverName, actualLevel);
+			D3D11_FEATURE_DATA_D3D11_OPTIONS options = {};
+			const HRESULT optionsResult = device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,
+				&options, sizeof(options));
+			std::fprintf(stderr,
+				"[Draw3PixelTest] feature=0x%X options_hr=0x%08X srv_no_overwrite=%d\n",
+				actualLevel, static_cast<unsigned int>(optionsResult),
+				SUCCEEDED(optionsResult) && options.MapNoOverwriteOnDynamicBufferSRV != FALSE);
+			ComPtr<IDXGIDevice> dxgiDevice;
+			ComPtr<IDXGIAdapter> adapter;
+			ComPtr<IDXGIFactory2> factory;
+			ComPtr<IDXGISwapChain1> swapChain;
+			if (logResult("QueryIDXGIDevice", device.As(&dxgiDevice)) &&
+				logResult("GetAdapter", dxgiDevice->GetAdapter(adapter.GetAddressOf())) &&
+				logResult("GetFactory2", adapter->GetParent(__uuidof(IDXGIFactory2),
+					reinterpret_cast<void**>(factory.GetAddressOf()))))
+			{
+				DXGI_SWAP_CHAIN_DESC1 description = {};
+				description.Width = size;
+				description.Height = size;
+				description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				description.SampleDesc.Count = 1;
+				description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+				description.BufferCount = 2;
+				description.Scaling = DXGI_SCALING_STRETCH;
+				description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+				description.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+				logResult("CreateSwapChainForHwnd.ordinary", factory->CreateSwapChainForHwnd(
+					device.Get(), owner.window, &description, nullptr, nullptr, swapChain.GetAddressOf()));
+				if (swapChain && logResult("GetSwapChainDesc1", swapChain->GetDesc1(&description)))
+					std::fprintf(stderr,
+						"[Draw3PixelTest] swapchain width=%u height=%u format=%u effect=%u alpha=%u flags=0x%X buffers=%u\n",
+						description.Width, description.Height, description.Format, description.SwapEffect,
+						description.AlphaMode, description.Flags, description.BufferCount);
+			}
+			if (adapter)
+			{
+				// 记录设备真正返回的适配器，避免仅凭 requested driver 推断硬件身份。
+				DXGI_ADAPTER_DESC description = {};
+				if (logResult("GetActualAdapterDesc", adapter->GetDesc(&description)))
+				{
+					char adapterName[512] = {};
+					WideCharToMultiByte(CP_UTF8, 0, description.Description, -1, adapterName, sizeof(adapterName), nullptr, nullptr);
+					std::fprintf(stderr, "[Draw3PixelTest] actual_adapter=%s vendor=0x%04X device=0x%04X driver=%s\n",
+						adapterName, description.VendorId, description.DeviceId, driverName);
+				}
+			}
+			InkRenderer renderer;
+			struct RendererCleanup
+			{
+				InkRenderer& renderer;
+				ID3D11DeviceContext* context;
+				~RendererCleanup() { context->ClearState(); renderer.ReleaseResources(); }
+			} cleanup{ renderer, context.Get() };
+			ComPtr<ID3D11Texture2D> backBuffer;
+			ComPtr<ID3D11RenderTargetView> backRtv;
+			if (swapChain && logResult("GetBuffer0", swapChain->GetBuffer(0,
+				__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(backBuffer.GetAddressOf()))))
+				logResult("CreateBackBufferRTV", device->CreateRenderTargetView(backBuffer.Get(),
+					nullptr, backRtv.GetAddressOf()));
+			ComPtr<ID3D11Texture2D> offscreen;
+			ComPtr<ID3D11RenderTargetView> offscreenRtv;
+			D3D11_TEXTURE2D_DESC textureDescription = {};
+			textureDescription.Width = size;
+			textureDescription.Height = size;
+			textureDescription.MipLevels = 1;
+			textureDescription.ArraySize = 1;
+			textureDescription.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			textureDescription.SampleDesc.Count = 1;
+			textureDescription.Usage = D3D11_USAGE_DEFAULT;
+			textureDescription.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+			if (logResult("CreateOffscreenBGRA", device->CreateTexture2D(&textureDescription,
+				nullptr, offscreen.GetAddressOf())))
+				logResult("CreateOffscreenRTV", device->CreateRenderTargetView(offscreen.Get(),
+					nullptr, offscreenRtv.GetAddressOf()));
+			enum class PixelExpectation { Clear, Cursor, Constant, Fields, Capture };
+			const auto readPixels = [&](const char* name, ID3D11Texture2D* source,
+				ID3D11RenderTargetView* rtv, PixelExpectation expectation, bool emitResult = true,
+				std::vector<unsigned char>* captured = nullptr) -> bool
+			{
+				if (!source || !rtv) { logResult(name, E_POINTER); return false; }
+				ComPtr<ID3D11Resource> rtvResource;
+				rtv->GetResource(rtvResource.GetAddressOf());
+				ComPtr<IUnknown> rtvIdentity, sourceIdentity;
+				rtvResource.As(&rtvIdentity);
+				source->QueryInterface(IID_PPV_ARGS(sourceIdentity.GetAddressOf()));
+				const bool identityMatches = rtvIdentity && rtvIdentity.Get() == sourceIdentity.Get();
+				D3D11_TEXTURE2D_DESC description = {};
+				source->GetDesc(&description);
+				std::fprintf(stderr,
+					"[Draw3PixelTest] case=%s texture=%p rtv_texture=%p identity=%d width=%u height=%u format=%u bind=0x%X\n",
+					name, static_cast<void*>(source), static_cast<void*>(rtvResource.Get()),
+					identityMatches, description.Width, description.Height, description.Format, description.BindFlags);
+				description.Usage = D3D11_USAGE_STAGING;
+				description.BindFlags = 0;
+				description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+				description.MiscFlags = 0;
+				ComPtr<ID3D11Texture2D> staging;
+				if (!logResult("CreateReadback", device->CreateTexture2D(&description, nullptr,
+					staging.GetAddressOf()))) return false;
+				ComPtr<ID3D11Query> completed;
+				const D3D11_QUERY_DESC queryDescription = { D3D11_QUERY_EVENT, 0 };
+				if (!logResult("CreateReadbackEvent", device->CreateQuery(&queryDescription,
+					completed.GetAddressOf()))) return false;
+				context->OMSetRenderTargets(0, nullptr, nullptr);
+				context->CopyResource(staging.Get(), source);
+				context->End(completed.Get());
+				context->Flush();
+				const auto deadline = std::chrono::steady_clock::now() + 3s;
+				BOOL ready = FALSE;
+				HRESULT waitResult = S_FALSE;
+				do
+				{
+					waitResult = context->GetData(completed.Get(), &ready, sizeof(ready),
+						D3D11_ASYNC_GETDATA_DONOTFLUSH);
+					if (waitResult != S_FALSE) break;
+					std::this_thread::sleep_for(1ms);
+				} while (std::chrono::steady_clock::now() < deadline);
+				if (waitResult != S_OK || !ready)
+				{
+					logResult("ReadbackEvent.wait", waitResult == S_FALSE ? HRESULT_FROM_WIN32(WAIT_TIMEOUT) : waitResult);
+					return false;
+				}
+				D3D11_MAPPED_SUBRESOURCE mapped = {};
+				if (!logResult("MapReadback", context->Map(staging.Get(), 0, D3D11_MAP_READ,
+					D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped))) return false;
+				if (mapped.RowPitch < description.Width * 4)
+				{
+					context->Unmap(staging.Get(), 0);
+					return false;
+				}
+				if (captured) captured->resize(description.Width * description.Height * 4);
+				unsigned alphaNonzero = 0, rgbNonzero = 0, wrongClearPixels = 0, wrongFieldAlpha = 0;
+				std::array<unsigned, 3> fieldErrorUnion = {}; // R/G/B 分别编码样式、VS 字段、PS b0 错误。
+				std::array<unsigned, 4> maximum = {}, center = {}, corner = {};
+				constexpr unsigned expected[] = { 64, 32, 16, 128 };
+				for (UINT y = 0; y < description.Height; ++y)
+				{
+					const auto* row = static_cast<const unsigned char*>(mapped.pData) + y * mapped.RowPitch;
+					for (UINT x = 0; x < description.Width; ++x)
+					{
+						const auto* pixel = row + x * 4;
+						if (captured) std::memcpy(captured->data() + (y * description.Width + x) * 4, pixel, 4);
+						alphaNonzero += pixel[3] != 0;
+						rgbNonzero += (pixel[0] | pixel[1] | pixel[2]) != 0;
+						if (expectation == PixelExpectation::Fields && pixel[3] != 0)
+						{
+							wrongFieldAlpha += pixel[3] != 255;
+							for (unsigned channel = 0; channel < 3; ++channel)
+								fieldErrorUnion[channel] |= pixel[2 - channel];
+						}
+						bool wrong = false;
+						for (unsigned channel = 0; channel < 4; ++channel)
+						{
+							if (pixel[channel] > maximum[channel]) maximum[channel] = pixel[channel];
+							if (x == size / 2 && y == size / 2) center[channel] = pixel[channel];
+							if (x == 0 && y == 0) corner[channel] = pixel[channel];
+							wrong |= std::abs(static_cast<int>(pixel[channel]) - static_cast<int>(expected[channel])) > 1;
+						}
+						wrongClearPixels += expectation == PixelExpectation::Clear && wrong;
+					}
+				}
+				context->Unmap(staging.Get(), 0);
+				bool validCursor = alphaNonzero > 100 && rgbNonzero > 100 &&
+					center[3] >= 120 && center[3] <= 130 && corner[3] == 0;
+				for (unsigned channel = 0; channel < 3; ++channel)
+					validCursor &= std::abs(static_cast<int>(center[channel]) - static_cast<int>(center[3])) <= 1;
+				const bool validFields = alphaNonzero > 100 && center[3] == 255 && corner[3] == 0 &&
+					wrongFieldAlpha == 0 && (fieldErrorUnion[0] | fieldErrorUnion[1] | fieldErrorUnion[2]) == 0;
+				const bool passed = identityMatches && (expectation == PixelExpectation::Capture ? true :
+					expectation == PixelExpectation::Clear ? wrongClearPixels == 0 :
+					expectation == PixelExpectation::Fields ? validFields :
+					expectation == PixelExpectation::Constant ? validCursor && alphaNonzero == 36 * 36 : validCursor);
+				std::fprintf(stderr,
+					"[Draw3PixelTest] case=%s alpha_nonzero=%u rgb_nonzero=%u max_bgra=(%u,%u,%u,%u) center_bgra=(%u,%u,%u,%u) corner_bgra=(%u,%u,%u,%u) clear_mismatch=%u %s=%s\n",
+					name, alphaNonzero, rgbNonzero, maximum[0], maximum[1], maximum[2], maximum[3],
+					center[0], center[1], center[2], center[3], corner[0], corner[1], corner[2], corner[3],
+					wrongClearPixels, emitResult ? "result" : "pixel_status", passed ? "PASS" : "FAIL");
+				if (expectation == PixelExpectation::Fields)
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s field_error_rgb_union=(0x%02X,0x%02X,0x%02X) wrong_opaque_alpha=%u\n",
+						name, fieldErrorUnion[0], fieldErrorUnion[1], fieldErrorUnion[2], wrongFieldAlpha);
+				return passed;
+			};
+			const float color[] = { 16.0f / 255.0f, 32.0f / 255.0f, 64.0f / 255.0f, 128.0f / 255.0f };
+			const auto clearProbe = [&](const char* name, ID3D11Texture2D* texture, ID3D11RenderTargetView* rtv)
+			{
+				if (rtv) context->ClearRenderTargetView(rtv, color);
+				++productionCases;
+				if (!readPixels(name, texture, rtv, PixelExpectation::Clear)) ++failures;
+			};
+			clearProbe("backbuffer.clear", backBuffer.Get(), backRtv.Get());
+			clearProbe("offscreen.clear", offscreen.Get(), offscreenRtv.Get());
+			const bool initialized = swapChain && renderer.Init(device.Get(), context.Get(), swapChain.Get(), size, size, driver);
+			std::fprintf(stderr, "[Draw3PixelTest] renderer_init=%d vs=%p ps=%p ink_buffer=%p global_cb=%p srv=%p\n",
+				initialized, static_cast<void*>(renderer.vertexShader.Get()), static_cast<void*>(renderer.pixelShader.Get()),
+				static_cast<void*>(renderer.inkDataBuffer.Get()), static_cast<void*>(renderer.globalCB.Get()),
+				static_cast<void*>(renderer.inkDataSRV.Get()));
+			if (!initialized) ++failures;
+			else
+			{
+				const auto originalTexture = renderer.backBufferTexture;
+				const auto originalRtv = renderer.backBufferRTV;
+				const auto originalBlend = renderer.operatorResolveBlendState;
+				const auto originalPixelShader = renderer.pixelShader;
+				ComPtr<ID3D11BlendState> noBlend;
+				D3D11_BLEND_DESC blendDescription = {};
+				blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+				logResult("CreateComparisonBlendDisabled", device->CreateBlendState(&blendDescription, noBlend.GetAddressOf()));
+				DrawingCursorVisual visual;
+				visual.visible = true;
+				visual.x = visual.y = size * 0.5f;
+				visual.appearance.width = visual.appearance.height = 32.0f;
+				visual.appearance.red = visual.appearance.green = visual.appearance.blue = 1.0f;
+				visual.appearance.opacity = 0.5f;
+				visual.appearance.fillAlpha = 1.0f;
+				// 字段校验 shader 的固定预期与此独立 fixture 一致，不改变生产光标外观。
+				visual.appearance.outlineWidth = 0.5f;
+				visual.appearance.outlineRed = visual.appearance.outlineGreen = visual.appearance.outlineBlue = 184.0f / 255.0f;
+				const auto drawProbe = [&](const char* name, ID3D11Texture2D* texture,
+					ID3D11RenderTargetView* rtv, bool comparison, ID3D11PixelShader* overrideShader = nullptr,
+					PixelExpectation expectation = PixelExpectation::Cursor, bool emitResult = true) -> bool
+				{
+					if (!comparison && !overrideShader) ++productionCases;
+					if (!texture || !rtv || (comparison && !noBlend))
+					{
+						logResult(name, E_POINTER);
+						if (!comparison && !overrideShader) ++failures;
+						return false;
+					}
+					// 修改的是独立 probe renderer；正式 Draw 内会重绑 OM，故比较态从持有字段替换。
+					renderer.backBufferTexture = texture;
+					renderer.backBufferRTV = rtv;
+					renderer.operatorResolveBlendState = comparison ? noBlend : originalBlend;
+					if (overrideShader) renderer.pixelShader = overrideShader;
+					renderer.SetScreenSize(static_cast<float>(size), static_cast<float>(size));
+					const float transparent[] = { 0, 0, 0, 0 };
+					context->ClearRenderTargetView(rtv, transparent);
+					ComPtr<ID3D11Query> statistics;
+					const D3D11_QUERY_DESC queryDescription = { D3D11_QUERY_PIPELINE_STATISTICS, 0 };
+					if (logResult("CreatePipelineStatistics", device->CreateQuery(&queryDescription, statistics.GetAddressOf())))
+						context->Begin(statistics.Get());
+					renderer.DrawTransientDrawingCursor(visual);
+					if (statistics) context->End(statistics.Get());
+					D3D11_VIEWPORT viewport = {};
+					UINT viewportCount = 1;
+					context->RSGetViewports(&viewportCount, &viewport);
+					std::fprintf(stderr,
+						"[Draw3PixelTest] case=%s viewport_count=%u viewport=(%.1f,%.1f,%.1f,%.1f,%.1f,%.1f) cpu_size=(%.1f,%.1f) comparison=%d ps=%p\n",
+						name, viewportCount, viewport.TopLeftX, viewport.TopLeftY, viewport.Width,
+						viewport.Height, viewport.MinDepth, viewport.MaxDepth,
+						renderer.viewportWidth, renderer.viewportHeight, comparison, static_cast<void*>(renderer.pixelShader.Get()));
+					const bool passed = readPixels(name, texture, rtv, expectation, emitResult);
+					if (!passed && !comparison && !overrideShader) ++failures;
+					if (statistics)
+					{
+						D3D11_QUERY_DATA_PIPELINE_STATISTICS data = {};
+						const auto statisticsDeadline = std::chrono::steady_clock::now() + 3s;
+						HRESULT result = S_FALSE;
+						do
+						{
+							result = context->GetData(statistics.Get(), &data, sizeof(data), D3D11_ASYNC_GETDATA_DONOTFLUSH);
+							if (result != S_FALSE) break;
+							std::this_thread::sleep_for(1ms);
+						} while (std::chrono::steady_clock::now() < statisticsDeadline);
+						std::fprintf(stderr,
+							"[Draw3PixelTest] case=%s statistics_hr=0x%08X ia_vertices=%llu vs_invocations=%llu ps_invocations=%llu\n",
+							name, static_cast<unsigned int>(result), data.IAVertices, data.VSInvocations, data.PSInvocations);
+					}
+					renderer.backBufferTexture = originalTexture;
+					renderer.backBufferRTV = originalRtv;
+					renderer.operatorResolveBlendState = originalBlend;
+					renderer.pixelShader = originalPixelShader;
+					return passed;
+				};
+				drawProbe("backbuffer.cursor.production", backBuffer.Get(), backRtv.Get(), false);
+				drawProbe("offscreen.cursor.production", offscreen.Get(), offscreenRtv.Get(), false);
+				drawProbe("backbuffer.cursor.blend_disabled", backBuffer.Get(), backRtv.Get(), true);
+				drawProbe("offscreen.cursor.blend_disabled", offscreen.Get(), offscreenRtv.Get(), true);
+				// 在任何对照重上传前检查正式 Draw 已写入的字节；只复制已定义的 b0/t0 部分。
+				const auto readUploaded = [&](const char* name, ID3D11Buffer* source, const void* expected, UINT bytes)
+				{
+					++diagnosticCases;
+					bool copiedBytesReadable = false;
+					const auto check = [&]() -> bool
+					{
+						std::fprintf(stderr, "[Draw3PixelTest] case=%s bytes=%u\n", name, bytes);
+						if (!source) { logResult(name, E_POINTER); return false; }
+						D3D11_BUFFER_DESC description = {};
+						description.ByteWidth = bytes;
+						description.Usage = D3D11_USAGE_STAGING;
+						description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+						ComPtr<ID3D11Buffer> staging;
+						if (!logResult("CreateBufferReadback", device->CreateBuffer(&description, nullptr,
+							staging.GetAddressOf()))) return false;
+						ComPtr<ID3D11Query> completed;
+						const D3D11_QUERY_DESC queryDescription = { D3D11_QUERY_EVENT, 0 };
+						if (!logResult("CreateBufferReadbackEvent", device->CreateQuery(&queryDescription,
+							completed.GetAddressOf()))) return false;
+						const D3D11_BOX region = { 0, 0, 0, bytes, 1, 1 };
+						context->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, source, 0, &region);
+						context->End(completed.Get());
+						context->Flush();
+						const auto deadline = std::chrono::steady_clock::now() + 3s;
+						BOOL ready = FALSE;
+						HRESULT result = S_FALSE;
+						do
+						{
+							result = context->GetData(completed.Get(), &ready, sizeof(ready), D3D11_ASYNC_GETDATA_DONOTFLUSH);
+							if (result != S_FALSE) break;
+							std::this_thread::sleep_for(1ms);
+						} while (std::chrono::steady_clock::now() < deadline);
+						if (result != S_OK || !ready)
+						{
+							logResult("BufferReadbackEvent.wait", result == S_FALSE ? HRESULT_FROM_WIN32(WAIT_TIMEOUT) : result);
+							return false;
+						}
+						D3D11_MAPPED_SUBRESOURCE mapped = {};
+						if (!logResult("MapBufferReadback", context->Map(staging.Get(), 0, D3D11_MAP_READ,
+							D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped))) return false;
+						const bool matches = std::memcmp(mapped.pData, expected, bytes) == 0;
+						const auto printWords = [&](const char* label, const void* data)
+						{
+							std::fprintf(stderr, "[Draw3PixelTest] case=%s %s_words=", name, label);
+							for (UINT offset = 0; offset < bytes; offset += sizeof(UINT))
+							{
+								UINT word = 0;
+								std::memcpy(&word, static_cast<const unsigned char*>(data) + offset, sizeof(word));
+								std::fprintf(stderr, "%s%08X", offset == 0 ? "" : ",", word);
+							}
+							std::fprintf(stderr, "\n");
+						};
+						printWords("expected", expected);
+						printWords("actual", mapped.pData);
+						context->Unmap(staging.Get(), 0);
+						copiedBytesReadable = true;
+						return matches;
+					};
+					const bool passed = check();
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s result=%s\n", name,
+						passed ? "PASS" : copiedBytesReadable ? "FAIL" : "ERROR");
+					if (!passed) ++diagnosticFailures;
+				};
+				struct ProbeConstants
+				{
+					float width, height, shape;
+					UINT offset;
+					float color[4];
+					UINT operation;
+					float outline[3];
+				};
+				static_assert(sizeof(ProbeConstants) == 48);
+				const ProbeConstants expectedConstants = { 128, 128, 4, 0, { 1, 1, 1, 0.5f }, 0,
+					{ visual.appearance.outlineRed, visual.appearance.outlineGreen, visual.appearance.outlineBlue } };
+				const InkPoint expectedInk[] = { { 64, 64, 16, 16 }, { visual.appearance.outlineWidth, 1, 0, 0 } };
+				readUploaded("upload.b0", renderer.globalCB.Get(), &expectedConstants, sizeof(expectedConstants));
+				readUploaded("upload.t0", renderer.inkDataBuffer.Get(), expectedInk, sizeof(expectedInk));
+				ComPtr<ID3D11PixelShader> constantShader, fieldShader, cursorShader;
+				using namespace Draw3PixelDiagnosticShaders;
+				logResult("CreateDiagnosticPS.ConstantOutput", device->CreatePixelShader(ConstantOutput,
+					sizeof(ConstantOutput), nullptr, constantShader.GetAddressOf()));
+				logResult("CreateDiagnosticPS.ValidateFields", device->CreatePixelShader(ValidateFields,
+					sizeof(ValidateFields), nullptr, fieldShader.GetAddressOf()));
+				logResult("CreateDiagnosticPS.CursorOnly", device->CreatePixelShader(CursorOnly,
+					sizeof(CursorOnly), nullptr, cursorShader.GetAddressOf()));
+				const auto shaderProbe = [&](const char* name, ID3D11PixelShader* shader, bool comparison, PixelExpectation expectation)
+				{
+					++diagnosticCases;
+					if (!shader)
+					{
+						std::fprintf(stderr, "[Draw3PixelTest] case=%s result=ERROR stage=diagnostic-shader-unavailable\n", name);
+						++diagnosticFailures;
+						return;
+					}
+					if (!drawProbe(name, offscreen.Get(), offscreenRtv.Get(), comparison, shader, expectation)) ++diagnosticFailures;
+				};
+				shaderProbe("diagnostic.constant.blend_disabled", constantShader.Get(), true, PixelExpectation::Constant);
+				shaderProbe("diagnostic.constant.production_blend", constantShader.Get(), false, PixelExpectation::Constant);
+				shaderProbe("diagnostic.fields.blend_disabled", fieldShader.Get(), true, PixelExpectation::Fields);
+				shaderProbe("diagnostic.cursor_only.blend_disabled", cursorShader.Get(), true, PixelExpectation::Cursor);
+				shaderProbe("diagnostic.cursor_only.production_blend", cursorShader.Get(), false, PixelExpectation::Cursor);
+				// 成功精简 PS 后交错恢复正式 PS，排除暖机/先后状态；结果不覆盖正式四项退出判定。
+				ComPtr<ID3D11PixelShader> recompiledShader, entryShader, aheadShader;
+				const auto createSequenceShader = [&](const char* name, const unsigned char* bytes,
+					SIZE_T byteCount, const char* hash, ComPtr<ID3D11PixelShader>& shader)
+				{
+					std::fprintf(stderr, "[Draw3PixelTest] sequence_shader=%s sha256=%s bytes=%zu\n",
+						name, hash, byteCount);
+					logResult(name, device->CreatePixelShader(bytes, byteCount, nullptr, shader.GetAddressOf()));
+				};
+				const auto sequenceProbe = [&](const char* name, ID3D11PixelShader* shader, PixelExpectation expectation)
+				{
+					++sequenceCases;
+					if (!shader)
+					{
+						std::fprintf(stderr, "[Draw3PixelTest] case=%s result=ERROR stage=sequence-shader-unavailable\n", name);
+						++sequenceFailures;
+						return;
+					}
+					// 全部序列保持同一 offscreen、生产 VS/上传和正式混合，仅改变独立 renderer 的 PS。
+					if (!drawProbe(name, offscreen.Get(), offscreenRtv.Get(), false, shader, expectation)) ++sequenceFailures;
+				};
+				std::fprintf(stderr, "[Draw3PixelTest] sequence_shader=OriginalProduction expected_resource_sha256=%s\n",
+					ProductionPixelSha256);
+				sequenceProbe("sequence.original_after_cursor_only", originalPixelShader.Get(), PixelExpectation::Cursor);
+				createSequenceShader("FullRecompiled", FullRecompiled, sizeof(FullRecompiled),
+					FullRecompiledSha256, recompiledShader);
+				createSequenceShader("FullCursorEntryConstant", FullCursorEntryConstant, sizeof(FullCursorEntryConstant),
+					FullCursorEntryConstantSha256, entryShader);
+				createSequenceShader("FullCursorAhead", FullCursorAhead, sizeof(FullCursorAhead),
+					FullCursorAheadSha256, aheadShader);
+				sequenceProbe("sequence.full_recompiled", recompiledShader.Get(), PixelExpectation::Cursor);
+				sequenceProbe("sequence.full_cursor_entry_constant", entryShader.Get(), PixelExpectation::Constant);
+				sequenceProbe("sequence.full_cursor_ahead", aheadShader.Get(), PixelExpectation::Cursor);
+				sequenceProbe("sequence.original_final", originalPixelShader.Get(), PixelExpectation::Cursor);
+				// 全矩阵只绑定独立已初始化 dummy；不改正式资源、shader 或正常绘制行为。
+				struct MatrixBindingSnapshot
+				{
+					ID3D11DeviceContext* context;
+					std::array<ComPtr<ID3D11Buffer>, 3> buffers;
+					std::array<ComPtr<ID3D11ShaderResourceView>, 14> resources;
+					ComPtr<ID3D11SamplerState> sampler;
+					explicit MatrixBindingSnapshot(ID3D11DeviceContext* value) : context(value)
+					{
+						for (UINT index = 0; index < buffers.size(); ++index)
+							context->PSGetConstantBuffers(index + 1, 1, buffers[index].GetAddressOf());
+						for (UINT index = 0; index < resources.size(); ++index)
+							context->PSGetShaderResources(index + 1, 1, resources[index].GetAddressOf());
+						context->PSGetSamplers(0, 1, sampler.GetAddressOf());
+					}
+					void Restore() const
+					{
+						for (UINT index = 0; index < buffers.size(); ++index)
+						{
+							auto* value = buffers[index].Get();
+							context->PSSetConstantBuffers(index + 1, 1, &value);
+						}
+						for (UINT index = 0; index < resources.size(); ++index)
+						{
+							auto* value = resources[index].Get();
+							context->PSSetShaderResources(index + 1, 1, &value);
+						}
+						auto* value = sampler.Get();
+						context->PSSetSamplers(0, 1, &value);
+					}
+					~MatrixBindingSnapshot() { Restore(); }
+				} matrixSnapshot(context.Get());
+				std::array<ComPtr<ID3D11Buffer>, 3> zeroBuffers;
+				ComPtr<ID3D11Buffer> finiteLaserBuffer;
+				ComPtr<ID3D11Texture2D> dummy2d, dummyArray;
+				ComPtr<ID3D11ShaderResourceView> dummy2dSrv, dummyArraySrv;
+				const std::array<float, 28> zeroConstants = {};
+				const std::array<float, 28> finiteLaserConstants = {
+					0.33f, 1.0f, 5.0f, 1.0f,
+					0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f,
+					0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f,
+					0.5f, 0.5f, 0.5f, 0.5f, 1.0f, 1.0f, 0.0f, 1.0f };
+				const UINT constantSizes[] = { 112, 48, 48 };
+				const auto createMatrixBuffer = [&](const char* name, UINT bytes, const void* values, ComPtr<ID3D11Buffer>& buffer)
+				{
+					D3D11_BUFFER_DESC description = {};
+					description.ByteWidth = bytes;
+					description.Usage = D3D11_USAGE_IMMUTABLE;
+					description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+					const D3D11_SUBRESOURCE_DATA initial = { values, 0, 0 };
+					return logResult(name, device->CreateBuffer(&description, &initial, buffer.GetAddressOf()));
+				};
+				for (UINT index = 0; index < zeroBuffers.size(); ++index)
+					createMatrixBuffer("CreateMatrixZeroCB", constantSizes[index], zeroConstants.data(), zeroBuffers[index]);
+				createMatrixBuffer("CreateMatrixFiniteLaserCB", 112, finiteLaserConstants.data(), finiteLaserBuffer);
+				std::fprintf(stderr, "[Draw3PixelTest] dummy_cb_init=immutable_zero sizes=(112,48,48) finite_laser_radii=(.33,1,5,1) parameters=(1,1,0,1)\n");
+				const auto createMatrixTexture = [&](bool array, ComPtr<ID3D11Texture2D>& texture, ComPtr<ID3D11ShaderResourceView>& srv)
+				{
+					D3D11_TEXTURE2D_DESC description = {};
+					description.Width = description.Height = description.MipLevels = 1;
+					description.ArraySize = array ? 2 : 1;
+					description.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+					description.SampleDesc.Count = 1;
+					description.Usage = D3D11_USAGE_IMMUTABLE;
+					description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+					const float zeroPixel[4] = {};
+					const D3D11_SUBRESOURCE_DATA initial[] = { { zeroPixel, 16, 16 }, { zeroPixel, 16, 16 } };
+					if (!logResult(array ? "CreateMatrixArrayZero" : "CreateMatrix2dZero", device->CreateTexture2D(
+						&description, initial, texture.GetAddressOf()))) return false;
+					D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
+					view.Format = description.Format;
+					view.ViewDimension = array ? D3D11_SRV_DIMENSION_TEXTURE2DARRAY : D3D11_SRV_DIMENSION_TEXTURE2D;
+					if (array) { view.Texture2DArray.MipLevels = 1; view.Texture2DArray.ArraySize = 2; }
+					else view.Texture2D.MipLevels = 1;
+					return logResult(array ? "CreateMatrixArraySRV" : "CreateMatrix2dSRV",
+						device->CreateShaderResourceView(texture.Get(), &view, srv.GetAddressOf()));
+				};
+				createMatrixTexture(false, dummy2d, dummy2dSrv);
+				createMatrixTexture(true, dummyArray, dummyArraySrv);
+				constexpr UINT texture2dSlots[] = { 1, 2, 4, 5, 6, 7, 9, 14 };
+				constexpr UINT arraySlots[] = { 10, 11, 12, 13 };
+				// mask 位分别为 sampler / CB1..3 / Texture2D / Texture2DArray，16组穷举。
+				const auto applyMatrixBindings = [&](UINT mask, bool finite) -> bool
+				{
+					matrixSnapshot.Restore();
+					if ((mask & 1) && !renderer.operatorSampler) return false;
+					if (mask & 1) { auto* value = renderer.operatorSampler.Get(); context->PSSetSamplers(0, 1, &value); }
+					if (mask & 2)
+					{
+						for (UINT index = 0; index < zeroBuffers.size(); ++index)
+						{
+							auto* value = finite && index == 0 ? finiteLaserBuffer.Get() : zeroBuffers[index].Get();
+							if (!value) return false;
+							context->PSSetConstantBuffers(index + 1, 1, &value);
+						}
+					}
+					if ((mask & 4) && !dummy2dSrv) return false;
+					if (mask & 4) for (UINT slot : texture2dSlots) { auto* value = dummy2dSrv.Get(); context->PSSetShaderResources(slot, 1, &value); }
+					if ((mask & 8) && !dummyArraySrv) return false;
+					if (mask & 8) for (UINT slot : arraySlots) { auto* value = dummyArraySrv.Get(); context->PSSetShaderResources(slot, 1, &value); }
+					return true;
+				};
+				const auto checkMatrixBindings = [&](const char* name, UINT mask, bool finite, ID3D11PixelShader* shader) -> bool
+				{
+					bool matched = true;
+					ComPtr<ID3D11PixelShader> actualShader;
+					ComPtr<ID3D11Buffer> actualGlobal;
+					ComPtr<ID3D11SamplerState> actualSampler;
+					context->PSGetShader(actualShader.GetAddressOf(), nullptr, nullptr);
+					context->PSGetConstantBuffers(0, 1, actualGlobal.GetAddressOf());
+					context->PSGetSamplers(0, 1, actualSampler.GetAddressOf());
+					matched &= actualShader.Get() == shader && actualGlobal.Get() == renderer.globalCB.Get() &&
+						actualSampler.Get() == ((mask & 1) ? renderer.operatorSampler.Get() : matrixSnapshot.sampler.Get());
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s binding_mask=%u finite_cb=%u actual_ps=%p actual_b0=%p actual_s0=%p\n",
+						name, mask, finite, static_cast<void*>(actualShader.Get()), static_cast<void*>(actualGlobal.Get()), static_cast<void*>(actualSampler.Get()));
+					for (UINT index = 0; index < zeroBuffers.size(); ++index)
+					{
+						ComPtr<ID3D11Buffer> actual;
+						context->PSGetConstantBuffers(index + 1, 1, actual.GetAddressOf());
+						auto* expected = (mask & 2) ? (finite && index == 0 ? finiteLaserBuffer.Get() : zeroBuffers[index].Get()) : matrixSnapshot.buffers[index].Get();
+						D3D11_BUFFER_DESC description = {};
+						if (actual) actual->GetDesc(&description);
+						matched &= actual.Get() == expected && (!(mask & 2) || description.ByteWidth == constantSizes[index]);
+						std::fprintf(stderr, "[Draw3PixelTest] case=%s actual_cb%u=%p bytes=%u expected=%p\n", name, index + 1,
+							static_cast<void*>(actual.Get()), description.ByteWidth, static_cast<void*>(expected));
+					}
+					ComPtr<IUnknown> targetIdentity;
+					offscreen.As(&targetIdentity);
+					for (UINT slot = 1; slot <= matrixSnapshot.resources.size(); ++slot)
+					{
+						ComPtr<ID3D11ShaderResourceView> actual;
+						context->PSGetShaderResources(slot, 1, actual.GetAddressOf());
+						bool is2d = false, isArray = false;
+						for (UINT value : texture2dSlots) is2d |= value == slot;
+						for (UINT value : arraySlots) isArray |= value == slot;
+						auto* expected = is2d && (mask & 4) ? dummy2dSrv.Get() : isArray && (mask & 8) ? dummyArraySrv.Get() : matrixSnapshot.resources[slot - 1].Get();
+						D3D11_SHADER_RESOURCE_VIEW_DESC description = {};
+						ComPtr<ID3D11Resource> resource;
+						ComPtr<IUnknown> identity;
+						if (actual) { actual->GetDesc(&description); actual->GetResource(resource.GetAddressOf()); resource.As(&identity); }
+						const bool alias = identity && identity.Get() == targetIdentity.Get();
+						matched &= actual.Get() == expected && !alias;
+						if (is2d && (mask & 4)) matched &= description.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D;
+						if (isArray && (mask & 8)) matched &= description.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DARRAY && description.Texture2DArray.ArraySize == 2;
+						std::fprintf(stderr, "[Draw3PixelTest] case=%s actual_t%u=%p resource=%p dimension=%u format=%u target_alias=%u expected=%p\n",
+							name, slot, static_cast<void*>(actual.Get()), static_cast<void*>(resource.Get()), description.ViewDimension,
+							description.Format, alias, static_cast<void*>(expected));
+					}
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s binding_status=%s\n", name, matched ? "PASS" : "FAIL");
+					return matched;
+				};
+				const auto matrixProbe = [&](const char* name, ID3D11PixelShader* shader, PixelExpectation expectation, UINT mask, bool finite = false)
+				{
+					++matrixCases;
+					if (!shader || !applyMatrixBindings(mask, finite))
+					{
+						std::fprintf(stderr, "[Draw3PixelTest] case=%s result=ERROR stage=matrix-resource-unavailable\n", name);
+						++matrixFailures;
+						matrixSnapshot.Restore();
+						return;
+					}
+					const bool pixelsPassed = drawProbe(name, offscreen.Get(), offscreenRtv.Get(), false, shader, expectation, false);
+					const bool bindingsPassed = checkMatrixBindings(name, mask, finite, shader);
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s result=%s pixel_status=%s binding_status=%s\n",
+						name, pixelsPassed && bindingsPassed ? "PASS" : "FAIL",
+						pixelsPassed ? "PASS" : "FAIL", bindingsPassed ? "PASS" : "FAIL");
+					if (!pixelsPassed || !bindingsPassed) ++matrixFailures;
+					matrixSnapshot.Restore();
+				};
+				struct MatrixShader
+				{
+					const char* name;
+					const unsigned char* bytes;
+					SIZE_T byteCount;
+					const char* hash;
+					PixelExpectation expectation;
+					ComPtr<ID3D11PixelShader> shader;
+				};
+				MatrixShader matrixShaders[] = {
+					{ "CompactIntegerRoute", CompactIntegerRoute, sizeof(CompactIntegerRoute), CompactIntegerRouteSha256, PixelExpectation::Constant, {} },
+					{ "CompactFloatRoute", CompactFloatRoute, sizeof(CompactFloatRoute), CompactFloatRouteSha256, PixelExpectation::Constant, {} },
+					{ "FullEarlyConstant", FullEarlyConstant, sizeof(FullEarlyConstant), FullEarlyConstantSha256, PixelExpectation::Constant, {} },
+					{ "FullFloatRoute", FullFloatRoute, sizeof(FullFloatRoute), FullFloatRouteSha256, PixelExpectation::Cursor, {} },
+					{ "CursorFamilyOnly", CursorFamilyOnly, sizeof(CursorFamilyOnly), CursorFamilyOnlySha256, PixelExpectation::Cursor, {} },
+					{ "CursorWithLaser", CursorWithLaser, sizeof(CursorWithLaser), CursorWithLaserSha256, PixelExpectation::Cursor, {} },
+					{ "FullWithoutLaser", FullWithoutLaser, sizeof(FullWithoutLaser), FullWithoutLaserSha256, PixelExpectation::Cursor, {} },
+					{ "CursorWithOperators", CursorWithOperators, sizeof(CursorWithOperators), CursorWithOperatorsSha256, PixelExpectation::Cursor, {} },
+					{ "FullWithoutOperators", FullWithoutOperators, sizeof(FullWithoutOperators), FullWithoutOperatorsSha256, PixelExpectation::Cursor, {} },
+					{ "CursorWithHistory", CursorWithHistory, sizeof(CursorWithHistory), CursorWithHistorySha256, PixelExpectation::Cursor, {} },
+					{ "FullWithoutHistory", FullWithoutHistory, sizeof(FullWithoutHistory), FullWithoutHistorySha256, PixelExpectation::Cursor, {} },
+					{ "CursorWithTrustedSnapshot", CursorWithTrustedSnapshot, sizeof(CursorWithTrustedSnapshot), CursorWithTrustedSnapshotSha256, PixelExpectation::Cursor, {} },
+					{ "FullWithoutTrustedSnapshot", FullWithoutTrustedSnapshot, sizeof(FullWithoutTrustedSnapshot), FullWithoutTrustedSnapshotSha256, PixelExpectation::Cursor, {} },
+					{ "CursorWithShape", CursorWithShape, sizeof(CursorWithShape), CursorWithShapeSha256, PixelExpectation::Cursor, {} },
+					{ "FullWithoutShape", FullWithoutShape, sizeof(FullWithoutShape), FullWithoutShapeSha256, PixelExpectation::Cursor, {} },
+					{ "CursorWithDefaultInk", CursorWithDefaultInk, sizeof(CursorWithDefaultInk), CursorWithDefaultInkSha256, PixelExpectation::Cursor, {} },
+					{ "FullWithoutDefaultInk", FullWithoutDefaultInk, sizeof(FullWithoutDefaultInk), FullWithoutDefaultInkSha256, PixelExpectation::Cursor, {} },
+				};
+				for (auto& item : matrixShaders)
+					createSequenceShader(item.name, item.bytes, item.byteCount, item.hash, item.shader);
+				std::fprintf(stderr, "[Draw3PixelTest] matrix_plan=69 old_cases=18 guarded_plan=18 total_cases=105 resource_groups=(s0,cb1-3,2d,array) query_timeout_ms=3000 driver=%s\n", driverName);
+				for (UINT index = 0; index < 4; ++index)
+					for (UINT mask : { 0u, 15u })
+					{
+						char name[128] = {};
+						std::snprintf(name, sizeof(name), "matrix.route.%s.mask%02u", matrixShaders[index].name, mask);
+						matrixProbe(name, matrixShaders[index].shader.Get(), matrixShaders[index].expectation, mask);
+					}
+				for (UINT mask = 0; mask < 16; ++mask)
+				{
+					char name[128] = {};
+					std::snprintf(name, sizeof(name), "matrix.bind.original.mask%02u", mask);
+					matrixProbe(name, originalPixelShader.Get(), PixelExpectation::Cursor, mask);
+					// 每个资源组合后都恢复实际原始绑定再测原对象，避免把暖机当绑定因果。
+					std::snprintf(name, sizeof(name), "matrix.restore.original.after_mask%02u", mask);
+					matrixProbe(name, originalPixelShader.Get(), PixelExpectation::Cursor, 0);
+				}
+				matrixProbe("matrix.bind.original.finite_laser.mask15", originalPixelShader.Get(), PixelExpectation::Cursor, 15, true);
+				for (UINT index = 4; index < ARRAYSIZE(matrixShaders); ++index)
+					for (UINT mask : { 0u, 15u })
+					{
+						char name[128] = {};
+						std::snprintf(name, sizeof(name), "matrix.family.%s.mask%02u", matrixShaders[index].name, mask);
+						matrixProbe(name, matrixShaders[index].shader.Get(), matrixShaders[index].expectation, mask);
+					}
+				matrixProbe("matrix.final.original", originalPixelShader.Get(), PixelExpectation::Cursor, 0);
+				matrixProbe("matrix.final.cursor_only", cursorShader.Get(), PixelExpectation::Cursor, 0);
+
+				// 完整数学候选单独验收；原版失效只令像素对照 unavailable，不能伪造 equal。
+				ComPtr<ID3D11PixelShader> guardedShader;
+				std::fprintf(stderr, "[Draw3PixelTest] guarded_shader_sha256=%s bytes=%zu plan=18 comparison_tolerance=1\n",
+					Draw3Win7GuardedShader::Sha256, sizeof(Draw3Win7GuardedShader::Bytecode));
+				logResult("CreateGuardedCompletePS", device->CreatePixelShader(Draw3Win7GuardedShader::Bytecode,
+					sizeof(Draw3Win7GuardedShader::Bytecode), nullptr, guardedShader.GetAddressOf()));
+				const auto originalStrokeBlend = renderer.strokeOperatorBlendState;
+				enum class GuardedScenario { Cursor, CursorNoBlend, CursorRetain, Round, Thin, Varying, Highlighter, EraseRetain, DrawRetain };
+				struct GuardedCase { const char* name; GuardedScenario kind; };
+				const GuardedCase guardedPlan[] = {
+					{ "cursor.production", GuardedScenario::Cursor },
+					{ "cursor.blend_disabled", GuardedScenario::CursorNoBlend },
+					{ "cursor.retain", GuardedScenario::CursorRetain },
+					{ "ink.round", GuardedScenario::Round },
+					{ "ink.thin", GuardedScenario::Thin },
+					{ "ink.varying_radius", GuardedScenario::Varying },
+					{ "ink.highlighter", GuardedScenario::Highlighter },
+					{ "ink.erase_retain", GuardedScenario::EraseRetain },
+					{ "ink.draw_retain", GuardedScenario::DrawRetain }
+				};
+				const auto nonzeroDestination = [](GuardedScenario kind)
+				{
+					return kind == GuardedScenario::CursorRetain || kind == GuardedScenario::EraseRetain || kind == GuardedScenario::DrawRetain;
+				};
+				const unsigned destinationBgra[] = { 192, 128, 64, 255 };
+				const float opaqueDestination[] = { 64.0f / 255.0f, 128.0f / 255.0f, 192.0f / 255.0f, 1.0f };
+				const float transparentDestination[] = { 0, 0, 0, 0 };
+				const auto guardedDraw = [&](const char* name, ID3D11Texture2D* texture, ID3D11RenderTargetView* rtv,
+					const GuardedCase& item, ID3D11PixelShader* shader, std::vector<unsigned char>& pixels)
+				{
+					if (!texture || !rtv || !shader || (item.kind == GuardedScenario::CursorNoBlend && !noBlend)) return false;
+					renderer.backBufferTexture = texture;
+					renderer.backBufferRTV = rtv;
+					renderer.pixelShader = shader;
+					renderer.SetScreenSize(size, size);
+					renderer.operatorResolveBlendState = item.kind == GuardedScenario::CursorNoBlend ? noBlend : originalBlend;
+					// 同一正式 VS/primitive 上传：此分界直接 resolve Add + Retain * 已知底图，补足原全零底图盲区。
+					renderer.strokeOperatorBlendState = originalBlend;
+					context->ClearRenderTargetView(rtv, nonzeroDestination(item.kind) ? opaqueDestination : transparentDestination);
+					renderer.SetOMTarget(rtv);
+					int drawResult = 0;
+					if (item.kind == GuardedScenario::Cursor || item.kind == GuardedScenario::CursorNoBlend || item.kind == GuardedScenario::CursorRetain)
+						renderer.DrawTransientDrawingCursor(visual);
+					else if (item.kind == GuardedScenario::Highlighter)
+					{
+						const HighlighterPrimitive primitive = { {40.0f, 64.5f}, {88.0f, 64.5f}, {1.25f, 25.0f} };
+						drawResult = renderer.DrawHighlighterPrimitives(std::span(&primitive, 1), {1.0f, 0.25f, 0.125f, 0.5f});
+					}
+					else
+					{
+						const float firstRadius = item.kind == GuardedScenario::Thin || item.kind == GuardedScenario::Varying ? 0.35f : 4.0f;
+						const float lastRadius = item.kind == GuardedScenario::Varying ? 3.0f : firstRadius;
+						const InkPoint points[] = { {40.0f, 64.5f, firstRadius, 0.0f}, {88.0f, 64.5f, lastRadius, 0.0f} };
+						drawResult = renderer.DrawStroke(points, {1.0f, 0.25f, 0.125f, 0.5f}, StrokeShape::RoundCapsule,
+							item.kind == GuardedScenario::EraseRetain ? InkOperatorKind::Erase : InkOperatorKind::Draw);
+					}
+					ComPtr<ID3D11BlendState> actualBlend;
+					float blendFactor[4] = {};
+					UINT sampleMask = 0;
+					context->OMGetBlendState(actualBlend.GetAddressOf(), blendFactor, &sampleMask);
+					const bool bindingMatched = actualBlend.Get() == (item.kind == GuardedScenario::CursorNoBlend ? noBlend.Get() : originalBlend.Get()) && sampleMask == 0xFFFFFFFF;
+					const bool readable = readPixels(name, texture, rtv, PixelExpectation::Capture, false, &pixels);
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s draw_hr=%d resolve_blend=%p actual_blend=%p binding_status=%s destination=%s\n",
+						name, drawResult, static_cast<void*>(originalBlend.Get()), static_cast<void*>(actualBlend.Get()),
+						bindingMatched ? "PASS" : "FAIL", nonzeroDestination(item.kind) ? "opaque-known" : "transparent");
+					renderer.backBufferTexture = originalTexture;
+					renderer.backBufferRTV = originalRtv;
+					renderer.pixelShader = originalPixelShader;
+					renderer.operatorResolveBlendState = originalBlend;
+					renderer.strokeOperatorBlendState = originalStrokeBlend;
+					return readable && drawResult == 0 && bindingMatched;
+				};
+				const auto checkGuardedPixels = [&](const char* name, const GuardedCase& item, const std::vector<unsigned char>& pixels)
+				{
+					if (pixels.size() != size * size * 4) return false;
+					const auto* center = pixels.data() + (size / 2 * size + size / 2) * 4;
+					const bool opaque = nonzeroDestination(item.kind);
+					unsigned changed = 0, fractional = 0, formulaErrors = 0, cornerErrors = 0;
+					for (size_t offset = 0; offset < pixels.size(); offset += 4)
+					{
+						const auto* pixel = pixels.data() + offset;
+						bool differs = false;
+						for (unsigned channel = 0; channel < 4; ++channel)
+							differs |= pixel[channel] != (opaque ? destinationBgra[channel] : 0);
+						changed += differs;
+						fractional += pixel[3] > 0 && pixel[3] < (opaque ? 255 : 120);
+						const bool cursor = item.kind == GuardedScenario::Cursor || item.kind == GuardedScenario::CursorNoBlend || item.kind == GuardedScenario::CursorRetain;
+						if (cursor)
+						{
+							// 原光标有灰色描边：不能把整图误当纯白；逐像素核圆形线性 AA、描边/填充及 Retain 公式。
+							const size_t index = offset / 4;
+							const float localX = static_cast<float>(index % size) + 0.5f - visual.x;
+							const float localY = static_cast<float>(index / size) + 0.5f - visual.y;
+							const float distance = std::sqrt(localX * localX + localY * localY) - visual.appearance.width * 0.5f;
+							const float outer = std::clamp(0.5f - distance, 0.0f, 1.0f);
+							const float inner = std::clamp(0.5f - distance - visual.appearance.outlineWidth, 0.0f, 1.0f);
+							const float outlineAlpha = (outer - inner) * visual.appearance.opacity;
+							const float fillAlpha = inner * visual.appearance.fillAlpha * visual.appearance.opacity;
+							const float alpha = outlineAlpha + fillAlpha;
+							const float outlineBgr[] = {visual.appearance.outlineBlue, visual.appearance.outlineGreen, visual.appearance.outlineRed};
+							const float fillBgr[] = {visual.appearance.blue, visual.appearance.green, visual.appearance.red};
+							for (unsigned channel = 0; channel < 4; ++channel)
+							{
+								const float add = channel == 3 ? alpha : outlineAlpha * outlineBgr[channel] + fillAlpha * fillBgr[channel];
+								const float expected = add * 255.0f + (opaque ? (1.0f - alpha) * destinationBgra[channel] : 0.0f);
+								formulaErrors += std::abs(pixel[channel] - expected) > 1.01f;
+							}
+						}
+						else if (!opaque)
+						{
+							const float ratios[] = { 0.125f, 0.25f, 1.0f };
+							for (unsigned channel = 0; channel < 3; ++channel)
+								formulaErrors += std::abs(pixel[channel] - pixel[3] * ratios[channel]) > 1.01f;
+						}
+						else if (item.kind == GuardedScenario::EraseRetain)
+							for (unsigned channel = 0; channel < 3; ++channel)
+								formulaErrors += std::abs(pixel[channel] - pixel[3] * destinationBgra[channel] / 255.0f) > 1.01f;
+					}
+					for (unsigned index : {0u, size - 1, (size - 1) * size, size * size - 1})
+						for (unsigned channel = 0; channel < 4; ++channel)
+							cornerErrors += pixels[index * 4 + channel] != (opaque ? destinationBgra[channel] : 0);
+					unsigned expectedCenter[] = {16, 32, 128, 128};
+					if (item.kind == GuardedScenario::Cursor || item.kind == GuardedScenario::CursorNoBlend)
+						for (auto& channel : expectedCenter) channel = 128;
+					if (item.kind == GuardedScenario::CursorRetain)
+					{
+						expectedCenter[0] = 224; expectedCenter[1] = 192; expectedCenter[2] = 160; expectedCenter[3] = 255;
+					}
+					if (item.kind == GuardedScenario::DrawRetain)
+					{
+						expectedCenter[0] = 112; expectedCenter[1] = 96; expectedCenter[2] = 160; expectedCenter[3] = 255;
+					}
+					if (item.kind == GuardedScenario::EraseRetain)
+						for (auto& channel : expectedCenter) channel = 0;
+					bool centerValid = true;
+					if (item.kind == GuardedScenario::Thin)
+						centerValid = center[3] >= 20 && center[3] <= 110;
+					else
+						for (unsigned channel = 0; channel < 4; ++channel)
+							centerValid &= std::abs(static_cast<int>(center[channel]) - static_cast<int>(expectedCenter[channel])) <= 1;
+					const unsigned leftAlpha = pixels[(64 * size + 42) * 4 + 3];
+					const unsigned rightAlpha = pixels[(64 * size + 85) * 4 + 3];
+					const bool varyingValid = item.kind != GuardedScenario::Varying || (leftAlpha > 0 && leftAlpha < 120 && rightAlpha >= 120);
+					const bool coverageValid = changed > (item.kind == GuardedScenario::Thin ? 40u : 100u);
+					const bool aaValid = (item.kind != GuardedScenario::Thin && item.kind != GuardedScenario::EraseRetain) || fractional > 0;
+					const bool passed = centerValid && varyingValid && coverageValid && aaValid && formulaErrors == 0 && cornerErrors == 0;
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s correctness=%s changed_pixels=%u fractional_alpha=%u premult_formula_errors=%u corner_errors=%u center=(%u,%u,%u,%u) varying_alpha=(%u,%u)\n",
+						name, passed ? "PASS" : "FAIL", changed, fractional, formulaErrors, cornerErrors, center[0], center[1], center[2], center[3], leftAlpha, rightAlpha);
+					return passed;
+				};
+				for (bool useBackBuffer : { true, false })
+					for (const auto& item : guardedPlan)
+					{
+						++guardedCases;
+						char name[128] = {}, referenceName[128] = {};
+						std::snprintf(name, sizeof(name), "guarded.%s.%s", useBackBuffer ? "backbuffer" : "offscreen", item.name);
+						std::snprintf(referenceName, sizeof(referenceName), "reference.%s.%s", useBackBuffer ? "backbuffer" : "offscreen", item.name);
+						auto* texture = useBackBuffer ? backBuffer.Get() : offscreen.Get();
+						auto* rtv = useBackBuffer ? backRtv.Get() : offscreenRtv.Get();
+						std::vector<unsigned char> reference, candidate;
+						const bool referenceReadable = guardedDraw(referenceName, texture, rtv, item, originalPixelShader.Get(), reference);
+						const bool referenceValid = referenceReadable && checkGuardedPixels(referenceName, item, reference);
+						const bool candidateReadable = guardedDraw(name, texture, rtv, item, guardedShader.Get(), candidate);
+						const bool candidateValid = candidateReadable && checkGuardedPixels(name, item, candidate);
+						unsigned mismatchPixels = 0, maxDelta = 0;
+						if (referenceValid && candidateReadable)
+							for (size_t offset = 0; offset < candidate.size(); offset += 4)
+							{
+								bool mismatched = false;
+								for (unsigned channel = 0; channel < 4; ++channel)
+								{
+									const unsigned delta = static_cast<unsigned>(std::abs(static_cast<int>(reference[offset + channel]) - static_cast<int>(candidate[offset + channel])));
+									maxDelta = (std::max)(maxDelta, delta);
+									mismatched |= delta > 1;
+								}
+								mismatchPixels += mismatched;
+							}
+						if (!referenceValid) ++referenceUnavailable;
+						const bool compared = referenceValid && candidateReadable;
+						const bool passed = candidateValid && (!referenceValid || mismatchPixels == 0);
+						if (!passed) ++guardedFailures;
+						std::fprintf(stderr, "[Draw3PixelTest] case=%s result=%s reference_status=%s comparison=%s mismatch_pixels=%u max_channel_delta=%u reference_readable=%u candidate_readable=%u\n",
+							name, !candidateReadable ? "ERROR" : passed ? "PASS" : "FAIL", referenceValid ? "available" : "unavailable",
+							!referenceValid ? "unavailable" : compared && mismatchPixels == 0 ? "PASS" : "FAIL", mismatchPixels, maxDelta, referenceReadable, candidateReadable);
+					}
+
+
+			}
+			std::fprintf(stderr, "[Draw3PixelTest] diagnostic_cases=%u diagnostic_failures=%u result=%s\n",
+				diagnosticCases, diagnosticFailures, diagnosticCases == 7 && diagnosticFailures == 0 ? "PASS" : "FAIL");
+			std::fprintf(stderr, "[Draw3PixelTest] sequence_cases=%u sequence_failures=%u result=%s\n",
+				sequenceCases, sequenceFailures, sequenceCases == 5 && sequenceFailures == 0 ? "PASS" : "FAIL");
+			std::fprintf(stderr, "[Draw3PixelTest] matrix_cases=%u matrix_failures=%u result=%s driver=%s\n",
+				matrixCases, matrixFailures, matrixCases == 69 && matrixFailures == 0 ? "PASS" : "FAIL", driverName);
+			std::fprintf(stderr, "[Draw3PixelTest] guarded_cases=%u guarded_failures=%u reference_unavailable=%u result=%s driver=%s\n",
+				guardedCases, guardedFailures, referenceUnavailable,
+				guardedCases == 18 && guardedFailures == 0 ? "PASS" : "FAIL", driverName);
+			const HRESULT removed = device->GetDeviceRemovedReason();
+			logResult("GetDeviceRemovedReason", removed);
+			if (FAILED(removed)) ++failures;
+			std::fprintf(stderr, "[Draw3PixelTest] production_cases=%u failures=%d result=%s\n",
+				productionCases, failures, failures == 0 && productionCases == 4 ? "PASS" : "FAIL");
+			return failures == 0 && productionCases == 4 && guardedCases == 18 && guardedFailures == 0 ? 0 : 1;
+		}
+		catch (...)
+		{
+			Report("FAIL", "renderer pixel probe exception");
+			return 1;
+		}
+	}
+
+	int RunRendererPixelTest() noexcept
+	{
+		return RunRendererPixelTestForDriver(D3D_DRIVER_TYPE_WARP);
+	}
+
+	int RunRendererHardwarePixelTest() noexcept
+	{
+		return RunRendererPixelTestForDriver(D3D_DRIVER_TYPE_HARDWARE);
+	}
+
+	int RunRendererMapCompatibilityTest() noexcept
+	{
+		int failures = 0;
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+		D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+		constexpr D3D_FEATURE_LEVEL requestedLevel[] = { D3D_FEATURE_LEVEL_11_0 };
+		const HRESULT createResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP,
+			nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, requestedLevel, ARRAYSIZE(requestedLevel),
+			D3D11_SDK_VERSION, device.GetAddressOf(), &actualLevel, context.GetAddressOf());
+		if (!Check(SUCCEEDED(createResult) && device && context &&
+			actualLevel == D3D_FEATURE_LEVEL_11_0,
+			"WARP FL11.0 device without HWND", failures)) return 1;
+
+		InkRenderer renderer;
+		renderer.device = device;
+		renderer.context = context;
+		renderer.viewportWidth = 64.0f;
+		renderer.viewportHeight = 64.0f;
+		D3D11_BUFFER_DESC constantDescription = {
+			48, D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER,
+			D3D11_CPU_ACCESS_WRITE, 0, 0
+		};
+		if (!Check(SUCCEEDED(device->CreateBuffer(&constantDescription, nullptr,
+			renderer.globalCB.GetAddressOf())), "create production constant buffer", failures))
+			return 1;
+		D3D11_BUFFER_DESC inkDescription = {};
+		inkDescription.ByteWidth = static_cast<UINT>(
+			InkRenderer::kMaxBufferCapacity * sizeof(InkPoint));
+		inkDescription.Usage = D3D11_USAGE_DYNAMIC;
+		inkDescription.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		inkDescription.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		inkDescription.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+		inkDescription.StructureByteStride = sizeof(InkPoint);
+		if (!Check(SUCCEEDED(device->CreateBuffer(&inkDescription, nullptr,
+			renderer.inkDataBuffer.GetAddressOf())), "create production dynamic SRV buffer", failures))
+			return 1;
+		D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription = {};
+		viewDescription.Format = DXGI_FORMAT_UNKNOWN;
+		viewDescription.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+		viewDescription.Buffer.NumElements = static_cast<UINT>(InkRenderer::kMaxBufferCapacity);
+		if (!Check(SUCCEEDED(device->CreateShaderResourceView(renderer.inkDataBuffer.Get(),
+			&viewDescription, renderer.inkDataSRV.GetAddressOf())),
+			"create production dynamic SRV", failures)) return 1;
+		D3D11_BUFFER_DESC stagingDescription = inkDescription;
+		stagingDescription.Usage = D3D11_USAGE_STAGING;
+		stagingDescription.BindFlags = 0;
+		stagingDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		stagingDescription.MiscFlags = 0;
+		stagingDescription.StructureByteStride = 0;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> staging;
+		if (!Check(SUCCEEDED(device->CreateBuffer(&stagingDescription, nullptr,
+			staging.GetAddressOf())), "create no-window readback buffer", failures)) return 1;
+
+		const auto checkUploaded = [&](const void* expected, size_t bytes, const char* name)
+		{
+			context->CopyResource(staging.Get(), renderer.inkDataBuffer.Get());
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (!Check(SUCCEEDED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+				"read back dynamic SRV upload", failures)) return false;
+			const bool matches = std::memcmp(mapped.pData, expected, bytes) == 0;
+			context->Unmap(staging.Get(), 0);
+			return Check(matches, name, failures);
+		};
+		const DirectX::XMFLOAT4 color(0.2f, 0.4f, 0.6f, 1.0f);
+		const std::array<InkPoint, 2> firstStroke = { InkPoint{ 2, 3, 4, 0 },
+			InkPoint{ 18, 20, 4, 1 } };
+		const std::array<InkPoint, 2> secondStroke = { InkPoint{ 5, 7, 3, 2 },
+			InkPoint{ 30, 31, 3, 3 } };
+		const std::array<ShapePrimitive, 1> shape = { ShapePrimitive{
+			{ 4, 6, 2, 0 }, { 28, 32, 0, 0 } } };
+		// 强制模拟 Win7/驱动不支持扩展：每批必须 DISCARD 并从零偏移上传。
+		renderer.mapNoOverwriteOnDynamicBufferSRV = false;
+		Check(renderer.DrawStroke(firstStroke, color) == 0 && renderer.m_bufferHead == 2,
+			"first unsupported-SRV stroke uses DISCARD", failures);
+		Check(renderer.DrawStroke(secondStroke, color) == 0 && renderer.m_bufferHead == 2,
+			"second unsupported-SRV stroke resets offset", failures);
+		checkUploaded(secondStroke.data(), sizeof(secondStroke),
+			"second stroke occupies first two InkPoint slots");
+		Check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, color) == 0 &&
+			renderer.m_bufferHead == 2, "unsupported-SRV shape resets offset", failures);
+		checkUploaded(shape.data(), sizeof(shape), "shape occupies first two InkPoint slots");
+
+		D3D11_FEATURE_DATA_D3D11_OPTIONS options = {};
+		const bool warpOptionsAvailable = SUCCEEDED(device->CheckFeatureSupport(
+			D3D11_FEATURE_D3D11_OPTIONS, &options, sizeof(options)));
+		std::fprintf(stderr, "[Draw3RendererMap] WARP_FL11_0 options=%d dynamic_srv_no_overwrite=%d\n",
+			warpOptionsAvailable, warpOptionsAvailable && options.MapNoOverwriteOnDynamicBufferSRV != FALSE);
+		Microsoft::WRL::ComPtr<ID3D11Device> hardwareDevice;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> hardwareContext;
+		D3D_FEATURE_LEVEL hardwareLevel = D3D_FEATURE_LEVEL_11_0;
+		const HRESULT hardwareResult = D3D11CreateDevice(nullptr,
+			D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+			requestedLevel, ARRAYSIZE(requestedLevel), D3D11_SDK_VERSION,
+			hardwareDevice.GetAddressOf(), &hardwareLevel, hardwareContext.GetAddressOf());
+		D3D11_FEATURE_DATA_D3D11_OPTIONS hardwareOptions = {};
+		const bool hardwareOptionsAvailable = SUCCEEDED(hardwareResult) && hardwareDevice &&
+			SUCCEEDED(hardwareDevice->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,
+				&hardwareOptions, sizeof(hardwareOptions)));
+		std::fprintf(stderr,
+			"[Draw3RendererMap] HARDWARE_FL11_0 create_hr=0x%08X options=%d dynamic_srv_no_overwrite=%d\n",
+			static_cast<unsigned int>(hardwareResult), hardwareOptionsAvailable,
+			hardwareOptionsAvailable && hardwareOptions.MapNoOverwriteOnDynamicBufferSRV != FALSE);
+		if (warpOptionsAvailable && options.MapNoOverwriteOnDynamicBufferSRV)
+		{
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (Check(SUCCEEDED(context->Map(renderer.inkDataBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped)),
+				"begin supported-SRV ring allocation", failures))
+			{
+				context->Unmap(renderer.inkDataBuffer.Get(), 0);
+				renderer.m_bufferHead = 0;
+				renderer.mapNoOverwriteOnDynamicBufferSRV = true;
+				Check(renderer.DrawStroke(firstStroke, color) == 0 &&
+					renderer.DrawStroke(secondStroke, color) == 0 &&
+					renderer.m_bufferHead == 4,
+					"supported-SRV device retains NO_OVERWRITE ring", failures);
+			}
+		}
+		context->ClearState();
+		renderer.ReleaseResources();
+		if (failures == 0) Report("PASS", "no-window WARP dynamic-SRV map compatibility");
+		return failures == 0 ? 0 : 1;
+	}
+
+	int RunRendererFailureCommitTest() noexcept
+	{
+		int failures = 0;
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+		D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+		constexpr D3D_FEATURE_LEVEL requestedLevel[] = { D3D_FEATURE_LEVEL_11_0 };
+		const HRESULT createResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP,
+			nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, requestedLevel, ARRAYSIZE(requestedLevel),
+			D3D11_SDK_VERSION, device.GetAddressOf(), &actualLevel, context.GetAddressOf());
+		if (!Check(SUCCEEDED(createResult) && device && context &&
+			actualLevel == D3D_FEATURE_LEVEL_11_0,
+			"failure test creates no-window WARP FL11.0 device", failures)) return 1;
+
+		InkRenderer renderer;
+		renderer.device = device;
+		renderer.context = context;
+		renderer.viewportWidth = 64.0f;
+		renderer.viewportHeight = 64.0f;
+		renderer.mapNoOverwriteOnDynamicBufferSRV = false;
+		const D3D11_BUFFER_DESC constantDescription = {
+			48, D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER,
+			D3D11_CPU_ACCESS_WRITE, 0, 0
+		};
+		if (!Check(SUCCEEDED(device->CreateBuffer(&constantDescription, nullptr,
+			renderer.globalCB.GetAddressOf())), "failure test creates constant buffer", failures))
+			return 1;
+
+		const auto createBufferPair = [&](UINT byteWidth,
+			Microsoft::WRL::ComPtr<ID3D11Buffer>& writable,
+			Microsoft::WRL::ComPtr<ID3D11Buffer>& unwritable) -> bool
+		{
+			D3D11_BUFFER_DESC description = {};
+			description.ByteWidth = byteWidth;
+			description.Usage = D3D11_USAGE_DYNAMIC;
+			description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			description.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+			description.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+			description.StructureByteStride = byteWidth /
+				static_cast<UINT>(InkRenderer::kMaxBufferCapacity);
+			if (FAILED(device->CreateBuffer(&description, nullptr,
+				writable.GetAddressOf()))) return false;
+			// 合法的 DEFAULT 缓冲区没有 CPU 写权限；真实 Map 应返回失败 HRESULT。
+			description.Usage = D3D11_USAGE_DEFAULT;
+			description.CPUAccessFlags = 0;
+			return SUCCEEDED(device->CreateBuffer(&description, nullptr,
+				unwritable.GetAddressOf()));
+		};
+		Microsoft::WRL::ComPtr<ID3D11Buffer> writableInk;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> unwritableInk;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> writableHighlighter;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> unwritableHighlighter;
+		if (!Check(createBufferPair(static_cast<UINT>(
+			InkRenderer::kMaxBufferCapacity * sizeof(InkPoint)),
+			writableInk, unwritableInk) &&
+			createBufferPair(static_cast<UINT>(
+			InkRenderer::kMaxBufferCapacity * sizeof(HighlighterPrimitive)),
+			writableHighlighter, unwritableHighlighter),
+			"failure test creates valid writable/unwritable structured buffers", failures))
+			return 1;
+
+		const DirectX::XMFLOAT4 color(0.2f, 0.4f, 0.6f, 1.0f);
+		const std::vector<InkPoint> points = {
+			{ 4.0f, 4.0f, 3.0f, 0.0f },
+			{ 12.0f, 12.0f, 3.0f, 1.0f },
+			{ 20.0f, 20.0f, 3.0f, 2.0f }
+		};
+		ActiveStroke pen(6.0f, 500.0f);
+		pen.realPoints = points;
+		renderer.inkDataBuffer = unwritableInk;
+		const LiveRasterSubmission failedPen = CommitStablePrefixToL1(pen, 0.0, 0.0, color,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(!failedPen.succeeded && IsRectEmpty(&failedPen.dirty) &&
+			pen.committedIndex == 0 &&
+			!pen.hasCommittedGeometry,
+			"failed real pen Map leaves stable L1 cursor unchanged", failures);
+		renderer.inkDataBuffer = writableInk;
+		const LiveRasterSubmission retriedPen = CommitStablePrefixToL1(pen, 0.0, 0.0, color,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(retriedPen.succeeded && !IsRectEmpty(&retriedPen.dirty) &&
+			pen.committedIndex == 1 &&
+			pen.hasCommittedGeometry,
+			"pen stable L1 retries once after writable buffer restored", failures);
+
+		ActiveStroke highlighter(6.0f, 500.0f,
+			StrokeWidthMode::SimulatedPressure, true);
+		highlighter.realPoints = points;
+		renderer.highlighterPrimitiveBuffer = unwritableHighlighter;
+		const LiveRasterSubmission failedHighlighter = CommitStablePrefixToL1(highlighter,
+			0.0, 0.0, color, StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(!failedHighlighter.succeeded && IsRectEmpty(&failedHighlighter.dirty) &&
+			highlighter.committedIndex == 0 &&
+			!highlighter.hasCommittedGeometry &&
+			highlighter.committedHighlighterGeometry.primitives.empty(),
+			"failed real highlighter Map does not cache unsubmitted geometry", failures);
+		renderer.highlighterPrimitiveBuffer = writableHighlighter;
+		const LiveRasterSubmission retriedHighlighter = CommitStablePrefixToL1(highlighter,
+			0.0, 0.0, color, StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(retriedHighlighter.succeeded &&
+			!IsRectEmpty(&retriedHighlighter.dirty) && highlighter.committedIndex == 1 &&
+			highlighter.hasCommittedGeometry &&
+			highlighter.committedHighlighterGeometry.primitives.size() == 1,
+			"highlighter L1 retry caches stable prefix exactly once", failures);
+
+		ActiveStroke eraser(6.0f, 500.0f);
+		eraser.realPoints = { points[0], points[1] };
+		renderer.inkDataBuffer = unwritableInk;
+		const LiveRasterSubmission failedEraser = CommitEraserRealPointsToL1(eraser,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(!failedEraser.succeeded && IsRectEmpty(&failedEraser.dirty) &&
+			eraser.committedIndex == 0 &&
+			!eraser.hasCommittedGeometry,
+			"failed real eraser Map leaves L1 cursor unchanged", failures);
+		renderer.inkDataBuffer = writableInk;
+		const LiveRasterSubmission retriedEraser = CommitEraserRealPointsToL1(eraser,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(retriedEraser.succeeded && !IsRectEmpty(&retriedEraser.dirty) &&
+			eraser.committedIndex == 1 &&
+			eraser.hasCommittedGeometry,
+			"eraser L1 retry commits accepted real points once", failures);
+
+		ActiveStroke eraserDot(6.0f, 500.0f);
+		eraserDot.hasInputStartPoint = true;
+		eraserDot.inputStartPoint = points[0];
+		renderer.inkDataBuffer = unwritableInk;
+		const LiveRasterSubmission failedDot = CommitEraserRealPointsToL1(eraserDot,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(!failedDot.succeeded && IsRectEmpty(&failedDot.dirty) &&
+			!eraserDot.hasCommittedGeometry,
+			"failed eraser single-point Map preserves retry eligibility", failures);
+		renderer.inkDataBuffer = writableInk;
+		const LiveRasterSubmission retriedDot = CommitEraserRealPointsToL1(eraserDot,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(retriedDot.succeeded && !IsRectEmpty(&retriedDot.dirty) &&
+			eraserDot.hasCommittedGeometry,
+			"single-point eraser retry commits after buffer restored", failures);
+
+		pen.l0DrawPoints = points;
+		renderer.inkDataBuffer = unwritableInk;
+		Check(!DrawL0LiveComposite(pen, color, StrokeShape::RoundCapsule,
+			renderer, false), "L0 pen reports real Map failure", failures);
+		renderer.inkDataBuffer = writableInk;
+		Check(DrawL0LiveComposite(pen, color, StrokeShape::RoundCapsule,
+			renderer, false), "L0 pen reports retry submission", failures);
+		renderer.highlighterPrimitiveBuffer = unwritableHighlighter;
+		Check(!DrawL0LiveComposite(highlighter, color, StrokeShape::RoundCapsule,
+			renderer, false), "L0 highlighter reports real Map failure", failures);
+		renderer.highlighterPrimitiveBuffer = writableHighlighter;
+		Check(DrawL0LiveComposite(highlighter, color, StrokeShape::RoundCapsule,
+			renderer, false), "L0 highlighter reports retry submission", failures);
+		const std::array<ShapePrimitive, 1> shape = { ShapePrimitive{
+			{ 4, 6, 2, 0 }, { 28, 32, 0, 0 } } };
+		renderer.inkDataBuffer = unwritableInk;
+		Check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, color) < 0,
+			"Shape batch reports real Map failure", failures);
+		renderer.inkDataBuffer = writableInk;
+		Check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, color) == 0,
+			"Shape batch reports retry submission", failures);
+
+		context->ClearState();
+		renderer.ReleaseResources();
+		if (failures == 0) Report("PASS", "no-window WARP raster submission failure retry");
+		return failures == 0 ? 0 : 1;
+	}
+
+	int RunLaserRasterFailureTest() noexcept
+	{
+		int failures = 0;
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+		D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+		constexpr D3D_FEATURE_LEVEL requestedLevel[] = { D3D_FEATURE_LEVEL_11_0 };
+		const HRESULT createResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP,
+			nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, requestedLevel, ARRAYSIZE(requestedLevel),
+			D3D11_SDK_VERSION, device.GetAddressOf(), &actualLevel, context.GetAddressOf());
+		if (!Check(SUCCEEDED(createResult) && device && context &&
+			actualLevel == D3D_FEATURE_LEVEL_11_0,
+			"Laser test creates no-window WARP FL11.0 device", failures)) return 1;
+
+		Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+		Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+		Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
+		if (!Check(SUCCEEDED(device.As(&dxgiDevice)) && dxgiDevice &&
+			SUCCEEDED(dxgiDevice->GetAdapter(adapter.GetAddressOf())) && adapter &&
+			SUCCEEDED(adapter->GetParent(__uuidof(IDXGIFactory2),
+				reinterpret_cast<void**>(factory.GetAddressOf()))) && factory,
+			"Laser test finds WARP DXGI 1.2 factory", failures)) return 1;
+		DXGI_SWAP_CHAIN_DESC1 description = {};
+		description.Width = 64;
+		description.Height = 64;
+		description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		description.SampleDesc.Count = 1;
+		description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		description.BufferCount = 2;
+		description.Scaling = DXGI_SCALING_STRETCH;
+		description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+		description.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+		Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
+		if (!Check(SUCCEEDED(factory->CreateSwapChainForComposition(device.Get(),
+			&description, nullptr, swapChain.GetAddressOf())) && swapChain,
+			"Laser test creates FLIP composition swapchain without HWND", failures)) return 1;
+
+		InkRenderer renderer;
+		if (!Check(renderer.Init(device.Get(), context.Get(), swapChain.Get(), 64, 64, D3D_DRIVER_TYPE_WARP),
+			"Laser test initializes production renderer and shaders", failures))
+		{
+			context->ClearState();
+			renderer.ReleaseResources();
+			return 1;
+		}
+		D3D11_BUFFER_DESC unwritableDescription = {};
+		renderer.inkDataBuffer->GetDesc(&unwritableDescription);
+		// 合法的 DEFAULT 缓冲区没有 CPU 写权限，第二层真实 Map 必须失败。
+		unwritableDescription.Usage = D3D11_USAGE_DEFAULT;
+		unwritableDescription.CPUAccessFlags = 0;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> unwritableInk;
+		if (Check(SUCCEEDED(device->CreateBuffer(&unwritableDescription, nullptr,
+			unwritableInk.GetAddressOf())),
+			"Laser test creates non-CPU-writable structured buffer", failures))
+		{
+			failures += RunLaserRasterFailureProductionProbe(renderer,
+				unwritableInk.Get());
+		}
+		context->ClearState();
+		renderer.ReleaseResources();
+		if (failures == 0) Report("PASS", "no-window WARP Laser bake transaction");
+		return failures == 0 ? 0 : 1;
+	}
+
+	int RunHiddenWindowRuntimeMetricsSmoke(const wchar_t* privateOutputRoot) noexcept
+	{
+		_CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
+		_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+		_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+		int failures = 0;
+		try
+		{
+			if (!Check(privateOutputRoot && *privateOutputRoot && !ProductRunning(),
+				"U3H00 private smoke starts without a product run", failures)) return 1;
+			const std::filesystem::path root(privateOutputRoot);
+			if (!Check(root.is_absolute() && root != root.root_path() &&
+				root == root.lexically_normal() && root.native().size() < MAX_PATH - 64,
+				"U3H00 bounded absolute private root", failures)) return 1;
+			// caller 提供任务私有 root；逐组件拒 reparse，固定子目录必须是本轮全新创建。
+			auto checked = root.root_path();
+			const auto directorySafe = [](const std::filesystem::path& path)
+			{
+				const DWORD attributes = GetFileAttributesW(path.c_str());
+				return attributes != INVALID_FILE_ATTRIBUTES &&
+					(attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+					(attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
+			};
+			if (!Check(directorySafe(checked), "U3H00 non-reparse root anchor", failures)) return 1;
+			for (const auto& component : root.relative_path())
+			{
+				checked /= component;
+				if (!Check(directorySafe(checked), "U3H00 non-reparse private parent", failures)) return 1;
+			}
+			const auto output = root / L"u3-h-host-metrics";
+			if (!Check(CreateDirectoryW(output.c_str(), nullptr) && directorySafe(output),
+				"U3H00 create-new smoke directory", failures)) return 1;
+			std::fprintf(stderr, "[Draw3HostMetrics] output=%ls\\n", output.c_str());
+			const auto absent = [](const std::filesystem::path& path)
+			{ return GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES && GetLastError() == ERROR_FILE_NOT_FOUND; };
+			const auto neverStarted = output / L"unstarted.json";
+			if (!Check(!ProductHost().WriteRuntimeMetrics(neverStarted.c_str()) && absent(neverStarted),
+				"U3H01 never-started Host refuses export", failures)) return 1;
+
+			Inkeys::Window::Service service(64);
+			StyleContext style{ &service };
+			struct StopBeforeWindowDestruction
+			{
+				Inkeys::Window::Service& service;
+				~StopBeforeWindowDestruction() { StopProduct(); service.StopAndJoin(); }
+			} stopGuard{ service }; // 声明在 style 后：异常/早退也先真 Stop，再销毁回调上下文和 HWND。
+			const std::wstring suffix = std::to_wstring(GetCurrentProcessId()) + L".MetricsSmoke";
+			std::vector<Inkeys::Window::WindowSpec> specs;
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::MagnifierHost,
+				L"Inkeys.Draw3.Hidden.Magnifier." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::Freeze,
+				L"Inkeys.Draw3.Hidden.Freeze." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::DrawpadPresentation,
+				L"Inkeys.Draw3.Hidden.Presentation." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::Drawpad,
+				L"Inkeys.Draw3.Hidden.Drawpad." + suffix, DrawpadMsgCallback, 320, 240));
+			if (!Check(service.Start(specs), "U3H02 create invisible legacy Window Service", failures)) return 1;
+			const HWND drawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
+			const HWND presentation = service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation);
+			for (const auto& spec : specs)
+			{
+				DWORD process = 0;
+				const HWND window = service.Handle(spec.role);
+				if (!Check(window && GetWindowThreadProcessId(window, &process) &&
+					process == GetCurrentProcessId() && !IsWindowVisible(window),
+					"U3H02 HWND belongs to this invisible service", failures)) return 1;
+			}
+			const HostStyleCallbacks callbacks{ &style, &ApplyDrawpadStyle };
+			HostStartOptions options{ HostPresentationMode::UlwDirtyRect };
+			options.allowDirectComposition = false;
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+				"U3H03 defaultoff real Host starts", failures)) return 1;
+			const auto off = ProductHost().RuntimeSnapshot();
+			const auto offPath = output / L"defaultoff.json";
+			if (!Check(off.running && off.firstFrameReady && !off.runtimeMetrics.enabled &&
+				off.runtimeMetrics.allocatedBytes == 0 && off.runtimeMetrics.presentAttempts == 0 &&
+				!ProductHost().WriteRuntimeMetrics(offPath.c_str()) && absent(offPath),
+				"U3H03 defaultoff has no Session or export", failures)) return 1;
+			StopProduct();
+
+			// 容量非法仅禁诊断；不能钳成另一 population，产品必须仍可完成真实启动和 Stop。
+			options.enableRuntimeMetrics = true;
+			for (const std::size_t invalidCapacity : { std::size_t{ 0 }, std::size_t{ 32769 } })
+			{
+				options.runtimeMetricsMaximumSamples = invalidCapacity;
+				if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+					"U3H04 invalid metrics capacity preserves product startup", failures)) return 1;
+				const auto unavailable = ProductHost().RuntimeSnapshot().runtimeMetrics;
+				StopProduct();
+				const auto invalidPath = output / (invalidCapacity == 0 ? L"capacity-zero.json" : L"capacity-high.json");
+				if (!Check(unavailable.enabled && unavailable.unavailable && unavailable.allocatedBytes == 0 &&
+					!ProductHost().WriteRuntimeMetrics(invalidPath.c_str()) && absent(invalidPath),
+					"U3H04 unavailable metrics refuses an empty success report", failures)) return 1;
+			}
+			options.enableHiddenTestContactInjection = true;
+			std::uint64_t previousRun = 0;
+			const auto readReport = [](const std::filesystem::path& path, Json::Value& value)
+			{
+				std::error_code error;
+				const auto bytes = std::filesystem::file_size(path, error);
+				if (error || bytes == 0 || bytes > 4u * 1024 * 1024) return false;
+				std::ifstream file(path, std::ios::binary);
+				Json::CharReaderBuilder reader;
+				std::string parseError;
+				return file && Json::parseFromStream(reader, file, &value, &parseError);
+			};
+			for (unsigned run = 1; run <= 2; ++run)
+			{
+				options.runtimeMetricsMaximumSamples = run == 1 ? 128 : 32768;
+				if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+					"U3H05 metrics-on real Host starts", failures)) return 1;
+				const auto initial = ProductHost().RuntimeSnapshot().runtimeMetrics;
+				const auto livePath = output / (run == 1 ? L"live-one.json" : L"live-two.json");
+				if (!Check(initial.enabled && !initial.unavailable && !initial.joined && !initial.sealed &&
+					!initial.startupFailed && initial.runSerial != 0 && initial.runSerial != previousRun &&
+					initial.contactSeen == 0 && initial.confirmed == 0 && initial.pending == 0 &&
+					initial.frameSerial > 0 && initial.presentAttempts > 0 && initial.allocatedBytes > 0 &&
+					initial.payloadByteUpperBound <= 32u * 1024 * 1024 &&
+					initial.effectiveSamples == options.runtimeMetricsMaximumSamples &&
+					initial.metadata.graphicsAvailable && initial.metadata.adapterAvailable &&
+					initial.metadata.qpcFrequency > 0 &&
+					initial.metadata.presentationMode == HostPresentationMode::UlwDirtyRect &&
+					!ProductHost().WriteRuntimeMetrics(livePath.c_str()) && absent(livePath),
+					"U3H05 fresh owner progress, budget and live-export rejection", failures)) return 1;
+				previousRun = initial.runSerial;
+				Bridge::ProductState state;
+				state.tool = Bridge::Tool::SolidLine;
+				state.selectionMode = false;
+				state.widthDip = 2.0f;
+				state.colorRgba = 0x000000FF;
+				state.autoSaveEnabled = false;
+				PublishProductState(state);
+				if (!Check(WaitUntil([]
+				{
+					const auto snapshot = ProductHost().RuntimeSnapshot();
+					return !snapshot.selectionMode && snapshot.workspace == Bridge::Workspace::Desktop &&
+						snapshot.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+						snapshot.readyOutputRevision == snapshot.requestedOutputRevision;
+				}, 2s), "U3H06 actual primary drawing output ready", failures)) return 1;
+				const auto before = ProductHost().RuntimeSnapshot();
+				const auto send = [&](HiddenTestContactPhase phase, int x, int y)
+				{
+					DWORD process = 0;
+					if (drawpad != service.Handle(Inkeys::Window::WindowRole::Drawpad) ||
+						!GetWindowThreadProcessId(drawpad, &process) || process != GetCurrentProcessId()) return false;
+					DWORD_PTR accepted = 0;
+					SetLastError(ERROR_SUCCESS);
+					// 参数只有值，无 timeout 后可能被 owner 迟用的栈 payload；不自动重发 Down。
+					return SendMessageTimeoutW(drawpad, kDraw3HiddenTestContactMessage,
+						static_cast<WPARAM>(phase) | kHiddenTestExternalPenFlag, MAKELPARAM(x, y),
+						SMTO_BLOCK | SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT, 2000, &accepted) != 0 && accepted == 0;
+				};
+				if (!Check(send(HiddenTestContactPhase::Down, 40, 48) && WaitUntil([]
+				{
+					return ProductHost().RuntimeSnapshot().runtimeMetrics.contactSeen == 1;
+				}, 2s), "U3H06 true mailbox Down registered by Controller", failures)) return 1;
+				if (!Check(send(HiddenTestContactPhase::Move, 160, 132) && WaitUntil([]
+				{
+					return ProductHost().RuntimeSnapshot().runtimeMetrics.confirmed == 1;
+				}, 2s), "U3H06 real content reaches successful production Present", failures)) return 1;
+				if (!Check(send(HiddenTestContactPhase::Up, 160, 132) && WaitUntil([before]
+				{
+					const auto snapshot = ProductHost().RuntimeSnapshot();
+					return snapshot.inputRecycled == before.inputRecycled + 1 &&
+						snapshot.currentPageHasContent;
+				}, 2s), "U3H06 terminal is consumed and recycled", failures)) return 1;
+				StopProduct();
+				const auto sealed = ProductHost().RuntimeSnapshot().runtimeMetrics;
+				if (!Check(sealed.joined && sealed.sealed && !sealed.startupFailed && !sealed.runFailed &&
+					!sealed.unavailable && sealed.runSerial == initial.runSerial &&
+					sealed.contactSeen == 1 && sealed.confirmed == 1 && sealed.pending == 0 &&
+					sealed.invalid == 0 && sealed.contactDropped == 0 && sealed.pendingOverflow == 0,
+					"U3H07 true Stop join seals exactly this run", failures)) return 1;
+				const auto report = output / (run == 1 ? L"run-one.json" : L"run-two.json");
+				Json::Value value;
+				if (!Check(ProductHost().WriteRuntimeMetrics(report.c_str()) && readReport(report, value),
+					"U3H08 production Session create-new offline export", failures)) return 1;
+				Check(value["schemaVersion"].asUInt() == 2 &&
+					value["coverage"]["contactSeen"].asUInt64() == 1 &&
+					value["coverage"]["confirmed"].asUInt64() == 1 &&
+					value["coverage"]["pending"].asUInt64() == 0 &&
+					value["coverage"]["framesSeen"].asUInt64() > 0 &&
+					value["summary"]["presentAttempts"].asUInt64() == sealed.presentAttempts &&
+					value["input"]["downPublished"].asUInt64() == 1 &&
+					value["input"]["movePublished"].asUInt64() == 1 &&
+					value["input"]["terminalPublished"].asUInt64() == 1 &&
+					value["input"]["recycled"].asUInt64() == 1 &&
+					value["input"]["occupiedSlots"].asUInt64() == 0 &&
+					value["landings"].size() == 1,
+					"U3H08 raw real metrics and input baseline belong to one run", failures);
+				Json::Value unchanged;
+				Check(!ProductHost().WriteRuntimeMetrics(report.c_str()) && readReport(report, unchanged) &&
+					value == unchanged, "U3H09 create-new refuses overwrite and preserves report", failures);
+				if (failures) return 1; // 本 run 报告读取结束后才建立下一 Session。
+			}
+			const auto failedPath = output / L"failed-start.json";
+			Check(!StartProduct(nullptr, presentation, callbacks, options) &&
+				ProductHost().RuntimeSnapshot().runtimeMetrics.startupFailed &&
+				!ProductHost().WriteRuntimeMetrics(failedPath.c_str()) && absent(failedPath),
+				"U3H10 failed Start cannot export the previous sealed run", failures);
+			StopProduct();
+			service.StopAndJoin();
+		}
+		catch (...)
+		{
+			++failures;
+			Report("FAIL", "U3H unexpected Host metrics smoke exception");
+		}
+		if (failures == 0) Report("PASS", "U3H real Host metrics lifecycle smoke");
+		return failures == 0 ? 0 : 1;
+	}
+
 	int RunHiddenWindowIntegrationTest(bool eraserOnly) noexcept
 	{
 		// 隐藏验收不能弹出 CRT 调试对话框，所有断言改写入测试 stderr。
@@ -2081,8 +3761,9 @@ namespace Inkeys::Drawing::Draw3
 			};
 			StyleContext styleContext{ &service };
 
-			// DComp 的 NOREDIRECTIONBITMAP 必须在 HWND 创建时存在；覆盖产品默认路径和完整桥接命令。
-			if (!Check(service.Start(makeSpecs(true)), "start DComp-compatible hidden Window Service", failures))
+			// 目标系统缺少 DComp API 时仍运行 legacy HWND/ULW 合同。
+			const bool dcompAvailable = ShouldPreconfigureNoRedirectionBitmap();
+			if (!Check(service.Start(makeSpecs(dcompAvailable)), "start initial hidden Window Service", failures))
 				return 1;
 			const HWND dcompMagnifierHost = service.Handle(Inkeys::Window::WindowRole::MagnifierHost);
 			const HWND dcompFreeze = service.Handle(Inkeys::Window::WindowRole::Freeze);
@@ -2090,15 +3771,15 @@ namespace Inkeys::Drawing::Draw3
 				Inkeys::Window::WindowRole::DrawpadPresentation);
 			const HWND dcompDrawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
 			Check(dcompMagnifierHost && dcompFreeze && dcompPresentation && dcompDrawpad,
-				"hidden DComp HWND creation", failures);
+				"initial hidden HWND creation", failures);
 			Check(!IsWindowVisible(dcompMagnifierHost) && !IsWindowVisible(dcompFreeze) &&
 				!IsWindowVisible(dcompPresentation) && !IsWindowVisible(dcompDrawpad),
-				"DComp HWND creation never shows UI", failures);
+				"initial HWND creation never shows UI", failures);
 
 			if(eraserOnly)
 			{
 				RunMode(service,styleContext,dcompMagnifierHost,dcompFreeze,dcompDrawpad,dcompPresentation,
-					HostPresentationMode::Automatic,true,false,false,failures,true);
+					HostPresentationMode::Automatic,dcompAvailable,false,false,failures,true);
 				StopProduct();
 				service.StopAndJoin();
 				if(!Check(service.Start(makeSpecs(false)),"fresh ULW eraser service",failures))return 1;
@@ -2125,37 +3806,41 @@ namespace Inkeys::Drawing::Draw3
 				"hidden visibility leaves both windows hidden", failures);
 			RunMode(service, styleContext, dcompMagnifierHost, dcompFreeze, dcompDrawpad,
 				dcompPresentation,
-				HostPresentationMode::Automatic, true, true, false, failures);
-			RunMode(service, styleContext, dcompMagnifierHost, dcompFreeze, dcompDrawpad,
-				dcompPresentation,
-				HostPresentationMode::DirectCompositionVisualTree, true, false, false, failures);
-			// Windows 可能把创建期 NOREDIRECTIONBITMAP 固化；回调结果必须与真实样式一致，不能伪造 legacy fallback。
-			const bool clearReported = service.SetExtendedStyleFlags(
-				Inkeys::Window::WindowRole::Drawpad, 0, WS_EX_NOREDIRECTIONBITMAP);
-			const bool clearApplied = (static_cast<DWORD>(GetWindowLongPtrW(
-				dcompDrawpad, GWL_EXSTYLE)) & WS_EX_NOREDIRECTIONBITMAP) == 0;
-			Check(clearReported == clearApplied,
-				"Window Service reports immutable DComp style truthfully", failures);
-			if (!clearApplied)
+				HostPresentationMode::Automatic, dcompAvailable, true, false, failures);
+			if (dcompAvailable)
+				RunMode(service, styleContext, dcompMagnifierHost, dcompFreeze, dcompDrawpad,
+					dcompPresentation,
+					HostPresentationMode::DirectCompositionVisualTree, true, false, false, failures);
+			if (dcompAvailable)
 			{
-				// 已绑定 DComp 的 HWND 不能直接切换 ULW；先验证失败清理，再重建唯一 legacy HWND。
-				const HostStyleCallbacks callbacks{ &styleContext, &ApplyDrawpadStyle };
-				HostStartOptions legacyOnDcompOptions{ HostPresentationMode::UlwDirtyRect };
-				legacyOnDcompOptions.allowDirectComposition = false;
-				Check(!StartProduct(dcompDrawpad, dcompPresentation, callbacks,
-					legacyOnDcompOptions),
-					"legacy presenter rejects immutable DComp HWND", failures);
-				Check(!ProductRunning() && !ProductFirstFrameReady(),
-					"failed legacy startup fully stops Draw3 host", failures);
+				// Windows 可能把创建期 NOREDIRECTIONBITMAP 固化；回调结果必须与真实样式一致。
+				const bool clearReported = service.SetExtendedStyleFlags(
+					Inkeys::Window::WindowRole::Drawpad, 0, WS_EX_NOREDIRECTIONBITMAP);
+				const bool clearApplied = (static_cast<DWORD>(GetWindowLongPtrW(
+					dcompDrawpad, GWL_EXSTYLE)) & WS_EX_NOREDIRECTIONBITMAP) == 0;
+				Check(clearReported == clearApplied,
+					"Window Service reports immutable DComp style truthfully", failures);
+				if (!clearApplied)
+				{
+					// 已绑定 DComp 的 HWND 不能直接切换 ULW；先验证失败清理，再重建唯一 legacy HWND。
+					const HostStyleCallbacks callbacks{ &styleContext, &ApplyDrawpadStyle };
+					HostStartOptions legacyOnDcompOptions{ HostPresentationMode::UlwDirtyRect };
+					legacyOnDcompOptions.allowDirectComposition = false;
+					Check(!StartProduct(dcompDrawpad, dcompPresentation, callbacks,
+						legacyOnDcompOptions),
+						"legacy presenter rejects immutable DComp HWND", failures);
+					Check(!ProductRunning() && !ProductFirstFrameReady(),
+						"failed legacy startup fully stops Draw3 host", failures);
+				}
 			}
 			StopProduct();
 			service.StopAndJoin();
 			Check(!IsWindow(dcompMagnifierHost) && !IsWindow(dcompFreeze) &&
 				!IsWindow(dcompPresentation) && !IsWindow(dcompDrawpad),
-				"Window Service destroys DComp-compatible hidden HWNDs", failures);
+				"Window Service destroys initial hidden HWNDs", failures);
 
-			// DWM/ULW 需要可切换的初始重定向表面；停止上一宿主后重建唯一的测试 Drawpad HWND。
-			if (!Check(service.Start(makeSpecs(false)), "start DWM-compatible hidden Window Service", failures))
+			// ULW 需要可切换的初始重定向表面；停止上一宿主后重建唯一的测试 Drawpad HWND。
+			if (!Check(service.Start(makeSpecs(false)), "start legacy-compatible hidden Window Service", failures))
 				return 1;
 			const HWND legacyMagnifierHost = service.Handle(Inkeys::Window::WindowRole::MagnifierHost);
 			const HWND legacyFreeze = service.Handle(Inkeys::Window::WindowRole::Freeze);
@@ -2163,19 +3848,38 @@ namespace Inkeys::Drawing::Draw3
 				Inkeys::Window::WindowRole::DrawpadPresentation);
 			const HWND legacyDrawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
 			Check(legacyMagnifierHost && legacyFreeze && legacyPresentation && legacyDrawpad,
-				"hidden DWM HWND creation", failures);
+				"hidden legacy HWND creation", failures);
 			Check(!IsWindowVisible(legacyMagnifierHost) && !IsWindowVisible(legacyFreeze) &&
 				!IsWindowVisible(legacyPresentation) && !IsWindowVisible(legacyDrawpad),
-				"DWM HWND creation never shows UI", failures);
+				"legacy HWND creation never shows UI", failures);
 			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
 				legacyPresentation,
 				HostPresentationMode::Automatic, false, false, false, failures);
-			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
-				legacyPresentation,
-				HostPresentationMode::DwmBlurBehind2, false, false, false, failures);
-			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
-				legacyPresentation,
-				HostPresentationMode::DwmBlurBehind, false, false, false, failures);
+			const HostStyleCallbacks legacyCallbacks{ &styleContext, &ApplyDrawpadStyle };
+			const HostPresentationMode disabledModes[] = {
+				HostPresentationMode::DwmBlurBehind2,
+				HostPresentationMode::DwmBlurBehind
+			};
+			for (const HostPresentationMode disabledMode : disabledModes)
+			{
+				// 强制选择必须在附着 HWND 前拒绝，失败后仍能继续启动 ULW。
+				const auto styleCallsBefore = styleContext.callCount.load(std::memory_order_acquire);
+				const auto windowStyleBefore = GetWindowLongPtrW(legacyDrawpad, GWL_EXSTYLE);
+				const HANDLE tabletPropertyBefore = GetProp(
+					legacyDrawpad, MICROSOFT_TABLETPENSERVICE_PROPERTY);
+				HostStartOptions disabledOptions{ disabledMode };
+				disabledOptions.allowDirectComposition = false;
+				Check(!StartProduct(legacyDrawpad, legacyPresentation, legacyCallbacks,
+					disabledOptions), "forced DWM presenter is disabled", failures);
+				Check(!ProductRunning() && !ProductFirstFrameReady(),
+					"rejected DWM startup fully stops Draw3 host", failures);
+				Check(styleContext.callCount.load(std::memory_order_acquire) == styleCallsBefore,
+					"rejected DWM startup does not configure HWND", failures);
+				Check(GetWindowLongPtrW(legacyDrawpad, GWL_EXSTYLE) == windowStyleBefore &&
+					GetProp(legacyDrawpad, MICROSOFT_TABLETPENSERVICE_PROPERTY) == tabletPropertyBefore,
+					"rejected DWM startup preserves HWND style and tablet property", failures);
+				StopProduct();
+			}
 			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
 				legacyPresentation,
 				HostPresentationMode::UlwDirtyRect, false, true, true, failures);
@@ -2183,7 +3887,7 @@ namespace Inkeys::Drawing::Draw3
 			service.StopAndJoin();
 			Check(!IsWindow(legacyMagnifierHost) && !IsWindow(legacyFreeze) &&
 				!IsWindow(legacyPresentation) && !IsWindow(legacyDrawpad),
-				"Window Service destroys DWM-compatible hidden HWNDs", failures);
+				"Window Service destroys legacy-compatible hidden HWNDs", failures);
 		}
 		catch (...)
 		{

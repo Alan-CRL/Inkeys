@@ -174,10 +174,12 @@ void BarEraserAttributePanel::ConfigureSurface(BarUiShapeClass& surface,EraserAt
 
 bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double speed,double zoom,UINT dpi,
 	RECT workArea,POINT origin,double rigidX,double rigidY,const BarUiTimelineClass* parentTimeline,
-	bool dragPlacementLocked)
+	bool dragPlacementLocked,std::optional<bool> eraserSelected)
 {
 	Initialize();changed_=false;active_=false;
-	const bool shouldClose=owner.barState.fold || stateMode.StateModeSelect!=StateModeSelectEnum::IdtEraser ||
+	const bool selected = eraserSelected.has_value() ? *eraserSelected
+		: GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtEraser;
+	const bool shouldClose=owner.barState.fold || !selected ||
 		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded;
 	if(shouldClose)Close(owner);
 	const bool open=owner.barState.eraserAttribute;if(!open)owner.barState.eraserSensitivityOpen=false;

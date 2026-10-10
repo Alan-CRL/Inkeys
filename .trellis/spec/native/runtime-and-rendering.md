@@ -110,7 +110,7 @@ Correct：`64ms DIP 累计路程 -> 非对称确认/释放 + 有界转折保护 
 
 ### 2. Signatures
 
-- `DrawingTool { Pen=0, Highlighter=1, Eraser=2, Laser=3, SolidLine=4, DashedLine=5, OutlineRectangle=6, FilledRectangle=7 }`
+- 当前已集成产品 `Draw3.WindowControl.cppm` 的 `DrawingTool { Pen=0, HardPen=1, Highlighter=2, Eraser=3, Laser=4, SolidLine=5, DashedLine=6, OutlineRectangle=7, FilledRectangle=8 }`。旧独立 demo/早期提交的数值不能用于当前产品；传输和断触身份判断应使用枚举值，不留硬编码整数。
 - `StoredInkType { Pen=0, Highlighter=1, Eraser=2, SolidLine=3, DashedLine=4, OutlineRectangle=5, FilledRectangle=6 }`
 - `ShapePrimitiveKind { SolidLine=16, DashedLine=17, OutlineRectangle=18, FilledRectangle=19 }`
 - `ResolveShapeLiveEndpoint(predictedResults, modeledEndpoint, hasModeledEndpoint, rawEndpoint)`
@@ -119,7 +119,7 @@ Correct：`64ms DIP 累计路程 -> 非对称确认/释放 + 有界转折保护 
 - `RectFromShapePrimitive(primitive, kind, width, height)`
 - `BuildStrokeTileFootprint(stroke, visibleBounds)`
 
-上述枚举都是 append-only 数值协议；不得重排既有值或把 shader `0..15` 复用于 Shape。
+`StoredInkType` 是持久化数值协议，`ShapePrimitiveKind` 是 CPU/HLSL 数值合同；这两者的既有值不得重排，shader `0..15` 不复用于 Shape。`DrawingTool` 是当前运行期工具身份，其具体值以产品模块定义为准；不要把它与 UInk 的 `StoredInkType` 混为同一序列化合同。修改其值时须同步核对 Bridge、Host、Controller、断触续接和测试。
 
 ### 3. Contracts
 

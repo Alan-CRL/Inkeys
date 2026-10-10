@@ -618,16 +618,10 @@ export
 			if (!active) return result;
 
 			double currentDuration = duration;
-			if (!isfinite(currentDuration) || currentDuration <= 0.0)
-			{
-				result.progress = 1.0;
-				result.reachedKeyframe = !keyframeTriggered;
-				result.finished = true;
-				progress = 1.0;
-				keyframeTriggered = true;
-				active = false;
-				return result;
-			}
+			// 关闭动画时内容关键帧也须在本帧提交，不能因 idle 首帧 dt=0 留一帧旧图标。
+			if (!static_cast<bool>(BarUiAnimationEnabled)
+				|| !isfinite(currentDuration) || currentDuration <= 0.0)
+				return FinishLocked();
 			if (!isfinite(dt) || dt <= 0.0 || !isfinite(speedRate) || speedRate <= 0.0)
 				return result;
 
@@ -645,6 +639,20 @@ export
 				result.finished = true;
 				active = false;
 			}
+			return result;
+		}
+		BarUiKeyframeTimelineResultClass FinishLocked()
+		{
+			BarUiKeyframeTimelineResultClass result;
+			result.generation = generation;
+			result.progress = clamp(progress, 0.0, 1.0);
+			if (!active) return result;
+			result.progress = 1.0;
+			result.reachedKeyframe = !keyframeTriggered;
+			result.finished = true;
+			progress = 1.0;
+			keyframeTriggered = true;
+			active = false;
 			return result;
 		}
 		void CopyStateLocked(const BarUiKeyframeTimelineClass& other)

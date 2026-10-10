@@ -1,4 +1,5 @@
 #include "Draw3.Host.h"
+#include <dxgi.h>
 #include "Draw3.PptTiming.h"
 #include "Draw3.SpeedEraser.h"
 
@@ -13,6 +14,7 @@ import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.presentation_auto_save;
 import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.realtime_stylus;
+import Inkeys.Drawing.Draw3.runtime_metrics;
 import Inkeys.Drawing.Draw3.transparent_presentation;
 import Inkeys.Drawing.Draw3.window_control;
 
@@ -22,8 +24,10 @@ import Inkeys.Drawing.Draw3.window_control;
 #include <condition_variable>
 #include <cstdio>
 #include <exception>
+#include <iostream>
 #include <limits>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
@@ -31,6 +35,35 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		UINT QueryCompatibleWindowDpi(HWND hwnd) noexcept
+		{
+			if (!hwnd) return 96;
+			using GetDpiForWindowFunction = UINT(WINAPI*)(HWND);
+			const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+			const auto getDpiForWindow = user32
+				? reinterpret_cast<GetDpiForWindowFunction>(
+					GetProcAddress(user32, "GetDpiForWindow")) : nullptr;
+			if (getDpiForWindow)
+			{
+				const UINT dpi = getDpiForWindow(hwnd);
+				if (dpi != 0) return dpi;
+			}
+			// Win7 无 GetDpiForWindow：沿用显示快照，再退到系统 GDI DPI。
+			const auto display = Inkeys::Display::GetSnapshot();
+			const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+			if (display)
+				if (const auto* info = display->Find(monitor))
+					if (info->effectiveDpiX != 0) return info->effectiveDpiX;
+			const HDC dc = GetDC(hwnd);
+			if (dc)
+			{
+				const int dpi = GetDeviceCaps(dc, LOGPIXELSX);
+				ReleaseDC(hwnd, dc);
+				if (dpi > 0) return static_cast<UINT>(dpi);
+			}
+			return 96;
+		}
+
 		const char* DisplayTopologyName(Inkeys::Display::DisplayTopology value) noexcept
 		{
 			switch(value)
@@ -50,6 +83,68 @@ namespace Inkeys::Drawing::Draw3
 			case Inkeys::Display::EdidStatus::ParseFailed:return "ParseFailed";
 			default:return "Unavailable";
 			}
+		}
+
+		const char* HostOutputTargetName(HostOutputTarget value) noexcept
+		{
+			return value == HostOutputTarget::SelectionUlw
+				? "DrawpadPresentation" : "Drawpad";
+		}
+
+		const char* Draw3BuildArchitectureName() noexcept
+		{
+#if defined(_M_ARM64)
+			return "ARM64";
+#elif defined(_M_X64)
+			return "x64";
+#elif defined(_M_IX86)
+			return "Win32";
+#else
+			return "unknown";
+#endif
+		}
+
+		void LogDraw3BuildIdentity()
+		{
+			// 工程的 Debug/Release 配置共用 NDEBUG 定义，配置名由交付构建命令记录；
+			// 这里只输出不会被配置宏误判的编译身份。
+			std::cout << "[Draw3Diag][build] id=draw3-" << __DATE__ << "T" << __TIME__
+				<< " arch=" << Draw3BuildArchitectureName()
+				<< " msvc=" << _MSC_VER << std::endl;
+		}
+
+		void LogDraw3WindowState(const char* eventName, HWND primary, HWND selection)
+		{
+			if (!eventName) return;
+			const auto logWindow = [eventName](const char* role, HWND window)
+			{
+				const BOOL valid = window && IsWindow(window);
+				const BOOL visible = valid && IsWindowVisible(window);
+				RECT windowRect = {};
+				RECT clientRect = {};
+				const BOOL windowRectOk = valid && GetWindowRect(window, &windowRect);
+				const BOOL clientRectOk = valid && GetClientRect(window, &clientRect);
+				DWORD processId = 0;
+				const DWORD threadId = valid ? GetWindowThreadProcessId(window, &processId) : 0;
+				std::cout << "[Draw3Diag][window] event=" << eventName << " role=" << role
+					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
+					<< " valid=" << std::dec << (valid ? 1 : 0)
+					<< " visible=" << (visible ? 1 : 0)
+					<< " pid=" << processId << " tid=" << threadId
+					<< " owner=0x" << std::hex << reinterpret_cast<UINT_PTR>(valid ? GetWindow(window, GW_OWNER) : nullptr)
+					<< " previous=0x" << reinterpret_cast<UINT_PTR>(valid ? GetWindow(window, GW_HWNDPREV) : nullptr)
+					<< " style=0x" << std::hex
+					<< static_cast<unsigned long>(valid ? GetWindowLongPtrW(window, GWL_STYLE) : 0)
+					<< " exStyle=0x" << static_cast<unsigned long>(valid ? GetWindowLongPtrW(window, GWL_EXSTYLE) : 0)
+					<< std::dec << " windowRectOk=" << (windowRectOk ? 1 : 0)
+					<< " clientRectOk=" << (clientRectOk ? 1 : 0)
+					<< " window=(" << windowRect.left << "," << windowRect.top << ","
+					<< windowRect.right << "," << windowRect.bottom << ")"
+					<< " client=(" << clientRect.left << "," << clientRect.top << ","
+					<< clientRect.right << "," << clientRect.bottom << ")" << std::endl;
+			};
+			logWindow("Drawpad", primary);
+			logWindow("DrawpadPresentation", selection);
 		}
 		const char* PhysicalReasonName(Inkeys::Display::PhysicalSizeUnavailableReason value) noexcept
 		{
@@ -82,11 +177,33 @@ namespace Inkeys::Drawing::Draw3
 
 	struct Host::Impl
 	{
+		struct RuntimeMetricsState
+		{
+			// 会话在 drawing 之前声明，析构顺序也保证 Controller 的借用先结束。
+			std::unique_ptr<RuntimeMetricsSession> session;
+			std::atomic_bool enabled = false, unavailable = false, joined = false, sealed = false;
+			std::atomic_bool startupFailed = false, runFailed = false;
+			mutable std::atomic_bool exportUnavailable = false;
+			std::atomic_uint64_t runSerial = 0;
+			std::atomic_uint64_t contactSeen = 0, confirmed = 0, pending = 0;
+			std::atomic_uint64_t invalid = 0, contactDropped = 0, pendingOverflow = 0;
+			std::atomic_uint64_t frameSerial = 0, presentAttempts = 0;
+			std::atomic_uint64_t allocatedBytes = 0, payloadByteUpperBound = 0, effectiveSamples = 0;
+			std::uint64_t nextRunSerial = 0;
+			bool ownerCreated = false;
+			mutable std::mutex metadataMutex;
+			HostRuntimeMetricsMetadata metadata;
+			ContactInputDiagnosticsSnapshot inputBaseline, finalInput;
+			RuntimeMetricsSnapshot finalSnapshot;
+		};
+		static_assert(sizeof(RuntimeMetricsState) <= 4096);
+		RuntimeMetricsState runtimeMetrics;
 		Bridge::StateBridge bridge;
 		DesktopAutoSaveService autoSave;
 		PresentationAutoSaveService presentationAutoSave;
 		ContactInputCoordinator input;
 		WindowController window;
+		std::mutex commandPublishMutex;
 		mutable std::mutex eraserDiagnosticsMutex;
 		SpeedEraser::Diagnostics eraserDiagnostics;
 		PenRuntimeDiagnostics penDiagnostics;
@@ -105,6 +222,9 @@ namespace Inkeys::Drawing::Draw3
 		Inkeys::Display::Subscription displaySubscription;
 		std::atomic_bool displayScaleDirty = false;
 		RECT appliedDisplayClientBounds{};
+		Inkeys::Business::PenWidth::Context appliedPenWidthContext;
+		std::uintptr_t appliedPenWidthMonitor = 0;
+		bool penWidthContextPrepared = false;
 		GraphicsDeviceResources graphics;
 		InkRenderer renderer;
 		TransparentPresentationController presentation;
@@ -129,6 +249,10 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::uint64_t> ulwPremultipliedAlphaFailureCount = 0;
 		std::atomic_bool ulwTransparentFullFrameVerified = false;
 		std::atomic_bool lastPresentSucceeded = false;
+		bool presentDiagnosticInitialized = false;
+		HostOutputTarget lastDiagnosticOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		std::uint64_t lastDiagnosticOutputRevision = 0;
+		bool lastDiagnosticPresentSucceeded = false;
 		std::atomic<int> committedWidth = 0;
 		std::atomic<int> committedHeight = 0;
 		std::atomic<std::size_t> currentPageIndex = 0;
@@ -167,6 +291,7 @@ namespace Inkeys::Drawing::Draw3
 		HostStyleCallbacks styleCallbacks = {};
 		HostRuntimeCallbacks runtimeCallbacks = {};
 		HostStartOptions startOptions = {};
+		std::atomic_uint64_t hiddenPresentationNotFound = 0;
 		std::mutex startupMutex;
 		std::condition_variable startupCondition;
 		mutable std::mutex contentMutex;
@@ -204,6 +329,201 @@ namespace Inkeys::Drawing::Draw3
 			return target == TransparentOutputTarget::SelectionUlw
 				? HostOutputTarget::SelectionUlw
 				: HostOutputTarget::PrimaryDrawpad;
+		}
+
+		void BeginRuntimeMetricsRun(const HostStartOptions& options) noexcept
+		{
+			// 串行 Start 已确认上一线程不可 join；每 run 新建会话，不 Reset 或复用旧键。
+			runtimeMetrics.session.reset();
+			runtimeMetrics.enabled.store(options.enableRuntimeMetrics, std::memory_order_release);
+			runtimeMetrics.unavailable.store(false, std::memory_order_release);
+			runtimeMetrics.joined.store(false, std::memory_order_release);
+			runtimeMetrics.sealed.store(false, std::memory_order_release);
+			runtimeMetrics.startupFailed.store(options.enableRuntimeMetrics, std::memory_order_release);
+			runtimeMetrics.runFailed.store(false, std::memory_order_release);
+			runtimeMetrics.exportUnavailable.store(false, std::memory_order_release);
+			runtimeMetrics.runSerial.store(0, std::memory_order_release);
+			runtimeMetrics.contactSeen.store(0, std::memory_order_release);
+			runtimeMetrics.confirmed.store(0, std::memory_order_release);
+			runtimeMetrics.pending.store(0, std::memory_order_release);
+			runtimeMetrics.invalid.store(0, std::memory_order_release);
+			runtimeMetrics.contactDropped.store(0, std::memory_order_release);
+			runtimeMetrics.pendingOverflow.store(0, std::memory_order_release);
+			runtimeMetrics.frameSerial.store(0, std::memory_order_release);
+			runtimeMetrics.presentAttempts.store(0, std::memory_order_release);
+			runtimeMetrics.allocatedBytes.store(0, std::memory_order_release);
+			runtimeMetrics.payloadByteUpperBound.store(0, std::memory_order_release);
+			runtimeMetrics.effectiveSamples.store(0, std::memory_order_release);
+			runtimeMetrics.inputBaseline = {};
+			runtimeMetrics.finalInput = {};
+			runtimeMetrics.finalSnapshot = {};
+			runtimeMetrics.ownerCreated = false;
+			{ std::scoped_lock lock(runtimeMetrics.metadataMutex); runtimeMetrics.metadata = {}; }
+			if (!options.enableRuntimeMetrics) return;
+			if (runtimeMetrics.nextRunSerial == (std::numeric_limits<std::uint64_t>::max)() ||
+				options.runtimeMetricsMaximumSamples == 0 || options.runtimeMetricsMaximumSamples > 32768)
+			{
+				runtimeMetrics.unavailable.store(true, std::memory_order_release);
+				return;
+			}
+			runtimeMetrics.runSerial.store(++runtimeMetrics.nextRunSerial, std::memory_order_release);
+		}
+
+		void PrepareRuntimeMetrics(const HostStartOptions& options) noexcept
+		{
+			if (!runtimeMetrics.enabled.load(std::memory_order_acquire) ||
+				runtimeMetrics.unavailable.load(std::memory_order_acquire)) return;
+			try
+			{
+				runtimeMetrics.session = std::make_unique<RuntimeMetricsSession>(options.runtimeMetricsMaximumSamples);
+				// Controller Prepare 仍执行共同预算；此处另预留其静态上限和 Host 固定载荷。
+				constexpr std::uint64_t auxiliaryBytes = 64u * 1024 + sizeof(RuntimeMetricsState) + sizeof(RuntimeMetricsSession);
+				constexpr std::uint64_t byteBudget = 32u * 1024 * 1024;
+				const auto snapshot = runtimeMetrics.session->Snapshot();
+				LARGE_INTEGER frequency{};
+				if (snapshot.allocatedBytes > byteBudget - auxiliaryBytes ||
+					!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0)
+				{
+					runtimeMetrics.session.reset();
+					runtimeMetrics.unavailable.store(true, std::memory_order_release);
+					return;
+				}
+				runtimeMetrics.payloadByteUpperBound.store(snapshot.allocatedBytes + auxiliaryBytes, std::memory_order_release);
+				{ std::scoped_lock lock(runtimeMetrics.metadataMutex); runtimeMetrics.metadata.qpcFrequency = frequency.QuadPart; }
+				PublishRuntimeMetricsProgress();
+			}
+			catch (...)
+			{
+				runtimeMetrics.session.reset();
+				runtimeMetrics.unavailable.store(true, std::memory_order_release);
+			}
+		}
+
+		void PublishRuntimeMetricsProgress() noexcept
+		{
+			if (!runtimeMetrics.session) return;
+			// 绘制 callback 读取 plain Session，再发布原子进度；caller 不跨线程读 Session。
+			const auto value = runtimeMetrics.session->Snapshot();
+			runtimeMetrics.contactSeen.store(value.contactSeen, std::memory_order_release);
+			runtimeMetrics.confirmed.store(value.confirmed, std::memory_order_release);
+			runtimeMetrics.pending.store(value.pending, std::memory_order_release);
+			runtimeMetrics.invalid.store(value.invalid, std::memory_order_release);
+			runtimeMetrics.contactDropped.store(value.contactDropped, std::memory_order_release);
+			runtimeMetrics.pendingOverflow.store(value.pendingOverflow, std::memory_order_release);
+			runtimeMetrics.frameSerial.store(value.frameSerial, std::memory_order_release);
+			runtimeMetrics.presentAttempts.store(value.presentAttempts, std::memory_order_release);
+			runtimeMetrics.allocatedBytes.store(value.allocatedBytes, std::memory_order_release);
+			runtimeMetrics.effectiveSamples.store(value.effectiveSamples, std::memory_order_release);
+		}
+
+		void CaptureRuntimeMetricsMetadata(bool copyAdapter) noexcept
+		{
+			if (!runtimeMetrics.session) return;
+			// 只有 GPU owner 调用；正常帧只抄数值，不查询 adapter 或增加时钟采样。
+			std::scoped_lock lock(runtimeMetrics.metadataMutex);
+			auto& value = runtimeMetrics.metadata;
+			value.graphicsAvailable = graphics.device && graphics.context;
+			value.driverType = value.graphicsAvailable ? static_cast<std::uint32_t>(graphics.driverType) : 0;
+			value.featureLevel = value.graphicsAvailable ? static_cast<std::uint32_t>(graphics.featureLevel) : 0;
+			value.presentationMode = ToHostMode(presentation.ActiveMode());
+			value.outputTarget = ToHostOutputTarget(presentation.RequestedOutputTarget());
+			value.outputRevision = presentation.RequestedOutputRevision();
+			if (copyAdapter)
+			{
+				DXGI_ADAPTER_DESC description{};
+				value.adapterAvailable = graphics.adapter && SUCCEEDED(graphics.adapter->GetDesc(&description));
+				value.adapterDescription = {};
+				if (value.adapterAvailable)
+					std::copy_n(description.Description, value.adapterDescription.size(), value.adapterDescription.begin());
+				value.adapterDescription.back() = L'\0';
+			}
+		}
+
+		void SealRuntimeMetricsRun(bool startupFailed = false) noexcept
+		{
+			if (!runtimeMetrics.enabled.load(std::memory_order_acquire) ||
+				runtimeMetrics.sealed.load(std::memory_order_acquire) || drawingThread.joinable() || drawing) return;
+			if (startupFailed) runtimeMetrics.startupFailed.store(true, std::memory_order_release);
+			runtimeMetrics.joined.store(runtimeMetrics.ownerCreated, std::memory_order_release);
+			if (runtimeMetrics.session)
+			{
+				// producer 已停止、Controller 已销毁且线程真 join 后，尾 pending 才终结。
+				runtimeMetrics.session->InvalidatePending();
+				runtimeMetrics.finalSnapshot = runtimeMetrics.session->Snapshot();
+				runtimeMetrics.finalInput = input.DiagnosticsSnapshot();
+				const auto subtract = [](std::uint64_t value, std::uint64_t baseline) noexcept
+				{ return value >= baseline ? value - baseline : 0; };
+				auto& final = runtimeMetrics.finalInput;
+				const auto& base = runtimeMetrics.inputBaseline;
+				final.downPublished = subtract(final.downPublished, base.downPublished);
+				final.downRejected = subtract(final.downRejected, base.downRejected);
+				final.movePublished = subtract(final.movePublished, base.movePublished);
+				final.moveContended = subtract(final.moveContended, base.moveContended);
+				final.terminalPublished = subtract(final.terminalPublished, base.terminalPublished);
+				final.recycled = subtract(final.recycled, base.recycled);
+				final.controlWakes = subtract(final.controlWakes, base.controlWakes);
+				final.controlWakeEnqueueFailures = subtract(final.controlWakeEnqueueFailures, base.controlWakeEnqueueFailures);
+				final.controlWakeInlineRecoveries = subtract(final.controlWakeInlineRecoveries, base.controlWakeInlineRecoveries);
+				final.activeWaits = subtract(final.activeWaits, base.activeWaits);
+				PublishRuntimeMetricsProgress();
+			}
+			runtimeMetrics.sealed.store(true, std::memory_order_release);
+		}
+
+		bool WriteRuntimeMetrics(const wchar_t* path) const noexcept
+		{
+			if (!runtimeMetrics.enabled.load(std::memory_order_acquire) ||
+				runtimeMetrics.unavailable.load(std::memory_order_acquire) ||
+				!runtimeMetrics.joined.load(std::memory_order_acquire) ||
+				!runtimeMetrics.sealed.load(std::memory_order_acquire) ||
+				runtimeMetrics.startupFailed.load(std::memory_order_acquire) ||
+				runtimeMetrics.runFailed.load(std::memory_order_acquire) || !runtimeMetrics.session) return false;
+			// 私有根及 reparse 由 caller 验真；此薄接口至少拒绝相对/drive-relative 路径。
+			if (!path || path[0] == L'\0') return false;
+			const bool driveAbsolute = ((path[0] >= L'A' && path[0] <= L'Z') ||
+				(path[0] >= L'a' && path[0] <= L'z')) && path[1] == L':' && (path[2] == L'\\' || path[2] == L'/');
+			const bool uncAbsolute = path[0] == L'\\' && path[1] == L'\\' && path[2] != L'\0';
+			if (!driveAbsolute && !uncAbsolute) return false;
+			try
+			{
+				const bool written = runtimeMetrics.session->WriteJson(path, runtimeMetrics.finalInput);
+				runtimeMetrics.exportUnavailable.store(!written, std::memory_order_release);
+				return written;
+			}
+			catch (...)
+			{
+				// 排序/分群/格式化也会分配；noexcept 导出不能把诊断失败变为 terminate。
+				runtimeMetrics.exportUnavailable.store(true, std::memory_order_release);
+				return false;
+			}
+		}
+
+		HostRuntimeMetricsSnapshot CopyRuntimeMetricsSnapshot() const noexcept
+		{
+			HostRuntimeMetricsSnapshot value;
+			value.enabled = runtimeMetrics.enabled.load(std::memory_order_acquire);
+			// defaultoff 也暴露实际分配计数，smoke 不能仅凭 enable=false 推断无 Session。
+			value.allocatedBytes = runtimeMetrics.allocatedBytes.load(std::memory_order_acquire);
+			if (!value.enabled) return value;
+			value.unavailable = runtimeMetrics.unavailable.load(std::memory_order_acquire);
+			value.joined = runtimeMetrics.joined.load(std::memory_order_acquire);
+			value.sealed = runtimeMetrics.sealed.load(std::memory_order_acquire);
+			value.startupFailed = runtimeMetrics.startupFailed.load(std::memory_order_acquire);
+			value.runFailed = runtimeMetrics.runFailed.load(std::memory_order_acquire);
+			value.exportUnavailable = runtimeMetrics.exportUnavailable.load(std::memory_order_acquire);
+			value.runSerial = runtimeMetrics.runSerial.load(std::memory_order_acquire);
+			value.contactSeen = runtimeMetrics.contactSeen.load(std::memory_order_acquire);
+			value.confirmed = runtimeMetrics.confirmed.load(std::memory_order_acquire);
+			value.pending = runtimeMetrics.pending.load(std::memory_order_acquire);
+			value.invalid = runtimeMetrics.invalid.load(std::memory_order_acquire);
+			value.contactDropped = runtimeMetrics.contactDropped.load(std::memory_order_acquire);
+			value.pendingOverflow = runtimeMetrics.pendingOverflow.load(std::memory_order_acquire);
+			value.frameSerial = runtimeMetrics.frameSerial.load(std::memory_order_acquire);
+			value.presentAttempts = runtimeMetrics.presentAttempts.load(std::memory_order_acquire);
+			value.payloadByteUpperBound = runtimeMetrics.payloadByteUpperBound.load(std::memory_order_acquire);
+			value.effectiveSamples = runtimeMetrics.effectiveSamples.load(std::memory_order_acquire);
+			{ std::scoped_lock lock(runtimeMetrics.metadataMutex); value.metadata = runtimeMetrics.metadata; }
+			return value;
 		}
 
 		void PublishRuntimeRevision() noexcept
@@ -249,6 +569,7 @@ namespace Inkeys::Drawing::Draw3
 
 		void ResetRuntimeDiagnostics()
 		{
+			hiddenPresentationNotFound.store(0, std::memory_order_release);
 			presentationMode.store(HostPresentationMode::Automatic, std::memory_order_release);
 			presentCount.store(0, std::memory_order_release);
 			successfulPresentCount.store(0, std::memory_order_release);
@@ -263,6 +584,10 @@ namespace Inkeys::Drawing::Draw3
 			ulwPremultipliedAlphaFailureCount.store(0, std::memory_order_release);
 			ulwTransparentFullFrameVerified.store(false, std::memory_order_release);
 			lastPresentSucceeded.store(false, std::memory_order_release);
+			presentDiagnosticInitialized = false;
+			lastDiagnosticOutputTarget = HostOutputTarget::PrimaryDrawpad;
+			lastDiagnosticOutputRevision = 0;
+			lastDiagnosticPresentSucceeded = false;
 			currentPageIndex.store(0, std::memory_order_release);
 			pageCount.store(0, std::memory_order_release);
 			currentPageHasContent.store(false, std::memory_order_release);
@@ -325,6 +650,38 @@ namespace Inkeys::Drawing::Draw3
 			bool runtimeChanged = false;
 			const HostOutputTarget outputTarget =
 				ToHostOutputTarget(observation.outputTarget);
+			const bool diagnosticTargetChanged = !self->presentDiagnosticInitialized ||
+				self->lastDiagnosticOutputTarget != outputTarget ||
+				self->lastDiagnosticOutputRevision != observation.outputRevision;
+			const bool diagnosticRecovery = self->presentDiagnosticInitialized &&
+				self->lastDiagnosticPresentSucceeded != succeeded;
+			if (diagnosticTargetChanged || diagnosticRecovery)
+			{
+				std::cout << "[Draw3Diag][present] event="
+					<< (succeeded ? (diagnosticRecovery ? "recovery" : "success") : "failure")
+					<< " mode=" << TransparentPresentModeName(self->presentation.ActiveMode())
+					<< " target=" << HostOutputTargetName(outputTarget)
+					<< " revision=" << observation.outputRevision
+					<< " contentRevision=" << observation.presentedContentRevision
+					<< " dirty=(" << dirty.left << "," << dirty.top << ","
+					<< dirty.right << "," << dirty.bottom << ")"
+					<< " full=" << (presentFull ? 1 : 0)
+					<< " hwnd=0x" << std::hex
+					<< reinterpret_cast<UINT_PTR>(outputTarget == HostOutputTarget::SelectionUlw
+						? self->attachedPresentationWindow.load(std::memory_order_acquire)
+						: self->attachedWindow.load(std::memory_order_acquire))
+					<< " result=0x" << static_cast<unsigned long>(
+						succeeded ? S_OK : self->presentation.LastFailure())
+					<< std::dec << std::endl;
+				if (!succeeded || diagnosticTargetChanged || diagnosticRecovery)
+					LogDraw3WindowState(succeeded ? "present-success" : "present-failure",
+						self->attachedWindow.load(std::memory_order_acquire),
+						self->attachedPresentationWindow.load(std::memory_order_acquire));
+			}
+			self->presentDiagnosticInitialized = true;
+			self->lastDiagnosticOutputTarget = outputTarget;
+			self->lastDiagnosticOutputRevision = observation.outputRevision;
+			self->lastDiagnosticPresentSucceeded = succeeded;
 			runtimeChanged = self->requestedOutputTarget.exchange(
 				outputTarget, std::memory_order_acq_rel) != outputTarget || runtimeChanged;
 			runtimeChanged = self->requestedOutputRevision.exchange(
@@ -363,6 +720,23 @@ namespace Inkeys::Drawing::Draw3
 					self->ulwTransparentFullFrameVerified.store(true, std::memory_order_release);
 			}
 			if (runtimeChanged) self->PublishRuntimeRevision();
+			if (self->runtimeMetrics.session)
+			{
+				self->CaptureRuntimeMetricsMetadata(false);
+				self->PublishRuntimeMetricsProgress();
+			}
+			// 首帧尚未置 firstFrameReady；只有已 Stored 内容的真实成功版本可停在此门。
+			const auto& options = self->startOptions;
+			if (options.enableHiddenTestContactInjection && options.successfulPresentReachedEvent &&
+				options.continueSuccessfulPresentEvent && succeeded &&
+				self->firstFrameReady.load(std::memory_order_acquire) &&
+				self->currentPageHasContent.load(std::memory_order_acquire) &&
+				observation.presentedContentRevision == self->contentRevision.load(std::memory_order_acquire))
+			{
+				if (!SetEvent(options.successfulPresentReachedEvent) ||
+					WaitForSingleObject(options.continueSuccessfulPresentEvent, INFINITE) != WAIT_OBJECT_0)
+					throw std::runtime_error("hidden successful-present gate failed");
+			}
 		}
 
 		static void ObserveResized(void* context, int width, int height)
@@ -781,7 +1155,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			else if (hwnd)
 			{
-				const UINT dpi = GetDpiForWindow(hwnd);
+				const UINT dpi = QueryCompatibleWindowDpi(hwnd);
 				scale.dipPerPixelX = scale.dipPerPixelY = 96.0f / (dpi ? dpi : 96u);
 			}
 			const bool syntheticDisplay=hiddenTestContactInjectionEnabled && startOptions.hiddenTestDisplayScale.has_value();
@@ -814,10 +1188,41 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
 			scale.revision = previous.revision;
-			if (scale == previous && EqualRect(&clientBounds, &appliedDisplayClientBounds)) return;
-			scale.revision = previous.revision + 1;
-			appliedDisplayClientBounds = clientBounds;
-			window.SetSpeedEraserDisplayScale(scale);
+			if (!(scale == previous) || !EqualRect(&clientBounds, &appliedDisplayClientBounds))
+			{
+				scale.revision = previous.revision + 1;
+				appliedDisplayClientBounds = clientBounds;
+				window.SetSpeedEraserDisplayScale(scale);
+			}
+			Inkeys::Business::PenWidth::Context penContext;
+			penContext.paintDevice = bridge.Snapshot().paintDevice;
+			penContext.effectiveDpi = monitor && !syntheticDisplay
+				? (monitor->effectiveDpiX ? monitor->effectiveDpiX : 96u)
+				: syntheticDisplay ? 96.0 / scale.dipPerPixelX : QueryCompatibleWindowDpi(hwnd);
+			penContext.pixelWidth = scale.pixelWidth;
+			penContext.pixelHeight = scale.pixelHeight;
+			if (!monitor && !syntheticDisplay)
+			{
+				// 快照缺目标时用同一目标全幅矩形回退，不借用窗口/工作区/虚拟桌面。
+				MONITORINFO info{};
+				info.cbSize = sizeof(info);
+				if (monitorHandle && GetMonitorInfoW(monitorHandle, &info))
+				{
+					penContext.pixelWidth = info.rcMonitor.right - info.rcMonitor.left;
+					penContext.pixelHeight = info.rcMonitor.bottom - info.rcMonitor.top;
+				}
+			}
+			if (!penWidthContextPrepared || appliedPenWidthMonitor != scale.monitor ||
+				!Inkeys::Business::PenWidth::EquivalentContext(penContext, appliedPenWidthContext))
+			{
+				penContext.revision = appliedPenWidthContext.revision + 1;
+				appliedPenWidthContext = penContext;
+				appliedPenWidthMonitor = scale.monitor;
+				penWidthContextPrepared = true;
+				// 不持显示锁；返回前产品必须发布同代 resolved DIP 和目标上下文。
+				if (runtimeCallbacks.penWidthContextChanged)
+					runtimeCallbacks.penWidthContextChanged(runtimeCallbacks.context, penContext);
+			}
 		}
 
 		void PumpBridgeState()
@@ -857,7 +1262,7 @@ namespace Inkeys::Drawing::Draw3
 			window.SetEraserInputs(state.eraserInputs);
 			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
 				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
-			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
+			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext);
 			if (state.workspace != Bridge::Workspace::Presentation &&
 				(workspace.load(std::memory_order_acquire) != state.workspace || restoreLatestScene))
 			{
@@ -932,29 +1337,31 @@ namespace Inkeys::Drawing::Draw3
 			window.EnqueueCanvasCommand(std::move(scene));
 		}
 
-		void PumpBridgeCommands()
+		void PumpOneBridgeCommand()
 		{
 			Bridge::Command command;
-			while (bridge.TryConsume(command))
+			if (!bridge.TryConsume(command))
 			{
-				// scene-stamped 命令可能恢复旧场景，排空后必须重新收敛 latest。
-				restoreLatestScene = true;
-				// 先恢复命令发布时的场景，再执行命令；队列排空后才应用 latest state。
-				EnqueueCommandScene(command);
-				CanvasCommand canvas;
-				switch (command.type)
-				{
-				case Bridge::CommandType::Clear: canvas.type = CanvasCommandType::Clear; break;
-				case Bridge::CommandType::Undo: canvas.type = CanvasCommandType::Undo; break;
-				case Bridge::CommandType::Redo: canvas.type = CanvasCommandType::Redo; break;
-				case Bridge::CommandType::NextPage: canvas.type = CanvasCommandType::NextPage; break;
-				case Bridge::CommandType::PreviousPage: canvas.type = CanvasCommandType::PreviousPage; break;
-				case Bridge::CommandType::PrepareExitAutoSave:
-					canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
-				default: continue;
-				}
-				window.EnqueueCanvasCommand(canvas);
+				std::fputs("[Draw3.Input] action=command_wake result=failed reason=bridge_empty\n",
+					stderr);
+				return;
 			}
+			// 每个独立 Command marker 只执行一条 scene-stamped 命令。
+			restoreLatestScene = true;
+			EnqueueCommandScene(command);
+			CanvasCommand canvas;
+			switch (command.type)
+			{
+			case Bridge::CommandType::Clear: canvas.type = CanvasCommandType::Clear; break;
+			case Bridge::CommandType::Undo: canvas.type = CanvasCommandType::Undo; break;
+			case Bridge::CommandType::Redo: canvas.type = CanvasCommandType::Redo; break;
+			case Bridge::CommandType::NextPage: canvas.type = CanvasCommandType::NextPage; break;
+			case Bridge::CommandType::PreviousPage: canvas.type = CanvasCommandType::PreviousPage; break;
+			case Bridge::CommandType::PrepareExitAutoSave:
+				canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
+			default: return;
+			}
+			window.EnqueueCanvasCommand(canvas);
 		}
 
 		void PumpPresentationCompletions()
@@ -962,6 +1369,10 @@ namespace Inkeys::Drawing::Draw3
 			PresentationPersistenceCompletion completion;
 			while (presentationAutoSave.TryTakeCompletion(completion))
 			{
+				if (startOptions.enableHiddenTestContactInjection &&
+					completion.operation == PresentationPersistenceOperation::Load &&
+					completion.status == PresentationPersistenceStatus::NotFound)
+					hiddenPresentationNotFound.fetch_add(1, std::memory_order_acq_rel);
 				CanvasCommand command;
 				command.type = CanvasCommandType::PresentationPersistenceCompleted;
 				command.presentationPersistenceCompletion = std::make_shared<
@@ -983,14 +1394,14 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
-		static void ConsumeBridge(void* context)
+		static void ConsumeBridge(void* context, ControlWakeKind kind)
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return;
-			// ControlWake 只在绘制线程消费产品快照、I/O 完成和命令队列。
+			// General 只做状态/完成收敛；Command 恰好对应一条 Bridge 命令。
 			self->PumpDesktopCompletions();
 			self->PumpPresentationCompletions();
-			self->PumpBridgeCommands();
+			if (kind == ControlWakeKind::Command) self->PumpOneBridgeCommand();
 			self->PumpBridgeState();
 		}
 
@@ -998,11 +1409,24 @@ namespace Inkeys::Drawing::Draw3
 			HostStyleCallbacks styleCallbacks, HostStartOptions options,
 			HostRuntimeCallbacks runtimeCallbacks)
 		{
-			if (running.load(std::memory_order_acquire) ||
+			const auto failedCleanup = options.failedCleanup;
+			if (running.load(std::memory_order_acquire) || drawingThread.joinable() ||
 				attachedWindow.load(std::memory_order_acquire) ||
-				attachedPresentationWindow.load(std::memory_order_acquire) ||
-				!hwnd || !presentationHwnd || !IsWindow(hwnd) ||
-				!IsWindow(presentationHwnd)) return false;
+				attachedPresentationWindow.load(std::memory_order_acquire)) return false;
+			LogDraw3BuildIdentity();
+			LogDraw3WindowState("start-request", hwnd, presentationHwnd);
+			BeginRuntimeMetricsRun(options);
+			// 强制 DWM 已禁用，必须在重置 bridge 或附着外部 HWND 前拒绝。
+			if (options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind ||
+				options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind2 ||
+				!hwnd || !presentationHwnd || !IsWindow(hwnd) || !IsWindow(presentationHwnd))
+			{
+				SealRuntimeMetricsRun(true);
+				return false;
+			}
+			PrepareRuntimeMetrics(options);
+			// 上一代 Stop 尾部可能留下普通唤醒；新 Bridge 不能消费旧 marker。
+			input.ResetForNextRun();
 			bridge.Reset();
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
@@ -1016,14 +1440,17 @@ namespace Inkeys::Drawing::Draw3
 			ExternalWindowCallbacks windowCallbacks{};
 			if (!window.AttachExternal(hwnd, windowCallbacks))
 			{
+				failedCleanup.BeginKnownFailure();
 				attachedWindow.store(nullptr, std::memory_order_release);
 				attachedPresentationWindow.store(nullptr, std::memory_order_release);
 				hiddenTestContactInjectionEnabled = false;
+				SealRuntimeMetricsRun(true);
 				return false;
 			}
 			if (startOptions.startupMilestone)
 				startOptions.startupMilestone(startOptions.startupContext,
 					HostStartupStage::WindowAttached);
+			LogDraw3WindowState("attached", hwnd, presentationHwnd);
 			autoSave.CloseAndDrain();
 			presentationAutoSave.CloseAndDrain();
 			if (!options.autoSaveRoot.empty() && !autoSave.Start(
@@ -1032,10 +1459,12 @@ namespace Inkeys::Drawing::Draw3
 			if (!options.autoSaveRoot.empty() && !presentationAutoSave.Start(
 				options.autoSaveRoot, this, &WakeForPresentationPersistence))
 				std::fputs("[Draw3.Presentation] action=start result=failed\n", stderr);
-			input.EnableDiagnostics(options.enableHiddenTestContactInjection);
+			input.EnableDiagnostics(options.enableHiddenTestContactInjection || options.enableRuntimeMetrics);
+			if (options.enableRuntimeMetrics) runtimeMetrics.inputBaseline = input.DiagnosticsSnapshot();
 			window.SetInputCoordinator(&input);
 			window.SetSpeedEraserDisplayScale({});
 			appliedDisplayClientBounds = {};
+			penWidthContextPrepared = false;
 			PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
 			// 启动握手保证绘制线程先拥有独立 GPU 资源，再启用唯一 RTS producer。
 			{
@@ -1047,16 +1476,30 @@ namespace Inkeys::Drawing::Draw3
 				startupSucceeded = false;
 			}
 			running.store(true, std::memory_order_release);
-			drawingThread = std::jthread([this](std::stop_token token)
+			auto runDrawing = [this, failedCleanup](std::stop_token token)
 			{
 				bool initialized = false;
 				bool graphicsInitialized = false;
+					std::cout << "[Draw3Diag][startup] stage=begin hwnd=0x" << std::hex
+						<< reinterpret_cast<UINT_PTR>(attachedWindow.load(std::memory_order_acquire))
+						<< " selectionHwnd=0x"
+						<< reinterpret_cast<UINT_PTR>(attachedPresentationWindow.load(std::memory_order_acquire))
+						<< std::dec << std::endl;
 				try
 				{
 					const HWND windowHandle = attachedWindow.load(std::memory_order_acquire);
 					const HWND presentationWindowHandle =
 						attachedPresentationWindow.load(std::memory_order_acquire);
 					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics);
+					std::cout << "[Draw3Diag][startup] stage=graphics result="
+						<< (graphicsInitialized ? "ready" : "failed")
+						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(windowHandle)
+						<< " selectionHwnd=0x" << reinterpret_cast<UINT_PTR>(presentationWindowHandle)
+						<< std::dec << " driver=" << (graphics.driverType == D3D_DRIVER_TYPE_WARP ? "WARP" : "Hardware")
+						<< " featureLevel=0x" << std::hex << static_cast<unsigned>(graphics.featureLevel)
+						<< std::dec << std::endl;
+					// 已知失败后先激活；普通设备初始化尚未返回时不设置冷启动上限。
+					if (!graphicsInitialized) failedCleanup.BeginKnownFailure();
 					if (graphicsInitialized && startOptions.startupMilestone)
 						startOptions.startupMilestone(startOptions.startupContext,
 							HostStartupStage::GraphicsReady);
@@ -1075,11 +1518,18 @@ namespace Inkeys::Drawing::Draw3
 							ToTransparentMode(startOptions.requiredPresentationMode);
 						presentationOptions.allowDirectComposition =
 							startOptions.allowDirectComposition;
+						presentationOptions.failedCleanup = failedCleanup;
 						graphicsInitialized = presentation.Initialize(windowHandle,
 							presentationWindowHandle, graphics, renderer,
 							static_cast<UINT>((std::max)(1, size.width)),
 							static_cast<UINT>((std::max)(1, size.height)), presentationCallbacks,
 							presentationOptions);
+						std::cout << "[Draw3Diag][startup] stage=presenter result="
+							<< (graphicsInitialized ? "ready" : "failed")
+							<< " mode=" << TransparentPresentModeName(presentation.ActiveMode())
+							<< " renderer=0x" << std::hex << reinterpret_cast<UINT_PTR>(&renderer)
+							<< std::dec << " size=" << size.width << "x" << size.height << std::endl;
+						if (!graphicsInitialized) failedCleanup.BeginKnownFailure();
 						if (graphicsInitialized)
 						{
 							if (startOptions.startupMilestone)
@@ -1089,9 +1539,12 @@ namespace Inkeys::Drawing::Draw3
 								std::memory_order_release);
 							window.SetGpuTransparentComposition(
 								presentation.IsGpuTransparentComposition());
+							CaptureRuntimeMetricsMetadata(true);
 						}
 					}
 
+					// 输入准入前由绘制 owner 同步解析目标并消费产品样式，首笔无异步纠正。
+					if (graphicsInitialized) PumpBridgeState();
 					{
 						std::scoped_lock lock(startupMutex);
 						graphicsReady = graphicsInitialized;
@@ -1101,16 +1554,26 @@ namespace Inkeys::Drawing::Draw3
 					{
 						// RTS 必须在图形资源准备好后才启用，避免输入 producer 先于 renderer 存活。
 						bool stylusApproved = false;
+						bool stylusDecisionValue = false;
+						bool stylusSucceededValue = false;
 						{
 							std::unique_lock lock(startupMutex);
+							std::cout << "[Draw3Diag][startup] gate=rts-ready state=waiting" << std::endl;
 							startupCondition.wait(lock, [this, &token]
 								{ return stylusDecision || token.stop_requested(); });
+							stylusDecisionValue = stylusDecision;
+							stylusSucceededValue = stylusSucceeded;
 							stylusApproved = stylusDecision && stylusSucceeded && !token.stop_requested();
 						}
+						std::cout << "[Draw3Diag][startup] gate=rts-ready result="
+							<< (stylusApproved ? "open" : "closed")
+							<< " decision=" << (stylusDecisionValue ? 1 : 0)
+							<< " stylus=" << (stylusSucceededValue ? 1 : 0)
+							<< " stopped=" << (token.stop_requested() ? 1 : 0) << std::endl;
 						if (stylusApproved)
 						{
 							StrokeModelConfiguration configuration =
-								CreateStrokeModelConfiguration(GetDpiForWindow(windowHandle));
+								CreateStrokeModelConfiguration(QueryCompatibleWindowDpi(windowHandle));
 							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
 								startOptions.enableHiddenTestContactInjection);
 							const DrawingControllerRuntimeObserver observer{
@@ -1127,7 +1590,10 @@ namespace Inkeys::Drawing::Draw3
 								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
-								presentation, configuration, observer);
+								presentation, configuration, observer, runtimeMetrics.session.get());
+							std::cout << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
+								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
+								<< std::dec << std::endl;
 							if (startOptions.startupMilestone)
 								startOptions.startupMilestone(startOptions.startupContext,
 									HostStartupStage::ControllerReady);
@@ -1136,8 +1602,29 @@ namespace Inkeys::Drawing::Draw3
 							presentation.SetOutputTarget(window.SelectionMode()
 								? TransparentOutputTarget::SelectionUlw
 								: TransparentOutputTarget::PrimaryDrawpad);
+							std::cout << "[Draw3Diag][startup] stage=first-frame attempt target="
+								<< HostOutputTargetName(ToHostOutputTarget(presentation.RequestedOutputTarget()))
+								<< " revision=" << presentation.RequestedOutputRevision()
+								<< " size=" << committedWidth.load(std::memory_order_acquire)
+								<< "x" << committedHeight.load(std::memory_order_acquire) << std::endl;
 							drawing->ClearCanvas();
+							if (runtimeMetrics.session)
+							{
+								// Controller 旁挂失败会关闭真实计数；不把空 Session 导出成正常 run。
+								const auto metrics = runtimeMetrics.session->Snapshot();
+								if (metrics.frameSerial == 0 || metrics.presentAttempts == 0)
+									runtimeMetrics.unavailable.store(true, std::memory_order_release);
+							}
 							initialized = lastPresentSucceeded.load(std::memory_order_acquire);
+							std::cout << "[Draw3Diag][startup] stage=first-frame result="
+								<< (initialized ? "committed" : "failed")
+								<< " target=" << HostOutputTargetName(
+									ToHostOutputTarget(presentation.RequestedOutputTarget()))
+								<< " revision=" << presentation.RequestedOutputRevision()
+								<< " size=" << committedWidth.load(std::memory_order_acquire)
+								<< "x" << committedHeight.load(std::memory_order_acquire) << std::endl;
+							LogDraw3WindowState("first-frame", windowHandle, presentationWindowHandle);
+							if (!initialized) failedCleanup.BeginKnownFailure();
 							firstFrameReady.store(initialized, std::memory_order_release);
 							if (initialized && startOptions.startupMilestone)
 								startOptions.startupMilestone(startOptions.startupContext,
@@ -1147,15 +1634,21 @@ namespace Inkeys::Drawing::Draw3
 				}
 				catch (const std::exception& exception)
 				{
+					failedCleanup.BeginKnownFailure();
 					// 初始化失败也必须完成握手；保留异常原因供隐藏测试和现场诊断。
 					std::fprintf(stderr, "[Draw3] startup failed: %s\n", exception.what());
 					initialized = false;
 				}
 				catch (...)
 				{
+					failedCleanup.BeginKnownFailure();
 					std::fputs("[Draw3] startup failed: unknown exception\n", stderr);
 					initialized = false;
 				}
+				// Signal 由此 owner 按值持有，覆盖失败握手与随后全部 GPU 释放。
+				if (!initialized) failedCleanup.BeginKnownFailure();
+				if (!initialized && runtimeMetrics.enabled.load(std::memory_order_acquire))
+					runtimeMetrics.startupFailed.store(true, std::memory_order_release);
 				{
 					std::scoped_lock lock(startupMutex);
 					startupSucceeded = initialized;
@@ -1170,6 +1663,7 @@ namespace Inkeys::Drawing::Draw3
 					}
 					catch (const std::exception& exception)
 					{
+						runtimeMetrics.runFailed.store(true, std::memory_order_release);
 						// 绘制循环异常必须收敛到宿主停止，不能穿出 jthread 触发 terminate。
 						std::fprintf(stderr, "[Draw3] drawing loop stopped: %s\n",
 							exception.what());
@@ -1177,12 +1671,14 @@ namespace Inkeys::Drawing::Draw3
 					}
 					catch (...)
 					{
+						runtimeMetrics.runFailed.store(true, std::memory_order_release);
 						std::fputs("[Draw3] drawing loop stopped: unknown exception\n", stderr);
 						window.RequestExit();
 					}
 				}
 				// Run 正常、异常或 stop 返回时都补齐活动结束，再释放 controller。
 				EndDrawingActivity();
+				CaptureRuntimeMetricsMetadata(true);
 				// GPU 资源在拥有它们的绘制线程释放，避免跨线程访问 Renderer。
 				if (drawing) drawing.reset();
 				presentation.Shutdown();
@@ -1192,12 +1688,36 @@ namespace Inkeys::Drawing::Draw3
 				contentCondition.notify_all();
 				exitAutoSaveCondition.notify_all();
 				runtimeRevision.NotifyAll();
-			});
+			};
+			try
+			{
+				drawingThread = std::jthread(std::move(runDrawing));
+				runtimeMetrics.ownerCreated = true;
+			}
+			catch (...)
+			{
+				// owner 创建失败也先监督，再排空已建立的 worker 并解除外部窗口附着。
+				failedCleanup.BeginKnownFailure();
+				running.store(false, std::memory_order_release);
+				autoSave.CloseAndDrain();
+				presentationAutoSave.CloseAndDrain();
+				EndDrawingActivity();
+				window.SetInputCoordinator(nullptr);
+				window.DetachExternal();
+				attachedWindow.store(nullptr, std::memory_order_release);
+				attachedPresentationWindow.store(nullptr, std::memory_order_release);
+				hiddenTestContactInjectionEnabled = false;
+				firstFrameReady.store(false, std::memory_order_release);
+				runtimeCallbacks = {};
+				SealRuntimeMetricsRun(true);
+				return false;
+			}
 
 		std::unique_lock lock(startupMutex);
 		startupCondition.wait(lock, [this] { return graphicsReady || startupCompleted; });
 		if (!graphicsReady)
 		{
+			failedCleanup.BeginKnownFailure();
 			lock.unlock();
 			if (drawingThread.joinable()) drawingThread.join();
 			autoSave.CloseAndDrain();
@@ -1210,6 +1730,7 @@ namespace Inkeys::Drawing::Draw3
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
 			runtimeCallbacks = {};
+			SealRuntimeMetricsRun(true);
 			return false;
 		}
 
@@ -1217,13 +1738,15 @@ namespace Inkeys::Drawing::Draw3
 		bool stylusInitialized = false;
 		try
 		{
-			stylusInitialized = stylus.Initialize(hwnd, input, &window);
+			stylusInitialized = stylus.Initialize(hwnd, input, &window, failedCleanup);
+			if (!stylusInitialized) failedCleanup.BeginKnownFailure();
 			if (stylusInitialized && startOptions.startupMilestone)
 				startOptions.startupMilestone(startOptions.startupContext,
 					HostStartupStage::RtsReady);
 		}
 		catch (...)
 		{
+			failedCleanup.BeginKnownFailure();
 			// 即使 RTS 构造意外抛出，也必须完成握手，不能让绘制线程永久等待。
 			stylusInitialized = false;
 		}
@@ -1240,6 +1763,7 @@ namespace Inkeys::Drawing::Draw3
 		lock.unlock();
 		if (!startupSucceededValue)
 		{
+			failedCleanup.BeginKnownFailure();
 			// 失败时先停止 RTS producer，再让绘制线程退出并释放 GPU 资源。
 			stylus.Shutdown();
 			window.RequestExit();
@@ -1257,6 +1781,7 @@ namespace Inkeys::Drawing::Draw3
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
 			runtimeCallbacks = {};
+			SealRuntimeMetricsRun(true);
 			return false;
 		}
 		displaySubscription = Inkeys::Display::Subscribe(
@@ -1265,6 +1790,9 @@ namespace Inkeys::Drawing::Draw3
 				// 通知线程只发布快照并唤醒，窗口信息由绘制线程低频解析。
 				PublishDisplaySnapshot(std::move(snapshot));
 			});
+		// Subscribe 仍可能抛出；只有 caller 完整 Start 成功后才清失败标记。
+		if (runtimeMetrics.enabled.load(std::memory_order_acquire))
+			runtimeMetrics.startupFailed.store(false, std::memory_order_release);
 		return true;
 		}
 
@@ -1273,12 +1801,13 @@ namespace Inkeys::Drawing::Draw3
 			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
 			if (!attachedWindow.load(std::memory_order_acquire) &&
 				!attachedPresentationWindow.load(std::memory_order_acquire) &&
-				!running.load(std::memory_order_acquire))
+				!running.load(std::memory_order_acquire) && !drawingThread.joinable())
 			{
 				autoSave.CloseAndDrain();
 				presentationAutoSave.CloseAndDrain();
 				EndDrawingActivity();
 				runtimeCallbacks = {};
+				SealRuntimeMetricsRun();
 				return;
 			}
 			{
@@ -1286,11 +1815,21 @@ namespace Inkeys::Drawing::Draw3
 				exitAutoSavePrepared = false;
 			}
 			// 关闭产品命令生产端，并把退出保存屏障排在所有已接受命令之后。
-			const bool exitBarrierQueued = bridge.StopWithFinalCommand(
-				Bridge::CommandType::PrepareExitAutoSave);
+			bool exitBarrierQueued = false;
+			{
+				std::scoped_lock lock(commandPublishMutex);
+				if (input.TryReserveCommandWake())
+				{
+					exitBarrierQueued = bridge.StopWithFinalCommand(
+						Bridge::CommandType::PrepareExitAutoSave);
+					if (!exitBarrierQueued) input.CancelReservedCommandWake();
+				}
+				else bridge.Stop(); // 预约失败不可接受一个无法送达的最终屏障。
+			}
 			// 再停止 RTS producer；Shutdown 会为仍活动的 contact 发布终止事件。
 			stylus.Shutdown();
-			input.PublishControlWake();
+			if (exitBarrierQueued) input.PublishReservedCommandWake();
+			else input.PublishControlWake();
 			if (exitBarrierQueued)
 			{
 				std::unique_lock lock(exitAutoSaveMutex);
@@ -1325,6 +1864,7 @@ namespace Inkeys::Drawing::Draw3
 			contentCondition.notify_all();
 			runtimeRevision.NotifyAll();
 			runtimeCallbacks = {};
+			SealRuntimeMetricsRun();
 		}
 	};
 
@@ -1338,7 +1878,23 @@ namespace Inkeys::Drawing::Draw3
 			runtimeCallbacks);
 	}
 	void Host::Stop() noexcept { impl_->Stop(); }
+	bool Host::WriteRuntimeMetrics(const wchar_t* absoluteOutputPath) const noexcept
+	{
+		return impl_->WriteRuntimeMetrics(absoluteOutputPath);
+	}
 	bool Host::Running() const noexcept { return impl_->running.load(std::memory_order_acquire); }
+	std::optional<HostHiddenPersistenceSnapshot> Host::HiddenPersistenceSnapshot() const noexcept
+	{
+		// startOptions 在当前 generation 不变，Stop 不改写此字段；禁止并行下一 Start。
+		if (!impl_->startOptions.enableHiddenTestContactInjection) return std::nullopt;
+		const auto desktop = impl_->autoSave.Diagnostics();
+		const auto presentation = impl_->presentationAutoSave.Diagnostics();
+		return HostHiddenPersistenceSnapshot{ desktop.accepted, desktop.committed,
+			desktop.failed, desktop.pending, presentation.accepted, presentation.committed,
+			presentation.loaded, presentation.failed,
+			impl_->hiddenPresentationNotFound.load(std::memory_order_acquire) };
+	}
+
 	bool Host::FirstFrameReady() const noexcept
 	{
 		return impl_->firstFrameReady.load(std::memory_order_acquire);
@@ -1350,6 +1906,7 @@ namespace Inkeys::Drawing::Draw3
 		snapshot.runtimeRevision = impl_->runtimeRevision.Revision();
 		{std::scoped_lock lock(impl_->eraserDiagnosticsMutex);snapshot.eraser=impl_->eraserDiagnostics;snapshot.pen=impl_->penDiagnostics;}
 		snapshot.touchContactAreaAssistanceEnabled=impl_->window.TouchContactAreaAssistance();
+		snapshot.runtimeMetrics = impl_->CopyRuntimeMetricsSnapshot();
 		snapshot.running = impl_->running.load(std::memory_order_acquire);
 		snapshot.firstFrameReady = impl_->firstFrameReady.load(std::memory_order_acquire);
 		snapshot.lastPresentSucceeded =
@@ -1622,9 +2179,12 @@ namespace Inkeys::Drawing::Draw3
 
 	Bridge::CommandResult Host::PublishCommand(Bridge::CommandType command) noexcept
 	{
+		std::scoped_lock lock(impl_->commandPublishMutex);
+		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
 		const Bridge::CommandResult result = impl_->bridge.Publish(command);
 		if (result == Bridge::CommandResult::Accepted)
-			(void)impl_->input.PublishControlWake();
+			impl_->input.PublishReservedCommandWake();
+		else impl_->input.CancelReservedCommandWake();
 		return result;
 	}
 }
