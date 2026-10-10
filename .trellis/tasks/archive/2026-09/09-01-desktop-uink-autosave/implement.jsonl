@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native/index.md","reason":"Native C++ module, threading, Win32 lifetime and test conventions."}
+{"file":".trellis/spec/native/platform-and-resources.md","reason":"Windows path, project resource and ARM64 solution build constraints."}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"Draw3 drawing-thread ownership and immutable CPU snapshot boundary."}
+{"file":".trellis/spec/native-desktop/index.md","reason":"Desktop host lifecycle, Bridge state and headless verification conventions."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Existing settings UI behavior and narrowly scoped control restoration."}
+{"file":".trellis/tasks/09-01-desktop-uink-autosave/research/current-state-and-risks.md","reason":"Draw2 reference behavior, existing UInk capabilities and identified concurrency risks."}

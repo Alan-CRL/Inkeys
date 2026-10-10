@@ -1,0 +1,7 @@
+{"file":".trellis/spec/native/index.md","reason":"复核 Native 层整体契约。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"复核 Shape 的 L0-only、L2 重放与输入线程边界。"}
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"复核模块、注释、编码和改动范围。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"执行完整 ARM64 构建、测试与性能门禁。"}
+{"file":".trellis/spec/shaders/index.md","reason":"复核 Shader 层改动范围。"}
+{"file":".trellis/spec/shaders/cpu-gpu-contracts.md","reason":"核对 shape 编号、结构布局和混合语义。"}
+{"file":".trellis/spec/shaders/build-and-encoding.md","reason":"核对 HLSL 构建资源及文件编码。"}

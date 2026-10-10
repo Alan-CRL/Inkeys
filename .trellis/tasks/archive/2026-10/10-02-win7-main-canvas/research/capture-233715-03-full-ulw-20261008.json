@@ -1,0 +1,89 @@
+{
+  "input_counts": {
+    "mouse_accepted": 1305,
+    "mouse_rejected": 0,
+    "cursor_before_draw": 13,
+    "cursor_after_draw": 13,
+    "rts_down_published": 16,
+    "rts_up_published": 16,
+    "rts_packets_published": 15,
+    "undo": 0,
+    "autosave_capture": 1,
+    "autosave_committed": 1
+  },
+  "ulw": {
+    "DrawpadPresentation": {
+      "samples": 2,
+      "source_nonzero_samples": 0,
+      "source_rgb_nonzero_samples": 0,
+      "api_success": 2,
+      "overrides": {
+        "1": 2
+      },
+      "dirty_parameters": {
+        "null": 2
+      },
+      "max_final_alpha": 0
+    },
+    "Drawpad": {
+      "samples": 24,
+      "source_nonzero_samples": 0,
+      "source_rgb_nonzero_samples": 0,
+      "api_success": 24,
+      "overrides": {
+        "1": 24
+      },
+      "dirty_parameters": {
+        "null": 24
+      },
+      "max_final_alpha": 1
+    }
+  },
+  "selected_lines": [
+    {
+      "file": "console.stdout.txt",
+      "line": 20,
+      "text": "[UlwDirtyRect] Draw3 created swapchain desc: size=1920x1080 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=UNSPECIFIED scaling=0 flags=0x0"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 32,
+      "text": "[Draw3Diag][ulw-pixels] role=DrawpadPresentation hwnd=0x3801da tick=57833330 dirty=(0,0,1920,1080) full=1 dirtyParameter=null fullUpdateOverride=1 copy_map_ms=78 rows_ms=15 ulw_ms=32 api=success error=0 underlay=0 pixels=2073600 sourceAlphaNonzero=0 sourceRgbNonzero=0 sourceMaxBgra=(0,0,0,0) sourceAlphaBounds=(0,0,0,0) sourcePremul=1 finalDibAlphaNonzero=0 finalDibRgbNonzero=0 finalDibMaxBgra=(0,0,0,0) finalDibAlphaBounds=(0,0,0,0) finalDibPremul=1 samplePos=(0,0) sampleSourceBgra=(0,0,0,0) sampleFinalBgra=(0,0,0,0)"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 46,
+      "text": "[Draw3Diag][ulw-pixels] role=Drawpad hwnd=0x4a00d2 tick=57837916 dirty=(0,0,1920,1080) full=1 dirtyParameter=null fullUpdateOverride=1 copy_map_ms=15 rows_ms=16 ulw_ms=31 api=success error=0 underlay=1 pixels=2073600 sourceAlphaNonzero=0 sourceRgbNonzero=0 sourceMaxBgra=(0,0,0,0) sourceAlphaBounds=(0,0,0,0) sourcePremul=1 finalDibAlphaNonzero=2073600 finalDibRgbNonzero=0 finalDibMaxBgra=(0,0,0,1) finalDibAlphaBounds=(0,0,1920,1080) finalDibPremul=1 samplePos=(0,0) sampleSourceBgra=(0,0,0,0) sampleFinalBgra=(0,0,0,1)"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 302,
+      "text": "[Draw3Diag][ulw-pixels] role=Drawpad hwnd=0x4a00d2 tick=57838930 dirty=(704,883,714,893) full=0 dirtyParameter=null fullUpdateOverride=1 copy_map_ms=0 rows_ms=0 ulw_ms=0 api=success error=0 underlay=1 pixels=100 sourceAlphaNonzero=0 sourceRgbNonzero=0 sourceMaxBgra=(0,0,0,0) sourceAlphaBounds=(0,0,0,0) sourcePremul=1 finalDibAlphaNonzero=100 finalDibRgbNonzero=0 finalDibMaxBgra=(0,0,0,1) finalDibAlphaBounds=(704,883,714,893) finalDibPremul=1 samplePos=(704,883) sampleSourceBgra=(0,0,0,0) sampleFinalBgra=(0,0,0,1)"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 8749,
+      "text": "[Draw3Diag][ulw-pixels] role=DrawpadPresentation hwnd=0x3801da tick=57874498 dirty=(0,0,1920,1080) full=1 dirtyParameter=null fullUpdateOverride=1 copy_map_ms=15 rows_ms=16 ulw_ms=0 api=success error=0 underlay=0 pixels=2073600 sourceAlphaNonzero=0 sourceRgbNonzero=0 sourceMaxBgra=(0,0,0,0) sourceAlphaBounds=(0,0,0,0) sourcePremul=1 finalDibAlphaNonzero=0 finalDibRgbNonzero=0 finalDibMaxBgra=(0,0,0,0) finalDibAlphaBounds=(0,0,0,0) finalDibPremul=1 samplePos=(0,0) sampleSourceBgra=(0,0,0,0) sampleFinalBgra=(0,0,0,0)"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 7,
+      "text": "[Draw3Diag][device] driver=Hardware levels=11_1,11_0 attempt=preferred hresult=0x887a0004"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 9,
+      "text": "[Draw3Diag][device] driver=WARP levels=11_1,11_0 attempt=preferred hresult=0x0"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 8755,
+      "text": "[Draw3.AutoSave] action=capture trigger=exit strokes=12 bytes=31559 elapsed_ms=0.054"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 8756,
+      "text": "[Draw3.AutoSave] action=commit request=b88a8509-dfc9-4133-9366-96f275ed4f3b trigger=exit result=committed"
+    }
+  ]
+}

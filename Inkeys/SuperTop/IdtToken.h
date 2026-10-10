@@ -260,11 +260,18 @@ namespace UiAccess
 		}
 		static bool SetUiAccessToken(const IdtHandle& winlogonToken, const IdtHandle& targetToken)
 		{
+			if (!winlogonToken) return false;
 			if (!SetThreadToken(NULL, winlogonToken.get())) return false;
 			BOOL ui_access = TRUE;
-			if (!SetTokenInformation(targetToken.get(), TokenUIAccess, &ui_access, sizeof(ui_access))) return false;
-			RevertToSelf();
-			return true;
+			const BOOL updated = SetTokenInformation(targetToken.get(),
+				TokenUIAccess, &ui_access, sizeof(ui_access));
+			// 冒用 winlogon 后任何失败都先撤销；撤销失败不能继续执行 helper。
+			if (!RevertToSelf())
+			{
+				TerminateProcess(GetCurrentProcess(), ERROR_PRIVILEGE_NOT_HELD);
+				return false;
+			}
+			return updated != FALSE;
 		}
 	private:
 		RunToken() = delete;

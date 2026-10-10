@@ -1,0 +1,36 @@
+{
+  "id": "laser-pointer-independent-width",
+  "name": "laser-pointer-independent-width",
+  "title": "独立激光笔粗细、笔型语义与 Bar 动画",
+  "description": "补齐 Laser 独立粗细、SoftPen/HardPen/Highlighter 行为、触摸粗细预览和 Bar 复合动画状态机。",
+  "status": "completed",
+  "dev_type": "feature",
+  "scope": "native-desktop",
+  "package": "Inkeys",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-08-18",
+  "completedAt": "2026-08-20",
+  "branch": "draw",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "a6bf819c",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "08-15-migrate-draw3-into-inkeys",
+  "relatedFiles": [
+    "Inkeys/IdtState.h",
+    "Inkeys/IdtState.cpp",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.Interaction.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp"
+  ],
+  "notes": "5d0777b6 是偏离需求的首轮实现，已由 540cd8b9 完整撤销；最终实现基线为 39c32be1、9064374b、18619a41、5f6201c4、97b90fba、6dccc597、a6bf819c。9c9faeed 仅恢复 Trellis/hooks 基础设施，不含产品代码。",
+  "meta": {
+    "history_recovered_from": "codex-session-01a014f0-114c-7883-b98e-4a843d27cb65",
+    "recoveredAt": "2026-08-20"
+  }
+}

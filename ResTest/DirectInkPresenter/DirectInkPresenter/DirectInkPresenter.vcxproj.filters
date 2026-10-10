@@ -1,0 +1,121 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="源文件\Ink">
+      <UniqueIdentifier>{68002d06-f496-43a3-b2be-bebf8bfd4683}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Ink">
+      <UniqueIdentifier>{334681ee-fa9a-477d-83d1-33c18d764a05}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Application">
+      <UniqueIdentifier>{4453173a-9169-4507-9361-8c6ec43ae4b7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\UI">
+      <UniqueIdentifier>{375f6951-33e3-4e1c-adec-b96c20e1e2db}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\UI">
+      <UniqueIdentifier>{4a19b985-e677-4b98-b655-a34363c38e15}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Foundation">
+      <UniqueIdentifier>{7e89a238-2461-45de-8244-e36b32c22553}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Foundation">
+      <UniqueIdentifier>{d914e364-c5f6-49ce-9dc1-0239e0de606e}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="StrokeCollection.h">
+      <Filter>头文件\Ink</Filter>
+    </ClInclude>
+    <ClInclude Include="Stroke.h">
+      <Filter>头文件\Ink</Filter>
+    </ClInclude>
+    <ClInclude Include="CRT.h">
+      <Filter>头文件\Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="DX.h">
+      <Filter>头文件\Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Framework.h">
+      <Filter>头文件\Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="ContactReceiver.h">
+      <Filter>头文件\Ink</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Application.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h">
+      <Filter>头文件\Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Resource.h">
+      <Filter>头文件\Application</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>头文件\Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Canvas.h">
+      <Filter>头文件\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Window.h">
+      <Filter>头文件\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics.h">
+      <Filter>头文件\UI</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Stroke.cpp">
+      <Filter>源文件\Ink</Filter>
+    </ClCompile>
+    <ClCompile Include="StrokeCollection.cpp">
+      <Filter>源文件\Ink</Filter>
+    </ClCompile>
+    <ClCompile Include="ContactReceiver.cpp">
+      <Filter>源文件\Ink</Filter>
+    </ClCompile>
+    <ClCompile Include="Application.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>源文件\Foundation</Filter>
+    </ClCompile>
+    <ClCompile Include="Canvas.cpp">
+      <Filter>源文件\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Window.cpp">
+      <Filter>源文件\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics.cpp">
+      <Filter>源文件\UI</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="DirectInkPresenter.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="DirectInkPresenter.ico">
+      <Filter>资源文件</Filter>
+    </Image>
+  </ItemGroup>
+</Project>

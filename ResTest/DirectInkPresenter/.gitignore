@@ -1,0 +1,10 @@
+/.vs/
+/packages/
+/Release/
+/Debug/
+/x64/
+/ARM64/
+/DirectInkPresenter/Release/
+/DirectInkPresenter/Debug/
+/DirectInkPresenter/x64/
+/DirectInkPresenter/ARM64/

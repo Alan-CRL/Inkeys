@@ -1,0 +1,4 @@
+#pragma once
+
+#define IDR_LASER_PARTICLE_UPDATE_CS 103
+#define IDR_LASER_PARTICLE_EMIT_CS 104

@@ -85,7 +85,7 @@ export namespace Inkeys::UI::Bar
 		bool waitableTimerFallback = false;
 	};
 
-	// 动画时钟可在真正 idle 唤醒时重置，避免把休眠时间计入首帧动画。
+	// 动画时钟在 idle 后第一次真正回调重基准，避免把休眠时间计入首帧动画。
 	class FrameAnimationClock
 	{
 	public:
@@ -102,18 +102,39 @@ export namespace Inkeys::UI::Bar
 			double elapsedSeconds =
 				std::chrono::duration<double>(now - reckon_).count();
 			reckon_ = now;
+			lastRawElapsedSeconds_ = elapsedSeconds;
+			if (resumeFromIdle_)
+			{
+				resumeFromIdle_ = false;
+				return 0.0;
+			}
 			if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0)
 				return 0.0;
 			return std::clamp(elapsedSeconds, 0.0, 0.05);
 		}
 
+		// 只记录最近 Tick 的原始间隔，诊断不能改变限幅或休眠重置时机。
+		[[nodiscard]] double LastRawElapsedSeconds() const noexcept
+		{
+			return lastRawElapsedSeconds_;
+		}
+
 		void Rebase(Clock::time_point now = Clock::now()) noexcept
 		{
 			reckon_ = now;
+			resumeFromIdle_ = false;
+		}
+
+		void SuspendForIdle(Clock::time_point now = Clock::now()) noexcept
+		{
+			reckon_ = now;
+			resumeFromIdle_ = true;
 		}
 
 	private:
 		Clock::time_point reckon_;
+		double lastRawElapsedSeconds_ = 0.0;
+		bool resumeFromIdle_ = false;
 	};
 
 	struct FrameRateAverages
@@ -203,7 +224,7 @@ export namespace Inkeys::UI::Bar
 		double publishedUnlimited_ = 0.0;
 	};
 
-	// FPS 文字只在真实渲染结束后补一帧休眠标记，不能反向维持渲染循环。
+	// 真实渲染结束后只补一个最终提交，用于收窗和调试末帧，不能反向维持循环。
 	class DebugFrameSleepLatch
 	{
 	public:

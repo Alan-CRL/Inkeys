@@ -17,11 +17,87 @@
 9. `PreviousSlideShow()`；
 10. `EndSlideShow()`；
 11. `ViewSlideShow()`；
-12. `ActivateSildeShowWindow()`。
+12. `ActivateSildeShowWindow()`；
+13. `SetConsoleOutputEnabled(bool enabled)`；
+14. `GetPresentationDescriptor()`。
 
 `【历史/兼容】` `ActivateSildeShowWindow` 的拼写已进入 COM 接口和 native 调用点；它不是新命名范例，也不能在无兼容计划时直接改名。
 
 `【直接确认】` `PptCOM.csproj` 构建后调用 `TlbExp.exe` 生成 `PptCOM.tlb`；`Inkeys/IdtPlug-in.cpp` 通过 `#import "PptCOM.tlb"` 使用 `IPptCOMServerPtr`。因此接口变更会跨越 C#、TLB、native 调用和部署产物。
+
+## Scenario: 纯值 Presentation descriptor 与 COM 所有权
+
+### 1. Scope / Trigger
+
+修改 PPT 文稿/页身份、SlideID 拓扑、PowerPoint/WPS dynamic 访问、descriptor 缓存、binding 恢复或 native 解析时必须应用本合同。目标是在不向 native 暴露 RCW 的前提下，为 Draw3 提供文稿、当前页和完整页拓扑的同一次快照。
+
+### 2. Signatures
+
+~~~csharp
+// IPptCOMServer 的最后一个方法；既有 GUID 与前 13 个方法顺序不变。
+string GetPresentationDescriptor();
+
+PresentationDescriptorValue PresentationDescriptorReader.Read(
+    object application, object presentation, object slideShowWindow,
+    long bindingRevision);
+~~~
+
+JSON schema version 1 恰含 `schemaVersion/provider/status/fullName/presentationName/applicationProcessId/slideShowHwnd/currentPage/totalPage/currentSlideId/slideIds/bindingRevision` 12 个字段；只允许 string、数值、nullable int 和 `int[]` 进入缓存。
+
+### 3. Contracts
+
+- `GetPresentationDescriptor()` 把短锁 clone 与锁外 `JavaScriptSerializer` 都放在异常边界内；失败使用手写 Unavailable JSON 兜底。它不访问 Office、不返回 dynamic/RCW，也不得持锁调 COM。
+- 只有 `PptComService` binding/monitor owner 读取 COM 图并刷新缓存。event 只置 refresh-pending；owner 在绑定、页/总数变化和低频复核时刷新。`TransientBusy` 可保留同 binding revision 的上一份 stable/fallback 纯值快照。
+- 文稿、当前页和完整拓扑等常规属性继续经 `InvokeMember` late-bound accessor 读取；reflection 必须解包内层异常供 busy HRESULT 分类，不做重复获取 COM temporary 的 typed→dynamic 二次尝试。
+- **唯一 HWND 标量例外**：PowerPoint `SlideShowWindow.HWND` 先借用既有 PIA 类型接口读取；真实放映中该接口可返回有效 HWND，而同一对象的 `InvokeMember("HWND")` 会返回 `0x80020003`。不支持该接口的 WPS/其他提供方仍走原 late-bound 路径。类型接口返回 0 或抛错时不得改用前台窗口充当会话身份；不额外释放借用的窗口 RCW。
+- application、active presentation 和 slide-show window 是长期借用字段，reader 不释放。`View`、`View.Slide`、`Slides` 及每个 `Slides.Item(i)` 是本次获取的 temporary；必须在 `finally` 按子到父每次恰好 `ReleaseComObject` 一次，不得 `foreach`、链式 COM 属性或 temporary `FinalReleaseComObject`。
+- 当前页的 `SlideIndex` 和 `SlideID` 必须来自同一个 `View.Slide` acquisition。完整 topology 必须用 `for (1..Count) + Slides.Item(i)` 读取，校验当前 SlideIndex 顺序、正 SlideID、唯一性及当前 ID 对应；descriptor 中的数组顺序只表示本次 COM 的当前页顺序，不能把顺序变化当成 SlideID 身份变化。任一读取失败不得返回部分 `slideIds`。
+- `FullCleanup` 必须先推进 `bindingRevision` 并发布 Unavailable 纯值缓存，再沿既有 event -> window -> presentation -> application 路径解绑/释放。WPS 所需的 final release/GC 只保留在原 cleanup 所有权边界，不下放给 descriptor reader。
+- managed 在缓存/数组分配前限制单个 identity 的 UTF-8 长度不超过 32 KiB、页数不超过 10,000；native 再对 JSON 设置 1 MiB UTF-8 payload、32 KiB identity 和 10,000 页上限，并严格校验 schema/status/数值/唯一 SlideID。
+- 有效 shared 页已变而 descriptor 仍是上一页，或 descriptor 为 `TransientBusy` 时，只有 descriptor bindingRevision 与 Bridge 当前 target 相同才可暂存旧画布且不发 ready；新 binding 首次 busy/unavailable 必须隔离，不能把 A 画布留给 B。
+
+### 4. Validation & Error Matrix
+
+| 条件 | descriptor/释放行为 |
+|---|---|
+| application/presentation/window 任一为 null | `Unavailable`；不释放借用 root |
+| `View.Slide`/SlideIndex 失败 | busy HRESULT -> `TransientBusy`；其他 -> `Unavailable`；已获取 current slide/View 均释放 |
+| 当前 SlideID 属性不存在 | 保留同次 SlideIndex，返回 `PageIndexFallback` |
+| Slides/Item/SlideID 普通失败、ID 重复/非法 | 若页码仍自洽则 `PageIndexFallback`，`slideIds=[]`；所有 temporary 恰好释放 |
+| 任一阶段 Office busy（`0x8001010A/0x800AC472/0x80010001`） | `TransientBusy`，不返回部分 topology，不破坏同 binding 的已缓存 stable 快照 |
+| cleanup 与 refresh 交错 | 候选 revision 不匹配时不发布；旧 binding 快照不得复活 |
+| JSON 序列化失败 | 返回同 revision 的 `Unavailable` JSON，不向 native 抛出托管异常 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：PowerPoint/WPS 均由 owner 读取完整页拓扑，getter 并发只复制纯值；反复扫描后 temporary acquisition/release 计数一致，Office 可正常退出。
+- Base：SlideID 不可用时返回 PageIndexFallback，native 用 process-local binding 隔离，既有三个 unsafe `int*` 页码槽仍原样工作。
+- Bad：在 getter 中现场遍历 Office，缓存 `dynamic Slide`，使用 `presentation.Slides[i].SlideID` 链式访问，或对借用 root 执行 FinalRelease；这些都可使 Office 进程残留或提前失效。
+
+### 6. Tests Required
+
+- managed fake COM ledger 覆盖 PowerPoint/WPS 值差异、重复扫描、每个异常点、busy HRESULT、缺失 SlideID、重复/非法 topology、borrowed root 零释放、temporary 恰好一次且子先父后。
+- native parser/身份测试覆盖 Unicode 路径、provider-independent stable identity、含 binding revision 的 process-local identity、payload/string/page 上限、重复 ID、同 binding stale/busy 保留及新 binding busy 隔离。
+- 完整 `InkeysRepo.sln Debug|x64` 构建必须重新生成 DLL/TLB，并核对 interface GUID 不变、新 getter 只在末尾追加。真实 PowerPoint/WPS 放映、busy/损坏、切文稿和进程退出必须另行设备验收。
+
+### 7. Wrong vs Correct
+
+~~~csharp
+// Wrong：链式 temporary 无法精确释放，getter 也被 Office 阻塞。
+return pptActivePresentation.Slides[index].SlideID;
+
+// Correct：owner 显式获取 temporary，finally 从子到父释放；getter 只返回 clone。
+object slides = null;
+object slide = null;
+try {
+    slides = accessor.GetProperty(presentation, "Slides");
+    slide = accessor.GetItem(slides, index);
+    return GetInt32(slide, "SlideID");
+} finally {
+    accessor.Release(slide);
+    accessor.Release(slides);
+}
+~~~
 
 ## `CheckCOM` 的真实作用
 
@@ -64,8 +140,8 @@
 1. `IdtMain.cpp::wWinMain` 调用 `CoInitializeEx`，准备/激活 PptCOM manifest context 并 `LoadLibrary` DLL；
 2. `IdtPlug-in.cpp::CheckPptCom` 创建服务，调用 `CheckCOM` 与 `Initialization`，再写入受保护的服务槽；
 3. `GetPptState` 取得快照并运行 `PptComService`；
-4. `PPTLinkageMain` 启动 `GetPptState`、`PptInfo`、`PptDraw`、`PptInteract` 等线程；
-5. `NextPptSlides`、`PreviousPptSlides` 等取得服务快照并包装用户命令；
+4. `PPTLinkageMain` 通过 `Inkeys.UI.Ppt` 租用 `Inkeys.UI.PageControl` 的四个渲染客户端，并启动 `GetPptState`、`PptInfo` 与 PPT 业务队列；
+5. UI3 回调只向业务队列提交请求，业务线程再通过 `NextPptSlides`、`PreviousPptSlides` 等取得服务快照并执行 COM 或模态确认；
 6. 退出路径通过 `offSignal`、服务 reset、COM/activation-context/module 清理收束。
 
 native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应每次通过既有快照入口取得服务并处理空值/COM 失败，而不是缓存未经同步的 raw interface pointer。
@@ -94,19 +170,16 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 
 `【合理推断】` 修改窗口发现时应覆盖 PowerPoint/WPS 的类名与进程、多个演示文稿/放映窗口、不可见或已销毁窗口、句柄复用和前台窗口不等于实际放映窗口的情况。是否支持所有 Office 位数由测试矩阵决定，不能仅凭 HWND API 外推。
 
-## 页码、缓冲状态与 `PptImg`
+## 当前 native 页码与会话合同
 
-`【直接确认】` 数据不是一步直达：
+当前生产路径、接口签名、验证矩阵和错误行为统一见 [native-session-ui3.md](native-session-ui3.md)。早期 `PublishProductPage` / `ResolvePageStateForPublication` 页码 helper 保留兼容和单元测试，不再描述新版会话 envelope 的完整生产路径。
 
-1. managed `PptComService` 通过 unsafe 指针写 `PptInfoState.TotalPage/CurrentPage`；
-2. `IdtPlug-in.cpp::PptInfo` 观察放映状态，并在放映结束时清理 `PptImg` 等状态；
-3. `IdtDrawpad.cpp` 比较 COM 状态与 buffer，换页前保存当前 `drawpad` 到 `PptImg.Image[页]`，再恢复目标页或清空画布；
-4. 画布处理完成后更新 `PptInfoStateBuffer`；源码注释明确 buffer 要等 `DrawpadDrawing` 加载 PPT 画布后再同步；
-5. `PptDraw`/PPT UI 使用缓冲状态显示控件，交互命令再调用 COM 服务。
-
-`PptImgStruct` 包含 `IsSave`、`IsSaved` 和 `map<int, IMAGE> Image`；它是 native 页级墨迹缓存，不是从 Office 获取的幻灯片位图。
-
-`【合理推断】` 页码修改应端到端验证第一页/末页、快速跳页、非相邻跳转、结束后重进、切换文档、有无页墨迹以及撤销历史；只验证 COM 页码或 UI 数字都不够。
+- 旧 `IPptCOMServer` 的 14 个方法及 v1 descriptor 均保留；新 `IPptCOMSessionState` 使用独立 IID，不在旧接口中改顺序。
+- native 对新版放映状态有界16ms采样、未放映100ms；旧 DLL 兼容页状态50ms。managed owner 已可被事件唤醒，500ms仍用于慢维护，不能把它写成固定端到端延迟。
+- Draw3 ready 必须匹配文稿、binding/target/session revision、SlideID/index，且在成功 Present 后发布；有效页不能提前显示。UI成功提交同一目标再开放新输入。
+- 新接口以明确 EndScreen 表达结束页，读取失败为 Unknown；旧 DLL 的 -1/有效总数歧义仅留在兼容路径。隐藏控件或覆盖白板都不是结束会话。
+- 仅主栏 EndShow 点击使用 Inkeys MessageBox 确认；PageControl 图标/滚轮/长按直接退出，原生 Esc/Office 退出不拦截。
+- `PptImg` 是遗留 DibSurface 缓存；生产墨迹归 Draw3 稳定文稿/SlideID slot 及 UInk 保存事务所有。
 
 ## 接口或构建产物变更清单
 

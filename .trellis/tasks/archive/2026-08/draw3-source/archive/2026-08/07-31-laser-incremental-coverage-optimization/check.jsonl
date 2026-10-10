@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native/index.md","reason":"检查原生层任务边界与总体验收项。"}
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"检查 module 接口同步、最小改动、注释、编码和换行。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"复核 Laser 单/多 contact、dirty 顺序、Bake、Hold/Fade 与粒子交叠。"}
+{"file":".trellis/spec/native/platform-and-resources.md","reason":"复核绘制线程资源创建、Resize/Release、部分失败清理与回退。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"执行 ARM64 全解决方案、测试、静态检查与未验证项披露。"}
+{"file":".trellis/spec/shaders/index.md","reason":"检查 shader 层完整影响范围。"}
+{"file":".trellis/spec/shaders/cpu-gpu-contracts.md","reason":"静态核对 t9、shape 13、MAX union、premultiplied resolve 与解绑。"}
+{"file":".trellis/spec/shaders/build-and-encoding.md","reason":"确认 VS/PS/UpdateCS/EmitCS、CSO、RC 链与源码格式。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"沿 coverage 数据流检查失败、Clear、Resize 与 Present 恢复。"}

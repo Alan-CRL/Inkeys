@@ -1,0 +1,7 @@
+{"file":".trellis/spec/native/index.md","reason":"Native 层输入、文档与渲染规范入口。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"L0/L1/L2、输入线程和绘制线程契约。"}
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"C++ 模块边界、命名、注释与编码约定。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"ARM64 构建、测试和性能验证要求。"}
+{"file":".trellis/spec/shaders/index.md","reason":"Shader 层范围与资源入口。"}
+{"file":".trellis/spec/shaders/cpu-gpu-contracts.md","reason":"CPU/HLSL shape 编号、buffer 布局和 blend 契约。"}
+{"file":".trellis/spec/shaders/build-and-encoding.md","reason":"HLSL 编译、嵌入资源、BOM 与 CRLF 要求。"}

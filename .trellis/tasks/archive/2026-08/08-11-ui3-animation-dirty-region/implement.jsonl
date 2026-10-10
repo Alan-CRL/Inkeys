@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/native-desktop/index.md","reason":"UI3 Bar 原生桌面修改前检查清单"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"基于变化的脏区事务、动画边界与呈现顺序合同"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"C++20 module 最小修改、中文注释与格式约束"}

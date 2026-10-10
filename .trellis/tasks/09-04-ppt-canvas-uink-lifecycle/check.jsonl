@@ -1,0 +1,16 @@
+{"file":".trellis/spec/index.md","reason":"Verify evidence claims, scope discipline, and mandatory project decisions."}
+{"file":".trellis/spec/native-desktop/index.md","reason":"Check product ownership boundaries and complete-solution validation requirements."}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Check x64 full build, PptCOM dependency, generated artifacts, and platform claims."}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Check synchronization, module interfaces, encoding, CRLF, comments, and minimal edits."}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Check workspace/document isolation, autosave, ready publication, and shutdown data flow."}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"Check restored history, page mutations, clear, undo/redo, and render truth."}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Audit RCW/COM/resource ownership and every failure/cleanup path."}
+{"file":".trellis/spec/ppt-interop/index.md","reason":"Check the full managed/native/UI PPT path and PowerPoint/WPS compatibility boundary."}
+{"file":".trellis/spec/ppt-interop/com-contract.md","reason":"Check appended COM ABI, busy/rebind, descriptor lifetime, and identity-aware ready semantics."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify fact-to-ready state publication and async worker completion across all layers."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check that Desktop transaction helpers are reused only where it reduces real duplication without regressions."}
+{"file":".trellis/tasks/09-04-ppt-canvas-uink-lifecycle/research/code-investigation.md","reason":"Verify every implementation claim against the investigated current state and extreme-switch matrix."}
+{"file":".trellis/tasks/09-04-ppt-canvas-uink-lifecycle/research/pptcom-slide-id-ownership.md","reason":"Audit each COM acquisition/release and managed fault-injection expectation."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/uink-v10-spec.md","reason":"Check stable SlideID and private page-index fallback output against UInk v10."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/file-conflict-strategy.md","reason":"Check full-save source revision, atomic replacement, and external writer conflict handling."}
+{"file":".trellis/tasks/09-01-desktop-uink-autosave/research/current-state-and-risks.md","reason":"Prove Desktop autosave/index remain unchanged and PptTouched is removed only after true isolation."}

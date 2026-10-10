@@ -1,0 +1,8 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"检查范围、模块边界和无窗口验证要求"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"检查共享设备、线程所有权、帧调度和 Setting 呈现合同"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"检查 ARM64 构建与 Win7 兼容声明"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"检查 C++ module、同步、命名和注释一致性"}
+{"file":".trellis/spec/native-desktop/directory-structure.md","reason":"检查工程、RC、shader 与源码归属"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"检查设备恢复和资源生命周期"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"检查配置不变与资源嵌入路径"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查跨线程/跨模块数据流完整性"}

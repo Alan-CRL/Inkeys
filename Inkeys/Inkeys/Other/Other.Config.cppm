@@ -1,16 +1,20 @@
 module;
 
 #include "../../IdtMain.h"
+#include "../../IdtConfiguration.h"
 
 #include <initializer_list>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
 export module Inkeys.Other.Config;
+
+import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys
 {
@@ -30,8 +34,9 @@ export namespace Inkeys
 		inline constexpr char Geometry[] = "Inkeys.Bar.Geometry";
 		inline constexpr char Recall[] = "Inkeys.Bar.Recall";
 		inline constexpr char Clean[] = "Inkeys.Bar.Clean";
-		inline constexpr char Pierce[] = "Inkeys.Bar.Pierce";
+		inline constexpr char Whiteboard[] = "Inkeys.Bar.Whiteboard";
 		inline constexpr char Freeze[] = "Inkeys.Bar.Freeze";
+		inline constexpr char EndShow[] = "Inkeys.Bar.EndShow";
 		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
 	}
 
@@ -124,7 +129,8 @@ export namespace Inkeys
 		inline BarButtonSizeKind DefaultSizeForBarButtonId(std::string_view id)
 		{
 			if (id == BarButtonId::Divider) return BarButtonSizeKind::OneTwo;
-			if (id == BarButtonId::Pierce || id == BarButtonId::Freeze) return BarButtonSizeKind::TwoOne;
+			if (id == BarButtonId::Whiteboard || id == BarButtonId::Freeze)
+				return BarButtonSizeKind::TwoOne;
 			return BarButtonSizeKind::TwoTwo;
 		}
 
@@ -144,10 +150,10 @@ inline bool IsFixedButtonsA1Id(std::string_view id)
 				return id == BarButtonId::Divider;
 			}
 
-		inline bool IsFixedButtonsA2Id(std::string_view id)
+		inline constexpr bool IsFixedButtonsA2Id(std::string_view id)
 		{
-			return id == BarButtonId::Pierce
-				|| id == BarButtonId::Freeze;
+			return id == BarButtonId::Whiteboard || id == BarButtonId::Freeze
+				|| id == BarButtonId::EndShow;
 		}
 
 		inline bool IsOfficialFixedBarButtonId(std::string_view id)
@@ -213,11 +219,60 @@ inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
 		inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA2()
 		{
 			return {
-				{ BarButtonId::Pierce, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::Whiteboard, BarButtonSizeKind::TwoOne },
 				{ BarButtonId::Freeze, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::EndShow, BarButtonSizeKind::TwoTwo },
 			};
 		}
 	}
+
+export namespace Inkeys::ConfigDetail
+{
+	void WriteHiddenConfigValue(Json::Value& parent, const char* name, const Json::Value& value, bool writeFile);
+	void AppendConfigUploadValue(std::string& result, const std::string& key, std::string value, bool writeReferer, bool stripGuidBraces = false);
+
+	template <typename T>
+	struct ConfigSourceBinding
+	{
+		const T* value;
+		std::shared_mutex* mutex;
+	};
+
+	template <typename T>
+	ConfigSourceBinding<T> BindConfigSource(const T* value, std::shared_mutex* mutex)
+	{
+		return { value, mutex };
+	}
+
+	template <typename T>
+	class ConfigReadOnlyValue
+	{
+	public:
+		explicit ConfigReadOnlyValue(T value) : fixedValue(std::move(value)) {}
+		explicit ConfigReadOnlyValue(const T* value) : ConfigReadOnlyValue(ConfigSourceBinding<T>{ value, nullptr }) {}
+		explicit ConfigReadOnlyValue(ConfigSourceBinding<T> sourceIn) : source(sourceIn)
+		{
+			if (!source.value) throw std::invalid_argument("Config source must not be null");
+		}
+
+		T Snapshot() const
+		{
+			if (!source.value) return fixedValue;
+			// 构造时仅保存地址；输出时在来源锁内复制，编码和 I/O 不持来源锁。
+			// 调用 Config 前须释放来源锁，锁顺序为 Config -> 来源。
+			if (source.mutex)
+			{
+				std::shared_lock lock(*source.mutex);
+				return *source.value;
+			}
+			return *source.value;
+		}
+
+	private:
+		T fixedValue{};
+		ConfigSourceBinding<T> source{ nullptr, nullptr };
+	};
+}
 
 namespace Inkeys::ConfigDetail
 {
@@ -241,6 +296,12 @@ namespace Inkeys::ConfigDetail
 			handler.HandleValue(name, value, defaultValue, canReadFromDocument, uploadMode, uploadName);
 		}
 
+		template <typename T>
+		void HiddenValue(const char* name, ConfigReadOnlyValue<T>& value, bool writeFile, bool writeReferer, const char* uploadName)
+		{
+			handler.HandleHiddenValue(name, value, writeFile, writeReferer, uploadName);
+		}
+
 	private:
 		HandlerT& handler;
 	};
@@ -251,12 +312,13 @@ namespace Inkeys::ConfigDetail
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoClean, false) \
 	) \
 	GROUP(Info, \
-		H(ConfigUploadMode::NoUpload, "NaN", std::wstring, UserId, ::userId) \
-		H(ConfigUploadMode::Upload, "ev", std::wstring, EditionVersion, ::editionVersion) \
-		H(ConfigUploadMode::Upload, "ed", std::wstring, EditionDate, ::editionDate) \
-		H(ConfigUploadMode::Upload, "pa", std::wstring, ProgramArchitecture, ::programArchitecture) \
-		H(ConfigUploadMode::NoUpload, "NaN", std::wstring, TargetArchitecture, ::targetArchitecture) \
-		H(ConfigUploadMode::Upload, "we", std::wstring, WindowsEdition, ::windowsEdition) \
+		H(true, true, "id", std::wstring, UserId, &::userId) \
+		H(true, false, "ev", std::wstring, EditionVersion, &::editionVersion) \
+		H(true, true, "ed", std::wstring, EditionDate, &::editionDate) \
+		H(true, true, "pa", std::wstring, ProgramArchitecture, &::programArchitecture) \
+		H(true, false, "NaN", std::wstring, TargetArchitecture, &::targetArchitecture) \
+		H(true, true, "we", std::wstring, WindowsEdition, &::windowsEdition) \
+		H(true, true, "ch", std::string, UpdateChannel, ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex)) \
 	) \
 GROUP(UI, \
 			GROUP(Bar, \
@@ -266,9 +328,37 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
 			) \
 		) \
+	GROUP(Drawing, \
+		GROUP(Eraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BaseDiameterDip, 32) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Sensitivity, 1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseLeft, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseRight, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Touch, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTip, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTail, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTipResponse, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTailResponse, -1) \
+		) \
+	) \
 	GROUP(Experimental, \
 		GROUP(Inkeys3, \
+			GROUP(Draw3, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
+			) \
+			GROUP(ConsoleOutput, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Draw3, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchArea, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
+			) \
 			GROUP(UI3, \
+				GROUP(StartupPreview, \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDip, ::StartupPreviewCachedWidthDefaultDip) \
+				) \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowFrameRate, true) \
@@ -313,9 +403,11 @@ namespace Inkeys
 	public:
 	#define INKEYS_CONFIG_DECLARE_GROUP(groupName, ...) struct groupName##_Node { __VA_ARGS__ } groupName;
 	#define INKEYS_CONFIG_DECLARE_VALUE(uploadMode, uploadName, valueType, valueName, defaultValue) valueType valueName{ defaultValue };
-		INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_DECLARE_GROUP, INKEYS_CONFIG_DECLARE_VALUE, INKEYS_CONFIG_DECLARE_VALUE)
+	#define INKEYS_CONFIG_DECLARE_H_VALUE(writeFile, writeReferer, uploadName, valueType, valueName, source) ConfigDetail::ConfigReadOnlyValue<valueType> valueName{ source };
+		INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_DECLARE_GROUP, INKEYS_CONFIG_DECLARE_VALUE, INKEYS_CONFIG_DECLARE_H_VALUE)
 		#undef INKEYS_CONFIG_DECLARE_GROUP
 		#undef INKEYS_CONFIG_DECLARE_VALUE
+		#undef INKEYS_CONFIG_DECLARE_H_VALUE
 
 	public:
 		Inkeys::Config& operator=(const Inkeys::Config& other);
@@ -344,7 +436,7 @@ namespace Inkeys
 
 		#define INKEYS_CONFIG_TRAVERSE_GROUP(groupName, ...) walker.BeginGroup(#groupName, group.groupName, [&](auto& group) { __VA_ARGS__ });
 		#define INKEYS_CONFIG_TRAVERSE_X_VALUE(uploadMode, uploadName, valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue }, true, uploadMode, uploadName);
-		#define INKEYS_CONFIG_TRAVERSE_H_VALUE(uploadMode, uploadName, valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue }, false, uploadMode, uploadName);
+		#define INKEYS_CONFIG_TRAVERSE_H_VALUE(writeFile, writeReferer, uploadName, valueType, valueName, source) walker.HiddenValue(#valueName, group.valueName, writeFile, writeReferer, uploadName);
 			INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_TRAVERSE_GROUP, INKEYS_CONFIG_TRAVERSE_X_VALUE, INKEYS_CONFIG_TRAVERSE_H_VALUE)
 			#undef INKEYS_CONFIG_TRAVERSE_GROUP
 			#undef INKEYS_CONFIG_TRAVERSE_X_VALUE
@@ -369,10 +461,14 @@ bool ReadImpl(const std::vector<std::string>& paths);
 		shared_lock<shared_mutex> otherLock(other.rwMutex, defer_lock);
 		std::lock(thisLock, otherLock);
 
-		Json::Value snapshot(Json::objectValue);
-		const_cast<Inkeys::Config&>(other).OverlayDocument(snapshot);
-
-		ApplyDocument(snapshot, std::vector<std::string>{}, true);
+		// 内部复制不经过文件输出：X 复制状态，H 复制来源描述符，绝不回写外部变量。
+	#define INKEYS_CONFIG_COPY_GROUP(groupName, ...) groupName = other.groupName;
+	#define INKEYS_CONFIG_COPY_X(...)
+	#define INKEYS_CONFIG_COPY_H(...)
+		INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_COPY_GROUP, INKEYS_CONFIG_COPY_X, INKEYS_CONFIG_COPY_H)
+	#undef INKEYS_CONFIG_COPY_GROUP
+	#undef INKEYS_CONFIG_COPY_X
+	#undef INKEYS_CONFIG_COPY_H
 		loadedDocument = other.loadedDocument;
 		hasLoadedDocument = other.hasLoadedDocument;
 		readAllDocument = other.readAllDocument;
@@ -499,6 +595,14 @@ ConfigSequence<T> 内部使用 shared_mutex。读取 JSON 时会先完整解析�
 如果已有自定义序列容器，不需要改为 std::vector：
 在本模块中为它特化 ConfigSequenceAdapter<T>，提供 ElementType、
 Snapshot(...) 和 Replace(...)，即可复用相同的 JSON 数组协议。
+
+九、只读信息 H 的来源与输出
+H(writeFile, writeReferer, refererName, type, name, source) 的两个输出开关独立。
+示例：H(true, false, "NaN", std::wstring, FixedInfo, L"fixed") 保存固定值；
+H(true, true, "id", std::wstring, UserId, &::userId) 每次输出读取变量最新地址值；
+跨线程来源使用 ConfigDetail::BindConfigSource(&value, &mutex)，地址和锁须长期有效。
+H 不参与文档读取或默认值重置；文件开关关闭时移除该已知键，未知键策略不变。
+通过 config.Info.UserId.Snapshot() 读取副本，Config 复制保持来源绑定。
 
 如果新增了这里未支持的普通值类型，需要去 Other.Config.cpp 里补 JsonValueCodec。
 除这种“新增全新类型支持”的情况外，日常新增、修改、删除配置项或 GROUP，

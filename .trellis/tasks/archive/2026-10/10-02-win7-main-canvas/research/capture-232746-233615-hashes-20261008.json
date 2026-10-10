@@ -1,0 +1,186 @@
+{
+  "20261008-232746-725": {
+    "original_path": "D:\\Personal\\Downloads\\20261008-232746-725",
+    "copy_path": "C:\\Users\\alan-\\.codex\\visualizations\\2026\\10\\03\\01a100c6-aa67-7cc3-9d01-6cda328f70c3\\win7-aero-evidence-20261008\\20261008-232746-725",
+    "files": {
+      "01-pixel-probe/identity.txt": {
+        "bytes": 2604,
+        "sha256": "36B88EAF56ADCFA599B0D0757C3885A2BC715C7C1A9A412CDF84D23D4A4AE0C0"
+      },
+      "01-pixel-probe/pixel-test-hardware.stderr.txt": {
+        "bytes": 413,
+        "sha256": "F585BE51D29AFFAC4B95E46280AF88DDF43D6792A30F93D29CCCB2F2B4BCD62D"
+      },
+      "01-pixel-probe/pixel-test-hardware.stdout.txt": {
+        "bytes": 0,
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "01-pixel-probe/pixel-test.stderr.txt": {
+        "bytes": 336850,
+        "sha256": "22DE2FD70FAC7CE9AA11FFCFEFB4FD53C5EDB135487E3EDA49A63890FCC9DD05"
+      },
+      "01-pixel-probe/pixel-test.stdout.txt": {
+        "bytes": 2747,
+        "sha256": "89DA8E0B2100A5FA9A396EEF6C5BC37A7E43F13E01F558CA7D580F231E9DBCC7"
+      },
+      "01-pixel-probe.collector.stderr.txt": {
+        "bytes": 0,
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "01-pixel-probe.collector.stdout.txt": {
+        "bytes": 626,
+        "sha256": "31379A9ECD3A2ADD076815F08218E726BC60537472AE87F2B4E375DB86868F3D"
+      },
+      "02-original-shader/console.stderr.txt": {
+        "bytes": 94660,
+        "sha256": "EDD835C5C884C5F0C09AB2D6C6516093BBC4B971F273EA0B9729122C6A05EC9A"
+      },
+      "02-original-shader/console.stdout.txt": {
+        "bytes": 12362500,
+        "sha256": "169E0EA6A9D4C33E0C3A5B17FC9CDC320D34F02795E38769BDF716D99861E27C"
+      },
+      "02-original-shader/identity.txt": {
+        "bytes": 967,
+        "sha256": "1544C0A0BA91BD38D15F8F94BB2A72F6021241AFBF8155B9CBB8D191807FF0D0"
+      },
+      "02-original-shader/idt1791473271062.log": {
+        "bytes": 42074,
+        "sha256": "02905A71EEB6DB4601C5AEB35F9591EA13A36736664097B1404732893D0AF424"
+      },
+      "02-original-shader.collector.stderr.txt": {
+        "bytes": 0,
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "02-original-shader.collector.stdout.txt": {
+        "bytes": 900,
+        "sha256": "F728D513AB8275008811F23B34E3A4EB6DE3AB737FC8EC388B14F0A655273AE2"
+      },
+      "03-guarded-shader/console.stderr.txt": {
+        "bytes": 215668,
+        "sha256": "ADA1F5088BD60049558F7BA20A8577019BAEFE19F6125EE416B37AA678E85B94"
+      },
+      "03-guarded-shader/console.stdout.txt": {
+        "bytes": 41704813,
+        "sha256": "BD33577392542A7769D31F0A886576B38E4F92B6413169236B740B9CB1E45630"
+      },
+      "03-guarded-shader/identity.txt": {
+        "bytes": 968,
+        "sha256": "14F817C39BF42B2A8B1FAA992B5BD72F65F8B67438FB2068AEFAFD4BFCBAE2AB"
+      },
+      "03-guarded-shader/idt1791473373014.log": {
+        "bytes": 39713,
+        "sha256": "363F4ED86422577F1166E3DDA34C88E9B2B6583F8F4176D2414E4C7E7D0DACB0"
+      },
+      "03-guarded-shader.collector.stderr.txt": {
+        "bytes": 0,
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "03-guarded-shader.collector.stdout.txt": {
+        "bytes": 898,
+        "sha256": "CD89B06ADB4BCA23FD9E1E3B8DA5B2A9FF3BCD54C795BBC1C5FC1B3C0966CC5E"
+      },
+      "observations.txt": {
+        "bytes": 634,
+        "sha256": "7401848A5266F6244A50C90E4CA4A08D429B4F57098977A53DF42B15621574B7"
+      },
+      "summary.txt": {
+        "bytes": 4054,
+        "sha256": "02AD6B03E46D490204EB3A561ADABA625DD911B9F34D5AE8F265F46EE3281F58"
+      }
+    },
+    "count": 21,
+    "original_and_copy_preserved": true
+  },
+  "20261008-233615-342": {
+    "original_path": "D:\\Personal\\Downloads\\20261008-233615-342",
+    "copy_path": "C:\\Users\\alan-\\.codex\\visualizations\\2026\\10\\03\\01a100c6-aa67-7cc3-9d01-6cda328f70c3\\win7-aero-evidence-20261008\\20261008-233615-342",
+    "files": {
+      "01-pixel-probe/identity.txt": {
+        "bytes": 2604,
+        "sha256": "435729C7E83D1D7C8AB47607BED86A7BE405BB1E71158207D6261E4F9C426F2D"
+      },
+      "01-pixel-probe/pixel-test-hardware.stderr.txt": {
+        "bytes": 413,
+        "sha256": "BACCD7F0C1A4207A51B0FA510587FBA2EA446CF27962FB099F52954ED3594CED"
+      },
+      "01-pixel-probe/pixel-test-hardware.stdout.txt": {
+        "bytes": 0,
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "01-pixel-probe/pixel-test.stderr.txt": {
+        "bytes": 336850,
+        "sha256": "5F1E941A9C6E468D3A7FE1FE9C1ADC0DAF4293C2844851F164EC3C80E6891944"
+      },
+      "01-pixel-probe/pixel-test.stdout.txt": {
+        "bytes": 1443,
+        "sha256": "21CC4ABA994CC1DFB1C63E1892CB01919F928B4A7ECAA0AF5298849D1F796190"
+      },
+      "01-pixel-probe.collector.stderr.txt": {
+        "bytes": 0,
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "01-pixel-probe.collector.stdout.txt": {
+        "bytes": 626,
+        "sha256": "BFC8E99E53B98238B5308AA93926CAB9FF865B7056AE7BF844611016CF40A304"
+      },
+      "02-original-shader/console.stderr.txt": {
+        "bytes": 77130,
+        "sha256": "010714FA7A8A1542BBF4D302A133911F3F5A024E9922562D72EE795D26DDCFB9"
+      },
+      "02-original-shader/console.stdout.txt": {
+        "bytes": 13993958,
+        "sha256": "5C27BBF40A66D9F27A78F6121BA5775AC780A6AB32D20E153CAEFBD05EA33442"
+      },
+      "02-original-shader/identity.txt": {
+        "bytes": 967,
+        "sha256": "6287AFB5689B8C36A8B3C8540F1FFF4F95EEE327728549AB017494CC62E6A9FE"
+      },
+      "02-original-shader/idt1791473777807.log": {
+        "bytes": 32126,
+        "sha256": "904948ED7AA7E786B8BB123C2DC1B011666D441DD930730946D16E966EE25ADD"
+      },
+      "02-original-shader.collector.stderr.txt": {
+        "bytes": 0,
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "02-original-shader.collector.stdout.txt": {
+        "bytes": 900,
+        "sha256": "84444298C043156E0AC4FB3B9CB5824A614FF76C045A98BA55FE40C456390BBF"
+      },
+      "03-guarded-shader/console.stderr.txt": {
+        "bytes": 115454,
+        "sha256": "5FF84468663BD322C5EBC7C626AD23E775B3BC2885566B9BEBAB74C261AE91A7"
+      },
+      "03-guarded-shader/console.stdout.txt": {
+        "bytes": 25728676,
+        "sha256": "CF9A9B2DEECFDABE1BE9A38190940C5D0DAACD4EA7883754C9A51C6286E688A2"
+      },
+      "03-guarded-shader/identity.txt": {
+        "bytes": 968,
+        "sha256": "1FCFC947A18A0CEC7AD2A0E0B670578EDE968D726A72902EEA9CB77B0771AA10"
+      },
+      "03-guarded-shader/idt1791473857552.log": {
+        "bytes": 33166,
+        "sha256": "10C8C64C38E877D401656386BDCE8BE8A4E16C6F7B38D940C1E229DA420C1C7F"
+      },
+      "03-guarded-shader.collector.stderr.txt": {
+        "bytes": 0,
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "03-guarded-shader.collector.stdout.txt": {
+        "bytes": 898,
+        "sha256": "ABD37307BFB2F90B63319F39CF90FFB1C8C89116D59F4C255A9D91A7A452AF3F"
+      },
+      "observations.txt": {
+        "bytes": 224,
+        "sha256": "7C98D7525A216A0E9CF197D182EA0CEED5F3C3A4DF2E1479029158A4E4163E75"
+      },
+      "summary.txt": {
+        "bytes": 4054,
+        "sha256": "DFD36067E37CDFB4EBF0C04D731632A4DC4D527AB7E7B85583B9FE9DFDE59941"
+      }
+    },
+    "count": 21,
+    "original_and_copy_preserved": true
+  }
+}

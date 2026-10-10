@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "IdtMain.h"
+#include "Inkeys/Graphics/Surface.hpp"
 
 extern bool main_open;
 extern bool FirstDraw;
@@ -25,7 +26,7 @@ public:
 
 public:
 	shared_mutex sm;
-	IMAGE* canvas;
+	Inkeys::Graphics::DibSurface* canvas;
 	int endMode; // 1 绘制到画布上 2 不绘制到画布上
 	int alpha;
 };
@@ -39,11 +40,12 @@ extern shared_mutex StrokeBackImageSm;
 extern bool drawWaiting;
 extern shared_mutex drawWaitingSm;
 
-extern IMAGE drawpad;
-extern IMAGE window_background;
+extern Inkeys::Graphics::DibSurface drawpad;
+extern Inkeys::Graphics::DibSurface window_background;
 
 extern HHOOK DrawpadHookCall;
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 void DrawpadInstallHook();
 
 void ResetPrepareCanvas();

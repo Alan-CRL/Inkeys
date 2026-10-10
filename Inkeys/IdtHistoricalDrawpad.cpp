@@ -3,16 +3,14 @@
 #include "IdtHistoricalDrawpad.h"
 
 #include "IdtConfiguration.h"
-#include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
-#include "IdtFloating.h"
+#include "Inkeys/Business/LegacyDrawState.hpp"
 #include "IdtFreezeFrame.h"
 #include "IdtImage.h"
-#include "IdtMagnification.h"
 #include "IdtState.h"
 #include "IdtTime.h"
-#include "IdtWindow.h"
+#include "Inkeys/Window/Window.Legacy.hpp"
 
 void removeEmptyFolders(wstring path)
 {
@@ -158,7 +156,7 @@ void LoadDrawpad()
 	total_record_pointer = practical_total_record_pointer = (int)record_value["Image_Properties"].size();
 }
 // 保存图像到指定目录
-void SaveScreenShot(IMAGE img, bool record_pointer_add)
+void SaveScreenShot(Inkeys::Graphics::DibSurface surface, bool record_pointer_add)
 {
 	if (!setlist.saveSetting.enable) return;
 
@@ -168,23 +166,9 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 		error_code ec;
 		filesystem::create_directories(globalPath + L"ScreenShot\\" + date, ec);
 	}
-	saveImageToPNG(img, globalPath + L"ScreenShot\\" + date + L"\\" + stamp + L".png", true, 10);
+	SaveSurfaceToPng(surface, globalPath + L"ScreenShot\\" + date + L"\\" + stamp + L".png");
 
-	/*
-	if (magnificationReady)
-	{
-		RequestUpdateMagWindow = true;
-		while (RequestUpdateMagWindow) this_thread::sleep_for(chrono::milliseconds(100));
-
-		std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
-		IMAGE blending = MagnificationBackground;
-		lock1.unlock();
-		saveImageToPNG(blending, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png").c_str(), false, 10);
-	}*/
-
-	//hiex::TransparentImage(&blending, 0, 0, &img);
-	//saveImageToJPG(blending, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(),50);
-	//saveimage((StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(), &blending);
+	// 背景合成截图暂未启用，当前仅持久化画板透明层。
 
 	//图像目录书写
 	if (_waccess((globalPath + L"ScreenShot\\attribute_directory.json").c_str(), 4) == 0)
@@ -194,7 +178,6 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 			set["date"] = Json::Value(utf16ToUtf8(date));
 			set["time"] = Json::Value(utf16ToUtf8(time));
 			set["drawpad"] = Json::Value(utf16ToUtf8(globalPath + L"ScreenShot\\" + date + L"\\" + stamp + L".png"));
-			//if (magnificationReady) set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
 			//set["blending"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].insert(0, set);
@@ -216,7 +199,6 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 			set["date"] = Json::Value(utf16ToUtf8(date));
 			set["time"] = Json::Value(utf16ToUtf8(time));
 			set["drawpad"] = Json::Value(utf16ToUtf8(globalPath + L"ScreenShot\\" + date + L"\\" + stamp + L".png"));
-			//if (magnificationReady) set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
 			//set["blending"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].append(set);
@@ -271,7 +253,7 @@ void IdtRecall()
 		tmp_recond = RecallImage.back().recond;
 		tmp_recall_image_type = RecallImage.back().type;
 
-		if (RecallImage.back().type == 2 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
+		if (RecallImage.back().type == 2 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !CompareSurfaces(&drawpad, &RecallImage.back().img));
 		else RecallImage.pop_back();
 		deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
 	}
@@ -295,13 +277,13 @@ void IdtRecall()
 			return;
 		}
 
-		SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
+		drawpad.clear();
 		extreme_point.clear();
 		recall_image_recond = 0;
 		FirstDraw = true;
 	}
-	SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
-	hiex::TransparentImage(&window_background, 0, 0, &drawpad);
+	window_background.clear(PackSurfaceBgra(RGBA(0, 0, 0, 1)));
+	(void)window_background.composite(drawpad);
 
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
 	{
@@ -314,7 +296,7 @@ void IdtRecall()
 		HDC hdcScreen = GetDC(NULL);
 		// 调用UpdateLayeredWindow函数更新窗口
 		POINT ptSrc = { 0,0 };
-		SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
+		SIZE sizeWnd = { drawpad.width(),drawpad.height() };
 		POINT ptDst = { 0,0 }; // 设置窗口位置
 		UPDATELAYEREDWINDOWINFO ulwi = { 0 };
 		ulwi.cbSize = sizeof(ulwi);
@@ -327,7 +309,7 @@ void IdtRecall()
 		ulwi.dwFlags = ULW_ALPHA;
 
 		// 定义要更新的矩形区域
-		ulwi.hdcSrc = GetImageHDC(&window_background);
+		ulwi.hdcSrc = window_background.dc();
 		UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 	}
 	else
@@ -415,14 +397,14 @@ void IdtRecovery()
 	else RecallImageTm = (tm)(NULL);
 	FreezeRecall = 500;
 
-	IMAGE temp;
-	idtLoadImage(&temp, utf8ToUtf16(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
+	Inkeys::Graphics::DibSurface temp;
+	LoadSurfaceFromFile(&temp, utf8ToUtf16(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), drawpad.width(), drawpad.height());
 	drawpad = temp, extreme_point = map<pair<int, int>, bool>();
 
 	current_record_pointer++;
 
-	SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
-	hiex::TransparentImage(&window_background, 0, 0, &drawpad);
+	window_background.clear(PackSurfaceBgra(RGBA(0, 0, 0, 1)));
+	(void)window_background.composite(drawpad);
 
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
@@ -435,7 +417,7 @@ void IdtRecovery()
 		HDC hdcScreen = GetDC(NULL);
 		// 调用UpdateLayeredWindow函数更新窗口
 		POINT ptSrc = { 0,0 };
-		SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
+		SIZE sizeWnd = { drawpad.width(),drawpad.height() };
 		POINT ptDst = { 0,0 }; // 设置窗口位置
 		UPDATELAYEREDWINDOWINFO ulwi = { 0 };
 		ulwi.cbSize = sizeof(ulwi);
@@ -448,7 +430,7 @@ void IdtRecovery()
 		ulwi.dwFlags = ULW_ALPHA;
 
 		// 定义要更新的矩形区域
-		ulwi.hdcSrc = GetImageHDC(&window_background);
+		ulwi.hdcSrc = window_background.dc();
 		UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 	}
 	else

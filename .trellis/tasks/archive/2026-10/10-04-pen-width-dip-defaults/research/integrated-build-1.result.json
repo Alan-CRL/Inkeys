@@ -1,0 +1,11 @@
+{
+  "command": [
+    "pwsh",
+    "-NoProfile",
+    "-Command",
+    "Remove-Item Env:PATH -ErrorAction SilentlyContinue; $env:MSBUILDDISABLENODEREUSE = '1'; & 'C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe' InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64 /m:1 /nr:false /v:minimal; exit $LASTEXITCODE"
+  ],
+  "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw",
+  "exit": 1,
+  "seconds": 97.17321209999864
+}

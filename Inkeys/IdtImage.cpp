@@ -1,10 +1,10 @@
 ﻿#include "IdtImage.h"
 
 //drawpad画笔
-IMAGE alpha_drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //临时画板
-IMAGE putout; //主画板上叠加的控件内容
-IMAGE tester(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //图形绘制画板
-IMAGE pptdrawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //PPT控件画板
+Inkeys::Graphics::DibSurface alpha_drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //临时画板
+Inkeys::Graphics::DibSurface putout; //主画板上叠加的控件内容
+Inkeys::Graphics::DibSurface tester(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //图形绘制画板
+Inkeys::Graphics::DibSurface pptdrawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //PPT控件画板
 
 int recall_image_recond, recall_image_reference;
 shared_mutex RecallImageManipulatedSm;
@@ -15,82 +15,86 @@ int RecallImagePeak = 0;
 deque<RecallStruct> RecallImage;//撤回栈
 
 //悬浮窗
-IMAGE background(576, 386);
-Graphics graphics(GetImageHDC(&background));
-
-Bitmap* IMAGEToBitmap(IMAGE* easyXImage)
+Inkeys::Graphics::DibSurface background(576, 386);
+namespace
 {
-	if (!easyXImage || easyXImage->getwidth() <= 0 || easyXImage->getheight() <= 0) {
+	HDC GetBackgroundGraphicsDc()
+	{
+		// 全局 Graphics 构造前先启动 GDI+，并让其析构早于进程级 GDI+ 生命周期。
+		(void)Inkeys::Graphics::Detail::EnsureGdiplusReady();
+		return background.dc();
+	}
+}
+Graphics graphics(GetBackgroundGraphicsDc());
+
+Bitmap* SurfaceToBitmap(const Inkeys::Graphics::DibSurface* surface)
+{
+	if (!surface || surface->empty() || !Inkeys::Graphics::Detail::EnsureGdiplusReady()) {
 		return nullptr;
 	}
 
-	// 获取 EasyX 图像的信息
-	int width = easyXImage->getwidth();
-	int height = easyXImage->getheight();
-	int channels = 4;  // 假设 EasyX 图像使用 32 位 ARGB 格式
+	const int width = surface->width();
+	const int height = surface->height();
 
 	// 创建 GDI+ Bitmap
-	Gdiplus::Bitmap* bitmap = new Gdiplus::Bitmap(width, height, PixelFormat32bppARGB);
-	if (!bitmap) {
+	Gdiplus::Bitmap* bitmap = nullptr;
+	try
+	{
+		bitmap = new Gdiplus::Bitmap(width, height, PixelFormat32bppPARGB);
+	}
+	catch (...)
+	{
+		return nullptr;
+	}
+	if (!bitmap || bitmap->GetLastStatus() != Gdiplus::Ok) {
+		delete bitmap;
 		return nullptr;
 	}
 
 	// 锁定 GDI+ Bitmap 的数据
-	Gdiplus::BitmapData bitmapData;
+	Gdiplus::BitmapData bitmapData{};
 	Gdiplus::Rect rect(0, 0, width, height);
-	bitmap->LockBits(&rect, Gdiplus::ImageLockModeWrite, PixelFormat32bppARGB, &bitmapData);
-
-	// 将 EasyX 图像数据复制到 GDI+ Bitmap
-	DWORD* srcData = GetImageBuffer(easyXImage);
-	BYTE* destData = static_cast<BYTE*>(bitmapData.Scan0);
-
-	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
-			// 每个像素有四个字节，分别是 B, G, R, A
-			destData[4 * (y * width + x) + 0] = GetRValue(srcData[(y * width + x)]);  // Blue
-			destData[4 * (y * width + x) + 1] = GetGValue(srcData[(y * width + x)]);  // Green
-			destData[4 * (y * width + x) + 2] = GetBValue(srcData[(y * width + x)]);  // Red
-			destData[4 * (y * width + x) + 3] = (srcData[(y * width + x)] >> 24) & 0xFF;  // Alpha
-		}
+	if (bitmap->LockBits(&rect, Gdiplus::ImageLockModeWrite, PixelFormat32bppPARGB, &bitmapData) != Gdiplus::Ok) {
+		delete bitmap;
+		return nullptr;
 	}
 
-	// 解锁 GDI+ Bitmap 的数据
+	// Surface 为 top-down BGRA，按行复制以兼容 GDI+ 的 stride。
+	const auto pixels = surface->pixels();
+	for (int y = 0; y < height; ++y)
+	{
+		const auto* sourceRow = reinterpret_cast<const BYTE*>(pixels.data() + static_cast<size_t>(y) * width);
+		auto* targetRow = static_cast<BYTE*>(bitmapData.Scan0) + static_cast<ptrdiff_t>(y) * bitmapData.Stride;
+		memcpy(targetRow, sourceRow, static_cast<size_t>(width) * sizeof(Inkeys::Graphics::DibSurface::Pixel));
+	}
 	bitmap->UnlockBits(&bitmapData);
 
 	return bitmap;
 }
-bool ImgCpy(IMAGE* tag, IMAGE* src)
+bool CopySurface(Inkeys::Graphics::DibSurface* target, const Inkeys::Graphics::DibSurface* source)
 {
-	if (tag == NULL || src == NULL) return false;
-	if (tag->getwidth() != src->getwidth() || tag->getheight() != src->getheight())
+	if (!target || !source) return false;
+	try
 	{
-		tag->Resize(src->getwidth(), src->getheight());
+		*target = *source;
+		return true;
 	}
-
-	int width = src->getwidth();
-	int height = src->getheight();
-	DWORD* pSrc = GetImageBuffer(src);
-	DWORD* pTag = GetImageBuffer(tag);
-
-	for (int y = 0; y < height; ++y)
+	catch (...)
 	{
-		for (int x = 0; x < width; ++x)
-		{
-			pTag[y * width + x] = pSrc[y * width + x];
-		}
+		return false;
 	}
-
-	return true;
 }
 
 shared_mutex loadImageSm;
-void idtLoadImage(IMAGE* pDstImg, LPCTSTR pImgFile, int nWidth, int nHeight, bool bResize)
+bool LoadSurfaceFromFile(Inkeys::Graphics::DibSurface* destination, LPCTSTR path, int width, int height)
 {
+	if (!destination || !path) return false;
 	lock_guard loadImageLock(loadImageSm);
-	loadimage(pDstImg, pImgFile, nWidth, nHeight, bResize);
+	return destination->loadFromFile(path, width, height);
 }
-void idtLoadImage(IMAGE* pDstImg, LPCTSTR pResType, LPCTSTR pResName, int nWidth, int nHeight, bool bResize)
+bool LoadSurfaceFromResource(Inkeys::Graphics::DibSurface* destination, LPCTSTR resourceType, LPCTSTR resourceName, int width, int height)
 {
+	if (!destination || !resourceType || !resourceName) return false;
 	lock_guard loadImageLock(loadImageSm);
-	loadimage(pDstImg, pResType, pResName, nWidth, nHeight, bResize);
+	return destination->loadFromResource(GetModuleHandleW(nullptr), resourceType, resourceName, width, height);
 }
