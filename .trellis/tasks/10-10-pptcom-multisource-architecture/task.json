@@ -1,0 +1,37 @@
+{
+  "id": "pptcom-multisource-architecture",
+  "name": "pptcom-multisource-architecture",
+  "title": "PptCOM 独立进程与多来源联动抽象层规划",
+  "description": "保留dynamic COM兼容与释放，设计双向权限helper、Win7 SP1/.NET4兼容IPC与活动优先仲裁；用户已批准本轮仅执行P0兼容基线与通信选型。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-10",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-10-pptcom-p0-baseline"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-10：本轮批准的P0已完成本机基线/探针/选型与全范围复核并归档；首发helper通道为命名管道。整体P1-P5仍未实施，下一阶段P1需后续明确指示；Win7/跨权限/真实Office门禁未验。",
+  "meta": {
+    "approvedImplementationPhases": [
+      "P0"
+    ],
+    "completedPhases": [
+      "P0"
+    ],
+    "nextPhase": "P1",
+    "helperTransport": "windows-named-pipe"
+  }
+}

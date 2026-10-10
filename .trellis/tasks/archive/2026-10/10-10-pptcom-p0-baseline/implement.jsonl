@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/ppt-interop/com-contract.md", "reason": "P0兼容基线、原生会话门禁与构建约束"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "P0兼容基线、原生会话门禁与构建约束"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "P0兼容基线、原生会话门禁与构建约束"}
+{"file": ".trellis/tasks/10-10-pptcom-multisource-architecture/research/current-contracts.md", "reason": "P0兼容基线、原生会话门禁与构建约束"}

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/ppt-interop/com-contract.md", "reason": "dynamic/late-bound、COM ABI、RCW所有权、busy、session与ready保留合同"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "native文稿/页身份、UI回执与Draw3输入门禁"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "现有MSBuild、平台支持边界与DLL/TLB产物交接"}
+{"file": ".trellis/tasks/10-10-pptcom-multisource-architecture/research/current-contracts.md", "reason": "本任务代码证据、单赢家局限、token启动及ZMQ/net40约束"}
+{"file": ".trellis/tasks/archive/2026-10/10-10-pptcom-p0-baseline/research/com-baseline.md", "reason": "P0固定的真实线程/owner/Focus与释放和产物基线"}
+{"file": ".trellis/tasks/archive/2026-10/10-10-pptcom-p0-baseline/research/transport-decision.md", "reason": "P0首发命名管道选择与尚未通过的实机门禁"}

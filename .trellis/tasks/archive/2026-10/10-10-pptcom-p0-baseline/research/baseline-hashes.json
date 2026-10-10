@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "capturedAtUtc": "2026-10-10T12:52:42.989763+00:00",
+  "captureMethod": "read-only file bytes; SHA-256; Git HEAD/ref read as plain files; no git command executed by research role",
+  "workspace": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw",
+  "branch": "feature/pptcom",
+  "head": "a50ad143cbe14c7a0e4a4d97bc14733f33eda4e1",
+  "workingTreeStatusEvidence": {
+    "providedBy": "root agent, 2026-10-10",
+    "command": "git status --short --ignore-submodules=all",
+    "lines": [
+      "?? .trellis/tasks/10-10-pptcom-multisource-architecture/",
+      "?? .trellis/tasks/10-10-pptcom-p0-baseline/"
+    ]
+  },
+  "excludedGeneratedDirectories": [
+    "PptCOM/bin",
+    "PptCOM/obj",
+    "PptCOM.Tests/bin",
+    "PptCOM.Tests/obj",
+    "Build",
+    "Inkeys/Cache",
+    "TestResults"
+  ],
+  "files": [
+    {
+      "path": "PptCOM/PptCOM.cs",
+      "byteLength": 90056,
+      "sha256": "fbcf9bd33bafd1dca64b287fe1bebb12814a3d6bc63ec5413a0100029ad1c03a"
+    },
+    {
+      "path": "PptCOM/PresentationDescriptor.cs",
+      "byteLength": 18927,
+      "sha256": "672017c022f9bed8ec838368ccd3dbe8588207ac026f6e039957d40c107075c6"
+    },
+    {
+      "path": "PptCOM/SlideShowSession.cs",
+      "byteLength": 13293,
+      "sha256": "d1b17962b1afb99debad17cbd97d03951ba844b6c1ee17aea8054001a8594900"
+    },
+    {
+      "path": "PptCOM/PptCOM.csproj",
+      "byteLength": 3254,
+      "sha256": "8b01e66b84470390239795b4391e4c5b00978b853dcf947b0106a177f65ab1a3"
+    },
+    {
+      "path": "PptCOM/PptCOM.manifest",
+      "byteLength": 471,
+      "sha256": "e9cbf839648f02f012041508071042b092d2503052a7bdc21c892819146122cf"
+    },
+    {
+      "path": "PptCOM/App.config",
+      "byteLength": 187,
+      "sha256": "9159c3cf709abe6d97d228beb44333bf36fb8fa7368afada702a71a7e4c54571"
+    },
+    {
+      "path": "PptCOM/Properties/AssemblyInfo.cs",
+      "byteLength": 1197,
+      "sha256": "b6d4fe4a1b7a20649b160d618a8bd38b107bc0edaefb95a95592efbd69bc4e47"
+    },
+    {
+      "path": "Inkeys/PptCOM.dll",
+      "byteLength": 67584,
+      "sha256": "ab34c31f9510be311439b798a35d6980d5da609d55622c8dfad339e97733c105"
+    },
+    {
+      "path": "Inkeys/PptCOM.tlb",
+      "byteLength": 6640,
+      "sha256": "c652b5dd0603576033b2e0d15869be103f23ffdcaa2a1984e53f3b6a14dba606"
+    },
+    {
+      "path": "Inkeys/Inkeys.rc",
+      "byteLength": 12162,
+      "sha256": "f219524ed3b4432b3754432037fb07ae6ae790169841c716451267253bb7c658"
+    },
+    {
+      "path": "Inkeys/resource.h",
+      "byteLength": 3784,
+      "sha256": "9870074673d5da74e6bb250729cd9723f7f4979651908ee31afe62ba5d35b38b"
+    },
+    {
+      "path": "Inkeys/Inkeys.vcxproj",
+      "byteLength": 90389,
+      "sha256": "22f06b8fcbfb94b3378cd2f6f105834e63dd98c8f870bfda91dda7d6bd19c481"
+    },
+    {
+      "path": "Inkeys/IdtMain.cpp",
+      "byteLength": 134997,
+      "sha256": "2482f025d69566903d05b045cfc0767e5142436b78eb4a46a162c5d1a0d508a7"
+    },
+    {
+      "path": "Inkeys/IdtPlug-in.cpp",
+      "byteLength": 50216,
+      "sha256": "a47ebd06182b9e26d1d1bfb16c5dcb99826fb0199f70c607b26814cdcddd103f"
+    },
+    {
+      "path": "Inkeys/Inkeys/Business/PptSession.h",
+      "byteLength": 1799,
+      "sha256": "6fae4edc86c1ad04d47911b0e975603737491d3433ec0c592f157469cce40010"
+    },
+    {
+      "path": "Inkeys/Inkeys/Business/PptSession.cpp",
+      "byteLength": 4693,
+      "sha256": "628ddaaa5793fdbdf8dfafa59f8a020accd8ca853771b5f3fc70ed3a446a542b"
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.cpp",
+      "byteLength": 109259,
+      "sha256": "d57f8373c6030fc04dad9bebf5c68d506689cdfba58bc55613f05ee3f25174f2"
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/PageControl/PageControl.cpp",
+      "byteLength": 122129,
+      "sha256": "950405e7784869f549eae3c6354440c7b893b9eb3a2865aa7f90f2132f6dbbde"
+    },
+    {
+      "path": "Inkeys/SuperTop/IdtToken.h",
+      "byteLength": 8451,
+      "sha256": "e01fe1f2ac5052cef2bc38d6faedcb4156ab26ee1cc0153380620a8ab12da8c1"
+    },
+    {
+      "path": "Inkeys/SuperTop/IdtSuperTop.cpp",
+      "byteLength": 8762,
+      "sha256": "817886b9220be3a5347522f6d1b3deca173b891548f6dc0e6c26ef42da322d39"
+    },
+    {
+      "path": "InkeysRepo.sln",
+      "byteLength": 5174,
+      "sha256": "7069b8f5b7389c4e3198e1563c1b354d2e3d457767b58699f6591778deaf35d1"
+    },
+    {
+      "path": "PptCOM.Tests/PptCOM.Tests.csproj",
+      "byteLength": 1680,
+      "sha256": "b595d92c790643268cb73fa8ad136a968a2b5e555472527c0d8ff9435f0ad1ab"
+    },
+    {
+      "path": "PptCOM.Tests/Program.cs",
+      "byteLength": 15309,
+      "sha256": "41c4914f4929c0a1a593fdf4f81fdf12bb707392bc98ac4716bc07cd2d1e5b1d"
+    },
+    {
+      "path": "PptCOM.Tests/SlideShowSessionTests.cs",
+      "byteLength": 26265,
+      "sha256": "cdc7bfd4b1ee57f70ded64b70e5399acab5c8490fffa0e59bebbe72fdae62a50"
+    },
+    {
+      "path": ".github/workflows/build-windows.yml",
+      "byteLength": 49432,
+      "sha256": "53652fd2a6267b442cf41d15857eb18b8a941d6eb62f9a2bc044baffee6fe753"
+    },
+    {
+      "path": ".github/scripts/release-artifacts.ps1",
+      "byteLength": 11938,
+      "sha256": "181cbcf3bc997d932ecde58e1ad388621e0c1f4c3eda23e58b752422f9fe1bb8"
+    }
+  ]
+}

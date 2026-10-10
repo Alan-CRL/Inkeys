@@ -1835,3 +1835,40 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 在 Actions 验收真实 Windows 2022 三架构链路。
+
+
+## Session 61: PptCOM P0 兼容基线与 IPC 选型完成
+<!-- trellis-session: v=2 fp=fc571cf2572d84dd -->
+
+**Date**: 2026-10-10
+**Task**: PptCOM P0 兼容基线与 IPC 选型完成
+**Branch**: `feature/pptcom`
+
+### Summary
+
+完成本轮授权的 P0：保留 dynamic/ROT/原线程与释放路径，冻结 26 文件字节基线，验证真实 net40 引用的隔离命名管道探针，独立全范围复核通过。P0 已归档；P1-P5 未实施；未 commit/push。
+
+### Main Changes
+
+- 新增 COM/native 兼容基线、SHA-256 清单、管道探针及通信选型记录；首发 helper 采用 Windows 本机双向命名管道。
+- 探针按复核修复超时 APM EndRead/EndWrite 收束与有界进程清理，新增读取超时用例；当前源码最终结果 11/11。
+- 更新父任务阶段进度，归档 P0；未改变生产源码、接口、工程和随附 DLL/TLB。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] ARM64 原生 MSBuild 重建 PptCOM.Tests Release AnyCPU，exit=0；本次重建测试 exe PASS，exit=0。
+- [OK] 真实 .NET Framework v4.0 引用重新编译探针，exit=0；独立修后 1 轮 11/11；26 个基线文件 SHA-256 均匹配；Trellis 最终检查 PASS_P0_SCOPE。
+- [OK] 本机 Windows 11 ARM64 / 已安装 .NET Framework 4.8；Win7 原版 .NET4、跨权限、真实 Office 释放与端到端延迟仍未验证。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 下一阶段为 P1 通用合同与仲裁纯逻辑，等待后续明确指示，本轮不激活。
+- P3-P5 完成 Win7、双向权限 helper、生产 IPC 生命周期、真实 PowerPoint/WPS 与多放映动态切换门禁。
