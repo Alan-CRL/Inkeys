@@ -1872,3 +1872,39 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 - 下一阶段为 P1 通用合同与仲裁纯逻辑，等待后续明确指示，本轮不激活。
 - P3-P5 完成 Win7、双向权限 helper、生产 IPC 生命周期、真实 PowerPoint/WPS 与多放映动态切换门禁。
+
+
+## Session 62: PptCOM P1 通用合同与仲裁完成
+<!-- trellis-session: v=2 fp=2dde6de21d4976f3 -->
+
+**Date**: 2026-10-10
+**Task**: PptCOM P1 通用合同与仲裁完成
+**Branch**: `feature/pptcom`
+
+### Summary
+
+完成P1纯值合同、活动优先仲裁、防反复切换、绑定确认与单路命令；独立全范围复核通过，SSH签名重试成功并归档。P2未开始。
+
+### Main Changes
+
+- 新增Business纯逻辑和fake测试，保留dynamic/ROT/原线程释放及ABI/DLL/TLB。
+- 修复5处合同边界，最终138项P1检查全绿；P1已归档，父任务更新阶段进度。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0b968e2b` | feat(pptcom): add multisource contracts and activity arbitration |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug ARM64与fresh headless --no-window均exit0，138 checks/0 failures；PptCOM.Tests exit0。
+- [OK] COM基线25项一致，唯一工程3行登记变化；真实Office/Win7/跨权限/生产IPC仍未验证。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 下一阶段P2内置适配器与共享通道，本轮未启动。

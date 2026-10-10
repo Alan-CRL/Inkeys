@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 61
+- **Total Sessions**: 62
 - **Last Active**: 2026-10-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1874 | Active |
+| `journal-1.md` | ~1910 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 62 | 2026-10-10 | PptCOM P1 通用合同与仲裁完成 | `0b968e2b` | `feature/pptcom` |
 | 61 | 2026-10-10 | PptCOM P0 兼容基线与 IPC 选型完成 | - | `feature/pptcom` |
 | 60 | 2026-10-10 | Windows 发布流水线拆分与 Win32 Harness 修复 | - | `dev` |
 | 59 | 2026-10-10 | Win7 主画布修复验收并归档 | `12d82884cf09928c2ae22eda2fe8851ac8581c9b`, `4011594d103f5b95e77ec923f54058593ce7e549` | `chore/publish` |
