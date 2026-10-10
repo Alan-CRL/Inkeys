@@ -2,11 +2,8 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtI18n.h"
-#include "../../../IdtI18nKeys.g.h"
+#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtState.h"
-#include "Bar.BottomDock.h"
-#include "Bar.I18nFormat.h"
 
 module Inkeys.UI.Bar;
 import :State;
@@ -15,32 +12,11 @@ import :Main;
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {
-	if (Inkeys::UI::Bar::WhiteboardDockLockActive())
-	{
-		// 白板首次自动贴底期间保留进入前的左右展开方向，仅固定次级面板向上。
-		widgetPosition.primaryBar = false;
-		return;
-	}
-	if (barUISet.IsBottomDockLayoutLocked())
-	{
-		// 底栏及脱离回弹阶段仍强制次级面板向上，避免纵向翻边。
-		widgetPosition.primaryBar = false;
-		const auto presented = barUISet.BottomDockPresentedSnapshot();
-		const double x = barUISet.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
-		const double windowWidth = static_cast<double>(barUISet.barWindow.w);
-		widgetPosition.mainBar =
-			Inkeys::UI::Bar::ResolveBarBottomDockPositionMainBarSide(
-				presented.centerMode, x, windowWidth,
-				widgetPosition.mainBar);
-		return;
-	}
-
 	// 获取主按钮中心位置
 	double x = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
 	double y = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetY() * tarZoom;
-	double monW = static_cast<double>(barUISet.barWindow.w);
-	double monH = static_cast<double>(barUISet.barWindow.h);
+	double monW = static_cast<double>(MainMonitor.MonitorWidth);
+	double monH = static_cast<double>(MainMonitor.MonitorHeight);
 
 	// 判断主栏所有位置
 	if (x <= monW / 2.0) widgetPosition.mainBar = true;
@@ -54,12 +30,8 @@ void BarStateClass::PositionUpdate(double tarZoom)
 }
 void BarStateClass::ThicknessDisplayUpdate()
 {
-	ThicknessDisplayUpdate(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip);
-}
-void BarStateClass::ThicknessDisplayUpdate(double penWidth)
-{
-	wstring tar = Inkeys::UI::Bar::Detail::FormatWidthDipText(
-		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat), penWidth);
+	int penThickness = static_cast<int>(GetPenWidth());
+	wstring tar = L"粗细" + format(L" {:>3}", clamp(penThickness, 0, 999));
 
 	barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->content.SetTar(tar);
 }

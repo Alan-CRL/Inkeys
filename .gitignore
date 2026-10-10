@@ -5,8 +5,6 @@
 /PptCOM/bin/
 /PptCOM/obj/
 /PptCOM/.vs/
-/PptCOM.Tests/bin/
-/PptCOM.Tests/obj/
 
 # Vcpkg
 /VcpkgInstalled/
@@ -18,7 +16,6 @@
 /Inkeys/Build/
 /InkeysHeadlessTests/Build/
 /PptCOM/Build/
-/Inkeys/Inkeys/Drawing/Draw3/Assets/*.cso
 
 # Project-local cache
 /packages/
@@ -27,28 +24,7 @@
 /InkeysHeadlessTests/Cache/
 /PptCOM/Cache/
 
-# Trellis machine-local state
-# Platform adapters are generated per machine; keep the shared .trellis core in Git.
-# The template hash manifest also contains per-machine platform ownership state,
-/.trellis/.template-hashes.json
-
-# Local AI agent integrations
+# Agents
 /.agents/
 /.codex/
-/.claude/
 /.zcode/
-/.cursor/
-
-# Imported Draw3 experiment outputs
-/TestResults/
-/Release/
-/Debug/
-/x64/
-/ARM64/
-/Win32/
-/inkStrokeModelerTest/inkStrokeModelerTest/
-/inkStrokeModelerTest/Release/
-/inkStrokeModelerTest/Debug/
-/inkStrokeModelerTest/x64/
-/inkStrokeModelerTest/ARM64/
-/auto upload.bat

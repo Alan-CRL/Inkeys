@@ -7,8 +7,6 @@ module;
 
 export module Inkeys.Helper.CrashHandler;
 
-import Inkeys.Window;
-
 export class CrashHandler {
 public:
 	// 禁用构造函数和赋值操作
@@ -20,10 +18,6 @@ public:
 
 	static void SetFlag(int initialState = 0);
 	static void IsSecond(bool initialState = false);
-
-	// 仅由继承父进程句柄验真的无 GUI 测试子进程设置；正式默认 Disabled。
-	enum class IsolatedUefTestMode : unsigned char { Disabled, StallAfterDumpOpen, ManualHoldAfterReport, ReportDiskFullOnce };
-	static void SetIsolatedUefTestMode(IsolatedUefTestMode mode) noexcept;
 
 	static void Shutdown();
 
@@ -60,12 +54,11 @@ private:
 // Helper
 export void CloseProgram()
 {
+	CrashHandler::Shutdown();
 	SetOffSignal(1);
-	// 退出意图先发布；窗口 owner 卡住时只排队隐藏，不能阻住主清理/看门狗。
-	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
 }
 export void RestartProgram()
 {
+	CrashHandler::Shutdown();
 	SetOffSignal(2);
-	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
 }

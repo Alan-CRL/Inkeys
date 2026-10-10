@@ -1,13 +1,10 @@
-import Inkeys.Conv.Text;
+﻿import Inkeys.Conv.Text;
 
 import Inkeys.Other.Config;
 
 #include "IdtConfiguration.h"
-#include "Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 #include "IdtState.h"
-#include "Inkeys/Business/PenWidthPreferences.hpp"
-#include <cstdio>
 
 // 占用文件
 bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath)
@@ -75,136 +72,9 @@ bool UnOccupyFile(HANDLE* hFile)
 	return false;
 }
 
-namespace
-{
-	constexpr LONGLONG kMaxLegacyConfigFileBytes = 16LL * 1024 * 1024;
-	mutex g_legacySettingWriteMutex;
-
-	bool ReadBoundedConfigFileSize(HANDLE file, DWORD& size) noexcept
-	{
-		LARGE_INTEGER length = {};
-		// 读取前拒绝空文件、截断到 DWORD 的长度和异常大的本地 JSON。
-		if (!GetFileSizeEx(file, &length) || length.QuadPart <= 0 ||
-			length.QuadPart > kMaxLegacyConfigFileBytes ||
-			length.QuadPart > MAXDWORD) return false;
-		size = static_cast<DWORD>(length.QuadPart);
-		return true;
-	}
-
-	bool ExistingConfigValidOrAbsent(const wstring& path) noexcept
-	{
-		const DWORD attributes = GetFileAttributesW(path.c_str());
-		if (attributes == INVALID_FILE_ATTRIBUTES)
-		{
-			const DWORD error = GetLastError();
-			return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
-		}
-		if (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
-			return false;
-		HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
-			nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (file == INVALID_HANDLE_VALUE) return false;
-		try
-		{
-			DWORD size = 0;
-			if (!ReadBoundedConfigFileSize(file, size))
-			{
-				CloseHandle(file);
-				return false;
-			}
-			string content(size, '\0');
-			DWORD read = 0;
-			const bool readOk = ReadFile(file, content.data(), size, &read, nullptr) &&
-				read == size;
-			CloseHandle(file);
-			file = INVALID_HANDLE_VALUE;
-			if (!readOk) return false;
-			if (content.compare(0, 3, "\xEF\xBB\xBF") == 0)
-				content.erase(0, 3);
-			istringstream stream(content);
-			Json::CharReaderBuilder reader;
-			reader["stackLimit"] = 64;
-			Json::Value root;
-			string error;
-			return Json::parseFromStream(reader, stream, &root, &error) &&
-				root.isObject();
-		}
-		catch (...)
-		{
-			// 解析或分配失败必须保留磁盘原件。
-			if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
-			return false;
-		}
-	}
-
-	bool ParseConfigJson(Json::CharReaderBuilder& reader, istream& stream,
-		Json::Value& root, string& error) noexcept
-	{
-		try
-		{
-			return Json::parseFromStream(reader, stream, &root, &error) &&
-				root.isObject();
-		}
-		catch (...) { return false; }
-	}
-}
-
 SetListStruct setlist;
 shared_mutex setlistUpdateMutex;
 Json::Value setlistVal;
-namespace
-{
-    std::mutex g_penWidthPreferencesMutex;
-    Inkeys::Business::PenWidth::Preferences g_penWidthStartup;
-    bool g_penWidthStartupInitialized = false;
-    bool ReadMemoryRoot(const filesystem::path& path, Json::Value& root)
-    {
-        root = Json::Value(Json::objectValue);
-        const DWORD attributes = GetFileAttributesW(path.c_str());
-        if (attributes == INVALID_FILE_ATTRIBUTES)
-            return GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND;
-        if (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) return false;
-        HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
-            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (file == INVALID_HANDLE_VALUE) return false;
-        DWORD size = 0;
-        if (!ReadBoundedConfigFileSize(file, size)) { CloseHandle(file); return false; }
-        string content(size, '\0');
-        DWORD read = 0;
-        const bool ok = ReadFile(file, content.data(), size, &read, nullptr) && read == size;
-        CloseHandle(file);
-        if (!ok) return false;
-        if (content.compare(0, 3, "\xEF\xBB\xBF") == 0) content.erase(0, 3);
-        istringstream input(content);
-        Json::CharReaderBuilder reader;
-        reader["stackLimit"] = 64;
-        string error;
-        return ParseConfigJson(reader, input, root, error);
-    }
-    bool SaveMemoryRoot(const filesystem::path& path, const Json::Value& root)
-    {
-        Json::StreamWriterBuilder writer;
-        const string content = "\xEF\xBB\xBF" + Json::writeString(writer, root);
-        if (content.size() > static_cast<size_t>(kMaxLegacyConfigFileBytes) ||
-            !ExistingConfigValidOrAbsent(path.wstring())) return false;
-        return Inkeys::PptSettings::WriteAtomically(path, content);
-    }
-    const filesystem::path MemoryPath()
-    {
-        return filesystem::path(globalPath) / L"Inkeys" / L"Memory" / L"memory.json";
-    }
-    bool ReadMemoryColor(const Json::Value& root, const char* slot, COLORREF& color)
-    {
-        if (!root["Draw"].isObject() || !root["Draw"][slot].isObject()) return false;
-        const auto& value = root["Draw"][slot]["Color"];
-        if (!value.isObject()) return false;
-        for (const char* component : { "R", "G", "B", "A" })
-            if (!value[component].isInt() || value[component].asInt() < 0 || value[component].asInt() > 255) return false;
-        color = RGBA(value["R"].asInt(), value["G"].asInt(), value["B"].asInt(), value["A"].asInt());
-        return true;
-    }
-}
-
 bool ReadSetting()
 {
 	HANDLE fileHandle = NULL;
@@ -214,12 +84,14 @@ bool ReadSetting()
 		return false;
 	}
 
-	DWORD dwSize = 0;
-	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -239,15 +111,10 @@ bool ReadSetting()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
-	readerBuilder["stackLimit"] = 64;
-	Json::Value parsedSetting;
 	string jsonErr;
 
-	if (ParseConfigJson(readerBuilder, jsonContentStream, parsedSetting, jsonErr))
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &setlistVal, &jsonErr))
 	{
-		// 仅在根对象完整验证后更新权威配置树，坏文件不能污染后续写入。
-		setlistVal = std::move(parsedSetting);
-		{ std::scoped_lock widthLock(g_penWidthPreferencesMutex); g_penWidthStartupInitialized = false; }
 		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isInt())
 			setlist.selectLanguage = setlistVal["SelectLanguage"].asInt();
 		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
@@ -277,13 +144,10 @@ bool ReadSetting()
 					setlist.regularSetting.clickRecover = setlistVal["Regular"]["ClickRecover"].asBool();
 			}
 
+			if (setlistVal["Regular"].isMember("AvoidFullScreen") && setlistVal["Regular"]["AvoidFullScreen"].isBool())
+				setlist.regularSetting.avoidFullScreen = setlistVal["Regular"]["AvoidFullScreen"].asBool();
 			if (setlistVal["Regular"].isMember("TeachingSafetyMode") && setlistVal["Regular"]["TeachingSafetyMode"].isInt())
-			{
-				const int requestedMode = setlistVal["Regular"]["TeachingSafetyMode"].asInt();
-				// 设置页只有四个合法选项；损坏配置不能作为 vector 下标传播。
-				if (requestedMode >= 0 && requestedMode < 4)
-					setlist.regularSetting.teachingSafetyMode = requestedMode;
-			}
+				setlist.regularSetting.teachingSafetyMode = setlistVal["Regular"]["TeachingSafetyMode"].asInt();
 		}
 
 		if (setlistVal.isMember("PaintDevice") && setlistVal["PaintDevice"].isInt())
@@ -294,17 +158,20 @@ bool ReadSetting()
 			setlist.liftStraighten = setlistVal["LiftStraighten"].asBool();
 		if (setlistVal.isMember("WaitStraighten") && setlistVal["WaitStraighten"].isBool())
 			setlist.waitStraighten = setlistVal["WaitStraighten"].asBool();
+		if (setlistVal.isMember("PointAdsorption") && setlistVal["PointAdsorption"].isBool())
+			setlist.pointAdsorption = setlistVal["PointAdsorption"].asBool();
+		if (setlistVal.isMember("SmoothWriting") && setlistVal["SmoothWriting"].isBool())
+			setlist.smoothWriting = setlistVal["SmoothWriting"].asBool();
 		if (setlistVal.isMember("EraserSetting") && setlistVal["EraserSetting"].isObject())
 		{
 			if (setlistVal["EraserSetting"].isMember("EraserMode") && setlistVal["EraserSetting"]["EraserMode"].isInt())
-			{
-				const int saved=setlistVal["EraserSetting"]["EraserMode"].asInt();
-				setlist.eraserSetting.savedFixedChoice=saved==2;
-				setlist.eraserSetting.eraserMode=Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(saved);
-			}
+				setlist.eraserSetting.eraserMode = setlistVal["EraserSetting"]["EraserMode"].asInt();
 			if (setlistVal["EraserSetting"].isMember("EraserSize") && setlistVal["EraserSetting"]["EraserSize"].isInt())
 				setlist.eraserSetting.eraserSize = setlistVal["EraserSetting"]["EraserSize"].asInt();
 		}
+		if (setlistVal.isMember("HideTouchPointerBeta") && setlistVal["HideTouchPointerBeta"].isBool())
+			setlist.hideTouchPointer = setlistVal["HideTouchPointerBeta"].asBool();
+
 		if (setlistVal.isMember("Save") && setlistVal["Save"].isObject())
 		{
 			if (setlistVal["Save"].isMember("Enable") && setlistVal["Save"]["Enable"].isBool())
@@ -312,6 +179,29 @@ bool ReadSetting()
 			if (setlistVal["Save"].isMember("SaveDays") && setlistVal["Save"]["SaveDays"].isInt())
 				setlist.saveSetting.saveDays = setlistVal["Save"]["SaveDays"].asInt();
 		}
+		if (setlistVal.isMember("Performance") && setlistVal["Performance"].isObject())
+		{
+			if (setlistVal["Performance"].isMember("PreparationQuantity") && setlistVal["Performance"]["PreparationQuantity"].isInt())
+				setlist.performanceSetting.preparationQuantity = setlistVal["Performance"]["PreparationQuantity"].asInt();
+
+			if (setlistVal["Performance"].isMember("SuperDrawBeta2") && setlistVal["Performance"]["SuperDrawBeta2"].isBool())
+				setlist.performanceSetting.superDraw = setlistVal["Performance"]["SuperDrawBeta2"].asBool();
+		}
+		if (setlistVal.isMember("Preset") && setlistVal["Preset"].isObject())
+		{
+			if (setlistVal["Preset"].isMember("MemoryWidth") && setlistVal["Preset"]["MemoryWidth"].isBool())
+				setlist.presetSetting.memoryWidth = setlistVal["Preset"]["MemoryWidth"].asBool();
+			if (setlistVal["Preset"].isMember("MemoryColor") && setlistVal["Preset"]["MemoryColor"].isBool())
+				setlist.presetSetting.memoryColor = setlistVal["Preset"]["MemoryColor"].asBool();
+
+			if (setlistVal["Preset"].isMember("AutoDefaultWidth") && setlistVal["Preset"]["AutoDefaultWidth"].isBool())
+				setlist.presetSetting.autoDefaultWidth = setlistVal["Preset"]["AutoDefaultWidth"].asBool();
+			if (setlistVal["Preset"].isMember("DefaultBrush1Width") && setlistVal["Preset"]["DefaultBrush1Width"].isDouble())
+				setlist.presetSetting.defaultBrush1Width = static_cast<float>(setlistVal["Preset"]["DefaultBrush1Width"].asDouble());
+			if (setlistVal["Preset"].isMember("DefaultHighlighter1Width") && setlistVal["Preset"]["DefaultHighlighter1Width"].isDouble())
+				setlist.presetSetting.defaultHighlighter1Width = static_cast<float>(setlistVal["Preset"]["DefaultHighlighter1Width"].asDouble());
+		}
+
 		if (setlistVal.isMember("UpdateSetting") && setlistVal["UpdateSetting"].isObject())
 		{
 			{
@@ -454,6 +344,14 @@ bool ReadSetting()
 			}
 		}
 
+		if (setlistVal.isMember("Experimental") && setlistVal["Experimental"].isObject())
+		{
+			if (setlistVal["Experimental"].isMember("Inkeys3") && setlistVal["Experimental"]["Inkeys3"].isObject())
+			{
+				if (setlistVal["Experimental"]["Inkeys3"].isMember("UI3") && setlistVal["Experimental"]["Inkeys3"]["UI3"].isBool())
+					setlist.Experimental.Inkeys3.UI3 = setlistVal["Experimental"]["Inkeys3"]["UI3"].asBool();
+			}
+		}
 	}
 	else return false;
 
@@ -468,12 +366,14 @@ bool ReadSettingMini()
 		return false;
 	}
 
-	DWORD dwSize = 0;
-	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -493,11 +393,10 @@ bool ReadSettingMini()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
-	readerBuilder["stackLimit"] = 64;
 	Json::Value updateVal;
 	string jsonErr;
 
-	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 	{
 		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
 		{
@@ -512,18 +411,9 @@ bool ReadSettingMini()
 
 	return true;
 }
-string CaptureSettingJson()
+bool WriteSetting()
 {
-    Json::Value widthPreferences;
-    {
-        std::scoped_lock widthLock(g_penWidthPreferencesMutex);
-        // 仅为安全保存保留退休偏好/迁移证据，不将其应用到本版启动状态。
-        // AutoClean 前冻结原对象，未来版本也不得降级覆盖。
-        g_penWidthStartup = Inkeys::Business::PenWidth::DecodePreferences(setlistVal, false, GetPenWidthContext());
-        widthPreferences = Inkeys::Business::PenWidth::EncodePreferences(g_penWidthStartup, false);
-    }
-    if (Inkeys::config.Config.AutoClean) setlistVal.clear();
-    setlistVal["PenWidth"] = std::move(widthPreferences);
+	if (Inkeys::config.Config.AutoClean) setlistVal.clear();
 
 	bool enableAutoUpdate;
 	string updateChannel;
@@ -550,28 +440,38 @@ string CaptureSettingJson()
 			setlistVal["Regular"]["MoveRecover1"] = Json::Value(setlist.regularSetting.moveRecover);
 			setlistVal["Regular"]["ClickRecover"] = Json::Value(setlist.regularSetting.clickRecover);
 		}
+		setlistVal["Regular"]["AvoidFullScreen"] = Json::Value(setlist.regularSetting.avoidFullScreen);
 		setlistVal["Regular"]["TeachingSafetyMode"] = Json::Value(setlist.regularSetting.teachingSafetyMode);
 
 		setlistVal["PaintDevice"] = Json::Value(setlist.paintDevice);
 		setlistVal["DisableRTS"] = Json::Value(setlist.disableRTS);
 		setlistVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
 		setlistVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);
+		setlistVal["PointAdsorption"] = Json::Value(setlist.pointAdsorption);
+		setlistVal["SmoothWriting"] = Json::Value(setlist.smoothWriting);
 		{
-			setlist.eraserSetting.eraserMode = setlist.eraserSetting.eraserMode == 1 ? 1 : 2;
 			setlistVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
 			setlistVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
 		}
+		setlistVal["HideTouchPointerBeta"] = Json::Value(setlist.hideTouchPointer);
+
 		{
 			setlistVal["Save"]["Enable"] = Json::Value(setlist.saveSetting.enable);
 			setlistVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
 		}
-		// 已删除的旧设置不依赖 AutoClean；每次保存都清除历史 JSON 键。
-		setlistVal["Regular"].removeMember("AvoidFullScreen");
-		setlistVal.removeMember("PointAdsorption");
-		setlistVal.removeMember("SmoothWriting");
-		setlistVal.removeMember("HideTouchPointerBeta");
-		setlistVal.removeMember("Performance");
-		setlistVal.removeMember("Preset");
+		{
+			setlistVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
+
+			setlistVal["Performance"]["SuperDrawBeta2"] = Json::Value(setlist.performanceSetting.superDraw);
+		}
+		{
+			setlistVal["Preset"]["MemoryWidth"] = Json::Value(setlist.presetSetting.memoryWidth);
+			setlistVal["Preset"]["MemoryColor"] = Json::Value(setlist.presetSetting.memoryColor);
+
+			setlistVal["Preset"]["AutoDefaultWidth"] = Json::Value(setlist.presetSetting.autoDefaultWidth);
+			setlistVal["Preset"]["DefaultBrush1Width"] = Json::Value(static_cast<double>(setlist.presetSetting.defaultBrush1Width));
+			setlistVal["Preset"]["DefaultHighlighter1Width"] = Json::Value(static_cast<double>(setlist.presetSetting.defaultHighlighter1Width));
+		}
 
 		{
 			setlistVal["UpdateSetting"]["EnableAutoUpdate"] = Json::Value(enableAutoUpdate);
@@ -656,38 +556,42 @@ string CaptureSettingJson()
 			}
 		}
 
-		// UI3 已成为唯一入口，升级写回时移除旧实验开关。
-		if (setlistVal.isMember("Experimental") && setlistVal["Experimental"].isObject()
-			&& setlistVal["Experimental"].isMember("Inkeys3")
-			&& setlistVal["Experimental"]["Inkeys3"].isObject())
 		{
-			setlistVal["Experimental"]["Inkeys3"].removeMember("UI3");
-			if (setlistVal["Experimental"]["Inkeys3"].empty())
-				setlistVal["Experimental"].removeMember("Inkeys3");
-			if (setlistVal["Experimental"].empty())
-				setlistVal.removeMember("Experimental");
+			{
+				setlistVal["Experimental"]["Inkeys3"]["UI3"] = Json::Value(setlist.Experimental.Inkeys3.UI3);
+			}
 		}
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, setlistVal);
-}
-
-bool WriteSettingJson(const string& jsonContent)
-{
-	scoped_lock writeLock(g_legacySettingWriteMutex);
-	if (jsonContent.empty() || jsonContent.size() >
-		static_cast<size_t>(kMaxLegacyConfigFileBytes))
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\deploy.json"))
+	{
+		UnOccupyFile(&fileHandle);
 		return false;
-	const filesystem::path path = filesystem::path(globalPath) / L"opt" / L"deploy.json";
-	// 已存在但不可读/不可解析时保留原件；首次缺文件才允许写默认值。
-	if (!ExistingConfigValidOrAbsent(path.wstring())) return false;
-	return Inkeys::PptSettings::WriteAtomically(path, jsonContent);
-}
+	}
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!SetEndOfFile(fileHandle))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
 
-bool WriteSetting()
-{
-	return WriteSettingJson(CaptureSettingJson());
+	Json::StreamWriterBuilder writerBuilder;
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, setlistVal);
+
+	DWORD bytesWritten = 0;
+	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	UnOccupyFile(&fileHandle);
+	return true;
 }
 
 PptComSetListStruct pptComSetlist;
@@ -700,12 +604,14 @@ bool PptComReadSetting()
 		return false;
 	}
 
-	DWORD dwSize = 0;
-	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -725,12 +631,13 @@ bool PptComReadSetting()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
-	readerBuilder["stackLimit"] = 64;
 	Json::Value updateVal;
 	string jsonErr;
 
-	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 	{
+		if (updateVal.isMember("FixedHandWriting") && updateVal["FixedHandWriting"].isBool())
+			pptComSetlist.fixedHandWriting = updateVal["FixedHandWriting"].asBool();
 		if (updateVal.isMember("ShowLoadingScreen") && updateVal["ShowLoadingScreen"].isBool())
 			pptComSetlist.showLoadingScreen = updateVal["ShowLoadingScreen"].asBool();
 		if (updateVal.isMember("MemoryWidgetPosition") && updateVal["MemoryWidgetPosition"].isBool())
@@ -781,12 +688,14 @@ bool PptComReadSettingPositionOnly()
 		return false;
 	}
 
-	DWORD dwSize = 0;
-	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -806,11 +715,10 @@ bool PptComReadSettingPositionOnly()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
-	readerBuilder["stackLimit"] = 64;
 	Json::Value updateVal;
 	string jsonErr;
 
-	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 	{
 		if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
 			pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
@@ -829,17 +737,11 @@ bool PptComReadSettingPositionOnly()
 
 	return true;
 }
-namespace
-{
-	std::mutex pptSettingsMutex;
-	std::mutex pptSettingsWriteMutex;
-	Inkeys::PptSettings::WriteJournal pptSettingsJournal;
-}
-
-static Json::Value CapturePptComSettingValue()
+bool PptComWriteSetting()
 {
 	Json::Value updateVal;
 	{
+		updateVal["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
 		updateVal["ShowLoadingScreen"] = Json::Value(pptComSetlist.showLoadingScreen);
 		updateVal["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
 
@@ -861,76 +763,35 @@ static Json::Value CapturePptComSettingValue()
 		// updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
 	}
 
-	return updateVal;
-}
-
-static void EnsurePptSettingsJournal()
-{
-	if (!pptSettingsJournal.Initialized())
-		pptSettingsJournal.Initialize(CapturePptComSettingValue());
-}
-
-string CapturePptComSettingJson()
-{
-	std::scoped_lock lock(pptSettingsMutex);
-	EnsurePptSettingsJournal();
-	return pptSettingsJournal.CaptureSettings(CapturePptComSettingValue());
-}
-
-string CapturePptComPositionSettingJson(Inkeys::PptSettings::Positions positions, bool remember)
-{
-	std::scoped_lock lock(pptSettingsMutex);
-	EnsurePptSettingsJournal();
-	return pptSettingsJournal.CapturePositions(positions, remember);
-}
-
-Inkeys::PptSettings::Positions SavedPptComPositions()
-{
-	std::scoped_lock lock(pptSettingsMutex);
-	EnsurePptSettingsJournal();
-	return pptSettingsJournal.Saved();
-}
-
-Inkeys::PptSettings::Positions RestorablePptComPositions()
-{
-	std::scoped_lock lock(pptSettingsMutex);
-	EnsurePptSettingsJournal();
-	return pptSettingsJournal.RestoreBaseline();
-}
-
-string RetryPptComSettingJson()
-{
-	std::scoped_lock lock(pptSettingsMutex);
-	return pptSettingsJournal.Retry();
-}
-
-bool WritePptComSettingJson(const string& jsonContent)
-{
-	// 文件提交串行，但 UI 捕获和读取保存基线不等待磁盘 I/O。
-	std::scoped_lock writeLock(pptSettingsWriteMutex);
-	const filesystem::path path = filesystem::path(globalPath) /
-		L"opt" / L"pptcom_configuration.json";
-	if (!ExistingConfigValidOrAbsent(path.wstring())) return false;
-	Inkeys::PptSettings::WriteJournal::PreparedWrite prepared;
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
 	{
-		std::scoped_lock lock(pptSettingsMutex);
-		if (!pptSettingsJournal.Prepare(jsonContent, prepared)) return false;
+		UnOccupyFile(&fileHandle);
+		return false;
 	}
-	if (prepared.revision == 0) return true;
-	const bool succeeded = !prepared.content.empty() &&
-		prepared.content.size() <= static_cast<size_t>(kMaxLegacyConfigFileBytes) &&
-		Inkeys::PptSettings::WriteAtomically(path, prepared.content);
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
 	{
-		std::scoped_lock lock(pptSettingsMutex);
-		pptSettingsJournal.Complete(prepared, succeeded);
+		UnOccupyFile(&fileHandle);
+		return false;
 	}
-	if (!succeeded) OutputDebugStringW(L"[Ppt] settings commit failed; frozen request retained for retry\n");
-	return succeeded;
-}
+	if (!SetEndOfFile(fileHandle))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
 
-bool PptComWriteSetting()
-{
-	return WritePptComSettingJson(CapturePptComSettingJson());
+	Json::StreamWriterBuilder writerBuilder;
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+
+	DWORD bytesWritten = 0;
+	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	UnOccupyFile(&fileHandle);
+	return true;
 }
 
 DdbInteractionSetListStruct ddbInteractionSetList;
@@ -1048,7 +909,7 @@ DdbInteractionSetListStruct ddbInteractionSetList;
 //
 //	return true;
 //}
-string CaptureDdbInteractionJson(bool change, bool close)
+bool DdbWriteInteraction(bool change, bool close)
 {
 	Json::Value updateVal;
 	{
@@ -1082,13 +943,6 @@ string CaptureDdbInteractionJson(bool change, bool close)
 		updateVal["~KeepOpen"] = Json::Value(!close);
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
-}
-
-bool WriteDdbInteractionJson(const string& jsonContent)
-{
-
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForWrite(&fileHandle, pluginPath + L"DesktopDrawpadBlocker\\interaction_configuration.json"))
 	{
@@ -1106,6 +960,9 @@ bool WriteDdbInteractionJson(const string& jsonContent)
 		return false;
 	}
 
+	Json::StreamWriterBuilder writerBuilder;
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+
 	DWORD bytesWritten = 0;
 	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
 	{
@@ -1117,283 +974,150 @@ bool WriteDdbInteractionJson(const string& jsonContent)
 	return true;
 }
 
-bool DdbWriteInteraction(bool change, bool close)
-{
-	return WriteDdbInteractionJson(CaptureDdbInteractionJson(change, close));
-}
-
-void InitializePenWidthPreferences(Inkeys::Business::PenWidth::Context context)
-{
-    using namespace Inkeys::Business::PenWidth;
-    ApplyPenWidthContext(context);
-    {
-        std::scoped_lock lock(g_penWidthPreferencesMutex);
-        // 默认仅初始化一次；后续换屏只重解析身份，不能覆盖手动粗细。
-        if (g_penWidthStartupInitialized) return;
-        // 本版隐藏且暂不支持启动记忆/启动预设；保留兼容代码但不读取应用残留配置。
-        // g_penWidthStartup = DecodePreferences(setlistVal, false, context);
-        // setlist.presetSetting.memoryWidth = g_penWidthStartup.memoryWidth;
-        // setlist.presetSetting.memoryColor = g_penWidthStartup.memoryColor;
-        // setlist.presetSetting.autoDefaultWidth = g_penWidthStartup.autoDefaultWidth;
-        g_penWidthStartupInitialized = true;
-    }
-    RestorePenWidthSelections({}, {}, {});
-    // GetMemory(); // 暂停启动恢复粗细/颜色；与 Draw3 文档历史恢复无关。
-}
-
 bool GetMemory()
 {
-    using namespace Inkeys::Business::PenWidth;
-    std::scoped_lock lock(g_penWidthPreferencesMutex);
-    const auto context = GetPenWidthContext();
-    if (!g_penWidthStartupInitialized)
-    {
-        g_penWidthStartup = DecodePreferences(setlistVal, false, context);
-        g_penWidthStartupInitialized = true;
-    }
-    Json::Value root;
-    const bool loaded = ReadMemoryRoot(MemoryPath(), root);
-    const Preferences memory = loaded ? DecodePreferences(root, true, context) : Preferences{};
-    COLORREF brushColor = 0, highlighterColor = 0;
-    const bool brushColorValid = loaded && g_penWidthStartup.memoryColor && ReadMemoryColor(root, "Brush1", brushColor);
-    const bool highlighterColorValid = loaded && g_penWidthStartup.memoryColor && ReadMemoryColor(root, "Highlighter1", highlighterColor);
-    RestorePenWidthSelections(StartupSelection(g_penWidthStartup, memory, 0),
-        StartupSelection(g_penWidthStartup, memory, 1), StartupSelection(g_penWidthStartup, memory, 2),
-        brushColorValid ? &brushColor : nullptr, highlighterColorValid ? &highlighterColor : nullptr);
-    if (loaded && memory.migrated)
-    {
-        // 版本/身份/迁移证据原子写入；失败保留旧文件，内存已解析值不再除 DPI。
-        root["PenWidth"] = EncodePreferences(memory, true);
-        return SaveMemoryRoot(MemoryPath(), root);
-    }
-    return loaded;
-}
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"Inkeys\\Memory\\memory.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
 
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		// Draw
+		if (updateVal.isMember("Draw") && updateVal["Draw"].isObject())
+		{
+			// Brush1
+			if (updateVal["Draw"].isMember("Brush1") && updateVal["Draw"]["Brush1"].isObject())
+			{
+				if (updateVal["Draw"]["Brush1"].isMember("Width") && updateVal["Draw"]["Brush1"]["Width"].isInt())
+				{
+					if (setlist.presetSetting.memoryWidth)
+						stateMode.Pen.Brush1.width = updateVal["Draw"]["Brush1"]["Width"].asInt();
+				}
+
+				if (updateVal["Draw"]["Brush1"].isMember("Color") && updateVal["Draw"]["Brush1"]["Color"].isObject())
+				{
+					if (updateVal["Draw"]["Brush1"]["Color"].isMember("R") && updateVal["Draw"]["Brush1"]["Color"]["R"].isInt() && \
+						updateVal["Draw"]["Brush1"]["Color"].isMember("G") && updateVal["Draw"]["Brush1"]["Color"]["G"].isInt() && \
+						updateVal["Draw"]["Brush1"]["Color"].isMember("B") && updateVal["Draw"]["Brush1"]["Color"]["B"].isInt() && \
+						updateVal["Draw"]["Brush1"]["Color"].isMember("A") && updateVal["Draw"]["Brush1"]["Color"]["A"].isInt())
+					{
+						if (setlist.presetSetting.memoryColor)
+							stateMode.Pen.Brush1.color = RGBA(updateVal["Draw"]["Brush1"]["Color"]["R"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["G"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["B"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["A"].asInt());
+					}
+				}
+			}
+			// Highlighter1
+			if (updateVal["Draw"].isMember("Highlighter1") && updateVal["Draw"]["Highlighter1"].isObject())
+			{
+				if (updateVal["Draw"]["Highlighter1"].isMember("Width") && updateVal["Draw"]["Highlighter1"]["Width"].isInt())
+				{
+					if (setlist.presetSetting.memoryWidth)
+						stateMode.Pen.Highlighter1.width = updateVal["Draw"]["Highlighter1"]["Width"].asInt();
+				}
+
+				if (updateVal["Draw"]["Highlighter1"].isMember("Color") && updateVal["Draw"]["Highlighter1"]["Color"].isObject())
+				{
+					if (updateVal["Draw"]["Highlighter1"]["Color"].isMember("R") && updateVal["Draw"]["Highlighter1"]["Color"]["R"].isInt() && \
+						updateVal["Draw"]["Highlighter1"]["Color"].isMember("G") && updateVal["Draw"]["Highlighter1"]["Color"]["G"].isInt() && \
+						updateVal["Draw"]["Highlighter1"]["Color"].isMember("B") && updateVal["Draw"]["Highlighter1"]["Color"]["B"].isInt() && \
+						updateVal["Draw"]["Highlighter1"]["Color"].isMember("A") && updateVal["Draw"]["Highlighter1"]["Color"]["A"].isInt())
+					{
+						if (setlist.presetSetting.memoryColor)
+							stateMode.Pen.Highlighter1.color = RGBA(updateVal["Draw"]["Highlighter1"]["Color"]["R"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["G"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["B"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["A"].asInt());
+					}
+				}
+			}
+		}
+	}
+	else return false;
+
+	return true;
+}
 bool SetMemory()
 {
-    using namespace Inkeys::Business::PenWidth;
-    std::scoped_lock lock(g_penWidthPreferencesMutex);
-    const auto snapshot = GetStateModeSnapshot();
-    Json::Value root;
-    if (!ReadMemoryRoot(MemoryPath(), root)) return false;
-    auto preferences = DecodePreferences(root, true, snapshot.penWidthContext);
-    if (!preferences.unknownSchema)
-    {
-        preferences.selections = { snapshot.Pen.Brush1.widthSelection,
-            snapshot.Pen.Highlighter1.widthSelection, snapshot.Pen.Laser.widthSelection };
-        preferences.valid = { true, true, true };
-        root["PenWidth"] = EncodePreferences(preferences, true);
-    }
-    // 旧 Width 原值保留作兼容证据；新真值只写带单位的 Selections，不混入旧字段。
-    const auto color = [&](const char* slot, COLORREF value)
-    {
-        if (!root["Draw"].isObject()) root["Draw"] = Json::Value(Json::objectValue);
-        if (!root["Draw"][slot].isObject()) root["Draw"][slot] = Json::Value(Json::objectValue);
-        auto& target = root["Draw"][slot]["Color"];
-        target = Json::Value(Json::objectValue);
-        target["R"] = static_cast<int>(value & 0xff);
-        target["G"] = static_cast<int>((value >> 8) & 0xff);
-        target["B"] = static_cast<int>((value >> 16) & 0xff);
-        target["A"] = static_cast<int>((value >> 24) & 0xff);
-    };
-    color("Brush1", snapshot.Pen.Brush1.color);
-    color("Highlighter1", snapshot.Pen.Highlighter1.color);
-    return SaveMemoryRoot(MemoryPath(), root);
-}
+	Json::Value updateVal;
+	{
+		// Draw
+		{
+			// Brush1
+			{
+				updateVal["Draw"]["Brush1"]["Width"] = Json::Value(stateMode.Pen.Brush1.width);
+				updateVal["Draw"]["Brush1"]["Color"]["R"] = Json::Value(static_cast<int>(stateMode.Pen.Brush1.color & 0xFF));
+				updateVal["Draw"]["Brush1"]["Color"]["G"] = Json::Value(static_cast<int>((stateMode.Pen.Brush1.color >> 8) & 0xFF));
+				updateVal["Draw"]["Brush1"]["Color"]["B"] = Json::Value(static_cast<int>((stateMode.Pen.Brush1.color >> 16) & 0xFF));
+				updateVal["Draw"]["Brush1"]["Color"]["A"] = Json::Value(static_cast<int>((stateMode.Pen.Brush1.color >> 24) & 0xFF));
+			}
+			// Highlighter1
+			{
+				updateVal["Draw"]["Highlighter1"]["Width"] = Json::Value(stateMode.Pen.Highlighter1.width);
+				updateVal["Draw"]["Highlighter1"]["Color"]["R"] = Json::Value(static_cast<int>(stateMode.Pen.Highlighter1.color & 0xFF));
+				updateVal["Draw"]["Highlighter1"]["Color"]["G"] = Json::Value(static_cast<int>((stateMode.Pen.Highlighter1.color >> 8) & 0xFF));
+				updateVal["Draw"]["Highlighter1"]["Color"]["B"] = Json::Value(static_cast<int>((stateMode.Pen.Highlighter1.color >> 16) & 0xFF));
+				updateVal["Draw"]["Highlighter1"]["Color"]["A"] = Json::Value(static_cast<int>((stateMode.Pen.Highlighter1.color >> 24) & 0xFF));
+			}
+		}
+	}
 
-int RunPenWidthPreferencesProductionTest() noexcept
-{
-    using namespace Inkeys::Business::PenWidth;
-    const auto savedPath = globalPath;
-    const auto savedRoot = setlistVal;
-    const auto savedAutoClean = Inkeys::config.Config.AutoClean.load();
-    Preferences savedStartup;
-    bool savedInitialized = false;
-    {
-        std::scoped_lock lock(g_penWidthPreferencesMutex);
-        savedStartup = g_penWidthStartup;
-        savedInitialized = g_penWidthStartupInitialized;
-    }
-    filesystem::path directory;
-    bool ownsDirectory = false;
-    HANDLE blockReplacement = INVALID_HANDLE_VALUE;
-    const char* stage = "temporary-config";
-    int result = 1;
-    try
-    {
-        const auto require = [](bool passed) { if (!passed) throw 1; };
-        wchar_t temporary[MAX_PATH]{};
-        const DWORD temporaryLength = GetTempPathW(MAX_PATH, temporary);
-        require(temporaryLength > 0 && temporaryLength < MAX_PATH);
-        directory = filesystem::path(temporary) / (L"InkeysPenWidthTest-" + std::to_wstring(GetCurrentProcessId())
-            + L"-" + std::to_wstring(GetTickCount64()));
-        require(!filesystem::exists(directory));
-        require(filesystem::create_directories(directory));
-        ownsDirectory = true;
-        globalPath = directory.wstring() + L"\\";
-        const auto writeRoot = [&](const filesystem::path& path, const Json::Value& root)
-        {
-            Json::StreamWriterBuilder writer;
-            return Inkeys::PptSettings::WriteAtomically(path, Json::writeString(writer, root));
-        };
-        const auto resetStartup = [&](Json::Value root)
-        {
-            setlistVal = std::move(root);
-            std::scoped_lock lock(g_penWidthPreferencesMutex);
-            g_penWidthStartupInitialized = false;
-        };
-        Context context{ 1, 1, 144.0, 1920, 1080 };
-        setlist.paintDevice = 1;
-        stage = "fresh-default-and-first-medium";
-        resetStartup(Json::Value(Json::objectValue));
-        InitializePenWidthPreferences(context);
-        auto snapshot = GetStateModeSnapshot();
-        require(snapshot.Pen.Brush1.widthSelection.source == Source::Preset && snapshot.Pen.Brush1.width == 3.0f
-            && snapshot.Pen.Highlighter1.width == 24.0f && snapshot.Pen.Laser.width == 5.0f);
-        ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
-        const auto first = GetPenWidthMetrics(GetStateModeSnapshot());
-        require(SetPenWidthPresetIfRevision(1, StateModeTransitionRevision(), false)
-            && first.idealCanvasWidthPx == GetPenWidthMetrics(GetStateModeSnapshot()).idealCanvasWidthPx);
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForWrite(&fileHandle, globalPath + L"Inkeys\\Memory\\memory.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!SetEndOfFile(fileHandle))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
 
-        stage = "retired-legacy-preferences-and-memory-ignored";
-        require(SetPenColor(RGB(12, 34, 56), false));
-        ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
-        require(SetPenColor(RGB(65, 43, 21), false));
-        ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
-        Json::Value deploy(Json::objectValue);
-        deploy["Preset"]["MemoryWidth"] = true;
-        deploy["Preset"]["MemoryColor"] = true;
-        deploy["Preset"]["AutoDefaultWidth"] = false;
-        deploy["Preset"]["DefaultBrush1Width"] = 3.0;
-        deploy["Preset"]["DefaultHighlighter1Width"] = 35.0;
-        deploy["Unrelated"] = "keep";
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy));
-        Json::Value memory(Json::objectValue);
-        memory["Draw"]["Brush1"]["Width"] = 12.0;
-        memory["Draw"]["Highlighter1"]["Width"] = 70.0;
-        memory["Draw"]["Laser"]["Width"] = 7.0;
-        memory["Draw"]["Brush1"]["Color"]["R"] = 255;
-        memory["Draw"]["Brush1"]["Color"]["G"] = 255;
-        memory["Draw"]["Brush1"]["Color"]["B"] = 255;
-        memory["Draw"]["Brush1"]["Color"]["A"] = 0;
-        memory["Draw"]["Highlighter1"]["Color"] = memory["Draw"]["Brush1"]["Color"];
-        memory["Unrelated"] = "keep-memory";
-        require(writeRoot(MemoryPath(), memory) && ReadSetting());
-        const auto brushColor = GetStateModeSnapshot().Pen.Brush1.color;
-        const auto requireMedium = [&]()
-        {
-            const auto state = GetStateModeSnapshot();
-            const auto medium = [](Selection selection)
-            { return selection.source == Source::Preset && selection.preset == Preset::Medium; };
-            require(medium(state.Pen.Brush1.widthSelection) && medium(state.Pen.Highlighter1.widthSelection)
-                && medium(state.Pen.Laser.widthSelection));
-            require(std::abs(state.Pen.Brush1.width - Resolve({}, Family::Brush, context).resolvedWidthDip) < 1e-6
-                && std::abs(state.Pen.Highlighter1.width - Resolve({}, Family::Highlighter, context).resolvedWidthDip) < 1e-6
-                && state.Pen.Laser.width == 5.0f && state.Pen.Brush1.color == brushColor
-                && state.Pen.Highlighter1.color == RGB(65, 43, 21));
-        };
-        InitializePenWidthPreferences(context);
-        requireMedium();
-        Json::Value migrated;
-        require(ReadMemoryRoot(MemoryPath(), migrated) && memory == migrated);
-        // 兼容解码仅用于保全保存证据，不代表当前产品支持恢复启动偏好。
-        require(WriteSetting() && ReadMemoryRoot(directory / L"opt" / L"deploy.json", migrated)
-            && migrated["PenWidth"]["Migration"]["Legacy"] == deploy["Preset"]
-            && migrated["Unrelated"].asString() == "keep");
-        require(ReadSetting());
-        context.effectiveDpi = 264.0;
-        InitializePenWidthPreferences(context);
-        requireMedium();
-        require(ReadMemoryRoot(MemoryPath(), migrated) && memory == migrated);
+	Json::StreamWriterBuilder writerBuilder;
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
 
-        stage = "retired-versioned-startup-and-memory-ignored";
-        Preferences startup;
-        startup.memoryWidth = true; startup.memoryColor = true; startup.autoDefaultWidth = false;
-        startup.valid = { true, true, true };
-        startup.selections = { Selection{ Source::ExplicitDip, Preset::Medium, 2.5 },
-            Selection{ Source::Preset, Preset::Thick, 3.0 }, Selection{ Source::ExplicitDip, Preset::Medium, 7.0 } };
-        deploy["PenWidth"] = EncodePreferences(startup, false);
-        Preferences remembered = startup;
-        remembered.selections[0] = { Source::ExplicitDip, Preset::Medium, 17.0 };
-        memory["PenWidth"] = EncodePreferences(remembered, true);
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy)
-            && writeRoot(MemoryPath(), memory) && ReadSetting());
-        InitializePenWidthPreferences(context);
-        requireMedium();
-        require(WriteSetting() && ReadMemoryRoot(directory / L"opt" / L"deploy.json", migrated)
-            && migrated["PenWidth"] == deploy["PenWidth"]);
-        startup.memoryWidth = false;
-        deploy["PenWidth"] = EncodePreferences(startup, false);
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy) && ReadSetting());
-        InitializePenWidthPreferences(context);
-        requireMedium();
+	DWORD bytesWritten = 0;
+	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
 
-        stage = "classroom-default-and-followup-context-preserves-manual";
-        context.paintDevice = 0; context.pixelWidth = 2560; context.pixelHeight = 1440;
-        setlist.paintDevice = 0;
-        require(ReadSetting());
-        InitializePenWidthPreferences(context);
-        requireMedium();
-        require(std::abs(GetPenWidthMetrics(GetStateModeSnapshot()).idealCanvasWidthPx - 16.0 / 3.0) < 1e-9);
-        require(SetPenWidth(17.0, false));
-        InitializePenWidthPreferences(context);
-        require(GetStateModeSnapshot().Pen.Brush1.widthSelection.source == Source::ExplicitDip
-            && GetStateModeSnapshot().Pen.Brush1.widthSelection.explicitDip == 17.0);
-        context.effectiveDpi = 192.0;
-        InitializePenWidthPreferences(context);
-        require(GetStateModeSnapshot().Pen.Brush1.widthSelection.explicitDip == 17.0);
-        require(SetPenWidthPresetIfRevision(2, StateModeTransitionRevision(), false));
-        context.pixelWidth = 3840; context.pixelHeight = 2160;
-        InitializePenWidthPreferences(context);
-        snapshot = GetStateModeSnapshot();
-        require(snapshot.Pen.Brush1.widthSelection.source == Source::Preset
-            && snapshot.Pen.Brush1.widthSelection.preset == Preset::Thick
-            && std::abs(GetPenWidthMetrics(snapshot).idealCanvasWidthPx - 12.0) < 1e-9);
-
-        stage = "atomic-failure-preserves-original";
-        require(ReadMemoryRoot(MemoryPath(), memory));
-        blockReplacement = CreateFileW(MemoryPath().c_str(), GENERIC_READ, FILE_SHARE_READ,
-            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        require(blockReplacement != INVALID_HANDLE_VALUE);
-        require(!SetMemory());
-        CloseHandle(blockReplacement); blockReplacement = INVALID_HANDLE_VALUE;
-        require(ReadMemoryRoot(MemoryPath(), migrated) && memory == migrated);
-
-        stage = "future-schema-autoclean-preservation";
-        deploy["PenWidth"]["Version"] = 99;
-        deploy["PenWidth"]["FuturePayload"] = "opaque";
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy) && ReadSetting());
-        InitializePenWidthPreferences(context);
-        Inkeys::config.Config.AutoClean = true;
-        const auto expectedFuture = deploy["PenWidth"];
-        require(WriteSetting() && ReadMemoryRoot(directory / L"opt" / L"deploy.json", migrated)
-            && migrated["PenWidth"] == expectedFuture);
-        memory["PenWidth"]["Version"] = 99;
-        memory["PenWidth"]["FuturePayload"] = "opaque memory";
-        require(writeRoot(MemoryPath(), memory) && SetMemory() && ReadMemoryRoot(MemoryPath(), migrated)
-            && memory["PenWidth"] == migrated["PenWidth"]);
-
-        stage = "malformed-file-no-overwrite";
-        require(Inkeys::PptSettings::WriteAtomically(MemoryPath(), "{broken"));
-        require(!SetMemory());
-        std::puts("pen-width-preferences-production-test: PASS");
-        result = 0;
-    }
-    catch (...) { std::fprintf(stderr, "pen-width-preferences-production-test: FAIL %s\n", stage); }
-    if (blockReplacement != INVALID_HANDLE_VALUE) CloseHandle(blockReplacement);
-    globalPath = savedPath;
-    setlistVal = savedRoot;
-    Inkeys::config.Config.AutoClean = savedAutoClean;
-    {
-        std::scoped_lock lock(g_penWidthPreferencesMutex);
-        g_penWidthStartup = std::move(savedStartup);
-        g_penWidthStartupInitialized = savedInitialized;
-    }
-    if (ownsDirectory)
-    {
-        // 只清理本探针刚创建并持有的独立目录，不接触用户配置目录。
-        std::error_code error;
-        filesystem::remove_all(directory, error);
-    }
-    return result;
+	UnOccupyFile(&fileHandle);
+	return true;
 }

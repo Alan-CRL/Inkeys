@@ -1,8 +1,8 @@
-module;
+﻿module;
 
 #include "../../IdtMain.h"
 
-#include <dwrite_1.h>
+#include "../../IdtD2DPreparation.h"
 
 module Inkeys.Text.Font;
 

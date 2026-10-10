@@ -3,12 +3,12 @@
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
+#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
-#include "../../../IdtI18n.h"
-#include "../../../IdtI18nKeys.g.h"
+#include "../../../IdtDrawpad.h"
+#include "../../../IdtFloating.h"
 #include "../../../IdtState.h"
-#include "../../Drawing/Draw3/Draw3.Product.h"
-#include "../../Window/Window.Legacy.hpp"
+#include "../../../IdtWindow.h"
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -19,14 +19,8 @@ import :Theme;
 
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
-import Inkeys.Business.ComponentActions;
-import Inkeys.Input.MouseHook;
-import Inkeys.Window;
-import Inkeys.UI.RenderPipeline;
-import Inkeys.UI.StartupPreview;
-import Inkeys.Startup.Progress;
-import Inkeys.Display;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
+extern const double BarButtonCursorLightIntensity;
 extern const double BarDrawAttributeCompactWidth;
 extern const double BarDrawAttributeCompactScale;
 extern const double BarDrawAttributeCompactHeight;
@@ -55,99 +49,26 @@ extern const double BarMorePanelCompactWidth;
 extern const double BarMorePanelCompactHeight;
 
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
-extern constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
-
-void BarUISetClass::PublishDisplaySnapshot(
-	Inkeys::Display::SnapshotPtr snapshot) noexcept
-{
-	const auto* monitor = snapshot && !Inkeys::UI::Bar::WhiteboardActive()
-		? snapshot->Find(Inkeys::UI::Bar::PptSceneMonitor()) : nullptr;
-	if (!monitor && snapshot) monitor = snapshot->Primary();
-	if (!monitor) return;
-	{
-		lock_guard lock(pendingDisplayPublishMutex);
-		// 奇数 serial 表示发布中；读方只接受同一偶数 serial 的完整快照。
-		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
-		pendingDisplayLeft.store(monitor->bounds.left, memory_order_relaxed);
-		pendingDisplayTop.store(monitor->bounds.top, memory_order_relaxed);
-		pendingDisplayRight.store(monitor->bounds.right, memory_order_relaxed);
-		pendingDisplayBottom.store(monitor->bounds.bottom, memory_order_relaxed);
-		pendingWorkAreaLeft.store(monitor->workArea.left, memory_order_relaxed);
-		pendingWorkAreaTop.store(monitor->workArea.top, memory_order_relaxed);
-		pendingWorkAreaRight.store(monitor->workArea.right, memory_order_relaxed);
-		pendingWorkAreaBottom.store(monitor->workArea.bottom, memory_order_relaxed);
-		pendingDisplayDpi.store(monitor->effectiveDpiX ? monitor->effectiveDpiX :
-			USER_DEFAULT_SCREEN_DPI, memory_order_relaxed);
-		pendingDisplaySerial.fetch_add(1, memory_order_release);
-	}
-	UpdateRendering(false);
-}
-
-void BarUISetClass::PublishWindowDpi(UINT dpi) noexcept
-{
-	if (!dpi) return;
-	{
-		lock_guard lock(pendingDisplayPublishMutex);
-		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
-		pendingDisplayDpi.store(dpi, memory_order_relaxed);
-		pendingDisplaySerial.fetch_add(1, memory_order_release);
-	}
-	UpdateRendering(false);
-}
-
-void BarUISetClass::StartDisplayTracking()
-{
-	displaySubscription.Reset();
-	displaySubscription = Inkeys::Display::Subscribe(
-		[this](Inkeys::Display::SnapshotPtr snapshot)
-		{
-			// 订阅线程只发布原子目标，布局与资源仍由共享渲染线程接管。
-			PublishDisplaySnapshot(std::move(snapshot));
-		});
-}
-
-void BarUISetClass::StopDisplayTracking() noexcept
-{
-	displaySubscription.Reset();
-}
-
+constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
 namespace Inkeys::UI::Bar
 {
-	WNDPROC WindowProc() noexcept
-	{
-		return barWindowMsgCallback;
-	}
-
 	void Initialization()
 	{
 		Inkeys::Thread::StatusGuard guard("BarInitializationClass::BarInitialization");
-		Inkeys::UI::StartupPreview::SetBarStartupState(
-			Inkeys::UI::StartupPreview::BarStartupState::Initializing);
-		if (offSignal)
-		{
-			Inkeys::UI::StartupPreview::SetBarStartupState(
-				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
-			return;
-		}
+		if (offSignal) return;
+		const auto CloseBarWindow = []()
+			{
+				HWND window = floating_window;
+				if (window && IsWindow(window))
+					hiex::closegraph_win32(window);
+			};
+
 		// 初始化
-		if (!InitializeWindow(barUISet))
-		{
-			Inkeys::UI::StartupPreview::SetBarStartupState(
-				Inkeys::UI::StartupPreview::BarStartupState::WindowMissing);
-			return;
-		}
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarWindowReady);
-		barUISet.spec.ConfigureLocalizedTypography();
+		if (!InitializeWindow(barUISet)) return;
 		InitializeUI(barUISet);
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarUiGraphReady);
-		barUISet.StartDisplayTracking();
 
 		barUISet.barMedia.LoadFormat();
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarMediaReady);
 
-		// 首次布局直接读取 Draw3 内容快照，避免依赖监控线程稍后的修订通知。
-		SetCurrentPageHasContent(
-			Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent);
 		// 初始化 按钮 们
 		barUISet.barButtonSet.PresetInitialization();
 		barUISet.barButtonSet.RegisterBuiltInComponents();
@@ -155,52 +76,33 @@ namespace Inkeys::UI::Bar
 			barUISet.barButtonSet.Load();
 			barUISet.barButtonSet.StateUpdate();
 		}
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarComponentsReady);
-		SetContentStateUpdatesReady(true);
 
 		barUISet.barState.PositionUpdate(barUISet.barStyle.zoom);
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarStateReady);
 		if (offSignal)
 		{
-			SetContentStateUpdatesReady(false);
-			Inkeys::UI::StartupPreview::SetBarStartupState(
-				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
+			CloseBarWindow();
 			return;
 		}
 
-		(void)Inkeys::Input::MouseHook::Start([&]()
-			{
-				barUISet.barState.fold = true;
-				barUISet.UpdateRendering(false);
-			});
-		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
-		if (!barUISet.Rendering())
-		{
-			SetContentStateUpdatesReady(false);
-			Inkeys::Input::MouseHook::Stop();
-			barUISet.StopDisplayTracking();
-			return;
-		}
+		// 所有 map 与按钮拓扑已冻结，再启动 Hook、Rendering、Interaction 三条工作线程。
+		FloatingPrepareHookStart();
+		thread hookThread(FloatingInstallHook);
+		FloatingWaitHookReady();
+		thread renderingThread([&]() { barUISet.Rendering(); });
 		thread interactionThread([&]() { barUISet.Interact(); });
 
 		// 等待
 
 		while (!offSignal) this_thread::sleep_for(chrono::milliseconds(100));
-		SetContentStateUpdatesReady(false);
 		// 先停止输入生产者，再由窗口线程撤销计时器、Raw Input 与 capture。
-		Inkeys::Input::MouseHook::Stop();
+		FloatingRequestHookStop();
+		if (hookThread.joinable()) hookThread.join();
 		// 退出信号与普通渲染请求共用代次通知，唤醒真正休眠的渲染线程。
 		BarAtomic::wait.Notify();
-		Inkeys::UI::RenderPipeline::WakeForStop();
 
 		if (interactionThread.joinable()) interactionThread.join();
-		barUISet.StopDisplayTracking();
-		barUISet.StopRendering();
-		if (Inkeys::UI::StartupPreview::GetBarStartupState()
-			!= Inkeys::UI::StartupPreview::BarStartupState::FirstFrameCommitted)
-			Inkeys::UI::StartupPreview::SetBarStartupState(
-				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
-		Inkeys::Business::ShutdownComponentActions();
+		if (renderingThread.joinable()) renderingThread.join();
+		CloseBarWindow();
 
 		return;
 	}
@@ -211,22 +113,20 @@ namespace Inkeys::UI::Bar
 		HWND window = floating_window;
 		if (!window || !IsWindow(window)) return false;
 
+		DisableResizing(window, true); // hiex 禁止窗口拉伸
+
+		SetWindowLong(window, GWL_STYLE, GetWindowLong(window, GWL_STYLE) & ~WS_CAPTION); // 隐藏窗口标题栏
+		SetWindowLong(window, GWL_EXSTYLE, WS_EX_TOOLWINDOW); // 隐藏窗口任务栏图标
+
 		barUISet.barWindow.x = 0;
 		barUISet.barWindow.y = 0;
-		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
-		const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
-		const RECT monitorBounds = monitor ? monitor->bounds :
-			RECT{ 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
-		barUISet.barWindow.w = (std::max)(1L, monitorBounds.right - monitorBounds.left);
-		barUISet.barWindow.h = (std::max)(1L, monitorBounds.bottom - monitorBounds.top);
+		barUISet.barWindow.w = MainMonitor.MonitorWidth;
+		barUISet.barWindow.h = MainMonitor.MonitorHeight - 1;
 		barUISet.barWindow.pct = 255;
-		// 真实窗口范围由首帧 ULW 原子提交，初始化阶段不再短暂覆盖整张屏幕。
-		RECT bounds{ monitorBounds.left, monitorBounds.top,
-			monitorBounds.left + 1, monitorBounds.top + 1 };
-		// 预缩放仅用于首帧前防闪；失败时仍由首帧 ULW 提交真实窗口范围。
-		(void)Inkeys::Window::GetService().SetBounds(
-			Inkeys::Window::WindowRole::Bar, bounds);
+		SetWindowPos(window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
 
+		// 设置自定义窗口消息回调
+		hiex::SetWndProcFunc(window, barWindowMsgCallback);
 		return true;
 	}
 	void InitializeUI(BarUISetClass& barUISet)
@@ -245,7 +145,7 @@ namespace Inkeys::UI::Bar
 			// 背景层
 			{
 				auto word = make_shared<BarUiWordClass>(700.0, 150.0, 1200.0, 300.0, L"", 30.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
-				word->content.Initialization(IW(I18nKey.UI.Bar.Errors.TransparentBackgroundWarning));
+				word->content.Initialization(L"软件遇到透明背景无法正常显示的故障\n\nexe属性->关闭使用简化的颜色模式\nWindows7用户请开启Aero主题\n\n联系开发者->软件选项主页中\n重启软件试试");
 				word->pct.Initialization(0.0);
 				word->enable.Initialization(true);
 				barUISet.wordMap[BarUISetWordEnum::BackgroundWarning] = word;
@@ -282,14 +182,9 @@ namespace Inkeys::UI::Bar
 			}
 			// 主栏
 			{
-				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0,
-					BarMainBarWidthDip, BarMainBarHeightDip,
-					BarMainBarCornerRadiusDip, BarMainBarCornerRadiusDip,
-					BarButtonFrameThicknessDip,
-					GetThemeColor(BarThemeColorEnum::Surface),
-					GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-				shape->pct.Initialization(BarMainBarFillOpacity);
-				shape->framePct = BarUiPctClass(BarMainBarFrameOpacity);
+				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				shape->pct.Initialization(0.8);
+				shape->framePct = BarUiPctClass(0.18);
 				shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
 				shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 				shape->w.mod = BarUiValueModeEnum::Variable;
@@ -612,7 +507,7 @@ namespace Inkeys::UI::Bar
 							4.0, GetThemeColor(BarThemeColorEnum::Surface));
 
 						auto InitializePickerWord = [&](BarUISetWordEnum type,
-							const wstring& text, double size)
+							const wchar_t* text, double size)
 							{
 								auto word = make_shared<BarUiWordClass>(
 									0.0, 0.0, 1.0, 1.0, text, size,
@@ -623,16 +518,16 @@ namespace Inkeys::UI::Bar
 							};
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb,
-							IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel), 13.0);
+							L"R", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerG,
-							IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel), 13.0);
+							L"G", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerB,
-							IW(I18nKey.UI.Bar.ColorPicker.BlueChannelLabel), 13.0);
+							L"B", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity,
-							IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel), 13.0);
+							L"透明度", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgbValue,
 							L"0", 13.0);
@@ -647,14 +542,14 @@ namespace Inkeys::UI::Bar
 							L"100%", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel,
-							IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel), 12.0);
+							L"保持并固定颜色", 12.0);
 					}
 					{ /**/ }
 					// 画笔样式区域
 					{
 						auto InitializePenTypeButton = [&](BarUISetShapeEnum shapeType,
 							BarUISetSvgEnum svgType, BarUISetWordEnum wordType,
-							const wchar_t* resourceName, const wstring& text)
+							const wchar_t* resourceName, const wchar_t* text)
 						{
 							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 115.0, 30.0,
 								4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::PressedFill), nullopt);
@@ -677,23 +572,23 @@ namespace Inkeys::UI::Bar
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush2,
 								BarUISetSvgEnum::DrawAttributeBar_Brush2,
 								BarUISetWordEnum::DrawAttributeBar_Brush2,
-								L"barPaintBrush", IW(I18nKey.UI.Bar.DrawAttributes.BrushLabel));
+								L"barPaintBrush", L"刷子");
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Laser,
 								BarUISetSvgEnum::DrawAttributeBar_Laser,
 								BarUISetWordEnum::DrawAttributeBar_Laser,
-								L"barLaser", IW(I18nKey.UI.Bar.DrawAttributes.LaserLabel));
+								L"barLaser", L"激光笔");
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Highlight1,
 								BarUISetSvgEnum::DrawAttributeBar_Highlight1,
 								BarUISetWordEnum::DrawAttributeBar_Highlight1,
-								L"barHighlighter1", IW(I18nKey.UI.Bar.DrawAttributes.HighlighterLabel));
+								L"barHighlighter1", L"荧光笔");
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush1,
 								BarUISetSvgEnum::DrawAttributeBar_Brush1,
 								BarUISetWordEnum::DrawAttributeBar_Brush1,
-								L"barBrush1", IW(I18nKey.UI.Bar.DrawAttributes.HardPenLabel));
+								L"barBrush1", L"硬笔");
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_SoftPen,
 								BarUISetSvgEnum::DrawAttributeBar_SoftPen,
 								BarUISetWordEnum::DrawAttributeBar_SoftPen,
-								L"barBrush2", IW(I18nKey.UI.Bar.DrawAttributes.SoftPenLabel));
+								L"barBrush2", L"软笔");
 						}
 					// 粗细调节区域
 					{
@@ -939,7 +834,7 @@ namespace Inkeys::UI::Bar
 
 						auto menuFreeWord = make_shared<BarUiWordClass>(
 							0.0, 0.0, 80.0, BarDrawAttributePenTypeMenuRowHeight,
-							IW(I18nKey.UI.Bar.DrawAttributes.FreeLineLabel), 12.0,
+							L"自由线", 12.0,
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 						menuFreeWord->pct.Initialization(0.0);
 						menuFreeWord->enable.Initialization(true);
@@ -968,9 +863,8 @@ namespace Inkeys::UI::Bar
 						barUISet.svgMap[
 							BarUISetSvgEnum::DrawAttributeBar_PenTypeMenuCheck] = menuCheck;
 
-							auto annotationLabel = make_shared<BarUiWordClass>(
-								0.0, 0.0, 80.0, 24.0,
-								IW(I18nKey.UI.Bar.DrawAttributes.AnnotationLineLabel), 13.0,
+auto annotationLabel = make_shared<BarUiWordClass>(
+								0.0, 0.0, 48.0, 24.0, L"标注线", 13.0,
 								RGB(200, 200, 200));
 							annotationLabel->pct.Initialization(0.0);
 							annotationLabel->enable.Initialization(true);
@@ -979,8 +873,7 @@ namespace Inkeys::UI::Bar
 								annotationLabel;
 
 							auto holdLockLabel = make_shared<BarUiWordClass>(
-								0.0, 0.0, 120.0, 24.0,
-								IW(I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel), 13.0,
+								0.0, 0.0, 120.0, 24.0, L"保持并固定粗细", 13.0,
 								RGB(200, 200, 200));
 							holdLockLabel->pct.Initialization(0.0);
 							holdLockLabel->enable.Initialization(true);
@@ -1003,7 +896,7 @@ namespace Inkeys::UI::Bar
 								GetThemeColor(BarThemeColorEnum::TextPrimary),
 								GetThemeColor(BarThemeColorEnum::Surface), 0.45);
 						auto InitializeTooltipWord =
-							[&](BarUISetWordEnum wordType, const wstring& text,
+							[&](BarUISetWordEnum wordType, const wchar_t* text,
 								double size, COLORREF color)
 							{
 								auto word = make_shared<BarUiWordClass>(
@@ -1014,21 +907,21 @@ namespace Inkeys::UI::Bar
 							};
 						InitializeTooltipWord(
 							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
-							IW(I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle),
+							L"启用标注线（暂不可用）",
 							BarThicknessTooltipTitleFontSize,
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 						InitializeTooltipWord(
 							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
-							IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),
+							L"锁定绘制方向仅为水平、竖直或斜45°",
 							BarThicknessTooltipBodyFontSize, popupBodyColor);
 						InitializeTooltipWord(
 							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
-							IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),
+							L"墨迹粗细超出预览范围",
 							BarThicknessTooltipTitleFontSize,
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 						InitializeTooltipWord(
 							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
-							IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),
+							L"预览中的粗细可能与绘制粗细不一致。",
 							BarThicknessTooltipBodyFontSize, popupBodyColor);
 
 						auto InitializeTooltipSvg =
@@ -1080,7 +973,7 @@ namespace Inkeys::UI::Bar
 						barUISet.shapeMap[BarUISetShapeEnum::GeometryAttributeBar] = panel;
 
 						auto InitializeGeometryButton = [&](BarUISetShapeEnum shapeType,
-							BarUISetWordEnum wordType, const wstring& text,
+							BarUISetWordEnum wordType, const wchar_t* text,
 							double size, double fontSize)
 							{
 								auto button = make_shared<BarUiShapeClass>(
@@ -1107,13 +1000,11 @@ namespace Inkeys::UI::Bar
 						InitializeGeometryButton(
 							BarUISetShapeEnum::GeometryAttributeBar_StraightLine,
 							BarUISetWordEnum::GeometryAttributeBar_StraightLine,
-							IW(I18nKey.UI.Bar.GeometryAttributes.StraightLineLabel),
-							BarGeometryAttributeShapeButtonSize, 11.0);
+							L"直线", BarGeometryAttributeShapeButtonSize, 11.0);
 						InitializeGeometryButton(
 							BarUISetShapeEnum::GeometryAttributeBar_Rectangle,
 							BarUISetWordEnum::GeometryAttributeBar_Rectangle,
-							IW(I18nKey.UI.Bar.GeometryAttributes.RectangleLabel),
-							BarGeometryAttributeShapeButtonSize, 11.0);
+							L"矩形", BarGeometryAttributeShapeButtonSize, 11.0);
 
 						auto InitializeGeometryShapeSvg = [&](BarUISetSvgEnum svgType,
 							const wchar_t* resourceName)

@@ -1,3 +1,0 @@
-[Draw3RendererMap] WARP_FL11_0 options=1 dynamic_srv_no_overwrite=1
-[Draw3RendererMap] HARDWARE_FL11_0 create_hr=0x00000000 options=1 dynamic_srv_no_overwrite=1
-[Draw3Hidden] PASS: no-window WARP dynamic-SRV map compatibility

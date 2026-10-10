@@ -2,17 +2,18 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtI18n.h"
-#include "../../../IdtI18nKeys.g.h"
 // 历史遗留问题
+#include "../../../IdtDraw.h"
+#include "../../../IdtDrawpad.h"
+#include "../../../IdtHistoricalDrawpad.h"
+#include "../../../IdtImage.h"
+#include "../../../IdtFloating.h"
 #include "../../../IdtState.h"
-#include "../../Drawing/Draw3/Draw3.Product.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../Window/Window.Legacy.hpp"
-#include "Bar.A2.h"
-#include "Bar.PresentationProbe.h"
-#include "Bar.Presentation.Source.h"
+#include "../../../IdtD2DPreparation.h"
+#include "../../../IdtDisplayManagement.h"
+#include "../../../IdtWindow.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -27,17 +28,6 @@ import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Other.Config;
-import Inkeys.Business.ComponentActions;
-import Inkeys.UI.Freeze;
-import Inkeys.UI.Setting;
-import Inkeys.Window;
-
-using Inkeys::Business::BuiltInComponentAction;
-using Inkeys::Business::ExecuteBuiltInComponentAction;
-using Inkeys::UI::Bar::BarClearClickAction;
-using Inkeys::UI::Bar::BarToggleChannel;
-using Inkeys::UI::Bar::ResolveBarClearClickAction;
-using Inkeys::UI::Bar::ResolveBarDrawButtonToggleDecision;
 
 bool BarButtonClass::TransitionContent(
 	const wstring& iconResourceName, const wstring& label)
@@ -47,41 +37,6 @@ bool BarButtonClass::TransitionContent(
 		changed |= icon.TransitionToResource(L"UI", iconResourceName);
 	changed |= name.TransitionToString(label);
 	return changed;
-}
-
-void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
-{
-	if (!doubleClickContinuation)
-	{
-		clearAttemptedForDoubleClick = false;
-		clearAcceptedForDoubleClick = false;
-	}
-	const bool selectionMode =
-		GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection;
-	const BarClearClickAction action = ResolveBarClearClickAction(
-		selectionMode, Inkeys::UI::Bar::CurrentPageHasContent(),
-		doubleClickContinuation, clearAttemptedForDoubleClick,
-		clearAcceptedForDoubleClick);
-	if (action == BarClearClickAction::EnterSelection)
-	{
-		clearAttemptedForDoubleClick = false;
-		clearAcceptedForDoubleClick = false;
-		if (!selectionMode) ChangeStateModeToSelection();
-		return;
-	}
-	if (action != BarClearClickAction::PublishClear)
-	{
-		clearAttemptedForDoubleClick = false;
-		clearAcceptedForDoubleClick = false;
-		return;
-	}
-
-	const auto result = Inkeys::Drawing::Draw3::PublishProductCommand(
-		Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
-	// 只有已进入 Draw3 FIFO 的首次 Clear，才允许双击第二击直接进入选择。
-	clearAttemptedForDoubleClick = true;
-	clearAcceptedForDoubleClick =
-		result == Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
 }
 
 bool BarButtonSetClass::RegisterButton(
@@ -210,7 +165,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"分割线", 0.0);
 			obj->name.enable.Initialization(false);
 		}
 		{
@@ -245,8 +200,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.SelectLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"选择", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -280,8 +234,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.DrawLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"绘制", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -297,12 +250,8 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					// 真 Draw callback 第一业务写前再核当前 Up 和同一个 Pen baseline。
-					if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute,
-						Inkeys::UI::Bar::Ui3FixtureActionPoint::Callback)) return;
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 					{
-						Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::UnsupportedState);
 						if (ChangeStateModeToPen())
 						{
 							barUISet.barState.drawAttribute = false;
@@ -311,23 +260,16 @@ void BarButtonSetClass::PresetInitialization()
 					}
 					else
 					{
-						if (!barUISet.TryBeginToggle(
-							BarToggleChannel::DrawAttribute))
-						{
-							Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::RejectedByBusiness);
-							return;
-						}
-						// 只在真实toggle接受点标记，之后仍走原决策与StateUpdate规范化。
-						Inkeys::UI::Bar::MarkCurrentUi3FiniteBusinessAccepted();
-						const auto decision = ResolveBarDrawButtonToggleDecision(
-							barUISet.barState.drawAttribute);
-						if (decision.openDrawAttribute)
+						if (barUISet.barState.drawAttribute) barUISet.barState.drawAttribute = false;
+						else
 						{
 							barUISet.barState.moreExpanded = false;
 							barUISet.barState.geometryAttribute = false;
+							barUISet.barState.drawAttribute = true;
 						}
-						barUISet.barState.drawAttribute =
-							decision.openDrawAttribute;
+
+						// 当穿透模式下再次点击绘制按钮，则退出穿透
+						if (penetrate.select) penetrate.select = false;
 					}
 				};
 		}
@@ -345,8 +287,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.EraserLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"擦除", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -362,21 +303,8 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					const auto selectedMode = GetStateModeSnapshot().StateModeSelect;
-					if (selectedMode != StateModeSelectEnum::IdtEraser)
-					{
-						// 切工具的首击不参与开合合并，下一击仍可立即展开属性栏。
-						barUISet.eraserAttribute.RememberEntryFromSelection(
-							selectedMode == StateModeSelectEnum::IdtSelection &&
-							Inkeys::UI::Bar::CurrentPageHasContent());
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtEraser)
 						ChangeStateModeToEraser();
-					}
-					else if (barUISet.TryBeginToggle(BarToggleChannel::EraserAttribute))
-					{
-						const bool open = !barUISet.barState.eraserAttribute;
-						barUISet.CollapseAuxiliaryPanels();
-						barUISet.barState.eraserAttribute = open;
-					}
 				};
 		}
 
@@ -393,8 +321,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.GeometryLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"几何", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -421,8 +348,6 @@ void BarButtonSetClass::PresetInitialization()
 					}
 					else
 					{
-						if (!barUISet.TryBeginToggle(
-							BarToggleChannel::GeometryAttribute)) return;
 						bool open = !static_cast<bool>(barUISet.barState.geometryAttribute);
 						if (open)
 						{
@@ -448,8 +373,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.UndoLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"撤回", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -465,8 +389,11 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					(void)Inkeys::Drawing::Draw3::PublishProductCommand(
-						Inkeys::Drawing::Draw3::Bridge::CommandType::Undo);
+					// 额外的检查
+					if (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))
+					{
+						IdtRecall();
+					}
 
 					// TODO 撤回库重做后需要试试检测撤回状态，要支持按键变灰
 				};
@@ -486,8 +413,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.ClearLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"清空", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -503,7 +429,13 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					ExecuteClearClick(false);
+					// 当穿透模式下只能先退出穿透，再清空（比较糟糕的 inkeys2 架构导致的）
+					if (penetrate.select)
+					{
+						penetrate.select = false;
+						if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+					}
+					stateMode.cleanPageSign = true;
 				};
 		}
 
@@ -511,54 +443,62 @@ void BarButtonSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 
-	// 白板
+	// 穿透
 	{
 		BarButtonClass* obj = new BarButtonClass;
 		{
 			obj->size = BarButtonSizeEnum::twoOne;
-			obj->preset = BarButtonPresetEnum::Whiteboard;
+			obj->preset = BarButtonPresetEnum::Pierce;
 			obj->hide = false;
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"穿透", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0,
-				nullopt, defaultButtonFill, nullopt);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
-			obj->icon.InitializationFromResource(L"UI", L"barWhiteboard");
+			obj->icon.InitializationFromResource(L"UI", L"barPierce");
 			obj->icon.enable.Initialization(true);
 		}
 
 		{
-			obj->clickFunc = []() -> void
+			obj->clickFunc = [&]() -> void
 				{
-					RequestWhiteboardActive(!WhiteboardRequested());
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
+					{
+						if (penetrate.select)
+						{
+							penetrate.select = false;
+							if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+						}
+						else
+						{
+							if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
+							penetrate.select = true;
+						}
+					}
 				};
 		}
 
 		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
-
 	// 定格
 	{
 		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->size = BarButtonSizeEnum::twoOne;
 			obj->preset = BarButtonPresetEnum::Freeze;
 			obj->hide = false;
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.FreezeLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"定格", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -574,46 +514,22 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					const bool wasActive = Inkeys::UI::Freeze::IsActive();
-					Inkeys::UI::Freeze::Toggle();
-					if (!wasActive && Inkeys::UI::Freeze::IsActive())
+					// TODO 注意 PptInfoState.TotalPage == -1 时需要禁用按钮
+					if (FreezeFrame.mode != 1)
 					{
-						// 定格激活后立即重申 owner 树层级；后台线程仍按原路径显示画面。
-						(void)Inkeys::Window::GetService().RequestTopmostRefresh();
+						FreezeFrame.mode = 1;
+						penetrate.select = false;
+
+						if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) FreezeFrame.select = true;
+					}
+					else
+					{
+						FreezeFrame.mode = 0;
+						FreezeFrame.select = false;
 					}
 				};
 		}
 
-		obj->state = &barButtonState[(int)obj->preset.load()];
-		preset[(int)obj->preset.load()] = obj;
-	}
-
-	// 结束放映
-	{
-		BarButtonClass* obj = new BarButtonClass;
-		{
-			obj->size = BarButtonSizeEnum::twoTwo;
-			obj->preset = BarButtonPresetEnum::EndShow;
-			obj->hide = true;
-		}
-
-		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.EndPresentationLabel), 0.0);
-			obj->name.enable.Initialization(true);
-		}
-		{
-			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0,
-				nullopt, defaultButtonFill, nullopt);
-			obj->button.enable.Initialization(true);
-		}
-		{
-			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
-			obj->icon.InitializationFromResource(L"UI", L"barEndShow");
-			obj->icon.enable.Initialization(true);
-		}
-
-		obj->clickFunc = []() { Inkeys::UI::Bar::RequestEndShow(); };
 		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
@@ -629,8 +545,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
-				IW(I18nKey.UI.Bar.MainButtons.SettingsLabel), 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"设置", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -646,7 +561,8 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					Inkeys::UI::Setting::Toggle();
+					if (test.select) test.select = false;
+					else test.select = true;
 				};
 		}
 
@@ -663,9 +579,8 @@ void BarButtonSetClass::PresetInitialization()
 	RegisterButton(Inkeys::BarButtonId::Clean, preset[(int)BarButtonPresetEnum::Clean], false, BarButtonLayoutZoneEnum::FixedA1);
 	// Divider 不进 A1 配置 required 集；仅作运行时交界注入模板（可多实例拷贝）。
 	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtonPresetEnum::Divider], true, BarButtonLayoutZoneEnum::FixedA1);
-	RegisterButton(Inkeys::BarButtonId::Whiteboard, preset[(int)BarButtonPresetEnum::Whiteboard], false, BarButtonLayoutZoneEnum::FixedA2);
+	RegisterButton(Inkeys::BarButtonId::Pierce, preset[(int)BarButtonPresetEnum::Pierce], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtonPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
-	RegisterButton(Inkeys::BarButtonId::EndShow, preset[(int)BarButtonPresetEnum::EndShow], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtonPresetEnum::Setting], false, BarButtonLayoutZoneEnum::Extension);
 	RegisterLayoutMarker(Inkeys::BarButtonId::MoreBoundary);
 
@@ -684,8 +599,7 @@ void BarButtonSetClass::PresetInitialization()
 	moreButton->size = BarButtonSizeEnum::twoTwo;
 	moreButton->hide = false;
 	moreButton->userVisible = true;
-	moreButton->name.Initialization(0.0, 0.0, 0.0, 0.0,
-		IW(I18nKey.UI.Bar.MainButtons.MoreLabel), 0.0);
+	moreButton->name.Initialization(0.0, 0.0, 0.0, 0.0, L"更多", 0.0);
 	moreButton->name.enable.Initialization(true);
 	moreButton->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 	moreButton->button.enable.Initialization(true);
@@ -707,7 +621,7 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 		const wchar_t* settingsName,
 		const wchar_t* shortText,
 		const wchar_t* iconResource,
-		BuiltInComponentAction action)
+		InkeysBuiltInComponentAction action)
 	{
 		BarButtonRegistrationClass existingRegistration;
 		if (TryGetRegistration(id, existingRegistration)) return;
@@ -735,7 +649,7 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 		obj->icon.rW = obj->pngIcon.rW;
 		obj->icon.rH = obj->pngIcon.rH;
 		obj->iconKind = BarButtonIconKindEnum::Png;
-		obj->clickFunc = [action]() { ExecuteBuiltInComponentAction(action); };
+		obj->clickFunc = [action]() { ExecuteInkeysBuiltInComponentAction(action); };
 
 		if (!RegisterButton(
 			id, obj, false, BarButtonLayoutZoneEnum::Extension, true,
@@ -751,132 +665,118 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 		"component.shortcutButton.appliance.explorer",
 		[] { return setlist.component.shortcutButton.appliance.explorer; },
 		L"软件", L"启动 文件资源管理器", L"文件管理器", L"CustomizeIco4",
-		BuiltInComponentAction::Explorer);
+		InkeysBuiltInComponentAction::Explorer);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Taskmgr",
 		"component.shortcutButton.appliance.taskmgr",
 		[] { return setlist.component.shortcutButton.appliance.taskmgr; },
 		L"软件", L"启动 任务管理器", L"任务管理器", L"CustomizeIco9",
-		BuiltInComponentAction::TaskManager);
+		InkeysBuiltInComponentAction::TaskManager);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Control",
 		"component.shortcutButton.appliance.control",
 		[] { return setlist.component.shortcutButton.appliance.control; },
 		L"软件", L"启动 控制面板", L"控制面板", L"CustomizeIco7",
-		BuiltInComponentAction::ControlPanel);
+		InkeysBuiltInComponentAction::ControlPanel);
 
 	registerComponent(
 		"Component.ShortcutButton.System.Desktop",
 		"component.shortcutButton.system.desktop",
 		[] { return setlist.component.shortcutButton.system.desktop; },
 		L"系统", L"显示桌面", L"显示桌面", L"CustomizeIco3",
-		BuiltInComponentAction::ShowDesktop);
+		InkeysBuiltInComponentAction::ShowDesktop);
 	registerComponent(
 		"Component.ShortcutButton.System.LockWorkStation",
 		"component.shortcutButton.system.lockWorkStation",
 		[] { return setlist.component.shortcutButton.system.lockWorkStation; },
 		L"系统", L"锁屏", L"锁屏", L"CustomizeIco8",
-		BuiltInComponentAction::LockWorkStation);
+		InkeysBuiltInComponentAction::LockWorkStation);
 
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.Keyboardesc",
 		"component.shortcutButton.keyboard.keyboardesc",
 		[] { return setlist.component.shortcutButton.keyboard.keyboardesc; },
 		L"键盘", L"ESC 键", L"ESC键", L"CustomizeIco5",
-		BuiltInComponentAction::Escape);
+		InkeysBuiltInComponentAction::Escape);
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.KeyboardAltF4",
 		"component.shortcutButton.keyboard.keyboardAltF4",
 		[] { return setlist.component.shortcutButton.keyboard.keyboardAltF4; },
 		L"键盘", L"Alt+F4", L"Alt+F4", L"CustomizeIco6",
-		BuiltInComponentAction::AltF4);
+		InkeysBuiltInComponentAction::AltF4);
 
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller1",
 		"component.shortcutButton.rollCall.IslandCaller1",
 		[] { return setlist.component.shortcutButton.rollCall.IslandCaller1; },
 		L"随机点名", L"IslandCaller 1", L"随机点名", L"CustomizeIco2",
-		BuiltInComponentAction::IslandCaller);
+		InkeysBuiltInComponentAction::IslandCaller);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller2",
 		"component.shortcutButton.rollCall.IslandCaller2",
 		[] { return setlist.component.shortcutButton.rollCall.IslandCaller2; },
 		L"随机点名", L"IslandCaller 2", L"随机点名", L"CustomizeIco2",
-		BuiltInComponentAction::IslandCallerSimple);
+		InkeysBuiltInComponentAction::IslandCallerSimple);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom1",
 		"component.shortcutButton.rollCall.SecRandom1",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom1; },
 		L"随机点名", L"SecRandom 1", L"随机点名", L"CustomizeIco10",
-		BuiltInComponentAction::SecRandomDirect);
+		InkeysBuiltInComponentAction::SecRandomDirect);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2",
 		"component.shortcutButton.rollCall.SecRandom2",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom2; },
 		L"随机点名", L"SecRandom 2", L"随机点名", L"CustomizeIco10",
-		BuiltInComponentAction::SecRandomQuickDraw);
+		InkeysBuiltInComponentAction::SecRandomQuickDraw);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2Compat",
 		"component.shortcutButton.rollCall.SecRandom2Compat",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom2Compat; },
 		L"随机点名", L"SecRandom 2 兼容", L"随机点名", L"CustomizeIco10",
-		BuiltInComponentAction::SecRandomQuickDrawCompat);
+		InkeysBuiltInComponentAction::SecRandomQuickDrawCompat);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.NamePicker",
 		"component.shortcutButton.rollCall.NamePicker",
 		[] { return setlist.component.shortcutButton.rollCall.NamePicker; },
 		L"随机点名", L"NamePicker", L"随机点名", L"CustomizeIco11",
-		BuiltInComponentAction::NamePicker);
+		InkeysBuiltInComponentAction::NamePicker);
 
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandSettings",
 		"component.shortcutButton.linkage.classislandSettings",
 		[] { return setlist.component.shortcutButton.linkage.classislandSettings; },
 		L"联动", L"ClassIsland 设置", L"CI设置", L"CustomizeIco1",
-		BuiltInComponentAction::ClassIslandSettings);
+		InkeysBuiltInComponentAction::ClassIslandSettings);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandProfile",
 		"component.shortcutButton.linkage.classislandProfile",
 		[] { return setlist.component.shortcutButton.linkage.classislandProfile; },
 		L"联动", L"档案编辑", L"档案编辑", L"CustomizeIco1",
-		BuiltInComponentAction::ClassIslandProfile);
+		InkeysBuiltInComponentAction::ClassIslandProfile);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandClassswap",
 		"component.shortcutButton.linkage.classislandClassswap",
 		[] { return setlist.component.shortcutButton.linkage.classislandClassswap; },
 		L"联动", L"快速换课", L"快速换课", L"CustomizeIco1",
-		BuiltInComponentAction::ClassIslandClassSwap);
+		InkeysBuiltInComponentAction::ClassIslandClassSwap);
 }
 
 void BarButtonSetClass::StateUpdate()
 {
-	StateUpdate(GetStateModeSnapshot());
-}
-void BarButtonSetClass::StateUpdate(const StateModeClass& stateMode)
-{
-	// 同一次刷新共用工具快照，避免高亮、内容和面板归位跨版本。
-	CalcState(stateMode);
-	PresetHoming(stateMode);
-	UpdateDrawButtonStyle(stateMode);
-	UpdateWhiteboardButtonStyle();
-	UpdateEraserButtonStyle(stateMode);
-	UpdateGeometryButtonStyle(stateMode);
+	CalcState();
+	PresetHoming();
+	UpdateDrawButtonStyle();
+	UpdateEraserButtonStyle();
+	UpdateGeometryButtonStyle();
 }
 void BarButtonSetClass::UpdateDrawButtonStyle()
 {
-	UpdateDrawButtonStyle(GetStateModeSnapshot());
-}
-void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
-{
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
-	bool laser = stateMode.laserActive;
 	bool highlighter =
-		!laser && stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
-	bool hardPen = !laser && !highlighter &&
-		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen;
-	int styleKey = (selected ? 2 : 0) + (highlighter ? 1 : 0) +
-		(laser ? 4 : 0) + (hardPen ? 8 : 0);
+		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
+	int styleKey = (selected ? 2 : 0) + (highlighter ? 1 : 0);
 	if (drawButtonStyleKey == styleKey) return;
 
 	lock_guard<mutex> lock(mtx);
@@ -884,48 +784,11 @@ void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
 	auto button = preset[(int)BarButtonPresetEnum::Draw];
 	if (!button) return;
 	button->TransitionContent(
-		laser ? L"barLaser" : (highlighter ? L"barHighlighter1" :
-			(hardPen ? L"barBrush1" : L"barBrush2")),
-		selected ? (laser ? IW(I18nKey.UI.Bar.MainButtons.LaserLabel)
-			: (highlighter ? IW(I18nKey.UI.Bar.MainButtons.HighlighterLabel)
-				: (hardPen ? IW(I18nKey.UI.Bar.MainButtons.HardPenLabel)
-					: IW(I18nKey.UI.Bar.MainButtons.SoftPenLabel))))
-			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel));
+		highlighter ? L"barHighlighter1" : L"barBrush1",
+		selected ? (highlighter ? L"荧光笔" : L"硬笔") : L"绘制");
 	drawButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateWhiteboardButtonStyle()
-{
-	static mutex mtx;
-	const bool active = Inkeys::UI::Bar::WhiteboardActive();
-	const bool presentation = Inkeys::UI::Bar::PptPresentationActive();
-	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
-	const auto projection = Inkeys::UI::Bar::ResolveBarA2Projection(
-		presentation, active, whiteboardFeatureEnabled);
-	const int styleKey = (active ? 2 : (presentation ? 1 : 0)) +
-		(whiteboardFeatureEnabled ? 0 : 4);
-	if (whiteboardButtonStyleKey == styleKey) return;
-
-	lock_guard<mutex> lock(mtx);
-	if (whiteboardButtonStyleKey == styleKey) return;
-	auto whiteboard = preset[(int)BarButtonPresetEnum::Whiteboard];
-	auto freeze = preset[(int)BarButtonPresetEnum::Freeze];
-	auto endShow = preset[(int)BarButtonPresetEnum::EndShow];
-	if (!whiteboard || !freeze || !endShow) return;
-	// 白板功能关闭时只隐藏入口，稳定按钮 ID 和用户原有 A2 配置仍保留。
-	whiteboard->hide = !whiteboardFeatureEnabled;
-	whiteboard->size = projection.whiteboardTwoTwo
-		? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-	// 定格在桌面与 PPT 放映场景中始终保持 2*2，避免切换场景时尺寸跳变。
-	freeze->size = BarButtonSizeEnum::twoTwo;
-	freeze->hide = !projection.freezeVisible;
-	endShow->size = BarButtonSizeEnum::twoTwo;
-	endShow->hide = !projection.endShowVisible;
-	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",
-		active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
-			: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
-	whiteboardButtonStyleKey = styleKey;
-}
-void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
+void BarButtonSetClass::UpdateEraserButtonStyle()
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser;
@@ -937,12 +800,10 @@ void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
 	auto button = preset[(int)BarButtonPresetEnum::Eraser];
 	if (!button) return;
 	button->TransitionContent(
-		L"barEraser", selected
-			? IW(I18nKey.UI.Bar.MainButtons.AreaEraserLabel)
-			: IW(I18nKey.UI.Bar.MainButtons.EraserLabel));
+		L"barEraser", selected ? L"面积擦" : L"擦除");
 	eraserButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode)
+void BarButtonSetClass::UpdateGeometryButtonStyle()
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
@@ -958,10 +819,7 @@ void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMod
 	const wchar_t* resourceName = !selected
 		? L"barGeometry" : (rectangle
 			? L"barShapeRectangle" : L"barShapeStraightLine");
-	const wstring label = !selected
-		? IW(I18nKey.UI.Bar.MainButtons.GeometryLabel)
-		: (rectangle ? IW(I18nKey.UI.Bar.MainButtons.RectangleLabel)
-			: IW(I18nKey.UI.Bar.MainButtons.StraightLineLabel));
+	const wchar_t* label = !selected ? L"几何" : (rectangle ? L"矩形" : L"直线");
 	button->TransitionContent(resourceName, label);
 	geometryButtonStyleKey = styleKey;
 }
@@ -1026,15 +884,6 @@ std::vector<Inkeys::BarFixedButtonLayoutEntry> BarButtonSetClass::NormalizeFixed
 	{
 		if (Inkeys::IsRuntimeBoundaryDividerId(entry.Id)) continue;
 		configuredWithoutDivider.push_back(entry);
-	}
-	// 旧 A2 只有 Whiteboard/Freeze；两种合法顺序都保留，并在末尾补 EndShow。
-	if (zone == BarButtonLayoutZoneEnum::FixedA2
-		&& configuredWithoutDivider.size() == 2)
-	{
-		if (Inkeys::UI::Bar::IsLegacyBarA2Pair(
-			configuredWithoutDivider[0].Id, configuredWithoutDivider[1].Id))
-			configuredWithoutDivider.push_back({ Inkeys::BarButtonId::EndShow,
-				Inkeys::BarButtonSizeKind::TwoTwo });
 	}
 
 	// 旧版默认顺序只迁移一次；其他合法自定义排列仍按原顺序保留。
@@ -1238,29 +1087,14 @@ void BarButtonSetClass::Load()
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry> defaultA2 =
 		Inkeys::MakeDefaultFixedButtonsA2().Snapshot();
 
-	const std::vector<Inkeys::BarFixedButtonLayoutEntry> configuredA1 =
-		Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot();
-	const std::vector<Inkeys::BarFixedButtonLayoutEntry> configuredA2 =
-		Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> normalizedA1 = NormalizeFixedZone(
-		configuredA1,
+		Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot(),
 		defaultA1,
 		BarButtonLayoutZoneEnum::FixedA1);
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> normalizedA2 = NormalizeFixedZone(
-		configuredA2,
+		Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot(),
 		defaultA2,
 		BarButtonLayoutZoneEnum::FixedA2);
-	auto fixedEntriesEqual = [](const auto& left, const auto& right)
-		{
-			if (left.size() != right.size()) return false;
-			for (size_t index = 0; index < left.size(); ++index)
-				if (left[index].Id != right[index].Id ||
-					left[index].Size != right[index].Size) return false;
-			return true;
-		};
-	const bool fixedLayoutMigrated =
-		!fixedEntriesEqual(configuredA1, normalizedA1) ||
-		!fixedEntriesEqual(configuredA2, normalizedA2);
 
 	vector<shared_ptr<BarButtonClass>> activeButtons;
 	AppendFixedButtons(normalizedA1, activeButtons);
@@ -1301,8 +1135,6 @@ void BarButtonSetClass::Load()
 	// 只规范化 A1/A2；运行时投影不读取、修改或写回持久化 B 区。
 	Inkeys::config.UI.Bar.FixedButtonsA1.Replace(std::move(normalizedA1));
 	Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(normalizedA2));
-	if (fixedLayoutMigrated)
-		(void)Inkeys::config.Write(); // 旧 {Pierce, Freeze} A2 规范化后立即写回。
 }
 
 void BarButtonSetClass::SyncLegacyExtensionButtons()
@@ -1330,28 +1162,24 @@ void BarButtonSetClass::ResetIconCaches()
 	if (moreButton) moreButton->icon.ResetCache();
 }
 
-void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
+void BarButtonSetClass::PresetHoming()
 {
-	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
-	if (whiteboard) barUISet.barState.geometryAttribute = false;
-	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible()))
+		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible())
 	{
 		barUISet.barState.drawAttribute = false;
 	}
-	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible()))
+		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible())
 	{
 		barUISet.barState.geometryAttribute = false;
 	}
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
 
-	// 只有“选择 + 空页”使用精简布局；有历史内容时保留完整绘制按钮。
-	if (!whiteboard
-		&& stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
-		&& !Inkeys::UI::Bar::CurrentPageHasContent())
+	// 进入非绘制模式需要隐藏无用按钮
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
 	{
 		// 显示状态变化
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = true;
@@ -1359,12 +1187,14 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		preset[(int)BarButtonPresetEnum::Recall]->hide = true;
 		//preset[(int)BarButtonPresetEnum::Redo]->hide = true;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = true;
+		preset[(int)BarButtonPresetEnum::Pierce]->hide = true;
+
+		// 显示尺寸变化
+		preset[(int)BarButtonPresetEnum::Freeze]->size = BarButtonSizeEnum::twoTwo;
 
 		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", whiteboard
-				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
-				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
+			L"barSelect", L"选择");
 	}
 	else
 	{
@@ -1374,14 +1204,17 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		preset[(int)BarButtonPresetEnum::Recall]->hide = false;
 		//preset[(int)BarButtonPresetEnum::Redo]->hide = false;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
-		// 选择按钮不再承载清空语义。
+		preset[(int)BarButtonPresetEnum::Pierce]->hide = false;
+
+		// 显示尺寸变化
+		preset[(int)BarButtonPresetEnum::Freeze]->size = BarButtonSizeEnum::twoOne;
+
+		// 显示名称变化
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", whiteboard
-				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
-				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
+			L"barSelect", L"选择(清空)");
 	}
 }
-void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
+void BarButtonSetClass::CalcState()
 {
 	{
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::Selected;
@@ -1401,20 +1234,16 @@ void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
 	}
 
 	{
-		if (!Inkeys::UI::Freeze::IsAvailable())
-			barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Disable;
-		else if (Inkeys::UI::Freeze::IsActive())
-			barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Selected;
-		else barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::None;
+		if (penetrate.select) barButtonState[(int)BarButtonPresetEnum::Pierce].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Pierce].state = BarWidgetState::None;
 	}
 	{
-		barButtonState[(int)BarButtonPresetEnum::Whiteboard].state =
-			Inkeys::UI::Bar::WhiteboardActive()
-			? BarWidgetState::Selected : BarWidgetState::None;
+		if (FreezeFrame.mode == 1) barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::None;
 	}
 
 	{
-		if (Inkeys::UI::Setting::IsVisible()) barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::Selected;
+		if (test.select) barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::None;
 	}
 }

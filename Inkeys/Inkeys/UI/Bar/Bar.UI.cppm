@@ -2,11 +2,10 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include <d2d1_1.h>
+#include "../../../IdtD2DPreparation.h"
 #include <wrl/client.h>
 
 #include <functional>
-#include "Bar.PresentationProbe.h"
 
 export module Inkeys.UI.Bar:UI;
 
@@ -218,11 +217,6 @@ enum class BarUiFrameLightOpacitySourceEnum : int
 };
 
 //// 单个形状控件
-// Shape 与独立 surface 共用同一圆角命中，避免只在绘制上看起来一致。
-bool BarUiRoundedRectContainsPoint(int mx, int my, double zoom,
-	double leftDip, double topDip, double widthDip, double heightDip,
-	double radiusXDip, double radiusYDip, double epsilon = 1e-6) noexcept;
-
 class BarUiShapeClass : public BarUiInnheritBaseClass
 {
 public:
@@ -309,12 +303,6 @@ public:
 		optional<double> durT = nullopt, double keyframeProgressT = 0.5, double middleScaleT = 0.8);
 	bool AdvanceContentTransition(double dt, double speedRate);
 	void CancelContentTransition();
-	[[nodiscard]] bool IsContentTransitionActive();
-	[[nodiscard]] bool BindObservationTag(std::uint32_t tag) noexcept;
-	void NotifyObservedContentValueWrite() noexcept;
-	[[nodiscard]] Inkeys::UI::Bar::Ui3SvgBitmapProof ObservedBitmapProof() const noexcept;
-	[[nodiscard]] const Inkeys::UI::Bar::Ui3SvgObjectObservation& ObservationState() const noexcept { return observed_; }
-	void ObserveFiniteRequirement(bool domainRelevant) noexcept;
 	// SVG 位图属于当前 D2D device，设备 epoch 切换时必须主动释放。
 	void ResetCache();
 
@@ -347,9 +335,6 @@ public:
 public:
 	bool SetWH(optional<double> wT, optional<double> hT);
 protected:
-	Inkeys::UI::Bar::Ui3SvgObjectObservation observed_;
-	const void* observedInitializationObject_ = nullptr;
-	const void* observedBitmapObject_ = nullptr;
 	void ApplyContentDirect(const wstring& valT);
 	pair<double, double> CalcWH();
 	BarUiStringClass transitionSvg;
@@ -406,7 +391,6 @@ public:
 	void Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
 	bool TransitionToString(const wstring& contentT, optional<double> durT = nullopt,
 		double keyframeProgressT = 0.5, double middleScaleT = 0.8);
-	bool SetStringImmediate(const wstring& contentT);
 	bool AdvanceContentTransition(double dt, double speedRate);
 	void CancelContentTransition();
 

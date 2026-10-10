@@ -1,9 +1,0 @@
-{
-  "command": [
-    "Build/ARM64/Debug/Inkeys.exe",
-    "--state-mode-production-test"
-  ],
-  "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw",
-  "exit": 0,
-  "seconds": 0.6669949000006454
-}

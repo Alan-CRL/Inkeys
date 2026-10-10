@@ -1,6 +1,5 @@
 ﻿import Inkeys.Conv.Text;
 import Inkeys.Text.Split;
-import Inkeys.UI.MessageBox;
 
 #include "IdtSuperTop.h"
 
@@ -11,11 +10,6 @@ import Inkeys.UI.MessageBox;
 
 #include <tlhelp32.h>
 #include <stdexcept>
-#include <cstdio>
-
-#ifdef MessageBox
-#undef MessageBox
-#endif
 
 #define try_win32(x) if(!(x)) [[unlikely]] throw_win32_error();
 void throw_win32_error()
@@ -48,43 +42,6 @@ bool hasUiAccess(HANDLE tok) {
 	BOOL ui_access;
 	GetTokenInformation(tok, TokenUIAccess, &ui_access, sizeof(ui_access), &ret_len);  // 获取 UI 访问权限信息
 	return ui_access;  // 返回 UI 访问权限的值
-}
-
-int RunSuperTopTokenFailureTest() noexcept
-{
-	// 测试进程仅冒用自己的复制令牌；无效目标强制走设置失败后的撤销路径。
-	HANDLE existing = nullptr;
-	if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &existing))
-	{
-		CloseHandle(existing);
-		std::fputs("[SuperTopToken] FAIL: test thread already impersonates\n", stderr);
-		return 1;
-	}
-	if (GetLastError() != ERROR_NO_TOKEN) return 1;
-	HANDLE rawProcessToken = nullptr;
-	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_QUERY,
-		&rawProcessToken)) return 1;
-	IdtHandle processToken(rawProcessToken);
-	HANDLE rawImpersonation = nullptr;
-	if (!DuplicateTokenEx(processToken.get(), TOKEN_IMPERSONATE | TOKEN_QUERY,
-		nullptr, SecurityImpersonation, TokenImpersonation,
-		&rawImpersonation)) return 1;
-	IdtHandle impersonation(rawImpersonation);
-	IdtHandle invalidTarget;
-	const bool updated = UiAccess::RunToken::SetUiAccessToken(
-		impersonation, invalidTarget);
-	HANDLE after = nullptr;
-	const bool stillImpersonating = OpenThreadToken(GetCurrentThread(),
-		TOKEN_QUERY, TRUE, &after) != FALSE;
-	const DWORD afterError = stillImpersonating ? ERROR_SUCCESS : GetLastError();
-	if (after) CloseHandle(after);
-	if (updated || stillImpersonating || afterError != ERROR_NO_TOKEN)
-	{
-		std::fputs("[SuperTopToken] FAIL: failed UIAccess update retained thread token\n", stderr);
-		return 1;
-	}
-	std::fputs("[SuperTopToken] PASS: failed UIAccess update reverted thread token\n", stderr);
-	return 0;
 }
 
 void SurperTopMain(wstring lpCmdLine)
@@ -224,12 +181,10 @@ void SurperTopMain(wstring lpCmdLine)
 		if (!UiAccess::GetToken::GetWinlogonToken(winlogonToken))
 		{
 			cout << "GetWinlogonToken Fail" << endl;
-			return;
 		}
 		if (!UiAccess::RunToken::SetUiAccessToken(winlogonToken, inkeysToken))
 		{
 			cout << "SetUiAccessToken Fail" << endl;
-			return;
 		}
 	}
 
@@ -247,13 +202,7 @@ void SurperTopMain(wstring lpCmdLine)
 	{
 		cout << "RunTokenProgram Fail" << endl;
 
-		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
-			L"Inkeys Tips",
-			L"Inkeys SuperTop failed. Reopen Inkeys; SuperTop will be disabled automatically.");
-		request.ownerlessTopmostAtCreation = true;
-		request.fallback.modality =
-			Inkeys::UI::MessageBox::SystemModality::System;
-		(void)Inkeys::UI::MessageBox::Show(request);
+		MessageBox(NULL, L"智绘教Inkeys SuperTop failed. Please reopen the app (the SuperTop feature will be automatically disabled).\n智绘教Inkeys 超级置顶失败，请重新打开程序（程序将自动关闭超级置顶功能）。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
 	}
 }
 

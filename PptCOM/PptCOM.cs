@@ -68,45 +68,16 @@ namespace PptCOM
         void EndSlideShow();
         void ViewSlideShow();
         void ActivateSildeShowWindow();
-
-        // 追加在接口末尾，保持既有 COM 方法顺序不变。
-        void SetConsoleOutputEnabled(bool enabled);
-        string GetPresentationDescriptor();
-    }
-
-    // 独立查询扩展，不能向旧 IUnknown vtable 插入方法。
-    [ComVisible(true)]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    [Guid("D7A63F98-43B8-4BA1-A875-B55A5A04DC3E")]
-    public interface IPptCOMSessionState
-    {
-        string GetSlideShowState(long afterRevision);
-        int EndSlideShowIfSession(long expectedShowSessionRevision);
     }
 
     [ComVisible(true)]
     [ClassInterface(ClassInterfaceType.None)]
     [Guid("C44270BE-9A52-400F-AD7C-ED42050A77D8")]
-    public class PptCOMServer : IPptCOMServer, IPptCOMSessionState
+    public class PptCOMServer : IPptCOMServer
     {
         private dynamic pptApplication;
         private dynamic pptActivePresentation;
         private dynamic pptSlideShowWindow;
-
-        private readonly object presentationDescriptorLock = new object();
-        private readonly PresentationDescriptorReader presentationDescriptorReader;
-        private readonly ILateBoundComAccessor presentationAccessor = new MarshalLateBoundComAccessor();
-        private readonly SlideShowSessionCache slideShowSession = new SlideShowSessionCache();
-        private readonly SlideShowOwnerMailbox slideShowOwner = new SlideShowOwnerMailbox();
-        private readonly object annotationToolLock = new object();
-        private long annotationToolSession, annotationToolBinding, annotationToolWindow;
-        private int annotationToolCache;
-        private PresentationDescriptorValue presentationDescriptorCache =
-            PresentationDescriptorValue.CreateStatus("Unavailable", 0);
-        private long presentationBindingRevision;
-        private long presentationDescriptorSession;
-        private int presentationDescriptorRefreshPending = 1;
-        private DateTime nextPresentationDescriptorRefreshUtc = DateTime.MinValue;
 
         private unsafe int* pptTotalPage;
         private unsafe int* pptCurrentPage;
@@ -126,20 +97,12 @@ namespace PptCOM
 
         private const int SlideShowAnnotationToolNone = 0;
         private const int SlideShowAnnotationToolPen = 1;
-        private const int SlideShowAnnotationToolLaser = 2;
-        private const int SlideShowAnnotationToolHighlighter = 3;
 
         private const int SlideShowPointerNone = 0;
         private const int SlideShowPointerArrow = 1;
         private const int SlideShowPointerPen = 2;
         private const int SlideShowPointerAlwaysHidden = 3;
         private const int SlideShowPointerAutoArrow = 4;
-
-        public PptCOMServer()
-        {
-            presentationDescriptorReader = new PresentationDescriptorReader(
-                presentationAccessor, ResolveWindowProcessId);
-        }
 
         // 初始化函数
         public unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal)
@@ -162,154 +125,6 @@ namespace PptCOM
         {
             string ret = "20260627a";
             return ret;
-        }
-
-        public void SetConsoleOutputEnabled(bool enabled)
-        {
-            // 托管 Console 独立开关，避免 Draw3 分配控制台后带出 PptCOM 日志。
-            if (!enabled)
-            {
-                Console.SetOut(TextWriter.Null);
-                Console.SetError(TextWriter.Null);
-                return;
-            }
-
-            try
-            {
-                Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-                Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
-            }
-            catch
-            {
-                Console.SetOut(TextWriter.Null);
-                Console.SetError(TextWriter.Null);
-            }
-        }
-
-        public string GetPresentationDescriptor()
-        {
-            try
-            {
-                PresentationDescriptorValue snapshot;
-                lock (presentationDescriptorLock)
-                {
-                    snapshot = presentationDescriptorCache.Clone();
-                }
-                // COM getter 只复制纯托管缓存；序列化期间不持锁，也不访问 Office。
-                return PresentationDescriptorJson.Serialize(snapshot);
-            }
-            catch
-            {
-                return PresentationDescriptorJson.SerializeUnavailable(
-                    Interlocked.Read(ref presentationBindingRevision));
-            }
-        }
-
-        public string GetSlideShowState(long afterRevision)
-        {
-            return slideShowSession.GetSince(afterRevision);
-        }
-
-        public int EndSlideShowIfSession(long expectedShowSessionRevision)
-        {
-            if (!slideShowSession.Matches(expectedShowSessionRevision)) return 0;
-            // 模态业务线程等待 owner 的实际执行结果；超时后排队请求失效。
-            return slideShowOwner.RequestExit(expectedShowSessionRevision, 2000);
-        }
-
-        private void ProcessSlideShowExitRequests()
-        {
-            slideShowOwner.ProcessExits(request => request.Operation == SlideShowOwnerOperation.ExitAnnotation
-                ? ExitSlideShowAnnotationToolOnOwner(request)
-                : SlideShowSessionExit.Execute(request, slideShowSession,
-                    (object)pptSlideShowWindow, presentationAccessor));
-        }
-
-        private void PublishSlideShowLifecycle()
-        {
-            SlideShowObservationStamp stamp = slideShowSession.Capture();
-            slideShowSession.Publish(stamp,
-                PresentationDescriptorValue.CreateStatus("Unavailable", stamp.Binding), "Unknown");
-        }
-
-        private static int ResolveWindowProcessId(IntPtr window)
-        {
-            try
-            {
-                uint processId;
-                GetWindowThreadProcessId(window, out processId);
-                return processId > int.MaxValue ? 0 : (int)processId;
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-
-        private void RequestPresentationDescriptorRefresh()
-        {
-            Interlocked.Exchange(ref presentationDescriptorRefreshPending, 1);
-            slideShowOwner.Wake();
-        }
-
-        private void InvalidatePresentationDescriptor()
-        {
-            long revision = Interlocked.Increment(ref presentationBindingRevision);
-            slideShowSession.InvalidateBinding(revision);
-            PublishSlideShowLifecycle();
-            lock (presentationDescriptorLock)
-            {
-                presentationDescriptorCache =
-                    PresentationDescriptorValue.CreateStatus("Unavailable", revision);
-            }
-            RequestPresentationDescriptorRefresh();
-            nextPresentationDescriptorRefreshUtc = DateTime.MinValue;
-        }
-
-        private void RefreshPresentationDescriptorIfNeeded(bool force)
-        {
-            DateTime now = DateTime.UtcNow;
-            int pending = Interlocked.Exchange(
-                ref presentationDescriptorRefreshPending, 0);
-            if (!force && pending == 0 && now < nextPresentationDescriptorRefreshUtc) return;
-
-            long revision = Interlocked.Read(ref presentationBindingRevision);
-            SlideShowObservationStamp stamp = slideShowSession.Capture();
-            if (stamp.Lifecycle != "Active")
-            {
-                PublishSlideShowLifecycle();
-                lock (presentationDescriptorLock)
-                    presentationDescriptorCache = PresentationDescriptorValue.CreateStatus("Unavailable", revision);
-                nextPresentationDescriptorRefreshUtc = now.AddSeconds(3);
-                return;
-            }
-            string pageStatus;
-            PresentationDescriptorValue candidate = presentationDescriptorReader.ReadShow(
-                (object)pptApplication, (object)pptActivePresentation,
-                (object)pptSlideShowWindow, revision, out pageStatus);
-            if (!slideShowSession.IsCurrent(stamp))
-            {
-                RequestPresentationDescriptorRefresh();
-                return;
-            }
-
-            lock (presentationDescriptorLock)
-            {
-                if (revision != Interlocked.Read(ref presentationBindingRevision)) return;
-                bool keepStable = candidate.status == "TransientBusy" &&
-                    presentationDescriptorCache.bindingRevision == revision &&
-                    presentationDescriptorSession == stamp.Session &&
-                    (presentationDescriptorCache.status == "StableSlideIds" ||
-                        presentationDescriptorCache.status == "PageIndexFallback");
-                if (!keepStable)
-                {
-                    presentationDescriptorCache = candidate.Clone();
-                    presentationDescriptorSession = stamp.Session;
-                }
-            }
-            if (!slideShowSession.Publish(stamp, candidate, pageStatus))
-                RequestPresentationDescriptorRefresh();
-            nextPresentationDescriptorRefreshUtc = now.AddSeconds(3);
         }
 
         // 过程函数
@@ -379,13 +194,6 @@ namespace PptCOM
         }
         private unsafe void FullCleanup(bool final = false)
         {
-            // 先让 native 无法消费旧 binding，再解绑事件和释放长期 RCW。
-            InvalidatePresentationDescriptor();
-            lock (annotationToolLock)
-            {
-                annotationToolSession = annotationToolBinding = annotationToolWindow = 0;
-                annotationToolCache = SlideShowAnnotationToolNone;
-            }
             UnbindEvents();
 
             Console.WriteLine("try CLEAN");
@@ -505,7 +313,7 @@ namespace PptCOM
                 return string.Empty;
             }
         }
-        private static bool HasSlideShowPointerName(object value, params string[] names)
+        private static bool HasOfficialSlideShowPointerName(object value, params string[] names)
         {
             string text = CoerceToText(value);
             if (string.IsNullOrWhiteSpace(text)) return false;
@@ -530,8 +338,6 @@ namespace PptCOM
                 return false;
             }
 
-            slideShowSession.Observe(Interlocked.Read(ref presentationBindingRevision), null, 0);
-            PublishSlideShowLifecycle();
             DateTime now = DateTime.Now;
             if (busyRetryStartTime == DateTime.MinValue || (busyRetryLastSeenTime != DateTime.MinValue && (now - busyRetryLastSeenTime).TotalMilliseconds > 500))
             {
@@ -846,8 +652,6 @@ namespace PptCOM
                 polling = 1;
             }
 
-            slideShowSession.PageChanged();
-            RequestPresentationDescriptorRefresh();
             Console.WriteLine("Change2");
         }
         private unsafe void SlideShowBegin(object WnObj)
@@ -856,9 +660,7 @@ namespace PptCOM
 
             updateTime = DateTime.Now;
 
-            // Begin 先废弃旧确认和旧候选，再安装本场窗口；回调内不遍历拓扑/序列化。
-            SlideShowObservationStamp beginStamp = slideShowSession.Begin(
-                Interlocked.Read(ref presentationBindingRevision), false);
+            // 【修改】直接赋值给 dynamic 类型的全局变量
             pptSlideShowWindow = WnObj;
 
             try
@@ -883,8 +685,6 @@ namespace PptCOM
             {
                 Console.WriteLine("Begin3");
             }
-            slideShowSession.FinishBegin(beginStamp);
-            RequestPresentationDescriptorRefresh();
             Console.WriteLine("Begin2");
         }
         private unsafe void SlideShowShowEnd(object WnObj)
@@ -893,17 +693,14 @@ namespace PptCOM
 
             updateTime = DateTime.Now;
 
-            slideShowSession.Observe(Interlocked.Read(ref presentationBindingRevision), false, 0);
             *pptCurrentPage = -1;
             *pptTotalPage = -1;
-            RequestPresentationDescriptorRefresh();
 
             Console.WriteLine("END2");
         }
         private void PresentationBeforeClose(object WnObj, ref bool cancel)
         {
             Console.WriteLine("PBCalled1");
-            RequestPresentationDescriptorRefresh();
 
             dynamic Wn = WnObj;
 
@@ -1194,7 +991,6 @@ namespace PptCOM
         public unsafe int PptComService()
         {
             Console.WriteLine("PPT Monitor ReStarted");
-            slideShowOwner.Start();
 
             // 初始化
             bindingEvents = false;
@@ -1211,15 +1007,6 @@ namespace PptCOM
             {
                 while (true)
                 {
-                    if (Thread.VolatileRead(ref *offSignal) != 0) break;
-                    // 到慢维护截止点的同时收到事件，也先消费事件，不让 ROT 排在页刷新前。
-                    RefreshPresentationDescriptorIfNeeded(false);
-                    ProcessSlideShowExitRequests();
-                    if (slideShowOwner.MaintenanceWaitMilliseconds > 0)
-                    {
-                        slideShowOwner.Wait(slideShowOwner.MaintenanceWaitMilliseconds);
-                        continue;
-                    }
                     bool busyRetry = false;
 
                     // 动态绑定/切换逻辑
@@ -1412,21 +1199,16 @@ namespace PptCOM
                         // ----------
                         // 检测是否处于放映模式
                         bool isSlideShowActive = false;
-                        bool lifecycleObserved = false;
-                        SlideShowObservationStamp lifecycleStamp = slideShowSession.Capture();
                         try
                         {
                             activePersentation = pptApplication.ActivePresentation;
 
-                            // 检查 SlideShowWindows 集合；只有成功读取才可判定真正退出。
-                            int showCount = activePersentation == null ? -1 : GetSlideShowWindowsCount(pptApplication);
-                            lifecycleObserved = showCount == 0;
-                            if (showCount > 0)
+                            // 检查 SlideShowWindows 集合
+                            if (activePersentation != null && GetSlideShowWindowsCount(pptApplication) > 0)
                             {
                                 isSlideShowActive = true;
 
                                 slideShowWindow = activePersentation.SlideShowWindow;
-                                lifecycleObserved = slideShowWindow != null;
                                 if (pptSlideShowWindow == null || (pptSlideShowWindow != null && !IsValidSlideShowWindow(pptSlideShowWindow)))
                                 {
                                     if (!AreComObjectsEqual((object)pptSlideShowWindow, (object)slideShowWindow))
@@ -1471,11 +1253,6 @@ namespace PptCOM
                                 Console.WriteLine($"slideShowWindow 被清理");
                             }
                         }
-                        slideShowSession.ObserveIfCurrent(lifecycleStamp,
-                            Interlocked.Read(ref presentationBindingRevision),
-                            lifecycleObserved ? (bool?)isSlideShowActive : null,
-                            isSlideShowActive ? GetPptHwndFromSlideShowWindow((object)pptSlideShowWindow).ToInt64() : 0);
-                        if (!slideShowSession.IsCurrent(lifecycleStamp)) RequestPresentationDescriptorRefresh();
                         if (busyRetry) continue;
 
                         if (isSlideShowActive)
@@ -1581,19 +1358,6 @@ namespace PptCOM
                         break;
                     }
 
-                    // 只有 service owner 枚举 COM 图；公开 getter 始终读取纯值缓存。
-                    int observedCurrentPage = *pptCurrentPage;
-                    int observedTotalPage = *pptTotalPage;
-                    bool pageChanged;
-                    lock (presentationDescriptorLock)
-                    {
-                        pageChanged = presentationDescriptorCache.currentPage != observedCurrentPage ||
-                            presentationDescriptorCache.totalPage != observedTotalPage;
-                    }
-                    RefreshPresentationDescriptorIfNeeded(forcePolling || pageChanged);
-                    RefreshSlideShowAnnotationTool();
-                    ProcessSlideShowExitRequests();
-
                     // 关闭信号检测
                     if (Thread.VolatileRead(ref *offSignal) != 0)
                     {
@@ -1601,8 +1365,7 @@ namespace PptCOM
                         break;
                     }
 
-                    slideShowOwner.MaintenanceCompleted();
-                    slideShowOwner.Wait(slideShowOwner.MaintenanceWaitMilliseconds);
+                    Thread.Sleep(500);
                 }
             }
             catch (Exception ex)
@@ -1612,7 +1375,6 @@ namespace PptCOM
             }
             finally
             {
-                slideShowOwner.Stop();
                 FullCleanup(true);
             }
 
@@ -1655,131 +1417,77 @@ namespace PptCOM
 
             return ret;
         }
-        private static int ReadSlideShowAnnotationTool(object view)
-        {
-            if (view == null) return SlideShowAnnotationToolNone;
-            // 当前 PIA 不含 LaserPointerEnabled，按名字 late-bound 读取，失败再读标准笔型。
-            object laserValue = null;
-            try { laserValue = ((dynamic)view).LaserPointerEnabled; }
-            catch { TryGetDynamicProperty(view, "LaserPointerEnabled", out laserValue); }
-            try
-            {
-                if (laserValue != null && Convert.ToBoolean(laserValue, CultureInfo.InvariantCulture))
-                    return SlideShowAnnotationToolLaser;
-            }
-            catch { }
-            try
-            {
-                var powerpointView = view as Microsoft.Office.Interop.PowerPoint.SlideShowView;
-                if (powerpointView != null)
-                    return powerpointView.PointerType == PpSlideShowPointerType.ppSlideShowPointerPen
-                        ? SlideShowAnnotationToolPen : SlideShowAnnotationToolNone;
-            }
-            catch { }
-            object pointerTypeValue = null;
-            try { pointerTypeValue = ((dynamic)view).PointerType; }
-            catch { TryGetDynamicProperty(view, "PointerType", out pointerTypeValue); }
-            if (pointerTypeValue == null) return SlideShowAnnotationToolNone;
-            // 标准 PointerType 只有 Pen；提供方明确返回荧光笔名称时才单独映射。
-            if (HasSlideShowPointerName(pointerTypeValue, "ppSlideShowPointerHighlighter", "Highlighter"))
-                return SlideShowAnnotationToolHighlighter;
-            if (HasSlideShowPointerName(pointerTypeValue, "ppSlideShowPointerPen") ||
-                CoerceToInt(pointerTypeValue, SlideShowPointerNone) == SlideShowPointerPen)
-                return SlideShowAnnotationToolPen;
-            return SlideShowAnnotationToolNone;
-        }
-        private void RefreshSlideShowAnnotationTool()
-        {
-            SlideShowObservationStamp stamp = slideShowSession.Capture();
-            int tool = SlideShowAnnotationToolNone;
-            object view = null;
-            try
-            {
-                if (stamp.Lifecycle == "Active" && stamp.Session > 0 && pptSlideShowWindow != null)
-                {
-                    view = pptSlideShowWindow.View;
-                    tool = ReadSlideShowAnnotationTool(view);
-                }
-            }
-            catch { }
-            finally { SafeRelease(view); }
-            SlideShowObservationStamp current = slideShowSession.Capture();
-            if (current.Session != stamp.Session || current.Binding != stamp.Binding ||
-                current.Window != stamp.Window || current.Lifecycle != stamp.Lifecycle) return;
-            lock (annotationToolLock)
-            {
-                annotationToolSession = stamp.Session;
-                annotationToolBinding = stamp.Binding;
-                annotationToolWindow = stamp.Window;
-                annotationToolCache = tool;
-            }
-        }
         public int GetSlideShowAnnotationTool()
         {
-            // native 轮询只读 owner 发布的纯值，不跨线程访问 Office RCW。
-            SlideShowObservationStamp stamp = slideShowSession.Capture();
-            lock (annotationToolLock)
-                return stamp.Lifecycle == "Active" && stamp.Session > 0 &&
-                    stamp.Session == annotationToolSession && stamp.Binding == annotationToolBinding &&
-                    stamp.Window == annotationToolWindow ? annotationToolCache : SlideShowAnnotationToolNone;
+            dynamic view = null;
+
+            try
+            {
+                if (pptSlideShowWindow == null) return SlideShowAnnotationToolNone;
+
+                view = pptSlideShowWindow.View;
+                object pointerTypeValue;
+                if (!TryGetDynamicProperty((object)view, "PointerType", out pointerTypeValue))
+                {
+                    return SlideShowAnnotationToolNone;
+                }
+
+                if (HasOfficialSlideShowPointerName(pointerTypeValue, "ppSlideShowPointerPen"))
+                {
+                    return SlideShowAnnotationToolPen;
+                }
+                if (HasOfficialSlideShowPointerName(pointerTypeValue,
+                    "ppSlideShowPointerNone",
+                    "ppSlideShowPointerArrow",
+                    "ppSlideShowPointerAlwaysHidden",
+                    "ppSlideShowPointerAutoArrow"))
+                {
+                    return SlideShowAnnotationToolNone;
+                }
+
+                int pointerType = CoerceToInt(pointerTypeValue, SlideShowPointerNone);
+                if (pointerType == SlideShowPointerPen) return SlideShowAnnotationToolPen;
+                if (pointerType == SlideShowPointerNone ||
+                    pointerType == SlideShowPointerArrow ||
+                    pointerType == SlideShowPointerAlwaysHidden ||
+                    pointerType == SlideShowPointerAutoArrow)
+                {
+                    return SlideShowAnnotationToolNone;
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                SafeRelease(view);
+                view = null;
+            }
+
+            return SlideShowAnnotationToolNone;
         }
         public bool ExitSlideShowAnnotationTool()
         {
-            SlideShowObservationStamp stamp = slideShowSession.Capture();
-            return stamp.Lifecycle == "Active" && stamp.Session > 0 &&
-                slideShowOwner.RequestAnnotationExit(stamp.Session, 2000) == 1;
-        }
-        private static bool ResetSlideShowPointer(object view)
-        {
-            // PowerPoint 先走 PIA 属性；WPS 保留 late-bound 的枚举/整数兼容。
+            dynamic view = null;
+
             try
             {
-                var powerpointView = view as Microsoft.Office.Interop.PowerPoint.SlideShowView;
-                if (powerpointView != null)
-                {
-                    powerpointView.PointerType = PpSlideShowPointerType.ppSlideShowPointerAutoArrow;
-                    return true;
-                }
-            }
-            catch { }
-            try { ((dynamic)view).PointerType = SlideShowPointerAutoArrow; return true; }
-            catch { }
-            return TrySetDynamicProperty(view, "PointerType", PpSlideShowPointerType.ppSlideShowPointerAutoArrow) ||
-                TrySetDynamicProperty(view, "PointerType", SlideShowPointerAutoArrow) ||
-                TrySetDynamicProperty(view, "PointerType", PpSlideShowPointerType.ppSlideShowPointerArrow) ||
-                TrySetDynamicProperty(view, "PointerType", SlideShowPointerArrow);
-        }
-        private static bool DisableSlideShowLaser(object view)
-        {
-            try { ((dynamic)view).LaserPointerEnabled = false; return true; }
-            catch { return TrySetDynamicProperty(view, "LaserPointerEnabled", false); }
-        }
-        private int ExitSlideShowAnnotationToolOnOwner(SlideShowExitRequest request)
-        {
-            if (request.IsCancelled || !slideShowSession.Matches(request.Session) ||
-                pptSlideShowWindow == null) return 0;
-            SlideShowObservationStamp stamp = slideShowSession.Capture();
-            object view = null;
-            try
-            {
+                if (pptSlideShowWindow == null) return false;
+
                 view = pptSlideShowWindow.View;
-                if (request.IsCancelled || !slideShowSession.IsCurrent(stamp) ||
-                    !slideShowSession.Matches(request.Session)) return 0;
-                int tool = ReadSlideShowAnnotationTool(view);
-                if (tool == SlideShowAnnotationToolNone) return 0;
-                if (tool == SlideShowAnnotationToolLaser && !DisableSlideShowLaser(view)) return -1;
-                bool pointerReset = ResetSlideShowPointer(view);
-                if (!pointerReset && tool != SlideShowAnnotationToolLaser) return -1;
-                if (ReadSlideShowAnnotationTool(view) != SlideShowAnnotationToolNone) return -1;
-                lock (annotationToolLock)
-                {
-                    if (annotationToolSession == stamp.Session && annotationToolWindow == stamp.Window)
-                        annotationToolCache = SlideShowAnnotationToolNone;
-                }
-                return 1;
+                if (TrySetDynamicProperty((object)view, "PointerType", SlideShowPointerAutoArrow)) return true;
+                if (TrySetDynamicProperty((object)view, "PointerType", SlideShowPointerArrow)) return true;
             }
-            catch { return -1; }
-            finally { SafeRelease(view); }
+            catch
+            {
+            }
+            finally
+            {
+                SafeRelease(view);
+                view = null;
+            }
+
+            return false;
         }
         private IntPtr GetPptHwndFromSlideShowWindow(object pptSlideShowWindowObj)
         {

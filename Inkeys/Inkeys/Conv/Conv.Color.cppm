@@ -1,7 +1,7 @@
 module;
 
 #include "../../IdtMain.h"
-#include <d2d1helper.h>
+#include "../../IdtD2DPreparation.h"
 
 export module Inkeys.Conv.Color;
 

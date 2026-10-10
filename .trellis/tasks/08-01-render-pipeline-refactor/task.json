@@ -1,0 +1,37 @@
+{
+  "id": "render-pipeline-refactor",
+  "name": "render-pipeline-refactor",
+  "title": "渲染管线重构",
+  "description": "未来大任务：弃用 UI2、多窗口拆分、IdtWindows 模块化、PPT 控件迁 UI3、UI3/Settings/PPT/背景窗统一 D3D11.1 WARP 串行渲染。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "native-desktop windowing and shared D3D11.1 WARP serial render pipeline",
+  "package": "native-desktop",
+  "priority": "P1",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-08-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/IdtWindows.cpp",
+    "Inkeys/Inkeys/UI/Bar",
+    "Inkeys/Inkeys/UI/Setting",
+    "Inkeys/IdtPlug-in.cpp",
+    "Inkeys/IdtD2DPreparation.cpp"
+  ],
+  "notes": "Future epic. Do not start until broader performance work is done. After this epic, continue 07-17 investigation outcomes into implementation. Hard part: wake/sleep + serial multi-module draw.",
+  "meta": {
+    "planned": "future",
+    "kind": "epic",
+    "blocked_by": "performance-optimization-first",
+    "blocks": "07-17-investigate-unified-ui-d3d11-pipeline-implementation"
+  }
+}

@@ -1,6 +1,5 @@
 ﻿#pragma once
 #include "IdtMain.h"
-#include "Inkeys/Graphics/Surface.hpp"
 
 // 选色轮相关
 struct BrushColorChooseStruct
@@ -9,7 +8,7 @@ struct BrushColorChooseStruct
 	int last_x, last_y;
 };
 extern BrushColorChooseStruct BrushColorChoose;
-extern Inkeys::Graphics::DibSurface ColorPaletteImg;
+extern IMAGE ColorPaletteImg;
 extern shared_mutex ColorPaletteSm;
 
 // TODO 老旧残留
@@ -49,28 +48,18 @@ double computeLuminance(COLORREF color);
 double computeContrast(COLORREF color1, COLORREF color2);
 
 //像素颜色调整（将所有透明度不为0的像素点，改为指定颜色）
-void RecolorSurface(Inkeys::Graphics::DibSurface& surface, COLORREF color);
-uint32_t PackSurfaceBgra(COLORREF color, bool preserveAlpha = true);
-Gdiplus::Color ToGdiplusColor(COLORREF color, bool preserveAlpha = false);
-Gdiplus::RectF ToGdiplusRect(RECT rect);
-void DrawSurfaceRectangle(float x, float y, float width, float height, COLORREF color, float lineWidth, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface);
-void DrawSurfaceEllipse(float x, float y, float width, float height, COLORREF color, float lineWidth, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface);
-void FillSurfaceEllipse(float x, float y, float width, float height, COLORREF color, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface);
-void DrawSurfaceRoundRect(float x, float y, float width, float height, float ellipseWidth, float ellipseHeight, COLORREF color, float lineWidth, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface);
-void FillSurfaceRoundRect(float x, float y, float width, float height, float ellipseWidth, float ellipseHeight, COLORREF color, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface);
-void DrawFilledSurfaceRoundRect(float x, float y, float width, float height, float ellipseWidth, float ellipseHeight, COLORREF lineColor, COLORREF fillColor, float lineWidth, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface);
+void ChangeColor(IMAGE& img, COLORREF color);
 // 计算两个COLORREF颜色之间的加权距离
 double color_distance(COLORREF c1, COLORREF c2);
 // 定义反色函数
 COLORREF InvertColor(COLORREF color, bool alpha_enable = false);
 //保存图像到本地
-bool SaveSurfaceToPng(const Inkeys::Graphics::DibSurface& surface, const wstring& filePath);
+bool saveImageToPNG(IMAGE img, const wstring& filePath, bool alpha = true, int compression_level = 9);
 
 //比较图像
-bool CompareSurfaces(const Inkeys::Graphics::DibSurface* first, const Inkeys::Graphics::DibSurface* second);
+bool CompareImagesWithBuffer(IMAGE* img1, IMAGE* img2);
 //设置图像必须不拥有全透明像素（将所有全透明像素点透明度设置为1）
-void EnsureNonZeroAlpha(Inkeys::Graphics::DibSurface* surface);
-void ForceOpaqueAlpha(Inkeys::Graphics::DibSurface* surface);
+void SetAlphaToOne(IMAGE* pImg);
 
 double EuclideanDistance(POINT a, POINT b);
 double EuclideanDistanceP(Point a, Point b);

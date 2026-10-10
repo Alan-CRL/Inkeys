@@ -2,7 +2,7 @@
 
 #include "IdtStart.h"
 
-import Inkeys.Display;
+#include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtState.h"
 
@@ -50,18 +50,12 @@ void StartForInkeys()
 	// 获取基础信息
 	{
 		// 主显示器信息
-		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
-		if (const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr)
-		{
-			hardwareInfo.screenWidth = monitor->pixelWidth;
-			hardwareInfo.screenHeight = monitor->pixelHeight;
-			hardwareInfo.screenPhyWidth = monitor->physicalSize.available
-				? monitor->physicalSize.widthCm : 0;
-			hardwareInfo.screenPhyHeight = monitor->physicalSize.available
-				? monitor->physicalSize.heightCm : 0;
-			// 屏幕是横向还是纵向
-			hardwareInfo.screenOrientation = monitor->orientation;
-		}
+		hardwareInfo.screenWidth = MainMonitor.MonitorWidth;
+		hardwareInfo.screenHeight = MainMonitor.MonitorHeight;
+		hardwareInfo.screenPhyWidth = MainMonitor.MonitorPhyWidth;
+		hardwareInfo.screenPhyHeight = MainMonitor.MonitorPhyHeight;
+		// 屏幕是横向还是纵向
+		hardwareInfo.screenOrientation = MainMonitor.displayOrientation;
 
 		// 内存大小
 		MEMORYSTATUSEX memoryStatus;

@@ -1,6 +1,0 @@
-{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"C++ module、共享状态、编码与关键中文注释约束"}
-{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"UI3 Bar target/current 动画、复合视觉状态机和无窗口验证合同"}
-{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"产品状态到 Draw3 tool、width、input 和 cursor 的集成边界"}
-{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"HardPen、Highlighter、Laser width mode、pressure、prediction 和 cursor 语义"}
-{"event":"history-recovery","date":"2026-08-20","result":"pass","details":"Recovered the missing task after 540cd8b9 removed the reverted implementation and its Trellis directory; final product history is 39c32be1 through a6bf819c."}
-{"event":"verification","date":"2026-08-20","result":"pass","details":"Reviewed final IdtState, product Draw3 and Bar call paths; prior ARM64 Debug/Release solution builds and no-window headless tests passed."}
