@@ -144,41 +144,15 @@ Correct: 独立构建 PptCOM → 选择本次 DLL/TLB ID → native 下载 ID �
 4. 兼容性结论必须记录实际运行过的 Windows、架构和 Office/WPS 组合；未运行的只写“配置存在”或“项目声明”。
 5. 不提交 `Build/`、`Inkeys/Cache/`、`VcpkgInstalled/`、`PptCOM/obj/` 等生成输出。
 
-## Scenario: 首发完整压缩包许可文件
+## 发布压缩包内容与命名
 
-### 1. Scope / Trigger
+`【直接确认；发布要求】` `.github/workflows/build-windows.yml` 的三个完整发布 ZIP 保持原有顶层架构目录（`Inkeys`、`Inkeys64`、`InkeysArm64`），目录内仅含 `Inkeys.exe` 与 `Tips.txt`。不额外复制 README、NOTICE 或第三方许可证；仓库中的许可文件保持原位。更新 ZIP 根目录仍仅含 `Inkeys.exe`。
 
-修改 `.github/workflows/build-windows.yml` 的 Package 完整发布 ZIP 时核此合同；自动更新 ZIP 的内容合同单独维持。
+- 完整包：`Inkeys<editionDate>-<arch>.zip`。
+- 更新包：`UpatePackage-Inkeys<editionDate>-<arch>.zip`，前缀按发布要求保留此拼写。
+- `<arch>` 为 `x86`、`x64`、`arm64`，不附加渠道或中文版本标签。
+- `<editionDate>` 使用源码完整字符串：当前 `3.0.0-20261010a`；后续源码改为 `3.0.0` 或 `3.0.1` 时，包名自然不再含日期后缀。
+- `update.txt` 的九个下载 URL 与三个包大小字段必须对应上述更新包的实际名称与长度；哈希仍针对待替换 EXE。
+- `Tips.txt` 的中英文快速开始文案由 workflow 生成，保留已有构建信息尾段。
 
-### 2. Signatures
-
-CI `Prepare license notices for release packages` 将仓库根 `LICENSE`、`NOTICE`、`ThirdpartyLicenses/` 放入 `signedUpload/{Inkeys,Inkeys64,InkeysArm64}/`，然后现有三条 `Compress-Archive` 生成完整发布 ZIP。
-
-### 3. Contracts
-
-每个完整发布 ZIP 同一顶层架构目录含 `Inkeys.exe`、`Tips.txt`、`LICENSE`、`NOTICE`、`ThirdpartyLicenses/`。`NOTICE` 指向的本项目与第三方许可文件应随包可读。`InkeysUpdate*.zip` 仍由较早步骤仅封装待替换 EXE，不改变既有更新解析、命名或包内路径。
-
-### 4. Validation & Error Matrix
-
-| 条件 | 处理 |
-| --- | --- |
-| 源 LICENSE/NOTICE/ThirdpartyLicenses 缺失或复制失败 | `Copy-Item -ErrorAction Stop` 使 CI Package 失败，不静默发缺许可完整包 |
-| 完整 ZIP 漏任一许可文件 | 阻止发布并核实际 ZIP entry；不能只凭仓库里有 NOTICE 判通过 |
-| 更新 ZIP 仍仅有 EXE | 保持原更新合同，不把完整包误送给 updater |
-
-### 5. Good / Base / Bad Cases
-
-- Good：Win32/x64/ARM64 三个完整 ZIP 都含上述许可目录，更新 ZIP 仍为 EXE。
-- Base：仓库根许可文件未改，仅调整打包随附；不修改产品运行或依赖版本。
-- Bad：只在源码仓库保留 NOTICE、发布 ZIP 仅含 EXE/Tips 却标注许可已随附。
-
-### 6. Tests Required
-
-对三架构完整 ZIP 逐项枚举 entry；本地同 `Copy-Item`/`Compress-Archive` 命令的隔离 dry-run 可检查打包语义，真正 CI 产物仍需发布前复核。静态 YAML diff、命令退出码与实际 ZIP 内容分开记。
-
-### 7. Wrong vs Correct
-
-~~~text
-Wrong: InkeysArm64/Inkeys.exe + InkeysArm64/Tips.txt
-Correct: 上述文件 + InkeysArm64/LICENSE + NOTICE + ThirdpartyLicenses/*
-~~~
+验证应在隔离目录执行实际 `Compress-Archive` 命令，枚举三架构完整包与更新包的 ZIP entries，并检查带日期及纯版本号的名称、更新 URL、包大小和 Tips 文本。不能仅凭命令或仓库中存在文件推断发布包内容。
