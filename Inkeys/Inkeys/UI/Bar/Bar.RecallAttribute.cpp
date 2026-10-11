@@ -280,13 +280,17 @@ std::array<RECT, 3> BarRecallAttributePanel::PresentedRegions() const
 }
 void BarRecallAttributePanel::Close(BarUISetClass& owner)
 {
-	owner.barState.recallAttribute = false; pressed_ = -1; hovered_ = -1; focused_ = -1; visible_ = false;
+	const bool wasOpen = owner.barState.recallAttribute.exchange(false);
+	pressed_ = -1; hovered_ = -1; focused_ = -1; visible_ = false;
+	// 浮窗真正关掉且 Redo 仍可用时，主栏收成 2×1。Undo 点击会随后重新打开浮窗。
+	if (wasOpen) owner.NoteRecallPopupDismissed();
 }
 void BarRecallAttributePanel::Execute(BarUISetClass& owner, int item)
 {
 	if (item != 0) return;
 	// 单步重做，保持展开；与主栏 Redo 一致交还 PPT 焦点。
 	(void)Inkeys::Drawing::Draw3::PublishProductCommand(Inkeys::Drawing::Draw3::Bridge::CommandType::Redo);
+	owner.NoteRecallPopupRedo();
 	Inkeys::UI::Bar::NotifyPptBusinessAction();
 	owner.UpdateRendering(false);
 }

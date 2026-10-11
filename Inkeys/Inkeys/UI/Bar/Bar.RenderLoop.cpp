@@ -3034,6 +3034,15 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			AnchorHiddenButton(BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Recall, BarButtonPresetEnum::Draw);
+			// 撤回还可见时停在撤回上，便于 2×1 从同一格展开；两者一起隐藏时跟撤回走同一锚点，避免落到右侧清空按钮。
+			{
+				BarButtonClass* recallButton = state.barButtonSet.preset[
+					static_cast<int>(BarButtonPresetEnum::Recall)];
+				AnchorHiddenButton(BarButtonPresetEnum::Redo,
+					recallButton && recallButton->IsVisible()
+						? BarButtonPresetEnum::Recall
+						: BarButtonPresetEnum::Draw);
+			}
 			AnchorHiddenButton(BarButtonPresetEnum::EndShow, BarButtonPresetEnum::Freeze);
 		}
 		totalWidth = layoutTotalWidth;
@@ -8033,6 +8042,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		frame.bottomDockDragActive,
 		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser);
 	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
+	const bool recallIdleDismissed = owner_.AdvanceRecallChromeIdle(animationDtSeconds);
 	const bool recallChanged = owner_.recallAttribute.Advance(owner_, animationDtSeconds,
 		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
 		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
@@ -8040,8 +8050,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
 		frame.bottomDockDragActive);
-	if (recallChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup));
-	return needRendering || eraserChanged || recallChanged;
+	if (recallChanged || recallIdleDismissed) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup));
+	return needRendering || eraserChanged || recallChanged || recallIdleDismissed;
 }
 
 void BarRenderLoopCoordinator::PrepareLightingAndDemand(

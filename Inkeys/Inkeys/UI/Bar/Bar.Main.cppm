@@ -7,7 +7,9 @@
 #include <dwrite_1.h>
 #include <wrl/client.h>
 #include <array>
+#include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
 #include "Bar.PresentationProbe.h"
@@ -19,6 +21,7 @@ import :UI;
 import :State;
 import Inkeys.UI.Bar.EraserAttributeMotion;
 import Inkeys.UI.Bar.RecallAttributeMotion;
+export import Inkeys.UI.Bar.RecallChrome;
 import :Button;
 import :Format;
 export import :Rendering;
@@ -493,6 +496,12 @@ public:
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
 	BarRecallAttributePanel recallAttribute;
+	// 第一次 Undo 后锁存 Redo 可用；绘制清除。不写入按钮配置。
+	std::mutex recallChromeMutex;
+	Inkeys::UI::Bar::RecallChromeState recallChrome{};
+	// 用墙钟期限，不累加动画 dt。主栏休眠时动画时钟会停，并且恢复后的第一帧 dt 为 0。
+	std::chrono::steady_clock::time_point recallChromeIdleDeadline{};
+	bool recallChromeIdleArmed = false;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
@@ -529,6 +538,19 @@ public:
 	Inkeys::UI::Bar::Ui3FiniteSignature ReadFiniteSignature(const StateModeVersionedSnapshot& tool);
 	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
 	void CollapseAuxiliaryPanels(bool cancelCapture = true);
+	// Undo 回到 2×2 并打开浮窗；收起且锁存仍在则收成上 Redo 下 Undo。
+	void OpenRecallFromUndo();
+	void NoteRecallPopupRedo();
+	void NoteRecallPopupDismissed();
+	void ClearRecallForDrawing();
+	void SettleRecallChromeForWorkspace();
+	bool AdvanceRecallChromeIdle(double dtSeconds);
+	void ApplyRecallChromeVisuals();
+	void ArmRecallChromeIdleTimer() noexcept;
+	void DisarmRecallChromeIdleTimer() noexcept;
+	void ArmRecallChromeIdleDeadline();
+	// 到期返回 true 并唤醒渲染；未到期时 retryMs 为剩余时间。
+	bool PollRecallChromeIdleTimer(unsigned& retryMs);
 	void StartDisplayTracking();
 	void StopDisplayTracking() noexcept;
 	void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot) noexcept;

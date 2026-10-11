@@ -46,6 +46,7 @@ constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarThicknessTooltipHoverGraceMs = 100;
 constexpr UINT_PTR BarThicknessAnnotationTooltipGraceTimerId = 0x494B4302;
 constexpr UINT_PTR BarThicknessOverflowTooltipGraceTimerId = 0x494B4303;
+constexpr UINT_PTR BarRecallChromeIdleTimerId = 0x494B4304;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
 constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
@@ -594,6 +595,18 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		if (wParam == BarBorderCursorGraceTimerId)
 		{
 			barUISet.HandleBorderCursorGraceTimeout(hWnd);
+			return 0;
+		}
+		if (wParam == BarRecallChromeIdleTimerId)
+		{
+			// 浮窗静止时渲染线程在休眠。到期只唤醒一帧；提前触发则按剩余时间重装。
+			unsigned retryMs = 0;
+			if (barUISet.PollRecallChromeIdleTimer(retryMs))
+				barUISet.UpdateRendering(false);
+			else if (retryMs != 0)
+				SetTimer(hWnd, BarRecallChromeIdleTimerId, retryMs, nullptr);
+			else
+				KillTimer(hWnd, BarRecallChromeIdleTimerId);
 			return 0;
 		}
 		if (wParam == BarThicknessAnnotationTooltipGraceTimerId
@@ -1155,6 +1168,19 @@ void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 	CloseColorPicker(cancelCapture);
 }
 
+void BarUISetClass::ArmRecallChromeIdleTimer() noexcept
+{
+	if (!floating_window || !IsWindow(floating_window)) return;
+	SetTimer(floating_window, BarRecallChromeIdleTimerId,
+		static_cast<UINT>(Inkeys::UI::Bar::RecallChromeIdleSeconds * 1000.0), nullptr);
+}
+
+void BarUISetClass::DisarmRecallChromeIdleTimer() noexcept
+{
+	if (!floating_window || !IsWindow(floating_window)) return;
+	KillTimer(floating_window, BarRecallChromeIdleTimerId);
+}
+
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
 	eraserAttribute.ResetPointerFeedback();
@@ -1165,6 +1191,7 @@ void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 	KillTimer(hWnd, BarBorderCursorGraceTimerId);
 	KillTimer(hWnd, BarThicknessAnnotationTooltipGraceTimerId);
 	KillTimer(hWnd, BarThicknessOverflowTooltipGraceTimerId);
+	KillTimer(hWnd, BarRecallChromeIdleTimerId);
 	barState.drawAttributeBar.thicknessSliderCapture = false;
 	barState.drawAttributeBar.colorPickerPointerCapture = false;
 	CloseThicknessSlider(false);
@@ -6460,6 +6487,8 @@ void BarUISetClass::HandleCanvasDrawingActivity(HWND hWnd, bool started)
 	if (started && BarCanvasDrawingActivityCount.load(std::memory_order_acquire) == 0)
 		return;
 
+	// 落笔后 Redo 不可用：先清锁存，再收起浮窗，避免收起路径又收成 2×1。
+	ClearRecallForDrawing();
 	// UI3 落笔时固定收起次级面板；主栏本身保持用户当前的展开状态。
 	CollapseAuxiliaryPanels(true);
 	UpdateRendering(false);

@@ -14,6 +14,10 @@ module;
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -465,23 +469,45 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					// 每次点击都执行 Undo；防抖只合并面板置位，不吞撤销。
+					// 每次点击都执行 Undo，并回到 2×2 浮窗，方便连续点同一块区域。
 					(void)Inkeys::Drawing::Draw3::PublishProductCommand(
 						Inkeys::Drawing::Draw3::Bridge::CommandType::Undo);
 
 					// TODO 撤回库重做后需要试试检测撤回状态，要支持按键变灰
-					if (!barUISet.TryBeginToggle(BarToggleChannel::RecallAttribute))
-						return;
-					// 继续点击保持展开，不切换关闭；收起由绘制/其他按钮/折叠/Escape 触发。
-					barUISet.CollapseAuxiliaryPanels();
-					barUISet.barState.recallAttribute = true;
+					if (barUISet.TryBeginToggle(BarToggleChannel::RecallAttribute))
+						barUISet.CollapseAuxiliaryPanels();
+					barUISet.OpenRecallFromUndo();
 				};
 		}
 
 		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
-	// 重做已实现为撤回属性弹窗内的 70x70 按钮，见 BarRecallAttributePanel。
+	// 主栏 Redo：默认隐藏。浮窗收起且 Redo 仍可用时变成 Undo 上方的 2×1。
+	{
+		mainRedoButton = std::make_shared<BarButtonClass>();
+		BarButtonClass* obj = mainRedoButton.get();
+		obj->size = BarButtonSizeEnum::twoOne;
+		obj->preset = BarButtonPresetEnum::Redo;
+		obj->hide = true;
+		obj->userVisible = true;
+		obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+			IW(I18nKey.UI.Bar.MainButtons.RedoLabel), 0.0);
+		obj->name.enable.Initialization(true);
+		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+		obj->button.enable.Initialization(true);
+		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+		obj->icon.InitializationFromResource(L"UI", L"barRedo");
+		obj->icon.enable.Initialization(true);
+		obj->clickFunc = []() -> void
+			{
+				// 只单步重做，保持 2×1，不打开浮窗。
+				(void)Inkeys::Drawing::Draw3::PublishProductCommand(
+					Inkeys::Drawing::Draw3::Bridge::CommandType::Redo);
+			};
+		obj->state = &barButtonState[(int)BarButtonPresetEnum::Redo];
+		preset[(int)BarButtonPresetEnum::Redo] = obj;
+	}
 	// 清空
 	{
 		BarButtonClass* obj = new BarButtonClass;
@@ -1270,6 +1296,16 @@ void BarButtonSetClass::Load()
 
 	vector<shared_ptr<BarButtonClass>> activeButtons;
 	AppendFixedButtons(normalizedA1, activeButtons);
+	if (mainRedoButton)
+	{
+		// 插在撤回前面，两个 2×1 才会叠进原来的 2×2 格子，且 Redo 在上。
+		const auto recall = std::find_if(activeButtons.begin(), activeButtons.end(),
+			[](const shared_ptr<BarButtonClass>& button)
+			{
+				return button && button->preset == BarButtonPresetEnum::Recall;
+			});
+		activeButtons.insert(recall, mainRedoButton);
+	}
 	vector<shared_ptr<BarButtonClass>> legacyButtons = GetLegacyExtensionButtons();
 	vector<shared_ptr<BarButtonClass>> forcedOverflow;
 	vector<shared_ptr<BarButtonClass>> mainButtons;
@@ -1309,6 +1345,8 @@ void BarButtonSetClass::Load()
 	Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(normalizedA2));
 	if (fixedLayoutMigrated)
 		(void)Inkeys::config.Write(); // 旧 {Pierce, Freeze} A2 规范化后立即写回。
+	// 配置把撤回写回 2×2；紧凑态在加载后再套一次，不写回配置。
+	barUISet.ApplyRecallChromeVisuals();
 }
 
 void BarButtonSetClass::SyncLegacyExtensionButtons()
@@ -1353,7 +1391,7 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		barUISet.barState.geometryAttribute = false;
 	}
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
-	// 撤回属性随折叠收起；选择+空页隐藏撤回入口时也收起（Advance 侧同步兜底）。
+	// 折叠收起浮窗；Redo 仍可用时收成 2×1，而不是重新弹出。
 	if (barUISet.barState.fold) barUISet.recallAttribute.Close(barUISet);
 
 	// 只有“选择 + 空页”使用精简布局；有历史内容时保留完整绘制按钮。
@@ -1365,7 +1403,6 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = true;
 		preset[(int)BarButtonPresetEnum::Geometry]->hide = true;
 		preset[(int)BarButtonPresetEnum::Recall]->hide = true;
-		//preset[(int)BarButtonPresetEnum::Redo]->hide = true;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = true;
 
 		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
@@ -1380,7 +1417,6 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = false;
 		preset[(int)BarButtonPresetEnum::Geometry]->hide = false;
 		preset[(int)BarButtonPresetEnum::Recall]->hide = false;
-		//preset[(int)BarButtonPresetEnum::Redo]->hide = false;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
 		// 选择按钮不再承载清空语义。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
@@ -1388,6 +1424,8 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
 				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
 	}
+	// 空页精简布局会藏起撤回；主栏 Redo 跟随，不单独露出来。
+	barUISet.ApplyRecallChromeVisuals();
 }
 void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
 {
@@ -1425,4 +1463,142 @@ void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
 		if (Inkeys::UI::Setting::IsVisible()) barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::None;
 	}
+}
+
+namespace
+{
+	void ApplyRecallChromeVisualsLocked(BarUISetClass& owner)
+	{
+		using namespace Inkeys::UI::Bar;
+		const RecallChromeView view = ResolveRecallChrome(owner.recallChrome);
+		BarButtonClass* undo = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Recall)];
+		BarButtonClass* redo = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Redo)];
+		if (undo)
+			undo->size = view.undoExpanded
+				? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+		if (redo)
+		{
+			redo->size = BarButtonSizeEnum::twoOne;
+			const bool recallHidden = undo && undo->hide.load();
+			redo->hide = recallHidden || !view.mainRedoVisible;
+		}
+		owner.barState.recallAttribute = view.popupOpen;
+	}
+}
+
+void BarUISetClass::ApplyRecallChromeVisuals()
+{
+	std::scoped_lock lock(recallChromeMutex);
+	ApplyRecallChromeVisualsLocked(*this);
+}
+
+bool BarUISetClass::PollRecallChromeIdleTimer(unsigned& retryMs)
+{
+	retryMs = 0;
+	std::scoped_lock lock(recallChromeMutex);
+	if (recallChrome.phase != Inkeys::UI::Bar::RecallChromePhase::Popup
+		|| !recallChromeIdleArmed)
+		return false;
+	const auto now = std::chrono::steady_clock::now();
+	if (now >= recallChromeIdleDeadline) return true;
+	auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+		recallChromeIdleDeadline - now).count();
+	if (remaining < 1) remaining = 1;
+	retryMs = static_cast<unsigned>(remaining);
+	return false;
+}
+
+void BarUISetClass::ArmRecallChromeIdleDeadline()
+{
+	using namespace std::chrono;
+	recallChromeIdleDeadline = steady_clock::now()
+		+ duration_cast<steady_clock::duration>(duration<double>(
+			Inkeys::UI::Bar::RecallChromeIdleSeconds));
+	recallChromeIdleArmed = true;
+}
+
+void BarUISetClass::OpenRecallFromUndo()
+{
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::UndoClick);
+		ArmRecallChromeIdleDeadline();
+		ApplyRecallChromeVisualsLocked(*this);
+	}
+	ArmRecallChromeIdleTimer();
+}
+
+void BarUISetClass::NoteRecallPopupRedo()
+{
+	bool armed = false;
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		if (recallChrome.phase != Inkeys::UI::Bar::RecallChromePhase::Popup) return;
+		ArmRecallChromeIdleDeadline();
+		armed = true;
+	}
+	if (armed) ArmRecallChromeIdleTimer();
+}
+
+void BarUISetClass::NoteRecallPopupDismissed()
+{
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::Dismiss);
+		recallChromeIdleArmed = false;
+		ApplyRecallChromeVisualsLocked(*this);
+	}
+	DisarmRecallChromeIdleTimer();
+}
+
+void BarUISetClass::ClearRecallForDrawing()
+{
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::DrawingStarted);
+		recallChromeIdleArmed = false;
+		ApplyRecallChromeVisualsLocked(*this);
+	}
+	DisarmRecallChromeIdleTimer();
+	recallAttribute.ResetPointerFeedback();
+}
+
+void BarUISetClass::SettleRecallChromeForWorkspace()
+{
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		// 场景切换只收起浮窗。Redo 仍可用时留在 2×1，不重新弹出。
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::ReturnToDesktop);
+		recallChromeIdleArmed = false;
+		ApplyRecallChromeVisualsLocked(*this);
+	}
+	DisarmRecallChromeIdleTimer();
+	recallAttribute.ResetPointerFeedback();
+}
+
+bool BarUISetClass::AdvanceRecallChromeIdle(double)
+{
+	bool dismissed = false;
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		if (recallChrome.phase != Inkeys::UI::Bar::RecallChromePhase::Popup
+			|| !recallChromeIdleArmed)
+			return false;
+		// 动画 dt 在休眠后会被清零并限幅到 50ms，不能用来判断这 5 秒。
+		if (std::chrono::steady_clock::now() < recallChromeIdleDeadline)
+			return false;
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::Dismiss);
+		recallChromeIdleArmed = false;
+		ApplyRecallChromeVisualsLocked(*this);
+		dismissed = true;
+	}
+	if (!dismissed) return false;
+	DisarmRecallChromeIdleTimer();
+	recallAttribute.ResetPointerFeedback();
+	return true;
 }

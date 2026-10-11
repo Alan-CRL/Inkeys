@@ -382,8 +382,13 @@ namespace Inkeys::UI::Bar
 			changed = pptPresentationActive.exchange(active, std::memory_order_acq_rel) != active;
 			changed = pptSceneState.Publish(session, active) || changed;
 		}
-		if (changed) barUISet.UpdateRendering(
-			contentStateUpdatesReady.load(std::memory_order_acquire));
+		if (changed)
+		{
+			// 进出放映都只收起浮窗。回到桌面时若 Redo 仍可用，显示 2×1，不重新弹出。
+			barUISet.SettleRecallChromeForWorkspace();
+			barUISet.UpdateRendering(
+				contentStateUpdatesReady.load(std::memory_order_acquire));
+		}
 	}
 	std::optional<bool> ConsumePptSceneTransition() noexcept
 	{

@@ -178,6 +178,7 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.RecallAttributeMotion.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.RecallChrome.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp" />
 	<ClCompile Include="presentation_descriptor_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />

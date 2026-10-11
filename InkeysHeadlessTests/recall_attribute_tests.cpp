@@ -3,6 +3,7 @@
 #include <iostream>
 
 import Inkeys.UI.Bar.RecallAttributeMotion;
+import Inkeys.UI.Bar.RecallChrome;
 import Inkeys.UI.Bar.Animation;
 
 int RunRecallAttributeTests()
@@ -117,6 +118,41 @@ int RunRecallAttributeTests()
 		expect(overshoot.Apply(panel).Width() > panel.Width(),
 			"dirty bounds follow the actual Back overshoot");
 		std::cout << "[RecallMotion] openingPeak=" << openingPeak << " closingPeak=" << closingPeak << '\n';
+	}
+	{
+		RecallChromeState state;
+		auto view = ResolveRecallChrome(state);
+		expect(view.phase == RecallChromePhase::Idle && view.undoExpanded && !view.mainRedoVisible && !view.popupOpen,
+			"idle undo is 2x2 and the main redo stays hidden");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::UndoClick);
+		view = ResolveRecallChrome(state);
+		expect(view.phase == RecallChromePhase::Popup && view.popupOpen && view.undoExpanded && !view.mainRedoVisible,
+			"undo opens the popup and keeps the 2x2 undo");
+		expect(!RecallChromeIdleElapsed(state.phase, RecallChromeIdleSeconds - 0.01)
+			&& RecallChromeIdleElapsed(state.phase, RecallChromeIdleSeconds),
+			"popup idles out at 5 seconds");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::PopupRedoClick);
+		expect(state.phase == RecallChromePhase::Popup, "popup redo keeps the popup open");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Dismiss);
+		view = ResolveRecallChrome(state);
+		expect(view.phase == RecallChromePhase::Compact && !view.popupOpen && view.mainRedoVisible && !view.undoExpanded,
+			"any dismiss while redo is available stacks redo over undo");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::BarRedoClick);
+		expect(ResolveRecallChrome(state).phase == RecallChromePhase::Compact,
+			"the main redo click stays compact");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::UndoClick);
+		expect(ResolveRecallChrome(state).popupOpen && ResolveRecallChrome(state).undoExpanded,
+			"undo from the compact pair reopens the popup at 2x2");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::ReturnToDesktop);
+		view = ResolveRecallChrome(state);
+		expect(view.phase == RecallChromePhase::Compact && !view.popupOpen && view.mainRedoVisible,
+			"returning to the desktop docks redo instead of reopening the popup");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::DrawingStarted);
+		view = ResolveRecallChrome(state);
+		expect(view.phase == RecallChromePhase::Idle && view.undoExpanded && !view.mainRedoVisible,
+			"drawing clears redo and restores the 2x2 undo");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::ReturnToDesktop);
+		expect(state.phase == RecallChromePhase::Idle, "workspace changes do not invent a redo latch");
 	}
 	std::cout << "[RecallAttribute] failures=" << failures << '\n';
 	return failures;
