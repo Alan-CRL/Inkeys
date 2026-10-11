@@ -7,7 +7,9 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Typography.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Controls.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Pages.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.HomeBrand.h"
 #include "../Inkeys/IdtI18n.h"
+#include "setting_home_warp_tests.h"
 #include "../Inkeys/additional/imfluent/imfluent.h"
 #include "../Inkeys/additional/imfluent/imfluent_internal.h"
 #include "../Inkeys/additional/imfluent/imfluent_icons.h"
@@ -23,6 +25,7 @@
 #include <iterator>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 // 导航测试只读取语言源的标签，不初始化产品配置、资源或异步服务。
 std::string I18n::getA(std::string key)
@@ -207,9 +210,9 @@ namespace
 		std::vector<char> bytes;
 	};
 
-	bool LoadNavigationLabels(const std::filesystem::path& fontDirectory)
+	bool LoadNavigationLabels(const std::filesystem::path& fontDirectory, const char* language = "zh-CN")
 	{
-		std::ifstream stream(fontDirectory.parent_path() / "i18n" / "zh-CN.jsonc", std::ios::binary);
+		std::ifstream stream(fontDirectory.parent_path() / "i18n" / (std::string(language) + ".jsonc"), std::ios::binary);
 		Json::Value source;
 		Json::CharReaderBuilder reader;
 		std::string errors;
@@ -222,7 +225,7 @@ namespace
 					self(self, node[key], path.empty() ? key : path + "/" + key);
 		};
 		flatten(flatten, source, "");
-		I18n::identifying = L"zh-CN";
+		I18n::identifying = std::wstring(language, language + std::strlen(language));
 		return !I18n::i18n.empty();
 	}
 
@@ -2786,7 +2789,7 @@ namespace
 			const auto capture = frame.active;
 			frame = draw({ hero.x - 300 * scale, hero.y - 45 * scale }, true);
 			checks.Expect(capture && frame.active == capture && Near(frame.scroll - before, 45 * scale, 1), "Home captured drag crosses noninteractive content and sibling regions without losing ownership");
-			draw(outside, false); requested = 170 * scale; frame = idle(); requested = -1;
+			draw(outside, false); requested = frame.scroll + frame.feature.Min.y - frame.outer->InnerRect.Min.y - 40 * scale; frame = idle(); requested = -1;
 			// 真实 feature card 位于 hero 后；用其绘制文本/图标区域起拖，而非空窗口。
 			checks.Expect(frame.feature.GetWidth() > 0 && frame.feature.GetHeight() > 0, "actual Home feature tint geometry is present in production DrawData");
 			const ImVec2 feature = frame.feature.GetCenter();
@@ -2838,7 +2841,7 @@ namespace
 		checks.Expect(Near(frame.scroll - lateBefore, 9 * scale, 1), "an external target posted after drag sampling but before the actual Begin is not overwritten by pending content motion");
 		const float resumed = frame.scroll; frame = draw({ precise.x, precise.y - 14 }, true);
 		checks.Expect(Near(frame.scroll - resumed, 3, 1), "captured motion rebases from the actual consumed external target on its next frame");
-		draw(outside, false); requested = 170 * scale; frame = idle(); requested = -1;
+		draw(outside, false); requested = frame.scroll + frame.feature.Min.y - frame.outer->InnerRect.Min.y - 40 * scale; frame = idle(); requested = -1;
 		io.ConfigInputTrickleEventQueue = true; const auto tap = frame.feature.GetCenter(); const int tapsBefore = actions;
 		draw(tap, false); io.AddMouseButtonEvent(0, true); io.AddMouseButtonEvent(0, false);
 		draw(tap, false); frame = draw(tap, false); frame = idle(2);
@@ -2851,7 +2854,7 @@ namespace
 		requested = 0; frame = idle(); requested = -1;
 		for (bool theme : { false, true })
 		{
-			dark = theme; animated = true; viewport = 1200; frame = idle(24);
+			dark = theme; animated = true; viewport = 2400; frame = idle(24);
 			checks.Expect(!frame.bar && frame.reserve == 0, "Home overflow removal completes with no permanent scrollbar reservation");
 			const float fullWidth = frame.width; viewport = 380;
 			for (int index = 0; index < 12; ++index) { frame = draw(outside, false);
@@ -2861,7 +2864,7 @@ namespace
 			checks.Expect(frame.width < fullWidth && frame.width > fullWidth - Design::Pixels(Design::ScrollbarTrackSize), "actual Home content width continuously shrinks with its native rail");
 			checks.Expect(frame.alpha > 0 && frame.alpha < ((Design::GetPalette().scrollbar >> IM_COL32_A_SHIFT) & 255), "actual Home thumb DrawData fades in together with its width");
 			frame = idle(24); const float settled = frame.reserve;
-			viewport = 1200;
+			viewport = 2400;
 			for (int index = 0; index < 12; ++index) { frame = draw(outside, false);
 				std::cout << "[HomeScrollbarExit] scale=" << scale << " step=" << index << " bar=" << frame.bar << " reserve=" << frame.reserve << " width=" << frame.width << " alpha=" << frame.alpha << '\n';
 				if (!frame.bar && frame.reserve > 0 && frame.reserve < settled - 0.01F) break; }
@@ -2869,7 +2872,7 @@ namespace
 			checks.Expect(frame.alpha > 0, "hidden Home rail has actual fading thumb vertices");
 			const float reversing = frame.reserve; viewport = 380; frame = draw(outside, false);
 			checks.Expect(frame.reserve <= reversing + 0.1F * scale, "quick overflow reversal continues from the currently visible scrollbar width");
-			rate = 2.5F; frame = idle(16); viewport = 1200; animated = false; frame = idle(2);
+			rate = 2.5F; frame = idle(16); viewport = 2400; animated = false; frame = idle(2);
 			checks.Expect(!frame.bar && frame.reserve == 0 && Near(frame.width, fullWidth, 1), "animation disable restores full native content width with zero hidden input reservation");
 		}
 		animated = false; dark = false; viewport = 380; rate = 1;
@@ -2894,6 +2897,350 @@ namespace
 		}
 		std::cout << "[HomeScrollFollowup] scale=" << scale << " frames=" << frames << '\n';
 		Design::ConfigureRowAnimations(0, false, 1); Design::ApplyPalette(false);
+	}
+
+	void CheckHomeBrandDesign(Checks& checks, const std::array<ImFont*, 5>& fonts,
+		const std::filesystem::path& fontDirectory, float scale)
+	{
+		using Design::HomeAction;
+		const auto& mesh = Design::HomeBrand::Geometry();
+		checks.Expect(&mesh == &Design::HomeBrand::Geometry() && mesh.size.y > mesh.size.x*.38F
+			&& mesh.vertices.size() < 65536, "complete cached website glyph includes the y descender and fits the native index budget");
+		auto& io = ImGui::GetIO(); io.ConfigInputTrickleEventQueue = false;
+		const auto previousFlags = io.ConfigFlags;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		const ImVec2 outside(-100,-100);
+		int frames = 0, actionCount = 0, wrappedLicenseRows = 0, wrappedLicenseCases = 0;
+		for (const char* language : {"zh-CN","zh-TW","en-US"})
+		{
+			checks.Expect(LoadNavigationLabels(fontDirectory,language), "home fixtures load each actual localization source");
+			const bool traditional = std::strcmp(language,"zh-TW")==0;
+			Design::BindTextFonts(fonts[traditional ? 2 : 0],fonts[traditional ? 3 : 1]); ImFluent::SetIconFont(fonts.back());
+			const auto label = [&](const char* key) { return I18n::getA(std::string("SettingsUI/Design/")+key); };
+			const std::string welcome = label("HomeWelcome"), signature=label("HomeCopyright");
+			const float fullLicenseWidth = Design::TextWidth(label("HomeLicenseName").c_str(),ImFluentTextStyle_Caption);
+			checks.Expect(welcome == (traditional ? "歡迎使用 Inkeys3" : std::strcmp(language,"en-US")==0
+				? "Welcome to Inkeys3" : "欢迎使用 智绘教Inkeys 3"), "home uses the approved localized welcome");
+			checks.Expect(signature.find("2023-2026")!=std::string::npos && (std::strcmp(language,"en-US")!=0
+				|| (signature.find("Chen Runlin")!=std::string::npos && signature.find("Chen Yunlam")!=std::string::npos)),
+				"copyright retains the full year range and both English names");
+			const std::string slogan=label("HeroTitle")+label("HeroJoin")+label("HeroDescription");
+			checks.Expect(slogan == (traditional ? "讓螢幕上的書寫行雲流水，讓每一次操作都賞心悅目。" : std::strcmp(language,"en-US")==0
+				? "Fluid ink. Beautiful motion. Screen annotation that feels as good as it looks."
+				: "让屏幕上的书写行云流水，让每一次操作都赏心悦目。"), "two measured slogan paragraphs retain the exact approved full wording");
+			for (bool dark : {false,true}) for (const ImVec2 size : {ImVec2(320,520),ImVec2(480,520),ImVec2(720,520),ImVec2(960,700),ImVec2(1440,900)})
+			for (bool expanded : {false,true})
+			{
+				Design::NavigationState state; state.Resize(size.x); if (state.Expanded()!=expanded) state.Toggle();
+				const auto shell=Design::ResolveShellGeometry(size.x,size.y,state);
+				float viewport=shell.content.Height(), requested=-1;
+				std::unordered_set<ImU32> inkColors; for (const auto& v : mesh.vertices) inkColors.insert(dark ? v.dark : v.light);
+				struct GlyphGroup { ImRect bounds; ImU32 color; };
+				struct Frame { ImGuiWindow* outer; ImGuiWindow* page; HomeAction action; ImGuiID hovered, active;
+					ImRect brand{{FLT_MAX,FLT_MAX},{-FLT_MAX,-FLT_MAX}}, nav;
+					float featureY=FLT_MAX, pageTop, width; std::vector<GlyphGroup> groups; std::vector<std::pair<ImGuiID,HomeAction>> ids; };
+				auto draw = [&](ImVec2 mouse, bool down) {
+					Design::ApplyPalette(dark); Design::ConfigureRowAnimations(0,false,1);
+					io.DisplaySize={size.x*scale,2600*scale}; io.AddMousePosEvent(mouse.x,mouse.y); io.AddMouseButtonEvent(0,down);
+					ImGui::NewFrame(); Design::BeginDragScrolling(state);
+					ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
+					ImGui::Begin("##home-brand-root",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse
+						|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+					ImGui::SetCursorPos({shell.content.left*scale,shell.content.top*scale});
+					Design::BeginScrollChild("##setting-content",{shell.content.Width()*scale,viewport*scale},ImGuiChildFlags_AlwaysUseWindowPadding);
+					Frame f; f.outer=ImGui::GetCurrentWindow(); if (requested>=0) ImGui::SetScrollY(requested);
+					const float available=ImGui::GetContentRegionAvail().x, width=(std::min)(available,Design::Pixels(Design::PageMaximumWidth));
+					ImGui::SetCursorPosX(ImGui::GetCursorPosX()+(available-width)*.5F);
+					Design::BeginScrollChild("##setting-page-content",{width,0},ImGuiChildFlags_AutoResizeY);
+					f.page=ImGui::GetCurrentWindow(); f.pageTop=ImGui::GetCursorScreenPos().y; f.width=ImGui::GetContentRegionAvail().x;
+					const int fontStack=GImGui->FontStack.Size, colorStack=GImGui->ColorStack.Size, varStack=GImGui->StyleVarStack.Size;
+					f.action=Design::RenderHome({0,1,"3.0.0-dev.3981",0,0,1}); actionCount += f.action!=HomeAction::None;
+					checks.Expect(fontStack==GImGui->FontStack.Size && colorStack==GImGui->ColorStack.Size && varStack==GImGui->StyleVarStack.Size,
+						"real home brand/copyright/card restores font, color and style scopes");
+					f.ids={{ImGui::GetID("##home-star"),HomeAction::GitHub},{ImGui::GetID("##home-sponsor"),HomeAction::Support}};
+					for (const auto section : {std::pair{"##home-license",1},std::pair{"##home-repositories",1},std::pair{"##home-repositories",3}})
+					{
+						ImGui::PushID(section.first); ImGui::PushID(section.second);
+						for (int line=0;line<10;++line) { ImGui::PushID(line); f.ids.emplace_back(ImGui::GetID("##inline-link"),
+							section.second==3 ? HomeAction::GitCode : std::strcmp(section.first,"##home-license")==0 ? HomeAction::License : HomeAction::GitHub); ImGui::PopID(); }
+						ImGui::PopID(); ImGui::PopID();
+					}
+					ImGui::EndChild(); ImGui::EndChild(); ImGui::End(); Design::ApplyDragScrolling(state);
+					f.hovered=GImGui->HoveredId; f.active=GImGui->ActiveId;
+					f.nav=f.page->NavRectRel[ImGuiNavLayer_Main]; f.nav.Translate(f.page->Pos);
+					ImGui::Render(); ++frames;
+					const auto white=io.Fonts->TexUvWhitePixel;
+					for (const auto& vertex : f.page->DrawList->VtxBuffer)
+					{
+						if (vertex.uv.x==white.x && vertex.uv.y==white.y && inkColors.contains(vertex.col)) f.brand.Add(vertex.pos);
+						if (vertex.col==Design::GetPalette().featureTint[0]) f.featureY=(std::min)(f.featureY,vertex.pos.y);
+					}
+					// 从真实字形 quad 聚合文字块，点击定位不复制产品的横幅/版权/按钮高度公式。
+					const auto& list=*f.page->DrawList;
+					for (const auto& cmd : list.CmdBuffer) for (unsigned i=0;i+5<cmd.ElemCount;++i)
+					{
+						const auto* index=list.IdxBuffer.Data+cmd.IdxOffset+i;
+						if (index[0]!=index[3] || index[2]!=index[4]) continue;
+						const auto& a=list.VtxBuffer[cmd.VtxOffset+index[0]]; const auto& c=list.VtxBuffer[cmd.VtxOffset+index[2]];
+						if (a.col!=c.col || (a.uv.x==white.x && a.uv.y==white.y) || a.uv.x==c.uv.x || a.uv.y==c.uv.y) continue;
+						if (a.pos.y<=f.brand.Max.y || a.pos.y>=f.featureY) continue;
+						ImRect bounds(a.pos,c.pos); bool merged=false;
+						for (auto& group : f.groups) if (group.color==a.col && group.bounds.Min.y<bounds.Max.y && bounds.Min.y<group.bounds.Max.y
+							&& bounds.Min.x>=group.bounds.Max.x-scale*2 && bounds.Min.x<=group.bounds.Max.x+scale*8)
+						{ group.bounds.Add(bounds); merged=true; break; }
+						if (!merged) f.groups.push_back({bounds,a.col}); i+=5;
+					}
+					CheckDrawData(checks); return f;
+				};
+				auto idle = [&](int count=4) { Frame f; for (int i=0;i<count;++i) f=draw(outside,false); return f; };
+				Frame frame=idle();
+				checks.Expect(frame.outer->ScrollMax.y>0 && frame.page->ScrollMax.y==0 && frame.outer->ScrollMax.x==0,
+					"real window-sized home scrolls vertically at its ancestor without nested or horizontal overflow");
+				viewport=2400; frame=idle();
+				const float inset=Design::Pixels(frame.width>=Design::Pixels(700) ? 28.0F : 20.0F);
+				checks.Expect(Near(frame.brand.GetWidth(),(std::min)((frame.width-inset*2)*.8F,Design::Pixels(520)),1)
+					&& Near(frame.brand.GetHeight()/frame.brand.GetWidth(),mesh.size.y/mesh.size.x,.002F)
+					&& frame.brand.Min.y>=frame.pageTop && frame.brand.Max.y<frame.featureY,
+					"actual cached rainbow DrawData scales within the hero and retains complete aspect/descender in every theme/width/scale");
+				std::vector<float> sloganRows;
+				for (const auto& group : frame.groups) if (group.color==Design::GetPalette().heroDescription)
+				{
+					if (sloganRows.empty() || !Near(sloganRows.back(),group.bounds.Min.y,scale*2)) sloganRows.push_back(group.bounds.Min.y);
+					checks.Expect(group.bounds.Min.y>frame.brand.Max.y+scale*20,"real slogan has readable separation below the complete descender");
+				}
+				const float inner=frame.width-inset*2;
+				checks.Expect(Design::TextWidth(slogan.c_str())<=inner ? sloganRows.size()==1 : sloganRows.size()>=2,
+					"actual localized slogan uses one regular-weight line when it fits and multiple lines when narrow");
+				if (Design::TextWidth(slogan.c_str())>inner && Design::TextWidth(label("HeroTitle").c_str())<=inner
+					&& Design::TextWidth(label("HeroDescription").c_str())<=inner)
+					checks.Expect(sloganRows.size()==2,"both semantic slogan phrases occupy exactly two equal-style lines when they fit individually");
+				for (const auto& group : frame.groups)
+					checks.Expect(group.bounds.Min.x>=frame.page->WorkRect.Min.x-scale*2 && group.bounds.Max.x<=frame.page->WorkRect.Max.x+scale*2,
+						"actual slogan/copyright/repository/button glyphs stay inside the page budget");
+				if (scale==1 && !dark && !expanded && size.x<=720)
+				{
+					const auto candidates=frame.groups; std::vector<std::pair<ImGuiID,ImVec2>> links;
+					for (const auto& group : candidates)
+					{
+						const ImVec2 point=group.bounds.GetCenter(); frame=draw(point,false);
+						for (const auto [id,kind] : frame.ids) if (frame.hovered==id) { links.emplace_back(id,point); break; }
+					}
+					std::unordered_set<ImGuiID> checked;
+					ImRect starBounds,sponsorBounds; int licenseTaps=0; bool licenseFound=false,githubFound=false,gitcodeFound=false,supportFound=false;
+					for (const auto [id,point] : links)
+					{
+						if (!checked.insert(id).second) continue;
+						frame=draw(point,false); HomeAction expected=HomeAction::None;
+						for (const auto [item,kind] : frame.ids) if (item==id) expected=kind;
+						const int before=actionCount; frame=draw(point,true); const ImRect hitBounds=frame.nav;
+						checks.Expect(frame.active==id,"new links/buttons receive their real active item on down");
+						frame=draw(point,false); checks.Expect(frame.action==expected && actionCount==before+1,"each actual wrapped link/button tap returns exactly its original action once");
+						frame=idle(1); checks.Expect(actionCount==before+1,"idle rendering produces no extra home business action");
+						// 使用真实轻点留下的焦点和键盘输入，不直接赋值 NavActivateId 伪造激活。
+						checks.Expect(GImGui->NavId==id,"each new home link/button retains its actual keyboard focus after a tap");
+						// 鼠标激活按原生规则隐藏焦点框；先用 Tab 进入键盘导航，再测试 Enter/Space。
+						const int beforeTab=actionCount;
+						io.AddKeyEvent(ImGuiKey_Tab,true); draw(outside,false);
+						io.AddKeyEvent(ImGuiKey_Tab,false); draw(outside,false); frame=idle(1);
+						checks.Expect(GImGui->NavId==id && GImGui->NavCursorVisible && actionCount==beforeTab,
+							"real Tab enters keyboard navigation on each focused home link/button without activating it");
+						for (const ImGuiKey key : {ImGuiKey_Enter,ImGuiKey_Space})
+						{
+							const int beforeKey=actionCount;
+							io.AddKeyEvent(key,true); const auto keyDown=draw(outside,false);
+							io.AddKeyEvent(key,false); const auto keyUp=draw(outside,false);
+							checks.Expect((keyDown.action==expected || keyUp.action==expected) && actionCount==beforeKey+1,
+								"real Enter/Space activates every wrapped home link and open-source button exactly once");
+							frame=idle(1); checks.Expect(actionCount==beforeKey+1 && GImGui->NavId==id && GImGui->NavCursorVisible,
+								"keyboard activation retains visible item focus and produces no action on the next idle frame");
+						}
+						if (id==frame.ids[0].first) starBounds=hitBounds;
+						if (id==frame.ids[1].first) sponsorBounds=hitBounds;
+						licenseFound |= expected==HomeAction::License; githubFound |= expected==HomeAction::GitHub;
+						gitcodeFound |= expected==HomeAction::GitCode; supportFound |= expected==HomeAction::Support;
+						wrappedLicenseRows += expected==HomeAction::License; licenseTaps += expected==HomeAction::License;
+						viewport=shell.content.Height(); requested=(std::max)(0.0F,point.y-frame.outer->InnerRect.Min.y-viewport*.5F); frame=idle(); requested=-1;
+						const ImVec2 visible(point.x,point.y-frame.outer->Scroll.y); frame=draw(visible,false); frame=draw(visible,true);
+						const float scrollBefore=frame.outer->Scroll.y; const int beforeDrag=actionCount;
+						frame=draw({visible.x,visible.y-25*scale},true);
+						checks.Expect(frame.active!=id && Near(frame.outer->Scroll.y-scrollBefore,25*scale,1),"new text links and open-source buttons transfer capture to real scrolling after the native threshold");
+						frame=draw({visible.x,visible.y-25*scale},false); checks.Expect(actionCount==beforeDrag,"dragging a new home link/button cancels the click action");
+						viewport=2400; requested=0; frame=idle(); requested=-1; frame=idle();
+					}
+					checks.Expect(licenseFound && githubFound && gitcodeFound && supportFound,"actual drawn copyright/repository/star/sponsor controls expose all four business actions");
+					wrappedLicenseCases += licenseTaps>=2;
+					checks.Expect(fullLicenseWidth<=frame.width-inset*2 || licenseTaps>=2,"every license name fragment remains clickable when the real constrained content forces multiple lines");
+					checks.Expect(starBounds.GetWidth()>0 && Near(starBounds.GetWidth(),sponsorBounds.GetWidth(),1)
+						&& !starBounds.Overlaps(sponsorBounds),"real ImFluent star and heart button hit bounds are equal width and disjoint");
+					checks.Expect(size.x!=320 || (Near(starBounds.Min.x,sponsorBounds.Min.x,1) && sponsorBounds.Min.y>=starBounds.Max.y),
+						"constrained card content moves full width star/sponsor controls below the copy and stacks them without overlap");
+				}
+			}
+		}
+		checks.Expect(scale!=1 || wrappedLicenseRows>=3,"all real localized license controls were tapped without opening external applications");
+		checks.Expect(scale!=1 || wrappedLicenseCases>0,"actual localized license link fragments include at least one genuinely wrapped case");
+		checks.Expect(LoadNavigationLabels(fontDirectory),"home tests restore the default Chinese fixtures for existing regressions");
+		Design::BindTextFonts(fonts[0],fonts[1]); Design::ApplyPalette(false); Design::ConfigureRowAnimations(0,false,1);
+		io.ConfigFlags = previousFlags;
+		std::cout << "[HomeBrandDesign] scale=" << scale << " frames=" << frames << " linkTaps=" << actionCount << '\n';
+	}
+
+	void CheckHomeMotion(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		Design::BindTextFonts(regular,strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
+		auto& io=ImGui::GetIO(); io.ConfigInputTrickleEventQueue=false;
+		Design::HomeMotionState motion;
+		std::uint64_t serial=1; bool enabled=true, allowed=true, dark=false, popup=false;
+		float delta=1.0F/60, rate=1, scroll=0, viewport=800;
+		const ImVec2 outside(-100,-100);
+		struct Frame { std::vector<ImVec2> text; int vertices=0, indices=0; float scroll=0, maximum=0; ImRect clip; };
+		auto frame=[&](ImVec2 mouse, ImGuiMouseSource source=ImGuiMouseSource_Mouse, bool down=false) {
+			io.DisplaySize={1000*scale,1000*scale}; io.DeltaTime=1.0F/60;
+			io.AddMouseSourceEvent(source); io.AddMousePosEvent(mouse.x,mouse.y); io.AddMouseButtonEvent(0,down);
+			ImGui::NewFrame(); Design::ApplyPalette(dark); Design::ConfigureRowAnimations(0,false,1);
+			ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##home-motion-root",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize
+				|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+			Design::BeginScrollChild("##motion-scroll",{900*scale,viewport*scale});
+			ImGui::SetScrollY(scroll);
+			Design::ConfigureHomeMotion(motion,true,serial,delta,enabled,rate,allowed);
+			checks.Expect(Design::RenderHome({0,1,"test",0,0,1},&motion)==Design::HomeAction::None,
+				"home animation never dispatches a business action");
+			Frame result; const auto* window=ImGui::GetCurrentWindow();
+			result.scroll=window->Scroll.y; result.maximum=window->ScrollMax.y; result.clip=window->ClipRect;
+			const auto& draw=*ImGui::GetWindowDrawList();
+			result.vertices=draw.VtxBuffer.Size; result.indices=draw.IdxBuffer.Size;
+			const auto white=io.Fonts->TexUvWhitePixel;
+			for (const auto& v : draw.VtxBuffer) if (v.uv.x!=white.x || v.uv.y!=white.y) result.text.push_back(v.pos);
+			ImGui::EndChild();
+			if (popup) ImGui::OpenPopup("##motion-gate");
+			if (ImGui::BeginPopup("##motion-gate")) { ImGui::TextUnformatted("gate"); if (!popup) ImGui::CloseCurrentPopup(); ImGui::EndPopup(); }
+			ImGui::End(); ImGui::Render(); CheckDrawData(checks); return result;
+		};
+		auto idle=[&](int count=90) { Frame result; for (int i=0;i<count;++i) result=frame(outside); return result; };
+		idle();
+		checks.Expect(motion.entries==1 && motion.shineElapsed==.9F && motion.x==0 && motion.y==0,
+			"first home entry plays once then reaches a stable neutral pose");
+		const auto allocations=motion.cache.allocations, rebuilt=motion.cache.rebuilds;
+		const Frame resting=idle(10);
+		checks.Expect(motion.cache.rebuilds==rebuilt && motion.cache.allocations==allocations,
+			"settled real homepage reuses transformed geometry with no hot-path cache allocation");
+		const ImVec2 center(motion.brandOrigin.x+motion.brandWidth*.5F,motion.brandOrigin.y+Design::HomeBrand::Height(motion.brandWidth)*.5F);
+		for (const ImVec2 corner : {ImVec2(-1,-1),ImVec2(1,-1),ImVec2(-1,1),ImVec2(1,1)})
+		{
+			const ImVec2 point(center.x+corner.x*motion.brandWidth*.49F,center.y+corner.y*Design::HomeBrand::Height(motion.brandWidth)*.49F);
+			Frame moving; for (int i=0;i<100;++i) moving=frame(point);
+			checks.Expect(motion.x*corner.x>.9F && motion.y*corner.y>.9F && std::abs(motion.x)<=1 && std::abs(motion.y)<=1,
+				"real mouse corners produce bounded perspective targets without feedback from transformed bounds");
+			checks.Expect(moving.vertices==resting.vertices && moving.indices==resting.indices && moving.text.size()==resting.text.size(),
+				"perspective keeps real page tessellation and text submission counts unchanged");
+			bool same=moving.text.size()==resting.text.size();
+			for (size_t i=0;same && i<moving.text.size();++i) same=Near(moving.text[i].x,resting.text[i].x,.1F)&&Near(moving.text[i].y,resting.text[i].y,.1F);
+			checks.Expect(same,"actual slogan, copyright, button labels and hit-layout remain still while only the transparent brand moves");
+			const auto& mesh=Design::HomeBrand::Geometry(); bool bounds=true,alpha=true;
+			for (size_t i=0;i<mesh.vertices.size();++i)
+			{
+				const auto& v=motion.cache.vertices[i];
+				bounds &= v.pos.x>=-Design::Pixels(14) && v.pos.x<=motion.brandWidth+Design::Pixels(14)
+					&& v.pos.y>=-Design::Pixels(14) && v.pos.y<=Design::HomeBrand::Height(motion.brandWidth)+Design::Pixels(14);
+				alpha &= (v.color&IM_COL32_A_MASK)==(mesh.vertices[i].light&IM_COL32_A_MASK);
+			}
+			checks.Expect(bounds && alpha,"all transformed descender and antialiasing vertices fit reserved envelope and retain transparent alpha");
+		}
+		const ImVec2 edge(center.x+motion.brandWidth*.45F,center.y);
+		for (const auto source : {ImGuiMouseSource_TouchScreen,ImGuiMouseSource_Pen})
+		{
+			// 每个来源先建立真实偏转；来源附着在位置事件上，需跨像素移动以避免 ImGui 去重。
+			frame({edge.x-Design::Pixels(2),edge.y});
+			for (int i=0;i<100;++i) frame(edge);
+			checks.Expect(io.MouseSource==ImGuiMouseSource_Mouse && motion.x>.85F,
+				"each non-mouse gate starts from an actual mouse-source event and mouse-driven tilt");
+			const ImVec2 nonMouseEdge(edge.x+Design::Pixels(2),edge.y);
+			for (int i=0;i<100;++i) frame(nonMouseEdge,source);
+			checks.Expect(io.MouseSource==source,"actual displaced input event switches to the tested pen or touch source");
+			checks.Expect(motion.x==0 && motion.y==0,"touch and pen input return the wordmark to rest despite a nonzero pointer target");
+		}
+		for (int i=0;i<60;++i) frame(edge);
+		allowed=false; idle(); checks.Expect(motion.x==0 && motion.y==0,"navigation overlay and inactive HWND gate return motion to rest"); allowed=true;
+		for (int i=0;i<60;++i) frame(edge);
+		for (int i=0;i<100;++i) frame(edge,ImGuiMouseSource_Mouse,true);
+		frame(outside); checks.Expect(motion.x==0 && motion.y==0,"held input cancels pointer motion without moving page controls");
+		for (int i=0;i<60;++i) frame(edge);
+		popup=true; for (int i=0;i<100;++i) frame(edge);
+		checks.Expect(motion.x==0 && motion.y==0,"real popup blocks perspective even with mouse in brand bounds"); popup=false; idle(3);
+		idle();
+		for (size_t button=0;button<2;++button)
+		{
+			const auto bounds=motion.buttonBounds[button];
+			const ImVec2 point((bounds.x+bounds.z)*.5F,(bounds.y+bounds.w)*.5F);
+			frame(point); frame(point);
+			checks.Expect(motion.buttons[button].hovered && motion.buttons[button].elapsed>0 && motion.buttons[button].elapsed<.32F,
+				"real open-source button hover starts a short icon feedback once");
+			for (int i=0;i<60;++i) frame(point);
+			const auto stableBounds=motion.buttonBounds[button];
+			checks.Expect(motion.buttons[button].elapsed==.32F && bounds.x==stableBounds.x && bounds.y==stableBounds.y
+				&& bounds.z==stableBounds.z && bounds.w==stableBounds.w,"held hover stops its icon pulse without moving the real Fluent hit rectangle");
+			idle(3);
+		}
+		const auto entries=motion.entries;
+		dark=true; idle(3); dark=false; idle(3);
+		checks.Expect(motion.entries==entries && motion.shineElapsed==.9F,"theme changes and repeated current-page frames do not replay entry light");
+		Design::ConfigureHomeMotion(motion,false,serial,delta,true,rate);
+		checks.Expect(!motion.home && motion.shineElapsed==.9F,"leaving home cancels the old reflection immediately");
+		delta=0; frame(outside);
+		checks.Expect(motion.entries==entries+1 && motion.shineElapsed==0,"returning home starts once with zero rebased time");
+		++serial; frame(outside);
+		checks.Expect(motion.entries==entries+2 && motion.shineElapsed==0,"hidden-to-visible serial starts a fresh home reflection");
+		delta=.02F; rate=1; frame(outside);
+		const auto openingRebuilds=motion.cache.rebuilds; const auto openingBounds=motion.buttonBounds;
+		for (int i=0;i<8;++i) frame(outside);
+		checks.Expect(motion.cache.rebuilds==openingRebuilds,"opening sheen does not recompute stable logo geometry or rainbow colors");
+		for (size_t i=0;i<openingBounds.size();++i)
+			checks.Expect(std::memcmp(&openingBounds[i],&motion.buttonBounds[i],sizeof(ImVec4))==0,"sheen preserves actual home button hit regions");
+		const float beforeSpeedChange=motion.shineElapsed;
+		rate=2; frame(outside); checks.Expect(Near(motion.shineElapsed-beforeSpeedChange,.04F),"speed changes advance from current reflection progress");
+		delta=0; frame(outside); const float paused=motion.shineElapsed; frame(outside);
+		checks.Expect(motion.shineElapsed==paused,"rebased resume frames do not accumulate hidden or skipped wall time");
+		delta=.02F; scroll=1200; frame(outside); frame(outside);
+		const auto originalViewport=frame(outside);
+		std::cout<<"[HomeMotionCull] scale="<<scale<<" viewport="<<viewport*scale
+			<<" scroll="<<originalViewport.scroll<<" max="<<originalViewport.maximum
+			<<" brandBottom="<<motion.brandOrigin.y+Design::HomeBrand::Height(motion.brandWidth)+Design::Pixels(14)
+			<<" clipTop="<<originalViewport.clip.Min.y<<'\n';
+		// 横幅重排后旧 800 DIP 视口可能无法把字标完全滚走；收窄视口建立真实离屏前置条件。
+		viewport=300; frame(outside); frame(outside); const auto clipped=frame(outside);
+		checks.Expect(clipped.scroll>0 && clipped.scroll<=clipped.maximum
+			&& motion.brandOrigin.y+Design::HomeBrand::Height(motion.brandWidth)+Design::Pixels(14)<clipped.clip.Min.y,
+			"ancestor scroll actually moves the full brand envelope above the smaller viewport");
+		std::cout<<"[HomeMotionCull] scale="<<scale<<" viewport="<<viewport*scale
+			<<" scroll="<<clipped.scroll<<" max="<<clipped.maximum
+			<<" brandBottom="<<motion.brandOrigin.y+Design::HomeBrand::Height(motion.brandWidth)+Design::Pixels(14)
+			<<" clipTop="<<clipped.clip.Min.y<<'\n';
+		const auto offscreenRebuilds=motion.cache.rebuilds;
+		const auto hidden=idle(5);
+		checks.Expect(!motion.brandVisible && motion.cache.rebuilds==offscreenRebuilds,
+			"real ancestor scrolling culls wordmark submission and pauses logo geometry updates");
+		// 仅字标离屏时，仍可见的横幅继续播放；整个横幅离屏才暂停同一开场时钟。
+		scroll=clipped.scroll+motion.heroOrigin.y+motion.heroSize.y-clipped.clip.Min.y-100*scale;
+		frame(outside); frame(outside); motion.shineElapsed=.25F;
+		const float logoClippedTime=motion.shineElapsed; const auto logoClippedBuilds=motion.cache.rebuilds;
+		const auto footerOnly=frame(outside);
+		checks.Expect(!motion.brandVisible && motion.heroVisible && motion.shineElapsed>logoClippedTime
+			&& motion.cache.rebuilds==logoClippedBuilds,"visible hero footer advances ripple while offscreen ink remains culled");
+		checks.Expect(footerOnly.text.size()>0,"partially visible hero retains real foreground submission");
+		scroll=10000; frame(outside); frame(outside); motion.shineElapsed=.3F;
+		const float wholeHeroClippedTime=motion.shineElapsed; frame(outside);
+		checks.Expect(!motion.heroVisible && !motion.brandVisible && motion.shineElapsed==wholeHeroClippedTime,
+			"fully offscreen hero pauses ripple without pretending to enter the page again");
+		viewport=800; scroll=0; frame(outside); frame(outside);
+		checks.Expect(motion.brandVisible && motion.entries==entries+2 && hidden.vertices<resting.vertices,
+			"scrolling back restores cached brand without a new home entry");
+		enabled=false; frame(edge);
+		checks.Expect(motion.x==0 && motion.y==0 && motion.shineElapsed==.9F,"animation off snaps pose and reflection in the same production frame");
+		enabled=true; idle();
+		checks.Expect(motion.cache.allocations==allocations,"all warmed parallax, reflection and culling paths reuse allocated vertex storage");
+		Design::ApplyPalette(false); io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
+		std::cout<<"[HomeMotion] scale="<<scale<<" entries="<<motion.entries<<" cacheBuilds="<<motion.cache.rebuilds<<" allocations="<<motion.cache.allocations<<'\n';
 	}
 
 	void CheckEdidCard(Checks& checks, ImFont* regular, ImFont* strong, float scale)
@@ -3175,7 +3522,7 @@ int RunSettingDesignTests()
 	}
 
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
-	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 4.0F })
+	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
 		ImGuiSession session;
 		ImGui::GetStyle().FontScaleDpi = scale;
@@ -3204,6 +3551,8 @@ int RunSettingDesignTests()
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
+		// 真正 DX11 backend 必须在 CPU 测试写入模拟 TexID 之前创建和销毁纹理。
+		if (scale==1.0F) checks.failures+=RunSettingHomeWarpProbe(fonts[0],fonts[1],fonts.back());
 		ImGui::NewFrame();
 		ImGui::SetNextWindowPos(ImVec2(0.0F, 0.0F));
 		ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -3244,6 +3593,8 @@ int RunSettingDesignTests()
 		CheckMultilineRowAnimations(checks, fonts, fontDirectory, scale);
 		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);
 		CheckEdidCard(checks, fonts[0], fonts[1], scale);
+		CheckHomeBrandDesign(checks, fonts, fontDirectory, scale);
+		if (scale==1.0F || scale==1.875F) CheckHomeMotion(checks,fonts[0],fonts[1],fonts.back(),scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 			CheckGeneralSections(checks, fonts[0], fonts[1], fonts.back(), scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)

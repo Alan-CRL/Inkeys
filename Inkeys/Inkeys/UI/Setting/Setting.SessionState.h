@@ -154,7 +154,12 @@ namespace Inkeys::UI::Setting
 	class SessionState
 	{
 	public:
-		void SetVisible(bool visible) noexcept { visible_ = visible; }
+		void SetVisible(bool visible) noexcept
+		{
+			if (visible && !visible_) ++showSerial_;
+			visible_ = visible;
+		}
+		[[nodiscard]] std::uint64_t ShowSerial() const noexcept { return showSerial_; }
 		[[nodiscard]] bool IsVisible() const noexcept { return visible_; }
 		void SetOccluded(bool occluded) noexcept { occluded_ = occluded; }
 		void QueueResize(std::uint32_t width, std::uint32_t height) noexcept
@@ -249,6 +254,7 @@ namespace Inkeys::UI::Setting
 		bool visible_ = false;
 		bool occluded_ = false;
 		std::uint64_t epoch_ = 0;
+		std::uint64_t showSerial_ = 0;
 		std::uint64_t businessCompletion_ = 0;
 		std::uint64_t consumedBusinessCompletion_ = 0;
 		std::uint64_t resizeSerial_ = 0;

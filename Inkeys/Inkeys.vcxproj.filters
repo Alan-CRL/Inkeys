@@ -504,6 +504,9 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>

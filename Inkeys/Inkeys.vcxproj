@@ -476,6 +476,7 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Design.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Layout.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h" />

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file": ".trellis/tasks/10-10-setting-home-design/ripple-revision.md", "reason": "第三轮直接授权：圆头无缝与字标/整横幅明显波纹，覆盖旧冲突约定"}
+{"file": ".trellis/tasks/10-10-setting-home-design/soft-sheen-revision.md", "reason": "第四轮用户授权：克制背景和下方文案反光，字标颜色不变；签名失败后保持原暂存快照"}

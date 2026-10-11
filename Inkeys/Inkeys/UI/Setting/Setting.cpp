@@ -2042,6 +2042,7 @@ SettingSessionCoroutine RunSettingSession()
 		int settingPlugInTab = 0;
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
+		Design::HomeMotionState homeMotion;
 		auto commitSettingScale = [&]()
 		{
 			if (SettingGlobalScale != setlist.settingGlobalScale)
@@ -2072,7 +2073,13 @@ SettingSessionCoroutine RunSettingSession()
 		auto navigateTo = [&](Design::NavigationDestination requested)
 		{
 			requested = Design::NormalizeDestination(requested);
-			if (requested != destination) commitGeneralSliders();
+			if (requested != destination)
+			{
+				commitGeneralSliders();
+				if (requested.page!=Design::PageId::Home)
+					Design::ConfigureHomeMotion(homeMotion,false,homeMotion.showSerial,0,
+						Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate);
+			}
 			destination = requested;
 			settingTab = static_cast<int>(destination.page);
 			Design::NotifyNavigationDestination(navigationState, destination);
@@ -2276,6 +2283,14 @@ SettingSessionCoroutine RunSettingSession()
 				synchronizeDestination();
 				const float contentAlpha = Design::ContentAlpha(navigationState);
 				const bool blockContentInput = navigationState.BlockContentInput();
+				std::uint64_t showSerial;
+				{
+					lock_guard stateLock(settingStateMutex);
+					showSerial=settingSessionState.ShowSerial();
+				}
+				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
+					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
+					!blockContentInput && settingWindowActive.load(memory_order_acquire));
 				const auto& contentGeometry = shellGeometry.content;
 				ImGui::SetCursorPos({ Widgets::Dip(contentGeometry.left), Widgets::Dip(contentGeometry.top) });
 				ImGui::PushStyleColor(ImGuiCol_ChildBg, Inkeys::UI::Setting::Design::PageSurface);
@@ -2319,7 +2334,7 @@ SettingSessionCoroutine RunSettingSession()
 						(ImTextureID)(intptr_t)TextureSettingSign[4],
 						static_cast<float>(max(1, settingSign[4].height)) / max(1, settingSign[4].width), version.c_str(),
 						(ImTextureID)(intptr_t)TextureSettingSign[3], (ImTextureID)(intptr_t)TextureSettingSign[7],
-						static_cast<float>(max(1, settingSign[7].height)) / max(1, settingSign[7].width) });
+						static_cast<float>(max(1, settingSign[7].height)) / max(1, settingSign[7].width) }, &homeMotion);
 					switch (action)
 					{
 					case HomeAction::Draw: settingTab = settingTabEnum::tab3; break;
@@ -2332,6 +2347,10 @@ SettingSessionCoroutine RunSettingSession()
 						ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://www.inkeys.top" : L"https://en.inkeys.top", 0, 0, SW_SHOW); break;
 					case HomeAction::GitHub:
 						ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys", 0, 0, SW_SHOW); break;
+					case HomeAction::License:
+						ShellExecuteW(0, 0, L"https://www.gnu.org/licenses/gpl-3.0.html", 0, 0, SW_SHOW); break;
+					case HomeAction::GitCode:
+						ShellExecuteW(0, 0, L"https://gitcode.com/alan16356/Inkeys", 0, 0, SW_SHOW); break;
 					case HomeAction::Community:
 						ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6" : L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW); break;
 					case HomeAction::Bilibili:

@@ -85,7 +85,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Debug'">$(VcpkgInstalledDir)$(VcpkgTriplet)\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Release'">$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>jsoncpp.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>jsoncpp.lib;setupapi.lib;d3d11.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -140,6 +140,8 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Presentation.Source.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
+    <ClCompile Include="setting_home_warp_tests.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="..\Inkeys\additional\imgui\imgui.cpp" />
     <ClCompile Include="..\Inkeys\additional\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\Inkeys\additional\imgui\imgui_tables.cpp" />
@@ -193,6 +195,8 @@
 	<ItemGroup>
 	  <ClInclude Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
 	  <ResourceCompile Include="message_box_test.rc" />
+	  <ResourceCompile Include="setting_home_warp_tests.rc" />
+	  <ClInclude Include="setting_home_warp_tests.h" />
 	</ItemGroup>
   <ItemGroup>
 	<ClInclude Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h" />

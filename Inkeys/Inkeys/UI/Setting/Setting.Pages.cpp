@@ -1,4 +1,7 @@
 #include "Setting.Pages.h"
+#include "Setting.HomeBrand.h"
+#include "imfluent/imfluent_internal.h"
+#include <cstring>
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
@@ -8,36 +11,211 @@ namespace Inkeys::UI::Setting::Design
 {
 	namespace
 	{
-		void WritingIllustration(ImVec2 origin, float width, float height)
+		struct InlineSpan { std::string text; HomeAction action = HomeAction::None; };
+		struct InlineFragment { std::string text; float x, y, width; size_t span, line; HomeAction action; };
+		struct InlineLayout { std::vector<InlineFragment> fragments; float height = 0; };
+
+		InlineLayout MeasureInline(std::initializer_list<InlineSpan> spans, float width,
+			ImFluentTextStyle role, bool centered, float fontSize = 0, float lineDip = 0)
 		{
-			// 首页静态矢量示意直接进入现有 ImDrawData，换色读取同一主题表。
+			InlineLayout result;
+			std::string joined; for (const auto& span : spans) joined += span.text;
+			ImFluent::PushFont(role, fontSize);
+			const float lineHeight = Pixels(lineDip ? lineDip : role == ImFluentTextStyle_Caption ? CaptionText.lineHeight : BodyText.lineHeight);
+			const char* cursor = joined.c_str(); const char* end = cursor + joined.size(); size_t line = 0;
+			while (cursor < end)
+			{
+				const char* stop = ImGui::GetFont()->CalcWordWrapPosition(ImGui::GetFontSize(), cursor, end, width);
+				if (stop == cursor) { unsigned codepoint; stop += (std::max)(1, ImTextCharFromUtf8(&codepoint, cursor, end)); }
+				const float lineWidth = ImGui::CalcTextSize(cursor, stop).x;
+				float x = centered ? (width - lineWidth) * .5F : 0;
+				size_t offset = 0, spanIndex = 0;
+				for (const auto& span : spans)
+				{
+					const size_t from = (std::max)(offset, static_cast<size_t>(cursor - joined.c_str()));
+					const size_t to = (std::min)(offset + span.text.size(), static_cast<size_t>(stop - joined.c_str()));
+					if (to > from)
+					{
+						std::string text = joined.substr(from, to - from);
+						const float fragmentWidth = ImGui::CalcTextSize(text.c_str()).x;
+						result.fragments.push_back({text, x, line * lineHeight, fragmentWidth, spanIndex, line, span.action});
+						x += fragmentWidth;
+					}
+					offset += span.text.size(); ++spanIndex;
+				}
+				cursor = stop; while (cursor < end && (*cursor == ' ' || *cursor == '\t')) ++cursor;
+				++line;
+			}
+			result.height = line * lineHeight;
+			ImFluent::PopFont();
+			return result;
+		}
+
+		void DrawInline(const char* id, const InlineLayout& layout, ImVec2 origin,
+			ImFluentTextStyle role, ImU32 color, HomeAction& action, float fontSize = 0, float lineDip = 0,
+			const HomeMotionState* motion = nullptr)
+		{
+			// 先测完整句子的换行；链接只登记各行中的真实片段，不把前后说明变成链接。
+			ImGui::PushID(id);
+			const float lineHeight = Pixels(lineDip ? lineDip : role == ImFluentTextStyle_Caption ? CaptionText.lineHeight : BodyText.lineHeight);
+			ImFluent::PushFont(role, fontSize);
+			for (const auto& fragment : layout.fragments)
+			{
+				const ImVec2 pos(origin.x + fragment.x, origin.y + fragment.y);
+				ImU32 ink = color; bool interactive = false;
+				if (fragment.action != HomeAction::None)
+				{
+					ImGui::PushID(static_cast<int>(fragment.span)); ImGui::PushID(static_cast<int>(fragment.line));
+					ImGui::SetCursorScreenPos(pos);
+					if (ImGui::InvisibleButton("##inline-link", {fragment.width, lineHeight}, ImGuiButtonFlags_EnableNav)) action = fragment.action;
+					AllowContentDrag();
+					interactive=ImGui::IsItemActive() || ImGui::IsItemHovered();
+					ink = ImFluent::GetColorU32(ImGui::IsItemActive() ? ImFluentCol_AccentTextTertiary
+						: ImGui::IsItemHovered() ? ImFluentCol_AccentTextSecondary : ImFluentCol_AccentTextPrimary);
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+						ImGui::GetWindowDrawList()->AddLine({pos.x,pos.y+lineHeight-1}, {pos.x+fragment.width,pos.y+lineHeight-1}, ink);
+					}
+					ImGui::PopID(); ImGui::PopID();
+				}
+				// 仅横幅文案按真实片段中心轻微提亮；链接交互色优先，字形 alpha/布局不变。
+				if (motion && motion->enabled && motion->heroVisible && motion->shineElapsed>0 && motion->shineElapsed<.9F
+					&& !interactive && motion->ripple.reach>0)
+				{
+					const auto& ripple=motion->ripple;
+					const float radial=std::hypot(pos.x+fragment.width*.5F-motion->heroOrigin.x-ripple.width*.5F,
+						(pos.y+lineHeight*.5F-motion->heroOrigin.y-ripple.centerY)*1.25F)/ripple.reach;
+					ink=HomeBrand::SheenColor(ink,radial,motion->shineElapsed/.9F,IsDarkMode());
+				}
+				ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+					{std::round(pos.x),std::round(pos.y+(lineHeight-ImGui::GetFontSize())*.5F)},ink,fragment.text.c_str());
+			}
+			ImFluent::PopFont();
+			ImGui::PopID();
+		}
+
+		void CenteredCopy(const char* text, ImVec2 origin, float width, ImFluentTextStyle role,
+			ImU32 color, HomeAction& action)
+		{
+			DrawInline("##home-copy", MeasureInline({{text}}, width, role, true), origin, role, color, action);
+		}
+
+		void HeroBackground(ImDrawList* draw, ImVec2 origin, float width, float height)
+		{
 			const auto& palette = GetPalette();
-			const float scale = (std::min)(width / 310.0F, height / 212.0F);
-			auto point = [&](float x, float y) { return ImVec2(origin.x + x * scale, origin.y + y * scale); };
-			ImDrawList* draw = ImGui::GetWindowDrawList();
-			draw->PushClipRect(origin, { origin.x + width, origin.y + height }, true);
-			draw->AddCircleFilled(point(216, 71), 110 * scale, palette.artCool);
-			draw->AddCircleFilled(point(279, 206), 62 * scale, palette.artWarm);
-			draw->AddRectFilled(point(34, 40), point(273, 181), Card, 8 * scale);
-			draw->AddRect(point(34, 40), point(273, 181), palette.artStroke, 8 * scale);
-			for (int i = 0; i < 2; ++i)
-				draw->AddLine(point(58, 68 + i * 10.0F), point(i ? 89.0F : 110.0F, 68 + i * 10.0F), palette.artRule, 3 * scale);
-			draw->AddLine(point(58, 151), point(179, 151), palette.artAxis, 1.5F * scale);
-			draw->AddLine(point(76, 154), point(76, 98), palette.artAxis, 1.5F * scale);
-			draw->AddBezierCubic(point(82, 136), point(103, 136), point(99, 99), point(120, 110), Accent, 3 * scale);
-			draw->AddBezierCubic(point(120, 110), point(142, 142), point(157, 137), point(178, 94), Accent, 3 * scale);
-			draw->AddTriangle(point(197, 80), point(235, 116), point(187, 116), palette.artWarmInk, 2 * scale);
-			draw->AddRectFilled(point(113, 166), point(279, 197), Card, 15.5F * scale);
-			draw->AddRect(point(113, 166), point(279, 197), palette.artStroke, 15.5F * scale);
-			draw->AddCircleFilled(point(134, 181), 8 * scale, palette.artPenSelection);
-			draw->AddLine(point(130, 184), point(138, 176), Accent, 3 * scale);
-			draw->AddLine(point(156, 178), point(163, 185), TextSecondary, 4 * scale);
-			draw->AddLine(point(182, 181), point(190, 181), TextSecondary, scale);
-			draw->AddLine(point(186, 177), point(186, 185), TextSecondary, scale);
-			draw->AddCircleFilled(point(214, 181), 4 * scale, Accent);
-			draw->AddCircleFilled(point(232, 181), 4 * scale, palette.artOrange);
-			draw->AddCircleFilled(point(250, 181), 4 * scale, palette.artGreen);
-			draw->PopClipRect();
+			const int start = draw->VtxBuffer.Size;
+			draw->AddRectFilled(origin, {origin.x+width,origin.y+height}, palette.heroFill, Pixels(8));
+			// 仅着色本横幅的圆角顶点，保留抗锯齿 alpha；不会溢出到页面背景。
+			for (int i = start; i < draw->VtxBuffer.Size; ++i)
+			{
+				auto& v = draw->VtxBuffer[i];
+				const float x = std::clamp((v.pos.x-origin.x)/width, 0.0F, 1.0F);
+				const float y = std::clamp((v.pos.y-origin.y)/height, 0.0F, 1.0F);
+				ImU32 color = v.col & IM_COL32_A_MASK;
+				for (int shift : {IM_COL32_R_SHIFT,IM_COL32_G_SHIFT,IM_COL32_B_SHIFT})
+				{
+					const float a = static_cast<float>((palette.heroMint >> shift) & 255), b = static_cast<float>((palette.heroLavender >> shift) & 255);
+					const float base = static_cast<float>((palette.heroFill >> shift) & 255);
+					color |= static_cast<ImU32>(std::round((a+(b-a)*x)*(1-y*.72F)+base*y*.72F)) << shift;
+				}
+				v.col = color;
+			}
+			draw->AddRect(origin, {origin.x+width,origin.y+height}, palette.heroStroke, Pixels(8));
+		}
+
+		bool HomePointerAllowed(const HomeMotionState& motion)
+		{
+			const auto& io=ImGui::GetIO();
+			return motion.pointerAllowed && !io.AppFocusLost && io.MouseSource==ImGuiMouseSource_Mouse
+				&& !ImGui::IsAnyMouseDown() && !ImGui::IsAnyItemActive()
+				&& !ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel)
+				&& ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+		}
+
+		void DrawHomeBrand(ImDrawList* draw, ImVec2 origin, float width, HomeMotionState* motion)
+		{
+			const float height=HomeBrand::Height(width);
+			const ImRect bounds(origin,{origin.x+width,origin.y+height});
+			ImRect envelope=bounds; envelope.Expand(Pixels(14));
+			const bool visible=envelope.Overlaps(ImGui::GetCurrentWindow()->ClipRect);
+			if (motion) { motion->brandOrigin=origin; motion->brandWidth=width; motion->brandVisible=visible; }
+			if (!visible) return;
+			if (!motion) { HomeBrand::Draw(draw,origin,width,IsDarkMode()); return; }
+			float targetX=0, targetY=0;
+			if (motion->enabled && HomePointerAllowed(*motion))
+			{
+				const auto mouse=ImGui::GetIO().MousePos, center=bounds.GetCenter();
+				const float dx=(std::max)(0.0F,std::abs(mouse.x-center.x)-width*.5F);
+				const float dy=(std::max)(0.0F,std::abs(mouse.y-center.y)-height*.5F);
+				const float fade=1-HomeBrand::Smooth(std::hypot(dx,dy)/Pixels(120));
+				targetX=std::clamp((mouse.x-center.x)/(width*.5F),-1.0F,1.0F)*fade;
+				targetY=std::clamp((mouse.y-center.y)/(height*.5F),-1.0F,1.0F)*fade;
+			}
+			const float follow=1-std::exp(-motion->delta/.16F);
+			auto advance=[&](float value,float target) {
+				value+=(target-value)*follow;
+				return !motion->enabled || std::abs(value-target)<.0001F ? target : value;
+			};
+			motion->x=advance(motion->x,targetX); motion->y=advance(motion->y,targetY);
+			HomeBrand::Prepare(motion->cache,width,Pixels(1),IsDarkMode(),motion->x,motion->y);
+			HomeBrand::Draw(draw,origin,width,IsDarkMode(),&motion->cache);
+		}
+
+		bool HomeIconButton(const char* id, const char* label, const char* icon, ImVec2 pos,
+			float width, bool accent, HomeMotionState* motion)
+		{
+			ImGui::SetCursorScreenPos(pos);
+			if (!accent)
+			{
+				const bool dark=IsDarkMode();
+				ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault,dark ? IM_COL32(255,255,255,14) : IM_COL32(255,255,255,155));
+				ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary,dark ? IM_COL32(255,255,255,24) : IM_COL32(255,255,255,205));
+				ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary,dark ? IM_COL32(255,255,255,10) : IM_COL32(255,255,255,115));
+			}
+			const bool pressed = accent ? AccentButton(id, {width,Pixels(36)}) : Button(id, {width,Pixels(36)});
+			if (!accent) ImFluent::PopStyleColor(3);
+			AllowContentDrag();
+			float pulse=0;
+			if (motion)
+			{
+				auto& state=motion->buttons[accent ? 1 : 0];
+				const auto minimum=ImGui::GetItemRectMin(), maximum=ImGui::GetItemRectMax();
+				motion->buttonBounds[accent ? 1 : 0]={minimum.x,minimum.y,maximum.x,maximum.y};
+				const bool hovered=ImGui::IsItemHovered() && HomePointerAllowed(*motion);
+				if (hovered && !state.hovered && motion->enabled) state.elapsed=0;
+				state.hovered=hovered;
+				state.elapsed=motion->enabled && motion->pointerAllowed ? (std::min)(.32F,state.elapsed+motion->delta) : .32F;
+				pulse=state.elapsed<.32F ? std::sin(state.elapsed/.32F*3.141592654F) : 0;
+			}
+			ImDrawList* draw=ImGui::GetWindowDrawList();
+			if (accent) draw->AddLine({pos.x+Pixels(4),pos.y+Pixels(1)},
+				{pos.x+width-Pixels(4),pos.y+Pixels(1)},IM_COL32(255,255,255,32),Pixels(1));
+			const ImU32 ink = ImFluent::GetColorU32(accent ? ImFluentCol_TextOnAccentPrimary : ImFluentCol_TextPrimary);
+			const float textWidth = ControlTextWidth(label), groupWidth = Pixels(24) + textWidth;
+			const float left = pos.x + (width-groupWidth)*.5F;
+			const int start=draw->VtxBuffer.Size;
+			ImFluent::DrawIcon(icon, {left,pos.y}, {left+Pixels(16),pos.y+Pixels(36)},16,ink);
+			// 仅图标顶点动一下，控件命中框、标签和键盘焦点保持原位。
+			const ImVec2 center(left+Pixels(8),pos.y+Pixels(18));
+			const float angle=accent ? 0 : pulse*.14F, c=std::cos(angle), sn=std::sin(angle), growth=1+pulse*.12F;
+			for (int i=start;i<draw->VtxBuffer.Size;++i)
+			{
+				auto& v=draw->VtxBuffer[i]; const float x=(v.pos.x-center.x)*growth,y=(v.pos.y-center.y)*growth;
+				v.pos={center.x+x*c-y*sn,center.y+x*sn+y*c-(accent ? Pixels(1.5F)*pulse : 0)};
+			}
+			if (!accent && pulse>.001F)
+			{
+				const ImU32 glint=(Accent & ~IM_COL32_A_MASK)|(static_cast<ImU32>(pulse*120)<<IM_COL32_A_SHIFT);
+				const ImVec2 point(left+Pixels(18),pos.y+Pixels(9));
+				draw->AddLine({point.x-Pixels(2),point.y},{point.x+Pixels(2),point.y},glint);
+				draw->AddLine({point.x,point.y-Pixels(2)},{point.x,point.y+Pixels(2)},glint);
+			}
+			ImFluent::PushFont(ImFluentTextStyle_Body, ControlText.size);
+			draw->AddText(ImGui::GetFont(),ImGui::GetFontSize(),
+				{std::round(left+Pixels(24)),std::round(pos.y+(Pixels(36)-ImGui::GetFontSize())*.5F)},ink,label);
+			ImFluent::PopFont();
+			return pressed;
 		}
 
 		void Link(const char* /*id*/, const char* label, HomeAction kind, HomeAction& action)
@@ -143,7 +321,7 @@ namespace Inkeys::UI::Setting::Design
 		return events;
 	}
 
-	HomeAction RenderHome(const HomeContent& content)
+	HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion)
 	{
 		HomeAction action = HomeAction::None;
 		const auto& palette = GetPalette();
@@ -152,39 +330,85 @@ namespace Inkeys::UI::Setting::Design
 		const ImVec2 heroOrigin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		const float inset = Pixels(width >= Pixels(700.0F) ? 28.0F : 20.0F);
-		const float artWidth = width >= Pixels(700.0F) ? Pixels(310.0F) : width >= Pixels(580.0F) ? Pixels(210.0F) : 0.0F;
-		const float copyWidth = (std::max)(1.0F, width - artWidth - inset * 2.0F);
+		const float copyWidth = (std::max)(1.0F, width - inset*2);
+		const float brandWidth = (std::min)(copyWidth*.8F, Pixels(520));
+		const float brandHeight = HomeBrand::Height(brandWidth);
 		const std::string heroTitle = IA(I18nKey.SettingsUI.Design.HeroTitle);
 		const std::string heroDescription = IA(I18nKey.SettingsUI.Design.HeroDescription);
-		const std::string drawAction = IA(I18nKey.SettingsUI.Design.DrawAction);
-		const std::string tutorial = IA(I18nKey.SettingsUI.Design.Tutorial);
-		const float titleHeight = TextHeight(heroTitle.c_str(), copyWidth, ImFluentTextStyle_Title);
-		const float descriptionHeight = TextHeight(heroDescription.c_str(), copyWidth);
-		const float primaryWidth = (std::min)(copyWidth, Pixels(ButtonWidth(drawAction.c_str())));
-		const float tutorialWidth = ControlTextWidth(tutorial.c_str());
-		const bool wrapHeroButtons = primaryWidth + Pixels(16.0F) + tutorialWidth > copyWidth;
-		const float heroHeight = (std::max)(Pixels(212.0F), inset * 2.0F + Pixels(24.0F) + titleHeight
-			+ Pixels(10.0F) + descriptionHeight + Pixels(20.0F) + Pixels(wrapHeroButtons ? 72.0F : 32.0F));
-		ImGui::Dummy({ width, heroHeight });
-		ImDrawList* draw = ImGui::GetWindowDrawList();
-		draw->AddRectFilled(heroOrigin, { heroOrigin.x + width, heroOrigin.y + heroHeight }, palette.heroFill, Pixels(8.0F));
-		draw->AddRect(heroOrigin, { heroOrigin.x + width, heroOrigin.y + heroHeight }, palette.heroStroke, Pixels(8.0F));
-		if (artWidth > 0.0F)
-			WritingIllustration({ heroOrigin.x + width - artWidth, heroOrigin.y + (heroHeight - Pixels(212.0F)) * 0.5F }, artWidth, Pixels(212.0F));
-		float y = heroOrigin.y + inset;
-		TextAt("INKEYS", { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Caption, palette.heroEyebrow);
-		y += Pixels(24.0F);
-		TextAt(heroTitle.c_str(), { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Title);
-		y += titleHeight + Pixels(10.0F);
-		TextAt(heroDescription.c_str(), { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Body, palette.heroDescription);
-		y += descriptionHeight + Pixels(20.0F);
-		ImGui::SetCursorScreenPos({ heroOrigin.x + inset, y });
-		if (AccentButton((drawAction + "###home-customize").c_str(), { primaryWidth, Pixels(32.0F) })) action = HomeAction::Draw;
-		ImGui::SetCursorScreenPos({ heroOrigin.x + inset + (wrapHeroButtons ? 0.0F : primaryWidth + Pixels(16.0F)), y + (wrapHeroButtons ? Pixels(40.0F) : Pixels(4.0F)) });
-		bool showTutorial = ImGui::GetStateStorage()->GetBool(ImGui::GetID("##home-tutorial-visible"));
-		if (HyperlinkButton((tutorial + "###home-tutorial").c_str())) showTutorial = !showTutorial;
-		ImGui::GetStateStorage()->SetBool(ImGui::GetID("##home-tutorial-visible"), showTutorial);
-		ImGui::SetCursorScreenPos({ heroOrigin.x, heroOrigin.y + heroHeight + Pixels(4.0F) });
+		const std::string slogan=heroTitle+IA(I18nKey.SettingsUI.Design.HeroJoin)+heroDescription;
+		const bool oneLine=TextWidth(slogan.c_str())<=copyWidth;
+		const auto first=MeasureInline({{oneLine ? slogan : heroTitle}},copyWidth,ImFluentTextStyle_Body,true);
+		const auto second=MeasureInline({{oneLine ? "" : heroDescription}},copyWidth,ImFluentTextStyle_Body,true);
+		const std::string openTitle=IA(I18nKey.SettingsUI.Design.HomeOpenSourceTitle);
+		const auto openCopy=MeasureInline({{openTitle}},copyWidth,ImFluentTextStyle_BodyStrong,true,16,22);
+		const auto repositories=MeasureInline({{IA(I18nKey.SettingsUI.Design.HomeRepositoryPrefix)},
+			{IA(I18nKey.SettingsUI.Design.HomeGitHubName),HomeAction::GitHub},
+			{IA(I18nKey.SettingsUI.Design.HomeRepositoryJoin)},
+			{IA(I18nKey.SettingsUI.Design.HomeGitCodeName),HomeAction::GitCode},
+			{IA(I18nKey.SettingsUI.Design.HomeRepositorySuffix)}},copyWidth,ImFluentTextStyle_Caption,true);
+		const std::string star=IA(I18nKey.SettingsUI.Design.HomeStarAction), sponsor=IA(I18nKey.SettingsUI.Design.HomeSponsorAction);
+		const float buttonWidth=(std::min)(copyWidth,(std::max)(Pixels(156),
+			(std::max)(ControlTextWidth(star.c_str()),ControlTextWidth(sponsor.c_str()))+Pixels(56)));
+		const bool buttonsInline=buttonWidth*2+Pixels(12)<=copyWidth;
+		const float top=Pixels(width>=Pixels(700) ? 56.0F : 40.0F);
+		const float heroHeight=top+brandHeight+Pixels(32)+first.height+second.height+Pixels(24+1+20)
+			+openCopy.height+Pixels(8)+repositories.height+Pixels(16)+Pixels(buttonsInline ? 36.0F : 80.0F)+Pixels(28);
+		ImGui::Dummy({width,heroHeight});
+		ImDrawList* draw=ImGui::GetWindowDrawList();
+		HeroBackground(draw,heroOrigin,width,heroHeight);
+		if (motion)
+		{
+			motion->heroOrigin=heroOrigin; motion->heroSize={width,heroHeight};
+			const auto clip=ImGui::GetCurrentWindow()->ClipRect;
+			motion->heroVisible=clip.GetWidth()>0 && clip.GetHeight()>0
+				&& ImRect(heroOrigin,{heroOrigin.x+width,heroOrigin.y+heroHeight}).Overlaps(clip);
+			// 波纹由整个横幅的可见性推进，字标滚走时背景仍播放；正文随后绘制以保持清晰。
+			if (motion->heroVisible)
+			{
+				motion->shineElapsed=(std::min)(.9F,motion->shineElapsed+motion->delta);
+				if (motion->enabled && motion->shineElapsed>0 && motion->shineElapsed<.9F)
+				{
+					HomeBrand::PrepareRipple(motion->ripple,width,heroHeight,Pixels(1),top+brandHeight*.5F);
+					HomeBrand::DrawRipple(draw,heroOrigin,motion->ripple,motion->shineElapsed/.9F,IsDarkMode());
+				}
+			}
+		}
+		DrawHomeBrand(draw,{heroOrigin.x+(width-brandWidth)*.5F,heroOrigin.y+top},brandWidth,motion);
+		float y=heroOrigin.y+top+brandHeight+Pixels(32);
+		DrawInline("##home-slogan-first",first,{heroOrigin.x+inset,y},ImFluentTextStyle_Body,palette.heroDescription,action,0,0,motion);
+		y+=first.height;
+		DrawInline("##home-slogan-second",second,{heroOrigin.x+inset,y},ImFluentTextStyle_Body,palette.heroDescription,action,0,0,motion);
+		y+=second.height+Pixels(24);
+		const float lineWidth=(std::min)(copyWidth,Pixels(640));
+		draw->AddLine({heroOrigin.x+(width-lineWidth)*.5F,y},{heroOrigin.x+(width+lineWidth)*.5F,y},palette.heroStroke,Pixels(1));
+		y+=Pixels(21);
+		DrawInline("##home-open-title",openCopy,{heroOrigin.x+inset,y},ImFluentTextStyle_BodyStrong,TextPrimary,action,16,22,motion);
+		y+=openCopy.height+Pixels(8);
+		DrawInline("##home-repositories",repositories,{heroOrigin.x+inset,y},ImFluentTextStyle_Caption,TextSecondary,action,0,0,motion);
+		y+=repositories.height+Pixels(16);
+		const float bx=heroOrigin.x+(width-buttonWidth-(buttonsInline ? buttonWidth+Pixels(12) : 0))*.5F;
+		if (HomeIconButton("##home-star",star.c_str(),"\ue734",{bx,y},buttonWidth,false,motion)) action=HomeAction::GitHub;
+		if (HomeIconButton("##home-sponsor",sponsor.c_str(),"\ueb51",
+			{buttonsInline ? bx+buttonWidth+Pixels(12) : bx,y+Pixels(buttonsInline ? 0.0F : 44.0F)},buttonWidth,true,motion)) action=HomeAction::Support;
+
+		const ImVec2 copyrightOrigin(heroOrigin.x,heroOrigin.y+heroHeight+Pixels(16));
+		const std::string copyrightText = IA(I18nKey.SettingsUI.Design.HomeCopyright);
+		const std::string redistribution = IA(I18nKey.SettingsUI.Design.HomeRedistribution);
+		const float copyrightHeight = TextHeight(copyrightText.c_str(),copyWidth);
+		const auto license = MeasureInline({{IA(I18nKey.SettingsUI.Design.HomeLicensePrefix)},
+			{IA(I18nKey.SettingsUI.Design.HomeLicenseName),HomeAction::License},
+			{IA(I18nKey.SettingsUI.Design.HomeLicenseSuffix)}},copyWidth,ImFluentTextStyle_Caption,true);
+		const float redistributionHeight = TextHeight(redistribution.c_str(),copyWidth,ImFluentTextStyle_Caption);
+		const float copyrightBlockHeight = copyrightHeight+Pixels(4)+license.height+Pixels(2)+redistributionHeight;
+		ImGui::SetCursorScreenPos(copyrightOrigin); ImGui::Dummy({width,copyrightBlockHeight});
+		const ImVec2 copyrightAfter = ImGui::GetCursorScreenPos();
+		y=copyrightOrigin.y;
+		CenteredCopy(copyrightText.c_str(),{copyrightOrigin.x+inset,y},copyWidth,ImFluentTextStyle_Body,TextPrimary,action);
+		y+=copyrightHeight+Pixels(4);
+		DrawInline("##home-license",license,{copyrightOrigin.x+inset,y},ImFluentTextStyle_Caption,TextSecondary,action);
+		y+=license.height+Pixels(2);
+		CenteredCopy(redistribution.c_str(),{copyrightOrigin.x+inset,y},copyWidth,ImFluentTextStyle_Caption,TextSecondary,action);
+		ImGui::SetCursorScreenPos({copyrightAfter.x,copyrightAfter.y+Pixels(24)});
 
 		SectionHeader(IA(I18nKey.SettingsUI.Design.Explore).c_str());
 		struct Feature { const char* title; const char* description; const char* icon; HomeAction action; ImU32 tint; ImU32 ink; };
@@ -314,11 +538,6 @@ namespace Inkeys::UI::Setting::Design
 		}
 		ImFluent::EndWrapPanel();
 		Text(IA(I18nKey.SettingsUI.Home.Prompt).c_str(), ImFluentTextStyle_Caption, TextSecondary);
-		if (showTutorial && content.tutorialTexture)
-		{
-			SectionHeader(tutorial.c_str());
-			ImGui::Image(content.tutorialTexture, { width, width * content.tutorialAspect });
-		}
 		return action;
 	}
 }

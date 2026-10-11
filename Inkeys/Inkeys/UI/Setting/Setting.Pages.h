@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Setting.Controls.h"
+#include "Setting.HomeBrand.h"
 
 struct ImGuiWindow;
 
@@ -60,7 +61,7 @@ namespace Inkeys::UI::Setting::Design
 	enum class HomeAction
 	{
 		None, Draw, Plugins, General, Language, Support, Website,
-		GitHub, Community, Bilibili, Feedback, Contact, Version,
+		GitHub, Community, Bilibili, Feedback, Contact, Version, License, GitCode,
 	};
 
 	struct HomeContent
@@ -72,6 +73,40 @@ namespace Inkeys::UI::Setting::Design
 		ImTextureID feedbackTexture = 0;
 		float feedbackAspect = 1.0F;
 	};
+
+	struct HomeMotionState
+	{
+		HomeBrand::DrawCache cache;
+		HomeBrand::RippleCache ripple;
+		struct ButtonMotion { bool hovered = false; float elapsed = .32F; };
+		std::array<ButtonMotion, 2> buttons;
+		std::array<ImVec4, 2> buttonBounds;
+		std::uint64_t showSerial = 0, entries = 0;
+		bool home = false, enabled = true, pointerAllowed = true, brandVisible = false, heroVisible = false;
+		float delta = 0, x = 0, y = 0, shineElapsed = .9F;
+		ImVec2 brandOrigin, heroOrigin, heroSize;
+		float brandWidth = 0;
+	};
+
+	// 页面身份和 Hide→Show 序号触发开场；帧缺席、尺寸和主题都不是进入事件。
+	inline void ConfigureHomeMotion(HomeMotionState& state, bool home, std::uint64_t showSerial,
+		float delta, bool enabled, float rate, bool pointerAllowed = true) noexcept
+	{
+		const bool enter=home && (!state.home || state.showSerial!=showSerial);
+		state.home=home; state.showSerial=showSerial; state.enabled=enabled; state.pointerAllowed=pointerAllowed;
+		state.delta=enabled && std::isfinite(delta) && std::isfinite(rate)
+			? std::clamp(delta,0.0F,.05F)*std::clamp(rate,.1F,5.0F) : 0;
+		if (enter)
+		{
+			++state.entries; state.shineElapsed=0; state.x=state.y=0;
+			state.buttons={};
+		}
+		if (!home || !enabled)
+		{
+			state.x=state.y=0; state.shineElapsed=.9F;
+			for (auto& button : state.buttons) button.elapsed=.32F;
+		}
+	}
 
 	struct GeneralDraft
 	{
@@ -107,7 +142,7 @@ namespace Inkeys::UI::Setting::Design
 	};
 
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha);
-	HomeAction RenderHome(const HomeContent& content);
+	HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion = nullptr);
 	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section = GeneralSection::Basic);
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
 		NavigationState& state, NavigationDestination selected);

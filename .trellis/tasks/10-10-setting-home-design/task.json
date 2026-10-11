@@ -1,0 +1,90 @@
+{
+  "id": "setting-home-design",
+  "name": "setting-home-design",
+  "title": "主页品牌横幅、版权信息与开源名片设计",
+  "description": "实现居中彩色手写字标、三语言欢迎语与标语、完整版权许可链接，以及 GitHub/GitCode 开源名片与 Star/赞助入口。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-10",
+  "completedAt": null,
+  "branch": "fluent",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-06-setting-winui3-design-rebuild",
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.HomeBrand.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "Inkeys/src/i18n/zh-CN.jsonc",
+    "Inkeys/src/i18n/zh-TW.jsonc",
+    "Inkeys/src/i18n/en-US.jsonc",
+    "Inkeys/IdtI18nKeys.g.h",
+    "Scripts/i18n.zh-CN.snapshot.jsonc",
+    "Inkeys/Inkeys.vcxproj",
+    "Inkeys/Inkeys.vcxproj.filters",
+    "InkeysHeadlessTests/setting_design_tests.cpp",
+    ".trellis/spec/native-desktop/rendering-and-ui.md",
+    "Inkeys/Inkeys/UI/Setting/Setting.SessionState.h",
+    "InkeysHeadlessTests/setting_session_state_tests.cpp",
+    "InkeysHeadlessTests/setting_home_warp_tests.cpp",
+    "InkeysHeadlessTests/setting_home_warp_tests.h",
+    "InkeysHeadlessTests/setting_home_warp_tests.rc",
+    "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj",
+    "Scripts/i18n.ps1",
+    ".trellis/spec/native-desktop/configuration-i18n-and-assets.md"
+  ],
+  "notes": "第四轮克制背景/文案柔光已实现且完整ARM64、--no-window及真实WARP通过；艺术字RGBA不变，k修复保留。此前commit因1Password SSH签名失败而停止，原暂存快照保留，本轮未暂存。Win7实机与原生观感仍待人工。见soft-sheen-revision.md及research/soft-sheen-implementation-validation.md。",
+  "meta": {
+    "validation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "384/384 PASS",
+      "warp": "Windows 11 ARM64 FL11.0 cap/unchanged ink/soft background+text/performance PASS",
+      "manualNativeVisual": "pending",
+      "win7Machine": "not run"
+    },
+    "motionRevision": "implemented_verified_pending_manual",
+    "firstRevisionValidation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "383/383 PASS",
+      "manualNativeVisual": "pending"
+    },
+    "rippleRevision": "implemented_verified_pending_manual",
+    "motionRevisionValidation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "384/384 PASS",
+      "warp": "Windows 11 ARM64 FL11.0 pixels/performance PASS",
+      "manualNativeVisual": "pending",
+      "win7Machine": "not run"
+    },
+    "commitAttempt": {
+      "status": "failed",
+      "reason": "1Password: failed to fill whole buffer; fatal: failed to write commit object",
+      "message": "feat(settings): redesign home branding and fix logo caps",
+      "stagedBaselinePreserved": true
+    },
+    "softSheenRevision": "implemented_verified_pending_manual",
+    "rippleRevisionValidation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "384/384 PASS",
+      "warp": "Windows 11 ARM64 FL11.0 cap/ripple pixels/performance PASS",
+      "manualNativeVisual": "pending",
+      "win7Machine": "not run"
+    }
+  }
+}

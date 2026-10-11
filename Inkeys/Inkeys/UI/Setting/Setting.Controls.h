@@ -21,7 +21,7 @@ namespace Inkeys::UI::Setting::Design
 		ImU32 subtleHover, subtlePressed, rowHover, rowPressed, selection;
 		ImU32 scrollbar, scrollbarHovered, scrollbarActive;
 		ImU32 notice[ImFluentInfoSeverity_Critical + 1];
-		ImU32 heroFill, heroStroke, heroEyebrow, heroDescription;
+		ImU32 heroFill, heroStroke, heroEyebrow, heroDescription, heroMint, heroLavender;
 		ImU32 artCool, artWarm, artStroke, artRule, artAxis, artWarmInk;
 		ImU32 artPenSelection, artOrange, artGreen;
 		ImU32 featureTint[3], featureInk[3], avatarFill;

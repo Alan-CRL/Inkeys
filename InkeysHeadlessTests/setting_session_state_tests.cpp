@@ -405,6 +405,14 @@ int RunSettingSessionStateTests()
 	if (!Expect(ResolveBarButtonClickAction(true, true)
 		== BarButtonClickAction::Hide,
 		"visible focused setting is hidden")) ++failures;
+	SessionState visibility;
+	if (!Expect(visibility.ShowSerial()==0,"hidden session starts without a home entry")) ++failures;
+	visibility.SetVisible(true); visibility.SetVisible(true);
+	if (!Expect(visibility.ShowSerial()==1,"repeated visible requests do not replay home")) ++failures;
+	visibility.SetOccluded(true); visibility.QueueResize(720,520); visibility.ReleasePresentation();
+	if (!Expect(visibility.ShowSerial()==1,"occlusion resize and device presentation do not count as reopening")) ++failures;
+	visibility.SetVisible(false); visibility.SetVisible(false); visibility.SetVisible(true);
+	if (!Expect(visibility.ShowSerial()==2,"one hide-to-show transition increments exactly once")) ++failures;
 	SessionState state;
 	StartupPreviewPreference startupPreview;
 	if (!Expect(startupPreview.StartupEnabled()
