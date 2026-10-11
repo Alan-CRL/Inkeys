@@ -7,6 +7,7 @@
 
 #include "setting_home_warp_tests.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Pages.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.SessionState.h"
 #include "../Inkeys/additional/imgui/imgui_internal.h"
 #include "../Inkeys/additional/imgui/imgui_impl_dx11.h"
 
@@ -39,6 +40,13 @@ namespace
 		{
 			if (!condition) { ++failures; std::cerr << "[HomeWARP] failed: " << message << '\n'; }
 			return condition;
+		}
+		bool ExpectedResult(HRESULT actual, HRESULT expected, const char* message)
+		{
+			if (actual == expected) return true;
+			std::cerr << "[HomeWARP] actual HRESULT=0x" << std::hex << static_cast<unsigned long>(actual)
+				<< " expected=0x" << static_cast<unsigned long>(expected) << std::dec << '\n';
+			return Expect(false, message);
 		}
 		bool Result(HRESULT result, const char* message)
 		{
@@ -114,13 +122,15 @@ namespace
 			io.AddMousePosEvent(Away.x, Away.y);
 		}
 
-		bool Submit(Checks& checks, ImDrawData* data, Pixels* pixels = nullptr)
+		bool Submit(Checks& checks, ImDrawData* data, Pixels* pixels = nullptr, HRESULT expectedResult = S_OK)
 		{
 			const float clear[4]{};
 			ID3D11RenderTargetView* rtv = view.Get();
 			context->OMSetRenderTargets(1, &rtv, nullptr);
 			context->ClearRenderTargetView(rtv, clear);
 			ImGui_ImplDX11_RenderDrawData(data);
+			const HRESULT result = ImGui_ImplDX11_GetLastResult();
+			if (!checks.ExpectedResult(result, expectedResult, "production backend preserves expected render HRESULT")) return false;
 			context->CopyResource(staging.Get(), target.Get());
 			D3D11_MAPPED_SUBRESOURCE mapped{};
 			// Map 等待这次真实绘制完成；报告含提交/执行/拷贝/等待的耗时，不冒充纯 GPU 时间。
@@ -147,20 +157,153 @@ namespace
 		io.AddMouseButtonEvent(0, false);
 		ImGui_ImplDX11_NewFrame(); ImGui::NewFrame(); Design::ConfigureRowAnimations(0, false, 1);
 		if (motion) Design::ConfigureHomeMotion(*motion, true, serial, delta, enabled, 1);
+		const bool entryBlocked=motion && Design::CancelHomeEntryOnInput(*motion);
 		ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
 		ImGui::Begin("##home-warp-production-root", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
 			| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-		ImGui::SetCursorPos({ 40, 30 });
-		Design::BeginScrollChild("##setting-content", { 920, 1040 }, ImGuiChildFlags_AlwaysUseWindowPadding);
+		ImGui::PopStyleVar();
+		Design::NavigationState navigation; navigation.animationsEnabled=false;
+		Design::AdvanceNavigationAnimations(navigation,0,false,1);
+		const auto shell=Design::ResolveShellGeometry(static_cast<float>(Width)/Design::Pixels(1),static_cast<float>(Height)/Design::Pixels(1),navigation);
+		ImGui::GetWindowDrawList()->AddRectFilled({0,0},{static_cast<float>(Width),Design::Pixels(32)},Design::AppBase);
+		ImGui::SetCursorPos({Design::Pixels(shell.content.left),Design::Pixels(shell.content.top)});
+		ImGui::PushStyleColor(ImGuiCol_ChildBg,Design::PageSurface);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{Design::Pixels(shell.gutter),Design::Pixels(28)});
+		Design::BeginScrollChild("##setting-content", {Design::Pixels(shell.content.Width()),Design::Pixels(shell.content.Height())}, ImGuiChildFlags_AlwaysUseWindowPadding);
+		ImGui::PopStyleVar();
+		ImGui::PopStyleColor();
+		const auto outerClip=ImGui::GetCurrentWindow()->ClipRect;
+		if (motion) Design::ConfigureHomeEntryViewport(*motion,{0,Design::Pixels(32),static_cast<float>(Width),static_cast<float>(Height)},
+			{outerClip.Min.x,outerClip.Min.y,outerClip.Max.x,outerClip.Max.y});
 		const float available = ImGui::GetContentRegionAvail().x;
 		Design::BeginScrollChild("##setting-page-content", { available, 0 }, ImGuiChildFlags_AutoResizeY);
 		const ImRect pageClip = ImGui::GetCurrentWindow()->ClipRect;
+		ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1); ImGui::BeginDisabled(entryBlocked);
 		Design::RenderHome({ 0, 1, "3.0.0-dev.3981", 0, 0, 1 }, motion);
-		ImGui::EndChild(); ImGui::EndChild(); ImGui::End(); ImGui::Render();
+		ImGui::EndDisabled(); ImGui::PopStyleVar();
+		ImGui::EndChild(); ImGui::EndChild();
+		ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1); ImGui::BeginDisabled(entryBlocked);
+		Design::RenderNavigationPane(shell,navigation,Design::NavigationDestination{});
+		ImGui::EndDisabled(); ImGui::PopStyleVar();
+		if (motion) Design::RenderHomeEntryOverlay(*motion);
+		ImGui::End(); ImGui::Render();
 		const auto* data = ImGui::GetDrawData(); FrameInfo info{ data->TotalVtxCount, data->TotalIdxCount, 0, pageClip };
 		for (const auto* list : data->CmdLists) for (const auto& command : list->CmdBuffer)
 			if (command.ElemCount && !command.UserCallback) ++info.batches;
 		return info;
+	}
+
+	void CheckBackendFailures(Checks& checks, Offscreen& renderer)
+	{
+		using Inkeys::UI::Setting::IsSharedDeviceLoss;
+		ImTextureData texture;
+		texture.Create(ImTextureFormat_RGBA32, 8, 8);
+		std::memset(texture.Pixels, 255, static_cast<size_t>(texture.GetSizeInBytes()));
+		// 某些 WARP 版本接受超过声明上限的尺寸；零宽描述必须由真实 D3D API 拒绝。
+		texture.Width = 0;
+		ImGui_ImplDX11_UpdateTexture(&texture);
+		checks.ExpectedResult(ImGui_ImplDX11_GetLastResult(), E_INVALIDARG, "real WARP rejects zero-width texture description");
+		checks.Expect(texture.Status == ImTextureStatus_WantCreate
+			&& texture.TexID == ImTextureID_Invalid && texture.BackendUserData == nullptr,
+			"actual FL11.0 WARP zero-width creation fails transactionally without publishing OK or backend data");
+		checks.Expect(!IsSharedDeviceLoss(ImGui_ImplDX11_GetLastResult(), renderer.device->GetDeviceRemovedReason()),
+			"real invalid resource creation leaves WARP healthy and follows ordinary retry");
+
+		// 直接提交真实页面 DrawData 并替换其待上传列表；失败帧应只有清屏，不能继续绘制页面。
+		Frame(nullptr, Away);
+		ImDrawData data = *ImGui::GetDrawData();
+		ImVector<ImTextureData*> textures; textures.push_back(&texture); data.Textures = &textures;
+		Pixels pixels;
+		renderer.Submit(checks, &data, &pixels, E_INVALIDARG);
+		checks.Expect(!pixels.empty() && std::all_of(pixels.begin(), pixels.end(), [](auto pixel) { return pixel == 0; }),
+			"texture upload failure aborts all real WARP draw commands before invalid texture getters");
+
+		// 即使无效描述意外被接受，也先通过生产销毁路径归还 owner，不能手改状态泄漏资源。
+		texture.WantDestroyNextFrame = true; texture.UnusedFrames = 1;
+		texture.SetStatus(ImTextureStatus_WantDestroy); ImGui_ImplDX11_UpdateTexture(&texture);
+		checks.Expect(texture.BackendUserData == nullptr && texture.TexID == ImTextureID_Invalid
+			&& texture.Status == ImTextureStatus_Destroyed, "fixture teardown safely handles unexpected creation success");
+		texture.DestroyPixels(); texture.WantDestroyNextFrame = false;
+		texture.Create(ImTextureFormat_RGBA32, 8, 8);
+		std::memset(texture.Pixels, 255, static_cast<size_t>(texture.GetSizeInBytes()));
+		for (auto stage : { ImGui_ImplDX11_TestFailure_Texture, ImGui_ImplDX11_TestFailure_TextureView })
+			for (HRESULT failure : { E_OUTOFMEMORY, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET })
+			{
+				// 单次 HRESULT 注入只替换失败的 API；其余创建、销毁和像素提交仍用真实 WARP/backend。
+				ImGui_ImplDX11_TestFailNext(stage, failure);
+				renderer.Submit(checks, &data, &pixels, failure);
+				checks.Expect(texture.Status == ImTextureStatus_WantCreate && texture.TexID == ImTextureID_Invalid
+					&& texture.BackendUserData == nullptr, "both create phases roll back all partial backend publication");
+				checks.Expect(std::all_of(pixels.begin(), pixels.end(), [](auto pixel) { return pixel == 0; }),
+					"injected OOM or device loss aborts draw submission with a transparent cleared target");
+				checks.Expect(IsSharedDeviceLoss(failure, renderer.device->GetDeviceRemovedReason()) == (failure != E_OUTOFMEMORY),
+					"injected device errors follow shared recovery while OOM on a healthy WARP device remains retry");
+				ImGui_ImplDX11_UpdateTexture(&texture);
+				checks.Expect(ImGui_ImplDX11_GetLastResult() == S_OK && texture.Status == ImTextureStatus_OK
+					&& texture.TexID != ImTextureID_Invalid && texture.BackendUserData != nullptr,
+					"same texture retries successfully after either creation phase fails");
+				texture.SetStatus(ImTextureStatus_WantUpdates); texture.Updates.push_back({ 0, 0, 8, 8 });
+				ImGui_ImplDX11_UpdateTexture(&texture);
+				checks.Expect(ImGui_ImplDX11_GetLastResult() == S_OK && texture.Status == ImTextureStatus_OK,
+					"successful recreated WARP texture accepts dynamic atlas block updates");
+				texture.Updates.clear(); texture.UnusedFrames = 1;
+				texture.SetStatus(ImTextureStatus_WantDestroy); ImGui_ImplDX11_UpdateTexture(&texture);
+				checks.Expect(texture.Status == ImTextureStatus_WantCreate && texture.BackendUserData == nullptr
+					&& texture.TexID == ImTextureID_Invalid, "cleanup returns retained CPU pixels to a clean recreatable state");
+			}
+
+		D3D11_TEXTURE2D_DESC desc{}; desc.Width = desc.Height = 8; desc.MipLevels = desc.ArraySize = 1;
+		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE; desc.Usage = D3D11_USAGE_DEFAULT;
+		ComPtr<ID3D11Texture2D> partial;
+		if (checks.Result(renderer.device->CreateTexture2D(&desc, nullptr, partial.GetAddressOf()), "create real partial texture fixture"))
+			for (ID3D11Texture2D* value : { static_cast<ID3D11Texture2D*>(nullptr), partial.Get() })
+			{
+				ImGui_ImplDX11_TestPublishPartialTexture(&texture, value);
+				texture.SetStatus(ImTextureStatus_WantUpdates); ImGui_ImplDX11_UpdateTexture(&texture);
+				checks.Expect(ImGui_ImplDX11_GetLastResult() == E_FAIL && texture.Status == ImTextureStatus_WantCreate
+					&& texture.TexID == ImTextureID_Invalid && texture.BackendUserData == nullptr,
+					"legacy OK with null SRV or null texture is safely revoked before update");
+				ImGui_ImplDX11_TestPublishPartialTexture(&texture, value);
+				texture.WantDestroyNextFrame = true; texture.RefCount = 1;
+				ImGui::GetPlatformIO().Textures.push_back(&texture);
+				ImGui_ImplDX11_InvalidateDeviceObjects(); ImGui_ImplDX11_InvalidateDeviceObjects();
+				ImGui::GetPlatformIO().Textures.pop_back();
+				checks.Expect(texture.Status == ImTextureStatus_Destroyed && texture.BackendUserData == nullptr
+					&& texture.TexID == ImTextureID_Invalid, "actual repeated device invalidation safely destroys screenshot-like null partial resources");
+				texture.WantDestroyNextFrame = false; texture.SetStatus(ImTextureStatus_WantCreate);
+				checks.Expect(ImGui_ImplDX11_CreateDeviceObjects(), "backend recreates embedded shaders after repeated partial cleanup");
+			}
+
+		Frame(nullptr, Away); renderer.Submit(checks, ImGui::GetDrawData());
+		ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure_IndexMap, E_OUTOFMEMORY);
+		renderer.Submit(checks, ImGui::GetDrawData(), &pixels, E_OUTOFMEMORY);
+		checks.Expect(std::all_of(pixels.begin(), pixels.end(), [](auto pixel) { return pixel == 0; }),
+			"second buffer Map failure unwinds mapped vertex buffer before returning");
+		renderer.Submit(checks, ImGui::GetDrawData(), &pixels);
+		checks.Expect(std::any_of(pixels.begin(), pixels.end(), [](auto pixel) { return pixel != 0; }),
+			"subsequent genuine WARP draw succeeds after Map rollback");
+
+		// 模拟 epoch 交接：撤销旧 backend 并以同一健康测试设备新建，断言真实图集可重传。
+		ImGui_ImplDX11_Shutdown(); renderer.initialized = false;
+		long initResult = S_OK;
+		checks.Expect(!ImGui_ImplDX11_Init(nullptr, renderer.context.Get(), &initResult) && initResult == E_INVALIDARG
+			&& ImGui::GetIO().BackendRendererUserData == nullptr && ImGui::GetIO().BackendRendererName == nullptr
+			&& (ImGui::GetIO().BackendFlags & (ImGuiBackendFlags_RendererHasTextures | ImGuiBackendFlags_RendererHasVtxOffset)) == 0,
+			"failed backend initialization preserves exact HRESULT without publishing owner or capabilities");
+		checks.Expect(!ImGui_ImplDX11_Init(renderer.device.Get(), nullptr, &initResult) && initResult == E_INVALIDARG
+			&& ImGui::GetIO().BackendRendererUserData == nullptr,
+			"invalid context initialization preserves exact HRESULT without a backend error slot");
+		renderer.initialized = ImGui_ImplDX11_Init(renderer.device.Get(), renderer.context.Get(), &initResult);
+		checks.Expect(initResult == S_OK, "successful initialization resets local HRESULT after prior failures");
+		if (checks.Expect(renderer.initialized && ImGui_ImplDX11_CreateDeviceObjects(), "backend can recover after shutdown and recreate"))
+		{
+			Frame(nullptr, Away); renderer.Submit(checks, ImGui::GetDrawData(), &pixels);
+			checks.Expect(std::any_of(pixels.begin(), pixels.end(), [](auto pixel) { return pixel != 0; }),
+				"real homepage and font atlas render again after backend recreation");
+		}
+		std::cout << "[HomeWARP] texture lifecycle: real E_INVALIDARG, both-phase injected OOM/removed/reset, legacy null partial, repeated teardown, Map rollback and recreation checked; device removal is simulated.\n";
 	}
 
 	void CheckColdEntry(Checks& checks, Offscreen& renderer)
@@ -171,9 +314,7 @@ namespace
 		int clippedFrames = 0, visibleFrames = 0;
 		for (int frame = 0; frame < 12; ++frame)
 		{
-			const float elapsed = frame == 0 ? 0.0F : state.shineElapsed;
-			const auto rebuilds = state.cache.rebuilds, allocations = state.cache.allocations;
-			const bool uncached=state.cache.vertices.empty();
+			const float elapsed = frame == 0 ? 0.0F : state.entryElapsed;
 			const auto info = Frame(&state, Away, delta, true);
 			ImRect envelope(state.brandOrigin, {state.brandOrigin.x + state.brandWidth,
 				state.brandOrigin.y + Brand::Height(state.brandWidth)});
@@ -181,28 +322,25 @@ namespace
 			const bool visible = info.pageClip.GetWidth() > 0 && info.pageClip.GetHeight() > 0
 				&& envelope.Overlaps(info.pageClip);
 			checks.Expect(state.brandVisible == visible, "cold entry uses actual nonempty page clip visibility");
-			checks.Expect(state.entries == 1, "cold entry remains one entry while AutoResizeY becomes visible");
+			checks.Expect(state.entries == 1 && state.EntryActive(), "cold entry starts from real outer viewport before AutoResizeY has grown");
 			if (!state.heroVisible)
 			{
 				++clippedFrames;
-				checks.Expect(state.shineElapsed == elapsed && state.cache.rebuilds == rebuilds
-					&& state.cache.allocations == allocations && state.cache.vertices.empty(),
-					"unmeasured clipped cold page consumes no entrance time or brand cache work");
+				checks.Expect(frame==0 && state.entryElapsed==0 && state.cache.vertices.empty(),
+					"cold foreground starts at zero with no premature underlying logo cache");
 			}
 			else
 			{
 				++visibleFrames;
-				checks.Expect(std::abs(state.shineElapsed-(std::min)(.9F,elapsed+delta))<.00001F,
-					"cold entry advances by frame delta only after hero becomes visible");
-				checks.Expect(state.cache.rebuilds==rebuilds+(visible && uncached ? 1 : 0)
-					&& (!visible || !state.cache.vertices.empty()),"cold entry builds visible ink once and reuses it throughout the sheen");
+				checks.Expect(std::abs(state.entryElapsed-elapsed-delta)<.00001F,
+					"valid cold layout advances only actual frame delta");
 			}
 			if (!renderer.Submit(checks, ImGui::GetDrawData())) return;
 		}
 		checks.Expect(clippedFrames > 0 && visibleFrames > 1,
 			"cold AutoResizeY fixture actually covers clipped first frame and subsequent visible frames");
 		std::cout << "[HomeWARP] cold-entry clipped=" << clippedFrames << " visible=" << visibleFrames
-			<< " entries=" << state.entries << " elapsed=" << state.shineElapsed << '\n';
+			<< " entries=" << state.entries << " elapsed=" << state.entryElapsed << '\n';
 	}
 
 	bool StableBaseline(Checks& checks, Offscreen& renderer, Design::HomeMotionState& state, Pixels& baseline)
@@ -388,6 +526,86 @@ namespace
 		std::cout << "[HomeWARP] transparent-ink solid=" << solid << " AA=" << partial << " lower=" << lower << " outside=" << outside << '\n';
 	}
 
+	void CheckWritingInk(Checks& checks, Offscreen& renderer, const Design::HomeMotionState& state)
+	{
+		// 从真实入场前景提取六笔前缀与活动圆头，保留透明清屏，避免纯色覆盖掩盖内部裂缝。
+		const auto pose=Design::ResolveHomeEntryPose(state); const auto& mesh=Brand::Geometry();
+		const float nativeScale=pose.width/mesh.size.x; const auto* data=ImGui::GetDrawData();
+		const auto* source=ImGui::GetForegroundDrawList(); int begin=-1;
+		for (int i=0;i+static_cast<int>(mesh.vertices.size())<=source->VtxBuffer.Size;++i)
+		{
+			const auto& v=source->VtxBuffer[i]; const auto& expected=mesh.vertices.front();
+			if (v.pos.x==pose.origin.x+expected.pos.x*nativeScale && v.pos.y==pose.origin.y+expected.pos.y*nativeScale
+				&& v.col==(Design::IsDarkMode() ? expected.dark : expected.light)) { begin=i; break; }
+		}
+		if (!checks.Expect(begin>=0 && pose.writing>0 && pose.writing<1,"locate actual incomplete foreground stroke vertices")) return;
+		std::vector<unsigned> submitted;
+		ImDrawList extracted(ImGui::GetDrawListSharedData()); extracted._ResetForNewFrame();
+		extracted.PushClipRect({0,0},{static_cast<float>(Width),static_cast<float>(Height)});
+		bool texturePushed=false;
+		for (const auto& command : source->CmdBuffer)
+		{
+			if (command.UserCallback) continue;
+			for (unsigned i=command.IdxOffset;i+2<command.IdxOffset+command.ElemCount;i+=3)
+			{
+				const unsigned a=command.VtxOffset+source->IdxBuffer[static_cast<int>(i)],
+					b=command.VtxOffset+source->IdxBuffer[static_cast<int>(i+1)],c=command.VtxOffset+source->IdxBuffer[static_cast<int>(i+2)];
+				if (a<static_cast<unsigned>(begin) || b<static_cast<unsigned>(begin) || c<static_cast<unsigned>(begin)) continue;
+				if (!texturePushed) { extracted.PushTexture(command.GetTexID()); texturePushed=true; }
+				extracted.PrimReserve(3,3);
+				for (unsigned index : {a,b,c})
+				{
+					submitted.push_back(index-begin); const auto& v=source->VtxBuffer[static_cast<int>(index)];
+					extracted.PrimWriteIdx(static_cast<ImDrawIdx>(extracted._VtxCurrentIdx)); extracted.PrimWriteVtx(v.pos,v.uv,v.col);
+				}
+			}
+		}
+		if (texturePushed) extracted.PopTexture(); extracted.PopClipRect();
+		std::vector<bool> referenced(mesh.vertices.size(),false);
+		for (unsigned index : submitted) if (index<referenced.size()) referenced[index]=true;
+		std::array<const Brand::Mesh::Section*,6> tips{}; unsigned completed=0; bool prefix=true;
+		for (size_t strokeIndex=0;strokeIndex<mesh.strokes.size();++strokeIndex)
+		{
+			const auto& stroke=mesh.strokes[strokeIndex]; float latest=-1;
+			for (const auto& section : stroke.sections)
+				if (std::any_of(section.vertices.begin(),section.vertices.end(),[&](unsigned index) { return referenced[index]; }))
+					if (section.progress>=latest) { latest=section.progress; tips[strokeIndex]=&section; }
+			const float phase=Brand::Smooth((pose.writing-static_cast<float>(strokeIndex)*.012F)/(1-static_cast<float>(strokeIndex)*.012F));
+			checks.Expect(tips[strokeIndex] && latest>0 && latest<=phase && latest<1,
+				"all six actual strokes have partial prefixes with no future section or premature terminal cap");
+			for (const auto& block : stroke.blocks) if (block.progress<=phase)
+				for (unsigned i=block.first;i<block.first+block.count;++i)
+				{ prefix &= completed<submitted.size() && submitted[completed]==mesh.indices[i]; ++completed; }
+		}
+		checks.Expect(prefix && completed>0 && submitted.size()==completed+7*108,
+			"actual foreground indices contain only completed original blocks and seven bounded activity caps");
+		ImDrawData onlyInk; onlyInk.Valid=true; onlyInk.DisplayPos=data->DisplayPos;
+		onlyInk.DisplaySize=data->DisplaySize; onlyInk.FramebufferScale=data->FramebufferScale; onlyInk.AddDrawList(&extracted);
+		std::vector<ImVec2> original; original.reserve(extracted.VtxBuffer.Size);
+		for (const auto& v : extracted.VtxBuffer) original.push_back(v.pos);
+		for (float zoom : {1.0F,1.875F,4.0F})
+		{
+			int tested=0,gaps=0;
+			for (const auto* tip : tips)
+			{
+				if (!tip) continue;
+				const ImVec2 center(pose.origin.x+tip->center.x*nativeScale,pose.origin.y+tip->center.y*nativeScale);
+				for (int i=0;i<extracted.VtxBuffer.Size;++i)
+					extracted.VtxBuffer[i].pos={500+(original[i].x-center.x)*zoom,500+(original[i].y-center.y)*zoom};
+				Pixels enlarged; if (!renderer.Submit(checks,&onlyInk,&enlarged)) return;
+				const float radius=tip->radius*nativeScale*zoom; const int extent=static_cast<int>(std::ceil(radius));
+				for (int y=500-extent;y<=500+extent;++y) for (int x=500-extent;x<=500+extent;++x)
+				{
+					const float dx=x+.5F-500,dy=y+.5F-500,along=dx*tip->normal.y-dy*tip->normal.x;
+					if (std::hypot(dx,dy)>=radius-1.3F || along<-.5F) continue;
+					++tested; if ((enlarged[static_cast<size_t>(y)*Width+x]>>24)<250) ++gaps;
+				}
+			}
+			checks.Expect(tested>60 && gaps==0,"all six real active cap/shaft joins remain opaque on transparent WARP readback at multiple scales");
+			std::cout<<"[HomeWARP] writing-caps zoom="<<zoom<<" solid-samples="<<tested<<" gaps="<<gaps<<'\n';
+		}
+	}
+
 	void CheckProductionText(Checks& checks, Offscreen& renderer, const Design::HomeMotionState& state, bool opening=false)
 	{
 		// 提取生产字体 UV 三角形，矩形背景/下划线/图标不计入文案像素和 AA 证据。
@@ -440,8 +658,8 @@ namespace
 			alphaChanges+=(pixels[i]>>24)!=(textReference[i]>>24); changed+=pixels[i]!=textReference[i];
 			for (int shift : {0,8,16}) maximum=(std::max)(maximum,std::abs(static_cast<int>((pixels[i]>>shift)&255)-static_cast<int>((textReference[i]>>shift)&255)));
 		}
-		checks.Expect(geometry && vertexAlpha && alphaChanges==0 && changed>20 && maximum>0 && maximum<=(Design::IsDarkMode() ? 31 : 21),
-			"isolated actual text lightly gleams while its geometry, UVs and transparent antialiasing remain identical");
+		checks.Expect(geometry && vertexAlpha && alphaChanges==0 && changed==0 && maximum==0,
+			"actual text behind entrance retains exact geometry, UV, RGBA and antialiasing");
 		std::cout<<"[HomeWARP] text-sheen changed="<<changed<<" max-channel-delta="<<maximum<<" alpha-changes="<<alphaChanges<<" stable-geometry="<<geometry<<'\n';
 		Snapshot(Design::IsDarkMode() ? "soft-dark-text-opening" : "soft-light-text-opening",pixels);
 	}
@@ -460,44 +678,55 @@ namespace
 	{
 		Design::HomeMotionState state;
 		Frame(&state, Away, 0, false);
+		if (mode>=4)
+		{
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=.8F; Frame(&state,Away,0,true);
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=.64F; Frame(&state,Away,0,true);
+		}
 		const ImVec2 center(state.brandOrigin.x + state.brandWidth * .5F, state.brandOrigin.y + Brand::Height(state.brandWidth) * .5F);
 		std::vector<double> cpu, submit; cpu.reserve(100); submit.reserve(100);
 		AllocationScope allocations;
-		std::uint64_t allocatedBefore = 0, cacheBefore = 0, rebuiltBefore = 0, rippleBefore=0;
-		std::uint64_t serial = mode==4 ? 2 : 1;
+		auto capacity=[] {
+			const auto& mesh=Brand::Geometry(); size_t total=mesh.vertices.capacity()+mesh.indices.capacity();
+			for (const auto& stroke : mesh.strokes) total+=stroke.blocks.capacity()+stroke.sections.capacity();
+			return total;
+		};
+		const auto geometryCapacity=capacity();
+		std::uint64_t allocatedBefore = 0, cacheBefore = 0, rebuiltBefore = 0;
 		FrameInfo info;
 		for (int frame = -20; frame < 100; ++frame)
 		{
-			if (frame == 0) { allocatedBefore = allocations.allocations; cacheBefore = state.cache.allocations; rebuiltBefore = state.cache.rebuilds; rippleBefore=state.ripple.allocations; }
+			if (frame == 0) { allocatedBefore = allocations.allocations; cacheBefore = state.cache.allocations; rebuiltBefore = state.cache.rebuilds; }
 			ImVec2 mouse = Away;
 			if (mode == 2) mouse = { center.x + std::sin(static_cast<float>(frame) * .2F) * state.brandWidth * .6F,
 				center.y + std::cos(static_cast<float>(frame) * .17F) * Brand::Height(state.brandWidth) * .6F };
 			// 回正每周期先通过真实鼠标追踪建立偏转，再记录鼠标离开后的帧。
 			if (mode == 3 && frame % 20 == 0)
 				for (int settle = 0; settle < 20; ++settle) Frame(&state, { center.x + state.brandWidth * .5F, center.y }, .05F);
-			if (mode == 4 && frame % 50 == 0) ++serial;
+			if (mode>=4)
+			{
+				state.entry=Design::HomeMotionState::Entry::Playing;
+				state.entryElapsed=mode==4 ? .13F+.5F*((frame+20)%100)/100
+					: mode==5 ? .8F : mode==6 ? .96F+.25F*((frame+20)%100)/100 : 1.23F+.09F*((frame+20)%100)/100;
+			}
 			const auto begin = Clock::now();
-			info = Frame(mode == 0 ? nullptr : &state, mouse, 1.0F / 60.0F, true, serial);
+			info = Frame(mode == 0 ? nullptr : &state, mouse, mode>=4 ? 0 : 1.0F / 60.0F, true);
 			const auto drawn = Clock::now();
 			if (!renderer.Submit(checks, ImGui::GetDrawData())) return;
 			const auto completed = Clock::now();
 			if (frame >= 0) { cpu.push_back(Micros(begin, drawn)); submit.push_back(Micros(drawn, completed)); }
-			const bool ripple=state.shineElapsed>0 && state.shineElapsed<.9F;
-			const int extraVertices=mode==4 && ripple ? static_cast<int>(state.ripple.vertices.size()) : 0;
-			const int extraIndices=mode==4 && ripple ? static_cast<int>(state.ripple.indices.size()) : 0;
-			checks.Expect(info.vertices==baseline.vertices+extraVertices && info.indices==baseline.indices+extraIndices
-				&& info.batches==baseline.batches && extraVertices<=3000,
-				"opening adds only the bounded cached hero mesh; all modes retain existing draw batches");
+			checks.Expect(info.vertices<=baseline.vertices+165 && info.indices<=baseline.indices+7*108+6
+				&& info.batches<=baseline.batches+1,
+				"entrance adds only a cover and bounded activity caps with one foreground draw batch");
 		}
 		checks.Expect(allocations.allocations==allocatedBefore,"warmed actual homepage motion performs no additional ImGui allocations");
-		checks.Expect(state.cache.allocations==cacheBefore && state.ripple.allocations==rippleBefore,
-			"warm brand and ripple caches never grow during benchmark");
-		if (mode == 1 || mode == 4) checks.Expect(state.cache.rebuilds == rebuiltBefore, "idle and entrance reuse the logo cache without sheen-driven rebuilds");
+		checks.Expect(state.cache.allocations==cacheBefore,"warm original brand cache never grows during benchmark");
+		checks.Expect(capacity()==geometryCapacity,"all original stroke/index/section capacities remain fixed during actual motion submissions");
+		if (mode == 1 || mode >=4) checks.Expect(state.cache.rebuilds == rebuiltBefore, "idle and entrance reuse original curve geometry");
 		std::cout << "[HomeWARP] benchmark=" << name << " frames=100 cpu-us median=" << Percentile(cpu, .5)
 			<< " p95=" << Percentile(cpu, .95) << " submit-complete-copy-us median=" << Percentile(submit, .5)
 			<< " p95=" << Percentile(submit, .95) << " vertices=" << info.vertices << " indices=" << info.indices
 			<< " batches=" << info.batches << " imgui-allocs=" << allocations.allocations - allocatedBefore
-			<< " ripple-vertices="<<state.ripple.vertices.size()<<" ripple-cache-growth="<<state.ripple.allocations-rippleBefore
 			<< " cache-growth=" << state.cache.allocations - cacheBefore << " cache-rebuilds=" << state.cache.rebuilds - rebuiltBefore << '\n';
 	}
 }
@@ -509,6 +738,7 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 		"probe runs before any CPU fake texture materialization") || !renderer.Initialize(checks)) return checks.failures;
 	Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 	CheckColdEntry(checks, renderer);
+	CheckBackendFailures(checks, renderer);
 	for (bool dark : { false, true })
 	{
 		Design::ApplyPalette(dark); Design::HomeMotionState state;
@@ -518,44 +748,54 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 		CheckProductionText(checks,renderer,state);
 		Snapshot(dark ? "soft-dark-static" : "soft-light-static",baseline);
 		Pixels changed;
-		Design::ConfigureHomeMotion(state,false,1,0,true,1); Frame(&state,Away,0);
+		Frame(&state,Away,0,true,2);
 		renderer.Submit(checks,ImGui::GetDrawData(),&changed);
-		checks.Expect(changed==baseline,"opening starts from exact static pixels");
+		checks.Expect(state.EntryActive() && state.entryElapsed==0,"new Show serial starts full-window entry at zero");
 		const auto openingRebuilds=state.cache.rebuilds; const auto openingBounds=state.buttonBounds;
-		for (int i=0;i<14;++i) Frame(&state,Away);
-		checks.Expect(state.cache.rebuilds==openingRebuilds,"changing sheen time never rebuilds a stable logo cache");
-		for (size_t i=0;i<openingBounds.size();++i)
-			checks.Expect(std::memcmp(&openingBounds[i],&state.buttonBounds[i],sizeof(ImVec4))==0,"opening leaves actual Fluent button hit rectangles unchanged");
-		renderer.Submit(checks,ImGui::GetDrawData(),&changed); CheckDifference(checks,baseline,changed,state,true);
-		Snapshot(dark ? "soft-dark-middle" : "soft-light-middle",changed);
-		CheckProductionText(checks,renderer,state,true);
-		CheckTransparentProductionInk(checks,renderer,state,true);
-		for (int i=0;i<25;++i) Frame(&state,Away);
-		renderer.Submit(checks,ImGui::GetDrawData(),&changed);
-		int belowLogo=0; for (int y=0;y<static_cast<int>(Height);++y) for (int x=0;x<static_cast<int>(Width);++x)
-			if (y>state.brandOrigin.y+Brand::Height(state.brandWidth)+40 && InsideHero(x,y,state)
-				&& changed[static_cast<size_t>(y)*Width+x]!=baseline[static_cast<size_t>(y)*Width+x]) ++belowLogo;
-		checks.Expect(belowLogo>1000,"wave visibly propagates beyond the logo into the lower hero background");
-		CheckDifference(checks,baseline,changed,state,true);
-		CheckTransparentProductionInk(checks,renderer,state,true);
-		Snapshot(dark ? "soft-dark-late" : "soft-light-late",changed);
-		for (int i = 0; i < 60; ++i) Frame(&state, Away);
+		Pixels held;
+		for (float time : {.13F,.38F,.65F,.8F,.949F,1.08F,1.27F})
+		{
+			state.entryElapsed=time; Frame(&state,Away,0,true,2);
+			renderer.Submit(checks,ImGui::GetDrawData(),&changed);
+			const auto pose=Design::ResolveHomeEntryPose(state);
+			if (time==.38F) CheckWritingInk(checks,renderer,state);
+			int outside=0,navChanged=0;
+			for (UINT y=0;y<Height;++y) for (UINT x=0;x<Width;++x)
+			{
+				const auto index=static_cast<size_t>(y)*Width+x;
+				if (changed[index]!=baseline[index]) { outside+=y<32; navChanged+=x<200 && y>=32; }
+			}
+			checks.Expect(outside==0,"full-window foreground excludes titlebar exactly");
+			if (time<1.22F) checks.Expect(navChanged>100,"entry cover includes actual navigation, not only hero background");
+			if (time>=.65F && time<.95F)
+			{
+				checks.Expect(pose.opacity==1 && pose.writing==1,"completed original six strokes stay opaque throughout 300ms hold");
+				if (held.empty()) held=changed; else checks.Expect(held==changed,"entire WARP readback is identical during opaque full-logo hold");
+			}
+			for (size_t i=0;i<openingBounds.size();++i)
+				checks.Expect(std::memcmp(&openingBounds[i],&state.buttonBounds[i],sizeof(ImVec4))==0,"entry never moves actual Fluent button hit rectangles");
+			CheckProductionText(checks,renderer,state,true);
+			Snapshot((std::string(dark ? "entry-dark-" : "entry-light-")+std::to_string(static_cast<int>(time*1000))).c_str(),changed);
+		}
+		checks.Expect(state.cache.rebuilds==openingRebuilds,"writing and docking never sample curves or rebuild the parallax cache");
+		for (int i = 0; i < 12; ++i) Frame(&state, Away,1.0F/60,true,2);
 		renderer.Submit(checks, ImGui::GetDrawData(), &changed);
-		checks.Expect(changed == baseline, "finished reflection returns exactly to static pixels");
+		checks.Expect(changed == baseline && !state.EntryActive(), "finished entry returns exactly to original static page RGBA");
+		CheckTransparentProductionInk(checks,renderer,state,true);
 		for (ImVec2 corner : { ImVec2(-1, -1), ImVec2(1, -1), ImVec2(-1, 1), ImVec2(1, 1) })
 		{
 			const ImVec2 mouse(state.brandOrigin.x + state.brandWidth * (.5F + corner.x * .6F),
 				state.brandOrigin.y + Brand::Height(state.brandWidth) * (.5F + corner.y * .6F));
-			for (int i = 0; i < 60; ++i) Frame(&state, mouse);
+			for (int i = 0; i < 60; ++i) Frame(&state, mouse,1.0F/60,true,2);
 			renderer.Submit(checks, ImGui::GetDrawData(), &changed); CheckDifference(checks, baseline, changed, state, false);
 		}
-		Frame(&state, Away, 0, false); renderer.Submit(checks, ImGui::GetDrawData(), &changed);
+		Frame(&state, Away, 0, false,2); renderer.Submit(checks, ImGui::GetDrawData(), &changed);
 		checks.Expect(changed == baseline, "disabling animations restores exact static pixels");
 	}
 	Design::ApplyPalette(false);
 	FrameInfo baseline; for (int i = 0; i < 20; ++i) baseline = Frame(nullptr, Away);
-	for (int mode = 0; mode < 5; ++mode)
-		Benchmark(checks, renderer, std::array{ "static", "idle", "moving", "returning", "entrance" }[mode], mode, baseline);
+	for (int mode = 0; mode < 8; ++mode)
+		Benchmark(checks, renderer, std::array{ "static", "idle", "moving", "returning", "writing", "hold", "dock", "settle" }[mode], mode, baseline);
 	std::cout << "[HomeWARP] CPU excludes WARP submission; completed submission includes copy/Map wait. "
 		"ImGui allocator counts exclude existing std::string/vector work; brand cache growth is counted separately.\n";
 	return checks.failures;

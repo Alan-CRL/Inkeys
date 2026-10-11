@@ -43,17 +43,21 @@
     "InkeysHeadlessTests/setting_home_warp_tests.rc",
     "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj",
     "Scripts/i18n.ps1",
-    ".trellis/spec/native-desktop/configuration-i18n-and-assets.md"
+    ".trellis/spec/native-desktop/configuration-i18n-and-assets.md",
+    "Inkeys/additional/imgui/imgui_impl_dx11.cpp",
+    "Inkeys/additional/imgui/imgui_impl_dx11.h"
   ],
-  "notes": "第四轮克制背景/文案柔光已实现且完整ARM64、--no-window及真实WARP通过；艺术字RGBA不变，k修复保留。此前commit因1Password SSH签名失败而停止，原暂存快照保留，本轮未暂存。Win7实机与原生观感仍待人工。见soft-sheen-revision.md及research/soft-sheen-implementation-validation.md。",
+  "notes": "第七轮按用户授权完成命令行原生窗口测试，未使用Computer Use操作窗口：三语言冷启动及浅深主题、6次连续关闭重开、切页/滚动关闭后主页顶部复位、大小窗/最小化/最大化恢复均通过。三份日志无error/设备失效、epoch1，三个隔离副本正常退出且原配置未变。本轮未发现新增产品缺陷，任务保持开放，不新增commit/push。最初DeviceRemoved触发源仍未知，实际设备移除恢复及Win7实机未验收。详见research/native-runtime-validation.md。",
   "meta": {
     "validation": {
-      "build": "Debug|ARM64 PASS",
-      "headless": "--no-window PASS",
+      "build": "Debug|ARM64 PASS; Exit0; 27.2498582s",
+      "headless": "--no-window PASS; Exit0; 172.6073485s; stderr0",
       "i18n": "384/384 PASS",
-      "warp": "Windows 11 ARM64 FL11.0 cap/unchanged ink/soft background+text/performance PASS",
-      "manualNativeVisual": "pending",
-      "win7Machine": "not run"
+      "warp": "FL11.0 production backend real E_INVALIDARG/pixels/lifecycle PASS; removed/reset HRESULT injection only",
+      "initialDeviceRemovalCause": "unknown",
+      "manualNativeVisual": "Windows11 ARM64 native smoke PASS; three languages/light-dark/Show-Hide/resize; real DeviceRemoved and Win7 not run",
+      "win7Machine": "not run",
+      "validationRecord": "research/texture-crash-validation.md"
     },
     "motionRevision": "implemented_verified_pending_manual",
     "firstRevisionValidation": {
@@ -85,6 +89,67 @@
       "warp": "Windows 11 ARM64 FL11.0 cap/ripple pixels/performance PASS",
       "manualNativeVisual": "pending",
       "win7Machine": "not run"
-    }
+    },
+    "brandEntryRevision": "implemented_verified_pending_manual",
+    "previousWorkCommit": "a3b22667",
+    "brandEntryRevisionValidation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "384/384 PASS",
+      "warp": "Windows 11 ARM64 FL11.0 native writing/Hold/curve/cap/pixels/performance PASS",
+      "manualNativeVisual": "Windows11 ARM64 native smoke PASS; three languages/light-dark/Show-Hide/resize; real DeviceRemoved and Win7 not run",
+      "win7Machine": "not run",
+      "validationRecord": "research/brand-entry-validation.md"
+    },
+    "textureCrashRevision": "implemented_verified_native_smoke_pass",
+    "textureCrashRevisionValidation": {
+      "build": "Debug|ARM64 PASS; Exit0; 27.2498582s",
+      "headless": "--no-window PASS; Exit0; 172.6073485s; stderr0",
+      "i18n": "384/384 PASS",
+      "warp": "FL11.0 production backend real E_INVALIDARG/pixels/lifecycle PASS; removed/reset HRESULT injection only",
+      "initialDeviceRemovalCause": "unknown",
+      "manualNativeVisual": "Windows11 ARM64 native smoke PASS; three languages/light-dark/Show-Hide/resize; real DeviceRemoved and Win7 not run",
+      "win7Machine": "not run",
+      "validationRecord": "research/texture-crash-validation.md"
+    },
+    "nativeRuntimeValidation": {
+      "coldStarts": 3,
+      "languages": [
+        "en-US",
+        "zh-CN",
+        "zh-TW"
+      ],
+      "languageThemeCombinations": 6,
+      "businessShowsObservedTotal": 14,
+      "businessShowsLogged": 13,
+      "additionalConsecutiveHideShowCycles": 6,
+      "normalExitRecords": 3,
+      "nativeDpi": 192,
+      "nativeClientDipSizes": [
+        [
+          720,
+          520
+        ],
+        [
+          960,
+          700
+        ],
+        [
+          1441,
+          889
+        ]
+      ],
+      "sourceConfigUnchanged": true,
+      "crashReproduced": false,
+      "actualDeviceRemovalTriggered": false,
+      "win7MachineRun": false,
+      "record": "research/native-runtime-validation.md",
+      "computerUseOperatedWindows": false
+    },
+    "remainingWork": [
+      "人工测试原生窗口观感与实际设备失效恢复",
+      "Win7 SP1+KB2670838实机验证",
+      "根据同机基线测量进行适当性能优化"
+    ]
   }
 }

@@ -77,36 +77,58 @@ namespace Inkeys::UI::Setting::Design
 	struct HomeMotionState
 	{
 		HomeBrand::DrawCache cache;
-		HomeBrand::RippleCache ripple;
 		struct ButtonMotion { bool hovered = false; float elapsed = .32F; };
 		std::array<ButtonMotion, 2> buttons;
 		std::array<ImVec4, 2> buttonBounds;
 		std::uint64_t showSerial = 0, entries = 0;
+		enum class Entry { Idle, Pending, Playing, Finished, Skipped };
+		Entry entry = Entry::Idle;
 		bool home = false, enabled = true, pointerAllowed = true, brandVisible = false, heroVisible = false;
-		float delta = 0, x = 0, y = 0, shineElapsed = .9F;
+		bool viewportReady = false;
+		bool entryLayoutValidated = false;
+		std::array<float,17> entryLayoutKey{};
+		float delta = 0, x = 0, y = 0, entryElapsed = 0;
 		ImVec2 brandOrigin, heroOrigin, heroSize;
-		float brandWidth = 0;
+		ImVec4 clientContent{}, contentClip{};
+		ImVec2 entryStart;
+		float brandWidth = 0, entryStartWidth = 0;
+		[[nodiscard]] bool EntryActive() const noexcept { return entry==Entry::Playing; }
 	};
 
-	// 页面身份和 Hide→Show 序号触发开场；帧缺席、尺寸和主题都不是进入事件。
+	inline void FinishHomeEntry(HomeMotionState& state) noexcept
+	{
+		state.entry=HomeMotionState::Entry::Finished; state.x=state.y=0;
+	}
+	// 仅真实 Hide→Show 序号触发；内部返回主页和普通激活不能重播。
 	inline void ConfigureHomeMotion(HomeMotionState& state, bool home, std::uint64_t showSerial,
 		float delta, bool enabled, float rate, bool pointerAllowed = true) noexcept
 	{
-		const bool enter=home && (!state.home || state.showSerial!=showSerial);
+		const bool enter=state.showSerial!=showSerial;
 		state.home=home; state.showSerial=showSerial; state.enabled=enabled; state.pointerAllowed=pointerAllowed;
 		state.delta=enabled && std::isfinite(delta) && std::isfinite(rate)
 			? std::clamp(delta,0.0F,.05F)*std::clamp(rate,.1F,5.0F) : 0;
 		if (enter)
 		{
-			++state.entries; state.shineElapsed=0; state.x=state.y=0;
+			state.entry=home && enabled ? HomeMotionState::Entry::Pending : HomeMotionState::Entry::Skipped;
+			state.entryElapsed=0; state.x=state.y=0;
+			state.entryLayoutValidated=false;
 			state.buttons={};
 		}
 		if (!home || !enabled)
 		{
-			state.x=state.y=0; state.shineElapsed=.9F;
+			FinishHomeEntry(state);
 			for (auto& button : state.buttons) button.elapsed=.32F;
 		}
 	}
+
+	struct HomeEntryPose { ImVec2 origin; float width = 0, writing = 1, opacity = 0; };
+	HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state);
+	void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip);
+	void RenderHomeEntryOverlay(const HomeMotionState& state);
+	bool CancelHomeEntryOnInput(HomeMotionState& state);
+	// Hide 的重置由唯一渲染线程在排布前消费；同帧 Hide→Show 也不会漏掉。
+	bool ConsumeSettingHomeReset(std::uint64_t resetSerial, std::uint64_t& consumed,
+		NavigationDestination& destination, NavigationState& navigation, HomeMotionState& motion);
 
 	struct GeneralDraft
 	{

@@ -102,6 +102,28 @@ namespace
 	Inkeys::UI::Setting::TitleBarGeometry settingTitleBarGeometry;
 	float settingTitleTextWidth = 0.0F;
 	float settingVersionTextWidth = 0.0F;
+	HRESULT settingLastResourceFailure = S_OK;
+	HRESULT settingLastRemovedReason = S_OK;
+	const char* settingLastFailureStage = nullptr;
+	uint64_t settingLastFailureEpoch = 0;
+
+	FrameResult ResolveSettingResourceFailure(const char* stage, HRESULT result = E_FAIL)
+	{
+		// 先保存失败与设备原因，再清理 lease；泛化 OOM/E_FAIL 也可能来自已移除的设备。
+		if (SUCCEEDED(result)) result = E_FAIL;
+		const HRESULT removedReason = g_pd3dDevice ? g_pd3dDevice->GetDeviceRemovedReason() : S_OK;
+		if (result != settingLastResourceFailure || removedReason != settingLastRemovedReason
+			|| stage != settingLastFailureStage || settingFrameContext.epoch.generation != settingLastFailureEpoch)
+		{
+			if (IDTLogger) IDTLogger->error("[Setting] {} 失败 HRESULT=0x{:08X}, deviceReason=0x{:08X}, epoch={}",
+				stage, static_cast<unsigned long>(result), static_cast<unsigned long>(removedReason),
+				settingFrameContext.epoch.generation);
+			settingLastResourceFailure = result; settingLastRemovedReason = removedReason;
+			settingLastFailureStage = stage; settingLastFailureEpoch = settingFrameContext.epoch.generation;
+		}
+		return Inkeys::UI::Setting::IsSharedDeviceLoss(result, removedReason)
+			? FrameResult::DeviceLost : FrameResult::Retry;
+	}
 
 	constexpr UINT SettingFrameThemeMessage = WM_APP + 0x531;
 	constexpr UINT SettingEnsureMinimumMessage = WM_APP + 0x532;
@@ -1521,9 +1543,8 @@ SettingSessionCoroutine RunSettingSession()
 	{
 		if (!AcquireDeviceLease(settingFrameContext.epoch))
 		{
-			if (IDTLogger) IDTLogger->error("[Setting] 获取共享 D3D11 设置资源失败");
+			settingFrameResult = ResolveSettingResourceFailure("AcquireDeviceLease");
 			CleanupDeviceD3D();
-			settingFrameResult = FrameResult::Retry;
 			co_return;
 		}
 		settingSessionEpoch = settingFrameContext.epoch.generation;
@@ -1855,11 +1876,10 @@ SettingSessionCoroutine RunSettingSession()
 			if (ranges::any_of(requiredTextureIndexes,
 				[](size_t index) { return TextureSettingSign[index] == nullptr; }))
 			{
-				if (IDTLogger) IDTLogger->error("[Setting] 静态图片 resident 预热失败");
+				settingFrameResult = ResolveSettingResourceFailure("ResidentTextures");
 				CleanupSettingTextures();
 				CleanupSettingTextureCache();
 				CleanupDeviceD3D();
-				settingFrameResult = FrameResult::Retry;
 				co_return;
 			}
 		}
@@ -1874,12 +1894,14 @@ SettingSessionCoroutine RunSettingSession()
 		ImGui::StyleColorsLight();
 
 		const bool win32BackendInitialized = ImGui_ImplWin32_Init(setting_window);
+		long backendInitResult = E_FAIL;
 		const bool dx11BackendInitialized = win32BackendInitialized
-			&& ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+			&& ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext, &backendInitResult);
 		if (!dx11BackendInitialized || !RebuildSettingFonts()
 			|| !ImGui_ImplDX11_CreateDeviceObjects())
 		{
-			if (IDTLogger) IDTLogger->error("[Setting] 内嵌字体图集初始化失败");
+			settingFrameResult = ResolveSettingResourceFailure("InitializeFontsBackend",
+				dx11BackendInitialized ? ImGui_ImplDX11_GetLastResult() : backendInitResult);
 			if (dx11BackendInitialized) ImGui_ImplDX11_Shutdown();
 			if (win32BackendInitialized) ImGui_ImplWin32_Shutdown();
 			CleanupSettingTextures();
@@ -1888,7 +1910,6 @@ SettingSessionCoroutine RunSettingSession()
 			ImFluent::ResetContext();
 			ImGui::DestroyContext();
 			CleanupDeviceD3D();
-			settingFrameResult = FrameResult::Retry;
 			co_return;
 		}
 
@@ -2043,6 +2064,8 @@ SettingSessionCoroutine RunSettingSession()
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
 		Design::HomeMotionState homeMotion;
+		std::uint64_t consumedHideSerial=0;
+		bool resetHomeScroll=false;
 		auto commitSettingScale = [&]()
 		{
 			if (SettingGlobalScale != setlist.settingGlobalScale)
@@ -2103,6 +2126,13 @@ SettingSessionCoroutine RunSettingSession()
 			ImGui_ImplDX11_NewFrame();
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
+			std::uint64_t hideSerial;
+			{ lock_guard stateLock(settingStateMutex); hideSerial=settingSessionState.HideSerial(); }
+			if (hideSerial!=consumedHideSerial) commitGeneralSliders();
+			if (Design::ConsumeSettingHomeReset(hideSerial,consumedHideSerial,destination,navigationState,homeMotion))
+			{
+				settingTab=0; resetHomeScroll=true;
+			}
 			Design::BeginDragScrolling(navigationState);
 			// 所有页面默认使用 ImFluent Body 字体，局部字号只通过 scoped PushFont 切换。
 			ImFluent::PushFluentStyle();
@@ -2282,7 +2312,7 @@ SettingSessionCoroutine RunSettingSession()
 				// 内容与导航单独排布；窄窗覆盖展开不改变正文宽度及其滚动位置。
 				synchronizeDestination();
 				const float contentAlpha = Design::ContentAlpha(navigationState);
-				const bool blockContentInput = navigationState.BlockContentInput();
+				bool blockContentInput = navigationState.BlockContentInput();
 				std::uint64_t showSerial;
 				{
 					lock_guard stateLock(settingStateMutex);
@@ -2291,6 +2321,8 @@ SettingSessionCoroutine RunSettingSession()
 				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
 					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
 					!blockContentInput && settingWindowActive.load(memory_order_acquire));
+				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
+				blockContentInput|=entryInputBlock;
 				const auto& contentGeometry = shellGeometry.content;
 				ImGui::SetCursorPos({ Widgets::Dip(contentGeometry.left), Widgets::Dip(contentGeometry.top) });
 				ImGui::PushStyleColor(ImGuiCol_ChildBg, Inkeys::UI::Setting::Design::PageSurface);
@@ -2304,8 +2336,13 @@ SettingSessionCoroutine RunSettingSession()
 					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section) : 0);
 				Design::BeginScrollChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
-					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None);
+					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll);
 				ImGuiWindow* contentWindow = ImGui::GetCurrentWindow();
+				resetHomeScroll=false;
+				const auto root=ImGui::GetMainViewport(); const auto clip=contentWindow->ClipRect;
+				Design::ConfigureHomeEntryViewport(homeMotion,
+					{root->Pos.x,root->Pos.y+Widgets::Dip(32),root->Pos.x+root->Size.x,root->Pos.y+root->Size.y},
+					{clip.Min.x,clip.Min.y,clip.Max.x,clip.Max.y});
 				ImGui::PopStyleVar();
 				ImGui::PopStyleColor();
 				// 所有设置页面共享校准字体；离开内容区后再恢复标题栏字体。
@@ -3861,7 +3898,11 @@ SettingSessionCoroutine RunSettingSession()
 				// 正文只渲染一次；若本帧关闭动画，导航使用已归位状态重新解析自己的几何。
 				const auto navigationGeometry = Design::ResolveShellGeometry(static_cast<float>(SettingWindowWidth) / settingGlobalScale,
 					static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
+				ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1.0F);
+				ImGui::BeginDisabled(entryInputBlock);
 				const auto navigationAction = Design::RenderNavigationPane(navigationGeometry, navigationState, destination);
+				ImGui::EndDisabled();
+				ImGui::PopStyleVar();
 				ImFluent::PopFont();
 				Inkeys::UI::Setting::Design::BindTextFonts(ImFontMain, ImFontStrong);
 				if (navigationAction.kind == Design::NavigationActionKind::Navigate)
@@ -3875,6 +3916,7 @@ SettingSessionCoroutine RunSettingSession()
 				{ commitGeneralSliders(); Inkeys::UI::Setting::Hide(); RestartProgram(); }
 				else if (navigationAction.kind == Design::NavigationActionKind::Exit)
 				{ commitGeneralSliders(); Inkeys::UI::Setting::Hide(); CloseProgram(); }
+				Design::RenderHomeEntryOverlay(homeMotion);
 
 				ImGui::End();
 			}
@@ -3898,14 +3940,23 @@ SettingSessionCoroutine RunSettingSession()
 			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
 			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
 			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+			const HRESULT backendResult = ImGui_ImplDX11_GetLastResult();
+			if (FAILED(backendResult))
+			{
+				// 纹理/Map 失败不能继续 Present 空白或残缺帧；保留原 epoch 恢复仲裁。
+				settingFrameResult = ResolveSettingResourceFailure("RenderDrawData", backendResult);
+				co_await suspend_always{};
+				continue;
+			}
 			const HRESULT result = g_pSwapChain->Present(1, 0);
 			g_SwapChainOccluded = (result == DXGI_STATUS_OCCLUDED);
-			if (Inkeys::UI::Setting::IsSharedDeviceLoss(result))
-				settingFrameResult = FrameResult::DeviceLost;
-			else if (FAILED(result))
-				settingFrameResult = FrameResult::Retry;
+			if (FAILED(result))
+				settingFrameResult = ResolveSettingResourceFailure("Present", result);
 			else
+			{
 				settingFrameResult = FrameResult::Continue;
+				settingLastResourceFailure = S_OK; settingLastFailureStage = nullptr;
+			}
 			co_await suspend_always{};
 		}
 
@@ -3962,6 +4013,7 @@ namespace
 			settingNavigationClockIdle = true;
 			return result;
 		};
+		settingFrameContext = context; // 初始化/重建失败的诊断也使用本次 epoch。
 		Inkeys::UI::Setting::SessionDecision decision;
 		Inkeys::UI::Setting::ResizeSnapshot resize;
 		uint64_t fontRebuildSerial = 0;
@@ -4023,7 +4075,7 @@ namespace
 				settingInitializeCompleted = true;
 			}
 			settingInitializeCondition.notify_all();
-			if (!succeeded) return pauseNavigationClock(FrameResult::Retry);
+			if (!succeeded) return pauseNavigationClock(settingFrameResult);
 		}
 
 		if (decision.rebuildDeviceResources && !settingSession.Done())
@@ -4035,16 +4087,19 @@ namespace
 			CleanupSettingTextures();
 			CleanupDeviceD3D();
 			const bool acquired = AcquireDeviceLease(context.epoch);
+			long backendInitResult = E_FAIL;
 			const bool backendInitialized = acquired
-				&& ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+				&& ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext, &backendInitResult);
 			if (!backendInitialized || !ImGui_ImplDX11_CreateDeviceObjects()
 				|| !RecreateSettingTextures())
 			{
-				// epoch 失败后保持 resident context，但撤销半成品 device 资源供下次重试。
+				// epoch 失败后保持 resident context，先分类设备状态再撤销半成品。
+				const auto failure = ResolveSettingResourceFailure("RebuildDeviceResources",
+					backendInitialized ? ImGui_ImplDX11_GetLastResult() : backendInitResult);
 				if (backendInitialized) ImGui_ImplDX11_Shutdown();
 				CleanupSettingTextures();
 				CleanupDeviceD3D();
-				return pauseNavigationClock(FrameResult::Retry);
+				return pauseNavigationClock(failure);
 			}
 			settingSessionEpoch = context.epoch.generation;
 			lock_guard stateLock(settingStateMutex);
@@ -4057,7 +4112,7 @@ namespace
 			ImGui_ImplDX11_InvalidateDeviceObjects();
 			if (!RebuildSettingFonts()
 				|| !ImGui_ImplDX11_CreateDeviceObjects())
-				return pauseNavigationClock(FrameResult::Retry);
+				return pauseNavigationClock(ResolveSettingResourceFailure("RebuildFonts", ImGui_ImplDX11_GetLastResult()));
 			Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
 			Inkeys::UI::Setting::Design::ApplyScrollbars();
 			lock_guard stateLock(settingStateMutex);
@@ -4081,7 +4136,7 @@ namespace
 		if (decision.createPresentation && !g_pSwapChain)
 		{
 			if (!CreatePresentation(setting_window, context.epoch))
-				return pauseNavigationClock(FrameResult::Retry);
+				return pauseNavigationClock(ResolveSettingResourceFailure("CreatePresentation"));
 		}
 
 		if (!decision.render || settingSession.Done() || !g_pSwapChain)
@@ -4091,9 +4146,7 @@ namespace
 		{
 			const HRESULT probeResult = g_pSwapChain->Present(0, DXGI_PRESENT_TEST);
 			if (probeResult == DXGI_STATUS_OCCLUDED) return pauseNavigationClock(FrameResult::Retry);
-			if (Inkeys::UI::Setting::IsSharedDeviceLoss(probeResult))
-				return pauseNavigationClock(FrameResult::DeviceLost);
-			if (FAILED(probeResult)) return pauseNavigationClock(FrameResult::Retry);
+			if (FAILED(probeResult)) return pauseNavigationClock(ResolveSettingResourceFailure("ProbeOcclusion", probeResult));
 			g_SwapChainOccluded = false;
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetOccluded(false);
@@ -4102,14 +4155,13 @@ namespace
 		if (decision.resize && !settingSession.Done() && g_pSwapChain)
 		{
 			const HRESULT resizeResult = ResizeSwapChain(resize.width, resize.height);
-			if (Inkeys::UI::Setting::IsSharedDeviceLoss(resizeResult))
-				return pauseNavigationClock(FrameResult::DeviceLost);
 			if (FAILED(resizeResult))
 			{
+				const auto failure = ResolveSettingResourceFailure("ResizeSwapChain", resizeResult);
 				CleanupPresentation();
 				lock_guard stateLock(settingStateMutex);
 				settingSessionState.ReleasePresentation();
-				return pauseNavigationClock(FrameResult::Retry);
+				return pauseNavigationClock(failure);
 			}
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.ConsumeResize(resize.serial);

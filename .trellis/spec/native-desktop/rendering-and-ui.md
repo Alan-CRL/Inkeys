@@ -1473,7 +1473,9 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 - HWND 所属线程只处理 capture/cursor/IME、生命周期和 `ImGui_ImplWin32_WndProcHandlerEx`；专用 recursive mutex 串行访问 ImGui IO，因为 Win32 backend 的 `SetCapture`/`ReleaseCapture`/IME 调用可能同步重入同一 WndProc。ImGui context、DX11 backend、NewFrame/draw/Present 只由 RenderPipeline 线程使用。
 - `Initialize()` 注册 Settings 客户端后，必须同步等待渲染线程建立 ImGui context、Win32/DX11 backend、内嵌字体图集、解码图片缓存和全部图片 SRV；任一步失败都按相反顺序回滚并返回 `false`，不得留下已初始化 backend、device lease 或半套 SRV。
 - Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；`Hide()` 只停止连续绘制并释放 swap chain/RTV，context、backend、字体、解码图片和 SRV 保持常驻。`Show()` 恢复窗口和呈现资源；只有 `Shutdown()` 才逆序释放全部常驻资源并调用 `ImFluent::ResetContext()`。
-- device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品并返回 `Retry`，后续重试不能对未初始化 backend 重复 `Shutdown`。
+- device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品；健康设备上的普通资源失败返回 `Retry`，已移除设备返回 `DeviceLost`，后续重试不能对未初始化 backend 重复 `Shutdown`。
+- 动态字体纹理必须按 texture→SRV 事务创建，仅两阶段成功后发布 `TexID`、`BackendUserData` 和 `Status_OK`。任一步实际 HRESULT 失败须撤销半成品、保留可重试请求并停止该帧绘制/Present；销毁支持空或部分 COM 资源及重复清理，不能靠断言处理运行时资源失败。项目定制 DX11 后端保留原 void API，`ImGui_ImplDX11_GetLastResult()` 按已发布的当前 ImGui context 提供创建/提交结果；兼容的 `Init(..., long*)` 重载在尚未发布 backend owner 时也向调用方保留实际初始化 HRESULT，不能用无 owner 时的通用 E_FAIL 冒充具体 factory 错误。
+- 初始化、字体/设备重建、纹理/缓冲上传、Present/probe/resize 失败时，在释放 device lease 前读取 `GetDeviceRemovedReason()`，与原资源 HRESULT 分别记录；FAILED 的移除原因（含 HUNG/INVALID_CALL）必须交给唯一共享管线恢复 epoch，不能反复重试旧设备。诊断按 stage/code/reason/epoch 去重；VB Map 成功后 IB Map 失败也必须 Unmap VB。
 - `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。WinUI 3 设置壳层按客户区逻辑 DIP 判定：`>=900` 使用宽窗偏好（默认展开），`<900` 显示紧凑轨道并以覆盖方式展开。`Setting.Layout.h` 的旧三档 helper 暂留历史调用/测试；产品新壳层以 `Setting.Design.h::NavigationState` 为准。
 - Setting 主题由 `ResolveThemeMode(bool settingDarkMode)` 解析独立偏好；默认 Light，显式 true 使用 Dark。系统主题消息可唤醒样式刷新，但不覆盖用户选择；配置和帧边界换色合同见下文“Setting 实时浅深主题合同”。
 - Setting 背景能力顺序固定为 Win11 `DWMWA_SYSTEMBACKDROP_TYPE/DWMSBT_MAINWINDOW`、旧 Win11 Mica attribute 1029、动态解析的 Win10 `SetWindowCompositionAttribute` Acrylic、Solid。每次应用先撤销旧状态；DWM composition 关闭、属性/API 缺失或调用失败都必须继续级联并最终无错误回到 Solid，不能让可选视觉效果阻断 Initialize/Show。
@@ -1489,7 +1491,9 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 | 条件 | 必须行为 |
 | --- | --- |
 | `Present` / `ResizeBuffers` 返回 device removed/reset/internal error | 返回 `DeviceLost`，由唯一管线线程恢复 epoch |
-| 普通 Present/resize 失败 | 只返回 `Retry` 并重建 Setting presentation resources，不销毁常驻 ImGui/backend/font/SRV，也不影响 Bar/PPT |
+| 普通 Present/resize 失败且 device reason 为 S_OK | 只返回 `Retry` 并重建 Setting presentation resources，不销毁常驻 ImGui/backend/font/SRV，也不影响 Bar/PPT |
+| 动态 atlas texture 或 SRV 创建失败 | 不发布 OK/部分 backend 数据，释放本次资源并中止绘制/Present；按原 HRESULT 和 device reason 仲裁 Retry/DeviceLost |
+| 初始化/重建返回泛化 E_FAIL/OOM 但 device reason 已失败 | 先保存两种错误再清理，返回 DeviceLost 供共享 epoch 恢复 |
 | `DXGI_STATUS_OCCLUDED` | 后续帧用 `DXGI_PRESENT_TEST` 探测，成功后恢复绘制 |
 | Hide | 释放 swap chain/RTV 并返回 `Idle`；常驻资源继续有效且不提交帧 |
 | 隐藏时 generation 变化 | 立即重建 backend device objects 和图片 SRV；保持无 swap chain/RTV |
@@ -1515,6 +1519,7 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 
 - Headless 覆盖初始化隐藏常驻、Show 创建 presentation、Hide 仅释放 presentation、隐藏/显示 epoch 重建、失败回滚、Shutdown 全释放、resize/font serial、倍率边界、DPI 乘积、导航断点，以及显式 false/true 分别解析为 Light/Dark；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
 - Headless 覆盖 backdrop 优先级与 Solid fallback；静态审计 Windows 10 Acrylic 入口只能动态解析，透明 clear 必须由已发布的非 Solid 状态门控。
+- 动态 atlas 故障回归复用生产 DX11 后端与无 HWND FL11.0 WARP：真实非法纹理尺寸失败、两阶段 OOM/移除错误的明确故障注入、截图式 NULL/部分资源重复清理、Map 失败撤销及 backend 重建后的真实像素恢复。注入的 HRESULT 不能冒充实际 WARP device removal，独立离屏设备通过不能替代共享 native 窗口现场验证。
 - 完整 Solution `Debug|ARM64` 构建，静态审计旧 hardware device、24 FPS、`SettingMain`、`test.select`、运行时 `D3DCompile` 和 flip/DirectComposition 均不存在于活动路径。
 - Setting 页面样式迁移需静态审计导航/content、SplitView、Card/SettingsCard、ScrollView/WrapPanel/StackPanel 的 Begin/End 配对；产品路径不得重新引入 `imgui_toggle`、页面级原生 ImGui Button/Combo/Slider/Toggle 或 `ImFluent::ShowDemoWindow()`。
 - GUI 受限任务只运行 `InkeysHeadlessTests.exe --no-window`。Win7 SP1 + KB2670838 只可声明传统 CreateSwapChain/discard/FL11.0 fallback 的静态兼容，未经实机不得声称已验证。
@@ -2027,7 +2032,9 @@ ImGui::Dummy({width, rowHeight + gap});
 
 ### 全页视觉验收授权边界
 
-默认遵守当前任务的窗口操作授权。2026-09-07 用户已允许本设置任务使用 Computer Use，取代此前禁用要求；该授权不扩大到登录/解锁或无关系统操作。使用记录 PID 的独立测试副本保留原用户配置，遵守所用工具的目标窗口与观察后操作规则；锁屏时请求用户解锁，不绕过锁屏。构建和 CPU 测试通过不能代替整页 D3D 视觉验收。
+默认遵守当前任务最新的窗口操作授权。2026-09-07 的 Computer Use 许可已被 2026-10-11 用户“不要 Computer Use、可以启动窗口测试”的要求覆盖；本轮仅允许命令行原生窗口测试，不扩大到登录/解锁或无关系统操作。使用记录 PID、可执行路径和启动时间的独立测试副本保留原用户配置，输入及截图前检查 owner、桌面解锁和遮挡；锁屏时请求用户解锁，不绕过锁屏。构建和 CPU 测试通过不能代替整页 D3D 视觉验收。
+
+设置入场/资源呈现测试必须经正常 Bar Setting::Toggle→Show 业务入口；裸 Win32 ShowWindow 只改变 HWND 可见性，不推进会话 ShowSerial，不能代替正常打开。Bar 普通鼠标位置取 GetMessagePos，单独 PostMessage 的 client lParam 不等价真实鼠标点击；DX11 的 PrintWindow 空白也不能单独证明产品白屏。日志无错误且 epoch 稳定仅证明本次正常路径未复现失效，不等于实际 DeviceRemoved 恢复或 Win7 实机通过。
 
 ### Setting 实时浅深主题合同
 
@@ -2099,7 +2106,13 @@ Design::ApplyPalette(setlist.settingDarkMode);
 HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion = nullptr);
 void ConfigureHomeMotion(HomeMotionState& state, bool home, uint64_t showSerial,
     float delta, bool enabled, float rate, bool pointerAllowed = true);
-// SessionState::ShowSerial() 仅在 SetVisible(false -> true) 时递增。
+// SessionState::ShowSerial()/HideSerial() 分别只在 false -> true / true -> false 时递增。
+void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip);
+HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state);
+void RenderHomeEntryOverlay(const HomeMotionState& state);
+bool CancelHomeEntryOnInput(HomeMotionState& state);
+bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
+    NavigationDestination& destination, NavigationState& navigation, HomeMotionState& motion);
 // License / GitCode 追加在既有 HomeAction 末尾；GitHub / Support 复用现有动作。
 ```
 
@@ -2109,9 +2122,11 @@ void ConfigureHomeMotion(HomeMotionState& state, bool home, uint64_t showSerial,
 - 横幅局部浅蓝/薄荷/淡紫与深色对应色不改变全局控件。700 DIP 宽窄分界，左右 28/20、顶部 56/40、底部 28 DIP；字标宽为可用内宽 80%、上限 520 DIP，预留变换包络、保持 8 DIP 圆角及完整下伸。
 - 字标下 32 DIP 的标语统一 14 DIP 正文、字重与颜色。用同一真实字体测量两个语义段及本地化 HeroJoin，能容纳全文时一行，不能时优先语义两行并允许段内自然换行；中文连接符为空，英文为空格，不缩字号。分割线与开源标题/说明/按钮全居中，标题 16/22 DIP，说明 12 DIP；按钮等宽 36 DIP 高、最小 156 DIP，放不下时上下排列。版权字号保持，横幅后 16 DIP、段间 4/2 DIP。
 - 版权和代码托管说明是三语言真实文本；完整许可证名以及 GitHub/GitCode 分别具备独立链接语义。换行片段需要稳定 ID 和完整可点击覆盖；只有相应名称是链接，前后说明保持普通文字，不烘焙到图片。
-- HomeMotionState 由常驻设置会话持有，以真实目的地变更和 ShowSerial 判断进入；首次进入、离页返回、隐藏后打开在主页播放一次 900 ms 从字标中心外扩的克制中性柔光，仅作用于字标 Z 序下方的圆角渐变背景及横幅内下方标语、开源标题和托管说明。艺术字 RGB 与透明 alpha 不受开场影响，按钮保持 Fluent 状态和独立悬停反馈；正文在背景反光之后绘制。重复当前页、resize、主题/字体/设备重建、滚动和鼠标靠近不能重播。离页立即结束；delta 沿用设置时钟重基准和动画总开关/速率，禁用直接稳定。缺省空上下文静态绘制。
-- 只让字标参与 4°/6 DIP、1200 DIP 透视与约 160 ms 跟随；用未变换布局框和框外 120 DIP 衰减计算目标。只接受真实鼠标；触摸、笔、按住/拖动、弹层和失焦回正。字标包络完全离屏时不推进姿态或提交字标网格，但横幅仍可见时开场时钟及背景波纹继续推进；整个横幅离屏才暂停开场，恢复可见不制造新进入事件。艺术字仅保留视差变换，原彩虹与透明 AA 保持；背景柔光限定圆角内，峰值浅约 8% / 深约 10%，不得恢复强青蓝环或大片漂白。横幅正文按真实文本片段中心小幅颜色调制并保留 alpha，链接 hover/pressed 语义色优先，Copyright 与其他区域不参与。调色前确保各通道在 0–255，避免 IM_COL32 溢位。
-- 缓存字标变换顶点/原始颜色，以姿态、宽度、DPI 和主题为键；开场时钟不进入字标缓存键，稳定姿态下开场不重算字标。稳定/结束/禁用时先门禁正文反光的径向数学，预热后动效缓存不扩容。原字标顶点/索引不因动效增加；背景波纹另缓存固定 66×43（2,838 顶点）上限的圆角网格，仅开场提交，静态/关闭/结束完全不提交。径向距离在几何构建时缓存，热路径不逐顶点求平方根，不增加绘制批次；按钮一次性图标反馈仅改变装饰顶点，文字和 Fluent 命中/焦点/按下/拖动取消保持稳定。
+- HomeMotionState 由常驻设置会话持有，仅 ShowSerial 的真实隐藏→显示触发入场；内部导航返回主页不重播。速率1时先稳定120ms、六笔并行写出530ms、完整字标原地停留300ms，再同时启动背景渐退与270ms三次Bezier空间曲线归位、110ms小幅落定。书写/停留期间客户内容区覆盖层alpha=1，标题栏排除在外；前景只绘制一份字标，横幅字标保留布局但不提交。全局动画禁用/离页/实际输入直接稳定终态，取消帧仍阻断输入，不能点穿不可见操作。重复Show/激活/主页点击、resize、主题/字体/设备重建、滚动与鼠标靠近均不重播；缺省空上下文静态绘制。旧反光/水波不再播放。delta沿用设置时钟重基准、总开关与速率，不新增计时器。
+- 完整归位后仅字标参与4°/6 DIP、1200 DIP透视与约160ms跟随；用未变换布局框和框外120 DIP衰减计算目标。只接受真实鼠标；触摸、笔、按住/拖动、弹层和失焦回正。字标包络完全离屏时不推进姿态或提交字标网格，滚回不制造新Show事件。原彩虹与透明AA保持，文字、按钮和命中矩形不参与运动；一次性按钮装饰仅在hover上升沿触发，不循环。
+- 原曲线轮廓、六组笔画截面/书写时间/索引区块在首次Build缓存；书写按每笔完整前缀选择索引，活动定向半圆共用截面，禁止任意截断全局索引或提前显示终端帽。写完立即复用原完整网格，最终RGBA与静态一致。视差缓存仍以姿态/宽度/DPI/主题为键，入场时钟不进入该键；热路径无重新采样/几何扩容。临时笔头为有界额外顶点，覆盖层与单份字标只增加一个前景批次；不新增Shader、离屏纹理、设备、线程或额外渲染请求。
+- 首次有效实际布局决定本次Show是否可播放：完整横幅必须在主内容clip内，中央起点、目标字标和整条曲线包络在客户内容区内保留安全边距。按真实三语言/font/DPI/用户倍率/导航宽度判定，不用固定分辨率代替；首帧AutoResize内层clip尚为空时使用有效外层viewport及实际测量，不能先闪正常页面再覆盖。门禁按viewport/contentClip/hero/brand/DPI缓存，稳定帧不重复计算路径包络；布局变化重验，变小不安全即取消，本次放大不能补播。
+- HideSerial由窗口状态同步持有，渲染线程在下一次可渲染帧NewFrame后、导航/拖动/布局前消费，共享复位函数回Home并清弹层/焦点/内容reveal；BeginScrollChild(resetToTop)在Begin和旧拖动目标消费前清Scroll、ScrollTarget及拖动storage。隐藏期间不强行Resume无RTV协程；即使Hide→Show间没有渲染帧，重开首次布局仍在主页最顶端。最小化/遮挡不递增Hide或Show，恢复delta重基准。弹层关闭只在栈非空时执行；从首层弹层保存的导航窗回溯到设置root，清旧NavLastIds/child记忆后FocusWindow(root)+NavInitWindow(root,true)。不能仅FocusWindow(nullptr)：无缺帧重开根窗不Appearing时Tab会失去入口。输入取消还需检查IsKeyDown，不能漏掉Show前已按住的导航键。
 - RenderHome 仅返回动作；许可证与 GitCode 和其他外链一样由 Setting.cpp 现有异步 Shell 队列处理，Star 复用 GitHub，Sponsor 复用 Support。绘制和测量不得执行 Shell 或写配置。i18n 使用源 JSONC → sync → check，不手改生成头。
 - inline 名称链接采用 InvisibleButton 的 EnableNav 与内建焦点绘制，不重复追加 RenderNavCursor。键盘回归先用真实 Tab 从鼠标模式进入键盘模式，再发 Enter/Space；不直接赋值 NavActivateId。换行验收基于真实字体测量。
 
@@ -2122,22 +2137,25 @@ void ConfigureHomeMotion(HomeMotionState& state, bool home, uint64_t showSerial,
 | 英文长署名 / 完整 GPL 名称 / 窄内容宽 | 完整自然换行，所有链接片段可点，不横向溢出 |
 | 标语 / 两按钮预算不够 | 语义换行 / 按钮纵排，横幅和滚动占位随内容增长 |
 | 浅深切换 / DPI 或用户倍率变化 | 同比缩放、主题即时变化，不重采样原曲线、不重播入口 |
-| 首帧 AutoResizeY clip 尚不可见 | 不消费反光时间、不创建变换缓存；可见后按当前 delta 推进 |
+| 首帧 AutoResizeY clip 尚不可见 | 有效外层viewport与真实测量判定，不消费额外时间、不闪旧页面；实际不足直接静态 |
+| 写完后的300ms | 同一居中字标、完整原网格、覆盖alpha=1；之后淡退和空间曲线同时开始 |
+| 关闭后立即重开 / 已滚主页或其他页 | 先消费Hide复位再布局，Home且Scroll=0，真实Show可重新播放 |
+| 首次尺寸不足 / 播放中缩小 / 后来放大 | 跳过或收束后不补播，本次Show已消费 |
 | touch / pen / 拖动 / 弹层 / 失焦 | 非零鼠标倾斜归零，不触发额外进入 |
 | 链接或按钮轻点 / 按住拖动 | 前者返回一次正确动作，后者只滚内容且不路由 |
 | 主页无输入 / 仅测量 | 返回 None，不发起外链或配置写入 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：完整 GPL 名称分行，全部名称片段返回同一 License 动作；重新打开主页反光一次，但滚动回来不重播。
+- Good：完整GPL名称分行，所有片段返回同一License动作；隐藏后重开在顶部并行书写，写完Hold300ms，内部切回主页保持静态。
 - Base：动画关闭时保留三语言自适应布局、透明字标和完整开源操作。
-- Bad：依据缺席帧猜测进入、用变换后边界计算视差、给整块横幅覆盖白光或每帧重建字标网格。
+- Bad：依据缺席帧猜进入、直接从窗口线程改ImGui、隐藏时额外无RTV绘制、直线插值冒充曲线路径，或每帧重采样/重验固定包络。
 
 #### 6. Tests Required
 
-生产 RenderHome、真实 SC/TC/en-US 字体/文案、实际 ImGui 输入与 DrawData 覆盖三窗口/额外窄宽、导航展开/收起、浅深和七倍率；验证单行/语义两行、下伸/透明 AA、全部四角视差、反光首中末、生命周期、开关/速率、固定命中区域、实际 tap/Tab/Enter/Space/拖动与原主页滚动。触摸/笔测试必须在每种来源前独立建立非零鼠标目标，避免零目标下的空断言。
+生产RenderHome、真实SC/TC/en-US字体/文案、实际ImGui输入与DrawData覆盖三窗口/额外窄宽、导航展开/收起、浅深和七倍率；验证单行/语义两行、下伸/透明AA、四角视差、并行前缀及活动圆头、300ms完整静止Hold、曲线偏离直线且背景同时渐退、结束单份字标与固定命中区域。生命周期覆盖Show/重复Show/导航返回、Hide→Show无中间帧/其他页/旧滚动、窗口尺寸/速率/开关中途变化、输入取消及旧tap/Tab/Enter/Space/拖动/滚动；触摸/笔各自在非零鼠标目标下验回正。
 
-无窗口 WARP 明确请求 FL11.0，使用现有 imgui_impl_dx11 和生产 CSO 资源，离屏读取真实主页与从其 DrawData 提取的字标像素；视差验证字标外像素固定；开场分别比较孤立生产字标 RGBA 完全一致、真实字体 UV 三角形的轻微颜色变化与 alpha/字形/布局不变、弱背景幅度上限和下部扩散、圆角横幅外变化为零、结束/关闭精确还原；不能用文本矩形内背景变化代替真正字形反光。圆头接合带使用真实 WARP 在 1/1.875/4 倍采样，不能只检查圆心或把正常外缘 AA 当作接缝。记录同机同配置静态/静止/移动/回正/反光的 CPU median/p95、完成提交（含 copy/Map 等待）、顶点/批次与缓存扩容/ImGui 分配。该分配计数不代表全页 std::string/vector 或驱动分配；不得据此声称整页零分配。完整 Debug|ARM64 Solution、--no-window、i18n 与编码/diff 检查；Windows 11 WARP 证据与 Win7 SP1+KB2670838 静态兼容审计、原生窗口人工观感分别记录。
+无窗口WARP明确请求FL11.0，使用现有imgui_impl_dx11和生产CSO，离屏读取实际导航+主页+前景DrawData。书写首/中/完整Hold/Dock/终态分别读回；Hold各帧RGBA相同，覆盖不越标题栏，底层真实字体的几何/UV/颜色和按钮命中保持，终态精确回到静态。圆头接合带使用真实WARP在1/1.875/4倍采样，不能只测圆心或误报正常外缘AA。记录同机同配置静态/静止/移动/回正/书写/Hold/Dock/落定CPU median/p95、完成提交（含copy/Map等待）、顶点/批次及缓存扩容/ImGui分配。该分配计数不代表整页std::string/vector或驱动分配，不能声称整页零分配。完整Debug|ARM64 Solution、--no-window、i18n及格式/diff检查；Windows11 WARP、Win7 SP1+KB2670838静态兼容审计与实机/原生观感分别记录。
 
 #### 7. Wrong vs Correct
 

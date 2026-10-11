@@ -53,7 +53,7 @@ namespace Inkeys::UI::Setting::Design
 
 		void DrawInline(const char* id, const InlineLayout& layout, ImVec2 origin,
 			ImFluentTextStyle role, ImU32 color, HomeAction& action, float fontSize = 0, float lineDip = 0,
-			const HomeMotionState* motion = nullptr)
+			const HomeMotionState* /*motion*/ = nullptr)
 		{
 			// 先测完整句子的换行；链接只登记各行中的真实片段，不把前后说明变成链接。
 			ImGui::PushID(id);
@@ -62,14 +62,13 @@ namespace Inkeys::UI::Setting::Design
 			for (const auto& fragment : layout.fragments)
 			{
 				const ImVec2 pos(origin.x + fragment.x, origin.y + fragment.y);
-				ImU32 ink = color; bool interactive = false;
+				ImU32 ink = color;
 				if (fragment.action != HomeAction::None)
 				{
 					ImGui::PushID(static_cast<int>(fragment.span)); ImGui::PushID(static_cast<int>(fragment.line));
 					ImGui::SetCursorScreenPos(pos);
 					if (ImGui::InvisibleButton("##inline-link", {fragment.width, lineHeight}, ImGuiButtonFlags_EnableNav)) action = fragment.action;
 					AllowContentDrag();
-					interactive=ImGui::IsItemActive() || ImGui::IsItemHovered();
 					ink = ImFluent::GetColorU32(ImGui::IsItemActive() ? ImFluentCol_AccentTextTertiary
 						: ImGui::IsItemHovered() ? ImFluentCol_AccentTextSecondary : ImFluentCol_AccentTextPrimary);
 					if (ImGui::IsItemHovered())
@@ -78,15 +77,6 @@ namespace Inkeys::UI::Setting::Design
 						ImGui::GetWindowDrawList()->AddLine({pos.x,pos.y+lineHeight-1}, {pos.x+fragment.width,pos.y+lineHeight-1}, ink);
 					}
 					ImGui::PopID(); ImGui::PopID();
-				}
-				// 仅横幅文案按真实片段中心轻微提亮；链接交互色优先，字形 alpha/布局不变。
-				if (motion && motion->enabled && motion->heroVisible && motion->shineElapsed>0 && motion->shineElapsed<.9F
-					&& !interactive && motion->ripple.reach>0)
-				{
-					const auto& ripple=motion->ripple;
-					const float radial=std::hypot(pos.x+fragment.width*.5F-motion->heroOrigin.x-ripple.width*.5F,
-						(pos.y+lineHeight*.5F-motion->heroOrigin.y-ripple.centerY)*1.25F)/ripple.reach;
-					ink=HomeBrand::SheenColor(ink,radial,motion->shineElapsed/.9F,IsDarkMode());
 				}
 				ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
 					{std::round(pos.x),std::round(pos.y+(lineHeight-ImGui::GetFontSize())*.5F)},ink,fragment.text.c_str());
@@ -127,7 +117,8 @@ namespace Inkeys::UI::Setting::Design
 		bool HomePointerAllowed(const HomeMotionState& motion)
 		{
 			const auto& io=ImGui::GetIO();
-			return motion.pointerAllowed && !io.AppFocusLost && io.MouseSource==ImGuiMouseSource_Mouse
+			return !motion.EntryActive() && motion.entry!=HomeMotionState::Entry::Pending
+				&& motion.pointerAllowed && !io.AppFocusLost && io.MouseSource==ImGuiMouseSource_Mouse
 				&& !ImGui::IsAnyMouseDown() && !ImGui::IsAnyItemActive()
 				&& !ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel)
 				&& ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
@@ -140,6 +131,7 @@ namespace Inkeys::UI::Setting::Design
 			ImRect envelope=bounds; envelope.Expand(Pixels(14));
 			const bool visible=envelope.Overlaps(ImGui::GetCurrentWindow()->ClipRect);
 			if (motion) { motion->brandOrigin=origin; motion->brandWidth=width; motion->brandVisible=visible; }
+			if (motion && motion->EntryActive()) { motion->x=motion->y=0; return; }
 			if (!visible) return;
 			if (!motion) { HomeBrand::Draw(draw,origin,width,IsDarkMode()); return; }
 			float targetX=0, targetY=0;
@@ -224,6 +216,144 @@ namespace Inkeys::UI::Setting::Design
 			const std::string stableLabel = std::string(label) + "###link";
 			if (HyperlinkButton(stableLabel.c_str())) action = kind;
 			ImGui::PopID();
+		}
+	}
+
+	HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state)
+	{
+		HomeEntryPose pose{state.brandOrigin,state.brandWidth,1,0};
+		if (!state.EntryActive()) return pose;
+		const float time=state.entryElapsed;
+		pose.origin=state.entryStart; pose.width=state.entryStartWidth; pose.opacity=1;
+		pose.writing=time>=.65F ? 1.0F : std::clamp((time-.12F)/.53F,0.0F,1.0F);
+		// 六笔完全写好后保持 300ms；淡出和位移只能在 .95s 后同时开始。
+		if (time<=.95F) return pose;
+		const float phase=std::clamp((time-.95F)/.27F,0.0F,1.0F), u=HomeBrand::Smooth(phase), v=1-u;
+		const float dpi=Pixels(1), endWidth=state.brandWidth*1.004F;
+		const ImVec2 start(state.entryStart.x+state.entryStartWidth*.5F,state.entryStart.y+HomeBrand::Height(state.entryStartWidth)*.5F);
+		const ImVec2 target(state.brandOrigin.x+state.brandWidth*.5F,state.brandOrigin.y+HomeBrand::Height(state.brandWidth)*.5F+1.5F*dpi);
+		const ImVec2 p1(start.x+36*dpi,start.y-42*dpi), p2(target.x-24*dpi,target.y-38*dpi);
+		const ImVec2 center(v*v*v*start.x+3*v*v*u*p1.x+3*v*u*u*p2.x+u*u*u*target.x,
+			v*v*v*start.y+3*v*v*u*p1.y+3*v*u*u*p2.y+u*u*u*target.y);
+		pose.width=state.entryStartWidth+(endWidth-state.entryStartWidth)*u;
+		pose.origin={center.x-pose.width*.5F,center.y-HomeBrand::Height(pose.width)*.5F};
+		pose.opacity=1-HomeBrand::Smooth(phase);
+		if (time>=1.22F)
+		{
+			const float settle=1-HomeBrand::Smooth((time-1.22F)/.11F);
+			pose.width=state.brandWidth*(1+.004F*settle);
+			pose.origin={state.brandOrigin.x+(state.brandWidth-pose.width)*.5F,
+				state.brandOrigin.y+1.5F*dpi*settle+(HomeBrand::Height(state.brandWidth)-HomeBrand::Height(pose.width))*.5F};
+		}
+		return pose;
+	}
+
+	void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip)
+	{
+		state.clientContent=clientContent; state.contentClip=contentClip;
+		state.viewportReady=clientContent.z>clientContent.x && clientContent.w>clientContent.y
+			&& contentClip.z>contentClip.x && contentClip.w>contentClip.y;
+	}
+
+	bool ConsumeSettingHomeReset(std::uint64_t resetSerial, std::uint64_t& consumed,
+		NavigationDestination& destination, NavigationState& navigation, HomeMotionState& motion)
+	{
+		if (resetSerial==consumed) return false;
+		consumed=resetSerial; destination={}; FinishHomeEntry(motion);
+		navigation.overlayOpen=navigation.flyoutOpen=navigation.restoreParentFocus=false;
+		navigation.mouseReleaseBarrier=false; navigation.generalExpanded=false;
+		navigation.childFocusId=navigation.childWindowItemId=0; navigation.inlineChildFocused=false;
+		navigation.scrollSelectedGeneral=false;
+		navigation.contentPage=0; navigation.contentSection=GeneralSection::Basic;
+		navigation.contentReveal.Reset(1); navigation.flyoutReveal.Reset(0); navigation.groupReveal.Reset(0);
+		navigation.ClearIndicator(); motion.buttons={};
+		ImGui::ClearActiveID(); GImGui->MovingWindow=nullptr;
+		// ClosePopupToLevel 要求栈非空；从首层弹窗保存的导航窗回溯，不能重新聚焦已关闭的弹窗。
+		auto* focus=GImGui->NavWindow;
+		if (!GImGui->OpenPopupStack.empty() && GImGui->OpenPopupStack[0].RestoreNavWindow)
+			focus=GImGui->OpenPopupStack[0].RestoreNavWindow;
+		while (focus && (focus->RootWindow->Flags & ImGuiWindowFlags_Popup)) focus=focus->RootWindow->ParentWindow;
+		auto* root=focus ? focus->RootWindow : nullptr;
+		if (!GImGui->OpenPopupStack.empty()) ImGui::ClosePopupToLevel(0,false);
+		ImGui::NavMoveRequestCancel();
+		// 无缺帧快速重开时根窗不 Appearing；清旧 ID 后保留正常 Tab 导航入口。
+		if (root) { root->NavLastIds[0]=root->NavLastIds[1]=0; root->NavLastChildNavWindow=nullptr; }
+		ImGui::FocusWindow(root);
+		if (root) ImGui::NavInitWindow(root,true);
+		return true;
+	}
+
+	void RenderHomeEntryOverlay(const HomeMotionState& state)
+	{
+		if (!state.EntryActive()) return;
+		const auto pose=ResolveHomeEntryPose(state); auto* draw=ImGui::GetForegroundDrawList();
+		const auto bounds=state.clientContent;
+		draw->PushClipRect({bounds.x,bounds.y},{bounds.z,bounds.w},false);
+		if (pose.opacity>0)
+		{
+			const ImU32 solid=AppBase;
+			draw->AddRectFilled({bounds.x,bounds.y},{bounds.z,bounds.w},
+				(solid & ~IM_COL32_A_MASK)|(static_cast<ImU32>(std::round(pose.opacity*255))<<IM_COL32_A_SHIFT));
+		}
+		HomeBrand::DrawWriting(draw,pose.origin,pose.width,IsDarkMode(),pose.writing);
+		draw->PopClipRect();
+	}
+
+	bool CancelHomeEntryOnInput(HomeMotionState& state)
+	{
+		if (!state.EntryActive() && state.entry!=HomeMotionState::Entry::Pending) return false;
+		const auto& io=ImGui::GetIO();
+		bool cancel=ImGui::IsAnyMouseDown() || io.MouseWheel!=0 || io.MouseWheelH!=0 || io.InputQueueCharacters.Size>0;
+		// Show 前已按住的导航键也要收束，不能等重复事件在覆盖层下改变焦点。
+		for (int key=ImGuiKey_NamedKey_BEGIN;key<ImGuiKey_NamedKey_END;++key)
+			cancel|=ImGui::IsKeyDown(static_cast<ImGuiKey>(key));
+		if (cancel) FinishHomeEntry(state);
+		// 返回本帧屏障：即使取消也不能把同一个按下穿透为链接/导航点击。
+		return cancel;
+	}
+
+	namespace
+	{
+		void ResolveHomeEntryLayout(HomeMotionState& state)
+		{
+			if (!state.viewportReady || (!state.EntryActive() && state.entry!=HomeMotionState::Entry::Pending)) return;
+			const float dpi=Pixels(1);
+			const std::array<float,17> key{state.clientContent.x,state.clientContent.y,state.clientContent.z,state.clientContent.w,
+				state.contentClip.x,state.contentClip.y,state.contentClip.z,state.contentClip.w,
+				state.heroOrigin.x,state.heroOrigin.y,state.heroSize.x,state.heroSize.y,
+				state.brandOrigin.x,state.brandOrigin.y,state.brandWidth,HomeBrand::Height(state.brandWidth),dpi};
+			if (state.entryLayoutValidated && state.entryLayoutKey==key)
+			{
+				state.entryElapsed=(std::min)(1.33F,state.entryElapsed+state.delta);
+				if (state.entryElapsed>=1.33F) FinishHomeEntry(state);
+				return;
+			}
+			state.entryLayoutKey=key; state.entryLayoutValidated=true;
+			state.entryStartWidth=(std::min)(580*dpi,(state.clientContent.z-state.clientContent.x)*.7F);
+			state.entryStart={(state.clientContent.x+state.clientContent.z-state.entryStartWidth)*.5F,
+				(state.clientContent.y+state.clientContent.w-HomeBrand::Height(state.entryStartWidth))*.5F};
+			auto contains=[](ImVec4 rect,ImVec2 origin,ImVec2 size,float margin) {
+				return origin.x-margin>=rect.x && origin.y-margin>=rect.y
+					&& origin.x+size.x+margin<=rect.z && origin.y+size.y+margin<=rect.w;
+			};
+			bool fits=contains(state.contentClip,state.heroOrigin,state.heroSize,0);
+			// 在同一真实布局上验证完整曲线包络；首帧 AutoResize clip 未测量也不影响前景覆盖。
+			HomeMotionState probe; probe.entry=HomeMotionState::Entry::Playing;
+			probe.brandOrigin=state.brandOrigin; probe.brandWidth=state.brandWidth;
+			probe.entryStart=state.entryStart; probe.entryStartWidth=state.entryStartWidth;
+			for (int i=0;fits && i<=64;++i)
+			{
+				probe.entryElapsed=.95F+.38F*i/64;
+				const auto pose=ResolveHomeEntryPose(probe);
+				fits=contains(state.clientContent,pose.origin,{pose.width,HomeBrand::Height(pose.width)},14*dpi);
+			}
+			if (!fits) { state.entry=HomeMotionState::Entry::Skipped; state.x=state.y=0; return; }
+			if (state.entry==HomeMotionState::Entry::Pending)
+			{
+				state.entry=HomeMotionState::Entry::Playing; state.entryElapsed=0; ++state.entries;
+			}
+			else state.entryElapsed=(std::min)(1.33F,state.entryElapsed+state.delta);
+			if (state.entryElapsed>=1.33F) FinishHomeEntry(state);
 		}
 	}
 
@@ -362,16 +492,8 @@ namespace Inkeys::UI::Setting::Design
 			const auto clip=ImGui::GetCurrentWindow()->ClipRect;
 			motion->heroVisible=clip.GetWidth()>0 && clip.GetHeight()>0
 				&& ImRect(heroOrigin,{heroOrigin.x+width,heroOrigin.y+heroHeight}).Overlaps(clip);
-			// 波纹由整个横幅的可见性推进，字标滚走时背景仍播放；正文随后绘制以保持清晰。
-			if (motion->heroVisible)
-			{
-				motion->shineElapsed=(std::min)(.9F,motion->shineElapsed+motion->delta);
-				if (motion->enabled && motion->shineElapsed>0 && motion->shineElapsed<.9F)
-				{
-					HomeBrand::PrepareRipple(motion->ripple,width,heroHeight,Pixels(1),top+brandHeight*.5F);
-					HomeBrand::DrawRipple(draw,heroOrigin,motion->ripple,motion->shineElapsed/.9F,IsDarkMode());
-				}
-			}
+			motion->brandOrigin={heroOrigin.x+(width-brandWidth)*.5F,heroOrigin.y+top}; motion->brandWidth=brandWidth;
+			ResolveHomeEntryLayout(*motion);
 		}
 		DrawHomeBrand(draw,{heroOrigin.x+(width-brandWidth)*.5F,heroOrigin.y+top},brandWidth,motion);
 		float y=heroOrigin.y+top+brandHeight+Pixels(32);

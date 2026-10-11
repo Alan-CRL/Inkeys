@@ -87,6 +87,12 @@ namespace Inkeys::UI::Setting
 			|| result == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
 	}
 
+	[[nodiscard]] constexpr bool IsSharedDeviceLoss(HRESULT result, HRESULT removedReason) noexcept
+	{
+		// GetDeviceRemovedReason 的失败本身证明 lease 已失效，包括 HUNG/INVALID_CALL 等原因。
+		return IsSharedDeviceLoss(result) || FAILED(removedReason);
+	}
+
 	enum class InteractiveWindowOperation : std::uint8_t
 	{
 		None,
@@ -157,9 +163,11 @@ namespace Inkeys::UI::Setting
 		void SetVisible(bool visible) noexcept
 		{
 			if (visible && !visible_) ++showSerial_;
+			if (!visible && visible_) ++hideSerial_;
 			visible_ = visible;
 		}
 		[[nodiscard]] std::uint64_t ShowSerial() const noexcept { return showSerial_; }
+		[[nodiscard]] std::uint64_t HideSerial() const noexcept { return hideSerial_; }
 		[[nodiscard]] bool IsVisible() const noexcept { return visible_; }
 		void SetOccluded(bool occluded) noexcept { occluded_ = occluded; }
 		void QueueResize(std::uint32_t width, std::uint32_t height) noexcept
@@ -255,6 +263,7 @@ namespace Inkeys::UI::Setting
 		bool occluded_ = false;
 		std::uint64_t epoch_ = 0;
 		std::uint64_t showSerial_ = 0;
+		std::uint64_t hideSerial_ = 0;
 		std::uint64_t businessCompletion_ = 0;
 		std::uint64_t consumedBusinessCompletion_ = 0;
 		std::uint64_t resizeSerial_ = 0;

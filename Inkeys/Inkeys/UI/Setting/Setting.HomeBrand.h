@@ -18,8 +18,12 @@ namespace Inkeys::UI::Setting::Design::HomeBrand
 	struct Vertex { ImVec2 pos; ImU32 light, dark; ImVec2 normalized; };
 	struct Mesh
 	{
+		struct Block { unsigned first, count; float progress; };
+		struct Section { ImVec2 center, normal; float radius, progress; std::array<unsigned,4> vertices; };
+		struct Stroke { std::vector<Block> blocks; std::vector<Section> sections; bool closed = false; };
 		std::vector<Vertex> vertices;
 		std::vector<unsigned> indices;
+		std::array<Stroke,6> strokes;
 		ImVec2 size, kEnd, kInward;
 		float kRadius = 0;
 	};
@@ -150,9 +154,15 @@ namespace Inkeys::UI::Setting::Design::HomeBrand
 		};
 		auto triangle = [&](unsigned a, unsigned b, unsigned c) { mesh.indices.insert(mesh.indices.end(), {a,b,c}); };
 		// 连续变宽轮廓、透明外缘与圆接头缓存为网格，逐帧只缩放/平移已完成的几何。
-		for (const auto& points : strokes)
+		for (size_t strokeIndex=0;strokeIndex<strokes.size();++strokeIndex)
 		{
+			const auto& points=strokes[strokeIndex]; auto& stroke=mesh.strokes[strokeIndex];
 			const bool closed=Length(points.front().pos,points.back().pos)<.001F;
+			stroke.closed=closed;
+			auto record=[&](unsigned first,float progress) {
+				const unsigned count=static_cast<unsigned>(mesh.indices.size())-first;
+				if (count) stroke.blocks.push_back({first,count,progress});
+			};
 			const ImVec2 inward=closed ? closedInward(points) : ImVec2();
 			size_t first = 0;
 			while (first < points.size()-1)
@@ -182,9 +192,13 @@ namespace Inkeys::UI::Setting::Design::HomeBrand
 					const float radii[]{p.width*.5F+.8F, p.width*.5F, -p.width*.5F, -p.width*.5F-.8F};
 					std::array<unsigned,4> current;
 					for (int j=0;j<4;++j) current[j]=vertex({p.pos.x+nx*radii[j],p.pos.y+ny*radii[j]},p.distance,j==0||j==3 ? 0 : 255);
+					const float progress=p.time/points.back().time;
+					stroke.sections.push_back({p.pos,{nx,ny},p.width*.5F,progress,current});
 					if (i==first) { firstSection=current; firstNormal={nx,ny}; }
 					if (i==last) { lastSection=current; lastNormal={nx,ny}; }
+					const auto indexStart=static_cast<unsigned>(mesh.indices.size());
 					if (i>first) for (int j=0;j<3;++j) { triangle(previous[j],current[j],current[j+1]); triangle(previous[j],current[j+1],previous[j+1]); }
+					record(indexStart,progress);
 					previous=current;
 				}
 				for (size_t end : {first,last})
@@ -192,6 +206,7 @@ namespace Inkeys::UI::Setting::Design::HomeBrand
 					const auto& p=points[end]; const bool endpoint=end==0 || end==points.size()-1;
 					// 圆头只覆盖截面外的半圆，并共用笔画端点；AA 带不再横跨圆头与笔画的内部接缝。
 					if (end==0 && Length(points.front().pos,points.back().pos)<.001F) continue;
+					const auto indexStart=static_cast<unsigned>(mesh.indices.size());
 					const unsigned center=vertex(p.pos,p.distance);
 					const auto section=end==first ? firstSection : lastSection;
 					const auto normal=end==first ? firstNormal : lastNormal;
@@ -209,6 +224,7 @@ namespace Inkeys::UI::Setting::Design::HomeBrand
 						if (i) { triangle(center,previousRing[0],ring[0]); triangle(previousRing[0],previousRing[1],ring[1]); triangle(previousRing[0],ring[1],ring[0]); }
 						previousRing=ring;
 					}
+					record(indexStart,p.time/points.back().time);
 				}
 				first=last;
 			}
@@ -224,6 +240,8 @@ namespace Inkeys::UI::Setting::Design::HomeBrand
 			v.pos.x-=minimum.x; v.pos.y-=minimum.y;
 			v.normalized={v.pos.x/mesh.size.x-.5F,v.pos.y/mesh.size.y-.5F};
 		}
+		for (auto& stroke : mesh.strokes) for (auto& section : stroke.sections)
+			section.center={section.center.x-minimum.x,section.center.y-minimum.y};
 		return mesh;
 	}
 	inline const Mesh& Geometry() { static const Mesh mesh=Build(); return mesh; }
@@ -351,5 +369,63 @@ namespace Inkeys::UI::Setting::Design::HomeBrand
 			for (const auto& v : cache->vertices) draw->PrimWriteVtx({origin.x+v.pos.x,origin.y+v.pos.y},uv,v.color);
 		else
 			for (const auto& v : mesh.vertices) draw->PrimWriteVtx({origin.x+v.pos.x*scale,origin.y+v.pos.y*scale},uv,dark ? v.dark : v.light);
+	}
+
+	inline void DrawWriting(ImDrawList* draw, ImVec2 origin, float width, bool dark, float progress)
+	{
+		if (progress>=1) { Draw(draw,origin,width,dark); return; }
+		if (progress<=0) return;
+		const auto& mesh=Geometry(); const float scale=width/mesh.size.x;
+		std::array<float,6> phases{}; unsigned count=0;
+		for (size_t s=0;s<phases.size();++s)
+		{
+			// 微小错开六笔起点；每笔仍在总书写时间内完成，尾帧直接复用完整网格。
+			const float delay=static_cast<float>(s)*.012F;
+			phases[s]=Smooth((progress-delay)/(1-delay));
+			if (phases[s]>0) for (const auto& block : mesh.strokes[s].blocks)
+				if (block.progress<=phases[s]) count+=block.count;
+		}
+		const auto uv=ImGui::GetIO().Fonts->TexUvWhitePixel;
+		draw->PrimReserve(static_cast<int>(count),static_cast<int>(mesh.vertices.size()));
+		const unsigned base=draw->_VtxCurrentIdx;
+		for (size_t s=0;s<phases.size();++s) if (phases[s]>0)
+			for (const auto& block : mesh.strokes[s].blocks) if (block.progress<=phases[s])
+				for (unsigned i=block.first;i<block.first+block.count;++i) draw->PrimWriteIdx(static_cast<ImDrawIdx>(base+mesh.indices[i]));
+		for (const auto& v : mesh.vertices) draw->PrimWriteVtx({origin.x+v.pos.x*scale,origin.y+v.pos.y*scale},uv,dark ? v.dark : v.light);
+		for (size_t s=0;s<phases.size();++s)
+		{
+			if (phases[s]<=0 || phases[s]>=1) continue;
+			const auto& stroke=mesh.strokes[s]; const auto* section=&stroke.sections.front();
+			for (const auto& candidate : stroke.sections) { if (candidate.progress>phases[s]) break; section=&candidate; }
+			// 活动笔头共用已完成截面，透明 AA 只在外缘，不把圆盘透明环压到笔画内。
+			auto cap=[&](const Mesh::Section& edge,bool start) {
+				constexpr int steps=12; draw->PrimReserve(steps*9,23);
+				static const auto circle=[] {
+					std::array<ImVec2,steps+1> result{};
+					for (int i=0;i<=steps;++i) { const float a=-3.141592654F*i/steps; result[i]={std::cos(a),std::sin(a)}; }
+					return result;
+				}();
+				const unsigned center=draw->_VtxCurrentIdx;
+				const auto& colorVertex=mesh.vertices[edge.vertices[1]];
+				const ImU32 ink=dark ? colorVertex.dark : colorVertex.light;
+				draw->PrimWriteVtx({origin.x+edge.center.x*scale,origin.y+edge.center.y*scale},uv,ink);
+				std::array<unsigned,2> previous{base+edge.vertices[1],base+edge.vertices[0]};
+				for (int i=1;i<=steps;++i)
+				{
+					std::array<unsigned,2> ring;
+					if (i==steps) ring={base+edge.vertices[2],base+edge.vertices[3]};
+					else for (int j=0;j<2;++j) {
+						ring[j]=draw->_VtxCurrentIdx; const float r=edge.radius+j*.8F, sn=circle[i].y*(start ? -1.0F : 1.0F);
+						const ImVec2 radial(edge.normal.x*circle[i].x-edge.normal.y*sn,edge.normal.y*circle[i].x+edge.normal.x*sn);
+						draw->PrimWriteVtx({origin.x+(edge.center.x+radial.x*r)*scale,origin.y+(edge.center.y+radial.y*r)*scale},uv,j ? ink & ~IM_COL32_A_MASK : ink);
+					}
+					draw->PrimWriteIdx(static_cast<ImDrawIdx>(center)); draw->PrimWriteIdx(static_cast<ImDrawIdx>(previous[0])); draw->PrimWriteIdx(static_cast<ImDrawIdx>(ring[0]));
+					for (unsigned index : {previous[0],previous[1],ring[1],previous[0],ring[1],ring[0]}) draw->PrimWriteIdx(static_cast<ImDrawIdx>(index));
+					previous=ring;
+				}
+			};
+			if (stroke.closed) cap(stroke.sections.front(),true);
+			cap(*section,false);
+		}
 	}
 }

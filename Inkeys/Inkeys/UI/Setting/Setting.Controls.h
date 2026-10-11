@@ -10,7 +10,7 @@
 
 namespace Inkeys::UI::Setting::Design
 {
-	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags = 0, ImGuiWindowFlags flags = 0);
+	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags = 0, ImGuiWindowFlags flags = 0, bool resetToTop = false);
 	bool BeginScrollPopupModal(const char* id, ImGuiWindowFlags flags);
 
 	// 主题语义色集中在同一张表；页面只选择角色，不自行判断明暗。

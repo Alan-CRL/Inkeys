@@ -2910,7 +2910,7 @@ namespace
 		const auto previousFlags = io.ConfigFlags;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 		const ImVec2 outside(-100,-100);
-		int frames = 0, actionCount = 0, wrappedLicenseRows = 0, wrappedLicenseCases = 0;
+		int frames = 0, actionCount = 0, wrappedLicenseRows = 0, wrappedLicenseCases = 0, entryPlays=0, entrySkips=0;
 		for (const char* language : {"zh-CN","zh-TW","en-US"})
 		{
 			checks.Expect(LoadNavigationLabels(fontDirectory,language), "home fixtures load each actual localization source");
@@ -2934,6 +2934,7 @@ namespace
 				Design::NavigationState state; state.Resize(size.x); if (state.Expanded()!=expanded) state.Toggle();
 				const auto shell=Design::ResolveShellGeometry(size.x,size.y,state);
 				float viewport=shell.content.Height(), requested=-1;
+				bool probeEntry=false; Design::HomeMotionState gateMotion;
 				std::unordered_set<ImU32> inkColors; for (const auto& v : mesh.vertices) inkColors.insert(dark ? v.dark : v.light);
 				struct GlyphGroup { ImRect bounds; ImU32 color; };
 				struct Frame { ImGuiWindow* outer; ImGuiWindow* page; HomeAction action; ImGuiID hovered, active;
@@ -2954,7 +2955,14 @@ namespace
 					Design::BeginScrollChild("##setting-page-content",{width,0},ImGuiChildFlags_AutoResizeY);
 					f.page=ImGui::GetCurrentWindow(); f.pageTop=ImGui::GetCursorScreenPos().y; f.width=ImGui::GetContentRegionAvail().x;
 					const int fontStack=GImGui->FontStack.Size, colorStack=GImGui->ColorStack.Size, varStack=GImGui->StyleVarStack.Size;
-					f.action=Design::RenderHome({0,1,"3.0.0-dev.3981",0,0,1}); actionCount += f.action!=HomeAction::None;
+					if (probeEntry)
+					{
+						Design::ConfigureHomeMotion(gateMotion,true,1,0,true,1);
+						const auto clip=f.outer->ClipRect;
+						Design::ConfigureHomeEntryViewport(gateMotion,{0,32*scale,size.x*scale,size.y*scale},
+							{clip.Min.x,clip.Min.y,clip.Max.x,clip.Max.y});
+					}
+					f.action=Design::RenderHome({0,1,"3.0.0-dev.3981",0,0,1},probeEntry ? &gateMotion : nullptr); actionCount += f.action!=HomeAction::None;
 					checks.Expect(fontStack==GImGui->FontStack.Size && colorStack==GImGui->ColorStack.Size && varStack==GImGui->StyleVarStack.Size,
 						"real home brand/copyright/card restores font, color and style scopes");
 					f.ids={{ImGui::GetID("##home-star"),HomeAction::GitHub},{ImGui::GetID("##home-sponsor"),HomeAction::Support}};
@@ -2965,7 +2973,9 @@ namespace
 							section.second==3 ? HomeAction::GitCode : std::strcmp(section.first,"##home-license")==0 ? HomeAction::License : HomeAction::GitHub); ImGui::PopID(); }
 						ImGui::PopID(); ImGui::PopID();
 					}
-					ImGui::EndChild(); ImGui::EndChild(); ImGui::End(); Design::ApplyDragScrolling(state);
+					ImGui::EndChild(); ImGui::EndChild();
+					if (probeEntry) Design::RenderHomeEntryOverlay(gateMotion);
+					ImGui::End(); Design::ApplyDragScrolling(state);
 					f.hovered=GImGui->HoveredId; f.active=GImGui->ActiveId;
 					f.nav=f.page->NavRectRel[ImGuiNavLayer_Main]; f.nav.Translate(f.page->Pos);
 					ImGui::Render(); ++frames;
@@ -2994,6 +3004,21 @@ namespace
 				};
 				auto idle = [&](int count=4) { Frame f; for (int i=0;i<count;++i) f=draw(outside,false); return f; };
 				Frame frame=idle();
+				probeEntry=true; const auto gateFrame=draw(outside,false); probeEntry=false;
+				const ImRect hero(gateMotion.heroOrigin,{gateMotion.heroOrigin.x+gateMotion.heroSize.x,gateMotion.heroOrigin.y+gateMotion.heroSize.y});
+				if (gateMotion.EntryActive())
+				{
+					++entryPlays;
+					checks.Expect(gateFrame.outer->ClipRect.Contains(hero) && gateMotion.entryElapsed==0,
+						"actual language/theme/navigation/scale layout plays only with the whole hero in its viewport");
+				}
+				else
+				{
+					++entrySkips;
+					checks.Expect(gateMotion.entry==Design::HomeMotionState::Entry::Skipped,
+						"insufficient actual matrix layout consumes Show and renders the normal static page");
+				}
+				frame=idle(1);
 				checks.Expect(frame.outer->ScrollMax.y>0 && frame.page->ScrollMax.y==0 && frame.outer->ScrollMax.x==0,
 					"real window-sized home scrolls vertically at its ancestor without nested or horizontal overflow");
 				viewport=2400; frame=idle();
@@ -3079,10 +3104,12 @@ namespace
 		}
 		checks.Expect(scale!=1 || wrappedLicenseRows>=3,"all real localized license controls were tapped without opening external applications");
 		checks.Expect(scale!=1 || wrappedLicenseCases>0,"actual localized license link fragments include at least one genuinely wrapped case");
+		checks.Expect(entryPlays>0 && entrySkips>0,"real three-language/theme/navigation size matrix includes both fitting and skipped entries");
 		checks.Expect(LoadNavigationLabels(fontDirectory),"home tests restore the default Chinese fixtures for existing regressions");
 		Design::BindTextFonts(fonts[0],fonts[1]); Design::ApplyPalette(false); Design::ConfigureRowAnimations(0,false,1);
 		io.ConfigFlags = previousFlags;
-		std::cout << "[HomeBrandDesign] scale=" << scale << " frames=" << frames << " linkTaps=" << actionCount << '\n';
+		std::cout << "[HomeBrandDesign] scale=" << scale << " frames=" << frames << " linkTaps=" << actionCount
+			<< " entry-plays="<<entryPlays<<" entry-skips="<<entrySkips<<'\n';
 	}
 
 	void CheckHomeMotion(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
@@ -3092,8 +3119,11 @@ namespace
 		Design::HomeMotionState motion;
 		std::uint64_t serial=1; bool enabled=true, allowed=true, dark=false, popup=false;
 		float delta=1.0F/60, rate=1, scroll=0, viewport=800;
+		bool resetScroll=false;
+		std::uint64_t hideSerial=0,consumedHideSerial=0;
+		Design::NavigationState resetNavigation; Design::NavigationDestination resetDestination;
 		const ImVec2 outside(-100,-100);
-		struct Frame { std::vector<ImVec2> text; int vertices=0, indices=0; float scroll=0, maximum=0; ImRect clip; };
+		struct Frame { std::vector<ImVec2> text; int vertices=0, indices=0; float scroll=0, maximum=0; ImRect clip; ImGuiWindow* window=nullptr; };
 		auto frame=[&](ImVec2 mouse, ImGuiMouseSource source=ImGuiMouseSource_Mouse, bool down=false) {
 			io.DisplaySize={1000*scale,1000*scale}; io.DeltaTime=1.0F/60;
 			io.AddMouseSourceEvent(source); io.AddMousePosEvent(mouse.x,mouse.y); io.AddMouseButtonEvent(0,down);
@@ -3101,12 +3131,21 @@ namespace
 			ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
 			ImGui::Begin("##home-motion-root",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize
 				|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
-			Design::BeginScrollChild("##motion-scroll",{900*scale,viewport*scale});
-			ImGui::SetScrollY(scroll);
+			const bool reset=Design::ConsumeSettingHomeReset(hideSerial,consumedHideSerial,resetDestination,resetNavigation,motion);
+			resetScroll|=reset;
+			Design::BeginScrollChild("##motion-scroll",{900*scale,viewport*scale},0,0,resetScroll);
+			if (!resetScroll) ImGui::SetScrollY(scroll);
+			resetScroll=false;
 			Design::ConfigureHomeMotion(motion,true,serial,delta,enabled,rate,allowed);
+			const bool entryBlocked=Design::CancelHomeEntryOnInput(motion);
+			const auto actualClip=ImGui::GetCurrentWindow()->ClipRect;
+			Design::ConfigureHomeEntryViewport(motion,{0,32*scale,io.DisplaySize.x,io.DisplaySize.y},
+				{actualClip.Min.x,actualClip.Min.y,actualClip.Max.x,actualClip.Max.y});
+			ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1); ImGui::BeginDisabled(entryBlocked);
 			checks.Expect(Design::RenderHome({0,1,"test",0,0,1},&motion)==Design::HomeAction::None,
 				"home animation never dispatches a business action");
-			Frame result; const auto* window=ImGui::GetCurrentWindow();
+			ImGui::EndDisabled(); ImGui::PopStyleVar();
+			Frame result; const auto* window=ImGui::GetCurrentWindow(); result.window=ImGui::GetCurrentWindow();
 			result.scroll=window->Scroll.y; result.maximum=window->ScrollMax.y; result.clip=window->ClipRect;
 			const auto& draw=*ImGui::GetWindowDrawList();
 			result.vertices=draw.VtxBuffer.Size; result.indices=draw.IdxBuffer.Size;
@@ -3115,11 +3154,12 @@ namespace
 			ImGui::EndChild();
 			if (popup) ImGui::OpenPopup("##motion-gate");
 			if (ImGui::BeginPopup("##motion-gate")) { ImGui::TextUnformatted("gate"); if (!popup) ImGui::CloseCurrentPopup(); ImGui::EndPopup(); }
+			Design::RenderHomeEntryOverlay(motion);
 			ImGui::End(); ImGui::Render(); CheckDrawData(checks); return result;
 		};
 		auto idle=[&](int count=90) { Frame result; for (int i=0;i<count;++i) result=frame(outside); return result; };
 		idle();
-		checks.Expect(motion.entries==1 && motion.shineElapsed==.9F && motion.x==0 && motion.y==0,
+		checks.Expect(motion.entries==1 && !motion.EntryActive() && motion.x==0 && motion.y==0,
 			"first home entry plays once then reaches a stable neutral pose");
 		const auto allocations=motion.cache.allocations, rebuilt=motion.cache.rebuilds;
 		const Frame resting=idle(10);
@@ -3184,23 +3224,39 @@ namespace
 		}
 		const auto entries=motion.entries;
 		dark=true; idle(3); dark=false; idle(3);
-		checks.Expect(motion.entries==entries && motion.shineElapsed==.9F,"theme changes and repeated current-page frames do not replay entry light");
+		checks.Expect(motion.entries==entries && !motion.EntryActive(),"theme changes and repeated current-page frames do not replay entry");
 		Design::ConfigureHomeMotion(motion,false,serial,delta,true,rate);
-		checks.Expect(!motion.home && motion.shineElapsed==.9F,"leaving home cancels the old reflection immediately");
+		checks.Expect(!motion.home && !motion.EntryActive(),"leaving home cancels entrance immediately");
 		delta=0; frame(outside);
-		checks.Expect(motion.entries==entries+1 && motion.shineElapsed==0,"returning home starts once with zero rebased time");
+		checks.Expect(motion.entries==entries && !motion.EntryActive(),"internal navigation back to home does not replay");
 		++serial; frame(outside);
-		checks.Expect(motion.entries==entries+2 && motion.shineElapsed==0,"hidden-to-visible serial starts a fresh home reflection");
+		checks.Expect(motion.entries==entries+1 && motion.entryElapsed==0 && motion.EntryActive(),"hidden-to-visible serial starts a fresh entry with rebased time");
+		const auto start=Design::ResolveHomeEntryPose(motion);
+		for (float time : {.65F,.8F,.949F})
+		{
+			motion.entryElapsed=time; frame(outside); const auto pose=Design::ResolveHomeEntryPose(motion);
+			checks.Expect(pose.writing==1 && pose.opacity==1 && pose.origin.x==start.origin.x && pose.origin.y==start.origin.y
+				&& pose.width==start.width,"all six strokes complete before exact 300ms opaque centre hold");
+		}
+		motion.entryElapsed=1.08F; frame(outside); const auto curve=Design::ResolveHomeEntryPose(motion);
+		const ImVec2 a(start.origin.x+start.width*.5F,start.origin.y+Design::HomeBrand::Height(start.width)*.5F);
+		const ImVec2 b(motion.brandOrigin.x+motion.brandWidth*.5F,motion.brandOrigin.y+Design::HomeBrand::Height(motion.brandWidth)*.5F);
+		const ImVec2 c(curve.origin.x+curve.width*.5F,curve.origin.y+Design::HomeBrand::Height(curve.width)*.5F);
+		const float deviation=std::abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))/std::hypot(b.x-a.x,b.y-a.y);
+		checks.Expect(curve.opacity>0 && curve.opacity<1 && deviation>scale,"dock fades and follows a real spatial curve away from straight interpolation");
+		motion.entryElapsed=.25F;
 		delta=.02F; rate=1; frame(outside);
 		const auto openingRebuilds=motion.cache.rebuilds; const auto openingBounds=motion.buttonBounds;
 		for (int i=0;i<8;++i) frame(outside);
-		checks.Expect(motion.cache.rebuilds==openingRebuilds,"opening sheen does not recompute stable logo geometry or rainbow colors");
+		checks.Expect(motion.cache.rebuilds==openingRebuilds,"writing and overlay do not recompute the original logo mesh");
 		for (size_t i=0;i<openingBounds.size();++i)
-			checks.Expect(std::memcmp(&openingBounds[i],&motion.buttonBounds[i],sizeof(ImVec4))==0,"sheen preserves actual home button hit regions");
-		const float beforeSpeedChange=motion.shineElapsed;
-		rate=2; frame(outside); checks.Expect(Near(motion.shineElapsed-beforeSpeedChange,.04F),"speed changes advance from current reflection progress");
-		delta=0; frame(outside); const float paused=motion.shineElapsed; frame(outside);
-		checks.Expect(motion.shineElapsed==paused,"rebased resume frames do not accumulate hidden or skipped wall time");
+			checks.Expect(std::memcmp(&openingBounds[i],&motion.buttonBounds[i],sizeof(ImVec4))==0,"entrance preserves actual home button hit regions");
+		const float beforeSpeedChange=motion.entryElapsed;
+		rate=2; frame(outside); checks.Expect(Near(motion.entryElapsed-beforeSpeedChange,.04F),"speed changes advance from current entry progress");
+		delta=0; frame(outside); const float paused=motion.entryElapsed; frame(outside);
+		checks.Expect(motion.entryElapsed==paused,"rebased resume frames do not accumulate hidden or skipped wall time");
+		enabled=false; frame(outside); enabled=true; frame(outside);
+		checks.Expect(!motion.EntryActive(),"disable finishes current show permanently, re-enable does not replay");
 		delta=.02F; scroll=1200; frame(outside); frame(outside);
 		const auto originalViewport=frame(outside);
 		std::cout<<"[HomeMotionCull] scale="<<scale<<" viewport="<<viewport*scale
@@ -3220,25 +3276,87 @@ namespace
 		const auto hidden=idle(5);
 		checks.Expect(!motion.brandVisible && motion.cache.rebuilds==offscreenRebuilds,
 			"real ancestor scrolling culls wordmark submission and pauses logo geometry updates");
-		// 仅字标离屏时，仍可见的横幅继续播放；整个横幅离屏才暂停同一开场时钟。
+		// 滚动只改变可见性，不产生新的显示事件。
 		scroll=clipped.scroll+motion.heroOrigin.y+motion.heroSize.y-clipped.clip.Min.y-100*scale;
-		frame(outside); frame(outside); motion.shineElapsed=.25F;
-		const float logoClippedTime=motion.shineElapsed; const auto logoClippedBuilds=motion.cache.rebuilds;
+		frame(outside); frame(outside); const auto logoClippedBuilds=motion.cache.rebuilds;
 		const auto footerOnly=frame(outside);
-		checks.Expect(!motion.brandVisible && motion.heroVisible && motion.shineElapsed>logoClippedTime
-			&& motion.cache.rebuilds==logoClippedBuilds,"visible hero footer advances ripple while offscreen ink remains culled");
+		checks.Expect(!motion.brandVisible && motion.heroVisible && !motion.EntryActive()
+			&& motion.cache.rebuilds==logoClippedBuilds,"visible hero footer leaves completed entrance and culled ink stable");
 		checks.Expect(footerOnly.text.size()>0,"partially visible hero retains real foreground submission");
-		scroll=10000; frame(outside); frame(outside); motion.shineElapsed=.3F;
-		const float wholeHeroClippedTime=motion.shineElapsed; frame(outside);
-		checks.Expect(!motion.heroVisible && !motion.brandVisible && motion.shineElapsed==wholeHeroClippedTime,
-			"fully offscreen hero pauses ripple without pretending to enter the page again");
+		scroll=10000; frame(outside); frame(outside);
+		checks.Expect(!motion.heroVisible && !motion.brandVisible && !motion.EntryActive(),
+			"fully offscreen hero never pretends to enter the page again");
 		viewport=800; scroll=0; frame(outside); frame(outside);
-		checks.Expect(motion.brandVisible && motion.entries==entries+2 && hidden.vertices<resting.vertices,
+		checks.Expect(motion.brandVisible && motion.entries==entries+1 && hidden.vertices<resting.vertices,
 			"scrolling back restores cached brand without a new home entry");
 		enabled=false; frame(edge);
-		checks.Expect(motion.x==0 && motion.y==0 && motion.shineElapsed==.9F,"animation off snaps pose and reflection in the same production frame");
+		checks.Expect(motion.x==0 && motion.y==0 && !motion.EntryActive(),"animation off snaps pose and entrance in the same production frame");
 		enabled=true; idle();
 		checks.Expect(motion.cache.allocations==allocations,"all warmed parallax, reflection and culling paths reuse allocated vertex storage");
+		viewport=220; ++serial; delta=0; frame(outside);
+		checks.Expect(motion.entry==Design::HomeMotionState::Entry::Skipped,"true Show with entire measured hero outside viewport skips all entry");
+		viewport=800; frame(outside);
+		checks.Expect(!motion.EntryActive(),"enlarging a skipped Show never starts a late entrance");
+		++serial; frame(outside); checks.Expect(motion.EntryActive(),"next true Show may play when the measured hero fits");
+		viewport=220; frame(outside); viewport=800; frame(outside);
+		checks.Expect(!motion.EntryActive(),"shrinking active entry cancels permanently for the current Show");
+		scroll=400; frame(outside); frame(outside);
+		resetDestination={Design::PageId::General,Design::GeneralSection::Interaction};
+		resetNavigation.overlayOpen=resetNavigation.flyoutOpen=true; resetNavigation.contentReveal.Reset(.2F);
+		resetNavigation.childFocusId=123; resetNavigation.childWindowItemId=456; resetNavigation.inlineChildFocused=true;
+		++hideSerial; scroll=0; ++serial;
+		const auto resetFrame=frame(outside);
+		checks.Expect(resetDestination.page==Design::PageId::Home && !resetNavigation.overlayOpen && !resetNavigation.flyoutOpen
+			&& resetNavigation.contentReveal.value==1 && !resetNavigation.childFocusId && !resetNavigation.childWindowItemId
+			&& !resetNavigation.inlineChildFocused && resetFrame.scroll==0 && motion.EntryActive(),
+			"production Hide reset and pre-Begin scroll helper return Home to top on first reopened layout");
+		const auto resetEntries=motion.entries; frame(outside);
+		checks.Expect(motion.entries==resetEntries && consumedHideSerial==hideSerial,"consumed Hide reset and repeated Show do not restart entry");
+		const auto star=motion.buttonBounds[0]; const ImVec2 button((star.x+star.z)*.5F,(star.y+star.w)*.5F);
+		frame(button,ImGuiMouseSource_Mouse,true); frame(button,ImGuiMouseSource_Mouse,false);
+		checks.Expect(!motion.EntryActive(),"actual mouse press cancels entrance and its release cannot activate the newly revealed Star");
+		++serial; frame(outside); io.AddKeyEvent(ImGuiKey_Space,true); frame(outside);
+		io.AddKeyEvent(ImGuiKey_Space,false); frame(outside);
+		checks.Expect(!motion.EntryActive(),"actual key event cancels entrance without a synthetic navigation/activation");
+		for (ImGuiKey key : {ImGuiKey_Tab,ImGuiKey_DownArrow,ImGuiKey_Space})
+		{
+			io.AddKeyEvent(key,true); frame(outside); // 隐藏前已按住，下一 Show 帧没有新的 pressed 边沿。
+			checks.Expect(ImGui::IsKeyDown(key) && ImGui::IsKeyPressed(key,false),"held-key fixture begins with a real key edge");
+			++serial; frame(outside);
+			checks.Expect(ImGui::IsKeyDown(key) && !ImGui::IsKeyPressed(key,false) && !motion.EntryActive(),
+				"key already held before Show cancels entrance before repeated navigation can pass through");
+			io.AddKeyEvent(key,false); frame(outside);
+			checks.Expect(!motion.EntryActive(),"releasing a held cancellation key cannot replay or activate revealed controls");
+		}
+		const auto previousFlags=io.ConfigFlags; io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard;
+		for (bool withPopup : {false,true})
+		{
+			enabled=false; const auto before=frame(outside);
+			const ImVec2 blank(before.clip.Min.x+1,before.clip.Min.y+1);
+			frame(blank,ImGuiMouseSource_Mouse,true); frame(blank,ImGuiMouseSource_Mouse,false);
+			popup=withPopup; frame(outside); frame(outside);
+			if (withPopup) checks.Expect(!GImGui->OpenPopupStack.empty() && GImGui->NavWindow
+				&& (GImGui->NavWindow->Flags & ImGuiWindowFlags_Popup),"keyboard reopen fixture starts with a real focused popup");
+			++hideSerial; ++serial; popup=false;
+			const auto reopened=frame(outside); const auto* root=reopened.window->RootWindow;
+			checks.Expect(!root->Appearing && GImGui->NavWindow && GImGui->NavWindow->RootWindow==root
+				&& !(GImGui->NavWindow->Flags & ImGuiWindowFlags_Popup) && GImGui->OpenPopupStack.empty(),
+				"fast Hide/Show rebinds the existing setting root rather than losing keyboard focus or keeping a closed popup");
+			io.AddKeyEvent(ImGuiKey_Tab,true); frame(outside); io.AddKeyEvent(ImGuiKey_Tab,false); frame(outside);
+			checks.Expect(GImGui->NavWindow==root && GImGui->NavId==reopened.window->ChildId,
+				"first Tab after fast reopen focuses the actual Home content host without a mouse or Ctrl+Tab");
+			// 沿用原生非扁平 child 的 Enter 进入规则，再以真实 Tab 到达页面控件。
+			io.AddKeyEvent(ImGuiKey_Enter,true); frame(outside); io.AddKeyEvent(ImGuiKey_Enter,false); frame(outside);
+			const auto starId=reopened.window->GetID("##home-star"); bool reached=GImGui->NavId==starId && GImGui->NavWindow==reopened.window;
+			for (int step=0;step<16 && !reached;++step)
+			{
+				io.AddKeyEvent(ImGuiKey_Tab,true); frame(outside);
+				io.AddKeyEvent(ImGuiKey_Tab,false); frame(outside);
+				reached=GImGui->NavId==starId && GImGui->NavWindow==reopened.window;
+			}
+			checks.Expect(reached,"real Tab after stable fast reopen reaches the actual Home Star control without mouse or Ctrl+Tab recovery");
+		}
+		io.ConfigFlags=previousFlags;
 		Design::ApplyPalette(false); io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
 		std::cout<<"[HomeMotion] scale="<<scale<<" entries="<<motion.entries<<" cacheBuilds="<<motion.cache.rebuilds<<" allocations="<<motion.cache.allocations<<'\n';
 	}

@@ -433,9 +433,20 @@ namespace Inkeys::UI::Setting::Design
 		if (owner) CaptureDrag(owner);
 	}
 
-	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags)
+	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags, bool resetToTop)
 	{
-		ScrollbarStyleScope scrollbar(ChildWindow(id), !(flags & ImGuiWindowFlags_NoMouseInputs));
+		auto* existing=ChildWindow(id);
+		if (resetToTop && existing)
+		{
+			// 必须在 Begin 消费旧惯性目标之前归零，第一帧布局直接使用顶部坐标。
+			existing->Scroll.y=0; existing->ScrollTarget.y=FLT_MAX;
+			existing->StateStorage.SetFloat(existing->GetID("##drag-scroll-position"),0);
+			existing->StateStorage.SetInt(existing->GetID("##drag-scroll-frame"),-2);
+			existing->StateStorage.SetInt(existing->GetID("##drag-scroll-sampled-frame"),-2);
+			existing->StateStorage.SetInt(existing->GetID("##drag-scroll-rebase"),1);
+		}
+		if (resetToTop) ImGui::SetNextWindowScroll({0,0});
+		ScrollbarStyleScope scrollbar(existing, !(flags & ImGuiWindowFlags_NoMouseInputs));
 		const bool visible = ImGui::BeginChild(id, size, childFlags, flags);
 		scrollbar.Finish(ImGui::GetCurrentWindow());
 		return visible;

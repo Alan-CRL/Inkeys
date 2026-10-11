@@ -406,13 +406,13 @@ int RunSettingSessionStateTests()
 		== BarButtonClickAction::Hide,
 		"visible focused setting is hidden")) ++failures;
 	SessionState visibility;
-	if (!Expect(visibility.ShowSerial()==0,"hidden session starts without a home entry")) ++failures;
+	if (!Expect(visibility.ShowSerial()==0 && visibility.HideSerial()==0,"hidden session starts without a home entry or reset")) ++failures;
 	visibility.SetVisible(true); visibility.SetVisible(true);
 	if (!Expect(visibility.ShowSerial()==1,"repeated visible requests do not replay home")) ++failures;
 	visibility.SetOccluded(true); visibility.QueueResize(720,520); visibility.ReleasePresentation();
 	if (!Expect(visibility.ShowSerial()==1,"occlusion resize and device presentation do not count as reopening")) ++failures;
 	visibility.SetVisible(false); visibility.SetVisible(false); visibility.SetVisible(true);
-	if (!Expect(visibility.ShowSerial()==2,"one hide-to-show transition increments exactly once")) ++failures;
+	if (!Expect(visibility.ShowSerial()==2 && visibility.HideSerial()==1,"one hide-to-show transition increments each serial exactly once even between render frames")) ++failures;
 	SessionState state;
 	StartupPreviewPreference startupPreview;
 	if (!Expect(startupPreview.StartupEnabled()
@@ -515,6 +515,12 @@ int RunSettingSessionStateTests()
 		&& !IsSharedDeviceLoss(DXGI_STATUS_OCCLUDED)
 		&& !IsSharedDeviceLoss(E_FAIL),
 		"DXGI failures distinguish shared device loss")) ++failures;
+	if (!Expect(IsSharedDeviceLoss(E_OUTOFMEMORY, DXGI_ERROR_DEVICE_HUNG)
+		&& IsSharedDeviceLoss(E_FAIL, DXGI_ERROR_INVALID_CALL)
+		&& IsSharedDeviceLoss(DXGI_ERROR_DEVICE_RESET, S_OK)
+		&& !IsSharedDeviceLoss(E_OUTOFMEMORY, S_OK)
+		&& !IsSharedDeviceLoss(E_INVALIDARG, S_OK),
+		"actual removed reason overrides generic resource HRESULT without treating ordinary OOM as device loss")) ++failures;
 
 	return failures;
 }
