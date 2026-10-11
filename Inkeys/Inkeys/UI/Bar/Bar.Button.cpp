@@ -13,6 +13,7 @@ module;
 #include "Bar.A2.h"
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
+#include "Bar.Haptics.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -305,6 +306,7 @@ void BarButtonSetClass::PresetInitialization()
 						Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::UnsupportedState);
 						if (ChangeStateModeToPen())
 						{
+							(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(Inkeys::UI::Bar::Haptics::acceptedClick);
 							barUISet.barState.drawAttribute = false;
 							barUISet.barState.geometryAttribute = false;
 						}
@@ -319,6 +321,7 @@ void BarButtonSetClass::PresetInitialization()
 						}
 						// 只在真实toggle接受点标记，之后仍走原决策与StateUpdate规范化。
 						Inkeys::UI::Bar::MarkCurrentUi3FiniteBusinessAccepted();
+						(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(Inkeys::UI::Bar::Haptics::acceptedClick);
 						const auto decision = ResolveBarDrawButtonToggleDecision(
 							barUISet.barState.drawAttribute);
 						if (decision.openDrawAttribute)
@@ -370,12 +373,14 @@ void BarButtonSetClass::PresetInitialization()
 							selectedMode == StateModeSelectEnum::IdtSelection &&
 							Inkeys::UI::Bar::CurrentPageHasContent());
 						ChangeStateModeToEraser();
+						(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(Inkeys::UI::Bar::Haptics::acceptedClick);
 					}
 					else if (barUISet.TryBeginToggle(BarToggleChannel::EraserAttribute))
 					{
 						const bool open = !barUISet.barState.eraserAttribute;
 						barUISet.CollapseAuxiliaryPanels();
 						barUISet.barState.eraserAttribute = open;
+						(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(Inkeys::UI::Bar::Haptics::acceptedClick);
 					}
 				};
 		}

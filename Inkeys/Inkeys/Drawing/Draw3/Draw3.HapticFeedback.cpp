@@ -5,16 +5,22 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cwchar>
+#include <cstring>
 #include <hstring.h>
 #include <inspectable.h>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <new>
 #include <vector>
 #include <windows.h>
 #include <wrl/client.h>
+#if defined(DRAW3_HAPTIC_TESTING)
+#include "Draw3.HapticRequest.h"
+#endif
 
 module Inkeys.Drawing.Draw3.haptic_feedback;
 
@@ -156,6 +162,13 @@ namespace Inkeys::Drawing::Draw3
 
 		struct WinRtApi
 		{
+#if defined(DRAW3_HAPTIC_TESTING)
+			HMODULE (*loadLibrary)(const wchar_t*) noexcept = &LoadSystemLibrary;
+			FARPROC (WINAPI* getProcAddress)(HMODULE, LPCSTR) = &GetProcAddress;
+#else
+			static constexpr auto loadLibrary = &LoadSystemLibrary;
+			static constexpr auto getProcAddress = &GetProcAddress;
+#endif
 			HMODULE combase = nullptr;
 			RoInitializeFunction roInitialize = nullptr;
 			RoUninitializeFunction roUninitialize = nullptr;
@@ -168,18 +181,18 @@ namespace Inkeys::Drawing::Draw3
 			bool Load() noexcept
 			{
 				if (available) return true;
-				if (!combase) combase = LoadSystemLibrary(L"combase.dll");
+				if (!combase) combase = loadLibrary(L"combase.dll");
 				if (!combase) return false;
 				roInitialize = reinterpret_cast<RoInitializeFunction>(
-					GetProcAddress(combase, "RoInitialize"));
+					getProcAddress(combase, "RoInitialize"));
 				roUninitialize = reinterpret_cast<RoUninitializeFunction>(
-					GetProcAddress(combase, "RoUninitialize"));
+					getProcAddress(combase, "RoUninitialize"));
 				roGetActivationFactory = reinterpret_cast<RoGetActivationFactoryFunction>(
-					GetProcAddress(combase, "RoGetActivationFactory"));
+					getProcAddress(combase, "RoGetActivationFactory"));
 				windowsCreateString = reinterpret_cast<WindowsCreateStringFunction>(
-					GetProcAddress(combase, "WindowsCreateString"));
+					getProcAddress(combase, "WindowsCreateString"));
 				windowsDeleteString = reinterpret_cast<WindowsDeleteStringFunction>(
-					GetProcAddress(combase, "WindowsDeleteString"));
+					getProcAddress(combase, "WindowsDeleteString"));
 				available = roInitialize && roUninitialize && roGetActivationFactory &&
 					windowsCreateString && windowsDeleteString;
 				return available;
@@ -284,7 +297,8 @@ namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<IInputHapticsManagerStatics> inputHapticsStatics;
 		Microsoft::WRL::ComPtr<IInputHapticsManager> inputHapticsManager;
 		Microsoft::WRL::ComPtr<ISimpleHapticsController> pointerController;
-		std::vector<FeedbackEntry> pointerFeedback;
+		std::array<FeedbackEntry, kMaximumCachedFeedbackCount> pointerFeedback{};
+		bool allowInputManagerFallback = true;
 		uint32_t attachedPointerId = 0;
 		uint32_t lastAttachAttemptPointerId = 0;
 		uint64_t lastContinuousTickMs = 0;
@@ -324,9 +338,9 @@ namespace Inkeys::Drawing::Draw3
 				penDeviceStatics.Attach(static_cast<IPenDeviceStatics*>(factory));
 
 			factory = nullptr;
-			result = api.GetFactory(L"Windows.Devices.Haptics.InputHapticsManager",
-				__uuidof(IInputHapticsManagerStatics), &factory);
-			if (SUCCEEDED(result))
+			result = allowInputManagerFallback ? api.GetFactory(L"Windows.Devices.Haptics.InputHapticsManager",
+				__uuidof(IInputHapticsManagerStatics), &factory) : E_NOINTERFACE;
+			if (SUCCEEDED(result) && factory)
 			{
 				inputHapticsStatics.Attach(
 					static_cast<IInputHapticsManagerStatics*>(factory));
@@ -348,7 +362,7 @@ namespace Inkeys::Drawing::Draw3
 		void Shutdown() noexcept
 		{
 			StopFeedback();
-			pointerFeedback.clear();
+			pointerFeedback = {};
 			pointerController.Reset();
 			inputHapticsManager.Reset();
 			inputHapticsStatics.Reset();
@@ -381,7 +395,7 @@ namespace Inkeys::Drawing::Draw3
 				// 新 PointerId 绑定失败时不能继续使用旧笔的 controller，避免串笔反馈。
 				StopFeedback();
 				pointerController.Reset();
-				pointerFeedback.clear();
+				pointerFeedback = {};
 				attachedPointerId = 0;
 				pointerIntensitySupported = false;
 				pointerPlayCountSupported = false;
@@ -408,6 +422,15 @@ namespace Inkeys::Drawing::Draw3
 			if constexpr (kHapticDebugLoggingEnabled)
 				std::cout << "[Haptics] attached pointer_id=" << pointerId << std::endl;
 			return pointerController != nullptr;
+		}
+
+		void DetachPointer() noexcept
+		{
+			StopFeedback();
+			pointerController.Reset();
+			pointerFeedback = {};
+			attachedPointerId = lastAttachAttemptPointerId = 0;
+			pointerIntensitySupported = pointerPlayCountSupported = pointerDurationSupported = false;
 		}
 
 		bool PlayDiscrete(HapticDiscreteFeedback feedback, double intensity) noexcept
@@ -537,7 +560,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			StopFeedback();
 			pointerController = controller;
-			pointerFeedback.clear();
+			pointerFeedback = {};
 			pointerIntensitySupported = false;
 			pointerPlayCountSupported = false;
 			pointerDurationSupported = false;
@@ -560,7 +583,6 @@ namespace Inkeys::Drawing::Draw3
 			uint32_t size = 0;
 			if (FAILED(view->get_Size(&size))) return;
 			size = std::min<uint32_t>(size, kMaximumCachedFeedbackCount);
-			pointerFeedback.reserve(size);
 			for (uint32_t index = 0; index < size; ++index)
 			{
 				Microsoft::WRL::ComPtr<ISimpleHapticsControllerFeedback> feedback;
@@ -569,7 +591,7 @@ namespace Inkeys::Drawing::Draw3
 					continue;
 				uint16_t waveform = 0;
 				if (FAILED(feedback->get_Waveform(&waveform))) continue;
-				pointerFeedback.push_back({ waveform, feedback });
+				pointerFeedback[index] = { waveform, feedback };
 			}
 			if constexpr (kHapticDebugLoggingEnabled)
 			{
@@ -645,7 +667,7 @@ namespace Inkeys::Drawing::Draw3
 
 		bool EnsureInputManager() noexcept
 		{
-			if (!inputHapticsSupported || !inputHapticsStatics) return false;
+			if (!allowInputManagerFallback || !inputHapticsSupported || !inputHapticsStatics) return false;
 			if (inputHapticsManager) return true;
 			HRESULT result = inputHapticsStatics->GetForCurrentThread(
 				inputHapticsManager.ReleaseAndGetAddressOf());
@@ -714,9 +736,15 @@ namespace Inkeys::Drawing::Draw3
 		}
 	};
 
-	PenHapticFeedback::PenHapticFeedback()
-		: impl_(std::make_unique<PenHapticFeedbackImpl>())
+#if defined(DRAW3_HAPTIC_TESTING)
+#include "../../../../InkeysHeadlessTests/draw3_haptic_backend.inl"
+#endif
+
+	PenHapticFeedback::PenHapticFeedback(bool allowInputManagerFallback) noexcept
+		: impl_(new (std::nothrow) PenHapticFeedbackImpl())
 	{
+		// 绘制线程只能路由明确绑定的笔；可选对象分配失败不影响画布启动。
+		if (impl_) impl_->allowInputManagerFallback = allowInputManagerFallback;
 	}
 
 	PenHapticFeedback::~PenHapticFeedback()
@@ -738,7 +766,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!impl_) return;
 		impl_->enabled = enabled;
-		if (!enabled) impl_->StopFeedback();
+		if (!enabled) impl_->DetachPointer();
 	}
 
 	bool PenHapticFeedback::IsEnabled() const noexcept
@@ -754,6 +782,11 @@ namespace Inkeys::Drawing::Draw3
 	bool PenHapticFeedback::AttachPointerId(uint32_t pointerId) noexcept
 	{
 		return impl_ && impl_->AttachPointerId(pointerId);
+	}
+
+	void PenHapticFeedback::DetachPointer() noexcept
+	{
+		if (impl_) impl_->DetachPointer();
 	}
 
 	bool PenHapticFeedback::PlayDiscrete(

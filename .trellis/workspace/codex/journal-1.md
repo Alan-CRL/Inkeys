@@ -1835,3 +1835,36 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 在 Actions 验收真实 Windows 2022 三架构链路。
+
+
+## Session 63: 恢复 Inkeys3 笔震动反馈与兼容回退
+<!-- trellis-session: v=2 fp=f1cf333becf0ed95 -->
+
+**Date**: 2026-10-11
+**Task**: 恢复 Inkeys3 笔震动反馈与兼容回退
+**Branch**: `bugfix/vibration`
+
+### Summary
+
+追溯 fc9a8b86 迁移遗漏，恢复 Host 触觉注入、UI3 有效笔按钮 Click 与安全生命周期；独立审阅和完整 ARM64 编译/无窗口测试通过。按用户要求未提交。
+
+### Main Changes
+
+- 生产绘制线程管理触觉 COM，精确 Pointer 路由与安全无能力回退
+- 保留 WM_TOUCH/光标语义，增加有界接触凭据及取消/代际校验
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 exit 0；InkeysHeadlessTests --no-window exit 0；imports/格式/diff 检查通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实体笔、真实 Win7 和跨驱动关联/混合设备验收；未授权 GUI，本轮未执行

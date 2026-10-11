@@ -168,6 +168,13 @@
 	<ClCompile Include="bar_display_transition_tests.cpp" />
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
 	<ClCompile Include="draw3_bridge_tests.cpp" />
+	<ClCompile Include="draw3_haptic_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.HapticFeedback.cppm">
+	  <PreprocessorDefinitions>DRAW3_HAPTIC_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.HapticFeedback.cpp">
+	  <PreprocessorDefinitions>DRAW3_HAPTIC_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
 	<ClCompile Include="draw3_contact_tests.cpp" />
 	<ClCompile Include="update_security_tests.cpp" />
 	<ClCompile Include="speed_eraser_tests.cpp" />

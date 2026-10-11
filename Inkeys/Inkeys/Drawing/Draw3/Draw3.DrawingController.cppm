@@ -13,6 +13,7 @@
 #include <optional>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.HapticRequest.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
 
@@ -94,7 +95,8 @@ export namespace Inkeys::Drawing::Draw3
 		DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 			DrawingControllerRuntimeObserver observer = {},
-			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr);
+			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr,
+			Haptics::ClickMailbox* hapticClicks = nullptr);
 		~DrawingController();
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
@@ -164,6 +166,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::unique_ptr<DrawingControllerMetricsState> metricsState_;
 		bool metricsUnavailable_ = false;
 		PenHapticFeedback* haptics_ = nullptr;
+		Haptics::ClickMailbox* hapticClicks_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;
 		bool graphicsRecoveryPending_ = false;

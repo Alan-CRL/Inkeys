@@ -10,6 +10,7 @@ import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.graphics_initialization;
+import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.presentation_auto_save;
 import Inkeys.Drawing.Draw3.renderer;
@@ -203,6 +204,7 @@ namespace Inkeys::Drawing::Draw3
 		PresentationAutoSaveService presentationAutoSave;
 		ContactInputCoordinator input;
 		WindowController window;
+		Haptics::ClickMailbox hapticClicks;
 		std::mutex commandPublishMutex;
 		mutable std::mutex eraserDiagnosticsMutex;
 		SpeedEraser::Diagnostics eraserDiagnostics;
@@ -1475,9 +1477,13 @@ namespace Inkeys::Drawing::Draw3
 				startupCompleted = false;
 				startupSucceeded = false;
 			}
+			hapticClicks.Start();
 			running.store(true, std::memory_order_release);
 			auto runDrawing = [this, failedCleanup](std::stop_token token)
 			{
+				// COM 的创建、调用和析构都留在此 owner；异常/首帧失败同样配对清理。
+				PenHapticFeedback haptics(false);
+				(void)haptics.Initialize();
 				bool initialized = false;
 				bool graphicsInitialized = false;
 					std::cout << "[Draw3Diag][startup] stage=begin hwnd=0x" << std::hex
@@ -1590,7 +1596,7 @@ namespace Inkeys::Drawing::Draw3
 								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
-								presentation, configuration, observer, runtimeMetrics.session.get());
+								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							std::cout << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
 								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
 								<< std::dec << std::endl;
@@ -1681,6 +1687,8 @@ namespace Inkeys::Drawing::Draw3
 				CaptureRuntimeMetricsMetadata(true);
 				// GPU 资源在拥有它们的绘制线程释放，避免跨线程访问 Renderer。
 				if (drawing) drawing.reset();
+				hapticClicks.Stop();
+				haptics.Shutdown();
 				presentation.Shutdown();
 				renderer.ReleaseResources();
 				graphics = {};
@@ -1798,6 +1806,7 @@ namespace Inkeys::Drawing::Draw3
 
 		void Stop() noexcept
 		{
+			hapticClicks.Stop();
 			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
 			if (!attachedWindow.load(std::memory_order_acquire) &&
 				!attachedPresentationWindow.load(std::memory_order_acquire) &&
@@ -2134,6 +2143,16 @@ namespace Inkeys::Drawing::Draw3
 	void Host::SetActivationAllowed(bool enabled) noexcept
 	{
 		impl_->window.SetActivationAllowed(enabled);
+	}
+	Haptics::Context Host::HapticContext() const noexcept
+	{
+		return Running() ? Haptics::Context{ impl_->hapticClicks.Run(), impl_->window.HapticPointerRevision() } : Haptics::Context{};
+	}
+	bool Host::PublishHapticClick(const Haptics::Click& source) noexcept
+	{
+		if (!impl_->hapticClicks.Publish(source, HapticContext(), GetTickCount64())) return false;
+		(void)impl_->input.PublishControlWake();
+		return true;
 	}
 	Bridge::StateBridge& Host::ProductBridge() noexcept { return impl_->bridge; }
 	void Host::PublishState(const Bridge::ProductState& state) noexcept

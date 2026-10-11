@@ -59,13 +59,17 @@ export namespace Inkeys::Drawing::Draw3
 	HapticDiscreteFeedback FallbackDiscreteHapticFeedback(
 		HapticDiscreteFeedback feedback) noexcept;
 
+#if defined(DRAW3_HAPTIC_TESTING)
+	int RunPenHapticBackendTests();
+#endif
+
 	struct PenHapticFeedbackImpl;
 
 	// 动态探测 WinRT 触觉能力；不可用时所有公开方法都是 no-op。
 	class PenHapticFeedback
 	{
 	public:
-		PenHapticFeedback();
+		explicit PenHapticFeedback(bool allowInputManagerFallback = true) noexcept;
 		~PenHapticFeedback();
 		PenHapticFeedback(const PenHapticFeedback&) = delete;
 		PenHapticFeedback& operator=(const PenHapticFeedback&) = delete;
@@ -76,6 +80,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool IsEnabled() const noexcept;
 		bool IsAvailable() const noexcept;
 		bool AttachPointerId(uint32_t pointerId) noexcept;
+		void DetachPointer() noexcept;
 		bool PlayDiscrete(HapticDiscreteFeedback feedback,
 			double intensity = kSystemDefaultHapticIntensity) noexcept;
 		bool TickContinuous(HapticContinuousFeedback feedback,

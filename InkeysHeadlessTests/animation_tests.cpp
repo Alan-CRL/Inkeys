@@ -54,6 +54,7 @@ int RunMagnifierCoordinatorTests();
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
+int RunDraw3HapticTests();
 int RunDraw3BridgeTests();
 int RunDraw3ContactInputTests();
 int RunSpeedEraserTests();
@@ -1688,6 +1689,7 @@ int main(int argc, char** argv)
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
 	failureCount += RunBarBottomDockTests();
+	failureCount += RunDraw3HapticTests();
 	failureCount += RunDraw3BridgeTests();
 	failureCount += RunDraw3ContactInputTests();
 	failureCount += RunUpdateSecurityTests();

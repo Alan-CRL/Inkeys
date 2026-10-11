@@ -49,6 +49,20 @@ namespace Inkeys::Drawing::Draw3
 		return !productStopping.load(std::memory_order_acquire) && productHost.Running();
 	}
 
+	Haptics::Context ProductHapticContext() noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return {};
+		std::scoped_lock callLock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire) ? Haptics::Context{} : productHost.HapticContext();
+	}
+
+	bool PublishProductHapticClick(const Haptics::Click& source) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) && productHost.PublishHapticClick(source);
+	}
+
 	bool ProductFirstFrameReady() noexcept
 	{
 		return !productStopping.load(std::memory_order_acquire) &&

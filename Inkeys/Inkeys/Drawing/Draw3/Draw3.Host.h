@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.HapticRequest.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "../../Helper/FailedCleanupDeadline.h"
@@ -318,6 +319,8 @@ namespace Inkeys::Drawing::Draw3
 			std::uint32_t timeoutMilliseconds) const noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
+		Haptics::Context HapticContext() const noexcept;
+		bool PublishHapticClick(const Haptics::Click& source) noexcept;
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
