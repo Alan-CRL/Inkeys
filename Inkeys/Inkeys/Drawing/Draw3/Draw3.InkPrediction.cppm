@@ -460,6 +460,10 @@ export namespace Inkeys::Drawing::Draw3
 		bool idleFrozen = false;
 		int visualStableFrameCount = 0;
 		double lastMovementInputTime = 0.0;
+		// 停笔有效弧长只允许缩短；运动/显示时间保证续画和延迟 Up 不继承错误封顶。
+		std::optional<double> liveTipLength;
+		double liveTipMovementTime = 0.0;
+		double liveTipDisplayTime = 0.0;
 		double lastFrameWallTime = 0.0;
 		double logicalInputTime = 0.0;
 		// 物理 Up 锁住显示年龄与修改边界，断触等待不能继续养粗或重写 Move。
@@ -504,6 +508,8 @@ export namespace Inkeys::Drawing::Draw3
 	void AppendTerminalFallbackPoint(ActiveStroke& stroke, const InkPoint& finalPoint);
 	// 有界记录模型与接纳尾段供诊断，不修改笔迹几何。
 	void CapturePenTerminalTrace(ActiveStroke& stroke) noexcept;
+	// 无 HWND：直接验证生产笔锋几何、真实模型停笔和完成/Stored 时间边界。
+	int RunPenTaperProductionProbe() noexcept;
 	// 用已确认真实点生成普通笔完成态尾段，并烘入最终笔锋宽度。
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output);

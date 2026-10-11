@@ -378,6 +378,8 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 
 ## Stroke Modeling Invariants
 
+主产品新增的弧长/笔身直径约束与停笔重平滑见 [Input and Ink：笔锋长度约束](../native-desktop/input-and-ink.md#scenario-draw3-笔锋长度约束与停笔重平滑)。它保留原有笔锋起点和预测保护窗口；独立 demo 不在此次行为调整范围内，不能以其测试代替主产品生产 probe。
+
 - 输入时间使用单调递增的 logical time，来源是 wall-clock delta。
 - 小于 `0.25px` 的原始移动视为抖动。
 - 普通笔 `SimulatedPressure` 使用相邻有效原始点的速度，不使用 modeled/predicted velocity。

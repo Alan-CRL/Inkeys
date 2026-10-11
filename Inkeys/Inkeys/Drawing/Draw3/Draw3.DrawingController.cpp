@@ -9189,7 +9189,11 @@ namespace Inkeys::Drawing::Draw3
 							{ runtime.lastSpeedSnapshot.position.x, runtime.lastSpeedSnapshot.position.y },
 							{ snapshot.position.x, snapshot.position.y });
 					runtime.stroke.logicalInputTime = std::max(runtime.stroke.logicalInputTime, inputTime);
-					if (positionMoved) runtime.stroke.lastMovementInputTime = inputTime;
+					if (positionMoved)
+					{
+						runtime.stroke.lastMovementInputTime = inputTime;
+						runtime.stroke.liveTipLength.reset(); // 真实位置已变，即使 QPC 相同也不能继承停笔封顶。
+					}
 					inputTime = ResolvePenModelInputTime(runtime.stroke, inputTime,
 						runtime.lastModelInputTime, 1.0 / configuration_.timingProfile.target_fps);
 				}
