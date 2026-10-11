@@ -826,6 +826,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	case WM_MOUSELEAVE:
 	{
 		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
+		if (barUISet.recallAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		// 需要等待离开的休眠路径在真实移出后解除重新激活限制。
 		{
 			lock_guard lock(barUISet.borderCursorLightMutex);
@@ -1144,6 +1145,7 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 {
 	eraserAttribute.Close(*this);
+	recallAttribute.Close(*this);
 	barState.drawAttribute = false;
 	barState.geometryAttribute = false;
 	barState.moreExpanded = false;
@@ -1156,6 +1158,7 @@ void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
 	eraserAttribute.ResetPointerFeedback();
+	recallAttribute.ResetPointerFeedback();
 	if (!hWnd) return;
 
 	// 先撤销输入源，避免 ReleaseCapture 重入时继续向交互队列投递手势。
@@ -2791,6 +2794,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			|| msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP)
 		{
 			if (barUISet.eraserAttribute.Keyboard(barUISet, msg.vkcode,
+				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
+				return BarInteractionStageResult::Consumed;
+			if (barUISet.recallAttribute.Keyboard(barUISet, msg.vkcode,
 				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
 				return BarInteractionStageResult::Consumed;
 			HandleColorPickerKeyboard(msg);
@@ -6014,6 +6020,14 @@ public:
 				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
 				continue;
 			}
+			// 撤回属性与橡皮同级早处理；二者互斥，同时最多一个展开。
+			if (barUISet.recallAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
+			{
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
+				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
+				continue;
+			}
 			const auto hoverResult = HandleCommonHoverAndOcclusion();
 			if (hoverResult == BarInteractionStageResult::Shutdown) break;
 			if (hoverResult == BarInteractionStageResult::Consumed) continue;
@@ -6543,6 +6557,11 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar], false);
 	AddShape(shapeMap[BarUISetShapeEnum::GeometryAttributeBar], false);
 	for (const RECT& bounds : eraserAttribute.PresentedRegions())
+		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
+			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+				bottomDockSnapshot.horizontalMapping.rigidOverlayTranslationXDip,
+				bottomDockSnapshot.rigidTranslationDip, frameZoom);
+	for (const RECT& bounds : recallAttribute.PresentedRegions())
 		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
 			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
 				bottomDockSnapshot.horizontalMapping.rigidOverlayTranslationXDip,
@@ -7383,7 +7402,9 @@ namespace Inkeys::UI::Bar
 		POINT pointer{};
 		const bool eraserKey = vkCode == VK_ESCAPE || vkCode == VK_TAB || vkCode == VK_LEFT
 			|| vkCode == VK_RIGHT || vkCode == VK_RETURN || vkCode == VK_SPACE;
-		if (eraserKey && !offSignal && floating_window && barUISet.eraserAttribute.WantsKeyboard()
+		// 撤回属性复用同一组键盘路由键（Escape/Tab/方向/回车/空格）。
+		const bool auxPanelWantsKeyboard = barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
+		if (eraserKey && !offSignal && floating_window && auxPanelWantsKeyboard
 			&& (GetForegroundWindow() == floating_window || (GetCursorPos(&pointer) && WindowFromPoint(pointer) == floating_window)))
 		{
 			ExMessage message{}; message.message = keyDown ? WM_KEYDOWN : WM_KEYUP; message.vkcode = vkCode;

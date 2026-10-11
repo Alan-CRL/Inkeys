@@ -465,17 +465,23 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					// 每次点击都执行 Undo；防抖只合并面板置位，不吞撤销。
 					(void)Inkeys::Drawing::Draw3::PublishProductCommand(
 						Inkeys::Drawing::Draw3::Bridge::CommandType::Undo);
 
 					// TODO 撤回库重做后需要试试检测撤回状态，要支持按键变灰
+					if (!barUISet.TryBeginToggle(BarToggleChannel::RecallAttribute))
+						return;
+					// 继续点击保持展开，不切换关闭；收起由绘制/其他按钮/折叠/Escape 触发。
+					barUISet.CollapseAuxiliaryPanels();
+					barUISet.barState.recallAttribute = true;
 				};
 		}
 
 		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
-	// TODO 重做（这个会成为撤回的子窗口）
+	// 重做已实现为撤回属性弹窗内的 70x70 按钮，见 BarRecallAttributePanel。
 	// 清空
 	{
 		BarButtonClass* obj = new BarButtonClass;
@@ -1347,6 +1353,8 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		barUISet.barState.geometryAttribute = false;
 	}
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
+	// 撤回属性随折叠收起；选择+空页隐藏撤回入口时也收起（Advance 侧同步兜底）。
+	if (barUISet.barState.fold) barUISet.recallAttribute.Close(barUISet);
 
 	// 只有“选择 + 空页”使用精简布局；有历史内容时保留完整绘制按钮。
 	if (!whiteboard

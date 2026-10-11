@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "质量门与回归边界"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "动画布局验证矩阵"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "最小变更与编码规范"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Motion复用检查"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Bar到Draw3跨层检查"}

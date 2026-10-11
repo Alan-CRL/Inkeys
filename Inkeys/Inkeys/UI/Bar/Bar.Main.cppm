@@ -18,6 +18,7 @@ export module Inkeys.UI.Bar:Main;
 import :UI;
 import :State;
 import Inkeys.UI.Bar.EraserAttributeMotion;
+import Inkeys.UI.Bar.RecallAttributeMotion;
 import :Button;
 import :Format;
 export import :Rendering;
@@ -130,6 +131,50 @@ private:
 	int selectedSize_ = 32, sensitivity_ = 1;
 	Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState automatic_ =
 		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;
+};
+
+// 撤回属性：单 70x70 Redo 按钮，开合/换边/命中语义与橡皮属性一致，无子菜单。
+class BarRecallAttributePanel
+{
+public:
+	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
+		RECT workArea, POINT origin, double rigidX, double rigidY,
+		const BarUiTimelineClass* parentTimeline = nullptr,
+		bool dragPlacementLocked = false);
+	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
+	void CommitPresented();
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool ResetPointerFeedback();
+	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
+	void Close(BarUISetClass& owner);
+	RECT Bounds() const;
+	std::array<RECT,3> PresentedRegions() const;
+	Inkeys::UI::Bar::RecallAttributePresentation PresentationSnapshot() const;
+	bool Changed() const noexcept { return changed_; }
+	bool Active() const noexcept { return active_; }
+	bool WantsKeyboard() const noexcept { return visible_.load(); }
+private:
+	void Initialize();
+	void Execute(BarUISetClass& owner, int item);
+	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::RecallAttributeRect rect, double scale = 1.0);
+	mutable std::mutex presentationMutex_;
+	Inkeys::UI::Bar::RecallAttributeLayout layout_;
+	Inkeys::UI::Bar::RecallAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::RecallAttributeLayoutInput stableLayoutInput_, dragLayoutInput_;
+	double zoom_ = 1;
+	bool initialized_ = false, changed_ = false, active_ = false;
+	bool hasStableLayoutInput_ = false, dragPlacementLocked_ = false;
+	bool releaseSwitchLayoutLocked_ = false, sideSwitchActive_ = false;
+	double sideSwitchExpandDuration_ = 0;
+	bool previousBelow_ = false;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	Inkeys::UI::Bar::RecallSurfaceMotion panelMotion_;
+	BarButtonClass redoButton_;
+	BarUiShapeClass surface_;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
+	unsigned long long deviceGeneration_ = 0;
 };
 
 
@@ -447,6 +492,7 @@ public:
 	BarStateClass barState;
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
+	BarRecallAttributePanel recallAttribute;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
