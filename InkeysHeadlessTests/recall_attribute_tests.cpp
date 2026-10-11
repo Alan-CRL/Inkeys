@@ -120,39 +120,59 @@ int RunRecallAttributeTests()
 		std::cout << "[RecallMotion] openingPeak=" << openingPeak << " closingPeak=" << closingPeak << '\n';
 	}
 	{
+		using Availability = RecallHistoryAvailability;
 		RecallChromeState state;
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, false });
 		auto view = ResolveRecallChrome(state);
-		expect(view.phase == RecallChromePhase::Idle && view.undoExpanded && !view.mainRedoVisible && !view.popupOpen,
-			"idle undo is 2x2 and the main redo stays hidden");
+		expect(view.undoExpanded && view.mainUndoVisible && !view.mainRedoVisible && !view.popupOpen
+			&& view.undoEnabled && !view.redoEnabled,
+			"only undo rests as a 2x2 undo");
+		const auto rejectedRedo = ApplyRecallChromeEvent(state, RecallChromeEvent::RedoClick);
+		expect(rejectedRedo.hold == state.hold, "gray redo does not take the 2x2");
 		state = ApplyRecallChromeEvent(state, RecallChromeEvent::UndoClick);
 		view = ResolveRecallChrome(state);
-		expect(view.phase == RecallChromePhase::Popup && view.popupOpen && view.undoExpanded && !view.mainRedoVisible,
-			"undo opens the popup and keeps the 2x2 undo");
-		expect(!RecallChromeIdleElapsed(state.phase, RecallChromeIdleSeconds - 0.01)
-			&& RecallChromeIdleElapsed(state.phase, RecallChromeIdleSeconds),
-			"popup idles out at 5 seconds");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::PopupRedoClick);
-		expect(state.phase == RecallChromePhase::Popup, "popup redo keeps the popup open");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Dismiss);
+		expect(state.hold == RecallChromeHold::Undo && view.popupOpen && view.popupShowsRedo
+			&& view.undoExpanded && !view.mainRedoVisible,
+			"undo click keeps a 2x2 undo and puts redo in the popup");
+		expect(RecallChromeIdleElapsed(state.hold, RecallChromeIdleSeconds)
+			&& !RecallChromeIdleElapsed(state.hold, RecallChromeIdleSeconds - 0.01),
+			"hold lasts 5 seconds");
+		state.availability = { true, true };
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, true });
+		expect(state.hold == RecallChromeHold::Undo && ResolveRecallChrome(state).undoExpanded,
+			"availability changes color immediately and does not change the held layout");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
 		view = ResolveRecallChrome(state);
-		expect(view.phase == RecallChromePhase::Compact && !view.popupOpen && view.mainRedoVisible && !view.undoExpanded,
-			"any dismiss while redo is available stacks redo over undo");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::BarRedoClick);
-		expect(ResolveRecallChrome(state).phase == RecallChromePhase::Compact,
-			"the main redo click stays compact");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::UndoClick);
-		expect(ResolveRecallChrome(state).popupOpen && ResolveRecallChrome(state).undoExpanded,
-			"undo from the compact pair reopens the popup at 2x2");
+		expect(state.hold == RecallChromeHold::None && !view.popupOpen
+			&& view.mainRedoVisible && view.mainUndoVisible && !view.undoExpanded && !view.redoExpanded,
+			"after 5 seconds both commands rest as redo over undo");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::RedoClick);
+		view = ResolveRecallChrome(state);
+		expect(state.hold == RecallChromeHold::Redo && view.popupOpen && !view.popupShowsRedo
+			&& view.redoExpanded && !view.mainUndoVisible,
+			"a 2x1 redo click makes redo 2x2 and moves undo into the popup");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { false, true });
+		view = ResolveRecallChrome(state);
+		expect(!view.popupOpen && view.redoExpanded && view.mainRedoVisible && !view.mainUndoVisible
+			&& !view.undoEnabled && view.redoEnabled,
+			"only redo rests as a 2x2 redo");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::RedoClick);
+		expect(ResolveRecallChrome(state).popupOpen && !ResolveRecallChrome(state).popupShowsRedo,
+			"clicking the lone redo opens undo in the popup");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::SuppressPopup);
+		expect(!ResolveRecallChrome(state).popupOpen && ResolveRecallChrome(state).redoExpanded
+			&& state.hold == RecallChromeHold::Redo,
+			"drawing hides the popup but keeps the held 2x2 until the timer");
 		state = ApplyRecallChromeEvent(state, RecallChromeEvent::ReturnToDesktop);
 		view = ResolveRecallChrome(state);
-		expect(view.phase == RecallChromePhase::Compact && !view.popupOpen && view.mainRedoVisible,
-			"returning to the desktop docks redo instead of reopening the popup");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::DrawingStarted);
+		expect(state.hold == RecallChromeHold::None && !view.popupOpen && view.redoExpanded,
+			"returning to the desktop settles without reopening the popup");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, {});
 		view = ResolveRecallChrome(state);
-		expect(view.phase == RecallChromePhase::Idle && view.undoExpanded && !view.mainRedoVisible,
-			"drawing clears redo and restores the 2x2 undo");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::ReturnToDesktop);
-		expect(state.phase == RecallChromePhase::Idle, "workspace changes do not invent a redo latch");
+		expect(view.undoExpanded && view.mainUndoVisible && !view.mainRedoVisible
+			&& !view.undoEnabled && !view.redoEnabled,
+			"neither command leaves a gray 2x2 undo");
 	}
 	std::cout << "[RecallAttribute] failures=" << failures << '\n';
 	return failures;

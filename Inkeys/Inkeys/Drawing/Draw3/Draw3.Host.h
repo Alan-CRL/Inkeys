@@ -261,6 +261,8 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		bool canUndo = false;
+		bool canRedo = false;
 		std::uint64_t contentRevision = 0;
 		Bridge::CompletedStrokeKind completedStrokeKind =
 			Bridge::CompletedStrokeKind::None;

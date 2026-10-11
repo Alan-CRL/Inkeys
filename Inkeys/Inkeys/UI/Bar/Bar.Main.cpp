@@ -354,6 +354,11 @@ namespace Inkeys::UI::Bar
 			barUISet.UpdateRendering();
 	}
 
+	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo)
+	{
+		barUISet.NoteRecallHistoryAvailability(canUndo, canRedo);
+	}
+
 	bool CurrentPageHasContent() noexcept
 	{
 		return currentPageHasContent;

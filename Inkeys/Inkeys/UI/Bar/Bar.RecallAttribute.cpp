@@ -71,6 +71,10 @@ namespace
 	{
 		return I18n::getWOr(I18nKey.UI.Bar.MainButtons.RedoLabel, L"重做");
 	}
+	wstring UndoButtonLabel()
+	{
+		return I18n::getWOr(I18nKey.UI.Bar.MainButtons.UndoLabel, L"撤回");
+	}
 }
 
 void BarRecallAttributePanel::Initialize()
@@ -216,14 +220,25 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, double dt, double sp
 	const auto& g = frame_.geometry;
 	changed_ |= surface_.fill->val != GetThemeColor(BarThemeColorEnum::Surface);
 	ConfigureSurface(surface_, g.panel, frame_.panelPose.scale);
-	// Redo 按钮与主栏同一套按压/悬停/选中视觉管线。
-	auto& b = redoButton_; changed_ |= b.name.SetStringImmediate(RedoButtonLabel());
+	// 浮窗按钮随按住相位在 Undo / Redo 之间切换，不可用时变灰。
+	auto& b = redoButton_;
+	const auto chrome = owner.RecallChromeView();
+	const bool showsRedo = chrome.popupShowsRedo;
+	const bool commandEnabled = showsRedo ? chrome.redoEnabled : chrome.undoEnabled;
+	changed_ |= b.TransitionContent(
+		showsRedo ? L"barRedo" : L"barRecall",
+		showsRedo ? RedoButtonLabel() : UndoButtonLabel());
 	const bool presented = frame_.panelVisible;
 	const double scale = frame_.panelPose.scale;
 	b.state->state = BarWidgetState::None;
-	SetBarButtonPressedVisual(b, pressed_ == 0);
-	UpdateBarButtonHoverVisual(b, presented, true, BarButtonHoverFadeDurationSeconds);
+	SetBarButtonPressedVisual(b, commandEnabled && pressed_ == 0);
+	UpdateBarButtonHoverVisual(b, presented, commandEnabled, BarButtonHoverFadeDurationSeconds);
 	RetargetBarButtonInteractionVisual(b, presented, true, false, BarButtonHoverTransitionDuration);
+	const COLORREF contentColor = commandEnabled
+		? GetThemeColor(BarThemeColorEnum::TextPrimary)
+		: RGB(200, 200, 200);
+	if (b.icon.color1.has_value()) b.icon.color1->SetTar(contentColor);
+	b.name.color.SetTar(contentColor);
 	b.button.frame->SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 	Place(b.button, g.items[0]);
 	b.button.rw->SetDirect(BarButtonCornerRadiusDip * scale); b.button.rh->SetDirect(BarButtonCornerRadiusDip * scale); b.button.ft->SetDirect(BarButtonFrameThicknessDip * scale);
@@ -288,9 +303,7 @@ void BarRecallAttributePanel::Close(BarUISetClass& owner)
 void BarRecallAttributePanel::Execute(BarUISetClass& owner, int item)
 {
 	if (item != 0) return;
-	// 单步重做，保持展开；与主栏 Redo 一致交还 PPT 焦点。
-	(void)Inkeys::Drawing::Draw3::PublishProductCommand(Inkeys::Drawing::Draw3::Bridge::CommandType::Redo);
-	owner.NoteRecallPopupRedo();
+	if (!owner.ActivateRecallPopupCommand()) return;
 	Inkeys::UI::Bar::NotifyPptBusinessAction();
 	owner.UpdateRendering(false);
 }

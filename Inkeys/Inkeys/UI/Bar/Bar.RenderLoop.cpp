@@ -2934,6 +2934,25 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							}
 						}
 
+						if (temp->preset == BarButtonPresetEnum::Recall
+							|| temp->preset == BarButtonPresetEnum::Redo)
+						{
+							const auto chrome = owner_.RecallChromeView();
+							const bool enabled = temp->preset == BarButtonPresetEnum::Recall
+								? chrome.undoEnabled : chrome.redoEnabled;
+							if (!enabled)
+							{
+								const COLORREF unavailable = RGB(200, 200, 200);
+								if (temp->icon.color1.has_value())
+								{
+									if (forNum == 1 || state.barState.fold || !temp->IsVisible())
+										temp->icon.color1.value().SetDirect(unavailable);
+									else temp->icon.color1.value().SetTar(unavailable);
+								}
+								temp->name.color.SetTar(unavailable);
+							}
+						}
+
 						// 按压倍率独立于布局批次，松手或拖出时从当前值回弹到标准大小。
 						if (temp->preset == BarButtonPresetEnum::Divider)
 						{
@@ -3033,11 +3052,16 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				};
 			AnchorHiddenButton(BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Draw);
-			AnchorHiddenButton(BarButtonPresetEnum::Recall, BarButtonPresetEnum::Draw);
-			// 撤回还可见时停在撤回上，便于 2×1 从同一格展开；两者一起隐藏时跟撤回走同一锚点，避免落到右侧清空按钮。
+			// 对方还可见时停在对方上；一起隐藏时锚到绘制，避免落到右侧按钮。
 			{
+				BarButtonClass* redoButton = state.barButtonSet.preset[
+					static_cast<int>(BarButtonPresetEnum::Redo)];
 				BarButtonClass* recallButton = state.barButtonSet.preset[
 					static_cast<int>(BarButtonPresetEnum::Recall)];
+				AnchorHiddenButton(BarButtonPresetEnum::Recall,
+					redoButton && redoButton->IsVisible()
+						? BarButtonPresetEnum::Redo
+						: BarButtonPresetEnum::Draw);
 				AnchorHiddenButton(BarButtonPresetEnum::Redo,
 					recallButton && recallButton->IsVisible()
 						? BarButtonPresetEnum::Recall

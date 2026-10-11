@@ -7491,8 +7491,37 @@ namespace Inkeys::Drawing::Draw3
 			return currentPageIndex_ < pageRuntimeStates.size() &&
 				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
 		};
+		bool publishedCanUndo = false;
+		bool publishedCanRedo = false;
+		auto publishHistoryAvailability = [&]()
+		{
+			bool canUndo = false;
+			bool canRedo = false;
+			if (currentPageIndex_ < pageRuntimeStates.size())
+			{
+				const CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+				const std::optional<RenderItemId> visible = runtime.history.LastVisibleItem();
+				canUndo = visible.has_value() && visible->index >= runtime.undoFloor;
+				canRedo = runtime.history.LastRedoItem().has_value() || runtime.clearRedoAvailable;
+				if (!canUndo)
+				{
+					if (activeWorkspace == Bridge::Workspace::Desktop && desktopClearRecovery)
+						canUndo = true;
+					else if (runtime.previousClearUndoAvailable &&
+						(activeWorkspace == Bridge::Workspace::Presentation ||
+							activeWorkspace == Bridge::Workspace::Whiteboard))
+						canUndo = true;
+				}
+			}
+			if (canUndo == publishedCanUndo && canRedo == publishedCanRedo) return;
+			publishedCanUndo = canUndo;
+			publishedCanRedo = canRedo;
+			if (observer_.historyAvailabilityChanged)
+				observer_.historyAvailabilityChanged(observer_.context, canUndo, canRedo);
+		};
 		auto publishCurrentPageContent = [&]()
 		{
+			publishHistoryAvailability();
 			const bool hasContent = currentPageHasContent();
 			if (hasContent == publishedCurrentPageHasContent) return;
 			publishedCurrentPageHasContent = hasContent;

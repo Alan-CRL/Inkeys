@@ -540,12 +540,16 @@ public:
 	void CollapseAuxiliaryPanels(bool cancelCapture = true);
 	// Undo 回到 2×2 并打开浮窗；收起且锁存仍在则收成上 Redo 下 Undo。
 	void OpenRecallFromUndo();
+	void OpenRecallFromRedo();
 	void NoteRecallPopupRedo();
+	bool ActivateRecallPopupCommand();
 	void NoteRecallPopupDismissed();
 	void ClearRecallForDrawing();
 	void SettleRecallChromeForWorkspace();
 	bool AdvanceRecallChromeIdle(double dtSeconds);
 	void ApplyRecallChromeVisuals();
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView();
+	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	void ArmRecallChromeIdleTimer() noexcept;
 	void DisarmRecallChromeIdleTimer() noexcept;
 	void ArmRecallChromeIdleDeadline();
@@ -1071,6 +1075,7 @@ namespace Inkeys::UI::Bar
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
+	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
