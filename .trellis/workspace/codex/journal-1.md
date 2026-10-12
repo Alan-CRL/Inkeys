@@ -1867,3 +1867,68 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 阶段1已完成归档；父任务尾段重构继续planning，需要独立实施/验收。GUI/实体笔/Win7真机未执行；无commit/push。
+
+
+## Session 67: 阶段2：库内终态尾段重构与离线验收完成
+<!-- trellis-session: v=2 fp=b8ee82401437d9c8 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段2：库内终态尾段重构与离线验收完成
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+用户批准创建并开始；独立Modeler本地扩展完成，四配置原API精确保持，96窗尾段/三架构成本通过，产品接入仍后续。
+
+### Main Changes
+
+- 新增有序raw/位移正则尾段模块，硬入口/终点/原子回退，共享14TU，本地来源及可重现CLI；原13源18头未改。
+- 清理3.092GiB任务缓存，冻结47资料不变；记录Win32跨架构数值机制，不改浮点/ABI。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 四配置尾段96窗口116105assert0失败，默认18Apply12改善；原19case128412assert同阶段1位级一致；主Debug+Headless、三架构24case成本、imports资源及checker通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 阶段3另建产品完成/Stored/taper/L1接入任务，按真实消费输入验证保护窗口/来源和成本；Touch续接及设备GUI另阶段。
+
+
+## Session 71: 阶段三 Draw3 完成态局部尾段拟合与评估
+<!-- trellis-session: v=2 fp=3127bb714edf1301 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段三 Draw3 完成态局部尾段拟合与评估
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+局部C++拟合、固定64点raw窗口、最终Stored接入；ARM64主/test构建、回放与生产probe通过。GUI/设备未执行，无commit/push。
+
+### Main Changes
+
+- 可选原始输入辅助，稀疏/零辅助仍平滑，修正可覆盖当前L1尾段
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 原API精确，150567尾段检查、331480生产probe、12312基准0fail
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实体笔和断触完成视觉、GPU重绘体验验证

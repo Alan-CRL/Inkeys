@@ -9,6 +9,7 @@
 #include <cmath>
 #include <iterator>
 #include <ink_stroke_modeler/stroke_modeler.h>
+#include <ink_stroke_modeler/terminal_tail_reconstructor.h>
 #include <limits>
 #include <optional>
 #include <span>
@@ -894,6 +895,98 @@ namespace draw3
 		}
 	}
 
+
+	void RecordPenTailRawInput(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 position, double physicalTime) noexcept
+	{
+		if (!std::isfinite(physicalTime) || !std::isfinite(position.x) ||
+			!std::isfinite(position.y)) return;
+		if (stroke.tailRawCount && physicalTime < stroke.tailRawSamples[stroke.tailRawCount - 1].physicalTime)
+			return; // 不把时间倒退样本塞进有序物理窗口。
+		size_t remove = 0;
+		while (remove < stroke.tailRawCount &&
+			stroke.tailRawSamples[remove].physicalTime < physicalTime - 0.160) ++remove;
+		if (!remove && stroke.tailRawCount == stroke.tailRawSamples.size()) remove = 1;
+		for (size_t i = remove; i < stroke.tailRawCount; ++i)
+			stroke.tailRawSamples[i - remove] = stroke.tailRawSamples[i];
+		stroke.tailRawCount -= remove;
+		stroke.tailRawSamples[stroke.tailRawCount++] = { position, physicalTime,
+			stroke.realPoints.empty() ? 0 : stroke.realPoints.size() - 1 };
+	}
+
+	namespace
+	{
+		void FitCompletedPenGeometry(const ActiveStroke& stroke, std::vector<InkPoint>& output)
+		{
+			using namespace ink::stroke_model;
+			// 仅确认完成时调用；断触等待和实时 L1/realPoints 不受影响。
+			if (!stroke.terminalDisplayTime || output.size() < 4) return;
+			const size_t count = output.size();
+			size_t start = count > 512 ? count - 512 : 0;
+			if (stroke.tailRawCount)
+				start = std::max(start, std::min(stroke.tailRawSamples[0].firstPoint, count - 1));
+			if (count - start < 4) return;
+			std::vector<TerminalTailReferencePoint> reference;
+			reference.reserve(count - start);
+			for (size_t i = start; i < count; ++i)
+				reference.push_back({ { output[i].x, output[i].y }, { i, i, 0 }, i + 1 == count });
+			std::vector<TerminalTailRawPoint> raw;
+			for (size_t i = 0; i < stroke.tailRawCount; ++i)
+				if (stroke.tailRawSamples[i].physicalTime >= *stroke.terminalDisplayTime - 0.080)
+					raw.push_back({ { stroke.tailRawSamples[i].position.x, stroke.tailRawSamples[i].position.y }, i });
+			TerminalTailRequest request;
+			request.reference = reference; request.raw = raw;
+			request.endpoint = { stroke.terminalRawUp.x, stroke.terminalRawUp.y };
+			request.replacement_range = { start, count }; request.baseline_token = count;
+			request.config.max_raw_points = 64;
+			// 产品坐标为画布像素，3px 为当前实验位移上限；不按显示时间匹配 raw。
+			TerminalTailScratch fitScratch;
+			const auto result = ReconstructLocalTerminalTail(request, fitScratch);
+			if (result.status != TerminalTailStatus::kApply || result.patch.baseline_token != count ||
+				result.patch.replacement_range.begin != start || result.patch.replacement_range.end != count ||
+				result.patch.points.size() != count - start) return;
+			for (size_t i = 0; i < result.patch.points.size(); ++i)
+				if (result.patch.points[i].source.first != start + i ||
+					result.patch.points[i].source.second != start + i || result.patch.points[i].source.fraction != 0)
+					return;
+			// 求解器只看尾窗；发布前有界检查新尾段与未传入的稳定前缀。
+			auto cross = [](Vec2 a, Vec2 b, Vec2 c) {
+				return (double(b.x) - a.x) * (double(c.y) - a.y) -
+					(double(b.y) - a.y) * (double(c.x) - a.x); };
+			auto intersects = [&](Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
+				const auto ab1 = cross(a,b,c), ab2 = cross(a,b,d);
+				const auto cd1 = cross(c,d,a), cd2 = cross(c,d,b);
+				if (ab1 * ab2 < 0 && cd1 * cd2 < 0) return true;
+				const auto on = [](Vec2 p, Vec2 q, Vec2 r, double area) {
+					return std::abs(area) <= 1e-6 && r.x >= std::min(p.x,q.x) - 1e-6 &&
+						r.x <= std::max(p.x,q.x) + 1e-6 && r.y >= std::min(p.y,q.y) - 1e-6 &&
+						r.y <= std::max(p.y,q.y) + 1e-6; };
+				return on(a,b,c,ab1) || on(a,b,d,ab2) || on(c,d,a,cd1) || on(c,d,b,cd2); };
+			size_t work = 0;
+			for (size_t i = 1; i < result.patch.points.size(); ++i)
+			{
+				const auto a = result.patch.points[i - 1].position, b = result.patch.points[i].position;
+				// L1 内笔宽沿用原属性，位置变化后仍必须满足圆胶囊公切线条件。
+				if (start + i <= stroke.committedIndex && stroke.hasCommittedGeometry &&
+					std::abs(output[start+i].r - output[start+i-1].r) >
+					0.95 * std::hypot(double(b.x) - a.x, double(b.y) - a.y)) return;
+				if (a.x == output[start+i-1].x && a.y == output[start+i-1].y &&
+					b.x == output[start+i].x && b.y == output[start+i].y) continue;
+				for (size_t j = 1; j <= start; ++j)
+				{
+					if (++work > request.config.max_validation_work) return;
+					if (start + i == j + 1) continue;
+					if (intersects(a, b, {output[j-1].x,output[j-1].y}, {output[j].x,output[j].y})) return;
+				}
+			}
+			for (size_t i = 0; i < result.patch.points.size(); ++i)
+			{
+				output[start + i].x = result.patch.points[i].position.x;
+				output[start + i].y = result.patch.points[i].position.y;
+			} // 只改位置；笔宽、压力来源、时间保持对应原点。
+		}
+	}
+
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output)
 	{
@@ -926,15 +1019,21 @@ namespace draw3
 
 		if (style.inkType == StoredInkType::Pen)
 		{
-			BuildCompletedPenTail(stroke, liveTipTaperSeconds, scratch);
-			const size_t stablePointCount = stroke.hasCommittedGeometry &&
-				!stroke.realPoints.empty()
-				? std::min(stroke.committedIndex + 1, stroke.realPoints.size()) : 0;
-			points.reserve((stablePointCount > 0 ? stablePointCount - 1 : 0) +
-				scratch.size());
-			// 尾段首点已经烘入 taper；用它替换稳定前缀连接点，避免接缝重复。
-			for (size_t index = 0; index + 1 < stablePointCount; ++index)
-				appendPoint(stroke.realPoints[index]);
+			scratch = stroke.realPoints;
+			FitCompletedPenGeometry(stroke, scratch);
+			if (!scratch.empty())
+			{
+				const size_t tailStart = stroke.hasCommittedGeometry
+					? std::min(stroke.committedIndex, scratch.size() - 1) : 0;
+				std::vector<InkPoint> tail(scratch.begin() + tailStart, scratch.end());
+				ApplyLiveTipTaper(tail, liveTipTaperSeconds, ResolvePenDisplayTime(stroke));
+				EnforceCapsuleTangency(tail);
+				// taper 可以插入派生连接点，不能复制到原点数的缓冲区。
+				scratch.resize(tailStart);
+				scratch.insert(scratch.end(), tail.begin(), tail.end());
+			}
+			else if (stroke.hasInputStartPoint) scratch.push_back(stroke.inputStartPoint);
+			points.reserve(scratch.size());
 			for (const InkPoint& point : scratch) appendPoint(point);
 		}
 		else if (style.inkType == StoredInkType::Highlighter ||
@@ -1148,6 +1247,7 @@ namespace draw3
 		modelScratch.clear();
 		predictedResults.clear();
 		realPoints.clear();
+		tailRawCount = 0;
 		predictedPoints.clear();
 		l0DrawPoints.clear();
 		previousL0DrawPoints.clear();

@@ -49,7 +49,7 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 构建日志需要同时证明 C++ 编译和两个 Shader 编译成功；只看到最终 EXE 存在，不能替代对 Shader 构建/资源链的检查。
 
-Ink Stroke Modeler/Abseil消费保持Release ABI：Debug自有代码保留调试信息/非优化，以 /MT、NDEBUG 链接，不能改回 /MTd、_DEBUG。2026-10-12批准的源码迁移仅对共享13个Modeler TU保持旧MinSizeRel优化；Abseil按最新授权固定vcpkg20250512.1#0同包头/Release MT库，专用C++20且必须数值/性能对照，详见native-desktop/draw3-integration固定ABI合同。InkeysHeadlessTests MTd不直接消费该依赖。
+Ink Stroke Modeler/Abseil消费保持Release ABI：Debug自有代码保留调试信息/非优化，以 /MT、NDEBUG 链接，不能改回 /MTd、_DEBUG。2026-10-12批准的源码迁移对共享13个上游Modeler TU及阶段2独立本地扩展保持旧MinSizeRel优化；Abseil按最新授权固定vcpkg20250512.1#0同包头/Release MT库，专用C++20且必须数值/性能对照，详见native-desktop/draw3-integration固定ABI合同。InkeysHeadlessTests MTd不直接消费该依赖。
 
 原生窗口宿主不需要文件级 `WholeProgramOptimization` 例外。Release 必须继续使用项目级 `/GL/LTCG`，并通过启动测试确认 `WS_EX_NOREDIRECTIONBITMAP` 直接进入 `CreateWindowExW`。
 

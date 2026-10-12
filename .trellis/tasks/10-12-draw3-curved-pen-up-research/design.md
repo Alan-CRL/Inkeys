@@ -2,13 +2,13 @@
 
 ## Status and Decisions
 
-2026-10-12，仍为研究/规划，不运行 task start。用户选择保留真实 Up、允许重构未落入 L1 的 pre-Up 尾段；最新要求是让计算成为 Ink Stroke Modeler 的专门模块，评估 runtime .cc 源编和 Abseil 单独静态链接，并明确没有把握的难点。后续算法尚未授权实施；阶段1源码迁移已在完整方案审阅后获批，由子任务 modeler-source-build-baseline 执行。
+2026-10-12，父任务协调分阶段交付，阶段2已获用户批准，独立模块和离线验收现已通过；产品接入仍规划。用户选择保留真实 Up、允许重构未落入 L1 的 pre-Up 尾段；最新要求是让计算成为 Ink Stroke Modeler 的专门模块，评估 runtime .cc 源编和 Abseil 单独静态链接，并明确没有把握的难点。阶段1已验收提交c34d3a56；阶段2独立终态模块与离线验收由子任务 modeler-terminal-tail-reconstruction 执行，产品接入和Touch续接留后续阶段。
 
 本文件替代上一轮“产品库外计算”为首选的架构；原有几何分析、边界和合成例子的限制继续有效。
 
 ## Architecture
 
-保留原版 Down/Move/Predict/Update(kUp) 的前向数学流程，新增库内独立 terminal_tail_reconstructor（文件/API名仅提案）。模块根据原始输入尾部、已接纳的平滑参考窗口、固定入口和真实 Up，返回显式 TailPatch；Draw3 校验并应用替换，统一完成绘制与 Stored。
+保留原版 Down/Move/Predict/Update(kUp) 的前向数学流程，阶段2新增库内独立 terminal_tail_reconstructor，已有显式API与离线验收；产品接入仍规划。模块根据原始输入尾部、已接纳的平滑参考窗口、固定入口和真实 Up，返回显式 TailPatch；Draw3 校验并应用替换，统一完成绘制与 Stored。
 
 ```text
 原 StrokeModeler -> 原平滑参考、活动笔迹
@@ -86,10 +86,10 @@ Cancelled、新Down、对象池、页面边界、多contact清各自缓存/版�
 | 事项 | 当前判断 | 下一证据 |
 |---|---|---|
 | 13源码与vcpkg Abseil | 源码/provider三架构及基线验收PASS | 包ABI、链接来源、三架构 |
-| 原Update合同及显式patch | 边界清楚，有较高实现把握 | 关闭扩展baseline、错误/范围测试 |
+| 原Update合同及显式patch | 阶段2四配置原API bit exact、96窗硬边界/失败原子通过 | 真实产品原子应用与来源属性转移 |
 | L1不动、endpoint一致 | 可作为硬合同验收 | 输出范围和端点断言 |
 | 新源码等同旧binary行为 | 19case/128412assert覆盖范围内bit exact | 真实设备/GUI及后续算法样本 |
-| 真圆弧末钩改善 | 有数学方向，无实际证据 | 当前modeler失败样本和实体设备 |
+| 圆/快转立即Up末钩改善 | 阶段2两合成轨迹的12窗口记录达独立物理改善，真设备未验证 | 实际产品接纳/实体设备/幅度与抽动 |
 | raw匹配、S弯/自交/真实角点 | 算法主要难点，没有普遍保证 | 有序正负样本矩阵 |
 | 短窗口零折弯、零形变 | 部分边界下不可兼得 | 空间/失败率、保护窗口决策 |
 | Up无抽动、reconnect无跳变 | 当前没有把握承诺 | preview/final/恢复视觉证据 |

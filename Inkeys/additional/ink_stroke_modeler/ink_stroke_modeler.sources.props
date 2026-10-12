@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <!-- 仅登记运行源码；测试、fuzz 和 GMock type_matchers 不参与产品编译。 -->
+  <!-- 13 个原版运行源与独立本地终态扩展；测试、fuzz 和 GMock 不参与产品编译。 -->
   <ItemGroup>
     <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)stroke_modeler.cc">
       <Link>ink_stroke_modeler\stroke_modeler.cc</Link>
@@ -40,6 +40,9 @@
     </InkStrokeModelerSource>
     <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\prediction\kalman_filter\kalman_filter.cc">
       <Link>ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)terminal_tail_reconstructor.cc">
+      <Link>ink_stroke_modeler\terminal_tail_reconstructor.cc</Link>
     </InkStrokeModelerSource>
   </ItemGroup>
 </Project>

@@ -5,7 +5,7 @@
 - 来源快照：D:/Project/Inkeys/inkStrokeModelerTest/Inkeys3-Draw3@8d045298eaaac76f752b4f8b5f3303b3520e50b7；不嵌套源.git。2026-10-12阶段1获批，仅调整Modeler/Abseil构建归属，算法及产品几何不变。
 - Draw3产品源在Inkeys/Inkeys/Drawing/Draw3；Modeler运行源唯一存放于Inkeys/additional/ink_stroke_modeler；Abseil通过vcpkg同包头/库消费，Inkeys/additional/absl保留旧.0头用于回退。
 - Inkeys/resource.h/Inkeys.rc保留资源301-304及现有shader嵌入链。
-- 产品不编译demo入口、独立测试窗口、window_performance_hud或Abseil.cc。仅允许共享清单中的13个Modeler运行.cc；排除GMock type_matchers.cc和测试/fuzz源码。
+- 产品不编译demo入口、独立测试窗口、window_performance_hud或Abseil.cc。共享清单保留13个未修改上游Modeler运行.cc；2026-10-12阶段2授权新增独立terminal_tail_reconstructor本地扩展TU，不隐式接入产品；排除GMock type_matchers.cc和测试/fuzz源码。
 
 ## Scenario: 固定版本 Ink Stroke Modeler 与 vcpkg Abseil ABI
 
@@ -20,7 +20,7 @@
 ### 3. Contracts
 - active vcpkg Abseil include优先保留vendor .0；实际patch版本、std string_view/ordering、lts_20250512、MT/NDEBUG/iterator0与库一致，不混用版本。
 - 不手工合并/复制Abseil库或拆旧merge；记录包source/port/toolchain/flags/hash/machine/CRT/namespace，无Modeler定义。
-- 业务Debug保持原调试/优化合同；仅13个Modeler TU保持旧MinSizeRel /O1 /Ob1、/MT、NDEBUG、C++20、/fp:precise、EH/RTTI，PCH/模块扫描关闭。运行期obj更新用逐项marker限制，不能改变业务cpp/cppm obj。
+- 业务Debug保持原调试/优化合同；仅共享清单标记的Modeler TU（13个上游源及阶段2独立扩展）保持旧MinSizeRel /O1 /Ob1、/MT、NDEBUG、C++20、/fp:precise、EH/RTTI，PCH/模块扫描关闭。运行期obj更新用逐项marker限制，不能改变业务cpp/cppm obj。
 - Abseil使用vcpkg标准Release优化，须对照验收；其他依赖/SDK/toolset不升级。
 - triplet文件hash参与所有包缓存，首次可重建同版本依赖；改变依赖设置前检查空间，不以cache失效为由改版本。
 - 源码Modeler与旧merge不能混链；Update追加、Predict非修改、Save/Restore、参数和几何接纳保持。

@@ -8576,6 +8576,9 @@ namespace Inkeys::Drawing::Draw3
 					const size_t reconnectManualTestFirstPointIndex =
 						reconnectRuntime->stroke.realPoints.empty()
 						? 0 : reconnectRuntime->stroke.realPoints.size() - 1;
+					if (reconnectRuntime->tool == DrawingTool::Pen || reconnectRuntime->tool == DrawingTool::HardPen)
+						RecordPenTailRawInput(reconnectRuntime->stroke, {down.position.x, down.position.y},
+							QpcDeltaSeconds(down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency));
 					reconnectRuntime->modelInputThisFrame = true;
 					const bool endpointRecovery =
 						(reconnectRuntime->tool == DrawingTool::Pen ||
@@ -8864,6 +8867,8 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = down.tilt,
 					.orientation = down.orientation
 				};
+				if (runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen)
+					RecordPenTailRawInput(stroke, {down.position.x, down.position.y}, 0.0);
 				runtime->modelInputThisFrame = true;
 				runtime->stationaryModelAdvanceBlocked = false;
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
@@ -9042,6 +9047,9 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
+				if (runtime.tool == DrawingTool::Pen || runtime.tool == DrawingTool::HardPen)
+					RecordPenTailRawInput(runtime.stroke, {snapshot.position.x, snapshot.position.y},
+						QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency));
 				runtime.modelInputThisFrame = true;
 				const bool sanitizeEndpoint =
 					(runtime.tool == DrawingTool::Pen ||
@@ -9213,6 +9221,9 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
+				if (endpointTool)
+					RecordPenTailRawInput(runtime.stroke, {snapshot.position.x, snapshot.position.y},
+						QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency));
 				bool modelUpdateSucceeded = false;
 				runtime.modelInputThisFrame = true;
 				const bool boundedEndpointUpdate = endpointTool &&

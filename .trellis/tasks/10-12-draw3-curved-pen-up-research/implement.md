@@ -2,7 +2,7 @@
 
 ## Status
 
-2026-10-12，父任务后续终态算法仍planning。用户已在最新完整阶段1方案后明确批准实施迁移，由子任务 modeler-source-build-baseline 执行；B-D必须依赖其验收，不能仅凭源码接入开始。
+2026-10-12，阶段1已验收提交c34d3a56；用户已批准阶段2创建并开始，B由子任务 modeler-terminal-tail-reconstruction 完成独立模块与离线验收。C-D仍规划，必须依赖B效果与合同验收，不能仅凭求解器编译开始。
 
 ## A. 源码迁移基线
 
@@ -19,18 +19,18 @@
 ## B. 库内模块与离线效果
 
 - [x] 独立无状态求解器与显式TailPatch规划，不改旧Update追加合同/StrokeModeler布局。
-- [ ] 定义单元无关request/outcome/scratch，以caller source id定位实际接纳窗口，输出位置/映射，不伪造Result速度。
-- [ ] 验证入口/终点/范围原子合同、Reject/NoChange、空/短/重复/非finite及总预算。
-- [ ] 同一真实模型输出比较平滑位移、raw约束重构、截尾参考、原路径；统一物理弧长重采样衡量转角。
-- [ ] 有序匹配及圆弧、S弯、反向、自交、真实角点、稀疏样本，量化偏差、形变、窗口不足失败率、耗时/内存。
-- [ ] 依据实测选择算法/权重/窗口/预算；不把玩具值投入产品。
+- [x] 定义单元无关request/outcome/scratch，以caller source id定位实际接纳窗口，输出位置/映射，不伪造Result速度。
+- [x] 验证入口/终点/范围原子合同、Reject/NoChange、空/短/重复/非finite及总预算。
+- [x] 同一实际模型输出比较平滑位移、raw约束重构与原路径；统一物理弧长重采样衡量转角。截尾仅为历史候选，本轮未做新截尾实现。
+- [x] 有序匹配及圆弧、S弯、反向、自交、真实角点、稀疏样本，量化偏差、形变、窗口不足失败率、耗时/内存。
+- [x] 完成9组权重/三窗口/三架构成本扫描，保留默认为研究起点，生产预算待C接入实测；不把玩具值投入产品。
 
 阶段门：能写求解器和能改善用户笔迹分别验收；仅理想圆弧成功不能进入普遍修复。无收益时保留实验结论，不接产品。
 
 ## C. 产品完成与存储
 
 - [ ] 有界消费raw尾部/来源记录和reference，不先重写RTS/mailbox。
-- [ ] 只传未提交区与连接点，不用modeledResults索引推断realPoints。
+- [ ] 阶段三最终 Stored Stroke 可重构当前笔划已进入 L1 的尾段；实时提交游标不回退，不用modeledResults索引推断realPoints。
 - [ ] 直接完成/deferred完成统一helper；旧Up/gate作安全baseline，patch不再过旧全窗口距Up单调门禁。
 - [ ] 属性从未taper基础半径/time有序映射，共享笔锋规则，物理Up显示锁不变；首次L2与Stored/重放同几何。
 - [ ] Cancelled、多contact、池复用、新Down、页面命令、dirty、普通Pen各压感模式和HardPen空间边界。
@@ -52,7 +52,7 @@
 
 算法用ABI匹配的既有真实模块测试/明确无HWND的生产probe。InkeysHeadlessTests.exe --no-window照常回归，不为混链Abseil把其MTd改MT。关闭扩展基线、各工具、预算、完成/Stored一致性均验证。
 
-GUI/隐藏Host/真实设备仅按用户明确授权执行。本轮只读库存和文档。实施时更新第三方provenance与固定ABI规范；默认不commit/push。
+GUI/隐藏Host/真实设备仅按用户明确授权执行。阶段三已获用户实施授权，子任务 draw3-local-tail-finalization 负责局部拟合与完成态接入。实施时更新第三方provenance与固定ABI规范；默认不commit/push。
 
 ## Rollback
 

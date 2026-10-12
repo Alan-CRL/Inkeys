@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "extension": "terminal_tail_reconstructor",
+  "upstream_change": false,
+  "opt_in": true,
+  "geometry_only": true,
+  "files": [
+    {
+      "path": "terminal_tail_reconstructor.h",
+      "sha256": "27a18e3d5681337b96e94e9f867970f80108cfce03487dcd1d271a160d809890"
+    },
+    {
+      "path": "terminal_tail_reconstructor.cc",
+      "sha256": "bf841c6fff4fe82ab6ddb5994ea7c5d5a5121f6ca5fad45a54ee5ebc17c7181f"
+    }
+  ]
+}

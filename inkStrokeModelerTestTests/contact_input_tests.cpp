@@ -50,6 +50,8 @@ int RunUInkTests();
 int RunThinStrokeGpuTests();
 int RunModelerReplay(const wchar_t* reportPath);
 int RunModelerBenchmark(const wchar_t* reportPath);
+int RunModelerTailReplay(const wchar_t* reportPath);
+int RunModelerTailBenchmark(const wchar_t* reportPath);
 
 namespace
 {
@@ -2183,6 +2185,75 @@ namespace
 		}
 	}
 
+
+	void TestLocalTailFinalization(TestState& state)
+	{
+		draw3::ActiveStroke cache(5, 100, draw3::StrokeWidthMode::Fixed);
+		for (int i = 0; i < 200; ++i)
+			draw3::RecordPenTailRawInput(cache, {float(i), 0}, i * 0.0001);
+		TEST_CHECK(state, cache.tailRawCount == 64);
+		TEST_CHECK(state, cache.tailRawSamples[0].position.x == 136);
+		draw3::RecordPenTailRawInput(cache, {200, 0}, 1.0);
+		TEST_CHECK(state, cache.tailRawCount == 1);
+		draw3::RecordPenTailRawInput(cache, {201, 0}, 0.9);
+		draw3::RecordPenTailRawInput(cache, {NAN, 0}, 1.1);
+		TEST_CHECK(state, cache.tailRawCount == 1);
+		cache.useDisplayTime = true;
+		draw3::LockPenTerminalState(cache, 1.0, {200,0}, {200,0});
+		draw3::ClearPenTerminalState(cache);
+		TEST_CHECK(state, cache.tailRawCount == 1); // 断触续接不丢历史，但新输入淘汰过期物理窗口。
+		draw3::RecordPenTailRawInput(cache, {202,0}, 1.2);
+		TEST_CHECK(state, cache.tailRawCount == 1 && cache.tailRawSamples[0].position.x == 202);
+		cache.Reset(5, 100, draw3::StrokeWidthMode::Fixed);
+		TEST_CHECK(state, cache.tailRawCount == 0);
+		for (bool assisted : {false, true})
+		{
+			draw3::ActiveStroke stroke(5,100,draw3::StrokeWidthMode::Fixed);
+			stroke.useDisplayTime = true;
+			for (int i = 0; i < 80; ++i)
+				stroke.realPoints.push_back({i * .1f,0,2.5f,i*.001f});
+			stroke.realPoints.push_back({7.9f,.3f,2.5f,.080f});
+			stroke.committedIndex = 78; stroke.hasCommittedGeometry = true;
+			stroke.logicalInputTime = stroke.lastMovementInputTime = .080;
+			if (assisted)
+			{
+				stroke.tailRawCount = 2;
+				stroke.tailRawSamples[0] = {{7.5f,.1f},.070,0};
+				stroke.tailRawSamples[1] = {{7.9f,.3f},.080,0};
+			}
+			const auto original = stroke.realPoints;
+			std::vector<draw3::InkPoint> scratch;
+			// 等待接续时只重绘实时尾段，不调用完成态拟合。
+			draw3::LockPenTerminalState(stroke,.080,{7.9f,0},{7.9f,.3f});
+			draw3::BuildCompletedPenTail(stroke,0,scratch);
+			TEST_CHECK(state, stroke.realPoints[79].y == 0 && stroke.committedIndex == 78);
+			draw3::StoredInkStyle style;
+			style.inkType = draw3::StoredInkType::Pen;
+			const auto stored = draw3::FinalizeStoredStroke(stroke,style,0,scratch);
+			TEST_CHECK(state, stored && stored->Points().size() == original.size());
+			TEST_CHECK(state, scratch.size() == original.size());
+			bool changedCommitted = false;
+			for (size_t i = 0; i < scratch.size(); ++i)
+			{
+				TEST_CHECK(state, stroke.realPoints[i].x == original[i].x && stroke.realPoints[i].y == original[i].y);
+				TEST_CHECK(state, scratch[i].time == original[i].time && scratch[i].r == original[i].r);
+				if (i < stroke.committedIndex && scratch[i].y != original[i].y) changedCommitted = true;
+				if (i < 35) TEST_CHECK(state, scratch[i].x == original[i].x && scratch[i].y == original[i].y);
+			}
+			TEST_CHECK(state, changedCommitted);
+			TEST_CHECK(state, scratch.back().x == 7.9f && scratch.back().y == .3f);
+			TEST_CHECK(state, stored && stored->Points()[78].y == scratch[78].y);
+			// 非普通笔完全保留旧中心线；形状使用独立 FinalizeStoredShape。
+			style.inkType = draw3::StoredInkType::Highlighter;
+			const auto highlighter = draw3::FinalizeStoredStroke(stroke,style,0,scratch);
+			TEST_CHECK(state, highlighter && highlighter->Points()[78].y == original[78].y);
+			style.inkType = draw3::StoredInkType::Pen;
+			stroke.terminalRawUp.x = NAN;
+			const auto fallback = draw3::FinalizeStoredStroke(stroke,style,0,scratch);
+			TEST_CHECK(state, fallback && scratch[78].y == original[78].y);
+		}
+	}
+
 	void TestPhysicalUpTipTime(TestState& state)
 	{
 		for (const auto mode : { draw3::StrokeWidthMode::Fixed,
@@ -3029,6 +3100,17 @@ void operator delete[](void* memory, size_t) noexcept
 
 int wmain(int argc, wchar_t* argv[])
 {
+	if (argc == 2 && wcscmp(argv[1], L"--local-tail-integration-only") == 0)
+	{
+		TestState state; TestLocalTailFinalization(state);
+		std::cout << "Local tail integration failures: " << state.failures << std::endl;
+		return state.failures;
+	}
+	// 尾段实验入口必须在任何窗口/GPU 测试之前返回。
+	if (argc >= 2 && wcscmp(argv[1], L"--modeler-tail-replay") == 0)
+		return argc == 3 ? RunModelerTailReplay(argv[2]) : 90;
+	if (argc >= 2 && wcscmp(argv[1], L"--modeler-tail-benchmark") == 0)
+		return argc == 3 ? RunModelerTailBenchmark(argv[2]) : 90;
 	// 模型对照入口必须在任何窗口/GPU 测试之前返回。
 	if (argc >= 2 && wcscmp(argv[1], L"--modeler-replay") == 0)
 		return argc == 3 ? RunModelerReplay(argv[2]) : 90;

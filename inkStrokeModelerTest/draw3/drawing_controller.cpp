@@ -2337,6 +2337,9 @@ namespace draw3
 					auto& reconnectModelOutput = endpointRecovery
 						? reconnectRuntime->stroke.modelScratch
 						: reconnectRuntime->stroke.modeledResults;
+					if (reconnectRuntime->tool == DrawingTool::Pen)
+						RecordPenTailRawInput(reconnectRuntime->stroke, {down.position.x, down.position.y},
+							QpcDeltaSeconds(down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency));
 					if (absl::Status status = reconnectRuntime->stroke.modeler.Update(
 						reconnectInput, reconnectModelOutput); status.ok())
 					{
@@ -2569,6 +2572,8 @@ namespace draw3
 					.tilt = down.tilt,
 					.orientation = down.orientation
 				};
+				if (runtime->tool == DrawingTool::Pen)
+					RecordPenTailRawInput(stroke, {down.position.x, down.position.y}, 0.0);
 				if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
 				{
 					std::cout << "Error: " << status.message() << std::endl;
@@ -2722,6 +2727,9 @@ namespace draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
+				if (runtime.tool == DrawingTool::Pen)
+					RecordPenTailRawInput(runtime.stroke, {snapshot.position.x, snapshot.position.y},
+						QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency));
 				const bool sanitizeEndpoint =
 					runtime.tool == DrawingTool::Pen && !runtime.shape.active;
 				if (sanitizeEndpoint) runtime.stroke.modelScratch.clear();
@@ -2862,6 +2870,9 @@ namespace draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
+				if (endpointTool)
+					RecordPenTailRawInput(runtime.stroke, {snapshot.position.x, snapshot.position.y},
+						QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency));
 				bool modelUpdateSucceeded = false;
 				runtime.modelInputThisFrame = true;
 				const bool boundedEndpointUpdate = endpointTool &&

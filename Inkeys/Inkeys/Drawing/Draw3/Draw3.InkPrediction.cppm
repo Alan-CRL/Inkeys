@@ -431,6 +431,13 @@ export namespace Inkeys::Drawing::Draw3
 
 	// 标记当前几何切片是否包含整笔的真实起点或可见终点。
 	// 保存一个 contact 的模型结果、预测结果和三层提交状态。
+	struct TailRawSample
+	{
+		DirectX::XMFLOAT2 position;
+		double physicalTime = 0;
+		size_t firstPoint = 0;
+	};
+
 	struct ActiveStroke
 	{
 		ink::stroke_model::StrokeModeler modeler;
@@ -439,6 +446,9 @@ export namespace Inkeys::Drawing::Draw3
 		std::vector<ink::stroke_model::Result> modelScratch;
 		std::vector<ink::stroke_model::Result> predictedResults;
 		std::vector<InkPoint> realPoints;
+		// 仅保存真实模型输入的物理尾窗；固定容量避免长笔划累计 raw。
+		std::array<TailRawSample, 64> tailRawSamples = {};
+		size_t tailRawCount = 0;
 		std::vector<InkPoint> predictedPoints;
 		std::vector<InkPoint> l0DrawPoints;
 		std::vector<InkPoint> previousL0DrawPoints;
@@ -511,6 +521,8 @@ export namespace Inkeys::Drawing::Draw3
 	// 无 HWND：直接验证生产笔锋几何、真实模型停笔和完成/Stored 时间边界。
 	int RunPenTaperProductionProbe() noexcept;
 	// 用已确认真实点生成普通笔完成态尾段，并烘入最终笔锋宽度。
+	void RecordPenTailRawInput(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 position, double physicalTime) noexcept;
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output);
 	// 把完成态真实点转换为不含 time/prediction 的持久 Stroke；scratch 由绘制线程复用。

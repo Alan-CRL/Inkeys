@@ -1,0 +1,4 @@
+{"reason":"旧接口与原子发布合同，新增局部入口","file":".trellis/spec/native/terminal-tail-reconstruction.md"}
+{"reason":"构建与无窗口验证","file":".trellis/spec/native/quality-and-validation.md"}
+{"reason":"Draw3完成态和固定库合同","file":".trellis/spec/native-desktop/draw3-integration.md"}
+{"reason":"主solution ARM64构建与ABI","file":".trellis/spec/native-desktop/build-and-compatibility.md"}

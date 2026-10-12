@@ -12,6 +12,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)terminal_tail_reconstructor.h" />
     <ClCompile Include="@(InkStrokeModelerSource)">
       <InkStrokeModelerRuntime>true</InkStrokeModelerRuntime>
       <!-- 仅 Modeler 保持旧 MinSizeRel 条件，自有 Debug 代码继续沿用原配置。 -->

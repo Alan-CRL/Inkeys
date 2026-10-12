@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 64
+- **Total Sessions**: 71
 - **Last Active**: 2026-10-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1869 | Active |
+| `journal-1.md` | ~1934 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 71 | 2026-10-12 | 阶段三 Draw3 完成态局部尾段拟合与评估 | - | `bugfix/penstroke` |
+| 67 | 2026-10-12 | 阶段2：库内终态尾段重构与离线验收完成 | - | `bugfix/penstroke` |
 | 64 | 2026-10-12 | 阶段1：vcpkg Abseil与Modeler源码基线完成 | - | `bugfix/penstroke` |
 | 60 | 2026-10-10 | Windows 发布流水线拆分与 Win32 Harness 修复 | - | `dev` |
 | 59 | 2026-10-10 | Win7 主画布修复验收并归档 | `12d82884cf09928c2ae22eda2fe8851ac8581c9b`, `4011594d103f5b95e77ec923f54058593ce7e549` | `chore/publish` |
