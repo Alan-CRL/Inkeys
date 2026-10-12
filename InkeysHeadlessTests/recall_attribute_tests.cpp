@@ -254,6 +254,44 @@ int RunRecallAttributeTests()
 			"popup redo is symmetric and never moves under a repeat click");
 	}
 	{
+		RecallChromeState state;
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { false, true });
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
+		const auto checkHeldRedoColumn = [&](const char* message)
+		{
+			const auto view = ResolveRecallChrome(state);
+			expect(view.mainRedoVisible && view.redoExpanded && !view.mainUndoVisible && !view.undoExpanded, message);
+			// 生产网格中一枚 2×2 或上下两枚 2×1 均只占原来的 75 DIP 列。
+			const unsigned halfColumns = (view.mainRedoVisible ? (view.redoExpanded ? 2u : 1u) : 0u)
+				+ (view.mainUndoVisible ? (view.undoExpanded ? 2u : 1u) : 0u);
+			expect(halfColumns == 2u, "the held redo group never adds a second main-bar column");
+		};
+		checkHeldRedoColumn("redo-only 2x2 starts in one main-bar column");
+		state = ApplyRecallChromeCommandResult(state, true, state.availability, true);
+		checkHeldRedoColumn("clicking 2x2 redo keeps its main-bar visible set and sizes");
+		expect(ResolveRecallChrome(state).popupOpen && !ResolveRecallChrome(state).popupShowsRedo,
+			"the fixed redo column opens popup undo");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, true });
+		checkHeldRedoColumn("restoring undo availability does not insert undo into the held main bar");
+		state = ApplyRecallChromeCommandResult(state, false, state.availability, true);
+		checkHeldRedoColumn("popup undo never changes main-bar column occupancy");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Dismiss);
+		checkHeldRedoColumn("closing popup undo leaves the held redo column unchanged");
+		state = ApplyRecallChromeCommandResult(state, true, state.availability, true);
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, false });
+		checkHeldRedoColumn("the last redo and its asynchronous exhaustion keep one column");
+		state = ApplyRecallChromeCommandResult(state, true, state.availability, false);
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::ReturnToDesktop);
+		checkHeldRedoColumn("gray repeat clicks and workspace closing cannot add a temporary column");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, true });
+		expect(!RecallChromeIdleElapsed(state, 2.99) && RecallChromeIdleElapsed(state, 3.0),
+			"the redo column retains its existing 3 second protection");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
+		const auto compact = ResolveRecallChrome(state);
+		expect(compact.mainRedoVisible && compact.mainUndoVisible && !compact.redoExpanded && !compact.undoExpanded
+			&& !compact.popupOpen, "after idle the same column legitimately becomes redo over undo");
+	}
+	{
 		// 主栏和弹窗共用生产颜色解析，再用真实颜色动画检查中间帧、反向与终态。
 		constexpr unsigned normal = 0x00302010;
 		BarUiColorClass color(normal);
@@ -318,6 +356,27 @@ int RunRecallAttributeTests()
 				&& advance.find("b.name.AdvanceContentTransition(dt, speed)") != std::string::npos
 				&& advance.find("active_ |= iconContentAdvanced || nameContentAdvanced") != std::string::npos,
 				"production popup advances SVG and Word targets and keeps rendering until their content is committed");
+		}
+		// 宽度扫描与状态刷新并行，检查生产归位入口不会临时把隐藏的 Undo 插回主栏。
+		std::ifstream buttonFile(source.parent_path() / "Bar.Button.cpp", std::ios::binary);
+		const std::string buttons((std::istreambuf_iterator<char>(buttonFile)), {});
+		const auto homingBegin = buttons.find("void BarButtonSetClass::PresetHoming(");
+		const auto homingEnd = buttons.find("void BarButtonSetClass::CalcState(", homingBegin);
+		expect(homingBegin != std::string::npos && homingEnd != std::string::npos,
+			"production button homing source is available for the width contract");
+		if (homingBegin != std::string::npos && homingEnd != std::string::npos)
+		{
+			const auto homing = buttons.substr(homingBegin, homingEnd - homingBegin);
+			const auto chromeProjection = homing.find("barUISet.ApplyRecallChromeVisuals()");
+			expect(chromeProjection != std::string::npos,
+				"production homing publishes the final recall chrome projection");
+			if (chromeProjection != std::string::npos)
+			{
+				const auto beforeProjection = homing.substr(0, chromeProjection);
+				expect(beforeProjection.find("BarButtonPresetEnum::Recall]->hide") == std::string::npos
+					&& beforeProjection.find("BarButtonPresetEnum::Redo]->hide") == std::string::npos,
+					"production homing cannot expose an extra undo or redo column before its final projection");
+			}
 		}
 		// 验证实际内容入口的提交/缓存链，防止目标正确但绘制仍消费旧 val。
 		std::ifstream uiFile(source.parent_path() / "Bar.UI.cpp", std::ios::binary);

@@ -1395,7 +1395,6 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		// 显示状态变化
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = true;
 		preset[(int)BarButtonPresetEnum::Geometry]->hide = true;
-		preset[(int)BarButtonPresetEnum::Recall]->hide = true;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = true;
 
 		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
@@ -1409,7 +1408,6 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		// 显示状态变化
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = false;
 		preset[(int)BarButtonPresetEnum::Geometry]->hide = false;
-		preset[(int)BarButtonPresetEnum::Recall]->hide = false;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
 		// 选择按钮不再承载清空语义。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
@@ -1417,6 +1415,7 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
 				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
 	}
+	// Undo/Redo 只发布当前布局，避免先显示隐藏的 Undo 再收起而多占一列。
 	barUISet.ApplyRecallChromeVisuals();
 	if (!whiteboard
 		&& stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection

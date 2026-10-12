@@ -1901,3 +1901,35 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 原任务保留，实际GUI视觉验收未运行；不commit/push。
+
+
+## Session 66: Redo2x2点击暂态主栏扩宽修复
+<!-- trellis-session: v=2 fp=e0c19c01627941cf -->
+
+**Date**: 2026-10-12
+**Task**: Redo2x2点击暂态主栏扩宽修复
+**Branch**: `feature/redo`
+
+### Summary
+
+删除PresetHoming先显示Undo再套布局的中间写入，避免并行宽度扫描新增临时75DIP列；ARM64完整构建/headless通过。
+
+### Main Changes
+
+- 生产只删除两次中间显隐并加中文注释，补生命周期/生产显隐接线回归。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check及diff检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实际GUI宽度验收未运行；本轮不commit/push，原任务保留。
