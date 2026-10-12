@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Native desktop scope and minimal modification rules"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "PageControl window presentation and visibility ownership"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Existing solution build and no GUI verification boundaries"}
+{"file": ".trellis/tasks/10-12-canvas-l-deadzone-stroke-start/research/startup-visibility-fix-proposal.md", "reason": "Reviewed minimal fix and evidence limits"}
