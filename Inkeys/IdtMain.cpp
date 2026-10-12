@@ -34,6 +34,7 @@ import Inkeys.UI.StartupPreview;
 import Inkeys.Startup.Progress;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.transparent_presentation;
 
 #include "IdtMain.h"
@@ -1078,6 +1079,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			const int state = RunPenWidthStateProductionTest();
 			return state != 0 ? state
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-taper-test") == 0)
+		{
+			// 生产几何自检在配置、单实例和窗口初始化之前退出。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunPenTaperProductionProbe();
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-width-test") == 0)
 		{

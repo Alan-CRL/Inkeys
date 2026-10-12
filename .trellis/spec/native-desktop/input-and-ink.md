@@ -631,3 +631,44 @@ Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW 
 - Wrong：Part2仍故障就称默认修复失败，或者把DXGI创建成功与GPU非透明像素/最终桌面可见混为一项。
 - Correct：Part2显式guard0保留原版，普通启动按auto；核实际所选byte SHA、GPU源/DIB和人工观察。`completed-with-failures` 包含刻意运行的原版 WARP 失败，不代替独立 `guarded-status` 和实际画布验收。2026-10-10 用户已确认新 EXE 两种后端普通启动正常；仍将偶发输入、定格观察与主画布修复验收分开记录。
 - 输入坐标边界：先解码 `mouse-source` 的原始 `lParam`，再对照 `mouse event`、sample 和 laser-tip。连续原消息 X 已为 0 且 accepted=1 时，不能把横向卡住归因于 shader/ULW；若没有系统 `GetCursorPos`、裁剪范围或虚拟机鼠标接管证据，也不能仅凭 Ctrl+Alt 恢复唯一归因 VMware。
+
+## Scenario: Draw3 笔锋长度约束与停笔重平滑
+
+### 1. Scope / Trigger
+修改主产品普通笔模拟笔锋的形状、停笔追赶或完成尾段时适用。源任务 `.trellis/tasks/10-11-pen-taper-shape-and-stop-smoothing`；独立 demo 的行为不随本合同改变。数学/无窗口模型验证不等于实际设备的可见手感验收。
+
+### 2. Signatures
+- `RebuildL0DrawPoints`、`BuildCompletedPenTail`、`FinalizeStoredStroke` 共用主产品收锋规则。
+- `RunPenTaperProductionProbe()` 与早退出 CLI `Inkeys.exe --draw3-pen-taper-test`；无 HWND，不进入正常 Host/RTS/配置启动链。
+- `ResolvePenDisplayTime` 仍优先使用已锁定的物理 `terminalDisplayTime`。
+
+### 3. Contracts
+- L0 包含完整笔锋和 prediction；100% 起点沿用末端时间回看 configured live-tip duration 的原有计算。不得把 L0 最早点当成收锋起点，也不得改变 prediction 长度或 L1 保护窗口/提交游标。
+- 原候选笔锋内以中心线弧长和未收锋最大笔身直径 D 计算有效长度 L；`S(x)=u*u*(3-2*u), u=clamp(x,0,1)`，端头比例 `1-0.7*S(L/(2D))`。L>=2D 为30%，L=D为65%，L=0.5D约89%，L=0为100%。有效区间内再按归一化弧长SmoothStep从100%连接到端头比例。
+- 每帧从未经模拟收锋的真实/预测半径重新生成；不把上一帧已收锋半径作为基础输入。保留胶囊公切线安全约束，L1共享连接点和真实中心线路径不改。
+- 停笔的显示年龄以最近真实运动和既有预测时间参考计算，合成model输出不能刷新年龄。有效长度按现有T平滑压缩并以上一帧长度封顶；真实Move/新Down/Reset解除旧限制。实际位置变化及成功重连须明确清除长度缓存，不能只比较时间值，因为不同真实Move可具有相同QPC时间戳。前段恢复笔身宽度，剩余过渡整体重算，不能以恢复为粗半径的圆头直接覆盖旧细尾。
+- 压缩边界在段内时只对派生几何加入插值连接点，不改`realPoints`、基础压感/速度估算、L1前缀或CPU/GPU结构布局。旧/新L0 bounds共同进入dirty。
+- 活动态、完成尾段及Stored使用同一形状求解；缓存的长度/时间须与运动及显示时间兼容。较晚live帧的缓存不得污染较早物理Up；Up锁定后延迟处理不继续老化，长停同位Up不重新收尖。
+- 硬件压感、HardPen及禁用taper的工具沿用现有行为；没有新配置或UInk格式迁移。
+
+### 4. Validation & Error Matrix
+| 条件 | 必需行为 |
+| --- | --- |
+| 零长度/重复点/同一时间戳的追赶点 | 弧长求解有界，无除零、NaN或突发整段变粗 |
+| 粗笔短锋 | 依据L/D限制收细程度，不强制到30% |
+| 停笔后模型继续追加点 | 不刷新真实运动时间，不重新拉长已消退的有效笔锋 |
+| 新真实Move/对象复用 | 解除旧停笔长度限制，恢复正常收锋 |
+| 物理Up时间早于最后live计算 | 忽略不兼容的未来缓存，按物理Up时间生成完成几何 |
+| 终态迟到/保存/重放 | 已锁定宽度不继续随帧时间变化 |
+
+### 5. Good / Base / Bad Cases
+- Good：长细锋停下后在原范围内压缩过渡，长度不足2D时端头逐渐变粗，停稳为100%；完成/Stored同规则。
+- Base：正常移动的100%起点及L0/L1/预测保护窗口保持原设计。
+- Bad：整段L0从最早点开始收尖、按重复点时间越界删除细尾、或使用上一帧收锋半径累计收细。
+
+### 6. Tests Required
+生产probe覆盖长度比例/阈值连续性、粗细及小数宽、弧线与稀疏/重复/同时间点、真实模型30/60/120/240FPS及预测模式的逐帧停笔、L1连接/dirty/真实点不改写、续画/多笔、快速/长停/延迟Up与Stored。完整`InkeysRepo.sln Debug|ARM64`和`InkeysHeadlessTests.exe --no-window`；可见GUI/实体设备结果单独记录。
+
+### 7. Wrong vs Correct
+- Wrong：`pointAge -> radius立即回到base -> 粗端帽覆盖旧细尾`；或`ApplyTaper(previousL0DrawPoints)`累计缩放。
+- Correct：`原笔锋范围 -> 原始半径 + 弧长 -> 压缩有效长度 -> 整段SmoothStep -> 公切线安全 -> 新/旧L0 dirty`。

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <iterator>
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <limits>
@@ -168,26 +169,66 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
-		void ApplyLiveTipTaper(std::vector<InkPoint>& points,
-			double liveTipDurationSeconds, double displayTime)
+		double ApplyLiveTipTaper(std::vector<InkPoint>& points,
+			double liveTipDurationSeconds, const ActiveStroke& stroke,
+			bool includePrediction)
 		{
-			if (points.empty() || liveTipDurationSeconds <= 0.0) return;
+			if (points.empty() || liveTipDurationSeconds <= 0.0) return 0.0;
 			const double endTime = points.back().time;
 			const double tipStartTime = endTime - liveTipDurationSeconds;
 			size_t firstTipIndex = points.size() - 1;
-			while (firstTipIndex > 0 && static_cast<double>(points[firstTipIndex - 1].time) >= tipStartTime) --firstTipIndex; // 找到需要渐细的实时尾部起点。
+			while (firstTipIndex > 0 && static_cast<double>(points[firstTipIndex - 1].time) >= tipStartTime) --firstTipIndex; // 沿用包含预测参考的原起点，不能扩展到整个 L0。
 
-			const double actualTipSpan = std::max(0.0, endTime - static_cast<double>(points[firstTipIndex].time));
-			const float spanRatio = SmoothStep01(static_cast<float>(actualTipSpan / liveTipDurationSeconds));
-			const double now = std::max(displayTime, endTime);
-			const float newestScale = LerpFloat(1.0f, 0.28f, spanRatio); // 尾部越完整，最新端点越细。
-			for (size_t index = firstTipIndex; index < points.size(); ++index)
+			double sourceLength = 0.0;
+			float referenceRadius = points[firstTipIndex].r;
+			for (size_t index = firstTipIndex + 1; index < points.size(); ++index)
 			{
-				const float ageRatio = actualTipSpan > 0.000001
-					? static_cast<float>((now - static_cast<double>(points[index].time)) / actualTipSpan)
-					: 0.0f;
-				points[index].r *= LerpFloat(newestScale, 1.0f, SmoothStep01(ageRatio)); // 从最新端点向旧点逐步恢复正常半径。
+				sourceLength += std::hypot(static_cast<double>(points[index].x) - points[index - 1].x,
+					static_cast<double>(points[index].y) - points[index - 1].y);
+				referenceRadius = std::max(referenceRadius, points[index].r);
 			}
+			if (sourceLength <= 0.0 || referenceRadius <= 0.0) return 0.0;
+
+			const double displayTime = ResolvePenDisplayTime(stroke);
+			// 运动预测保留原未来参考；追赶和 Up 的合成点不能重置真实运动年龄。
+			const double referenceTime = includePrediction && !stroke.predictedPoints.empty()
+				? std::max(stroke.lastMovementInputTime, static_cast<double>(stroke.predictedPoints.back().time))
+				: stroke.lastMovementInputTime;
+			const double age = std::max(0.0, displayTime - referenceTime);
+			double effectiveLength = sourceLength * (1.0 - SmoothStep01(
+				static_cast<float>(age / liveTipDurationSeconds)));
+			if (age > 0.0 && stroke.liveTipLength &&
+				stroke.liveTipMovementTime == stroke.lastMovementInputTime &&
+				stroke.liveTipDisplayTime <= displayTime)
+				effectiveLength = std::min(effectiveLength, *stroke.liveTipLength);
+			// 延迟处理的物理 Up 不能使用其后显示帧的缓存；新真实 Move 自然解除封顶。
+			if (effectiveLength <= 0.0) return 0.0;
+
+			const float tipScale = 1.0f - 0.7f * SmoothStep01(
+				static_cast<float>(effectiveLength / (4.0 * referenceRadius)));
+			const double taperStart = sourceLength - effectiveLength;
+			double arcLength = 0.0;
+			for (size_t index = firstTipIndex + 1; index < points.size(); ++index)
+			{
+				const InkPoint previous = points[index - 1];
+				const InkPoint current = points[index];
+				const double distance = std::hypot(static_cast<double>(current.x) - previous.x,
+					static_cast<double>(current.y) - previous.y);
+				const double nextArcLength = arcLength + distance;
+				if (arcLength < taperStart && nextArcLength > taperStart && distance > 0.0)
+				{
+					// 只在派生几何插入 100% 连接点，稀疏采样也不能跨过压缩边界。
+					const float ratio = static_cast<float>((taperStart - arcLength) / distance);
+					points.insert(points.begin() + index, InkPoint{
+						LerpFloat(previous.x, current.x, ratio), LerpFloat(previous.y, current.y, ratio),
+						LerpFloat(previous.r, current.r, ratio), LerpFloat(previous.time, current.time, ratio) });
+					++index;
+				}
+				const float progress = static_cast<float>((nextArcLength - taperStart) / effectiveLength);
+				points[index].r *= LerpFloat(1.0f, tipScale, SmoothStep01(progress));
+				arcLength = nextArcLength;
+			}
+			return effectiveLength;
 		}
 
 	}
@@ -390,6 +431,7 @@ namespace Inkeys::Drawing::Draw3
 	void ClearPenTerminalState(ActiveStroke& stroke) noexcept
 	{
 		stroke.terminalDisplayTime.reset();
+		stroke.liveTipLength.reset(); // 成功续接可能沿用相同真实时间戳，也必须解除旧停笔封顶。
 		stroke.terminalFirstPoint = 0;
 		stroke.terminalRawMove = {};
 		stroke.terminalRawUp = {};
@@ -455,7 +497,7 @@ namespace Inkeys::Drawing::Draw3
 			const size_t tailStart = stroke.hasCommittedGeometry
 				? std::min(stroke.committedIndex, stroke.realPoints.size() - 1) : 0;
 			output.assign(stroke.realPoints.begin() + tailStart, stroke.realPoints.end());
-			ApplyLiveTipTaper(output, liveTipTaperSeconds, ResolvePenDisplayTime(stroke));
+			ApplyLiveTipTaper(output, liveTipTaperSeconds, stroke, false);
 			EnforceCapsuleTangency(output); // 与 L0 实时笔锋同一套公切线安全，不再套稳定笔宽时间限速。
 		}
 		if (output.empty() && stroke.hasInputStartPoint)
@@ -693,6 +735,389 @@ namespace Inkeys::Drawing::Draw3
 		Reset(baseDiameter, expectedSpeed, widthModeValue, highlighterValue);
 	}
 
+	int RunPenTaperProductionProbe() noexcept
+	{
+		int failures = 0;
+		int assertions = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			++assertions;
+			if (condition) return;
+			++failures;
+			if (failures <= 40) std::fprintf(stderr, "[Draw3PenTaper] FAIL: %s\n", name);
+		};
+		const auto close = [](double actual, double expected, double tolerance = 0.0001)
+		{
+			return std::isfinite(actual) && std::abs(actual - expected) <= tolerance;
+		};
+		const auto samePoints = [&](std::span<const InkPoint> a, std::span<const InkPoint> b)
+		{
+			if (a.size() != b.size()) return false;
+			for (size_t i = 0; i < a.size(); ++i)
+				if (a[i].x != b[i].x || a[i].y != b[i].y || a[i].r != b[i].r || a[i].time != b[i].time)
+					return false;
+			return true;
+		};
+		const auto rebuild = [](ActiveStroke& stroke, double duration = 0.055)
+		{
+			RebuildL0DrawPoints(stroke, duration, StrokeShape::RoundCapsule, 4096, 4096);
+		};
+		const auto safeContour = [&](std::span<const InkPoint> points, bool monotone)
+		{
+			bool safe = true;
+			for (size_t i = 0; i < points.size(); ++i)
+			{
+				safe &= std::isfinite(points[i].r) && points[i].r > 0.0f;
+				if (!i) continue;
+				const double distance = std::hypot(static_cast<double>(points[i].x) - points[i - 1].x,
+					static_cast<double>(points[i].y) - points[i - 1].y);
+				safe &= std::abs(points[i].r - points[i - 1].r) <= 0.95 * distance + 0.0001;
+				if (monotone) safe &= points[i].r <= points[i - 1].r + 0.0001f;
+			}
+			return safe;
+		};
+		try
+		{
+			// 测试实际 Rebuild/完成/Stored 入口；比例表独立列出，不能只复制算法自证。
+			struct Ratio { float length; float scale; };
+			constexpr Ratio ratios[] = { { 0, 1 }, { 0.25f, 0.969921875f },
+				{ 0.5f, 0.890625f }, { 1, 0.65f }, { 1.5f, 0.409375f }, { 2, 0.3f }, { 4, 0.3f } };
+			for (const float diameter : { 0.125f, 1.0f, 3.0f, 5.3333335f, 8.0f, 24.0f })
+			{
+				for (const auto test : ratios)
+				{
+					ActiveStroke stroke(diameter, 500, StrokeWidthMode::Fixed);
+					stroke.lastMovementInputTime = stroke.logicalInputTime = 0.04;
+					for (int i = 0; i <= 32; ++i)
+						stroke.realPoints.push_back({ 100 + diameter * test.length * i / 32, 100,
+							diameter * 0.5f, 0.04f * i / 32 });
+					const auto original = stroke.realPoints;
+					rebuild(stroke);
+					check(close(stroke.l0DrawPoints.back().r / (diameter * 0.5), test.scale, 0.0002), "length/diameter table including fractional widths");
+					check(stroke.l0DrawPoints.front().r == diameter * 0.5f && samePoints(stroke.realPoints, original), "100 percent start and untapered real points");
+					check(safeContour(stroke.l0DrawPoints, true), "length contour has no coarse head or capsule degeneration");
+					rebuild(stroke);
+					check(close(stroke.l0DrawPoints.back().r / (diameter * 0.5), test.scale, 0.0002), "rebuild never compounds taper factors");
+				}
+				float previous = 1.0f;
+				for (int i = 0; i <= 201; ++i)
+				{
+					ActiveStroke stroke(diameter, 500, StrokeWidthMode::Fixed);
+					stroke.lastMovementInputTime = stroke.logicalInputTime = 0.04;
+					stroke.realPoints = { { 100, 100, diameter * 0.5f, 0 },
+						{ 100 + diameter * i / 100, 100, diameter * 0.5f, 0.04f } };
+					rebuild(stroke);
+					const float scale = stroke.l0DrawPoints.back().r / (diameter * 0.5f);
+					check(scale <= previous + 0.0002f && std::abs(scale - previous) <= 0.006f,
+						"continuous tip at zero and both sides of 2D threshold");
+					previous = scale;
+				}
+			}
+			{
+				ActiveStroke curve(10, 500, StrokeWidthMode::Fixed);
+				curve.lastMovementInputTime = curve.logicalInputTime = 0.04;
+				for (int i = 0; i <= 32; ++i)
+				{
+					const double angle = i * 6.283185307179586 / 32;
+					curve.realPoints.push_back({ 100 + 5 * static_cast<float>(std::cos(angle)),
+						100 + 5 * static_cast<float>(std::sin(angle)), 5, 0.04f * i / 32 });
+				}
+				rebuild(curve);
+				check(close(curve.l0DrawPoints.back().r, 1.5), "closed circle uses arc length instead of endpoint chord");
+				check(safeContour(curve.l0DrawPoints, true), "curved tail remains monotone and tangent safe");
+				ActiveStroke irregular(10, 500, StrokeWidthMode::Fixed);
+				irregular.lastMovementInputTime = irregular.logicalInputTime = 0.04;
+				irregular.realPoints = { {100,100,5,0.04f}, {100,100,5,0.04f},
+					{103,100,5,0.04f}, {103,100,5,0.04f}, {107,100,5,0.04f}, {120,100,5,0.04f} };
+				rebuild(irregular);
+				check(close(irregular.l0DrawPoints.back().r, 1.5) && safeContour(irregular.l0DrawPoints, true),
+					"duplicate and equal-time samples cannot erase the taper front");
+				irregular.logicalInputTime += 0.0275;
+				rebuild(irregular);
+				check(irregular.l0DrawPoints.size() == irregular.realPoints.size() + 1 &&
+					close(irregular.l0DrawPoints[5].x, 110) && close(irregular.l0DrawPoints[5].r, 5),
+					"sparse compression frontier inserts only a derived 100 percent connector");
+				check(close(irregular.l0DrawPoints.back().r, 3.25) && safeContour(irregular.l0DrawPoints, true),
+					"equal-time catchup re-smooths the entire remaining 1D tail");
+				ActiveStroke variable(10, 500, StrokeWidthMode::Fixed);
+				variable.lastMovementInputTime = variable.logicalInputTime = 0.04;
+				variable.realPoints = { {100,100,10,0}, {110,100,7.5f,0.02f}, {120,100,5,0.04f} };
+				rebuild(variable);
+				check(close(variable.l0DrawPoints.back().r, 3.25), "reference diameter uses largest original body radius");
+			}
+			{
+				ActiveStroke stroke(10, 500, StrokeWidthMode::Fixed);
+				for (int i = 0; i <= 20; ++i)
+					stroke.realPoints.push_back({ 100 + 10.0f * i, 100, 5, 0.01f * i });
+				stroke.committedIndex = 10; stroke.hasCommittedGeometry = true;
+				stroke.lastMovementInputTime = stroke.logicalInputTime = 0.20;
+				stroke.predictedPoints = { {310,100,5,0.21f}, {330,100,5,0.23f} };
+				const auto original = stroke.realPoints;
+				rebuild(stroke);
+				check(stroke.l0DrawPoints.front().x == 200 && stroke.l0DrawPoints.front().r == 5 &&
+					stroke.l0DrawPoints[8].r == 5 && stroke.l0DrawPoints[9].r < 5,
+					"original prediction cutoff starts at real time .18 rather than L0 .10");
+				check(close(*stroke.liveTipLength, 50), "prediction arc belongs to original taper candidate");
+				const auto protectedIndex = ink_prediction_detail::FindProtectedStartIndex(stroke.realPoints, 0.055 + GetPredictionDurationSeconds(stroke));
+				check(protectedIndex < 18 && stroke.committedIndex == 10 && samePoints(stroke.realPoints, original),
+					"L1 protection and stable prefix remain independent from taper shape");
+				const RECT oldBounds = stroke.currentL0Rect;
+				stroke.predictedPoints.clear(); stroke.logicalInputTime += 0.0275;
+				rebuild(stroke);
+				RECT dirty = oldBounds; UnionRectInPlace(dirty, stroke.currentL0Rect);
+				check(dirty.left <= oldBounds.left && dirty.right >= oldBounds.right &&
+					dirty.top <= stroke.currentL0Rect.top && dirty.bottom >= stroke.currentL0Rect.bottom,
+					"old prediction and newly wider L0 both belong to dirty union");
+				check(stroke.l0DrawPoints.front().r == original[10].r && samePoints(stroke.realPoints, original), "compressed frontier never rewrites shared L1 anchor");
+			}
+			{
+				ActiveStroke stopped(10, 500, StrokeWidthMode::Fixed);
+				stopped.realPoints = { {100,100,5,0}, {140,100,5,0.04f} };
+				stopped.lastMovementInputTime = stopped.logicalInputTime = 0.04;
+				rebuild(stopped);
+				stopped.logicalInputTime += 0.0275; rebuild(stopped);
+				const double before = *stopped.liveTipLength;
+				stopped.realPoints.push_back({180,100,5,0.04f});
+				stopped.logicalInputTime += 0.001; rebuild(stopped);
+				check(*stopped.liveTipLength <= before && safeContour(stopped.l0DrawPoints, true), "synthetic catchup cannot lengthen a retiring taper");
+				stopped.logicalInputTime = 0.095; rebuild(stopped);
+				check(*stopped.liveTipLength == 0 && stopped.l0DrawPoints.back().r == 5, "dwell finishes at normal body width");
+				ActiveStroke other(10, 500, StrokeWidthMode::Fixed);
+				other.realPoints = { {100,100,5,0}, {140,100,5,0.04f} };
+				other.lastMovementInputTime = other.logicalInputTime = 0.04; rebuild(other);
+				check(close(other.l0DrawPoints.back().r, 1.5) && *stopped.liveTipLength == 0, "simultaneous strokes keep independent taper caches");
+				stopped.lastMovementInputTime = stopped.logicalInputTime = 0.12;
+				stopped.realPoints.push_back({220,100,5,0.10f});
+				stopped.realPoints.push_back({260,100,5,0.12f}); rebuild(stopped);
+				check(*stopped.liveTipLength > 0 && close(stopped.l0DrawPoints.back().r, 1.5), "new real movement releases the old zero-length cap");
+				stopped.Reset(10, 500, StrokeWidthMode::Fixed);
+				check(!stopped.liveTipLength && stopped.liveTipDisplayTime == 0 && stopped.liveTipMovementTime == 0, "pooled Reset clears transient taper state");
+			}
+			// 物理 Up、延迟处理与 Stored 共用配方，不能被更晚的帧继续养粗。
+			for (const double upAge : { 0.0, 0.015, 0.055, 1.0 })
+			{
+				ActiveStroke stroke(10, 500, StrokeWidthMode::Fixed);
+				stroke.realPoints = { {100,100,5,0}, {110,100,5,0.01f}, {120,100,5,0.02f}, {140,100,5,0.04f} };
+				stroke.lastMovementInputTime = stroke.logicalInputTime = 0.04;
+				const double upTime = 0.04 + upAge;
+				stroke.logicalInputTime = upTime + 2; rebuild(stroke); // 故意先计算晚于物理 Up 的 live cache。
+				LockPenTerminalState(stroke, upTime, {140,100}, {140,100});
+				std::vector<InkPoint> completed;
+				BuildCompletedPenTail(stroke, 0.055, completed);
+				check(upAge >= 0.055 ? completed.back().r == 5 : completed.back().r < 5,
+					"late live cache cannot contaminate earlier physical Up");
+				rebuild(stroke);
+				check(samePoints(completed, stroke.l0DrawPoints), "locked active and completed share identical recipe");
+				stroke.logicalInputTime += 100;
+				std::vector<InkPoint> later; BuildCompletedPenTail(stroke, 0.055, later);
+				check(samePoints(completed, later), "delayed completion does not age physical Up");
+				const auto stored = FinalizeStoredStroke(stroke, {}, 0.055, later);
+				bool sameStored = stored && stored->Points().size() == completed.size();
+				if (sameStored) for (size_t i = 0; i < completed.size(); ++i)
+					sameStored &= close(stored->Points()[i].width, completed[i].r * 2);
+				check(sameStored, "Stored stroke persists exactly completed widths without prediction");
+				ClearPenTerminalState(stroke);
+				stroke.lastMovementInputTime = stroke.logicalInputTime;
+				rebuild(stroke);
+				check(stroke.l0DrawPoints.back().r < 5, "successful reconnect restores live aging epoch");
+			}
+			{
+				ActiveStroke sameTime(10, 500, StrokeWidthMode::Fixed);
+				sameTime.lastMovementInputTime = 0.04; sameTime.logicalInputTime = 0.0675;
+				sameTime.realPoints = { {100,100,5,0}, {120,100,5,0.04f} };
+				rebuild(sameTime);
+				const double oldLength = *sameTime.liveTipLength;
+				LockPenTerminalState(sameTime, 0.0675, {120,100}, {120,100});
+				ClearPenTerminalState(sameTime);
+				check(!sameTime.liveTipLength, "successful reconnect clears cap even with identical real timestamp");
+				sameTime.realPoints.push_back({160,100,5,0.04f}); rebuild(sameTime);
+				check(*sameTime.liveTipLength > oldLength && close(sameTime.l0DrawPoints.back().r, 1.5),
+					"same-time resumed geometry can develop a new length-constrained tip");
+			}
+			for (const auto mode : { StrokeWidthMode::HardwarePressure, StrokeWidthMode::Fixed })
+			{
+				ActiveStroke stroke(10, 500, mode);
+				stroke.realPoints = { {100,100,5,0}, {140,100,5,0.04f} };
+				stroke.lastMovementInputTime = stroke.logicalInputTime = 0.04;
+				rebuild(stroke, mode == StrokeWidthMode::HardwarePressure ? ResolveLiveTipTaperDurationSeconds(mode, 0.055) : 0.0);
+				check(samePoints(stroke.realPoints, stroke.l0DrawPoints), "hardware pressure and disabled taper stay unchanged");
+				std::vector<InkPoint> tail; BuildCompletedPenTail(stroke, 0, tail);
+				check(samePoints(stroke.realPoints, tail), "disabled completed geometry stays unchanged");
+			}
+			{
+				ActiveStroke marker(50, 500, StrokeWidthMode::Fixed, true);
+				marker.realPoints = { {100,100,25,0}, {140,100,25,0.04f} };
+				rebuild(marker);
+				check(samePoints(marker.realPoints, marker.l0DrawPoints) && !marker.l0HighlighterGeometry.primitives.empty(), "highlighter retains its rectangle path");
+			}
+			int modelCases = 0;
+			int resumeCases = 0;
+			double maximumSettleAge = 0;
+			size_t maximumOutputs = 0;
+			for (const auto profileId : { StrokeTimingProfileId::Fps30, StrokeTimingProfileId::Fps60,
+				StrokeTimingProfileId::Fps120, StrokeTimingProfileId::Fps240 })
+				for (const auto prediction : { InkPredictionMode::Disabled, InkPredictionMode::StrokeEnd, InkPredictionMode::Kalman })
+					for (const float speed : { 25.0f, 500.0f, 1500.0f })
+						for (const auto mode : { StrokeWidthMode::Fixed, StrokeWidthMode::SimulatedPressure })
+						{
+							++modelCases;
+							auto config = CreateStrokeModelConfiguration(96);
+							config.timingProfile = ink_prediction_detail::GetStrokeTimingProfile(profileId);
+							const auto& profile = config.timingProfile;
+							const double frame = 1.0 / profile.target_fps;
+							config.modelParams.sampling_params.min_output_rate = profile.min_output_rate;
+							config.modelParams.wobble_smoother_params.timeout = ink::stroke_model::Duration(profile.wobble_timeout_seconds);
+							config.kalmanPredictorParams.prediction_interval = ink::stroke_model::Duration(profile.prediction_interval_seconds);
+							config.kalmanPredictorParams.max_time_samples = profile.kalman_max_time_samples;
+							config.kalmanPredictorParams.confidence_params.desired_number_of_samples = profile.kalman_desired_number_of_samples;
+							if (prediction == InkPredictionMode::Disabled) config.modelParams.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+							else if (prediction == InkPredictionMode::StrokeEnd) config.modelParams.prediction_params = ink::stroke_model::StrokeEndPredictorParams{};
+							else config.modelParams.prediction_params = config.kalmanPredictorParams;
+							const float diameter = speed < 100 ? 3.25f : speed < 1000 ? 6.0f : 16.0f;
+							ActiveStroke stroke(diameter, config.expectedSpeed, mode);
+							stroke.useDisplayTime = true;
+							check(stroke.modeler.Reset(config.modelParams).ok(), "real model Reset");
+							double modelTime = 0;
+							DirectX::XMFLOAT2 endpoint{100,100};
+							const auto update = [&](ink::stroke_model::Input::EventType event, double time,
+								std::vector<ink::stroke_model::Result>& output)
+							{
+								const ink::stroke_model::Input input{ .event_type = event,
+									.position = ink::stroke_model::Vec2(endpoint.x,endpoint.y), .time = ink::stroke_model::Time(time),
+									.pressure = 1, .tilt = 1.57079632679f, .orientation = 0 };
+								const size_t before = output.size();
+								const bool ok = stroke.modeler.Update(input, output).ok();
+								maximumOutputs = std::max(maximumOutputs, output.size() - before);
+								check(ok && output.size() - before <= static_cast<size_t>(profile.max_outputs_per_call), "real model bounded output budget");
+								return ok;
+							};
+							update(ink::stroke_model::Input::EventType::kDown, 0, stroke.modeledResults);
+							AppendNewModeledPoints(stroke);
+							for (int i = 1; i <= 24; ++i)
+							{
+								modelTime = i / 120.0;
+								endpoint.x = 100 + speed * static_cast<float>(modelTime);
+								stroke.logicalInputTime = stroke.lastMovementInputTime = modelTime;
+								update(ink::stroke_model::Input::EventType::kMove, modelTime, stroke.modeledResults);
+								AppendNewModeledPoints(stroke, speed);
+								stroke.predictedResults.clear();
+								if (prediction != InkPredictionMode::Disabled) check(stroke.modeler.Predict(stroke.predictedResults).ok(), "real moving prediction");
+								RebuildPredictedPoints(stroke); rebuild(stroke); UpdateIdleFreezeState(stroke, true, false, 0.055);
+							}
+							const double stopTime = stroke.lastMovementInputTime;
+							double settleAge = -1;
+							double previousLength = *stroke.liveTipLength;
+							float previousScale = 0;
+							float previousDistance = std::hypot(stroke.realPoints.back().x - endpoint.x, stroke.realPoints.back().y - endpoint.y);
+							size_t frozenPoints = 0;
+							for (int i = 1; i <= static_cast<int>(10 * profile.target_fps); ++i)
+							{
+								stroke.logicalInputTime = stopTime + i * frame;
+								if (!stroke.idleFrozen && ShouldStartEndpointSettling(stroke.logicalInputTime - stopTime, frame))
+								{
+									BeginEndpointAdmission(stroke, endpoint);
+									bool settled = IsModeledTipSettled(LatestModeledTip(stroke), endpoint, frame);
+									stroke.modelScratch.clear();
+									if (!settled)
+									{
+										modelTime = ResolvePenModelInputTime(stroke, stroke.logicalInputTime, modelTime, frame);
+										update(ink::stroke_model::Input::EventType::kMove, modelTime, stroke.modelScratch);
+									}
+									AppendEndpointBoundedModeledPoints(stroke, stroke.modelScratch, -1, stopTime, settled);
+									settled = IsModeledTipSettled(LatestModeledTip(stroke), endpoint, frame);
+									if (settled) { stroke.modelClockStopped = true; if (settleAge < 0) settleAge = i * frame; }
+									const float distance = std::hypot(stroke.realPoints.back().x - endpoint.x, stroke.realPoints.back().y - endpoint.y);
+									check(distance <= previousDistance + 0.0001f && stroke.realPoints.back().x <= endpoint.x + 0.05f, "catchup endpoint is monotone and never crosses raw plane");
+									previousDistance = distance;
+								}
+								stroke.predictedResults.clear();
+								if (!stroke.endpointAdmission.active && prediction != InkPredictionMode::Disabled) check(stroke.modeler.Predict(stroke.predictedResults).ok(), "tracking keeps prediction before settling gate");
+								RebuildPredictedPoints(stroke);
+								const auto raw = stroke.realPoints;
+								rebuild(stroke);
+								if (stroke.endpointAdmission.active)
+								{
+									check(*stroke.liveTipLength <= previousLength + 0.0001, "frame-driven dwell length never rebounds");
+									const float scale = stroke.l0DrawPoints.back().r / stroke.realPoints.back().r;
+									check(scale + 0.0001f >= previousScale, "frame-driven tip thickens continuously to body");
+									previousScale = scale;
+								}
+								previousLength = *stroke.liveTipLength;
+								check(samePoints(raw, stroke.realPoints) && safeContour(stroke.l0DrawPoints, mode == StrokeWidthMode::Fixed), "production frame geometry preserves raw radii and contour safety");
+								UpdateIdleFreezeState(stroke, false, IsModeledTipSettled(LatestModeledTip(stroke), endpoint, frame), 0.055);
+								if (stroke.idleFrozen && !frozenPoints) frozenPoints = stroke.realPoints.size();
+								if (frozenPoints) check(stroke.realPoints.size() == frozenPoints, "ten-second frame loop retains bounded frozen points");
+							}
+							maximumSettleAge = std::max(maximumSettleAge, settleAge);
+							check(settleAge >= 0 && settleAge <= 0.2 + 0.000001 && stroke.idleFrozen && *stroke.liveTipLength == 0,
+								"real model settles by 200ms then normal-width visuals freeze");
+							// 一半用真实模型续画，覆盖同向、直角、反向；其余保留停稳后真实 kUp。
+							const bool resumed = (modelCases / 2) % 2 != 0;
+							if (resumed)
+							{
+								++resumeCases;
+								const size_t beforeResume = stroke.realPoints.size();
+								const DirectX::XMFLOAT2 origin = endpoint;
+								const double resumeTime = stroke.logicalInputTime;
+								for (int i = 1; i <= 24; ++i)
+								{
+									const float distance = speed * static_cast<float>(i * frame);
+									endpoint = prediction == InkPredictionMode::Disabled
+										? DirectX::XMFLOAT2{origin.x - distance, origin.y}
+										: prediction == InkPredictionMode::StrokeEnd
+										? DirectX::XMFLOAT2{origin.x, origin.y + distance}
+										: DirectX::XMFLOAT2{origin.x + distance, origin.y};
+									stroke.lastMovementInputTime = stroke.logicalInputTime = resumeTime + i * frame;
+									stroke.liveTipLength.reset(); stroke.idleFrozen = false; // 与生产真实位置变化分支一致。
+									modelTime = ResolvePenModelInputTime(stroke, stroke.logicalInputTime, modelTime, frame);
+									if (stroke.endpointAdmission.active)
+									{
+										stroke.modelScratch.clear();
+										update(ink::stroke_model::Input::EventType::kMove, modelTime, stroke.modelScratch);
+										AppendRecoveryModeledPoints(stroke, stroke.modelScratch, endpoint, speed);
+									}
+									else
+									{
+										update(ink::stroke_model::Input::EventType::kMove, modelTime, stroke.modeledResults);
+										AppendNewModeledPoints(stroke, speed);
+									}
+									stroke.predictedResults.clear();
+									if (!stroke.endpointAdmission.active && prediction != InkPredictionMode::Disabled) check(stroke.modeler.Predict(stroke.predictedResults).ok(), "real resumed prediction after admission unlock");
+									RebuildPredictedPoints(stroke); rebuild(stroke);
+									UpdateIdleFreezeState(stroke, true, false, 0.055);
+								}
+								check(!stroke.endpointAdmission.active && stroke.realPoints.size() > beforeResume && *stroke.liveTipLength > 0,
+									"real long-stop resume unlocks model geometry and taper without hard raw pinning");
+							}
+							LockPenTerminalState(stroke, stroke.logicalInputTime, endpoint, endpoint);
+							stroke.modelScratch.clear(); modelTime = ResolvePenModelInputTime(stroke, stroke.logicalInputTime, modelTime, frame);
+							update(ink::stroke_model::Input::EventType::kUp, modelTime, stroke.modelScratch);
+							BeginEndpointAdmission(stroke, endpoint); // 与实际终态分支相同，恢复后也重新建立 Up 接纳边界。
+							const auto terminal = AppendEndpointBoundedModeledPoints(stroke, stroke.modelScratch, -1, stroke.lastMovementInputTime, true);
+							check(!stroke.modelScratch.empty() && terminal.endpointPinned && stroke.endpointAdmission.visualPinned &&
+								close(stroke.realPoints.back().x, endpoint.x) && close(stroke.realPoints.back().y, endpoint.y),
+								"actual kUp output is admitted and pinned to the true terminal endpoint");
+							std::vector<InkPoint> tail; BuildCompletedPenTail(stroke, 0.055, tail);
+							check(resumed ? safeContour(tail, false) : close(tail.back().r, stroke.realPoints.back().r),
+								"real model stationary/resumed Up preserves its physical-time recipe");
+							const auto completed = tail;
+							stroke.logicalInputTime += 100;
+							const auto stored = FinalizeStoredStroke(stroke, {}, 0.055, tail);
+							bool storedMatches = stored && samePoints(completed, tail) && stored->Points().size() == tail.size();
+							if (storedMatches) for (size_t i = 0; i < tail.size(); ++i)
+								storedMatches &= close(stored->Points()[i].width, tail[i].r * 2);
+							check(storedMatches, "actual-model Up completed and Stored stay identical after processing delay");
+						}
+			std::fprintf(stderr, "[Draw3PenTaper] modelCases=%d resumeCases=%d maxSettleMs=%.3f maxOutputs=%zu\n", modelCases, resumeCases, maximumSettleAge * 1000, maximumOutputs);
+		}
+		catch (...)
+		{
+			check(false, "unexpected exception");
+		}
+		std::fprintf(stderr, "[Draw3PenTaper] assertions=%d failures=%d\n", assertions, failures);
+		return failures == 0 ? 0 : 1;
+	}
+
 	void ActiveStroke::Reset(float baseDiameter, float expectedSpeed,
 		StrokeWidthMode widthModeValue, bool highlighterValue)
 	{
@@ -722,6 +1147,9 @@ namespace Inkeys::Drawing::Draw3
 		idleFrozen = false;
 		visualStableFrameCount = 0;
 		lastMovementInputTime = 0.0;
+		liveTipLength.reset();
+		liveTipMovementTime = 0.0;
+		liveTipDisplayTime = 0.0;
 		lastFrameWallTime = 0.0;
 		logicalInputTime = 0.0;
 		ClearPenTerminalState(*this);
@@ -1303,7 +1731,9 @@ namespace Inkeys::Drawing::Draw3
 			return;
 		}
 		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end()); // 预测点只放在 L0，便于下一帧擦除重画。
-		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds, ResolvePenDisplayTime(stroke));
+		stroke.liveTipLength = ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds, stroke, true);
+		stroke.liveTipMovementTime = stroke.lastMovementInputTime;
+		stroke.liveTipDisplayTime = ResolvePenDisplayTime(stroke);
 		EnforceCapsuleTangency(stroke.l0DrawPoints); // 笔锋只做公切线安全投影，不再套用稳定笔宽时间限速。
 		stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height, shape);
 	}
