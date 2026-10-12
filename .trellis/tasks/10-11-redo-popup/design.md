@@ -1,5 +1,20 @@
 # 设计：主栏 Redo 弹窗
 
+## 本轮追加修复边界
+
+- `RecallChromeIdleSeconds` 是 Undo/Redo 等待的唯一来源，改为 3.0；修改相关注释/既有边界测试。
+- 属性按钮已有 TransitionContent 目标，核对并补齐 icon/name 的 AdvanceContentTransition；使用同一动画上下文，避免只改策略布尔值而遗漏真实显示提交。
+- 本轮不涉及通用 hover/grace、构建超时、工程与依赖；保持此前所有未提交修改。
+
+## 2026-10-12 修复边界（本节优先于下方历史设计）
+
+- 行为差距在 Bar 的 RecallChrome 状态解析、命令发出前后时序、关闭入口和正常/禁用颜色目标；先核对现有 Host 可用性链，只在发现与本需求直接相关的断点时补齐。
+- 预期修改 `Bar.RecallChrome.cppm`（锁存布局/目标与 5 秒策略）、`Bar.Button.cpp`（命令可用性快照、计时和关闭）、`Bar.Main.cppm`（必要状态声明）、`Bar.RenderLoop.cpp`（单一正常/禁用颜色目标）、`Bar.Scene.cpp`（既有交互 helper 接收该目标，避免再次覆写正常色）、`Bar.RecallAttribute.cpp`（必要弹窗身份/颜色处理）和既有 `recall_attribute_tests.cpp`。
+- 布局事实和实时命令可用性分开；保持期内实时可用性只控制颜色与动作，不能通过 Resolve 或 dismiss 直接推导新尺寸/身份。点击前认可的命令不能被异步执行后的 availability 反过来取消 UI 点击反馈。
+- 复用现有 steady_clock deadline、WM_TIMER 唤醒和 UI 颜色动画，不增加线程、持久化配置或新构建系统。主栏与弹窗各帧只提交一个正常/灰色颜色目标，避免同一帧反复重启相反动画。
+- 仅补当前需求及必要回归，不重构无关按钮、绘制/历史、资源或窗口系统；保持原编码与换行。
+
+
 ## 边界
 
 - 修改包：`Inkeys.UI.Bar`（UI3 主栏唯一入口），只读消费 `Inkeys.Drawing.Draw3` 现有 Redo 命令。
@@ -53,6 +68,13 @@ Redo弹窗点击 -> Redo命令 -> Draw3 redoCurrentPage -> LastRedoItem/RedoLast
               -> RestoreComposition(冷)/直接重绘(热) -> 保持展开
 开始绘制/其他按钮/fold/Escape -> CollapseAuxiliaryPanels -> recallAttribute=false -> 收起动画
 ```
+
+## 主栏 2×1
+
+- 纯状态在 `Bar.RecallChrome.cppm`：`Idle` / `Popup` / `Compact`。Undo 进入 Popup；任意收起或回到桌面从 Popup 进入 Compact；绘制进入 Idle。主栏 Redo 点击不改变相位。
+- 5 秒计时只在 Popup 累加，到点走与其他收起相同的 Dismiss。
+- `Load()` 把运行时 Redo 插在 Recall 前，加载后再套当前相位，避免配置把尺寸写回 2×2。
+- 选择且空页隐藏 Recall 时，主栏 Redo 一并隐藏。
 
 ## 取舍
 

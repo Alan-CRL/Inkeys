@@ -118,23 +118,21 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, double dt, double sp
 	bool dragPlacementLocked)
 {
 	Initialize(); changed_ = false; active_ = false;
-	// 与其他辅助面板互斥；折叠或撤回入口隐藏时自动收起。
-	bool shouldClose = owner.barState.fold ||
+	// 同一份布局快照决定锚点、可见性与弹窗身份；Redo 展开时不能再检查已隐藏的 Undo。
+	const auto chrome = owner.RecallChromeView();
+	auto anchor = owner.barButtonSet.preset[static_cast<int>(
+		chrome.redoExpanded ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall)];
+	const bool shouldClose = owner.barState.fold ||
 		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded ||
-		owner.barState.eraserAttribute;
-	if (!shouldClose)
-	{
-		auto recallPreset = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Recall)];
-		if (recallPreset && !recallPreset->IsVisible()) shouldClose = true;
-	}
+		owner.barState.eraserAttribute || (anchor && !anchor->IsVisible());
 	if (shouldClose) Close(owner);
-	const bool open = owner.barState.recallAttribute; visible_ = open;
+	const bool open = chrome.popupOpen && !shouldClose; visible_ = open;
 	const BarUiAnimationAdvanceContextClass context{ dt, speed, static_cast<bool>(BarUiAnimationEnabled), false };
 	auto advance = [&](auto& value) { const auto result = BarUiAdvanceAnimation(value, context); changed_ |= result.changed; active_ |= result.active; };
 	auto root = owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 	root->UpInh(BarUiInheritClass(root->x.val - root->w.val / 2, root->y.val - root->h.val / 2));
 	auto main = owner.shapeMap[BarUISetShapeEnum::MainBar]; main->Inherit(BarUiInheritEnum::Center, *root);
-	auto anchor = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Recall)]; anchor->button.Inherit(BarUiInheritEnum::CenterFromTopLeft, *main);
+	anchor->button.Inherit(BarUiInheritEnum::CenterFromTopLeft, *main);
 	RecallAttributeLayoutInput currentInput;
 	currentInput.main = { main->inhX, main->inhY, main->inhX + main->w.val, main->inhY + main->h.val };
 	currentInput.anchor = { anchor->button.inhX, anchor->button.inhY, anchor->button.inhX + anchor->button.w.val, anchor->button.inhY + anchor->button.h.val };
@@ -222,23 +220,33 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, double dt, double sp
 	ConfigureSurface(surface_, g.panel, frame_.panelPose.scale);
 	// 浮窗按钮随按住相位在 Undo / Redo 之间切换，不可用时变灰。
 	auto& b = redoButton_;
-	const auto chrome = owner.RecallChromeView();
 	const bool showsRedo = chrome.popupShowsRedo;
 	const bool commandEnabled = showsRedo ? chrome.redoEnabled : chrome.undoEnabled;
-	changed_ |= b.TransitionContent(
-		showsRedo ? L"barRedo" : L"barRecall",
-		showsRedo ? RedoButtonLabel() : UndoButtonLabel());
+	const auto commandPreset = showsRedo ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall;
+	const auto iconResource = showsRedo ? L"barRedo" : L"barRecall";
+	const auto label = showsRedo ? RedoButtonLabel() : UndoButtonLabel();
+	if (b.preset != commandPreset)
+	{
+		// 命令身份改变时同帧提交图标和文字，不能显示旧命令却执行新命令。
+		b.preset = commandPreset;
+		b.icon.InitializationFromResource(L"UI", iconResource);
+		b.name.SetStringImmediate(label);
+		changed_ = true;
+	}
+	else changed_ |= b.TransitionContent(iconResource, label);
+	// 属性按钮不在主栏注册表中，必须自行推进内容关键帧并保持续帧。
+	const bool iconContentAdvanced = b.icon.AdvanceContentTransition(dt, speed);
+	const bool nameContentAdvanced = b.name.AdvanceContentTransition(dt, speed);
+	changed_ |= iconContentAdvanced || nameContentAdvanced;
+	active_ |= iconContentAdvanced || nameContentAdvanced;
 	const bool presented = frame_.panelVisible;
 	const double scale = frame_.panelPose.scale;
 	b.state->state = BarWidgetState::None;
 	SetBarButtonPressedVisual(b, commandEnabled && pressed_ == 0);
 	UpdateBarButtonHoverVisual(b, presented, commandEnabled, BarButtonHoverFadeDurationSeconds);
-	RetargetBarButtonInteractionVisual(b, presented, true, false, BarButtonHoverTransitionDuration);
-	const COLORREF contentColor = commandEnabled
-		? GetThemeColor(BarThemeColorEnum::TextPrimary)
-		: RGB(200, 200, 200);
-	if (b.icon.color1.has_value()) b.icon.color1->SetTar(contentColor);
-	b.name.color.SetTar(contentColor);
+	const COLORREF contentColor = ResolveRecallCommandContentColor(commandEnabled,
+		GetThemeColor(BarThemeColorEnum::TextPrimary));
+	RetargetBarButtonInteractionVisual(b, presented, true, false, BarButtonHoverTransitionDuration, contentColor);
 	b.button.frame->SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 	Place(b.button, g.items[0]);
 	b.button.rw->SetDirect(BarButtonCornerRadiusDip * scale); b.button.rh->SetDirect(BarButtonCornerRadiusDip * scale); b.button.ft->SetDirect(BarButtonFrameThicknessDip * scale);
@@ -297,7 +305,7 @@ void BarRecallAttributePanel::Close(BarUISetClass& owner)
 {
 	const bool wasOpen = owner.barState.recallAttribute.exchange(false);
 	pressed_ = -1; hovered_ = -1; focused_ = -1; visible_ = false;
-	// 浮窗真正关掉且 Redo 仍可用时，主栏收成 2×1。Undo 点击会随后重新打开浮窗。
+	// 面板可立即关闭，但主栏尺寸与命令身份仍遵守 3 秒保护。
 	if (wasOpen) owner.NoteRecallPopupDismissed();
 }
 void BarRecallAttributePanel::Execute(BarUISetClass& owner, int item)

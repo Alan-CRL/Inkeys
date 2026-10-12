@@ -1,6 +1,10 @@
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
+#include <string>
 
 import Inkeys.UI.Bar.RecallAttributeMotion;
 import Inkeys.UI.Bar.RecallChrome;
@@ -120,60 +124,226 @@ int RunRecallAttributeTests()
 		std::cout << "[RecallMotion] openingPeak=" << openingPeak << " closingPeak=" << closingPeak << '\n';
 	}
 	{
-		using Availability = RecallHistoryAvailability;
+		static_assert(RecallChromeIdleSeconds == 3.0);
 		RecallChromeState state;
 		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, false });
 		auto view = ResolveRecallChrome(state);
 		expect(view.undoExpanded && view.mainUndoVisible && !view.mainRedoVisible && !view.popupOpen
-			&& view.undoEnabled && !view.redoEnabled,
-			"only undo rests as a 2x2 undo");
-		const auto rejectedRedo = ApplyRecallChromeEvent(state, RecallChromeEvent::RedoClick);
-		expect(rejectedRedo.hold == state.hold, "gray redo does not take the 2x2");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::UndoClick);
+			&& view.undoEnabled && !view.redoEnabled, "only undo rests as a 2x2 undo");
+		const auto rejected = ApplyRecallChromeCommandResult(state, true, state.availability, true);
+		expect(rejected.hold == state.hold && rejected.idleResetSerial == state.idleResetSerial,
+			"disabled commands do not open or restart the layout");
+		const auto notAccepted = ApplyRecallChromeCommandResult(state, false, state.availability, false);
+		expect(notAccepted.hold == state.hold && !notAccepted.settlePending,
+			"a rejected publish leaves the UI untouched");
+
+		state = ApplyRecallChromeCommandResult(state, false, state.availability, true);
 		view = ResolveRecallChrome(state);
 		expect(state.hold == RecallChromeHold::Undo && view.popupOpen && view.popupShowsRedo
 			&& view.undoExpanded && !view.mainRedoVisible,
 			"undo click keeps a 2x2 undo and puts redo in the popup");
-		expect(RecallChromeIdleElapsed(state.hold, RecallChromeIdleSeconds)
-			&& !RecallChromeIdleElapsed(state.hold, RecallChromeIdleSeconds - 0.01),
-			"hold lasts 5 seconds");
-		state.availability = { true, true };
+		expect(RecallChromeIdleElapsed(state, 3.0) && !RecallChromeIdleElapsed(state, 2.99),
+			"the pending layout waits a full 3 seconds");
+		const auto beforeAvailability = state;
 		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, true });
-		expect(state.hold == RecallChromeHold::Undo && ResolveRecallChrome(state).undoExpanded,
-			"availability changes color immediately and does not change the held layout");
+		expect(!RecallChromeNeedsIdleRestart(beforeAvailability, state) && ResolveRecallChrome(state).undoExpanded,
+			"availability changes color without restarting or changing a clicked layout");
 		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
 		view = ResolveRecallChrome(state);
-		expect(state.hold == RecallChromeHold::None && !view.popupOpen
+		expect(state.hold == RecallChromeHold::None && !state.settlePending && !view.popupOpen
 			&& view.mainRedoVisible && view.mainUndoVisible && !view.undoExpanded && !view.redoExpanded,
-			"after 5 seconds both commands rest as redo over undo");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::RedoClick);
+			"after 3 seconds both commands rest as redo over undo");
+
+		// 模拟真实末步顺序：点击前可用，Publish 后耗尽，互斥关闭再应用已接受的点击。
+		const auto clickAvailability = state.availability;
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, false });
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Dismiss);
+		state = ApplyRecallChromeCommandResult(state, true, clickAvailability, true);
 		view = ResolveRecallChrome(state);
 		expect(state.hold == RecallChromeHold::Redo && view.popupOpen && !view.popupShowsRedo
-			&& view.redoExpanded && !view.mainUndoVisible,
-			"a 2x1 redo click makes redo 2x2 and moves undo into the popup");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { false, true });
+			&& view.redoExpanded && !view.mainUndoVisible && !view.redoEnabled && view.undoEnabled,
+			"the last 2x1 redo still expands redo and opens undo even after asynchronous exhaustion");
+		const auto beforePopupUndo = state;
+		state = ApplyRecallChromeCommandResult(state, false, state.availability, true);
 		view = ResolveRecallChrome(state);
-		expect(!view.popupOpen && view.redoExpanded && view.mainRedoVisible && !view.mainUndoVisible
-			&& !view.undoEnabled && view.redoEnabled,
-			"only redo rests as a 2x2 redo");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::RedoClick);
-		expect(ResolveRecallChrome(state).popupOpen && !ResolveRecallChrome(state).popupShowsRedo,
-			"clicking the lone redo opens undo in the popup");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::SuppressPopup);
-		expect(!ResolveRecallChrome(state).popupOpen && ResolveRecallChrome(state).redoExpanded
-			&& state.hold == RecallChromeHold::Redo,
-			"drawing hides the popup but keeps the held 2x2 until the timer");
-		state = ApplyRecallChromeEvent(state, RecallChromeEvent::ReturnToDesktop);
-		view = ResolveRecallChrome(state);
-		expect(state.hold == RecallChromeHold::None && !view.popupOpen && view.redoExpanded,
-			"returning to the desktop settles without reopening the popup");
+		expect(RecallChromeNeedsIdleRestart(beforePopupUndo, state) && state.hold == RecallChromeHold::Redo
+			&& view.redoExpanded && !view.popupShowsRedo && view.popupOpen,
+			"popup undo keeps main redo and popup undo identities while restarting 3 seconds");
+		const auto beforeRepeatedUndo = state;
+		state = ApplyRecallChromeCommandResult(state, false, state.availability, true);
+		expect(RecallChromeNeedsIdleRestart(beforeRepeatedUndo, state),
+			"every accepted repeated command postpones the idle deadline");
+		for (const auto event : { RecallChromeEvent::Dismiss, RecallChromeEvent::SuppressPopup,
+			RecallChromeEvent::ReturnToDesktop })
+		{
+			const auto closed = ApplyRecallChromeEvent(state, event);
+			const auto closedView = ResolveRecallChrome(closed);
+			expect(!closedView.popupOpen && closedView.redoExpanded && closed.hold == RecallChromeHold::Redo
+				&& closed.settlePending && !RecallChromeNeedsIdleRestart(state, closed),
+				"close, drawing and workspace changes preserve the clicked deadline and identity");
+			const auto reopened = ApplyRecallChromeCommandResult(closed, false, closed.availability, true);
+			expect(reopened.hold == RecallChromeHold::Redo && ResolveRecallChrome(reopened).redoExpanded,
+				"a suppressed popup cannot let its opposite command swap the main identity early");
+		}
 		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, {});
+		expect(!ResolveRecallChrome(state).redoEnabled && !ResolveRecallChrome(state).undoEnabled
+			&& ResolveRecallChrome(state).redoExpanded, "both disabled colors keep the protected geometry");
+		const auto grayClicked = ApplyRecallChromeCommandResult(state, true, state.availability, false);
+		expect(RecallChromeNeedsIdleRestart(state, grayClicked) && grayClicked.hold == state.hold
+			&& ResolveRecallChrome(grayClicked).redoExpanded,
+			"clicking the exhausted command delays the existing protection without moving its identity");
+		const auto grayClosed = ApplyRecallChromeEvent(grayClicked, RecallChromeEvent::Dismiss);
+		const auto grayClosedClicked = ApplyRecallChromeCommandResult(grayClosed, true, grayClosed.availability, false);
+		expect(RecallChromeNeedsIdleRestart(grayClosed, grayClosedClicked) && !ResolveRecallChrome(grayClosedClicked).popupOpen,
+			"gray repeated clicks postpone a suppressed layout without reopening the popup");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
 		view = ResolveRecallChrome(state);
-		expect(view.undoExpanded && view.mainUndoVisible && !view.mainRedoVisible
-			&& !view.undoEnabled && !view.redoEnabled,
-			"neither command leaves a gray 2x2 undo");
+		expect(view.undoExpanded && !view.popupOpen && !view.undoEnabled && !view.redoEnabled,
+			"exhaustion settles into a gray 2x2 undo only after idle");
 	}
+	{
+		RecallChromeState state;
+		const auto before = state;
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, true });
+		expect(RecallChromeNeedsIdleRestart(before, state) && state.settlePending && state.hold == RecallChromeHold::None
+			&& ResolveRecallChrome(state).undoExpanded,
+			"availability without a click starts a pending timer and keeps the old geometry");
+		const auto unchanged = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, true });
+		expect(!RecallChromeNeedsIdleRestart(state, unchanged), "per-frame availability polling does not extend idle");
+		const auto retargeted = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { false, true });
+		expect(RecallChromeNeedsIdleRestart(state, retargeted) && ResolveRecallChrome(retargeted).undoExpanded,
+			"a different unclicked pending target starts its own 3 second wait");
+		const auto cancelled = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, false });
+		expect(!cancelled.settlePending && ResolveRecallChrome(cancelled).undoExpanded,
+			"returning to the displayed target cancels an unclicked pending change");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, false });
+		expect(state.settlePending && ResolveRecallChrome(state).mainRedoVisible
+			&& !ResolveRecallChrome(state).redoEnabled && !ResolveRecallChrome(state).undoExpanded,
+			"redo exhaustion in idle 2x1 grays redo immediately and postpones 2x2 undo");
+		const auto grayPendingClick = ApplyRecallChromeCommandResult(state, true, state.availability, false);
+		expect(RecallChromeNeedsIdleRestart(state, grayPendingClick) && !ResolveRecallChrome(grayPendingClick).popupOpen,
+			"gray clicks also delay an availability-only pending layout without opening a popup");
+		const auto closed = ApplyRecallChromeEvent(state, RecallChromeEvent::Dismiss);
+		expect(closed.settlePending && !RecallChromeNeedsIdleRestart(state, closed)
+			&& !ResolveRecallChrome(closed).undoExpanded,
+			"dismiss also preserves an availability-only pending timer");
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
+		expect(ResolveRecallChrome(state).undoExpanded && !state.settlePending,
+			"availability-only transitions settle on their timer");
+
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { false, true });
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
+		expect(ResolveRecallChrome(state).redoExpanded && !ResolveRecallChrome(state).mainUndoVisible,
+			"only redo rests as a 2x2 redo");
+		state = ApplyRecallChromeCommandResult(state, true, state.availability, true);
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, true });
+		const auto afterPopup = ApplyRecallChromeCommandResult(state, false, state.availability, true);
+		expect(afterPopup.hold == RecallChromeHold::Redo && !ResolveRecallChrome(afterPopup).popupShowsRedo,
+			"redo-only main and popup undo remain in place during opposite commands");
+
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::IdleElapsed);
+		state = ApplyRecallChromeCommandResult(state, false, state.availability, true);
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { false, true });
+		const auto lastUndo = ApplyRecallChromeCommandResult(state, false, { true, true }, true);
+		expect(ResolveRecallChrome(lastUndo).undoExpanded && !ResolveRecallChrome(lastUndo).undoEnabled,
+			"last undo keeps its expanded feedback even if availability already changed");
+		const auto popupRedo = ApplyRecallChromeCommandResult(lastUndo, true, lastUndo.availability, true);
+		expect(popupRedo.hold == RecallChromeHold::Undo && ResolveRecallChrome(popupRedo).popupShowsRedo
+			&& ResolveRecallChrome(popupRedo).undoExpanded,
+			"popup redo is symmetric and never moves under a repeat click");
+	}
+	{
+		// 主栏和弹窗共用生产颜色解析，再用真实颜色动画检查中间帧、反向与终态。
+		constexpr unsigned normal = 0x00302010;
+		BarUiColorClass color(normal);
+		const auto advance = [&] { return BarUiAdvanceAnimation(color, { 0.05, 1, true, false }); };
+		const auto target = [&](bool enabled) { color.SetTar(ResolveRecallCommandContentColor(enabled, normal)); };
+		target(false);
+		advance();
+		expect(color.tar == RecallCommandUnavailableColor && color.val != normal
+			&& color.val != RecallCommandUnavailableColor, "gray animation has a real intermediate color");
+		const auto middle = color.val.load();
+		target(true);
+		expect(color.val == middle && color.startColor == middle && color.tar == normal,
+			"re-enabling reverses color continuously from the displayed color");
+		for (int frame = 0; frame < 10; ++frame) { target(true); advance(); }
+		expect(color.val == normal && color.IsSame(), "repeated enabled targets converge to normal");
+		for (int frame = 0; frame < 10; ++frame) { target(false); advance(); }
+		expect(color.val == RecallCommandUnavailableColor && color.IsSame(),
+			"repeated disabled targets converge to the brush gray without animation resets");
+	}
+
+	{
+		// Headless 不编译 D2D 面板，源级检查真实 Advance 没有绕过可测状态策略。
+		namespace fs = std::filesystem;
+		const fs::path relative = "Inkeys/Inkeys/UI/Bar/Bar.RecallAttribute.cpp";
+		fs::path source = fs::path(__FILE__).parent_path().parent_path() / relative;
+		if (!fs::exists(source))
+		{
+			for (auto root = fs::current_path(); !root.empty(); root = root.parent_path())
+			{
+				if (fs::exists(root / relative)) { source = root / relative; break; }
+				if (root == root.parent_path()) break;
+			}
+		}
+		std::ifstream file(source, std::ios::binary);
+		const std::string code((std::istreambuf_iterator<char>(file)), {});
+		const auto begin = code.find("bool BarRecallAttributePanel::Advance(");
+		const auto end = code.find("void BarRecallAttributePanel::Draw(", begin);
+		expect(begin != std::string::npos && end != std::string::npos,
+			"production Recall panel source is available for its wiring contract");
+		if (begin != std::string::npos && end != std::string::npos)
+		{
+			const auto advance = code.substr(begin, end - begin);
+			const auto snapshot = advance.find("owner.RecallChromeView()");
+			expect(snapshot != std::string::npos && advance.find("owner.RecallChromeView()", snapshot + 1) == std::string::npos,
+				"production panel uses one chrome snapshot for gate, anchor and popup identity");
+			expect(advance.find("chrome.redoExpanded ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall") != std::string::npos
+				&& advance.find("anchor && !anchor->IsVisible()") != std::string::npos
+				&& advance.find("anchor->button.Inherit(") != std::string::npos
+				&& advance.find("currentInput.anchor = { anchor->button.inhX") != std::string::npos,
+				"production panel tests visibility and positions geometry from the selected undo or redo anchor");
+			expect(advance.find("recallPreset") == std::string::npos
+				&& advance.find("chrome.popupOpen && !shouldClose") != std::string::npos,
+				"hiding main undo during redo expansion cannot close popup undo");
+			expect(advance.find("commandPreset = showsRedo ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall") != std::string::npos
+				&& advance.find("iconResource = showsRedo ? L\"barRedo\" : L\"barRecall\"") != std::string::npos
+				&& advance.find("label = showsRedo ? RedoButtonLabel() : UndoButtonLabel()") != std::string::npos
+				&& advance.find("b.preset = commandPreset") != std::string::npos
+				&& advance.find("b.icon.InitializationFromResource(L\"UI\", iconResource)") != std::string::npos
+				&& advance.find("b.name.SetStringImmediate(label)") != std::string::npos,
+				"popup command identity commits its matching SVG and label together without showing the previous action");
+			expect(advance.find("b.icon.AdvanceContentTransition(dt, speed)") != std::string::npos
+				&& advance.find("b.name.AdvanceContentTransition(dt, speed)") != std::string::npos
+				&& advance.find("active_ |= iconContentAdvanced || nameContentAdvanced") != std::string::npos,
+				"production popup advances SVG and Word targets and keeps rendering until their content is committed");
+		}
+		// 验证实际内容入口的提交/缓存链，防止目标正确但绘制仍消费旧 val。
+		std::ifstream uiFile(source.parent_path() / "Bar.UI.cpp", std::ios::binary);
+		const std::string ui((std::istreambuf_iterator<char>(uiFile)), {});
+		expect(!ui.empty(), "production SVG and Word source is available for its commit contract");
+		const auto section = [&](const char* start, const char* next)
+		{
+			const auto first = ui.find(start);
+			if (first == std::string::npos) return std::string{};
+			const auto last = ui.find(next, first);
+			return last == std::string::npos ? std::string{} : ui.substr(first, last - first);
+		};
+		const auto svgImmediate = section("void BarUiSVGClass::InitializationFromString(", "void BarUiSVGClass::InitializationFromResource(");
+		const auto svgCommit = section("void BarUiSVGClass::ApplyContentDirect(", "bool BarUiSVGClass::CacheBitmap(");
+		const auto wordImmediate = section("bool BarUiWordClass::SetStringImmediate(", "bool BarUiWordClass::AdvanceContentTransition(");
+		expect(svgImmediate.find("CancelContentTransition()") != std::string::npos
+			&& svgImmediate.find("ApplyContentDirect(valT)") != std::string::npos
+			&& svgCommit.find("svg.Initialization(valT)") != std::string::npos
+			&& svgCommit.find("ResetCache()") != std::string::npos,
+			"production immediate SVG cancels stale keyframes, commits the rendered value and invalidates its old bitmap");
+		expect(wordImmediate.find("ApplyBarImmediateContentUpdate(") != std::string::npos
+			&& wordImmediate.find("content.Initialization(contentT)") != std::string::npos
+			&& wordImmediate.find("transitionContent.Initialization(contentT)") != std::string::npos,
+			"production immediate Word shares the tested transaction and commits both rendered and pending strings");
+	}
+
 	std::cout << "[RecallAttribute] failures=" << failures << '\n';
 	return failures;
 }

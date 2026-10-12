@@ -2478,17 +2478,27 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			variant<decltype(baseRange), decltype(baseRange | views::reverse)> viewVariant;
 			viewVariant = baseRange;
 
+			const auto recallChrome = owner_.RecallChromeView();
 			visit([&](auto&& forRange)
 				{
 					for (int id : forRange)
 					{
 						BarButtonClass* temp = state.barButtonSet.buttonList.Get(id);
 						if (temp == nullptr) continue;
+						const bool recallCommand = temp->preset == BarButtonPresetEnum::Recall
+							|| temp->preset == BarButtonPresetEnum::Redo;
+						const bool commandEnabled = temp->preset == BarButtonPresetEnum::Recall
+							? recallChrome.undoEnabled : recallChrome.redoEnabled;
+						const COLORREF normalContentColor = temp->state->state == BarWidgetState::Selected
+							? GetThemeColor(BarThemeColorEnum::Accent)
+							: GetThemeColor(BarThemeColorEnum::TextPrimary);
+						// 几何保持时可用性仍立即变色；所有布局分支共用这个最终目标。
+						const COLORREF contentColor = recallCommand
+							? Inkeys::UI::Bar::ResolveRecallCommandContentColor(commandEnabled, normalContentColor)
+							: normalContentColor;
 						if (temp->icon.color1.has_value())
 						{
-							COLORREF iconColor = temp->state->state == BarWidgetState::Selected
-								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::TextPrimary);
+							const COLORREF iconColor = contentColor;
 							// 第一次计算或不可见时直接同步，避免 SVG 显示后才从黑色过渡。
 							if (forNum == 1 || state.barState.fold || !temp->IsVisible())
 								temp->icon.color1.value().SetDirect(iconColor);
@@ -2546,7 +2556,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								temp->button.enable.tar
 									&& temp->state->state != BarWidgetState::Disable,
 								temp->state->state == BarWidgetState::Selected,
-								operationDur);
+								operationDur, contentColor);
 
 						if (temp->size == BarButtonSizeEnum::oneOne)
 						{
@@ -2609,9 +2619,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnOneHalf, 40.0, true);
 									 temp->state->state == BarWidgetState::Disable
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+									temp->icon.color1.value().SetTar(contentColor);
 								}
 							}
 							if (temp->name.enable.tar)
@@ -2716,9 +2724,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 									 temp->state->state == BarWidgetState::Disable
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+									temp->icon.color1.value().SetTar(contentColor);
 								}
 							}
 							if (temp->name.enable.tar)
@@ -2733,9 +2739,7 @@ temp->name.x.SetTar(metrics.primaryOffsetXDip); // 右侧文字槽与共享 2x1 
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 
-								if (temp->state->state == BarWidgetState::Selected)
-									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-								else temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+								temp->name.color.SetTar(contentColor);
 									temp->name.size.SetTar(metrics.primaryFontSizeDip);
 							}
 
@@ -2828,9 +2832,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 									 temp->state->state == BarWidgetState::Disable
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+									temp->icon.color1.value().SetTar(contentColor);
 								}
 							}
 							if (temp->name.enable.tar)
@@ -2845,9 +2847,7 @@ temp->name.x.SetTar(metrics.primaryOffsetXDip);
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 
-								if (temp->state->state == BarWidgetState::Selected)
-									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-								else temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+								temp->name.color.SetTar(contentColor);
 
 									temp->name.size.SetTar(metrics.primaryFontSizeDip);
 							}
@@ -2931,25 +2931,6 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 									temp->button.frameLightPct.value().SetTar(0.0, operationDur);
 								temp->icon.pct.SetTar(0.0, operationDur);
 								temp->name.pct.SetTar(0.0, operationDur);
-							}
-						}
-
-						if (temp->preset == BarButtonPresetEnum::Recall
-							|| temp->preset == BarButtonPresetEnum::Redo)
-						{
-							const auto chrome = owner_.RecallChromeView();
-							const bool enabled = temp->preset == BarButtonPresetEnum::Recall
-								? chrome.undoEnabled : chrome.redoEnabled;
-							if (!enabled)
-							{
-								const COLORREF unavailable = RGB(200, 200, 200);
-								if (temp->icon.color1.has_value())
-								{
-									if (forNum == 1 || state.barState.fold || !temp->IsVisible())
-										temp->icon.color1.value().SetDirect(unavailable);
-									else temp->icon.color1.value().SetTar(unavailable);
-								}
-								temp->name.color.SetTar(unavailable);
 							}
 						}
 

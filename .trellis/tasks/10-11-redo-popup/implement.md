@@ -1,5 +1,22 @@
 # 实施计划：主栏 Redo 弹窗
 
+## 本轮追加实施清单
+
+- [x] 统一 Undo/Redo 等待为 3 秒并同步边界回归。
+- [x] 修复属性图标/文字内容切换提交与相反身份显示。
+- [x] 独立复查、完整 Debug|ARM64 构建、无窗口回归并记录；不提交、不启动 GUI。
+
+## 2026-10-12 延续修复清单
+
+- [x] 核对最近三个 commit 和历史任务，补正本轮需求及变更边界。
+- [x] 修复真实点击时序、布局保护和 popup 命令身份，关闭入口不抢先 settle。
+- [x] 修复主栏与弹窗正常/灰色目标以及颜色动画；保持可用性真实来源。
+- [x] 扩充既有 Recall 回归：2×1 Redo、最后一步、连续点击、无 hold 可用性变化、关闭/工作区切换、颜色正常↔禁用。
+- [x] 独立 trellis-check 审查最小 diff、规格及生产路径。
+- [x] 通过当前 VS ARM64 原生 MSBuild 构建 InkeysRepo.sln Debug|ARM64（同一 invocation 规范化 PATH，至少 5 分钟预算），运行 InkeysHeadlessTests --no-window。
+- [x] 记录结果并更新相关 spec；本轮不 commit、不 push、不打开 GUI。
+
+
 ## 有序清单
 
 - [x] 1. 状态与通道：`Bar.State.cppm` 加 `recallAttribute`；`Bar.ToggleClickCoalescer.cppm` 加 `RecallAttribute`。

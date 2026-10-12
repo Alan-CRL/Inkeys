@@ -197,7 +197,7 @@ namespace Inkeys::UI::Bar
 	void SetBarButtonPressedVisual(BarButtonClass& button, bool pressed) noexcept;
 	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
 		bool visible, bool enabled, bool selected,
-		double durationSeconds) noexcept;
+		double durationSeconds, std::optional<COLORREF> contentColor = std::nullopt) noexcept;
 
 	struct BarButtonDrawOptions
 	{
@@ -496,7 +496,7 @@ public:
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
 	BarRecallAttributePanel recallAttribute;
-	// 第一次 Undo 后锁存 Redo 可用；绘制清除。不写入按钮配置。
+	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
 	std::mutex recallChromeMutex;
 	Inkeys::UI::Bar::RecallChromeState recallChrome{};
 	// 用墙钟期限，不累加动画 dt。主栏休眠时动画时钟会停，并且恢复后的第一帧 dt 为 0。
@@ -538,7 +538,7 @@ public:
 	Inkeys::UI::Bar::Ui3FiniteSignature ReadFiniteSignature(const StateModeVersionedSnapshot& tool);
 	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
 	void CollapseAuxiliaryPanels(bool cancelCapture = true);
-	// Undo 回到 2×2 并打开浮窗；收起且锁存仍在则收成上 Redo 下 Undo。
+	// 主栏点击展开对应 2×2；关闭只收面板，布局等 3 秒空闲后调整。
 	void OpenRecallFromUndo();
 	void OpenRecallFromRedo();
 	void NoteRecallPopupRedo();

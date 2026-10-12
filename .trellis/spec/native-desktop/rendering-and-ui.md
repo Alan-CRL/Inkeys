@@ -54,6 +54,60 @@
 - `GetDC/ReleaseDC`、`BeginDraw/EndDraw` 在成功与失败路径成对；
 - 不在没有线程安全依据时跨线程传递 device context/target。
 
+### Undo/Redo 属性与 3 秒布局保护合同
+
+#### 1. Scope / Trigger
+
+修改 UI3 主栏 Recall/Redo、属性弹窗命令身份、Draw3 历史可用性显示或相关布局/颜色动画时适用。
+
+#### 2. Signatures
+
+`Inkeys.UI.Bar.RecallChrome` 提供生产纯策略：
+
+~~~cpp
+RecallChromeState ApplyRecallChromeCommandResult(RecallChromeState state,
+    bool redo, RecallHistoryAvailability clickAvailability, bool accepted) noexcept;
+bool RecallChromeNeedsIdleRestart(RecallChromeState before, RecallChromeState after) noexcept;
+unsigned ResolveRecallCommandContentColor(bool enabled, unsigned normalColor) noexcept;
+~~~
+
+`BarUISetClass` 的 `NoteRecallHistoryAvailability`、`PollRecallChromeIdleTimer`、`AdvanceRecallChromeIdle` 和既有 `ArmRecallChromeIdleDeadline/Timer` 负责发布与唤醒；`RetargetBarButtonInteractionVisual` 可接收 `std::optional<COLORREF>` 最终内容颜色，省略时保留原主题行为。
+
+#### 3. Contracts
+
+- Draw3 真实 `canUndo/canRedo` 只控制即时可用性与颜色。当前 `layout` 独立锁存，静止目标为两者可用时上 Redo/下 Undo 的 2×1、仅 Redo 可用时 2×2 Redo、Redo 不可用时 2×2 Undo。
+- 主栏 2×1 点击进入所点命令的 2×2 交互及相反命令弹窗。已有展开交互内的命令点击保持主栏/弹窗身份，并延长最后一次点击后的 3 秒保护。
+- 属性面板的同一 `RecallChromeView` 快照须选择当前 2×2 主栏 Redo/Recall；所选按钮同时用于 `IsVisible()` 关闭门禁、几何继承和弹窗锚点。隐藏的另一命令不能触发 `Close`。
+- 点击前在原互斥边界取可用性快照；发布命令后只在 `CommandResult::Accepted` 时确认展开。异步执行末步导致可用性耗尽，不能反过来拒绝本次已接受点击的反馈。
+- `Dismiss/ReturnToDesktop/SuppressPopup` 只关闭面板，保留布局与期限。没有点击的可用性变化也保存 `pendingLayout`，从目标变化起等待 3 秒；同目标逐帧读取不得重启期限。目标回到当前布局时可取消无点击等待。
+- 期限使用 `steady_clock`，主栏 idle 时以既有 `WM_TIMER` 唤醒；有 hold 和无 hold pending 都须被唤醒。不得累加会在 idle 停止的动画 dt 来判定 3 秒。
+- 禁用或发布失败不发送成功点击反馈；若已有待调整布局，点击仍延长保护，保持关闭面板的关闭状态。无 pending 时无效点击不启动新交互。
+- 主栏 Redo 时属性按钮必须为 Undo，反向对称；属性按钮不在主栏注册表，必须自行推进 icon/name 的 `AdvanceContentTransition` 并保持续帧。身份切换以已有 `InitializationFromResource`（SVG val/tar 同步、取消旧内容动画、缓存失效）和 `SetStringImmediate` 同帧提交显示及 preset，避免旧内容与新动作混配。同身份普通内容更新继续使用原动画。
+- 正常颜色与 `RecallCommandUnavailableColor=0x00C8C8C8` 由同一生产解析给出，各尺寸分支与交互 helper 每帧使用同一最终目标；以现有 `BarUiColorClass` 从当前值双向过渡。可用性变化不得先切回正常目标再切灰色。
+
+#### 4. Validation & Error Matrix
+
+| 场景 | 必须行为 |
+| --- | --- |
+| 最后一次 2×1 Redo 在 Publish 后耗尽 | 仍为 2×2 Redo + 弹窗 Undo，Redo 变灰，3 秒空闲后才调整 |
+| 展开的主栏/弹窗连续交替点击 | 单步命令，位置身份保持，计时从最后点击开始 |
+| 灰色按钮继续连点 | 不发布禁用命令，仅延期已有保护，不新开弹窗 |
+| 无 hold 的历史可用性变化 | 即时变色，保存待调整目标并等待 3 秒 |
+| Escape/其他属性/绘制/工作区切换 | 可立即收面板，不能立即更换受保护几何 |
+| 相同颜色目标逐帧重复设置 | 动画正常收敛，反向从当前显示颜色开始 |
+
+#### 5. Good / Base / Bad Cases
+
+Good：末步前快照认可已接受点击，后续耗尽只改颜色；Base：灰色 2×2 Undo 在无待调整目标时点击无新交互；Bad：关闭面板直接清 hold，或 `Resolve` 从实时 availability 推导几何，或同帧正常色/灰色反复 retarget。
+
+#### 6. Tests Required
+
+`InkeysHeadlessTests --no-window` 中既有 Recall 测试须覆盖 2.99/3 秒、异步末步事件顺序、popup 身份、连续/灰色点击延期、无 hold pending 的重定向与取消、关闭/绘制/工作区保护；颜色须调用生产解析和真实动画，断言中间帧、反向连续与终态。既有测试另检查 `RecallAttribute::Advance` 生产源码的单快照、当前主栏锚点门禁及几何接线，需从仓库源码可访问的位置运行。完整 `InkeysRepo.sln Debug|ARM64` 验证生产入口与 helper 编译接线；纯策略、源级断言与编译均不替代实际 D2D/HWND 定时唤醒及交互视觉验收。
+
+#### 7. Wrong vs Correct
+
+Wrong：`Publish(Redo) -> Close/Refresh -> 读取已耗尽 canRedo 拒绝展开`；Correct：保存点击前可用性，发布成功后用该快照确认交互，再以最新事实更新颜色。Wrong：一帧先正常色、后禁用色；Correct：先解析最终目标，所有调用路径提交同一目标。
+
 ### UI3 idle 唤醒动画时钟合同
 
 #### 1. Scope / Trigger

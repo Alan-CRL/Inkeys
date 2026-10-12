@@ -1835,3 +1835,69 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 在 Actions 验收真实 Windows 2022 三架构链路。
+
+
+## Session 64: 延续 Redo 弹窗：修复5秒布局保护与灰色动画
+<!-- trellis-session: v=2 fp=50b5fb3aa499acd9 -->
+
+**Date**: 2026-10-12
+**Task**: 延续 Redo 弹窗：修复5秒布局保护与灰色动画
+**Branch**: `feature/redo`
+
+### Summary
+
+修复异步末步反馈丢失、无hold布局即时切换、关闭绕过保护、弹窗锚点和颜色目标冲突；完整ARM64 Debug构建及headless通过，保留原任务等待实际交互验收。
+
+### Main Changes
+
+- UI3 Recall 独立锁存布局，真实可用性驱动颜色与门禁；连续及灰色点击延长已有5秒保护。
+- 属性面板以当前Undo/Redo主栏按钮为锚点，源级接线回归补足纯状态测试。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 MSBuild退出0、0 error；新增及既有headless --no-window沙箱外退出0。
+- [OK] 普通sandbox PDB C1902及TEMP写入失败经同一探针/测试沙箱外对照排除；无源码/配置绕过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留10-11-redo-popup任务，实际UI连点/5s/颜色视觉验收尚未执行；本轮未commit或push。
+
+
+## Session 65: Redo追加：3秒等待与属性身份显示提交
+<!-- trellis-session: v=2 fp=0bb9eb797f83ff95 -->
+
+**Date**: 2026-10-12
+**Task**: Redo追加：3秒等待与属性身份显示提交
+**Branch**: `feature/redo`
+
+### Summary
+
+仅Undo/Redo计时改3s，属性身份使用既有即时内容事务并补内容动画推进，完整ARM64 Debug及headless通过。
+
+### Main Changes
+
+- 修复主栏Redo时属性仍显示Redo的实际val/缓存未提交问题。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 原任务保留，实际GUI视觉验收未运行；不commit/push。
