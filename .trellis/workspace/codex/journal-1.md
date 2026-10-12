@@ -1877,3 +1877,45 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 71: Draw3 RTS 注册前根置顶顺序修复
+<!-- trellis-session: v=2 fp=29c2f1b1de18b8a3 -->
+
+**Date**: 2026-10-12
+**Task**: Draw3 RTS 注册前根置顶顺序修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 重建，失败不启动 RTS。独立审查、完整 Debug ARM64 Solution 构建和 --no-window 测试通过（退出码0）；真实故障场景待验收，无 GUI、无 commit/push。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 72: RTS 注册前置顶修复核验与任务归档
+<!-- trellis-session: v=2 fp=79c5c3b927d252ae -->
+
+**Date**: 2026-10-12
+**Task**: RTS 注册前置顶修复核验与任务归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认当前任务核验通过，修复与规范已提交，任务归档 completed。完整 Debug ARM64 Solution 构建、无窗口测试和独立审查通过；AI 未执行 GUI。归档上下文引用已校验，无 push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74d7e688` | Restore topmost preparation before RTS startup |
+
+### Status
+
+[OK] **Completed**

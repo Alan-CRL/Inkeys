@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 70
+- **Total Sessions**: 72
 - **Last Active**: 2026-10-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1879 | Active |
+| `journal-1.md` | ~1921 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 72 | 2026-10-12 | RTS 注册前置顶修复核验与任务归档 | `74d7e688` | `bugfix/drawpad` |
+| 71 | 2026-10-12 | Draw3 RTS 注册前根置顶顺序修复 | - | `bugfix/drawpad` |
 | 70 | 2026-10-12 | 左上角落笔死区用户验收与任务归档 | `f5ccf0fb` | `bugfix/drawpad` |
 | 69 | 2026-10-12 | 分页窗口启动显隐冲突修复 | - | `bugfix/drawpad` |
 | 60 | 2026-10-10 | Windows 发布流水线拆分与 Win32 Harness 修复 | - | `dev` |
