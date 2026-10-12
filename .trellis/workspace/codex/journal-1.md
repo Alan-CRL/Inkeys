@@ -1835,3 +1835,45 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 在 Actions 验收真实 Windows 2022 三架构链路。
+
+
+## Session 69: 分页窗口启动显隐冲突修复
+<!-- trellis-session: v=2 fp=747879c574e3e8bf -->
+
+**Date**: 2026-10-12
+**Task**: 分页窗口启动显隐冲突修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+删除 TopWindow 四次分页窗 Show，保持 CRLF/UTF-8；静态审查通过。Debug ARM64 Solution 构建 10 分钟超时，PptCOM 成功，原生结果未完成；无 GUI、无提交，保留原任务 in_progress。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 70: 左上角落笔死区用户验收与任务归档
+<!-- trellis-session: v=2 fp=44b1a6bf418e2c6e -->
+
+**Date**: 2026-10-12
+**Task**: 左上角落笔死区用户验收与任务归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认问题解决。修复已提交，原任务归档为 completed；静态审查通过，此前 Debug ARM64 构建 10 分钟超时记录保留。未启动 GUI、未 push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5ccf0fb` | Fix page control startup visibility |
+
+### Status
+
+[OK] **Completed**
