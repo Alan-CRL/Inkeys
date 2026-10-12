@@ -1,5 +1,18 @@
 # 设计：主栏 Redo 弹窗
 
+## Clear 前进续接状态方案
+
+- CanvasPageRuntimeState 增加同页有限 ClearRedoContinuation（InkPage 与完整 CPU runtime 值副本），只持有最近一次被撤销Clear的后继区间，不存GPU后像、不形成引用环。
+- 成功UndoClear换页前先保留后继区间全部StoredStroke、隐藏项、redo候选、before/after与raster，并在副本中归到Clear之后的空可见状态。恢复旧区间仍以floor0逐笔Undo，最多一次最近边界。
+- Redo优先普通旧区间stroke候选，栈空才重做Clear；Clear按新历史根后的合法ordinal安装后继空状态，随后沿保留的后继redo栈逐笔推进到最新。
+- 新StoredStroke CPU成功追加立即取消forward；页面/工作区按pageGuid/StableSlideId保持。PPT active/parked磁盘恢复同接线，有forward或仍在重做后继笔画时不得淘汰相关parked slot；有forward或普通redo候选的拓扑重建保留完整CPU页/runtime，其余普通路径保持。
+- 分配、磁盘和身份验证失败不消费旧恢复点或替换权威页。Clear仍保留当前viewport，恢复时失效旧GPU历史缓存并走既有权威重建。
+- 生产预计仅Draw3.DrawingController.cpp，既有HiddenWindowTest.cpp覆盖真实Host生命周期，必要CPU检查复用已有Controller测试入口，不新CLI/工程。
+
+## 本轮 Clear 历史链研究与修改边界
+
+当前断点位于Draw3运行历史：旧区间继续Undo清掉clearRedoAvailable，Redo Clear复用新Clear事务清掉后继笔迹。先核对CanvasPageRuntimeState、boundary fallback和磁盘恢复/保存完成身份，设计只保留最近边界所需的前进续接状态，普通Stroke/GPU恢复复用原路径。预计修改Draw3.DrawingController.cpp及已有CPU/隐藏回归；持久化相关改动仅在直接丢失forward链的证据成立时纳入。实现方案由研究确认后补入，不顺手重构通用历史/线程/窗口。
+
 ## 本轮追加宽度修复边界
 
 最小行为差距：Redo 2×2 点击没有新增主栏按钮，却出现暂态额外列。沿点击、PresetHoming/显隐、RenderLoop 占位与窗口尺寸链定位；只修改直接导致暂态布局的生产路径和必要回归，不改通用几何/动画参数或固定窗口宽度。延续中文关键注释、原编码换行及3秒保护。

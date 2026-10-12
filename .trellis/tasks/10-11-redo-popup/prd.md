@@ -1,5 +1,13 @@
 # 主栏 Redo 弹窗
 
+## 本轮追加：最近 Clear 区间 Undo/Redo 完整链（覆盖历史 UI-only 边界）
+
+- 延续本任务。Undo先逐笔撤空当前区间，再最多恢复最近一次Clear前画布；恢复画布全部笔画可逐笔Undo到空，无笔画时停止，不继续进入更早Clear。
+- Redo逐步回到本会话最新位置：先重做旧区间笔画，再重做Clear边界，随后能继续重做Clear后的笔画，不因Clear停住。不把单次点击变为批量到最新。
+- 验收序列A1/A2→Clear→B1/B2：Undo B2/B1→Undo Clear→Undo A2/A1→额外Undo no-op；Redo A1/A2→Redo Clear（透明画布）→Redo B1/B2→额外Redo no-op。
+- 新笔迹提交取消旧Redo分支；页面/工作区状态按原身份隔离；失败/迟到磁盘恢复不丢当前权威历史。Desktop/PPT与可用性发布须消费同一真实历史链。
+- 不改UI3布局、3秒计时、绘制几何或持久化格式，不新建任务，不自动commit/push或GUI验证。
+
 ## 本轮追加：2×2 Redo 点击主栏宽度稳定
 
 - 主栏已为 2×2 Redo 时，点击 Redo 不新增主栏按钮，不应导致主栏先变宽再变窄。

@@ -4,3 +4,4 @@
 {"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Motion复用检查"}
 {"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Bar到Draw3跨层检查"}
 {"file": ".trellis/tasks/10-11-redo-popup/research/fix-history-20261012.md", "reason": "独立复核真实点击路径和延时/颜色回归"}
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "检查真实历史边界及GPU恢复事务"}
