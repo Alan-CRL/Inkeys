@@ -47,3 +47,11 @@ GitHub/GitCode分别可点击 https://github.com/Alan-CRL/Inkeys 与 https://git
 - [x] 既有探索/常用设置/作者和功能保留，滚动控件回归通过。
 - [x] 完整Debug|ARM64 Solution、--no-window、i18n、编码/换行、diff检查通过。
 - [x] 独立Trellis审查完成；原生HWND/DX11最终观感留人工，不将CPU验证当实机验收。
+
+## 第八轮已批准修订
+
+开屏总时长约2.66秒、写完600ms停顿、遮罩下真实首帧准备与低帧率优化；需求、技术边界及本轮验收以 [entry-performance-revision.md](entry-performance-revision.md) 为准，覆盖旧时序冲突。用户直接预批准实施，允许必要原生性能测试但禁止Computer Use。
+
+## 第八轮实施验收完成
+
+2.66s时序、600ms完整停顿、遮罩下真实首帧/动态字形准备、完全不透明CPU/提交快路径及精确门禁Solid省填充已实施。完整Debug|ARM64、--no-window、真实WARP精确RGBA/配对性能和必要原生cold+3warm/小窗检查通过；最终测量及限制见 [research/entry-performance-validation.md](research/entry-performance-validation.md)。本轮无Computer Use、commit或push；人工观感、Win7和真实设备失效保留为后续验收，任务状态继续in_progress。

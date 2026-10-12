@@ -23,3 +23,11 @@
 - Scripts/i18n.ps1 sync/check，git diff --check，tracked+新文件编码/BOM/CRLF核查。
 - 生产RenderHome/真实三语言/真实字体/ImGui输入/DrawData：720x520/960x700/1440x900对应内容宽/导航展开收起，浅深，现有1/1.25/1.5/1.875/2/3倍矩阵；字标下伸、署名/按钮预算、链接/点击/拖动/栈平衡与外层滚动。保留既有主页滚动控件回归。
 - 只观察动作/目标映射，不在测试执行外链；CPU证据不能替代原生观感。
+
+## 第八轮已批准修订
+
+开屏总时长约2.66秒、写完600ms停顿、遮罩下真实首帧准备与低帧率优化；需求、技术边界及本轮验收以 [entry-performance-revision.md](entry-performance-revision.md) 为准，覆盖旧时序冲突。用户直接预批准实施，允许必要原生性能测试但禁止Computer Use。
+
+## 第八轮实施验收完成
+
+2.66s时序、600ms完整停顿、遮罩下真实首帧/动态字形准备、完全不透明CPU/提交快路径及精确门禁Solid省填充已实施。完整Debug|ARM64、--no-window、真实WARP精确RGBA/配对性能和必要原生cold+3warm/小窗检查通过；最终测量及限制见 [research/entry-performance-validation.md](research/entry-performance-validation.md)。本轮无Computer Use、commit或push；人工观感、Win7和真实设备失效保留为后续验收，任务状态继续in_progress。

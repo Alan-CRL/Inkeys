@@ -225,10 +225,11 @@ namespace Inkeys::UI::Setting::Design
 		if (!state.EntryActive()) return pose;
 		const float time=state.entryElapsed;
 		pose.origin=state.entryStart; pose.width=state.entryStartWidth; pose.opacity=1;
-		pose.writing=time>=.65F ? 1.0F : std::clamp((time-.12F)/.53F,0.0F,1.0F);
-		// 六笔完全写好后保持 300ms；淡出和位移只能在 .95s 后同时开始。
-		if (time<=.95F) return pose;
-		const float phase=std::clamp((time-.95F)/.27F,0.0F,1.0F), u=HomeBrand::Smooth(phase), v=1-u;
+		pose.writing=time>=HomeEntryTiming::WritingEnd ? 1.0F
+			: std::clamp((time-HomeEntryTiming::Wait)/HomeEntryTiming::Writing,0.0F,1.0F);
+		// 六笔完全写好后保持 600ms；1.90s 前不透出界面、不移动字标。
+		if (time<=HomeEntryTiming::DockStart) return pose;
+		const float phase=std::clamp((time-HomeEntryTiming::DockStart)/HomeEntryTiming::Dock,0.0F,1.0F), u=HomeBrand::Smooth(phase), v=1-u;
 		const float dpi=Pixels(1), endWidth=state.brandWidth*1.004F;
 		const ImVec2 start(state.entryStart.x+state.entryStartWidth*.5F,state.entryStart.y+HomeBrand::Height(state.entryStartWidth)*.5F);
 		const ImVec2 target(state.brandOrigin.x+state.brandWidth*.5F,state.brandOrigin.y+HomeBrand::Height(state.brandWidth)*.5F+1.5F*dpi);
@@ -238,9 +239,9 @@ namespace Inkeys::UI::Setting::Design
 		pose.width=state.entryStartWidth+(endWidth-state.entryStartWidth)*u;
 		pose.origin={center.x-pose.width*.5F,center.y-HomeBrand::Height(pose.width)*.5F};
 		pose.opacity=1-HomeBrand::Smooth(phase);
-		if (time>=1.22F)
+		if (time>=HomeEntryTiming::SettleStart)
 		{
-			const float settle=1-HomeBrand::Smooth((time-1.22F)/.11F);
+			const float settle=1-HomeBrand::Smooth((time-HomeEntryTiming::SettleStart)/HomeEntryTiming::Settle);
 			pose.width=state.brandWidth*(1+.004F*settle);
 			pose.origin={state.brandOrigin.x+(state.brandWidth-pose.width)*.5F,
 				state.brandOrigin.y+1.5F*dpi*settle+(HomeBrand::Height(state.brandWidth)-HomeBrand::Height(pose.width))*.5F};
@@ -253,6 +254,116 @@ namespace Inkeys::UI::Setting::Design
 		state.clientContent=clientContent; state.contentClip=contentClip;
 		state.viewportReady=clientContent.z>clientContent.x && clientContent.w>clientContent.y
 			&& contentClip.z>contentClip.x && contentClip.w>contentClip.y;
+	}
+
+	bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
+		float styleAlpha, ImVec4 windowBackground) noexcept
+	{
+		// 同色不透明 clear 已建立底色；只省根填充，保留 Begin 原 flags 的边框与输入合同。
+		return state.home && state.EntryActive() && solidBackdrop && styleAlpha==1 && windowBackground.w==1
+			&& std::isfinite(windowBackground.x) && windowBackground.x>=0 && windowBackground.x<=1
+			&& std::isfinite(windowBackground.y) && windowBackground.y>=0 && windowBackground.y<=1
+			&& std::isfinite(windowBackground.z) && windowBackground.z>=0 && windowBackground.z<=1;
+	}
+
+	HomeEntryFrameKey MakeHomeEntryFrameKey(ImVec4 contentBounds, float gutter, std::uint64_t epoch,
+		std::uint64_t fontSerial, int language, ImFont* regular, ImFont* strong, ImFont* icons)
+	{
+		const auto& io=ImGui::GetIO(); const auto* atlas=io.Fonts;
+		HomeEntryFrameKey key;
+		key.geometry={io.DisplaySize.x,io.DisplaySize.y,io.DisplayFramebufferScale.x,io.DisplayFramebufferScale.y,
+			contentBounds.x,contentBounds.y,contentBounds.z,contentBounds.w,gutter,Pixels(1)};
+		key.fonts={reinterpret_cast<std::uintptr_t>(atlas),reinterpret_cast<std::uintptr_t>(regular),
+			reinterpret_cast<std::uintptr_t>(strong),reinterpret_cast<std::uintptr_t>(icons)};
+		key.epoch=epoch; key.fontSerial=fontSerial; key.language=language; key.dark=IsDarkMode();
+		if (atlas->TexData)
+		{
+			key.texture=atlas->TexData->UniqueID; key.atlasWidth=atlas->TexData->Width; key.atlasHeight=atlas->TexData->Height;
+		}
+		return key;
+	}
+
+	bool BeginHomeEntryFrame(HomeMotionState& state, const HomeEntryFrameKey& key, bool allowFreeze)
+	{
+		auto& prep=state.preparation; prep.managed=true; ++prep.frame;
+		prep.skipBackground=false; prep.fullFrame=true; prep.previousElapsed=state.entryElapsed;
+		if (!state.EntryActive() && state.entry!=HomeMotionState::Entry::Pending) return false;
+		if (!prep.keyValid || prep.key!=key)
+		{
+			// DPI/布局/字形图集/资源 epoch 变化时先重走真实页；保留已消费 Show 与动画进度。
+			prep.key=key; prep.keyValid=true; prep.ready=false; prep.warmFrames=0;
+			prep.revealFrames=0; prep.revealReady=false; state.entryLayoutValidated=false;
+		}
+		if (!prep.ready || !state.EntryActive()) return false;
+		if (!allowFreeze) { FinishHomeEntry(state); return false; }
+		const float next=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
+		if (!prep.revealReady && next>=HomeEntryTiming::DockStart)
+		{
+			// child 数帧未出现会触发 AutoResize 重新测量；在不透明边界完成两次成功暖帧再淡出。
+			prep.revealPending=true; state.entryElapsed=HomeEntryTiming::DockStart;
+			return false;
+		}
+		state.entryElapsed=next;
+		if (next>=HomeEntryTiming::Total) { FinishHomeEntry(state); return false; }
+		prep.skipBackground=next<HomeEntryTiming::DockStart;
+		prep.fullFrame=!prep.skipBackground;
+		if (prep.skipBackground) ++prep.skippedFrames;
+		return prep.skipBackground;
+	}
+
+	bool HomeEntryTexturesReady(const ImDrawData* data)
+	{
+		if (!data || !data->Textures) return false;
+		for (const auto* texture : *data->Textures)
+			if (texture->Status==ImTextureStatus_WantCreate || texture->Status==ImTextureStatus_WantUpdates) return false;
+		const auto* texture=ImGui::GetIO().Fonts->TexData;
+		return texture && texture->Status==ImTextureStatus_OK && texture->GetTexID()!=ImTextureID_Invalid;
+	}
+
+	void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady)
+	{
+		auto& prep=state.preparation;
+		if (!prep.managed || prep.submitted==prep.frame || !state.EntryActive()) return;
+		prep.submitted=prep.frame;
+		if (!submitted || !texturesReady)
+		{
+			// 失败/遮挡帧不消费动画时间；下一次可呈现帧重新确认字体和资源事务。
+			state.entryElapsed=prep.previousElapsed; prep.ready=false; prep.warmFrames=0;
+			prep.revealFrames=0; prep.revealReady=false;
+			if (++prep.attempts>=6) FinishHomeEntry(state);
+			return;
+		}
+		if (!prep.fullFrame) return;
+		if (!prep.ready)
+		{
+			// 最多六次准备；故障继续走原 Retry/DeviceLost，不能在加载页永久等待。
+			if (++prep.attempts>=6) { FinishHomeEntry(state); return; }
+			if (submitted && texturesReady) { if (++prep.warmFrames>=2) prep.ready=true; }
+			else prep.warmFrames=0;
+		}
+		if (prep.revealPending && !prep.revealReady)
+		{
+			if (submitted && texturesReady) { if (++prep.revealFrames>=2) prep.revealReady=true; }
+			else prep.revealFrames=0;
+		}
+	}
+
+	void FilterHomeEntryDrawData(const HomeMotionState& state, ImDrawData* data,
+		ImDrawList* root, ImDrawList* titleBar, ImDrawList* foreground)
+	{
+		if (!data || !state.preparation.managed || !state.preparation.ready || !state.EntryActive()
+			|| ResolveHomeEntryPose(state).opacity!=1) return;
+		// 覆盖 alpha 精确为 1 时底层 GPU 提交没有可见贡献。保留 caption 与单份前景，纹理队列不变。
+		int count=0; data->TotalVtxCount=data->TotalIdxCount=0;
+		for (auto* list : data->CmdLists)
+		{
+			if (list!=root && list!=titleBar && list!=foreground) continue;
+			if (list==root)
+				for (auto& command : list->CmdBuffer) command.ClipRect.w=(std::min)(command.ClipRect.w,state.clientContent.y);
+			data->CmdLists[count++]=list;
+			data->TotalVtxCount+=list->VtxBuffer.Size; data->TotalIdxCount+=list->IdxBuffer.Size;
+		}
+		data->CmdLists.resize(count); data->CmdListsCount=count;
 	}
 
 	bool ConsumeSettingHomeReset(std::uint64_t resetSerial, std::uint64_t& consumed,
@@ -324,8 +435,8 @@ namespace Inkeys::UI::Setting::Design
 				state.brandOrigin.x,state.brandOrigin.y,state.brandWidth,HomeBrand::Height(state.brandWidth),dpi};
 			if (state.entryLayoutValidated && state.entryLayoutKey==key)
 			{
-				state.entryElapsed=(std::min)(1.33F,state.entryElapsed+state.delta);
-				if (state.entryElapsed>=1.33F) FinishHomeEntry(state);
+				if (!state.preparation.managed) state.entryElapsed=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
+				if (state.entryElapsed>=HomeEntryTiming::Total) FinishHomeEntry(state);
 				return;
 			}
 			state.entryLayoutKey=key; state.entryLayoutValidated=true;
@@ -343,7 +454,7 @@ namespace Inkeys::UI::Setting::Design
 			probe.entryStart=state.entryStart; probe.entryStartWidth=state.entryStartWidth;
 			for (int i=0;fits && i<=64;++i)
 			{
-				probe.entryElapsed=.95F+.38F*i/64;
+				probe.entryElapsed=HomeEntryTiming::DockStart+(HomeEntryTiming::Dock+HomeEntryTiming::Settle)*i/64;
 				const auto pose=ResolveHomeEntryPose(probe);
 				fits=contains(state.clientContent,pose.origin,{pose.width,HomeBrand::Height(pose.width)},14*dpi);
 			}
@@ -352,8 +463,8 @@ namespace Inkeys::UI::Setting::Design
 			{
 				state.entry=HomeMotionState::Entry::Playing; state.entryElapsed=0; ++state.entries;
 			}
-			else state.entryElapsed=(std::min)(1.33F,state.entryElapsed+state.delta);
-			if (state.entryElapsed>=1.33F) FinishHomeEntry(state);
+			else if (!state.preparation.managed) state.entryElapsed=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
+			if (state.entryElapsed>=HomeEntryTiming::Total) FinishHomeEntry(state);
 		}
 	}
 

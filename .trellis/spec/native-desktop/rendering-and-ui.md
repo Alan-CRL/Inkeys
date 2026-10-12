@@ -2110,6 +2110,14 @@ void ConfigureHomeMotion(HomeMotionState& state, bool home, uint64_t showSerial,
 void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip);
 HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state);
 void RenderHomeEntryOverlay(const HomeMotionState& state);
+// 完整页有限预热与不透明快路径使用当前帧的值键及提交结果。
+bool BeginHomeEntryFrame(HomeMotionState& state, const HomeEntryFrameKey& key, bool allowFreeze = true);
+void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady);
+bool HomeEntryTexturesReady(const ImDrawData* data);
+bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
+    float styleAlpha, ImVec4 windowBackground) noexcept;
+void FilterHomeEntryDrawData(const HomeMotionState& state, ImDrawData* data,
+    ImDrawList* root, ImDrawList* titlebar, ImDrawList* foreground);
 bool CancelHomeEntryOnInput(HomeMotionState& state);
 bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
     NavigationDestination& destination, NavigationState& navigation, HomeMotionState& motion);
@@ -2122,7 +2130,10 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 - 横幅局部浅蓝/薄荷/淡紫与深色对应色不改变全局控件。700 DIP 宽窄分界，左右 28/20、顶部 56/40、底部 28 DIP；字标宽为可用内宽 80%、上限 520 DIP，预留变换包络、保持 8 DIP 圆角及完整下伸。
 - 字标下 32 DIP 的标语统一 14 DIP 正文、字重与颜色。用同一真实字体测量两个语义段及本地化 HeroJoin，能容纳全文时一行，不能时优先语义两行并允许段内自然换行；中文连接符为空，英文为空格，不缩字号。分割线与开源标题/说明/按钮全居中，标题 16/22 DIP，说明 12 DIP；按钮等宽 36 DIP 高、最小 156 DIP，放不下时上下排列。版权字号保持，横幅后 16 DIP、段间 4/2 DIP。
 - 版权和代码托管说明是三语言真实文本；完整许可证名以及 GitHub/GitCode 分别具备独立链接语义。换行片段需要稳定 ID 和完整可点击覆盖；只有相应名称是链接，前后说明保持普通文字，不烘焙到图片。
-- HomeMotionState 由常驻设置会话持有，仅 ShowSerial 的真实隐藏→显示触发入场；内部导航返回主页不重播。速率1时先稳定120ms、六笔并行写出530ms、完整字标原地停留300ms，再同时启动背景渐退与270ms三次Bezier空间曲线归位、110ms小幅落定。书写/停留期间客户内容区覆盖层alpha=1，标题栏排除在外；前景只绘制一份字标，横幅字标保留布局但不提交。全局动画禁用/离页/实际输入直接稳定终态，取消帧仍阻断输入，不能点穿不可见操作。重复Show/激活/主页点击、resize、主题/字体/设备重建、滚动与鼠标靠近均不重播；缺省空上下文静态绘制。旧反光/水波不再播放。delta沿用设置时钟重基准、总开关与速率，不新增计时器。
+- HomeMotionState 由常驻设置会话持有，仅 ShowSerial 的真实隐藏→显示触发入场；内部导航返回主页不重播。时序统一由HomeEntryTiming定义：速率1时先稳定240ms、六笔并行写出1060ms、完整字标原地停留600ms，再同时启动背景渐退与540ms三次Bezier空间曲线归位、220ms小幅落定，共2.66s逻辑动画时间；有限准备帧另计且不消耗书写时间。书写/停留期间客户内容区覆盖层alpha=1，标题栏排除在外；前景只绘制一份字标，横幅字标保留布局但不提交。全局动画禁用/离页/实际输入直接稳定终态，取消帧仍阻断输入，不能点穿不可见操作。重复Show/激活/主页点击、resize、主题/字体/设备重建、滚动与鼠标靠近均不重播；缺省空上下文静态绘制。旧反光/水波不再播放。delta沿用设置时钟重基准、总开关与速率，不新增计时器。
+- 动态atlas的Build不代表真实字号/语言字形已预热。生产会话先在不透明覆盖下生成完整页与导航，两个不同全帧backend+Present成功且字体事务就绪后才推进书写；准备尝试有六帧预算，失败回滚该帧时间并沿原HRESULT Retry/DeviceLost路径收束，不能形成永久加载遮罩。完全不透明且值键稳定时暂停底层页/导航生成；当前帧DrawData只保留root标题栏clip、titlebar与foreground，Textures队列仍交生产DX11后端。渐退边界先恢复两个成功完整布局帧，再进入首个半透明帧；半透明起正常绘制整页。不得跨帧缓存裸DrawList、ImFontBaked、SRV或旧字体UV。
+- 活动主页入场且Solid backdrop、style.Alpha和WindowBg.w精确为1、RGB有限且在0..1时，可以SetNextWindowBgAlpha(0)省去已由同色不透明Clear建立的根背景填充。根Begin前读取同份backdrop/WindowBg快照供门禁和最终Clear；保留原flags、外框、caption、child与输入。不能使用会同时删除外框的NoBackground；Mica/Acrylic、部分alpha或静态终态保持旧路径。必须在真实同色Solid clear下对浅深八阶段full/suppressed精确RGBA及title/border比对，并单独报告透明/部分alpha回退与配对性能，不能将Solid收益推广至Mica。
+- HomeEntryFrameKey涵盖客户/内容矩形、FramebufferScale、DIP倍率、字体/atlas身份与序号、语言、主题、设备epoch、atlas UniqueID及尺寸；任一变化强制完整页准备并重验实际可见包络，同次Show不重播。弹层/真实输入取消时使用完整页并保留取消帧屏障，普通Tab/点击/滚动不因快路径失效。隐藏/最小化/遮挡继续复用既有调度和时钟重基准，无新线程、timer、纹理或额外帧请求。
 - 完整归位后仅字标参与4°/6 DIP、1200 DIP透视与约160ms跟随；用未变换布局框和框外120 DIP衰减计算目标。只接受真实鼠标；触摸、笔、按住/拖动、弹层和失焦回正。字标包络完全离屏时不推进姿态或提交字标网格，滚回不制造新Show事件。原彩虹与透明AA保持，文字、按钮和命中矩形不参与运动；一次性按钮装饰仅在hover上升沿触发，不循环。
 - 原曲线轮廓、六组笔画截面/书写时间/索引区块在首次Build缓存；书写按每笔完整前缀选择索引，活动定向半圆共用截面，禁止任意截断全局索引或提前显示终端帽。写完立即复用原完整网格，最终RGBA与静态一致。视差缓存仍以姿态/宽度/DPI/主题为键，入场时钟不进入该键；热路径无重新采样/几何扩容。临时笔头为有界额外顶点，覆盖层与单份字标只增加一个前景批次；不新增Shader、离屏纹理、设备、线程或额外渲染请求。
 - 首次有效实际布局决定本次Show是否可播放：完整横幅必须在主内容clip内，中央起点、目标字标和整条曲线包络在客户内容区内保留安全边距。按真实三语言/font/DPI/用户倍率/导航宽度判定，不用固定分辨率代替；首帧AutoResize内层clip尚为空时使用有效外层viewport及实际测量，不能先闪正常页面再覆盖。门禁按viewport/contentClip/hero/brand/DPI缓存，稳定帧不重复计算路径包络；布局变化重验，变小不安全即取消，本次放大不能补播。
@@ -2138,7 +2149,7 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 | 标语 / 两按钮预算不够 | 语义换行 / 按钮纵排，横幅和滚动占位随内容增长 |
 | 浅深切换 / DPI 或用户倍率变化 | 同比缩放、主题即时变化，不重采样原曲线、不重播入口 |
 | 首帧 AutoResizeY clip 尚不可见 | 有效外层viewport与真实测量判定，不消费额外时间、不闪旧页面；实际不足直接静态 |
-| 写完后的300ms | 同一居中字标、完整原网格、覆盖alpha=1；之后淡退和空间曲线同时开始 |
+| 写完后的600ms | 同一居中字标、完整原网格、覆盖alpha=1；之后淡退和空间曲线同时开始 |
 | 关闭后立即重开 / 已滚主页或其他页 | 先消费Hide复位再布局，Home且Scroll=0，真实Show可重新播放 |
 | 首次尺寸不足 / 播放中缩小 / 后来放大 | 跳过或收束后不补播，本次Show已消费 |
 | touch / pen / 拖动 / 弹层 / 失焦 | 非零鼠标倾斜归零，不触发额外进入 |
@@ -2147,15 +2158,15 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 
 #### 5. Good / Base / Bad Cases
 
-- Good：完整GPL名称分行，所有片段返回同一License动作；隐藏后重开在顶部并行书写，写完Hold300ms，内部切回主页保持静态。
+- Good：完整GPL名称分行，所有片段返回同一License动作；隐藏后重开在顶部并行书写，写完Hold600ms，内部切回主页保持静态。
 - Base：动画关闭时保留三语言自适应布局、透明字标和完整开源操作。
 - Bad：依据缺席帧猜进入、直接从窗口线程改ImGui、隐藏时额外无RTV绘制、直线插值冒充曲线路径，或每帧重采样/重验固定包络。
 
 #### 6. Tests Required
 
-生产RenderHome、真实SC/TC/en-US字体/文案、实际ImGui输入与DrawData覆盖三窗口/额外窄宽、导航展开/收起、浅深和七倍率；验证单行/语义两行、下伸/透明AA、四角视差、并行前缀及活动圆头、300ms完整静止Hold、曲线偏离直线且背景同时渐退、结束单份字标与固定命中区域。生命周期覆盖Show/重复Show/导航返回、Hide→Show无中间帧/其他页/旧滚动、窗口尺寸/速率/开关中途变化、输入取消及旧tap/Tab/Enter/Space/拖动/滚动；触摸/笔各自在非零鼠标目标下验回正。
+生产RenderHome、真实SC/TC/en-US字体/文案、实际ImGui输入与DrawData覆盖三窗口/额外窄宽、导航展开/收起、浅深和七倍率；验证单行/语义两行、下伸/透明AA、四角视差、并行前缀及活动圆头、600ms完整静止Hold、曲线偏离直线且背景同时渐退、结束单份字标与固定命中区域。生命周期覆盖Show/重复Show/导航返回、Hide→Show无中间帧/其他页/旧滚动、窗口尺寸/速率/开关中途变化、输入取消及旧tap/Tab/Enter/Space/拖动/滚动；触摸/笔各自在非零鼠标目标下验回正。
 
-无窗口WARP明确请求FL11.0，使用现有imgui_impl_dx11和生产CSO，离屏读取实际导航+主页+前景DrawData。书写首/中/完整Hold/Dock/终态分别读回；Hold各帧RGBA相同，覆盖不越标题栏，底层真实字体的几何/UV/颜色和按钮命中保持，终态精确回到静态。圆头接合带使用真实WARP在1/1.875/4倍采样，不能只测圆心或误报正常外缘AA。记录同机同配置静态/静止/移动/回正/书写/Hold/Dock/落定CPU median/p95、完成提交（含copy/Map等待）、顶点/批次及缓存扩容/ImGui分配。该分配计数不代表整页std::string/vector或驱动分配，不能声称整页零分配。完整Debug|ARM64 Solution、--no-window、i18n及格式/diff检查；Windows11 WARP、Win7 SP1+KB2670838静态兼容审计与实机/原生观感分别记录。
+无窗口WARP明确请求FL11.0，使用现有imgui_impl_dx11和生产CSO，离屏读取实际导航+主页+前景DrawData。书写首/中/完整Hold/Dock/终态分别读回；Hold各帧RGBA相同，覆盖不越标题栏，底层真实字体的几何/UV/颜色和按钮命中保持，终态精确回到静态。圆头接合带使用真实WARP在1/1.875/4倍采样，不能只测圆心或误报正常外缘AA。记录同机同配置静态/静止/移动/回正/书写/Hold/Dock/落定CPU median/p95、完成提交（含copy/Map等待）、顶点/批次及缓存扩容/ImGui分配。该分配计数不代表整页std::string/vector或驱动分配，不能声称整页零分配。新增快路径必须以同一个真实Frame分别完整背景与生产Begin/Complete/Filter对照，检查冷字形、两次暖帧、首透明RGBA与终态精确一致，并报告同机同面积书写/Hold/Dock/落定CPU与提交完成median/p95、顶点/索引/批次和有界准备状态。原生必要测量将CPU生成、backend调用、Present等待、回调间隔与Present返回间隔分别记录；离屏copy/Map与Present返回均不能冒充屏幕实际显示FPS。Debug仅Setting.cpp条件编译的INKEYS_SETTING_ENTRY_PROFILE且显式环境变量=1才采样固定512帧，结束一次汇总、超限计dropped，记录真实solid-root-suppressed总体/分阶段计数，不逐帧分配/格式化/写盘；Release不编译该诊断。完整Debug|ARM64 Solution、--no-window、i18n及格式/diff检查；Windows11 WARP、Win7 SP1+KB2670838静态兼容审计与实机/原生观感分别记录。
 
 #### 7. Wrong vs Correct
 

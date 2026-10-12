@@ -74,6 +74,23 @@ namespace Inkeys::UI::Setting::Design
 		float feedbackAspect = 1.0F;
 	};
 
+	// 入场时间只在这一处定义；准备字体/首帧提交的等待不占用书写时长。
+	struct HomeEntryTiming
+	{
+		static constexpr float Wait = .24F, Writing = 1.06F, Hold = .60F, Dock = .54F, Settle = .22F;
+		static constexpr float WritingEnd = Wait + Writing, DockStart = WritingEnd + Hold;
+		static constexpr float SettleStart = DockStart + Dock, Total = SettleStart + Settle;
+	};
+	struct HomeEntryFrameKey
+	{
+		std::array<float,10> geometry{};
+		std::array<std::uintptr_t,4> fonts{};
+		std::uint64_t epoch = 0, fontSerial = 0;
+		int language = 0, texture = 0, atlasWidth = 0, atlasHeight = 0;
+		bool dark = false;
+		bool operator==(const HomeEntryFrameKey&) const = default;
+	};
+
 	struct HomeMotionState
 	{
 		HomeBrand::DrawCache cache;
@@ -91,6 +108,16 @@ namespace Inkeys::UI::Setting::Design
 		ImVec2 brandOrigin, heroOrigin, heroSize;
 		ImVec4 clientContent{}, contentClip{};
 		ImVec2 entryStart;
+		// 只保存值键和有限计数，不跨帧保存 DrawList/SRV/ImFontBaked 指针。
+		struct Preparation
+		{
+			HomeEntryFrameKey key;
+			bool managed = false, keyValid = false, ready = false, revealPending = false, revealReady = false;
+			bool fullFrame = true, skipBackground = false;
+			unsigned warmFrames = 0, revealFrames = 0, attempts = 0;
+			float previousElapsed = 0;
+			std::uint64_t frame = 0, submitted = 0, skippedFrames = 0;
+		} preparation;
 		float brandWidth = 0, entryStartWidth = 0;
 		[[nodiscard]] bool EntryActive() const noexcept { return entry==Entry::Playing; }
 	};
@@ -112,6 +139,7 @@ namespace Inkeys::UI::Setting::Design
 			state.entry=home && enabled ? HomeMotionState::Entry::Pending : HomeMotionState::Entry::Skipped;
 			state.entryElapsed=0; state.x=state.y=0;
 			state.entryLayoutValidated=false;
+			state.preparation={};
 			state.buttons={};
 		}
 		if (!home || !enabled)
@@ -125,6 +153,18 @@ namespace Inkeys::UI::Setting::Design
 	HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state);
 	void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip);
 	void RenderHomeEntryOverlay(const HomeMotionState& state);
+	bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
+		float styleAlpha, ImVec4 windowBackground) noexcept;
+	HomeEntryFrameKey MakeHomeEntryFrameKey(ImVec4 contentBounds, float gutter, std::uint64_t epoch,
+		std::uint64_t fontSerial, int language, ImFont* regular, ImFont* strong, ImFont* icons);
+	// 在输入取消之后、正文 Begin 之前调用；返回 true 才可暂停被完全遮住的页/导航生成。
+	bool BeginHomeEntryFrame(HomeMotionState& state, const HomeEntryFrameKey& key, bool allowFreeze = true);
+	void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady);
+	bool HomeEntryTexturesReady(const ImDrawData* data);
+	// 仅修改当前帧的提交列表，不复制缓存；纹理请求仍由生产 DX11 后端完整处理。
+	void FilterHomeEntryDrawData(const HomeMotionState& state, ImDrawData* data,
+		ImDrawList* root, ImDrawList* titleBar, ImDrawList* foreground);
+
 	bool CancelHomeEntryOnInput(HomeMotionState& state);
 	// Hide 的重置由唯一渲染线程在排布前消费；同帧 Hide→Show 也不会漏掉。
 	bool ConsumeSettingHomeReset(std::uint64_t resetSerial, std::uint64_t& consumed,

@@ -28,6 +28,9 @@ module;
 #include <dwmapi.h>
 #include <algorithm>
 #include <cstdio>
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+#include <chrono>
+#endif
 #include <condition_variable>
 #include <coroutine>
 #include <deque>
@@ -124,6 +127,89 @@ namespace
 		return Inkeys::UI::Setting::IsSharedDeviceLoss(result, removedReason)
 			? FrameResult::DeviceLost : FrameResult::Retry;
 	}
+
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+	// 仅 Debug + 显式环境变量启用。512 帧值样本，不逐帧格式化/写盘、不新增调度请求。
+	struct SettingEntryProfiler
+	{
+		using Clock=std::chrono::steady_clock;
+		struct Sample
+		{
+			double cpu, backend, present, frameGap, presentGap;
+			int vertices, indices, batches, phase;
+			bool fast, rootSuppressed;
+		};
+		struct Stats { double median=0, p95=0, maximum=0; };
+		std::array<Sample,512> samples{};
+		std::uint64_t serial=0;
+		size_t count=0, dropped=0;
+		bool enabled=false, active=false, havePrevious=false;
+		Clock::time_point started{}, previousFrame{}, previousPresent{};
+		SettingEntryProfiler()
+		{
+			wchar_t value[2]{};
+			enabled=GetEnvironmentVariableW(L"INKEYS_SETTING_ENTRY_PROFILE",value,2)==1 && value[0]==L'1';
+		}
+		~SettingEntryProfiler() { Flush("session-end"); }
+		static double Micros(Clock::time_point a,Clock::time_point b)
+		{ return std::chrono::duration<double,std::micro>(b-a).count(); }
+		void Begin(std::uint64_t next,Clock::time_point time)
+		{
+			if (!enabled || next==serial) return;
+			Flush("hidden-or-replaced"); serial=next; active=true; count=dropped=0; havePrevious=false; started=time;
+		}
+		Stats Measure(double Sample::* field,int phase=-1) const
+		{
+			std::array<double,512> values{}; size_t size=0;
+			for (size_t i=0;i<count;++i)
+				if ((phase<0 || samples[i].phase==phase) && samples[i].*field>0) values[size++]=samples[i].*field;
+			if (!size) return {};
+			std::sort(values.begin(),values.begin()+size);
+			return {values[(size-1)/2],values[static_cast<size_t>((size-1)*.95)],values[size-1]};
+		}
+		void Record(Clock::time_point frame,Clock::time_point cpu,Clock::time_point backend,
+			Clock::time_point completed,const Design::HomeMotionState& motion,const ImDrawData* data,bool rootSuppressed)
+		{
+			if (!active) return;
+			int phase=(!motion.preparation.ready || (motion.preparation.revealPending && !motion.preparation.revealReady)) ? 0 : motion.entryElapsed<Design::HomeEntryTiming::Wait ? 1
+				: motion.entryElapsed<Design::HomeEntryTiming::WritingEnd ? 2 : motion.entryElapsed<=Design::HomeEntryTiming::DockStart ? 3
+				: motion.entryElapsed<Design::HomeEntryTiming::SettleStart ? 4 : 5;
+			int batches=0;
+			for (const auto* list : data->CmdLists) for (const auto& command : list->CmdBuffer)
+				if (command.ElemCount && !command.UserCallback) ++batches;
+			if (count<samples.size()) samples[count++]={Micros(frame,cpu),Micros(cpu,backend),Micros(backend,completed),
+				havePrevious ? Micros(previousFrame,frame) : 0,havePrevious ? Micros(previousPresent,completed) : 0,
+				data->TotalVtxCount,data->TotalIdxCount,batches,phase,motion.preparation.skipBackground,rootSuppressed};
+			else ++dropped;
+			previousFrame=frame; previousPresent=completed; havePrevious=true;
+			if (!motion.EntryActive() && motion.entry!=Design::HomeMotionState::Entry::Pending)
+				Flush(motion.entry==Design::HomeMotionState::Entry::Skipped ? "skipped" : motion.entryElapsed>=Design::HomeEntryTiming::Total ? "finished" : "cancelled");
+		}
+		void Flush(const char* outcome)
+		{
+			if (!active) return;
+			active=false;
+			if (!IDTLogger || !count) return;
+			const auto gap=Measure(&Sample::frameGap), presented=Measure(&Sample::presentGap);
+			size_t fast=0,rootsSuppressed=0; int maximumVertices=0,maximumIndices=0,maximumBatches=0;
+			for (size_t i=0;i<count;++i) { fast+=samples[i].fast; rootsSuppressed+=samples[i].rootSuppressed; maximumVertices=(std::max)(maximumVertices,samples[i].vertices);
+				maximumIndices=(std::max)(maximumIndices,samples[i].indices); maximumBatches=(std::max)(maximumBatches,samples[i].batches); }
+			IDTLogger->info("[SettingEntryPerf] show={} outcome={} frames={} dropped={} fast={} solid-root-suppressed={} wall-ms={:.3f} frame-gap-us median={:.3f} p95={:.3f} max={:.3f} present-return-gap-us median={:.3f} p95={:.3f} max={:.3f} max-vtx={} max-idx={} max-batches={} sample-bytes={}",
+				serial,outcome,count,dropped,fast,rootsSuppressed,Micros(started,previousPresent)/1000,gap.median,gap.p95,gap.maximum,
+				presented.median,presented.p95,presented.maximum,maximumVertices,maximumIndices,maximumBatches,sizeof(samples));
+			static constexpr const char* names[]{"prepare","wait","writing","hold","dock","settle"};
+			for (int phase=0;phase<6;++phase)
+			{
+				size_t frames=0,rootFrames=0; for (size_t i=0;i<count;++i) if (samples[i].phase==phase)
+				{ ++frames; rootFrames+=samples[i].rootSuppressed; }
+				if (!frames) continue;
+				const auto cpu=Measure(&Sample::cpu,phase), backend=Measure(&Sample::backend,phase), present=Measure(&Sample::present,phase);
+				IDTLogger->info("[SettingEntryPerf] show={} phase={} frames={} solid-root-suppressed={} cpu-us median={:.3f} p95={:.3f} max={:.3f} backend-us median={:.3f} p95={:.3f} max={:.3f} Present-us median={:.3f} p95={:.3f} max={:.3f}",
+					serial,names[phase],frames,rootFrames,cpu.median,cpu.p95,cpu.maximum,backend.median,backend.p95,backend.maximum,present.median,present.p95,present.maximum);
+			}
+		}
+	};
+#endif
 
 	constexpr UINT SettingFrameThemeMessage = WM_APP + 0x531;
 	constexpr UINT SettingEnsureMinimumMessage = WM_APP + 0x532;
@@ -1497,7 +1583,7 @@ void SettingWindowBegin()
 		ImFontStrong, 40.0F);
 	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Display,
 		ImFontStrong, 68.0F);
-	// Initialize/隐藏态重建都必须先完成 atlas，Show 不承担字体工作。
+	// 先初始化 resident atlas；动态字体的真实字号/字形仍在遮罩下首帧准备。
 	return io.Fonts->Build();
 }
 
@@ -2064,6 +2150,9 @@ SettingSessionCoroutine RunSettingSession()
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
 		Design::HomeMotionState homeMotion;
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+		SettingEntryProfiler entryProfiler;
+#endif
 		std::uint64_t consumedHideSerial=0;
 		bool resetHomeScroll=false;
 		auto commitSettingScale = [&]()
@@ -2122,12 +2211,30 @@ SettingSessionCoroutine RunSettingSession()
 
 		while (!settingSessionShouldStop.load(memory_order_acquire))
 		{
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+			const auto entryFrameBegin=entryProfiler.enabled ? SettingEntryProfiler::Clock::now() : SettingEntryProfiler::Clock::time_point{};
+#endif
 			// Start the Dear ImGui frame
 			ImGui_ImplDX11_NewFrame();
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
+			ImDrawList* entryRootDraw=nullptr; ImDrawList* entryTitleDraw=nullptr;
+			bool entryRootSuppressed=false;
+			// 本帧 backdrop/底色一致快照；caption 的主题点击只在下帧 ApplySettingTheme 换色。
+			const bool transparentBackdrop=settingBackdropMode.load(memory_order_acquire)!=Inkeys::UI::Setting::BackdropMode::Solid;
+			const ImVec4 clearColorValue=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
 			std::uint64_t hideSerial;
-			{ lock_guard stateLock(settingStateMutex); hideSerial=settingSessionState.HideSerial(); }
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+			std::uint64_t entryProfileShowSerial;
+#endif
+			{ lock_guard stateLock(settingStateMutex); hideSerial=settingSessionState.HideSerial();
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+				entryProfileShowSerial=settingSessionState.ShowSerial();
+#endif
+			}
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+			entryProfiler.Begin(entryProfileShowSerial,entryFrameBegin);
+#endif
 			if (hideSerial!=consumedHideSerial) commitGeneralSliders();
 			if (Design::ConsumeSettingHomeReset(hideSerial,consumedHideSerial,destination,navigationState,homeMotion))
 			{
@@ -2168,6 +2275,9 @@ SettingSessionCoroutine RunSettingSession()
 
 				ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
 				ImGui::SetNextWindowSize({ static_cast<float>(SettingWindowWidth),static_cast<float>(SettingWindowHeight) });//设置窗口大小
+				entryRootSuppressed=Design::CanOmitHomeEntryRootBackground(homeMotion,!transparentBackdrop,ImGui::GetStyle().Alpha,clearColorValue);
+				if (entryRootSuppressed)
+					ImGui::SetNextWindowBgAlpha(0); // NoBackground 还会删除外框；这里只抑制同色重复填充。
 
 				ImGui::PushStyleColor(ImGuiCol_Border,
 					Widgets::Color(ImFluentCol_SurfaceStrokeDefault));
@@ -2175,6 +2285,7 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::Begin("主窗口", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);//开始绘制窗口
 				ImGui::PopStyleVar();
 				ImGui::PopStyleColor();
+				entryRootDraw=ImGui::GetWindowDrawList();
 
 				const float widthDip = static_cast<float>(SettingWindowWidth) / settingGlobalScale;
 				navigationState.Resize(widthDip);
@@ -2208,6 +2319,7 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						const ImVec2 origin = ImGui::GetWindowPos();
 						ImDrawList* drawList = ImGui::GetWindowDrawList();
+						entryTitleDraw=drawList;
 						// 根背景可为 Mica 透明，但 caption 始终以当前主题底色覆盖系统强调色。
 						drawList->AddRectFilled(origin,
 							{ origin.x + ImGui::GetWindowSize().x, origin.y + titleBarGeometry.height },
@@ -2313,10 +2425,11 @@ SettingSessionCoroutine RunSettingSession()
 				synchronizeDestination();
 				const float contentAlpha = Design::ContentAlpha(navigationState);
 				bool blockContentInput = navigationState.BlockContentInput();
-				std::uint64_t showSerial;
+				std::uint64_t showSerial, entryFontSerial;
 				{
 					lock_guard stateLock(settingStateMutex);
 					showSerial=settingSessionState.ShowSerial();
+					entryFontSerial=settingSessionState.FontRebuildSerial();
 				}
 				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
 					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
@@ -2324,6 +2437,17 @@ SettingSessionCoroutine RunSettingSession()
 				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				blockContentInput|=entryInputBlock;
 				const auto& contentGeometry = shellGeometry.content;
+				const auto entryKey=Design::MakeHomeEntryFrameKey(
+					{Widgets::Dip(contentGeometry.left),Widgets::Dip(contentGeometry.top),
+					Widgets::Dip(contentGeometry.right),Widgets::Dip(contentGeometry.bottom)},
+					Widgets::Dip(shellGeometry.gutter),settingSessionEpoch,entryFontSerial,SelectLanguage,
+					ImFontDesignMain,ImFontDesignStrong,ImFontDesignIcons);
+				const bool skipEntryBackground=Design::BeginHomeEntryFrame(homeMotion,entryKey,
+					!blockContentInput && !navigationState.flyoutOpen
+					&& !ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel));
+				// 暖帧后不再生成完全遮住的页面；淡出边界先恢复 child 测量，再正常显示。
+				if (!skipEntryBackground)
+				{
 				ImGui::SetCursorPos({ Widgets::Dip(contentGeometry.left), Widgets::Dip(contentGeometry.top) });
 				ImGui::PushStyleColor(ImGuiCol_ChildBg, Inkeys::UI::Setting::Design::PageSurface);
 				ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0F);
@@ -3916,6 +4040,7 @@ SettingSessionCoroutine RunSettingSession()
 				{ commitGeneralSliders(); Inkeys::UI::Setting::Hide(); RestartProgram(); }
 				else if (navigationAction.kind == Design::NavigationActionKind::Exit)
 				{ commitGeneralSliders(); Inkeys::UI::Setting::Hide(); CloseProgram(); }
+				}
 				Design::RenderHomeEntryOverlay(homeMotion);
 
 				ImGui::End();
@@ -3928,9 +4053,7 @@ SettingSessionCoroutine RunSettingSession()
 			ImFluent::PopFluentStyle();
 			ImGui::EndFrame();
 			ImGui::Render();
-			const bool transparentBackdrop = settingBackdropMode.load(
-				memory_order_acquire) != Inkeys::UI::Setting::BackdropMode::Solid;
-			const ImVec4 clearColorValue = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
+			Design::FilterHomeEntryDrawData(homeMotion,ImGui::GetDrawData(),entryRootDraw,entryTitleDraw,ImGui::GetForegroundDrawList());
 			const float clearColor[4] = {
 				transparentBackdrop ? 0.0F : clearColorValue.x * clearColorValue.w,
 				transparentBackdrop ? 0.0F : clearColorValue.y * clearColorValue.w,
@@ -3939,17 +4062,33 @@ SettingSessionCoroutine RunSettingSession()
 			};
 			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
 			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+			const auto entryCpuEnd=entryProfiler.enabled ? SettingEntryProfiler::Clock::now() : SettingEntryProfiler::Clock::time_point{};
+#endif
 			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+			const auto entryBackendEnd=entryProfiler.enabled ? SettingEntryProfiler::Clock::now() : SettingEntryProfiler::Clock::time_point{};
+#endif
 			const HRESULT backendResult = ImGui_ImplDX11_GetLastResult();
 			if (FAILED(backendResult))
 			{
 				// 纹理/Map 失败不能继续 Present 空白或残缺帧；保留原 epoch 恢复仲裁。
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+				entryProfiler.Record(entryFrameBegin,entryCpuEnd,entryBackendEnd,entryBackendEnd,homeMotion,ImGui::GetDrawData(),entryRootSuppressed);
+				entryProfiler.Flush("backend-failure");
+#endif
+				Design::CompleteHomeEntryFrame(homeMotion,false,false);
 				settingFrameResult = ResolveSettingResourceFailure("RenderDrawData", backendResult);
 				co_await suspend_always{};
 				continue;
 			}
 			const HRESULT result = g_pSwapChain->Present(1, 0);
 			g_SwapChainOccluded = (result == DXGI_STATUS_OCCLUDED);
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+			if (entryProfiler.active) entryProfiler.Record(entryFrameBegin,entryCpuEnd,entryBackendEnd,SettingEntryProfiler::Clock::now(),homeMotion,ImGui::GetDrawData(),entryRootSuppressed);
+			if (result!=S_OK) entryProfiler.Flush(result==DXGI_STATUS_OCCLUDED ? "occluded" : "present-failure");
+#endif
+			Design::CompleteHomeEntryFrame(homeMotion,result==S_OK,Design::HomeEntryTexturesReady(ImGui::GetDrawData()));
 			if (FAILED(result))
 				settingFrameResult = ResolveSettingResourceFailure("Present", result);
 			else

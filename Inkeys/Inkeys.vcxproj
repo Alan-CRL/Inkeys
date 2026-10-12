@@ -987,7 +987,9 @@
     <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp" />
-    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">INKEYS_SETTING_ENTRY_PROFILE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm" />

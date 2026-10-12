@@ -47,17 +47,29 @@
     "Inkeys/additional/imgui/imgui_impl_dx11.cpp",
     "Inkeys/additional/imgui/imgui_impl_dx11.h"
   ],
-  "notes": "第七轮按用户授权完成命令行原生窗口测试，未使用Computer Use操作窗口：三语言冷启动及浅深主题、6次连续关闭重开、切页/滚动关闭后主页顶部复位、大小窗/最小化/最大化恢复均通过。三份日志无error/设备失效、epoch1，三个隔离副本正常退出且原配置未变。本轮未发现新增产品缺陷，任务保持开放，不新增commit/push。最初DeviceRemoved触发源仍未知，实际设备移除恢复及Win7实机未验收。详见research/native-runtime-validation.md。",
+  "notes": "第八轮实现和既有验收完成：2.66s时序、遮罩下首帧准备及有界快路径；完整ARM64构建、headless/WARP和必要native性能测试通过，无Computer Use。用户2026-10-12明确授权提交本轮改动并要求不结束任务；任务保持in_progress，后续继续性能优化和人工测试，以及Win7/真实设备失效验收。详见research/entry-performance-validation.md。",
   "meta": {
     "validation": {
-      "build": "Debug|ARM64 PASS; Exit0; 27.2498582s",
-      "headless": "--no-window PASS; Exit0; 172.6073485s; stderr0",
-      "i18n": "384/384 PASS",
-      "warp": "FL11.0 production backend real E_INVALIDARG/pixels/lifecycle PASS; removed/reset HRESULT injection only",
+      "build": "Debug|ARM64 PASS; Exit0; 79.7518292s; 0 errors",
+      "headless": "--no-window PASS; Exit0; 273.9630156s; stderr0",
+      "i18n": "384/384 PASS; no visible source strings changed",
+      "warp": "FL11.0 production backend exact preparation/first-transparent/static RGBA + light/dark Solid 8 phases + 3 fallback PASS; same Frame 20warm/100samples pairs",
+      "manualNativeVisual": "Windows11 ARM64 SC/light native cold+3warm finished; small Show skipped; restore no replay; normal closing log and PID exited; no Computer Use",
+      "nativeFrameCallbackMedianMs": [
+        17.7048,
+        18.0849
+      ],
+      "nativeFrameCallbackP95Ms": [
+        24.4313,
+        28.7855
+      ],
+      "nativeSolidSuppressedCount": 0,
+      "nativeBackdrop": "Mica fallback; no native Solid gain claim",
+      "preparationBytes": 160,
+      "debugProfileSamplesBytes": 32768,
       "initialDeviceRemovalCause": "unknown",
-      "manualNativeVisual": "Windows11 ARM64 native smoke PASS; three languages/light-dark/Show-Hide/resize; real DeviceRemoved and Win7 not run",
       "win7Machine": "not run",
-      "validationRecord": "research/texture-crash-validation.md"
+      "validationRecord": "research/entry-performance-validation.md"
     },
     "motionRevision": "implemented_verified_pending_manual",
     "firstRevisionValidation": {
@@ -147,9 +159,32 @@
       "computerUseOperatedWindows": false
     },
     "remainingWork": [
-      "人工测试原生窗口观感与实际设备失效恢复",
-      "Win7 SP1+KB2670838实机验证",
-      "根据同机基线测量进行适当性能优化"
-    ]
+      "继续开屏动画与设置渲染的性能优化，并保留同机实测对照",
+      "人工确认最终原生动画观感与真实设备失效恢复",
+      "Win7 SP1+KB2670838实机验证"
+    ],
+    "entryPerformanceRevision": "implemented_verified_native_performance_pass",
+    "entryPerformanceRevisionValidation": {
+      "build": "Debug|ARM64 PASS; Exit0; 79.7518292s; 0 errors",
+      "headless": "--no-window PASS; Exit0; 273.9630156s; stderr0",
+      "i18n": "384/384 PASS; no visible source strings changed",
+      "warp": "FL11.0 production backend exact preparation/first-transparent/static RGBA + light/dark Solid 8 phases + 3 fallback PASS; same Frame 20warm/100samples pairs",
+      "manualNativeVisual": "Windows11 ARM64 SC/light native cold+3warm finished; small Show skipped; restore no replay; normal closing log and PID exited; no Computer Use",
+      "nativeFrameCallbackMedianMs": [
+        17.7048,
+        18.0849
+      ],
+      "nativeFrameCallbackP95Ms": [
+        24.4313,
+        28.7855
+      ],
+      "nativeSolidSuppressedCount": 0,
+      "nativeBackdrop": "Mica fallback; no native Solid gain claim",
+      "preparationBytes": 160,
+      "debugProfileSamplesBytes": 32768,
+      "initialDeviceRemovalCause": "unknown",
+      "win7Machine": "not run",
+      "validationRecord": "research/entry-performance-validation.md"
+    }
   }
 }

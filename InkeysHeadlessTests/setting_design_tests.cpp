@@ -3112,8 +3112,77 @@ namespace
 			<< " entry-plays="<<entryPlays<<" entry-skips="<<entrySkips<<'\n';
 	}
 
+	void CheckHomeEntryPreparation(Checks& checks)
+	{
+		using Timing=Design::HomeEntryTiming;
+		checks.Expect(Near(Timing::Total,2.66F) && Near(Timing::Writing,1.06F) && Near(Timing::Hold,.6F),
+			"one shared timing definition doubles complete entrance, writing and opaque hold");
+		Design::HomeMotionState state; Design::HomeEntryFrameKey key;
+		key.geometry={1000,1100,1,1,200,32,1000,1100,20,1}; key.epoch=1; key.fontSerial=1;
+		state.home=true; state.showSerial=1; state.entry=Design::HomeMotionState::Entry::Playing;
+		state.entryElapsed=.4F; state.entryLayoutValidated=true;
+		const ImVec4 solidColor(.4F,.5F,.6F,1);
+		checks.Expect(Design::CanOmitHomeEntryRootBackground(state,true,1,solidColor),
+			"active home entry with opaque style and Solid clear permits only root background alpha override");
+		checks.Expect(!Design::CanOmitHomeEntryRootBackground(state,false,1,solidColor)
+			&& !Design::CanOmitHomeEntryRootBackground(state,true,.8F,solidColor)
+			&& !Design::CanOmitHomeEntryRootBackground(state,true,1,{.4F,.5F,.6F,.8F})
+			&& !Design::CanOmitHomeEntryRootBackground(state,true,1,{1.1F,.5F,.6F,1}),
+			"transparent backdrop/style/background and non-normalized RGB cannot use redundant root suppression");
+		auto inactive=state; Design::FinishHomeEntry(inactive);
+		checks.Expect(!Design::CanOmitHomeEntryRootBackground(inactive,true,1,solidColor),"static or finished setting root retains legacy background");
+		Design::ConfigureHomeMotion(state,true,1,.05F,true,5);
+		checks.Expect(!Design::BeginHomeEntryFrame(state,key) && state.entryElapsed==.4F,
+			"fastest animation rate cannot advance unprepared first frame");
+		Design::CompleteHomeEntryFrame(state,true,true); Design::CompleteHomeEntryFrame(state,true,true);
+		checks.Expect(state.preparation.warmFrames==1 && !state.preparation.ready,"duplicate completion cannot count as second successful warm frame");
+		Design::BeginHomeEntryFrame(state,key); Design::CompleteHomeEntryFrame(state,true,true);
+		checks.Expect(state.preparation.ready && state.entryElapsed==.4F,"exactly two distinct full submitted frames prepare entry");
+		checks.Expect(Design::BeginHomeEntryFrame(state,key) && Near(state.entryElapsed,.65F),
+			"ready opaque frame skips invisible background and advances clamped rate-scaled delta");
+		Design::CompleteHomeEntryFrame(state,true,true);
+		const auto ready=state;
+		for (int field=0;field<21;++field)
+		{
+			state=ready; state.entryLayoutValidated=true; auto changed=key;
+			if (field<10) changed.geometry[field]+=1;
+			else if (field<14) changed.fonts[field-10]+=1;
+			else switch (field)
+			{
+			case 14: ++changed.epoch; break; case 15: ++changed.fontSerial; break; case 16: ++changed.language; break;
+			case 17: ++changed.texture; break; case 18: ++changed.atlasWidth; break; case 19: ++changed.atlasHeight; break;
+			case 20: changed.dark=!changed.dark; break;
+			}
+			checks.Expect(!Design::BeginHomeEntryFrame(state,changed) && !state.preparation.ready && !state.entryLayoutValidated
+				&& state.entryElapsed==ready.entryElapsed,"every actual layout/font/atlas/epoch/theme/language key invalidates fast frame without replay");
+		}
+		state=ready; Design::BeginHomeEntryFrame(state,key); Design::CompleteHomeEntryFrame(state,false,false);
+		checks.Expect(!state.preparation.ready && state.entryElapsed==ready.entryElapsed,
+			"failed submission rolls back consumed delta and forces real resource preparation");
+		for (int failure=0;failure<8 && state.EntryActive();++failure)
+		{ Design::BeginHomeEntryFrame(state,key); Design::CompleteHomeEntryFrame(state,false,false); }
+		checks.Expect(!state.EntryActive() && state.preparation.attempts<=6,"failed preparation is bounded and cannot permanently trap loading overlay");
+		state=ready; state.entryElapsed=Timing::DockStart-.01F;
+		for (int frame=0;frame<2;++frame)
+		{
+			checks.Expect(!Design::BeginHomeEntryFrame(state,key) && state.entryElapsed==Timing::DockStart,
+				"rate 5 holds opaque dock boundary while actual child layout is restored");
+			Design::CompleteHomeEntryFrame(state,true,true);
+		}
+		checks.Expect(state.preparation.revealReady && !Design::BeginHomeEntryFrame(state,key)
+			&& state.entryElapsed>Timing::DockStart,"transparent start uses restored full rendering after two confirmations");
+		state=ready; Design::ConfigureHomeMotion(state,true,2,.05F,true,1);
+		checks.Expect(state.entry==Design::HomeMotionState::Entry::Pending && !state.preparation.ready && !state.preparation.managed,
+			"new actual Show discards prior preparation without retaining GPU or ImGui resource pointers");
+		state=ready; Design::ConfigureHomeMotion(state,false,1,.05F,true,1);
+		checks.Expect(!state.EntryActive(),"navigation away terminates prepared overlay without late replay");
+		std::cout<<"[HomeEntryPreparation] total="<<Timing::Total<<" ready-frames=2 invalidation-keys=21 bounded-state-bytes="
+			<<sizeof(state.preparation)<<'\n';
+	}
+
 	void CheckHomeMotion(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
+		CheckHomeEntryPreparation(checks);
 		Design::BindTextFonts(regular,strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
 		auto& io=ImGui::GetIO(); io.ConfigInputTrickleEventQueue=false;
 		Design::HomeMotionState motion;
@@ -3157,7 +3226,7 @@ namespace
 			Design::RenderHomeEntryOverlay(motion);
 			ImGui::End(); ImGui::Render(); CheckDrawData(checks); return result;
 		};
-		auto idle=[&](int count=90) { Frame result; for (int i=0;i<count;++i) result=frame(outside); return result; };
+		auto idle=[&](int count=180) { Frame result; for (int i=0;i<count;++i) result=frame(outside); return result; };
 		idle();
 		checks.Expect(motion.entries==1 && !motion.EntryActive() && motion.x==0 && motion.y==0,
 			"first home entry plays once then reaches a stable neutral pose");
@@ -3232,19 +3301,19 @@ namespace
 		++serial; frame(outside);
 		checks.Expect(motion.entries==entries+1 && motion.entryElapsed==0 && motion.EntryActive(),"hidden-to-visible serial starts a fresh entry with rebased time");
 		const auto start=Design::ResolveHomeEntryPose(motion);
-		for (float time : {.65F,.8F,.949F})
+		for (float time : {1.30F,1.60F,1.898F})
 		{
 			motion.entryElapsed=time; frame(outside); const auto pose=Design::ResolveHomeEntryPose(motion);
 			checks.Expect(pose.writing==1 && pose.opacity==1 && pose.origin.x==start.origin.x && pose.origin.y==start.origin.y
-				&& pose.width==start.width,"all six strokes complete before exact 300ms opaque centre hold");
+				&& pose.width==start.width,"all six strokes complete before exact 600ms opaque centre hold");
 		}
-		motion.entryElapsed=1.08F; frame(outside); const auto curve=Design::ResolveHomeEntryPose(motion);
+		motion.entryElapsed=2.16F; frame(outside); const auto curve=Design::ResolveHomeEntryPose(motion);
 		const ImVec2 a(start.origin.x+start.width*.5F,start.origin.y+Design::HomeBrand::Height(start.width)*.5F);
 		const ImVec2 b(motion.brandOrigin.x+motion.brandWidth*.5F,motion.brandOrigin.y+Design::HomeBrand::Height(motion.brandWidth)*.5F);
 		const ImVec2 c(curve.origin.x+curve.width*.5F,curve.origin.y+Design::HomeBrand::Height(curve.width)*.5F);
 		const float deviation=std::abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))/std::hypot(b.x-a.x,b.y-a.y);
 		checks.Expect(curve.opacity>0 && curve.opacity<1 && deviation>scale,"dock fades and follows a real spatial curve away from straight interpolation");
-		motion.entryElapsed=.25F;
+		motion.entryElapsed=.50F;
 		delta=.02F; rate=1; frame(outside);
 		const auto openingRebuilds=motion.cache.rebuilds; const auto openingBounds=motion.buttonBounds;
 		for (int i=0;i<8;++i) frame(outside);

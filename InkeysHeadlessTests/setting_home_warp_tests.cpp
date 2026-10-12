@@ -122,9 +122,11 @@ namespace
 			io.AddMousePosEvent(Away.x, Away.y);
 		}
 
-		bool Submit(Checks& checks, ImDrawData* data, Pixels* pixels = nullptr, HRESULT expectedResult = S_OK)
+		bool Submit(Checks& checks, ImDrawData* data, Pixels* pixels = nullptr, HRESULT expectedResult = S_OK, bool solidClear = false)
 		{
-			const float clear[4]{};
+			const auto color=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
+			const float clear[4]{solidClear ? color.x*color.w : 0,solidClear ? color.y*color.w : 0,
+				solidClear ? color.z*color.w : 0,solidClear ? color.w : 0};
 			ID3D11RenderTargetView* rtv = view.Get();
 			context->OMSetRenderTargets(1, &rtv, nullptr);
 			context->ClearRenderTargetView(rtv, clear);
@@ -147,18 +149,21 @@ namespace
 		}
 	};
 
-	struct FrameInfo { int vertices = 0, indices = 0, batches = 0; ImRect pageClip; };
+	struct FrameInfo { int vertices = 0, indices = 0, batches = 0; ImRect pageClip; bool skipped = false; Design::HomeAction action = Design::HomeAction::None; bool rootSuppressed = false; };
 	FrameInfo Frame(Design::HomeMotionState* motion, ImVec2 mouse, float delta = 1.0F / 60.0F,
-		bool enabled = true, std::uint64_t serial = 1)
+		bool enabled = true, std::uint64_t serial = 1, bool optimized = false, float rate = 1, bool solidBackdrop = false, bool suppressRoot = false)
 	{
 		auto& io = ImGui::GetIO(); io.DisplaySize = { static_cast<float>(Width), static_cast<float>(Height) };
 		io.DisplayFramebufferScale = { 1, 1 }; io.DeltaTime = 1.0F / 60.0F;
 		io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); io.AddMousePosEvent(mouse.x, mouse.y);
 		io.AddMouseButtonEvent(0, false);
 		ImGui_ImplDX11_NewFrame(); ImGui::NewFrame(); Design::ConfigureRowAnimations(0, false, 1);
-		if (motion) Design::ConfigureHomeMotion(*motion, true, serial, delta, enabled, 1);
+		if (motion) Design::ConfigureHomeMotion(*motion, true, serial, delta, enabled, rate);
 		const bool entryBlocked=motion && Design::CancelHomeEntryOnInput(*motion);
 		ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+		const bool rootSuppressed=suppressRoot && motion && Design::CanOmitHomeEntryRootBackground(*motion,
+			solidBackdrop,ImGui::GetStyle().Alpha,ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+		if (rootSuppressed) ImGui::SetNextWindowBgAlpha(0);
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
 		ImGui::Begin("##home-warp-production-root", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
 			| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -167,6 +172,15 @@ namespace
 		Design::AdvanceNavigationAnimations(navigation,0,false,1);
 		const auto shell=Design::ResolveShellGeometry(static_cast<float>(Width)/Design::Pixels(1),static_cast<float>(Height)/Design::Pixels(1),navigation);
 		ImGui::GetWindowDrawList()->AddRectFilled({0,0},{static_cast<float>(Width),Design::Pixels(32)},Design::AppBase);
+		auto* rootDraw=ImGui::GetWindowDrawList();
+		const bool skipped=optimized && motion && Design::BeginHomeEntryFrame(*motion,
+			Design::MakeHomeEntryFrameKey({Design::Pixels(shell.content.left),Design::Pixels(shell.content.top),
+				Design::Pixels(shell.content.right),Design::Pixels(shell.content.bottom)},Design::Pixels(shell.gutter),
+				1,1,0,ImGui::GetFont(),nullptr,nullptr));
+		ImRect pageClip; Design::HomeAction homeAction=Design::HomeAction::None;
+		if (!skipped)
+		{
+
 		ImGui::SetCursorPos({Design::Pixels(shell.content.left),Design::Pixels(shell.content.top)});
 		ImGui::PushStyleColor(ImGuiCol_ChildBg,Design::PageSurface);
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{Design::Pixels(shell.gutter),Design::Pixels(28)});
@@ -178,20 +192,29 @@ namespace
 			{outerClip.Min.x,outerClip.Min.y,outerClip.Max.x,outerClip.Max.y});
 		const float available = ImGui::GetContentRegionAvail().x;
 		Design::BeginScrollChild("##setting-page-content", { available, 0 }, ImGuiChildFlags_AutoResizeY);
-		const ImRect pageClip = ImGui::GetCurrentWindow()->ClipRect;
+		pageClip = ImGui::GetCurrentWindow()->ClipRect;
 		ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1); ImGui::BeginDisabled(entryBlocked);
-		Design::RenderHome({ 0, 1, "3.0.0-dev.3981", 0, 0, 1 }, motion);
+		homeAction=Design::RenderHome({ 0, 1, "3.0.0-dev.3981", 0, 0, 1 }, motion);
 		ImGui::EndDisabled(); ImGui::PopStyleVar();
 		ImGui::EndChild(); ImGui::EndChild();
 		ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1); ImGui::BeginDisabled(entryBlocked);
 		Design::RenderNavigationPane(shell,navigation,Design::NavigationDestination{});
 		ImGui::EndDisabled(); ImGui::PopStyleVar();
+		}
 		if (motion) Design::RenderHomeEntryOverlay(*motion);
 		ImGui::End(); ImGui::Render();
-		const auto* data = ImGui::GetDrawData(); FrameInfo info{ data->TotalVtxCount, data->TotalIdxCount, 0, pageClip };
+		if (optimized && motion) Design::FilterHomeEntryDrawData(*motion,ImGui::GetDrawData(),rootDraw,nullptr,ImGui::GetForegroundDrawList());
+		const auto* data = ImGui::GetDrawData(); FrameInfo info{ data->TotalVtxCount, data->TotalIdxCount, 0, pageClip, skipped, homeAction, rootSuppressed };
 		for (const auto* list : data->CmdLists) for (const auto& command : list->CmdBuffer)
 			if (command.ElemCount && !command.UserCallback) ++info.batches;
 		return info;
+	}
+
+	bool SubmitPrepared(Checks& checks, Offscreen& renderer, Design::HomeMotionState& state, Pixels* pixels=nullptr, bool solidClear=false)
+	{
+		const bool success=renderer.Submit(checks,ImGui::GetDrawData(),pixels,S_OK,solidClear);
+		Design::CompleteHomeEntryFrame(state,success,Design::HomeEntryTexturesReady(ImGui::GetDrawData()));
+		return success;
 	}
 
 	void CheckBackendFailures(Checks& checks, Offscreen& renderer)
@@ -308,45 +331,47 @@ namespace
 
 	void CheckColdEntry(Checks& checks, Offscreen& renderer)
 	{
-		// 首次 AutoResizeY 尚未测出页面高度；直接开启动效，不能先用静态帧预热掩盖入口行为。
+		// 首次动态字体/AutoResizeY 尚未测量；不先用静态帧掩盖首开字形与提交准备。
 		Design::ApplyPalette(false); Design::HomeMotionState state;
-		constexpr float delta = 1.0F / 60.0F;
-		int clippedFrames = 0, visibleFrames = 0;
-		for (int frame = 0; frame < 12; ++frame)
+		constexpr float delta=1.0F/60.0F; int clipped=0,visible=0,skipped=0;
+		for (int frame=0;frame<12;++frame)
 		{
-			const float elapsed = frame == 0 ? 0.0F : state.entryElapsed;
-			const auto info = Frame(&state, Away, delta, true);
-			ImRect envelope(state.brandOrigin, {state.brandOrigin.x + state.brandWidth,
-				state.brandOrigin.y + Brand::Height(state.brandWidth)});
-			envelope.Expand(Design::Pixels(14));
-			const bool visible = info.pageClip.GetWidth() > 0 && info.pageClip.GetHeight() > 0
-				&& envelope.Overlaps(info.pageClip);
-			checks.Expect(state.brandVisible == visible, "cold entry uses actual nonempty page clip visibility");
-			checks.Expect(state.entries == 1 && state.EntryActive(), "cold entry starts from real outer viewport before AutoResizeY has grown");
-			if (!state.heroVisible)
+			const float before=state.entryElapsed; const bool ready=state.preparation.ready;
+			const auto info=Frame(&state,Away,delta,true,1,true);
+			checks.Expect(state.entries==1 && state.EntryActive(),"cold actual outer viewport starts one entry before AutoResizeY has grown");
+			if (!info.skipped)
 			{
-				++clippedFrames;
-				checks.Expect(frame==0 && state.entryElapsed==0 && state.cache.vertices.empty(),
-					"cold foreground starts at zero with no premature underlying logo cache");
+				ImRect envelope(state.brandOrigin,{state.brandOrigin.x+state.brandWidth,state.brandOrigin.y+Brand::Height(state.brandWidth)});
+				envelope.Expand(Design::Pixels(14));
+				const bool actual=info.pageClip.GetWidth()>0 && info.pageClip.GetHeight()>0 && envelope.Overlaps(info.pageClip);
+				checks.Expect(state.brandVisible==actual,"cold full warm frame uses actual nonempty page clip");
+				if (state.heroVisible) ++visible; else ++clipped;
 			}
-			else
-			{
-				++visibleFrames;
-				checks.Expect(std::abs(state.entryElapsed-elapsed-delta)<.00001F,
-					"valid cold layout advances only actual frame delta");
-			}
-			if (!renderer.Submit(checks, ImGui::GetDrawData())) return;
+			else ++skipped;
+			checks.Expect(!ready ? state.entryElapsed==before : state.entryElapsed<=before+delta+.00001F,
+				"cold font preparation freezes time and prepared motion consumes at most actual delta");
+			if (!SubmitPrepared(checks,renderer,state)) return;
 		}
-		checks.Expect(clippedFrames > 0 && visibleFrames > 1,
-			"cold AutoResizeY fixture actually covers clipped first frame and subsequent visible frames");
-		std::cout << "[HomeWARP] cold-entry clipped=" << clippedFrames << " visible=" << visibleFrames
-			<< " entries=" << state.entries << " elapsed=" << state.entryElapsed << '\n';
+		checks.Expect(clipped>0 && visible>0 && skipped>1 && state.preparation.ready,
+			"cold test covers clipped first child, successful full warm glyph frames and opaque fast frames");
+		std::cout<<"[HomeWARP] cold-entry clipped="<<clipped<<" full-visible="<<visible<<" opaque-skipped="<<skipped
+			<<" entries="<<state.entries<<" elapsed="<<state.entryElapsed<<'\n';
 	}
 
 	bool StableBaseline(Checks& checks, Offscreen& renderer, Design::HomeMotionState& state, Pixels& baseline)
 	{
 		// 现有 Fluent 控件以 0.083 s 指数补间主题色，关闭主页动效不关闭该颜色通道。
 		// 等真实读回连续稳定再采基线，不能把浅→深过渡误计为字标越界的像素变化。
+		// Fluent 的 U32 颜色补间可能在主题目标附近量化停留；正常页面缺席后重现会回到精确目标色。
+		// 用真实非主页帧建立该既有生命周期基线，不放宽 RGBA 或改全局控件配色。
+		for (int absent=0;absent<2;++absent)
+		{
+			ImGui_ImplDX11_NewFrame(); ImGui::NewFrame();
+			ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+			ImGui::Begin("##home-warp-baseline-other-page",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoSavedSettings);
+			ImGui::TextUnformatted("Other settings page"); ImGui::End(); ImGui::Render();
+			if (!renderer.Submit(checks,ImGui::GetDrawData())) return false;
+		}
 		Pixels previous, current;
 		int stableFrames = 0;
 		for (int frame = 0; frame < 120; ++frame)
@@ -364,6 +389,156 @@ namespace
 			previous.swap(current);
 		}
 		return checks.Expect(false, "actual WARP theme pixels stabilize before motion comparison");
+	}
+
+	void CheckPreparedEntry(Checks& checks, Offscreen& renderer, const Pixels& baseline)
+	{
+		Design::HomeMotionState state; FrameInfo info;
+		const auto coldBegin=Clock::now(); unsigned warm=0;
+		for (;warm<8;++warm)
+		{
+			info=Frame(&state,Away,0,true,41,true,5);
+			checks.Expect(state.entryElapsed==0 && !info.skipped,"real cold glyph/layout preparation does not consume animation time even at rate 5");
+			if (!SubmitPrepared(checks,renderer,state)) return;
+			if (state.preparation.ready) break;
+		}
+		const auto prepared=Clock::now();
+		checks.Expect(warm<6 && state.preparation.ready && state.preparation.warmFrames==2,
+			"two actual successful backend submissions prepare current glyph sizes within bounded warm frames");
+		const auto entries=state.entries; Pixels fast,full;
+		state.entryElapsed=.76F;
+		info=Frame(&state,Away,0,true,41,true);
+		if (!SubmitPrepared(checks,renderer,state,&fast)) return;
+		checks.Expect(info.skipped && state.entries==entries,
+			"opaque production helper omits page/nav generation and submits only root/caption and foreground");
+		const auto* data=ImGui::GetDrawData(); bool onlyOwn=true;
+		for (const auto* list : data->CmdLists) onlyOwn &= list==ImGui::FindWindowByName("##home-warp-production-root")->DrawList
+			|| list==ImGui::GetForegroundDrawList();
+		checks.Expect(onlyOwn,"real DX11 DrawData contains no obscured page/navigation lists");
+		int roots=0,foregrounds=0; bool legal=true;
+		for (const auto* list : data->CmdLists) for (const auto& command : list->CmdBuffer)
+		{
+			if (!command.ElemCount || command.UserCallback) continue;
+			const bool rootList=list!=ImGui::GetForegroundDrawList();
+			if (rootList) ++roots; else ++foregrounds;
+			legal &= command.GetTexID()!=ImTextureID_Invalid && (rootList ? command.ClipRect.w<=state.clientContent.y
+				: command.ClipRect.y>=state.clientContent.y);
+			std::cout<<"[HomeWARP] opaque-command list="<<(rootList ? "root/caption" : "foreground")
+				<<" elems="<<command.ElemCount<<" vtx-offset="<<command.VtxOffset<<" texture="<<command.GetTexID()
+				<<" clip="<<command.ClipRect.x<<','<<command.ClipRect.y<<','<<command.ClipRect.z<<','<<command.ClipRect.w<<'\n';
+		}
+		checks.Expect(legal && roots==2 && foregrounds==1 && info.batches==roots+foregrounds,
+			"root decoration/inner caption clip commands and one brand foreground are the only legitimate opaque batches");
+		Design::HomeMotionState reference=state; reference.preparation={};
+		Frame(&reference,Away,0,true,41,false); if (!renderer.Submit(checks,ImGui::GetDrawData(),&full)) return;
+		checks.Expect(fast==full,"opaque writing readback equals the unoptimized real full-page submission exactly");
+		state.entryElapsed=Design::HomeEntryTiming::DockStart-.001F;
+		for (int frame=0;frame<2;++frame)
+		{
+			info=Frame(&state,Away,.05F,true,41,true,5);
+			checks.Expect(!info.skipped && state.entryElapsed==Design::HomeEntryTiming::DockStart
+				&& Design::ResolveHomeEntryPose(state).opacity==1,"fastest rate cannot expose stale AutoResize children before two full reveal warm submissions");
+			if (!SubmitPrepared(checks,renderer,state)) return;
+		}
+		checks.Expect(state.preparation.revealReady,"pre-fade child geometry is confirmed through real backend twice");
+		info=Frame(&state,Away,.01F,true,41,true);
+		if (!SubmitPrepared(checks,renderer,state,&fast)) return;
+		checks.Expect(!info.skipped && info.pageClip.GetHeight()>0 && Design::ResolveHomeEntryPose(state).opacity<1,
+			"first translucent frame restores measured page and navigation immediately");
+		reference=state; reference.preparation={}; Frame(&reference,Away,0,true,41,false);
+		if (!renderer.Submit(checks,ImGui::GetDrawData(),&full)) return;
+		checks.Expect(fast==full,"first translucent real WARP pixels match the full-page control frame without pop or old UVs");
+		state.entryElapsed=Design::HomeEntryTiming::Total-.005F;
+		Frame(&state,Away,.01F,true,41,true); if (!SubmitPrepared(checks,renderer,state,&fast)) return;
+		checks.Expect(!state.EntryActive() && fast==baseline,"prepared fast path finishes at exactly the static homepage pixels");
+
+		std::cout<<"[HomeWARP] prepared-entry theme="<<(Design::IsDarkMode() ? "dark" : "light")
+			<<" full-warm-frames="<<warm+1<<" elapsed-preparation-us="
+			<<std::chrono::duration<double,std::micro>(prepared-coldBegin).count()<<" fast-frames="<<state.preparation.skippedFrames
+			<<" bounded-state-bytes="<<sizeof(state.preparation)<<'\n';
+	}
+
+	void CheckSolidRootBackground(Checks& checks, Offscreen& renderer)
+	{
+		using Timing=Design::HomeEntryTiming;
+		Design::HomeMotionState state;
+		Frame(&state,Away,0,false,73); renderer.Submit(checks,ImGui::GetDrawData());
+		for (int warm=0;warm<4;++warm)
+		{
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=Timing::DockStart;
+			Frame(&state,Away,0,true,73,true,1,true,true);
+			if (!SubmitPrepared(checks,renderer,state,nullptr,true)) return;
+		}
+		Pixels control,optimized; int comparisons=0,edgePixels=0;
+		for (float time : {0.0F,Timing::Wait+.01F,.76F,Timing::WritingEnd+.15F,Timing::DockStart,
+			Timing::DockStart+Timing::Dock*.5F,Timing::SettleStart+Timing::Settle*.5F,Timing::Total})
+		{
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=time;
+			const auto info=Frame(&state,Away,0,true,73,true,1,true,true);
+			if (!SubmitPrepared(checks,renderer,state,&optimized,true)) return;
+			checks.Expect(info.rootSuppressed,"active Solid/alpha1 entry uses root alpha override while preserving original window flags");
+			auto full=state; full.entry=Design::HomeMotionState::Entry::Playing; full.entryElapsed=time;
+			Frame(&full,Away,0,true,73,true,1,true,false);
+			if (!SubmitPrepared(checks,renderer,full,&control,true)) return;
+			checks.Expect(control==optimized,"production Solid clear with suppressed root exactly equals full root at every entrance phase including title/border");
+			bool edges=true;
+			for (UINT y=0;y<Height;++y) for (UINT x=0;x<Width;++x)
+				if (y<32 || x<2 || y<2 || x>=Width-2 || y>=Height-2)
+				{ ++edgePixels; edges &= control[static_cast<size_t>(y)*Width+x]==optimized[static_cast<size_t>(y)*Width+x]; }
+			checks.Expect(edges,"root alpha suppression leaves titlebar and rounded outside border pixels exactly unchanged");
+			++comparisons;
+		}
+		const auto staticInfo=Frame(&state,Away,0,false,73,true,1,true,true);
+		checks.Expect(!staticInfo.rootSuppressed,"finished/disabled static homepage retains legacy root rendering");
+		const float originalAlpha=ImGui::GetStyle().Alpha;
+		const ImVec4 originalBackground=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
+		for (int fallback=0;fallback<3;++fallback)
+		{
+			const bool solid=fallback!=0;
+			ImGui::GetStyle().Alpha=fallback==1 ? .6F : originalAlpha;
+			ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
+			if (fallback!=1) ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w=fallback==0 ? 0.0F : .6F;
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=Timing::DockStart+Timing::Dock*.5F;
+			const auto info=Frame(&state,Away,0,true,73,true,1,solid,true);
+			if (!SubmitPrepared(checks,renderer,state,&optimized,solid)) break;
+			auto full=state; Frame(&full,Away,0,true,73,true,1,solid,false);
+			if (!SubmitPrepared(checks,renderer,full,&control,solid)) break;
+			checks.Expect(!info.rootSuppressed && optimized==control,
+				"Mica/transparent backdrop, partial style alpha and partial background alpha take unchanged full-root fallback");
+		}
+		ImGui::GetStyle().Alpha=originalAlpha; ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
+		std::cout<<"[HomeWARP] solid-root theme="<<(Design::IsDarkMode() ? "dark" : "light")
+			<<" exact-phase-comparisons="<<comparisons<<" exact-title-border-pixels="<<edgePixels<<" fallback-cases=3\n";
+	}
+
+	void CheckPreparedKeyboard(Checks& checks, Offscreen& renderer)
+	{
+		Design::HomeMotionState state; FrameInfo info;
+		// 跨多次缺席帧后，用真实 Tab 取消并恢复普通 child 导航；不伪造 Focus/ID 来掩盖问题。
+		auto& io=ImGui::GetIO(); const auto oldFlags=io.ConfigFlags; const bool oldTrickle=io.ConfigInputTrickleEventQueue;
+		io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue=false;
+		for (int frame=0;frame<16;++frame)
+		{
+			info=Frame(&state,Away,.02F,true,42,true);
+			if (!SubmitPrepared(checks,renderer,state)) break;
+		}
+		checks.Expect(info.skipped,"actual keyboard recovery fixture starts after opaque skipped child frames");
+		io.AddKeyEvent(ImGuiKey_Tab,true); info=Frame(&state,Away,.02F,true,42,true); SubmitPrepared(checks,renderer,state);
+		checks.Expect(!state.EntryActive() && !info.skipped && info.action==Design::HomeAction::None,
+			"real Tab cancels fast entry and cannot activate underlying action on cancellation frame");
+		io.AddKeyEvent(ImGuiKey_Tab,false); Frame(&state,Away,.02F,true,42,true); SubmitPrepared(checks,renderer,state);
+		auto* root=ImGui::FindWindowByName("##home-warp-production-root"); bool reachable=false;
+		for (int step=0;step<10 && !reachable;++step)
+		{
+			io.AddKeyEvent(ImGuiKey_Tab,true); Frame(&state,Away,.02F,true,42,true); SubmitPrepared(checks,renderer,state);
+			io.AddKeyEvent(ImGuiKey_Tab,false); Frame(&state,Away,.02F,true,42,true); SubmitPrepared(checks,renderer,state);
+			reachable=GImGui->NavWindow && GImGui->NavWindow->RootWindow==root && GImGui->NavId!=0;
+		}
+		checks.Expect(reachable,"real keyboard focus reaches setting root children again after fast entry without mouse/forced focus");
+		io.ConfigFlags=oldFlags; io.ConfigInputTrickleEventQueue=oldTrickle;
+		// 使用真实鼠标位移退出导航 hover/focus 绘制，避免键盘夹具污染后续独立性能对照。
+		Frame(&state,{Away.x+2,Away.y+2},0,false,42,true); SubmitPrepared(checks,renderer,state);
+		Frame(&state,Away,0,false,42,true); SubmitPrepared(checks,renderer,state);
 	}
 
 	bool InsideLogo(int x, int y, const Design::HomeMotionState& state, float margin = 18)
@@ -674,14 +849,23 @@ namespace
 		return values[static_cast<size_t>(std::floor(static_cast<double>(values.size() - 1) * quantile))];
 	}
 
-	void Benchmark(Checks& checks, Offscreen& renderer, const char* name, int mode, const FrameInfo& baseline)
+	void Benchmark(Checks& checks, Offscreen& renderer, const char* name, int mode, const FrameInfo& baseline, bool optimized = false, bool solidClear = false, bool suppressRoot = false)
 	{
 		Design::HomeMotionState state;
 		Frame(&state, Away, 0, false);
 		if (mode>=4)
 		{
-			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=.8F; Frame(&state,Away,0,true);
-			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=.64F; Frame(&state,Away,0,true);
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=1.6F; Frame(&state,Away,0,true);
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=1.28F; Frame(&state,Away,0,true);
+		}
+		if (optimized)
+		{
+			for (int frame=0;frame<6;++frame)
+			{
+				state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=Design::HomeEntryTiming::DockStart;
+				Frame(&state,Away,0,true,1,true,1,solidClear,suppressRoot);
+				if (!SubmitPrepared(checks,renderer,state,nullptr,solidClear)) return;
+			}
 		}
 		const ImVec2 center(state.brandOrigin.x + state.brandWidth * .5F, state.brandOrigin.y + Brand::Height(state.brandWidth) * .5F);
 		std::vector<double> cpu, submit; cpu.reserve(100); submit.reserve(100);
@@ -706,13 +890,14 @@ namespace
 			if (mode>=4)
 			{
 				state.entry=Design::HomeMotionState::Entry::Playing;
-				state.entryElapsed=mode==4 ? .13F+.5F*((frame+20)%100)/100
-					: mode==5 ? .8F : mode==6 ? .96F+.25F*((frame+20)%100)/100 : 1.23F+.09F*((frame+20)%100)/100;
+				state.entryElapsed=mode==4 ? .26F+1.0F*((frame+20)%100)/100
+					: mode==5 ? 1.6F : mode==6 ? 1.92F+.50F*((frame+20)%100)/100 : 2.46F+.18F*((frame+20)%100)/100;
 			}
 			const auto begin = Clock::now();
-			info = Frame(mode == 0 ? nullptr : &state, mouse, mode>=4 ? 0 : 1.0F / 60.0F, true);
+			info = Frame(mode == 0 ? nullptr : &state, mouse, mode>=4 ? 0 : 1.0F / 60.0F, true,1,optimized,1,solidClear,suppressRoot);
 			const auto drawn = Clock::now();
-			if (!renderer.Submit(checks, ImGui::GetDrawData())) return;
+			if (!renderer.Submit(checks, ImGui::GetDrawData(),nullptr,S_OK,solidClear)) return;
+			if (optimized) Design::CompleteHomeEntryFrame(state,true,Design::HomeEntryTexturesReady(ImGui::GetDrawData()));
 			const auto completed = Clock::now();
 			if (frame >= 0) { cpu.push_back(Micros(begin, drawn)); submit.push_back(Micros(drawn, completed)); }
 			checks.Expect(info.vertices<=baseline.vertices+165 && info.indices<=baseline.indices+7*108+6
@@ -727,7 +912,8 @@ namespace
 			<< " p95=" << Percentile(cpu, .95) << " submit-complete-copy-us median=" << Percentile(submit, .5)
 			<< " p95=" << Percentile(submit, .95) << " vertices=" << info.vertices << " indices=" << info.indices
 			<< " batches=" << info.batches << " imgui-allocs=" << allocations.allocations - allocatedBefore
-			<< " cache-growth=" << state.cache.allocations - cacheBefore << " cache-rebuilds=" << state.cache.rebuilds - rebuiltBefore << '\n';
+			<< " opaque-fast="<<info.skipped<<" solid-clear="<<solidClear<<" root-suppressed="<<info.rootSuppressed<<" prep-state-bytes="<<sizeof(state.preparation)
+			<<" cache-growth=" << state.cache.allocations - cacheBefore << " cache-rebuilds=" << state.cache.rebuilds - rebuiltBefore << '\n';
 	}
 }
 
@@ -744,6 +930,8 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 		Design::ApplyPalette(dark); Design::HomeMotionState state;
 		Pixels baseline; if (!StableBaseline(checks, renderer, state, baseline)) return checks.failures;
 		checks.Expect(state.brandVisible && state.brandWidth > 400, "production brand fully visible at benchmark viewport");
+		CheckPreparedEntry(checks,renderer,baseline);
+		Frame(&state,Away,0,false); renderer.Submit(checks,ImGui::GetDrawData());
 		CheckTransparentProductionInk(checks, renderer, state);
 		CheckProductionText(checks,renderer,state);
 		Snapshot(dark ? "soft-dark-static" : "soft-light-static",baseline);
@@ -753,12 +941,12 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 		checks.Expect(state.EntryActive() && state.entryElapsed==0,"new Show serial starts full-window entry at zero");
 		const auto openingRebuilds=state.cache.rebuilds; const auto openingBounds=state.buttonBounds;
 		Pixels held;
-		for (float time : {.13F,.38F,.65F,.8F,.949F,1.08F,1.27F})
+		for (float time : {.26F,.76F,1.30F,1.60F,1.898F,2.16F,2.54F})
 		{
 			state.entryElapsed=time; Frame(&state,Away,0,true,2);
 			renderer.Submit(checks,ImGui::GetDrawData(),&changed);
 			const auto pose=Design::ResolveHomeEntryPose(state);
-			if (time==.38F) CheckWritingInk(checks,renderer,state);
+			if (time==.76F) CheckWritingInk(checks,renderer,state);
 			int outside=0,navChanged=0;
 			for (UINT y=0;y<Height;++y) for (UINT x=0;x<Width;++x)
 			{
@@ -766,10 +954,10 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 				if (changed[index]!=baseline[index]) { outside+=y<32; navChanged+=x<200 && y>=32; }
 			}
 			checks.Expect(outside==0,"full-window foreground excludes titlebar exactly");
-			if (time<1.22F) checks.Expect(navChanged>100,"entry cover includes actual navigation, not only hero background");
-			if (time>=.65F && time<.95F)
+			if (time<Design::HomeEntryTiming::SettleStart) checks.Expect(navChanged>100,"entry cover includes actual navigation, not only hero background");
+			if (time>=Design::HomeEntryTiming::WritingEnd && time<Design::HomeEntryTiming::DockStart)
 			{
-				checks.Expect(pose.opacity==1 && pose.writing==1,"completed original six strokes stay opaque throughout 300ms hold");
+				checks.Expect(pose.opacity==1 && pose.writing==1,"completed original six strokes stay opaque throughout 600ms hold");
 				if (held.empty()) held=changed; else checks.Expect(held==changed,"entire WARP readback is identical during opaque full-logo hold");
 			}
 			for (size_t i=0;i<openingBounds.size();++i)
@@ -778,7 +966,7 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 			Snapshot((std::string(dark ? "entry-dark-" : "entry-light-")+std::to_string(static_cast<int>(time*1000))).c_str(),changed);
 		}
 		checks.Expect(state.cache.rebuilds==openingRebuilds,"writing and docking never sample curves or rebuild the parallax cache");
-		for (int i = 0; i < 12; ++i) Frame(&state, Away,1.0F/60,true,2);
+		for (int i = 0; i < 16; ++i) Frame(&state, Away,1.0F/60,true,2);
 		renderer.Submit(checks, ImGui::GetDrawData(), &changed);
 		checks.Expect(changed == baseline && !state.EntryActive(), "finished entry returns exactly to original static page RGBA");
 		CheckTransparentProductionInk(checks,renderer,state,true);
@@ -791,11 +979,20 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 		}
 		Frame(&state, Away, 0, false,2); renderer.Submit(checks, ImGui::GetDrawData(), &changed);
 		checks.Expect(changed == baseline, "disabling animations restores exact static pixels");
+		CheckSolidRootBackground(checks,renderer);
 	}
+	CheckPreparedKeyboard(checks,renderer);
 	Design::ApplyPalette(false);
 	FrameInfo baseline; for (int i = 0; i < 20; ++i) baseline = Frame(nullptr, Away);
 	for (int mode = 0; mode < 8; ++mode)
 		Benchmark(checks, renderer, std::array{ "static", "idle", "moving", "returning", "writing", "hold", "dock", "settle" }[mode], mode, baseline);
+	for (int mode : {4,5,6,7})
+		Benchmark(checks,renderer,std::array{"writing-fast","hold-fast","dock-prepared","settle-prepared"}[mode-4],mode,baseline,true);
+	for (int mode : {4,5,6,7})
+	{
+		Benchmark(checks,renderer,std::array{"solid-writing-full-root","solid-hold-full-root","solid-dock-full-root","solid-settle-full-root"}[mode-4],mode,baseline,true,true,false);
+		Benchmark(checks,renderer,std::array{"solid-writing-suppressed-root","solid-hold-suppressed-root","solid-dock-suppressed-root","solid-settle-suppressed-root"}[mode-4],mode,baseline,true,true,true);
+	}
 	std::cout << "[HomeWARP] CPU excludes WARP submission; completed submission includes copy/Map wait. "
 		"ImGui allocator counts exclude existing std::string/vector work; brand cache growth is counted separately.\n";
 	return checks.failures;

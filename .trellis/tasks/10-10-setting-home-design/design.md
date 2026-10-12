@@ -27,3 +27,11 @@ HomeAction末尾追加License/GitCode保留旧值，GitHub/Support复用；目�
 
 ## 格式与国际化
 保留原编码/CRLF，关键逻辑中文注释，最小diff。JSONC改基准/翻译，经Scripts/i18n.ps1 sync生成header/快照再check，不手改生成头。新头若需工程登记才作必要登记，不清理旧资源。
+
+## 第八轮已批准修订
+
+开屏总时长约2.66秒、写完600ms停顿、遮罩下真实首帧准备与低帧率优化；需求、技术边界及本轮验收以 [entry-performance-revision.md](entry-performance-revision.md) 为准，覆盖旧时序冲突。用户直接预批准实施，允许必要原生性能测试但禁止Computer Use。
+
+## 第八轮实施验收完成
+
+2.66s时序、600ms完整停顿、遮罩下真实首帧/动态字形准备、完全不透明CPU/提交快路径及精确门禁Solid省填充已实施。完整Debug|ARM64、--no-window、真实WARP精确RGBA/配对性能和必要原生cold+3warm/小窗检查通过；最终测量及限制见 [research/entry-performance-validation.md](research/entry-performance-validation.md)。本轮无Computer Use、commit或push；人工观感、Win7和真实设备失效保留为后续验收，任务状态继续in_progress。
