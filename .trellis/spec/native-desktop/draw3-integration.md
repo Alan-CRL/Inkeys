@@ -57,6 +57,40 @@ Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs ->
 - Draw3 不创建/销毁顶层窗口，不修改标题、owner 或 Z 序；样式和 `Primary/Presentation/Hidden` 可见性变化必须通过 Window Service 的 owner-thread 命令完成。
 - owner 层级保持 `MagnifierHost -> Freeze -> DrawpadPresentation -> Drawpad -> PPT/Bar`，使 PPT/Bar 通过传递 Owner 关系始终高于两套画布表面。Drawpad 仍是顶层 owned popup，不是 `WS_CHILD`。Draw3 presenter 不得调用 `SetWindowPos`、`SetParent` 或直接改 owner；`SetBounds(Drawpad)` 必须同步两窗。
 
+## Scenario: 产品 RTS 注册前置顶准备
+
+### 1. Scope / Trigger
+
+产品首次启动或 DComp 失败后重建 ULW HWND 链时适用。历史 Inkeys2 在 0c0aaf0e99a4 / 649de99daecc 保留根置顶先于 RTS 创建的经验合同；不将该经验写成微软 API 强制要求。
+
+### 2. Signatures
+
+`IdtMain.cpp` 私有 `bool PrepareDraw3WindowTopmost(Window::Service&, HWND drawpad, const char* phase)`；复用公开 `RequestTopmostRefresh()`、`Handle()`、`OverlayRoot()`，不改变 Host/Window 公共接口。
+
+### 3. Contracts
+
+- 每次 `StartDraw3ProductWithFallback` 的 `StartProduct` 前准备，phase 为 initial 或 rebuilt-ulw；后者只在旧 Host/窗口清理并完成新链创建后执行。
+- 桌面策略必须允许 topmost 且非 Whiteboard；只通过 Window Service 同步刷新根，Mag 缺失时 Freeze 为根，不显示/激活或单独置顶画布/主栏。
+- 检查 root、Freeze、DrawpadPresentation、Drawpad 的有效句柄、直接 GW_OWNER、实际 WS_EX_TOPMOST 和刷新前后身份；策略 true 和 API 成功都不能代替 HWND 事实。
+- 初次准备失败立即返回，不能误进 DComp 回退；新链准备失败也不启动 Host/RTS。准备成功后才创建该次 Host cleanup scope，保留原失败监督。
+- 首帧后的 Preview observer/InitialTopmostRefresh 及周期刷新、白板 NOTOPMOST 保留。日志每次准备一次，含阶段、角色、原因和 HWND/owner/exstyle/read error；服务调用错误由 owner thread 捕获，不从调用线程读取陈旧 GetLastError。
+
+### 4. Validation & Error Matrix
+
+root/策略/句柄/owner/实际 topmost 不符、刷新失败、读取样式失败或身份变化 → 返回 false，不调用该次 StartProduct。Mag 未创建但 Freeze 为有效无 owner 根 → 允许。成功 → 返回 true，随后才初始化 RTS。
+
+### 5. Good / Base / Bad Cases
+
+Good：初代及重建代都完成准备再初始化 RTS；Base：Mag 缺失仍以 Freeze 抬升整链；Bad：只在首帧后刷新，或 prepare && StartProduct 失败统一进入 DComp 回退。
+
+### 6. Tests Required
+
+静态核对两处 gate、回退/清理边界和无激活合同，完整 Solution Debug|ARM64 与 `InkeysHeadlessTests --no-window`。后者不验证真实 HWND/RTS/Z 序；真实窗口/笔输入和白板行为须另按授权验证，不能将编译或属性检查认作视觉证明。
+
+### 7. Wrong vs Correct
+
+Wrong：只等 RtsReady/首帧后刷新；Correct：每代窗口准备失败直接返回，成功后调用 StartProduct，保留后置恢复。实际 Windows/RTS 系统内部因果仍需故障现场证据。
+
 ## 设备与线程
 
 - Draw3 独立创建 D3D11.1 hardware-first/WARP-fallback 设备、context、DXGI factory、交换链和呈现资源，禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
