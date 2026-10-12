@@ -148,11 +148,8 @@ void TopWindow()
 
 	(void)service.Show(Inkeys::Window::WindowRole::Freeze);
 	// Drawpad 已由 Draw3 首帧握手确认，显隐只能交给选择/内容状态机。
-	// PPT 五窗按各自配置决定显隐，TopWindow 只负责唤醒其首次提交。
-	(void)service.Show(Inkeys::Window::WindowRole::PptBottomLeft);
-	(void)service.Show(Inkeys::Window::WindowRole::PptBottomRight);
-	(void)service.Show(Inkeys::Window::WindowRole::PptMiddleLeft);
-	(void)service.Show(Inkeys::Window::WindowRole::PptMiddleRight);
+	// 分页窗口由 PageControl 在布局和呈现提交后决定显隐；
+	// 启动阶段不能直接显示，否则初始矩形可能滞留在左上角。
 	(void)service.Show(Inkeys::Window::WindowRole::Bar);
 	while (rtsWait && !offSignal)
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
