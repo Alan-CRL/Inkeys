@@ -1,0 +1,27 @@
+{
+  "scope": "Synthetic geometric proposal only; no StrokeModeler, device, or product execution",
+  "raw_circle_radius": 70.0,
+  "synthetic_model_radius": 80.0,
+  "synthetic_model_angle_lag_radians": 0.1,
+  "sample_count": 161,
+  "mutable_start_index": 70,
+  "prototype_weights": {
+    "model": 1,
+    "raw_max": 4,
+    "second_difference_of_displacement": 200,
+    "soft_terminal_tangent": 100
+  },
+  "baseline_terminal_turn_degrees": 56.25320696490131,
+  "clipped_endpoint_error": 12.488128317971096,
+  "refit_endpoint_error": 0.0,
+  "stable_prefix_max_change": 0.0,
+  "refit_max_polygon_turn_degrees": 3.6905276369335556,
+  "max_mutable_displacement": 12.488128317971096,
+  "mutable_model_arc_length": 70.68555083517106,
+  "limitations": [
+    "Input correspondence is analytically known in this toy; real raw/model matching is unsolved",
+    "Weights are toy values, not production parameters",
+    "Polygon angle depends on sampling; not production acceptance threshold",
+    "No self-crossing/short-stroke/noise/reconnect/radius/performance/actual library validation"
+  ]
+}

@@ -48,6 +48,8 @@ int RunPenCursorTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
 int RunUInkTests();
 int RunThinStrokeGpuTests();
+int RunModelerReplay(const wchar_t* reportPath);
+int RunModelerBenchmark(const wchar_t* reportPath);
 
 namespace
 {
@@ -3027,6 +3029,11 @@ void operator delete[](void* memory, size_t) noexcept
 
 int wmain(int argc, wchar_t* argv[])
 {
+	// 模型对照入口必须在任何窗口/GPU 测试之前返回。
+	if (argc >= 2 && wcscmp(argv[1], L"--modeler-replay") == 0)
+		return argc == 3 ? RunModelerReplay(argv[2]) : 90;
+	if (argc >= 2 && wcscmp(argv[1], L"--modeler-benchmark") == 0)
+		return argc == 3 ? RunModelerBenchmark(argv[2]) : 90;
 	if (argc == 5 && wcscmp(argv[1], L"--presentation-atomic-child") == 0)
 		return RunPresentationAutoSaveAtomicChild(argv[2], argv[3], argv[4]);
 	if (argc >= 2 && wcscmp(argv[1], L"--presentation-session-child") == 0)

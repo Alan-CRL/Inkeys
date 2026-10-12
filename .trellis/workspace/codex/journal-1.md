@@ -1835,3 +1835,35 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 在 Actions 验收真实 Windows 2022 三架构链路。
+
+
+## Session 64: 阶段1：vcpkg Abseil与Modeler源码基线完成
+<!-- trellis-session: v=2 fp=f8686272ba5b8497 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段1：vcpkg Abseil与Modeler源码基线完成
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+固定vcpkg Abseil20250512.1#0，13个Modeler源码三消费者共享；全部构建/精确回放/三架构30paired性能/Headless/ABI/资源导入检查通过，清理本任务约12GiB可重建缓存。
+
+### Main Changes
+
+- 停止手工Abseil库导入，精确manifest与static-v143/C++20同包头库，Modeler算法/API/参数/几何保持。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 4source和4main Rebuild exit0；4replay19case/128412 bit exact，仅依赖版本metadata变化；3arch各30pairs PASS；Headless no-window0。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 阶段1已完成归档；父任务尾段重构继续planning，需要独立实施/验收。GUI/实体笔/Win7真机未执行；无commit/push。

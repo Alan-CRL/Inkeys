@@ -1249,6 +1249,7 @@
     <None Include="src\UI\logo1.svg" />
     <None Include="src\UI\logo2.svg" />
   </ItemGroup>
+  <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

@@ -2,54 +2,55 @@
 
 ## 来源与文件边界
 
-- 来源快照：`D:\Project\Inkeys\inkStrokeModelerTest\Inkeys3-Draw3@8d045298eaaac76f752b4f8b5f3303b3520e50b7`；目标仓库不嵌套源 `.git`。
-- `draw3/*.cpp|*.cppm` 重命名到 `Inkeys/Inkeys/Drawing/Draw3/Draw3.*`；HLSL/HLSLI/CSO 到 `Inkeys/Inkeys/Drawing/Draw3/Assets/`；Ink Stroke Modeler 和 Abseil 仅复制头文件到 `Inkeys/additional/`。
-- `Inkeys/resource.h`/`Inkeys/Inkeys.rc` 保留 Draw3 资源 ID：`301=IDR_DRAW3_INK_PIXEL_SHADER`、`302=IDR_DRAW3_INK_VERTEX_SHADER`、`303=IDR_DRAW3_LASER_UPDATE_CS`、`304=IDR_DRAW3_LASER_EMIT_CS`。
-- 产品编译不得登记源 `main.cpp`、demo/独立测试窗口、`window_performance_hud`、`.git/.vs`、构建输出或第三方 `.cc`；只允许链接源快照自带的三架构 `ink_stroke_modeler_merge.lib`。
+- 来源快照：D:/Project/Inkeys/inkStrokeModelerTest/Inkeys3-Draw3@8d045298eaaac76f752b4f8b5f3303b3520e50b7；不嵌套源.git。2026-10-12阶段1获批，仅调整Modeler/Abseil构建归属，算法及产品几何不变。
+- Draw3产品源在Inkeys/Inkeys/Drawing/Draw3；Modeler运行源唯一存放于Inkeys/additional/ink_stroke_modeler；Abseil通过vcpkg同包头/库消费，Inkeys/additional/absl保留旧.0头用于回退。
+- Inkeys/resource.h/Inkeys.rc保留资源301-304及现有shader嵌入链。
+- 产品不编译demo入口、独立测试窗口、window_performance_hud或Abseil.cc。仅允许共享清单中的13个Modeler运行.cc；排除GMock type_matchers.cc和测试/fuzz源码。
 
-## Scenario: 固定版本 Ink Stroke Modeler ABI
+## Scenario: 固定版本 Ink Stroke Modeler 与 vcpkg Abseil ABI
 
 ### 1. Scope / Trigger
-
-修改 Ink prediction、第三方头文件、平台/CRT/Vcpkg 配置或固定模型库时必须应用本合同。
+修改Ink prediction、vendor源/头、共享MSBuild清单、vcpkg依赖或CRT时应用此合同。阶段1证据归10-12-modeler-source-build-baseline，配置存在不代表验收。
 
 ### 2. Signatures
-
-- `#pragma comment(lib, "ink_stroke_modeler_merge.lib")`
-- `InkStrokeModelerLibraryDirectory`: Win32=`..\inkStrokeModelerTest\lib\lib32`，x64=`..\inkStrokeModelerTest\lib\lib64`，ARM64=`..\inkStrokeModelerTest\lib\libArm64`
+- vcpkg.json精确override Abseil20250512.1#0，保留原baseline与其他版本。
+- 三个static-v143 triplet仅给Abseil设置C++20/REQUIRED，MSBuild三消费者统一VcpkgConfiguration=Release。
+- Modeler13个传统TU共享清单/canonical Modeler头；Abseil头与静态库来自同一vcpkg installed包，旧merge/.0头只作独立对照/整套回退。
 
 ### 3. Contracts
-
-- `Inkeys/additional/{ink_stroke_modeler,absl}` 只保留公开/传递头文件，不登记或保留 `.cc`。
-- 三架构固定库必须来自已合并的 Draw3 commit `8d045298`；不得用本机构建输出静默替换。
-- 固定库使用 `/MT`、`NDEBUG` 和 `_ITERATOR_DEBUG_LEVEL=0`。Inkeys Debug 保留禁用优化/PDB，但必须使用 `MultiThreaded`、取消 `_DEBUG`，并在 `Microsoft.Cpp.targets` 导入前设置 `VcpkgConfiguration=Release`。
+- active vcpkg Abseil include优先保留vendor .0；实际patch版本、std string_view/ordering、lts_20250512、MT/NDEBUG/iterator0与库一致，不混用版本。
+- 不手工合并/复制Abseil库或拆旧merge；记录包source/port/toolchain/flags/hash/machine/CRT/namespace，无Modeler定义。
+- 业务Debug保持原调试/优化合同；仅13个Modeler TU保持旧MinSizeRel /O1 /Ob1、/MT、NDEBUG、C++20、/fp:precise、EH/RTTI，PCH/模块扫描关闭。运行期obj更新用逐项marker限制，不能改变业务cpp/cppm obj。
+- Abseil使用vcpkg标准Release优化，须对照验收；其他依赖/SDK/toolset不升级。
+- triplet文件hash参与所有包缓存，首次可重建同版本依赖；改变依赖设置前检查空间，不以cache失效为由改版本。
+- 源码Modeler与旧merge不能混链；Update追加、Predict非修改、Save/Restore、参数和几何接纳保持。
 
 ### 4. Validation & Error Matrix
-
 | 条件 | 必需结果 |
 |---|---|
-| 任一架构库缺失 | 链接失败，不回退到源码直编 |
-| Debug 使用 `/MTd` 或 `_DEBUG` | 视为 ABI 配置错误，禁止用 `/NODEFAULTLIB` 或忽略 LNK2038 |
-| Vcpkg Debug 静态库进入 Inkeys Debug | 改为 Release 子目录，使完整本机依赖链保持 `/MT` |
-| 头文件与固定库版本不一致 | 更新必须成套进行并重跑全量 Rebuild |
+| package或13cc缺失 | 构建失败，不静默回旧merge |
+| MTd/_DEBUG/iterator不匹配 | ABI错误，不忽略LNK2038 |
+| 头与库版本/ABI不同 | 同包配套并完整Rebuild |
+| 回放字段差异 | 仅声明的.0→.1依赖版本metadata可不同；语义全部bit exact |
+| 可重复且超噪声退化 | 阶段1不通过，不调算法掩盖 |
 
 ### 5. Good / Base / Bad Cases
-
-- Good：Debug 自有代码可调试，但所有静态依赖 ABI 为 `/MT`，清空中间目录后成功链接。
-- Base：Release 直接使用对应架构固定库。
-- Bad：保留 Abseil/Modeler `.cc` 与固定库同时链接，或靠旧 `.obj` 让增量 Build 假通过。
+- Good：13TU独立优化、vcpkg同包Release头/库、业务flags保持，完整Rebuild/回放/性能通过。
+- Base：三架构共享源码，各自对应installed包。
+- Bad：vendor.0头+.1库、源码+merge混链、整工程MTd、旧obj复用。
 
 ### 6. Tests Required
-
-- ARM64 Debug/Release 对完整 `InkeysRepo.sln` 执行 `/m:1 /t:Rebuild`。
-- 静态断言四个第三方目录无 `.cc`、项目无第三方 `.cc` 编译项、三架构库与 pragma/目录映射齐全。
-- 运行 `InkeysHeadlessTests.exe --no-window` 和 `Inkeys.exe --draw3-hidden-test`。
+- InkeysRepo.sln Debug ARM64完整Rebuild，补三架构Release；demo/test既有solution。
+- 切换前独立旧EXE；--modeler-replay精确状态/计数/时间/全部Result，--modeler-benchmark 30轮交替。
+- 计时在无构建干扰时执行；reset为完成Up后64次无参Reset批次均摊，不能据此推断Reset(params)/新Down初始化成本。
+- 来源/实际include/flags、三架构ABI与x86/x64静态imports，旧头/库hash保持。
+- Headless --no-window保持MTd且不消费Abseil。GUI/D3D/Win7真机本阶段不执行。
 
 ### 7. Wrong vs Correct
+Wrong：Debug MTd + MT包，vendor旧头混新库，源码和merge同时链接。
+Correct：同包Abseil头/库、MT/NDEBUG/iterator0/std别名、13TU独立优化、严格旧/新对照。
 
-Wrong：`Debug /MTd + release merge.lib -> 忽略 LNK2038`。
-
-Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs -> 固定库 ABI 一致`。
+共享props中运行期metadata更新必须逐项限制 `InkStrokeModelerRuntime=true`；不要在Target内用 `ClCompile Update="@(InkStrokeModelerSource)"` 假定已限制范围，否则业务cpp/cppm可能共用obj。实际vcpkg properties/imports先于ItemDefinition求值，installed路径需用getItem及CL.read双重确认。
 
 ## 窗口与所有权
 

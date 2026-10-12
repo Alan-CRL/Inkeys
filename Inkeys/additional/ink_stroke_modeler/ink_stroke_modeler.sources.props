@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- 仅登记运行源码；测试、fuzz 和 GMock type_matchers 不参与产品编译。 -->
+  <ItemGroup>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)stroke_modeler.cc">
+      <Link>ink_stroke_modeler\stroke_modeler.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)params.cc">
+      <Link>ink_stroke_modeler\params.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)types.cc">
+      <Link>ink_stroke_modeler\types.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\internal_types.cc">
+      <Link>ink_stroke_modeler\internal\internal_types.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\loop_contraction_mitigation_modeler.cc">
+      <Link>ink_stroke_modeler\internal\loop_contraction_mitigation_modeler.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\position_modeler.cc">
+      <Link>ink_stroke_modeler\internal\position_modeler.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\stylus_state_modeler.cc">
+      <Link>ink_stroke_modeler\internal\stylus_state_modeler.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\utils.cc">
+      <Link>ink_stroke_modeler\internal\utils.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\wobble_smoother.cc">
+      <Link>ink_stroke_modeler\internal\wobble_smoother.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\prediction\kalman_predictor.cc">
+      <Link>ink_stroke_modeler\internal\prediction\kalman_predictor.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\prediction\stroke_end_predictor.cc">
+      <Link>ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\prediction\kalman_filter\axis_predictor.cc">
+      <Link>ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc</Link>
+    </InkStrokeModelerSource>
+    <InkStrokeModelerSource Include="$(MSBuildThisFileDirectory)internal\prediction\kalman_filter\kalman_filter.cc">
+      <Link>ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc</Link>
+    </InkStrokeModelerSource>
+  </ItemGroup>
+</Project>

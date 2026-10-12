@@ -1,0 +1,35 @@
+{
+  "id": "draw3-curved-pen-up-research",
+  "name": "draw3-curved-pen-up-research",
+  "title": "规划 Ink Stroke Modeler 源码编译与库内终态重构",
+  "description": "研究/规划：保留原Move/Predict算法，评估Modeler源码与vcpkg Abseil固定包，设计库内终态尾段替换；真实Up/L1及分阶段验收；算法不实施。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "draw3",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-12",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-12-modeler-source-build-baseline"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.ContactInput.cpp",
+    "Inkeys/additional/ink_stroke_modeler/params.h"
+  ],
+  "notes": "2026-10-12阶段1子任务全部验收PASS：vcpkg20250512.1#0/C++20/MT/NDEBUG匹配包与Modeler13源码，4配置构建/精确回放、3arch各30pairs、Headless等通过。旧库/报告保留；父任务尾段算法/产品/续接仍planning，阶段1基线门已满足，不自动实施后续。NoGUI/commit/push。",
+  "meta": {}
+}
