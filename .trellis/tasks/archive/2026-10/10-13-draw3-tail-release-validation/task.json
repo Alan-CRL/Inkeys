@@ -24,6 +24,8 @@
   "notes": "阶段四最终工程验收PASS：默认正常颜色、无尾轨迹I/O；ARM64 Debug/Release、x64/Win32 Release共8个solution构建与生产/模块回放、精确原模型基线、保存/历史/接续、最新Headless、资源和imports均通过。用户确认鼠标/实体笔/触摸体验正常；旧偶发长斜线未定位、按用户要求暂缓，6沿用暂缓。无猜测性算法修改、无GUI或push，签名提交后归档。",
   "meta": {
     "manualAcceptance": "accepted-mouse-pen-touch-with-prior-incident-deferred",
+    "finalManualAcceptance": "passed-user-confirmed",
+    "finalManualAcceptanceAt": "2026-10-14",
     "phase3Commit": "71858b0b",
     "diagnosticBinarySHA256": "494f645b0289a89f41607ab8b7cffe4b3a41ef204913d1226b04d538dabd2221",
     "diagnosticManualFollowup": "completed-38916-and-9812",
