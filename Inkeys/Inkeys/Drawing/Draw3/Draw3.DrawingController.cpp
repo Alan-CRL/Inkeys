@@ -1645,6 +1645,208 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 
+		void CaptureTailRuntimeProvenance(RuntimeStroke& runtime) noexcept
+		{
+			auto& trace = runtime.stroke.tailInputDiagnostic;
+			if (!trace.enabled) return;
+			trace.handleValue = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(runtime.handle.record));
+			trace.generation = runtime.handle.generation;
+			if (runtime.handle)
+			{
+				trace.tcid = runtime.handle.record->TabletContextId();
+				trace.cid = runtime.handle.record->ContactId();
+				trace.device = static_cast<uint32_t>(runtime.handle.record->DeviceType());
+			}
+			trace.tool = static_cast<uint32_t>(runtime.tool);
+			trace.rgb = PackStoredRgb(ColorForTool(runtime.tool, runtime.visualStyle));
+			trace.styleWidthDip = runtime.visualStyle.widthDip;
+			trace.canvasOffsetX = runtime.viewport.x;
+			trace.canvasOffsetY = runtime.viewport.y;
+			trace.qpcOrigin = runtime.qpcOrigin;
+		}
+
+		void NoteTailInputSnapshot(RuntimeStroke& runtime, const ContactSnapshot& snapshot) noexcept
+		{
+			auto& trace = runtime.stroke.tailInputDiagnostic;
+			if (!trace.enabled || snapshot.sequence == trace.currentSequence) return;
+			// seqlock 每次发布递增2；同一 contact 的差值才可解释为未消费快照。
+			if (trace.currentSequence && snapshot.sequence > trace.currentSequence)
+			{
+				const uint64_t published = (snapshot.sequence - trace.currentSequence) / 2;
+				if (published > 1) trace.maxSkippedSnapshots = std::max(trace.maxSkippedSnapshots, published - 1);
+			}
+			trace.currentSequence = snapshot.sequence;
+			++trace.snapshots;
+			if (snapshot.phase == ContactPhase::Move) ++trace.moves;
+			if (snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled)
+			{
+				trace.terminalPriorSequence = trace.lastNonterminalSequence;
+				trace.terminalPriorQpc = trace.lastNonterminalQpc;
+				trace.terminalPriorPosition = trace.lastNonterminalPosition;
+				trace.terminalSequence = snapshot.sequence;
+				trace.terminalQpc = snapshot.qpc;
+				trace.terminalPosition = { snapshot.position.x, snapshot.position.y };
+			}
+			else
+			{
+				trace.lastNonterminalSequence = snapshot.sequence;
+				trace.lastNonterminalQpc = snapshot.qpc;
+				trace.lastNonterminalPosition = { snapshot.position.x, snapshot.position.y };
+			}
+		}
+
+		void BeginTailInputDiagnostic(RuntimeStroke& runtime, const ContactSnapshot& down,
+			bool reconnect, bool enabled) noexcept
+		{
+			auto& trace = runtime.stroke.tailInputDiagnostic;
+			if (!reconnect) trace = {};
+			if (!enabled) return;
+			trace.enabled = true;
+			if (reconnect) ++trace.reconnects;
+			else
+			{
+				trace.downSequence = down.sequence;
+				trace.downQpc = down.qpc;
+				trace.downPosition = { down.position.x, down.position.y };
+			}
+			// 新 handle 的序列重新从 Down 起算；累计计数与整笔初始 Down 仍保留。
+			trace.currentSequence = 0;
+			trace.contactDownSequence = down.sequence;
+			trace.contactDownQpc = down.qpc;
+			trace.contactDownPosition = { down.position.x, down.position.y };
+			// 接续成功不再有当前终态；旧 Up 不得冒充新 contact 的抬笔证据。
+			trace.terminalPriorSequence = trace.terminalSequence = trace.upSequence = 0;
+			trace.terminalPriorQpc = trace.terminalQpc = trace.upQpc = 0;
+			trace.terminalPriorPosition = trace.terminalPosition = trace.upPosition = {};
+			trace.upModelTime = 0;
+			trace.upStatus = -1;
+			trace.upProduced = trace.upAccepted = trace.upGeometryAdded = 0;
+			trace.upFallback = trace.upEndpointPinned = false;
+			trace.source = static_cast<uint32_t>(down.source.kind);
+			trace.sourceRecognition = static_cast<uint32_t>(down.source.recognition);
+			trace.sourceContext = down.source.contextId;
+			trace.sourceCursor = down.source.cursorId;
+			trace.sourceGeneration = down.source.generation;
+			CaptureTailRuntimeProvenance(runtime);
+			if (!reconnect)
+			{
+				trace.initialHandleValue = trace.handleValue;
+				trace.initialGeneration = trace.generation;
+				trace.initialTcid = trace.tcid; trace.initialCid = trace.cid;
+				trace.initialDevice = trace.device; trace.initialSource = trace.source;
+			}
+			NoteTailInputSnapshot(runtime, down);
+		}
+
+		void BeginTailModelUpDiagnostic(RuntimeStroke& runtime, const ContactSnapshot& up,
+			double modelTime) noexcept
+		{
+			auto& trace = runtime.stroke.tailInputDiagnostic;
+			if (!trace.enabled) return;
+			trace.upSequence = up.sequence;
+			trace.upQpc = up.qpc;
+			trace.upPosition = { up.position.x, up.position.y };
+			trace.upModelTime = modelTime;
+			trace.upStatus = -1;
+			trace.upProduced = trace.upAccepted = trace.upGeometryAdded = 0;
+			trace.upFallback = trace.upEndpointPinned = false;
+		}
+
+		static_assert(std::is_trivially_copyable_v<TailInputDiagnostic> && sizeof(TailInputDiagnostic) <= 512);
+
+		template<class Check>
+		void CheckTailInputDiagnosticContract(Check&& check)
+		{
+			ContactInputCoordinator input;
+			RuntimeStroke runtime(100);
+			runtime.tool = DrawingTool::Pen;
+			ContactSnapshot down;
+			down.position = { 20, 30 };
+			down.qpc = 1000;
+			down.source.kind = SpeedEraser::SourceKind::ExternalPen;
+			ContactRecord* record = nullptr;
+			const bool ready = input.PublishDown(0xB5, 1, InputDeviceType::Pen, down) &&
+				input.TryDequeue(record) && record;
+			check(ready, "tail input trace real contact setup");
+			if (!ready) return;
+			runtime.handle = { record, record->Generation() };
+			down = record->DownSnapshot();
+			BeginTailInputDiagnostic(runtime, down, false, false);
+			NoteTailInputSnapshot(runtime, down);
+			check(!runtime.stroke.tailInputDiagnostic.enabled &&
+				runtime.stroke.tailInputDiagnostic.snapshots == 0,
+				"disabled tail trace does not collect input");
+			BeginTailInputDiagnostic(runtime, down, false, true); // 仅 probe 显式启用，不改变进程开关。
+			ContactSnapshot sample = down;
+			sample.position = { 22, 31 }; sample.qpc = 2000;
+			check(input.PublishMove(0xB5, 1, sample), "tail trace first coalesced Move");
+			sample.position = { 24, 32 }; sample.qpc = 3000;
+			check(input.PublishMove(0xB5, 1, sample), "tail trace second coalesced Move");
+			sample.position = { 200, 250 }; sample.qpc = 4000;
+			ContactSnapshot terminal;
+			const bool ended = input.PublishUp(0xB5, 1, sample) && input.TryReadSnapshot(runtime.handle, terminal);
+			check(ended, "tail trace consumes terminal after coalesced Moves");
+			if (!ended) return;
+			NoteTailInputSnapshot(runtime, terminal);
+			// 和生产路径一样先记录再覆盖 lastInput；重复 deferred Up 不能再计数。
+			runtime.lastInputSnapshot = terminal;
+			runtime.lastConsumedSequence = terminal.sequence;
+			NoteTailInputSnapshot(runtime, terminal);
+			BeginTailModelUpDiagnostic(runtime, terminal, .003);
+			const auto initial = runtime.stroke.tailInputDiagnostic;
+			check(initial.snapshots == 2 && initial.moves == 0 && initial.maxSkippedSnapshots == 2 &&
+				initial.terminalPriorSequence == down.sequence && initial.terminalPriorQpc == down.qpc &&
+				initial.terminalPriorPosition.x == 20 && initial.terminalPriorPosition.y == 30 &&
+				initial.terminalPosition.x == 200 && initial.terminalPosition.y == 250 &&
+				initial.upSequence == terminal.sequence && initial.upStatus == -1 &&
+				initial.initialHandleValue == initial.handleValue && initial.initialGeneration == initial.generation &&
+				initial.initialTcid == 0xB5 && initial.initialCid == 1 &&
+				initial.contactDownSequence == down.sequence && initial.contactDownQpc == down.qpc,
+				"Down plus Up trace retains prior position and skipped seqlock publications");
+			input.Recycle(runtime.handle);
+			sample.position = { 201, 251 }; sample.qpc = 5000;
+			sample.source.kind = SpeedEraser::SourceKind::IntegratedPen;
+			record = nullptr;
+			const bool reconnected = input.PublishDown(0xB5, 2, InputDeviceType::Pen, sample) &&
+				input.TryDequeue(record) && record;
+			check(reconnected, "tail trace reconnect contact setup");
+			if (!reconnected) return;
+			runtime.handle = { record, record->Generation() };
+			const auto resumedDown = record->DownSnapshot();
+			BeginTailInputDiagnostic(runtime, resumedDown, true, true);
+			const auto reconnectStart = runtime.stroke.tailInputDiagnostic;
+			check(reconnectStart.terminalSequence == 0 && reconnectStart.terminalPriorSequence == 0 &&
+				reconnectStart.upSequence == 0 && reconnectStart.upStatus == -1 &&
+				reconnectStart.terminalQpc == 0 && reconnectStart.upQpc == 0 &&
+				reconnectStart.initialHandleValue == initial.handleValue && reconnectStart.initialGeneration == initial.generation &&
+				reconnectStart.initialTcid == 0xB5 && reconnectStart.initialCid == 1 &&
+				reconnectStart.initialSource == static_cast<uint32_t>(SpeedEraser::SourceKind::ExternalPen) &&
+				reconnectStart.contactDownSequence == resumedDown.sequence && reconnectStart.contactDownQpc == 5000 &&
+				reconnectStart.contactDownPosition.x == 201 && reconnectStart.contactDownPosition.y == 251,
+				"reconnect trace distinguishes original/current contact and discards old terminal evidence");
+			sample.position = { 202, 252 }; sample.qpc = 6000;
+			ContactSnapshot move;
+			const bool moved = input.PublishMove(0xB5, 2, sample) && input.TryReadSnapshot(runtime.handle, move);
+			check(moved, "tail trace reconnect Move read");
+			if (moved) NoteTailInputSnapshot(runtime, move);
+			const auto resumed = runtime.stroke.tailInputDiagnostic;
+			check(resumed.snapshots == 4 && resumed.moves == 1 && resumed.reconnects == 1 &&
+				resumed.maxSkippedSnapshots == 2 && resumed.downQpc == 1000 &&
+				resumed.downPosition.x == 20 && resumed.cid == 2 &&
+				resumed.generation == runtime.handle.generation &&
+				resumed.source == static_cast<uint32_t>(SpeedEraser::SourceKind::IntegratedPen),
+				"reconnect preserves cumulative trace and resets contact sequence gap basis");
+			check(input.PublishCancelled(0xB5, 2, sample), "tail trace test contact retirement");
+			input.Recycle(runtime.handle);
+			runtime.stroke.Reset(5, 100, StrokeWidthMode::Fixed);
+			check(!runtime.stroke.tailInputDiagnostic.enabled &&
+				runtime.stroke.tailInputDiagnostic.snapshots == 0 &&
+				runtime.stroke.tailInputDiagnostic.lastNonterminalSequence == 0 &&
+				runtime.stroke.tailInputDiagnostic.initialHandleValue == 0 &&
+				runtime.stroke.tailInputDiagnostic.contactDownSequence == 0,
+				"ActiveStroke Reset clears all tail input trace provenance");
+		}
+
 		void CaptureProductStrokeStyle(RuntimeStroke& runtime,
 			const WindowController& window) noexcept
 		{
@@ -1830,6 +2032,7 @@ namespace Inkeys::Drawing::Draw3
 			const std::optional<StoredInkStyle> style =
 				StoredStyleForTool(runtime.tool, runtime.visualStyle);
 			if (!style) return reject("transient_tool"); // Laser 永远是瞬态视觉。
+			CaptureTailRuntimeProvenance(runtime);
 			std::optional<InkStroke> finalizedStroke = runtime.shape.active
 				? FinalizeStoredShape(runtime.shape.primitive, *style,
 					runtime.viewport.x, runtime.viewport.y)
@@ -3964,6 +4167,7 @@ namespace Inkeys::Drawing::Draw3
 			++failures;
 			std::fprintf(stderr, "[Draw3ControlFence] FAIL: %s\n", name);
 		};
+		CheckTailInputDiagnosticContract(check);
 		ContactInputCoordinator input;
 		WindowController window;
 		const auto snapshot = [](ContactPhase phase)
@@ -8631,6 +8835,8 @@ namespace Inkeys::Drawing::Draw3
 						}
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
 						reconnectRuntime->handle = handle;
+						BeginTailInputDiagnostic(*reconnectRuntime, down, true,
+							reconnectRuntime->stroke.tailInputDiagnostic.enabled);
 						reconnectRuntime->lastSpeedSnapshot = down;
 						reconnectRuntime->lastInputSnapshot = down;
 						reconnectRuntime->lastModelSnapshot = modelDown;
@@ -8831,6 +9037,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->lastModelSnapshot = modelDown;
 				runtime->lastConsumedSequence = down.sequence;
 				runtime->qpcOrigin = down.qpc;
+				BeginTailInputDiagnostic(*runtime, down, false, IsPenTailTraceEnabled());
 				runtime->lastModelInputTime = 0.0;
 				runtime->diagnosticStrokeId = observer_.penDiagnostics ? ++nextDiagnosticStrokeId : 0;
 				runtime->diagnosticModelUpdates = observer_.penDiagnostics ? 1 : 0;
@@ -9057,18 +9264,28 @@ namespace Inkeys::Drawing::Draw3
 				if (sanitizeEndpoint) runtime.stroke.modelScratch.clear();
 				auto& modelOutput = sanitizeEndpoint
 					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				const bool traceUp = runtime.stroke.tailInputDiagnostic.enabled;
+				const size_t traceOutputBefore = traceUp ? modelOutput.size() : 0;
+				const size_t traceRealBefore = traceUp ? runtime.stroke.realPoints.size() : 0;
+				BeginTailModelUpDiagnostic(runtime, snapshot, inputTime);
 				const auto metricsGeometryBefore = metricsState_ ? CaptureMetricGeometry(runtime) : MetricGeometrySnapshot{};
 				if (absl::Status status = updateContactModel(
 					runtime, upInput, inputTime, modelOutput); status.ok())
 				{
+					if (traceUp) runtime.stroke.tailInputDiagnostic.upStatus = 0;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
 					else if (sanitizeEndpoint)
 					{
 						BeginEndpointAdmission(runtime.stroke,
 							{ snapshot.position.x, snapshot.position.y });
-						AppendEndpointBoundedModeledPoints(runtime.stroke,
+						const auto accepted = AppendEndpointBoundedModeledPoints(runtime.stroke,
 							runtime.stroke.modelScratch, -1.0f,
 							runtime.stroke.lastMovementInputTime, true);
+						if (traceUp)
+						{
+							runtime.stroke.tailInputDiagnostic.upAccepted = accepted.acceptedResultCount;
+							runtime.stroke.tailInputDiagnostic.upEndpointPinned = accepted.endpointPinned;
+						}
 					}
 					else AppendRuntimeModeledPoints(runtime, -1.0f, inputTime);
 					if (metricsState_ && !cancelled)
@@ -9079,8 +9296,20 @@ namespace Inkeys::Drawing::Draw3
 				else
 				{
 					std::cout << "Error: " << status.message() << std::endl;
+					if (traceUp)
+					{
+						runtime.stroke.tailInputDiagnostic.upStatus = static_cast<int32_t>(status.code());
+						runtime.stroke.tailInputDiagnostic.upFallback = !runtime.shape.active;
+					}
 					if (!runtime.shape.active)
 						appendTerminalFallback(runtime, snapshot, inputTime);
+				}
+				if (traceUp)
+				{
+					auto& trace = runtime.stroke.tailInputDiagnostic;
+					trace.upProduced = modelOutput.size() >= traceOutputBefore ? modelOutput.size() - traceOutputBefore : 0;
+					trace.upGeometryAdded = runtime.stroke.realPoints.size() >= traceRealBefore ? runtime.stroke.realPoints.size() - traceRealBefore : 0;
+					if (!sanitizeEndpoint && trace.upStatus == 0) trace.upAccepted = trace.upGeometryAdded;
 				}
 				if (runtime.shape.active)
 				{
@@ -9108,6 +9337,7 @@ namespace Inkeys::Drawing::Draw3
 				ContactSnapshot snapshot;
 				if (!input_.TryReadSnapshot(runtime.handle, snapshot) ||
 					snapshot.sequence == runtime.lastConsumedSequence) return false;
+				NoteTailInputSnapshot(runtime, snapshot); // 必须先保存 Up 之前的已消费位置。
 				runtime.lastConsumedSequence = snapshot.sequence;
 				runtime.lastInputSnapshot = snapshot;
 				if (metricsState_)
@@ -9231,11 +9461,16 @@ namespace Inkeys::Drawing::Draw3
 				if (boundedEndpointUpdate) runtime.stroke.modelScratch.clear();
 				auto& modelOutput = boundedEndpointUpdate
 					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				const bool traceUp = runtime.stroke.tailInputDiagnostic.enabled && input.event_type == Input::EventType::kUp;
+				const size_t traceOutputBefore = traceUp ? modelOutput.size() : 0;
+				const size_t traceRealBefore = traceUp ? runtime.stroke.realPoints.size() : 0;
+				if (traceUp) BeginTailModelUpDiagnostic(runtime, snapshot, inputTime);
 				const auto metricsGeometryBefore = metricsState_ ? CaptureMetricGeometry(runtime) : MetricGeometrySnapshot{};
 				if (absl::Status status = updateContactModel(
 					runtime, input, inputTime, modelOutput); status.ok())
 				{
 					modelUpdateSucceeded = true;
+					if (traceUp) runtime.stroke.tailInputDiagnostic.upStatus = 0;
 					runtime.stationaryModelAdvanceBlocked = false;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
 					else if (boundedEndpointUpdate)
@@ -9247,9 +9482,14 @@ namespace Inkeys::Drawing::Draw3
 						{
 							BeginEndpointAdmission(runtime.stroke,
 								{ snapshot.position.x, snapshot.position.y });
-							AppendEndpointBoundedModeledPoints(runtime.stroke,
+							const auto accepted = AppendEndpointBoundedModeledPoints(runtime.stroke,
 								runtime.stroke.modelScratch, inputSpeed,
 								runtime.stroke.lastMovementInputTime, terminal);
+							if (traceUp)
+							{
+								runtime.stroke.tailInputDiagnostic.upAccepted = accepted.acceptedResultCount;
+								runtime.stroke.tailInputDiagnostic.upEndpointPinned = accepted.endpointPinned;
+							}
 						}
 					}
 					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
@@ -9261,10 +9501,22 @@ namespace Inkeys::Drawing::Draw3
 				else
 				{
 					std::cout << "Error: " << status.message() << std::endl;
+					if (traceUp)
+					{
+						runtime.stroke.tailInputDiagnostic.upStatus = static_cast<int32_t>(status.code());
+						runtime.stroke.tailInputDiagnostic.upFallback = terminal && !deferUp && !runtime.shape.active;
+					}
 					if (runtime.shape.active)
 						runtime.shape.rawFallbackRequired = true;
 					if (terminal && !deferUp && !runtime.shape.active)
 						appendTerminalFallback(runtime, snapshot, inputTime);
+				}
+				if (traceUp)
+				{
+					auto& trace = runtime.stroke.tailInputDiagnostic;
+					trace.upProduced = modelOutput.size() >= traceOutputBefore ? modelOutput.size() - traceOutputBefore : 0;
+					trace.upGeometryAdded = runtime.stroke.realPoints.size() >= traceRealBefore ? runtime.stroke.realPoints.size() - traceRealBefore : 0;
+					if (!boundedEndpointUpdate && trace.upStatus == 0) trace.upAccepted = trace.upGeometryAdded;
 				}
 				if (terminal && endpointTool && (modelUpdateSucceeded || !deferUp))
 					CapturePenTerminalTrace(runtime.stroke);

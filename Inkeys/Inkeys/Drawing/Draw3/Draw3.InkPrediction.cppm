@@ -438,9 +438,42 @@ export namespace Inkeys::Drawing::Draw3
 		size_t firstPoint = 0;
 	};
 
+	// 仅显式诊断启用时由消费者写入；固定数值状态不延长 contact 生命周期。
+	struct TailInputDiagnostic
+	{
+		bool enabled = false;
+		uint64_t snapshots = 0, moves = 0, maxSkippedSnapshots = 0, reconnects = 0;
+		uint64_t handleValue = 0, generation = 0;
+		uint32_t tcid = 0, cid = 0, device = 0, source = 0, tool = 0, rgb = 0;
+		// 整笔初始 Down 与接续后的当前 contact 分开归属，不能跨代次比较 sequence。
+		uint64_t initialHandleValue = 0, initialGeneration = 0;
+		uint32_t initialTcid = 0, initialCid = 0, initialDevice = 0, initialSource = 0;
+		uint64_t contactDownSequence = 0;
+		int64_t contactDownQpc = 0;
+		DirectX::XMFLOAT2 contactDownPosition = {};
+		uint32_t sourceRecognition = 0, sourceContext = 0, sourceCursor = 0;
+		uint64_t sourceGeneration = 0;
+		double styleWidthDip = 0;
+		float canvasOffsetX = 0, canvasOffsetY = 0;
+		int64_t qpcOrigin = 0;
+		uint64_t downSequence = 0, lastNonterminalSequence = 0;
+		uint64_t terminalPriorSequence = 0, terminalSequence = 0, currentSequence = 0;
+		int64_t downQpc = 0, lastNonterminalQpc = 0, terminalPriorQpc = 0, terminalQpc = 0;
+		DirectX::XMFLOAT2 downPosition = {}, lastNonterminalPosition = {};
+		DirectX::XMFLOAT2 terminalPriorPosition = {}, terminalPosition = {};
+		uint64_t upSequence = 0;
+		int64_t upQpc = 0;
+		DirectX::XMFLOAT2 upPosition = {};
+		double upModelTime = 0;
+		int32_t upStatus = -1;
+		uint64_t upProduced = 0, upAccepted = 0, upGeometryAdded = 0;
+		bool upFallback = false, upEndpointPinned = false;
+	};
+
 	struct ActiveStroke
 	{
 		ink::stroke_model::StrokeModeler modeler;
+		TailInputDiagnostic tailInputDiagnostic;
 		std::vector<ink::stroke_model::Result> modeledResults;
 		// stationary/terminal Update 复用该 scratch，避免累计 modeledResults 无界增长。
 		std::vector<ink::stroke_model::Result> modelScratch;
@@ -525,6 +558,8 @@ export namespace Inkeys::Drawing::Draw3
 	// 无 HWND：直接验证生产笔锋几何、真实模型停笔和完成/Stored 时间边界。
 	int RunPenTaperProductionProbe() noexcept;
 	// 用已确认真实点生成普通笔完成态尾段，并烘入最终笔锋宽度。
+	// 进程显式环境开关，默认关闭；Move 热路径只读取 Down 锁存的 enabled。
+	bool IsPenTailTraceEnabled() noexcept;
 	void RecordPenTailModelBoundary(ActiveStroke& stroke, double physicalTime) noexcept;
 	void RecordPenTailRawInput(ActiveStroke& stroke,
 		DirectX::XMFLOAT2 position, double physicalTime) noexcept;

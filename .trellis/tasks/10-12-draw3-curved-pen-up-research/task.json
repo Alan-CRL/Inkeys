@@ -2,7 +2,7 @@
   "id": "draw3-curved-pen-up-research",
   "name": "draw3-curved-pen-up-research",
   "title": "规划 Ink Stroke Modeler 源码编译与库内终态重构",
-  "description": "Modeler源码/vcpkg基线、独立终态算法及Draw3完成态自适应重构已实现；用户确认最新核心效果通过人工验收，临时诊断收尾及发布/接续验证待后续。",
+  "description": "四阶段源码基线、独立尾段算法、Draw3完成态与工程收尾已实现；最新用户确认鼠标/实体笔/触摸体验正常，最终发布验收记录由阶段四汇总。",
   "status": "planning",
   "dev_type": null,
   "scope": "draw3",
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-10-12",
   "completedAt": null,
-  "branch": null,
+  "branch": "bugfix/penstroke",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,7 +21,8 @@
   "children": [
     "10-12-modeler-source-build-baseline",
     "10-12-modeler-terminal-tail-reconstruction",
-    "10-12-draw3-local-tail-finalization"
+    "10-12-draw3-local-tail-finalization",
+    "10-13-draw3-tail-release-validation"
   ],
   "parent": null,
   "relatedFiles": [
@@ -32,6 +33,8 @@
     "Inkeys/Inkeys/Drawing/Draw3/Draw3.ContactInput.cpp",
     "Inkeys/additional/ink_stroke_modeler/params.h"
   ],
-  "notes": "2026-10-12阶段1已验收提交c34d3a56；阶段2用户批准创建/开始后，独立库模块及离线验收PASS：4配置19case旧API精确相同，96窗口116105assert0fail，默认18Apply/12改善记录，3架构有界成本、主Debug/Headless通过。产品/L1/Stored/taper/Touch仍规划，后续接入须依赖阶段2并补真实输入/设备及平台预算。阶段2NoGUI/no commit/push。 阶段三draw3-local-tail-finalization代码及无窗口验收通过，原始点为可选辅助，零辅助可修正；最终Stored允许重构当前L1尾段，断触等待不提前固化；真实GUI/设备尚未执行。 2026-10-13用户确认最新短1误修已解决，阶段三核心抬笔修正效果人工验收通过。当前使用最终Stored重画当前L1尾部；下一阶段关闭临时反色/同步日志并补接续、存储和发布配置验证，Touch立即Up预览条件实施。",
-  "meta": {}
+  "notes": "2026-10-12阶段1已验收提交c34d3a56；阶段2用户批准创建/开始后，独立库模块及离线验收PASS：4配置19case旧API精确相同，96窗口116105assert0fail，默认18Apply/12改善记录，3架构有界成本、主Debug/Headless通过。产品/L1/Stored/taper/Touch仍规划，后续接入须依赖阶段2并补真实输入/设备及平台预算。阶段2NoGUI/no commit/push。 阶段三draw3-local-tail-finalization代码及无窗口验收通过，原始点为可选辅助，零辅助可修正；最终Stored允许重构当前L1尾段，断触等待不提前固化；真实GUI/设备尚未执行。 2026-10-13用户确认最新短1误修已解决，阶段三核心抬笔修正效果人工验收通过。当前使用最终Stored重画当前L1尾部；下一阶段关闭临时反色/同步日志并补接续、存储和发布配置验证，Touch立即Up预览条件实施。 2026-10-13用户确认38916鼠标/触控板和9812实体笔/触摸均未出现异常，并明确暂缓此前偶发长斜线、完成阶段四。四阶段核心范围闭合；旧未复现事件和6为暂缓事项，Win7/GPU Debug Layer不冒称实测。",
+  "meta": {
+    "latestManualAcceptance": "mouse-pen-touch-accepted"
+  }
 }
