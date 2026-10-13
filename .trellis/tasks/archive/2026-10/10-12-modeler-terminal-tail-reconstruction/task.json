@@ -19,7 +19,7 @@
   "pr_url": null,
   "subtasks": [],
   "children": [],
-  "parent": "10-12-draw3-curved-pen-up-research",
+  "parent": null,
   "relatedFiles": [
     "Inkeys/additional/ink_stroke_modeler/terminal_tail_reconstructor.h",
     "Inkeys/additional/ink_stroke_modeler/terminal_tail_reconstructor.cc",

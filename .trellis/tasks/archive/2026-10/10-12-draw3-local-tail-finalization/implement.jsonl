@@ -2,5 +2,5 @@
 {"reason":"构建与无窗口验证","file":".trellis/spec/native/quality-and-validation.md"}
 {"reason":"Draw3完成态和固定库合同","file":".trellis/spec/native-desktop/draw3-integration.md"}
 {"reason":"主solution ARM64构建与ABI","file":".trellis/spec/native-desktop/build-and-compatibility.md"}
-{"file": ".trellis/tasks/10-12-draw3-local-tail-finalization/research/actual-log-repair-plan.md", "reason": "用户最新授权：可见折线触发、弧长扩窗、位移不作硬门及完成态重采样"}
-{"file": ".trellis/tasks/10-12-draw3-local-tail-finalization/research/actual-log-code-analysis.md", "reason": "现场8笔真实失败证据与可变点数集成边界"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-draw3-local-tail-finalization/research/actual-log-repair-plan.md", "reason": "用户最新授权：可见折线触发、弧长扩窗、位移不作硬门及完成态重采样"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-draw3-local-tail-finalization/research/actual-log-code-analysis.md", "reason": "现场8笔真实失败证据与可变点数集成边界"}

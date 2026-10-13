@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/native/index.md", "reason": "原生模型规范索引；需手工读取runtime-and-rendering:394-462相关合同"}
-{"file": ".trellis/spec/native-desktop/index.md", "reason": "产品规范索引；实施迁移前明确修订draw3-integration固定库合同，不隐式混链"}
-{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "第三方补丁/CRT/纯文档验证及构建范围"}
-{"file": ".trellis/tasks/10-12-draw3-curved-pen-up-research/research/modeler-source-build-and-abseil-split.md", "reason": "当前三架构库存、13cc清单、Abseil拆分、ABI与工程阶段门"}
-{"file": ".trellis/tasks/10-12-draw3-curved-pen-up-research/research/modeler-terminal-reconstruction-api.md", "reason": "新库内模块、替换协议、物理Up/重连、宽度/Stored和难点"}
