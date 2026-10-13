@@ -389,10 +389,11 @@
         "N": "Drawing Performance",
         "Device":
         {
-          "N": "Input Device",
-          "E": "Optimize for selected device.",
-          "Touch": "Touch Screen",
-          "MousePen": "Mouse, Pen, or Graphics Tablet"
+          "N": "Choose an interaction mode",
+          "Touch": "Large-Screen Touch Mode",
+          "MousePen": "Desktop Mode",
+          "TouchE": "For writing and interacting directly on large touchscreens in classrooms, meeting rooms, and similar settings.",
+          "MousePenE": "For PCs, tablets, and mouse-operated large displays, with mouse, pen, graphics tablet, or touch input."
         }
       },
       "Eraser":

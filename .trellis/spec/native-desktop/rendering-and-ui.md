@@ -1526,7 +1526,7 @@ FrameResult RenderSettingFrame(const FrameContext&);
 
 - HWND 所属线程只处理 capture/cursor/IME、生命周期和 `ImGui_ImplWin32_WndProcHandlerEx`；专用 recursive mutex 串行访问 ImGui IO，因为 Win32 backend 的 `SetCapture`/`ReleaseCapture`/IME 调用可能同步重入同一 WndProc。ImGui context、DX11 backend、NewFrame/draw/Present 只由 RenderPipeline 线程使用。
 - Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；隐藏时逆序释放 backend、SRV、swap chain/RTV，返回 `Idle`。resize、遮挡和 epoch 变化由 `SessionState` 决策，不在 WndProc 直接操作 D3D。
-- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`。停止时禁止新命令，并按 FIFO 排空已接收命令。
+- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；配置 I/O 命令的 worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`；绘图状态同步命令按下文专用合同读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
 
@@ -1906,3 +1906,52 @@ Bar、PPT 与 Setting 共享 RenderPipeline device epoch 和调度线程；Bar/P
 - 设置窗口的 DX11 resize/遮挡、hide/show/stop 资源清理，以及 SRV 图片颜色/透明度；
 - 画板的基础层、活动笔画、撤销/恢复和 PPT 换页合成；
 - UI3 Bar 是唯一悬浮栏路径；不得把 UI2 源码重新加入产品回归矩阵。
+
+
+## Setting 绘制期间的 Draw3 同步合同
+
+### 1. Scope / Trigger
+设置会话在 ImGui 临界区内直接或经橡皮等业务 setter 调用 SyncDraw3State 时适用。2026-10-13 卡死源于渲染线程持 ImGui 锁等待 Setting HWND 命令，而 HWND WndProc 正等待同一把锁。
+
+### 2. Signatures
+- `Setting::DeferDraw3SyncIfRendering() -> bool`。
+- `SetListStruct.paintDevice: IdtAtomic<int>`，`CaptureSettingJson`显式load并保持PaintDevice整数；每次Sync只load一次用于比较和赋值。
+- `SettingRenderScope` 标记当前线程正在设置会话 Resume；`settingRenderingOnCurrentThread` 为 thread_local。
+- `SyncDraw3State()` 入口先调用 defer guard；业务 FIFO 增加 `SettingBusinessKind::SyncDraw3State`，worker 调用全局生产 Sync。
+
+### 3. Contracts
+- 设置绘制作用域内 guard 返回 true 并转交现有 FIFO，调用方立即返回；不能持 ImGui 锁同步等 HWND。
+- 非设置绘制线程 guard 返回 false，保持原有同步语义。thread_local 防止 worker 再次延后自己。
+- 选项先更新当前配置，Sync 命令随后按最新状态应用；配置写盘仍在生产者线程冻结 payload，并排在同一 FIFO 中的 Sync 之后。
+- Setting owner 的 HWND 线程所有权、desired/applied 版本与 250ms 重试保持不变，不用 try_lock 丢弃同步或跨线程直接改 HWND。
+- 停止生产后排空已接受命令；停止期拒绝入队沿用现有队列语义，不能回退到锁内执行 Sync。guard 的 true 表示已拦截同步，不等于窗口事务已经应用成功。
+
+### 4. Validation & Error Matrix
+| 条件 | 行为 |
+| --- | --- |
+| Render 持 ImGui 锁，模拟 HWND 正等锁 | 同步提交立即返回；释放 render 锁后 worker 能完成 |
+| 非 render 调用 | 原同步路径执行 |
+| 快速连续修改 | FIFO 保持顺序，应用最新运行时状态，写盘消费各次已冻结 payload |
+| 停止队列 | 已接受命令排空，新命令按既有停止语义拒绝，不在 render 锁内执行 |
+| 窗口 owner 应用失败 | 保留既有 desired/applied 差异及重试 |
+
+### 5. Good / Base / Bad Cases
+- Good：模式下拉或橡皮 setter 发起 Sync 后渲染继续；worker 执行实际 HWND 调度。
+- Base：状态监控、非设置工具入口继续同步应用。
+- Bad：只换 Combo/Radio 控件，仍在 ImGui 锁内等待 Window::Submit 的 future；或只用计数式 Sync 桩测试就宣称卡死已修复。
+
+### 6. Tests Required
+- 使用生产业务 FIFO、render 标记及 defer guard 的无窗口线程回归：锁内提交不阻塞、worker 竞争锁后完成、非render语义、FIFO顺序、重复修改/停止排空。
+- 控件回放另验证三语下拉与信息卡片缩放几何；它不能代替线程调度测试。
+- 完整 ARM64 solution 与 Headless --no-window；受限环境出现已知 PDB/文件权限失败时区分环境并按权限规则复核。
+
+### 7. Wrong vs Correct
+```cpp
+// Wrong：设置会话持 ImGui 锁时进入同步 HWND 等待。
+void SyncDraw3State() { ApplySettingOwnerDesiredState(...); }
+// Correct：只延后设置渲染发起的同步，worker 和其他线程仍走原生产路径。
+void SyncDraw3State() {
+    if (Inkeys::UI::Setting::DeferDraw3SyncIfRendering()) return;
+    // 原有状态/owner/呈现同步。
+}
+```

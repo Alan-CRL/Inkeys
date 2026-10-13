@@ -41,7 +41,8 @@ struct SetListStruct
 #pragma endregion
 
 #pragma region 绘制
-	int paintDevice;
+	// 设置渲染与后台同步并发读写，沿用可复制的原子配置字段。
+	IdtAtomic<int> paintDevice;
 	IdtAtomic<bool> disableRTS;
 
 	bool liftStraighten, waitStraighten;

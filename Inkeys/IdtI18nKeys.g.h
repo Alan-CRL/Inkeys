@@ -393,9 +393,10 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__Draw__Effect__Device
                 {
                     const char* N = "SettingsUI/Draw/Effect/Device/N";
-                    const char* E = "SettingsUI/Draw/Effect/Device/E";
                     const char* Touch = "SettingsUI/Draw/Effect/Device/Touch";
                     const char* MousePen = "SettingsUI/Draw/Effect/Device/MousePen";
+                    const char* TouchE = "SettingsUI/Draw/Effect/Device/TouchE";
+                    const char* MousePenE = "SettingsUI/Draw/Effect/Device/MousePenE";
                 } Device{};
             } Effect{};
             struct Node__SettingsUI__Draw__Eraser

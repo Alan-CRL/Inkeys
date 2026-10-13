@@ -776,12 +776,14 @@ namespace { void ResolveWidthSlotsLocked(); }
 
 void SyncDraw3State()
 {
+	if (Inkeys::UI::Setting::DeferDraw3SyncIfRendering()) return;
     // 设备更新必须在同锁内只改设备字段，避免用旧显示快照覆盖新的目标 DPI。
     {
         std::scoped_lock lock(stateModeTransitionMutex);
-        if (stateMode.penWidthContext.paintDevice != setlist.paintDevice)
+        const int paintDevice = setlist.paintDevice.load();
+        if (stateMode.penWidthContext.paintDevice != paintDevice)
         {
-            stateMode.penWidthContext.paintDevice = setlist.paintDevice;
+            stateMode.penWidthContext.paintDevice = paintDevice;
             ResolveWidthSlotsLocked();
             stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
         }

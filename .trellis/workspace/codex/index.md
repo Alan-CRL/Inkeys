@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 68
-- **Last Active**: 2026-10-12
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 76
+- **Last Active**: 2026-10-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~2000 | Active |
+| `journal-2.md` | ~55 | Active |
+| `journal-1.md` | ~2000 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 76 | 2026-10-13 | 修复设置模式切换卡死并恢复下拉卡片 | - | `feature/mode` |
+| 75 | 2026-10-13 | 交互模式切换入口与三语文案 | - | `feature/mode` |
 | 68 | 2026-10-12 | Redo popup 人工验收通过并归档 | `7094cea4` | `feature/redo` |
 | 67 | 2026-10-12 | 最近 Clear 区间 Undo 与前进 Redo 完整链修复 | - | `feature/redo` |
 | 66 | 2026-10-12 | Redo2x2点击暂态主栏扩宽修复 | - | `feature/redo` |
