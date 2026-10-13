@@ -14,6 +14,7 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
 #include "Bar.BottomDock.h"
+#include "../StartupPlacement.h"
 #include "Bar.DisplayTransition.h"
 #include "Bar.I18nFormat.h"
 #include "Bar.PresentDecision.h"
@@ -1395,7 +1396,7 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			mainButton->n.value().SetTar(3.0, operationDur);
 
 			mainButton->pct.SetTar(
-				0.6, operationDur, nullopt, false, mainButtonPctCurveSpec);
+				BarMainButtonCollapsedFillOpacity, operationDur, nullopt, false, mainButtonPctCurveSpec);
 		}
 		else
 		{
@@ -3068,8 +3069,11 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			double mainBarFrameHalfDip = mainBar->ft.has_value()
 				? max(0.0, static_cast<double>(mainBar->ft.value().tar) / 2.0)
 				: 0.0;
+			const bool floatingStartup = !whiteboardDockPlacement
+				&& owner_.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar;
 			const bool opensRight = whiteboardDockPlacement
-				? static_cast<bool>(state.barState.widgetPosition.mainBar) : true;
+				? static_cast<bool>(state.barState.widgetPosition.mainBar)
+				: owner_.startupPlacement != Inkeys::UI::StartupPlacement::BottomRightFloating;
 			const double bodyLeftDip = opensRight
 				? -mainButton->GetW() / 2.0 - mainFrameHalfDip
 				: -mainButton->GetW() / 2.0 - 10.0 - totalWidth
@@ -3078,7 +3082,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				? mainButton->GetW() / 2.0 + 10.0 + totalWidth
 					+ mainBarFrameHalfDip
 				: mainButton->GetW() / 2.0 + mainFrameHalfDip;
-			const double screenCenterX =
+			double screenCenterX =
 				ResolveBarBottomDockInitialMainCenterScreenX(
 					state.activeMonitorBounds, bodyLeftDip, bodyRightDip,
 					mainButton->GetW() / 2.0 + mainFrameHalfDip,
@@ -3090,9 +3094,26 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
 				mainBar->ft.has_value()
 					? static_cast<double>(mainBar->ft.value().tar) : 0.0);
-			const double screenCenterY = ResolveBarBottomDockCenterScreenY(
+			double screenCenterY = ResolveBarBottomDockCenterScreenY(
 				dockLine, state.mainButtonBaseSize,
 				strokeWidthDip, placementZoom);
+			if (!whiteboardDockPlacement)
+			{
+				// Preview 与正式主体共用可见描边包络；窗口留白由 ULW 自行管理。
+				const double visibleWidth = floatingStartup
+					? mainButton->GetW() + 2.0 * mainFrameHalfDip
+					: bodyRightDip - bodyLeftDip;
+				const RECT visible = Inkeys::UI::ResolveStartupPlacementBounds(
+					owner_.startupPlacement, state.activeMonitorBounds, state.activeWorkArea,
+					visibleWidth, state.mainButtonBaseSize + strokeWidthDip,
+					placementZoom, state.barStyle.dpiZoom);
+				screenCenterX = floatingStartup
+					? (static_cast<double>(visible.left) + visible.right) / 2.0
+					: visible.left - bodyLeftDip * placementZoom;
+				screenCenterY = floatingStartup
+					? (static_cast<double>(visible.top) + visible.bottom) / 2.0
+					: visible.bottom - (state.mainButtonBaseSize + strokeWidthDip) * placementZoom / 2.0;
+			}
 
 			if (whiteboardDockPlacement)
 			{
@@ -3115,9 +3136,9 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			}
 			// PPT 场景不主动展开；交接期间的新收起请求仍由用户持有。
 			if (!state.pptDockPlacementPending || state.whiteboardDockPlacementPending)
-				state.barState.fold = false;
+				state.barState.fold = floatingStartup;
 			if (!whiteboardDockPlacement)
-				state.barState.widgetPosition.mainBar = true;
+				state.barState.widgetPosition.mainBar = opensRight;
 			state.barState.widgetPosition.primaryBar = false;
 			if (whiteboardDockPlacement)
 			{
@@ -13641,9 +13662,11 @@ BarRenderLoopCoordinator::RenderFrame(
 		|| frame.bottomDockRecoveryActive;
 	if (!state.initialBottomDockPlacementApplied)
 	{
-		const bool initialSide = ResolveBarBottomDockInitialMainBarSide(
-			state.whiteboardDockPlacementPending,
-			state.barState.widgetPosition.mainBar);
+		const bool initialSide = !state.whiteboardDockPlacementPending
+			&& owner_.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar
+			? owner_.startupPlacement == Inkeys::UI::StartupPlacement::BottomLeftFloating
+			: ResolveBarBottomDockInitialMainBarSide(
+				state.whiteboardDockPlacementPending, state.barState.widgetPosition.mainBar);
 		// 首次方向缓存先于 PositionUpdate 建立，避免桌面默认侧或白板既有侧被覆盖。
 		state.barState.widgetPosition.mainBar = initialSide;
 		state.mainBarLayoutSide = initialSide;

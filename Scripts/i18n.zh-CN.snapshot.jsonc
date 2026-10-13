@@ -427,6 +427,18 @@
         }
       }
     },
+    "Preset":
+    {
+      "N": "预设",
+      "StartupPlacement":
+      {
+        "N": "启动后位置",
+        "E": "居中底栏会展开显示主栏；左下角或右下角悬浮窗只显示主按钮。更改将在下次启动时生效。",
+        "CenteredBottomBar": "居中底栏",
+        "BottomLeftFloating": "左下角悬浮窗",
+        "BottomRightFloating": "右下角悬浮窗"
+      }
+    },
     "Experimental":
     {
       "ConsoleOutput":

@@ -1,4 +1,15 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
+#include <d3d11.h>
+#include <d2d1_1.h>
+#include <wrl/client.h>
+#include "../Inkeys/Inkeys/UI/StartupPlacement.h"
+#include "../Inkeys/Inkeys/UI/StartupPreview/StartupPreview.Drawing.h"
+
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "d2d1.lib")
 
 #include <algorithm>
 #include <chrono>
@@ -8,6 +19,8 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <cstring>
+#include <vector>
 
 #include <json/json.h>
 
@@ -94,13 +107,292 @@ namespace
 			config.UI.Bar.Zoom.load(),
 		};
 	}
+	int RunStartupPlacementConfigTests()
+	{
+		using namespace Inkeys::UI;
+		namespace fs = std::filesystem;
+		int failures = 0;
+		const fs::path root = fs::temp_directory_path() / (L"inkeys-startup-placement-"
+			+ std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+		const std::wstring previousPath = globalPath;
+		struct Cleanup final
+		{
+			fs::path root;
+			std::wstring previous;
+			~Cleanup() { globalPath = previous; std::error_code ignored; fs::remove_all(root, ignored); }
+		} cleanup{ root, previousPath };
+		const fs::path path = root / L"Inkeys" / L"Config" / L"main.json";
+		std::error_code error;
+		fs::create_directories(path.parent_path(), error);
+		if (!Expect(!error, "create startup placement config fixture")) return 1;
+		globalPath = root.wstring() + L"\\";
+		auto write = [&](const Json::Value& document)
+		{
+			std::ofstream file(path, std::ios::binary | std::ios::trunc);
+			Json::StreamWriterBuilder writer; writer["indentation"] = "";
+			file << Json::writeString(writer, document);
+			return file.good();
+		};
+		for (const Json::Value value : { Json::Value(), Json::Value(-1), Json::Value(0),
+			Json::Value(1), Json::Value(2), Json::Value(3), Json::Value("left") })
+		{
+			Json::Value document(Json::objectValue);
+			if (!value.isNull()) document["UI"]["Bar"]["StartupPlacement"] = value;
+			document["UI"]["Bar"]["Zoom"] = 1.25;
+			if (!Expect(write(document), "write startup placement input fixture")) { ++failures; continue; }
+			Inkeys::Config mini;
+			const bool miniRead = mini.ReadMini({ "UI.Bar.StartupPlacement", "UI.Bar.Zoom" });
+			Inkeys::Config all;
+			const bool allRead = all.ReadAll();
+			const auto expected = NormalizeStartupPlacement(value.isInt() ? value.asInt() : 0);
+			if (!Expect(miniRead && allRead && mini.UI.Bar.Zoom.load() == 1.25
+				&& NormalizeStartupPlacement(mini.UI.Bar.StartupPlacement.load()) == expected
+				&& NormalizeStartupPlacement(all.UI.Bar.StartupPlacement.load()) == expected,
+				"Mini/All normalize missing, illegal and all three startup placements consistently")) ++failures;
+		}
+		Json::Value document(Json::objectValue);
+		document["UI"]["Bar"]["StartupPlacement"] = 1;
+		if (!Expect(write(document), "write frozen-startup fixture")) return failures + 1;
+		Inkeys::Config config;
+		if (!Expect(config.ReadMini({ "UI.Bar.StartupPlacement" }), "read startup mini")) return failures + 1;
+		StartupPreview::StartOptions frozen;
+		frozen.startupPlacement = NormalizeStartupPlacement(config.UI.Bar.StartupPlacement.load());
+		document["UI"]["Bar"]["StartupPlacement"] = 2;
+		if (!Expect(write(document) && config.ReadAll()
+			&& config.UI.Bar.StartupPlacement.load() == 2
+			&& frozen.startupPlacement == StartupPlacement::BottomLeftFloating,
+			"full config read cannot mutate this startup's frozen Preview choice")) ++failures;
+		for (int placement = 0; placement != 3; ++placement)
+		{
+			config.UI.Bar.StartupPlacement = placement;
+			Inkeys::Config payload;
+			payload = config; // 与设置FIFO相同的值快照，不引用活动config。
+			config.UI.Bar.StartupPlacement = (placement + 1) % 3;
+			const bool saved = payload.Write();
+			Inkeys::Config next;
+			if (!Expect(saved && next.ReadMini({ "UI.Bar.StartupPlacement" })
+				&& next.UI.Bar.StartupPlacement.load() == placement
+				&& frozen.startupPlacement == StartupPlacement::BottomLeftFloating,
+				"frozen write payload round-trips selected placement only for next launch")) ++failures;
+		}
+		return failures;
+	}
+
+	int RunStartupPlacementGeometryTests()
+	{
+		using namespace Inkeys::UI;
+		int failures = 0;
+		const RECT monitor{ -2560, -400, 0, 1040 };
+		const RECT work{ -2500, -360, 0, 1000 };
+		for (const UINT dpi : { 96U, 120U, 144U, 192U })
+			for (const double zoom : { .75, 1.0, 1.25, 1.5 })
+			{
+				const double scale = StartupPreview::ResolveStartupPreviewScale(dpi, zoom);
+				const LONG margin = static_cast<LONG>(std::lround(24.0 * scale));
+				for (const auto placement : { StartupPlacement::BottomLeftFloating, StartupPlacement::BottomRightFloating })
+				{
+					const auto bounds = StartupPreview::ResolveStartupPreviewBounds(monitor, work,
+						470.0, 80.0, dpi, zoom, placement);
+					const auto shared = ResolveStartupPlacementBounds(placement, monitor, work, 81.0, 81.0,
+						scale, static_cast<double>(dpi) / 96.0);
+					if (!Expect(EqualRect(&bounds, &shared)
+						&& bounds.right - bounds.left == std::lround(81.0 * scale)
+						&& bounds.bottom - bounds.top == std::lround(81.0 * scale)
+						&& work.bottom - bounds.bottom == margin
+						&& (placement == StartupPlacement::BottomLeftFloating
+							? bounds.left - work.left : work.right - bounds.right) == margin,
+						"negative-origin Preview/formal visible stroke envelope has equal 24 DIP margins")) ++failures;
+				}
+			}
+		return failures;
+	}
+
+	struct BgraPixel final { unsigned char blue, green, red, alpha; };
+
+	class OffscreenPreview final
+	{
+		using MicrosoftComPtr = Microsoft::WRL::ComPtr<ID2D1DeviceContext>;
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID2D1Factory1> factory;
+		Microsoft::WRL::ComPtr<ID2D1Device> d2d;
+		MicrosoftComPtr context;
+		Microsoft::WRL::ComPtr<ID2D1Bitmap1> target, mask, readable;
+		Microsoft::WRL::ComPtr<ID2D1Geometry> shape;
+		Microsoft::WRL::ComPtr<ID2D1StrokeStyle> ringStroke;
+		Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> fill, frame, track, indicator, maskFill, maskStroke;
+		Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> shimmer;
+		bool floating = false;
+		float scale = 1.f;
+	public:
+		UINT width = 0, height = 0;
+		HRESULT Initialize(bool isFloating, float pixelScale)
+		{
+			using namespace Inkeys::UI::StartupPreview;
+			floating = isFloating; scale = pixelScale;
+			width = static_cast<UINT>(std::lround((floating ? 81.0 : 471.0) * scale));
+			height = static_cast<UINT>(std::lround(81.0 * scale));
+			HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr);
+			if (FAILED(hr)) return hr;
+			Microsoft::WRL::ComPtr<IDXGIDevice> dxgi;
+			hr = device.As(&dxgi); if (FAILED(hr)) return hr;
+			hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, factory.GetAddressOf()); if (FAILED(hr)) return hr;
+			hr = factory->CreateDevice(dxgi.Get(), &d2d); if (FAILED(hr)) return hr;
+			hr = d2d->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &context); if (FAILED(hr)) return hr;
+			const auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+			hr = context->CreateBitmap(D2D1::SizeU(width, height), nullptr, 0, &properties, &target); if (FAILED(hr)) return hr;
+			const auto maskProperties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET,
+				D2D1::PixelFormat(DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+			hr = context->CreateBitmap(D2D1::SizeU(width, height), nullptr, 0, &maskProperties, &mask); if (FAILED(hr)) return hr;
+			const auto readProperties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+			hr = context->CreateBitmap(D2D1::SizeU(width, height), nullptr, 0, &readProperties, &readable); if (FAILED(hr)) return hr;
+			hr = Drawing::CreateShape(factory.Get(), static_cast<float>(width), static_cast<float>(height), scale, floating, &shape); if (FAILED(hr)) return hr;
+			hr = Drawing::CreateRingStroke(factory.Get(), &ringStroke); if (FAILED(hr)) return hr;
+			hr = context->CreateSolidColorBrush(D2D1::ColorF(24.f/255.f, 24.f/255.f, 24.f/255.f), &fill); if (FAILED(hr)) return hr;
+			hr = context->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f), &frame); if (FAILED(hr)) return hr;
+			hr = context->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, .24f), &track); if (FAILED(hr)) return hr;
+			hr = context->CreateSolidColorBrush(D2D1::ColorF(.38f, .80f, 1.f), &indicator); if (FAILED(hr)) return hr;
+			hr = context->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f), &maskFill); if (FAILED(hr)) return hr;
+			hr = context->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f), &maskStroke); if (FAILED(hr)) return hr;
+			const auto gradient = ResolveStartupPreviewShimmerGradient(width, height);
+			hr = Drawing::CreateShimmer(context.Get(), D2D1::Point2F(static_cast<float>(gradient.startX), static_cast<float>(gradient.startY)),
+				D2D1::Point2F(static_cast<float>(gradient.endX), static_cast<float>(gradient.endY)), &shimmer); if (FAILED(hr)) return hr;
+			context->SetTarget(mask.Get()); context->BeginDraw(); context->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
+			Drawing::DrawShape(context.Get(), shape.Get(), maskFill.Get(), maskStroke.Get(), scale,
+				static_cast<float>(floating ? StartupPreviewFloatingFillAlpha : StartupPreviewFillAlpha),
+				static_cast<float>(StartupPreviewFrameAlpha));
+			hr = context->EndDraw(); context->SetTarget(nullptr); return hr;
+		}
+
+		std::vector<BgraPixel> Render(double ratio, bool failed, bool showRing, double shimmerPhase)
+		{
+			using namespace Inkeys::UI::StartupPreview;
+			context->SetTarget(target.Get()); context->BeginDraw(); context->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
+			Drawing::DrawShape(context.Get(), shape.Get(), fill.Get(), frame.Get(), scale,
+				static_cast<float>(floating ? StartupPreviewFloatingFillAlpha : StartupPreviewFillAlpha),
+				static_cast<float>(StartupPreviewFrameAlpha));
+			if (shimmerPhase >= 0.0)
+			{
+				const auto gradient = ResolveStartupPreviewShimmerGradient(width, height);
+				const auto travel = ResolveShimmerTravel({ 0., 0., static_cast<double>(width), static_cast<double>(height) },
+					gradient, (std::max)(8.0, std::hypot(gradient.endX-gradient.startX, gradient.endY-gradient.startY)*.10));
+				const auto translation = ResolveShimmerTranslation(travel, shimmerPhase);
+				shimmer->SetStartPoint(D2D1::Point2F(static_cast<float>(gradient.startX+translation.x), static_cast<float>(gradient.startY+translation.y)));
+				shimmer->SetEndPoint(D2D1::Point2F(static_cast<float>(gradient.endX+translation.x), static_cast<float>(gradient.endY+translation.y)));
+				Drawing::DrawShimmer(context.Get(), mask.Get(), shimmer.Get(), static_cast<float>(width), static_cast<float>(height));
+			}
+			HRESULT draw = S_OK;
+			if (showRing) draw = Drawing::DrawRing(context.Get(), ringStroke.Get(), track.Get(), indicator.Get(),
+				D2D1::Point2F(width*.5f, height*.5f), scale, ratio, 1.f, failed);
+			const HRESULT end = context->EndDraw(); context->SetTarget(nullptr);
+			if (FAILED(draw) || FAILED(end) || FAILED(readable->CopyFromBitmap(nullptr, target.Get(), nullptr))) return {};
+			D2D1_MAPPED_RECT mapped{};
+			if (FAILED(readable->Map(D2D1_MAP_OPTIONS_READ, &mapped))) return {};
+			std::vector<BgraPixel> pixels(static_cast<size_t>(width)*height);
+			for (UINT y=0; y<height; ++y) std::memcpy(pixels.data()+static_cast<size_t>(y)*width,
+				mapped.bits+static_cast<size_t>(y)*mapped.pitch, static_cast<size_t>(width)*sizeof(BgraPixel));
+			(void)readable->Unmap(); return pixels;
+		}
+	};
+
+	bool Blue(const BgraPixel& pixel) { return pixel.blue > pixel.red + 30 && pixel.green > pixel.red + 15; }
+	bool Red(const BgraPixel& pixel) { return pixel.red > pixel.blue + 12 && pixel.red > pixel.green + 12; }
+
+	void SavePreviewBitmap(const std::filesystem::path& name, UINT width, UINT height, const std::vector<BgraPixel>& pixels)
+	{
+		if (pixels.empty()) return;
+		std::error_code ignored;
+		const auto directory = std::filesystem::current_path() / L"Build" / L"StartupPreviewVisualQA";
+		std::filesystem::create_directories(directory, ignored);
+		BITMAPFILEHEADER file{}; file.bfType=0x4d42; file.bfOffBits=sizeof(file)+sizeof(BITMAPINFOHEADER);
+		file.bfSize=file.bfOffBits+width*height*4;
+		BITMAPINFOHEADER info{}; info.biSize=sizeof(info); info.biWidth=static_cast<LONG>(width);
+		info.biHeight=-static_cast<LONG>(height); info.biPlanes=1; info.biBitCount=32; info.biCompression=BI_RGB;
+		std::ofstream output(directory/name,std::ios::binary|std::ios::trunc);
+		output.write(reinterpret_cast<const char*>(&file),sizeof(file)); output.write(reinterpret_cast<const char*>(&info),sizeof(info));
+		output.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()*sizeof(BgraPixel)));
+	}
+
+	int RunStartupPreviewPixelTests()
+	{
+		int failures=0;
+		for (const bool floating : { false, true })
+			for (const float scale : { 1.f, 1.5625f, 2.f, 2.25f })
+			{
+				OffscreenPreview renderer;
+				const HRESULT init=renderer.Initialize(floating,scale);
+				if (!Expect(SUCCEEDED(init),"create HWND-free production D2D/WARP pixel fixture"))
+				{ std::cerr << "D2D HRESULT=" << std::hex << init << std::dec << '\n'; ++failures; continue; }
+				const auto base=renderer.Render(0.,false,false,-1.);
+				const auto start=renderer.Render(0.,false,false,0.);
+				const auto middle=renderer.Render(0.,false,false,.5);
+				const auto finish=renderer.Render(0.,false,false,1.);
+				const auto zero=renderer.Render(0.,false,true,-1.);
+				const auto half=renderer.Render(.5,false,true,-1.);
+				const auto full=renderer.Render(1.,false,true,-1.);
+				const auto fatal=renderer.Render(.5,true,true,-1.);
+				const auto fatalZero=renderer.Render(0.,true,true,-1.);
+				const size_t count=static_cast<size_t>(renderer.width)*renderer.height;
+				if (!Expect(base.size()==count&&start.size()==count&&middle.size()==count&&finish.size()==count
+					&&zero.size()==count&&half.size()==count&&full.size()==count&&fatal.size()==count&&fatalZero.size()==count,
+					"all production preview bitmap draws and CPU readbacks succeed")) { ++failures; continue; }
+				auto at=[&](const auto& pixels,double x,double y)->const BgraPixel&
+				{ return pixels[static_cast<size_t>(std::lround(y))*renderer.width+static_cast<size_t>(std::lround(x))]; };
+				const double cx=renderer.width*.5, cy=renderer.height*.5, radius=14.5*scale;
+				if (!Expect(base.front().alpha==0 && base.back().alpha==0
+					&& std::abs(static_cast<int>(at(base,cx,cy).alpha)-(floating?153:204))<=1,
+					"actual shape has transparent corners and correct center per-pixel fill alpha")) ++failures;
+				bool endpointsEqual=true,changed=false,maskClipped=true;
+				for (size_t i=0;i<count;++i)
+				{
+					endpointsEqual &= std::memcmp(&base[i],&start[i],sizeof(BgraPixel))==0
+						&& std::memcmp(&base[i],&finish[i],sizeof(BgraPixel))==0;
+					changed |= middle[i].red>base[i].red+5;
+					if (base[i].alpha==0) maskClipped &= middle[i].alpha==0;
+				}
+				if (!Expect(endpointsEqual&&changed&&maskClipped,"real shimmer crosses the opacity mask and is absent at both offscreen endpoints")) ++failures;
+				if (floating && !Expect(at(base,5.*scale,5.*scale).alpha==0 && at(base,12.*scale,12.*scale).alpha>0,
+					"production n3 superellipse is rounder than a rounded square and fuller than an ellipse")) ++failures;
+				if (!Expect(!Blue(at(zero,cx,cy-radius)) && Blue(at(half,cx+radius,cy))
+					&& !Blue(at(half,cx-radius,cy)) && Blue(at(full,cx-radius,cy))
+					&& at(full,cx,cy).alpha==at(base,cx,cy).alpha,
+					"real ring pixels reflect 0/50/100 percent clockwise progress with hollow center")) ++failures;
+				if (!Expect(Red(at(fatal,cx+radius,cy)) && !Blue(at(fatal,cx+radius,cy))
+					&& Red(at(fatalZero,cx+radius,cy)),"first fatal pixels are red, including zero actual progress without a fake arc")) ++failures;
+				if (scale>=1.5f && !Expect(Blue(at(half,cx-scale,cy-radius)) && Blue(at(half,cx-scale,cy+radius)),
+					"production open ring arc uses round caps extending beyond top/bottom endpoints")) ++failures;
+				int minX=static_cast<int>(renderer.width), maxX=-1;
+				int minY=static_cast<int>(renderer.height), maxY=-1;
+				for (UINT y=0;y<renderer.height;++y) for (UINT x=0;x<renderer.width;++x)
+					if (Blue(full[static_cast<size_t>(y)*renderer.width+x]))
+					{ minX=(std::min)(minX,static_cast<int>(x)); maxX=(std::max)(maxX,static_cast<int>(x));
+					  minY=(std::min)(minY,static_cast<int>(y)); maxY=(std::max)(maxY,static_cast<int>(y)); }
+				int radialStrokePixels=0;
+				for (int x=static_cast<int>(cx+8.*scale);x<=static_cast<int>(cx+20.*scale);++x)
+					if (Blue(at(full,x,cy))) ++radialStrokePixels;
+				if (!Expect(std::abs((maxX-minX+1)-32.*scale)<=2.
+					&& std::abs((maxY-minY+1)-32.*scale)<=2.
+					&& std::abs(radialStrokePixels-3.*scale)<=2.,
+					"production ring preserves 32 DIP outer diameter and 3 DIP stroke at fractional DPI times zoom")) ++failures;
+				const std::wstring prefix=(floating?L"corner-":L"center-")+std::to_wstring(scale)+L"x-";
+				SavePreviewBitmap(prefix+L"0.bmp",renderer.width,renderer.height,zero);
+				SavePreviewBitmap(prefix+L"50.bmp",renderer.width,renderer.height,half);
+				SavePreviewBitmap(prefix+L"100.bmp",renderer.width,renderer.height,full);
+				SavePreviewBitmap(prefix+L"fatal.bmp",renderer.width,renderer.height,fatal);
+				SavePreviewBitmap(prefix+L"shimmer.bmp",renderer.width,renderer.height,middle);
+			}
+		return failures;
+	}
+
 }
 
 int RunStartupPreviewStateTests()
 {
 	using namespace Inkeys::UI::StartupPreview;
 	using namespace std::chrono_literals;
-	int failures = 0;
+	int failures = RunStartupPlacementConfigTests() + RunStartupPlacementGeometryTests() + RunStartupPreviewPixelTests();
 
 	if (!Expect(DefaultMainBarBodyWidthDip == 380.0
 		&& DefaultCachedStartupBarWidthDip == 470.0
@@ -115,7 +407,7 @@ int RunStartupPreviewStateTests()
 		"preview uses MainBar dark surface visuals and derives 380/470 DIP geometry"))
 		++failures;
 	if (!Expect(CalculateStartupBarTotalWidthDip(80.0, 380.0, false) == 80.0,
-		"collapsed geometry publishes only the main button width")) ++failures;
+		"collapsed nominal geometry contains only the main button")) ++failures;
 	for (const double invalid : { 0.0, -1.0, 79.99, 4096.01,
 		(std::numeric_limits<double>::quiet_NaN)(),
 		(std::numeric_limits<double>::infinity)(),
@@ -154,14 +446,14 @@ int RunStartupPreviewStateTests()
 	const RECT negativeWorkArea{ -1920, 0, 0, 1040 };
 	const RECT centered = ResolveStartupPreviewBounds(
 		negativeMonitor, negativeWorkArea, 470.0, 80.0, 96, 1.0);
-	if (!Expect(centered.left == -1195 && centered.right == -725
-		&& centered.top == 960 && centered.bottom == 1040,
+	if (!Expect(centered.left == -1196 && centered.right == -725
+		&& centered.top == 959 && centered.bottom == 1040,
 		"complete placeholder envelope stays centered in negative work area")) ++failures;
 	const RECT sideTaskbarWorkArea{ -1870, 0, 0, 1080 };
 	const RECT sideTaskbar = ResolveStartupPreviewBounds(
 		negativeMonitor, sideTaskbarWorkArea, 470.0, 80.0, 96, 1.0);
-	if (!Expect(sideTaskbar.left == -1195 && sideTaskbar.right == -725
-		&& sideTaskbar.top == 1000 && sideTaskbar.bottom == 1080,
+	if (!Expect(sideTaskbar.left == -1196 && sideTaskbar.right == -725
+		&& sideTaskbar.top == 999 && sideTaskbar.bottom == 1080,
 		"side taskbar keeps the envelope centered on the monitor")) ++failures;
 
 	for (const auto pixels : { pixels96, pixels120, pixels144 })
@@ -430,8 +722,8 @@ int RunStartupPreviewStateTests()
 		"expanded committed target publishes total width once")) ++failures;
 	NotifyBarFirstCommittedFrame(80.0, 380.0, false);
 	if (!Expect(TakeCommittedStartupBarWidthDip(publishedWidth)
-		&& publishedWidth == 80.0,
-		"collapsed committed target publishes button width")) ++failures;
+		&& publishedWidth == 470.0,
+		"collapsed committed target preserves expanded width cache")) ++failures;
 	NotifyBarFirstCommittedFrame(80.0,
 		(std::numeric_limits<double>::quiet_NaN)(), true);
 	if (!Expect(!TakeCommittedStartupBarWidthDip(publishedWidth),

@@ -163,6 +163,8 @@ export namespace Inkeys::Display
 	[[nodiscard]] std::wstring_view PhysicalSizeUnavailableReasonText(
 		PhysicalSizeUnavailableReason reason) noexcept;
 
+	// 启动 Mini 阶段只查询目标屏的有效 DPI，不枚举拓扑/EDID，也不发布显示快照。
+	[[nodiscard]] UINT QueryEffectiveDpi(HMONITOR monitor) noexcept;
 	[[nodiscard]] bool Initialize();
 	[[nodiscard]] bool Refresh(ChangeReason reason = ChangeReason::Manual);
 	void Shutdown() noexcept;

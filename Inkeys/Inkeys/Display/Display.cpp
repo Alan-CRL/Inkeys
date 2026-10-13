@@ -752,6 +752,15 @@ namespace Inkeys::Display
 		Unsubscribe(state);
 	}
 
+	UINT QueryEffectiveDpi(HMONITOR monitor) noexcept
+	{
+		MONITORINFOEXW information{};
+		information.cbSize = sizeof(information);
+		const bool hasInformation = monitor && GetMonitorInfoW(monitor, &information);
+		// 与后续 Display 枚举共用动态 Shcore/GDI 回退，保留 Win7 加载边界。
+		return QueryMonitorDpi(monitor, hasInformation ? information.szDevice : nullptr).first;
+	}
+
 	bool Initialize()
 	{
 		{

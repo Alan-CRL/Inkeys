@@ -1,6 +1,10 @@
 module;
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#include "../StartupPlacement.h"
 
 #include <chrono>
 #include <cstdint>
@@ -20,11 +24,13 @@ export namespace Inkeys::UI::StartupPreview
 	inline constexpr double StartupPreviewSurfaceFrameColorChannel =
 		static_cast<double>(BarDarkSurfaceFrameColorChannel) / 255.0;
 	inline constexpr double StartupPreviewFillAlpha = BarMainBarFillOpacity;
+	inline constexpr double StartupPreviewFloatingFillAlpha = BarMainButtonCollapsedFillOpacity;
 	inline constexpr double StartupPreviewFrameAlpha = BarMainBarFrameOpacity;
 
 	struct StartOptions final
 	{
 		bool enabled = StartupPreviewEnabledByDefault;
+		StartupPlacement startupPlacement = StartupPlacement::CenteredBottomBar;
 		HINSTANCE instance = nullptr;
 		double cachedWidthDip = DefaultCachedStartupBarWidthDip;
 		double barZoom = 1.0;
@@ -51,7 +57,8 @@ export namespace Inkeys::UI::StartupPreview
 
 	[[nodiscard]] RECT ResolveStartupPreviewBounds(const RECT& monitorBounds,
 		const RECT& workArea, double widthDip, double heightDip,
-		UINT dpi, double zoom) noexcept;
+		UINT dpi, double zoom,
+		StartupPlacement placement = StartupPlacement::CenteredBottomBar) noexcept;
 
 	[[nodiscard]] bool Start(const StartOptions& options);
 	void Stop() noexcept;

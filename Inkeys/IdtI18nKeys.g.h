@@ -430,6 +430,18 @@ inline constexpr struct I18nKeyRoot
                 } TouchArea{};
             } Eraser{};
         } Draw{};
+        struct Node__SettingsUI__Preset
+        {
+            const char* N = "SettingsUI/Preset/N";
+            struct Node__SettingsUI__Preset__StartupPlacement
+            {
+                const char* N = "SettingsUI/Preset/StartupPlacement/N";
+                const char* E = "SettingsUI/Preset/StartupPlacement/E";
+                const char* CenteredBottomBar = "SettingsUI/Preset/StartupPlacement/CenteredBottomBar";
+                const char* BottomLeftFloating = "SettingsUI/Preset/StartupPlacement/BottomLeftFloating";
+                const char* BottomRightFloating = "SettingsUI/Preset/StartupPlacement/BottomRightFloating";
+            } StartupPlacement{};
+        } Preset{};
         struct Node__SettingsUI__Experimental
         {
             struct Node__SettingsUI__Experimental__ConsoleOutput

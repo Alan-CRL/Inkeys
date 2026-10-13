@@ -22,7 +22,8 @@ module;
 #include <mutex>
 #include <thread>
 
-#include "../Bar/Bar.BottomDock.h"
+#include "../StartupPlacement.h"
+#include "StartupPreview.Drawing.h"
 
 module Inkeys.UI.StartupPreview;
 import Inkeys.UI.RenderPipeline;
@@ -402,6 +403,8 @@ namespace Inkeys::UI::StartupPreview
 			ComPtr<ID2D1DeviceContext> context;
 			ComPtr<ID2D1Bitmap1> target;
 			ComPtr<ID2D1Bitmap1> mask;
+			ComPtr<ID2D1Geometry> shape;
+			ComPtr<ID2D1StrokeStyle> ringStroke;
 			ComPtr<ID2D1GdiInteropRenderTarget> gdi;
 			ComPtr<ID2D1SolidColorBrush> baseFill;
 			ComPtr<ID2D1SolidColorBrush> frameStroke;
@@ -412,6 +415,8 @@ namespace Inkeys::UI::StartupPreview
 			void Reset() noexcept
 			{
 				if (context) context->SetTarget(nullptr);
+				shape.Reset();
+				ringStroke.Reset();
 				progressFill.Reset();
 				progressTrack.Reset();
 				shimmer.Reset();
@@ -556,54 +561,40 @@ namespace Inkeys::UI::StartupPreview
 				D2D1::ColorF(0.38f, 0.80f, 1.f, 1.f), &next.progressFill);
 			if (FAILED(result)) return result;
 
-			std::array<D2D1_GRADIENT_STOP, 7> stops{
-				D2D1::GradientStop(0.00f, D2D1::ColorF(1.f, 1.f, 1.f, 0.00f)),
-				D2D1::GradientStop(0.24f, D2D1::ColorF(1.f, 1.f, 1.f, 0.035f)),
-				D2D1::GradientStop(0.40f, D2D1::ColorF(1.f, 1.f, 1.f, 0.09f)),
-				D2D1::GradientStop(0.50f, D2D1::ColorF(1.f, 1.f, 1.f, 0.20f)),
-				D2D1::GradientStop(0.60f, D2D1::ColorF(1.f, 1.f, 1.f, 0.075f)),
-				D2D1::GradientStop(0.78f, D2D1::ColorF(1.f, 1.f, 1.f, 0.025f)),
-				D2D1::GradientStop(1.00f, D2D1::ColorF(1.f, 1.f, 1.f, 0.00f)),
-			};
-			ComPtr<ID2D1GradientStopCollection> collection;
-			result = next.context->CreateGradientStopCollection(stops.data(),
-				static_cast<UINT32>(stops.size()), &collection);
+			const auto gradient = ResolveStartupPreviewShimmerGradient(width, height);
+			result = Drawing::CreateShimmer(next.context.Get(),
+				D2D1::Point2F(static_cast<float>(gradient.startX), static_cast<float>(gradient.startY)),
+				D2D1::Point2F(static_cast<float>(gradient.endX), static_cast<float>(gradient.endY)),
+				&next.shimmer);
 			if (FAILED(result)) return result;
-			const auto gradient = ResolveStartupPreviewShimmerGradient(
-				static_cast<double>(width), static_cast<double>(height));
-			result = next.context->CreateLinearGradientBrush(
-				D2D1::LinearGradientBrushProperties(
-					D2D1::Point2F(static_cast<float>(gradient.startX),
-						static_cast<float>(gradient.startY)),
-					D2D1::Point2F(static_cast<float>(gradient.endX),
-						static_cast<float>(gradient.endY))),
-				collection.Get(), &next.shimmer);
+			ComPtr<ID2D1Factory> factory;
+			next.context->GetFactory(&factory);
+			const bool floating = runtime.options.startupPlacement != StartupPlacement::CenteredBottomBar;
+			result = Drawing::CreateShape(factory.Get(), static_cast<float>(width),
+				static_cast<float>(height), DpiScale(runtime), floating, &next.shape);
+			if (FAILED(result)) return result;
+			result = Drawing::CreateRingStroke(factory.Get(), &next.ringStroke);
 			if (FAILED(result)) return result;
 
-			// A8 mask 缓存实际圆角 alpha；窗口不再包含旧 blur padding。
+			// A8 mask 缓存实际外形与描边的最终alpha；反光不会越过超椭圆透明角。
 			next.context->SetTarget(next.mask.Get());
 			next.context->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 			next.context->BeginDraw();
 			next.context->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
 			const float scale = DpiScale(runtime);
-			const float radius = static_cast<float>(StartupBarCornerRadiusDip) * scale;
-			const float stroke = (std::max)(1.f, scale);
-			const auto maskRect = D2D1::RoundedRect(
-				D2D1::RectF(stroke * 0.5f, stroke * 0.5f,
-					static_cast<float>(width) - stroke * 0.5f,
-					static_cast<float>(height) - stroke * 0.5f), radius, radius);
+
 			ComPtr<ID2D1SolidColorBrush> maskFill;
 			ComPtr<ID2D1SolidColorBrush> maskStroke;
 			result = next.context->CreateSolidColorBrush(
 				D2D1::ColorF(1.f, 1.f, 1.f,
-					static_cast<float>(StartupPreviewFillAlpha)), &maskFill);
+					static_cast<float>(floating ? StartupPreviewFloatingFillAlpha : StartupPreviewFillAlpha)), &maskFill);
 			if (SUCCEEDED(result)) result = next.context->CreateSolidColorBrush(
 				D2D1::ColorF(1.f, 1.f, 1.f,
 					static_cast<float>(StartupPreviewFrameAlpha)), &maskStroke);
 			if (SUCCEEDED(result))
 			{
-				next.context->FillRoundedRectangle(&maskRect, maskFill.Get());
-				next.context->DrawRoundedRectangle(&maskRect, maskStroke.Get(), stroke);
+				next.context->FillGeometry(next.shape.Get(), maskFill.Get());
+				next.context->DrawGeometry(next.shape.Get(), maskStroke.Get(), scale);
 			}
 			const HRESULT maskEnd = next.context->EndDraw();
 			if (FAILED(result)) return result;
@@ -643,69 +634,30 @@ namespace Inkeys::UI::StartupPreview
 				static_cast<float>(gradient.endX + translation.x),
 				static_cast<float>(gradient.endY + translation.y)));
 			resources.shimmer->SetOpacity(contentOpacity);
-			const auto previous = resources.context->GetAntialiasMode();
-			resources.context->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
-			const auto destination = D2D1::RectF(0.f, 0.f,
-				static_cast<float>(width), static_cast<float>(height));
-			const auto source = destination;
-			resources.context->FillOpacityMask(resources.mask.Get(),
-				resources.shimmer.Get(), D2D1_OPACITY_MASK_CONTENT_GRAPHICS,
-				&destination, &source);
-			resources.context->SetAntialiasMode(previous);
+			Drawing::DrawShimmer(resources.context.Get(), resources.mask.Get(),
+				resources.shimmer.Get(), static_cast<float>(width), static_cast<float>(height));
 		}
 
-		[[nodiscard]] bool DrawProgress(Runtime& runtime,
+		[[nodiscard]] HRESULT DrawProgress(Runtime& runtime,
 			const Inkeys::Startup::Snapshot& snapshot,
 			std::chrono::steady_clock::time_point now, bool success,
-			float contentOpacity)
+			float contentOpacity, bool& progressVisible)
 		{
+			progressVisible = false;
 			const bool failed = snapshot.failed || runtime.phase == Phase::Failure;
 			const auto visual = runtime.progressVisual.Update(
 				now, snapshot.actualRatio, success, failed);
-			if (contentOpacity <= 0.f || visual.opacity <= 0.001) return false;
+			if (contentOpacity <= 0.f || visual.opacity <= 0.001) return S_OK;
 			const float scale = DpiScale(runtime);
 			const float width = static_cast<float>(runtime.resources.width);
 			const float height = static_cast<float>(runtime.resources.height);
-			// 窄窗口保留两侧各 12 DIP，未来仅显示主按钮时进度条仍可辨认。
-			const float progressWidth = (std::min)(192.f * scale,
-				(std::max)(0.f, width - 24.f * scale));
-			if (progressWidth <= 0.f) return false;
-			const float centerX = width * 0.5f;
-			const float centerY = height * 0.5f;
-			const float trackHeight = (std::max)(1.f, scale);
-			const float indicatorHeight = (std::max)(3.f, 3.f * scale);
-			const auto track = D2D1::RoundedRect(
-				D2D1::RectF(centerX - progressWidth / 2.f,
-					centerY - trackHeight / 2.f,
-					centerX + progressWidth / 2.f,
-					centerY + trackHeight / 2.f),
-				trackHeight / 2.f, trackHeight / 2.f);
 			const float opacity = Clamp01(visual.opacity * contentOpacity);
-			runtime.resources.progressTrack->SetOpacity(opacity);
-			runtime.resources.context->FillRoundedRectangle(&track,
-				runtime.resources.progressTrack.Get());
-			const float fillWidth = progressWidth
-				* static_cast<float>(visual.displayedRatio);
-			if (fillWidth <= 0.f) return true;
-			const auto fill = D2D1::RoundedRect(
-				D2D1::RectF(track.rect.left, centerY - indicatorHeight / 2.f,
-					track.rect.left + fillWidth, centerY + indicatorHeight / 2.f),
-				indicatorHeight / 2.f, indicatorHeight / 2.f);
-			const float errorProgress = Clamp01(visual.failureColorProgress);
-			constexpr float normalRed = 0.38f;
-			constexpr float normalGreen = 0.80f;
-			constexpr float normalBlue = 1.f;
-			constexpr float errorRed = 1.f;
-			constexpr float errorGreen = 0.38f;
-			constexpr float errorBlue = 0.44f;
-			auto* brush = runtime.resources.progressFill.Get();
-			brush->SetColor(D2D1::ColorF(
-				normalRed + (errorRed - normalRed) * errorProgress,
-				normalGreen + (errorGreen - normalGreen) * errorProgress,
-				normalBlue + (errorBlue - normalBlue) * errorProgress, 1.f));
-			brush->SetOpacity(opacity);
-			runtime.resources.context->FillRoundedRectangle(&fill, brush);
-			return true;
+			const HRESULT result = Drawing::DrawRing(runtime.resources.context.Get(), runtime.resources.ringStroke.Get(),
+				runtime.resources.progressTrack.Get(), runtime.resources.progressFill.Get(),
+				D2D1::Point2F(width * .5f, height * .5f), scale,
+				visual.displayedRatio, opacity, visual.failureColorProgress >= 1.0);
+			progressVisible = SUCCEEDED(result);
+			return result;
 		}
 
 		void RequestAutomaticStop(const std::shared_ptr<Runtime>& runtime)
@@ -833,24 +785,26 @@ namespace Inkeys::UI::StartupPreview
 			resources.context->SetTarget(resources.target.Get());
 			resources.context->BeginDraw();
 			resources.context->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
-			const float radius = static_cast<float>(StartupBarCornerRadiusDip)
-				* DpiScale(*runtime);
-			const float stroke = (std::max)(1.f, DpiScale(*runtime));
-			const auto rounded = D2D1::RoundedRect(
-				D2D1::RectF(stroke * 0.5f, stroke * 0.5f,
-					static_cast<float>(width) - stroke * 0.5f,
-					static_cast<float>(height) - stroke * 0.5f),
-				radius, radius);
-			// 整窗淡入淡出只由 ULW 的 SourceConstantAlpha 执行；brush 保持 per-pixel alpha。
-			resources.baseFill->SetOpacity(static_cast<float>(StartupPreviewFillAlpha));
-			resources.frameStroke->SetOpacity(static_cast<float>(StartupPreviewFrameAlpha));
-			resources.context->FillRoundedRectangle(&rounded, resources.baseFill.Get());
-			resources.context->DrawRoundedRectangle(&rounded,
-				resources.frameStroke.Get(), stroke);
+			// 整窗淡入淡出只由ULW执行；两种外形共享实际mask和基础绘制。
+			Drawing::DrawShape(resources.context.Get(), resources.shape.Get(),
+				resources.baseFill.Get(), resources.frameStroke.Get(), DpiScale(*runtime),
+				static_cast<float>(runtime->options.startupPlacement == StartupPlacement::CenteredBottomBar
+					? StartupPreviewFillAlpha : StartupPreviewFloatingFillAlpha),
+				static_cast<float>(StartupPreviewFrameAlpha));
 			// 固定合成层级：反光先绘制，进度条始终最后绘制在其上方。
 			DrawShimmer(*runtime, frame, 1.f);
-			const bool progressVisible = DrawProgress(
-				*runtime, snapshot, frame.frameTime, success, 1.f);
+			bool progressVisible = false;
+			const HRESULT progressResult = DrawProgress(
+				*runtime, snapshot, frame.frameTime, success, 1.f, progressVisible);
+			if (FAILED(progressResult))
+			{
+				// 圆弧构造失败不能冒充可见进度或最终红帧；按既有资源失败路径重试/绕过。
+				const HRESULT end = resources.context->EndDraw();
+				if (end == D2DERR_RECREATE_TARGET) resources.Reset();
+				if (barReady) RecoverOpaqueBar(runtime);
+				return IsSharedDeviceLoss(progressResult) || IsSharedDeviceLoss(end)
+					? FrameResult::DeviceLost : FrameResult::Retry;
+			}
 
 			const auto presentOwner = runtime->owner.Snapshot();
 			if (!presentOwner.window || !SameBounds(presentOwner.bounds, owner.bounds))
@@ -960,23 +914,14 @@ namespace Inkeys::UI::StartupPreview
 
 	RECT ResolveStartupPreviewBounds(const RECT& monitorBounds,
 		const RECT& workArea, double widthDip, double heightDip,
-		UINT dpi, double zoom) noexcept
+		UINT dpi, double zoom, StartupPlacement placement) noexcept
 	{
-		const LONG width = RoundStartupPreviewDipToPixels(widthDip, dpi, zoom);
-		const LONG height = RoundStartupPreviewDipToPixels(heightDip, dpi, zoom);
-		const bool monitorValid = Width(monitorBounds) > 0
-			&& Height(monitorBounds) > 0;
-		const RECT resolvedMonitor = monitorValid ? monitorBounds : workArea;
-		const LONG left = resolvedMonitor.left
-			+ (Width(resolvedMonitor) - width) / 2;
-		const double dpiScale = static_cast<double>(dpi ? dpi
-			: USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI;
-		const LONG dockLine = static_cast<LONG>(std::lround(
-			Inkeys::UI::Bar::ResolveBarBottomDockLine(
-				resolvedMonitor, workArea, 0.0, dpiScale)));
-		// 与正式 Bar 一致：按显示器居中，只有底部任务栏会抬高 dock line。
-		const LONG top = dockLine - height;
-		return { left, top, left + width, top + height };
+		const bool floating = placement != StartupPlacement::CenteredBottomBar;
+		const double visibleWidthDip = (floating ? 80.0 : widthDip) + 1.0;
+		const double visibleHeightDip = (floating ? 80.0 : heightDip) + 1.0;
+		return ResolveStartupPlacementBounds(placement, monitorBounds, workArea,
+			visibleWidthDip, visibleHeightDip, ResolveStartupPreviewScale(dpi, zoom),
+			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI);
 	}
 
 	bool Start(const StartOptions& options)
@@ -991,6 +936,7 @@ namespace Inkeys::UI::StartupPreview
 			}
 			auto runtime = std::make_shared<Runtime>();
 			runtime->options = options;
+			runtime->options.startupPlacement = NormalizeStartupPlacement(static_cast<int>(options.startupPlacement));
 			runtime->options.cachedWidthDip = ResolveCachedStartupBarWidthDip(
 				options.cachedWidthDip);
 			runtime->options.dpi = options.dpi == 0
@@ -1006,7 +952,7 @@ namespace Inkeys::UI::StartupPreview
 			if (Width(bounds) == 0 || Height(bounds) == 0)
 				bounds = ResolveStartupPreviewBounds(options.monitorBounds, workArea,
 					runtime->options.cachedWidthDip, DefaultStartupBarHeightDip,
-					runtime->options.dpi, runtime->options.barZoom);
+					runtime->options.dpi, runtime->options.barZoom, runtime->options.startupPlacement);
 			if (!runtime->owner.Start(runtime->options.instance, bounds)) return false;
 			runtime->active.store(true, std::memory_order_release);
 			{
@@ -1088,16 +1034,18 @@ namespace Inkeys::UI::StartupPreview
 	void NotifyBarFirstCommittedFrame(double mainButtonTargetWidthDip,
 		double layoutTotalWidthDip, bool expanded) noexcept
 	{
+		// 即使首帧折叠，宽度缓存也代表展开目标包络，不能以80DIP污染下次居中启动。
+		(void)expanded;
 		if (!std::isfinite(mainButtonTargetWidthDip)
 			|| mainButtonTargetWidthDip < CachedStartupBarWidthMinimumDip
 			|| mainButtonTargetWidthDip > CachedStartupBarWidthMaximumDip
-			|| (expanded && (!std::isfinite(layoutTotalWidthDip)
+			|| (!std::isfinite(layoutTotalWidthDip)
 				|| layoutTotalWidthDip <= 0.0
 				|| layoutTotalWidthDip > CachedStartupBarWidthMaximumDip
 					- mainButtonTargetWidthDip
-					- StartupMainButtonToMainBarGapDip))) return;
+					- StartupMainButtonToMainBarGapDip)) return;
 		const double widthDip = CalculateStartupBarTotalWidthDip(
-			mainButtonTargetWidthDip, layoutTotalWidthDip, expanded);
+			mainButtonTargetWidthDip, layoutTotalWidthDip, true);
 		if (!IsValidCachedStartupBarWidthDip(widthDip)) return;
 		double expected = 0.0;
 		(void)publishedStartupBarWidthDip.compare_exchange_strong(
@@ -1198,7 +1146,8 @@ namespace Inkeys::UI::StartupPreview
 		const auto runtime = SnapshotRuntime();
 		if (!runtime) return {};
 		return {
-			runtime->options.cachedWidthDip,
+			runtime->options.startupPlacement == StartupPlacement::CenteredBottomBar
+				? runtime->options.cachedWidthDip : 80.0,
 			runtime->active.load(std::memory_order_acquire),
 			runtime->firstFrameCommitted.load(std::memory_order_acquire),
 			runtime->previewFadeOutCommitted.load(std::memory_order_acquire),

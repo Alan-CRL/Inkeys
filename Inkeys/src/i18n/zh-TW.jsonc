@@ -427,6 +427,18 @@
         }
       }
     },
+    "Preset":
+    {
+      "N": "預設",
+      "StartupPlacement":
+      {
+        "N": "啟動後位置",
+        "E": "置中的底部工具列會展開顯示主工具列；左下角或右下角懸浮視窗只顯示主按鈕。變更將於下次啟動時生效。",
+        "CenteredBottomBar": "置中底部工具列",
+        "BottomLeftFloating": "左下角懸浮視窗",
+        "BottomRightFloating": "右下角懸浮視窗"
+      }
+    },
     "Experimental":
     {
       "ConsoleOutput":

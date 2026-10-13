@@ -9,6 +9,7 @@
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
+#include "../StartupPlacement.h"
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -56,6 +57,19 @@ extern const double BarMorePanelCompactHeight;
 
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 extern constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
+
+bool BarUISetClass::InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept
+{
+	// 只在渲染注册前调用，底部吸附状态通过类自身维护，不暴露 protected 字段。
+	startupPlacement = Inkeys::UI::NormalizeStartupPlacement(static_cast<int>(placement));
+	const bool floating = startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar;
+	barState.fold = floating;
+	bottomDockMode.store(floating ? Inkeys::UI::Bar::BarBottomDockMode::Floating
+		: Inkeys::UI::Bar::BarBottomDockMode::BottomDocked, memory_order_relaxed);
+	bottomDockCenterMode.store(floating ? Inkeys::UI::Bar::BarBottomDockCenterMode::Free
+		: Inkeys::UI::Bar::BarBottomDockCenterMode::Centered, memory_order_relaxed);
+	return floating;
+}
 
 void BarUISetClass::PublishDisplaySnapshot(
 	Inkeys::Display::SnapshotPtr snapshot) noexcept
@@ -118,7 +132,7 @@ namespace Inkeys::UI::Bar
 		return barWindowMsgCallback;
 	}
 
-	void Initialization()
+	void Initialization(Inkeys::UI::StartupPlacement startupPlacement)
 	{
 		Inkeys::Thread::StatusGuard guard("BarInitializationClass::BarInitialization");
 		Inkeys::UI::StartupPreview::SetBarStartupState(
@@ -129,6 +143,8 @@ namespace Inkeys::UI::Bar
 				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
 			return;
 		}
+		// 在渲染注册前锁存位置及折叠状态，角落模式从第一帧就是主按钮。
+		const bool floatingStartup = barUISet.InitializeStartupPlacement(startupPlacement);
 		// 初始化
 		if (!InitializeWindow(barUISet))
 		{
@@ -154,6 +170,23 @@ namespace Inkeys::UI::Bar
 		{
 			barUISet.barButtonSet.Load();
 			barUISet.barButtonSet.StateUpdate();
+		}
+		if (floatingStartup)
+		{
+			// 子控件的继承仅传位置、不传透明度；首帧直接设置折叠终态，不能先淡出图标。
+			for (int id = 0; id < barUISet.barButtonSet.tot; ++id)
+			{
+				auto* button = barUISet.barButtonSet.buttonList.Get(id);
+				if (!button) continue;
+				button->button.x.SetDirect(40.0);
+				button->button.y.SetDirect(40.0);
+				button->button.pct.SetDirect(0.0);
+				if (button->button.framePct) button->button.framePct->SetDirect(0.0);
+				if (button->button.frameLightPct) button->button.frameLightPct->SetDirect(0.0);
+				button->icon.pct.SetDirect(0.0);
+				button->pngIcon.pct.SetDirect(0.0);
+				button->name.pct.SetDirect(0.0);
+			}
 		}
 		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarComponentsReady);
 		SetContentStateUpdatesReady(true);
@@ -240,6 +273,23 @@ namespace Inkeys::UI::Bar
 			mainX = static_cast<double>(barUISet.barWindow.x + barUISet.barWindow.w - 80 - 50) / barUISet.barStyle.zoom;
 			mainY = static_cast<double>(barUISet.barWindow.y + barUISet.barWindow.h - 80 - 200) / barUISet.barStyle.zoom;
 		}
+		if (barUISet.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar)
+		{
+			const auto snapshot = Inkeys::Display::GetSnapshot();
+			const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+			if (monitor)
+			{
+				const RECT visible = Inkeys::UI::ResolveStartupPlacementBounds(
+					barUISet.startupPlacement, monitor->bounds, monitor->workArea,
+					BarMainButtonWidthDip + BarButtonFrameThicknessDip,
+					BarMainButtonHeightDip + BarButtonFrameThicknessDip,
+					barUISet.barStyle.zoom, barUISet.barStyle.dpiZoom);
+				mainX = ((static_cast<double>(visible.left) + visible.right) / 2.0
+					- monitor->bounds.left) / barUISet.barStyle.zoom;
+				mainY = ((static_cast<double>(visible.top) + visible.bottom) / 2.0
+					- monitor->bounds.top) / barUISet.barStyle.zoom;
+			}
+		}
 		// 定义 UI 控件
 		{
 			// 背景层
@@ -254,7 +304,7 @@ namespace Inkeys::UI::Bar
 			// 主按钮
 			{
 				auto superellipse = make_shared<BarUiSuperellipseClass>(mainX, mainY, 80.0, 80.0, 3.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-				superellipse->pct.Initialization(0.6);
+				superellipse->pct.Initialization(BarMainButtonCollapsedFillOpacity);
 				superellipse->framePct = BarUiPctClass(0.18);
 				superellipse->frameRendering = BarUiFrameRenderingEnum::PointLight;
 				superellipse->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
@@ -288,8 +338,9 @@ namespace Inkeys::UI::Bar
 					BarButtonFrameThicknessDip,
 					GetThemeColor(BarThemeColorEnum::Surface),
 					GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-				shape->pct.Initialization(BarMainBarFillOpacity);
-				shape->framePct = BarUiPctClass(BarMainBarFrameOpacity);
+				const bool foldedStartup = barUISet.barState.fold;
+				shape->pct.Initialization(foldedStartup ? 0.0 : BarMainBarFillOpacity);
+				shape->framePct = BarUiPctClass(foldedStartup ? 0.0 : BarMainBarFrameOpacity);
 				shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
 				shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 				shape->w.mod = BarUiValueModeEnum::Variable;

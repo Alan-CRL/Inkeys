@@ -42,6 +42,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
 #include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
+#include "Inkeys/UI/StartupPlacement.h"
 #include "PptSettingsPersistence.h"
 #include "resource.h"
 #include <array>
@@ -1980,7 +1981,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
-		"UI.Bar.Zoom" });
+		"UI.Bar.Zoom", "UI.Bar.StartupPlacement" });
+	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
+	const auto startupPlacement = Inkeys::UI::NormalizeStartupPlacement(
+		startupMiniConfig.UI.Bar.StartupPlacement.load());
 	const bool startupPreviewConfigured = startupPreviewSmokeRequested
 		|| startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.Enable;
 	bool startupPreviewStarted = false;
@@ -2025,15 +2029,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		monitorInfo.cbSize = sizeof(monitorInfo);
 		const HMONITOR primaryMonitor = MonitorFromPoint(POINT{}, MONITOR_DEFAULTTOPRIMARY);
 		(void)GetMonitorInfoW(primaryMonitor, &monitorInfo);
-		UINT startupDpi = USER_DEFAULT_SCREEN_DPI;
-		if (HDC screen = GetDC(nullptr))
-		{
-			const int queriedDpi = GetDeviceCaps(screen, LOGPIXELSX);
-			if (queriedDpi > 0) startupDpi = static_cast<UINT>(queriedDpi);
-			ReleaseDC(nullptr, screen);
-		}
+		const UINT startupDpi = Inkeys::Display::QueryEffectiveDpi(primaryMonitor);
 		Inkeys::UI::StartupPreview::StartOptions previewOptions;
 		previewOptions.instance = hInstance;
+		previewOptions.startupPlacement = startupPlacement;
 		previewOptions.cachedWidthDip =
 			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
 				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.
@@ -2042,12 +2041,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		previewOptions.dpi = startupDpi;
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
 		previewOptions.workArea = monitorInfo.rcWork;
-		previewOptions.contentBounds =
-			Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
-				previewOptions.monitorBounds, previewOptions.workArea,
-				previewOptions.cachedWidthDip,
-				Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
-				previewOptions.dpi, previewOptions.barZoom);
+		previewOptions.contentBounds = Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
+			previewOptions.monitorBounds, previewOptions.workArea,
+			previewOptions.cachedWidthDip,
+			Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
+			previewOptions.dpi, previewOptions.barZoom, startupPlacement);
 		previewOptions.progress = &startupProgress;
 		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
 			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
@@ -3183,7 +3181,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (!isolatedStartupFailure)
 	{
 		topWindowThread = jthread(TopWindow);
-		ui3InitializationThread = jthread(Inkeys::UI::Bar::Initialization);
+		ui3InitializationThread = jthread([startupPlacement]()
+			{ Inkeys::UI::Bar::Initialization(startupPlacement); });
 		freezeFrameThread = jthread(FreezeFrameWindow);
 		stateMonitoringThread = jthread(StateMonitoring);
 	}

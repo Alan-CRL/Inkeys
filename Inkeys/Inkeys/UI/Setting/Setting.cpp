@@ -15,6 +15,7 @@ module;
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Setting.SessionState.h"
+#include "../StartupPlacement.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
@@ -1402,6 +1403,7 @@ SettingSessionCoroutine RunSettingSession()
 					tab8,
 					tab9,
 					tabExperimental,
+					tabPreset,
 				};
 				enum settingPlugInTabEnum
 				{
@@ -1498,6 +1500,13 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
 
 						if (Widgets::button.Navigation(("   \uee56   " + IA(I18nKey.SettingsUI.Draw.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab3, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab3;
+					}
+
+					// 预设
+					{
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
+
+						if (Widgets::button.Navigation(("   \uf259   " + IA(I18nKey.SettingsUI.Preset.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tabPreset, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tabPreset;
 					}
 
 					// 插件
@@ -3993,6 +4002,93 @@ SettingSessionCoroutine RunSettingSession()
 					break;
 				}
 
+
+				// 预设仅配置下次启动位置，不恢复已退役的画笔记忆条目。
+				case settingTabEnum::tabPreset:
+				{
+					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
+					ImGui::BeginChild("预设", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+					ImFontMain->Scale = 0.8f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+					ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.N).c_str());
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+
+					const string placementNames[] = {
+						IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
+						IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
+						IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating)
+					};
+					const string placementDescription = IA(I18nKey.SettingsUI.Preset.StartupPlacement.E);
+					// 按实际换行高度撑开信息卡片，英文和缩放后的说明不会被裁切。
+					ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+					const float descriptionHeight = ImGui::CalcTextSize(placementDescription.c_str(), nullptr, false,
+						(settingItemWidth - 80.0f) * settingGlobalScale).y;
+					ImGui::PopFont();
+					const float infoCardHeight = max(descriptionHeight, 30.0f * settingGlobalScale) + 40.0f * settingGlobalScale;
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+					ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+					ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+					ImGui::BeginChild("启动位置说明", { settingItemWidth * settingGlobalScale,infoCardHeight }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+					ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::AccentText);
+					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+					ImGui::TextUnformatted("\uf167");
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+					ImGui::SetCursorPos({ 60.0f * settingGlobalScale,20.0f * settingGlobalScale });
+					ImGui::PushTextWrapPos((settingItemWidth - 20.0f) * settingGlobalScale);
+					ImGui::TextUnformatted(placementDescription.c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImGui::EndChild();
+
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+					ImGui::BeginChild("启动后位置", { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+					ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+					ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.StartupPlacement.N).c_str());
+					ImGui::PopFont();
+					ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+					const int placement = static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(
+						Inkeys::config.UI.Bar.StartupPlacement.load()));
+					float comboWidth = 200.0f * settingGlobalScale;
+					for (const auto& name : placementNames)
+						comboWidth = max(comboWidth, ImGui::CalcTextSize(name.c_str()).x + 45.0f * settingGlobalScale);
+					ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - comboWidth - 20.0f * settingGlobalScale,15.0f * settingGlobalScale });
+					ImGui::SetNextItemWidth(comboWidth);
+					if (Widgets::combo.Begin("##启动后位置", placementNames[placement].c_str(), 3))
+					{
+						for (int i = 0; i < 3; ++i)
+						{
+							const bool selected = placement == i;
+							if (Widgets::combo.Selectable(placementNames[i].c_str(), selected) && !selected)
+							{
+								// 本次位置已在启动 Mini 阶段冻结，这里只保存下次启动的选择。
+								Inkeys::config.UI.Bar.StartupPlacement = i;
+								QueueConfigWrite();
+							}
+							if (selected) ImGui::SetItemDefaultFocus();
+						}
+						Widgets::combo.End();
+					}
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImGui::EndChild();
+					ImGui::PopStyleColor();
+					ImGui::PopStyleVar(2);
+					ImGui::EndChild();
+					ImGui::PopStyleColor();
+					break;
+				}
 
 				// 插件
 				case settingTabEnum::tab4:

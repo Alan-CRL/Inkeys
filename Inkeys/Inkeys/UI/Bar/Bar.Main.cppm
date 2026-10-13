@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
 #include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
 
@@ -492,6 +493,10 @@ public:
 	BarButtonSetClass barButtonSet;
 	BarUIRendering spec;
 
+	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
+	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
+	Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar;
 	BarStateClass barState;
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
@@ -1065,7 +1070,8 @@ namespace Inkeys::UI::Bar
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
-	export void Initialization();
+	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar);
 	export void RequestPresentationAlpha(std::uint8_t alpha) noexcept;
 	export std::uint8_t CommittedPresentationAlpha() noexcept;
 	export std::uint8_t RequestedPresentationAlpha() noexcept;

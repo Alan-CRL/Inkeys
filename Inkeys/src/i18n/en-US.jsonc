@@ -427,6 +427,18 @@
         }
       }
     },
+    "Preset":
+    {
+      "N": "Presets",
+      "StartupPlacement":
+      {
+        "N": "Position after startup",
+        "E": "The centered bottom bar starts expanded. The bottom-left and bottom-right floating windows show only the main button. Changes take effect the next time Inkeys starts.",
+        "CenteredBottomBar": "Centered bottom bar",
+        "BottomLeftFloating": "Bottom-left floating window",
+        "BottomRightFloating": "Bottom-right floating window"
+      }
+    },
     "Experimental":
     {
       "ConsoleOutput":
