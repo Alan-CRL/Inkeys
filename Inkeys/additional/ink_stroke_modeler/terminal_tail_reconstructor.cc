@@ -500,8 +500,171 @@ namespace ink::stroke_model
 				&& std::isfinite(c.max_terminal_angle) && c.max_terminal_angle >= 0 && c.max_terminal_angle <= 3.141592653589793;
 		}
 
+		TerminalTailOutcome SampleAdaptive(const TerminalTailRequest& request, TerminalTailScratch& scratch,
+			const AdaptiveTerminalTailConfig& config, TerminalTailDiagnostics diagnostics, std::size_t start,
+			LocalVector entry, LocalVector terminal, double h0, double h1, double anomaly, double visible_correction)
+		{
+			const auto& c = request.config;
+			const auto reject = [&](TerminalTailReason reason)
+			{ return Finish(TerminalTailStatus::kRejected, reason, diagnostics, scratch); };
+			const std::size_t n = request.reference.size();
+			const Vec2 p0 = request.reference[start].position, p3 = request.endpoint;
+			const double length = scratch.reference_arc.back() - scratch.reference_arc[start];
+			diagnostics.repair_length = length;
+			diagnostics.changed_begin = start + 1;
+			const LocalVector control[4]{{p0.x,p0.y}, {p0.x+entry.x*h0,p0.y+entry.y*h0},
+				{p3.x-terminal.x*h1,p3.y-terminal.y*h1}, {p3.x,p3.y}};
+			const auto evaluate = [&](double t)
+			{
+				const double u=1-t;
+				return LocalVector{u*u*u*control[0].x+3*u*u*t*control[1].x+3*u*t*t*control[2].x+t*t*t*control[3].x,
+					u*u*u*control[0].y+3*u*u*t*control[1].y+3*u*t*t*control[2].y+t*t*t*control[3].y};
+			};
+			const auto derivative = [&](double t)
+			{
+				const double u=1-t;
+				return LocalVector{3*(u*u*(control[1].x-control[0].x)+2*u*t*(control[2].x-control[1].x)+t*t*(control[3].x-control[2].x)),
+					3*(u*u*(control[1].y-control[0].y)+2*u*t*(control[2].y-control[1].y)+t*t*(control[3].y-control[2].y))};
+			};
+			// 曲率在连续曲线上按空间尺度检查，不能靠增加输出顶点掩盖急弯。
+			double total_turn=0, positive_turn=0, negative_turn=0;
+			LocalVector previous=entry;
+			// 只以可见横向回拉的一半衡量新增曲率，不把切向 pin 长度误当转弯半径。
+			const double quality_scale=std::max(config.visibility_distance,visible_correction*.5);
+			for (std::size_t i=0;i<=128;++i)
+			{
+				if (!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+				const double t=double(i)/128, u=1-t;
+				auto d=derivative(t);
+				const double speed=std::hypot(d.x,d.y);
+				if (!Normalize(d,c.epsilon)) return reject(TerminalTailReason::kExcessiveTurn);
+				const LocalVector second{6*(u*(control[2].x-2*control[1].x+control[0].x)+t*(control[3].x-2*control[2].x+control[1].x)),
+					6*(u*(control[2].y-2*control[1].y+control[0].y)+t*(control[3].y-2*control[2].y+control[1].y))};
+				diagnostics.max_curve_turn=std::max(diagnostics.max_curve_turn,
+					std::abs(d.x*second.y-d.y*second.x)/(speed*speed)*quality_scale);
+				const double step_turn=std::acos(std::clamp(Dot(previous,d),-1.0,1.0));
+				total_turn+=step_turn;
+				if(previous.x*d.y-previous.y*d.x>=0) positive_turn+=step_turn; else negative_turn+=step_turn;
+				previous=d;
+			}
+			// 已有高曲率以正常模型段同尺度转向作基准，避免把自然弯曲强行拉直。
+			const double normal_begin=scratch.reference_arc[start];
+			const double normal_end=scratch.reference_arc.back()-anomaly;
+			const double probe=std::min(quality_scale,(normal_end-normal_begin)*.25);
+			if (probe>c.epsilon)
+				for (std::size_t i=0;i<=64;++i)
+				{
+					if (!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+					const double center=normal_begin+probe+(normal_end-normal_begin-2*probe)*double(i)/64;
+					const double angle=Angle(AtArc(scratch.reference_positions,scratch.reference_arc,center-probe),
+						AtArc(scratch.reference_positions,scratch.reference_arc,center),
+						AtArc(scratch.reference_positions,scratch.reference_arc,center+probe),c.epsilon);
+					diagnostics.reference_max_physical_turn=std::max(diagnostics.reference_max_physical_turn,angle*quality_scale/probe);
+				}
+			diagnostics.candidate_max_physical_turn=diagnostics.max_curve_turn;
+			const double allowed_turn=std::max(config.max_curve_turn,diagnostics.reference_max_physical_turn*1.25);
+			if (!std::isfinite(diagnostics.max_curve_turn) || diagnostics.max_curve_turn>allowed_turn)
+				return reject(TerminalTailReason::kExcessiveTurn);
+			double reference_turn=0;
+			for(std::size_t i=start;i+1<n;++i)
+				reference_turn+=Angle(request.reference[i-1].position,request.reference[i].position,request.reference[i+1].position,c.epsilon);
+			if(total_turn>reference_turn+c.max_local_turn_increase) return reject(TerminalTailReason::kExcessiveTurn);
+			// 正常段已经明显回弯时，不能借终点约束把整段弯曲抄近路拉直。
+			double normal_turn=0,normal_positive=0,normal_negative=0;
+			for(std::size_t i=start;i+1<n && scratch.reference_arc.back()-scratch.reference_arc[i+1]>anomaly+c.epsilon;++i)
+			{
+				const double angle=Angle(request.reference[i-1].position,request.reference[i].position,request.reference[i+1].position,c.epsilon);
+				const auto before=Difference(request.reference[i].position,request.reference[i-1].position);
+				const auto after=Difference(request.reference[i+1].position,request.reference[i].position);
+				normal_turn+=angle;
+				if(before.x*after.y-before.y*after.x>=0) normal_positive+=angle; else normal_negative+=angle;
+			}
+			// 原轨迹没有的反曲不能凭拟合新增；失败扩窗摊开末端约束。
+			if(std::min(positive_turn,negative_turn)>std::min(normal_positive,normal_negative)+0.04)
+				return reject(TerminalTailReason::kExcessiveTurn);
+			if(normal_turn>1.0 && total_turn<normal_turn*.5) return reject(TerminalTailReason::kExcessiveTurn);
+			scratch.patch_points.clear();
+			for(std::size_t i=0;i<=start;++i)
+				scratch.patch_points.push_back({request.reference[i].position,request.reference[i].source,{}});
+			bool exhausted=false, invalid=false;
+			// 每段三次子曲线控制多边形到弦的距离是保守弦误差上界。
+			const auto subdivide = [&](auto&& self,double a,double b,std::size_t segment,std::size_t depth)->void
+			{
+				if(exhausted||invalid) return;
+				if(!Spend(diagnostics.validation_work,c.max_validation_work)){exhausted=true;return;}
+				const auto pa=evaluate(a),pb=evaluate(b),da=derivative(a),db=derivative(b);
+				const double dx=pb.x-pa.x,dy=pb.y-pa.y, norm=dx*dx+dy*dy;
+				const auto distance=[&](LocalVector v)
+				{
+					const double t=norm>0?std::clamp(((v.x-pa.x)*dx+(v.y-pa.y)*dy)/norm,0.0,1.0):0;
+					return std::hypot(v.x-pa.x-t*dx,v.y-pa.y-t*dy);
+				};
+				const double error=std::max(distance({pa.x+da.x*(b-a)/3,pa.y+da.y*(b-a)/3}),
+					distance({pb.x-db.x*(b-a)/3,pb.y-db.y*(b-a)/3}));
+				if(error>config.sampling_tolerance)
+				{
+					if(depth>=config.max_subdivision_depth){exhausted=true;return;}
+					self(self,a,(a+b)*.5,segment,depth+1);self(self,(a+b)*.5,b,segment,depth+1);return;
+				}
+				if(scratch.patch_points.size()>=config.max_output_points){exhausted=true;return;}
+				const double bound=std::numeric_limits<float>::max();
+				if(!std::isfinite(pb.x)||!std::isfinite(pb.y)||std::abs(pb.x)>bound||std::abs(pb.y)>bound){invalid=true;return;}
+				const double arc=scratch.reference_arc[start]+b*length;
+				const double fraction=std::clamp((arc-scratch.reference_arc[segment])/
+					(scratch.reference_arc[segment+1]-scratch.reference_arc[segment]),0.0,1.0);
+				const bool anchor=b==(scratch.reference_arc[segment+1]-scratch.reference_arc[start])/length;
+				TerminalTailSource source=anchor?request.reference[segment+1].source:
+					TerminalTailSource{request.reference[segment].source.first,request.reference[segment+1].source.first,fraction};
+				Vec2 position=b==1?request.endpoint:Vec2{static_cast<float>(pb.x),static_cast<float>(pb.y)};
+				scratch.patch_points.push_back({position,source,{}});
+				diagnostics.sampling_error=std::max(diagnostics.sampling_error,error);
+				diagnostics.max_displacement=std::max(diagnostics.max_displacement,
+					Distance(position,Interpolate(request.reference[segment].position,request.reference[segment+1].position,fraction)));
+			};
+			for(std::size_t i=start;i+1<n;++i)
+			{
+				const double a=(scratch.reference_arc[i]-scratch.reference_arc[start])/length;
+				const double b=(scratch.reference_arc[i+1]-scratch.reference_arc[start])/length;
+				if(b>a) subdivide(subdivide,a,b,i,0);
+				else if(scratch.patch_points.size()<config.max_output_points)
+					scratch.patch_points.push_back({scratch.patch_points.back().position,request.reference[i+1].source,{}});
+				else exhausted=true;
+			}
+			if(exhausted) return reject(TerminalTailReason::kBudgetExceeded);
+			if(invalid) return reject(TerminalTailReason::kInvalidInput);
+			scratch.candidate.clear();
+			for(const auto& p:scratch.patch_points) scratch.candidate.push_back(p.position);
+			diagnostics.candidate_length=Arc(scratch.candidate,scratch.candidate_arc);
+			diagnostics.output_points=scratch.candidate.size();
+			diagnostics.candidate_terminal_turn=TerminalTurn(scratch.candidate,scratch.candidate_arc,c);
+			std::size_t previous_distinct=0,current_distinct=0;
+			for(std::size_t next=1;next<scratch.candidate.size();++next)
+			{
+				if(!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+				if(Distance(scratch.candidate[current_distinct],scratch.candidate[next])<=c.epsilon) continue;
+				if(current_distinct>=start && previous_distinct!=current_distinct
+					&& AdjacentOverlap(scratch.candidate[previous_distinct],scratch.candidate[current_distinct],scratch.candidate[next],c.epsilon))
+					return reject(TerminalTailReason::kNewIntersection);
+				previous_distinct=current_distinct;current_distinct=next;
+			}
+			// 只检查涉及修改段的相交，稳定前缀已有交点不影响当前修正。
+			for(std::size_t i=0;i+1<scratch.candidate.size();++i)
+				for(std::size_t j=std::max(i+2,start);j+1<scratch.candidate.size();++j)
+				{
+					if(!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+					if(Intersects(scratch.candidate[i],scratch.candidate[i+1],scratch.candidate[j],scratch.candidate[j+1],c.epsilon))
+						return reject(TerminalTailReason::kNewIntersection);
+				}
+			TerminalTailOutcome result;
+			result.status=TerminalTailStatus::kApply;result.reason=TerminalTailReason::kApplied;
+			result.diagnostics=diagnostics;
+			result.patch={request.replacement_range,request.baseline_token,scratch.patch_points};
+			return result;
+		}
+
 		TerminalTailOutcome RunLocal(const TerminalTailRequest& request, TerminalTailScratch& scratch,
-			const LocalTerminalTailConfig& local)
+			const LocalTerminalTailConfig& local, const AdaptiveTerminalTailConfig* adaptive = nullptr,
+			std::size_t reliable_index = 0, double anomaly = 0, double visible_correction = 0, double inward_side = 0)
 		{
 			scratch.patch_points.clear();
 			TerminalTailDiagnostics diagnostics;
@@ -538,20 +701,23 @@ namespace ink::stroke_model
 			diagnostics.reference_terminal_turn = Angle(scratch.reference_positions[n - 3], scratch.reference_positions[n - 2], request.endpoint, c.epsilon);
 			if (diagnostics.reference_terminal_turn < local.activation_angle)
 				return Finish(TerminalTailStatus::kNoChange, TerminalTailReason::kUnchanged, diagnostics, scratch);
-			const double pin_length = Distance(scratch.reference_positions[n - 2], request.endpoint);
+			const std::size_t reliable = adaptive ? reliable_index : n - 2;
+			const double pin_length = Distance(scratch.reference_positions[reliable], request.endpoint);
 			const double reach = std::min(diagnostics.reference_length * local.max_repair_fraction,
 				std::max(local.min_repair_length, local.pin_length_multiplier * pin_length));
 			std::size_t start = static_cast<std::size_t>(std::lower_bound(scratch.reference_arc.begin(), scratch.reference_arc.end(),
 				diagnostics.reference_length - reach) - scratch.reference_arc.begin());
-			start = std::clamp(start, std::size_t(1), n - 4);
+			// 自适应窗口向前取整，确保稀疏模型仍覆盖已承诺的辅助点与入口过渡余量。
+			if (adaptive && start > 1 && scratch.reference_arc[start] > diagnostics.reference_length - reach) --start;
+			start = std::clamp(start, std::size_t(1), adaptive ? std::max(std::size_t(1), reliable - 1) : n - 4);
 			const double free_length = diagnostics.reference_length - scratch.reference_arc[start];
 			if (free_length <= c.epsilon) return reject(TerminalTailReason::kInsufficientWindow);
 			LocalVector entry = Difference(scratch.reference_positions[start], scratch.reference_positions[start - 1]);
-			const double reliable_end = scratch.reference_arc[n - 2];
-			std::size_t probe = static_cast<std::size_t>(std::lower_bound(scratch.reference_arc.begin(), scratch.reference_arc.begin() + n - 1,
+			const double reliable_end = scratch.reference_arc[reliable];
+			std::size_t probe = static_cast<std::size_t>(std::lower_bound(scratch.reference_arc.begin(), scratch.reference_arc.begin() + reliable + 1,
 				std::max(0.0, reliable_end - local.model_direction_probe)) - scratch.reference_arc.begin());
 			if (probe) --probe;
-			LocalVector terminal = Difference(scratch.reference_positions[n - 2], scratch.reference_positions[probe]);
+			LocalVector terminal = Difference(scratch.reference_positions[reliable], scratch.reference_positions[probe]);
 			if (!Normalize(entry, c.epsilon) || !Normalize(terminal, c.epsilon)) return reject(TerminalTailReason::kInsufficientWindow);
 			// 原始输入是可选证据；重复点不增加权重，最多选择固定数量的后半窗节点。
 			scratch.raw_arc.resize(m);
@@ -638,7 +804,9 @@ namespace ink::stroke_model
 					LocalVector direction{matrix[1][3], matrix[1][4]};
 					if (solved && Normalize(direction, c.epsilon))
 					{
-						const double confidence = std::min(1.0, double(count - begin - 1) / 3);
+						const double confidence = adaptive
+							? 0.5 * std::max(0.0, Dot(direction, terminal)) * scale / (scale + pin_length)
+							: std::min(1.0, double(count - begin - 1) / 3);
 						LocalVector blend{confidence * direction.x + (1 - confidence) * terminal.x,
 							confidence * direction.y + (1 - confidence) * terminal.y};
 						if (Normalize(blend, c.epsilon)) terminal = blend;
@@ -654,16 +822,29 @@ namespace ink::stroke_model
 				b = {-3 * u * t * t * terminal.x, -3 * u * t * t * terminal.y};
 			};
 			double aa = 0, ab = 0, bb = 0, ar = 0, br = 0;
+			double free_system[3][7]{};
 			const auto accumulate = [&](double t, Vec2 target, double weight)
 			{
 				LocalVector base, a, b; basis(t, base, a, b);
 				const LocalVector residual{double(target.x) - base.x, double(target.y) - base.y};
 				aa += weight * Dot(a, a); ab += weight * Dot(a, b); bb += weight * Dot(b, b);
 				ar += weight * Dot(a, residual); br += weight * Dot(b, residual);
+				if (adaptive)
+				{
+					// P1 只沿入口切向移动；P2 的两个分量独立，Up 只固定位置。
+					const double b2 = 3 * (1 - t) * t * t;
+					const LocalVector columns[3]{a,{b2,0},{0,b2}};
+					for (std::size_t row=0;row<3;++row)
+					{
+						for (std::size_t col=0;col<3;++col)
+							free_system[row][col]+=weight*Dot(columns[row],columns[col]);
+						free_system[row][3]+=weight*Dot(columns[row],residual);
+					}
+				}
 			};
-			const double weight_length = scratch.reference_arc[n - 2] - scratch.reference_arc[start];
+			const double weight_length = scratch.reference_arc[reliable] - scratch.reference_arc[start];
 			if (weight_length <= c.epsilon) return reject(TerminalTailReason::kInsufficientWindow);
-			for (std::size_t i = start; i + 2 < n; ++i)
+			for (std::size_t i = start; i < reliable; ++i)
 				accumulate((scratch.reference_arc[i] - scratch.reference_arc[start]) / free_length, scratch.reference_positions[i],
 					(scratch.reference_arc[i + 1] - scratch.reference_arc[i]) / weight_length);
 			std::size_t used = 0;
@@ -676,6 +857,99 @@ namespace ink::stroke_model
 			{
 				const double t = (selected_arc[k] - scratch.reference_arc[start]) / free_length;
 				if (t > .01 && t < .999) accumulate(t, request.raw[selected[k]].position, local.raw_position_weight / double(used));
+			}
+			if (adaptive)
+			{
+				// 极弱的弦向正则仅稳定欠定解，不绑定模型或原始输入的末端方向。
+				const double diagonal_scale=free_system[0][0]+free_system[1][1]+free_system[2][2];
+				if (!std::isfinite(diagonal_scale)||diagonal_scale<=1e-12)
+					return reject(TerminalTailReason::kInsufficientWindow);
+				const double regularization=diagonal_scale*1e-6;
+				const double prior[3]{free_length/3,(double(p0.x)-p3.x)/3,(double(p0.y)-p3.y)/3};
+				for (std::size_t row=0;row<3;++row)
+				{
+					free_system[row][row]+=regularization;
+					free_system[row][3]+=regularization*prior[row];
+					free_system[row][4+row]=1;
+				}
+				for (std::size_t col=0;col<3;++col)
+				{
+					std::size_t pivot=col;
+					for (std::size_t row=col+1;row<3;++row)
+						if (std::abs(free_system[row][col])>std::abs(free_system[pivot][col])) pivot=row;
+					if (std::abs(free_system[pivot][col])<=diagonal_scale*1e-12)
+						return reject(TerminalTailReason::kInsufficientWindow);
+					for (std::size_t j=0;j<7;++j) std::swap(free_system[col][j],free_system[pivot][j]);
+					const double divisor=free_system[col][col];
+					for (std::size_t j=0;j<7;++j) free_system[col][j]/=divisor;
+					for (std::size_t row=0;row<3;++row) if (row!=col)
+					{
+						const double factor=free_system[row][col];
+						for (std::size_t j=0;j<7;++j) free_system[row][j]-=factor*free_system[col][j];
+					}
+				}
+				if (inward_side!=0)
+				{
+					// 只有可信 raw 提示向内时约束法向侧，防止位置最小二乘用前段外鼓补偿内缩。
+					struct SideConstraint { double normal[3]; double lower; };
+					std::vector<SideConstraint> constraints;
+					constraints.reserve(2*(reliable-start));
+					const double tolerance=std::min(adaptive->sampling_tolerance,adaptive->visibility_distance*.25);
+					for (std::size_t i=start;i<reliable;++i)
+					{
+						auto edge=Difference(request.reference[i+1].position,request.reference[i].position);
+						if (!Normalize(edge,c.epsilon)) continue;
+						const LocalVector normal{-edge.y*inward_side,edge.x*inward_side};
+						for (std::size_t sample=1;sample<=2;++sample)
+						{
+							if (!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+							const double fraction=sample*.5;
+							const double arc=scratch.reference_arc[i]+fraction*(scratch.reference_arc[i+1]-scratch.reference_arc[i]);
+							const double t=(arc-scratch.reference_arc[start])/free_length;
+							LocalVector base,a,b;basis(t,base,a,b);
+							const Vec2 target=Interpolate(request.reference[i].position,request.reference[i+1].position,fraction);
+							const double b2=3*(1-t)*t*t;
+							constraints.push_back({{Dot(a,normal),b2*normal.x,b2*normal.y},
+								(double(target.x)-base.x)*normal.x+(double(target.y)-base.y)*normal.y-tolerance});
+						}
+					}
+					// 在原最小二乘度量下投影，变量仍只有三个；固定轮数后再次检查全部半空间。
+					for (std::size_t iteration=0;iteration<16;++iteration)
+					{
+						bool changed=false;
+						for (const auto& constraint:constraints)
+						{
+							if (!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+							double value=0,direction[3]{},denominator=0;
+							for (std::size_t row=0;row<3;++row)
+							{
+								value+=constraint.normal[row]*free_system[row][3];
+								for (std::size_t col=0;col<3;++col) direction[row]+=free_system[row][4+col]*constraint.normal[col];
+								denominator+=constraint.normal[row]*direction[row];
+							}
+							const double deficit=constraint.lower-value;
+							if (deficit<=c.epsilon) continue;
+							if (!std::isfinite(denominator)||denominator<=1e-20) return reject(TerminalTailReason::kExcessiveTurn);
+							for (std::size_t row=0;row<3;++row) free_system[row][3]+=direction[row]*deficit/denominator;
+							changed=true;
+						}
+						if (!changed) break;
+					}
+					for (const auto& constraint:constraints)
+					{
+						if (!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+						double value=0;
+						for (std::size_t row=0;row<3;++row) value+=constraint.normal[row]*free_system[row][3];
+						if (!std::isfinite(value)||value+c.epsilon<constraint.lower) return reject(TerminalTailReason::kExcessiveTurn);
+					}
+				}
+				const double entry_handle=free_system[0][3];
+				LocalVector free_terminal{-free_system[1][3],-free_system[2][3]};
+				const double terminal_handle=std::hypot(free_terminal.x,free_terminal.y);
+				if (!std::isfinite(entry_handle)||entry_handle<=c.epsilon||!Normalize(free_terminal,c.epsilon))
+					return reject(TerminalTailReason::kExcessiveTurn);
+				return SampleAdaptive(request,scratch,*adaptive,diagnostics,start,entry,free_terminal,
+					entry_handle,terminal_handle,anomaly,visible_correction);
 			}
 			const double determinant = aa * bb - ab * ab;
 			if (!std::isfinite(determinant) || determinant <= 1e-12 * aa * bb) return reject(TerminalTailReason::kInsufficientWindow);
@@ -766,6 +1040,65 @@ namespace ink::stroke_model
 			return result;
 		}
 
+		bool TerminalRawSupportsPin(const TerminalTailRequest& request, std::size_t reliable_index,
+			const AdaptiveTerminalTailConfig& config, TerminalTailDiagnostics& diagnostics, bool strict_raw_support)
+		{
+			const auto& c=request.config;
+			const auto& raw=request.raw;
+			if(raw.size()<3 || Distance(raw.back().position,request.endpoint)>c.epsilon
+				|| Distance(request.reference.back().position,request.endpoint)>c.epsilon) return false;
+			// 锁定唯一回拉起点；仅已有严格吻合证据时允许原始输入的直接末边，否则须有中间输入。
+			std::size_t anchor=raw.size();
+			for(std::size_t i=0;i+(strict_raw_support?1:2)<raw.size();++i)
+			{
+				if(!Spend(diagnostics.match_work,c.max_match_work)) return false;
+				if(Distance(raw[i].position,request.reference[reliable_index].position)>config.visibility_distance*.25) continue;
+				if(anchor!=raw.size()) return false;
+				anchor=i;
+			}
+			if(anchor==raw.size()) return false;
+			const auto modelPoint=[&](std::size_t i){return request.reference[i].position;};
+			const auto rawPoint=[&](std::size_t i){return raw[i].position;};
+			const auto within=[&](std::size_t sourceBegin,std::size_t sourceEnd,const auto& sourcePoint,
+				std::size_t targetBegin,std::size_t targetEnd,const auto& targetPoint)
+			{
+				const auto distance=[&](LocalVector point)
+				{
+					double best=std::numeric_limits<double>::infinity();
+					for(std::size_t j=targetBegin;j+1<targetEnd;++j)
+					{
+						if(!Spend(diagnostics.match_work,c.max_match_work)) return best=std::numeric_limits<double>::infinity();
+						const Vec2 a=targetPoint(j),b=targetPoint(j+1);
+						const auto edge=Difference(b,a);
+						const double norm=Dot(edge,edge);
+						const double t=norm>c.epsilon*c.epsilon?std::clamp(((point.x-a.x)*edge.x+(point.y-a.y)*edge.y)/norm,0.0,1.0):0;
+						best=std::min(best,std::hypot(point.x-a.x-t*edge.x,point.y-a.y-t*edge.y));
+					}
+					return best;
+				};
+				const auto edgeWithin=[&](const auto& self,LocalVector a,LocalVector b,double da,double db,std::size_t depth)->bool
+				{
+					if(da>config.visibility_distance || db>config.visibility_distance) return false;
+					// 到折线的距离是1-Lipschitz：端点距离加半弦长可保守覆盖整段，不能只验证顶点。
+					if(std::max(da,db)+std::hypot(b.x-a.x,b.y-a.y)*.5+c.epsilon<=config.visibility_distance) return true;
+					if(depth>=std::min<std::size_t>(config.max_subdivision_depth,12)) return false;
+					const LocalVector mid{(a.x+b.x)*.5,(a.y+b.y)*.5};
+					const double dm=distance(mid);
+					return self(self,a,mid,da,dm,depth+1) && self(self,mid,b,dm,db,depth+1);
+				};
+				for(std::size_t i=sourceBegin;i+1<sourceEnd;++i)
+				{
+					const Vec2 av=sourcePoint(i),bv=sourcePoint(i+1);
+					const LocalVector a{av.x,av.y},b{bv.x,bv.y};
+					if(!edgeWithin(edgeWithin,a,b,distance(a),distance(b),0)) return false;
+				}
+				return true;
+			};
+			// 只对已锚定的有序尾段做双向检查，原始输入绕行也不能被终点重合掩盖。
+			return within(reliable_index,request.reference.size(),modelPoint,anchor,raw.size(),rawPoint)
+				&& within(anchor,raw.size(),rawPoint,reliable_index,request.reference.size(),modelPoint);
+		}
+
 	}
 
 	TerminalTailOutcome ReconstructTerminalTail(const TerminalTailRequest& request, TerminalTailScratch& scratch)
@@ -784,6 +1117,170 @@ namespace ink::stroke_model
 	{
 		try { return RunLocal(request, scratch, config); }
 		catch (const std::bad_alloc&) { return Finish(TerminalTailStatus::kRejected, TerminalTailReason::kBudgetExceeded, {}, scratch); }
+	}
+
+	TerminalTailOutcome ReconstructAdaptiveTerminalTail(const TerminalTailRequest& request, TerminalTailScratch& scratch,
+		const AdaptiveTerminalTailConfig& config)
+	{
+		try
+		{
+			scratch.patch_points.clear();
+			TerminalTailDiagnostics diagnostics;
+			const auto fail=[&](TerminalTailStatus status,TerminalTailReason reason)
+			{ return Finish(status,reason,diagnostics,scratch); };
+			const auto& c=request.config;
+			if(!ValidConfig(c)||!request.endpoint.IsFinite()||!std::isfinite(config.visibility_distance)||config.visibility_distance<=0
+				||!std::isfinite(config.min_repair_length)||config.min_repair_length<=0
+				||!std::isfinite(config.initial_pin_multiplier)||config.initial_pin_multiplier<=1
+				||!std::isfinite(config.window_growth)||config.window_growth<=1
+				||!std::isfinite(config.sampling_tolerance)||config.sampling_tolerance<=0
+				||!std::isfinite(config.activation_angle)||config.activation_angle<=0||config.activation_angle>3.141592653589793
+				||!std::isfinite(config.max_curve_turn)||config.max_curve_turn<=0||config.max_curve_turn>1.5
+				||config.max_window_attempts==0||config.max_window_attempts>16
+				||config.max_output_points<5||config.max_output_points>kHardPointLimit
+				||config.max_subdivision_depth==0||config.max_subdivision_depth>16
+				||(request.reference.size()&&!request.reference.data())||(request.raw.size()&&!request.raw.data()))
+				return fail(TerminalTailStatus::kRejected,TerminalTailReason::kInvalidInput);
+			const auto n=request.reference.size();
+			if(n>c.max_reference_points||request.raw.size()>c.max_raw_points||n>config.max_output_points)
+				return fail(TerminalTailStatus::kRejected,TerminalTailReason::kBudgetExceeded);
+			if(n<5) return fail(TerminalTailStatus::kRejected,TerminalTailReason::kInsufficientWindow);
+			for(std::size_t i=0;i<n;++i)
+			{
+				const auto& p=request.reference[i];
+				if(!p.position.IsFinite()||p.source.first!=p.source.second||p.source.fraction!=0
+					||p.source.first<request.replacement_range.begin||p.source.second>=request.replacement_range.end
+					||(i&&p.source.first<=request.reference[i-1].source.first)||(p.weak_terminal&&i+1!=n))
+					return fail(TerminalTailStatus::kRejected,TerminalTailReason::kInvalidInput);
+			}
+			for(std::size_t i=0;i<request.raw.size();++i)
+				if(!request.raw[i].position.IsFinite()||(i&&request.raw[i].source<=request.raw[i-1].source))
+					return fail(TerminalTailStatus::kRejected,TerminalTailReason::kInvalidInput);
+			scratch.reference_positions.clear();
+			for(const auto& p:request.reference) scratch.reference_positions.push_back(p.position);
+			const double full=Arc(scratch.reference_positions,scratch.reference_arc);
+			if(!std::isfinite(full)||full<=c.epsilon) return fail(TerminalTailStatus::kRejected,TerminalTailReason::kInsufficientWindow);
+			// 扫描末段的方向突变，细分成多条共线边的人工 pin 也能被识别。
+			double anomaly=0,turn=0;
+			std::size_t reliable_index=n-2;
+			for(std::size_t i=n-2;i>0;--i)
+			{
+				const double suffix=full-scratch.reference_arc[i];
+				if(suffix>full*.35) break;
+				const double angle=Angle(request.reference[i-1].position,request.reference[i].position,request.endpoint,c.epsilon);
+				if(angle>config.activation_angle && angle>turn)
+				{turn=angle;anomaly=suffix;reliable_index=i;break;}
+				// 向前仅合并近似共线的末边；正常圆弧累计转向不能伪装成突变。
+				if(angle>config.activation_angle*.2) break;
+			}
+			// 原始折线与模型尾段吻合时，末端转向有真实输入证据，不当成人工回拉。
+			bool strict_raw_support=false;
+			if(request.raw.size()>=3)
+			{
+				double deviation=0;
+				for(std::size_t i=0;i<n;++i)
+				{
+					if(full-scratch.reference_arc[i]>std::max(anomaly*2,config.min_repair_length)) continue;
+					double best=std::numeric_limits<double>::infinity();
+					for(std::size_t j=0;j+1<request.raw.size();++j)
+					{
+						if(!Spend(diagnostics.match_work,c.max_match_work)) return fail(TerminalTailStatus::kRejected,TerminalTailReason::kBudgetExceeded);
+						const auto edge=Difference(request.raw[j+1].position,request.raw[j].position);
+						const double norm=Dot(edge,edge);
+						const double t=norm>c.epsilon*c.epsilon?std::clamp(Dot(Difference(request.reference[i].position,request.raw[j].position),edge)/norm,0.0,1.0):0;
+						best=std::min(best,Distance(request.reference[i].position,Interpolate(request.raw[j].position,request.raw[j+1].position,t)));
+					}
+					deviation=std::max(deviation,best);
+				}
+				strict_raw_support=deviation<=config.visibility_distance*.25;
+			}
+			diagnostics.reference_terminal_turn=turn;
+			if(anomaly<=c.epsilon)
+				return fail(TerminalTailStatus::kNoChange,TerminalTailReason::kUnchanged);
+			const auto last_direction=Difference(request.reference[reliable_index].position,request.reference[reliable_index-1].position);
+			const auto correction=Difference(request.endpoint,request.reference[reliable_index].position);
+			const double correction_side=last_direction.x*correction.y-last_direction.y*correction.x;
+			// 按真实横向偏离判断可见性，近共线倒退不能按整段回拉长度触发。
+			const double visible_correction=std::abs(correction_side)/std::max(c.epsilon,std::hypot(last_direction.x,last_direction.y));
+			if(visible_correction<config.visibility_distance)
+				return fail(TerminalTailStatus::kNoChange,TerminalTailReason::kUnchanged);
+			// 实际输入也有这段小回退且两条轨迹的差异不可见时，保留输入支持的终态。
+			if(TerminalRawSupportsPin(request,reliable_index,config,diagnostics,strict_raw_support))
+				return fail(TerminalTailStatus::kNoChange,TerminalTailReason::kUnchanged);
+			if(diagnostics.match_work>=c.max_match_work)
+				return fail(TerminalTailStatus::kRejected,TerminalTailReason::kBudgetExceeded);
+			const double available=full-scratch.reference_arc[1];
+			double reach=std::min(available,std::max(config.min_repair_length,anomaly*config.initial_pin_multiplier));
+			// 原始点提示偏离已经从更早开始：只扩展末端连续可信分支，不把整窗改成原始折线。
+			double next_arc=full,hint_reach=0;
+			std::size_t hint_support=0;
+			Vec2 next_raw=request.endpoint;
+			for(std::size_t r=request.raw.size();r>0;--r)
+			{
+				const Vec2 raw=request.raw[r-1].position;
+				if(Distance(raw,next_raw)<=c.epsilon) continue;
+				double best=std::numeric_limits<double>::infinity(),where=0,signed_distance=0,alignment=0;
+				for(std::size_t i=0;i<reliable_index;++i)
+				{
+					if(!Spend(diagnostics.match_work,c.max_match_work)) return fail(TerminalTailStatus::kRejected,TerminalTailReason::kBudgetExceeded);
+					if(scratch.reference_arc[i]>next_arc) break;
+					const auto edge=Difference(request.reference[i+1].position,request.reference[i].position);
+					const double length=std::hypot(edge.x,edge.y);
+					if(length<=c.epsilon) continue;
+					const double t=std::clamp(Dot(Difference(raw,request.reference[i].position),edge)/(length*length),
+						0.0,std::clamp((next_arc-scratch.reference_arc[i])/length,0.0,1.0));
+					const Vec2 projected=Interpolate(request.reference[i].position,request.reference[i+1].position,t);
+					const double distance=Distance(raw,projected);
+					if(distance<best)
+					{
+						best=distance;where=scratch.reference_arc[i]+t*length;
+						const auto offset=Difference(raw,projected),forward=Difference(next_raw,raw);
+						signed_distance=(edge.x*offset.y-edge.y*offset.x)/length;
+						alignment=Dot(edge,forward)/(length*std::max(c.epsilon,std::hypot(forward.x,forward.y)));
+					}
+				}
+				// 偏离幅度只用于辅助点可信度，不能否决拟合结果；孤立大离群点不扩大窗口。
+				if(!std::isfinite(best)||best>anomaly*2||alignment<.5||signed_distance*correction_side<=0) break;
+				if(std::abs(signed_distance)<std::max(config.visibility_distance,anomaly*.2)) break;
+				hint_reach=full-where;
+				++hint_support;
+				next_arc=where;next_raw=raw;
+			}
+			// 单个辅助点只能建议有限局部范围，持续远处偏离需要多个相邻点作证。
+			if(hint_support==1 && hint_reach>anomaly*12) hint_reach=0;
+			if(hint_reach>0)
+				reach=std::min(available,std::max(reach,hint_reach+std::max(anomaly,hint_reach*.25)));
+			TerminalTailOutcome last;
+			std::size_t match_work=diagnostics.match_work,validation_work=0;
+			for(std::size_t attempt=0;attempt<config.max_window_attempts;++attempt)
+			{
+				if(match_work>=c.max_match_work||validation_work>=c.max_validation_work)
+					return Finish(TerminalTailStatus::kRejected,TerminalTailReason::kBudgetExceeded,diagnostics,scratch);
+				LocalTerminalTailConfig local;
+				local.min_repair_length=reach;local.pin_length_multiplier=1e-6;local.max_repair_fraction=1;
+				local.activation_angle=0;local.model_direction_probe=std::max(.75,anomaly*.25);
+				TerminalTailRequest bounded=request;
+				bounded.config.max_match_work=c.max_match_work-match_work;
+				bounded.config.max_validation_work=c.max_validation_work-validation_work;
+				const double inward_side=hint_reach>0 ? (correction_side>0 ? 1.0 : -1.0) : 0;
+				last=RunLocal(bounded,scratch,local,&config,reliable_index,anomaly,visible_correction,inward_side);
+				match_work+=last.diagnostics.match_work;validation_work+=last.diagnostics.validation_work;
+				last.diagnostics.window_attempts=attempt+1;last.diagnostics.iterations=attempt+1;
+				last.diagnostics.raw_hint_length=hint_reach;
+				last.diagnostics.match_work=match_work;last.diagnostics.validation_work=validation_work;
+				last.diagnostics.reference_terminal_turn=turn;
+				if(last.status==TerminalTailStatus::kApply||last.reason==TerminalTailReason::kInvalidInput
+					||last.reason==TerminalTailReason::kSharpCorner||last.reason==TerminalTailReason::kBudgetExceeded
+					||last.reason==TerminalTailReason::kAmbiguousMatch) return last;
+				if(reach>=available) return last;
+				if(match_work>=c.max_match_work||validation_work>=c.max_validation_work)
+					return Finish(TerminalTailStatus::kRejected,TerminalTailReason::kBudgetExceeded,last.diagnostics,scratch);
+				reach=attempt+2==config.max_window_attempts?available:std::min(available,reach*config.window_growth);
+			}
+			return last;
+		}
+		catch(const std::bad_alloc&)
+		{ return Finish(TerminalTailStatus::kRejected,TerminalTailReason::kBudgetExceeded,{},scratch); }
 	}
 
 }

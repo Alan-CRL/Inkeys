@@ -1932,3 +1932,51 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Next Steps
 
 - 实体笔和断触完成视觉、GPU重绘体验验证
+
+
+## Session 73: 阶段三人工反馈：临时尾段反色诊断
+<!-- trellis-session: v=2 fp=3c4f87a9e0fb6863 -->
+
+**Date**: 2026-10-13
+**Task**: 阶段三人工反馈：临时尾段反色诊断
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+实际体验无变化原因未确定；仅应用成功且改变位置的尾段反色，保持保存颜色；ARM64主solution和生产331608断言及外部Headless通过；等待人工复测，不结束任务。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 74: 阶段三无反色调查：大弧位移拒绝与有界日志
+<!-- trellis-session: v=2 fp=f34d825b56d793ba -->
+
+**Date**: 2026-10-13
+**Task**: 阶段三无反色调查：大弧位移拒绝与有界日志
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+真实生产大弧回放确认3px位移门拒绝3.66/12.19px候选；单Up raw导致一点评估窗。新增18场景和有界日志，未调算法。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] ARM64 Debug solution和333894断言probe通过；Headless首次调度时序断言失败，相同二进制复测通过；无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户复现后读取TEMP尾段日志，定位现场拒绝原因；阶段三人工未通过、不归档。

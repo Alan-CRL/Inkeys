@@ -4822,6 +4822,7 @@ namespace draw3
 						BeginEndpointAdmission(runtime->stroke, rawEndpoint);
 					}
 					runtime->stroke.modelScratch.clear();
+					RecordPenTailModelBoundary(runtime->stroke, frameRealTime);
 					AppendEndpointBoundedModeledPoints(runtime->stroke,
 						runtime->stroke.modelScratch, -1.0f,
 						runtime->stroke.lastMovementInputTime, true);
@@ -4845,6 +4846,7 @@ namespace draw3
 					stationaryInput, runtime->stroke.modelScratch); status.ok())
 				{
 					runtime->lastModelInputTime = frameInputTime;
+					RecordPenTailModelBoundary(runtime->stroke, frameRealTime);
 					if (runtime->stroke.endpointAdmission.recovering)
 						AppendRecoveryModeledPoints(runtime->stroke, runtime->stroke.modelScratch,
 							rawEndpoint, -1.0f);

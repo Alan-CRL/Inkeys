@@ -896,13 +896,31 @@ namespace draw3
 	}
 
 
+	void RecordPenTailModelBoundary(ActiveStroke& stroke, double physicalTime) noexcept
+	{
+		if (!std::isfinite(physicalTime) || (stroke.tailModelBoundaryCount &&
+			physicalTime < stroke.tailModelBoundaries[stroke.tailModelBoundaryCount-1].physicalTime)) return;
+		// 记录输入即将追加的模型区间；raw 淘汰/缺失不会抹掉模型时间边界。
+		size_t expired = 0;
+		while (expired < stroke.tailModelBoundaryCount &&
+			stroke.tailModelBoundaries[expired].physicalTime < physicalTime - 0.160) ++expired;
+		if (!expired && stroke.tailModelBoundaryCount == stroke.tailModelBoundaries.size()) expired = 1;
+		for (size_t i = expired; i < stroke.tailModelBoundaryCount; ++i)
+			stroke.tailModelBoundaries[i-expired] = stroke.tailModelBoundaries[i];
+		stroke.tailModelBoundaryCount -= expired;
+		stroke.tailModelBoundaries[stroke.tailModelBoundaryCount++] = { physicalTime,
+			stroke.realPoints.empty() ? 0 : stroke.realPoints.size()-1 };
+	}
+
 	void RecordPenTailRawInput(ActiveStroke& stroke,
 		DirectX::XMFLOAT2 position, double physicalTime) noexcept
 	{
 		if (!std::isfinite(physicalTime) || !std::isfinite(position.x) ||
 			!std::isfinite(position.y)) return;
-		if (stroke.tailRawCount && physicalTime < stroke.tailRawSamples[stroke.tailRawCount - 1].physicalTime)
+		if ((stroke.tailRawCount && physicalTime < stroke.tailRawSamples[stroke.tailRawCount - 1].physicalTime) ||
+			(stroke.tailModelBoundaryCount && physicalTime < stroke.tailModelBoundaries[stroke.tailModelBoundaryCount - 1].physicalTime))
 			return; // 不把时间倒退样本塞进有序物理窗口。
+		RecordPenTailModelBoundary(stroke, physicalTime);
 		size_t remove = 0;
 		while (remove < stroke.tailRawCount &&
 			stroke.tailRawSamples[remove].physicalTime < physicalTime - 0.160) ++remove;
@@ -916,16 +934,33 @@ namespace draw3
 
 	namespace
 	{
-		void FitCompletedPenGeometry(const ActiveStroke& stroke, std::vector<InkPoint>& output)
+		InkPoint InterpolateCompletedPoint(const InkPoint& a, const InkPoint& b,
+			ink::stroke_model::Vec2 position, double fraction)
+		{
+			const float weight = static_cast<float>(fraction);
+			return {position.x,position.y,LerpFloat(a.r,b.r,weight),LerpFloat(a.time,b.time,weight)};
+		}
+
+		std::optional<size_t> FitCompletedPenGeometry(const ActiveStroke& stroke, std::vector<InkPoint>& output, size_t& completedBoundary)
 		{
 			using namespace ink::stroke_model;
+			const char* decision = "missing_terminal_or_short";
+			int status = -1, reason = -1;
+			size_t windowStart = 0, changedStart = std::numeric_limits<size_t>::max();
+			TerminalTailDiagnostics diagnostics;
 			// 仅确认完成时调用；断触等待和实时 L1/realPoints 不受影响。
-			if (!stroke.terminalDisplayTime || output.size() < 4) return;
+			if (!stroke.terminalDisplayTime || output.size() < 4) return std::nullopt;
 			const size_t count = output.size();
 			size_t start = count > 512 ? count - 512 : 0;
-			if (stroke.tailRawCount)
-				start = std::max(start, std::min(stroke.tailRawSamples[0].firstPoint, count - 1));
-			if (count - start < 4) return;
+			// 没有近期模型边界时不可猜测物理时间，更不能退回整笔最后 512 点。
+			size_t firstBoundary = 0;
+			while (firstBoundary < stroke.tailModelBoundaryCount &&
+				stroke.tailModelBoundaries[firstBoundary].physicalTime < *stroke.terminalDisplayTime - .160) ++firstBoundary;
+			if (firstBoundary == stroke.tailModelBoundaryCount) { decision = "missing_model_window"; return std::nullopt; }
+			start = std::max(start, std::min(stroke.tailModelBoundaries[firstBoundary].firstPoint, count-1));
+			windowStart = start;
+			decision = "short_window";
+			if (count - start < 4) return std::nullopt;
 			std::vector<TerminalTailReferencePoint> reference;
 			reference.reserve(count - start);
 			for (size_t i = start; i < count; ++i)
@@ -939,16 +974,50 @@ namespace draw3
 			request.endpoint = { stroke.terminalRawUp.x, stroke.terminalRawUp.y };
 			request.replacement_range = { start, count }; request.baseline_token = count;
 			request.config.max_raw_points = 64;
-			// 产品坐标为画布像素，3px 为当前实验位移上限；不按显示时间匹配 raw。
+			// 可见折线触发有限扩窗；位移只诊断，不设正常修正的位移硬门。
 			TerminalTailScratch fitScratch;
-			const auto result = ReconstructLocalTerminalTail(request, fitScratch);
+			// 坐标与笔宽均为画布像素，不额外乘 DPI；细笔保持亚像素误差，粗笔也有可见性上限。
+			double diameter = 0;
+			for (size_t i = start; i < count; ++i) diameter = std::max(diameter, 2.0*output[i].r);
+			AdaptiveTerminalTailConfig adaptiveConfig;
+			adaptiveConfig.visibility_distance = std::clamp(diameter*.10, .5, 1.0);
+			adaptiveConfig.sampling_tolerance = std::clamp(diameter*.03, .10, .20);
+			const auto result = ReconstructAdaptiveTerminalTail(request, fitScratch, adaptiveConfig);
+			status = static_cast<int>(result.status); reason = static_cast<int>(result.reason);
+			diagnostics = result.diagnostics; decision = "solver_or_patch_rejected";
 			if (result.status != TerminalTailStatus::kApply || result.patch.baseline_token != count ||
 				result.patch.replacement_range.begin != start || result.patch.replacement_range.end != count ||
-				result.patch.points.size() != count - start) return;
-			for (size_t i = 0; i < result.patch.points.size(); ++i)
-				if (result.patch.points[i].source.first != start + i ||
-					result.patch.points[i].source.second != start + i || result.patch.points[i].source.fraction != 0)
-					return;
+				result.patch.points.empty() || result.patch.points.size() > 2048) return std::nullopt;
+			decision = "source_rejected";
+			std::vector<InkPoint> candidate;
+			candidate.reserve(result.patch.points.size());
+			double previousSource = -1;
+			size_t mappedBoundary = completedBoundary;
+			bool foundBoundary = completedBoundary < start;
+			for (const auto& point : result.patch.points)
+			{
+				const auto& source = point.source;
+				if (source.first < start || source.second >= count || source.first > source.second ||
+					source.second-source.first > 1 || !std::isfinite(source.fraction) || source.fraction < 0 || source.fraction > 1)
+					return std::nullopt;
+				const double parameter = source.first + (source.second-source.first)*double(source.fraction);
+				if (parameter < previousSource) return std::nullopt;
+				previousSource = parameter;
+				const auto& a = output[source.first]; const auto& b = output[source.second];
+				const InkPoint sample = InterpolateCompletedPoint(a,b,point.position,source.fraction);
+				if (!std::isfinite(sample.x) || !std::isfinite(sample.y) || !std::isfinite(sample.r) || !std::isfinite(sample.time)) return std::nullopt;
+				if (parameter == completedBoundary) { mappedBoundary = start+candidate.size(); foundBoundary = true; }
+				if (point.position.x != LerpFloat(a.x,b.x,static_cast<float>(source.fraction)) || point.position.y != LerpFloat(a.y,b.y,static_cast<float>(source.fraction)))
+					changedStart = std::min(changedStart, start+candidate.size());
+				candidate.push_back(sample);
+			}
+			// 边界原顶点必须保留，避免把 L1 笔宽保护区误交给 taper。
+			if (!foundBoundary || result.patch.points.front().source.first != start ||
+				result.patch.points.front().source.fraction != 0 ||
+				result.patch.points.back().source.first != count-1 || result.patch.points.back().source.second != count-1 ||
+				result.patch.points.back().source.fraction != 0 ||
+				candidate.front().x != output[start].x || candidate.front().y != output[start].y ||
+				candidate.back().x != request.endpoint.x || candidate.back().y != request.endpoint.y) return std::nullopt;
 			// 求解器只看尾窗；发布前有界检查新尾段与未传入的稳定前缀。
 			auto cross = [](Vec2 a, Vec2 b, Vec2 c) {
 				return (double(b.x) - a.x) * (double(c.y) - a.y) -
@@ -967,23 +1036,23 @@ namespace draw3
 			{
 				const auto a = result.patch.points[i - 1].position, b = result.patch.points[i].position;
 				// L1 内笔宽沿用原属性，位置变化后仍必须满足圆胶囊公切线条件。
-				if (start + i <= stroke.committedIndex && stroke.hasCommittedGeometry &&
-					std::abs(output[start+i].r - output[start+i-1].r) >
-					0.95 * std::hypot(double(b.x) - a.x, double(b.y) - a.y)) return;
-				if (a.x == output[start+i-1].x && a.y == output[start+i-1].y &&
-					b.x == output[start+i].x && b.y == output[start+i].y) continue;
+				if (start + i <= mappedBoundary && stroke.hasCommittedGeometry &&
+					std::abs(candidate[i].r - candidate[i-1].r) >
+					0.95 * std::hypot(double(b.x) - a.x, double(b.y) - a.y)) { decision = "width_rejected"; return std::nullopt; }
+				if (start+i < changedStart) continue;
 				for (size_t j = 1; j <= start; ++j)
 				{
-					if (++work > request.config.max_validation_work) return;
+					if (++work > request.config.max_validation_work) { decision = "caller_budget_rejected"; return std::nullopt; }
 					if (start + i == j + 1) continue;
-					if (intersects(a, b, {output[j-1].x,output[j-1].y}, {output[j].x,output[j].y})) return;
+					if (intersects(a, b, {output[j-1].x,output[j-1].y}, {output[j].x,output[j].y})) { decision = "prefix_intersection_rejected"; return std::nullopt; }
 				}
 			}
-			for (size_t i = 0; i < result.patch.points.size(); ++i)
-			{
-				output[start + i].x = result.patch.points[i].position.x;
-				output[start + i].y = result.patch.points[i].position.y;
-			} // 只改位置；笔宽、压力来源、时间保持对应原点。
+			const bool changed = changedStart < start+candidate.size();
+			output.resize(start);
+			output.insert(output.end(),candidate.begin(),candidate.end());
+			completedBoundary = mappedBoundary;
+			decision = changed ? "applied" : "applied_without_position_change";
+			return changed ? std::optional<size_t>(changedStart ? changedStart-1 : 0) : std::nullopt;
 		}
 	}
 
@@ -1020,11 +1089,12 @@ namespace draw3
 		if (style.inkType == StoredInkType::Pen)
 		{
 			scratch = stroke.realPoints;
-			FitCompletedPenGeometry(stroke, scratch);
+			size_t completedBoundary = stroke.hasCommittedGeometry && !scratch.empty() ? std::min(stroke.committedIndex,scratch.size()-1) : 0;
+			FitCompletedPenGeometry(stroke, scratch, completedBoundary);
 			if (!scratch.empty())
 			{
 				const size_t tailStart = stroke.hasCommittedGeometry
-					? std::min(stroke.committedIndex, scratch.size() - 1) : 0;
+					? completedBoundary : 0;
 				std::vector<InkPoint> tail(scratch.begin() + tailStart, scratch.end());
 				ApplyLiveTipTaper(tail, liveTipTaperSeconds, ResolvePenDisplayTime(stroke));
 				EnforceCapsuleTangency(tail);
@@ -1248,6 +1318,7 @@ namespace draw3
 		predictedResults.clear();
 		realPoints.clear();
 		tailRawCount = 0;
+		tailModelBoundaryCount = 0;
 		predictedPoints.clear();
 		l0DrawPoints.clear();
 		previousL0DrawPoints.clear();

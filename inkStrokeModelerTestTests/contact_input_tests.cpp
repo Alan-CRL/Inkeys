@@ -50,6 +50,7 @@ int RunUInkTests();
 int RunThinStrokeGpuTests();
 int RunModelerReplay(const wchar_t* reportPath);
 int RunModelerBenchmark(const wchar_t* reportPath);
+int RunModelerAdaptiveTailReplay(const wchar_t* reportPath);
 int RunModelerTailReplay(const wchar_t* reportPath);
 int RunModelerTailBenchmark(const wchar_t* reportPath);
 
@@ -2211,37 +2212,41 @@ namespace
 			draw3::ActiveStroke stroke(5,100,draw3::StrokeWidthMode::Fixed);
 			stroke.useDisplayTime = true;
 			for (int i = 0; i < 80; ++i)
-				stroke.realPoints.push_back({i * .1f,0,2.5f,i*.001f});
-			stroke.realPoints.push_back({7.9f,.3f,2.5f,.080f});
+				stroke.realPoints.push_back({float(i),0,2.5f,i*.001f});
+			stroke.realPoints.push_back({79.f,3.f,2.5f,.080f});
 			stroke.committedIndex = 78; stroke.hasCommittedGeometry = true;
 			stroke.logicalInputTime = stroke.lastMovementInputTime = .080;
 			if (assisted)
 			{
 				stroke.tailRawCount = 2;
-				stroke.tailRawSamples[0] = {{7.5f,.1f},.070,0};
-				stroke.tailRawSamples[1] = {{7.9f,.3f},.080,0};
+				stroke.tailRawSamples[0] = {{75.f,1.f},.070,0};
+				stroke.tailRawSamples[1] = {{79.f,3.f},.080,0};
 			}
+			stroke.tailModelBoundaryCount = 1;
+			stroke.tailModelBoundaries[0] = {.020,20};
 			const auto original = stroke.realPoints;
 			std::vector<draw3::InkPoint> scratch;
 			// 等待接续时只重绘实时尾段，不调用完成态拟合。
-			draw3::LockPenTerminalState(stroke,.080,{7.9f,0},{7.9f,.3f});
+			draw3::LockPenTerminalState(stroke,.080,{79.f,0},{79.f,3.f});
 			draw3::BuildCompletedPenTail(stroke,0,scratch);
 			TEST_CHECK(state, stroke.realPoints[79].y == 0 && stroke.committedIndex == 78);
 			draw3::StoredInkStyle style;
 			style.inkType = draw3::StoredInkType::Pen;
 			const auto stored = draw3::FinalizeStoredStroke(stroke,style,0,scratch);
-			TEST_CHECK(state, stored && stored->Points().size() == original.size());
-			TEST_CHECK(state, scratch.size() == original.size());
+			TEST_CHECK(state, stored && stored->Points().size() == scratch.size());
+			TEST_CHECK(state, scratch.size() >= original.size());
 			bool changedCommitted = false;
+			for (size_t i = 0; i < original.size(); ++i)
+				TEST_CHECK(state, stroke.realPoints[i].x == original[i].x && stroke.realPoints[i].y == original[i].y);
 			for (size_t i = 0; i < scratch.size(); ++i)
 			{
-				TEST_CHECK(state, stroke.realPoints[i].x == original[i].x && stroke.realPoints[i].y == original[i].y);
-				TEST_CHECK(state, scratch[i].time == original[i].time && scratch[i].r == original[i].r);
-				if (i < stroke.committedIndex && scratch[i].y != original[i].y) changedCommitted = true;
-				if (i < 35) TEST_CHECK(state, scratch[i].x == original[i].x && scratch[i].y == original[i].y);
+				TEST_CHECK(state, scratch[i].r == 2.5f && scratch[i].time >= original.front().time && scratch[i].time <= original.back().time);
+				if (i) TEST_CHECK(state, scratch[i].time >= scratch[i-1].time);
+				if (scratch[i].time < original[78].time && scratch[i].y != 0) changedCommitted = true;
+				if (i < stroke.tailModelBoundaries[0].firstPoint) TEST_CHECK(state, scratch[i].x == original[i].x && scratch[i].y == original[i].y && scratch[i].r == original[i].r && scratch[i].time == original[i].time);
 			}
 			TEST_CHECK(state, changedCommitted);
-			TEST_CHECK(state, scratch.back().x == 7.9f && scratch.back().y == .3f);
+			TEST_CHECK(state, scratch.back().x == 79.f && scratch.back().y == 3.f);
 			TEST_CHECK(state, stored && stored->Points()[78].y == scratch[78].y);
 			// 非普通笔完全保留旧中心线；形状使用独立 FinalizeStoredShape。
 			style.inkType = draw3::StoredInkType::Highlighter;
@@ -3107,6 +3112,8 @@ int wmain(int argc, wchar_t* argv[])
 		return state.failures;
 	}
 	// 尾段实验入口必须在任何窗口/GPU 测试之前返回。
+	if (argc >= 2 && wcscmp(argv[1], L"--modeler-adaptive-tail-replay") == 0)
+		return argc == 3 ? RunModelerAdaptiveTailReplay(argv[2]) : 90;
 	if (argc >= 2 && wcscmp(argv[1], L"--modeler-tail-replay") == 0)
 		return argc == 3 ? RunModelerTailReplay(argv[2]) : 90;
 	if (argc >= 2 && wcscmp(argv[1], L"--modeler-tail-benchmark") == 0)

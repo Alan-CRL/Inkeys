@@ -115,6 +115,13 @@ namespace ink::stroke_model
 		std::size_t match_work = 0;
 		std::size_t validation_work = 0;
 		std::size_t iterations = 0;
+		double repair_length = 0;
+		double raw_hint_length = 0;
+		double sampling_error = 0;
+		double max_curve_turn = 0;
+		std::size_t window_attempts = 0;
+		std::size_t output_points = 0;
+		std::size_t changed_begin = 0;
 	};
 
 	struct TerminalTailPatch
@@ -177,6 +184,25 @@ namespace ink::stroke_model
 	TerminalTailOutcome ReconstructLocalTerminalTail(
 		const TerminalTailRequest& request, TerminalTailScratch& scratch,
 		const LocalTerminalTailConfig& config = {});
+
+	// 完成态专用：可见末钩触发，有限扩窗；位移只记录，不作发布硬门。
+	struct AdaptiveTerminalTailConfig
+	{
+		double visibility_distance = 0.5;
+		double min_repair_length = 6;
+		double initial_pin_multiplier = 4;
+		double window_growth = 1.6;
+		double sampling_tolerance = 0.15;
+		double activation_angle = 0.3490658503988659;
+		double max_curve_turn = 0.35;
+		std::size_t max_window_attempts = 8;
+		std::size_t max_output_points = 2048;
+		std::size_t max_subdivision_depth = 12;
+	};
+	// 输入来源须为精确原顶点；输出保留原参数锚点并允许有序分数来源插点。
+	TerminalTailOutcome ReconstructAdaptiveTerminalTail(
+		const TerminalTailRequest& request, TerminalTailScratch& scratch,
+		const AdaptiveTerminalTailConfig& config = {});
 
 }
 
