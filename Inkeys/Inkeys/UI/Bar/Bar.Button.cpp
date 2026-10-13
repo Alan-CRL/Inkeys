@@ -14,6 +14,10 @@ module;
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -465,17 +469,38 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					(void)Inkeys::Drawing::Draw3::PublishProductCommand(
-						Inkeys::Drawing::Draw3::Bridge::CommandType::Undo);
-
-					// TODO 撤回库重做后需要试试检测撤回状态，要支持按键变灰
+					// 灰色不可用时不发命令，但连点会延长已有的 3 秒保护。
+					barUISet.OpenRecallFromUndo();
 				};
 		}
 
 		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
-	// TODO 重做（这个会成为撤回的子窗口）
+	// 主栏 Redo：默认隐藏。浮窗收起且 Redo 仍可用时变成 Undo 上方的 2×1。
+	{
+		mainRedoButton = std::make_shared<BarButtonClass>();
+		BarButtonClass* obj = mainRedoButton.get();
+		obj->size = BarButtonSizeEnum::twoOne;
+		obj->preset = BarButtonPresetEnum::Redo;
+		obj->hide = true;
+		obj->userVisible = true;
+		obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+			IW(I18nKey.UI.Bar.MainButtons.RedoLabel), 0.0);
+		obj->name.enable.Initialization(true);
+		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+		obj->button.enable.Initialization(true);
+		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+		obj->icon.InitializationFromResource(L"UI", L"barRedo");
+		obj->icon.enable.Initialization(true);
+		obj->clickFunc = []() -> void
+			{
+				// 点中后 Redo 变成 2×2，Undo 进入浮窗；灰色时不发命令。
+				barUISet.OpenRecallFromRedo();
+			};
+		obj->state = &barButtonState[(int)BarButtonPresetEnum::Redo];
+		preset[(int)BarButtonPresetEnum::Redo] = obj;
+	}
 	// 清空
 	{
 		BarButtonClass* obj = new BarButtonClass;
@@ -1264,6 +1289,17 @@ void BarButtonSetClass::Load()
 
 	vector<shared_ptr<BarButtonClass>> activeButtons;
 	AppendFixedButtons(normalizedA1, activeButtons);
+	if (mainRedoButton)
+	{
+		// 插在撤回前面，两个 2×1 才会叠进原来的 2×2 格子，且 Redo 在上。
+		const auto recall = std::find_if(activeButtons.begin(), activeButtons.end(),
+			[](const shared_ptr<BarButtonClass>& button)
+			{
+				return button && button->preset == BarButtonPresetEnum::Recall;
+			});
+		// 用户移除固定区撤回时，不额外插入依附于它的重做。
+		if (recall != activeButtons.end()) activeButtons.insert(recall, mainRedoButton);
+	}
 	vector<shared_ptr<BarButtonClass>> legacyButtons = GetLegacyExtensionButtons();
 	vector<shared_ptr<BarButtonClass>> forcedOverflow;
 	vector<shared_ptr<BarButtonClass>> mainButtons;
@@ -1303,6 +1339,8 @@ void BarButtonSetClass::Load()
 	Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(normalizedA2));
 	if (fixedLayoutMigrated)
 		(void)Inkeys::config.Write(); // 旧 {Pierce, Freeze} A2 规范化后立即写回。
+	// 配置把撤回写回 2×2；紧凑态在加载后再套一次，不写回配置。
+	barUISet.ApplyRecallChromeVisuals();
 }
 
 void BarButtonSetClass::SyncLegacyExtensionButtons()
@@ -1347,6 +1385,8 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		barUISet.barState.geometryAttribute = false;
 	}
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
+	// 折叠收起浮窗；Redo 仍可用时收成 2×1，而不是重新弹出。
+	if (barUISet.barState.fold) barUISet.recallAttribute.Close(barUISet);
 
 	// 只有“选择 + 空页”使用精简布局；有历史内容时保留完整绘制按钮。
 	if (!whiteboard
@@ -1356,8 +1396,6 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		// 显示状态变化
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = true;
 		preset[(int)BarButtonPresetEnum::Geometry]->hide = true;
-		preset[(int)BarButtonPresetEnum::Recall]->hide = true;
-		//preset[(int)BarButtonPresetEnum::Redo]->hide = true;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = true;
 
 		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
@@ -1371,14 +1409,21 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		// 显示状态变化
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = false;
 		preset[(int)BarButtonPresetEnum::Geometry]->hide = false;
-		preset[(int)BarButtonPresetEnum::Recall]->hide = false;
-		//preset[(int)BarButtonPresetEnum::Redo]->hide = false;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
 		// 选择按钮不再承载清空语义。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
 			L"barSelect", whiteboard
 				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
 				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
+	}
+	// Undo/Redo 只发布当前布局，避免先显示隐藏的 Undo 再收起而多占一列。
+	barUISet.ApplyRecallChromeVisuals();
+	if (!whiteboard
+		&& stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
+		&& !Inkeys::UI::Bar::CurrentPageHasContent())
+	{
+		preset[(int)BarButtonPresetEnum::Recall]->hide = true;
+		if (auto* redo = preset[(int)BarButtonPresetEnum::Redo]) redo->hide = true;
 	}
 }
 void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
@@ -1417,4 +1462,245 @@ void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
 		if (Inkeys::UI::Setting::IsVisible()) barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::None;
 	}
+}
+
+namespace
+{
+	void ApplyRecallAvailabilityLocked(BarUISetClass& owner,
+		Inkeys::UI::Bar::RecallHistoryAvailability availability)
+	{
+		using namespace Inkeys::UI::Bar;
+		const auto before = owner.recallChrome;
+		owner.recallChrome = ApplyRecallChromeEvent(before, RecallChromeEvent::Availability, availability);
+		if (RecallChromeNeedsIdleRestart(before, owner.recallChrome))
+		{
+			owner.ArmRecallChromeIdleDeadline();
+			owner.ArmRecallChromeIdleTimer();
+		}
+		else if (!owner.recallChrome.settlePending && owner.recallChromeIdleArmed)
+		{
+			owner.recallChromeIdleArmed = false;
+			owner.DisarmRecallChromeIdleTimer();
+		}
+	}
+
+	void RefreshRecallAvailabilityLocked(BarUISetClass& owner)
+	{
+		using namespace Inkeys::UI::Bar;
+		RecallHistoryAvailability availability{};
+		if (Inkeys::Drawing::Draw3::ProductRunning())
+		{
+			const auto snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+			availability.canUndo = snapshot.canUndo;
+			availability.canRedo = snapshot.canRedo;
+		}
+		ApplyRecallAvailabilityLocked(owner, availability);
+	}
+
+	void ApplyRecallChromeVisualsLocked(BarUISetClass& owner)
+	{
+		using namespace Inkeys::UI::Bar;
+		const RecallChromeView view = ResolveRecallChrome(owner.recallChrome);
+		BarButtonClass* undo = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Recall)];
+		BarButtonClass* redo = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Redo)];
+		if (undo)
+		{
+			undo->size = view.undoExpanded
+				? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+			undo->hide = !view.mainUndoVisible;
+		}
+		if (redo)
+		{
+			redo->size = view.redoExpanded
+				? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+			redo->hide = !view.mainRedoVisible;
+		}
+		owner.barState.recallAttribute = view.popupOpen;
+	}
+
+	void ApplyRecallCommandResultLocked(BarUISetClass& owner, bool redo,
+		Inkeys::UI::Bar::RecallHistoryAvailability clickAvailability, bool accepted)
+	{
+		using namespace Inkeys::UI::Bar;
+		const auto before = owner.recallChrome;
+		owner.recallChrome = ApplyRecallChromeCommandResult(before, redo, clickAvailability, accepted);
+		if (RecallChromeNeedsIdleRestart(before, owner.recallChrome))
+		{
+			owner.ArmRecallChromeIdleDeadline();
+			owner.ArmRecallChromeIdleTimer();
+		}
+		ApplyRecallChromeVisualsLocked(owner);
+	}
+
+	bool EngageRecallCommand(BarUISetClass& owner, bool redo, bool popupCommand = false)
+	{
+		using namespace Inkeys::UI::Bar;
+		RecallHistoryAvailability clickAvailability;
+		{
+			std::scoped_lock lock(owner.recallChromeMutex);
+			RefreshRecallAvailabilityLocked(owner);
+			clickAvailability = owner.recallChrome.availability;
+			const auto view = ResolveRecallChrome(owner.recallChrome);
+			if (popupCommand && (!view.popupOpen || view.popupShowsRedo != redo)) return false;
+			if (!RecallChromeCommandEnabled(clickAvailability, redo))
+			{
+				ApplyRecallCommandResultLocked(owner, redo, clickAvailability, false);
+				return false;
+			}
+		}
+		const auto result = Inkeys::Drawing::Draw3::PublishProductCommand(redo
+			? Inkeys::Drawing::Draw3::Bridge::CommandType::Redo
+			: Inkeys::Drawing::Draw3::Bridge::CommandType::Undo);
+		if (result != Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted)
+		{
+			std::scoped_lock lock(owner.recallChromeMutex);
+			ApplyRecallCommandResultLocked(owner, redo, clickAvailability, false);
+			return false;
+		}
+		// 弹窗点击保留现有身份；主栏只合并面板互斥，不合并 Undo/Redo 命令。
+		if (!popupCommand && owner.TryBeginToggle(BarToggleChannel::RecallAttribute))
+			owner.CollapseAuxiliaryPanels();
+		{
+			std::scoped_lock lock(owner.recallChromeMutex);
+			ApplyRecallCommandResultLocked(owner, redo, clickAvailability, true);
+		}
+		owner.UpdateRendering(false);
+		return true;
+	}
+}
+
+void BarUISetClass::ApplyRecallChromeVisuals()
+{
+	std::scoped_lock lock(recallChromeMutex);
+	RefreshRecallAvailabilityLocked(*this);
+	ApplyRecallChromeVisualsLocked(*this);
+}
+
+Inkeys::UI::Bar::RecallChromeView BarUISetClass::RecallChromeView()
+{
+	std::scoped_lock lock(recallChromeMutex);
+	RefreshRecallAvailabilityLocked(*this);
+	return Inkeys::UI::Bar::ResolveRecallChrome(recallChrome);
+}
+
+void BarUISetClass::NoteRecallHistoryAvailability(bool canUndo, bool canRedo)
+{
+	bool changed = false;
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		if (recallChrome.availability.canUndo == canUndo
+			&& recallChrome.availability.canRedo == canRedo)
+			return;
+		ApplyRecallAvailabilityLocked(*this, { canUndo, canRedo });
+		ApplyRecallChromeVisualsLocked(*this);
+		changed = true;
+	}
+	if (changed) UpdateRendering(false);
+}
+
+bool BarUISetClass::PollRecallChromeIdleTimer(unsigned& retryMs)
+{
+	retryMs = 0;
+	std::scoped_lock lock(recallChromeMutex);
+	if (!recallChrome.settlePending || !recallChromeIdleArmed)
+		return false;
+	const auto now = std::chrono::steady_clock::now();
+	if (now >= recallChromeIdleDeadline) return true;
+	auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+		recallChromeIdleDeadline - now).count();
+	if (remaining < 1) remaining = 1;
+	retryMs = static_cast<unsigned>(remaining);
+	return false;
+}
+
+void BarUISetClass::ArmRecallChromeIdleDeadline()
+{
+	using namespace std::chrono;
+	recallChromeIdleDeadline = steady_clock::now()
+		+ duration_cast<steady_clock::duration>(duration<double>(
+			Inkeys::UI::Bar::RecallChromeIdleSeconds));
+	recallChromeIdleArmed = true;
+}
+
+void BarUISetClass::OpenRecallFromUndo()
+{
+	EngageRecallCommand(*this, false);
+}
+
+void BarUISetClass::OpenRecallFromRedo()
+{
+	EngageRecallCommand(*this, true);
+}
+
+void BarUISetClass::NoteRecallPopupRedo()
+{
+	OpenRecallFromRedo();
+}
+
+bool BarUISetClass::ActivateRecallPopupCommand()
+{
+	bool showsRedo = true;
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		RefreshRecallAvailabilityLocked(*this);
+		const auto view = Inkeys::UI::Bar::ResolveRecallChrome(recallChrome);
+		if (!view.popupOpen) return false;
+		showsRedo = view.popupShowsRedo;
+	}
+	return EngageRecallCommand(*this, showsRedo, true);
+}
+
+void BarUISetClass::NoteRecallPopupDismissed()
+{
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		RefreshRecallAvailabilityLocked(*this);
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::Dismiss);
+		ApplyRecallChromeVisualsLocked(*this);
+	}
+}
+
+void BarUISetClass::ClearRecallForDrawing()
+{
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		RefreshRecallAvailabilityLocked(*this);
+		// 落笔只关掉浮窗。3 秒按住还在时，大按钮保持到计时结束。
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::SuppressPopup);
+		ApplyRecallChromeVisualsLocked(*this);
+	}
+	recallAttribute.ResetPointerFeedback();
+}
+
+void BarUISetClass::SettleRecallChromeForWorkspace()
+{
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		RefreshRecallAvailabilityLocked(*this);
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::ReturnToDesktop);
+		ApplyRecallChromeVisualsLocked(*this);
+	}
+	recallAttribute.ResetPointerFeedback();
+}
+
+bool BarUISetClass::AdvanceRecallChromeIdle(double)
+{
+	{
+		std::scoped_lock lock(recallChromeMutex);
+		RefreshRecallAvailabilityLocked(*this);
+		if (!recallChrome.settlePending || !recallChromeIdleArmed)
+			return false;
+		if (std::chrono::steady_clock::now() < recallChromeIdleDeadline)
+			return false;
+		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
+			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::IdleElapsed);
+		recallChromeIdleArmed = false;
+		DisarmRecallChromeIdleTimer();
+		ApplyRecallChromeVisualsLocked(*this);
+	}
+	recallAttribute.ResetPointerFeedback();
+	return true;
 }

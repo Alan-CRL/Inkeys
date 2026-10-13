@@ -80,6 +80,7 @@ inline constexpr struct I18nKeyRoot
                 const char* RectangleLabel = "UI/Bar/MainButtons/RectangleLabel";
                 const char* StraightLineLabel = "UI/Bar/MainButtons/StraightLineLabel";
                 const char* UndoLabel = "UI/Bar/MainButtons/UndoLabel";
+                const char* RedoLabel = "UI/Bar/MainButtons/RedoLabel";
                 const char* ClearLabel = "UI/Bar/MainButtons/ClearLabel";
                 const char* WhiteboardLabel = "UI/Bar/MainButtons/WhiteboardLabel";
                 const char* CloseWhiteboardLabel = "UI/Bar/MainButtons/CloseWhiteboardLabel";

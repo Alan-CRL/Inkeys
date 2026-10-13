@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 60
-- **Last Active**: 2026-10-10
+- **Total Sessions**: 68
+- **Last Active**: 2026-10-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1835 | Active |
+| `journal-1.md` | ~2000 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,11 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 68 | 2026-10-12 | Redo popup 人工验收通过并归档 | `7094cea4` | `feature/redo` |
+| 67 | 2026-10-12 | 最近 Clear 区间 Undo 与前进 Redo 完整链修复 | - | `feature/redo` |
+| 66 | 2026-10-12 | Redo2x2点击暂态主栏扩宽修复 | - | `feature/redo` |
+| 65 | 2026-10-12 | Redo追加：3秒等待与属性身份显示提交 | - | `feature/redo` |
+| 64 | 2026-10-12 | 延续 Redo 弹窗：修复5秒布局保护与灰色动画 | - | `feature/redo` |
 | 60 | 2026-10-10 | Windows 发布流水线拆分与 Win32 Harness 修复 | - | `dev` |
 | 59 | 2026-10-10 | Win7 主画布修复验收并归档 | `12d82884cf09928c2ae22eda2fe8851ac8581c9b`, `4011594d103f5b95e77ec923f54058593ce7e549` | `chore/publish` |
 | 55 | 2026-10-09 | Win7 WARP 主画布默认完整 shader 修复 | - | `chore/publish` |

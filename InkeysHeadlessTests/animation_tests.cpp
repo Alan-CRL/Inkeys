@@ -59,6 +59,7 @@ int RunDraw3ContactInputTests();
 int RunSpeedEraserTests();
 int RunPenWidthTests();
 int RunEraserAttributeTests();
+int RunRecallAttributeTests();
 int RunPresentationDescriptorTests();
 
 namespace
@@ -1694,6 +1695,7 @@ int main(int argc, char** argv)
 	failureCount += RunSpeedEraserTests();
 	failureCount += RunPenWidthTests();
 	failureCount += RunEraserAttributeTests();
+	failureCount += RunRecallAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
 	if (benchmark) RunBenchmarks();
 

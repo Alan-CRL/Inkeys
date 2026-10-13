@@ -371,7 +371,7 @@ namespace Inkeys::UI::Bar
 
 	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
 		bool visible, bool enabled, bool selected,
-		double durationMilliseconds) noexcept
+		double durationMilliseconds, std::optional<COLORREF> contentColorOverride) noexcept
 	{
 		const bool pressed = button.state->emph
 			== BarWidgetEmphasize::Pressed;
@@ -406,9 +406,10 @@ namespace Inkeys::UI::Bar
 			BarButtonHoverTransitionDuration);
 		button.name.pct.SetTar(contentOpacity,
 			BarButtonHoverTransitionDuration);
-		const COLORREF contentColor = GetThemeColor(selected
+		// 调用方已有禁用颜色时，共用同一个目标，避免同帧正常/灰色反复重启动画。
+		const COLORREF contentColor = contentColorOverride.value_or(GetThemeColor(selected
 			? BarThemeColorEnum::Accent
-			: BarThemeColorEnum::TextPrimary);
+			: BarThemeColorEnum::TextPrimary));
 		if (button.icon.color1.has_value())
 			button.icon.color1->SetTar(contentColor);
 		button.name.color.SetTar(contentColor);
