@@ -122,6 +122,14 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, double dt, double sp
 	const auto chrome = owner.RecallChromeView();
 	auto anchor = owner.barButtonSet.preset[static_cast<int>(
 		chrome.redoExpanded ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall)];
+	if (!anchor)
+	{
+		// 锚点已移除时立即清掉旧面板，避免后续继承几何时解引用空指针。
+		Close(owner);
+		changed_ = frame_.panelVisible;
+		frame_.panelVisible = false;
+		return changed_;
+	}
 	const bool shouldClose = owner.barState.fold ||
 		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded ||
 		owner.barState.eraserAttribute || (anchor && !anchor->IsVisible());

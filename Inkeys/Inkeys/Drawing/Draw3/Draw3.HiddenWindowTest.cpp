@@ -915,6 +915,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			bool modeSucceeded = true;
 			auto snapshot = ProductHost().RuntimeSnapshot();
+			// 每次启动都是空历史，不能继承上一个 Host 的可用性快照。
+			modeSucceeded &= Check(!snapshot.canUndo && !snapshot.canRedo,
+				"fresh host starts with Undo and Redo unavailable", failures);
 			const auto modeDownBaseline=snapshot.inputDownPublished;
 			const auto modeRecycledBaseline=snapshot.inputRecycled;
 			modeSucceeded &= Check(snapshot.running && snapshot.firstFrameReady &&
@@ -1263,7 +1266,8 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= exerciseClearContinuation("Desktop", [&](bool)
 				{
 					const auto original = ProductHost().RuntimeSnapshot();
-					PublishProductCommand(Bridge::CommandType::NextPage);
+					if (!Check(PublishProductCommand(Bridge::CommandType::NextPage) == Bridge::CommandResult::Accepted,
+						"continuation Desktop NextPage accepted", failures)) return false;
 					if (!Check(WaitUntil([original]
 					{
 						const auto state = ProductHost().RuntimeSnapshot();
@@ -1272,7 +1276,8 @@ namespace Inkeys::Drawing::Draw3
 					const auto other = ProductHost().RuntimeSnapshot();
 					if (!Check(other.currentPageHasContent || !other.canUndo,
 						"empty Desktop page does not borrow another page Clear undo", failures)) return false;
-					PublishProductCommand(Bridge::CommandType::PreviousPage);
+					if (!Check(PublishProductCommand(Bridge::CommandType::PreviousPage) == Bridge::CommandResult::Accepted,
+						"continuation Desktop PreviousPage accepted", failures)) return false;
 					return Check(WaitUntil([original, other]
 					{
 						const auto state = ProductHost().RuntimeSnapshot();

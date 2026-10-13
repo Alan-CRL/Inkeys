@@ -1297,7 +1297,8 @@ void BarButtonSetClass::Load()
 			{
 				return button && button->preset == BarButtonPresetEnum::Recall;
 			});
-		activeButtons.insert(recall, mainRedoButton);
+		// 用户移除固定区撤回时，不额外插入依附于它的重做。
+		if (recall != activeButtons.end()) activeButtons.insert(recall, mainRedoButton);
 	}
 	vector<shared_ptr<BarButtonClass>> legacyButtons = GetLegacyExtensionButtons();
 	vector<shared_ptr<BarButtonClass>> forcedOverflow;

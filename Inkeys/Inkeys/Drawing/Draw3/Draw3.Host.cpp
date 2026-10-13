@@ -593,6 +593,9 @@ namespace Inkeys::Drawing::Draw3
 			currentPageIndex.store(0, std::memory_order_release);
 			pageCount.store(0, std::memory_order_release);
 			currentPageHasContent.store(false, std::memory_order_release);
+			// 新 Host 生命周期不能沿用上次运行的撤回/重做可用性。
+			canUndo.store(false, std::memory_order_release);
+			canRedo.store(false, std::memory_order_release);
 			contentRevision.store(0, std::memory_order_release);
 			completedStrokeKind.store(
 				Bridge::CompletedStrokeKind::None, std::memory_order_release);
