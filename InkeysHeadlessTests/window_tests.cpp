@@ -501,20 +501,45 @@ int RunWindowTests()
 	const auto settingExStyleBeforeOwner = GetWindowLongPtrW(setting, GWL_EXSTYLE);
 	const auto settingIconBeforeOwner =
 		reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0));
-	check(service.SetSettingOwnedByDrawpad(true)
-		&& service.SetSettingOwnedByDrawpad(true),
-		"setting attach owner idempotent");
+	std::atomic_int settingRefreshes = 0;
+	service.SetTopmostRefreshObserver([&] { ++settingRefreshes; });
+	check(service.SetSettingOwnedByDrawpad(true), "setting attach owner");
+	check(settingRefreshes.load() == 1, "setting attach immediately refreshes root");
+	check(service.SetSettingOwnedByDrawpad(true) && settingRefreshes.load() == 1,
+		"unchanged correct setting owner avoids repeated root refresh");
+	service.SetTopmostRefreshObserver({});
 	check(GetWindow(setting, GW_OWNER) == drawpad,
 		"setting joins drawpad owner chain");
+	check((GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"visible selection setting immediately rises above both canvases on attach");
 	check(service.OwnerThreadId(WindowRole::Setting) == settingOwnerThread,
 		"setting owner thread remains stable");
 	check(settingOwnerThread != service.OwnerThreadId(WindowRole::Drawpad),
 		"setting keeps dedicated owner thread");
 	check(GetWindowLongPtrW(setting, GWL_STYLE) == settingStyleBeforeOwner
-		&& GetWindowLongPtrW(setting, GWL_EXSTYLE) == settingExStyleBeforeOwner
+		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & ~WS_EX_TOPMOST)
+			== (settingExStyleBeforeOwner & ~WS_EX_TOPMOST)
 		&& reinterpret_cast<HICON>(SendMessageW(
 			setting, WM_GETICON, ICON_BIG, 0)) == settingIconBeforeOwner,
 		"setting owner attach preserves app window contract");
+	check(service.Hide(WindowRole::Setting) && service.Show(WindowRole::Setting)
+		&& IsWindowVisible(setting)
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"owned setting reshow immediately stays above both canvases");
+	check(service.SetOverlayTopmost(false)
+		&& service.SetSettingOwnedByDrawpad(true)
+		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0
+		&& service.Show(WindowRole::Setting)
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"setting immediate ordering respects non-topmost root policy");
+	check(service.SetOverlayTopmost(true), "restore root policy after setting show");
 	check(service.SetSettingOwnedByDrawpad(false)
 		&& service.SetSettingOwnedByDrawpad(false),
 		"setting detach owner idempotent");

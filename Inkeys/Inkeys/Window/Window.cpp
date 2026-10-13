@@ -356,6 +356,8 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool Show(WindowRole role)
 		{
+			// 已加入画布链的设置在显示前同步抬升根；选择态保留普通窗口语义。
+			if (IsSetting(role) && !PrepareSettingZOrder(true)) return false;
 			return Submit(role, CommandType::Show);
 		}
 
@@ -431,7 +433,63 @@ namespace Inkeys::Window
 			command.type = CommandType::SetSettingOwnedByDrawpad;
 			command.role = WindowRole::Setting;
 			command.enabled = enabled;
-			return Submit(std::move(command));
+			const HWND setting = Handle(WindowRole::Setting);
+			const HWND previousOwner = setting ? GetWindow(setting, GW_OWNER) : nullptr;
+			if (!Submit(std::move(command))) return false;
+			if (!enabled) return true;
+			if (!PrepareSettingZOrder(previousOwner != Handle(WindowRole::Drawpad))) return false;
+			return setting && setting == Handle(WindowRole::Setting)
+				&& IsWindow(setting) && GetWindow(setting, GW_OWNER) == Handle(WindowRole::Drawpad)
+				&& Handle(WindowRole::Drawpad) != nullptr;
+		}
+
+		[[nodiscard]] bool SettingAboveDrawpads(HWND setting) const noexcept
+		{
+			const HWND primary = Handle(WindowRole::Drawpad);
+			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
+			if (!setting || !primary || !presentation) return false;
+			bool primaryBelow = false;
+			bool presentationBelow = false;
+			for (HWND below = GetWindow(setting, GW_HWNDNEXT); below;
+				below = GetWindow(below, GW_HWNDNEXT))
+			{
+				primaryBelow |= below == primary;
+				presentationBelow |= below == presentation;
+				if (primaryBelow && presentationBelow) return true;
+			}
+			return false;
+		}
+
+		[[nodiscard]] bool PrepareSettingZOrder(bool forceRefresh)
+		{
+			const HWND setting = Handle(WindowRole::Setting);
+			if (!setting || !IsWindow(setting)) return false;
+			const HWND owner = GetWindow(setting, GW_OWNER);
+			if (!owner) return true;
+			if (owner != Handle(WindowRole::Drawpad) || !IsWindow(owner)) return false;
+			const HWND root = OverlayRoot();
+			const bool topmost = overlayTopmost_.load(std::memory_order_acquire)
+				&& !whiteboardWindowMode_.load(std::memory_order_acquire);
+			const auto matches = [&]() noexcept
+			{
+				return setting == Handle(WindowRole::Setting) && IsWindow(setting)
+					&& owner == Handle(WindowRole::Drawpad) && IsWindow(owner)
+					&& GetWindow(setting, GW_OWNER) == owner
+					&& root && root == OverlayRoot() && IsWindow(root)
+					&& topmost == (overlayTopmost_.load(std::memory_order_acquire)
+						&& !whiteboardWindowMode_.load(std::memory_order_acquire))
+					&& ((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) == topmost
+					&& ((GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) == topmost
+					&& SettingAboveDrawpads(setting);
+			};
+			if (forceRefresh || !matches())
+			{
+				// 根操作可能同步向 owned 窗口发消息；设置线程不能等待 overlay 线程。
+				if (GetCurrentThreadId() == settingThreadId_.load(std::memory_order_acquire))
+					return false;
+				if (!RequestTopmostRefresh()) return false;
+			}
+			return matches();
 		}
 
 		[[nodiscard]] bool SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
@@ -1590,6 +1648,20 @@ namespace Inkeys::Window
 				if (IsSetting(command.role))
 				{
 					ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+					if (GetWindow(hwnd, GW_OWNER)
+						&& GetWindow(hwnd, GW_OWNER) == Handle(WindowRole::Drawpad))
+					{
+						// 只调整当前继承窗口带内的顺序，不独立设置 TOPMOST。
+						SetLastError(ERROR_SUCCESS);
+						succeeded = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+							SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+						if (succeeded) succeeded = SettingAboveDrawpads(hwnd);
+						if (!succeeded)
+						{
+							error = GetLastError();
+							if (error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+						}
+					}
 					// Setting 是普通应用窗口；每次打开都交还键盘焦点。
 					(void)SetForegroundWindow(hwnd);
 					(void)SetActiveWindow(hwnd);

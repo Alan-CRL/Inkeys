@@ -978,13 +978,9 @@ namespace Inkeys::Drawing::Draw3
 			Bridge::ProductState selectionState{};
 			selectionState.selectionMode = true;
 			PublishProductState(selectionState);
-			// 模拟退出时 Selection 先于完整 ULW 帧到达，窗口事务先撤下旧主窗。
-			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
-				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
-				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
-				"waiting Selection hides the old primary HWND", failures);
-			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
-				"hiding Selection releases primary Drawpad capture on its owner thread", failures);
+			// Selection 输出尚未就绪时保留旧表面，正常交接不制造双隐藏空档。
+			modeSucceeded &= Check(IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"pending Selection keeps the previous primary frame visible", failures);
 			modeSucceeded &= Check(WaitUntil([primaryReady]
 			{
 				const auto state = ProductHost().RuntimeSnapshot();
@@ -1003,6 +999,8 @@ namespace Inkeys::Drawing::Draw3
 					(WS_EX_LAYERED | WS_EX_TRANSPARENT)) ==
 					(WS_EX_LAYERED | WS_EX_TRANSPARENT),
 				"ready Selection restores only the layered through surface", failures);
+			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
+				"ready Selection handoff releases primary capture on its owner thread", failures);
 			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
 				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
 				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),

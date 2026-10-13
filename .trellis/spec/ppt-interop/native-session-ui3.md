@@ -31,7 +31,7 @@
 - target 接受后关新 contact admission；绘制线程收尾已接受持久笔迹到旧页，保留 FIFO 已接受命令及保存边界，取消 Laser，停止重连/惯性。未抬起的物理接触隔离至真实 Up/Cancelled，不允许跨页续写，也不无界等待 Up。
 - 文档切换和成功 Present 是不同阶段。只有 replay + Present 成功才发布 identity-ready；页码随后带同一 target 发布。可见 PageControl surface 全部成功提交（没有可见控件则直接回执）后，匹配当前 target 才开放新输入。
 - Unknown 暂停后清除旧 UI-ready；恢复同一页也须取得新回执。完整、可信的 EndScreen 则走独立 target→页槽切换→成功 Present→`-1/N` UI 提交→输入开放，版本与普通页同等严格。旧 UI ack、load/save 完成和 Host 重启前结果不能重新激活旧目标。
-- 真正退出放映时，PptInfo 的可靠 Inactive/已销毁或复用 HWND 边沿发布 Desktop，并以退出检测时的工具模式 revision 有条件地调和 Selection（即使工具枚举本来是 Selection）；后来的用户 Pen/Shape/Eraser 修改不能被旧退出覆盖。等待 Desktop Selection 输出帧期间在 Window Service owner thread 隐藏旧双画布并保持有界重试；呈现成功后有墨迹走辅助穿透 ULW，无墨迹双隐藏。不能靠非 layered 主 HWND 的 `WS_EX_TRANSPARENT`、AdmissionBlocked 或 MA_NOACTIVATE 推断 USER32 穿透。白板、Unknown、结束黑页和同次 rebind 不触发此收尾。
+- 真正退出放映时，PptInfo 的可靠 Inactive/已销毁或复用 HWND 边沿发布 Desktop，并以退出检测时的工具模式 revision 有条件地调和 Selection（即使工具枚举本来是 Selection）；后来的用户 Pen/Shape/Eraser 修改不能被旧退出覆盖。等待 Desktop Selection 输出帧期间保留旧可见表面并重试；最新工作区/模式/输出与内容帧就绪后成对交接，有墨迹走辅助穿透 ULW，空 clean 页允许隐藏画布而主栏保持。条件 Selection 成功后再次更新 Bar 样式/渲染；退出的 Desktop 就绪交接立即刷新根，较新工具不被旧退出覆盖，也不跳过该层级恢复。不能靠非 layered 主 HWND 的 `WS_EX_TRANSPARENT`、AdmissionBlocked 或 MA_NOACTIVATE 推断 USER32 穿透。白板、Unknown、结束黑页和同次 rebind 不触发此收尾。
 - EndScreen 的 UInk 是同一文稿文件中 N 个正常页之后的独立第 N+1 个 active canvas：`pageIndex=N/pageNumber=N+1`、单个 `inkeysPageKind=end-screen` marker、无 SlideID、独立 pageGuid/history。真实 `slideIds`/COM 总数/索引 ID 列表仍只有 N 项。codec 仅对这个标记例外，严格应用导入拒绝重复/歧义；旧 N-canvas 文件冷读补空结束页。重排/增删页按 SlideID 投影正常页，结束页 pageGuid 随文稿保留并移至新的内部 N。
 - parked/warm slot 先恢复旧 target，再比较有序 SlideIDs；普通 pageIndex/当前 SlideID/targetRevision 变化不是拓扑变化。
 
@@ -64,7 +64,7 @@
 | 新场次在旧确认框期间开始 | 旧请求拒绝，不退出新场次、不切新场次模式 |
 | 白板覆盖 / 临时 descriptor 失败 | 不触发正常 PPT 退出或位置保存 |
 | 退出检测后用户主动切 Pen/Shape/Eraser | 模式 revision 已变化时旧 Selection 收尾不覆盖新工具；窗口 owner thread 旧显隐命令在释放 capture 前因 bridge 或工具模式 revision 不匹配而拒绝 |
-| Selection 输出未 ready / Present 失败 | 先隐藏旧主 Drawpad 与辅助窗，保留 250ms 重试；不可让非 layered 主窗全屏拦截桌面，也不伪造 ready |
+| Selection 输出未 ready / Present 失败 | 保留旧已呈现表面，等待最新目标帧并重试，不主动双隐藏、不伪造 ready；旧主窗保留期不承诺系统穿透，最终以辅助帧完成交接 |
 | EndScreen 已确认并成功 Present / 拓扑暂不可用 | 前者才用独立 `N` 槽和 `-1/N` 同 revision UI 回执开放输入；后者保留安全待定且不冒充普通页 |
 | 无事件且同 HWND 的结束重开完全落在观测间隙 | 外部可观测性限制；必须设备验收，不能宣称仅缓存已证明该提供方全部场景 |
 

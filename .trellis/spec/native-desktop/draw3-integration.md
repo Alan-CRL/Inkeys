@@ -391,7 +391,7 @@ PumpBridgeState();
 - Good：有一笔的选择态由辅助 ULW 穿透显示，Clear 后等当前 revision 的完整 clean 帧再隐藏；Undo 恢复该笔并重新显示辅助窗，Redo 再次隐藏，另一页的 Eraser history 仍存在。
 - Base：初始选择空页两窗隐藏；进入 Pen 先预热主 presenter 再显示，未落笔返回选择再次经辅助 clean 后隐藏。
 - Bad：用窗口穿透样式推断选择模式、让主 Drawpad 承担穿透、复制固定 L2、视觉像素是否为空推断内容，或 Clear 时删除 Stroke/替换 runtime。
-- PPT 真退出的 Desktop Selection 可以先于其辅助 ULW 完整帧就绪；等待时 Window Service owner thread 必须隐藏旧双画布，保持可恢复重试，且在最新 bridge revision、输出目标/content revision 成功 Present 后再显示辅助 ULW（有内容）或双隐藏（空内容）。成对 HWND 事务要读回双窗可见性；AdmissionBlocked、MA_NOACTIVATE 和非 layered 主窗上的 `WS_EX_TRANSPARENT` 不能代替系统命中穿透。白板和更新的 Pen/Presentation 期望优先。
+- PPT 真退出及 Desktop/Presentation、Selection/绘制交接必须保持旧可见画面直至最新工作区、模式、输出目标/revision、content Present 与场景身份均匹配；等待或过期帧不主动双隐藏。就绪后通过 owner-thread 成对显隐事务切换目标，有内容选择页使用辅助 ULW，空 clean 页可隐藏画布但主栏保留。旧非 layered 主表面保留期间不承诺系统穿透；AdmissionBlocked 不能代替该穿透。可信退出的条件 Selection 成功后必须再刷新 Bar 样式和渲染，不能沿用提交前的高亮；Desktop交接就绪时刷新根并在失败时重试。
 - PPT EndScreen 仅由可信 State=5 与同次完整文稿拓扑产生明确 `PageKind::EndScreen` 目标：内部索引为真实 `N`，COM/UI 总页数仍 `N`，无 SlideID。正常页与 EndScreen 共用单 Host 页边界、contact 隔离、成功 Present、UI ready 和保存 worker。UInk 文件在 N 个真实 active 页后保存一个带单个 `inkeysPageKind=end-screen` 的独立 pageGuid；codec 两侧和应用严格导入须配套验证，旧 N-canvas 文件冷读补空页。重排/增删幻灯片不能把该页放入 retained SlideID 集合。
 
 ### 6. Tests Required
@@ -399,7 +399,7 @@ PumpBridgeState();
 - Headless 覆盖 `Primary/Presentation/Hidden` 解析、Clear 点击/双击决策，以及 timer begin/end 幂等、失败、模式往返和析构清理。
 - CPU history 覆盖普通 `A/B/C` 的 Undo/Redo、`undoFloor` 截止、Clear 恢复画布逐笔撤空且不跨第二个边界、新 Stroke 分支丢弃 redo 和每页隔离；UInk/storage 覆盖 `A/Clear/B/Clear/C`、空 Clear no-op 与最近区间恢复。
 - 隐藏 HWND 集成覆盖双窗固定样式/owner/bounds、互斥可见、输出 generation 往返、clean 握手、Stored Stroke 内容发布、页面切换、Clear 后 Undo 恢复、普通 Stroke Redo 和 presenter recovery；跨 Clear Redo 不在本期。
-- Selection PPT 页级回归须通过真实 Controller observer 和 Host 覆盖两个不同有墨迹页的 `true/r→true/r+1`、两个空页的 `false/r→false/r+1`、相同完整载荷幂等、EndScreen 与普通页往返；每次比较 Host 目标/成功 Present 内容版本及辅助 ULW 的完成输出，不能只等待 `presentationReady` 身份或内容 bool。Pen 模式与真退出双隐藏合同同时复测。
+- Selection PPT 页级回归须通过真实 Controller observer 和 Host 覆盖两个不同有墨迹页的 `true/r→true/r+1`、两个空页的 `false/r→false/r+1`、相同完整载荷幂等、EndScreen 与普通页往返；每次比较 Host 目标/成功 Present 内容版本及辅助 ULW 的完成输出，不能只等待 `presentationReady` 身份或内容 bool。Pen 模式与真退出保留旧帧、就绪交接和主栏模式同步合同同时复测。
 - 完整 `InkeysRepo.sln Debug|ARM64` 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`；不得启动可见窗口。
 
 ### 7. Wrong vs Correct
