@@ -234,3 +234,39 @@
 ### Next Steps
 
 - 本次四阶段范围完成，无需继续修改；旧事件再现时用显式诊断捕获并建立对应回归。真实Win7、D3D Debug Layer、Release GUI及原生x64/Win32体验未执行，不推送远程。
+
+
+## Session 82: Draw3尾段修复最终人工验收确认
+<!-- trellis-session: v=2 fp=c4f423fa866d747d -->
+
+**Date**: 2026-10-14
+**Task**: Draw3尾段修复最终人工验收确认
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+2026-10-14用户明确宣布人工验证通过并要求结束任务及提交。已在归档父任务、阶段三、阶段四及既有验收报告补记最终人工确认，维持completed，不新建阶段五。
+
+### Main Changes
+
+- 增加最终人工验收通过标记及2026-10-14确认日期，保留原工作提交和归档日期。
+- 本次仅更新验收文档和任务元数据；旧偶发斜线与数字6暂缓事项保留，不追加未说明的设备或平台覆盖声明。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e154707ce72e95c0c4c20297afefbbaa07f04d14` | docs(draw3): confirm final manual acceptance |
+
+### Testing
+
+- [OK] 三个已归档任务的JSON与Trellis上下文校验通过；git diff --check通过，修改保持原编码与换行，仅4份验收记录。
+- [OK] 纯验收记录更新，未修改代码或构建配置，未重复编译、运行测试或打开GUI。沿用阶段四已通过的构建和自动验收证据。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务已完成并归档，继续正常使用或按原流程发布；问题再现时采集诊断证据。未推送远程。
