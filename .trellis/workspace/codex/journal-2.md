@@ -158,3 +158,79 @@
 ### Next Steps
 
 - 阶段四工程收尾：默认正常颜色/日志策略、接续和存储、最新Release多架构及性能；物理Up预览按实测需要决定
+
+
+## Session 80: 阶段四正常颜色抬笔长斜线调查与显式诊断交付
+<!-- trellis-session: v=2 fp=4f541197f3798382 -->
+
+**Date**: 2026-10-13
+**Task**: 阶段四正常颜色抬笔长斜线调查与显式诊断交付
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+阶段三签名提交重试成功；阶段四人工发现抬笔长斜线，已交付默认关闭且正常颜色的有界来源与完成几何诊断，根因未确认，用户稍后测试，任务不归档。
+
+### Main Changes
+
+- 默认反色与轨迹I/O关闭，显式INKEYS_DRAW3_TAIL_TRACE=1收集输入与最终Stored；接续身份、旧终态和PID复用日志已审查修正。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `71858b0b` | fix(draw3): reconstruct pen-up tails and preserve raw-supported returns |
+
+### Testing
+
+- [OK] 完整Debug ARM64 solution、334115生产断言、诊断开关几何一致、control fence、模块9245/128412基线、生命周期/UInk通过；未运行GUI或Win7。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 等待用户正常颜色复现日志，定位长线首现阶段并建立回归后修复；随后继续最终Release/跨架构及人工验收。
+
+
+## Session 81: 阶段四验收完成、签名提交与父子任务归档
+<!-- trellis-session: v=2 fp=7480dca109fa79a0 -->
+
+**Date**: 2026-10-13
+**Task**: 阶段四验收完成、签名提交与父子任务归档
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+阶段四工程验收及鼠标、实体笔、触摸人工验收通过。现有SSH签名重试成功，完成工作提交和阶段三、阶段四、父任务归档；旧偶发斜线与6小末钩按用户决定暂缓，不宣称已修复。
+
+### Main Changes
+
+- 默认关闭临时反色和尾轨迹I/O，保留显式开启的128条/2MiB正常颜色诊断与真实接触、Up、完成态Stored关联。
+- 保持已有尾段算法、参数、Modeler公共API、vcpkg Abseil 20250512.1#0、CRT和工具集，补充完成态存储、历史、接续及Reset回归。
+- 签名工作提交62f1e6b；归档完成任务并校正上下文路径，五个阶段/父任务manifest验证通过，活动任务指针清空。
+- 保留程序/PDB、输入、报告、依赖和当前ARM64 Debug缓存，释放9个Release obj目录共6.500GiB；此前旧缓存约2020.6MiB。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `62f1e6b0d0bd67bb084d958da7fb9cafd6ed12b9` | fix(draw3): finalize tail diagnostics and release validation |
+| `17694165fcefcfb07d963a8c3d7db1cf56eb3fc5` | chore(trellis): archive completed Draw3 tail tasks |
+
+### Testing
+
+- [OK] ARM64 Debug/Release、x64 Release、Win32 Release主solution及demo/test共8次构建退出0；各配置生产334115、尾段9245、原Modeler128412断言均0失败，精确基线hash一致。
+- [OK] 最终InkeysHeadlessTests --no-window退出0（98.36秒）；控制围栏、保存/读入、undo/redo、composition、等待/接续/Reset回归通过。
+- [OK] 四架构shader资源301-304为有效非空DXBC；x64/Win32产品及demo/test静态imports与原基线无增删；默认/on诊断几何一致。
+- [OK] 用户确认鼠标/实体笔/触摸未出现异常；38916的92条Mouse和9812的107条Pen完整日志检查通过，触摸体验来自人工确认。
+- [OK] 无诊断I/O完整FinalizeStoredStroke预热后30轮：ARM64 Release中位0.0471ms（无前缀）、0.1464ms（1000点前缀），不含GPU或端到端Up延迟。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本次四阶段范围完成，无需继续修改；旧事件再现时用显式诊断捕获并建立对应回归。真实Win7、D3D Debug Layer、Release GUI及原生x64/Win32体验未执行，不推送远程。
