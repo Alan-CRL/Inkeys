@@ -1919,3 +1919,45 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 73: PPT 退出连贯交接与设置即时层级修复
+<!-- trellis-session: v=2 fp=91200a3823382b76 -->
+
+**Date**: 2026-10-13
+**Task**: PPT 退出连贯交接与设置即时层级修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+新建原任务要求的Trellis任务并实施。保留旧帧至目标ready、修复退出后Bar高亮、即时设置root/Z序。独立审查/完整Debug ARM64 Solution/--no-window通过；首次测试快照构造错误已修正。无GUI、无commit/push，待实机验收。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 74: PPT 退出与设置层级人工验收及归档
+<!-- trellis-session: v=2 fp=e6f52f411ea08bec -->
+
+**Date**: 2026-10-13
+**Task**: PPT 退出与设置层级人工验收及归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认两项问题修复、人工验证通过。源码/测试/规范已提交，任务completed归档。完整Debug ARM64构建、--no-window和独立审查通过；AI未运行GUI，不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4057b8ea` | Fix PPT exit handoff and immediate settings z-order |
+
+### Status
+
+[OK] **Completed**
