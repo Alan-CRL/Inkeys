@@ -2,7 +2,7 @@
   "id": "interaction-modes-startup",
   "name": "interaction-modes-startup",
   "title": "产品模式与启动预设：交互模式切换和命名",
-  "description": "交互模式切换修复已验收提交；本阶段实现三种启动位置、Mini冻结、折叠首帧与环形进度，预设三语设置恢复，保留自动判定规则；任务继续进行。",
+  "description": "交互模式切换修复已验收提交；本阶段实现三种启动位置、Mini冻结、折叠首帧与分模式启动进度，预设三语设置恢复，保留自动判定规则；各阶段已通过自动验证和用户人工验收。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "ecfee6ab为上轮用户验收提交；本轮启动三位置/24DIP/下次生效/环形进度已实现，完整ARM64与Headless exit0、独立gate PASS，规格及验证记录更新。继续in_progress；2026-10-14用户授权提交本批改动，未push/GUI，等待后续反馈。",
+  "notes": "交互模式修复ecfee6ab及启动预设18b4c8fb已提交；最后修正恢复安全失败测试入口、居中条形进度及统一45°反光。完整ARM64、Headless和独立审查通过，2026-10-14用户确认人工验证通过，授权提交并结束当前任务；未push。",
   "meta": {}
 }

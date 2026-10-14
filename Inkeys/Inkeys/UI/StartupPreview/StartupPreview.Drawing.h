@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Superellipse.Geometry.h"
+#include "../StartupPlacement.h"
 #include <array>
 
 namespace Inkeys::UI::StartupPreview::Drawing
@@ -97,6 +98,50 @@ namespace Inkeys::UI::StartupPreview::Drawing
 		result = sink->Close();
 		if (SUCCEEDED(result)) context->DrawGeometry(path.Get(), fill, stroke, strokeStyle);
 		return result;
+	}
+
+	[[nodiscard]] inline HRESULT DrawLinear(ID2D1DeviceContext* context,
+		ID2D1SolidColorBrush* track, ID2D1SolidColorBrush* fill,
+		float width, float height, float scale, double ratio, float opacity, bool failed)
+	{
+		// 居中底栏恢复原192DIP横向样式；窄窗口两侧各保留12DIP。
+		const float progressWidth = (std::min)(192.f * scale, (std::max)(0.f, width - 24.f * scale));
+		if (progressWidth <= 0.f) return S_FALSE;
+		const float centerX = width * .5f, centerY = height * .5f;
+		const float trackHeight = (std::max)(1.f, scale);
+		const float indicatorHeight = (std::max)(3.f, 3.f * scale);
+		const auto trackRect = D2D1::RoundedRect(D2D1::RectF(
+			centerX - progressWidth * .5f, centerY - trackHeight * .5f,
+			centerX + progressWidth * .5f, centerY + trackHeight * .5f),
+			trackHeight * .5f, trackHeight * .5f);
+		// 0%最终失败仍染红轨道，不虚构已完成长度。
+		track->SetColor(failed ? D2D1::ColorF(1.f, .38f, .44f, .24f)
+			: D2D1::ColorF(1.f, 1.f, 1.f, .24f));
+		track->SetOpacity(opacity);
+		context->FillRoundedRectangle(&trackRect, track);
+		const float fillWidth = progressWidth * static_cast<float>(std::clamp(ratio, 0.0, 1.0));
+		if (fillWidth <= 0.f) return S_OK;
+		const auto fillRect = D2D1::RoundedRect(D2D1::RectF(
+			trackRect.rect.left, centerY - indicatorHeight * .5f,
+			trackRect.rect.left + fillWidth, centerY + indicatorHeight * .5f),
+			indicatorHeight * .5f, indicatorHeight * .5f);
+		fill->SetColor(failed ? D2D1::ColorF(1.f, .38f, .44f, 1.f)
+			: D2D1::ColorF(.38f, .80f, 1.f, 1.f));
+		fill->SetOpacity(opacity);
+		context->FillRoundedRectangle(&fillRect, fill);
+		return S_OK;
+	}
+
+	[[nodiscard]] inline HRESULT DrawProgress(ID2D1DeviceContext* context,
+		ID2D1StrokeStyle* ringStroke, ID2D1SolidColorBrush* track, ID2D1SolidColorBrush* fill,
+		StartupPlacement placement, float width, float height, float scale,
+		double ratio, float opacity, bool failed)
+	{
+		// 生产和离屏验证共用模式选择，避免测试重新实现另一份分支。
+		return placement == StartupPlacement::CenteredBottomBar
+			? DrawLinear(context, track, fill, width, height, scale, ratio, opacity, failed)
+			: DrawRing(context, ringStroke, track, fill,
+				D2D1::Point2F(width * .5f, height * .5f), scale, ratio, opacity, failed);
 	}
 
 	[[nodiscard]] inline HRESULT CreateShimmer(ID2D1DeviceContext* context,

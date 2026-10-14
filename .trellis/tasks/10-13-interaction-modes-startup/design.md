@@ -25,3 +25,8 @@
 - 环形与外形绘制原语位于StartupPreview.Drawing.h；Superellipse.Geometry.h只共享无状态路径构造。保留各自mask/device资源所有权。环形HRESULT失败回到已有重试链，不能提交sticky-visible或failed-visible状态。
 - 三种启动状态、所有折叠子控件透明度以生产赋值提取回放验证；新预设页面和完整侧栏以实际ImGui块提取回放。回放不创建HWND、不验证真实ULW首帧，也不等于嵌入字体的GUI视觉验收。
 - 完整侧栏实际回放证实原36 DIP导航行可容纳新增预设项：Experimental446..482、分割线486、Community490..526；无需改变原导航尺寸。
+
+## 2026-10-14 进度形态与反光修正
+- StartupPreview.Drawing.h统一选择居中旧条形进度与角落现有环形进度，生产与离屏fixture调用同一选择，避免测试仍无条件绘制环形。
+- ResolveStartupPreviewShimmerGradient固定X/Y绝对跨度相等，保留原向量长度；原宽高自适应向量的角度随缩放改变，特别是corner 2x时高光带约26°，是本轮纠正原因。
+- 修正仅覆盖Preview进度原语/选择、纯渐变方向和相应像素/几何回归；保留此前未提交的安全重试测试入口，不改主栏位置、配置、UI设置或交接状态机。

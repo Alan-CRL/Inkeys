@@ -222,13 +222,15 @@ namespace
 		Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> fill, frame, track, indicator, maskFill, maskStroke;
 		Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> shimmer;
 		bool floating = false;
+		Inkeys::UI::StartupPlacement placement = Inkeys::UI::StartupPlacement::CenteredBottomBar;
 		float scale = 1.f;
 	public:
 		UINT width = 0, height = 0;
-		HRESULT Initialize(bool isFloating, float pixelScale)
+		HRESULT Initialize(Inkeys::UI::StartupPlacement startupPlacement, float pixelScale)
 		{
 			using namespace Inkeys::UI::StartupPreview;
-			floating = isFloating; scale = pixelScale;
+			placement = startupPlacement;
+			floating = placement != Inkeys::UI::StartupPlacement::CenteredBottomBar; scale = pixelScale;
 			width = static_cast<UINT>(std::lround((floating ? 81.0 : 471.0) * scale));
 			height = static_cast<UINT>(std::lround(81.0 * scale));
 			HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
@@ -266,7 +268,7 @@ namespace
 			hr = context->EndDraw(); context->SetTarget(nullptr); return hr;
 		}
 
-		std::vector<BgraPixel> Render(double ratio, bool failed, bool showRing, double shimmerPhase)
+		std::vector<BgraPixel> Render(double ratio, bool failed, bool showProgress, double shimmerPhase)
 		{
 			using namespace Inkeys::UI::StartupPreview;
 			context->SetTarget(target.Get()); context->BeginDraw(); context->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
@@ -284,8 +286,8 @@ namespace
 				Drawing::DrawShimmer(context.Get(), mask.Get(), shimmer.Get(), static_cast<float>(width), static_cast<float>(height));
 			}
 			HRESULT draw = S_OK;
-			if (showRing) draw = Drawing::DrawRing(context.Get(), ringStroke.Get(), track.Get(), indicator.Get(),
-				D2D1::Point2F(width*.5f, height*.5f), scale, ratio, 1.f, failed);
+			if (showProgress) draw = Drawing::DrawProgress(context.Get(), ringStroke.Get(), track.Get(), indicator.Get(),
+				placement, static_cast<float>(width), static_cast<float>(height), scale, ratio, 1.f, failed);
 			const HRESULT end = context->EndDraw(); context->SetTarget(nullptr);
 			if (FAILED(draw) || FAILED(end) || FAILED(readable->CopyFromBitmap(nullptr, target.Get(), nullptr))) return {};
 			D2D1_MAPPED_RECT mapped{};
@@ -318,11 +320,17 @@ namespace
 	int RunStartupPreviewPixelTests()
 	{
 		int failures=0;
-		for (const bool floating : { false, true })
-			for (const float scale : { 1.f, 1.5625f, 2.f, 2.25f })
+		using Inkeys::UI::StartupPlacement;
+		if (!Expect(Inkeys::UI::StartupPreview::Drawing::DrawProgress(nullptr, nullptr, nullptr, nullptr,
+			StartupPlacement::CenteredBottomBar, 24.f, 81.f, 1.f, .5, 1.f, false) == S_FALSE,
+			"too narrow linear progress does not claim a visible draw")) ++failures;
+		for (const auto placement : { StartupPlacement::CenteredBottomBar,
+			StartupPlacement::BottomLeftFloating, StartupPlacement::BottomRightFloating })
+			for (const float scale : { .75f, 1.f, 1.5625f, 2.f, 2.25f })
 			{
 				OffscreenPreview renderer;
-				const HRESULT init=renderer.Initialize(floating,scale);
+				const bool floating = placement != StartupPlacement::CenteredBottomBar;
+				const HRESULT init=renderer.Initialize(placement,scale);
 				if (!Expect(SUCCEEDED(init),"create HWND-free production D2D/WARP pixel fixture"))
 				{ std::cerr << "D2D HRESULT=" << std::hex << init << std::dec << '\n'; ++failures; continue; }
 				const auto base=renderer.Render(0.,false,false,-1.);
@@ -353,30 +361,77 @@ namespace
 					if (base[i].alpha==0) maskClipped &= middle[i].alpha==0;
 				}
 				if (!Expect(endpointsEqual&&changed&&maskClipped,"real shimmer crosses the opacity mask and is absent at both offscreen endpoints")) ++failures;
+				// 反光等强度线与梯度垂直；实际像素沿(x+d,y-d)保持一致，覆盖所有DPI与外形。
+				const int sampleX=static_cast<int>(cx), sampleY=static_cast<int>(cy);
+				const int diagonalOffset=static_cast<int>(std::lround(10.*scale));
+				const int centerLight=at(middle,sampleX,sampleY).red-at(base,sampleX,sampleY).red;
+				const int upperLight=at(middle,sampleX+diagonalOffset,sampleY-diagonalOffset).red
+					-at(base,sampleX+diagonalOffset,sampleY-diagonalOffset).red;
+				const int lowerLight=at(middle,sampleX-diagonalOffset,sampleY+diagonalOffset).red
+					-at(base,sampleX-diagonalOffset,sampleY+diagonalOffset).red;
+				if (!Expect(centerLight>5 && std::abs(centerLight-upperLight)<=1 && std::abs(centerLight-lowerLight)<=1,
+					"real shimmer equal-intensity pixels form a 45 degree band independent of shape and scale")) ++failures;
 				if (floating && !Expect(at(base,5.*scale,5.*scale).alpha==0 && at(base,12.*scale,12.*scale).alpha>0,
 					"production n3 superellipse is rounder than a rounded square and fuller than an ellipse")) ++failures;
-				if (!Expect(!Blue(at(zero,cx,cy-radius)) && Blue(at(half,cx+radius,cy))
-					&& !Blue(at(half,cx-radius,cy)) && Blue(at(full,cx-radius,cy))
-					&& at(full,cx,cy).alpha==at(base,cx,cy).alpha,
-					"real ring pixels reflect 0/50/100 percent clockwise progress with hollow center")) ++failures;
-				if (!Expect(Red(at(fatal,cx+radius,cy)) && !Blue(at(fatal,cx+radius,cy))
-					&& Red(at(fatalZero,cx+radius,cy)),"first fatal pixels are red, including zero actual progress without a fake arc")) ++failures;
-				if (scale>=1.5f && !Expect(Blue(at(half,cx-scale,cy-radius)) && Blue(at(half,cx-scale,cy+radius)),
-					"production open ring arc uses round caps extending beyond top/bottom endpoints")) ++failures;
 				int minX=static_cast<int>(renderer.width), maxX=-1;
 				int minY=static_cast<int>(renderer.height), maxY=-1;
 				for (UINT y=0;y<renderer.height;++y) for (UINT x=0;x<renderer.width;++x)
 					if (Blue(full[static_cast<size_t>(y)*renderer.width+x]))
 					{ minX=(std::min)(minX,static_cast<int>(x)); maxX=(std::max)(maxX,static_cast<int>(x));
 					  minY=(std::min)(minY,static_cast<int>(y)); maxY=(std::max)(maxY,static_cast<int>(y)); }
-				int radialStrokePixels=0;
-				for (int x=static_cast<int>(cx+8.*scale);x<=static_cast<int>(cx+20.*scale);++x)
-					if (Blue(at(full,x,cy))) ++radialStrokePixels;
-				if (!Expect(std::abs((maxX-minX+1)-32.*scale)<=2.
-					&& std::abs((maxY-minY+1)-32.*scale)<=2.
-					&& std::abs(radialStrokePixels-3.*scale)<=2.,
-					"production ring preserves 32 DIP outer diameter and 3 DIP stroke at fractional DPI times zoom")) ++failures;
-				const std::wstring prefix=(floating?L"corner-":L"center-")+std::to_wstring(scale)+L"x-";
+				if (floating)
+				{
+					if (!Expect(!Blue(at(zero,cx,cy-radius)) && Blue(at(half,cx+radius,cy))
+						&& !Blue(at(half,cx-radius,cy)) && Blue(at(full,cx-radius,cy))
+						&& at(full,cx,cy).alpha==at(base,cx,cy).alpha,
+						"real corner ring pixels reflect 0/50/100 percent clockwise progress with hollow center")) ++failures;
+					if (!Expect(Red(at(fatal,cx+radius,cy)) && !Blue(at(fatal,cx+radius,cy))
+						&& Red(at(fatalZero,cx+radius,cy)),"first fatal ring pixels are red, including zero progress without a fake arc")) ++failures;
+					if (scale>=1.5f && !Expect(Blue(at(half,cx-scale,cy-radius)) && Blue(at(half,cx-scale,cy+radius)),
+						"production open ring arc uses round caps extending beyond top/bottom endpoints")) ++failures;
+					int radialStrokePixels=0;
+					for (int x=static_cast<int>(cx+8.*scale);x<=static_cast<int>(cx+20.*scale);++x)
+						if (Blue(at(full,x,cy))) ++radialStrokePixels;
+					if (!Expect(std::abs((maxX-minX+1)-32.*scale)<=2.
+						&& std::abs((maxY-minY+1)-32.*scale)<=2.
+						&& std::abs(radialStrokePixels-3.*scale)<=2.,
+						"production ring preserves 32 DIP diameter and 3 DIP stroke at fractional DPI times zoom")) ++failures;
+				}
+				else
+				{
+					if (!Expect(!Blue(at(zero,cx-48.*scale,cy)) && Blue(at(half,cx-48.*scale,cy))
+						&& !Blue(at(half,cx+48.*scale,cy)) && Blue(at(full,cx+48.*scale,cy)),
+						"real centered linear pixels reflect empty/half/full horizontal progress")) ++failures;
+					if (!Expect(Red(at(fatal,cx-48.*scale,cy)) && !Blue(at(fatal,cx-48.*scale,cy))
+						&& Red(at(fatalZero,cx,static_cast<int>(cy))),"first fatal linear pixels are red, including the zero progress track")) ++failures;
+					const double fillHeight=(std::max)(3.,3.*scale), trackHeight=(std::max)(1.,static_cast<double>(scale));
+					if (!Expect(std::abs((maxX-minX+1)-192.*scale)<=2.
+						&& std::abs((maxY-minY+1)-fillHeight)<=2.
+						&& minX>=cx-96.*scale-1. && maxX<=cx+96.*scale+1.,
+						"center restores the original centered 192 DIP width and minimum 3 pixel/DIP fill")) ++failures;
+					// 0%仅有白色细轨道；顶部/底部不能画成环，也不能带蓝色填充。
+					const int trackY=static_cast<int>(cy);
+					const auto& trackPixel=at(zero,cx-48.*scale,trackY);
+					if (!Expect(trackPixel.red==trackPixel.green && trackPixel.green==trackPixel.blue
+						&& trackPixel.red>at(base,cx-48.*scale,trackY).red
+						&& at(zero,cx-48.*scale,cy+trackHeight+1.).alpha==at(base,cx-48.*scale,cy+trackHeight+1.).alpha,
+						"normal linear track is original white and one pixel/DIP tall")) ++failures;
+					if (scale>=1.5f)
+					{
+						// 同Y比较外角与内部覆盖，避免取整后采样点落入合法圆头；矩形端点会同强度。
+						const int capLeft=static_cast<int>(std::floor(cx-96.*scale));
+						const int capTop=static_cast<int>(std::floor(cy-fillHeight*.5));
+						const auto& outer=at(full,capLeft,capTop);
+						const auto& inner=at(full,std::floor(cx-96.*scale+6.*scale),capTop);
+						const int outerChroma=static_cast<int>(outer.blue)-outer.red;
+						const int innerChroma=static_cast<int>(inner.blue)-inner.red;
+						if (!Expect(Blue(at(full,cx-96.*scale+.5*scale,cy))
+							&& innerChroma-outerChroma>30 && outerChroma*2<innerChroma,
+							"linear progress preserves rounded fill ends")) ++failures;
+					}
+				}
+				const std::wstring prefix=(placement==StartupPlacement::BottomLeftFloating ? L"left-"
+					: placement==StartupPlacement::BottomRightFloating ? L"right-" : L"center-")+std::to_wstring(scale)+L"x-";
 				SavePreviewBitmap(prefix+L"0.bmp",renderer.width,renderer.height,zero);
 				SavePreviewBitmap(prefix+L"50.bmp",renderer.width,renderer.height,half);
 				SavePreviewBitmap(prefix+L"100.bmp",renderer.width,renderer.height,full);
@@ -456,6 +511,17 @@ int RunStartupPreviewStateTests()
 		&& sideTaskbar.top == 999 && sideTaskbar.bottom == 1080,
 		"side taskbar keeps the envelope centered on the monitor")) ++failures;
 
+	for (const double widthDip : { 81., 471. })
+		for (const double scale : { .75, 1., 1.5625, 2., 2.25 })
+		{
+			const double width=std::lround(widthDip*scale), height=std::lround(81.*scale);
+			const auto gradient=ResolveStartupPreviewShimmerGradient(width,height);
+			const double dx=gradient.endX-gradient.startX, dy=gradient.endY-gradient.startY;
+			const double priorLength=std::hypot((std::max)(160.,width*.5),height*2.);
+			if (!Expect(dx>0. && std::abs(dx-dy)<1e-9
+				&& std::abs(std::hypot(dx,dy)-priorLength)<1e-9,
+				"all preview sizes use a 45 degree shimmer while preserving its original support length")) ++failures;
+		}
 	for (const auto pixels : { pixels96, pixels120, pixels144 })
 	{
 		const GeometryRect bounds{ 0.0, 0.0,

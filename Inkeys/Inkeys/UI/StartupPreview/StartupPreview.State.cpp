@@ -142,8 +142,9 @@ namespace Inkeys::UI::StartupPreview
 		if (!std::isfinite(width) || !std::isfinite(height)
 			|| width <= 0.0 || height <= 0.0) return {};
 		const double supportX = (std::max)(160.0, width * 0.5);
-		// Y 方向跨度来自占位高度，让高光核心保持旧版左上到右下的斜向质感。
-		return { 0.0, height * -0.5, supportX, height * 1.5, 0.0, 1.0 };
+		// 等X/Y跨度固定反光带为45度，不能让宽高比或最小像素跨度改变角度；保留原支持长度。
+		const double diagonal = std::hypot(supportX, height * 2.0) / std::sqrt(2.0);
+		return { 0.0, height * -0.5, diagonal, height * -0.5 + diagonal, 0.0, 1.0 };
 	}
 
 	ShimmerTravel ResolveShimmerTravel(

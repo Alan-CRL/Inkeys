@@ -204,6 +204,55 @@ namespace
 		Inkeys::UI::StartupPreview::Stop();
 	}
 
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	bool RunStartupPreviewRetryFailureForManualTest() noexcept
+	{
+		// 仅测试构建且同时明确开启慢速观察和故障注入；命令行慢速开关不授权故障。
+		if (!Inkeys::UI::StartupPreview::IsActive()) return true;
+		const auto ExactEnvironmentOptIn = [](const wchar_t* name) noexcept
+			{
+				wchar_t enabled[2]{};
+				return GetEnvironmentVariableW(name, enabled, 2) == 1
+					&& enabled[0] == L'1';
+			};
+		if (!ExactEnvironmentOptIn(L"INKEYS_STARTUP_PREVIEW_RETRY_FAILURE")
+			|| !ExactEnvironmentOptIn(L"INKEYS_STARTUP_PREVIEW_MANUAL_DELAY"))
+			return true;
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(800));
+		// 先建立 Close 的15秒监督；重试由下方唯一启动点负责，不能另行 Arm Restart。
+		SetOffSignal(1);
+		if (!LaunchState::warnTry)
+		{
+			if (IDTLogger) IDTLogger->warn(
+				"[主线程][IdtMain] 人工测试阶段首次失败，淡出后以 -WarnTry 重试");
+			// 首次重试保持普通颜色，等 Preview 淡出再启动继承两项环境开关的子进程。
+			Inkeys::UI::StartupPreview::RequestFadeOutForExit();
+			(void)Inkeys::UI::StartupPreview::WaitForFadeOut(
+				std::chrono::milliseconds(500));
+			Inkeys::UI::StartupPreview::Stop();
+			const auto launchResult = reinterpret_cast<INT_PTR>(ShellExecuteW(
+				nullptr, nullptr, GetCurrentExePath().c_str(),
+				L"-WarnTry", nullptr, SW_SHOWNORMAL));
+			if (launchResult <= 32)
+			{
+				if (IDTLogger) IDTLogger->critical(
+					"[主线程][IdtMain] 人工测试重试进程启动失败, shellResult={}",
+					launchResult);
+				PublishFatalStartupFailure(0xD0FEu,
+					L"人工测试：无法启动模拟重试进程，测试已停止。");
+			}
+			return false;
+		}
+
+		if (IDTLogger) IDTLogger->critical(
+			"[主线程][IdtMain] 人工测试阶段重试后仍失败");
+		PublishFatalStartupFailure(0xD0FEu,
+			L"人工测试：模拟初始化阶段重试后仍失败。");
+		return false;
+	}
+#endif
+
 	bool WriteStartupPreviewSmokeReport(const std::wstring& path, bool passed,
 		const Inkeys::UI::StartupPreview::Diagnostics& preview,
 		const Inkeys::UI::Bar::PresentationAlphaDiagnostics& alpha) noexcept
@@ -2690,6 +2739,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::PptComReady);
 	}
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	if (!RunStartupPreviewRetryFailureForManualTest())
+	{
+		// 此处 PptCOM 已激活；与真实初始化失败保持同样的资源清理边界。
+		if (pptComModule) FreeLibrary(pptComModule);
+		if (actCtxActivated) DeactivateActCtx(0, ulCookie);
+		if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
+		if (SUCCEEDED(comInitializeResult)) CoUninitialize();
+		Inkeys::UI::RenderPipeline::Shutdown();
+		return 1;
+	}
+#endif
 	// 自动更新初始化
 	{
 	#ifdef IDT_RELEASE

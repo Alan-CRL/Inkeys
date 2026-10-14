@@ -652,11 +652,11 @@ namespace Inkeys::UI::StartupPreview
 			const float width = static_cast<float>(runtime.resources.width);
 			const float height = static_cast<float>(runtime.resources.height);
 			const float opacity = Clamp01(visual.opacity * contentOpacity);
-			const HRESULT result = Drawing::DrawRing(runtime.resources.context.Get(), runtime.resources.ringStroke.Get(),
+			const HRESULT result = Drawing::DrawProgress(runtime.resources.context.Get(), runtime.resources.ringStroke.Get(),
 				runtime.resources.progressTrack.Get(), runtime.resources.progressFill.Get(),
-				D2D1::Point2F(width * .5f, height * .5f), scale,
+				runtime.options.startupPlacement, width, height, scale,
 				visual.displayedRatio, opacity, visual.failureColorProgress >= 1.0);
-			progressVisible = SUCCEEDED(result);
+			progressVisible = result == S_OK;
 			return result;
 		}
 
