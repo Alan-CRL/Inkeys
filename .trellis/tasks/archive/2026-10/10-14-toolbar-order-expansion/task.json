@@ -3,7 +3,7 @@
   "name": "toolbar-order-expansion",
   "title": "主栏图标顺序与展开方向",
   "description": "新增主栏横向图标顺序与空间不足换边策略，默认保留方向并避免反复调整",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,17 +11,17 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-10-14",
-  "completedAt": null,
+  "completedAt": "2026-10-14",
   "branch": "feature/mode",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": "2dd3b3448c6317e6924f667db5aee5629f4b479f",
+  "commit": "8515d469a80b7c1b90565fced0c00efd8ebfdd62",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "主栏设置、第三光源及按钮统一状态派生均已实现并通过自动验证；2026-10-14用户确认人工验证通过，授权提交本轮改动并结束任务。归档后保留完整研究、验证与提交记录。",
+  "notes": "任务实施与全部延续修复完成；自动验证通过，2026-10-14用户确认人工验收通过并授权收尾。设置35afa7ee、第三光源2dd3b344、主栏统一状态派生8515d469已提交；不push，归档完整任务与验收证据。",
   "meta": {
     "implementation": "complete_button_presentation",
     "automated_validation": "passed_button_presentation",
@@ -72,6 +72,7 @@
     "manual_gui_confirmation": {
       "date": "2026-10-14",
       "source": "用户确认修改到位、人工验证通过，并授权结束任务及提交commit"
-    }
+    },
+    "button_presentation_commit": "8515d469a80b7c1b90565fced0c00efd8ebfdd62"
   }
 }
