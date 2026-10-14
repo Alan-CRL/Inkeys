@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 82
-- **Last Active**: 2026-10-13
+- **Total Sessions**: 83
+- **Last Active**: 2026-10-14
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~89 | Active |
+| `journal-2.md` | ~129 | Active |
 | `journal-1.md` | ~2000 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 83 | 2026-10-14 | 交互模式与启动预设人工验收结案 | `ecfee6ab`, `18b4c8fb`, `519afa01` | `feature/mode` |
 | 82 | 2026-10-13 | 启动位置预设与环形启动进度实现 | - | `feature/mode` |
 | 76 | 2026-10-13 | 修复设置模式切换卡死并恢复下拉卡片 | - | `feature/mode` |
 | 75 | 2026-10-13 | 交互模式切换入口与三语文案 | - | `feature/mode` |

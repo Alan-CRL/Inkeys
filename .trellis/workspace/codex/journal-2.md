@@ -89,3 +89,41 @@
 - 任务保持in_progress，等待用户下一轮启动预设反馈或修改；本批不commit/push/归档。
 
 2026-10-14：用户授权提交上述启动位置预设改动；保留任务 in_progress，不执行归档或 push。
+
+
+## Session 83: 交互模式与启动预设人工验收结案
+<!-- trellis-session: v=2 fp=1c19ac5831005d06 -->
+
+**Date**: 2026-10-14
+**Task**: 交互模式与启动预设人工验收结案
+**Branch**: `feature/mode`
+
+### Summary
+
+用户确认人工测试通过，提交最终动画样式与安全故障测试入口，完成并归档interaction-modes-startup任务；未push。
+
+### Main Changes
+
+- 交互模式切换死锁与三语命名、三种启动位置及Mini冻结完成；居中保留旧条形进度，角落使用环形，反光统一45度。
+- 故障观察入口通过现有测试编译门和精确双环境值隔离，默认Release不编入；仅一次重试，无循环或配置写入。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ecfee6ab` | fix(settings): resolve interaction mode switch deadlock |
+| `18b4c8fb` | feat(startup): add placement presets and circular preview progress |
+| `519afa01` | fix(startup): restore preview styling and gate failure tests |
+
+### Testing
+
+- [OK] 完整Debug|ARM64 solution、Headless --no-window、独立审查及75份当前离屏像素通过；最终人工验收由用户于2026-10-14确认。
+- [OK] 圆角像素断言误采样经真实BMP对照修正；编码/CRLF与git diff检查通过，原始日志保留ignored Build目录。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 当前任务已完成归档，当前会话任务指针清除；其他任务不变，不推送。
