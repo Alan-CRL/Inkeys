@@ -8,10 +8,25 @@
 #include <string>
 #include <vector>
 
+#include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+
 import Inkeys.Window;
 
 namespace
 {
+	constexpr UINT kSettingOwnerProbe = WM_APP + 74;
+
+	LRESULT CALLBACK SettingOwnerProbeProc(HWND hwnd, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		if (message == kSettingOwnerProbe)
+		{
+			auto* service = reinterpret_cast<Inkeys::Window::Service*>(lParam);
+			return service->SetSettingOwnedByDrawpad(wParam != 0);
+		}
+		return DefWindowProcW(hwnd, message, wParam, lParam);
+	}
+
 	constexpr UINT kExitGateBlockOwner = WM_APP + 71;
 	constexpr UINT kExitGateCapture = WM_APP + 72;
 	constexpr UINT kExitGateReadCapture = WM_APP + 73;
@@ -104,6 +119,42 @@ namespace
 		}
 		return true;
 	}
+}
+
+int RunWindowCommandCompletionTests()
+{
+	using namespace Inkeys::Window::Detail;
+	int failures = 0;
+	const auto check = [&](bool passed, const char* name)
+	{
+		if (!passed) { ++failures; std::cerr << "FAIL " << name << '\n'; }
+	};
+	for (const bool value : { false, true })
+	{
+		std::promise<bool> completion;
+		auto result = completion.get_future();
+		completion.set_value(value);
+		check(WaitForCommandResult(result, std::chrono::steady_clock::now()
+			+ std::chrono::seconds(1)) == value, "bounded command preserves result");
+	}
+	std::promise<bool> pending;
+	auto result = pending.get_future();
+	const auto start = std::chrono::steady_clock::now();
+	const CommandDeadline deadline = start + std::chrono::milliseconds(20);
+	check(!WaitForCommandResult(result, deadline), "stalled owner command times out");
+	check(std::chrono::steady_clock::now() - start < std::chrono::seconds(2),
+		"stalled owner wait stays bounded");
+	check(CommandExpired(deadline), "late queued command is rejected");
+	// 调用方已失败返回，队列仍能安全完成 promise；迟到成功不改变超时结果。
+	pending.set_value(true);
+	check(result.get(), "late completion remains safe after timeout");
+	check(!CommandExpired({}), "ordinary commands have no startup deadline");
+	std::promise<bool> ordinary;
+	auto ordinaryResult = ordinary.get_future();
+	ordinary.set_value(true);
+	check(WaitForCommandResult(ordinaryResult, {}), "ordinary completion unchanged");
+	std::cout << "[WindowCommandCompletion] failures=" << failures << '\n';
+	return failures;
 }
 
 int RunWindowExitVisibilityTests()
@@ -294,6 +345,7 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::PptMiddleRight, L"PptMiddleRight"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
+	settingSpec.windowProc = SettingOwnerProbeProc;
 	settingSpec.style = WS_POPUP;
 	settingSpec.exStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 	specs.push_back(std::move(settingSpec));
@@ -501,20 +553,51 @@ int RunWindowTests()
 	const auto settingExStyleBeforeOwner = GetWindowLongPtrW(setting, GWL_EXSTYLE);
 	const auto settingIconBeforeOwner =
 		reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0));
-	check(service.SetSettingOwnedByDrawpad(true)
-		&& service.SetSettingOwnedByDrawpad(true),
-		"setting attach owner idempotent");
+	std::atomic_int settingRefreshes = 0;
+	service.SetTopmostRefreshObserver([&] { ++settingRefreshes; });
+	// Setting 线程不能等待根刷新；attach 已成功但准备失败时必须回滚 owner。
+	check(SendMessageW(setting, kSettingOwnerProbe, TRUE,
+		reinterpret_cast<LPARAM>(&service)) == FALSE,
+		"setting thread rejects attach requiring root refresh");
+	check(GetWindow(setting, GW_OWNER) == nullptr,
+		"failed setting preparation restores original owner");
+	check(service.SetSettingOwnedByDrawpad(true), "setting attach owner");
+	check(settingRefreshes.load() == 1, "setting attach immediately refreshes root");
+	check(service.SetSettingOwnedByDrawpad(true) && settingRefreshes.load() == 1,
+		"unchanged correct setting owner avoids repeated root refresh");
+	service.SetTopmostRefreshObserver({});
 	check(GetWindow(setting, GW_OWNER) == drawpad,
 		"setting joins drawpad owner chain");
+	check((GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"visible selection setting immediately rises above both canvases on attach");
 	check(service.OwnerThreadId(WindowRole::Setting) == settingOwnerThread,
 		"setting owner thread remains stable");
 	check(settingOwnerThread != service.OwnerThreadId(WindowRole::Drawpad),
 		"setting keeps dedicated owner thread");
 	check(GetWindowLongPtrW(setting, GWL_STYLE) == settingStyleBeforeOwner
-		&& GetWindowLongPtrW(setting, GWL_EXSTYLE) == settingExStyleBeforeOwner
+		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & ~WS_EX_TOPMOST)
+			== (settingExStyleBeforeOwner & ~WS_EX_TOPMOST)
 		&& reinterpret_cast<HICON>(SendMessageW(
 			setting, WM_GETICON, ICON_BIG, 0)) == settingIconBeforeOwner,
 		"setting owner attach preserves app window contract");
+	check(service.Hide(WindowRole::Setting) && service.Show(WindowRole::Setting)
+		&& IsWindowVisible(setting)
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"owned setting reshow immediately stays above both canvases");
+	check(service.SetOverlayTopmost(false)
+		&& service.SetSettingOwnedByDrawpad(true)
+		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0
+		&& service.Show(WindowRole::Setting)
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"setting immediate ordering respects non-topmost root policy");
+	check(service.SetOverlayTopmost(true), "restore root policy after setting show");
 	check(service.SetSettingOwnedByDrawpad(false)
 		&& service.SetSettingOwnedByDrawpad(false),
 		"setting detach owner idempotent");

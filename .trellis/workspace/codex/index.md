@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 68
-- **Last Active**: 2026-10-12
+- **Total Sessions**: 74
+- **Last Active**: 2026-10-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~2000 | Active |
+| `journal-1.md` | ~2087 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,12 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 74 | 2026-10-13 | PPT 退出与设置层级人工验收及归档 | `4057b8ea` | `bugfix/drawpad` |
+| 73 | 2026-10-13 | PPT 退出连贯交接与设置即时层级修复 | - | `bugfix/drawpad` |
+| 72 | 2026-10-12 | RTS 注册前置顶修复核验与任务归档 | `74d7e688` | `bugfix/drawpad` |
+| 71 | 2026-10-12 | Draw3 RTS 注册前根置顶顺序修复 | - | `bugfix/drawpad` |
+| 70 | 2026-10-12 | 左上角落笔死区用户验收与任务归档 | `f5ccf0fb` | `bugfix/drawpad` |
+| 69 | 2026-10-12 | 分页窗口启动显隐冲突修复 | - | `bugfix/drawpad` |
 | 68 | 2026-10-12 | Redo popup 人工验收通过并归档 | `7094cea4` | `feature/redo` |
 | 67 | 2026-10-12 | 最近 Clear 区间 Undo 与前进 Redo 完整链修复 | - | `feature/redo` |
 | 66 | 2026-10-12 | Redo2x2点击暂态主栏扩宽修复 | - | `feature/redo` |

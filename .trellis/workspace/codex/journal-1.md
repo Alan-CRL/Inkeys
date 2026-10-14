@@ -1837,6 +1837,16 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 - 在 Actions 验收真实 Windows 2022 三架构链路。
 
 
+## Session 69: 分页窗口启动显隐冲突修复
+<!-- trellis-session: v=2 fp=747879c574e3e8bf -->
+
+**Date**: 2026-10-12
+**Task**: 分页窗口启动显隐冲突修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+删除 TopWindow 四次分页窗 Show，保持 CRLF/UTF-8；静态审查通过。Debug ARM64 Solution 构建 10 分钟超时，PptCOM 成功，原生结果未完成；无 GUI、无提交，保留原任务 in_progress。
 ## Session 64: 延续 Redo 弹窗：修复5秒布局保护与灰色动画
 <!-- trellis-session: v=2 fp=50b5fb3aa499acd9 -->
 
@@ -1857,6 +1867,27 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 (No commits - planning session)
 
+### Status
+
+[OK] **Completed**
+
+
+## Session 70: 左上角落笔死区用户验收与任务归档
+<!-- trellis-session: v=2 fp=44b1a6bf418e2c6e -->
+
+**Date**: 2026-10-12
+**Task**: 左上角落笔死区用户验收与任务归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认问题解决。修复已提交，原任务归档为 completed；静态审查通过，此前 Debug ARM64 构建 10 分钟超时记录保留。未启动 GUI、未 push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5ccf0fb` | Fix page control startup visibility |
 ### Testing
 
 - [OK] 完整 InkeysRepo.sln Debug|ARM64 MSBuild退出0、0 error；新增及既有headless --no-window沙箱外退出0。
@@ -1866,6 +1897,17 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 [OK] **Completed**
 
+
+## Session 71: Draw3 RTS 注册前根置顶顺序修复
+<!-- trellis-session: v=2 fp=29c2f1b1de18b8a3 -->
+
+**Date**: 2026-10-12
+**Task**: Draw3 RTS 注册前根置顶顺序修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 重建，失败不启动 RTS。独立审查、完整 Debug ARM64 Solution 构建和 --no-window 测试通过（退出码0）；真实故障场景待验收，无 GUI、无 commit/push。
 ### Next Steps
 
 - 保留10-11-redo-popup任务，实际UI连点/5s/颜色视觉验收尚未执行；本轮未commit或push。
@@ -1898,6 +1940,39 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 [OK] **Completed**
 
+
+## Session 72: RTS 注册前置顶修复核验与任务归档
+<!-- trellis-session: v=2 fp=79c5c3b927d252ae -->
+
+**Date**: 2026-10-12
+**Task**: RTS 注册前置顶修复核验与任务归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认当前任务核验通过，修复与规范已提交，任务归档 completed。完整 Debug ARM64 Solution 构建、无窗口测试和独立审查通过；AI 未执行 GUI。归档上下文引用已校验，无 push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74d7e688` | Restore topmost preparation before RTS startup |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 73: PPT 退出连贯交接与设置即时层级修复
+<!-- trellis-session: v=2 fp=91200a3823382b76 -->
+
+**Date**: 2026-10-13
+**Task**: PPT 退出连贯交接与设置即时层级修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+新建原任务要求的Trellis任务并实施。保留旧帧至目标ready、修复退出后Bar高亮、即时设置root/Z序。独立审查/完整Debug ARM64 Solution/--no-window通过；首次测试快照构造错误已修正。无GUI、无commit/push，待实机验收。
 ### Next Steps
 
 - 原任务保留，实际GUI视觉验收未运行；不commit/push。
@@ -1930,9 +2005,27 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 [OK] **Completed**
 
-### Next Steps
 
-- 实际GUI宽度验收未运行；本轮不commit/push，原任务保留。
+## Session 74: PPT 退出与设置层级人工验收及归档
+<!-- trellis-session: v=2 fp=e6f52f411ea08bec -->
+
+**Date**: 2026-10-13
+**Task**: PPT 退出与设置层级人工验收及归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认两项问题修复、人工验证通过。源码/测试/规范已提交，任务completed归档。完整Debug ARM64构建、--no-window和独立审查通过；AI未运行GUI，不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4057b8ea` | Fix PPT exit handoff and immediate settings z-order |
+
+### Status
+
+[OK] **Completed**
 
 
 ## Session 67: 最近 Clear 区间 Undo 与前进 Redo 完整链修复

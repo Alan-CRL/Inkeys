@@ -818,7 +818,12 @@ void PptInfo()
 			if (exitedThisTick)
 			{
 				// 可信退出只收尾一次；若此后用户主动换工具，旧退出不得覆盖它。
-				(void)ChangeStateModeToSelectionIfRevision(exitModeRevision);
+				if (ChangeStateModeToSelectionIfRevision(exitModeRevision))
+				{
+					// EndSession 的刷新早于模式收尾；成功进入选择后重绘实际工具高亮。
+					barUISet.barButtonSet.UpdateDrawButtonStyle();
+					barUISet.UpdateRendering();
+				}
 			}
 		}
 		else if (!whiteboard && session.active && trustedTarget)
