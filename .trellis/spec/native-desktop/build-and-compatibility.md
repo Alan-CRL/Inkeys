@@ -55,6 +55,7 @@ MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=<NativePlatform>
 | concurrentqueue | 1.0.4#1 |
 | unordered-dense | 4.7.0 |
 | spdlog | 1.17.0 |
+| abseil | 20250512.1#0 |
 
 `【直接确认】` `Vcpkg` 是第三方依赖子模块。本项目代码任务不得递归修改它；依赖变更应同时审查 manifest、triplet、许可和随附第三方产物。
 

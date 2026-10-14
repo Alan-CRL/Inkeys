@@ -197,6 +197,134 @@ int RunConfigMetadataTests()
 	{ std::unique_lock lock(setlistUpdateMutex); setlist.UpdateChannel = "Final"; }
 	check(config.GetUploadInfo().ends_with("ch=Final;"), "final synchronized channel value");
 
+	// 在同一私有目录使用真实配置读写，覆盖模式默认值、严格校验和冻结写盘副本。
+	Inkeys::Config modeConfig;
+	check(modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0, "interaction mode defaults to combined");
+	const std::string modeUpload = modeConfig.GetUploadInfo();
+	for (const int mode : { 0, 1 })
+	{
+		modeConfig.UI.Bar.SelectAndClickThroughMode = mode;
+		check(modeConfig.Write(), "write both interaction modes");
+		const auto document = ReadJson(file);
+		check(document["UI"]["Bar"]["SelectAndClickThroughMode"].asInt() == mode,
+			"mode is persisted under UI.Bar");
+		Inkeys::Config restarted;
+		check(restarted.ReadAll() && restarted.UI.Bar.SelectAndClickThroughMode.load() == mode,
+			"restart restores persisted interaction mode");
+		check(modeConfig.GetUploadInfo() == modeUpload, "mode is excluded from upload metadata");
+	}
+	modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
+	Inkeys::Config frozenMode;
+	frozenMode = modeConfig;
+	modeConfig.UI.Bar.SelectAndClickThroughMode = 0;
+	check(frozenMode.UI.Bar.SelectAndClickThroughMode.load() == 1 && frozenMode.Write()
+		&& ReadJson(file)["UI"]["Bar"]["SelectAndClickThroughMode"].asInt() == 1,
+		"frozen configuration copy retains mode independently");
+	modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
+	modeConfig.ResetToDefaults();
+	check(modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0, "reset returns to combined");
+
+	auto writeModeDocument = [&](const Json::Value& document)
+	{
+		std::ofstream output(file, std::ios::binary | std::ios::trunc);
+		Json::StreamWriterBuilder builder;
+		output << Json::writeString(builder, document);
+		check(static_cast<bool>(output), "write mode input fixture");
+	};
+	Json::Value modeDocument(Json::objectValue);
+	modeDocument["UI"]["Bar"]["Zoom"] = 1.25;
+	modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
+	writeModeDocument(modeDocument);
+	check(modeConfig.ReadAll() && modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0,
+		"missing mode falls back to combined on ReadAll");
+	modeConfig.UI.Bar.Zoom = 2.5;
+	modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
+	check(modeConfig.ReadMini({ "UI.Bar.SelectAndClickThroughMode" })
+		&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0 && modeConfig.UI.Bar.Zoom.load() == 2.5,
+		"ReadMini missing mode resets only the selected field");
+	for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(2),
+		Json::Value(true), Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)),
+		Json::Value(Json::UInt64(18446744073709551615ULL)) })
+	{
+		modeDocument["UI"]["Bar"]["SelectAndClickThroughMode"] = invalid;
+		writeModeDocument(modeDocument);
+		modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
+		check(modeConfig.ReadAll() && modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0,
+			"ReadAll rejects illegal mode type/value without integer truncation");
+		modeConfig.UI.Bar.Zoom = 2.5;
+		modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
+		check(modeConfig.ReadMini({ "UI.Bar.SelectAndClickThroughMode" })
+			&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0 && modeConfig.UI.Bar.Zoom.load() == 2.5,
+			"ReadMini normalizes invalid mode without changing unrelated fields");
+	}
+	modeDocument["UI"]["Bar"]["SelectAndClickThroughMode"] = 1;
+	writeModeDocument(modeDocument);
+	check(modeConfig.ReadMini({ "UI.Bar.SelectAndClickThroughMode" })
+		&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 1 && modeConfig.UI.Bar.Zoom.load() == 2.5,
+		"ReadMini loads separate mode without changing unrelated fields");
+
+	// 主栏两项使用生产 schema，覆盖所有合法值、严格类型校验及异步保存所用的冻结副本。
+	for (int field = 0; field < 2; ++field)
+	{
+		const char* name = field == 0 ? "IconOrder" : "ExpandDirectionAdjustment";
+		const std::string path = std::string("UI.Bar.") + name;
+		const int defaultValue = field == 0 ? 0 : 1;
+		const int maxValue = field == 0 ? 3 : 1;
+		const int nonDefaultValue = field == 0 ? 3 : 0;
+		Inkeys::Config toolbarConfig;
+		auto& preference = field == 0 ? toolbarConfig.UI.Bar.IconOrder : toolbarConfig.UI.Bar.ExpandDirectionAdjustment;
+		check(preference.load() == defaultValue, "toolbar preference schema default");
+		const auto toolbarUpload = toolbarConfig.GetUploadInfo();
+		for (int preferenceValue = 0; preferenceValue <= maxValue; ++preferenceValue)
+		{
+			preference = preferenceValue;
+			check(toolbarConfig.Write() && ReadJson(file)["UI"]["Bar"][name].asInt() == preferenceValue,
+				"all toolbar preference values persist under UI.Bar");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll()
+				&& (field == 0 ? restarted.UI.Bar.IconOrder.load() : restarted.UI.Bar.ExpandDirectionAdjustment.load()) == preferenceValue,
+				"restart restores each toolbar preference value");
+			check(toolbarConfig.GetUploadInfo() == toolbarUpload, "toolbar preferences are not uploaded");
+			preference = defaultValue;
+			toolbarConfig.UI.Bar.Zoom = 2.5;
+			check(toolbarConfig.ReadMini({ path }) && preference.load() == preferenceValue && toolbarConfig.UI.Bar.Zoom.load() == 2.5,
+				"ReadMini loads each toolbar value without altering unrelated fields");
+		}
+		preference = maxValue;
+		Inkeys::Config frozenToolbar;
+		frozenToolbar = toolbarConfig;
+		preference = 0;
+		check(frozenToolbar.Write() && ReadJson(file)["UI"]["Bar"][name].asInt() == maxValue,
+			"frozen toolbar configuration retains captured preference");
+		preference = nonDefaultValue;
+		toolbarConfig.ResetToDefaults();
+		check(preference.load() == defaultValue, "toolbar preference reset restores schema default");
+		Json::Value toolbarDocument(Json::objectValue);
+		toolbarDocument["UI"]["Bar"]["Zoom"] = 1.25;
+		preference = nonDefaultValue;
+		writeModeDocument(toolbarDocument);
+		check(toolbarConfig.ReadAll() && preference.load() == defaultValue,
+			"ReadAll missing toolbar field restores default for existing configurations");
+		preference = nonDefaultValue;
+		toolbarConfig.UI.Bar.Zoom = 2.5;
+		check(toolbarConfig.ReadMini({ path }) && preference.load() == defaultValue && toolbarConfig.UI.Bar.Zoom.load() == 2.5,
+			"ReadMini missing toolbar field resets selected preference only");
+		for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(maxValue + 1),
+			Json::Value(true), Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)),
+			Json::Value(Json::UInt64(18446744073709551615ULL)), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+		{
+			toolbarDocument["UI"]["Bar"][name] = invalid;
+			writeModeDocument(toolbarDocument);
+			preference = nonDefaultValue;
+			check(toolbarConfig.ReadAll() && preference.load() == defaultValue,
+				"ReadAll rejects invalid toolbar type/value without truncation");
+			preference = nonDefaultValue;
+			toolbarConfig.UI.Bar.Zoom = 2.5;
+			check(toolbarConfig.ReadMini({ path }) && preference.load() == defaultValue && toolbarConfig.UI.Bar.Zoom.load() == 2.5,
+				"ReadMini normalizes invalid toolbar preference without unrelated changes");
+		}
+	}
+
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;
 }

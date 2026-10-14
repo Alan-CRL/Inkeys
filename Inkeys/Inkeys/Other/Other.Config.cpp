@@ -554,6 +554,37 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			const Json::Value* jsonValue = TryGetValueAtPath(root, groupPath, name);
 			if (!jsonValue) return;
 
+			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
+			{
+				if (JoinPath(groupPath, name) == "UI.Bar.SelectAndClickThroughMode")
+				{
+					// 仅整数 1 启用分离式；类型错误、越界及未知值统一回到合并式。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
+					return;
+				}
+
+				if (JoinPath(groupPath, name) == "UI.Bar.StartupPlacement")
+				{
+					// 启动位置只接受整数 0..2；非法类型或超宽整数不能窄化成有效位置。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : 0;
+					return;
+				}
+
+				const auto path = JoinPath(groupPath, name);
+				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")
+				{
+					// 先验证 JSON 整数类型与范围，避免超宽整数窄化后成为合法选项。
+					const bool iconOrder = path == "UI.Bar.IconOrder";
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= (iconOrder ? 3 : 1) ? candidate : (iconOrder ? 0 : 1);
+					return;
+				}
+			}
+
 			T loadedValue{};
 			if (!JsonValueCodec<T>::TryRead(*jsonValue, loadedValue)) return;
 

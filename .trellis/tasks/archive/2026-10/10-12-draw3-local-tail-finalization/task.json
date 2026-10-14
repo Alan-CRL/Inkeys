@@ -1,0 +1,30 @@
+{
+  "id": "draw3-local-tail-finalization",
+  "name": "draw3-local-tail-finalization",
+  "title": "Draw3完成态局部尾段拟合与验证",
+  "description": "实现可选原始输入辅助的局部尾段拟合、Draw3 Stored Stroke接入与无窗口效果验证",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-12",
+  "completedAt": "2026-10-13",
+  "branch": "bugfix/penstroke",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "71858b0b",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-13用户确认最新短1误修已解决，阶段三核心抬笔修正效果人工验收通过。9245回放/128412基线/334062产品probe与完整ARM64 Debug构建通过。临时反色及有界同步日志仍保留，下一阶段收尾并补最新发布验证；6无法复现按用户要求暂不处理。当前提交获用户明确授权，不push；任务暂保留in_progress待收尾归档。 阶段四后续鼠标/实体笔/触摸体验均由用户确认正常，默认反色与同步诊断已关闭；尾段存储/历史/接续和发布收尾由阶段四完成后统一归档。6及旧未复现偶发长斜线按用户决定暂缓，不声称已修复。",
+  "meta": {
+    "manualAcceptance": "accepted-with-deferred-unreproduced-cases",
+    "finalManualAcceptance": "passed-user-confirmed",
+    "finalManualAcceptanceAt": "2026-10-14"
+  }
+}

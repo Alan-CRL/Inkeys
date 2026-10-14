@@ -7,9 +7,12 @@
 #include <dwrite_1.h>
 #include <wrl/client.h>
 #include <array>
+#include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
 #include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
 
@@ -18,6 +21,8 @@ export module Inkeys.UI.Bar:Main;
 import :UI;
 import :State;
 import Inkeys.UI.Bar.EraserAttributeMotion;
+import Inkeys.UI.Bar.RecallAttributeMotion;
+export import Inkeys.UI.Bar.RecallChrome;
 import :Button;
 import :Format;
 export import :Rendering;
@@ -132,9 +137,59 @@ private:
 		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;
 };
 
+// 撤回属性：单 70x70 Redo 按钮，开合/换边/命中语义与橡皮属性一致，无子菜单。
+class BarRecallAttributePanel
+{
+public:
+	bool Advance(BarUISetClass& owner, const Inkeys::UI::Bar::RecallChromeView& chrome,
+		bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
+		RECT workArea, POINT origin, double rigidX, double rigidY,
+		const BarUiTimelineClass* parentTimeline = nullptr,
+		bool dragPlacementLocked = false);
+	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
+	void CommitPresented();
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool ResetPointerFeedback();
+	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
+	void Close(BarUISetClass& owner);
+	RECT Bounds() const;
+	std::array<RECT,3> PresentedRegions() const;
+	Inkeys::UI::Bar::RecallAttributePresentation PresentationSnapshot() const;
+	bool Changed() const noexcept { return changed_; }
+	bool Active() const noexcept { return active_; }
+	bool WantsKeyboard() const noexcept { return visible_.load(); }
+private:
+	void Initialize();
+	void Execute(BarUISetClass& owner, int item);
+	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::RecallAttributeRect rect, double scale = 1.0);
+	mutable std::mutex presentationMutex_;
+	Inkeys::UI::Bar::RecallAttributeLayout layout_;
+	Inkeys::UI::Bar::RecallAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::RecallAttributeLayoutInput stableLayoutInput_, dragLayoutInput_;
+	double zoom_ = 1;
+	bool initialized_ = false, changed_ = false, active_ = false;
+	bool hasStableLayoutInput_ = false, dragPlacementLocked_ = false;
+	bool releaseSwitchLayoutLocked_ = false, sideSwitchActive_ = false;
+	double sideSwitchExpandDuration_ = 0;
+	bool previousBelow_ = false;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	Inkeys::UI::Bar::RecallSurfaceMotion panelMotion_;
+	BarButtonClass redoButton_;
+	BarUiShapeClass surface_;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
+	unsigned long long deviceGeneration_ = 0;
+};
+
 
 namespace Inkeys::UI::Bar
 {
+	// 隐藏按钮继续留在运行时列表，位置跟随来源按钮；渲染与离屏回归共用。
+	void AnchorHiddenBarButton(BarButtonSetClass& buttons, bool folded,
+		BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset,
+		const std::function<void(BarUiValueClass&, double)>& setPositionTarget);
+
 	// Main Bar 与跨 HWND surface 共用这些行为入口，调用方只保留资源和拓扑。
 	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtonHoverStageEnum>* hoverStage);
@@ -149,7 +204,7 @@ namespace Inkeys::UI::Bar
 	void SetBarButtonPressedVisual(BarButtonClass& button, bool pressed) noexcept;
 	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
 		bool visible, bool enabled, bool selected,
-		double durationSeconds) noexcept;
+		double durationSeconds, std::optional<COLORREF> contentColor = std::nullopt) noexcept;
 
 	struct BarButtonDrawOptions
 	{
@@ -444,9 +499,22 @@ public:
 	BarButtonSetClass barButtonSet;
 	BarUIRendering spec;
 
+	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
+	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
+	Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar;
 	BarStateClass barState;
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
+	BarRecallAttributePanel recallAttribute;
+	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
+	std::mutex recallChromeMutex;
+	Inkeys::UI::Bar::RecallChromeState recallChrome{};
+	// 本次统一投影发布的view供布局颜色和弹窗共用，不在getter再次拼实时输入。
+	Inkeys::UI::Bar::RecallChromeView recallChromePresentation{};
+	// 用墙钟期限，不累加动画 dt。主栏休眠时动画时钟会停，并且恢复后的第一帧 dt 为 0。
+	std::chrono::steady_clock::time_point recallChromeIdleDeadline{};
+	bool recallChromeIdleArmed = false;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
@@ -483,6 +551,23 @@ public:
 	Inkeys::UI::Bar::Ui3FiniteSignature ReadFiniteSignature(const StateModeVersionedSnapshot& tool);
 	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
 	void CollapseAuxiliaryPanels(bool cancelCapture = true);
+	// 主栏点击展开对应 2×2；关闭只收面板，布局等 3 秒空闲后调整。
+	void OpenRecallFromUndo();
+	void OpenRecallFromRedo();
+	void NoteRecallPopupRedo();
+	bool ActivateRecallPopupCommand();
+	void NoteRecallPopupDismissed();
+	void ClearRecallForDrawing();
+	void SettleRecallChromeForWorkspace();
+	bool AdvanceRecallChromeIdle(double dtSeconds);
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView();
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView(bool compactSelection);
+	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
+	void ArmRecallChromeIdleTimer() noexcept;
+	void DisarmRecallChromeIdleTimer() noexcept;
+	void ArmRecallChromeIdleDeadline();
+	// 到期返回 true 并唤醒渲染；未到期时 retryMs 为剩余时间。
+	bool PollRecallChromeIdleTimer(unsigned& retryMs);
 	void StartDisplayTracking();
 	void StopDisplayTracking() noexcept;
 	void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot) noexcept;
@@ -993,7 +1078,8 @@ namespace Inkeys::UI::Bar
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
-	export void Initialization();
+	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar);
 	export void RequestPresentationAlpha(std::uint8_t alpha) noexcept;
 	export std::uint8_t CommittedPresentationAlpha() noexcept;
 	export std::uint8_t RequestedPresentationAlpha() noexcept;
@@ -1003,7 +1089,9 @@ namespace Inkeys::UI::Bar
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
+	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
+	export void RefreshToolState() noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
 	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;

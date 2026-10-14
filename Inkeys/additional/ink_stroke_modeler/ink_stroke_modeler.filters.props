@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildThisFileDirectory)ink_stroke_modeler.sources.props" />
+  <ItemGroup>
+    <Filter Include="Ink Stroke Modeler">
+      <UniqueIdentifier>{DA4B8C83-A524-4EFD-9923-77B54A3E2414}</UniqueIdentifier>
+    </Filter>
+    <ClInclude Include="$(MSBuildThisFileDirectory)terminal_tail_reconstructor.h">
+      <Filter>Ink Stroke Modeler</Filter>
+    </ClInclude>
+    <ClCompile Include="@(InkStrokeModelerSource)">
+      <Filter>Ink Stroke Modeler</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

@@ -348,6 +348,63 @@ namespace
 
 	void TestDrawpadPresentationPlan(int& failures)
 	{
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		desired.workspace = Workspace::Desktop;
+		desired.selectionMode = true;
+		HostRuntimeSnapshot ready{};
+		ready.firstFrameReady = true;
+		ready.workspace = desired.workspace;
+		ready.selectionMode = true;
+		ready.requestedOutputTarget = ready.readyOutputTarget = HostOutputTarget::SelectionUlw;
+		ready.requestedOutputRevision = ready.readyOutputRevision = 3;
+		ready.contentRevision = ready.presentedContentRevision = 8;
+		if (!Expect(DrawpadPresentationReady(desired, ready),
+			"desktop retained ink selection accepts matching output")) ++failures;
+		const auto reject = [&](HostRuntimeSnapshot candidate, const char* reason)
+		{
+			if (!Expect(!DrawpadPresentationReady(desired, candidate), reason)) ++failures;
+		};
+		auto pending = ready; pending.firstFrameReady = false;
+		reject(pending, "initial frame pending retains previous surface");
+		pending = ready; pending.workspace = Workspace::Presentation;
+		reject(pending, "PPT exit cannot commit the old workspace frame");
+		pending = ready; pending.selectionMode = false;
+		reject(pending, "PPT pen frame cannot satisfy desktop selection");
+		pending = ready; pending.requestedOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		reject(pending, "pending auxiliary target retains previous surface");
+		pending = ready; pending.readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		reject(pending, "primary ready cannot satisfy auxiliary output");
+		pending = ready; --pending.readyOutputRevision;
+		reject(pending, "previous output generation cannot commit");
+		pending = ready; --pending.presentedContentRevision;
+		reject(pending, "same content bool with stale ink revision cannot commit");
+		pending = ready; pending.commandScenePending = true;
+		reject(pending, "command replay cannot commit an intermediate scene");
+		desired.selectionMode = false;
+		if (!Expect(!DrawpadPresentationReady(desired, ready),
+			"selection frame cannot satisfy a newer pen intent")) ++failures;
+		ready.selectionMode = false;
+		ready.requestedOutputTarget = ready.readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		if (!Expect(DrawpadPresentationReady(desired, ready),
+			"pen handoff accepts the preheated primary frame")) ++failures;
+		pending = ready; --pending.presentedContentRevision;
+		reject(pending, "pen handoff also waits for matching content revision");
+		desired.workspace = Workspace::Presentation;
+		ready.workspace = Workspace::Presentation;
+		if (!Expect(!DrawpadPresentationReady(desired, ready),
+			"PPT requires a trusted target identity")) ++failures;
+		PresentationTarget target{};
+		target.sessionRevision = 5; target.targetRevision = 10;
+		desired.presentationTarget = std::make_shared<const PresentationTarget>(target);
+		ready.presentationReady = ReadyIdentityFor(target);
+		if (!Expect(DrawpadPresentationReady(desired, ready),
+			"matching PPT target frame is eligible for handoff")) ++failures;
+		++target.targetRevision;
+		desired.presentationTarget = std::make_shared<const PresentationTarget>(target);
+		if (!Expect(!DrawpadPresentationReady(desired, ready),
+			"new PPT target rejects old same-mode ready identity")) ++failures;
+
 		if (!Expect(SelectionUsesAuxiliaryOutput(true, Workspace::Desktop)
 			&& SelectionUsesAuxiliaryOutput(true, Workspace::Presentation)
 			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Whiteboard)

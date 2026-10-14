@@ -15,6 +15,15 @@
     <ClCompile Include="contact_input_tests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="modeler_baseline_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="modeler_adaptive_tail_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="modeler_tail_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="thin_stroke_gpu_tests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -144,4 +153,5 @@
       <Filter>draw3</Filter>
     </ClCompile>
   </ItemGroup>
+  <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.filters.props" />
 </Project>

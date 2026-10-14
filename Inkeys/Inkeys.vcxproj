@@ -974,6 +974,10 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallChrome.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeMotion.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttribute.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationProbe.cpp" />
@@ -1249,6 +1253,7 @@
     <None Include="src\UI\logo1.svg" />
     <None Include="src\UI\logo2.svg" />
   </ItemGroup>
+  <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

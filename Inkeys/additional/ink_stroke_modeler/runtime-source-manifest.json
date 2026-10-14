@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/google/ink-stroke-modeler",
+  "source_tree_base_revision": "2cd45e8683025c28fa2efcf672ad46607e8af869",
+  "draw3_snapshot_revision": "8d045298eaaac76f752b4f8b5f3303b3520e50b7",
+  "runtime_sources": [
+    {
+      "path": "stroke_modeler.cc",
+      "sha256": "6f402c26102fd9f1b933e40de0568b890b3dc22a841ee377b993296c32da3566"
+    },
+    {
+      "path": "params.cc",
+      "sha256": "371a0226fd00123782981ef17ef6e5c75d0603f404ed5f5aa683e805955f5e1d"
+    },
+    {
+      "path": "types.cc",
+      "sha256": "2fc8cef29cb17e8b400d101553d19f05ebd27df7728cb3360cd254ed9c7c487f"
+    },
+    {
+      "path": "internal/internal_types.cc",
+      "sha256": "9ec6d8ee7bee104873259e239ebf8bd5c46bfb284c7cfa06fd9c8c068506a607"
+    },
+    {
+      "path": "internal/loop_contraction_mitigation_modeler.cc",
+      "sha256": "37ae7731d5b2345d38c7b825a0977ef4252d364261d1fdba25582de71af6c2f8"
+    },
+    {
+      "path": "internal/position_modeler.cc",
+      "sha256": "48f3469c6694acd4b1dc8daac469800ab7cdba46f211e5b5e1c5e2a6aa111996"
+    },
+    {
+      "path": "internal/stylus_state_modeler.cc",
+      "sha256": "75032075aa7a95acf94cfb9281df381f0905374b74785d6373ac368e29a4ff8f"
+    },
+    {
+      "path": "internal/utils.cc",
+      "sha256": "c4912656eb1ddd807e2423198c63c9180fb59d7f85f7f571ee12271c5d160a97"
+    },
+    {
+      "path": "internal/wobble_smoother.cc",
+      "sha256": "dc4016bb43eb3e60984c1acde9db5823c03f09b07723e57abcf7edf6331e67b6"
+    },
+    {
+      "path": "internal/prediction/kalman_predictor.cc",
+      "sha256": "9b14282780f5743dee3ba73070d75d6494bfd1b1404ed77a0c0a46c088f38f9c"
+    },
+    {
+      "path": "internal/prediction/stroke_end_predictor.cc",
+      "sha256": "dc3b6e3d5c605eefb673fdfa5b3556094b897b89ab6899c5888ac9d4b1e4ccef"
+    },
+    {
+      "path": "internal/prediction/kalman_filter/axis_predictor.cc",
+      "sha256": "1799d985f64d313291bb5f296dec567b9d697761f480fb2cc6b2dd78253433a6"
+    },
+    {
+      "path": "internal/prediction/kalman_filter/kalman_filter.cc",
+      "sha256": "d96d2423217e4ab8a0fab06369b562a2dd9970b804aad3dae7f755c288c8f61f"
+    }
+  ],
+  "retained_headers": [
+    {
+      "path": "internal/internal_types.h",
+      "sha256": "94dd442cc51e36f5cb7aa62b54d4775457c407c778b529d7d3c5a6530f2c0f78"
+    },
+    {
+      "path": "internal/loop_contraction_mitigation_modeler.h",
+      "sha256": "085ebf86e34ad6306d3515f4ed821538d932a8172ce1539ae003f7809f2a7fcf"
+    },
+    {
+      "path": "internal/position_modeler.h",
+      "sha256": "e710603dca86e495dd067c0729fd06dd0bc0785af90dab1ab0d942ac08d1dc2b"
+    },
+    {
+      "path": "internal/prediction/input_predictor.h",
+      "sha256": "69ca47e31ca84eb9a624fb020367f77a718ce4d0110351dd938e3279d529a8dd"
+    },
+    {
+      "path": "internal/prediction/kalman_filter/axis_predictor.h",
+      "sha256": "8c1c8a844c82fcd6067a78f7a872b4b1cec4e47c64788e4373f10acd2c178904"
+    },
+    {
+      "path": "internal/prediction/kalman_filter/kalman_filter.h",
+      "sha256": "042f843a231858aabe48068c57d991fd1e60fa94f69d9f90dac42515658987c1"
+    },
+    {
+      "path": "internal/prediction/kalman_filter/matrix.h",
+      "sha256": "d5f969d6899a31a33f98a996ed17ba21dc7edadbd03b3444ee4408a3c7313bc5"
+    },
+    {
+      "path": "internal/prediction/kalman_predictor.h",
+      "sha256": "cf2428876bedd09bc0efb0f70064d29d5873abd8a1b7984478834561242183bb"
+    },
+    {
+      "path": "internal/prediction/stroke_end_predictor.h",
+      "sha256": "9902db065627af1d5f634462a939df4cbecb6821e1433f58722e9196c93c36b7"
+    },
+    {
+      "path": "internal/stylus_state_modeler.h",
+      "sha256": "2bf6276bb2a1db8379b586ce42aa088f1538a42f68b7baa343e7049b6b9bbbee"
+    },
+    {
+      "path": "internal/type_matchers.h",
+      "sha256": "a6a3fb220c29912aaf9d1b49a6a547302f0803be108e83879420ae822d1b2f38"
+    },
+    {
+      "path": "internal/utils.h",
+      "sha256": "9081fb9e7b90ab8b8907d766871db78e12d8827e95ac20a081e97c82d49b7cef"
+    },
+    {
+      "path": "internal/validation.h",
+      "sha256": "5323dcc0d61d81fe4241f6fe8f0cf47105a760b62ea694c72f38d5ce17b34d95"
+    },
+    {
+      "path": "internal/wobble_smoother.h",
+      "sha256": "3da3c2cc8430bda4ab8c8ae084f1c6f9bf86e3d6203c65abad61028320fdebfe"
+    },
+    {
+      "path": "numbers.h",
+      "sha256": "78f12f391511849b628a61247df320b811e3d6132a6b4def117da373a920cb55"
+    },
+    {
+      "path": "params.h",
+      "sha256": "2ce56c9f53d01e239198992315e482a8fbcacf54b4d325f6ad7f1174459363e6"
+    },
+    {
+      "path": "stroke_modeler.h",
+      "sha256": "e0a39698f9ccbaaa2579d2a5c94d3714b46f0542eddd731687b185dacd3f2dbd"
+    },
+    {
+      "path": "types.h",
+      "sha256": "0991305f5c775986492bb0c6cbb911e13fa5ac5dee0670b868e11464e8c7795d"
+    }
+  ],
+  "local_header_compatibility": "Existing numbers.h is retained unchanged; runtime source files are byte-exact imports.",
+  "abseil_provider": {
+    "kind": "vcpkg",
+    "version": "20250512.1",
+    "port_version": 0,
+    "consumer_configuration": "Release",
+    "headers": "Matching installed vcpkg package; retained local 20250512.0 headers are not used."
+  }
+}

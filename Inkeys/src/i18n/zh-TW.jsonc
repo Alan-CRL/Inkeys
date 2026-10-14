@@ -1,4 +1,4 @@
-// 你可以在此文件中使用 // 作為行註釋，但塊註釋和尾隨逗號等其他 JSONC 功能不受支持。
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
 // You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
 {
   "Language": "zh-TW",
@@ -65,6 +65,8 @@
       "MainButtons":
       {
         "SelectLabel": "選擇",
+        "SelectClearLabel": "選擇(清空)",
+        "ClickThroughLabel": "穿透",
         "MoveLabel": "拖動",
         "DrawLabel": "繪製",
         "LaserLabel": "雷射筆",
@@ -77,6 +79,7 @@
         "RectangleLabel": "矩形",
         "StraightLineLabel": "直線",
         "UndoLabel": "復原",
+        "RedoLabel": "重做",
         "ClearLabel": "清空",
         "WhiteboardLabel": "白板",
         "CloseWhiteboardLabel": "關閉白板",
@@ -297,6 +300,30 @@
     "Regular":
     {
       "N": "常規",
+      "SelectAndClickThrough":
+      {
+        "N": "選擇與穿透",
+        "Combined": "合併式",
+        "Separate": "分離式",
+        "CombinedDescription": "透過「選擇」統一操作電腦，涵蓋無墨跡與保留墨跡兩種狀態。",
+        "SeparateDescription": "「選擇」清空墨跡後操作電腦；「穿透」保留墨跡並操作下方視窗。",
+        "ClickThrough": "穿透",
+        "ClickThroughDescription": "保留螢幕上的墨跡，讓點擊與觸控穿過註記層，操作下方視窗。"
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "主欄圖示順序",
+        "FollowMainButton": "跟隨主按鈕",
+        "FollowMainButtonReverse": "跟隨主按鈕（反向）",
+        "LeftToRight": "從左到右",
+        "RightToLeft": "從右到左"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "主欄展開方向調整",
+        "Centerline": "中軸線",
+        "WhenSpaceInsufficient": "當位置不足時"
+      },
       "StartUp":
       {
         "N": "開機自動執行與啟動行為",
@@ -388,10 +415,20 @@
         "N": "繪圖效果優化",
         "Device":
         {
-          "N": "繪圖裝置",
-          "E": "我們會根據不同裝置型別優化使用體驗。",
-          "Touch": "觸控螢幕",
-          "MousePen": "滑鼠、手寫筆或數位板"
+          "N": "選擇互動模式",
+          "Touch": "大螢幕觸控模式",
+          "MousePen": "桌面互動模式",
+          "TouchE": "適用於教室、會議室等情境，直接在觸控大螢幕上書寫與操作。",
+          "MousePenE": "適用於個人電腦、平板及以滑鼠操控的大螢幕，兼顧滑鼠、觸控筆、繪圖板與觸控操作。"
+        }
+      },
+      "Touch":
+      {
+        "N": "觸摸",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "斷觸接續",
+          "E": "觸控書寫時，若螢幕短暫失去接觸後又沿原方向恢復，將嘗試把兩段筆跡接成一筆，減少斷線。關閉後，每次抬起都會結束目前筆畫。"
         }
       },
       "Eraser":
@@ -423,6 +460,18 @@
           "N": "適用於觸控筆速橡皮的接觸面積輔助",
           "E": "使橡皮粗細始終略大於手指（避免手指遮住橡皮游標），不建議大螢幕裝置啟用。"
         }
+      }
+    },
+    "Preset":
+    {
+      "N": "預設",
+      "StartupPlacement":
+      {
+        "N": "啟動後位置",
+        "E": "置中的底部工具列會展開顯示主工具列；左下角或右下角懸浮視窗只顯示主按鈕。變更將於下次啟動時生效。",
+        "CenteredBottomBar": "置中底部工具列",
+        "BottomLeftFloating": "左下角懸浮視窗",
+        "BottomRightFloating": "右下角懸浮視窗"
       }
     },
     "Experimental":

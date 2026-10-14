@@ -2,6 +2,7 @@
 #include "../../../IdtMain.h"
 #include <d2d1_1helper.h>
 #include "../../../IdtState.h"
+#include "../../../IdtConfiguration.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../../Drawing/Draw3/Assets/EraserGripVisual.h"
@@ -13,6 +14,7 @@
 #include <fstream>
 #include <crtdbg.h>
 #include <wincodec.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -23,6 +25,8 @@
 #include <bit>
 #include <limits>
 #include "Bar.PresentationProbe.h"
+#include "Bar.MainLayoutPolicy.h"
+#include "../StartupPlacement.h"
 #pragma comment(lib,"windowscodecs.lib")
 
 module Inkeys.UI.Bar;
@@ -31,6 +35,7 @@ import :Scene;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.PageControl;
+import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
 import Inkeys.Text.Font;
 
@@ -44,8 +49,51 @@ extern const double BarColorPickerPanelWidth;
 
 namespace Inkeys::UI::Bar
 {
+	// 测试调用已有 Surface 屏幕光源映射，不增加产品注入接口。
+	BarUiFrameLightingSnapshot ResolveBarSurfaceFrameLightingSnapshot(
+		const BarSurfaceSharedLighting& lighting,
+		const RECT& logicalBounds, LONG presentationOutset) noexcept;
 	namespace
 	{
+		class DragCursorLightFixture : public BarUISetClass
+		{
+		public:
+			void SeedCursor(POINT screenPoint, POINT layoutScreenOrigin)
+			{
+				// 仅在离屏 fixture 中种入真实输入快照，测试期间不发送任何新鼠标消息。
+				std::lock_guard lock(borderCursorLightMutex);
+				borderCursorLightScreenPoint = D2D1::Point2F(
+					static_cast<FLOAT>(screenPoint.x), static_cast<FLOAT>(screenPoint.y));
+				borderCursorLightPoint = D2D1::Point2F(
+					static_cast<FLOAT>(screenPoint.x - layoutScreenOrigin.x),
+					static_cast<FLOAT>(screenPoint.y - layoutScreenOrigin.y));
+				borderCursorLightSerial = 41;
+				borderCursorInputAvailable = true;
+				borderCursorLightReady = true;
+				borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Inside;
+			}
+			void SetAvailability(bool available, bool ready = true, bool nearRegion = true)
+			{
+				std::lock_guard lock(borderCursorLightMutex);
+				borderCursorInputAvailable = available; borderCursorLightReady = ready;
+				borderCursorLightNearVisibleRegion = nearRegion;
+				borderCursorTrackingState = !available ? BarBorderCursorTrackingStateEnum::Dormant
+					: nearRegion ? BarBorderCursorTrackingStateEnum::Inside : BarBorderCursorTrackingStateEnum::Grace;
+			}
+			void SetTranslationDistractors(POINT live, POINT presented)
+			{
+				std::lock_guard lock(directWindowDragMutex);
+				directWindowDragTranslationX = live.x; directWindowDragTranslationY = live.y;
+				// 渲染已吸收目标位移时，最后成功窗口仍可能保留不为零的实际残差。
+				RebaseBottomDockPresentedWindow(presented);
+			}
+			void Prepare(POINT layoutScreenOrigin)
+			{
+				(void)spec.PrepareFrameLighting(1.0 / 60.0, layoutScreenOrigin,
+					static_cast<int>(StateModeSelectEnum::IdtSelection), 0, 0, 0);
+			}
+		};
+
 		std::vector<unsigned char> ReadSvgProofPixels(ID2D1DeviceContext* context, ID2D1Bitmap1* source)
 		{
 			if (!context || !source) return {};
@@ -113,14 +161,639 @@ namespace Inkeys::UI::Bar
 		const std::array<UINT,4> fonts{IDR_TTF1,IDR_TTF7,IDR_TTF3,IDR_TTF8};
 		const HRESULT fontCollectionHr=RenderPipeline::InitializeFontCollection(
 			IdtFontFileLoader::GetLoader(),IdtFontCollectionLoader::GetLoader(),fonts);
+		std::filesystem::create_directories(L"Build/eraser-b");
 		std::ofstream report("Build/eraser-b/offscreen-results.log");
 		int failures=0;
 		auto expect=[&](bool ok,const char* why){if(!ok){++failures;report<<"[EraserVisual] FAIL "<<why<<'\n';}};
 		expect(SUCCEEDED(fontCollectionHr),"SC/TC font collection initializes");
+		// screenPoint/serial 保持不变，验证直移吸收和显示原点变更不依赖下一次 WM_MOUSEMOVE。
+		{
+			const bool savedEdge = BarUiEdgeLightingEnabled;
+			const bool savedDynamic = BarUiDynamicEdgeLightingEnabled;
+			const double savedSpeed = BarUiAnimationSpeedRate;
+			const bool savedAnimation = BarUiAnimationEnabled;
+			BarUiEdgeLightingEnabled = true; BarUiDynamicEdgeLightingEnabled = true;
+			BarUiAnimationSpeedRate = 1.0;
+			BarUiAnimationEnabled = true;
+			struct RebaseCase { POINT screen, beforeOrigin, afterOrigin; };
+			const std::array cases{
+				RebaseCase{{900,450},{300,0},{0,0}},
+				RebaseCase{{-1240,400},{-2220,-180},{-1920,-360}},
+				RebaseCase{{-1200,500},{1510,-890},{-1920,400}},
+				RebaseCase{{-1250,260},{-1590,-135},{-1920,-300}},
+				RebaseCase{{-1250,260},{-1590,-135},{-1960,-325}},
+				RebaseCase{{450,300},{-100,120},{-100,120}}};
+			for(const double zoom:{0.6,1.0,1.5,2.0})for(const auto& item:cases)
+			{
+				auto fixture = std::make_unique<DragCursorLightFixture>();
+				fixture->spec.SetFrameZoom(zoom); fixture->SeedCursor(item.screen,item.beforeOrigin);
+				for(int frame=0;frame<90;++frame)fixture->Prepare(item.beforeOrigin);
+				const auto before = fixture->spec.SnapshotFrameLighting();
+				const auto beforeBounds = fixture->spec.GetFrameCursorLightDamageBounds();
+				const auto atScreen = [&](const BarUiFrameLightingSnapshot& light,POINT origin)
+				{
+					return std::abs(light.cursorLight.x + origin.x - item.screen.x)<0.01F
+						&& std::abs(light.cursorLight.y + origin.y - item.screen.y)<0.01F;
+				};
+				expect(atScreen(before,item.beforeOrigin) && before.cursorLightVisible
+					&& std::abs(before.cursorIntensity-1.0F)<0.0001F,
+					"drag cursor baseline reaches full strength in the original layout domain");
+				// 同帧捕获值故意与 live/最后成功呈现残差不同，不能在 Prepare 中重新取后两者。
+				fixture->SetTranslationDistractors({730,-510},{-40,-25});
+				fixture->Prepare(item.afterOrigin);
+				const auto after = fixture->spec.SnapshotFrameLighting();
+				const auto afterBounds = fixture->spec.GetFrameCursorLightDamageBounds();
+				expect(atScreen(after,item.afterOrigin),
+					"drag release rebases real Prepare cursor light without a new input serial");
+				const bool originChanged = item.beforeOrigin.x!=item.afterOrigin.x || item.beforeOrigin.y!=item.afterOrigin.y;
+				expect(fixture->spec.DidFrameCursorLightChange()==originChanged
+					&& ((beforeBounds.left!=afterBounds.left || beforeBounds.top!=afterBounds.top)==originChanged)
+					&& afterBounds.left<=after.cursorLight.x-after.cursorRadius
+					&& afterBounds.right>=after.cursorLight.x+after.cursorRadius
+					&& afterBounds.top<=after.cursorLight.y-after.cursorRadius
+					&& afterBounds.bottom>=after.cursorLight.y+after.cursorRadius,
+					"drag release local light change invalidates complete old and new damage bounds");
+				const auto surfaceLight = [&](const BarUiFrameLightingSnapshot& light)
+				{
+					BarSurfaceSharedLighting shared;
+					shared.cursorScreenX=light.cursorScreenLight.x;shared.cursorScreenY=light.cursorScreenLight.y;
+					shared.cursorRadiusPixels=light.cursorRadius;shared.cursorIntensity=light.cursorIntensity;
+					shared.cursorVisible=light.cursorLightVisible;shared.edgeLightingEnabled=light.edgeLightingEnabled;
+					return ResolveBarSurfaceFrameLightingSnapshot(shared,{-2000,-500,-1600,-300},12);
+				};
+				const auto beforeSurface=surfaceLight(before),afterSurface=surfaceLight(after);
+				expect(beforeSurface.cursorLight.x==afterSurface.cursorLight.x
+					&& beforeSurface.cursorLight.y==afterSurface.cursorLight.y
+					&& beforeSurface.cursorRadius==afterSurface.cursorRadius
+					&& beforeSurface.cursorIntensity==afterSurface.cursorIntensity
+					&& beforeSurface.cursorLightVisible==afterSurface.cursorLightVisible,
+					"drag rebase keeps the real PageControl screen-light mapping continuous");
+				bool stable = true;
+				for(int frame=0;frame<120;++frame)
+				{
+					fixture->Prepare(item.afterOrigin);
+					const auto light = fixture->spec.SnapshotFrameLighting();
+					stable &= atScreen(light,item.afterOrigin) && light.cursorLightVisible
+						&& std::abs(light.cursorIntensity-before.cursorIntensity)<0.0001F
+						&& std::abs(light.cursorRadius-240.0*zoom)<0.001
+						&& light.cursorScreenLight.x==before.cursorScreenLight.x
+						&& light.cursorScreenLight.y==before.cursorScreenLight.y
+						&& !fixture->spec.DidFrameCursorLightChange();
+				}
+				expect(stable,"stationary release stays continuous for 120 frames at each zoom");
+				report<<"[DragCursorLight] zoom="<<zoom<<" origin="<<item.beforeOrigin.x<<','<<item.beforeOrigin.y
+					<<" -> "<<item.afterOrigin.x<<','<<item.afterOrigin.y<<" local="<<before.cursorLight.x<<','<<before.cursorLight.y
+					<<" -> "<<after.cursorLight.x<<','<<after.cursorLight.y<<" stable="<<stable<<'\n';
+			}
+			// 独立调用真实 Prepare/Shape，只保留第三光；用屏幕几何对齐同一边框像素。
+			for(const double zoom:{0.6,1.0,1.5,2.0})
+			{
+				auto fixture=std::make_unique<DragCursorLightFixture>();
+				fixture->spec.SetFrameZoom(zoom);fixture->SeedCursor({900,450},{300,0});
+				for(int frame=0;frame<90;++frame)fixture->Prepare({300,0});
+				expect(SUCCEEDED(fixture->spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),512,512)),
+					"drag third-light pixel target initializes");
+				auto* dc=fixture->spec.GetDeviceContext();
+				if(!dc)continue;
+				BarUiShapeClass border(0,0,160,60,12,12,2,std::nullopt,RGB(255,255,255));
+				border.enable.Initialization(true);border.pct.SetDirect(1);
+				border.framePct.emplace(0);border.frameLightPct.emplace(1);
+				border.frameRendering=BarUiFrameRenderingEnum::PointLight; border.framePrimaryLightEnabled=false;
+				const auto draw=[&](POINT origin)
+				{
+					const auto light=fixture->spec.SnapshotFrameLighting();
+					fixture->spec.SetFrameCursorLightLocalGeometry(light.cursorLight,D2D1::SizeF(light.cursorRadius,light.cursorRadius));
+					// 几何从固定 screenPoint 派生，不能用待验证的局部光源反推形状而掩盖错误。
+					const double left=(900.0-origin.x)/zoom-80.0,top=(450.0-origin.y)/zoom-20.0;
+					dc->BeginDraw();dc->SetTransform(D2D1::Matrix3x2F::Translation(
+						static_cast<FLOAT>(64.0-left*zoom),static_cast<FLOAT>(64.0-top*zoom)));
+					dc->Clear(D2D1::ColorF(0,0,0,0));
+					const bool drew=fixture->spec.Shape(dc,border,BarUiInheritClass(left,top));
+					const HRESULT hr=dc->EndDraw();fixture->spec.HandleFrameEndDrawResult(hr);
+					expect(drew && SUCCEEDED(hr),"real third-light border renders across drag release");
+					return ReadSvgProofPixels(dc,fixture->spec.GetTargetBitmap());
+				};
+				const auto before=draw({300,0});
+				fixture->SetTranslationDistractors({730,-510},{-40,-25});fixture->Prepare({0,0});
+				const auto after=draw({0,0});
+				unsigned maxDelta=0,lit=0;
+				if(before.size()==after.size())for(size_t i=0;i<before.size();++i)
+				{
+					maxDelta=std::max(maxDelta,static_cast<unsigned>(std::abs(static_cast<int>(before[i])-after[i])));
+					lit+=before[i]>0;
+				}
+				expect(before.size()==512*512*4 && after.size()==before.size() && lit>100 && maxDelta<=2,
+					"isolated real third-light pixels remain continuous after absorption");
+				fixture->SetAvailability(false);
+				for(int frame=0;frame<90;++frame)fixture->Prepare({0,0});
+				const auto withoutCursor=draw({0,0});
+				const auto darkBytes=std::count_if(withoutCursor.begin(),withoutCursor.end(),[](unsigned char pixel){return pixel>0;});
+				expect(withoutCursor.size()==after.size() && darkBytes==0 && lit>100,
+					"third-light-off control is transparent while the isolated enabled border contributes pixels");
+				report<<"[DragCursorPixels] zoom="<<zoom<<" lit="<<lit<<" maxDelta="<<maxDelta<<" offLit="<<darkBytes<<'\n';
+				fixture->spec.DiscardDeviceResources();
+			}
+			// 保持既有 Prepare 门禁；这里只检验生产光照帧，不启动 Raw Input/timer/HWND 状态机。
+			{
+				auto fixture=std::make_unique<DragCursorLightFixture>();
+				fixture->spec.SetFrameZoom(1);fixture->SeedCursor({900,450},{300,0});
+				const auto settle=[&](POINT origin){for(int frame=0;frame<90;++frame)fixture->Prepare(origin);};
+				settle({300,0});const auto inside=fixture->spec.SnapshotFrameLighting();
+				fixture->SetAvailability(true,true,false);fixture->Prepare({0,0});
+				const auto grace=fixture->spec.SnapshotFrameLighting();
+				expect(grace.cursorLightVisible && grace.cursorIntensity==inside.cursorIntensity,
+					"Grace outside the accepting region does not change third-light strength at release");
+				fixture->SetAvailability(false);settle({0,0});
+				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"Dormant input fades the third light without new input serial");
+				fixture->SetAvailability(true,false);settle({0,0});
+				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"unready cursor input remains hidden across a rebase");
+				fixture->SetAvailability(true);settle({0,0});
+				BarUiDynamicEdgeLightingEnabled=false;settle({-40,-25});
+				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"dynamic-light gate preserves its fade-out behavior");
+				BarUiDynamicEdgeLightingEnabled=true;settle({-40,-25});
+				BarUiAnimationEnabled=false;fixture->Prepare({0,0});
+				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"animation gate immediately hides third light during a rebase");
+				BarUiAnimationEnabled=true;settle({0,0});
+				BarUiEdgeLightingEnabled=false;fixture->Prepare({300,0});
+				expect(!fixture->spec.SnapshotFrameLighting().edgeLightingEnabled
+					&& !fixture->spec.SnapshotFrameLighting().cursorLightVisible,"total-light gate hides all light during a rebase");
+			}
+			BarUiAnimationSpeedRate=savedSpeed;
+			BarUiEdgeLightingEnabled = savedEdge; BarUiDynamicEdgeLightingEnabled = savedDynamic;
+			BarUiAnimationEnabled = savedAnimation;
+		}
 		auto& owner=barUISet;
 		expect(I18n::load(1,L"JSON",L"zh-CN"),"default bundled translation loads");
 		owner.spec.ConfigureLocalizedTypography();
 		owner.barButtonSet.PresetInitialization();owner.barMedia.LoadFormat();
+		// 早期 CLI 未读取配置；准备已规范化的内存布局，避免 Load 触发迁移写盘。
+		auto a2Fixture=Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
+		for(auto& entry:a2Fixture)
+			if(entry.Id==Inkeys::BarButtonId::Freeze)entry.Size=Inkeys::BarButtonSizeKind::TwoTwo;
+		Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(a2Fixture));
+		owner.barButtonSet.Load();
+		// UpdateRendering 在 Pen 状态还会刷新粗细文字；离屏 fixture 不加载整套窗口控件。
+		owner.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay] =
+			std::make_shared<BarUiWordClass>(0.0,0.0,0.0,0.0,L"",13.0);
+		// 直接覆盖生产 PositionUpdate 的策略门禁，不能让后续刷新重新按中轴覆盖空间模式。
+		{
+			const int savedDirection = Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load();
+			const auto savedMainButton = owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			const auto savedPlacement = owner.startupPlacement;
+			const bool savedFold = owner.barState.fold;
+			const bool savedSide = owner.barState.widgetPosition.mainBar;
+			const bool savedPrimary = owner.barState.widgetPosition.primaryBar;
+			const auto savedWidth = owner.barWindow.w, savedHeight = owner.barWindow.h;
+			const auto mainButton = std::make_shared<BarUiSuperellipseClass>(800,500,80,80,10.0,1.0,std::nullopt,std::nullopt);
+			owner.superellipseMap[BarUISetSuperellipseEnum::MainButton] = mainButton;
+			// 早期 CLI 尚未启动交互/渲染，复用公开启动入口准备浮动状态。
+			(void)owner.InitializeStartupPlacement(Inkeys::UI::StartupPlacement::BottomLeftFloating);
+			expect(!owner.IsBottomDockLayoutLocked(),"PositionUpdate fixture initializes floating state through the production startup entry");
+			owner.barWindow.w = 1000; owner.barWindow.h = 1000;
+			Inkeys::config.UI.Bar.ExpandDirectionAdjustment = 0;
+			owner.barState.widgetPosition.mainBar = true; owner.barState.PositionUpdate(1.0);
+			expect(!owner.barState.widgetPosition.mainBar,"explicit centerline setting retains the legacy right-half classification");
+			Inkeys::config.UI.Bar.ExpandDirectionAdjustment = 1;
+			owner.barState.widgetPosition.mainBar = true;
+			for(int frame=0;frame<120;++frame)owner.barState.PositionUpdate(1.0);
+			expect(owner.barState.widgetPosition.mainBar,"space strategy survives repeated production PositionUpdate across the centerline");
+			mainButton->x.SetDirect(200);mainButton->y.SetDirect(100);owner.barState.widgetPosition.mainBar = false;
+			owner.barState.PositionUpdate(1.0);
+			expect(!owner.barState.widgetPosition.mainBar && owner.barState.widgetPosition.primaryBar,
+				"space strategy keeps the horizontal side while retaining the original upper/lower reversal");
+			owner.superellipseMap[BarUISetSuperellipseEnum::MainButton] = savedMainButton;
+			(void)owner.InitializeStartupPlacement(savedPlacement);
+			owner.barState.fold = savedFold;
+			owner.barState.widgetPosition.mainBar = savedSide;owner.barState.widgetPosition.primaryBar = savedPrimary;
+			owner.barWindow.w = savedWidth;owner.barWindow.h = savedHeight;
+			Inkeys::config.UI.Bar.ExpandDirectionAdjustment = savedDirection;
+		}
+		// 真实设置入口在无内容变化且工具不变时，也必须同步主栏显隐和清空状态。
+		SetContentStateUpdatesReady(true);
+		ChangeStateModeToPen();owner.UpdateRendering();
+		auto* selectModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Select];
+		auto* pierceModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Pierce];
+		auto* freezeModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Freeze];
+		auto* clearModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Clean];
+		std::vector<BarButtonClass*> stableButtons;
+		for(int index=0;index<owner.barButtonSet.tot;++index)
+			stableButtons.push_back(owner.barButtonSet.buttonList.Get(index));
+		const auto pierceIndex=std::find(stableButtons.begin(),stableButtons.end(),pierceModeButton);
+		expect(pierceIndex!=stableButtons.end() && std::count(stableButtons.begin(),stableButtons.end(),pierceModeButton)==1
+			&& pierceIndex+1!=stableButtons.end() && *(pierceIndex+1)==freezeModeButton,
+			"hidden Pierce is one stable runtime member immediately before Freeze");
+		const auto expectStableButtons=[&]()
+		{
+			bool same=owner.barButtonSet.tot==static_cast<int>(stableButtons.size());
+			for(size_t index=0;index<stableButtons.size() && same;++index)
+				same=owner.barButtonSet.buttonList.Get(static_cast<int>(index))==stableButtons[index];
+			expect(same,"mode, content and Freeze changes retain hidden Pierce identity and list order");
+		};
+		const bool changedToSeparate=SetSelectAndClickThroughMode(1);
+		selectModeButton->name.AdvanceContentTransition(1.0,1.0);
+		expect(changedToSeparate && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
+			&& pierceModeButton->IsVisible() && pierceModeButton->size==BarButtonSizeEnum::twoOne
+			&& freezeModeButton->size==BarButtonSizeEnum::twoOne
+			&& selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
+			"setting mode updates compact buttons while tool and empty content stay unchanged");
+		// 复用设置的真实组件同步链；业务 key 不变时不能覆写分离式的有效半高网格。
+		owner.barButtonSet.RegisterBuiltInComponents();
+		const bool savedExplorer=setlist.component.shortcutButton.appliance.explorer;
+		setlist.component.shortcutButton.appliance.explorer=false;
+		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+		setlist.component.shortcutButton.appliance.explorer=true;
+		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+		std::vector<BarButtonClass*> componentButtons;
+		for(int index=0;index<owner.barButtonSet.tot;++index)
+			componentButtons.push_back(owner.barButtonSet.buttonList.Get(index));
+		const auto componentPierce=std::find(componentButtons.begin(),componentButtons.end(),pierceModeButton);
+		expect(pierceModeButton->IsVisible() && freezeModeButton->IsVisible()
+			&& pierceModeButton->size==BarButtonSizeEnum::twoOne && freezeModeButton->size==BarButtonSizeEnum::twoOne,
+			"component reload retains Separate drawing Pierce and Freeze as twoOne");
+		expect(componentPierce!=componentButtons.end() && componentPierce+1!=componentButtons.end()
+			&& *(componentPierce+1)==freezeModeButton && std::count(componentButtons.begin(),componentButtons.end(),pierceModeButton)==1,
+			"component reload preserves stable Pierce/Freeze identities and adjacency");
+		expect(componentButtons.size()==stableButtons.size()+1,
+			"real Explorer component switch adds one toolbar member");
+		setlist.component.shortcutButton.appliance.explorer=savedExplorer;
+		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+		expect(SetSelectAndClickThroughMode(0) && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
+			&& !pierceModeButton->IsVisible() && freezeModeButton->size==BarButtonSizeEnum::twoTwo,
+			"combined setting immediately hides Pierce and enlarges Freeze");
+		// 直接执行生产 Pierce 回调，验证按钮切换身份和三类记忆工具恢复。
+		SetSelectAndClickThroughMode(1);
+		for(const auto tool:{StateModeSelectEnum::IdtPen,StateModeSelectEnum::IdtShape,StateModeSelectEnum::IdtEraser})
+		{
+			if(tool==StateModeSelectEnum::IdtPen)ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+			else if(tool==StateModeSelectEnum::IdtShape){ChangeStateModeToShape();SetShapeModeSelect(ShapeModeSelectEnum::IdtShapeRectangle1);}
+			else ChangeStateModeToEraser();
+			owner.UpdateRendering();
+			const auto annotation=GetStateModeSnapshot();
+			const auto revision=StateModeTransitionRevision();
+			freezeModeButton->clickFunc();
+			expect(Freeze::IsActive(),"Freeze fixture is active before the Pierce button click");
+			pierceModeButton->clickFunc();owner.UpdateRendering();expectStableButtons();
+			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtClickThrough &&
+				StateModeTransitionRevision()==revision+1 && !Freeze::IsActive() &&
+				pierceModeButton->state->state==BarWidgetState::Selected,
+				"production Pierce callback enters click-through and selects the same button");
+			pierceModeButton->clickFunc();owner.UpdateRendering();expectStableButtons();
+			const auto restored=GetStateModeSnapshot();
+			const auto restoredPreset=tool==StateModeSelectEnum::IdtPen ? BarButtonPresetEnum::Draw :
+				tool==StateModeSelectEnum::IdtShape ? BarButtonPresetEnum::Geometry : BarButtonPresetEnum::Eraser;
+			expect(restored.StateModeSelect==tool && restored.lastAnnotationMode==tool &&
+				restored.laserActive==annotation.laserActive && restored.Pen.ModeSelect==annotation.Pen.ModeSelect &&
+				restored.Shape.ModeSelect==annotation.Shape.ModeSelect && StateModeTransitionRevision()==revision+2 &&
+				!Freeze::IsActive() && pierceModeButton->state->state!=BarWidgetState::Selected &&
+				owner.barButtonSet.preset[(int)restoredPreset]->state->state==BarWidgetState::Selected,
+				"production Pierce callback restores the remembered tool and its selected button without Freeze");
+			pierceModeButton->clickFunc();owner.UpdateRendering();
+			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtClickThrough &&
+				pierceModeButton->state->state==BarWidgetState::Selected,"same Pierce callback can reenter click-through");
+			pierceModeButton->clickFunc();owner.UpdateRendering();
+			expect(GetStateModeSnapshot().StateModeSelect==tool && StateModeTransitionRevision()==revision+4 &&
+				!Freeze::IsActive(),"same Pierce callback can exit again with one revision per click");
+		}
+		SetSelectAndClickThroughMode(0);
+		ChangeStateModeToSelection();owner.UpdateRendering();
+		expect(clearModeButton->state->state==BarWidgetState::Disable,
+			"empty Selection Clear uses unified disabled state");
+		ChangeStateModeToPen();owner.UpdateRendering();
+		expect(clearModeButton->state->state!=BarWidgetState::Disable,"empty drawing Clear can enter Selection");
+		SetSelectAndClickThroughMode(1);ChangeStateModeToClickThrough();owner.UpdateRendering();
+		expect(pierceModeButton->state->state==BarWidgetState::Selected &&
+			clearModeButton->state->state!=BarWidgetState::Disable,"Click-through highlight and empty Clear are active");
+		owner.barButtonSet.ExecuteClearClick(false);owner.UpdateRendering();
+		expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtSelection &&
+			clearModeButton->state->state==BarWidgetState::Disable && !pierceModeButton->IsVisible(),
+			"empty Click-through Clear enters Selection and removes hidden Pierce hit target");
+		SetPptPresentationActive(true);Freeze::SetPresentationActive(true);owner.UpdateRendering();
+		expect(!freezeModeButton->IsVisible() && !pierceModeButton->IsVisible(),
+			"PPT empty Selection hides both A2 interaction buttons");
+		ChangeStateModeToPen();owner.UpdateRendering();
+		expect(!freezeModeButton->IsVisible() && pierceModeButton->IsVisible() &&
+			pierceModeButton->size==BarButtonSizeEnum::twoTwo,"PPT Pierce fills hidden Freeze slot");
+		Freeze::SetPresentationActive(false);SetPptPresentationActive(false);
+		SetSelectAndClickThroughMode(0);ChangeStateModeToSelection();owner.UpdateRendering();
+		// 用真实两行按钮与位置动画检查 X 策略，隐藏锚点仍共用当前批次目标。
+		for(int order=0;order<4;++order)for(bool opensRight:{false,true})
+		{
+			SetSelectAndClickThroughMode(1);ChangeStateModeToPen();owner.UpdateRendering();
+			const double targetX = ResolveBarMainIconX(340.0,380.0,NormalizeBarIconOrder(order),opensRight);
+			const BarUiCurveSpecClass curve{BarUiCurveEnum::EaseOutCubic,BarUiCurveEnum::EaseOutCubic,0.0,false};
+			pierceModeButton->button.x.SetDirect(180.0);freezeModeButton->button.x.SetDirect(180.0);
+			pierceModeButton->button.y.SetDirect(21.25);freezeModeButton->button.y.SetDirect(58.75);
+			BarUiSetLayoutPositionTarget(pierceModeButton->button.x,targetX,BarUiDefaultOperationDur,true,curve);
+			BarUiSetLayoutPositionTarget(freezeModeButton->button.x,targetX,BarUiDefaultOperationDur,true,curve);
+			expect(pierceModeButton->button.x.val==180.0 && freezeModeButton->button.x.val==180.0,
+				"sorting retargets from current visible values instead of jumping");
+			for(int frame=0;frame<12;++frame)
+			{
+				const BarUiAnimationAdvanceContextClass tick{0.05,1,true,false};
+				BarUiAdvanceAnimation(pierceModeButton->button.x,tick);BarUiAdvanceAnimation(freezeModeButton->button.x,tick);
+			}
+			expect(pierceModeButton->button.x.val==targetX && freezeModeButton->button.x.val==targetX
+				&& pierceModeButton->button.y.val<freezeModeButton->button.y.val,
+				"all horizontal policies keep Pierce above Freeze and their shared column");
+			SetSelectAndClickThroughMode(0);owner.UpdateRendering();
+			AnchorHiddenBarButton(owner.barButtonSet,false,BarButtonPresetEnum::Pierce,BarButtonPresetEnum::Freeze,
+				[&](BarUiValueClass& value,double target){BarUiSetLayoutPositionTarget(value,target,BarUiDefaultOperationDur,true,curve);});
+			expect(!pierceModeButton->IsVisible() && pierceModeButton->button.x.tar==targetX,
+				"hidden Pierce retains the mirrored column without becoming a hit target");
+			expectStableButtons();
+		}
+		// 连续收窄/展开和 PPT 进出：隐藏按钮只改 hide，不能离开列表或保留右侧旧坐标。
+		const auto positionTarget=[](BarUiValueClass& value,double target)
+			{ value.SetTar(target,BarUiDefaultOperationDur); };
+		const auto anchorPierce=[&]()
+			{ AnchorHiddenBarButton(owner.barButtonSet,false,BarButtonPresetEnum::Pierce,
+				BarButtonPresetEnum::Freeze,positionTarget); };
+		const auto advancePierce=[&](double dt)
+		{
+			const BarUiAnimationAdvanceContextClass frame{dt,1,true,false};
+			BarUiAdvanceAnimation(pierceModeButton->button.x,frame);
+			BarUiAdvanceAnimation(pierceModeButton->button.y,frame);
+		};
+		for(int cycle=0;cycle<3;++cycle)
+		{
+			ChangeStateModeToSelection();SetCurrentPageHasContent(false);owner.UpdateRendering();expectStableButtons();
+			pierceModeButton->button.x.SetDirect(1000.0);
+			pierceModeButton->button.y.SetDirect(20.0);
+			freezeModeButton->button.x.SetDirect(450.0-cycle*75.0);
+			freezeModeButton->button.y.SetDirect(40.0);
+			anchorPierce();advancePierce(0.0);
+			expect(pierceModeButton->button.x.val==1000.0 && pierceModeButton->button.x.tar==freezeModeButton->button.x.tar
+				&& pierceModeButton->button.y.tar==freezeModeButton->button.y.tar,
+				"hidden Pierce retargets to Freeze without jumping on zero-time advance");
+			for(int frame=0;frame<12;++frame){anchorPierce();advancePierce(0.05);}
+			expect(pierceModeButton->button.x.val==freezeModeButton->button.x.tar
+				&& pierceModeButton->button.y.val==freezeModeButton->button.y.tar,
+				"repeated hidden frames settle Pierce at Freeze instead of the old right edge");
+			SetSelectAndClickThroughMode(1);ChangeStateModeToPen();owner.UpdateRendering();expectStableButtons();
+			expect(pierceModeButton->IsVisible() && pierceModeButton->button.x.val==freezeModeButton->button.x.tar,
+				"revealed Pierce starts from the retained Freeze column");
+			SetSelectAndClickThroughMode(0);owner.UpdateRendering();expectStableButtons();
+			freezeModeButton->button.x.SetDirect(250.0);anchorPierce();
+			for(int frame=0;frame<12;++frame){anchorPierce();advancePierce(0.05);}
+			expect(!pierceModeButton->IsVisible() && pierceModeButton->button.x.val==250.0,
+				"Combined also retains and positions hidden Pierce for the next mode change");
+			SetPptPresentationActive(true);Freeze::SetPresentationActive(true);owner.UpdateRendering();expectStableButtons();
+			auto* a2Divider=std::distance(stableButtons.begin(),pierceIndex)>=2 ? *(pierceIndex-2) : nullptr;
+			expect(a2Divider && a2Divider->preset==BarButtonPresetEnum::Divider && a2Divider->IsVisible(),
+				"default A2 boundary is the nearest visible predecessor when Freeze is unavailable");
+			if(a2Divider){a2Divider->button.x.SetDirect(300.0);a2Divider->button.y.SetDirect(40.0);}
+			anchorPierce();
+			for(int frame=0;frame<12;++frame){anchorPierce();advancePierce(0.05);}
+			expect(!freezeModeButton->IsVisible() && a2Divider && pierceModeButton->button.x.val==a2Divider->button.x.tar,
+				"hidden Pierce uses the existing nearest-visible-anchor rule when Freeze is unavailable");
+			SetSelectAndClickThroughMode(1);owner.UpdateRendering();expectStableButtons();
+			expect(pierceModeButton->IsVisible() && pierceModeButton->size==BarButtonSizeEnum::twoTwo,
+				"PPT reveals the same Pierce member in the full slot");
+			Freeze::SetPresentationActive(false);SetPptPresentationActive(false);
+		}
+		// 真实旧组件0/1/2/3+增删：不执行组件动作，不启动Host或窗口。
+		{
+			const auto savedShortcuts=setlist.component.shortcutButton;
+			const bool savedFold=owner.barState.fold;
+			setlist.component.shortcutButton={};
+			owner.barState.fold=false;
+			const auto reload=[&](int count)
+			{
+				setlist.component.shortcutButton.appliance.explorer=count>0;
+				setlist.component.shortcutButton.appliance.taskmgr=count>1;
+				setlist.component.shortcutButton.appliance.control=count>2;
+				setlist.component.shortcutButton.system.desktop=count>3;
+				owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+			};
+			const auto switchTool=[&](StateModeSelectEnum tool)
+			{
+				if(tool==StateModeSelectEnum::IdtSelection)ChangeStateModeToSelection();
+				else if(tool==StateModeSelectEnum::IdtPen)ChangeStateModeToPen();
+				else if(tool==StateModeSelectEnum::IdtShape)ChangeStateModeToShape();
+				else if(tool==StateModeSelectEnum::IdtEraser)ChangeStateModeToEraser();
+				else ChangeStateModeToClickThrough();
+			};
+			const auto savedA1=Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot();
+			const auto savedA2=Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
+			int matrixCases=0;
+			for(int count:{0,1,2,3,4,2,1,0})
+			for(int mode:{0,1})for(int scene:{0,1,2})for(bool content:{false,true})
+			for(const auto tool:{StateModeSelectEnum::IdtSelection,StateModeSelectEnum::IdtPen,
+				StateModeSelectEnum::IdtShape,StateModeSelectEnum::IdtEraser,StateModeSelectEnum::IdtClickThrough})
+			{
+				SetWhiteboardActive(scene==2);Freeze::SetWhiteboardActive(scene==2);
+				SetPptPresentationActive(scene==1);Freeze::SetPresentationActive(scene==1);
+				SetSelectAndClickThroughMode(mode);SetCurrentPageHasContent(content);switchTool(tool);
+				owner.barState.fold=false;reload(count);
+				const bool selectionEmpty=tool==StateModeSelectEnum::IdtSelection && !content;
+				const bool pierceVisible=mode==1 && scene!=2 && !selectionEmpty;
+				expect(pierceModeButton->IsVisible()==pierceVisible && freezeModeButton->IsVisible()==(scene==0)
+					&& (!pierceVisible || pierceModeButton->size==(scene==1?BarButtonSizeEnum::twoTwo:BarButtonSizeEnum::twoOne))
+					&& (scene!=0 || freezeModeButton->size==(pierceVisible?BarButtonSizeEnum::twoOne:BarButtonSizeEnum::twoTwo)),
+					"component matrix keeps the workspace/mode/content A2 grids");
+				expect(owner.barButtonSet.preset[(int)BarButtonPresetEnum::Eraser]->IsVisible()==!(scene!=2 && selectionEmpty)
+					&& owner.barButtonSet.preset[(int)BarButtonPresetEnum::Geometry]->IsVisible()==!(scene!=2 && selectionEmpty)
+					&& (clearModeButton->state->state==BarWidgetState::Disable)==selectionEmpty,
+					"component matrix retains compact tools and Clear availability");
+				const auto more=owner.barButtonSet.GetMoreButtonSnapshot();
+				expect(owner.barButtonSet.tot==static_cast<int>(stableButtons.size())+std::min(count,2)
+					&& more.explicitMore.size()==1 && more.forcedOverflow.size()==static_cast<size_t>(std::max(0,count-2)),
+					"component capacity keeps two main members, explicit Settings and forced overflow");
+				const auto before=owner.barButtonSet.MainLayoutSnapshot();
+				owner.barButtonSet.Load();owner.UpdateRendering();
+				for(int repeat=0;repeat<3;++repeat)owner.UpdateRendering();
+				expect(owner.barButtonSet.MainLayoutSnapshot()==before
+					&& owner.barButtonSet.preset[(int)BarButtonPresetEnum::Freeze]==freezeModeButton
+					&& owner.barButtonSet.preset[(int)BarButtonPresetEnum::Pierce]==pierceModeButton,
+					"repeated Load and projection preserve all effective geometry and stable identities");
+				++matrixCases;
+			}
+			report<<"[MainPresentation] componentMatrixCases="<<matrixCases<<'\n';
+			SetWhiteboardActive(false);Freeze::SetWhiteboardActive(false);
+			SetPptPresentationActive(false);Freeze::SetPresentationActive(false);
+			SetSelectAndClickThroughMode(1);ChangeStateModeToPen();SetCurrentPageHasContent(false);reload(0);
+			const auto compact=owner.barButtonSet.MainLayoutSnapshot();
+			const double compactX=pierceModeButton->button.x.val;
+			const double compactY=pierceModeButton->button.y.val;
+			const double compactH=freezeModeButton->button.h.val;
+			SetSelectAndClickThroughMode(0);owner.UpdateRendering();
+			const auto full=owner.barButtonSet.MainLayoutSnapshot();
+			expect(compact!=full && pierceModeButton->button.x.val==compactX
+				&& pierceModeButton->button.y.val==compactY && freezeModeButton->button.h.val==compactH,
+				"equal-width split/full A2 change invalidates geometry without moving current animation values");
+			SetSelectAndClickThroughMode(1);owner.UpdateRendering();
+			const auto stable=owner.barButtonSet.MainLayoutSnapshot();
+			auto* draw=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Draw];
+			const auto savedEmph=draw->state->emph.load();const auto savedHover=draw->hoverStage.load();
+			draw->state->emph=BarWidgetEmphasize::Pressed;draw->hoverStage=BarButtonHoverStageEnum::Showing;
+			draw->pressScale.SetTar(0.9,0.4);draw->name.color.SetTar(RGB(1,2,3),0.4);
+			expect(owner.barButtonSet.MainLayoutSnapshot()==stable,
+				"hover, press, color and animation values are absent from the layout fingerprint");
+			draw->state->emph=savedEmph;draw->hoverStage=savedHover;
+			draw->pressScale.SetDirect(1.0);
+			owner.barButtonSet.buttonList.Swap(0,1);
+			expect(owner.barButtonSet.MainLayoutSnapshot()!=stable,"equal-width member permutation changes the stable layout fingerprint");
+			owner.barButtonSet.buttonList.Swap(0,1);
+			// 模拟目标提交使用真实timeline/SetTar helper：早期可加入、晚期从当前值完整重开。
+			BarUiTimelineClass batch;batch.Restart(BarUiDefaultOperationDur);
+			pierceModeButton->button.y.SetDirect(40.0);freezeModeButton->button.y.SetDirect(40.0);
+			freezeModeButton->button.h.SetDirect(70.0);
+			BarUiSetLayoutPositionTarget(pierceModeButton->button.y,21.25,batch.GetRemainingDuration(),true,BarButtonPressCurve());
+			BarUiSetLayoutPositionTarget(freezeModeButton->button.y,58.75,batch.GetRemainingDuration(),true,BarButtonPressCurve());
+			freezeModeButton->button.h.SetTar(32.5,batch.GetRemainingDuration());
+			const BarUiAnimationAdvanceContextClass zero{0.0,1,true,false};
+			BarUiAdvanceAnimation(freezeModeButton->button.h,zero);
+			expect(freezeModeButton->button.h.val==70.0 && batch.CanJoin(),"zero-time split targets retain current geometry and permit early batch join");
+			batch.Advance(BarUiDefaultOperationDur*0.75,1);
+			const BarUiAnimationAdvanceContextClass partial{BarUiDefaultOperationDur*0.75,1,true,false};
+			BarUiAdvanceAnimation(freezeModeButton->button.h,partial);
+			const double interruptedHeight=freezeModeButton->button.h.val;
+			expect(!batch.CanJoin(),"late main-layout update cannot join the old half-finished batch");
+			SetSelectAndClickThroughMode(0);owner.UpdateRendering();
+			batch.Restart(BarUiDefaultOperationDur);freezeModeButton->button.h.SetTar(70.0,batch.GetRemainingDuration());
+			expect(freezeModeButton->button.h.val==interruptedHeight,"late layout retarget starts at the displayed height");
+			const auto repeated=owner.barButtonSet.MainLayoutSnapshot();
+			for(int frame=0;frame<120;++frame)
+			{
+				owner.UpdateRendering();
+				const BarUiAnimationAdvanceContextClass tick{0.01,1,true,false};
+				BarUiAdvanceAnimation(freezeModeButton->button.h,tick);batch.Advance(0.01,1);
+				selectModeButton->name.AdvanceContentTransition(0.01,1);
+			}
+			expect(owner.barButtonSet.MainLayoutSnapshot()==repeated && !batch.IsActive()
+				&& freezeModeButton->button.h.val==70.0 && selectModeButton->name.content.GetVal()==selectModeButton->name.content.GetTar(),
+				"same-state refresh leaves the batch and content animation free to settle");
+			const auto fixedEqual=[](const auto& left,const auto& right)
+			{
+				if(left.size()!=right.size())return false;
+				for(size_t i=0;i<left.size();++i)if(left[i].Id!=right[i].Id || left[i].Size!=right[i].Size)return false;
+				return true;
+			};
+			expect(fixedEqual(savedA1,Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot())
+				&& fixedEqual(savedA2,Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot()),"effective presentation never rewrites persisted A1/A2 sizes or order");
+			setlist.component.shortcutButton=savedShortcuts;
+			owner.barState.fold=savedFold;owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();expectStableButtons();
+		}
+		// 用真实历史刷新和墙钟到期入口覆盖精简态，保留保护身份但不能再次显示按钮。
+		auto* undoModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Recall];
+		auto* redoModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Redo];
+		for(const bool redo:{false,true})
+		{
+			ChangeStateModeToPen();SetCurrentPageHasContent(true);
+			{
+				std::scoped_lock lock(owner.recallChromeMutex);
+				owner.recallChrome={};
+				owner.recallChrome.availability={true,true};
+				owner.recallChrome.layout=RecallChromeLayout::Compact;
+				owner.recallChrome=ApplyRecallChromeCommandResult(owner.recallChrome,redo,{true,true},true);
+				owner.ArmRecallChromeIdleDeadline();
+			}
+			ChangeStateModeToSelection();SetCurrentPageHasContent(false);owner.UpdateRendering();
+			const auto hiddenHistory=[&]()
+			{
+				const auto chrome=owner.RecallChromeView();
+				expect(!undoModeButton->IsVisible() && !redoModeButton->IsVisible()
+					&& !owner.barState.recallAttribute && !chrome.popupOpen
+					&& !chrome.mainUndoVisible && !chrome.mainRedoVisible,
+					"empty Selection chrome stays hidden across refresh and timer projection");
+			};
+			hiddenHistory();
+			const auto protectedHold=owner.recallChrome.hold;
+			const auto protectedDeadline=owner.recallChromeIdleDeadline;
+			owner.UpdateRendering();hiddenHistory();
+			owner.NoteRecallHistoryAvailability(true,true);hiddenHistory();
+			owner.NoteRecallHistoryAvailability(false,false);hiddenHistory();
+			unsigned retry=0;
+			expect(!owner.PollRecallChromeIdleTimer(retry) && retry>0 && !owner.AdvanceRecallChromeIdle(10.0)
+				&& owner.recallChrome.hold==protectedHold && owner.recallChromeIdleDeadline==protectedDeadline,
+				"compact Selection preserves the 3 second wall-clock protection");
+			SetCurrentPageHasContent(true);owner.UpdateRendering();
+			expect(redo ? redoModeButton->IsVisible() : undoModeButton->IsVisible(),
+				"nonempty Selection retains the protected history layout");
+			SetCurrentPageHasContent(false);owner.UpdateRendering();hiddenHistory();
+			owner.recallChromeIdleDeadline=std::chrono::steady_clock::now()-std::chrono::seconds(1);
+			expect(owner.PollRecallChromeIdleTimer(retry) && owner.AdvanceRecallChromeIdle(0.0),
+				"actual idle expiry applies the pending history layout");
+			hiddenHistory();
+			expect(owner.recallChrome.hold==RecallChromeHold::None && !owner.recallChromeIdleArmed,
+				"idle settlement completes without redisplaying hidden history buttons");
+			ChangeStateModeToPen();owner.UpdateRendering();
+			expect(undoModeButton->IsVisible() && !redoModeButton->IsVisible(),
+				"leaving compact Selection restores the original settled history layout");
+		}
+		// 无Host的真实历史事件/墙钟/拒绝命令入口，不把种入Accepted策略当成产品命令执行。
+		{
+			ChangeStateModeToPen();SetCurrentPageHasContent(true);owner.barState.fold=false;
+			const auto seedHold=[&](bool redo)
+			{
+				std::scoped_lock lock(owner.recallChromeMutex);
+				owner.recallChrome={};owner.recallChrome.availability={true,true};
+				owner.recallChrome.layout=RecallChromeLayout::Compact;
+				owner.recallChrome=ApplyRecallChromeCommandResult(owner.recallChrome,redo,{true,true},true);
+				owner.ArmRecallChromeIdleDeadline();
+			};
+			for(bool redo:{false,true})
+			{
+				seedHold(redo);owner.UpdateRendering();
+				const auto protectedLayout=owner.barButtonSet.MainLayoutSnapshot();
+				const auto protectedHold=owner.recallChrome.hold;
+				const auto deadline=owner.recallChromeIdleDeadline;
+				unsigned retry=0;
+				expect(!owner.PollRecallChromeIdleTimer(retry) && retry>0 && !owner.AdvanceRecallChromeIdle(100.0)
+					&& owner.recallChromeIdleDeadline==deadline,"early timer and large animation dt cannot consume the wall-clock hold");
+				{
+					std::scoped_lock lock(owner.recallChromeMutex);
+					owner.recallChromeIdleDeadline=std::chrono::steady_clock::now()-std::chrono::seconds(1);
+				}
+				if(redo)owner.OpenRecallFromRedo();else owner.OpenRecallFromUndo();
+				expect(owner.recallChromeIdleDeadline>std::chrono::steady_clock::now()
+					&& !owner.PollRecallChromeIdleTimer(retry) && retry>0 && owner.recallChrome.hold==protectedHold
+					&& owner.barButtonSet.MainLayoutSnapshot()==protectedLayout,
+					"gray production command extends the hold without directly changing button geometry");
+				owner.UpdateRendering();
+				expect((redo?redoModeButton:undoModeButton)->state->state!=BarWidgetState::Disable,
+					"gray protected history remains eligible for repeat-click feedback");
+				const auto refreshedDeadline=owner.recallChromeIdleDeadline;
+				owner.NoteRecallPopupDismissed();owner.ClearRecallForDrawing();owner.SettleRecallChromeForWorkspace();
+				expect(owner.recallChromeIdleDeadline==refreshedDeadline && owner.recallChrome.hold==protectedHold
+					&& owner.barButtonSet.MainLayoutSnapshot()==protectedLayout,
+					"popup, drawing and workspace events only suppress popup while protecting main geometry");
+				owner.UpdateRendering();
+				expect(!owner.RecallChromeView().popupOpen,"unified view publishes suppressed popup identity");
+				owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+				expect(owner.barButtonSet.MainLayoutSnapshot()==protectedLayout,"component Load cannot reset a protected history identity");
+				const auto beforeExpiry=owner.barButtonSet.MainLayoutSnapshot();
+				{
+					std::scoped_lock lock(owner.recallChromeMutex);
+					owner.recallChromeIdleDeadline=std::chrono::steady_clock::now()-std::chrono::seconds(1);
+				}
+				expect(owner.PollRecallChromeIdleTimer(retry) && owner.AdvanceRecallChromeIdle(0.0)
+					&& !owner.recallChromeIdleArmed && owner.recallChrome.hold==RecallChromeHold::None
+					&& owner.barButtonSet.MainLayoutSnapshot()==beforeExpiry,
+					"idle expiry settles state without a second effective-button write path");
+				owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
+				expect(undoModeButton->IsVisible() && undoModeButton->size==BarButtonSizeEnum::twoTwo && !redoModeButton->IsVisible(),
+					"the frame presentation entry applies the settled history grid before target scanning");
+			}
+			{
+				std::scoped_lock lock(owner.recallChromeMutex);
+				owner.recallChrome={};owner.recallChrome.layout=RecallChromeLayout::Compact;
+			}
+			owner.NoteRecallHistoryAvailability(false,false);owner.UpdateRendering();
+			expect(owner.recallChrome.settlePending && owner.recallChromeIdleArmed
+				&& undoModeButton->size==BarButtonSizeEnum::twoOne && redoModeButton->size==BarButtonSizeEnum::twoOne,
+				"availability-only layout changes also keep a wall-clock pending transition");
+			{
+				std::scoped_lock lock(owner.recallChromeMutex);
+				owner.recallChromeIdleDeadline=std::chrono::steady_clock::now()-std::chrono::seconds(1);
+			}
+			expect(owner.AdvanceRecallChromeIdle(0.0),"availability-only idle transition is settled without a clicked hold");
+			owner.UpdateRendering();
+			expect(undoModeButton->size==BarButtonSizeEnum::twoTwo && !redoModeButton->IsVisible(),
+				"availability-only settled grid is applied by the same projection");
+		}
+		SetCurrentPageHasContent(false);SetSelectAndClickThroughMode(0);ChangeStateModeToSelection();owner.UpdateRendering();
+		SetContentStateUpdatesReady(false);
 		SetThemeStyleSource(&owner.barStyle);
 		auto root=std::make_shared<BarUiSuperellipseClass>(100,430,BarMainButtonWidthDip,BarMainButtonHeightDip,3.0,
 			BarButtonFrameThicknessDip,GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
@@ -131,6 +804,45 @@ namespace Inkeys::UI::Bar
 		main->enable.Initialization(true);main->pct.SetDirect(BarMainBarFillOpacity);
 		main->framePct.emplace(BarMainBarFrameOpacity);main->frameLightPct.emplace(BarMainBarFrameOpacity);
 		main->frameRendering=BarUiFrameRenderingEnum::PointLight;owner.shapeMap[BarUISetShapeEnum::MainBar]=main;
+		// 真实Advance消费已捕获帧，即使锁外又发布空页Selection也不能混用下一帧门禁。
+		{
+			owner.barState.fold=false;owner.barState.drawAttribute=false;owner.barState.geometryAttribute=false;
+			owner.barState.moreExpanded=false;owner.barState.eraserAttribute=false;
+			for(const bool redo:{false,true})
+			{
+				{
+					std::scoped_lock lock(owner.recallChromeMutex);
+					owner.recallChrome={};owner.recallChrome.availability={true,true};
+					owner.recallChrome.layout=RecallChromeLayout::Compact;
+					owner.recallChrome=ApplyRecallChromeCommandResult(owner.recallChrome,redo,{true,true},true);
+					owner.ArmRecallChromeIdleDeadline();
+				}
+				auto frameTool=GetStateModeSnapshot();frameTool.StateModeSelect=StateModeSelectEnum::IdtPen;
+				owner.barButtonSet.UpdateMainPresentation(frameTool);
+				const auto frameChrome=owner.RecallChromeView();
+				auto* anchor=owner.barButtonSet.preset[(int)(frameChrome.redoExpanded?BarButtonPresetEnum::Redo:BarButtonPresetEnum::Recall)];
+				const bool anchorVisible=anchor->IsVisible();
+				anchor->button.x.SetDirect(200.0);anchor->button.y.SetDirect(40.0);
+				anchor->button.w.SetDirect(70.0);anchor->button.h.SetDirect(70.0);
+				frameTool.StateModeSelect=StateModeSelectEnum::IdtSelection;
+				owner.barButtonSet.UpdateMainPresentation(frameTool);
+				expect(frameChrome.popupOpen && frameChrome.popupShowsRedo!=redo && anchorVisible
+					&& !owner.RecallChromeView().popupOpen && !anchor->IsVisible(),
+					"fixture publishes a newer global history view after capturing an open frame and its anchor gate");
+				BarRecallAttributePanel framePanel;
+				for(int tick=0;tick<90;++tick)
+					framePanel.Advance(owner,frameChrome,anchorVisible,1.0/60,1,1,96,{0,0,1000,1000},{0,0},0,0);
+				framePanel.CommitPresented();
+				expect(framePanel.PresentationSnapshot().panelVisible,
+					"real history Advance preserves the captured frame popup despite newer global compact visibility");
+				for(int tick=0;tick<90;++tick)
+					framePanel.Advance(owner,frameChrome,false,1.0/60,1,1,96,{0,0,1000,1000},{0,0},0,0);
+				framePanel.CommitPresented();
+				expect(!framePanel.PresentationSnapshot().panelVisible,
+					"real history Advance closes when the supplied frame anchor gate becomes hidden");
+			}
+			owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
+		}
 		stateMode.StateModeSelect=StateModeSelectEnum::IdtEraser;owner.barState.fold=false;
 		owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;
 		const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
@@ -147,7 +859,7 @@ namespace Inkeys::UI::Bar
 			for(size_t i=0;i<presets.size();++i)
 			{
 				auto* b=presets[i]==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(presets[i])];
-				const auto label=IW(localizedPresetLabelKeys[i]);b->name.content.SetVal(label);b->name.content.SetTar(label);
+				const auto label=IW(localizedPresetLabelKeys[i]);b->name.SetStringImmediate(label);b->TransitionContent(L"",label);b->name.size.SetDirect(b->LabelFontSize(metrics.primaryFontSizeDip));
 			}
 		};
 		for(size_t i=0;i<presets.size();++i)
@@ -195,6 +907,48 @@ namespace Inkeys::UI::Bar
 			for(const auto* key:{I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.FreezeLabel})
 				expect(owner.spec.MeasureText(IW(key),twoOneMetrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=twoOneMetrics.primarySlotWidthDip+0.5f,
 					"localized Whiteboard and Freeze labels fit the existing 37 DIP slot");
+			for(const auto preset:{BarButtonPresetEnum::Select,BarButtonPresetEnum::Pierce})
+			{
+				auto* b=owner.barButtonSet.preset[(int)preset];
+				auto label=IW(preset==BarButtonPresetEnum::Select ? I18nKey.UI.Bar.MainButtons.SelectClearLabel
+					: I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
+				// 直接测量真实语言资源，不在测试里重复生产代码的英文改写。
+				expect(std::count(label.begin(),label.end(),L'\n')==(I18n::isIdentifying(L"en-US")?1:0),
+					"localized Select Clear and Click-through resources keep English two-line and Chinese single-line labels");
+				b->name.SetStringImmediate(label);b->TransitionContent(L"",label);
+				for(const auto kind:{BarButtonVisualLayoutKind::StandardTwoTwo,BarButtonVisualLayoutKind::StandardTwoOne})
+				{
+					if(preset==BarButtonPresetEnum::Select && kind==BarButtonVisualLayoutKind::StandardTwoOne)continue;
+					const auto slot=ResolveBarButtonVisualMetrics(kind);
+					const auto measured=owner.spec.MeasureText(label,b->LabelFontSize(slot.primaryFontSizeDip),DWRITE_FONT_WEIGHT_BOLD);
+					expect(measured.width>0 && measured.width<=slot.primarySlotWidthDip+0.5f &&
+						measured.height>0 && measured.height<=slot.primarySlotHeightDip+0.5f,
+						"Select Clear and Click-through three-language DWrite bounds fit original slots");
+					if(label.find(L'\n')!=wstring::npos)
+					{
+						// 真实换字过渡的中点前后都测量当前字号，防止目标文案提前裁切。
+						BarButtonClass transitioning(*b);
+						transitioning.name.SetStringImmediate(L"Select");
+						transitioning.name.size.SetDirect(slot.primaryFontSizeDip);
+						transitioning.TransitionContent(L"",label);
+						for(const double dt:{0.0,0.19,0.02,0.05,0.5})
+						{
+							transitioning.name.AdvanceContentTransition(dt,1.0);
+							const auto bounds=owner.spec.MeasureText(transitioning.name.content.GetVal(),
+								transitioning.name.size.val,DWRITE_FONT_WEIGHT_BOLD);
+							expect(bounds.width<=slot.primarySlotWidthDip+0.5f && bounds.height<=slot.primarySlotHeightDip+0.5f,
+								"incoming multiline label fits before, at and after the transparent midpoint");
+						}
+						transitioning.TransitionContent(L"",L"Select");
+						expect(transitioning.LabelFontSize(slot.primaryFontSizeDip)==9.0,
+							"outgoing multiline label keeps compact font until content changes");
+						transitioning.name.AdvanceContentTransition(1.0,1.0);
+						expect(transitioning.LabelFontSize(slot.primaryFontSizeDip)==slot.primaryFontSizeDip,
+							"short label restores standard font after content transition");
+					}
+				}
+			}
+			updateLocalizedPresetLabels();
 			for(const auto* key:penMenuLabelKeys)
 				expect(owner.spec.MeasureText(IW(key),12.0,DWRITE_FONT_WEIGHT_NORMAL).width<=80.5f,
 					"localized pen menu label fits its measured text slot");
@@ -234,7 +988,7 @@ namespace Inkeys::UI::Bar
 				owner.barStyle.darkStyle=true;owner.barStyle.zoom=zoom;
 				const UINT width=static_cast<UINT>(700*zoom),height=static_cast<UINT>(245*zoom);
 				expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),width,height)),"localized bar target setup");
-				owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+				owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
 				auto* dc=owner.spec.GetDeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
 				main->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 				DrawBarBackgroundVisual(owner.spec,dc,*main,BarUiInheritClass(main->inhX,main->inhY));
@@ -321,7 +1075,7 @@ namespace Inkeys::UI::Bar
 			const UINT width=static_cast<UINT>(1000*zoom),height=static_cast<UINT>(620*zoom);
 			const auto epoch=RenderPipeline::GetDeviceEpoch();
 			expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,width,height)),"shared renderer resource setup");
-			owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+			owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
 			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,zoom,dpi,{0,0,static_cast<LONG>(width),static_cast<LONG>(height)},{0,0},0,0);
 			expect(!owner.eraserAttribute.Active(),"animation settles without polling");
 			owner.eraserAttribute.CommitPresented();const auto presentation=owner.eraserAttribute.PresentationSnapshot();
@@ -413,7 +1167,7 @@ namespace Inkeys::UI::Bar
 			root->x.SetDirect(-70);root->y.SetDirect(430);
 			const auto epoch=RenderPipeline::GetDeviceEpoch();
 			expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,narrowWidth,narrowHeight)),"narrow target setup");
-			owner.spec.SetFrameZoom(1);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+			owner.spec.SetFrameZoom(1);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
 			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,1,96,{0,0,narrowWidth,narrowHeight},{0,0},0,0);
 			owner.eraserAttribute.CommitPresented();const auto narrow=owner.eraserAttribute.PresentationSnapshot();
 			const double narrowCircleEndGap=narrow.geometry.reversed

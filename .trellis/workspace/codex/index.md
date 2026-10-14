@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 60
-- **Last Active**: 2026-10-10
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 98
+- **Last Active**: 2026-10-14
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1835 | Active |
+| `journal-2.md` | ~454 | Active |
+| `journal-1.md` | ~2205 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,36 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 98 | 2026-10-14 | 完成主栏图标顺序与展开方向任务 | `35afa7ee`, `2dd3b344`, `8515d469`, `bec78a29` | `feature/mode` |
+| 97 | 2026-10-14 | 选择与穿透操作模式完成 | `3f3946cf`, `d444f6a7`, `7d5a003f` | `feature/mode` |
+| 83 | 2026-10-14 | 交互模式与启动预设人工验收结案 | `ecfee6ab`, `18b4c8fb`, `519afa01` | `feature/mode` |
+| 82 | 2026-10-13 | 启动位置预设与环形启动进度实现 | - | `feature/mode` |
+| 76 | 2026-10-13 | 修复设置模式切换卡死并恢复下拉卡片 | - | `feature/mode` |
+| 75 | 2026-10-13 | 交互模式切换入口与三语文案 | - | `feature/mode` |
+| 82 | 2026-10-14 | Draw3尾段修复最终人工验收确认 | `e154707ce72e95c0c4c20297afefbbaa07f04d14` | `bugfix/penstroke` |
+| 81 | 2026-10-13 | 阶段四验收完成、签名提交与父子任务归档 | `62f1e6b0d0bd67bb084d958da7fb9cafd6ed12b9`, `17694165fcefcfb07d963a8c3d7db1cf56eb3fc5` | `bugfix/penstroke` |
+| 80 | 2026-10-13 | 阶段四正常颜色抬笔长斜线调查与显式诊断交付 | `71858b0b` | `bugfix/penstroke` |
+| 79 | 2026-10-13 | 阶段三人工效果验收与提交准备 | - | `bugfix/penstroke` |
+| 78 | 2026-10-13 | 修复原始输入支持的小回退导致短1误修 | - | `bugfix/penstroke` |
+| 77 | 2026-10-13 | 修复近直线抬笔回退误触发 | - | `bugfix/penstroke` |
+| 76 | 2026-10-13 | Draw3可见末钩自适应窗口与原始输入内侧辅助 | - | `bugfix/penstroke` |
+| 75 | 2026-10-13 | 阶段三现场8笔日志分析与修复规划 | - | `bugfix/penstroke` |
+| 74 | 2026-10-13 | 阶段三无反色调查：大弧位移拒绝与有界日志 | - | `bugfix/penstroke` |
+| 73 | 2026-10-13 | 阶段三人工反馈：临时尾段反色诊断 | - | `bugfix/penstroke` |
+| 71 | 2026-10-12 | 阶段三 Draw3 完成态局部尾段拟合与评估 | - | `bugfix/penstroke` |
+| 67 | 2026-10-12 | 阶段2：库内终态尾段重构与离线验收完成 | - | `bugfix/penstroke` |
+| 64 | 2026-10-12 | 阶段1：vcpkg Abseil与Modeler源码基线完成 | - | `bugfix/penstroke` |
+| 74 | 2026-10-13 | PPT 退出与设置层级人工验收及归档 | `4057b8ea` | `bugfix/drawpad` |
+| 73 | 2026-10-13 | PPT 退出连贯交接与设置即时层级修复 | - | `bugfix/drawpad` |
+| 72 | 2026-10-12 | RTS 注册前置顶修复核验与任务归档 | `74d7e688` | `bugfix/drawpad` |
+| 71 | 2026-10-12 | Draw3 RTS 注册前根置顶顺序修复 | - | `bugfix/drawpad` |
+| 70 | 2026-10-12 | 左上角落笔死区用户验收与任务归档 | `f5ccf0fb` | `bugfix/drawpad` |
+| 69 | 2026-10-12 | 分页窗口启动显隐冲突修复 | - | `bugfix/drawpad` |
+| 68 | 2026-10-12 | Redo popup 人工验收通过并归档 | `7094cea4` | `feature/redo` |
+| 67 | 2026-10-12 | 最近 Clear 区间 Undo 与前进 Redo 完整链修复 | - | `feature/redo` |
+| 66 | 2026-10-12 | Redo2x2点击暂态主栏扩宽修复 | - | `feature/redo` |
+| 65 | 2026-10-12 | Redo追加：3秒等待与属性身份显示提交 | - | `feature/redo` |
+| 64 | 2026-10-12 | 延续 Redo 弹窗：修复5秒布局保护与灰色动画 | - | `feature/redo` |
 | 60 | 2026-10-10 | Windows 发布流水线拆分与 Win32 Harness 修复 | - | `dev` |
 | 59 | 2026-10-10 | Win7 主画布修复验收并归档 | `12d82884cf09928c2ae22eda2fe8851ac8581c9b`, `4011594d103f5b95e77ec923f54058593ce7e549` | `chore/publish` |
 | 55 | 2026-10-09 | Win7 WARP 主画布默认完整 shader 修复 | - | `chore/publish` |

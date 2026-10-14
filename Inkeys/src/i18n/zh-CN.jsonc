@@ -65,6 +65,8 @@
       "MainButtons":
       {
         "SelectLabel": "选择",
+        "SelectClearLabel": "选择(清空)",
+        "ClickThroughLabel": "穿透",
         "MoveLabel": "拖动",
         "DrawLabel": "绘制",
         "LaserLabel": "激光笔",
@@ -77,6 +79,7 @@
         "RectangleLabel": "矩形",
         "StraightLineLabel": "直线",
         "UndoLabel": "撤回",
+        "RedoLabel": "重做",
         "ClearLabel": "清空",
         "WhiteboardLabel": "白板",
         "CloseWhiteboardLabel": "关闭白板",
@@ -297,6 +300,30 @@
     "Regular":
     {
       "N": "常规",
+      "SelectAndClickThrough":
+      {
+        "N": "选择与穿透",
+        "Combined": "合并式",
+        "Separate": "分离式",
+        "CombinedDescription": "通过「选择」统一操作电脑，涵盖无墨迹和保留墨迹两种状态。",
+        "SeparateDescription": "「选择」清空墨迹后操作电脑；「穿透」保留墨迹并操作下方窗口。",
+        "ClickThrough": "穿透",
+        "ClickThroughDescription": "保留屏幕上的墨迹，让点击和触摸穿过批注层，操作下方窗口。"
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "主栏图标顺序",
+        "FollowMainButton": "跟随主按钮",
+        "FollowMainButtonReverse": "跟随主按钮（反向）",
+        "LeftToRight": "从左到右",
+        "RightToLeft": "从右到左"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "主栏展开方向调整",
+        "Centerline": "中轴线",
+        "WhenSpaceInsufficient": "当位置不足时"
+      },
       "StartUp":
       {
         "N": "开机自启和启动行为",
@@ -388,10 +415,20 @@
         "N": "绘图效果优化",
         "Device":
         {
-          "N": "绘图设备",
-          "E": "我们将根据不同设备类型优化使用体验。",
-          "Touch": "触控屏幕",
-          "MousePen": "鼠标、手写笔或数位板"
+          "N": "选择交互模式",
+          "Touch": "大屏触控模式",
+          "MousePen": "桌面交互模式",
+          "TouchE": "适用于教室、会议室等场景，直接在触控大屏上书写和操作。",
+          "MousePenE": "适用于个人电脑、平板及鼠标操控的大屏，兼顾鼠标、触控笔、数位板和触摸操作。"
+        }
+      },
+      "Touch":
+      {
+        "N": "触摸",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "断触接续",
+          "E": "触摸书写时，若屏幕短暂丢失接触后又沿原方向恢复，将尝试把两段笔迹接成一笔，减少断线。关闭后，每次抬起都会结束当前笔画。"
         }
       },
       "Eraser":
@@ -423,6 +460,18 @@
           "N": "适用于触摸笔速橡皮的接触面积辅助",
           "E": "使橡皮粗细始终略大于手指（避免手指遮住橡皮光标），不建议大屏设备启用。"
         }
+      }
+    },
+    "Preset":
+    {
+      "N": "预设",
+      "StartupPlacement":
+      {
+        "N": "启动后位置",
+        "E": "居中底栏会展开显示主栏；左下角或右下角悬浮窗只显示主按钮。更改将在下次启动时生效。",
+        "CenteredBottomBar": "居中底栏",
+        "BottomLeftFloating": "左下角悬浮窗",
+        "BottomRightFloating": "右下角悬浮窗"
       }
     },
     "Experimental":

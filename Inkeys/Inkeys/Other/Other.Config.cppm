@@ -323,6 +323,10 @@ namespace Inkeys::ConfigDetail
 GROUP(UI, \
 			GROUP(Bar, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, StartupPlacement, 0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ExpandDirectionAdjustment, 1) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA1, MakeDefaultFixedButtonsA1()) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarExtensionButtonLayoutEntry>, ExtensionButtons, MakeDefaultExtensionButtons()) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
@@ -345,6 +349,7 @@ GROUP(UI, \
 	GROUP(Experimental, \
 		GROUP(Inkeys3, \
 			GROUP(Draw3, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnect, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
 			) \

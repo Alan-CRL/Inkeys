@@ -68,6 +68,8 @@ inline constexpr struct I18nKeyRoot
             struct Node__UI__Bar__MainButtons
             {
                 const char* SelectLabel = "UI/Bar/MainButtons/SelectLabel";
+                const char* SelectClearLabel = "UI/Bar/MainButtons/SelectClearLabel";
+                const char* ClickThroughLabel = "UI/Bar/MainButtons/ClickThroughLabel";
                 const char* MoveLabel = "UI/Bar/MainButtons/MoveLabel";
                 const char* DrawLabel = "UI/Bar/MainButtons/DrawLabel";
                 const char* LaserLabel = "UI/Bar/MainButtons/LaserLabel";
@@ -80,6 +82,7 @@ inline constexpr struct I18nKeyRoot
                 const char* RectangleLabel = "UI/Bar/MainButtons/RectangleLabel";
                 const char* StraightLineLabel = "UI/Bar/MainButtons/StraightLineLabel";
                 const char* UndoLabel = "UI/Bar/MainButtons/UndoLabel";
+                const char* RedoLabel = "UI/Bar/MainButtons/RedoLabel";
                 const char* ClearLabel = "UI/Bar/MainButtons/ClearLabel";
                 const char* WhiteboardLabel = "UI/Bar/MainButtons/WhiteboardLabel";
                 const char* CloseWhiteboardLabel = "UI/Bar/MainButtons/CloseWhiteboardLabel";
@@ -300,6 +303,30 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Regular
         {
             const char* N = "SettingsUI/Regular/N";
+            struct Node__SettingsUI__Regular__SelectAndClickThrough
+            {
+                const char* N = "SettingsUI/Regular/SelectAndClickThrough/N";
+                const char* Combined = "SettingsUI/Regular/SelectAndClickThrough/Combined";
+                const char* Separate = "SettingsUI/Regular/SelectAndClickThrough/Separate";
+                const char* CombinedDescription = "SettingsUI/Regular/SelectAndClickThrough/CombinedDescription";
+                const char* SeparateDescription = "SettingsUI/Regular/SelectAndClickThrough/SeparateDescription";
+                const char* ClickThrough = "SettingsUI/Regular/SelectAndClickThrough/ClickThrough";
+                const char* ClickThroughDescription = "SettingsUI/Regular/SelectAndClickThrough/ClickThroughDescription";
+            } SelectAndClickThrough{};
+            struct Node__SettingsUI__Regular__ToolbarIconOrder
+            {
+                const char* N = "SettingsUI/Regular/ToolbarIconOrder/N";
+                const char* FollowMainButton = "SettingsUI/Regular/ToolbarIconOrder/FollowMainButton";
+                const char* FollowMainButtonReverse = "SettingsUI/Regular/ToolbarIconOrder/FollowMainButtonReverse";
+                const char* LeftToRight = "SettingsUI/Regular/ToolbarIconOrder/LeftToRight";
+                const char* RightToLeft = "SettingsUI/Regular/ToolbarIconOrder/RightToLeft";
+            } ToolbarIconOrder{};
+            struct Node__SettingsUI__Regular__ToolbarExpansionDirection
+            {
+                const char* N = "SettingsUI/Regular/ToolbarExpansionDirection/N";
+                const char* Centerline = "SettingsUI/Regular/ToolbarExpansionDirection/Centerline";
+                const char* WhenSpaceInsufficient = "SettingsUI/Regular/ToolbarExpansionDirection/WhenSpaceInsufficient";
+            } ToolbarExpansionDirection{};
             struct Node__SettingsUI__Regular__StartUp
             {
                 const char* N = "SettingsUI/Regular/StartUp/N";
@@ -392,11 +419,21 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__Draw__Effect__Device
                 {
                     const char* N = "SettingsUI/Draw/Effect/Device/N";
-                    const char* E = "SettingsUI/Draw/Effect/Device/E";
                     const char* Touch = "SettingsUI/Draw/Effect/Device/Touch";
                     const char* MousePen = "SettingsUI/Draw/Effect/Device/MousePen";
+                    const char* TouchE = "SettingsUI/Draw/Effect/Device/TouchE";
+                    const char* MousePenE = "SettingsUI/Draw/Effect/Device/MousePenE";
                 } Device{};
             } Effect{};
+            struct Node__SettingsUI__Draw__Touch
+            {
+                const char* N = "SettingsUI/Draw/Touch/N";
+                struct Node__SettingsUI__Draw__Touch__InterruptedStrokeReconnect
+                {
+                    const char* N = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/N";
+                    const char* E = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/E";
+                } InterruptedStrokeReconnect{};
+            } Touch{};
             struct Node__SettingsUI__Draw__Eraser
             {
                 const char* N = "SettingsUI/Draw/Eraser/N";
@@ -428,6 +465,18 @@ inline constexpr struct I18nKeyRoot
                 } TouchArea{};
             } Eraser{};
         } Draw{};
+        struct Node__SettingsUI__Preset
+        {
+            const char* N = "SettingsUI/Preset/N";
+            struct Node__SettingsUI__Preset__StartupPlacement
+            {
+                const char* N = "SettingsUI/Preset/StartupPlacement/N";
+                const char* E = "SettingsUI/Preset/StartupPlacement/E";
+                const char* CenteredBottomBar = "SettingsUI/Preset/StartupPlacement/CenteredBottomBar";
+                const char* BottomLeftFloating = "SettingsUI/Preset/StartupPlacement/BottomLeftFloating";
+                const char* BottomRightFloating = "SettingsUI/Preset/StartupPlacement/BottomRightFloating";
+            } StartupPlacement{};
+        } Preset{};
         struct Node__SettingsUI__Experimental
         {
             struct Node__SettingsUI__Experimental__ConsoleOutput

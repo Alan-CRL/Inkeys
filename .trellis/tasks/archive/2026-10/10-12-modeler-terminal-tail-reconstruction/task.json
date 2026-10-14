@@ -1,0 +1,33 @@
+{
+  "id": "modeler-terminal-tail-reconstruction",
+  "name": "modeler-terminal-tail-reconstruction",
+  "title": "阶段2：库内抬笔尾段重构与离线验收",
+  "description": "保持前向模型不变，实现独立终态尾段补丁模块，比较端点平滑位移与有序raw约束重构，验收固定入口/真实终点/原子回退及离线效果成本；不接Draw3或Touch续接。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "draw3",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-12",
+  "completedAt": "2026-10-12",
+  "branch": "bugfix/penstroke",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/additional/ink_stroke_modeler/terminal_tail_reconstructor.h",
+    "Inkeys/additional/ink_stroke_modeler/terminal_tail_reconstructor.cc",
+    "Inkeys/additional/ink_stroke_modeler/ink_stroke_modeler.sources.props",
+    "inkStrokeModelerTestTests/modeler_tail_tests.cpp",
+    "inkStrokeModelerTestTests/contact_input_tests.cpp",
+    ".trellis/spec/native/terminal-tail-reconstruction.md"
+  ],
+  "notes": "2026-10-12用户明确批准创建并开始；依赖阶段1c34d3a56。阶段2独立模块/离线验收PASS：四配置96窗口116105assert0fail，默认18Apply12改善记录；原API同架构19case精确保持，三架构成本/主Debug/Headless及平台静态检查通过。原31源头与47冻结资料不变，缓存清理3.092GiB。生产接入与设备/GUI/Win7仍后续，未commit/push。",
+  "meta": {}
+}

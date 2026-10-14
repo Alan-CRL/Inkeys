@@ -735,7 +735,8 @@ namespace Inkeys::UI::Bar
 				&& left.penColorRgb == right.penColorRgb && left.penWidthBits == right.penWidthBits
 				&& left.toolRevision == right.toolRevision && left.thicknessView == right.thicknessView
 				&& left.darkStyle == right.darkStyle && left.dpi == right.dpi
-				&& left.displaySerial == right.displaySerial && left.configZoomBits == right.configZoomBits;
+				&& left.displaySerial == right.displaySerial && left.configZoomBits == right.configZoomBits
+				&& (left.flags & 0x700u) == (right.flags & 0x700u);
 		}
 		bool FiniteSceneStateSupported(const Ui3FiniteSignature& signature) noexcept
 		{
@@ -749,7 +750,7 @@ namespace Inkeys::UI::Bar
 	{
 		const float width = std::bit_cast<float>(signature.penWidthBits);
 		const double zoom = std::bit_cast<double>(signature.configZoomBits);
-		return signature.validMask == Ui3FiniteRequiredMask && (signature.flags & ~127u) == 0
+		return signature.validMask == Ui3FiniteRequiredMask && (signature.flags & ~(127u | 0x700u)) == 0
 			&& signature.stateMode == 1 && signature.penMode <= 2 && signature.penColorRgb <= 0xFFFFFFu
 			&& signature.mainSide <= 1 && signature.primarySide <= 1 && signature.thicknessView <= 2
 			&& signature.darkStyle <= 1 && signature.dpi != 0 && signature.toolRevision != 0
