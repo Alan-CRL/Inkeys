@@ -151,3 +151,39 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 98: 完成主栏图标顺序与展开方向任务
+<!-- trellis-session: v=2 fp=0a06fb1ca7cabb88 -->
+
+**Date**: 2026-10-14
+**Task**: 完成主栏图标顺序与展开方向任务
+**Branch**: `feature/mode`
+
+### Summary
+
+主栏排序与展开策略、拖动释放第三光源、按钮统一状态派生均完成；自动验证通过，用户确认人工验收通过，任务已归档。
+
+### Main Changes
+
+- 默认位置不足时换边，四种图标横向顺序；保留现有停靠与上下倒转。
+- 修复第三光源拖动释放闪烁，以及分离式增删组件覆盖定格2×1；主栏尺寸/显隐统一派生、等宽动画失效和历史同帧视图。
+- 用户于2026-10-14确认修改到位及人工验证通过；feature/mode提交完成，任务completed并清除活动指针，未push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `35afa7ee` | feat(toolbar): add icon order and expansion direction settings |
+| `2dd3b344` | fix(toolbar): keep cursor light stable after dragging |
+| `8515d469` | fix(toolbar): centralize button presentation updates |
+| `bec78a29` | chore(task): archive toolbar-order-expansion |
+
+### Testing
+
+- [OK] 最终Debug|ARM64完整solution退出0；Bar离屏480组组件矩阵失败0；Headless --no-window与state-mode-production退出0。
+- [OK] 第三光源24坐标组/4组D2D像素差异0，diff/UTF-8/BOM/CRLF与Trellis检查通过；人工验证由用户确认。
+
+### Status
+
+[OK] **Completed**
