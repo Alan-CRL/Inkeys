@@ -127,3 +127,27 @@
 ### Next Steps
 
 - 当前任务已完成归档，当前会话任务指针清除；其他任务不变，不推送。
+
+
+## Session 97: 选择与穿透操作模式完成
+<!-- trellis-session: v=2 fp=b5e7f8d8dc9d5d03 -->
+
+**Date**: 2026-10-14
+**Task**: 选择与穿透操作模式完成
+**Branch**: `feature/mode`
+
+### Summary
+
+合并式/分离式、稳定穿透与历史按钮显隐、紧凑三语说明和穿透再次点击恢复工具均完成；用户确认完成，任务已归档。Debug ARM64和无窗口回归通过，未执行GUI测试或push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f3946cf` | feat(mode): add combined and separate click-through modes |
+| `d444f6a7` | fix(mode): stabilize toolbar visibility and tighten mode guidance |
+| `7d5a003f` | feat(mode): toggle click-through back to remembered tool |
+
+### Status
+
+[OK] **Completed**
