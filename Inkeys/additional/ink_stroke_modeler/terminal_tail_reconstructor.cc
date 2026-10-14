@@ -649,12 +649,27 @@ namespace ink::stroke_model
 			}
 			// 只检查涉及修改段的相交，稳定前缀已有交点不影响当前修正。
 			for(std::size_t i=0;i+1<scratch.candidate.size();++i)
+			{
+				if(scratch.candidate[i]==scratch.candidate[i+1])
+				{
+					if(!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+					continue;
+				}
+				// 同位节点两侧仍是几何相邻边；上面的独立检查继续拒绝相邻反向重叠。
+				std::size_t adjacent=i+1;
+				while(adjacent+1<scratch.candidate.size() && scratch.candidate[adjacent]==scratch.candidate[adjacent+1])
+				{
+					if(!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+					++adjacent;
+				}
 				for(std::size_t j=std::max(i+2,start);j+1<scratch.candidate.size();++j)
 				{
 					if(!Spend(diagnostics.validation_work,c.max_validation_work)) return reject(TerminalTailReason::kBudgetExceeded);
+					if(j==adjacent) continue;
 					if(Intersects(scratch.candidate[i],scratch.candidate[i+1],scratch.candidate[j],scratch.candidate[j+1],c.epsilon))
 						return reject(TerminalTailReason::kNewIntersection);
 				}
+			}
 			TerminalTailOutcome result;
 			result.status=TerminalTailStatus::kApply;result.reason=TerminalTailReason::kApplied;
 			result.diagnostics=diagnostics;

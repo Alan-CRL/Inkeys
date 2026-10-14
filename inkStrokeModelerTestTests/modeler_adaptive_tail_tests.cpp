@@ -241,6 +241,57 @@ int RunModelerAdaptiveTailReplay(const wchar_t* reportPath)
             check(b.y-a.y > .05*std::hypot(double(b.x-a.x),double(b.y-a.y)),"terminal direction can rotate away from old horizontal tangent");
         } else check(false,"free terminal direction publishes");
     }
+    // 同位模型节点只增加属性锚点，不能把连续笔段误判成非相邻自交。
+    for (std::size_t duplicates : {std::size_t(1),std::size_t(3)})
+    {
+        auto repeated=freeDirection;
+        repeated.reference.insert(repeated.reference.begin()+69,duplicates,repeated.reference[68]);
+        for (std::size_t i=0;i<repeated.reference.size();++i) repeated.reference[i].source={i,i,0};
+        const auto name="free_terminal_direction_repeated_"+std::to_string(duplicates);
+        run(name,repeated,0);
+        TerminalTailScratch originalScratch,repeatedScratch;
+        const auto original=ReconstructAdaptiveTerminalTail(freeDirection.Request(),originalScratch);
+        const auto result=ReconstructAdaptiveTerminalTail(repeated.Request(),repeatedScratch);
+        check(original.status==TerminalTailStatus::kApply && result.status==TerminalTailStatus::kApply,name+" duplicate anchors preserve Apply");
+        if (original.status==TerminalTailStatus::kApply && result.status==TerminalTailStatus::kApply)
+        {
+            std::vector<TerminalTailPoint> normalized;
+            const auto sourceBeforeDuplicates=[&](std::uint64_t source)
+            { return source<=68 ? source : source<=68+duplicates ? std::uint64_t(68) : source-duplicates; };
+            for (auto p:result.patch.points)
+            {
+                p.source.first=sourceBeforeDuplicates(p.source.first);
+                p.source.second=sourceBeforeDuplicates(p.source.second);
+                if (!normalized.empty() && Same(normalized.back().position,p.position)
+                    && normalized.back().source.first==p.source.first && normalized.back().source.second==p.source.second
+                    && normalized.back().source.fraction==p.source.fraction) continue;
+                normalized.push_back(p);
+            }
+            check(normalized.size()==original.patch.points.size(),name+" only repeated anchors added");
+            for (std::size_t i=0;i<std::min(normalized.size(),original.patch.points.size());++i)
+            {
+                const auto& a=original.patch.points[i]; const auto& b=normalized[i];
+                check(Same(a.position,b.position),name+" geometry exact after repeated anchors removed");
+                check(a.source.first==b.source.first && a.source.second==b.source.second && a.source.fraction==b.source.fraction,
+                    name+" ordered attribute sources retained");
+            }
+        }
+    }
+    // 同位链以外的共享端点和折返仍是非法候选；限定一次扩窗以固定受检入口。
+    {
+        AdaptiveTerminalTailConfig fixedWindow; fixedWindow.min_repair_length=50; fixedWindow.max_window_attempts=1;
+        auto sharedEndpoint=freeDirection;
+        sharedEndpoint.reference.insert(sharedEndpoint.reference.begin(),
+            {{{32,0},{0,0,0},false},{{-10,-20},{0,0,0},false}});
+        sharedEndpoint.reference.insert(sharedEndpoint.reference.begin()+71,sharedEndpoint.reference[70]);
+        for (std::size_t i=0;i<sharedEndpoint.reference.size();++i) sharedEndpoint.reference[i].source={i,i,0};
+        run("nonadjacent_shared_endpoint",sharedEndpoint,2,-1,fixedWindow,static_cast<int>(TerminalTailReason::kNewIntersection));
+        auto reversal=freeDirection;
+        reversal.reference.insert(reversal.reference.begin()+69,reversal.reference[68]);
+        reversal.reference.insert(reversal.reference.begin()+40,{{31,0},{0,0,0},false});
+        for (std::size_t i=0;i<reversal.reference.size();++i) reversal.reference[i].source={i,i,0};
+        run("reversal_with_repeated_anchor",reversal,2,-1,fixedWindow,static_cast<int>(TerminalTailReason::kExcessiveTurn));
+    }
     {
         auto outlier=freeDirection;
         outlier.raw={{{20,1000},0},{outlier.endpoint,1}};

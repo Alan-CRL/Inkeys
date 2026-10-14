@@ -2294,6 +2294,9 @@ namespace
 		const auto completed = draw3::FinalizeStoredStroke(stroke, style, .025, scratch);
 		TEST_CHECK(state, completed.has_value());
 		if (!completed) return;
+		// 长度断言失败后停止逐点比较，避免测试自身越界掩盖回归。
+		TEST_CHECK(state, completed->Points().size() == scratch.size());
+		if (completed->Points().size() != scratch.size()) return;
 		bool changedCommitted = false;
 		for (size_t i = 0; i < scratch.size(); ++i)
 		{
@@ -3490,6 +3493,10 @@ int wmain(int argc, wchar_t* argv[])
 	TestStationaryTipAging(state);
 	TestPhysicalUpTipTime(state);
 	TestTerminalFallbackBoundary(state);
+	TestLocalTailFinalization(state);
+	TestFinalizedTailHistoryAndPersistence(state);
+	TestDeferredTailReconnectAndReset(state);
+	TestDeferredTailCompletion(state);
 	TestSparsePenFrames(state);
 	TestInvertedPenPolicy(state);
 	TestHapticFeedbackContracts(state);
