@@ -1463,13 +1463,6 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 	}
 	// Undo/Redo 只发布当前布局，避免先显示隐藏的 Undo 再收起而多占一列。
 	barUISet.ApplyRecallChromeVisuals();
-	if (!whiteboard
-		&& stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
-		&& !Inkeys::UI::Bar::CurrentPageHasContent())
-	{
-		preset[(int)BarButtonPresetEnum::Recall]->hide = true;
-		if (auto* redo = preset[(int)BarButtonPresetEnum::Redo]) redo->hide = true;
-	}
 }
 void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
 {
@@ -1518,6 +1511,13 @@ void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
 
 namespace
 {
+	bool IsCompactSelectionBar()
+	{
+		return !Inkeys::UI::Bar::WhiteboardActive()
+			&& GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection
+			&& !Inkeys::UI::Bar::CurrentPageHasContent();
+	}
+
 	void ApplyRecallAvailabilityLocked(BarUISetClass& owner,
 		Inkeys::UI::Bar::RecallHistoryAvailability availability)
 	{
@@ -1552,7 +1552,7 @@ namespace
 	void ApplyRecallChromeVisualsLocked(BarUISetClass& owner)
 	{
 		using namespace Inkeys::UI::Bar;
-		const RecallChromeView view = ResolveRecallChrome(owner.recallChrome);
+		const RecallChromeView view = ResolveRecallChrome(owner.recallChrome, IsCompactSelectionBar());
 		BarButtonClass* undo = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Recall)];
 		BarButtonClass* redo = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Redo)];
 		if (undo)
@@ -1592,7 +1592,7 @@ namespace
 			std::scoped_lock lock(owner.recallChromeMutex);
 			RefreshRecallAvailabilityLocked(owner);
 			clickAvailability = owner.recallChrome.availability;
-			const auto view = ResolveRecallChrome(owner.recallChrome);
+			const auto view = ResolveRecallChrome(owner.recallChrome, IsCompactSelectionBar());
 			if (popupCommand && (!view.popupOpen || view.popupShowsRedo != redo)) return false;
 			if (!RecallChromeCommandEnabled(clickAvailability, redo))
 			{
@@ -1632,7 +1632,7 @@ Inkeys::UI::Bar::RecallChromeView BarUISetClass::RecallChromeView()
 {
 	std::scoped_lock lock(recallChromeMutex);
 	RefreshRecallAvailabilityLocked(*this);
-	return Inkeys::UI::Bar::ResolveRecallChrome(recallChrome);
+	return Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, IsCompactSelectionBar());
 }
 
 void BarUISetClass::NoteRecallHistoryAvailability(bool canUndo, bool canRedo)
@@ -1695,7 +1695,7 @@ bool BarUISetClass::ActivateRecallPopupCommand()
 	{
 		std::scoped_lock lock(recallChromeMutex);
 		RefreshRecallAvailabilityLocked(*this);
-		const auto view = Inkeys::UI::Bar::ResolveRecallChrome(recallChrome);
+		const auto view = Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, IsCompactSelectionBar());
 		if (!view.popupOpen) return false;
 		showsRedo = view.popupShowsRedo;
 	}

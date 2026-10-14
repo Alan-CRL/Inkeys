@@ -13,3 +13,17 @@
 - 步骤1至7已完成，两个 trellis-implement 和 trellis-check 产出已整合，相关 spec 已同步。
 - 步骤8已保存 validation.md。自动验证全部通过，人工 GUI 项待验，任务保持 in_progress；实施阶段按用户要求未创建 commit/push。
 - 后续用户明确授权为本次改动提交 commit，同时要求不要结束任务。沿用现有签名配置，不 push、不 finish/archive，不触发 journal 自动提交。
+
+## 后续截图反馈实施
+- 继续本任务，修复Pierce运行时稳定成员身份、空页Selection下历史计时显隐覆盖、说明文案和行距。
+- 分派两个implement代理独立负责Bar与Setting；统一check审查及必要无窗口回归、完整Debug|ARM64构建。
+- 本轮未授权新commit或结束任务，保留in_progress，不finish/archive；人工视觉待验。
+
+## 本轮反馈修复执行结果
+- 两个implement与全范围check完成，相关规格与三语需求已同步。
+- 完整Debug|ARM64 solution、Headless、生产状态机、主栏离屏及三语设置回放全部通过，详见validation.md后续反馈部分。
+- 当前feature/mode，保持任务in_progress；本轮没有新commit/push或finish/archive，真实GUI视觉仍待人工验收。
+
+## 本轮提交授权
+- 用户要求确认改动生效后提交commit，但不要结束任务。提交前核对成功构建/测试与当前源码一致，最新三语资源已嵌入产物。
+- 单一commit包含本轮修复、回归测试、规范和任务记录，沿用现有SSH签名；不push，不finish/archive。

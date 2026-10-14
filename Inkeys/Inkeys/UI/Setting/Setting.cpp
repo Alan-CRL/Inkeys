@@ -3060,12 +3060,12 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Separate)
 						};
 						const string modeDescription = modeNames[0] + ": "
-							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n\n"
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n"
 							+ modeNames[1] + ": "
-							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n\n"
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n"
 							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThrough) + ": "
 							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThroughDescription);
-						// 使用与绘制相同的信息卡，按实际换行高度容纳三语言的完整说明。
+						// 三段用单换行紧凑排列，测量和绘制共用文字与宽度，避免长英文裁切。
 						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
 						const float descriptionHeight = ImGui::CalcTextSize(modeDescription.c_str(), nullptr, false,
 							(settingItemWidth - 80.0f) * settingGlobalScale).y;

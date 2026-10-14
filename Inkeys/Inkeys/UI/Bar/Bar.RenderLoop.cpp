@@ -843,6 +843,44 @@ struct BarRenderLoopState
 	wstring fps = IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable);
 };
 
+namespace Inkeys::UI::Bar
+{
+	void AnchorHiddenBarButton(BarButtonSetClass& buttons, bool folded,
+		BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset,
+		const std::function<void(BarUiValueClass&, double)>& setPositionTarget)
+	{
+		auto* hidden = buttons.preset[static_cast<int>(hiddenPreset)];
+		if (folded || !hidden || hidden->IsVisible()) return;
+		auto* preferred = buttons.preset[static_cast<int>(anchorPreset)];
+		const int buttonCount = buttons.tot.load();
+		int hiddenIndex = -1;
+		BarButtonClass* anchor = nullptr;
+		for (int index = 0; index < buttonCount; ++index)
+		{
+			auto* candidate = buttons.buttonList.Get(index);
+			if (candidate == hidden) hiddenIndex = index;
+			if (candidate && candidate == preferred && candidate->IsVisible()) anchor = candidate;
+		}
+		if (!anchor && hiddenIndex >= 0)
+		{
+			// 首选锚点不可见时，按布局距离寻找最近的有效按钮。
+			for (int distance = 1; distance < buttonCount && !anchor; ++distance)
+			{
+				auto* previous = buttons.buttonList.Get(hiddenIndex - distance);
+				auto* next = buttons.buttonList.Get(hiddenIndex + distance);
+				if (previous && previous->IsVisible()) anchor = previous;
+				else if (next && next->IsVisible()) anchor = next;
+			}
+		}
+		if (!anchor) return;
+		// 保留原布局批次的回调曲线，显示时从来源位置展开。
+		setPositionTarget(hidden->button.x, anchor->button.x.tar);
+		setPositionTarget(hidden->button.y, anchor->button.y.tar);
+		hidden->lastDrawX = anchor->button.x.tar;
+		hidden->lastDrawY = anchor->button.y.tar;
+	}
+}
+
 [[nodiscard]] bool HasBarMainBarSideSwitchGeometryKeyframe(
 	BarRenderLoopState& state) noexcept
 {
@@ -2985,51 +3023,11 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 					}
 				}, viewVariant);
 
-			auto FindVisibleAnchor = [&](BarButtonClass* hidden, BarButtonClass* preferred)
-				{
-					const int buttonCount = state.barButtonSet.tot.load();
-					int hiddenIndex = -1;
-					for (int index = 0; index < buttonCount; index++)
-					{
-						BarButtonClass* candidate = state.barButtonSet.buttonList.Get(index);
-						if (candidate == hidden) hiddenIndex = index;
-						if (candidate && candidate == preferred && candidate->IsVisible()) return candidate;
-					}
-					if (hiddenIndex < 0) return static_cast<BarButtonClass*>(nullptr);
-
-					// 首选锚点不可见时，按布局距离寻找最近的有效按钮。
-					for (int distance = 1; distance < buttonCount; distance++)
-					{
-						const int previousIndex = hiddenIndex - distance;
-						if (previousIndex >= 0)
-						{
-							BarButtonClass* candidate = state.barButtonSet.buttonList.Get(previousIndex);
-							if (candidate && candidate->IsVisible()) return candidate;
-						}
-
-						const int nextIndex = hiddenIndex + distance;
-						if (nextIndex < buttonCount)
-						{
-							BarButtonClass* candidate = state.barButtonSet.buttonList.Get(nextIndex);
-							if (candidate && candidate->IsVisible()) return candidate;
-						}
-					}
-					return static_cast<BarButtonClass*>(nullptr);
-				};
 			auto AnchorHiddenButton = [&](BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset)
 				{
-					BarButtonClass* hidden = state.barButtonSet.preset[static_cast<int>(hiddenPreset)];
-					if (state.barState.fold || !hidden || hidden->IsVisible()) return;
-
-					BarButtonClass* anchor = FindVisibleAnchor(
-						hidden, state.barButtonSet.preset[static_cast<int>(anchorPreset)]);
-					if (!anchor) return;
-
-					// 隐藏控件停在来源按钮中心，显示时从该位置展开。
-					SetButtonPositionTar(hidden->button.x, anchor->button.x.tar, 40.0);
-					SetButtonPositionTar(hidden->button.y, anchor->button.y.tar, 40.0);
-					hidden->lastDrawX = anchor->button.x.tar;
-					hidden->lastDrawY = anchor->button.y.tar;
+					Inkeys::UI::Bar::AnchorHiddenBarButton(state.barButtonSet, state.barState.fold,
+						hiddenPreset, anchorPreset, [&](BarUiValueClass& value, double target)
+						{ SetButtonPositionTar(value, target, 40.0); });
 				};
 			AnchorHiddenButton(BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Draw);
@@ -3048,6 +3046,8 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						? BarButtonPresetEnum::Recall
 						: BarButtonPresetEnum::Draw);
 			}
+			// 穿透隐藏时也跟随定格列，不能保留收窄前主栏右侧的旧坐标。
+			AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze);
 			AnchorHiddenButton(BarButtonPresetEnum::EndShow, BarButtonPresetEnum::Freeze);
 		}
 		totalWidth = layoutTotalWidth;

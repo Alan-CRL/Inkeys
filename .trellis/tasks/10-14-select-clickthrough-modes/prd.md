@@ -18,23 +18,28 @@
 ## 三语言精确设置说明
 zh-CN:
 设置项：选择与穿透
-合并式：通过“选择”统一操作电脑，涵盖无墨迹和保留墨迹两种状态。
-分离式：“选择（清空）”清空墨迹后操作电脑；“穿透”保留墨迹并操作下方窗口。
+合并式：通过「选择」统一操作电脑，涵盖无墨迹和保留墨迹两种状态。
+分离式：「选择」清空墨迹后操作电脑；「穿透」保留墨迹并操作下方窗口。
 穿透：保留屏幕上的墨迹，让点击和触摸穿过批注层，操作下方窗口。
 
 zh-TW:
 設定項：選擇與穿透
 合併式：透過「選擇」統一操作電腦，涵蓋無墨跡與保留墨跡兩種狀態。
-分離式：「選擇（清空）」清空墨跡後操作電腦；「穿透」保留墨跡並操作下方視窗。
+分離式：「選擇」清空墨跡後操作電腦；「穿透」保留墨跡並操作下方視窗。
 穿透：保留螢幕上的墨跡，讓點擊與觸控穿過註記層，操作下方視窗。
 
 en-US:
 Setting: Select and Click-through
 Combined: Use Select to operate your computer with no ink displayed or with ink kept visible.
-Separate: Use Select (Clear Ink) to clear ink and operate your computer, or Click-through to interact with underlying windows while keeping ink visible.
+Separate: Use Select to clear ink and operate your computer, or Click-through to interact with underlying windows while keeping ink visible.
 Click-through: Keep ink visible while allowing clicks and touch input to pass through the annotation layer to the windows underneath.
 
 ## 验收
 配置默认/非法/读写；三类工具进入穿透、重复点击、与定格互斥/恢复；双向设置映射；选择Clear拒绝/接受与历史；清空两击与灰色；桌面/PPT/空页布局矩阵；三语言不截断与隐藏无命中。
 自动：i18n sync/check，早期无窗口状态测试，headless --no-window，完整Debug ARM64 solution。
 人工：真实点击/触摸穿透、PPT页切换/退出、设置视觉，未获GUI授权不执行，明确记录待验。
+
+## 后续截图反馈验收
+- 穿透固定留在运行时主栏按钮列表中，仅隐藏；反复显隐时不重新插入或从右侧飞入，不影响A2持久化。
+- 空页Selection主栏收窄时，撤回/重做始终隐藏，不受历史按钮3秒保护计时影响；其他场景继续原保护。
+- 说明卡三段行距收紧，中文使用「」且分离式说明仅称选择；主栏选择(清空)的按钮规则不改。细节见research/feedback-fixes.md。

@@ -306,7 +306,7 @@
         "Combined": "合併式",
         "Separate": "分離式",
         "CombinedDescription": "透過「選擇」統一操作電腦，涵蓋無墨跡與保留墨跡兩種狀態。",
-        "SeparateDescription": "「選擇（清空）」清空墨跡後操作電腦；「穿透」保留墨跡並操作下方視窗。",
+        "SeparateDescription": "「選擇」清空墨跡後操作電腦；「穿透」保留墨跡並操作下方視窗。",
         "ClickThrough": "穿透",
         "ClickThroughDescription": "保留螢幕上的墨跡，讓點擊與觸控穿過註記層，操作下方視窗。"
       },

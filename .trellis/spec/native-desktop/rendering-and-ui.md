@@ -68,6 +68,7 @@
 RecallChromeState ApplyRecallChromeCommandResult(RecallChromeState state,
     bool redo, RecallHistoryAvailability clickAvailability, bool accepted) noexcept;
 bool RecallChromeNeedsIdleRestart(RecallChromeState before, RecallChromeState after) noexcept;
+RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelection = false) noexcept;
 // 历史按钮复用 RetargetBarButtonInteractionVisual 的主题与统一禁用透明度。
 ~~~
 
@@ -76,7 +77,7 @@ bool RecallChromeNeedsIdleRestart(RecallChromeState before, RecallChromeState af
 #### 3. Contracts
 
 - Draw3 真实 `canUndo/canRedo` 只控制即时可用性与颜色。当前 `layout` 独立锁存，静止目标为两者可用时上 Redo/下 Undo 的 2×1、仅 Redo 可用时 2×2 Redo、Redo 不可用时 2×2 Undo。
-- `PresetHoming` 等通用状态刷新不得先显示/隐藏 Recall 再套当前布局；主栏 2×2 Redo 点击没有新增按钮，应保持原单列宽度。Undo/Redo 先由 Recall 策略发布最终显隐，选择空页精简门禁仍可按原规则覆盖；生产接线回归须拒绝投影前的临时显隐写入。
+- `PresetHoming` 等通用状态刷新不得先显示/隐藏 Recall 再套当前布局；主栏 2×2 Redo 点击没有新增按钮，应保持原单列宽度。Undo/Redo 由 Recall 策略发布最终显隐时，非白板空页Selection的精简门禁优先覆盖两按钮隐藏，不能被3秒布局保护、待调整目标或计时器唤醒重新显示；不清除历史保护状态，其他工具/非空页保持原规则。生产接线回归须拒绝投影前的临时显隐写入。
 - 主栏 2×1 点击进入所点命令的 2×2 交互及相反命令弹窗。已有展开交互内的命令点击保持主栏/弹窗身份，并延长最后一次点击后的 3 秒保护。
 - 属性面板的同一 `RecallChromeView` 快照须选择当前 2×2 主栏 Redo/Recall；所选按钮同时用于 `IsVisible()` 关闭门禁、几何继承和弹窗锚点。隐藏的另一命令不能触发 `Close`。
 - 点击前在原互斥边界取可用性快照；发布命令后只在 `CommandResult::Accepted` 时确认展开。异步执行末步导致可用性耗尽，不能反过来拒绝本次已接受点击的反馈。
@@ -96,6 +97,7 @@ bool RecallChromeNeedsIdleRestart(RecallChromeState before, RecallChromeState af
 | 无 hold 的历史可用性变化 | 即时变色，保存待调整目标并等待 3 秒 |
 | Escape/其他属性/绘制/工作区切换 | 可立即收面板，不能立即更换受保护几何 |
 | 相同透明度目标逐帧重复设置 | 动画正常收敛，反向从当前显示透明度开始 |
+| 空页Selection且主栏收窄，历史仍有hold/pending | Undo/Redo隐藏且不可命中；计时器到期不重新显示，退出精简态仍沿原历史布局 |
 
 #### 5. Good / Base / Bad Cases
 

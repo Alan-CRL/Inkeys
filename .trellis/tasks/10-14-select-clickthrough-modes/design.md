@@ -9,7 +9,7 @@
 - 输入滚轮、设置owner、状态呈现和桥接测试统一使用电脑操作判定；主栏仍分别高亮Select/Pierce。
 
 ## 主栏
-- BarButtonPresetEnum追加Pierce；shared_ptr持有运行时穿透按钮，Load中紧邻Freeze之前插入，类似运行时Redo，不改变FixedButtonsA2和旧Pierce退休codec。
+- BarButtonPresetEnum追加Pierce；shared_ptr持有运行时穿透按钮，Load中紧邻Freeze之前固定加入，后续显隐只更新hide/size，不从运行时按钮列表抽离或重新插入。不改变FixedButtonsA2和旧Pierce退休codec。
 - A2纯投影按操作模式、实际工具、当前页内容、Freeze可用性及白板得到freezeVisible/freezeTwoTwo/pierceVisible/pierceTwoTwo；组合进入缓存key。保持已有Whiteboard/EndShow分支。
 - Select根据分离式和工具切换i18n文案；清空Disable仅用于空页Selection（注意已有Accepted Clear双击延续）。
 - 使用barPierce.svg。英文Select两行 Select/(Clear)；Click-through两行 Click-/through，针对37DIP紧凑槽局部字号调整；DWrite测量不截断。不修改全局网格或其他按钮。

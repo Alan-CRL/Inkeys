@@ -136,15 +136,16 @@ export namespace Inkeys::UI::Bar
 			|| (after.hold == RecallChromeHold::None && before.pendingLayout != after.pendingLayout));
 	}
 
-	inline RecallChromeView ResolveRecallChrome(RecallChromeState state) noexcept
+	inline RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelection = false) noexcept
 	{
 		RecallChromeView view;
 		view.undoEnabled = state.availability.canUndo;
 		view.redoEnabled = state.availability.canRedo;
-		view.popupOpen = state.hold != RecallChromeHold::None && !state.popupSuppressed;
+		// 精简选择态只覆盖显隐，不丢弃历史布局和 3 秒保护。
+		view.popupOpen = !compactSelection && state.hold != RecallChromeHold::None && !state.popupSuppressed;
 		view.popupShowsRedo = state.hold != RecallChromeHold::Redo;
-		view.mainUndoVisible = state.layout != RecallChromeLayout::Redo;
-		view.mainRedoVisible = state.layout != RecallChromeLayout::Undo;
+		view.mainUndoVisible = !compactSelection && state.layout != RecallChromeLayout::Redo;
+		view.mainRedoVisible = !compactSelection && state.layout != RecallChromeLayout::Undo;
 		view.undoExpanded = state.layout == RecallChromeLayout::Undo;
 		view.redoExpanded = state.layout == RecallChromeLayout::Redo;
 		return view;

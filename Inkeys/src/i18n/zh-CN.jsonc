@@ -305,8 +305,8 @@
         "N": "选择与穿透",
         "Combined": "合并式",
         "Separate": "分离式",
-        "CombinedDescription": "通过“选择”统一操作电脑，涵盖无墨迹和保留墨迹两种状态。",
-        "SeparateDescription": "“选择（清空）”清空墨迹后操作电脑；“穿透”保留墨迹并操作下方窗口。",
+        "CombinedDescription": "通过「选择」统一操作电脑，涵盖无墨迹和保留墨迹两种状态。",
+        "SeparateDescription": "「选择」清空墨迹后操作电脑；「穿透」保留墨迹并操作下方窗口。",
         "ClickThrough": "穿透",
         "ClickThroughDescription": "保留屏幕上的墨迹，让点击和触摸穿过批注层，操作下方窗口。"
       },

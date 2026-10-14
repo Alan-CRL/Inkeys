@@ -438,8 +438,8 @@ H(true, true, "ch", std::string, UpdateChannel,
 - Separate Select按钮先通过现有Draw3 Clear事务清当前页，Accepted后进入Selection；拒绝保持工具。空页直接选择。普通系统/可信PPT退出Selection入口保持原语义，不附加清空。
 - ClickThrough独立高亮，重复点击无动作；进入时关闭Freeze。记忆最近Pen/Shape/Eraser顶层模式，具体子工具/笔型/属性留在既有字段。穿透时点Freeze恢复该模式并开启Freeze，墨迹不动，不恢复旧Freeze。
 - backend selectionMode、呈现/输入/设置owner按电脑操作判定处理两工具，但主栏按实际枚举分别高亮。已接受/迟到回调沿既有修订保护。
-- Pierce运行时插在Freeze前，shared_ptr稳定持有、无需持久化布局注册；不改变A2用户顺序和旧Pierce迁移行为。
-- 常规页标题下/自启区前显示说明卡片和combo，说明在上；复用PPT信息卡片样式，按实际字体/换行测量高度。三语说明完整，短按钮文案独立。
+- Pierce运行时固定留在Freeze前，shared_ptr稳定持有；不可用时仅hide，不从主栏运行时列表抽离/重插。隐藏按钮保持布局动画定位且不命中，避免显示时从右侧飞入。无需持久化布局注册，不改变A2用户顺序和旧Pierce迁移行为。
+- 常规页标题下/自启区前显示说明卡片和combo，说明在上；复用PPT信息卡片样式，按实际字体/换行测量高度。三段使用单换行以收紧行距，中文工具名使用「选择」/「選擇」/「穿透」；分离式说明仅称选择/Select，不加清空括注。短按钮选择(清空)/Select (Clear)文案独立保持。
 - Separate非Selection文案为“选择(清空)”/“選擇(清空)”/两行Select与(Clear)；Selection显示普通选择。英文穿透可两行Click-与through，仅该标签局部适配字号，不改全局网格。目标为两行时在透明中点换字前先缩到9 DIP；换回短标签时保持小字号到文字替换，再恢复标准字号。
 
 ### 4. Validation & Error Matrix
@@ -464,7 +464,7 @@ H(true, true, "ch", std::string, UpdateChannel,
 ### 6. Tests Required
 - 真实配置读写：缺失/非法/0/1、大整数、Mini/复制/默认值，不上传；三语sync/check。
 - 早期无窗口生产状态测试：电脑操作bridge投影、模式双向映射、穿透幂等/Freeze互斥与三类工具恢复、Clear拒绝。
-- Headless覆盖A2布局矩阵、清空二击与Disable边界；DWrite实际测量三语短标签，两种尺寸不截断。
+- Headless覆盖A2布局矩阵、清空二击与Disable边界；离屏覆盖Pierce稳定列表身份及反复隐藏/显示的布局位置和命中。空页Selection优先隐藏Undo/Redo，不受历史保护计时影响。DWrite实际测量三语短标签，两种尺寸不截断；说明卡三语换行测高与紧凑行距一致。
 - 完整Debug|ARM64 solution和Headless --no-window。真实点击/触摸/PPT/设置视觉需独立人工证据，不用CLI替代。
 
 ### 7. Wrong vs Correct

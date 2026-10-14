@@ -293,6 +293,37 @@ int RunRecallAttributeTests()
 			&& !compact.popupOpen, "after idle the same column legitimately becomes redo over undo");
 	}
 	{
+		// 精简态覆盖视图而不是重置状态；计时前后及退回绘制均保留原布局规则。
+		for(const RecallHistoryAvailability availability : { RecallHistoryAvailability{true,false},
+			RecallHistoryAvailability{true,true}, RecallHistoryAvailability{false,true} })
+		{
+			RecallChromeState state;
+			state=ApplyRecallChromeEvent(state,RecallChromeEvent::Availability,availability);
+			state=ApplyRecallChromeEvent(state,RecallChromeEvent::IdleElapsed);
+			for(const bool redo : { false,true })
+			{
+				auto held=ApplyRecallChromeCommandResult(state,redo,availability,true);
+				held=ApplyRecallChromeEvent(held,RecallChromeEvent::Availability,{});
+				for(const double elapsed : {0.0,2.99,3.0,5.0})
+				{
+					const auto unhidden=ResolveRecallChrome(held);
+					const auto hidden=ResolveRecallChrome(held,true);
+					expect(!hidden.mainUndoVisible && !hidden.mainRedoVisible && !hidden.popupOpen,
+						"empty Selection hides protected and pending history before and after its timer");
+					expect(hidden.undoExpanded==unhidden.undoExpanded && hidden.redoExpanded==unhidden.redoExpanded
+						&& hidden.undoEnabled==unhidden.undoEnabled && hidden.redoEnabled==unhidden.redoEnabled,
+						"compact projection keeps command availability and protected size identity");
+					const auto restored=ResolveRecallChrome(held,false);
+					expect(restored.mainUndoVisible==unhidden.mainUndoVisible
+						&& restored.mainRedoVisible==unhidden.mainRedoVisible && restored.popupOpen==unhidden.popupOpen,
+						"leaving empty Selection recovers the preserved history view");
+					if(RecallChromeIdleElapsed(held,elapsed))
+						held=ApplyRecallChromeEvent(held,RecallChromeEvent::IdleElapsed);
+				}
+			}
+		}
+	}
+	{
 		// 四类主栏按钮和历史弹窗共用透明度，用真实动画覆盖反向和重复目标收敛。
 		BarUiPctClass opacity(1.0);
 		const auto advance = [&] { return BarUiAdvanceAnimation(opacity, { 0.05, 1, true, false }); };
@@ -381,6 +412,18 @@ int RunRecallAttributeTests()
 					"production homing cannot expose an extra undo or redo column before its final projection");
 			}
 		}
+		const auto visualBegin=buttons.find("void ApplyRecallChromeVisualsLocked(");
+		const auto visualEnd=buttons.find("void ApplyRecallCommandResultLocked(",visualBegin);
+		expect(visualBegin!=std::string::npos && visualEnd!=std::string::npos
+			&& buttons.substr(visualBegin,visualEnd-visualBegin).find(
+				"ResolveRecallChrome(owner.recallChrome, IsCompactSelectionBar())")!=std::string::npos
+			&& buttons.find("return Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, IsCompactSelectionBar())")!=std::string::npos,
+			"production history refresh and popup view share the compact Selection gate");
+		std::ifstream renderFile(source.parent_path()/"Bar.RenderLoop.cpp",std::ios::binary);
+		const std::string rendering((std::istreambuf_iterator<char>(renderFile)),{});
+		expect(rendering.find("Inkeys::UI::Bar::AnchorHiddenBarButton(state.barButtonSet, state.barState.fold,")!=std::string::npos
+			&& rendering.find("AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze)")!=std::string::npos,
+			"production main-bar layout advances the shared Pierce-to-Freeze hidden anchor");
 		// 验证实际内容入口的提交/缓存链，防止目标正确但绘制仍消费旧 val。
 		std::ifstream uiFile(source.parent_path() / "Bar.UI.cpp", std::ios::binary);
 		const std::string ui((std::istreambuf_iterator<char>(uiFile)), {});

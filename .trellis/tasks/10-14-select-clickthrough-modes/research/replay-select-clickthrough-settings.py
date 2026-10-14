@@ -19,6 +19,9 @@ assert '"选择与穿透说明"' in block and "SetSelectAndClickThroughMode(i)" 
 block = re.sub(
     r"IA\(I18nKey.SettingsUI.Regular.SelectAndClickThrough.(\w+)\)",
     r'Text("\1")', block)
+block = block.replace(
+    "ImGui::TextUnformatted(modeDescription.c_str());",
+    "RecordDescription(modeDescription.c_str(), descriptionHeight, infoCardHeight);")
 block = block.replace("ImGui::TextUnformatted(", "RecordText(")
 block = block.replace(
     "if (Widgets::combo.Begin(",
@@ -55,6 +58,7 @@ prefix = r'''
 #include "imgui_internal.h"
 #include <algorithm>
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -63,6 +67,8 @@ using std::string;
 const char* labels[3][7] = { LANGS };
 const char* keys[] = { KEYS };
 int lang=0, mode=0, writes=0, setterCalls=0, clips=0, glyphClips=0, missingGlyphs=0, overlaps=0;
+int descriptionChecks=0, spacingFailures=0;
+float compactHeight=0, looseHeight=0, cardHeight=0;
 float settingGlobalScale=1;
 constexpr float settingItemWidth=758;
 ImFont* ImFontMain;
@@ -98,6 +104,21 @@ void RecordText(const char* text) {
         if(c>32 && !ImGui::GetFontBaked()->FindGlyphNoFallback(static_cast<ImWchar>(c)))
             ++missingGlyphs;
     }
+}
+void RecordDescription(const char* text,float measuredHeight,float infoHeight) {
+    ++descriptionChecks;
+    RecordText(text);
+    compactHeight=measuredHeight;
+    cardHeight=infoHeight;
+    // 实际文字项应匹配测量高度；旧双换行应恰好多占两行，而非改变换行宽度。
+    if(std::count(text,text+strlen(text),'\n')!=2 || strstr(text,"\n\n")
+        || std::abs(ImGui::GetItemRectSize().y-measuredHeight)>.5f) ++spacingFailures;
+    string loose;
+    for(const char* p=text;*p;++p) {loose+=*p;if(*p=='\n') loose+='\n';}
+    looseHeight=ImGui::CalcTextSize(loose.c_str(),nullptr,false,(settingItemWidth-80)*settingGlobalScale).y;
+    if(std::abs((looseHeight-measuredHeight)-2*ImGui::GetTextLineHeight())>.5f
+        || std::abs(infoHeight-(max(measuredHeight,18*settingGlobalScale)+40*settingGlobalScale))>.5f)
+        ++spacingFailures;
 }
 namespace Widgets {
 namespace FluentColor {
@@ -172,6 +193,8 @@ int main() {
         style.ChildBorderSize=style.FrameBorderSize=scale;
         style.ChildRounding=style.FrameRounding=style.PopupRounding=4*scale;
         mode=writes=setterCalls=clips=glyphClips=missingGlyphs=overlaps=0;
+        descriptionChecks=spacingFailures=0;
+        compactHeight=looseHeight=cardHeight=0;
         frozenWrites.clear();
         frame({-1,-1},false);
         frame({-1,-1},false);
@@ -181,9 +204,10 @@ int main() {
         if(mode!=1||writes!=1||setterCalls!=1) ++failures;
         choose(0);
         if(mode!=0||writes!=2||setterCalls!=2||frozenWrites!=std::vector<int>{1,0}) ++failures;
-        if(clips||glyphClips||missingGlyphs||overlaps) ++failures;
-        printf("locale=%d scale=%.1f mode=%d writes=%d setters=%d clipped=%d glyphClipped=%d missing=%d overlaps=%d failures=%d\n",
-            lang,scale,mode,writes,setterCalls,clips,glyphClips,missingGlyphs,overlaps,failures);
+        if(clips||glyphClips||missingGlyphs||overlaps||!descriptionChecks||spacingFailures) ++failures;
+        printf("locale=%d scale=%.1f mode=%d writes=%d setters=%d clipped=%d glyphClipped=%d missing=%d overlaps=%d compactHeight=%.1f oldHeight=%.1f cardHeight=%.1f spacingFailures=%d failures=%d\n",
+            lang,scale,mode,writes,setterCalls,clips,glyphClips,missingGlyphs,overlaps,
+            compactHeight,looseHeight,cardHeight,spacingFailures,failures);
         ImGui::DestroyContext();
     }
     return failures?1:0;

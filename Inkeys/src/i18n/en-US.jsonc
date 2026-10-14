@@ -306,7 +306,7 @@
         "Combined": "Combined",
         "Separate": "Separate",
         "CombinedDescription": "Use Select to operate your computer with no ink displayed or with ink kept visible.",
-        "SeparateDescription": "Use Select (Clear Ink) to clear ink and operate your computer, or Click-through to interact with underlying windows while keeping ink visible.",
+        "SeparateDescription": "Use Select to clear ink and operate your computer, or Click-through to interact with underlying windows while keeping ink visible.",
         "ClickThrough": "Click-through",
         "ClickThroughDescription": "Keep ink visible while allowing clicks and touch input to pass through the annotation layer to the windows underneath."
       },

@@ -20,7 +20,7 @@
 - 清空首击保留工具、空页再击进入选择；空页且已选择时灰色不响应。清空/撤回/重做/定格共用主题 TextPrimary 和0.30禁用透明度。
 - 英文主栏 Select / (Clear)、Click- / through 使用局部两行字号，覆盖实际 DWrite 换字中点及恢复普通字号。
 
-## 自动验证结果
+## 初次实现自动验证结果（3f3946cf）
 
 | 验证 | 结果与边界 | 证据 |
 |---|---|---|
@@ -70,3 +70,37 @@ $modeMsbuild = & 'C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhe
 4. 有墨迹时分离式选择清空、撤销/重做恢复；清空两击；穿透后定格恢复最近工具且不恢复旧定格。
 
 人工项保持 pending，不作为已经自动通过的结果；依据用户的无 GUI 验证约束本轮未执行。
+
+## 后续截图反馈修复（2026-10-14，基线3f3946cf）
+
+本轮继续feature/mode原任务，保持in_progress；修复和验证阶段未创建commit/push。后续用户明确要求确认改动生效后提交commit，但不要结束任务；不push，不finish/archive。
+
+- Pierce原已固定留在运行时列表，问题是隐藏位置补位遗漏。复用现有隐藏锚点规则，将隐藏Pierce定位到Freeze或最近可见邻居；保留原位置动画曲线，不修改用户A2顺序。
+- 非白板空页Selection的Undo/Redo门禁移入统一Recall视图投影，覆盖可用性刷新、计时器与弹窗入口；只覆盖显隐，不丢弃原3秒保护和布局。
+- 中文说明改用「选择」/「穿透」、繁体「選擇」/「穿透」，分离式说明去掉清空括注，英文同为Select；主栏选择(清空)规则不改。三段双换行改为单换行，同字符串/字体/宽度测高，信息卡继续自适应。
+- 新回归覆盖生产运行时按钮身份、反复模式/PPT变化、实际隐藏位置动画、真实Recall刷新与计时到期；设置回放验证紧凑高度/实际绘制高度一致。
+
+已完成：i18n sync/check349/349；无HWND设置回放三语×4比例共12组通过，裁切/缺字/重叠/spacingFailures均0。1.0下中文文字45DIP/卡85DIP，英文75DIP/卡115DIP，比同文案双换行少30DIP。日志Build/SelectClickThroughValidation/settings-feedback.log，细节research/feedback-settings.md。
+
+完整源码check及本轮自动验证均已通过：
+
+| 验证 | 本轮结果 | 日志/记录 |
+| --- | --- | --- |
+| Trellis全范围源码check | 无需新增产品修复；锁顺序、隐藏命中、迟到popup门禁与CLI不写用户配置均已核对 | research/feedback-check.md |
+| 完整 InkeysRepo.sln Debug ARM64 | exit 0，0 errors，4分4.65秒；185个既有告警，未修改无关告警代码 | Build/SelectClickThroughValidation/solution-feedback.log |
+| InkeysHeadlessTests.exe --no-window | exit 0，RecallAttribute failures=0，全套PASS | Build/SelectClickThroughValidation/headless-feedback.stdout.log |
+| --bar-eraser-offscreen-test | exit 0，EraserVisual failures=0、PageControlScene failures=0，实际隐藏定位动画/按钮身份/历史计时回归通过 | Build/eraser-b/offscreen-results.log、Build/SelectClickThroughValidation/bar-offscreen-feedback.stderr.log |
+| --state-mode-production-test | exit 0，生产操作模式/清空事务及既有过期回调等PASS | Build/SelectClickThroughValidation/state-mode-feedback.stderr.log |
+| 新产物三语言资源 | Inkeys.exe包含当前三个完整JSONC字节，确认嵌入最新文案 | 构建后只读二进制核对 |
+| i18n与设置回放 | sync/check349/349；12组布局/行距与写盘计数均通过 | research/feedback-settings.md、settings-feedback.log |
+| 最终diff/格式 | diff --check通过；本轮跟踪文件BOM/UTF-8/CRLF保持，无裸LF | 主会话及check的HEAD字节对比 |
+
+本轮沿用上文已验证的构建命令参数与PATH workaround，动态定位ARM64原生MSBuild，完整solution成功。未升级依赖或改动工程配置；post-build的pwsh.exe PATH提示与既有环境相同，独立i18n和嵌入资源核对已通过。测试进程均用Hidden+WaitForExit(300000)+ExitCode确认，无交互窗口。
+
+任务implementation=complete、automated_validation=passed、manual_gui_validation=pending，status继续in_progress。修复和验证阶段未创建新commit；后续用户已授权提交本轮改动，任务仍不结束，不push、不finish/archive。实际GUI动画、HWND计时唤醒、PPT和最终设置视觉仍人工待验；未启动产品窗口或使用Computer Use。
+
+### 提交前确认
+- 当前所有待提交产品/测试源文件都早于已验证的最新Debug ARM64产物；既有成功构建、Headless/production/offscreen结果对应当前源码。
+- 重新只读核对Inkeys.exe包含当前zh-CN/zh-TW/en-US完整JSONC资源，最新说明已进入产物。
+- 用户明确授权提交本轮修复及相关测试/规范/任务记录；沿用SSH签名。继续保持当前活动任务in_progress，不执行finish/archive、journal自动提交或push。
+- 没有新的产品源码改动，不重复完整构建和全套测试。没有GUI授权，实际窗口视觉仍人工待验。

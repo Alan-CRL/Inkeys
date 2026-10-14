@@ -184,6 +184,11 @@ private:
 
 namespace Inkeys::UI::Bar
 {
+	// 隐藏按钮继续留在运行时列表，位置跟随来源按钮；渲染与离屏回归共用。
+	void AnchorHiddenBarButton(BarButtonSetClass& buttons, bool folded,
+		BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset,
+		const std::function<void(BarUiValueClass&, double)>& setPositionTarget);
+
 	// Main Bar 与跨 HWND surface 共用这些行为入口，调用方只保留资源和拓扑。
 	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtonHoverStageEnum>* hoverStage);
