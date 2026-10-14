@@ -80,6 +80,7 @@ inline constexpr struct I18nKeyRoot
                 const char* RectangleLabel = "UI/Bar/MainButtons/RectangleLabel";
                 const char* StraightLineLabel = "UI/Bar/MainButtons/StraightLineLabel";
                 const char* UndoLabel = "UI/Bar/MainButtons/UndoLabel";
+                const char* RedoLabel = "UI/Bar/MainButtons/RedoLabel";
                 const char* ClearLabel = "UI/Bar/MainButtons/ClearLabel";
                 const char* WhiteboardLabel = "UI/Bar/MainButtons/WhiteboardLabel";
                 const char* CloseWhiteboardLabel = "UI/Bar/MainButtons/CloseWhiteboardLabel";
@@ -397,6 +398,15 @@ inline constexpr struct I18nKeyRoot
                     const char* MousePen = "SettingsUI/Draw/Effect/Device/MousePen";
                 } Device{};
             } Effect{};
+            struct Node__SettingsUI__Draw__Touch
+            {
+                const char* N = "SettingsUI/Draw/Touch/N";
+                struct Node__SettingsUI__Draw__Touch__InterruptedStrokeReconnect
+                {
+                    const char* N = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/N";
+                    const char* E = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/E";
+                } InterruptedStrokeReconnect{};
+            } Touch{};
             struct Node__SettingsUI__Draw__Eraser
             {
                 const char* N = "SettingsUI/Draw/Eraser/N";

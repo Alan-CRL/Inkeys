@@ -282,6 +282,8 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 		vector<std::string> registrationOrder;
 		shared_ptr<BarButtonClass> boundaryDividers[2];
 		shared_ptr<BarButtonClass> moreButton;
+		// 运行时插在 Recall 前，不进入 FixedButtonsA1。
+		shared_ptr<BarButtonClass> mainRedoButton;
 		mutable mutex moreSnapshotMutex;
 		BarMoreButtonSnapshotClass moreSnapshot;
 		mutex legacyOrderMutex;

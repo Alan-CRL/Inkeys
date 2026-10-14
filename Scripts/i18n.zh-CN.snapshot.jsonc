@@ -77,6 +77,7 @@
         "RectangleLabel": "矩形",
         "StraightLineLabel": "直线",
         "UndoLabel": "撤回",
+        "RedoLabel": "重做",
         "ClearLabel": "清空",
         "WhiteboardLabel": "白板",
         "CloseWhiteboardLabel": "关闭白板",
@@ -392,6 +393,15 @@
           "E": "我们将根据不同设备类型优化使用体验。",
           "Touch": "触控屏幕",
           "MousePen": "鼠标、手写笔或数位板"
+        }
+      },
+      "Touch":
+      {
+        "N": "触摸",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "断触接续",
+          "E": "触摸书写时，若屏幕短暂丢失接触后又沿原方向恢复，将尝试把两段笔迹接成一笔，减少断线。关闭后，每次抬起都会结束当前笔画。"
         }
       },
       "Eraser":

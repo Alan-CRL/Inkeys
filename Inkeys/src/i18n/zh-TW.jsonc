@@ -1,4 +1,4 @@
-// 你可以在此文件中使用 // 作為行註釋，但塊註釋和尾隨逗號等其他 JSONC 功能不受支持。
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
 // You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
 {
   "Language": "zh-TW",
@@ -77,6 +77,7 @@
         "RectangleLabel": "矩形",
         "StraightLineLabel": "直線",
         "UndoLabel": "復原",
+        "RedoLabel": "重做",
         "ClearLabel": "清空",
         "WhiteboardLabel": "白板",
         "CloseWhiteboardLabel": "關閉白板",
@@ -392,6 +393,15 @@
           "E": "我們會根據不同裝置型別優化使用體驗。",
           "Touch": "觸控螢幕",
           "MousePen": "滑鼠、手寫筆或數位板"
+        }
+      },
+      "Touch":
+      {
+        "N": "觸摸",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "斷觸接續",
+          "E": "觸控書寫時，若螢幕短暫失去接觸後又沿原方向恢復，將嘗試把兩段筆跡接成一筆，減少斷線。關閉後，每次抬起都會結束目前筆畫。"
         }
       },
       "Eraser":

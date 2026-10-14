@@ -77,6 +77,7 @@
         "RectangleLabel": "Rectangle",
         "StraightLineLabel": "Line",
         "UndoLabel": "Undo",
+        "RedoLabel": "Redo",
         "ClearLabel": "Clear",
         "WhiteboardLabel": "Board",
         "CloseWhiteboardLabel": "Close",
@@ -392,6 +393,15 @@
           "E": "Optimize for selected device.",
           "Touch": "Touch Screen",
           "MousePen": "Mouse, Pen, or Graphics Tablet"
+        }
+      },
+      "Touch":
+      {
+        "N": "Touch",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "Reconnect interrupted strokes",
+          "E": "When touch briefly drops out and resumes in the same direction, the app tries to join both parts into one stroke, reducing gaps. When disabled, lifting your finger ends the stroke."
         }
       },
       "Eraser":

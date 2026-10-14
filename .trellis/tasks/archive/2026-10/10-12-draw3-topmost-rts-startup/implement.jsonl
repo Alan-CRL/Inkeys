@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Native desktop boundaries"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Window owner tree root refresh and whiteboard policy"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Host/RTS startup and cleanup"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Solution build and verification"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-draw3-topmost-rts-startup/research/current-startup-order.md", "reason": "Current startup order evidence"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-draw3-topmost-rts-startup/research/history-rts-topmost.md", "reason": "Historical topmost-before-RTS contract and prior recovery limits"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-draw3-topmost-rts-startup/research/window-topmost-contract.md", "reason": "Synchronous root refresh and validation boundaries"}

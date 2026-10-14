@@ -2337,12 +2337,13 @@ namespace draw3
 					auto& reconnectModelOutput = endpointRecovery
 						? reconnectRuntime->stroke.modelScratch
 						: reconnectRuntime->stroke.modeledResults;
-					if (reconnectRuntime->tool == DrawingTool::Pen)
-						RecordPenTailRawInput(reconnectRuntime->stroke, {down.position.x, down.position.y},
-							QpcDeltaSeconds(down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency));
 					if (absl::Status status = reconnectRuntime->stroke.modeler.Update(
 						reconnectInput, reconnectModelOutput); status.ok())
 					{
+						// 模型确认续接后再记录 raw，失败不能淘汰旧笔划的物理尾窗。
+						if (reconnectRuntime->tool == DrawingTool::Pen)
+							RecordPenTailRawInput(reconnectRuntime->stroke, {down.position.x, down.position.y},
+								QpcDeltaSeconds(down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency));
 						const double gapSeconds = reconnectResult.gapMilliseconds / 1000.0;
 						const float alpha = std::clamp(static_cast<float>(
 							1.0 - std::exp(-gapSeconds / kInputSpeedSmoothingSeconds)), 0.02f, 0.35f);

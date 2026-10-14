@@ -576,6 +576,27 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: expanded JSON replaced the last readable file\n", stderr);
 				return 1;
 			}
+			stage = "touch reconnect configuration";
+			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
+			Inkeys::Config reconnectDefaults;
+			if (!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect ||
+				!writeBytes(mainConfig, "{}") || !reconnectDefaults.ReadAll() ||
+				!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect)
+			{
+				std::fputs("[ConfigBoundary] FAIL: touch reconnect default was not enabled\n", stderr);
+				return 1;
+			}
+			for (const bool enabled : { false, true })
+			{
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = enabled;
+				Inkeys::Config restoredReconnect;
+				if (!reconnectDefaults.Write() || !restoredReconnect.ReadAll() ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
+				{
+					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
+					return 1;
+				}
+			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
 			std::filesystem::create_directories(root / "fresh" / "opt");
@@ -586,7 +607,7 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
 				return 1;
 			}
-			std::fputs("[ConfigBoundary] PASS: bounded reads preserve bad files and first-run creation\n", stderr);
+			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation and touch reconnect preferences\n", stderr);
 			return 0;
 		}
 		catch (...)
@@ -735,6 +756,94 @@ namespace
 		}
 	}
 
+	bool PrepareDraw3WindowTopmost(Inkeys::Window::Service& service, HWND drawpad, const char* phase)
+	{
+		using Role = Inkeys::Window::WindowRole;
+		constexpr std::array<Role, 4> roles{
+			Role::MagnifierHost, Role::Freeze, Role::DrawpadPresentation, Role::Drawpad };
+		constexpr std::array<const char*, 4> names{ "Mag", "Freeze", "Presentation", "Drawpad" };
+		std::array<HWND, 4> windows{}, owners{};
+		std::array<LONG_PTR, 4> styles{};
+		std::array<DWORD, 4> styleErrors{};
+		std::array<bool, 4> valid{};
+		for (size_t i = 0; i != roles.size(); ++i) windows[i] = service.Handle(roles[i]);
+		const HWND root = service.OverlayRoot();
+		const HWND expectedRoot = windows[0] ? windows[0] : windows[1];
+		const bool desktopTopmost = service.OverlayTopmost() && !service.WhiteboardWindowMode();
+		const char* failure = nullptr;
+		const char* failedRole = "Root";
+		if (!desktopTopmost) failure = "desktop-policy";
+		else if (!root || root != expectedRoot) failure = "root-mismatch";
+		else if (!drawpad || drawpad != windows[3]) failure = "drawpad-mismatch";
+
+		// 沿用历史合同：隐藏窗口链必须先完成根置顶，再注册 RTS；策略值不能代替实际 HWND 状态。
+		// 刷新在窗口所属线程同步执行，错误码由服务捕获，不能在此读取跨线程的 GetLastError。
+		constexpr DWORD startupRefreshMilliseconds = 5000;
+		if (!failure && !service.RequestTopmostRefresh(startupRefreshMilliseconds))
+			failure = "root-refresh";
+		for (size_t i = 0; i != roles.size(); ++i)
+		{
+			if (i == 0 && !windows[i]) continue; // Mag 为可选窗口，缺失时 Freeze 是根。
+			valid[i] = IsWindow(windows[i]) != FALSE;
+			if (valid[i])
+			{
+				owners[i] = GetWindow(windows[i], GW_OWNER);
+				SetLastError(ERROR_SUCCESS);
+				styles[i] = GetWindowLongPtrW(windows[i], GWL_EXSTYLE);
+				styleErrors[i] = styles[i] == 0 ? GetLastError() : ERROR_SUCCESS;
+			}
+			const HWND expectedOwner = i == 0 ? nullptr : windows[i - 1];
+			const char* nodeFailure = !valid[i] ? "invalid-window"
+				: styleErrors[i] != ERROR_SUCCESS ? "read-style"
+				: owners[i] != expectedOwner ? "owner-mismatch"
+				: (styles[i] & WS_EX_TOPMOST) == 0 ? "missing-topmost" : nullptr;
+			if (!failure && nodeFailure)
+			{
+				failure = nodeFailure;
+				failedRole = names[i];
+			}
+		}
+		// 启动与重建由主线程串行协调；复核句柄，不能将上一代窗口的成功状态用于新 Host。
+		for (size_t i = 0; i != roles.size(); ++i)
+		{
+			if (!failure && service.Handle(roles[i]) != windows[i])
+			{
+				failure = "window-generation";
+				failedRole = names[i];
+			}
+		}
+		if (!failure && (service.OverlayRoot() != root
+			|| !service.OverlayTopmost() || service.WhiteboardWindowMode()))
+			failure = "root-or-policy-changed";
+
+		// 有限等待失败后先建立独立退场监督，日志和窗口 join 也不能无限阻塞。
+		if (failure) SetOffSignal(1);
+		char message[2048]{};
+		std::snprintf(message, sizeof(message),
+			"[Draw3Topmost] phase=%s result=%s cause=%s role=%s root=%p desktop=%d "
+			"Mag={hwnd=%p owner=%p valid=%d exstyle=0x%llX error=%lu} "
+			"Freeze={hwnd=%p owner=%p valid=%d exstyle=0x%llX error=%lu} "
+			"Presentation={hwnd=%p owner=%p valid=%d exstyle=0x%llX error=%lu} "
+			"Drawpad={hwnd=%p owner=%p valid=%d exstyle=0x%llX error=%lu}",
+			phase, failure ? "failed" : "ready", failure ? failure : "none", failedRole,
+			static_cast<void*>(root), desktopTopmost,
+			static_cast<void*>(windows[0]), static_cast<void*>(owners[0]), valid[0],
+			static_cast<unsigned long long>(styles[0]), styleErrors[0],
+			static_cast<void*>(windows[1]), static_cast<void*>(owners[1]), valid[1],
+			static_cast<unsigned long long>(styles[1]), styleErrors[1],
+			static_cast<void*>(windows[2]), static_cast<void*>(owners[2]), valid[2],
+			static_cast<unsigned long long>(styles[2]), styleErrors[2],
+			static_cast<void*>(windows[3]), static_cast<void*>(owners[3]), valid[3],
+			static_cast<unsigned long long>(styles[3]), styleErrors[3]);
+		if (IDTLogger)
+		{
+			if (failure) IDTLogger->error("{}", message);
+			else IDTLogger->info("{}", message);
+		}
+		else std::fprintf(stderr, "%s\n", message);
+		return failure == nullptr;
+	}
+
 	template <typename StartWindows>
 	bool StartDraw3ProductWithFallback(Inkeys::Window::Service& windowService,
 		std::vector<Inkeys::Window::WindowSpec>& windowSpecs, HWND& drawpad_window,
@@ -744,6 +853,7 @@ namespace
 		bool preferDraw3DirectComposition, StartWindows&& StartWindowService,
 		Inkeys::Shutdown::CleanupRealPacket* observation = nullptr)
 	{
+		if (!PrepareDraw3WindowTopmost(windowService, drawpad_window, "initial")) return false;
 		Inkeys::Shutdown::FailedCleanupDeadline firstHostCleanup(
 			observation ? &Inkeys::Shutdown::PublishAuthorizedCleanupFatal
 			: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
@@ -786,6 +896,7 @@ namespace
 			}
 			if (InterlockedCompareExchange(&offSignalInterop, 0, 0) == 0 && StartWindowService())
 			{
+				if (!PrepareDraw3WindowTopmost(windowService, drawpad_window, "rebuilt-ulw")) return false;
 				Inkeys::Shutdown::FailedCleanupDeadline ulwHostCleanup(
 					observation ? &Inkeys::Shutdown::PublishAuthorizedCleanupFatal
 					: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
@@ -2441,6 +2552,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
 			InitializeEraserInputPreferences();
+			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
 			{
 				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();

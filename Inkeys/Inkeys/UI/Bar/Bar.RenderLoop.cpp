@@ -383,6 +383,7 @@ enum class BarDirtyFixedVisual : BarDirtyVisualKey
 	CursorLight = 0xFFFF000000000006ULL,
 	DockTargetIndicator = 0xFFFF000000000007ULL,
 	EraserAttributeGroup = 0xFFFF000000000008ULL,
+	RecallAttributeGroup = 0xFFFF000000000009ULL,
 };
 
 [[nodiscard]] BarDirtyVisualKey GetBarDirtyVisualKey(const void* visual) noexcept
@@ -2477,17 +2478,27 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			variant<decltype(baseRange), decltype(baseRange | views::reverse)> viewVariant;
 			viewVariant = baseRange;
 
+			const auto recallChrome = owner_.RecallChromeView();
 			visit([&](auto&& forRange)
 				{
 					for (int id : forRange)
 					{
 						BarButtonClass* temp = state.barButtonSet.buttonList.Get(id);
 						if (temp == nullptr) continue;
+						const bool recallCommand = temp->preset == BarButtonPresetEnum::Recall
+							|| temp->preset == BarButtonPresetEnum::Redo;
+						const bool commandEnabled = temp->preset == BarButtonPresetEnum::Recall
+							? recallChrome.undoEnabled : recallChrome.redoEnabled;
+						const COLORREF normalContentColor = temp->state->state == BarWidgetState::Selected
+							? GetThemeColor(BarThemeColorEnum::Accent)
+							: GetThemeColor(BarThemeColorEnum::TextPrimary);
+						// 几何保持时可用性仍立即变色；所有布局分支共用这个最终目标。
+						const COLORREF contentColor = recallCommand
+							? Inkeys::UI::Bar::ResolveRecallCommandContentColor(commandEnabled, normalContentColor)
+							: normalContentColor;
 						if (temp->icon.color1.has_value())
 						{
-							COLORREF iconColor = temp->state->state == BarWidgetState::Selected
-								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::TextPrimary);
+							const COLORREF iconColor = contentColor;
 							// 第一次计算或不可见时直接同步，避免 SVG 显示后才从黑色过渡。
 							if (forNum == 1 || state.barState.fold || !temp->IsVisible())
 								temp->icon.color1.value().SetDirect(iconColor);
@@ -2545,7 +2556,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								temp->button.enable.tar
 									&& temp->state->state != BarWidgetState::Disable,
 								temp->state->state == BarWidgetState::Selected,
-								operationDur);
+								operationDur, contentColor);
 
 						if (temp->size == BarButtonSizeEnum::oneOne)
 						{
@@ -2608,9 +2619,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnOneHalf, 40.0, true);
 									 temp->state->state == BarWidgetState::Disable
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+									temp->icon.color1.value().SetTar(contentColor);
 								}
 							}
 							if (temp->name.enable.tar)
@@ -2715,9 +2724,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 									 temp->state->state == BarWidgetState::Disable
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+									temp->icon.color1.value().SetTar(contentColor);
 								}
 							}
 							if (temp->name.enable.tar)
@@ -2732,9 +2739,7 @@ temp->name.x.SetTar(metrics.primaryOffsetXDip); // 右侧文字槽与共享 2x1 
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 
-								if (temp->state->state == BarWidgetState::Selected)
-									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-								else temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+								temp->name.color.SetTar(contentColor);
 									temp->name.size.SetTar(metrics.primaryFontSizeDip);
 							}
 
@@ -2827,9 +2832,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 									 temp->state->state == BarWidgetState::Disable
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+									temp->icon.color1.value().SetTar(contentColor);
 								}
 							}
 							if (temp->name.enable.tar)
@@ -2844,9 +2847,7 @@ temp->name.x.SetTar(metrics.primaryOffsetXDip);
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 
-								if (temp->state->state == BarWidgetState::Selected)
-									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-								else temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+								temp->name.color.SetTar(contentColor);
 
 									temp->name.size.SetTar(metrics.primaryFontSizeDip);
 							}
@@ -3032,7 +3033,21 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				};
 			AnchorHiddenButton(BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Draw);
-			AnchorHiddenButton(BarButtonPresetEnum::Recall, BarButtonPresetEnum::Draw);
+			// 对方还可见时停在对方上；一起隐藏时锚到绘制，避免落到右侧按钮。
+			{
+				BarButtonClass* redoButton = state.barButtonSet.preset[
+					static_cast<int>(BarButtonPresetEnum::Redo)];
+				BarButtonClass* recallButton = state.barButtonSet.preset[
+					static_cast<int>(BarButtonPresetEnum::Recall)];
+				AnchorHiddenButton(BarButtonPresetEnum::Recall,
+					redoButton && redoButton->IsVisible()
+						? BarButtonPresetEnum::Redo
+						: BarButtonPresetEnum::Draw);
+				AnchorHiddenButton(BarButtonPresetEnum::Redo,
+					recallButton && recallButton->IsVisible()
+						? BarButtonPresetEnum::Recall
+						: BarButtonPresetEnum::Draw);
+			}
 			AnchorHiddenButton(BarButtonPresetEnum::EndShow, BarButtonPresetEnum::Freeze);
 		}
 		totalWidth = layoutTotalWidth;
@@ -8032,7 +8047,16 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		frame.bottomDockDragActive,
 		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser);
 	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
-	return needRendering || eraserChanged;
+	const bool recallIdleDismissed = owner_.AdvanceRecallChromeIdle(animationDtSeconds);
+	const bool recallChanged = owner_.recallAttribute.Advance(owner_, animationDtSeconds,
+		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
+		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
+		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
+		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
+		frame.bottomDockDragActive);
+	if (recallChanged || recallIdleDismissed) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup));
+	return needRendering || eraserChanged || recallChanged || recallIdleDismissed;
 }
 
 void BarRenderLoopCoordinator::PrepareLightingAndDemand(
@@ -8581,6 +8605,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
 			|| owner_.eraserAttribute.Changed()
+			|| owner_.recallAttribute.Changed()
 			|| !state.morePanelProgress.IsSame()
 			|| !state.drawAttributePenThickness.IsSame()
 			|| !state.drawAttributeLaserShellProgress.IsSame()
@@ -8741,6 +8766,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			IncludeShapeBounds(drawAttribute, BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(geometryAttribute, BottomDockBoundsTransform::Rigid);
 			IncludeVisibleBounds(owner_.eraserAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+			IncludeVisibleBounds(owner_.recallAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanel],
 				BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanelDivider],
@@ -9335,6 +9361,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			IntersectBarWindowRect(eraserBounds, ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Rigid)));
 		if (observeCursorLight) BarRenderingAttribute::UnionRectInPlace(cursorLightDamageBounds,
 			IntersectBarWindowRect(eraserBounds, cursorLightInfluence));
+		const RECT recallBounds = TransformBottomDockBounds(owner_.recallAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+		const auto recallKey = GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup);
+		state.dirtyRegionTracker.Observe(recallKey, recallBounds);
+		if (observePrimaryLight) BarRenderingAttribute::UnionRectInPlace(primaryLightDamageBounds,
+			IntersectBarWindowRect(recallBounds, ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Rigid)));
+		if (observeCursorLight) BarRenderingAttribute::UnionRectInPlace(cursorLightDamageBounds,
+			IntersectBarWindowRect(recallBounds, cursorLightInfluence));
 		if (observeMainGroup)
 			state.dirtyRegionTracker.Observe(mainGroupKey, mainGroupBounds);
 		if (observeDrawAttributeGroup)
@@ -9523,6 +9556,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
 			|| owner_.eraserAttribute.Changed()
+			|| owner_.recallAttribute.Changed()
 			|| !state.morePanelProgress.IsSame()
 			|| !state.drawAttributeLaserShellProgress.IsSame()
 			|| !state.drawAttributeLaserOuterThickness.IsSame()
@@ -11710,9 +11744,10 @@ bool presetButton = button.presetIndex >= 0;
 					state.spec.SetFrameDiffuseMaskGeometryScale(1.0);
 				}
 
-				// 橡皮主面板、菜单和提示统一先画，主栏随后覆盖其重叠区域。
+				// 橡皮与撤回属性都先画，主栏随后覆盖其重叠区域。
 				SetRigidTransform();
 				owner_.eraserAttribute.Draw(state.spec, barDeviceContext);
+				owner_.recallAttribute.Draw(state.spec, barDeviceContext);
 
 				// More 必须先画、主栏后画，收拢部分才会从主栏下层自然出现。
 				auto DrawMainBar = [&]()
@@ -13012,6 +13047,7 @@ bool presetButton = button.presetIndex >= 0;
 			// D2D/GDI/ULW 四阶段全部成功后，才推进业务与调试覆盖层快照。
 			state.dirtyRegionTracker.CommitPresented();
 			owner_.eraserAttribute.CommitPresented();
+			owner_.recallAttribute.CommitPresented();
 			state.viewportController.Commit(candidateViewport);
 			state.presentMappingTracker.CommitPresented(candidatePresentMapping);
 			const RECT committedWindowScreenBounds{

@@ -56,7 +56,7 @@ Bounds使用实际已变换shell及阴影外扩，不能只拿最终layout矩形
 
 绘制线程原有`active.empty()`边界不变：接受命令不等于活动接触尚未结束时已经执行。Clear等待Up/提交，然后清当前页批注，保留viewport和其他页。不得直接清GPU纹理代替业务事务。
 
-每页`clearRedoAvailable`仅在Clear边界快照恢复时建立（含磁盘旧区间恢复），新笔迹提交清除此标记；Redo回到原Clear分支，复用快照/保存/回撤。页面与场景迁移保持自己的标记。Whiteboard使用同页boundaryFallback，Desktop/PPT保留原异步持久化链。
+每页`clearRedoAvailable`及有限CPU `clearRedoContinuation`在最近Clear撤销恢复时建立（含磁盘恢复），旧区间继续Undo不能清掉边界资格；新笔迹成功CPU追加才取消前向分支。Redo先旧Stroke、再Clear、再后继Stroke到最新，Clear继续复用原GPU重置/保存事务。页面与场景迁移保留其CPU历史；PPT有forward或后继redo的slot不能被任一淘汰入口丢弃。Whiteboard使用同页boundaryFallback，Desktop/PPT保留原异步持久化链，迟到安装须符合当前页/floor/请求资格。
 
 ## 4. Validation & Error Matrix
 |场景|结果|

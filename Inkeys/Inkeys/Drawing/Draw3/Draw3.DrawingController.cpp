@@ -400,6 +400,8 @@ namespace Inkeys::Drawing::Draw3
 			return pageIndex;
 		}
 
+		struct ClearRedoContinuation;
+
 		struct CanvasPageRuntimeState
 		{
 			CanvasRuntimeHistory history;
@@ -413,7 +415,42 @@ namespace Inkeys::Drawing::Draw3
 			bool previousClearUndoAvailable = true; // 跨 Clear 恢复成功后消费，阻止进入更早画布。
 			bool clearRedoAvailable = false; // 仅Clear撤销恢复后有效，新笔迹提交会取消。
 			std::optional<draw3::uink::Draw3UInkCanvasSnapshot> boundaryFallback;
+			// 只在跨最近 Clear 撤销后保留后继 CPU 分支，不保存 GPU 后像。
+			std::shared_ptr<ClearRedoContinuation> clearRedoContinuation;
 		};
+
+		struct ClearRedoContinuation
+		{
+			InkPage page;
+			CanvasPageRuntimeState runtime;
+		};
+
+		std::shared_ptr<ClearRedoContinuation> CaptureClearRedoContinuation(
+			const InkPage& page, const CanvasPageRuntimeState& runtime)
+		{
+			try
+			{
+				auto continuation = std::make_shared<ClearRedoContinuation>(
+					ClearRedoContinuation{ page, runtime });
+				continuation->runtime.clearRedoAvailable = false;
+				continuation->runtime.clearRedoContinuation.reset();
+				continuation->runtime.intervalLoadPending = false;
+				continuation->runtime.undoFloor = 0;
+				// 持久化导入根也需回到 Clear 后空态，Redo 才能逐笔前进到原最新分支。
+				while (const auto item = continuation->runtime.history.LastVisibleItem())
+				{
+					if (item->index >= continuation->runtime.beforeStates.size()
+						|| !continuation->runtime.history.UndoLastVisible(*item)) return {};
+					continuation->runtime.rasterState = continuation->runtime.beforeStates[item->index];
+				}
+				return continuation;
+			}
+			catch (const std::exception&)
+			{
+				std::fputs("[Draw3.ClearRedo] result=failed reason=cpu_snapshot\n", stderr);
+				return {};
+			}
+		}
 
 		struct DesktopClearRecovery
 		{
@@ -422,7 +459,35 @@ namespace Inkeys::Drawing::Draw3
 			bool diskSaveRequested = false;
 			bool diskReady = false;
 			bool loadPending = false;
+			InkGuid pageGuid;
+			std::uint64_t loadHistoryRevision = 0;
 		};
+
+		bool DesktopRecoveryBelongsToPage(const DesktopClearRecovery& recovery,
+			const InkPage* page) noexcept
+		{
+			return page && page->PageGuid() == recovery.pageGuid;
+		}
+
+		bool CanInstallDesktopClearRecovery(const DesktopClearRecovery& recovery,
+			bool wasPending, Bridge::Workspace workspace, const InkPage* page,
+			const CanvasPageRuntimeState* runtime) noexcept
+		{
+			if (!wasPending || workspace != Bridge::Workspace::Desktop || !runtime
+				|| !DesktopRecoveryBelongsToPage(recovery, page)
+				|| runtime->history.Revision() != recovery.loadHistoryRevision) return false;
+			const auto visible = runtime->history.LastVisibleItem();
+			return !visible || visible->index < runtime->undoFloor;
+		}
+
+		bool CanInstallPreviousClearInterval(const CanvasPageRuntimeState& runtime,
+			std::uint32_t completedInterval) noexcept
+		{
+			if (!runtime.intervalLoadPending || runtime.intervalOrdinal == 0
+				|| completedInterval + 1 != runtime.intervalOrdinal) return false;
+			const auto visible = runtime.history.LastVisibleItem();
+			return !visible || visible->index < runtime.undoFloor;
+		}
 
 		struct DrawingDocumentSlot
 		{
@@ -440,6 +505,16 @@ namespace Inkeys::Drawing::Draw3
 			bool loadPending = false;
 			std::uint64_t slotGeneration = 0;
 		};
+
+		bool CanEvictPresentationCpuSlot(const DrawingDocumentSlot& slot) noexcept
+		{
+			// UInk 只保存可见 tail；所有淘汰入口都必须保住会话内的前向分支。
+			if (std::any_of(slot.pageRuntimeStates.begin(), slot.pageRuntimeStates.end(),
+				[](const CanvasPageRuntimeState& runtime)
+				{ return runtime.clearRedoContinuation || runtime.history.LastRedoItem().has_value(); })) return false;
+			return ShouldEvictPresentationSlot(slot.fileGuid.has_value(),
+				slot.mutationRevision, slot.queuedRevision, slot.committedRevision, slot.loadPending);
+		}
 
 		struct PresentationLaneKey
 		{
@@ -617,10 +692,7 @@ namespace Inkeys::Drawing::Draw3
 						stderr);
 				}
 				SwapActiveDocumentSlot(active, *destination);
-				if (previousLane && source.document &&
-					ShouldEvictPresentationSlot(source.fileGuid.has_value(),
-						source.mutationRevision, source.queuedRevision,
-						source.committedRevision, source.loadPending))
+				if (previousLane && source.document && CanEvictPresentationCpuSlot(source))
 					parkedSlots.erase(*previousLane);
 				activeKey = topologyConflict
 					? std::nullopt : std::optional<Bridge::PresentationKey>(target.key);
@@ -2048,6 +2120,10 @@ namespace Inkeys::Drawing::Draw3
 				canvas->AppendStroke(std::move(*finalizedStroke));
 			if (!strokeIndex) return reject("canvas_append");
 			pageRuntime.history.DiscardRedoBranch();
+			// CPU 追加已创建新分支；后续 history/GPU 失败也不能复活旧 Clear 重做。
+			pageRuntime.clearRedoAvailable = false;
+			pageRuntime.clearRedoContinuation.reset();
+			pageRuntime.intervalLoadPending = false;
 			const std::optional<RenderItemId> renderItem =
 				pageRuntime.history.AppendStroke(*strokeIndex, std::move(*footprint), true);
 			const RenderItemState* visibleItem = renderItem
@@ -6567,6 +6643,37 @@ namespace Inkeys::Drawing::Draw3
 					captured.snapshot->canvases[0].strokes.size() == 1,
 					"pre-seal snapshot keeps completed old stroke only");
 				input.SetAdmissionBlocked(true);
+				CanvasPageRuntimeState& delayedPage = desktopRuntimes[0];
+				delayedPage.undoFloor = 1;
+				delayedPage.intervalOrdinal = 3;
+				delayedPage.intervalLoadPending = true;
+				DesktopClearRecovery delayedRecovery;
+				delayedRecovery.pageGuid = desktop.PageAt(0)->PageGuid();
+				delayedRecovery.fileGuid = draw3::uink::UInkGuid(guid(0x41).Bytes());
+				delayedRecovery.loadPending = true;
+				delayedRecovery.loadHistoryRevision = delayedPage.history.Revision();
+				delayedRecovery.canvas.emplace();
+				delayedRecovery.canvas->pageGuid = draw3::uink::UInkGuid(delayedRecovery.pageGuid.Bytes());
+				const auto desktopAdmission = [&](bool pending, Bridge::Workspace workspace,
+					const InkPage* page = nullptr)
+				{
+					return CanInstallDesktopClearRecovery(delayedRecovery, pending, workspace,
+						page ? page : desktop.PageAt(0), &delayedPage);
+				};
+				check(desktopAdmission(true, Bridge::Workspace::Desktop), "matching Desktop load may replace its sealed root");
+				check(!desktopAdmission(false, Bridge::Workspace::Desktop), "cancelled Desktop load is rejected");
+				check(!desktopAdmission(true, Bridge::Workspace::Presentation), "Desktop load cannot install into Presentation");
+				check(!desktopAdmission(true, Bridge::Workspace::Desktop, presentation.PageAt(0)), "Desktop load cannot overwrite another page GUID");
+				check(!CanInstallDesktopClearRecovery(delayedRecovery, true, Bridge::Workspace::Desktop,
+					 nullptr, &delayedPage), "missing Desktop page rejects the load");
+				check(!CanInstallDesktopClearRecovery(delayedRecovery, true, Bridge::Workspace::Desktop,
+					 desktop.PageAt(0), nullptr), "missing Desktop runtime rejects the load");
+				check(CanInstallPreviousClearInterval(delayedPage, 2), "matching Presentation interval may install at floor");
+				check(!CanInstallPreviousClearInterval(delayedPage, 1), "wrong Presentation interval is rejected");
+				delayedPage.undoFloor = 0;
+				check(!desktopAdmission(true, Bridge::Workspace::Desktop), "visible Desktop ink above floor blocks replacement");
+				check(!CanInstallPreviousClearInterval(delayedPage, 2), "visible Presentation ink above floor blocks replacement");
+				delayedPage.undoFloor = 1;
 				InkRasterStateToken nextToken = 3;
 				const auto sealed = CommitRuntimeStoredStrokeCpu(activePen, desktop,
 					desktopRuntimes, 0, 0.0, StoredStrokeCommitMode::Fatal,
@@ -6577,6 +6684,29 @@ namespace Inkeys::Drawing::Draw3
 					captured.snapshot->canvases[0].strokes.size() == 2 &&
 					captured.snapshot->canvases[0].strokes[1].points.back().x == 55.0f,
 					"fatal CPU seal appends accepted real Move, excludes prediction");
+				// 上面的真实生产 CPU 追加必须取消请求；再次 Undo 到 floor 也不能接受旧回执。
+				check(!delayedPage.intervalLoadPending, "real CPU stroke append cancels the Presentation interval request");
+				check(!desktopAdmission(true, Bridge::Workspace::Desktop), "new CPU stroke rejects the old Desktop load revision");
+				check(!CanInstallPreviousClearInterval(delayedPage, 2), "new CPU stroke rejects the old Presentation load");
+				const auto newItem = delayedPage.history.LastVisibleItem();
+				check(newItem && delayedPage.history.UndoLastVisible(*newItem), "actual history can return new ink to the sealed floor");
+				check(!desktopAdmission(true, Bridge::Workspace::Desktop), "returning to floor still rejects an earlier Desktop history revision");
+				check(!CanInstallPreviousClearInterval(delayedPage, 2), "returning to floor cannot revive a cancelled Presentation request");
+				check(delayedRecovery.canvas && delayedRecovery.fileGuid &&
+					delayedRecovery.canvas->pageGuid.Bytes() == delayedRecovery.pageGuid.Bytes(),
+					"rejected loads leave the recovery point and locator intact for retry");
+				delayedRecovery.loadPending = false;
+				check(!desktopAdmission(delayedRecovery.loadPending, Bridge::Workspace::Desktop), "failed load clears only pending admission");
+				delayedRecovery.loadPending = true;
+				delayedRecovery.loadHistoryRevision = delayedPage.history.Revision();
+				check(desktopAdmission(delayedRecovery.loadPending, Bridge::Workspace::Desktop), "a fresh Desktop retry may reuse the preserved recovery point");
+				delayedPage.intervalLoadPending = true;
+				check(CanInstallPreviousClearInterval(delayedPage, 2), "a fresh Presentation retry may install the same boundary");
+				delayedPage.intervalOrdinal = 0;
+				check(!CanInstallPreviousClearInterval(delayedPage, 2), "canonical root cannot accept an old interval completion");
+				delayedPage.intervalLoadPending = false;
+				delayedPage.undoFloor = 0;
+				check(newItem && delayedPage.history.RedoLastUndone(*newItem), "restore the probe history after late-load negative cases");
 				const size_t afterPen = desktopRuntimes[0].history.Items().size();
 				check(!CommitRuntimeStoredStrokeCpu(activePen, desktop, desktopRuntimes,
 					0, 0.0, StoredStrokeCommitMode::Fatal,
@@ -7695,8 +7825,40 @@ namespace Inkeys::Drawing::Draw3
 			return currentPageIndex_ < pageRuntimeStates.size() &&
 				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
 		};
+		bool publishedCanUndo = false;
+		bool publishedCanRedo = false;
+		auto publishHistoryAvailability = [&]()
+		{
+			bool canUndo = false;
+			bool canRedo = false;
+			if (currentPageIndex_ < pageRuntimeStates.size())
+			{
+				const CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+				const std::optional<RenderItemId> visible = runtime.history.LastVisibleItem();
+				canUndo = visible.has_value() && visible->index >= runtime.undoFloor;
+				canRedo = runtime.history.LastRedoItem().has_value() || runtime.clearRedoAvailable;
+				if (!canUndo)
+				{
+					if (activeWorkspace == Bridge::Workspace::Desktop && desktopClearRecovery &&
+						DesktopRecoveryBelongsToPage(*desktopClearRecovery,
+							document_ ? document_->PageAt(currentPageIndex_) : nullptr))
+						canUndo = true;
+					else if (runtime.previousClearUndoAvailable &&
+						(runtime.intervalOrdinal != 0 || runtime.boundaryFallback) &&
+						(activeWorkspace == Bridge::Workspace::Presentation ||
+							activeWorkspace == Bridge::Workspace::Whiteboard))
+						canUndo = true;
+				}
+			}
+			if (canUndo == publishedCanUndo && canRedo == publishedCanRedo) return;
+			publishedCanUndo = canUndo;
+			publishedCanRedo = canRedo;
+			if (observer_.historyAvailabilityChanged)
+				observer_.historyAvailabilityChanged(observer_.context, canUndo, canRedo);
+		};
 		auto publishCurrentPageContent = [&]()
 		{
+			publishHistoryAvailability();
 			const bool hasContent = currentPageHasContent();
 			if (hasContent == publishedCurrentPageHasContent) return;
 			publishedCurrentPageHasContent = hasContent;
@@ -8780,9 +8942,6 @@ namespace Inkeys::Drawing::Draw3
 					const size_t reconnectManualTestFirstPointIndex =
 						reconnectRuntime->stroke.realPoints.empty()
 						? 0 : reconnectRuntime->stroke.realPoints.size() - 1;
-					if (reconnectRuntime->tool == DrawingTool::Pen || reconnectRuntime->tool == DrawingTool::HardPen)
-						RecordPenTailRawInput(reconnectRuntime->stroke, {down.position.x, down.position.y},
-							QpcDeltaSeconds(down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency));
 					reconnectRuntime->modelInputThisFrame = true;
 					const bool endpointRecovery =
 						(reconnectRuntime->tool == DrawingTool::Pen ||
@@ -8799,6 +8958,10 @@ namespace Inkeys::Drawing::Draw3
 						metricsState_ ? metricsState_->metricFrequency : 0, [&] { return reconnectRuntime->stroke.modeler.Update(
 						reconnectInput, reconnectModelOutput); }); status.ok())
 					{
+						// 模型确认续接后再记录 raw，失败不能淘汰旧笔划的物理尾窗。
+						if (reconnectRuntime->tool == DrawingTool::Pen || reconnectRuntime->tool == DrawingTool::HardPen)
+							RecordPenTailRawInput(reconnectRuntime->stroke, {down.position.x, down.position.y},
+								QpcDeltaSeconds(down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency));
 						reconnectRuntime->stationaryModelAdvanceBlocked = false;
 						const double gapSeconds = reconnectResult.gapMilliseconds / 1000.0;
 						const float alpha = std::clamp(static_cast<float>(
@@ -10763,9 +10926,7 @@ namespace Inkeys::Drawing::Draw3
 
 		auto canEvictPresentationSlot = [](const DrawingDocumentSlot& slot) noexcept
 		{
-			return ShouldEvictPresentationSlot(slot.fileGuid.has_value(),
-				slot.mutationRevision, slot.queuedRevision,
-				slot.committedRevision, slot.loadPending);
+			return CanEvictPresentationCpuSlot(slot);
 		};
 
 			auto resetGpuForPageSwitch = [&](RECT& frameDirty,
@@ -11169,6 +11330,14 @@ namespace Inkeys::Drawing::Draw3
 				if (found == oldRuntimeByPage.end()) continue;
 				CanvasPageRuntimeState& source = pageRuntimeStates[found->second];
 				CanvasPageRuntimeState& destination = rebuilt->pageRuntimeStates[index];
+				if (source.clearRedoContinuation || source.history.LastRedoItem())
+				{
+					// 拓扑重排的 visible 导出会丢隐藏候选，仅前向分支页沿 GUID 保留完整值。
+					const InkPage* original = document_->PageAt(found->second);
+					if (!original || !rebuilt->document->ReplacePage(index, *original)) return false;
+					destination = source;
+					continue;
+				}
 				destination.undoFloor = (std::min)(
 					source.undoFloor, destination.history.Items().size());
 				destination.intervalOrdinal = source.intervalOrdinal;
@@ -11561,7 +11730,8 @@ namespace Inkeys::Drawing::Draw3
 
 			auto clearCurrentPage = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot,
-			bool& forceFullPresent, int width, int height) -> bool
+			bool& forceFullPresent, int width, int height,
+			std::shared_ptr<ClearRedoContinuation> continuation = {}) -> bool
 		{
 			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size() ||
 				!currentPageHasContent())
@@ -11571,17 +11741,30 @@ namespace Inkeys::Drawing::Draw3
 				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 			if (!canvas) return false;
 
-			// Clear 截断当前页全部文档与历史；viewport 留在 Canvas 对象中。
+			// 普通 Clear 截断当前页历史；Redo Clear 可安装已准备好的空态前向分支，viewport 保持。
 			const std::uint32_t previousInterval =
 				pageRuntimeStates[currentPageIndex_].intervalOrdinal;
 			if (activeWorkspace == Bridge::Workspace::Presentation &&
 				previousInterval == UINT32_MAX) return false;
-			canvas->ClearStrokes();
-			CanvasPageRuntimeState freshRuntime;
-			freshRuntime.rasterState = allocateRasterStateToken();
-			if (activeWorkspace == Bridge::Workspace::Presentation)
-				freshRuntime.intervalOrdinal = previousInterval + 1;
-			pageRuntimeStates[currentPageIndex_] = std::move(freshRuntime);
+			if (continuation)
+			{
+				InkCanvas* nextCanvas = continuation->page.FindCanvas(kDefaultDeviceKey);
+				if (!nextCanvas || !nextCanvas->SetViewport(canvas->Viewport())
+					|| !document_->ReplacePage(currentPageIndex_, std::move(continuation->page))) return false;
+				continuation->runtime.intervalOrdinal = activeWorkspace == Bridge::Workspace::Presentation
+					? previousInterval + 1 : 0;
+				continuation->runtime.previousClearUndoAvailable = true;
+				pageRuntimeStates[currentPageIndex_] = std::move(continuation->runtime);
+			}
+			else
+			{
+				canvas->ClearStrokes();
+				CanvasPageRuntimeState freshRuntime;
+				freshRuntime.rasterState = allocateRasterStateToken();
+				if (activeWorkspace == Bridge::Workspace::Presentation)
+					freshRuntime.intervalOrdinal = previousInterval + 1;
+				pageRuntimeStates[currentPageIndex_] = std::move(freshRuntime);
+			}
 
 			historyGpuCache.DiscardHotPreimages();
 			historyGpuCache.DiscardCompositionCache();
@@ -11620,14 +11803,19 @@ namespace Inkeys::Drawing::Draw3
 			const InkPage* current = document_->PageAt(currentPageIndex_);
 			if (!current || current->PageGuid().Bytes() != snapshot.pageGuid.Bytes())
 				return false;
+			auto continuation = CaptureClearRedoContinuation(*current, pageRuntimeStates[currentPageIndex_]);
+			if (!continuation) return false;
 			auto materialized = materializeCanvasPage(snapshot, false);
-			if (!materialized || !document_->ReplacePage(
-				currentPageIndex_, std::move(materialized->first))) return false;
+			const InkCanvas* currentCanvas = current->FindCanvas(kDefaultDeviceKey);
+			InkCanvas* restoredCanvas = materialized ? materialized->first.FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (!currentCanvas || !restoredCanvas || !restoredCanvas->SetViewport(currentCanvas->Viewport())
+				|| !document_->ReplacePage(currentPageIndex_, std::move(materialized->first))) return false;
 			pageRuntimeStates[currentPageIndex_] = std::move(materialized->second);
 			// 恢复画布成为新的历史根；后续保存同步截断更早 Clear 区间。
 			pageRuntimeStates[currentPageIndex_].intervalOrdinal = 0;
 			pageRuntimeStates[currentPageIndex_].previousClearUndoAvailable = false;
 			pageRuntimeStates[currentPageIndex_].clearRedoAvailable = true;
+			pageRuntimeStates[currentPageIndex_].clearRedoContinuation = std::move(continuation);
 			restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 				forceFullPresent, width, height);
 			return true;
@@ -11669,7 +11857,14 @@ namespace Inkeys::Drawing::Draw3
 						else desktopClearRecovery->diskSaveRequested = false;
 						continue;
 					}
+					const bool wasPending = desktopClearRecovery->loadPending;
 					desktopClearRecovery->loadPending = false;
+					const InkPage* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+					const CanvasPageRuntimeState* runtime = currentPageIndex_ < pageRuntimeStates.size()
+						? &pageRuntimeStates[currentPageIndex_] : nullptr;
+					// 新笔迹、换页或已取消的请求不能被迟到的磁盘恢复覆盖。
+					if (!CanInstallDesktopClearRecovery(*desktopClearRecovery,
+						wasPending, activeWorkspace, page, runtime)) continue;
 					if (completion.status == DesktopPersistenceStatus::Loaded &&
 						completion.loadedSnapshot &&
 						completion.loadedSnapshot->canvases.size() == 1 &&
@@ -11784,16 +11979,20 @@ namespace Inkeys::Drawing::Draw3
 								if (!page || page->PageGuid().Bytes() != completion.pageGuid->Bytes())
 									continue;
 								CanvasPageRuntimeState& pending = (*runtimes)[index];
-								if (!pending.intervalLoadPending || pending.intervalOrdinal == 0 ||
-									completion.intervalOrdinal + 1 != pending.intervalOrdinal)
+								if (!CanInstallPreviousClearInterval(pending, completion.intervalOrdinal))
 									return std::nullopt;
+								auto continuation = CaptureClearRedoContinuation(*page, pending);
+								if (!continuation) return std::nullopt;
 								auto materialized = materializeCanvasPage(*source, false);
-								if (!materialized || !targetDocument->ReplacePage(
-									index, std::move(materialized->first))) return std::nullopt;
+								const InkCanvas* currentCanvas = page->FindCanvas(kDefaultDeviceKey);
+								InkCanvas* restoredCanvas = materialized ? materialized->first.FindCanvas(kDefaultDeviceKey) : nullptr;
+								if (!currentCanvas || !restoredCanvas || !restoredCanvas->SetViewport(currentCanvas->Viewport())
+									|| !targetDocument->ReplacePage(index, std::move(materialized->first))) return std::nullopt;
 								(*runtimes)[index] = std::move(materialized->second);
 								(*runtimes)[index].intervalOrdinal = 0;
 								(*runtimes)[index].previousClearUndoAvailable = false;
 								(*runtimes)[index].clearRedoAvailable = true;
+								(*runtimes)[index].clearRedoContinuation = std::move(continuation);
 								return index;
 							}
 							return std::nullopt;
@@ -12072,10 +12271,23 @@ namespace Inkeys::Drawing::Draw3
 				interruptNavigationForPenOrMouse("canvas-command");
 				const bool redoClear = command.type == CanvasCommandType::Redo &&
 					currentPageIndex_ < pageRuntimeStates.size() &&
-					pageRuntimeStates[currentPageIndex_].clearRedoAvailable;
+					pageRuntimeStates[currentPageIndex_].clearRedoAvailable &&
+					!pageRuntimeStates[currentPageIndex_].history.LastRedoItem();
 				// 重做直接复用唯一Clear事务，包括快照、当前页边界与保存请求。
 				if (command.type == CanvasCommandType::Clear || redoClear)
 				{
+					std::shared_ptr<ClearRedoContinuation> continuation;
+					if (redoClear && pageRuntimeStates[currentPageIndex_].clearRedoContinuation)
+					{
+						const auto& saved = *pageRuntimeStates[currentPageIndex_].clearRedoContinuation;
+						const InkPage* current = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+						if (!current || current->PageGuid() != saved.page.PageGuid()
+							|| !(continuation = CaptureClearRedoContinuation(saved.page, saved.runtime)))
+						{
+							reportCommand(command.type);
+							continue;
+						}
+					}
 					std::optional<draw3::uink::Draw3UInkCanvasSnapshot> preClear;
 					if (document_ && currentPageIndex_ < pageRuntimeStates.size())
 						if (const InkPage* page = document_->PageAt(currentPageIndex_))
@@ -12110,13 +12322,14 @@ namespace Inkeys::Drawing::Draw3
 						desktopDiskRequested = captureDesktopAutoSave(
 							DesktopAutoSaveTrigger::Clear, &desktopFileGuid);
 					const bool cleared = clearCurrentPage(frameDirty, particleSnapshot,
-						forceFullPresent, width, height);
+						forceFullPresent, width, height, std::move(continuation));
 					if (cleared && activeWorkspace == Bridge::Workspace::Desktop)
 					{
 						// 第二次有效 Clear 会替换更老的恢复点。
+						const InkGuid recoveryPageGuid(preClear->pageGuid.Bytes());
 						desktopClearRecovery = DesktopClearRecovery{
 							std::move(*preClear), desktopFileGuid,
-							desktopDiskRequested, false, false };
+							desktopDiskRequested, false, false, recoveryPageGuid };
 						desktopAutoSavePolicy.CompleteDesktopClear();
 					}
 					else if (cleared && (activeWorkspace == Bridge::Workspace::Presentation ||
@@ -12125,6 +12338,8 @@ namespace Inkeys::Drawing::Draw3
 						pageRuntimeStates[currentPageIndex_].boundaryFallback =
 							std::move(*preClear);
 					(void)boundaryQueued;
+					// 恢复点建立后再发布真实可用性，避免 Clear 内部空态提前报告不能 Undo。
+					if (cleared) publishCurrentPageContent();
 					reportCommand(command.type);
 					continue;
 				}
@@ -12146,31 +12361,31 @@ namespace Inkeys::Drawing::Draw3
 					{
 						InkPage* page = document_->PageAt(currentPageIndex_);
 						CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
-						if (activeWorkspace == Bridge::Workspace::Desktop &&
-							desktopClearRecovery && page)
+						const auto visible = runtime.history.LastVisibleItem();
+						const bool atFloor = !visible || visible->index < runtime.undoFloor;
+						if (atFloor && activeWorkspace == Bridge::Workspace::Desktop && desktopClearRecovery &&
+							DesktopRecoveryBelongsToPage(*desktopClearRecovery, page))
 						{
 							if (desktopClearRecovery->canvas &&
 								page->PageGuid().Bytes() ==
 									desktopClearRecovery->canvas->pageGuid.Bytes())
 							{
-								auto recovery = std::move(*desktopClearRecovery->canvas);
-								auto locator = desktopClearRecovery->fileGuid;
-								desktopClearRecovery.reset();
-								restoredBoundary = restoreCurrentPageFromSnapshot(recovery,
+								restoredBoundary = restoreCurrentPageFromSnapshot(*desktopClearRecovery->canvas,
 									particleSnapshot, frameDirty, forceFullPresent, width, height);
-								if (!restoredBoundary)
-									desktopClearRecovery = DesktopClearRecovery{
-										std::move(recovery), locator, false, false, false };
+								if (restoredBoundary) desktopClearRecovery.reset();
 							}
 							else if (desktopClearRecovery->diskReady &&
 								desktopClearRecovery->fileGuid &&
 								!desktopClearRecovery->loadPending &&
 								observer_.desktopLoadRequested)
+							{
 								desktopClearRecovery->loadPending =
-									observer_.desktopLoadRequested(observer_.context,
-										*desktopClearRecovery->fileGuid);
+									observer_.desktopLoadRequested(observer_.context, *desktopClearRecovery->fileGuid);
+								if (desktopClearRecovery->loadPending)
+									desktopClearRecovery->loadHistoryRevision = runtime.history.Revision();
+							}
 						}
-						else if (runtime.previousClearUndoAvailable &&
+						else if (atFloor && runtime.previousClearUndoAvailable &&
 							(activeWorkspace == Bridge::Workspace::Presentation ||
 							activeWorkspace == Bridge::Workspace::Whiteboard) &&
 							page && (runtime.intervalOrdinal != 0 || runtime.boundaryFallback) &&
@@ -12178,9 +12393,7 @@ namespace Inkeys::Drawing::Draw3
 						{
 							if (runtime.boundaryFallback)
 							{
-								auto fallback = std::move(*runtime.boundaryFallback);
-								runtime.boundaryFallback.reset();
-								restoredBoundary = restoreCurrentPageFromSnapshot(fallback,
+								restoredBoundary = restoreCurrentPageFromSnapshot(*runtime.boundaryFallback,
 									particleSnapshot, frameDirty, forceFullPresent, width, height);
 							}
 							else if (activePresentationTarget &&
@@ -12201,8 +12414,7 @@ namespace Inkeys::Drawing::Draw3
 					}
 					if (changed)
 					{
-						// 继续撤回恢复画布后，Redo 应沿笔迹历史前进，不能再重放 Clear。
-						pageRuntimeStates[currentPageIndex_].clearRedoAvailable = false;
+						// 恢复画布先沿 Stroke redo 前进；栈耗尽后仍保留原 Clear 和后继分支。
 						markPresentationMutation();
 						publishCurrentPageContent();
 					}

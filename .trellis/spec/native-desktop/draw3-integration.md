@@ -18,7 +18,7 @@
 - Modeler13个传统TU共享清单/canonical Modeler头；Abseil头与静态库来自同一vcpkg installed包，旧merge/.0头只作独立对照/整套回退。
 
 ### 3. Contracts
-- active vcpkg Abseil include优先保留vendor .0；实际patch版本、std string_view/ordering、lts_20250512、MT/NDEBUG/iterator0与库一致，不混用版本。
+- active vcpkg Abseil include优先于保留的vendor .0头；实际patch版本、std string_view/ordering、lts_20250512、MT/NDEBUG/iterator0与库一致，不混用版本。
 - 不手工合并/复制Abseil库或拆旧merge；记录包source/port/toolchain/flags/hash/machine/CRT/namespace，无Modeler定义。
 - 业务Debug保持原调试/优化合同；仅共享清单标记的Modeler TU（13个上游源及阶段2独立扩展）保持旧MinSizeRel /O1 /Ob1、/MT、NDEBUG、C++20、/fp:precise、EH/RTTI，PCH/模块扫描关闭。运行期obj更新用逐项marker限制，不能改变业务cpp/cppm obj。
 - Abseil使用vcpkg标准Release优化，须对照验收；其他依赖/SDK/toolset不升级。
@@ -57,6 +57,40 @@ Correct：同包Abseil头/库、MT/NDEBUG/iterator0/std别名、13TU独立优化
 - `WindowService` 是 `WindowRole::Drawpad` 与 `WindowRole::DrawpadPresentation` HWND 的唯一创建、显示、隐藏和销毁者。Draw3 只把主 Drawpad 交给 `AttachExternal(HWND, callbacks)`；辅助窗不得绑定 RTS、WndProc mailbox、document 或第二套 Host。
 - Draw3 不创建/销毁顶层窗口，不修改标题、owner 或 Z 序；样式和 `Primary/Presentation/Hidden` 可见性变化必须通过 Window Service 的 owner-thread 命令完成。
 - owner 层级保持 `MagnifierHost -> Freeze -> DrawpadPresentation -> Drawpad -> PPT/Bar`，使 PPT/Bar 通过传递 Owner 关系始终高于两套画布表面。Drawpad 仍是顶层 owned popup，不是 `WS_CHILD`。Draw3 presenter 不得调用 `SetWindowPos`、`SetParent` 或直接改 owner；`SetBounds(Drawpad)` 必须同步两窗。
+
+## Scenario: 产品 RTS 注册前置顶准备
+
+### 1. Scope / Trigger
+
+产品首次启动或 DComp 失败后重建 ULW HWND 链时适用。历史 Inkeys2 在 0c0aaf0e99a4 / 649de99daecc 保留根置顶先于 RTS 创建的经验合同；不将该经验写成微软 API 强制要求。
+
+### 2. Signatures
+
+`IdtMain.cpp` 私有 `bool PrepareDraw3WindowTopmost(Window::Service&, HWND drawpad, const char* phase)`；复用公开 `RequestTopmostRefresh()`、`Handle()`、`OverlayRoot()`，不改变 Host/Window 公共接口。
+
+### 3. Contracts
+
+- 每次 `StartDraw3ProductWithFallback` 的 `StartProduct` 前准备，phase 为 initial 或 rebuilt-ulw；后者只在旧 Host/窗口清理并完成新链创建后执行。
+- 桌面策略必须允许 topmost 且非 Whiteboard；只通过 Window Service 同步刷新根，Mag 缺失时 Freeze 为根，不显示/激活或单独置顶画布/主栏。
+- 检查 root、Freeze、DrawpadPresentation、Drawpad 的有效句柄、直接 GW_OWNER、实际 WS_EX_TOPMOST 和刷新前后身份；策略 true 和 API 成功都不能代替 HWND 事实。
+- 初次准备失败立即返回，不能误进 DComp 回退；新链准备失败也不启动 Host/RTS。启动根刷新最多等待 5 秒；超时队列命令不再执行，准备失败在日志和 join 前建立既有退出监督。准备成功后才创建该次 Host cleanup scope，保留原失败监督。
+- 首帧后的 Preview observer/InitialTopmostRefresh 及周期刷新、白板 NOTOPMOST 保留。日志每次准备一次，含阶段、角色、原因和 HWND/owner/exstyle/read error；服务调用错误由 owner thread 捕获，不从调用线程读取陈旧 GetLastError。
+
+### 4. Validation & Error Matrix
+
+root/策略/句柄/owner/实际 topmost 不符、刷新失败、读取样式失败或身份变化 → 返回 false，不调用该次 StartProduct。Mag 未创建但 Freeze 为有效无 owner 根 → 允许。成功 → 返回 true，随后才初始化 RTS。
+
+### 5. Good / Base / Bad Cases
+
+Good：初代及重建代都完成准备再初始化 RTS；Base：Mag 缺失仍以 Freeze 抬升整链；Bad：只在首帧后刷新，或 prepare && StartProduct 失败统一进入 DComp 回退。
+
+### 6. Tests Required
+
+静态核对两处 gate、回退/清理边界和无激活合同，完整 Solution Debug|ARM64 与 `InkeysHeadlessTests --no-window`。后者不验证真实 HWND/RTS/Z 序；真实窗口/笔输入和白板行为须另按授权验证，不能将编译或属性检查认作视觉证明。
+
+### 7. Wrong vs Correct
+
+Wrong：只等 RtsReady/首帧后刷新；Correct：每代窗口准备失败直接返回，成功后调用 StartProduct，保留后置恢复。实际 Windows/RTS 系统内部因果仍需故障现场证据。
 
 ## 设备与线程
 
@@ -189,8 +223,8 @@ ClearCurrentInterval(); // completion durable 后 recovery.canvas.reset()
 - `clearPageGuid + clearIntervalOrdinal` 必须同时出现并匹配请求中的页；Boundary 请求严格 FIFO、不可 latest-wins。普通 Tail 只可替换同 key 最近 Boundary 之后的普通 Tail。completion 也携带两字段，controller 仅在当前 ordinal 等于 `sealed+1` 时释放对应 fallback，防止第一次 Clear 的迟到 completion 释放第二次 Clear 内容。
 - 保存触发在 Clear boundary、同 PPT 换页、A/B/workspace 离开和正常退出屏障。快照包含全部页（包括空页）；同一 key 的普通 Tail 使用 latest-wins，Boundary 始终逐项 durable。最终 scene-stamped 屏障位于前序 Clear/Undo/Redo 之后并扫描 active 与全部 parked slot；worker 无超时排空所有已接受请求。显式失败保留旧文件和页级 fallback，并在 completion 被绘制线程处理后恢复 dirty。
 - 同一 PPT 的每条 storage track 保持逻辑 `fileGuid/workspaceGuid`；每次保存先 durable commit 到新的 versioned UInk 路径，再在同轨命名 mutex 内原子发布 schema v2 index，旧主索引转 backup，旧 UInk 不就地覆盖。index 提交失败保留最后已提交索引/文件及同进程同 root、track、generation 的 self-written pending；后续 Save/Load 只在严格身份与 revision 匹配后收敛，不得永久卡在 `SourceChanged`。不自动回收仍可能被备份索引引用的历史版本。
-- clean inactive slot 只在有已提交文件、三 revision 相等且非 load-pending 时可淘汰。重入已淘汰 slot 必须走 `index -> ReadUInk -> strict import -> drawing-thread materialize`；dirty/pending/failed slot 保持 warm，不得被旧磁盘快照覆盖。加载期间清空 surface、不发布 identity-ready，并丢弃 physical contact/破坏性命令，直到 Loaded/NotFound/失败 completion 收敛。
-- 当前区间 Undo 到 floor 且 `previousClearUndoAvailable` 时，若 boundary fallback 尚在则直接恢复；否则提交一次 `PreviousInterval(pageGuid, intervalOrdinal-1)`。worker 只返回目标区间的可见 tail，controller 只替换匹配 Page/Slide 的 runtime，以 `undoFloor=0、intervalOrdinal=0` 物化并消费跨 Clear 资格；恢复出的 Stroke 可逐笔 Undo/Redo，到空后不得继续进入更早区间。其他 active/retained Canvas 不动。成功后的普通 Tail 保存把恢复画布写成 canonical 新根并截断前后 Clear 分支；跨 Clear Redo 不在本期。
+- clean inactive slot 只在有已提交文件、三 revision 相等、非 load-pending 且没有Clear continuation/Stroke redo时可淘汰。重入已淘汰 slot 必须走 `index -> ReadUInk -> strict import -> drawing-thread materialize`；dirty/pending/failed slot 保持 warm，不得被旧磁盘快照覆盖。加载期间清空 surface、不发布 identity-ready，并丢弃 physical contact/破坏性命令，直到 Loaded/NotFound/失败 completion 收敛。
+- 当前区间 Undo 到 floor 且 `previousClearUndoAvailable` 时，若 boundary fallback 尚在则直接恢复；否则提交一次 `PreviousInterval(pageGuid, intervalOrdinal-1)`。worker 只返回目标区间的可见 tail，controller 只替换匹配 Page/Slide 的 runtime，以 `undoFloor=0、intervalOrdinal=0` 物化并消费跨 Clear 资格；恢复出的 Stroke 可逐笔 Undo/Redo，到空后不得继续进入更早区间。其他 active/retained Canvas 不动。成功后的普通 Tail 保存把恢复画布写成 canonical 新根并截断前后 Clear 分支；跨最近Clear的会话Redo以同页有限CPU continuation保留后继隐藏Stroke及redo栈，旧区间Stroke→Clear→后继Stroke逐步回到最新；新Stroke取消分支，不改变UInk格式。
 - `PageIndexFallback -> StableSlideId` 不能凭路径、页数或完整 SlideID 列表证明旧 ordinal 墨迹的一一对应关系；`CanUpgradePresentationBindingByOrdinal` 必须拒绝。当前会话旧 fallback lane 保留其内容与旧文件，新 Stable lane 建立独立空文稿并保存到独立 track。各 lane 内的稳定 source 可按现有 binding/SlideID 身份恢复；process-local 身份仍要求 exact binding token/revision。
 - 每条 track 的 `index.json(.bak)` 是严格 schema（写 v2、读 v1/v2）：source/key/fileGuid/path 均唯一，entry 恰含 source identity、key、sessionId、file/workspace GUID、relative path、binding mode、processLocal、binding revision、mutation revision、slideIds 和 UInk source revision。稳定模式的 `slideIds` 是已知 active/retained SlideID 并集，保存时只增不删；仅 `sessionId == ProcessSessionId()` 的 entry 可自动恢复。稳定路径 page-index 可在同 session/key/source、相同页数下跨放映 binding 按 ordinal 读写，process-local 必须 exact binding。foreign 或不一致内容返回结构化终态，不弹窗、不删未知文件、不静默覆盖。
 - index commit 失败后的 self-written pending entry 只跨同一规范化 autosave root 的 Host generation 保留；切换 root 清除。I/O 使用保留大小写的绝对路径，folded root key 仅用于等价比较和 named mutex。
@@ -358,15 +392,15 @@ PumpBridgeState();
 - Good：有一笔的选择态由辅助 ULW 穿透显示，Clear 后等当前 revision 的完整 clean 帧再隐藏；Undo 恢复该笔并重新显示辅助窗，Redo 再次隐藏，另一页的 Eraser history 仍存在。
 - Base：初始选择空页两窗隐藏；进入 Pen 先预热主 presenter 再显示，未落笔返回选择再次经辅助 clean 后隐藏。
 - Bad：用窗口穿透样式推断选择模式、让主 Drawpad 承担穿透、复制固定 L2、视觉像素是否为空推断内容，或 Clear 时删除 Stroke/替换 runtime。
-- PPT 真退出的 Desktop Selection 可以先于其辅助 ULW 完整帧就绪；等待时 Window Service owner thread 必须隐藏旧双画布，保持可恢复重试，且在最新 bridge revision、输出目标/content revision 成功 Present 后再显示辅助 ULW（有内容）或双隐藏（空内容）。成对 HWND 事务要读回双窗可见性；AdmissionBlocked、MA_NOACTIVATE 和非 layered 主窗上的 `WS_EX_TRANSPARENT` 不能代替系统命中穿透。白板和更新的 Pen/Presentation 期望优先。
+- PPT 真退出及 Desktop/Presentation、Selection/绘制交接必须保持旧可见画面直至最新工作区、模式、输出目标/revision、content Present 与场景身份均匹配；等待或过期帧不主动双隐藏。就绪后通过 owner-thread 成对显隐事务切换目标，有内容选择页使用辅助 ULW，空 clean 页可隐藏画布但主栏保留。旧非 layered 主表面保留期间不承诺系统穿透；AdmissionBlocked 不能代替该穿透。可信退出的条件 Selection 成功后必须再刷新 Bar 样式和渲染，不能沿用提交前的高亮；Desktop交接就绪时刷新根并在失败时重试。
 - PPT EndScreen 仅由可信 State=5 与同次完整文稿拓扑产生明确 `PageKind::EndScreen` 目标：内部索引为真实 `N`，COM/UI 总页数仍 `N`，无 SlideID。正常页与 EndScreen 共用单 Host 页边界、contact 隔离、成功 Present、UI ready 和保存 worker。UInk 文件在 N 个真实 active 页后保存一个带单个 `inkeysPageKind=end-screen` 的独立 pageGuid；codec 两侧和应用严格导入须配套验证，旧 N-canvas 文件冷读补空页。重排/增删幻灯片不能把该页放入 retained SlideID 集合。
 
 ### 6. Tests Required
 
 - Headless 覆盖 `Primary/Presentation/Hidden` 解析、Clear 点击/双击决策，以及 timer begin/end 幂等、失败、模式往返和析构清理。
 - CPU history 覆盖普通 `A/B/C` 的 Undo/Redo、`undoFloor` 截止、Clear 恢复画布逐笔撤空且不跨第二个边界、新 Stroke 分支丢弃 redo 和每页隔离；UInk/storage 覆盖 `A/Clear/B/Clear/C`、空 Clear no-op 与最近区间恢复。
-- 隐藏 HWND 集成覆盖双窗固定样式/owner/bounds、互斥可见、输出 generation 往返、clean 握手、Stored Stroke 内容发布、页面切换、Clear 后 Undo 恢复、普通 Stroke Redo 和 presenter recovery；跨 Clear Redo 不在本期。
-- Selection PPT 页级回归须通过真实 Controller observer 和 Host 覆盖两个不同有墨迹页的 `true/r→true/r+1`、两个空页的 `false/r→false/r+1`、相同完整载荷幂等、EndScreen 与普通页往返；每次比较 Host 目标/成功 Present 内容版本及辅助 ULW 的完成输出，不能只等待 `presentationReady` 身份或内容 bool。Pen 模式与真退出双隐藏合同同时复测。
+- 隐藏 HWND 集成覆盖双窗固定样式/owner/bounds、互斥可见、输出 generation 往返、clean 握手、Stored Stroke 内容发布、页面切换、Clear 后 Undo 恢复、普通 Stroke Redo 和 presenter recovery；跨最近Clear的会话Redo以同页有限CPU continuation保留后继隐藏Stroke及redo栈，旧区间Stroke→Clear→后继Stroke逐步回到最新；新Stroke取消分支，不改变UInk格式。
+- Selection PPT 页级回归须通过真实 Controller observer 和 Host 覆盖两个不同有墨迹页的 `true/r→true/r+1`、两个空页的 `false/r→false/r+1`、相同完整载荷幂等、EndScreen 与普通页往返；每次比较 Host 目标/成功 Present 内容版本及辅助 ULW 的完成输出，不能只等待 `presentationReady` 身份或内容 bool。Pen 模式与真退出保留旧帧、就绪交接和主栏模式同步合同同时复测。
 - 完整 `InkeysRepo.sln Debug|ARM64` 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`；不得启动可见窗口。
 
 ### 7. Wrong vs Correct

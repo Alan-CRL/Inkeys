@@ -261,6 +261,8 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		bool canUndo = false;
+		bool canRedo = false;
 		std::uint64_t contentRevision = 0;
 		Bridge::CompletedStrokeKind completedStrokeKind =
 			Bridge::CompletedStrokeKind::None;
@@ -306,6 +308,8 @@ namespace Inkeys::Drawing::Draw3
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
 		// Caller 仅在成功 Start 后且不并行下一 Start 时读取；未启用 hidden 则 nullopt。
 		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
+		// 保存期望值并唤醒绘制线程，启动前设置也保留到下一次 Start。
+		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;

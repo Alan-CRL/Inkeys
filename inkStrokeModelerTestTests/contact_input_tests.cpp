@@ -2352,8 +2352,10 @@ namespace
 		const auto configuration = draw3::CreateStrokeModelConfiguration(96);
 		draw3::ActiveStroke resumed(5, configuration.expectedSpeed, draw3::StrokeWidthMode::Fixed);
 		draw3::ActiveStroke uninterrupted(5, configuration.expectedSpeed, draw3::StrokeWidthMode::Fixed);
-		TEST_CHECK(state, resumed.modeler.Reset(configuration.modelParams).ok());
-		TEST_CHECK(state, uninterrupted.modeler.Reset(configuration.modelParams).ok());
+		const auto resumedReset = resumed.modeler.Reset(configuration.modelParams);
+		const auto uninterruptedReset = uninterrupted.modeler.Reset(configuration.modelParams);
+		TEST_CHECK(state, resumedReset.ok() && uninterruptedReset.ok());
+		if (!resumedReset.ok() || !uninterruptedReset.ok()) return;
 		resumed.useDisplayTime = uninterrupted.useDisplayTime = true;
 		for (int i = 0; i <= 24; ++i)
 		{
@@ -2366,12 +2368,26 @@ namespace
 				.position = position, .time = Time(time) };
 			for (auto* active : { &resumed, &uninterrupted })
 			{
+				const bool reconnecting = active == &resumed && active->terminalDisplayTime.has_value();
+				const size_t firstPoint = active->realPoints.empty() ? 0 : active->realPoints.size() - 1;
+				const auto status = active->modeler.Update(input, active->modeledResults);
+				TEST_CHECK(state, status.ok());
+				if (!status.ok()) return;
 				draw3::RecordPenTailRawInput(*active, {position.x, position.y}, time);
-				TEST_CHECK(state, active->modeler.Update(input, active->modeledResults).ok());
+				TEST_CHECK(state, active->tailRawCount != 0 && active->tailModelBoundaryCount != 0);
+				if (!active->tailRawCount || !active->tailModelBoundaryCount) return;
+				TEST_CHECK(state, active->tailRawSamples[active->tailRawCount - 1].firstPoint == firstPoint);
+				TEST_CHECK(state, active->tailModelBoundaries[active->tailModelBoundaryCount - 1].firstPoint == firstPoint);
 				draw3::AppendNewModeledPoints(*active, 500);
+				if (reconnecting)
+				{
+					// 新 Down 按 Move 成功续接后才清终态；旧样本和模型继续用于最终尾段拟合。
+					draw3::ClearPenTerminalState(*active);
+					TEST_CHECK(state, !active->terminalDisplayTime && active->terminalFirstPoint == 0);
+				}
 				active->logicalInputTime = active->lastMovementInputTime = time;
 			}
-			if (i == 12)
+			if (i == 6 || i == 12 || i == 18)
 			{
 				// 物理 Up 暂作 Move；等待中只构造实时尾部，确认接续后清终态继续同一模型。
 				const auto beforeWait = resumed.realPoints;
@@ -2387,14 +2403,24 @@ namespace
 					resumed.logicalInputTime = time + delay;
 					draw3::BuildCompletedPenTail(resumed, .055, preview);
 					TEST_CHECK(state, resumed.realPoints.size() == beforeWait.size());
+					if (resumed.realPoints.size() != beforeWait.size()) return;
 					for (size_t j = 0; j < beforeWait.size(); ++j)
 						TEST_CHECK(state, resumed.realPoints[j].x == beforeWait[j].x &&
 							resumed.realPoints[j].y == beforeWait[j].y &&
 							resumed.realPoints[j].r == beforeWait[j].r &&
 							resumed.realPoints[j].time == beforeWait[j].time);
 				}
-				draw3::ClearPenTerminalState(resumed);
-				TEST_CHECK(state, !resumed.terminalDisplayTime && resumed.terminalFirstPoint == 0);
+				// 模型拒绝时间倒退的续接；未来物理时间不能提前淘汰旧 raw/模型边界。
+				const size_t outputCount = resumed.modeledResults.size();
+				const Input rejected{ .event_type = Input::EventType::kMove,
+					.position = {position.x + 100, position.y}, .time = Time(time - .001) };
+				const auto rejectedStatus = resumed.modeler.Update(rejected, resumed.modeledResults);
+				TEST_CHECK(state, !rejectedStatus.ok());
+				if (rejectedStatus.ok())
+					draw3::RecordPenTailRawInput(resumed,
+						{rejected.position.x, rejected.position.y}, time + 1.0);
+				TEST_CHECK(state, resumed.modeledResults.size() == outputCount);
+				TEST_CHECK(state, resumed.terminalDisplayTime == time);
 				TEST_CHECK(state, resumed.tailRawCount == rawCount &&
 					resumed.tailModelBoundaryCount == boundaryCount);
 				for (size_t j = 0; j < rawCount; ++j)
@@ -2409,6 +2435,8 @@ namespace
 		}
 		std::vector<draw3::InkPoint> resumedScratch, uninterruptedScratch;
 		const draw3::StoredInkStyle style{ draw3::StoredInkType::Pen, 0x884422u, .75f, 0 };
+		TEST_CHECK(state, !resumed.realPoints.empty() && !uninterrupted.realPoints.empty());
+		if (resumed.realPoints.empty() || uninterrupted.realPoints.empty()) return;
 		for (auto* active : { &resumed, &uninterrupted })
 			draw3::LockPenTerminalState(*active, .120, {active->realPoints.back().x,
 				active->realPoints.back().y}, {200.f, 300.f});
@@ -2444,6 +2472,100 @@ namespace
 		if (fresh)
 			for (const auto& point : fresh->Points())
 				TEST_CHECK(state, point.x >= 2000.f && point.y == 2000.f && point.width == 5.f);
+	}
+
+	void TestDeferredTailCompletion(TestState& state)
+	{
+		using ink::stroke_model::Input;
+		using ink::stroke_model::Time;
+		const auto configuration = draw3::CreateStrokeModelConfiguration(96);
+		const draw3::StoredInkStyle style{ draw3::StoredInkType::Pen, 0x884422u, .75f, 0 };
+		std::optional<draw3::InkStroke> previous;
+		for (bool expired : { false, true })
+		{
+			draw3::ActiveStroke stroke(5, configuration.expectedSpeed, draw3::StrokeWidthMode::Fixed);
+			const auto resetStatus = stroke.modeler.Reset(configuration.modelParams);
+			TEST_CHECK(state, resetStatus.ok());
+			if (!resetStatus.ok()) return;
+			stroke.useDisplayTime = true;
+			constexpr double upTime = .120;
+			const DirectX::XMFLOAT2 endpoint{ 200, 300 };
+			for (int i = 0; i <= 24; ++i)
+			{
+				const double time = i * .005;
+				const float angle = i * 3.14159265358979323846f / 24;
+				const DirectX::XMFLOAT2 position = i == 24 ? endpoint : DirectX::XMFLOAT2{
+					300.f + 100.f * std::cos(angle), 300.f + 100.f * std::sin(angle) };
+				stroke.logicalInputTime = stroke.lastMovementInputTime = time;
+				if (i == 24)
+				{
+					TEST_CHECK(state, !stroke.realPoints.empty());
+					if (stroke.realPoints.empty()) return;
+					draw3::LockPenTerminalState(stroke, upTime,
+						{stroke.realPoints.back().x, stroke.realPoints.back().y}, endpoint);
+				}
+				stroke.modelScratch.clear();
+				auto& modelOutput = i == 24 ? stroke.modelScratch : stroke.modeledResults;
+				const auto status = stroke.modeler.Update({ .event_type = i == 0
+					? Input::EventType::kDown : Input::EventType::kMove,
+					.position = {position.x, position.y}, .time = Time(time) }, modelOutput);
+				TEST_CHECK(state, status.ok());
+				if (!status.ok()) return;
+				draw3::RecordPenTailRawInput(stroke, position, time);
+				if (i == 24)
+				{
+					draw3::BeginEndpointAdmission(stroke, endpoint);
+					draw3::AppendEndpointBoundedModeledPoints(stroke, stroke.modelScratch, 500, time, true);
+				}
+				else draw3::AppendNewModeledPoints(stroke, 500);
+			}
+			TEST_CHECK(state, stroke.realPoints.size() > 3);
+			if (stroke.realPoints.size() <= 3) return;
+			stroke.committedIndex = stroke.realPoints.size() - 3;
+			stroke.hasCommittedGeometry = true;
+			const size_t committedIndex = stroke.committedIndex;
+			const auto beforeWait = stroke.realPoints;
+			// 开关关闭和候选到期都提交原物理 Up；等待墙钟不能进入尾窗或笔锋年龄。
+			const double delay = expired ? .200 : .030;
+			stroke.logicalInputTime = upTime + delay;
+			TEST_CHECK(state, draw3::IsInterruptedStrokeReconnectExpired(200000, 120000 +
+				static_cast<int64_t>(delay * 1000000)) == expired);
+			std::vector<draw3::InkPoint> scratch;
+			draw3::BuildCompletedPenTail(stroke, .055, scratch);
+			TEST_CHECK(state, stroke.realPoints.size() == beforeWait.size());
+			TEST_CHECK(state, draw3::ResolvePenDisplayTime(stroke) == upTime);
+			const double inputTime = draw3::ResolvePenModelInputTime(stroke, upTime, upTime,
+				1.0 / configuration.timingProfile.target_fps);
+			stroke.modelScratch.clear();
+			const auto upStatus = stroke.modeler.Update({ .event_type = Input::EventType::kUp,
+				.position = {endpoint.x, endpoint.y}, .time = Time(inputTime) }, stroke.modelScratch);
+			TEST_CHECK(state, upStatus.ok());
+			if (!upStatus.ok()) return;
+			draw3::RecordPenTailRawInput(stroke, endpoint, upTime);
+			draw3::BeginEndpointAdmission(stroke, endpoint);
+			draw3::AppendEndpointBoundedModeledPoints(stroke, stroke.modelScratch, -1, upTime, true);
+			const auto activeBeforeFinalize = stroke.realPoints;
+			const auto stored = draw3::FinalizeStoredStroke(stroke, style, .055, scratch);
+			TEST_CHECK(state, stored && !stored->Points().empty());
+			if (stored && !stored->Points().empty())
+			{
+				TEST_CHECK(state, stored->Points().back().x == endpoint.x && stored->Points().back().y == endpoint.y);
+				if (previous) TEST_CHECK(state, SameStoredStroke(*previous, *stored));
+				previous = stored;
+			}
+			TEST_CHECK(state, stroke.committedIndex == committedIndex);
+			TEST_CHECK(state, stroke.realPoints.size() == activeBeforeFinalize.size());
+			if (stroke.realPoints.size() != activeBeforeFinalize.size()) return;
+			for (size_t i = 0; i < activeBeforeFinalize.size(); ++i)
+				TEST_CHECK(state, stroke.realPoints[i].x == activeBeforeFinalize[i].x &&
+					stroke.realPoints[i].y == activeBeforeFinalize[i].y &&
+					stroke.realPoints[i].r == activeBeforeFinalize[i].r &&
+					stroke.realPoints[i].time == activeBeforeFinalize[i].time);
+			for (size_t i = 0; i < stroke.tailRawCount; ++i)
+				TEST_CHECK(state, stroke.tailRawSamples[i].physicalTime <= upTime);
+			for (size_t i = 0; i < stroke.tailModelBoundaryCount; ++i)
+				TEST_CHECK(state, stroke.tailModelBoundaries[i].physicalTime <= upTime);
+		}
 	}
 
 	void TestPhysicalUpTipTime(TestState& state)
@@ -3297,6 +3419,7 @@ int wmain(int argc, wchar_t* argv[])
 		TestState state; TestLocalTailFinalization(state);
 		TestFinalizedTailHistoryAndPersistence(state);
 		TestDeferredTailReconnectAndReset(state);
+		TestDeferredTailCompletion(state);
 		std::cout << "Local tail integration failures: " << state.failures << std::endl;
 		return state.failures;
 	}
