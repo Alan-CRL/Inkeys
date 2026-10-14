@@ -1018,9 +1018,9 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	apply(moreButton.get()); apply(mainRedoButton.get()); apply(mainPierceButton.get());
 	barUISet.barState.recallAttribute = recall.popupOpen;
 	// 内容仍从当前动画值过渡；同目标不会重启文字或图标动画。
+	// 长标签换行由语言资源指定，翻译调整不再依赖英文原文匹配。
 	auto label = whiteboard ? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
 		: IW(separate && !selection ? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
-	if (label == L"Select (Clear)") label = L"Select\n(Clear)";
 	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label);
 	UpdateDrawButtonStyle(stateMode);
 	UpdateWhiteboardButtonStyle(whiteboard);
@@ -1061,7 +1061,6 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active)
 	if (auto* pierce = preset[(int)BarButtonPresetEnum::Pierce])
 	{
 		auto label = IW(I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
-		if (label == L"Click-through") label = L"Click-\nthrough";
 		pierce->TransitionContent(L"barPierce", label);
 	}
 	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",

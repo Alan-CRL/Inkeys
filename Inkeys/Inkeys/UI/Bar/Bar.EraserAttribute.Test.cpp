@@ -912,8 +912,9 @@ namespace Inkeys::UI::Bar
 				auto* b=owner.barButtonSet.preset[(int)preset];
 				auto label=IW(preset==BarButtonPresetEnum::Select ? I18nKey.UI.Bar.MainButtons.SelectClearLabel
 					: I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
-				if(label==L"Select (Clear)")label=L"Select\n(Clear)";
-				if(label==L"Click-through")label=L"Click-\nthrough";
+				// 直接测量真实语言资源，不在测试里重复生产代码的英文改写。
+				expect(std::count(label.begin(),label.end(),L'\n')==(I18n::isIdentifying(L"en-US")?1:0),
+					"localized Select Clear and Click-through resources keep English two-line and Chinese single-line labels");
 				b->name.SetStringImmediate(label);b->TransitionContent(L"",label);
 				for(const auto kind:{BarButtonVisualLayoutKind::StandardTwoTwo,BarButtonVisualLayoutKind::StandardTwoOne})
 				{

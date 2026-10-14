@@ -65,8 +65,8 @@
       "MainButtons":
       {
         "SelectLabel": "Select",
-        "SelectClearLabel": "Select (Clear)",
-        "ClickThroughLabel": "Click-through",
+        "SelectClearLabel": "Select\n(Clear)",
+        "ClickThroughLabel": "Click-\nthrough",
         "MoveLabel": "Move",
         "DrawLabel": "Draw",
         "LaserLabel": "Laser",

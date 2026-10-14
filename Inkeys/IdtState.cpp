@@ -1074,16 +1074,18 @@ namespace
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
 	}
 
-	bool SetSelectAndClickThroughModeImpl(int mode, bool hasContent)
+	template<class ReadContent>
+	bool SetSelectAndClickThroughModeImpl(int mode, ReadContent readContent)
 	{
 		mode = mode == 1 ? 1 : 0;
 		{
 			std::scoped_lock lock(stateModeTransitionMutex);
 			if (GetSelectAndClickThroughMode() == mode) return false;
 			Inkeys::config.UI.Bar.SelectAndClickThroughMode = mode;
+			// 内容由 Host 独立发布；等模式锁之后再采样，避免使用排队前的旧值。
 			// 设置变更只改工具身份，不发布 Clear，因此已有墨迹和历史不会丢失。
-			if (mode == 1 && !WhiteboardActive() && !WhiteboardRequested() && hasContent &&
-				stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+			if (mode == 1 && !WhiteboardActive() && !WhiteboardRequested() &&
+				stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection && readContent())
 				stateMode.StateModeSelect = StateModeSelectEnum::IdtClickThrough;
 			else if (mode == 0 && stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough)
 				stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
@@ -1127,8 +1129,10 @@ int GetSelectAndClickThroughMode() noexcept
 
 bool SetSelectAndClickThroughMode(int mode)
 {
-	return SetSelectAndClickThroughModeImpl(mode,
-		Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent);
+	return SetSelectAndClickThroughModeImpl(mode, []
+	{
+		return Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent;
+	});
 }
 
 bool ChangeStateModeToSelectionFromButton()
@@ -1555,7 +1559,7 @@ int RunStateModeProductionTest() noexcept
 			!ToggleClickThroughFromButton(), "combined-default-no-clickthrough");
 		ChangeStateModeToSelection();
 		const auto beforeSeparate = bridge.Snapshot();
-		require(SetSelectAndClickThroughModeImpl(1, true) &&
+		require(SetSelectAndClickThroughModeImpl(1, [] { return true; }) &&
 			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtClickThrough,
 			"separate-maps-retained-selection");
 		require(bridge.Snapshot().selectionMode && sameProjection(beforeSeparate, bridge.Snapshot()),
@@ -1566,9 +1570,63 @@ int RunStateModeProductionTest() noexcept
 		require(SetSelectAndClickThroughMode(0) &&
 			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
 			"combined-restores-selection");
-		require(SetSelectAndClickThroughModeImpl(1, false) &&
+		require(SetSelectAndClickThroughModeImpl(1, [] { return false; }) &&
 			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
 			"separate-empty-selection-remains-selection");
+		stage = "mode-switch-content-after-lock-wait";
+		const auto checkQueuedContent = [&](bool before, bool after)
+		{
+			SetSelectAndClickThroughMode(0);
+			ChangeStateModeToSelection();
+			const auto initial = GetStateModeVersionedSnapshot();
+			const auto initialBridge = bridge.Snapshot();
+			std::atomic_bool content = before;
+			std::mutex queueMutex;
+			std::condition_variable queueReady;
+			bool queued = false;
+			bool accepted = false;
+			bool sampledContent = before;
+			int sampledMode = -1;
+			int readCount = 0;
+			std::unique_lock modeLock(stateModeTransitionMutex);
+			std::thread pending([&]
+			{
+				{
+					std::scoped_lock queueLock(queueMutex);
+					queued = true;
+				}
+				queueReady.notify_one();
+				accepted = SetSelectAndClickThroughModeImpl(1, [&]
+				{
+					++readCount;
+					sampledMode = GetSelectAndClickThroughMode();
+					sampledContent = content.load(std::memory_order_acquire);
+					return sampledContent;
+				});
+			});
+			{
+				std::unique_lock queueLock(queueMutex);
+				queueReady.wait(queueLock, [&] { return queued; });
+			}
+			// 模拟 Host 不持模式锁的内容发布；设置请求只能在解锁后读取新值。
+			content.store(after, std::memory_order_release);
+			modeLock.unlock();
+			pending.join();
+			require(accepted && readCount == 1 && sampledContent == after && sampledMode == 1,
+				"queued-mode-switch-samples-current-content-in-transaction");
+			require(StateModeTransitionRevision() == initial.revision + 1 &&
+				GetStateModeSnapshot().StateModeSelect == (after ?
+					StateModeSelectEnum::IdtClickThrough : StateModeSelectEnum::IdtSelection) &&
+				sameProjection(initialBridge, bridge.Snapshot()), "queued-mode-switch-maps-latest-content");
+			require(!SetSelectAndClickThroughModeImpl(1, [&] { ++readCount; return before; }) &&
+				readCount == 1, "unchanged-mode-does-not-sample-content");
+		};
+		checkQueuedContent(true, false);
+		checkQueuedContent(false, true);
+		// 真实公开入口仍读取未启动 Host 的空页；不为测试启动画布或写配置。
+		require(SetSelectAndClickThroughMode(0) && SetSelectAndClickThroughMode(1) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
+			"public-mode-switch-samples-empty-host");
 		const StateModeSelectEnum rememberedTools[]{StateModeSelectEnum::IdtPen,
 			StateModeSelectEnum::IdtShape, StateModeSelectEnum::IdtEraser};
 		for (const auto tool : rememberedTools)

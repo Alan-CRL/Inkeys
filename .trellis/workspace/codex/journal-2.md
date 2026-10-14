@@ -70,6 +70,27 @@
 
 - main.json新增UI.Bar.StartupPlacement，预设combo仅下次启动生效，Mini同一选择传Preview及Bar。
 - 共用工作区/DPI/zoom/描边几何，角落80 DIP超椭圆与终态初始化，缓存始终发布展开宽度；三位置32/3 DIP确定式环形、保留反光与顺序交接。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64与InkeysHeadlessTests --no-window均exit0；i18n340/340、12组页面/侧栏回放、生产状态提取回放、40份真实D2D/WARP像素和独立Trellis gate PASS。
+- [OK] 编码/BOM/CRLF及git diff --check通过；未GUI验证真实HWND首帧/嵌入字体/现场混合DPI，边界已记录。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务保持in_progress，等待用户下一轮启动预设反馈或修改；本批不commit/push/归档。
+
+2026-10-14：用户授权提交上述启动位置预设改动；保留任务 in_progress，不执行归档或 push。
+
+
 ## Session 75: 阶段三现场8笔日志分析与修复规划
 <!-- trellis-session: v=2 fp=96501f25e5683a7b -->
 
@@ -87,8 +108,6 @@
 
 ### Testing
 
-- [OK] 完整InkeysRepo.sln Debug|ARM64与InkeysHeadlessTests --no-window均exit0；i18n340/340、12组页面/侧栏回放、生产状态提取回放、40份真实D2D/WARP像素和独立Trellis gate PASS。
-- [OK] 编码/BOM/CRLF及git diff --check通过；未GUI验证真实HWND首帧/嵌入字体/现场混合DPI，边界已记录。
 - [OK] 完整8条日志解析与源码分支核对，独立研究审查规划；仅文档/离线统计，本轮不构建、不改产品算法。
 
 ### Status
@@ -97,9 +116,7 @@
 
 ### Next Steps
 
-- 任务保持in_progress，等待用户下一轮启动预设反馈或修改；本批不commit/push/归档。
-
-2026-10-14：用户授权提交上述启动位置预设改动；保留任务 in_progress，不执行归档或 push。
+- 按现场回归→曲线/采样与预算→窗口→完整链验收执行；阶段三人工未通过。
 
 
 ## Session 83: 交互模式与启动预设人工验收结案
@@ -130,7 +147,14 @@
 
 - [OK] 完整Debug|ARM64 solution、Headless --no-window、独立审查及75份当前离屏像素通过；最终人工验收由用户于2026-10-14确认。
 - [OK] 圆角像素断言误采样经真实BMP对照修正；编码/CRLF与git diff检查通过，原始日志保留ignored Build目录。
-- 按现场回归→曲线/采样与预算→窗口→完整链验收执行；阶段三人工未通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 当前任务已完成归档，当前会话任务指针清除；其他任务不变，不推送。
 
 
 ## Session 76: Draw3可见末钩自适应窗口与原始输入内侧辅助
@@ -163,7 +187,7 @@
 
 ### Next Steps
 
-- 当前任务已完成归档，当前会话任务指针清除；其他任务不变，不推送。
+- 人工检查第6/8笔内缩过渡及第3/4筆较长修正范围；阶段三不归档
 
 
 ## Session 97: 选择与穿透操作模式完成
@@ -220,7 +244,10 @@
 
 - [OK] 最终Debug|ARM64完整solution退出0；Bar离屏480组组件矩阵失败0；Headless --no-window与state-mode-production退出0。
 - [OK] 第三光源24坐标组/4组D2D像素差异0，diff/UTF-8/BOM/CRLF与Trellis检查通过；人工验证由用户确认。
-- 人工检查第6/8笔内缩过渡及第3/4筆较长修正范围；阶段三不归档
+
+### Status
+
+[OK] **Completed**
 
 
 ## Session 77: 修复近直线抬笔回退误触发

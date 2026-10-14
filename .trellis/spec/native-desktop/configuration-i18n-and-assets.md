@@ -435,12 +435,14 @@ H(true, true, "ch", std::string, UpdateChannel,
 - schema缺失或非法值回Combined；读取严格验证JSON整数0/1，不允许大整数窄化误变Separate。
 - 设置每帧取实时模式；先改变配置/工具，沿既有SyncDraw3State的render defer guard同步，再通过Setting FIFO冻结配置payload。重复选择不写盘；不得持ImGui锁同步等待HWND。
 - 设置切Combined→Separate时，当前有墨迹Selection映射ClickThrough；反向ClickThrough映射Selection，始终保留内容；其他工具不变。
+- 决定Selection→ClickThrough映射所需的页面内容在取得stateModeTransitionMutex后按需读取，不能在等锁前预读并传入布尔值。模式锁不阻止Host独立发布新内容；采用提交决策时的最新快照，锁内不发布Draw3命令或调用窗口。
 - Separate Select按钮先通过现有Draw3 Clear事务清当前页，Accepted后进入Selection；拒绝保持工具。空页直接选择。普通系统/可信PPT退出Selection入口保持原语义，不附加清空。
 - ClickThrough独立高亮；用户在穿透时再次点击穿透按钮，退出并恢复lastAnnotationMode记忆的Pen/Shape/Eraser，保留墨迹，不恢复旧Freeze。显式进入穿透的程序入口继续幂等；进入时关闭Freeze。记忆最近Pen/Shape/Eraser顶层模式，具体子工具/笔型/属性留在既有字段。穿透时点Freeze恢复该模式并开启Freeze，墨迹不动，不恢复旧Freeze。
 - backend selectionMode、呈现/输入/设置owner按电脑操作判定处理两工具，但主栏按实际枚举分别高亮。已接受/迟到回调沿既有修订保护。
 - Pierce运行时固定留在Freeze前，shared_ptr稳定持有；不可用时仅hide，不从主栏运行时列表抽离/重插。隐藏按钮保持布局动画定位且不命中，避免显示时从右侧飞入。无需持久化布局注册，不改变A2用户顺序和旧Pierce迁移行为。
 - 常规页标题下/自启区前显示说明卡片和combo，说明在上；复用PPT信息卡片样式，按实际字体/换行测量高度。三段使用单换行以收紧行距，中文工具名使用「选择」/「選擇」/「穿透」；分离式说明仅称选择/Select，不加清空括注。短按钮选择(清空)/Select (Clear)文案独立保持。
 - Separate非Selection文案为“选择(清空)”/“選擇(清空)”/两行Select与(Clear)；Selection显示普通选择。英文穿透可两行Click-与through，仅该标签局部适配字号，不改全局网格。目标为两行时在透明中点换字前先缩到9 DIP；换回短标签时保持小字号到文字替换，再恢复标准字号。
+- SelectClearLabel与ClickThroughLabel的排版换行由各语言资源提供，主栏不比较英文译文字面量。i18n检查仅对这两个最多两行的短标签允许各语言0或1个换行，超出仍拒绝；其余文案继续严格校验与基准相同的换行数。
 
 ### 4. Validation & Error Matrix
 |条件|行为|
