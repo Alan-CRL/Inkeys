@@ -1847,6 +1847,21 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Summary
 
 删除 TopWindow 四次分页窗 Show，保持 CRLF/UTF-8；静态审查通过。Debug ARM64 Solution 构建 10 分钟超时，PptCOM 成功，原生结果未完成；无 GUI、无提交，保留原任务 in_progress。
+## Session 64: 延续 Redo 弹窗：修复5秒布局保护与灰色动画
+<!-- trellis-session: v=2 fp=50b5fb3aa499acd9 -->
+
+**Date**: 2026-10-12
+**Task**: 延续 Redo 弹窗：修复5秒布局保护与灰色动画
+**Branch**: `feature/redo`
+
+### Summary
+
+修复异步末步反馈丢失、无hold布局即时切换、关闭绕过保护、弹窗锚点和颜色目标冲突；完整ARM64 Debug构建及headless通过，保留原任务等待实际交互验收。
+
+### Main Changes
+
+- UI3 Recall 独立锁存布局，真实可用性驱动颜色与门禁；连续及灰色点击延长已有5秒保护。
+- 属性面板以当前Undo/Redo主栏按钮为锚点，源级接线回归补足纯状态测试。
 
 ### Git Commits
 
@@ -1873,6 +1888,10 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 | Hash | Message |
 |------|---------|
 | `f5ccf0fb` | Fix page control startup visibility |
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 MSBuild退出0、0 error；新增及既有headless --no-window沙箱外退出0。
+- [OK] 普通sandbox PDB C1902及TEMP写入失败经同一探针/测试沙箱外对照排除；无源码/配置绕过。
 
 ### Status
 
@@ -1889,10 +1908,33 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 ### Summary
 
 IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 重建，失败不启动 RTS。独立审查、完整 Debug ARM64 Solution 构建和 --no-window 测试通过（退出码0）；真实故障场景待验收，无 GUI、无 commit/push。
+### Next Steps
+
+- 保留10-11-redo-popup任务，实际UI连点/5s/颜色视觉验收尚未执行；本轮未commit或push。
+
+
+## Session 65: Redo追加：3秒等待与属性身份显示提交
+<!-- trellis-session: v=2 fp=0bb9eb797f83ff95 -->
+
+**Date**: 2026-10-12
+**Task**: Redo追加：3秒等待与属性身份显示提交
+**Branch**: `feature/redo`
+
+### Summary
+
+仅Undo/Redo计时改3s，属性身份使用既有即时内容事务并补内容动画推进，完整ARM64 Debug及headless通过。
+
+### Main Changes
+
+- 修复主栏Redo时属性仍显示Redo的实际val/缓存未提交问题。
 
 ### Git Commits
 
 (No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check通过。
 
 ### Status
 
@@ -1931,10 +1973,33 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 ### Summary
 
 新建原任务要求的Trellis任务并实施。保留旧帧至目标ready、修复退出后Bar高亮、即时设置root/Z序。独立审查/完整Debug ARM64 Solution/--no-window通过；首次测试快照构造错误已修正。无GUI、无commit/push，待实机验收。
+### Next Steps
+
+- 原任务保留，实际GUI视觉验收未运行；不commit/push。
+
+
+## Session 66: Redo2x2点击暂态主栏扩宽修复
+<!-- trellis-session: v=2 fp=e0c19c01627941cf -->
+
+**Date**: 2026-10-12
+**Task**: Redo2x2点击暂态主栏扩宽修复
+**Branch**: `feature/redo`
+
+### Summary
+
+删除PresetHoming先显示Undo再套布局的中间写入，避免并行宽度扫描新增临时75DIP列；ARM64完整构建/headless通过。
+
+### Main Changes
+
+- 生产只删除两次中间显隐并加中文注释，补生命周期/生产显隐接线回归。
 
 ### Git Commits
 
 (No commits - planning session)
+
+### Testing
+
+- [OK] 完整Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check及diff检查通过。
 
 ### Status
 
@@ -1951,12 +2016,71 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 ### Summary
 
 用户确认两项问题修复、人工验证通过。源码/测试/规范已提交，任务completed归档。完整Debug ARM64构建、--no-window和独立审查通过；AI未运行GUI，不push。
+### Next Steps
+
+- 实际GUI宽度验收未运行；本轮不commit/push，原任务保留。
+
+
+## Session 67: 最近 Clear 区间 Undo 与前进 Redo 完整链修复
+<!-- trellis-session: v=2 fp=39978782e6727403 -->
+
+**Date**: 2026-10-12
+**Task**: 最近 Clear 区间 Undo 与前进 Redo 完整链修复
+**Branch**: `feature/redo`
+
+### Summary
+
+延续 redo-popup：保留最近 Clear 后继 CPU 历史，Undo 旧区间到空停止，Redo 穿过 Clear 到最新；完成独立检查、Debug ARM64 与双渲染模式隐藏回归。任务继续 in_progress，本轮未提交。
+
+### Main Changes
+
+- 同页 ClearRedoContinuation 保留隐藏笔画与redo候选；新笔画取消分支，迟到加载按身份与revision拒绝；PPT park和拓扑保留会话历史。
+- 既有隐藏Host测试覆盖完整A→Clear→B逐步历史；落盘严格导入验证canonical根及独立EndScreen，按本run增量核计数。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 最终exit0；headless --no-window exit0；native solution/console exit0；双renderer Desktop+PPT hidden exit0。
+- [OK] git diff --check与原BOM/CRLF检查通过；链接器LNK1000由保留ILK备份重链解决，不改工程。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户可继续现有Trellis任务；本轮不commit/push、不归档，未做可见产品/Office GUI验证。
+
+
+## Session 68: Redo popup 人工验收通过并归档
+<!-- trellis-session: v=2 fp=927cfa9c5a0d3095 -->
+
+**Date**: 2026-10-12
+**Task**: Redo popup 人工验收通过并归档
+**Branch**: `feature/redo`
+
+### Summary
+
+用户确认人工验证通过。已提交最近 Clear Undo/Redo 完整链修复，并结束、归档 redo-popup；自动化与独立检查结果已记录，未推送远程。
+
+### Main Changes
+
+- 提交修复及相关规格/测试/验证记录，使用既有签名配置。
+- 归档 10-11-redo-popup，任务结束；其余任务不变。
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
 | `4057b8ea` | Fix PPT exit handoff and immediate settings z-order |
+| `7094cea4` | fix(draw3): preserve redo history across the latest clear boundary |
+
+### Testing
+
+- [OK] 本轮此前ARM64 solution、headless、native与双renderer隐藏测试均通过；用户人工验收通过。
 
 ### Status
 

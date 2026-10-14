@@ -517,6 +517,8 @@ namespace
 		// 白板空页仍保留完整绘制栏和主 Drawpad；选择只表示拖动态，不切辅助 ULW。
 		Inkeys::UI::Bar::SetCurrentPageHasContent(
 			whiteboard || runtime.currentPageHasContent);
+		Inkeys::UI::Bar::NoteRecallHistoryAvailability(
+			runtime.canUndo, runtime.canRedo);
 		const bool targetReady = Inkeys::Drawing::Draw3::DrawpadPresentationReady(
 			desired, runtime);
 		if (!targetReady)

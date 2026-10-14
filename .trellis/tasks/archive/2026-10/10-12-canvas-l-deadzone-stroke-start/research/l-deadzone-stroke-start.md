@@ -17,7 +17,7 @@ The L is the union of the four page-control HWNDs at their **creation** rectangl
 
 Right and left siblings share the same origin and size, so they overlap. The union is one L: a 230×80 top band plus a 43×165 left band. It is not a single corner rectangle.
 
-Those windows are owned by Drawpad, so they sit above both canvas surfaces. `TopWindow` shows all four after startup without moving them. Outside a slideshow, PageControl does not commit a positioning frame, so the creation rects can stay visible. A new pen/pointer down is resolved against the topmost HWND. Page control does not publish a Draw3 contact. An already-open RealTimeStylus contact keeps receiving `Packets` on the Drawpad plugin, and the canvas surface still covers those pixels. The page-control windows have no layered bitmap until their first present, so the continuing ink shows through.
+Those windows are owned by Drawpad, so they sit above both canvas surfaces. `TopWindow` shows all four after startup without moving them. Outside a slideshow, PageControl does not commit a positioning frame, so the creation rects can stay visible. If pen hit-testing does not honor `HTTRANSPARENT` for the unpresented layered window, a new pen/pointer down may be intercepted by the topmost HWND; this behavior remains unverified at runtime. Page control does not publish a Draw3 contact. An already-open RealTimeStylus contact keeps receiving `Packets` on the Drawpad plugin, and the canvas surface still covers those pixels. The page-control windows have no layered bitmap until their first present, so the continuing ink shows through.
 
 This is independent of DirectComposition versus UpdateLayeredWindow. Both canvas present modes sit under the same owned popups.
 
@@ -228,7 +228,7 @@ Page control's own hit policy does not start ink. While the surface has never be
 
 `ShouldAcceptPageControlClientHit` returns HTCLIENT for a PPT background hit (`policy.drag`) and for a whiteboard widget hit (`PageControl.cppm` 45–53 and 196–201). That path matters after a surface is actually shown by PageControl. It is not what paints the creation-sized L, because a successful frame also moves and resizes the HWND (`SetBounds` / ULW destination = `PresentationBounds()`).
 
-The creation-sized L matches windows that were `Show`n and never presented. In that state the proc returns `HTTRANSPARENT`. Two static facts still let them eat a new pen down:
+The creation-sized L matches windows that were `Show`n and never presented. In that state the proc returns `HTTRANSPARENT`. The following static facts establish a possible, not confirmed, interception path:
 
 - They are visible, topmost in that rect, `WS_EX_LAYERED`, and have never received `UpdateLayeredWindow`. There is no per-pixel alpha mask yet. Touch was registered with `RegisterTouchWindow` at creation.
 - Page control does not forward an unhandled pointer/touch down to Drawpad. `WM_TOUCH` is translated only into the page-control mouse path. Other pointer messages fall through to `DefWindowProcW` (`PageControl.cpp` 2471).

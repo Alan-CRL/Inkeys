@@ -46,6 +46,7 @@ constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarThicknessTooltipHoverGraceMs = 100;
 constexpr UINT_PTR BarThicknessAnnotationTooltipGraceTimerId = 0x494B4302;
 constexpr UINT_PTR BarThicknessOverflowTooltipGraceTimerId = 0x494B4303;
+constexpr UINT_PTR BarRecallChromeIdleTimerId = 0x494B4304;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
 constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
@@ -596,6 +597,18 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			barUISet.HandleBorderCursorGraceTimeout(hWnd);
 			return 0;
 		}
+		if (wParam == BarRecallChromeIdleTimerId)
+		{
+			// 浮窗静止时渲染线程在休眠。到期只唤醒一帧；提前触发则按剩余时间重装。
+			unsigned retryMs = 0;
+			if (barUISet.PollRecallChromeIdleTimer(retryMs))
+				barUISet.UpdateRendering(false);
+			else if (retryMs != 0)
+				SetTimer(hWnd, BarRecallChromeIdleTimerId, retryMs, nullptr);
+			else
+				KillTimer(hWnd, BarRecallChromeIdleTimerId);
+			return 0;
+		}
 		if (wParam == BarThicknessAnnotationTooltipGraceTimerId
 			|| wParam == BarThicknessOverflowTooltipGraceTimerId)
 		{
@@ -826,6 +839,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	case WM_MOUSELEAVE:
 	{
 		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
+		if (barUISet.recallAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		// 需要等待离开的休眠路径在真实移出后解除重新激活限制。
 		{
 			lock_guard lock(barUISet.borderCursorLightMutex);
@@ -1144,6 +1158,7 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 {
 	eraserAttribute.Close(*this);
+	recallAttribute.Close(*this);
 	barState.drawAttribute = false;
 	barState.geometryAttribute = false;
 	barState.moreExpanded = false;
@@ -1153,15 +1168,30 @@ void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 	CloseColorPicker(cancelCapture);
 }
 
+void BarUISetClass::ArmRecallChromeIdleTimer() noexcept
+{
+	if (!floating_window || !IsWindow(floating_window)) return;
+	SetTimer(floating_window, BarRecallChromeIdleTimerId,
+		static_cast<UINT>(Inkeys::UI::Bar::RecallChromeIdleSeconds * 1000.0), nullptr);
+}
+
+void BarUISetClass::DisarmRecallChromeIdleTimer() noexcept
+{
+	if (!floating_window || !IsWindow(floating_window)) return;
+	KillTimer(floating_window, BarRecallChromeIdleTimerId);
+}
+
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
 	eraserAttribute.ResetPointerFeedback();
+	recallAttribute.ResetPointerFeedback();
 	if (!hWnd) return;
 
 	// 先撤销输入源，避免 ReleaseCapture 重入时继续向交互队列投递手势。
 	KillTimer(hWnd, BarBorderCursorGraceTimerId);
 	KillTimer(hWnd, BarThicknessAnnotationTooltipGraceTimerId);
 	KillTimer(hWnd, BarThicknessOverflowTooltipGraceTimerId);
+	KillTimer(hWnd, BarRecallChromeIdleTimerId);
 	barState.drawAttributeBar.thicknessSliderCapture = false;
 	barState.drawAttributeBar.colorPickerPointerCapture = false;
 	CloseThicknessSlider(false);
@@ -2791,6 +2821,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			|| msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP)
 		{
 			if (barUISet.eraserAttribute.Keyboard(barUISet, msg.vkcode,
+				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
+				return BarInteractionStageResult::Consumed;
+			if (barUISet.recallAttribute.Keyboard(barUISet, msg.vkcode,
 				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
 				return BarInteractionStageResult::Consumed;
 			HandleColorPickerKeyboard(msg);
@@ -6014,6 +6047,14 @@ public:
 				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
 				continue;
 			}
+			// 撤回属性与橡皮同级早处理；二者互斥，同时最多一个展开。
+			if (barUISet.recallAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
+			{
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
+				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
+				continue;
+			}
 			const auto hoverResult = HandleCommonHoverAndOcclusion();
 			if (hoverResult == BarInteractionStageResult::Shutdown) break;
 			if (hoverResult == BarInteractionStageResult::Consumed) continue;
@@ -6446,6 +6487,8 @@ void BarUISetClass::HandleCanvasDrawingActivity(HWND hWnd, bool started)
 	if (started && BarCanvasDrawingActivityCount.load(std::memory_order_acquire) == 0)
 		return;
 
+	// 落笔后 Redo 不可用：先清锁存，再收起浮窗，避免收起路径又收成 2×1。
+	ClearRecallForDrawing();
 	// UI3 落笔时固定收起次级面板；主栏本身保持用户当前的展开状态。
 	CollapseAuxiliaryPanels(true);
 	UpdateRendering(false);
@@ -6543,6 +6586,11 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar], false);
 	AddShape(shapeMap[BarUISetShapeEnum::GeometryAttributeBar], false);
 	for (const RECT& bounds : eraserAttribute.PresentedRegions())
+		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
+			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+				bottomDockSnapshot.horizontalMapping.rigidOverlayTranslationXDip,
+				bottomDockSnapshot.rigidTranslationDip, frameZoom);
+	for (const RECT& bounds : recallAttribute.PresentedRegions())
 		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
 			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
 				bottomDockSnapshot.horizontalMapping.rigidOverlayTranslationXDip,
@@ -7383,7 +7431,9 @@ namespace Inkeys::UI::Bar
 		POINT pointer{};
 		const bool eraserKey = vkCode == VK_ESCAPE || vkCode == VK_TAB || vkCode == VK_LEFT
 			|| vkCode == VK_RIGHT || vkCode == VK_RETURN || vkCode == VK_SPACE;
-		if (eraserKey && !offSignal && floating_window && barUISet.eraserAttribute.WantsKeyboard()
+		// 撤回属性复用同一组键盘路由键（Escape/Tab/方向/回车/空格）。
+		const bool auxPanelWantsKeyboard = barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
+		if (eraserKey && !offSignal && floating_window && auxPanelWantsKeyboard
 			&& (GetForegroundWindow() == floating_window || (GetCursorPos(&pointer) && WindowFromPoint(pointer) == floating_window)))
 		{
 			ExMessage message{}; message.message = keyDown ? WM_KEYDOWN : WM_KEYUP; message.vkcode = vkCode;

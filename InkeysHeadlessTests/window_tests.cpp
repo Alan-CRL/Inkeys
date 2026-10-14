@@ -12,6 +12,19 @@ import Inkeys.Window;
 
 namespace
 {
+	constexpr UINT kSettingOwnerProbe = WM_APP + 74;
+
+	LRESULT CALLBACK SettingOwnerProbeProc(HWND hwnd, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		if (message == kSettingOwnerProbe)
+		{
+			auto* service = reinterpret_cast<Inkeys::Window::Service*>(lParam);
+			return service->SetSettingOwnedByDrawpad(wParam != 0);
+		}
+		return DefWindowProcW(hwnd, message, wParam, lParam);
+	}
+
 	constexpr UINT kExitGateBlockOwner = WM_APP + 71;
 	constexpr UINT kExitGateCapture = WM_APP + 72;
 	constexpr UINT kExitGateReadCapture = WM_APP + 73;
@@ -294,6 +307,7 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::PptMiddleRight, L"PptMiddleRight"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
+	settingSpec.windowProc = SettingOwnerProbeProc;
 	settingSpec.style = WS_POPUP;
 	settingSpec.exStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 	specs.push_back(std::move(settingSpec));
@@ -503,6 +517,12 @@ int RunWindowTests()
 		reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0));
 	std::atomic_int settingRefreshes = 0;
 	service.SetTopmostRefreshObserver([&] { ++settingRefreshes; });
+	// Setting 线程不能等待根刷新；attach 已成功但准备失败时必须回滚 owner。
+	check(SendMessageW(setting, kSettingOwnerProbe, TRUE,
+		reinterpret_cast<LPARAM>(&service)) == FALSE,
+		"setting thread rejects attach requiring root refresh");
+	check(GetWindow(setting, GW_OWNER) == nullptr,
+		"failed setting preparation restores original owner");
 	check(service.SetSettingOwnedByDrawpad(true), "setting attach owner");
 	check(settingRefreshes.load() == 1, "setting attach immediately refreshes root");
 	check(service.SetSettingOwnedByDrawpad(true) && settingRefreshes.load() == 1,

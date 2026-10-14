@@ -437,7 +437,20 @@ namespace Inkeys::Window
 			const HWND previousOwner = setting ? GetWindow(setting, GW_OWNER) : nullptr;
 			if (!Submit(std::move(command))) return false;
 			if (!enabled) return true;
-			if (!PrepareSettingZOrder(previousOwner != Handle(WindowRole::Drawpad))) return false;
+			if (!PrepareSettingZOrder(previousOwner != Handle(WindowRole::Drawpad)))
+			{
+				// 层级准备失败时在 Setting 线程恢复原 owner，避免留下半完成的归属。
+				if (previousOwner != Handle(WindowRole::Drawpad))
+				{
+					Command rollback;
+					rollback.type = CommandType::SetSettingOwnedByDrawpad;
+					rollback.role = WindowRole::Setting;
+					rollback.enabled = previousOwner != nullptr;
+					rollback.settingOwner = previousOwner;
+					(void)Submit(std::move(rollback));
+				}
+				return false;
+			}
 			return setting && setting == Handle(WindowRole::Setting)
 				&& IsWindow(setting) && GetWindow(setting, GW_OWNER) == Handle(WindowRole::Drawpad)
 				&& Handle(WindowRole::Drawpad) != nullptr;
@@ -660,6 +673,7 @@ namespace Inkeys::Window
 			WindowRole role = WindowRole::Bar;
 			RECT bounds{};
 			bool enabled = false;
+			std::optional<HWND> settingOwner;
 			DrawpadSurfaceVisibility drawpadVisibility =
 				DrawpadSurfaceVisibility::Hidden;
 			std::function<bool()> stillDesired;
@@ -1770,14 +1784,15 @@ namespace Inkeys::Window
 			case CommandType::SetSettingOwnedByDrawpad:
 			{
 				const HWND drawpad = Handle(WindowRole::Drawpad);
-				if (command.enabled && (!drawpad || !IsWindow(drawpad)))
+				if (command.enabled && !command.settingOwner && (!drawpad || !IsWindow(drawpad)))
 				{
 					ReportCommandResult(command, false,
 						ERROR_INVALID_WINDOW_HANDLE, hwnd);
 					return false;
 				}
 
-				const HWND desiredOwner = command.enabled ? drawpad : nullptr;
+				const HWND desiredOwner = command.settingOwner.value_or(
+					command.enabled ? drawpad : nullptr);
 				const HWND previousOwner = GetWindow(hwnd, GW_OWNER);
 				bool succeeded = true;
 				DWORD error = ERROR_SUCCESS;

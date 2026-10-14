@@ -19,6 +19,7 @@ export namespace Inkeys::UI::Bar
 		PenTypeMenu,
 		EraserAttribute,
 		EraserSensitivity,
+		RecallAttribute,
 		Count,
 	};
 

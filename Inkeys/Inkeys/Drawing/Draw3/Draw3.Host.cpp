@@ -258,6 +258,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::size_t> currentPageIndex = 0;
 		std::atomic<std::size_t> pageCount = 0;
 		std::atomic_bool currentPageHasContent = false;
+		std::atomic_bool canUndo = false;
+		std::atomic_bool canRedo = false;
 		std::atomic<std::uint64_t> contentRevision = 0;
 		std::atomic<Bridge::CompletedStrokeKind> completedStrokeKind =
 			Bridge::CompletedStrokeKind::None;
@@ -591,6 +593,9 @@ namespace Inkeys::Drawing::Draw3
 			currentPageIndex.store(0, std::memory_order_release);
 			pageCount.store(0, std::memory_order_release);
 			currentPageHasContent.store(false, std::memory_order_release);
+			// 新 Host 生命周期不能沿用上次运行的撤回/重做可用性。
+			canUndo.store(false, std::memory_order_release);
+			canRedo.store(false, std::memory_order_release);
 			contentRevision.store(0, std::memory_order_release);
 			completedStrokeKind.store(
 				Bridge::CompletedStrokeKind::None, std::memory_order_release);
@@ -810,6 +815,15 @@ namespace Inkeys::Drawing::Draw3
 			}
 			self->contentCondition.notify_all();
 			self->PublishRuntimeRevision();
+		}
+
+		static void ObserveHistoryAvailability(void* context, bool canUndo, bool canRedo)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			const bool undoChanged = self->canUndo.exchange(canUndo, std::memory_order_acq_rel) != canUndo;
+			const bool redoChanged = self->canRedo.exchange(canRedo, std::memory_order_acq_rel) != canRedo;
+			if (undoChanged || redoChanged) self->PublishRuntimeRevision();
 		}
 
 		static void ObserveStrokeCompleted(
@@ -1576,7 +1590,7 @@ namespace Inkeys::Drawing::Draw3
 								CreateStrokeModelConfiguration(QueryCompatibleWindowDpi(windowHandle));
 							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
 								startOptions.enableHiddenTestContactInjection);
-							const DrawingControllerRuntimeObserver observer{
+							DrawingControllerRuntimeObserver observer{
 								this, &ObservePresented, &ObserveResized,
 								&ObserveCommand, &ObserveDocument,
 								&ObserveCurrentPageContent, &ObserveStrokeCompleted,
@@ -1589,6 +1603,7 @@ namespace Inkeys::Drawing::Draw3
 								&ObserveEraserDiagnostics,
 								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
 							};
+							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get());
 							std::cout << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
@@ -1947,6 +1962,8 @@ namespace Inkeys::Drawing::Draw3
 		// 再读取布尔值，避免把新 revision 与旧内容拼成不可重试的快照。
 		snapshot.currentPageHasContent =
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
+		snapshot.canUndo = impl_->canUndo.load(std::memory_order_acquire);
+		snapshot.canRedo = impl_->canRedo.load(std::memory_order_acquire);
 		snapshot.completedStrokeKind =
 			impl_->completedStrokeKind.load(std::memory_order_acquire);
 		snapshot.selectionMode = impl_->selectionMode.load(std::memory_order_acquire);
