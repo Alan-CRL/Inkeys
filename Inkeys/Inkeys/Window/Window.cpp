@@ -5,6 +5,7 @@ module;
 #include <windows.h>
 
 #include "../Helper/FailedCleanupDeadline.h"
+#include "Window.CommandCompletion.h"
 
 #include <array>
 #include <atomic>
@@ -548,10 +549,15 @@ namespace Inkeys::Window
 			return Submit(WindowRole::Freeze, CommandType::CancelPointerCapture);
 		}
 
-		[[nodiscard]] bool RequestTopmostRefresh()
+		[[nodiscard]] bool RequestTopmostRefresh(DWORD timeoutMilliseconds = INFINITE)
 		{
-			const bool refreshed = Submit(
-				WindowRole::MagnifierHost, CommandType::RefreshTopmost);
+			Command command;
+			command.role = WindowRole::MagnifierHost;
+			command.type = CommandType::RefreshTopmost;
+			if (timeoutMilliseconds != INFINITE)
+				command.deadline = std::chrono::steady_clock::now()
+					+ std::chrono::milliseconds(timeoutMilliseconds);
+			const bool refreshed = Submit(std::move(command));
 			if (!refreshed) return false;
 			std::function<void()> callback;
 			{
@@ -683,6 +689,7 @@ namespace Inkeys::Window
 			Message::BindOptions bindOptions{};
 			std::optional<WindowSpec> spec;
 			std::shared_ptr<std::promise<bool>> completion;
+			Detail::CommandDeadline deadline;
 		};
 
 		struct CommandQueue
@@ -1377,6 +1384,7 @@ namespace Inkeys::Window
 			// WNDPROC/lifecycle hook 可能在所属线程内调用服务，此时直接执行避免自锁。
 			if (ownerThreadId && ownerThreadId == GetCurrentThreadId())
 				return Execute(command);
+			const auto deadline = command.deadline;
 			command.completion = std::make_shared<std::promise<bool>>();
 			auto result = command.completion->get_future();
 			{
@@ -1386,7 +1394,7 @@ namespace Inkeys::Window
 				queue.commands.push_back(std::move(command));
 			}
 			if (eventHandle) SetEvent(eventHandle);
-			return result.get();
+			return Detail::WaitForCommandResult(result, deadline);
 		}
 
 		void DrainCommands(CommandQueue& queue)
@@ -1614,6 +1622,8 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool Execute(const Command& command)
 		{
+			// 启动调用已超时的排队刷新不能在 owner 恢复后重新修改窗口层级。
+			if (Detail::CommandExpired(command.deadline)) return false;
 			if (command.type == CommandType::HideAll)
 				return HideUserWindowsInGroup(IsSetting(command.role));
 			if (shutdownRequested_.load(std::memory_order_acquire))
@@ -2308,7 +2318,8 @@ namespace Inkeys::Window
 		{
 			return impl_->CancelPointerCapture();
 		}
-		bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
+		bool Service::RequestTopmostRefresh(DWORD timeoutMilliseconds)
+		{ return impl_->RequestTopmostRefresh(timeoutMilliseconds); }
 		void Service::SetTopmostRefreshObserver(std::function<void()> callback)
 		{
 			impl_->SetTopmostRefreshObserver(std::move(callback));

@@ -2016,9 +2016,16 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 ### Summary
 
 用户确认两项问题修复、人工验证通过。源码/测试/规范已提交，任务completed归档。完整Debug ARM64构建、--no-window和独立审查通过；AI未运行GUI，不push。
-### Next Steps
 
-- 实际GUI宽度验收未运行；本轮不commit/push，原任务保留。
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4057b8ea` | Fix PPT exit handoff and immediate settings z-order |
+
+### Status
+
+[OK] **Completed**
 
 
 ## Session 67: 最近 Clear 区间 Undo 与前进 Redo 完整链修复
@@ -2075,7 +2082,6 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 | Hash | Message |
 |------|---------|
-| `4057b8ea` | Fix PPT exit handoff and immediate settings z-order |
 | `7094cea4` | fix(draw3): preserve redo history across the latest clear boundary |
 
 ### Testing

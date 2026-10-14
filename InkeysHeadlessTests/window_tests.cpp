@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+
 import Inkeys.Window;
 
 namespace
@@ -117,6 +119,42 @@ namespace
 		}
 		return true;
 	}
+}
+
+int RunWindowCommandCompletionTests()
+{
+	using namespace Inkeys::Window::Detail;
+	int failures = 0;
+	const auto check = [&](bool passed, const char* name)
+	{
+		if (!passed) { ++failures; std::cerr << "FAIL " << name << '\n'; }
+	};
+	for (const bool value : { false, true })
+	{
+		std::promise<bool> completion;
+		auto result = completion.get_future();
+		completion.set_value(value);
+		check(WaitForCommandResult(result, std::chrono::steady_clock::now()
+			+ std::chrono::seconds(1)) == value, "bounded command preserves result");
+	}
+	std::promise<bool> pending;
+	auto result = pending.get_future();
+	const auto start = std::chrono::steady_clock::now();
+	const CommandDeadline deadline = start + std::chrono::milliseconds(20);
+	check(!WaitForCommandResult(result, deadline), "stalled owner command times out");
+	check(std::chrono::steady_clock::now() - start < std::chrono::seconds(2),
+		"stalled owner wait stays bounded");
+	check(CommandExpired(deadline), "late queued command is rejected");
+	// 调用方已失败返回，队列仍能安全完成 promise；迟到成功不改变超时结果。
+	pending.set_value(true);
+	check(result.get(), "late completion remains safe after timeout");
+	check(!CommandExpired({}), "ordinary commands have no startup deadline");
+	std::promise<bool> ordinary;
+	auto ordinaryResult = ordinary.get_future();
+	ordinary.set_value(true);
+	check(WaitForCommandResult(ordinaryResult, {}), "ordinary completion unchanged");
+	std::cout << "[WindowCommandCompletion] failures=" << failures << '\n';
+	return failures;
 }
 
 int RunWindowExitVisibilityTests()

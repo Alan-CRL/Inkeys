@@ -757,7 +757,9 @@ namespace
 
 		// 沿用历史合同：隐藏窗口链必须先完成根置顶，再注册 RTS；策略值不能代替实际 HWND 状态。
 		// 刷新在窗口所属线程同步执行，错误码由服务捕获，不能在此读取跨线程的 GetLastError。
-		if (!failure && !service.RequestTopmostRefresh()) failure = "root-refresh";
+		constexpr DWORD startupRefreshMilliseconds = 5000;
+		if (!failure && !service.RequestTopmostRefresh(startupRefreshMilliseconds))
+			failure = "root-refresh";
 		for (size_t i = 0; i != roles.size(); ++i)
 		{
 			if (i == 0 && !windows[i]) continue; // Mag 为可选窗口，缺失时 Freeze 是根。
@@ -793,6 +795,8 @@ namespace
 			|| !service.OverlayTopmost() || service.WhiteboardWindowMode()))
 			failure = "root-or-policy-changed";
 
+		// 有限等待失败后先建立独立退场监督，日志和窗口 join 也不能无限阻塞。
+		if (failure) SetOffSignal(1);
 		char message[2048]{};
 		std::snprintf(message, sizeof(message),
 			"[Draw3Topmost] phase=%s result=%s cause=%s role=%s root=%p desktop=%d "

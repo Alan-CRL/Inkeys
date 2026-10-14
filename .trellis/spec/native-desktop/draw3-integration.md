@@ -72,7 +72,7 @@ Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs ->
 - 每次 `StartDraw3ProductWithFallback` 的 `StartProduct` 前准备，phase 为 initial 或 rebuilt-ulw；后者只在旧 Host/窗口清理并完成新链创建后执行。
 - 桌面策略必须允许 topmost 且非 Whiteboard；只通过 Window Service 同步刷新根，Mag 缺失时 Freeze 为根，不显示/激活或单独置顶画布/主栏。
 - 检查 root、Freeze、DrawpadPresentation、Drawpad 的有效句柄、直接 GW_OWNER、实际 WS_EX_TOPMOST 和刷新前后身份；策略 true 和 API 成功都不能代替 HWND 事实。
-- 初次准备失败立即返回，不能误进 DComp 回退；新链准备失败也不启动 Host/RTS。准备成功后才创建该次 Host cleanup scope，保留原失败监督。
+- 初次准备失败立即返回，不能误进 DComp 回退；新链准备失败也不启动 Host/RTS。启动根刷新最多等待 5 秒；超时队列命令不再执行，准备失败在日志和 join 前建立既有退出监督。准备成功后才创建该次 Host cleanup scope，保留原失败监督。
 - 首帧后的 Preview observer/InitialTopmostRefresh 及周期刷新、白板 NOTOPMOST 保留。日志每次准备一次，含阶段、角色、原因和 HWND/owner/exstyle/read error；服务调用错误由 owner thread 捕获，不从调用线程读取陈旧 GetLastError。
 
 ### 4. Validation & Error Matrix
