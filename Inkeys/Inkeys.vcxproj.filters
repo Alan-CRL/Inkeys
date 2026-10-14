@@ -2629,4 +2629,5 @@
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </FxCompile>
   </ItemGroup>
+  <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.filters.props" />
 </Project>

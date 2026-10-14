@@ -564,6 +564,15 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					return;
 				}
 
+				if (JoinPath(groupPath, name) == "UI.Bar.StartupPlacement")
+				{
+					// 启动位置只接受整数 0..2；非法类型或超宽整数不能窄化成有效位置。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : 0;
+					return;
+				}
+
 				const auto path = JoinPath(groupPath, name);
 				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")
 				{

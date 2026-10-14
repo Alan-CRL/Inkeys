@@ -8,8 +8,11 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <cwchar>
 #include <iterator>
 #include <ink_stroke_modeler/stroke_modeler.h>
+#include <ink_stroke_modeler/terminal_tail_reconstructor.h>
 #include <limits>
 #include <optional>
 #include <span>
@@ -26,6 +29,215 @@ namespace Inkeys::Drawing::Draw3
 	// 本实现单元集中维护笔宽估算、荧光笔几何和 ActiveStroke 热路径。
 	namespace
 	{
+		// 开发诊断需显式开启；产品默认使用正常颜色且不落盘尾部轨迹，不影响求解。
+		constexpr bool kDebugCompletedTailVisibility = false;
+		// 轨迹记录与反色独立；仅显式环境变量启用，进程首次查询后锁存，默认无同步 I/O。
+		bool IsTailTraceEnabled() noexcept
+		{
+			static const bool enabled = [] {
+				wchar_t value[2]{};
+				return GetEnvironmentVariableW(L"INKEYS_DRAW3_TAIL_TRACE",value,2) == 1 && value[0] == L'1';
+			}();
+			return enabled;
+		}
+		// 无窗口计时作用域可以临时禁止已启用的诊断，不能改变几何或正常颜色。
+		thread_local bool gTailDiagnosticIoEnabled = true;
+		struct TailFinalizeTrace
+		{
+			const char* decision = "not_pen";
+			int status = -1, reason = -1;
+			size_t windowStart = 0, changedStart = std::numeric_limits<size_t>::max();
+			double visibility = 0, sampling = 0;
+			ink::stroke_model::TerminalTailDiagnostics diagnostics;
+		};
+		// 临时诊断只在完成时落盘；每进程最多 128 笔、2 MiB，不记录窗口外原始轨迹。
+		void WriteTailDebugRecord(const ActiveStroke& stroke, const TailFinalizeTrace& trace,
+			std::span<const InkPoint> completed, std::span<const StoredInkPoint> stored,
+			StoredInkStyle style, double taper, float offsetX, float offsetY, bool valid) noexcept
+		{
+			if (!IsTailTraceEnabled() || !gTailDiagnosticIoEnabled) return;
+			static SRWLOCK lock = SRWLOCK_INIT;
+			AcquireSRWLockExclusive(&lock);
+			struct Unlock { ~Unlock() { ReleaseSRWLockExclusive(&lock); } } unlock;
+			static unsigned records = 0;
+			if (records >= 128) return;
+			++records;
+			static wchar_t path[MAX_PATH]{};
+			wchar_t exe[MAX_PATH]{};
+			HANDLE file = INVALID_HANDLE_VALUE;
+			if (!path[0])
+			{
+				wchar_t temp[MAX_PATH]{}, candidate[MAX_PATH]{};
+				const DWORD length = GetTempPathW(MAX_PATH, temp);
+				if (!length || length >= MAX_PATH) return;
+				if (swprintf_s(candidate, L"%sInkeys-Draw3-tail-%lu.log", temp, GetCurrentProcessId()) < 0) return;
+				file = CreateFileW(candidate, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (file == INVALID_HANDLE_VALUE &&
+					(GetLastError() == ERROR_FILE_EXISTS || GetLastError() == ERROR_ALREADY_EXISTS))
+				{
+					// PID 会复用；旧现场证据原样保留，新进程用有界 create-new 后缀避免混入旧头。
+					FILETIME created{}; GetSystemTimeAsFileTime(&created);
+					for (unsigned attempt = 0; attempt < 8; ++attempt)
+					{
+						if (swprintf_s(candidate, L"%sInkeys-Draw3-tail-%lu-%08lx%08lx-%u.log", temp,
+							GetCurrentProcessId(), created.dwHighDateTime, created.dwLowDateTime, attempt) < 0) return;
+						file = CreateFileW(candidate, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+						if (file != INVALID_HANDLE_VALUE ||
+							(GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS)) break;
+					}
+				}
+				if (file == INVALID_HANDLE_VALUE) return;
+				wcscpy_s(path, candidate);
+			}
+			else file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (file == INVALID_HANDLE_VALUE) return;
+			LARGE_INTEGER size{};
+			if (!GetFileSizeEx(file, &size) || size.QuadPart > 2 * 1024 * 1024 - 262144) { CloseHandle(file); return; }
+			LARGE_INTEGER offset{};
+			if (!SetFilePointerEx(file, offset, nullptr, FILE_END)) { CloseHandle(file); return; }
+			bool writeOk = true;
+			auto write = [&](const char* text) {
+				if (!writeOk) return;
+				const DWORD bytes = static_cast<DWORD>(strlen(text));
+				DWORD written = 0;
+				// 失败、短写或总字节预算耗尽后停止，不把残缺记录标成完整的 end。
+				if (bytes > 2 * 1024 * 1024 - size.QuadPart) { writeOk = false; return; }
+				writeOk = WriteFile(file, text, bytes, &written, nullptr) && written == bytes;
+				size.QuadPart += written;
+			};
+			char line[1536];
+#if defined(_M_ARM64)
+			constexpr const char* architecture = "ARM64";
+#elif defined(_M_X64)
+			constexpr const char* architecture = "x64";
+#else
+			constexpr const char* architecture = "Win32";
+#endif
+#if defined(NDEBUG)
+			constexpr int ndebug = 1;
+#else
+			constexpr int ndebug = 0;
+#endif
+			if (size.QuadPart == 0) {
+				GetModuleFileNameW(nullptr, exe, MAX_PATH);
+				char executable[3 * MAX_PATH]{};
+				WideCharToMultiByte(CP_UTF8, 0, exe, -1, executable, sizeof(executable), nullptr, nullptr);
+				std::snprintf(line, sizeof(line), "tail-diag-v3 build=%s %s pid=%lu arch=%s ndebug=%d inverse=%d trace_env=1 exe=%s\n",
+					__DATE__, __TIME__, GetCurrentProcessId(), architecture,ndebug,kDebugCompletedTailVisibility,executable);
+				write(line);
+			}
+			SYSTEMTIME utc{}; GetSystemTime(&utc);
+			std::snprintf(line,sizeof(line),"record=%u utc=%04u-%02u-%02uT%02u:%02u:%02u.%03uZ pid=%lu thread=%lu valid=%d ink=%u color=%u alpha=%.9g texture=%u taper=%.17g offset=%.9g,%.9g inverse=%d\n",
+				records,unsigned(utc.wYear),unsigned(utc.wMonth),unsigned(utc.wDay),unsigned(utc.wHour),unsigned(utc.wMinute),unsigned(utc.wSecond),unsigned(utc.wMilliseconds),GetCurrentProcessId(),GetCurrentThreadId(),valid,
+				unsigned(style.inkType),style.fallbackRgb,style.opacity,unsigned(style.texture),taper,offsetX,offsetY,kDebugCompletedTailVisibility);
+			write(line);
+			const char* reasons[] = {"applied","unchanged","no_improvement","invalid_input","budget","insufficient_window","ambiguous_match","sharp_corner","excessive_displacement","length_change","new_intersection","excessive_turn"};
+			const auto& d = trace.diagnostics;
+			std::snprintf(line,sizeof(line),"[Draw3 tail] decision=%s status=%d reason=%d(%s) points=%zu raw=%zu window=%zu changed=%zu candidate_metrics=%s displacement=%.6f turn=%.3f->%.3f attempts=%zu repair=%.6f raw_hint=%.6f output=%zu sampling_error=%.6f curve_turn=%.6f visibility=%.6f sampling=%.6f\n",
+				trace.decision,trace.status,trace.reason,trace.reason >= 0 && trace.reason < 12 ? reasons[trace.reason] : "not_called",completed.size(),stroke.tailRawCount,
+				trace.windowStart,trace.changedStart,d.output_points ? "computed" : "not_computed",d.max_displacement,d.reference_terminal_turn,d.candidate_terminal_turn,
+				d.window_attempts,d.repair_length,d.raw_hint_length,d.output_points,d.sampling_error,d.max_curve_turn,trace.visibility,trace.sampling);
+			OutputDebugStringA(line); write(line);
+			std::snprintf(line, sizeof(line), "endpoint=%.9g,%.9g terminal=%d time=%.17g committed=%zu terminalFirst=%zu limits=model512,raw64,completed512,stored512,output2048\n",
+				stroke.terminalRawUp.x, stroke.terminalRawUp.y, stroke.terminalDisplayTime.has_value(), stroke.terminalDisplayTime.value_or(-1), stroke.committedIndex, stroke.terminalFirstPoint);
+			write(line);
+			const auto& gate = stroke.endpointAdmission;
+			std::snprintf(line,sizeof(line),"gate active=%d pinned=%d recovering=%d direction=%d endpoint=%.9g,%.9g approach=%.9g,%.9g distance=%.9g origin=%.9g,%.9g terminalMove=%.9g,%.9g lastRaw=%ld,%ld hasRaw=%d logical=%.17g movement=%.17g useDisplay=%d widthMode=%u modelOffset=%.17g modelStopped=%d hasCommitted=%d\n",
+				gate.active,gate.visualPinned,gate.recovering,gate.hasApproachDirection,gate.endpoint.x,gate.endpoint.y,gate.approachDirection.x,gate.approachDirection.y,gate.previousDistance,
+				gate.recoveryOrigin.x,gate.recoveryOrigin.y,stroke.terminalRawMove.x,stroke.terminalRawMove.y,stroke.lastRawPosition.x,stroke.lastRawPosition.y,stroke.hasLastRawPosition,
+				stroke.logicalInputTime,stroke.lastMovementInputTime,stroke.useDisplayTime,unsigned(stroke.widthMode),stroke.modelTimeOffset,stroke.modelClockStopped,stroke.hasCommittedGeometry);
+			write(line);
+			const auto& input = stroke.tailInputDiagnostic;
+			std::snprintf(line,sizeof(line),"input_trace enabled=%d snapshots=%llu moves=%llu max_skipped=%llu reconnects=%llu handle=%llu generation=%llu tcid=%u cid=%u device=%u source=%u tool=%u rgb=%u qpc_origin=%lld current_sequence=%llu width_dip=%.9g canvas_offset=%.9g,%.9g recognition=%u source_context=%u source_cursor=%u source_generation=%llu\n",
+				input.enabled,input.snapshots,input.moves,input.maxSkippedSnapshots,input.reconnects,input.handleValue,input.generation,input.tcid,input.cid,input.device,input.source,input.tool,input.rgb,
+				input.qpcOrigin,input.currentSequence,input.styleWidthDip,input.canvasOffsetX,input.canvasOffsetY,input.sourceRecognition,input.sourceContext,input.sourceCursor,input.sourceGeneration); write(line);
+			std::snprintf(line,sizeof(line),"input_initial_identity handle=%llu generation=%llu tcid=%u cid=%u device=%u source=%u down_scope=initial current_scope=contact_down,last_nonterminal,terminal_prior,physical_terminal,model_up\n",
+				input.initialHandleValue,input.initialGeneration,input.initialTcid,input.initialCid,input.initialDevice,input.initialSource); write(line);
+			auto inputPoint = [&](const char* kind, uint64_t sequence, int64_t qpc, DirectX::XMFLOAT2 position) {
+				std::snprintf(line,sizeof(line),"input_%s sequence=%llu qpc=%lld position=%.9g,%.9g\n",kind,sequence,qpc,position.x,position.y); write(line);
+			};
+			inputPoint("down",input.downSequence,input.downQpc,input.downPosition);
+			inputPoint("contact_down",input.contactDownSequence,input.contactDownQpc,input.contactDownPosition);
+			inputPoint("last_nonterminal",input.lastNonterminalSequence,input.lastNonterminalQpc,input.lastNonterminalPosition);
+			inputPoint("terminal_prior",input.terminalPriorSequence,input.terminalPriorQpc,input.terminalPriorPosition);
+			inputPoint("physical_terminal",input.terminalSequence,input.terminalQpc,input.terminalPosition);
+			inputPoint("model_up",input.upSequence,input.upQpc,input.upPosition);
+			std::snprintf(line,sizeof(line),"input_up model_time=%.17g status=%d produced=%llu accepted=%llu geometry_added=%llu fallback=%d pinned=%d\n",
+				input.upModelTime,input.upStatus,input.upProduced,input.upAccepted,input.upGeometryAdded,input.upFallback,input.upEndpointPinned); write(line);
+			// 全局首尾、包围盒和弧长不受尾窗裁剪影响；长斜线也可能由很多短边组成。
+			auto describe = [&](const char* kind, const auto& points) {
+				if (points.empty()) { std::snprintf(line,sizeof(line),"extent %s count=0\n",kind); write(line); return; }
+				size_t edge = 0, nonfinite = 0; double largest = 0, arcLength = 0;
+				double left = std::numeric_limits<double>::infinity(), top = left, right = -left, bottom = -left;
+				uint64_t hash = 14695981039346656037ULL;
+				for (size_t i = 0; i < points.size(); ++i) {
+					for (float value : {points[i].x,points[i].y}) {
+						uint32_t bits = 0; std::memcpy(&bits,&value,sizeof(bits));
+						for (unsigned shift = 0; shift < 32; shift += 8) { hash ^= (bits >> shift) & 0xff; hash *= 1099511628211ULL; }
+					}
+					if (!std::isfinite(points[i].x) || !std::isfinite(points[i].y)) { ++nonfinite; continue; }
+					left = std::min(left,double(points[i].x)); top = std::min(top,double(points[i].y));
+					right = std::max(right,double(points[i].x)); bottom = std::max(bottom,double(points[i].y));
+					if (!i || !std::isfinite(points[i-1].x) || !std::isfinite(points[i-1].y)) continue;
+					const double length = std::hypot(double(points[i].x)-points[i-1].x,double(points[i].y)-points[i-1].y);
+					arcLength += length;
+					if (length > largest) { largest = length; edge = i; }
+				}
+				const auto& a = points[edge ? edge-1 : 0]; const auto& b = points[edge];
+				std::snprintf(line,sizeof(line),"extent %s count=%zu first=%.9g,%.9g last=%.9g,%.9g max_edge=%zu length=%.17g edge_a=%.9g,%.9g edge_b=%.9g,%.9g nonfinite=%zu arc_length=%.17g bbox=%.9g,%.9g,%.9g,%.9g position_hash=%016llx\n",
+					kind,points.size(),points.front().x,points.front().y,points.back().x,points.back().y,edge,largest,a.x,a.y,b.x,b.y,nonfinite,arcLength,left,top,right,bottom,hash); write(line);
+			};
+			describe("model",stroke.realPoints); describe("completed",completed); describe("stored",stored);
+			if (!stroke.realPoints.empty()) {
+				const auto& first = stroke.realPoints.front(); const auto& last = stroke.realPoints.back();
+				std::snprintf(line,sizeof(line),"model_global_attrs first_r=%.9g first_time=%.17g last_r=%.9g last_time=%.17g base_diameter=%.9g expected_speed=%.9g live_length=%.17g\n",
+					first.r,double(first.time),last.r,double(last.time),stroke.widthEstimator.baseDiameter,stroke.widthEstimator.expectedSpeed,stroke.liveTipLength.value_or(-1)); write(line);
+			}
+			const size_t start = std::max(trace.windowStart, stroke.realPoints.size() > 512 ? stroke.realPoints.size()-512 : 0);
+			for (size_t i = start; i < stroke.realPoints.size(); ++i) {
+				const auto& p = stroke.realPoints[i];
+				std::snprintf(line, sizeof(line), "model %zu %.9g %.9g %.9g %.17g\n", i,p.x,p.y,p.r,double(p.time)); write(line);
+			}
+			for (size_t i = 0; i < std::min(stroke.tailRawCount, stroke.tailRawSamples.size()); ++i) {
+				const auto& p = stroke.tailRawSamples[i];
+				std::snprintf(line, sizeof(line), "raw %zu %.9g %.9g %.17g %zu\n", i,p.position.x,p.position.y,p.physicalTime,p.firstPoint); write(line);
+			}
+			for (size_t i = 0; i < std::min(stroke.tailModelBoundaryCount,stroke.tailModelBoundaries.size()); ++i) {
+				const auto& p = stroke.tailModelBoundaries[i];
+				std::snprintf(line,sizeof(line),"boundary %zu %.17g %zu\n",i,p.physicalTime,p.firstPoint); write(line);
+			}
+			// 记录发布前 taper/公切线后的副本与发布坐标；各最多最后512点，不复制整条长笔划。
+			for (size_t i = completed.size() > 512 ? completed.size()-512 : 0; i < completed.size(); ++i) {
+				const auto& p = completed[i];
+				std::snprintf(line,sizeof(line),"completed %zu %.9g %.9g %.9g %.17g\n",i,p.x,p.y,p.r,double(p.time)); write(line);
+			}
+			for (size_t i = stored.size() > 512 ? stored.size()-512 : 0; i < stored.size(); ++i) {
+				const auto& p = stored[i];
+				std::snprintf(line,sizeof(line),"stored %zu %.9g %.9g %.9g\n",i,p.x,p.y,p.width); write(line);
+			}
+			write("end\n");
+			CloseHandle(file);
+		}
+		DirectX::XMFLOAT4 TailDebugColor(DirectX::XMFLOAT4 color, bool inverted) noexcept
+		{
+			return inverted ? DirectX::XMFLOAT4{1-color.x, 1-color.y, 1-color.z, color.w} : color;
+		}
+		std::vector<StoredStrokePointRange> SplitTailDebugRanges(
+			const std::vector<StoredStrokePointRange>& planned, std::optional<size_t> start)
+		{
+			std::vector<StoredStrokePointRange> ranges;
+			for (auto range : planned)
+			{
+				if (start && range.begin < *start && *start + 1 < range.end)
+				{
+					// 共享一个连接点；线段不重复，也不拆成新的历史 Stroke。
+					ranges.push_back({range.begin, *start + 1});
+					ranges.push_back({*start, range.end});
+				}
+				else ranges.push_back(range);
+			}
+			return ranges;
+		}
 		constexpr float kIdleMoveThresholdPx = 0.25f;
 		constexpr float kVisualStablePositionEpsilonPx = 0.05f;
 		constexpr float kEndpointDirectionEpsilonPx = 0.000001f;
@@ -171,7 +383,7 @@ namespace Inkeys::Drawing::Draw3
 
 		double ApplyLiveTipTaper(std::vector<InkPoint>& points,
 			double liveTipDurationSeconds, const ActiveStroke& stroke,
-			bool includePrediction)
+			bool includePrediction, std::optional<size_t>* changedSegment = nullptr)
 		{
 			if (points.empty() || liveTipDurationSeconds <= 0.0) return 0.0;
 			const double endTime = points.back().time;
@@ -222,6 +434,8 @@ namespace Inkeys::Drawing::Draw3
 					points.insert(points.begin() + index, InkPoint{
 						LerpFloat(previous.x, current.x, ratio), LerpFloat(previous.y, current.y, ratio),
 						LerpFloat(previous.r, current.r, ratio), LerpFloat(previous.time, current.time, ratio) });
+					// 插入点落在颜色边界前时，边界索引必须同步后移。
+					if (changedSegment && *changedSegment && index <= **changedSegment) ++**changedSegment;
 					++index;
 				}
 				const float progress = static_cast<float>((nextArcLength - taperStart) / effectiveLength);
@@ -273,6 +487,11 @@ namespace Inkeys::Drawing::Draw3
 			return startIndex;
 		}
 
+	}
+
+	bool IsPenTailTraceEnabled() noexcept
+	{
+		return IsTailTraceEnabled();
 	}
 
 	StrokeWidthEstimator::StrokeWidthEstimator(float baseDiameterValue, float expectedSpeedValue)
@@ -487,6 +706,169 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+
+	void RecordPenTailModelBoundary(ActiveStroke& stroke, double physicalTime) noexcept
+	{
+		if (!std::isfinite(physicalTime) || (stroke.tailModelBoundaryCount &&
+			physicalTime < stroke.tailModelBoundaries[stroke.tailModelBoundaryCount-1].physicalTime)) return;
+		// 记录输入即将追加的模型区间；raw 淘汰/缺失不会抹掉模型时间边界。
+		size_t expired = 0;
+		while (expired < stroke.tailModelBoundaryCount &&
+			stroke.tailModelBoundaries[expired].physicalTime < physicalTime - 0.160) ++expired;
+		if (!expired && stroke.tailModelBoundaryCount == stroke.tailModelBoundaries.size()) expired = 1;
+		for (size_t i = expired; i < stroke.tailModelBoundaryCount; ++i)
+			stroke.tailModelBoundaries[i-expired] = stroke.tailModelBoundaries[i];
+		stroke.tailModelBoundaryCount -= expired;
+		stroke.tailModelBoundaries[stroke.tailModelBoundaryCount++] = { physicalTime,
+			stroke.realPoints.empty() ? 0 : stroke.realPoints.size()-1 };
+	}
+
+	void RecordPenTailRawInput(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 position, double physicalTime) noexcept
+	{
+		if (!std::isfinite(physicalTime) || !std::isfinite(position.x) ||
+			!std::isfinite(position.y)) return;
+		if ((stroke.tailRawCount && physicalTime < stroke.tailRawSamples[stroke.tailRawCount - 1].physicalTime) ||
+			(stroke.tailModelBoundaryCount && physicalTime < stroke.tailModelBoundaries[stroke.tailModelBoundaryCount - 1].physicalTime))
+			return; // 不把时间倒退样本塞进有序物理窗口。
+		RecordPenTailModelBoundary(stroke, physicalTime);
+		size_t remove = 0;
+		while (remove < stroke.tailRawCount &&
+			stroke.tailRawSamples[remove].physicalTime < physicalTime - 0.160) ++remove;
+		if (!remove && stroke.tailRawCount == stroke.tailRawSamples.size()) remove = 1;
+		for (size_t i = remove; i < stroke.tailRawCount; ++i)
+			stroke.tailRawSamples[i - remove] = stroke.tailRawSamples[i];
+		stroke.tailRawCount -= remove;
+		stroke.tailRawSamples[stroke.tailRawCount++] = { position, physicalTime,
+			stroke.realPoints.empty() ? 0 : stroke.realPoints.size() - 1 };
+	}
+
+	namespace
+	{
+		InkPoint InterpolateCompletedPoint(const InkPoint& a, const InkPoint& b,
+			ink::stroke_model::Vec2 position, double fraction)
+		{
+			const float weight = static_cast<float>(fraction);
+			return {position.x,position.y,LerpFloat(a.r,b.r,weight),LerpFloat(a.time,b.time,weight)};
+		}
+
+		std::optional<size_t> FitCompletedPenGeometry(const ActiveStroke& stroke, std::vector<InkPoint>& output,
+			size_t& completedBoundary, TailFinalizeTrace& trace)
+		{
+			using namespace ink::stroke_model;
+			trace.decision = "missing_terminal_or_short";
+			auto& decision = trace.decision; auto& status = trace.status; auto& reason = trace.reason;
+			auto& windowStart = trace.windowStart; auto& changedStart = trace.changedStart;
+			auto& diagnostics = trace.diagnostics;
+			// 仅确认完成时调用；断触等待和实时 L1/realPoints 不受影响。
+			if (!stroke.terminalDisplayTime || output.size() < 4) return std::nullopt;
+			const size_t count = output.size();
+			size_t start = count > 512 ? count - 512 : 0;
+			// 没有近期模型边界时不可猜测物理时间，更不能退回整笔最后 512 点。
+			size_t firstBoundary = 0;
+			while (firstBoundary < stroke.tailModelBoundaryCount &&
+				stroke.tailModelBoundaries[firstBoundary].physicalTime < *stroke.terminalDisplayTime - .160) ++firstBoundary;
+			if (firstBoundary == stroke.tailModelBoundaryCount) { decision = "missing_model_window"; return std::nullopt; }
+			start = std::max(start, std::min(stroke.tailModelBoundaries[firstBoundary].firstPoint, count-1));
+			windowStart = start;
+			decision = "short_window";
+			if (count - start < 4) return std::nullopt;
+			std::vector<TerminalTailReferencePoint> reference;
+			reference.reserve(count - start);
+			for (size_t i = start; i < count; ++i)
+				reference.push_back({ { output[i].x, output[i].y }, { i, i, 0 }, i + 1 == count });
+			std::vector<TerminalTailRawPoint> raw;
+			for (size_t i = 0; i < stroke.tailRawCount; ++i)
+				if (stroke.tailRawSamples[i].physicalTime >= *stroke.terminalDisplayTime - 0.080)
+					raw.push_back({ { stroke.tailRawSamples[i].position.x, stroke.tailRawSamples[i].position.y }, i });
+			TerminalTailRequest request;
+			request.reference = reference; request.raw = raw;
+			request.endpoint = { stroke.terminalRawUp.x, stroke.terminalRawUp.y };
+			request.replacement_range = { start, count }; request.baseline_token = count;
+			request.config.max_raw_points = 64;
+			// 可见折线触发有限扩窗；位移只诊断，不设正常修正的位移硬门。
+			TerminalTailScratch fitScratch;
+			// 坐标与笔宽均为画布像素，不额外乘 DPI；细笔保持亚像素误差，粗笔也有可见性上限。
+			double diameter = 0;
+			for (size_t i = start; i < count; ++i) diameter = std::max(diameter, 2.0*output[i].r);
+			AdaptiveTerminalTailConfig adaptiveConfig;
+			adaptiveConfig.visibility_distance = std::clamp(diameter*.10, .5, 1.0);
+			adaptiveConfig.sampling_tolerance = std::clamp(diameter*.03, .10, .20);
+			trace.visibility = adaptiveConfig.visibility_distance; trace.sampling = adaptiveConfig.sampling_tolerance;
+			const auto result = ReconstructAdaptiveTerminalTail(request, fitScratch, adaptiveConfig);
+			status = static_cast<int>(result.status); reason = static_cast<int>(result.reason);
+			diagnostics = result.diagnostics; decision = "solver_or_patch_rejected";
+			if (result.status != TerminalTailStatus::kApply || result.patch.baseline_token != count ||
+				result.patch.replacement_range.begin != start || result.patch.replacement_range.end != count ||
+				result.patch.points.empty() || result.patch.points.size() > 2048) return std::nullopt;
+			decision = "source_rejected";
+			std::vector<InkPoint> candidate;
+			candidate.reserve(result.patch.points.size());
+			double previousSource = -1;
+			size_t mappedBoundary = completedBoundary;
+			bool foundBoundary = completedBoundary < start;
+			for (const auto& point : result.patch.points)
+			{
+				const auto& source = point.source;
+				if (source.first < start || source.second >= count || source.first > source.second ||
+					source.second-source.first > 1 || !std::isfinite(source.fraction) || source.fraction < 0 || source.fraction > 1)
+					return std::nullopt;
+				const double parameter = source.first + (source.second-source.first)*double(source.fraction);
+				if (parameter < previousSource) return std::nullopt;
+				previousSource = parameter;
+				const auto& a = output[source.first]; const auto& b = output[source.second];
+				const InkPoint sample = InterpolateCompletedPoint(a,b,point.position,source.fraction);
+				if (!std::isfinite(sample.x) || !std::isfinite(sample.y) || !std::isfinite(sample.r) || !std::isfinite(sample.time)) return std::nullopt;
+				if (parameter == completedBoundary) { mappedBoundary = start+candidate.size(); foundBoundary = true; }
+				if (point.position.x != LerpFloat(a.x,b.x,static_cast<float>(source.fraction)) || point.position.y != LerpFloat(a.y,b.y,static_cast<float>(source.fraction)))
+					changedStart = std::min(changedStart, start+candidate.size());
+				candidate.push_back(sample);
+			}
+			// 边界原顶点必须保留，避免把 L1 笔宽保护区误交给 taper。
+			if (!foundBoundary || result.patch.points.front().source.first != start ||
+				result.patch.points.front().source.fraction != 0 ||
+				result.patch.points.back().source.first != count-1 || result.patch.points.back().source.second != count-1 ||
+				result.patch.points.back().source.fraction != 0 ||
+				candidate.front().x != output[start].x || candidate.front().y != output[start].y ||
+				candidate.back().x != request.endpoint.x || candidate.back().y != request.endpoint.y) return std::nullopt;
+			// 求解器只看尾窗；发布前有界检查新尾段与未传入的稳定前缀。
+			auto cross = [](Vec2 a, Vec2 b, Vec2 c) {
+				return (double(b.x) - a.x) * (double(c.y) - a.y) -
+					(double(b.y) - a.y) * (double(c.x) - a.x); };
+			auto intersects = [&](Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
+				const auto ab1 = cross(a,b,c), ab2 = cross(a,b,d);
+				const auto cd1 = cross(c,d,a), cd2 = cross(c,d,b);
+				if (ab1 * ab2 < 0 && cd1 * cd2 < 0) return true;
+				const auto on = [](Vec2 p, Vec2 q, Vec2 r, double area) {
+					return std::abs(area) <= 1e-6 && r.x >= std::min(p.x,q.x) - 1e-6 &&
+						r.x <= std::max(p.x,q.x) + 1e-6 && r.y >= std::min(p.y,q.y) - 1e-6 &&
+						r.y <= std::max(p.y,q.y) + 1e-6; };
+				return on(a,b,c,ab1) || on(a,b,d,ab2) || on(c,d,a,cd1) || on(c,d,b,cd2); };
+			size_t work = 0;
+			for (size_t i = 1; i < result.patch.points.size(); ++i)
+			{
+				const auto a = result.patch.points[i - 1].position, b = result.patch.points[i].position;
+				// L1 内笔宽沿用原属性，位置变化后仍必须满足圆胶囊公切线条件。
+				if (start + i <= mappedBoundary && stroke.hasCommittedGeometry &&
+					std::abs(candidate[i].r - candidate[i-1].r) >
+					0.95 * std::hypot(double(b.x) - a.x, double(b.y) - a.y)) { decision = "width_rejected"; return std::nullopt; }
+				if (start+i < changedStart) continue;
+				for (size_t j = 1; j <= start; ++j)
+				{
+					if (++work > request.config.max_validation_work) { decision = "caller_budget_rejected"; return std::nullopt; }
+					if (start + i == j + 1) continue;
+					if (intersects(a, b, {output[j-1].x,output[j-1].y}, {output[j].x,output[j].y})) { decision = "prefix_intersection_rejected"; return std::nullopt; }
+				}
+			}
+			const bool changed = changedStart < start+candidate.size();
+			output.resize(start);
+			output.insert(output.end(),candidate.begin(),candidate.end());
+			completedBoundary = mappedBoundary;
+			decision = changed ? "applied" : "applied_without_position_change";
+			return changed ? std::optional<size_t>(changedStart ? changedStart-1 : 0) : std::nullopt;
+		}
+	}
+
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output)
 	{
@@ -511,6 +893,8 @@ namespace Inkeys::Drawing::Draw3
 		if (!std::isfinite(canvasOffsetX) || !std::isfinite(canvasOffsetY))
 			return std::nullopt;
 		std::vector<StoredInkPoint> points;
+		TailFinalizeTrace trace;
+		std::optional<size_t> changedSegment;
 		auto appendPoint = [&](const InkPoint& point)
 		{
 			points.push_back({ point.x + canvasOffsetX,
@@ -519,15 +903,25 @@ namespace Inkeys::Drawing::Draw3
 
 		if (style.inkType == StoredInkType::Pen)
 		{
-			BuildCompletedPenTail(stroke, liveTipTaperSeconds, scratch);
-			const size_t stablePointCount = stroke.hasCommittedGeometry &&
-				!stroke.realPoints.empty()
-				? std::min(stroke.committedIndex + 1, stroke.realPoints.size()) : 0;
-			points.reserve((stablePointCount > 0 ? stablePointCount - 1 : 0) +
-				scratch.size());
-			// 尾段首点已经烘入 taper；用它替换稳定前缀连接点，避免接缝重复。
-			for (size_t index = 0; index + 1 < stablePointCount; ++index)
-				appendPoint(stroke.realPoints[index]);
+			scratch = stroke.realPoints;
+			size_t completedBoundary = stroke.hasCommittedGeometry && !scratch.empty() ? std::min(stroke.committedIndex,scratch.size()-1) : 0;
+			changedSegment = FitCompletedPenGeometry(stroke, scratch, completedBoundary, trace);
+			if (!scratch.empty())
+			{
+				const size_t tailStart = stroke.hasCommittedGeometry
+					? completedBoundary : 0;
+				std::vector<InkPoint> tail(scratch.begin() + tailStart, scratch.end());
+				std::optional<size_t> localChanged;
+				if (changedSegment && *changedSegment >= tailStart) localChanged = *changedSegment - tailStart;
+				ApplyLiveTipTaper(tail, liveTipTaperSeconds, stroke, false, &localChanged);
+				if (localChanged) changedSegment = tailStart + *localChanged;
+				EnforceCapsuleTangency(tail);
+				// taper 可以插入派生连接点，不能复制到原点数的缓冲区。
+				scratch.resize(tailStart);
+				scratch.insert(scratch.end(), tail.begin(), tail.end());
+			}
+			else if (stroke.hasInputStartPoint) scratch.push_back(stroke.inputStartPoint);
+			points.reserve(scratch.size());
 			for (const InkPoint& point : scratch) appendPoint(point);
 		}
 		else if (style.inkType == StoredInkType::Highlighter ||
@@ -549,8 +943,13 @@ namespace Inkeys::Drawing::Draw3
 			return std::nullopt;
 		}
 
-		InkStroke storedStroke(style, std::move(points));
-		if (!storedStroke.IsValid()) return std::nullopt;
+		InkStroke storedStroke(style, std::move(points),
+			kDebugCompletedTailVisibility ? changedSegment : std::nullopt);
+		const bool valid = storedStroke.IsValid();
+		if (IsTailTraceEnabled() && gTailDiagnosticIoEnabled)
+			WriteTailDebugRecord(stroke,trace,style.inkType == StoredInkType::Pen ? std::span<const InkPoint>(scratch) : std::span<const InkPoint>(stroke.realPoints),
+				storedStroke.Points(),style,liveTipTaperSeconds,canvasOffsetX,canvasOffsetY,valid);
+		if (!valid) return std::nullopt;
 		return storedStroke;
 	}
 
@@ -696,8 +1095,10 @@ namespace Inkeys::Drawing::Draw3
 				primitive, *shapeKind, target.width, target.height) };
 		}
 
-		const std::vector<StoredStrokePointRange> ranges =
+		const std::vector<StoredStrokePointRange> plannedRanges =
 			PlanStoredStrokeRasterRanges(stroke, target);
+		const auto debugStart = kDebugCompletedTailVisibility ? stroke.DebugTailSegmentStart() : std::nullopt;
+		const auto ranges = SplitTailDebugRanges(plannedRanges, debugStart);
 		RECT dirty = {};
 		for (StoredStrokePointRange range : ranges)
 		{
@@ -721,7 +1122,8 @@ namespace Inkeys::Drawing::Draw3
 
 			const InkOperatorKind operatorKind = style.inkType == StoredInkType::Eraser
 				? InkOperatorKind::Erase : InkOperatorKind::Draw;
-			if (renderer.DrawStrokeOrDot(pointScratch, color,
+			if (renderer.DrawStrokeOrDot(pointScratch,
+				TailDebugColor(color, debugStart && range.begin >= *debugStart),
 				StrokeShape::RoundCapsule, operatorKind) < 0) return {};
 			UnionRectInPlace(dirty, RectFromStrokePoints(
 				pointScratch, target.width, target.height));
@@ -737,6 +1139,7 @@ namespace Inkeys::Drawing::Draw3
 
 	int RunPenTaperProductionProbe() noexcept
 	{
+		std::fprintf(stderr,"[Draw3TailTrace] enabled=%d inverse=%d\n",IsTailTraceEnabled(),kDebugCompletedTailVisibility);
 		int failures = 0;
 		int assertions = 0;
 		const auto check = [&](bool condition, const char* name)
@@ -756,6 +1159,43 @@ namespace Inkeys::Drawing::Draw3
 			for (size_t i = 0; i < a.size(); ++i)
 				if (a[i].x != b[i].x || a[i].y != b[i].y || a[i].r != b[i].r || a[i].time != b[i].time)
 					return false;
+			return true;
+		};
+		// 与未拟合、但使用相同 taper 的完成态基线比较位置；不能用反色标记证明修正生效。
+		const auto geometryChanged = [](std::span<const InkPoint> actual, std::span<const InkPoint> baseline)
+		{
+			if (actual.empty() || baseline.size() < 2) return false;
+			for (const auto& point : actual)
+			{
+				double closest = std::numeric_limits<double>::infinity();
+				for (size_t i = 1; i < baseline.size(); ++i)
+				{
+					const auto& a = baseline[i-1]; const auto& b = baseline[i];
+					const double dx = double(b.x)-a.x, dy = double(b.y)-a.y;
+					const double length2 = dx*dx+dy*dy;
+					const double t = length2 ? std::clamp(((double(point.x)-a.x)*dx+(double(point.y)-a.y)*dy)/length2,0.0,1.0) : 0;
+					closest = std::min(closest, std::hypot(double(point.x)-a.x-t*dx,double(point.y)-a.y-t*dy));
+					if (closest <= .0001) break;
+				}
+				if (closest > .0001) return true;
+			}
+			return false;
+		};
+		const auto finalizeBaseline = [](ActiveStroke& stroke, StoredInkStyle style, double taper, std::vector<InkPoint>& output)
+		{
+			struct RestoreHistory {
+				ActiveStroke& stroke; size_t count;
+				~RestoreHistory() { stroke.tailModelBoundaryCount = count; }
+			} restore{stroke,stroke.tailModelBoundaryCount};
+			stroke.tailModelBoundaryCount = 0; // 仅对照调用暂时屏蔽拟合历史，保留同一终点和笔锋流程。
+			return FinalizeStoredStroke(stroke,style,taper,output);
+		};
+		const auto storedMatches = [](const InkStroke& stored, StoredInkStyle style, std::span<const InkPoint> points)
+		{
+			if (stored.Style().inkType != style.inkType || stored.Style().fallbackRgb != style.fallbackRgb ||
+				stored.Style().opacity != style.opacity || stored.Style().texture != style.texture || stored.Points().size() != points.size()) return false;
+			for (size_t i = 0; i < points.size(); ++i)
+				if (stored.Points()[i].x != points[i].x || stored.Points()[i].y != points[i].y || stored.Points()[i].width != 2*points[i].r) return false;
 			return true;
 		};
 		const auto rebuild = [](ActiveStroke& stroke, double duration = 0.055)
@@ -778,6 +1218,174 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
+			{
+				ActiveStroke cache(5, 100, StrokeWidthMode::Fixed);
+				for (int i = 0; i < 200; ++i)
+					RecordPenTailRawInput(cache, {float(i), 0}, i * 0.0001);
+				check( cache.tailRawCount == 64 && cache.tailModelBoundaryCount == 128, "separate history capacities");
+				check( cache.tailRawSamples[0].position.x == 136, "local finalization contract");
+				RecordPenTailRawInput(cache, {200, 0}, 1.0);
+				check( cache.tailRawCount == 1, "local finalization contract");
+				RecordPenTailRawInput(cache, {201, 0}, 0.9);
+				RecordPenTailRawInput(cache, {NAN, 0}, 1.1);
+				check( cache.tailRawCount == 1, "local finalization contract");
+				cache.useDisplayTime = true;
+				LockPenTerminalState(cache, 1.0, {200,0}, {200,0});
+				ClearPenTerminalState(cache);
+				check( cache.tailRawCount == 1, "local finalization contract"); // 断触续接不丢历史，但新输入淘汰过期物理窗口。
+				RecordPenTailRawInput(cache, {202,0}, 1.2);
+				check( cache.tailRawCount == 1 && cache.tailRawSamples[0].position.x == 202, "local finalization contract");
+				cache.tailInputDiagnostic.enabled = true;
+				cache.tailInputDiagnostic.snapshots = 5; cache.tailInputDiagnostic.generation = 7;
+				cache.tailInputDiagnostic.upStatus = 0;
+				cache.Reset(5, 100, StrokeWidthMode::Fixed);
+				check( cache.tailRawCount == 0 && cache.tailModelBoundaryCount == 0, "reset clears bounded model/raw history");
+				check(!cache.tailInputDiagnostic.enabled && !cache.tailInputDiagnostic.snapshots &&
+					!cache.tailInputDiagnostic.generation && cache.tailInputDiagnostic.upStatus == -1, "reset clears diagnostic provenance");
+				for (bool assisted : {false, true})
+				{
+					ActiveStroke stroke(5,100,StrokeWidthMode::Fixed);
+					stroke.useDisplayTime = true;
+					for (int i = 0; i < 80; ++i)
+						stroke.realPoints.push_back({float(i),0,2.5f,i*.001f});
+					stroke.realPoints.push_back({79.f,3.f,2.5f,.080f});
+					stroke.committedIndex = 78; stroke.hasCommittedGeometry = true;
+					stroke.logicalInputTime = stroke.lastMovementInputTime = .080;
+					if (assisted)
+					{
+						stroke.tailRawCount = 2;
+						stroke.tailRawSamples[0] = {{75.f,1.f},.070,0};
+						stroke.tailRawSamples[1] = {{79.f,3.f},.080,0};
+					}
+					stroke.tailModelBoundaryCount = 1;
+					stroke.tailModelBoundaries[0] = {.020,20};
+					const auto original = stroke.realPoints;
+					std::vector<InkPoint> scratch;
+					// 等待接续时只重绘实时尾段，不调用完成态拟合。
+					LockPenTerminalState(stroke,.080,{79.f,0},{79.f,3.f});
+					BuildCompletedPenTail(stroke,0,scratch);
+					check( stroke.realPoints[79].y == 0 && stroke.committedIndex == 78, "local finalization contract");
+					StoredInkStyle style;
+					style.inkType = StoredInkType::Pen;
+					style.fallbackRgb = 0x123456; style.opacity = .4f; style.texture = 7;
+					std::vector<InkPoint> baseline;
+					const auto baselineStored = finalizeBaseline(stroke,style,0,baseline);
+					check(baselineStored && samePoints(original,baseline), "unfitted completion baseline preserves input");
+					const auto stored = FinalizeStoredStroke(stroke,style,0,scratch);
+					check(stored && geometryChanged(scratch,baseline), "normal-color finalization actually changes positions");
+					check(stored && storedMatches(*stored,style,scratch), "normal stored style and geometry are exact");
+					check( stored && stored->Points().size() == scratch.size(), "local finalization contract");
+					check( scratch.size() >= original.size(), "local finalization contract");
+					bool changedCommitted = false;
+					for (size_t i = 0; i < original.size(); ++i)
+						check(stroke.realPoints[i].x == original[i].x && stroke.realPoints[i].y == original[i].y, "active geometry stays unchanged");
+					for (size_t i = 0; i < scratch.size(); ++i)
+					{
+						check(scratch[i].r == 2.5f && scratch[i].time >= original.front().time && scratch[i].time <= original.back().time, "mapped width/time range");
+						if (i) check(scratch[i].time >= scratch[i-1].time, "fractional time remains ordered");
+						if (i < stroke.tailModelBoundaries[0].firstPoint)
+							check(scratch[i].x == original[i].x && scratch[i].y == original[i].y && scratch[i].r == original[i].r && scratch[i].time == original[i].time, "physical model window prefix stays exact");
+						if (scratch[i].time < original[78].time && scratch[i].y != 0) changedCommitted = true;
+					}
+					check( changedCommitted, "local finalization contract");
+					check(stored && stored->DebugTailSegmentStart().has_value() == kDebugCompletedTailVisibility,
+						"applied tail debug metadata follows explicit switch");
+					if (stored && stored->DebugTailSegmentStart())
+					{
+						const size_t first = *stored->DebugTailSegmentStart();
+						check(first+1 < scratch.size() && first < 78, "inverted range includes changed L1 tail");
+						for (size_t i=0; i<=first; ++i)
+							check(scratch[i].x == original[i].x && scratch[i].y == original[i].y, "debug prefix stays original");
+					}
+					if (stored)
+					{
+						InkStroke restored(stored->Style(), std::vector<StoredInkPoint>(stored->Points().begin(),stored->Points().end()));
+						check(!restored.DebugTailSegmentStart() && storedMatches(restored,style,scratch), "restored document keeps geometry/style without debug color");
+					}
+					check(stored && stored->Style().fallbackRgb == style.fallbackRgb && stored->Style().opacity == style.opacity,
+						"diagnostic does not change persisted style");
+					check( scratch.back().x == 79.f && scratch.back().y == 3.f, "local finalization contract");
+					check( stored && stored->Points()[78].y == scratch[78].y, "local finalization contract");
+					const auto fractionProbe = InterpolateCompletedPoint({0,0,2,.1f},{1,1,6,.5f},{9,8},.25);
+					check(fractionProbe.x == 9 && fractionProbe.y == 8 && fractionProbe.r == 3 &&
+						std::abs(fractionProbe.time-.2f) < 1e-6f, "new sample attributes interpolate original model sources");
+					stroke.tailRawCount = 0;
+					const auto withoutRaw = FinalizeStoredStroke(stroke,style,0,scratch);
+					check(withoutRaw && geometryChanged(scratch,baseline) && storedMatches(*withoutRaw,style,scratch),
+						"raw absence retains applied normal-color geometry");
+					check(withoutRaw && withoutRaw->DebugTailSegmentStart().has_value() == kDebugCompletedTailVisibility,
+						"raw-free debug metadata follows explicit switch");
+					stroke.tailRawCount = 1;
+					stroke.tailRawSamples[0] = {{79.f,3.f},.080,80};
+					const auto onlyUp = FinalizeStoredStroke(stroke,style,0,scratch);
+					check(onlyUp && geometryChanged(scratch,baseline) && storedMatches(*onlyUp,style,scratch),
+						"one Up raw sample still publishes repaired geometry");
+					check(onlyUp && onlyUp->DebugTailSegmentStart().has_value() == kDebugCompletedTailVisibility,
+						"single-Up debug metadata follows explicit switch");
+					stroke.tailModelBoundaries[0].physicalTime = -.2;
+					const auto stale = FinalizeStoredStroke(stroke,style,0,scratch);
+					check(stale && !stale->DebugTailSegmentStart() && scratch.size() == original.size() && scratch[78].y == original[78].y, "expired model window keeps baseline");
+					stroke.tailModelBoundaries[0].physicalTime = .020;
+					stroke.realPoints[78].r = 100;
+					const auto widthFallback = FinalizeStoredStroke(stroke,style,0,scratch);
+					check(widthFallback && !widthFallback->DebugTailSegmentStart() && scratch[78].y == original[78].y,
+						"caller width rejection has no diagnostic color");
+					stroke.realPoints[78].r = original[78].r;
+					// 非普通笔完全保留旧中心线；形状使用独立 FinalizeStoredShape。
+					style.inkType = StoredInkType::Highlighter;
+					const auto highlighter = FinalizeStoredStroke(stroke,style,0,scratch);
+					check( highlighter && highlighter->Points()[78].y == original[78].y, "local finalization contract");
+					style.inkType = StoredInkType::Pen;
+					stroke.terminalRawUp.x = NAN;
+					const auto fallback = FinalizeStoredStroke(stroke,style,0,scratch);
+					check( fallback && scratch[78].y == original[78].y, "local finalization contract");
+					check(fallback && !fallback->DebugTailSegmentStart(), "rejected fit has no inverted color");
+					check(highlighter && !highlighter->DebugTailSegmentStart(), "highlighter has no debug tail");
+				}
+			}
+
+			{
+				// 实际笔锋压缩在 104→125 边插入 x=120，覆盖颜色边界两侧的索引映射。
+				ActiveStroke taperProbe(10,500,StrokeWidthMode::Fixed);
+				taperProbe.logicalInputTime = .0675;
+				taperProbe.lastMovementInputTime = .04;
+				const std::vector<InkPoint> original = {
+					{100,100,5,.04f},{104,100,5,.04f},{125,100,5,.04f},{140,100,5,.04f}};
+				auto baseline = original;
+				ApplyLiveTipTaper(baseline,.055,taperProbe,false);
+				for (size_t marker : {size_t{2},size_t{1}})
+				{
+					auto points = original;
+					std::optional<size_t> changedSegment = marker;
+					ApplyLiveTipTaper(points,.055,taperProbe,false,&changedSegment);
+					check(points.size()==original.size()+1 && close(points[2].x,120),
+						"debug remap probe actually inserts taper connector");
+					check(samePoints(points,baseline),"debug boundary tracking leaves tapered geometry unchanged");
+					if (marker == 2)
+						check(changedSegment == 3 && points[3].x == original[2].x,
+							"insertion before diagnostic boundary shifts index to original segment start");
+					else
+					{
+						check(changedSegment == 1,"insertion within changed edge preserves diagnostic start");
+						const auto ranges = SplitTailDebugRanges({{0,points.size()}},changedSegment);
+						check(ranges.size()==2 && ranges[1].begin==1 && ranges[1].end==points.size(),
+							"both derived segments inside changed edge remain inverted");
+					}
+				}
+			}
+			const auto split = SplitTailDebugRanges({{0,10},{12,15}},size_t{5});
+			check(split.size()==3 && split[0].begin==0 && split[0].end==6 &&
+				split[1].begin==5 && split[1].end==10 && split[2].begin==12,
+				"clipped raster range splits only at diagnostic segment");
+			const auto unchangedRanges = SplitTailDebugRanges({{0,10}},std::nullopt);
+			check(unchangedRanges.size()==1 && unchangedRanges[0].end==10, "no diagnostic leaves raster range intact");
+			InkStroke invalidDebug({},{{0,0,1},{1,0,1}},size_t{1});
+			check(!invalidDebug.DebugTailSegmentStart(),"out of range debug marker ignored");
+			const auto inverted = TailDebugColor({.2f,.3f,.4f,.35f},true);
+			check(close(inverted.x,.8f) && close(inverted.y,.7f) && close(inverted.z,.6f) && inverted.w == .35f,
+				"tail debug inverts RGB but preserves alpha");
+			const auto regular = TailDebugColor({.2f,.3f,.4f,.35f},false);
+			check(regular.x == .2f && regular.y == .3f && regular.z == .4f && regular.w == .35f, "normal range color unchanged");
 			// 测试实际 Rebuild/完成/Stored 入口；比例表独立列出，不能只复制算法自证。
 			struct Ratio { float length; float scale; };
 			constexpr Ratio ratios[] = { { 0, 1 }, { 0.25f, 0.969921875f },
@@ -950,6 +1558,116 @@ namespace Inkeys::Drawing::Draw3
 				rebuild(marker);
 				check(samePoints(marker.realPoints, marker.l0DrawPoints) && !marker.l0HighlighterGeometry.primitives.empty(), "highlighter retains its rectangle path");
 			}
+			// 实际像素尺度弧线：覆盖立即 Up 和停顿 Up，观察拒绝原因，不把回退当成视觉通过。
+			for (float radius : {30.0f, 300.0f, 1000.0f})
+				for (double duration : {0.15, 0.6, 2.0})
+					for (double dwell : {0.0, 0.2})
+					{
+						using namespace ink::stroke_model;
+						const auto config = CreateStrokeModelConfiguration(96);
+						ActiveStroke stroke(3, config.expectedSpeed, StrokeWidthMode::Fixed);
+						stroke.useDisplayTime = true;
+						check(stroke.modeler.Reset(config.modelParams).ok(), "arc model reset");
+						const int steps = std::max(2, int(duration * 120));
+						DirectX::XMFLOAT2 endpoint{};
+						double lastModelTime = -0.001;
+						for (int i = 0; i <= steps; ++i) {
+							const double time = duration * i / steps;
+							const double angle = 2.0 * i / steps;
+							endpoint = {float(1200+radius*std::sin(angle)), float(1200-radius*std::cos(angle))};
+							stroke.logicalInputTime = stroke.lastMovementInputTime = time;
+							RecordPenTailRawInput(stroke, endpoint, time);
+							const double modelTime = i ? ResolvePenModelInputTime(stroke,time,lastModelTime,1.0/config.timingProfile.target_fps) : time;
+							lastModelTime = modelTime;
+							check(stroke.modeler.Update(Input{.event_type=i ? Input::EventType::kMove : Input::EventType::kDown,
+								.position={endpoint.x,endpoint.y},.time=Time(modelTime),.pressure=1,.tilt=1.5707963f,.orientation=0},stroke.modeledResults).ok(), "arc actual move");
+							AppendNewModeledPoints(stroke, float(2*radius/duration));
+						}
+						// 停顿走相同 endpoint admission，合成静止点不进入 raw 缓存。
+						for (int i = 1; i <= int(dwell * 120); ++i) {
+							stroke.logicalInputTime = duration + i/120.0;
+							BeginEndpointAdmission(stroke,endpoint);
+							lastModelTime = ResolvePenModelInputTime(stroke,stroke.logicalInputTime,lastModelTime,1.0/config.timingProfile.target_fps);
+							stroke.modelScratch.clear();
+							check(stroke.modeler.Update(Input{.event_type=Input::EventType::kMove,.position={endpoint.x,endpoint.y},
+								.time=Time(lastModelTime),.pressure=1,.tilt=1.5707963f,.orientation=0},stroke.modelScratch).ok(),"arc actual dwell");
+							AppendEndpointBoundedModeledPoints(stroke,stroke.modelScratch,-1,duration,false);
+						}
+						stroke.logicalInputTime = duration+dwell+0.0001;
+						LockPenTerminalState(stroke,stroke.logicalInputTime,endpoint,endpoint);
+						RecordPenTailRawInput(stroke,endpoint,stroke.logicalInputTime);
+						lastModelTime = ResolvePenModelInputTime(stroke,stroke.logicalInputTime,lastModelTime,1.0/config.timingProfile.target_fps);
+						stroke.modelScratch.clear();
+						check(stroke.modeler.Update(Input{.event_type=Input::EventType::kUp,.position={endpoint.x,endpoint.y},
+							.time=Time(lastModelTime),.pressure=1,.tilt=1.5707963f,.orientation=0},stroke.modelScratch).ok(),"arc actual up");
+						BeginEndpointAdmission(stroke,endpoint);
+						AppendEndpointBoundedModeledPoints(stroke,stroke.modelScratch,-1,duration,true);
+						const auto original = stroke.realPoints;
+						std::vector<InkPoint> completed, arcBaseline;
+						const auto unfittedArc = finalizeBaseline(stroke,{},0,arcBaseline);
+						const auto stored = FinalizeStoredStroke(stroke,{},0,completed);
+						check(unfittedArc && stored && storedMatches(*stored,{},completed), "arc publishes exact normal stored geometry/style");
+						check(stored && (kDebugCompletedTailVisibility || !stored->DebugTailSegmentStart()), "normal arc has no debug metadata");
+						const bool arcRepaired = geometryChanged(completed,arcBaseline);
+						check(stored && samePoints(original,stroke.realPoints), "arc finalization preserves active geometry");
+						check(!completed.empty() && completed.back().x==endpoint.x && completed.back().y==endpoint.y, "arc true endpoint retained");
+						if (radius == 300 && duration == .15 && dwell == 0)
+						{
+							struct QuietDiagnostics {
+								bool previous = gTailDiagnosticIoEnabled;
+								QuietDiagnostics() { gTailDiagnosticIoEnabled = false; }
+								~QuietDiagnostics() { gTailDiagnosticIoEnabled = previous; }
+							} quiet;
+							LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency);
+							for (size_t prefix : {size_t(0),size_t(1000)})
+							{
+								// 同一真实 Modeler 弧线追加稳定长前缀，计入完成复制及前缀相交检查。
+								if (prefix) {
+									std::vector<InkPoint> prefixed; prefixed.reserve(prefix+original.size());
+									for (size_t i=0;i<prefix;++i) prefixed.push_back({original.front().x-float(prefix-i),original.front().y,
+										original.front().r,original.front().time});
+									prefixed.insert(prefixed.end(),original.begin(),original.end());
+									stroke.realPoints.swap(prefixed);
+									for (size_t i=0;i<stroke.tailModelBoundaryCount;++i) stroke.tailModelBoundaries[i].firstPoint += prefix;
+									for (size_t i=0;i<stroke.tailRawCount;++i) stroke.tailRawSamples[i].firstPoint += prefix;
+								}
+								stroke.hasCommittedGeometry = true;
+								stroke.committedIndex = prefix+original.size()/2;
+								StoredInkStyle benchmarkStyle;
+								benchmarkStyle.fallbackRgb = 0x2468ac; benchmarkStyle.opacity = .6f;
+								std::vector<InkPoint> baseline, expected;
+								const auto baselineStored = finalizeBaseline(stroke,benchmarkStyle,.055,baseline);
+								const auto expectedStored = FinalizeStoredStroke(stroke,benchmarkStyle,.055,expected);
+								check(baselineStored && expectedStored && geometryChanged(expected,baseline),
+									"untimed baseline confirms benchmark actually repairs geometry");
+								check(expectedStored && storedMatches(*expectedStored,benchmarkStyle,expected) &&
+									expected.back().x == endpoint.x && expected.back().y == endpoint.y,
+									"benchmark keeps true Up and exact normal stored style");
+								const size_t protectedCount = stroke.tailModelBoundaries[0].firstPoint;
+								check(expected.size() >= protectedCount && samePoints(
+									std::span<const InkPoint>(expected).first(protectedCount),std::span<const InkPoint>(stroke.realPoints).first(protectedCount)),
+									"benchmark protected prefix remains exact");
+								check(safeContour(expected,false), "benchmark repaired taper is capsule safe");
+								std::array<double,30> milliseconds{};
+								for (int round=-3;round<30;++round) {
+									LARGE_INTEGER before{},after{}; QueryPerformanceCounter(&before);
+									const auto measured = FinalizeStoredStroke(stroke,benchmarkStyle,.055,completed);
+									QueryPerformanceCounter(&after);
+									// 比较在计时外：确保每轮发布的是已证实修正的结果，而非只检查关闭的反色标记。
+									check(measured && samePoints(completed,expected) && storedMatches(*measured,benchmarkStyle,expected),
+										"complete benchmark publishes exact repaired geometry/style");
+									check(measured && measured->DebugTailSegmentStart().has_value() == kDebugCompletedTailVisibility,
+										"benchmark debug metadata follows explicit switch");
+									if (round>=0) milliseconds[round]=1000.0*double(after.QuadPart-before.QuadPart)/frequency.QuadPart;
+								}
+								std::sort(milliseconds.begin(),milliseconds.end());
+								std::fprintf(stderr,"[Draw3TailCompleteBenchmark] prefix=%zu rounds=30 median_ms=%.6f p95_ms=%.6f input=%zu output=%zu diagnostics_io=off\n",
+									prefix,(milliseconds[14]+milliseconds[15])*.5,milliseconds[28],stroke.realPoints.size(),completed.size());
+							}
+						}
+						std::fprintf(stderr,"[Draw3TailArc] radius=%.0f duration=%.2f dwell=%.1f points=%zu raw=%zu repaired=%d\n",
+							radius,duration,dwell,original.size(),stroke.tailRawCount,arcRepaired);
+					}
 			int modelCases = 0;
 			int resumeCases = 0;
 			double maximumSettleAge = 0;
@@ -1121,10 +1839,13 @@ namespace Inkeys::Drawing::Draw3
 	void ActiveStroke::Reset(float baseDiameter, float expectedSpeed,
 		StrokeWidthMode widthModeValue, bool highlighterValue)
 	{
+		tailInputDiagnostic = {}; // 运行时复用不得保留上一接触的输入归属或计数。
 		modeledResults.clear();
 		modelScratch.clear();
 		predictedResults.clear();
 		realPoints.clear();
+		tailRawCount = 0;
+		tailModelBoundaryCount = 0;
 		predictedPoints.clear();
 		l0DrawPoints.clear();
 		previousL0DrawPoints.clear();

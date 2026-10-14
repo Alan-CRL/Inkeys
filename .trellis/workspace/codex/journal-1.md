@@ -1837,6 +1837,30 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 - 在 Actions 验收真实 Windows 2022 三架构链路。
 
 
+## Session 64: 阶段1：vcpkg Abseil与Modeler源码基线完成
+<!-- trellis-session: v=2 fp=f8686272ba5b8497 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段1：vcpkg Abseil与Modeler源码基线完成
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+固定vcpkg Abseil20250512.1#0，13个Modeler源码三消费者共享；全部构建/精确回放/三架构30paired性能/Headless/ABI/资源导入检查通过，清理本任务约12GiB可重建缓存。
+
+### Main Changes
+
+- 停止手工Abseil库导入，精确manifest与static-v143/C++20同包头库，Modeler算法/API/参数/几何保持。
+## Session 69: 分页窗口启动显隐冲突修复
+<!-- trellis-session: v=2 fp=747879c574e3e8bf -->
+
+**Date**: 2026-10-12
+**Task**: 分页窗口启动显隐冲突修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+删除 TopWindow 四次分页窗 Show，保持 CRLF/UTF-8；静态审查通过。Debug ARM64 Solution 构建 10 分钟超时，PptCOM 成功，原生结果未完成；无 GUI、无提交，保留原任务 in_progress。
 ## Session 64: 延续 Redo 弹窗：修复5秒布局保护与灰色动画
 <!-- trellis-session: v=2 fp=50b5fb3aa499acd9 -->
 
@@ -1857,6 +1881,27 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 (No commits - planning session)
 
+### Status
+
+[OK] **Completed**
+
+
+## Session 70: 左上角落笔死区用户验收与任务归档
+<!-- trellis-session: v=2 fp=44b1a6bf418e2c6e -->
+
+**Date**: 2026-10-12
+**Task**: 左上角落笔死区用户验收与任务归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认问题解决。修复已提交，原任务归档为 completed；静态审查通过，此前 Debug ARM64 构建 10 分钟超时记录保留。未启动 GUI、未 push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5ccf0fb` | Fix page control startup visibility |
 ### Testing
 
 - [OK] 完整 InkeysRepo.sln Debug|ARM64 MSBuild退出0、0 error；新增及既有headless --no-window沙箱外退出0。
@@ -1866,6 +1911,17 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 [OK] **Completed**
 
+
+## Session 71: Draw3 RTS 注册前根置顶顺序修复
+<!-- trellis-session: v=2 fp=29c2f1b1de18b8a3 -->
+
+**Date**: 2026-10-12
+**Task**: Draw3 RTS 注册前根置顶顺序修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 重建，失败不启动 RTS。独立审查、完整 Debug ARM64 Solution 构建和 --no-window 测试通过（退出码0）；真实故障场景待验收，无 GUI、无 commit/push。
 ### Next Steps
 
 - 保留10-11-redo-popup任务，实际UI连点/5s/颜色视觉验收尚未执行；本轮未commit或push。
@@ -1892,12 +1948,141 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 ### Testing
 
+- [OK] 4source和4main Rebuild exit0；4replay19case/128412 bit exact，仅依赖版本metadata变化；3arch各30pairs PASS；Headless no-window0。
 - [OK] 完整InkeysRepo.sln Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check通过。
 
 ### Status
 
 [OK] **Completed**
 
+### Next Steps
+
+- 阶段1已完成归档；父任务尾段重构继续planning，需要独立实施/验收。GUI/实体笔/Win7真机未执行；无commit/push。
+
+
+## Session 67: 阶段2：库内终态尾段重构与离线验收完成
+<!-- trellis-session: v=2 fp=b8ee82401437d9c8 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段2：库内终态尾段重构与离线验收完成
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+用户批准创建并开始；独立Modeler本地扩展完成，四配置原API精确保持，96窗尾段/三架构成本通过，产品接入仍后续。
+
+### Main Changes
+
+- 新增有序raw/位移正则尾段模块，硬入口/终点/原子回退，共享14TU，本地来源及可重现CLI；原13源18头未改。
+- 清理3.092GiB任务缓存，冻结47资料不变；记录Win32跨架构数值机制，不改浮点/ABI。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 四配置尾段96窗口116105assert0失败，默认18Apply12改善；原19case128412assert同阶段1位级一致；主Debug+Headless、三架构24case成本、imports资源及checker通过。
+
+## Session 72: RTS 注册前置顶修复核验与任务归档
+<!-- trellis-session: v=2 fp=79c5c3b927d252ae -->
+
+**Date**: 2026-10-12
+**Task**: RTS 注册前置顶修复核验与任务归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认当前任务核验通过，修复与规范已提交，任务归档 completed。完整 Debug ARM64 Solution 构建、无窗口测试和独立审查通过；AI 未执行 GUI。归档上下文引用已校验，无 push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74d7e688` | Restore topmost preparation before RTS startup |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 阶段3另建产品完成/Stored/taper/L1接入任务，按真实消费输入验证保护窗口/来源和成本；Touch续接及设备GUI另阶段。
+
+
+## Session 71: 阶段三 Draw3 完成态局部尾段拟合与评估
+<!-- trellis-session: v=2 fp=3127bb714edf1301 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段三 Draw3 完成态局部尾段拟合与评估
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+局部C++拟合、固定64点raw窗口、最终Stored接入；ARM64主/test构建、回放与生产probe通过。GUI/设备未执行，无commit/push。
+
+### Main Changes
+
+- 可选原始输入辅助，稀疏/零辅助仍平滑，修正可覆盖当前L1尾段
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 原API精确，150567尾段检查、331480生产probe、12312基准0fail
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实体笔和断触完成视觉、GPU重绘体验验证
+
+
+## Session 73: 阶段三人工反馈：临时尾段反色诊断
+<!-- trellis-session: v=2 fp=3c4f87a9e0fb6863 -->
+
+**Date**: 2026-10-13
+**Task**: 阶段三人工反馈：临时尾段反色诊断
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+实际体验无变化原因未确定；仅应用成功且改变位置的尾段反色，保持保存颜色；ARM64主solution和生产331608断言及外部Headless通过；等待人工复测，不结束任务。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 74: 阶段三无反色调查：大弧位移拒绝与有界日志
+<!-- trellis-session: v=2 fp=f34d825b56d793ba -->
+
+**Date**: 2026-10-13
+**Task**: 阶段三无反色调查：大弧位移拒绝与有界日志
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+真实生产大弧回放确认3px位移门拒绝3.66/12.19px候选；单Up raw导致一点评估窗。新增18场景和有界日志，未调算法。
+
+## Session 73: PPT 退出连贯交接与设置即时层级修复
+<!-- trellis-session: v=2 fp=91200a3823382b76 -->
+
+**Date**: 2026-10-13
+**Task**: PPT 退出连贯交接与设置即时层级修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+新建原任务要求的Trellis任务并实施。保留旧帧至目标ready、修复退出后Bar高亮、即时设置root/Z序。独立审查/完整Debug ARM64 Solution/--no-window通过；首次测试快照构造错误已修正。无GUI、无commit/push，待实机验收。
 ### Next Steps
 
 - 原任务保留，实际GUI视觉验收未运行；不commit/push。
@@ -1924,15 +2109,34 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 ### Testing
 
+- [OK] ARM64 Debug solution和333894断言probe通过；Headless首次调度时序断言失败，相同二进制复测通过；无GUI。
 - [OK] 完整Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check及diff检查通过。
 
 ### Status
 
 [OK] **Completed**
 
-### Next Steps
 
-- 实际GUI宽度验收未运行；本轮不commit/push，原任务保留。
+## Session 74: PPT 退出与设置层级人工验收及归档
+<!-- trellis-session: v=2 fp=e6f52f411ea08bec -->
+
+**Date**: 2026-10-13
+**Task**: PPT 退出与设置层级人工验收及归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认两项问题修复、人工验证通过。源码/测试/规范已提交，任务completed归档。完整Debug ARM64构建、--no-window和独立审查通过；AI未运行GUI，不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4057b8ea` | Fix PPT exit handoff and immediate settings z-order |
+
+### Status
+
+[OK] **Completed**
 
 
 ## Session 67: 最近 Clear 区间 Undo 与前进 Redo 完整链修复
@@ -1966,6 +2170,7 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 ### Next Steps
 
+- 用户复现后读取TEMP尾段日志，定位现场拒绝原因；阶段三人工未通过、不归档。
 - 用户可继续现有Trellis任务；本轮不commit/push、不归档，未做可见产品/Office GUI验证。
 
 

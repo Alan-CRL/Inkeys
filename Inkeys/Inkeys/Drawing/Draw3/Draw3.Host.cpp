@@ -230,6 +230,7 @@ namespace Inkeys::Drawing::Draw3
 		TransparentPresentationController presentation;
 		RealTimeStylusInput stylus;
 		std::unique_ptr<DrawingController> drawing;
+		std::atomic_bool interruptedStrokeReconnectEnabled = true;
 		std::jthread drawingThread;
 		std::atomic_bool running = false;
 		std::atomic_bool firstFrameReady = false;
@@ -1241,6 +1242,10 @@ namespace Inkeys::Drawing::Draw3
 
 		void PumpBridgeState()
 		{
+			// 仅绘制 owner 访问 Controller；独立配置不受 bridge revision 去重影响。
+			const bool reconnectEnabled = interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
+			if (drawing && drawing->GetInterruptedStrokeReconnectEnabled() != reconnectEnabled)
+				drawing->SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
 			PumpDisplayScale();
 			{
 				std::scoped_lock lock(presentationTargetMutex);
@@ -1588,6 +1593,8 @@ namespace Inkeys::Drawing::Draw3
 						{
 							StrokeModelConfiguration configuration =
 								CreateStrokeModelConfiguration(QueryCompatibleWindowDpi(windowHandle));
+							configuration.interruptedStrokeReconnectEnabled =
+								interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
 							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
 								startOptions.enableHiddenTestContactInjection);
 							DrawingControllerRuntimeObserver observer{
@@ -2103,6 +2110,14 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if (published) (void)impl_->input.PublishControlWake();
 		return published;
+	}
+
+	void Host::SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept
+	{
+		if (impl_->interruptedStrokeReconnectEnabled.exchange(enabled, std::memory_order_acq_rel) == enabled)
+			return;
+		// Start/Stop 不清除此期望值；空闲时也唤醒，关闭后及时正常提交等待接续的笔画。
+		(void)impl_->input.PublishControlWake();
 	}
 
 	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)

@@ -66,6 +66,7 @@ namespace
 	std::atomic_bool draw3PresentationRetryPending = false;
 	bool draw3PresentationFailureActive = false;
 	bool draw3SelectionWaitActive = false;
+	bool draw3PresentationExitRefreshPending = false;
 	enum class Draw3PresentationGateWaitReason : std::uint8_t
 	{
 		None,
@@ -432,6 +433,7 @@ namespace
 		constexpr Inkeys::Window::WindowRole roles[] = {
 			Inkeys::Window::WindowRole::Drawpad,
 			Inkeys::Window::WindowRole::DrawpadPresentation,
+			Inkeys::Window::WindowRole::Bar,
 			Inkeys::Window::WindowRole::Freeze,
 			Inkeys::Window::WindowRole::MagnifierHost,
 		};
@@ -472,6 +474,10 @@ namespace
 		const auto desired =
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
 		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		// 曾观测到放映后，桌面就绪交接必须恢复根层级；不绑定旧退出工具版本。
+		if (desired.workspace == Workspace::Presentation ||
+			runtime.workspace == Workspace::Presentation)
+			draw3PresentationExitRefreshPending = true;
 		// 新工具已选中但 bridge 尚未发布时，不提交旧画布可见性。
 		if (modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire) ||
 			modeSelection != desired.selectionMode)
@@ -487,9 +493,6 @@ namespace
 		const bool selectionMode = runtime.selectionMode;
 		const bool whiteboard = runtime.workspace ==
 			Inkeys::Drawing::Draw3::Bridge::Workspace::Whiteboard;
-		const bool whiteboardTransition = whiteboardDesired.load(
-			std::memory_order_acquire) ||
-			whiteboardPhase.load(std::memory_order_acquire) != WhiteboardPhase::Inactive;
 		const auto bridgeGuard = [](std::uint64_t revision, bool requireSelection,
 			std::uint64_t expectedModeRevision)
 		{
@@ -517,77 +520,26 @@ namespace
 			whiteboard || runtime.currentPageHasContent);
 		Inkeys::UI::Bar::NoteRecallHistoryAvailability(
 			runtime.canUndo, runtime.canRedo);
-		const auto expectedTarget =
-			Inkeys::Drawing::Draw3::Bridge::SelectionUsesAuxiliaryOutput(
-				selectionMode, runtime.workspace)
-			? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
-			: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
-		const bool targetReady = runtime.requestedOutputTarget == expectedTarget &&
-			runtime.readyOutputTarget == expectedTarget &&
-			runtime.readyOutputRevision == runtime.requestedOutputRevision &&
-			runtime.presentedContentRevision == runtime.contentRevision;
-		const bool selectionRequested = desired.selectionMode &&
-			desired.workspace != Workspace::Whiteboard && !whiteboardTransition;
-		// 双表面立即隐藏只用于可信 PPT 真退出，普通选择切换等待辅助帧。
-		const bool selectionWaiting = selectionRequested &&
-			desired.workspace == Workspace::Desktop &&
-			ExitSelectionHandoffPending() &&
-			(!runtime.firstFrameReady || !runtime.selectionMode ||
-				runtime.workspace != desired.workspace || !targetReady);
-		if (selectionWaiting)
+		const bool targetReady = Inkeys::Drawing::Draw3::DrawpadPresentationReady(
+			desired, runtime);
+		if (!targetReady)
 		{
+			const bool exitWaiting = ExitSelectionHandoffPending() &&
+				desired.selectionMode && desired.workspace == Workspace::Desktop;
 			LogDraw3PresentationGateWait(
-				Draw3PresentationGateWaitReason::SelectionHandoff, runtime,
-				desired.revision, modeRevision);
-			draw3SelectionWaitActive = true;
-			// 旧主 Drawpad 可能仍是非 layered DComp 窗口。新选择帧尚未呈现时，
-			// 先在窗口 owner thread 隐藏双表面，不能把 AdmissionBlocked 当穿透。
-			const HWND primary = service.Handle(WindowRole::Drawpad);
-			const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
-			GUITHREADINFO ownerInfo{ sizeof(GUITHREADINFO) };
-			const DWORD ownerThread = service.OwnerThreadId(WindowRole::Drawpad);
-			const bool primaryCaptured = ownerThread &&
-				GetGUIThreadInfo(ownerThread, &ownerInfo) &&
-				ownerInfo.hwndCapture == primary;
-			const bool hidden = primary && presentation && IsWindow(primary) &&
-				IsWindow(presentation) &&
-				!IsWindowVisible(primary) && !IsWindowVisible(presentation);
-			const bool safe = (hidden && !primaryCaptured) || service.SetDrawpadSurfaceVisibility(
-				Inkeys::Window::DrawpadSurfaceVisibility::Hidden,
-				bridgeGuard(desired.revision, true, modeRevision));
-			draw3PresentationRetryPending.store(true, std::memory_order_release);
-			TraceSelectionWindowState(desired, runtime,
-				!runtime.firstFrameReady ? "first-frame" :
-				!runtime.selectionMode ? "selection-not-applied" :
-				runtime.workspace != desired.workspace ? "workspace-not-applied" :
-				"selection-output-not-ready", safe);
-			if (!safe)
-			{
-				if (modeRevision != stateModeTransitionRevision.load(
-					std::memory_order_acquire) ||
-					Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot()
-						.revision != desired.revision)
-					return Draw3PresentationReconcileResult::Retry;
-				if (!draw3PresentationFailureActive)
-					LogDraw3PresentationFailure(runtime,
-						Inkeys::Window::DrawpadSurfaceVisibility::Hidden);
-				draw3PresentationFailureActive = true;
-				return Draw3PresentationReconcileResult::Retry;
-			}
-			draw3PresentationFailureActive = false;
-			return Draw3PresentationReconcileResult::Waiting;
-		}
-		if (!runtime.firstFrameReady ||
-			(selectionMode && !whiteboard && !targetReady))
-		{
-			LogDraw3PresentationGateWait(
-				!runtime.firstFrameReady
-					? Draw3PresentationGateWaitReason::FirstFrame
-					: Draw3PresentationGateWaitReason::SelectionOutput,
+				exitWaiting ? Draw3PresentationGateWaitReason::SelectionHandoff :
+				!runtime.firstFrameReady ? Draw3PresentationGateWaitReason::FirstFrame :
+				Draw3PresentationGateWaitReason::SelectionOutput,
 				runtime, desired.revision, modeRevision);
-			// 失败的 Present 也需有后继机会；仅等待一次 revision 可能永远卡住。
+			// 保留已呈现的表面，直到目标工作区/模式的完整帧就绪再成对切换。
+			// 旧 DComp 主窗在此期间不保证系统穿透，不能把输入门关闭当成穿透。
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			draw3PresentationFailureActive = false;
+			if (exitWaiting)
+			{
+				draw3SelectionWaitActive = true;
+				TraceSelectionWindowState(desired, runtime, "selection-output-not-ready", false);
+			}
 			return Draw3PresentationReconcileResult::Waiting;
 		}
 
@@ -609,26 +561,11 @@ namespace
 			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Hidden; break;
 		}
 
-		const auto hideForNewSelection =
-			[&](const Inkeys::Drawing::Draw3::Bridge::ProductState& state)
-		{
-			const auto currentModeRevision = stateModeTransitionRevision.load(
-				std::memory_order_acquire);
-			if (!ExitSelectionHandoffPending() || !state.selectionMode ||
-				state.workspace != Workspace::Desktop ||
-				whiteboardDesired.load(std::memory_order_acquire) ||
-				whiteboardPhase.load(std::memory_order_acquire) != WhiteboardPhase::Inactive)
-				return;
-			(void)service.SetDrawpadSurfaceVisibility(
-				Inkeys::Window::DrawpadSurfaceVisibility::Hidden,
-				bridgeGuard(state.revision, true, currentModeRevision));
-		};
 		// 等待窗口提交期间若期望场景已变，旧 ready 不得重新显示主拦截窗。
 		const auto latest =
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
 		if (latest.revision != desired.revision)
 		{
-			hideForNewSelection(latest);
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			return Draw3PresentationReconcileResult::Retry;
 		}
@@ -641,7 +578,6 @@ namespace
 			if (current.revision != desired.revision ||
 				modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire))
 			{
-				hideForNewSelection(current);
 				return Draw3PresentationReconcileResult::Retry;
 			}
 			if (!draw3PresentationFailureActive)
@@ -655,10 +591,19 @@ namespace
 		if (after.revision != desired.revision ||
 			modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire))
 		{
-			// 旧窗口命令已执行也可能赶在新 Selection 发布之后；立即撤下主窗。
-			hideForNewSelection(after);
+			// 提交期间目标改变时保留现有画面，下次仅提交最新目标的就绪帧。
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			return Draw3PresentationReconcileResult::Retry;
+		}
+		if (draw3PresentationExitRefreshPending && desired.workspace == Workspace::Desktop)
+		{
+			// 用户退出后选择新工具也立即恢复根层级；失败按最新目标继续重试。
+			if (!service.RequestTopmostRefresh())
+			{
+				draw3PresentationRetryPending.store(true, std::memory_order_release);
+				return Draw3PresentationReconcileResult::Retry;
+			}
+			draw3PresentationExitRefreshPending = false;
 		}
 		LogDraw3PresentationGateReady(runtime, desired.revision, modeRevision);
 		draw3PresentationRetryPending.store(false, std::memory_order_release);

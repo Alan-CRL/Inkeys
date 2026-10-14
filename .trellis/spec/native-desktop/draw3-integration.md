@@ -2,60 +2,95 @@
 
 ## 来源与文件边界
 
-- 来源快照：`D:\Project\Inkeys\inkStrokeModelerTest\Inkeys3-Draw3@8d045298eaaac76f752b4f8b5f3303b3520e50b7`；目标仓库不嵌套源 `.git`。
-- `draw3/*.cpp|*.cppm` 重命名到 `Inkeys/Inkeys/Drawing/Draw3/Draw3.*`；HLSL/HLSLI/CSO 到 `Inkeys/Inkeys/Drawing/Draw3/Assets/`；Ink Stroke Modeler 和 Abseil 仅复制头文件到 `Inkeys/additional/`。
-- `Inkeys/resource.h`/`Inkeys/Inkeys.rc` 保留 Draw3 资源 ID：`301=IDR_DRAW3_INK_PIXEL_SHADER`、`302=IDR_DRAW3_INK_VERTEX_SHADER`、`303=IDR_DRAW3_LASER_UPDATE_CS`、`304=IDR_DRAW3_LASER_EMIT_CS`。
-- 产品编译不得登记源 `main.cpp`、demo/独立测试窗口、`window_performance_hud`、`.git/.vs`、构建输出或第三方 `.cc`；只允许链接源快照自带的三架构 `ink_stroke_modeler_merge.lib`。
+- 来源快照：D:/Project/Inkeys/inkStrokeModelerTest/Inkeys3-Draw3@8d045298eaaac76f752b4f8b5f3303b3520e50b7；不嵌套源.git。2026-10-12阶段1获批，仅调整Modeler/Abseil构建归属，算法及产品几何不变。
+- Draw3产品源在Inkeys/Inkeys/Drawing/Draw3；Modeler运行源唯一存放于Inkeys/additional/ink_stroke_modeler；Abseil通过vcpkg同包头/库消费，Inkeys/additional/absl保留旧.0头用于回退。
+- Inkeys/resource.h/Inkeys.rc保留资源301-304及现有shader嵌入链。
+- 产品不编译demo入口、独立测试窗口、window_performance_hud或Abseil.cc。共享清单保留13个未修改上游Modeler运行.cc；2026-10-12阶段2授权新增独立terminal_tail_reconstructor本地扩展TU，不隐式接入产品；排除GMock type_matchers.cc和测试/fuzz源码。
 
-## Scenario: 固定版本 Ink Stroke Modeler ABI
+## Scenario: 固定版本 Ink Stroke Modeler 与 vcpkg Abseil ABI
 
 ### 1. Scope / Trigger
-
-修改 Ink prediction、第三方头文件、平台/CRT/Vcpkg 配置或固定模型库时必须应用本合同。
+修改Ink prediction、vendor源/头、共享MSBuild清单、vcpkg依赖或CRT时应用此合同。阶段1证据归10-12-modeler-source-build-baseline，配置存在不代表验收。
 
 ### 2. Signatures
-
-- `#pragma comment(lib, "ink_stroke_modeler_merge.lib")`
-- `InkStrokeModelerLibraryDirectory`: Win32=`..\inkStrokeModelerTest\lib\lib32`，x64=`..\inkStrokeModelerTest\lib\lib64`，ARM64=`..\inkStrokeModelerTest\lib\libArm64`
+- vcpkg.json精确override Abseil20250512.1#0，保留原baseline与其他版本。
+- 三个static-v143 triplet仅给Abseil设置C++20/REQUIRED，MSBuild三消费者统一VcpkgConfiguration=Release。
+- Modeler13个传统TU共享清单/canonical Modeler头；Abseil头与静态库来自同一vcpkg installed包，旧merge/.0头只作独立对照/整套回退。
 
 ### 3. Contracts
-
-- `Inkeys/additional/{ink_stroke_modeler,absl}` 只保留公开/传递头文件，不登记或保留 `.cc`。
-- 三架构固定库必须来自已合并的 Draw3 commit `8d045298`；不得用本机构建输出静默替换。
-- 固定库使用 `/MT`、`NDEBUG` 和 `_ITERATOR_DEBUG_LEVEL=0`。Inkeys Debug 保留禁用优化/PDB，但必须使用 `MultiThreaded`、取消 `_DEBUG`，并在 `Microsoft.Cpp.targets` 导入前设置 `VcpkgConfiguration=Release`。
+- active vcpkg Abseil include优先于保留的vendor .0头；实际patch版本、std string_view/ordering、lts_20250512、MT/NDEBUG/iterator0与库一致，不混用版本。
+- 不手工合并/复制Abseil库或拆旧merge；记录包source/port/toolchain/flags/hash/machine/CRT/namespace，无Modeler定义。
+- 业务Debug保持原调试/优化合同；仅共享清单标记的Modeler TU（13个上游源及阶段2独立扩展）保持旧MinSizeRel /O1 /Ob1、/MT、NDEBUG、C++20、/fp:precise、EH/RTTI，PCH/模块扫描关闭。运行期obj更新用逐项marker限制，不能改变业务cpp/cppm obj。
+- Abseil使用vcpkg标准Release优化，须对照验收；其他依赖/SDK/toolset不升级。
+- triplet文件hash参与所有包缓存，首次可重建同版本依赖；改变依赖设置前检查空间，不以cache失效为由改版本。
+- 源码Modeler与旧merge不能混链；Update追加、Predict非修改、Save/Restore、参数和几何接纳保持。
 
 ### 4. Validation & Error Matrix
-
 | 条件 | 必需结果 |
 |---|---|
-| 任一架构库缺失 | 链接失败，不回退到源码直编 |
-| Debug 使用 `/MTd` 或 `_DEBUG` | 视为 ABI 配置错误，禁止用 `/NODEFAULTLIB` 或忽略 LNK2038 |
-| Vcpkg Debug 静态库进入 Inkeys Debug | 改为 Release 子目录，使完整本机依赖链保持 `/MT` |
-| 头文件与固定库版本不一致 | 更新必须成套进行并重跑全量 Rebuild |
+| package或13cc缺失 | 构建失败，不静默回旧merge |
+| MTd/_DEBUG/iterator不匹配 | ABI错误，不忽略LNK2038 |
+| 头与库版本/ABI不同 | 同包配套并完整Rebuild |
+| 回放字段差异 | 仅声明的.0→.1依赖版本metadata可不同；语义全部bit exact |
+| 可重复且超噪声退化 | 阶段1不通过，不调算法掩盖 |
 
 ### 5. Good / Base / Bad Cases
-
-- Good：Debug 自有代码可调试，但所有静态依赖 ABI 为 `/MT`，清空中间目录后成功链接。
-- Base：Release 直接使用对应架构固定库。
-- Bad：保留 Abseil/Modeler `.cc` 与固定库同时链接，或靠旧 `.obj` 让增量 Build 假通过。
+- Good：13TU独立优化、vcpkg同包Release头/库、业务flags保持，完整Rebuild/回放/性能通过。
+- Base：三架构共享源码，各自对应installed包。
+- Bad：vendor.0头+.1库、源码+merge混链、整工程MTd、旧obj复用。
 
 ### 6. Tests Required
-
-- ARM64 Debug/Release 对完整 `InkeysRepo.sln` 执行 `/m:1 /t:Rebuild`。
-- 静态断言四个第三方目录无 `.cc`、项目无第三方 `.cc` 编译项、三架构库与 pragma/目录映射齐全。
-- 运行 `InkeysHeadlessTests.exe --no-window` 和 `Inkeys.exe --draw3-hidden-test`。
+- InkeysRepo.sln Debug ARM64完整Rebuild，补三架构Release；demo/test既有solution。
+- 切换前独立旧EXE；--modeler-replay精确状态/计数/时间/全部Result，--modeler-benchmark 30轮交替。
+- 计时在无构建干扰时执行；reset为完成Up后64次无参Reset批次均摊，不能据此推断Reset(params)/新Down初始化成本。
+- 来源/实际include/flags、三架构ABI与x86/x64静态imports，旧头/库hash保持。
+- Headless --no-window保持MTd且不消费Abseil。GUI/D3D/Win7真机本阶段不执行。
 
 ### 7. Wrong vs Correct
+Wrong：Debug MTd + MT包，vendor旧头混新库，源码和merge同时链接。
+Correct：同包Abseil头/库、MT/NDEBUG/iterator0/std别名、13TU独立优化、严格旧/新对照。
 
-Wrong：`Debug /MTd + release merge.lib -> 忽略 LNK2038`。
-
-Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs -> 固定库 ABI 一致`。
+共享props中运行期metadata更新必须逐项限制 `InkStrokeModelerRuntime=true`；不要在Target内用 `ClCompile Update="@(InkStrokeModelerSource)"` 假定已限制范围，否则业务cpp/cppm可能共用obj。实际vcpkg properties/imports先于ItemDefinition求值，installed路径需用getItem及CL.read双重确认。
 
 ## 窗口与所有权
 
 - `WindowService` 是 `WindowRole::Drawpad` 与 `WindowRole::DrawpadPresentation` HWND 的唯一创建、显示、隐藏和销毁者。Draw3 只把主 Drawpad 交给 `AttachExternal(HWND, callbacks)`；辅助窗不得绑定 RTS、WndProc mailbox、document 或第二套 Host。
 - Draw3 不创建/销毁顶层窗口，不修改标题、owner 或 Z 序；样式和 `Primary/Presentation/Hidden` 可见性变化必须通过 Window Service 的 owner-thread 命令完成。
 - owner 层级保持 `MagnifierHost -> Freeze -> DrawpadPresentation -> Drawpad -> PPT/Bar`，使 PPT/Bar 通过传递 Owner 关系始终高于两套画布表面。Drawpad 仍是顶层 owned popup，不是 `WS_CHILD`。Draw3 presenter 不得调用 `SetWindowPos`、`SetParent` 或直接改 owner；`SetBounds(Drawpad)` 必须同步两窗。
+
+## Scenario: 产品 RTS 注册前置顶准备
+
+### 1. Scope / Trigger
+
+产品首次启动或 DComp 失败后重建 ULW HWND 链时适用。历史 Inkeys2 在 0c0aaf0e99a4 / 649de99daecc 保留根置顶先于 RTS 创建的经验合同；不将该经验写成微软 API 强制要求。
+
+### 2. Signatures
+
+`IdtMain.cpp` 私有 `bool PrepareDraw3WindowTopmost(Window::Service&, HWND drawpad, const char* phase)`；复用公开 `RequestTopmostRefresh()`、`Handle()`、`OverlayRoot()`，不改变 Host/Window 公共接口。
+
+### 3. Contracts
+
+- 每次 `StartDraw3ProductWithFallback` 的 `StartProduct` 前准备，phase 为 initial 或 rebuilt-ulw；后者只在旧 Host/窗口清理并完成新链创建后执行。
+- 桌面策略必须允许 topmost 且非 Whiteboard；只通过 Window Service 同步刷新根，Mag 缺失时 Freeze 为根，不显示/激活或单独置顶画布/主栏。
+- 检查 root、Freeze、DrawpadPresentation、Drawpad 的有效句柄、直接 GW_OWNER、实际 WS_EX_TOPMOST 和刷新前后身份；策略 true 和 API 成功都不能代替 HWND 事实。
+- 初次准备失败立即返回，不能误进 DComp 回退；新链准备失败也不启动 Host/RTS。启动根刷新最多等待 5 秒；超时队列命令不再执行，准备失败在日志和 join 前建立既有退出监督。准备成功后才创建该次 Host cleanup scope，保留原失败监督。
+- 首帧后的 Preview observer/InitialTopmostRefresh 及周期刷新、白板 NOTOPMOST 保留。日志每次准备一次，含阶段、角色、原因和 HWND/owner/exstyle/read error；服务调用错误由 owner thread 捕获，不从调用线程读取陈旧 GetLastError。
+
+### 4. Validation & Error Matrix
+
+root/策略/句柄/owner/实际 topmost 不符、刷新失败、读取样式失败或身份变化 → 返回 false，不调用该次 StartProduct。Mag 未创建但 Freeze 为有效无 owner 根 → 允许。成功 → 返回 true，随后才初始化 RTS。
+
+### 5. Good / Base / Bad Cases
+
+Good：初代及重建代都完成准备再初始化 RTS；Base：Mag 缺失仍以 Freeze 抬升整链；Bad：只在首帧后刷新，或 prepare && StartProduct 失败统一进入 DComp 回退。
+
+### 6. Tests Required
+
+静态核对两处 gate、回退/清理边界和无激活合同，完整 Solution Debug|ARM64 与 `InkeysHeadlessTests --no-window`。后者不验证真实 HWND/RTS/Z 序；真实窗口/笔输入和白板行为须另按授权验证，不能将编译或属性检查认作视觉证明。
+
+### 7. Wrong vs Correct
+
+Wrong：只等 RtsReady/首帧后刷新；Correct：每代窗口准备失败直接返回，成功后调用 StartProduct，保留后置恢复。实际 Windows/RTS 系统内部因果仍需故障现场证据。
 
 ## 设备与线程
 
@@ -357,7 +392,7 @@ PumpBridgeState();
 - Good：有一笔的选择态由辅助 ULW 穿透显示，Clear 后等当前 revision 的完整 clean 帧再隐藏；Undo 恢复该笔并重新显示辅助窗，Redo 再次隐藏，另一页的 Eraser history 仍存在。
 - Base：初始选择空页两窗隐藏；进入 Pen 先预热主 presenter 再显示，未落笔返回选择再次经辅助 clean 后隐藏。
 - Bad：用窗口穿透样式推断选择模式、让主 Drawpad 承担穿透、复制固定 L2、视觉像素是否为空推断内容，或 Clear 时删除 Stroke/替换 runtime。
-- PPT 真退出的 Desktop Selection 可以先于其辅助 ULW 完整帧就绪；等待时 Window Service owner thread 必须隐藏旧双画布，保持可恢复重试，且在最新 bridge revision、输出目标/content revision 成功 Present 后再显示辅助 ULW（有内容）或双隐藏（空内容）。成对 HWND 事务要读回双窗可见性；AdmissionBlocked、MA_NOACTIVATE 和非 layered 主窗上的 `WS_EX_TRANSPARENT` 不能代替系统命中穿透。白板和更新的 Pen/Presentation 期望优先。
+- PPT 真退出及 Desktop/Presentation、Selection/绘制交接必须保持旧可见画面直至最新工作区、模式、输出目标/revision、content Present 与场景身份均匹配；等待或过期帧不主动双隐藏。就绪后通过 owner-thread 成对显隐事务切换目标，有内容选择页使用辅助 ULW，空 clean 页可隐藏画布但主栏保留。旧非 layered 主表面保留期间不承诺系统穿透；AdmissionBlocked 不能代替该穿透。可信退出的条件 Selection 成功后必须再刷新 Bar 样式和渲染，不能沿用提交前的高亮；Desktop交接就绪时刷新根并在失败时重试。
 - PPT EndScreen 仅由可信 State=5 与同次完整文稿拓扑产生明确 `PageKind::EndScreen` 目标：内部索引为真实 `N`，COM/UI 总页数仍 `N`，无 SlideID。正常页与 EndScreen 共用单 Host 页边界、contact 隔离、成功 Present、UI ready 和保存 worker。UInk 文件在 N 个真实 active 页后保存一个带单个 `inkeysPageKind=end-screen` 的独立 pageGuid；codec 两侧和应用严格导入须配套验证，旧 N-canvas 文件冷读补空页。重排/增删幻灯片不能把该页放入 retained SlideID 集合。
 
 ### 6. Tests Required
@@ -365,7 +400,7 @@ PumpBridgeState();
 - Headless 覆盖 `Primary/Presentation/Hidden` 解析、Clear 点击/双击决策，以及 timer begin/end 幂等、失败、模式往返和析构清理。
 - CPU history 覆盖普通 `A/B/C` 的 Undo/Redo、`undoFloor` 截止、Clear 恢复画布逐笔撤空且不跨第二个边界、新 Stroke 分支丢弃 redo 和每页隔离；UInk/storage 覆盖 `A/Clear/B/Clear/C`、空 Clear no-op 与最近区间恢复。
 - 隐藏 HWND 集成覆盖双窗固定样式/owner/bounds、互斥可见、输出 generation 往返、clean 握手、Stored Stroke 内容发布、页面切换、Clear 后 Undo 恢复、普通 Stroke Redo 和 presenter recovery；跨最近Clear的会话Redo以同页有限CPU continuation保留后继隐藏Stroke及redo栈，旧区间Stroke→Clear→后继Stroke逐步回到最新；新Stroke取消分支，不改变UInk格式。
-- Selection PPT 页级回归须通过真实 Controller observer 和 Host 覆盖两个不同有墨迹页的 `true/r→true/r+1`、两个空页的 `false/r→false/r+1`、相同完整载荷幂等、EndScreen 与普通页往返；每次比较 Host 目标/成功 Present 内容版本及辅助 ULW 的完成输出，不能只等待 `presentationReady` 身份或内容 bool。Pen 模式与真退出双隐藏合同同时复测。
+- Selection PPT 页级回归须通过真实 Controller observer 和 Host 覆盖两个不同有墨迹页的 `true/r→true/r+1`、两个空页的 `false/r→false/r+1`、相同完整载荷幂等、EndScreen 与普通页往返；每次比较 Host 目标/成功 Present 内容版本及辅助 ULW 的完成输出，不能只等待 `presentationReady` 身份或内容 bool。Pen 模式与真退出保留旧帧、就绪交接和主栏模式同步合同同时复测。
 - 完整 `InkeysRepo.sln Debug|ARM64` 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`；不得启动可见窗口。
 
 ### 7. Wrong vs Correct

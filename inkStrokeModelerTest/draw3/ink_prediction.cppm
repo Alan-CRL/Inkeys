@@ -512,6 +512,13 @@ export namespace draw3
 
 	// 标记当前几何切片是否包含整笔的真实起点或可见终点。
 	// 保存一个 contact 的模型结果、预测结果和三层提交状态。
+	struct TailRawSample
+	{
+		DirectX::XMFLOAT2 position;
+		double physicalTime = 0;
+		size_t firstPoint = 0;
+	};
+
 	struct ActiveStroke
 	{
 		ink::stroke_model::StrokeModeler modeler;
@@ -520,6 +527,13 @@ export namespace draw3
 		std::vector<ink::stroke_model::Result> modelScratch;
 		std::vector<ink::stroke_model::Result> predictedResults;
 		std::vector<InkPoint> realPoints;
+		// 仅保存真实模型输入的物理尾窗；固定容量避免长笔划累计 raw。
+		std::array<TailRawSample, 64> tailRawSamples = {};
+		size_t tailRawCount = 0;
+		// 模型边界独立于可选 raw；固定容量且只访问最近 160ms。
+		struct TailModelBoundary { double physicalTime = 0; size_t firstPoint = 0; };
+		std::array<TailModelBoundary, 128> tailModelBoundaries = {};
+		size_t tailModelBoundaryCount = 0;
 		std::vector<InkPoint> predictedPoints;
 		std::vector<InkPoint> l0DrawPoints;
 		std::vector<InkPoint> previousL0DrawPoints;
@@ -586,6 +600,9 @@ export namespace draw3
 	// 有界记录模型与接纳尾段供诊断，不修改笔迹几何。
 	void CapturePenTerminalTrace(ActiveStroke& stroke) noexcept;
 	// 用已确认真实点生成普通笔完成态尾段，并烘入最终笔锋宽度。
+	void RecordPenTailModelBoundary(ActiveStroke& stroke, double physicalTime) noexcept;
+	void RecordPenTailRawInput(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 position, double physicalTime) noexcept;
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output);
 	// 把完成态真实点转换为不含 time/prediction 的持久 Stroke；scratch 由绘制线程复用。

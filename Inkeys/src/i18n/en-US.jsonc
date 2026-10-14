@@ -422,6 +422,15 @@
           "MousePenE": "For PCs, tablets, and mouse-operated large displays, with mouse, pen, graphics tablet, or touch input."
         }
       },
+      "Touch":
+      {
+        "N": "Touch",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "Reconnect interrupted strokes",
+          "E": "When touch briefly drops out and resumes in the same direction, the app tries to join both parts into one stroke, reducing gaps. When disabled, lifting your finger ends the stroke."
+        }
+      },
       "Eraser":
       {
         "N": "Eraser",

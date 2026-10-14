@@ -21,6 +21,7 @@
 #include <string>
 #include <cstring>
 #include <vector>
+#include <utility>
 
 #include <json/json.h>
 
@@ -133,8 +134,22 @@ namespace
 			file << Json::writeString(writer, document);
 			return file.good();
 		};
-		for (const Json::Value value : { Json::Value(), Json::Value(-1), Json::Value(0),
-			Json::Value(1), Json::Value(2), Json::Value(3), Json::Value("left") })
+		// 预期值由案例明确给出，不重复生产类型判断；通过真实 JSON 写入和 Mini/All 读取验证。
+		const std::pair<Json::Value, int> cases[] = {
+			{ Json::Value(), 0 }, { Json::Value(-1), 0 },
+			{ Json::Value(0), 0 }, { Json::Value(1), 1 }, { Json::Value(2), 2 }, { Json::Value(3), 0 },
+			{ Json::Value(Json::UInt(1)), 1 }, { Json::Value(Json::UInt(2)), 2 },
+			{ Json::Value(1.0), 0 }, { Json::Value(2.0), 0 }, { Json::Value(1.5), 0 },
+			{ Json::Value(true), 0 }, { Json::Value(false), 0 },
+			{ Json::Value("1"), 0 }, { Json::Value("left"), 0 },
+			{ Json::Value(Json::UInt64(4294967297ULL)), 0 },
+			{ Json::Value(Json::UInt64(4294967298ULL)), 0 },
+			{ Json::Value((std::numeric_limits<Json::UInt64>::max)()), 0 },
+			{ Json::Value((std::numeric_limits<Json::Int64>::min)()), 0 },
+			{ Json::Value((std::numeric_limits<Json::Int64>::max)()), 0 },
+			{ Json::Value(Json::arrayValue), 0 }, { Json::Value(Json::objectValue), 0 }
+		};
+		for (const auto& [value, expected] : cases)
 		{
 			Json::Value document(Json::objectValue);
 			if (!value.isNull()) document["UI"]["Bar"]["StartupPlacement"] = value;
@@ -144,10 +159,9 @@ namespace
 			const bool miniRead = mini.ReadMini({ "UI.Bar.StartupPlacement", "UI.Bar.Zoom" });
 			Inkeys::Config all;
 			const bool allRead = all.ReadAll();
-			const auto expected = NormalizeStartupPlacement(value.isInt() ? value.asInt() : 0);
 			if (!Expect(miniRead && allRead && mini.UI.Bar.Zoom.load() == 1.25
-				&& NormalizeStartupPlacement(mini.UI.Bar.StartupPlacement.load()) == expected
-				&& NormalizeStartupPlacement(all.UI.Bar.StartupPlacement.load()) == expected,
+				&& mini.UI.Bar.StartupPlacement.load() == expected
+				&& all.UI.Bar.StartupPlacement.load() == expected,
 				"Mini/All normalize missing, illegal and all three startup placements consistently")) ++failures;
 		}
 		Json::Value document(Json::objectValue);

@@ -1,9 +1,9 @@
 {"file": ".trellis/spec/native-desktop/index.md", "reason": "设置代码边界"}
 {"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "最小diff/编码/注释"}
-{"file": ".trellis/tasks/10-13-interaction-modes-startup/research/config-i18n-spec-excerpt.md", "reason": "配置所有者、i18n生成与设置同步摘录，避免大文件注入截断"}
-{"file": ".trellis/tasks/10-13-interaction-modes-startup/research/setting-spec-excerpt.md", "reason": "设置ImGui及业务队列合同摘录，避免完整大文件注入截断"}
+{"file": ".trellis/tasks/archive/2026-10/10-13-interaction-modes-startup/research/config-i18n-spec-excerpt.md", "reason": "配置所有者、i18n生成与设置同步摘录，避免大文件注入截断"}
+{"file": ".trellis/tasks/archive/2026-10/10-13-interaction-modes-startup/research/setting-spec-excerpt.md", "reason": "设置ImGui及业务队列合同摘录，避免完整大文件注入截断"}
 {"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "solution ARM64无窗口验证"}
-{"file": ".trellis/tasks/10-13-interaction-modes-startup/research/current-behavior.md", "reason": "启动及切换已确认行为"}
-{"file": ".trellis/tasks/10-13-interaction-modes-startup/research/freeze-call-chain.md", "reason": "真实生产死锁等待链与上轮同步桩测试遗漏，修复和回归边界"}
+{"file": ".trellis/tasks/archive/2026-10/10-13-interaction-modes-startup/research/current-behavior.md", "reason": "启动及切换已确认行为"}
+{"file": ".trellis/tasks/archive/2026-10/10-13-interaction-modes-startup/research/freeze-call-chain.md", "reason": "真实生产死锁等待链与上轮同步桩测试遗漏，修复和回归边界"}
 {"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "现有启动生命周期/进度/交接合同，新形态按用户审批覆盖旧线性外形"}
-{"file": ".trellis/tasks/10-13-interaction-modes-startup/research/startup-placement-plan.md", "reason": "已批准的新功能参数、首帧/缓存陷阱和所有权"}
+{"file": ".trellis/tasks/archive/2026-10/10-13-interaction-modes-startup/research/startup-placement-plan.md", "reason": "已批准的新功能参数、首帧/缓存陷阱和所有权"}

@@ -4,6 +4,6 @@
 {"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"本任务模式、配置、主栏、历史边界及验证合同；用户已批准的新行为覆盖旧合同"}
 {"file":".trellis/spec/native-desktop/eraser-attributes.md","reason":"本任务模式、配置、主栏、历史边界及验证合同；用户已批准的新行为覆盖旧合同"}
 {"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"本任务模式、配置、主栏、历史边界及验证合同；用户已批准的新行为覆盖旧合同"}
-{"file":".trellis/tasks/10-14-select-clickthrough-modes/research/current-and-legacy.md","reason":"本任务模式、配置、主栏、历史边界及验证合同；用户已批准的新行为覆盖旧合同"}
-{"file": ".trellis/tasks/10-14-select-clickthrough-modes/research/feedback-fixes.md", "reason": "本轮用户截图反馈：稳定穿透运行时按钮身份、紧凑选择态历史隐藏、说明文案与行距"}
-{"file": ".trellis/tasks/10-14-select-clickthrough-modes/research/clickthrough-toggle.md", "reason": "最新用户需求：穿透按钮再次点击恢复lastAnnotationMode，覆盖原按钮重复无动作合同"}
+{"file":".trellis/tasks/archive/2026-10/10-14-select-clickthrough-modes/research/current-and-legacy.md","reason":"本任务模式、配置、主栏、历史边界及验证合同；用户已批准的新行为覆盖旧合同"}
+{"file": ".trellis/tasks/archive/2026-10/10-14-select-clickthrough-modes/research/feedback-fixes.md", "reason": "本轮用户截图反馈：稳定穿透运行时按钮身份、紧凑选择态历史隐藏、说明文案与行距"}
+{"file": ".trellis/tasks/archive/2026-10/10-14-select-clickthrough-modes/research/clickthrough-toggle.md", "reason": "最新用户需求：穿透按钮再次点击恢复lastAnnotationMode，覆盖原按钮重复无动作合同"}

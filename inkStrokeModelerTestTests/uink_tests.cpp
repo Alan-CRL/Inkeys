@@ -32,7 +32,9 @@
 
 import draw3.uink_codec;
 import draw3.uink_draw3_capture;
+import draw3.uink_draw3_import;
 import draw3.uink_file;
+import draw3.ink_history;
 
 namespace
 {
@@ -3724,6 +3726,87 @@ namespace
 			UINK_CHECK(state, !invalidDeviceResult.diagnostics.empty());
 		}
 	}
+}
+
+// 使用调用方实际拟合、taper 后的 Stroke，避免仅证明手造持久化样本能往返。
+int RunFinalizedTailPersistenceTests(const draw3::InkStroke& stroke)
+{
+	TestState state;
+	TempDirectory temporary;
+	UINK_CHECK(state, temporary.IsValid());
+	if (!temporary.IsValid()) return state.failures;
+	InkCanvasCollection collection(Draw3Guid("30000000-0000-4000-8000-00000000f031"));
+	InkPage page(Draw3Guid("50000000-0000-4000-8000-00000000f031"));
+	InkCanvas* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
+	UINK_CHECK(state, canvas != nullptr);
+	if (!canvas) return state.failures;
+	UINK_CHECK(state, canvas->AppendStroke(stroke) == std::optional<size_t>(0));
+	UINK_CHECK(state, collection.AppendPage(std::move(page)) == std::optional<size_t>(0));
+	Draw3UInkCaptureOptions captureOptions;
+	captureOptions.fileGuid = Guid("10000000-0000-4000-8000-00000000f031");
+	const auto captured = CaptureDraw3UInkExportSnapshot(collection, captureOptions);
+	UINK_CHECK(state, captured.snapshot.has_value());
+	if (!captured.snapshot) return state.failures;
+	const auto exported = ExportDraw3SnapshotToUInk(*captured.snapshot);
+	UINK_CHECK(state, exported.status == Draw3UInkExportStatus::Success &&
+		exported.document && exported.capabilities.inkCount == 1);
+	if (!exported.document) return state.failures;
+	UInkEditingSession session;
+	session.document = *exported.document;
+	UInkSaveOptions saveOptions;
+	saveOptions.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+	const auto path = temporary.File(L"finalized-tail.uink");
+	UINK_CHECK(state, SaveUInkFile(path, session, saveOptions).status == UInkSaveStatus::Committed);
+	const auto read = ReadUInkFile(path);
+	UINK_CHECK(state, read.status == UInkReadStatus::Complete && read.document.has_value());
+	if (!read.document) return state.failures;
+	UINK_CHECK(state, read.document->canvases.size() == 1 &&
+		read.document->canvases[0].content.size() == 1);
+	if (read.document->canvases.size() != 1 ||
+		read.document->canvases[0].content.size() != 1) return state.failures;
+	const auto* encodedInk = std::get_if<UInkInk>(&read.document->canvases[0].content[0]);
+	UINK_CHECK(state, encodedInk != nullptr);
+	if (!encodedInk) return state.failures;
+	UINK_CHECK(state, !encodedInk->extra && !encodedInk->color.extended &&
+		encodedInk->effectiveTexture == 0);
+	for (const auto& point : encodedInk->points) UINK_CHECK(state, !point.style);
+	const auto imported = ImportDraw3UInkDocument(*read.document);
+	UINK_CHECK(state, imported.status == Draw3UInkImportStatus::Success && imported.snapshot);
+	if (!imported.snapshot) return state.failures;
+	UINK_CHECK(state, imported.snapshot->canvases.size() == 1 &&
+		imported.snapshot->canvases[0].strokes.size() == 1);
+	if (imported.snapshot->canvases.size() != 1 ||
+		imported.snapshot->canvases[0].strokes.size() != 1) return state.failures;
+	const auto& restored = imported.snapshot->canvases[0].strokes[0];
+	UINK_CHECK(state, restored.style.kind == Draw3UInkStrokeKind::Pen &&
+		restored.style.fallbackRgb == stroke.Style().fallbackRgb &&
+		restored.style.opacity == stroke.Style().opacity &&
+		restored.style.texture == stroke.Style().texture &&
+		restored.points.size() == stroke.Points().size());
+	if (restored.points.size() != stroke.Points().size()) return state.failures;
+	std::vector<StoredInkPoint> replayPoints;
+	for (size_t i = 0; i < restored.points.size(); ++i)
+	{
+		UINK_CHECK(state, restored.points[i].x == stroke.Points()[i].x &&
+			restored.points[i].y == stroke.Points()[i].y &&
+			restored.points[i].width == stroke.Points()[i].width);
+		replayPoints.push_back({restored.points[i].x, restored.points[i].y, restored.points[i].width});
+	}
+	const InkStroke replay(stroke.Style(), std::move(replayPoints));
+	const auto originalFootprint = BuildStrokeTileFootprint(stroke);
+	const auto replayFootprint = BuildStrokeTileFootprint(replay);
+	UINK_CHECK(state, originalFootprint && replayFootprint);
+	if (originalFootprint && replayFootprint)
+	{
+		UINK_CHECK(state, replayFootprint->undoTiles == originalFootprint->undoTiles &&
+			replayFootprint->compositionTiles == originalFootprint->compositionTiles);
+		UINK_CHECK(state, replayFootprint->pixelBounds.left == originalFootprint->pixelBounds.left &&
+			replayFootprint->pixelBounds.top == originalFootprint->pixelBounds.top &&
+			replayFootprint->pixelBounds.right == originalFootprint->pixelBounds.right &&
+			replayFootprint->pixelBounds.bottom == originalFootprint->pixelBounds.bottom);
+	}
+	std::cout << "Finalized tail persistence failures: " << state.failures << std::endl;
+	return state.failures;
 }
 
 int RunUInkTests()
