@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 74
-- **Last Active**: 2026-10-13
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 96
+- **Last Active**: 2026-10-14
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~2087 | Active |
+| `journal-2.md` | ~272 | Active |
+| `journal-1.md` | ~2205 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,19 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 82 | 2026-10-14 | Draw3尾段修复最终人工验收确认 | `e154707ce72e95c0c4c20297afefbbaa07f04d14` | `bugfix/penstroke` |
+| 81 | 2026-10-13 | 阶段四验收完成、签名提交与父子任务归档 | `62f1e6b0d0bd67bb084d958da7fb9cafd6ed12b9`, `17694165fcefcfb07d963a8c3d7db1cf56eb3fc5` | `bugfix/penstroke` |
+| 80 | 2026-10-13 | 阶段四正常颜色抬笔长斜线调查与显式诊断交付 | `71858b0b` | `bugfix/penstroke` |
+| 79 | 2026-10-13 | 阶段三人工效果验收与提交准备 | - | `bugfix/penstroke` |
+| 78 | 2026-10-13 | 修复原始输入支持的小回退导致短1误修 | - | `bugfix/penstroke` |
+| 77 | 2026-10-13 | 修复近直线抬笔回退误触发 | - | `bugfix/penstroke` |
+| 76 | 2026-10-13 | Draw3可见末钩自适应窗口与原始输入内侧辅助 | - | `bugfix/penstroke` |
+| 75 | 2026-10-13 | 阶段三现场8笔日志分析与修复规划 | - | `bugfix/penstroke` |
+| 74 | 2026-10-13 | 阶段三无反色调查：大弧位移拒绝与有界日志 | - | `bugfix/penstroke` |
+| 73 | 2026-10-13 | 阶段三人工反馈：临时尾段反色诊断 | - | `bugfix/penstroke` |
+| 71 | 2026-10-12 | 阶段三 Draw3 完成态局部尾段拟合与评估 | - | `bugfix/penstroke` |
+| 67 | 2026-10-12 | 阶段2：库内终态尾段重构与离线验收完成 | - | `bugfix/penstroke` |
+| 64 | 2026-10-12 | 阶段1：vcpkg Abseil与Modeler源码基线完成 | - | `bugfix/penstroke` |
 | 74 | 2026-10-13 | PPT 退出与设置层级人工验收及归档 | `4057b8ea` | `bugfix/drawpad` |
 | 73 | 2026-10-13 | PPT 退出连贯交接与设置即时层级修复 | - | `bugfix/drawpad` |
 | 72 | 2026-10-12 | RTS 注册前置顶修复核验与任务归档 | `74d7e688` | `bugfix/drawpad` |

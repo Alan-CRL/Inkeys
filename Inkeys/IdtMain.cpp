@@ -576,6 +576,27 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: expanded JSON replaced the last readable file\n", stderr);
 				return 1;
 			}
+			stage = "touch reconnect configuration";
+			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
+			Inkeys::Config reconnectDefaults;
+			if (!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect ||
+				!writeBytes(mainConfig, "{}") || !reconnectDefaults.ReadAll() ||
+				!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect)
+			{
+				std::fputs("[ConfigBoundary] FAIL: touch reconnect default was not enabled\n", stderr);
+				return 1;
+			}
+			for (const bool enabled : { false, true })
+			{
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = enabled;
+				Inkeys::Config restoredReconnect;
+				if (!reconnectDefaults.Write() || !restoredReconnect.ReadAll() ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
+				{
+					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
+					return 1;
+				}
+			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
 			std::filesystem::create_directories(root / "fresh" / "opt");
@@ -586,7 +607,7 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
 				return 1;
 			}
-			std::fputs("[ConfigBoundary] PASS: bounded reads preserve bad files and first-run creation\n", stderr);
+			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation and touch reconnect preferences\n", stderr);
 			return 0;
 		}
 		catch (...)
@@ -2531,6 +2552,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
 			InitializeEraserInputPreferences();
+			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
 			{
 				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();

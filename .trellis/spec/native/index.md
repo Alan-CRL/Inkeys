@@ -12,6 +12,7 @@
 | [Runtime and Rendering](./runtime-and-rendering.md) | 输入、建模、工具、L0/L1/L2、脏矩形和帧循环 |
 | [Platform and Resources](./platform-and-resources.md) | COM/D3D 生命周期、resize、透明 presenter 与错误回退 |
 | [Quality and Validation](./quality-and-validation.md) | 修改边界、构建命令、人工验证和审查清单 |
+| [Terminal Tail Reconstruction](./terminal-tail-reconstruction.md) | 阶段2独立本地终态模块、硬边界、失败回退与离线验收 |
 
 ## Pre-Development Checklist
 

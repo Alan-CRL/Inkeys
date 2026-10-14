@@ -1837,6 +1837,20 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 - 在 Actions 验收真实 Windows 2022 三架构链路。
 
 
+## Session 64: 阶段1：vcpkg Abseil与Modeler源码基线完成
+<!-- trellis-session: v=2 fp=f8686272ba5b8497 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段1：vcpkg Abseil与Modeler源码基线完成
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+固定vcpkg Abseil20250512.1#0，13个Modeler源码三消费者共享；全部构建/精确回放/三架构30paired性能/Headless/ABI/资源导入检查通过，清理本任务约12GiB可重建缓存。
+
+### Main Changes
+
+- 停止手工Abseil库导入，精确manifest与static-v143/C++20同包头库，Modeler算法/API/参数/几何保持。
 ## Session 69: 分页窗口启动显隐冲突修复
 <!-- trellis-session: v=2 fp=747879c574e3e8bf -->
 
@@ -1934,12 +1948,41 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Testing
 
+- [OK] 4source和4main Rebuild exit0；4replay19case/128412 bit exact，仅依赖版本metadata变化；3arch各30pairs PASS；Headless no-window0。
 - [OK] 完整InkeysRepo.sln Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check通过。
 
 ### Status
 
 [OK] **Completed**
 
+### Next Steps
+
+- 阶段1已完成归档；父任务尾段重构继续planning，需要独立实施/验收。GUI/实体笔/Win7真机未执行；无commit/push。
+
+
+## Session 67: 阶段2：库内终态尾段重构与离线验收完成
+<!-- trellis-session: v=2 fp=b8ee82401437d9c8 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段2：库内终态尾段重构与离线验收完成
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+用户批准创建并开始；独立Modeler本地扩展完成，四配置原API精确保持，96窗尾段/三架构成本通过，产品接入仍后续。
+
+### Main Changes
+
+- 新增有序raw/位移正则尾段模块，硬入口/终点/原子回退，共享14TU，本地来源及可重现CLI；原13源18头未改。
+- 清理3.092GiB任务缓存，冻结47资料不变；记录Win32跨架构数值机制，不改浮点/ABI。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 四配置尾段96窗口116105assert0失败，默认18Apply12改善；原19case128412assert同阶段1位级一致；主Debug+Headless、三架构24case成本、imports资源及checker通过。
 
 ## Session 72: RTS 注册前置顶修复核验与任务归档
 <!-- trellis-session: v=2 fp=79c5c3b927d252ae -->
@@ -1962,6 +2005,73 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 [OK] **Completed**
 
+### Next Steps
+
+- 阶段3另建产品完成/Stored/taper/L1接入任务，按真实消费输入验证保护窗口/来源和成本；Touch续接及设备GUI另阶段。
+
+
+## Session 71: 阶段三 Draw3 完成态局部尾段拟合与评估
+<!-- trellis-session: v=2 fp=3127bb714edf1301 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段三 Draw3 完成态局部尾段拟合与评估
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+局部C++拟合、固定64点raw窗口、最终Stored接入；ARM64主/test构建、回放与生产probe通过。GUI/设备未执行，无commit/push。
+
+### Main Changes
+
+- 可选原始输入辅助，稀疏/零辅助仍平滑，修正可覆盖当前L1尾段
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 原API精确，150567尾段检查、331480生产probe、12312基准0fail
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实体笔和断触完成视觉、GPU重绘体验验证
+
+
+## Session 73: 阶段三人工反馈：临时尾段反色诊断
+<!-- trellis-session: v=2 fp=3c4f87a9e0fb6863 -->
+
+**Date**: 2026-10-13
+**Task**: 阶段三人工反馈：临时尾段反色诊断
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+实际体验无变化原因未确定；仅应用成功且改变位置的尾段反色，保持保存颜色；ARM64主solution和生产331608断言及外部Headless通过；等待人工复测，不结束任务。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 74: 阶段三无反色调查：大弧位移拒绝与有界日志
+<!-- trellis-session: v=2 fp=f34d825b56d793ba -->
+
+**Date**: 2026-10-13
+**Task**: 阶段三无反色调查：大弧位移拒绝与有界日志
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+真实生产大弧回放确认3px位移门拒绝3.66/12.19px候选；单Up raw导致一点评估窗。新增18场景和有界日志，未调算法。
 
 ## Session 73: PPT 退出连贯交接与设置即时层级修复
 <!-- trellis-session: v=2 fp=91200a3823382b76 -->
@@ -1999,6 +2109,7 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Testing
 
+- [OK] ARM64 Debug solution和333894断言probe通过；Headless首次调度时序断言失败，相同二进制复测通过；无GUI。
 - [OK] 完整Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check及diff检查通过。
 
 ### Status
@@ -2059,6 +2170,7 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Next Steps
 
+- 用户复现后读取TEMP尾段日志，定位现场拒绝原因；阶段三人工未通过、不归档。
 - 用户可继续现有Trellis任务；本轮不commit/push、不归档，未做可见产品/Office GUI验证。
 
 

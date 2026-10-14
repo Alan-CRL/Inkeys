@@ -3967,6 +3967,48 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::EndChild();
 					}
 					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
+						ImGui::BeginChild("触摸设置", { settingItemWidth * settingGlobalScale,160.0f * settingGlobalScale },
+							false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::SetCursorPos({ 0.0f,0.0f });
+						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
+
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("断触接续", { settingItemWidth * settingGlobalScale,120.0f * settingGlobalScale },
+							true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,15.0f * settingGlobalScale });
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.N).c_str());
+						ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,48.0f * settingGlobalScale });
+						ImGui::PushTextWrapPos((settingItemWidth - 30.0f) * settingGlobalScale);
+						ImGui::TextWrapped("%s", IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.E).c_str());
+						ImGui::PopTextWrapPos();
+						bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
+						const bool reconnectBefore = reconnectEnabled;
+						ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,20.0f * settingGlobalScale });
+						Widgets::toggle.ToggleBool("##断触接续", &reconnectEnabled);
+						if (reconnectBefore != reconnectEnabled)
+						{
+							// 配置与运行时期望同步更新；写盘复用既有快照队列。
+							Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = reconnectEnabled;
+							Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
+							QueueConfigWrite();
+						}
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						ImGui::EndChild();
+						ImGui::EndChild();
+					}
+					{
 						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
 						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
 					}
