@@ -15,6 +15,7 @@ module;
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Setting.SessionState.h"
+#include "../StartupPlacement.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
@@ -76,6 +77,7 @@ namespace
 	enum class SettingBusinessKind
 	{
 		WriteSetting,
+		SyncDraw3State,
 		WritePptSetting,
 		WriteConfig,
 		ShellExecute,
@@ -194,6 +196,9 @@ namespace
 		{
 			switch (command.kind)
 			{
+			case SettingBusinessKind::SyncDraw3State:
+				::SyncDraw3State();
+				return true;
 			case SettingBusinessKind::WriteSetting:
 				return WriteSettingJson(command.jsonPayload);
 			case SettingBusinessKind::WritePptSetting:
@@ -362,6 +367,14 @@ namespace
 	};
 
 	SettingBusinessQueue settingBusinessQueue;
+	thread_local bool settingRenderingOnCurrentThread = false;
+
+	struct SettingRenderScope
+	{
+		bool previous = settingRenderingOnCurrentThread;
+		SettingRenderScope() { settingRenderingOnCurrentThread = true; }
+		~SettingRenderScope() { settingRenderingOnCurrentThread = previous; }
+	};
 
 	void QueueBusiness(SettingBusinessCommand command)
 	{
@@ -1262,7 +1275,6 @@ SettingSessionCoroutine RunSettingSession()
 			int SaveDays = setlist.saveSetting.saveDays;
 		}SaveSetting;
 
-		int PaintDevice = setlist.paintDevice;
 		struct
 		{
 			struct
@@ -1391,6 +1403,7 @@ SettingSessionCoroutine RunSettingSession()
 					tab8,
 					tab9,
 					tabExperimental,
+					tabPreset,
 				};
 				enum settingPlugInTabEnum
 				{
@@ -1487,6 +1500,13 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
 
 						if (Widgets::button.Navigation(("   \uee56   " + IA(I18nKey.SettingsUI.Draw.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab3, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab3;
+					}
+
+					// 预设
+					{
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
+
+						if (Widgets::button.Navigation(("   \uf259   " + IA(I18nKey.SettingsUI.Preset.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tabPreset, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tabPreset;
 					}
 
 					// 插件
@@ -3033,6 +3053,142 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
 						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.N).c_str());
 					}
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						const string modeNames[] = {
+							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Combined),
+							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Separate)
+						};
+						const string modeDescription = modeNames[0] + ": "
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n"
+							+ modeNames[1] + ": "
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n"
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThrough) + ": "
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThroughDescription);
+						// 三段用单换行紧凑排列，测量和绘制共用文字与宽度，避免长英文裁切。
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						const float descriptionHeight = ImGui::CalcTextSize(modeDescription.c_str(), nullptr, false,
+							(settingItemWidth - 80.0f) * settingGlobalScale).y;
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						const float infoCardHeight = max(descriptionHeight, ImGui::GetTextLineHeight()) + 40.0f * settingGlobalScale;
+						ImGui::PopFont();
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("选择与穿透说明", { settingItemWidth * settingGlobalScale,infoCardHeight }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::AccentText);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+						ImGui::TextUnformatted("\uf167");
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::SetCursorPos({ 60.0f * settingGlobalScale,20.0f * settingGlobalScale });
+						ImGui::PushTextWrapPos((settingItemWidth - 20.0f) * settingGlobalScale);
+						ImGui::TextUnformatted(modeDescription.c_str());
+						ImGui::PopTextWrapPos();
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImGui::EndChild();
+
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+						ImGui::BeginChild("选择与穿透模式", { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str());
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						const int mode = GetSelectAndClickThroughMode();
+						float comboWidth = 200.0f * settingGlobalScale;
+						for (const auto& name : modeNames)
+							comboWidth = max(comboWidth, ImGui::CalcTextSize(name.c_str()).x + 45.0f * settingGlobalScale);
+						ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - comboWidth - 20.0f * settingGlobalScale,15.0f * settingGlobalScale });
+						ImGui::SetNextItemWidth(comboWidth);
+						if (Widgets::combo.Begin("##选择与穿透", modeNames[mode].c_str(), 2))
+						{
+							for (int i = 0; i < 2; ++i)
+							{
+								const bool selected = mode == i;
+								// 运行时同步沿用设置的延后队列，再冻结本次修改后的配置写盘。
+								if (Widgets::combo.Selectable(modeNames[i].c_str(), selected) && !selected
+									&& SetSelectAndClickThroughMode(i))
+									QueueConfigWrite();
+								if (selected) ImGui::SetItemDefaultFocus();
+							}
+							Widgets::combo.End();
+						}
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar(2);
+					}
+
+					{
+						const string itemNames[] = {
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
+							IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N)
+						};
+						const string optionNames[][4] = {
+							{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
+							{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
+							IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) }
+						};
+						const char* itemIds[] = { "主栏图标顺序", "主栏展开方向调整" };
+						for (int item = 0; item < 2; ++item)
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild(itemIds[item], { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+							ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+							ImGui::TextUnformatted(itemNames[item].c_str());
+							ImGui::PopFont();
+							ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+							auto& preference = item == 0 ? Inkeys::config.UI.Bar.IconOrder : Inkeys::config.UI.Bar.ExpandDirectionAdjustment;
+							const int optionCount = item == 0 ? 4 : 2;
+							const int storedValue = preference.load();
+							const int value = storedValue >= 0 && storedValue < optionCount ? storedValue : (item == 0 ? 0 : 1);
+							float comboWidth = 200.0f * settingGlobalScale;
+							for (int i = 0; i < optionCount; ++i)
+								comboWidth = max(comboWidth, ImGui::CalcTextSize(optionNames[item][i].c_str()).x + 45.0f * settingGlobalScale);
+							ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - comboWidth - 20.0f * settingGlobalScale,15.0f * settingGlobalScale });
+							ImGui::SetNextItemWidth(comboWidth);
+							// 下拉弹窗保留少量上下留白，防止英文下伸字形贴住边框。
+							ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * settingGlobalScale, 4.0f * settingGlobalScale));
+							if (Widgets::combo.Begin("##主栏布局", optionNames[item][value].c_str(), optionCount))
+							{
+								for (int i = 0; i < optionCount; ++i)
+								{
+									const bool selected = value == i;
+									if (Widgets::combo.Selectable(optionNames[item][i].c_str(), selected) && !selected)
+									{
+										// 只唤醒主栏布局，避免设置渲染期间同步工具或等待窗口线程。
+										preference = i;
+										barUISet.UpdateRendering(false);
+										QueueConfigWrite();
+									}
+									if (selected) ImGui::SetItemDefaultFocus();
+								}
+								Widgets::combo.End();
+							}
+							ImGui::PopStyleVar();
+							ImGui::PopStyleColor();
+							ImGui::PopFont();
+							ImGui::EndChild();
+							ImGui::PopStyleColor();
+							ImGui::PopStyleVar(2);
+						}
+					}
 
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
@@ -3744,89 +3900,92 @@ SettingSessionCoroutine RunSettingSession()
 
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("绘制#1", { settingItemWidth * settingGlobalScale,100.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-						{
-							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
-							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Effect.N).c_str());
-						}
-
-						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("绘图设备", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-							float cursosPosY = 0;
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
-								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Effect.Device.E).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ settingRightComboX * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								ImGui::SetNextItemWidth(200 * settingGlobalScale);
-
-								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-								vector<char*> vec;
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.Effect.Device.Touch)).c_str()));
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePen)).c_str()));
-
-								if (Widgets::combo.Begin("##绘图设备", vec[PaintDevice], static_cast<int>(vec.size())))
-								{
-									for (int i = 0; i < vec.size(); i++)
-									{
-										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
-
-										bool is_selected = (PaintDevice == i);
-										if (Widgets::combo.Selectable(vec[i], is_selected))
-										{
-											PaintDevice = i;
-											if (setlist.paintDevice != PaintDevice)
-											{
-												setlist.paintDevice = PaintDevice;
-												SyncDraw3State();
-												WriteSetting();
-
-												drawingScale = GetDrawingScale();
-												stopTimingError = GetStopTimingError();
-											}
-										}
-									}
-									ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
-									Widgets::combo.End();
-								}
-								for (char* ptr : vec) free(ptr), ptr = nullptr;
-							}
-
-							{
-								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-								while (PushFontNum) PushFontNum--, ImGui::PopFont();
-							}
-							ImGui::EndChild();
-						}
-
-						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
-						}
+						const string modeNames[] = { IA(I18nKey.SettingsUI.Draw.Effect.Device.Touch), IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePen) };
+						const string modeDescriptions[] = {
+							modeNames[0] + ": " + IA(I18nKey.SettingsUI.Draw.Effect.Device.TouchE),
+							modeNames[1] + ": " + IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePenE)
+						};
+						// 卡片按实际换行高度布局，给信息图标和两侧内边距留出空间。
+						const float descriptionWidth = (settingItemWidth - 80.0f) * settingGlobalScale;
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						const float modeTitleHeight = ImGui::GetTextLineHeight();
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						const float modeDescriptionHeight = ImGui::CalcTextSize(modeDescriptions[0].c_str(), nullptr, false, descriptionWidth).y
+							+ ImGui::CalcTextSize(modeDescriptions[1].c_str(), nullptr, false, descriptionWidth).y;
+						const float infoCardHeight = modeDescriptionHeight + 45.0f * settingGlobalScale;
+						ImGui::PopFont();
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
+						ImGui::BeginChild("绘制#1", { settingItemWidth * settingGlobalScale, modeTitleHeight + infoCardHeight + 80.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str());
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImGui::SetCursorPosY(modeTitleHeight + 10.0f * settingGlobalScale);
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("交互模式说明", { settingItemWidth * settingGlobalScale, infoCardHeight }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::AccentText);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+						ImGui::TextUnformatted("\uf167");
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+						ImGui::PushTextWrapPos((settingItemWidth - 20.0f) * settingGlobalScale);
+						ImGui::TextUnformatted(modeDescriptions[0].c_str());
+						ImGui::SetCursorPos({ 60.0f * settingGlobalScale, ImGui::GetCursorPosY() + 5.0f * settingGlobalScale });
+						ImGui::TextUnformatted(modeDescriptions[1].c_str());
+						ImGui::PopTextWrapPos();
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
 						ImGui::EndChild();
+						ImGui::SetCursorPosY(modeTitleHeight + infoCardHeight + 15.0f * settingGlobalScale);
+						ImGui::BeginChild("绘图设备", { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str());
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						// 每帧读取配置，不再用会话内缓存覆盖当前选择。
+						const int paintDevice = setlist.paintDevice == 0 ? 0 : 1;
+						const float comboWidth = max(200.0f * settingGlobalScale, max(ImGui::CalcTextSize(modeNames[0].c_str()).x, ImGui::CalcTextSize(modeNames[1].c_str()).x) + 45.0f * settingGlobalScale);
+						ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - comboWidth - 20.0f * settingGlobalScale, 15.0f * settingGlobalScale });
+						ImGui::SetNextItemWidth(comboWidth);
+						if (Widgets::combo.Begin("##绘图设备", modeNames[paintDevice].c_str(), 2))
+						{
+							for (int i = 0; i < 2; ++i)
+							{
+								const bool selected = paintDevice == i;
+								if (Widgets::combo.Selectable(modeNames[i].c_str(), selected) && !selected)
+								{
+									setlist.paintDevice = i;
+									SyncDraw3State();
+									WriteSetting();
+									drawingScale = GetDrawingScale();
+									stopTimingError = GetStopTimingError();
+								}
+								if (selected) ImGui::SetItemDefaultFocus();
+							}
+							Widgets::combo.End();
+						}
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar();
+						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar(2);
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
 					}
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
@@ -4021,6 +4180,93 @@ SettingSessionCoroutine RunSettingSession()
 					break;
 				}
 
+
+				// 预设仅配置下次启动位置，不恢复已退役的画笔记忆条目。
+				case settingTabEnum::tabPreset:
+				{
+					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
+					ImGui::BeginChild("预设", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+					ImFontMain->Scale = 0.8f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+					ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.N).c_str());
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+
+					const string placementNames[] = {
+						IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
+						IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
+						IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating)
+					};
+					const string placementDescription = IA(I18nKey.SettingsUI.Preset.StartupPlacement.E);
+					// 按实际换行高度撑开信息卡片，英文和缩放后的说明不会被裁切。
+					ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+					const float descriptionHeight = ImGui::CalcTextSize(placementDescription.c_str(), nullptr, false,
+						(settingItemWidth - 80.0f) * settingGlobalScale).y;
+					ImGui::PopFont();
+					const float infoCardHeight = max(descriptionHeight, 30.0f * settingGlobalScale) + 40.0f * settingGlobalScale;
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+					ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+					ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+					ImGui::BeginChild("启动位置说明", { settingItemWidth * settingGlobalScale,infoCardHeight }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+					ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::AccentText);
+					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+					ImGui::TextUnformatted("\uf167");
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+					ImGui::SetCursorPos({ 60.0f * settingGlobalScale,20.0f * settingGlobalScale });
+					ImGui::PushTextWrapPos((settingItemWidth - 20.0f) * settingGlobalScale);
+					ImGui::TextUnformatted(placementDescription.c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImGui::EndChild();
+
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+					ImGui::BeginChild("启动后位置", { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+					ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+					ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.StartupPlacement.N).c_str());
+					ImGui::PopFont();
+					ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+					const int placement = static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(
+						Inkeys::config.UI.Bar.StartupPlacement.load()));
+					float comboWidth = 200.0f * settingGlobalScale;
+					for (const auto& name : placementNames)
+						comboWidth = max(comboWidth, ImGui::CalcTextSize(name.c_str()).x + 45.0f * settingGlobalScale);
+					ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - comboWidth - 20.0f * settingGlobalScale,15.0f * settingGlobalScale });
+					ImGui::SetNextItemWidth(comboWidth);
+					if (Widgets::combo.Begin("##启动后位置", placementNames[placement].c_str(), 3))
+					{
+						for (int i = 0; i < 3; ++i)
+						{
+							const bool selected = placement == i;
+							if (Widgets::combo.Selectable(placementNames[i].c_str(), selected) && !selected)
+							{
+								// 本次位置已在启动 Mini 阶段冻结，这里只保存下次启动的选择。
+								Inkeys::config.UI.Bar.StartupPlacement = i;
+								QueueConfigWrite();
+							}
+							if (selected) ImGui::SetItemDefaultFocus();
+						}
+						Widgets::combo.End();
+					}
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImGui::EndChild();
+					ImGui::PopStyleColor();
+					ImGui::PopStyleVar(2);
+					ImGui::EndChild();
+					ImGui::PopStyleColor();
+					break;
+				}
 
 				// 插件
 				case settingTabEnum::tab4:
@@ -8433,6 +8679,7 @@ namespace
 		{
 			settingSessionShouldStop.store(true, memory_order_release);
 			lock_guard imguiLock(settingImguiMutex);
+			SettingRenderScope renderScope;
 			settingSession.Resume();
 		}
 		settingSession.Reset();
@@ -8517,6 +8764,7 @@ namespace
 
 		{
 			lock_guard imguiLock(settingImguiMutex);
+			SettingRenderScope renderScope;
 			settingSession.Resume();
 		}
 		if (settingSession.Done())
@@ -8539,6 +8787,14 @@ namespace
 namespace Inkeys::UI::Setting
 {
 	void RequestConfigWrite() { QueueConfigWrite(); }
+
+	bool DeferDraw3SyncIfRendering()
+	{
+		if (!settingRenderingOnCurrentThread) return false;
+		// 渲染持有 ImGui 锁，不能同步等待同样需要该锁的 HWND 线程。
+		QueueBusiness({ SettingBusinessKind::SyncDraw3State });
+		return true;
+	}
 
 	bool Initialize()
 	{

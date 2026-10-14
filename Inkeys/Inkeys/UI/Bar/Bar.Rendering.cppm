@@ -47,6 +47,7 @@ enum class BarBorderPrimaryAnchorEnum : int
 	Draw,
 	Eraser,
 	Geometry,
+	Pierce,
 };
 
 // Surface 只消费 Main Bar 已经计算完成的两路光源，不复制第三光源状态机。
@@ -90,7 +91,7 @@ public:
 	{
 		return textLocale;
 	}
-	bool PrepareFrameLighting(double animationDtSeconds,
+	bool PrepareFrameLighting(double animationDtSeconds, POINT layoutScreenOrigin,
 		int drawingMode, int penMode, COLORREF brush1Color,
 		COLORREF highlighterColor);
 	[[nodiscard]] RECT GetFramePrimaryLightDamageBounds() const noexcept;

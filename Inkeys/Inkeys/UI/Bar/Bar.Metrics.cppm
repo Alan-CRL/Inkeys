@@ -34,6 +34,7 @@ export
 	// Startup Preview 只依赖这些无副作用的视觉常量，不提前初始化完整 Bar。
 	inline constexpr double BarMainButtonWidthDip = 80.0;
 	inline constexpr double BarMainButtonHeightDip = 80.0;
+	inline constexpr double BarMainButtonCollapsedFillOpacity = 0.6;
 	inline constexpr double BarMainButtonToMainBarGapDip = 10.0;
 	inline constexpr double BarDefaultButtonColumnStepDip =
 		BarButtonTwoSideDip + BarButtonGapDip;

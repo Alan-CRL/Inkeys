@@ -1062,21 +1062,42 @@ namespace
 		Check(!desktop.whiteboardTwoTwo && desktop.freezeVisible
 			&& !desktop.endShowVisible,
 			"desktop A2 shows two compact buttons");
-		Check(!presentation.whiteboardTwoTwo && presentation.freezeVisible
+		Check(!presentation.whiteboardTwoTwo && !presentation.freezeVisible
 			&& presentation.endShowVisible,
-			"PPT A2 keeps disabled Freeze visible with EndShow");
+			"PPT A2 hides unavailable Freeze and keeps EndShow");
 		Check(whiteboard.whiteboardTwoTwo && !whiteboard.freezeVisible
 			&& !whiteboard.endShowVisible,
 			"whiteboard A2 shows only Close Whiteboard");
 		Check(!disabledDesktop.whiteboardTwoTwo && disabledDesktop.freezeVisible
 			&& !disabledDesktop.endShowVisible && !disabledPresentation.whiteboardTwoTwo
-			&& disabledPresentation.freezeVisible && disabledPresentation.endShowVisible,
-			"temporarily disabled whiteboard keeps PPT Freeze visible with EndShow");
+			&& !disabledPresentation.freezeVisible && disabledPresentation.endShowVisible,
+			"temporarily disabled whiteboard still hides PPT Freeze");
 		Check(IsLegacyBarA2Pair("Inkeys.Bar.Whiteboard", "Inkeys.Bar.Freeze")
 			&& IsLegacyBarA2Pair("Inkeys.Bar.Freeze", "Inkeys.Bar.Whiteboard"),
 			"both legal legacy A2 orders are accepted");
 		Check(!IsLegacyBarA2Pair("Inkeys.Bar.Whiteboard", "Inkeys.Bar.EndShow"),
 			"invalid legacy A2 pair returns to defaults");
+
+		for (const bool presentationActive : { false, true })
+		for (const bool separate : { false, true })
+		for (const bool selectionEmpty : { false, true })
+		for (const bool available : { false, true })
+		{
+			const auto view = ResolveBarA2Projection(presentationActive, false, false,
+				separate, selectionEmpty, available);
+			Check(view.freezeVisible == (available && !presentationActive),
+				"Freeze hides whenever unavailable in either operation mode");
+			Check(view.pierceVisible == (separate && !selectionEmpty),
+				"Pierce only appears in separate mode outside empty Selection");
+			Check(!view.pierceVisible || view.pierceTwoTwo == !view.freezeVisible,
+				"Pierce takes full slot precisely when Freeze is hidden");
+			Check(!view.freezeVisible || view.freezeTwoTwo == !view.pierceVisible,
+				"Freeze takes full slot when Pierce is hidden");
+			const auto board = ResolveBarA2Projection(presentationActive, true, true,
+				separate, selectionEmpty, available);
+			Check(board.whiteboardTwoTwo && !board.freezeVisible && !board.pierceVisible,
+				"Whiteboard never gains Click-through in either operation mode");
+		}
 
 		BarA2CallbackDispatcher dispatcher;
 		int dispatchCount = 0;

@@ -6,13 +6,6 @@ export namespace Inkeys::UI::Bar
 {
 	// 点击后 3 秒内保持位置与命令身份；没有点击时，从待调整目标变化开始等待。
 	inline constexpr double RecallChromeIdleSeconds = 3.0;
-	// 与绘制属性里未启用笔型相同的灰色。
-	inline constexpr unsigned RecallCommandUnavailableColor = 0x00C8C8C8;
-
-	inline unsigned ResolveRecallCommandContentColor(bool enabled, unsigned normalColor) noexcept
-	{
-		return enabled ? normalColor : RecallCommandUnavailableColor;
-	}
 
 	struct RecallHistoryAvailability
 	{
@@ -143,15 +136,16 @@ export namespace Inkeys::UI::Bar
 			|| (after.hold == RecallChromeHold::None && before.pendingLayout != after.pendingLayout));
 	}
 
-	inline RecallChromeView ResolveRecallChrome(RecallChromeState state) noexcept
+	inline RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelection = false) noexcept
 	{
 		RecallChromeView view;
 		view.undoEnabled = state.availability.canUndo;
 		view.redoEnabled = state.availability.canRedo;
-		view.popupOpen = state.hold != RecallChromeHold::None && !state.popupSuppressed;
+		// 精简选择态只覆盖显隐，不丢弃历史布局和 3 秒保护。
+		view.popupOpen = !compactSelection && state.hold != RecallChromeHold::None && !state.popupSuppressed;
 		view.popupShowsRedo = state.hold != RecallChromeHold::Redo;
-		view.mainUndoVisible = state.layout != RecallChromeLayout::Redo;
-		view.mainRedoVisible = state.layout != RecallChromeLayout::Undo;
+		view.mainUndoVisible = !compactSelection && state.layout != RecallChromeLayout::Redo;
+		view.mainRedoVisible = !compactSelection && state.layout != RecallChromeLayout::Undo;
 		view.undoExpanded = state.layout == RecallChromeLayout::Undo;
 		view.redoExpanded = state.layout == RecallChromeLayout::Redo;
 		return view;

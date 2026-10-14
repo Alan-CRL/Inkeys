@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 96
+- **Total Sessions**: 98
 - **Last Active**: 2026-10-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~272 | Active |
+| `journal-2.md` | ~454 | Active |
 | `journal-1.md` | ~2205 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,12 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 98 | 2026-10-14 | 完成主栏图标顺序与展开方向任务 | `35afa7ee`, `2dd3b344`, `8515d469`, `bec78a29` | `feature/mode` |
+| 97 | 2026-10-14 | 选择与穿透操作模式完成 | `3f3946cf`, `d444f6a7`, `7d5a003f` | `feature/mode` |
+| 83 | 2026-10-14 | 交互模式与启动预设人工验收结案 | `ecfee6ab`, `18b4c8fb`, `519afa01` | `feature/mode` |
+| 82 | 2026-10-13 | 启动位置预设与环形启动进度实现 | - | `feature/mode` |
+| 76 | 2026-10-13 | 修复设置模式切换卡死并恢复下拉卡片 | - | `feature/mode` |
+| 75 | 2026-10-13 | 交互模式切换入口与三语文案 | - | `feature/mode` |
 | 82 | 2026-10-14 | Draw3尾段修复最终人工验收确认 | `e154707ce72e95c0c4c20297afefbbaa07f04d14` | `bugfix/penstroke` |
 | 81 | 2026-10-13 | 阶段四验收完成、签名提交与父子任务归档 | `62f1e6b0d0bd67bb084d958da7fb9cafd6ed12b9`, `17694165fcefcfb07d963a8c3d7db1cf56eb3fc5` | `bugfix/penstroke` |
 | 80 | 2026-10-13 | 阶段四正常颜色抬笔长斜线调查与显式诊断交付 | `71858b0b` | `bugfix/penstroke` |

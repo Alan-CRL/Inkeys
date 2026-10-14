@@ -15,6 +15,8 @@ export namespace Inkeys::UI::Setting
 	void Shutdown() noexcept;
 	// 复用已启动的业务FIFO，不打开设置窗口。
 	void RequestConfigWrite();
+	// 仅设置渲染线程把阻塞窗口同步交给已有 FIFO，其他调用保持同步。
+	[[nodiscard]] bool DeferDraw3SyncIfRendering();
 	void Show();
 	void Hide();
 	void Toggle();

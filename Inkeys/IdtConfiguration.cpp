@@ -552,7 +552,7 @@ string CaptureSettingJson()
 		}
 		setlistVal["Regular"]["TeachingSafetyMode"] = Json::Value(setlist.regularSetting.teachingSafetyMode);
 
-		setlistVal["PaintDevice"] = Json::Value(setlist.paintDevice);
+		setlistVal["PaintDevice"] = Json::Value(setlist.paintDevice.load());
 		setlistVal["DisableRTS"] = Json::Value(setlist.disableRTS);
 		setlistVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
 		setlistVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);

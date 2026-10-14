@@ -8,6 +8,7 @@ import :Main;
 import :Atomic;
 
 import Inkeys.Other.Config;
+import Inkeys.Display;
 
 namespace
 {
@@ -47,6 +48,10 @@ namespace
 
 	double GetStartupDpiZoom()
 	{
+		const auto snapshot = Inkeys::Display::GetSnapshot();
+		const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+		if (monitor && monitor->effectiveDpiX)
+			return static_cast<double>(monitor->effectiveDpiX) / USER_DEFAULT_SCREEN_DPI;
 		HDC screenDC = GetDC(nullptr);
 		double scale = 1.0;
 
@@ -161,6 +166,8 @@ export namespace Inkeys::UI::Bar::Zoom
 	void FitInitialAfterMainBarLayout(BarUISetClass& barUISet, double mainBarWidth)
 	{
 		if (!barUISet.barStyle.initialZoomFitPending.exchange(false)) return;
+		// 角落只显示 80 DIP 按钮，不能按尚未展开的整栏缩小启动轮廓。
+		if (barUISet.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar) return;
 
 		auto mainButton = GetMainButton(barUISet);
 		auto mainBar = GetMainBar(barUISet);

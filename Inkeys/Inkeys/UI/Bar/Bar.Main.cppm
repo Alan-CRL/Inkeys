@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
 #include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
 
@@ -140,7 +141,8 @@ private:
 class BarRecallAttributePanel
 {
 public:
-	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
+	bool Advance(BarUISetClass& owner, const Inkeys::UI::Bar::RecallChromeView& chrome,
+		bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
 		RECT workArea, POINT origin, double rigidX, double rigidY,
 		const BarUiTimelineClass* parentTimeline = nullptr,
 		bool dragPlacementLocked = false);
@@ -183,6 +185,11 @@ private:
 
 namespace Inkeys::UI::Bar
 {
+	// 隐藏按钮继续留在运行时列表，位置跟随来源按钮；渲染与离屏回归共用。
+	void AnchorHiddenBarButton(BarButtonSetClass& buttons, bool folded,
+		BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset,
+		const std::function<void(BarUiValueClass&, double)>& setPositionTarget);
+
 	// Main Bar 与跨 HWND surface 共用这些行为入口，调用方只保留资源和拓扑。
 	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtonHoverStageEnum>* hoverStage);
@@ -492,6 +499,10 @@ public:
 	BarButtonSetClass barButtonSet;
 	BarUIRendering spec;
 
+	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
+	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
+	Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar;
 	BarStateClass barState;
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
@@ -499,6 +510,8 @@ public:
 	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
 	std::mutex recallChromeMutex;
 	Inkeys::UI::Bar::RecallChromeState recallChrome{};
+	// 本次统一投影发布的view供布局颜色和弹窗共用，不在getter再次拼实时输入。
+	Inkeys::UI::Bar::RecallChromeView recallChromePresentation{};
 	// 用墙钟期限，不累加动画 dt。主栏休眠时动画时钟会停，并且恢复后的第一帧 dt 为 0。
 	std::chrono::steady_clock::time_point recallChromeIdleDeadline{};
 	bool recallChromeIdleArmed = false;
@@ -547,8 +560,8 @@ public:
 	void ClearRecallForDrawing();
 	void SettleRecallChromeForWorkspace();
 	bool AdvanceRecallChromeIdle(double dtSeconds);
-	void ApplyRecallChromeVisuals();
 	Inkeys::UI::Bar::RecallChromeView RecallChromeView();
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView(bool compactSelection);
 	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	void ArmRecallChromeIdleTimer() noexcept;
 	void DisarmRecallChromeIdleTimer() noexcept;
@@ -1065,7 +1078,8 @@ namespace Inkeys::UI::Bar
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
-	export void Initialization();
+	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar);
 	export void RequestPresentationAlpha(std::uint8_t alpha) noexcept;
 	export std::uint8_t CommittedPresentationAlpha() noexcept;
 	export std::uint8_t RequestedPresentationAlpha() noexcept;
@@ -1077,6 +1091,7 @@ namespace Inkeys::UI::Bar
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
 	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
+	export void RefreshToolState() noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
 	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;

@@ -2048,6 +2048,14 @@ int RunRenderSchedulerTests()
 			}
 			validation &= !IsUi3FiniteSignatureValid(bad);
 		}
+		for (unsigned order = 0; order < 4; ++order)
+			for (unsigned direction = 0; direction < 2; ++direction)
+			{
+				auto configured = valid;
+				configured.flags |= (order << 8) | (direction << 10);
+				validation &= IsUi3FiniteSignatureValid(configured);
+				validation &= SameUi3FiniteSemanticSignature(valid, configured) == (order == 0 && direction == 0);
+			}
 		auto derivedSide = valid;
 		derivedSide.mainSide = derivedSide.primarySide = 1;
 		validation &= SameUi3FiniteSemanticSignature(valid, derivedSide);

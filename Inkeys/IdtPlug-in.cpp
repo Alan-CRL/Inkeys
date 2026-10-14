@@ -496,7 +496,6 @@ bool StartPptTakeoverAnnotation(int toolType, std::uint64_t expectedRevision)
 		toolType > static_cast<int>(PptAnnotationTool::Highlighter)) return false;
 	if (!ChangeStateModeToPptAnnotation(
 		static_cast<PptAnnotationTool>(toolType), expectedRevision)) return false;
-	barUISet.barButtonSet.UpdateDrawButtonStyle();
 	barUISet.UpdateRendering();
 	return true;
 }
@@ -568,7 +567,6 @@ void PptInfo()
 		PptImg.Image.clear();
 		PptInfoStateBuffer = { -1, -1 };
 		cachedTarget.reset();
-		barUISet.barButtonSet.UpdateDrawButtonStyle();
 		barUISet.UpdateRendering();
 	};
 	while (!offSignal)
@@ -737,7 +735,6 @@ void PptInfo()
 				pptTakeoverConsumedInCurrentShow = false;
 				Inkeys::UI::Ppt::PublishSession(session.localSession, true, showWindow);
 				Inkeys::UI::Freeze::SetPresentationActive(true);
-				barUISet.barButtonSet.UpdateDrawButtonStyle();
 				barUISet.UpdateRendering();
 				QueuePptUiBusinessCommand(PptUiBusinessCommand::Focus);
 				descriptorChanged = true;
@@ -821,7 +818,6 @@ void PptInfo()
 				if (ChangeStateModeToSelectionIfRevision(exitModeRevision))
 				{
 					// EndSession 的刷新早于模式收尾；成功进入选择后重绘实际工具高亮。
-					barUISet.barButtonSet.UpdateDrawButtonStyle();
 					barUISet.UpdateRendering();
 				}
 			}

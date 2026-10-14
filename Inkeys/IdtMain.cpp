@@ -42,6 +42,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
 #include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
+#include "Inkeys/UI/StartupPlacement.h"
 #include "PptSettingsPersistence.h"
 #include "resource.h"
 #include <array>
@@ -202,6 +203,55 @@ namespace
 			std::chrono::milliseconds(500));
 		Inkeys::UI::StartupPreview::Stop();
 	}
+
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	bool RunStartupPreviewRetryFailureForManualTest() noexcept
+	{
+		// 仅测试构建且同时明确开启慢速观察和故障注入；命令行慢速开关不授权故障。
+		if (!Inkeys::UI::StartupPreview::IsActive()) return true;
+		const auto ExactEnvironmentOptIn = [](const wchar_t* name) noexcept
+			{
+				wchar_t enabled[2]{};
+				return GetEnvironmentVariableW(name, enabled, 2) == 1
+					&& enabled[0] == L'1';
+			};
+		if (!ExactEnvironmentOptIn(L"INKEYS_STARTUP_PREVIEW_RETRY_FAILURE")
+			|| !ExactEnvironmentOptIn(L"INKEYS_STARTUP_PREVIEW_MANUAL_DELAY"))
+			return true;
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(800));
+		// 先建立 Close 的15秒监督；重试由下方唯一启动点负责，不能另行 Arm Restart。
+		SetOffSignal(1);
+		if (!LaunchState::warnTry)
+		{
+			if (IDTLogger) IDTLogger->warn(
+				"[主线程][IdtMain] 人工测试阶段首次失败，淡出后以 -WarnTry 重试");
+			// 首次重试保持普通颜色，等 Preview 淡出再启动继承两项环境开关的子进程。
+			Inkeys::UI::StartupPreview::RequestFadeOutForExit();
+			(void)Inkeys::UI::StartupPreview::WaitForFadeOut(
+				std::chrono::milliseconds(500));
+			Inkeys::UI::StartupPreview::Stop();
+			const auto launchResult = reinterpret_cast<INT_PTR>(ShellExecuteW(
+				nullptr, nullptr, GetCurrentExePath().c_str(),
+				L"-WarnTry", nullptr, SW_SHOWNORMAL));
+			if (launchResult <= 32)
+			{
+				if (IDTLogger) IDTLogger->critical(
+					"[主线程][IdtMain] 人工测试重试进程启动失败, shellResult={}",
+					launchResult);
+				PublishFatalStartupFailure(0xD0FEu,
+					L"人工测试：无法启动模拟重试进程，测试已停止。");
+			}
+			return false;
+		}
+
+		if (IDTLogger) IDTLogger->critical(
+			"[主线程][IdtMain] 人工测试阶段重试后仍失败");
+		PublishFatalStartupFailure(0xD0FEu,
+			L"人工测试：模拟初始化阶段重试后仍失败。");
+		return false;
+	}
+#endif
 
 	bool WriteStartupPreviewSmokeReport(const std::wstring& path, bool passed,
 		const Inkeys::UI::StartupPreview::Diagnostics& preview,
@@ -2091,7 +2141,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
-		"UI.Bar.Zoom" });
+		"UI.Bar.Zoom", "UI.Bar.StartupPlacement" });
+	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
+	const auto startupPlacement = Inkeys::UI::NormalizeStartupPlacement(
+		startupMiniConfig.UI.Bar.StartupPlacement.load());
 	const bool startupPreviewConfigured = startupPreviewSmokeRequested
 		|| startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.Enable;
 	bool startupPreviewStarted = false;
@@ -2136,15 +2189,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		monitorInfo.cbSize = sizeof(monitorInfo);
 		const HMONITOR primaryMonitor = MonitorFromPoint(POINT{}, MONITOR_DEFAULTTOPRIMARY);
 		(void)GetMonitorInfoW(primaryMonitor, &monitorInfo);
-		UINT startupDpi = USER_DEFAULT_SCREEN_DPI;
-		if (HDC screen = GetDC(nullptr))
-		{
-			const int queriedDpi = GetDeviceCaps(screen, LOGPIXELSX);
-			if (queriedDpi > 0) startupDpi = static_cast<UINT>(queriedDpi);
-			ReleaseDC(nullptr, screen);
-		}
+		const UINT startupDpi = Inkeys::Display::QueryEffectiveDpi(primaryMonitor);
 		Inkeys::UI::StartupPreview::StartOptions previewOptions;
 		previewOptions.instance = hInstance;
+		previewOptions.startupPlacement = startupPlacement;
 		previewOptions.cachedWidthDip =
 			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
 				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.
@@ -2153,12 +2201,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		previewOptions.dpi = startupDpi;
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
 		previewOptions.workArea = monitorInfo.rcWork;
-		previewOptions.contentBounds =
-			Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
-				previewOptions.monitorBounds, previewOptions.workArea,
-				previewOptions.cachedWidthDip,
-				Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
-				previewOptions.dpi, previewOptions.barZoom);
+		previewOptions.contentBounds = Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
+			previewOptions.monitorBounds, previewOptions.workArea,
+			previewOptions.cachedWidthDip,
+			Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
+			previewOptions.dpi, previewOptions.barZoom, startupPlacement);
 		previewOptions.progress = &startupProgress;
 		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
 			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
@@ -2805,6 +2852,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::PptComReady);
 	}
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	if (!RunStartupPreviewRetryFailureForManualTest())
+	{
+		// 此处 PptCOM 已激活；与真实初始化失败保持同样的资源清理边界。
+		if (pptComModule) FreeLibrary(pptComModule);
+		if (actCtxActivated) DeactivateActCtx(0, ulCookie);
+		if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
+		if (SUCCEEDED(comInitializeResult)) CoUninitialize();
+		Inkeys::UI::RenderPipeline::Shutdown();
+		return 1;
+	}
+#endif
 	// 自动更新初始化
 	{
 	#ifdef IDT_RELEASE
@@ -3296,7 +3355,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (!isolatedStartupFailure)
 	{
 		topWindowThread = jthread(TopWindow);
-		ui3InitializationThread = jthread(Inkeys::UI::Bar::Initialization);
+		ui3InitializationThread = jthread([startupPlacement]()
+			{ Inkeys::UI::Bar::Initialization(startupPlacement); });
 		freezeFrameThread = jthread(FreezeFrameWindow);
 		stateMonitoringThread = jthread(StateMonitoring);
 	}

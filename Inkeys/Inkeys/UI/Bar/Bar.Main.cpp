@@ -10,6 +10,7 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.A2.h"
 #include "Bar.BottomDock.h"
+#include "Bar.MainLayoutPolicy.h"
 #include "Bar.PresentDecision.h"
 #include "Bar.PresentationProbe.h"
 #include <bit>
@@ -233,6 +234,9 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 		| (barState.geometryAttribute ? 4u : 0u) | (barState.moreExpanded ? 8u : 0u)
 		| (barState.eraserAttribute ? 16u : 0u) | (barState.eraserSensitivityOpen ? 32u : 0u)
 		| (auxClosed ? 64u : 0u);
+	// 空闲签名位记录两项布局配置，不改变既有测试DTO尺寸。
+	signature.flags |= BarMainLayoutSignatureFlags(NormalizeBarIconOrder(Inkeys::config.UI.Bar.IconOrder.load()),
+		NormalizeBarExpandDirectionAdjustment(Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load()));
 	signature.validMask = 1;
 	// 宽/色/工具版本来自同一快照，不用独立getter拼接不同代状态。
 	signature.stateMode = static_cast<std::uint32_t>(tool.state.StateModeSelect);
@@ -274,12 +278,11 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 
 void BarUISetClass::UpdateRendering(bool updateState)
 {
+	// 历史/绘制回调的false请求只唤醒，不能等待可能回入其owner的状态锁。
 	static mutex mtx;
-	lock_guard<mutex> lock(mtx);
-
-	// 状态更新
 	if (updateState)
 	{
+		lock_guard<mutex> lock(mtx);
 		// 按钮、面板归位和粗细文字使用同一工具代次，再统一发布渲染请求。
 		const auto stateMode = GetStateModeSnapshot();
 		barButtonSet.StateUpdate(stateMode);
@@ -357,6 +360,12 @@ namespace Inkeys::UI::Bar
 	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo)
 	{
 		barUISet.NoteRecallHistoryAvailability(canUndo, canRedo);
+	}
+
+	void RefreshToolState() noexcept
+	{
+		// 设置切模式即使未改变墨迹或工具，也必须重新计算按钮；早期 CLI 尚未建好预设。
+		barUISet.UpdateRendering(contentStateUpdatesReady.load(std::memory_order_acquire));
 	}
 
 	bool CurrentPageHasContent() noexcept

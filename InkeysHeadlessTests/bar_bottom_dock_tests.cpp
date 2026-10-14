@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.MainLayoutPolicy.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
@@ -455,6 +456,66 @@ namespace
 			}
 	}
 
+	void TestMainToolbarLayoutPolicy()
+	{
+		using namespace Inkeys::UI::Bar;
+		const bool mirrors[4][2]{{true,false},{false,true},{false,false},{true,true}};
+		for (int order = 0; order < 4; ++order)
+			for (int side = 0; side < 2; ++side)
+			{
+				const auto policy = NormalizeBarIconOrder(order);
+				Check(MirrorBarMainIconsX(policy, side != 0) == mirrors[order][side],
+					"four icon orders preserve their physical horizontal order on both expansion sides");
+				const double first = ResolveBarMainIconX(40.0, 380.0, policy, side != 0);
+				const double last = ResolveBarMainIconX(340.0, 380.0, policy, side != 0);
+				Check((first < last) != mirrors[order][side], "only horizontal coordinates are mirrored");
+			}
+		Check(NormalizeBarIconOrder(-1) == BarIconOrder::FollowMainButton
+			&& NormalizeBarIconOrder(4) == BarIconOrder::FollowMainButton
+			&& NormalizeBarExpandDirectionAdjustment(-1) == BarExpandDirectionAdjustment::WhenSpaceInsufficient,
+			"invalid internal layout settings normalize to defaults");
+		for (double origin : {-1920.0, 0.0, 1920.0})
+			for (double zoom : {0.6, 1.0, 1.5, 2.0})
+			{
+				BarMainExpansionInput input{origin, origin + 1000.0 * zoom,
+					origin + 500.0 * zoom, zoom, 40.0, 10.0, 300.0, 0.5, 0.5};
+				Check(ResolveBarMainExpansionSide(input, true) && !ResolveBarMainExpansionSide(input, false),
+					"both sides fit retains current direction across monitors and zoom");
+				BarMainExpansionCache cache;
+				input.mainCenterScreenX = origin + 800.0 * zoom;
+				bool side = cache.Resolve(input, true);
+				Check(!side, "only the opposite side fits flips once");
+				for (int frame = 0; frame < 180; ++frame)
+				{
+					side = cache.Resolve(input, side);
+					Check(!side, "same stable geometry cannot repeatedly flip during animation");
+				}
+				input.mainCenterScreenX = origin + 400.0 * zoom;
+				Check(!cache.Resolve(input, side), "crossing the centerline with enough room keeps the chosen side");
+				input.layoutWidthDip = 700.0;
+				input.mainCenterScreenX = origin + 500.0 * zoom;
+				Check(ResolveBarMainExpansionSide(input,true) && !ResolveBarMainExpansionSide(input,false),
+					"neither side fits retains either selected direction without translating the root");
+				input.mainCenterScreenX = origin + 200.0 * zoom;
+				input.layoutWidthDip = 300.0;
+				Check(cache.Resolve(input,false), "real position change can flip back when only right fits");
+				input.directionLocked = true;
+				Check(!ResolveBarMainExpansionSide(input,false), "centered and whiteboard direction locks win over space policy");
+				input.adjustment = BarExpandDirectionAdjustment::Centerline;
+				Check(!ResolveBarMainExpansionSide(input,false), "direction lock also wins over centerline policy");
+				input.directionLocked = false;
+				Check(ResolveBarMainExpansionSide(input,false), "explicit centerline option retains legacy classification");
+			}
+		BarMainExpansionInput edge{0.0,1000.0,600.0,1.0,40.0,10.0,349.5,0.5,0.5};
+		Check(ResolveBarMainExpansionSide(edge,true), "pixel-aligned exact target envelope fits");
+		edge.layoutWidthDip += 0.01;
+		Check(!ResolveBarMainExpansionSide(edge,true), "subpixel overflow rounds outward and switches to the fitting side");
+		edge.monitorRight = edge.monitorLeft;
+		Check(ResolveBarMainExpansionSide(edge,true), "invalid monitor bounds preserve the selected side");
+		edge.monitorRight = 1000.0; edge.zoom = std::numeric_limits<double>::quiet_NaN();
+		Check(ResolveBarMainExpansionSide(edge,true), "invalid scale cannot trigger a direction change");
+	}
+
 	bool RectEquals(const RECT& value, const RECT& expected)
 	{
 		return value.left == expected.left && value.top == expected.top
@@ -465,6 +526,7 @@ namespace
 int RunBarBottomDockTests()
 {
 	using namespace Inkeys::UI::Bar;
+	TestMainToolbarLayoutPolicy();
 	TestHorizontalCapturePresentedSequence();
 	TestFirstCapturePresentationAcrossNewSamples();
 	TestOldFloatingFrameCannotAcknowledgeCapture();

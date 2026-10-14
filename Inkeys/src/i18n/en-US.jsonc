@@ -65,6 +65,8 @@
       "MainButtons":
       {
         "SelectLabel": "Select",
+        "SelectClearLabel": "Select\n(Clear)",
+        "ClickThroughLabel": "Click-\nthrough",
         "MoveLabel": "Move",
         "DrawLabel": "Draw",
         "LaserLabel": "Laser",
@@ -298,6 +300,30 @@
     "Regular":
     {
       "N": "General",
+      "SelectAndClickThrough":
+      {
+        "N": "Select and Click-through",
+        "Combined": "Combined",
+        "Separate": "Separate",
+        "CombinedDescription": "Use Select to operate your computer with no ink displayed or with ink kept visible.",
+        "SeparateDescription": "Use Select to clear ink and operate your computer, or Click-through to interact with underlying windows while keeping ink visible.",
+        "ClickThrough": "Click-through",
+        "ClickThroughDescription": "Keep ink visible while allowing clicks and touch input to pass through the annotation layer to the windows underneath."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "Main toolbar icon order",
+        "FollowMainButton": "Follow main button",
+        "FollowMainButtonReverse": "Follow main button (reverse)",
+        "LeftToRight": "Left to right",
+        "RightToLeft": "Right to left"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Main toolbar expansion direction",
+        "Centerline": "Screen centerline",
+        "WhenSpaceInsufficient": "When space is insufficient"
+      },
       "StartUp":
       {
         "N": "Startup",
@@ -389,10 +415,11 @@
         "N": "Drawing Performance",
         "Device":
         {
-          "N": "Input Device",
-          "E": "Optimize for selected device.",
-          "Touch": "Touch Screen",
-          "MousePen": "Mouse, Pen, or Graphics Tablet"
+          "N": "Choose an interaction mode",
+          "Touch": "Large-Screen Touch Mode",
+          "MousePen": "Desktop Mode",
+          "TouchE": "For writing and interacting directly on large touchscreens in classrooms, meeting rooms, and similar settings.",
+          "MousePenE": "For PCs, tablets, and mouse-operated large displays, with mouse, pen, graphics tablet, or touch input."
         }
       },
       "Touch":
@@ -433,6 +460,18 @@
           "N": "Contact-area assistance for the touch speed eraser",
           "E": "Keeps the eraser slightly wider than your finger so it does not cover the eraser cursor. Not recommended for large displays."
         }
+      }
+    },
+    "Preset":
+    {
+      "N": "Presets",
+      "StartupPlacement":
+      {
+        "N": "Position after startup",
+        "E": "The centered bottom bar starts expanded. The bottom-left and bottom-right floating windows show only the main button. Changes take effect the next time Inkeys starts.",
+        "CenteredBottomBar": "Centered bottom bar",
+        "BottomLeftFloating": "Bottom-left floating window",
+        "BottomRightFloating": "Bottom-right floating window"
       }
     },
     "Experimental":

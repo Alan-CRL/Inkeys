@@ -113,13 +113,13 @@ void BarRecallAttributePanel::ConfigureSurface(BarUiShapeClass& surface, RecallA
 	surface.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface)); surface.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 }
 
-bool BarRecallAttributePanel::Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
+bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeView& chrome,
+	bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
 	RECT workArea, POINT origin, double rigidX, double rigidY, const BarUiTimelineClass* parentTimeline,
 	bool dragPlacementLocked)
 {
 	Initialize(); changed_ = false; active_ = false;
 	// 同一份布局快照决定锚点、可见性与弹窗身份；Redo 展开时不能再检查已隐藏的 Undo。
-	const auto chrome = owner.RecallChromeView();
 	auto anchor = owner.barButtonSet.preset[static_cast<int>(
 		chrome.redoExpanded ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall)];
 	if (!anchor)
@@ -132,7 +132,7 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, double dt, double sp
 	}
 	const bool shouldClose = owner.barState.fold ||
 		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded ||
-		owner.barState.eraserAttribute || (anchor && !anchor->IsVisible());
+		owner.barState.eraserAttribute || !anchorVisible;
 	if (shouldClose) Close(owner);
 	const bool open = chrome.popupOpen && !shouldClose; visible_ = open;
 	const BarUiAnimationAdvanceContextClass context{ dt, speed, static_cast<bool>(BarUiAnimationEnabled), false };
@@ -252,9 +252,8 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, double dt, double sp
 	b.state->state = BarWidgetState::None;
 	SetBarButtonPressedVisual(b, commandEnabled && pressed_ == 0);
 	UpdateBarButtonHoverVisual(b, presented, commandEnabled, BarButtonHoverFadeDurationSeconds);
-	const COLORREF contentColor = ResolveRecallCommandContentColor(commandEnabled,
-		GetThemeColor(BarThemeColorEnum::TextPrimary));
-	RetargetBarButtonInteractionVisual(b, presented, true, false, BarButtonHoverTransitionDuration, contentColor);
+	// 与主栏清空/定格共用禁用透明度，仍由现有命令策略处理灰色重复点击。
+	RetargetBarButtonInteractionVisual(b, presented, commandEnabled, false, BarButtonHoverTransitionDuration);
 	b.button.frame->SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 	Place(b.button, g.items[0]);
 	b.button.rw->SetDirect(BarButtonCornerRadiusDip * scale); b.button.rh->SetDirect(BarButtonCornerRadiusDip * scale); b.button.ft->SetDirect(BarButtonFrameThicknessDip * scale);
