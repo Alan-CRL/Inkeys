@@ -104,3 +104,28 @@ $modeMsbuild = & 'C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhe
 - 重新只读核对Inkeys.exe包含当前zh-CN/zh-TW/en-US完整JSONC资源，最新说明已进入产物。
 - 用户明确授权提交本轮修复及相关测试/规范/任务记录；沿用SSH签名。继续保持当前活动任务in_progress，不执行finish/archive、journal自动提交或push。
 - 没有新的产品源码改动，不重复完整构建和全套测试。没有GUI授权，实际窗口视觉仍人工待验。
+
+## 穿透按钮再次点击恢复工具（2026-10-14，基线d444f6a7）
+
+- 最新用户要求：穿透时再次点击穿透按钮，退出并恢复既有lastAnnotationMode记忆的Pen/Shape/Eraser；保留墨迹、历史及具体工具属性，不恢复旧Freeze。
+- 新增用户按钮统一入口ToggleClickThroughFromButton；显式ChangeStateModeToClickThrough继续表示幂等进入，不让同步意图误触退出。
+- 同一状态锁/修订和既有SyncDraw3State链处理进出；不改配置、i18n、布局/动画和选择清空合同。
+- 主会话已同步PRD/design/两份spec；implement与全范围check均完成，未发现需遗留的源码问题；Debug|ARM64和本轮无窗口回归已通过。
+- 本轮保持feature/mode原任务in_progress，不commit/push、不finish/archive；真实点击/触摸仍人工待验，不启动GUI。
+
+### 本轮切换验证结果
+
+| 验证 | 结果 | 证据 |
+| --- | --- | --- |
+| Trellis implement/check | 源码冻结，入口/锁/修订/记忆与真实按钮接线审查通过，无未修问题 | research/clickthrough-toggle-implementation.md、clickthrough-toggle-check.md |
+| 完整InkeysRepo.sln Debug ARM64 | exit 0，0 errors，4分6.99秒；149个既有告警 | Build/SelectClickThroughValidation/solution-clickthrough-toggle.log |
+| --state-mode-production-test | exit 0，clickthrough toggle/freezing等PASS；三工具入/出/重入、属性/bridge、一次修订、迟到回调与FIFO不增Clear通过 | Build/SelectClickThroughValidation/clickthrough-toggle-state.stderr.log |
+| --bar-eraser-offscreen-test | exit 0，EraserVisual failures=0、PageControlScene failures=0；真实Pierce回调和三工具高亮恢复通过 | Build/eraser-b/offscreen-results.log、Build/SelectClickThroughValidation/clickthrough-toggle-bar.stderr.log |
+| Headless --no-window | exit 0，全套PASS，Recall/Eraser failures=0 | Build/SelectClickThroughValidation/clickthrough-toggle-headless.stdout.log |
+| Diff/编码/换行 | diff --check及本轮跟踪文件UTF-8/BOM/CRLF核对通过 | 主会话/检查代理对HEAD字节检查 |
+
+沿用已验证的ARM64原生MSBuild、同invocation PATH workaround及命令参数；允许至少5分钟的持续构建等待，未修改solution/工具链/依赖版本。所有CLI使用Hidden、WaitForExit(300000)和ExitCode确认结果。配置/i18n未改，不重复设置回放或sync。
+
+状态测试未启动Host，内容/历史快照和Undo/Redo哨兵FIFO证明切换不发画布命令，不代表真实墨迹呈现与鼠标/触摸穿透已人工验收。真实GUI/PPT/HWND视觉仍pending，未启动产品窗口或Computer Use。
+
+本轮implementation=complete、automated_validation=passed，任务status仍in_progress；当前feature/mode，无新commit/push，无finish/archive。

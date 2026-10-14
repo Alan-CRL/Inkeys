@@ -1,8 +1,8 @@
 # 技术设计
 
 ## 边界和接口
-- StateModeSelectEnum 末尾追加 IdtClickThrough，保留既有值。新增 IsComputerInteractionMode(StateModeSelectEnum)、ChangeStateModeToClickThrough()、SetSelectAndClickThroughMode(int)、ChangeStateModeToSelectionFromButton()、ToggleFreezeFromButton()。
-- 使用 IdtState 现有状态锁/修订。lastAnnotationMode只保存最近画笔/图形/橡皮顶层模式，笔型/属性保存在现有状态；重复穿透无动作。定格从穿透恢复该记忆。
+- StateModeSelectEnum 末尾追加 IdtClickThrough，保留既有值。新增 IsComputerInteractionMode(StateModeSelectEnum)、ChangeStateModeToClickThrough()、SetSelectAndClickThroughMode(int)、ChangeStateModeToSelectionFromButton()、ToggleClickThroughFromButton()、ToggleFreezeFromButton()。
+- 使用 IdtState 现有状态锁/修订。lastAnnotationMode只保存最近画笔/图形/橡皮顶层模式，笔型/属性保存在现有状态；显式进入穿透的程序入口保持幂等；用户穿透按钮切换进入/退出，退出恢复该记忆且不恢复旧定格。定格从穿透恢复该记忆。
 - ProductState.selectionMode 由电脑操作模式判断投影（Selection或ClickThrough），复用Draw3和辅助ULW，不改后端工具枚举。
 - UI.Bar.SelectAndClickThroughMode 通过新schema IdtAtomic<int>保存0/1。读取规范化。SetSelectAndClickThroughMode更新字段与工具映射，调用SyncDraw3State和主栏刷新；由Setting队列负责写盘，函数本身不写盘。
 - 分离式选择按钮先发布现有Clear，Accepted才切Selection；空页直接切换。系统PPT可信退出的条件Selection入口保持现有语义，不能让通用Selection入口自动清空全部系统调用。

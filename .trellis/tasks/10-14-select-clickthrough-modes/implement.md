@@ -27,3 +27,13 @@
 ## 本轮提交授权
 - 用户要求确认改动生效后提交commit，但不要结束任务。提交前核对成功构建/测试与当前源码一致，最新三语资源已嵌入产物。
 - 单一commit包含本轮修复、回归测试、规范和任务记录，沿用现有SSH签名；不push，不finish/archive。
+
+## 穿透按钮再次点击恢复记忆工具
+- 延续任务，用户按钮在穿透态再次点击后退出并恢复lastAnnotationMode记忆工具；保留墨迹/属性，不恢复旧定格。
+- 分派implement/check，主会话更新合同并执行完整Debug|ARM64与必要生产/离屏无窗口回归。
+- 显式进入穿透入口保持幂等；配置/i18n/主栏布局不变。本轮不commit/push或结束任务。
+
+## 穿透按钮切换实施结果
+- implement/check及规格同步完成；完整Debug|ARM64、生产状态、真实按钮离屏和Headless均通过。
+- 穿透再次点击恢复记忆工具，属性/墨迹保留，定格不恢复；显式进入入口保持幂等。
+- 本轮未commit/push，当前feature/mode，任务保持in_progress，无finish/archive；人工待验边界见validation.md。

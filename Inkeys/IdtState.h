@@ -78,7 +78,7 @@ public:
 	StateModeSelectEnum StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 	// 记录最后选择的笔型是否为 Laser；离开 Pen 时保留，返回 Pen 时恢复。
 	bool laserActive = false;
-	// 穿透退出到定格时只恢复顶层工具，具体笔型与属性仍使用原有记忆。
+	// 穿透退出或切到定格时只恢复顶层工具，具体笔型与属性仍使用原有记忆。
 	StateModeSelectEnum lastAnnotationMode = StateModeSelectEnum::IdtPen;
 	Inkeys::Business::PenWidth::Context penWidthContext;
 
@@ -166,6 +166,7 @@ float GetEffectivePenOpacity(const StateModeClass& snapshot) noexcept;
 bool ChangeStateModeToSelection();
 bool ChangeStateModeToSelectionFromButton();
 bool ChangeStateModeToClickThrough();
+bool ToggleClickThroughFromButton();
 int GetSelectAndClickThroughMode() noexcept;
 bool SetSelectAndClickThroughMode(int mode);
 void ToggleFreezeFromButton();

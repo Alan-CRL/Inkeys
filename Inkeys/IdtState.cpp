@@ -1196,22 +1196,43 @@ bool ChangeStateModeToSelectionFromButton()
 		});
 }
 
-bool ChangeStateModeToClickThrough()
+static bool ChangeStateModeToClickThroughImpl(bool toggle)
 {
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		if (GetSelectAndClickThroughMode() != 1 || WhiteboardActive() || WhiteboardRequested() ||
-			WhiteboardTransactionActive() || stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough)
-			return false;
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtClickThrough;
-		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtClickThrough;
-		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtClickThrough;
-		BackgroundColorMode = 0;
+			WhiteboardTransactionActive()) return false;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough)
+		{
+			if (!toggle) return false;
+			// 再点按钮才恢复记忆工具；锁内决定方向，避免旧快照覆盖较新的用户选择。
+			stateMode.StateModeSelect = stateMode.lastAnnotationMode;
+			BackgroundColorMode = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? 0 :
+				(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
+		}
+		else
+		{
+			stateMode.StateModeSelect = StateModeSelectEnum::IdtClickThrough;
+			BackgroundColorMode = 0;
+		}
+		stateMode.StateModeSelectTarget = stateMode.StateModeSelect;
+		stateMode.StateModeSelectEcho = stateMode.StateModeSelect;
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
 	}
+	// 退出也保持定格关闭，不恢复进入穿透前的定格状态。
 	(void)Inkeys::UI::Freeze::DeactivateIfRevision(Inkeys::UI::Freeze::Snapshot().revision);
 	SyncDraw3State();
 	return true;
+}
+
+bool ChangeStateModeToClickThrough()
+{
+	return ChangeStateModeToClickThroughImpl(false);
+}
+
+bool ToggleClickThroughFromButton()
+{
+	return ChangeStateModeToClickThroughImpl(true);
 }
 
 void ToggleFreezeFromButton()
@@ -1420,6 +1441,7 @@ int RunStateModeProductionTest() noexcept
 			return a.StateModeSelect == b.StateModeSelect &&
 				a.StateModeSelectTarget == b.StateModeSelectTarget &&
 				a.StateModeSelectEcho == b.StateModeSelectEcho &&
+				a.lastAnnotationMode == b.lastAnnotationMode &&
 				a.laserActive == b.laserActive && a.Pen.ModeSelect == b.Pen.ModeSelect &&
 				a.Pen.Brush1.width == b.Pen.Brush1.width && a.Pen.Brush1.color == b.Pen.Brush1.color &&
 				a.Pen.Highlighter1.width == b.Pen.Highlighter1.width && a.Pen.Highlighter1.color == b.Pen.Highlighter1.color &&
@@ -1584,7 +1606,8 @@ int RunStateModeProductionTest() noexcept
 		require(IsLaserToolActive(), "pen-restores-laser-memory");
 		checkProjection(Bridge::Tool::Laser);
 		stage = "select-and-clickthrough-modes";
-		require(GetSelectAndClickThroughMode() == 0 && !ChangeStateModeToClickThrough(), "combined-default-no-clickthrough");
+		require(GetSelectAndClickThroughMode() == 0 && !ChangeStateModeToClickThrough() &&
+			!ToggleClickThroughFromButton(), "combined-default-no-clickthrough");
 		ChangeStateModeToSelection();
 		const auto beforeSeparate = bridge.Snapshot();
 		require(SetSelectAndClickThroughModeImpl(1, true) &&
@@ -1594,7 +1617,7 @@ int RunStateModeProductionTest() noexcept
 			"mode-mapping-preserves-bridge-and-ink");
 		const auto repeated = GetStateModeVersionedSnapshot();
 		require(!ChangeStateModeToClickThrough() && StateModeTransitionRevision() == repeated.revision &&
-			!SetSelectAndClickThroughMode(1), "repeated-clickthrough-and-mode-no-op");
+			!SetSelectAndClickThroughMode(1), "explicit-clickthrough-and-mode-remain-idempotent");
 		require(SetSelectAndClickThroughMode(0) &&
 			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
 			"combined-restores-selection");
@@ -1618,6 +1641,47 @@ int RunStateModeProductionTest() noexcept
 				!bridge.Snapshot().selectionMode, "freeze-restores-tool-and-all-attributes");
 			ToggleFreezeFromButton();
 			require(!Inkeys::UI::Freeze::IsActive(), "freeze-second-click-deactivates");
+
+			const auto annotationVersion = GetStateModeVersionedSnapshot();
+			const auto annotationBridge = bridge.Snapshot();
+			const auto runtimeBefore = ProductRuntimeSnapshot();
+			Bridge::Command historyCommand;
+			require(!bridge.TryConsume(historyCommand) &&
+				bridge.Publish(Bridge::CommandType::Undo) == Bridge::CommandResult::Accepted &&
+				bridge.Publish(Bridge::CommandType::Redo) == Bridge::CommandResult::Accepted,
+				"seed-history-fifo-before-clickthrough-toggle");
+			ToggleFreezeFromButton();
+			require(ToggleClickThroughFromButton() &&
+				StateModeTransitionRevision() == annotationVersion.revision + 1 &&
+				GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtClickThrough &&
+				bridge.Snapshot().selectionMode && !Inkeys::UI::Freeze::IsActive(),
+				"button-enters-clickthrough-and-cancels-freeze");
+			const auto clickthroughVersion = GetStateModeVersionedSnapshot();
+			const auto clickthroughBridge = bridge.Snapshot();
+			require(!ChangeStateModeToClickThrough() &&
+				StateModeTransitionRevision() == clickthroughVersion.revision &&
+				bridge.Snapshot().revision == clickthroughBridge.revision,
+				"explicit-entry-does-not-toggle-selected-clickthrough");
+			require(ToggleClickThroughFromButton() &&
+				StateModeTransitionRevision() == clickthroughVersion.revision + 1 &&
+				sameState(annotation, GetStateModeSnapshot()) &&
+				sameProjection(annotationBridge, bridge.Snapshot()) &&
+				!bridge.Snapshot().selectionMode && !Inkeys::UI::Freeze::IsActive(),
+				"button-exits-to-remembered-tool-and-all-attributes-without-freeze");
+			require(!ChangeStateModeToSelectionIfRevision(clickthroughVersion.revision) &&
+				!ChangeStateModeToPptAnnotation(PptAnnotationTool::Pen, annotationVersion.revision),
+				"toggle-rejects-old-selection-and-ppt-callbacks");
+			require(ToggleClickThroughFromButton() && bridge.Snapshot().selectionMode &&
+				ToggleClickThroughFromButton() && sameState(annotation, GetStateModeSnapshot()) &&
+				sameProjection(annotationBridge, bridge.Snapshot()) && !Inkeys::UI::Freeze::IsActive(),
+				"button-reenters-and-exits-same-remembered-tool");
+			const auto runtimeAfter = ProductRuntimeSnapshot();
+			require(runtimeBefore.currentPageHasContent == runtimeAfter.currentPageHasContent &&
+				runtimeBefore.canUndo == runtimeAfter.canUndo && runtimeBefore.canRedo == runtimeAfter.canRedo &&
+				runtimeBefore.contentRevision == runtimeAfter.contentRevision &&
+				bridge.TryConsume(historyCommand) && historyCommand.type == Bridge::CommandType::Undo &&
+				bridge.TryConsume(historyCommand) && historyCommand.type == Bridge::CommandType::Redo &&
+				!bridge.TryConsume(historyCommand), "toggle-preserves-content-and-history-fifo-without-clear");
 		}
 		Inkeys::UI::Freeze::SetPresentationActive(true);
 		require(ChangeStateModeToClickThrough(), "ppt-clickthrough-still-available");
@@ -1625,12 +1689,15 @@ int RunStateModeProductionTest() noexcept
 		ToggleFreezeFromButton();
 		require(StateModeTransitionRevision() == pptClickthrough.revision &&
 			!Inkeys::UI::Freeze::IsActive(), "ppt-freeze-unavailable-no-tool-change");
+		require(ToggleClickThroughFromButton() && !bridge.Snapshot().selectionMode &&
+			!Inkeys::UI::Freeze::IsActive() && ToggleClickThroughFromButton(),
+			"ppt-clickthrough-button-exits-and-reenters-with-freeze-unavailable");
 		Inkeys::UI::Freeze::SetPresentationActive(false);
 		RequestWhiteboardActive(true);
 		ChangeStateModeToPen();
 		// 功能关闭时真实请求会被拒绝，不能把不存在的白板事务当作穿透门禁。
 		if (IsWhiteboardFeatureEnabled())
-			require(WhiteboardRequested() && !ChangeStateModeToClickThrough(),
+			require(WhiteboardRequested() && !ChangeStateModeToClickThrough() && !ToggleClickThroughFromButton(),
 				"whiteboard-request-rejects-clickthrough");
 		else
 			require(!WhiteboardRequested() && !WhiteboardTransactionActive() && ChangeStateModeToClickThrough(),
@@ -1658,7 +1725,7 @@ int RunStateModeProductionTest() noexcept
 			"empty-selection-does-not-publish-clear");
 		require(SetSelectAndClickThroughMode(0), "restore-default-mode");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
-		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough/freezing, clear transaction\n", stderr);
+		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough toggle/freezing, clear transaction\n", stderr);
 		return 0;
 	}
 	catch (const char* check)

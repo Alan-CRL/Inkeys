@@ -164,6 +164,41 @@ namespace Inkeys::UI::Bar
 		expect(SetSelectAndClickThroughMode(0) && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
 			&& !pierceModeButton->IsVisible() && freezeModeButton->size==BarButtonSizeEnum::twoTwo,
 			"combined setting immediately hides Pierce and enlarges Freeze");
+		// 直接执行生产 Pierce 回调，验证按钮切换身份和三类记忆工具恢复。
+		SetSelectAndClickThroughMode(1);
+		for(const auto tool:{StateModeSelectEnum::IdtPen,StateModeSelectEnum::IdtShape,StateModeSelectEnum::IdtEraser})
+		{
+			if(tool==StateModeSelectEnum::IdtPen)ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+			else if(tool==StateModeSelectEnum::IdtShape){ChangeStateModeToShape();SetShapeModeSelect(ShapeModeSelectEnum::IdtShapeRectangle1);}
+			else ChangeStateModeToEraser();
+			owner.UpdateRendering();
+			const auto annotation=GetStateModeSnapshot();
+			const auto revision=StateModeTransitionRevision();
+			freezeModeButton->clickFunc();
+			expect(Freeze::IsActive(),"Freeze fixture is active before the Pierce button click");
+			pierceModeButton->clickFunc();owner.UpdateRendering();expectStableButtons();
+			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtClickThrough &&
+				StateModeTransitionRevision()==revision+1 && !Freeze::IsActive() &&
+				pierceModeButton->state->state==BarWidgetState::Selected,
+				"production Pierce callback enters click-through and selects the same button");
+			pierceModeButton->clickFunc();owner.UpdateRendering();expectStableButtons();
+			const auto restored=GetStateModeSnapshot();
+			const auto restoredPreset=tool==StateModeSelectEnum::IdtPen ? BarButtonPresetEnum::Draw :
+				tool==StateModeSelectEnum::IdtShape ? BarButtonPresetEnum::Geometry : BarButtonPresetEnum::Eraser;
+			expect(restored.StateModeSelect==tool && restored.lastAnnotationMode==tool &&
+				restored.laserActive==annotation.laserActive && restored.Pen.ModeSelect==annotation.Pen.ModeSelect &&
+				restored.Shape.ModeSelect==annotation.Shape.ModeSelect && StateModeTransitionRevision()==revision+2 &&
+				!Freeze::IsActive() && pierceModeButton->state->state!=BarWidgetState::Selected &&
+				owner.barButtonSet.preset[(int)restoredPreset]->state->state==BarWidgetState::Selected,
+				"production Pierce callback restores the remembered tool and its selected button without Freeze");
+			pierceModeButton->clickFunc();owner.UpdateRendering();
+			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtClickThrough &&
+				pierceModeButton->state->state==BarWidgetState::Selected,"same Pierce callback can reenter click-through");
+			pierceModeButton->clickFunc();owner.UpdateRendering();
+			expect(GetStateModeSnapshot().StateModeSelect==tool && StateModeTransitionRevision()==revision+4 &&
+				!Freeze::IsActive(),"same Pierce callback can exit again with one revision per click");
+		}
+		SetSelectAndClickThroughMode(0);
 		ChangeStateModeToSelection();owner.UpdateRendering();
 		expect(clearModeButton->state->state==BarWidgetState::Disable,
 			"empty Selection Clear uses unified disabled state");

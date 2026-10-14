@@ -592,7 +592,7 @@ void BarButtonSetClass::PresetInitialization()
 		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 		obj->icon.InitializationFromResource(L"UI", L"barPierce");
 		obj->icon.enable.Initialization(true);
-		obj->clickFunc = [] { ChangeStateModeToClickThrough(); };
+		obj->clickFunc = [] { ToggleClickThroughFromButton(); };
 		obj->state = &barButtonState[(int)BarButtonPresetEnum::Pierce];
 		preset[(int)BarButtonPresetEnum::Pierce] = obj;
 	}
