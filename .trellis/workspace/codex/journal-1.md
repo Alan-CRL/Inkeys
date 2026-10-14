@@ -1778,3 +1778,34 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 任务继续in_progress；本轮不commit/push/归档，不GUI。查看scrollbar-validation.md继续人工审阅或后续修复。
+
+
+## Session 101: 设置开屏缓存任务完成与归档
+<!-- trellis-session: v=2 fp=f185321da3ef78c6 -->
+
+**Date**: 2026-10-14
+**Task**: 设置开屏缓存任务完成与归档
+**Branch**: `fluent`
+
+### Summary
+
+用户确认滚动条跳变修复有效；三轮优化及离屏验证完成，修复已提交，任务已归档。
+
+### Main Changes
+
+- 缓存与首个实时帧使用一致滚动条宽度及已收敛的原生内容尺寸；自然无溢出布局保持无滚动条。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a4bdd89` | perf(setting): cache entrance page and skip duplicate submissions |
+| `c7effa54` | fix(setting): stabilize cached entrance scrollbar layout |
+
+### Testing
+
+- [OK] 完整Debug ARM64 solution构建通过；无窗口全套测试通过，浅深六例背景精确像素差异为0；保留原有PptCOM.dll修改。
+
+### Status
+
+[OK] **Completed**
