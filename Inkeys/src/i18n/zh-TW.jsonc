@@ -310,6 +310,20 @@
         "ClickThrough": "穿透",
         "ClickThroughDescription": "保留螢幕上的墨跡，讓點擊與觸控穿過註記層，操作下方視窗。"
       },
+      "ToolbarIconOrder":
+      {
+        "N": "主欄圖示順序",
+        "FollowMainButton": "跟隨主按鈕",
+        "FollowMainButtonReverse": "跟隨主按鈕（反向）",
+        "LeftToRight": "從左到右",
+        "RightToLeft": "從右到左"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "主欄展開方向調整",
+        "Centerline": "中軸線",
+        "WhenSpaceInsufficient": "當位置不足時"
+      },
       "StartUp":
       {
         "N": "開機自動執行與啟動行為",

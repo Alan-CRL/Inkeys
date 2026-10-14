@@ -10,6 +10,7 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.A2.h"
 #include "Bar.BottomDock.h"
+#include "Bar.MainLayoutPolicy.h"
 #include "Bar.PresentDecision.h"
 #include "Bar.PresentationProbe.h"
 #include <bit>
@@ -233,6 +234,9 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 		| (barState.geometryAttribute ? 4u : 0u) | (barState.moreExpanded ? 8u : 0u)
 		| (barState.eraserAttribute ? 16u : 0u) | (barState.eraserSensitivityOpen ? 32u : 0u)
 		| (auxClosed ? 64u : 0u);
+	// 空闲签名位记录两项布局配置，不改变既有测试DTO尺寸。
+	signature.flags |= BarMainLayoutSignatureFlags(NormalizeBarIconOrder(Inkeys::config.UI.Bar.IconOrder.load()),
+		NormalizeBarExpandDirectionAdjustment(Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load()));
 	signature.validMask = 1;
 	// 宽/色/工具版本来自同一快照，不用独立getter拼接不同代状态。
 	signature.stateMode = static_cast<std::uint32_t>(tool.state.StateModeSelect);

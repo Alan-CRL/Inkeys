@@ -24,6 +24,8 @@
 #include <bit>
 #include <limits>
 #include "Bar.PresentationProbe.h"
+#include "Bar.MainLayoutPolicy.h"
+#include "../StartupPlacement.h"
 #pragma comment(lib,"windowscodecs.lib")
 
 module Inkeys.UI.Bar;
@@ -133,6 +135,39 @@ namespace Inkeys::UI::Bar
 		// UpdateRendering 在 Pen 状态还会刷新粗细文字；离屏 fixture 不加载整套窗口控件。
 		owner.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay] =
 			std::make_shared<BarUiWordClass>(0.0,0.0,0.0,0.0,L"",13.0);
+		// 直接覆盖生产 PositionUpdate 的策略门禁，不能让后续刷新重新按中轴覆盖空间模式。
+		{
+			const int savedDirection = Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load();
+			const auto savedMainButton = owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			const auto savedPlacement = owner.startupPlacement;
+			const bool savedFold = owner.barState.fold;
+			const bool savedSide = owner.barState.widgetPosition.mainBar;
+			const bool savedPrimary = owner.barState.widgetPosition.primaryBar;
+			const auto savedWidth = owner.barWindow.w, savedHeight = owner.barWindow.h;
+			const auto mainButton = std::make_shared<BarUiSuperellipseClass>(800,500,80,80,10.0,1.0,std::nullopt,std::nullopt);
+			owner.superellipseMap[BarUISetSuperellipseEnum::MainButton] = mainButton;
+			// 早期 CLI 尚未启动交互/渲染，复用公开启动入口准备浮动状态。
+			(void)owner.InitializeStartupPlacement(Inkeys::UI::StartupPlacement::BottomLeftFloating);
+			expect(!owner.IsBottomDockLayoutLocked(),"PositionUpdate fixture initializes floating state through the production startup entry");
+			owner.barWindow.w = 1000; owner.barWindow.h = 1000;
+			Inkeys::config.UI.Bar.ExpandDirectionAdjustment = 0;
+			owner.barState.widgetPosition.mainBar = true; owner.barState.PositionUpdate(1.0);
+			expect(!owner.barState.widgetPosition.mainBar,"explicit centerline setting retains the legacy right-half classification");
+			Inkeys::config.UI.Bar.ExpandDirectionAdjustment = 1;
+			owner.barState.widgetPosition.mainBar = true;
+			for(int frame=0;frame<120;++frame)owner.barState.PositionUpdate(1.0);
+			expect(owner.barState.widgetPosition.mainBar,"space strategy survives repeated production PositionUpdate across the centerline");
+			mainButton->x.SetDirect(200);mainButton->y.SetDirect(100);owner.barState.widgetPosition.mainBar = false;
+			owner.barState.PositionUpdate(1.0);
+			expect(!owner.barState.widgetPosition.mainBar && owner.barState.widgetPosition.primaryBar,
+				"space strategy keeps the horizontal side while retaining the original upper/lower reversal");
+			owner.superellipseMap[BarUISetSuperellipseEnum::MainButton] = savedMainButton;
+			(void)owner.InitializeStartupPlacement(savedPlacement);
+			owner.barState.fold = savedFold;
+			owner.barState.widgetPosition.mainBar = savedSide;owner.barState.widgetPosition.primaryBar = savedPrimary;
+			owner.barWindow.w = savedWidth;owner.barWindow.h = savedHeight;
+			Inkeys::config.UI.Bar.ExpandDirectionAdjustment = savedDirection;
+		}
 		// 真实设置入口在无内容变化且工具不变时，也必须同步主栏显隐和清空状态。
 		SetContentStateUpdatesReady(true);
 		ChangeStateModeToPen();owner.UpdateRendering();
@@ -219,6 +254,33 @@ namespace Inkeys::UI::Bar
 			pierceModeButton->size==BarButtonSizeEnum::twoTwo,"PPT Pierce fills hidden Freeze slot");
 		Freeze::SetPresentationActive(false);SetPptPresentationActive(false);
 		SetSelectAndClickThroughMode(0);ChangeStateModeToSelection();owner.UpdateRendering();
+		// 用真实两行按钮与位置动画检查 X 策略，隐藏锚点仍共用当前批次目标。
+		for(int order=0;order<4;++order)for(bool opensRight:{false,true})
+		{
+			SetSelectAndClickThroughMode(1);ChangeStateModeToPen();owner.UpdateRendering();
+			const double targetX = ResolveBarMainIconX(340.0,380.0,NormalizeBarIconOrder(order),opensRight);
+			const BarUiCurveSpecClass curve{BarUiCurveEnum::EaseOutCubic,BarUiCurveEnum::EaseOutCubic,0.0,false};
+			pierceModeButton->button.x.SetDirect(180.0);freezeModeButton->button.x.SetDirect(180.0);
+			pierceModeButton->button.y.SetDirect(21.25);freezeModeButton->button.y.SetDirect(58.75);
+			BarUiSetLayoutPositionTarget(pierceModeButton->button.x,targetX,BarUiDefaultOperationDur,true,curve);
+			BarUiSetLayoutPositionTarget(freezeModeButton->button.x,targetX,BarUiDefaultOperationDur,true,curve);
+			expect(pierceModeButton->button.x.val==180.0 && freezeModeButton->button.x.val==180.0,
+				"sorting retargets from current visible values instead of jumping");
+			for(int frame=0;frame<12;++frame)
+			{
+				const BarUiAnimationAdvanceContextClass tick{0.05,1,true,false};
+				BarUiAdvanceAnimation(pierceModeButton->button.x,tick);BarUiAdvanceAnimation(freezeModeButton->button.x,tick);
+			}
+			expect(pierceModeButton->button.x.val==targetX && freezeModeButton->button.x.val==targetX
+				&& pierceModeButton->button.y.val<freezeModeButton->button.y.val,
+				"all horizontal policies keep Pierce above Freeze and their shared column");
+			SetSelectAndClickThroughMode(0);owner.UpdateRendering();
+			AnchorHiddenBarButton(owner.barButtonSet,false,BarButtonPresetEnum::Pierce,BarButtonPresetEnum::Freeze,
+				[&](BarUiValueClass& value,double target){BarUiSetLayoutPositionTarget(value,target,BarUiDefaultOperationDur,true,curve);});
+			expect(!pierceModeButton->IsVisible() && pierceModeButton->button.x.tar==targetX,
+				"hidden Pierce retains the mirrored column without becoming a hit target");
+			expectStableButtons();
+		}
 		// 连续收窄/展开和 PPT 进出：隐藏按钮只改 hide，不能离开列表或保留右侧旧坐标。
 		const auto positionTarget=[](BarUiValueClass& value,double target)
 			{ value.SetTar(target,BarUiDefaultOperationDur); };

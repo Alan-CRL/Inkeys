@@ -474,3 +474,40 @@ state.selectionMode = mode == StateModeSelectEnum::IdtSelection;
 // Correct：复用原穿透呈现链，同时保持独立UI工具身份。
 state.selectionMode = IsComputerInteractionMode(mode);
 ```
+
+## 主栏图标顺序与展开方向合同
+
+### 1. Scope / Trigger
+适用于UI3主栏横向图标顺序、展开侧策略、常规设置两个下拉及对应配置；不改按钮ID/持久化A1/A2序列或上下翻转。
+
+### 2. Types / Configuration
+- UI.Bar.IconOrder: IdtAtomic<int>=0、NoUpload；0跟随主按钮、1跟随反向、2固定LTR、3固定RTL。
+- UI.Bar.ExpandDirectionAdjustment: IdtAtomic<int>=1、NoUpload；0中轴线、1仅当空间不足。缺失、非法类型/越界/超宽整数回各自默认，不能窄化误读。
+- Setting仅真正变化后写原子字段、UpdateRendering(false)唤醒、QueueConfigWrite冻结保存；不修改工具/Draw3。
+
+### 3. Contracts
+- 主栏列表始终正序，y从上到下；横坐标镜像表follow=!opensRight、reverse=opensRight、LTR=false、RTL=true。同列2×1不颠倒，Pierce上Freeze下、Redo上Undo下，Divider仍原网格封列。排序不修改列表/A1/A2/按钮身份。
+- 只改排序时不改父栏宽度、展开侧及主按钮位置；排序变化纳入布局批次/缓存/damage/命中和稳定几何版本，隐藏锚点同帧正确。内部finite签名保持原字段/sizeof72/协议版本，复用flags bit8..9编码IconOrder、bit10编码ExpandDirectionAdjustment，producer/frame捕获和合法mask一致；bit7仍未知非法，不将配置变化证明成旧几何。
+- 空间不足模式保持当前侧，当前完整目标包络不fit且对侧完整fit才换；两侧不足不换、不平移/自动缩放。包络含主按钮半宽、10DIP间隔、完整可见网格宽及描边，使用active monitor与zoom，不能看动态ULW包络/Back/pulse实际宽度。
+- 先计算完整目标宽度再判侧再设动画。首次沿startup规则，完整宽可用后评估，fold仍按下一次展开宽。输入无变化时不重复目标或重启动画；切换后fit则保持，收窄和越过中轴均不自动回翻。
+- 中轴线模式保留x<=中心右展、else左展；整体居中和白板首次专用dock锁优先。非居中dock适用设置，primaryBar上下逻辑不改。
+- 两个新卡紧随选择与穿透，自启前，三语最长选项测宽，标题不得重叠；不追加额外说明块。
+
+### 4. Validation Matrix
+| 场景 | 行为 |
+| --- | --- |
+| 当前侧足够，包括两侧都fit | 保持侧 |
+| 当前侧不足且另一侧fit | 换一次后稳定 |
+| 两侧不足 | 保持原侧，允许越界 |
+| 居中/白板锁或无效显示参考 | 保持侧，不影响上下 |
+| 两固定排序 + 两方向 | 屏幕LTR/RTL固定，列表与y不变 |
+| 动画/pulse/回弹，目标几何无变 | 不因临时尺寸换边 |
+
+### 5. Good / Bad
+Good：正序算格、仅X镜像、纯空间策略用稳定目标。Bad：逆转buttonList导致上下颠倒；旧PositionUpdate每帧按中轴覆盖新策略；两侧不足来回切。
+
+### 6. Tests Required
+真实配置读写/严格类型/默认/复制/NoUpload；三语sync/check及实际控件回放；Headless四排序×左右/空间矩阵/边界/负屏坐标/DPI/连续输入；真实Bar离屏排序/隐藏hit/重复动画、底栏居中与白板锁回归；完整Debug|ARM64及Headless --no-window，GUI视觉独立人工记录。
+
+### 7. Data flow
+Settings原子配置→frame配置快照→完整稳定宽度→受锁约束的side策略→独立IconOrder X镜像→统一布局动画/继承/hit/damage。工具和文档状态不变。

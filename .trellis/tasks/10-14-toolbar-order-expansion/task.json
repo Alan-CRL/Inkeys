@@ -1,0 +1,32 @@
+{
+  "id": "toolbar-order-expansion",
+  "name": "toolbar-order-expansion",
+  "title": "主栏图标顺序与展开方向",
+  "description": "新增主栏横向图标顺序与空间不足换边策略，默认保留方向并避免反复调整",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-14",
+  "completedAt": null,
+  "branch": "feature/mode",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "实施与自动验证完成；真实GUI拖动、换边与设置视觉待人工验收。按本轮要求保持任务进行中，不提交或结束。",
+  "meta": {
+    "implementation": "complete",
+    "automated_validation": "passed",
+    "manual_gui_validation": "pending",
+    "trellis_check": "passed_after_compile_fixes",
+    "validation_file": "validation.md"
+  }
+}

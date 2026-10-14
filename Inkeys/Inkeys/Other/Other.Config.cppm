@@ -325,6 +325,8 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, StartupPlacement, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ExpandDirectionAdjustment, 1) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA1, MakeDefaultFixedButtonsA1()) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarExtensionButtonLayoutEntry>, ExtensionButtons, MakeDefaultExtensionButtons()) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \

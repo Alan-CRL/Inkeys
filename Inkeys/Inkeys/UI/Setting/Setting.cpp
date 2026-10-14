@@ -3127,6 +3127,68 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::PopStyleVar(2);
 					}
 
+					{
+						const string itemNames[] = {
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
+							IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N)
+						};
+						const string optionNames[][4] = {
+							{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
+							{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
+							IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) }
+						};
+						const char* itemIds[] = { "主栏图标顺序", "主栏展开方向调整" };
+						for (int item = 0; item < 2; ++item)
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild(itemIds[item], { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+							ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+							ImGui::TextUnformatted(itemNames[item].c_str());
+							ImGui::PopFont();
+							ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+							auto& preference = item == 0 ? Inkeys::config.UI.Bar.IconOrder : Inkeys::config.UI.Bar.ExpandDirectionAdjustment;
+							const int optionCount = item == 0 ? 4 : 2;
+							const int storedValue = preference.load();
+							const int value = storedValue >= 0 && storedValue < optionCount ? storedValue : (item == 0 ? 0 : 1);
+							float comboWidth = 200.0f * settingGlobalScale;
+							for (int i = 0; i < optionCount; ++i)
+								comboWidth = max(comboWidth, ImGui::CalcTextSize(optionNames[item][i].c_str()).x + 45.0f * settingGlobalScale);
+							ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - comboWidth - 20.0f * settingGlobalScale,15.0f * settingGlobalScale });
+							ImGui::SetNextItemWidth(comboWidth);
+							// 下拉弹窗保留少量上下留白，防止英文下伸字形贴住边框。
+							ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * settingGlobalScale, 4.0f * settingGlobalScale));
+							if (Widgets::combo.Begin("##主栏布局", optionNames[item][value].c_str(), optionCount))
+							{
+								for (int i = 0; i < optionCount; ++i)
+								{
+									const bool selected = value == i;
+									if (Widgets::combo.Selectable(optionNames[item][i].c_str(), selected) && !selected)
+									{
+										// 只唤醒主栏布局，避免设置渲染期间同步工具或等待窗口线程。
+										preference = i;
+										barUISet.UpdateRendering(false);
+										QueueConfigWrite();
+									}
+									if (selected) ImGui::SetItemDefaultFocus();
+								}
+								Widgets::combo.End();
+							}
+							ImGui::PopStyleVar();
+							ImGui::PopStyleColor();
+							ImGui::PopFont();
+							ImGui::EndChild();
+							ImGui::PopStyleColor();
+							ImGui::PopStyleVar(2);
+						}
+					}
 
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);

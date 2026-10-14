@@ -310,6 +310,20 @@
         "ClickThrough": "Click-through",
         "ClickThroughDescription": "Keep ink visible while allowing clicks and touch input to pass through the annotation layer to the windows underneath."
       },
+      "ToolbarIconOrder":
+      {
+        "N": "Main toolbar icon order",
+        "FollowMainButton": "Follow main button",
+        "FollowMainButtonReverse": "Follow main button (reverse)",
+        "LeftToRight": "Left to right",
+        "RightToLeft": "Right to left"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Main toolbar expansion direction",
+        "Centerline": "Screen centerline",
+        "WhenSpaceInsufficient": "When space is insufficient"
+      },
       "StartUp":
       {
         "N": "Startup",

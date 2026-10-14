@@ -310,6 +310,20 @@
         "ClickThrough": "穿透",
         "ClickThroughDescription": "保留屏幕上的墨迹，让点击和触摸穿过批注层，操作下方窗口。"
       },
+      "ToolbarIconOrder":
+      {
+        "N": "主栏图标顺序",
+        "FollowMainButton": "跟随主按钮",
+        "FollowMainButtonReverse": "跟随主按钮（反向）",
+        "LeftToRight": "从左到右",
+        "RightToLeft": "从右到左"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "主栏展开方向调整",
+        "Centerline": "中轴线",
+        "WhenSpaceInsufficient": "当位置不足时"
+      },
       "StartUp":
       {
         "N": "开机自启和启动行为",

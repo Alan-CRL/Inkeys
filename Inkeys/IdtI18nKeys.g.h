@@ -313,6 +313,20 @@ inline constexpr struct I18nKeyRoot
                 const char* ClickThrough = "SettingsUI/Regular/SelectAndClickThrough/ClickThrough";
                 const char* ClickThroughDescription = "SettingsUI/Regular/SelectAndClickThrough/ClickThroughDescription";
             } SelectAndClickThrough{};
+            struct Node__SettingsUI__Regular__ToolbarIconOrder
+            {
+                const char* N = "SettingsUI/Regular/ToolbarIconOrder/N";
+                const char* FollowMainButton = "SettingsUI/Regular/ToolbarIconOrder/FollowMainButton";
+                const char* FollowMainButtonReverse = "SettingsUI/Regular/ToolbarIconOrder/FollowMainButtonReverse";
+                const char* LeftToRight = "SettingsUI/Regular/ToolbarIconOrder/LeftToRight";
+                const char* RightToLeft = "SettingsUI/Regular/ToolbarIconOrder/RightToLeft";
+            } ToolbarIconOrder{};
+            struct Node__SettingsUI__Regular__ToolbarExpansionDirection
+            {
+                const char* N = "SettingsUI/Regular/ToolbarExpansionDirection/N";
+                const char* Centerline = "SettingsUI/Regular/ToolbarExpansionDirection/Centerline";
+                const char* WhenSpaceInsufficient = "SettingsUI/Regular/ToolbarExpansionDirection/WhenSpaceInsufficient";
+            } ToolbarExpansionDirection{};
             struct Node__SettingsUI__Regular__StartUp
             {
                 const char* N = "SettingsUI/Regular/StartUp/N";

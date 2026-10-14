@@ -14,6 +14,7 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
 #include "Bar.BottomDock.h"
+#include "Bar.MainLayoutPolicy.h"
 #include "../StartupPlacement.h"
 #include "Bar.DisplayTransition.h"
 #include "Bar.I18nFormat.h"
@@ -256,6 +257,8 @@ struct BarRenderFrameSnapshot
 	COLORREF highlighterColor = RGB(0, 0, 0);
 	unsigned long long demandGeneration = 0;
 	double zoom = 1.0;
+	Inkeys::UI::Bar::BarIconOrder iconOrder = Inkeys::UI::Bar::BarIconOrder::FollowMainButton;
+	Inkeys::UI::Bar::BarExpandDirectionAdjustment directionAdjustment = Inkeys::UI::Bar::BarExpandDirectionAdjustment::WhenSpaceInsufficient;
 	double animationDtSeconds = 0.0;
 	double animationSpeedRate = 1.0;
 	int ordinal = 2;
@@ -648,6 +651,8 @@ struct BarRenderLoopState
 	const BarUiCurveSpecClass buttonPressCurve = BarButtonPressCurve();
 	const BarUiCurveSpecClass buttonReleaseCurve = BarButtonReleaseCurve();
 	optional<double> mainBarLayoutWidth;
+	optional<Inkeys::UI::Bar::BarIconOrder> mainBarIconOrder;
+	Inkeys::UI::Bar::BarMainExpansionCache mainBarExpansionCache;
 	BarUiValueClass drawAttributePenThickness{ GetPenWidthMetrics(stateModeSnapshot).resolvedWidthDip };
 	bool drawAttributePenThicknessInitialized =
 		stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtPen;
@@ -1128,6 +1133,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 		diagnostics->failureRecoveryReset = hadFailureBackoff
 			&& !state.presentDecision.HasFailureBackoff();
 	}
+	frame.iconOrder = Inkeys::UI::Bar::NormalizeBarIconOrder(Inkeys::config.UI.Bar.IconOrder.load());
+	frame.directionAdjustment = Inkeys::UI::Bar::NormalizeBarExpandDirectionAdjustment(
+		Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load());
 	frame.animationSpeedRate = static_cast<double>(BarUiAnimationSpeedRate);
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
@@ -1536,15 +1544,70 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 					pct.continueTimelinePhase = syncedPctCurve.continueTimelinePhase;
 				}
 			};
+// 与下方布局共用：间隙 5，1*1 边长 32.5，使
+			// 2*1 = 两枚 1*1 + 间隙，2*2 = 两枚 2*1 + 间隙 = 四枚 1*1，且各处间隙一致。
+			constexpr double barBtnGap = BarButtonGapDip;
+			constexpr double barBtnOne = BarButtonOneSideDip;
+			constexpr double barBtnTwo = BarButtonTwoSideDip;
+			constexpr double barBtnOneStep = barBtnOne + barBtnGap; // 37.5
+			constexpr double barBtnTwoStep = barBtnTwo + barBtnGap; // 75
+			auto CalculateButtonLayoutWidth = [&]()
+				{
+					double width = barBtnGap, xO = barBtnGap, yO = barBtnGap;
+					for (int id = 0; id < state.barButtonSet.tot; id++)
+					{
+						BarButtonClass* temp = state.barButtonSet.buttonList.Get(id);
+						if (!temp) continue;
+						if (temp->size == BarButtonSizeEnum::oneOne)
+						{
+							if (!temp->IsVisible()) continue;
+							if (yO <= barBtnGap) yO += barBtnOneStep, width += barBtnOneStep;
+							else if (xO + barBtnOneStep >= width) xO += barBtnOneStep, yO = barBtnGap;
+							else xO += barBtnOneStep;
+						}
+						else if (temp->size == BarButtonSizeEnum::twoOne)
+						{
+							if (yO > barBtnGap && xO + barBtnTwoStep > width) xO = width, yO = barBtnGap;
+							if (!temp->IsVisible()) continue;
+							if (yO <= barBtnGap) yO += barBtnOneStep, width += barBtnTwoStep;
+							else xO += barBtnTwoStep, yO = barBtnGap;
+						}
+						else if (temp->size == BarButtonSizeEnum::twoTwo)
+						{
+							if (yO > barBtnGap) yO = barBtnGap, xO = width;
+							if (temp->IsVisible()) xO += barBtnTwoStep, width += barBtnTwoStep;
+						}
+						else if (temp->size == BarButtonSizeEnum::oneTwo)
+						{
+							if (!temp->IsVisible()) continue;
+							// Divider 只结束未填满的列，不占用已有 5 DIP 间隙之外的宽度。
+							xO = width;
+							yO = barBtnGap;
+						}
+					}
+					return width;
+				};
+		double layoutTotalWidth = CalculateButtonLayoutWidth();
 		const bool dockLayoutLocked = frame.bottomDockLayoutLocked;
 		const bool centeredMainBarSideLocked =
 			frame.bottomDockMode == BarBottomDockMode::BottomDocked
 			&& frame.bottomDockCenterMode == BarBottomDockCenterMode::Centered
 			&& !state.barState.fold;
 		// 居中态由根节点位置维持联合中心，不再根据窗口 X 反复重判展开方向。
-		bool currentMainBarSide = centeredMainBarSideLocked
-			? state.mainBarLayoutSide
-			: static_cast<bool>(state.barState.widgetPosition.mainBar);
+		const auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		const Inkeys::UI::Bar::BarMainExpansionInput expansionInput{
+			static_cast<double>(state.activeMonitorBounds.left), static_cast<double>(state.activeMonitorBounds.right),
+			state.monitorOrigin.x + mainButton->x.val * frameZoom, frameZoom,
+			state.mainButtonBaseSize / 2.0, 10.0, layoutTotalWidth,
+			mainButton->ft.has_value() ? max(0.0, mainButton->ft.value().tar / 2.0) : 0.0,
+			mainBar->ft.has_value() ? max(0.0, mainBar->ft.value().tar / 2.0) : 0.0,
+			frame.directionAdjustment, centeredMainBarSideLocked || Inkeys::UI::Bar::WhiteboardDockLockActive()
+				|| state.whiteboardDockAnimationActive || state.whiteboardDockPlacementPending
+				|| state.pptDockPlacementPending || !state.initialBottomDockPlacementApplied };
+		// 完整目标宽度先于方向判定；折叠也以未来展开宽度评估，同输入沿用锁存结果。
+		bool currentMainBarSide = state.mainBarExpansionCache.Resolve(expansionInput,
+			centeredMainBarSideLocked ? state.mainBarLayoutSide
+				: static_cast<bool>(state.barState.widgetPosition.mainBar));
 		state.barState.widgetPosition.mainBar = currentMainBarSide;
 		const bool mainBarSideChanged = !state.barState.fold
 			&& currentMainBarSide != state.mainBarLayoutSide;
@@ -2380,53 +2443,12 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			}
 		bool mainBarFoldChange = (state.barState.fold && mainBar->x.tar != 0.0)
 			|| (!state.barState.fold && mainBar->x.tar == 0.0);
-// 与下方布局共用：间隙 5，1*1 边长 32.5，使
-			// 2*1 = 两枚 1*1 + 间隙，2*2 = 两枚 2*1 + 间隙 = 四枚 1*1，且各处间隙一致。
-			constexpr double barBtnGap = BarButtonGapDip;
-			constexpr double barBtnOne = BarButtonOneSideDip;
-			constexpr double barBtnTwo = BarButtonTwoSideDip;
-			constexpr double barBtnOneStep = barBtnOne + barBtnGap; // 37.5
-			constexpr double barBtnTwoStep = barBtnTwo + barBtnGap; // 75
-			auto CalculateButtonLayoutWidth = [&]()
-				{
-					double width = barBtnGap, xO = barBtnGap, yO = barBtnGap;
-					for (int id = 0; id < state.barButtonSet.tot; id++)
-					{
-						BarButtonClass* temp = state.barButtonSet.buttonList.Get(id);
-						if (!temp) continue;
-						if (temp->size == BarButtonSizeEnum::oneOne)
-						{
-							if (!temp->IsVisible()) continue;
-							if (yO <= barBtnGap) yO += barBtnOneStep, width += barBtnOneStep;
-							else if (xO + barBtnOneStep >= width) xO += barBtnOneStep, yO = barBtnGap;
-							else xO += barBtnOneStep;
-						}
-						else if (temp->size == BarButtonSizeEnum::twoOne)
-						{
-							if (yO > barBtnGap && xO + barBtnTwoStep > width) xO = width, yO = barBtnGap;
-							if (!temp->IsVisible()) continue;
-							if (yO <= barBtnGap) yO += barBtnOneStep, width += barBtnTwoStep;
-							else xO += barBtnTwoStep, yO = barBtnGap;
-						}
-						else if (temp->size == BarButtonSizeEnum::twoTwo)
-						{
-							if (yO > barBtnGap) yO = barBtnGap, xO = width;
-							if (temp->IsVisible()) xO += barBtnTwoStep, width += barBtnTwoStep;
-						}
-						else if (temp->size == BarButtonSizeEnum::oneTwo)
-						{
-							if (!temp->IsVisible()) continue;
-							// Divider 只结束未填满的列，不占用已有 5 DIP 间隙之外的宽度。
-							xO = width;
-							yO = barBtnGap;
-						}
-					}
-					return width;
-				};
-		double layoutTotalWidth = CalculateButtonLayoutWidth();
-		bool mainBarLayoutChange = state.mainBarLayoutWidth.has_value()
-			&& abs(layoutTotalWidth - state.mainBarLayoutWidth.value()) > 0.000001;
+		const bool iconOrderChanged = state.mainBarIconOrder.has_value()
+			&& state.mainBarIconOrder.value() != frame.iconOrder;
+		bool mainBarLayoutChange = iconOrderChanged || (state.mainBarLayoutWidth.has_value()
+			&& abs(layoutTotalWidth - state.mainBarLayoutWidth.value()) > 0.000001);
 		bool mainBarLayoutExpands = mainBarLayoutChange
+			&& state.mainBarLayoutWidth.has_value()
 			&& layoutTotalWidth > state.mainBarLayoutWidth.value();
 		// 布局变化会取代仍在运行的换边关键帧；即使某个控件目标没变，也必须从当前值重建。
 		bool interruptingMainBarSideSwitch = mainBarLayoutChange
@@ -2464,6 +2486,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				: (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseOutCubic);
 		}
 		state.mainBarLayoutWidth = layoutTotalWidth;
+		state.mainBarIconOrder = frame.iconOrder;
 		if (state.mainBarTimeline.IsActive()) operationDur = state.mainBarTimeline.GetRemainingDuration();
 		double mainBarPhase = state.mainBarTimeline.IsActive() ? state.mainBarTimeline.GetProgress() : 0.0;
 		bool continueMainBarPhase = state.mainBarTimeline.IsActive() && mainBarPhase > 0.0
@@ -2487,8 +2510,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			mainBarPhase, true };
 		auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle, bool mirrorX = false)
 			{
-				// 左侧展开仍按正序布局，只将最终横坐标按主栏宽度镜像。
-				if (mirrorX && !state.barState.widgetPosition.mainBar) target = layoutTotalWidth - target;
+				// 列表与纵坐标保持正序，只有横坐标按用户策略镜像。
+				if (mirrorX) target = Inkeys::UI::Bar::ResolveBarMainIconX(target, layoutTotalWidth, frame.iconOrder, currentMainBarSide);
 				if (mainBarSideSwitch)
 				{
 					value.SetTar(target, operationDur, middle, true, keyframeValueCurve);
@@ -13698,6 +13721,8 @@ BarRenderLoopCoordinator::RenderFrame(
 		// 原Display阶段已锁存实际targetDisplay.dpi；初始publication0也必须使用同一帧值。
 		if (signature.dpi != state.activeDisplayDpi) signature.validMask &= ~std::uint64_t{32};
 		signature.mainSide = state.mainBarLayoutSide ? 1u : 0u;
+		signature.flags = (signature.flags & ~0x700u)
+			| Inkeys::UI::Bar::BarMainLayoutSignatureFlags(frame.iconOrder, frame.directionAdjustment);
 		signature.primarySide = state.drawAttributeLayoutSide ? 1u : 0u;
 		const auto ticks = diagnostics && diagnostics->detailedCaptureEnabled
 			? chrono::steady_clock::now().time_since_epoch().count() : 0;
