@@ -365,11 +365,11 @@ int RunRecallAttributeTests()
 		if (begin != std::string::npos && end != std::string::npos)
 		{
 			const auto advance = code.substr(begin, end - begin);
-			const auto snapshot = advance.find("owner.RecallChromeView()");
-			expect(snapshot != std::string::npos && advance.find("owner.RecallChromeView()", snapshot + 1) == std::string::npos,
-				"production panel uses one chrome snapshot for gate, anchor and popup identity");
+			expect(advance.find("const RecallChromeView& chrome") != std::string::npos
+				&& advance.find("owner.RecallChromeView()") == std::string::npos,
+				"production panel consumes the frame chrome snapshot without rereading newer global history");
 			expect(advance.find("chrome.redoExpanded ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall") != std::string::npos
-				&& advance.find("anchor && !anchor->IsVisible()") != std::string::npos
+				&& advance.find("!anchorVisible") != std::string::npos
 				&& advance.find("anchor->button.Inherit(") != std::string::npos
 				&& advance.find("currentInput.anchor = { anchor->button.inhX") != std::string::npos,
 				"production panel tests visibility and positions geometry from the selected undo or redo anchor");
@@ -391,36 +391,56 @@ int RunRecallAttributeTests()
 				&& advance.find("active_ |= iconContentAdvanced || nameContentAdvanced") != std::string::npos,
 				"production popup advances SVG and Word targets and keeps rendering until their content is committed");
 		}
-		// 宽度扫描与状态刷新并行，检查生产归位入口不会临时把隐藏的 Undo 插回主栏。
+		// 源级合同仅补充真实Bar回归：主栏派生唯一应用，业务事件不能再写有效属性。
 		std::ifstream buttonFile(source.parent_path() / "Bar.Button.cpp", std::ios::binary);
 		const std::string buttons((std::istreambuf_iterator<char>(buttonFile)), {});
-		const auto homingBegin = buttons.find("void BarButtonSetClass::PresetHoming(");
-		const auto homingEnd = buttons.find("void BarButtonSetClass::CalcState(", homingBegin);
-		expect(homingBegin != std::string::npos && homingEnd != std::string::npos,
-			"production button homing source is available for the width contract");
-		if (homingBegin != std::string::npos && homingEnd != std::string::npos)
+		const auto projectionBegin = buttons.find("void BarButtonSetClass::ApplyMainPresentationLocked(");
+		const auto projectionEnd = buttons.find("void BarButtonSetClass::UpdateDrawButtonStyle(", projectionBegin);
+		expect(projectionBegin != std::string::npos && projectionEnd != std::string::npos,
+			"production unified main-button projection is available");
+		if (projectionBegin != std::string::npos && projectionEnd != std::string::npos)
 		{
-			const auto homing = buttons.substr(homingBegin, homingEnd - homingBegin);
-			const auto chromeProjection = homing.find("barUISet.ApplyRecallChromeVisuals()");
-			expect(chromeProjection != std::string::npos,
-				"production homing publishes the final recall chrome projection");
-			if (chromeProjection != std::string::npos)
-			{
-				const auto beforeProjection = homing.substr(0, chromeProjection);
-				expect(beforeProjection.find("BarButtonPresetEnum::Recall]->hide") == std::string::npos
-					&& beforeProjection.find("BarButtonPresetEnum::Redo]->hide") == std::string::npos,
-					"production homing cannot expose an extra undo or redo column before its final projection");
-			}
+			const auto projection = buttons.substr(projectionBegin, projectionEnd - projectionBegin);
+			expect(projection.find("button->size = size;") != std::string::npos
+				&& projection.find("button->hide = hide;") != std::string::npos
+				&& projection.find("barUISet.RecallChromeView(compactSelection)") != std::string::npos,
+				"final grids and visibility share the same compact Selection and history inputs");
 		}
-		const auto visualBegin=buttons.find("void ApplyRecallChromeVisualsLocked(");
-		const auto visualEnd=buttons.find("void ApplyRecallCommandResultLocked(",visualBegin);
-		expect(visualBegin!=std::string::npos && visualEnd!=std::string::npos
-			&& buttons.substr(visualBegin,visualEnd-visualBegin).find(
-				"ResolveRecallChrome(owner.recallChrome, IsCompactSelectionBar())")!=std::string::npos
-			&& buttons.find("return Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, IsCompactSelectionBar())")!=std::string::npos,
-			"production history refresh and popup view share the compact Selection gate");
+		const auto eventsBegin = buttons.find("void BarUISetClass::NoteRecallHistoryAvailability(");
+		expect(eventsBegin != std::string::npos
+			&& buttons.substr(eventsBegin).find("->size =") == std::string::npos
+			&& buttons.substr(eventsBegin).find("->hide =") == std::string::npos
+			&& buttons.find("ApplyRecallChromeVisualsLocked") == std::string::npos,
+			"history notifications and idle expiry only update business state, never main-button grids");
+		const auto loadBegin = buttons.find("void BarButtonSetClass::Load()");
+		const auto loadEnd = buttons.find("void BarButtonSetClass::SyncLegacyExtensionButtons()", loadBegin);
+		expect(loadBegin != std::string::npos && loadEnd != std::string::npos
+			&& buttons.substr(loadBegin, loadEnd - loadBegin).find("ApplyMainPresentationLocked(GetStateModeSnapshot())") != std::string::npos,
+			"component Load ends with the same final projection");
 		std::ifstream renderFile(source.parent_path()/"Bar.RenderLoop.cpp",std::ios::binary);
 		const std::string rendering((std::istreambuf_iterator<char>(renderFile)),{});
+		const auto frameBegin = rendering.find("BarRenderLoopCoordinator::RenderFrame(");
+		const auto due = rendering.find("frame.recallIdleDismissed = owner_.AdvanceRecallChromeIdle(0.0)", frameBegin);
+		const auto submit = rendering.find("SubmitTargetsAndLayout(state, frame)", frameBegin);
+		expect(due != std::string::npos && due < submit
+			&& rendering.find("owner_.AdvanceRecallChromeIdle(animationDtSeconds)") == std::string::npos
+			&& rendering.find("layoutSnapshot != state.mainBarLayoutSnapshot.value()") != std::string::npos,
+			"idle settlement precedes target scanning and equal-width geometry invalidates the main layout batch");
+		expect(rendering.find("frame.recallChrome = owner_.RecallChromeView()") != std::string::npos
+			&& rendering.find("frame.recallAnchorVisible = recallAnchor && recallAnchor->IsVisible()") != std::string::npos
+			&& rendering.find("const auto& recallChrome = frame.recallChrome") != std::string::npos
+			&& rendering.find("owner_.recallAttribute.Advance(owner_, frame.recallChrome, frame.recallAnchorVisible") != std::string::npos,
+			"main colors and popup share the history and anchor gate captured by the frame projection");
+		const auto submitBegin = rendering.find("void BarRenderLoopCoordinator::SubmitTargetsAndLayout(");
+		const auto presentationLock = rendering.find("unique_lock presentationLock(", submitBegin);
+		const auto presentationUnlock = rendering.find("presentationLock.unlock()", presentationLock);
+		const auto closePicker = rendering.find("CloseColorPicker(true)", submitBegin);
+		const auto closeSlider = rendering.find("CloseThicknessSlider(true)", submitBegin);
+		expect(submitBegin != std::string::npos && presentationLock != std::string::npos
+			&& presentationUnlock != std::string::npos && closePicker < presentationLock && closeSlider < presentationLock
+			&& rendering.substr(presentationLock, presentationUnlock - presentationLock).find("CloseColorPicker(") == std::string::npos
+			&& rendering.substr(presentationLock, presentationUnlock - presentationLock).find("CloseThicknessSlider(") == std::string::npos,
+			"capture cancellation that synchronously calls the window owner stays outside the main presentation lock");
 		expect(rendering.find("Inkeys::UI::Bar::AnchorHiddenBarButton(state.barButtonSet, state.barState.fold,")!=std::string::npos
 			&& rendering.find("AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze)")!=std::string::npos,
 			"production main-bar layout advances the shared Pierce-to-Freeze hidden anchor");

@@ -54,6 +54,16 @@
 - `GetDC/ReleaseDC`、`BeginDraw/EndDraw` 在成功与失败路径成对；
 - 不在没有线程安全依据时跨线程传递 device context/target。
 
+### 主栏按钮统一状态派生合同
+
+- 范围为主栏A1/B/A2与运行时Pierce/More/Divider。配置/注册基础尺寸、用户可见性、成员顺序是输入；运行时有效size/hide/业务Selected/Disable与相关内容由StateUpdate单一计算/应用入口给出。不同业务事件不能直接覆盖有效字段，组件Load后所有特殊/普通按钮均一致化，不能只修Freeze或只补Recall。
+- 工具、内容、Whiteboard/PPT/Freeze可用性、RecallView、fold/More状态按同组快照计算。内容缓存只抑制重复内容动画，不抑制尺寸/显隐重投影；重复同状态不重启内容或几何动画。 Recall的view与所选锚点可见性在网格锁内捕获到帧对象，主栏颜色和历史属性Advance显式使用同份帧值，不在解锁后重新读全局view或有效hide拼接旧目标。
+- Recall保持3秒steady_clock保护、接受命令前事实、灰色点击延期及popup身份；灰色表观不能以通用Disable拦截所有点击而丢弃延期资格。事件持Recall锁只更新state/deadline，锁外请求；不能在该锁或Draw3回调内盲目同步整套UI更新。
+- 列表重建与投影使用短而明确的同一串行边界。不得持该锁跨D2D呈现、Window Service/SetWindowPos/owner等待；UpdateRendering(false)轻请求与timer不能等待可能同步等待owner的渲染锁。面板Close归位等可重入副作用与纯投影分开，避免锁内Close重新取得Recall/更新锁。
+- 主栏布局失效必须比较稳定成员身份/顺序、有效size/IsVisible以及隐藏成员锚点语义，不能只比较总宽度。等宽的两枚2×1与单枚2×2、成员替换/顺序变化仍进入现有统一批次；扩张曲线继续由实际宽度决定。Selected/Disable、文字/颜色、hover/emph/pressScale/动画val不属于几何指纹。
+- RenderLoop继续持有像素目标SetTar、current/target、CanJoin与换边后半程重开、隐藏锚点、命中和旧新dirty；统一业务入口不得SetDirect跳过动画。主按钮脉冲/停靠及独立Surface/属性按钮保持原所有权，不扩大为全UI属性框架。
+- 真实Bar无窗口回归须调用RegisterBuiltInComponents/SyncLegacyExtensionButtons/Load/UpdateRendering与生产timer/state入口：相同业务styleKey下Separate绘制增删组件仍为Pierce上2×1/Freeze下2×1；覆盖0/1/2/3+组件及overflow、模式/内容/PPT/Whiteboard、历史期限与精简态、等宽转换/动画中途/重复刷新。源码合同只作补充，不以复制逻辑或字符串替代真实生产调用；未启动Draw3 Host/HWND时不能声称验证Accepted命令或系统WM_TIMER投递。
+
 ### Undo/Redo 属性与 3 秒布局保护合同
 
 #### 1. Scope / Trigger
@@ -77,7 +87,7 @@ RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelect
 #### 3. Contracts
 
 - Draw3 真实 `canUndo/canRedo` 只控制即时可用性与颜色。当前 `layout` 独立锁存，静止目标为两者可用时上 Redo/下 Undo 的 2×1、仅 Redo 可用时 2×2 Redo、Redo 不可用时 2×2 Undo。
-- `PresetHoming` 等通用状态刷新不得先显示/隐藏 Recall 再套当前布局；主栏 2×2 Redo 点击没有新增按钮，应保持原单列宽度。Undo/Redo 由 Recall 策略发布最终显隐时，非白板空页Selection的精简门禁优先覆盖两按钮隐藏，不能被3秒布局保护、待调整目标或计时器唤醒重新显示；不清除历史保护状态，其他工具/非空页保持原规则。生产接线回归须拒绝投影前的临时显隐写入。
+- Recall业务事件/计时器只更新历史状态、期限与通知；Undo/Redo最终有效size/hide由主栏统一状态派生入口应用，不得在Load、事件、idle或PresetHoming中另套第二投影。主栏 2×2 Redo 点击没有新增按钮，应保持原单列宽度。该入口使用同组工具/内容/工作区与RecallView，非白板空页Selection精简门禁优先隐藏两按钮，不能被3秒保护、待调整或timer重新显示；不清除历史保护。到期结算与唯一投影必须在该帧目标宽度/布局批次扫描前，不能动画末尾再改变有效尺寸。
 - 主栏 2×1 点击进入所点命令的 2×2 交互及相反命令弹窗。已有展开交互内的命令点击保持主栏/弹窗身份，并延长最后一次点击后的 3 秒保护。
 - 属性面板的同一 `RecallChromeView` 快照须选择当前 2×2 主栏 Redo/Recall；所选按钮同时用于 `IsVisible()` 关闭门禁、几何继承和弹窗锚点。隐藏的另一命令不能触发 `Close`。
 - 点击前在原互斥边界取可用性快照；发布命令后只在 `CommandResult::Accepted` 时确认展开。异步执行末步导致可用性耗尽，不能反过来拒绝本次已接受点击的反馈。

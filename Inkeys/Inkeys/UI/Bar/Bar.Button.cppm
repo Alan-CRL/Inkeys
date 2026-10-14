@@ -77,6 +77,8 @@ public:
 	// 拷贝构造函数，深拷贝所有数据成员，mutex新建
 	BarButtonClass(const BarButtonClass& other)
 		: size(other.size),
+		baseSize(other.baseSize),
+		baseUserVisible(other.baseUserVisible),
 		preset(other.preset),
 		id(other.id),
 		userVisible(other.userVisible),
@@ -111,6 +113,9 @@ public:
 	bool TransitionContent(const wstring& iconResourceName, const wstring& label);
 
 public:
+	// 基准元数据由注册/Load更新；运行时有效值只由统一主栏投影提交。
+	IdtAtomic<BarButtonSizeEnum> baseSize = BarButtonSizeEnum::twoTwo;
+	IdtAtomic<bool> baseUserVisible = true;
 	IdtAtomic<BarButtonSizeEnum> size;
 	IdtAtomic<BarButtonPresetEnum> preset = BarButtonPresetEnum::None;
 	std::string id;
@@ -216,9 +221,19 @@ protected:
 	vector<shared_ptr<BarButtonClass>> list;
 };
 
+struct BarMainButtonLayoutEntry
+{
+	const BarButtonClass* identity = nullptr;
+	BarButtonSizeEnum size = BarButtonSizeEnum::twoTwo;
+	bool visible = false;
+	bool operator==(const BarMainButtonLayoutEntry&) const = default;
+};
+
 class BarButtonSetClass
 {
 public:
+	// 只保护基准、列表和有效投影/目标扫描；不跨窗口等待、面板Close或呈现。
+	mutable recursive_mutex presentationMutex;
 	BarButtonListClass buttonList;
 	IdtAtomic<int> tot = 0; // 顺序列顶，开
 
@@ -249,8 +264,9 @@ bool RegisterButton(
 		void RegisterBuiltInComponents();
 		void StateUpdate();
 		void StateUpdate(const StateModeClass& stateMode);
-		void UpdateDrawButtonStyle();
-		void UpdateWhiteboardButtonStyle();
+		void PrepareMainPanels(const StateModeClass& stateMode);
+		void UpdateMainPresentation(const StateModeClass& stateMode);
+		vector<BarMainButtonLayoutEntry> MainLayoutSnapshot();
 		void ExecuteClearClick(bool doubleClickContinuation);
 
 		void Load();
@@ -259,11 +275,11 @@ bool RegisterButton(
 
 	protected:
 		void UpdateDrawButtonStyle(const StateModeClass& stateMode);
-		void UpdateWhiteboardButtonStyle(const StateModeClass& stateMode);
+		void UpdateWhiteboardButtonStyle(bool active);
+		void ApplyMainPresentationLocked(const StateModeClass& stateMode);
 		void UpdateEraserButtonStyle(const StateModeClass& stateMode);
 		void UpdateGeometryButtonStyle(const StateModeClass& stateMode);
 		void PresetHoming(const StateModeClass& stateMode);
-		void CalcState(const StateModeClass& stateMode);
 		static Inkeys::BarButtonSizeKind ToConfigSize(BarButtonSizeEnum size);
 		static BarButtonSizeEnum ToRuntimeSize(Inkeys::BarButtonSizeKind size);
 		static bool IsExactFixedZonePermutation(
@@ -286,7 +302,6 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 
 		mutable shared_mutex registrationMutex;
 		IdtAtomic<int> drawButtonStyleKey = -1;
-		IdtAtomic<int> whiteboardButtonStyleKey = -1;
 		IdtAtomic<int> eraserButtonStyleKey = -1;
 		IdtAtomic<int> geometryButtonStyleKey = -1;
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;

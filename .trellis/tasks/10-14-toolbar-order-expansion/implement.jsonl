@@ -6,3 +6,6 @@
 {"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/current-layout.md", "reason": "当前研究与本机验证方式"}
 {"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/drag-release-third-light.md", "reason": "拖动释放第三光源坐标因果、同帧原点设计与真实Prepare回归"}
 {"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/drag-light-implementation.md", "reason": "同帧光源实现、已确认红测与生产Prepare/像素回归边界"}
+{"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/toolbar-presentation-writers.md", "reason": "全部主栏有效表现写入库存、组件Load因果与统一入口/布局指纹"}
+{"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/toolbar-history-state.md", "reason": "Recall状态/timer锁序/宽度前结算/灰色延期及真实回归边界"}
+{"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/toolbar-presentation-implementation.md", "reason": "统一主栏有效字段、短锁与单帧Recall事实、480真实组件回归和测试边界"}

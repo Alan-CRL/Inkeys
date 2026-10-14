@@ -261,6 +261,9 @@ struct BarRenderFrameSnapshot
 	Inkeys::UI::Bar::BarExpandDirectionAdjustment directionAdjustment = Inkeys::UI::Bar::BarExpandDirectionAdjustment::WhenSpaceInsufficient;
 	double animationDtSeconds = 0.0;
 	double animationSpeedRate = 1.0;
+	bool recallIdleDismissed = false;
+	Inkeys::UI::Bar::RecallChromeView recallChrome{};
+	bool recallAnchorVisible = false;
 	int ordinal = 2;
 	Inkeys::UI::Bar::BarBottomDockMode bottomDockMode =
 		Inkeys::UI::Bar::BarBottomDockMode::BottomDocked;
@@ -651,6 +654,7 @@ struct BarRenderLoopState
 	const BarUiCurveSpecClass buttonPressCurve = BarButtonPressCurve();
 	const BarUiCurveSpecClass buttonReleaseCurve = BarButtonReleaseCurve();
 	optional<double> mainBarLayoutWidth;
+	optional<vector<BarMainButtonLayoutEntry>> mainBarLayoutSnapshot;
 	optional<Inkeys::UI::Bar::BarIconOrder> mainBarIconOrder;
 	Inkeys::UI::Bar::BarMainExpansionCache mainBarExpansionCache;
 	BarUiValueClass drawAttributePenThickness{ GetPenWidthMetrics(stateModeSnapshot).resolvedWidthDip };
@@ -912,7 +916,7 @@ private:
 	void ApplyDisplayTransition(
 		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame);
 	void SubmitTargetsAndLayout(
-		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame);
+		BarRenderLoopState& state, BarRenderFrameSnapshot& frame);
 	bool AdvanceAnimationsAndDeriveLayout(
 		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame);
 	void PrepareLightingAndDemand(
@@ -1372,7 +1376,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 }
 
 void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
-	BarRenderLoopState& state, const BarRenderFrameSnapshot& frame)
+	BarRenderLoopState& state, BarRenderFrameSnapshot& frame)
 {
 	const auto& stateMode = state.stateModeSnapshot;
 	const auto& frameDrawingState = frame;
@@ -1380,6 +1384,46 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 	const double animationDtSeconds = frame.animationDtSeconds;
 	const double currentAnimationSpeedRate = frame.animationSpeedRate;
 	const int forNum = frame.ordinal;
+	// 捕获取消会同步等待窗口线程，必须在主栏表现锁外完成。
+	auto thicknessSliderRange = GetBarThicknessSliderRange(
+		frameDrawingState.penMode, state.barStyle.dpiZoom, stateMode);
+	bool thicknessSliderAvailable =
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+			&& !stateMode.laserActive
+			&& thicknessSliderRange.supported
+			&& state.barState.drawAttribute && !state.barState.fold;
+	bool colorPickerAvailable =
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+			&& state.barState.drawAttribute && !state.barState.fold;
+	if (!colorPickerAvailable
+		&& (state.barState.drawAttributeBar.colorPickerOpen
+			|| state.barState.drawAttributeBar.colorPickerPointerPressed
+			|| state.barState.drawAttributeBar.colorPickerPointerCapture))
+	{
+		// 属性栏折叠或工具失效时立即撤销命中，承载面板仍按进度完成退场。
+		CloseColorPicker(true);
+	}
+	if (!thicknessSliderAvailable
+		&& (state.barState.drawAttributeBar.thicknessSliderHover
+			|| state.barState.drawAttributeBar.thicknessSliderPinned
+			|| state.barState.drawAttributeBar.thicknessSliderPressed
+			|| state.barState.drawAttributeBar.thicknessSliderDragging
+			|| state.barState.drawAttributeBar.thicknessPreviewDragging
+			|| state.barState.drawAttributeBar.thicknessFineDialDragging
+			|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive
+			|| state.barState.drawAttributeBar
+				.thicknessFineDialActivationPreviewActive
+			|| state.barState.drawAttributeBar
+				.thicknessFineDialActivationDwellActive
+			|| static_cast<float>(state.barState.drawAttributeBar
+				.thicknessFineDialActivationPreviewProgress) > 0.0f
+			|| state.barState.drawAttributeBar.thicknessViewMode
+				!= ThicknessViewMode::Preview
+			|| state.barState.drawAttributeBar.thicknessSliderCapture))
+	{
+		// 属性栏失效时主动结束捕获，嵌套输入循环会收到一次合成抬起。
+		CloseThicknessSlider(true);
+	}
 	// 主按钮
 	{
 		double operationDur = BarUiDefaultOperationDur;
@@ -1503,6 +1547,15 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 	}
 	// 主栏
 	{
+		// 仅保护主栏网格目标扫描，不跨初置/停靠/呈现；Close等副作用已在锁外归位。
+		unique_lock presentationLock(state.barButtonSet.presentationMutex);
+		state.barButtonSet.UpdateMainPresentation(state.stateModeSnapshot);
+		// 锁内锁存本帧历史与锚点门禁，后续组件/工具刷新只影响下一帧。
+		frame.recallChrome = owner_.RecallChromeView();
+		const auto* recallAnchor = state.barButtonSet.preset[static_cast<int>(
+			frame.recallChrome.redoExpanded ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall)];
+		frame.recallAnchorVisible = recallAnchor && recallAnchor->IsVisible();
+		const auto layoutSnapshot = state.barButtonSet.MainLayoutSnapshot();
 		double operationDur = BarUiDefaultOperationDur;
 		auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
 		BarUiCurveSpecClass syncedValueCurve;
@@ -1612,10 +1665,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		const bool mainBarSideChanged = !state.barState.fold
 			&& currentMainBarSide != state.mainBarLayoutSide;
 		bool mainBarSideSwitch = mainBarSideChanged;
-		// 浮层展开状态直接映射到硬编码入口的选中态，复用普通按钮颜色。
-		if (auto moreButton = state.barButtonSet.GetMoreButton())
-			moreButton->localState.state = (!state.barState.fold && state.barState.moreExpanded)
-				? BarWidgetState::Selected : BarWidgetState::None;
 		state.mainBarLayoutSide = currentMainBarSide;
 		bool currentDrawAttributeSide = state.barState.widgetPosition.primaryBar;
 		const bool drawAttributeSideChanged = state.barState.drawAttribute
@@ -1656,24 +1705,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		bool geometryAttributeVisibilityChange =
 			currentGeometryAttributeOpen != state.geometryAttributeLayoutOpen;
 		state.geometryAttributeLayoutOpen = currentGeometryAttributeOpen;
-		auto thicknessSliderRange = GetBarThicknessSliderRange(
-			frameDrawingState.penMode, state.barStyle.dpiZoom, stateMode);
-		bool thicknessSliderAvailable =
-			stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
-				&& !stateMode.laserActive
-				&& thicknessSliderRange.supported
-				&& state.barState.drawAttribute && !state.barState.fold;
-		bool colorPickerAvailable =
-			stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
-				&& state.barState.drawAttribute && !state.barState.fold;
-		if (!colorPickerAvailable
-			&& (state.barState.drawAttributeBar.colorPickerOpen
-				|| state.barState.drawAttributeBar.colorPickerPointerPressed
-				|| state.barState.drawAttributeBar.colorPickerPointerCapture))
-		{
-			// 属性栏折叠或工具失效时立即撤销命中，承载面板仍按进度完成退场。
-			CloseColorPicker(true);
-		}
 		// 展开/收起都保留 Popup 的 Back 回弹，几何值可短暂越过终点。
 		const BarUiCurveSpecClass colorPickerPanelCurve{
 			state.barState.drawAttributeBar.colorPickerOpen
@@ -1738,27 +1769,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 				state.drawAttributeColorPickerDisplayOpacity.SetTar(
 					displayOpacity, operationDur);
 			}
-		}
-		if (!thicknessSliderAvailable
-			&& (state.barState.drawAttributeBar.thicknessSliderHover
-				|| state.barState.drawAttributeBar.thicknessSliderPinned
-				|| state.barState.drawAttributeBar.thicknessSliderPressed
-				|| state.barState.drawAttributeBar.thicknessSliderDragging
-				|| state.barState.drawAttributeBar.thicknessPreviewDragging
-				|| state.barState.drawAttributeBar.thicknessFineDialDragging
-				|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive
-				|| state.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewActive
-				|| state.barState.drawAttributeBar
-					.thicknessFineDialActivationDwellActive
-				|| static_cast<float>(state.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewProgress) > 0.0f
-				|| state.barState.drawAttributeBar.thicknessViewMode
-					!= ThicknessViewMode::Preview
-				|| state.barState.drawAttributeBar.thicknessSliderCapture))
-		{
-			// 属性栏失效时主动结束捕获，嵌套输入循环会收到一次合成抬起。
-			CloseThicknessSlider(true);
 		}
 		ThicknessViewMode thicknessViewMode = thicknessSliderAvailable
 			? static_cast<ThicknessViewMode>(
@@ -2445,7 +2455,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			|| (!state.barState.fold && mainBar->x.tar == 0.0);
 		const bool iconOrderChanged = state.mainBarIconOrder.has_value()
 			&& state.mainBarIconOrder.value() != frame.iconOrder;
-		bool mainBarLayoutChange = iconOrderChanged || (state.mainBarLayoutWidth.has_value()
+		const bool buttonLayoutChanged = state.mainBarLayoutSnapshot.has_value()
+			&& layoutSnapshot != state.mainBarLayoutSnapshot.value();
+		bool mainBarLayoutChange = buttonLayoutChanged || iconOrderChanged || (state.mainBarLayoutWidth.has_value()
 			&& abs(layoutTotalWidth - state.mainBarLayoutWidth.value()) > 0.000001);
 		bool mainBarLayoutExpands = mainBarLayoutChange
 			&& state.mainBarLayoutWidth.has_value()
@@ -2485,6 +2497,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				? BarUiCurveEnum::EaseInOutCubic
 				: (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseOutCubic);
 		}
+		state.mainBarLayoutSnapshot = layoutSnapshot;
 		state.mainBarLayoutWidth = layoutTotalWidth;
 		state.mainBarIconOrder = frame.iconOrder;
 		if (state.mainBarTimeline.IsActive()) operationDur = state.mainBarTimeline.GetRemainingDuration();
@@ -2540,7 +2553,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			variant<decltype(baseRange), decltype(baseRange | views::reverse)> viewVariant;
 			viewVariant = baseRange;
 
-			const auto recallChrome = owner_.RecallChromeView();
+			const auto& recallChrome = frame.recallChrome;
 			visit([&](auto&& forRange)
 				{
 					for (int id : forRange)
@@ -3073,6 +3086,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze);
 			AnchorHiddenButton(BarButtonPresetEnum::EndShow, BarButtonPresetEnum::Freeze);
 		}
+		presentationLock.unlock();
 		totalWidth = layoutTotalWidth;
 		Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(owner_, totalWidth);
 		const bool whiteboardDockPlacement =
@@ -5145,7 +5159,6 @@ for (size_t i = 0; i < 3; ++i)
 		if (!hasButtons)
 		{
 			state.barState.moreExpanded = false;
-			if (moreButton) moreButton->localState.state = BarWidgetState::None;
 		}
 		bool open = hasButtons && state.barState.moreExpanded && !state.barState.fold;
 		bool side = state.barState.widgetPosition.primaryBar;
@@ -8096,8 +8109,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		frame.bottomDockDragActive,
 		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser);
 	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
-	const bool recallIdleDismissed = owner_.AdvanceRecallChromeIdle(animationDtSeconds);
-	const bool recallChanged = owner_.recallAttribute.Advance(owner_, animationDtSeconds,
+	const bool recallIdleDismissed = frame.recallIdleDismissed;
+	const bool recallChanged = owner_.recallAttribute.Advance(owner_, frame.recallChrome, frame.recallAnchorVisible, animationDtSeconds,
 		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
 		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
 			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
@@ -13718,6 +13731,9 @@ BarRenderLoopCoordinator::RenderFrame(
 	}
 	finiteExit.Stage(Ui3FiniteDiagnosticStage::SubmitTargetsAndLayout);
 	FrameStageTimer submitTargetsTimer(diagnostics, FrameStage::SubmitTargetsAndLayout);
+	// 先结算业务期限并统一表现，再按本帧工具扫描目标宽度，避免到期帧使用旧几何。
+	frame.recallIdleDismissed = owner_.AdvanceRecallChromeIdle(0.0);
+	state.barButtonSet.PrepareMainPanels(state.stateModeSnapshot);
 	SubmitTargetsAndLayout(state, frame);
 	if (state.finiteObserver)
 	{

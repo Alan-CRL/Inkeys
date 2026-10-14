@@ -278,12 +278,11 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 
 void BarUISetClass::UpdateRendering(bool updateState)
 {
+	// 历史/绘制回调的false请求只唤醒，不能等待可能回入其owner的状态锁。
 	static mutex mtx;
-	lock_guard<mutex> lock(mtx);
-
-	// 状态更新
 	if (updateState)
 	{
+		lock_guard<mutex> lock(mtx);
 		// 按钮、面板归位和粗细文字使用同一工具代次，再统一发布渲染请求。
 		const auto stateMode = GetStateModeSnapshot();
 		barButtonSet.StateUpdate(stateMode);

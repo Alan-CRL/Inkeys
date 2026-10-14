@@ -141,7 +141,8 @@ private:
 class BarRecallAttributePanel
 {
 public:
-	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
+	bool Advance(BarUISetClass& owner, const Inkeys::UI::Bar::RecallChromeView& chrome,
+		bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
 		RECT workArea, POINT origin, double rigidX, double rigidY,
 		const BarUiTimelineClass* parentTimeline = nullptr,
 		bool dragPlacementLocked = false);
@@ -509,6 +510,8 @@ public:
 	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
 	std::mutex recallChromeMutex;
 	Inkeys::UI::Bar::RecallChromeState recallChrome{};
+	// 本次统一投影发布的view供布局颜色和弹窗共用，不在getter再次拼实时输入。
+	Inkeys::UI::Bar::RecallChromeView recallChromePresentation{};
 	// 用墙钟期限，不累加动画 dt。主栏休眠时动画时钟会停，并且恢复后的第一帧 dt 为 0。
 	std::chrono::steady_clock::time_point recallChromeIdleDeadline{};
 	bool recallChromeIdleArmed = false;
@@ -557,8 +560,8 @@ public:
 	void ClearRecallForDrawing();
 	void SettleRecallChromeForWorkspace();
 	bool AdvanceRecallChromeIdle(double dtSeconds);
-	void ApplyRecallChromeVisuals();
 	Inkeys::UI::Bar::RecallChromeView RecallChromeView();
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView(bool compactSelection);
 	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	void ArmRecallChromeIdleTimer() noexcept;
 	void DisarmRecallChromeIdleTimer() noexcept;

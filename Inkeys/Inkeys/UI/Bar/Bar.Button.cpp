@@ -125,6 +125,8 @@ bool BarButtonSetClass::RegisterButton(
 
 	button->id = id;
 	button->only = !allowMultiple;
+	button->baseSize = button->size.load();
+	button->baseUserVisible = defaultUserVisible;
 	button->userVisible = defaultUserVisible;
 	button->closeMoreAfterAction = closeMoreAfterAction;
 	shared_ptr<BarButtonClass> ownedButton(button);
@@ -898,17 +900,132 @@ void BarButtonSetClass::StateUpdate()
 }
 void BarButtonSetClass::StateUpdate(const StateModeClass& stateMode)
 {
-	// 同一次刷新共用工具快照，避免高亮、内容和面板归位跨版本。
-	CalcState(stateMode);
+	PrepareMainPanels(stateMode);
+	UpdateMainPresentation(stateMode);
+}
+void BarButtonSetClass::PrepareMainPanels(const StateModeClass& stateMode)
+{
+	if (!preset[(int)BarButtonPresetEnum::Draw]) return;
+	// 面板Close可能发布轻量刷新，放在表现锁外；主栏最终目标随后统一应用。
 	PresetHoming(stateMode);
+}
+void BarButtonSetClass::UpdateMainPresentation(const StateModeClass& stateMode)
+{
+	lock_guard lock(presentationMutex);
+	ApplyMainPresentationLocked(stateMode);
+}
+vector<BarMainButtonLayoutEntry> BarButtonSetClass::MainLayoutSnapshot()
+{
+	lock_guard lock(presentationMutex);
+	vector<BarMainButtonLayoutEntry> result;
+	result.reserve(tot);
+	for (int index = 0; index < tot; ++index)
+		if (auto* button = buttonList.Get(index))
+			result.push_back({ button, button->size.load(), button->IsVisible() });
+	return result;
+}
+void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateMode)
+{
+	if (!preset[(int)BarButtonPresetEnum::Draw]) return;
+	// 所有动态网格共用这一组输入，内容缓存不能短路几何投影。
+	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
+	const bool presentation = Inkeys::UI::Bar::PptPresentationActive();
+	const bool hasContent = Inkeys::UI::Bar::CurrentPageHasContent();
+	const bool featureEnabled = IsWhiteboardFeatureEnabled();
+	const bool separate = GetSelectAndClickThroughMode() == 1;
+	const bool selection = stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
+	const bool compactSelection = !whiteboard && selection && !hasContent;
+	const bool freezeAvailable = Inkeys::UI::Freeze::IsAvailable();
+	const bool freezeActive = Inkeys::UI::Freeze::IsActive();
+	const bool settingVisible = Inkeys::UI::Setting::IsVisible();
+	const bool fold = barUISet.barState.fold;
+	const bool hasMoreButtons = GetMoreButtonSnapshot().HasButtons();
+	const bool moreOpen = !fold && barUISet.barState.moreExpanded && hasMoreButtons;
+	const auto a2 = Inkeys::UI::Bar::ResolveBarA2Projection(
+		presentation, whiteboard, featureEnabled, separate, selection && !hasContent, freezeAvailable);
+	const auto recall = barUISet.RecallChromeView(compactSelection);
+	if (fold || !hasMoreButtons) barUISet.barState.moreExpanded = false;
+	const auto apply = [&](BarButtonClass* button)
+	{
+		if (!button) return;
+		auto size = button->baseSize.load();
+		bool hide = false;
+		BarWidgetState state = BarWidgetState::None;
+		switch (button->preset.load())
+		{
+		case BarButtonPresetEnum::Select:
+			state = selection ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
+		case BarButtonPresetEnum::Draw:
+			state = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
+		case BarButtonPresetEnum::Eraser:
+			hide = compactSelection;
+			state = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
+		case BarButtonPresetEnum::Geometry:
+			hide = compactSelection;
+			state = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
+		case BarButtonPresetEnum::Clean:
+			state = selection && !hasContent ? BarWidgetState::Disable : BarWidgetState::None;
+			break;
+		case BarButtonPresetEnum::Whiteboard:
+			size = a2.whiteboardTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+			hide = !featureEnabled;
+			state = whiteboard ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
+		case BarButtonPresetEnum::Freeze:
+			size = a2.freezeTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+			hide = !a2.freezeVisible;
+			state = !freezeAvailable ? BarWidgetState::Disable : (freezeActive ? BarWidgetState::Selected : BarWidgetState::None);
+			break;
+		case BarButtonPresetEnum::Pierce:
+			size = a2.pierceTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+			hide = !a2.pierceVisible;
+			state = stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
+		case BarButtonPresetEnum::EndShow:
+			hide = !a2.endShowVisible;
+			break;
+		case BarButtonPresetEnum::Recall:
+			size = recall.undoExpanded ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+			hide = !recall.mainUndoVisible;
+			// 灰色历史按钮仍可点击延期，由命令可用性阻止发布，不能设成Disable。
+			break;
+		case BarButtonPresetEnum::Redo:
+			size = recall.redoExpanded ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+			hide = !recall.mainRedoVisible;
+			break;
+		case BarButtonPresetEnum::More:
+			state = moreOpen ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
+		case BarButtonPresetEnum::Setting:
+			state = settingVisible ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
+		default: break;
+		}
+		button->size = size;
+		button->userVisible = button->baseUserVisible.load();
+		button->hide = hide;
+		button->state->state = state;
+	};
+	{
+		shared_lock lock(registrationMutex);
+		for (const auto& [id, registration] : registrations) apply(registration.button.get());
+	}
+	for (const auto& divider : boundaryDividers) apply(divider.get());
+	apply(moreButton.get()); apply(mainRedoButton.get()); apply(mainPierceButton.get());
+	barUISet.barState.recallAttribute = recall.popupOpen;
+	// 内容仍从当前动画值过渡；同目标不会重启文字或图标动画。
+	auto label = whiteboard ? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
+		: IW(separate && !selection ? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
+	if (label == L"Select (Clear)") label = L"Select\n(Clear)";
+	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label);
 	UpdateDrawButtonStyle(stateMode);
-	UpdateWhiteboardButtonStyle(stateMode);
+	UpdateWhiteboardButtonStyle(whiteboard);
 	UpdateEraserButtonStyle(stateMode);
 	UpdateGeometryButtonStyle(stateMode);
-}
-void BarButtonSetClass::UpdateDrawButtonStyle()
-{
-	UpdateDrawButtonStyle(GetStateModeSnapshot());
 }
 void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
 {
@@ -937,53 +1054,19 @@ void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
 			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel));
 	drawButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateWhiteboardButtonStyle()
+void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active)
 {
-	UpdateWhiteboardButtonStyle(GetStateModeSnapshot());
-}
-void BarButtonSetClass::UpdateWhiteboardButtonStyle(const StateModeClass& stateMode)
-{
-	static mutex mtx;
-	const bool active = Inkeys::UI::Bar::WhiteboardActive();
-	const bool presentation = Inkeys::UI::Bar::PptPresentationActive();
-	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
-	const bool separateMode = GetSelectAndClickThroughMode() == 1;
-	const bool selectionEmpty = stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
-		&& !Inkeys::UI::Bar::CurrentPageHasContent();
-	const bool freezeAvailable = Inkeys::UI::Freeze::IsAvailable();
-	const auto projection = Inkeys::UI::Bar::ResolveBarA2Projection(
-		presentation, active, whiteboardFeatureEnabled, separateMode, selectionEmpty, freezeAvailable);
-	const int styleKey = (active ? 1 : 0) | (presentation ? 2 : 0) |
-		(whiteboardFeatureEnabled ? 4 : 0) | (separateMode ? 8 : 0) |
-		(selectionEmpty ? 16 : 0) | (freezeAvailable ? 32 : 0);
-	if (whiteboardButtonStyleKey == styleKey) return;
-
-	lock_guard<mutex> lock(mtx);
-	if (whiteboardButtonStyleKey == styleKey) return;
 	auto whiteboard = preset[(int)BarButtonPresetEnum::Whiteboard];
-	auto freeze = preset[(int)BarButtonPresetEnum::Freeze];
-	auto endShow = preset[(int)BarButtonPresetEnum::EndShow];
-	if (!whiteboard || !freeze || !endShow) return;
-	// 白板功能关闭时只隐藏入口，稳定按钮 ID 和用户原有 A2 配置仍保留。
-	whiteboard->hide = !whiteboardFeatureEnabled;
-	whiteboard->size = projection.whiteboardTwoTwo
-		? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-	freeze->size = projection.freezeTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-	freeze->hide = !projection.freezeVisible;
+	if (!whiteboard) return;
 	if (auto* pierce = preset[(int)BarButtonPresetEnum::Pierce])
 	{
-		pierce->hide = !projection.pierceVisible;
-		pierce->size = projection.pierceTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
 		auto label = IW(I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
 		if (label == L"Click-through") label = L"Click-\nthrough";
 		pierce->TransitionContent(L"barPierce", label);
 	}
-	endShow->size = BarButtonSizeEnum::twoTwo;
-	endShow->hide = !projection.endShowVisible;
 	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",
 		active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
 			: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
-	whiteboardButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
 {
@@ -1211,8 +1294,8 @@ void BarButtonSetClass::AppendFixedButtons(
 		if (!TryGetRegistration(entry.Id, registration) || registration.button == nullptr) continue;
 
 		// A 区显隐只来自注册默认，不读配置 Visible。
-		registration.button->userVisible = registration.defaultUserVisible;
-		registration.button->size = ToRuntimeSize(entry.Size);
+		registration.button->baseUserVisible = registration.defaultUserVisible;
+		registration.button->baseSize = ToRuntimeSize(entry.Size);
 		activeButtons.push_back(registration.button);
 	}
 }
@@ -1267,9 +1350,8 @@ vector<shared_ptr<BarButtonClass>> BarButtonSetClass::GetLegacyExtensionButtons(
 	{
 		auto registration = registrationsById.find(id);
 		if (registration == registrationsById.end() || !registration->second.button) continue;
-		registration->second.button->userVisible = true;
-		registration->second.button->hide = false;
-		registration->second.button->size = registration->second.defaultSize;
+		registration->second.button->baseUserVisible = true;
+		registration->second.button->baseSize = registration->second.defaultSize;
 		result.push_back(registration->second.button);
 	}
 	return result;
@@ -1284,14 +1366,14 @@ void BarButtonSetClass::AppendBoundaryDivider(
 	// 交界分割线强制可见，尺寸用注册默认；不写配置。
 	BarButtonRegistrationClass registration;
 	if (!TryGetRegistration(Inkeys::BarButtonId::Divider, registration)) return;
-	boundaryDividers[boundaryIndex]->userVisible = true;
-	boundaryDividers[boundaryIndex]->hide = false;
-	boundaryDividers[boundaryIndex]->size = registration.defaultSize;
+	boundaryDividers[boundaryIndex]->baseUserVisible = true;
+	boundaryDividers[boundaryIndex]->baseSize = registration.defaultSize;
 	activeButtons.push_back(boundaryDividers[boundaryIndex]);
 }
 
 void BarButtonSetClass::Load()
 {
+	unique_lock lock(presentationMutex);
 	// UI3 与 UI2 并行期间，B 区只由旧组件开关投影，完全忽略新版 ExtensionButtons。
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry> defaultA1 =
 		Inkeys::MakeDefaultFixedButtonsA1().Snapshot();
@@ -1348,9 +1430,8 @@ void BarButtonSetClass::Load()
 	if (TryGetRegistration(Inkeys::BarButtonId::Setting, settingRegistration)
 		&& settingRegistration.button)
 	{
-		settingRegistration.button->userVisible = true;
-		settingRegistration.button->hide = false;
-		settingRegistration.button->size = settingRegistration.defaultSize;
+		settingRegistration.button->baseUserVisible = true;
+		settingRegistration.button->baseSize = settingRegistration.defaultSize;
 		explicitMore.push_back(settingRegistration.button);
 	}
 	{
@@ -1381,10 +1462,11 @@ void BarButtonSetClass::Load()
 	// 只规范化 A1/A2；运行时投影不读取、修改或写回持久化 B 区。
 	Inkeys::config.UI.Bar.FixedButtonsA1.Replace(std::move(normalizedA1));
 	Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(normalizedA2));
+	// 列表和基准发布后套同一最终投影，不把配置尺寸短暂写回有效网格。
+	ApplyMainPresentationLocked(GetStateModeSnapshot());
+	lock.unlock();
 	if (fixedLayoutMigrated)
-		(void)Inkeys::config.Write(); // 旧 {Pierce, Freeze} A2 规范化后立即写回。
-	// 配置把撤回写回 2×2；紧凑态在加载后再套一次，不写回配置。
-	barUISet.ApplyRecallChromeVisuals();
+		(void)Inkeys::config.Write(); // 迁移保存不占用主栏表现锁。
 }
 
 void BarButtonSetClass::SyncLegacyExtensionButtons()
@@ -1431,82 +1513,6 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
 	// 折叠收起浮窗；Redo 仍可用时收成 2×1，而不是重新弹出。
 	if (barUISet.barState.fold) barUISet.recallAttribute.Close(barUISet);
-
-	// 只有“选择 + 空页”使用精简布局；有历史内容时保留完整绘制按钮。
-	if (!whiteboard
-		&& stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
-		&& !Inkeys::UI::Bar::CurrentPageHasContent())
-	{
-		// 显示状态变化
-		preset[(int)BarButtonPresetEnum::Eraser]->hide = true;
-		preset[(int)BarButtonPresetEnum::Geometry]->hide = true;
-		// preset[(int)BarButtonPresetEnum::Clean]->hide = true;
-
-		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
-		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", whiteboard
-				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
-				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
-	}
-	else
-	{
-		// 显示状态变化
-		preset[(int)BarButtonPresetEnum::Eraser]->hide = false;
-		preset[(int)BarButtonPresetEnum::Geometry]->hide = false;
-		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
-		auto label = whiteboard ? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
-			: IW(GetSelectAndClickThroughMode() == 1 &&
-				stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection
-				? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
-		if (label == L"Select (Clear)") label = L"Select\n(Clear)";
-		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label);
-	}
-	// Undo/Redo 只发布当前布局，避免先显示隐藏的 Undo 再收起而多占一列。
-	barUISet.ApplyRecallChromeVisuals();
-}
-void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
-{
-	barButtonState[(int)BarButtonPresetEnum::Pierce].state =
-		stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough
-		? BarWidgetState::Selected : BarWidgetState::None;
-	// 只有空页且已选择时清空无动作，其余状态仍可由清空返回选择。
-	barButtonState[(int)BarButtonPresetEnum::Clean].state =
-		stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection &&
-		!Inkeys::UI::Bar::CurrentPageHasContent() ? BarWidgetState::Disable : BarWidgetState::None;
-	{
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::Selected;
-		else barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::None;
-	}
-	{
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen) barButtonState[(int)BarButtonPresetEnum::Draw].state = BarWidgetState::Selected;
-		else barButtonState[(int)BarButtonPresetEnum::Draw].state = BarWidgetState::None;
-	}
-	{
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser) barButtonState[(int)BarButtonPresetEnum::Eraser].state = BarWidgetState::Selected;
-		else barButtonState[(int)BarButtonPresetEnum::Eraser].state = BarWidgetState::None;
-	}
-	{
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape) barButtonState[(int)BarButtonPresetEnum::Geometry].state = BarWidgetState::Selected;
-		else barButtonState[(int)BarButtonPresetEnum::Geometry].state = BarWidgetState::None;
-	}
-
-	{
-		if (!Inkeys::UI::Freeze::IsAvailable())
-			barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Disable;
-		else if (Inkeys::UI::Freeze::IsActive())
-			barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Selected;
-		else barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::None;
-	}
-	{
-		barButtonState[(int)BarButtonPresetEnum::Whiteboard].state =
-			Inkeys::UI::Bar::WhiteboardActive()
-			? BarWidgetState::Selected : BarWidgetState::None;
-	}
-
-	{
-		if (Inkeys::UI::Setting::IsVisible()) barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::Selected;
-		else barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::None;
-	}
 }
 
 namespace
@@ -1549,27 +1555,6 @@ namespace
 		ApplyRecallAvailabilityLocked(owner, availability);
 	}
 
-	void ApplyRecallChromeVisualsLocked(BarUISetClass& owner)
-	{
-		using namespace Inkeys::UI::Bar;
-		const RecallChromeView view = ResolveRecallChrome(owner.recallChrome, IsCompactSelectionBar());
-		BarButtonClass* undo = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Recall)];
-		BarButtonClass* redo = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Redo)];
-		if (undo)
-		{
-			undo->size = view.undoExpanded
-				? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-			undo->hide = !view.mainUndoVisible;
-		}
-		if (redo)
-		{
-			redo->size = view.redoExpanded
-				? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-			redo->hide = !view.mainRedoVisible;
-		}
-		owner.barState.recallAttribute = view.popupOpen;
-	}
-
 	void ApplyRecallCommandResultLocked(BarUISetClass& owner, bool redo,
 		Inkeys::UI::Bar::RecallHistoryAvailability clickAvailability, bool accepted)
 	{
@@ -1581,32 +1566,33 @@ namespace
 			owner.ArmRecallChromeIdleDeadline();
 			owner.ArmRecallChromeIdleTimer();
 		}
-		ApplyRecallChromeVisualsLocked(owner);
 	}
 
 	bool EngageRecallCommand(BarUISetClass& owner, bool redo, bool popupCommand = false)
 	{
 		using namespace Inkeys::UI::Bar;
 		RecallHistoryAvailability clickAvailability;
+		bool commandEnabled = false;
 		{
 			std::scoped_lock lock(owner.recallChromeMutex);
 			RefreshRecallAvailabilityLocked(owner);
 			clickAvailability = owner.recallChrome.availability;
 			const auto view = ResolveRecallChrome(owner.recallChrome, IsCompactSelectionBar());
 			if (popupCommand && (!view.popupOpen || view.popupShowsRedo != redo)) return false;
-			if (!RecallChromeCommandEnabled(clickAvailability, redo))
-			{
-				ApplyRecallCommandResultLocked(owner, redo, clickAvailability, false);
-				return false;
-			}
+			commandEnabled = RecallChromeCommandEnabled(clickAvailability, redo);
+			if (!commandEnabled) ApplyRecallCommandResultLocked(owner, redo, clickAvailability, false);
 		}
+		if (!commandEnabled) { owner.UpdateRendering(false); return false; }
 		const auto result = Inkeys::Drawing::Draw3::PublishProductCommand(redo
 			? Inkeys::Drawing::Draw3::Bridge::CommandType::Redo
 			: Inkeys::Drawing::Draw3::Bridge::CommandType::Undo);
 		if (result != Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted)
 		{
-			std::scoped_lock lock(owner.recallChromeMutex);
-			ApplyRecallCommandResultLocked(owner, redo, clickAvailability, false);
+			{
+				std::scoped_lock lock(owner.recallChromeMutex);
+				ApplyRecallCommandResultLocked(owner, redo, clickAvailability, false);
+			}
+			owner.UpdateRendering(false);
 			return false;
 		}
 		// 弹窗点击保留现有身份；主栏只合并面板互斥，不合并 Undo/Redo 命令。
@@ -1621,18 +1607,17 @@ namespace
 	}
 }
 
-void BarUISetClass::ApplyRecallChromeVisuals()
-{
-	std::scoped_lock lock(recallChromeMutex);
-	RefreshRecallAvailabilityLocked(*this);
-	ApplyRecallChromeVisualsLocked(*this);
-}
-
 Inkeys::UI::Bar::RecallChromeView BarUISetClass::RecallChromeView()
 {
 	std::scoped_lock lock(recallChromeMutex);
+	return recallChromePresentation;
+}
+Inkeys::UI::Bar::RecallChromeView BarUISetClass::RecallChromeView(bool compactSelection)
+{
+	std::scoped_lock lock(recallChromeMutex);
 	RefreshRecallAvailabilityLocked(*this);
-	return Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, IsCompactSelectionBar());
+	recallChromePresentation = Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, compactSelection);
+	return recallChromePresentation;
 }
 
 void BarUISetClass::NoteRecallHistoryAvailability(bool canUndo, bool canRedo)
@@ -1644,7 +1629,6 @@ void BarUISetClass::NoteRecallHistoryAvailability(bool canUndo, bool canRedo)
 			&& recallChrome.availability.canRedo == canRedo)
 			return;
 		ApplyRecallAvailabilityLocked(*this, { canUndo, canRedo });
-		ApplyRecallChromeVisualsLocked(*this);
 		changed = true;
 	}
 	if (changed) UpdateRendering(false);
@@ -1709,8 +1693,8 @@ void BarUISetClass::NoteRecallPopupDismissed()
 		RefreshRecallAvailabilityLocked(*this);
 		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
 			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::Dismiss);
-		ApplyRecallChromeVisualsLocked(*this);
 	}
+	UpdateRendering(false);
 }
 
 void BarUISetClass::ClearRecallForDrawing()
@@ -1721,9 +1705,9 @@ void BarUISetClass::ClearRecallForDrawing()
 		// 落笔只关掉浮窗。3 秒按住还在时，大按钮保持到计时结束。
 		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
 			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::SuppressPopup);
-		ApplyRecallChromeVisualsLocked(*this);
 	}
 	recallAttribute.ResetPointerFeedback();
+	UpdateRendering(false);
 }
 
 void BarUISetClass::SettleRecallChromeForWorkspace()
@@ -1733,16 +1717,16 @@ void BarUISetClass::SettleRecallChromeForWorkspace()
 		RefreshRecallAvailabilityLocked(*this);
 		recallChrome = Inkeys::UI::Bar::ApplyRecallChromeEvent(
 			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::ReturnToDesktop);
-		ApplyRecallChromeVisualsLocked(*this);
 	}
 	recallAttribute.ResetPointerFeedback();
+	UpdateRendering(false);
 }
 
 bool BarUISetClass::AdvanceRecallChromeIdle(double)
 {
 	{
 		std::scoped_lock lock(recallChromeMutex);
-		RefreshRecallAvailabilityLocked(*this);
+		// 只结算已发布的业务状态；本帧统一投影再读取一次最新历史事实。
 		if (!recallChrome.settlePending || !recallChromeIdleArmed)
 			return false;
 		if (std::chrono::steady_clock::now() < recallChromeIdleDeadline)
@@ -1751,7 +1735,6 @@ bool BarUISetClass::AdvanceRecallChromeIdle(double)
 			recallChrome, Inkeys::UI::Bar::RecallChromeEvent::IdleElapsed);
 		recallChromeIdleArmed = false;
 		DisarmRecallChromeIdleTimer();
-		ApplyRecallChromeVisualsLocked(*this);
 	}
 	recallAttribute.ResetPointerFeedback();
 	return true;

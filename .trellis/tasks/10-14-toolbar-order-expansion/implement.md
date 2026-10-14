@@ -16,3 +16,11 @@
 4. Trellis检查真实生产路径/线程交接/坐标/测试边界；主会话同步对应规范。
 5. 主会话使用既有ARM64原生MSBuild及同invocation PATH规范化完整solution构建（允许至少5分钟），执行相应Headless与Bar无窗口回归，保存延续验证结果。
 6. 保持进行中，不自动再次commit/push/finish/archive；明确真实输入视觉人工待验。
+
+## 主栏按钮统一表现延续
+
+1. 基线2dd3b344，第三光源修复已提交；本轮开始工作树干净，任务保持进行中。
+2. 两项独立研究：全主栏尺寸/显隐写入口与组件Load；Recall计时器/状态/锁与动画，持久化并配置上下文。
+3. 根据真实路径实现唯一派生更新入口及必要事件状态；先添加真实Load问题失败回归，再修复并补组件增删/历史/timer/布局和动画。
+4. Trellis全范围检查，主会话同步合同，统一ARM64原生MSBuild完整solution（PATH规范化同invocation、至少5分钟）、Bar离屏及Headless无窗口回归。
+5. 保存单独验证记录，明确自动与真实GUI边界；不自动commit/push/finish/archive。

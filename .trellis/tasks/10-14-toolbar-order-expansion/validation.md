@@ -59,3 +59,7 @@ CLI使用明确的早期无窗口入口，以Hidden Start-Process、WaitForExit(
 用户随后要求先提交改动但不结束任务，已创建35afa7ee5f7752f6ae91442624ba05c4f840b1b6（feat(toolbar): add icon order and expansion direction settings），提交后工作树干净。继续同任务调查与修复拖动释放第三光源闪烁；本节覆盖此前“不提交”的初版执行约束，任务仍in_progress，新修复结果将单独记录。
 
 光源延续修复已完成并通过自动验证：旧实现48条预期FAIL，修复后24组坐标/120静止帧与4组D2D像素均通过，完整ARM64 solution和Headless退出0。详情见[validation-drag-light.md](validation-drag-light.md)。新修复未再次提交，任务仍进行中。
+
+## 人工验收与任务收尾
+
+2026-10-14，用户明确确认“修改到位，人工验证通过”，并授权结束任务及提交commit。人工验收状态已记为passed_user_confirmed；以上“人工待验/任务继续/暂不提交”的段落保留为当时阶段记录，本节为最终状态。沿用已通过的自动验证证据，本次收尾不修改产品代码、不启动GUI、不push。代码修复提交后进行Trellis任务归档与会话记录，具体提交哈希以归档task.json和Git历史为准。

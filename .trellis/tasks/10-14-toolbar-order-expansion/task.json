@@ -15,19 +15,19 @@
   "branch": "feature/mode",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": "35afa7ee5f7752f6ae91442624ba05c4f840b1b6",
+  "commit": "2dd3b3448c6317e6924f667db5aee5629f4b479f",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "原功能已提交35afa7ee；第三光源修复与自动验证完成，用户最新授权提交该修复，任务保持进行中，真实输入视觉待人工验收。",
+  "notes": "主栏设置、第三光源及按钮统一状态派生均已实现并通过自动验证；2026-10-14用户确认人工验证通过，授权提交本轮改动并结束任务。归档后保留完整研究、验证与提交记录。",
   "meta": {
-    "implementation": "complete",
-    "automated_validation": "passed",
-    "manual_gui_validation": "pending",
-    "trellis_check": "passed_drag_release_fix",
-    "validation_file": "validation-drag-light.md",
+    "implementation": "complete_button_presentation",
+    "automated_validation": "passed_button_presentation",
+    "manual_gui_validation": "passed_user_confirmed",
+    "trellis_check": "passed_button_presentation",
+    "validation_file": "validation-button-presentation.md",
     "toolbar_settings_validation": "passed",
     "settings_commit": "35afa7ee5f7752f6ae91442624ba05c4f840b1b6",
     "drag_release_review": "passed",
@@ -47,6 +47,31 @@
       "pixel_groups": 4,
       "pixel_max_delta": 0
     },
-    "drag_release_commit_authorized": true
+    "drag_release_commit_authorized": true,
+    "drag_release_commit": "2dd3b3448c6317e6924f667db5aee5629f4b479f",
+    "button_presentation_baseline": "2dd3b3448c6317e6924f667db5aee5629f4b479f",
+    "button_presentation_review": "passed",
+    "button_presentation_red_regression": {
+      "build_exit": 0,
+      "bar_exit": 1,
+      "expected_failures": 1,
+      "log": "Build/ToolbarOrderExpansionValidation/button-presentation/red-offscreen-results.log"
+    },
+    "drag_release_validation_file": "validation-drag-light.md",
+    "button_presentation_regression": {
+      "build_exit": 0,
+      "bar_exit": 0,
+      "headless_exit": 0,
+      "state_mode_exit": 0,
+      "component_matrix_cases": 480,
+      "third_light_pixel_groups": 4,
+      "third_light_pixel_max_delta": 0,
+      "private_render_loop_dynamic_run": false,
+      "gui_manual": "passed_user_confirmed"
+    },
+    "manual_gui_confirmation": {
+      "date": "2026-10-14",
+      "source": "用户确认修改到位、人工验证通过，并授权结束任务及提交commit"
+    }
   }
 }
