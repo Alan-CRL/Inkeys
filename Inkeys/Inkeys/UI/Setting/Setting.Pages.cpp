@@ -267,7 +267,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	HomeEntryFrameKey MakeHomeEntryFrameKey(ImVec4 contentBounds, float gutter, std::uint64_t epoch,
-		std::uint64_t fontSerial, int language, ImFont* regular, ImFont* strong, ImFont* icons)
+		std::uint64_t fontSerial, int language, ImFont* regular, ImFont* strong, ImFont* icons, int backdrop)
 	{
 		const auto& io=ImGui::GetIO(); const auto* atlas=io.Fonts;
 		HomeEntryFrameKey key;
@@ -275,7 +275,9 @@ namespace Inkeys::UI::Setting::Design
 			contentBounds.x,contentBounds.y,contentBounds.z,contentBounds.w,gutter,Pixels(1)};
 		key.fonts={reinterpret_cast<std::uintptr_t>(atlas),reinterpret_cast<std::uintptr_t>(regular),
 			reinterpret_cast<std::uintptr_t>(strong),reinterpret_cast<std::uintptr_t>(icons)};
-		key.epoch=epoch; key.fontSerial=fontSerial; key.language=language; key.dark=IsDarkMode();
+		key.epoch=epoch; key.fontSerial=fontSerial; key.language=language; key.dark=IsDarkMode(); key.backdrop=backdrop;
+		const auto& style=ImGui::GetStyle(); const auto color=style.Colors[ImGuiCol_WindowBg];
+		key.material={style.Alpha,color.x,color.y,color.z,color.w};
 		if (atlas->TexData)
 		{
 			key.texture=atlas->TexData->UniqueID; key.atlasWidth=atlas->TexData->Width; key.atlasHeight=atlas->TexData->Height;
@@ -292,23 +294,31 @@ namespace Inkeys::UI::Setting::Design
 		{
 			// DPI/布局/字形图集/资源 epoch 变化时先重走真实页；保留已消费 Show 与动画进度。
 			prep.key=key; prep.keyValid=true; prep.ready=false; prep.warmFrames=0;
-			prep.revealFrames=0; prep.revealReady=false; state.entryLayoutValidated=false;
+			prep.revealFrames=0; prep.revealReady=false; prep.revealPending=false;
+			prep.restoreFrames=0; prep.restoreReady=prep.restorePending=false; state.entryLayoutValidated=false;
 		}
-		if (!prep.ready || !state.EntryActive()) return false;
 		if (!allowFreeze) { FinishHomeEntry(state); return false; }
+		if (!prep.ready || !state.EntryActive()) return false;
 		const float next=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
-		if (!prep.revealReady && next>=HomeEntryTiming::DockStart)
+		if (!prep.revealReady && next>=HomeEntryTiming::WritingEnd)
 		{
-			// child 数帧未出现会触发 AutoResize 重新测量；在不透明边界完成两次成功暖帧再淡出。
-			prep.revealPending=true; state.entryElapsed=HomeEntryTiming::DockStart;
+			// 书写完成后仍保持不透明：两次完整排布消除缺席 child 的 AutoResize 冷启动，再截无字标页。
+			prep.revealPending=true;
+			state.entryElapsed=(std::max)(state.entryElapsed,HomeEntryTiming::WritingEnd);
+			return false;
+		}
+		if (next>=HomeEntryTiming::Total && !prep.restoreReady)
+		{
+			// 终态前在缓存遮挡下恢复两帧真实 child，防止恢复帧正文被旧高度裁切。
+			prep.restorePending=true;
 			return false;
 		}
 		state.entryElapsed=next;
 		if (next>=HomeEntryTiming::Total) { FinishHomeEntry(state); return false; }
-		prep.skipBackground=next<HomeEntryTiming::DockStart;
-		prep.fullFrame=!prep.skipBackground;
-		if (prep.skipBackground) ++prep.skippedFrames;
-		return prep.skipBackground;
+		// style alpha 非 1 时蒙版未真正不透明；截图就绪前仍需绘制实际底层。
+		if (!prep.revealReady && key.material[0]!=1) return false;
+		prep.skipBackground=true; prep.fullFrame=false; ++prep.skippedFrames;
+		return true;
 	}
 
 	bool HomeEntryTexturesReady(const ImDrawData* data)
@@ -320,7 +330,7 @@ namespace Inkeys::UI::Setting::Design
 		return texture && texture->Status==ImTextureStatus_OK && texture->GetTexID()!=ImTextureID_Invalid;
 	}
 
-	void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady)
+	void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady, bool captured)
 	{
 		auto& prep=state.preparation;
 		if (!prep.managed || prep.submitted==prep.frame || !state.EntryActive()) return;
@@ -329,7 +339,7 @@ namespace Inkeys::UI::Setting::Design
 		{
 			// 失败/遮挡帧不消费动画时间；下一次可呈现帧重新确认字体和资源事务。
 			state.entryElapsed=prep.previousElapsed; prep.ready=false; prep.warmFrames=0;
-			prep.revealFrames=0; prep.revealReady=false;
+			prep.revealFrames=0; prep.revealReady=false; prep.restoreFrames=0; prep.restoreReady=prep.restorePending=false;
 			if (++prep.attempts>=6) FinishHomeEntry(state);
 			return;
 		}
@@ -343,17 +353,19 @@ namespace Inkeys::UI::Setting::Design
 		}
 		if (prep.revealPending && !prep.revealReady)
 		{
-			if (submitted && texturesReady) { if (++prep.revealFrames>=2) prep.revealReady=true; }
-			else prep.revealFrames=0;
+			++prep.revealFrames;
+			if (captured && prep.revealFrames>=2) prep.revealReady=true;
+			else if (prep.revealFrames>=6) FinishHomeEntry(state);
 		}
+		if (prep.restorePending && !prep.restoreReady && ++prep.restoreFrames>=2) prep.restoreReady=true;
 	}
 
 	void FilterHomeEntryDrawData(const HomeMotionState& state, ImDrawData* data,
 		ImDrawList* root, ImDrawList* titleBar, ImDrawList* foreground)
 	{
 		if (!data || !state.preparation.managed || !state.preparation.ready || !state.EntryActive()
-			|| ResolveHomeEntryPose(state).opacity!=1) return;
-		// 覆盖 alpha 精确为 1 时底层 GPU 提交没有可见贡献。保留 caption 与单份前景，纹理队列不变。
+			|| (!state.preparation.skipBackground && !state.preparation.revealReady)) return;
+		// 捕获帧保留完整背景；复用/终态暖帧仅提交标题栏与单份前景，根填充不可覆盖缓存像素。
 		int count=0; data->TotalVtxCount=data->TotalIdxCount=0;
 		for (auto* list : data->CmdLists)
 		{

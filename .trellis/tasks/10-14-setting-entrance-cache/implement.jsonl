@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "设置生命周期、首页开屏合同"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "现有Solution及ARM64验证"}
+{"file": ".trellis/tasks/10-14-setting-entrance-cache/research/cache-and-benchmark.md", "reason": "GPU像素拷贝/无窗口基准与生命周期研究"}
+{"file": ".trellis/tasks/10-14-setting-entrance-cache/submission-revision.md", "reason": "用户直接批准第二轮提交/像素优化与验收边界"}
+{"file": ".trellis/tasks/10-14-setting-entrance-cache/research/idle-submission-research.md", "reason": "延迟动画/下载/输入缺唤醒要求保留CPU检测帧"}

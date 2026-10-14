@@ -1627,6 +1627,7 @@ int main(int argc, char** argv)
 {
 	bool benchmark = false;
 	bool penWidthOnly = false;
+	bool settingHomeOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
 	bool exitVisibilityGateOnly = false;
@@ -1637,6 +1638,7 @@ int main(int argc, char** argv)
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
 		penWidthOnly |= argument == "--pen-width-only";
+		settingHomeOnly |= argument == "--setting-home-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
@@ -1669,6 +1671,8 @@ int main(int argc, char** argv)
 		}
 #endif
 	}
+
+	if (settingHomeOnly) return RunSettingDesignTests()==0 ? 0 : 1;
 
 	TestCurvesAndTimelines();
 	TestLocalizedFormatFallbacks();

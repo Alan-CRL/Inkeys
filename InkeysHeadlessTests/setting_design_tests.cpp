@@ -7,6 +7,7 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Typography.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Controls.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Pages.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.FrameSubmission.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.HomeBrand.h"
 #include "../Inkeys/IdtI18n.h"
 #include "setting_home_warp_tests.h"
@@ -3112,6 +3113,89 @@ namespace
 			<< " entry-plays="<<entryPlays<<" entry-skips="<<entrySkips<<'\n';
 	}
 
+	void CheckFrameSubmission(Checks& checks)
+	{
+		ImDrawList list(nullptr);
+		list.VtxBuffer.resize(3); list.IdxBuffer.resize(3); list.CmdBuffer.resize(1);
+		for (int i=0;i<3;++i)
+		{
+			list.VtxBuffer[i]={{static_cast<float>(i),static_cast<float>(i+1)},{.25F,.5F},IM_COL32(50,100,150,255)};
+			list.IdxBuffer[i]=static_cast<ImDrawIdx>(i);
+		}
+		// ImVector::resize 不运行元素构造；显式初始化 callback/offset，避免把未定义字节当真实渲染命令。
+		auto& cmd=list.CmdBuffer[0]; cmd=ImDrawCmd{};
+		cmd.ClipRect={0,0,100,100}; cmd.TexRef=ImTextureRef(ImTextureID(31)); cmd.ElemCount=3;
+		ImDrawData data; data.Valid=true; data.DisplaySize={100,100}; data.FramebufferScale={1,1};
+		data.CmdLists.push_back(&list); data.CmdListsCount=1; data.TotalVtxCount=data.TotalIdxCount=3;
+		Design::FrameSubmissionKey key; key.output.epoch=1; key.target=7; key.clear={.1F,.2F,.3F,1};
+		Design::FrameSubmissionCache snapshot;
+		checks.Expect(!snapshot.CanSkip(&data,key),"first output must actually submit before it can be deduplicated");
+		snapshot.ConfirmPresented(&data,key);
+		const auto stored=snapshot.StoredBytes(); const auto capacity=snapshot.Capacity();
+		checks.Expect(stored>0 && stored<Design::FrameSubmissionCache::BudgetBytes && snapshot.CanSkip(&data,key),
+			"successful output owns a bounded exact value snapshot");
+		for (int i=0;i<100;++i) checks.Expect(snapshot.CanSkip(&data,key),"unchanged frames reuse the same successful output");
+		checks.Expect(snapshot.StoredBytes()==stored && snapshot.Capacity()==capacity,"duplicate comparison does not grow or overwrite snapshot storage");
+		auto reject=[&](auto mutate,auto restore) {
+			mutate(); checks.Expect(!snapshot.CanSkip(&data,key),"each actual renderer field mutation forces submission");
+			restore(); checks.Expect(snapshot.CanSkip(&data,key),"restoring exact output matches the owned successful snapshot");
+		};
+		auto scalar=[&](auto& field) { const auto old=field; reject([&]{field+=1;},[&]{field=old;}); };
+		scalar(list.VtxBuffer[0].pos.x); scalar(list.VtxBuffer[0].pos.y);
+		scalar(list.VtxBuffer[0].uv.x); scalar(list.VtxBuffer[0].uv.y); scalar(list.VtxBuffer[0].col);
+		scalar(list.IdxBuffer[0]); scalar(cmd.ClipRect.x); scalar(cmd.ClipRect.y); scalar(cmd.ClipRect.z); scalar(cmd.ClipRect.w);
+		scalar(cmd.TexRef._TexID); scalar(cmd.VtxOffset); scalar(cmd.IdxOffset); scalar(cmd.ElemCount);
+		scalar(data.DisplayPos.x); scalar(data.DisplaySize.x); scalar(data.FramebufferScale.x);
+		checks.Expect(!snapshot.CanSkip(&data,key,true),"explicit resource or layout transaction never skips submission");
+		reject([&]{cmd.UserCallback=ImDrawCallback_ResetRenderState;},[&]{cmd.UserCallback=nullptr;});
+		ImTextureData texture; texture.SetTexID(31); texture.SetStatus(ImTextureStatus_OK);
+		ImVector<ImTextureData*> textures; textures.push_back(&texture); data.Textures=&textures;
+		for (const auto status : {ImTextureStatus_WantCreate,ImTextureStatus_WantUpdates,ImTextureStatus_WantDestroy,ImTextureStatus_Destroyed})
+		{
+			texture.SetStatus(status); checks.Expect(!snapshot.CanSkip(&data,key),"every pending texture lifecycle action executes the real backend");
+		}
+		texture.SetStatus(ImTextureStatus_OK); cmd.TexRef=texture.GetTexRef();
+		checks.Expect(snapshot.CanSkip(&data,key),"texture indirection compares the actual GetTexID rather than pointer storage");
+		texture.SetTexID(ImTextureID_Invalid); checks.Expect(!snapshot.CanSkip(&data,key),"not-yet-uploaded indirect texture is rejected before GetTexID assertions");
+		texture.SetTexID(31); cmd.TexRef=ImTextureRef(ImTextureID(31)); data.Textures=nullptr;
+		for (int i=0;i<12;++i)
+		{
+			auto changed=key;
+			switch(i)
+			{
+			case 0: ++changed.output.epoch; break; case 1: ++changed.output.fontSerial; break;
+			case 2: ++changed.output.language; break; case 3: ++changed.output.backdrop; break;
+			case 4: changed.clear[0]+=.1F; break; case 5: ++changed.cacheRevision; break;
+			case 6: ++changed.target; break; case 7: ++changed.showSerial; break; case 8: ++changed.hideSerial; break;
+			case 9: ++changed.themeSerial; break; case 10: changed.output.geometry[0]+=1; break; case 11: changed.output.material[0]=.5F; break;
+			}
+			checks.Expect(!snapshot.CanSkip(&data,changed),"target/session/material/font/cache identities invalidate a duplicate");
+		}
+		list.VtxBuffer[0].col=IM_COL32(1,2,3,255);
+		checks.Expect(!snapshot.CanSkip(&data,key),"unsuccessful attempted output cannot replace last successful presentation");
+		snapshot.Reset(); checks.Expect(!snapshot.CanSkip(&data,key),"failed or occluded submission requires the next identical frame to retry");
+		snapshot.ConfirmPresented(&data,key); checks.Expect(snapshot.CanSkip(&data,key),"real successful retry publishes its own snapshot");
+		list.VtxBuffer.resize(static_cast<int>(Design::FrameSubmissionCache::BudgetBytes/sizeof(ImDrawVert)+1));
+		data.TotalVtxCount=list.VtxBuffer.Size; snapshot.ConfirmPresented(&data,key);
+		checks.Expect(snapshot.StoredBytes()==0 && !snapshot.CanSkip(&data,key) && snapshot.Capacity()==capacity,
+			"over-budget output submits normally without growing snapshot memory");
+		Design::HomeMotionState motion; motion.entry=Design::HomeMotionState::Entry::Playing;
+		checks.Expect(Design::RequiresHomeEntrySubmission(motion),"unprepared entry must count only actual submissions");
+		motion.preparation.managed=motion.preparation.ready=motion.preparation.keyValid=motion.preparation.revealReady=true;
+		motion.preparation.fullFrame=false; motion.preparation.key=key.output;
+		motion.entryElapsed=Design::HomeEntryTiming::WritingEnd+.01F; motion.delta=.05F;
+		const auto submitted=motion.preparation.submitted;
+		for (int i=0;i<14;++i)
+		{
+			Design::BeginHomeEntryFrame(motion,key.output);
+			checks.Expect(!Design::RequiresHomeEntrySubmission(motion),"ordinary cached hold and dock may reuse exact output");
+		}
+		checks.Expect(motion.entryElapsed>Design::HomeEntryTiming::DockStart && motion.preparation.submitted==submitted,
+			"skipped hold frames advance the 600ms clock without inventing backend warm successes");
+		motion.preparation.fullFrame=true; checks.Expect(Design::RequiresHomeEntrySubmission(motion),"capture and restore full layout frames always submit");
+		std::cout<<"[FrameSubmission] snapshot-budget="<<Design::FrameSubmissionCache::BudgetBytes<<" exact-fields=17 invalidation-keys=12\n";
+	}
+
 	void CheckHomeEntryPreparation(Checks& checks)
 	{
 		using Timing=Design::HomeEntryTiming;
@@ -3142,7 +3226,7 @@ namespace
 			"ready opaque frame skips invisible background and advances clamped rate-scaled delta");
 		Design::CompleteHomeEntryFrame(state,true,true);
 		const auto ready=state;
-		for (int field=0;field<21;++field)
+		for (int field=0;field<27;++field)
 		{
 			state=ready; state.entryLayoutValidated=true; auto changed=key;
 			if (field<10) changed.geometry[field]+=1;
@@ -3152,6 +3236,8 @@ namespace
 			case 14: ++changed.epoch; break; case 15: ++changed.fontSerial; break; case 16: ++changed.language; break;
 			case 17: ++changed.texture; break; case 18: ++changed.atlasWidth; break; case 19: ++changed.atlasHeight; break;
 			case 20: changed.dark=!changed.dark; break;
+			case 26: ++changed.backdrop; break;
+			default: changed.material[field-21]+=.1F; break;
 			}
 			checks.Expect(!Design::BeginHomeEntryFrame(state,changed) && !state.preparation.ready && !state.entryLayoutValidated
 				&& state.entryElapsed==ready.entryElapsed,"every actual layout/font/atlas/epoch/theme/language key invalidates fast frame without replay");
@@ -3162,21 +3248,33 @@ namespace
 		for (int failure=0;failure<8 && state.EntryActive();++failure)
 		{ Design::BeginHomeEntryFrame(state,key); Design::CompleteHomeEntryFrame(state,false,false); }
 		checks.Expect(!state.EntryActive() && state.preparation.attempts<=6,"failed preparation is bounded and cannot permanently trap loading overlay");
-		state=ready; state.entryElapsed=Timing::DockStart-.01F;
+		state=ready; state.entryElapsed=Timing::WritingEnd-.01F;
 		for (int frame=0;frame<2;++frame)
 		{
-			checks.Expect(!Design::BeginHomeEntryFrame(state,key) && state.entryElapsed==Timing::DockStart,
-				"rate 5 holds opaque dock boundary while actual child layout is restored");
+			checks.Expect(!Design::BeginHomeEntryFrame(state,key) && state.entryElapsed==Timing::WritingEnd,
+				"rate 5 captures only after writing completes while the cover remains opaque");
+			Design::CompleteHomeEntryFrame(state,true,true,frame==1);
+		}
+		checks.Expect(state.preparation.revealReady && Design::BeginHomeEntryFrame(state,key),
+			"successful no-logo capture freezes background throughout hold");
+		state.entryElapsed=Timing::DockStart;
+		checks.Expect(Design::BeginHomeEntryFrame(state,key) && state.entryElapsed>Timing::DockStart,
+			"translucent docking freezes page and navigation CPU generation");
+		state.entryElapsed=Timing::Total-.005F;
+		for (int frame=0;frame<2;++frame)
+		{
+			checks.Expect(!Design::BeginHomeEntryFrame(state,key) && state.EntryActive(),
+				"terminal child warm frames stay hidden behind cached page");
 			Design::CompleteHomeEntryFrame(state,true,true);
 		}
-		checks.Expect(state.preparation.revealReady && !Design::BeginHomeEntryFrame(state,key)
-			&& state.entryElapsed>Timing::DockStart,"transparent start uses restored full rendering after two confirmations");
+		checks.Expect(state.preparation.restoreReady && !Design::BeginHomeEntryFrame(state,key) && !state.EntryActive(),
+			"after two full terminal submissions normal static frame resumes");
 		state=ready; Design::ConfigureHomeMotion(state,true,2,.05F,true,1);
 		checks.Expect(state.entry==Design::HomeMotionState::Entry::Pending && !state.preparation.ready && !state.preparation.managed,
 			"new actual Show discards prior preparation without retaining GPU or ImGui resource pointers");
 		state=ready; Design::ConfigureHomeMotion(state,false,1,.05F,true,1);
 		checks.Expect(!state.EntryActive(),"navigation away terminates prepared overlay without late replay");
-		std::cout<<"[HomeEntryPreparation] total="<<Timing::Total<<" ready-frames=2 invalidation-keys=21 bounded-state-bytes="
+		std::cout<<"[HomeEntryPreparation] total="<<Timing::Total<<" ready-frames=2 invalidation-keys=27 bounded-state-bytes="
 			<<sizeof(state.preparation)<<'\n';
 	}
 
@@ -3683,6 +3781,7 @@ int RunSettingDesignTests()
 	Checks checks;
 	CheckNavigation(checks);
 	CheckNavigationPaneGeometry(checks);
+	CheckFrameSubmission(checks);
 	const auto fontDirectory = FindFontDirectory();
 	if (fontDirectory.empty())
 	{

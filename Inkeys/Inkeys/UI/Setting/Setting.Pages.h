@@ -84,10 +84,12 @@ namespace Inkeys::UI::Setting::Design
 	struct HomeEntryFrameKey
 	{
 		std::array<float,10> geometry{};
+		std::array<float,5> material{1,0,0,0,1};
 		std::array<std::uintptr_t,4> fonts{};
 		std::uint64_t epoch = 0, fontSerial = 0;
 		int language = 0, texture = 0, atlasWidth = 0, atlasHeight = 0;
 		bool dark = false;
+		int backdrop = 0;
 		bool operator==(const HomeEntryFrameKey&) const = default;
 	};
 
@@ -113,8 +115,8 @@ namespace Inkeys::UI::Setting::Design
 		{
 			HomeEntryFrameKey key;
 			bool managed = false, keyValid = false, ready = false, revealPending = false, revealReady = false;
-			bool fullFrame = true, skipBackground = false;
-			unsigned warmFrames = 0, revealFrames = 0, attempts = 0;
+			bool fullFrame = true, skipBackground = false, restorePending = false, restoreReady = false;
+			unsigned warmFrames = 0, revealFrames = 0, restoreFrames = 0, attempts = 0;
 			float previousElapsed = 0;
 			std::uint64_t frame = 0, submitted = 0, skippedFrames = 0;
 		} preparation;
@@ -156,12 +158,12 @@ namespace Inkeys::UI::Setting::Design
 	bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
 		float styleAlpha, ImVec4 windowBackground) noexcept;
 	HomeEntryFrameKey MakeHomeEntryFrameKey(ImVec4 contentBounds, float gutter, std::uint64_t epoch,
-		std::uint64_t fontSerial, int language, ImFont* regular, ImFont* strong, ImFont* icons);
-	// 在输入取消之后、正文 Begin 之前调用；返回 true 才可暂停被完全遮住的页/导航生成。
+		std::uint64_t fontSerial, int language, ImFont* regular, ImFont* strong, ImFont* icons, int backdrop = 0);
+	// 在输入取消之后、正文 Begin 之前调用；不透明遮挡或截图就绪时才暂停页/导航生成。
 	bool BeginHomeEntryFrame(HomeMotionState& state, const HomeEntryFrameKey& key, bool allowFreeze = true);
-	void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady);
+	void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady, bool captured = false);
 	bool HomeEntryTexturesReady(const ImDrawData* data);
-	// 仅修改当前帧的提交列表，不复制缓存；纹理请求仍由生产 DX11 后端完整处理。
+	// 仅修改当前帧的提交列表；GPU 页面像素由同设备缓存复原，纹理队列仍交生产后端。
 	void FilterHomeEntryDrawData(const HomeMotionState& state, ImDrawData* data,
 		ImDrawList* root, ImDrawList* titleBar, ImDrawList* foreground);
 

@@ -1682,3 +1682,67 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 本子任务已结束；父任务继续进行中。没有新增实机鼠标/触屏/DX11验证，不GUI/Computer Use/push。
+
+
+## Session 98: 设置开屏 GPU 页面缓存与无限制离屏性能
+<!-- trellis-session: v=2 fp=3938b28797561516 -->
+
+**Date**: 2026-10-14
+**Task**: 设置开屏 GPU 页面缓存与无限制离屏性能
+**Branch**: `fluent`
+
+### Summary
+
+延续fluent开屏任务，确认旧Inkeys工作树/stash无遗漏；实现无字标GPU页面截图与渐退归位复用，完整ARM64构建和无窗口回归通过。39组WARP/Adreno测量确认默认WARP是瓶颈，正常仍有60Hz调度及垂直同步。
+
+### Main Changes
+
+- WritingEnd两暖帧捕获，单份GPU copy缓存，终态两布局恢复，失效与清理覆盖；不commit/push。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 exit0 87.836s；全套--no-window exit0 304.793s，stderr0；i18n384/384和编码/diff通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户审阅validation.md；如继续优化，优先评估共享WARP策略或做字标/蒙版消融，不直接改限帧。
+
+
+## Session 99: 设置静止帧跳过提交与WARP组件消融
+<!-- trellis-session: v=2 fp=684af92ec7dfcd3b -->
+
+**Date**: 2026-10-14
+**Task**: 设置静止帧跳过提交与WARP组件消融
+**Branch**: `fluent`
+
+### Summary
+
+保留共享WARP/独立Draw架构，实现精确重复提交跳过与不透明省copy；全套离屏测试和60组测量通过，省Clear无稳定收益撤回产品。
+
+### Main Changes
+
+- 单帧1MiB CPU值快照仅S_OK发布，保留CPU Continue与计时，事务/输入/失败强制实际重绘；无新增GPU资源。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 最终InkeysRepo.sln Debug|ARM64 exit0 22.3754s；全套--no-window exit0 278.4643s、stderr0，21新增+39既有benchmark。i18n384/384、精确RGBA、7文件baseline格式与diff通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 查看submission-validation.md；产品仍16.666667ms共享调度与Present(1,0)，未GUI/Win7实机/commit/push，保留当前任务供审阅。

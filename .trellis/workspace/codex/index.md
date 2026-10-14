@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 58
-- **Last Active**: 2026-10-09
+- **Total Sessions**: 99
+- **Last Active**: 2026-10-14
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1684 | Active |
+| `journal-1.md` | ~1748 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 99 | 2026-10-14 | 设置静止帧跳过提交与WARP组件消融 | - | `fluent` |
+| 98 | 2026-10-14 | 设置开屏 GPU 页面缓存与无限制离屏性能 | - | `fluent` |
 | 58 | 2026-10-09 | 结束并归档滚动条与内容拖动子任务 | `4df1f0b6`, `c45bcd64` | `fluent` |
 | 57 | 2026-10-09 | 设置滚动条动画与内容拖动同帧响应 | `b8beea0b` | `fluent` |
 | 56 | 2026-10-09 | 侧栏统一滚动条与旧内容拖动复用 | - | `fluent` |

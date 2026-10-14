@@ -21,6 +21,8 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "Setting.SessionState.h"
 #include "Setting.Pages.h"
+#include "Setting.HomeEntryCache.h"
+#include "Setting.FrameSubmission.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
@@ -100,6 +102,8 @@ namespace
 	FrameResult settingFrameResult = FrameResult::Idle;
 	bool settingNavigationClockIdle = true; // 仅共享渲染线程访问，跳过恢复帧的隐藏/移动耗时。
 	uint64_t settingSessionEpoch = 0;
+	Design::HomeEntryPageCache settingHomeEntryCache; // 唯一共享渲染线程的临时 GPU 页面快照。
+	Design::FrameSubmissionCache settingFrameSubmission; // 有界的上次成功呈现值快照，不持有 GPU 资源。
 	Inkeys::UI::Setting::SessionState settingSessionState;
 	Inkeys::UI::Setting::BusinessCompletionSnapshot settingLastBusinessCompletion;
 	Inkeys::UI::Setting::TitleBarGeometry settingTitleBarGeometry;
@@ -113,6 +117,7 @@ namespace
 	FrameResult ResolveSettingResourceFailure(const char* stage, HRESULT result = E_FAIL)
 	{
 		// 先保存失败与设备原因，再清理 lease；泛化 OOM/E_FAIL 也可能来自已移除的设备。
+		settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
 		if (SUCCEEDED(result)) result = E_FAIL;
 		const HRESULT removedReason = g_pd3dDevice ? g_pd3dDevice->GetDeviceRemovedReason() : S_OK;
 		if (result != settingLastResourceFailure || removedReason != settingLastRemovedReason
@@ -142,7 +147,7 @@ namespace
 		struct Stats { double median=0, p95=0, maximum=0; };
 		std::array<Sample,512> samples{};
 		std::uint64_t serial=0;
-		size_t count=0, dropped=0;
+		size_t count=0, dropped=0, skipped=0, snapshotBytes=0, backendFailures=0, cleared=0, copied=0;
 		bool enabled=false, active=false, havePrevious=false;
 		Clock::time_point started{}, previousFrame{}, previousPresent{};
 		SettingEntryProfiler()
@@ -156,7 +161,7 @@ namespace
 		void Begin(std::uint64_t next,Clock::time_point time)
 		{
 			if (!enabled || next==serial) return;
-			Flush("hidden-or-replaced"); serial=next; active=true; count=dropped=0; havePrevious=false; started=time;
+			Flush("hidden-or-replaced"); serial=next; active=true; count=dropped=skipped=snapshotBytes=backendFailures=cleared=copied=0; havePrevious=false; started=time;
 		}
 		Stats Measure(double Sample::* field,int phase=-1) const
 		{
@@ -166,6 +171,11 @@ namespace
 			if (!size) return {};
 			std::sort(values.begin(),values.begin()+size);
 			return {values[(size-1)/2],values[static_cast<size_t>((size-1)*.95)],values[size-1]};
+		}
+		void RecordSkipped(Clock::time_point frame,size_t bytes)
+		{
+			if (!active) return;
+			++skipped; snapshotBytes=bytes; previousFrame=frame; // 不伪造 Present 时间或 GPU 样本。
 		}
 		void Record(Clock::time_point frame,Clock::time_point cpu,Clock::time_point backend,
 			Clock::time_point completed,const Design::HomeMotionState& motion,const ImDrawData* data,bool rootSuppressed)
@@ -194,8 +204,8 @@ namespace
 			size_t fast=0,rootsSuppressed=0; int maximumVertices=0,maximumIndices=0,maximumBatches=0;
 			for (size_t i=0;i<count;++i) { fast+=samples[i].fast; rootsSuppressed+=samples[i].rootSuppressed; maximumVertices=(std::max)(maximumVertices,samples[i].vertices);
 				maximumIndices=(std::max)(maximumIndices,samples[i].indices); maximumBatches=(std::max)(maximumBatches,samples[i].batches); }
-			IDTLogger->info("[SettingEntryPerf] show={} outcome={} frames={} dropped={} fast={} solid-root-suppressed={} wall-ms={:.3f} frame-gap-us median={:.3f} p95={:.3f} max={:.3f} present-return-gap-us median={:.3f} p95={:.3f} max={:.3f} max-vtx={} max-idx={} max-batches={} sample-bytes={}",
-				serial,outcome,count,dropped,fast,rootsSuppressed,Micros(started,previousPresent)/1000,gap.median,gap.p95,gap.maximum,
+			IDTLogger->info("[SettingEntryPerf] show={} outcome={} submitted-frames={} skipped-frames={} snapshot-bytes={} backend-failures={} clear-frames={} page-copy-frames={} dropped={} fast={} solid-root-suppressed={} wall-ms={:.3f} frame-gap-us median={:.3f} p95={:.3f} max={:.3f} present-return-gap-us median={:.3f} p95={:.3f} max={:.3f} max-vtx={} max-idx={} max-batches={} sample-bytes={}",
+				serial,outcome,count,skipped,snapshotBytes,backendFailures,cleared,copied,dropped,fast,rootsSuppressed,Micros(started,previousPresent)/1000,gap.median,gap.p95,gap.maximum,
 				presented.median,presented.p95,presented.maximum,maximumVertices,maximumIndices,maximumBatches,sizeof(samples));
 			static constexpr const char* names[]{"prepare","wait","writing","hold","dock","settle"};
 			for (int phase=0;phase<6;++phase)
@@ -1630,6 +1640,7 @@ SettingSessionCoroutine RunSettingSession()
 		if (!AcquireDeviceLease(settingFrameContext.epoch))
 		{
 			settingFrameResult = ResolveSettingResourceFailure("AcquireDeviceLease");
+			settingHomeEntryCache.Reset();
 			CleanupDeviceD3D();
 			co_return;
 		}
@@ -1965,6 +1976,7 @@ SettingSessionCoroutine RunSettingSession()
 				settingFrameResult = ResolveSettingResourceFailure("ResidentTextures");
 				CleanupSettingTextures();
 				CleanupSettingTextureCache();
+				settingHomeEntryCache.Reset();
 				CleanupDeviceD3D();
 				co_return;
 			}
@@ -1995,6 +2007,7 @@ SettingSessionCoroutine RunSettingSession()
 			io.Fonts->Clear();
 			ImFluent::ResetContext();
 			ImGui::DestroyContext();
+			settingHomeEntryCache.Reset();
 			CleanupDeviceD3D();
 			co_return;
 		}
@@ -2220,8 +2233,12 @@ SettingSessionCoroutine RunSettingSession()
 			ImGui::NewFrame();
 			ImDrawList* entryRootDraw=nullptr; ImDrawList* entryTitleDraw=nullptr;
 			bool entryRootSuppressed=false;
+			Design::FrameSubmissionKey submissionKey;
+			const bool submissionInput=!GImGui->InputEventsTrail.empty();
+			if (submissionInput) settingFrameSubmission.Reset();
 			// 本帧 backdrop/底色一致快照；caption 的主题点击只在下帧 ApplySettingTheme 换色。
-			const bool transparentBackdrop=settingBackdropMode.load(memory_order_acquire)!=Inkeys::UI::Setting::BackdropMode::Solid;
+			const auto entryBackdrop=settingBackdropMode.load(memory_order_acquire);
+			const bool transparentBackdrop=entryBackdrop!=Inkeys::UI::Setting::BackdropMode::Solid;
 			const ImVec4 clearColorValue=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
 			std::uint64_t hideSerial;
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
@@ -2238,7 +2255,7 @@ SettingSessionCoroutine RunSettingSession()
 			if (hideSerial!=consumedHideSerial) commitGeneralSliders();
 			if (Design::ConsumeSettingHomeReset(hideSerial,consumedHideSerial,destination,navigationState,homeMotion))
 			{
-				settingTab=0; resetHomeScroll=true;
+				settingTab=0; resetHomeScroll=true; settingFrameSubmission.Reset();
 			}
 			Design::BeginDragScrolling(navigationState);
 			// 所有页面默认使用 ImFluent Body 字体，局部字号只通过 scoped PushFont 切换。
@@ -2441,11 +2458,15 @@ SettingSessionCoroutine RunSettingSession()
 					{Widgets::Dip(contentGeometry.left),Widgets::Dip(contentGeometry.top),
 					Widgets::Dip(contentGeometry.right),Widgets::Dip(contentGeometry.bottom)},
 					Widgets::Dip(shellGeometry.gutter),settingSessionEpoch,entryFontSerial,SelectLanguage,
-					ImFontDesignMain,ImFontDesignStrong,ImFontDesignIcons);
+					ImFontDesignMain,ImFontDesignStrong,ImFontDesignIcons,
+					static_cast<int>(entryBackdrop));
+				submissionKey.output=entryKey; submissionKey.showSerial=showSerial; submissionKey.hideSerial=hideSerial;
+				submissionKey.themeSerial=settingConsumedThemeSerial;
+				settingHomeEntryCache.Validate(homeMotion,entryKey);
 				const bool skipEntryBackground=Design::BeginHomeEntryFrame(homeMotion,entryKey,
 					!blockContentInput && !navigationState.flyoutOpen
 					&& !ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel));
-				// 暖帧后不再生成完全遮住的页面；淡出边界先恢复 child 测量，再正常显示。
+				// 写完后捕获真实无字标页；渐退/归位复用 GPU 像素，终态前才恢复 child 排布。
 				if (!skipEntryBackground)
 				{
 				ImGui::SetCursorPos({ Widgets::Dip(contentGeometry.left), Widgets::Dip(contentGeometry.top) });
@@ -4060,21 +4081,55 @@ SettingSessionCoroutine RunSettingSession()
 				transparentBackdrop ? 0.0F : clearColorValue.z * clearColorValue.w,
 				transparentBackdrop ? 0.0F : clearColorValue.w
 			};
-			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
-			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
+			submissionKey.clear={clearColor[0],clearColor[1],clearColor[2],clearColor[3]};
+			submissionKey.target=reinterpret_cast<std::uintptr_t>(g_mainRenderTargetView);
+			submissionKey.cacheRevision=settingHomeEntryCache.Revision();
+			const HRESULT frameResources=ImGui_ImplDX11_GetLastResult();
+			const HRESULT frameDevice=g_pd3dDevice->GetDeviceRemovedReason();
+			if (FAILED(frameDevice))
+			{
+				Design::CompleteHomeEntryFrame(homeMotion,false,false);
+				settingFrameResult=ResolveSettingResourceFailure("FrameDevice",frameDevice);
+				co_await suspend_always{}; continue;
+			}
+			// NewFrame 不会清除上次 Map/OOM 错误；旧 backend 失败只强制重绘，交由真实 Render 重试。
+			const bool duplicate=settingFrameSubmission.CanSkip(ImGui::GetDrawData(),submissionKey,
+				submissionInput || FAILED(frameResources) || Design::RequiresHomeEntrySubmission(homeMotion));
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 			const auto entryCpuEnd=entryProfiler.enabled ? SettingEntryProfiler::Clock::now() : SettingEntryProfiler::Clock::time_point{};
 #endif
-			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+			if (duplicate)
+			{
+				// CPU 帧已消费输入/推进延迟与时钟；复用 compositor 上次成功画面，不接触 discard buffer。
+				// 此路径没有准备/捕获/恢复事务，不调用 Complete 虚增真实提交计数或回滚时间。
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
+				entryProfiler.RecordSkipped(entryFrameBegin,settingFrameSubmission.StoredBytes());
+#endif
+				settingFrameResult=FrameResult::Continue;
+				co_await suspend_always{}; continue;
+			}
+			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
+			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
+			bool entryCaptured=false;
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+			Design::HomeEntryPageCache::RenderStats entryRenderStats;
+			if (entryProfiler.active) ++entryProfiler.cleared;
+#endif
+			const HRESULT backendResult=settingHomeEntryCache.Render(g_pd3dDevice,g_pd3dDeviceContext,g_mainRenderTargetView,
+				homeMotion,ImGui::GetDrawData(),ImGui::GetForegroundDrawList(),entryCaptured
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+				,&entryRenderStats
+#endif
+			);
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+			if (entryProfiler.active) entryProfiler.copied+=entryRenderStats.copies;
 			const auto entryBackendEnd=entryProfiler.enabled ? SettingEntryProfiler::Clock::now() : SettingEntryProfiler::Clock::time_point{};
 #endif
-			const HRESULT backendResult = ImGui_ImplDX11_GetLastResult();
 			if (FAILED(backendResult))
 			{
 				// 纹理/Map 失败不能继续 Present 空白或残缺帧；保留原 epoch 恢复仲裁。
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
-				entryProfiler.Record(entryFrameBegin,entryCpuEnd,entryBackendEnd,entryBackendEnd,homeMotion,ImGui::GetDrawData(),entryRootSuppressed);
+				++entryProfiler.backendFailures; // 未调用 Present，不记录伪造的呈现返回间隔。
 				entryProfiler.Flush("backend-failure");
 #endif
 				Design::CompleteHomeEntryFrame(homeMotion,false,false);
@@ -4088,7 +4143,23 @@ SettingSessionCoroutine RunSettingSession()
 			if (entryProfiler.active) entryProfiler.Record(entryFrameBegin,entryCpuEnd,entryBackendEnd,SettingEntryProfiler::Clock::now(),homeMotion,ImGui::GetDrawData(),entryRootSuppressed);
 			if (result!=S_OK) entryProfiler.Flush(result==DXGI_STATUS_OCCLUDED ? "occluded" : "present-failure");
 #endif
-			Design::CompleteHomeEntryFrame(homeMotion,result==S_OK,Design::HomeEntryTexturesReady(ImGui::GetDrawData()));
+			Design::CompleteHomeEntryFrame(homeMotion,result==S_OK,Design::HomeEntryTexturesReady(ImGui::GetDrawData()),entryCaptured);
+			if (result!=S_OK || !homeMotion.EntryActive()) settingHomeEntryCache.Reset();
+			if (result==S_OK)
+			{
+				// 字体 backend 可能刚发布 atlas 尺寸/ID；记录实际完成后的身份供下一帧精确匹配。
+				if (const auto* atlas=io.Fonts->TexData)
+				{
+					submissionKey.output.texture=atlas->UniqueID;
+					submissionKey.output.atlasWidth=atlas->Width; submissionKey.output.atlasHeight=atlas->Height;
+				}
+				submissionKey.cacheRevision=settingHomeEntryCache.Revision();
+				settingFrameSubmission.ConfirmPresented(ImGui::GetDrawData(),submissionKey);
+#if defined(INKEYS_SETTING_ENTRY_PROFILE)
+				entryProfiler.snapshotBytes=settingFrameSubmission.StoredBytes();
+#endif
+			}
+			else settingFrameSubmission.Reset();
 			if (FAILED(result))
 				settingFrameResult = ResolveSettingResourceFailure("Present", result);
 			else
@@ -4113,6 +4184,7 @@ SettingSessionCoroutine RunSettingSession()
 		io.Fonts->Clear();
 		ImFluent::ResetContext();
 		ImGui::DestroyContext();
+		settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
 		CleanupDeviceD3D();
 	settingSessionEpoch = 0;
 	#undef CloseProgram
@@ -4128,7 +4200,7 @@ namespace
 {
 	void DrainSettingSessionOnRenderThread() noexcept
 	{
-		settingNavigationClockIdle = true;
+		settingNavigationClockIdle = true; settingFrameSubmission.Reset();
 		if (!settingSession.Done())
 		{
 			settingSessionShouldStop.store(true, memory_order_release);
@@ -4149,7 +4221,7 @@ namespace
 		auto pauseNavigationClock = [](FrameResult result)
 		{
 			// 所有未实际绘制的路径都在渲染线程标记；可见低帧率仍持续推进动画。
-			settingNavigationClockIdle = true;
+			settingNavigationClockIdle = true; settingFrameSubmission.Reset();
 			return result;
 		};
 		settingFrameContext = context; // 初始化/重建失败的诊断也使用本次 epoch。
@@ -4172,6 +4244,8 @@ namespace
 			}
 		}
 
+		if (decision.releasePresentation || decision.rebuildDeviceResources || decision.rebuildFonts || decision.resize)
+		{ settingHomeEntryCache.Reset(); settingFrameSubmission.Reset(); }
 		if (decision.releasePresentation)
 		{
 			CleanupPresentation();
@@ -4224,6 +4298,7 @@ namespace
 			if (ImGui::GetIO().BackendRendererUserData)
 				ImGui_ImplDX11_Shutdown();
 			CleanupSettingTextures();
+			settingHomeEntryCache.Reset();
 			CleanupDeviceD3D();
 			const bool acquired = AcquireDeviceLease(context.epoch);
 			long backendInitResult = E_FAIL;
@@ -4237,6 +4312,7 @@ namespace
 					backendInitialized ? ImGui_ImplDX11_GetLastResult() : backendInitResult);
 				if (backendInitialized) ImGui_ImplDX11_Shutdown();
 				CleanupSettingTextures();
+				settingHomeEntryCache.Reset();
 				CleanupDeviceD3D();
 				return pauseNavigationClock(failure);
 			}
@@ -4261,6 +4337,7 @@ namespace
 		const uint64_t themeSerial = settingThemeSerial.load(memory_order_acquire);
 		if (!settingSession.Done() && themeSerial != settingConsumedThemeSerial)
 		{
+			settingFrameSubmission.Reset();
 			// 主题消息在隐藏态也立即更新 resident style，不等待下一次 Show。
 			lock_guard imguiLock(settingImguiMutex);
 			ApplySettingTheme(setting_window);
