@@ -3,3 +3,4 @@
 {"file": ".trellis/tasks/10-14-setting-entrance-cache/research/cache-and-benchmark.md", "reason": "GPU像素拷贝/无窗口基准与生命周期研究"}
 {"file": ".trellis/tasks/10-14-setting-entrance-cache/submission-revision.md", "reason": "用户直接批准第二轮提交/像素优化与验收边界"}
 {"file": ".trellis/tasks/10-14-setting-entrance-cache/research/idle-submission-research.md", "reason": "延迟动画/下载/输入缺唤醒要求保留CPU检测帧"}
+{"file": ".trellis/tasks/10-14-setting-entrance-cache/scrollbar-revision.md", "reason": "当前滚动条跳变修复边界与真实NoInputs回归"}

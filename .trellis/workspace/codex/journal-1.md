@@ -1746,3 +1746,35 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 查看submission-validation.md；产品仍16.666667ms共享调度与Present(1,0)，未GUI/Win7实机/commit/push，保留当前任务供审阅。
+
+
+## Session 100: 设置开屏缓存滚动条与终态布局连续性修复
+<!-- trellis-session: v=2 fp=1fa8c69b335838ec -->
+
+**Date**: 2026-10-14
+**Task**: 设置开屏缓存滚动条与终态布局连续性修复
+**Branch**: `fluent`
+
+### Summary
+
+开屏准备/恢复使用稳定滚动条尺寸，并以当帧native内容尺寸就绪门禁截图与恢复；浅深六例首实时背景精确RGBA一致，全套无窗口验证通过。
+
+### Main Changes
+
+- 保留默认160ms滚动条动效和真实溢出条件；新增CompleteHomeEntryLayout按本帧正文子树native explicit/Trunc/Ideal尺寸检查，至少2提交且实际ready/六次预算，避免8px宽度及thumb高度跳变。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64 exit0/25.0683s，全套--no-window exit0/226.2471s、stderr0，六例背景diff0、60既有测量完成；i18n384/384、8源码格式和diff通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务继续in_progress；本轮不commit/push/归档，不GUI。查看scrollbar-validation.md继续人工审阅或后续修复。

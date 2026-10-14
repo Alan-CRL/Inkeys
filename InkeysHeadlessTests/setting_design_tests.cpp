@@ -3253,6 +3253,7 @@ namespace
 		{
 			checks.Expect(!Design::BeginHomeEntryFrame(state,key) && state.entryElapsed==Timing::WritingEnd,
 				"rate 5 captures only after writing completes while the cover remains opaque");
+			state.preparation.layoutReady=frame==1;
 			Design::CompleteHomeEntryFrame(state,true,true,frame==1);
 		}
 		checks.Expect(state.preparation.revealReady && Design::BeginHomeEntryFrame(state,key),
@@ -3265,10 +3266,34 @@ namespace
 		{
 			checks.Expect(!Design::BeginHomeEntryFrame(state,key) && state.EntryActive(),
 				"terminal child warm frames stay hidden behind cached page");
+			state.preparation.layoutReady=true;
 			Design::CompleteHomeEntryFrame(state,true,true);
 		}
 		checks.Expect(state.preparation.restoreReady && !Design::BeginHomeEntryFrame(state,key) && !state.EntryActive(),
 			"after two full terminal submissions normal static frame resumes");
+		// 即使字体/提交都成功，旧 native ContentSize 仍不能作为截图或恢复完成的依据。
+		state=ready; state.entryElapsed=Timing::WritingEnd-.01F;
+		for (int frame=0;frame<2;++frame)
+		{ Design::BeginHomeEntryFrame(state,key); Design::CompleteHomeEntryFrame(state,true,true,true); }
+		checks.Expect(!state.preparation.revealReady && !state.preparation.layoutReady && state.entryElapsed==Timing::WritingEnd,
+			"two successful frames with unconsumed native sizes cannot publish a page snapshot");
+		Design::BeginHomeEntryFrame(state,key); state.preparation.layoutReady=true; Design::CompleteHomeEntryFrame(state,true,true,true);
+		checks.Expect(state.preparation.revealReady && state.preparation.revealFrames==3,
+			"capture readiness follows the actual layout measurement instead of a larger fixed warm-frame constant");
+		state.entryElapsed=Timing::Total-.005F;
+		for (int frame=0;frame<2;++frame)
+		{ Design::BeginHomeEntryFrame(state,key); Design::CompleteHomeEntryFrame(state,true,true); }
+		checks.Expect(!state.preparation.restoreReady && state.EntryActive(),"unconsumed native restore sizes stay behind the cache after two successful submissions");
+		Design::BeginHomeEntryFrame(state,key); state.preparation.layoutReady=true; Design::CompleteHomeEntryFrame(state,true,true);
+		checks.Expect(state.preparation.restoreReady && state.preparation.restoreFrames==3,"restoration also waits for current native layout readiness");
+		state.preparation.restoreReady=false; state.preparation.restoreFrames=0;
+		for (int frame=0;frame<6 && state.EntryActive();++frame)
+		{ Design::BeginHomeEntryFrame(state,key); Design::CompleteHomeEntryFrame(state,true,true); }
+		checks.Expect(!state.EntryActive() && state.preparation.restoreFrames==6,"nonconverging native layout restoration terminates within its existing six-submission budget");
+		state=ready; state.entryElapsed=Timing::WritingEnd-.01F;
+		for (int frame=0;frame<6 && state.EntryActive();++frame)
+		{ Design::BeginHomeEntryFrame(state,key); Design::CompleteHomeEntryFrame(state,true,true,true); }
+		checks.Expect(!state.EntryActive() && state.preparation.revealFrames==6,"nonconverging native capture layout also terminates within the six-submission budget");
 		state=ready; Design::ConfigureHomeMotion(state,true,2,.05F,true,1);
 		checks.Expect(state.entry==Design::HomeMotionState::Entry::Pending && !state.preparation.ready && !state.preparation.managed,
 			"new actual Show discards prior preparation without retaining GPU or ImGui resource pointers");

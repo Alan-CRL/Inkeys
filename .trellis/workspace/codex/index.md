@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 99
+- **Total Sessions**: 100
 - **Last Active**: 2026-10-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1748 | Active |
+| `journal-1.md` | ~1780 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 100 | 2026-10-14 | 设置开屏缓存滚动条与终态布局连续性修复 | - | `fluent` |
 | 99 | 2026-10-14 | 设置静止帧跳过提交与WARP组件消融 | - | `fluent` |
 | 98 | 2026-10-14 | 设置开屏 GPU 页面缓存与无限制离屏性能 | - | `fluent` |
 | 58 | 2026-10-09 | 结束并归档滚动条与内容拖动子任务 | `4df1f0b6`, `c45bcd64` | `fluent` |

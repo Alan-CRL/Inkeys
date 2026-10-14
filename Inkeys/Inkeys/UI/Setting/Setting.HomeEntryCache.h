@@ -51,7 +51,7 @@ namespace Inkeys::UI::Setting::Design
 			if (!state.EntryActive() || serial!=state.showSerial || key!=current) Reset();
 			if (!texture && state.preparation.revealReady)
 			{
-				state.preparation.revealReady=false; state.preparation.revealFrames=0;
+				state.preparation.revealReady=false; state.preparation.layoutReady=false; state.preparation.revealFrames=0;
 				state.preparation.restoreReady=false; state.preparation.restoreFrames=0;
 			}
 		}
@@ -63,7 +63,7 @@ namespace Inkeys::UI::Setting::Design
 			captured=false; if (stats) *stats={};
 			const auto& prep=state.preparation;
 			const bool capture=state.EntryActive() && prep.ready && prep.revealPending && !prep.revealReady
-				&& prep.fullFrame && prep.revealFrames>=1;
+				&& prep.fullFrame && prep.layoutReady && prep.revealFrames>=1;
 			const bool replay=state.EntryActive() && prep.revealReady;
 			if (!capture && !replay)
 			{

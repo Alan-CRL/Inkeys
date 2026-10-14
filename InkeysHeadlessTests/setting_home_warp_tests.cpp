@@ -309,29 +309,44 @@ namespace
 		return true;
 	}
 
-	struct FrameInfo { int vertices = 0, indices = 0, batches = 0; ImRect pageClip; bool skipped = false; Design::HomeAction action = Design::HomeAction::None; bool rootSuppressed = false; bool subsetValid = true; bool clearOmitted = false; };
+	struct EntryLayoutProbe
+	{
+		ImVec2 viewport{static_cast<float>(Width),static_cast<float>(Height)};
+		const char* root="##home-warp-production-root";
+		bool animated=true, settle=true, blockInput=false;
+	};
+
+	std::array<float,8> LayoutDiagnostics(ImGuiWindow* window)
+	{
+		if (!window) return {};
+		return {window->ContentSize.y, static_cast<float>(ImTrunc64(window->DC.CursorMaxPos.y-window->DC.CursorStartPos.y)),
+			window->ContentSizeIdeal.y, window->ScrollMax.y, window->Scroll.y, window->InnerRect.GetHeight(),
+			window->StateStorage.GetFloat(window->GetID("##scrollbar-thumb-top")),window->StateStorage.GetFloat(window->GetID("##scrollbar-thumb-bottom"))};
+	}
+
+	struct FrameInfo { int vertices = 0, indices = 0, batches = 0; ImRect pageClip; bool skipped = false; Design::HomeAction action = Design::HomeAction::None; bool rootSuppressed = false; bool subsetValid = true; bool clearOmitted = false; ImGuiWindow* content = nullptr; float contentWidth = 0; bool inputBlocked = false; ImRect contentWorkRect, pageWorkRect; std::array<float,8> contentLayout{}, pageLayout{}; };
 	FrameInfo Frame(Design::HomeMotionState* motion, ImVec2 mouse, float delta = 1.0F / 60.0F,
 		bool enabled = true, std::uint64_t serial = 1, bool optimized = false, float rate = 1, bool solidBackdrop = false, bool suppressRoot = false,
-		OverlaySubset subset = OverlaySubset::All, bool candidateClear = false)
+		OverlaySubset subset = OverlaySubset::All, bool candidateClear = false, const EntryLayoutProbe* layout = nullptr)
 	{
-		auto& io = ImGui::GetIO(); io.DisplaySize = { static_cast<float>(Width), static_cast<float>(Height) };
+		auto& io = ImGui::GetIO(); io.DisplaySize = layout ? layout->viewport : ImVec2(static_cast<float>(Width), static_cast<float>(Height));
 		io.DisplayFramebufferScale = { 1, 1 }; io.DeltaTime = 1.0F / 60.0F;
 		io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); io.AddMousePosEvent(mouse.x, mouse.y);
 		io.AddMouseButtonEvent(0, false);
-		ImGui_ImplDX11_NewFrame(); ImGui::NewFrame(); Design::ConfigureRowAnimations(0, false, 1);
+		ImGui_ImplDX11_NewFrame(); ImGui::NewFrame(); Design::ConfigureRowAnimations(layout ? io.DeltaTime : 0, layout && layout->animated, rate);
 		if (motion) Design::ConfigureHomeMotion(*motion, true, serial, delta, enabled, rate);
-		const bool entryBlocked=motion && Design::CancelHomeEntryOnInput(*motion);
+		const bool entryBlocked=(motion && Design::CancelHomeEntryOnInput(*motion)) || (layout && layout->blockInput);
 		ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
 		const bool rootSuppressed=suppressRoot && motion && Design::CanOmitHomeEntryRootBackground(*motion,
 			solidBackdrop,ImGui::GetStyle().Alpha,ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
 		if (rootSuppressed) ImGui::SetNextWindowBgAlpha(0);
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
-		ImGui::Begin("##home-warp-production-root", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+		ImGui::Begin(layout ? layout->root : "##home-warp-production-root", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
 			| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 		ImGui::PopStyleVar();
 		Design::NavigationState navigation; navigation.animationsEnabled=false;
 		Design::AdvanceNavigationAnimations(navigation,0,false,1);
-		const auto shell=Design::ResolveShellGeometry(static_cast<float>(Width)/Design::Pixels(1),static_cast<float>(Height)/Design::Pixels(1),navigation);
+		const auto shell=Design::ResolveShellGeometry(io.DisplaySize.x/Design::Pixels(1),io.DisplaySize.y/Design::Pixels(1),navigation);
 		ImGui::GetWindowDrawList()->AddRectFilled({0,0},{static_cast<float>(Width),Design::Pixels(32)},Design::AppBase);
 		auto* rootDraw=ImGui::GetWindowDrawList();
 		bool skipped=false;
@@ -346,26 +361,33 @@ namespace
 		const bool clearOmitted=candidateClear && motion && PrepareExperimentalHomeEntryTargetClear(*motion,solidBackdrop,
 			ImGui::GetStyle().Alpha,ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
 		if (activeRenderer) activeRenderer->frameClearOmitted=clearOmitted;
-		ImRect pageClip; Design::HomeAction homeAction=Design::HomeAction::None;
+		ImRect pageClip, contentWorkRect, pageWorkRect; ImGuiWindow* content=nullptr; ImGuiWindow* page=nullptr; float contentWidth=0; Design::HomeAction homeAction=Design::HomeAction::None;
 		if (!skipped)
 		{
 
 		ImGui::SetCursorPos({Design::Pixels(shell.content.left),Design::Pixels(shell.content.top)});
 		ImGui::PushStyleColor(ImGuiCol_ChildBg,Design::PageSurface);
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{Design::Pixels(shell.gutter),Design::Pixels(28)});
-		Design::BeginScrollChild("##setting-content", {Design::Pixels(shell.content.Width()),Design::Pixels(shell.content.Height())}, ImGuiChildFlags_AlwaysUseWindowPadding);
+		Design::BeginScrollChild("##setting-content", {Design::Pixels(shell.content.Width()),Design::Pixels(shell.content.Height())}, ImGuiChildFlags_AlwaysUseWindowPadding,entryBlocked ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,false,
+			motion && (!layout || layout->settle) && (motion->EntryActive() || motion->entry==Design::HomeMotionState::Entry::Pending));
+		content=ImGui::GetCurrentWindow();
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor();
 		const auto outerClip=ImGui::GetCurrentWindow()->ClipRect;
-		if (motion) Design::ConfigureHomeEntryViewport(*motion,{0,Design::Pixels(32),static_cast<float>(Width),static_cast<float>(Height)},
+		if (motion) Design::ConfigureHomeEntryViewport(*motion,{0,Design::Pixels(32),io.DisplaySize.x,io.DisplaySize.y},
 			{outerClip.Min.x,outerClip.Min.y,outerClip.Max.x,outerClip.Max.y});
-		const float available = ImGui::GetContentRegionAvail().x;
-		Design::BeginScrollChild("##setting-page-content", { available, 0 }, ImGuiChildFlags_AutoResizeY);
-		pageClip = ImGui::GetCurrentWindow()->ClipRect;
+		const float available = ImGui::GetContentRegionAvail().x; contentWidth=available;
+		const float pageWidth=(std::min)(available,Design::Pixels(Design::PageMaximumWidth));
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX()+(available-pageWidth)*.5F);
+		Design::BeginScrollChild("##setting-page-content", { pageWidth, 0 }, ImGuiChildFlags_AutoResizeY);
+		page=ImGui::GetCurrentWindow(); pageClip = page->ClipRect;
 		ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1); ImGui::BeginDisabled(entryBlocked);
 		homeAction=Design::RenderHome({ 0, 1, "3.0.0-dev.3981", 0, 0, 1 }, motion);
+		contentWorkRect=content->WorkRect; pageWorkRect=ImGui::GetCurrentWindow()->WorkRect;
 		ImGui::EndDisabled(); ImGui::PopStyleVar();
-		ImGui::EndChild(); ImGui::EndChild();
+		ImGui::EndChild();
+		if (motion) Design::CompleteHomeEntryLayout(*motion);
+		ImGui::EndChild();
 		ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1); ImGui::BeginDisabled(entryBlocked);
 		Design::RenderNavigationPane(shell,navigation,Design::NavigationDestination{});
 		ImGui::EndDisabled(); ImGui::PopStyleVar();
@@ -385,7 +407,7 @@ namespace
 			}
 		}
 		const bool subsetValid=!motion || SelectOverlaySubset(ImGui::GetDrawData(),*motion,subset);
-		const auto* data = ImGui::GetDrawData(); FrameInfo info{ data->TotalVtxCount, data->TotalIdxCount, 0, pageClip, skipped, homeAction, rootSuppressed, subsetValid, clearOmitted };
+		const auto* data = ImGui::GetDrawData(); FrameInfo info{ data->TotalVtxCount, data->TotalIdxCount, 0, pageClip, skipped, homeAction, rootSuppressed, subsetValid, clearOmitted, content, contentWidth, entryBlocked, contentWorkRect, pageWorkRect, LayoutDiagnostics(content), LayoutDiagnostics(page) };
 		for (const auto* list : data->CmdLists) for (const auto& command : list->CmdBuffer)
 			if (command.ElemCount && !command.UserCallback) ++info.batches;
 		return info;
@@ -538,6 +560,114 @@ namespace
 			<<" entries="<<state.entries<<" elapsed="<<state.entryElapsed<<'\n';
 	}
 
+	void CheckEntryScrollbarContinuity(Checks& checks, Offscreen& renderer)
+	{
+		const float oldScale=ImGui::GetStyle().FontScaleDpi;
+		const auto oldCounters=renderer.counters;
+		// 与生产相同的动画时钟及冷 child 层级；普通条宽补间作为能复现跳变的控制路径。
+		for (bool dark : {false,true}) for (int variant=0;variant<3;++variant)
+		{
+			Design::ApplyPalette(dark);
+			ImGui::GetStyle().FontScaleDpi=std::array{1.0F,1.25F,.6F}[variant];
+			EntryLayoutProbe layout; layout.viewport.x=variant==1 ? 760.0F : static_cast<float>(Width);
+			const std::string name="##entry-scrollbar-cold-"+std::to_string(dark)+"-"+std::to_string(variant);
+			layout.root=name.c_str(); Design::HomeMotionState state; FrameInfo captured;
+			const std::uint64_t serial=201+dark*10+variant;
+			auto frame=[&](float delta=0, OverlaySubset subset=OverlaySubset::None) {
+				return Frame(&state,Away,delta,true,serial,true,1,false,false,subset,false,&layout);
+			};
+			for (int warm=0;warm<8 && !state.preparation.ready;++warm)
+			{ frame(); if (!SubmitPrepared(checks,renderer,state)) return; }
+			checks.Expect(state.preparation.ready && state.preparation.warmFrames==2,"animated cold entry uses the existing two successful warm submissions");
+			state.entryElapsed=.76F;
+			for (int absent=0;absent<12;++absent)
+			{ const auto info=frame(); checks.Expect(info.skipped,"actual entry omits cold page children before capture"); if (!SubmitPrepared(checks,renderer,state)) return; }
+			state.entryElapsed=Design::HomeEntryTiming::WritingEnd-.001F;
+			for (int warm=0;warm<6 && !state.preparation.revealReady && state.EntryActive();++warm)
+			{ captured=frame(.05F); checks.Expect(!captured.skipped,"capture preparation really submits the complete page"); if (!SubmitPrepared(checks,renderer,state)) return; }
+			checks.Expect(state.preparation.revealReady && renderer.pageCache.Ready(),"animated cold page capture completes within the existing bounded preparation budget");
+			if (!captured.content || !state.preparation.revealReady) continue;
+			checks.Expect(state.preparation.layoutReady && state.preparation.revealFrames>=2,"capture waits for native consumed sizes to match current measured content");
+			const unsigned captureFrames=state.preparation.revealFrames;
+			const bool scrollbar=captured.content->ScrollbarY;
+			const float reserve=captured.content->ScrollbarSizes.x, contentWidth=captured.contentWidth;
+			const auto brand=state.brandOrigin, hero=state.heroOrigin, heroSize=state.heroSize;
+			const float brandWidth=state.brandWidth; const auto buttons=state.buttonBounds; const auto clip=state.contentClip;
+			checks.Expect(scrollbar== (variant!=2),"normal and narrow pages overflow naturally while the roomy scaled page has no forced rail");
+			checks.Expect(reserve==(scrollbar ? Design::Pixels(Design::ScrollbarTrackSize) : 0),"captured native rail has terminal width or exactly zero reservation without overflow");
+			Pixels cached,first;
+			state.entryElapsed=2.65F; auto info=frame();
+			if (!SubmitPrepared(checks,renderer,state,&cached)) return;
+			checks.Expect(info.skipped && !info.content,"docking cached page performs no child layout");
+			// 恢复仍在缓存下等本帧实际布局就绪；第一帧实时输出不能依赖额外事后暖帧才正确。
+			state.entryElapsed=Design::HomeEntryTiming::Total-.001F;
+			for (int warm=0;warm<6 && !state.preparation.restoreReady && state.EntryActive();++warm)
+			{ info=frame(.01F); if (!SubmitPrepared(checks,renderer,state)) return; }
+			checks.Expect(state.preparation.restoreReady && state.preparation.layoutReady && state.preparation.restoreFrames>=2 && state.preparation.restoreFrames<=6,
+				"bounded restoration waits for actual native layout readiness after at least two successful submissions");
+			const unsigned restoreFrames=state.preparation.restoreFrames;
+			info=frame(.01F);
+			if (!SubmitPrepared(checks,renderer,state,&first)) return;
+			checks.Expect(!state.EntryActive() && !info.skipped && info.content,"comparison uses the first real page immediately after entry finishes");
+			const float firstLiveWidth=info.contentWidth;
+			auto logLayout=[&](const char* stage,const FrameInfo& value) {
+				std::cout<<"[HomeScrollbarLayout] dark="<<dark<<" variant="<<variant<<" stage="<<stage;
+				for (const auto& rect : {value.contentWorkRect,value.pageWorkRect})
+					std::cout<<" work="<<rect.Min.x<<','<<rect.Min.y<<','<<rect.Max.x<<','<<rect.Max.y;
+				for (const auto& values : {value.contentLayout,value.pageLayout}) { std::cout<<" layout="; for (float v : values) std::cout<<v<<','; }
+				std::cout<<'\n';
+			};
+			logLayout("capture",captured); logLayout("first-live",info);
+			auto sameRect=[](const ImRect& left,const ImRect& right) { return left.Min.x==right.Min.x && left.Min.y==right.Min.y
+				&& left.Max.x==right.Max.x && left.Max.y==right.Max.y; };
+			checks.Expect(sameRect(captured.contentWorkRect,info.contentWorkRect) && sameRect(captured.pageWorkRect,info.pageWorkRect),
+				"capture and first live frame preserve actual outer and nested WorkRect coordinates exactly");
+			checks.Expect(info.content && info.content->ScrollbarY==scrollbar && info.content->ScrollbarSizes.x==reserve
+				&& info.contentWidth==contentWidth && state.brandOrigin.x==brand.x && state.brandOrigin.y==brand.y && state.brandWidth==brandWidth
+				&& state.heroOrigin.x==hero.x && state.heroOrigin.y==hero.y && state.heroSize.x==heroSize.x && state.heroSize.y==heroSize.y
+				&& state.contentClip.x==clip.x && state.contentClip.y==clip.y && state.contentClip.z==clip.z && state.contentClip.w==clip.w
+				&& std::memcmp(buttons.data(),state.buttonBounds.data(),sizeof(buttons))==0,"capture and first live frame preserve rail, available width, clip, hero, brand destination and button geometry exactly");
+			// 截图本来无字标，终态内联字标会出现；只剔除已验证坐标不变的字标 AA 包围矩形。
+			// 蒙版/运动字标已用真实 foreground 选择器移除，其他整个 target（含右侧滚动条）逐像素 RGBA 比较。
+			ImRect ink(brand,{brand.x+brandWidth,brand.y+Brand::Height(brandWidth)}); ink.Expand(Design::Pixels(14));
+			std::uint64_t compared=0,different=0; ImRect differences({FLT_MAX,FLT_MAX},{-FLT_MAX,-FLT_MAX});
+			for (UINT y=0;y<Height;++y) for (UINT x=0;x<Width;++x)
+				if (!ink.Contains({x+.5F,y+.5F})) { ++compared; if (cached[static_cast<size_t>(y)*Width+x]!=first[static_cast<size_t>(y)*Width+x])
+				{ ++different; differences.Add({static_cast<float>(x),static_cast<float>(y)}); } }
+			std::cout<<"[HomeScrollbarPixelDifference] dark="<<dark<<" variant="<<variant<<" pixels="<<different<<" bounds="
+				<<differences.Min.x<<','<<differences.Min.y<<','<<differences.Max.x<<','<<differences.Max.y<<'\n';
+			checks.Expect(different==0 && compared>static_cast<std::uint64_t>(Width)*Height/2,"cached no-overlay background equals first live page RGBA exactly outside the sole inline brand region");
+			// 终态下一帧可正常消费原生滚动目标，不延长输入屏障。
+			if (scrollbar) { ImGui::SetScrollY(info.content,Design::Pixels(20)); info=frame();
+				checks.Expect(info.content && info.content->Scroll.y>0 && !(info.content->Flags & ImGuiWindowFlags_NoInputs),"native scrolling resumes on the next live frame"); if (!SubmitPrepared(checks,renderer,state)) return; }
+			// 新 Show 的首个实际输入取消；复用生产 NoInputs 防止该帧点击/按键穿透。
+			state.showSerial=0; frame(); if (!SubmitPrepared(checks,renderer,state)) return;
+			ImGui::GetIO().AddKeyEvent(ImGuiKey_Tab,true); info=frame();
+			checks.Expect(!state.EntryActive() && info.inputBlocked && info.content && (info.content->Flags & ImGuiWindowFlags_NoInputs)==ImGuiWindowFlags_NoInputs
+				&& info.action==Design::HomeAction::None,"real cancellation frame blocks inputs via the production NoInputs child flags");
+			if (!SubmitPrepared(checks,renderer,state)) return;
+			ImGui::GetIO().AddKeyEvent(ImGuiKey_Tab,false); info=frame();
+			checks.Expect(!info.inputBlocked && info.content && !(info.content->Flags & ImGuiWindowFlags_NoInputs),"input barrier clears after the cancellation event");
+			if (!SubmitPrepared(checks,renderer,state)) return;
+			std::cout<<"[HomeScrollbarCache] dark="<<dark<<" scale="<<ImGui::GetStyle().FontScaleDpi<<" width="<<layout.viewport.x
+				<<" bar="<<scrollbar<<" reserve="<<reserve<<" capture-width="<<contentWidth<<" first-live-width="<<firstLiveWidth
+				<<" exact-background-pixels="<<compared<<" differing="<<different<<" capture-frames="<<captureFrames<<" restore-frames="<<restoreFrames<<" native-layout-ready=1\n";
+		}
+		// 未启用入场稳定策略的旧条宽动画，两个冷布局帧之后尚未到最终宽度；不是靠关闭所有动效修复。
+		ImGui::GetStyle().FontScaleDpi=1; Design::ApplyPalette(false);
+		EntryLayoutProbe control; control.root="##entry-scrollbar-original-control"; control.settle=false;
+		Design::HomeMotionState state; FrameInfo info;
+		auto draw=[&]() { return Frame(&state,Away,0,true,299,false,1,false,false,OverlaySubset::None,false,&control); };
+		for (int warm=0;warm<2;++warm) { info=draw(); if (!renderer.Submit(checks,ImGui::GetDrawData())) return; }
+		const float coldWidth=info.contentWidth, coldReserve=info.content ? info.content->ScrollbarSizes.x : 0;
+		for (int warm=0;warm<30;++warm) { info=draw(); if (!renderer.Submit(checks,ImGui::GetDrawData())) return; }
+		checks.Expect(info.content && info.content->ScrollbarY && info.content->ScrollbarSizes.x==Design::Pixels(Design::ScrollbarTrackSize)
+			&& coldWidth>info.contentWidth && coldReserve<info.content->ScrollbarSizes.x,"ordinary animated scrollbar control reproduces the pre-fix cold-to-settled page width jump");
+		std::cout<<"[HomeScrollbarCache] original-control cold-width="<<coldWidth<<" terminal-width="<<info.contentWidth
+			<<" width-gap="<<coldWidth-info.contentWidth<<" cold-reserve="<<coldReserve<<" terminal-reserve="<<info.content->ScrollbarSizes.x<<'\n';
+		ImGui::GetStyle().FontScaleDpi=oldScale; renderer.pageCache.Reset(); renderer.submittedFrame.Reset(); renderer.counters=oldCounters;
+		Design::ConfigureRowAnimations(0,false,1); ImGui::GetIO().AddMousePosEvent(Away.x,Away.y);
+	}
 	bool StableBaseline(Checks& checks, Offscreen& renderer, Design::HomeMotionState& state, Pixels& baseline)
 	{
 		// 现有 Fluent 控件以 0.083 s 指数补间主题色，关闭主页动效不关闭该颜色通道。
@@ -1141,10 +1271,15 @@ namespace
 
 			}
 			const auto begin = Clock::now();
+			const auto countersBefore=renderer.counters;
 			info = Frame(mode == 0 ? nullptr : &state, mouse, mode==11 ? .01F : mode>=4 ? 0 : 1.0F / 60.0F, true,1,optimized,1,solidClear,suppressRoot);
 			const auto drawn = Clock::now();
 			if (!renderer.Submit(checks, ImGui::GetDrawData(),nullptr,S_OK,solidClear,optimized ? &state : nullptr)) return;
 			const auto completed = Clock::now();
+			if (optimized && mode==9) checks.Expect(state.preparation.layoutReady && renderer.counters.captures==countersBefore.captures+1,
+				"capture diagnostic records one actual snapshot only after the production native-size readiness check");
+			if (optimized && mode==11) checks.Expect(state.preparation.layoutReady && state.preparation.restoreFrames==1 && !state.preparation.restoreReady
+				&& renderer.counters.copies==countersBefore.copies+1,"restore diagnostic measures a genuine hidden layout submission with current sizes and original successful-frame accounting");
 			if (frame >= 0) { cpu.push_back(Micros(begin, drawn)); submit.push_back(Micros(drawn, completed));
 				backend.push_back(renderer.backendUs); wait.push_back(renderer.waitUs); total.push_back(Micros(begin,completed)); }
 			checks.Expect(info.vertices<=baseline.vertices+165 && info.indices<=baseline.indices+7*108+6
@@ -1448,6 +1583,7 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 	Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 	CheckColdEntry(checks, renderer);
 	CheckBackendFailures(checks, renderer);
+	CheckEntryScrollbarContinuity(checks,renderer);
 	for (bool dark : { false, true })
 	{
 		Design::ApplyPalette(dark); Design::HomeMotionState state;

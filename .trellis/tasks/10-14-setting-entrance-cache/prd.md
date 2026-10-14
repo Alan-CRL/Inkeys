@@ -1,3 +1,5 @@
+> 第三轮直接续作：当前要求与验收以 [scrollbar-revision.md](scrollbar-revision.md) 为准，修复缓存到终态的滚动条与页面布局跳变；前两轮结果保留。
+
 > 2026-10-14 第二轮已直接批准继续优化和测试。最新要求、实现边界与验收以 [submission-revision.md](submission-revision.md) 为准；首轮验证保留在 validation.md。UI共用WARP、Draw独立hardware；保留CPU帧以维护延迟动画/光标/轮询，精确相同输出跳过实际提交。
 
 # 设置开屏缓存与离屏性能分析

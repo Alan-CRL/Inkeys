@@ -250,9 +250,11 @@ namespace Inkeys::UI::Setting::Design
 		{
 			ImGuiWindow* window;
 			float phase, previousSize, previousPadding;
+			bool settled;
 			ImVec4 previousColors[3];
 		public:
-			explicit ScrollbarStyleScope(ImGuiWindow* existing, bool input = true) : window(existing), phase(0.0F)
+			explicit ScrollbarStyleScope(ImGuiWindow* existing, bool input = true, bool settleLayout = false)
+				: window(existing), phase(0.0F), settled(settleLayout)
 			{
 				previousSize = ImGui::GetStyle().ScrollbarSize;
 				previousPadding = ImGui::GetStyle().ScrollbarPadding;
@@ -275,8 +277,9 @@ namespace Inkeys::UI::Setting::Design
 					tween.progress = storage.GetFloat(window->GetID("##scrollbar-progress"));
 					const int last = storage.GetInt(window->GetID("##scrollbar-frame"), -2);
 					// 关闭/未提交后重开从不可见状态开始，不复用旧条的退出装饰。
-					if (last != GImGui->FrameCount && last != GImGui->FrameCount - 1) tween.Reset(0.0F);
-					if (last != GImGui->FrameCount)
+					if (settled) tween.Reset(1.0F);
+					else if (last != GImGui->FrameCount && last != GImGui->FrameCount - 1) tween.Reset(0.0F);
+					if (!settled && last != GImGui->FrameCount)
 						tween.Advance(last == GImGui->FrameCount - 1 ? rowAnimationDelta : 0.0F, 0.160F / rowAnimationRate, rowAnimationsEnabled);
 					phase = tween.value;
 					storage.SetFloat(window->GetID("##scrollbar-value"), tween.value);
@@ -285,7 +288,8 @@ namespace Inkeys::UI::Setting::Design
 					storage.SetFloat(window->GetID("##scrollbar-progress"), tween.progress);
 				}
 				// 关闭动画时首帧也使用完整 native 轨道；开启时由零宽开始。
-				if (!rowAnimationsEnabled) phase = 1.0F;
+				// 入场截图及恢复帧直接使用真实终态轨道，不能把缺席后的零宽补间截进缓存。
+				if (settled || !rowAnimationsEnabled) phase = 1.0F;
 				ImGui::GetStyle().ScrollbarSize = Pixels(ScrollbarTrackSize) * phase;
 				ImGui::GetStyle().ScrollbarPadding = Pixels(ScrollbarPadding) * phase;
 				for (auto color : { ImGuiCol_ScrollbarGrab, ImGuiCol_ScrollbarGrabHovered, ImGuiCol_ScrollbarGrabActive })
@@ -308,7 +312,14 @@ namespace Inkeys::UI::Setting::Design
 				}
 				storage.SetFloat(window->GetID("##scrollbar-target"), target);
 				storage.SetInt(window->GetID("##scrollbar-frame"), GImGui->FrameCount);
-				if (!rowAnimationsEnabled) phase = target;
+				if (settled)
+				{
+					// 无溢出仍由 native 决定不显示；清掉退出装饰，嵌套 child 继承本帧稳定策略。
+					storage.SetFloat(window->GetID("##scrollbar-start"), target);
+					storage.SetFloat(window->GetID("##scrollbar-progress"), 1.0F);
+				}
+				storage.SetInt(window->GetID("##scrollbar-settled-frame"), settled ? GImGui->FrameCount : -2);
+				if (settled || !rowAnimationsEnabled) phase = target;
 				storage.SetFloat(window->GetID("##scrollbar-value"), phase);
 				if (window->ScrollbarY && phase > 0.0F)
 				{
@@ -433,7 +444,7 @@ namespace Inkeys::UI::Setting::Design
 		if (owner) CaptureDrag(owner);
 	}
 
-	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags, bool resetToTop)
+	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags, bool resetToTop, bool settleScrollbarLayout)
 	{
 		auto* existing=ChildWindow(id);
 		if (resetToTop && existing)
@@ -446,7 +457,9 @@ namespace Inkeys::UI::Setting::Design
 			existing->StateStorage.SetInt(existing->GetID("##drag-scroll-rebase"),1);
 		}
 		if (resetToTop) ImGui::SetNextWindowScroll({0,0});
-		ScrollbarStyleScope scrollbar(existing, !(flags & ImGuiWindowFlags_NoMouseInputs));
+		auto* parent = ImGui::GetCurrentWindow();
+		settleScrollbarLayout |= parent->StateStorage.GetInt(parent->GetID("##scrollbar-settled-frame"), -2) == GImGui->FrameCount;
+		ScrollbarStyleScope scrollbar(existing, !(flags & ImGuiWindowFlags_NoMouseInputs), settleScrollbarLayout);
 		const bool visible = ImGui::BeginChild(id, size, childFlags, flags);
 		scrollbar.Finish(ImGui::GetCurrentWindow());
 		return visible;

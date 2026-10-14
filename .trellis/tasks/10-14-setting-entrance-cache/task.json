@@ -21,17 +21,19 @@
   "children": [],
   "parent": "10-10-setting-home-design",
   "relatedFiles": [],
-  "notes": "两轮实现与离屏验收完成，保留任务供审阅/继续；CPU Continue精确跳过重复DX11/Present、整数不透明省copy；省Clear无稳定收益撤回产品仅留实验。没有commit/push，原工作树/stash无遗漏开屏内容。",
+  "notes": "前两轮已提交8a4bdd89；第三轮滚动条布局与native尺寸就绪修复验收通过，任务保持in_progress。本轮未commit/push/归档。",
   "meta": {
-    "validationRecord": "submission-validation.md",
+    "validationRecord": "scrollbar-validation.md",
     "qualityGate": "passed",
     "buildExitCode": 0,
     "noWindowExitCode": 0,
-    "previousValidationRecord": "validation.md",
-    "buildSeconds": 22.3753978,
-    "noWindowSeconds": 278.4643381,
+    "previousValidationRecord": "submission-validation.md",
+    "buildSeconds": 25.0682736,
+    "noWindowSeconds": 226.2470515,
     "benchmarkGroups": 60,
     "submissionBenchmarkGroups": 21,
-    "testSha256": "5EA497E71DF5E8AD5321F521F308EF20CAAFD5BD258E70154241FC51CAD48EBD"
+    "testSha256": "7B8EAC4A534A2D9A500C83C365EC9E3952DDA4B4FCA4B8AAF6EECBC9BADEC3F3",
+    "activeRevision": "scrollbar-revision.md",
+    "scrollbarContinuityCases": 6
   }
 }

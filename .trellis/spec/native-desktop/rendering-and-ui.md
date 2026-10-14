@@ -2104,6 +2104,8 @@ Design::ApplyPalette(setlist.settingDarkMode);
 
 ```cpp
 HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion = nullptr);
+bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags = 0,
+    ImGuiWindowFlags flags = 0, bool resetToTop = false, bool settleScrollbarLayout = false);
 void ConfigureHomeMotion(HomeMotionState& state, bool home, uint64_t showSerial,
     float delta, bool enabled, float rate, bool pointerAllowed = true);
 // SessionState::ShowSerial()/HideSerial() 分别只在 false -> true / true -> false 时递增。
@@ -2112,6 +2114,8 @@ HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state);
 void RenderHomeEntryOverlay(const HomeMotionState& state);
 // 完整页有限预热与不透明快路径使用当前帧的值键及提交结果。
 bool BeginHomeEntryFrame(HomeMotionState& state, const HomeEntryFrameKey& key, bool allowFreeze = true);
+// 在完整正文子树已提交、outer EndChild之前检查当帧真实 native 尺寸。
+void CompleteHomeEntryLayout(HomeMotionState& state);
 void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady, bool captured = false);
 bool HomeEntryTexturesReady(const ImDrawData* data);
 bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
@@ -2139,7 +2143,9 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 - 字标下 32 DIP 的标语统一 14 DIP 正文、字重与颜色。用同一真实字体测量两个语义段及本地化 HeroJoin，能容纳全文时一行，不能时优先语义两行并允许段内自然换行；中文连接符为空，英文为空格，不缩字号。分割线与开源标题/说明/按钮全居中，标题 16/22 DIP，说明 12 DIP；按钮等宽 36 DIP 高、最小 156 DIP，放不下时上下排列。版权字号保持，横幅后 16 DIP、段间 4/2 DIP。
 - 版权和代码托管说明是三语言真实文本；完整许可证名以及 GitHub/GitCode 分别具备独立链接语义。换行片段需要稳定 ID 和完整可点击覆盖；只有相应名称是链接，前后说明保持普通文字，不烘焙到图片。
 - HomeMotionState 由常驻设置会话持有，仅 ShowSerial 的真实隐藏→显示触发入场；内部导航返回主页不重播。时序统一由HomeEntryTiming定义：速率1时先稳定240ms、六笔并行写出1060ms、完整字标原地停留600ms，再同时启动背景渐退与540ms三次Bezier空间曲线归位、220ms小幅落定，共2.66s逻辑动画时间；有限准备帧另计且不消耗书写时间。书写/停留期间客户内容区覆盖层alpha=1，标题栏排除在外；前景只绘制一份字标，横幅字标保留布局但不提交。全局动画禁用/离页/实际输入直接稳定终态，取消帧仍阻断输入，不能点穿不可见操作。重复Show/激活/主页点击、resize、主题/字体/设备重建、滚动与鼠标靠近均不重播；缺省空上下文静态绘制。旧反光/水波不再播放。delta沿用设置时钟重基准、总开关与速率，不新增计时器。
-- 动态atlas的Build不代表真实字号/语言字形已预热。生产会话先在不透明覆盖下生成完整页与导航，两个不同全帧backend+Present成功且字体事务就绪后才推进书写；准备尝试有六帧预算，失败回滚该帧时间并沿原HRESULT Retry/DeviceLost路径收束，不能形成永久加载遮罩。完全不透明且值键稳定时暂停底层页/导航生成；当前帧DrawData只保留root标题栏clip、titlebar与foreground，Textures队列仍交生产DX11后端。书写完成（WritingEnd）后仍保持完全不透明，恢复两个成功完整布局帧；第二帧先提交不含foreground的真实主页/导航，再CopyResource到同设备单份临时纹理，最后绘制唯一遮罩/字标。捕获成功与字体事务就绪后才发布revealReady。Hold后段、渐退和归位暂停正文/导航CPU生成，Clear后CopySubresourceRegion原样回写客户内容，再提交标题栏/foreground；不能用AddImage再次混合预乘RGBA。终态前在缓存遮挡下恢复两个真实child布局帧，再恢复正常整页并释放缓存。不得跨帧保存裸DrawList、ImFontBaked或旧字体UV。
+- 动态atlas的Build不代表真实字号/语言字形已预热。生产会话先在不透明覆盖下生成完整页与导航，两个不同全帧backend+Present成功且字体事务就绪后才推进书写；准备尝试有六帧预算，失败回滚该帧时间并沿原HRESULT Retry/DeviceLost路径收束，不能形成永久加载遮罩。完全不透明且值键稳定时暂停底层页/导航生成；当前帧DrawData只保留root标题栏clip、titlebar与foreground，Textures队列仍交生产DX11后端。书写完成（WritingEnd）后仍保持完全不透明，至少两个成功完整布局帧且当帧layoutReady后，先提交不含foreground的真实主页/导航，再CopyResource到同设备单份临时纹理，最后绘制唯一遮罩/字标。捕获成功与字体事务就绪后才发布revealReady。Hold后段、渐退和归位暂停正文/导航CPU生成，Clear后CopySubresourceRegion原样回写客户内容，再提交标题栏/foreground；不能用AddImage再次混合预乘RGBA。终态前在缓存遮挡下恢复至少两个真实child布局帧且layoutReady，再恢复正常整页并释放缓存。不得跨帧保存裸DrawList、ImFontBaked或旧字体UV。
+- 主页Pending/Playing完整准备、截图及终态恢复帧向外层BeginScrollChild传settleScrollbarLayout=true，native在Begin前使用完整8 DIP轨道/2 DIPpadding/三态alpha，Finish依据实际ScrollbarY写回value/target/start/progress的0或1。只沿当帧父子窗口标记继承给嵌套正文，不影响其他窗口和后续普通帧；无溢出不保留退出装饰或空白。缺席后的160ms条宽补间会改变WorkRect和hero目标，不能把过渡宽度截进缓存。默认false保持正常滚动条显隐动效，不用AlwaysVerticalScrollbar或额外等待帧掩盖。NoInputs仍只按导航阻断/取消首帧决定，不能为了视觉一致解除输入屏障。
+- CompleteHomeEntryLayout仅递归当前真正提交的正文子树，在outer EndChild前按vendored CalcWindowContentSizes的collapsed/hidden保留、ContentSizeExplicit及ImTrunc64规则检查当前ContentSize与ContentSizeIdeal是否消费本帧CursorMax/IdealMax测量；不能把字体准备或固定两帧等同于nested AutoResize尺寸稳定。Begin每帧清layoutReady，失败/key/cache失效撤销；实际GPU捕获和revealReady发布均检查该帧ready。恢复同样至少两次成功提交且ready；capture/restore各自六次不收敛则收束动画，不能永久遮挡或靠猜测增加固定暖帧常量。准备期间不消费书写/归位时间。
 - 活动主页入场且Solid backdrop、style.Alpha和WindowBg.w精确为1、RGB有限且在0..1时，可以SetNextWindowBgAlpha(0)省去已由同色不透明Clear建立的根背景填充。根Begin前读取同份backdrop/WindowBg快照供门禁和最终Clear；保留原flags、外框、caption、child与输入。不能使用会同时删除外框的NoBackground；Mica/Acrylic、部分alpha或静态终态保持旧路径。必须在真实同色Solid clear下对浅深八阶段full/suppressed精确RGBA及title/border比对，并单独报告透明/部分alpha回退与配对性能，不能将Solid收益推广至Mica。
 - HomeEntryFrameKey涵盖客户/内容矩形、FramebufferScale、DIP倍率、字体/atlas身份与序号、语言、主题、设备epoch、atlas UniqueID及尺寸、backdrop透明模式和style.Alpha/WindowBg RGBA五个材质值；任一变化撤销缓存并强制完整页准备并重验实际可见包络，同次Show不重播。弹层/真实输入取消时使用完整页并保留取消帧屏障，普通Tab/点击/滚动不因快路径失效。隐藏/最小化/遮挡继续复用既有调度和时钟重基准，临时页面纹理仅由设置共享渲染线程持有；Hide、尺寸/字体/epoch切换、输入取消、终态和失败均撤销，清理须能从RenderSettingFrame同步执行，不能依赖隐藏协程恢复。无新线程、timer或额外帧请求。
 - CPU侧仍逐帧NewFrame、布局、输入、tooltip/menu延迟、caret、下载文字轮询与动画时钟；最终DrawData精确等于上次成功呈现时，可在Clear之前跳过cache copy/backend/Present，但必须返回Continue。不能从连续两帧相同推导整个设置客户端Idle；共享FrameInterval和Present策略保持。准备/捕获/恢复由RequiresHomeEntrySubmission强制实际提交，skip不调用CompleteHomeEntryFrame或虚增暖帧成功。
@@ -2170,6 +2176,8 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 | 无后续输入的tooltip/caret / 后台文字变化 | 每帧CPU继续，首次变化即实际提交 |
 | callback / 纹理事务 / 准备捕获恢复 / 上次backend失败 | 强制实际提交；失败后相同下一帧仍能真实重试 |
 | 整数像素不透明覆盖 / 分数边界或部分alpha | 前者可省cache copy，后者保持copy；实际提交均保留Clear |
+| 冷child/缺席后截图与恢复 / 无内容溢出 | 入场完整帧用稳定轨道且等待本帧native尺寸就绪，缓存和终态首帧WorkRect/hero/正文一致；无溢出保持无条/无额外留白 |
+| 已提交两帧但native ContentSize仍旧 / 六次不收敛 | 不捕获/不发布ready、不消费相应动画时间；预算到达收束，不永久等待 |
 
 #### 5. Good / Base / Bad Cases
 
@@ -2184,6 +2192,8 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 无窗口WARP明确请求FL11.0，使用现有imgui_impl_dx11和生产CSO，离屏读取实际导航+主页+前景DrawData。书写首/中/完整Hold/Dock/终态分别读回；Hold各帧RGBA相同，覆盖不越标题栏，底层真实字体的几何/UV/颜色和按钮命中保持，终态精确回到静态。圆头接合带使用真实WARP在1/1.875/4倍采样，不能只测圆心或误报正常外缘AA。记录同机同配置静态/静止/移动/回正/书写/Hold/Dock/落定CPU median/p95、完成提交（含copy/Map等待）、顶点/批次及缓存扩容/ImGui分配。该分配计数不代表整页std::string/vector或驱动分配，不能声称整页零分配。 无限速离屏吞吐使用有界D3D11_QUERY_EVENT+Flush/GetData确认绘制/缓存copy完成，热采样不做staging读回、不Sleep/Present；分别报告CPU生成、backend调用、完成等待及同一帧total，FPS由total样本换算。像素回归另用Copy/Map。默认生产WARP与独立hardware诊断分列，注明Debug配置/面积；wait/write不可人为提前捕获cache后回拨时钟。正常共享FrameInterval=16,666,667ns及设置Present(1,0)保持，离屏吞吐不能当屏幕FPS。新增快路径必须以同一个真实Frame分别完整背景与生产Begin/Complete/Filter对照，检查冷字形、两次暖帧、首透明RGBA与终态精确一致，并报告同机同面积书写/Hold/Dock/落定CPU与提交完成median/p95、顶点/索引/批次和有界准备状态。原生必要测量将CPU生成、backend调用、Present等待、回调间隔与Present返回间隔分别记录；离屏copy/Map与Present返回均不能冒充屏幕实际显示FPS。Debug仅Setting.cpp条件编译的INKEYS_SETTING_ENTRY_PROFILE且显式环境变量=1才采样固定512帧，结束一次汇总、超限计dropped，记录真实solid-root-suppressed总体/分阶段计数，不逐帧分配/格式化/写盘；Release不编译该诊断。完整Debug|ARM64 Solution、--no-window、i18n及格式/diff检查；Windows11 WARP、Win7 SP1+KB2670838静态兼容审计与实机/原生观感分别记录。
 
 精确提交回归须调用生产FrameSubmissionCache：17绘制字段和12输出键变化、预算/callback/texture事务、失败与实际Map重试；浅深静态首提交后12次skip整帧RGBA相同，Hold十次skip仍推进时钟且Dock/恢复实际提交。真实Fluent hover/延迟tooltip、InputText字符与至少1.2s caret、caption和业务文字变化都须重新提交。七材质/边界×四时刻×浅深精确RGBA检查省copy与局部省Clear实验，目标预先污染，不能依赖旧像素。固定同帧full/no-ink/no-cover/copy-title消融保留同字体/面积/真实网格；区分CPU仍生成后裁剪的测试开销。报告actual-submits/skips/clears/copies和快照字节；skip没有EVENT或显示FPS。Debug诊断把submitted/skipped/backend-failures分列，只有真实Present产生返回间隔，不将失败backendEnd填入Present样本。
+
+冷布局缓存回归必须开启真实ConfigureRowAnimations(delta,true,rate)，按生产实际条件传NoInputs；不能用关闭条宽动画的夹具声称入场终态一致。覆盖浅深、倍率/窄宽及溢出与无条窗口，记录捕获时ScrollbarY/ScrollbarSizes/WorkRect/hero目标；缓存背景与首个实时帧排除字标后精确RGBA一致。普通动效控制应能复现缺席后条宽未到位，修复路径捕获与恢复稳定；回归故意保留多层AutoResize高度传播，验证至少两次+实际ready门禁与六次不收敛边界，不能忽略WorkRect的Y轴或排除右侧thumb像素。正常滚动和取消输入保持原合同。
 
 #### 7. Wrong vs Correct
 

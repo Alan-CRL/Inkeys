@@ -3,3 +3,4 @@
 {"file": ".trellis/tasks/10-14-setting-entrance-cache/research/cache-and-benchmark.md", "reason": "缓存透明度/恢复与性能证据审查"}
 {"file": ".trellis/tasks/10-14-setting-entrance-cache/submission-revision.md", "reason": "精确重复提交/透明像素/唤醒与性能审查"}
 {"file": ".trellis/tasks/10-14-setting-entrance-cache/research/idle-submission-research.md", "reason": "重复帧跳过正确性与失效交易"}
+{"file": ".trellis/tasks/10-14-setting-entrance-cache/scrollbar-revision.md", "reason": "当前滚动条缓存终态一致性验收"}

@@ -115,7 +115,7 @@ namespace Inkeys::UI::Setting::Design
 		{
 			HomeEntryFrameKey key;
 			bool managed = false, keyValid = false, ready = false, revealPending = false, revealReady = false;
-			bool fullFrame = true, skipBackground = false, restorePending = false, restoreReady = false;
+			bool fullFrame = true, skipBackground = false, restorePending = false, restoreReady = false, layoutReady = false;
 			unsigned warmFrames = 0, revealFrames = 0, restoreFrames = 0, attempts = 0;
 			float previousElapsed = 0;
 			std::uint64_t frame = 0, submitted = 0, skippedFrames = 0;
@@ -161,6 +161,8 @@ namespace Inkeys::UI::Setting::Design
 		std::uint64_t fontSerial, int language, ImFont* regular, ImFont* strong, ImFont* icons, int backdrop = 0);
 	// 在输入取消之后、正文 Begin 之前调用；不透明遮挡或截图就绪时才暂停页/导航生成。
 	bool BeginHomeEntryFrame(HomeMotionState& state, const HomeEntryFrameKey& key, bool allowFreeze = true);
+	// 完整正文提交后、outer EndChild 前验证本帧尺寸已被 native 布局消费，不把旧 thumb/高度截入缓存。
+	void CompleteHomeEntryLayout(HomeMotionState& state);
 	void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady, bool captured = false);
 	bool HomeEntryTexturesReady(const ImDrawData* data);
 	// 仅修改当前帧的提交列表；GPU 页面像素由同设备缓存复原，纹理队列仍交生产后端。

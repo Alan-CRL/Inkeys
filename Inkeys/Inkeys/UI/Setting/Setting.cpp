@@ -2481,7 +2481,8 @@ SettingSessionCoroutine RunSettingSession()
 					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section) : 0);
 				Design::BeginScrollChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
-					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll);
+					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll,
+					homeMotion.home && (homeMotion.EntryActive() || homeMotion.entry==Design::HomeMotionState::Entry::Pending));
 				ImGuiWindow* contentWindow = ImGui::GetCurrentWindow();
 				resetHomeScroll=false;
 				const auto root=ImGui::GetMainViewport(); const auto clip=contentWindow->ClipRect;
@@ -4018,6 +4019,7 @@ SettingSessionCoroutine RunSettingSession()
 				ImFluent::PopFont();
 				Design::BindTextFonts(ImFontMain, ImFontStrong);
 				Design::ApplyContentAlpha(contentWindow, Experimental.Inkeys3.AnimationEnable ? contentAlpha : 1.0F);
+				Design::CompleteHomeEntryLayout(homeMotion);
 				ImGui::EndChild();
 				ImGui::PopID();
 				ImGui::PopID();

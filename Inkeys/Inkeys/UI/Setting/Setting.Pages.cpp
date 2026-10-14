@@ -288,7 +288,7 @@ namespace Inkeys::UI::Setting::Design
 	bool BeginHomeEntryFrame(HomeMotionState& state, const HomeEntryFrameKey& key, bool allowFreeze)
 	{
 		auto& prep=state.preparation; prep.managed=true; ++prep.frame;
-		prep.skipBackground=false; prep.fullFrame=true; prep.previousElapsed=state.entryElapsed;
+		prep.skipBackground=false; prep.fullFrame=true; prep.layoutReady=false; prep.previousElapsed=state.entryElapsed;
 		if (!state.EntryActive() && state.entry!=HomeMotionState::Entry::Pending) return false;
 		if (!prep.keyValid || prep.key!=key)
 		{
@@ -302,14 +302,14 @@ namespace Inkeys::UI::Setting::Design
 		const float next=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
 		if (!prep.revealReady && next>=HomeEntryTiming::WritingEnd)
 		{
-			// 书写完成后仍保持不透明：两次完整排布消除缺席 child 的 AutoResize 冷启动，再截无字标页。
+			// 书写完成后仍保持不透明：至少两次完整排布且 native 已消费当前测量后，再截无字标页。
 			prep.revealPending=true;
 			state.entryElapsed=(std::max)(state.entryElapsed,HomeEntryTiming::WritingEnd);
 			return false;
 		}
 		if (next>=HomeEntryTiming::Total && !prep.restoreReady)
 		{
-			// 终态前在缓存遮挡下恢复两帧真实 child，防止恢复帧正文被旧高度裁切。
+			// 终态前在缓存遮挡下恢复真实 child，至少两帧且尺寸就绪才解除遮挡。
 			prep.restorePending=true;
 			return false;
 		}
@@ -330,6 +330,33 @@ namespace Inkeys::UI::Setting::Design
 		return texture && texture->Status==ImTextureStatus_OK && texture->GetTexID()!=ImTextureID_Invalid;
 	}
 
+	void CompleteHomeEntryLayout(HomeMotionState& state)
+	{
+		auto& prep=state.preparation;
+		prep.layoutReady=false;
+		if (!prep.managed || !prep.fullFrame || !state.EntryActive()) return;
+		// ImGui Begin 使用上帧测量：多层 AutoResize/换行的当前高度必须先传播到 native ContentSize。
+		// 仅检查本帧真实提交的正文子树；按 CalcWindowContentSizes 的 explicit/保留/取整规则比较。
+		auto ready=[&](auto&& self, ImGuiWindow* window) -> bool {
+			const bool preserve=(window->Collapsed && window->AutoFitFramesX<=0 && window->AutoFitFramesY<=0)
+				|| (window->Hidden && window->HiddenFramesCannotSkipItems==0 && window->HiddenFramesCanSkipItems>0);
+			if (!preserve) for (int axis=0;axis<2;++axis)
+			{
+				const float explicitSize=window->ContentSizeExplicit[axis];
+				const float measured=explicitSize!=0 ? explicitSize
+					: ImTrunc64(window->DC.CursorMaxPos[axis]-window->DC.CursorStartPos[axis]);
+				const float ideal=explicitSize!=0 ? explicitSize
+					: ImTrunc64((std::max)(window->DC.CursorMaxPos[axis],window->DC.IdealMaxPos[axis])-window->DC.CursorStartPos[axis]);
+				if (window->ContentSize[axis]!=measured || window->ContentSizeIdeal[axis]!=ideal) return false;
+			}
+			for (auto* child : window->DC.ChildWindows)
+				if (child->Active && child->LastFrameActive==GImGui->FrameCount && !self(self,child)) return false;
+			return true;
+		};
+		auto* content=ImGui::GetCurrentWindow();
+		prep.layoutReady=!content->SkipItems && ready(ready,content);
+	}
+
 	void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady, bool captured)
 	{
 		auto& prep=state.preparation;
@@ -338,7 +365,7 @@ namespace Inkeys::UI::Setting::Design
 		if (!submitted || !texturesReady)
 		{
 			// 失败/遮挡帧不消费动画时间；下一次可呈现帧重新确认字体和资源事务。
-			state.entryElapsed=prep.previousElapsed; prep.ready=false; prep.warmFrames=0;
+			state.entryElapsed=prep.previousElapsed; prep.ready=false; prep.layoutReady=false; prep.warmFrames=0;
 			prep.revealFrames=0; prep.revealReady=false; prep.restoreFrames=0; prep.restoreReady=prep.restorePending=false;
 			if (++prep.attempts>=6) FinishHomeEntry(state);
 			return;
@@ -354,10 +381,15 @@ namespace Inkeys::UI::Setting::Design
 		if (prep.revealPending && !prep.revealReady)
 		{
 			++prep.revealFrames;
-			if (captured && prep.revealFrames>=2) prep.revealReady=true;
+			if (captured && prep.layoutReady && prep.revealFrames>=2) prep.revealReady=true;
 			else if (prep.revealFrames>=6) FinishHomeEntry(state);
 		}
-		if (prep.restorePending && !prep.restoreReady && ++prep.restoreFrames>=2) prep.restoreReady=true;
+		if (prep.restorePending && !prep.restoreReady)
+		{
+			++prep.restoreFrames;
+			if (prep.layoutReady && prep.restoreFrames>=2) prep.restoreReady=true;
+			else if (prep.restoreFrames>=6) FinishHomeEntry(state);
+		}
 	}
 
 	void FilterHomeEntryDrawData(const HomeMotionState& state, ImDrawData* data,
