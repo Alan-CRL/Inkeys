@@ -433,7 +433,7 @@ RECT BarUIRendering::GetFrameCursorLightDamageBounds() const noexcept
 		static_cast<LONG>(ceil(static_cast<double>(frameCursorLight.y) + radius)));
 }
 
-bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
+bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds, POINT layoutScreenOrigin,
 	int drawingMode, int penMode, COLORREF brush1Color,
 	COLORREF highlighterColor)
 {
@@ -621,8 +621,11 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	if (barUISetClass)
 	{
 		lock_guard lock(barUISetClass->borderCursorLightMutex);
-		frameCursorLight = barUISetClass->borderCursorLightPoint;
 		frameCursorScreenLight = barUISetClass->borderCursorLightScreenPoint;
+		// 旧局部缓存属于最后呈现坐标；松手吸收直移后仍须用同帧布局原点重算。
+		frameCursorLight = D2D1::Point2F(
+			frameCursorScreenLight.x - static_cast<FLOAT>(layoutScreenOrigin.x),
+			frameCursorScreenLight.y - static_cast<FLOAT>(layoutScreenOrigin.y));
 		cursorSerial = barUISetClass->borderCursorLightSerial;
 		cursorInputAvailable = barUISetClass->borderCursorInputAvailable
 			&& barUISetClass->borderCursorLightReady;

@@ -1181,6 +1181,7 @@ namespace Inkeys::UI::Bar
 - `Grace → Dormant`：绝对截止时间到达，或画布开始真实绘制时，注销 Raw Input 并从当前强度平滑淡出。落笔时若光标仍在 UI3 接收区，区域内后续移动不得重新激活；必须先收到离开，再由下一次自然进入激活。
 - 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
 - Main Bar 每个实际光源帧以屏幕物理像素发布第三光源位置、`240 × barStyle.zoom` 半径、当前生命周期强度和可见性；PageControl 只映射到各自 presentation target。分页本地 hover 与第三光源是两条状态：hover 可快速退出，不能据此清零或重新创建第三光源。
+- 第三光源输入的屏幕物理像素点是跨坐标重基准的唯一位置来源。`PrepareFrameLighting` 必须用当前帧布局屏幕原点（同帧 `monitorOrigin + bottomDockFrameTransitionTranslation`）重新换算局部物理像素点；该 translation 来自布局已捕获的同一稳定偶数 tuple，不另读 live/最后成功呈现位移，也不额外除以 zoom。松手吸收直移、取消/回滚或显示原点改变时，即使 screenPoint 和输入 serial 不变也必须正确换算；不能直接沿用输入线程缓存的旧 layoutPoint、逐帧轮询光标或在吸收分支竞争写回输入缓存。生命周期、共享屏幕快照、主体/刚性逆映射与旧新光源 damage 继续由原入口持有。
 - PageControl 只有在完整 present 与 `SetBounds/Show` 成功后才发布该 HWND 的屏幕边界；成功隐藏发布空边界。该列表只参与 Grace 邻域唤醒裁剪，不能改变亮度、截止时间或 `WindowFromPoint` 的实际接收判断。
 - 并发笔迹由原子 activity count 合并：`0 → 1` 才向 Bar 窗口线程发送 Started。Draw3 controller 必须对聚合 bool 去重，多 contact 不重复发送；Host stop/异常时若仍 active 必须补 false。Ended 只负责把 activity count 安全归零，不维持绘图静默状态。
 - Bar 窗口线程收到有效 Started 时必须无条件让第三光源进入 `Dormant` 并注销 Raw Input。若系统光标仍位于 Bar 或 PageControl 实际接收 HWND，必须建立 wait-for-leave 门禁：区域内后续移动不能重新激活，真实离开后才允许下一次自然进入。后续绘制过程和抬笔不再持续控制光影。
@@ -1219,6 +1220,7 @@ namespace Inkeys::UI::Bar
 - 分别在 UI 接收区外和 Bar/PageControl 接收区内落笔，确认第三光源立即休眠；区内落笔还必须验证区域内移动不能重新激活、真实离开后下一次自然进入才可激活。整笔持续期间移动并抬笔，第一光源、光色过渡和普通 UI 动画始终不受影响。
 - Headless 覆盖 Draw3 聚合状态 `false→true→true→false` 只发送一次 Start/End、多 contact 去重，以及 Host stop/异常 active 清理补 End；多指和快速连续短笔迹下 activity count 最终归零且不存在绘图静默门禁。
 - Headless 覆盖屏幕点到 PageControl presentation 点的坐标映射；生产静态审查四窗只调用通知/边界发布接口，且不存在 Surface 本地 cursor-light prepare/reset。
+- 无窗口 Bar 离屏回归必须调用真实 `PrepareFrameLighting`：保持屏幕点与 serial 静止，切换非零直移、吸收后的零位移及实际残差原点，断言局部点加同帧原点恒等于屏幕点，光源半径/强度/可见性与分页共享快照不跳变。覆盖正负两轴、负显示器原点、实际 zoom、连续静止帧与原有光照门禁；坐标改变沿既有 lightChanged/damage 链生效。修复前应能确认缓存旧局部点导致失败，修复后通过；不得用手工设置最终光照快照代替真实 Prepare 入口证明修复。
 
 #### 7. Wrong vs Correct
 

@@ -53,3 +53,9 @@ CLI使用明确的早期无窗口入口，以Hidden Start-Process、WaitForExit(
 - 未启用需要HWND的Presentation harness，未启动GUI或Computer Use。
 - 人工待验：真实设置页三语视觉、四排序×两侧的拖动与切换动画、左右边缘单侧/双侧空间不足、折叠后重开、动画中途切换、系统DPI/缩放与负坐标多屏切换、底部居中/非居中停靠及白板/PPT放置、上下倒转回归。
 - 本轮不commit、不push、不finish/archive任务。
+
+## 用户授权的后续提交与延续
+
+用户随后要求先提交改动但不结束任务，已创建35afa7ee5f7752f6ae91442624ba05c4f840b1b6（feat(toolbar): add icon order and expansion direction settings），提交后工作树干净。继续同任务调查与修复拖动释放第三光源闪烁；本节覆盖此前“不提交”的初版执行约束，任务仍in_progress，新修复结果将单独记录。
+
+光源延续修复已完成并通过自动验证：旧实现48条预期FAIL，修复后24组坐标/120静止帧与4组D2D像素均通过，完整ARM64 solution和Headless退出0。详情见[validation-drag-light.md](validation-drag-light.md)。新修复未再次提交，任务仍进行中。

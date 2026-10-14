@@ -15,18 +15,38 @@
   "branch": "feature/mode",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "35afa7ee5f7752f6ae91442624ba05c4f840b1b6",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "实施与自动验证完成；真实GUI拖动、换边与设置视觉待人工验收。按本轮要求保持任务进行中，不提交或结束。",
+  "notes": "原功能已提交35afa7ee；第三光源修复与自动验证完成，用户最新授权提交该修复，任务保持进行中，真实输入视觉待人工验收。",
   "meta": {
     "implementation": "complete",
     "automated_validation": "passed",
     "manual_gui_validation": "pending",
-    "trellis_check": "passed_after_compile_fixes",
-    "validation_file": "validation.md"
+    "trellis_check": "passed_drag_release_fix",
+    "validation_file": "validation-drag-light.md",
+    "toolbar_settings_validation": "passed",
+    "settings_commit": "35afa7ee5f7752f6ae91442624ba05c4f840b1b6",
+    "drag_release_review": "passed",
+    "drag_release_red_regression": {
+      "build_exit": 0,
+      "test_exit": 1,
+      "expected_failures": 48,
+      "log": "Build/ToolbarOrderExpansionValidation/drag-light/red-offscreen-results.log"
+    },
+    "toolbar_settings_validation_file": "validation.md",
+    "drag_release_regression": {
+      "bar_exit": 0,
+      "headless_exit": 0,
+      "build_exit": 0,
+      "coordinate_cases": 24,
+      "stationary_frames": 120,
+      "pixel_groups": 4,
+      "pixel_max_delta": 0
+    },
+    "drag_release_commit_authorized": true
   }
 }

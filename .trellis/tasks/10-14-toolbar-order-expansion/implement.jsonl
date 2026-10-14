@@ -4,3 +4,5 @@
 {"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "动画/dock/有限观察边界"}
 {"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整solution验证"}
 {"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/current-layout.md", "reason": "当前研究与本机验证方式"}
+{"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/drag-release-third-light.md", "reason": "拖动释放第三光源坐标因果、同帧原点设计与真实Prepare回归"}
+{"file": ".trellis/tasks/10-14-toolbar-order-expansion/research/drag-light-implementation.md", "reason": "同帧光源实现、已确认红测与生产Prepare/像素回归边界"}

@@ -48,8 +48,51 @@ extern const double BarColorPickerPanelWidth;
 
 namespace Inkeys::UI::Bar
 {
+	// 测试调用已有 Surface 屏幕光源映射，不增加产品注入接口。
+	BarUiFrameLightingSnapshot ResolveBarSurfaceFrameLightingSnapshot(
+		const BarSurfaceSharedLighting& lighting,
+		const RECT& logicalBounds, LONG presentationOutset) noexcept;
 	namespace
 	{
+		class DragCursorLightFixture : public BarUISetClass
+		{
+		public:
+			void SeedCursor(POINT screenPoint, POINT layoutScreenOrigin)
+			{
+				// 仅在离屏 fixture 中种入真实输入快照，测试期间不发送任何新鼠标消息。
+				std::lock_guard lock(borderCursorLightMutex);
+				borderCursorLightScreenPoint = D2D1::Point2F(
+					static_cast<FLOAT>(screenPoint.x), static_cast<FLOAT>(screenPoint.y));
+				borderCursorLightPoint = D2D1::Point2F(
+					static_cast<FLOAT>(screenPoint.x - layoutScreenOrigin.x),
+					static_cast<FLOAT>(screenPoint.y - layoutScreenOrigin.y));
+				borderCursorLightSerial = 41;
+				borderCursorInputAvailable = true;
+				borderCursorLightReady = true;
+				borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Inside;
+			}
+			void SetAvailability(bool available, bool ready = true, bool nearRegion = true)
+			{
+				std::lock_guard lock(borderCursorLightMutex);
+				borderCursorInputAvailable = available; borderCursorLightReady = ready;
+				borderCursorLightNearVisibleRegion = nearRegion;
+				borderCursorTrackingState = !available ? BarBorderCursorTrackingStateEnum::Dormant
+					: nearRegion ? BarBorderCursorTrackingStateEnum::Inside : BarBorderCursorTrackingStateEnum::Grace;
+			}
+			void SetTranslationDistractors(POINT live, POINT presented)
+			{
+				std::lock_guard lock(directWindowDragMutex);
+				directWindowDragTranslationX = live.x; directWindowDragTranslationY = live.y;
+				// 渲染已吸收目标位移时，最后成功窗口仍可能保留不为零的实际残差。
+				RebaseBottomDockPresentedWindow(presented);
+			}
+			void Prepare(POINT layoutScreenOrigin)
+			{
+				(void)spec.PrepareFrameLighting(1.0 / 60.0, layoutScreenOrigin,
+					static_cast<int>(StateModeSelectEnum::IdtSelection), 0, 0, 0);
+			}
+		};
+
 		std::vector<unsigned char> ReadSvgProofPixels(ID2D1DeviceContext* context, ID2D1Bitmap1* source)
 		{
 			if (!context || !source) return {};
@@ -122,6 +165,162 @@ namespace Inkeys::UI::Bar
 		int failures=0;
 		auto expect=[&](bool ok,const char* why){if(!ok){++failures;report<<"[EraserVisual] FAIL "<<why<<'\n';}};
 		expect(SUCCEEDED(fontCollectionHr),"SC/TC font collection initializes");
+		// screenPoint/serial 保持不变，验证直移吸收和显示原点变更不依赖下一次 WM_MOUSEMOVE。
+		{
+			const bool savedEdge = BarUiEdgeLightingEnabled;
+			const bool savedDynamic = BarUiDynamicEdgeLightingEnabled;
+			const double savedSpeed = BarUiAnimationSpeedRate;
+			const bool savedAnimation = BarUiAnimationEnabled;
+			BarUiEdgeLightingEnabled = true; BarUiDynamicEdgeLightingEnabled = true;
+			BarUiAnimationSpeedRate = 1.0;
+			BarUiAnimationEnabled = true;
+			struct RebaseCase { POINT screen, beforeOrigin, afterOrigin; };
+			const std::array cases{
+				RebaseCase{{900,450},{300,0},{0,0}},
+				RebaseCase{{-1240,400},{-2220,-180},{-1920,-360}},
+				RebaseCase{{-1200,500},{1510,-890},{-1920,400}},
+				RebaseCase{{-1250,260},{-1590,-135},{-1920,-300}},
+				RebaseCase{{-1250,260},{-1590,-135},{-1960,-325}},
+				RebaseCase{{450,300},{-100,120},{-100,120}}};
+			for(const double zoom:{0.6,1.0,1.5,2.0})for(const auto& item:cases)
+			{
+				auto fixture = std::make_unique<DragCursorLightFixture>();
+				fixture->spec.SetFrameZoom(zoom); fixture->SeedCursor(item.screen,item.beforeOrigin);
+				for(int frame=0;frame<90;++frame)fixture->Prepare(item.beforeOrigin);
+				const auto before = fixture->spec.SnapshotFrameLighting();
+				const auto beforeBounds = fixture->spec.GetFrameCursorLightDamageBounds();
+				const auto atScreen = [&](const BarUiFrameLightingSnapshot& light,POINT origin)
+				{
+					return std::abs(light.cursorLight.x + origin.x - item.screen.x)<0.01F
+						&& std::abs(light.cursorLight.y + origin.y - item.screen.y)<0.01F;
+				};
+				expect(atScreen(before,item.beforeOrigin) && before.cursorLightVisible
+					&& std::abs(before.cursorIntensity-1.0F)<0.0001F,
+					"drag cursor baseline reaches full strength in the original layout domain");
+				// 同帧捕获值故意与 live/最后成功呈现残差不同，不能在 Prepare 中重新取后两者。
+				fixture->SetTranslationDistractors({730,-510},{-40,-25});
+				fixture->Prepare(item.afterOrigin);
+				const auto after = fixture->spec.SnapshotFrameLighting();
+				const auto afterBounds = fixture->spec.GetFrameCursorLightDamageBounds();
+				expect(atScreen(after,item.afterOrigin),
+					"drag release rebases real Prepare cursor light without a new input serial");
+				const bool originChanged = item.beforeOrigin.x!=item.afterOrigin.x || item.beforeOrigin.y!=item.afterOrigin.y;
+				expect(fixture->spec.DidFrameCursorLightChange()==originChanged
+					&& ((beforeBounds.left!=afterBounds.left || beforeBounds.top!=afterBounds.top)==originChanged)
+					&& afterBounds.left<=after.cursorLight.x-after.cursorRadius
+					&& afterBounds.right>=after.cursorLight.x+after.cursorRadius
+					&& afterBounds.top<=after.cursorLight.y-after.cursorRadius
+					&& afterBounds.bottom>=after.cursorLight.y+after.cursorRadius,
+					"drag release local light change invalidates complete old and new damage bounds");
+				const auto surfaceLight = [&](const BarUiFrameLightingSnapshot& light)
+				{
+					BarSurfaceSharedLighting shared;
+					shared.cursorScreenX=light.cursorScreenLight.x;shared.cursorScreenY=light.cursorScreenLight.y;
+					shared.cursorRadiusPixels=light.cursorRadius;shared.cursorIntensity=light.cursorIntensity;
+					shared.cursorVisible=light.cursorLightVisible;shared.edgeLightingEnabled=light.edgeLightingEnabled;
+					return ResolveBarSurfaceFrameLightingSnapshot(shared,{-2000,-500,-1600,-300},12);
+				};
+				const auto beforeSurface=surfaceLight(before),afterSurface=surfaceLight(after);
+				expect(beforeSurface.cursorLight.x==afterSurface.cursorLight.x
+					&& beforeSurface.cursorLight.y==afterSurface.cursorLight.y
+					&& beforeSurface.cursorRadius==afterSurface.cursorRadius
+					&& beforeSurface.cursorIntensity==afterSurface.cursorIntensity
+					&& beforeSurface.cursorLightVisible==afterSurface.cursorLightVisible,
+					"drag rebase keeps the real PageControl screen-light mapping continuous");
+				bool stable = true;
+				for(int frame=0;frame<120;++frame)
+				{
+					fixture->Prepare(item.afterOrigin);
+					const auto light = fixture->spec.SnapshotFrameLighting();
+					stable &= atScreen(light,item.afterOrigin) && light.cursorLightVisible
+						&& std::abs(light.cursorIntensity-before.cursorIntensity)<0.0001F
+						&& std::abs(light.cursorRadius-240.0*zoom)<0.001
+						&& light.cursorScreenLight.x==before.cursorScreenLight.x
+						&& light.cursorScreenLight.y==before.cursorScreenLight.y
+						&& !fixture->spec.DidFrameCursorLightChange();
+				}
+				expect(stable,"stationary release stays continuous for 120 frames at each zoom");
+				report<<"[DragCursorLight] zoom="<<zoom<<" origin="<<item.beforeOrigin.x<<','<<item.beforeOrigin.y
+					<<" -> "<<item.afterOrigin.x<<','<<item.afterOrigin.y<<" local="<<before.cursorLight.x<<','<<before.cursorLight.y
+					<<" -> "<<after.cursorLight.x<<','<<after.cursorLight.y<<" stable="<<stable<<'\n';
+			}
+			// 独立调用真实 Prepare/Shape，只保留第三光；用屏幕几何对齐同一边框像素。
+			for(const double zoom:{0.6,1.0,1.5,2.0})
+			{
+				auto fixture=std::make_unique<DragCursorLightFixture>();
+				fixture->spec.SetFrameZoom(zoom);fixture->SeedCursor({900,450},{300,0});
+				for(int frame=0;frame<90;++frame)fixture->Prepare({300,0});
+				expect(SUCCEEDED(fixture->spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),512,512)),
+					"drag third-light pixel target initializes");
+				auto* dc=fixture->spec.GetDeviceContext();
+				if(!dc)continue;
+				BarUiShapeClass border(0,0,160,60,12,12,2,std::nullopt,RGB(255,255,255));
+				border.enable.Initialization(true);border.pct.SetDirect(1);
+				border.framePct.emplace(0);border.frameLightPct.emplace(1);
+				border.frameRendering=BarUiFrameRenderingEnum::PointLight; border.framePrimaryLightEnabled=false;
+				const auto draw=[&](POINT origin)
+				{
+					const auto light=fixture->spec.SnapshotFrameLighting();
+					fixture->spec.SetFrameCursorLightLocalGeometry(light.cursorLight,D2D1::SizeF(light.cursorRadius,light.cursorRadius));
+					// 几何从固定 screenPoint 派生，不能用待验证的局部光源反推形状而掩盖错误。
+					const double left=(900.0-origin.x)/zoom-80.0,top=(450.0-origin.y)/zoom-20.0;
+					dc->BeginDraw();dc->SetTransform(D2D1::Matrix3x2F::Translation(
+						static_cast<FLOAT>(64.0-left*zoom),static_cast<FLOAT>(64.0-top*zoom)));
+					dc->Clear(D2D1::ColorF(0,0,0,0));
+					const bool drew=fixture->spec.Shape(dc,border,BarUiInheritClass(left,top));
+					const HRESULT hr=dc->EndDraw();fixture->spec.HandleFrameEndDrawResult(hr);
+					expect(drew && SUCCEEDED(hr),"real third-light border renders across drag release");
+					return ReadSvgProofPixels(dc,fixture->spec.GetTargetBitmap());
+				};
+				const auto before=draw({300,0});
+				fixture->SetTranslationDistractors({730,-510},{-40,-25});fixture->Prepare({0,0});
+				const auto after=draw({0,0});
+				unsigned maxDelta=0,lit=0;
+				if(before.size()==after.size())for(size_t i=0;i<before.size();++i)
+				{
+					maxDelta=std::max(maxDelta,static_cast<unsigned>(std::abs(static_cast<int>(before[i])-after[i])));
+					lit+=before[i]>0;
+				}
+				expect(before.size()==512*512*4 && after.size()==before.size() && lit>100 && maxDelta<=2,
+					"isolated real third-light pixels remain continuous after absorption");
+				fixture->SetAvailability(false);
+				for(int frame=0;frame<90;++frame)fixture->Prepare({0,0});
+				const auto withoutCursor=draw({0,0});
+				const auto darkBytes=std::count_if(withoutCursor.begin(),withoutCursor.end(),[](unsigned char pixel){return pixel>0;});
+				expect(withoutCursor.size()==after.size() && darkBytes==0 && lit>100,
+					"third-light-off control is transparent while the isolated enabled border contributes pixels");
+				report<<"[DragCursorPixels] zoom="<<zoom<<" lit="<<lit<<" maxDelta="<<maxDelta<<" offLit="<<darkBytes<<'\n';
+				fixture->spec.DiscardDeviceResources();
+			}
+			// 保持既有 Prepare 门禁；这里只检验生产光照帧，不启动 Raw Input/timer/HWND 状态机。
+			{
+				auto fixture=std::make_unique<DragCursorLightFixture>();
+				fixture->spec.SetFrameZoom(1);fixture->SeedCursor({900,450},{300,0});
+				const auto settle=[&](POINT origin){for(int frame=0;frame<90;++frame)fixture->Prepare(origin);};
+				settle({300,0});const auto inside=fixture->spec.SnapshotFrameLighting();
+				fixture->SetAvailability(true,true,false);fixture->Prepare({0,0});
+				const auto grace=fixture->spec.SnapshotFrameLighting();
+				expect(grace.cursorLightVisible && grace.cursorIntensity==inside.cursorIntensity,
+					"Grace outside the accepting region does not change third-light strength at release");
+				fixture->SetAvailability(false);settle({0,0});
+				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"Dormant input fades the third light without new input serial");
+				fixture->SetAvailability(true,false);settle({0,0});
+				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"unready cursor input remains hidden across a rebase");
+				fixture->SetAvailability(true);settle({0,0});
+				BarUiDynamicEdgeLightingEnabled=false;settle({-40,-25});
+				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"dynamic-light gate preserves its fade-out behavior");
+				BarUiDynamicEdgeLightingEnabled=true;settle({-40,-25});
+				BarUiAnimationEnabled=false;fixture->Prepare({0,0});
+				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"animation gate immediately hides third light during a rebase");
+				BarUiAnimationEnabled=true;settle({0,0});
+				BarUiEdgeLightingEnabled=false;fixture->Prepare({300,0});
+				expect(!fixture->spec.SnapshotFrameLighting().edgeLightingEnabled
+					&& !fixture->spec.SnapshotFrameLighting().cursorLightVisible,"total-light gate hides all light during a rebase");
+			}
+			BarUiAnimationSpeedRate=savedSpeed;
+			BarUiEdgeLightingEnabled = savedEdge; BarUiDynamicEdgeLightingEnabled = savedDynamic;
+			BarUiAnimationEnabled = savedAnimation;
+		}
 		auto& owner=barUISet;
 		expect(I18n::load(1,L"JSON",L"zh-CN"),"default bundled translation loads");
 		owner.spec.ConfigureLocalizedTypography();
@@ -533,7 +732,7 @@ namespace Inkeys::UI::Bar
 				owner.barStyle.darkStyle=true;owner.barStyle.zoom=zoom;
 				const UINT width=static_cast<UINT>(700*zoom),height=static_cast<UINT>(245*zoom);
 				expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),width,height)),"localized bar target setup");
-				owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+				owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
 				auto* dc=owner.spec.GetDeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
 				main->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 				DrawBarBackgroundVisual(owner.spec,dc,*main,BarUiInheritClass(main->inhX,main->inhY));
@@ -620,7 +819,7 @@ namespace Inkeys::UI::Bar
 			const UINT width=static_cast<UINT>(1000*zoom),height=static_cast<UINT>(620*zoom);
 			const auto epoch=RenderPipeline::GetDeviceEpoch();
 			expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,width,height)),"shared renderer resource setup");
-			owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+			owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
 			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,zoom,dpi,{0,0,static_cast<LONG>(width),static_cast<LONG>(height)},{0,0},0,0);
 			expect(!owner.eraserAttribute.Active(),"animation settles without polling");
 			owner.eraserAttribute.CommitPresented();const auto presentation=owner.eraserAttribute.PresentationSnapshot();
@@ -712,7 +911,7 @@ namespace Inkeys::UI::Bar
 			root->x.SetDirect(-70);root->y.SetDirect(430);
 			const auto epoch=RenderPipeline::GetDeviceEpoch();
 			expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,narrowWidth,narrowHeight)),"narrow target setup");
-			owner.spec.SetFrameZoom(1);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+			owner.spec.SetFrameZoom(1);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
 			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,1,96,{0,0,narrowWidth,narrowHeight},{0,0},0,0);
 			owner.eraserAttribute.CommitPresented();const auto narrow=owner.eraserAttribute.PresentationSnapshot();
 			const double narrowCircleEndGap=narrow.geometry.reversed

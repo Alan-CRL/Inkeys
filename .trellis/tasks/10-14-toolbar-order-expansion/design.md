@@ -13,4 +13,14 @@ Core代理拥有Bar代码、必要新增纯策略头和现有布局/底部停靠
 检查现有finite稳定签名/根批次/缓存依赖，把新增排序/策略变化计入正确几何版本，不破坏既有协议。
 
 ## 主会话边界
-主会话拥有task/spec与统一build/test；两代理不修改对方代码、不撤销他人变动。冻结后trellis-check全范围，必要局部机械修复。禁止GUI/commit/push/task结束。
+主会话拥有task/spec与统一build/test；两代理不修改对方代码、不撤销他人变动。冻结后trellis-check全范围，必要局部机械修复。禁止GUI/push/task结束；commit仅按下文用户的具体授权执行。
+
+## 延续修复边界
+
+调查第三光源生产输入、拖动move/up/cancel到render的状态交接、屏幕/窗口/DIP坐标以及释放时几何更新；只修已确认的交接问题，不重构光源或主栏架构。优先复用已有生产入口和离屏/纯策略回归，测试不得用替代公式隐藏生产链错误。主会话拥有任务/spec与统一构建，实施代理拥有本次必要Bar源码/回归；冻结后交由Trellis检查。
+
+## 第三光源坐标交接设计（源码研究后）
+
+输入继续在原锁内发布物理screenPoint/serial/available，保留现有缓存与唯一生命周期。PrepareLightingAndDemand显式传入本帧layoutScreenOrigin（monitorOrigin + bottomDockFrameTransitionTranslation，来自同一稳定偶数tuple）；真实PrepareFrameLighting以该原点换算screenPoint得到物理像素局部点，不另除zoom、不读live或最后成功呈现translation。保留既有FinishLightingFrame旧新局部光源比较与damage链、主体/刚性光影逆映射，分页继续使用原共享屏幕点/半径/强度。普通stale presentation只检查既有合同，不扩大修复呈现策略。
+
+在已有Bar真实离屏入口添加受保护数据的派生fixture，固定screenPoint和serial，在translation清零及根几何吸收前后调用真实Prepare；先在旧实现观测失败，再修正后复验。覆盖负坐标、zoom、残差、静止连续帧/取消和原门禁，共享屏幕光照保持；可行时补隔离第一光的D2D像素连续性。

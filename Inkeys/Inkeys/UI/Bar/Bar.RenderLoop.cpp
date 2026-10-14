@@ -8117,8 +8117,12 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 	bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false);
 	bool needBorderLightingRendering = false;
 	{
+		// 光源与本帧几何消费同一稳定 tuple，不拼接 live 或旧成功呈现的位移。
+		const POINT layoutScreenOrigin{
+			state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y };
 		needBorderLightingRendering = state.spec.PrepareFrameLighting(
-			animationDtSeconds,
+			animationDtSeconds, layoutScreenOrigin,
 			static_cast<int>(frameDrawingState.stateMode),
 			static_cast<int>(frameDrawingState.penMode),
 			frameDrawingState.brush1Color,

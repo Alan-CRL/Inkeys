@@ -91,7 +91,7 @@ public:
 	{
 		return textLocale;
 	}
-	bool PrepareFrameLighting(double animationDtSeconds,
+	bool PrepareFrameLighting(double animationDtSeconds, POINT layoutScreenOrigin,
 		int drawingMode, int penMode, COLORREF brush1Color,
 		COLORREF highlighterColor);
 	[[nodiscard]] RECT GetFramePrimaryLightDamageBounds() const noexcept;
