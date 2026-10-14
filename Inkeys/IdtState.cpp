@@ -206,6 +206,7 @@ namespace
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
+		stateMode.lastAnnotationMode = StateModeSelectEnum::IdtPen;
 		BackgroundColorMode = computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1;
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
 	}
@@ -222,7 +223,7 @@ namespace
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.selectionMode =
-			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
+			IsComputerInteractionMode(stateMode.StateModeSelect);
 		state.autoSaveEnabled = setlist.saveSetting.enable;
 		Inkeys::Drawing::Draw3::PublishProductState(state);
 	}
@@ -465,7 +466,7 @@ namespace
 		{
 			std::scoped_lock modeLock(stateModeTransitionMutex);
 			modeRevision = stateModeTransitionRevision.load(std::memory_order_relaxed);
-			modeSelection = stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
+			modeSelection = IsComputerInteractionMode(stateMode.StateModeSelect);
 		}
 		std::scoped_lock lock(draw3PresentationMutex);
 		const auto desired =
@@ -793,7 +794,7 @@ void SyncDraw3State()
 	{
 		std::scoped_lock modeLock(stateModeTransitionMutex);
 		settingOwnerState = PublishSettingOwnerDesiredState(
-			stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection);
+			!IsComputerInteractionMode(stateMode.StateModeSelect));
 	}
 	ApplySettingOwnerDesiredState(settingOwnerState);
 	PublishDraw3State();
@@ -1116,16 +1117,132 @@ float GetEffectivePenOpacity(const StateModeClass& snapshot) noexcept
 		? Inkeys::Drawing::Draw3::Bridge::kHighlighterCompositeOpacity : 1.0f;
 }
 
-bool ChangeStateModeToSelection()
+namespace
 {
+	void ApplySelectionTransitionLocked()
 	{
-		std::scoped_lock lock(stateModeTransitionMutex);
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
 		if (state == 1.1) state = 1;
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 		BackgroundColorMode = 0;
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
+
+	bool SetSelectAndClickThroughModeImpl(int mode, bool hasContent)
+	{
+		mode = mode == 1 ? 1 : 0;
+		{
+			std::scoped_lock lock(stateModeTransitionMutex);
+			if (GetSelectAndClickThroughMode() == mode) return false;
+			Inkeys::config.UI.Bar.SelectAndClickThroughMode = mode;
+			// 设置变更只改工具身份，不发布 Clear，因此已有墨迹和历史不会丢失。
+			if (mode == 1 && !WhiteboardActive() && !WhiteboardRequested() && hasContent &&
+				stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+				stateMode.StateModeSelect = StateModeSelectEnum::IdtClickThrough;
+			else if (mode == 0 && stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough)
+				stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+			stateMode.StateModeSelectTarget = stateMode.StateModeSelect;
+			stateMode.StateModeSelectEcho = stateMode.StateModeSelect;
+			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+		}
+		if (GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtClickThrough)
+			(void)Inkeys::UI::Freeze::DeactivateIfRevision(Inkeys::UI::Freeze::Snapshot().revision);
+		SyncDraw3State();
+		Inkeys::UI::Bar::RefreshToolState();
+		return true;
+	}
+
+	template<class PublishClear>
+	bool ChangeStateModeToSelectionFromButtonImpl(bool hasContent, PublishClear publishClear)
+	{
+		const auto expected = GetStateModeVersionedSnapshot();
+		if (GetSelectAndClickThroughMode() == 1 && !WhiteboardActive() && hasContent)
+		{
+			// 必须先进入 Draw3 FIFO；拒绝时保留原工具，不能假装已经清空。
+			if (publishClear() != Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted)
+				return false;
+		}
+		{
+			std::scoped_lock lock(stateModeTransitionMutex);
+			// Clear 发布期间若用户已选新工具，旧请求不得再覆盖新意图。
+			if (stateModeTransitionRevision.load(std::memory_order_relaxed) != expected.revision)
+				return false;
+			ApplySelectionTransitionLocked();
+		}
+		SyncDraw3State();
+		return true;
+	}
+}
+
+int GetSelectAndClickThroughMode() noexcept
+{
+	return Inkeys::config.UI.Bar.SelectAndClickThroughMode.load() == 1 ? 1 : 0;
+}
+
+bool SetSelectAndClickThroughMode(int mode)
+{
+	return SetSelectAndClickThroughModeImpl(mode,
+		Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent);
+}
+
+bool ChangeStateModeToSelectionFromButton()
+{
+	return ChangeStateModeToSelectionFromButtonImpl(
+		Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent, []
+		{
+			return Inkeys::Drawing::Draw3::PublishProductCommand(
+				Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
+		});
+}
+
+bool ChangeStateModeToClickThrough()
+{
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		if (GetSelectAndClickThroughMode() != 1 || WhiteboardActive() || WhiteboardRequested() ||
+			WhiteboardTransactionActive() || stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough)
+			return false;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtClickThrough;
+		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtClickThrough;
+		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtClickThrough;
+		BackgroundColorMode = 0;
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
+	(void)Inkeys::UI::Freeze::DeactivateIfRevision(Inkeys::UI::Freeze::Snapshot().revision);
+	SyncDraw3State();
+	return true;
+}
+
+void ToggleFreezeFromButton()
+{
+	if (!Inkeys::UI::Freeze::IsAvailable()) return;
+	bool restored = false;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough)
+		{
+			stateMode.StateModeSelect = stateMode.lastAnnotationMode;
+			stateMode.StateModeSelectTarget = stateMode.StateModeSelect;
+			stateMode.StateModeSelectEcho = stateMode.StateModeSelect;
+			BackgroundColorMode = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? 0 :
+				(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
+			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+			restored = true;
+		}
+	}
+	if (restored) SyncDraw3State();
+	const bool wasActive = Inkeys::UI::Freeze::IsActive();
+	Inkeys::UI::Freeze::Toggle();
+	if (!wasActive && Inkeys::UI::Freeze::IsActive())
+		(void)Inkeys::Window::GetService().RequestTopmostRefresh();
+}
+
+bool ChangeStateModeToSelection()
+{
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		ApplySelectionTransitionLocked();
 	}
 	SyncDraw3State();
 	return true;
@@ -1224,6 +1341,7 @@ bool ChangeStateModeToShape()
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
 		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
+		stateMode.lastAnnotationMode = StateModeSelectEnum::IdtShape;
 		BackgroundColorMode = computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1;
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
 	}
@@ -1270,6 +1388,7 @@ bool ChangeStateModeToEraser()
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtEraser;
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
 		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
+		stateMode.lastAnnotationMode = StateModeSelectEnum::IdtEraser;
 		BackgroundColorMode = 0;
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
 	}
@@ -1329,7 +1448,7 @@ int RunStateModeProductionTest() noexcept
 			require(published.tool == tool, "bridge-tool");
 			require(published.widthDip == GetPenWidthMetrics(snapshot.state).resolvedWidthDip, "bridge-width");
 			require(published.colorRgba == ColorRefToRgba(GetPenColor(snapshot.state)), "bridge-color");
-			require(published.selectionMode == (snapshot.state.StateModeSelect == StateModeSelectEnum::IdtSelection), "bridge-selection");
+			require(published.selectionMode == IsComputerInteractionMode(snapshot.state.StateModeSelect), "bridge-selection");
 			require(snapshot.state.StateModeSelect == snapshot.state.StateModeSelectTarget &&
 				snapshot.state.StateModeSelect == snapshot.state.StateModeSelectEcho, "mode-projection");
 		};
@@ -1464,8 +1583,82 @@ int RunStateModeProductionTest() noexcept
 		ChangeStateModeToPen();
 		require(IsLaserToolActive(), "pen-restores-laser-memory");
 		checkProjection(Bridge::Tool::Laser);
+		stage = "select-and-clickthrough-modes";
+		require(GetSelectAndClickThroughMode() == 0 && !ChangeStateModeToClickThrough(), "combined-default-no-clickthrough");
+		ChangeStateModeToSelection();
+		const auto beforeSeparate = bridge.Snapshot();
+		require(SetSelectAndClickThroughModeImpl(1, true) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtClickThrough,
+			"separate-maps-retained-selection");
+		require(bridge.Snapshot().selectionMode && sameProjection(beforeSeparate, bridge.Snapshot()),
+			"mode-mapping-preserves-bridge-and-ink");
+		const auto repeated = GetStateModeVersionedSnapshot();
+		require(!ChangeStateModeToClickThrough() && StateModeTransitionRevision() == repeated.revision &&
+			!SetSelectAndClickThroughMode(1), "repeated-clickthrough-and-mode-no-op");
+		require(SetSelectAndClickThroughMode(0) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
+			"combined-restores-selection");
+		require(SetSelectAndClickThroughModeImpl(1, false) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
+			"separate-empty-selection-remains-selection");
+		const StateModeSelectEnum rememberedTools[]{StateModeSelectEnum::IdtPen,
+			StateModeSelectEnum::IdtShape, StateModeSelectEnum::IdtEraser};
+		for (const auto tool : rememberedTools)
+		{
+			if (tool == StateModeSelectEnum::IdtPen) ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+			else if (tool == StateModeSelectEnum::IdtShape) ChangeStateModeToShape();
+			else ChangeStateModeToEraser();
+			const auto annotation = GetStateModeSnapshot();
+			ToggleFreezeFromButton();
+			require(Inkeys::UI::Freeze::IsActive() && ChangeStateModeToClickThrough() &&
+				!Inkeys::UI::Freeze::IsActive() && bridge.Snapshot().selectionMode,
+				"clickthrough-cancels-freeze-for-all-tools");
+			ToggleFreezeFromButton();
+			require(Inkeys::UI::Freeze::IsActive() && sameState(annotation, GetStateModeSnapshot()) &&
+				!bridge.Snapshot().selectionMode, "freeze-restores-tool-and-all-attributes");
+			ToggleFreezeFromButton();
+			require(!Inkeys::UI::Freeze::IsActive(), "freeze-second-click-deactivates");
+		}
+		Inkeys::UI::Freeze::SetPresentationActive(true);
+		require(ChangeStateModeToClickThrough(), "ppt-clickthrough-still-available");
+		const auto pptClickthrough = GetStateModeVersionedSnapshot();
+		ToggleFreezeFromButton();
+		require(StateModeTransitionRevision() == pptClickthrough.revision &&
+			!Inkeys::UI::Freeze::IsActive(), "ppt-freeze-unavailable-no-tool-change");
+		Inkeys::UI::Freeze::SetPresentationActive(false);
+		RequestWhiteboardActive(true);
+		ChangeStateModeToPen();
+		// 功能关闭时真实请求会被拒绝，不能把不存在的白板事务当作穿透门禁。
+		if (IsWhiteboardFeatureEnabled())
+			require(WhiteboardRequested() && !ChangeStateModeToClickThrough(),
+				"whiteboard-request-rejects-clickthrough");
+		else
+			require(!WhiteboardRequested() && !WhiteboardTransactionActive() && ChangeStateModeToClickThrough(),
+				"closed-whiteboard-gate-preserves-desktop-clickthrough");
+		RequestWhiteboardActive(false);
+		ChangeStateModeToClickThrough();
+		const auto clearRejected = GetStateModeVersionedSnapshot();
+		require(!ChangeStateModeToSelectionFromButtonImpl(true, [] { return Bridge::CommandResult::QueueFull; }) &&
+			StateModeTransitionRevision() == clearRejected.revision &&
+			sameState(clearRejected.state, GetStateModeSnapshot()), "selection-clear-rejection-preserves-tool");
+		Bridge::Command queued;
+		while (bridge.TryConsume(queued)) {}
+		require(ChangeStateModeToSelectionFromButtonImpl(true, [&] { return bridge.Publish(Bridge::CommandType::Clear); }) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection &&
+			bridge.TryConsume(queued) && queued.type == Bridge::CommandType::Clear &&
+			!bridge.TryConsume(queued), "selection-clear-accepted-one-fifo-command");
+		ChangeStateModeToPen();
+		require(!ChangeStateModeToSelectionFromButtonImpl(true, []
+			{
+				ChangeStateModeToShape();
+				return Bridge::CommandResult::Accepted;
+			}) && GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtShape,
+			"selection-clear-late-result-preserves-new-tool");
+		require(ChangeStateModeToSelectionFromButtonImpl(false, [] { return Bridge::CommandResult::NotRunning; }),
+			"empty-selection-does-not-publish-clear");
+		require(SetSelectAndClickThroughMode(0), "restore-default-mode");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
-		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory\n", stderr);
+		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough/freezing, clear transaction\n", stderr);
 		return 0;
 	}
 	catch (const char* check)

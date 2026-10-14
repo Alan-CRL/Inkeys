@@ -252,9 +252,8 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, double dt, double sp
 	b.state->state = BarWidgetState::None;
 	SetBarButtonPressedVisual(b, commandEnabled && pressed_ == 0);
 	UpdateBarButtonHoverVisual(b, presented, commandEnabled, BarButtonHoverFadeDurationSeconds);
-	const COLORREF contentColor = ResolveRecallCommandContentColor(commandEnabled,
-		GetThemeColor(BarThemeColorEnum::TextPrimary));
-	RetargetBarButtonInteractionVisual(b, presented, true, false, BarButtonHoverTransitionDuration, contentColor);
+	// 与主栏清空/定格共用禁用透明度，仍由现有命令策略处理灰色重复点击。
+	RetargetBarButtonInteractionVisual(b, presented, commandEnabled, false, BarButtonHoverTransitionDuration);
 	b.button.frame->SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 	Place(b.button, g.items[0]);
 	b.button.rw->SetDirect(BarButtonCornerRadiusDip * scale); b.button.rh->SetDirect(BarButtonCornerRadiusDip * scale); b.button.ft->SetDirect(BarButtonFrameThicknessDip * scale);

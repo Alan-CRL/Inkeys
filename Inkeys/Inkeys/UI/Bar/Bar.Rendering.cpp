@@ -567,6 +567,9 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 		case StateModeSelectEnum::IdtSelection:
 			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Select;
 			break;
+		case StateModeSelectEnum::IdtClickThrough:
+			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Pierce;
+			break;
 		default:
 			break;
 		}
@@ -588,6 +591,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 			case BarBorderPrimaryAnchorEnum::Draw: anchorPreset = BarButtonPresetEnum::Draw; break;
 			case BarBorderPrimaryAnchorEnum::Eraser: anchorPreset = BarButtonPresetEnum::Eraser; break;
 			case BarBorderPrimaryAnchorEnum::Geometry: anchorPreset = BarButtonPresetEnum::Geometry; break;
+			case BarBorderPrimaryAnchorEnum::Pierce: anchorPreset = BarButtonPresetEnum::Pierce; break;
 			default: break;
 			}
 

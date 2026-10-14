@@ -4011,6 +4011,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										case BarButtonPresetEnum::Clean:
 										case BarButtonPresetEnum::Recall:
 										case BarButtonPresetEnum::Redo:
+										case BarButtonPresetEnum::Pierce:
 											Inkeys::UI::Bar::NotifyPptBusinessAction(); break;
 										default: break;
 										}

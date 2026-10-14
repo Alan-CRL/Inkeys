@@ -31,6 +31,7 @@ import :Scene;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.PageControl;
+import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
 import Inkeys.Text.Font;
 
@@ -113,6 +114,7 @@ namespace Inkeys::UI::Bar
 		const std::array<UINT,4> fonts{IDR_TTF1,IDR_TTF7,IDR_TTF3,IDR_TTF8};
 		const HRESULT fontCollectionHr=RenderPipeline::InitializeFontCollection(
 			IdtFontFileLoader::GetLoader(),IdtFontCollectionLoader::GetLoader(),fonts);
+		std::filesystem::create_directories(L"Build/eraser-b");
 		std::ofstream report("Build/eraser-b/offscreen-results.log");
 		int failures=0;
 		auto expect=[&](bool ok,const char* why){if(!ok){++failures;report<<"[EraserVisual] FAIL "<<why<<'\n';}};
@@ -121,6 +123,47 @@ namespace Inkeys::UI::Bar
 		expect(I18n::load(1,L"JSON",L"zh-CN"),"default bundled translation loads");
 		owner.spec.ConfigureLocalizedTypography();
 		owner.barButtonSet.PresetInitialization();owner.barMedia.LoadFormat();
+		// UpdateRendering 在 Pen 状态还会刷新粗细文字；离屏 fixture 不加载整套窗口控件。
+		owner.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay] =
+			std::make_shared<BarUiWordClass>(0.0,0.0,0.0,0.0,L"",13.0);
+		// 真实设置入口在无内容变化且工具不变时，也必须同步主栏显隐和清空状态。
+		SetContentStateUpdatesReady(true);
+		ChangeStateModeToPen();owner.UpdateRendering();
+		auto* selectModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Select];
+		auto* pierceModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Pierce];
+		auto* freezeModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Freeze];
+		auto* clearModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Clean];
+		const bool changedToSeparate=SetSelectAndClickThroughMode(1);
+		selectModeButton->name.AdvanceContentTransition(1.0,1.0);
+		expect(changedToSeparate && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
+			&& pierceModeButton->IsVisible() && pierceModeButton->size==BarButtonSizeEnum::twoOne
+			&& freezeModeButton->size==BarButtonSizeEnum::twoOne
+			&& selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
+			"setting mode updates compact buttons while tool and empty content stay unchanged");
+		expect(SetSelectAndClickThroughMode(0) && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
+			&& !pierceModeButton->IsVisible() && freezeModeButton->size==BarButtonSizeEnum::twoTwo,
+			"combined setting immediately hides Pierce and enlarges Freeze");
+		ChangeStateModeToSelection();owner.UpdateRendering();
+		expect(clearModeButton->state->state==BarWidgetState::Disable,
+			"empty Selection Clear uses unified disabled state");
+		ChangeStateModeToPen();owner.UpdateRendering();
+		expect(clearModeButton->state->state!=BarWidgetState::Disable,"empty drawing Clear can enter Selection");
+		SetSelectAndClickThroughMode(1);ChangeStateModeToClickThrough();owner.UpdateRendering();
+		expect(pierceModeButton->state->state==BarWidgetState::Selected &&
+			clearModeButton->state->state!=BarWidgetState::Disable,"Click-through highlight and empty Clear are active");
+		owner.barButtonSet.ExecuteClearClick(false);owner.UpdateRendering();
+		expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtSelection &&
+			clearModeButton->state->state==BarWidgetState::Disable && !pierceModeButton->IsVisible(),
+			"empty Click-through Clear enters Selection and removes hidden Pierce hit target");
+		SetPptPresentationActive(true);Freeze::SetPresentationActive(true);owner.UpdateRendering();
+		expect(!freezeModeButton->IsVisible() && !pierceModeButton->IsVisible(),
+			"PPT empty Selection hides both A2 interaction buttons");
+		ChangeStateModeToPen();owner.UpdateRendering();
+		expect(!freezeModeButton->IsVisible() && pierceModeButton->IsVisible() &&
+			pierceModeButton->size==BarButtonSizeEnum::twoTwo,"PPT Pierce fills hidden Freeze slot");
+		Freeze::SetPresentationActive(false);SetPptPresentationActive(false);
+		SetSelectAndClickThroughMode(0);ChangeStateModeToSelection();owner.UpdateRendering();
+		SetContentStateUpdatesReady(false);
 		SetThemeStyleSource(&owner.barStyle);
 		auto root=std::make_shared<BarUiSuperellipseClass>(100,430,BarMainButtonWidthDip,BarMainButtonHeightDip,3.0,
 			BarButtonFrameThicknessDip,GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
@@ -147,7 +190,7 @@ namespace Inkeys::UI::Bar
 			for(size_t i=0;i<presets.size();++i)
 			{
 				auto* b=presets[i]==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(presets[i])];
-				const auto label=IW(localizedPresetLabelKeys[i]);b->name.content.SetVal(label);b->name.content.SetTar(label);
+				const auto label=IW(localizedPresetLabelKeys[i]);b->name.SetStringImmediate(label);b->TransitionContent(L"",label);b->name.size.SetDirect(b->LabelFontSize(metrics.primaryFontSizeDip));
 			}
 		};
 		for(size_t i=0;i<presets.size();++i)
@@ -195,6 +238,47 @@ namespace Inkeys::UI::Bar
 			for(const auto* key:{I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.FreezeLabel})
 				expect(owner.spec.MeasureText(IW(key),twoOneMetrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=twoOneMetrics.primarySlotWidthDip+0.5f,
 					"localized Whiteboard and Freeze labels fit the existing 37 DIP slot");
+			for(const auto preset:{BarButtonPresetEnum::Select,BarButtonPresetEnum::Pierce})
+			{
+				auto* b=owner.barButtonSet.preset[(int)preset];
+				auto label=IW(preset==BarButtonPresetEnum::Select ? I18nKey.UI.Bar.MainButtons.SelectClearLabel
+					: I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
+				if(label==L"Select (Clear)")label=L"Select\n(Clear)";
+				if(label==L"Click-through")label=L"Click-\nthrough";
+				b->name.SetStringImmediate(label);b->TransitionContent(L"",label);
+				for(const auto kind:{BarButtonVisualLayoutKind::StandardTwoTwo,BarButtonVisualLayoutKind::StandardTwoOne})
+				{
+					if(preset==BarButtonPresetEnum::Select && kind==BarButtonVisualLayoutKind::StandardTwoOne)continue;
+					const auto slot=ResolveBarButtonVisualMetrics(kind);
+					const auto measured=owner.spec.MeasureText(label,b->LabelFontSize(slot.primaryFontSizeDip),DWRITE_FONT_WEIGHT_BOLD);
+					expect(measured.width>0 && measured.width<=slot.primarySlotWidthDip+0.5f &&
+						measured.height>0 && measured.height<=slot.primarySlotHeightDip+0.5f,
+						"Select Clear and Click-through three-language DWrite bounds fit original slots");
+					if(label.find(L'\n')!=wstring::npos)
+					{
+						// 真实换字过渡的中点前后都测量当前字号，防止目标文案提前裁切。
+						BarButtonClass transitioning(*b);
+						transitioning.name.SetStringImmediate(L"Select");
+						transitioning.name.size.SetDirect(slot.primaryFontSizeDip);
+						transitioning.TransitionContent(L"",label);
+						for(const double dt:{0.0,0.19,0.02,0.05,0.5})
+						{
+							transitioning.name.AdvanceContentTransition(dt,1.0);
+							const auto bounds=owner.spec.MeasureText(transitioning.name.content.GetVal(),
+								transitioning.name.size.val,DWRITE_FONT_WEIGHT_BOLD);
+							expect(bounds.width<=slot.primarySlotWidthDip+0.5f && bounds.height<=slot.primarySlotHeightDip+0.5f,
+								"incoming multiline label fits before, at and after the transparent midpoint");
+						}
+						transitioning.TransitionContent(L"",L"Select");
+						expect(transitioning.LabelFontSize(slot.primaryFontSizeDip)==9.0,
+							"outgoing multiline label keeps compact font until content changes");
+						transitioning.name.AdvanceContentTransition(1.0,1.0);
+						expect(transitioning.LabelFontSize(slot.primaryFontSizeDip)==slot.primaryFontSizeDip,
+							"short label restores standard font after content transition");
+					}
+				}
+			}
+			updateLocalizedPresetLabels();
 			for(const auto* key:penMenuLabelKeys)
 				expect(owner.spec.MeasureText(IW(key),12.0,DWRITE_FONT_WEIGHT_NORMAL).width<=80.5f,
 					"localized pen menu label fits its measured text slot");

@@ -46,6 +46,12 @@ using Inkeys::UI::Bar::ResolveBarDrawButtonToggleDecision;
 bool BarButtonClass::TransitionContent(
 	const wstring& iconResourceName, const wstring& label)
 {
+	// 先缩到新标签所需字号，再在透明中点换字；换回短标签前保留小字号。
+	if (preset == BarButtonPresetEnum::Select || preset == BarButtonPresetEnum::Pierce)
+	{
+		compactMultilineLabel = label.find(L'\n') != wstring::npos;
+		if (compactMultilineLabel && name.size.val > 9.0) name.size.SetDirect(9.0);
+	}
 	bool changed = false;
 	if (iconKind == BarButtonIconKindEnum::Svg && !iconResourceName.empty())
 		changed |= icon.TransitionToResource(L"UI", iconResourceName);
@@ -266,8 +272,7 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
-						ChangeStateModeToSelection();
+					ChangeStateModeToSelectionFromButton();
 				};
 		}
 
@@ -572,6 +577,26 @@ void BarButtonSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 
+	// 独立穿透只进入运行时列表，保留旧 A2 配置迁移边界。
+	{
+		mainPierceButton = std::make_shared<BarButtonClass>();
+		auto* obj = mainPierceButton.get();
+		obj->size = BarButtonSizeEnum::twoOne;
+		obj->preset = BarButtonPresetEnum::Pierce;
+		obj->hide = true;
+		obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+			IW(I18nKey.UI.Bar.MainButtons.ClickThroughLabel), 0.0);
+		obj->name.enable.Initialization(true);
+		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+		obj->button.enable.Initialization(true);
+		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+		obj->icon.InitializationFromResource(L"UI", L"barPierce");
+		obj->icon.enable.Initialization(true);
+		obj->clickFunc = [] { ChangeStateModeToClickThrough(); };
+		obj->state = &barButtonState[(int)BarButtonPresetEnum::Pierce];
+		preset[(int)BarButtonPresetEnum::Pierce] = obj;
+	}
+
 	// 定格
 	{
 		BarButtonClass* obj = new BarButtonClass;
@@ -599,13 +624,7 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					const bool wasActive = Inkeys::UI::Freeze::IsActive();
-					Inkeys::UI::Freeze::Toggle();
-					if (!wasActive && Inkeys::UI::Freeze::IsActive())
-					{
-						// 定格激活后立即重申 owner 树层级；后台线程仍按原路径显示画面。
-						(void)Inkeys::Window::GetService().RequestTopmostRefresh();
-					}
+					ToggleFreezeFromButton();
 				};
 		}
 
@@ -883,7 +902,7 @@ void BarButtonSetClass::StateUpdate(const StateModeClass& stateMode)
 	CalcState(stateMode);
 	PresetHoming(stateMode);
 	UpdateDrawButtonStyle(stateMode);
-	UpdateWhiteboardButtonStyle();
+	UpdateWhiteboardButtonStyle(stateMode);
 	UpdateEraserButtonStyle(stateMode);
 	UpdateGeometryButtonStyle(stateMode);
 }
@@ -920,14 +939,23 @@ void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
 }
 void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 {
+	UpdateWhiteboardButtonStyle(GetStateModeSnapshot());
+}
+void BarButtonSetClass::UpdateWhiteboardButtonStyle(const StateModeClass& stateMode)
+{
 	static mutex mtx;
 	const bool active = Inkeys::UI::Bar::WhiteboardActive();
 	const bool presentation = Inkeys::UI::Bar::PptPresentationActive();
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
+	const bool separateMode = GetSelectAndClickThroughMode() == 1;
+	const bool selectionEmpty = stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
+		&& !Inkeys::UI::Bar::CurrentPageHasContent();
+	const bool freezeAvailable = Inkeys::UI::Freeze::IsAvailable();
 	const auto projection = Inkeys::UI::Bar::ResolveBarA2Projection(
-		presentation, active, whiteboardFeatureEnabled);
-	const int styleKey = (active ? 2 : (presentation ? 1 : 0)) +
-		(whiteboardFeatureEnabled ? 0 : 4);
+		presentation, active, whiteboardFeatureEnabled, separateMode, selectionEmpty, freezeAvailable);
+	const int styleKey = (active ? 1 : 0) | (presentation ? 2 : 0) |
+		(whiteboardFeatureEnabled ? 4 : 0) | (separateMode ? 8 : 0) |
+		(selectionEmpty ? 16 : 0) | (freezeAvailable ? 32 : 0);
 	if (whiteboardButtonStyleKey == styleKey) return;
 
 	lock_guard<mutex> lock(mtx);
@@ -940,9 +968,16 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 	whiteboard->hide = !whiteboardFeatureEnabled;
 	whiteboard->size = projection.whiteboardTwoTwo
 		? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-	// 定格在桌面与 PPT 放映场景中始终保持 2*2，避免切换场景时尺寸跳变。
-	freeze->size = BarButtonSizeEnum::twoTwo;
+	freeze->size = projection.freezeTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
 	freeze->hide = !projection.freezeVisible;
+	if (auto* pierce = preset[(int)BarButtonPresetEnum::Pierce])
+	{
+		pierce->hide = !projection.pierceVisible;
+		pierce->size = projection.pierceTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+		auto label = IW(I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
+		if (label == L"Click-through") label = L"Click-\nthrough";
+		pierce->TransitionContent(L"barPierce", label);
+	}
 	endShow->size = BarButtonSizeEnum::twoTwo;
 	endShow->hide = !projection.endShowVisible;
 	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",
@@ -1328,6 +1363,15 @@ void BarButtonSetClass::Load()
 	if (moreButton) activeButtons.push_back(moreButton);
 	AppendBoundaryDivider(activeButtons, 1); // B | A2
 	AppendFixedButtons(normalizedA2, activeButtons);
+	if (mainPierceButton)
+	{
+		const auto freeze = std::find_if(activeButtons.begin(), activeButtons.end(),
+			[](const shared_ptr<BarButtonClass>& button)
+			{
+				return button && button->preset == BarButtonPresetEnum::Freeze;
+			});
+		if (freeze != activeButtons.end()) activeButtons.insert(freeze, mainPierceButton);
+	}
 
 	// 先在列表锁内替换整段序列，再发布数量；注册表和边界实例继续持有对象所有权。
 	const int activeButtonCount = static_cast<int>(activeButtons.size());
@@ -1410,11 +1454,12 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = false;
 		preset[(int)BarButtonPresetEnum::Geometry]->hide = false;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
-		// 选择按钮不再承载清空语义。
-		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", whiteboard
-				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
-				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
+		auto label = whiteboard ? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
+			: IW(GetSelectAndClickThroughMode() == 1 &&
+				stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection
+				? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
+		if (label == L"Select (Clear)") label = L"Select\n(Clear)";
+		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label);
 	}
 	// Undo/Redo 只发布当前布局，避免先显示隐藏的 Undo 再收起而多占一列。
 	barUISet.ApplyRecallChromeVisuals();
@@ -1428,6 +1473,13 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 }
 void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
 {
+	barButtonState[(int)BarButtonPresetEnum::Pierce].state =
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough
+		? BarWidgetState::Selected : BarWidgetState::None;
+	// 只有空页且已选择时清空无动作，其余状态仍可由清空返回选择。
+	barButtonState[(int)BarButtonPresetEnum::Clean].state =
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection &&
+		!Inkeys::UI::Bar::CurrentPageHasContent() ? BarWidgetState::Disable : BarWidgetState::None;
 	{
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::None;

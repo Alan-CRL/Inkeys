@@ -65,6 +65,8 @@
       "MainButtons":
       {
         "SelectLabel": "選擇",
+        "SelectClearLabel": "選擇(清空)",
+        "ClickThroughLabel": "穿透",
         "MoveLabel": "拖動",
         "DrawLabel": "繪製",
         "LaserLabel": "雷射筆",
@@ -298,6 +300,16 @@
     "Regular":
     {
       "N": "常規",
+      "SelectAndClickThrough":
+      {
+        "N": "選擇與穿透",
+        "Combined": "合併式",
+        "Separate": "分離式",
+        "CombinedDescription": "透過「選擇」統一操作電腦，涵蓋無墨跡與保留墨跡兩種狀態。",
+        "SeparateDescription": "「選擇（清空）」清空墨跡後操作電腦；「穿透」保留墨跡並操作下方視窗。",
+        "ClickThrough": "穿透",
+        "ClickThroughDescription": "保留螢幕上的墨跡，讓點擊與觸控穿過註記層，操作下方視窗。"
+      },
       "StartUp":
       {
         "N": "開機自動執行與啟動行為",

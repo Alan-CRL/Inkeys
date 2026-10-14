@@ -188,8 +188,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
   - `RegisterButton` 按分区强制上述规则；Extension 仅额外允许已注册官方实体 `Inkeys.Bar.Setting`，布局标识必须走 `RegisterLayoutMarker`；B 区规范化时丢弃未注册官方前缀 ID 与非法点分格式。
 - A1 默认 required 与顺序：Select, Draw, Geometry, Eraser, Recall, Clean（**不含 Divider**）。
-- A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoOne`、`EndShow/twoTwo`；Setting 属于 Extension 的显式 More 项。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。`Pierce` 已退出产品合同，新 A2 配置不接受该 ID。
-- A2 运行时投影固定为：桌面显示 Whiteboard `twoOne` + Freeze `twoOne`；PPT 放映显示 Whiteboard `twoTwo` + EndShow `twoTwo`；全屏 Whiteboard 只显示“关闭白板” `twoTwo`。Freeze 在 PPT/Whiteboard 隐藏，EndShow 在非 PPT 或 Whiteboard 隐藏；这些是运行时 `hide/size`，不改写 A2 持久化顺序。
+- A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoOne`、`EndShow/twoTwo`；Setting 属于 Extension 的显式 More 项。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。旧持久化 `Pierce` ID 仍退休，新 A2 配置不接受该 ID；分离式的独立穿透只作为运行时伴随按钮。
+- A2 的 Freeze/Pierce 按“选择与穿透”合同运行时投影：合并式只显示可用 Freeze `twoTwo`；分离式在同一列显示上 Pierce `twoOne`、下 Freeze `twoOne`。空页 Selection 隐藏 Pierce 并放大可用 Freeze；Freeze 不可用时隐藏并把可用 Pierce 放大。Whiteboard 不提供 Pierce；Whiteboard/EndShow 沿现有工作区投影，隐藏的白板功能入口不因此开放。以上 `hide/size` 不改写 A2 持久化順序。
 - **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。当前虚拟投影始终包含 More 与 Setting，因此主栏恒按 `A1 | Divider | 最多两个 B 实体 | More | Divider | A2` 构建；旧组件全关时仍保留两条 Divider。Divider 保留 `oneTwo` 的两行布局占用，但只绘制 `1x50` DIP、圆角 `0.5` 的 Shape 细线并垂直居中；SurfaceFrame 填充透明度为 `0.30`，不得加载或绘制 SVG；PointLight 关闭主光并复用几何分隔线 `0.30` 的第三鼠标光强度。它不增加主栏横向宽度，而是居中复用上一组尾端已有的 `5` DIP 间隙；前组小按钮留下未填满列时必须先封列，再从新列排下一组，统一横坐标镜像继续保证左右布局对称。
 - **交界分割线交互**：Divider 必须从主栏悬停动画推进、指针扫描及点击/按压命中入口显式排除。遗留 hover、pressed、pressScale 状态应恢复为 `None/None/1.0`；不得通过禁用 Shape 或把可见态 `frameLightPct` 清零来实现不可交互，否则会错误关闭第三鼠标光。
 - **固定 More 入口**：运行时在 B 末尾、`B|A2` Divider 前注入一个硬编码 More 按钮。它不登记到 `ExtensionButtons`，不进入配置；主栏折叠时隐藏，浮层打开时使用普通按钮的 `Selected` 视觉状态。
@@ -224,7 +224,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 | B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
 | 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2；Divider 不迁入，交界运行时注入 |
 | 旧 A2 恰好为 Whiteboard/Freeze（任一顺序） | 保留相对顺序，在末尾追加 EndShow 并规范化默认尺寸 |
-| 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃；A2 最终按 Whiteboard/Freeze/EndShow required 集合严校验，不注册 Pierce 实体 |
+| 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃；A2 最终按 Whiteboard/Freeze/EndShow required 集合严校验，不将 Pierce 注册为持久化布局实体 |
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
 | 旧组件全关 | 运行时仍显示 More；浮层仅含远端 Setting，无横向分割线 |
 | 相邻两条 Divider（运行时/配置） | 只保留一条 |
@@ -418,3 +418,59 @@ H(true, true, "ch", std::string, UpdateChannel,
 - 下拉仅更新偏好并QueueConfigWrite冻结副本，明确下次启动生效，不触发本次Bar移动/折叠或锁内窗口同步。
 - 所有新标题/说明/三选项为zh-CN/zh-TW/en-US，通过i18n sync/check生成头与快照。
 - 新增导航必须检测整个侧栏与固定页脚/分隔线边界，不以单个新页面回放替代整体布局验证。
+
+## 选择与穿透操作模式合同
+
+### 1. Scope / Trigger
+修改合并式/分离式配置、Select/Pierce工具身份、Freeze互斥、主栏Clear禁用、说明卡片及三语短标签时适用。仅UI3产品；不恢复旧Draw2穿透共存模型。
+
+### 2. Signatures
+- `UI.Bar.SelectAndClickThroughMode: IdtAtomic<int> = 0`，main.json中仅0（Combined）/1（Separate），不上传。
+- `GetSelectAndClickThroughMode() noexcept -> int`；`SetSelectAndClickThroughMode(int) -> bool`，返回配置是否变化，不直接写盘。
+- `StateModeSelectEnum::IdtClickThrough`末尾追加，既有枚举值不变。
+- `IsComputerInteractionMode(StateModeSelectEnum) noexcept -> bool`判定Selection或ClickThrough。
+- `ChangeStateModeToClickThrough() -> bool`；`ChangeStateModeToSelectionFromButton() -> bool`；`ToggleFreezeFromButton() -> void`。
+
+### 3. Contracts
+- schema缺失或非法值回Combined；读取严格验证JSON整数0/1，不允许大整数窄化误变Separate。
+- 设置每帧取实时模式；先改变配置/工具，沿既有SyncDraw3State的render defer guard同步，再通过Setting FIFO冻结配置payload。重复选择不写盘；不得持ImGui锁同步等待HWND。
+- 设置切Combined→Separate时，当前有墨迹Selection映射ClickThrough；反向ClickThrough映射Selection，始终保留内容；其他工具不变。
+- Separate Select按钮先通过现有Draw3 Clear事务清当前页，Accepted后进入Selection；拒绝保持工具。空页直接选择。普通系统/可信PPT退出Selection入口保持原语义，不附加清空。
+- ClickThrough独立高亮，重复点击无动作；进入时关闭Freeze。记忆最近Pen/Shape/Eraser顶层模式，具体子工具/笔型/属性留在既有字段。穿透时点Freeze恢复该模式并开启Freeze，墨迹不动，不恢复旧Freeze。
+- backend selectionMode、呈现/输入/设置owner按电脑操作判定处理两工具，但主栏按实际枚举分别高亮。已接受/迟到回调沿既有修订保护。
+- Pierce运行时插在Freeze前，shared_ptr稳定持有、无需持久化布局注册；不改变A2用户顺序和旧Pierce迁移行为。
+- 常规页标题下/自启区前显示说明卡片和combo，说明在上；复用PPT信息卡片样式，按实际字体/换行测量高度。三语说明完整，短按钮文案独立。
+- Separate非Selection文案为“选择(清空)”/“選擇(清空)”/两行Select与(Clear)；Selection显示普通选择。英文穿透可两行Click-与through，仅该标签局部适配字号，不改全局网格。目标为两行时在透明中点换字前先缩到9 DIP；换回短标签时保持小字号到文字替换，再恢复标准字号。
+
+### 4. Validation & Error Matrix
+|条件|行为|
+|---|---|
+|缺失、非int、超范围或超宽整数模式|Combined|
+|Combined|Pierce隐藏，可用Freeze 2×2|
+|Separate且非空页Selection或其他工具|Pierce上2×1+Freeze下2×1|
+|空页Selection|Pierce隐藏，可用Freeze 2×2|
+|Freeze不可用/PPT|Freeze隐藏，可用Pierce 2×2|
+|白板|不提供Pierce|
+|空页Selection的主栏Clear|Disable统一灰色，不发命令|
+|空页绘制或ClickThrough的主栏Clear|仍可进入Selection，不能提前禁用|
+|首击Clear被拒绝|不切工具，后续继续清空|
+|设置写盘失败|运行时已选模式生效，下次按磁盘恢复|
+
+### 5. Good / Base / Bad Cases
+- Good：Pen→Pierce→Freeze恢复Pen；Eraser/Shape同样恢复，穿透重点击不退出。
+- Base：旧配置无模式字段，Combined行为保持；PPT隐藏Freeze。
+- Bad：把Pierce重新写进A2、将空画布绘制态Clear禁用、在所有Selection系统入口附加Clear。
+
+### 6. Tests Required
+- 真实配置读写：缺失/非法/0/1、大整数、Mini/复制/默认值，不上传；三语sync/check。
+- 早期无窗口生产状态测试：电脑操作bridge投影、模式双向映射、穿透幂等/Freeze互斥与三类工具恢复、Clear拒绝。
+- Headless覆盖A2布局矩阵、清空二击与Disable边界；DWrite实际测量三语短标签，两种尺寸不截断。
+- 完整Debug|ARM64 solution和Headless --no-window。真实点击/触摸/PPT/设置视觉需独立人工证据，不用CLI替代。
+
+### 7. Wrong vs Correct
+```cpp
+// Wrong：把“非Selection”直接当绘图，会令Pierce拦截底层输入。
+state.selectionMode = mode == StateModeSelectEnum::IdtSelection;
+// Correct：复用原穿透呈现链，同时保持独立UI工具身份。
+state.selectionMode = IsComputerInteractionMode(mode);
+```

@@ -6,13 +6,6 @@ export namespace Inkeys::UI::Bar
 {
 	// 点击后 3 秒内保持位置与命令身份；没有点击时，从待调整目标变化开始等待。
 	inline constexpr double RecallChromeIdleSeconds = 3.0;
-	// 与绘制属性里未启用笔型相同的灰色。
-	inline constexpr unsigned RecallCommandUnavailableColor = 0x00C8C8C8;
-
-	inline unsigned ResolveRecallCommandContentColor(bool enabled, unsigned normalColor) noexcept
-	{
-		return enabled ? normalColor : RecallCommandUnavailableColor;
-	}
 
 	struct RecallHistoryAvailability
 	{

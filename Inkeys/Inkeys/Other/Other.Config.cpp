@@ -554,6 +554,17 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			const Json::Value* jsonValue = TryGetValueAtPath(root, groupPath, name);
 			if (!jsonValue) return;
 
+			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
+			{
+				if (JoinPath(groupPath, name) == "UI.Bar.SelectAndClickThroughMode")
+				{
+					// 仅整数 1 启用分离式；类型错误、越界及未知值统一回到合并式。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
+					return;
+				}
+			}
+
 			T loadedValue{};
 			if (!JsonValueCodec<T>::TryRead(*jsonValue, loadedValue)) return;
 

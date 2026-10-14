@@ -359,6 +359,12 @@ namespace Inkeys::UI::Bar
 		barUISet.NoteRecallHistoryAvailability(canUndo, canRedo);
 	}
 
+	void RefreshToolState() noexcept
+	{
+		// 设置切模式即使未改变墨迹或工具，也必须重新计算按钮；早期 CLI 尚未建好预设。
+		barUISet.UpdateRendering(contentStateUpdatesReady.load(std::memory_order_acquire));
+	}
+
 	bool CurrentPageHasContent() noexcept
 	{
 		return currentPageHasContent;

@@ -2493,10 +2493,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						const COLORREF normalContentColor = temp->state->state == BarWidgetState::Selected
 							? GetThemeColor(BarThemeColorEnum::Accent)
 							: GetThemeColor(BarThemeColorEnum::TextPrimary);
-						// 几何保持时可用性仍立即变色；所有布局分支共用这个最终目标。
-						const COLORREF contentColor = recallCommand
-							? Inkeys::UI::Bar::ResolveRecallCommandContentColor(commandEnabled, normalContentColor)
-							: normalContentColor;
+						// 清空、定格和历史按钮共用主题颜色与禁用透明度，历史保护时序不变。
+						const bool contentDisabled = temp->state->state == BarWidgetState::Disable
+							|| (recallCommand && !commandEnabled);
+						const COLORREF contentColor = normalContentColor;
 						if (temp->icon.color1.has_value())
 						{
 							const COLORREF iconColor = contentColor;
@@ -2554,8 +2554,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						if (!colorSelector)
 							Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(
 								*temp, !state.barState.fold && temp->IsVisible(),
-								temp->button.enable.tar
-									&& temp->state->state != BarWidgetState::Disable,
+								temp->button.enable.tar && !contentDisabled,
 								temp->state->state == BarWidgetState::Selected,
 								operationDur, contentColor);
 
@@ -2617,7 +2616,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnOneHalf, 40.0, true);
 								else
 								{
 									temp->icon.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
+									 contentDisabled
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 									temp->icon.color1.value().SetTar(contentColor);
@@ -2722,7 +2721,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 								else
 								{
 									temp->icon.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
+									 contentDisabled
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 									temp->icon.color1.value().SetTar(contentColor);
@@ -2736,12 +2735,12 @@ temp->name.x.SetTar(metrics.primaryOffsetXDip); // 右侧文字槽与共享 2x1 
 									temp->name.h.SetTar(metrics.primarySlotHeightDip);
 								if (state.barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
 								else temp->name.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
+									 contentDisabled
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 
 								temp->name.color.SetTar(contentColor);
-									temp->name.size.SetTar(metrics.primaryFontSizeDip);
+									temp->name.size.SetTar(temp->LabelFontSize(metrics.primaryFontSizeDip));
 							}
 
 							// 记录目标绘制位置
@@ -2830,7 +2829,7 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 								else
 								{
 									temp->icon.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
+									 contentDisabled
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 									temp->icon.color1.value().SetTar(contentColor);
@@ -2844,13 +2843,13 @@ temp->name.x.SetTar(metrics.primaryOffsetXDip);
 									temp->name.h.SetTar(metrics.primarySlotHeightDip);
 								if (state.barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
 								else temp->name.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
+									 contentDisabled
 										 ? BarButtonDisabledContentOpacity : 1.0,
 									 operationDur);
 
 								temp->name.color.SetTar(contentColor);
 
-									temp->name.size.SetTar(metrics.primaryFontSizeDip);
+									temp->name.size.SetTar(temp->LabelFontSize(metrics.primaryFontSizeDip));
 							}
 
 							// 记录目标绘制位置
@@ -5457,7 +5456,7 @@ for (size_t i = 0; i < 3; ++i)
 				button->name.y.SetDirect(metrics.primaryOffsetYDip * scale);
 				button->name.w.SetDirect(metrics.primarySlotWidthDip * scale);
 				button->name.h.SetDirect(metrics.primarySlotHeightDip * scale);
-				button->name.size.SetDirect(metrics.primaryFontSizeDip * scale);
+				button->name.size.SetDirect(button->LabelFontSize(metrics.primaryFontSizeDip) * scale);
 				button->name.pct.SetDirect(opacityProgress);
 			}
 			else if (button->size == BarButtonSizeEnum::twoTwo)
@@ -5472,7 +5471,7 @@ for (size_t i = 0; i < 3; ++i)
 				button->name.y.SetDirect(metrics.primaryOffsetYDip * scale);
 				button->name.w.SetDirect(metrics.primarySlotWidthDip * scale);
 				button->name.h.SetDirect(metrics.primarySlotHeightDip * scale);
-				button->name.size.SetDirect(metrics.primaryFontSizeDip * scale);
+				button->name.size.SetDirect(button->LabelFontSize(metrics.primaryFontSizeDip) * scale);
 				button->name.pct.SetDirect(opacityProgress);
 			}
 			else
@@ -6161,6 +6160,12 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			const bool contentAdvanced = temp->name.AdvanceContentTransition(animationDtSeconds, currentAnimationSpeedRate);
 			if (contentAdvanced)
 			{
+				if (temp->preset == BarButtonPresetEnum::Select || temp->preset == BarButtonPresetEnum::Pierce)
+				{
+					const auto metrics = ResolveBarButtonVisualMetrics(temp->size == BarButtonSizeEnum::twoOne
+						? BarButtonVisualLayoutKind::StandardTwoOne : BarButtonVisualLayoutKind::StandardTwoTwo);
+					temp->name.size.SetTar(temp->LabelFontSize(metrics.primaryFontSizeDip));
+				}
 				needRendering = true;
 				state.dirtyRegionTracker.MarkChanged(nameDirtyKey);
 			}

@@ -3053,6 +3053,80 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
 						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.N).c_str());
 					}
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						const string modeNames[] = {
+							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Combined),
+							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Separate)
+						};
+						const string modeDescription = modeNames[0] + ": "
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n\n"
+							+ modeNames[1] + ": "
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n\n"
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThrough) + ": "
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThroughDescription);
+						// 使用与绘制相同的信息卡，按实际换行高度容纳三语言的完整说明。
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						const float descriptionHeight = ImGui::CalcTextSize(modeDescription.c_str(), nullptr, false,
+							(settingItemWidth - 80.0f) * settingGlobalScale).y;
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						const float infoCardHeight = max(descriptionHeight, ImGui::GetTextLineHeight()) + 40.0f * settingGlobalScale;
+						ImGui::PopFont();
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("选择与穿透说明", { settingItemWidth * settingGlobalScale,infoCardHeight }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::AccentText);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+						ImGui::TextUnformatted("\uf167");
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::SetCursorPos({ 60.0f * settingGlobalScale,20.0f * settingGlobalScale });
+						ImGui::PushTextWrapPos((settingItemWidth - 20.0f) * settingGlobalScale);
+						ImGui::TextUnformatted(modeDescription.c_str());
+						ImGui::PopTextWrapPos();
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImGui::EndChild();
+
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+						ImGui::BeginChild("选择与穿透模式", { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str());
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						const int mode = GetSelectAndClickThroughMode();
+						float comboWidth = 200.0f * settingGlobalScale;
+						for (const auto& name : modeNames)
+							comboWidth = max(comboWidth, ImGui::CalcTextSize(name.c_str()).x + 45.0f * settingGlobalScale);
+						ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - comboWidth - 20.0f * settingGlobalScale,15.0f * settingGlobalScale });
+						ImGui::SetNextItemWidth(comboWidth);
+						if (Widgets::combo.Begin("##选择与穿透", modeNames[mode].c_str(), 2))
+						{
+							for (int i = 0; i < 2; ++i)
+							{
+								const bool selected = mode == i;
+								// 运行时同步沿用设置的延后队列，再冻结本次修改后的配置写盘。
+								if (Widgets::combo.Selectable(modeNames[i].c_str(), selected) && !selected
+									&& SetSelectAndClickThroughMode(i))
+									QueueConfigWrite();
+								if (selected) ImGui::SetItemDefaultFocus();
+							}
+							Widgets::combo.End();
+						}
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar(2);
+					}
+
 
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);

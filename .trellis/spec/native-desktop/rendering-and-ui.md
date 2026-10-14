@@ -44,7 +44,7 @@
 
 ### 定格状态机合同
 
-`Inkeys.UI.Freeze` 是定格业务状态的唯一所有者。绘制、选择和工具按钮切换不得清除或恢复定格；用户只能通过定格按钮切换状态。PPT 或 Whiteboard 工作区进入时必须关闭定格并禁用主栏定格按钮，退出工作区只解除禁用，不恢复进入前的定格状态。禁用按钮保留可见布局和内容，以现有 `BarButtonDisabledContentOpacity` 呈现，不参与悬停、按压或点击命中。
+`Inkeys.UI.Freeze` 是定格业务状态的唯一所有者。普通绘制、选择和工具按钮切换不清除或恢复定格；独立ClickThrough与Freeze互斥，进入穿透关闭定格，穿透时点定格保留墨迹并恢复记住的Pen/Shape/Eraser后开启定格，不恢复旧定格状态。PPT或Whiteboard进入时关闭并标记不可用；不可用定格按钮从主栏隐藏，退出工作区只恢复可用性，不恢复进入前状态。合并式/分离式的尺寸与显隐见[选择与穿透合同](configuration-i18n-and-assets.md#选择与穿透操作模式合同)。主栏Clear空页且已Selection时使用同一 `Disable` 和 `BarButtonDisabledContentOpacity`，不参与悬停/按压/点击；空页仍在绘制或穿透工具时保持可点击以进入Selection。
 
 以下仅是对现有 Bar 的 `【合理推断】` 修改约束，不适用于所有窗口：
 
@@ -68,7 +68,7 @@
 RecallChromeState ApplyRecallChromeCommandResult(RecallChromeState state,
     bool redo, RecallHistoryAvailability clickAvailability, bool accepted) noexcept;
 bool RecallChromeNeedsIdleRestart(RecallChromeState before, RecallChromeState after) noexcept;
-unsigned ResolveRecallCommandContentColor(bool enabled, unsigned normalColor) noexcept;
+// 历史按钮复用 RetargetBarButtonInteractionVisual 的主题与统一禁用透明度。
 ~~~
 
 `BarUISetClass` 的 `NoteRecallHistoryAvailability`、`PollRecallChromeIdleTimer`、`AdvanceRecallChromeIdle` 和既有 `ArmRecallChromeIdleDeadline/Timer` 负责发布与唤醒；`RetargetBarButtonInteractionVisual` 可接收 `std::optional<COLORREF>` 最终内容颜色，省略时保留原主题行为。
@@ -84,7 +84,7 @@ unsigned ResolveRecallCommandContentColor(bool enabled, unsigned normalColor) no
 - 期限使用 `steady_clock`，主栏 idle 时以既有 `WM_TIMER` 唤醒；有 hold 和无 hold pending 都须被唤醒。不得累加会在 idle 停止的动画 dt 来判定 3 秒。
 - 禁用或发布失败不发送成功点击反馈；若已有待调整布局，点击仍延长保护，保持关闭面板的关闭状态。无 pending 时无效点击不启动新交互。
 - 主栏 Redo 时属性按钮必须为 Undo，反向对称；属性按钮不在主栏注册表，必须自行推进 icon/name 的 `AdvanceContentTransition` 并保持续帧。身份切换以已有 `InitializationFromResource`（SVG val/tar 同步、取消旧内容动画、缓存失效）和 `SetStringImmediate` 同帧提交显示及 preset，避免旧内容与新动作混配。同身份普通内容更新继续使用原动画。
-- 正常颜色与 `RecallCommandUnavailableColor=0x00C8C8C8` 由同一生产解析给出，各尺寸分支与交互 helper 每帧使用同一最终目标；以现有 `BarUiColorClass` 从当前值双向过渡。可用性变化不得先切回正常目标再切灰色。
+- 主栏 Undo/Redo 与弹窗历史按钮的不可用效果统一使用主题 `TextPrimary` 和 `BarButtonDisabledContentOpacity=0.30`，与 Clear/Freeze 相同；可用性仅从当前透明度双向过渡，保护时序、点击决策与布局不变。各尺寸分支与交互 helper 每帧提交同一最终目标，不能先回到完整透明度再降低。
 
 #### 4. Validation & Error Matrix
 
@@ -95,7 +95,7 @@ unsigned ResolveRecallCommandContentColor(bool enabled, unsigned normalColor) no
 | 灰色按钮继续连点 | 不发布禁用命令，仅延期已有保护，不新开弹窗 |
 | 无 hold 的历史可用性变化 | 即时变色，保存待调整目标并等待 3 秒 |
 | Escape/其他属性/绘制/工作区切换 | 可立即收面板，不能立即更换受保护几何 |
-| 相同颜色目标逐帧重复设置 | 动画正常收敛，反向从当前显示颜色开始 |
+| 相同透明度目标逐帧重复设置 | 动画正常收敛，反向从当前显示透明度开始 |
 
 #### 5. Good / Base / Bad Cases
 
@@ -103,7 +103,7 @@ Good：末步前快照认可已接受点击，后续耗尽只改颜色；Base：
 
 #### 6. Tests Required
 
-`InkeysHeadlessTests --no-window` 中既有 Recall 测试须覆盖 2.99/3 秒、异步末步事件顺序、popup 身份、连续/灰色点击延期、无 hold pending 的重定向与取消、关闭/绘制/工作区保护；颜色须调用生产解析和真实动画，断言中间帧、反向连续与终态。既有测试另检查 `RecallAttribute::Advance` 生产源码的单快照、当前主栏锚点门禁及几何接线，需从仓库源码可访问的位置运行。完整 `InkeysRepo.sln Debug|ARM64` 验证生产入口与 helper 编译接线；纯策略、源级断言与编译均不替代实际 D2D/HWND 定时唤醒及交互视觉验收。
+`InkeysHeadlessTests --no-window` 中既有 Recall 测试须覆盖 2.99/3 秒、异步末步事件顺序、popup 身份、连续/灰色点击延期、无 hold pending 的重定向与取消、关闭/绘制/工作区保护；透明度须使用统一禁用常量和真实动画，断言中间帧、反向连续与终态，并确认弹窗接入公共视觉 helper。既有测试另检查 `RecallAttribute::Advance` 生产源码的单快照、当前主栏锚点门禁及几何接线，需从仓库源码可访问的位置运行。完整 `InkeysRepo.sln Debug|ARM64` 验证生产入口与 helper 编译接线；纯策略、源级断言与编译均不替代实际 D2D/HWND 定时唤醒及交互视觉验收。
 
 #### 7. Wrong vs Correct
 
@@ -1699,7 +1699,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - `Inkeys.UI.Freeze` 把业务 flags 与单调 `revision` 放在同一原子状态字中，每次真实 Toggle 或 PPT/Whiteboard 工作区切换发布完整 `StateSnapshot`。observer 只能把 `{revision, active}` 投递到 latest-wins mailbox 并唤醒 `MagnifierThread`，不得直接操作 HWND；迟到通知按 revision 丢弃，失败回退只能调用 `DeactivateIfRevision(request.revision)`，禁止无条件 `Toggle()`。
 - `MagnifierThread` 是桌面定格唯一的 Magnifier 更新/显示协调入口。一次有效 active revision 依次校验 Window Service 当前 Host/Child、保持 Host 透明并显示 Host/Child、从当前角色 HWND 重建并提交排除列表、提交一次 source、invalidate/redraw，最后再校验 revision 与当前句柄后揭开 Host；Reveal 后仍需复查，过期结果必须立即 conceal 且不得提交 applied/visible。过滤、source 或必要显示步骤任一失败都停止成功链、条件撤销对应 Freeze revision，并允许后续新 revision 重试。inactive、工作区切换、停止和退出只透明并隐藏 Magnifier Host/Child，不隐藏 Bar/Drawpad，不改变 owner/topmost/focus/taskbar。`FreezeFrameWindow` 只保留 Freeze/PPT/Recall surface 绘制，不得调用 Magnifier 更新、显隐或 alpha API。
 - 桌面定格不得调用 `SetOverlayFullscreen`：Magnifier 和 Freeze surface 都继续使用显示器高度减 1 像素，Shell fullscreen 标记只属于白板工作区。Window Service 重建 Magnifier 生命周期时先停止旧 coordinator，再在新 `PrepareMagnifierWindow` 生命周期 reset；每次事务重新读取当前 Host/Child 和完整排除集合，不能缓存旧 HWND。
-- Setting 创建时及 `IdtSelection` 选择态的 owner 必须为 null；所有非选择态通过 `SetSettingOwnedByDrawpad(true)` 把 Drawpad 设为 owner，回到选择态通过 `SetSettingOwnedByDrawpad(false)` 清除 owner 并以 `HWND_NOTOPMOST` 退出画布置顶链。owner 修改必须投递到 Setting 所属线程，重复请求幂等；目标 HWND 缺失、Win32 调用失败或最终 `GW_OWNER` 不符合请求时返回 false，部分修改必须回滚原 owner。`SyncDraw3State()` 保存带版本的最新期望值，提交失败后由 `StateMonitoring()` 的 250ms 节拍重试；提交与 applied 写回必须串行，并在持锁后丢弃过期版本，避免旧命令覆盖新模式或产生假收敛。该动态 owner 是 Setting 唯一受控例外，不得直接从工具按钮、快捷键或渲染线程修改。
+- Setting 创建时及电脑操作状态（`IdtSelection`/`IdtClickThrough`）的 owner 必须为 null；绘制状态通过 `SetSettingOwnedByDrawpad(true)` 把 Drawpad 设为 owner，回到电脑操作状态通过 `SetSettingOwnedByDrawpad(false)` 清除 owner 并以 `HWND_NOTOPMOST` 退出画布置顶链。owner 修改必须投递到 Setting 所属线程，重复请求幂等；目标 HWND 缺失、Win32 调用失败或最终 `GW_OWNER` 不符合请求时返回 false，部分修改必须回滚原 owner。`SyncDraw3State()` 保存带版本的最新期望值，提交失败后由 `StateMonitoring()` 的 250ms 节拍重试；提交与 applied 写回必须串行，并在持锁后丢弃过期版本，避免旧命令覆盖新模式或产生假收敛。该动态 owner 是 Setting 唯一受控例外，不得直接从工具按钮、快捷键或渲染线程修改。
 - Setting 始终是可激活的顶层 owned/unowned popup，而不是真正的子窗口：style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除独立 topmost/layered/noactivate/toolwindow。owner 切换不得改变 style、ex-style、图标、窗口线程或任务栏按钮；显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
 - Setting 自绘标题栏的可拖动空白区必须在 ImGui 消息转发前处理 `WM_NCHITTEST` 并返回 `HTCAPTION`，由 Win32 非客户区移动循环负责拖窗；当前几何为缩放后的 `0 <= y < 32 DIP` 且 `0 <= x < 914 DIP`。右侧 `914..960 DIP` 关闭按钮和正文返回 `HTCLIENT`，继续由 ImGui 处理隐藏与内容交互。该命中合同不得因 Setting 是否拥有 Drawpad owner 而分支，`WM_MOVE` 继续记录最终位置。
 - 主栏设置按钮调用统一 `UI::Setting::Toggle()`：隐藏时显示并激活；已显示但真实 Setting HWND 不是前台线程的焦点窗口时，只重新提交 Setting `Show` 命令以 restore/foreground/active/focus；仅在已显示且前台窗口与真实焦点 HWND 都是 Setting 时隐藏。Bar 保持 `WS_EX_NOACTIVATE`，只读取焦点状态，不得从 Bar 输入线程直接调用 `ShowWindow`、`SetForegroundWindow`、`SetActiveWindow` 或 `SetFocus`。
@@ -1749,7 +1749,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 ### 5. Good / Base / Bad Cases
 
 - Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；Drawpad 以顶层 owned popup 挂到 DrawpadPresentation，根刷新整体抬升单条 owner 树；桌面定格激活发布一次立即的 service refresh，并由唯一 Magnifier coordinator 对该 revision 提交一次减 1 像素 source，不向 Shell 声明全屏。
-- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；非选择态 Setting 作为 Drawpad owned popup 随链位于画布之上，选择态清除 owner 后回到普通窗口层级；owner 提交短暂失败时保持最新期望并周期重试；两种状态下标题栏拖动与主栏按钮的失焦恢复行为一致。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
+- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；绘制态 Setting 作为 Drawpad owned popup 随链位于画布之上，选择/穿透态清除 owner 后回到普通窗口层级；owner 提交短暂失败时保持最新期望并周期重试；两种状态下标题栏拖动与主栏按钮的失焦恢复行为一致。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
 - Bad：把 DrawpadPresentation 和 Drawpad 都直接挂到 Freeze，会让 Bar 与 selection-only 表面缺少可传递的 Owner 层级保证；定格按钮直接 `SetWindowPos(Freeze, HWND_TOPMOST, ...)` 或把置顶延迟到定格画面准备完成，会分裂链根置顶所有权或让用户误以为定格加载很慢。
 
 ### 6. Tests Required
@@ -1846,7 +1846,7 @@ SetWindowLongPtrW(setting, GWLP_HWNDPARENT,
 
 // Correct：统一发布最新期望；同步失败由状态线程持续重试到 applied 版本追上。
 const auto desired = PublishSettingOwnerDesiredState(
-    stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection);
+    !IsComputerInteractionMode(stateMode.StateModeSelect));
 ApplySettingOwnerDesiredState(desired);
 ~~~
 

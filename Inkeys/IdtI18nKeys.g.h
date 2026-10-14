@@ -68,6 +68,8 @@ inline constexpr struct I18nKeyRoot
             struct Node__UI__Bar__MainButtons
             {
                 const char* SelectLabel = "UI/Bar/MainButtons/SelectLabel";
+                const char* SelectClearLabel = "UI/Bar/MainButtons/SelectClearLabel";
+                const char* ClickThroughLabel = "UI/Bar/MainButtons/ClickThroughLabel";
                 const char* MoveLabel = "UI/Bar/MainButtons/MoveLabel";
                 const char* DrawLabel = "UI/Bar/MainButtons/DrawLabel";
                 const char* LaserLabel = "UI/Bar/MainButtons/LaserLabel";
@@ -301,6 +303,16 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Regular
         {
             const char* N = "SettingsUI/Regular/N";
+            struct Node__SettingsUI__Regular__SelectAndClickThrough
+            {
+                const char* N = "SettingsUI/Regular/SelectAndClickThrough/N";
+                const char* Combined = "SettingsUI/Regular/SelectAndClickThrough/Combined";
+                const char* Separate = "SettingsUI/Regular/SelectAndClickThrough/Separate";
+                const char* CombinedDescription = "SettingsUI/Regular/SelectAndClickThrough/CombinedDescription";
+                const char* SeparateDescription = "SettingsUI/Regular/SelectAndClickThrough/SeparateDescription";
+                const char* ClickThrough = "SettingsUI/Regular/SelectAndClickThrough/ClickThrough";
+                const char* ClickThroughDescription = "SettingsUI/Regular/SelectAndClickThrough/ClickThroughDescription";
+            } SelectAndClickThrough{};
             struct Node__SettingsUI__Regular__StartUp
             {
                 const char* N = "SettingsUI/Regular/StartUp/N";

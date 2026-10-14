@@ -1,0 +1,30 @@
+{
+  "id": "select-clickthrough-modes",
+  "name": "select-clickthrough-modes",
+  "title": "选择与穿透操作模式",
+  "description": "新增合并式与分离式，独立穿透工具、定格布局、清空禁用视觉及三语言设置说明",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-14",
+  "completedAt": null,
+  "branch": "feature/mode",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "implementation": "complete",
+    "automated_validation": "passed",
+    "manual_gui_validation": "pending"
+  }
+}

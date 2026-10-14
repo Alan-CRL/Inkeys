@@ -9,6 +9,7 @@
 import Inkeys.UI.Bar.RecallAttributeMotion;
 import Inkeys.UI.Bar.RecallChrome;
 import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.Bar.Metrics;
 
 int RunRecallAttributeTests()
 {
@@ -292,24 +293,23 @@ int RunRecallAttributeTests()
 			&& !compact.popupOpen, "after idle the same column legitimately becomes redo over undo");
 	}
 	{
-		// 主栏和弹窗共用生产颜色解析，再用真实颜色动画检查中间帧、反向与终态。
-		constexpr unsigned normal = 0x00302010;
-		BarUiColorClass color(normal);
-		const auto advance = [&] { return BarUiAdvanceAnimation(color, { 0.05, 1, true, false }); };
-		const auto target = [&](bool enabled) { color.SetTar(ResolveRecallCommandContentColor(enabled, normal)); };
+		// 四类主栏按钮和历史弹窗共用透明度，用真实动画覆盖反向和重复目标收敛。
+		BarUiPctClass opacity(1.0);
+		const auto advance = [&] { return BarUiAdvanceAnimation(opacity, { 0.05, 1, true, false }); };
+		const auto target = [&](bool enabled) { opacity.SetTar(enabled ? 1.0 : BarButtonDisabledContentOpacity); };
 		target(false);
 		advance();
-		expect(color.tar == RecallCommandUnavailableColor && color.val != normal
-			&& color.val != RecallCommandUnavailableColor, "gray animation has a real intermediate color");
-		const auto middle = color.val.load();
+		expect(opacity.tar == BarButtonDisabledContentOpacity && opacity.val < 1.0
+			&& opacity.val > BarButtonDisabledContentOpacity, "disabled animation has a real intermediate opacity");
+		const auto middle = opacity.val.load();
 		target(true);
-		expect(color.val == middle && color.startColor == middle && color.tar == normal,
-			"re-enabling reverses color continuously from the displayed color");
+		expect(opacity.val == middle && opacity.startV == middle && opacity.tar == 1.0,
+			"re-enabling reverses opacity continuously from the displayed opacity");
 		for (int frame = 0; frame < 10; ++frame) { target(true); advance(); }
-		expect(color.val == normal && color.IsSame(), "repeated enabled targets converge to normal");
+		expect(opacity.val == 1.0 && opacity.IsSame(), "repeated enabled targets converge to full opacity");
 		for (int frame = 0; frame < 10; ++frame) { target(false); advance(); }
-		expect(color.val == RecallCommandUnavailableColor && color.IsSame(),
-			"repeated disabled targets converge to the brush gray without animation resets");
+		expect(opacity.val == BarButtonDisabledContentOpacity && opacity.IsSame(),
+			"repeated disabled targets converge to unified gray without animation resets");
 	}
 
 	{
@@ -352,6 +352,9 @@ int RunRecallAttributeTests()
 				&& advance.find("b.icon.InitializationFromResource(L\"UI\", iconResource)") != std::string::npos
 				&& advance.find("b.name.SetStringImmediate(label)") != std::string::npos,
 				"popup command identity commits its matching SVG and label together without showing the previous action");
+			expect(advance.find("RetargetBarButtonInteractionVisual(b, presented, commandEnabled, false") != std::string::npos
+				&& advance.find("ResolveRecallCommandContentColor") == std::string::npos,
+				"popup uses the same theme and disabled opacity as Clear and Freeze");
 			expect(advance.find("b.icon.AdvanceContentTransition(dt, speed)") != std::string::npos
 				&& advance.find("b.name.AdvanceContentTransition(dt, speed)") != std::string::npos
 				&& advance.find("active_ |= iconContentAdvanced || nameContentAdvanced") != std::string::npos,

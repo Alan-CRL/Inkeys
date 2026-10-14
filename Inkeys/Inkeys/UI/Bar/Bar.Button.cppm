@@ -39,7 +39,8 @@ enum class BarButtonPresetEnum : int
 	EndShow,
 
 	More,
-	Setting
+	Setting,
+	Pierce
 };
 
 class BarButtonStateClass
@@ -81,6 +82,7 @@ public:
 		userVisible(other.userVisible),
 		hide(other.hide),
 		only(other.only),
+		compactMultilineLabel(other.compactMultilineLabel),
 		button(other.button),
 		hoverStage(other.hoverStage),
 		pressScale(other.pressScale),
@@ -98,6 +100,13 @@ public:
 	{
 		return userVisible.load() && !hide.load();
 	}
+	// 新增英文长标签使用两行，局部缩小字号，不改变现有按钮网格。
+	double LabelFontSize(double standardFontSize) const
+	{
+		return (preset == BarButtonPresetEnum::Select || preset == BarButtonPresetEnum::Pierce)
+			&& (compactMultilineLabel || name.content.GetVal().find(L'\n') != wstring::npos)
+			? 9.0 : standardFontSize;
+	}
 	// 图标和文字只在内容实际变化时启动同一套缩放、淡出与回弹过程。
 	bool TransitionContent(const wstring& iconResourceName, const wstring& label);
 
@@ -109,6 +118,7 @@ public:
 	IdtAtomic<bool> userVisible = true;
 	IdtAtomic<bool> hide = true;
 	IdtAtomic<bool> only = true;
+	IdtAtomic<bool> compactMultilineLabel = false;
 
 	// 绘制记录
 	IdtAtomic<double> lastDrawX = 0.0;
@@ -249,6 +259,7 @@ bool RegisterButton(
 
 	protected:
 		void UpdateDrawButtonStyle(const StateModeClass& stateMode);
+		void UpdateWhiteboardButtonStyle(const StateModeClass& stateMode);
 		void UpdateEraserButtonStyle(const StateModeClass& stateMode);
 		void UpdateGeometryButtonStyle(const StateModeClass& stateMode);
 		void PresetHoming(const StateModeClass& stateMode);
@@ -284,6 +295,8 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 		shared_ptr<BarButtonClass> moreButton;
 		// 运行时插在 Recall 前，不进入 FixedButtonsA1。
 		shared_ptr<BarButtonClass> mainRedoButton;
+		// 运行时依附定格，不注册旧 Pierce 持久化 ID。
+		shared_ptr<BarButtonClass> mainPierceButton;
 		mutable mutex moreSnapshotMutex;
 		BarMoreButtonSnapshotClass moreSnapshot;
 		mutex legacyOrderMutex;

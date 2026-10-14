@@ -315,7 +315,7 @@ PumpBridgeState();
 
 ### 2. Signatures
 
-- `Bridge::ProductState::selectionMode : bool`，默认 `true`；不得从 `WS_EX_TRANSPARENT` 反推模式。
+- `Bridge::ProductState::selectionMode : bool`，默认 `true`；由 `IsComputerInteractionMode(StateModeSelect)` 将 `IdtSelection`/`IdtClickThrough` 统一投影，保留独立 UI 工具身份；不得从 `WS_EX_TRANSPARENT` 反推模式。
 - `DrawingControllerRuntimeObserver::currentPageContentChanged(void*, bool, uint64_t)`。
 - `HostRuntimeSnapshot` 包含内容、已应用选择模式、请求/就绪输出目标及 revision、`presentedContentRevision`、`auxiliaryFullFrameClean`、`runtimeRevision`；状态线程使用 `WaitForRuntimeRevision()`。
 - `CanvasPageRuntimeState::{undoFloor, intervalOrdinal, intervalLoadPending, previousClearUndoAvailable, boundaryFallback}` 与 UInk Type 6 Clear。
@@ -327,12 +327,12 @@ PumpBridgeState();
 
 - 当前页内容真值唯一来自当前 interval 的 `CanvasRuntimeHistory::LastVisibleItem()`：存在可见 Stroke 时有内容，否则无内容。Pen、Highlighter、Shape 和 Eraser 都算 Stroke 内容；Laser 与 UInk Clear marker 不算；Eraser 即使把视觉画面擦空仍算。
 - DrawingController 在文档初始化、Stored Stroke 成功进入 runtime history、Undo/Redo 成功、Clear 和页面切换后检查内容；跨文档/页槽切换即使 `hasContent` 不变也发布新的 `contentRevision`。Host 必须把 `(hasContent, contentRevision)` 当成完整载荷：任一字段变化都存储、通知 `WaitForContentRevision` 并推进 runtime wake；两者都相同才幂等跳过。每次成功 Present 记录实际目标、输出 revision 和对应内容 revision，Selection 显隐仍要求 `presentedContentRevision == contentRevision`，不得用新呈现版本反向伪造目标。
-- presentation 状态固定为：非选择只显示主 Drawpad；选择先把最终 backbuffer 全量提交到辅助 ULW，再隐藏主窗并显示辅助窗；选择无内容时只有辅助完整帧 alpha 全零才隐藏两窗。换窗前必须满足请求/就绪 target 与 revision 一致且 `presentedContentRevision == contentRevision`。
+- presentation 使用桥接 selectionMode：绘制只显示主 Drawpad；选择/穿透先把最终 backbuffer 全量提交到辅助 ULW，再隐藏主窗并显示辅助窗；选择无内容时只有辅助完整帧 alpha 全零才隐藏两窗。换窗前必须满足请求/就绪 target 与 revision 一致且 `presentedContentRevision == contentRevision`。
 - Window Service 用批量窗口位置命令确保两窗互斥可见；失败时先隐藏两窗再收敛到唯一目标。主 Drawpad 不得动态切换 `WS_EX_TRANSPARENT`。
-- Bar 仅在“选择+无内容”隐藏 Eraser/Geometry/Recall 等绘制按钮；选择+有内容与非选择均保持完整布局，选择按钮文字恒为“选择”。产品路径不再注册或读取 Pierce/`penetrate.select`。
+- Bar 仅在“选择+无内容”隐藏 Eraser/Geometry/Recall 等绘制按钮；选择+有内容与其他工具保持完整布局。合并式选择沿现有语义，分离式非选择状态显示“选择(清空)”并在 Clear Accepted 后进入选择；独立 Pierce 仅按[选择与穿透合同](configuration-i18n-and-assets.md#选择与穿透操作模式合同)注入运行时主栏，旧持久化 Pierce ID 与 `penetrate.select` 不恢复。
 - Clear 只在 UInk canonical `Canvas.content` 中是 append-only Type 6 操作；活动 runtime 必须清空 `InkCanvas` Stroke、替换为 fresh history/raster token 并全量清理 GPU/瞬态资源。保存成功后释放 fallback，Undo 到 floor 时再按 Desktop locator 或 PPT page/ordinal 物化最近目标区间；该画布可逐笔撤空，但不能再跨越更早 Clear。
 - Clear 成功后仍分配新的 raster token，丢弃不兼容的热前像、composition GPU cache/维护、恢复计划和 trusted L2，并重置 Laser/粒子/光标/瞬态层后全量透明呈现；CPU history、当前 viewport 和其他页面保留。Undo 隐藏 Clear 并恢复旧 Stroke，Redo 重新显示 Clear 并清空。
-- 清空按钮采用两步语义：有内容时单击只发布 Clear 并保持模式；无内容且非选择时单击进入选择。绘制有内容时双击由第一击已接受的 Clear 资格使第二击直接进入选择，不等待异步内容回报；发布失败时第二击重试 Clear。Clear 不进入 300ms toggle 点击合并。
+- 清空按钮采用两步语义：有内容时单击只发布 Clear 并保持模式；无内容且非选择时单击进入选择；空页已选择时使用统一 Disable 灰色且不响应。绘制或穿透有内容时双击由第一击已接受的 Clear 资格使第二击直接进入选择，不等待异步内容回报；发布失败时第二击重试 Clear。Clear 不进入 300ms toggle 点击合并。
 - `timeBeginPeriod(1)` 只在进入非选择模式时幂等尝试；回到选择或绘制线程退出时，仅对成功 begin 配对 `timeEndPeriod(1)`。begin 失败后同一次绘制停留不重试，必须离开并重新进入绘制模式。
 
 ### 4. Validation & Error Matrix

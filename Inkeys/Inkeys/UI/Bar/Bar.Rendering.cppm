@@ -47,6 +47,7 @@ enum class BarBorderPrimaryAnchorEnum : int
 	Draw,
 	Eraser,
 	Geometry,
+	Pierce,
 };
 
 // Surface 只消费 Main Bar 已经计算完成的两路光源，不复制第三光源状态机。

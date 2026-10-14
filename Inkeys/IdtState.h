@@ -14,8 +14,15 @@ enum class StateModeSelectEnum
 	IdtEraser,
 	IdtShape,
 
-	IdtTouchTest
+	IdtTouchTest,
+	IdtClickThrough
 };
+
+constexpr bool IsComputerInteractionMode(StateModeSelectEnum mode) noexcept
+{
+	return mode == StateModeSelectEnum::IdtSelection ||
+		mode == StateModeSelectEnum::IdtClickThrough;
+}
 enum class PenModeSelectEnum
 {
 	// Brush1 是历史名称，当前默认工具语义为软笔；保留别名避免旧调用失效。
@@ -71,6 +78,8 @@ public:
 	StateModeSelectEnum StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 	// 记录最后选择的笔型是否为 Laser；离开 Pen 时保留，返回 Pen 时恢复。
 	bool laserActive = false;
+	// 穿透退出到定格时只恢复顶层工具，具体笔型与属性仍使用原有记忆。
+	StateModeSelectEnum lastAnnotationMode = StateModeSelectEnum::IdtPen;
 	Inkeys::Business::PenWidth::Context penWidthContext;
 
 	struct
@@ -155,6 +164,11 @@ float GetEffectivePenOpacity();
 float GetEffectivePenOpacity(const StateModeClass& snapshot) noexcept;
 
 bool ChangeStateModeToSelection();
+bool ChangeStateModeToSelectionFromButton();
+bool ChangeStateModeToClickThrough();
+int GetSelectAndClickThroughMode() noexcept;
+bool SetSelectAndClickThroughMode(int mode);
+void ToggleFreezeFromButton();
 std::uint64_t StateModeTransitionRevision() noexcept;
 bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision);
 bool ChangeStateModeToPen();

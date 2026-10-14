@@ -1083,6 +1083,7 @@ namespace Inkeys::UI::Bar
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
 	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
+	export void RefreshToolState() noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
 	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;

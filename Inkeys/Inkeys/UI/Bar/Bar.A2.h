@@ -13,18 +13,25 @@ namespace Inkeys::UI::Bar
 		bool whiteboardTwoTwo = false;
 		bool freezeVisible = true;
 		bool endShowVisible = false;
+		bool freezeTwoTwo = true;
+		bool pierceVisible = false;
+		bool pierceTwoTwo = false;
 	};
 
 	[[nodiscard]] constexpr BarA2Projection ResolveBarA2Projection(
 		bool presentationActive, bool whiteboardActive,
-		bool whiteboardFeatureEnabled = true) noexcept
+		bool whiteboardFeatureEnabled = true, bool separateMode = false,
+		bool selectionEmpty = false, bool freezeAvailable = true) noexcept
 	{
-		if (!whiteboardFeatureEnabled)
-			return { false, true, presentationActive };
-		if (whiteboardActive) return { true, false, false };
-		// PPT 中保留定格入口，由按钮状态显示为禁用而不是隐藏。
-		if (presentationActive) return { false, true, true };
-		return { false, true, false };
+		if (whiteboardActive) return { whiteboardFeatureEnabled, false, false };
+		BarA2Projection result;
+		result.freezeVisible = freezeAvailable && !presentationActive;
+		result.endShowVisible = presentationActive;
+		// 穿透依附定格的位置；空页选择不需要穿透，PPT 禁用定格时让穿透独占一格。
+		result.pierceVisible = separateMode && !selectionEmpty;
+		result.freezeTwoTwo = !result.pierceVisible;
+		result.pierceTwoTwo = !result.freezeVisible;
+		return result;
 	}
 
 	[[nodiscard]] constexpr bool IsLegacyBarA2Pair(
