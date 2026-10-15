@@ -261,6 +261,10 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		WhiteboardTheme whiteboardTheme;
+		std::uint64_t whiteboardGeneration = 0;
+		bool whiteboardLoadPending = false;
+		bool whiteboardUnsaved = false;
 		bool canUndo = false;
 		bool canRedo = false;
 		std::uint64_t contentRevision = 0;
@@ -325,6 +329,7 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
+		Bridge::CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		// 生命周期事务控制 Drawpad 是否允许本次鼠标输入激活窗口。
 		void SetActivationAllowed(bool enabled) noexcept;
 		bool PublishPresentationUiReady(

@@ -87,20 +87,29 @@ int RunPptSessionTests()
 	check(reentryTransition == std::optional<bool>(false) && rapidReentry.active
 		&& rapidReentry.session == 2 && !rapidReentry.Take(),
 		"pending exit obligation survives newer entry without replaying two animations");
-	check(reentryTransition && ResolveBarPptSceneAction(*reentryTransition, false,
-		BarBottomDockMode::Floating, false) == BarPptSceneAction::CenterDock,
-		"expanded floating bar centers after exit even when next show already started");
-	check(ResolveBarPptSceneAction(true, false, BarBottomDockMode::BottomDocked, false)
-		== BarPptSceneAction::CenterDock, "expanded dock enters centered");
-	check(ResolveBarPptSceneAction(true, false, BarBottomDockMode::Floating, false)
-		== BarPptSceneAction::Keep, "expanded free bar stays free on entry");
-	check(ResolveBarPptSceneAction(true, true, BarBottomDockMode::BottomDocked, false)
-		== BarPptSceneAction::Detach, "folded dock releases constraints without expansion");
-	check(ResolveBarPptSceneAction(false, false, BarBottomDockMode::Floating, false)
-		== BarPptSceneAction::CenterDock, "expanded exit centers even a free bar");
-	check(ResolveBarPptSceneAction(false, true, BarBottomDockMode::Floating, false)
-		== BarPptSceneAction::Keep, "folded exit keeps position");
-	check(ResolveBarPptSceneAction(false, false, BarBottomDockMode::BottomDocked, true)
-		== BarPptSceneAction::Keep, "whiteboard owns geometry when underlying show ends");
+	check(ShouldPlaceBarWorkspaceDock(false, BarBottomDockMode::BottomDocked),
+		"expanded dock follows scene bottom without changing centering mode");
+	check(!ShouldPlaceBarWorkspaceDock(true, BarBottomDockMode::BottomDocked) &&
+		!ShouldPlaceBarWorkspaceDock(false, BarBottomDockMode::Floating) &&
+		!ShouldPlaceBarWorkspaceDock(true, BarBottomDockMode::Floating),
+		"folded and floating bars preserve their geometry on scene entry");
+	BarWorkspaceSceneState workspace;
+	check(workspace.Update(false, true) == BarWorkspaceTransition::Enter,
+		"desktop to presentation captures baseline");
+	check(workspace.Update(true, true) == BarWorkspaceTransition::Switch,
+		"presentation to whiteboard preserves baseline");
+	check(workspace.Update(true, false) == BarWorkspaceTransition::Keep,
+		"background presentation exit cannot restore desktop under whiteboard");
+	check(workspace.Update(false, false) == BarWorkspaceTransition::Leave,
+		"last workspace exit restores desktop baseline");
+	check(workspace.Update(true, false) == BarWorkspaceTransition::Enter,
+		"desktop to whiteboard captures a fresh baseline");
+	check(workspace.Update(false, true) == BarWorkspaceTransition::Switch,
+		"return to a live show preserves baseline");
+	check(workspace.Update(false, true) == BarWorkspaceTransition::Keep,
+		"heartbeat and minimizing do not replay entry");
+	check(workspace.Update(false, false) == BarWorkspaceTransition::Leave &&
+		workspace.Update(false, false) == BarWorkspaceTransition::Keep,
+		"desktop restoration occurs exactly once");
 	return failures;
 }

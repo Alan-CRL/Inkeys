@@ -142,6 +142,7 @@ export namespace Inkeys::Drawing::Draw3
 	{
 	public:
 		virtual ~DrawingCursorEventSink() = default;
+		virtual void NotifyCanvasContactDown() noexcept {}
 		// RTS 确认 Touch 接触开始后，使上一设备留下的 Mouse Hover 失效。
 		virtual void NotifyTouchContactBegin() noexcept = 0;
 		// RTS Touch 的 Up/Cancel 仅维护诊断生命周期，不把 Touch 设为持久 owner。

@@ -569,6 +569,15 @@ struct BarRenderLoopState
 	bool initialBottomDockPlacementApplied = false;
 	bool whiteboardDockPlacementPending = false;
 	bool pptDockPlacementPending = false;
+	Inkeys::UI::Bar::BarWorkspaceSceneState workspaceScene;
+	BarBottomDockMode desktopDockMode = BarBottomDockMode::Floating;
+	BarBottomDockCenterMode desktopCenterMode = BarBottomDockCenterMode::Free;
+	bool desktopFold = false;
+	bool desktopSide = false;
+	bool desktopPrimarySide = false;
+	double desktopScreenX = 0.0, desktopScreenY = 0.0;
+	HMONITOR desktopMonitor = nullptr;
+	bool desktopRestorePending = false;
 	bool whiteboardDockAnimationActive = false;
 	double displayCapacityZoom = 1.0;
 	BarUiValueClass displayDpiScale{ 1.0 };
@@ -3151,6 +3160,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 					: visible.bottom - (state.mainButtonBaseSize + strokeWidthDip) * placementZoom / 2.0;
 			}
 
+			if (whiteboardDockPlacement && frame.bottomDockCenterMode == BarBottomDockCenterMode::Free)
+				screenCenterX = ClampBarBottomDockMainCenterScreenX(
+					state.monitorOrigin.x + state.displayCenterX.val, state.activeMonitorBounds,
+					mainButton->GetW() / 2.0 + mainFrameHalfDip, placementZoom);
 			if (whiteboardDockPlacement)
 			{
 				// 白板入口只在首次就位时播放 0.4s 动画，后续靠近底部仍交给原吸附状态机。
@@ -13585,79 +13598,66 @@ BarRenderLoopCoordinator::RenderFrame(
 			BarDirectWindowDragPhase::Idle, memory_order_release);
 	}
 	BarDirectWindowDragPhase expectedScenePhase = BarDirectWindowDragPhase::Idle;
-	if (!owner_.bottomDockDragActive.load(memory_order_acquire)
+	if (state.initialBottomDockPlacementApplied
+		&& !owner_.bottomDockDragActive.load(memory_order_acquire)
 		&& owner_.directWindowDragPhase.compare_exchange_strong(expectedScenePhase,
 			BarDirectWindowDragPhase::Absorbing, memory_order_acq_rel, memory_order_acquire))
 	{
 		// 与 Seek 的起拖 CAS 使用同一交接协议；失败时保留尚未消费的场景边沿。
 		lock_guard directDragLock(owner_.directWindowDragMutex);
-		if (const auto entering = Inkeys::UI::Bar::ConsumePptSceneTransition())
+		(void)Inkeys::UI::Bar::ConsumePptSceneTransition();
+		(void)Inkeys::UI::Bar::ConsumeWhiteboardBottomDockRequest();
+		using namespace Inkeys::UI::Bar;
+		const auto transition = state.workspaceScene.Update(Inkeys::UI::Bar::WhiteboardActive(), PptPresentationActive());
+		if (transition != BarWorkspaceTransition::Keep)
 		{
-			const auto action = Inkeys::UI::Bar::ResolveBarPptSceneAction(*entering,
-				state.barState.fold, owner_.bottomDockMode.load(memory_order_acquire),
-				Inkeys::UI::Bar::WhiteboardActive());
-			state.pptDockPlacementPending = false;
-			if (action != Inkeys::UI::Bar::BarPptSceneAction::Keep)
+			if (transition == BarWorkspaceTransition::Enter)
 			{
-				// 从最后已显示的主体重基准，解除低栏时不能先按新 dock 线跳动。
-				const auto presented = owner_.BottomDockPresentedSnapshot();
-				if (presented.serial != 0)
-				{
-					const double zoom = max(0.000001, frame.zoom);
-					const double x = presented.mainCenterScreenX - state.monitorOrigin.x;
-					const double y = presented.mainCenterScreenY
-						+ presented.rigidTranslationDip * presented.zoom - state.monitorOrigin.y;
-					state.displayCenterX.SetDirect(x);
-					state.displayCenterY.SetDirect(y);
-					const auto main = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-					main->x.SetDirect(x / zoom);
-					main->y.SetDirect(y / zoom);
-				}
-				const bool center = action == Inkeys::UI::Bar::BarPptSceneAction::CenterDock;
+				state.desktopDockMode = owner_.bottomDockMode.load(memory_order_acquire);
+				state.desktopCenterMode = owner_.bottomDockCenterMode.load(memory_order_acquire);
+				state.desktopFold = state.barState.fold;
+				state.desktopSide = state.barState.widgetPosition.mainBar;
+				state.desktopPrimarySide = state.barState.widgetPosition.primaryBar;
+				state.desktopScreenX = state.monitorOrigin.x + state.displayCenterX.val;
+				state.desktopScreenY = state.monitorOrigin.y + state.displayCenterY.val;
+				state.desktopMonitor = MonitorFromPoint(POINT{ static_cast<LONG>(state.desktopScreenX),
+					static_cast<LONG>(state.desktopScreenY) }, MONITOR_DEFAULTTONEAREST);
+			}
+			state.pptDockPlacementPending = false;
+			state.whiteboardDockPlacementPending = false;
+			if (transition == BarWorkspaceTransition::Leave)
+			{
 				owner_.BeginBottomDockTransition();
-				owner_.bottomDockMode.store(center ? BarBottomDockMode::BottomDocked
-					: BarBottomDockMode::Floating, memory_order_relaxed);
-				owner_.bottomDockCenterMode.store(center ? BarBottomDockCenterMode::Centered
-					: BarBottomDockCenterMode::Free, memory_order_relaxed);
+				owner_.bottomDockMode.store(state.desktopDockMode, memory_order_relaxed);
+				owner_.bottomDockCenterMode.store(state.desktopCenterMode, memory_order_relaxed);
 				owner_.bottomDockPhase.store(BarBottomDockPhase::Stable, memory_order_relaxed);
 				owner_.bottomDockCenterPhase.store(BarBottomDockPhase::Stable, memory_order_relaxed);
 				owner_.bottomDockElasticOffsetDip.store(0.0, memory_order_relaxed);
 				owner_.bottomDockCenterElasticOffsetDip.store(0.0, memory_order_relaxed);
 				owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
 				(void)owner_.FinishBottomDockTransition(true);
-				state.bottomDockSpring = {};
-				state.bottomDockCenterSpring = {};
-				state.bottomDockCaptureBottomSpring = {};
-				state.bottomDockCenterCaptureFarEdgeSpring = {};
-				state.pptDockPlacementPending = center;
-				if (center) Inkeys::UI::Bar::UpdatePptSceneMonitor(
-					Inkeys::UI::Bar::PptPresentationActive()
-						? Inkeys::UI::Bar::PptPresentationWindow() : floating_window);
-				state.unclassifiedDamagePending = true;
-				state.presentDecision.RequireVisualRetry();
+				state.barState.fold = state.desktopFold;
+				state.barState.widgetPosition.mainBar = state.desktopSide;
+				state.barState.widgetPosition.primaryBar = state.desktopPrimarySide;
+				state.mainBarLayoutSide = state.desktopSide;
+				UpdateSceneMonitor(state.desktopMonitor);
+				state.desktopRestorePending = true;
 			}
+			else if (ShouldPlaceBarWorkspaceDock(state.barState.fold, owner_.bottomDockMode.load(memory_order_acquire)))
+			{
+				// 仅已有展开底栏跟随场景屏幕；普通底栏保留横向位置及展开方向。
+				if (Inkeys::UI::Bar::WhiteboardActive()) UpdateSceneMonitor(nullptr);
+				else UpdatePptSceneMonitor(PptPresentationWindow());
+				state.pptDockPlacementPending = true;
+			}
+			state.bottomDockSpring = {};
+			state.bottomDockCenterSpring = {};
+			state.bottomDockCaptureBottomSpring = {};
+			state.bottomDockCenterCaptureFarEdgeSpring = {};
+			state.unclassifiedDamagePending = true;
+			state.presentDecision.RequireVisualRetry();
 		}
-		owner_.directWindowDragPhase.store(
-			BarDirectWindowDragPhase::Idle, memory_order_release);
-	}
-	if (Inkeys::UI::Bar::ConsumeWhiteboardBottomDockRequest())
-	{
-		// 模式和几何作为同一事务发布；布局阶段在完整主栏宽度可用后求居中目标。
-		owner_.BeginBottomDockTransition();
-		owner_.bottomDockMode.store(
-			BarBottomDockMode::BottomDocked, memory_order_relaxed);
-		owner_.bottomDockPhase.store(
-			BarBottomDockPhase::Stable, memory_order_relaxed);
-		owner_.bottomDockElasticOffsetDip.store(0.0, memory_order_relaxed);
-		owner_.bottomDockCenterMode.store(
-			BarBottomDockCenterMode::Centered, memory_order_relaxed);
-		owner_.bottomDockCenterPhase.store(
-			BarBottomDockPhase::Stable, memory_order_relaxed);
-		owner_.bottomDockCenterElasticOffsetDip.store(0.0,
-			memory_order_relaxed);
-		owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
-		(void)owner_.FinishBottomDockTransition(true);
-		state.whiteboardDockPlacementPending = true;
+		owner_.directWindowDragPhase.store(BarDirectWindowDragPhase::Idle, memory_order_release);
 	}
 	// 底栏形态、抓取点和直移必须整帧共用同一偶数 serial，
 	// 显示过渡、布局和 ULW 不能各自读取不同时刻的原子值。
@@ -13720,6 +13720,25 @@ BarRenderLoopCoordinator::RenderFrame(
 	finiteExit.Stage(Ui3FiniteDiagnosticStage::DisplayTransition);
 	FrameStageTimer displayTransitionTimer(diagnostics, FrameStage::DisplayTransition);
 	ApplyDisplayTransition(state, frame);
+	if (state.desktopRestorePending)
+	{
+		// 显示器消失时使用发布快照的回退屏，钳制位置到可见范围。
+		const auto main = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		const double zoom = max(0.000001, static_cast<double>(state.barStyle.zoom));
+		const double half = main->GetW() * zoom / 2.0;
+		const double x = clamp(state.desktopScreenX, state.activeWorkArea.left + half,
+			max(state.activeWorkArea.left + half, state.activeWorkArea.right - half));
+		const double y = clamp(state.desktopScreenY, state.activeWorkArea.top + half,
+			max(state.activeWorkArea.top + half, state.activeWorkArea.bottom - half));
+		state.displayCenterX.SetDirect(x - state.monitorOrigin.x);
+		state.displayCenterY.SetDirect(y - state.monitorOrigin.y);
+		main->x.SetDirect((x - state.monitorOrigin.x) / zoom);
+		main->y.SetDirect((y - state.monitorOrigin.y) / zoom);
+		state.displayTransitionActive = false;
+		state.whiteboardDockAnimationActive = false;
+		state.desktopRestorePending = false;
+	}
+
 	displayTransitionTimer.Stop();
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;

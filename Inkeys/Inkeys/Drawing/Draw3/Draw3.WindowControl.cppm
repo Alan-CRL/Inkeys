@@ -97,6 +97,8 @@ export namespace Inkeys::Drawing::Draw3
 		DesktopPersistenceCompleted,
 		PresentationPersistenceCompleted,
 		PrepareExitAutoSave,
+		SetWhiteboardTheme,
+		WhiteboardPersistenceCompleted,
 	};
 
 	struct CanvasCommand
@@ -106,6 +108,8 @@ export namespace Inkeys::Drawing::Draw3
 		float deltaY = 0.0f;
 		std::size_t pageIndex = 0;
 		std::uint8_t workspace = 0;
+		WhiteboardTheme whiteboardTheme;
+		std::uint64_t whiteboardGeneration = 0;
 		std::shared_ptr<const Bridge::PresentationTarget> presentationTarget;
 		std::shared_ptr<const DesktopPersistenceCompletion>
 			desktopPersistenceCompletion;
@@ -218,6 +222,9 @@ export namespace Inkeys::Drawing::Draw3
 		void SuppressPenContactForTouchPan() noexcept;
 		bool PenContactSuppressedForTouchPan() const noexcept;
 		void NotifyTouchContactBegin() noexcept override;
+		void NotifyCanvasContactDown() noexcept override { if (canvasContactDown) canvasContactDown(); }
+		// Host 在输入生产者启动前设置；回调只发布异步 UI 请求。
+		void (*canvasContactDown)() = nullptr;
 		void NotifyTouchContactEnd() noexcept override;
 		void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept override;
 		void ClearPenCursorSample() noexcept override;

@@ -142,6 +142,27 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		return CommandResult::Accepted;
 	}
 
+	CommandResult StateBridge::PublishWhiteboardTheme(WhiteboardTheme theme,
+		std::uint64_t generation, std::size_t page) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return CommandResult::NotRunning;
+		if (state_.workspace != Workspace::Whiteboard || !ValidWhiteboardTheme(theme))
+			return CommandResult::Unsupported;
+		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
+		try
+		{
+			Command command{ CommandType::SetWhiteboardTheme, nextSequence_, state_.workspace };
+			command.whiteboardTheme = theme;
+			command.whiteboardGeneration = generation;
+			command.whiteboardPage = page;
+			commands_.push_back(std::move(command));
+			++nextSequence_;
+			return CommandResult::Accepted;
+		}
+		catch (...) { return CommandResult::QueueFull; }
+	}
+
 	bool StateBridge::TryConsume(Command& command) noexcept
 	{
 		std::scoped_lock lock(mutex_);

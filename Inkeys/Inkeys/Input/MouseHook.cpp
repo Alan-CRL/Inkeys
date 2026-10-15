@@ -18,6 +18,8 @@ module;
 module Inkeys.Input.MouseHook;
 import Inkeys.Other.Inputs;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.PageControl;
+import Inkeys.Window;
 
 namespace
 {
@@ -100,6 +102,16 @@ namespace
 		if (code < 0 || !running.load(std::memory_order_acquire)
 			|| message == WM_MOUSEMOVE)
 			return CallNextHookEx(hookHandle, code, message, lParam);
+
+		if (message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN || message == WM_RBUTTONDOWN)
+		{
+			const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
+			const HWND menuWindow = Inkeys::Window::GetService().Handle(Inkeys::Window::WindowRole::PptBottomLeft);
+			const HWND target = WindowFromPoint(mouse->pt);
+			// Hook 只投递收起请求，不等待窗口/渲染线程；原点击继续交给画布或其他窗口。
+			if (menuWindow && target != menuWindow && !IsChild(menuWindow, target))
+				(void)Inkeys::UI::PageControl::RequestWhiteboardMenuDismiss();
+		}
 
 		if (message == WM_LBUTTONDOWN)
 			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);

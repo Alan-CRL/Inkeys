@@ -15,6 +15,7 @@ module;
 #include <utility>
 
 #include "../../../IdtFreezeFrame.h"
+#include "Whiteboard.Theme.h"
 
 module Inkeys.UI.Whiteboard;
 
@@ -41,6 +42,10 @@ namespace Inkeys::UI::Whiteboard
 		std::atomic_bool committedBackgroundActive = false;
 		std::mutex pageStateMutex;
 		PageStateTransaction pageTransaction;
+		std::uint32_t themeRgb = 0x123B32;
+		int themePattern = 0;
+		bool unsavedPages = false;
+		std::uint64_t pageGeneration = 0;
 		std::mutex backgroundRenderMutex;
 		Scene backgroundScene;
 		RECT configuredBackgroundScreen{};
@@ -73,16 +78,18 @@ namespace Inkeys::UI::Whiteboard
 			return 1.0F;
 		}
 
-		[[nodiscard]] PageState PublishedPageState() noexcept
-		{
-			std::scoped_lock lock(pageStateMutex);
-			return pageTransaction.Snapshot();
-		}
-
 		void PublishPageControlSnapshot() noexcept
 		{
-			const PageState page = PublishedPageState();
+			PageState page;
 			Inkeys::UI::PageControl::WhiteboardState state;
+			{
+				std::scoped_lock lock(pageStateMutex);
+				page = pageTransaction.Snapshot();
+				state.backgroundRgb = themeRgb;
+				state.pattern = themePattern;
+				state.unsaved = unsavedPages;
+				state.generation = pageGeneration;
+			}
 			state.expandedLayoutTarget = expandedLayoutTarget.load(
 				std::memory_order_acquire);
 			state.active = active.load(std::memory_order_acquire);
@@ -107,6 +114,9 @@ namespace Inkeys::UI::Whiteboard
 				bounds.bottom - bounds.top) / scale;
 			Inkeys::UI::Bar::BarSurfaceBackgroundSpec background;
 			background.bounds = { 0.0, 0.0, widthDip, heightDip };
+			std::uint32_t rgb; int pattern;
+			{ std::scoped_lock lock(pageStateMutex); rgb=themeRgb; pattern=themePattern; }
+			background.drawContent = [rgb, pattern](auto* dc, auto rect) { WhiteboardVisual::DrawTheme(dc,rect,rgb,pattern); };
 			background.fill = RGB(18, 59, 50);
 			background.frame = RGB(18, 59, 50);
 			background.useThemeColors = false;
@@ -247,6 +257,8 @@ namespace Inkeys::UI::Whiteboard
 		Inkeys::UI::PageControl::SetWhiteboardCallbacks({
 			std::move(callbacks.previousPage),
 			std::move(callbacks.nextPage),
+			std::move(callbacks.closeWhiteboard),
+			std::move(callbacks.changeTheme),
 		});
 		if (!Inkeys::UI::RenderPipeline::Register(
 			Client::WhiteboardFreeze, RenderBackground))
@@ -313,6 +325,28 @@ namespace Inkeys::UI::Whiteboard
 	{
 		if (initialized.load(std::memory_order_acquire))
 			Inkeys::UI::PageControl::CancelPointerCapture();
+	}
+
+	void PublishPageSnapshot(int current, int total, bool changing,
+		std::uint32_t rgb, int pattern, bool unsaved, std::uint64_t generation) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		bool themeChanged;
+		{
+			// 页码、主题和身份一次提交，禁止主题回执夹带上一页的可交互状态。
+			std::scoped_lock lock(pageStateMutex);
+			(void)pageTransaction.Publish(current, total, changing);
+			themeChanged = themeRgb != rgb || themePattern != pattern;
+			themeRgb = rgb; themePattern = pattern;
+			unsavedPages = unsaved; pageGeneration = generation;
+		}
+		if (themeChanged)
+		{
+			std::scoped_lock lock(backgroundRenderMutex);
+			configuredBackgroundScale = 0;
+		}
+		PublishPageControlSnapshot();
+		if (themeChanged) Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze);
 	}
 
 	void PublishPageState(int current, int total, bool changing) noexcept

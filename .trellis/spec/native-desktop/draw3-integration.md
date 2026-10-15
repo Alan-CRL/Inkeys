@@ -111,7 +111,9 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 ## 功能边界
 
-桥接工具固定为 Pen、HardPen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换、Desktop UInk 自动保存及当前进程内的 PPT UInk 自动保存/恢复已接入；手动保存、Whiteboard 自动保存、跨进程 PPT 恢复/冲突交互、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
+桥接工具固定为 Pen、HardPen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换、Desktop UInk 自动保存及当前进程内的 PPT UInk 自动保存/恢复已接入；手动保存、跨进程 PPT 恢复/冲突交互、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
+
+Whiteboard 初版的独立自动保存、按页冷热状态、完整历史恢复和流式 UInk 读写见 [whiteboard.md](whiteboard.md)。其保存不读取 Desktop 开关，也不复用 PPT 整文稿常驻策略。
 
 ## Scenario: Desktop UInk 自动保存事务与退出屏障
 
@@ -438,3 +440,16 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 主产品直接编译共享 `inkStrokeModelerTest/draw3/uink_file.cpp`。SaveUInkFile 的 temp/backup/new-recovery 必须使用规范化最终路径的原同父前缀加独立 GUID36 短叶及固定后缀，不再次拼入最终末名；同目录/同卷原子替换、CREATE_NEW、锁、strong source revision/SHA 和最终格式不变。恢复调用者消费实际返回的 opaque recoveryPath，不能按最终 basename 猜恢复文件名。
 
 此短内部名称不承诺任意最终长路径支持：普通父前缀加最长49字符内部叶仍受 Win32 路径边界约束；不以新 manifest/registry/补丁提升最低平台，不授权按后缀清理未知文件。2026-10-01 shared helper 的合法230首存/更新/predecessor严格回归已真实红绿；主产品原PPT长路径C10、Release三架构与Win7真机仍分别待验证。清理创建/身份归属竞态独立F069，命名修补不能证明其已解决。
+
+## Whiteboard 页级 UInk 与编辑历史合同
+
+`【直接确认：源码；2026-10-15】` 白板使用 `Inkeys.Drawing.Draw3.whiteboard_store` 和共享 `draw3.uink_page_file`，不复用 PPT 的整文稿读写。产品范围见 [whiteboard.md](whiteboard.md)；本节说明实际接口与所有权，测试通过情况以任务验证记录为准。
+
+- `ScanUInkPageFile(path)` 返回 `UInkPageFileDirectory`：路径、完整 `UInkSourceRevision`、不含各页笔迹/extra 的 metadata，以及 `{pageGuid, offset, length}` 目录。扫描、SHA 和自校验流式进行，自校验逐页物化。`peakBufferBytes` 仅是序列化工作缓冲高水位估计，不包含解码模型、调用方快照或分配器余量，不能据此宣称总 RAM 上限。
+- `ReadUInkPageFile(directory, pageGuid)` 打开文件并核对目录绑定的完整 revision 后读取指定页，返回 `pageIndex/currentPageIndex=0` 的单页文档，保留 pageGuid。旧偏移不得套到新版本；文件身份/内容改变、GUID 缺失或页损坏均失败，不用空页替换。
+- `RewriteUInkPageFile(newPath, previous, onePage, orderedPages, currentPageIndex)` 只接受不存在的新路径；旧版本只读，已存在页顺序必须保留且只可追加。目标页重新编码，未修改页按目录分块复制；Flush 和逐页自校验后返回新目录。逻辑 file/workspace/page GUID 保持，UInk 10 标准格式与原桌面/PPT接口不变。
+- `WhiteboardStore::{Save,Load,Take,Drain}` 由单 worker 持有目录及文件 I/O，绘制线程提交不可变单页快照并消费 completion。每进程会话写 `AutoSave/whiteboard/<GUID>/`，`<sequence>.uink` 是同一逻辑白板的物理版本；`current` 索引经临时文件 flush 后原子替换为版本文件名，只有索引发布成功才替换运行期目录。失败保留原目录和 warm 页；同页排队快照合并，保存队列上限为两项，队满页保留 warm 待后续安全点重试。
+- Store 保留当前与一份前版本；清理更旧的本进程版本只能通过 `TryRemoveOwnedUInkPageFile` 校验强 revision 并按同一文件句柄删除，失败保留，不得退化为按路径删除，也不得清理扫描得到的外部文件。新进程不读取旧白板，旧会话保留供未来历史功能。
+- Canvas `extra["inkeysWhiteboardHistory"]` 是版本 1 JSON：`version/rgb/pattern` 加完整 CPU strokes、历史 items（strokeIndex/visible/compositionBarrier）、redo 索引、undo floor、interval、最近 Clear 资格、boundary fallback 及有限 Clear redo continuation。恢复严格验证类型、索引、重复 key、主题范围及 continuation 深度；重建 footprint/raster token，GPU 缓存与句柄不入文件。标准 `content` 只导出当前可见笔迹，通用读取器不应看到隐藏 redo。
+- Load completion 携带页面及运行 generation，安装前再次核对 active workspace、待加载页、generation 和 pageGuid；成功才成对恢复内容/主题并切页。Save completion 以页面 revision 仲裁，只有成功且 saved==当前 mutation、非当前页且非正在加载时才卸载页内容/历史/CPU/GPU。保存失败可翻页，失败页保持 warm；关闭白板不销毁文档，退出屏障还处理 parked dirty 页。
+- 必须验证多页与主题空页 roundtrip、隐藏 redo、Clear continuation、过期 completion、源版本替换/内容损坏、写入和索引失败、快速返回，以及至少 100 个非空页的正常卸载。流式缓冲统计与实际页 runtime 释放分别断言；GUI/PPT/任务栏验收不由这些无窗口测试替代。

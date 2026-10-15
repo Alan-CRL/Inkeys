@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <windows.h>
 #include "Draw3.Bridge.h"
 #include "Draw3.SpeedEraser.h"
@@ -61,6 +62,7 @@ export namespace Inkeys::Drawing::Draw3
 	int RunDraw3ControlFenceProductionProbe() noexcept;
 	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
 	int RunDraw3ContentProofProductionProbe() noexcept;
+	int RunWhiteboardStorageProductionTest() noexcept;
 
 	struct DrawingControllerRuntimeObserver
 	{
@@ -86,6 +88,9 @@ export namespace Inkeys::Drawing::Draw3
 		void (*penDiagnostics)(void*, const PenRuntimeDiagnostics&) = nullptr;
 		void (*runtimeMetricsPhaseProgress)(void*, const RuntimeMetricsPhaseProgress&) noexcept = nullptr;
 		void (*historyAvailabilityChanged)(void*, bool, bool) = nullptr;
+		void (*whiteboardExitSaved)(void*, bool) = nullptr;
+		void (*whiteboardChanged)(void*, WhiteboardTheme, std::uint64_t, bool, bool, std::size_t, std::size_t, bool, std::uint64_t) = nullptr;
+		std::wstring whiteboardRoot;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

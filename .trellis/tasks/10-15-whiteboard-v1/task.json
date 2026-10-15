@@ -1,0 +1,40 @@
+{
+  "id": "whiteboard-v1",
+  "name": "whiteboard-v1",
+  "title": "Whiteboard 初版完整实现",
+  "description": "按已批准方案恢复白板入口、UI3主题菜单、UInk页级持久化和场景恢复",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-15",
+  "completedAt": null,
+  "branch": "feature/whiteboard",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-15-whiteboard-storage",
+    "10-15-whiteboard-theme-menu",
+    "10-15-whiteboard-scene"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "三个实现子任务已完成。父任务保留 in_progress，仅跟踪未授权运行的真实 GUI 人工验收；实现、自动验证、独立检查均完成。用户已授权提交当前改动；任务保持进行中，未 push。",
+  "meta": {
+    "approved_plan": "User explicitly requested implementation 2026-10-15",
+    "related_task": "08-17-ui3-whiteboard",
+    "implementation_complete": true,
+    "automated_validation": "passed",
+    "manual_acceptance": "pending_gui_not_run",
+    "related_tasks": [
+      "08-17-ui3-whiteboard",
+      "08-23-shared-bottom-page-control-windows"
+    ]
+  }
+}

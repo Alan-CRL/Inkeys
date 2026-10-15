@@ -2411,6 +2411,14 @@ namespace Inkeys::UI::Bar
 						impl_->backgroundShape.y.val
 							- impl_->backgroundShape.h.val / 2.0)) || result.rendered;
 			}
+			if (impl_->background.drawContent) {
+				deviceContext->SetTransform(D2D1::Matrix3x2F::Scale(impl_->dpiScale, impl_->dpiScale)
+					* D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(outset),static_cast<FLOAT>(outset)));
+				impl_->background.drawContent(deviceContext, D2D1::RectF(
+					static_cast<float>(impl_->background.bounds.left), static_cast<float>(impl_->background.bounds.top),
+					static_cast<float>(impl_->background.bounds.right), static_cast<float>(impl_->background.bounds.bottom)));
+				deviceContext->SetTransform(D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(outset),static_cast<FLOAT>(outset)));
+			}
 			for (auto& widget : impl_->widgets)
 			{
 				if (!widget.spec.visible) continue;
@@ -2433,6 +2441,16 @@ namespace Inkeys::UI::Bar
 				result.rendered = DrawBarButtonVisual(
 					impl_->rendererOwner.spec, deviceContext,
 					*widget.button, inherit, options) || result.rendered;
+				if (widget.spec.drawContent)
+				{
+					const auto& b = widget.button->button;
+					deviceContext->SetTransform(D2D1::Matrix3x2F::Scale(impl_->dpiScale, impl_->dpiScale)
+						* D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(outset),static_cast<FLOAT>(outset)));
+					widget.spec.drawContent(deviceContext, D2D1::RectF(
+						static_cast<float>(b.x.val-b.w.val/2), static_cast<float>(b.y.val-b.h.val/2),
+						static_cast<float>(b.x.val+b.w.val/2), static_cast<float>(b.y.val+b.h.val/2)));
+					deviceContext->SetTransform(D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(outset),static_cast<FLOAT>(outset)));
+				}
 			}
 			if (opacityLayer) deviceContext->PopLayer();
 			deviceContext->SetTransform(originalTransform);

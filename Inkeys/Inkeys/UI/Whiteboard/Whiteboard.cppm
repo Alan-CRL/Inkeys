@@ -15,6 +15,8 @@ export namespace Inkeys::UI::Whiteboard
 	{
 		std::function<void()> previousPage;
 		std::function<void()> nextPage;
+		std::function<void()> closeWhiteboard;
+		std::function<void(std::uint32_t, int, std::uint64_t, int)> changeTheme;
 	};
 
 	struct PageState
@@ -145,6 +147,8 @@ export namespace Inkeys::UI::Whiteboard
 	void PublishExpandedLayoutTarget(bool expanded) noexcept;
 	void PublishActive(bool active) noexcept;
 	void CancelPointerCapture() noexcept;
+	void PublishPageSnapshot(int currentPage, int totalPage, bool switching,
+		std::uint32_t rgb, int pattern, bool unsaved, std::uint64_t generation) noexcept;
 	void PublishPageState(int currentPage, int totalPage, bool switching) noexcept;
 	[[nodiscard]] bool Active() noexcept;
 	[[nodiscard]] bool BackgroundMatchesActive(bool active) noexcept;

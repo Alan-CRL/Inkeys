@@ -13,6 +13,9 @@ module;
 #include <wrl/client.h>
 
 #include "../Bar/Bar.DirtyRegion.h"
+#include "../Whiteboard/Whiteboard.Theme.h"
+#include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../Drawing/Draw3/Draw3.PptTiming.h"
 
 #include <algorithm>
@@ -59,6 +62,8 @@ namespace Inkeys::UI::PageControl
 		constexpr WidgetId PreviousWidget = 2;
 		constexpr WidgetId PageWidget = 3;
 		constexpr WidgetId NextWidget = 4;
+		constexpr WidgetId MoreWidget = 5;
+		void CloseWhiteboardMenu() noexcept;
 		[[nodiscard]] constexpr PptPointerRegion PointerRegionForWidget(
 			WidgetId widget) noexcept
 		{
@@ -192,6 +197,8 @@ namespace Inkeys::UI::PageControl
 			PptKeyboardRepeatTiming repeatTiming{};
 			std::chrono::steady_clock::time_point layoutTransitionUntil{};
 			std::uint64_t observedRevision = 0;
+			WhiteboardState renderedWhiteboard;
+			WhiteboardState pressedWhiteboard;
 			SIZE backingCapacity{ 1, 1 };
 			SIZE committedPresentationSize{};
 			SIZE committedBackingCapacity{};
@@ -261,6 +268,7 @@ namespace Inkeys::UI::PageControl
 		PptPageCommitState pageCommit;
 		std::array<std::uint64_t, 2> handedOffDragVersions{};
 		WhiteboardState publishedWhiteboard;
+		std::atomic_bool whiteboardMenuOpen = false;
 		PptCallbacks pptCallbacks;
 		WhiteboardCallbacks whiteboardCallbacks;
 		Inkeys::Display::Subscription displaySubscription;
@@ -539,6 +547,7 @@ namespace Inkeys::UI::PageControl
 		void InvokeDirection(std::size_t surfaceIndex, bool next)
 		{
 			if (surfaceIndex >= surfaces.size()) return;
+			CloseWhiteboardMenu();
 			std::function<void()> callback;
 			const auto [ppt, whiteboard] = Snapshot();
 			{
@@ -587,15 +596,15 @@ namespace Inkeys::UI::PageControl
 		}
 
 		[[nodiscard]] Inkeys::UI::Bar::BarSurfaceBackgroundSpec BuildBackground(
-			std::size_t index, WorkspaceMode mode)
+			std::size_t index, WorkspaceMode mode, int menu = 0, bool unsaved = false)
 		{
 			Inkeys::UI::Bar::BarSurfaceBackgroundSpec background;
 			const bool whiteboard = mode == WorkspaceMode::WhiteboardExpanded;
 			const bool vertical = index >= 2;
 			background.bounds = { 0.0, 0.0,
-				whiteboard ? WhiteboardWidthDip
+				whiteboard ? (index == 0 ? 305.0 : WhiteboardWidthDip)
 					: vertical ? PptCompactShortSideDip : PptCompactLongSideDip,
-				whiteboard ? WhiteboardHeightDip
+				whiteboard ? WhiteboardHeightDip + (index == 0 ? ((menu == 2 ? 235.0 : menu ? 150.0 : 0.0) + (unsaved ? 32.0 : 0.0)) : 0.0)
 					: vertical ? PptCompactLongSideDip : PptCompactShortSideDip };
 			background.useThemeColors = false;
 			background.fill = GetThemeColor(
@@ -610,11 +619,43 @@ namespace Inkeys::UI::PageControl
 			return background;
 		}
 
+		void CloseWhiteboardMenu() noexcept
+		{
+			{ std::scoped_lock lock(snapshotMutex);
+			  if(!publishedWhiteboard.menu) return;
+			  publishedWhiteboard.menu=0; whiteboardMenuOpen.store(false,std::memory_order_release); publishedRevision.fetch_add(1,std::memory_order_release); }
+			RequestAll();
+		}
+
+		void InvokeWhiteboardMenu(WidgetId id, const WhiteboardState& pressed)
+		{
+			WhiteboardCallbacks callbacks;
+			{ std::scoped_lock lock(callbackMutex); callbacks=whiteboardCallbacks; }
+			const auto state=Snapshot().second;
+			if(!state.active || state.switching) return;
+			if(id==5 || id==8) {
+				{ std::scoped_lock lock(snapshotMutex);
+				  publishedWhiteboard.menu=id==5 ? (state.menu ? 0:1) : (state.menu==2 ? 1:2);
+				  whiteboardMenuOpen.store(publishedWhiteboard.menu!=0,std::memory_order_release);
+				  publishedRevision.fetch_add(1,std::memory_order_release); }
+				RequestAll(); return;
+			}
+			if(id==6 || id==7) {
+				CloseWhiteboardMenu();
+				if(id==6 && callbacks.closeWhiteboard) callbacks.closeWhiteboard();
+				if(id==7) (void)Inkeys::Window::GetService().MinimizeWhiteboardWindowGroup();
+			}
+			constexpr std::uint32_t colors[]={0x123B32,0xFFFFFF,0xF5F1E6,0xE5E7EB,0x25282D,0x172A46};
+			if(id>=9 && id<=17 && callbacks.changeTheme)
+				callbacks.changeTheme(id<15 ? colors[id-9] : pressed.backgroundRgb,
+					id<15 ? pressed.pattern : static_cast<int>(id-15), pressed.generation, pressed.currentPage);
+		}
+
 		[[nodiscard]] std::vector<WidgetSpec> BuildWidgets(
 			std::size_t index, WorkspaceMode mode,
 			const PptState& ppt, const WhiteboardState& whiteboard)
 		{
-			std::vector<WidgetSpec> widgets(4);
+			std::vector<WidgetSpec> widgets(18);
 			const auto inputPolicy = ResolveWorkspaceInputPolicy(mode);
 			auto& drag = widgets[0];
 			drag.id = DragWidget;
@@ -703,6 +744,46 @@ namespace Inkeys::UI::PageControl
 				const int maximum = vertical ? 999 : 9999;
 				page.primaryText = PageNumber(ppt.currentPage, maximum);
 				page.secondaryText = L"/" + PageNumber(ppt.totalPage, maximum);
+			}
+			// 所有布局保留同一组实例，PPT/白板切换和菜单反向动画不重建按钮。
+			for (std::size_t i=4;i<widgets.size();++i) {
+				auto& w=widgets[i]; w.id=static_cast<WidgetId>(i+1);
+				w.visible=false; w.interactive=false; w.bounds={230,5,300,75}; ApplyDarkTheme(w);
+			}
+			if(index==0 && mode==WorkspaceMode::WhiteboardExpanded) {
+				auto& more=widgets[4]; more.visible=true; more.interactive=!whiteboard.switching;
+				more.layoutKind=Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardTwoTwo;
+				more.iconResource=L"barMenu"; more.secondaryText=IW(I18nKey.UI.Bar.MainButtons.MoreLabel);
+				const auto row=[&](std::size_t i, double top, const std::wstring& text) {
+					auto& w=widgets[i]; w.visible=whiteboard.menu!=0; w.interactive=w.visible&&!whiteboard.switching;
+					w.bounds={5,top,300,top+42.5}; w.primaryText=text; w.primaryFontSizeDip=16;
+					w.primaryOffsetYDip=0; w.primarySlotHeightDip=22;
+				};
+				const double top=whiteboard.menu==2 ? -230.0 : -145.0;
+				row(5,top,IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel));
+				row(6,top+47.5,IW(I18nKey.UI.Bar.MainButtons.MinimizeWhiteboardLabel));
+				row(7,top+95,IW(I18nKey.UI.Bar.MainButtons.WhiteboardThemeLabel));
+				constexpr std::uint32_t colors[]={0x123B32,0xFFFFFF,0xF5F1E6,0xE5E7EB,0x25282D,0x172A46};
+				for(std::size_t i=0;i<9;++i) {
+					auto& w=widgets[8+i]; w.visible=whiteboard.menu==2; w.interactive=w.visible&&!whiteboard.switching;
+					const auto rgb=i<6 ? colors[i] : whiteboard.backgroundRgb;
+					const int pattern=i<6 ? 0 : static_cast<int>(i-6);
+					w.selected=i<6 ? rgb==whiteboard.backgroundRgb : pattern==whiteboard.pattern;
+					const double x=i<6 ? 5+i*49.0 : 5+(i-6)*98.0;
+					w.bounds={x,i<6 ? -82.5 : -40.0,x+(i<6 ? 45.0 : 94.0),i<6 ? -42.5 : 0.0};
+					w.drawContent=[rgb,pattern,selected=w.selected](auto* dc,auto rect) {
+						WhiteboardVisual::DrawTheme(dc,rect,rgb,pattern,true,selected);
+					};
+				}
+
+			}
+			if(index==0 && mode==WorkspaceMode::WhiteboardExpanded) {
+				const double offset=WhiteboardMenuHeight(whiteboard);
+				for(auto& widget:widgets) { widget.bounds.top+=offset; widget.bounds.bottom+=offset; }
+				auto& status=widgets[17]; status.visible=whiteboard.unsaved;
+				status.interactive=false; status.bounds={5,5,300,32};
+				status.primaryText=IW(I18nKey.UI.Bar.MainButtons.WhiteboardUnsavedLabel);
+				status.primaryOffsetYDip=0; status.primaryFontSizeDip=14; status.primarySlotHeightDip=20;
 			}
 			return widgets;
 		}
@@ -873,7 +954,7 @@ namespace Inkeys::UI::PageControl
 			const bool contentChanged = state.observedRevision != revision;
 			if (!state.sceneConfigured)
 			{
-				const auto background = BuildBackground(index, visualMode);
+				const auto background = BuildBackground(index, visualMode, whiteboard.menu, whiteboard.unsaved);
 				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard);
 				if (!state.scene.Configure(background, widgets))
 				{
@@ -893,19 +974,19 @@ namespace Inkeys::UI::PageControl
 						+ LayoutTransitionWallDuration();
 				}
 			}
-			else if (modeChanged)
+			else if (modeChanged || (contentChanged && visualMode == WorkspaceMode::WhiteboardExpanded))
 			{
-				const auto background = BuildBackground(index, visualMode);
+				const auto background = BuildBackground(index, visualMode, whiteboard.menu, whiteboard.unsaved);
 				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard);
 				const bool animateLayout = ShouldAnimateWorkspaceLayout(SurfaceFor(index),
 						state.configuredMode, visualMode, state.targetVisible);
 				if (!state.scene.TransitionLayout(background, widgets,
-					animateLayout ? LayoutTransitionDurationSeconds() : 0.0))
+					(animateLayout || whiteboard.menu != 0 || visualMode == WorkspaceMode::WhiteboardExpanded) ? LayoutTransitionDurationSeconds() : 0.0))
 				{
 					failedStage = "scene-transition";
 					return false;
 				}
-				if (modeChanged)
+				if (modeChanged || contentChanged)
 					state.layoutTransitionUntil = now
 						+ LayoutTransitionWallDuration();
 			}
@@ -977,6 +1058,7 @@ namespace Inkeys::UI::PageControl
 			state.sceneConfigured = true;
 			state.configuredMode = visualMode;
 			state.observedRevision = revision;
+			state.renderedWhiteboard = whiteboard;
 			return true;
 		}
 
@@ -2158,10 +2240,12 @@ namespace Inkeys::UI::PageControl
 				CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(lParam));
 				return 0;
 			}
+			if ((message == WM_KEYDOWN && wParam == VK_ESCAPE) || message == WM_CANCELMODE)
+				CloseWhiteboardMenu();
 			if (message == WM_NCHITTEST)
 			{
 				std::unique_lock renderLock(renderTransactionMutex);
-				if (!state.targetVisible || state.inputLocked) return HTTRANSPARENT;
+				if (!state.targetVisible) return HTTRANSPARENT;
 				RECT window{};
 				GetWindowRect(hwnd, &window);
 				const POINT local{ GET_X_LPARAM(lParam) - window.left,
@@ -2173,7 +2257,8 @@ namespace Inkeys::UI::PageControl
 					!= Inkeys::UI::Bar::BarSurfaceNoWidget;
 				// PPT 外框空白也属于拖动面；Whiteboard 仍只接收真实按钮。
 				return ShouldAcceptPageControlClientHit(state.configuredMode,
-					backgroundHit, widgetHit) ? HTCLIENT : HTTRANSPARENT;
+					backgroundHit, widgetHit, state.inputLocked,
+					index == 0 && Snapshot().second.menu != 0) ? HTCLIENT : HTTRANSPARENT;
 			}
 			if (message == WM_MOUSEMOVE)
 			{
@@ -2270,6 +2355,7 @@ namespace Inkeys::UI::PageControl
 						? Inkeys::UI::Bar::BarSurfacePointerResult{}
 						: state.scene.PointerDown(*logical);
 					if (!result.consumed && !dragCandidate) return 0;
+					state.pressedWhiteboard = state.renderedWhiteboard;
 					SetCapture(hwnd);
 					promotePpt = state.configuredMode == WorkspaceMode::PptCompact;
 					auto [ppt, whiteboard] = Snapshot();
@@ -2335,6 +2421,7 @@ namespace Inkeys::UI::PageControl
 				std::uint64_t suppressedPresentationBusyTraces = 0;
 				bool shouldInvokeClick = false;
 				WorkspaceMode releasedMode = WorkspaceMode::Hidden;
+				WhiteboardState pressedWhiteboard;
 				Inkeys::UI::Bar::BarSurfaceWidgetId clicked =
 					Inkeys::UI::Bar::BarSurfaceNoWidget;
 				{
@@ -2343,6 +2430,7 @@ namespace Inkeys::UI::PageControl
 					const bool acceptInput = !state.inputLocked && state.targetVisible;
 					shouldInvokeClick = acceptInput;
 					releasedMode = state.configuredMode;
+					pressedWhiteboard = state.pressedWhiteboard;
 					if (acceptInput)
 					{
 						if (const auto logical = state.scene.PresentationToLogical(local))
@@ -2381,6 +2469,8 @@ namespace Inkeys::UI::PageControl
 					&& releasedMode != WorkspaceMode::PptCompact
 					&& (clicked == PreviousWidget || clicked == NextWidget))
 					InvokeDirection(index, clicked == NextWidget);
+				else if(shouldInvokeClick && releasedMode==WorkspaceMode::WhiteboardExpanded && clicked>=MoreWidget)
+					InvokeWhiteboardMenu(clicked, pressedWhiteboard);
 				if (dragRelease.tracked)
 				{
 					TraceDrag("up surface=%s pair=%s revision=%llu dragged=%d "
@@ -2492,12 +2582,15 @@ namespace Inkeys::UI::PageControl
 		whiteboard.previousInteractive = whiteboard.nextInteractive = true;
 		whiteboard.expandedLayoutTarget = whiteboard.active = true;
 		const auto now = std::chrono::steady_clock::now() + 1s;
+		for (const int menu : {0,1,2})
 		for (const auto mode : { WorkspaceMode::PptCompact, WorkspaceMode::WhiteboardExpanded })
 			for (std::size_t index = 0; index < (mode == WorkspaceMode::PptCompact ? 4U : 2U); ++index)
 				for (const float scale : { 0.25F, 1.0F, 5.0F, 12.0F })
 				{
+					if(menu && (index!=0 || mode!=WorkspaceMode::WhiteboardExpanded)) continue;
+					whiteboard.menu=menu;
 					Scene scene;
-					const auto background = BuildBackground(index, mode);
+					const auto background = BuildBackground(index, mode, menu);
 					const auto widgets = BuildWidgets(index, mode, ppt, whiteboard);
 					Check(scene.Configure(background, widgets), "product widgets configure");
 					const LONG width = static_cast<LONG>(std::lround(background.bounds.right * scale));
@@ -2553,7 +2646,52 @@ namespace Inkeys::UI::PageControl
 						"right and bottom body pixels contain visible content instead of one-sided gaps");
 					Check(Alpha(targetWidth - 1, targetHeight - 1) == 0,
 						"extra backing capacity remains outside presentation content");
+					if (menu == 2)
+					{
+						constexpr std::uint32_t colors[] = { 0x123B32, 0xFFFFFF, 0xF5F1E6, 0xE5E7EB, 0x25282D, 0x172A46 };
+						for (std::size_t color = 0; color < 6; ++color)
+						{
+							const auto& rect = widgets[8 + color].bounds;
+							const LONG x = static_cast<LONG>((rect.left + rect.right) * scale / 2) + outset;
+							const LONG y = static_cast<LONG>((rect.top + rect.bottom) * scale / 2) + outset;
+							const auto* pixel = mapped.bits + y * mapped.pitch + x * 4;
+							Check(pixel[0] == (colors[color] & 255)
+								&& pixel[1] == ((colors[color] >> 8) & 255)
+								&& pixel[2] == ((colors[color] >> 16) & 255),
+								"swatch center pixels reproduce the six product background colors");
+						}
+						if (scale >= 1.0F)
+						{
+							// 直接检查真实 Scene 的预览像素，不能仅断言 painter 回调存在。
+							auto PreviewRed = [&](std::size_t style, double x, double y)
+							{
+								const auto& rect = widgets[14 + style].bounds;
+								const LONG px = static_cast<LONG>((rect.left + x) * scale) + outset;
+								const LONG py = static_cast<LONG>((rect.top + y) * scale) + outset;
+								return mapped.bits[py * mapped.pitch + px * 4 + 2];
+							};
+							Check(PreviewRed(1, 19, 19) > PreviewRed(0, 19, 19),
+								"dot preview contains a visible dot over the blank background");
+							Check(PreviewRed(2, 19, 23) > PreviewRed(1, 19, 23),
+								"grid preview contains a continuous line outside the dot footprint");
+						}
+					}
 					readable->Unmap();
+					if(menu==2) {
+						Check(widgets[4].iconResource==L"barMenu" && widgets[4].visible,
+							"left fourth standard button survives expanded theme layout");
+						Check(widgets[8].drawContent && widgets[16].drawContent,
+							"real swatches and grid previews use shared painter");
+						whiteboard.menu=0;
+						Check(scene.TransitionLayout(BuildBackground(index,mode),
+							BuildWidgets(index,mode,ppt,whiteboard),0.2),"menu close uses existing Scene transition");
+						whiteboard.menu=1;
+						Check(scene.TransitionLayout(BuildBackground(index,mode,1),
+							BuildWidgets(index,mode,ppt,whiteboard),0.2),"menu reversal reuses widget instances");
+						scene.ReleaseDeviceResources();
+						Check(SUCCEEDED(scene.EnsureDeviceResources(epoch,targetWidth,targetHeight)),
+							"menu resources rebuild after device release");
+					}
 				}
 		std::fprintf(stderr, "[PageControlScene] failures=%d\n", failures);
 		return failures;
@@ -2967,8 +3105,14 @@ namespace Inkeys::UI::PageControl
 	{
 		{
 			std::scoped_lock lock(snapshotMutex);
-			if (AreWhiteboardStatesEquivalent(publishedWhiteboard, state)) return;
-			publishedWhiteboard = state;
+			auto next=state;
+			// 页/工作区交接收起菜单；同页主题回执不打断用户继续选色。
+			if(state.active && !state.switching && state.currentPage==publishedWhiteboard.currentPage
+				&& state.generation==publishedWhiteboard.generation)
+				next.menu=publishedWhiteboard.menu;
+			if (AreWhiteboardStatesEquivalent(publishedWhiteboard, next)) return;
+			publishedWhiteboard = next;
+			whiteboardMenuOpen.store(next.menu!=0,std::memory_order_release);
 			publishedRevision.fetch_add(1, std::memory_order_release);
 		}
 		AcknowledgePage(Snapshot().first, 0);
@@ -3006,8 +3150,17 @@ namespace Inkeys::UI::PageControl
 		RequestAll();
 	}
 
+	bool RequestWhiteboardMenuDismiss() noexcept
+	{
+		// 低级输入钩子只投递取消，不等待窗口线程或渲染事务。
+		if (!whiteboardMenuOpen.load(std::memory_order_acquire)) return false;
+		const HWND hwnd = Inkeys::Window::GetService().Handle(WindowRole::PptBottomLeft);
+		return hwnd && PostMessageW(hwnd, WM_CANCELMODE, 0, 0) != FALSE;
+	}
+
 	void CancelPointerCapture() noexcept
 	{
+		CloseWhiteboardMenu();
 		(void)Inkeys::Window::GetService().CancelPointerCapture();
 		std::array<bool, 2> rollbackPairs{};
 		{

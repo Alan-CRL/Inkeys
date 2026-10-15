@@ -16,6 +16,15 @@ namespace
 
 namespace Inkeys::Drawing::Draw3
 {
+	Bridge::CommandResult RequestWhiteboardTheme(const WhiteboardTheme& theme,
+		std::uint64_t generation, std::size_t page) noexcept
+	{
+		std::scoped_lock callLock(productCallMutex);
+		if (productStopping.load(std::memory_order_acquire) || !productHost.Running())
+			return Bridge::CommandResult::NotRunning;
+		return productHost.PublishWhiteboardTheme(theme, generation, page);
+	}
+
 	Host& ProductHost() noexcept { return productHost; }
 
 	bool StartProduct(HWND drawpad, HWND drawpadPresentation,

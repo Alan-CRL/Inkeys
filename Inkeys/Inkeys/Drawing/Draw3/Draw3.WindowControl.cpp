@@ -1341,6 +1341,7 @@ namespace Inkeys::Drawing::Draw3
 		case WM_POINTERDOWN:
 		case WM_POINTERUP:
 		{
+			if (message == WM_POINTERDOWN) NotifyCanvasContactDown();
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
 			const PointerDetails details = QueryPointerDetails(pointerId);
 #if defined(DRAW3_RTS_DIAGNOSTICS)

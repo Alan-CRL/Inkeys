@@ -104,6 +104,11 @@ namespace
 			&& !ShouldAcceptPageControlClientHit(
 				WorkspaceMode::WhiteboardExpanded, true, false),
 			"transparent rounded corners pass through while PPT background remains draggable");
+		Check(ShouldAcceptPageControlClientHit(WorkspaceMode::WhiteboardExpanded, true, false, true)
+			&& ShouldAcceptPageControlClientHit(WorkspaceMode::WhiteboardExpanded, true, false, false, true)
+			&& !ShouldAcceptPageControlClientHit(WorkspaceMode::WhiteboardExpanded, false, false, true, true)
+			&& !ShouldAcceptPageControlClientHit(WorkspaceMode::PptCompact, true, true, true),
+			"locked whiteboard panel consumes clicks without accepting transparent corners or PPT input");
 		constexpr POINT dragStart{ 100, 100 };
 		Check(!HasExceededPptDragThreshold(
 			dragStart, POINT{ 103, 102 }, 8, 6)
@@ -502,8 +507,16 @@ namespace
 		WhiteboardState whiteboard;
 		whiteboard.expandedLayoutTarget = whiteboard.active = true;
 		const auto expanded = ResolveSurfaceLayout(Surface::BottomLeft, monitor, 2, ppt, whiteboard);
-		Check(expanded.scale == 2 && Width(expanded.logicalBounds) == 460,
-			"whiteboard never inherits PPT user scale or position");
+		const auto expandedRight = ResolveSurfaceLayout(Surface::BottomRight, monitor, 2, ppt, whiteboard);
+		Check(expanded.scale == 2 && Width(expanded.logicalBounds) == 610
+			&& Height(expanded.logicalBounds) == 160
+			&& expanded.logicalBounds.left == monitor.left + 10
+			&& expanded.logicalBounds.bottom == monitor.bottom - 10
+			&& expandedRight.scale == 2 && Width(expandedRight.logicalBounds) == 460
+			&& Height(expandedRight.logicalBounds) == 160
+			&& expandedRight.logicalBounds.right == monitor.right - 10
+			&& expandedRight.logicalBounds.bottom == monitor.bottom - 10,
+			"whiteboard uses independent 305/230 DIP widths and fixed bottom corners without inheriting PPT scale or position");
 	}
 
 	void TestIndependentSurfaceFitRegression()
@@ -632,7 +645,7 @@ namespace
 		const auto hiddenSide = ResolveSurfaceLayout(Surface::MiddleLeft,
 			monitor, 1.0F, ppt, whiteboard);
 		Check(expanded.mode == WorkspaceMode::WhiteboardExpanded
-			&& Width(expanded.logicalBounds) == 230
+			&& Width(expanded.logicalBounds) == 305
 			&& Height(expanded.logicalBounds) == 80
 			&& expanded.logicalBounds.left == 5
 			&& expanded.logicalBounds.bottom == monitor.bottom - 5

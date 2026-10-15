@@ -420,20 +420,20 @@ namespace Inkeys::UI::Bar
 	{
 		return pptSceneMonitor.load(std::memory_order_acquire);
 	}
+	void UpdateSceneMonitor(HMONITOR monitor) noexcept
+	{
+		pptSceneMonitor.store(monitor, std::memory_order_release);
+		barUISet.PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
+	}
 	void UpdatePptSceneMonitor(HWND window) noexcept
 	{
-		{
-			std::scoped_lock lock(pptSceneMutex);
-			if (!WhiteboardActive() && window && IsWindow(window))
-				pptSceneMonitor.store(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST),
-					std::memory_order_release);
-		}
-		barUISet.PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
+		UpdateSceneMonitor(window && IsWindow(window)
+			? MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) : nullptr);
 	}
 	double SceneBottomDockInsetDip() noexcept
 	{
-		return WhiteboardActive() || pptDockSceneActive.load(std::memory_order_acquire)
-			? 5.0 : 0.0;
+		return !barUISet.barState.fold && (WhiteboardActive() ||
+			pptDockSceneActive.load(std::memory_order_acquire)) ? 5.0 : 0.0;
 	}
 	bool PptBusinessFocusAllowed() noexcept
 	{
@@ -490,27 +490,9 @@ namespace Inkeys::UI::Bar
 			// 工作区切换时默认使用拖拽模式，属性浮层保持收起；后续由用户按钮控制展开。
 			barUISet.CollapseAuxiliaryPanels(true);
 		}
-		if (active)
-		{
-			if (changed)
-			{
-				// 白板仍以主屏为场景；返回时保持原有收起位置，不重放 PPT 入口。
-				{
-					std::scoped_lock lock(pptSceneMutex);
-					pptSceneMonitor.store(nullptr, std::memory_order_release);
-				}
-				barUISet.PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
-			}
-			RequestWhiteboardBottomDock();
-		}
-		else
-		{
-			// 退出白板后主栏回到 Presentation 的收起态，避免下一次桌面点击
-			// 被残留的 bottom dock 或辅助面板重新唤醒。
-			barUISet.barState.fold = true;
-			whiteboardBottomDockRequested.store(false, std::memory_order_release);
+		// 几何和桌面基线由渲染线程统一交接，业务线程不再强制居中或折叠。
+		if (changed && !active)
 			whiteboardDockLockActive.store(false, std::memory_order_release);
-		}
 		if (changed || contentStateUpdatesReady.load(std::memory_order_acquire))
 			barUISet.UpdateRendering();
 	}

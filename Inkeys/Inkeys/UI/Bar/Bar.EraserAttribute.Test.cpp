@@ -539,13 +539,30 @@ namespace Inkeys::UI::Bar
 				"Combined also retains and positions hidden Pierce for the next mode change");
 			SetPptPresentationActive(true);Freeze::SetPresentationActive(true);owner.UpdateRendering();expectStableButtons();
 			auto* a2Divider=std::distance(stableButtons.begin(),pierceIndex)>=2 ? *(pierceIndex-2) : nullptr;
+			auto* whiteboardAnchor=std::distance(stableButtons.begin(),pierceIndex)>=1 ? *(pierceIndex-1) : nullptr;
 			expect(a2Divider && a2Divider->preset==BarButtonPresetEnum::Divider && a2Divider->IsVisible(),
-				"default A2 boundary is the nearest visible predecessor when Freeze is unavailable");
+				"default A2 boundary remains two positions before Pierce");
+			expect(whiteboardAnchor && whiteboardAnchor->preset==BarButtonPresetEnum::Whiteboard && whiteboardAnchor->IsVisible(),
+				"restored Whiteboard is the nearest visible predecessor when Freeze is unavailable");
 			if(a2Divider){a2Divider->button.x.SetDirect(300.0);a2Divider->button.y.SetDirect(40.0);}
+			if(whiteboardAnchor){whiteboardAnchor->button.x.SetDirect(375.0);whiteboardAnchor->button.y.SetDirect(50.0);}
 			anchorPierce();
 			for(int frame=0;frame<12;++frame){anchorPierce();advancePierce(0.05);}
-			expect(!freezeModeButton->IsVisible() && a2Divider && pierceModeButton->button.x.val==a2Divider->button.x.tar,
-				"hidden Pierce uses the existing nearest-visible-anchor rule when Freeze is unavailable");
+			expect(!freezeModeButton->IsVisible() && !pierceModeButton->IsVisible() && whiteboardAnchor
+				&& pierceModeButton->button.x.val==whiteboardAnchor->button.x.tar
+				&& pierceModeButton->button.y.val==whiteboardAnchor->button.y.tar,
+				"hidden Pierce anchors to restored Whiteboard when Freeze is unavailable");
+			// 保留原来的较远锚点覆盖：白板也不可见时仍应回退到 A2 分隔线。
+			if(whiteboardAnchor)
+			{
+				const bool savedWhiteboardHide=whiteboardAnchor->hide;
+				whiteboardAnchor->hide=true;
+				for(int frame=0;frame<12;++frame){anchorPierce();advancePierce(0.05);}
+				expect(a2Divider && pierceModeButton->button.x.val==a2Divider->button.x.tar
+					&& pierceModeButton->button.y.val==a2Divider->button.y.tar,
+					"hidden Pierce still falls back to A2 boundary when both Freeze and Whiteboard are unavailable");
+				whiteboardAnchor->hide=savedWhiteboardHide;
+			}
 			SetSelectAndClickThroughMode(1);owner.UpdateRendering();expectStableButtons();
 			expect(pierceModeButton->IsVisible() && pierceModeButton->size==BarButtonSizeEnum::twoTwo,
 				"PPT reveals the same Pierce member in the full slot");

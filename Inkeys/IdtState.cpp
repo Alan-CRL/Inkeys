@@ -819,6 +819,19 @@ bool WhiteboardTransactionActive() noexcept
 		WhiteboardPhase::Inactive);
 }
 
+void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept
+{
+	if (!WhiteboardActive() || pattern < 0 || pattern > 2) return;
+	const auto snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+	if (snapshot.whiteboardLoadPending || currentPage < 1
+		|| snapshot.whiteboardGeneration != generation
+		|| snapshot.currentPageIndex != static_cast<std::size_t>(currentPage - 1)) return;
+	// 页面身份随主题请求一起投递，迟到的菜单动作不能改写下一页。
+	(void)Inkeys::Drawing::Draw3::RequestWhiteboardTheme(
+		{ rgb, static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(pattern) },
+		snapshot.whiteboardGeneration, snapshot.currentPageIndex);
+}
+
 void RequestWhiteboardPreviousPage() noexcept
 {
 	if (WhiteboardActive())
@@ -1822,9 +1835,11 @@ void StateMonitoring()
 			if (!Draw3WorkspaceReady(snapshot, Workspace::Whiteboard)) continue;
 
 			SetWhiteboardFreezeSurfaceOwned(true);
-			Inkeys::UI::Whiteboard::PublishPageState(
+			Inkeys::UI::Whiteboard::PublishPageSnapshot(
 				static_cast<int>(snapshot.currentPageIndex + 1),
-				static_cast<int>(snapshot.pageCount), false);
+				static_cast<int>(snapshot.pageCount), false,
+				snapshot.whiteboardTheme.backgroundRgb, static_cast<int>(snapshot.whiteboardTheme.pattern),
+				snapshot.whiteboardUnsaved, snapshot.whiteboardGeneration);
 			Inkeys::UI::Whiteboard::PublishActive(true);
 			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true)) continue;
 			Inkeys::UI::Bar::SetWhiteboardActive(true);
@@ -1889,7 +1904,7 @@ void StateMonitoring()
 					completed != pageCommandCountBeforeRequest)
 					pageSwitching = false;
 			}
-			if (!pageSwitching && snapshot.workspace == Workspace::Whiteboard)
+			if (!pageSwitching && !snapshot.whiteboardLoadPending && snapshot.workspace == Workspace::Whiteboard)
 			{
 				const bool previous = whiteboardPreviousRequested.exchange(
 					false, std::memory_order_acq_rel);
@@ -1914,9 +1929,11 @@ void StateMonitoring()
 						Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
 				}
 			}
-			Inkeys::UI::Whiteboard::PublishPageState(
+			Inkeys::UI::Whiteboard::PublishPageSnapshot(
 				static_cast<int>(snapshot.currentPageIndex + 1),
-				static_cast<int>(snapshot.pageCount), pageSwitching);
+				static_cast<int>(snapshot.pageCount), pageSwitching || snapshot.whiteboardLoadPending,
+				snapshot.whiteboardTheme.backgroundRgb, static_cast<int>(snapshot.whiteboardTheme.pattern),
+				snapshot.whiteboardUnsaved, snapshot.whiteboardGeneration);
 			continue;
 		}
 

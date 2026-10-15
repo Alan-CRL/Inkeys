@@ -1064,7 +1064,9 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active)
 		pierce->TransitionContent(L"barPierce", label);
 	}
 	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",
-		active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
+		active ? (Inkeys::UI::Bar::PptPresentationActive()
+			? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
+			: IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel))
 			: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
 }
 void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)

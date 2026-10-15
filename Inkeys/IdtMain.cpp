@@ -1318,6 +1318,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--draw3-laser-raster-failure-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunLaserRasterFailureTest();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-whiteboard-storage-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunWhiteboardStorageProductionTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-parked-desktop-exit-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunParkedDesktopExitAutoSaveTest();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
@@ -1364,7 +1367,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	bool draw3ConsoleOutputEnabled = false;
 	bool touchAreaConsoleOutputEnabled = false;
 	bool cursorConsoleOutputEnabled = false;
-	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
+	// 白板入口与启动失败、正常退出清理路径使用同一功能开关。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
 
 	// 路径预处理
@@ -3285,6 +3288,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (whiteboardFeatureEnabled && !Inkeys::UI::Whiteboard::Initialize({
 			[] { RequestWhiteboardPreviousPage(); },
 			[] { RequestWhiteboardNextPage(); },
+			[] { RequestWhiteboardActive(false); },
+			[](std::uint32_t rgb, int pattern, std::uint64_t generation, int page) { RequestWhiteboardTheme(rgb, pattern, generation, page); },
 			}))
 		{
 			SetOffSignal(1);

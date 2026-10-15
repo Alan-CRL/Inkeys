@@ -37,6 +37,7 @@ export namespace Inkeys::UI::Bar
 		double fillOpacity = 1.0;
 		double frameOpacity = 0.0;
 		bool visible = true;
+		std::function<void(ID2D1DeviceContext*, D2D1_RECT_F)> drawContent;
 	};
 
 	using BarSurfaceWidgetId = std::uint32_t;
@@ -90,6 +91,7 @@ export namespace Inkeys::UI::Bar
 		COLORREF content = RGB(0, 0, 0);
 		bool useThemeColors = true;
 		std::function<void()> onClick;
+		std::function<void(ID2D1DeviceContext*, D2D1_RECT_F)> drawContent;
 	};
 
 	struct BarSurfaceWidgetLayout

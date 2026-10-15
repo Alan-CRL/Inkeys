@@ -412,6 +412,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
 	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
+	<ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h" />
+	<ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h" />
 	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
 	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
 	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
@@ -1015,6 +1017,8 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_codec.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cppm"><CompileAs>CompileAsCppModule</CompileAs></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_file.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_file.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -1031,6 +1035,8 @@
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cpp" />
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cppm"><CompileAs>CompileAsCppModule</CompileAs></ClCompile>
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp" />
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -1234,6 +1240,7 @@
     <None Include="src\UI\barAutoEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
     <None Include="src\UI\barWhiteboard.svg" />
+    <None Include="src\UI\barMenu.svg" />
     <None Include="src\UI\barDismiss.svg" />
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barHighlighter1.svg" />

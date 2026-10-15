@@ -1007,6 +1007,7 @@ namespace Inkeys::Drawing::Draw3
 		void NotifyRtsStylusDownCursor(InputDeviceType deviceType,
 			DrawingCursorEventSink* drawingCursorSink) noexcept
 		{
+			if (drawingCursorSink) drawingCursorSink->NotifyCanvasContactDown();
 			if (drawingCursorSink && deviceType == InputDeviceType::Touch)
 				drawingCursorSink->NotifyTouchContactBegin();
 		}

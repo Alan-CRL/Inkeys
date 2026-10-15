@@ -340,6 +340,7 @@ BARQUESTION             UI                      "src\\UI\\barQuestion.svg"
 BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
 
 BARMORE                 UI                      "src\\UI\\barMore.svg"
+BARMENU                 UI                      "src\\UI\\barMenu.svg"
 
 BARENDSHOW              UI                      "src\\UI\\barEndShow.svg"
 

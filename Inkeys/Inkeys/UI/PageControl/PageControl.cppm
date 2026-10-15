@@ -194,9 +194,13 @@ export namespace Inkeys::UI::PageControl
 	}
 
 	[[nodiscard]] constexpr bool ShouldAcceptPageControlClientHit(
-		WorkspaceMode mode, bool backgroundHit, bool widgetHit) noexcept
+		WorkspaceMode mode, bool backgroundHit, bool widgetHit,
+		bool inputLocked = false, bool menuOpen = false) noexcept
 	{
 		if (!backgroundHit) return false;
+		// 锁定的是操作，不是可见面板的遮挡；过渡帧点击不能穿透落笔。
+		if (mode == WorkspaceMode::WhiteboardExpanded && (inputLocked || menuOpen)) return true;
+		if (inputLocked) return false;
 		const auto policy = ResolveWorkspaceInputPolicy(mode);
 		return policy.drag || (policy.click && widgetHit);
 	}
@@ -661,7 +665,18 @@ export namespace Inkeys::UI::PageControl
 		bool nextInteractive = true;
 		bool nextIsAdd = false;
 		bool switching = false;
+		std::uint64_t generation = 0;
+		std::uint32_t backgroundRgb = 0x123B32;
+		int pattern = 0;
+		bool unsaved = false;
+		int menu = 0;
 	};
+
+	[[nodiscard]] constexpr double WhiteboardMenuHeight(const WhiteboardState& state) noexcept
+	{
+		return (state.menu == 2 ? 235.0 : state.menu ? 150.0 : 0.0)
+			+ (state.unsaved ? 32.0 : 0.0);
+	}
 
 	[[nodiscard]] inline bool ArePptStatesEquivalent(
 		const PptState& left, const PptState& right) noexcept
@@ -710,7 +725,10 @@ export namespace Inkeys::UI::PageControl
 			&& left.nextEnabled == right.nextEnabled
 			&& left.nextInteractive == right.nextInteractive
 			&& left.nextIsAdd == right.nextIsAdd
-			&& left.switching == right.switching;
+			&& left.switching == right.switching
+			&& left.generation == right.generation
+			&& left.backgroundRgb == right.backgroundRgb && left.pattern == right.pattern
+			&& left.unsaved == right.unsaved && left.menu == right.menu;
 	}
 
 	struct PptCallbacks
@@ -727,6 +745,8 @@ export namespace Inkeys::UI::PageControl
 	{
 		std::function<void()> previousPage;
 		std::function<void()> nextPage;
+		std::function<void()> closeWhiteboard;
+		std::function<void(std::uint32_t, int, std::uint64_t, int)> changeTheme;
 	};
 
 	struct ResolvedSurfaceLayout
@@ -998,8 +1018,8 @@ export namespace Inkeys::UI::PageControl
 			? PptCompactLongSideDip : PptCompactShortSideDip;
 		if (result.mode == WorkspaceMode::WhiteboardExpanded)
 		{
-			widthDip = WhiteboardWidthDip;
-			heightDip = WhiteboardHeightDip;
+			widthDip = surface == Surface::BottomLeft ? 305.0 : WhiteboardWidthDip;
+			heightDip = WhiteboardHeightDip + (surface == Surface::BottomLeft ? WhiteboardMenuHeight(whiteboard) : 0.0);
 		}
 		else if (result.vertical)
 			scale *= NormalizeRuntimeControlScale(ppt.layout.middlePairScale);
@@ -1255,5 +1275,6 @@ export namespace Inkeys::UI::PageControl
 	void QueuePptWheel(short delta) noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;
 	void NotifyLayoutChanged() noexcept;
+	bool RequestWhiteboardMenuDismiss() noexcept;
 	void CancelPointerCapture() noexcept;
 }

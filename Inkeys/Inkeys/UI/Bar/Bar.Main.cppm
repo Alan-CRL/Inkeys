@@ -1098,6 +1098,7 @@ namespace Inkeys::UI::Bar
 	export std::optional<bool> ConsumePptSceneTransition() noexcept;
 	export HWND PptPresentationWindow() noexcept;
 	export HMONITOR PptSceneMonitor() noexcept;
+	export void UpdateSceneMonitor(HMONITOR monitor) noexcept;
 	export void UpdatePptSceneMonitor(HWND window) noexcept;
 	export double SceneBottomDockInsetDip() noexcept;
 	export void SetBusinessFocusCallback(std::function<void()> callback);

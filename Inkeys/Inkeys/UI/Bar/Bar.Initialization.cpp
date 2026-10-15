@@ -74,7 +74,7 @@ bool BarUISetClass::InitializeStartupPlacement(Inkeys::UI::StartupPlacement plac
 void BarUISetClass::PublishDisplaySnapshot(
 	Inkeys::Display::SnapshotPtr snapshot) noexcept
 {
-	const auto* monitor = snapshot && !Inkeys::UI::Bar::WhiteboardActive()
+	const auto* monitor = snapshot
 		? snapshot->Find(Inkeys::UI::Bar::PptSceneMonitor()) : nullptr;
 	if (!monitor && snapshot) monitor = snapshot->Primary();
 	if (!monitor) return;

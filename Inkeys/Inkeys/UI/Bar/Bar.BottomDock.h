@@ -15,7 +15,7 @@ namespace Inkeys::UI::Bar
 {
 	inline constexpr double BarBottomDockThresholdDip = 20.0;
 	inline constexpr double BarBottomDockCenterThresholdDip = 40.0;
-		inline constexpr double BarWhiteboardBottomInsetDip = 5.0;
+	inline constexpr double BarWhiteboardBottomInsetDip = 5.0;
 	inline constexpr double BarBottomDockVisualLimitDip = 24.0;
 	inline constexpr double BarBottomDockSpringOmega = 18.0;
 	inline constexpr double BarBottomDockSpringDampingRatio = 0.72;
@@ -47,17 +47,27 @@ namespace Inkeys::UI::Bar
 		Recovering,
 	};
 
-	// 放映生命周期与控件显隐分离；重复页发布不能重放场景动画。
-	enum class BarPptSceneAction { Keep, CenterDock, Detach };
-	[[nodiscard]] constexpr BarPptSceneAction ResolveBarPptSceneAction(
-		bool entering, bool folded, BarBottomDockMode mode, bool whiteboard) noexcept
+	// 桌面基线只在第一个覆盖工作区进入时捕获，PPT/白板互切不覆盖它。
+	enum class BarWorkspaceScene { Desktop, Presentation, Whiteboard };
+	enum class BarWorkspaceTransition { Keep, Enter, Switch, Leave };
+	[[nodiscard]] constexpr bool ShouldPlaceBarWorkspaceDock(bool folded, BarBottomDockMode mode) noexcept
 	{
-		if (whiteboard) return BarPptSceneAction::Keep;
-		if (folded) return mode == BarBottomDockMode::BottomDocked
-			? BarPptSceneAction::Detach : BarPptSceneAction::Keep;
-		return !entering || mode == BarBottomDockMode::BottomDocked
-			? BarPptSceneAction::CenterDock : BarPptSceneAction::Keep;
+		return !folded && mode == BarBottomDockMode::BottomDocked;
 	}
+	struct BarWorkspaceSceneState
+	{
+		BarWorkspaceScene scene = BarWorkspaceScene::Desktop;
+		BarWorkspaceTransition Update(bool whiteboard, bool presentation) noexcept
+		{
+			const auto next = whiteboard ? BarWorkspaceScene::Whiteboard
+				: presentation ? BarWorkspaceScene::Presentation : BarWorkspaceScene::Desktop;
+			if (scene == next) return BarWorkspaceTransition::Keep;
+			const auto result = scene == BarWorkspaceScene::Desktop ? BarWorkspaceTransition::Enter
+				: next == BarWorkspaceScene::Desktop ? BarWorkspaceTransition::Leave : BarWorkspaceTransition::Switch;
+			scene = next;
+			return result;
+		}
+	};
 	struct BarPptSceneState
 	{
 		std::uint64_t session = 0;
