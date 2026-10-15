@@ -37,6 +37,7 @@ export namespace Inkeys::UI::Bar
 		double fillOpacity = 1.0;
 		double frameOpacity = 0.0;
 		bool visible = true;
+		bool contentEnvelope = false;
 		std::function<void(ID2D1DeviceContext*, D2D1_RECT_F)> drawContent;
 	};
 
@@ -67,6 +68,15 @@ export namespace Inkeys::UI::Bar
 		// 临时输入锁不改变控件的 enabled 外观和内容透明度。
 		bool interactive = true;
 		bool selected = false;
+		bool panel = false;
+		// 子面板由共享属性动效驱动；内容只声明父项，继承整块姿态。
+		BarSurfaceWidgetId parentPanel = BarSurfaceNoWidget;
+		BarSurfaceWidgetId popupAnchor = BarSurfaceNoWidget;
+		bool divider = false;
+		bool header = false;
+		bool selectionIndicator = false;
+		bool selectionVisible = false;
+		bool primaryLeftAligned = false;
 		std::wstring iconResource;
 		std::wstring primaryText;
 		std::wstring secondaryText;
@@ -90,6 +100,8 @@ export namespace Inkeys::UI::Bar
 		COLORREF fill = RGB(0, 0, 0);
 		COLORREF content = RGB(0, 0, 0);
 		bool useThemeColors = true;
+		std::uint64_t contentRevision = 0;
+		std::function<void()> releaseContentResources;
 		std::function<void()> onClick;
 		std::function<void(ID2D1DeviceContext*, D2D1_RECT_F)> drawContent;
 	};
@@ -190,6 +202,7 @@ export namespace Inkeys::UI::Bar
 			std::span<const BarSurfaceWidgetSpec> widgets,
 			const BarSurfaceHorizontalGroupSpec& group);
 		bool SetWidgets(std::span<const BarSurfaceWidgetSpec> widgets);
+		bool UpdateContent(std::span<const BarSurfaceWidgetSpec> widgets);
 		// 复用稳定 id，从当前呈现几何连续过渡到新背景和按钮布局。
 		bool TransitionLayout(const BarSurfaceBackgroundSpec& background,
 			std::span<const BarSurfaceWidgetSpec> widgets,
@@ -201,6 +214,7 @@ export namespace Inkeys::UI::Bar
 		bool SetWidgetInteractive(BarSurfaceWidgetId id, bool interactive);
 		bool SetWidgetSelected(BarSurfaceWidgetId id, bool selected);
 		bool SetBounds(RECT logicalBounds, float dpiScale) noexcept;
+		void RebaseLocalOrigin(double deltaY) noexcept;
 		void SetBackground(const BarSurfaceBackgroundSpec& background);
 		void SetOpacity(double opacity,
 			double durationSeconds = 0.2) noexcept;
@@ -248,6 +262,7 @@ export namespace Inkeys::UI::Bar
 			std::chrono::steady_clock::time_point frameTime);
 		[[nodiscard]] bool Advance(std::chrono::steady_clock::time_point frameTime) noexcept;
 		[[nodiscard]] bool AnimationActive() const noexcept;
+		[[nodiscard]] bool PopupAnimationActive() const noexcept;
 
 	private:
 		struct Impl;

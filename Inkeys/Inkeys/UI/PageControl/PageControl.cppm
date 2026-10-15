@@ -16,6 +16,8 @@ module;
 
 export module Inkeys.UI.PageControl;
 
+import Inkeys.UI.Bar.EraserAttributeMotion;
+
 export namespace Inkeys::UI::PageControl
 {
 	enum class Surface : std::uint8_t
@@ -672,10 +674,20 @@ export namespace Inkeys::UI::PageControl
 		int menu = 0;
 	};
 
-	[[nodiscard]] constexpr double WhiteboardMenuHeight(const WhiteboardState& state) noexcept
+	inline const Inkeys::UI::Bar::EraserAttributeRect WhiteboardMenuPanel{190,-122.5,340,-5};
+	inline const Inkeys::UI::Bar::EraserAttributeRect WhiteboardMoreAnchor{230,5,300,75};
+	inline const Inkeys::UI::Bar::EraserAttributeRect WhiteboardThemePanel{345,-301,575,-5};
+	inline const Inkeys::UI::Bar::EraserAttributeRect WhiteboardThemeAnchor{195,-42.5,335,-10};
+	[[nodiscard]] inline auto WhiteboardPopupEnvelope(int menu) noexcept
 	{
-		return (state.menu == 2 ? 235.0 : state.menu ? 150.0 : 0.0)
-			+ (state.unsaved ? 32.0 : 0.0);
+		using namespace Inkeys::UI::Bar;
+		return menu==2?ResolveEraserPopupEnvelope(WhiteboardThemePanel,WhiteboardThemeAnchor,60,
+			WhiteboardMenuPanel,WhiteboardMoreAnchor):ResolveEraserPopupEnvelope(WhiteboardMenuPanel,WhiteboardMoreAnchor,60);
+	}
+	[[nodiscard]] inline double WhiteboardMenuHeight(const WhiteboardState& state) noexcept
+	{
+		return (state.menu?std::ceil((std::max)(0.0,-WhiteboardPopupEnvelope(state.menu).top))+5.0:0.0)
+			+(state.unsaved?32.0:0.0);
 	}
 
 	[[nodiscard]] inline bool ArePptStatesEquivalent(
@@ -1018,7 +1030,7 @@ export namespace Inkeys::UI::PageControl
 			? PptCompactLongSideDip : PptCompactShortSideDip;
 		if (result.mode == WorkspaceMode::WhiteboardExpanded)
 		{
-			widthDip = surface == Surface::BottomLeft ? 305.0 : WhiteboardWidthDip;
+			widthDip = surface == Surface::BottomLeft ? (whiteboard.menu ? std::ceil((std::max)(305.0,WhiteboardPopupEnvelope(whiteboard.menu).right))+5.0 : 305.0) : WhiteboardWidthDip;
 			heightDip = WhiteboardHeightDip + (surface == Surface::BottomLeft ? WhiteboardMenuHeight(whiteboard) : 0.0);
 		}
 		else if (result.vertical)

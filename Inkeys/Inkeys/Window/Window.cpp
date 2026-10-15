@@ -154,7 +154,8 @@ namespace
 					const UINT command = static_cast<UINT>(wParam & 0xfff0u);
 					if (command == SC_MINIMIZE)
 					{
-						if (service.MinimizeWhiteboardWindowGroup()) return 0;
+						(void)service.MinimizeWhiteboardWindowGroup();
+						return 0;
 					}
 					else if (command == SC_RESTORE)
 					{
@@ -164,6 +165,10 @@ namespace
 				else if (wParam == SIZE_MINIMIZED)
 				{
 					if (service.MinimizeWhiteboardWindowGroup()) return 0;
+					// ShowWindow 可绕过 SC_MINIMIZE；业务拒绝后立即撤销系统已发生的最小化。
+					// SIZE_RESTORED 只读取未最小化的组状态，不会再次调用 ShowWindow。
+					if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+					return 0;
 				}
 				else if (wParam == SIZE_RESTORED)
 				{
@@ -532,6 +537,11 @@ namespace Inkeys::Window
 		[[nodiscard]] bool WhiteboardWindowMode() const noexcept
 		{
 			return whiteboardWindowMode_.load(std::memory_order_acquire);
+		}
+
+		[[nodiscard]] bool WhiteboardWindowGroupMinimized() const noexcept
+		{
+			return whiteboardGroupMinimized_.load(std::memory_order_acquire);
 		}
 
 		[[nodiscard]] bool MinimizeWhiteboardWindowGroup()
@@ -1195,7 +1205,7 @@ namespace Inkeys::Window
 				}
 			}
 
-			if (IsSetting(spec.role))
+			if (IsSetting(spec.role) || spec.role == WindowRole::Freeze)
 			{
 				SendMessageW(hwnd, WM_SETICON, ICON_BIG,
 					reinterpret_cast<LPARAM>(windowClass.hIcon));
@@ -1528,23 +1538,44 @@ namespace Inkeys::Window
 			}
 			if (succeeded)
 			{
+				// 保留的主栏允许直接关闭最小化白板；清除锚点 iconic 状态后保持隐藏，
+				// 防止下一次进入白板继承最小化状态，也不恢复整组过时的可见快照。
+				if (!whiteboard && whiteboardGroupMinimized_.load(std::memory_order_acquire))
+				{
+					if (const HWND anchor = Handle(WindowRole::Freeze); anchor && IsIconic(anchor))
+					{
+						whiteboardGroupMinimized_.store(false, std::memory_order_release);
+						ShowWindow(anchor, SW_SHOWNOACTIVATE);
+						ShowWindow(anchor, SW_HIDE);
+					}
+				}
 				whiteboardWindowMode_.store(whiteboard, std::memory_order_release);
 				whiteboardGroupMinimized_.store(false, std::memory_order_release);
 				whiteboardVisibleBeforeMinimize_.fill(false);
+				NotifyWhiteboardMinimizedChanged();
 			}
 			return succeeded;
+		}
+
+		void NotifyWhiteboardMinimizedChanged() noexcept
+		{
+			const auto& spec = records_[RoleIndex(WindowRole::Freeze)].activeSpec;
+			try { if (spec && spec->whiteboardMinimizedChanged) spec->whiteboardMinimizedChanged(); }
+			catch (...) {}
 		}
 
 		[[nodiscard]] bool ApplyMinimizeWhiteboardGroup() noexcept
 		{
 			if (!whiteboardWindowMode_.load(std::memory_order_acquire)) return false;
+			const auto& spec = records_[RoleIndex(WindowRole::Freeze)].activeSpec;
+			try { if (spec && spec->whiteboardMinimizeAllowed && !spec->whiteboardMinimizeAllowed()) return false; }
+			catch (...) { return false; }
 			if (whiteboardGroupMinimized_.load(std::memory_order_acquire)) return true;
 			constexpr WindowRole roles[] = {
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
-				WindowRole::Bar,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -1557,6 +1588,7 @@ namespace Inkeys::Window
 			if (!anchor || !IsWindow(anchor)) return false;
 			// 先锁存状态再触发 WM_SIZE，避免系统消息重入时再次递归最小化。
 			whiteboardGroupMinimized_.store(true, std::memory_order_release);
+			(void)ApplyCancelPointerCapture();
 			ShowWindow(anchor, SW_MINIMIZE);
 			for (const WindowRole role : roles)
 			{
@@ -1564,6 +1596,9 @@ namespace Inkeys::Window
 				if (const HWND hwnd = Handle(role); hwnd && IsWindow(hwnd))
 					ShowWindow(hwnd, SW_HIDE);
 			}
+			// Windows 自动隐藏 owned popup，显式恢复主栏以保留工作区入口。
+			if (const HWND bar = Handle(WindowRole::Bar)) ShowWindow(bar, SW_SHOWNOACTIVATE);
+			NotifyWhiteboardMinimizedChanged();
 			return true;
 		}
 
@@ -1577,7 +1612,6 @@ namespace Inkeys::Window
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
-				WindowRole::Bar,
 			};
 			const HWND anchor = Handle(WindowRole::Freeze);
 			if (!anchor || !IsWindow(anchor)) return false;
@@ -1600,6 +1634,9 @@ namespace Inkeys::Window
 				(void)HideUserWindowsInGroup(false);
 				return false;
 			}
+			// Windows 自动隐藏 owned popup，显式恢复主栏以保留工作区入口。
+			if (const HWND bar = Handle(WindowRole::Bar)) ShowWindow(bar, SW_SHOWNOACTIVATE);
+			NotifyWhiteboardMinimizedChanged();
 			return true;
 		}
 
@@ -1667,6 +1704,9 @@ namespace Inkeys::Window
 				return false;
 			case CommandType::Show:
 			{
+				// 拒绝最小化之前排队的呈现请求，不能重新唤醒画布或翻页控件。
+				if (WhiteboardWindowGroupMinimized() && command.role != WindowRole::Bar
+					&& !IsSetting(command.role)) return true;
 				bool succeeded = true;
 				DWORD error = ERROR_SUCCESS;
 				if (IsSetting(command.role))
@@ -1757,6 +1797,7 @@ namespace Inkeys::Window
 			}
 			case CommandType::SetBounds:
 			{
+				if (WhiteboardWindowGroupMinimized() && command.role == WindowRole::Freeze) return true;
 				SetLastError(ERROR_SUCCESS);
 				const bool succeeded = command.role == WindowRole::Drawpad
 					? ApplyDrawpadBounds(command.bounds)
@@ -1976,6 +2017,7 @@ namespace Inkeys::Window
 		[[nodiscard]] bool ApplyDrawpadSurfaceVisibility(
 			DrawpadSurfaceVisibility visibility) noexcept
 		{
+			if (WhiteboardWindowGroupMinimized()) visibility = DrawpadSurfaceVisibility::Hidden;
 			const HWND primary = Handle(WindowRole::Drawpad);
 			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
 			const bool wasPrimaryVisible = primary && IsWindowVisible(primary);
@@ -2163,7 +2205,8 @@ namespace Inkeys::Window
 
 			void ApplyOverlayFullscreen(HWND root) noexcept
 			{
-				const bool fullscreen = overlayFullscreen_.load(std::memory_order_acquire);
+				const bool fullscreen = overlayFullscreen_.load(std::memory_order_acquire)
+					&& !WhiteboardWindowGroupMinimized();
 				HWND target = Handle(WindowRole::Freeze);
 				if (!target || !IsWindow(target)) target = root;
 				if (!target || !IsWindow(target)) return;
@@ -2305,6 +2348,10 @@ namespace Inkeys::Window
 		bool Service::WhiteboardWindowMode() const noexcept
 		{
 			return impl_->WhiteboardWindowMode();
+		}
+		bool Service::WhiteboardWindowGroupMinimized() const noexcept
+		{
+			return impl_->WhiteboardWindowGroupMinimized();
 		}
 		bool Service::MinimizeWhiteboardWindowGroup()
 		{

@@ -25,7 +25,7 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "三个实现子任务已完成。父任务保留 in_progress，仅跟踪未授权运行的真实 GUI 人工验收；实现、自动验证、独立检查均完成。用户已授权提交当前改动；任务保持进行中，未 push。",
+  "notes": "初版已提交 dfdc8b8e。UI3统一菜单与动画实施、独立检查、ARM64构建和最终无窗口/离屏验证完成。未新增commit/push，保持in_progress，真实GUI手感与跨屏验收待执行。",
   "meta": {
     "approved_plan": "User explicitly requested implementation 2026-10-15",
     "related_task": "08-17-ui3-whiteboard",

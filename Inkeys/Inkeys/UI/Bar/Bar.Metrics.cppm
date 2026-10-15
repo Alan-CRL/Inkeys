@@ -83,6 +83,7 @@ export namespace Inkeys::UI::Bar
 		Custom,
 		StandardOneOne,
 		StandardTwoOne,
+		StandardFourOne,
 		StandardTwoTwo,
 		PageHorizontal,
 		PageVertical,
@@ -146,6 +147,17 @@ export namespace Inkeys::UI::Bar
 			result.primaryFontSizeDip = 12.0;
 			result.primaryOffsetXDip = 11.5;
 			result.primarySlotWidthDip = 37.0;
+			result.primarySlotHeightDip = BarButtonOneSideDip;
+			break;
+		case BarButtonVisualLayoutKind::StandardFourOne:
+			// 白板操作行按产品规范固定 140 DIP，沿用单行按钮的字号和图标。
+			result.buttonWidthDip = 140.0;
+			result.buttonHeightDip = BarButtonOneSideDip;
+			result.iconSizeDip = 18.0;
+			result.iconOffsetXDip = -56.0;
+			result.primaryFontSizeDip = 12.0;
+			result.primaryOffsetXDip = 11.5;
+			result.primarySlotWidthDip = 107.0;
 			result.primarySlotHeightDip = BarButtonOneSideDip;
 			break;
 		case BarButtonVisualLayoutKind::StandardTwoTwo:

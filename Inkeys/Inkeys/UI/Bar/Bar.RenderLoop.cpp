@@ -41,6 +41,7 @@ import :Atomic;
 import :Zoom;
 import :Theme;
 
+import Inkeys.Window;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.StartupPreview;
@@ -568,6 +569,8 @@ struct BarRenderLoopState
 	bool displayTransitionActive = false;
 	bool initialBottomDockPlacementApplied = false;
 	bool whiteboardDockPlacementPending = false;
+	bool whiteboardMinimized = false;
+	BarBottomDockCenterMode whiteboardRestoreCenterMode = BarBottomDockCenterMode::Free;
 	bool pptDockPlacementPending = false;
 	Inkeys::UI::Bar::BarWorkspaceSceneState workspaceScene;
 	BarBottomDockMode desktopDockMode = BarBottomDockMode::Floating;
@@ -1663,7 +1666,8 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			state.mainButtonBaseSize / 2.0, 10.0, layoutTotalWidth,
 			mainButton->ft.has_value() ? max(0.0, mainButton->ft.value().tar / 2.0) : 0.0,
 			mainBar->ft.has_value() ? max(0.0, mainBar->ft.value().tar / 2.0) : 0.0,
-			frame.directionAdjustment, centeredMainBarSideLocked || Inkeys::UI::Bar::WhiteboardDockLockActive()
+			frame.directionAdjustment, Inkeys::UI::Bar::LockCenteredBarExpansion(centeredMainBarSideLocked,
+				Inkeys::UI::Bar::WhiteboardActive(), frame.directionAdjustment) || Inkeys::UI::Bar::WhiteboardDockLockActive()
 				|| state.whiteboardDockAnimationActive || state.whiteboardDockPlacementPending
 				|| state.pptDockPlacementPending || !state.initialBottomDockPlacementApplied };
 		// 完整目标宽度先于方向判定；折叠也以未来展开宽度评估，同输入沿用锁存结果。
@@ -13656,6 +13660,26 @@ BarRenderLoopCoordinator::RenderFrame(
 			state.bottomDockCenterCaptureFarEdgeSpring = {};
 			state.unclassifiedDamagePending = true;
 			state.presentDecision.RequireVisualRetry();
+		}
+		const bool minimized = Inkeys::UI::Bar::WhiteboardActive()
+			&& Inkeys::Window::GetService().WhiteboardWindowGroupMinimized();
+		if (state.whiteboardMinimized != minimized)
+		{
+			// 暂停/恢复只移动现有底栏，桌面快照仍由上面的工作区状态机独占。
+			if (ShouldPlaceBarWorkspaceDock(state.barState.fold, owner_.bottomDockMode.load(memory_order_acquire))
+				&& transition != BarWorkspaceTransition::Leave)
+			{
+				owner_.BeginBottomDockTransition();
+				if (minimized)
+					state.whiteboardRestoreCenterMode = owner_.bottomDockCenterMode.load(memory_order_relaxed);
+				owner_.bottomDockCenterMode.store(minimized ? BarBottomDockCenterMode::Centered
+					: state.whiteboardRestoreCenterMode, memory_order_relaxed);
+				(void)owner_.FinishBottomDockTransition(true);
+				state.pptDockPlacementPending = true;
+				state.unclassifiedDamagePending = true;
+				state.presentDecision.RequireVisualRetry();
+			}
+			state.whiteboardMinimized = minimized;
 		}
 		owner_.directWindowDragPhase.store(BarDirectWindowDragPhase::Idle, memory_order_release);
 	}

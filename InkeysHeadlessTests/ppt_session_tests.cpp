@@ -93,6 +93,11 @@ int RunPptSessionTests()
 		!ShouldPlaceBarWorkspaceDock(false, BarBottomDockMode::Floating) &&
 		!ShouldPlaceBarWorkspaceDock(true, BarBottomDockMode::Floating),
 		"folded and floating bars preserve their geometry on scene entry");
+	check(ResolveBarWorkspaceBottomInsetDip(false, true, false, false) == 5.0
+		&& ResolveBarWorkspaceBottomInsetDip(false, true, false, true) == 0.0
+		&& ResolveBarWorkspaceBottomInsetDip(false, false, true, false) == 5.0
+		&& ResolveBarWorkspaceBottomInsetDip(true, true, false, false) == 0.0,
+		"whiteboard minimize switches to work-area dock without ending scene");
 	BarWorkspaceSceneState workspace;
 	check(workspace.Update(false, true) == BarWorkspaceTransition::Enter,
 		"desktop to presentation captures baseline");

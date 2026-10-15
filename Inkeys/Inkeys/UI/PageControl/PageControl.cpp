@@ -37,6 +37,8 @@ module Inkeys.UI.PageControl;
 
 import Inkeys.UI.Bar;
 import Inkeys.UI.Bar.FramePacing;
+import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.Bar.EraserAttributeMotion;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
 import Inkeys.Message;
@@ -198,6 +200,8 @@ namespace Inkeys::UI::PageControl
 			std::chrono::steady_clock::time_point layoutTransitionUntil{};
 			std::uint64_t observedRevision = 0;
 			WhiteboardState renderedWhiteboard;
+			double envelopeOffset = 0.0;
+			int envelopeMenu = 0;
 			WhiteboardState pressedWhiteboard;
 			SIZE backingCapacity{ 1, 1 };
 			SIZE committedPresentationSize{};
@@ -596,16 +600,18 @@ namespace Inkeys::UI::PageControl
 		}
 
 		[[nodiscard]] Inkeys::UI::Bar::BarSurfaceBackgroundSpec BuildBackground(
-			std::size_t index, WorkspaceMode mode, int menu = 0, bool unsaved = false)
+			std::size_t index, WorkspaceMode mode, int menu = 0, bool unsaved = false, double envelopeOffset = -1.0)
 		{
 			Inkeys::UI::Bar::BarSurfaceBackgroundSpec background;
 			const bool whiteboard = mode == WorkspaceMode::WhiteboardExpanded;
 			const bool vertical = index >= 2;
-			background.bounds = { 0.0, 0.0,
+			const double offset = whiteboard && index == 0 ? (envelopeOffset >= 0 ? envelopeOffset : (menu ? std::ceil((std::max)(0.0,-WhiteboardPopupEnvelope(menu).top))+5.0 : 0.0) + (unsaved ? 32.0 : 0.0)) : 0.0;
+			background.bounds = { 0.0, offset,
 				whiteboard ? (index == 0 ? 305.0 : WhiteboardWidthDip)
 					: vertical ? PptCompactShortSideDip : PptCompactLongSideDip,
-				whiteboard ? WhiteboardHeightDip + (index == 0 ? ((menu == 2 ? 235.0 : menu ? 150.0 : 0.0) + (unsaved ? 32.0 : 0.0)) : 0.0)
-					: vertical ? PptCompactLongSideDip : PptCompactShortSideDip };
+				offset + (whiteboard ? WhiteboardHeightDip
+					: vertical ? PptCompactLongSideDip : PptCompactShortSideDip) };
+			background.contentEnvelope=whiteboard && index==0;
 			background.useThemeColors = false;
 			background.fill = GetThemeColor(
 				BarThemeModeEnum::Dark, BarThemeColorEnum::Surface);
@@ -643,7 +649,7 @@ namespace Inkeys::UI::PageControl
 			if(id==6 || id==7) {
 				CloseWhiteboardMenu();
 				if(id==6 && callbacks.closeWhiteboard) callbacks.closeWhiteboard();
-				if(id==7) (void)Inkeys::Window::GetService().MinimizeWhiteboardWindowGroup();
+				if(id==7 && !Snapshot().first.presentationVisible) (void)Inkeys::Window::GetService().MinimizeWhiteboardWindowGroup();
 			}
 			constexpr std::uint32_t colors[]={0x123B32,0xFFFFFF,0xF5F1E6,0xE5E7EB,0x25282D,0x172A46};
 			if(id>=9 && id<=17 && callbacks.changeTheme)
@@ -653,9 +659,9 @@ namespace Inkeys::UI::PageControl
 
 		[[nodiscard]] std::vector<WidgetSpec> BuildWidgets(
 			std::size_t index, WorkspaceMode mode,
-			const PptState& ppt, const WhiteboardState& whiteboard)
+			const PptState& ppt, const WhiteboardState& whiteboard, double envelopeOffset = -1.0)
 		{
-			std::vector<WidgetSpec> widgets(18);
+			std::vector<WidgetSpec> widgets(23);
 			const auto inputPolicy = ResolveWorkspaceInputPolicy(mode);
 			auto& drag = widgets[0];
 			drag.id = DragWidget;
@@ -674,7 +680,7 @@ namespace Inkeys::UI::PageControl
 			const auto previousContent = ResolveDirectionContentPolicy(
 				mode, false, false);
 			previous.iconResource = previousContent.icon;
-			previous.secondaryText = previousContent.label;
+			previous.primaryText = mode == WorkspaceMode::WhiteboardExpanded ? IW(I18nKey.UI.Bar.MainButtons.WhiteboardPreviousLabel) : std::wstring(previousContent.label);
 			previous.iconAngle = ResolveDirectionIconAngle(
 				SurfaceFor(index), mode, false, false);
 			previous.onClick = [index] { InvokeDirection(index, false); };
@@ -701,7 +707,7 @@ namespace Inkeys::UI::PageControl
 			const auto nextContent = ResolveDirectionContentPolicy(
 				mode, true, whiteboard.nextIsAdd, nextIsEndShow);
 			next.iconResource = nextContent.icon;
-			next.secondaryText = nextContent.label;
+			next.primaryText = mode == WorkspaceMode::WhiteboardExpanded ? IW(whiteboard.nextIsAdd ? I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel : I18nKey.UI.Bar.MainButtons.WhiteboardNextLabel) : std::wstring(nextContent.label);
 			next.iconAngle = ResolveDirectionIconAngle(
 				SurfaceFor(index), mode, true, whiteboard.nextIsAdd,
 				nextIsEndShow);
@@ -750,35 +756,64 @@ namespace Inkeys::UI::PageControl
 				auto& w=widgets[i]; w.id=static_cast<WidgetId>(i+1);
 				w.visible=false; w.interactive=false; w.bounds={230,5,300,75}; ApplyDarkTheme(w);
 			}
-			if(index==0 && mode==WorkspaceMode::WhiteboardExpanded) {
+			if (index==0 && mode==WorkspaceMode::WhiteboardExpanded) {
+				using namespace Inkeys::UI::Bar;
+				constexpr double gap=BarButtonGapDip, one=BarButtonOneSideDip, two=BarButtonTwoSideDip;
+				constexpr double menuLeft=190.0, menuTop=-122.5, themeLeft=345.0, themeTop=-301.0;
 				auto& more=widgets[4]; more.visible=true; more.interactive=!whiteboard.switching;
-				more.layoutKind=Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardTwoTwo;
-				more.iconResource=L"barMenu"; more.secondaryText=IW(I18nKey.UI.Bar.MainButtons.MoreLabel);
-				const auto row=[&](std::size_t i, double top, const std::wstring& text) {
+				more.layoutKind=BarButtonVisualLayoutKind::StandardTwoTwo;
+				more.iconResource=L"barMenu"; more.primaryText=IW(I18nKey.UI.Bar.MainButtons.MoreLabel);
+				const auto row=[&](std::size_t i, const std::wstring& text, const wchar_t* icon) {
 					auto& w=widgets[i]; w.visible=whiteboard.menu!=0; w.interactive=w.visible&&!whiteboard.switching;
-					w.bounds={5,top,300,top+42.5}; w.primaryText=text; w.primaryFontSizeDip=16;
-					w.primaryOffsetYDip=0; w.primarySlotHeightDip=22;
+					w.parentPanel=19; w.layoutKind=BarButtonVisualLayoutKind::StandardFourOne; w.primaryLeftAligned=true;
+					const double top=menuTop+gap+(i-5)*(one+gap);
+					w.bounds={menuLeft+gap,top,menuLeft+gap+140,top+one}; w.primaryText=text; w.iconResource=icon;
 				};
-				const double top=whiteboard.menu==2 ? -230.0 : -145.0;
-				row(5,top,IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel));
-				row(6,top+47.5,IW(I18nKey.UI.Bar.MainButtons.MinimizeWhiteboardLabel));
-				row(7,top+95,IW(I18nKey.UI.Bar.MainButtons.WhiteboardThemeLabel));
+				row(5,IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel),L"barCloseSmall");
+				row(6,IW(I18nKey.UI.Bar.MainButtons.MinimizeWhiteboardLabel),L"barMinimize");
+				row(7,IW(I18nKey.UI.Bar.MainButtons.WhiteboardThemeLabel),L"barPalette");
+				widgets[6].enabled=widgets[6].interactive=widgets[6].interactive&&!ppt.presentationVisible;
 				constexpr std::uint32_t colors[]={0x123B32,0xFFFFFF,0xF5F1E6,0xE5E7EB,0x25282D,0x172A46};
-				for(std::size_t i=0;i<9;++i) {
+				const std::wstring labels[]={IW(I18nKey.UI.Bar.MainButtons.WhiteboardBlankLabel),
+					IW(I18nKey.UI.Bar.MainButtons.WhiteboardDotsLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardGridLabel)};
+				for (std::size_t i=0;i<9;++i) {
 					auto& w=widgets[8+i]; w.visible=whiteboard.menu==2; w.interactive=w.visible&&!whiteboard.switching;
-					const auto rgb=i<6 ? colors[i] : whiteboard.backgroundRgb;
-					const int pattern=i<6 ? 0 : static_cast<int>(i-6);
-					w.selected=i<6 ? rgb==whiteboard.backgroundRgb : pattern==whiteboard.pattern;
-					const double x=i<6 ? 5+i*49.0 : 5+(i-6)*98.0;
-					w.bounds={x,i<6 ? -82.5 : -40.0,x+(i<6 ? 45.0 : 94.0),i<6 ? -42.5 : 0.0};
-					w.drawContent=[rgb,pattern,selected=w.selected](auto* dc,auto rect) {
-						WhiteboardVisual::DrawTheme(dc,rect,rgb,pattern,true,selected);
+					w.parentPanel=20; w.layoutKind=BarButtonVisualLayoutKind::StandardTwoTwo;
+					const auto rgb=i<6?colors[i]:whiteboard.backgroundRgb;
+					const int pattern=i<6?0:static_cast<int>(i-6);
+					w.selectionIndicator=true; w.selectionVisible=i<6?rgb==whiteboard.backgroundRgb:pattern==whiteboard.pattern;
+					w.iconResource=L"colorSelect";
+					const double x=themeLeft+gap+(i%3)*(two+gap);
+					const double y=themeTop+(i<6?35.0+(i/3)*(two+gap):221.0);
+					w.bounds={x,y,x+two,y+two};
+					if(i>=6) {
+						w.primaryText=labels[i-6];
+						const unsigned luminance=((rgb>>16)&255)*299+((rgb>>8)&255)*587+(rgb&255)*114;
+						w.content=GetThemeColor(luminance>128000?BarThemeModeEnum::Light:BarThemeModeEnum::Dark,
+							BarThemeColorEnum::TextPrimary);
+					}
+					w.contentRevision=static_cast<std::uint64_t>(rgb)*4+pattern;
+					auto resources=std::make_shared<WhiteboardVisual::ThemeDrawingResources>();
+					w.releaseContentResources=[resources] { *resources={}; };
+					w.drawContent=[rgb,pattern,resources,labelled=i>=6](auto* dc,auto rect) {
+						WhiteboardVisual::DrawTheme(dc,rect,rgb,pattern,true,false,resources.get(),labelled);
 					};
 				}
-
-			}
-			if(index==0 && mode==WorkspaceMode::WhiteboardExpanded) {
-				const double offset=WhiteboardMenuHeight(whiteboard);
+				auto& menu=widgets[18]; menu.panel=true; menu.visible=whiteboard.menu!=0;
+				menu.popupAnchor=MoreWidget; menu.interactive=false; menu.bounds={menuLeft,menuTop,340,-5};
+				auto& theme=widgets[19]; theme.panel=true; theme.visible=whiteboard.menu==2;
+				theme.popupAnchor=8; theme.parentPanel=19; theme.interactive=false; theme.bounds={themeLeft,themeTop,575,-5};
+				const auto header=[&](std::size_t i,double y,const std::wstring& title) {
+					auto& w=widgets[i]; w.visible=whiteboard.menu==2; w.parentPanel=20; w.header=true; w.interactive=false;
+					w.bounds={themeLeft+gap,y,570,y+25}; w.primaryText=title;
+					w.primaryFontSizeDip=12; w.primaryOffsetYDip=0; w.primarySlotHeightDip=25;
+					w.primaryLeftAligned=true;
+				};
+				header(20,themeTop+gap,IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundColorLabel));
+				header(21,themeTop+191,IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundStyleLabel));
+				auto& divider=widgets[22]; divider.visible=whiteboard.menu==2; divider.parentPanel=20;
+				divider.divider=true; divider.interactive=false; divider.bounds={themeLeft+gap,themeTop+185,570,themeTop+186};
+				const double offset=envelopeOffset>=0?envelopeOffset:WhiteboardMenuHeight(whiteboard);
 				for(auto& widget:widgets) { widget.bounds.top+=offset; widget.bounds.bottom+=offset; }
 				auto& status=widgets[17]; status.visible=whiteboard.unsaved;
 				status.interactive=false; status.bounds={5,5,300,32};
@@ -939,7 +974,7 @@ namespace Inkeys::UI::PageControl
 
 		[[nodiscard]] bool ConfigureSurface(std::size_t index, WorkspaceMode desiredMode,
 			const PptState& ppt, const WhiteboardState& whiteboard,
-			const RECT& monitor, const ResolvedSurfaceLayout& target,
+			const RECT& monitor, const ResolvedSurfaceLayout& target, const WhiteboardState& envelopeState,
 			std::uint64_t revision,
 			std::chrono::steady_clock::time_point now,
 			const char*& failedStage)
@@ -952,10 +987,16 @@ namespace Inkeys::UI::PageControl
 			const bool modeChanged = state.sceneConfigured
 				&& state.configuredMode != visualMode;
 			const bool contentChanged = state.observedRevision != revision;
+			const double offset=index==0 && visualMode==WorkspaceMode::WhiteboardExpanded?WhiteboardMenuHeight(envelopeState):0.0;
+			if (state.sceneConfigured && !modeChanged && offset!=state.envelopeOffset)
+				state.scene.RebaseLocalOrigin(offset-state.envelopeOffset);
+			const bool popupEnvelopeChanged=offset!=state.envelopeOffset;
+			state.envelopeOffset=offset; state.envelopeMenu=envelopeState.menu;
+
 			if (!state.sceneConfigured)
 			{
-				const auto background = BuildBackground(index, visualMode, whiteboard.menu, whiteboard.unsaved);
-				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard);
+				const auto background = BuildBackground(index, visualMode, whiteboard.menu, whiteboard.unsaved, offset);
+				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard, offset);
 				if (!state.scene.Configure(background, widgets))
 				{
 					failedStage = "scene-configure";
@@ -974,10 +1015,10 @@ namespace Inkeys::UI::PageControl
 						+ LayoutTransitionWallDuration();
 				}
 			}
-			else if (modeChanged || (contentChanged && visualMode == WorkspaceMode::WhiteboardExpanded))
+			else if (modeChanged || ((state.renderedWhiteboard.menu!=whiteboard.menu || popupEnvelopeChanged) && visualMode == WorkspaceMode::WhiteboardExpanded))
 			{
-				const auto background = BuildBackground(index, visualMode, whiteboard.menu, whiteboard.unsaved);
-				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard);
+				const auto background = BuildBackground(index, visualMode, whiteboard.menu, whiteboard.unsaved, offset);
+				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard, offset);
 				const bool animateLayout = ShouldAnimateWorkspaceLayout(SurfaceFor(index),
 						state.configuredMode, visualMode, state.targetVisible);
 				if (!state.scene.TransitionLayout(background, widgets,
@@ -986,15 +1027,18 @@ namespace Inkeys::UI::PageControl
 					failedStage = "scene-transition";
 					return false;
 				}
-				if (modeChanged || contentChanged)
+				if (modeChanged)
 					state.layoutTransitionUntil = now
 						+ LayoutTransitionWallDuration();
 			}
 			else if (contentChanged)
 			{
 				// 相同布局只更新稳定 widget；TransitionLayout 会无条件扩大为整窗 damage。
-				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard);
-				for (const auto& widget : widgets)
+				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard, offset);
+				if (visualMode==WorkspaceMode::WhiteboardExpanded) {
+					if(!state.scene.UpdateContent(widgets)) { failedStage="scene-content"; return false; }
+				}
+				else for (const auto& widget : widgets)
 				{
 					if (!state.scene.SetWidgetState(widget.id, widget.visible,
 						widget.enabled, widget.primaryText, widget.secondaryText,
@@ -1025,7 +1069,7 @@ namespace Inkeys::UI::PageControl
 				state.layoutTransitionUntil = now
 					+ LayoutTransitionWallDuration();
 			}
-			const bool animateBounds = state.bounds.initialized
+			const bool animateBounds = !popupEnvelopeChanged && state.bounds.initialized
 				&& (wasVisible || state.targetVisible)
 				&& (!entering || index >= 2);
 			if (!state.targetVisible && state.bounds.initialized
@@ -1843,10 +1887,13 @@ namespace Inkeys::UI::PageControl
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				groupBudget.presentationOutsetDip, groupBudget.bitmapLimit);
 			const Surface surface = SurfaceFor(index);
-			const WorkspaceMode mode = ResolveWorkspaceMode(
-				surface, ppt, whiteboard);
+			const WorkspaceMode mode = whiteboard.active && Inkeys::Window::GetService().WhiteboardWindowGroupMinimized()
+				? WorkspaceMode::Hidden : ResolveWorkspaceMode(surface, ppt, whiteboard);
+			auto envelopeState=whiteboard;
+			if (index==0 && whiteboard.active && surfaces[index].scene.PopupAnimationActive())
+				envelopeState.menu=(std::max)(whiteboard.menu,surfaces[index].envelopeMenu);
 			auto target = ResolveSurfaceLayout(surface, monitor,
-				dpiScale, ppt, whiteboard);
+				dpiScale, ppt, envelopeState);
 			if (mode == WorkspaceMode::Hidden && index >= 2)
 				target.logicalBounds = ResolveHiddenSurfaceBounds(
 					surface, monitor, target.logicalBounds);
@@ -1876,7 +1923,7 @@ namespace Inkeys::UI::PageControl
 					return FrameResult::Retry;
 				const char* configureFailure = nullptr;
 				if (!ConfigureSurface(index, mode, ppt, whiteboard, monitor,
-					target, renderSnapshot.revision, frameContext.frameTime,
+					target, envelopeState, renderSnapshot.revision, frameContext.frameTime,
 					configureFailure))
 				{
 					state.forceFullPresentation = true;
@@ -1928,6 +1975,7 @@ namespace Inkeys::UI::PageControl
 						state.repeatTiming = {};
 					}
 				}
+				(void)state.scene.Advance(frameContext.frameTime);
 				presentation = state.scene.PresentationBounds();
 				SIZE presentationSize{
 					presentation.right - presentation.left,
@@ -2590,10 +2638,11 @@ namespace Inkeys::UI::PageControl
 					if(menu && (index!=0 || mode!=WorkspaceMode::WhiteboardExpanded)) continue;
 					whiteboard.menu=menu;
 					Scene scene;
-					const auto background = BuildBackground(index, mode, menu);
+					auto background = BuildBackground(index, mode, menu);
+					background.contentEnvelope=false;
 					const auto widgets = BuildWidgets(index, mode, ppt, whiteboard);
 					Check(scene.Configure(background, widgets), "product widgets configure");
-					const LONG width = static_cast<LONG>(std::lround(background.bounds.right * scale));
+					const LONG width = static_cast<LONG>(std::lround((menu ? std::ceil((std::max)(305.0,WhiteboardPopupEnvelope(menu).right))+5.0 : background.bounds.right) * scale));
 					const LONG height = static_cast<LONG>(std::lround(background.bounds.bottom * scale));
 					Check(scene.SetBounds({ 200, 100, 200 + width, 100 + height }, scale), "effective bounds accepted");
 					scene.SetOpacity(1.0, 0.0);
@@ -2608,19 +2657,21 @@ namespace Inkeys::UI::PageControl
 					Check(SUCCEEDED(setup), "actual Scene backing allocates");
 					if (FAILED(setup)) continue;
 					auto* context = scene.DeviceContext();
+					for(int frame=0;frame<=40;++frame) (void)scene.Advance(now-std::chrono::milliseconds(2000-frame*50));
+					Check(!scene.AnimationActive(),"settled popup shares finite attribute timeline without repeated target changes");
 					context->BeginDraw();
 					context->SetTransform(D2D1::Matrix3x2F::Identity());
 					context->Clear(D2D1::ColorF(0, 0, 0, 0));
 					(void)scene.Render(context, now);
 					Check(SUCCEEDED(context->EndDraw()), "actual Scene renders at final scale");
-					const POINT right{ width - (std::max)(1L, static_cast<LONG>(5 * scale)), height / 2 };
-					const POINT bottom{ width / 2, height - (std::max)(1L, static_cast<LONG>(5 * scale)) };
+					const POINT right{ static_cast<LONG>(background.bounds.right*scale) - (std::max)(1L, static_cast<LONG>(5 * scale)), static_cast<LONG>((background.bounds.top+background.bounds.bottom)*scale/2) };
+					const POINT bottom{ static_cast<LONG>(background.bounds.right*scale/2), height - (std::max)(1L, static_cast<LONG>(5 * scale)) };
 					Check(scene.HitTestBackground(right) && scene.HitTestBackground(bottom),
 						"right and bottom content use the same scale as layout");
 					Check(!scene.PresentationToLogical({ 0, 0 }).has_value(), "transparent margin remains click through");
 					for (const auto& widget : widgets)
 					{
-						if (!widget.visible || widget.kind == Inkeys::UI::Bar::BarSurfaceWidgetKind::DragHandle) continue;
+						if (!widget.visible || !widget.enabled || !widget.interactive || widget.panel || widget.kind == Inkeys::UI::Bar::BarSurfaceWidgetKind::DragHandle) continue;
 						const auto& rectangle = widget.bounds;
 						const POINT center{ static_cast<LONG>((rectangle.left + rectangle.right) * scale / 2),
 							static_cast<LONG>((rectangle.top + rectangle.bottom) * scale / 2) };
@@ -2646,20 +2697,42 @@ namespace Inkeys::UI::PageControl
 						"right and bottom body pixels contain visible content instead of one-sided gaps");
 					Check(Alpha(targetWidth - 1, targetHeight - 1) == 0,
 						"extra backing capacity remains outside presentation content");
+					if (mode == WorkspaceMode::WhiteboardExpanded && scale >= 1.0F) {
+						for(const auto slot : {1,3,4}) {
+							if(slot==4 && index!=0) continue;
+							const auto& rect=widgets[slot].bounds; int bright=0;
+							for(LONG y=static_cast<LONG>((rect.top+45)*scale);y<static_cast<LONG>((rect.top+65)*scale);++y)
+								for(LONG x=static_cast<LONG>((rect.left+4)*scale);x<static_cast<LONG>((rect.right-4)*scale);++x) {
+									const auto* p=mapped.bits+(y+outset)*mapped.pitch+(x+outset)*4;
+									if(p[0]>180 && p[1]>180 && p[2]>180) ++bright;
+								}
+							Check(bright>0,"standard 2x2 direction and More label pixels are visible");
+						}
+					}
 					if (menu == 2)
 					{
 						constexpr std::uint32_t colors[] = { 0x123B32, 0xFFFFFF, 0xF5F1E6, 0xE5E7EB, 0x25282D, 0x172A46 };
 						for (std::size_t color = 0; color < 6; ++color)
 						{
 							const auto& rect = widgets[8 + color].bounds;
-							const LONG x = static_cast<LONG>((rect.left + rect.right) * scale / 2) + outset;
-							const LONG y = static_cast<LONG>((rect.top + rect.bottom) * scale / 2) + outset;
+							const LONG x = static_cast<LONG>((rect.left + 10) * scale) + outset;
+							const LONG y = static_cast<LONG>((rect.top + 10) * scale) + outset;
 							const auto* pixel = mapped.bits + y * mapped.pitch + x * 4;
 							Check(pixel[0] == (colors[color] & 255)
 								&& pixel[1] == ((colors[color] >> 8) & 255)
 								&& pixel[2] == ((colors[color] >> 16) & 255),
 								"swatch center pixels reproduce the six product background colors");
 						}
+						Check(widgets[5].bounds.Width()==140 && widgets[5].bounds.Height()==32.5,
+							"menu operation rows use exact standard 140x32.5 DIP");
+						Check((widgets[18].bounds.left+widgets[18].bounds.right)/2==(widgets[4].bounds.left+widgets[4].bounds.right)/2,
+							"menu center inherits More button center");
+						Check(widgets[19].bounds.left-widgets[18].bounds.right==5 && background.bounds.top-widgets[18].bounds.bottom==5,
+							"popup gaps use the shared 5 DIP metric");
+						Check(widgets[20].header && widgets[21].header && widgets[22].divider,
+							"theme grouping uses shared UI text and divider shape");
+						Check(widgets[8].selectionIndicator && widgets[8].iconResource==L"colorSelect",
+							"theme selection uses existing pen-color SVG resource");
 						if (scale >= 1.0F)
 						{
 							// 直接检查真实 Scene 的预览像素，不能仅断言 painter 回调存在。
@@ -2670,10 +2743,50 @@ namespace Inkeys::UI::PageControl
 								const LONG py = static_cast<LONG>((rect.top + y) * scale) + outset;
 								return mapped.bits[py * mapped.pitch + px * 4 + 2];
 							};
-							Check(PreviewRed(1, 19, 19) > PreviewRed(0, 19, 19),
+							Check(PreviewRed(1, 11, 25) > PreviewRed(0, 11, 25),
 								"dot preview contains a visible dot over the blank background");
-							Check(PreviewRed(2, 19, 23) > PreviewRed(1, 19, 23),
+							Check(PreviewRed(2, 11, 34) > PreviewRed(1, 11, 34),
 								"grid preview contains a continuous line outside the dot footprint");
+						}
+					}
+					if(menu==2 && scale==1.0F) {
+						// 原 SVG 的绿圆可见直径约 22 DIP，对应 30 DIP 盒；旧 15 DIP 图标不能通过。
+						const auto& selected=widgets[8].bounds; int minX=70,maxX=-1,minY=70,maxY=-1;
+						for(int y=0;y<70;++y) for(int x=0;x<70;++x) {
+							const auto* pixel=mapped.bits+(static_cast<LONG>(selected.top)+y+outset)*mapped.pitch+(static_cast<LONG>(selected.left)+x+outset)*4;
+							if(pixel[0]>=100 && pixel[0]<=155 && pixel[1]>180 && pixel[2]<30) {
+								minX=(std::min)(minX,x); maxX=(std::max)(maxX,x); minY=(std::min)(minY,y); maxY=(std::max)(maxY,y);
+							}
+						}
+						Check(maxX-minX+1>=21 && maxX-minX+1<=24 && maxY-minY+1>=21 && maxY-minY+1<=24,
+							"selected SVG retains original green fill at twice pen-color selector size");
+						for(const int slot:{14,15,16}) {
+							const auto& rect=widgets[slot].bounds; int bright=0;
+							for(int y=45;y<65;++y) for(int x=4;x<66;++x) {
+								const auto* pixel=mapped.bits+(static_cast<LONG>(rect.top)+y+outset)*mapped.pitch+(static_cast<LONG>(rect.left)+x+outset)*4;
+								if(pixel[0]>180 && pixel[1]>180 && pixel[2]>180) ++bright;
+							}
+							Check(bright>0,"blank dots and grid labels render inside standard 2x2 primary label slot");
+						}
+						auto PatternPixel=[&](int slot,int x,int y) {
+							const auto& rect=widgets[slot].bounds;
+							return mapped.bits[(static_cast<LONG>(rect.top)+y+outset)*mapped.pitch+(static_cast<LONG>(rect.left)+x+outset)*4+2];
+						};
+						Check(std::abs(int(PatternPixel(15,10,24))-int(PatternPixel(15,59,25)))<=2
+							&& std::abs(int(PatternPixel(16,10,9))-int(PatternPixel(16,59,40)))<=2,
+							"dot and grid pixels are centrally symmetric about preview content center");
+					}
+					if(menu==2 && scale==1.0F) {
+						CreateDirectoryW(L"TestResults",nullptr);
+						FILE* output=nullptr; _wfopen_s(&output,L"TestResults/whiteboard-menu-revision.bmp",L"wb");
+						if(output) {
+							BITMAPFILEHEADER file{}; file.bfType=0x4d42; file.bfOffBits=sizeof(file)+sizeof(BITMAPINFOHEADER);
+							file.bfSize=file.bfOffBits+targetWidth*targetHeight*4;
+							BITMAPINFOHEADER info{}; info.biSize=sizeof(info); info.biWidth=targetWidth;
+							info.biHeight=-static_cast<LONG>(targetHeight); info.biPlanes=1; info.biBitCount=32;
+							fwrite(&file,sizeof(file),1,output); fwrite(&info,sizeof(info),1,output);
+							for(UINT y=0;y<targetHeight;++y) fwrite(mapped.bits+y*mapped.pitch,targetWidth*4,1,output);
+							fclose(output);
 						}
 					}
 					readable->Unmap();
@@ -2683,16 +2796,136 @@ namespace Inkeys::UI::PageControl
 						Check(widgets[8].drawContent && widgets[16].drawContent,
 							"real swatches and grid previews use shared painter");
 						whiteboard.menu=0;
-						Check(scene.TransitionLayout(BuildBackground(index,mode),
-							BuildWidgets(index,mode,ppt,whiteboard),0.2),"menu close uses existing Scene transition");
+						Check(scene.TransitionLayout(BuildBackground(index,mode,0,false,background.bounds.top),
+							BuildWidgets(index,mode,ppt,whiteboard,background.bounds.top),0.2),"menu close uses existing Scene transition");
+						// 实际提交关闭中间帧，覆盖 Back 越零和半途反向，而非只连续设置 target。
+						for (int step=0;step<5;++step) {
+							context->BeginDraw(); context->Clear(D2D1::ColorF(0,0,0,0));
+							(void)scene.Render(context,now+std::chrono::milliseconds(30*(step+1)));
+							Check(SUCCEEDED(context->EndDraw()),"closing Back frame renders valid geometry");
+						}
 						whiteboard.menu=1;
-						Check(scene.TransitionLayout(BuildBackground(index,mode,1),
-							BuildWidgets(index,mode,ppt,whiteboard),0.2),"menu reversal reuses widget instances");
+						Check(scene.TransitionLayout(BuildBackground(index,mode,1,false,background.bounds.top),
+							BuildWidgets(index,mode,ppt,whiteboard,background.bounds.top),0.2),"menu reversal reuses widget instances");
+						for (int step=0;step<8;++step) {
+							context->BeginDraw(); context->Clear(D2D1::ColorF(0,0,0,0));
+							(void)scene.Render(context,now+std::chrono::milliseconds(150+30*(step+1)));
+							Check(SUCCEEDED(context->EndDraw()),"reversed Back frame renders valid geometry");
+						}
 						scene.ReleaseDeviceResources();
 						Check(SUCCEEDED(scene.EnsureDeviceResources(epoch,targetWidth,targetHeight)),
 							"menu resources rebuild after device release");
 					}
 				}
+		// 真实 PPT 稳定实例进入白板，逐帧对照共享属性 motion，不复制独立 easing。
+		{
+			using namespace Inkeys::UI::Bar;
+			const double savedSpeed=BarUiAnimationSpeedRate; const bool savedEnabled=BarUiAnimationEnabled;
+			for(const double speed:{0.5,1.0,2.0}) for(const float scale:{0.75F,1.5F}) {
+				BarUiAnimationSpeedRate=speed; BarUiAnimationEnabled=false;
+				WhiteboardState state=whiteboard; state.menu=2;
+				const double offset=WhiteboardMenuHeight(state);
+				const auto openBackground=BuildBackground(0,WorkspaceMode::WhiteboardExpanded,2,false,offset);
+				const auto openWidgets=BuildWidgets(0,WorkspaceMode::WhiteboardExpanded,ppt,state,offset);
+				const LONG width=static_cast<LONG>(std::ceil((WhiteboardPopupEnvelope(2).right+5)*scale));
+				const LONG height=static_cast<LONG>(std::ceil((offset+80)*scale));
+				Scene scene;
+				Check(scene.Configure(BuildBackground(0,WorkspaceMode::PptCompact),BuildWidgets(0,WorkspaceMode::PptCompact,ppt,state)),"cold PPT configures stable popup slots");
+				state.menu=0;
+				Check(scene.TransitionLayout(BuildBackground(0,WorkspaceMode::WhiteboardExpanded,0,false,offset),
+					BuildWidgets(0,WorkspaceMode::WhiteboardExpanded,ppt,state,offset),0),"cold PPT transitions to whiteboard without replacing slots");
+				Check(scene.SetBounds({-1800,-320,-1800+width,-320+height},scale),"negative-screen origin accepted");
+				const auto start=now+10s; (void)scene.Advance(start-16ms); (void)scene.Advance(start);
+				Check(!scene.AnimationActive(),"cold PPT content transitions settle before idle popup start");
+				const LONG outset=scene.PresentationOutsetPixels();
+				const HRESULT setup=scene.EnsureDeviceResources(epoch,width+2*outset+4,height+2*outset+4);
+				Check(SUCCEEDED(setup),"animated production scene resources allocate"); if(FAILED(setup)) continue;
+				const auto bodyPresentation=scene.PresentationBounds();
+				BarUiAnimationEnabled=true; state.menu=2;
+				Check(scene.TransitionLayout(openBackground,openWidgets,0.4),"joint popup open reuses PPT instances");
+				EraserSurfaceMotion parent,child; parent.Retarget(true,0.4); child.Retarget(true,0.4,&parent.Timeline());
+				FrameAnimationClock referenceClock; (void)referenceClock.Tick(start); referenceClock.SuspendForIdle(start);
+				auto RectFor=[&](WidgetId id) { for(const auto& item:scene.Layout().widgets) if(item.id==id) return item.localPixels; return RECT{}; };
+				auto Expected=[&](const WidgetSpec& item,EraserSurfacePose pose) {
+					const auto r=pose.Apply({item.bounds.left,item.bounds.top,item.bounds.right,item.bounds.bottom});
+					return RECT{static_cast<LONG>(std::floor(r.left*scale)),static_cast<LONG>(std::floor(r.top*scale)),
+						static_cast<LONG>(std::ceil(r.right*scale)),static_cast<LONG>(std::ceil(r.bottom*scale))};
+				};
+				for(int frame=1;frame<=60;++frame) {
+					const auto time=start+std::chrono::milliseconds(frame*16);
+					const double popupDt=referenceClock.Tick(time);
+					(void)parent.Advance({popupDt,speed,true,false}); (void)child.Advance({popupDt,speed,true,false}); (void)scene.Advance(time);
+					const auto& p=openWidgets[18].bounds; const auto& a=openWidgets[4].bounds;
+					const auto pp=ResolveEraserSurfacePose({p.left,p.top,p.right,p.bottom},{a.left,a.top,a.right,a.bottom},parent.Geometry(),60);
+					const auto& c=openWidgets[19].bounds; const auto& ca=openWidgets[7].bounds;
+					const auto cp=ComposeEraserPose(pp,ResolveEraserSurfacePose({c.left,c.top,c.right,c.bottom},
+						{ca.left,ca.top,ca.right,ca.bottom},child.Geometry(),60));
+					const auto ep=Expected(openWidgets[18],pp),ec=Expected(openWidgets[19],cp),ap=RectFor(19),ac=RectFor(20);
+					if(frame==1 && (!EqualRect(&ep,&ap) || !EqualRect(&ec,&ac)))
+						std::fprintf(stderr,"[PageControlScene] pose speed=%.1f dpi=%.2f dt=%.3f expected=(%ld,%ld,%ld,%ld)/(%ld,%ld,%ld,%ld) actual=(%ld,%ld,%ld,%ld)/(%ld,%ld,%ld,%ld)\n",
+							speed,scale,popupDt,ep.left,ep.top,ep.right,ep.bottom,ec.left,ec.top,ec.right,ec.bottom,
+							ap.left,ap.top,ap.right,ap.bottom,ac.left,ac.top,ac.right,ac.bottom);
+					Check(EqualRect(&ep,&ap) && EqualRect(&ec,&ac),"intermediate parent and child exactly match shared attribute motion at each speed");
+					auto* dc=scene.DeviceContext(); dc->BeginDraw(); dc->Clear(D2D1::ColorF(0,0,0,0)); (void)scene.Render(dc,time);
+					Check(SUCCEEDED(dc->EndDraw()),"shared popup intermediate frame draws successfully");
+					const auto afterRender=RectFor(20); Check(EqualRect(&ac,&afterRender),"Advance and Render at one frameTime do not double advance");
+					const auto presented=scene.PresentationBounds(),logical=scene.LogicalBounds();
+					Check(presented.left<=logical.left+ac.left && presented.top<=logical.top+ac.top
+						&& presented.right>=logical.left+ac.right && presented.bottom>=logical.top+ac.bottom,
+						"actual presented crop contains composed child at every sampled pose");
+					const auto color=RectFor(9); const POINT center{(color.left+color.right)/2,(color.top+color.bottom)/2};
+					const POINT client{logical.left+center.x-presented.left,logical.top+center.y-presented.top};
+					const auto mapped=scene.PresentationToLogical(client);
+					Check(mapped && mapped->x==center.x && mapped->y==center.y,"cropped client maps to logical pixels across DPI and negative origin");
+					if(frame==10) {
+						state.backgroundRgb=0xFFFFFF;
+						Check(scene.UpdateContent(BuildWidgets(0,WorkspaceMode::WhiteboardExpanded,ppt,state,offset)),"theme selection uses content-only update");
+						(void)scene.Advance(time); const auto afterContent=RectFor(20);
+						Check(EqualRect(&ac,&afterContent),"content update preserves pose and same-frame clock");
+					}
+				}
+				// 真实 PPT 初始化后的面板填充与 More 分割线必须有像素，不能只验证其 spec。
+				{
+					auto* dc=scene.DeviceContext(); ComPtr<ID2D1Image> image; dc->GetTarget(&image);
+					ComPtr<ID2D1Bitmap1> bitmap,readable; if(image) (void)image.As(&bitmap);
+					if(bitmap) {
+						const auto properties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,bitmap->GetPixelFormat());
+						Check(SUCCEEDED(dc->CreateBitmap(bitmap->GetPixelSize(),nullptr,0,&properties,&readable)),"cold PPT chrome readback allocates");
+						if(readable && SUCCEEDED(readable->CopyFromBitmap(nullptr,bitmap.Get(),nullptr))) {
+							D2D1_MAPPED_RECT pixels{};
+							if(SUCCEEDED(readable->Map(D2D1_MAP_OPTIONS_READ,&pixels))) {
+								const auto presented=scene.PresentationBounds(),logical=scene.LogicalBounds();
+								auto Pixel=[&](double x,double y) {
+									const LONG px=static_cast<LONG>(std::floor(x*scale))+logical.left-presented.left;
+									const LONG py=static_cast<LONG>(std::floor(y*scale))+logical.top-presented.top;
+									return pixels.bits+py*pixels.pitch+px*4;
+								};
+								// frame 10 已切换纯白背景，标签须沿用同一文字槽并转为可读的深色。
+								for(const int slot:{14,15,16}) {
+									const auto& rect=openWidgets[slot].bounds; int dark=0;
+									for(int y=45;y<65;++y) for(int x=4;x<66;++x) {
+										const auto* pixel=Pixel(rect.left+x,rect.top+y);
+										if(pixel[0]<100 && pixel[1]<100 && pixel[2]<100 && pixel[3]>220) ++dark;
+									}
+									Check(dark>0,"light-background style labels retain readable dark text inside standard 2x2 slot");
+								}
+								Check(Pixel(193,offset-80)[3]>120,"cold PPT to whiteboard applies opaque menu panel chrome");
+								Check(Pixel(360,offset-115.5)[2]>35,"cold PPT to whiteboard applies shared More divider fill");
+								readable->Unmap();
+							} else Check(false,"cold PPT chrome maps");
+						} else Check(false,"cold PPT chrome copies");
+					} else Check(false,"cold PPT chrome target supports readback");
+				}
+				Check(!scene.PopupAnimationActive(),"popup finishes independent of other button feedback");
+				// 动画禁用即刻回到主体，不等待按钮 hover 的五秒退场。
+				BarUiAnimationEnabled=false; state.menu=0;
+				Check(scene.TransitionLayout(BuildBackground(0,WorkspaceMode::WhiteboardExpanded,0,false,offset),
+					BuildWidgets(0,WorkspaceMode::WhiteboardExpanded,ppt,state,offset),0.4),"disabled close accepted");
+				(void)scene.Advance(start+2s); Check(!scene.PopupAnimationActive(),"disabled animation closes parent and child immediately");
+				const auto closed=scene.PresentationBounds(); Check(EqualRect(&closed,&bodyPresentation),"HWND envelope returns to body after popup close");
+			}
+			BarUiAnimationSpeedRate=savedSpeed; BarUiAnimationEnabled=savedEnabled;
+		}
 		std::fprintf(stderr, "[PageControlScene] failures=%d\n", failures);
 		return failures;
 	}

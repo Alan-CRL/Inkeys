@@ -204,7 +204,8 @@ namespace Inkeys::UI::Bar
 	void SetBarButtonPressedVisual(BarButtonClass& button, bool pressed) noexcept;
 	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
 		bool visible, bool enabled, bool selected,
-		double durationSeconds, std::optional<COLORREF> contentColor = std::nullopt) noexcept;
+		double durationSeconds, std::optional<COLORREF> contentColor = std::nullopt,
+		bool iconVisible = true) noexcept;
 
 	struct BarButtonDrawOptions
 	{

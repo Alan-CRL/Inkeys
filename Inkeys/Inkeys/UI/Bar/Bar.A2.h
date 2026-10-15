@@ -25,6 +25,7 @@ namespace Inkeys::UI::Bar
 	{
 		if (whiteboardActive) return { whiteboardFeatureEnabled, false, false };
 		BarA2Projection result;
+		result.whiteboardTwoTwo = whiteboardFeatureEnabled;
 		result.freezeVisible = freezeAvailable && !presentationActive;
 		result.endShowVisible = presentationActive;
 		// 穿透依附定格的位置；空页选择不需要穿透，PPT 禁用定格时让穿透独占一格。

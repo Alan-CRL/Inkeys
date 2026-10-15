@@ -6,3 +6,4 @@
 {"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "白板跨层实现与验收合同"}
 {"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "白板跨层实现与验收合同"}
 {"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "白板跨层实现与验收合同"}
+{"file":".trellis/tasks/10-15-whiteboard-v1/research/ui3-motion-research.md","reason":"UI3统一展开与卡顿调查，最新按钮/资源复用边界"}

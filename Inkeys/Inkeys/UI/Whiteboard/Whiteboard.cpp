@@ -144,6 +144,7 @@ namespace Inkeys::UI::Whiteboard
 			auto& service = Inkeys::Window::GetService();
 			const HWND hwnd = service.Handle(WindowRole::Freeze);
 			if (!hwnd) return FrameResult::Retry;
+			if (service.WhiteboardWindowGroupMinimized()) return FrameResult::Idle;
 			if (!active.load(std::memory_order_acquire))
 			{
 				(void)service.Hide(WindowRole::Freeze);

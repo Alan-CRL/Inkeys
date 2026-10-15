@@ -36,6 +36,13 @@ namespace Inkeys::UI::Bar
 		return (static_cast<unsigned>(order) << 8) | (static_cast<unsigned>(adjustment) << 10);
 	}
 
+	[[nodiscard]] constexpr bool LockCenteredBarExpansion(bool centered, bool whiteboard,
+		BarExpandDirectionAdjustment adjustment) noexcept
+	{
+		// 白板居中仍需响应屏幕边缘；中线策略保持居中方向，避免往返翻转。
+		return centered && !(whiteboard && adjustment == BarExpandDirectionAdjustment::WhenSpaceInsufficient);
+	}
+
 	struct BarMainExpansionInput
 	{
 		double monitorLeft = 0.0, monitorRight = 0.0, mainCenterScreenX = 0.0;

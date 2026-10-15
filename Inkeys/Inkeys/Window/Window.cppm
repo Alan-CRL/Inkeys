@@ -105,6 +105,9 @@ export namespace Inkeys::Window
 		std::function<bool()> beforeCreate;
 		std::function<void(HWND)> created;
 		std::function<void()> destroyed;
+		// Freeze owner 线程调用业务策略与非阻塞渲染唤醒，窗口层不依赖 UI 模块。
+		std::function<bool()> whiteboardMinimizeAllowed;
+		std::function<void()> whiteboardMinimizedChanged;
 	};
 
 	class Service
@@ -156,6 +159,7 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool EnterWhiteboardWindowMode();
 		[[nodiscard]] bool LeaveWhiteboardWindowMode();
 		[[nodiscard]] bool WhiteboardWindowMode() const noexcept;
+		[[nodiscard]] bool WhiteboardWindowGroupMinimized() const noexcept;
 		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
 		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
 		[[nodiscard]] bool CancelPointerCapture();

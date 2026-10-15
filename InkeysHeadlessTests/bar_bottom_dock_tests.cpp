@@ -506,6 +506,10 @@ namespace
 				input.directionLocked = false;
 				Check(ResolveBarMainExpansionSide(input,false), "explicit centerline option retains legacy classification");
 			}
+		Check(!LockCenteredBarExpansion(true, true, BarExpandDirectionAdjustment::WhenSpaceInsufficient)
+			&& LockCenteredBarExpansion(true, false, BarExpandDirectionAdjustment::WhenSpaceInsufficient)
+			&& LockCenteredBarExpansion(true, true, BarExpandDirectionAdjustment::Centerline),
+			"centered whiteboard space policy uses screen edges while other direction locks remain");
 		BarMainExpansionInput edge{0.0,1000.0,600.0,1.0,40.0,10.0,349.5,0.5,0.5};
 		Check(ResolveBarMainExpansionSide(edge,true), "pixel-aligned exact target envelope fits");
 		edge.layoutWidthDip += 0.01;

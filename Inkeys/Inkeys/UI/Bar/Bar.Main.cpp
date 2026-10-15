@@ -29,6 +29,7 @@ import :Theme;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
+import Inkeys.Window;
 
 import <ranges>;
 
@@ -432,8 +433,9 @@ namespace Inkeys::UI::Bar
 	}
 	double SceneBottomDockInsetDip() noexcept
 	{
-		return !barUISet.barState.fold && (WhiteboardActive() ||
-			pptDockSceneActive.load(std::memory_order_acquire)) ? 5.0 : 0.0;
+		return ResolveBarWorkspaceBottomInsetDip(barUISet.barState.fold, WhiteboardActive(),
+			pptDockSceneActive.load(std::memory_order_acquire),
+			Inkeys::Window::GetService().WhiteboardWindowGroupMinimized());
 	}
 	bool PptBusinessFocusAllowed() noexcept
 	{

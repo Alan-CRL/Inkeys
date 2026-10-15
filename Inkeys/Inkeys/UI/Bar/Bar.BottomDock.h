@@ -54,6 +54,12 @@ namespace Inkeys::UI::Bar
 	{
 		return !folded && mode == BarBottomDockMode::BottomDocked;
 	}
+	[[nodiscard]] constexpr double ResolveBarWorkspaceBottomInsetDip(
+		bool folded, bool whiteboard, bool presentation, bool minimized) noexcept
+	{
+		// 最小化只暂停白板全屏停靠，不结束工作区或覆盖桌面基线。
+		return !folded && (whiteboard ? !minimized : presentation) ? BarWhiteboardBottomInsetDip : 0.0;
+	}
 	struct BarWorkspaceSceneState
 	{
 		BarWorkspaceScene scene = BarWorkspaceScene::Desktop;

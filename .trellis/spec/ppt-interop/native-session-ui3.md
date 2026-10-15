@@ -147,3 +147,7 @@ ChangeStateModeToPen(); ExitPptSlideShowAnnotationTool();
 if (ExitPptSlideShowAnnotationTool(server) && SameSession() && SameModeRevision())
     ChangeStateModeToPptAnnotation(tool, expectedRevision);
 ~~~
+
+## 2026-10-15 白板截图反馈修订
+
+白板最新 UI/最小化合同见 [whiteboard.md](../native-desktop/whiteboard.md)，覆盖此前同页的旧行为：更多和主题为同 HWND 内分开的上方/右侧矩形，采用共享属性 Back 动画；2×2 分页标签使用主文字槽。最小化隐藏画布和分页但保留主栏，已有展开底栏回到任务栏居中位置；PPT 活动时拒绝最小化。居中白板空间不足换向按屏幕边缘计算。Freeze 使用国际化 Inkeys 标题与 exe 图标。

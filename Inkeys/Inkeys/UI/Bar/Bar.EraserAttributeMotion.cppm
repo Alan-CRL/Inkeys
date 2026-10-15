@@ -35,6 +35,24 @@ export namespace Inkeys::UI::Bar
 		if(actual.Height()<=work.Height())pose.y+=(std::clamp)(actual.top,work.top,work.bottom-actual.Height())-actual.top;
 		return pose;
 	}
+	// 分页、属性面板可共用的保守回弹包络；父/子矩形使用同一曲线极值与姿态组合。
+	inline EraserAttributeRect ResolveEraserPopupEnvelope(EraserAttributeRect panel,EraserAttributeRect anchor,
+		double compactWidth, std::optional<EraserAttributeRect> parentPanel=std::nullopt,
+		std::optional<EraserAttributeRect> parentAnchor=std::nullopt) noexcept
+	{
+		const auto range=BarUiGetCurveExtrema(BarUiCurveEnum::EaseOutBack);
+		const double phases[]={0.0,1.0,range.maximum,1.0-range.maximum};
+		EraserAttributeRect envelope=panel;
+		for(const double child:phases) for(const double parent:phases) {
+			auto pose=ResolveEraserSurfacePose(panel,anchor,child,compactWidth);
+			if(parentPanel && parentAnchor) pose=ComposeEraserPose(
+				ResolveEraserSurfacePose(*parentPanel,*parentAnchor,parent,compactWidth),pose);
+			const auto r=pose.Apply(panel);
+			envelope.left=(std::min)(envelope.left,r.left); envelope.top=(std::min)(envelope.top,r.top);
+			envelope.right=(std::max)(envelope.right,r.right); envelope.bottom=(std::max)(envelope.bottom,r.bottom);
+		}
+		return envelope;
+	}
 	class EraserSurfaceMotion
 	{
 	public:

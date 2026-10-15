@@ -1072,10 +1072,10 @@ namespace
 		const auto whiteboard = ResolveBarA2Projection(true, true);
 		const auto disabledDesktop = ResolveBarA2Projection(false, false, false);
 		const auto disabledPresentation = ResolveBarA2Projection(true, false, false);
-		Check(!desktop.whiteboardTwoTwo && desktop.freezeVisible
+		Check(desktop.whiteboardTwoTwo && desktop.freezeVisible
 			&& !desktop.endShowVisible,
-			"desktop A2 shows two compact buttons");
-		Check(!presentation.whiteboardTwoTwo && !presentation.freezeVisible
+			"desktop A2 keeps a standard 2x2 whiteboard entry");
+		Check(presentation.whiteboardTwoTwo && !presentation.freezeVisible
 			&& presentation.endShowVisible,
 			"PPT A2 hides unavailable Freeze and keeps EndShow");
 		Check(whiteboard.whiteboardTwoTwo && !whiteboard.freezeVisible

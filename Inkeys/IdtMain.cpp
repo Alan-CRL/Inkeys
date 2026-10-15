@@ -57,6 +57,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "IdtFreezeFrame.h"
 #include "IdtGuid.h"
 #include "IdtI18n.h"
+#include "IdtI18nKeys.g.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtOther.h"
@@ -3079,6 +3080,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					if (preferDraw3DirectComposition)
 						spec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
 				}
+				if (role == Inkeys::Window::WindowRole::Freeze)
+				{
+					spec.largeIcon = applicationIcon;
+					spec.smallIcon = applicationIcon;
+					spec.whiteboardMinimizeAllowed = [] { return !Inkeys::UI::Bar::PptPresentationActive(); };
+					spec.whiteboardMinimizedChanged = []
+					{
+						Inkeys::UI::PageControl::NotifyLayoutChanged();
+						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::WhiteboardFreeze);
+					};
+				}
 				spec.windowProc = proc;
 				spec.created = created;
 				if (role >= Inkeys::Window::WindowRole::PptBottomLeft &&
@@ -3103,7 +3116,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				}
 				windowSpecs.push_back(std::move(spec));
 			};
-		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
+		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", IW(I18nKey.UI.Bar.MainButtons.WhiteboardWindowTitle).c_str(),
 			nullptr, WS_EX_TRANSPARENT, {});
 		AddOverlayWindow(Inkeys::Window::WindowRole::DrawpadPresentation,
 			L"Inkeys2.Presentation;", L"Inkeys DrawpadPresentationWindow",
