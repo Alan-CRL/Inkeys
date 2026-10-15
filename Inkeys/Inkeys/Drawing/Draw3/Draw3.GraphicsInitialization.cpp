@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <cstring>
@@ -62,7 +63,7 @@ namespace Inkeys::Drawing::Draw3
 
 		HRESULT CreateCompatibleDevice(D3D_DRIVER_TYPE driverType, UINT creationFlags,
 			Microsoft::WRL::ComPtr<ID3D11Device>& device, D3D_FEATURE_LEVEL& actualFeatureLevel,
-			Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context)
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context, PerformanceSession* performance)
 		{
 			static constexpr D3D_FEATURE_LEVEL preferredLevels[] = {
 				D3D_FEATURE_LEVEL_11_1,
@@ -72,38 +73,42 @@ namespace Inkeys::Drawing::Draw3
 
 			device.Reset();
 			context.Reset();
+			const auto attemptStart = performance ? performance->Clock() : 0;
 			HRESULT result = D3D11CreateDevice(nullptr, driverType, nullptr, creationFlags,
 				preferredLevels, ARRAYSIZE(preferredLevels), D3D11_SDK_VERSION,
 				device.GetAddressOf(), &actualFeatureLevel, context.GetAddressOf());
+			if (performance) performance->Initialization("d3d_create_preferred", attemptStart, result, SUCCEEDED(result), driverType, creationFlags, actualFeatureLevel);
 			LogDeviceAttempt(driverType, "11_1,11_0", "preferred", result);
 			if (result == E_INVALIDARG)
 			{
 				// Windows 7 不识别 11_1 枚举，使用只含 11_0 的列表重试。
 				device.Reset();
 				context.Reset();
+				const auto retryStart = performance ? performance->Clock() : 0;
 				result = D3D11CreateDevice(nullptr, driverType, nullptr, creationFlags,
 					fallbackLevels, ARRAYSIZE(fallbackLevels), D3D11_SDK_VERSION,
 					device.GetAddressOf(), &actualFeatureLevel, context.GetAddressOf());
+				if (performance) performance->Initialization("d3d_create_11_0_retry", retryStart, result, SUCCEEDED(result), driverType, actualFeatureLevel);
 				LogDeviceAttempt(driverType, "11_0", "fallback", result);
 			}
 			return result;
 		}
 	}
 
-	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources)
+	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources, PerformanceSession* performance)
 	{
 		// 重建时不能让新 device 与旧 adapter/factory 混用。
 		resources = {};
 		const UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT; // 透明窗口路径需要 BGRA backbuffer。
 		const HRESULT hardwareResult = CreateCompatibleDevice(D3D_DRIVER_TYPE_HARDWARE, creationFlags,
-			resources.device, resources.featureLevel, resources.context);
+			resources.device, resources.featureLevel, resources.context, performance);
 		HRESULT result = hardwareResult;
 		if (FAILED(result))
 		{
 			// 保留硬件最终 HRESULT，再记录 WARP 尝试，避免现场只能看到“回退成功”。
 			std::cout << "Hardware device initialization failed. Falling back to WARP." << std::endl;
 			result = CreateCompatibleDevice(D3D_DRIVER_TYPE_WARP, creationFlags, // 硬件失败时退到软件光栅，方便诊断和兼容。
-				resources.device, resources.featureLevel, resources.context);
+				resources.device, resources.featureLevel, resources.context, performance);
 			if (FAILED(result))
 			{
 				std::cout << "[Draw3Diag][device] final=failed hardware_hresult=0x" << std::hex
@@ -127,7 +132,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		resources.dxgiDevice.Reset();
-		result = resources.device.As(&resources.dxgiDevice); // 使用类型安全的 QueryInterface 获取 DXGI 设备。
+		result = resources.device.As(&resources.dxgiDevice);
+		if (performance) performance->Initialization("dxgi_device", 0, result, SUCCEEDED(result)); // 使用类型安全的 QueryInterface 获取 DXGI 设备。
 		if (FAILED(result))
 		{
 			LogHResult("ID3D11Device::QueryInterface(IDXGIDevice1)", result);
@@ -136,6 +142,7 @@ namespace Inkeys::Drawing::Draw3
 		resources.dxgiDevice->SetMaximumFrameLatency(1); // 限制排队帧数，降低笔迹显示延迟。
 
 		result = resources.dxgiDevice->GetAdapter(resources.adapter.ReleaseAndGetAddressOf()); // 取得适配器用于日志和 factory 查询。
+		if (performance) performance->Initialization("dxgi_adapter", 0, result, SUCCEEDED(result) && resources.adapter);
 		if (FAILED(result) || !resources.adapter)
 		{
 			LogHResult("IDXGIDevice1::GetAdapter", result);
@@ -146,11 +153,14 @@ namespace Inkeys::Drawing::Draw3
 
 		result = resources.adapter->GetParent(__uuidof(IDXGIFactory2),
 			reinterpret_cast<void**>(resources.factory.ReleaseAndGetAddressOf())); // 交换链必须由同一适配器的 factory 创建。
+		if (performance) performance->Initialization("dxgi_factory", 0, result, SUCCEEDED(result) && resources.factory);
 		if (FAILED(result) || !resources.factory)
 		{
 			LogHResult("IDXGIAdapter::GetParent(IDXGIFactory2)", result);
 			return false;
 		}
+		if (performance) performance->CaptureGraphics(resources.device.Get(), resources.context.Get(), resources.adapter.Get(),
+			static_cast<uint32_t>(resources.driverType), static_cast<uint32_t>(resources.featureLevel));
 		return true;
 	}
 

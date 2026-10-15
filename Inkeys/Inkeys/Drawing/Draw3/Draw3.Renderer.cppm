@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
 #include <cstddef>
 #include <cstdint>
 #include <d3d11.h>
@@ -194,6 +195,18 @@ export namespace Inkeys::Drawing::Draw3
 	class InkRenderer
 	{
 	public:
+		void SetPerformanceSession(PerformanceSession* session) noexcept
+		{ performance_ = session; laserParticleSystem_.SetPerformanceSession(session); }
+		void SetPerformancePass(PerformanceGraphicsPass pass) noexcept
+		{ if (performance_) { performancePass_ = pass; laserParticleSystem_.SetPerformancePass(pass); } }
+		// 仅绘制 owner 的历史缓存借用旁挂；参数和 view 匹配仍由 lazy builder 调用。
+		PerformanceSession* PerformanceSessionForOwner() const noexcept { return performance_; }
+		PerformanceGraphicsArguments PerformanceArgumentsForOwner(ID3D11Resource* resource = nullptr,
+			std::uint64_t bytes = 0, std::uint64_t offset = 0, ID3D11Resource* related = nullptr,
+			std::uint32_t argument0 = 0, std::uint32_t argument1 = 0) const noexcept
+		{ return TraceArguments(resource, bytes, offset, related, argument0, argument1); }
+		ID3D11Resource* PerformanceResourceForOwner(ID3D11View* view) const noexcept
+		{ return TraceViewResource(view); }
 		Microsoft::WRL::ComPtr<ID3D11Device> device;
 		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
 
@@ -334,6 +347,21 @@ export namespace Inkeys::Drawing::Draw3
 		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver);
 
 	private:
+		PerformanceSession* performance_ = nullptr;
+		PerformanceGraphicsPass performancePass_ = PerformanceGraphicsPass::Unknown;
+		PerformanceGraphicsArguments TraceArguments(ID3D11Resource* resource = nullptr,
+			std::uint64_t bytes = 0, std::uint64_t offset = 0, ID3D11Resource* related = nullptr,
+			std::uint32_t argument0 = 0, std::uint32_t argument1 = 0) const noexcept;
+		ID3D11Resource* TraceViewResource(ID3D11View* view) const noexcept;
+		template<class Resource, class Call>
+		HRESULT TraceCreateResource(Microsoft::WRL::ComPtr<Resource>& resource,
+			PerformanceGraphicsRole role, PerformanceGraphicsSite site, Call&& call)
+		{
+			const HRESULT result = PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other,
+				role, site, [&] { return TraceArguments(); }, std::forward<Call>(call));
+			if (performance_) performance_->RegisterResource(resource.Get(), role, site, result);
+			return result;
+		}
 		// 创建 BGRA8 Add 与 R16F Retain 两张尺寸相关纹理。
 		bool CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer);
 		bool CreateLaserCoverageResources(UINT width, UINT height, LaserCoverageResources& layer);

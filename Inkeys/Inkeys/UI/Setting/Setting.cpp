@@ -1367,6 +1367,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				bool PerformanceOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Performance;
 				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
 			}Inkeys3;
 		}Experimental;
@@ -7681,7 +7682,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
-						inkeys3PanelHeight += 300.0f;
+						inkeys3PanelHeight += 395.0f;
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -7694,13 +7695,13 @@ SettingSessionCoroutine RunSettingSession()
 						}
 
 							auto drawConsoleOutput = [&](const char* id, const string& title,
-								const string& description, bool& value, auto&& commit)
+								const string& description, bool& value, auto&& commit, float cardHeight = 70.0f)
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-								ImGui::BeginChild(id, { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGui::BeginChild(id, { settingItemWidth * settingGlobalScale,cardHeight * settingGlobalScale }, true,
 									ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -7709,8 +7710,14 @@ SettingSessionCoroutine RunSettingSession()
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted(description.c_str());
-								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,25.0f * settingGlobalScale });
+								if (cardHeight > 70.0f)
+								{
+									ImGui::PushTextWrapPos((settingRightToggleX - 20.0f) * settingGlobalScale);
+									ImGui::TextWrapped("%s", description.c_str());
+									ImGui::PopTextWrapPos();
+								}
+								else ImGui::TextUnformatted(description.c_str());
+								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,(cardHeight * 0.5f - 10.0f) * settingGlobalScale });
 								const bool before = value;
 								const string toggleId = "##" + string(id);
 								Widgets::toggle.ToggleBool(toggleId.c_str(), &value);
@@ -7757,6 +7764,16 @@ SettingSessionCoroutine RunSettingSession()
 										Experimental.Inkeys3.CursorConsoleOutput;
 									QueueConfigWrite();
 								});
+							// 只保存下一次启动偏好；当前 Host 的采集和其它调试开关保持独立。
+							drawConsoleOutput("Draw3 性能数据输出",
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Performance.N),
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Performance.E),
+								Experimental.Inkeys3.PerformanceOutput, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Performance =
+										Experimental.Inkeys3.PerformanceOutput;
+									QueueConfigWrite();
+								}, 90.0f);
 
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

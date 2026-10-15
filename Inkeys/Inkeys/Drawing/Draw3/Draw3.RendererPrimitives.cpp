@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -71,36 +73,60 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0, mapType, 0, &mapped))) return -1;
+			if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0, mapType, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_stroke_map_ink_data"), performancePass_))) return -1;
 			auto* destination = static_cast<InkPoint*>(mapped.pData);
-			std::memcpy(destination + m_bufferHead, points.data() + startIndex, batchCount * sizeof(InkPoint)); // 把本批点写入结构化缓冲区。
-			context->Unmap(inkDataBuffer.Get(), 0);
+			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_stroke_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), batchCount * sizeof(InkPoint), m_bufferHead * sizeof(InkPoint)); }, [&] { std::memcpy(destination + m_bufferHead, points.data() + startIndex, batchCount * sizeof(InkPoint)); });
+			performanceCopy.Finish();
+			if (performance_) performance_->CopiedBytes(batchCount * sizeof(InkPoint)); // 把本批点写入结构化缓冲区。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_stroke_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, m_bufferHead * sizeof(InkPoint)); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
 
-			if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_stroke_map_global_constants"), performancePass_))) return -1;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-			constants->width = viewportWidth;
-			constants->height = viewportHeight;
-			constants->color = color;
-			constants->shapeType = static_cast<float>(static_cast<uint32_t>(shape));
-			constants->bufferOffset = static_cast<uint32_t>(m_bufferHead); // 着色器用偏移定位当前批次的起点。
-			constants->operatorKind = static_cast<uint32_t>(operatorKind);
-			context->Unmap(globalCB.Get(), 0);
+			// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+				PerformanceGraphicsSite("draw_stroke_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 36); }, [&] {
+				constants->width = viewportWidth;
+				constants->height = viewportHeight;
+				constants->color = color;
+				constants->shapeType = static_cast<float>(static_cast<uint32_t>(shape));
+				constants->bufferOffset = static_cast<uint32_t>(m_bufferHead); // 着色器用偏移定位当前批次的起点。
+				constants->operatorKind = static_cast<uint32_t>(operatorKind);
+			});
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_stroke_unmap_2"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
-			context->IASetInputLayout(nullptr);
-			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_stroke_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_stroke_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_stroke_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
 			ID3D11ShaderResourceView* shaderResources[] = { inkDataSRV.Get() };
-			context->VSSetShaderResources(0, 1, shaderResources);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_stroke_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((shaderResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, shaderResources); });
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
-			context->VSSetConstantBuffers(0, 1, constantBuffers);
-			context->PSSetShader(pixelShader.Get(), nullptr, 0);
-			context->PSSetConstantBuffers(0, 1, constantBuffers); // operatorKind 由像素着色器读取，必须单独绑定到 PS。
-			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF); // Add 取 MAX、Retain 取 MIN，整笔覆盖率只累计一次。
-			context->RSSetState(rasterState.Get());
-			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); // 每两个相邻点生成一个形状段，段数乘 6 个顶点。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_stroke_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->VSSetConstantBuffers(0, 1, constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_stroke_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_stroke_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->PSSetConstantBuffers(0, 1, constantBuffers); }); // operatorKind 由像素着色器读取，必须单独绑定到 PS。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_stroke_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF); }); // Add 取 MAX、Retain 取 MIN，整笔覆盖率只累计一次。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_stroke_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
+			PerformanceCall(performance_, PerformanceStage::DrawSubmit, [&] { PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_stroke_draw_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0, nullptr, (static_cast<UINT>(batchCount) - 1) * 6, 1); }, [&] { context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); }); });
+			if (performance_) performance_->Draw(); // 每两个相邻点生成一个形状段，段数乘 6 个顶点。
 
 			ID3D11ShaderResourceView* nullResources[] = { nullptr };
-			context->VSSetShaderResources(0, 1, nullResources);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_stroke_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, nullResources); });
 			m_bufferHead += batchCount;
 			// 相邻批次共享一个端点，避免分段处出现断裂。
 			startIndex += batchCount - 1;
@@ -118,38 +144,62 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const size_t batchCount = std::min(primitives.size() - startIndex, kMaxBufferCapacity);
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(highlighterPrimitiveBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			if (FAILED(PerformanceMap(performance_, context.Get(), highlighterPrimitiveBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::HighlighterData,
+			PerformanceGraphicsSite("draw_highlighter_primitives_map_highlighter_data"), performancePass_))) return -1;
 			auto* destination = static_cast<HighlighterPrimitive*>(mapped.pData);
-			std::memcpy(destination, primitives.data() + startIndex,
-				batchCount * sizeof(HighlighterPrimitive)); // 每个 primitive 可独立批处理，不再共享易翻转的四边形端点。
-			context->Unmap(highlighterPrimitiveBuffer.Get(), 0);
+			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::HighlighterData,
+			PerformanceGraphicsSite("draw_highlighter_primitives_memcpy_highlighter_data"), [&] { return TraceArguments(highlighterPrimitiveBuffer.Get(), batchCount * sizeof(HighlighterPrimitive), 0); }, [&] { std::memcpy(destination, primitives.data() + startIndex,
+				batchCount * sizeof(HighlighterPrimitive)); });
+			performanceCopy.Finish();
+			if (performance_) performance_->CopiedBytes(batchCount * sizeof(HighlighterPrimitive)); // 每个 primitive 可独立批处理，不再共享易翻转的四边形端点。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::HighlighterData,
+			PerformanceGraphicsSite("draw_highlighter_primitives_unmap_1"), [&] { return TraceArguments(highlighterPrimitiveBuffer.Get(), 0, 0); }, [&] { context->Unmap(highlighterPrimitiveBuffer.Get(), 0); });
 
-			if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_highlighter_primitives_map_global_constants"), performancePass_))) return -1;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-			constants->width = viewportWidth;
-			constants->height = viewportHeight;
-			constants->color = color;
-			constants->shapeType = 3.0f;
-			constants->bufferOffset = 0; // DISCARD 在 D3D11 核心路径即可使用，不依赖动态 SRV 的 NO_OVERWRITE 扩展。
-			constants->operatorKind = static_cast<uint32_t>(operatorKind);
-			context->Unmap(globalCB.Get(), 0);
+			// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+				PerformanceGraphicsSite("draw_highlighter_primitives_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 36); }, [&] {
+				constants->width = viewportWidth;
+				constants->height = viewportHeight;
+				constants->color = color;
+				constants->shapeType = 3.0f;
+				constants->bufferOffset = 0; // DISCARD 在 D3D11 核心路径即可使用，不依赖动态 SRV 的 NO_OVERWRITE 扩展。
+				constants->operatorKind = static_cast<uint32_t>(operatorKind);
+			});
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_highlighter_primitives_unmap_2"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
-			context->IASetInputLayout(nullptr);
-			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_highlighter_primitives_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_highlighter_primitives_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_highlighter_primitives_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
 			ID3D11ShaderResourceView* primitiveResources[] = { highlighterPrimitiveSRV.Get() };
-			context->VSSetShaderResources(3, 1, primitiveResources);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_highlighter_primitives_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((primitiveResources)[0]), 0, 0, nullptr, 3, 1); }, [&] { context->VSSetShaderResources(3, 1, primitiveResources); });
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
-			context->VSSetConstantBuffers(0, 1, constantBuffers);
-			context->PSSetShader(pixelShader.Get(), nullptr, 0);
-			context->PSSetConstantBuffers(0, 1, constantBuffers);
-			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
-			context->RSSetState(rasterState.Get());
-			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_highlighter_primitives_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->VSSetConstantBuffers(0, 1, constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_highlighter_primitives_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_highlighter_primitives_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->PSSetConstantBuffers(0, 1, constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_highlighter_primitives_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_highlighter_primitives_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
+			PerformanceCall(performance_, PerformanceStage::DrawSubmit, [&] { PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::HighlighterData,
+			PerformanceGraphicsSite("draw_highlighter_primitives_draw_1"), [&] { return TraceArguments(highlighterPrimitiveBuffer.Get(), 0, 0, nullptr, static_cast<UINT>(batchCount) * 6, 1); }, [&] { context->Draw(static_cast<UINT>(batchCount) * 6, 0); }); });
+			if (performance_) performance_->Draw();
 
 			ID3D11ShaderResourceView* nullResource[] = { nullptr };
-			context->VSSetShaderResources(3, 1, nullResource);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_highlighter_primitives_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResource)[0]), 0, 0, nullptr, 3, 1); }, [&] { context->VSSetShaderResources(3, 1, nullResource); });
 			startIndex += batchCount;
 		}
 		return 0;
@@ -184,41 +234,65 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0, mapType, 0, &mapped))) return -1;
+			if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0, mapType, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_shape_primitives_map_ink_data"), performancePass_))) return -1;
 			auto* destination = static_cast<InkPoint*>(mapped.pData);
-			std::memcpy(destination + m_bufferHead, primitives.data() + startIndex,
-				batchCount * sizeof(ShapePrimitive)); // 两个连续 InkPoint 槽描述一个 analytic shape。
-			context->Unmap(inkDataBuffer.Get(), 0);
+			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_shape_primitives_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), batchCount * sizeof(ShapePrimitive), m_bufferHead * sizeof(InkPoint)); }, [&] { std::memcpy(destination + m_bufferHead, primitives.data() + startIndex,
+				batchCount * sizeof(ShapePrimitive)); });
+			performanceCopy.Finish();
+			if (performance_) performance_->CopiedBytes(batchCount * sizeof(ShapePrimitive)); // 两个连续 InkPoint 槽描述一个 analytic shape。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_shape_primitives_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, m_bufferHead * sizeof(InkPoint)); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
 
-			if (FAILED(context->Map(globalCB.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_shape_primitives_map_global_constants"), performancePass_))) return -1;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-			constants->width = viewportWidth;
-			constants->height = viewportHeight;
-			constants->color = color;
-			constants->shapeType = static_cast<float>(static_cast<uint32_t>(kind));
-			constants->bufferOffset = static_cast<uint32_t>(m_bufferHead);
-			constants->operatorKind = static_cast<uint32_t>(operatorKind);
-			constants->padding[0] = shapeRoundedCornerRadiusPixels_;
-			constants->padding[1] = 0.0f;
-			constants->padding[2] = 0.0f;
-			context->Unmap(globalCB.Get(), 0);
+			// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+				PerformanceGraphicsSite("draw_shape_primitives_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 48); }, [&] {
+				constants->width = viewportWidth;
+				constants->height = viewportHeight;
+				constants->color = color;
+				constants->shapeType = static_cast<float>(static_cast<uint32_t>(kind));
+				constants->bufferOffset = static_cast<uint32_t>(m_bufferHead);
+				constants->operatorKind = static_cast<uint32_t>(operatorKind);
+				constants->padding[0] = shapeRoundedCornerRadiusPixels_;
+				constants->padding[1] = 0.0f;
+				constants->padding[2] = 0.0f;
+			});
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_shape_primitives_unmap_2"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
-			context->IASetInputLayout(nullptr);
-			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_shape_primitives_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_shape_primitives_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_shape_primitives_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
 			ID3D11ShaderResourceView* shaderResources[] = { inkDataSRV.Get() };
-			context->VSSetShaderResources(0, 1, shaderResources);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_shape_primitives_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((shaderResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, shaderResources); });
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
-			context->VSSetConstantBuffers(0, 1, constantBuffers);
-			context->PSSetShader(pixelShader.Get(), nullptr, 0);
-			context->PSSetConstantBuffers(0, 1, constantBuffers);
-			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
-			context->RSSetState(rasterState.Get());
-			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_shape_primitives_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->VSSetConstantBuffers(0, 1, constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_shape_primitives_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_shape_primitives_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->PSSetConstantBuffers(0, 1, constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_shape_primitives_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_shape_primitives_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
+			PerformanceCall(performance_, PerformanceStage::DrawSubmit, [&] { PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_shape_primitives_draw_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0, nullptr, static_cast<UINT>(batchCount) * 6, 1); }, [&] { context->Draw(static_cast<UINT>(batchCount) * 6, 0); }); });
+			if (performance_) performance_->Draw();
 
 			ID3D11ShaderResourceView* nullResource[] = { nullptr };
-			context->VSSetShaderResources(0, 1, nullResource);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_shape_primitives_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResource)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, nullResource); });
 			m_bufferHead += pointCount;
 			startIndex += batchCount;
 		}
@@ -230,9 +304,11 @@ namespace Inkeys::Drawing::Draw3
 		if (!context || !layerL0.addRTV || !layerL0.retainRTV) return;
 		D3D11_VIEWPORT savedViewport = {};
 		UINT viewportCount = 1;
-		context->RSGetViewports(&viewportCount, &savedViewport);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("warm_up_shape_shaders_r_s_get_viewports_1"), [&] { return TraceArguments(); }, [&] { context->RSGetViewports(&viewportCount, &savedViewport); });
 		const D3D11_VIEWPORT emptyViewport = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
-		context->RSSetViewports(1, &emptyViewport);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("warm_up_shape_shaders_r_s_set_viewports_1"), [&] { return TraceArguments(); }, [&] { context->RSSetViewports(1, &emptyViewport); });
 		SetOperatorTarget(layerL0);
 		const std::array<ShapePrimitive, 1> primitive = { ShapePrimitive{
 			{ 0.0f, 0.0f, 2.5f, 0.0f }, { 16.0f, 12.0f, 0.0f, 0.0f } } };
@@ -244,7 +320,8 @@ namespace Inkeys::Drawing::Draw3
 			DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
 		DrawShapePrimitives(primitive, ShapePrimitiveKind::FilledRectangle,
 			DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
-		context->RSSetViewports(1, &savedViewport);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("warm_up_shape_shaders_r_s_set_viewports_2"), [&] { return TraceArguments(); }, [&] { context->RSSetViewports(1, &savedViewport); });
 	}
 
 	void InkRenderer::DrawTransientDrawingCursor(const DrawingCursorVisual& visual)
@@ -281,16 +358,23 @@ namespace Inkeys::Drawing::Draw3
 			if (inspectBindings && context)
 			{
 				viewportCount = static_cast<UINT>(viewports.size());
-				context->RSGetViewports(&viewportCount, viewports.data());
-				context->OMGetRenderTargets(1, boundRtv.GetAddressOf(), nullptr);
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_r_s_get_viewports_1"), [&] { return TraceArguments(); }, [&] { context->RSGetViewports(&viewportCount, viewports.data()); });
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_o_m_get_render_targets_1"), [&] { return TraceArguments(); }, [&] { context->OMGetRenderTargets(1, boundRtv.GetAddressOf(), nullptr); });
 				if (boundRtv) boundRtv->GetResource(boundResource.GetAddressOf());
 				if (boundResource) boundResource.As(&targetIdentity);
 				if (backBufferTexture) backBufferTexture.As(&backBufferIdentity);
-				context->VSGetShader(boundVs.GetAddressOf(), nullptr, nullptr);
-				context->PSGetShader(boundPs.GetAddressOf(), nullptr, nullptr);
-				context->VSGetConstantBuffers(0, 1, boundVsCb.GetAddressOf());
-				context->PSGetConstantBuffers(0, 1, boundPsCb.GetAddressOf());
-				context->VSGetShaderResources(0, 1, boundSrv.GetAddressOf());
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_v_s_get_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSGetShader(boundVs.GetAddressOf(), nullptr, nullptr); });
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_p_s_get_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSGetShader(boundPs.GetAddressOf(), nullptr, nullptr); });
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_v_s_get_constant_buffers_1"), [&] { return TraceArguments(); }, [&] { context->VSGetConstantBuffers(0, 1, boundVsCb.GetAddressOf()); });
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_p_s_get_constant_buffers_1"), [&] { return TraceArguments(); }, [&] { context->PSGetConstantBuffers(0, 1, boundPsCb.GetAddressOf()); });
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_v_s_get_shader_resources_1"), [&] { return TraceArguments(); }, [&] { context->VSGetShaderResources(0, 1, boundSrv.GetAddressOf()); });
 			}
 			char line[1536] = {};
 			const int length = std::snprintf(line, sizeof(line),
@@ -340,59 +424,83 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		const HRESULT inkMapResult = context->Map(inkDataBuffer.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+		const HRESULT inkMapResult = PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_map_ink_data"), performancePass_);
 		if (FAILED(inkMapResult))
 		{
 			recordGpu("map-ink-data", inkMapResult, false);
 			return;
 		}
-		std::memcpy(mapped.pData, cursorData, sizeof(cursorData));
-		context->Unmap(inkDataBuffer.Get(), 0);
+		PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), sizeof(cursorData), 0); }, [&] { std::memcpy(mapped.pData, cursorData, sizeof(cursorData)); });
+		performanceCopy.Finish();
+		if (performance_) performance_->CopiedBytes(sizeof(cursorData));
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
 		m_bufferHead = 2;
 
-		const HRESULT constantsMapResult = context->Map(globalCB.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+		const HRESULT constantsMapResult = PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_map_global_constants"), performancePass_);
 		if (FAILED(constantsMapResult))
 		{
 			recordGpu("map-global-cb", constantsMapResult, false);
 			return;
 		}
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-		constants->width = viewportWidth;
-		constants->height = viewportHeight;
-		constants->shapeType = shapeType;
-		constants->bufferOffset = 0;
-		constants->color = DirectX::XMFLOAT4(
-			appearance.red, appearance.green, appearance.blue, appearance.opacity);
-		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-		constants->padding[0] = appearance.outlineRed;
-		constants->padding[1] = appearance.outlineGreen;
-		constants->padding[2] = appearance.outlineBlue;
-		context->Unmap(globalCB.Get(), 0);
+		// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 48); }, [&] {
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->shapeType = shapeType;
+			constants->bufferOffset = 0;
+			constants->color = DirectX::XMFLOAT4(
+				appearance.red, appearance.green, appearance.blue, appearance.opacity);
+			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+			constants->padding[0] = appearance.outlineRed;
+			constants->padding[1] = appearance.outlineGreen;
+			constants->padding[2] = appearance.outlineBlue;
+		});
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_unmap_2"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
 		recordGpu("upload-success", S_OK, false);
 
 		SetOMTarget(backBufferRTV.Get());
-		context->IASetInputLayout(nullptr);
-		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
 		ID3D11ShaderResourceView* shaderResources[] = { inkDataSRV.Get() };
-		context->VSSetShaderResources(0, 1, shaderResources);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((shaderResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, shaderResources); });
 		ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
-		context->VSSetConstantBuffers(0, 1, constantBuffers);
-		context->PSSetShader(pixelShader.Get(), nullptr, 0);
-		context->PSSetConstantBuffers(0, 1, constantBuffers);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->VSSetConstantBuffers(0, 1, constantBuffers); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->PSSetConstantBuffers(0, 1, constantBuffers); });
 		// Cursor PS 直接输出 premultiplied Add 和 Retain，复用 resolve blend 叠到 backbuffer。
-		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
-		context->RSSetState(rasterState.Get());
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
 		recordGpu("before-draw", S_OK, true);
-		context->Draw(6, 0);
+		PerformanceCall(performance_, PerformanceStage::DrawSubmit, [&] { PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_draw_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0, nullptr, 6, 1); }, [&] { context->Draw(6, 0); }); });
+			if (performance_) performance_->Draw();
 		// Draw 无 HRESULT；这里只证明命令已发出，像素仍由读回诊断独立验证。
 		recordGpu("after-draw-issued", S_OK, true);
 
 		ID3D11ShaderResourceView* nullResource[] = { nullptr };
-		context->VSSetShaderResources(0, 1, nullResource);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResource)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, nullResource); });
 	}
 
 }

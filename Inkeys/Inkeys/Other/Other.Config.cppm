@@ -356,6 +356,7 @@ GROUP(UI, \
 			GROUP(ConsoleOutput, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Draw3, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Performance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchArea, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
 			) \

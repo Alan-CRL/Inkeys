@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -117,14 +119,20 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		laserStyleConstants_.parameters.x = clampedOpacity;
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(laserStyleCB.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+		if (FAILED(PerformanceMap(performance_, context.Get(), laserStyleCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("update_laser_style_constants_map_laser_data"), performancePass_)))
 		{
 			laserStyleCacheValid_ = false;
 			return false;
 		}
-		std::memcpy(mapped.pData, &laserStyleConstants_, sizeof(laserStyleConstants_));
-		context->Unmap(laserStyleCB.Get(), 0);
+		PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("update_laser_style_constants_memcpy_laser_data"), [&] { return TraceArguments(laserStyleCB.Get(), sizeof(laserStyleConstants_), 0); }, [&] { std::memcpy(mapped.pData, &laserStyleConstants_, sizeof(laserStyleConstants_)); });
+		performanceCopy.Finish();
+		if (performance_) performance_->CopiedBytes(sizeof(laserStyleConstants_));
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("update_laser_style_constants_unmap_1"), [&] { return TraceArguments(laserStyleCB.Get(), 0, 0); }, [&] { context->Unmap(laserStyleCB.Get(), 0); });
 		uploadedLaserStyleGeneration_ = laserStyleGeneration_;
 		uploadedLaserStyleOpacity_ = clampedOpacity;
 		laserStyleCacheValid_ = true;
@@ -161,47 +169,74 @@ namespace Inkeys::Drawing::Draw3
 			const size_t remaining = drawPoints.size() - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
-			std::memcpy(mapped.pData, drawPoints.data() + startIndex,
-				batchCount * sizeof(InkPoint));
-			context->Unmap(inkDataBuffer.Get(), 0);
+			if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_coverage_map_ink_data"), performancePass_))) return -1;
+			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_coverage_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), batchCount * sizeof(InkPoint), 0); }, [&] { std::memcpy(mapped.pData, drawPoints.data() + startIndex,
+				batchCount * sizeof(InkPoint)); });
+			performanceCopy.Finish();
+			if (performance_) performance_->CopiedBytes(batchCount * sizeof(InkPoint));
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_coverage_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
 
-			if (FAILED(context->Map(globalCB.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_coverage_map_global_constants"), performancePass_))) return -1;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-			constants->width = viewportWidth;
-			constants->height = viewportHeight;
-			constants->shapeType = 7.0f;
-			constants->bufferOffset = 0;
-			constants->color = {};
-			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-			context->Unmap(globalCB.Get(), 0);
+			// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+				PerformanceGraphicsSite("draw_laser_coverage_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 36); }, [&] {
+				constants->width = viewportWidth;
+				constants->height = viewportHeight;
+				constants->shapeType = 7.0f;
+				constants->bufferOffset = 0;
+				constants->color = {};
+				constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+			});
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_coverage_unmap_2"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
-			context->IASetInputLayout(nullptr);
-			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
 			ID3D11ShaderResourceView* inkResources[] = { inkDataSRV.Get() };
-			context->VSSetShaderResources(0, 1, inkResources);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_laser_coverage_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((inkResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, inkResources); });
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
-			context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-			context->PSSetShader(pixelShader.Get(), nullptr, 0);
-			context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-			context->OMSetBlendState(laserCoverageBlendState.Get(), nullptr, 0xFFFFFFFF);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_coverage_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, constantBuffers[1], 0, ARRAYSIZE(constantBuffers)); }, [&] { context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_coverage_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, constantBuffers[1], 0, ARRAYSIZE(constantBuffers)); }, [&] { context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(laserCoverageBlendState.Get(), nullptr, 0xFFFFFFFF); });
 			if (useScissor)
 			{
-				context->RSSetScissorRects(1, &scissorRect);
-				context->RSSetState(laserScissorRasterState.Get());
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_r_s_set_scissor_rects_1"), [&] { return TraceArguments(); }, [&] { context->RSSetScissorRects(1, &scissorRect); });
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(laserScissorRasterState.Get()); });
 			}
 			else
 			{
-				context->RSSetState(rasterState.Get());
+				PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_r_s_set_state_2"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
 			}
-			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0);
-			if (useScissor) context->RSSetState(rasterState.Get());
+			PerformanceCall(performance_, PerformanceStage::DrawSubmit, [&] { PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_coverage_draw_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0, nullptr, (static_cast<UINT>(batchCount) - 1) * 6, 1); }, [&] { context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); }); });
+			if (performance_) performance_->Draw();
+			if (useScissor) PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_coverage_r_s_set_state_3"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
 
 			ID3D11ShaderResourceView* nullResource[] = { nullptr };
-			context->VSSetShaderResources(0, 1, nullResource);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_laser_coverage_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResource)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, nullResource); });
 			startIndex += batchCount - 1;
 		}
 		return 0;
@@ -221,58 +256,81 @@ namespace Inkeys::Drawing::Draw3
 		if (!UpdateLaserStyleConstants(opacity)) return false;
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(globalCB.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+		if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_rect_pass_map_global_constants"), performancePass_))) return false;
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-		constants->width = viewportWidth;
-		constants->height = viewportHeight;
-		constants->shapeType = shapeType;
-		constants->bufferOffset = 0;
-		constants->color = DirectX::XMFLOAT4(
-			static_cast<float>(rect.left), static_cast<float>(rect.top),
-			static_cast<float>(rect.right), static_cast<float>(rect.bottom));
-		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-		context->Unmap(globalCB.Get(), 0);
+		// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_rect_pass_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 36); }, [&] {
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->shapeType = shapeType;
+			constants->bufferOffset = 0;
+			constants->color = DirectX::XMFLOAT4(
+				static_cast<float>(rect.left), static_cast<float>(rect.top),
+				static_cast<float>(rect.right), static_cast<float>(rect.bottom));
+			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+		});
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_rect_pass_unmap_1"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
 		// 先解绑 t6-t9，再把其中任意一张 Laser 纹理安全地切换为 RTV。
 		UnbindLaserCoverageShaderResources();
 		SetOMTarget(dstRTV);
-		context->IASetInputLayout(nullptr);
-		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
 		ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
-		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-		context->PSSetShader(pixelShader.Get(), nullptr, 0);
-		context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_rect_pass_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, constantBuffers[1], 0, ARRAYSIZE(constantBuffers)); }, [&] { context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_rect_pass_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, constantBuffers[1], 0, ARRAYSIZE(constantBuffers)); }, [&] { context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers); });
 		if (source && sourceSlot >= 6 && sourceSlot <= 9)
 		{
 			ID3D11ShaderResourceView* sourceResources[] = { source };
-			context->PSSetShaderResources(sourceSlot, 1, sourceResources);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_laser_rect_pass_p_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((sourceResources)[0]), 0, 0, nullptr, sourceSlot, 1); }, [&] { context->PSSetShaderResources(sourceSlot, 1, sourceResources); });
 			ID3D11SamplerState* samplers[] = { operatorSampler.Get() };
-			context->PSSetSamplers(0, 1, samplers);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_p_s_set_samplers_1"), [&] { return TraceArguments(); }, [&] { context->PSSetSamplers(0, 1, samplers); });
 		}
 		if (secondarySource && secondarySourceSlot >= 6 && secondarySourceSlot <= 9)
 		{
 			ID3D11ShaderResourceView* sourceResources[] = { secondarySource };
-			context->PSSetShaderResources(secondarySourceSlot, 1, sourceResources);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_laser_rect_pass_p_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((sourceResources)[0]), 0, 0, nullptr, secondarySourceSlot, 1); }, [&] { context->PSSetShaderResources(secondarySourceSlot, 1, sourceResources); });
 		}
-		context->OMSetBlendState(blendState, nullptr, 0xFFFFFFFF);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(blendState, nullptr, 0xFFFFFFFF); });
 		if (laserScissorRasterState)
 		{
-			context->RSSetScissorRects(1, &rect);
-			context->RSSetState(laserScissorRasterState.Get());
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_r_s_set_scissor_rects_1"), [&] { return TraceArguments(); }, [&] { context->RSSetScissorRects(1, &rect); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(laserScissorRasterState.Get()); });
 		}
 		else
 		{
 			// scissor 是可选优化；矩形 quad 本身仍会把像素范围限制在 rect。
-			context->RSSetState(rasterState.Get());
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_r_s_set_state_2"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
 		}
-		context->Draw(6, 0);
-		context->RSSetState(rasterState.Get());
+		PerformanceCall(performance_, PerformanceStage::DrawSubmit, [&] { PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_rect_pass_draw_1"), [&] { return TraceArguments(nullptr, 0, 0, nullptr, 6, 1); }, [&] { context->Draw(6, 0); }); });
+			if (performance_) performance_->Draw();
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_r_s_set_state_3"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
 
 		ID3D11SamplerState* nullSampler[] = { nullptr };
 		UnbindLaserCoverageShaderResources();
-		context->PSSetSamplers(0, 1, nullSampler);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_rect_pass_p_s_set_samplers_2"), [&] { return TraceArguments(); }, [&] { context->PSSetSamplers(0, 1, nullSampler); });
 		return true;
 	}
 
@@ -354,37 +412,61 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const size_t batchCount = std::min(dots.size() - startIndex, kMaxBufferCapacity);
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
-			std::memcpy(mapped.pData, dots.data() + startIndex,
-				batchCount * sizeof(LaserDot));
-			context->Unmap(inkDataBuffer.Get(), 0);
-			if (FAILED(context->Map(globalCB.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+			if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_dots_map_ink_data"), performancePass_))) return;
+			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_dots_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), batchCount * sizeof(LaserDot), 0); }, [&] { std::memcpy(mapped.pData, dots.data() + startIndex,
+				batchCount * sizeof(LaserDot)); });
+			performanceCopy.Finish();
+			if (performance_) performance_->CopiedBytes(batchCount * sizeof(LaserDot));
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_dots_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
+			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_dots_map_global_constants"), performancePass_))) return;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-			constants->width = viewportWidth;
-			constants->height = viewportHeight;
-			constants->shapeType = 9.0f;
-			constants->bufferOffset = 0;
-			constants->color = {};
-			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-			context->Unmap(globalCB.Get(), 0);
+			// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+				PerformanceGraphicsSite("draw_laser_dots_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 36); }, [&] {
+				constants->width = viewportWidth;
+				constants->height = viewportHeight;
+				constants->shapeType = 9.0f;
+				constants->bufferOffset = 0;
+				constants->color = {};
+				constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+			});
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_dots_unmap_2"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
 			SetOMTarget(backBufferRTV.Get());
-			context->IASetInputLayout(nullptr);
-			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_dots_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_dots_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_dots_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
 			ID3D11ShaderResourceView* inkResources[] = { inkDataSRV.Get() };
-			context->VSSetShaderResources(0, 1, inkResources);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_laser_dots_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((inkResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, inkResources); });
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
-			context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-			context->PSSetShader(pixelShader.Get(), nullptr, 0);
-			context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-			context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
-			context->RSSetState(rasterState.Get());
-			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_dots_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, constantBuffers[1], 0, ARRAYSIZE(constantBuffers)); }, [&] { context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_dots_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_dots_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, constantBuffers[1], 0, ARRAYSIZE(constantBuffers)); }, [&] { context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_dots_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_dots_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
+			PerformanceCall(performance_, PerformanceStage::DrawSubmit, [&] { PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_laser_dots_draw_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0, nullptr, static_cast<UINT>(batchCount) * 6, 1); }, [&] { context->Draw(static_cast<UINT>(batchCount) * 6, 0); }); });
+			if (performance_) performance_->Draw();
 			ID3D11ShaderResourceView* nullResource[] = { nullptr };
-			context->VSSetShaderResources(0, 1, nullResource);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_laser_dots_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResource)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, nullResource); });
 			startIndex += batchCount;
 		}
 	}
@@ -397,39 +479,57 @@ namespace Inkeys::Drawing::Draw3
 			!UpdateLaserStyleConstants(1.0f)) return;
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(globalCB.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_particles_map_global_constants"), performancePass_))) return;
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-		constants->width = viewportWidth;
-		constants->height = viewportHeight;
-		constants->shapeType = 10.0f;
-		constants->bufferOffset = 0;
-		// shape 10：color.x 传辉光半径倍率，color.zw 与 padding.xy 传辉光颜色。
-		// 其余槽位由 shader 忽略，显式清零以免保留无效状态。
-		constants->color = DirectX::XMFLOAT4(
-			laserParticleGlowRadiusScale_, 0.0f,
-			laserParticleGlowGreen_, laserParticleGlowBlue_);
-		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-		constants->padding[0] = laserParticleGlowRed_;
-		constants->padding[1] = laserParticleGlowAlpha_;
-		constants->padding[2] = 0.0f;
-		context->Unmap(globalCB.Get(), 0);
+		// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_particles_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 48); }, [&] {
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->shapeType = 10.0f;
+			constants->bufferOffset = 0;
+			// shape 10：color.x 传辉光半径倍率，color.zw 与 padding.xy 传辉光颜色。
+			// 其余槽位由 shader 忽略，显式清零以免保留无效状态。
+			constants->color = DirectX::XMFLOAT4(
+				laserParticleGlowRadiusScale_, 0.0f,
+				laserParticleGlowGreen_, laserParticleGlowBlue_);
+			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+			constants->padding[0] = laserParticleGlowRed_;
+			constants->padding[1] = laserParticleGlowAlpha_;
+			constants->padding[2] = 0.0f;
+		});
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_particles_unmap_1"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
 		SetOMTarget(backBufferRTV.Get());
-		context->IASetInputLayout(nullptr);
-		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		context->VSSetShader(vertexShader.Get(), nullptr, 0);
-		context->VSSetShaderResources(8, 1, &particleResource);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_particles_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_particles_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_particles_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_laser_particles_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((&particleResource)[0]), 0, 0, nullptr, 8, 1); }, [&] { context->VSSetShaderResources(8, 1, &particleResource); });
 		ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
-		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-		context->PSSetShader(pixelShader.Get(), nullptr, 0);
-		context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
-		context->RSSetState(rasterState.Get());
-		context->DrawInstanced(6, kLaserParticleCapacity, 0, 0);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_particles_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, constantBuffers[1], 0, ARRAYSIZE(constantBuffers)); }, [&] { context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_particles_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("draw_laser_particles_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, constantBuffers[1], 0, ARRAYSIZE(constantBuffers)); }, [&] { context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_particles_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw_laser_particles_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("draw_laser_particles_draw_instanced_1"), [&] { return TraceArguments(nullptr, 0, 0, nullptr, 6, kLaserParticleCapacity); }, [&] { context->DrawInstanced(6, kLaserParticleCapacity, 0, 0); });
+		if (performance_) performance_->Draw();
 
 		ID3D11ShaderResourceView* nullParticle[] = { nullptr };
-		context->VSSetShaderResources(8, 1, nullParticle);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("draw_laser_particles_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullParticle)[0]), 0, 0, nullptr, 8, 1); }, [&] { context->VSSetShaderResources(8, 1, nullParticle); });
 	}
 
 	void InkRenderer::WarmUpLaserShaders() noexcept
@@ -444,9 +544,11 @@ namespace Inkeys::Drawing::Draw3
 		// 保存当前视口，替换为零宽高视口以抑制任何像素写入。
 		D3D11_VIEWPORT savedVP = {};
 		UINT vpCount = 1;
-		context->RSGetViewports(&vpCount, &savedVP);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("warm_up_laser_shaders_r_s_get_viewports_1"), [&] { return TraceArguments(); }, [&] { context->RSGetViewports(&vpCount, &savedVP); });
 		const D3D11_VIEWPORT emptyVP = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
-		context->RSSetViewports(1, &emptyVP);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("warm_up_laser_shaders_r_s_set_viewports_1"), [&] { return TraceArguments(); }, [&] { context->RSSetViewports(1, &emptyVP); });
 
 		// shape 10: 粒子 VS/PS（DrawLaserParticles 内部含所有绑定与 DrawInstanced）
 		DrawLaserParticles();
@@ -481,7 +583,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		// 恢复视口，不留任何可见副作用。
-		context->RSSetViewports(1, &savedVP);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("warm_up_laser_shaders_r_s_set_viewports_2"), [&] { return TraceArguments(); }, [&] { context->RSSetViewports(1, &savedVP); });
 	}
 
 }

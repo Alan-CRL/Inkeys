@@ -9,6 +9,8 @@
 #include "Draw3.ShaderCompatibility.h"
 #include "Draw3.Win7GuardedShader.h"
 
+#include "Draw3.Performance.h"
+
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -27,6 +29,39 @@ module Inkeys.Drawing.Draw3.renderer;
 namespace Inkeys::Drawing::Draw3
 {
 	using renderer_detail::GlobalShaderConstants;
+
+	PerformanceGraphicsArguments InkRenderer::TraceArguments(ID3D11Resource* resource,
+		std::uint64_t bytes, std::uint64_t offset, ID3D11Resource* related,
+		std::uint32_t argument0, std::uint32_t argument1) const noexcept
+	{
+		PerformanceGraphicsArguments result{};
+		result.resource = resource; result.relatedResource = related;
+		result.bytes = bytes; result.offset = offset;
+		result.argument0 = argument0; result.argument1 = argument1;
+		result.pass = performancePass_;
+		return result;
+	}
+
+	ID3D11Resource* InkRenderer::TraceViewResource(ID3D11View* view) const noexcept
+	{
+		// 仅在诊断 lazy metadata 内做指针身份匹配，热路径不额外查询 COM 描述。
+		if (!view) return nullptr;
+		if (view == backBufferRTV.Get()) return backBufferTexture.Get();
+		if (view == layerL2RTV.Get()) return layerL2Texture.Get();
+		if (view == inkDataSRV.Get()) return inkDataBuffer.Get();
+		if (view == highlighterPrimitiveSRV.Get()) return highlighterPrimitiveBuffer.Get();
+		if (view == laserParticleSystem_.ParticleShaderResourceView()) return laserParticleSystem_.ResourceForDiagnostics();
+		if (view == trustedL2SnapshotSRV_.Get()) return trustedL2SnapshotTexture_.Get();
+		for (const auto* layer : { &layerL0, &layerL1 })
+		{
+			if (view == layer->addRTV.Get() || view == layer->addSRV.Get()) return layer->addTexture.Get();
+			if (view == layer->retainRTV.Get() || view == layer->retainSRV.Get()) return layer->retainTexture.Get();
+		}
+		for (const auto* layer : { &laserCompositedColor, &laserStrokeCoverage,
+			&laserLiveCoverage, &laserBakeScratchColor_ })
+			if (view == layer->rtv.Get() || view == layer->srv.Get()) return layer->texture.Get();
+		return nullptr; // 外部历史/粒子 view 没有冷注册身份时保留 unknown，不做猜测。
+	}
 
 	namespace
 	{
@@ -106,7 +141,8 @@ namespace Inkeys::Drawing::Draw3
 		sourceRegion.right = rect.right;
 		sourceRegion.bottom = rect.bottom;
 		sourceRegion.back = 1;
-		context->CopySubresourceRegion(dst, 0, rect.left, rect.top, 0, src, 0, &sourceRegion); // 只复制脏矩形，减少 backbuffer 更新量。
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("copy_resource_copy_subresource_region_1"), [&] { return TraceArguments(dst, 0, 0, src); }, [&] { context->CopySubresourceRegion(dst, 0, rect.left, rect.top, 0, src, 0, &sourceRegion); }); // 只复制脏矩形，减少 backbuffer 更新量。
 	}
 
 	bool InkRenderer::ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
@@ -126,31 +162,50 @@ namespace Inkeys::Drawing::Draw3
 			{ static_cast<float>(rect.right), static_cast<float>(rect.bottom), 0.0f, 0.0f }
 		};
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(inkDataBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
-		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints)); // 复用墨迹缓冲区传入要混合的矩形范围。
-		context->Unmap(inkDataBuffer.Get(), 0);
+		if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::CompositeVertices,
+			PerformanceGraphicsSite("apply_operator_layers_map_composite_vertices"), performancePass_))) return false;
+		PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::CompositeVertices,
+			PerformanceGraphicsSite("apply_operator_layers_memcpy_composite_vertices"), [&] { return TraceArguments(inkDataBuffer.Get(), sizeof(rectPoints), 0); }, [&] { std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints)); });
+		performanceCopy.Finish();
+		if (performance_) performance_->CopiedBytes(sizeof(rectPoints)); // 复用墨迹缓冲区传入要混合的矩形范围。
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::CompositeVertices,
+			PerformanceGraphicsSite("apply_operator_layers_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
 		m_bufferHead = 2;
 
-		if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+		if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("apply_operator_layers_map_global_constants"), performancePass_))) return false;
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-		constants->width = viewportWidth;
-		constants->height = viewportHeight;
-		constants->color = DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);
-		constants->shapeType = mergeMode == OperatorLayerMergeMode::Ordered ? 2.0f : 1.0f;
-		constants->bufferOffset = 0;
-		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-		context->Unmap(globalCB.Get(), 0);
+		// 单独计量原有逐字段写入；不更改生产写法或补写 padding。
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("apply_operator_layers_field_write_global_constants"), [&] { return TraceArguments(globalCB.Get(), 36); }, [&] {
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->color = DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);
+			constants->shapeType = mergeMode == OperatorLayerMergeMode::Ordered ? 2.0f : 1.0f;
+			constants->bufferOffset = 0;
+			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+		});
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("apply_operator_layers_unmap_2"), [&] { return TraceArguments(globalCB.Get(), 0, 0); }, [&] { context->Unmap(globalCB.Get(), 0); });
 
 		SetOMTarget(dstRTV);
-		context->IASetInputLayout(nullptr);
-		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("apply_operator_layers_i_a_set_input_layout_1"), [&] { return TraceArguments(); }, [&] { context->IASetInputLayout(nullptr); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("apply_operator_layers_i_a_set_primitive_topology_1"), [&] { return TraceArguments(); }, [&] { context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("apply_operator_layers_v_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->VSSetShader(vertexShader.Get(), nullptr, 0); });
 		ID3D11ShaderResourceView* shaderResources[] = { inkDataSRV.Get() };
-		context->VSSetShaderResources(0, 1, shaderResources);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("apply_operator_layers_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((shaderResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, shaderResources); });
 		ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
-		context->VSSetConstantBuffers(0, 1, constantBuffers);
-		context->PSSetShader(pixelShader.Get(), nullptr, 0);
-		context->PSSetConstantBuffers(0, 1, constantBuffers);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("apply_operator_layers_v_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->VSSetConstantBuffers(0, 1, constantBuffers); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("apply_operator_layers_p_s_set_shader_1"), [&] { return TraceArguments(); }, [&] { context->PSSetShader(pixelShader.Get(), nullptr, 0); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("apply_operator_layers_p_s_set_constant_buffers_1"), [&] { return TraceArguments((constantBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { context->PSSetConstantBuffers(0, 1, constantBuffers); });
 		ID3D11ShaderResourceView* compositeResources[] = {
 			stableLayer.addSRV.Get(),
 			stableLayer.retainSRV.Get(),
@@ -158,18 +213,27 @@ namespace Inkeys::Drawing::Draw3
 			liveLayer.addSRV.Get(),
 			liveLayer.retainSRV.Get()
 		};
-		context->PSSetShaderResources(1, ARRAYSIZE(compositeResources), compositeResources);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("apply_operator_layers_p_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((compositeResources)[0]), 0, 0, TraceViewResource(compositeResources[1]), 1, ARRAYSIZE(compositeResources)); }, [&] { context->PSSetShaderResources(1, ARRAYSIZE(compositeResources), compositeResources); });
 		ID3D11SamplerState* samplers[] = { operatorSampler.Get() };
-		context->PSSetSamplers(0, 1, samplers);
-		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
-		context->RSSetState(rasterState.Get());
-		context->Draw(6, 0); // 双源混合一次完成 Result = Add + Retain * Below。
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("apply_operator_layers_p_s_set_samplers_1"), [&] { return TraceArguments(); }, [&] { context->PSSetSamplers(0, 1, samplers); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("apply_operator_layers_o_m_set_blend_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("apply_operator_layers_r_s_set_state_1"), [&] { return TraceArguments(); }, [&] { context->RSSetState(rasterState.Get()); });
+		PerformanceCall(performance_, PerformanceStage::DrawSubmit, [&] { PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::CompositeVertices,
+			PerformanceGraphicsSite("apply_operator_layers_draw_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0, nullptr, 6, 1); }, [&] { context->Draw(6, 0); }); });
+			if (performance_) performance_->Draw(); // 双源混合一次完成 Result = Add + Retain * Below。
 
 		ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr, nullptr, nullptr, nullptr };
 		ID3D11SamplerState* nullSampler[] = { nullptr };
-		context->VSSetShaderResources(0, 1, nullResources);
-		context->PSSetShaderResources(1, ARRAYSIZE(nullResources), nullResources); // 解除 SRV 绑定，避免后续作为 RTV 时冲突。
-		context->PSSetSamplers(0, 1, nullSampler);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("apply_operator_layers_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, nullResources); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("apply_operator_layers_p_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResources)[0]), 0, 0, nullptr, 1, ARRAYSIZE(nullResources)); }, [&] { context->PSSetShaderResources(1, ARRAYSIZE(nullResources), nullResources); }); // 解除 SRV 绑定，避免后续作为 RTV 时冲突。
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("apply_operator_layers_p_s_set_samplers_2"), [&] { return TraceArguments(); }, [&] { context->PSSetSamplers(0, 1, nullSampler); });
 		return true;
 	}
 
@@ -178,7 +242,8 @@ namespace Inkeys::Drawing::Draw3
 		viewportWidth = width;
 		viewportHeight = height;
 		D3D11_VIEWPORT viewport = { 0, 0, width, height, 0.0f, 1.0f };
-		context->RSSetViewports(1, &viewport);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("set_screen_size_r_s_set_viewports_1"), [&] { return TraceArguments(); }, [&] { context->RSSetViewports(1, &viewport); });
 	}
 
 	double InkRenderer::QueryVideoMemoryUsageMiB() const noexcept
@@ -199,23 +264,29 @@ namespace Inkeys::Drawing::Draw3
 	void InkRenderer::SetOMTarget(ID3D11RenderTargetView* renderTargetView)
 	{
 		ID3D11RenderTargetView* targets[] = { renderTargetView };
-		context->OMSetRenderTargets(1, targets, nullptr);
-		if (dsState) context->OMSetDepthStencilState(dsState.Get(), 0);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("set_o_m_target_o_m_set_render_targets_1"), [&] { return TraceArguments(TraceViewResource((targets)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->OMSetRenderTargets(1, targets, nullptr); });
+		if (dsState) PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("set_o_m_target_o_m_set_depth_stencil_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetDepthStencilState(dsState.Get(), 0); });
 	}
 
 	void InkRenderer::SetOperatorTarget(const OperatorLayerResources& layer)
 	{
 		ID3D11RenderTargetView* targets[] = { layer.addRTV.Get(), layer.retainRTV.Get() };
-		context->OMSetRenderTargets(ARRAYSIZE(targets), targets, nullptr);
-		if (dsState) context->OMSetDepthStencilState(dsState.Get(), 0);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("set_operator_target_o_m_set_render_targets_1"), [&] { return TraceArguments(TraceViewResource((targets)[0]), 0, 0, TraceViewResource(targets[1]), 0, ARRAYSIZE(targets)); }, [&] { context->OMSetRenderTargets(ARRAYSIZE(targets), targets, nullptr); });
+		if (dsState) PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("set_operator_target_o_m_set_depth_stencil_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetDepthStencilState(dsState.Get(), 0); });
 	}
 
 	void InkRenderer::SetLaserCoverageTarget(const LaserCoverageResources& layer)
 	{
 		UnbindLaserCoverageShaderResources();
 		ID3D11RenderTargetView* targets[] = { layer.rtv.Get() };
-		context->OMSetRenderTargets(1, targets, nullptr);
-		if (dsState) context->OMSetDepthStencilState(dsState.Get(), 0);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("set_laser_coverage_target_o_m_set_render_targets_1"), [&] { return TraceArguments(TraceViewResource((targets)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->OMSetRenderTargets(1, targets, nullptr); });
+		if (dsState) PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("set_laser_coverage_target_o_m_set_depth_stencil_state_1"), [&] { return TraceArguments(); }, [&] { context->OMSetDepthStencilState(dsState.Get(), 0); });
 	}
 
 	void InkRenderer::SetLaserLiveCoverageTarget()
@@ -226,7 +297,8 @@ namespace Inkeys::Drawing::Draw3
 	void InkRenderer::ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color)
 	{
 		const float clearColor[4] = { color.x, color.y, color.z, color.w };
-		context->ClearRenderTargetView(renderTargetView, clearColor);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Clear, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("clear_r_t_v_clear_render_target_view_1"), [&] { return TraceArguments(TraceViewResource(renderTargetView)); }, [&] { context->ClearRenderTargetView(renderTargetView, clearColor); });
 	}
 
 	void InkRenderer::ClearOperatorLayer(const OperatorLayerResources& layer)
@@ -247,14 +319,16 @@ namespace Inkeys::Drawing::Draw3
 		if (!context) return;
 		ID3D11ShaderResourceView* nullLaserResources[] = {
 			nullptr, nullptr, nullptr, nullptr };
-		context->PSSetShaderResources(6, ARRAYSIZE(nullLaserResources), nullLaserResources);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("unbind_laser_coverage_shader_resources_p_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((nullLaserResources)[0]), 0, 0, nullptr, 6, ARRAYSIZE(nullLaserResources)); }, [&] { context->PSSetShaderResources(6, ARRAYSIZE(nullLaserResources), nullLaserResources); });
 	}
 
 	void InkRenderer::ClearAllLaserCoverage()
 	{
 		ClearLaserCoverage(laserCompositedColor);
 		ClearLaserIncrementalCoverage();
-		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
+		if (context) PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("clear_all_laser_coverage_o_m_set_render_targets_1"), [&] { return TraceArguments(nullptr, 0, 0, nullptr, 0, 0); }, [&] { context->OMSetRenderTargets(0, nullptr, nullptr); });
 		laserBakeScratchColor_ = {}; // Laser 生命周期结束后归还按需分配的全尺寸 scratch。
 	}
 
@@ -284,9 +358,11 @@ namespace Inkeys::Drawing::Draw3
 		if (!laserBakeScratchColor_.rtv || !laserBakeScratchColor_.srv) return false;
 		// 先解绑读写槽，再从最后已提交颜色复制；失败重试永远从同一状态起步。
 		UnbindLaserCoverageShaderResources();
-		context->OMSetRenderTargets(0, nullptr, nullptr);
-		context->CopyResource(laserBakeScratchColor_.texture.Get(),
-			laserCompositedColor.texture.Get());
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("begin_laser_bake_o_m_set_render_targets_1"), [&] { return TraceArguments(nullptr, 0, 0, nullptr, 0, 0); }, [&] { context->OMSetRenderTargets(0, nullptr, nullptr); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("begin_laser_bake_copy_resource_1"), [&] { return TraceArguments(laserBakeScratchColor_.texture.Get(), 0, 0, laserCompositedColor.texture.Get()); }, [&] { context->CopyResource(laserBakeScratchColor_.texture.Get(),
+			laserCompositedColor.texture.Get()); });
 		return true;
 	}
 
@@ -298,7 +374,8 @@ namespace Inkeys::Drawing::Draw3
 	void InkRenderer::CommitLaserBake() noexcept
 	{
 		UnbindLaserCoverageShaderResources();
-		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
+		if (context) PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("commit_laser_bake_o_m_set_render_targets_1"), [&] { return TraceArguments(nullptr, 0, 0, nullptr, 0, 0); }, [&] { context->OMSetRenderTargets(0, nullptr, nullptr); });
 		std::swap(laserCompositedColor, laserBakeScratchColor_);
 	}
 
@@ -314,20 +391,26 @@ namespace Inkeys::Drawing::Draw3
 		textureDescription.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
 		textureDescription.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr,
-			layer.addTexture.ReleaseAndGetAddressOf()))) return false;
-		if (FAILED(device->CreateRenderTargetView(layer.addTexture.Get(), nullptr,
-			layer.addRTV.ReleaseAndGetAddressOf()))) return false;
-		if (FAILED(device->CreateShaderResourceView(layer.addTexture.Get(), nullptr,
-			layer.addSRV.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(TraceCreateResource(layer.addTexture, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("create_operator_layer_resources_create_layer_add_texture"), [&] { return device->CreateTexture2D(&textureDescription, nullptr,
+			layer.addTexture.ReleaseAndGetAddressOf()); }))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createrendertargetview_2"), [&] { return TraceArguments(); }, [&] { return device->CreateRenderTargetView(layer.addTexture.Get(), nullptr,
+			layer.addRTV.ReleaseAndGetAddressOf()); }))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createshaderresourceview_3"), [&] { return TraceArguments(); }, [&] { return device->CreateShaderResourceView(layer.addTexture.Get(), nullptr,
+			layer.addSRV.ReleaseAndGetAddressOf()); }))) return false;
 
 		textureDescription.Format = DXGI_FORMAT_R16_FLOAT;
-		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr,
-			layer.retainTexture.ReleaseAndGetAddressOf()))) return false;
-		if (FAILED(device->CreateRenderTargetView(layer.retainTexture.Get(), nullptr,
-			layer.retainRTV.ReleaseAndGetAddressOf()))) return false;
-		if (FAILED(device->CreateShaderResourceView(layer.retainTexture.Get(), nullptr,
-			layer.retainSRV.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(TraceCreateResource(layer.retainTexture, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("create_operator_layer_resources_create_layer_retain_texture"), [&] { return device->CreateTexture2D(&textureDescription, nullptr,
+			layer.retainTexture.ReleaseAndGetAddressOf()); }))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createrendertargetview_5"), [&] { return TraceArguments(); }, [&] { return device->CreateRenderTargetView(layer.retainTexture.Get(), nullptr,
+			layer.retainRTV.ReleaseAndGetAddressOf()); }))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createshaderresourceview_6"), [&] { return TraceArguments(); }, [&] { return device->CreateShaderResourceView(layer.retainTexture.Get(), nullptr,
+			layer.retainSRV.ReleaseAndGetAddressOf()); }))) return false;
 		return true;
 	}
 
@@ -343,12 +426,15 @@ namespace Inkeys::Drawing::Draw3
 		description.SampleDesc.Count = 1;
 		description.Usage = D3D11_USAGE_DEFAULT;
 		description.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-		if (FAILED(device->CreateTexture2D(&description, nullptr,
-			layer.texture.ReleaseAndGetAddressOf()))) return false;
-		if (FAILED(device->CreateRenderTargetView(layer.texture.Get(), nullptr,
-			layer.rtv.ReleaseAndGetAddressOf()))) return false;
-		if (FAILED(device->CreateShaderResourceView(layer.texture.Get(), nullptr,
-			layer.srv.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(TraceCreateResource(layer.texture, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("create_laser_coverage_resources_create_layer_texture"), [&] { return device->CreateTexture2D(&description, nullptr,
+			layer.texture.ReleaseAndGetAddressOf()); }))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createrendertargetview_8"), [&] { return TraceArguments(); }, [&] { return device->CreateRenderTargetView(layer.texture.Get(), nullptr,
+			layer.rtv.ReleaseAndGetAddressOf()); }))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createshaderresourceview_9"), [&] { return TraceArguments(); }, [&] { return device->CreateShaderResourceView(layer.texture.Get(), nullptr,
+			layer.srv.ReleaseAndGetAddressOf()); }))) return false;
 		return true;
 	}
 
@@ -357,8 +443,11 @@ namespace Inkeys::Drawing::Draw3
 		if (!device || !context || !swapChain || width == 0 || height == 0) return false;
 		if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D),
 			reinterpret_cast<void**>(backBufferTexture.ReleaseAndGetAddressOf())))) return false; // 取得最终呈现缓冲区。
-		if (FAILED(device->CreateRenderTargetView(backBufferTexture.Get(), nullptr,
-			backBufferRTV.ReleaseAndGetAddressOf()))) return false;
+		if (performance_) performance_->RegisterResource(backBufferTexture.Get(), PerformanceGraphicsRole::BackBuffer,
+			PerformanceGraphicsSite("swapchain_back_buffer"));
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createrendertargetview_10"), [&] { return TraceArguments(); }, [&] { return device->CreateRenderTargetView(backBufferTexture.Get(), nullptr,
+			backBufferRTV.ReleaseAndGetAddressOf()); }))) return false;
 
 		D3D11_TEXTURE2D_DESC textureDescription = {};
 		textureDescription.Width = width;
@@ -370,12 +459,14 @@ namespace Inkeys::Drawing::Draw3
 		textureDescription.Usage = D3D11_USAGE_DEFAULT;
 		textureDescription.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
-		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr, layerL2Texture.ReleaseAndGetAddressOf()))) return false; // L2 保存已经落定的完整画布。
+		if (FAILED(TraceCreateResource(layerL2Texture, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("create_size_dependent_resources_create_layer_l2_texture"), [&] { return device->CreateTexture2D(&textureDescription, nullptr, layerL2Texture.ReleaseAndGetAddressOf()); }))) return false; // L2 保存已经落定的完整画布。
 
 		D3D11_RENDER_TARGET_VIEW_DESC renderTargetDescription = {};
 		renderTargetDescription.Format = textureDescription.Format;
 		renderTargetDescription.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-		if (FAILED(device->CreateRenderTargetView(layerL2Texture.Get(), &renderTargetDescription, layerL2RTV.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createrendertargetview_12"), [&] { return TraceArguments(); }, [&] { return device->CreateRenderTargetView(layerL2Texture.Get(), &renderTargetDescription, layerL2RTV.ReleaseAndGetAddressOf()); }))) return false;
 		// 快照是可选视觉兜底；分配失败时权威 L2 与逐 tile 恢复仍可继续。
 		CreateTrustedL2SnapshotResources(width, height);
 		if (!CreateOperatorLayerResources(width, height, layerL1)) return false; // L1 保存当前笔画已确认前缀操作。
@@ -397,14 +488,26 @@ namespace Inkeys::Drawing::Draw3
 
 	void InkRenderer::ReleaseSizeDependentResources()
 	{
+		if (performance_)
+		{
+			ID3D11Resource* resources[] = { backBufferTexture.Get(), layerL2Texture.Get(),
+				layerL1.addTexture.Get(), layerL1.retainTexture.Get(), layerL0.addTexture.Get(), layerL0.retainTexture.Get(),
+				laserCompositedColor.texture.Get(), laserStrokeCoverage.texture.Get(),
+				laserLiveCoverage.texture.Get(), laserBakeScratchColor_.texture.Get() };
+			for (auto* resource : resources) performance_->RetireResource(resource);
+		}
 		if (context)
 		{
 			ID3D11ShaderResourceView* nullResources[] = {
 				nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-			context->OMSetRenderTargets(0, nullptr, nullptr);
-			context->VSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); // t8 粒子 SRV 也随 Resize 显式解绑。
-			context->PSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); // 释放前先解绑，避免 D3D 仍持有引用。
-			context->Flush();
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("release_size_dependent_resources_o_m_set_render_targets_1"), [&] { return TraceArguments(nullptr, 0, 0, nullptr, 0, 0); }, [&] { context->OMSetRenderTargets(0, nullptr, nullptr); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("release_size_dependent_resources_v_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((nullResources)[0]), 0, 0, nullptr, 0, ARRAYSIZE(nullResources)); }, [&] { context->VSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); }); // t8 粒子 SRV 也随 Resize 显式解绑。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("release_size_dependent_resources_p_s_set_shader_resources_1"), [&] { return TraceArguments(TraceViewResource((nullResources)[0]), 0, 0, nullptr, 0, ARRAYSIZE(nullResources)); }, [&] { context->PSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); }); // 释放前先解绑，避免 D3D 仍持有引用。
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("release_size_dependent_resources_flush_1"), [&] { return TraceArguments(); }, [&] { context->Flush(); });
 		}
 		backBufferRTV.Reset();
 		backBufferTexture.Reset();
@@ -437,6 +540,9 @@ namespace Inkeys::Drawing::Draw3
 
 	void InkRenderer::ReleaseResources()
 	{
+		if (performance_)
+			for (auto* resource : { globalCB.Get(), laserStyleCB.Get(), inkDataBuffer.Get(), highlighterPrimitiveBuffer.Get() })
+				performance_->RetireResource(resource);
 		laserParticleSystem_.Release();
 		ReleaseSizeDependentResources();
 		vertexShader.Reset();
@@ -513,6 +619,7 @@ namespace Inkeys::Drawing::Draw3
 
 	bool InkRenderer::Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver)
 	{
+		SetPerformancePass(PerformanceGraphicsPass::Initialization);
 		device = inDevice; // 渲染器只借用外部统一创建的 D3D 设备。
 		context = inContext;
 		if (!device || !context)
@@ -522,9 +629,11 @@ namespace Inkeys::Drawing::Draw3
 		}
 		D3D11_FEATURE_DATA_D3D11_OPTIONS deviceOptions = {};
 		// Win7 Platform Update/旧驱动可拒绝动态 SRV 的 NO_OVERWRITE；按本次设备查询，失败即回退。
-		mapNoOverwriteOnDynamicBufferSRV = SUCCEEDED(device->CheckFeatureSupport(
-			D3D11_FEATURE_D3D11_OPTIONS, &deviceOptions, sizeof(deviceOptions))) &&
+		const HRESULT capabilityResult = device->CheckFeatureSupport(
+			D3D11_FEATURE_D3D11_OPTIONS, &deviceOptions, sizeof(deviceOptions));
+		mapNoOverwriteOnDynamicBufferSRV = SUCCEEDED(capabilityResult) &&
 			deviceOptions.MapNoOverwriteOnDynamicBufferSRV != FALSE;
+		if (performance_) performance_->CaptureUploadCapability(mapNoOverwriteOnDynamicBufferSRV, capabilityResult);
 		Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
 		Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
 		if (SUCCEEDED(device.As(&dxgiDevice)) && dxgiDevice &&
@@ -536,10 +645,12 @@ namespace Inkeys::Drawing::Draw3
 			sizeof(GlobalShaderConstants), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER,
 			D3D11_CPU_ACCESS_WRITE, 0, 0
 		};
-		if (FAILED(device->CreateBuffer(&constantBufferDescription, nullptr, globalCB.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(TraceCreateResource(globalCB, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("init_create_global_c_b"), [&] { return device->CreateBuffer(&constantBufferDescription, nullptr, globalCB.ReleaseAndGetAddressOf()); }))) return false;
 		constantBufferDescription.ByteWidth = sizeof(LaserStyleConstants);
-		if (FAILED(device->CreateBuffer(&constantBufferDescription, nullptr,
-			laserStyleCB.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(TraceCreateResource(laserStyleCB, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("init_create_laser_style_c_b"), [&] { return device->CreateBuffer(&constantBufferDescription, nullptr,
+			laserStyleCB.ReleaseAndGetAddressOf()); }))) return false;
 		ConfigureLaserStyle(1.0f,
 			DirectX::XMFLOAT4(1.0f, 16.0f / 255.0f, 0.0f, 1.0f));
 
@@ -563,7 +674,8 @@ namespace Inkeys::Drawing::Draw3
 		blendDescription.RenderTarget[1].DestBlendAlpha = D3D11_BLEND_ONE;
 		blendDescription.RenderTarget[1].BlendOpAlpha = D3D11_BLEND_OP_MIN;
 		blendDescription.RenderTarget[1].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_RED;
-		if (FAILED(device->CreateBlendState(&blendDescription, strokeOperatorBlendState.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createblendstate_15"), [&] { return TraceArguments(); }, [&] { return device->CreateBlendState(&blendDescription, strokeOperatorBlendState.ReleaseAndGetAddressOf()); }))) return false;
 
 		blendDescription = {};
 		blendDescription.RenderTarget[0].BlendEnable = TRUE;
@@ -575,7 +687,8 @@ namespace Inkeys::Drawing::Draw3
 		blendDescription.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_SRC1_ALPHA;
 		blendDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
 		blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-		if (FAILED(device->CreateBlendState(&blendDescription, operatorResolveBlendState.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createblendstate_16"), [&] { return TraceArguments(); }, [&] { return device->CreateBlendState(&blendDescription, operatorResolveBlendState.ReleaseAndGetAddressOf()); }))) return false;
 
 		blendDescription = {};
 		blendDescription.RenderTarget[0].BlendEnable = TRUE;
@@ -586,20 +699,24 @@ namespace Inkeys::Drawing::Draw3
 		blendDescription.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
 		blendDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
 		blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-		if (FAILED(device->CreateBlendState(&blendDescription,
-			laserCoverageBlendState.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createblendstate_17"), [&] { return TraceArguments(); }, [&] { return device->CreateBlendState(&blendDescription,
+			laserCoverageBlendState.ReleaseAndGetAddressOf()); }))) return false;
 
 		D3D11_DEPTH_STENCIL_DESC depthStencilDescription = {};
-		if (FAILED(device->CreateDepthStencilState(&depthStencilDescription, dsState.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createdepthstencilstate_18"), [&] { return TraceArguments(); }, [&] { return device->CreateDepthStencilState(&depthStencilDescription, dsState.ReleaseAndGetAddressOf()); }))) return false;
 
 		D3D11_RASTERIZER_DESC rasterizerDescription = {};
 		rasterizerDescription.FillMode = D3D11_FILL_SOLID;
 		rasterizerDescription.CullMode = D3D11_CULL_NONE;
 		rasterizerDescription.DepthClipEnable = TRUE;
-		if (FAILED(device->CreateRasterizerState(&rasterizerDescription, rasterState.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createrasterizerstate_19"), [&] { return TraceArguments(); }, [&] { return device->CreateRasterizerState(&rasterizerDescription, rasterState.ReleaseAndGetAddressOf()); }))) return false;
 		rasterizerDescription.ScissorEnable = TRUE;
-		if (FAILED(device->CreateRasterizerState(&rasterizerDescription,
-			laserScissorRasterState.ReleaseAndGetAddressOf())))
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createrasterizerstate_20"), [&] { return TraceArguments(); }, [&] { return device->CreateRasterizerState(&rasterizerDescription,
+			laserScissorRasterState.ReleaseAndGetAddressOf()); })))
 		{
 			// scissor 只减少激光局部 pass 的像素工作，创建失败不应阻断 renderer 初始化。
 			laserScissorRasterState.Reset();
@@ -612,21 +729,25 @@ namespace Inkeys::Drawing::Draw3
 		inkBufferDescription.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 		inkBufferDescription.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 		inkBufferDescription.StructureByteStride = sizeof(InkPoint);
-		if (FAILED(device->CreateBuffer(&inkBufferDescription, nullptr, inkDataBuffer.ReleaseAndGetAddressOf()))) return false; // CPU 每帧写点，GPU 着色器按结构化缓冲区读取。
+		if (FAILED(TraceCreateResource(inkDataBuffer, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("init_create_ink_data_buffer"), [&] { return device->CreateBuffer(&inkBufferDescription, nullptr, inkDataBuffer.ReleaseAndGetAddressOf()); }))) return false; // CPU 每帧写点，GPU 着色器按结构化缓冲区读取。
 
 		D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceDescription = {};
 		shaderResourceDescription.Format = DXGI_FORMAT_UNKNOWN;
 		shaderResourceDescription.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
 		shaderResourceDescription.Buffer.NumElements = static_cast<UINT>(kMaxBufferCapacity);
-		if (FAILED(device->CreateShaderResourceView(inkDataBuffer.Get(), &shaderResourceDescription, inkDataSRV.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createshaderresourceview_22"), [&] { return TraceArguments(); }, [&] { return device->CreateShaderResourceView(inkDataBuffer.Get(), &shaderResourceDescription, inkDataSRV.ReleaseAndGetAddressOf()); }))) return false;
 
 		D3D11_BUFFER_DESC highlighterBufferDescription = inkBufferDescription;
 		highlighterBufferDescription.ByteWidth = static_cast<UINT>(kMaxBufferCapacity * sizeof(HighlighterPrimitive));
 		highlighterBufferDescription.StructureByteStride = sizeof(HighlighterPrimitive);
-		if (FAILED(device->CreateBuffer(&highlighterBufferDescription, nullptr,
-			highlighterPrimitiveBuffer.ReleaseAndGetAddressOf()))) return false;
-		if (FAILED(device->CreateShaderResourceView(highlighterPrimitiveBuffer.Get(), &shaderResourceDescription,
-			highlighterPrimitiveSRV.ReleaseAndGetAddressOf()))) return false; // 荧光笔几何单独上传，避免改变普通墨迹点布局。
+		if (FAILED(TraceCreateResource(highlighterPrimitiveBuffer, PerformanceGraphicsRole::HighlighterData,
+			PerformanceGraphicsSite("init_create_highlighter_primitive_buffer"), [&] { return device->CreateBuffer(&highlighterBufferDescription, nullptr,
+			highlighterPrimitiveBuffer.ReleaseAndGetAddressOf()); }))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createshaderresourceview_24"), [&] { return TraceArguments(); }, [&] { return device->CreateShaderResourceView(highlighterPrimitiveBuffer.Get(), &shaderResourceDescription,
+			highlighterPrimitiveSRV.ReleaseAndGetAddressOf()); }))) return false; // 荧光笔几何单独上传，避免改变普通墨迹点布局。
 
 		D3D11_SAMPLER_DESC samplerDescription = {};
 		samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT; // 混合图层按像素采样，不做线性模糊。
@@ -635,7 +756,8 @@ namespace Inkeys::Drawing::Draw3
 		samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
 		samplerDescription.ComparisonFunc = D3D11_COMPARISON_NEVER;
 		samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
-		if (FAILED(device->CreateSamplerState(&samplerDescription, operatorSampler.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createsamplerstate_25"), [&] { return TraceArguments(); }, [&] { return device->CreateSamplerState(&samplerDescription, operatorSampler.ReleaseAndGetAddressOf()); }))) return false;
 		CreateTrustedL2SnapshotPipeline(); // 可选 pass 失败时仅禁用动态快照兜底。
 		return LoadShaders(driver);
 	}
@@ -657,8 +779,24 @@ namespace Inkeys::Drawing::Draw3
 			? ShaderBlob{ Draw3Win7GuardedShader::Bytecode, sizeof(Draw3Win7GuardedShader::Bytecode) }
 			: LoadShaderFromResource(IDR_DRAW3_INK_PIXEL_SHADER);
 		if (!vertexShaderBlob.data || !pixelShaderBlob.data) return false;
-		if (FAILED(device->CreateVertexShader(vertexShaderBlob.data, vertexShaderBlob.size, nullptr, vertexShader.ReleaseAndGetAddressOf()))) return false;
-		const HRESULT pixelResult = device->CreatePixelShader(pixelShaderBlob.data, pixelShaderBlob.size, nullptr, pixelShader.ReleaseAndGetAddressOf());
+		if (performance_)
+		{
+			// 冷记录实际所选字节码身份；FNV 仅用于关联，包 EXE 身份仍由 manifest SHA 验证。
+			const auto identity = [](const ShaderBlob& blob) {
+				std::uint64_t hash = 14695981039346656037ull;
+				for (std::size_t i = 0; i < blob.size; ++i)
+					hash = (hash ^ static_cast<const unsigned char*>(blob.data)[i]) * 1099511628211ull;
+				return hash;
+			};
+			performance_->Initialization("renderer_vertex_bytecode_fnv1a64", 0, S_OK, true,
+				IDR_DRAW3_INK_VERTEX_SHADER, vertexShaderBlob.size, identity(vertexShaderBlob));
+			performance_->Initialization(guarded ? "renderer_guarded_pixel_bytecode_fnv1a64" : "renderer_pixel_bytecode_fnv1a64",
+				0, S_OK, true, guarded ? 0 : IDR_DRAW3_INK_PIXEL_SHADER, pixelShaderBlob.size, identity(pixelShaderBlob));
+		}
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createvertexshader_26"), [&] { return TraceArguments(); }, [&] { return device->CreateVertexShader(vertexShaderBlob.data, vertexShaderBlob.size, nullptr, vertexShader.ReleaseAndGetAddressOf()); }))) return false;
+		const HRESULT pixelResult = PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_renderer_createpixelshader_27"), [&] { return TraceArguments(); }, [&] { return device->CreatePixelShader(pixelShaderBlob.data, pixelShaderBlob.size, nullptr, pixelShader.ReleaseAndGetAddressOf()); });
 		if (diagnostics) ReportSelectedPixelShader(pixelShaderBlob, guarded, pixelResult);
 		if (FAILED(pixelResult)) return false; // 不静默切回原版，否则会把候选创建失败误记为实测通过。
 		const ShaderBlob updateShaderBlob =

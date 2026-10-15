@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "native layer scope"}
+{"file": ".trellis/spec/native-desktop/draw3-performance-diagnostics.md", "reason": "v1 lifecycle and strict opt-in contracts"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ modules and minimal edits"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "solution/ARM64 and platform evidence"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "resources/diagnostic IO"}
+{"file": ".trellis/tasks/archive/2026-10/10-15-draw3-performance-diagnostics-v2/research/recorder-v2.md", "reason": "recorder and GPU v2 contract"}
+{"file": ".trellis/tasks/archive/2026-10/10-15-draw3-performance-diagnostics-v2/research/package-v2.md", "reason": "PS2/schema/worker isolation and analysis"}
+{"file": ".trellis/tasks/archive/2026-10/10-15-draw3-performance-diagnostics-v2/research/graphics-v2.md", "reason": "Graphics calls and no-window probe matrix"}

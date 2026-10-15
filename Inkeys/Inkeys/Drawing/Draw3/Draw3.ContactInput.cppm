@@ -5,6 +5,7 @@
 #endif
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.Performance.h"
 
 #include <atomic>
 #include <cstddef>
@@ -208,16 +209,17 @@ export namespace Inkeys::Drawing::Draw3
 
 		// 可靠发布不可变 Down，并把 handle 放入阻塞队列。
 		bool PublishDown(uint32_t tabletContextId, uint32_t contactId,
-			InputDeviceType deviceType, const ContactSnapshot& snapshot);
+			InputDeviceType deviceType, const ContactSnapshot& snapshot,
+			PerformanceInputTrace* performanceTrace = nullptr);
 		// 覆盖最新 Move；写门闩争用时允许丢弃。
 		bool PublishMove(uint32_t tabletContextId, uint32_t contactId,
-			const ContactSnapshot& snapshot) noexcept;
+			const ContactSnapshot& snapshot, PerformanceInputTrace* performanceTrace = nullptr) noexcept;
 		// 关闭生产路由并可靠发布不可逆 Up。
 		bool PublishUp(uint32_t tabletContextId, uint32_t contactId,
-			const ContactSnapshot& snapshot) noexcept;
+			const ContactSnapshot& snapshot, PerformanceInputTrace* performanceTrace = nullptr) noexcept;
 		// 关闭生产路由并可靠发布不可逆 Cancelled。
 		bool PublishCancelled(uint32_t tabletContextId, uint32_t contactId,
-			const ContactSnapshot& snapshot) noexcept;
+			const ContactSnapshot& snapshot, PerformanceInputTrace* performanceTrace = nullptr) noexcept;
 
 		// 读取 generation 匹配的跨字段一致快照。
 		bool TryReadSnapshot(ContactHandle handle, ContactSnapshot& snapshot) const noexcept;

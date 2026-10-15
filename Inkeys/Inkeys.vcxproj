@@ -490,6 +490,8 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Performance.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ResourceProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
@@ -501,6 +503,7 @@
     <ClInclude Include="Inkeys\Net\UpdatePathSafety.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
+    <ClInclude Include="Launch\IdtPerformanceLaunch.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="IdtTime.h" />
@@ -1001,6 +1004,7 @@
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
+    <ClCompile Include="Launch\IdtPerformanceLaunch.cpp" />
     <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cppm">
@@ -1110,6 +1114,8 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.FailedCleanupFixture.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Performance.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ResourceProbe.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />

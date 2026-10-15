@@ -15,6 +15,7 @@
 #include "Draw3.Bridge.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
+#include "Draw3.Performance.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
@@ -95,7 +96,8 @@ export namespace Inkeys::Drawing::Draw3
 		DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 			DrawingControllerRuntimeObserver observer = {},
-			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr);
+			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr,
+			PerformanceSession* performance = nullptr);
 		~DrawingController();
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;

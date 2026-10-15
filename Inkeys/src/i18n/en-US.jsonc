@@ -497,6 +497,11 @@
         {
           "N": "Cursor diagnostics",
           "E": "Output cursor input ownership and rendered visuals to the console on the next launch."
+        },
+        "Performance":
+        {
+          "N": "Draw3 performance data",
+          "E": "Restart to capture Draw3 frame times and input latency. Results are saved to log/Draw3Performance on exit. The diagnostic package enables capture automatically."
         }
       }
     },

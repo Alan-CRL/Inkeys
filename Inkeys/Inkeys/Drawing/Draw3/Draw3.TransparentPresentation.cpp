@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -244,6 +246,7 @@ namespace Inkeys::Drawing::Draw3
 
 		struct UlwDirtyRectPresenter
 		{
+			PerformanceSession* performanceSession = nullptr;
 			const char* diagnosticRole = "Drawpad";
 			bool applyPrimaryHitUnderlay = false;
 			HWND window = nullptr;
@@ -369,6 +372,7 @@ namespace Inkeys::Drawing::Draw3
 			void Reset()
 			{
 				ReleaseDib();
+				if (performanceSession) performanceSession->RetireResource(stagingTexture.Get());
 				stagingTexture.Reset();
 				device.Reset();
 				context.Reset();
@@ -387,6 +391,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (!device || width == 0 || height == 0) return false;
 				if (stagingTexture && stagingWidth == width && stagingHeight == height) return true;
+				if (performanceSession) performanceSession->RetireResource(stagingTexture.Get());
 				stagingTexture.Reset();
 				D3D11_TEXTURE2D_DESC description = {};
 				description.Width = width;
@@ -397,8 +402,16 @@ namespace Inkeys::Drawing::Draw3
 				description.SampleDesc.Count = 1;
 				description.Usage = D3D11_USAGE_STAGING; // ULW 需要 CPU 读回像素。
 				description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-				const HRESULT createResult = device->CreateTexture2D(&description, nullptr,
-					stagingTexture.ReleaseAndGetAddressOf());
+				const HRESULT createResult = PerformanceGraphicsCall(performanceSession,
+					PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::StagingReadback,
+					PerformanceGraphicsSite("ulw_create_staging"), [&] {
+						PerformanceGraphicsArguments arguments{};
+						arguments.pass = PerformanceGraphicsPass::Initialization;
+						return arguments;
+					}, [&] { return device->CreateTexture2D(&description, nullptr,
+						stagingTexture.ReleaseAndGetAddressOf()); });
+				if (performanceSession) performanceSession->RegisterResource(stagingTexture.Get(),
+					PerformanceGraphicsRole::StagingReadback, PerformanceGraphicsSite("ulw_create_staging"), createResult);
 				if (FAILED(createResult))
 				{
 					std::cout << "[Draw3Diag][ulw-init] role=" << diagnosticRole
@@ -473,7 +486,7 @@ namespace Inkeys::Drawing::Draw3
 				return CreateStagingTexture(width, height) && EnsureWindowDib();
 			}
 
-			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull)
+			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull, PerformanceSession* performance)
 			{
 				lastObservation = {};
 				lastObservation.ulw = true;
@@ -481,6 +494,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto fail = [&](const char* stage, DWORD error = ERROR_SUCCESS,
 					HRESULT hresult = S_OK)
 				{
+					if (performance) performance->PresentApiResult(hresult == S_OK ? E_FAIL : hresult, false);
 					if (!presentFailureLogged)
 					{
 						std::cout << "[Draw3Diag][ulw] stage=" << stage
@@ -531,10 +545,28 @@ namespace Inkeys::Drawing::Draw3
 				};
 				const bool diagnosticsEnabled = StartupEnvironmentDiagnosticsEnabled();
 				const ULONGLONG copyStartedTick = diagnosticsEnabled ? GetTickCount64() : 0;
-				context->CopySubresourceRegion(stagingTexture.Get(), 0, static_cast<UINT>(dirty.left),
-					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从 GPU backbuffer 拷到可读纹理。
+				PerformanceScope copyScope(performance, PerformanceStage::UlwCopySubmit);
+				if (performance) performance->GpuMarker(4);
+				PerformanceGraphicsVoid(performance, PerformanceGraphicsOperation::Copy,
+					PerformanceGraphicsRole::StagingReadback, PerformanceGraphicsSite("ulw_copy_dirty_to_staging"), [&] {
+						PerformanceGraphicsArguments arguments{};
+						arguments.resource = stagingTexture.Get(); arguments.relatedResource = finalTexture;
+						arguments.bytes = static_cast<std::uint64_t>(dirty.right - dirty.left) * (dirty.bottom - dirty.top) * 4;
+						arguments.argument0 = dirty.right - dirty.left; arguments.argument1 = dirty.bottom - dirty.top;
+						arguments.pass = PerformanceGraphicsPass::Present; return arguments;
+					}, [&] { context->CopySubresourceRegion(stagingTexture.Get(), 0, static_cast<UINT>(dirty.left),
+						static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); }); // 只把脏区从 GPU backbuffer 拷到可读纹理。
+				copyScope.Finish();
+				if (performance) performance->GpuMarker(5);
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
-				const HRESULT mapResult = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+				PerformanceScope mapScope(performance, PerformanceStage::UlwMap);
+				const HRESULT mapResult = PerformanceGraphicsCall(performance, PerformanceGraphicsOperation::Map,
+					PerformanceGraphicsRole::StagingReadback, PerformanceGraphicsSite("ulw_map_read"), [&] {
+						PerformanceGraphicsArguments arguments{}; arguments.resource = stagingTexture.Get();
+						arguments.mapType = D3D11_MAP_READ; arguments.pass = PerformanceGraphicsPass::Present;
+						return arguments;
+					}, [&] { return context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped); });
+				mapScope.Finish();
 				if (FAILED(mapResult)) return fail("map", ERROR_SUCCESS, mapResult);
 				const ULONGLONG diagnosticTick = diagnosticsEnabled ? GetTickCount64() : 0;
 				const bool inspectPixels = diagnosticsEnabled &&
@@ -543,15 +575,33 @@ namespace Inkeys::Drawing::Draw3
 				if (inspectPixels) pixels.emplace();
 				const auto copyRows = [&]<bool InspectPixels>()
 				{
+					if (!performance)
+						return CopyAndInspectUlwDirtyRows<InspectPixels>(
+							static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
+							static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
+							applyPrimaryHitUnderlay, [&] { context->Unmap(stagingTexture.Get(), 0); },
+							InspectPixels ? &*pixels : nullptr);
+					PerformanceGraphicsArguments arguments{}; arguments.resource = stagingTexture.Get();
+					arguments.bytes = static_cast<std::uint64_t>(dirty.right - dirty.left) * (dirty.bottom - dirty.top) * 4;
+					arguments.argument0 = mapped.RowPitch; arguments.pass = PerformanceGraphicsPass::Present;
+					const auto rowsToken = performance->BeginGraphicsCall(PerformanceGraphicsOperation::WriteCopy,
+						PerformanceGraphicsRole::StagingReadback, PerformanceGraphicsSite("ulw_rows_copy_and_alpha_scan"), arguments);
 					return CopyAndInspectUlwDirtyRows<InspectPixels>(
 						static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
 						static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
-						applyPrimaryHitUnderlay, [&] { context->Unmap(stagingTexture.Get(), 0); },
-						InspectPixels ? &*pixels : nullptr);
+						applyPrimaryHitUnderlay, [&] {
+							// 在原 helper 的 Unmap 接缝封口 rows，避免两个叶计量相互嵌套。
+							performance->EndGraphicsCall(rowsToken);
+							PerformanceGraphicsVoid(performance, PerformanceGraphicsOperation::Unmap,
+								PerformanceGraphicsRole::StagingReadback, PerformanceGraphicsSite("ulw_unmap_read"),
+								[&] { return arguments; }, [&] { context->Unmap(stagingTexture.Get(), 0); });
+						}, InspectPixels ? &*pixels : nullptr);
 				};
 				// 非采样帧使用原扫描的模板实例，不执行任何诊断像素统计。
+				PerformanceScope rowsScope(performance, PerformanceStage::UlwRows);
 				const UlwDirtyCopyResult copyResult = inspectPixels ?
 					copyRows.operator()<true>() : copyRows.operator()<false>();
+				rowsScope.Finish();
 				const ULONGLONG rowsFinishedTick = inspectPixels ? GetTickCount64() : 0;
 				if (inspectPixels)
 				{
@@ -588,8 +638,20 @@ namespace Inkeys::Drawing::Draw3
 				update.dwFlags = ULW_ALPHA;
 				update.prcDirty = presentFull || forceFullUlwUpdate ? nullptr : &dirty;
 				const ULONGLONG ulwStartedTick = inspectPixels ? GetTickCount64() : 0;
-				const BOOL updated = UpdateLayeredWindowIndirect(window, &update);
-				const DWORD error = updated ? ERROR_SUCCESS : GetLastError(); // 日志前锁存本次 API 错误。
+				PerformanceScope updateScope(performance, PerformanceStage::UlwUpdate);
+				BOOL updated = FALSE;
+				DWORD error = ERROR_SUCCESS;
+				PerformanceGraphicsCall(performance, PerformanceGraphicsOperation::Present,
+					PerformanceGraphicsRole::BackBuffer, PerformanceGraphicsSite("ulw_update_layered_window_indirect"), [&] {
+						PerformanceGraphicsArguments arguments{}; arguments.resource = finalTexture;
+						arguments.pass = PerformanceGraphicsPass::Present; return arguments;
+					}, [&] {
+						updated = UpdateLayeredWindowIndirect(window, &update);
+						error = updated ? ERROR_SUCCESS : GetLastError(); // 必须早于诊断 clock 锁存 BOOL API 的错误。
+						return updated ? S_OK : error ? HRESULT_FROM_WIN32(error) : E_FAIL;
+					});
+				updateScope.Finish();
+				if (performance) performance->PresentApiResult(updated ? S_OK : error ? HRESULT_FROM_WIN32(error) : E_FAIL);
 				if (inspectPixels) LogPixelDiagnostic(*pixels, diagnosticTick, dirty, presentFull, updated, error,
 					diagnosticTick - copyStartedTick, rowsFinishedTick - diagnosticTick, GetTickCount64() - ulwStartedTick);
 				if (!updated)
@@ -753,6 +815,7 @@ namespace Inkeys::Drawing::Draw3
 		HWND primaryWindow = nullptr;
 		HWND selectionWindow = nullptr;
 		GraphicsDeviceResources* graphics = nullptr;
+		PerformanceSession* performance = nullptr;
 		InkRenderer* renderer = nullptr;
 		TransparentPresentationCallbacks callbacks = {};
 		Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
@@ -824,6 +887,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				result = graphics->factory->CreateSwapChainForComposition(graphics->device.Get(), &description, nullptr,
 					swapChain.ReleaseAndGetAddressOf()); // DComp 使用无 HWND 的 composition swapchain。
+				if (performance) performance->Initialization("swapchain_composition", 0, result, SUCCEEDED(result), description.Width, description.Height, description.SwapEffect, description.Flags);
 				return SUCCEEDED(result) && swapChain ? S_OK : (FAILED(result) ? result : E_FAIL);
 			}
 
@@ -836,6 +900,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			result = graphics->factory->CreateSwapChainForHwnd(graphics->device.Get(), primaryWindow, &description, nullptr, nullptr,
 				swapChain.ReleaseAndGetAddressOf()); // DWM/ULW 路径绑定到实际 HWND。
+			if (performance) performance->Initialization("swapchain_hwnd", 0, result, SUCCEEDED(result), description.Width, description.Height, description.SwapEffect, description.Flags);
 			if (FAILED(result) && IsDwmGlassMode(mode))
 			{
 				BOOL opaqueBlend = TRUE;
@@ -956,6 +1021,19 @@ namespace Inkeys::Drawing::Draw3
 			Shutdown::FailedCleanupSignal releaseSignal = {},
 			Shutdown::FailedCleanupSignal terminalOuterSignal = {})
 		{
+			const auto start = performance ? performance->Clock() : 0;
+			const bool succeeded = TryInitializeCore(mode, releaseSignal, terminalOuterSignal);
+			if (performance)
+			{
+				performance->Initialization("presenter_attempt", start, succeeded ? S_OK : E_FAIL, succeeded, static_cast<uint32_t>(mode), width, height);
+				if (succeeded) performance->CapturePresenter(static_cast<uint32_t>(activeMode), width, height);
+			}
+			return succeeded;
+		}
+		bool TryInitializeCore(TransparentPresentMode mode,
+			Shutdown::FailedCleanupSignal releaseSignal,
+			Shutdown::FailedCleanupSignal terminalOuterSignal)
+		{
 			const auto beginFailure = [&]() noexcept
 			{
 				const ULONGLONG deadline = releaseSignal.BeginKnownFailure();
@@ -1035,9 +1113,23 @@ namespace Inkeys::Drawing::Draw3
 				parameters.DirtyRectsCount = 1;
 				parameters.pDirtyRects = &dirty;
 			}
-			return swapChain->Present1(0, 0, &parameters);
+			const HRESULT result = PerformanceGraphicsCall(performance, PerformanceGraphicsOperation::Present,
+				PerformanceGraphicsRole::BackBuffer, PerformanceGraphicsSite("dcomp_swapchain_present1"), [&] {
+					PerformanceGraphicsArguments arguments{};
+					arguments.resource = renderer ? renderer->backBufferTexture.Get() : nullptr;
+					arguments.pass = PerformanceGraphicsPass::Present; return arguments;
+				}, [&] { return swapChain->Present1(0, 0, &parameters); });
+			if (performance) performance->PresentApiResult(result);
+			return result;
 		}
 	};
+
+	void TransparentPresentationController::SetPerformanceSession(PerformanceSession* session) noexcept
+	{
+		impl_->performance = session;
+		impl_->primaryUlwPresenter.performanceSession = session;
+		impl_->selectionUlwPresenter.performanceSession = session;
+	}
 
 	TransparentPresentationController::TransparentPresentationController()
 		: impl_(std::make_unique<Impl>())
@@ -1192,7 +1284,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 所有旧设备引用已由调用方 GPU cache 和 presenter 释放，随后在同一绘制线程重建。
 			*impl_->graphics = {};
-			if (!InitializeGraphicsDevice(*impl_->graphics))
+			if (!InitializeGraphicsDevice(*impl_->graphics, impl_->performance))
 			{
 				impl_->lastFailure = failure;
 				return false;
@@ -1259,17 +1351,20 @@ namespace Inkeys::Drawing::Draw3
 	{
 		bool succeeded = false;
 		const TransparentOutputTarget target = impl_->requestedOutputTarget;
+		if (impl_->performance) impl_->performance->PresentResult(true, false, S_FALSE, 0, dirty, presentFull,
+			static_cast<uint32_t>(impl_->activeMode), static_cast<uint32_t>(target), impl_->requestedOutputRevision, contentRevision);
+		PerformanceScope presentScope(impl_->performance, PerformanceStage::Present);
 		if (target == TransparentOutputTarget::SelectionUlw)
 		{
 			succeeded = impl_->selectionUlwPresenter.Present(
-				impl_->renderer->backBufferTexture.Get(), dirty, presentFull);
+				impl_->renderer->backBufferTexture.Get(), dirty, presentFull, impl_->performance);
 			impl_->lastObservation = impl_->selectionUlwPresenter.lastObservation;
 			if (!succeeded) impl_->SetFailure(E_FAIL);
 		}
 		else if (IsUlwMode(impl_->activeMode))
 		{
 			succeeded = impl_->primaryUlwPresenter.Present(
-				impl_->renderer->backBufferTexture.Get(), dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
+				impl_->renderer->backBufferTexture.Get(), dirty, presentFull, impl_->performance); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
 			impl_->lastObservation = impl_->primaryUlwPresenter.lastObservation;
 			if (!succeeded) impl_->SetFailure(E_FAIL);
 		}

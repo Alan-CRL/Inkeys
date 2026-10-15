@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -31,6 +33,18 @@ namespace Inkeys::Drawing::Draw3
 	namespace
 	{
 		using Microsoft::WRL::ComPtr;
+
+		template<class Resource, class Call>
+		HRESULT TraceHistoryResource(InkRenderer& renderer, ComPtr<Resource>& resource,
+			PerformanceGraphicsRole role, PerformanceGraphicsSite site, Call&& call)
+		{
+			auto* performance = renderer.PerformanceSessionForOwner();
+			const HRESULT result = PerformanceGraphicsCall(performance, PerformanceGraphicsOperation::Other,
+				role, site, [&] { return renderer.PerformanceArgumentsForOwner(); }, std::forward<Call>(call));
+			if (performance) performance->RegisterResource(resource.Get(), role, site, result);
+			return result;
+		}
+
 
 		constexpr float kCompositionShapeType = 14.0f;
 		constexpr float kApplyCachedShapeType = 15.0f;
@@ -280,6 +294,16 @@ namespace Inkeys::Drawing::Draw3
 
 		void Reset() noexcept
 		{
+			if (renderer && renderer->PerformanceSessionForOwner())
+			{
+				auto* performance = renderer->PerformanceSessionForOwner();
+				performance->RetireResource(cacheConstantBuffer.Get());
+				for (const auto& page : undoPages) performance->RetireResource(page.texture.Get());
+				for (const auto& page : compositionPages)
+				{ performance->RetireResource(page.addTexture.Get()); performance->RetireResource(page.retainTexture.Get()); }
+				for (const auto& page : scratchPages)
+				{ performance->RetireResource(page.addTexture.Get()); performance->RetireResource(page.retainTexture.Get()); }
+			}
 			renderer = nullptr;
 			context1.Reset();
 			undoPages.clear();
@@ -313,8 +337,9 @@ namespace Inkeys::Drawing::Draw3
 			description.SampleDesc.Count = 1;
 			description.Usage = D3D11_USAGE_DEFAULT;
 			UndoPage page;
-			if (FAILED(renderer->device->CreateTexture2D(
-				&description, nullptr, page.texture.ReleaseAndGetAddressOf()))) return false;
+			if (FAILED(TraceHistoryResource(*renderer, page.texture, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_create_1"), [&] { return renderer->device->CreateTexture2D(
+				&description, nullptr, page.texture.ReleaseAndGetAddressOf()); }))) return false;
 			page.sliceCount = sliceCount;
 			const uint32_t pageIndex = static_cast<uint32_t>(undoPages.size());
 			undoPages.push_back(std::move(page));
@@ -398,8 +423,9 @@ namespace Inkeys::Drawing::Draw3
 				description.SampleDesc.Count = 1;
 				description.Usage = D3D11_USAGE_DEFAULT;
 				UndoPage page;
-				if (FAILED(renderer->device->CreateTexture2D(
-					&description, nullptr, page.texture.ReleaseAndGetAddressOf()))) return false;
+				if (FAILED(TraceHistoryResource(*renderer, page.texture, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_create_2"), [&] { return renderer->device->CreateTexture2D(
+					&description, nullptr, page.texture.ReleaseAndGetAddressOf()); }))) return false;
 				page.sliceCount = slices;
 				const uint32_t pageIndex = static_cast<uint32_t>(replacementPages.size());
 				replacementPages.push_back(std::move(page));
@@ -409,7 +435,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			UnbindAllShaderResources();
-			renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_1"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetRenderTargets(0, nullptr, nullptr); });
 			for (HotEntry& entry : hotEntries)
 			{
 				for (HotTile& tile : entry.tiles)
@@ -419,10 +446,11 @@ namespace Inkeys::Drawing::Draw3
 					const UINT sourceSubresource = D3D11CalcSubresource(0, tile.slot.slice, 1);
 					const UINT destinationSubresource = D3D11CalcSubresource(
 						0, replacement.slice, 1);
-					renderer->context->CopySubresourceRegion(
+					PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_copysubresourceregion_2"), [&] { return renderer->PerformanceArgumentsForOwner(replacementPages[replacement.page].texture.Get(), 0, 0, undoPages[tile.slot.page].texture.Get()); }, [&] { renderer->context->CopySubresourceRegion(
 						replacementPages[replacement.page].texture.Get(), destinationSubresource,
 						0, 0, 0, undoPages[tile.slot.page].texture.Get(),
-						sourceSubresource, nullptr);
+						sourceSubresource, nullptr); });
 					tile.slot = replacement;
 				}
 			}
@@ -435,8 +463,10 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (!renderer || !renderer->context) return;
 			ID3D11ShaderResourceView* nullResources[14] = {};
-			renderer->context->VSSetShaderResources(0, 14, nullResources);
-			renderer->context->PSSetShaderResources(0, 14, nullResources);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_vssetshaderresources_3"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->VSSetShaderResources(0, 14, nullResources); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_pssetshaderresources_4"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->PSSetShaderResources(0, 14, nullResources); });
 		}
 
 		bool CreateOperatorPage(uint32_t sliceCount, OperatorPage& page)
@@ -458,8 +488,9 @@ namespace Inkeys::Drawing::Draw3
 				std::vector<ComPtr<ID3D11RenderTargetView>>& rtvs)
 			{
 				description.Format = format;
-				if (FAILED(renderer->device->CreateTexture2D(&description, nullptr,
-					texture.ReleaseAndGetAddressOf()))) return false;
+				if (FAILED(TraceHistoryResource(*renderer, texture, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_create_3"), [&] { return renderer->device->CreateTexture2D(&description, nullptr,
+					texture.ReleaseAndGetAddressOf()); }))) return false;
 				srvs.resize(sliceCount);
 				rtvs.resize(sliceCount);
 				for (uint32_t slice = 0; slice < sliceCount; ++slice)
@@ -539,74 +570,99 @@ namespace Inkeys::Drawing::Draw3
 			UnbindAllShaderResources();
 			ID3D11RenderTargetView* targets[] = {
 				page.addRTVs[slice].Get(), page.retainRTVs[slice].Get() };
-			renderer->context->OMSetRenderTargets(2, targets, nullptr);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_5"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetRenderTargets(2, targets, nullptr); });
 			const float addClear[4] = {};
 			const float retainClear[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-			renderer->context->ClearRenderTargetView(targets[0], addClear);
-			renderer->context->ClearRenderTargetView(targets[1], retainClear);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Clear, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_clearrendertargetview_6"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->ClearRenderTargetView(targets[0], addClear); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Clear, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_clearrendertargetview_7"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->ClearRenderTargetView(targets[1], retainClear); });
 		}
 
 		void CopyOperator(OperatorPage& source, uint32_t sourceSlice,
 			OperatorPage& destination, uint32_t destinationSlice)
 		{
 			UnbindAllShaderResources();
-			renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_8"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetRenderTargets(0, nullptr, nullptr); });
 			const UINT sourceSubresource = D3D11CalcSubresource(0, sourceSlice, 1);
 			const UINT destinationSubresource = D3D11CalcSubresource(
 				0, destinationSlice, 1);
-			renderer->context->CopySubresourceRegion(destination.addTexture.Get(),
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_copysubresourceregion_9"), [&] { return renderer->PerformanceArgumentsForOwner(destination.addTexture.Get(), 0, 0, source.addTexture.Get()); }, [&] { renderer->context->CopySubresourceRegion(destination.addTexture.Get(),
 				destinationSubresource, 0, 0, 0, source.addTexture.Get(),
-				sourceSubresource, nullptr);
-			renderer->context->CopySubresourceRegion(destination.retainTexture.Get(),
+				sourceSubresource, nullptr); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_copysubresourceregion_10"), [&] { return renderer->PerformanceArgumentsForOwner(destination.retainTexture.Get(), 0, 0, source.retainTexture.Get()); }, [&] { renderer->context->CopySubresourceRegion(destination.retainTexture.Get(),
 				destinationSubresource, 0, 0, 0, source.retainTexture.Get(),
-				sourceSubresource, nullptr);
+				sourceSubresource, nullptr); });
 		}
 
 		bool UpdatePassConstants(float shapeType, float width, float height,
 			const HistoryCacheConstants& historyConstants)
 		{
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(renderer->context->Map(renderer->globalCB.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+			if (FAILED(PerformanceGraphicsCall(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Map, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_map_11"), [&] { return [&] { auto arguments = renderer->PerformanceArgumentsForOwner(renderer->globalCB.Get()); arguments.subresource = 0; arguments.mapType = D3D11_MAP_WRITE_DISCARD; arguments.flags = 0; return arguments; }(); }, [&] { return renderer->context->Map(renderer->globalCB.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped); }))) return false;
 			CacheGlobalConstants constants = {};
 			constants.width = width;
 			constants.height = height;
 			constants.shapeType = shapeType;
-			std::memcpy(mapped.pData, &constants, sizeof(constants));
-			renderer->context->Unmap(renderer->globalCB.Get(), 0);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_constant_memcpy_1"), [&] { return renderer->PerformanceArgumentsForOwner(renderer->globalCB.Get(), sizeof(constants)); }, [&] { std::memcpy(mapped.pData, &constants, sizeof(constants)); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_unmap_12"), [&] { return renderer->PerformanceArgumentsForOwner(renderer->globalCB.Get()); }, [&] { renderer->context->Unmap(renderer->globalCB.Get(), 0); });
 
-			if (FAILED(renderer->context->Map(cacheConstantBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
-			std::memcpy(mapped.pData, &historyConstants, sizeof(historyConstants));
-			renderer->context->Unmap(cacheConstantBuffer.Get(), 0);
+			if (FAILED(PerformanceGraphicsCall(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Map, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_map_13"), [&] { return [&] { auto arguments = renderer->PerformanceArgumentsForOwner(cacheConstantBuffer.Get()); arguments.subresource = 0; arguments.mapType = D3D11_MAP_WRITE_DISCARD; arguments.flags = 0; return arguments; }(); }, [&] { return renderer->context->Map(cacheConstantBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped); }))) return false;
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_constant_memcpy_2"), [&] { return renderer->PerformanceArgumentsForOwner(cacheConstantBuffer.Get(), sizeof(historyConstants)); }, [&] { std::memcpy(mapped.pData, &historyConstants, sizeof(historyConstants)); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_unmap_14"), [&] { return renderer->PerformanceArgumentsForOwner(cacheConstantBuffer.Get()); }, [&] { renderer->context->Unmap(cacheConstantBuffer.Get(), 0); });
 			return true;
 		}
 
 		void BindCommonCachePass()
 		{
-			renderer->context->IASetInputLayout(nullptr);
-			renderer->context->IASetPrimitiveTopology(
-				D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			renderer->context->VSSetShader(renderer->vertexShader.Get(), nullptr, 0);
-			renderer->context->PSSetShader(renderer->pixelShader.Get(), nullptr, 0);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_iasetinputlayout_15"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->IASetInputLayout(nullptr); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_iasetprimitivetopology_16"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->IASetPrimitiveTopology(
+				D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_vssetshader_17"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->VSSetShader(renderer->vertexShader.Get(), nullptr, 0); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_pssetshader_18"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->PSSetShader(renderer->pixelShader.Get(), nullptr, 0); });
 			ID3D11Buffer* globalBuffers[] = { renderer->globalCB.Get() };
 			ID3D11Buffer* cacheBuffers[] = { cacheConstantBuffer.Get() };
-			renderer->context->VSSetConstantBuffers(0, 1, globalBuffers);
-			renderer->context->PSSetConstantBuffers(0, 1, globalBuffers);
-			renderer->context->VSSetConstantBuffers(2, 1, cacheBuffers);
-			renderer->context->PSSetConstantBuffers(2, 1, cacheBuffers);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_vssetconstantbuffers_19"), [&] { return renderer->PerformanceArgumentsForOwner((globalBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { renderer->context->VSSetConstantBuffers(0, 1, globalBuffers); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_pssetconstantbuffers_20"), [&] { return renderer->PerformanceArgumentsForOwner((globalBuffers)[0], 0, 0, nullptr, 0, 1); }, [&] { renderer->context->PSSetConstantBuffers(0, 1, globalBuffers); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_vssetconstantbuffers_21"), [&] { return renderer->PerformanceArgumentsForOwner((cacheBuffers)[0], 0, 0, nullptr, 2, 1); }, [&] { renderer->context->VSSetConstantBuffers(2, 1, cacheBuffers); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_pssetconstantbuffers_22"), [&] { return renderer->PerformanceArgumentsForOwner((cacheBuffers)[0], 0, 0, nullptr, 2, 1); }, [&] { renderer->context->PSSetConstantBuffers(2, 1, cacheBuffers); });
 			ID3D11SamplerState* samplers[] = { renderer->operatorSampler.Get() };
-			renderer->context->PSSetSamplers(0, 1, samplers);
-			renderer->context->RSSetState(renderer->rasterState.Get());
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_pssetsamplers_23"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->PSSetSamplers(0, 1, samplers); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_rssetstate_24"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->RSSetState(renderer->rasterState.Get()); });
 		}
 
 		void FinishCachePass()
 		{
 			ID3D11ShaderResourceView* nullResources[4] = {};
-			renderer->context->PSSetShaderResources(10, 4, nullResources);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_pssetshaderresources_25"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->PSSetShaderResources(10, 4, nullResources); });
 			ID3D11Buffer* nullBuffer[] = { nullptr };
-			renderer->context->VSSetConstantBuffers(2, 1, nullBuffer);
-			renderer->context->PSSetConstantBuffers(2, 1, nullBuffer);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_vssetconstantbuffers_26"), [&] { return renderer->PerformanceArgumentsForOwner((nullBuffer)[0], 0, 0, nullptr, 2, 1); }, [&] { renderer->context->VSSetConstantBuffers(2, 1, nullBuffer); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_pssetconstantbuffers_27"), [&] { return renderer->PerformanceArgumentsForOwner((nullBuffer)[0], 0, 0, nullptr, 2, 1); }, [&] { renderer->context->PSSetConstantBuffers(2, 1, nullBuffer); });
 		}
 
 		void FinishHistoryOperation(int width, int height) noexcept
@@ -614,8 +670,10 @@ namespace Inkeys::Drawing::Draw3
 			if (!renderer || !renderer->context) return;
 			UnbindAllShaderResources();
 			FinishCachePass();
-			renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
-			renderer->context->RSSetState(renderer->rasterState.Get());
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_28"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetRenderTargets(0, nullptr, nullptr); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_rssetstate_29"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->RSSetState(renderer->rasterState.Get()); });
 			if (width > 0 && height > 0)
 				renderer->SetScreenSize(
 					static_cast<float>(width), static_cast<float>(height));
@@ -639,18 +697,23 @@ namespace Inkeys::Drawing::Draw3
 			UnbindAllShaderResources();
 			ID3D11RenderTargetView* targets[] = {
 				output.addRTVs[outputSlice].Get(), output.retainRTVs[outputSlice].Get() };
-			renderer->context->OMSetRenderTargets(2, targets, nullptr);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_30"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetRenderTargets(2, targets, nullptr); });
 			ID3D11ShaderResourceView* sources[] = {
 				earlier.addSRVs[earlierSlice].Get(), earlier.retainSRVs[earlierSlice].Get(),
 				later.addSRVs[laterSlice].Get(), later.retainSRVs[laterSlice].Get() };
-			renderer->context->PSSetShaderResources(10, 4, sources);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_pssetshaderresources_31"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->PSSetShaderResources(10, 4, sources); });
 			D3D11_VIEWPORT viewport = { 0.0f, 0.0f,
 				static_cast<float>(kCompositionTileSize),
 				static_cast<float>(kCompositionTileSize), 0.0f, 1.0f };
-			renderer->context->RSSetViewports(1, &viewport);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_rssetviewports_32"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->RSSetViewports(1, &viewport); });
 			BindCommonCachePass();
-			renderer->context->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
-			renderer->context->Draw(6, 0);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetblendstate_33"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_draw_34"), [&] { return renderer->PerformanceArgumentsForOwner(nullptr, 0, 0, nullptr, 6, 1); }, [&] { renderer->context->Draw(6, 0); }); if (renderer->PerformanceSessionForOwner()) renderer->PerformanceSessionForOwner()->Draw();
 			FinishCachePass();
 			return true;
 		}
@@ -686,14 +749,18 @@ namespace Inkeys::Drawing::Draw3
 			ID3D11ShaderResourceView* sources[] = {
 				source.addSRVs[sourceSlice].Get(),
 				source.retainSRVs[sourceSlice].Get(), nullptr, nullptr };
-			renderer->context->PSSetShaderResources(10, 4, sources);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_pssetshaderresources_35"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->PSSetShaderResources(10, 4, sources); });
 			D3D11_VIEWPORT viewport = { 0.0f, 0.0f,
 				static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f };
-			renderer->context->RSSetViewports(1, &viewport);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_rssetviewports_36"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->RSSetViewports(1, &viewport); });
 			BindCommonCachePass();
-			renderer->context->OMSetBlendState(
-				renderer->operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
-			renderer->context->Draw(6, 0);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetblendstate_37"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetBlendState(
+				renderer->operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF); });
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Draw, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_draw_38"), [&] { return renderer->PerformanceArgumentsForOwner(nullptr, 0, 0, nullptr, 6, 1); }, [&] { renderer->context->Draw(6, 0); }); if (renderer->PerformanceSessionForOwner()) renderer->PerformanceSessionForOwner()->Draw();
 			FinishCachePass();
 			return true;
 		}
@@ -711,22 +778,25 @@ namespace Inkeys::Drawing::Draw3
 				const D3D11_RECT clearRect = {
 					clipped.left, clipped.top, clipped.right, clipped.bottom };
 				UnbindAllShaderResources();
-				context1->ClearView(renderer->layerL2RTV.Get(), transparent, &clearRect, 1);
+				PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Clear, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_clearview_39"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { context1->ClearView(renderer->layerL2RTV.Get(), transparent, &clearRect, 1); });
 				return true;
 			}
 			if (!EnsureScratch()) return false;
 			ClearOperator(scratchPages[0], 0);
 			UnbindAllShaderResources();
-			renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_40"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetRenderTargets(0, nullptr, nullptr); });
 			D3D11_BOX sourceBox = {};
 			sourceBox.left = 0;
 			sourceBox.top = 0;
 			sourceBox.right = static_cast<UINT>(clipped.right - clipped.left);
 			sourceBox.bottom = static_cast<UINT>(clipped.bottom - clipped.top);
 			sourceBox.back = 1;
-			renderer->context->CopySubresourceRegion(renderer->layerL2Texture.Get(), 0,
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_copysubresourceregion_41"), [&] { return renderer->PerformanceArgumentsForOwner(renderer->layerL2Texture.Get(), 0, 0, scratchPages[0].addTexture.Get()); }, [&] { renderer->context->CopySubresourceRegion(renderer->layerL2Texture.Get(), 0,
 				static_cast<UINT>(clipped.left), static_cast<UINT>(clipped.top), 0,
-				scratchPages[0].addTexture.Get(), 0, &sourceBox);
+				scratchPages[0].addTexture.Get(), 0, &sourceBox); });
 			return true;
 		}
 
@@ -886,7 +956,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			UnbindAllShaderResources();
-			renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
+			PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_42"), [&] { return renderer->PerformanceArgumentsForOwner(); }, [&] { renderer->context->OMSetRenderTargets(0, nullptr, nullptr); });
 			for (ResidentNode& resident : residentNodes)
 			{
 				const OperatorSlot replacement = replacementFreeSlots.back();
@@ -897,12 +968,14 @@ namespace Inkeys::Drawing::Draw3
 					0, resident.slot.slice, 1);
 				const UINT destinationSubresource = D3D11CalcSubresource(
 					0, replacement.slice, 1);
-				renderer->context->CopySubresourceRegion(destination.addTexture.Get(),
+				PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_copysubresourceregion_43"), [&] { return renderer->PerformanceArgumentsForOwner(destination.addTexture.Get(), 0, 0, source.addTexture.Get()); }, [&] { renderer->context->CopySubresourceRegion(destination.addTexture.Get(),
 					destinationSubresource, 0, 0, 0, source.addTexture.Get(),
-					sourceSubresource, nullptr);
-				renderer->context->CopySubresourceRegion(destination.retainTexture.Get(),
+					sourceSubresource, nullptr); });
+				PerformanceGraphicsVoid(renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_copysubresourceregion_44"), [&] { return renderer->PerformanceArgumentsForOwner(destination.retainTexture.Get(), 0, 0, source.retainTexture.Get()); }, [&] { renderer->context->CopySubresourceRegion(destination.retainTexture.Get(),
 					destinationSubresource, 0, 0, 0, source.retainTexture.Get(),
-					sourceSubresource, nullptr);
+					sourceSubresource, nullptr); });
 				resident.slot = replacement;
 			}
 			compositionPages = std::move(replacementPages);
@@ -1117,8 +1190,9 @@ namespace Inkeys::Drawing::Draw3
 		description.Usage = D3D11_USAGE_DYNAMIC;
 		description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 		description.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-		impl_->compositionPassAvailable = SUCCEEDED(renderer.device->CreateBuffer(
-			&description, nullptr, impl_->cacheConstantBuffer.ReleaseAndGetAddressOf()));
+		impl_->compositionPassAvailable = SUCCEEDED(TraceHistoryResource(renderer, impl_->cacheConstantBuffer, PerformanceGraphicsRole::GlobalConstants,
+			PerformanceGraphicsSite("history_create_4"), [&] { return renderer.device->CreateBuffer(
+			&description, nullptr, impl_->cacheConstantBuffer.ReleaseAndGetAddressOf()); }));
 		if (!impl_->compositionPassAvailable)
 			ReportCacheFailureOnce(
 				L"[InkHistory] composition cache constants unavailable; hot undo remains enabled.\n");
@@ -1229,7 +1303,8 @@ namespace Inkeys::Drawing::Draw3
 		entry.tiles.reserve(screenRects.size());
 
 		impl_->UnbindAllShaderResources();
-		impl_->renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
+		PerformanceGraphicsVoid(impl_->renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_45"), [&] { return impl_->renderer->PerformanceArgumentsForOwner(); }, [&] { impl_->renderer->context->OMSetRenderTargets(0, nullptr, nullptr); });
 		for (const HotPreimageScreenRect& planned : screenRects)
 		{
 			const RECT screenRect = {
@@ -1243,10 +1318,11 @@ namespace Inkeys::Drawing::Draw3
 			sourceBox.bottom = static_cast<UINT>(screenRect.bottom);
 			sourceBox.back = 1;
 			const UINT destinationSubresource = D3D11CalcSubresource(0, slot.slice, 1);
-			impl_->renderer->context->CopySubresourceRegion(
+			PerformanceGraphicsVoid(impl_->renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_copysubresourceregion_46"), [&] { return impl_->renderer->PerformanceArgumentsForOwner(impl_->undoPages[slot.page].texture.Get(), 0, 0, impl_->renderer->layerL2Texture.Get()); }, [&] { impl_->renderer->context->CopySubresourceRegion(
 				impl_->undoPages[slot.page].texture.Get(), destinationSubresource,
 				0, 0, 0,
-				impl_->renderer->layerL2Texture.Get(), 0, &sourceBox);
+				impl_->renderer->layerL2Texture.Get(), 0, &sourceBox); });
 			entry.tiles.push_back({ slot, screenRect });
 		}
 
@@ -1297,7 +1373,8 @@ namespace Inkeys::Drawing::Draw3
 		const std::vector<Impl::HotTile> tiles = reverseIterator->tiles;
 
 		impl_->UnbindAllShaderResources();
-		impl_->renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
+		PerformanceGraphicsVoid(impl_->renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_omsetrendertargets_47"), [&] { return impl_->renderer->PerformanceArgumentsForOwner(); }, [&] { impl_->renderer->context->OMSetRenderTargets(0, nullptr, nullptr); });
 		for (const Impl::HotTile& tile : tiles)
 		{
 			D3D11_BOX sourceBox = {};
@@ -1309,12 +1386,13 @@ namespace Inkeys::Drawing::Draw3
 				tile.screenRect.bottom - tile.screenRect.top);
 			sourceBox.back = 1;
 			const UINT sourceSubresource = D3D11CalcSubresource(0, tile.slot.slice, 1);
-			impl_->renderer->context->CopySubresourceRegion(
+			PerformanceGraphicsVoid(impl_->renderer->PerformanceSessionForOwner(), PerformanceGraphicsOperation::Copy, PerformanceGraphicsRole::LayerTexture,
+			PerformanceGraphicsSite("history_copysubresourceregion_48"), [&] { return impl_->renderer->PerformanceArgumentsForOwner(impl_->renderer->layerL2Texture.Get(), 0, 0, impl_->undoPages[tile.slot.page].texture.Get()); }, [&] { impl_->renderer->context->CopySubresourceRegion(
 				impl_->renderer->layerL2Texture.Get(), 0,
 				static_cast<UINT>(tile.screenRect.left),
 				static_cast<UINT>(tile.screenRect.top), 0,
 				impl_->undoPages[tile.slot.page].texture.Get(), sourceSubresource,
-				&sourceBox);
+				&sourceBox); });
 			UnionRectLocal(result.dirty, tile.screenRect);
 		}
 

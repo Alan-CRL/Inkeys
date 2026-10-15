@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
 #include <dxgi1_2.h>
 #include <cstdint>
 #include <memory>
@@ -80,6 +81,7 @@ export namespace Inkeys::Drawing::Draw3
 	{
 	public:
 		TransparentPresentationController();
+		void SetPerformanceSession(PerformanceSession* session) noexcept;
 		~TransparentPresentationController();
 		TransparentPresentationController(const TransparentPresentationController&) = delete;
 		TransparentPresentationController& operator=(const TransparentPresentationController&) = delete;

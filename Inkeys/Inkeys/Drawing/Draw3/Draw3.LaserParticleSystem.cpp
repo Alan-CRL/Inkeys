@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -83,10 +85,12 @@ namespace Inkeys::Drawing::Draw3
 		device_ = device;
 		context_ = context;
 
-		if (FAILED(device_->CreateComputeShader(updateShader.data, updateShader.size,
-			nullptr, updateShader_.ReleaseAndGetAddressOf())) ||
-			FAILED(device_->CreateComputeShader(emitShader.data, emitShader.size,
-				nullptr, emitShader_.ReleaseAndGetAddressOf())))
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_laserparticlesystem_createcomputeshader_1"), [&] { return TraceArguments(); }, [&] { return device_->CreateComputeShader(updateShader.data, updateShader.size,
+			nullptr, updateShader_.ReleaseAndGetAddressOf()); })) ||
+			FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_laserparticlesystem_createcomputeshader_2"), [&] { return TraceArguments(); }, [&] { return device_->CreateComputeShader(emitShader.data, emitShader.size,
+				nullptr, emitShader_.ReleaseAndGetAddressOf()); })))
 		{
 			Release();
 			return false;
@@ -100,8 +104,8 @@ namespace Inkeys::Drawing::Draw3
 			D3D11_BIND_UNORDERED_ACCESS;
 		bufferDescription.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 		bufferDescription.StructureByteStride = sizeof(LaserGpuParticle);
-		if (FAILED(device_->CreateBuffer(&bufferDescription, nullptr,
-			particleBuffer_.ReleaseAndGetAddressOf())))
+		if (FAILED(TraceCreateResource(particleBuffer_, PerformanceGraphicsSite("laser_particle_create_particleBuffer_"), [&] { return device_->CreateBuffer(&bufferDescription, nullptr,
+			particleBuffer_.ReleaseAndGetAddressOf()); })))
 		{
 			Release();
 			return false;
@@ -111,8 +115,9 @@ namespace Inkeys::Drawing::Draw3
 		srvDescription.Format = DXGI_FORMAT_UNKNOWN;
 		srvDescription.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
 		srvDescription.Buffer.NumElements = kLaserParticleCapacity;
-		if (FAILED(device_->CreateShaderResourceView(particleBuffer_.Get(),
-			&srvDescription, particleSRV_.ReleaseAndGetAddressOf())))
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_laserparticlesystem_createshaderresourceview_4"), [&] { return TraceArguments(); }, [&] { return device_->CreateShaderResourceView(particleBuffer_.Get(),
+			&srvDescription, particleSRV_.ReleaseAndGetAddressOf()); })))
 		{
 			Release();
 			return false;
@@ -121,8 +126,9 @@ namespace Inkeys::Drawing::Draw3
 		uavDescription.Format = DXGI_FORMAT_UNKNOWN;
 		uavDescription.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
 		uavDescription.Buffer.NumElements = kLaserParticleCapacity;
-		if (FAILED(device_->CreateUnorderedAccessView(particleBuffer_.Get(),
-			&uavDescription, particleUAV_.ReleaseAndGetAddressOf())))
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::Other,
+			PerformanceGraphicsSite("draw3_laserparticlesystem_createunorderedaccessview_5"), [&] { return TraceArguments(); }, [&] { return device_->CreateUnorderedAccessView(particleBuffer_.Get(),
+			&uavDescription, particleUAV_.ReleaseAndGetAddressOf()); })))
 		{
 			Release();
 			return false;
@@ -133,15 +139,15 @@ namespace Inkeys::Drawing::Draw3
 		bufferDescription.Usage = D3D11_USAGE_DYNAMIC;
 		bufferDescription.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 		bufferDescription.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-		if (FAILED(device_->CreateBuffer(&bufferDescription, nullptr,
-			updateConstants_.ReleaseAndGetAddressOf())))
+		if (FAILED(TraceCreateResource(updateConstants_, PerformanceGraphicsSite("laser_particle_create_updateConstants_"), [&] { return device_->CreateBuffer(&bufferDescription, nullptr,
+			updateConstants_.ReleaseAndGetAddressOf()); })))
 		{
 			Release();
 			return false;
 		}
 		bufferDescription.ByteWidth = sizeof(LaserParticleEmitConstants);
-		if (FAILED(device_->CreateBuffer(&bufferDescription, nullptr,
-			emitConstants_.ReleaseAndGetAddressOf())))
+		if (FAILED(TraceCreateResource(emitConstants_, PerformanceGraphicsSite("laser_particle_create_emitConstants_"), [&] { return device_->CreateBuffer(&bufferDescription, nullptr,
+			emitConstants_.ReleaseAndGetAddressOf()); })))
 		{
 			Release();
 			return false;
@@ -159,6 +165,9 @@ namespace Inkeys::Drawing::Draw3
 
 	void LaserParticleSystem::Release() noexcept
 	{
+		if (performance_)
+			for (auto* resource : { particleBuffer_.Get(), updateConstants_.Get(), emitConstants_.Get() })
+				performance_->RetireResource(resource);
 		available_ = false;
 		updateShader_.Reset();
 		emitShader_.Reset();
@@ -203,20 +212,28 @@ namespace Inkeys::Drawing::Draw3
 		constants.resetAll = resetAll ? 1u : 0u;
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context_->Map(updateConstants_.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
-		std::memcpy(mapped.pData, &constants, sizeof(constants));
-		context_->Unmap(updateConstants_.Get(), 0);
+		if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Map, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_map_1"), [&] { return [&] { auto arguments = TraceArguments(updateConstants_.Get()); arguments.subresource = 0; arguments.mapType = D3D11_MAP_WRITE_DISCARD; arguments.flags = 0; return arguments; }(); }, [&] { return context_->Map(updateConstants_.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped); }))) return false;
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_constant_memcpy_1"), [&] { return TraceArguments(updateConstants_.Get(), sizeof(constants)); }, [&] { std::memcpy(mapped.pData, &constants, sizeof(constants)); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_unmap_2"), [&] { return TraceArguments(updateConstants_.Get()); }, [&] { context_->Unmap(updateConstants_.Get(), 0); });
 
 		// 粒子 SRV 先从 VS 解绑，再把同一缓冲区安全绑定为 Compute UAV。
 		ID3D11ShaderResourceView* nullParticle[] = { nullptr };
-		context_->VSSetShaderResources(8, 1, nullParticle);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_vssetshaderresources_3"), [&] { return TraceArguments(nullptr); }, [&] { context_->VSSetShaderResources(8, 1, nullParticle); });
 		ID3D11UnorderedAccessView* unorderedViews[] = { particleUAV_.Get() };
-		context_->CSSetUnorderedAccessViews(0, 1, unorderedViews, nullptr);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetunorderedaccessviews_4"), [&] { return TraceArguments(particleBuffer_.Get()); }, [&] { context_->CSSetUnorderedAccessViews(0, 1, unorderedViews, nullptr); });
 		ID3D11Buffer* constantBuffers[] = { updateConstants_.Get() };
-		context_->CSSetConstantBuffers(0, 1, constantBuffers);
-		context_->CSSetShader(updateShader_.Get(), nullptr, 0);
-		context_->Dispatch((kLaserParticleCapacity + 63u) / 64u, 1, 1);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetconstantbuffers_5"), [&] { return TraceArguments((constantBuffers)[0]); }, [&] { context_->CSSetConstantBuffers(0, 1, constantBuffers); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetshader_6"), [&] { return TraceArguments(nullptr); }, [&] { context_->CSSetShader(updateShader_.Get(), nullptr, 0); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_dispatch_7"), [&] { return TraceArguments(particleBuffer_.Get(), 0, (kLaserParticleCapacity + 63u) / 64u, 1); }, [&] { context_->Dispatch((kLaserParticleCapacity + 63u) / 64u, 1, 1); });
 		UnbindComputeResources();
 		return true;
 	}
@@ -229,9 +246,11 @@ namespace Inkeys::Drawing::Draw3
 
 		// 同一帧 update/emit 共享一次 UAV 绑定，逐请求常量和 Dispatch 顺序保持不变。
 		ID3D11ShaderResourceView* nullParticle[] = { nullptr };
-		context_->VSSetShaderResources(8, 1, nullParticle);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_vssetshaderresources_8"), [&] { return TraceArguments(nullptr); }, [&] { context_->VSSetShaderResources(8, 1, nullParticle); });
 		ID3D11UnorderedAccessView* unorderedViews[] = { particleUAV_.Get() };
-		context_->CSSetUnorderedAccessViews(0, 1, unorderedViews, nullptr);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetunorderedaccessviews_9"), [&] { return TraceArguments(particleBuffer_.Get()); }, [&] { context_->CSSetUnorderedAccessViews(0, 1, unorderedViews, nullptr); });
 
 		if (simulateExisting)
 		{
@@ -246,20 +265,26 @@ namespace Inkeys::Drawing::Draw3
 			constants.endRadiusScale = configuration_.endRadiusScale;
 
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context_->Map(updateConstants_.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+			if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Map, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_map_10"), [&] { return [&] { auto arguments = TraceArguments(updateConstants_.Get()); arguments.subresource = 0; arguments.mapType = D3D11_MAP_WRITE_DISCARD; arguments.flags = 0; return arguments; }(); }, [&] { return context_->Map(updateConstants_.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped); })))
 			{
 				// 无法推进存量槽时直接降级，避免旧 alive 槽在后续发射时重现。
 				UnbindComputeResources();
 				Release();
 				return;
 			}
-			std::memcpy(mapped.pData, &constants, sizeof(constants));
-			context_->Unmap(updateConstants_.Get(), 0);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_constant_memcpy_2"), [&] { return TraceArguments(updateConstants_.Get(), sizeof(constants)); }, [&] { std::memcpy(mapped.pData, &constants, sizeof(constants)); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_unmap_11"), [&] { return TraceArguments(updateConstants_.Get()); }, [&] { context_->Unmap(updateConstants_.Get(), 0); });
 			ID3D11Buffer* constantBuffers[] = { updateConstants_.Get() };
-			context_->CSSetConstantBuffers(0, 1, constantBuffers);
-			context_->CSSetShader(updateShader_.Get(), nullptr, 0);
-			context_->Dispatch((kLaserParticleCapacity + 63u) / 64u, 1, 1);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetconstantbuffers_12"), [&] { return TraceArguments((constantBuffers)[0]); }, [&] { context_->CSSetConstantBuffers(0, 1, constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetshader_13"), [&] { return TraceArguments(nullptr); }, [&] { context_->CSSetShader(updateShader_.Get(), nullptr, 0); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_dispatch_14"), [&] { return TraceArguments(particleBuffer_.Get(), 0, (kLaserParticleCapacity + 63u) / 64u, 1); }, [&] { context_->Dispatch((kLaserParticleCapacity + 63u) / 64u, 1, 1); });
 		}
 
 		for (const LaserParticleEmissionRequest& request : emissionRequests)
@@ -318,14 +343,20 @@ namespace Inkeys::Drawing::Draw3
 				configuration_.sizeTravelCorrelation;
 
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context_->Map(emitConstants_.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) continue;
-			std::memcpy(mapped.pData, &constants, sizeof(constants));
-			context_->Unmap(emitConstants_.Get(), 0);
+			if (FAILED(PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Map, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_map_15"), [&] { return [&] { auto arguments = TraceArguments(emitConstants_.Get()); arguments.subresource = 0; arguments.mapType = D3D11_MAP_WRITE_DISCARD; arguments.flags = 0; return arguments; }(); }, [&] { return context_->Map(emitConstants_.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped); }))) continue;
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteConstant, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_constant_memcpy_3"), [&] { return TraceArguments(emitConstants_.Get(), sizeof(constants)); }, [&] { std::memcpy(mapped.pData, &constants, sizeof(constants)); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_unmap_16"), [&] { return TraceArguments(emitConstants_.Get()); }, [&] { context_->Unmap(emitConstants_.Get(), 0); });
 			ID3D11Buffer* constantBuffers[] = { emitConstants_.Get() };
-			context_->CSSetConstantBuffers(0, 1, constantBuffers);
-			context_->CSSetShader(emitShader_.Get(), nullptr, 0);
-			context_->Dispatch((count + 63u) / 64u, 1, 1);
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetconstantbuffers_17"), [&] { return TraceArguments((constantBuffers)[0]); }, [&] { context_->CSSetConstantBuffers(0, 1, constantBuffers); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetshader_18"), [&] { return TraceArguments(nullptr); }, [&] { context_->CSSetShader(emitShader_.Get(), nullptr, 0); });
+			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Other, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_dispatch_19"), [&] { return TraceArguments(particleBuffer_.Get(), 0, (count + 63u) / 64u, 1); }, [&] { context_->Dispatch((count + 63u) / 64u, 1, 1); });
 			spawnCursor_ = (spawnCursor_ + count) % kLaserParticleCapacity;
 		}
 
@@ -346,10 +377,13 @@ namespace Inkeys::Drawing::Draw3
 	void LaserParticleSystem::UnbindComputeResources() noexcept
 	{
 		ID3D11UnorderedAccessView* nullUav[] = { nullptr };
-		context_->CSSetUnorderedAccessViews(0, 1, nullUav, nullptr);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetunorderedaccessviews_20"), [&] { return TraceArguments(particleBuffer_.Get()); }, [&] { context_->CSSetUnorderedAccessViews(0, 1, nullUav, nullptr); });
 		ID3D11Buffer* nullBuffer[] = { nullptr };
-		context_->CSSetConstantBuffers(0, 1, nullBuffer);
-		context_->CSSetShader(nullptr, nullptr, 0);
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetconstantbuffers_21"), [&] { return TraceArguments((nullBuffer)[0]); }, [&] { context_->CSSetConstantBuffers(0, 1, nullBuffer); });
+		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LaserData,
+			PerformanceGraphicsSite("laser_particle_cssetshader_22"), [&] { return TraceArguments(nullptr); }, [&] { context_->CSSetShader(nullptr, nullptr, 0); });
 	}
 
 	ID3D11ShaderResourceView* LaserParticleSystem::ParticleShaderResourceView() const noexcept

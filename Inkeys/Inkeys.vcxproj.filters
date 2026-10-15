@@ -486,6 +486,9 @@
     <ClInclude Include="Launch\IdtLaunchState.h">
       <Filter>头文件\Launch</Filter>
     </ClInclude>
+    <ClInclude Include="Launch\IdtPerformanceLaunch.h">
+      <Filter>头文件\Launch</Filter>
+    </ClInclude>
     <ClInclude Include="SuperTop\IdtSuperTop.h">
       <Filter>头文件\SuperTop</Filter>
     </ClInclude>
@@ -508,6 +511,12 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Performance.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ResourceProbe.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h">
@@ -1730,6 +1739,9 @@
     <ClCompile Include="Launch\IdtLaunchState.cpp">
       <Filter>源文件\Launch</Filter>
     </ClCompile>
+    <ClCompile Include="Launch\IdtPerformanceLaunch.cpp">
+      <Filter>源文件\Launch</Filter>
+    </ClCompile>
     <ClCompile Include="SuperTop\IdtSuperTop.cpp">
       <Filter>源文件\SuperTop</Filter>
     </ClCompile>
@@ -2172,6 +2184,12 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Performance.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ResourceProbe.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.cpp">

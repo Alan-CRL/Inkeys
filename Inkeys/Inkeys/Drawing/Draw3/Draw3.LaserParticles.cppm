@@ -5,6 +5,7 @@
 #endif
 
 #include <array>
+#include "Draw3.Performance.h"
 #include <cstddef>
 #include <cstdint>
 #include <d3d11.h>
@@ -210,6 +211,10 @@ export namespace Inkeys::Drawing::Draw3
 	class LaserParticleSystem
 	{
 	public:
+		void SetPerformanceSession(PerformanceSession* session) noexcept { performance_ = session; }
+		void SetPerformancePass(PerformanceGraphicsPass pass) noexcept
+		{ if (performance_) performancePass_ = pass; }
+		ID3D11Resource* ResourceForDiagnostics() const noexcept { return particleBuffer_.Get(); }
 		bool Initialize(ID3D11Device* device, ID3D11DeviceContext* context,
 			LaserParticleShaderBytecode updateShader,
 			LaserParticleShaderBytecode emitShader) noexcept;
@@ -226,6 +231,24 @@ export namespace Inkeys::Drawing::Draw3
 		ID3D11ShaderResourceView* ParticleShaderResourceView() const noexcept;
 
 	private:
+		PerformanceSession* performance_ = nullptr;
+		PerformanceGraphicsPass performancePass_ = PerformanceGraphicsPass::Initialization;
+		PerformanceGraphicsArguments TraceArguments(ID3D11Resource* resource = nullptr,
+			std::uint64_t bytes = 0, std::uint32_t argument0 = 0, std::uint32_t argument1 = 0) const noexcept
+		{
+			PerformanceGraphicsArguments result{}; result.resource = resource; result.bytes = bytes;
+			result.argument0 = argument0; result.argument1 = argument1; result.pass = performancePass_;
+			return result;
+		}
+		template<class Resource, class Call>
+		HRESULT TraceCreateResource(Microsoft::WRL::ComPtr<Resource>& resource,
+			PerformanceGraphicsSite site, Call&& call)
+		{
+			const HRESULT result = PerformanceGraphicsCall(performance_, PerformanceGraphicsOperation::Other,
+				PerformanceGraphicsRole::LaserData, site, [&] { return TraceArguments(); }, std::forward<Call>(call));
+			if (performance_) performance_->RegisterResource(resource.Get(), PerformanceGraphicsRole::LaserData, site, result);
+			return result;
+		}
 		bool DispatchUpdate(float wallDeltaSeconds, float motionDeltaSeconds,
 			bool resetAll) noexcept;
 		void UnbindComputeResources() noexcept;

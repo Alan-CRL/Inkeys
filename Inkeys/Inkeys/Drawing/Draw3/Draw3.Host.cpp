@@ -232,6 +232,8 @@ namespace Inkeys::Drawing::Draw3
 		std::unique_ptr<DrawingController> drawing;
 		std::atomic_bool interruptedStrokeReconnectEnabled = true;
 		std::jthread drawingThread;
+		std::unique_ptr<PerformanceSession> performance;
+		bool performanceStartupFailed = true;
 		std::atomic_bool running = false;
 		std::atomic_bool firstFrameReady = false;
 		std::atomic<HWND> attachedWindow = nullptr;
@@ -440,6 +442,14 @@ namespace Inkeys::Drawing::Draw3
 					std::copy_n(description.Description, value.adapterDescription.size(), value.adapterDescription.begin());
 				value.adapterDescription.back() = L'\0';
 			}
+		}
+
+		void SealPerformanceRun() noexcept
+		{
+			// 调用处已停止RTS并真join；任何活跃producer都不能与导出读同一槽。
+			if (performance && !drawingThread.joinable() && !drawing)
+				performance->ExportHost(performanceStartupFailed, runtimeMetrics.runFailed.load(),
+					runtimeMetrics.payloadByteUpperBound.load(), runtimeMetrics.unavailable.load());
 		}
 
 		void SealRuntimeMetricsRun(bool startupFailed = false) noexcept
@@ -1234,6 +1244,8 @@ namespace Inkeys::Drawing::Draw3
 				appliedPenWidthContext = penContext;
 				appliedPenWidthMonitor = scale.monitor;
 				penWidthContextPrepared = true;
+				if (performance) performance->CaptureDisplay(penContext.effectiveDpi, penContext.pixelWidth, penContext.pixelHeight,
+					snapshot ? snapshot->generation : 0, static_cast<uint32_t>(snapshot ? snapshot->topology : Inkeys::Display::DisplayTopology::Unknown));
 				// 不持显示锁；返回前产品必须发布同代 resolved DIP 和目标上下文。
 				if (runtimeCallbacks.penWidthContextChanged)
 					runtimeCallbacks.penWidthContextChanged(runtimeCallbacks.context, penContext);
@@ -1434,6 +1446,9 @@ namespace Inkeys::Drawing::Draw3
 				attachedPresentationWindow.load(std::memory_order_acquire)) return false;
 			LogDraw3BuildIdentity();
 			LogDraw3WindowState("start-request", hwnd, presentationHwnd);
+			performance = PerformanceSession::CreateHost(options.performanceOutputDirectory);
+			performanceStartupFailed = true;
+			if (performance) options.enableRuntimeMetrics = true;
 			BeginRuntimeMetricsRun(options);
 			// 强制 DWM 已禁用，必须在重置 bridge 或附着外部 HWND 前拒绝。
 			if (options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind ||
@@ -1441,6 +1456,7 @@ namespace Inkeys::Drawing::Draw3
 				!hwnd || !presentationHwnd || !IsWindow(hwnd) || !IsWindow(presentationHwnd))
 			{
 				SealRuntimeMetricsRun(true);
+			SealPerformanceRun();
 				return false;
 			}
 			PrepareRuntimeMetrics(options);
@@ -1464,6 +1480,7 @@ namespace Inkeys::Drawing::Draw3
 				attachedPresentationWindow.store(nullptr, std::memory_order_release);
 				hiddenTestContactInjectionEnabled = false;
 				SealRuntimeMetricsRun(true);
+			SealPerformanceRun();
 				return false;
 			}
 			if (startOptions.startupMilestone)
@@ -1509,7 +1526,11 @@ namespace Inkeys::Drawing::Draw3
 					const HWND windowHandle = attachedWindow.load(std::memory_order_acquire);
 					const HWND presentationWindowHandle =
 						attachedPresentationWindow.load(std::memory_order_acquire);
-					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics);
+					const auto graphicsStart = performance ? performance->Clock() : 0;
+					renderer.SetPerformanceSession(performance.get());
+					presentation.SetPerformanceSession(performance.get());
+					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics, performance.get());
+					if (performance) performance->Initialization("graphics_ready", graphicsStart, graphicsInitialized ? S_OK : E_FAIL, graphicsInitialized);
 					std::cout << "[Draw3Diag][startup] stage=graphics result="
 						<< (graphicsInitialized ? "ready" : "failed")
 						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(windowHandle)
@@ -1593,6 +1614,7 @@ namespace Inkeys::Drawing::Draw3
 						{
 							StrokeModelConfiguration configuration =
 								CreateStrokeModelConfiguration(QueryCompatibleWindowDpi(windowHandle));
+							if (performance) performance->CaptureModelConfiguration(configuration.dpiScale, configuration.timingProfile.target_fps);
 							configuration.interruptedStrokeReconnectEnabled =
 								interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
 							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
@@ -1612,7 +1634,7 @@ namespace Inkeys::Drawing::Draw3
 							};
 							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
-								presentation, configuration, observer, runtimeMetrics.session.get());
+								presentation, configuration, observer, runtimeMetrics.session.get(), nullptr, performance.get());
 							std::cout << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
 								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
 								<< std::dec << std::endl;
@@ -1703,6 +1725,7 @@ namespace Inkeys::Drawing::Draw3
 				CaptureRuntimeMetricsMetadata(true);
 				// GPU 资源在拥有它们的绘制线程释放，避免跨线程访问 Renderer。
 				if (drawing) drawing.reset();
+				if (performance) performance->GpuStop();
 				presentation.Shutdown();
 				renderer.ReleaseResources();
 				graphics = {};
@@ -1732,6 +1755,7 @@ namespace Inkeys::Drawing::Draw3
 				firstFrameReady.store(false, std::memory_order_release);
 				runtimeCallbacks = {};
 				SealRuntimeMetricsRun(true);
+			SealPerformanceRun();
 				return false;
 			}
 
@@ -1753,6 +1777,7 @@ namespace Inkeys::Drawing::Draw3
 			firstFrameReady.store(false, std::memory_order_release);
 			runtimeCallbacks = {};
 			SealRuntimeMetricsRun(true);
+			SealPerformanceRun();
 			return false;
 		}
 
@@ -1760,7 +1785,9 @@ namespace Inkeys::Drawing::Draw3
 		bool stylusInitialized = false;
 		try
 		{
-			stylusInitialized = stylus.Initialize(hwnd, input, &window, failedCleanup);
+			const auto rtsStart = performance ? performance->Clock() : 0;
+			stylusInitialized = stylus.Initialize(hwnd, input, &window, failedCleanup, performance.get());
+			if (performance) performance->Initialization("rts_ready", rtsStart, stylusInitialized ? S_OK : E_FAIL, stylusInitialized);
 			if (!stylusInitialized) failedCleanup.BeginKnownFailure();
 			if (stylusInitialized && startOptions.startupMilestone)
 				startOptions.startupMilestone(startOptions.startupContext,
@@ -1804,6 +1831,7 @@ namespace Inkeys::Drawing::Draw3
 			firstFrameReady.store(false, std::memory_order_release);
 			runtimeCallbacks = {};
 			SealRuntimeMetricsRun(true);
+			SealPerformanceRun();
 			return false;
 		}
 		displaySubscription = Inkeys::Display::Subscribe(
@@ -1815,6 +1843,7 @@ namespace Inkeys::Drawing::Draw3
 		// Subscribe 仍可能抛出；只有 caller 完整 Start 成功后才清失败标记。
 		if (runtimeMetrics.enabled.load(std::memory_order_acquire))
 			runtimeMetrics.startupFailed.store(false, std::memory_order_release);
+		performanceStartupFailed = false;
 		return true;
 		}
 
@@ -1830,6 +1859,7 @@ namespace Inkeys::Drawing::Draw3
 				EndDrawingActivity();
 				runtimeCallbacks = {};
 				SealRuntimeMetricsRun();
+			SealPerformanceRun();
 				return;
 			}
 			{
@@ -1887,6 +1917,7 @@ namespace Inkeys::Drawing::Draw3
 			runtimeRevision.NotifyAll();
 			runtimeCallbacks = {};
 			SealRuntimeMetricsRun();
+			SealPerformanceRun();
 		}
 	};
 

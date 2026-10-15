@@ -48,6 +48,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <iterator>
 
@@ -68,11 +69,14 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Window/Window.Legacy.hpp"
 #include "Inkeys/Drawing/Draw3/Draw3.HiddenWindowTest.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PerformanceProbe.h"
+#include "Inkeys/Drawing/Draw3/Draw3.Performance.h"
+#include "Inkeys/Drawing/Draw3/Draw3.ResourceProbe.h"
 #include "Inkeys/Drawing/Draw3/Draw3.HistoryProbe.h"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Helper/ShutdownSupervisor.h"
 #include "Inkeys/Net/UpdatePathSafety.h"
 #include "Launch/IdtLaunchState.h"
+#include "Launch/IdtPerformanceLaunch.h"
 #include "SuperTop/IdtSuperTop.h"
 
 #include <atomic>
@@ -105,6 +109,29 @@ namespace
 	Inkeys::Display::Subscription displaySubscription;
 	std::atomic_bool startupPreviewManualDelayRequested = false;
 	constexpr LONGLONG kMaximumUpdateInstructionBytes = 64LL * 1024LL;
+	Inkeys::Launch::PerformanceLaunch* performanceLaunchState = nullptr;
+
+	struct PerformanceLaunchScope final
+	{
+		Inkeys::Launch::PerformanceLaunch& launch;
+		int exitCode = 1;
+		bool normalShutdown = false;
+		int ReturnCode(int code) noexcept { exitCode = code; return code; }
+		~PerformanceLaunchScope()
+		{
+			if (launch.OwnsFinalProcess())
+			{
+				// 错误返回也先停止 RTS/绘制 owner；封口和导出完成后才发布终态。
+				Inkeys::Drawing::Draw3::StopProduct();
+				// 未处理异常没有可信退出码，保留 launch 让采集器判定缺少终态。
+				if (std::uncaught_exceptions() == 0)
+					(void)launch.Complete(Inkeys::Drawing::Draw3::GetDraw3PerformanceExportStatus(),
+						exitCode, normalShutdown, offSignal == 2);
+			}
+			else if (launch.Enabled()) (void)launch.WriteBeforeFinalFailure();
+			performanceLaunchState = nullptr;
+		}
+	};
 
 	[[nodiscard]] HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
 	{
@@ -184,6 +211,7 @@ namespace
 	void PublishFatalStartupFailure(
 		std::uint32_t code, const wchar_t* message) noexcept
 	{
+		if (performanceLaunchState) performanceLaunchState->NoteFailure("startup_failed", code);
 		// 已确认无法启动时先建立退场监督，红帧、提示与清理都不得挡住15秒截止。
 		SetOffSignal(1);
 		(void)Inkeys::Startup::ReportFailure(code);
@@ -644,6 +672,23 @@ namespace
 					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
 				{
 					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
+					return 1;
+				}
+			}
+			stage = "Draw3 performance configuration";
+			Inkeys::Config performanceDefaults;
+			if (performanceDefaults.Experimental.Inkeys3.ConsoleOutput.Performance
+				|| !writeBytes(mainConfig, "{}") || !performanceDefaults.ReadAll()
+				|| performanceDefaults.Experimental.Inkeys3.ConsoleOutput.Performance) return 1;
+			for (const bool enabled : { false, true })
+			{
+				performanceDefaults.Experimental.Inkeys3.ConsoleOutput.Performance = enabled;
+				Inkeys::Config restoredPerformance;
+				if (!performanceDefaults.Write() || !restoredPerformance.ReadMini({
+					"Experimental.Inkeys3.ConsoleOutput.Performance" })
+					|| restoredPerformance.Experimental.Inkeys3.ConsoleOutput.Performance.load() != enabled)
+				{
+					std::fputs("[ConfigBoundary] FAIL: Draw3 performance preference did not round-trip\n", stderr);
 					return 1;
 				}
 			}
@@ -1196,6 +1241,8 @@ namespace Inkeys::UI::Bar
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
 {
+	Inkeys::Launch::PerformanceLaunch performanceLaunch;
+	PerformanceLaunchScope performanceLaunchScope{ performanceLaunch };
 	// 内部监督进程和隔离测试必须在配置、单实例与任何 HWND 初始化前退出。
 	int ui3FixtureExitCode = 0;
 	if (Inkeys::UI::Bar::TryRunUi3PresentationFixtureEarly(GetCommandLineW(), ui3FixtureExitCode)) return ui3FixtureExitCode;
@@ -1206,6 +1253,29 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// 资源对照只走严格的无窗口入口，必须早于配置、单实例和产品窗口初始化。
+		int resourceProbeExitCode = 0;
+		if (Inkeys::Drawing::Draw3::TryRunDraw3ResourceProbeEarly(count, arguments, resourceProbeExitCode))
+		{
+			LocalFree(arguments);
+			return resourceProbeExitCode;
+		}
+		const auto performanceArguments = performanceLaunch.ParseArguments(count, arguments);
+		if (performanceArguments == Inkeys::Launch::PerformanceArgumentResult::Probe
+			|| performanceArguments == Inkeys::Launch::PerformanceArgumentResult::LaunchProbe)
+		{
+			LocalFree(arguments);
+			return performanceArguments == Inkeys::Launch::PerformanceArgumentResult::Probe
+				? Inkeys::Drawing::Draw3::RunDraw3PerformanceProbe()
+				: Inkeys::Launch::RunPerformanceLaunchProbe();
+		}
+		if (performanceArguments == Inkeys::Launch::PerformanceArgumentResult::Invalid)
+		{
+			LocalFree(arguments);
+			std::fprintf(stderr, "[Draw3PerformanceLaunch] invalid arguments: %s\n", performanceLaunch.ErrorReason());
+			return 2;
+		}
+		if (performanceLaunch.Enabled()) performanceLaunchState = &performanceLaunch;
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
@@ -1364,6 +1434,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	bool draw3ConsoleOutputEnabled = false;
 	bool touchAreaConsoleOutputEnabled = false;
 	bool cursorConsoleOutputEnabled = false;
+	const char* configuredPerformanceFailure = nullptr;
 	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
 
@@ -1400,11 +1471,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 			if (typeRoot == 1)
 			{
+				if (performanceLaunch.Enabled())
+				{
+					performanceLaunch.NoteFailure("executable_directory_not_writable", ERROR_ACCESS_DENIED);
+					return 4;
+				}
 				ShowStartupMessage(L"The current directory permissions are restricted, so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#1)");
 				return 0;
 			}
 			else if (typeRoot == 2)
 			{
+				if (performanceLaunch.Enabled())
+				{
+					performanceLaunch.NoteFailure("executable_directory_redirected", ERROR_ACCESS_DENIED);
+					return 4;
+				}
 				ShowStartupMessage(L"The current directory permissions are restricted (file operations are redirected to the virtual store), so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#2)");
 				return 0;
 			}
@@ -1413,6 +1494,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		wstring appName = GetCurrentExeName();
 		if (!isAsciiPrintable(appName))
 		{
+			if (performanceLaunch.Enabled())
+			{
+				performanceLaunch.NoteFailure("executable_name_not_supported");
+				return 4;
+			}
 			ShowStartupMessage(L"The Inkeys file name can contain only English characters. Rename the file and restart Inkeys. (#3)");
 			return 0;
 		}
@@ -1495,6 +1581,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			DWORD lastError = GetLastError();
 			if (launchMutex != NULL && lastError == ERROR_ALREADY_EXISTS)
 			{
+				if (performanceLaunch.Enabled())
+				{
+					performanceLaunch.NoteFailure("already_running", lastError);
+					return 4;
+				}
 				ShowStartupMessage(L"Inkeys is already running. If no Inkeys window is visible, end the existing Inkeys process and open it again.");
 
 				return 0;
@@ -2107,6 +2198,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 只有最终进程越过 SuperTop 分支后，才建立唯一 T0 与启动状态。
 	const auto startupT0 = chrono::steady_clock::now();
+	if (performanceLaunch.Enabled() && !performanceLaunch.BeginFinalProcess(
+		GetCurrentExePath(), editionVersion, editionDate, programArchitecture))
+	{
+		std::fprintf(stderr, "[Draw3PerformanceLaunch] final owner failed: %s\n", performanceLaunch.ErrorReason());
+		return performanceLaunchScope.ReturnCode(4);
+	}
 	std::wstring startupPreviewSmokePath;
 	{
 		int argumentCount = 0;
@@ -2139,9 +2236,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		!startupPreviewSmokePath.empty();
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
+		"Experimental.Inkeys3.ConsoleOutput.Performance",
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
 		"UI.Bar.Zoom", "UI.Bar.StartupPlacement" });
+	if (!performanceLaunch.Enabled() && startupMiniConfig.Experimental.Inkeys3.ConsoleOutput.Performance)
+	{
+		// 实验选项同样只在本次启动固定采集状态，不附带控制台/像素诊断。
+		if (!performanceLaunch.CreateConfiguredDirectory(GetCurrentExeDirectory())
+			|| !performanceLaunch.BeginFinalProcess(GetCurrentExePath(), editionVersion,
+				editionDate, programArchitecture))
+		{
+			std::fprintf(stderr, "[Draw3PerformanceLaunch] configured capture failed: %s\n", performanceLaunch.ErrorReason());
+			configuredPerformanceFailure = performanceLaunch.ErrorReason();
+			(void)performanceLaunch.WriteBeforeFinalFailure();
+			// 可选输出失败只放弃本次采集，不阻止软件启动或改写用户偏好。
+			performanceLaunch.Disable();
+		}
+		else performanceLaunchState = &performanceLaunch;
+	}
 	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
 	const auto startupPlacement = Inkeys::UI::NormalizeStartupPlacement(
 		startupMiniConfig.UI.Bar.StartupPlacement.load());
@@ -2167,7 +2280,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		PublishFatalStartupFailure(0xD001u,
 			L"Unable to configure process DPI awareness.\n无法配置进程 DPI 感知，程序无法安全启动。");
-		return 1;
+		return performanceLaunchScope.ReturnCode(1);
 	}
 	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::DpiAwarenessReady);
 
@@ -2178,7 +2291,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		{
 			PublishFatalStartupFailure(0xD002u,
 				L"Unable to initialize the shared rendering pipeline.\n共享渲染管线初始化失败。");
-			return 1;
+			return performanceLaunchScope.ReturnCode(1);
 		}
 		// 现有 Initialize 是一个原子握手；三个真实子资源在成功返回后合并报告。
 		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderFactoriesReady);
@@ -2232,7 +2345,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					Inkeys::UI::StartupPreview::SnapshotDiagnostics(),
 					Inkeys::UI::Bar::SnapshotPresentationAlphaDiagnostics());
 				Inkeys::UI::RenderPipeline::Shutdown();
-				return 3;
+				return performanceLaunchScope.ReturnCode(3);
 			}
 			// 显式 smoke 模式短暂保留程序化首帧，供无输入截图验证。
 			this_thread::sleep_for(chrono::milliseconds(1500));
@@ -2333,6 +2446,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (_waccess((globalPath + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(globalPath + L"log\\idt" + Timestamp + L".log", ec);
 
 		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink<std::mutex>>(globalPath + L"log\\idt" + Timestamp + L".log", true);
+		if (performanceLaunch.Enabled()) performanceLaunch.SetLogFile(globalPath + L"log\\idt" + Timestamp + L".log");
 
 		spdlog::init_thread_pool(8192, 64);
 		IDTLogger = std::make_shared<spdlog::async_logger>("IDTLogger", IDTLoggerFileSink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
@@ -2356,6 +2470,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				return diagnosticsPool->discard_counter() == discarded;
 			});
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
+		if (configuredPerformanceFailure) IDTLogger->warn(
+			"[主线程][Draw3Performance] 实验性能输出无法启用，本次按普通模式启动，reason={}",
+			configuredPerformanceFailure);
 
 		if (LaunchState::crashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
 		ReportStartupMilestoneForManualTest(
@@ -2397,7 +2514,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			L"COM 运行环境初始化失败，程序无法继续启动。");
 		if (isolatedComFailure && SUCCEEDED(comInitializeResult)) CoUninitialize();
 		Inkeys::UI::RenderPipeline::Shutdown();
-		return 1;
+		return performanceLaunchScope.ReturnCode(1);
 	}
 
 	// 显示器信息初始化
@@ -2845,7 +2962,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
 			if (SUCCEEDED(comInitializeResult)) CoUninitialize();
 			Inkeys::UI::RenderPipeline::Shutdown();
-			return 1;
+			return performanceLaunchScope.ReturnCode(1);
 		}
 
 		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
@@ -2861,7 +2978,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
 		if (SUCCEEDED(comInitializeResult)) CoUninitialize();
 		Inkeys::UI::RenderPipeline::Shutdown();
-		return 1;
+		return performanceLaunchScope.ReturnCode(1);
 	}
 #endif
 	// 自动更新初始化
@@ -2880,7 +2997,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (IDTLogger) IDTLogger->error("[主线程][IdtMain] 界面绘图库初始化失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
 			PublishFatalStartupFailure(0xD002u,
 				L"共享渲染管线初始化失败，程序无法继续启动。");
-			return 0;
+			return performanceLaunchScope.ReturnCode(0);
 		}
 		if (hr == S_OK)
 		{
@@ -2926,7 +3043,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				PublishFatalStartupFailure(0xD003u,
 					L"UI 字体资源初始化失败，程序无法继续启动。");
 				Inkeys::UI::RenderPipeline::Shutdown();
-				return 0;
+				return performanceLaunchScope.ReturnCode(0);
 			}
 
 			// ----- 开始诊断代码 -----
@@ -3195,7 +3312,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				L"窗口服务初始化失败，程序无法继续启动。");
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
-			return 1;
+			return performanceLaunchScope.ReturnCode(1);
 		}
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::WindowOverlayReady);
@@ -3214,6 +3331,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		if (performanceLaunch.Enabled()) draw3StartOptions.performanceOutputDirectory = performanceLaunch.OutputDirectory();
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
@@ -3267,7 +3385,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				L"Draw3 绘图服务初始化失败，程序无法继续启动。");
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
-			return 1;
+			return performanceLaunchScope.ReturnCode(1);
 		}
 		if (!setting_window || !Inkeys::UI::Setting::Initialize())
 		{
@@ -3278,7 +3396,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::StopProduct();
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
-			return 1;
+			return performanceLaunchScope.ReturnCode(1);
 		}
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::SettingReady);
@@ -3295,7 +3413,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::StopProduct();
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
-			return 1;
+			return performanceLaunchScope.ReturnCode(1);
 		}
 		// 发布前临时跳过白板 UI 初始化，但仍完成既有启动进度契约。
 		ReportStartupMilestoneForManualTest(
@@ -3313,7 +3431,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::StopProduct();
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
-			return 1;
+			return performanceLaunchScope.ReturnCode(1);
 		}
 		ReconcileDraw3Presentation();
 		magnificationCreateReady = magnificationCreateReady &&
@@ -3339,7 +3457,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::StopProduct();
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
-			return 1;
+			return performanceLaunchScope.ReturnCode(1);
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
@@ -3399,6 +3517,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (Inkeys::Startup::ActiveSnapshot().failed) SetOffSignal(1);
 		if (!offSignal && !Inkeys::Drawing::Draw3::ProductRunning())
 		{
+			if (performanceLaunchState) performanceLaunchState->NoteFailure("draw3_runtime_stopped");
 			// 意外失去绘图消费者时先阻断旧可见性请求，再由窗口 owner 成对撤下画布。
 			SetOffSignal(1);
 			auto& service = Inkeys::Window::GetService();
@@ -3466,6 +3585,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		const auto startupSnapshot = Inkeys::Startup::ActiveSnapshot();
 		if (!startupSnapshot.failed) continue;
+		if (performanceLaunchState) performanceLaunchState->NoteFailure("startup_failed", startupSnapshot.failureCode);
 		SetOffSignal(1);
 		Inkeys::UI::StartupPreview::RequestFailureFrame();
 		(void)Inkeys::UI::StartupPreview::WaitForFailureFrame(
@@ -3531,6 +3651,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
+	performanceLaunchScope.exitCode = developerModeExitCode;
+	performanceLaunchScope.normalShutdown = true;
 
 	return developerModeExitCode;
 }

@@ -3,6 +3,7 @@
 #include "Draw3.Bridge.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
+#include "Draw3.Performance.h"
 #include "../../Helper/FailedCleanupDeadline.h"
 
 #include <windows.h>
@@ -192,6 +193,8 @@ namespace Inkeys::Drawing::Draw3
 		HANDLE successfulPresentReachedEvent = nullptr;
 		HANDLE continueSuccessfulPresentEvent = nullptr;
 		// 显式诊断只在本次 run 创建会话；越界容量仅关闭指标，不阻止产品启动。
+		// 空关闭；只影响本进程，每代Host在绝对根下独立create-new导出。
+		std::wstring performanceOutputDirectory;
 		bool enableRuntimeMetrics = false;
 		std::size_t runtimeMetricsMaximumSamples = 32768;
 	};

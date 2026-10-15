@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 98
-- **Last Active**: 2026-10-14
+- **Total Sessions**: 103
+- **Last Active**: 2026-10-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~454 | Active |
+| `journal-2.md` | ~583 | Active |
 | `journal-1.md` | ~2205 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 103 | 2026-10-15 | Draw3 性能诊断包2完成与交付 | - | `diagnostic/performance` |
+| 102 | 2026-10-15 | Draw3 性能诊断包与输入延迟分析 | - | `diagnostic/performance` |
 | 98 | 2026-10-14 | 完成主栏图标顺序与展开方向任务 | `35afa7ee`, `2dd3b344`, `8515d469`, `bec78a29` | `feature/mode` |
 | 97 | 2026-10-14 | 选择与穿透操作模式完成 | `3f3946cf`, `d444f6a7`, `7d5a003f` | `feature/mode` |
 | 83 | 2026-10-14 | 交互模式与启动预设人工验收结案 | `ecfee6ab`, `18b4c8fb`, `519afa01` | `feature/mode` |

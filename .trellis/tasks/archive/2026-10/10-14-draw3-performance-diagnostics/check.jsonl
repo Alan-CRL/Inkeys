@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "唯一Draw3 owner与no-window验证边界"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Host/RTS/renderer与RuntimeMetrics proof合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "线程所有权、最小修改和原编码换行"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "诊断日志及退出资源生命周期"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "ConsoleOutput配置归属与i18n"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "solution与无窗口验证范围"}
+{"file": ".trellis/tasks/10-14-draw3-performance-diagnostics/research/render-pipeline.md", "reason": "实际frame/presenter/GPU采样点"}
+{"file": ".trellis/tasks/10-14-draw3-performance-diagnostics/research/input-latency.md", "reason": "真实输入序号及内容贡献/呈现关联"}
+{"file": ".trellis/tasks/10-14-draw3-performance-diagnostics/research/package-and-config.md", "reason": "SuperTop最终进程、ConsoleOutput和Win7PS兼容"}

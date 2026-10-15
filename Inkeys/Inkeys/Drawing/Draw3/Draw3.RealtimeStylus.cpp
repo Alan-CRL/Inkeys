@@ -17,6 +17,7 @@
 #include <memory>
 #include <vector>
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.Performance.h"
 #include "../../Helper/FailedCleanupDeadline.h"
 #include <windows.h>
 #include <RTSCOM.h>
@@ -1022,9 +1023,9 @@ namespace Inkeys::Drawing::Draw3
 		{
 		public:
 			StylusSyncPlugin(ContactInputCoordinator& coordinator,
-				DrawingCursorEventSink* drawingCursorSink)
+				DrawingCursorEventSink* drawingCursorSink, PerformanceSession* performance = nullptr)
 				: coordinator_(coordinator), interruptionSimulation_(coordinator),
-				drawingCursorSink_(drawingCursorSink),
+				drawingCursorSink_(drawingCursorSink), performance_(performance),
 				activeBindings_(ComputeDefaultActiveBindingCapacity())
 			{
 				marshalerResult_ = CoCreateFreeThreadedMarshaler(
@@ -1137,11 +1138,14 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE StylusDown(IRealTimeStylus* source, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
+				PerformanceInputScope performanceInput(performance_, 0,
+					stylusInfo ? stylusInfo->tcid : 0, stylusInfo ? stylusInfo->cid : 0, 1);
 				// 产品构建不启用旧 RTS 宏；通过有界 Cursor 队列观察真实输入到达与发布。
 				RecordInputDiagnostic("Down", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
 				if (!source || !stylusInfo || !packet)
 				{
 					RecordInputDiagnostic("Down", "invalid-argument", stylusInfo);
+					performanceInput.Outcome(PerformanceCallbackOutcome::InvalidArgument);
 					return E_INVALIDARG;
 				}
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
@@ -1150,6 +1154,7 @@ namespace Inkeys::Drawing::Draw3
 					source, stylusInfo->tcid, nullptr, decoderSlotIndex);
 				if (!decoder)
 				{
+					performanceInput.Outcome(PerformanceCallbackOutcome::DecoderMissing);
 					RecordInputDiagnostic("Down", "no-decoder", stylusInfo);
 					PublishDefaultPenCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -1161,6 +1166,7 @@ namespace Inkeys::Drawing::Draw3
 				// 触控板板面不进入擦屏接触链；它控制的桌面指针仍走原鼠标通道。
 				if(SourceForCursor(*decoder,stylusInfo->cid).kind==SpeedEraser::SourceKind::TouchPad)
 				{
+					performanceInput.Outcome(PerformanceCallbackOutcome::TouchpadFiltered);
 					RecordInputDiagnostic("Down", "touchpad", stylusInfo, decoder);
 					return S_OK;
 				}
@@ -1181,6 +1187,7 @@ namespace Inkeys::Drawing::Draw3
 					decoder->generation, decoder->deviceType, true };
 				if (activeBindings_.Insert(binding) != RtsBindingInsertResult::Inserted)
 				{
+					performanceInput.Outcome(PerformanceCallbackOutcome::NoBinding);
 					RecordInputDiagnostic("Down", "binding-failed", stylusInfo, decoder);
 					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -1194,6 +1201,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!DecodeSnapshot(*decoder, propertyCount, packet,
 					ContactPhase::Down, QueryQpc(), snapshot))
 				{
+					performanceInput.Outcome(PerformanceCallbackOutcome::DecodeFailed);
 					RecordInputDiagnostic("Down", "decode-failed", stylusInfo, decoder,
 						nullptr, false, 1, propertyCount);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
@@ -1223,7 +1231,8 @@ namespace Inkeys::Drawing::Draw3
 						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
 				else
 					published = coordinator_.PublishDown(
-						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
+						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot, performanceInput.Trace());
+				if (performanceInput.Trace()) performance_->PublicationResult(performanceInput.Trace(), published);
 				if (!published)
 				{
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
@@ -1241,10 +1250,13 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE StylusUp(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
+				PerformanceInputScope performanceInput(performance_, 2,
+					stylusInfo ? stylusInfo->tcid : 0, stylusInfo ? stylusInfo->cid : 0, 1);
 				RecordInputDiagnostic("Up", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
 				if (!stylusInfo)
 				{
 					RecordInputDiagnostic("Up", "invalid-argument", stylusInfo);
+					performanceInput.Outcome(PerformanceCallbackOutcome::InvalidArgument);
 					return E_INVALIDARG;
 				}
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
@@ -1256,7 +1268,9 @@ namespace Inkeys::Drawing::Draw3
 				if (!packet)
 				{
 					PublishDefaultPenCursor();
-					const bool published = CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					const bool published = CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc(), performanceInput.Trace());
+					if (performanceInput.Trace()) performance_->PublicationResult(performanceInput.Trace(), published);
+					performanceInput.Outcome(PerformanceCallbackOutcome::Cancelled);
 					RecordInputDiagnostic("Up", "no-packet-cancel", stylusInfo,
 						binding ? decoderCache_.Resolve(*binding) : nullptr, nullptr, published);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
@@ -1272,7 +1286,9 @@ namespace Inkeys::Drawing::Draw3
 					PublishDefaultPenCursor();
 					// 坏 Up 包不能把 contact 永久留在 Producing；协调器会沿用最后有效位置闭合。
 					const bool published = CloseProducerContact(
-						stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+						stylusInfo->tcid, stylusInfo->cid, QueryQpc(), performanceInput.Trace());
+					if (performanceInput.Trace()) performance_->PublicationResult(performanceInput.Trace(), published);
+					performanceInput.Outcome(PerformanceCallbackOutcome::Cancelled);
 					RecordInputDiagnostic("Up", decoder ? "decode-failed-cancel" : "no-decoder-cancel",
 						stylusInfo, decoder, nullptr, published, 1, propertyCount);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
@@ -1293,7 +1309,8 @@ namespace Inkeys::Drawing::Draw3
 					published = interruptionSimulation_.PublishUp(
 						stylusInfo->tcid, stylusInfo->cid, snapshot);
 				else
-					published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
+					published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot, performanceInput.Trace());
+				if (performanceInput.Trace()) performance_->PublicationResult(performanceInput.Trace(), published);
 				activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 				if (bindingKnown)
 					NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
@@ -1346,12 +1363,15 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE Packets(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG packetCount, ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
+				PerformanceInputScope performanceInput(performance_, 1,
+					stylusInfo ? stylusInfo->tcid : 0, stylusInfo ? stylusInfo->cid : 0, packetCount);
 				const bool tracePacket = ShouldRecordInputPacket();
 				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
 					packetBufferLength % packetCount != 0)
 				{
 					if (tracePacket) RecordInputDiagnostic("Packets", "invalid-argument", stylusInfo,
 						nullptr, nullptr, false, packetCount);
+					performanceInput.Outcome(PerformanceCallbackOutcome::InvalidArgument);
 					return E_INVALIDARG;
 				}
 				const ULONG propertyCount = packetBufferLength / packetCount;
@@ -1359,6 +1379,7 @@ namespace Inkeys::Drawing::Draw3
 				RtsPacketStateGuard stateAccess(stateGate_);
 				if (!stateAccess)
 				{
+					performanceInput.Outcome(PerformanceCallbackOutcome::StateBusy);
 					if (tracePacket) RecordInputDiagnostic("Packets", "state-busy", stylusInfo,
 						nullptr, nullptr, false, packetCount, propertyCount);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -1374,6 +1395,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!decoder || !DecodeSnapshot(*decoder, propertyCount, lastPacket,
 					ContactPhase::Move, QueryQpc(), snapshot))
 				{
+					performanceInput.Outcome(decoder ? PerformanceCallbackOutcome::DecodeFailed : PerformanceCallbackOutcome::NoBinding);
 					if (tracePacket) RecordInputDiagnostic("Packets", decoder ? "decode-failed" : "no-binding-decoder",
 						stylusInfo, decoder, nullptr, false, packetCount, propertyCount);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -1390,7 +1412,8 @@ namespace Inkeys::Drawing::Draw3
 					published = interruptionSimulation_.PublishMove(
 						stylusInfo->tcid, stylusInfo->cid, snapshot);
 				else
-					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
+					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot, performanceInput.Trace());
+				if (performanceInput.Trace()) performance_->PublicationResult(performanceInput.Trace(), published);
 				PublishPenCursor(decoder, stylusInfo, true, snapshot);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
@@ -1575,7 +1598,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			bool CloseProducerContact(uint32_t tabletContextId,
-				uint32_t contactId, int64_t qpc) noexcept
+				uint32_t contactId, int64_t qpc, PerformanceInputTrace* performanceTrace = nullptr) noexcept
 			{
 				ContactSnapshot snapshot;
 				snapshot.position = { NAN, NAN };
@@ -1584,7 +1607,7 @@ namespace Inkeys::Drawing::Draw3
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					return interruptionSimulation_.PublishUp(tabletContextId, contactId, snapshot);
 				else
-					return coordinator_.PublishCancelled(tabletContextId, contactId, snapshot);
+					return coordinator_.PublishCancelled(tabletContextId, contactId, snapshot, performanceTrace);
 			}
 
 			void ResetActiveContactState(bool closeProducerContacts) noexcept
@@ -1757,6 +1780,7 @@ namespace Inkeys::Drawing::Draw3
 			[[no_unique_address]] InterruptedStrokeSimulation<
 				kInterruptedStrokeReconnectSimulationEnabled> interruptionSimulation_;
 			DrawingCursorEventSink* drawingCursorSink_ = nullptr;
+			PerformanceSession* performance_ = nullptr;
 			Microsoft::WRL::ComPtr<IUnknown> freeThreadedMarshaler_;
 			HRESULT marshalerResult_ = E_UNEXPECTED;
 			// lifecycle/Down/Up 串行写普通数组；只有 Packets/InAir 做一次无等待只读尝试。
@@ -2461,7 +2485,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 
 	bool RealTimeStylusInput::Initialize(HWND window, ContactInputCoordinator& coordinator,
-		DrawingCursorEventSink* drawingCursorSink, Shutdown::FailedCleanupSignal failedCleanup)
+		DrawingCursorEventSink* drawingCursorSink, Shutdown::FailedCleanupSignal failedCleanup, PerformanceSession* performance)
 	{
 		if (!window || impl_->initialized)
 		{
@@ -2496,6 +2520,7 @@ namespace Inkeys::Drawing::Draw3
 			<< std::dec << std::endl;
 
 		HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		if (performance) performance->Initialization("rts_com", 0, result, SUCCEEDED(result));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.coInitializeResult = result;
 #endif
@@ -2514,6 +2539,7 @@ namespace Inkeys::Drawing::Draw3
 
 		result = CoCreateInstance(__uuidof(RealTimeStylus), nullptr, CLSCTX_INPROC_SERVER,
 			IID_PPV_ARGS(impl_->stylus.ReleaseAndGetAddressOf()));
+		if (performance) performance->Initialization("rts_create", 0, result, SUCCEEDED(result));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.createStylusResult = result;
 #endif
@@ -2529,6 +2555,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		result = impl_->stylus->put_HWND(reinterpret_cast<HANDLE_PTR>(window));
+		if (performance) performance->Initialization("rts_hwnd", 0, result, SUCCEEDED(result));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.putHwndResult = result;
 #endif
@@ -2539,7 +2566,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if (SUCCEEDED(result))
 		{
-			result = impl_->stylus->SetAllTabletsMode(TRUE); // 同时接收鼠标、笔和触摸。
+			result = impl_->stylus->SetAllTabletsMode(TRUE);
+		if (performance) performance->Initialization("rts_all_tablets", 0, result, SUCCEEDED(result)); // 同时接收鼠标、笔和触摸。
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.setAllTabletsModeResult = result;
 #endif
@@ -2556,6 +2584,7 @@ namespace Inkeys::Drawing::Draw3
 				static_cast<ULONG>(kExtendedPacketProperties.size());
 			const HRESULT desiredPacketResult = impl_->stylus->SetDesiredPacketDescription(
 				desiredPacketPropertyCount, desiredPacketProperties);
+		if (performance) performance->Initialization("rts_packet_extended", 0, desiredPacketResult, SUCCEEDED(desiredPacketResult));
 			result = desiredPacketResult;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.desiredPacketDescriptionResult = desiredPacketResult;
@@ -2565,6 +2594,7 @@ namespace Inkeys::Drawing::Draw3
 				LogHResult("Set desired RealTimeStylus packet description", result);
 				const HRESULT requiredResult = impl_->stylus->SetDesiredPacketDescription(
 					static_cast<ULONG>(kRequiredPacketProperties.size()), kRequiredPacketProperties.data());
+		if (performance) performance->Initialization("rts_packet_required", 0, requiredResult, SUCCEEDED(requiredResult));
 				result = requiredResult;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				traceState.fallbackPacketDescriptionResult = requiredResult;
@@ -2589,6 +2619,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			Microsoft::WRL::ComPtr<IRealTimeStylus2> stylus2;
 			const HRESULT stylus2Result = impl_->stylus.As(&stylus2);
+		if (performance) performance->Initialization("rts_query_2", 0, stylus2Result, SUCCEEDED(stylus2Result));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.queryStylus2Result = stylus2Result;
 #endif
@@ -2596,6 +2627,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// 窗口标志负责多点 opt-in；这里关闭轻拂，避免笔输入被系统手势延迟或接管。
 				const HRESULT flicksResult = stylus2->put_FlicksEnabled(FALSE);
+		if (performance) performance->Initialization("rts_disable_flicks", 0, flicksResult, SUCCEEDED(flicksResult));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				traceState.disableFlicksResult = flicksResult;
 #endif
@@ -2605,6 +2637,7 @@ namespace Inkeys::Drawing::Draw3
 		if (SUCCEEDED(result))
 		{
 			result = impl_->stylus.As(&impl_->stylus3);
+		if (performance) performance->Initialization("rts_query_3", 0, result, SUCCEEDED(result));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.queryStylus3Result = result;
 #endif
@@ -2612,6 +2645,7 @@ namespace Inkeys::Drawing::Draw3
 		if (SUCCEEDED(result))
 		{
 			result = impl_->stylus3->put_MultiTouchEnabled(TRUE);
+		if (performance) performance->Initialization("rts_multitouch", 0, result, SUCCEEDED(result));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.enableMultiTouchResult = result;
 #endif
@@ -2620,6 +2654,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			BOOL multiTouchEnabled = FALSE;
 			const HRESULT verifyResult = impl_->stylus3->get_MultiTouchEnabled(&multiTouchEnabled);
+		if (performance) performance->Initialization("rts_multitouch_readback", 0, verifyResult, SUCCEEDED(verifyResult));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.readMultiTouchResult = verifyResult;
 			traceState.multiTouchEnabled = multiTouchEnabled;
@@ -2640,7 +2675,7 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 
-		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, drawingCursorSink);
+		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, drawingCursorSink, performance);
 		if (!plugin)
 		{
 			impl_->failedCleanup.BeginKnownFailure();
@@ -2668,6 +2703,7 @@ namespace Inkeys::Drawing::Draw3
 			impl_->diagnosticsPlugin=plugin;
 		}
 		result = impl_->stylus->AddStylusSyncPlugin(0, impl_->plugin.Get());
+		if (performance) performance->Initialization("rts_add_plugin", 0, result, SUCCEEDED(result));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.marshalerResult = plugin->MarshalerResult();
 		traceState.addPluginResult = result;
@@ -2685,6 +2721,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->pluginAdded = true;
 
 		result = impl_->stylus->put_Enabled(TRUE);
+		if (performance) performance->Initialization("rts_enable", 0, result, SUCCEEDED(result));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.enableStylusResult = result;
 #endif

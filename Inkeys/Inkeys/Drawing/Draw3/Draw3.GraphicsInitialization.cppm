@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <wrl/client.h>
@@ -25,7 +26,7 @@ export namespace Inkeys::Drawing::Draw3
 	};
 
 	// 初始化 D3D11 设备，硬件设备失败时自动回退到 WARP。
-	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources);
+	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources, PerformanceSession* performance = nullptr);
 	// 统一识别必须销毁并重建 D3D 设备的 DXGI 返回值。
 	bool IsGraphicsDeviceLostError(HRESULT result) noexcept;
 }

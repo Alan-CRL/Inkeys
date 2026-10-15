@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.Performance.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -262,7 +264,8 @@ namespace Inkeys::Drawing::Draw3
 			record.writerLatch_.clear(std::memory_order_release);
 		}
 
-		static void PublishSnapshot(ContactRecord& record, ContactSnapshot snapshot) noexcept
+		static void PublishSnapshot(ContactRecord& record, ContactSnapshot snapshot,
+			PerformanceInputTrace* performanceTrace = nullptr, uint64_t generation = 0) noexcept
 		{
 			uint64_t sequence = record.sequence_.Load();
 			if ((sequence & 1u) != 0) ++sequence;
@@ -280,6 +283,10 @@ namespace Inkeys::Drawing::Draw3
 			record.height_.Store(snapshot.contactSize.height);
 			record.qpc_.Store(snapshot.qpc);
 			record.phase_.Store(static_cast<uint32_t>(snapshot.phase));
+			// 持writer时锁存本次真实序号；消费者无需等待诊断，旁挂不回读可能被覆盖的快照。
+			if (performanceTrace && performanceTrace->publication) performanceTrace->publication(performanceTrace,
+				{ reinterpret_cast<uintptr_t>(&record), generation, sequence + 2 }, snapshot.qpc,
+				record.downSnapshot_.admissionRevision, static_cast<uint32_t>(snapshot.phase), record.deviceType_.Load());
 			record.sequence_.Store(sequence + 2); // 偶数一次性发布一致终态。
 		}
 
@@ -563,7 +570,7 @@ namespace Inkeys::Drawing::Draw3
 
 		bool Close(ContactRecord& record, uint64_t expectedGeneration,
 			uint32_t tabletContextId, uint32_t contactId,
-			ContactSnapshot snapshot, ContactPhase phase) noexcept
+			ContactSnapshot snapshot, ContactPhase phase, PerformanceInputTrace* performanceTrace = nullptr) noexcept
 		{
 			if (!ContactRecordAccess::Matches(record, tabletContextId, contactId)) return false;
 			bool quarantined = false;
@@ -612,7 +619,7 @@ namespace Inkeys::Drawing::Draw3
 				if (terminalQpc > 0) snapshot.qpc = terminalQpc;
 			}
 			snapshot.phase = phase;
-			ContactRecordAccess::PublishSnapshot(record, snapshot);
+			ContactRecordAccess::PublishSnapshot(record, snapshot, performanceTrace, expectedGeneration);
 			ContactRecordAccess::UnlockWriter(record);
 			bool closed = ContactRecordAccess::TrySetExactState(record, expectedGeneration,
 				ProducerState::Closing, quarantined ? ProducerState::Free : ProducerState::ConsumerOwned);
@@ -735,7 +742,7 @@ namespace Inkeys::Drawing::Draw3
 	ContactInputCoordinator::~ContactInputCoordinator() = default;
 
 	bool ContactInputCoordinator::PublishDown(uint32_t tabletContextId, uint32_t contactId,
-		InputDeviceType deviceType, const ContactSnapshot& snapshot)
+		InputDeviceType deviceType, const ContactSnapshot& snapshot, PerformanceInputTrace* performanceTrace)
 	{
 		if (!HasFinitePosition(snapshot))
 		{
@@ -756,6 +763,9 @@ namespace Inkeys::Drawing::Draw3
 		admitted.admissionRevision = impl_->admissionRevision.load(std::memory_order_acquire);
 		ContactRecordAccess::Initialize(
 			*record, tabletContextId, contactId, deviceType, admitted, generation);
+		if (performanceTrace && performanceTrace->publication) performanceTrace->publication(performanceTrace,
+			{ reinterpret_cast<uintptr_t>(record), generation, 2 }, admitted.qpc,
+			admitted.admissionRevision, static_cast<uint32_t>(ContactPhase::Down), static_cast<uint32_t>(deviceType));
 		ContactRecordAccess::SetState(*record, ProducerState::Producing);
 		if (impl_->EnqueueDown(record))
 		{
@@ -769,7 +779,7 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	bool ContactInputCoordinator::PublishMove(uint32_t tabletContextId, uint32_t contactId,
-		const ContactSnapshot& snapshot) noexcept
+		const ContactSnapshot& snapshot, PerformanceInputTrace* performanceTrace) noexcept
 	{
 		if (!HasFinitePosition(snapshot)) return false;
 		const LocatedContact located = impl_->FindProducing(tabletContextId, contactId);
@@ -788,7 +798,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 		ContactSnapshot moveSnapshot = snapshot;
 		moveSnapshot.phase = ContactPhase::Move;
-		ContactRecordAccess::PublishSnapshot(*located.record, moveSnapshot);
+		ContactRecordAccess::PublishSnapshot(*located.record, moveSnapshot, performanceTrace, located.generation);
 		const bool routeStillMatches = ContactRecordAccess::HasRoute(
 			*located.record, located.generation, ProducerState::Producing);
 		ContactRecordAccess::UnlockWriter(*located.record);
@@ -802,19 +812,19 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	bool ContactInputCoordinator::PublishUp(uint32_t tabletContextId, uint32_t contactId,
-		const ContactSnapshot& snapshot) noexcept
+		const ContactSnapshot& snapshot, PerformanceInputTrace* performanceTrace) noexcept
 	{
 		const LocatedContact located = impl_->FindProducing(tabletContextId, contactId);
 		return located && impl_->Close(*located.record, located.generation,
-			tabletContextId, contactId, snapshot, ContactPhase::Up);
+			tabletContextId, contactId, snapshot, ContactPhase::Up, performanceTrace);
 	}
 
 	bool ContactInputCoordinator::PublishCancelled(uint32_t tabletContextId, uint32_t contactId,
-		const ContactSnapshot& snapshot) noexcept
+		const ContactSnapshot& snapshot, PerformanceInputTrace* performanceTrace) noexcept
 	{
 		const LocatedContact located = impl_->FindProducing(tabletContextId, contactId);
 		return located && impl_->Close(*located.record, located.generation,
-			tabletContextId, contactId, snapshot, ContactPhase::Cancelled);
+			tabletContextId, contactId, snapshot, ContactPhase::Cancelled, performanceTrace);
 	}
 
 	bool ContactInputCoordinator::TryReadSnapshot(ContactHandle handle, ContactSnapshot& snapshot) const noexcept

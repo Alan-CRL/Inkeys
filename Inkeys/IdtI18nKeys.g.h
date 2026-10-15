@@ -501,6 +501,11 @@ inline constexpr struct I18nKeyRoot
                     const char* N = "SettingsUI/Experimental/ConsoleOutput/Cursor/N";
                     const char* E = "SettingsUI/Experimental/ConsoleOutput/Cursor/E";
                 } Cursor{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__Performance
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/Performance/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/Performance/E";
+                } Performance{};
             } ConsoleOutput{};
         } Experimental{};
         struct Node__SettingsUI__PlugIn
