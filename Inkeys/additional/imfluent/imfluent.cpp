@@ -7,6 +7,7 @@
 
 #include <math.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <time.h>
 
 #if defined( _WIN32 )
@@ -26,6 +27,8 @@ struct ImFluentNextItemData
     bool HasDescription;
     bool HasGlyph;
     bool HasError;
+    ImGuiWindow * Window; // Where and when SetNextItem*() ran: a widget that skips itself (clipped) never consumes
+    int Frame;            // the data, and it must not leak to an unrelated widget later
 };
 
 struct ImFluentNextAutoSuggestData
@@ -85,12 +88,16 @@ struct ImFluentExpanderState
 
 struct ImFluentNavViewState
 {
+    bool InTabGroup; // Between BeginNavigationView and EndNavigationView: menu items form one tab stop
+    bool FooterItem; // The item being submitted is a footer item (Settings): its own tab stop
     float CurrentWidth;
     bool ContentStarted;
     ImFluentNavViewMode Mode;
     ImFluentNavViewMode PrevMode;
     bool NextToggleVisible;
     bool NextToggleVisibleSet;
+    bool MenuRegionOpen;       // Left modes: the menu items' scrolling region is open (see BeginNavMenuRegion)
+    float FooterStartY = -1.f; // Pane cursor y where the footer items (Settings) start, -1 without footer
 };
 
 struct ImFluentPopupAnchor
@@ -106,6 +113,13 @@ struct ImFluentCommandBarState
     float Height;
     bool HasItem              = false;
     bool SuppressAutoSameLine = false;
+    bool IconOnly             = false; // CommandBarFlyout primary commands: no labels
+    ImGuiWindow * Window      = NULL;  // The bar's child window (the overflow popup is another window)
+    ImGuiID PrevFirst         = 0;    // First and last commands of the previous frame: Left/Right stop there
+    ImGuiID PrevLast          = 0;
+    ImGuiID First             = 0;
+    ImGuiID Last              = 0;
+    bool OverflowFocusLast    = false; // Opened with Up: focus the last overflow item (WinUI)
 };
 
 struct ImFluentSplitViewState
@@ -131,12 +145,77 @@ struct ImFluentTextStyleFont
     float FontSize;
 };
 
+// A control that is ONE tab stop (WinUI TabFocusNavigation="Once"): Tab lands on the selected, else last focused, else first item.
+enum ImFluentTabGroupFlags_
+{
+    ImFluentTabGroupFlags_None                  = 0,
+    ImFluentTabGroupFlags_Vertical              = 1 << 0, // A column: Up/Down stop at the ends, Left/Right do nothing
+    ImFluentTabGroupFlags_Horizontal            = 1 << 1, // A row: Left/Right stop at the ends, Up/Down do nothing
+    ImFluentTabGroupFlags_Wrap                  = 1 << 2, // With Vertical/Horizontal: the ends wrap around instead
+    ImFluentTabGroupFlags_SelectionFollowsFocus = 1 << 3, // Arrow keys select the item they focus (not with Ctrl)
+    ImFluentTabGroupFlags_HomeEnd               = 1 << 4, // Home/End focus the first/last item
+    ImFluentTabGroupFlags_FirstIsStop           = 1 << 5, // The first item is always the tab stop (BreadcrumbBar)
+    ImFluentTabGroupFlags_Grid                  = 1 << 6, // Arrows move to the nearest item of the group (GridView)
+    ImFluentTabGroupFlags_ItemsContainer        = 1 << 7, // BeginListView/GridView/TreeView: their items join the group
+    ImFluentTabGroupFlags_EnterAtEnds           = 1 << 8, // Without a selection: Tab enters on the first item, Shift+Tab on the last (ItemsRepeater)
+    ImFluentTabGroupFlags_EnterOnLastFocused    = 1 << 9, // Tab enters on the last focused item, before the selected one (Selector: ListBox, TabView)
+};
+
+// Item rects of a Grid tab group, kept from the previous frame: arrows move between them. A TabView keeps its Left/Right order here.
+struct ImFluentTabGroupLayout
+{
+    ImVector< ImGuiID > Items;
+    ImVector< ImRect > Rects;
+    ImVector< ImGuiID > NextItems; // This frame
+    ImVector< ImRect > NextRects;
+};
+
+struct ImFluentTabGroup
+{
+    ImGuiID Id;
+    int Flags;
+    int LayoutIdx;     // Grid groups: index in ImFluentContext::TabGroupLayouts, else -1
+    ImGuiID Stop;      // Item that is the tab stop this frame, decided from the previous frame
+    ImGuiID PrevFirst; // First and last items of the previous frame
+    ImGuiID PrevLast;
+    ImGuiID Pending;      // Item that Home/End or a wrap moved focus to: scrolled into view when it is submitted
+    bool PendingSelect;   // ...and selected (SelectionFollowsFocus without Ctrl)
+    ImGuiID LastSelected; // The selected item last submitted, kept while it is hidden
+    ImGuiID First;        // This frame
+    ImGuiID Last;
+    ImGuiID Selected;
+    ImGuiID SelectedAncestor; // A collapsed item that hides the selected item (TabGroupHiddenSelection)
+    ImGuiID Focused;
+    bool StopSeen;
+};
+
+struct ImFluentBackdropState
+{
+    static const int TexSize = 96; // One monitor; non-square texels
+
+    ImFluentBackdrop Kind = ImFluentBackdrop_None;
+    ImFluentBackdropHooks Hooks;
+    ImTextureData * Texture         = NULL; // RegisterUserTexture; the renderer backend uploads it
+    bool HasImage                   = false;
+    unsigned int BuiltSerial        = 0; // What the texture was built from
+    ImFluentBackdrop BuiltKind      = -1;
+    ImFluentThemePreset BuiltPreset = -1;
+    ImVec2 BuiltMonitorSize;
+    double NextPoll                  = 0.0;
+    float Active                     = 1.f; // 0 when the app is not focused
+    bool Native                      = false;
+    ImFluentBackdrop NativeKind      = -1;
+    ImFluentThemePreset NativePreset = -1;
+};
+
 struct ImFluentContext
 {
     static const int MaxPopupAnchors = 16;
 
     ImFluentThemePreset Preset;
     ImFluentStyle Style;
+    ImFluentActions Actions;
+    ImFluentBackdropState Backdrop;
     ImFluentTextStyleFont Fonts[ ImFluentTextStyle_COUNT ];
     ImFont * IconFont = NULL; // INKEYS PATCH: 图标与正文的度量分离。
 
@@ -150,6 +229,45 @@ struct ImFluentContext
     ImVector< ImFluentExpanderState > ExpanderStack;
     ImVector< ImFluentCommandBarState > CommandBarStack;
     ImVector< float > NavItemIndentStack;
+    ImVector< ImGuiID > NavItemParentStack; // Expanded BeginNavItem ids, with NavItemIndentStack
+    ImVector< ImFluentTabGroup > TabGroupStack;
+    ImPool< ImFluentTabGroupLayout > TabGroupLayouts;
+
+    struct FlipViewState
+    {
+        ImGuiID Id;
+        const char * Label;
+        int * Current;
+        int Count;
+    };
+    ImVector< FlipViewState > FlipViewStack;
+
+    struct MenuBarState
+    {
+        static const int MaxItems = 16;
+        bool InPage               = false; // BeginMenuBar( id ), else the application's main menu bar
+        ImGuiID Id                = 0;
+        int Count                 = 0;
+        int OpenIndex             = -1; // The item whose menu is open this frame
+        int PrevOpenIndex         = -1; // ...and last frame
+        int SwitchDir             = 0;  // Left/Right inside an open menu: open the neighbouring menu
+        ImGuiID ItemIds[ MaxItems ];
+        ImGuiID PopupIds[ MaxItems ];
+        ImRect Rects[ MaxItems ];
+    };
+    ImVector< MenuBarState > MenuBarStack;
+    bool InRadioButtons;                  // RadioButtons() moves focus itself: its items are not loose radio buttons
+    ImDrawListSplitter TextFrameSplitter; // A text control's fill goes under the text ImGui draws (see BeginTextControlFrame)
+    ImVector< ImGuiID > TreeParentStack; // Open TreeNode ids (TreePop pops): Left on a child focuses its parent
+    ImGuiID TreeFocusFirstChildOf = 0;   // Right on an expanded TreeNode: its first child takes focus
+
+    struct TypeAhead
+    {
+        ImGuiID Id      = 0;
+        char Buf[ 64 ]  = {};
+        int Len         = 0;
+        double LastTime = -1.0;
+    } ComboTypeAhead;
     ImVector< ImFluentSplitViewState > SplitViewStack;
     ImVector< ImFluentAutoSuggestScoredItem > AutoSuggestVisible;
 
@@ -280,42 +398,41 @@ namespace ImFluent
 
     static void BuildDarkPalette( ImFluentStyle & s )
     {
-        FillCommon( s );
         ImVec4 * c = s.Colors;
 
-        c[ ImFluentCol_TextPrimary ]   = ImColor( 255, 255, 255, 228 );
-        c[ ImFluentCol_TextSecondary ] = ImColor( 255, 255, 255, 200 );
-        c[ ImFluentCol_TextTertiary ]  = ImColor( 255, 255, 255, 144 );
+        c[ ImFluentCol_TextPrimary ]   = ImColor( 255, 255, 255 );
+        c[ ImFluentCol_TextSecondary ] = ImColor( 255, 255, 255, 197 );
+        c[ ImFluentCol_TextTertiary ]  = ImColor( 255, 255, 255, 135 );
         c[ ImFluentCol_TextDisabled ]  = ImColor( 255, 255, 255, 93 );
 
         c[ ImFluentCol_TextOnAccentPrimary ]   = ImColor( 0, 0, 0 );
-        c[ ImFluentCol_TextOnAccentSecondary ] = ImColor( 0, 0, 0, 178 );
-        c[ ImFluentCol_TextOnAccentDisabled ]  = ImColor( 0, 0, 0, 87 );
-        c[ ImFluentCol_TextOnAccentSelected ]  = ImColor( 0, 0, 0 );
+        c[ ImFluentCol_TextOnAccentSecondary ] = ImColor( 0, 0, 0, 128 );
+        c[ ImFluentCol_TextOnAccentDisabled ]  = ImColor( 255, 255, 255, 135 );
+        c[ ImFluentCol_TextOnAccentSelected ]  = ImColor( 255, 255, 255 );
         c[ ImFluentCol_AccentTextPrimary ]     = ImColor( 153, 235, 255 );
         c[ ImFluentCol_AccentTextSecondary ]   = ImColor( 118, 215, 255 );
         c[ ImFluentCol_AccentTextTertiary ]    = ImColor( 96, 205, 255 );
         c[ ImFluentCol_AccentTextDisabled ]    = ImColor( 255, 255, 255, 93 );
 
-        c[ ImFluentCol_ControlFillDefault ]        = ImColor( 255, 255, 255, 18 );
-        c[ ImFluentCol_ControlFillSecondary ]      = ImColor( 255, 255, 255, 40 );
+        c[ ImFluentCol_ControlFillDefault ]        = ImColor( 255, 255, 255, 15 );
+        c[ ImFluentCol_ControlFillSecondary ]      = ImColor( 255, 255, 255, 21 );
         c[ ImFluentCol_ControlFillTertiary ]       = ImColor( 255, 255, 255, 8 );
-        c[ ImFluentCol_ControlFillQuarternary ]    = ImColor( 255, 255, 255, 76 );
-        c[ ImFluentCol_ControlFillDisabled ]       = ImColor( 255, 255, 255, 10 );
+        c[ ImFluentCol_ControlFillQuarternary ]    = ImColor( 255, 255, 255, 15 );
+        c[ ImFluentCol_ControlFillDisabled ]       = ImColor( 255, 255, 255, 11 );
         c[ ImFluentCol_ControlFillTransparent ]    = ImColor( 0, 0, 0, 0 );
-        c[ ImFluentCol_ControlFillInputActive ]    = ImColor( 30, 30, 30, 178 );
+        c[ ImFluentCol_ControlFillInputActive ]    = ImColor( 30, 30, 30, 179 );
         c[ ImFluentCol_ControlAltFillTransparent ] = ImColor( 0, 0, 0, 0 );
-        c[ ImFluentCol_ControlAltFillSecondary ]   = ImColor( 0, 0, 0, 26 );
-        c[ ImFluentCol_ControlAltFillTertiary ]    = ImColor( 255, 255, 255, 10 );
+        c[ ImFluentCol_ControlAltFillSecondary ]   = ImColor( 0, 0, 0, 25 );
+        c[ ImFluentCol_ControlAltFillTertiary ]    = ImColor( 255, 255, 255, 11 );
         c[ ImFluentCol_ControlAltFillQuarternary ] = ImColor( 255, 255, 255, 18 );
         c[ ImFluentCol_ControlAltFillDisabled ]    = ImColor( 0, 0, 0, 0 );
-        c[ ImFluentCol_ControlSolidFillDefault ]   = ImColor( 105, 105, 105 );
-        c[ ImFluentCol_ControlStrongFillDefault ]  = ImColor( 255, 255, 255, 138 );
-        c[ ImFluentCol_ControlStrongFillDisabled ] = ImColor( 255, 255, 255, 93 );
+        c[ ImFluentCol_ControlSolidFillDefault ]   = ImColor( 69, 69, 69 );
+        c[ ImFluentCol_ControlStrongFillDefault ]  = ImColor( 255, 255, 255, 139 );
+        c[ ImFluentCol_ControlStrongFillDisabled ] = ImColor( 255, 255, 255, 63 );
 
         c[ ImFluentCol_SubtleFillTransparent ] = ImColor( 255, 255, 255, 0 );
-        c[ ImFluentCol_SubtleFillSecondary ]   = ImColor( 255, 255, 255, 30 );
-        c[ ImFluentCol_SubtleFillTertiary ]    = ImColor( 255, 255, 255, 18 );
+        c[ ImFluentCol_SubtleFillSecondary ]   = ImColor( 255, 255, 255, 15 );
+        c[ ImFluentCol_SubtleFillTertiary ]    = ImColor( 255, 255, 255, 10 );
         c[ ImFluentCol_SubtleFillDisabled ]    = ImColor( 255, 255, 255, 0 );
 
         c[ ImFluentCol_AccentFillDefault ]        = ImColor( 76, 194, 255 );
@@ -325,41 +442,41 @@ namespace ImFluent
         c[ ImFluentCol_AccentFillSelectedTextBg ] = ImColor( 0, 103, 192 );
 
         c[ ImFluentCol_CardBgDefault ]      = ImColor( 255, 255, 255, 13 );
-        c[ ImFluentCol_CardBgSecondary ]    = ImColor( 255, 255, 255, 18 );
-        c[ ImFluentCol_LayerFillDefault ]   = ImColor( 58, 58, 58, 128 );
+        c[ ImFluentCol_CardBgSecondary ]    = ImColor( 255, 255, 255, 8 );
+        c[ ImFluentCol_LayerFillDefault ]   = ImColor( 58, 58, 58, 76 );
         c[ ImFluentCol_LayerFillAlt ]       = ImColor( 44, 44, 44 );
-        c[ ImFluentCol_SmokeFill ]          = ImColor( 0, 0, 0, 76 );
+        c[ ImFluentCol_SmokeFill ]          = ImColor( 0, 0, 0, 77 );
         c[ ImFluentCol_AcrylicFill ]        = ImColor( 44, 44, 44, 220 );
         c[ ImFluentCol_SolidBgBase ]        = ImColor( 32, 32, 32 );
         c[ ImFluentCol_SolidBgQuarternary ] = ImColor( 44, 44, 44 );
 
-        c[ ImFluentCol_CardStrokeDefault ]              = ImColor( 255, 255, 255, 20 );
-        c[ ImFluentCol_CardStrokeSolid ]                = ImColor( 56, 56, 56 );
+        c[ ImFluentCol_CardStrokeDefault ]              = ImColor( 0, 0, 0, 25 );
+        c[ ImFluentCol_CardStrokeSolid ]                = ImColor( 28, 28, 28 );
         c[ ImFluentCol_ControlStrokeDefault ]           = ImColor( 255, 255, 255, 18 );
-        c[ ImFluentCol_ControlStrokeSecondary ]         = ImColor( 255, 255, 255, 41 );
+        c[ ImFluentCol_ControlStrokeSecondary ]         = ImColor( 255, 255, 255, 24 );
         c[ ImFluentCol_ControlStrokeOnAccentDefault ]   = ImColor( 255, 255, 255, 20 );
-        c[ ImFluentCol_ControlStrokeOnAccentSecondary ] = ImColor( 0, 0, 0, 102 );
-        c[ ImFluentCol_ControlStrongStrokeDefault ]     = ImColor( 255, 255, 255, 138 );
-        c[ ImFluentCol_ControlStrongStrokeDisabled ]    = ImColor( 255, 255, 255, 56 );
-        c[ ImFluentCol_SurfaceStrokeDefault ]           = ImColor( 0, 0, 0, 102 );
-        c[ ImFluentCol_SurfaceStrokeFlyout ]            = ImColor( 0, 0, 0, 102 );
+        c[ ImFluentCol_ControlStrokeOnAccentSecondary ] = ImColor( 0, 0, 0, 35 );
+        c[ ImFluentCol_ControlStrongStrokeDefault ]     = ImColor( 255, 255, 255, 139 );
+        c[ ImFluentCol_ControlStrongStrokeDisabled ]    = ImColor( 255, 255, 255, 40 );
+        c[ ImFluentCol_SurfaceStrokeDefault ]           = ImColor( 117, 117, 117, 102 );
+        c[ ImFluentCol_SurfaceStrokeFlyout ]            = ImColor( 0, 0, 0, 51 );
         c[ ImFluentCol_DividerStrokeDefault ]           = ImColor( 255, 255, 255, 21 );
 
         c[ ImFluentCol_FocusStrokeOuter ] = ImColor( 255, 255, 255 );
-        c[ ImFluentCol_FocusStrokeInner ] = ImColor( 28, 28, 28 );
+        c[ ImFluentCol_FocusStrokeInner ] = ImColor( 0, 0, 0, 179 );
 
-        c[ ImFluentCol_ElevationControlTop ]               = ImColor( 255, 255, 255, 20 );
-        c[ ImFluentCol_ElevationControlBottom ]            = ImColor( 0, 0, 0, 90 );
-        c[ ImFluentCol_ElevationTextControlTop ]           = ImColor( 255, 255, 255, 20 );
-        c[ ImFluentCol_ElevationTextControlBottom ]        = ImColor( 255, 255, 255, 138 );
+        c[ ImFluentCol_ElevationControlTop ]               = ImColor( 255, 255, 255, 24 );
+        c[ ImFluentCol_ElevationControlBottom ]            = ImColor( 255, 255, 255, 18 );
+        c[ ImFluentCol_ElevationTextControlTop ]           = ImColor( 255, 255, 255, 18 );
+        c[ ImFluentCol_ElevationTextControlBottom ]        = ImColor( 255, 255, 255, 139 );
         c[ ImFluentCol_ElevationTextControlFocusedBottom ] = ImColor( 76, 194, 255 );
         c[ ImFluentCol_ElevationAccentTop ]                = ImColor( 255, 255, 255, 20 );
-        c[ ImFluentCol_ElevationAccentBottom ]             = ImColor( 0, 0, 0, 64 );
+        c[ ImFluentCol_ElevationAccentBottom ]             = ImColor( 0, 0, 0, 35 );
 
         c[ ImFluentCol_SystemFillSuccess ]   = ImColor( 108, 203, 95 );
         c[ ImFluentCol_SystemFillCaution ]   = ImColor( 252, 225, 0 );
         c[ ImFluentCol_SystemFillCritical ]  = ImColor( 255, 153, 164 );
-        c[ ImFluentCol_SystemFillNeutral ]   = ImColor( 255, 255, 255, 138 );
+        c[ ImFluentCol_SystemFillNeutral ]   = ImColor( 255, 255, 255, 139 );
         c[ ImFluentCol_SystemFillAttention ] = ImColor( 96, 205, 255 );
     }
 
@@ -372,63 +489,63 @@ namespace ImFluent
         c[ ImFluentCol_TextTertiary ]          = ImColor( 0, 0, 0, 114 );
         c[ ImFluentCol_TextDisabled ]          = ImColor( 0, 0, 0, 92 );
         c[ ImFluentCol_TextOnAccentPrimary ]   = ImColor( 255, 255, 255 );
-        c[ ImFluentCol_TextOnAccentSecondary ] = ImColor( 255, 255, 255, 178 );
-        c[ ImFluentCol_TextOnAccentDisabled ]  = ImColor( 255, 255, 255, 87 );
+        c[ ImFluentCol_TextOnAccentSecondary ] = ImColor( 255, 255, 255, 179 );
+        c[ ImFluentCol_TextOnAccentDisabled ]  = ImColor( 255, 255, 255 );
         c[ ImFluentCol_TextOnAccentSelected ]  = ImColor( 255, 255, 255 );
         c[ ImFluentCol_AccentTextPrimary ]     = ImColor( 0, 90, 158 );
         c[ ImFluentCol_AccentTextSecondary ]   = ImColor( 0, 78, 140 );
         c[ ImFluentCol_AccentTextTertiary ]    = ImColor( 0, 103, 192 );
         c[ ImFluentCol_AccentTextDisabled ]    = ImColor( 0, 0, 0, 92 );
 
-        c[ ImFluentCol_ControlFillDefault ]        = ImColor( 255, 255, 255, 178 );
+        c[ ImFluentCol_ControlFillDefault ]        = ImColor( 255, 255, 255, 179 );
         c[ ImFluentCol_ControlFillSecondary ]      = ImColor( 249, 249, 249, 128 );
         c[ ImFluentCol_ControlFillTertiary ]       = ImColor( 249, 249, 249, 77 );
-        c[ ImFluentCol_ControlFillQuarternary ]    = ImColor( 249, 249, 249, 194 );
-        c[ ImFluentCol_ControlFillDisabled ]       = ImColor( 243, 243, 243, 178 );
+        c[ ImFluentCol_ControlFillQuarternary ]    = ImColor( 243, 243, 243, 194 );
+        c[ ImFluentCol_ControlFillDisabled ]       = ImColor( 249, 249, 249, 77 );
         c[ ImFluentCol_ControlFillInputActive ]    = ImColor( 255, 255, 255 );
         c[ ImFluentCol_ControlAltFillTransparent ] = ImColor( 0, 0, 0, 0 );
         c[ ImFluentCol_ControlAltFillSecondary ]   = ImColor( 0, 0, 0, 6 );
         c[ ImFluentCol_ControlAltFillTertiary ]    = ImColor( 0, 0, 0, 15 );
-        c[ ImFluentCol_ControlAltFillQuarternary ] = ImColor( 0, 0, 0, 18 );
+        c[ ImFluentCol_ControlAltFillQuarternary ] = ImColor( 0, 0, 0, 24 );
         c[ ImFluentCol_ControlAltFillDisabled ]    = ImColor( 0, 0, 0, 0 );
         c[ ImFluentCol_ControlSolidFillDefault ]   = ImColor( 255, 255, 255 );
         c[ ImFluentCol_ControlStrongFillDefault ]  = ImColor( 0, 0, 0, 114 );
-        c[ ImFluentCol_ControlStrongFillDisabled ] = ImColor( 0, 0, 0, 82 );
+        c[ ImFluentCol_ControlStrongFillDisabled ] = ImColor( 0, 0, 0, 81 );
 
         c[ ImFluentCol_SubtleFillTransparent ] = ImColor( 0, 0, 0, 0 );
-        c[ ImFluentCol_SubtleFillSecondary ]   = ImColor( 0, 0, 0, 10 );
+        c[ ImFluentCol_SubtleFillSecondary ]   = ImColor( 0, 0, 0, 9 );
         c[ ImFluentCol_SubtleFillTertiary ]    = ImColor( 0, 0, 0, 6 );
         c[ ImFluentCol_SubtleFillDisabled ]    = ImColor( 0, 0, 0, 0 );
 
         c[ ImFluentCol_AccentFillDefault ]        = ImColor( 0, 103, 192 );
         c[ ImFluentCol_AccentFillSecondary ]      = ImColor( 0, 103, 192, 230 );
         c[ ImFluentCol_AccentFillTertiary ]       = ImColor( 0, 103, 192, 204 );
-        c[ ImFluentCol_AccentFillDisabled ]       = ImColor( 0, 0, 0, 56 );
+        c[ ImFluentCol_AccentFillDisabled ]       = ImColor( 0, 0, 0, 55 );
         c[ ImFluentCol_AccentFillSelectedTextBg ] = ImColor( 0, 103, 192 );
 
-        c[ ImFluentCol_CardBgDefault ]      = ImColor( 255, 255, 255, 178 );
+        c[ ImFluentCol_CardBgDefault ]      = ImColor( 255, 255, 255, 179 );
         c[ ImFluentCol_CardBgSecondary ]    = ImColor( 246, 246, 246, 128 );
         c[ ImFluentCol_LayerFillDefault ]   = ImColor( 255, 255, 255, 128 );
         c[ ImFluentCol_LayerFillAlt ]       = ImColor( 255, 255, 255 );
-        c[ ImFluentCol_SmokeFill ]          = ImColor( 0, 0, 0, 76 );
+        c[ ImFluentCol_SmokeFill ]          = ImColor( 0, 0, 0, 77 );
         c[ ImFluentCol_AcrylicFill ]        = ImColor( 252, 252, 252, 220 );
         c[ ImFluentCol_SolidBgBase ]        = ImColor( 243, 243, 243 );
         c[ ImFluentCol_SolidBgQuarternary ] = ImColor( 238, 238, 238 );
 
-        c[ ImFluentCol_CardStrokeDefault ]              = ImColor( 0, 0, 0, 18 );
+        c[ ImFluentCol_CardStrokeDefault ]              = ImColor( 0, 0, 0, 15 );
         c[ ImFluentCol_CardStrokeSolid ]                = ImColor( 235, 235, 235 );
         c[ ImFluentCol_ControlStrokeDefault ]           = ImColor( 0, 0, 0, 15 );
         c[ ImFluentCol_ControlStrokeSecondary ]         = ImColor( 0, 0, 0, 41 );
         c[ ImFluentCol_ControlStrokeOnAccentDefault ]   = ImColor( 255, 255, 255, 20 );
         c[ ImFluentCol_ControlStrokeOnAccentSecondary ] = ImColor( 0, 0, 0, 102 );
         c[ ImFluentCol_ControlStrongStrokeDefault ]     = ImColor( 0, 0, 0, 114 );
-        c[ ImFluentCol_ControlStrongStrokeDisabled ]    = ImColor( 0, 0, 0, 56 );
+        c[ ImFluentCol_ControlStrongStrokeDisabled ]    = ImColor( 0, 0, 0, 55 );
         c[ ImFluentCol_SurfaceStrokeDefault ]           = ImColor( 117, 117, 117, 102 );
-        c[ ImFluentCol_SurfaceStrokeFlyout ]            = ImColor( 0, 0, 0, 18 );
+        c[ ImFluentCol_SurfaceStrokeFlyout ]            = ImColor( 0, 0, 0, 15 );
         c[ ImFluentCol_DividerStrokeDefault ]           = ImColor( 0, 0, 0, 15 );
 
-        c[ ImFluentCol_FocusStrokeOuter ] = ImColor( 0, 0, 0 );
-        c[ ImFluentCol_FocusStrokeInner ] = ImColor( 255, 255, 255 );
+        c[ ImFluentCol_FocusStrokeOuter ] = ImColor( 0, 0, 0, 228 );
+        c[ ImFluentCol_FocusStrokeInner ] = ImColor( 255, 255, 255, 179 );
 
         c[ ImFluentCol_ElevationControlTop ]               = ImColor( 0, 0, 0, 15 );
         c[ ImFluentCol_ElevationControlBottom ]            = ImColor( 0, 0, 0, 41 );
@@ -436,7 +553,11 @@ namespace ImFluent
         c[ ImFluentCol_ElevationTextControlBottom ]        = ImColor( 0, 0, 0, 114 );
         c[ ImFluentCol_ElevationTextControlFocusedBottom ] = ImColor( 0, 103, 192 );
         c[ ImFluentCol_ElevationAccentTop ]                = ImColor( 255, 255, 255, 20 );
-        c[ ImFluentCol_ElevationAccentBottom ]             = ImColor( 0, 0, 0, 64 );
+        c[ ImFluentCol_ElevationAccentBottom ]             = ImColor( 0, 0, 0, 102 );
+        c[ ImFluentCol_SystemFillSuccess ]                 = ImColor( 15, 123, 15 );
+        c[ ImFluentCol_SystemFillCaution ]                 = ImColor( 157, 93, 0 );
+        c[ ImFluentCol_SystemFillCritical ]                = ImColor( 196, 43, 28 );
+        c[ ImFluentCol_SystemFillNeutral ]                 = ImColor( 0, 0, 0, 114 );
     }
 
     static void BuildHighContrastPalette( ImFluentStyle & s )
@@ -521,7 +642,6 @@ namespace ImFluent
         const ImVec4 light3 = LerpVec4( base_opaque, white, 0.65f );
         const ImVec4 dark1  = LerpVec4( base_opaque, black, 0.20f );
         const ImVec4 dark2  = LerpVec4( base_opaque, black, 0.40f );
-        const ImVec4 dark3  = LerpVec4( base_opaque, black, 0.65f );
 
         c[ ImFluentCol_AccentFillDefault ]        = base_opaque;
         c[ ImFluentCol_AccentFillSecondary ]      = ImVec4( base_opaque.x, base_opaque.y, base_opaque.z, 230.f / 255.f );
@@ -587,8 +707,27 @@ namespace ImFluent
         return result;
     }
 
+    // Drops next-item data set in another frame, or in a window that is not the current one or one of its parents.
+    static void DropStaleNextItem()
+    {
+        ImFluentNextItemData & d = g_Ctx.NextItem;
+        if ( !( d.HasHeader || d.HasDescription || d.HasGlyph || d.HasError ) )
+            return;
+        ImGuiContext & g = *GImGui;
+        bool same_scope  = d.Frame == g.FrameCount;
+        if ( same_scope && d.Window )
+        {
+            same_scope = false;
+            for ( ImGuiWindow * w = g.CurrentWindow; w && !same_scope; w = w->ParentWindow )
+                same_scope = ( w == d.Window );
+        }
+        if ( !same_scope )
+            d = ImFluentNextItemData();
+    }
+
     static void RenderAndConsumePendingHeader()
     {
+        DropStaleNextItem();
         if ( !g_Ctx.NextItem.HasHeader )
             return;
         const ImFluentStyle & style = ImFluent::GetStyle();
@@ -600,6 +739,7 @@ namespace ImFluent
 
     static void RenderAndConsumePendingDescription()
     {
+        DropStaleNextItem();
         if ( !g_Ctx.NextItem.HasDescription )
             return;
         const ImFluentStyle & style = ImFluent::GetStyle();
@@ -611,6 +751,7 @@ namespace ImFluent
 
     static const char * ConsumePendingGlyph( const char * fallback )
     {
+        DropStaleNextItem();
         if ( !g_Ctx.NextItem.HasGlyph )
             return fallback;
         const char * g          = g_Ctx.NextItem.Glyph;
@@ -629,13 +770,21 @@ namespace ImFluent
         return ( ImGui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled ) != 0;
     }
 
+    // Mouse over `bb` and not covered by another window (a bare IsMouseHoveringRect fires through popups).
+    static bool IsMouseOverWindowRect( const ImRect & bb, ImGuiHoveredFlags flags = ImGuiHoveredFlags_None )
+    {
+        return ImGui::IsMouseHoveringRect( bb.Min, bb.Max, false ) && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem | flags );
+    }
+
     static bool HasPendingError()
     {
+        DropStaleNextItem();
         return g_Ctx.NextItem.HasError;
     }
 
     static void RenderAndConsumePendingError( const ImRect & item_bb )
     {
+        DropStaleNextItem();
         if ( !g_Ctx.NextItem.HasError )
             return;
         const ImFluentStyle & style = ImFluent::GetStyle();
@@ -650,13 +799,6 @@ namespace ImFluent
         ImFluent::PopFont();
         g_Ctx.NextItem.Error    = NULL;
         g_Ctx.NextItem.HasError = false;
-    }
-
-    static void RenderAndConsumePendingError()
-    {
-        if ( !g_Ctx.NextItem.HasError )
-            return;
-        RenderAndConsumePendingError( ImGui::GetCurrentContext()->LastItemData.Rect );
     }
 
     static const ImU32 kAnimSeed = 0xF1ECF1ECu;
@@ -750,12 +892,59 @@ namespace ImFluent
         dl->AddText( font, fs, pos, col, text );
     }
 
-    static void RenderElevationBorder( ImDrawList * dl, const ImRect & bb, float rounding, ImU32 sides, ImU32 bottom, float bottom_thickness )
+    // A 1 dp stroke in whole pixels, as WinUI layout rounding draws it: 1 at 100% and 125%, 2 at 150% and 200%.
+    static float StrokeWidth()
     {
-        dl->AddRect( bb.Min, bb.Max, sides, rounding, 0, 1.f );
+        return ImMax( 1.f, IM_ROUND( FluentDpx( 1.f ) ) );
+    }
 
-        const float t = ( bottom_thickness > 0.f ) ? bottom_thickness : 1.f;
-        dl->AddRectFilled( ImVec2( bb.Min.x + rounding, bb.Max.y - t ), ImVec2( bb.Max.x - rounding, bb.Max.y ), bottom );
+    // A 1 dp outline inside [a, b] on whole pixels (AddRect centres a stroke half a pixel in, which blurs wider strokes).
+    static void StrokeRect( ImDrawList * dl, const ImVec2 & a, const ImVec2 & b, ImU32 col, float rounding, ImDrawFlags flags = 0 )
+    {
+        const float t = StrokeWidth();
+        const float h = t * 0.5f;
+        dl->PathRect( ImVec2( a.x + h, a.y + h ), ImVec2( b.x - h, b.y - h ), ImMax( 0.f, rounding - h ), flags );
+        dl->PathStroke( col, ImDrawFlags_Closed, t );
+    }
+
+    // Fill inside the 1 dp border (WinUI BackgroundSizing="InnerBorderEdge"), so the border blends with what is behind the control.
+    static void FillInsideBorder( ImDrawList * dl, const ImVec2 & a, const ImVec2 & b, ImU32 col, float rounding, ImDrawFlags flags = 0 )
+    {
+        const float t = StrokeWidth();
+        dl->AddRectFilled( ImVec2( a.x + t, a.y + t ), ImVec2( b.x - t, b.y - t ), col, ImMax( 0.f, rounding - t ), flags );
+    }
+
+    // The colour that, drawn over `under`, composites to `want` on any background (clamped where no colour can).
+    static ImU32 OverlayToComposite( ImU32 under, ImU32 want )
+    {
+        const float a_under = ( float )( ( under >> IM_COL32_A_SHIFT ) & 0xFF ) / 255.f;
+        const float a_want  = ( float )( ( want >> IM_COL32_A_SHIFT ) & 0xFF ) / 255.f;
+        const float a       = a_under < 1.f ? ImMax( 0.f, ( a_want - a_under ) / ( 1.f - a_under ) ) : 0.f;
+        if ( a <= 0.f )
+            return 0;
+        ImU32 out = ( ImU32 )( a * 255.f + 0.5f ) << IM_COL32_A_SHIFT;
+        for ( int shift : { IM_COL32_R_SHIFT, IM_COL32_G_SHIFT, IM_COL32_B_SHIFT } )
+        {
+            const float u = ( float )( ( under >> shift ) & 0xFF );
+            const float w = ( float )( ( want >> shift ) & 0xFF );
+            out |= ( ImU32 )ImClamp( ( w * a_want - u * a_under * ( 1.f - a ) ) / a + 0.5f, 0.f, 255.f ) << shift;
+        }
+        return out;
+    }
+
+    // WinUI elevation border: the side colour with a 1 dp edge of another colour at the bottom (light theme, accent controls)
+    // or at the top (dark theme); the edge strip goes over the side stroke, in the colour that composites to the edge colour.
+    static void RenderElevationBorder( ImDrawList * dl, const ImRect & bb, float rounding, ImU32 sides, ImU32 top, ImU32 bottom, float edge_thickness )
+    {
+        StrokeRect( dl, bb.Min, bb.Max, sides, rounding );
+
+        const float t = ImMax( StrokeWidth(), IM_ROUND( FluentDpx( edge_thickness > 0.f ? edge_thickness : 1.f ) ) );
+        if ( top != sides )
+            if ( const ImU32 strip = OverlayToComposite( sides, top ) )
+                dl->AddRectFilled( ImVec2( bb.Min.x + rounding, bb.Min.y ), ImVec2( bb.Max.x - rounding, bb.Min.y + t ), strip );
+        if ( bottom != sides )
+            if ( const ImU32 strip = OverlayToComposite( sides, bottom ) )
+                dl->AddRectFilled( ImVec2( bb.Min.x + rounding, bb.Max.y - t ), ImVec2( bb.Max.x - rounding, bb.Max.y ), strip );
     }
 
     static void RenderElevationShadow( ImDrawList * dl, const ImRect & bb, float rounding, int layers )
@@ -769,12 +958,6 @@ namespace ImFluent
             const ImU32 col = IM_COL32( 0, 0, 0, ( int )( 40.f / k ) );
             dl->AddRectFilled( ImVec2( bb.Min.x - pad, bb.Min.y - pad + k ), ImVec2( bb.Max.x + pad, bb.Max.y + pad + k ), col, rounding + pad );
         }
-    }
-
-    static void RenderAcrylicSurrogate( ImDrawList * dl, const ImRect & bb, float rounding, ImU32 base )
-    {
-        dl->AddRectFilled( bb.Min, bb.Max, base, rounding );
-        dl->AddRectFilled( bb.Min, bb.Max, IM_COL32( 255, 255, 255, 8 ), rounding );
     }
 
     static ImU32 ResolveControlFillState( bool disabled, bool held, bool hovered )
@@ -889,6 +1072,50 @@ namespace ImFluent
         ImGui::PopStyleVar( 2 );
     }
 
+    // A WinUI text control frame around the InputText between Begin and End: fill by state, 1 dp border, 1 dp strong bottom edge.
+    // ImGui draws only the text (transparent frame, no border); the fill goes on a draw channel under it.
+    static void BeginTextControlFrame( float h )
+    {
+        PushControlFrameStyle( h );
+        ImGui::PushStyleColor( ImGuiCol_FrameBg, IM_COL32( 0, 0, 0, 0 ) );
+        ImGui::PushStyleVar( ImGuiStyleVar_FrameBorderSize, 0.f );
+        ImDrawList * dl = ImGui::GetWindowDrawList();
+        g_Ctx.TextFrameSplitter.Split( dl, 2 );
+        g_Ctx.TextFrameSplitter.SetCurrentChannel( dl, 1 );
+    }
+
+    static void EndTextControlFrame()
+    {
+        using namespace ImFluent;
+        const ImFluentStyle & style = ImFluent::GetStyle();
+        ImDrawList * dl             = ImGui::GetWindowDrawList();
+        const ImRect bb             = ImGui::GetCurrentContext()->LastItemData.Rect;
+        const bool disabled         = IsCurrentItemDisabled();
+        const bool active           = ImGui::IsItemActive();
+        const float r               = FluentDpx( style.ControlCornerRadius );
+
+        ImFluentCol fill = ImFluentCol_ControlFillDefault;
+        if ( disabled )
+            fill = ImFluentCol_ControlFillDisabled;
+        else if ( active )
+            fill = ImFluentCol_ControlFillInputActive;
+        else if ( ImGui::IsItemHovered() )
+            fill = ImFluentCol_ControlFillSecondary;
+        g_Ctx.TextFrameSplitter.SetCurrentChannel( dl, 0 );
+        FillInsideBorder( dl, bb.Min, bb.Max, GetColorU32( fill ), r );
+        g_Ctx.TextFrameSplitter.Merge( dl );
+
+        const ImU32 stroke = GetColorU32( ImFluentCol_ControlStrokeDefault );
+        if ( disabled )
+            StrokeRect( dl, bb.Min, bb.Max, stroke, r );
+        else
+            RenderElevationBorder( dl, bb, r, stroke, GetColorU32( ImFluentCol_ElevationTextControlTop ), GetColorU32( ImFluentCol_ElevationTextControlBottom ), 1.f );
+
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        PopControlFrameStyle();
+    }
+
     static void PushOverlayWindowStyle( float padding_x, float padding_y )
     {
         using namespace ImFluent;
@@ -905,7 +1132,7 @@ namespace ImFluent
         ImGui::PopStyleColor( 2 );
     }
 
-    static const char * LocalizeGetMsg( ImFluentLocKey key )
+    const char * LocalizeGetMsg( ImFluentLocKey key )
     {
         if ( key < 0 || key >= ImFluentLocKey_COUNT )
             return "*Missing Text*";
@@ -913,7 +1140,7 @@ namespace ImFluent
         return msg ? msg : "*Missing Text*";
     }
 
-    static void LocalizeRegisterEntries( const ImFluentLocEntry * entries, int count )
+    void LocalizeRegisterEntries( const ImFluentLocEntry * entries, int count )
     {
         if ( !entries || count <= 0 )
             return;
@@ -965,7 +1192,7 @@ namespace ImFluent
     static ImFluentAppBarLabelPosition ConsumeAppBarLabelPos()
     {
         if ( !g_Ctx.NextAppBarLabelPosSet )
-            return ImFluentAppBarLabelPosition_Bottom;
+            return ( !g_Ctx.CommandBarStack.empty() && g_Ctx.CommandBarStack.back().IconOnly ) ? ImFluentAppBarLabelPosition_Collapsed : ImFluentAppBarLabelPosition_Bottom;
         const ImFluentAppBarLabelPosition v = g_Ctx.NextAppBarLabelPos;
         g_Ctx.NextAppBarLabelPosSet         = false;
         return v;
@@ -1053,12 +1280,345 @@ namespace ImFluent
         return g.NavId == id && g.NavCursorVisible;
     }
 
+    // Item label and state for the Dear ImGui Test Engine, as ImGui's own widgets report them (no-op without IMGUI_ENABLE_TEST_ENGINE).
+    static void ReportItemInfo( ImGuiID id, const char * label, ImGuiItemStatusFlags flags = 0 )
+    {
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+        ImGuiContext & g = *GImGui;
+        IMGUI_TEST_ENGINE_ITEM_INFO( id, label, g.LastItemData.StatusFlags | flags );
+#else
+        IM_UNUSED( id );
+        IM_UNUSED( label );
+        IM_UNUSED( flags );
+#endif
+    }
+
+    // INKEYS PATCH: 1.92.7 的语义状态仅供 Test Engine，关闭时与 ReportItemInfo 一同跳过。
+    static ImGuiItemStatusFlags CheckedFlags( bool checked )
+    {
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+        return ImGuiItemStatusFlags_Checkable | ( checked ? ImGuiItemStatusFlags_Checked : 0 );
+#else
+        IM_UNUSED( checked );
+        return 0;
+#endif
+    }
+
+    static ImGuiItemStatusFlags OpenedFlags( bool opened )
+    {
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+        return ImGuiItemStatusFlags_Openable | ( opened ? ImGuiItemStatusFlags_Opened : 0 );
+#else
+        IM_UNUSED( opened );
+        return 0;
+#endif
+    }
+
     // Overload of RenderNavFocusRing that performs the IsItemFocused(id) check
     // itself — mirrors ImGui's own RenderNavCursor(bb, id) idiom.
     static void RenderNavFocusRing( ImGuiID id, const ImRect & bb, float rounding )
     {
         if ( IsItemFocused( id ) )
             RenderNavFocusRing( bb, rounding );
+    }
+
+    // WinUI controls take arrow keys themselves: if `id` has nav focus and the nav move goes in `dir`, cancel it and return true.
+    static bool ConsumeNavArrow( ImGuiID id, ImGuiDir dir )
+    {
+        ImGuiContext & g = *GImGui;
+        if ( g.NavId != id || g.NavMoveDir != dir || !g.NavMoveSubmitted )
+            return false;
+        ImGui::NavClearPreferredPosForAxis( ( dir == ImGuiDir_Left || dir == ImGuiDir_Right ) ? ImGuiAxis_X : ImGuiAxis_Y );
+        ImGui::NavMoveRequestCancel();
+        g.NavCursorVisible = true;
+        return true;
+    }
+
+    // Chord press with exact modifiers, wherever focus is. A 0 chord (action turned off) is never pressed.
+    static bool IsActionPressed( ImGuiKeyChord chord )
+    {
+        return chord != 0 && ImGui::IsKeyChordPressed( chord );
+    }
+
+    // Chord press (exact modifiers) whose key `owner_id` takes, so ImGui's navigation does not also use it (Home/End/PageUp/PageDown scroll).
+    static bool IsChordPressedOwned( ImGuiKeyChord chord, ImGuiID owner_id, bool repeat = true )
+    {
+        if ( chord == 0 )
+            return false;
+        ImGui::SetKeyOwner( ( ImGuiKey )( chord & ~ImGuiMod_Mask_ ), owner_id );
+        return ImGui::IsKeyChordPressed( chord, repeat ? ImGuiInputFlags_Repeat : ImGuiInputFlags_None, owner_id );
+    }
+
+    // Chord press for the nav-focused item: an arrow chord is taken from the nav move request, other keys are owned by the item.
+    static bool IsFocusedItemChordPressed( ImGuiID id, ImGuiKeyChord chord, bool repeat = true )
+    {
+        ImGuiContext & g = *GImGui;
+        if ( chord == 0 || g.NavId != id || g.ActiveId != 0 )
+            return false;
+        const ImGuiKey key = ( ImGuiKey )( chord & ~ImGuiMod_Mask_ );
+        if ( key == ImGuiKey_LeftArrow || key == ImGuiKey_RightArrow || key == ImGuiKey_UpArrow || key == ImGuiKey_DownArrow )
+        {
+            if ( g.IO.KeyMods != ( chord & ImGuiMod_Mask_ ) )
+                return false;
+            const ImGuiDir dir = key == ImGuiKey_LeftArrow ? ImGuiDir_Left : key == ImGuiKey_RightArrow ? ImGuiDir_Right : key == ImGuiKey_UpArrow ? ImGuiDir_Up : ImGuiDir_Down;
+            return ConsumeNavArrow( id, dir );
+        }
+        return IsChordPressedOwned( chord, id, repeat );
+    }
+
+    // WinUI CheckBox, RadioButton and ToggleSwitch ignore Enter: only Space (and the mouse) toggle them.
+    static bool IsEnterActivation( ImGuiID id )
+    {
+        ImGuiContext & g = *GImGui;
+        return g.NavActivatePressedId == id && ( g.NavActivateFlags & ImGuiActivateFlags_PreferInput ) != 0;
+    }
+
+    // WinUI TextBox, PasswordBox and RichEditBox keep their text on Escape (ImGui's InputText reverts). Call before the InputText:
+    // Escape then only leaves edit mode and is not also a nav cancel. NumberBox keeps the revert, as in WinUI.
+    static void TextInputEscapeKeepsText( ImGuiID input_id )
+    {
+        ImGuiContext & g = *GImGui;
+        if ( g.ActiveId != input_id || !ImGui::IsKeyPressed( ImGuiKey_Escape, ImGuiInputFlags_None, ImGuiKeyOwner_Any ) )
+            return;
+        ImGui::ClearActiveID();
+        ImGui::SetKeyOwner( ImGuiKey_Escape, input_id, ImGuiInputFlags_LockUntilRelease );
+    }
+
+    static const ImGuiID TABGROUP_KEY_SELECTED       = 0x7A6B0001u;
+    static const ImGuiID TABGROUP_KEY_FOCUSED        = 0x7A6B0002u;
+    static const ImGuiID TABGROUP_KEY_FIRST          = 0x7A6B0003u;
+    static const ImGuiID TABGROUP_KEY_LAST           = 0x7A6B0004u;
+    static const ImGuiID TABGROUP_KEY_PENDING        = 0x7A6B0005u;
+    static const ImGuiID TABGROUP_KEY_PENDING_SELECT = 0x7A6B0006u;
+    static const ImGuiID TABGROUP_KEY_ANCESTOR       = 0x7A6B0007u;
+    static const ImGuiID TABGROUP_KEY_LAST_SELECTED  = 0x7A6B0008u;
+
+    // One-tab-stop group around members in one window. Each member: TabGroupItemFlags() on its ItemAdd, then TabGroupItemNav() after
+    // its behavior, which returns true when focus just arrived in a SelectionFollowsFocus group (the caller selects it).
+    static void BeginTabGroup( ImGuiID group_id, int flags )
+    {
+        ImGuiContext & g       = *GImGui;
+        ImGuiStorage * st      = ImGui::GetStateStorage();
+        const ImGuiID selected = ( ImGuiID )st->GetInt( group_id ^ TABGROUP_KEY_SELECTED, 0 );
+        const ImGuiID ancestor = ( ImGuiID )st->GetInt( group_id ^ TABGROUP_KEY_ANCESTOR, 0 );
+        const ImGuiID focused  = ( ImGuiID )st->GetInt( group_id ^ TABGROUP_KEY_FOCUSED, 0 );
+        ImFluentTabGroup grp;
+        grp.Id               = group_id;
+        grp.Flags            = flags;
+        grp.PrevFirst        = ( ImGuiID )st->GetInt( group_id ^ TABGROUP_KEY_FIRST, 0 );
+        grp.PrevLast         = ( ImGuiID )st->GetInt( group_id ^ TABGROUP_KEY_LAST, 0 );
+        grp.Pending          = ( ImGuiID )st->GetInt( group_id ^ TABGROUP_KEY_PENDING, 0 );
+        grp.PendingSelect    = st->GetBool( group_id ^ TABGROUP_KEY_PENDING_SELECT, false );
+        grp.LastSelected     = ( ImGuiID )st->GetInt( group_id ^ TABGROUP_KEY_LAST_SELECTED, 0 );
+        const bool tab_back  = g.NavMoveSubmitted && ( g.NavMoveFlags & ImGuiNavMoveFlags_IsTabbing ) && g.NavTabbingDir < 0;
+        const ImGuiID enter  = ( flags & ImFluentTabGroupFlags_EnterAtEnds ) ? ( tab_back ? grp.PrevLast : grp.PrevFirst ) : focused ? focused : grp.PrevFirst;
+        const ImGuiID chosen = ( ( flags & ImFluentTabGroupFlags_EnterOnLastFocused ) && focused ) ? focused : selected ? selected : ancestor ? ancestor : enter;
+        // Focus inside the group stays the stop, so Tab and Shift+Tab leave the group from it
+        grp.Stop             = ( focused && focused == g.NavId ) ? focused : ( flags & ImFluentTabGroupFlags_FirstIsStop ) ? grp.PrevFirst : chosen;
+        grp.SelectedAncestor = 0;
+        grp.First = grp.Last = grp.Selected = grp.Focused = 0;
+        grp.StopSeen                                      = false;
+        grp.LayoutIdx                                     = -1;
+        if ( flags & ImFluentTabGroupFlags_Grid )
+        {
+            ImFluentTabGroupLayout * lay = g_Ctx.TabGroupLayouts.GetOrAddByKey( group_id );
+            lay->NextItems.resize( 0 );
+            lay->NextRects.resize( 0 );
+            grp.LayoutIdx = g_Ctx.TabGroupLayouts.GetIndex( lay );
+        }
+        g_Ctx.TabGroupStack.push_back( grp );
+    }
+
+    // Grid groups: records a member's rect, also for a clipped member (call it before returning on ItemAdd()).
+    static void TabGroupItemRect( ImGuiID item_id, const ImRect & bb )
+    {
+        if ( g_Ctx.TabGroupStack.empty() || g_Ctx.TabGroupStack.back().LayoutIdx < 0 )
+            return;
+        ImFluentTabGroupLayout * lay = g_Ctx.TabGroupLayouts.GetByIndex( g_Ctx.TabGroupStack.back().LayoutIdx );
+        lay->NextItems.push_back( item_id );
+        lay->NextRects.push_back( bb );
+    }
+
+    // Nearest previous-frame member from `from` in `dir`, 0 at the edge: Left/Right stay in the row, Up/Down prefer the column.
+    static ImGuiID TabGroupNeighbour( const ImFluentTabGroupLayout & lay, ImGuiID from, ImGuiDir dir )
+    {
+        int fi = -1;
+        for ( int i = 0; i < lay.Items.Size && fi < 0; ++i )
+            if ( lay.Items[ i ] == from )
+                fi = i;
+        if ( fi < 0 )
+            return 0;
+        const ImRect a        = lay.Rects[ fi ];
+        const bool horizontal = ( dir == ImGuiDir_Left || dir == ImGuiDir_Right );
+        const float sign      = ( dir == ImGuiDir_Left || dir == ImGuiDir_Up ) ? -1.f : 1.f;
+        ImGuiID best          = 0;
+        float best_score      = FLT_MAX;
+        for ( int i = 0; i < lay.Items.Size; ++i )
+        {
+            if ( i == fi )
+                continue;
+            const ImRect & b   = lay.Rects[ i ];
+            const float along  = sign * ( horizontal ? b.GetCenter().x - a.GetCenter().x : b.GetCenter().y - a.GetCenter().y );
+            const float across = horizontal ? ImMax( 0.f, ImMax( a.Min.y - b.Max.y, b.Min.y - a.Max.y ) ) : ImMax( 0.f, ImMax( a.Min.x - b.Max.x, b.Min.x - a.Max.x ) );
+            if ( along <= 0.5f || ( horizontal && across > 0.f ) )
+                continue;
+            const float score = along + across * 4.f;
+            if ( score < best_score )
+            {
+                best_score = score;
+                best       = lay.Items[ i ];
+            }
+        }
+        return best;
+    }
+
+    static ImGuiItemFlags TabGroupItemFlags( ImGuiID item_id, bool selected )
+    {
+        if ( g_Ctx.TabGroupStack.empty() )
+            return ImGuiItemFlags_None;
+        ImFluentTabGroup & grp = g_Ctx.TabGroupStack.back();
+        if ( !grp.First )
+            grp.First = item_id;
+        grp.Last = item_id;
+        if ( selected && !grp.Selected )
+            grp.Selected = item_id;
+        if ( GImGui->NavId == item_id )
+            grp.Focused = item_id;
+        const ImGuiID stop = grp.Stop ? grp.Stop : grp.First;
+        if ( item_id == stop )
+            grp.StopSeen = true;
+        return ( item_id == stop ) ? ImGuiItemFlags_None : ImGuiItemFlags_NoTabStop;
+    }
+
+    // A collapsed member whose hidden descendant `hidden_selected` is the group's selected item takes the tab stop (WinUI NavigationView).
+    static void TabGroupHiddenSelection( ImGuiID item_id, ImGuiID hidden_selected )
+    {
+        if ( g_Ctx.TabGroupStack.empty() )
+            return;
+        ImFluentTabGroup & grp = g_Ctx.TabGroupStack.back();
+        if ( hidden_selected != 0 && hidden_selected == grp.LastSelected && !grp.SelectedAncestor )
+            grp.SelectedAncestor = item_id;
+    }
+
+    static bool TabGroupItemNav( ImGuiID item_id )
+    {
+        if ( g_Ctx.TabGroupStack.empty() )
+            return false;
+        ImGuiContext & g       = *GImGui;
+        ImFluentTabGroup & grp = g_Ctx.TabGroupStack.back();
+        const int flags        = grp.Flags;
+        const bool follows     = ( flags & ImFluentTabGroupFlags_SelectionFollowsFocus ) != 0;
+        bool arrived           = false;
+        if ( grp.Pending == item_id )
+        {
+            arrived           = grp.PendingSelect;
+            grp.Pending       = 0;
+            grp.PendingSelect = false;
+            if ( g.LastItemData.ID == item_id )
+                ImGui::ScrollToItem( ImGuiScrollFlags_KeepVisibleEdgeX | ImGuiScrollFlags_KeepVisibleEdgeY );
+        }
+        if ( g.NavId == item_id )
+        {
+            const bool vertical   = ( flags & ImFluentTabGroupFlags_Vertical ) != 0;
+            const bool horizontal = ( flags & ImFluentTabGroupFlags_Horizontal ) != 0;
+            const bool wrap       = ( flags & ImFluentTabGroupFlags_Wrap ) != 0;
+            ImGuiID jump          = 0;
+            if ( vertical || horizontal )
+            {
+                const ImGuiDir prev_dir = vertical ? ImGuiDir_Up : ImGuiDir_Left;
+                const ImGuiDir next_dir = vertical ? ImGuiDir_Down : ImGuiDir_Right;
+                if ( item_id == grp.PrevFirst && ConsumeNavArrow( item_id, prev_dir ) && wrap )
+                    jump = grp.PrevLast;
+                if ( item_id == grp.PrevLast && ConsumeNavArrow( item_id, next_dir ) && wrap )
+                    jump = grp.PrevFirst;
+                ConsumeNavArrow( item_id, vertical ? ImGuiDir_Left : ImGuiDir_Up );
+                ConsumeNavArrow( item_id, vertical ? ImGuiDir_Right : ImGuiDir_Down );
+            }
+            if ( grp.LayoutIdx >= 0 )
+            {
+                for ( int dir = ImGuiDir_Left; dir <= ImGuiDir_Down; ++dir )
+                    if ( ConsumeNavArrow( item_id, ( ImGuiDir )dir ) )
+                        jump = TabGroupNeighbour( *g_Ctx.TabGroupLayouts.GetByIndex( grp.LayoutIdx ), item_id, ( ImGuiDir )dir );
+            }
+            if ( flags & ImFluentTabGroupFlags_HomeEnd )
+            {
+                if ( IsFocusedItemChordPressed( item_id, g_Ctx.Actions.FirstItem ) )
+                    jump = grp.PrevFirst;
+                if ( IsFocusedItemChordPressed( item_id, g_Ctx.Actions.LastItem ) )
+                    jump = grp.PrevLast;
+            }
+            if ( jump && jump != item_id )
+            {
+                ImGui::SetFocusID( jump, g.CurrentWindow );
+                g.NavCursorVisible = true;
+                grp.Pending        = jump; // Scrolled into view (and selected) when it is submitted
+                grp.PendingSelect  = follows && !g.IO.KeyCtrl;
+            }
+        }
+        if ( follows && g.NavJustMovedToId == item_id && !g.NavJustMovedToIsTabbing && !( g.NavJustMovedToKeyMods & ImGuiMod_Ctrl ) )
+            arrived = true;
+        return arrived;
+    }
+
+    static void EndTabGroup()
+    {
+        if ( g_Ctx.TabGroupStack.empty() )
+            return;
+        const ImFluentTabGroup & grp = g_Ctx.TabGroupStack.back();
+        ImGuiStorage * st            = ImGui::GetStateStorage();
+        // WinUI Selector::SetFocusedItem: a selection change also moves the remembered focus
+        const bool selection_changed = grp.Selected && grp.Selected != ( ImGuiID )st->GetInt( grp.Id ^ TABGROUP_KEY_SELECTED, 0 );
+        const ImGuiID focused        = grp.Focused ? grp.Focused : selection_changed ? grp.Selected : 0;
+        st->SetInt( grp.Id ^ TABGROUP_KEY_SELECTED, ( int )grp.Selected );
+        st->SetInt( grp.Id ^ TABGROUP_KEY_ANCESTOR, ( int )grp.SelectedAncestor );
+        if ( grp.Selected )
+            st->SetInt( grp.Id ^ TABGROUP_KEY_LAST_SELECTED, ( int )grp.Selected );
+        if ( focused || !grp.StopSeen )
+            st->SetInt( grp.Id ^ TABGROUP_KEY_FOCUSED, ( int )focused ); // Forget a remembered item that went away
+        st->SetInt( grp.Id ^ TABGROUP_KEY_FIRST, ( int )grp.First );
+        st->SetInt( grp.Id ^ TABGROUP_KEY_LAST, ( int )grp.Last );
+        st->SetInt( grp.Id ^ TABGROUP_KEY_PENDING, ( int )grp.Pending );
+        st->SetBool( grp.Id ^ TABGROUP_KEY_PENDING_SELECT, grp.PendingSelect );
+        if ( grp.LayoutIdx >= 0 )
+        {
+            ImFluentTabGroupLayout * lay = g_Ctx.TabGroupLayouts.GetByIndex( grp.LayoutIdx );
+            lay->Items.swap( lay->NextItems );
+            lay->Rects.swap( lay->NextRects );
+        }
+        g_Ctx.TabGroupStack.pop_back();
+    }
+
+    static bool InItemsContainer()
+    {
+        return !g_Ctx.TabGroupStack.empty() && ( g_Ctx.TabGroupStack.back().Flags & ImFluentTabGroupFlags_ItemsContainer ) != 0;
+    }
+
+    // WinUI TreeView rows: Right on an expanded node focuses its first child; a Left that did nothing on a row focuses the parent.
+    static void TreeRowTakeFirstChildFocus( ImGuiID id )
+    {
+        if ( g_Ctx.TreeParentStack.empty() || g_Ctx.TreeFocusFirstChildOf != g_Ctx.TreeParentStack.back() )
+            return;
+        g_Ctx.TreeFocusFirstChildOf = 0;
+        ImGui::SetFocusID( id, GImGui->CurrentWindow );
+        GImGui->NavCursorVisible = true;
+    }
+
+    static void TreeRowLeftToParent( ImGuiID id )
+    {
+        if ( g_Ctx.TreeParentStack.empty() || !ConsumeNavArrow( id, ImGuiDir_Left ) )
+            return;
+        ImGui::SetFocusID( g_Ctx.TreeParentStack.back(), GImGui->CurrentWindow );
+        GImGui->NavCursorVisible = true;
+    }
+
+    // -1 / +1 for a focused item that takes Left/Down as "decrease" and Right/Up as "increase".
+    static int ConsumeNavIncrement( ImGuiID id )
+    {
+        if ( ConsumeNavArrow( id, ImGuiDir_Left ) || ConsumeNavArrow( id, ImGuiDir_Down ) )
+            return -1;
+        if ( ConsumeNavArrow( id, ImGuiDir_Right ) || ConsumeNavArrow( id, ImGuiDir_Up ) )
+            return +1;
+        return 0;
     }
 
     // Derive a stable popup id keyed by an owning widget id + popup name. Keeps
@@ -1113,7 +1673,7 @@ namespace ImFluent
         RenderChevronLerp( dl, cx, cy, L, t, col, th );
     }
 
-    static bool ButtonExStyled( const char * label, const ImVec2 & size_arg, ImU32 fillRest, ImU32 fillHover, ImU32 fillPress, ImU32 fillDisabled, ImU32 textCol, ImU32 textDisabled, ImU32 stroke, ImU32 strokeBottom, ImGuiButtonFlags flags )
+    static bool ButtonExStyled( const char * label, const ImVec2 & size_arg, ImU32 fillRest, ImU32 fillHover, ImU32 fillPress, ImU32 fillDisabled, ImU32 textCol, ImU32 textDisabled, ImU32 stroke, ImU32 strokeTop, ImU32 strokeBottom, ImGuiButtonFlags flags )
     {
         ImGuiWindow * w = ImGui::GetCurrentWindow();
         if ( w->SkipItems )
@@ -1134,6 +1694,7 @@ namespace ImFluent
         bool hovered = false, held = false;
         const bool pressed  = ImGui::ButtonBehavior( bb, id, &hovered, &held, flags );
         const bool disabled = ImFluent::IsCurrentItemDisabled();
+        ReportItemInfo( id, label );
 
         ImU32 fillTarget;
         if ( disabled )
@@ -1149,11 +1710,11 @@ namespace ImFluent
         const float r        = FluentDpx( style.ControlCornerRadius );
         ImDrawList * dl      = w->DrawList;
 
-        dl->AddRectFilled( bb.Min, bb.Max, fillAnim, r );
+        FillInsideBorder( dl, bb.Min, bb.Max, fillAnim, r );
         if ( !held && !disabled )
-            RenderElevationBorder( dl, bb, r, stroke, strokeBottom, 1.f );
+            RenderElevationBorder( dl, bb, r, stroke, strokeTop, strokeBottom, 1.f );
         else
-            dl->AddRect( bb.Min, bb.Max, stroke, r, 0, 1.f );
+            ImFluent::StrokeRect( dl, bb.Min, bb.Max, stroke, r );
 
         RenderButtonLabel( dl, bb, label, disabled ? textDisabled : textCol, pad_x, pad_y );
 
@@ -1164,14 +1725,42 @@ namespace ImFluent
 
 // [SECTION] Style & Theme
 
+// Metrics and texts once; SetThemePreset() then changes only the colours.
 IMGUI_API ImFluentStyle::ImFluentStyle()
 {
+    ImFluent::FillCommon( *this );
     ImFluent::BuildThemePalette( *this, g_Ctx.Preset );
 }
 
 ImFluentStyle & ImFluent::GetStyle()
 {
     return g_Ctx.Style;
+}
+
+IMGUI_API ImFluentActions::ImFluentActions()
+{
+    RevealPassword      = ImGuiMod_Alt | ImGuiKey_F8;
+    TogglePopup         = ImGuiKey_F4;
+    OpenPopup           = ImGuiMod_Alt | ImGuiKey_DownArrow;
+    ClosePopup          = ImGuiMod_Alt | ImGuiKey_UpArrow;
+    PickerOpenCommit    = ImGuiMod_Alt | ImGuiKey_DownArrow;
+    PickerOpenCommitAlt = ImGuiMod_Alt | ImGuiKey_UpArrow;
+    NextTab             = ImGuiMod_Ctrl | ImGuiKey_Tab;
+    PreviousTab         = ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Tab;
+    CloseTab            = ImGuiMod_Ctrl | ImGuiKey_F4;
+    CalendarZoomOut     = ImGuiMod_Ctrl | ImGuiKey_UpArrow;
+    CalendarZoomIn      = ImGuiMod_Ctrl | ImGuiKey_DownArrow;
+    FirstItem           = ImGuiKey_Home;
+    LastItem            = ImGuiKey_End;
+    PageUp              = ImGuiKey_PageUp;
+    PageDown            = ImGuiKey_PageDown;
+    CloseDialog         = ImGuiKey_Escape;
+    RepeatStepButtons   = true;
+}
+
+ImFluentActions & ImFluent::GetActions()
+{
+    return g_Ctx.Actions;
 }
 
 float ImFluent::FluentDpx( float v )
@@ -1229,6 +1818,275 @@ bool ImFluent::HasUserAccentColor()
     return g_Ctx.HasUserAccent;
 }
 
+// [SECTION] Backdrop (Mica)
+// The blurred, tinted wallpaper in a small texture behind all windows, mapped to the monitor so it stays still.
+
+namespace
+{
+    struct MicaParams
+    {
+        ImVec4 Tint;
+        float TintOpacity;
+        float LuminosityOpacity;
+    };
+
+    // WinUI MicaController defaults per kind and theme.
+    MicaParams GetMicaParams( ImFluentBackdrop kind, bool dark )
+    {
+        if ( kind == ImFluentBackdrop_MicaAlt )
+            return dark ? MicaParams{ ImColor( 0x0A, 0x0A, 0x0A ).Value, 0.f, 1.f } : MicaParams{ ImColor( 0xDA, 0xDA, 0xDA ).Value, 0.5f, 1.f };
+        return dark ? MicaParams{ ImColor( 0x20, 0x20, 0x20 ).Value, 0.8f, 1.f } : MicaParams{ ImColor( 0xF3, 0xF3, 0xF3 ).Value, 0.5f, 1.f };
+    }
+
+    // W3C compositing Lum and SetLum (with ClipColor).
+    float Lum( const ImVec4 & c )
+    {
+        return 0.3f * c.x + 0.59f * c.y + 0.11f * c.z;
+    }
+
+    ImVec4 SetLum( ImVec4 c, float l )
+    {
+        const float d = l - Lum( c );
+        c.x += d;
+        c.y += d;
+        c.z += d;
+        const float lum = Lum( c );
+        const float n   = ImMin( c.x, ImMin( c.y, c.z ) );
+        const float x   = ImMax( c.x, ImMax( c.y, c.z ) );
+        float * ch[ 3 ] = { &c.x, &c.y, &c.z };
+        for ( float * v : ch )
+        {
+            if ( n < 0.f )
+                *v = lum + ( *v - lum ) * lum / ( lum - n );
+            if ( x > 1.f )
+                *v = lum + ( *v - lum ) * ( 1.f - lum ) / ( x - lum );
+        }
+        return c;
+    }
+
+    ImVec4 Mix( const ImVec4 & a, const ImVec4 & b, float t )
+    {
+        return ImVec4( a.x + ( b.x - a.x ) * t, a.y + ( b.y - a.y ) * t, a.z + ( b.z - a.z ) * t, 1.f );
+    }
+
+    ImVec4 SampleWallpaper( const ImFluentWallpaper & wp, float u, float v )
+    {
+        if ( wp.Repeat )
+        {
+            u -= ImFloor( u );
+            v -= ImFloor( v );
+        }
+        else if ( u < 0.f || v < 0.f || u >= 1.f || v >= 1.f )
+            return ImGui::ColorConvertU32ToFloat4( wp.BackgroundColor );
+        const int x             = ImClamp( ( int )( u * wp.Width ), 0, wp.Width - 1 );
+        const int y             = ImClamp( ( int )( v * wp.Height ), 0, wp.Height - 1 );
+        const unsigned char * p = wp.Pixels + ( ( size_t )y * wp.Width + x ) * 4;
+        return ImVec4( p[ 0 ] / 255.f, p[ 1 ] / 255.f, p[ 2 ] / 255.f, 1.f );
+    }
+
+    void BoxBlur( ImVec4 * img, ImVec4 * tmp, int n, int r, bool vertical )
+    {
+        const float inv = 1.f / ( 2 * r + 1 );
+        for ( int line = 0; line < n; ++line )
+        {
+            auto at = [ & ]( int i ) -> ImVec4 &
+            {
+                return vertical ? img[ ImClamp( i, 0, n - 1 ) * n + line ] : img[ line * n + ImClamp( i, 0, n - 1 ) ];
+            };
+            ImVec4 sum( 0.f, 0.f, 0.f, 0.f );
+            for ( int i = -r; i <= r; ++i )
+                sum = ImVec4( sum.x + at( i ).x, sum.y + at( i ).y, sum.z + at( i ).z, 1.f );
+            for ( int i = 0; i < n; ++i )
+            {
+                tmp[ i ]           = ImVec4( sum.x * inv, sum.y * inv, sum.z * inv, 1.f );
+                const ImVec4 & add = at( i + r + 1 );
+                const ImVec4 & sub = at( i - r );
+                sum                = ImVec4( sum.x + add.x - sub.x, sum.y + add.y - sub.y, sum.z + add.z - sub.z, 1.f );
+            }
+            for ( int i = 0; i < n; ++i )
+                ( vertical ? img[ i * n + line ] : img[ line * n + i ] ) = tmp[ i ];
+        }
+    }
+
+    void BuildBackdropTexture( const ImFluentWallpaper & wp, const ImVec2 & monitor_size, ImFluentBackdrop kind, bool dark )
+    {
+        ImFluentBackdropState & bd = g_Ctx.Backdrop;
+        const int n                = ImFluentBackdropState::TexSize;
+        ImVector< ImVec4 > img, tmp;
+        img.resize( n * n );
+        tmp.resize( n );
+
+        const int ss = 4;
+        for ( int y = 0; y < n; ++y )
+            for ( int x = 0; x < n; ++x )
+            {
+                ImVec4 sum( 0.f, 0.f, 0.f, 0.f );
+                for ( int sy = 0; sy < ss; ++sy )
+                    for ( int sx = 0; sx < ss; ++sx )
+                    {
+                        const float fx = ( x + ( sx + 0.5f ) / ss ) / n;
+                        const float fy = ( y + ( sy + 0.5f ) / ss ) / n;
+                        const ImVec4 c = SampleWallpaper( wp, wp.UV0.x + ( wp.UV1.x - wp.UV0.x ) * fx, wp.UV0.y + ( wp.UV1.y - wp.UV0.y ) * fy );
+                        sum            = ImVec4( sum.x + c.x, sum.y + c.y, sum.z + c.z, 1.f );
+                    }
+                img[ y * n + x ] = ImVec4( sum.x / ( ss * ss ), sum.y / ( ss * ss ), sum.z / ( ss * ss ), 1.f );
+            }
+
+        // Three box passes ~ Gaussian; ry follows the aspect ratio so the blur is round on screen.
+        const float aspect = ( monitor_size.x > 0.f && monitor_size.y > 0.f ) ? monitor_size.x / monitor_size.y : 16.f / 9.f;
+        const int rx       = 3;
+        const int ry       = ImMax( 1, ( int )( rx * aspect + 0.5f ) );
+        for ( int pass = 0; pass < 3; ++pass )
+        {
+            BoxBlur( img.Data, tmp.Data, n, rx, false );
+            BoxBlur( img.Data, tmp.Data, n, ry, true );
+        }
+
+        // Mica: the tint's luminosity with the wallpaper's hue and saturation, then the tint on top.
+        const MicaParams mp = GetMicaParams( kind, dark );
+        const float tint_l  = Lum( mp.Tint );
+        if ( !bd.Texture )
+        {
+            bd.Texture = IM_NEW( ImTextureData )();
+            bd.Texture->Create( ImTextureFormat_RGBA32, n, n );
+            ImGui::RegisterUserTexture( bd.Texture );
+        }
+        for ( int i = 0; i < n * n; ++i )
+        {
+            const ImVec4 lum_layer = Mix( img[ i ], SetLum( img[ i ], tint_l ), mp.LuminosityOpacity );
+            const ImVec4 c         = Mix( lum_layer, SetLum( mp.Tint, Lum( lum_layer ) ), mp.TintOpacity );
+            unsigned char * p      = bd.Texture->Pixels + i * 4;
+            p[ 0 ]                 = ( unsigned char )ImClamp( c.x * 255.f + 0.5f, 0.f, 255.f );
+            p[ 1 ]                 = ( unsigned char )ImClamp( c.y * 255.f + 0.5f, 0.f, 255.f );
+            p[ 2 ]                 = ( unsigned char )ImClamp( c.z * 255.f + 0.5f, 0.f, 255.f );
+            p[ 3 ]                 = 255;
+        }
+        bd.Texture->UseColors = true;
+        if ( bd.Texture->Status != ImTextureStatus_WantCreate )
+        {
+            ImTextureRect all = { 0, 0, ( unsigned short )n, ( unsigned short )n };
+            bd.Texture->Updates.resize( 0 );
+            bd.Texture->Updates.push_back( all );
+            bd.Texture->UpdateRect = all;
+            bd.Texture->UsedRect   = all;
+            bd.Texture->Status     = ImTextureStatus_WantUpdates;
+        }
+        bd.HasImage         = true;
+        bd.BuiltSerial      = wp.Serial;
+        bd.BuiltKind        = kind;
+        bd.BuiltPreset      = g_Ctx.Preset;
+        bd.BuiltMonitorSize = monitor_size;
+    }
+} // namespace
+
+void ImFluent::SetBackdrop( ImFluentBackdrop backdrop )
+{
+    g_Ctx.Backdrop.Kind     = backdrop;
+    g_Ctx.Backdrop.NextPoll = 0.0;
+}
+
+ImFluentBackdrop ImFluent::GetBackdrop()
+{
+    return g_Ctx.Backdrop.Kind;
+}
+
+ImFluentBackdropHooks & ImFluent::GetBackdropHooks()
+{
+    return g_Ctx.Backdrop.Hooks;
+}
+
+bool ImFluent::IsBackdropVisible()
+{
+    // WinUI turns Mica off in high contrast.
+    return g_Ctx.Backdrop.Kind != ImFluentBackdrop_None && g_Ctx.Preset != ImFluentThemePreset_HighContrast;
+}
+
+void ImFluent::PlaceWallpaper( ImFluentWallpaper * wp, ImFluentWallpaperFit fit, float image_w, float image_h, const ImVec4 & monitor, const ImVec4 & desktop )
+{
+    const float mw = monitor.z - monitor.x, mh = monitor.w - monitor.y;
+    wp->Repeat = false;
+    if ( fit == ImFluentWallpaperFit_Stretch || image_w <= 0.f || image_h <= 0.f || mw <= 0.f || mh <= 0.f )
+    {
+        wp->UV0 = ImVec2( 0.f, 0.f );
+        wp->UV1 = ImVec2( 1.f, 1.f );
+        return;
+    }
+    if ( fit == ImFluentWallpaperFit_Tile )
+    {
+        wp->UV0    = ImVec2( 0.f, 0.f );
+        wp->UV1    = ImVec2( mw / image_w, mh / image_h );
+        wp->Repeat = true;
+        return;
+    }
+    // The image is centred on `area` at `s` screen units per image pixel.
+    const ImVec4 area = ( fit == ImFluentWallpaperFit_Span && desktop.z > desktop.x && desktop.w > desktop.y ) ? desktop : monitor;
+    const float aw = area.z - area.x, ah = area.w - area.y;
+    float s = 1.f;
+    if ( fit == ImFluentWallpaperFit_Fill || fit == ImFluentWallpaperFit_Span )
+        s = ImMax( aw / image_w, ah / image_h );
+    else if ( fit == ImFluentWallpaperFit_Fit )
+        s = ImMin( aw / image_w, ah / image_h );
+    const float ox = area.x + ( aw - image_w * s ) * 0.5f;
+    const float oy = area.y + ( ah - image_h * s ) * 0.5f;
+    wp->UV0        = ImVec2( ( monitor.x - ox ) / ( image_w * s ), ( monitor.y - oy ) / ( image_h * s ) );
+    wp->UV1        = ImVec2( ( monitor.z - ox ) / ( image_w * s ), ( monitor.w - oy ) / ( image_h * s ) );
+}
+
+void ImFluent::RenderBackdrop( ImGuiViewport * vp )
+{
+    ImFluentBackdropState & bd          = g_Ctx.Backdrop;
+    const ImFluentBackdropHooks & hooks = bd.Hooks;
+    if ( !vp )
+        vp = ImGui::GetMainViewport();
+    const bool visible = IsBackdropVisible();
+    const bool dark    = g_Ctx.Preset == ImFluentThemePreset_Dark;
+
+    if ( hooks.SetNativeBackdrop && ( bd.NativeKind != ( visible ? bd.Kind : ImFluentBackdrop_None ) || bd.NativePreset != g_Ctx.Preset ) )
+    {
+        bd.NativeKind   = visible ? bd.Kind : ImFluentBackdrop_None;
+        bd.NativePreset = g_Ctx.Preset;
+        bd.Native       = hooks.SetNativeBackdrop( vp, bd.NativeKind, dark, hooks.UserData ) && visible;
+    }
+    if ( !visible || bd.Native )
+        return;
+
+    ImVec4 client, monitor;
+    const bool has_rects  = hooks.GetScreenRects && hooks.GetScreenRects( vp, &client, &monitor, hooks.UserData ) && monitor.z > monitor.x && monitor.w > monitor.y;
+    const ImVec2 mon_size = has_rects ? ImVec2( monitor.z - monitor.x, monitor.w - monitor.y ) : vp->Size;
+
+    // Poll about once a second, and at once after a kind or theme change.
+    const double now = ImGui::GetTime();
+    if ( bd.BuiltKind != bd.Kind || bd.BuiltPreset != g_Ctx.Preset )
+        bd.NextPoll = 0.0;
+    if ( hooks.GetWallpaper && now >= bd.NextPoll )
+    {
+        bd.NextPoll = now + 1.0;
+        ImFluentWallpaper wp;
+        if ( !hooks.GetWallpaper( vp, &wp, hooks.UserData ) || !wp.Pixels || wp.Width <= 0 || wp.Height <= 0 )
+            bd.HasImage = false;
+        else if ( !bd.HasImage || wp.Serial != bd.BuiltSerial || bd.BuiltKind != bd.Kind || bd.BuiltPreset != g_Ctx.Preset || bd.BuiltMonitorSize.x != mon_size.x || bd.BuiltMonitorSize.y != mon_size.y )
+            BuildBackdropTexture( wp, mon_size, bd.Kind, dark );
+    }
+
+    // Mica shows its fallback colour while the app is not focused.
+    bd.Active = ImLinearSweep( bd.Active, ImGui::GetIO().AppFocusLost ? 0.f : 1.f, ImGui::GetIO().DeltaTime / 0.25f );
+
+    ImDrawList * dl = ImGui::GetBackgroundDrawList( vp );
+    const ImVec2 p0 = vp->Pos;
+    const ImVec2 p1( vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y );
+    dl->AddRectFilled( p0, p1, GetColorU32( ImFluentCol_SolidBgBase ) );
+    if ( bd.HasImage && bd.Texture && bd.Active > 0.f )
+    {
+        ImVec2 uv0( 0.f, 0.f ), uv1( 1.f, 1.f );
+        if ( has_rects )
+        {
+            uv0 = ImVec2( ( client.x - monitor.x ) / mon_size.x, ( client.y - monitor.y ) / mon_size.y );
+            uv1 = ImVec2( ( client.z - monitor.x ) / mon_size.x, ( client.w - monitor.y ) / mon_size.y );
+        }
+        dl->AddImage( bd.Texture->GetTexRef(), p0, p1, uv0, uv1, IM_COL32( 255, 255, 255, ( int )( bd.Active * 255.f ) ) );
+    }
+}
+
 void ImFluent::SetThemePreset( ImFluentThemePreset preset )
 {
     g_Ctx.Preset = preset;
@@ -1256,15 +2114,17 @@ void ImFluent::SetThemePreset( ImFluentThemePreset preset )
     c[ ImGuiCol_ScrollbarGrab ]         = fc[ ImFluentCol_ControlStrongFillDefault ];
     c[ ImGuiCol_ScrollbarGrabHovered ]  = fc[ ImFluentCol_ControlStrongFillDefault ];
     c[ ImGuiCol_ScrollbarGrabActive ]   = fc[ ImFluentCol_ControlStrongFillDefault ];
-    c[ ImGuiCol_CheckMark ]             = fc[ ImFluentCol_TextOnAccentPrimary ];
+    c[ ImGuiCol_CheckMark ]                 = fc[ ImFluentCol_AccentFillDefault ];
     c[ ImGuiCol_SliderGrab ]            = fc[ ImFluentCol_AccentFillDefault ];
     c[ ImGuiCol_SliderGrabActive ]      = fc[ ImFluentCol_AccentFillSecondary ];
     c[ ImGuiCol_Button ]                = fc[ ImFluentCol_ControlFillDefault ];
     c[ ImGuiCol_ButtonHovered ]         = fc[ ImFluentCol_ControlFillSecondary ];
     c[ ImGuiCol_ButtonActive ]          = fc[ ImFluentCol_ControlFillTertiary ];
-    c[ ImGuiCol_Header ]                = fc[ ImFluentCol_SubtleFillSecondary ];
-    c[ ImGuiCol_HeaderHovered ]         = fc[ ImFluentCol_SubtleFillTertiary ];
-    c[ ImGuiCol_HeaderActive ]          = fc[ ImFluentCol_SubtleFillSecondary ];
+    // Selection: the accent at the WinUI DataGrid opacities.
+    const ImVec4 accent                     = fc[ ImFluentCol_AccentFillDefault ];
+    c[ ImGuiCol_Header ]                    = ImVec4( accent.x, accent.y, accent.z, 0.4f );
+    c[ ImGuiCol_HeaderHovered ]             = ImVec4( accent.x, accent.y, accent.z, 0.2f );
+    c[ ImGuiCol_HeaderActive ]              = ImVec4( accent.x, accent.y, accent.z, 0.6f );
     c[ ImGuiCol_Separator ]             = fc[ ImFluentCol_DividerStrokeDefault ];
     c[ ImGuiCol_SeparatorHovered ]      = fc[ ImFluentCol_DividerStrokeDefault ];
     c[ ImGuiCol_SeparatorActive ]       = fc[ ImFluentCol_DividerStrokeDefault ];
@@ -1276,8 +2136,18 @@ void ImFluent::SetThemePreset( ImFluentThemePreset preset )
     c[ ImGuiCol_TabSelected ]           = fc[ ImFluentCol_LayerFillAlt ];
     c[ ImGuiCol_TabDimmed ]             = fc[ ImFluentCol_SubtleFillTransparent ];
     c[ ImGuiCol_TabDimmedSelected ]     = fc[ ImFluentCol_LayerFillAlt ];
-    c[ ImGuiCol_PlotLines ]             = fc[ ImFluentCol_AccentFillDefault ];
-    c[ ImGuiCol_PlotHistogram ]         = fc[ ImFluentCol_AccentFillDefault ];
+    c[ ImGuiCol_TabSelectedOverline ]       = fc[ ImFluentCol_AccentFillDefault ];
+    c[ ImGuiCol_TabDimmedSelectedOverline ] = fc[ ImFluentCol_AccentFillDefault ];
+    c[ ImGuiCol_PlotLines ]                 = fc[ ImFluentCol_AccentFillDefault ];
+    c[ ImGuiCol_PlotLinesHovered ]          = fc[ ImFluentCol_AccentFillSecondary ];
+    c[ ImGuiCol_PlotHistogram ]             = fc[ ImFluentCol_AccentFillDefault ];
+    c[ ImGuiCol_PlotHistogramHovered ]      = fc[ ImFluentCol_AccentFillSecondary ];
+    c[ ImGuiCol_TextLink ]                  = fc[ ImFluentCol_AccentTextPrimary ];
+    c[ ImGuiCol_InputTextCursor ]           = fc[ ImFluentCol_TextPrimary ];
+    c[ ImGuiCol_TreeLines ]                 = fc[ ImFluentCol_DividerStrokeDefault ];
+    c[ ImGuiCol_DragDropTarget ]            = fc[ ImFluentCol_AccentFillDefault ];
+    c[ ImGuiCol_DragDropTargetBg ]          = ImVec4( accent.x, accent.y, accent.z, 0.1f );
+    c[ ImGuiCol_UnsavedMarker ]             = fc[ ImFluentCol_TextPrimary ];
     c[ ImGuiCol_TableHeaderBg ]         = fc[ ImFluentCol_LayerFillDefault ];
     c[ ImGuiCol_TableBorderStrong ]     = fc[ ImFluentCol_DividerStrokeDefault ];
     c[ ImGuiCol_TableBorderLight ]      = fc[ ImFluentCol_DividerStrokeDefault ];
@@ -1296,10 +2166,10 @@ void ImFluent::SetThemePreset( ImFluentThemePreset preset )
     s.IndentSpacing     = ImTrunc( 16.f * s.FontScaleDpi );
     s.ScrollbarSize     = ImTrunc( 12.f * s.FontScaleDpi );
     s.GrabMinSize       = ImTrunc( 16.f * s.FontScaleDpi );
-    s.WindowBorderSize  = ImTrunc( 1.f * s.FontScaleDpi );
-    s.ChildBorderSize   = ImTrunc( 1.f * s.FontScaleDpi );
-    s.PopupBorderSize   = ImTrunc( 1.f * s.FontScaleDpi );
-    s.FrameBorderSize   = ImTrunc( 1. * s.FontScaleDpi );
+    s.WindowBorderSize  = ImMax( 1.f, IM_ROUND( 1.f * s.FontScaleDpi ) );
+    s.ChildBorderSize   = ImMax( 1.f, IM_ROUND( 1.f * s.FontScaleDpi ) );
+    s.PopupBorderSize   = ImMax( 1.f, IM_ROUND( 1.f * s.FontScaleDpi ) );
+    s.FrameBorderSize   = ImMax( 1.f, IM_ROUND( 1.f * s.FontScaleDpi ) );
     s.WindowRounding    = ImTrunc( g_Ctx.Style.OverlayCornerRadius * s.FontScaleDpi );
     s.ChildRounding     = ImTrunc( g_Ctx.Style.ControlCornerRadius * s.FontScaleDpi );
     s.PopupRounding     = ImTrunc( g_Ctx.Style.OverlayCornerRadius * s.FontScaleDpi );
@@ -1468,70 +2338,92 @@ void ImFluent::EndDisabled()
 
 // [SECTION] Fonts (LoadFluentFonts / PushFont / PopFont)
 
-static ImFont * LoadFontAndMergeWithIcons( const char * fontsDirectory, const char * fontName )
+static bool FontFileExists( const char * path )
 {
-    const char * fontPath;
-    ImFormatStringToTempBuffer( &fontPath, nullptr, "%s/%s", fontsDirectory, fontName );
+    if ( !path || !path[ 0 ] )
+        return false;
+    ImFileHandle f = ImFileOpen( path, "rb" );
+    if ( !f )
+        return false;
+    ImFileClose( f );
+    return true;
+}
 
+static const char * FirstExistingFont( const char * const * candidates, int count )
+{
+    for ( int i = 0; i < count; ++i )
+        if ( FontFileExists( candidates[ i ] ) )
+            return candidates[ i ];
+    return NULL;
+}
+
+// Text font with the icon font merged in. Missing files fall back to Dear ImGui's default font and no icons.
+static ImFont * LoadFontAndMergeWithIcons( const char * font_path, const char * icons_path )
+{
     ImFontConfig cfg;
-    cfg.SizePixels         = 16.0;
-    cfg.RasterizerMultiply = 1.2f;
-
-    ImFont * font = ImGui::GetIO().Fonts->AddFontFromFileTTF( fontPath, 0.0f, &cfg );
-    IM_ASSERT( font != nullptr );
-
-    bool iconFontMedged = false;
-
-    static const char * iconFonts[]         = { "SegoeIcons.ttf", "SegMDL2.ttf" };
-    static const ImWchar fluentIconsRange[] = { 0xE000, 0xF8FF, 0 };
-
-    for ( const char * iconFontName : iconFonts )
+    cfg.SizePixels = 16.0;
+    ImFont * font  = FontFileExists( font_path ) ? ImGui::GetIO().Fonts->AddFontFromFileTTF( font_path, 0.0f, &cfg ) : NULL;
+    if ( !font )
+        font = ImGui::GetIO().Fonts->AddFontDefault();
+    if ( FontFileExists( icons_path ) )
     {
-        ImFormatStringToTempBuffer( &fontPath, nullptr, "%s/%s", fontsDirectory, iconFontName );
-
-        cfg.MergeMode   = true;
-        cfg.PixelSnapH  = true;
-        cfg.GlyphOffset = { 0.0f, cfg.SizePixels / 8.0f };
-
-        iconFontMedged = ImGui::GetIO().Fonts->AddFontFromFileTTF( fontPath, 0.0f, &cfg, fluentIconsRange );
-        if ( iconFontMedged )
-            break;
+        static const ImWchar fluentIconsRange[] = { 0xE000, 0xF8FF, 0 };
+        cfg.MergeMode                           = true;
+        cfg.PixelSnapH                          = true;
+        cfg.GlyphOffset                         = ImVec2( 0.0f, cfg.SizePixels / 8.0f );
+        ImGui::GetIO().Fonts->AddFontFromFileTTF( icons_path, 0.0f, &cfg, fluentIconsRange );
     }
-
-    IM_ASSERT( iconFontMedged );
     return font;
 }
 
-void ImFluent::LoadFluentSystemFonts()
+void ImFluent::LoadFluentFonts( const char * regular_ttf, const char * semibold_ttf, const char * icons_ttf )
 {
-    char windowsDirectory[ MAX_PATH ] = { 0 };
-    ::GetWindowsDirectoryA( windowsDirectory, MAX_PATH );
+    ImFont * regularFont = LoadFontAndMergeWithIcons( regular_ttf, icons_ttf );
+    ImFont * strongFont  = FontFileExists( semibold_ttf ) ? LoadFontAndMergeWithIcons( semibold_ttf, icons_ttf ) : regularFont;
 
-    char fontsDirectory[ MAX_PATH ] = { 0 };
-    ImFormatString( fontsDirectory, MAX_PATH, "%s/Fonts", windowsDirectory );
-
-    struct TextStyleFontInfo
-    {
-        ImFluentTextStyle style;
-        float dp;
-        const char * fontFile;
-    };
-
-    ImFont * regularFont = LoadFontAndMergeWithIcons( fontsDirectory, "segoeui.ttf" );
-
-    SetFluentTextStyleFont( ImFluentTextStyle_Caption, regularFont, 16.0f );
-    SetFluentTextStyleFont( ImFluentTextStyle_Body, regularFont, 20.0f );
-
-    ImFont * boldFont = LoadFontAndMergeWithIcons( fontsDirectory, "segoeuib.ttf" );
-
-    SetFluentTextStyleFont( ImFluentTextStyle_BodyStrong, boldFont, 20.0f );
-    SetFluentTextStyleFont( ImFluentTextStyle_Subtitle, boldFont, 28.0f );
-    SetFluentTextStyleFont( ImFluentTextStyle_Title, boldFont, 36.0f );
-    SetFluentTextStyleFont( ImFluentTextStyle_TitleLarge, boldFont, 52.0f );
-    SetFluentTextStyleFont( ImFluentTextStyle_Display, boldFont, 92.0f );
+    // Fluent type ramp in em; Dear ImGui sizes Segoe UI by ascent + descent = 1.33 em.
+    const float em = 2724.f / 2048.f;
+    SetFluentTextStyleFont( ImFluentTextStyle_Caption, regularFont, 12.f * em );
+    SetFluentTextStyleFont( ImFluentTextStyle_Body, regularFont, 14.f * em );
+    SetFluentTextStyleFont( ImFluentTextStyle_BodyStrong, strongFont, 14.f * em );
+    SetFluentTextStyleFont( ImFluentTextStyle_Subtitle, strongFont, 20.f * em );
+    SetFluentTextStyleFont( ImFluentTextStyle_Title, strongFont, 28.f * em );
+    SetFluentTextStyleFont( ImFluentTextStyle_TitleLarge, strongFont, 40.f * em );
+    SetFluentTextStyleFont( ImFluentTextStyle_Display, strongFont, 68.f * em );
 
     if ( ImGui::GetIO().FontDefault == NULL )
-        ImGui::GetIO().FontDefault = g_Ctx.Fonts[ ImFluentTextStyle_Body ].Font;
+    {
+        ImGui::GetIO().FontDefault     = g_Ctx.Fonts[ ImFluentTextStyle_Body ].Font;
+        ImGui::GetStyle().FontSizeBase = g_Ctx.Fonts[ ImFluentTextStyle_Body ].FontSize;
+    }
+}
+
+// Segoe UI, Segoe UI Semibold and the Segoe icon font where they are installed; elsewhere a common UI font.
+void ImFluent::LoadFluentSystemFonts()
+{
+#if defined( _WIN32 )
+    char dir[ MAX_PATH ] = { 0 };
+    ::GetWindowsDirectoryA( dir, MAX_PATH );
+    char regular[ MAX_PATH ], semibold[ MAX_PATH ], bold[ MAX_PATH ], icons[ MAX_PATH ], mdl2[ MAX_PATH ];
+    ImFormatString( regular, MAX_PATH, "%s/Fonts/segoeui.ttf", dir );
+    ImFormatString( semibold, MAX_PATH, "%s/Fonts/seguisb.ttf", dir );
+    ImFormatString( bold, MAX_PATH, "%s/Fonts/segoeuib.ttf", dir );
+    ImFormatString( icons, MAX_PATH, "%s/Fonts/SegoeIcons.ttf", dir ); // Windows 11
+    ImFormatString( mdl2, MAX_PATH, "%s/Fonts/segmdl2.ttf", dir );     // Windows 10
+    const char * semibolds[] = { semibold, bold };
+    const char * iconsets[]  = { icons, mdl2 };
+    LoadFluentFonts( regular, FirstExistingFont( semibolds, 2 ), FirstExistingFont( iconsets, 2 ) );
+#elif defined( __APPLE__ )
+    static const char * regulars[]  = { "/Library/Fonts/Segoe UI.ttf", "/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc" };
+    static const char * semibolds[] = { "/Library/Fonts/Segoe UI Semibold.ttf", "/Library/Fonts/Segoe UI Bold.ttf" };
+    static const char * iconsets[]  = { "/Library/Fonts/Segoe Fluent Icons.ttf", "/Library/Fonts/Segoe MDL2 Assets.ttf" };
+    LoadFluentFonts( FirstExistingFont( regulars, IM_ARRAYSIZE( regulars ) ), FirstExistingFont( semibolds, IM_ARRAYSIZE( semibolds ) ), FirstExistingFont( iconsets, IM_ARRAYSIZE( iconsets ) ) );
+#else
+    static const char * regulars[]  = { "/usr/share/fonts/truetype/msttcorefonts/segoeui.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/google-noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans.ttf" };
+    static const char * semibolds[] = { "/usr/share/fonts/truetype/msttcorefonts/seguisb.ttf", "/usr/share/fonts/truetype/noto/NotoSans-SemiBold.ttf", "/usr/share/fonts/noto/NotoSans-SemiBold.ttf", "/usr/share/fonts/google-noto/NotoSans-SemiBold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf" };
+    static const char * iconsets[]  = { "/usr/share/fonts/truetype/msttcorefonts/SegoeIcons.ttf", "/usr/share/fonts/truetype/msttcorefonts/segmdl2.ttf" };
+    LoadFluentFonts( FirstExistingFont( regulars, IM_ARRAYSIZE( regulars ) ), FirstExistingFont( semibolds, IM_ARRAYSIZE( semibolds ) ), FirstExistingFont( iconsets, IM_ARRAYSIZE( iconsets ) ) );
+#endif
 }
 
 void ImFluent::PushFont( ImFluentTextStyle style, float size )
@@ -1550,23 +2442,34 @@ void ImFluent::PopFont()
 
 // [SECTION] Next-item attributes
 
+static void MarkNextItemScope()
+{
+    ImFluent::DropStaleNextItem(); // Data left over by a skipped widget does not join the new data
+    g_Ctx.NextItem.Window = GImGui->CurrentWindow;
+    g_Ctx.NextItem.Frame  = GImGui->FrameCount;
+}
+
 void ImFluent::SetNextItemHeader( const char * text )
 {
+    MarkNextItemScope();
     g_Ctx.NextItem.Header    = text;
     g_Ctx.NextItem.HasHeader = ( text != NULL );
 }
 void ImFluent::SetNextItemDescription( const char * text )
 {
+    MarkNextItemScope();
     g_Ctx.NextItem.Description    = text;
     g_Ctx.NextItem.HasDescription = ( text != NULL );
 }
 void ImFluent::SetNextItemGlyph( const char * glyph )
 {
+    MarkNextItemScope();
     g_Ctx.NextItem.Glyph    = glyph;
     g_Ctx.NextItem.HasGlyph = ( glyph != NULL );
 }
 void ImFluent::SetNextItemError( const char * error )
 {
+    MarkNextItemScope();
     g_Ctx.NextItem.Error    = error;
     g_Ctx.NextItem.HasError = ( error != NULL );
 }
@@ -1605,24 +2508,21 @@ void ImFluent::DrawIcon( const char * glyph, const ImVec2 & min,
 
 bool ImFluent::Button( const char * label, const ImVec2 & size )
 {
-    const ImFluentStyle & style = ImFluent::GetStyle();
     return ButtonExStyled( label, size, ImFluent::GetColorU32( ImFluentCol_ControlFillDefault ), ImFluent::GetColorU32( ImFluentCol_ControlFillSecondary ), ImFluent::GetColorU32( ImFluentCol_ControlFillTertiary ), ImFluent::GetColorU32( ImFluentCol_ControlFillDisabled ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), ImFluent::GetColorU32( ImFluentCol_TextDisabled ),
-        ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), ImGuiButtonFlags_None );
+        ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlTop ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), ImGuiButtonFlags_None );
 }
 
 bool ImFluent::AccentButton( const char * label, const ImVec2 & size )
 {
-    const ImFluentStyle & style = ImFluent::GetStyle();
     return ButtonExStyled( label, size, ImFluent::GetColorU32( ImFluentCol_AccentFillDefault ), ImFluent::GetColorU32( ImFluentCol_AccentFillSecondary ), ImFluent::GetColorU32( ImFluentCol_AccentFillTertiary ), ImFluent::GetColorU32( ImFluentCol_AccentFillDisabled ), ImFluent::GetColorU32( ImFluentCol_TextOnAccentPrimary ), ImFluent::GetColorU32( ImFluentCol_TextOnAccentDisabled ),
-        ImFluent::GetColorU32( ImFluentCol_ControlStrokeOnAccentDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationAccentBottom ), ImGuiButtonFlags_None );
+        ImFluent::GetColorU32( ImFluentCol_ControlStrokeOnAccentDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationAccentTop ), ImFluent::GetColorU32( ImFluentCol_ElevationAccentBottom ), ImGuiButtonFlags_None );
 }
 
 bool ImFluent::RepeatButton( const char * label, const ImVec2 & size )
 {
-    const ImFluentStyle & style = ImFluent::GetStyle();
     ImGui::PushItemFlag( ImGuiItemFlags_ButtonRepeat, true );
     const bool pressed = ButtonExStyled( label, size, ImFluent::GetColorU32( ImFluentCol_ControlFillDefault ), ImFluent::GetColorU32( ImFluentCol_ControlFillSecondary ), ImFluent::GetColorU32( ImFluentCol_ControlFillTertiary ), ImFluent::GetColorU32( ImFluentCol_ControlFillDisabled ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), ImFluent::GetColorU32( ImFluentCol_TextDisabled ),
-        ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), ImGuiButtonFlags_None );
+        ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlTop ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), ImGuiButtonFlags_None );
     ImGui::PopItemFlag();
     return pressed;
 }
@@ -1643,6 +2543,7 @@ bool ImFluent::HyperlinkButton( const char * label )
         return false;
     bool hovered = false, held = false;
     const bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    ReportItemInfo( id, label );
     const ImU32 col    = ImFluent::GetColorU32( held ? ImFluentCol_AccentTextTertiary : hovered ? ImFluentCol_AccentTextSecondary : ImFluentCol_AccentTextPrimary );
     const ImU32 anim   = AnimateColorU32( id, col );
 
@@ -1657,20 +2558,20 @@ bool ImFluent::HyperlinkButton( const char * label )
 
 bool ImFluent::ToggleButton( const char * label, bool * v, const ImVec2 & size )
 {
-    const ImFluentStyle & style = ImFluent::GetStyle();
     bool pressed;
     if ( v && *v )
     {
         pressed = ButtonExStyled( label, size, ImFluent::GetColorU32( ImFluentCol_AccentFillDefault ), ImFluent::GetColorU32( ImFluentCol_AccentFillSecondary ), ImFluent::GetColorU32( ImFluentCol_AccentFillTertiary ), ImFluent::GetColorU32( ImFluentCol_AccentFillDisabled ), ImFluent::GetColorU32( ImFluentCol_TextOnAccentPrimary ), ImFluent::GetColorU32( ImFluentCol_TextOnAccentDisabled ),
-            ImFluent::GetColorU32( ImFluentCol_ControlStrokeOnAccentDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationAccentBottom ), ImGuiButtonFlags_None );
+            ImFluent::GetColorU32( ImFluentCol_ControlStrokeOnAccentDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationAccentTop ), ImFluent::GetColorU32( ImFluentCol_ElevationAccentBottom ), ImGuiButtonFlags_None );
     }
     else
     {
         pressed = ButtonExStyled( label, size, ImFluent::GetColorU32( ImFluentCol_ControlFillDefault ), ImFluent::GetColorU32( ImFluentCol_ControlFillSecondary ), ImFluent::GetColorU32( ImFluentCol_ControlFillTertiary ), ImFluent::GetColorU32( ImFluentCol_ControlFillDisabled ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), ImFluent::GetColorU32( ImFluentCol_TextDisabled ),
-            ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), ImGuiButtonFlags_None );
+            ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlTop ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), ImGuiButtonFlags_None );
     }
     if ( pressed && v )
         *v = !*v;
+    ReportItemInfo( ImGui::GetCurrentContext()->LastItemData.ID, label, CheckedFlags( v && *v ) );
     return pressed;
 }
 
@@ -1708,8 +2609,9 @@ bool ImFluent::DropDownButtonEx( const char * label, bool * v_state, bool * drop
         chev_pressed = ImGui::ButtonBehavior( bb_chev, id_chev, &chev_hovered, &chev_held );
 
     const bool disabled = ImFluent::IsCurrentItemDisabled();
+    ReportItemInfo( id_main, label, ( split && v_state ) ? CheckedFlags( toggled ) : 0 );
 
-    ImU32 fillRest, fillHover, fillPress, fillDisabled, textCol, textDisabled, strokeCol, strokeBottom;
+    ImU32 fillRest, fillHover, fillPress, fillDisabled, textCol, textDisabled, strokeCol, strokeTop, strokeBottom;
     if ( toggled )
     {
         fillRest     = ImFluent::GetColorU32( ImFluentCol_AccentFillDefault );
@@ -1719,6 +2621,7 @@ bool ImFluent::DropDownButtonEx( const char * label, bool * v_state, bool * drop
         textCol      = ImFluent::GetColorU32( ImFluentCol_TextOnAccentPrimary );
         textDisabled = ImFluent::GetColorU32( ImFluentCol_TextOnAccentDisabled );
         strokeCol    = ImFluent::GetColorU32( ImFluentCol_ControlStrokeOnAccentDefault );
+        strokeTop    = ImFluent::GetColorU32( ImFluentCol_ElevationAccentTop );
         strokeBottom = ImFluent::GetColorU32( ImFluentCol_ElevationAccentBottom );
     }
     else
@@ -1730,6 +2633,7 @@ bool ImFluent::DropDownButtonEx( const char * label, bool * v_state, bool * drop
         textCol      = ImFluent::GetColorU32( ImFluentCol_TextPrimary );
         textDisabled = ImFluent::GetColorU32( ImFluentCol_TextDisabled );
         strokeCol    = ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault );
+        strokeTop    = ImFluent::GetColorU32( ImFluentCol_ElevationControlTop );
         strokeBottom = ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom );
     }
 
@@ -1751,23 +2655,24 @@ bool ImFluent::DropDownButtonEx( const char * label, bool * v_state, bool * drop
     if ( split )
     {
 
-        dl->AddRectFilled( bb_main.Min, bb_main.Max, mainAnim, r, ImDrawFlags_RoundCornersLeft );
+        const float sw = StrokeWidth();
+        dl->AddRectFilled( ImVec2( bb_main.Min.x + sw, bb_main.Min.y + sw ), ImVec2( bb_main.Max.x, bb_main.Max.y - sw ), mainAnim, r - sw, ImDrawFlags_RoundCornersLeft );
         const ImU32 chevTarget = pickFill( chev_hovered, chev_held );
         const ImU32 chevAnim   = AnimateColorU32( id_chev, chevTarget );
-        dl->AddRectFilled( bb_chev.Min, bb_chev.Max, chevAnim, r, ImDrawFlags_RoundCornersRight );
+        dl->AddRectFilled( ImVec2( bb_chev.Min.x, bb_chev.Min.y + sw ), ImVec2( bb_chev.Max.x - sw, bb_chev.Max.y - sw ), chevAnim, r - sw, ImDrawFlags_RoundCornersRight );
         dl->AddLine( ImVec2( bb_main.Max.x, bb_main.Min.y + FluentDpx( style.SpacingMedium ) ), ImVec2( bb_main.Max.x, bb_main.Max.y - FluentDpx( style.SpacingMedium ) ), ImFluent::GetColorU32( ImFluentCol_DividerStrokeDefault ), 1.f );
         if ( !disabled )
-            RenderElevationBorder( dl, bb_total, r, strokeCol, strokeBottom, 1.f );
+            RenderElevationBorder( dl, bb_total, r, strokeCol, strokeTop, strokeBottom, 1.f );
         else
-            dl->AddRect( bb_total.Min, bb_total.Max, strokeCol, r, 0, 1.f );
+            ImFluent::StrokeRect( dl, bb_total.Min, bb_total.Max, strokeCol, r );
     }
     else
     {
-        dl->AddRectFilled( bb_total.Min, bb_total.Max, mainAnim, r );
+        FillInsideBorder( dl, bb_total.Min, bb_total.Max, mainAnim, r );
         if ( !main_held && !disabled )
-            RenderElevationBorder( dl, bb_total, r, strokeCol, strokeBottom, 1.f );
+            RenderElevationBorder( dl, bb_total, r, strokeCol, strokeTop, strokeBottom, 1.f );
         else
-            dl->AddRect( bb_total.Min, bb_total.Max, strokeCol, r, 0, 1.f );
+            ImFluent::StrokeRect( dl, bb_total.Min, bb_total.Max, strokeCol, r );
     }
 
     RenderButtonLabel( dl, ImRect( bb_main.Min, ImVec2( bb_main.Max.x - ( split ? 0.f : chev_w ), bb_main.Max.y ) ), label, disabled ? textDisabled : textCol, pad_x, pad_y );
@@ -1779,6 +2684,9 @@ bool ImFluent::DropDownButtonEx( const char * label, bool * v_state, bool * drop
 
     RenderNavFocusRing( id_main, bb_total, r );
 
+    // SplitButton keyboard (WinUI): one tab stop; Space/Enter run the primary action, Alt+Down and F4 open the flyout.
+    if ( split && !disabled && ( IsFocusedItemChordPressed( id_main, g_Ctx.Actions.TogglePopup, false ) || IsFocusedItemChordPressed( id_main, g_Ctx.Actions.OpenPopup, false ) ) )
+        chev_pressed = true;
     if ( dropdown_clicked )
         *dropdown_clicked = split ? chev_pressed : false;
     if ( v_state && main_pressed && !split )
@@ -1824,7 +2732,7 @@ bool ImFluent::CheckboxEx( const char * label, int * v_tri, bool * v_bool )
         return false;
 
     bool hovered = false, held = false;
-    const bool pressed = ImGui::ButtonBehavior( total_bb, id, &hovered, &held );
+    const bool pressed = ImGui::ButtonBehavior( total_bb, id, &hovered, &held ) && !IsEnterActivation( id );
     if ( pressed )
     {
         if ( v_tri )
@@ -1845,6 +2753,7 @@ bool ImFluent::CheckboxEx( const char * label, int * v_tri, bool * v_bool )
     const bool checked  = state > 0;
     const bool indet    = state < 0;
     const bool disabled = ImFluent::IsCurrentItemDisabled();
+    ReportItemInfo( id, label, CheckedFlags( checked ) );
 
     ImDrawList * dl = w->DrawList;
     const float r   = FluentDpx( style.ControlCornerRadius );
@@ -1923,8 +2832,9 @@ bool ImFluent::RadioButton( const char * label, bool active )
     if ( !ImGui::ItemAdd( total_bb, id ) )
         return false;
     bool hovered = false, held = false;
-    const bool pressed  = ImGui::ButtonBehavior( total_bb, id, &hovered, &held );
+    const bool pressed  = ImGui::ButtonBehavior( total_bb, id, &hovered, &held ) && !IsEnterActivation( id );
     const bool disabled = ImFluent::IsCurrentItemDisabled();
+    ReportItemInfo( id, label, CheckedFlags( active ) );
 
     ImDrawList * dl = w->DrawList;
     const ImVec2 c( ( ring_bb.Min.x + ring_bb.Max.x ) * 0.5f, ( ring_bb.Min.y + ring_bb.Max.y ) * 0.5f );
@@ -1949,10 +2859,57 @@ bool ImFluent::RadioButton( const char * label, bool active )
     return pressed;
 }
 
+// Loose radio buttons sharing one int* are a group (WinUI GroupName): arrows move focus only, wrapping; links kept from last frame.
+static void LooseRadioGroupNav( const int * group, ImGuiID id )
+{
+    static const ImGuiID KEY_FRAME = 0x4AD10001u, KEY_FIRST = 0x4AD10002u, KEY_LAST = 0x4AD10003u, KEY_PREV_LAST = 0x4AD10004u;
+    static const ImGuiID KEY_NEXT = 0x4AD10005u, KEY_PREV = 0x4AD10006u;
+    ImGuiContext & g   = *GImGui;
+    ImGuiStorage * st  = ImGui::GetStateStorage();
+    const ImGuiID gkey = ImHashData( &group, sizeof( group ) );
+    if ( st->GetInt( gkey ^ KEY_FRAME, -1 ) != g.FrameCount )
+    {
+        st->SetInt( gkey ^ KEY_FRAME, g.FrameCount );
+        st->SetInt( gkey ^ KEY_PREV_LAST, st->GetInt( gkey ^ KEY_LAST, 0 ) );
+        st->SetInt( gkey ^ KEY_FIRST, ( int )id );
+        st->SetInt( id ^ KEY_PREV, 0 );
+    }
+    else
+    {
+        const ImGuiID prev = ( ImGuiID )st->GetInt( gkey ^ KEY_LAST, 0 );
+        st->SetInt( prev ^ KEY_NEXT, ( int )id );
+        st->SetInt( id ^ KEY_PREV, ( int )prev );
+    }
+    st->SetInt( gkey ^ KEY_LAST, ( int )id );
+    if ( g.NavId != id )
+        return;
+    const ImGuiID first     = ( ImGuiID )st->GetInt( gkey ^ KEY_FIRST, 0 );
+    const ImGuiID prev_last = ( ImGuiID )st->GetInt( gkey ^ KEY_PREV_LAST, 0 );
+    const bool down         = ImFluent::ConsumeNavArrow( id, ImGuiDir_Down ); // Consume both keys of each pair
+    const bool right        = ImFluent::ConsumeNavArrow( id, ImGuiDir_Right );
+    const bool up           = ImFluent::ConsumeNavArrow( id, ImGuiDir_Up );
+    const bool left         = ImFluent::ConsumeNavArrow( id, ImGuiDir_Left );
+    const bool fwd          = down || right;
+    const bool back         = up || left;
+    ImGuiID target          = 0;
+    if ( fwd )
+        target = ( id == prev_last ) ? first : ( ImGuiID )st->GetInt( id ^ KEY_NEXT, 0 );
+    else if ( back )
+        target = ( id == first ) ? prev_last : ( ImGuiID )st->GetInt( id ^ KEY_PREV, 0 );
+    if ( target && target != id )
+    {
+        ImGui::SetFocusID( target, g.CurrentWindow );
+        g.NavCursorVisible = true;
+    }
+}
+
 bool ImFluent::RadioButton( const char * label, int * v, int v_button )
 {
-    const bool active = v && ( *v == v_button );
-    if ( RadioButton( label, active ) )
+    const bool active  = v && ( *v == v_button );
+    const bool pressed = RadioButton( label, active );
+    if ( v && !g_Ctx.InRadioButtons && GImGui->LastItemData.ID == ImGui::GetID( label ) )
+        LooseRadioGroupNav( v, GImGui->LastItemData.ID );
+    if ( pressed )
     {
         if ( v )
             *v = v_button;
@@ -1974,7 +2931,11 @@ bool ImFluent::RadioButtons( const char * label, int * v, const char * const ite
         RenderAndConsumePendingHeader();
         ImGui::TextUnformatted( label );
     }
-    const int rows = ( items_count + max_columns - 1 ) / max_columns;
+    // WinUI RadioButtons: one tab stop; Up/Down by index (column-major), Left/Right by column, stop at the ends; select unless Ctrl.
+    ImGuiContext & g = *GImGui;
+    const int rows   = ( items_count + max_columns - 1 ) / max_columns;
+    int nav_target   = -1;
+    BeginTabGroup( ImGui::GetID( "##radio-group" ), ImFluentTabGroupFlags_None );
     for ( int row = 0; row < rows; ++row )
     {
         for ( int col = 0; col < max_columns; ++col )
@@ -1984,10 +2945,37 @@ bool ImFluent::RadioButtons( const char * label, int * v, const char * const ite
                 continue;
             if ( col > 0 )
                 ImGui::SameLine();
+            const ImGuiID item_id = ImGui::GetID( items[ i ] );
+            ImGui::PushItemFlag( ImGuiItemFlags_NoTabStop, TabGroupItemFlags( item_id, v && *v == i ) != ImGuiItemFlags_None );
+            g_Ctx.InRadioButtons = true;
             if ( RadioButton( items[ i ], v, i ) )
                 changed = true;
+            g_Ctx.InRadioButtons = false;
+            ImGui::PopItemFlag();
+            if ( g.NavId == item_id )
+            {
+                if ( ConsumeNavArrow( item_id, ImGuiDir_Down ) && i + 1 < items_count )
+                    nav_target = i + 1;
+                if ( ConsumeNavArrow( item_id, ImGuiDir_Up ) && i > 0 )
+                    nav_target = i - 1;
+                if ( ConsumeNavArrow( item_id, ImGuiDir_Right ) && i + rows < items_count )
+                    nav_target = i + rows;
+                if ( ConsumeNavArrow( item_id, ImGuiDir_Left ) && i - rows >= 0 )
+                    nav_target = i - rows;
+            }
         }
     }
+    if ( nav_target >= 0 )
+    {
+        ImGui::SetFocusID( ImGui::GetID( items[ nav_target ] ), ImGui::GetCurrentWindow() );
+        g.NavCursorVisible = true;
+        if ( v && !g.IO.KeyCtrl && *v != nav_target )
+        {
+            *v      = nav_target;
+            changed = true;
+        }
+    }
+    EndTabGroup();
     RenderAndConsumePendingDescription();
     ImGui::PopID();
     return changed;
@@ -2017,11 +3005,12 @@ bool ImFluent::ToggleSwitch( const char * label, bool * v, const char * on_text,
         return false;
 
     bool hovered = false, held = false;
-    const bool pressed = ImGui::ButtonBehavior( track_bb, id, &hovered, &held );
+    const bool pressed = ImGui::ButtonBehavior( track_bb, id, &hovered, &held ) && !IsEnterActivation( id );
     if ( pressed && v )
         *v = !*v;
     const bool on       = v && *v;
     const bool disabled = ImFluent::IsCurrentItemDisabled();
+    ReportItemInfo( id, label, CheckedFlags( on ) );
 
     ImU32 trackTarget;
     if ( disabled )
@@ -2035,7 +3024,7 @@ bool ImFluent::ToggleSwitch( const char * label, bool * v, const char * on_text,
     ImDrawList * dl = w->DrawList;
     dl->AddRectFilled( track_bb.Min, track_bb.Max, trackAnim, H * 0.5f );
     if ( !on )
-        dl->AddRect( track_bb.Min, track_bb.Max, ImFluent::GetColorU32( ImFluentCol_ControlStrongStrokeDefault ), H * 0.5f, 0, 1.f );
+        ImFluent::StrokeRect( dl, track_bb.Min, track_bb.Max, ImFluent::GetColorU32( ImFluentCol_ControlStrongStrokeDefault ), H * 0.5f );
 
     const float pad            = FluentDpx( style.SpacingSmall );
     const float thumb_r_target = on ? FluentDpx( style.ToggleSwitchThumbRadiusOn ) : FluentDpx( style.ToggleSwitchThumbRadiusOff );
@@ -2079,6 +3068,25 @@ bool ImFluent::RatingControl( const char * label, float * value, int max_stars )
 
     const bool hovered = ImGui::ItemHoverable( bb, id, ImGuiItemFlags_None );
     bool changed       = false;
+    ReportItemInfo( id, label );
+
+    // Keyboard: arrows step by one star, Home clears, End fills (WinUI RatingControl).
+    if ( value && !IsCurrentItemDisabled() )
+    {
+        float new_val = *value;
+        if ( const int step = ConsumeNavIncrement( id ) )
+            new_val = ImClamp( ImFloor( new_val + ( step > 0 ? 1.f : -0.5f ) ), 0.f, ( float )max_stars );
+        if ( IsFocusedItemChordPressed( id, g_Ctx.Actions.FirstItem ) )
+            new_val = 0.f;
+        if ( IsFocusedItemChordPressed( id, g_Ctx.Actions.LastItem ) )
+            new_val = ( float )max_stars;
+        if ( new_val != *value )
+        {
+            *value  = new_val;
+            changed = true;
+            ImGui::MarkItemEdited( id );
+        }
+    }
     if ( hovered && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
     {
         const float mx = ImGui::GetMousePos().x - bb.Min.x;
@@ -2097,18 +3105,20 @@ bool ImFluent::RatingControl( const char * label, float * value, int max_stars )
     }
     const float v        = value ? *value : 0.f;
     ImDrawList * dl      = w->DrawList;
-    const ImU32 trackCol = ImFluent::GetColorU32( ImFluentCol_ControlStrongStrokeDefault );
+    const ImU32 trackCol = ImFluent::GetColorU32( ImFluentCol_TextSecondary );
     const ImU32 fillCol  = ImFluent::GetColorU32( ImFluentCol_AccentFillDefault );
+    // WinUI RatingControl: Segoe star glyphs, an outline for unset items, a filled star (cut for half values) for the value.
+    ImFont * font        = ImGui::GetFont();
     for ( int i = 0; i < max_stars; ++i )
     {
-        const ImVec2 c( pos.x + i * ( star + gap ) + star * 0.5f, pos.y + star * 0.5f );
+        const ImVec2 p( pos.x + i * ( star + gap ), pos.y );
         const float fill = ImClamp( v - ( float )i, 0.f, 1.f );
-
-        dl->AddNgon( c, star * 0.45f, trackCol, 5, 1.5f );
+        if ( fill < 1.f )
+            dl->AddText( font, star, p, trackCol, ImFluentIcon_FavoriteStar );
         if ( fill > 0.f )
         {
-            dl->PushClipRect( ImVec2( c.x - star * 0.5f, c.y - star * 0.5f ), ImVec2( c.x - star * 0.5f + star * fill, c.y + star * 0.5f ), true );
-            dl->AddNgonFilled( c, star * 0.45f, fillCol, 5 );
+            dl->PushClipRect( p, ImVec2( p.x + star * fill, p.y + star ), true );
+            dl->AddText( font, star, p, fillCol, ImFluentIcon_FavoriteStarFill );
             dl->PopClipRect();
         }
     }
@@ -2117,6 +3127,106 @@ bool ImFluent::RatingControl( const char * label, float * value, int max_stars )
 }
 
 // [SECTION] Sliders & Progress
+
+static double SliderValueToDouble( ImGuiDataType dtype, const void * p )
+{
+    switch ( dtype )
+    {
+        case ImGuiDataType_S8:
+            return *( const ImS8 * )p;
+        case ImGuiDataType_U8:
+            return *( const ImU8 * )p;
+        case ImGuiDataType_S16:
+            return *( const ImS16 * )p;
+        case ImGuiDataType_U16:
+            return *( const ImU16 * )p;
+        case ImGuiDataType_S32:
+            return *( const ImS32 * )p;
+        case ImGuiDataType_U32:
+            return *( const ImU32 * )p;
+        case ImGuiDataType_S64:
+            return ( double )*( const ImS64 * )p;
+        case ImGuiDataType_U64:
+            return ( double )*( const ImU64 * )p;
+        case ImGuiDataType_Float:
+            return *( const float * )p;
+        case ImGuiDataType_Double:
+            return *( const double * )p;
+        default:
+            return 0.0;
+    }
+}
+
+static void SliderValueFromDouble( ImGuiDataType dtype, void * p, double d )
+{
+    const bool is_float = ( dtype == ImGuiDataType_Float || dtype == ImGuiDataType_Double );
+    if ( !is_float )
+        d = ( d < 0.0 ) ? ( double )( ImS64 )( d - 0.5 ) : ( double )( ImS64 )( d + 0.5 );
+    switch ( dtype )
+    {
+        case ImGuiDataType_S8:
+            *( ImS8 * )p = ( ImS8 )d;
+            break;
+        case ImGuiDataType_U8:
+            *( ImU8 * )p = ( ImU8 )d;
+            break;
+        case ImGuiDataType_S16:
+            *( ImS16 * )p = ( ImS16 )d;
+            break;
+        case ImGuiDataType_U16:
+            *( ImU16 * )p = ( ImU16 )d;
+            break;
+        case ImGuiDataType_S32:
+            *( ImS32 * )p = ( ImS32 )d;
+            break;
+        case ImGuiDataType_U32:
+            *( ImU32 * )p = ( ImU32 )d;
+            break;
+        case ImGuiDataType_S64:
+            *( ImS64 * )p = ( ImS64 )d;
+            break;
+        case ImGuiDataType_U64:
+            *( ImU64 * )p = ( ImU64 )d;
+            break;
+        case ImGuiDataType_Float:
+            *( float * )p = ( float )d;
+            break;
+        case ImGuiDataType_Double:
+            *( double * )p = d;
+            break;
+        default:
+            break;
+    }
+}
+
+// WinUI Slider keys: arrows 1 (integers) or 1% of the range, PageUp/PageDown 10%, Home/End the ends. Steps come from
+// [step_min, step_max] when given (a range slider thumb is clamped by the other thumb but steps over the full range).
+static bool SliderKeyboardStep( ImGuiID id, ImGuiDataType dtype, void * v, const void * v_min, const void * v_max, const void * step_min = NULL, const void * step_max = NULL )
+{
+    const double lo    = SliderValueToDouble( dtype, v_min );
+    const double hi    = SliderValueToDouble( dtype, v_max );
+    const double range = ImAbs( SliderValueToDouble( dtype, step_max ? step_max : v_max ) - SliderValueToDouble( dtype, step_min ? step_min : v_min ) );
+    const bool is_int  = !( dtype == ImGuiDataType_Float || dtype == ImGuiDataType_Double );
+    const double small = is_int ? 1.0 : range / 100.0;
+    const double large = is_int ? ImMax( 1.0, floor( range / 10.0 ) ) : range / 10.0;
+    const double cur   = SliderValueToDouble( dtype, v );
+    double next        = cur;
+    if ( const int step = ImFluent::ConsumeNavIncrement( id ) )
+        next += step * small;
+    if ( ImFluent::IsFocusedItemChordPressed( id, g_Ctx.Actions.PageUp ) )
+        next += large;
+    if ( ImFluent::IsFocusedItemChordPressed( id, g_Ctx.Actions.PageDown ) )
+        next -= large;
+    if ( ImFluent::IsFocusedItemChordPressed( id, g_Ctx.Actions.FirstItem ) )
+        next = ImMin( lo, hi );
+    if ( ImFluent::IsFocusedItemChordPressed( id, g_Ctx.Actions.LastItem ) )
+        next = ImMax( lo, hi );
+    next = ImClamp( next, ImMin( lo, hi ), ImMax( lo, hi ) );
+    if ( next == cur )
+        return false;
+    SliderValueFromDouble( dtype, v, next );
+    return true;
+}
 
 bool ImFluent::Slider( const char * label, ImGuiDataType dtype, void * v, const void * v_min, const void * v_max, const char * format, ImGuiSliderFlags flags )
 {
@@ -2150,9 +3260,15 @@ bool ImFluent::Slider( const char * label, ImGuiDataType dtype, void * v, const 
     }
 
     ImRect grab_bb;
-    const bool changed = ImGui::SliderBehavior( frame_bb, id, dtype, v, v_min, v_max, format, flags, &grab_bb );
+    bool changed = ImGui::SliderBehavior( frame_bb, id, dtype, v, v_min, v_max, format, flags, &grab_bb );
+    if ( g.ActiveId != id && !IsCurrentItemDisabled() && SliderKeyboardStep( id, dtype, v, v_min, v_max ) )
+    {
+        changed = true;
+        ImGui::SliderBehavior( frame_bb, id, dtype, v, v_min, v_max, format, flags | ImGuiSliderFlags_ReadOnly, &grab_bb ); // Grab rect for the new value
+    }
     if ( changed )
         ImGui::MarkItemEdited( id );
+    ReportItemInfo( id, label );
 
     const bool active = ImGui::IsItemActive();
 
@@ -2219,6 +3335,13 @@ bool ImFluent::RangeSlider( const char * label, float * v_min, float * v_max, fl
     }
     ImGui::SetNextItemAllowOverlap();
     ImGui::ItemAdd( frame_bb, id_hi );
+    {
+        const char * hi_label;
+        const char * hi_label_end;
+        ImFormatStringToTempBuffer( &hi_label, &hi_label_end, "%s (upper)", label );
+        ReportItemInfo( id_lo, label );
+        ReportItemInfo( id_hi, hi_label );
+    }
 
     const float thumb_r     = FluentDpx( style.SliderThumbRadius );
     const float track_h     = FluentDpx( style.SliderTrackHeight );
@@ -2248,6 +3371,19 @@ bool ImFluent::RangeSlider( const char * label, float * v_min, float * v_max, fl
     bool hi_hov = false, hi_held = false;
     ImGui::ButtonBehavior( lo_bb, id_lo, &lo_hov, &lo_held );
     ImGui::ButtonBehavior( hi_bb, id_hi, &hi_hov, &hi_held );
+    // Space/Enter also "hold" a button; only a mouse drag moves a thumb to the pointer.
+    if ( ImGui::GetCurrentContext()->ActiveIdSource != ImGuiInputSource_Mouse )
+        lo_held = hi_held = false;
+
+    if ( !IsCurrentItemDisabled() )
+    {
+        const float lo_cur = *v_min, hi_cur = *v_max;
+        const float hi_lim = hi_cur, lo_lim = lo_cur;
+        SliderKeyboardStep( id_lo, ImGuiDataType_Float, v_min, &v_lo, &hi_lim, &v_lo, &v_hi );
+        SliderKeyboardStep( id_hi, ImGuiDataType_Float, v_max, &lo_lim, &v_hi, &v_lo, &v_hi );
+        if ( *v_min != lo_cur || *v_max != hi_cur )
+            changed = true;
+    }
     if ( lo_held )
     {
         const float nv = ImClamp( x_to_value( ImGui::GetMousePos().x ), v_lo, *v_max );
@@ -2287,6 +3423,7 @@ bool ImFluent::RangeSlider( const char * label, float * v_min, float * v_max, fl
         dl->AddCircleFilled( c, thumb_r, col_thumb_solid, 32 );
         dl->AddCircle( c, thumb_r, col_thumb_stroke, 32, stroke_thin );
         dl->AddCircleFilled( c, inner_r, col_thumb_inner, 24 );
+        RenderNavFocusRing( side == 0 ? id_lo : id_hi, ImRect( c.x - thumb_r, c.y - thumb_r, c.x + thumb_r, c.y + thumb_r ), thumb_r );
     }
 
     if ( format && *format )
@@ -2595,7 +3732,7 @@ bool ImFluent::TextBox( const char * label, char * buf, size_t buf_size, const c
     RenderAndConsumePendingHeader();
 
     const ImFluentStyle & style = ImFluent::GetStyle();
-    PushControlFrameStyle( FluentDpx( style.ControlHeight ) );
+    BeginTextControlFrame( FluentDpx( style.ControlHeight ) );
 
     const ImGuiID input_id_predicted = ImGui::GetID( label );
     ImGuiStorage * storage           = ImGui::GetStateStorage();
@@ -2620,6 +3757,7 @@ bool ImFluent::TextBox( const char * label, char * buf, size_t buf_size, const c
     void * cb_user;
     PrepareTextInputCallback( buf, max_length, consume_clear, extra_flags, chain, cb, cb_user );
 
+    TextInputEscapeKeepsText( input_id_predicted );
     bool changed = hint ? ImGui::InputTextWithHint( label, hint, buf, buf_size, extra_flags, cb, cb_user ) : ImGui::InputText( label, buf, buf_size, extra_flags, cb, cb_user );
 
     // SetKeyboardFocusHere has a one-frame latency: nav-activate Enter on the clear
@@ -2629,7 +3767,7 @@ bool ImFluent::TextBox( const char * label, char * buf, size_t buf_size, const c
     if ( chain.ClearPending )
         storage->SetBool( clear_pending_key, true );
 
-    PopControlFrameStyle();
+    EndTextControlFrame();
 
     // Snapshot the InputText's LastItemData so caller-side IsItem*() queries keep
     // working — the clear button's ItemAdd, the counter's TextUnformatted, and the
@@ -2655,7 +3793,8 @@ bool ImFluent::TextBox( const char * label, char * buf, size_t buf_size, const c
         // the InputText, which activates naturally and fires all its usual callbacks.
         const ImGuiID button_id = input_id ^ 0xC1EA8u;
         ImGui::KeepAliveID( button_id );
-        ImGui::ItemAdd( btn_bb, button_id );
+        ImGui::ItemAdd( btn_bb, button_id, NULL, ImGuiItemFlags_NoTabStop );
+        ReportItemInfo( button_id, "Clear" );
 
         const ImGuiContext & g = *ImGui::GetCurrentContext();
         const bool nav_focused = ( g.NavId == button_id && g.NavCursorVisible );
@@ -2747,9 +3886,22 @@ bool ImFluent::PasswordBox( const char * label, char * buf, size_t buf_size, con
     const float inset            = FluentDpx( style.SpacingXSmall );
     const ImRect btn_pred( ImVec2( input_predicted.Max.x - reveal_w - inset, input_predicted.Min.y + inset ), ImVec2( input_predicted.Max.x - inset, input_predicted.Max.y - inset ) );
 
-    const bool hov      = ImGui::IsMouseHoveringRect( btn_pred.Min, btn_pred.Max );
-    const bool held     = hov && ImGui::IsMouseDown( ImGuiMouseButton_Left );
-    const bool revealed = held;
+    const bool hov  = IsMouseOverWindowRect( btn_pred );
+    const bool held = hov && ImGui::IsMouseDown( ImGuiMouseButton_Left );
+
+    // WinUI PasswordBox: Alt+F8 (ImFluentActions::RevealPassword) shows the password while the key is held.
+    ImGuiContext & g           = *GImGui;
+    const ImGuiID pw_id        = ImGui::GetID( label );
+    ImGuiStorage * st          = ImGui::GetStateStorage();
+    const ImGuiID peek_key     = pw_id ^ 0x9EE6F8u;
+    const bool has_focus       = g.ActiveId == pw_id || g.NavId == pw_id;
+    const ImGuiKeyChord reveal = g_Ctx.Actions.RevealPassword;
+    const ImGuiKey reveal_key  = ( ImGuiKey )( reveal & ~ImGuiMod_Mask_ );
+    bool key_peek              = reveal != 0 && st->GetBool( peek_key, false ) && has_focus && ImGui::IsKeyDown( reveal_key );
+    if ( has_focus && IsActionPressed( reveal ) )
+        key_peek = true;
+    st->SetBool( peek_key, key_peek );
+    const bool revealed = held || key_peek;
 
     ImGuiInputTextFlags fl = revealed ? flags : ( flags | ImGuiInputTextFlags_Password );
 
@@ -2758,9 +3910,10 @@ bool ImFluent::PasswordBox( const char * label, char * buf, size_t buf_size, con
     void * cb_user;
     PrepareTextInputCallback( buf, /*max_length*/ 0, /*clear_pending*/ false, fl, chain, cb, cb_user );
 
-    PushControlFrameStyle( h );
+    BeginTextControlFrame( h );
+    TextInputEscapeKeepsText( pw_id );
     const bool changed = hint ? ImGui::InputTextWithHint( label, hint, buf, buf_size, fl, cb, cb_user ) : ImGui::InputText( label, buf, buf_size, fl, cb, cb_user );
-    PopControlFrameStyle();
+    EndTextControlFrame();
 
     const bool input_active = ImGui::IsItemActive();
     const ImRect input_rect = ImGui::GetCurrentContext()->LastItemData.Rect;
@@ -2818,28 +3971,28 @@ bool ImFluent::NumberBox( const char * label, double * v, double step, double st
     const ImFluentStyle & style = ImFluent::GetStyle();
     const float h               = FluentDpx( style.ControlHeight );
 
-    PushControlFrameStyle( h );
+    BeginTextControlFrame( h );
 
     ImGui::SetNextItemAllowOverlap();
 
     bool changed = ImGui::InputDouble( label, v, 0.0, 0.0, format, flags );
-    PopControlFrameStyle();
+    EndTextControlFrame();
 
     const bool input_active = ImGui::IsItemActive();
     const ImRect input_rect = ImGui::GetCurrentContext()->LastItemData.Rect;
     const ImGuiID input_id  = ImGui::GetCurrentContext()->LastItemData.ID;
 
-    const float spin_w = FluentDpx( style.SpinButtonWidth );
+    const float spin_w = FluentDpx( style.SpinButtonWidth + style.SpacingMedium ); // 36: WinUI inline spin button
     const float inset  = FluentDpx( style.SpacingXSmall );
-    const ImRect spin_area( ImVec2( input_rect.Max.x - spin_w - inset, input_rect.Min.y + inset ), ImVec2( input_rect.Max.x - inset, input_rect.Max.y - inset ) );
-    const float btn_h = ( spin_area.GetHeight() - inset ) * 0.5f;
-    const ImRect up_bb( spin_area.Min, ImVec2( spin_area.Max.x, spin_area.Min.y + btn_h ) );
-    const ImRect dn_bb( ImVec2( spin_area.Min.x, spin_area.Max.y - btn_h ), spin_area.Max );
+    // WinUI NumberBox SpinButtonPlacementMode="Inline": up and down buttons side by side at the right of the box.
+    const ImRect spin_area( ImVec2( input_rect.Max.x - spin_w * 2.f - inset, input_rect.Min.y + inset ), ImVec2( input_rect.Max.x - inset, input_rect.Max.y - inset ) );
+    const ImRect up_bb( spin_area.Min, ImVec2( spin_area.Min.x + spin_w, spin_area.Max.y ) );
+    const ImRect dn_bb( ImVec2( spin_area.Min.x + spin_w, spin_area.Min.y ), spin_area.Max );
 
     ImDrawList * dl = w->DrawList;
     const float r   = FluentDpx( style.ControlCornerRadius );
 
-    ImGui::PushItemFlag( ImGuiItemFlags_ButtonRepeat, true );
+    ImGui::PushItemFlag( ImGuiItemFlags_ButtonRepeat, g_Ctx.Actions.RepeatStepButtons );
 
     struct SpinBtn
     {
@@ -2857,7 +4010,8 @@ bool ImFluent::NumberBox( const char * label, double * v, double step, double st
     for ( int i = 0; i < 2; ++i )
     {
         const SpinBtn & b = btns[ i ];
-        ImGui::ItemAdd( b.bb, b.id );
+        ImGui::ItemAdd( b.bb, b.id, NULL, ImGuiItemFlags_NoNav ); // WinUI spin buttons are not tab stops
+        ReportItemInfo( b.id, b.sign > 0.0 ? "Increase" : "Decrease" );
         bool hov = false, held = false;
         const bool pr = ImGui::ButtonBehavior( b.bb, b.id, &hov, &held );
         if ( pr && v )
@@ -2889,10 +4043,32 @@ bool ImFluent::NumberBox( const char * label, double * v, double step, double st
         dl->AddRectFilled( b.bb.Min, b.bb.Max, ImFluent::AnimateColorU32( b.id, hi_target ), r );
 
         const ImVec2 c( ( b.bb.Min.x + b.bb.Max.x ) * 0.5f, ( b.bb.Min.y + b.bb.Max.y ) * 0.5f );
-        RenderChevron( dl, c, b.dir, ImFluent::GetColorU32( ImFluentCol_TextSecondary ), FluentDpx( style.ChevronGlyphSize - 1.f ) );
+        RenderChevron( dl, c, b.dir, ImFluent::GetColorU32( ImFluentCol_TextSecondary ), FluentDpx( style.ChevronGlyphSize + 2.f ) ); // 12 wide
     }
 
     ImGui::PopItemFlag();
+
+    // Keyboard while editing (WinUI NumberBox): Up/Down step by `step`, PageUp/PageDown by `step_fast`.
+    if ( input_active && v )
+    {
+        double delta = 0.0;
+        if ( ImGui::IsKeyPressed( ImGuiKey_UpArrow, ImGuiInputFlags_Repeat, input_id ) )
+            delta += step;
+        if ( ImGui::IsKeyPressed( ImGuiKey_DownArrow, ImGuiInputFlags_Repeat, input_id ) )
+            delta -= step;
+        if ( IsChordPressedOwned( g_Ctx.Actions.PageUp, input_id ) )
+            delta += step_fast;
+        if ( IsChordPressedOwned( g_Ctx.Actions.PageDown, input_id ) )
+            delta -= step_fast;
+        if ( delta != 0.0 )
+        {
+            *v += delta;
+            changed = true;
+            if ( ImGuiInputTextState * state = ImGui::GetInputTextState( input_id ) )
+                state->ReloadUserBufAndSelectAll(); // Show the new value in the field being edited
+        }
+    }
+
     RenderAndConsumePendingDescription();
     RenderAndConsumePendingError( input_rect );
     return changed;
@@ -2908,9 +4084,10 @@ bool ImFluent::RichEditBox( const char * label, char * buf, size_t buf_size, con
     void * cb_user;
     PrepareTextInputCallback( buf, max_length, /*clear_pending*/ false, flags, chain, cb, cb_user );
 
-    PushControlFrameStyle( ImGui::GetFontSize() + FluentDpx( style.SpacingXLarge ) );
+    BeginTextControlFrame( ImGui::GetFontSize() + FluentDpx( style.SpacingXLarge ) );
+    TextInputEscapeKeepsText( ImGui::GetID( label ) );
     const bool changed = ImGui::InputTextMultiline( label, buf, buf_size, size, flags, cb, cb_user );
-    PopControlFrameStyle();
+    EndTextControlFrame();
     const ImRect input_rect = ImGui::GetCurrentContext()->LastItemData.Rect;
     RenderAndConsumePendingDescription();
     RenderAndConsumePendingError( input_rect );
@@ -3010,7 +4187,7 @@ bool ImFluent::AutoSuggestBox( const char * label, char * buf, size_t buf_size, 
     // and the Selectable that the user clicked never renders — swallowing the click.
     // The Selectable's own pressed-handler will commit and call CloseCurrentPopup.
     const bool click_in_popup = mouse_clicked && mouse_over_popup;
-    const bool click_in_input = mouse_clicked && ImGui::IsMouseHoveringRect( input_rect.Min, input_rect.Max, false );
+    const bool click_in_input = mouse_clicked && IsMouseOverWindowRect( input_rect );
     // Click landed outside both input and popup — we own the dismiss because the
     // popup uses NoFocusOnAppearing + NoNav, so ImGui's own ClosePopupsOverWindow
     // doesn't fire when the click stays within the parent window.
@@ -3207,7 +4384,6 @@ void ImFluent::Separator()
     ImGuiWindow * w = ImGui::GetCurrentWindow();
     if ( w->SkipItems )
         return;
-    const ImFluentStyle & style = ImFluent::GetStyle();
     const float thickness       = 1.f;
     const ImVec2 pos            = w->DC.CursorPos;
     const float W               = ImGui::GetContentRegionAvail().x;
@@ -3244,9 +4420,18 @@ bool ImFluent::BeginCard( const char * id, const ImVec2 & size, ImFluentCardStyl
     ImGui::PushStyleColor( ImGuiCol_ChildBg, bg );
     ImGui::PushStyleColor( ImGuiCol_Border, stroke );
     ImGui::PushStyleVar( ImGuiStyleVar_ChildRounding, FluentDpx( style.OverlayCornerRadius ) );
-    ImGui::PushStyleVar( ImGuiStyleVar_ChildBorderSize, 1.f );
+    ImGui::PushStyleVar( ImGuiStyleVar_ChildBorderSize, 0.f );
     ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( FluentDpx( style.CardPadding ), FluentDpx( style.CardPadding ) ) );
-    return ImGui::BeginChild( id, size, ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY );
+    // INKEYS PATCH: 手绘边框的 child 没有原生 border，须显式保留 CardPadding，避免内容测量和绘制宽度失配。
+    const bool open   = ImGui::BeginChild( id, size, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_NavFlattened | ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoBackground );
+    // Fill and border on whole pixels (ImGui's child border straddles half pixels and blurs at 150%), as WinUI draws them.
+    ImGuiWindow * w = ImGui::GetCurrentWindow();
+    const ImRect rect = w->Rect();
+    w->DrawList->PushClipRect( rect.Min, rect.Max, false );
+    FillInsideBorder( w->DrawList, rect.Min, rect.Max, bg, FluentDpx( style.OverlayCornerRadius ) );
+    StrokeRect( w->DrawList, rect.Min, rect.Max, stroke, FluentDpx( style.OverlayCornerRadius ) );
+    w->DrawList->PopClipRect();
+    return open;
 }
 
 void ImFluent::EndCard()
@@ -3408,13 +4593,14 @@ static bool ExpanderHeader( const char * label, bool * open, ImFluentExpandDirec
     if ( pressed && open )
         *open = !*open;
     const bool isOpen = open && *open;
+    ImFluent::ReportItemInfo( id, label, ImFluent::OpenedFlags( isOpen ) );
 
     const float r   = ImFluent::FluentDpx( style.ControlCornerRadius );
     ImU32 fill      = ImFluent::ResolveControlFillState( false, held, hovered );
     fill            = ImFluent::AnimateColorU32( id, fill );
     ImDrawList * dl = w->DrawList;
-    dl->AddRectFilled( bb.Min, bb.Max, fill, r );
-    ImFluent::RenderElevationBorder( dl, bb, r, ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), 1.f );
+    ImFluent::FillInsideBorder( dl, bb.Min, bb.Max, fill, r );
+    ImFluent::RenderElevationBorder( dl, bb, r, ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlTop ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), 1.f );
 
     const float closed_phase = ( dir == ImFluentExpandDirection_Up ) ? 1.f : 0.f;
     const float open_phase   = ( dir == ImFluentExpandDirection_Up ) ? 0.f : 1.f;
@@ -3446,7 +4632,7 @@ static bool ExpanderPushBody( const char * label )
     ImGui::PushStyleColor( ImGuiCol_ChildBg, ImFluent::GetColorU32( ImFluentCol_CardBgDefault ) );
     ImGui::PushStyleVar( ImGuiStyleVar_ChildRounding, r );
     ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( ImFluent::FluentDpx( style.SpacingXLarge ), ImFluent::FluentDpx( style.SpacingLarge ) ) );
-    const bool open = ImGui::BeginChild( label, ImVec2( W, 0.f ), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders );
+    const bool open = ImGui::BeginChild( label, ImVec2( W, 0.f ), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened );
     if ( !open )
     {
         ImGui::EndChild();
@@ -3538,7 +4724,7 @@ bool ImFluent::BeginScrollView( const char * id, const ImVec2 & size )
     const ImFluentStyle & style = ImFluent::GetStyle();
     ImGui::PushStyleColor( ImGuiCol_ChildBg, ImFluent::GetColorU32( ImFluentCol_SubtleFillTransparent ) );
     ImGui::PushStyleVar( ImGuiStyleVar_ChildRounding, FluentDpx( style.ControlCornerRadius ) );
-    if ( !ImGui::BeginChild( id, size, ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar ) )
+    if ( !ImGui::BeginChild( id, size, ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_HorizontalScrollbar ) )
     {
         ImGui::EndChild();
         ImGui::PopStyleVar();
@@ -3557,6 +4743,13 @@ void ImFluent::EndScrollView()
 
 // [SECTION] TabView
 
+// Tab and tab bar height (32) for the calls that lay out tabs; the tab content keeps the regular frame padding.
+static void PushTabFramePadding()
+{
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( ImFluent::FluentDpx( style.SpacingLarge ), ImMax( 0.f, ( ImFluent::FluentDpx( style.ControlHeight ) - ImGui::GetFontSize() ) * 0.5f ) ) );
+}
+
 bool ImFluent::BeginTabView( const char * id )
 {
     const ImFluentStyle & style = ImFluent::GetStyle();
@@ -3565,19 +4758,163 @@ bool ImFluent::BeginTabView( const char * id )
     ImGui::PushStyleColor( ImGuiCol_TabSelected, ImFluent::GetColorU32( ImFluentCol_LayerFillAlt ) );
     ImGui::PushStyleColor( ImGuiCol_TabDimmed, ImFluent::GetColorU32( ImFluentCol_SubtleFillTransparent ) );
     ImGui::PushStyleColor( ImGuiCol_TabDimmedSelected, ImFluent::GetColorU32( ImFluentCol_LayerFillAlt ) );
-    ImGui::PushStyleVar( ImGuiStyleVar_TabRounding, FluentDpx( style.ControlCornerRadius ) );
-    if ( ImGui::BeginTabBar( id, ImGuiTabBarFlags_None ) )
-        return true;
+    // WinUI TabView: 32 high tabs with 8 rounded top corners, no overline, close buttons on every tab.
+    ImGui::PushStyleVar( ImGuiStyleVar_TabRounding, FluentDpx( style.OverlayCornerRadius ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_TabBarOverlineSize, 0.f );
+    PushTabFramePadding();
+    const bool open = ImGui::BeginTabBar( id, ImGuiTabBarFlags_None );
     ImGui::PopStyleVar();
+    if ( open )
+    {
+        BeginTabGroup( ImGui::GetCurrentContext()->CurrentTabBar->ID, ImFluentTabGroupFlags_Horizontal | ImFluentTabGroupFlags_Wrap | ImFluentTabGroupFlags_HomeEnd | ImFluentTabGroupFlags_EnterOnLastFocused );
+        return true;
+    }
+    ImGui::PopStyleVar( 2 );
     ImGui::PopStyleColor( 5 );
     return false;
 }
 
+static const ImGuiID TABVIEW_FOCUS_KEY_SALT = 0x7AB5F0C5u;
+static const ImGuiID TABVIEW_RING_SALT      = 0x7AB5F0C6u;
+
+static ImGuiID TabCloseButtonId( ImGuiID tab_id )
+{
+    return ImHashStr( "#CLOSE", 0, tab_id ); // ImGui's id for a tab's close button
+}
+
+// The current TabView's focus ring, NULL for a plain ImGui tab bar.
+static ImFluentTabGroupLayout * TabViewRing()
+{
+    const ImGuiTabBar * tab_bar = GImGui->CurrentTabBar;
+    if ( !tab_bar || g_Ctx.TabGroupStack.empty() || g_Ctx.TabGroupStack.back().Id != tab_bar->ID )
+        return NULL;
+    return g_Ctx.TabGroupLayouts.GetOrAddByKey( tab_bar->ID ^ TABVIEW_RING_SALT );
+}
+
+// WinUI TabView::MoveFocus: Left/Right go tab 1, its close button, tab 2, ..., the Add button, and wrap.
+static void TabViewRingItem( ImGuiID id )
+{
+    ImFluentTabGroupLayout * ring = TabViewRing();
+    if ( !ring )
+        return;
+    ring->NextItems.push_back( id );
+    const int n = ring->Items.Size;
+    const int i = ring->Items.find_index( id );
+    if ( i < 0 || n < 2 )
+        return;
+    const int step = ImFluent::ConsumeNavArrow( id, ImGuiDir_Right ) ? 1 : ImFluent::ConsumeNavArrow( id, ImGuiDir_Left ) ? -1 : 0;
+    if ( step == 0 )
+        return;
+    ImGui::SetFocusID( ring->Items[ ( i + step + n ) % n ], GImGui->CurrentWindow );
+    ImGui::SetNavCursorVisible( true );
+}
+
+// WinUI TabView::RequestCloseTab: if the tab or its close button has focus, focus goes to the next tab on the right, else on the left, else to Add.
+static void TabViewCloseTab( bool * p_open, ImGuiID tab_id )
+{
+    *p_open                             = false;
+    ImGuiContext & g                    = *GImGui;
+    const ImFluentTabGroupLayout * ring = TabViewRing();
+    const int i                         = ring ? ring->Items.find_index( tab_id ) : -1;
+    if ( i < 0 || ( g.NavId != tab_id && g.NavId != TabCloseButtonId( tab_id ) ) )
+        return;
+    ImGuiID next = 0, prev = 0, add = 0;
+    for ( int k = 0; k < ring->Items.Size; ++k )
+    {
+        const ImGuiTabItem * tab = ImGui::TabBarFindTabByID( g.CurrentTabBar, ring->Items[ k ] );
+        if ( !tab || k == i )
+            continue; // Close buttons are not tabs
+        if ( tab->Flags & ImGuiTabItemFlags_Button )
+            add = tab->ID;
+        else if ( k > i && !next )
+            next = tab->ID;
+        else if ( k < i )
+            prev = tab->ID;
+    }
+    const ImGuiID target = next ? next : prev ? prev : add;
+    if ( !target )
+        return;
+    const bool cursor_visible = g.NavCursorVisible;
+    ImGui::SetFocusID( target, g.CurrentWindow );
+    g.NavCursorVisible = cursor_visible;
+}
+
 bool ImFluent::BeginTabItem( const char * label, bool * p_open, ImGuiTabItemFlags flags )
 {
-    const bool open = ImGui::BeginTabItem( label, p_open, flags );
-    if ( p_open && ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenBlockedByPopup ) && ImGui::IsMouseClicked( ImGuiMouseButton_Middle ) )
-        *p_open = false;
+    // Ctrl+F4 asks to close the selected tab while focus is inside the tab view (WinUI TabView accelerator).
+    ImGuiContext & g = *GImGui;
+    if ( ImGuiTabBar * tab_bar = g.CurrentTabBar )
+        if ( p_open && *p_open && tab_bar->SelectedTabId == ImGui::GetID( label ) && ImGui::GetStateStorage()->GetBool( tab_bar->ID ^ TABVIEW_FOCUS_KEY_SALT, false ) && IsActionPressed( g_Ctx.Actions.CloseTab ) )
+            TabViewCloseTab( p_open, ImGui::GetID( label ) );
+    if ( p_open && !*p_open )
+        return ImGui::BeginTabItem( label, p_open, flags );
+    // WinUI TabView: one tab stop on the last focused (or selected) tab; Left/Right wrap, Home/End (focus only), Up/Down stay in the strip.
+    const ImGuiID tab_id   = ImGui::GetID( label );
+    ImGuiTabBar * tab_bar  = g.CurrentTabBar;
+    const bool is_selected = tab_bar && tab_bar->SelectedTabId == tab_id;
+    // WinUI TabView look: equal-width tabs (100 to 240), secondary text when unselected, dividers between unselected tabs.
+    // In an auto-sizing window each tab fits its label: equal widths would grow the window every frame.
+    if ( tab_bar && tab_bar->Tabs.Size > 0 )
+    {
+        const ImGuiWindow * win = g.CurrentWindow;
+        const bool auto_width   = ( win->Flags & ImGuiWindowFlags_AlwaysAutoResize ) || ( win->ChildFlags & ImGuiChildFlags_AutoResizeX );
+        const float pad_x       = FluentDpx( ImFluent::GetStyle().SpacingLarge );
+        const float fit_w       = ImGui::CalcTextSize( label, NULL, true ).x + pad_x * 2.f + ( p_open ? ImGui::GetFontSize() + pad_x * 0.5f : 0.f );
+        const float w           = auto_width ? fit_w : tab_bar->BarRect.GetWidth() / ( float )tab_bar->Tabs.Size;
+        ImGui::SetNextItemWidth( ImClamp( w, FluentDpx( 100.f ), FluentDpx( 240.f ) ) );
+    }
+    if ( !is_selected )
+        ImGui::PushStyleColor( ImGuiCol_Text, ImFluent::GetColorU32( ImFluentCol_TextSecondary ) );
+    ImGui::PushItemFlag( ImGuiItemFlags_NoTabStop, TabGroupItemFlags( tab_id, is_selected ) != ImGuiItemFlags_None );
+    PushTabFramePadding();
+    // ImGui's close button takes the tab's item flags, so on the selected tab it would be a Tab stop (WinUI: never).
+    // ImFluent draws it instead; ImGui's hidden unsaved marker keeps the label clear of it.
+    ImGuiTabItemFlags tab_flags = flags;
+    const bool hide_marker      = p_open && !( flags & ImGuiTabItemFlags_UnsavedDocument );
+    if ( p_open )
+        tab_flags |= ImGuiTabItemFlags_NoCloseButton | ImGuiTabItemFlags_UnsavedDocument;
+    if ( hide_marker )
+        ImGui::PushStyleColor( ImGuiCol_UnsavedMarker, IM_COL32( 0, 0, 0, 0 ) );
+    if ( p_open )
+        ImGui::SetNextItemAllowOverlap(); // The close button over the tab takes the hover
+    const bool open = ImGui::BeginTabItem( label, p_open, tab_flags );
+    if ( hide_marker )
+        ImGui::PopStyleColor();
+    if ( p_open && *p_open && g.LastItemData.ID == tab_id )
+    {
+        const ImRect tab_bb            = g.LastItemData.Rect;
+        const ImVec2 pad               = ImGui::GetStyle().FramePadding;
+        const ImGuiLastItemData backup = g.LastItemData;
+        const ImGuiID close_id         = TabCloseButtonId( tab_id );
+        ImGui::PushItemFlag( ImGuiItemFlags_NoTabStop, true );
+        if ( ImGui::CloseButton( close_id, ImVec2( tab_bb.Max.x - pad.x - ImGui::GetFontSize(), tab_bb.Min.y + pad.y ) ) )
+            TabViewCloseTab( p_open, tab_id );
+        ImGui::PopItemFlag();
+        ReportItemInfo( close_id, "Close tab" );
+        TabViewRingItem( close_id );
+        g.LastItemData = backup;
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopItemFlag();
+    if ( !is_selected )
+        ImGui::PopStyleColor();
+    if ( tab_bar && !is_selected )
+    {
+        const ImGuiTabItem * tab = ImGui::TabBarFindTabByID( tab_bar, tab_id );
+        const int index          = tab ? tab_bar->Tabs.index_from_ptr( tab ) : -1;
+        if ( index >= 0 && index + 1 < tab_bar->Tabs.Size && tab_bar->Tabs[ index + 1 ].ID != tab_bar->SelectedTabId )
+        {
+            const ImRect r = g.LastItemData.Rect;
+            const float x  = r.Max.x + ImGui::GetStyle().ItemInnerSpacing.x * 0.5f;
+            const float h  = FluentDpx( 16.f );
+            const float cy = ( r.Min.y + r.Max.y ) * 0.5f;
+            ImGui::GetWindowDrawList()->AddLine( ImVec2( x, cy - h * 0.5f ), ImVec2( x, cy + h * 0.5f ), ImFluent::GetColorU32( ImFluentCol_DividerStrokeDefault ) );
+        }
+    }
+    TabViewRingItem( tab_id );
+    TabGroupItemNav( tab_id );
+    if ( p_open && !( flags & ImGuiTabItemFlags_NoCloseWithMiddleMouseButton ) && ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenBlockedByPopup ) && ImGui::IsMouseClicked( ImGuiMouseButton_Middle ) )
+        TabViewCloseTab( p_open, tab_id );
     return open;
 }
 void ImFluent::EndTabItem()
@@ -3587,13 +4924,70 @@ void ImFluent::EndTabItem()
 
 bool ImFluent::TabAddButton()
 {
-    return ImGui::TabItemButton( ImFluentIcon_Add, ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip );
+    PushTabFramePadding();
+    const bool pressed = ImGui::TabItemButton( ImFluentIcon_Add, ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip );
+    ImGui::PopStyleVar();
+    ReportItemInfo( ImGui::GetItemID(), "Add tab" );
+    TabViewRingItem( ImGui::GetItemID() );
+    return pressed;
 }
 
 void ImFluent::EndTabView()
 {
+    // WinUI TabView accelerators while focus is inside the tab view (NextTab, PreviousTab, wrapping).
+    // Applications turn off ImGui's Ctrl+Tab window switcher (ConfigNavWindowingKeyNext/Prev = 0) so the keys reach the tab view.
+    ImGuiContext & g = *GImGui;
+    if ( ImGuiTabBar * tab_bar = g.CurrentTabBar )
+    {
+        bool focus_inside = false;
+        if ( g.NavId != 0 && g.NavWindow && ( g.NavWindow == g.CurrentWindow || g.NavWindow->RootWindowForNav == g.CurrentWindow->RootWindowForNav ) )
+        {
+            const ImRect view( tab_bar->BarRect.Min, ImVec2( tab_bar->BarRect.Max.x, g.CurrentWindow->DC.CursorPos.y ) );
+            const ImRect nav = ImGui::WindowRectRelToAbs( g.NavWindow, g.NavWindow->NavRectRel[ g.NavLayer ] );
+            focus_inside     = view.Contains( nav.GetCenter() );
+        }
+        ImGui::GetStateStorage()->SetBool( tab_bar->ID ^ TABVIEW_FOCUS_KEY_SALT, focus_inside );
+        const int n = tab_bar->Tabs.Size;
+        if ( focus_inside && n > 1 )
+        {
+            int dir = 0;
+            if ( IsActionPressed( g_Ctx.Actions.NextTab ) )
+                dir = +1;
+            else if ( IsActionPressed( g_Ctx.Actions.PreviousTab ) )
+                dir = -1;
+            if ( dir != 0 )
+            {
+                int cur = 0;
+                for ( int i = 0; i < n; ++i )
+                    if ( tab_bar->Tabs[ i ].ID == tab_bar->SelectedTabId )
+                        cur = i;
+                for ( int step = 1; step < n; ++step )
+                {
+                    const ImGuiTabItem & tab = tab_bar->Tabs[ ( ( cur + dir * step ) % n + n ) % n ];
+                    if ( tab.Flags & ( ImGuiTabItemFlags_Button | ImGuiTabItemFlags_Leading | ImGuiTabItemFlags_Trailing ) )
+                        continue; // The "+" button is not a tab
+                    tab_bar->NextSelectedTabId = tab.ID;
+                    break;
+                }
+            }
+        }
+    }
+    if ( ImFluentTabGroupLayout * ring = TabViewRing() )
+    {
+        // The tab bar's visual order (the Add button is Trailing), each tab followed by its close button
+        ring->Items.resize( 0 );
+        for ( const ImGuiTabItem & tab : g.CurrentTabBar->Tabs )
+        {
+            if ( ring->NextItems.contains( tab.ID ) )
+                ring->Items.push_back( tab.ID );
+            if ( ring->NextItems.contains( TabCloseButtonId( tab.ID ) ) )
+                ring->Items.push_back( TabCloseButtonId( tab.ID ) );
+        }
+        ring->NextItems.resize( 0 );
+    }
+    EndTabGroup();
     ImGui::EndTabBar();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar( 2 );
     ImGui::PopStyleColor( 5 );
 }
 
@@ -3608,6 +5002,8 @@ bool ImFluent::BeginSelectorBar( const char * id )
     ImGui::PushID( id );
     ImGui::BeginGroup();
     ImGui::PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( FluentDpx( style.SpacingXSmall ), 0.f ) );
+    // Keys as WinUI SelectorBar.
+    BeginTabGroup( ImGui::GetID( "##selector-group" ), ImFluentTabGroupFlags_Horizontal | ImFluentTabGroupFlags_HomeEnd | ImFluentTabGroupFlags_SelectionFollowsFocus );
     return true;
 }
 
@@ -3631,13 +5027,15 @@ bool ImFluent::SelectorBarItem( const char * label, bool selected, const char * 
     const ImVec2 pos  = w->DC.CursorPos;
     const ImRect bb( pos, ImVec2( pos.x + ts.x + pad_x * 2.f, pos.y + ts.y + pad_y * 2.f ) );
     ImGui::ItemSize( bb );
-    if ( !ImGui::ItemAdd( bb, id ) )
+    if ( !ImGui::ItemAdd( bb, id, NULL, TabGroupItemFlags( id, selected ) ) )
     {
         ImGui::SameLine();
         return false;
     }
     bool hovered = false, held = false;
-    const bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    const bool clicked = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    const bool pressed = TabGroupItemNav( id ) || clicked;
+    ReportItemInfo( id, label, CheckedFlags( selected ) );
     ImDrawList * dl    = w->DrawList;
     ImU32 fillTarget;
     fillTarget           = ResolveSubtleFillState( selected, held, hovered );
@@ -3657,6 +5055,7 @@ bool ImFluent::SelectorBarItem( const char * label, bool selected, const char * 
 
 void ImFluent::EndSelectorBar()
 {
+    EndTabGroup();
     ImGui::PopStyleVar();
     ImGui::EndGroup();
     ImGui::PopID();
@@ -3682,6 +5081,28 @@ bool ImFluent::IsNavPaneClosing()
     return g_Ctx.NavView.PrevMode == ImFluentNavViewMode_LeftOpen && g_Ctx.NavView.Mode != ImFluentNavViewMode_LeftOpen;
 }
 
+// Left modes (WinUI): menu items scroll in their own region, footer items stay pinned under it (footer height from last frame).
+static const ImGuiID NAVVIEW_KEY_FOOTER_H = 0xF0073Eu;
+
+static void BeginNavMenuRegion()
+{
+    const float footer_h = ImGui::GetStateStorage()->GetFloat( NAVVIEW_KEY_FOOTER_H, 0.f );
+    ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( 0.f, 0.f ) );
+    ImGui::BeginChild( "##nav-menu", ImVec2( 0.f, footer_h > 0.f ? -footer_h : 0.f ), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar );
+    ImGui::PopStyleVar();
+    g_Ctx.NavView.MenuRegionOpen = true;
+    g_Ctx.NavView.FooterStartY   = -1.f;
+}
+
+static void EndNavMenuRegion()
+{
+    if ( !g_Ctx.NavView.MenuRegionOpen )
+        return;
+    ImGui::EndChild();
+    g_Ctx.NavView.MenuRegionOpen = false;
+    g_Ctx.NavView.FooterStartY   = ImGui::GetCursorPosY();
+}
+
 bool ImFluent::BeginNavigationView( const char * id, ImFluentNavViewMode * mode_io )
 {
     const ImFluentStyle & style = ImFluent::GetStyle();
@@ -3692,6 +5113,11 @@ bool ImFluent::BeginNavigationView( const char * id, ImFluentNavViewMode * mode_
     const ImFluentNavViewMode mode = mode_io ? *mode_io : ImFluentNavViewMode_LeftCompact;
     const ImFluentNavViewMode prev_mode = ( ImFluentNavViewMode )st->GetInt( mode_key, ( int )ImFluentNavViewMode_LeftCompact );
     st->SetInt( mode_key, ( int )mode );
+
+    // WinUI NavigationView: menu items are one tab stop with Up/Down and Home/End; Settings is its own stop.
+    // Tab enters on the selected item (or the collapsed item that hides it), else on the first item, Shift+Tab on the last.
+    BeginTabGroup( nav_id ^ 0x7AB1E5u, ImFluentTabGroupFlags_HomeEnd | ImFluentTabGroupFlags_EnterAtEnds );
+    g_Ctx.NavView.InTabGroup = true;
 
     g_Ctx.NavView.PrevMode = prev_mode;
     g_Ctx.NavView.Mode     = mode;
@@ -3706,10 +5132,11 @@ bool ImFluent::BeginNavigationView( const char * id, ImFluentNavViewMode * mode_
 
         ImGui::PushID( id );
         ImGui::BeginGroup();
-        ImGui::PushStyleColor( ImGuiCol_ChildBg, ImFluent::GetColorU32( ImFluentCol_LayerFillDefault ) );
+        // WinUI: the pane has no fill of its own; the window's base color shows through.
+        ImGui::PushStyleColor( ImGuiCol_ChildBg, IM_COL32( 0, 0, 0, 0 ) );
         ImGui::PushStyleVar( ImGuiStyleVar_ChildRounding, 0.f );
         ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( FluentDpx( style.SpacingSmall ), FluentDpx( style.SpacingSmall ) ) );
-        const bool pane_open = ImGui::BeginChild( "##nav-pane", ImVec2( 0, h + FluentDpx( style.SpacingSmall ) * 2.f ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
+        const bool pane_open = ImGui::BeginChild( "##nav-pane", ImVec2( 0, h + FluentDpx( style.SpacingSmall ) * 2.f ), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoScrollbar );
         return pane_open ? true : true;
     }
 
@@ -3718,28 +5145,35 @@ bool ImFluent::BeginNavigationView( const char * id, ImFluentNavViewMode * mode_
 
     ImGui::PushID( id );
     ImGui::BeginGroup();
-    ImGui::PushStyleColor( ImGuiCol_ChildBg, ImFluent::GetColorU32( ImFluentCol_LayerFillDefault ) );
+    ImGui::PushStyleColor( ImGuiCol_ChildBg, IM_COL32( 0, 0, 0, 0 ) ); // As in Top mode: no pane fill
     ImGui::PushStyleVar( ImGuiStyleVar_ChildRounding, 0.f );
     ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( FluentDpx( style.SpacingSmall ), FluentDpx( style.SpacingSmall ) ) );
-    const bool pane_open = ImGui::BeginChild( "##nav-pane", ImVec2( g_Ctx.NavView.CurrentWidth, 0.f ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
+    const bool pane_open = ImGui::BeginChild( "##nav-pane", ImVec2( g_Ctx.NavView.CurrentWidth, 0.f ), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoScrollbar );
     if ( !pane_open )
         return true;
 
     if ( !toggle_visible )
+    {
+        BeginNavMenuRegion();
         return true;
+    }
 
     const float row_h = FluentDpx( style.NavItemHeight );
-    if ( ImGui::InvisibleButton( "##nav-toggle", ImVec2( g_Ctx.NavView.CurrentWidth - FluentDpx( style.SpacingMedium ), row_h ) ) )
+    // InvisibleButton is NoNav by default: EnableNav keeps the pane toggle reachable with Tab.
+    if ( ImGui::InvisibleButton( "##nav-toggle", ImVec2( g_Ctx.NavView.CurrentWidth - FluentDpx( style.SpacingMedium ), row_h ), ImGuiButtonFlags_EnableNav ) )
     {
         if ( mode_io )
             *mode_io = ( g_Ctx.NavView.Mode == ImFluentNavViewMode_LeftOpen ) ? ImFluentNavViewMode_LeftCompact : ImFluentNavViewMode_LeftOpen;
     }
     {
-        const ImRect bb = ImGui::GetCurrentContext()->LastItemData.Rect;
-        ImDrawList * dl = ImGui::GetWindowDrawList();
-        const bool hov  = ImGui::IsItemHovered();
+        const ImGuiLastItemData & item = ImGui::GetCurrentContext()->LastItemData;
+        const ImRect bb                = item.Rect;
+        ImDrawList * dl                = ImGui::GetWindowDrawList();
+        const bool hov                 = ImGui::IsItemHovered();
+        ReportItemInfo( item.ID, "Toggle pane" );
         if ( hov )
             dl->AddRectFilled( bb.Min, bb.Max, ImFluent::GetColorU32( ImFluentCol_SubtleFillSecondary ), FluentDpx( style.ControlCornerRadius ) );
+        RenderNavFocusRing( item.ID, bb, FluentDpx( style.ControlCornerRadius ) );
 
         const float cx = bb.Min.x + FluentDpx( style.SpacingXXLarge );
         const float cy = ( bb.Min.y + bb.Max.y ) * 0.5f;
@@ -3747,6 +5181,64 @@ bool ImFluent::BeginNavigationView( const char * id, ImFluentNavViewMode * mode_
         for ( int i = -1; i <= 1; ++i )
             dl->AddLine( ImVec2( cx - lw * 0.5f, cy + ( float )i * FluentDpx( style.SpacingSmall + 1.f ) ), ImVec2( cx + lw * 0.5f, cy + ( float )i * FluentDpx( style.SpacingSmall + 1.f ) ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), FluentDpx( style.StrokeMedium ) );
     }
+    BeginNavMenuRegion();
+    return true;
+}
+
+// NavigationView item icons are 16 dp (WinUI), smaller than the label, and centered on the row.
+static void RenderNavGlyph( ImDrawList * dl, float x, const ImRect & row, const char * glyph )
+{
+    const float size = ImFluent::FluentDpx( 16.f );
+    dl->AddText( ImGui::GetFont(), size, ImVec2( x, ( row.Min.y + row.Max.y - size ) * 0.5f ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), glyph );
+}
+
+// The hover/selection fill of a pane item row: 4 dp in from each side of the pane, as WinUI's item presenter.
+static ImRect NavItemPillRect( const ImRect & row )
+{
+    const float m = ImFluent::FluentDpx( ImFluent::GetStyle().SpacingSmall );
+    return ImRect( row.Min.x + m, row.Min.y, row.Max.x - m, row.Max.y );
+}
+
+// NavigationView menu items form one tab-stop group; footer items and items outside a NavigationView are ordinary stops.
+static bool InNavMenuGroup()
+{
+    return g_Ctx.NavView.InTabGroup && !g_Ctx.NavView.FooterItem;
+}
+
+static const ImGuiID NAVITEM_SELECTED_CHILD_SALT = 0x5E1C4D17u;
+
+static ImGuiItemFlags NavMenuItemFlags( ImGuiID id, bool selected )
+{
+    if ( selected )
+        for ( ImGuiID parent : g_Ctx.NavItemParentStack )
+            ImGui::GetStateStorage()->SetInt( parent ^ NAVITEM_SELECTED_CHILD_SALT, ( int )id ); // Found again while collapsed
+    return InNavMenuGroup() ? ImFluent::TabGroupItemFlags( id, selected ) : ImGuiItemFlags_None;
+}
+
+static void NavMenuItemNav( ImGuiID id )
+{
+    if ( InNavMenuGroup() )
+        ImFluent::TabGroupItemNav( id );
+}
+
+// After a BeginNavItem row, clipped or not: opens its children when expanded.
+static bool NavItemBeginChildren( ImGuiID id, bool expanded )
+{
+    ImGuiStorage * storage  = ImGui::GetStateStorage();
+    const ImGuiID child_key = id ^ NAVITEM_SELECTED_CHILD_SALT;
+    if ( !expanded )
+    {
+        if ( InNavMenuGroup() )
+            ImFluent::TabGroupHiddenSelection( id, ( ImGuiID )storage->GetInt( child_key, 0 ) );
+        return false;
+    }
+    storage->SetInt( child_key, 0 );
+    // WinUI: child items are indented so that their label (no icon column) lines up with the parent's label.
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const float indent_amt      = ImFluent::FluentDpx( style.NavPaneCompactWidth - style.SpacingXLarge );
+    ImGui::Indent( indent_amt );
+    g_Ctx.NavItemIndentStack.push_back( indent_amt );
+    g_Ctx.NavItemParentStack.push_back( id );
     return true;
 }
 
@@ -3769,13 +5261,15 @@ bool ImFluent::NavItem( const char * label, bool selected, const char * glyph )
         const ImVec2 pos   = w->DC.CursorPos;
         const ImRect bb( pos, ImVec2( pos.x + w_item, pos.y + h ) );
         ImGui::ItemSize( bb );
-        if ( !ImGui::ItemAdd( bb, id ) )
+        if ( !ImGui::ItemAdd( bb, id, NULL, NavMenuItemFlags( id, selected ) ) )
         {
             ImGui::SameLine();
             return false;
         }
         bool hov = false, held = false;
         const bool pressed = ImGui::ButtonBehavior( bb, id, &hov, &held );
+        NavMenuItemNav( id );
+        ReportItemInfo( id, label, CheckedFlags( selected ) );
         const float r      = FluentDpx( style.ControlCornerRadius );
         const ImU32 fill   = AnimateColorU32( id, ResolveSubtleFillState( selected, held, hov ) );
         ImDrawList * dl    = w->DrawList;
@@ -3784,7 +5278,7 @@ bool ImFluent::NavItem( const char * label, bool selected, const char * glyph )
         float text_x   = bb.Min.x + pad_x;
         if ( glyph )
         {
-            dl->AddText( ImVec2( text_x, cy ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), glyph );
+            RenderNavGlyph( dl, text_x, bb, glyph );
             text_x += gw;
         }
         dl->AddText( ImVec2( text_x, cy ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), label );
@@ -3815,9 +5309,11 @@ bool ImFluent::NavItemEx( const char * id_label, const char * label,
     const ImVec2 pos = w->DC.CursorPos;
     const ImRect bb( pos, ImVec2( pos.x + ImGui::GetContentRegionAvail().x, pos.y + row_h ) );
     ImGui::ItemSize( bb );
-    if ( !ImGui::ItemAdd( bb, id ) ) return false;
+    if ( !ImGui::ItemAdd( bb, id, NULL, NavMenuItemFlags( id, selected ) ) ) return false;
     bool hovered = false, held = false;
     const bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    NavMenuItemNav( id );
+    ReportItemInfo( id, label, CheckedFlags( selected ) );
     const float radius = FluentDpx( style.ControlCornerRadius );
     ImDrawList * dl = w->DrawList;
     dl->AddRectFilled( bb.Min, bb.Max,
@@ -3859,26 +5355,43 @@ bool ImFluent::BeginNavItem( const char * label, bool selected, const char * gly
     const ImVec2 pos     = w->DC.CursorPos;
     const float indent_x = w->DC.Indent.x;
     const ImRect bb( ImVec2( w->Pos.x, pos.y ), ImVec2( w->Pos.x + w->Size.x, pos.y + row_h ) );
+    // ImGui::SetNextItemOpen() sets the expanded state, as for a TreeNode (read before ItemAdd clears it).
+    ImGuiContext & g       = *GImGui;
+    ImGuiStorage * storage = ImGui::GetStateStorage();
+    if ( g.NextItemData.HasFlags & ImGuiNextItemDataFlags_HasOpen )
+    {
+        const bool first_use = storage->GetInt( id, -1 ) == -1;
+        if ( ( g.NextItemData.OpenCond & ( ImGuiCond_Always | ImGuiCond_Appearing ) ) || first_use )
+            storage->SetBool( id, g.NextItemData.OpenVal );
+    }
     ImGui::ItemSize( ImVec2( w->Size.x, row_h ) );
-    if ( !ImGui::ItemAdd( bb, id ) )
-        return false;
+    if ( !ImGui::ItemAdd( bb, id, NULL, NavMenuItemFlags( id, selected ) ) )
+        return NavItemBeginChildren( id, storage->GetBool( id, false ) ); // Its children can be in view
 
     bool hovered = false, held = false;
     const bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    NavMenuItemNav( id );
 
-    ImGuiStorage * storage = ImGui::GetStateStorage();
-    bool expanded          = storage->GetBool( id, false );
+    bool expanded = storage->GetBool( id, false );
     if ( pressed )
     {
         expanded = !expanded;
         storage->SetBool( id, expanded );
     }
+    // WinUI NavigationView: Right expands, Left collapses.
+    if ( ( expanded && ConsumeNavArrow( id, ImGuiDir_Left ) ) || ( !expanded && ConsumeNavArrow( id, ImGuiDir_Right ) ) )
+    {
+        expanded = !expanded;
+        storage->SetBool( id, expanded );
+    }
+    ImFluent::ReportItemInfo( id, label, ImFluent::OpenedFlags( expanded ) | ImFluent::CheckedFlags( selected ) );
 
     const float r        = FluentDpx( style.ControlCornerRadius );
     ImU32 fillTarget     = ImFluent::ResolveSubtleFillState( selected, held, hovered );
     const ImU32 fillAnim = ImFluent::AnimateColorU32( id, fillTarget );
     ImDrawList * dl      = w->DrawList;
-    dl->AddRectFilled( bb.Min, bb.Max, fillAnim, r );
+    const ImRect pill    = NavItemPillRect( bb );
+    dl->AddRectFilled( pill.Min, pill.Max, fillAnim, r );
 
     if ( selected )
     {
@@ -3890,7 +5403,7 @@ bool ImFluent::BeginNavItem( const char * label, bool selected, const char * gly
     const float text_x = bb.Min.x + indent_x + FluentDpx( style.NavPaneCompactWidth );
     const float cy     = ( bb.Min.y + bb.Max.y - ImGui::GetFontSize() ) * 0.5f;
     if ( glyph )
-        dl->AddText( ImVec2( icon_x, cy ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), glyph );
+        RenderNavGlyph( dl, icon_x, bb, glyph );
 
     const bool show_text = g_Ctx.NavView.CurrentWidth > FluentDpx( style.AppBarButtonWidth );
     if ( show_text )
@@ -3907,16 +5420,8 @@ bool ImFluent::BeginNavItem( const char * label, bool selected, const char * gly
     }
 
     if ( ImFluent::IsItemFocused( id ) )
-        ImFluent::RenderNavFocusRing( bb, r );
-
-    if ( expanded )
-    {
-        const float indent_amt = FluentDpx( style.SpacingXXLarge );
-        ImGui::Indent( indent_amt );
-        g_Ctx.NavItemIndentStack.push_back( indent_amt );
-        return true;
-    }
-    return false;
+        ImFluent::RenderNavFocusRing( pill, r );
+    return NavItemBeginChildren( id, expanded );
 }
 
 void ImFluent::EndNavItem()
@@ -3928,6 +5433,7 @@ void ImFluent::EndNavItem()
     }
     const float indent_amt = g_Ctx.NavItemIndentStack.back();
     g_Ctx.NavItemIndentStack.pop_back();
+    g_Ctx.NavItemParentStack.pop_back();
     ImGui::Unindent( indent_amt );
 }
 
@@ -3989,6 +5495,7 @@ bool ImFluent::NavBackButton( bool enabled, bool visible )
     bool pressed = false;
     if ( enabled )
         pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    ReportItemInfo( id, "Back" );
 
     ImDrawList * dl = w->DrawList;
     const float r   = FluentDpx( style.ControlCornerRadius );
@@ -4018,13 +5525,27 @@ void ImFluent::NavPaneFooterEnd()
 
 bool ImFluent::NavSettingsItem( bool selected )
 {
+    EndNavMenuRegion(); // A footer item: pinned under the scrolling menu items
     SetNextItemGlyph( ImFluentIcon_Settings );
-    return NavItem( "Settings", selected );
+    g_Ctx.NavView.FooterItem = true;
+    const bool pressed       = NavItem( "Settings", selected );
+    g_Ctx.NavView.FooterItem = false;
+    return pressed;
 }
 
 void ImFluent::EndNavigationView()
 {
+    const bool had_region = g_Ctx.NavView.MenuRegionOpen || g_Ctx.NavView.FooterStartY >= 0.f;
+    EndNavMenuRegion();
+    if ( had_region )
+    {
+        const float footer_h = ImMax( 0.f, ImGui::GetCursorPosY() - g_Ctx.NavView.FooterStartY );
+        ImGui::GetStateStorage()->SetFloat( NAVVIEW_KEY_FOOTER_H, footer_h );
+        g_Ctx.NavView.FooterStartY = -1.f;
+    }
     ImGui::EndChild();
+    g_Ctx.NavView.InTabGroup = false;
+    EndTabGroup();
     ImGui::PopStyleVar( 2 );
     ImGui::PopStyleColor();
     ImGui::EndGroup();
@@ -4032,12 +5553,29 @@ void ImFluent::EndNavigationView()
     ImGui::SameLine( 0.f, 0.f );
 }
 
-void ImFluent::NavigationViewBeginContent()
+void ImFluent::NavigationViewBeginContent( const ImVec2 & padding )
 {
     const ImFluentStyle & style = ImFluent::GetStyle();
-    ImGui::PushStyleColor( ImGuiCol_ChildBg, ImFluent::GetColorU32( ImFluentCol_LayerFillAlt ) );
-    ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( FluentDpx( style.SpacingXXLarge ), FluentDpx( style.SpacingXXLarge ) ) );
-    ImGui::BeginChild( "##nav-content", ImVec2( 0, 0 ), ImGuiChildFlags_AlwaysUseWindowPadding );
+    // WinUI: a content layer over the base color, 1 px stroke, rounded top-left corner; drawn in the parent, under the child.
+    {
+        ImDrawList * dl    = ImGui::GetWindowDrawList();
+        const ImVec2 p0    = ImGui::GetCursorScreenPos();
+        const ImVec2 avail = ImGui::GetContentRegionAvail();
+        const ImVec2 p1( p0.x + avail.x, p0.y + avail.y );
+        const float r = FluentDpx( style.OverlayCornerRadius );
+        dl->AddRectFilled( p0, p1, ImFluent::GetColorU32( ImFluentCol_LayerFillDefault ), r, ImDrawFlags_RoundCornersTopLeft );
+        ImFluent::StrokeRect( dl, p0, ImVec2( p1.x + r, p1.y + r ), ImFluent::GetColorU32( ImFluentCol_CardStrokeDefault ), r, ImDrawFlags_RoundCornersTopLeft );
+    }
+    ImGui::PushStyleColor( ImGuiCol_ChildBg, IM_COL32( 0, 0, 0, 0 ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( padding.x >= 0.f ? padding.x : FluentDpx( style.SpacingXXLarge ), padding.y >= 0.f ? padding.y : FluentDpx( style.SpacingXXLarge ) ) );
+    // Fluent scroll bar (as ScrollViewer): a thin rounded thumb on a clear track. Only for this window's own bar.
+    ImGui::PushStyleColor( ImGuiCol_ScrollbarBg, IM_COL32( 0, 0, 0, 0 ) );
+    ImGui::PushStyleColor( ImGuiCol_ScrollbarGrab, ImFluent::GetColorU32( ImFluentCol_ControlStrongFillDefault ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_ScrollbarSize, FluentDpx( style.SpacingMedium ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_ScrollbarRounding, FluentDpx( style.SpacingMedium ) );
+    ImGui::BeginChild( "##nav-content", ImVec2( 0, 0 ), ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened );
+    ImGui::PopStyleVar( 2 );
+    ImGui::PopStyleColor( 2 );
     g_Ctx.NavView.ContentStarted = true;
 }
 
@@ -4127,7 +5665,7 @@ bool ImFluent::BeginSplitViewPane()
     ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( FluentDpx( style.SpacingSmall ), FluentDpx( style.SpacingSmall ) ) );
     char child_id[ 80 ];
     ImFormatString( child_id, sizeof( child_id ), "##sv-pane-%s", s.Id );
-    const bool pane_open = ImGui::BeginChild( child_id, ImVec2( s.CurrentPaneWidth, s.Height ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
+    const bool pane_open = ImGui::BeginChild( child_id, ImVec2( s.CurrentPaneWidth, s.Height ), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoScrollbar );
     if ( !pane_open )
     {
         ImGui::EndChild();
@@ -4173,7 +5711,7 @@ bool ImFluent::BeginSplitViewContent()
     ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( pad, pad ) );
     char child_id[ 80 ];
     ImFormatString( child_id, sizeof( child_id ), "##sv-content-%s", s.Id );
-    const bool open = ImGui::BeginChild( child_id, ImVec2( s.ContentWidth, s.Height ), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse );
+    const bool open = ImGui::BeginChild( child_id, ImVec2( s.ContentWidth, s.Height ), ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse );
     if ( !open )
     {
         ImGui::EndChild();
@@ -4207,7 +5745,53 @@ void ImFluent::EndSplitView()
 
 // [SECTION] Lists & Pickers (ComboBox / ListBox / TreeNode / GridView / PipsPager / BreadcrumbBar)
 
-bool ImFluent::ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags )
+// ComboBox type-ahead (WinUI): the search string resets after one second; the first case-insensitive prefix match wins
+// (leading spaces ignored). A new string searches after the current item, an extended one from it. Returns -1 if none.
+static int ComboTypeAheadSearch( ImGuiID id, int current, const char * const items[], int items_count )
+{
+    ImGuiContext & g = *GImGui;
+    if ( g.IO.InputQueueCharacters.Size == 0 || items_count <= 0 )
+        return -1;
+    ImFluentContext::TypeAhead & ta = g_Ctx.ComboTypeAhead;
+    const double now                = ImGui::GetTime();
+    const bool fresh                = ( ta.Id != id || now - ta.LastTime > 1.0 );
+    if ( fresh )
+    {
+        ta.Id       = id;
+        ta.Len      = 0;
+        ta.Buf[ 0 ] = 0;
+    }
+    for ( ImWchar c : g.IO.InputQueueCharacters )
+    {
+        if ( c < 32 || ( c == ' ' && ta.Len == 0 ) )
+            continue;
+        char utf8[ 5 ];
+        const int n = ImTextCharToUtf8( utf8, c );
+        if ( ta.Len + n >= ( int )sizeof( ta.Buf ) )
+            break;
+        memcpy( ta.Buf + ta.Len, utf8, ( size_t )n );
+        ta.Len += n;
+        ta.Buf[ ta.Len ] = 0;
+    }
+    ta.LastTime = now;
+    if ( ta.Len == 0 )
+        return -1;
+    const int start = fresh ? current + 1 : ImMax( current, 0 );
+    for ( int k = 0; k < items_count; ++k )
+    {
+        const int i      = ( ( start + k ) % items_count + items_count ) % items_count;
+        const char * itm = items[ i ];
+        if ( !itm )
+            continue;
+        while ( *itm == ' ' )
+            ++itm;
+        if ( ImStrnicmp( itm, ta.Buf, ( size_t )ta.Len ) == 0 )
+            return i;
+    }
+    return -1;
+}
+
+bool ImFluent::ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags, const char * placeholder )
 {
     ImGuiWindow * w = ImGui::GetCurrentWindow();
     if ( w->SkipItems )
@@ -4223,7 +5807,7 @@ bool ImFluent::ComboBox( const char * label, int * current_item, const char * co
     const float h               = FluentDpx( style.ControlHeight );
     const float r               = FluentDpx( style.ControlCornerRadius );
     const float chev_w          = ( flags & ImGuiComboFlags_NoArrowButton ) ? 0.f : h;
-    const char * preview        = ( current_item && *current_item >= 0 && *current_item < items_count ) ? items[ *current_item ] : "";
+    const char * preview        = ( current_item && *current_item >= 0 && *current_item < items_count && items[ *current_item ] ) ? items[ *current_item ] : "";
 
     float full_w;
     if ( flags & ImGuiComboFlags_NoPreview )
@@ -4251,10 +5835,13 @@ bool ImFluent::ComboBox( const char * label, int * current_item, const char * co
 
     const ImGuiID popup_id = GetWidgetPopupId( id, "##fl_cb_popup" );
     const bool popup_open = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
+    ReportItemInfo( id, label, OpenedFlags( popup_open ) );
 
-    const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsMouseHoveringRect( bb.Min, bb.Max, false );
+    const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && IsMouseOverWindowRect( bb );
     const bool nav_activate = ( gctx.NavActivateId == id );
-    const bool toggle       = ( click_in_bb || nav_activate ) && !disabled;
+    // WinUI ComboBox also opens with Alt+Down and F4.
+    const bool key_open     = !popup_open && !disabled && ( IsFocusedItemChordPressed( id, g_Ctx.Actions.TogglePopup, false ) || IsFocusedItemChordPressed( id, g_Ctx.Actions.OpenPopup, false ) );
+    const bool toggle       = ( click_in_bb || nav_activate || key_open ) && !disabled;
 
     if ( toggle )
     {
@@ -4265,6 +5852,33 @@ bool ImFluent::ComboBox( const char * label, int * current_item, const char * co
         else
         {
             ImGui::OpenPopupEx( popup_id, ImGuiPopupFlags_None );
+        }
+    }
+
+    // Closed (WinUI): Up/Down step without opening (no wrap), Home/End jump to the ends, typing selects the first match.
+    bool changed = false;
+    if ( !popup_open && !toggle && !disabled && current_item && !gctx.IO.KeyAlt && items_count > 0 )
+    {
+        int sel = *current_item;
+        if ( ConsumeNavArrow( id, ImGuiDir_Down ) )
+            sel = ( sel < 0 ) ? 0 : ImMin( sel + 1, items_count - 1 );
+        if ( ConsumeNavArrow( id, ImGuiDir_Up ) && sel > 0 )
+            sel = sel - 1;
+        if ( IsFocusedItemChordPressed( id, g_Ctx.Actions.FirstItem ) )
+            sel = 0;
+        if ( IsFocusedItemChordPressed( id, g_Ctx.Actions.LastItem ) )
+            sel = items_count - 1;
+        if ( gctx.NavId == id && gctx.ActiveId == 0 )
+        {
+            const int match = ComboTypeAheadSearch( id, sel, items, items_count );
+            if ( match >= 0 )
+                sel = match;
+        }
+        if ( sel != *current_item )
+        {
+            *current_item = sel;
+            changed       = true;
+            preview       = items[ sel ] ? items[ sel ] : "";
         }
     }
 
@@ -4279,17 +5893,21 @@ bool ImFluent::ComboBox( const char * label, int * current_item, const char * co
     else
         fill_target = ImFluent::GetColorU32( ImFluentCol_ControlFillDefault );
     const ImU32 fill = AnimateColorU32( id, fill_target );
-    dl->AddRectFilled( bb.Min, bb.Max, fill, r );
+    FillInsideBorder( dl, bb.Min, bb.Max, fill, r );
 
     const ImU32 stroke     = ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault );
+    const ImU32 stroke_top = ImFluent::GetColorU32( ImFluentCol_ElevationControlTop );
     const ImU32 stroke_bot = ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom );
     if ( !held && !popup_open && !disabled )
-        RenderElevationBorder( dl, bb, r, stroke, stroke_bot, 1.f );
+        RenderElevationBorder( dl, bb, r, stroke, stroke_top, stroke_bot, 1.f );
     else
-        dl->AddRect( bb.Min, bb.Max, stroke, r, 0, 1.f );
+        ImFluent::StrokeRect( dl, bb.Min, bb.Max, stroke, r );
 
-    const ImU32 text_col = ImFluent::GetColorU32( disabled ? ImFluentCol_TextDisabled : ImFluentCol_TextPrimary );
-    if ( !( flags & ImGuiComboFlags_NoPreview ) && preview && *preview )
+    // No selection shows the placeholder (WinUI PlaceholderText) in the secondary text colour.
+    const bool is_placeholder = !( preview && *preview ) && placeholder && *placeholder;
+    const char * shown        = is_placeholder ? placeholder : preview;
+    const ImU32 text_col      = ImFluent::GetColorU32( disabled ? ImFluentCol_TextDisabled : is_placeholder ? ImFluentCol_TextSecondary : ImFluentCol_TextPrimary );
+    if ( !( flags & ImGuiComboFlags_NoPreview ) && shown && *shown )
     {
         const float pad_x = FluentDpx( style.SpacingLarge );
         ImFluentStackGuard g;
@@ -4297,7 +5915,7 @@ bool ImFluent::ComboBox( const char * label, int * current_item, const char * co
         const ImVec2 tmin( bb.Min.x + pad_x, bb.Min.y );
         const ImVec2 tmax( bb.Max.x - chev_w, bb.Max.y );
         const ImRect text_clip( tmin, tmax );
-        ImGui::RenderTextClipped( tmin, tmax, preview, ImGui::FindRenderedTextEnd( preview ), NULL, ImVec2( 0.f, 0.5f ), &text_clip );
+        ImGui::RenderTextClipped( tmin, tmax, shown, ImGui::FindRenderedTextEnd( shown ), NULL, ImVec2( 0.f, 0.5f ), &text_clip );
     }
 
     if ( chev_w > 0.f )
@@ -4309,7 +5927,6 @@ bool ImFluent::ComboBox( const char * label, int * current_item, const char * co
 
     RenderNavFocusRing( id, bb, r );
 
-    bool changed              = false;
     const int popup_max_items = ResolveComboPopupMaxItems( flags );
     const float popup_max_h   = CalcComboPopupMaxHeight( popup_max_items, h );
     ImGui::SetNextWindowPos( ImVec2( bb.Min.x, bb.Max.y + FluentDpx( style.SpacingXSmall ) ) );
@@ -4319,11 +5936,35 @@ bool ImFluent::ComboBox( const char * label, int * current_item, const char * co
     const ImGuiWindowFlags cb_wflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
     if ( ImGui::BeginPopupEx( popup_id, cb_wflags ) )
     {
+        ImGuiWindow * popup_window = ImGui::GetCurrentWindow();
+
+        // Open: typing selects at once and moves focus to the match; Home/End focus the first/last item (WinUI).
+        int focus_match = -1;
+        if ( current_item && gctx.NavWindow == popup_window )
+        {
+            focus_match = ComboTypeAheadSearch( id, *current_item, items, items_count );
+            if ( focus_match >= 0 && focus_match != *current_item )
+            {
+                *current_item = focus_match;
+                changed       = true;
+            }
+        }
+        int focus_only = -1;
+        if ( gctx.NavWindow == popup_window && gctx.NavId != 0 )
+        {
+            if ( IsChordPressedOwned( g_Ctx.Actions.FirstItem, popup_id, false ) )
+                focus_only = 0;
+            if ( IsChordPressedOwned( g_Ctx.Actions.LastItem, popup_id, false ) )
+                focus_only = items_count - 1;
+        }
+
         const float row_advance = h + ImGui::GetStyle().ItemSpacing.y;
         ImGuiListClipper clipper;
         clipper.Begin( items_count, row_advance );
         if ( current_item && *current_item >= 0 && *current_item < items_count )
             clipper.IncludeItemByIndex( *current_item );
+        if ( focus_only >= 0 )
+            clipper.IncludeItemByIndex( focus_only );
         while ( clipper.Step() )
         {
             for ( int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i )
@@ -4339,9 +5980,26 @@ bool ImFluent::ComboBox( const char * label, int * current_item, const char * co
                     changed = true;
                     ImGui::CloseCurrentPopup();
                 }
+                const ImGuiID item_id = gctx.LastItemData.ID;
+                if ( sel )
+                    ImGui::SetItemDefaultFocus(); // Keyboard focus starts on the selected item
+                if ( i == 0 )
+                    ConsumeNavArrow( item_id, ImGuiDir_Up ); // The list does not wrap (WinUI ComboBox)
+                if ( i == items_count - 1 )
+                    ConsumeNavArrow( item_id, ImGuiDir_Down );
+                if ( i == focus_match || i == focus_only )
+                {
+                    ImGui::SetFocusID( item_id, popup_window );
+                    ImGui::SetScrollHereY();
+                    gctx.NavCursorVisible = true;
+                }
                 ImGui::PopID();
             }
         }
+        // Only a list that was already open closes: the key press that opened it must not close it again.
+        // Tab closes without committing, as in WinUI; focus returns to the box.
+        if ( popup_open && ( IsActionPressed( g_Ctx.Actions.TogglePopup ) || IsActionPressed( g_Ctx.Actions.ClosePopup ) || ImGui::IsKeyPressed( ImGuiKey_Tab, false ) ) )
+            ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     PopOverlayWindowStyle();
@@ -4372,6 +6030,7 @@ bool ImFluent::Selectable( const char * label, bool selected, const char * glyph
 
     bool hovered = false, held = false;
     const bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    ReportItemInfo( id, label, CheckedFlags( selected ) );
 
     ImU32 fill_target;
     if ( held || selected )
@@ -4417,24 +6076,92 @@ bool ImFluent::ListBox( const char * label, int * current_item, const char * con
     g.PushStyleColor( ImGuiCol_FrameBg, ImFluent::GetColorU32( ImFluentCol_LayerFillDefault ) );
     g.PushStyleVar( ImGuiStyleVar_FrameRounding, FluentDpx( style.ControlCornerRadius ) );
     bool changed = false;
-    const ImVec2 sz( 0, FluentDpx( ( float )height_in_items * style.ControlHeight ) );
-    if ( ImGui::BeginListBox( label, sz ) )
+    const ImVec2 sz( ImGui::CalcItemWidth(), FluentDpx( ( float )height_in_items * style.ControlHeight ) );
+    // WinUI ListBox: one tab stop, selection follows focus; the frame is a flattened child, so Tab reaches the items directly.
+    ImGui::BeginGroup();
+    const ImGuiID list_id = ImGui::GetID( label );
+    if ( ImGui::BeginChild( list_id, sz, ImGuiChildFlags_FrameStyle | ImGuiChildFlags_NavFlattened ) )
     {
+        BeginTabGroup( list_id, ImFluentTabGroupFlags_Vertical | ImFluentTabGroupFlags_HomeEnd | ImFluentTabGroupFlags_SelectionFollowsFocus | ImFluentTabGroupFlags_EnterOnLastFocused );
         for ( int i = 0; i < items_count; ++i )
         {
             if ( !items[ i ] )
                 continue;
-            const bool sel = ( current_item && *current_item == i );
-            if ( ImFluent::Selectable( items[ i ], sel ) )
+            const bool sel        = ( current_item && *current_item == i );
+            const ImGuiID item_id = ImGui::GetID( items[ i ] );
+            ImGui::PushItemFlag( ImGuiItemFlags_NoTabStop, TabGroupItemFlags( item_id, sel ) != ImGuiItemFlags_None );
+            bool pressed = ImFluent::Selectable( items[ i ], sel );
+            ImGui::PopItemFlag();
+            pressed |= TabGroupItemNav( item_id );
+            if ( pressed && current_item && *current_item != i )
             {
-                if ( current_item )
-                    *current_item = i;
-                changed = true;
+                *current_item = i;
+                changed       = true;
             }
         }
-        ImGui::EndListBox();
+        EndTabGroup();
     }
+    ImGui::EndChild();
+    const char * label_end = ImGui::FindRenderedTextEnd( label );
+    if ( label_end > label )
+    {
+        ImGui::SameLine( 0.f, ImGui::GetStyle().ItemInnerSpacing.x );
+        ImGui::TextUnformatted( label, label_end );
+    }
+    ImGui::EndGroup();
     return changed;
+}
+
+// [SECTION] ListView / GridView / TreeView containers
+// The items between Begin and End are one tab stop (WinUI TabNavigation="Once"); Home/End go to the first/last item.
+
+static void BeginItemsContainer( const char * id, int flags )
+{
+    ImGui::PushID( id );
+    ImGui::BeginGroup();
+    ImFluent::BeginTabGroup( ImGui::GetID( "##items" ), flags | ImFluentTabGroupFlags_ItemsContainer | ImFluentTabGroupFlags_HomeEnd );
+}
+
+static void EndItemsContainer()
+{
+    ImFluent::EndTabGroup();
+    ImGui::EndGroup();
+    ImGui::PopID();
+}
+
+static int ItemsViewSelectFlags( ImFluentItemsViewFlags flags )
+{
+    return ( flags & ImFluentItemsViewFlags_NoSelectOnFocus ) ? 0 : ImFluentTabGroupFlags_SelectionFollowsFocus;
+}
+
+void ImFluent::BeginListView( const char * id, ImFluentItemsViewFlags flags )
+{
+    BeginItemsContainer( id, ImFluentTabGroupFlags_Vertical | ItemsViewSelectFlags( flags ) );
+}
+
+void ImFluent::EndListView()
+{
+    EndItemsContainer();
+}
+
+void ImFluent::BeginGridView( const char * id, ImFluentItemsViewFlags flags )
+{
+    BeginItemsContainer( id, ImFluentTabGroupFlags_Grid | ItemsViewSelectFlags( flags ) );
+}
+
+void ImFluent::EndGridView()
+{
+    EndItemsContainer();
+}
+
+void ImFluent::BeginTreeView( const char * id, ImFluentItemsViewFlags flags )
+{
+    BeginItemsContainer( id, ImFluentTabGroupFlags_Vertical | ItemsViewSelectFlags( flags ) );
+}
+
+void ImFluent::EndTreeView()
+{
+    EndItemsContainer();
 }
 
 bool ImFluent::ListViewItem( const char * label, bool selected, const char * glyph )
@@ -4450,10 +6177,16 @@ bool ImFluent::ListViewItem( const char * label, bool selected, const char * gly
     const ImVec2 pos            = w->DC.CursorPos;
     const ImRect bb( pos, ImVec2( pos.x + W, pos.y + h ) );
     ImGui::ItemSize( bb );
-    if ( !ImGui::ItemAdd( bb, id ) )
+    const bool in_list_view = InItemsContainer();
+    if ( !ImGui::ItemAdd( bb, id, NULL, in_list_view ? TabGroupItemFlags( id, selected ) : ImGuiItemFlags_None ) )
         return false;
     bool hovered = false, held = false;
-    const bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    TreeRowTakeFirstChildFocus( id ); // A leaf row inside a TreeNode
+    TreeRowLeftToParent( id );
+    if ( in_list_view )
+        pressed |= TabGroupItemNav( id );
+    ReportItemInfo( id, label, CheckedFlags( selected ) );
     ImDrawList * dl    = w->DrawList;
     const float r      = FluentDpx( style.ControlCornerRadius );
     ImU32 fillTarget;
@@ -4474,16 +6207,26 @@ bool ImFluent::ListViewItem( const char * label, bool selected, const char * gly
     return pressed;
 }
 
-bool ImFluent::TreeNode( const char * label, bool * p_open )
+// An open row indents its children and is their parent for Left (TreePop undoes it).
+static bool TreeRowBeginChildren( ImGuiID id, bool open )
 {
-    return TreeNode( label, p_open, NULL );
+    if ( open )
+    {
+        ImGui::Indent( ImFluent::FluentDpx( ImFluent::GetStyle().CheckboxSize ) );
+        g_Ctx.TreeParentStack.push_back( id );
+    }
+    return open;
 }
 
-bool ImFluent::TreeNode( const char * label, bool * p_open, bool * p_checked )
+// A TreeView row. single_selected < 0: TreeNode (a click toggles *p_open, optional checkbox for multiple selection).
+// Else TreeViewItem: a click, Space/Enter or Up/Down arrival sets *out_select, the chevron toggles *p_open (WinUI single selection).
+static bool TreeRow( const char * label, bool * p_open, bool * p_checked, int single_selected, bool * out_select )
 {
-    ImGuiWindow * w = ImGui::GetCurrentWindow();
+    using namespace ImFluent;
+    ImGuiWindow * w   = ImGui::GetCurrentWindow();
+    const bool single = single_selected >= 0;
     if ( w->SkipItems )
-        return false;
+        return single && p_open && TreeRowBeginChildren( w->GetID( label ), *p_open ); // TreeViewItem callers TreePop() while *p_open
     const ImFluentStyle & style = ImFluent::GetStyle();
     const ImGuiID id            = w->GetID( label );
     const float h               = FluentDpx( style.ControlHeight );
@@ -4520,33 +6263,64 @@ bool ImFluent::TreeNode( const char * label, bool * p_open, bool * p_checked )
         x += glyph_w + glyph_gap;
     const float label_x = x;
 
-    if ( p_checked )
+    const bool chevron_button = single && p_open;
+    if ( p_checked || chevron_button )
         ImGui::SetNextItemAllowOverlap();
-    if ( !ImGui::ItemAdd( bb, id ) )
-    {
-        const bool clipped_open = p_open && *p_open;
-        if ( clipped_open )
-            ImGui::Indent( FluentDpx( style.CheckboxSize ) );
-        return clipped_open;
-    }
+    const bool in_tree_view = InItemsContainer();
+    if ( !ImGui::ItemAdd( bb, id, NULL, in_tree_view ? TabGroupItemFlags( id, single_selected > 0 ) : ImGuiItemFlags_None ) )
+        return TreeRowBeginChildren( id, p_open && *p_open );
 
     bool hovered = false, held = false;
     const bool row_pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
 
+    // WinUI TreeView: Right expands, then moves to the first child; Left collapses, then moves to the parent.
+    TreeRowTakeFirstChildFocus( id );
+    if ( p_open && *p_open )
+    {
+        if ( ConsumeNavArrow( id, ImGuiDir_Left ) )
+            *p_open = false;
+        else if ( ConsumeNavArrow( id, ImGuiDir_Right ) )
+            g_Ctx.TreeFocusFirstChildOf = id;
+    }
+    else if ( p_open && ConsumeNavArrow( id, ImGuiDir_Right ) )
+        *p_open = true;
+    else
+        TreeRowLeftToParent( id );
+    const bool arrived = in_tree_view && TabGroupItemNav( id );
+
+    if ( chevron_button )
+    {
+        const float half  = ( chevron_w + chevron_gap ) * 0.5f;
+        const ImGuiID vid = w->GetID( ( const void * )( ( intptr_t )id ^ 0xC4EDu ) );
+        const ImRect chevron_bb( ImVec2( chevron_cx - half, bb.Min.y ), ImVec2( chevron_cx + half, bb.Max.y ) );
+        ImGui::ItemAdd( chevron_bb, vid, NULL, ImGuiItemFlags_NoTabStop | ImGuiItemFlags_NoNav );
+        bool chevron_hov = false, chevron_held = false;
+        if ( ImGui::ButtonBehavior( chevron_bb, vid, &chevron_hov, &chevron_held ) )
+            *p_open = !*p_open;
+        ReportItemInfo( vid, "Expand", OpenedFlags( *p_open ) );
+        hovered |= chevron_hov;
+    }
+    if ( out_select )
+        *out_select = row_pressed || arrived;
+
+    // The checkbox is not a tab stop: Space toggles it (WinUI TreeView multiple selection); Enter and clicks expand/collapse.
+    const bool space_check = p_checked && row_pressed && GImGui->NavActivatePressedId == id && !IsEnterActivation( id );
     bool check_pressed = false, check_hov = false, check_held = false;
     if ( p_checked )
     {
         const ImGuiID cid = w->GetID( ( const void * )( ( intptr_t )id ^ 0xC4ECu ) );
-        ImGui::ItemAdd( check_bb, cid );
+        ImGui::ItemAdd( check_bb, cid, NULL, ImGuiItemFlags_NoTabStop | ImGuiItemFlags_NoNav );
         check_pressed = ImGui::ButtonBehavior( check_bb, cid, &check_hov, &check_held );
-        if ( check_pressed )
+        if ( check_pressed || space_check )
             *p_checked = !*p_checked;
+        ReportItemInfo( cid, "Check", CheckedFlags( *p_checked ) );
     }
-    if ( row_pressed && !check_pressed && p_open )
+    if ( !single && row_pressed && !check_pressed && !space_check && p_open )
         *p_open = !*p_open;
 
     const bool isOpen   = p_open && *p_open;
-    const bool selected = p_checked && *p_checked;
+    const bool selected = single ? single_selected > 0 : p_checked && *p_checked;
+    ReportItemInfo( id, label, OpenedFlags( isOpen ) | ( single ? CheckedFlags( selected ) : 0 ) );
 
     ImDrawList * dl = w->DrawList;
     const float r   = FluentDpx( style.ControlCornerRadius );
@@ -4578,6 +6352,7 @@ bool ImFluent::TreeNode( const char * label, bool * p_open, bool * p_checked )
         ImGui::PushStyleColor( ImGuiCol_Border, box_stroke_anim );
         ImGui::RenderFrame( check_bb.Min, check_bb.Max, box_fill_anim, true, box_r );
         ImGui::PopStyleColor();
+        RenderNavFocusRing( cid, check_bb, box_r );
         if ( *p_checked )
         {
             const ImU32 mark = ImFluent::GetColorU32( ImFluentCol_TextOnAccentPrimary );
@@ -4589,7 +6364,8 @@ bool ImFluent::TreeNode( const char * label, bool * p_open, bool * p_checked )
         }
     }
 
-    RenderChevron( dl, ImVec2( chevron_cx, cy ), isOpen ? ImGuiDir_Down : ImGuiDir_Right, ImFluent::GetColorU32( ImFluentCol_TextPrimary ), FluentDpx( style.ChevronGlyphSize ) );
+    if ( !single || p_open ) // A TreeViewItem leaf has no chevron
+        RenderChevron( dl, ImVec2( chevron_cx, cy ), isOpen ? ImGuiDir_Down : ImGuiDir_Right, ImFluent::GetColorU32( ImFluentCol_TextPrimary ), FluentDpx( style.ChevronGlyphSize ) );
 
     if ( glyph )
         dl->AddText( ImVec2( glyph_x, cy - ImGui::GetFontSize() * 0.5f ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), glyph );
@@ -4597,14 +6373,32 @@ bool ImFluent::TreeNode( const char * label, bool * p_open, bool * p_checked )
     dl->AddText( ImVec2( label_x, cy - ImGui::GetFontSize() * 0.5f ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), label );
 
     RenderNavFocusRing( id, bb, r );
-    if ( isOpen )
-        ImGui::Indent( FluentDpx( style.CheckboxSize ) );
-    return isOpen;
+    return TreeRowBeginChildren( id, isOpen );
+}
+
+bool ImFluent::TreeNode( const char * label, bool * p_open )
+{
+    return TreeRow( label, p_open, NULL, -1, NULL );
+}
+
+bool ImFluent::TreeNode( const char * label, bool * p_open, bool * p_checked )
+{
+    return TreeRow( label, p_open, p_checked, -1, NULL );
+}
+
+bool ImFluent::TreeViewItem( const char * label, bool selected, bool * p_open )
+{
+    bool select = false;
+    TreeRow( label, p_open, NULL, selected ? 1 : 0, &select );
+    return select;
 }
 
 void ImFluent::TreePop()
 {
     ImGui::Unindent( FluentDpx( GetStyle().CheckboxSize ) );
+    if ( !g_Ctx.TreeParentStack.empty() )
+        g_Ctx.TreeParentStack.pop_back();
+    g_Ctx.TreeFocusFirstChildOf = 0; // A node with no child row this frame has no first child to focus
 }
 
 bool ImFluent::GridViewItem( const char * label, bool selected, const ImVec2 & size )
@@ -4619,11 +6413,16 @@ bool ImFluent::GridViewItem( const char * label, bool selected, const ImVec2 & s
     const ImVec2 pos            = w->DC.CursorPos;
     const ImRect bb( pos, ImVec2( pos.x + sz.x, pos.y + sz.y ) );
     ImGui::ItemSize( bb );
-    if ( !ImGui::ItemAdd( bb, id ) )
+    const bool in_grid_view = InItemsContainer();
+    if ( in_grid_view )
+        TabGroupItemRect( id, bb );
+    if ( !ImGui::ItemAdd( bb, id, NULL, in_grid_view ? TabGroupItemFlags( id, selected ) : ImGuiItemFlags_None ) )
         return false;
     bool hovered = false, held = false;
-    const bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
-    ImDrawList * dl    = w->DrawList;
+    bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    if ( in_grid_view )
+        pressed |= TabGroupItemNav( id );
+    ReportItemInfo( id, label, CheckedFlags( selected ) );
     const float r      = FluentDpx( style.OverlayCornerRadius );
     ImU32 fill         = ImFluent::GetColorU32( selected ? ImFluentCol_AccentFillSecondary : held ? ImFluentCol_ControlFillTertiary : hovered ? ImFluentCol_ControlFillSecondary : ImFluentCol_CardBgDefault );
     ImGui::PushStyleColor( ImGuiCol_Border, ImFluent::GetColorU32( ImFluentCol_CardStrokeDefault ) );
@@ -4656,8 +6455,12 @@ bool ImFluent::PipsPager( const char * id, int * current_item, int total_pages )
     const ImRect bb( pos, ImVec2( pos.x + total_w, pos.y + dot ) );
     ImGui::ItemSize( bb );
     const ImGuiID gid = w->GetID( id );
-    if ( !ImGui::ItemAdd( bb, gid ) )
+    if ( !ImGui::ItemAdd( bb, 0 ) )
         return false;
+    // WinUI PipsPager: one tab stop on the selected pip, arrows focus only (Up/Down as Left/Right); past the end pips they move on spatially.
+    BeginTabGroup( gid, ImFluentTabGroupFlags_None );
+    ImGuiContext & g         = *GImGui;
+    int nav_target           = -1;
     bool changed             = false;
     ImDrawList * dl          = w->DrawList;
     const ImU32 col_pip_sel  = ImFluent::GetColorU32( ImFluentCol_AccentFillDefault );
@@ -4670,8 +6473,27 @@ bool ImFluent::PipsPager( const char * id, int * current_item, int total_pages )
         ImGui::PushID( i );
         const ImGuiID iid = w->GetID( i );
         const ImRect rect( ImVec2( c.x - dot * 0.5f, c.y - dot * 0.5f ), ImVec2( c.x + dot * 0.5f, c.y + dot * 0.5f ) );
+        if ( !ImGui::ItemAdd( rect, iid, NULL, TabGroupItemFlags( iid, sel ) ) )
+        {
+            ImGui::PopID();
+            continue;
+        }
         bool hov = false, held = false;
         const bool pr = ImGui::ButtonBehavior( rect, iid, &hov, &held );
+        TabGroupItemNav( iid );
+        if ( g.NavId == iid )
+        {
+            if ( i > 0 && ConsumeNavArrow( iid, ImGuiDir_Up ) )
+                nav_target = i - 1;
+            if ( i + 1 < total_pages && ConsumeNavArrow( iid, ImGuiDir_Down ) )
+                nav_target = i + 1;
+        }
+        {
+            char pip_label[ 24 ];
+            ImFormatString( pip_label, sizeof( pip_label ), "Page %d", i + 1 );
+            ReportItemInfo( iid, pip_label, CheckedFlags( sel ) );
+        }
+        RenderNavFocusRing( iid, rect, dot * 0.5f );
         if ( pr && current_item )
         {
             *current_item = i;
@@ -4681,10 +6503,18 @@ bool ImFluent::PipsPager( const char * id, int * current_item, int total_pages )
         dl->AddCircleFilled( c, dot * 0.5f, AnimateColorU32( iid, col_target ), 16 );
         ImGui::PopID();
     }
+    if ( nav_target >= 0 )
+    {
+        ImGui::PushID( nav_target );
+        ImGui::SetFocusID( w->GetID( nav_target ), w );
+        ImGui::PopID();
+        g.NavCursorVisible = true;
+    }
+    EndTabGroup();
     return changed;
 }
 
-static bool RenderPagerButton( const char * btn_id, const char * text, float sz, bool enabled, bool repeat, bool active )
+static bool RenderPagerButton( const char * btn_id, const char * name, const char * text, float sz, bool enabled, bool repeat, bool active )
 {
     ImGuiWindow * w = ImGui::GetCurrentWindow();
     if ( w->SkipItems )
@@ -4700,6 +6530,7 @@ static bool RenderPagerButton( const char * btn_id, const char * text, float sz,
 
     bool hov = false, held = false;
     const bool pressed      = enabled ? ImGui::ButtonBehavior( bb, id, &hov, &held ) : false;
+    ImFluent::ReportItemInfo( id, name, active ? ImFluent::CheckedFlags( true ) : 0 );
     const float r           = ImFluent::FluentDpx( style.ControlCornerRadius );
     const ImU32 fill_target = !enabled ? IM_COL32( 0, 0, 0, 0 ) : active ? ImFluent::ResolveAccentFillState( false, held, hov ) : ImFluent::ResolveSubtleFillState( false, held, hov );
     w->DrawList->AddRectFilled( bb.Min, bb.Max, ImFluent::AnimateColorU32( id, fill_target ), r );
@@ -4732,6 +6563,7 @@ bool ImFluent::PagerControl( const char * id, int * current_page, int total_page
     struct NavBtn
     {
         const char * id;
+        const char * name;
         const char * glyph;
         int target_page;
         bool enabled;
@@ -4744,7 +6576,7 @@ bool ImFluent::PagerControl( const char * id, int * current_page, int total_page
             return;
         if ( b.vis == ImFluentPagerButtonVisibility_HiddenOnEdge && !b.enabled )
             return;
-        if ( RenderPagerButton( b.id, b.glyph, btn_sz, b.enabled, true, false ) )
+        if ( RenderPagerButton( b.id, b.name, b.glyph, btn_sz, b.enabled, g_Ctx.Actions.RepeatStepButtons, false ) )
         {
             *current_page = b.target_page;
             changed       = true;
@@ -4752,8 +6584,8 @@ bool ImFluent::PagerControl( const char * id, int * current_page, int total_page
         ImGui::SameLine( 0.f, gap );
     };
 
-    draw_nav( { "##first", ImFluentIcon_Previous, 0, cur > 0, first_last_visibility, true } );
-    draw_nav( { "##prev", ImFluentIcon_ChevronLeft, cur - 1, cur > 0, prev_next_visibility, true } );
+    draw_nav( { "##first", "First page", ImFluentIcon_Previous, 0, cur > 0, first_last_visibility, true } );
+    draw_nav( { "##prev", "Previous page", ImFluentIcon_ChevronLeft, cur - 1, cur > 0, prev_next_visibility, true } );
 
     if ( display_mode == ImFluentPagerDisplayMode_ButtonPanel )
     {
@@ -4769,7 +6601,7 @@ bool ImFluent::PagerControl( const char * id, int * current_page, int total_page
             ImGui::PushID( page );
             char num[ 8 ];
             ImFormatString( num, sizeof( num ), "%d", page + 1 );
-            if ( RenderPagerButton( "##np", num, btn_sz, true, false, page == cur ) )
+            if ( RenderPagerButton( "##np", num, num, btn_sz, true, false, page == cur ) )
             {
                 *current_page = page;
                 changed       = true;
@@ -4837,8 +6669,8 @@ bool ImFluent::PagerControl( const char * id, int * current_page, int total_page
         ImGui::SameLine( 0.f, gap );
     }
 
-    draw_nav( { "##next", ImFluentIcon_ChevronRight, cur + 1, cur < total_pages - 1, prev_next_visibility, false } );
-    draw_nav( { "##last", ImFluentIcon_Next, total_pages - 1, cur < total_pages - 1, first_last_visibility, false } );
+    draw_nav( { "##next", "Next page", ImFluentIcon_ChevronRight, cur + 1, cur < total_pages - 1, prev_next_visibility, false } );
+    draw_nav( { "##last", "Last page", ImFluentIcon_Next, total_pages - 1, cur < total_pages - 1, first_last_visibility, false } );
 
     ImGui::EndGroup();
     ImGui::PopID();
@@ -4851,6 +6683,14 @@ int ImFluent::BreadcrumbBar( const char * id, const char * const items[], int it
     ImFluentStackGuard g;
     g.PushID( id );
     g.BeginGroup();
+    // WinUI BreadcrumbBar: one tab stop entering on the first item; Space/Enter click any item, the current one too.
+    BeginTabGroup( ImGui::GetID( "##crumbs" ), ImFluentTabGroupFlags_Horizontal | ImFluentTabGroupFlags_FirstIsStop );
+    // WinUI look: every item is plain primary text (the current one too), separated by a small chevron.
+    ImGuiWindow * w             = ImGui::GetCurrentWindow();
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const float pad_y           = FluentDpx( style.SpacingXSmall );
+    const float gap             = FluentDpx( style.SpacingMedium );
+    const float chevron         = FluentDpx( 12.f );
     for ( int i = 0; i < items_count; ++i )
     {
         if ( !items[ i ] )
@@ -4858,22 +6698,32 @@ int ImFluent::BreadcrumbBar( const char * id, const char * const items[], int it
         const bool last = ( i == items_count - 1 );
         ImFluentStackGuard item_g;
         item_g.PushID( i );
-        if ( last )
+        const ImGuiID item_id = ImGui::GetID( items[ i ] );
+        const ImVec2 ts       = ImGui::CalcTextSize( items[ i ], NULL, true );
+        const ImVec2 pos      = w->DC.CursorPos;
+        const ImRect bb( pos, ImVec2( pos.x + ts.x, pos.y + ts.y + pad_y * 2.f ) );
+        ImGui::ItemSize( bb );
+        if ( ImGui::ItemAdd( bb, item_id, NULL, TabGroupItemFlags( item_id, false ) ) )
         {
-            item_g.PushStyleColor( ImGuiCol_Text, ImFluent::GetColorU32( ImFluentCol_TextPrimary ) );
-            ImFluent::TextBlock( items[ i ], ImFluentTextStyle_BodyStrong );
-        }
-        else
-        {
-            if ( ImFluent::HyperlinkButton( items[ i ] ) )
+            bool hov = false, held = false;
+            if ( ImGui::ButtonBehavior( bb, item_id, &hov, &held ) )
                 clicked = i;
-            ImGui::SameLine();
-            item_g.PushStyleColor( ImGuiCol_Text, ImFluent::GetColorU32( ImFluentCol_TextSecondary ) );
-            ImGui::TextUnformatted( " / " );
-            item_g.Restore();
-            ImGui::SameLine();
+            TabGroupItemNav( item_id );
+            ReportItemInfo( item_id, items[ i ] );
+            const ImU32 col = ImFluent::GetColorU32( held ? ImFluentCol_TextTertiary : hov ? ImFluentCol_TextSecondary : ImFluentCol_TextPrimary );
+            w->DrawList->AddText( ImVec2( bb.Min.x, bb.Min.y + pad_y ), col, items[ i ], ImGui::FindRenderedTextEnd( items[ i ] ) );
+            RenderNavFocusRing( item_id, bb, FluentDpx( style.ControlCornerRadius ) );
+        }
+        if ( !last )
+        {
+            ImGui::SameLine( 0.f, gap );
+            const ImVec2 cp = w->DC.CursorPos;
+            w->DrawList->AddText( ImGui::GetFont(), chevron, ImVec2( cp.x, cp.y + ( bb.GetHeight() - chevron ) * 0.5f ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), ImFluentIcon_ChevronRight );
+            ImGui::Dummy( ImVec2( chevron, bb.GetHeight() ) );
+            ImGui::SameLine( 0.f, gap );
         }
     }
+    EndTabGroup();
     return clicked;
 }
 
@@ -4947,6 +6797,24 @@ bool ImFluent::BeginMenuFlyout( const char * id )
     return true;
 }
 
+// Invoking a menu item closes the whole menu (WinUI MenuFlyout): the open popups each begun inside the previous one.
+static void CloseMenuFlyoutChain()
+{
+    ImGuiContext & g = *GImGui;
+    int level        = -1;
+    for ( int i = g.OpenPopupStack.Size - 1; i >= 0; --i )
+        if ( g.OpenPopupStack[ i ].Window == g.CurrentWindow )
+        {
+            level = i;
+            break;
+        }
+    if ( level < 0 )
+        return;
+    while ( level > 0 && g.OpenPopupStack[ level ].Window && g.OpenPopupStack[ level ].Window->ParentWindow == g.OpenPopupStack[ level - 1 ].Window )
+        --level;
+    ImGui::ClosePopupToLevel( level, true );
+}
+
 bool ImFluent::MenuFlyoutItem( const char * label, const char * shortcut, const char * glyph, bool selected, bool enabled )
 {
     ImGuiWindow * w = ImGui::GetCurrentWindow();
@@ -4963,19 +6831,30 @@ bool ImFluent::MenuFlyoutItem( const char * label, const char * shortcut, const 
     const float W               = ImMax( min_w, ts.x + ss.x + FluentDpx( style.AppBarButtonWidth ) );
     const ImRect bb( pos, ImVec2( pos.x + W, pos.y + h ) );
     ImGui::ItemSize( bb );
-    if ( !ImGui::ItemAdd( bb, id ) )
+    // A disabled item carries ImGuiItemFlags_Disabled so keyboard navigation skips it, as in WinUI.
+    if ( !enabled )
+        ImGui::PushItemFlag( ImGuiItemFlags_Disabled, true );
+    const bool added = ImGui::ItemAdd( bb, id, NULL, ImGuiItemFlags_NoTabStop ); // WinUI menus ignore Tab
+    if ( !enabled )
+        ImGui::PopItemFlag();
+    if ( !added )
         return false;
     bool hov = false, held = false;
     const bool pressed    = enabled ? ImGui::ButtonBehavior( bb, id, &hov, &held ) : false;
+    ReportItemInfo( id, label );
     ImDrawList * dl       = w->DrawList;
-    const ImU32 mf_target = ResolveSubtleFillState( selected, held, hov );
-    dl->AddRectFilled( bb.Min, bb.Max, AnimateColorU32( id, mf_target ), FluentDpx( style.ControlCornerRadius ) );
+    const float r         = FluentDpx( style.ControlCornerRadius );
+    const ImU32 mf_target = ResolveSubtleFillState( selected, held, hov || IsItemFocused( id ) );
+    dl->AddRectFilled( bb.Min, bb.Max, AnimateColorU32( id, mf_target ), r );
+    RenderNavFocusRing( id, bb, r );
     const float cy = ( bb.Min.y + bb.Max.y - ts.y ) * 0.5f;
     if ( glyph )
         dl->AddText( ImVec2( bb.Min.x + FluentDpx( style.SpacingLarge ), cy ), ImFluent::GetColorU32( enabled ? ImFluentCol_TextPrimary : ImFluentCol_TextDisabled ), glyph );
     dl->AddText( ImVec2( bb.Min.x + FluentDpx( style.NavItemHeight ), cy ), ImFluent::GetColorU32( enabled ? ImFluentCol_TextPrimary : ImFluentCol_TextDisabled ), label );
     if ( shortcut )
         dl->AddText( ImVec2( bb.Max.x - FluentDpx( style.SpacingLarge ) - ss.x, cy ), ImFluent::GetColorU32( ImFluentCol_TextSecondary ), shortcut );
+    if ( pressed )
+        CloseMenuFlyoutChain();
     return pressed;
 }
 
@@ -4983,26 +6862,22 @@ bool ImFluent::ToggleMenuFlyoutItem( const char * label, bool * v, const char * 
 {
     const bool selected = v && *v;
     const char * mark   = selected ? ImFluentIcon_CheckMark : NULL;
-    if ( MenuFlyoutItem( label, shortcut, mark, false, enabled ) )
-    {
-        if ( v )
-            *v = !*v;
-        return true;
-    }
-    return false;
+    const bool pressed  = MenuFlyoutItem( label, shortcut, mark, false, enabled );
+    if ( pressed && v )
+        *v = !*v;
+    ReportItemInfo( ImGui::GetCurrentContext()->LastItemData.ID, label, CheckedFlags( v && *v ) );
+    return pressed;
 }
 
 bool ImFluent::RadioMenuFlyoutItem( const char * label, int * v, int v_button, const char * shortcut, bool enabled )
 {
     const bool selected = v && ( *v == v_button );
     const char * mark   = selected ? ImFluentIcon_CheckMark : NULL;
-    if ( MenuFlyoutItem( label, shortcut, mark, false, enabled ) )
-    {
-        if ( v )
-            *v = v_button;
-        return true;
-    }
-    return false;
+    const bool pressed  = MenuFlyoutItem( label, shortcut, mark, false, enabled );
+    if ( pressed && v )
+        *v = v_button;
+    ReportItemInfo( ImGui::GetCurrentContext()->LastItemData.ID, label, CheckedFlags( v && *v == v_button ) );
+    return pressed;
 }
 
 bool ImFluent::BeginMenuFlyoutSubItem( const char * label, const char * glyph, bool enabled )
@@ -5020,20 +6895,32 @@ bool ImFluent::BeginMenuFlyoutSubItem( const char * label, const char * glyph, b
     const float W               = ImMax( min_w, ts.x + FluentDpx( style.AppBarButtonWidth ) );
     const ImRect bb( pos, ImVec2( pos.x + W, pos.y + h ) );
     ImGui::ItemSize( bb );
-    if ( !ImGui::ItemAdd( bb, id ) )
+    if ( !enabled )
+        ImGui::PushItemFlag( ImGuiItemFlags_Disabled, true );
+    const bool added = ImGui::ItemAdd( bb, id, NULL, ImGuiItemFlags_NoTabStop ); // WinUI menus ignore Tab
+    if ( !enabled )
+        ImGui::PopItemFlag();
+    if ( !added )
         return false;
 
+    // Enter, Space or Right open the submenu with focus inside; Left or Escape close it. Hover opens it only while the mouse
+    // is in use (NoHoveredOnFocus, NavHighlightItemUnderNav), so Escape is not undone next frame. Same rule as ImGui's BeginMenu.
     bool hov = false, held = false;
-    const bool pressed = enabled ? ImGui::ButtonBehavior( bb, id, &hov, &held, ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_NoNavFocus ) : false;
-    const bool open    = ImGui::IsPopupOpen( label, ImGuiPopupFlags_None );
-    if ( pressed || ( hov && !open ) )
+    const bool pressed     = enabled ? ImGui::ButtonBehavior( bb, id, &hov, &held, ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_NoHoveredOnFocus ) : false;
+    const bool open        = ImGui::IsPopupOpen( label, ImGuiPopupFlags_None );
+    const bool nav_open    = enabled && !open && ConsumeNavArrow( id, ImGuiDir_Right );
+    const bool mouse_hover = hov && !GImGui->NavHighlightItemUnderNav;
+    if ( pressed || nav_open || ( mouse_hover && !open ) )
     {
         ImGui::OpenPopup( label );
     }
+    ReportItemInfo( id, label, OpenedFlags( open ) );
 
     ImDrawList * dl        = w->DrawList;
-    const ImU32 mfs_target = ResolveSubtleFillState( open, held, hov );
-    dl->AddRectFilled( bb.Min, bb.Max, AnimateColorU32( id, mfs_target ), FluentDpx( style.ControlCornerRadius ) );
+    const float r          = FluentDpx( style.ControlCornerRadius );
+    const ImU32 mfs_target = ResolveSubtleFillState( open, held, hov || IsItemFocused( id ) );
+    dl->AddRectFilled( bb.Min, bb.Max, AnimateColorU32( id, mfs_target ), r );
+    RenderNavFocusRing( id, bb, r );
     const float cy = ( bb.Min.y + bb.Max.y - ts.y ) * 0.5f;
     if ( glyph )
         dl->AddText( ImVec2( bb.Min.x + FluentDpx( style.SpacingLarge ), cy ), ImFluent::GetColorU32( enabled ? ImFluentCol_TextPrimary : ImFluentCol_TextDisabled ), glyph );
@@ -5059,6 +6946,13 @@ bool ImFluent::BeginMenuFlyoutSubItem( const char * label, const char * glyph, b
 
 void ImFluent::EndMenuFlyoutSubItem()
 {
+    // Left closes this submenu when it has keyboard focus; ImGui then restores focus to the parent item.
+    ImGuiContext & g = *GImGui;
+    if ( g.NavWindow == ImGui::GetCurrentWindow() && g.NavMoveDir == ImGuiDir_Left && g.NavMoveSubmitted )
+    {
+        ImGui::NavMoveRequestCancel();
+        ImGui::CloseCurrentPopup();
+    }
     ImGui::EndPopup();
     ImGui::PopStyleVar( 3 );
     ImGui::PopStyleColor( 4 );
@@ -5085,17 +6979,6 @@ void ImFluent::EndMenuFlyout()
     ImGui::EndPopup();
     ImGui::PopStyleVar( 3 );
     ImGui::PopStyleColor( 4 );
-}
-
-// [SECTION] CommandBarFlyout
-
-bool ImFluent::BeginCommandBarFlyout( const char * id )
-{
-    return BeginFlyout( id );
-}
-void ImFluent::EndCommandBarFlyout()
-{
-    EndFlyout();
 }
 
 // [SECTION] ContentDialog
@@ -5150,6 +7033,8 @@ int ImFluent::EndContentDialog( const char * primary, const char * secondary, co
     {
         const bool use_accent = ( default_button == kind );
         const bool clicked    = use_accent ? ImFluent::AccentButton( label, btn_sz ) : ImFluent::Button( label, btn_sz );
+        if ( use_accent )
+            ImGui::SetItemDefaultFocus();
         if ( clicked )
         {
             result = code;
@@ -5173,6 +7058,12 @@ int ImFluent::EndContentDialog( const char * primary, const char * secondary, co
     if ( close_text )
     {
         run( close_text, ImFluentContentDialogButton_Close, 3 );
+    }
+    // Escape works like the close button (WinUI ContentDialog). ImGui does not close modals on Escape by itself.
+    if ( close_text && result == 0 && ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows ) && IsActionPressed( g_Ctx.Actions.CloseDialog ) )
+    {
+        result = 3;
+        ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
     ImGui::PopStyleVar( 2 );
@@ -5251,7 +7142,7 @@ bool ImFluent::InfoBar( ImFluentInfoSeverity sev, const char * title, const char
     dl->AddRectFilled( bb.Min, bb.Max, ImFluent::GetColorU32( ImFluentCol_CardBgDefault ), r );
     if ( bgTint )
         dl->AddRectFilled( bb.Min, bb.Max, bgTint, r );
-    dl->AddRect( bb.Min, bb.Max, ImFluent::GetColorU32( ImFluentCol_CardStrokeDefault ), r, 0, 1.f );
+    ImFluent::StrokeRect( dl, bb.Min, bb.Max, ImFluent::GetColorU32( ImFluentCol_CardStrokeDefault ), r );
 
     dl->AddRectFilled( bb.Min, ImVec2( bb.Min.x + FluentDpx( style.SeverityBarThickness ), bb.Max.y ), sevCol, r );
 
@@ -5283,14 +7174,16 @@ bool ImFluent::InfoBar( ImFluentInfoSeverity sev, const char * title, const char
         if ( ImGui::ItemAdd( btn_bb, aid ) )
         {
             action_clicked = ImGui::ButtonBehavior( btn_bb, aid, &ahov, &aheld );
+            ReportItemInfo( aid, action_label );
         }
         const ImU32 fill_target = ResolveControlFillState( false, aheld, ahov );
         const float r_btn       = FluentDpx( style.ControlCornerRadius );
-        dl->AddRectFilled( btn_bb.Min, btn_bb.Max, ImFluent::AnimateColorU32( aid, fill_target ), r_btn );
-        RenderElevationBorder( dl, btn_bb, r_btn, ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), 1.f );
+        FillInsideBorder( dl, btn_bb.Min, btn_bb.Max, ImFluent::AnimateColorU32( aid, fill_target ), r_btn );
+        RenderElevationBorder( dl, btn_bb, r_btn, ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), ImFluent::GetColorU32( ImFluentCol_ElevationControlTop ), ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom ), 1.f );
         const float ax = btn_bb.Min.x + ( btn_bb.GetWidth() - action_text_sz.x ) * 0.5f;
         const float ay = btn_bb.Min.y + ( btn_bb.GetHeight() - action_text_sz.y ) * 0.5f;
         dl->AddText( ImVec2( ax, ay ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), action_label );
+        RenderNavFocusRing( aid, btn_bb, r_btn );
     }
 
     if ( is_open )
@@ -5304,6 +7197,7 @@ bool ImFluent::InfoBar( ImFluentInfoSeverity sev, const char * title, const char
         if ( ImGui::ItemAdd( close_bb, cid ) )
         {
             const bool pr = ImGui::ButtonBehavior( close_bb, cid, &hov, &held );
+            ReportItemInfo( cid, "Close" );
             if ( pr )
                 *is_open = false;
         }
@@ -5313,6 +7207,7 @@ bool ImFluent::InfoBar( ImFluentInfoSeverity sev, const char * title, const char
         const float L = FluentDpx( style.ChevronGlyphSize + 1.f );
         dl->AddLine( ImVec2( cc.x - L, cc.y - L ), ImVec2( cc.x + L, cc.y + L ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), FluentDpx( style.StrokeMedium ) );
         dl->AddLine( ImVec2( cc.x - L, cc.y + L ), ImVec2( cc.x + L, cc.y - L ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), FluentDpx( style.StrokeMedium ) );
+        RenderNavFocusRing( cid, close_bb, FluentDpx( style.ControlCornerRadius ) );
     }
     return action_clicked;
 }
@@ -5448,7 +7343,7 @@ bool ImFluent::BeginTitleBar( const char * title, float height )
     g.PushStyleColor( ImGuiCol_ChildBg, ImFluent::GetColorU32( ImFluentCol_SolidBgBase ) );
     g.PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( FluentDpx( style.SpacingMedium ), pad_y ) );
     g.PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( FluentDpx( style.SpacingMedium ), 0.f ) );
-    if ( !ImGui::BeginChild( "##fluent-titlebar", ImVec2( 0, h ), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse ) )
+    if ( !ImGui::BeginChild( "##fluent-titlebar", ImVec2( 0, h ), ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse ) )
     {
         ImGui::EndChild();
         return false;
@@ -5473,7 +7368,7 @@ void ImFluent::EndTitleBar()
     ImGui::PopStyleColor();
 }
 
-static bool TitleBarChromeButton( const char * id, const char * glyph, bool enabled )
+static bool TitleBarChromeButton( const char * id, const char * name, const char * glyph, bool enabled )
 {
     ImGuiWindow * w = ImGui::GetCurrentWindow();
     if ( w->SkipItems )
@@ -5490,6 +7385,7 @@ static bool TitleBarChromeButton( const char * id, const char * glyph, bool enab
         return false;
     bool hov = false, held = false;
     const bool pressed = enabled ? ImGui::ButtonBehavior( bb, iid, &hov, &held ) : false;
+    ImFluent::ReportItemInfo( iid, name );
     ImDrawList * dl    = w->DrawList;
     const float r      = ImFluent::FluentDpx( style.ControlCornerRadius );
     if ( enabled )
@@ -5498,8 +7394,12 @@ static bool TitleBarChromeButton( const char * id, const char * glyph, bool enab
         dl->AddRectFilled( bb.Min, bb.Max, ImFluent::AnimateColorU32( iid, fill_target ), r );
     }
     const ImU32 textCol = ImFluent::GetColorU32( enabled ? ImFluentCol_TextPrimary : ImFluentCol_TextDisabled );
-    const ImVec2 ts     = ImGui::CalcTextSize( glyph );
-    dl->AddText( ImVec2( bb.Min.x + ( btn_w - ts.x ) * 0.5f, bb.Min.y + ( bar_h - ts.y ) * 0.5f ), textCol, glyph );
+    // WinUI title bar icons are 16 dp.
+    const float glyph_size = ImFluent::FluentDpx( 16.f );
+    const ImVec2 ts        = ImGui::GetFont()->CalcTextSizeA( glyph_size, FLT_MAX, 0.f, glyph );
+    dl->AddText( ImGui::GetFont(), glyph_size, ImVec2( bb.Min.x + ( btn_w - ts.x ) * 0.5f, bb.Min.y + ( bar_h - ts.y ) * 0.5f ), textCol, glyph );
+    if ( enabled )
+        ImFluent::RenderNavFocusRing( iid, bb, r );
     ImGui::SameLine();
     return pressed;
 }
@@ -5508,14 +7408,14 @@ bool ImFluent::TitleBarBackButton( bool enabled, bool visible )
 {
     if ( !visible )
         return false;
-    return TitleBarChromeButton( "##tb-back", ImFluentIcon_Back, enabled );
+    return TitleBarChromeButton( "##tb-back", "Back", ImFluentIcon_Back, enabled );
 }
 
 bool ImFluent::TitleBarPaneToggleButton( bool enabled, bool visible )
 {
     if ( !visible )
         return false;
-    return TitleBarChromeButton( "##tb-toggle", ImFluentIcon_GlobalNavButton, enabled );
+    return TitleBarChromeButton( "##tb-toggle", "Toggle pane", ImFluentIcon_GlobalNavButton, enabled );
 }
 
 static void TitleBarVerticallyCenterCursor()
@@ -5566,22 +7466,146 @@ void ImFluent::TitleBarSubtitle( const char * subtitle )
 
 bool ImFluent::BeginMenuBar()
 {
-    const ImFluentStyle & style = ImFluent::GetStyle();
     ImGui::PushStyleColor( ImGuiCol_MenuBarBg, ImFluent::GetColorU32( ImFluentCol_LayerFillDefault ) );
     if ( !ImGui::BeginMainMenuBar() )
     {
         ImGui::PopStyleColor();
         return false;
     }
+    g_Ctx.MenuBarStack.push_back( ImFluentContext::MenuBarState() );
     return true;
 }
+
+// WinUI MenuBar in the page: one tab stop, Left/Right wrap, Enter/Space/Down open; while open, Left/Right or hover switch menus.
+static const ImGuiID MENUBAR_KEY_OPEN = 0x4D42u; // Index of the open menu, in the window storage
+
+bool ImFluent::BeginMenuBar( const char * id )
+{
+    ImGuiWindow * w = ImGui::GetCurrentWindow();
+    if ( w->SkipItems )
+        return false;
+    ImGui::PushID( id );
+    ImGui::BeginGroup();
+    ImFluentContext::MenuBarState mb;
+    mb.InPage        = true;
+    mb.Id            = ImGui::GetID( "##menubar" );
+    mb.PrevOpenIndex = ImGui::GetStateStorage()->GetInt( mb.Id ^ MENUBAR_KEY_OPEN, -1 );
+    g_Ctx.MenuBarStack.push_back( mb );
+    ImGui::PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( 0.f, 0.f ) );
+    BeginTabGroup( mb.Id, ImFluentTabGroupFlags_Horizontal | ImFluentTabGroupFlags_Wrap );
+    return true;
+}
+
+bool ImFluent::BeginMenuBarItem( const char * label )
+{
+    IM_ASSERT( !g_Ctx.MenuBarStack.empty() && g_Ctx.MenuBarStack.back().InPage && "BeginMenuBarItem() needs BeginMenuBar( id )" );
+    ImFluentContext::MenuBarState & mb = g_Ctx.MenuBarStack.back();
+    ImGuiContext & g                   = *GImGui;
+    ImGuiWindow * w                    = g.CurrentWindow;
+    if ( w->SkipItems )
+        return false;
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const ImGuiID id            = w->GetID( label );
+    char popup_name[ 80 ];
+    ImFormatString( popup_name, sizeof( popup_name ), "##menubar-%s", label );
+    const ImGuiID popup_id = w->GetID( popup_name );
+
+    const float pad_x = FluentDpx( style.SpacingLarge );
+    const ImVec2 ts   = ImGui::CalcTextSize( label, NULL, true );
+    const ImVec2 pos  = w->DC.CursorPos;
+    const ImRect bb( pos, ImVec2( pos.x + ts.x + pad_x * 2.f, pos.y + FluentDpx( style.ControlHeight ) ) );
+    ImGui::ItemSize( bb );
+    const int index = mb.Count;
+    if ( mb.Count < ImFluentContext::MenuBarState::MaxItems )
+    {
+        mb.ItemIds[ mb.Count ]  = id;
+        mb.PopupIds[ mb.Count ] = popup_id;
+        mb.Rects[ mb.Count ]    = bb;
+        ++mb.Count;
+    }
+    if ( !ImGui::ItemAdd( bb, id, NULL, TabGroupItemFlags( id, false ) ) )
+    {
+        ImGui::SameLine();
+        return false;
+    }
+    bool hovered = false, held = false;
+    const bool pressed  = ImGui::ButtonBehavior( bb, id, &hovered, &held, ImGuiButtonFlags_PressedOnClick );
+    const bool key_open = ConsumeNavArrow( id, ImGuiDir_Down );
+    TabGroupItemNav( id );
+    const bool open     = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
+    const bool was_open = mb.PrevOpenIndex == index;
+    // A click on the open menu's own item closes it: ImGui already closed the popup on the click outside it.
+    bool want_open      = ( pressed && !open && !was_open ) || ( key_open && !open );
+    if ( !open && mb.PrevOpenIndex >= 0 && !was_open && IsMouseOverWindowRect( bb, ImGuiHoveredFlags_AllowWhenBlockedByPopup ) && ( g.IO.MouseDelta.x != 0.f || g.IO.MouseDelta.y != 0.f ) )
+        want_open = true;
+    if ( want_open )
+    {
+        ImGui::ClosePopupsOverWindow( w, false );
+        StorePopupAnchor( popup_id, bb );
+        ImGui::OpenPopupEx( popup_id, ImGuiPopupFlags_None );
+    }
+    ReportItemInfo( id, label, OpenedFlags( open || want_open ) );
+    ImDrawList * dl = w->DrawList;
+    const float r   = FluentDpx( style.ControlCornerRadius );
+    dl->AddRectFilled( bb.Min, bb.Max, AnimateColorU32( id, ResolveSubtleFillState( open, held, hovered ) ), r );
+    dl->AddText( ImVec2( bb.Min.x + pad_x, ( bb.Min.y + bb.Max.y - ts.y ) * 0.5f ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), label, ImGui::FindRenderedTextEnd( label ) );
+    RenderNavFocusRing( id, bb, r );
+    ImGui::SameLine();
+
+    if ( !BeginMenuFlyout( popup_name ) )
+        return false;
+    mb.OpenIndex = index;
+    return true;
+}
+
+void ImFluent::EndMenuBarItem()
+{
+    ImFluentContext::MenuBarState & mb = g_Ctx.MenuBarStack.back();
+    ImGuiContext & g                   = *GImGui;
+    // Left/Right on this menu (a submenu item consumes them first) open the neighbouring menu.
+    if ( g.NavWindow == g.CurrentWindow && g.NavMoveSubmitted && ( g.NavMoveDir == ImGuiDir_Left || g.NavMoveDir == ImGuiDir_Right ) )
+    {
+        mb.SwitchDir = g.NavMoveDir == ImGuiDir_Left ? -1 : 1;
+        ImGui::NavMoveRequestCancel();
+    }
+    EndMenuFlyout();
+}
+
 void ImFluent::EndMenuBar()
 {
-    ImGui::EndMainMenuBar();
-    ImGui::PopStyleColor();
+    IM_ASSERT( !g_Ctx.MenuBarStack.empty() && "EndMenuBar() without BeginMenuBar()" );
+    const ImFluentContext::MenuBarState mb = g_Ctx.MenuBarStack.back();
+    g_Ctx.MenuBarStack.pop_back();
+    if ( !mb.InPage )
+    {
+        ImGui::EndMainMenuBar();
+        ImGui::PopStyleColor();
+        return;
+    }
+    EndTabGroup();
+    ImGui::PopStyleVar();
+    int open_index = mb.OpenIndex;
+    if ( mb.SwitchDir != 0 && mb.OpenIndex >= 0 && mb.Count > 1 )
+    {
+        const int next = ( mb.OpenIndex + mb.SwitchDir + mb.Count ) % mb.Count;
+        ImGui::ClosePopupsOverWindow( ImGui::GetCurrentWindow(), false );
+        // Escape in the new menu gives focus back to its own bar item.
+        ImGui::SetFocusID( mb.ItemIds[ next ], ImGui::GetCurrentWindow() );
+        ImGui::SetNavCursorVisible( true ); // SetFocusID hides it when the last active input was the mouse
+        StorePopupAnchor( mb.PopupIds[ next ], mb.Rects[ next ] );
+        ImGui::OpenPopupEx( mb.PopupIds[ next ], ImGuiPopupFlags_None );
+        open_index = next;
+    }
+    ImGui::GetStateStorage()->SetInt( mb.Id ^ MENUBAR_KEY_OPEN, open_index );
+    ImGui::EndGroup();
+    ImGui::PopID();
+    ImGui::NewLine();
 }
 
 // [SECTION] CommandBar & AppBar
+
+static const ImGuiID COMMANDBAR_KEY_FIRST = 0xCBF1F57u; // In the bar's child window storage
+static const ImGuiID COMMANDBAR_KEY_LAST  = 0xCB1A57u;
 
 bool ImFluent::BeginCommandBar( const char * id, float height )
 {
@@ -5593,7 +7617,11 @@ bool ImFluent::BeginCommandBar( const char * id, float height )
     g.PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( FluentDpx( style.SpacingMedium ), 0.f ) );
     g.PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( FluentDpx( style.SpacingXSmall ), 0.f ) );
 
-    if ( !ImGui::BeginChild( id, ImVec2( 0, h ), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse ) )
+    // In an auto-sizing window the bar takes its commands' width: filling the available width would collapse it.
+    const ImGuiWindow * parent = ImGui::GetCurrentWindow();
+    const bool auto_width      = ( parent->Flags & ImGuiWindowFlags_AlwaysAutoResize ) || ( parent->ChildFlags & ImGuiChildFlags_AutoResizeX );
+    const ImGuiChildFlags cf   = ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened | ( auto_width ? ImGuiChildFlags_AutoResizeX : 0 );
+    if ( !ImGui::BeginChild( id, ImVec2( 0, h ), cf, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse ) )
     {
         ImGui::EndChild();
         return false;
@@ -5603,9 +7631,30 @@ bool ImFluent::BeginCommandBar( const char * id, float height )
     ImFluentCommandBarState s;
     ImStrncpy( s.Id, id, sizeof( s.Id ) );
     ImFormatString( s.PopupId, sizeof( s.PopupId ), "##cb-overflow-%s", id );
-    s.Height = h;
+    s.Height          = h;
+    s.Window          = ImGui::GetCurrentWindow();
+    ImGuiStorage * st = ImGui::GetStateStorage();
+    s.PrevFirst       = ( ImGuiID )st->GetInt( COMMANDBAR_KEY_FIRST, 0 );
+    s.PrevLast        = ( ImGuiID )st->GetInt( COMMANDBAR_KEY_LAST, 0 );
     g_Ctx.CommandBarStack.push_back( s );
     return true;
+}
+
+// WinUI CommandBar: each primary command is a tab stop; Left/Right stop at the first one and at More. The overflow uses menu keys.
+static void CommandBarItemNav( ImGuiID id )
+{
+    if ( g_Ctx.CommandBarStack.empty() )
+        return;
+    ImFluentCommandBarState & s = g_Ctx.CommandBarStack.back();
+    if ( GImGui->CurrentWindow != s.Window )
+        return;
+    if ( !s.First )
+        s.First = id;
+    s.Last = id;
+    if ( id == s.PrevFirst )
+        ImFluent::ConsumeNavArrow( id, ImGuiDir_Left );
+    if ( id == s.PrevLast )
+        ImFluent::ConsumeNavArrow( id, ImGuiDir_Right );
 }
 
 bool ImFluent::BeginCommandBarOverflow()
@@ -5625,23 +7674,80 @@ bool ImFluent::BeginCommandBarOverflow()
         s.SuppressAutoSameLine = true;
     }
     SetNextAppBarLabelPosition( ImFluentAppBarLabelPosition_Collapsed );
-    if ( AppBarButton( "##cb-more", ImFluentIcon_More, ImVec2( chev_w, s.Height ) ) )
+    const bool pressed    = AppBarButton( "##cb-more", ImFluentIcon_More, ImVec2( chev_w, s.Height ) );
+    const ImGuiID more_id = GImGui->LastItemData.ID;
+    // WinUI: Down or Up on More also opens the overflow, Up on its last item.
+    const bool down       = ConsumeNavArrow( more_id, ImGuiDir_Down );
+    const bool up         = ConsumeNavArrow( more_id, ImGuiDir_Up );
+    if ( pressed || down || up )
         OpenMenuFlyout( s.PopupId );
+    s.OverflowFocusLast = up;
     return BeginMenuFlyout( s.PopupId );
 }
 
 void ImFluent::EndCommandBarOverflow()
 {
+    if ( !g_Ctx.CommandBarStack.empty() && g_Ctx.CommandBarStack.back().OverflowFocusLast )
+        ImGui::SetItemDefaultFocus();
     EndMenuFlyout();
 }
 
 void ImFluent::EndCommandBar()
 {
     if ( !g_Ctx.CommandBarStack.empty() )
+    {
+        const ImFluentCommandBarState & s = g_Ctx.CommandBarStack.back();
+        ImGui::GetStateStorage()->SetInt( COMMANDBAR_KEY_FIRST, ( int )s.First );
+        ImGui::GetStateStorage()->SetInt( COMMANDBAR_KEY_LAST, ( int )s.Last );
         g_Ctx.CommandBarStack.pop_back();
+    }
     ImGui::EndChild();
     ImGui::PopStyleVar( 2 );
     ImGui::PopStyleColor();
+}
+
+// [SECTION] CommandBarFlyout
+// WinUI CommandBarFlyout: focus opens on the first primary command, Left/Right stop at the ends of the row,
+// a secondary command closes the flyout, Escape closes it all.
+
+bool ImFluent::BeginCommandBarFlyout( const char * id )
+{
+    if ( !BeginFlyout( id ) )
+        return false;
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    ImFluentCommandBarState s;
+    ImStrncpy( s.Id, id, sizeof( s.Id ) );
+    s.PopupId[ 0 ]    = 0;
+    s.Height          = FluentDpx( style.AppBarButtonHeight );
+    s.IconOnly        = true;
+    s.Window          = ImGui::GetCurrentWindow();
+    ImGuiStorage * st = ImGui::GetStateStorage();
+    s.PrevFirst       = ( ImGuiID )st->GetInt( COMMANDBAR_KEY_FIRST, 0 );
+    s.PrevLast        = ( ImGuiID )st->GetInt( COMMANDBAR_KEY_LAST, 0 );
+    g_Ctx.CommandBarStack.push_back( s );
+    return true;
+}
+
+static void EndCommandBarFlyoutPrimary()
+{
+    if ( g_Ctx.CommandBarStack.empty() || g_Ctx.CommandBarStack.back().Window != ImGui::GetCurrentWindow() )
+        return;
+    const ImFluentCommandBarState & s = g_Ctx.CommandBarStack.back();
+    ImGui::GetStateStorage()->SetInt( COMMANDBAR_KEY_FIRST, ( int )s.First );
+    ImGui::GetStateStorage()->SetInt( COMMANDBAR_KEY_LAST, ( int )s.Last );
+    g_Ctx.CommandBarStack.pop_back();
+}
+
+void ImFluent::CommandBarFlyoutSecondary()
+{
+    EndCommandBarFlyoutPrimary();
+    MenuFlyoutSeparator();
+}
+
+void ImFluent::EndCommandBarFlyout()
+{
+    EndCommandBarFlyoutPrimary();
+    EndFlyout();
 }
 
 void ImFluent::SetNextAppBarLabelPosition( ImFluentAppBarLabelPosition pos )
@@ -5687,6 +7793,8 @@ bool ImFluent::AppBarButton( const char * label, const char * glyph, const ImVec
         return false;
     bool hov = false, held = false;
     const bool pressed = ImGui::ButtonBehavior( bb, id, &hov, &held );
+    CommandBarItemNav( id );
+    ReportItemInfo( id, label ? label : glyph );
     ImDrawList * dl    = w->DrawList;
     const float r      = FluentDpx( style.ControlCornerRadius );
     ImU32 fill         = ResolveSubtleFillState( false, held, hov );
@@ -5718,9 +7826,11 @@ bool ImFluent::AppBarToggleButton( const char * label, const char * glyph, bool 
         return false;
     bool hov = false, held = false;
     const bool pressed = ImGui::ButtonBehavior( bb, id, &hov, &held );
+    CommandBarItemNav( id );
     if ( pressed && v )
         *v = !*v;
     const bool on = v && *v;
+    ReportItemInfo( id, label ? label : glyph, CheckedFlags( on ) );
 
     ImDrawList * dl = w->DrawList;
     const float r   = FluentDpx( style.ControlCornerRadius );
@@ -5846,11 +7956,13 @@ namespace ImFluent
     static const ImGuiID PICKER_KEY_MINUTE           = 0xD117u;
     static const float DATEPICKER_DAY_RATIO          = 56.f / 256.f;
     static const float DATEPICKER_MON_RATIO          = 120.f / 256.f;
-    static const ImGuiID CAL_KEY_INIT                = 0xC9FEu;
     static const ImGuiID CAL_KEY_WAS                 = 0xC7FEu;
     static const ImGuiID CAL_KEY_VIEW_Y              = 0xC1FEu;
     static const ImGuiID CAL_KEY_VIEW_M              = 0xC2FEu;
     static const ImGuiID CAL_KEY_MODE                = 0xC3FEu;
+    static const ImGuiID CAL_KEY_FOCUS_Y             = 0xC4FEu;
+    static const ImGuiID CAL_KEY_FOCUS_M             = 0xC5FEu;
+    static const ImGuiID CAL_KEY_FOCUS_D             = 0xC6FEu;
     static const ImGuiWindowFlags PICKER_POPUP_FLAGS = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
 
     static void SetupPickerPopup( const ImRect & trigger_bb, float popup_w, float popup_pad_y_dpx )
@@ -5880,28 +7992,55 @@ namespace ImFluent
         RenderChevron( dl, c, dir, ImFluent::GetColorU32( ImFluentCol_TextPrimary ), L, th );
     }
 
-    static int RenderSpinnerColumn( const char * id, int value, int min_v, int max_v, bool month_names, const char * format, float col_w, int step = 1 )
+    typedef const char * ( *SpinnerLabelFn )( int index, char * buf, size_t buf_size, const void * user_data );
+
+    // One picker flyout column (WinUI LoopingSelector) over [0, count): one focus stop on the selection band, rows answer the mouse only.
+    // Up/Down (wrap when `loop`), PageUp/Down by SPINNER_CENTER_ROW, Home/End; Enter/Space/Alt+Up/Alt+Down commit. Returns the new index.
+    static int RenderSpinnerColumnEx( const char * id, const char * name, int index, int count, SpinnerLabelFn label_fn, const void * label_user, float col_w, bool loop, bool default_focus, bool * out_commit )
     {
-        if ( step < 1 )
-            step = 1;
         const ImFluentStyle & style = ImFluent::GetStyle();
         const float row_h           = ImFloor( ImFluent::FluentDpx( style.ControlHeight ) );
         const float win_h           = SPINNER_VISIBLE_ROWS * row_h;
         const float pad_h           = SPINNER_CENTER_ROW * row_h;
+        const float r               = ImFluent::FluentDpx( style.ControlCornerRadius );
 
-        int new_value = ImClamp( value, min_v, max_v );
-        new_value     = min_v + ( ( new_value - min_v ) / step ) * step;
+        int new_index = ImClamp( index, 0, count - 1 );
 
         ImGui::PushID( id );
-        const float target_scroll = ( float )( ( new_value - min_v ) / step ) * row_h;
-        ImGui::SetNextWindowScroll( ImVec2( -1.f, target_scroll ) );
+        ImGuiWindow * host   = ImGui::GetCurrentWindow();
+        const ImVec2 col_pos = ImGui::GetCursorScreenPos();
+        const ImRect band( ImVec2( col_pos.x, col_pos.y + pad_h ), ImVec2( col_pos.x + col_w, col_pos.y + pad_h + row_h ) );
+        const ImGuiID focus_id = host->GetID( "##column" );
+
+        // Keyboard, before the scroll position for this frame is chosen. Alt+Up/Alt+Down commit (WinUI).
+        if ( IsFocusedItemChordPressed( focus_id, g_Ctx.Actions.PickerOpenCommit, false ) || IsFocusedItemChordPressed( focus_id, g_Ctx.Actions.PickerOpenCommitAlt, false ) )
+            *out_commit = true;
+        else if ( !ImGui::GetIO().KeyAlt )
+        {
+            if ( ConsumeNavArrow( focus_id, ImGuiDir_Up ) )
+                new_index = ( new_index > 0 ) ? new_index - 1 : ( loop ? count - 1 : 0 );
+            if ( ConsumeNavArrow( focus_id, ImGuiDir_Down ) )
+                new_index = ( new_index < count - 1 ) ? new_index + 1 : ( loop ? 0 : count - 1 );
+            if ( IsFocusedItemChordPressed( focus_id, g_Ctx.Actions.PageUp ) )
+                new_index = ImMax( 0, new_index - SPINNER_CENTER_ROW );
+            if ( IsFocusedItemChordPressed( focus_id, g_Ctx.Actions.PageDown ) )
+                new_index = ImMin( count - 1, new_index + SPINNER_CENTER_ROW );
+            if ( IsFocusedItemChordPressed( focus_id, g_Ctx.Actions.FirstItem ) )
+                new_index = 0;
+            if ( IsFocusedItemChordPressed( focus_id, g_Ctx.Actions.LastItem ) )
+                new_index = count - 1;
+        }
+        if ( GImGui->NavActivateId == focus_id )
+            *out_commit = true;
+
+        ImGui::SetNextWindowScroll( ImVec2( -1.f, ( float )new_index * row_h ) );
 
         ImFluentStackGuard gw;
         gw.PushStyleColor( ImGuiCol_ChildBg, IM_COL32_BLACK_TRANS );
         gw.PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( 0.f, 0.f ) );
         gw.PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( 0.f, 0.f ) );
 
-        ImGui::BeginChild( id, ImVec2( col_w, win_h ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse );
+        ImGui::BeginChild( id, ImVec2( col_w, win_h ), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse );
 
         const bool col_hovered = ImGui::IsWindowHovered();
 
@@ -5910,24 +8049,19 @@ namespace ImFluent
         const ImGuiID wheel_owner = ImGui::GetCurrentWindow()->ID;
         float acc                 = cs->GetFloat( acc_key, 0.f );
         if ( col_hovered )
-        {
             ImGui::SetKeyOwner( ImGuiKey_MouseWheelY, wheel_owner );
-        }
         else
-        {
             acc = 0.f;
-        }
         if ( ImGui::TestKeyOwner( ImGuiKey_MouseWheelY, wheel_owner ) )
         {
             const float wheel = ImGui::GetIO().MouseWheel;
             if ( wheel != 0.f )
             {
                 acc += wheel;
-                int wheel_steps = ( acc >= 0.f ) ? ( int )ImFloor( acc ) : ( int )ImCeil( acc );
+                const int wheel_steps = ( acc >= 0.f ) ? ( int )ImFloor( acc ) : ( int )ImCeil( acc );
                 if ( wheel_steps != 0 )
                 {
-                    new_value = ImClamp( new_value - wheel_steps * step, min_v, max_v );
-                    new_value = min_v + ( ( new_value - min_v ) / step ) * step;
+                    new_index = ImClamp( new_index - wheel_steps, 0, count - 1 );
                     acc -= ( float )wheel_steps;
                 }
             }
@@ -5938,191 +8072,51 @@ namespace ImFluent
 
         ImGuiWindow * cw = ImGui::GetCurrentWindow();
         ImDrawList * dl  = cw->DrawList;
-        const float r    = ImFluent::FluentDpx( style.ControlCornerRadius );
 
-        const int sel_idx          = ( new_value - min_v ) / step;
-        const bool can_up          = ( new_value > min_v );
-        const bool can_down        = ( new_value < max_v );
-        const int top_chev_k       = sel_idx - SPINNER_CENTER_ROW;
-        const int bot_chev_k       = sel_idx + SPINNER_CENTER_ROW;
+        const bool can_up          = ( new_index > 0 );
+        const bool can_down        = ( new_index < count - 1 );
+        const int top_chev_k       = new_index - SPINNER_CENTER_ROW;
+        const int bot_chev_k       = new_index + SPINNER_CENTER_ROW;
         const ImU32 col_subtle_ter = ImFluent::GetColorU32( ImFluentCol_SubtleFillTertiary );
         const ImU32 col_subtle_sec = ImFluent::GetColorU32( ImFluentCol_SubtleFillSecondary );
         const ImU32 col_on_acc     = ImFluent::GetColorU32( ImFluentCol_TextOnAccentPrimary );
         const ImU32 col_text_pri   = ImFluent::GetColorU32( ImFluentCol_TextPrimary );
         const ImU32 col_text_sec   = ImFluent::GetColorU32( ImFluentCol_TextSecondary );
 
-        int k_idx = 0;
-        for ( int v = min_v; v <= max_v; v += step, ++k_idx )
+        for ( int k = 0; k < count; ++k )
         {
             char buf[ 32 ];
-            if ( month_names )
-                ImStrncpy( buf, ImFluent::LocalizeGetMsg( ( ImFluentLocKey )( ImFluentLocKey_MonthJanuary + v - 1 ) ), sizeof( buf ) );
-            else
-                ImFormatString( buf, sizeof( buf ), format, v );
+            const char * txt = label_fn( k, buf, sizeof( buf ), label_user );
 
-            ImGui::PushID( v );
+            ImGui::PushID( k );
             const ImGuiID item_id = cw->GetID( "##si" );
             ImGui::PopID();
 
             const ImVec2 pos = cw->DC.CursorPos;
             const ImRect bb( pos, ImVec2( pos.x + col_w, pos.y + row_h ) );
             ImGui::ItemSize( bb );
-            if ( !ImGui::ItemAdd( bb, item_id ) )
+            if ( !ImGui::ItemAdd( bb, item_id, NULL, ImGuiItemFlags_NoNav ) ) // Rows are not focus stops
                 continue;
 
-            const bool chev_covers = col_hovered && ( ( can_up && k_idx == top_chev_k ) || ( can_down && k_idx == bot_chev_k ) );
+            const bool chev_covers = col_hovered && ( ( can_up && k == top_chev_k ) || ( can_down && k == bot_chev_k ) );
             if ( chev_covers )
                 continue;
 
             bool hov = false, held = false;
             const bool pressed = ImGui::ButtonBehavior( bb, item_id, &hov, &held );
             if ( pressed )
-                new_value = v;
+                new_index = k;
 
-            const bool sel = ( v == new_value );
+            const bool sel = ( k == new_index );
+            ReportItemInfo( item_id, txt, CheckedFlags( sel ) );
             if ( !sel )
             {
-                ImU32 hover_fill = held ? col_subtle_ter : ( hov ? col_subtle_sec : 0u );
+                const ImU32 hover_fill = held ? col_subtle_ter : ( hov ? col_subtle_sec : 0u );
                 if ( hover_fill )
                     dl->AddRectFilled( bb.Min, bb.Max, hover_fill, r );
             }
 
             const ImU32 text_col = sel ? col_on_acc : ( hov ? col_text_pri : col_text_sec );
-            const ImVec2 ts      = ImGui::CalcTextSize( buf );
-            dl->AddText( ImVec2( bb.Min.x + ( col_w - ts.x ) * 0.5f, bb.Min.y + ( row_h - ts.y ) * 0.5f ), text_col, buf );
-        }
-
-        ImGui::Dummy( ImVec2( 0.f, pad_h ) );
-
-        if ( col_hovered )
-        {
-            const ImVec2 wp = ImGui::GetWindowPos();
-            const ImVec2 ws = ImGui::GetWindowSize();
-            if ( can_up )
-            {
-                const ImRect top_bb( wp, ImVec2( wp.x + ws.x, wp.y + row_h ) );
-                const bool top_hov     = ImGui::IsMouseHoveringRect( top_bb.Min, top_bb.Max, false );
-                const bool top_held    = top_hov && ImGui::IsMouseDown( ImGuiMouseButton_Left );
-                const bool top_clicked = top_hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left, true );
-                RenderSpinnerChevronButton( dl, top_bb, ImGuiDir_Up, top_hov, top_held );
-                if ( top_clicked )
-                    new_value = ImClamp( new_value - step, min_v, max_v );
-            }
-            if ( can_down )
-            {
-                const ImRect bot_bb( ImVec2( wp.x, wp.y + ws.y - row_h ), ImVec2( wp.x + ws.x, wp.y + ws.y ) );
-                const bool bot_hov     = ImGui::IsMouseHoveringRect( bot_bb.Min, bot_bb.Max, false );
-                const bool bot_held    = bot_hov && ImGui::IsMouseDown( ImGuiMouseButton_Left );
-                const bool bot_clicked = bot_hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left, true );
-                RenderSpinnerChevronButton( dl, bot_bb, ImGuiDir_Down, bot_hov, bot_held );
-                if ( bot_clicked )
-                    new_value = ImClamp( new_value + step, min_v, max_v );
-            }
-        }
-
-        ImGui::EndChild();
-        ImGui::PopID();
-        return new_value;
-    }
-
-    static int RenderSpinnerLabelColumn( const char * id, int value, const char * const * labels, int count, float col_w )
-    {
-        const ImFluentStyle & style = ImFluent::GetStyle();
-        const float row_h           = ImFloor( ImFluent::FluentDpx( style.ControlHeight ) );
-        const float win_h           = SPINNER_VISIBLE_ROWS * row_h;
-        const float pad_h           = SPINNER_CENTER_ROW * row_h;
-
-        int new_value = ImClamp( value, 0, count - 1 );
-
-        ImGui::PushID( id );
-        const float target_scroll = ( float )new_value * row_h;
-        ImGui::SetNextWindowScroll( ImVec2( -1.f, target_scroll ) );
-
-        ImFluentStackGuard gw;
-        gw.PushStyleColor( ImGuiCol_ChildBg, IM_COL32_BLACK_TRANS );
-        gw.PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( 0.f, 0.f ) );
-        gw.PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( 0.f, 0.f ) );
-
-        ImGui::BeginChild( id, ImVec2( col_w, win_h ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse );
-
-        const bool col_hovered = ImGui::IsWindowHovered();
-
-        ImGuiStorage * cs         = ImGui::GetStateStorage();
-        const ImGuiID acc_key     = ImGui::GetID( "##sp_acc" );
-        const ImGuiID wheel_owner = ImGui::GetCurrentWindow()->ID;
-        float acc                 = cs->GetFloat( acc_key, 0.f );
-        if ( col_hovered )
-        {
-            ImGui::SetKeyOwner( ImGuiKey_MouseWheelY, wheel_owner );
-        }
-        else
-        {
-            acc = 0.f;
-        }
-        if ( ImGui::TestKeyOwner( ImGuiKey_MouseWheelY, wheel_owner ) )
-        {
-            const float wheel = ImGui::GetIO().MouseWheel;
-            if ( wheel != 0.f )
-            {
-                acc += wheel;
-                int steps = ( acc >= 0.f ) ? ( int )ImFloor( acc ) : ( int )ImCeil( acc );
-                if ( steps != 0 )
-                {
-                    new_value = ImClamp( new_value - steps, 0, count - 1 );
-                    acc -= ( float )steps;
-                }
-            }
-        }
-        cs->SetFloat( acc_key, acc );
-
-        ImGui::Dummy( ImVec2( 0.f, pad_h ) );
-
-        ImGuiWindow * cw = ImGui::GetCurrentWindow();
-        ImDrawList * dl  = cw->DrawList;
-        const float r    = ImFluent::FluentDpx( style.ControlCornerRadius );
-
-        const int sel_idx          = new_value;
-        const bool can_up          = ( new_value > 0 );
-        const bool can_down        = ( new_value < count - 1 );
-        const int top_chev_k       = sel_idx - SPINNER_CENTER_ROW;
-        const int bot_chev_k       = sel_idx + SPINNER_CENTER_ROW;
-        const ImU32 col_subtle_ter = ImFluent::GetColorU32( ImFluentCol_SubtleFillTertiary );
-        const ImU32 col_subtle_sec = ImFluent::GetColorU32( ImFluentCol_SubtleFillSecondary );
-        const ImU32 col_on_acc     = ImFluent::GetColorU32( ImFluentCol_TextOnAccentPrimary );
-        const ImU32 col_text_pri   = ImFluent::GetColorU32( ImFluentCol_TextPrimary );
-        const ImU32 col_text_sec   = ImFluent::GetColorU32( ImFluentCol_TextSecondary );
-
-        for ( int v = 0; v < count; ++v )
-        {
-            ImGui::PushID( v );
-            const ImGuiID item_id = cw->GetID( "##si" );
-            ImGui::PopID();
-
-            const ImVec2 pos = cw->DC.CursorPos;
-            const ImRect bb( pos, ImVec2( pos.x + col_w, pos.y + row_h ) );
-            ImGui::ItemSize( bb );
-            if ( !ImGui::ItemAdd( bb, item_id ) )
-                continue;
-
-            const bool chev_covers = col_hovered && ( ( can_up && v == top_chev_k ) || ( can_down && v == bot_chev_k ) );
-            if ( chev_covers )
-                continue;
-
-            bool hov = false, held = false;
-            const bool pressed = ImGui::ButtonBehavior( bb, item_id, &hov, &held );
-            if ( pressed )
-                new_value = v;
-
-            const bool sel = ( v == new_value );
-            if ( !sel )
-            {
-                ImU32 hover_fill = held ? col_subtle_ter : ( hov ? col_subtle_sec : 0u );
-                if ( hover_fill )
-                    dl->AddRectFilled( bb.Min, bb.Max, hover_fill, r );
-            }
-
-            const ImU32 text_col = sel ? col_on_acc : ( hov ? col_text_pri : col_text_sec );
-            const char * txt     = labels[ v ];
             const ImVec2 ts      = ImGui::CalcTextSize( txt );
             dl->AddText( ImVec2( bb.Min.x + ( col_w - ts.x ) * 0.5f, bb.Min.y + ( row_h - ts.y ) * 0.5f ), text_col, txt );
         }
@@ -6136,31 +8130,78 @@ namespace ImFluent
             if ( can_up )
             {
                 const ImRect top_bb( wp, ImVec2( wp.x + ws.x, wp.y + row_h ) );
-                const bool tov = ImGui::IsMouseHoveringRect( top_bb.Min, top_bb.Max, false );
-                const bool thd = tov && ImGui::IsMouseDown( ImGuiMouseButton_Left );
-                const bool tcl = tov && ImGui::IsMouseClicked( ImGuiMouseButton_Left );
-                RenderSpinnerChevronButton( dl, top_bb, ImGuiDir_Up, tov, thd );
-                if ( tcl )
-                    new_value = ImClamp( new_value - 1, 0, count - 1 );
+                const bool top_hov     = ImGui::IsMouseHoveringRect( top_bb.Min, top_bb.Max, false );
+                const bool top_held    = top_hov && ImGui::IsMouseDown( ImGuiMouseButton_Left );
+                const bool top_clicked = top_hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left, g_Ctx.Actions.RepeatStepButtons );
+                RenderSpinnerChevronButton( dl, top_bb, ImGuiDir_Up, top_hov, top_held );
+                if ( top_clicked )
+                    new_index = ImMax( 0, new_index - 1 );
             }
             if ( can_down )
             {
                 const ImRect bot_bb( ImVec2( wp.x, wp.y + ws.y - row_h ), ImVec2( wp.x + ws.x, wp.y + ws.y ) );
-                const bool bov = ImGui::IsMouseHoveringRect( bot_bb.Min, bot_bb.Max, false );
-                const bool bhd = bov && ImGui::IsMouseDown( ImGuiMouseButton_Left );
-                const bool bcl = bov && ImGui::IsMouseClicked( ImGuiMouseButton_Left );
-                RenderSpinnerChevronButton( dl, bot_bb, ImGuiDir_Down, bov, bhd );
-                if ( bcl )
-                    new_value = ImClamp( new_value + 1, 0, count - 1 );
+                const bool bot_hov     = ImGui::IsMouseHoveringRect( bot_bb.Min, bot_bb.Max, false );
+                const bool bot_held    = bot_hov && ImGui::IsMouseDown( ImGuiMouseButton_Left );
+                const bool bot_clicked = bot_hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left, g_Ctx.Actions.RepeatStepButtons );
+                RenderSpinnerChevronButton( dl, bot_bb, ImGuiDir_Down, bot_hov, bot_held );
+                if ( bot_clicked )
+                    new_index = ImMin( count - 1, new_index + 1 );
             }
         }
 
         ImGui::EndChild();
+        gw.Restore();
+
+        // The focus stop, registered after the child so it does not move the layout.
+        ImGui::ItemAdd( band, focus_id );
+        if ( default_focus )
+            ImGui::SetItemDefaultFocus();
+        ReportItemInfo( focus_id, name );
+        RenderNavFocusRing( focus_id, band, r );
+
         ImGui::PopID();
-        return new_value;
+        return new_index;
     }
 
-    static bool RenderPickerActionButton( const char * label, const ImVec2 & size )
+    struct SpinnerRange
+    {
+        int Min, Step;
+        bool MonthNames;
+        const char * Format;
+    };
+
+    static const char * SpinnerRangeLabel( int index, char * buf, size_t buf_size, const void * user_data )
+    {
+        const SpinnerRange & range = *( const SpinnerRange * )user_data;
+        const int v                = range.Min + index * range.Step;
+        if ( range.MonthNames )
+            return ImFluent::LocalizeGetMsg( ( ImFluentLocKey )( ImFluentLocKey_MonthJanuary + v - 1 ) );
+        ImFormatString( buf, buf_size, range.Format, v );
+        return buf;
+    }
+
+    static const char * SpinnerListLabel( int index, char *, size_t, const void * user_data )
+    {
+        return ( ( const char * const * )user_data )[ index ];
+    }
+
+    // Numeric column: values min_v, min_v + step, ... max_v (month names when `month_names`).
+    static int RenderSpinnerColumn( const char * id, const char * name, int value, int min_v, int max_v, bool month_names, const char * format, float col_w, int step, bool loop, bool default_focus, bool * out_commit )
+    {
+        if ( step < 1 )
+            step = 1;
+        const SpinnerRange range = { min_v, step, month_names, format };
+        const int count          = ( max_v - min_v ) / step + 1;
+        const int index          = ( ImClamp( value, min_v, max_v ) - min_v ) / step;
+        return min_v + step * RenderSpinnerColumnEx( id, name, index, count, SpinnerRangeLabel, &range, col_w, loop, default_focus, out_commit );
+    }
+
+    static int RenderSpinnerLabelColumn( const char * id, const char * name, int value, const char * const * labels, int count, float col_w, bool loop, bool * out_commit )
+    {
+        return RenderSpinnerColumnEx( id, name, value, count, SpinnerListLabel, labels, col_w, loop, false, out_commit );
+    }
+
+    static bool RenderPickerActionButton( const char * label, const char * name, const ImVec2 & size )
     {
         ImGuiWindow * w = ImGui::GetCurrentWindow();
         if ( w->SkipItems )
@@ -6176,6 +8217,7 @@ namespace ImFluent
 
         bool hov = false, held = false;
         const bool pressed = ImGui::ButtonBehavior( bb, id, &hov, &held );
+        ReportItemInfo( id, name );
 
         ImU32 fill_target;
         if ( held )
@@ -6217,14 +8259,15 @@ namespace ImFluent
         else
             fill_target = ImFluent::GetColorU32( ImFluentCol_ControlFillDefault );
         const ImU32 fill = ImFluent::AnimateColorU32( id, fill_target );
-        dl->AddRectFilled( bb.Min, bb.Max, fill, r );
+        ImFluent::FillInsideBorder( dl, bb.Min, bb.Max, fill, r );
 
         const ImU32 stroke     = ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault );
+        const ImU32 stroke_top = ImFluent::GetColorU32( ImFluentCol_ElevationControlTop );
         const ImU32 stroke_bot = ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom );
         if ( !held && !open && !disabled )
-            ImFluent::RenderElevationBorder( dl, bb, r, stroke, stroke_bot, 1.f );
+            ImFluent::RenderElevationBorder( dl, bb, r, stroke, stroke_top, stroke_bot, 1.f );
         else
-            dl->AddRect( bb.Min, bb.Max, stroke, r, 0, 1.f );
+            ImFluent::StrokeRect( dl, bb.Min, bb.Max, stroke, r );
     }
 
     static void RenderColumnSeparator( ImDrawList * dl, float x, float ymin, float ymax, ImU32 col )
@@ -6238,13 +8281,15 @@ namespace ImFluent
         dl->AddText( ImVec2( x0 + ( ( x1 - x0 ) - ts.x ) * 0.5f, ycenter - ts.y * 0.5f ), col, text );
     }
 
-    static bool PickerTogglePopup( ImGuiID popup_id, const ImRect & bb, ImGuiID trig_id, bool disabled )
+    // Opens the picker flyout on click, Space/Enter and, when `alt_arrows_open`, the PickerOpenCommit chords (WinUI).
+    static bool PickerTogglePopup( ImGuiID popup_id, const ImRect & bb, ImGuiID trig_id, bool disabled, bool alt_arrows_open )
     {
         ImGuiContext & gctx     = *ImGui::GetCurrentContext();
         const bool popup_open   = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
-        const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsMouseHoveringRect( bb.Min, bb.Max, false );
+        const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && IsMouseOverWindowRect( bb );
         const bool nav_activate = ( gctx.NavActivateId == trig_id );
-        const bool toggle       = ( click_in_bb || nav_activate ) && !disabled;
+        const bool key_open     = alt_arrows_open && !popup_open && ( IsFocusedItemChordPressed( trig_id, g_Ctx.Actions.PickerOpenCommit, false ) || IsFocusedItemChordPressed( trig_id, g_Ctx.Actions.PickerOpenCommitAlt, false ) );
+        const bool toggle       = ( click_in_bb || nav_activate || key_open ) && !disabled;
         if ( toggle )
         {
             if ( popup_open )
@@ -6255,18 +8300,18 @@ namespace ImFluent
         return popup_open;
     }
 
-    static int RenderPickerActionFooter( ImGuiStorage * st, ImGuiID init_key, float total_w )
+    static int RenderPickerActionFooter( ImGuiStorage * st, ImGuiID init_key, float total_w, bool commit )
     {
         const ImFluentStyle & style = ImFluent::GetStyle();
         const float btn_w           = total_w * 0.5f;
         const float btn_h           = ImFluent::FluentDpx( style.ControlHeight );
 
-        int fired = 0;
+        int fired = commit ? 1 : 0;
         ImGui::Dummy( ImVec2( 0.f, ImFluent::FluentDpx( style.SpacingXSmall ) ) );
-        if ( RenderPickerActionButton( ImFluentIcon_CheckMark "##ok", ImVec2( btn_w, btn_h ) ) )
+        if ( RenderPickerActionButton( ImFluentIcon_CheckMark "##ok", "Accept", ImVec2( btn_w, btn_h ) ) && !fired )
             fired = 1;
         ImGui::SameLine( 0.f, 0.f );
-        if ( RenderPickerActionButton( ImFluentIcon_Cancel "##cancel", ImVec2( btn_w, btn_h ) ) )
+        if ( RenderPickerActionButton( ImFluentIcon_Cancel "##cancel", "Dismiss", ImVec2( btn_w, btn_h ) ) && !fired )
             fired = 2;
         if ( fired )
         {
@@ -6304,7 +8349,8 @@ bool ImFluent::DatePicker( const char * label, ImFluentDate * date )
 
     const ImGuiID popup_id = GetWidgetPopupId( id, "##fl_dp_popup" );
 
-    const bool popup_open = PickerTogglePopup( popup_id, bb, id, disabled );
+    const bool popup_open = PickerTogglePopup( popup_id, bb, id, disabled, true );
+    ReportItemInfo( id, label, OpenedFlags( popup_open ) );
 
     ImDrawList * dl = w->DrawList;
     RenderPickerTriggerFrame( dl, bb, r, hovered, held, popup_open, disabled, id );
@@ -6371,18 +8417,19 @@ bool ImFluent::DatePicker( const char * label, ImFluentDate * date )
         const float total_w       = c_day_w + c_mon_w + c_yr_w;
         RenderSpinnerSelectionBand( ImGui::GetWindowDrawList(), group_origin, total_w, row_h );
 
+        // Columns left to right so Tab and the initial focus follow the visual order. Day and Month loop, Year does not (WinUI).
+        bool commit = false;
         {
             ImFluentStackGuard sp_group;
             sp_group.BeginGroup();
-            ImGui::SetCursorScreenPos( ImVec2( group_origin.x + c_day_w, group_origin.y ) );
-            wm = RenderSpinnerColumn( "##sp_mon", wm, 1, 12, true, NULL, c_mon_w );
-            ImGui::SetCursorScreenPos( ImVec2( group_origin.x + c_day_w + c_mon_w, group_origin.y ) );
-            wy = RenderSpinnerColumn( "##sp_yr", wy, 1900, 2100, false, "%d", c_yr_w );
-
-            const int dim_pre = DaysInMonth( wy, wm );
-            wd                = ImClamp( wd, 1, dim_pre );
+            wd = ImClamp( wd, 1, DaysInMonth( wy, wm ) );
             ImGui::SetCursorScreenPos( group_origin );
-            wd = RenderSpinnerColumn( "##sp_day", wd, 1, dim_pre, false, "%d", c_day_w );
+            wd = RenderSpinnerColumn( "##sp_day", "Day", wd, 1, DaysInMonth( wy, wm ), false, "%d", c_day_w, 1, true, true, &commit );
+            ImGui::SetCursorScreenPos( ImVec2( group_origin.x + c_day_w, group_origin.y ) );
+            wm = RenderSpinnerColumn( "##sp_mon", "Month", wm, 1, 12, true, NULL, c_mon_w, 1, true, false, &commit );
+            ImGui::SetCursorScreenPos( ImVec2( group_origin.x + c_day_w + c_mon_w, group_origin.y ) );
+            wy = RenderSpinnerColumn( "##sp_yr", "Year", wy, 1900, 2100, false, "%d", c_yr_w, 1, false, false, &commit );
+            wd = ImClamp( wd, 1, DaysInMonth( wy, wm ) ); // A month or year change can shorten the month
         }
 
         {
@@ -6398,7 +8445,7 @@ bool ImFluent::DatePicker( const char * label, ImFluentDate * date )
         st->SetInt( mon_key, wm );
         st->SetInt( yr_key, wy );
 
-        if ( RenderPickerActionFooter( st, init_key, total_w ) == 1 )
+        if ( RenderPickerActionFooter( st, init_key, total_w, commit ) == 1 )
         {
             date->Day   = wd;
             date->Month = wm;
@@ -6459,7 +8506,8 @@ bool ImFluent::TimePicker( const char * label, ImFluentTime * time, ImFluentTime
 
     const ImGuiID popup_id = GetWidgetPopupId( id, "##fl_tp_popup" );
 
-    const bool popup_open = PickerTogglePopup( popup_id, bb, id, disabled );
+    const bool popup_open = PickerTogglePopup( popup_id, bb, id, disabled, true );
+    ReportItemInfo( id, label, OpenedFlags( popup_open ) );
 
     ImDrawList * dl = w->DrawList;
     RenderPickerTriggerFrame( dl, bb, r, hovered, held, popup_open, disabled, id );
@@ -6555,22 +8603,23 @@ bool ImFluent::TimePicker( const char * label, ImFluentTime * time, ImFluentTime
 
         const int m_max = ( 60 / minute_increment - 1 ) * minute_increment;
 
+        bool commit = false;
         {
             ImFluentStackGuard sp_group;
             sp_group.BeginGroup();
             if ( is_12h )
             {
-                w_disp_h = RenderSpinnerColumn( "##sp_h", w_disp_h, 1, 12, false, "%d", col_w_h );
+                w_disp_h = RenderSpinnerColumn( "##sp_h", "Hour", w_disp_h, 1, 12, false, "%d", col_w_h, 1, true, true, &commit );
                 ImGui::SameLine( 0.f, 0.f );
-                wm = RenderSpinnerColumn( "##sp_m", wm, 0, m_max, false, "%02d", col_w_m, minute_increment );
+                wm = RenderSpinnerColumn( "##sp_m", "Minute", wm, 0, m_max, false, "%02d", col_w_m, minute_increment, true, false, &commit );
                 ImGui::SameLine( 0.f, 0.f );
-                w_ap = RenderSpinnerLabelColumn( "##sp_ap", w_ap, kAmPm, 2, col_w_ap );
+                w_ap = RenderSpinnerLabelColumn( "##sp_ap", "Period", w_ap, kAmPm, 2, col_w_ap, false, &commit );
             }
             else
             {
-                wh24 = RenderSpinnerColumn( "##sp_h", wh24, 0, 23, false, "%02d", col_w_h );
+                wh24 = RenderSpinnerColumn( "##sp_h", "Hour", wh24, 0, 23, false, "%02d", col_w_h, 1, true, true, &commit );
                 ImGui::SameLine( 0.f, 0.f );
-                wm = RenderSpinnerColumn( "##sp_m", wm, 0, m_max, false, "%02d", col_w_m, minute_increment );
+                wm = RenderSpinnerColumn( "##sp_m", "Minute", wm, 0, m_max, false, "%02d", col_w_m, minute_increment, true, false, &commit );
             }
         }
 
@@ -6593,7 +8642,7 @@ bool ImFluent::TimePicker( const char * label, ImFluentTime * time, ImFluentTime
         st->SetInt( hr_key, wh24 );
         st->SetInt( mn_key, wm );
 
-        if ( RenderPickerActionFooter( st, init_key, total_w ) == 1 )
+        if ( RenderPickerActionFooter( st, init_key, total_w, commit ) == 1 )
         {
             time->Hour   = wh24;
             time->Minute = wm;
@@ -6630,6 +8679,73 @@ static ImVec2 CalendarViewCalcSize()
     return ImVec2( grid_w, header_h + dow_h + day_grid_h );
 }
 
+static void CalendarAddDays( int & y, int & m, int & d, int n )
+{
+    while ( n > 0 )
+    {
+        const int dim = DaysInMonth( y, m );
+        if ( d + n <= dim )
+        {
+            d += n;
+            n = 0;
+        }
+        else
+        {
+            n -= dim - d + 1;
+            d = 1;
+            if ( ++m > 12 )
+            {
+                m = 1;
+                ++y;
+            }
+        }
+    }
+    while ( n < 0 )
+    {
+        if ( d + n >= 1 )
+        {
+            d += n;
+            n = 0;
+        }
+        else
+        {
+            n += d;
+            if ( --m < 1 )
+            {
+                m = 12;
+                --y;
+            }
+            d = DaysInMonth( y, m );
+        }
+    }
+}
+
+static void CalendarAddMonths( int & y, int & m, int & d, int n )
+{
+    const int total = y * 12 + ( m - 1 ) + n;
+    y               = total / 12;
+    m               = total % 12 + 1;
+    d               = ImMin( d, DaysInMonth( y, m ) );
+}
+
+static void CalendarClampToRange( int & y, int & m, int & d, const ImFluent::ImFluentDate * min_d, const ImFluent::ImFluentDate * max_d )
+{
+    if ( min_d && CompareDate( y, m, d, min_d->Year, min_d->Month, min_d->Day ) < 0 )
+    {
+        y = min_d->Year;
+        m = min_d->Month;
+        d = min_d->Day;
+    }
+    if ( max_d && CompareDate( y, m, d, max_d->Year, max_d->Month, max_d->Day ) > 0 )
+    {
+        y = max_d->Year;
+        m = max_d->Month;
+        d = max_d->Day;
+    }
+}
+
+// WinUI CalendarView keys: header, Previous and Next are tab stops, the grid is ONE more, on the focus date. Arrows, Home/End and
+// PageUp/PageDown move the focus date and never leave the grid; Enter/Space select or drill down; Ctrl+Up/Down zoom.
 bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluentDate * min_date, const ImFluentDate * max_date )
 {
     if ( !date )
@@ -6648,27 +8764,140 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
     const float r2              = FluentDpx( style.ControlCornerRadius );
 
     ImGui::PushID( id );
-    const ImGuiID scope_id  = w->GetID( "##cv_scope" );
-    ImGuiStorage * st       = &w->StateStorage;
-    const ImGuiID viewy_key = scope_id ^ CAL_KEY_VIEW_Y;
-    const ImGuiID viewm_key = scope_id ^ CAL_KEY_VIEW_M;
-    const ImGuiID mode_key  = scope_id ^ CAL_KEY_MODE;
-    const ImGuiID frame_key = scope_id ^ CAL_KEY_WAS;
+    const ImGuiID scope_id    = w->GetID( "##cv_scope" );
+    ImGuiStorage * st         = &w->StateStorage;
+    const ImGuiID viewy_key   = scope_id ^ CAL_KEY_VIEW_Y;
+    const ImGuiID viewm_key   = scope_id ^ CAL_KEY_VIEW_M;
+    const ImGuiID mode_key    = scope_id ^ CAL_KEY_MODE;
+    const ImGuiID frame_key   = scope_id ^ CAL_KEY_WAS;
+    const ImGuiID focus_y_key = scope_id ^ CAL_KEY_FOCUS_Y;
+    const ImGuiID focus_m_key = scope_id ^ CAL_KEY_FOCUS_M;
+    const ImGuiID focus_d_key = scope_id ^ CAL_KEY_FOCUS_D;
+    const ImGuiID grid_id     = w->GetID( "##cal_grid" );
 
     int today_y, today_m, today_d;
     GetTodayDate( today_y, today_m, today_d );
 
     const bool reopened = !AnimFrameContiguous( st, frame_key );
+    const bool has_date = date->Year > 0;
+    const int start_y   = has_date ? date->Year : today_y;
+    const int start_m   = has_date ? date->Month : today_m;
+    const int start_d   = has_date ? date->Day : today_d;
 
-    int view_y    = st->GetInt( viewy_key, date->Year > 0 ? date->Year : today_y );
-    int view_m    = st->GetInt( viewm_key, date->Month > 0 ? date->Month : today_m );
+    int view_y    = st->GetInt( viewy_key, start_y );
+    int view_m    = st->GetInt( viewm_key, start_m );
     int view_mode = st->GetInt( mode_key, 0 );
+    int focus_y   = st->GetInt( focus_y_key, start_y );
+    int focus_m   = st->GetInt( focus_m_key, start_m );
+    int focus_d   = st->GetInt( focus_d_key, start_d );
 
     if ( reopened )
     {
-        view_y    = date->Year > 0 ? date->Year : today_y;
-        view_m    = date->Month > 0 ? date->Month : today_m;
+        view_y = focus_y = start_y;
+        view_m = focus_m = start_m;
+        focus_d          = start_d;
         view_mode = 0;
+    }
+
+    // Keyboard on the grid focus stop, before layout so this frame already shows the result.
+    ImGuiContext & g = *GImGui;
+    if ( g.NavId == grid_id )
+    {
+        const bool zoom_out = IsFocusedItemChordPressed( grid_id, g_Ctx.Actions.CalendarZoomOut, false );
+        const bool zoom_in  = IsFocusedItemChordPressed( grid_id, g_Ctx.Actions.CalendarZoomIn, false );
+        if ( zoom_out || zoom_in )
+        {
+            if ( zoom_out && view_mode < 2 )
+                view_mode++;
+            if ( zoom_in && view_mode > 0 )
+                view_mode--;
+            view_y = focus_y;
+            view_m = focus_m;
+        }
+        else if ( g.IO.KeyCtrl ) // Other Ctrl+arrows do nothing
+        {
+            for ( int dir = ImGuiDir_Left; dir <= ImGuiDir_Down; ++dir )
+                ConsumeNavArrow( grid_id, ( ImGuiDir )dir );
+        }
+        else
+        {
+            const int dx      = ConsumeNavArrow( grid_id, ImGuiDir_Left ) ? -1 : ConsumeNavArrow( grid_id, ImGuiDir_Right ) ? 1 : 0;
+            const int dy      = ConsumeNavArrow( grid_id, ImGuiDir_Up ) ? -1 : ConsumeNavArrow( grid_id, ImGuiDir_Down ) ? 1 : 0;
+            const bool k_home = IsFocusedItemChordPressed( grid_id, g_Ctx.Actions.FirstItem );
+            const bool k_end  = IsFocusedItemChordPressed( grid_id, g_Ctx.Actions.LastItem );
+            const bool k_pgup = IsFocusedItemChordPressed( grid_id, g_Ctx.Actions.PageUp );
+            const bool k_pgdn = IsFocusedItemChordPressed( grid_id, g_Ctx.Actions.PageDown );
+            int ny = focus_y, nm = focus_m, nd = focus_d;
+            if ( view_mode == 0 )
+            {
+                if ( dx )
+                {
+                    CalendarAddDays( ny, nm, nd, dx );
+                    CalendarClampToRange( ny, nm, nd, min_date, max_date );
+                }
+                if ( dy )
+                {
+                    int ty = ny, tm = nm, td = nd;
+                    CalendarAddDays( ty, tm, td, dy * 7 );
+                    if ( DateInRange( ty, tm, td, min_date, max_date ) ) // No move past MinDate/MaxDate
+                    {
+                        ny = ty;
+                        nm = tm;
+                        nd = td;
+                    }
+                }
+                if ( k_home || k_end )
+                {
+                    ny = view_y;
+                    nm = view_m;
+                    nd = k_home ? 1 : DaysInMonth( view_y, view_m );
+                    CalendarClampToRange( ny, nm, nd, min_date, max_date );
+                }
+                if ( k_pgup || k_pgdn )
+                {
+                    CalendarAddMonths( ny, nm, nd, k_pgup ? -1 : 1 );
+                    CalendarClampToRange( ny, nm, nd, min_date, max_date );
+                }
+                if ( ny != focus_y || nm != focus_m )
+                {
+                    view_y = ny;
+                    view_m = nm;
+                }
+            }
+            else if ( view_mode == 1 )
+            {
+                int ty = ny, tm = nm, td = nd;
+                if ( dx || dy )
+                    CalendarAddMonths( ty, tm, td, dx + dy * 4 );
+                if ( k_home || k_end )
+                    tm = k_home ? 1 : 12;
+                if ( k_pgup || k_pgdn )
+                    ty += k_pgup ? -1 : 1;
+                if ( ( ty != ny || tm != nm ) && MonthOverlapsRange( ty, tm, min_date, max_date ) )
+                {
+                    ny = ty;
+                    nm = tm;
+                }
+                nd     = ImMin( nd, DaysInMonth( ny, nm ) );
+                view_y = ny;
+            }
+            else
+            {
+                const int decade_start = ( view_y / 10 ) * 10;
+                int ty                 = ny + dx + dy * 4;
+                if ( k_home || k_end )
+                    ty = k_home ? decade_start : decade_start + 9;
+                if ( k_pgup || k_pgdn )
+                    ty += k_pgup ? -10 : 10;
+                if ( ty != ny && YearOverlapsRange( ty, min_date, max_date ) )
+                    ny = ty;
+                nd     = ImMin( nd, DaysInMonth( ny, nm ) );
+                view_y = ny;
+            }
+            focus_y = ny;
+            focus_m = nm;
+            focus_d = nd;
+        }
     }
 
     ImFluentStackGuard sg;
@@ -6679,11 +8908,20 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
 
     const ImVec2 hdr_origin = ImGui::GetCursorScreenPos();
     ImDrawList * pdl        = w->DrawList;
+    // WinUI CalendarView sits on a bordered panel. Inside a flyout (CalendarDatePicker) the flyout is the frame.
+    if ( !( w->Flags & ImGuiWindowFlags_Popup ) )
+    {
+        const float pr = FluentDpx( style.OverlayCornerRadius );
+        const ImVec2 p0( hdr_origin.x - 1.f, hdr_origin.y - 1.f );
+        const ImVec2 p1( hdr_origin.x + grid_w + 1.f, hdr_origin.y + header_h + dow_h + day_grid_h + 1.f );
+        pdl->AddRectFilled( p0, p1, GetColorU32( ImFluentCol_ControlFillInputActive ), pr );
+        StrokeRect( pdl, p0, p1, GetColorU32( ImFluentCol_CardStrokeDefault ), pr );
+    }
 
     {
         const ImVec2 cv_size = CalendarViewCalcSize();
         const ImRect cv_bb( hdr_origin, ImVec2( hdr_origin.x + cv_size.x, hdr_origin.y + cv_size.y ) );
-        if ( ImGui::IsMouseHoveringRect( cv_bb.Min, cv_bb.Max, false ) )
+        if ( IsMouseOverWindowRect( cv_bb ) )
         {
             ImGui::SetKeyOwner( ImGuiKey_MouseWheelY, scope_id );
         }
@@ -6741,10 +8979,17 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
     ImGui::SetCursorScreenPos( hdr_origin );
     const ImGuiID title_id = w->GetID( "##cal_title" );
     ImGui::ItemSize( title_bb );
-    if ( ImGui::ItemAdd( title_bb, title_id ) )
+    // The header button has nothing above the decade view: it is disabled there and keyboard focus skips it.
+    if ( view_mode >= 2 )
+        ImGui::PushItemFlag( ImGuiItemFlags_Disabled, true );
+    const bool title_added = ImGui::ItemAdd( title_bb, title_id );
+    if ( view_mode >= 2 )
+        ImGui::PopItemFlag();
+    if ( title_added )
     {
         bool t_hov = false, t_held = false;
         const bool t_pr = view_mode < 2 ? ImGui::ButtonBehavior( title_bb, title_id, &t_hov, &t_held ) : false;
+        ReportItemInfo( title_id, title_buf );
         ImU32 t_fill_target;
         if ( t_held )
             t_fill_target = GetColorU32( ImFluentCol_SubtleFillTertiary );
@@ -6758,6 +9003,7 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
         const ImVec2 t_ts = ImGui::CalcTextSize( title_buf );
         const float t_pad = FluentDpx( style.SpacingMedium );
         pdl->AddText( ImVec2( title_bb.Min.x + t_pad, title_bb.Min.y + ( header_h - t_ts.y ) * 0.5f ), GetColorU32( ImFluentCol_TextPrimary ), title_buf );
+        RenderNavFocusRing( title_id, title_bb, r2 );
 
         if ( t_pr )
         {
@@ -6772,8 +9018,9 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
     const float prev_x = hdr_origin.x + grid_w - chev_btn_w * 2.f;
     const float next_x = hdr_origin.x + grid_w - chev_btn_w;
 
+    ImGui::PushItemFlag( ImGuiItemFlags_ButtonRepeat, g_Ctx.Actions.RepeatStepButtons );
     ImGui::SetCursorScreenPos( ImVec2( prev_x, chev_y ) );
-    if ( RenderPickerActionButton( ImFluentIcon_ChevronUpMed "##prev", ImVec2( chev_btn_w, chev_btn_w ) ) )
+    if ( RenderPickerActionButton( ImFluentIcon_ChevronUpMed "##prev", "Previous", ImVec2( chev_btn_w, chev_btn_w ) ) )
     {
         if ( view_mode == 0 )
         {
@@ -6794,7 +9041,7 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
         }
     }
     ImGui::SetCursorScreenPos( ImVec2( next_x, chev_y ) );
-    if ( RenderPickerActionButton( ImFluentIcon_ChevronDownMed "##next", ImVec2( chev_btn_w, chev_btn_w ) ) )
+    if ( RenderPickerActionButton( ImFluentIcon_ChevronDownMed "##next", "Next", ImVec2( chev_btn_w, chev_btn_w ) ) )
     {
         if ( view_mode == 0 )
         {
@@ -6814,6 +9061,7 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
             view_y += 10;
         }
     }
+    ImGui::PopItemFlag();
 
     {
         const float div_y = hdr_origin.y + header_h - 1.f;
@@ -6852,6 +9100,20 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
         {
             next_m = 1;
             next_y++;
+        }
+
+        // A focus date outside the shown grid (after Previous/Next) moves to the same day of the shown month.
+        {
+            const bool in_view = focus_y == view_y && focus_m == view_m;
+            const bool in_prev = focus_y == prev_y && focus_m == prev_m && focus_d > prev_dim - day1_dow;
+            const bool in_next = focus_y == next_y && focus_m == next_m && focus_d <= 42 - day1_dow - dim;
+            if ( !in_view && !in_prev && !in_next )
+            {
+                focus_y = view_y;
+                focus_m = view_m;
+                focus_d = ImMin( focus_d, dim );
+                CalendarClampToRange( focus_y, focus_m, focus_d, min_date, max_date );
+            }
         }
 
         const ImU32 col_subtle_trans  = GetColorU32( ImFluentCol_SubtleFillTransparent );
@@ -6896,20 +9158,27 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
                 const ImVec2 cp( grid_origin.x + col * cell, grid_origin.y + row * cell );
                 const ImRect cbb( cp, ImVec2( cp.x + cell, cp.y + cell ) );
 
+                // The focus date's cell carries the grid's one focus stop; other cells answer the mouse only.
+                const bool is_focus = ( cell_y == focus_y && cell_m == focus_m && cell_d == focus_d );
                 ImGui::PushID( idx );
-                const ImGuiID cell_id = w->GetID( "##d" );
+                const ImGuiID cell_id = is_focus ? grid_id : w->GetID( "##d" );
                 ImGui::PopID();
 
                 ImGui::ItemSize( cbb );
-                if ( !ImGui::ItemAdd( cbb, cell_id ) )
+                if ( !ImGui::ItemAdd( cbb, cell_id, NULL, is_focus ? ImGuiItemFlags_None : ImGuiItemFlags_NoNav ) )
                     continue;
 
                 const bool out_of_range = !DateInRange( cell_y, cell_m, cell_d, min_date, max_date );
 
                 bool chov = false, chld = false;
-                const bool cpr = !out_of_range && ImGui::ButtonBehavior( cbb, cell_id, &chov, &chld );
+                const bool cpr = !out_of_range && ImGui::ButtonBehavior( cbb, cell_id, &chov, &chld, is_focus ? ImGuiButtonFlags_None : ImGuiButtonFlags_NoNavFocus );
 
                 const bool is_sel = ( cell_y == date->Year && cell_m == date->Month && cell_d == date->Day );
+                {
+                    char cell_label[ 16 ];
+                    ImFormatString( cell_label, sizeof( cell_label ), "%04d-%02d-%02d", cell_y, cell_m, cell_d );
+                    ReportItemInfo( cell_id, cell_label, CheckedFlags( is_sel ) );
+                }
 
                 ImU32 fill_target;
                 if ( out_of_range )
@@ -6948,6 +9217,8 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
                 ImFormatString( ds, sizeof( ds ), "%d", cell_d );
                 const ImVec2 ts = ImGui::CalcTextSize( ds );
                 pdl->AddText( ImVec2( cx - ts.x * 0.5f, cy - ts.y * 0.5f ), cell_text_col, ds );
+                if ( is_focus )
+                    RenderNavFocusRing( grid_id, ImRect( cx - circ_r, cy - circ_r, cx + circ_r, cy + circ_r ), circ_r );
 
                 if ( cpr )
                 {
@@ -6957,6 +9228,11 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
                     changed     = true;
                     view_y      = cell_y;
                     view_m      = cell_m;
+                    focus_y     = cell_y;
+                    focus_m     = cell_m;
+                    focus_d     = cell_d;
+                    if ( !is_focus )
+                        ImGui::SetFocusID( grid_id, w ); // Keyboard continues from the clicked day
                 }
             }
         }
@@ -6977,6 +9253,14 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
         const ImU32 col_text_on_acc2   = GetColorU32( ImFluentCol_TextOnAccentPrimary );
         const ImU32 col_text_tert2     = GetColorU32( ImFluentCol_TextTertiary );
         const ImU32 col_text_primary2  = GetColorU32( ImFluentCol_TextPrimary );
+        const int decade_start         = ( view_y / 10 ) * 10;
+        const int grid_mode            = view_mode; // A drill-down below changes view_mode for the next frame only
+
+        // Same rule as the month view: the focus stop follows the shown year or decade.
+        if ( view_mode == 1 && focus_y != view_y )
+            focus_y = view_y;
+        if ( view_mode == 2 && ( focus_y < decade_start - 1 || focus_y > decade_start + 10 ) )
+            focus_y = ImClamp( focus_y, decade_start, decade_start + 9 );
 
         for ( int row = 0; row < 3; ++row )
         {
@@ -6989,7 +9273,7 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
                 bool is_today_cell = false;
                 bool out_of_range  = false;
                 char buf2[ 16 ];
-                if ( view_mode == 1 )
+                if ( grid_mode == 1 )
                 {
                     cell_val        = idx + 1;
                     is_sel          = ( view_y == date->Year && cell_val == date->Month );
@@ -7013,28 +9297,29 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
                 }
                 else
                 {
-                    const int decade_start = ( view_y / 10 ) * 10;
-                    cell_val               = decade_start - 1 + idx;
-                    other_range            = ( cell_val < decade_start || cell_val > decade_start + 9 );
-                    is_sel                 = ( cell_val == date->Year );
-                    is_today_cell          = ( cell_val == today_y );
-                    out_of_range           = !YearOverlapsRange( cell_val, min_date, max_date );
+                    cell_val      = decade_start - 1 + idx;
+                    other_range   = ( cell_val < decade_start || cell_val > decade_start + 9 );
+                    is_sel        = ( cell_val == date->Year );
+                    is_today_cell = ( cell_val == today_y );
+                    out_of_range  = !YearOverlapsRange( cell_val, min_date, max_date );
                     ImFormatString( buf2, sizeof( buf2 ), "%d", cell_val );
                 }
 
                 const ImVec2 cp( grid_origin.x + col * cell_w, grid_origin.y + row * cell_h );
                 const ImRect cbb( cp, ImVec2( cp.x + cell_w, cp.y + cell_h ) );
 
+                const bool is_focus = ( grid_mode == 1 ) ? ( cell_val == focus_m ) : ( cell_val == focus_y );
                 ImGui::PushID( idx );
-                const ImGuiID cell_id = w->GetID( view_mode == 1 ? "##m" : "##y" );
+                const ImGuiID cell_id = is_focus ? grid_id : w->GetID( grid_mode == 1 ? "##m" : "##y" );
                 ImGui::PopID();
 
                 ImGui::ItemSize( cbb );
-                if ( !ImGui::ItemAdd( cbb, cell_id ) )
+                if ( !ImGui::ItemAdd( cbb, cell_id, NULL, is_focus ? ImGuiItemFlags_None : ImGuiItemFlags_NoNav ) )
                     continue;
 
                 bool chov = false, chld = false;
-                const bool cpr = !out_of_range && ImGui::ButtonBehavior( cbb, cell_id, &chov, &chld );
+                const bool cpr = !out_of_range && ImGui::ButtonBehavior( cbb, cell_id, &chov, &chld, is_focus ? ImGuiButtonFlags_None : ImGuiButtonFlags_NoNavFocus );
+                ReportItemInfo( cell_id, buf2, CheckedFlags( is_sel ) );
 
                 ImU32 fill_target;
                 if ( out_of_range )
@@ -7071,19 +9356,28 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
                 tg2.PushStyleColor( ImGuiCol_Text, cell_text_col );
                 const ImRect text_clip( ImVec2( cbb.Min.x + cell_inset, cbb.Min.y ), ImVec2( cbb.Max.x - cell_inset, cbb.Max.y ) );
                 ImGui::RenderTextClipped( text_clip.Min, text_clip.Max, buf2, NULL, NULL, ImVec2( 0.5f, 0.5f ), &text_clip );
+                if ( is_focus )
+                    RenderNavFocusRing( grid_id, ImRect( cell_min, cell_max ), r2 );
 
+                // Enter/Space or a click drills down; focus goes to the same day in the chosen month or year.
                 if ( cpr )
                 {
-                    if ( view_mode == 1 )
+                    if ( grid_mode == 1 )
                     {
                         view_m    = cell_val;
                         view_mode = 0;
+                        focus_y   = view_y;
+                        focus_m   = cell_val;
                     }
                     else
                     {
                         view_y    = cell_val;
                         view_mode = 1;
+                        focus_y   = cell_val;
                     }
+                    focus_d = ImMin( focus_d, DaysInMonth( focus_y, focus_m ) );
+                    if ( !is_focus )
+                        ImGui::SetFocusID( grid_id, w );
                 }
             }
         }
@@ -7092,6 +9386,9 @@ bool ImFluent::CalendarView( const char * id, ImFluentDate * date, const ImFluen
     st->SetInt( viewy_key, view_y );
     st->SetInt( viewm_key, view_m );
     st->SetInt( mode_key, view_mode );
+    st->SetInt( focus_y_key, focus_y );
+    st->SetInt( focus_m_key, focus_m );
+    st->SetInt( focus_d_key, focus_d );
 
     sg.Restore();
     ImGui::PopID();
@@ -7125,7 +9422,8 @@ bool ImFluent::CalendarDatePicker( const char * label, ImFluentDate * date, cons
 
     const ImGuiID popup_id = GetWidgetPopupId( id, "##fl_cdp_popup" );
 
-    const bool popup_open = PickerTogglePopup( popup_id, bb, id, disabled );
+    const bool popup_open = PickerTogglePopup( popup_id, bb, id, disabled, false );
+    ReportItemInfo( id, label, OpenedFlags( popup_open ) );
 
     ImDrawList * dl = w->DrawList;
     RenderPickerTriggerFrame( dl, bb, r, hovered, held, popup_open, disabled, id );
@@ -7204,4 +9502,292 @@ bool ImFluent::CalendarDatePicker( const char * label, ImFluentDate * date, cons
 
     RenderAndConsumePendingError( bb );
     return changed;
+}
+
+// [SECTION] PersonPicture / Image
+
+// Initials of a display name: the first letter of the first and of the last word ("Ada Lovelace" -> "AL").
+static void PersonInitials( const char * name, char * out, int out_size )
+{
+    out[ 0 ] = 0;
+    if ( !name )
+        return;
+    const char * first = NULL;
+    const char * last  = NULL;
+    for ( const char * p = name; *p; ++p )
+        if ( *p != ' ' && ( p == name || p[ -1 ] == ' ' ) )
+        {
+            if ( !first )
+                first = p;
+            last = p;
+        }
+    int n = 0;
+    for ( const char * src : { first, last != first ? last : NULL } )
+    {
+        if ( !src )
+            continue;
+        unsigned int c   = 0;
+        const int length = ImTextCharFromUtf8( &c, src, NULL );
+        if ( n + length >= out_size )
+            break;
+        if ( c < 128 )
+            out[ n++ ] = ( char )ImToUpper( ( char )c );
+        else
+            for ( int i = 0; i < length; ++i )
+                out[ n++ ] = src[ i ];
+    }
+    out[ n ] = 0;
+}
+
+static bool HasTexture( ImTextureRef texture )
+{
+    return texture._TexData != NULL || texture._TexID != ImTextureID_Invalid;
+}
+
+void ImFluent::PersonPicture( const char * display_name, float size, int badge_number, ImTextureRef texture, const char * initials )
+{
+    ImGuiWindow * w = ImGui::GetCurrentWindow();
+    if ( w->SkipItems )
+        return;
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const float D               = size > 0.f ? size : FluentDpx( 100.f );
+    const ImVec2 pos            = w->DC.CursorPos;
+    const ImRect bb( pos, ImVec2( pos.x + D, pos.y + D ) );
+    const ImGuiID id = w->GetID( display_name && *display_name ? display_name : "##person" );
+    ImGui::ItemSize( bb );
+    if ( !ImGui::ItemAdd( bb, id, NULL, ImGuiItemFlags_NoNav ) )
+        return;
+    ReportItemInfo( id, display_name ? display_name : "PersonPicture" );
+
+    ImDrawList * dl = w->DrawList;
+    const ImVec2 c( pos.x + D * 0.5f, pos.y + D * 0.5f );
+    if ( HasTexture( texture ) )
+        dl->AddImageRounded( texture, bb.Min, bb.Max, ImVec2( 0, 0 ), ImVec2( 1, 1 ), IM_COL32_WHITE, D * 0.5f );
+    else
+    {
+        dl->AddCircleFilled( c, D * 0.5f, ImFluent::GetColorU32( ImFluentCol_ControlAltFillQuarternary ), 48 );
+        char buf[ 16 ];
+        if ( initials && *initials )
+            ImStrncpy( buf, initials, sizeof( buf ) );
+        else
+            PersonInitials( display_name, buf, sizeof( buf ) );
+        // WinUI: initials at about 40% of the picture size; the person glyph when there is no name.
+        const char * text = buf[ 0 ] ? buf : ImFluentIcon_Contact;
+        ImFluent::RenderCenteredText( dl, c, D * 0.4f, ImFluent::GetColorU32( ImFluentCol_TextPrimary ), text );
+    }
+
+    if ( badge_number > 0 )
+    {
+        const float bd = ImMax( FluentDpx( style.BadgeHeight ), D * 0.25f );
+        const ImVec2 bc( bb.Max.x - bd * 0.5f, bb.Min.y + bd * 0.5f );
+        char num[ 8 ];
+        ImFormatString( num, sizeof( num ), badge_number > 99 ? "99+" : "%d", badge_number );
+        dl->AddCircleFilled( bc, bd * 0.5f + FluentDpx( style.StrokeMedium ), ImFluent::GetColorU32( ImFluentCol_SolidBgBase ), 32 );
+        dl->AddCircleFilled( bc, bd * 0.5f, ImFluent::GetColorU32( ImFluentCol_AccentFillDefault ), 32 );
+        ImFluent::RenderCenteredText( dl, bc, bd * 0.6f, ImFluent::GetColorU32( ImFluentCol_TextOnAccentPrimary ), num );
+    }
+}
+
+void ImFluent::Image( ImTextureRef texture, const ImVec2 & size, float corner_radius, const ImVec2 & uv0, const ImVec2 & uv1 )
+{
+    ImGuiWindow * w = ImGui::GetCurrentWindow();
+    if ( w->SkipItems )
+        return;
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const ImVec2 pos            = w->DC.CursorPos;
+    const ImRect bb( pos, ImVec2( pos.x + size.x, pos.y + size.y ) );
+    ImGui::ItemSize( bb );
+    if ( !ImGui::ItemAdd( bb, 0 ) )
+        return;
+    const float r = corner_radius >= 0.f ? corner_radius : FluentDpx( style.OverlayCornerRadius );
+    if ( HasTexture( texture ) )
+        w->DrawList->AddImageRounded( texture, bb.Min, bb.Max, uv0, uv1, IM_COL32_WHITE, r );
+    else
+        w->DrawList->AddRectFilled( bb.Min, bb.Max, ImFluent::GetColorU32( ImFluentCol_ControlAltFillQuarternary ), r );
+}
+
+// [SECTION] Border / ScrollViewer
+
+bool ImFluent::BeginBorder( const char * id, const ImVec2 & size, ImFluentCol background, ImFluentCol stroke, float thickness, float corner_radius, const ImVec2 & padding )
+{
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const ImVec2 pad            = ImVec2( padding.x >= 0.f ? padding.x : FluentDpx( style.SpacingLarge ), padding.y >= 0.f ? padding.y : FluentDpx( style.SpacingLarge ) );
+    ImGui::PushStyleColor( ImGuiCol_ChildBg, ImFluent::GetColorU32( background ) );
+    ImGui::PushStyleColor( ImGuiCol_Border, ImFluent::GetColorU32( stroke ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_ChildRounding, corner_radius >= 0.f ? corner_radius : FluentDpx( style.ControlCornerRadius ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_ChildBorderSize, thickness );
+    ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, pad );
+    ImGuiChildFlags flags = ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened;
+    if ( thickness > 0.f )
+        flags |= ImGuiChildFlags_Borders;
+    if ( size.x == 0.f )
+        flags |= ImGuiChildFlags_AutoResizeX;
+    if ( size.y == 0.f )
+        flags |= ImGuiChildFlags_AutoResizeY;
+    const bool visible = ImGui::BeginChild( id, size, flags, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse );
+    ImGui::PopStyleVar( 3 );
+    ImGui::PopStyleColor( 2 );
+    return visible;
+}
+
+void ImFluent::EndBorder()
+{
+    ImGui::EndChild();
+}
+
+bool ImFluent::BeginScrollViewer( const char * id, const ImVec2 & size, bool horizontal )
+{
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    // Fluent scroll bars: a thin rounded thumb on a clear track.
+    ImGui::PushStyleColor( ImGuiCol_ScrollbarBg, IM_COL32( 0, 0, 0, 0 ) );
+    ImGui::PushStyleColor( ImGuiCol_ScrollbarGrab, ImFluent::GetColorU32( ImFluentCol_ControlStrongFillDefault ) );
+    ImGui::PushStyleColor( ImGuiCol_ScrollbarGrabHovered, ImFluent::GetColorU32( ImFluentCol_TextSecondary ) );
+    ImGui::PushStyleColor( ImGuiCol_ScrollbarGrabActive, ImFluent::GetColorU32( ImFluentCol_TextPrimary ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_ScrollbarSize, FluentDpx( style.SpacingMedium ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_ScrollbarRounding, FluentDpx( style.SpacingMedium ) );
+    return ImGui::BeginChild( id, size, ImGuiChildFlags_NavFlattened, horizontal ? ImGuiWindowFlags_HorizontalScrollbar : ImGuiWindowFlags_None );
+}
+
+void ImFluent::EndScrollViewer()
+{
+    ImGui::EndChild();
+    ImGui::PopStyleVar( 2 );
+    ImGui::PopStyleColor( 4 );
+}
+
+// [SECTION] FlipView / Pivot
+
+// WinUI FlipView: one tab stop, Left/Right without wrap; previous/next buttons show on hover or focus and are not tab stops.
+bool ImFluent::BeginFlipView( const char * id, int * current_item, int items_count, const ImVec2 & size )
+{
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    ImGui::PushID( id );
+    g_Ctx.FlipViewStack.push_back( { ImGui::GetID( "##flip" ), id, current_item, items_count } );
+    ImGui::PushStyleColor( ImGuiCol_ChildBg, ImFluent::GetColorU32( ImFluentCol_CardBgDefault ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_ChildRounding, FluentDpx( style.OverlayCornerRadius ) );
+    ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( 0.f, 0.f ) );
+    const bool visible = ImGui::BeginChild( "##flip-content", size, ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse );
+    ImGui::PopStyleVar( 2 );
+    ImGui::PopStyleColor();
+    return visible;
+}
+
+static bool FlipViewButton( const char * str_id, const char * name, const ImRect & bb, const char * glyph )
+{
+    ImGuiWindow * w             = ImGui::GetCurrentWindow();
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const ImGuiID id            = w->GetID( str_id );
+    if ( !ImGui::ItemAdd( bb, id, NULL, ImGuiItemFlags_NoNav | ( g_Ctx.Actions.RepeatStepButtons ? ImGuiItemFlags_ButtonRepeat : 0 ) ) )
+        return false;
+    bool hov = false, held = false;
+    const bool pressed = ImGui::ButtonBehavior( bb, id, &hov, &held );
+    ImFluent::ReportItemInfo( id, name );
+    const float r   = ImFluent::FluentDpx( style.ControlCornerRadius );
+    ImDrawList * dl = w->DrawList;
+    dl->AddRectFilled( bb.Min, bb.Max, ImFluent::AnimateColorU32( id, ImFluent::ResolveControlFillState( false, held, hov ) ), r );
+    ImFluent::StrokeRect( dl, bb.Min, bb.Max, ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault ), r );
+    ImFluent::RenderCenteredText( dl, bb.GetCenter(), ImGui::GetFontSize() * 0.7f, ImFluent::GetColorU32( ImFluentCol_TextSecondary ), glyph );
+    return pressed;
+}
+
+void ImFluent::EndFlipView()
+{
+    IM_ASSERT( !g_Ctx.FlipViewStack.empty() && "EndFlipView() without BeginFlipView()" );
+    const ImFluentContext::FlipViewState st = g_Ctx.FlipViewStack.back();
+    g_Ctx.FlipViewStack.pop_back();
+    ImGuiContext & g            = *GImGui;
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    int cur                     = st.Current ? ImClamp( *st.Current, 0, ImMax( 0, st.Count - 1 ) ) : 0;
+
+    // Overlay buttons, drawn inside the child so they sit above the item content.
+    ImGuiWindow * cw  = ImGui::GetCurrentWindow();
+    const ImRect area = cw->Rect();
+    const bool show   = st.Count > 1 && ( ImGui::IsWindowHovered( ImGuiHoveredFlags_ChildWindows ) || g.NavId == st.Id );
+    if ( show )
+    {
+        const float bw  = FluentDpx( 20.f );
+        const float bh  = FluentDpx( 36.f );
+        const float pad = FluentDpx( style.SpacingXSmall );
+        const float cy  = ( area.Min.y + area.Max.y ) * 0.5f;
+        if ( cur > 0 && FlipViewButton( "##flip-prev", "Previous", ImRect( area.Min.x + pad, cy - bh * 0.5f, area.Min.x + pad + bw, cy + bh * 0.5f ), ImFluentIcon_ChevronLeft ) )
+            --cur;
+        if ( cur < st.Count - 1 && FlipViewButton( "##flip-next", "Next", ImRect( area.Max.x - pad - bw, cy - bh * 0.5f, area.Max.x - pad, cy + bh * 0.5f ), ImFluentIcon_ChevronRight ) )
+            ++cur;
+    }
+    ImGui::EndChild();
+
+    const ImRect view( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+    if ( ImGui::ItemAdd( view, st.Id ) )
+    {
+        ReportItemInfo( st.Id, st.Label );
+        if ( g.NavId == st.Id )
+        {
+            if ( ConsumeNavArrow( st.Id, ImGuiDir_Left ) && cur > 0 )
+                --cur;
+            if ( ConsumeNavArrow( st.Id, ImGuiDir_Right ) && cur < st.Count - 1 )
+                ++cur;
+        }
+        RenderNavFocusRing( st.Id, view, FluentDpx( style.OverlayCornerRadius ) );
+    }
+    if ( st.Current )
+        *st.Current = cur;
+    ImGui::PopID();
+}
+
+// WinUI Pivot: an accent pipe under the selected header; the headers are one tab stop and Left/Right wrap.
+bool ImFluent::BeginPivot( const char * id )
+{
+    ImGuiWindow * w = ImGui::GetCurrentWindow();
+    if ( w->SkipItems )
+        return false;
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    ImGui::PushID( id );
+    ImGui::BeginGroup();
+    ImGui::PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( FluentDpx( style.SpacingSmall ), 0.f ) );
+    ImFluent::PushFont( ImFluentTextStyle_Subtitle );
+    BeginTabGroup( ImGui::GetID( "##pivot-group" ), ImFluentTabGroupFlags_Horizontal | ImFluentTabGroupFlags_Wrap | ImFluentTabGroupFlags_SelectionFollowsFocus );
+    return true;
+}
+
+bool ImFluent::PivotItem( const char * header, bool selected )
+{
+    ImGuiWindow * w = ImGui::GetCurrentWindow();
+    if ( w->SkipItems )
+        return false;
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const ImGuiID id            = w->GetID( header );
+    const float pad_x           = FluentDpx( style.SpacingMedium );
+    const float pad_y           = FluentDpx( style.SpacingSmall );
+    const float pipe_h          = FluentDpx( 3.f );
+    const ImVec2 ts             = ImGui::CalcTextSize( header, NULL, true );
+    const ImVec2 pos            = w->DC.CursorPos;
+    const ImRect bb( pos, ImVec2( pos.x + ts.x + pad_x * 2.f, pos.y + ts.y + pad_y * 2.f + pipe_h ) );
+    ImGui::ItemSize( bb );
+    if ( !ImGui::ItemAdd( bb, id, NULL, TabGroupItemFlags( id, selected ) ) )
+    {
+        ImGui::SameLine();
+        return false;
+    }
+    bool hovered = false, held = false;
+    const bool clicked = ImGui::ButtonBehavior( bb, id, &hovered, &held );
+    const bool pressed = TabGroupItemNav( id ) || clicked;
+    ReportItemInfo( id, header, CheckedFlags( selected ) );
+    ImDrawList * dl          = w->DrawList;
+    const ImFluentCol text_c = selected ? ImFluentCol_TextPrimary : held ? ImFluentCol_TextTertiary : hovered ? ImFluentCol_TextPrimary : ImFluentCol_TextSecondary;
+    dl->AddText( ImVec2( bb.Min.x + pad_x, bb.Min.y + pad_y ), AnimateColorU32( id, ImFluent::GetColorU32( text_c ) ), header, ImGui::FindRenderedTextEnd( header ) );
+    if ( selected )
+        dl->AddRectFilled( ImVec2( bb.Min.x + pad_x, bb.Max.y - pipe_h ), ImVec2( bb.Max.x - pad_x, bb.Max.y ), ImFluent::GetColorU32( ImFluentCol_AccentFillDefault ), pipe_h * 0.5f );
+    RenderNavFocusRing( id, bb, FluentDpx( style.ControlCornerRadius ) );
+    ImGui::SameLine();
+    return pressed;
+}
+
+void ImFluent::EndPivot()
+{
+    EndTabGroup();
+    ImFluent::PopFont();
+    ImGui::PopStyleVar();
+    ImGui::EndGroup();
+    ImGui::PopID();
+    ImGui::NewLine();
 }

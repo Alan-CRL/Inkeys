@@ -867,6 +867,11 @@ namespace
 				const auto containerBase = ImGui::GetStyle(); const int containerVars = GImGui->StyleVarStack.Size, containerColors = GImGui->ColorStack.Size;
 				auto checkContainer = [&](bool card) {
 					const auto& fluent = ImFluent::GetStyle(); const auto& current = ImGui::GetStyle();
+					// ImGui 的无边框 child 默认忽略 padding，必须检查实际窗口而不仅是 style 栈。
+					if (verify && card) checks.Expect(
+						Near(ImGui::GetCurrentWindow()->WindowPadding.x, ImFluent::FluentDpx(fluent.CardPadding))
+						&& Near(ImGui::GetCurrentWindow()->WindowPadding.y, ImFluent::FluentDpx(fluent.CardPadding)),
+						"borderless vendor Card retains actual child window padding for content geometry");
 					if (verify) checks.Expect(Near(current.WindowPadding.x, ImFluent::FluentDpx(card ? fluent.CardPadding : fluent.SpacingXLarge))
 						&& Near(current.WindowPadding.y, ImFluent::FluentDpx(card ? fluent.CardPadding : fluent.SpacingLarge))
 						&& ImGui::GetColorU32(ImGuiCol_ChildBg) == ImFluent::GetColorU32(ImFluentCol_CardBgDefault)
@@ -1011,6 +1016,34 @@ namespace
 
 	void CheckThemeSwitching(Checks& checks, ImFont* regular, float scale)
 	{
+		// 直接测试上游换肤入口，避免项目 ApplyPalette 再覆盖尺寸而掩盖回归。
+		auto& fluent = ImFluent::GetStyle();
+		const auto savedFluent = fluent;
+		const auto savedImGui = ImGui::GetStyle();
+		const auto savedPreset = ImFluent::GetThemePreset();
+		fluent.ControlHeight = 37.0F;
+		fluent.CardPadding = 19.0F;
+		fluent.ControlContentPadding = ImVec2(13.0F, 7.0F);
+		fluent.SpacingLarge = 17.0F;
+		const char* customText = "Custom empty result";
+		fluent.LocalizationTable[ImFluentLocKey_AutoSuggestNoSuggestions] = customText;
+		ImFluent::SetThemePreset(ImFluentThemePreset_Light);
+		const auto lightText = ImFluent::GetColorU32(ImFluentCol_TextPrimary);
+		for (const auto preset : { ImFluentThemePreset_Dark, ImFluentThemePreset_Light })
+		{
+			ImFluent::SetThemePreset(preset);
+			checks.Expect(Near(fluent.ControlHeight, 37) && Near(fluent.CardPadding, 19)
+				&& Near(fluent.ControlContentPadding.x, 13) && Near(fluent.ControlContentPadding.y, 7)
+				&& Near(fluent.SpacingLarge, 17)
+				&& fluent.LocalizationTable[ImFluentLocKey_AutoSuggestNoSuggestions] == customText,
+				"vendor theme switches preserve custom control metrics and localization pointers");
+			checks.Expect((ImFluent::GetColorU32(ImFluentCol_TextPrimary) == lightText)
+				== (preset == ImFluentThemePreset_Light),
+				"vendor theme switches still replace light and dark colors");
+		}
+		ImFluent::SetThemePreset(savedPreset);
+		fluent = savedFluent;
+		ImGui::GetStyle() = savedImGui;
 		const auto& light = Design::PaletteForTheme(false);
 		const auto& dark = Design::PaletteForTheme(true);
 		checks.Expect(Brightness(dark.appBase) < Brightness(light.appBase)
@@ -1084,6 +1117,30 @@ namespace
 					ImGui::ColorConvertFloat4ToU32(ImFluent::GetStyle().Colors[ImFluentCol_ControlFillDefault]),
 					true).Width() > 0.0F,
 				"actual button fill and text follow the selected ImFluent theme");
+			// 用互不相同的强对比边框色捕捉新增的上边高光，避免透明背景把遗漏的描边藏住。
+			const ImU32 borderColors[]{ IM_COL32(251, 17, 199, 255),
+				IM_COL32(17, 251, 199, 255), IM_COL32(199, 251, 17, 255) };
+			for (bool captionSelected : { false, true })
+			{
+				ImGui::PushID(captionSelected ? 1 : 0);
+				ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, borderColors[0]);
+				ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, borderColors[1]);
+				ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, borderColors[2]);
+				first = draw->VtxBuffer.Size;
+				Design::CaptionNavigationButton("borderless-caption", "Caption", captionSelected,
+					ImVec2(180 * scale, 32 * scale));
+				ImFluent::PopStyleColor(3);
+				int borderVertices = 0;
+				for (int index = first; index < draw->VtxBuffer.Size; ++index)
+					for (const auto border : borderColors)
+						if ((draw->VtxBuffer[index].col & IM_COL32_A_MASK) != 0
+							&& (draw->VtxBuffer[index].col & ~IM_COL32_A_MASK) == (border & ~IM_COL32_A_MASK))
+							++borderVertices;
+				checks.Expect(borderVertices == 0 && VertexBounds(draw, first,
+					captionSelected ? palette.textPrimary : palette.textSecondary, true).Width() > 0,
+					"light/dark caption navigation buttons keep visible text and suppress all top/bottom border strips");
+				ImGui::PopID();
+			}
 			char text[]{ "Agpqy 中文" };
 			ImGui::SetNextItemWidth(240.0F * scale);
 			first = draw->VtxBuffer.Size;
@@ -1117,6 +1174,140 @@ namespace
 			ImGui::EndChild();
 			ImGui::PopID();
 		}
+		Design::ApplyPalette(false);
+	}
+
+	void CheckComboBoxInteraction(Checks& checks, ImFont* regular, float scale)
+	{
+		auto& io = ImGui::GetIO();
+		const auto previousFlags = io.ConfigFlags;
+		const bool previousTrickle = io.ConfigInputTrickleEventQueue;
+		const auto previousSize = io.DisplaySize;
+		const auto savedActions = ImFluent::GetActions();
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		io.ConfigInputTrickleEventQueue = false;
+		io.DisplaySize = ImVec2(640 * scale, 420 * scale);
+		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, Design::BodyText.size);
+		Design::ApplyPalette(false);
+		const char* options[]{ "First", "Second", "Third", "Fourth" };
+		std::array<int, 2> selected{ 2, 0 }, changes{};
+		std::array<ImRect, 2> bounds{};
+		std::array<ImGuiID, 2> ids{}, popupIds{};
+		bool disabled = false;
+		ImGuiWindow* host = nullptr;
+		const ImVec2 outside(-100, -100);
+		struct Frame { std::array<bool, 2> open{}; ImGuiWindow* popup = nullptr; };
+		auto draw = [&](ImVec2 mouse, bool down) {
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+			ImGui::NewFrame();
+			ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##combo-upgrade-input", nullptr, ImGuiWindowFlags_NoDecoration
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
+			host = ImGui::GetCurrentWindow();
+			for (int index = 0; index < 2; ++index)
+			{
+				const char* label = index == 0 ? "##combo-upper" : "##combo-under-popup";
+				ImGui::SetCursorScreenPos(ImVec2(30 * scale, (30 + index * 50) * scale));
+				ids[index] = host->GetID(label);
+				popupIds[index] = ImHashStr("##fl_cb_popup", 0, ids[index]);
+				if (disabled && index == 0) ImGui::BeginDisabled();
+				ImGui::SetNextItemWidth(240 * scale);
+				changes[index] += Design::ComboBox(label, &selected[index], options, 4) ? 1 : 0;
+				if (disabled && index == 0) ImGui::EndDisabled();
+				// Popup 内的 Selectable 会改写 LastItemData，只在列表关闭时记录主体真实 item 范围。
+				if (!ImGui::IsPopupOpen(popupIds[index], ImGuiPopupFlags_None))
+					bounds[index] = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+			}
+			Frame result;
+			for (int index = 0; index < 2; ++index)
+				result.open[index] = ImGui::IsPopupOpen(popupIds[index], ImGuiPopupFlags_None);
+			for (const auto& popup : GImGui->OpenPopupStack)
+				if (popup.PopupId == popupIds[0] && popup.Window && popup.Window->Active)
+					result.popup = popup.Window;
+			ImGui::End(); ImGui::Render();
+			return result;
+		};
+		auto idle = [&](int count = 3) {
+			Frame result; for (int index = 0; index < count; ++index) result = draw(outside, false);
+			return result;
+		};
+		auto click = [&](ImVec2 point) {
+			draw(point, false); draw(point, true); return draw(point, false);
+		};
+		auto chord = [&](ImGuiKeyChord value) {
+			const auto key = static_cast<ImGuiKey>(value & ~ImGuiMod_Mask_);
+			for (const auto mod : { ImGuiMod_Ctrl, ImGuiMod_Shift, ImGuiMod_Alt, ImGuiMod_Super })
+				if (value & mod) io.AddKeyEvent(mod, true);
+			io.AddKeyEvent(key, true); draw(outside, false);
+			io.AddKeyEvent(key, false);
+			for (const auto mod : { ImGuiMod_Ctrl, ImGuiMod_Shift, ImGuiMod_Alt, ImGuiMod_Super })
+				if (value & mod) io.AddKeyEvent(mod, false);
+			draw(outside, false); return idle(2);
+		};
+		auto focus = [&] {
+			ImGui::FocusWindow(host);
+			ImRect relative = bounds[0]; relative.Translate(ImVec2(-host->Pos.x, -host->Pos.y));
+			ImGui::SetNavID(ids[0], ImGuiNavLayer_Main, host->NavRootFocusScopeId, relative);
+			GImGui->NavCursorVisible = true;
+		};
+		idle();
+		auto frame = click(bounds[0].GetCenter()); frame = idle();
+		checks.Expect(frame.open[0] && !frame.open[1] && frame.popup,
+			"real combo mouse click opens only its own popup");
+		if (frame.popup)
+		{
+			const auto rowMin = frame.popup->DC.CursorStartPos;
+			const float top = (std::max)(rowMin.y, bounds[1].Min.y);
+			const float bottom = (std::min)(rowMin.y + ImFluent::FluentDpx(ImFluent::GetStyle().ControlHeight), bounds[1].Max.y);
+			checks.Expect(bottom > top && bounds[1].Contains(ImVec2(rowMin.x + 30 * scale, (top + bottom) * 0.5F)),
+				"popup first selectable actually overlaps the second combo hit area");
+			frame = click(ImVec2(rowMin.x + 30 * scale, (top + bottom) * 0.5F));
+			checks.Expect(selected[0] == 0 && changes[0] == 1 && selected[1] == 0
+				&& changes[1] == 0 && !frame.open[0] && !frame.open[1],
+				"clicking an overlapping popup row selects once without opening the combo underneath");
+		}
+		if (!GImGui->OpenPopupStack.empty()) ImGui::ClosePopupToLevel(0, true);
+		idle(); focus();
+		frame = chord(ImFluent::GetActions().TogglePopup);
+		checks.Expect(frame.open[0], "F4 opens a keyboard-focused wrapped combo");
+		frame = chord(ImFluent::GetActions().LastItem);
+		checks.Expect(frame.open[0] && selected[0] == 0,
+			"End moves popup focus without prematurely changing the selected value");
+		frame = chord(ImGuiKey_Enter);
+		checks.Expect(!frame.open[0] && selected[0] == 3 && changes[0] == 2,
+			"Enter commits the End-focused last popup row exactly once");
+		focus(); frame = chord(ImFluent::GetActions().OpenPopup);
+		checks.Expect(frame.open[0], "Alt Down opens a keyboard-focused wrapped combo");
+		chord(ImFluent::GetActions().FirstItem); chord(ImGuiKey_DownArrow);
+		frame = chord(ImGuiKey_Enter);
+		checks.Expect(!frame.open[0] && selected[0] == 1 && changes[0] == 3,
+			"Home and native Down navigation followed by Enter commit the second popup row");
+		for (const auto close : { ImFluent::GetActions().TogglePopup, ImFluent::GetActions().ClosePopup })
+		{
+			focus(); frame = chord(ImFluent::GetActions().TogglePopup);
+			checks.Expect(frame.open[0], "keyboard close scenario starts with a real open popup");
+			frame = chord(close);
+			checks.Expect(!frame.open[0] && selected[0] == 1 && changes[0] == 3,
+				"F4 and Alt Up close the popup without committing another value");
+		}
+		// 改绑用真实按键事件证明封装读取上游 action 表，不能只测试默认 F4 常量。
+		ImFluent::GetActions().TogglePopup = ImGuiKey_F6;
+		focus(); frame = chord(ImGuiKey_F4);
+		checks.Expect(!frame.open[0], "rebound combo no longer responds to the old F4 binding");
+		frame = chord(ImGuiKey_F6);
+		checks.Expect(frame.open[0], "wrapped combo honors a customized upstream popup action");
+		frame = chord(ImGuiKey_F6);
+		checks.Expect(!frame.open[0], "customized popup action also closes its popup");
+		ImFluent::GetActions() = savedActions;
+		disabled = true; idle();
+		frame = click(bounds[0].GetCenter());
+		checks.Expect(!frame.open[0], "disabled wrapped combo rejects mouse opening");
+		focus(); frame = chord(ImFluent::GetActions().TogglePopup);
+		checks.Expect(!frame.open[0] && selected[0] == 1 && changes[0] == 3,
+			"disabled wrapped combo rejects keyboard opening and retains its value");
+		if (!GImGui->OpenPopupStack.empty()) ImGui::ClosePopupToLevel(0, true);
+		io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;
+		io.DisplaySize = previousSize;
 		Design::ApplyPalette(false);
 	}
 
@@ -3900,6 +4091,8 @@ int RunSettingDesignTests()
 		CheckThemeSwitching(checks, fonts[0], scale);
 		ImGui::End();
 		ImGui::Render();
+		CheckDrawData(checks);
+		CheckComboBoxInteraction(checks, fonts[0], scale);
 		CheckDrawData(checks);
 		CheckMultilineRowAnimations(checks, fonts, fontDirectory, scale);
 		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);

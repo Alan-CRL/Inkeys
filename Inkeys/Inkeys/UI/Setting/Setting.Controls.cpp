@@ -664,10 +664,12 @@ namespace Inkeys::UI::Setting::Design
 		ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, GetPalette().subtleHover);
 		ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, GetPalette().subtlePressed);
 		ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
+		// 上游增加顶部高光边，无边框封装需同时清除上下两条边。
+		ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, IM_COL32(0, 0, 0, 0));
 		ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
 		ImFluent::PushStyleColor(ImFluentCol_TextPrimary, selected ? TextPrimary : TextSecondary);
 		const bool pressed = ImFluent::Button(stableLabel.c_str(), size);
-		ImFluent::PopStyleColor(6);
+		ImFluent::PopStyleColor(7);
 		ImFluent::PopFont();
 		return pressed;
 	}
@@ -724,13 +726,61 @@ namespace Inkeys::UI::Setting::Design
 	namespace
 	{
 		using namespace ImFluent;
-	    static void RenderElevationBorder( ImDrawList * dl, const ImRect & bb, float rounding, ImU32 sides, ImU32 bottom, float bottom_thickness )
+		// 与上游保持相同的整像素描边和透明度合成，项目下拉框仍独立接入滚动。
+	    static float StrokeWidth()
 	    {
-	        dl->AddRect( bb.Min, bb.Max, sides, rounding, 0, 1.f );
-
-	        const float t = ( bottom_thickness > 0.f ) ? bottom_thickness : 1.f;
-	        dl->AddRectFilled( ImVec2( bb.Min.x + rounding, bb.Max.y - t ), ImVec2( bb.Max.x - rounding, bb.Max.y ), bottom );
+	        return ImMax( 1.f, IM_ROUND( FluentDpx( 1.f ) ) );
 	    }
+
+	    // A 1 dp outline inside [a, b] on whole pixels (AddRect centres a stroke half a pixel in, which blurs wider strokes).
+	    static void StrokeRect( ImDrawList * dl, const ImVec2 & a, const ImVec2 & b, ImU32 col, float rounding, ImDrawFlags flags = 0 )
+	    {
+	        const float t = StrokeWidth();
+	        const float h = t * 0.5f;
+	        dl->PathRect( ImVec2( a.x + h, a.y + h ), ImVec2( b.x - h, b.y - h ), ImMax( 0.f, rounding - h ), flags );
+	        dl->PathStroke( col, ImDrawFlags_Closed, t );
+	    }
+
+	    // Fill inside the 1 dp border (WinUI BackgroundSizing="InnerBorderEdge"), so the border blends with what is behind the control.
+	    static void FillInsideBorder( ImDrawList * dl, const ImVec2 & a, const ImVec2 & b, ImU32 col, float rounding, ImDrawFlags flags = 0 )
+	    {
+	        const float t = StrokeWidth();
+	        dl->AddRectFilled( ImVec2( a.x + t, a.y + t ), ImVec2( b.x - t, b.y - t ), col, ImMax( 0.f, rounding - t ), flags );
+	    }
+
+	    // The colour that, drawn over `under`, composites to `want` on any background (clamped where no colour can).
+	    static ImU32 OverlayToComposite( ImU32 under, ImU32 want )
+	    {
+	        const float a_under = ( float )( ( under >> IM_COL32_A_SHIFT ) & 0xFF ) / 255.f;
+	        const float a_want  = ( float )( ( want >> IM_COL32_A_SHIFT ) & 0xFF ) / 255.f;
+	        const float a       = a_under < 1.f ? ImMax( 0.f, ( a_want - a_under ) / ( 1.f - a_under ) ) : 0.f;
+	        if ( a <= 0.f )
+	            return 0;
+	        ImU32 out = ( ImU32 )( a * 255.f + 0.5f ) << IM_COL32_A_SHIFT;
+	        for ( int shift : { IM_COL32_R_SHIFT, IM_COL32_G_SHIFT, IM_COL32_B_SHIFT } )
+	        {
+	            const float u = ( float )( ( under >> shift ) & 0xFF );
+	            const float w = ( float )( ( want >> shift ) & 0xFF );
+	            out |= ( ImU32 )ImClamp( ( w * a_want - u * a_under * ( 1.f - a ) ) / a + 0.5f, 0.f, 255.f ) << shift;
+	        }
+	        return out;
+	    }
+
+	    // WinUI elevation border: the side colour with a 1 dp edge of another colour at the bottom (light theme, accent controls)
+	    // or at the top (dark theme); the edge strip goes over the side stroke, in the colour that composites to the edge colour.
+	    static void RenderElevationBorder( ImDrawList * dl, const ImRect & bb, float rounding, ImU32 sides, ImU32 top, ImU32 bottom, float edge_thickness )
+	    {
+	        StrokeRect( dl, bb.Min, bb.Max, sides, rounding );
+
+	        const float t = ImMax( StrokeWidth(), IM_ROUND( FluentDpx( edge_thickness > 0.f ? edge_thickness : 1.f ) ) );
+	        if ( top != sides )
+	            if ( const ImU32 strip = OverlayToComposite( sides, top ) )
+	                dl->AddRectFilled( ImVec2( bb.Min.x + rounding, bb.Min.y ), ImVec2( bb.Max.x - rounding, bb.Min.y + t ), strip );
+	        if ( bottom != sides )
+	            if ( const ImU32 strip = OverlayToComposite( sides, bottom ) )
+	                dl->AddRectFilled( ImVec2( bb.Min.x + rounding, bb.Max.y - t ), ImVec2( bb.Max.x - rounding, bb.Max.y ), strip );
+	    }
+
 
 	    static void PushOverlayWindowStyle( float padding_x, float padding_y )
 	    {
@@ -873,6 +923,51 @@ namespace Inkeys::UI::Setting::Design
 	        RenderChevronLerp( dl, cx, cy, L, t, col, th );
 	    }
 
+		// 快捷键沿用 ImFluent 的可重绑定动作，并消费方向键，避免同时触发页面导航。
+	    static bool ConsumeNavArrow( ImGuiID id, ImGuiDir dir )
+	    {
+	        ImGuiContext & g = *GImGui;
+	        if ( g.NavId != id || g.NavMoveDir != dir || !g.NavMoveSubmitted )
+	            return false;
+	        ImGui::NavClearPreferredPosForAxis( ( dir == ImGuiDir_Left || dir == ImGuiDir_Right ) ? ImGuiAxis_X : ImGuiAxis_Y );
+	        ImGui::NavMoveRequestCancel();
+	        g.NavCursorVisible = true;
+	        return true;
+	    }
+
+	    // Chord press with exact modifiers, wherever focus is. A 0 chord (action turned off) is never pressed.
+	    static bool IsActionPressed( ImGuiKeyChord chord )
+	    {
+	        return chord != 0 && ImGui::IsKeyChordPressed( chord );
+	    }
+
+	    // Chord press (exact modifiers) whose key `owner_id` takes, so ImGui's navigation does not also use it (Home/End/PageUp/PageDown scroll).
+	    static bool IsChordPressedOwned( ImGuiKeyChord chord, ImGuiID owner_id, bool repeat = true )
+	    {
+	        if ( chord == 0 )
+	            return false;
+	        ImGui::SetKeyOwner( ( ImGuiKey )( chord & ~ImGuiMod_Mask_ ), owner_id );
+	        return ImGui::IsKeyChordPressed( chord, repeat ? ImGuiInputFlags_Repeat : ImGuiInputFlags_None, owner_id );
+	    }
+
+	    // Chord press for the nav-focused item: an arrow chord is taken from the nav move request, other keys are owned by the item.
+	    static bool IsFocusedItemChordPressed( ImGuiID id, ImGuiKeyChord chord, bool repeat = true )
+	    {
+	        ImGuiContext & g = *GImGui;
+	        if ( chord == 0 || g.NavId != id || g.ActiveId != 0 )
+	            return false;
+	        const ImGuiKey key = ( ImGuiKey )( chord & ~ImGuiMod_Mask_ );
+	        if ( key == ImGuiKey_LeftArrow || key == ImGuiKey_RightArrow || key == ImGuiKey_UpArrow || key == ImGuiKey_DownArrow )
+	        {
+	            if ( g.IO.KeyMods != ( chord & ImGuiMod_Mask_ ) )
+	                return false;
+	            const ImGuiDir dir = key == ImGuiKey_LeftArrow ? ImGuiDir_Left : key == ImGuiKey_RightArrow ? ImGuiDir_Right : key == ImGuiKey_UpArrow ? ImGuiDir_Up : ImGuiDir_Down;
+	            return ConsumeNavArrow( id, dir );
+	        }
+	        return IsChordPressedOwned( chord, id, repeat );
+	    }
+
+
 	    static bool IsItemFocused( ImGuiID id )
 	    {
 	        ImGuiContext & g = *ImGui::GetCurrentContext();
@@ -916,7 +1011,7 @@ namespace Inkeys::UI::Setting::Design
 	    const float h               = FluentDpx( style.ControlHeight );
 	    const float r               = FluentDpx( style.ControlCornerRadius );
 	    const float chev_w          = ( flags & ImGuiComboFlags_NoArrowButton ) ? 0.f : h;
-	    const char * preview        = ( current_item && *current_item >= 0 && *current_item < items_count ) ? items[ *current_item ] : "";
+	    const char * preview        = ( current_item && *current_item >= 0 && *current_item < items_count && items[ *current_item ] ) ? items[ *current_item ] : "";
 
 	    float full_w;
 	    if ( flags & ImGuiComboFlags_NoPreview )
@@ -944,9 +1039,16 @@ namespace Inkeys::UI::Setting::Design
 	    const ImGuiID popup_id = ImHashStr( "##fl_cb_popup", 0, id );
 	    const bool popup_open = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
 
-	    const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsMouseHoveringRect( bb.Min, bb.Max, false );
+	    // 不能仅按坐标命中：弹出层覆盖下方下拉框时，点击必须留在弹出层。
+	    const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left )
+	        && ImGui::IsMouseHoveringRect( bb.Min, bb.Max, false )
+	        && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem );
 	    const bool nav_activate = ( gctx.NavActivateId == id );
-	    const bool toggle       = ( click_in_bb || nav_activate ) && !disabled;
+	    const auto& actions = ImFluent::GetActions();
+	    const bool key_open = !popup_open && !disabled
+	        && ( IsFocusedItemChordPressed( id, actions.TogglePopup, false )
+	            || IsFocusedItemChordPressed( id, actions.OpenPopup, false ) );
+	    const bool toggle       = ( click_in_bb || nav_activate || key_open ) && !disabled;
 
 	    if ( toggle )
 	    {
@@ -972,14 +1074,15 @@ namespace Inkeys::UI::Setting::Design
 	    else
 	        fill_target = ImFluent::GetColorU32( ImFluentCol_ControlFillDefault );
 	    const ImU32 fill = AnimateColorU32( id, fill_target );
-	    dl->AddRectFilled( bb.Min, bb.Max, fill, r );
+	    FillInsideBorder( dl, bb.Min, bb.Max, fill, r );
 
 	    const ImU32 stroke     = ImFluent::GetColorU32( ImFluentCol_ControlStrokeDefault );
+	    const ImU32 stroke_top = ImFluent::GetColorU32( ImFluentCol_ElevationControlTop );
 	    const ImU32 stroke_bot = ImFluent::GetColorU32( ImFluentCol_ElevationControlBottom );
 	    if ( !held && !popup_open && !disabled )
-	        RenderElevationBorder( dl, bb, r, stroke, stroke_bot, 1.f );
+	        RenderElevationBorder( dl, bb, r, stroke, stroke_top, stroke_bot, 1.f );
 	    else
-	        dl->AddRect( bb.Min, bb.Max, stroke, r, 0, 1.f );
+	        StrokeRect( dl, bb.Min, bb.Max, stroke, r );
 
 	    const ImU32 text_col = ImFluent::GetColorU32( disabled ? ImFluentCol_TextDisabled : ImFluentCol_TextPrimary );
 	    if ( !( flags & ImGuiComboFlags_NoPreview ) && preview && *preview )
@@ -1016,12 +1119,20 @@ namespace Inkeys::UI::Setting::Design
 	    ScrollbarStyleScope scrollbar(popup_window);
 	    if ( ImGui::BeginPopupEx( popup_id, cb_wflags ) )
 	    {
-	        scrollbar.Finish(ImGui::GetCurrentWindow());
+	        auto* popup_host = ImGui::GetCurrentWindow();
+	        scrollbar.Finish(popup_host);
+	        int focus_only = -1;
+	        if ( gctx.NavWindow == popup_host && gctx.NavId != 0 )
+	        {
+	            if ( IsChordPressedOwned( actions.FirstItem, popup_id, false ) ) focus_only = 0;
+	            if ( IsChordPressedOwned( actions.LastItem, popup_id, false ) ) focus_only = items_count - 1;
+	        }
 	        const float row_advance = h + ImGui::GetStyle().ItemSpacing.y;
 	        ImGuiListClipper clipper;
 	        clipper.Begin( items_count, row_advance );
 	        if ( current_item && *current_item >= 0 && *current_item < items_count )
 	            clipper.IncludeItemByIndex( *current_item );
+	        if ( focus_only >= 0 ) clipper.IncludeItemByIndex( focus_only );
 	        while ( clipper.Step() )
 	        {
 	            for ( int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i )
@@ -1037,10 +1148,24 @@ namespace Inkeys::UI::Setting::Design
 	                    changed = true;
 	                    ImGui::CloseCurrentPopup();
 	                }
+	                const auto item_id = gctx.LastItemData.ID;
+	                if ( sel ) ImGui::SetItemDefaultFocus();
+	                if ( i == 0 ) ConsumeNavArrow( item_id, ImGuiDir_Up );
+	                if ( i == items_count - 1 ) ConsumeNavArrow( item_id, ImGuiDir_Down );
+	                if ( i == focus_only )
+	                {
+	                    ImGui::SetFocusID( item_id, popup_host );
+	                    ImGui::SetScrollHereY();
+	                    gctx.NavCursorVisible = true;
+	                }
 	                AllowContentDrag();
 	                ImGui::PopID();
 	            }
 	        }
+	        // 只关闭原本已展开的列表，避免本帧 F4 打开后又立即关闭。
+	        if ( popup_open && ( IsActionPressed( actions.TogglePopup )
+	            || IsActionPressed( actions.ClosePopup ) || ImGui::IsKeyPressed( ImGuiKey_Tab, false ) ) )
+	            ImGui::CloseCurrentPopup();
 	        ImGui::EndPopup();
 	    }
 	    }
@@ -1254,11 +1379,13 @@ namespace Inkeys::UI::Setting::Design
 		ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, GetPalette().rowHover);
 		ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, GetPalette().rowPressed);
 		ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
+		// 上游增加顶部高光边，无边框封装需同时清除上下两条边。
+		ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, IM_COL32(0, 0, 0, 0));
 		ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
 		ImGui::PushID(id);
 		const bool clicked = Button("##navigate", { width, (std::max)(1.0F, next.y - origin.y - Pixels(RowGap)) });
 		ImGui::PopID();
-		ImFluent::PopStyleColor(5);
+		ImFluent::PopStyleColor(6);
 		ImGui::SetCursorScreenPos(next);
 		return clicked;
 	}

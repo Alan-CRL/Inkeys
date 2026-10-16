@@ -212,9 +212,10 @@ namespace Inkeys::UI::Setting::Design
 			ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, GetPalette().subtlePressed);
 			ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
 			ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
+			ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, IM_COL32(0, 0, 0, 0));
 			ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
 			toggled = Button("##pane-toggle", { Pixels(sections.menu.Width()), Pixels(sections.menu.Height()) });
-			ImFluent::PopStyleColor(6);
+			ImFluent::PopStyleColor(7);
 			ImFluent::DrawIcon("\ue700", menuOrigin,
 				{ menuOrigin.x + Pixels(sections.menu.Width()), menuOrigin.y + Pixels(sections.menu.Height()) },
 				NavigationGlyphSize, TextPrimary);
@@ -299,9 +300,10 @@ namespace Inkeys::UI::Setting::Design
 					ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
 					ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
 					ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
+					ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, IM_COL32(0, 0, 0, 0));
 					ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
 					const bool arrowPressed = Button("##general-chevron", { Pixels(NavigationRowHeight), Pixels(NavigationRowHeight) });
-					ImFluent::PopStyleColor(4);
+					ImFluent::PopStyleColor(5);
 					state.chevronBounds = ItemBounds();
 					ImDrawList* dl = ImGui::GetWindowDrawList();
 					const int firstVertex = dl->VtxBuffer.Size;

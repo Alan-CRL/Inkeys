@@ -13,6 +13,52 @@ enum ImFluentThemePreset_
 };
 typedef int ImFluentThemePreset;
 
+// Window backdrop material (WinUI SystemBackdrop): the desktop wallpaper, blurred and tinted.
+enum ImFluentBackdrop_
+{
+    ImFluentBackdrop_None = 0,
+    ImFluentBackdrop_Mica,    // Main window background (WinUI MicaBackdrop)
+    ImFluentBackdrop_MicaAlt, // Stronger wallpaper colour, for tabbed title bars (MicaKind.BaseAlt)
+};
+typedef int ImFluentBackdrop;
+
+// The desktop wallpaper, from GetWallpaper.
+struct ImFluentWallpaper
+{
+    const unsigned char * Pixels = NULL; // RGBA8; valid until the next GetWallpaper call
+    int Width                    = 0;    // Any size (a hook may decode it downscaled)
+    int Height                   = 0;
+    ImVec2 UV0                   = ImVec2( 0.f, 0.f );       // Image part on the monitor: fill crops,
+    ImVec2 UV1                   = ImVec2( 1.f, 1.f );       // fit and center letterbox (outside 0..1)
+    bool Repeat                  = false;                    // Tiled wallpaper
+    ImU32 BackgroundColor        = IM_COL32( 0, 0, 0, 255 ); // Around a letterboxed image, or with no image
+    unsigned int Serial          = 0;                        // Changes when the wallpaper changes
+};
+
+// How the desktop places the wallpaper image (for ImFluent::PlaceWallpaper).
+enum ImFluentWallpaperFit_
+{
+    ImFluentWallpaperFit_Fill = 0, // Cover the monitor, crop the rest
+    ImFluentWallpaperFit_Fit,      // Whole image, letterboxed
+    ImFluentWallpaperFit_Stretch,
+    ImFluentWallpaperFit_Center, // 1:1, letterboxed or cropped
+    ImFluentWallpaperFit_Tile,
+    ImFluentWallpaperFit_Span, // Fill across all monitors
+};
+typedef int ImFluentWallpaperFit;
+
+// Platform hooks for backdrops, all optional; see backends/imfluent_backdrop_*.cpp.
+struct ImFluentBackdropHooks
+{
+    // Wallpaper of the viewport's monitor, polled about once a second. False: no wallpaper (fallback colour).
+    bool ( *GetWallpaper )( ImGuiViewport * viewport, ImFluentWallpaper * out, void * user_data )                   = NULL;
+    // Client and monitor rects (x1, y1, x2, y2) in the same screen units. False: unknown.
+    bool ( *GetScreenRects )( ImGuiViewport * viewport, ImVec4 * client, ImVec4 * monitor, void * user_data )       = NULL;
+    // The OS backdrop (Windows 11 Mica, macOS vibrancy). True: ImFluent draws nothing; present cleared alpha.
+    bool ( *SetNativeBackdrop )( ImGuiViewport * viewport, ImFluentBackdrop backdrop, bool dark, void * user_data ) = NULL;
+    void * UserData                                                                                                 = NULL;
+};
+
 enum ImFluentTextStyle_
 {
     ImFluentTextStyle_Caption = 0,
@@ -217,6 +263,13 @@ enum ImFluentTextBoxFlags_
 };
 typedef int ImFluentTextBoxFlags;
 
+enum ImFluentItemsViewFlags_
+{
+    ImFluentItemsViewFlags_None            = 0,
+    ImFluentItemsViewFlags_NoSelectOnFocus = 1 << 0, // Arrows move focus only: items act as buttons (WinUI SelectionMode="None")
+};
+typedef int ImFluentItemsViewFlags;
+
 enum ImFluentTimePickerFlags_
 {
     ImFluentTimePickerFlags_None    = 0,
@@ -348,11 +401,37 @@ struct ImFluentStyle
     const char * LocalizationTable[ ImFluentLocKey_COUNT ];
 };
 
+// Key chords (ImGuiKey | ImGuiMod_ flags, modifiers match exactly; 0 = off) of the ImFluent commands, with WinUI defaults.
+struct ImFluentActions
+{
+    ImGuiKeyChord RevealPassword;      // PasswordBox: show the password while the key is held. Alt+F8
+    ImGuiKeyChord TogglePopup;         // ComboBox, SplitButton: open the popup; close the ComboBox list. F4
+    ImGuiKeyChord OpenPopup;           // ComboBox, SplitButton: open the popup. Alt+Down
+    ImGuiKeyChord ClosePopup;          // ComboBox: close the open list. Alt+Up
+    ImGuiKeyChord PickerOpenCommit;    // DatePicker, TimePicker: open the flyout; in the flyout, commit. Alt+Down
+    ImGuiKeyChord PickerOpenCommitAlt; // Second chord for PickerOpenCommit. Alt+Up
+    ImGuiKeyChord NextTab;             // TabView: select the next tab, wrapping. Ctrl+Tab
+    ImGuiKeyChord PreviousTab;         // TabView: select the previous tab, wrapping. Ctrl+Shift+Tab
+    ImGuiKeyChord CloseTab;            // TabView: close the selected tab. Ctrl+F4
+    ImGuiKeyChord CalendarZoomOut;     // CalendarView: month view, then year view, then decade view. Ctrl+Up
+    ImGuiKeyChord CalendarZoomIn;      // CalendarView: back towards the month view. Ctrl+Down
+    ImGuiKeyChord FirstItem;           // Lists, groups, ComboBox, picker columns: first item; Slider, Rating: minimum. Home
+    ImGuiKeyChord LastItem;            // As FirstItem, for the last item or the maximum. End
+    ImGuiKeyChord PageUp;              // Slider, NumberBox: large increase; CalendarView: previous page; columns: page. PageUp
+    ImGuiKeyChord PageDown;            // As PageUp, the other way. PageDown
+    ImGuiKeyChord CloseDialog;         // ContentDialog: close with the close button's result. Escape
+
+    bool RepeatStepButtons; // Step arrows (spin, pager, picker, calendar, flip view) repeat while held. true
+
+    IMGUI_API ImFluentActions();
+};
+
 typedef int ( *ImFluentAutoSuggestPredicate )( const char * item, const char * filter, void * user_data );
 
 namespace ImFluent
 {
     IMGUI_API ImFluentStyle & GetStyle();
+    IMGUI_API ImFluentActions & GetActions();
 
     IMGUI_API void SetThemePreset( ImFluentThemePreset preset );
     IMGUI_API ImFluentThemePreset GetThemePreset();
@@ -361,7 +440,20 @@ namespace ImFluent
     IMGUI_API ImColor GetAccentColor();
     IMGUI_API bool HasUserAccentColor();
 
+    // Call RenderBackdrop() once per frame after ImGui::NewFrame(); while IsBackdropVisible(), give the root window ImGuiWindowFlags_NoBackground.
+    IMGUI_API void SetBackdrop( ImFluentBackdrop backdrop );
+    IMGUI_API ImFluentBackdrop GetBackdrop();
+    IMGUI_API ImFluentBackdropHooks & GetBackdropHooks();
+    IMGUI_API void RenderBackdrop( ImGuiViewport * viewport = NULL );
+    IMGUI_API bool IsBackdropVisible();
+    // For GetWallpaper hooks: UV0, UV1 and Repeat of an image_w x image_h image placed on `monitor` (x1, y1, x2, y2);
+    // `desktop` is the rect of all monitors (Span only).
+    IMGUI_API void PlaceWallpaper( ImFluentWallpaper * wallpaper, ImFluentWallpaperFit fit, float image_w, float image_h, const ImVec4 & monitor, const ImVec4 & desktop );
+
+    // Segoe UI and the Segoe icon font where installed, else a common UI font and no icons.
     IMGUI_API void LoadFluentSystemFonts();
+    // Explicit font files; NULL or missing files fall back (text: Dear ImGui's default font; semibold: regular).
+    IMGUI_API void LoadFluentFonts( const char * regular_ttf, const char * semibold_ttf, const char * icons_ttf );
 
     // INKEYS PATCH: 项目使用内嵌字体，并在 ImGui context 销毁前重置库状态。
     IMGUI_API void SetFluentTextStyleFont( ImFluentTextStyle style, ImFont * font, float size );
@@ -486,7 +578,8 @@ namespace ImFluent
     IMGUI_API void NavPaneFooterEnd();
     IMGUI_API bool NavSettingsItem( bool selected );
     IMGUI_API void EndNavigationView();
-    IMGUI_API void NavigationViewBeginContent();
+    // padding < 0: 24 dp on that axis.
+    IMGUI_API void NavigationViewBeginContent( const ImVec2 & padding = ImVec2( -1.f, -1.f ) );
     IMGUI_API void NavContentHeader( const char * title );
     IMGUI_API void NavigationViewEndContent();
 
@@ -499,13 +592,23 @@ namespace ImFluent
     IMGUI_API bool IsNavPaneOpening();
     IMGUI_API bool IsNavPaneClosing();
 
-    IMGUI_API bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags = 0 );
+    IMGUI_API bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags = 0, const char * placeholder = NULL ); // placeholder: shown while *current_item < 0
     IMGUI_API bool ListBox( const char * label, int * current_item, const char * const items[], int items_count, int height_in_items = 7 );
     IMGUI_API bool Selectable( const char * label, bool selected = false, const char * glyph = NULL, float height = 0.f );
+    // ListViewItem/GridViewItem/TreeNode between these are one Tab stop with WinUI arrow keys (optional).
+    IMGUI_API void BeginListView( const char * id, ImFluentItemsViewFlags flags = 0 );
+    IMGUI_API void EndListView();
+    IMGUI_API void BeginGridView( const char * id, ImFluentItemsViewFlags flags = 0 );
+    IMGUI_API void EndGridView();
+    IMGUI_API void BeginTreeView( const char * id, ImFluentItemsViewFlags flags = 0 );
+    IMGUI_API void EndTreeView();
     IMGUI_API bool ListViewItem( const char * label, bool selected = false, const char * glyph = NULL );
     IMGUI_API bool TreeNode( const char * label, bool * p_open );
 
     IMGUI_API bool TreeNode( const char * label, bool * p_open, bool * p_checked );
+    // Single selection row: returns true when clicked or when Up/Down focus it (as ListViewItem); the chevron toggles *p_open.
+    // With p_open it has children: call TreePop() while *p_open.
+    IMGUI_API bool TreeViewItem( const char * label, bool selected, bool * p_open = NULL );
     IMGUI_API void TreePop();
     IMGUI_API bool GridViewItem( const char * label, bool selected, const ImVec2 & size );
     IMGUI_API bool PipsPager( const char * id, int * current_item, int total_pages );
@@ -526,7 +629,9 @@ namespace ImFluent
     IMGUI_API void MenuFlyoutSeparator();
     IMGUI_API void EndMenuFlyout();
 
+    // Icon-only primary commands, then MenuFlyoutItems after CommandBarFlyoutSecondary(). Open it with OpenFlyout( id ).
     IMGUI_API bool BeginCommandBarFlyout( const char * id );
+    IMGUI_API void CommandBarFlyoutSecondary();
     IMGUI_API void EndCommandBarFlyout();
 
     IMGUI_API void OpenContentDialog( const char * id );
@@ -535,6 +640,26 @@ namespace ImFluent
 
     IMGUI_API bool InfoBar( ImFluentInfoSeverity severity, const char * title, const char * message, bool * is_open = NULL, const char * glyph_override = NULL, bool show_icon = true, const char * action_label = NULL );
     IMGUI_API void InfoBadge( int count = -1, const char * glyph = NULL );
+
+    // The texture, else the initials of display_name (or `initials`), else a person glyph. size 0 = 100 dp.
+    IMGUI_API void PersonPicture( const char * display_name, float size = 0.f, int badge_number = 0, ImTextureRef texture = ImTextureRef(), const char * initials = NULL );
+    // A texture with rounded corners (corner_radius < 0: the overlay corner radius).
+    IMGUI_API void Image( ImTextureRef texture, const ImVec2 & size, float corner_radius = -1.f, const ImVec2 & uv0 = ImVec2( 0, 0 ), const ImVec2 & uv1 = ImVec2( 1, 1 ) );
+
+    // A zero size fits the content; corner_radius/padding < 0 use the style. Call EndBorder() whatever BeginBorder() returns.
+    IMGUI_API bool BeginBorder( const char * id, const ImVec2 & size = ImVec2( 0, 0 ), ImFluentCol background = ImFluentCol_CardBgDefault, ImFluentCol stroke = ImFluentCol_CardStrokeDefault, float thickness = 1.f, float corner_radius = -1.f, const ImVec2 & padding = ImVec2( -1.f, -1.f ) );
+    IMGUI_API void EndBorder();
+    // A scrolling region with Fluent scroll bars. Call EndScrollViewer() whatever it returns.
+    IMGUI_API bool BeginScrollViewer( const char * id, const ImVec2 & size, bool horizontal = false );
+    IMGUI_API void EndScrollViewer();
+
+    // Draw item *current_item between Begin and End; Left/Right change it. Call EndFlipView() whatever BeginFlipView() returns.
+    IMGUI_API bool BeginFlipView( const char * id, int * current_item, int items_count, const ImVec2 & size );
+    IMGUI_API void EndFlipView();
+    // PivotItem returns true when clicked or reached with the arrow keys; draw the selected item's content after EndPivot().
+    IMGUI_API bool BeginPivot( const char * id );
+    IMGUI_API bool PivotItem( const char * header, bool selected );
+    IMGUI_API void EndPivot();
 
 
     IMGUI_API void OpenTeachingTip( const char * id );
@@ -549,7 +674,11 @@ namespace ImFluent
     IMGUI_API void TitleBarSubtitle( const char * subtitle );
     IMGUI_API void EndTitleBar();
 
+    // BeginMenuBar(): main menu bar; BeginMenuBar( id ): in-page WinUI MenuBar. EndMenuBarItem() only when BeginMenuBarItem() is true.
     IMGUI_API bool BeginMenuBar();
+    IMGUI_API bool BeginMenuBar( const char * id );
+    IMGUI_API bool BeginMenuBarItem( const char * label );
+    IMGUI_API void EndMenuBarItem();
     IMGUI_API void EndMenuBar();
 
     IMGUI_API bool BeginCommandBar( const char * id, float height = 0.f );
@@ -579,5 +708,9 @@ namespace ImFluent
     IMGUI_API bool CalendarDatePicker( const char * label, ImFluentDate * date, const char * hint = "Pick a date", const ImFluentDate * min_date = NULL, const ImFluentDate * max_date = NULL );
 
     IMGUI_API void ShowDemoWindow( bool * p_open = NULL );
+    // Demo deep links. Page ids: "Home", "AllControls", "Settings", "Section_<Group>", "Item_<Control>" (e.g. "Item_ComboBox").
+    IMGUI_API void SetDemoWindowPage( const char * page_id );
+    IMGUI_API const char * GetDemoWindowPage();
+    IMGUI_API const char * GetDemoWindowPageId( int index ); // NULL past the last page
 
 } // namespace ImFluent
