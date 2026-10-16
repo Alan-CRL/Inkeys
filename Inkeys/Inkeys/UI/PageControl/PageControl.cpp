@@ -652,7 +652,7 @@ namespace Inkeys::UI::PageControl
 				if(id==6 && callbacks.closeWhiteboard) callbacks.closeWhiteboard();
 				if(id==7 && !Snapshot().first.presentationVisible) (void)Inkeys::Window::GetService().MinimizeWhiteboardWindowGroup();
 			}
-			constexpr std::uint32_t colors[]={0x123B32,0xFFFFFF,0xF5F1E6,0xE5E7EB,0x25282D,0x172A46};
+			constexpr auto& colors=WhiteboardVisual::ThemeColors;
 			if(id>=9 && id<=17 && callbacks.changeTheme)
 				callbacks.changeTheme(id<15 ? colors[id-9] : pressed.backgroundRgb,
 					id<15 ? pressed.pattern : static_cast<int>(id-15), pressed.generation, pressed.currentPage);
@@ -2483,6 +2483,8 @@ namespace Inkeys::UI::PageControl
 	{
 		int failures=0;
 		const auto Check=[&](bool valid,const char* why){if(!valid){++failures;std::fprintf(stderr,"[PageControlUI3] FAIL %s\n",why);}};
+		constexpr std::array<std::uint32_t,6> expectedColors{0x123B32,0x172A46,0x000000,0xFFFFFF,0xE5E7EB,0xF5F1E6};
+		Check(WhiteboardVisual::ThemeColors==expectedColors,"palette row order is green, navy, black then white, light gray, ivory");
 		const auto epoch=Inkeys::UI::RenderPipeline::GetDeviceEpoch();
 		PptState ppt;ppt.presentationVisible=true;ppt.currentPage=7;ppt.totalPage=28;ppt.layout.showMiddlePair=true;
 		WhiteboardState wb;wb.expandedLayoutTarget=wb.active=true;wb.currentPage=2;wb.totalPage=4;
@@ -2537,8 +2539,20 @@ namespace Inkeys::UI::PageControl
 					const auto* pixel=mapped.bits+(y+100-bounds.top)*mapped.pitch+(x+200-bounds.left)*4;
 					if(pixel[0]>120&&pixel[1]>120&&pixel[2]>120)++bright;}
 				Check(bright>10,"current and total page text are actually drawn");
-				if(menu==2){const auto* white=Pixel(460,-231);Check(white[0]>230&&white[1]>230&&white[2]>230,"theme white square is filled");
-					const auto* a=Pixel(436,-55);const auto* b=Pixel(484,-55);Check(std::abs(int(a[2])-int(b[2]))<3,"dot texture is symmetric about content center");
+				if(menu==2){const auto* white=Pixel(360,-181);Check(white[0]>230&&white[1]>230&&white[2]>230,"theme white square is filled");
+					for(std::size_t color=0;color<WhiteboardVisual::ThemeColors.size();++color){
+						const auto rgb=WhiteboardVisual::ThemeColors[color];const auto* swatch=Pixel(358+static_cast<double>(color%3)*75,-258+static_cast<double>(color/3)*75);
+						Check(std::abs(int(swatch[2])-int((rgb>>16)&255))<3&&std::abs(int(swatch[1])-int((rgb>>8)&255))<3
+							&&std::abs(int(swatch[0])-int(rgb&255))<3,"all six rendered swatches match the shared click palette in row order");
+					}
+					for(const double y:{-69.0,-45.0,-21.0})for(const double x:{436.0,460.0,484.0}){
+						const auto* dot=Pixel(x,y);Check(dot[1]>70,"full button preview contains its centered three by three dots, including the label row");
+					}
+					for(const double y:{-69.0,-45.0,-21.0}){
+						const auto* line=Pixel(505,y);Check(line[1]>70,"grid horizontal lines span the full preview width behind the label row");
+						for(const double x:{511.0,535.0,559.0})Check(Pixel(x,y)[1]>70,"grid preview has nine centered intersections");
+					}
+					const auto* a=Pixel(436,-45);const auto* b=Pixel(484,-45);Check(std::abs(int(a[2])-int(b[2]))<3,"dot texture is symmetric about content center");
 						const auto* green=Pixel(377,-231);Check(green[1]>160&&green[2]<60,"selection uses the original green SVG at double swatch size");
 						const auto* fill=Pixel(356,-260);Check(std::abs(int(fill[2])-18)<3&&std::abs(int(fill[1])-59)<3,"selected swatch has no extra outer highlight");
 				}
@@ -2564,6 +2578,46 @@ namespace Inkeys::UI::PageControl
 				Check(EqualRect(&midway,&reversed),"same-frame reversal continues the current UI3 pose");
 			}
 			surface.ReleaseDeviceResources();Check(SUCCEEDED(surface.EnsureDeviceResources(epoch,w+23,h+19)),"device resources rebuild with stable button instances");
+		}
+		{
+			// 真实展开帧中检查前层按钮遮挡后层，不只验证静止时彼此分离的矩形。
+			Scene surface;auto content=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,wb);content.menu=0;
+			surface.ConfigurePagination(content);surface.SetBounds({0,0,305,80},1);(void)surface.Advance(origin);
+			content.menu=2;surface.ConfigurePagination(content);unsigned rootOverlaps=0,menuOverlaps=0,tripleOverlaps=0;
+			// 固定分页面板的独立圆角区域判据；不为测试导出 Bar 内部命中类型。
+			const auto rootPanelContains=[](POINT point){
+				if(point.x<0||point.x>=305||point.y<0||point.y>=80)return false;
+				const LONG dx=point.x-(std::clamp)(point.x,8L,297L),dy=point.y-(std::clamp)(point.y,8L,72L);
+				return dx*dx+dy*dy<=64;
+			};
+			for(int frame=1;frame<=45;++frame){
+				const auto time=origin+frame*10ms;(void)surface.Advance(time);const auto bounds=surface.PresentationBounds();
+				if(FAILED(surface.EnsureDeviceResources(epoch,bounds.right-bounds.left,bounds.bottom-bounds.top))){Check(false,"overlap frame resources");break;}
+				auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,
+					static_cast<FLOAT>(bounds.right-bounds.left),static_cast<FLOAT>(bounds.bottom-bounds.top)));
+				surface.Render(dc,time);renderer.FinishFrameDrawCommands(dc);Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"overlapping panels draw through shared renderer");
+				surface.CommitPresented();const auto layout=surface.Layout();
+				for(const auto& front:layout.buttons){if(!front.visible||!front.interactive||front.id>8)continue;
+					for(const auto& back:layout.buttons){if(!back.visible||back.id<(front.id<=5?6U:9U))continue;
+						RECT overlap{};if(!IntersectRect(&overlap,&front.localPixels,&back.localPixels)||overlap.right-overlap.left<8||overlap.bottom-overlap.top<8)continue;
+						const POINT point{(overlap.left+overlap.right)/2,(overlap.top+overlap.bottom)/2};
+						// 菜单和主题重叠时，最前的分页栏仍可能覆盖二者；其空白处同样遮挡。
+						if(front.id>5&&rootPanelContains(point)){
+							const auto hit=surface.HitTest(point);const POINT presentation{point.x-bounds.left,point.y-bounds.top};
+							const auto sample=surface.SamplePointer(presentation);
+							Check(hit<=5&&sample.hit==hit&&sample.primaryBackground&&!sample.popupBackground
+								&&surface.PointerMove(point).hover==hit,"pagination occludes both menu and theme during three-layer overlap");
+							++tripleOverlaps;continue;
+						}
+						Check(surface.HitTest(point)==front.id,"front pagination/menu button wins animated overlap hit");
+						const POINT presentation{point.x-bounds.left,point.y-bounds.top};
+						Check(surface.SamplePointer(presentation).hit==front.id&&surface.PointerMove(point).hover==front.id,
+							"sample and worker pointer entry use the same front-to-back hit order");
+						if(front.id<=5)++rootOverlaps;else ++menuOverlaps;
+					}
+				}
+			}
+			Check(rootOverlaps>0&&menuOverlaps>0&&tripleOverlaps>0,"real opening motion exercises pagination-over-menu, menu-over-theme and three-layer overlaps");
 		}
 		// 无 HWND 的故障注入走实际 GetDC/ReleaseDC/EndDraw 事务，不以数学动画冒充呈现。
 		OffscreenSnapshot snapshot{ppt,wb};snapshot.whiteboard.menu=2;
@@ -2795,6 +2849,11 @@ namespace Inkeys::UI::PageControl
 			publishedWhiteboard=wb;publishedWhiteboard.menu=1;
 			(void)PageControlInputTick(repeatTime+100ms,context);
 			Check(pptNext==2&&whiteboardNext==0&&publishedWhiteboard.menu==1,"old PPT repeat neither advances whiteboard nor dismisses its menu");
+			std::vector<std::uint32_t> selectedColors;
+			whiteboardCallbacks.changeTheme=[&](std::uint32_t rgb,int,std::uint64_t,int){selectedColors.push_back(rgb);};
+			for(WidgetId id=9;id<=14;++id)InvokeWhiteboardMenu(id,publishedWhiteboard);
+			Check(selectedColors==std::vector<std::uint32_t>(expectedColors.begin(),expectedColors.end()),
+				"six color actions dispatch the same reordered RGB values as the rendered swatches");
 			publishedWhiteboard.generation=7;publishedWhiteboard.currentPage=2;
 			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::WhiteboardExpanded,publishedWhiteboard,{},true,false,publishedPpt.layout.session);}
 			PageControlInputEvent(event,context);

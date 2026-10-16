@@ -35,8 +35,7 @@ namespace Inkeys::UI::Bar
 		constexpr EraserAttributeRect MenuBounds{190,-122.5,340,-5};
 		constexpr EraserAttributeRect ThemeBounds{345,-301,575,-5};
 		constexpr EraserAttributeRect ThemeAnchor{195,-42.5,335,-10};
-		constexpr std::array<std::uint32_t,6> ThemeColors{
-			0x123B32,0xFFFFFF,0xF5F1E6,0xE5E7EB,0x25282D,0x172A46};
+		constexpr auto& ThemeColors=WhiteboardVisual::ThemeColors;
 		std::mutex lightingMutex;
 		BarSurfaceSharedLighting sharedLighting;
 		std::uint64_t lightingRevision=1;
@@ -153,6 +152,22 @@ namespace Inkeys::UI::Bar
 			bool enabled=false;
 			std::uint64_t generation=0;
 		};
+		// 命中与绘制的前后层级一致；前景面板的空白区域也不能点到后层按钮。
+		static int FrontPanel(const FrameHit& frame,double x,double y) noexcept
+		{
+			for(std::size_t i=0;i<frame.panels.size();++i)
+				if(frame.panelVisible[i]&&RoundedContains(frame.panels[i],frame.panelRadii[i],x,y))return static_cast<int>(i);
+			return -1;
+		}
+		static BarSurfaceButtonId HitButton(const FrameHit& frame,POINT point) noexcept
+		{
+			if(!frame.enabled)return 0;
+			const double x=point.x/frame.scale,y=point.y/frame.scale;
+			const int panel=FrontPanel(frame,x,y);if(panel<0)return 0;
+			const BarSurfaceButtonId first=panel==0?1:panel==1?6:9,last=panel==0?5:panel==1?8:17;
+			for(auto id=first;id<=last;++id)if(HitTestBarButton(frame.buttons[id-1],x,y))return id;
+			return 0;
+		}
 		FrameHit candidate,committed;
 		mutable std::mutex inputMutex;
 		ButtonPointerState pointer;
@@ -558,11 +573,7 @@ namespace Inkeys::UI::Bar
 		BarSurfacePointerResult Pointer(ButtonPointerEvent event,POINT logicalPoint)
 		{
 			std::scoped_lock lock(inputMutex);
-			BarSurfaceButtonId hit=0;
-			if(committed.enabled)for(std::size_t i=committed.buttons.size();i>0;--i)
-				if(HitTestBarButton(committed.buttons[i-1],logicalPoint.x/committed.scale,logicalPoint.y/committed.scale)){
-					hit=static_cast<BarSurfaceButtonId>(i);break;
-				}
+			const auto hit=HitButton(committed,logicalPoint);
 			const auto result=pointer.Update(event,hit);
 			hover=static_cast<BarSurfaceButtonId>(result.hover);pressed=static_cast<BarSurfaceButtonId>(result.pressed);
 			feedbackDirty=feedbackDirty||result.previousHover!=result.hover||result.previousPressed!=result.pressed;
@@ -591,8 +602,8 @@ namespace Inkeys::UI::Bar
 				};
 				if(i>=6)options.content=[&,i](auto& target,auto* context,auto& item,const auto&){
 					const float z=static_cast<float>(target.GetFrameZoom());const auto r=Bounds(item.button);
-					const D2D1_RECT_F texture=D2D1::RectF(static_cast<FLOAT>((r.left+5)*z),static_cast<FLOAT>((r.top+5)*z),
-						static_cast<FLOAT>((r.right-5)*z),static_cast<FLOAT>((r.top+45)*z));
+					const D2D1_RECT_F texture=D2D1::RectF(static_cast<FLOAT>(r.left*z),static_cast<FLOAT>(r.top*z),
+						static_cast<FLOAT>(r.right*z),static_cast<FLOAT>(r.bottom*z));
 					WhiteboardVisual::DrawThemePattern(context,texture,content.backgroundRgb,static_cast<int>(i-6),z,target.ContentSolidBrush(RGB(255,255,255),1));
 					return true;
 				};
@@ -747,8 +758,7 @@ namespace Inkeys::UI::Bar
 	BarSurfaceButtonId BarPageSurface::HitTest(POINT point) const noexcept
 	{
 		std::scoped_lock lock(impl_->inputMutex);const auto& c=impl_->committed;if(!c.enabled)return 0;
-		for(std::size_t i=c.buttons.size();i>0;--i)if(HitTestBarButton(c.buttons[i-1],point.x/c.scale,point.y/c.scale))return static_cast<BarSurfaceButtonId>(i);
-		return 0;
+		return Impl::HitButton(c,point);
 	}
 	BarSurfaceButtonId BarPageSurface::HitTestPresentation(POINT point) const noexcept
 	{const auto logical=PresentationToLogical(point);return logical?HitTest(*logical):0;}
@@ -759,11 +769,9 @@ namespace Inkeys::UI::Bar
 		if(!c.enabled)return result;
 		result.logical={point.x+c.presentation.left-c.logical.left,point.y+c.presentation.top-c.logical.top};
 		result.valid=true;
-		for(std::size_t i=0;i<c.panels.size();++i)if(c.panelVisible[i]&&RoundedContains(c.panels[i],c.panelRadii[i],result.logical.x/c.scale,result.logical.y/c.scale)){
-			result.background=true;if(i==0)result.primaryBackground=true;else result.popupBackground=true;
-		}
-		for(std::size_t i=c.buttons.size();i>0;--i)if(HitTestBarButton(c.buttons[i-1],result.logical.x/c.scale,result.logical.y/c.scale)){
-			result.hit=static_cast<BarSurfaceButtonId>(i);break;}
+		const int panel=Impl::FrontPanel(c,result.logical.x/c.scale,result.logical.y/c.scale);
+		result.background=panel>=0;result.primaryBackground=panel==0;result.popupBackground=panel>0;
+		result.hit=Impl::HitButton(c,result.logical);
 		return result;
 	}
 	BarSurfacePointerResult BarPageSurface::ApplyPointer(BarSurfacePointerEventKind kind,BarSurfaceButtonId hit) noexcept
@@ -799,6 +807,12 @@ namespace Inkeys::UI::Bar
 		const float alpha=static_cast<FLOAT>(p.opacity.val);const bool layer=alpha<0.9999F;
 		if(layer)p.renderer.PushPanelOpacity(dc,D2D1::RectF(static_cast<FLOAT>(p.presentation.left-p.logical.left),static_cast<FLOAT>(p.presentation.top-p.logical.top),
 			static_cast<FLOAT>(p.presentation.right-p.logical.left),static_cast<FLOAT>(p.presentation.bottom-p.logical.top)),alpha);
+		// 后层先画：主题位于菜单下，菜单位于分页栏下；沿用共享面板的当前姿态。
+		if(!p.backgroundOnly){
+			if(p.themeFrame.visible)p.DrawGroup(dc,true);
+			if(p.menuFrame.visible)p.DrawGroup(dc,false);
+			p.SetPose(dc,{});
+		}
 		p.DrawShape(dc,p.root);
 		if(p.backgroundOnly&&p.background.drawContent){
 			dc->SetTransform(D2D1::Matrix3x2F::Scale(p.scale,p.scale)*D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(p.logical.left-p.presentation.left),static_cast<FLOAT>(p.logical.top-p.presentation.top)));
@@ -812,8 +826,6 @@ namespace Inkeys::UI::Bar
 			}
 			for(BarSurfaceButtonId id=2;id<=5;++id)if(id!=5||p.candidate.buttons[4].visible)p.DrawButton(dc,id);
 			if(p.content.whiteboard&&p.content.surface==0&&p.content.unsaved)p.renderer.Word(dc,p.unsaved,{5,-32},DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_LEADING);
-			if(p.menuFrame.visible)p.DrawGroup(dc,false);
-			if(p.themeFrame.visible)p.DrawGroup(dc,true);
 		}
 		if(layer)dc->PopLayer();dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);
 		p.renderer.SetFrameLightingSnapshot(p.drawingLighting);

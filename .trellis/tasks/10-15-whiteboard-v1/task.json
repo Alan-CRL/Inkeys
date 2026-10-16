@@ -32,6 +32,7 @@
     "implementation_complete": false,
     "ui3_shared_runtime": "native ARM64 build14 and input/offscreen/headless passed; production rendering matches complete build12 expanded benchmark; 27 valid runs, 23 budget misses; performance acceptance remains open",
     "automated_validation": "functional_passed_performance_budget_unmet",
+    "ui3_preview_revision": "2026-10-16: theme/menu/root z-order and matching occlusion, reordered shared palette, full-button 3x3 pattern previews; native ARM64 build and D2D offscreen passed; user manual acceptance passed; performance not rerun; commit authorized; task remains in_progress",
     "manual_acceptance": "user_confirmed_current_iteration_improved; agent_gui_not_run",
     "related_tasks": [
       "08-17-ui3-whiteboard",

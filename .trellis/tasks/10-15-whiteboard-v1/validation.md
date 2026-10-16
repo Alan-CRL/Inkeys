@@ -128,3 +128,22 @@ build12修正启动fixture的完整27组已保留 baseline-expanded/（含exe SH
 ## 用户本轮体验验收与提交授权
 
 用户明确反馈“验收完成，比之前好得多”，授权仅为当前改动创建commit，并要求白板任务不结束，后续继续修改。本轮体验验收记为用户确认通过；此前自动性能预算未通过的原始数据与代理未执行GUI的事实均保留。父任务继续in_progress，不归档、不push。
+
+## 当前菜单层级与主题预览修订（2026-10-16）
+
+在用户上轮体验验收与commit 92c3c8b1之后继续本轮三项UI小改，父任务保持in_progress。绘制顺序改为主题→更多→分页栏，三个输入入口共用与绘制一致的前层面板判定，前层空白阻挡后层按钮；色板显示与点击共享重排后的六色常量；样式纹理覆盖完整70×70按钮，24 DIP中心相位产生九点/九交点，标签仍在标准槽位。未新增动画、缓存或渲染路径，未修改画布密度与存储。
+
+| 验证 | 结果与证据（TestResults/ui3-shared-runtime/） |
+| --- | --- |
+| ARM64原生MSBuild完整solution Debug/ARM64 | 最终退出0，preview-revision-final-build-2.log；同PowerShell规范PATH，动态定位原生ARM64 MSBuild |
+| 生产公共D2D离屏回归 | --bar-eraser-offscreen-test退出0，PageControlUI3/EraserVisual均0 failures；preview-revision-final-offscreen-{stderr,results}.log |
+| 本轮新增回归 | 六色色块实际像素/六项业务点击映射、整按钮九点及九交点/标签下方纹理、45个真实展开帧的分页>菜单、菜单>主题及三层遮挡；现有DPI/反转/设备重建/失败提交继续通过 |
+| Trellis上下文 | implement/check各13项validate通过；原大型规范注入截断提示保留，当前白板规范完整加入上下文 |
+| 独立检查与格式 | research/ui3-preview-revision-check.md；产品UTF-8/CRLF和git diff --check通过，父PRD历史混合换行保留 |
+
+首轮35个新增测试失败来自两处fixture问题：size_t参与负数色块坐标运算造成下溢（15项），以及三层重叠时误把菜单当作前景（20项）。保留严格颜色阈值及命中要求后修复坐标类型，增加独立分页圆角区域判据，强制三类重叠样本均存在。中途测试曾引用未export的内部Bar命中类型导致编译失败，改用测试内圆角判据，不扩大产品模块导出。最终构建/离屏结果均通过。三条既有hashlib转换warning未清理。
+
+本轮没有运行GUI/真实PPT，也没有重跑多目标性能基准；上述结果用于这三项UI调整，不改变上一轮性能预算尚未达标的记录。没有新建/结束/归档任务，没有commit或push。
+
+### 本轮人工验收与提交授权
+用户确认上述菜单层级、颜色顺序与预览调整人工核验通过，并授权提交当前改动。白板父任务继续保持in_progress，不结束、不归档、不push。既有自动性能预算记录保持原结论。

@@ -10,3 +10,4 @@
 {"file": ".trellis/tasks/10-15-whiteboard-v1/research/control-architecture-audit.md", "reason": "本轮统一范围与旧适配层偏差"}
 {"file": ".trellis/tasks/10-15-whiteboard-v1/research/render-hotpath-audit.md", "reason": "dirty-before-clear及真实GetDC耗时证据"}
 {"file": ".trellis/tasks/10-15-whiteboard-v1/research/verification-gap-audit.md", "reason": "无窗口与实际吞吐验收边界"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "当前菜单叠放、色板顺序与全按钮九点预览合同"}

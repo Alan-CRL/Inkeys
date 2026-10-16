@@ -19,3 +19,6 @@
 4. 输入复用现有worker，HWND路由+已成功呈现的immutable hit snapshot。每个手势Down/Move/Up/Cancel仅走一步并返回，允许coroutine/continuation保存旧手势局部状态；不保留阻塞nested Wait。交互反馈由render消费，动作通过原服务队列派发，阻塞dialog改异步续接。保留触摸mouse兼容过滤、double-click、长按、拖动语义。
 5. 分页移除BuildWidgets/独立目标推进/命中/渲染，替换为自身ButtonList及两个固定面板。检查Scene其他consumer，无使用方时删旧实现与工程项。PPT布局revision、成对drag/pagePresented、窗口所有权、存储不变。
 6. 无窗口性能sink执行真实D2D/GetDC同步，仅不调用原生ULW；raw诊断覆盖同Scheduler批次，不能宣称DWM视觉帧率。主栏单独baseline与迁移后多target用同机同配置，旧异常日志不作改善百分比基线。
+
+## 菜单层级与预览修订
+调整固定面板的绘制顺序和命中优先级，使分页栏在更多菜单上层、更多在主题上层。色板调整静态映射；使用现有纹理函数的共享居中规则绘制全按钮预览，70 DIP预览沿用24 DIP居中间距得到九点/九交点，画布规则不变，不新增动画或缓存。

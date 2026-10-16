@@ -2,11 +2,16 @@
 
 #include <d2d1_1.h>
 #include <wrl/client.h>
+#include <array>
 #include <cstdint>
 #include <cmath>
 
 namespace Inkeys::UI::WhiteboardVisual
 {
+	// 显示和点击使用同一顺序，避免颜色重排后请求到旧色值。
+	inline constexpr std::array<std::uint32_t,6> ThemeColors{
+		0x123B32,0x172A46,0x000000,0xFFFFFF,0xE5E7EB,0xF5F1E6};
+
 	// 预览和整幅背景共用纹理相位；预览的底色、圆角和边框由标准 UI3 Shape 绘制。
 	inline void DrawThemePattern(ID2D1DeviceContext* context,D2D1_RECT_F bounds,
 		std::uint32_t rgb,int pattern,float scale=1,ID2D1SolidColorBrush* sharedBrush=nullptr)
