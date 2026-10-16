@@ -1809,3 +1809,40 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 105: Complete native material surface adaptation
+<!-- trellis-session: v=2 fp=a58899bcc39b4494 -->
+
+**Date**: 2026-10-16
+**Task**: Complete native material surface adaptation
+**Branch**: `fluent`
+
+### Summary
+
+Completed native Mica/Acrylic surface blending with opaque overlays, preserved foregrounds and borders, validated ARM64 build and headless settings tests; user approved commit and task completion.
+
+### Main Changes
+
+- Blend sidebar/page/card surfaces only when native materials are available; retain exact Solid fallback and opaque caption/popups.
+- Added DPI/material popup DrawData and exact cached/full RGBA regressions; recorded material contracts.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0b6c1d23` | feat(setting): blend surfaces with native window materials |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug ARM64 via native MSBuild: PASS, exit 0.
+- [OK] InkeysHeadlessTests --no-window --setting-home-only: PASS, exit 0, stderr empty.
+- [OK] git diff --check: PASS. Original PptCOM.dll/tlb bytes preserved; no GUI run.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- No pending implementation work; visual tuning may be requested separately.
