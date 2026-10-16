@@ -17,6 +17,10 @@ module;
 #include "Bar.WindowGeometry.h"
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
+#include "Bar.InteractionWorker.h"
+#include <type_traits>
+#include <future>
+#include <stop_token>
 
 #ifdef MessageBox
 #undef MessageBox
@@ -52,6 +56,7 @@ constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
 constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
 constexpr UINT BarColorPickerCaptureMessage = WM_APP + 0x34;
 constexpr UINT BarBorderCursorSurfacePointerMessage = WM_APP + 0x35;
+constexpr UINT BarInputReleaseCaptureMessage = WM_APP + 0x36;
 constexpr short BarTouchPointerMessageMarker = SHRT_MIN;
 constexpr short BarTouchCancelMessageMarker = SHRT_MIN + 1;
 constexpr short BarTouchDirectDragScreenMessageMarker = SHRT_MIN + 2;
@@ -150,6 +155,19 @@ enum class BarThicknessFineDialHitZone : int
 	Drag,
 };
 
+template<class Shape> bool IsPresentedBarVisualHit(BarUISetClass& owner,
+	const std::shared_ptr<Shape>& shape, double clientX, double clientY)
+{
+	if (!shape) return false;
+	for (;;)
+	{
+		const auto before = owner.BottomDockPresentedSnapshot();
+		const double zoom = (std::max)(0.000001, before.zoom);
+		const bool hit = owner.HitTestPresentedShape(*shape, clientX / zoom, clientY / zoom);
+		if (owner.BottomDockPresentedSnapshot().serial == before.serial) return hit;
+	}
+}
+
 bool IsBarThicknessPreviewPopupHit(
 	BarUISetClass& barUISet, int clientX, int clientY)
 {
@@ -161,8 +179,7 @@ bool IsBarThicknessPreviewPopupHit(
 		BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface];
 	return popupSurface && popupSurface->pct.val > 0.000001
 		&& popupSurface->w.val > 0.0 && popupSurface->h.val > 0.0
-		&& popupSurface->IsClick(
-			clientX, clientY, barUISet.barStyle.zoom);
+		&& IsPresentedBarVisualHit(barUISet, popupSurface, clientX, clientY);
 }
 
 bool TryGetBarThicknessFineDialActivationGeometry(
@@ -417,6 +434,69 @@ namespace
 	}
 }
 
+namespace
+{
+	// 票据仅由原生窗口线程推进；延迟释放必须核对同一接触，不能释放后来建立的捕获。
+	struct MainNativeCaptureOwnership
+	{
+		HWND window = nullptr;
+		std::uint64_t serial = 0, ticket = 0;
+		std::uint64_t Begin(HWND target) noexcept
+		{
+			window = target;
+			if (++serial == 0) ++serial;
+			return ticket = serial;
+		}
+		bool Owns(HWND target, std::uint64_t expected) const noexcept
+		{ return expected != 0 && window == target && ticket == expected; }
+		bool Retire(HWND target, std::uint64_t expected) noexcept
+		{
+			if (!Owns(target, expected)) return false;
+			ticket = 0; return true;
+		}
+		std::uint64_t Current(HWND target) const noexcept
+		{ return window == target ? ticket : 0; }
+	};
+	MainNativeCaptureOwnership mainNativeCaptureOwnership;
+	std::atomic_uint64_t mainSliderCaptureTicket = 0, mainColorPickerCaptureTicket = 0;
+	std::atomic_uint64_t activeMainGestureCaptureTicket = 0;
+	bool UpdateMainAttributeCapture(std::atomic_uint64_t& attribute, std::uint64_t ticket, bool start) noexcept
+	{
+		if (!ticket) return false;
+		if (start)
+		{
+			// 逻辑接触来自 worker 已消费的 Down；即使 native Up/新 Down 先到也不丢 FIFO 编辑。
+			if (activeMainGestureCaptureTicket.load(std::memory_order_acquire) != ticket) return false;
+			attribute.store(ticket, std::memory_order_release); return true;
+		}
+		return attribute.compare_exchange_strong(ticket, 0);
+	}
+	std::mutex acceptedMainCaptureMutex;
+	HWND acceptedMainCaptureWindow = nullptr;
+	std::uint64_t acceptedMainCaptureTicket = 0;
+	thread_local void (*mainCaptureReleaseTestSink)(HWND, std::uint64_t, void*) = nullptr;
+	thread_local void* mainCaptureReleaseTestContext = nullptr;
+	void RequestMainCaptureRelease(HWND window, std::uint64_t ticket) noexcept
+	{
+		if (!window || !ticket) return;
+		if (mainCaptureReleaseTestSink) mainCaptureReleaseTestSink(window, ticket, mainCaptureReleaseTestContext);
+		else PostMessage(window, BarInputReleaseCaptureMessage, static_cast<WPARAM>(ticket), 0);
+	}
+	void CancelAcceptedMainCapture() noexcept
+	{
+		HWND window; std::uint64_t ticket;
+		{
+			std::lock_guard lock(acceptedMainCaptureMutex);
+			window = std::exchange(acceptedMainCaptureWindow, nullptr);
+			ticket = std::exchange(acceptedMainCaptureTicket, 0);
+		}
+		RequestMainCaptureRelease(window, ticket);
+	}
+	std::uint64_t AcquireBarNativeCapture(HWND window);
+	void ReleaseBarNativeCapture(HWND window, std::uint64_t ticket);
+	bool EnqueueMainInteractionMessage(HWND window, ExMessage message, std::uint64_t captureTicket = 0);
+}
+
 namespace Inkeys::UI::Bar
 {
 	Message::Reply DispatchAuthorizedFixtureIndex(HWND window, UINT message, WPARAM index, LPARAM extra) noexcept
@@ -435,7 +515,7 @@ namespace Inkeys::UI::Bar
 				try
 				{
 					Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, input.lbutton);
-					enqueued = Inkeys::Window::Enqueue(window, input);
+					enqueued = EnqueueMainInteractionMessage(window, input);
 				}
 				catch (...) { RejectAuthorizedFixtureSource(Ui3FixtureSourceFailure::Enqueue); }
 				FinishAuthorizedFixtureEnqueue(static_cast<std::uint32_t>(index), enqueued);
@@ -455,48 +535,1040 @@ namespace Inkeys::UI::Bar
 	}
 }
 
-bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd,
-	bool preserveTouchScreenCoordinates = false,
-	BarTouchScreenSample* touchScreenSample = nullptr)
+namespace
 {
-	// 保持原有轮询粒度，同时让退出时的 join 可终止。
-	while (!offSignal)
+	using Inkeys::UI::Bar::InteractionTask;
+	using Inkeys::UI::Bar::SurfaceInputEvent;
+	using InteractionClock = std::chrono::steady_clock;
+	struct SharedInputEnvelope
 	{
-		if (Inkeys::Window::TryGet(hWnd, message,
-			static_cast<Inkeys::Message::Filter>(filter)))
+		SurfaceInputEvent surface{};
+		ExMessage main{};
+		std::shared_ptr<BarButtonClass> mainButtonHit;
+		bool mainHitFrozen = false;
+		bool fixtureSource = false;
+		bool forMain = false;
+	};
+	struct SurfaceInputRegistration
+	{
+		HWND window = nullptr;
+		std::uint64_t generation = 0;
+		Inkeys::UI::Bar::SurfaceInputHandler handler = nullptr;
+		Inkeys::UI::Bar::SurfaceInputTick tick = nullptr;
+		Inkeys::UI::Bar::SurfaceInputCancel cancel = nullptr;
+		void* context = nullptr;
+		bool nativeWindow = true;
+		std::atomic_bool active = true;
+		std::atomic_uint64_t acceptedCaptureTicket=0;
+		std::mutex callbackMutex;
+		std::condition_variable callbackDrained;
+		unsigned inFlight = 0;
+		bool cancellationDelivered = false;
+	};
+	Inkeys::UI::Bar::InteractionMailbox<SharedInputEnvelope> sharedInputMailbox;
+	std::mutex interactionRegistrationMutex;
+	std::vector<std::shared_ptr<SurfaceInputRegistration>> interactionRegistrations;
+	std::atomic_bool interactionWorkerRunning = false;
+	std::atomic_bool offscreenInteractionWorker = false;
+	std::atomic<DWORD> interactionWorkerThreadId = 0;
+	// 仅由交互 worker 使用；非当前 filter 的键盘消息保持有界，手势结束后继续消费。
+	std::deque<SharedInputEnvelope> pendingMainInput;
+	struct MainInteractionAwaitContext
+	{
+		std::coroutine_handle<> continuation{};
+		ExMessage* output = nullptr;
+		BYTE filter = 0;
+		bool* received = nullptr;
+		InteractionClock::time_point deadline = InteractionClock::time_point::max();
+		bool cancelled = false;
+		std::shared_ptr<BarButtonClass> currentButtonHit;
+		bool currentHitFrozen = false;
+		std::uint64_t currentCaptureTicket = 0, gestureCaptureTicket = 0;
+	};
+	thread_local MainInteractionAwaitContext* mainInteractionAwaitContext = nullptr;
+	bool InteractionCancelled() noexcept
+	{ return mainInteractionAwaitContext && mainInteractionAwaitContext->cancelled; }
+	std::uint64_t MainGestureCaptureTicket() noexcept
+	{ return mainInteractionAwaitContext ? mainInteractionAwaitContext->gestureCaptureTicket : 0; }
+	void BeginMainGestureCapture() noexcept
+	{
+		if (mainInteractionAwaitContext)
 		{
-			if (!Inkeys::UI::Bar::ObserveAuthorizedFixtureDequeue(FixtureWireFromMessage(message))) return false;
-			// 普通命中在消费时转换；拖动循环保留整次 contact 的绝对屏幕采样。
-			PrepareBarInteractionMessage(message,
-				preserveTouchScreenCoordinates, touchScreenSample);
+			mainInteractionAwaitContext->gestureCaptureTicket = mainInteractionAwaitContext->currentCaptureTicket;
+			activeMainGestureCaptureTicket.store(mainInteractionAwaitContext->gestureCaptureTicket, std::memory_order_release);
+		}
+	}
+
+	void FreezeMainPresentedButtonHit(SharedInputEnvelope& event)
+	{
+		if (!IsBarCoordinateMessage(event.main.message)) return;
+		event.mainHitFrozen = true;
+		for (;;)
+		{
+			// mapping 与命中 maps 在同一奇偶发布边界内提交；读者不拼接跨帧的缩放和按钮。
+			const auto before = barUISet.BottomDockPresentedSnapshot();
+			event.mainButtonHit.reset();
+			ExMessage rigid = event.main;
+			PrepareBarInteractionMessage(rigid, false);
+			ExMessage body = rigid; ApplyBarBottomDockBodyHitTestFromRigid(body);
+			const double zoom = (std::max)(0.000001, before.zoom);
+			const auto more = barUISet.barButtonSet.GetMoreButtonSnapshot();
+			auto hitMore = [&](const auto& buttons)
+			{
+				for (const auto& button : buttons)
+					if (button && barUISet.HitTestPresentedButton(*button, rigid.x / zoom, rigid.y / zoom))
+					{ event.mainButtonHit = button; return true; }
+				return false;
+			};
+			const bool moreHit = barUISet.barState.moreExpanded
+				&& (hitMore(more.explicitMore) || hitMore(more.forcedOverflow));
+			if (!moreHit)
+				for (const auto& button : barUISet.barButtonSet.buttonList.Snapshot())
+					if (button && barUISet.HitTestPresentedButton(*button, body.x / zoom, body.y / zoom))
+					{ event.mainButtonHit = button; break; }
+			if (barUISet.BottomDockPresentedSnapshot().serial != before.serial) continue;
+			event.surface.presentedRevision = before.serial;
+			return;
+		}
+	}
+
+	bool CanCoalesceMainInput(const SharedInputEnvelope& previous, const SharedInputEnvelope& next) noexcept
+	{
+		return previous.forMain && next.forMain && !previous.fixtureSource && !next.fixtureSource
+			&& previous.surface.window == next.surface.window
+			&& previous.main.message == WM_MOUSEMOVE && next.main.message == WM_MOUSEMOVE
+			&& previous.main.lbutton == next.main.lbutton && previous.main.rbutton == next.main.rbutton
+			&& previous.main.mbutton == next.main.mbutton && previous.main.shift == next.main.shift
+			&& previous.main.ctrl == next.main.ctrl && previous.main.wheel == next.main.wheel
+			&& previous.surface.captureTicket == next.surface.captureTicket
+			&& previous.surface.presentedRevision == next.surface.presentedRevision;
+	}
+
+	bool EnqueueMainInteractionMessage(HWND window, ExMessage message, std::uint64_t captureTicket)
+	{
+		message.hwnd = window;
+		if (message.category == 0)
+			message.category = (message.message == WM_KEYDOWN || message.message == WM_KEYUP
+				|| message.message == WM_SYSKEYDOWN || message.message == WM_SYSKEYUP) ? EM_KEY : EM_MOUSE;
+		SharedInputEnvelope event;
+		event.forMain = true; event.main = message;
+		event.fixtureSource = Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled();
+		event.surface.window = window;
+		event.surface.message = message.message;
+		event.surface.touch = IsBarTouchPointerMessage(message);
+		event.surface.captureTicket = captureTicket;
+		FreezeMainPresentedButtonHit(event);
+		return sharedInputMailbox.Push(std::move(event), CanCoalesceMainInput, [](const SharedInputEnvelope& admitted)
+		{
+			if ((admitted.main.message == WM_LBUTTONDOWN || admitted.main.message == WM_LBUTTONDBLCLK)
+				&& admitted.surface.captureTicket)
+			{
+				// 与 mailbox 准入同锁发布；溢出时连尚未被协程消费的 Down 也有准确释放票据。
+				std::lock_guard lock(acceptedMainCaptureMutex);
+				acceptedMainCaptureWindow = admitted.surface.window;
+				acceptedMainCaptureTicket = admitted.surface.captureTicket;
+			}
+			return true;
+		});
+	}
+
+	struct MainInteractionMessageAwaiter
+	{
+		ExMessage* output;
+		BYTE filter;
+		bool preserveTouchScreenCoordinates;
+		BarTouchScreenSample* screenSample;
+		InteractionClock::time_point deadline;
+		bool received = false;
+		bool await_ready() const noexcept
+		{
+			return offSignal || !mainInteractionAwaitContext || mainInteractionAwaitContext->cancelled;
+		}
+		void await_suspend(std::coroutine_handle<> continuation) noexcept
+		{
+			auto& context = *mainInteractionAwaitContext;
+			context.continuation = continuation; context.output = output;
+			context.filter = filter; context.received = &received; context.deadline = deadline;
+		}
+		bool await_resume()
+		{
+			if (!received) return false;
+			if (!Inkeys::UI::Bar::ObserveAuthorizedFixtureDequeue(FixtureWireFromMessage(*output))) return false;
+			PrepareBarInteractionMessage(*output, preserveTouchScreenCoordinates, screenSample);
 			return true;
 		}
-		this_thread::sleep_for(chrono::milliseconds(1));
+	};
+
+	MainInteractionMessageAwaiter NextBarInteractionMessage(ExMessage& message, BYTE filter, HWND,
+		bool preserveTouchScreenCoordinates = false, BarTouchScreenSample* screenSample = nullptr,
+		InteractionClock::time_point deadline = InteractionClock::time_point::max())
+	{
+		return { &message, filter, preserveTouchScreenCoordinates, screenSample, deadline };
 	}
-	return false;
+	struct MainInteractionDelayAwaiter
+	{
+		InteractionClock::time_point deadline;
+		bool received = false;
+		bool await_ready() const noexcept
+		{
+			return offSignal || !mainInteractionAwaitContext || mainInteractionAwaitContext->cancelled;
+		}
+		void await_suspend(std::coroutine_handle<> continuation) noexcept
+		{
+			auto& context = *mainInteractionAwaitContext;
+			context.continuation = continuation; context.output = nullptr;
+			context.filter = 0; context.received = &received; context.deadline = deadline;
+		}
+		void await_resume() const noexcept {}
+	};
+	template<class Rep, class Period> MainInteractionDelayAwaiter InteractionDelay(
+		std::chrono::duration<Rep, Period> delay) noexcept
+	{
+		return { InteractionClock::now() + delay };
+	}
+
+	bool ResumeMainInteraction(MainInteractionAwaitContext& context, InteractionClock::time_point now)
+	{
+		if (!context.continuation) return false;
+		bool ready = offSignal || context.cancelled || now >= context.deadline;
+		bool received = false;
+		if (!offSignal && !context.cancelled && context.output)
+		{
+			for (auto it = pendingMainInput.begin(); it != pendingMainInput.end(); ++it)
+			{
+				if ((it->main.category & context.filter) == 0) continue;
+				*context.output = it->main;
+				context.currentButtonHit = it->mainButtonHit; context.currentHitFrozen = it->mainHitFrozen;
+				context.currentCaptureTicket = it->surface.captureTicket;
+				pendingMainInput.erase(it); ready = received = true; break;
+			}
+		}
+		if (!ready) return false;
+		if (context.received) *context.received = received;
+		auto continuation = std::exchange(context.continuation, {});
+		context.deadline = InteractionClock::time_point::max();
+		continuation.resume();
+		return true;
+	}
+
+	std::vector<std::shared_ptr<SurfaceInputRegistration>> SnapshotInteractionRegistrations()
+	{
+		std::lock_guard lock(interactionRegistrationMutex);
+		return interactionRegistrations;
+	}
+	template<class Callback> bool WithSurfaceInputCallback(
+		const std::shared_ptr<SurfaceInputRegistration>& registration,
+		bool requireActive, bool cancellation, Callback callback)
+	{
+		{
+			std::lock_guard lock(registration->callbackMutex);
+			if (requireActive && !registration->active.load(std::memory_order_acquire)) return false;
+			if (cancellation && !registration->active.load(std::memory_order_acquire)
+				&& registration->cancellationDelivered) return false;
+			++registration->inFlight;
+		}
+		try { callback(); }
+		catch (...) { if (IDTLogger) IDTLogger->error("[UI3] 分页输入回调失败，保留取消屏障"); }
+		{
+			std::lock_guard lock(registration->callbackMutex);
+			--registration->inFlight;
+			if (cancellation && !registration->active.load(std::memory_order_acquire))
+				registration->cancellationDelivered = true;
+			registration->callbackDrained.notify_all();
+		}
+		return true;
+	}
+	void CancelRegisteredInteractionSurfaces()
+	{
+		for (const auto& registration : SnapshotInteractionRegistrations())
+			(void)WithSurfaceInputCallback(registration, false, true, [&]
+			{
+				SurfaceInputEvent cancellation;cancellation.window=registration->window;cancellation.message=WM_CANCELMODE;
+				cancellation.generation=registration->generation;cancellation.captureTicket=registration->acceptedCaptureTicket.load(std::memory_order_acquire);
+				if (registration->cancel) registration->cancel(cancellation, registration->context);
+			});
+	}
+	void DispatchSurfaceInteraction(const SurfaceInputEvent& event)
+	{
+		for (const auto& registration : SnapshotInteractionRegistrations())
+		{
+			if (registration->window != event.window) continue;
+			if (event.generation != 0 && event.generation != registration->generation) continue;
+			const bool cancellation = event.message == WM_CANCELMODE || event.message == WM_CAPTURECHANGED
+				|| event.message == WM_DESTROY;
+			if (WithSurfaceInputCallback(registration, true, cancellation, [&]
+			{
+				if (cancellation && !event.nativeCaptureReleased)
+				{
+					if (registration->cancel) registration->cancel(event, registration->context);
+				}
+				else if (registration->handler) registration->handler(event, registration->context);
+			})) break;
+		}
+	}
+	InteractionClock::time_point TickSurfaceInteractions(InteractionClock::time_point now)
+	{
+		auto deadline = InteractionClock::time_point::max();
+		for (const auto& registration : SnapshotInteractionRegistrations())
+		{
+			if (!registration->active.load(std::memory_order_acquire))
+			{
+				(void)WithSurfaceInputCallback(registration, false, true, [&]
+				{
+					SurfaceInputEvent cancellation;cancellation.window=registration->window;cancellation.message=WM_CANCELMODE;
+					cancellation.generation=registration->generation;cancellation.captureTicket=registration->acceptedCaptureTicket.load(std::memory_order_acquire);
+					if (registration->cancel) registration->cancel(cancellation, registration->context);
+				});
+				continue;
+			}
+			(void)WithSurfaceInputCallback(registration, true, false, [&]
+			{
+				if (registration->tick) deadline = (std::min)(deadline, registration->tick(now, registration->context));
+			});
+		}
+		{
+			std::lock_guard lock(interactionRegistrationMutex);
+			std::erase_if(interactionRegistrations, [](const auto& registration)
+			{
+				std::lock_guard callbackLock(registration->callbackMutex);
+				return !registration->active.load(std::memory_order_acquire)
+					&& registration->cancellationDelivered && registration->inFlight == 0;
+			});
+		}
+		return deadline;
+	}
+
+	void ProcessBarTooltipTimer(HWND hWnd, WPARAM wParam);
+	void ProcessBarPointerLeave();
+
+	InteractionClock::time_point PumpSharedInteraction(MainInteractionAwaitContext& context,
+		InteractionClock::time_point now)
+	{
+		if (sharedInputMailbox.OverflowPending())
+		{
+			struct Complete {~Complete(){sharedInputMailbox.CompleteOverflow();}} complete;
+			// 丢掉整个在途接触并显式取消；宁可取消点击，也不能丢 Up 后留下捕获。
+			pendingMainInput.clear(); context.cancelled = true;
+			CancelAcceptedMainCapture();
+			CancelRegisteredInteractionSurfaces();
+		}
+		SharedInputEnvelope event;
+		for (unsigned budget = 0; budget != 32 && sharedInputMailbox.Pop(event); ++budget)
+		{
+			if (!event.forMain) DispatchSurfaceInteraction(event.surface);
+			else if (event.main.message == WM_TIMER) ProcessBarTooltipTimer(event.main.hwnd, event.main.wParam);
+			else if (event.main.message == WM_MOUSELEAVE) ProcessBarPointerLeave();
+			else if (event.main.message == WM_CANCELMODE || event.main.message == WM_CAPTURECHANGED
+				|| event.main.message == WM_DESTROY)
+			{
+				pendingMainInput.clear(); context.cancelled = true;
+			}
+			else if (!pendingMainInput.empty() && CanCoalesceMainInput(pendingMainInput.back(), event))
+				pendingMainInput.back() = std::move(event);
+			else if (pendingMainInput.size() < 512) pendingMainInput.push_back(std::move(event));
+			else { pendingMainInput.clear(); context.cancelled = true; CancelAcceptedMainCapture(); }
+			(void)ResumeMainInteraction(context, now);
+			// 主手势取消后先重建续接，再消费随后接触；不能把新 Down/Up 丢在旧协程后。
+			if (context.cancelled) break;
+		}
+		// 时间事件也通过同一 owner，长按重复不再依赖绘制帧率。
+		auto deadline = TickSurfaceInteractions(now);
+		for (unsigned budget = 0; budget != 32 && ResumeMainInteraction(context, now); ++budget) {}
+		return (std::min)(deadline, context.deadline);
+	}
+
+	enum class InteractionBusinessKind { Persistence, Dialog, Component };
+	struct InteractionBusinessJob
+	{
+		std::function<void()> action;
+		InteractionBusinessKind kind = InteractionBusinessKind::Persistence;
+	};
+	std::mutex interactionBusinessMutex;
+	std::condition_variable interactionBusinessDrained;
+	std::deque<InteractionBusinessJob> interactionBusinessQueue;
+	unsigned interactionBusinessInFlight = 0;
+	bool interactionBusinessDrainScheduled = false;
+	std::stop_source interactionBusinessStop;
+	std::atomic_bool interactionMemorySaveRequested = false;
+	std::atomic_bool interactionMemorySaveScheduled = false;
+	std::stop_token InteractionBusinessCancellation()
+	{
+		std::lock_guard lock(interactionBusinessMutex);
+		return interactionBusinessStop.get_token();
+	}
+	void CancelInteractionBusiness() noexcept
+	{
+		std::stop_source cancellation;
+		{
+			std::lock_guard lock(interactionBusinessMutex);
+			cancellation = interactionBusinessStop;
+		}
+		cancellation.request_stop();
+	}
+	void DrainInteractionBusiness()
+	{
+		std::unique_lock lock(interactionBusinessMutex);
+		interactionBusinessDrained.wait(lock, []
+		{
+			return interactionBusinessInFlight == 0 && !interactionBusinessDrainScheduled;
+		});
+	}
+	bool ResetInteractionBusiness()
+	{
+		std::lock_guard lock(interactionBusinessMutex);
+		if (interactionBusinessInFlight != 0 || interactionBusinessDrainScheduled) return false;
+		interactionBusinessStop = std::stop_source{};
+		return true;
+	}
+	void CALLBACK DrainInteractionBusinessQueue(PTP_CALLBACK_INSTANCE instance, void*)
+	{
+		(void)CallbackMayRunLong(instance);
+		for (;;)
+		{
+			// 一个有界 FIFO 由一个 STA drain 执行，Shell/COM 不进入交互或渲染线程。
+			const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+			for (;;)
+			{
+				InteractionBusinessJob job;
+				bool cancelled = false;
+				{
+					std::lock_guard lock(interactionBusinessMutex);
+					if (interactionBusinessQueue.empty()) break;
+					job = std::move(interactionBusinessQueue.front()); interactionBusinessQueue.pop_front();
+					cancelled = interactionBusinessStop.stop_requested();
+				}
+				// 退出后不再启动排队的外部组件；保存仍排空，dialog 自己消费 stop_token。
+				if (!cancelled || job.kind != InteractionBusinessKind::Component)
+					try { job.action(); } catch (...) {}
+				{
+					std::lock_guard lock(interactionBusinessMutex);
+					--interactionBusinessInFlight;
+				}
+				sharedInputMailbox.Wake();
+			}
+			if (SUCCEEDED(apartment)) CoUninitialize();
+			{
+				std::lock_guard lock(interactionBusinessMutex);
+				// apartment 清理期间收到的任务仍由当前 drain 接手，不遗漏通知。
+				if (!interactionBusinessQueue.empty()) continue;
+				interactionBusinessDrainScheduled = false;
+				interactionBusinessDrained.notify_all();
+				return;
+			}
+		}
+	}
+	bool SubmitInteractionBusiness(std::function<void()> action,
+		InteractionBusinessKind kind = InteractionBusinessKind::Persistence)
+	{
+		std::lock_guard lock(interactionBusinessMutex);
+		if (interactionBusinessQueue.size() >= 128
+			|| (kind == InteractionBusinessKind::Component && interactionBusinessStop.stop_requested())) return false;
+		interactionBusinessQueue.push_back({ std::move(action), kind }); ++interactionBusinessInFlight;
+		if (interactionBusinessDrainScheduled) return true;
+		interactionBusinessDrainScheduled = true;
+		if (!TrySubmitThreadpoolCallback(DrainInteractionBusinessQueue, nullptr, nullptr))
+		{
+			interactionBusinessQueue.pop_back(); --interactionBusinessInFlight;
+			interactionBusinessDrainScheduled = false;
+			interactionBusinessDrained.notify_all();
+			return false;
+		}
+		return true;
+	}
+
+	void RequestInteractionMemorySave()
+	{
+		interactionMemorySaveRequested.store(true, std::memory_order_release);
+		if (interactionMemorySaveScheduled.exchange(true, std::memory_order_acq_rel)) return;
+		if (!SubmitInteractionBusiness([]
+		{
+			for (;;)
+			{
+				interactionMemorySaveRequested.store(false, std::memory_order_release);
+				(void)SetMemory();
+				interactionMemorySaveScheduled.store(false, std::memory_order_release);
+				if (!interactionMemorySaveRequested.load(std::memory_order_acquire)
+					|| interactionMemorySaveScheduled.exchange(true, std::memory_order_acq_rel)) break;
+			}
+		})) interactionMemorySaveScheduled.store(false, std::memory_order_release);
+	}
+	struct InteractionVisualFeedback
+	{
+		const void* identity = nullptr;
+		unsigned slot = 0;
+		std::function<void()> apply;
+	};
+	std::mutex interactionVisualMutex;
+	std::vector<InteractionVisualFeedback> interactionVisualFeedback;
+	bool interactionVisualDrainPosted = false;
+	void QueueInteractionVisualFeedback(const void* identity, unsigned slot, std::function<void()> apply)
+	{
+		{
+			std::lock_guard lock(interactionVisualMutex);
+			auto previous = std::find_if(interactionVisualFeedback.begin(), interactionVisualFeedback.end(),
+				[&](const auto& value) { return value.identity == identity && value.slot == slot; });
+			if (previous != interactionVisualFeedback.end()) previous->apply = std::move(apply);
+			else if (interactionVisualFeedback.size() < 1024)
+				interactionVisualFeedback.push_back({ identity, slot, std::move(apply) });
+			else return;
+			if (interactionVisualDrainPosted) return;
+			interactionVisualDrainPosted = true;
+		}
+		// 高频 Move 只更新同一条反馈，RenderPipeline 中至多保留一个 drain 请求。
+		if (!Inkeys::UI::RenderPipeline::PostControl([]
+		{
+			std::vector<InteractionVisualFeedback> feedback;
+			{
+				std::lock_guard lock(interactionVisualMutex);
+				feedback.swap(interactionVisualFeedback);
+				interactionVisualDrainPosted = false;
+			}
+			for (auto& value : feedback) value.apply();
+			Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		}))
+		{
+			std::lock_guard lock(interactionVisualMutex);
+			interactionVisualDrainPosted = false;
+			interactionVisualFeedback.clear();
+		}
+	}
+
+	bool SetInteractionPenColor(COLORREF color, bool save = true)
+	{
+		const bool accepted = SetPenColor(color, false);
+		if (accepted && save) RequestInteractionMemorySave();
+		return accepted;
+	}
+	bool SetInteractionPenWidthIfRevision(double width, std::uint64_t revision, bool save = true)
+	{
+		const bool accepted = SetPenWidthIfRevision(width, revision, false);
+		if (accepted && save) RequestInteractionMemorySave();
+		return accepted;
+	}
+	bool SetInteractionPenWidthPresetIfRevision(int preset, std::uint64_t revision, bool save = true)
+	{
+		const bool accepted = SetPenWidthPresetIfRevision(preset, revision, false);
+		if (accepted && save) RequestInteractionMemorySave();
+		return accepted;
+	}
+
+	template<class Action> InteractionTask<std::invoke_result_t<Action>> RunInteractionBusiness(Action action)
+	{
+		using Result = std::invoke_result_t<Action>;
+		struct Completion { std::optional<Result> value; std::atomic_bool ready = false; };
+		auto completion = std::make_shared<Completion>();
+		if (!SubmitInteractionBusiness([completion, action = std::move(action)]() mutable
+		{
+			try { completion->value.emplace(action()); }
+			catch (...) { completion->value.emplace(); }
+			completion->ready.store(true, std::memory_order_release);
+		}, InteractionBusinessKind::Dialog)) co_return Result{};
+		while (!completion->ready.load(std::memory_order_acquire) && !offSignal && !InteractionCancelled())
+			co_await InteractionDelay(std::chrono::milliseconds(8));
+		if (!completion->ready.load(std::memory_order_acquire)) co_return Result{};
+		co_return std::move(*completion->value);
+	}
+
 }
 
-bool TryGetBarInteractionMessage(
-	ExMessage* message, BYTE filter, bool removeMessage, HWND hWnd,
-	BarTouchScreenSample* touchScreenSample = nullptr)
+namespace Inkeys::UI::Bar
 {
-	// 旧交互路径全部是成功即消费，HiMsg 不提供 peek 语义。
-	if (!message || !removeMessage || !Inkeys::Window::TryGet(
-		hWnd, *message, static_cast<Inkeys::Message::Filter>(filter)))
-		return false;
-	if (!Inkeys::UI::Bar::ObserveAuthorizedFixtureDequeue(FixtureWireFromMessage(*message))) return false;
-	PrepareBarInteractionMessage(*message, false, touchScreenSample);
-	return true;
+	bool RegisterInteractionSurface(HWND window, std::uint64_t generation, SurfaceInputHandler handler,
+		SurfaceInputTick tick, SurfaceInputCancel cancel, void* context, bool nativeWindow)
+	{
+		if (!window || !handler) return false;
+		auto registration = std::make_shared<SurfaceInputRegistration>();
+		registration->window = window; registration->generation = generation;
+		registration->handler = handler; registration->tick = tick;
+		registration->cancel = cancel; registration->context = context; registration->nativeWindow = nativeWindow;
+		{
+			std::lock_guard lock(interactionRegistrationMutex);
+			for (const auto& previous : interactionRegistrations)
+				if (previous->window == window)
+				{
+					std::lock_guard callbackLock(previous->callbackMutex);
+					previous->active.store(false, std::memory_order_release);
+				}
+			interactionRegistrations.push_back(std::move(registration));
+		}
+		sharedInputMailbox.Wake();
+		return true;
+	}
+	void UnregisterInteractionSurface(HWND window)
+	{
+		// HWND owner 不等待 worker，避免与 worker 的窗口效果请求形成互锁。
+		{
+			std::lock_guard lock(interactionRegistrationMutex);
+			for (const auto& registration : interactionRegistrations)
+				if (registration->window == window)
+				{
+					std::lock_guard callbackLock(registration->callbackMutex);
+					registration->active.store(false, std::memory_order_release);
+				}
+		}
+		sharedInputMailbox.RemoveIf([&](const auto& event) { return !event.forMain && event.surface.window == window; });
+		sharedInputMailbox.Wake();
+	}
+	bool DrainInteractionSurfaceCallbacks() noexcept
+	{
+		const auto registrations = SnapshotInteractionRegistrations();
+		if (std::none_of(registrations.begin(), registrations.end(), [](const auto& registration)
+			{ return !registration->active.load(std::memory_order_acquire); })) return true;
+		if (interactionWorkerThreadId.load(std::memory_order_acquire) == GetCurrentThreadId()) return false;
+		for (const auto& registration : registrations)
+			if (!registration->active.load(std::memory_order_acquire)
+				&& registration->nativeWindow
+				&& GetWindowThreadProcessId(registration->window, nullptr) == GetCurrentThreadId()) return false;
+		sharedInputMailbox.Wake();
+		for (const auto& registration : registrations)
+		{
+			std::unique_lock lock(registration->callbackMutex);
+			if (registration->active.load(std::memory_order_acquire)) continue;
+			if (!interactionWorkerRunning.load(std::memory_order_acquire))
+			{
+				registration->callbackDrained.wait(lock, [&] { return registration->inFlight == 0; });
+				registration->cancellationDelivered = true;
+			}
+			else registration->callbackDrained.wait(lock, [&]
+			{
+				return registration->inFlight == 0 && (registration->cancellationDelivered
+					|| !interactionWorkerRunning.load(std::memory_order_acquire));
+			});
+		}
+		return true;
+	}
+
+	bool QueueInteractionComponentAction(std::function<void()> action)
+	{
+		return !offscreenInteractionWorker.load(std::memory_order_acquire)
+			&& action && SubmitInteractionBusiness(std::move(action), InteractionBusinessKind::Component);
+	}
+
+	bool SubmitSurfaceInput(const SurfaceInputEvent& input)
+	{
+		std::shared_ptr<SurfaceInputRegistration> registration;
+		{
+			std::lock_guard lock(interactionRegistrationMutex);
+			for(const auto& candidate:interactionRegistrations)if(candidate->window==input.window
+				&&candidate->active.load(std::memory_order_acquire)&&(input.generation==0||input.generation==candidate->generation)){
+				registration=candidate;break;
+			}
+		}
+		if(!registration)return false;
+		SharedInputEnvelope event; event.surface = input;
+		return sharedInputMailbox.Push(std::move(event), [](const auto& previous, const auto& next)
+		{
+			return !previous.forMain && !next.forMain && previous.surface.window == next.surface.window
+				&& previous.surface.message == WM_MOUSEMOVE && next.surface.message == WM_MOUSEMOVE
+				&& previous.surface.generation == next.surface.generation
+				&& previous.surface.presentedRevision == next.surface.presentedRevision
+				&& previous.surface.semanticRevision == next.surface.semanticRevision
+				&& previous.surface.captureTicket == next.surface.captureTicket
+				&& previous.surface.contactId == next.surface.contactId && previous.surface.touch == next.surface.touch
+				&& previous.surface.wParam == next.surface.wParam;
+		},[registration](auto& admitted){
+			std::lock_guard lock(registration->callbackMutex);
+			if(!registration->active.load(std::memory_order_acquire))return false;
+			auto& input=admitted.surface;
+			const bool cancel=input.message==WM_CANCELMODE||input.message==WM_CAPTURECHANGED||input.message==WM_DESTROY;
+			if(cancel&&!input.nativeCaptureReleased&&!input.captureTicket)
+				input.captureTicket=registration->acceptedCaptureTicket.load(std::memory_order_acquire);
+			else if(!cancel&&input.captureTicket)registration->acceptedCaptureTicket.store(input.captureTicket,std::memory_order_release);
+			return true;
+		});
+	}
+	void WakeInteractionWorker() noexcept { sharedInputMailbox.Wake(); }
+	struct ScopedInteractionWorker::State
+	{
+		std::jthread thread;
+		std::mutex readyMutex;
+		std::condition_variable ready;
+		bool started = false;
+	};
+	ScopedInteractionWorker::ScopedInteractionWorker() = default;
+	ScopedInteractionWorker::~ScopedInteractionWorker()
+	{
+		if (!state_) return;
+		state_->thread.request_stop(); sharedInputMailbox.Wake();
+		if (state_->thread.joinable()) state_->thread.join();
+	}
+	std::unique_ptr<ScopedInteractionWorker> CreateOffscreenInteractionWorker()
+	{
+		if (Inkeys::Window::GetService().Running() || Inkeys::Drawing::Draw3::ProductRunning() || offSignal) return {};
+		bool expected = false;
+		if (!interactionWorkerRunning.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) return {};
+		try
+		{
+			if (!SnapshotInteractionRegistrations().empty())
+			{ interactionWorkerRunning.store(false, std::memory_order_release); return {}; }
+			auto scope = std::unique_ptr<ScopedInteractionWorker>(new ScopedInteractionWorker);
+			scope->state_ = std::make_unique<ScopedInteractionWorker::State>();
+			auto* state = scope->state_.get();
+			pendingMainInput.clear(); sharedInputMailbox.RemoveIf([](const auto&) { return true; });
+			(void)sharedInputMailbox.ConsumeOverflow();
+			offscreenInteractionWorker.store(true, std::memory_order_release);
+			state->thread = std::jthread([state](std::stop_token stop)
+			{
+				MainInteractionAwaitContext context;
+				mainInteractionAwaitContext = &context;
+				interactionWorkerThreadId.store(GetCurrentThreadId(), std::memory_order_release);
+				{
+					std::lock_guard lock(state->readyMutex); state->started = true; state->ready.notify_all();
+				}
+				try
+				{
+					while (!stop.stop_requested())
+					{
+						const auto observed = sharedInputMailbox.Revision();
+						const auto deadline = PumpSharedInteraction(context, InteractionClock::now());
+						if (!stop.stop_requested()) sharedInputMailbox.WaitUntil(deadline, observed);
+					}
+				}
+				catch (...) { if (IDTLogger) IDTLogger->error("[UI3] 无窗口输入 owner 退出"); }
+				// scope 结束时关闭所有未注销目标，等待中的 drain 得到确定完成通知。
+				for (const auto& registration : SnapshotInteractionRegistrations())
+				{
+					std::lock_guard lock(registration->callbackMutex);
+					registration->active.store(false, std::memory_order_release);
+				}
+				CancelRegisteredInteractionSurfaces();
+				(void)TickSurfaceInteractions(InteractionClock::now());
+				pendingMainInput.clear(); mainInteractionAwaitContext = nullptr;
+				interactionWorkerThreadId.store(0, std::memory_order_release);
+				offscreenInteractionWorker.store(false, std::memory_order_release);
+				interactionWorkerRunning.store(false, std::memory_order_release);
+			});
+			std::unique_lock readyLock(state->readyMutex);
+			state->ready.wait(readyLock, [&] { return state->started; });
+			return scope;
+		}
+		catch (...)
+		{
+			offscreenInteractionWorker.store(false, std::memory_order_release);
+			interactionWorkerRunning.store(false, std::memory_order_release);
+			return {};
+		}
+	}
+
+	int RunSharedInteractionWorkerTests() noexcept
+	{
+		if (interactionWorkerRunning.load(std::memory_order_acquire)) return 2;
+		int failures = 0;
+		const auto check = [&](bool value, const char* name)
+		{
+			if (!value) { ++failures; std::fprintf(stderr, "[UI3Input] FAIL %s\n", name); }
+		};
+		struct Probe
+		{
+			unsigned down = 0, up = 0, cancelled = 0, logicalCancelled = 0, repeat = 0;
+			std::uint64_t cancelledCaptureTicket=0;
+			bool throwOnCancel=false;
+			bool held = false;
+			InteractionClock::time_point next = InteractionClock::time_point::max();
+		};
+		std::array<Probe, 4> probes{};
+		const auto handler = +[](const SurfaceInputEvent& input, void* opaque)
+		{
+			auto& probe = *static_cast<Probe*>(opaque);
+			if (input.message == WM_LBUTTONDOWN)
+			{
+				++probe.down; probe.held = true;
+				probe.next = InteractionClock::now() + std::chrono::milliseconds(10);
+			}
+			if (input.message == WM_LBUTTONUP) { ++probe.up; probe.held = false; }
+			if (input.message == WM_CANCELMODE || input.message == WM_CAPTURECHANGED)
+			{ ++probe.logicalCancelled; probe.held = false; }
+		};
+		const auto tick = +[](InteractionClock::time_point now, void* opaque)
+		{
+			auto& probe = *static_cast<Probe*>(opaque);
+			if (probe.held && now >= probe.next)
+			{
+				++probe.repeat; probe.next = now + std::chrono::milliseconds(10);
+			}
+			return probe.held ? probe.next : InteractionClock::time_point::max();
+		};
+		const auto cancel = +[](const SurfaceInputEvent& input, void* opaque)
+		{
+			auto& probe = *static_cast<Probe*>(opaque);
+			++probe.cancelled; probe.held = false;
+			probe.cancelledCaptureTicket=input.captureTicket;if(probe.throwOnCancel)throw 1;
+		};
+		MainInteractionAwaitContext context;
+		auto* previousContext = mainInteractionAwaitContext;
+		mainInteractionAwaitContext = &context;
+		try
+		{
+			{
+				std::lock_guard lock(interactionRegistrationMutex);
+				if (!interactionRegistrations.empty())
+				{ mainInteractionAwaitContext = previousContext; return 2; }
+			}
+			for (std::size_t index = 0; index != probes.size(); ++index)
+				check(RegisterInteractionSurface(reinterpret_cast<HWND>(index + 1), 7,
+					handler, tick, cancel, &probes[index]), "register-production-surface");
+			SharedInputEnvelope moveA, moveB;
+			moveA.forMain = moveB.forMain = true;
+			moveA.main.message = moveB.main.message = WM_MOUSEMOVE;
+			check(CanCoalesceMainInput(moveA, moveB), "production-ordinary-moves-coalesce");
+			moveB.fixtureSource = true;
+			check(!CanCoalesceMainInput(moveA, moveB), "authorized-fixture-wire-provenance-retained");
+			moveB.fixtureSource = false; moveB.main.ctrl = true;
+			check(!CanCoalesceMainInput(moveA, moveB), "modifier-change-is-an-input-boundary");
+			bool receivedMain = false;
+			auto waitForMain = [&]() -> InteractionTask<bool>
+			{
+				ExMessage message{};
+				receivedMain = co_await NextBarInteractionMessage(message, EM_KEY, nullptr);
+				co_return receivedMain;
+			};
+			auto mainTask = waitForMain(); mainTask.Start();
+			for (std::size_t index = 0; index != probes.size(); ++index)
+			{
+				SurfaceInputEvent event; event.window = reinterpret_cast<HWND>(index + 1);
+				event.generation = 7; event.message = WM_LBUTTONDOWN;
+				check(SubmitSurfaceInput(event), "enqueue-production-surface");
+			}
+			(void)PumpSharedInteraction(context, InteractionClock::now());
+			check(!mainTask.Done() && !receivedMain, "main-wait-genuinely-suspends");
+			for (const auto& probe : probes) check(probe.down == 1, "all-targets-progress-during-main-wait");
+			(void)PumpSharedInteraction(context, InteractionClock::now() + std::chrono::seconds(1));
+			for (const auto& probe : probes) check(probe.repeat == 1, "late-deadline-emits-once-without-render");
+			SurfaceInputEvent oldNativeCancel;oldNativeCancel.window=reinterpret_cast<HWND>(1);
+			oldNativeCancel.generation=7;oldNativeCancel.message=WM_CANCELMODE;oldNativeCancel.captureTicket=11;oldNativeCancel.nativeCaptureReleased=true;
+			SurfaceInputEvent nextContact=oldNativeCancel;nextContact.message=WM_LBUTTONDOWN;
+			nextContact.captureTicket=12;nextContact.nativeCaptureReleased=false;
+			(void)SubmitSurfaceInput(oldNativeCancel);(void)SubmitSurfaceInput(nextContact);
+			(void)PumpSharedInteraction(context,InteractionClock::now());
+			check(probes[0].logicalCancelled==1&&probes[0].cancelled==0&&probes[0].held,
+				"native-cancel-before-new-contact-does-not-repeat-capture-release");
+			SurfaceInputEvent stale; stale.window = reinterpret_cast<HWND>(1);
+			stale.generation = 6; stale.message = WM_LBUTTONUP;
+			(void)SubmitSurfaceInput(stale);
+			(void)PumpSharedInteraction(context, InteractionClock::now());
+			check(probes[0].up == 0, "old-surface-generation-rejected");
+			ExMessage key{}; key.category = EM_KEY; key.message = WM_KEYDOWN; key.vkcode = VK_ESCAPE;
+			check(EnqueueMainInteractionMessage(nullptr, key), "enqueue-main-same-mailbox");
+			(void)PumpSharedInteraction(context, InteractionClock::now());
+			check(mainTask.Done() && receivedMain, "main-resumes-after-other-targets");
+			mainTask.Rethrow();
+			context = {}; receivedMain = false;
+			auto cancelledTask = waitForMain(); cancelledTask.Start();
+			std::array<unsigned,4> downBeforeOverflow{};std::array<std::uint64_t,4> droppedCaptureTickets{};
+			for(std::size_t i=0;i<probes.size();++i)downBeforeOverflow[i]=probes[i].down;
+			for (unsigned index = 0; index != 512; ++index)
+			{
+				SurfaceInputEvent event; event.window = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(index % 4 + 1));
+				event.generation = 7; event.message = WM_LBUTTONDOWN;
+				event.captureTicket=1000+index;droppedCaptureTickets[index%4]=event.captureTicket;
+				check(SubmitSurfaceInput(event), "production-capacity-admitted");
+			}
+			SurfaceInputEvent overflow; overflow.window = reinterpret_cast<HWND>(1);
+			overflow.generation = 7; overflow.message = WM_LBUTTONUP;
+			overflow.captureTicket=9000;
+			check(!SubmitSurfaceInput(overflow), "production-overflow-detected");
+			SurfaceInputEvent rejectedDown=overflow;rejectedDown.message=WM_LBUTTONDOWN;rejectedDown.captureTicket=9001;
+			check(!SubmitSurfaceInput(rejectedDown)&&sharedInputMailbox.OverflowPending(),"overflow-barrier-rejects-new-contact-before-cancellation");
+			probes[3].throwOnCancel=true;
+			(void)PumpSharedInteraction(context, InteractionClock::now());
+			probes[3].throwOnCancel=false;
+			check(cancelledTask.Done() && !receivedMain, "overflow-cancels-suspended-main");
+			for (const auto& probe : probes)
+				check(probe.cancelled == 1 && !probe.held, "overflow-cancels-all-affected-targets");
+			for(std::size_t i=0;i<probes.size();++i)
+				check(probes[i].down==downBeforeOverflow[i]&&probes[i].cancelledCaptureTicket==droppedCaptureTickets[i],
+					"unseen-dropped-down-retains-bounded-exact-capture-ticket");
+			check(!sharedInputMailbox.OverflowPending(),"overflow-barrier-completes-even-after-cancel-callback-throws");
+			rejectedDown.captureTicket=9002;check(SubmitSurfaceInput(rejectedDown),"new-contact-admitted-after-overflow-cancellation");
+			(void)PumpSharedInteraction(context,InteractionClock::now());
+			check(probes[0].held&&probes[0].down==downBeforeOverflow[0]+1,"post-barrier-contact-progresses-through-real-pump");
+			rejectedDown.message=WM_LBUTTONUP;(void)SubmitSurfaceInput(rejectedDown);(void)PumpSharedInteraction(context,InteractionClock::now());
+			SurfaceInputEvent unseenDown=rejectedDown;unseenDown.window=reinterpret_cast<HWND>(2);unseenDown.message=WM_LBUTTONDOWN;unseenDown.captureTicket=10001;
+			const auto beforeRetire=probes[1].down;check(SubmitSurfaceInput(unseenDown),"unseen-contact-admitted-before-retirement");
+			UnregisterInteractionSurface(unseenDown.window);(void)PumpSharedInteraction(context,InteractionClock::now());
+			check(probes[1].down==beforeRetire&&probes[1].cancelledCaptureTicket==10001,
+				"retirement-retains-capture-ticket-of-unconsumed-down");
+			for (std::size_t index = 0; index != probes.size(); ++index)
+				UnregisterInteractionSurface(reinterpret_cast<HWND>(index + 1));
+			(void)PumpSharedInteraction(context, InteractionClock::now());
+			check(SnapshotInteractionRegistrations().empty(), "retired-surface-descriptors-reclaimed");
+			{
+				struct CaptureProbe
+				{
+					MainNativeCaptureOwnership owner;
+					std::vector<std::uint64_t> requests, observedDowns;
+					unsigned retired = 0;
+					std::atomic_uint64_t attribute = 0;
+					bool completed = false;
+				} capture;
+				const auto target = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(0x500));
+				struct RestoreCaptureSink
+				{
+					decltype(mainCaptureReleaseTestSink) sink = mainCaptureReleaseTestSink;
+					void* context = mainCaptureReleaseTestContext;
+					~RestoreCaptureSink()
+					{ mainCaptureReleaseTestSink = sink; mainCaptureReleaseTestContext = context; }
+				} restore;
+				mainCaptureReleaseTestContext = &capture;
+				mainCaptureReleaseTestSink = +[](HWND window, std::uint64_t ticket, void* opaque)
+				{
+					auto& probe = *static_cast<CaptureProbe*>(opaque);
+					probe.requests.push_back(ticket);
+					if (probe.owner.Retire(window, ticket)) ++probe.retired;
+				};
+				// 运行真实 mailbox/Pump：旧协程的取消完成晚于下一接触的原生捕获建立。
+				auto gesture = [&]() -> InteractionTask<bool>
+				{
+					ExMessage input{};
+					if (!(co_await NextBarInteractionMessage(input, EM_MOUSE, target))) co_return false;
+					BeginMainGestureCapture();
+					capture.observedDowns.push_back(MainGestureCaptureTicket());
+					const bool started = UpdateMainAttributeCapture(capture.attribute, MainGestureCaptureTicket(), true);
+					const bool up = co_await NextBarInteractionMessage(input, EM_MOUSE, target);
+					const bool stopped = UpdateMainAttributeCapture(capture.attribute, MainGestureCaptureTicket(), false);
+					RequestMainCaptureRelease(target, MainGestureCaptureTicket());
+					capture.completed = started && stopped && up && input.message == WM_LBUTTONUP;
+					co_return capture.completed;
+				};
+				context = {};
+				auto oldGesture = gesture(); oldGesture.Start();
+				ExMessage down{}; down.message = WM_LBUTTONDOWN; down.lbutton = true;
+				const auto oldTicket = capture.owner.Begin(target);
+				check(EnqueueMainInteractionMessage(target, down, oldTicket), "main-native-down-retains-capture-ticket");
+				(void)PumpSharedInteraction(context, InteractionClock::now());
+				check(!oldGesture.Done() && MainGestureCaptureTicket() == oldTicket, "main-gesture-freezes-its-starting-ticket");
+				(void)capture.owner.Retire(target, oldTicket);
+				ExMessage cancelled{}; cancelled.message = WM_CANCELMODE;
+				check(EnqueueMainInteractionMessage(target, cancelled, oldTicket), "enqueue-old-main-cancel");
+				const auto nextTicket = capture.owner.Begin(target);
+				check(EnqueueMainInteractionMessage(target, down, nextTicket), "enqueue-next-main-down-before-old-coroutine-finishes");
+				ExMessage up{}; up.message = WM_LBUTTONUP;
+				check(EnqueueMainInteractionMessage(target, up, nextTicket), "enqueue-next-main-up-in-same-pump-batch");
+				(void)PumpSharedInteraction(context, InteractionClock::now());
+				check(oldGesture.Done() && !capture.completed && capture.owner.Owns(target, nextTicket)
+					&& capture.requests == std::vector<std::uint64_t>{ oldTicket }, "old-main-cleanup-cannot-release-new-capture");
+				context = {};
+				auto nextGesture = gesture(); nextGesture.Start();
+				(void)PumpSharedInteraction(context, InteractionClock::now());
+				check(nextGesture.Done() && capture.completed
+					&& capture.observedDowns == std::vector<std::uint64_t>{ oldTicket, nextTicket }
+					&& capture.retired == 1, "cancel-boundary-preserves-following-main-down-up");
+				CancelAcceptedMainCapture();
+				context = {};
+				const auto fastTicket = capture.owner.Begin(target);
+				check(EnqueueMainInteractionMessage(target, down, fastTicket)
+					&& EnqueueMainInteractionMessage(target, up, fastTicket), "native-fast-tap-queued-before-property-start");
+				(void)capture.owner.Retire(target, fastTicket);
+				const auto replacementTicket = capture.owner.Begin(target);
+				check(EnqueueMainInteractionMessage(target, down, replacementTicket), "native-next-down-precedes-first-property-start");
+				auto fastGesture = gesture(); fastGesture.Start();
+				(void)PumpSharedInteraction(context, InteractionClock::now());
+				check(fastGesture.Done() && capture.completed && capture.owner.Owns(target, replacementTicket),
+					"queued-fast-edit-commits-without-reacquiring-or-releasing-next-native-capture");
+				context = {};
+				auto replacementGesture = gesture(); replacementGesture.Start();
+				(void)PumpSharedInteraction(context, InteractionClock::now());
+				check(!replacementGesture.Done() && capture.attribute.load() == replacementTicket,
+					"queued-second-down-survives-first-gesture-completion");
+				check(!UpdateMainAttributeCapture(capture.attribute, fastTicket, false)
+					&& capture.attribute.load() == replacementTicket, "old-attribute-stop-cannot-clear-replacement-state");
+				(void)capture.owner.Retire(target, replacementTicket);
+				check(EnqueueMainInteractionMessage(target, up, replacementTicket), "enqueue-replacement-up");
+				(void)PumpSharedInteraction(context, InteractionClock::now());
+				check(replacementGesture.Done() && capture.completed && capture.observedDowns.size() == 4,
+					"native-queued-taps-preserve-both-logical-property-edits");
+				CancelAcceptedMainCapture();
+				context = {}; receivedMain = false;
+				auto unseenMain = waitForMain(); unseenMain.Start();
+				const auto admittedTicket = capture.owner.Begin(target);
+				for (unsigned i = 0; i != 512; ++i)
+					check(EnqueueMainInteractionMessage(target, down, admittedTicket), "main-overflow-fill-admitted");
+				const auto rejectedTicket = capture.owner.Begin(target);
+				check(!EnqueueMainInteractionMessage(target, down, rejectedTicket), "main-overflow-rejects-next-native-down");
+				// 原生拒绝路径立即按被拒票据释放，不能覆盖 mailbox 已准入的票据。
+				check(capture.owner.Retire(target, rejectedTicket), "rejected-main-down-releases-only-its-own-ticket");
+				(void)PumpSharedInteraction(context, InteractionClock::now());
+				check(unseenMain.Done() && !receivedMain && !capture.requests.empty()
+					&& capture.requests.back() == admittedTicket && capture.observedDowns.size() == 4,
+					"main-overflow-releases-exact-ticket-of-unconsumed-down");
+				check(!sharedInputMailbox.OverflowPending(), "main-overflow-barrier-completes-after-release-request");
+				activeMainGestureCaptureTicket.store(0, std::memory_order_release);
+				context = {};
+			}
+			check(ResetInteractionBusiness(), "business-service-starts-empty");
+			std::vector<unsigned> businessOrder;
+			std::promise<void> entered; auto enteredResult = entered.get_future();
+			const auto token = InteractionBusinessCancellation();
+			check(SubmitInteractionBusiness([&]
+			{
+				businessOrder.push_back(1); entered.set_value();
+				std::mutex mutex; std::condition_variable_any wake; std::unique_lock lock(mutex);
+				(void)wake.wait(lock, token, [] { return false; });
+				businessOrder.push_back(2);
+			}, InteractionBusinessKind::Dialog), "cooperative-business-request-accepted");
+			check(enteredResult.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+				"business-drain-started");
+			check(SubmitInteractionBusiness([&] { businessOrder.push_back(3); }), "accepted-save-queued-after-modal-request");
+			check(QueueInteractionComponentAction([&] { businessOrder.push_back(4); }), "external-action-queued-in-order");
+			CancelInteractionBusiness(); DrainInteractionBusiness();
+			check(businessOrder == std::vector<unsigned>{ 1, 2, 3 }, "shutdown-cancels-dialog-drains-save-skips-pending-launch");
+			check(!QueueInteractionComponentAction([] {}), "shutdown-rejects-new-external-action");
+			check(ResetInteractionBusiness(), "business-context-fully-joined-before-reuse");
+			{
+				auto scope = CreateOffscreenInteractionWorker();
+				check(scope != nullptr, "offscreen-factory-starts-production-pump");
+				if (scope)
+				{
+					check(!CreateOffscreenInteractionWorker(), "second-interaction-owner-rejected");
+					struct WakeProbe { std::mutex mutex; std::condition_variable wake; unsigned calls = 0; } wakeProbe;
+					const auto input = +[](const SurfaceInputEvent&, void* value)
+					{
+						auto& probe = *static_cast<WakeProbe*>(value);
+						std::lock_guard lock(probe.mutex); ++probe.calls; probe.wake.notify_all();
+					};
+					const auto opaque = reinterpret_cast<HWND>(0x100);
+					check(RegisterInteractionSurface(opaque, 9, input, nullptr, nullptr, &wakeProbe, false), "opaque-target-registers-without-native-owner");
+					SurfaceInputEvent event; event.window = opaque; event.generation = 9; event.message = WM_LBUTTONDOWN;
+					check(SubmitSurfaceInput(event), "opaque-target-uses-production-mailbox");
+					{
+						std::unique_lock lock(wakeProbe.mutex);
+						check(wakeProbe.wake.wait_for(lock, std::chrono::seconds(1), [&] { return wakeProbe.calls == 1; }), "production-worker-dispatches-opaque-input");
+					}
+					UnregisterInteractionSurface(opaque);
+					check(DrainInteractionSurfaceCallbacks(), "opaque-callbacks-drain-before-context-destruction");
+				}
+			}
+			check(!interactionWorkerRunning.load(std::memory_order_acquire), "scope-stop-wakes-and-joins-worker");
+
+
+		}
+		catch (...) { ++failures; std::fputs("[UI3Input] FAIL exception\n", stderr); }
+		{
+			std::lock_guard lock(interactionRegistrationMutex);
+			interactionRegistrations.clear();
+		}
+		sharedInputMailbox.RemoveIf([](const auto&) { return true; });
+		pendingMainInput.clear(); mainInteractionAwaitContext = previousContext;
+		std::fprintf(stderr, "[UI3Input] %s: production mailbox/dispatcher/continuation/deadline/cancel\n",
+			failures ? "FAIL" : "PASS");
+		return failures ? 1 : 0;
+	}
+
 }
 
 void ClearBarInteractionMessages(BYTE filter, HWND hWnd)
 {
-	const auto removed = Inkeys::Window::Clear(
-		hWnd, static_cast<Inkeys::Message::Filter>(filter));
+	std::size_t removed = sharedInputMailbox.RemoveIf([&](const auto& event)
+	{
+		return event.forMain && event.surface.window == hWnd && (event.main.category & filter) != 0;
+	});
+	for (auto it = pendingMainInput.begin(); it != pendingMainInput.end();)
+		if (it->main.hwnd == hWnd && (it->main.category & filter) != 0) { it = pendingMainInput.erase(it); ++removed; }
+		else ++it;
 	Inkeys::UI::Bar::ObserveAuthorizedFixtureClear(filter, removed);
 }
 
-void QueueBarThicknessSliderEnd(HWND hWnd)
+void QueueBarThicknessSliderEnd(HWND hWnd, std::uint64_t captureTicket)
 {
 	if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
 	{
@@ -516,10 +1588,10 @@ void QueueBarThicknessSliderEnd(HWND hWnd)
 		point.y, SHRT_MIN, SHRT_MAX));
 	message.lbutton = false;
 
-	(void)Inkeys::Window::Enqueue(hWnd, message);
+	(void)EnqueueMainInteractionMessage(hWnd, message, captureTicket);
 }
 
-void QueueBarColorPickerEnd(HWND hWnd)
+void QueueBarColorPickerEnd(HWND hWnd, std::uint64_t captureTicket)
 {
 	if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
 	{
@@ -537,21 +1609,172 @@ void QueueBarColorPickerEnd(HWND hWnd)
 	message.y = static_cast<short>(clamp<LONG>(point.y, SHRT_MIN, SHRT_MAX));
 	message.lbutton = false;
 
-	(void)Inkeys::Window::Enqueue(hWnd, message);
+	(void)EnqueueMainInteractionMessage(hWnd, message, captureTicket);
 }
 
 // ====================
 // 窗口
 
+namespace
+{
+	void ProcessBarTooltipTimer(HWND hWnd, WPARAM wParam)
+	{
+		bool annotation =
+			wParam == BarThicknessAnnotationTooltipGraceTimerId;
+		UINT_PTR timerId = annotation
+			? BarThicknessAnnotationTooltipGraceTimerId
+			: BarThicknessOverflowTooltipGraceTimerId;
+		KillTimer(hWnd, timerId);
+
+		auto& drawAttribute = barUISet.barState.drawAttributeBar;
+		IdtAtomic<bool>& grace = annotation
+			? drawAttribute.thicknessAnnotationHoverGrace
+			: drawAttribute.thicknessOverflowHoverGrace;
+		IdtAtomic<bool>& hover = annotation
+			? drawAttribute.thicknessAnnotationHover
+			: drawAttribute.thicknessOverflowHover;
+		IdtAtomic<bool>& pinned = annotation
+			? drawAttribute.thicknessAnnotationPinned
+			: drawAttribute.thicknessOverflowPinned;
+		if (!static_cast<bool>(grace))
+			return;
+
+		bool popupInteractive = static_cast<bool>(hover)
+			|| static_cast<bool>(pinned) || static_cast<bool>(grace);
+		grace = false;
+
+		POINT point{};
+		bool pointAvailable = ReadBarPointerPosition(&point)
+			&& BarScreenToLayout(point);
+		if (pointAvailable)
+			point.y = barUISet.BottomDockRigidHitTestY(point.y);
+		auto infoHit = barUISet.shapeMap[annotation
+			? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit
+			: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
+		auto popup = barUISet.shapeMap[annotation
+			? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup
+			: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup];
+		const auto stateMode = GetStateModeSnapshot();
+			bool available = barUISet.barState.drawAttribute
+				&& !barUISet.barState.fold
+				&& (annotation
+					? static_cast<bool>(drawAttribute.penTypeMenuOpen)
+						&& !stateMode.laserActive
+						&& PenModeSupportsAnnotationLine(
+							stateMode.Pen.ModeSelect)
+					: static_cast<bool>(
+						drawAttribute.thicknessOverflowHintPresent));
+			// 颜色选择器盖住下方控件时，宽限期计时器也不得再把悬停还给滑块/提示。
+			auto colorPickerPanel = barUISet.shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel];
+			bool colorPickerOccludes = pointAvailable
+				&& barUISet.barState.drawAttributeBar.colorPickerOpen
+				&& colorPickerPanel
+				&& IsPresentedBarVisualHit(barUISet, colorPickerPanel, point.x, point.y);
+			bool pointerInside = pointAvailable && available
+				&& !colorPickerOccludes
+				&& ((infoHit && IsPresentedBarVisualHit(barUISet, infoHit, point.x, point.y))
+					|| (popupInteractive && popup && IsPresentedBarVisualHit(barUISet, popup, point.x, point.y)));
+			bool changed = static_cast<bool>(hover) != pointerInside;
+			hover = pointerInside;
+
+			auto sliderHit = barUISet.shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
+			bool sliderAvailable = stateMode.StateModeSelect
+				== StateModeSelectEnum::IdtPen
+				&& barUISet.barState.drawAttribute && !barUISet.barState.fold
+				&& GetBarThicknessSliderRange(
+					stateMode.Pen.ModeSelect,
+					barUISet.barStyle.dpiZoom, stateMode).supported;
+			bool sliderHover = sliderAvailable
+				&& drawAttribute.thicknessViewMode
+					!= ThicknessViewMode::FineDial
+				&& !drawAttribute.thicknessSliderCapture
+				&& !colorPickerOccludes
+				&& !pointerInside
+				&& pointAvailable
+				&& ((sliderHit && IsPresentedBarVisualHit(barUISet, sliderHit, point.x, point.y))
+					|| IsBarThicknessPreviewPopupHit(
+						barUISet, point.x, point.y)
+					|| IsBarThicknessPrecisionDragHit(
+						barUISet, point.x, point.y));
+		if (static_cast<bool>(drawAttribute.thicknessSliderHover)
+			!= sliderHover)
+		{
+			drawAttribute.thicknessSliderHover = sliderHover;
+			if (sliderHover
+				&& drawAttribute.thicknessViewMode
+					== ThicknessViewMode::Preview)
+				drawAttribute.thicknessViewMode = ThicknessViewMode::Slider;
+			else if (!sliderHover
+				&& drawAttribute.thicknessViewMode
+					== ThicknessViewMode::Slider
+				&& !drawAttribute.thicknessSliderPinned
+				&& !drawAttribute.thicknessSliderPressed
+				&& !drawAttribute.thicknessSliderDragging)
+				drawAttribute.thicknessViewMode = ThicknessViewMode::Preview;
+			changed = true;
+		}
+		if (changed) barUISet.UpdateRendering(false);
+		return;
+	}
+	void ProcessBarPointerLeave()
+	{
+		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
+		if (barUISet.recallAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
+		// 原生窗口线程统一处理离开反馈，解除边缘光效的重新激活限制。
+		Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
+		if (barUISet.barState.drawAttributeBar.thicknessSliderHover
+			&& !barUISet.barState.drawAttributeBar.thicknessSliderPinned
+			&& !barUISet.barState.drawAttributeBar.thicknessSliderPressed
+			&& !barUISet.barState.drawAttributeBar.thicknessSliderDragging)
+		{
+			barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
+			if (barUISet.barState.drawAttributeBar.thicknessViewMode
+				== ThicknessViewMode::Slider)
+				barUISet.barState.drawAttributeBar.thicknessViewMode =
+					ThicknessViewMode::Preview;
+			barUISet.UpdateRendering(false);
+		}
+		return;
+
+	}
+
+}
+
+namespace
+{
+	bool voluntaryBarCaptureRelease = false;
+	std::uint64_t AcquireBarNativeCapture(HWND window)
+	{
+		SetCapture(window);
+		return GetCapture() == window ? mainNativeCaptureOwnership.Begin(window) : 0;
+	}
+	void ReleaseBarNativeCapture(HWND window, std::uint64_t ticket)
+	{
+		if (!mainNativeCaptureOwnership.Retire(window, ticket) || GetCapture() != window) return;
+		voluntaryBarCaptureRelease = true;
+		ReleaseCapture();
+		voluntaryBarCaptureRelease = false;
+	}
+}
+
 LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	if (msg == BarInputReleaseCaptureMessage)
+	{
+		ReleaseBarNativeCapture(hWnd, static_cast<std::uint64_t>(wParam));
+		return 0;
+	}
 	if (msg == WM_DESTROY)
 	{
+		ExMessage cancel{}; cancel.message = WM_DESTROY; (void)EnqueueMainInteractionMessage(hWnd, cancel, mainNativeCaptureOwnership.Current(hWnd));
 		barUISet.ShutdownWindowInput(hWnd);
 		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 	if (msg == WM_CANCELMODE)
 	{
+		ExMessage cancel{}; cancel.message = WM_CANCELMODE; (void)EnqueueMainInteractionMessage(hWnd, cancel, mainNativeCaptureOwnership.Current(hWnd));
 		// Whiteboard Exit 会通过 Window Service 广播取消消息，清掉 Bar 的捕获和浮层输入。
 		barUISet.ShutdownWindowInput(hWnd);
 		barUISet.UpdateRendering(false);
@@ -612,107 +1835,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		if (wParam == BarThicknessAnnotationTooltipGraceTimerId
 			|| wParam == BarThicknessOverflowTooltipGraceTimerId)
 		{
-			bool annotation =
-				wParam == BarThicknessAnnotationTooltipGraceTimerId;
-			UINT_PTR timerId = annotation
-				? BarThicknessAnnotationTooltipGraceTimerId
-				: BarThicknessOverflowTooltipGraceTimerId;
-			KillTimer(hWnd, timerId);
-
-			auto& drawAttribute = barUISet.barState.drawAttributeBar;
-			IdtAtomic<bool>& grace = annotation
-				? drawAttribute.thicknessAnnotationHoverGrace
-				: drawAttribute.thicknessOverflowHoverGrace;
-			IdtAtomic<bool>& hover = annotation
-				? drawAttribute.thicknessAnnotationHover
-				: drawAttribute.thicknessOverflowHover;
-			IdtAtomic<bool>& pinned = annotation
-				? drawAttribute.thicknessAnnotationPinned
-				: drawAttribute.thicknessOverflowPinned;
-			if (!static_cast<bool>(grace))
-				return 0;
-
-			bool popupInteractive = static_cast<bool>(hover)
-				|| static_cast<bool>(pinned) || static_cast<bool>(grace);
-			grace = false;
-
-			POINT point{};
-			bool pointAvailable = ReadBarPointerPosition(&point)
-				&& BarScreenToLayout(point);
-			if (pointAvailable)
-				point.y = barUISet.BottomDockRigidHitTestY(point.y);
-			auto infoHit = barUISet.shapeMap[annotation
-				? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit
-				: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
-			auto popup = barUISet.shapeMap[annotation
-				? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup
-				: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup];
-			const auto stateMode = GetStateModeSnapshot();
-				bool available = barUISet.barState.drawAttribute
-					&& !barUISet.barState.fold
-					&& (annotation
-						? static_cast<bool>(drawAttribute.penTypeMenuOpen)
-							&& !stateMode.laserActive
-							&& PenModeSupportsAnnotationLine(
-								stateMode.Pen.ModeSelect)
-						: static_cast<bool>(
-							drawAttribute.thicknessOverflowHintPresent));
-				// 颜色选择器盖住下方控件时，宽限期计时器也不得再把悬停还给滑块/提示。
-				auto colorPickerPanel = barUISet.shapeMap[
-					BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel];
-				bool colorPickerOccludes = pointAvailable
-					&& barUISet.barState.drawAttributeBar.colorPickerOpen
-					&& colorPickerPanel
-					&& colorPickerPanel->IsClick(
-						point.x, point.y, barUISet.barStyle.zoom);
-				bool pointerInside = pointAvailable && available
-					&& !colorPickerOccludes
-					&& ((infoHit && infoHit->IsClick(
-						point.x, point.y, barUISet.barStyle.zoom))
-						|| (popupInteractive && popup && popup->IsClick(
-							point.x, point.y, barUISet.barStyle.zoom)));
-				bool changed = static_cast<bool>(hover) != pointerInside;
-				hover = pointerInside;
-
-				auto sliderHit = barUISet.shapeMap[
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
-				bool sliderAvailable = stateMode.StateModeSelect
-					== StateModeSelectEnum::IdtPen
-					&& barUISet.barState.drawAttribute && !barUISet.barState.fold
-					&& GetBarThicknessSliderRange(
-						stateMode.Pen.ModeSelect,
-						barUISet.barStyle.dpiZoom, stateMode).supported;
-				bool sliderHover = sliderAvailable
-					&& drawAttribute.thicknessViewMode
-						!= ThicknessViewMode::FineDial
-					&& !drawAttribute.thicknessSliderCapture
-					&& !colorPickerOccludes
-					&& !pointerInside
-					&& pointAvailable
-					&& ((sliderHit && sliderHit->IsClick(
-						point.x, point.y, barUISet.barStyle.zoom))
-						|| IsBarThicknessPreviewPopupHit(
-							barUISet, point.x, point.y)
-						|| IsBarThicknessPrecisionDragHit(
-							barUISet, point.x, point.y));
-			if (static_cast<bool>(drawAttribute.thicknessSliderHover)
-				!= sliderHover)
-			{
-				drawAttribute.thicknessSliderHover = sliderHover;
-				if (sliderHover
-					&& drawAttribute.thicknessViewMode
-						== ThicknessViewMode::Preview)
-					drawAttribute.thicknessViewMode = ThicknessViewMode::Slider;
-				else if (!sliderHover
-					&& drawAttribute.thicknessViewMode
-						== ThicknessViewMode::Slider
-					&& !drawAttribute.thicknessSliderPinned
-					&& !drawAttribute.thicknessSliderPressed
-					&& !drawAttribute.thicknessSliderDragging)
-					drawAttribute.thicknessViewMode = ThicknessViewMode::Preview;
-				changed = true;
-			}
-			if (changed) barUISet.UpdateRendering(false);
+			ExMessage timer{}; timer.message = WM_TIMER; timer.category = EM_WINDOW; timer.wParam = wParam;
+			(void)EnqueueMainInteractionMessage(hWnd, timer);
 			return 0;
 		}
 		return DefWindowProcW(hWnd, msg, wParam, lParam);
@@ -748,115 +1872,58 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case BarThicknessSliderCaptureMessage:
 	{
+		auto ticket = static_cast<std::uint64_t>(lParam);
 		if (wParam == BarThicknessSliderCaptureStart)
 		{
-			// 捕获必须由窗口线程建立，保证鼠标移出 Bar 后仍继续投递。
-			SetCapture(hWnd);
-			bool captured = GetCapture() == hWnd;
-			barUISet.barState.drawAttributeBar.thicknessSliderCapture =
-				captured;
-			return captured ? 1 : 0;
+			// 复用 Down 在窗口线程建立的捕获；滞后的属性 Start 不能接管新接触。
+			if (!UpdateMainAttributeCapture(mainSliderCaptureTicket, ticket, true)) return 0;
+			barUISet.barState.drawAttributeBar.thicknessSliderCapture = true;
+			return 1;
 		}
 
+		if (!UpdateMainAttributeCapture(mainSliderCaptureTicket, ticket, false)) return 0;
 		barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
-		if (GetCapture() == hWnd) ReleaseCapture();
+		ReleaseBarNativeCapture(hWnd, ticket);
 		if (wParam == BarThicknessSliderCaptureCancel)
-			QueueBarThicknessSliderEnd(hWnd);
+			QueueBarThicknessSliderEnd(hWnd, ticket);
 		return 0;
 	}
 
 	case BarColorPickerCaptureMessage:
 	{
+		auto ticket = static_cast<std::uint64_t>(lParam);
 		if (wParam == BarColorPickerCaptureStart)
 		{
-			// 与粗细调节一致，由窗口线程建立捕获，允许拖出色板继续夹紧选色。
-			SetCapture(hWnd);
-			bool captured = GetCapture() == hWnd;
-			barUISet.barState.drawAttributeBar.colorPickerPointerCapture = captured;
-			return captured ? 1 : 0;
+			// 与粗细调节一致，只接受本次 Down 的票据，允许拖出色板继续夹紧选色。
+			if (!UpdateMainAttributeCapture(mainColorPickerCaptureTicket, ticket, true)) return 0;
+			barUISet.barState.drawAttributeBar.colorPickerPointerCapture = true;
+			return 1;
 		}
 
+		if (!UpdateMainAttributeCapture(mainColorPickerCaptureTicket, ticket, false)) return 0;
 		barUISet.barState.drawAttributeBar.colorPickerPointerCapture = false;
-		if (GetCapture() == hWnd) ReleaseCapture();
+		ReleaseBarNativeCapture(hWnd, ticket);
 		if (wParam == BarColorPickerCaptureCancel)
-			QueueBarColorPickerEnd(hWnd);
+			QueueBarColorPickerEnd(hWnd, ticket);
 		return 0;
 	}
 
 	case WM_CAPTURECHANGED:
 	{
-		if (barUISet.barState.drawAttributeBar.colorPickerPointerCapture)
+		if (!voluntaryBarCaptureRelease)
 		{
-			auto& picker = barUISet.barState.drawAttributeBar;
-			picker.colorPickerPointerCapture = false;
-			picker.colorPickerPointerPressed = false;
-			picker.colorPickerHoldHintActive = false;
-			picker.colorPickerHoldLocked = false;
-			picker.colorPickerHoldProgress = 0.0f;
-			QueueBarColorPickerEnd(hWnd);
-			barUISet.UpdateRendering(false);
-			return 0;
+			const auto ticket = mainNativeCaptureOwnership.Current(hWnd);
+			(void)mainNativeCaptureOwnership.Retire(hWnd, ticket);
+			ExMessage cancel{}; cancel.message = WM_CAPTURECHANGED;
+			(void)EnqueueMainInteractionMessage(hWnd, cancel, ticket);
 		}
-		if (barUISet.barState.drawAttributeBar.thicknessSliderCapture)
-		{
-			// 捕获被其他窗口夺走时，合成抬起事件唤醒阻塞式手势循环。
-				barUISet.barState.drawAttributeBar.thicknessViewMode =
-					ThicknessViewMode::Preview;
-				barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderPinned = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderDragging = false;
-				barUISet.barState.drawAttributeBar.thicknessPreviewDragging = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderPressed = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
-				barUISet.barState.drawAttributeBar.thicknessFineDialVisualWidth = 0.0f;
-				barUISet.barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
-				barUISet.barState.drawAttributeBar.thicknessFineDialDragging = false;
-				barUISet.barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialRangeTransitionActive = false;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewActive = false;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialActivationDwellActive = false;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewProgress = 0.0f;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewVisualWidth = 0.0f;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialPopupExitLatchRequested = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderHoldHintActive = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderHoldLocked = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderHoldProgress = 0.0f;
-				barUISet.CloseDrawAttributeTooltips();
-				QueueBarThicknessSliderEnd(hWnd);
-				barUISet.UpdateRendering(false);
-				return 0;
-		}
-		return DefWindowProcW(hWnd, msg, wParam, lParam);
+		return 0;
 	}
 
 	case WM_MOUSELEAVE:
 	{
-		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
-		if (barUISet.recallAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
-		// 需要等待离开的休眠路径在真实移出后解除重新激活限制。
-		{
-			lock_guard lock(barUISet.borderCursorLightMutex);
-			barUISet.borderCursorActivationBlockedUntilLeave = false;
-		}
-		if (barUISet.barState.drawAttributeBar.thicknessSliderHover
-			&& !barUISet.barState.drawAttributeBar.thicknessSliderPinned
-			&& !barUISet.barState.drawAttributeBar.thicknessSliderPressed
-			&& !barUISet.barState.drawAttributeBar.thicknessSliderDragging)
-		{
-			barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
-			if (barUISet.barState.drawAttributeBar.thicknessViewMode
-				== ThicknessViewMode::Slider)
-				barUISet.barState.drawAttributeBar.thicknessViewMode =
-					ThicknessViewMode::Preview;
-			barUISet.UpdateRendering(false);
-		}
+		ExMessage leave{}; leave.message = WM_MOUSELEAVE; leave.category = EM_WINDOW;
+		(void)EnqueueMainInteractionMessage(hWnd, leave);
 		return 0;
 	}
 
@@ -927,7 +1994,9 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.lbutton = false;
 							MarkBarTouchPointerMessage(msgMouse, true, true);
 
-							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
+							const auto ticket = mainNativeCaptureOwnership.Current(hWnd);
+							(void)EnqueueMainInteractionMessage(hWnd, msgMouse, ticket);
+							ReleaseBarNativeCapture(hWnd, ticket);
 						}
 					}
 
@@ -951,7 +2020,9 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.lbutton = true;
 							MarkBarTouchPointerMessage(msgMouse, false, true);
 
-							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
+							const auto ticket = AcquireBarNativeCapture(hWnd);
+							if (!EnqueueMainInteractionMessage(hWnd, msgMouse, ticket))
+							{ ReleaseBarNativeCapture(hWnd, ticket); Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false); }
 						}
 					}
 				}
@@ -973,7 +2044,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.lbutton = true;
 							MarkBarTouchPointerMessage(msgMouse, false, true);
 
-							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
+							(void)EnqueueMainInteractionMessage(hWnd, msgMouse, mainNativeCaptureOwnership.Current(hWnd));
 						}
 					}
 				}
@@ -997,7 +2068,9 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.lbutton = false;
 							MarkBarTouchPointerMessage(msgMouse, false, true);
 
-							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
+							const auto ticket = mainNativeCaptureOwnership.Current(hWnd);
+							(void)EnqueueMainInteractionMessage(hWnd, msgMouse, ticket);
+							ReleaseBarNativeCapture(hWnd, ticket);
 						}
 					}
 				}
@@ -1031,8 +2104,14 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			msg, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
 			return 0;
 		if (msg == WM_MOUSEMOVE) barUISet.ActivateBorderCursorTracking(hWnd);
-		if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
-		if (msg == WM_LBUTTONUP) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
+		if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK)
+		{
+			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
+		}
+		if (msg == WM_LBUTTONUP)
+		{
+			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
+		}
 
 		// 否则当成真正的鼠标消息处理
 
@@ -1122,7 +2201,8 @@ void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
 				cancelCapture
 					? BarThicknessSliderCaptureCancel
 					: BarThicknessSliderCaptureStop,
-			0);
+			static_cast<LPARAM>(mainInteractionAwaitContext ? MainGestureCaptureTicket()
+				: mainSliderCaptureTicket.load(std::memory_order_acquire)));
 	}
 	else barState.drawAttributeBar.thicknessSliderCapture = false;
 }
@@ -1148,7 +2228,8 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 				cancelCapture
 					? BarColorPickerCaptureCancel
 					: BarColorPickerCaptureStop,
-				0);
+				static_cast<LPARAM>(mainInteractionAwaitContext ? MainGestureCaptureTicket()
+					: mainColorPickerCaptureTicket.load(std::memory_order_acquire)));
 			return;
 		}
 	}
@@ -1183,8 +2264,8 @@ void BarUISetClass::DisarmRecallChromeIdleTimer() noexcept
 
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
-	eraserAttribute.ResetPointerFeedback();
-	recallAttribute.ResetPointerFeedback();
+
+
 	if (!hWnd) return;
 
 	// 先撤销输入源，避免 ReleaseCapture 重入时继续向交互队列投递手势。
@@ -1194,11 +2275,7 @@ void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 	KillTimer(hWnd, BarRecallChromeIdleTimerId);
 	barState.drawAttributeBar.thicknessSliderCapture = false;
 	barState.drawAttributeBar.colorPickerPointerCapture = false;
-	CloseThicknessSlider(false);
-	CloseColorPicker(false);
-	ClosePenTypeMenu();
-	CloseDrawAttributeTooltips();
-	if (GetCapture() == hWnd) ReleaseCapture();
+	ReleaseBarNativeCapture(hWnd, mainNativeCaptureOwnership.Current(hWnd));
 	SuspendBorderCursorTracking(hWnd);
 }
 
@@ -1206,7 +2283,7 @@ namespace
 {
 struct BarInteractionMemberAccess
 {
-	BarSeekResult (BarUISetClass::*seek)(const ExMessage&) = nullptr;
+	InteractionTask<BarSeekResult> (BarUISetClass::*seek)(const ExMessage&) = nullptr;
 	void (BarUISetClass::*closeThicknessOverflowTooltip)() = nullptr;
 	void (BarUISetClass::*closeDrawAttributeTooltips)() = nullptr;
 	void (BarUISetClass::*closePenTypeMenu)() = nullptr;
@@ -1906,35 +2983,71 @@ private:
 			}
 		}
 
-	void StartHover(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
-		IdtAtomic<BarButtonHoverStageEnum>* hoverStage)
+	std::shared_ptr<BarButtonClass> RetainButton(BarButtonClass* button)
+	{
+		if (!button) return {};
+		for (const auto& candidate : barButtonSet.buttonList.Snapshot())
+			if (candidate.get() == button) return candidate;
+		const auto more = barButtonSet.GetMoreButtonSnapshot();
+		for (const auto& candidate : more.explicitMore) if (candidate.get() == button) return candidate;
+		for (const auto& candidate : more.forcedOverflow) if (candidate.get() == button) return candidate;
+		return {};
+	}
+	bool HitPresentedButton(const BarButtonClass& button, const ExMessage& message)
+	{
+		if (mainInteractionAwaitContext && mainInteractionAwaitContext->currentHitFrozen)
+			return mainInteractionAwaitContext->currentButtonHit.get() == &button;
+		const double zoom = (std::max)(0.000001, barUISet.BottomDockPresentedSnapshot().zoom);
+		return barUISet.HitTestPresentedButton(button, message.x / zoom, message.y / zoom);
+	}
+	void SetButtonPressed(BarButtonClass& button, bool pressed)
+	{
+		auto retained = RetainButton(&button);
+		if (!retained) return;
+		QueueInteractionVisualFeedback(&button, 1, [retained = std::move(retained), pressed]
 		{
-			if (Inkeys::UI::Bar::StartBarButtonHoverVisual(hoverPct, hoverFill, hoverStage))
-				UpdateRendering(false);
-		}
-
-	void StopHover(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
-		IdtAtomic<BarButtonHoverStageEnum>* hoverStage, bool immediate,
-		bool preserveVisual = false)
+			SetBarButtonPressedVisual(*retained, pressed);
+			Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		});
+	}
+	void StartHover(BarUiPctClass* pct, BarUiColorClass* fill,
+		IdtAtomic<BarButtonHoverStageEnum>* stage)
+	{
+		QueueInteractionVisualFeedback(pct, 0, [pct, fill, stage]
 		{
-			if (Inkeys::UI::Bar::StopBarButtonHoverVisual(
-				hoverPct, hoverFill, hoverStage, immediate, preserveVisual))
-				UpdateRendering(false);
-		}
-
+			if (Inkeys::UI::Bar::StartBarButtonHoverVisual(pct, fill, stage))
+				Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		});
+	}
+	void StopHover(BarUiPctClass* pct, BarUiColorClass* fill,
+		IdtAtomic<BarButtonHoverStageEnum>* stage, bool immediate, bool preserveVisual = false)
+	{
+		QueueInteractionVisualFeedback(pct, 0, [pct, fill, stage, immediate, preserveVisual]
+		{
+			if (Inkeys::UI::Bar::StopBarButtonHoverVisual(pct, fill, stage, immediate, preserveVisual))
+				Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		});
+	}
 	void StartMainBarButtonHover(BarButtonClass* button)
+	{
+		auto retained = RetainButton(button);
+		if (!retained) return;
+		QueueInteractionVisualFeedback(button, 0, [retained = std::move(retained)]
 		{
-			if (button && StartBarButtonHoverVisual(*button))
-				UpdateRendering(false);
-		}
-
-	void StopMainBarButtonHover(
-		BarButtonClass* button, bool immediate, bool preserveVisual = false)
+			if (StartBarButtonHoverVisual(*retained))
+				Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		});
+	}
+	void StopMainBarButtonHover(BarButtonClass* button, bool immediate, bool preserveVisual = false)
+	{
+		auto retained = RetainButton(button);
+		if (!retained) return;
+		QueueInteractionVisualFeedback(button, 0, [retained = std::move(retained), immediate, preserveVisual]
 		{
-			if (!button) return;
-			if (StopBarButtonHoverVisual(
-				*button, immediate, preserveVisual)) UpdateRendering(false);
-		}
+			if (StopBarButtonHoverVisual(*retained, immediate, preserveVisual))
+				Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		});
+	}
 
 	void StartIndependentHover(IndependentHoverTargetEnum target)
 		{
@@ -2113,7 +3226,7 @@ private:
 			std::uint64_t committedRevision = thicknessFineDialModeRevision;
 			if (shouldCommit)
 			{
-				if (SetPenWidthIfRevision(candidate, thicknessFineDialModeRevision, setMemory))
+				if (SetInteractionPenWidthIfRevision(candidate, thicknessFineDialModeRevision, setMemory))
 					++committedRevision;
 				else committedRevision = 0;
 			}
@@ -2521,7 +3634,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		auto pickerPanel = shapeMap[
 			BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel];
 		return pickerPanel
-			&& pickerPanel->IsClick(clientX, clientY, barStyle.zoom);
+			&& IsPresentedBarVisualHit(barUISet, pickerPanel, clientX, clientY);
 	}
 
 	bool IsPenTypeMenuOccludingPoint(int clientX, int clientY)
@@ -2530,7 +3643,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			return false;
 		auto menu = shapeMap[
 			BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu];
-		return menu && menu->IsClick(clientX, clientY, barStyle.zoom);
+		return menu && IsPresentedBarVisualHit(barUISet, menu, clientX, clientY);
 	}
 
 	static unsigned int ColorPickerKeyMask(BYTE vkCode)
@@ -2560,7 +3673,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			barState.drawAttributeBar.colorPickerMarkerY =
 				static_cast<float>(markerY);
 			barState.drawAttributeBar.colorPickerMarkerVisible = true;
-			SetPenColor(Inkeys::Color::SetAlphaR(color, 255), setMemory);
+			SetInteractionPenColor(Inkeys::Color::SetAlphaR(color, 255), setMemory);
 		}
 
 	void ProjectCurrentColorPickerPoint()
@@ -2599,7 +3712,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				if ((downMask & keyMask) != 0 && nextMask == 0)
 				{
 					// 最后一个移动键抬起才持久化，系统重复按下不会写配置。
-					SetPenColor(GetPenColor(), true);
+					SetInteractionPenColor(GetPenColor(), true);
 					UpdateRendering();
 				}
 				return;
@@ -2635,16 +3748,16 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			UpdateRendering();
 		}
 
-	void RunColorPickerPointerGesture(ExMessage& gestureMessage)
+	InteractionTask<bool> RunColorPickerPointerGesture(ExMessage& gestureMessage)
 		{
 			if (gestureMessage.message != WM_LBUTTONDOWN
 				|| !ColorPickerAvailable()
 				|| !barState.drawAttributeBar.colorPickerOpen)
-				return;
+				co_return false;
 			auto palette = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ColorPickerPalette];
 			if (!palette || palette->w.val <= 0.0 || palette->h.val <= 0.0)
-				return;
+				co_return false;
 
 			COLORREF finalColor = GetPenColor();
 			auto ApplyClientPoint = [&](int clientX, int clientY)
@@ -2713,13 +3826,15 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		picker.colorPickerHoldProgress = 0.0f;
 		ApplyClientPoint(gestureMessage.x, gestureMessage.y);
 		SendMessage(floating_window, BarColorPickerCaptureMessage,
-			BarColorPickerCaptureStart, 0);
+			BarColorPickerCaptureStart, static_cast<LPARAM>(MainGestureCaptureTicket()));
 		UpdateRendering();
 
-		while (!offSignal)
+		while (!offSignal && !InteractionCancelled())
 		{
-			if (!TryGetBarInteractionMessage(
-				&gestureMessage, EM_MOUSE, true, floating_window))
+			const bool hasInput = co_await NextBarInteractionMessage(gestureMessage, EM_MOUSE, floating_window,
+				false, nullptr, InteractionClock::now() + std::chrono::milliseconds(8));
+			stateMode = GetStateModeSnapshot();
+			if (!hasInput)
 			{
 				if (!ColorPickerAvailable() || !picker.colorPickerOpen
 					|| (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)
@@ -2727,7 +3842,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					break;
 				// 触摸不会保证同步系统鼠标位置，静止期间沿用最后一个触点坐标。
 				UpdateHold(activeScreenPoint);
-				std::this_thread::sleep_for(std::chrono::milliseconds(8));
 				continue;
 			}
 			if (!ColorPickerAvailable() || !picker.colorPickerOpen) break;
@@ -2752,7 +3866,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		bool captured = picker.colorPickerPointerCapture;
 		if (captured)
 			SendMessage(floating_window, BarColorPickerCaptureMessage,
-				BarColorPickerCaptureStop, 0);
+				BarColorPickerCaptureStop, static_cast<LPARAM>(MainGestureCaptureTicket()));
 		bool completed = captured && !offSignal
 			&& !gestureMessage.lbutton && ColorPickerAvailable()
 			&& picker.colorPickerOpen;
@@ -2761,59 +3875,71 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		picker.colorPickerHoldLocked = false;
 		picker.colorPickerHoldProgress = 0.0f;
 		if (completed)
-			SetPenColor(Inkeys::Color::SetAlphaR(finalColor, 255), true);
+			SetInteractionPenColor(Inkeys::Color::SetAlphaR(finalColor, 255), true);
 		UpdateRendering();
 		SuppressHoverUntilPointerMove();
 		ClearBarInteractionMessages(EM_MOUSE, floating_window);
+		co_return true;
 	}
 
 	BarInteractionStageResult FinishInteraction()
-		{
-			barState.drawAttributeBar.laserPress = false;
-			CloseThicknessSlider(false);
-			CloseColorPicker(false);
-			ClosePenTypeMenu();
-			return BarInteractionStageResult::Shutdown;
-		}
+	{
+		if (hoveredMainBarButton) StopMainBarButtonHover(hoveredMainBarButton, true);
+		if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
+			StopIndependentHover(hoveredIndependentButton, true);
+		for (const auto& button : barButtonSet.buttonList.Snapshot())
+			if (button) SetButtonPressed(*button, false);
+		const auto more = barButtonSet.GetMoreButtonSnapshot();
+		for (const auto& button : more.explicitMore) if (button) SetButtonPressed(*button, false);
+		for (const auto& button : more.forcedOverflow) if (button) SetButtonPressed(*button, false);
+		auto& draw = barState.drawAttributeBar;
+		draw.brush1Press = draw.softPenPress = draw.laserPress = draw.highlight1Press = false;
+		draw.penTypeExtensionPress = draw.penTypeFreeLinePress = false;
+		draw.thicknessFinePress = draw.thicknessMediumPress = draw.thicknessCoarsePress = draw.thicknessAdjustPress = false;
+		draw.thicknessAnnotationClosePress = draw.thicknessOverflowClosePress = false;
+		draw.colorPickerTonePress = draw.colorPickerClosePress = false;
+		auto& geometry = barState.geometryAttributeBar;
+		geometry.straightLinePress = geometry.rectanglePress = geometry.closePress = false;
+		geometry.thicknessFinePress = geometry.thicknessMediumPress = geometry.thicknessCoarsePress = false;
+		barState.moreClosePress = false; BarColorPickerEntryPressed = false;
+		barUISet.eraserAttribute.ResetPointerFeedback(); barUISet.recallAttribute.ResetPointerFeedback();
+		CancelThicknessFineDialSelection();
+		CloseThicknessSlider(true); CloseColorPicker(true); ClosePenTypeMenu();
+		RequestMainCaptureRelease(floating_window, MainGestureCaptureTicket());
+		auto ticket = MainGestureCaptureTicket();
+		(void)activeMainGestureCaptureTicket.compare_exchange_strong(ticket, 0);
+		UpdateRendering(false);
+		return BarInteractionStageResult::Shutdown;
+	}
 
-	BarInteractionStageResult PollInteractionMessage()
-		{
+	InteractionTask<BarInteractionStageResult> PollInteractionMessage()
+	{
 		currentTouchScreenSample.ready = false;
 		if ((thicknessFineDialPhase == ThicknessFineDialPhase::Inertia
 			|| thicknessFineDialPhase == ThicknessFineDialPhase::Settling)
 			&& !barState.drawAttributeBar.thicknessFineDialPhysicsActive)
 		{
-			// 生命周期线程已撤销共享状态时，同步丢弃交互线程残余速度。
 			thicknessFineDialPhase = ThicknessFineDialPhase::Idle;
-			thicknessFineDialVelocity = 0.0;
-			thicknessFineDialResidualVelocity = 0.0;
+			thicknessFineDialVelocity = thicknessFineDialResidualVelocity = 0.0;
 			ResetThicknessFineDialSamples();
 		}
-		bool thicknessPhysicsPolling =
-			barState.drawAttributeBar.thicknessFineDialPhysicsActive
+		const bool physics = barState.drawAttributeBar.thicknessFineDialPhysicsActive
 			&& (thicknessFineDialPhase == ThicknessFineDialPhase::Inertia
-				|| thicknessFineDialPhase
-					== ThicknessFineDialPhase::Settling);
-		if (thicknessPhysicsPolling)
+				|| thicknessFineDialPhase == ThicknessFineDialPhase::Settling);
+		const auto deadline = physics ? InteractionClock::now() + BarThicknessFineDialPhysicsPollInterval
+			: InteractionClock::time_point::max();
+		const bool received = co_await NextBarInteractionMessage(msg, EM_MOUSE | EM_KEY,
+			floating_window, false, &currentTouchScreenSample, deadline);
+		if (offSignal || InteractionCancelled()) co_return BarInteractionStageResult::Shutdown;
+		if (!received)
 		{
-			if (!TryGetBarInteractionMessage(
-				&msg, EM_MOUSE | EM_KEY, true, floating_window,
-				&currentTouchScreenSample))
-			{
-				AdvanceThicknessFineDialPhysics();
-				std::this_thread::sleep_for(
-					BarThicknessFineDialPhysicsPollInterval);
-				return BarInteractionStageResult::Consumed;
-			}
-			// 任意消息或嵌套按压都会暂停物理；下一次空轮询从零 dt 接续。
-			thicknessFineDialPhysicsClockNeedsReset = true;
+			AdvanceThicknessFineDialPhysics();
+			co_return BarInteractionStageResult::Consumed;
 		}
-		else if (!WaitForBarInteractionMessage(
-			msg, EM_MOUSE | EM_KEY, floating_window, false,
-			&currentTouchScreenSample))
-			return BarInteractionStageResult::Shutdown;
-		return BarInteractionStageResult::PassThrough;
-		}
+		if (msg.message == WM_LBUTTONDOWN || msg.message == WM_LBUTTONDBLCLK) BeginMainGestureCapture();
+		if (physics) thicknessFineDialPhysicsClockNeedsReset = true;
+		co_return BarInteractionStageResult::PassThrough;
+	}
 
 	BarInteractionStageResult HandleKeyboardMessage()
 		{
@@ -2862,12 +3988,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			StopIndependentHover(hoveredIndependentButton, true);
 			hoveredIndependentButton = IndependentHoverTargetEnum::None;
 		}
-		for (int id = 0; id < barButtonSet.tot; ++id)
+		for (const auto& retainedButton : barButtonSet.buttonList.Snapshot())
 		{
-			auto button = barButtonSet.buttonList.Get(id);
+			auto button = retainedButton.get();
 			if (button && button->state
 				&& button->state->emph == BarWidgetEmphasize::Pressed)
-				SetBarButtonPressedVisual(*button, false);
+				SetButtonPressed(*button, false);
 		}
 		lastClickedMainBarButton = nullptr;
 		auto& draw = barState.drawAttributeBar;
@@ -2904,7 +4030,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		barState.geometryAttributeBar.thicknessMediumPress = false;
 		barState.geometryAttributeBar.thicknessCoarsePress = false;
 		barState.geometryAttributeBar.closePress = false;
-		if (GetCapture() == floating_window) ReleaseCapture();
+		RequestMainCaptureRelease(floating_window, MainGestureCaptureTicket());
 		UpdateRendering(false);
 		return BarInteractionStageResult::Consumed;
 	}
@@ -2933,8 +4059,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			CloseThicknessSlider(true);
 			UpdateRendering(false);
 		}
-		if (hoveredMainBarButton
-			&& (barState.fold || !hoveredMainBarButton->IsVisible()))
+		if (const auto retainedHover = RetainButton(hoveredMainBarButton); hoveredMainBarButton
+			&& (barState.fold || !retainedHover || !retainedHover->IsVisible()))
 		{
 			StopMainBarButtonHover(hoveredMainBarButton, true);
 			hoveredMainBarButton = nullptr;
@@ -2974,14 +4100,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				bool annotationBadgeHover = !colorPickerOccludes
 					&& AnnotationTooltipAvailable()
 					&& annotationInfoHit
-					&& annotationInfoHit->IsClick(
-						msg.x, msg.y, barStyle.zoom);
+					&& IsPresentedBarVisualHit(barUISet, annotationInfoHit, msg.x, msg.y);
 				bool overflowBadgeHover = !colorPickerOccludes
 					&& !penTypeMenuOccludes
 					&& OverflowTooltipAvailable()
 					&& overflowInfoHit
-					&& overflowInfoHit->IsClick(
-						msg.x, msg.y, barStyle.zoom);
+					&& IsPresentedBarVisualHit(barUISet, overflowInfoHit, msg.x, msg.y);
 				auto annotationPopup = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup];
 				auto overflowPopup = shapeMap[
@@ -2997,15 +4121,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				bool annotationPopupHover = !colorPickerOccludes
 					&& AnnotationTooltipAvailable()
 					&& annotationPopupInteractive && annotationPopup
-					&& annotationPopup->IsClick(
-						msg.x, msg.y, barStyle.zoom);
+					&& IsPresentedBarVisualHit(barUISet, annotationPopup, msg.x, msg.y);
 				bool overflowPopupHover = !colorPickerOccludes
 					&& !penTypeMenuOccludes
 					&& !annotationPopupHover
 					&& OverflowTooltipAvailable()
 					&& overflowPopupInteractive && overflowPopup
-					&& overflowPopup->IsClick(
-						msg.x, msg.y, barStyle.zoom);
+					&& IsPresentedBarVisualHit(barUISet, overflowPopup, msg.x, msg.y);
 				bool tooltipHoverChanged = false;
 				tooltipHoverChanged |= UpdateTooltipHover(
 					AnnotationTooltipAvailable(),
@@ -3036,8 +4158,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					&& barState.drawAttributeBar.thicknessViewMode
 						!= ThicknessViewMode::FineDial
 					&& !overflowUiActive
-					&& ((sliderHit && sliderHit->IsClick(
-						msg.x, msg.y, barStyle.zoom))
+					&& ((sliderHit && IsPresentedBarVisualHit(barUISet, sliderHit, msg.x, msg.y))
 						|| IsBarThicknessPreviewPopupHit(
 							barUISet, msg.x, msg.y)
 						|| IsBarThicknessPrecisionDragHit(
@@ -3066,34 +4187,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					UpdateRendering(false);
 
 				BarButtonClass* currentHoveredButton = nullptr;
-				// 普通主栏的双轴命中必须来自同一个成功呈现 tuple。
-				const auto mainBodyPresented =
-					barUISet.BottomDockPresentedSnapshot();
-				const int mainBodyVisualX = static_cast<int>(lround(
-					static_cast<double>(msg.x)
-						+ mainBodyPresented.horizontalMapping
-							.rigidOverlayTranslationXDip
-							* mainBodyPresented.zoom));
-				const int mainBodyVisualY = static_cast<int>(lround(
-					static_cast<double>(msg.y)
-						+ mainBodyPresented.rigidTranslationDip
-							* mainBodyPresented.zoom));
-				const int mainBodyHitTestX = static_cast<int>(lround(
-					Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelX(
-						static_cast<double>(mainBodyVisualX),
-						mainBodyPresented.horizontalMapping,
-						mainBodyPresented.zoom)));
-				const int mainBodyHitTestY = static_cast<int>(lround(
-					Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelY(
-						static_cast<double>(mainBodyVisualY),
-						mainBodyPresented.mapping,
-						mainBodyPresented.zoom)));
+				// 普通按钮与 More 共用入队时锁存的成功呈现命中。
 				if (!barState.fold && !colorPickerOccludes
 					&& !penTypeMenuOccludes)
 				{
-					for (int id = 0; id < barButtonSet.tot; id++)
+					for (const auto& retainedButton : barButtonSet.buttonList.Snapshot())
 					{
-						BarButtonClass* temp = barButtonSet.buttonList.Get(id);
+						BarButtonClass* temp = retainedButton.get();
 						if (!temp || !temp->IsVisible()
 							|| temp->preset == BarButtonPresetEnum::Divider
 							|| temp->state->state == BarWidgetState::Disable
@@ -3101,8 +4201,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						bool isColorSelector = temp->name.enable.tar
 							&& temp->name.content.GetTar().substr(0, 7) == L"__color";
 						if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
-						if (temp->button.IsClick(
-							mainBodyHitTestX, mainBodyHitTestY, barStyle.zoom))
+						if (HitPresentedButton(*temp, msg))
 						{
 							currentHoveredButton = temp;
 							break;
@@ -3121,8 +4220,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										|| button->state->state == BarWidgetState::Disable
 										|| button->state->state == BarWidgetState::Selected)
 										continue;
-									if (button->button.IsClick(
-										msg.x, msg.y, barStyle.zoom))
+									if (HitPresentedButton(*button, msg))
 									{
 										currentHoveredButton = button.get();
 										break;
@@ -3147,8 +4245,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				{
 					auto freeLine = shapeMap[
 						BarUISetShapeEnum::DrawAttributeBar_PenTypeMenuFreeLine];
-					if (freeLine && freeLine->IsClick(
-						msg.x, msg.y, barStyle.zoom))
+					if (freeLine && IsPresentedBarVisualHit(barUISet, freeLine, msg.x, msg.y))
 						currentIndependentButton = IndependentHoverTargetEnum::
 							DrawAttributePenTypeFreeLine;
 				}
@@ -3159,8 +4256,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				{
 					auto extension = shapeMap[
 						BarUISetShapeEnum::DrawAttributeBar_PenTypeExtensionHit];
-					if (extension && extension->IsClick(
-						msg.x, msg.y, barStyle.zoom))
+					if (extension && IsPresentedBarVisualHit(barUISet, extension, msg.x, msg.y))
 						currentIndependentButton = IndependentHoverTargetEnum::
 							DrawAttributePenTypeExtension;
 				}
@@ -3169,8 +4265,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					&& IsIndependentHoverAllowed(IndependentHoverTargetEnum::MoreClose))
 				{
 					auto moreClose = shapeMap[BarUISetShapeEnum::MorePanelCloseHit];
-					if (moreClose && moreClose->IsClick(
-						msg.x, msg.y, barStyle.zoom))
+					if (moreClose && IsPresentedBarVisualHit(barUISet, moreClose, msg.x, msg.y))
 						currentIndependentButton = IndependentHoverTargetEnum::MoreClose;
 				}
 				if (currentIndependentButton == IndependentHoverTargetEnum::None
@@ -3183,7 +4278,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					if (IsIndependentHoverAllowed(
 						IndependentHoverTargetEnum::DrawAttributeColorPickerClose)
 						&& colorPickerCloseHit
-						&& colorPickerCloseHit->IsClick(msg.x, msg.y, barStyle.zoom))
+						&& IsPresentedBarVisualHit(barUISet, colorPickerCloseHit, msg.x, msg.y))
 					{
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeColorPickerClose;
@@ -3191,7 +4286,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					else if (IsIndependentHoverAllowed(
 						IndependentHoverTargetEnum::DrawAttributeColorPickerTone)
 						&& colorPickerToneHit
-						&& colorPickerToneHit->IsClick(msg.x, msg.y, barStyle.zoom))
+						&& IsPresentedBarVisualHit(barUISet, colorPickerToneHit, msg.x, msg.y))
 					{
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeColorPickerTone;
@@ -3217,7 +4312,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							+ static_cast<int>(index));
 						auto shape = shapeMap[geometryShapes[index]];
 						if (IsIndependentHoverAllowed(target) && shape
-							&& shape->IsClick(msg.x, msg.y, barStyle.zoom))
+							&& IsPresentedBarVisualHit(barUISet, shape, msg.x, msg.y))
 						{
 							currentIndependentButton = target;
 							break;
@@ -3236,7 +4331,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				if (IsIndependentHoverAllowed(
 					IndependentHoverTargetEnum::DrawAttributeAnnotationClose)
 					&& annotationClose
-					&& annotationClose->IsClick(msg.x, msg.y, barStyle.zoom))
+					&& IsPresentedBarVisualHit(barUISet, annotationClose, msg.x, msg.y))
 				{
 					currentIndependentButton =
 						IndependentHoverTargetEnum::DrawAttributeAnnotationClose;
@@ -3244,7 +4339,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				else if (IsIndependentHoverAllowed(
 					IndependentHoverTargetEnum::DrawAttributeOverflowClose)
 					&& overflowClose
-					&& overflowClose->IsClick(msg.x, msg.y, barStyle.zoom))
+					&& IsPresentedBarVisualHit(barUISet, overflowClose, msg.x, msg.y))
 				{
 					currentIndependentButton =
 						IndependentHoverTargetEnum::DrawAttributeOverflowClose;
@@ -3267,7 +4362,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						+ static_cast<int>(i));
 					auto obj = shapeMap[presetShapes[i]];
 					if (IsIndependentHoverAllowed(target)
-						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+						&& obj && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 					{
 						currentIndependentButton = target;
 						break;
@@ -3279,28 +4374,28 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
 					if (IsIndependentHoverAllowed(
 						IndependentHoverTargetEnum::DrawAttributeThicknessAdjust)
-						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+						&& obj && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeThicknessAdjust;
 				}
 				if (currentIndependentButton == IndependentHoverTargetEnum::None)
 				{
 					if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser];
-						obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+						obj && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 					{
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeLaser;
 					}
 					else if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
 					stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHardPen
-					&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+					&& obj && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 					{
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeBrush;
 					}
 					else if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_SoftPen];
 						stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenSoftPen
-						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+						&& obj && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 					{
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeSoftPen;
@@ -3308,7 +4403,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					else if (auto obj =
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
 						stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1
-						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+						&& obj && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 					{
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeHighlight;
@@ -3325,7 +4420,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		return BarInteractionStageResult::PassThrough;
 	}
 
-	BarInteractionStageResult HandleColorPickerPointerStage()
+	InteractionTask<BarInteractionStageResult> HandleColorPickerPointerStage()
 	{
 			bool continueFlag = true;
 
@@ -3338,10 +4433,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel];
 				auto customSwatch = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ColorSelect12];
-				bool insidePicker = pickerPanel && pickerPanel->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-				bool insideEntry = customSwatch && customSwatch->IsClick(
-					msg.x, msg.y, barStyle.zoom);
+				bool insidePicker = pickerPanel && IsPresentedBarVisualHit(barUISet, pickerPanel, msg.x, msg.y);
+				bool insideEntry = customSwatch && IsPresentedBarVisualHit(barUISet, customSwatch, msg.x, msg.y);
 				if (!insidePicker && !insideEntry)
 				{
 					CloseColorPicker(false);
@@ -3361,8 +4454,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle];
 				auto pickerClose = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit];
-				if (pickerClose && pickerClose->IsClick(
-					msg.x, msg.y, barStyle.zoom))
+				if (pickerClose && IsPresentedBarVisualHit(barUISet, pickerClose, msg.x, msg.y))
 				{
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
@@ -3375,13 +4467,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						UpdateRendering(false);
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (!pickerClose->IsClick(
-								msg.x, msg.y, barStyle.zoom)) break;
+							if (!IsPresentedBarVisualHit(barUISet, pickerClose, msg.x, msg.y)) break;
 							if (!msg.lbutton)
 							{
 								CloseColorPicker(false);
@@ -3395,8 +4486,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							EM_MOUSE, floating_window);
 					}
 				}
-				else if (pickerTone && pickerTone->IsClick(
-					msg.x, msg.y, barStyle.zoom))
+				else if (pickerTone && IsPresentedBarVisualHit(barUISet, pickerTone, msg.x, msg.y))
 				{
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
@@ -3409,13 +4499,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						UpdateRendering(false);
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (!pickerTone->IsClick(
-								msg.x, msg.y, barStyle.zoom)) break;
+							if (!IsPresentedBarVisualHit(barUISet, pickerTone, msg.x, msg.y)) break;
 							if (!msg.lbutton)
 							{
 								barState.drawAttributeBar.colorPickerDarkTone =
@@ -3433,14 +4522,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							EM_MOUSE, floating_window);
 					}
 				}
-				else if (pickerPalette && pickerPalette->IsClick(
-					msg.x, msg.y, barStyle.zoom))
+				else if (pickerPalette && IsPresentedBarVisualHit(barUISet, pickerPalette, msg.x, msg.y))
 				{
 					continueFlag = false;
-					RunColorPickerPointerGesture(msg);
+					(void)co_await RunColorPickerPointerGesture(msg);
 				}
-				else if (pickerPanel && pickerPanel->IsClick(
-					msg.x, msg.y, barStyle.zoom))
+				else if (pickerPanel && IsPresentedBarVisualHit(barUISet, pickerPanel, msg.x, msg.y))
 				{
 					// 面板正文阻止点击穿透；面板外则维持既有主栏交互。
 					continueFlag = false;
@@ -3451,8 +4538,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			{
 				auto customSwatch = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ColorSelect12];
-				if (customSwatch && customSwatch->IsClick(
-					msg.x, msg.y, barStyle.zoom))
+				if (customSwatch && IsPresentedBarVisualHit(barUISet, customSwatch, msg.x, msg.y))
 				{
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
@@ -3461,13 +4547,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						UpdateRendering(false);
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (!customSwatch->IsClick(
-								msg.x, msg.y, barStyle.zoom)) break;
+							if (!IsPresentedBarVisualHit(barUISet, customSwatch, msg.x, msg.y)) break;
 							if (!msg.lbutton)
 							{
 								if (barState.drawAttributeBar.colorPickerOpen)
@@ -3492,12 +4577,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					}
 				}
 			}
-			return continueFlag
+			co_return continueFlag
 				? BarInteractionStageResult::PassThrough
 				: BarInteractionStageResult::Consumed;
 	}
 
-	BarInteractionStageResult HandleOverlayPointerStage()
+	InteractionTask<BarInteractionStageResult> HandleOverlayPointerStage()
 	{
 			bool continueFlag = true;
 
@@ -3545,7 +4630,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				auto closeHit = shapeMap[tooltip.closeHit];
 				if (!continueFlag || !tooltip.available
 					|| !static_cast<bool>(*tooltip.pinned) || !closeHit
-					|| !closeHit->IsClick(msg.x, msg.y, barStyle.zoom))
+					|| !IsPresentedBarVisualHit(barUISet, closeHit, msg.x, msg.y))
 					continue;
 
 				continueFlag = false;
@@ -3561,13 +4646,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					UpdateRendering(false);
 					while (true)
 					{
-						if (!WaitForBarInteractionMessage(
-							msg, EM_MOUSE, floating_window))
+						if (!(co_await AwaitNextBarInteractionMessage(
+							msg, EM_MOUSE, floating_window)))
 						{
-							return BarInteractionStageResult::Shutdown;
+							co_return BarInteractionStageResult::Shutdown;
 						}
-						if (closeHit->IsClick(
-							msg.x, msg.y, barStyle.zoom))
+						if (IsPresentedBarVisualHit(barUISet, closeHit, msg.x, msg.y))
 						{
 							if (!msg.lbutton)
 							{
@@ -3589,7 +4673,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			{
 				auto infoHit = shapeMap[tooltip.infoHit];
 				if (!continueFlag || !tooltip.available || !infoHit
-					|| !infoHit->IsClick(msg.x, msg.y, barStyle.zoom))
+					|| !IsPresentedBarVisualHit(barUISet, infoHit, msg.x, msg.y))
 					continue;
 
 				continueFlag = false;
@@ -3599,13 +4683,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						*tooltip.hoverGrace, tooltip.hoverGraceTimerId);
 					while (true)
 					{
-						if (!WaitForBarInteractionMessage(
-							msg, EM_MOUSE, floating_window))
+						if (!(co_await AwaitNextBarInteractionMessage(
+							msg, EM_MOUSE, floating_window)))
 						{
-							return BarInteractionStageResult::Shutdown;
+							co_return BarInteractionStageResult::Shutdown;
 						}
-						if (infoHit->IsClick(
-							msg.x, msg.y, barStyle.zoom))
+						if (IsPresentedBarVisualHit(barUISet, infoHit, msg.x, msg.y))
 						{
 							if (!msg.lbutton)
 							{
@@ -3631,7 +4714,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				if (continueFlag && tooltip.available
 					&& (static_cast<bool>(*tooltip.pinned)
 						|| static_cast<bool>(*tooltip.hover)) && popup
-					&& popup->IsClick(msg.x, msg.y, barStyle.zoom))
+					&& IsPresentedBarVisualHit(barUISet, popup, msg.x, msg.y))
 				{
 					// 悬停或固定浮窗正文都阻止点击穿透，关闭动作仍由 X 独立处理。
 					continueFlag = false;
@@ -3646,10 +4729,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu];
 				auto entry = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_PenTypeExtensionHit];
-				bool insideMenu = menu && menu->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-				bool insideEntry = entry && entry->IsClick(
-					msg.x, msg.y, barStyle.zoom);
+				bool insideMenu = menu && IsPresentedBarVisualHit(barUISet, menu, msg.x, msg.y);
+				bool insideEntry = entry && IsPresentedBarVisualHit(barUISet, entry, msg.x, msg.y);
 				if (!insideMenu && !insideEntry)
 				{
 					ClosePenTypeMenu();
@@ -3665,12 +4746,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					BarUISetShapeEnum::DrawAttributeBar_PenTypeMenuFreeLine];
 				auto annotationLine = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_PenTypeMenuAnnotationLine];
-				bool insideFreeLine = freeLine && freeLine->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-				bool insideAnnotationLine = annotationLine && annotationLine->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-				bool insideMenu = menu && menu->IsClick(
-					msg.x, msg.y, barStyle.zoom);
+				bool insideFreeLine = freeLine && IsPresentedBarVisualHit(barUISet, freeLine, msg.x, msg.y);
+				bool insideAnnotationLine = annotationLine && IsPresentedBarVisualHit(barUISet, annotationLine, msg.x, msg.y);
+				bool insideMenu = menu && IsPresentedBarVisualHit(barUISet, menu, msg.x, msg.y);
 				if (insideFreeLine)
 				{
 					continueFlag = false;
@@ -3685,13 +4763,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						bool clickCompleted = false;
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (!freeLine->IsClick(
-								msg.x, msg.y, barStyle.zoom)) break;
+							if (!IsPresentedBarVisualHit(barUISet, freeLine, msg.x, msg.y)) break;
 							if (!msg.lbutton)
 							{
 								clickCompleted = true;
@@ -3712,12 +4789,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					continueFlag = false;
 				}
 			}
-			return continueFlag
+			co_return continueFlag
 				? BarInteractionStageResult::PassThrough
 				: BarInteractionStageResult::Consumed;
 	}
 
-	BarInteractionStageResult HandleMorePointerStage()
+	InteractionTask<BarInteractionStageResult> HandleMorePointerStage()
 	{
 			bool continueFlag = true;
 
@@ -3730,11 +4807,11 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				BarMoreButtonSnapshotClass moreSnapshot =
 					barButtonSet.GetMoreButtonSnapshot();
 				bool pointerInPanel = morePanel
-					&& morePanel->IsClick(msg.x, msg.y, barStyle.zoom);
+					&& IsPresentedBarVisualHit(barUISet, morePanel, msg.x, msg.y);
 				bool pointerInMoreButton = moreButton
-					&& moreButton->button.IsClick(msg.x, msg.y, barStyle.zoom);
+					&& HitPresentedButton(*moreButton, msg);
 
-				if (moreClose && moreClose->IsClick(msg.x, msg.y, barStyle.zoom))
+				if (moreClose && IsPresentedBarVisualHit(barUISet, moreClose, msg.x, msg.y))
 				{
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
@@ -3745,12 +4822,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						UpdateRendering(false);
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (!moreClose->IsClick(msg.x, msg.y, barStyle.zoom)) break;
+							if (!IsPresentedBarVisualHit(barUISet, moreClose, msg.x, msg.y)) break;
 							if (!msg.lbutton)
 							{
 								barState.moreExpanded = false;
@@ -3776,23 +4853,29 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					{
 						if (!button || !button->IsVisible()
 							|| button->state->state == BarWidgetState::Disable
-							|| !button->button.IsClick(msg.x, msg.y, barStyle.zoom)) continue;
+							|| !HitPresentedButton(*button, msg)) continue;
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN)
 						{
-							SetBarButtonPressedVisual(*button, true);
+							Inkeys::UI::Bar::ButtonPointerState pointerState;
+							const auto pointerIdentity = reinterpret_cast<std::uintptr_t>(button.get());
+							(void)pointerState.Update(Inkeys::UI::Bar::ButtonPointerEvent::Down, pointerIdentity);
+							SetButtonPressed(*button, true);
 							StopMainBarButtonHover(hoveredMainBarButton, true, true);
 							hoveredMainBarButton = nullptr;
 							UpdateRendering(false);
 							while (true)
 							{
-								if (!WaitForBarInteractionMessage(
-									msg, EM_MOUSE, floating_window))
+								if (!(co_await AwaitNextBarInteractionMessage(
+									msg, EM_MOUSE, floating_window)))
 								{
-									return BarInteractionStageResult::Shutdown;
+									co_return BarInteractionStageResult::Shutdown;
 								}
-								if (!button->button.IsClick(msg.x, msg.y, barStyle.zoom)) break;
-								if (!msg.lbutton)
+								const auto pointer = pointerState.Update(msg.message == WM_LBUTTONUP
+									? Inkeys::UI::Bar::ButtonPointerEvent::Up : Inkeys::UI::Bar::ButtonPointerEvent::Move,
+									HitPresentedButton(*button, msg) ? pointerIdentity : 0);
+								if (pointer.pressed == 0 && pointer.activate == 0) break;
+								if (msg.message == WM_LBUTTONUP && pointer.activate == pointerIdentity)
 								{
 									// 默认先收起再执行，避免动作打开新窗口时浮层残留。
 									if (button->closeMoreAfterAction)
@@ -3801,7 +4884,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									break;
 								}
 							}
-							SetBarButtonPressedVisual(*button, false);
+							SetButtonPressed(*button, false);
 							UpdateRendering(false);
 							SuppressHoverUntilPointerMove();
 							ClearBarInteractionMessages(EM_MOUSE, floating_window);
@@ -3820,12 +4903,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					UpdateRendering(false);
 				}
 			}
-			return continueFlag
+			co_return continueFlag
 				? BarInteractionStageResult::PassThrough
 				: BarInteractionStageResult::Consumed;
 	}
 
-	BarInteractionStageResult HandleMainButtonAndBarPointerStage()
+	InteractionTask<BarInteractionStageResult> HandleMainButtonAndBarPointerStage()
 	{
 			bool continueFlag = true;
 			const short rigidMessageX = msg.x;
@@ -3851,13 +4934,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				msg, nullptr, nullptr);
 
 			// 主按钮
-			if (auto obj = superellipseMap[BarUISetSuperellipseEnum::MainButton]; continueFlag && obj->IsClick(gripMessage.x, gripMessage.y, barStyle.zoom))
+			if (auto obj = superellipseMap[BarUISetSuperellipseEnum::MainButton]; continueFlag && IsPresentedBarVisualHit(barUISet, obj, gripMessage.x, gripMessage.y))
 			{
 				continueFlag = false;
 				if (msg.message == WM_LBUTTONDOWN)
 				{
 					if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::MainFold,
-						Inkeys::UI::Bar::Ui3FixtureActionPoint::Down)) return BarInteractionStageResult::Shutdown;
+						Inkeys::UI::Bar::Ui3FixtureActionPoint::Down)) co_return BarInteractionStageResult::Shutdown;
 					// Seek 需要按下时的真实视觉坐标，不能把主体逆形变坐标当作抓取点。
 					ExMessage seekMessage = msg;
 					seekMessage.x = static_cast<short>(clamp(
@@ -3866,11 +4949,11 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					seekMessage.y = static_cast<short>(clamp(
 						visualMessageY, static_cast<int>(SHRT_MIN),
 						static_cast<int>(SHRT_MAX)));
-					const BarSeekResult seekResult = Seek(seekMessage);
+					const BarSeekResult seekResult = co_await Seek(seekMessage);
 					if (seekResult.allowClick)
 					{
 						if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::MainFold,
-							Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) return BarInteractionStageResult::Shutdown;
+							Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) co_return BarInteractionStageResult::Shutdown;
 						// 奇数publication必须先于coalescer及第一业务写，默认无probe不工作。
 						Inkeys::UI::Bar::Ui3FiniteMutationScope finiteMutation(Inkeys::UI::Bar::Ui3FiniteScene::MainFold);
 						if (barUISet.TryBeginToggle(BarToggleChannel::Main))
@@ -3906,6 +4989,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 				if (msg.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 				{
+					const bool shouldClose = co_await RunInteractionBusiness([cancellation = InteractionBusinessCancellation()]() -> bool
+					{
 					const auto title = I18n::getWOr(
 						I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
 					const auto body = I18n::getWOr(
@@ -3917,6 +5002,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
 						title.c_str(), body.c_str());
 					request.language = I18n::languageId();
+					request.cancellation = cancellation;
 					request.labels.ok = okLabel.c_str();
 					request.labels.cancel = cancelLabel.c_str();
 					request.owner = floating_window;
@@ -3924,8 +5010,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					request.fallback.owner = floating_window;
 					request.fallback.modality =
 						Inkeys::UI::MessageBox::SystemModality::System;
-					if (Inkeys::UI::MessageBox::Show(request)
-						== Inkeys::UI::MessageBox::Result::Ok) CloseProgram();
+					return Inkeys::UI::MessageBox::Show(request) == Inkeys::UI::MessageBox::Result::Ok;
+					});
+					if (shouldClose && !offSignal && !InteractionCancelled()) CloseProgram();
 
 					ClearBarInteractionMessages(EM_MOUSE, floating_window);
 				}
@@ -3935,9 +5022,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			if (continueFlag)
 			{
 				// 特殊体质：按钮
-				for (int id = 0; id < barButtonSet.tot; id++)
+				const auto mainButtons = barButtonSet.buttonList.Snapshot();
+				for (const auto& retainedButton : mainButtons)
 				{
-					BarButtonClass* temp = barButtonSet.buttonList.Get(id);
+					BarButtonClass* temp = retainedButton.get();
 					if (temp == nullptr || !temp->IsVisible()
 						|| temp->preset == BarButtonPresetEnum::Divider
 						|| temp->state->state == BarWidgetState::Disable) continue;
@@ -3945,7 +5033,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					// 双击第二击仍归属于第一击按钮，避免动画中按钮位移导致命中丢失。
 					bool doubleClickContinuation = msg.message == WM_LBUTTONDBLCLK
 						&& temp == lastClickedMainBarButton;
-					if (temp->button.IsClick(msg.x, msg.y, barStyle.zoom) || doubleClickContinuation)
+					if (HitPresentedButton(*temp, msg) || doubleClickContinuation)
 					{
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN || msg.message == WM_LBUTTONDBLCLK)
@@ -3953,28 +5041,32 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							const auto fixtureAction = temp->preset == BarButtonPresetEnum::Draw
 								? Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute : static_cast<Inkeys::UI::Bar::Ui3FiniteScene>(0);
 							if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(fixtureAction,
-								Inkeys::UI::Bar::Ui3FixtureActionPoint::Down)) return BarInteractionStageResult::Shutdown;
+								Inkeys::UI::Bar::Ui3FixtureActionPoint::Down)) co_return BarInteractionStageResult::Shutdown;
 							bool clickCompleted = false;
 							// 同一背景层先切换到按下状态；抬起后必须收到新的鼠标移动才能再次悬停。
-							SetBarButtonPressedVisual(*temp, true);
+							Inkeys::UI::Bar::ButtonPointerState pointerState;
+							const auto pointerIdentity = reinterpret_cast<std::uintptr_t>(temp);
+							(void)pointerState.Update(Inkeys::UI::Bar::ButtonPointerEvent::Down, pointerIdentity);
+							SetButtonPressed(*temp, true);
 							StopMainBarButtonHover(hoveredMainBarButton, true, true);
 							hoveredMainBarButton = nullptr;
 							UpdateRendering(false);
 							while (true)
 							{
-								if (!WaitForBarInteractionMessage(
-									msg, EM_MOUSE, floating_window))
+								if (!(co_await AwaitNextBarInteractionMessage(
+									msg, EM_MOUSE, floating_window)))
 								{
-									return BarInteractionStageResult::Shutdown;
+									co_return BarInteractionStageResult::Shutdown;
 								}
 								ApplyBarBottomDockBodyHitTestFromRigid(msg);
-								if (doubleClickContinuation || temp->button.IsClick(msg.x, msg.y, barStyle.zoom))
+								if (doubleClickContinuation || HitPresentedButton(*temp, msg))
 								{
 									// Move 缺少 MK_LBUTTON 不能代表抬起，点击只在明确 Up 后执行。
-									if (msg.message == WM_LBUTTONUP && !msg.lbutton)
+									if (msg.message == WM_LBUTTONUP && !msg.lbutton
+										&& pointerState.Update(Inkeys::UI::Bar::ButtonPointerEvent::Up, pointerIdentity).activate == pointerIdentity)
 									{
 										if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(fixtureAction,
-											Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) return BarInteractionStageResult::Shutdown;
+											Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) co_return BarInteractionStageResult::Shutdown;
 										Inkeys::UI::Bar::Ui3FiniteMutationScope finiteMutation(
 											Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute, temp->preset == BarButtonPresetEnum::Draw);
 										ClosePenTypeMenu();
@@ -4024,7 +5116,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								}
 								else break;
 							}
-							SetBarButtonPressedVisual(*temp, false); UpdateRendering(false);
+							SetButtonPressed(*temp, false); UpdateRendering(false);
 							SuppressHoverUntilPointerMove();
 
 							// 成功点击后保留队列中的下一击；拖出取消时仍清理本轮残留消息。
@@ -4035,12 +5127,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 			}
 			msg.y = rigidMessageY;
-			return continueFlag
+			co_return continueFlag
 				? BarInteractionStageResult::PassThrough
 				: BarInteractionStageResult::Consumed;
 	}
 
-	BarInteractionStageResult HandleGeometryPointerStage()
+	InteractionTask<BarInteractionStageResult> HandleGeometryPointerStage()
 	{
 			bool continueFlag = true;
 
@@ -4080,7 +5172,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				for (const auto& button : geometryButtons)
 				{
 					auto shape = shapeMap[button.shape];
-					if (!shape || !shape->IsClick(msg.x, msg.y, barStyle.zoom))
+					if (!shape || !IsPresentedBarVisualHit(barUISet, shape, msg.x, msg.y))
 						continue;
 
 					continueFlag = false;
@@ -4095,12 +5187,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						UpdateRendering(false);
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (!shape->IsClick(msg.x, msg.y, barStyle.zoom)) break;
+							if (!IsPresentedBarVisualHit(barUISet, shape, msg.x, msg.y)) break;
 							if (!msg.lbutton)
 							{
 							if (StateModeTransitionRevision() != geometryAtPress.revision)
@@ -4112,7 +5204,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									SetShapeModeSelectIfRevision(
 										button.shapeMode.value(), geometryAtPress.revision);
 								}
-								else SetPenWidthPresetIfRevision(button.thicknessPresetIndex,
+								else SetInteractionPenWidthPresetIfRevision(button.thicknessPresetIndex,
 									geometryAtPress.revision);
 								UpdateRendering();
 								break;
@@ -4126,12 +5218,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					break;
 				}
 			}
-			return continueFlag
+			co_return continueFlag
 				? BarInteractionStageResult::PassThrough
 				: BarInteractionStageResult::Consumed;
 	}
 
-	BarInteractionStageResult HandleThicknessAndFineDialPointerStage()
+	InteractionTask<BarInteractionStageResult> HandleThicknessAndFineDialPointerStage()
 	{
 			bool continueFlag = true;
 
@@ -4159,8 +5251,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								== ThicknessViewMode::FineDial
 							&& barState.drawAttributeBar
 								.thicknessFineDialRangeTransitionActive;
-						if ((sliderHit && sliderHit->IsClick(
-							msg.x, msg.y, barStyle.zoom))
+						if ((sliderHit && IsPresentedBarVisualHit(barUISet, sliderHit, msg.x, msg.y))
 							|| previewPopupHit
 							|| fineActivationHit
 								!= BarThicknessFineDialHitZone::None)
@@ -4309,8 +5400,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								// 点在圆点内：保持相对偏移；点在外侧：中心对齐到触点 X。
 								bool pressOnThumb = !fineDialGesture
 									&& valueAdjustAllowed
-									&& sliderThumb->IsClick(
-										msg.x, msg.y, barStyle.zoom);
+									&& IsPresentedBarVisualHit(barUISet, sliderThumb, msg.x, msg.y);
 								bool pressTracksSliderThumb = pressOnThumb
 									|| sliderPopupGesture;
 								double grabOffsetScreenX = pressTracksSliderThumb
@@ -4819,14 +5909,16 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										IndependentHoverTargetEnum::None;
 									SendMessage(floating_window,
 										BarThicknessSliderCaptureMessage,
-										BarThicknessSliderCaptureStart, 0);
+										BarThicknessSliderCaptureStart, static_cast<LPARAM>(MainGestureCaptureTicket()));
 									UpdateRendering(false);
 
-									while (!offSignal)
+									while (!offSignal && !InteractionCancelled())
 									{
-										// 用 peek 轮询，便于静止计时在无新消息时也能推进。
-										if (!TryGetBarInteractionMessage(
-											&msg, EM_MOUSE, true, floating_window))
+										// 等待输入或最近的计时期限；挂起期间其他窗口仍由同一 worker 处理。
+										const bool hasInput = co_await NextBarInteractionMessage(msg, EM_MOUSE, floating_window, false,
+											nullptr, InteractionClock::now() + std::chrono::milliseconds(8));
+										stateMode = GetStateModeSnapshot();
+										if (!hasInput)
 										{
 											bool samePenMode =
 												stateMode.StateModeSelect
@@ -4887,8 +5979,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 														static_cast<double>(cursorPoint.y));
 												}
 											}
-											std::this_thread::sleep_for(
-												std::chrono::milliseconds(8));
 											continue;
 										}
 
@@ -5291,7 +6381,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									if (gestureCaptured)
 										SendMessage(floating_window,
 											BarThicknessSliderCaptureMessage,
-											BarThicknessSliderCaptureStop, 0);
+											BarThicknessSliderCaptureStop, static_cast<LPARAM>(MainGestureCaptureTicket()));
 									bool holdLockedAtRelease =
 										barState.drawAttributeBar
 											.thicknessSliderHoldLocked;
@@ -5377,7 +6467,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												CommitThicknessFineDialSelection();
 											}
 											else if (candidateChanged)
-												SetPenWidthIfRevision(finalWidth, gestureRevision, true);
+												SetInteractionPenWidthIfRevision(finalWidth, gestureRevision, true);
 											barState.drawAttributeBar
 												.thicknessSliderCandidateWidth = 0.0f;
 											barState.drawAttributeBar.thicknessViewMode =
@@ -5408,7 +6498,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										bool canCommit = gestureCompleted
 											&& candidateChanged;
 										if (canCommit)
-											SetPenWidthIfRevision(finalWidth, gestureRevision, true);
+											SetInteractionPenWidthIfRevision(finalWidth, gestureRevision, true);
 										barState.drawAttributeBar.thicknessSliderDragging = false;
 										barState.drawAttributeBar.thicknessPreviewDragging = false;
 										barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
@@ -5455,17 +6545,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										|| barState.drawAttributeBar.thicknessOverflowHoverGrace
 										|| barState.drawAttributeBar.thicknessOverflowPinned;
 									bool annotationPointerInside =
-										(annotationInfoHit && annotationInfoHit->IsClick(
-											msg.x, msg.y, barStyle.zoom))
+										(annotationInfoHit && IsPresentedBarVisualHit(barUISet, annotationInfoHit, msg.x, msg.y))
 										|| (annotationPopupInteractive && annotationPopup
-											&& annotationPopup->IsClick(
-											msg.x, msg.y, barStyle.zoom));
+											&& IsPresentedBarVisualHit(barUISet, annotationPopup, msg.x, msg.y));
 					bool overflowPointerInside = !annotationPointerInside
-						&& ((overflowInfoHit && overflowInfoHit->IsClick(
-							msg.x, msg.y, barStyle.zoom))
+						&& ((overflowInfoHit && IsPresentedBarVisualHit(barUISet, overflowInfoHit, msg.x, msg.y))
 							|| (overflowPopupInteractive && overflowPopup
-								&& overflowPopup->IsClick(
-								msg.x, msg.y, barStyle.zoom)));
+								&& IsPresentedBarVisualHit(barUISet, overflowPopup, msg.x, msg.y)));
 									// 内层捕获循环不会处理普通 hover，抬起后统一重算提示和宽限期。
 									UpdateTooltipHover(
 										AnnotationTooltipAvailable(),
@@ -5490,8 +6576,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									else
 										barState.drawAttributeBar.thicknessSliderHover =
 											!overflowUiActive
-											&& ((sliderHit && sliderHit->IsClick(
-												msg.x, msg.y, barStyle.zoom))
+											&& ((sliderHit && IsPresentedBarVisualHit(barUISet, sliderHit, msg.x, msg.y))
 												|| IsBarThicknessPreviewPopupHit(
 													barUISet, msg.x, msg.y)
 												|| IsBarThicknessPrecisionDragHit(
@@ -5516,12 +6601,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						}
 					}
 				}
-			return continueFlag
+			co_return continueFlag
 				? BarInteractionStageResult::PassThrough
 				: BarInteractionStageResult::Consumed;
 	}
 
-	BarInteractionStageResult HandleDrawAttributePointerStage()
+	InteractionTask<BarInteractionStageResult> HandleDrawAttributePointerStage()
 	{
 		auto SelectPenTool = [&](PenToolSelectionEnum tool)
 			{
@@ -5560,8 +6645,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							BarUISetShapeEnum::DrawAttributeBar_ColorSelect11); i++)
 					{
 						auto swatch = shapeMap[static_cast<BarUISetShapeEnum>(i)];
-						if (swatch && swatch->IsClick(
-							msg.x, msg.y, barStyle.zoom))
+						if (swatch && IsPresentedBarVisualHit(barUISet, swatch, msg.x, msg.y))
 						{
 							activeSwatch = swatch;
 							break;
@@ -5573,7 +6657,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						continueFlag = false;
 						auto ApplySwatch = [&](const shared_ptr<BarUiShapeClass>& swatch)
 							{
-								SetPenColor(Inkeys::Color::SetAlphaR(
+								SetInteractionPenColor(Inkeys::Color::SetAlphaR(
 									swatch->fill.value().tar, 255));
 								if (barState.drawAttributeBar.colorPickerOpen)
 									ProjectCurrentColorPickerPoint();
@@ -5584,10 +6668,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						// 只有色块内的 Down 才启动拖选，穿过间隙后仍可切到新色块。
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
 							if (!msg.lbutton) break;
 
@@ -5599,8 +6683,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								auto swatch = shapeMap[
 									static_cast<BarUISetShapeEnum>(i)];
 								if (!swatch || swatch == activeSwatch
-									|| !swatch->IsClick(
-										msg.x, msg.y, barStyle.zoom))
+									|| !IsPresentedBarVisualHit(barUISet, swatch, msg.x, msg.y))
 									continue;
 								activeSwatch = swatch;
 								ApplySwatch(activeSwatch);
@@ -5642,7 +6725,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								&& (!laserThicknessPresetMode || button.presetIndex >= 0);
 							auto obj = shapeMap[button.shape];
 							if (!visible || !obj
-								|| !obj->IsClick(msg.x, msg.y, barStyle.zoom))
+								|| !IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 								continue;
 
 							continueFlag = false;
@@ -5677,12 +6760,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								UpdateRendering(false);
 								while (true)
 								{
-									if (!WaitForBarInteractionMessage(
-										msg, EM_MOUSE, floating_window))
+									if (!(co_await AwaitNextBarInteractionMessage(
+										msg, EM_MOUSE, floating_window)))
 									{
-										return BarInteractionStageResult::Shutdown;
+										co_return BarInteractionStageResult::Shutdown;
 									}
-									if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
+									if (IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 									{
 										if (!msg.lbutton)
 										{
@@ -5695,7 +6778,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											{
 												if (fineDialAtPress)
 													CancelThicknessFineDialSelection();
-												SetPenWidthPresetIfRevision(button.presetIndex, toolRevisionAtPress);
+												SetInteractionPenWidthPresetIfRevision(button.presetIndex, toolRevisionAtPress);
 											}
 											else
 											{
@@ -5763,8 +6846,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				{
 					auto extension = shapeMap[
 						BarUISetShapeEnum::DrawAttributeBar_PenTypeExtensionHit];
-					if (extension && extension->IsClick(
-						msg.x, msg.y, barStyle.zoom))
+					if (extension && IsPresentedBarVisualHit(barUISet, extension, msg.x, msg.y))
 					{
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN)
@@ -5778,13 +6860,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							bool clickCompleted = false;
 							while (true)
 							{
-								if (!WaitForBarInteractionMessage(
-									msg, EM_MOUSE, floating_window))
+								if (!(co_await AwaitNextBarInteractionMessage(
+									msg, EM_MOUSE, floating_window)))
 								{
-									return BarInteractionStageResult::Shutdown;
+									co_return BarInteractionStageResult::Shutdown;
 								}
-								if (!extension->IsClick(
-									msg.x, msg.y, barStyle.zoom)) break;
+								if (!IsPresentedBarVisualHit(barUISet, extension, msg.x, msg.y)) break;
 								if (!msg.lbutton)
 								{
 									clickCompleted = true;
@@ -5842,7 +6923,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 
 				// 激光笔
-				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser]; continueFlag && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 				{
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
@@ -5854,9 +6935,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						bool clickCompleted = false;
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(msg, EM_MOUSE, floating_window))
-								return BarInteractionStageResult::Shutdown;
-							if (obj->IsClick(msg.x, msg.y, barStyle.zoom) && !msg.lbutton)
+							if (!(co_await AwaitNextBarInteractionMessage(msg, EM_MOUSE, floating_window)))
+								co_return BarInteractionStageResult::Shutdown;
+							if (IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y) && !msg.lbutton)
 							{
 								clickCompleted = true;
 								ClosePenTypeMenu();
@@ -5865,7 +6946,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								UpdateRendering();
 								break;
 							}
-							if (!obj->IsClick(msg.x, msg.y, barStyle.zoom)) break;
+							if (!IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y)) break;
 						}
 						barState.drawAttributeBar.laserPress = false;
 						UpdateRendering(false);
@@ -5875,7 +6956,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 
 				// 画笔
-				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]; continueFlag && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 				{
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
@@ -5886,12 +6967,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						UpdateRendering(false);
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
+							if (IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 							{
 							if (!msg.lbutton)
 							{
@@ -5911,7 +6992,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 				// 软笔：默认画笔，和硬笔共用粗细/颜色但保持独立按钮状态。
 				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_SoftPen];
-					continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+					continueFlag && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 				{
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
@@ -5922,10 +7003,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						UpdateRendering(false);
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
-								return BarInteractionStageResult::Shutdown;
-							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
+								co_return BarInteractionStageResult::Shutdown;
+							if (IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 							{
 								if (!msg.lbutton)
 								{
@@ -5942,7 +7023,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					}
 				}
 				// 荧光笔
-				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]; continueFlag && IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 				{
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
@@ -5953,12 +7034,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						UpdateRendering(false);
 						while (true)
 						{
-							if (!WaitForBarInteractionMessage(
-								msg, EM_MOUSE, floating_window))
+							if (!(co_await AwaitNextBarInteractionMessage(
+								msg, EM_MOUSE, floating_window)))
 							{
-								return BarInteractionStageResult::Shutdown;
+								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
+							if (IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y))
 							{
 							if (!msg.lbutton)
 							{
@@ -5976,12 +7057,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					}
 				}
 			}
-		return continueFlag
+		co_return continueFlag
 			? BarInteractionStageResult::PassThrough
 			: BarInteractionStageResult::Consumed;
 	}
 
-	BarInteractionStageResult DispatchPointerStages()
+	InteractionTask<BarInteractionStageResult> DispatchPointerStages()
 	{
 		// 浮层外点击关闭后仍按原顺序向下传递同一条消息。
 		const auto stages = {
@@ -5995,21 +7076,21 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		};
 		for (const auto stage : stages)
 		{
-			const auto result = (this->*stage)();
+			const auto result = co_await (this->*stage)();
 			if (stage == &BarInteractionSession::HandleMainButtonAndBarPointerStage
 				&& result == BarInteractionStageResult::PassThrough && Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
 			{
 				Inkeys::UI::Bar::RejectAuthorizedFixtureSource(Inkeys::UI::Bar::Ui3FixtureSourceFailure::Action);
-				return BarInteractionStageResult::Shutdown;
+				co_return BarInteractionStageResult::Shutdown;
 			}
 			if (result != BarInteractionStageResult::PassThrough)
-				return result;
+				co_return result;
 		}
-		return BarInteractionStageResult::PassThrough;
+		co_return BarInteractionStageResult::PassThrough;
 	}
 
 public:
-	void Run()
+	InteractionTask<bool> Run()
 	{
 		Inkeys::UI::Bar::EnterAuthorizedFixtureInteraction();
 		struct FixtureInteractionExit { ~FixtureInteractionExit() { Inkeys::UI::Bar::LeaveAuthorizedFixtureInteraction(); } } fixtureExit;
@@ -6018,9 +7099,9 @@ public:
 		// Session 构造、mailbox 与交互状态全部可用后再报告 ready。
 		(void)Inkeys::Startup::Report(
 			Inkeys::Startup::Milestone::BarInteractionReady);
-		while (!offSignal)
+		while (!offSignal && !InteractionCancelled())
 		{
-			const auto pollResult = PollInteractionMessage();
+			const auto pollResult = co_await PollInteractionMessage();
 			stateMode = GetStateModeSnapshot();
 			if (pollResult == BarInteractionStageResult::Shutdown) break;
 			if (pollResult == BarInteractionStageResult::Consumed) continue;
@@ -6060,22 +7141,23 @@ public:
 			if (hoverResult == BarInteractionStageResult::Shutdown) break;
 			if (hoverResult == BarInteractionStageResult::Consumed) continue;
 
-			const auto pointerResult = DispatchPointerStages();
+			const auto pointerResult = co_await DispatchPointerStages();
 			if (pointerResult == BarInteractionStageResult::Shutdown) break;
 			if (pointerResult == BarInteractionStageResult::Consumed) continue;
 		}
 		(void)FinishInteraction();
+		co_return true;
 	}
 
 private:
-	bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd,
+	InteractionTask<bool> AwaitNextBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd,
 		bool preserveTouchScreenCoordinates = false,
 		BarTouchScreenSample* touchScreenSample = nullptr)
 	{
-		const bool received = ::WaitForBarInteractionMessage(message, filter, hWnd,
+		const bool received = co_await NextBarInteractionMessage(message, filter, hWnd,
 			preserveTouchScreenCoordinates, touchScreenSample);
 		if (received) stateMode = GetStateModeSnapshot();
-		return received;
+		co_return received;
 	}
 
 	void UpdateRendering(bool updateState = true)
@@ -6083,7 +7165,7 @@ private:
 		barUISet.UpdateRendering(updateState);
 	}
 
-	BarSeekResult Seek(const ExMessage& message)
+	InteractionTask<BarSeekResult> Seek(const ExMessage& message)
 	{
 		ExMessage seekMessage = message;
 		if (currentTouchScreenSample.ready
@@ -6097,7 +7179,7 @@ private:
 				IsBarTouchCancelMessage(message), true);
 		}
 		currentTouchScreenSample.ready = false;
-		return (barUISet.*memberAccess.seek)(seekMessage);
+		co_return co_await (barUISet.*memberAccess.seek)(seekMessage);
 	}
 
 	void CloseThicknessOverflowTooltip()
@@ -6212,8 +7294,50 @@ void BarUISetClass::Interact()
 		&BarUISetClass::CloseThicknessSlider,
 		&BarUISetClass::CloseColorPicker,
 	};
-	BarInteractionSession(
-		*this, mainButtonClickPulseSerial, memberAccess).Run();
+	bool expected = false;
+	if (!interactionWorkerRunning.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) return;
+	(void)ResetInteractionBusiness();
+	MainInteractionAwaitContext context;
+	mainInteractionAwaitContext = &context;
+	interactionWorkerThreadId.store(GetCurrentThreadId(), std::memory_order_release);
+	{
+		std::unique_ptr<BarInteractionSession> session;
+		InteractionTask<bool> routine;
+		while (!offSignal)
+		{
+			if (routine.Done())
+			{
+				try { routine.Rethrow(); }
+				catch (...) { if (IDTLogger) IDTLogger->error("[UI3] 交互续接失败，取消当前手势"); }
+				// Cancel 已清理旧接触；保留边界后已入队的新接触，交给新协程。
+				context = {};
+				session = std::make_unique<BarInteractionSession>(*this, mainButtonClickPulseSerial, memberAccess);
+				routine = session->Run(); routine.Start();
+			}
+			const auto observed = sharedInputMailbox.Revision();
+			auto deadline = PumpSharedInteraction(context, InteractionClock::now());
+			if (routine.Done()) continue;
+			// 无输入或手势计时期限时完全休眠；退出由同一 mailbox 显式唤醒。
+			sharedInputMailbox.WaitUntil(deadline, observed);
+		}
+		CancelInteractionBusiness();
+		context.cancelled = true;
+		for (unsigned budget = 0; budget != 64 && !routine.Done(); ++budget)
+			if (!ResumeMainInteraction(context, InteractionClock::now())) break;
+		CancelAcceptedMainCapture();
+		CancelRegisteredInteractionSurfaces();
+	}
+	interactionWorkerRunning.store(false, std::memory_order_release);
+	for (const auto& registration : SnapshotInteractionRegistrations())
+	{
+		std::lock_guard lock(registration->callbackMutex);
+		registration->callbackDrained.notify_all();
+	}
+	interactionWorkerThreadId.store(0, std::memory_order_release);
+	mainInteractionAwaitContext = nullptr;
+	pendingMainInput.clear();
+	// 停止时排空已经接受的保存/确认任务，不让其越过业务服务的生命周期。
+	DrainInteractionBusiness();
 }
 
 bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
@@ -6674,14 +7798,14 @@ bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 }
 
 // 拖动交互
-BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
+InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 {
 	using namespace Inkeys::UI::Bar;
 	BarSeekResult result;
 	if (IsBottomDockIndicatorPresentedAt(msg.x, msg.y))
 	{
 		result.allowClick = false;
-		return result;
+		co_return result;
 	}
 	auto IsLeftButtonDown = []() -> bool
 		{
@@ -6692,13 +7816,13 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	if (touchGesture && IsBarTouchCancelMessage(msg))
 	{
 		result.allowClick = false;
-		return result;
+		co_return result;
 	}
 	if ((touchGesture && (!msg.lbutton || IsBarTouchCancelMessage(msg)))
-		|| (!touchGesture && !IsLeftButtonDown())) return result;
+		|| (!touchGesture && !IsLeftButtonDown())) co_return result;
 
 	auto mainButton = superellipseMap[BarUISetSuperellipseEnum::MainButton];
-	if (!mainButton) return result;
+	if (!mainButton) co_return result;
 
 	const BarPendingDisplaySnapshot initialDisplaySnapshot =
 		PendingDisplaySnapshot();
@@ -6714,8 +7838,9 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		if (directWindowDragPhase.compare_exchange_weak(
 			expected, BarDirectWindowDragPhase::Dragging,
 			memory_order_acq_rel, memory_order_acquire)) break;
-		if (expected == BarDirectWindowDragPhase::Dragging) return result;
-		lock_guard lock(directWindowDragMutex);
+		if (expected == BarDirectWindowDragPhase::Dragging) co_return result;
+		co_await InteractionDelay(std::chrono::milliseconds(1));
+		if (offSignal || InteractionCancelled()) co_return result;
 	}
 	auto FinishDirectWindowDrag = [&]()
 		{
@@ -6848,7 +7973,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		result.allowClick = false;
 		FinishDirectWindowDrag();
 		if (!offSignal) UpdateRendering(false);
-		return result;
+		co_return result;
 	}
 	POINT previousPointer = startPointer;
 	const double actualMainCenterScreenX =
@@ -7227,10 +8352,10 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	if (touchGesture)
 	{
 		ExMessage touchMessage = msg;
-		while (!offSignal && !directMoveFailed)
+		while (!offSignal && !InteractionCancelled() && !directMoveFailed)
 		{
-			if (!WaitForBarInteractionMessage(
-				touchMessage, EM_MOUSE, floating_window, true))
+			if (!(co_await NextBarInteractionMessage(
+				touchMessage, EM_MOUSE, floating_window, true)))
 			{
 				gestureCancelled = true;
 				break;
@@ -7258,7 +8383,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	else
 	{
 		POINT point = startPointer;
-		while (!offSignal && !directMoveFailed)
+		while (!offSignal && !InteractionCancelled() && !directMoveFailed)
 		{
 			if (!IsLeftButtonDown()) break;
 			if (!GetCursorPos(&point))
@@ -7266,11 +8391,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				gestureCancelled = true;
 				break;
 			}
-			if (!ApplyAbsolutePointer(point) && !directMoveFailed)
-				this_thread::sleep_for(chrono::milliseconds(15));
+			(void)ApplyAbsolutePointer(point);
+			co_await InteractionDelay(std::chrono::milliseconds(8));
 		}
 	}
 
+	if (InteractionCancelled()) gestureCancelled = true;
 	if (directMoveFailed)
 	{
 		// 直接移动失败时以最后一次真实上屏 tuple 为准，不能回到手势开始时的旧快照。
@@ -7349,7 +8475,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		&& BarScreenToLayout(releasePoint)
 		&& IsBottomDockIndicatorPresentedAt(releasePoint.x, releasePoint.y))
 		result.allowClick = false;
-	return result;
+	co_return result;
 }
 
 namespace Inkeys::UI::Bar
@@ -7392,6 +8518,13 @@ namespace Inkeys::UI::Bar
 		if (Inkeys::Message::IsPointerGeneratedMouseMessage(
 			message, extraInfo))
 			return { Inkeys::Message::Action::Discard, 0 };
+		if (message == WM_KEYDOWN || message == WM_KEYUP || message == WM_SYSKEYDOWN || message == WM_SYSKEYUP)
+		{
+			ExMessage queued{}; queued.message = static_cast<USHORT>(message);
+			queued.category = EM_KEY; queued.vkcode = static_cast<BYTE>(wParam);
+			(void)EnqueueMainInteractionMessage(hwnd, queued);
+			return { Inkeys::Message::Action::Discard, 0 };
+		}
 		if (!IsBarCoordinateMessage(message)) return {};
 
 		// 在窗口线程入队时就固化屏幕坐标，避免 resize 后用新原点解释旧 client 消息。
@@ -7421,8 +8554,11 @@ namespace Inkeys::UI::Bar
 		queued.lbutton = (keyState & MK_LBUTTON) != 0;
 		queued.mbutton = (keyState & MK_MBUTTON) != 0;
 		queued.rbutton = (keyState & MK_RBUTTON) != 0;
-		(void)Inkeys::Window::Enqueue(hwnd, queued);
-		return { Inkeys::Message::Action::Discard, 0 };
+		const bool down = message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK;
+		const auto ticket = down ? AcquireBarNativeCapture(hwnd) : mainNativeCaptureOwnership.Current(hwnd);
+		const bool accepted = EnqueueMainInteractionMessage(hwnd, queued, ticket);
+		if (message == WM_LBUTTONUP || (down && !accepted)) ReleaseBarNativeCapture(hwnd, ticket);
+		return { accepted ? Inkeys::Message::Action::Discard : Inkeys::Message::Action::Handled, 0 };
 	}
 
 	bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown)
@@ -7438,7 +8574,7 @@ namespace Inkeys::UI::Bar
 			&& (GetForegroundWindow() == floating_window || (GetCursorPos(&pointer) && WindowFromPoint(pointer) == floating_window)))
 		{
 			ExMessage message{}; message.message = keyDown ? WM_KEYDOWN : WM_KEYUP; message.vkcode = vkCode;
-			return Inkeys::Window::Enqueue(floating_window, message);
+			return EnqueueMainInteractionMessage(floating_window, message);
 		}
 		bool movementKey = vkCode == VK_LEFT || vkCode == VK_RIGHT
 			|| vkCode == VK_UP || vkCode == VK_DOWN
@@ -7454,7 +8590,7 @@ namespace Inkeys::UI::Bar
 		ExMessage message{};
 		message.message = keyDown ? WM_KEYDOWN : WM_KEYUP;
 		message.vkcode = vkCode;
-		return Inkeys::Window::Enqueue(floating_window, message);
+		return EnqueueMainInteractionMessage(floating_window, message);
 	}
 
 	void NotifyCanvasDrawingStarted()

@@ -91,3 +91,13 @@ failed = sample.presentFailed || result == FrameResult::DeviceLost;
 ```
 
 完整失败判定还包含资源/DC/EndDraw HRESULT、ULW 错误和回调异常；上例仅说明统计语义。
+
+## 公共 UI3 多目标无窗口基准
+
+`Inkeys.exe --ui3-multitarget-benchmark` 调用真实主栏 coordinator 与四个分页生产回调，使用同一 `Scheduler`、共享 WARP epoch、真实 D2D/GetDC/ReleaseDC/EndDraw；只替换最终 HWND 提交 sink。主栏单独、PPT 四目标、白板两个可见目标分别覆盖 100%/150%/200%，每组预热 120 帧、采样 600 活动帧、三轮，默认光效开启。隐藏目标不得持续回调，白板最后一轮额外观测收起后的 Idle。活动负载使用真实标准按钮的连续按压动画（与输入反馈使用不同按钮）和每帧变化的页码内容；每个可见目标必须实际成功提交全部 600 个采样帧，不能以强制 Continue 的空回调充当活动帧。生产首次启动放置可能改变fold；无窗口fixture应在该批完成后按正常状态展开，并逐采样帧核对MainBar与真实Draw/Geometry图标、文字尺寸和可见alpha，main_visible_frames必须600；注册身份或成功提交数不能单独证明展开主栏负载。
+
+- 基准输入经过生产 mailbox/dispatcher 和公共 `ButtonPointerState` 反馈；主栏输入使用无窗口标准按钮反馈适配器，分页使用真实已呈现命中与 `BarPageSurface::ApplyPointer`。这不是完整原生 WndProc、触摸驱动或主栏复杂属性手势的端到端延迟测量；相关取消/续接由独立生产 Pump 回归覆盖，原生链留人工验收。
+- 原始 `*-metadata.json`、`*-batches.csv`、`*-callbacks.csv` 和 `summary.csv` 写入忽略目录 `TestResults/ui3-shared-runtime/`。检查 sealed、零掉样、同 batch frameTime、成功提交及预期倍率/活动帧数；计算、Draw、GetDC 与 batch 分别报告，不能把包含性阶段重复相加。main_culled_draws 在真实主栏 coordinator 提交后采样，需为正以证明公共脏区剔除进入生产路径；它不替代像素正确性。
+- 热态目标为 batch P95≤16.67 ms、P99≤33.4 ms；同时报告主栏成功提交间隔、超过 50 ms 的异常来源和正常静置是否仍唤醒。资源计数按几何稳定的重复帧检查；回弹/改变几何产生合法新遮罩不能冒充缓存缺陷。
+- `--ui3-input-worker-test` 直接验证生产注册、mailbox、dispatcher/续接、跨目标公平、超限取消和卸载排空；`InkeysHeadlessTests --no-window` 验证纯策略/状态合同。绘制/像素/命中/设备重建/失败提交回归使用 `--bar-eraser-offscreen-test` 中的真实公共实现。
+- 基准通过也只证明此软件渲染事务和指定输入负载；不证明原生 ULW/DWM、真实 Office/WPS、触摸驱动或视觉帧率。未启动 GUI 时必须将原生转场与主观手感列为人工验收，不能由无窗口结果推断通过。

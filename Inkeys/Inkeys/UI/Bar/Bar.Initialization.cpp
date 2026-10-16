@@ -10,6 +10,7 @@
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "../StartupPlacement.h"
+#include "Bar.InteractionWorker.h"
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -226,6 +227,8 @@ namespace Inkeys::UI::Bar
 		BarAtomic::wait.Notify();
 		Inkeys::UI::RenderPipeline::WakeForStop();
 
+		// 输入 worker 在无手势时无限休眠；退出必须显式唤醒同一个事件邮箱。
+		Inkeys::UI::Bar::WakeInteractionWorker();
 		if (interactionThread.joinable()) interactionThread.join();
 		barUISet.StopDisplayTracking();
 		barUISet.StopRendering();

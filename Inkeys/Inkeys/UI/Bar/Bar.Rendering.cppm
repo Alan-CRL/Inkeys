@@ -67,14 +67,33 @@ export struct BarUiFrameLightingSnapshot
 	bool edgeLightingEnabled = false;
 };
 
+// 主栏只发布一次当前帧的光源输入；独立目标不需要构造主栏 owner。
+export struct BarUiMainLightingInput
+{
+	std::array<D2D1_POINT_2F, 6> anchors{};
+	std::array<bool, 6> anchorAvailable{};
+	D2D1_POINT_2F cursorScreenPoint{};
+	unsigned long long cursorSerial = 0;
+	bool cursorAvailable = false;
+};
+export struct BarUIRenderingServices
+{
+	std::function<BarFormatCache*()> typography;
+	std::function<void()> resetDeviceCaches;
+	std::function<BarUiMainLightingInput()> mainLightingInput;
+};
+
 // 具体渲染
-class BarUIRendering
+export class BarUIRendering
 {
 public:
-	BarUIRendering() {};
+	BarUIRendering() = default;
+	explicit BarUIRendering(BarUIRenderingServices services) : services_(std::move(services)) {}
 	BarUIRendering(BarUISetClass* barUISetClassT);
 
 public:
+	ID2D1SolidColorBrush* ContentSolidBrush(COLORREF color, double opacity = 1.0)
+	{ return GetFrameSolidColorBrush(deviceContext.Get(), color, opacity); }
 	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
@@ -139,10 +158,23 @@ public:
 		return D2D1::SizeU(targetBitmapWidth, targetBitmapHeight);
 	}
 	void DiscardDeviceResources();
+	// 主栏与所有独立目标共同执行绘制前裁剪；GetDC 之前必须结束 clip/layer 栈。
+	void BeginFrameDraw(ID2D1DeviceContext* context, const D2D1_RECT_F& dirtyRect);
+	void FinishFrameDrawCommands(ID2D1DeviceContext* context);
+	HRESULT EndFrameDraw(ID2D1DeviceContext* context);
 	void PushFrameDirtyClip(
 		ID2D1DeviceContext* deviceContext, const D2D1_RECT_F& dirtyRect);
 	void PopFrameDirtyClip(ID2D1DeviceContext* deviceContext);
+	// bounds 使用当前 DC 的坐标；按当前变换与推入时的真实 clip 比较，未知时保留原绘制。
+	[[nodiscard]] bool ShouldDrawFrameBounds(ID2D1DeviceContext* context,
+		const D2D1_RECT_F& bounds, double outset = 0.0) noexcept;
+	[[nodiscard]] double GetFrameShapeDrawOutset(const BarUiShapeClass& shape) const noexcept;
+	[[nodiscard]] unsigned long long GetFrameCulledDrawCount() const noexcept
+	{ return frameCulledDrawCount; }
 	void HandleFrameEndDrawResult(HRESULT endDrawResult);
+	void SetFrameDiffuseReferenceZoom(double zoom) noexcept
+	{ frameDiffuseReferenceZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 0.0; }
+	void PushPanelOpacity(ID2D1DeviceContext* context, const D2D1_RECT_F& bounds, double opacity);
 	void SetFrameDiffuseMaskGeometryScale(double scale)
 	{
 		frameDiffuseMaskGeometryScale = scale > 0.0 ? scale : 1.0;
@@ -159,10 +191,10 @@ public:
 				? radius.height : 0.0F;
 	}
 
-public:
-	BarUISetClass* barUISetClass = nullptr;
-
 protected:
+	BarFormatCache* GetTypographyCache();
+	BarUIRenderingServices services_;
+	std::unique_ptr<BarFormatCache> ownedTypography_;
 	HRESULT RecreateDeviceResources(const Ui3RenderDeviceEpoch& epoch,
 		UINT32 targetWidth, UINT32 targetHeight);
 	void DiscardDeviceDependentCaches();
@@ -376,12 +408,17 @@ protected:
 	bool frameDiffuseMaskCreatedThisFrame = false;
 	bool frameDiffuseExactMaskUnavailable = false;
 	double frameDiffuseMaskGeometryScale = 1.0;
+	double frameDiffuseReferenceZoom = 0.0;
 	unsigned long long frameDiffuseMaskFrameSerial = 0;
 	unsigned long long frameDiffuseExactMaskUseSerial = 0;
 	unsigned long long frameDiffuseExactMaskPromotionFrameSerial = 0;
 	double frameZoom = 1.0;
 	bool frameDirtyClipActive = false;
 	D2D1_RECT_F frameDirtyClipRect{};
+	D2D1_RECT_F frameDirtyClipDeviceRect{};
+	ID2D1DeviceContext* frameDirtyClipContext = nullptr;
+	bool frameDirtyClipDeviceValid = false;
+	unsigned long long frameCulledDrawCount = 0;
 	double framePrimaryLightMoveElapsed = 0.0;
 	double frameCursorLightFadeElapsed = 0.0;
 	double frameDrawingPenColorElapsed = 0.0;

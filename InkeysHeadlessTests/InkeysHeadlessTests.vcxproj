@@ -184,6 +184,7 @@
     <ClCompile Include="present_decision_tests.cpp" />
 	<ClCompile Include="surface_tests.cpp" />
 	<ClCompile Include="message_tests.cpp" />
+	<ClCompile Include="ui3_input_tests.cpp" />
 	<ClCompile Include="window_tests.cpp" />
 	<ClCompile Include="message_box_tests.cpp" />
     <ClCompile Include="wake_signal_tests.cpp" />

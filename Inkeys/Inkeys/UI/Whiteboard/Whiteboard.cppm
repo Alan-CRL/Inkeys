@@ -10,7 +10,7 @@ export module Inkeys.UI.Whiteboard;
 
 export namespace Inkeys::UI::Whiteboard
 {
-	// Whiteboard 只暴露业务回调；UI 视觉状态由 BarSurfaceScene 持有。
+	// Whiteboard 只暴露业务回调；UI 视觉状态由公共 UI3 按钮和 BarPageSurface 适配器持有。
 	struct BusinessCallbacks
 	{
 		std::function<void()> previousPage;

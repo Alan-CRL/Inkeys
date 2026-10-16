@@ -24,3 +24,17 @@
 - [x] 完整共享 2×2 交互、内部标签、30 DIP 原 SVG 选中、中心对称纹理。
 - [x] 统一共享 UI 动画与包络，实际 Scene 中间帧/反转/像素回归。
 - [x] 独立检查、完整 ARM64 solution 和无窗口验证，规范及验证记录更新，任务保持活动。
+
+## 2026-10-15 UI3统一实施轮（已批准，当前工作）
+- [x] 从实际主栏提取按钮/列表/固定面板与渲染事务；Main/MainMore接入。
+- [x] PPT/WB分页接入公共列表，白板More/主题固定内容接入；移除Scene重复路径和自有clip缓存。
+- [x] Renderer解除伪主栏owner依赖，dirty-before-clear/分组opacity/高水位crop/成功发布失败重试。
+- [x] 一个共享输入worker，主栏nested Wait改非阻塞续接；分页交互不再在WndProc/render执行。
+- [x] 真实生产公共实现的无窗口像素/输入/失败测试及多目标性能基准（120warm/600active/3runs/1,1.5,2），保留raw结果和未达标项。
+- [x] 独立Trellis-check全范围检查并修复；主会话唯一ARM64 solution构建；相关no-window测试。
+- [x] trellis-update-spec更新规范/validation；不结束、归档、commit或push。
+实现代理文件所有权在dispatch中明确，彼此不覆盖。新工程文件由主会话登记。主会话负责计划/规范/集成和最终验证，禁止并行MSBuild。
+
+尚未完成的验收（父任务保持in_progress）：
+- [ ] 性能预算：有效27组中23组超标，继续收敛GetDC/完整事务长帧及主栏33.89–39.39ms提交间隔。
+- [ ] 原生ULW/DWM、任务栏恢复、跨屏和真实PPT/视觉手感人工验收；本轮不启动GUI。

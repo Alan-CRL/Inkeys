@@ -7,3 +7,6 @@
 {"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "白板跨层实现与验收合同"}
 {"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "白板跨层实现与验收合同"}
 {"file":".trellis/tasks/10-15-whiteboard-v1/research/ui3-motion-research.md","reason":"UI3统一展开与卡顿调查，最新按钮/资源复用边界"}
+{"file": ".trellis/tasks/10-15-whiteboard-v1/research/control-architecture-audit.md", "reason": "本轮统一范围与旧适配层偏差"}
+{"file": ".trellis/tasks/10-15-whiteboard-v1/research/render-hotpath-audit.md", "reason": "dirty-before-clear及真实GetDC耗时证据"}
+{"file": ".trellis/tasks/10-15-whiteboard-v1/research/verification-gap-audit.md", "reason": "无窗口与实际吞吐验收边界"}

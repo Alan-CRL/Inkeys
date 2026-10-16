@@ -77,3 +77,54 @@
 环境：系统Python alias不可执行，使用已有bundled Python；git子模块读权限限制使用ignoreSubmodules只审查本工作区。沙箱内C1902用同一最小C++探针独立复现，批准沙箱外同一探针退出0；完整构建因此在沙箱外复核。配置文件写入测试同样在沙箱外运行相同--no-window通过。未更改SDK/工具链/工程配置。命令行沿用非增量链接避免前轮LNK1000。
 
 没有启动GUI/Computer Use/真实PPT，任务栏、跨屏及真实动画手感仍需人工验收。本轮未commit、未push，父任务保持in_progress，不结束或归档。
+
+## 统一 UI3 按钮计算、交互与多目标渲染（2026-10-15—16，最新工作）
+
+本节取代前一轮共享 Scene 方案的当前结论，保留旧记录作为历史。实际 Main/MainMore、分页列表与固定属性已接公共按钮/面板函数；旧动态 Scene 控件构建、独立 popup clock/插值/命中及伪主栏 renderer owner 已移除。产品输入统一使用原主栏 worker，续接手势与有序异步业务分离；确认对话框可取消并接入退出排空。任务保持 in_progress，不结束、归档、commit 或 push。
+
+本轮日志目录：`TestResults/ui3-shared-runtime/`。独立检查报告：`research/ui3-shared-runtime-check.md`；功能通过、性能预算未通过，未标总体验收完成。
+
+| 已执行项目 | 实际结果与证据 |
+| --- | --- |
+| ARM64 原生 MSBuild 完整 solution Debug/ARM64 | build14 退出0，最终公共渲染实现恢复到build12已测版本；build-integration-14.log / final-build-manifest.json |
+| 生产共享输入 worker | build14 --ui3-input-worker-test 退出0，生产 mailbox/dispatcher/continuation/deadline/cancel；input-integration-14-stderr.log |
+| 实际 D2D 离屏像素/命中 | build14 --bar-eraser-offscreen-test 退出0，PageControlUI3 和 EraserVisual 均0 failures，9组BGRA严格相等；offscreen-integration-14-stderr.log / offscreen-integration-14-results.log |
+| 最终 Headless | build14 InkeysHeadlessTests --no-window 退出0，橡皮216布局、Recall及动画通过；headless-integration-14-stdout.log |
+| 场景与存储回归 | build6 四项 Draw3 CLI 均退出0：100页白板存储/冷页历史/主题/CPU与GPU缓存引用释放、parked-desktop-exit、parked-ppt-retained、control-fence；对应 *-integration-6 日志。本轮后续未改这些业务实现 |
+| Trellis context / 格式 | implement/check各12项 validate通过（既有大文件注入截断警告，代理手动读取相关完整章节）；产品文件UTF-8/BOM/CRLF与diff whitespace检查通过，父prd历史混合换行保留 |
+
+性能验收进行中，不能使用旧轮通过记录替代本轮结果。第一份基准把被生产布局覆盖的按钮坐标目标当作活动，回调数600但主栏提交仅约100，保留 baseline-invalid-activity/，不作为验收。后续虽严格达到600真实提交，独立检查发现生产首帧浮动启动放置覆写fold，使Main/PPT只测到折叠主按钮；隐藏Geometry按压仍能造成空脏区兜底全绘，所以真实提交数量本身不足以证明负载。原27组及build11九组均保留 baseline-folded-full/ 和 baseline-folded-partial/，不再宣称有效展开主栏基线或改善比例。
+
+额外严格回归：3倍率×3设备DPI共9组，真实共享按钮/文字/图形/变换/光效的局部重绘与完整重绘逐BGRA像素相等；未知custom内容、无裁剪和有限SVG探针保守绘制。页码/主题增量更新逐项验证全部17按钮与窗口包络不跳变，再逐20ms批次验证原布局动画继续。曾有一条新测试把Cubic起步小于1像素的取整平台误判为停止，保留严格几何断言并使用5个真实20ms批次修正，未改生产曲线或放宽像素对照。
+
+build12修正启动fixture的完整27组已保留 baseline-expanded/（含exe SHA256与aggregate.json）：每组600实际展开/可见主栏提交，PPT四分页、白板两分页各600，合计16200主栏、48600全部提交，零掉样、三次Idle观测均零额外回调，raw复算量化与summary一致。23组超预算；100%主栏批次P95为13.19–13.48ms，PPT17.77–18.57ms，白板18.89–21.37ms；200%主栏18.38–20.51ms，PPT23.24–25.94ms，白板23.48–25.17ms。仅记录为真实展开路径基线，不将性能标通过。
+
+该基线慢段主要落在GetDC/flush：100%PPT按每批排他阶段合计的P95，计算4.19–4.43ms、Draw2.14–2.24ms、GetDC10.45–11.01ms；不同阶段分位数不能相加当作批次分位数。PPT单个分页计算仅0.26–0.36ms，远光裁剪原已存在，因此不增加隐藏状态/字宽缓存来猜测主要原因。进一步尝试A8柔光九宫格片段级剔除：build13构建、九组跨dirty父面板/独立形状/整按钮分支及BGRA一致验证均通过，但21组候选采样未证明时间收益，并出现计算/Draw/GetDC整段波动。没有将全段波动直接归因这2行候选；按最小diff原则撤回该优化和其专用断言/spec，保留原公共Shape/Word/标准按钮剔除。候选的source、CSV、exe SHA与逐字节恢复hash在 candidate-mask-slices-partial/，不冒充最终通过结果。build14产品渲染代码恢复到build12完整27组所测实现，最终基准代码只多输出Scheduler.Stop后的mask_slices列，不改变活动负载；因此不重复同一生产实现的27组，完整数据对应build12，最终编译/功能确认对应build14。
+
+最终采用实现的完整性能数据（build12，三轮范围，毫秒；目标P95≤16.67/P99≤33.4）：
+
+| 场景 | 倍率 | batch P95 | batch P99 |
+| --- | --- | --- | --- |
+| 展开主栏 | 100% | 13.19–13.48 | 17.86–20.85 |
+| 主栏+四PPT分页 | 100% | 17.77–18.57 | 22.94–26.50 |
+| 主栏+两白板分页/菜单主题 | 100% | 18.89–21.37 | 24.36–29.58 |
+| 展开主栏 | 150% | 15.98–26.91 | 21.41–40.19 |
+| 主栏+四PPT分页 | 150% | 23.08–30.32 | 29.77–70.82 |
+| 主栏+两白板分页/菜单主题 | 150% | 22.85–25.84 | 27.60–35.40 |
+| 展开主栏 | 200% | 18.38–20.51 | 20.16–29.49 |
+| 主栏+四PPT分页 | 200% | 23.24–25.94 | 28.90–60.89 |
+| 主栏+两白板分页/菜单主题 | 200% | 23.48–25.17 | 25.43–30.14 |
+
+主栏成功提交间隔P95约33.89–39.39ms，100%主栏单独运行仍约37.04–37.68ms，不能把某组batch达标称为60fps。共有45个batch超过50ms，43个最大排他阶段为GetDC，1个EndDraw、1个计算；最慢293.35ms，GetDC183.29ms。共有69个主栏提交间隔超过50ms。GetDC会flush先前D2D工作，不能把这些等待单独归因到某一个API实现或缓存重建；来源尚未完全收敛。
+
+动画中确有829次新圆角父遮罩创建，不能报为热态零分配，也没有证据支持每帧重建。固定几何/epoch的独立真实事务回归验证context/bitmap/遮罩复用、重复热帧创建计数不增长。当前尚未对所有字体/SVG/CPU分配做完整分配器跟踪，不能宣称全部热态资源零创建。
+
+当前结论：共享UI实现与功能/像素验证已落地，软件渲染预算尚未通过；父任务保持in_progress、implementation_complete=false。剩余项为GetDC/完整事务长帧与提交节奏的性能收敛，以及原生ULW/DWM/任务栏/真实PPT人工验收；不借未执行GUI验证替代软件预算结果。
+
+构建环境：使用同一PowerShell invocation规范化PATH，动态定位ARM64原生MSBuild，完整InkeysRepo.sln Debug/ARM64，命令使用非增量链接。沙箱C1902由同一最小CL探针复现且批准沙箱外通过，未改SDK/工具链。vcpkg找不到pwsh的日志随后按其既有规则回退系统WindowsPowerShell成功；未出现applocal失败警告。已知hashlib转换及触摸LONG转short警告保留，未顺手清理。
+
+没有启动GUI/Computer Use/真实PPT。无窗口输入基准经过生产mailbox/dispatcher与公共按钮反馈，主栏使用标准反馈适配器，分页走真实成功呈现命中和ApplyPointer；复杂手势由独立生产Pump回归覆盖。原生WndProc/驱动端到端、ULW/DWM、跨屏、任务栏及视觉手感仍需人工验收。
+
+## 用户本轮体验验收与提交授权
+
+用户明确反馈“验收完成，比之前好得多”，授权仅为当前改动创建commit，并要求白板任务不结束，后续继续修改。本轮体验验收记为用户确认通过；此前自动性能预算未通过的原始数据与代理未执行GUI的事实均保留。父任务继续in_progress，不归档、不push。

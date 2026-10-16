@@ -474,6 +474,7 @@
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.InteractionWorker.h" />
     <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h" />
     <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h" />
     <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h" />
@@ -971,6 +972,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.MultiTarget.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />

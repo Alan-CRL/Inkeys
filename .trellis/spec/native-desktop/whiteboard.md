@@ -5,7 +5,7 @@
 ## UI 与线程所有权
 
 - PageControl 是四个分页 HWND 的唯一 owner；白板继续复用 PptBottomLeft/Right。左栏增加标准 2×2 More 后为 305×80 DIP，右栏 230×80 DIP，主体距侧/底各 5 DIP。
-- 菜单及主题面板属于左下同一 HWND，但分别绘制独立矩形：菜单在分页栏上方回弹展开，主题在菜单右侧回弹展开，节奏复用主栏属性动画。菜单行使用左图标和左对齐文字。包络、命中、damage 与呈现基于同帧动画几何；左/底锚点不移动，不新建 popup HWND。共享 BarSurfaceScene 行为而非复制按钮状态机。
+- 菜单及主题面板属于左下同一 HWND，但分别绘制独立矩形：菜单在分页栏上方回弹展开，主题在菜单右侧回弹展开，节奏复用主栏属性动画。菜单行使用左图标和左对齐文字。包络、命中、damage 与呈现基于同帧动画几何；左/底锚点不移动，不新建 popup HWND。分页列表与固定属性直接调用主栏公共按钮函数，BarPageSurface 仅负责数据和目标适配。
 - More、Escape、面板外点击、翻页、最小化、workspace 转换收起菜单并取消 capture。透明边界穿透，UI 操作不落笔。背景和预览使用同一主题纹理绘制规则。
 - 按钮在白板中显示关闭白板，有有效放映时显示返回放映；菜单关闭使用同一退出事务。后台 PPT 结束不得结束白板。
 - 主题按页保存，新页继承；默认墨绿 #123B32/空白。色板 #123B32/#FFFFFF/#F5F1E6/#E5E7EB/#25282D/#172A46；空白/点阵/网格，24 DIP 间距、1 DIP 点半径/线宽。主题不改变画笔、不进入墨迹 undo，修改使页 dirty。
@@ -29,7 +29,7 @@
 
 ## 验证要求
 
-- 生产 Scene 离屏像素/命中/包络测试，覆盖六色三纹理、动画反向/DPI/设备重建/透明区域；不能仅以公式测试代替。
+- 生产分页适配器和主栏公共按钮的离屏像素/命中/包络测试，覆盖六色三纹理、动画反向/DPI/设备重建/透明区域；不能仅以公式测试代替。
 - 真实存储与Controller测试覆盖多页 roundtrip、Undo/Redo/Clear 分支、主题空页、foreign session、写/索引/读失败、快速重入与stale completion。
 - 100 非空页保存遍历后非当前页内容/历史/CPU/GPU释放；统计流式buffer峰值，不用失败warm页假冒正常回收通过。
 - 完整 InkeysRepo.sln Debug|ARM64 与相关无窗口测试。GUI验收必须另获明确授权；编译/headless不能代替真实PPT/任务栏/视觉验收。
@@ -40,19 +40,23 @@
 - 色板和纹理预览均为 70×70 DIP 圆角方形，选中只显示中央勾，复用主栏按钮悬停/按压反馈，不添加外围选中高亮。
 - 居中白板主栏换向使用屏幕边缘，不把分页控件当作可用屏幕边界。
 
-- StandardTwoTwo 的标签必须使用 primaryText/主文字槽。secondaryText 的字号与槽位在共享 metrics 中为零，不能用它呈现分页标签；回归需检查真实 Scene 标签像素。
+- StandardTwoTwo 的标签必须写入标准主文字槽（BarButtonClass::name）。页码的第二行使用明确的字号和槽位，不能把分页按钮标签写入字号为零的次级槽；回归需检查实际公共按钮的文字像素。
 
 ## UI3 统一菜单与主题合同（覆盖截图轮旧尺寸）
 - 三项菜单操作使用共享按钮交互，140×32.5 DIP（4×1），左图标/文字，无子菜单箭头。菜单中心锚定 More 按钮中心；面板、行、预览间距均为5 DIP共享常量。
 - 主题面板的背景颜色、背景样式标题和分割线沿用主栏 More 的视觉能力；预览是70×70 DIP标准2×2按钮，不能只套一层自绘hover/press。空白/点阵/网格文字在按钮内使用主栏相同标签槽和字重。
 - 选中叠加已有 color/colorSelect SVG，30 DIP（主栏画笔色板15 DIP的两倍），不得绘制替代勾或增加外圈选中效果。点阵和网格相位相对于预览内容中心对称，保持24 DIP标尺。
-- 弹出节点的父触发分别为 More 和 Theme；面板及内容继承共享UI单一pose，分页业务层不另行easing。原有PageControl屏幕bounds过渡不得给菜单再叠加第二套时钟。
-- 纯文案/主题/编辑状态更新不应重新启动面板展开、重置输入锁或让静态Scene持续绘制。动画遵循全局速度和禁用设置。
+- 两个固定面板的触发分别为 More 和 Theme；面板及内容由共享属性面板函数计算当前 pose，分页业务层不另行 easing 或递归节点编排。PageControl 屏幕 bounds 过渡不得给菜单再叠加第二套时钟。
+- 纯文案/主题/编辑状态更新不应重新启动面板展开、重置输入锁或让静态目标持续绘制。动画遵循全局速度和禁用设置。
 
-### 共享动画与设备资源防回归
-- 通用 Scene 的 popupAnchor/parentPanel 直接使用已有 EraserSurfaceMotion、ResolveEraserSurfacePose、ComposeEraserPose 和 FrameAnimationClock。标准按钮完整绘制/命中由 DrawBarButtonVisual 与共享 metrics 负责，业务 drawContent 仅画背景纹理。
-- logical backing 用共享曲线极值和父子组合范围分配，保持高水位缓冲；实际 presentation 取当前背景与可见 pose 矩形并集及阴影。渲染/脏区/光源/presentation→logical 命中均使用同一 X/Y 原点。
-- 读取动态包络前 Advance(frameTime)，同一 frameTime 的 Render 对所有动画值幂等。纯内容用 UpdateContent，不再次展开或延长输入锁；关闭只依据 popup motion，不被 hover 的5秒淡出延长。
-- 同一控件的 icon/content opacity 每帧只能有一个目标；无图标/未选中或隐藏内容不得先后写1→0或0→0.3导致永不落定。
-- 预览缓存画刷/圆角裁切，按压通过共享矩阵变换稳定几何；所有设备缓存 reset 路径释放回调保留的旧 context。PPT 初始隐藏按钮转换为 popup 时同样应用 panel/divider chrome。
-- 回归需从生产 PPT Configure 切入白板，比较共享 motion 中间帧，覆盖父子同时展开、倍率/禁用/反向、当前包络包含可见像素、坐标映射和内容更新不重启；仅最终矩形或 EndDraw 成功不足以证明这些合同。
+### 共享计算、输入与渲染防回归
+- Main/MainMore/PPT/白板分页分别拥有稳定的 BarButtonListClass，帧开始一次 Snapshot；主栏、分组网格和分页单行使用同一 ResolveBarButtonListLayout。固定属性/More/主题继续保留明确字段或数组，不建通用节点图或动态注册表。
+- 标准按钮共用 ConfigureBarButtonVisualTargets、AdvanceBarButtonVisual、PrepareBarButtonVisualInheritance、DrawBarButtonVisual 和公共命中。Draw/Geometry 的固定 shape/SVG/Word 通过非拥有引用视图使用相同组件函数。特殊页码/主题只替换内容，不能重写按压、悬停、字体槽或另一份动画推进。
+- 固定面板共用 BarAttributePanelMotion、ResolveBarAttributePanelFrame；不保留 popupClock/parentPanel/BuildWidgets。每批消费同一 frameTime，同目标同时间重复 Advance/Render 不再次推进。内容更新不重开运动或延长输入锁；同布局的页码和主题只更新对应数据及脏区，保留现有几何动画，不能以零时长配置把转换提前跳到终态。
+- 每个目标独立持有 renderer/context/bitmap/cache，显式消费字体、倍率、光照和设备代次；不得构造完整 BarUISetClass 充当分页 renderer owner。分组透明度采用共享有界 PushPanelOpacity，不能对子按钮逐个创建覆盖整幅目标的透明层。
+- BeginFrameDraw 必须在 Clear 和实际 draw 前设置脏区裁剪；FinishFrameDrawCommands 在 GetDC 前清空 clip/layer，GetDC/ReleaseDC/EndFrameDraw 与主栏同一事务。高水位只保留容量，实际提交、命中、dirty 和光源映射使用同帧当前包络。
+- 预览底色、边框、圆角和反馈复用 renderer 的 Shape/按钮能力，纹理仅绘制内容；不再维护 ThemeDrawingResources 及自有圆角裁剪缓存。一个属性每帧只有一个最终目标，禁止标准图标尺寸或 opacity 先写默认值再覆盖造成永久重定向。
+- 成功完成绘制/GDI/提交/必要窗口交接后才发布命中与几何、消费 dirty；失败保留旧已呈现快照和待绘制状态。PPT 成对拖动/布局 revision/pagePresented 门禁保持。
+- 一个主栏交互 worker 公平处理全部目标；手势等待采用非阻塞续接，WndProc 仅标准化/入队和即时原生捕获。Move 可合并但不能跨 Down/Up/Cancel；fixture 来源保留精确队列出处。输入发布反馈、render 独占视觉对象；长按计时不在 render 执行业务。对话框和保存采用异步结果或原服务队列。退出显式唤醒邮箱，静置不靠轮询维持。
+- 无窗口 --ui3-multitarget-benchmark 运行实际主栏协调器及分页提交，保留 D2D/GetDC/ReleaseDC/EndDraw，仅替换最终 HWND sink；120 帧预热、600 活动帧、三轮、1/1.5/2 倍率，保存 raw callback/batch、时钟单位和丢样本计数。热态批次 P95≤16.67ms/P99≤33.4ms 为目标，另查成功主栏提交间隔及收起后静置。结果必须引用任务 validation，不能把此规范或公式测试当作性能通过。
+- 默认不启动 GUI。无窗口像素/吞吐不证明真实 ULW/DWM、任务栏、跨屏或 Office 动画；这些仍须明确列人工未验证项。

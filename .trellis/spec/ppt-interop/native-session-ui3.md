@@ -40,12 +40,14 @@
 - facade 拥有运行偏好；PageControl 候选和成功提交按 session、layout epoch、pair version 交接。全局 direct-move revision 只用于过期帧门禁，不是另一组的提交版本。旧完整快照在 ownership 释放后也不得覆盖新位置。
 - 拖动永不触发写盘。开关打开/关闭瞬间保存；记忆开启时真正结束放映或正常退出软件保存；关闭后保持冻结位置。每场进入恢复最近一次明确保存请求的冻结基线（当前进程可含尚未完成的请求），新进程恢复实际磁盘值。重置无论开关均更新默认值。
 - 冻结请求基线与 durable saved revision 分开，不能将待保存称为已保存。两个业务队列统一版本仲裁；旧 JSON 跳过。临时文件完整写入/flush 后原子替换；失败保留原文件和原请求重试，不采集后续临时拖动。
-- DPI、用户缩放、最终有效缩放分别归一化；最终值传入 Scene 后不重复 DPI 上下限裁剪。绘制、文字、命中、阴影、presentation 使用相同值。主屏布局边界与 DPI 来自同一显示快照；运行适配不写保存偏好，backing capacity 不决定呈现大小。白板继续独立布局。
+- DPI、用户缩放、最终有效缩放分别归一化；最终值传入 BarPageSurface 后不重复 DPI 上下限裁剪。绘制、文字、命中、阴影、presentation 使用相同值。主屏布局边界与 DPI 来自同一显示快照；运行适配不写保存偏好，backing capacity 不决定呈现大小。白板继续独立布局。
 
 ### 主栏、确认和焦点
 
 - PPT/白板共用桌面基线恢复合同，见 [Whiteboard 初版](../native-desktop/whiteboard.md)：仅已有展开底栏贴屏底5 DIP，保留是否居中，浮动/折叠保持。互切不重拍基线，最终回桌面恢复进入前位置与形态。
 - 主栏和四分页控件不互为位置障碍；共享光标光效接收区域不属于排斥逻辑。
+- PPT/白板分页列表与主栏共用 UI3 按钮计算/推进/绘制及单一输入 worker，Window Service 仍独占 HWND；PPT 成对拖动、pair/version、页面呈现确认协议不变。长按由输入 worker 的计时状态推进，不在渲染回调中调用翻页业务。
+- 持续 PPT 长按允许跨同会话的 page target revision；切入白板、换放映会话或当前 workspace 已失效时，旧请求必须被拒绝/取消，不能按新白板动作解释。白板 Down/Up 还须校验当前页面代次，不能将旧页释放点击写到新页。
 - 仅主栏 EndShow 点击确认。PageControl 结束图标/滚轮/长按及原生 Esc/Office 退出不新增确认。请求携带 session 和 request id，过期完成不能解除新请求。MessageBox 在业务线程且不持渲染/窗口锁，默认取消、关闭取消、失败关闭，不走系统回退。
 - 确认执行时再次校验 managed session。返回1才代表匹配目标的 Exit 调用成功；0为过期/状态不匹配，-1为失败/超时。未实际执行的超时请求不能迟到执行。取消、失败或新会话不改变模式。
 - 焦点只在有效进入和明确业务动作后交接，验证 HWND/PID/当前会话/前台；设置、颜色编辑和任何 MessageBox 请求期间不抢焦点。绘制、拖动、渲染和轮询不调用焦点转移。
@@ -57,7 +59,7 @@
 | remember off 拖动后页码/显隐/设置刷新 | 保留运行位置，保存基线不变 |
 | end/toggle 保存未完成立即重入 | 恢复冻结请求基线，durable revision 不提前推进 |
 | 文件替换失败或旧 Settings payload 后到 | 保留原字节、当前偏好及对应重试；旧 payload 不回写 |
-| DPI2 × user2.5、最终<.5 | Scene、背景、控件、命中和呈现同尺度 |
+| DPI2 × user2.5、最终<.5 | BarPageSurface、背景、控件、命中和呈现同尺度 |
 | 按住笔/鼠标/触摸切页 | 旧页收尾，旧 contact 后续样本不写新页 |
 | 画布成功但页码 surface 失败 | 新页输入保持关闭，成功重试后才开放 |
 | 同页暂停再恢复 / Host 重启 | 旧 ack 无效，重新呈现/回执，不复用旧 target revision |
@@ -77,7 +79,7 @@
 ## 6. Tests Required
 
 - 生产 PositionState/WriteJournal 与真实临时文件失败测试：旧完整快照、交错 pair、session/epoch、freeze desired vs durable saved、失败重试。
-- 实际 BarSurfaceScene offscreen 绘制/像素/命中与白板比例测试，不能只验证重复公式。
+- 实际公共按钮/BarPageSurface offscreen 绘制/像素/命中与白板比例测试，不能只验证重复公式。
 - ContactInput 并发 Up/retire/admission、Draw3 hidden held-Down→switch→Present→UI ack→old Up→fresh Down、late ack/暂停/Host reset/warm重排。
 - managed owner/cache/退出及 acquisition-release ledger；native envelope 复用 descriptor parser，过期会话/请求确认状态机。
 - 完整 Debug|ARM64 Solution、headless、hidden/offscreen、托管测试、i18n、diff check。真实 Office/WPS/设备与延迟/CPU 另列实际条件，未跑标 NOT VERIFIED。

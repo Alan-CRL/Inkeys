@@ -1,0 +1,1062 @@
+{
+  "source": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\log\\idt1792070038504.log",
+  "sourceEndedAt": "2026-10-15 21:15:00",
+  "processQuery": "No matching process visible at read-only query; no live CPU trace collected.",
+  "caveats": [
+    "Anomaly summaries only; not a continuous FPS trace.",
+    "Draw records submission; GetDC may flush queued WARP work.",
+    "Settings long callback is a separate observed event."
+  ],
+  "samples": [
+    {
+      "line": 2,
+      "time": "21:13:58.852",
+      "clients": [
+        {
+          "client": "StartupPreview",
+          "calls": "1",
+          "callbackMs": "72.813/72.813",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "1",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 7,
+      "time": "21:13:59.920",
+      "clients": [
+        {
+          "client": "StartupPreview",
+          "calls": "14",
+          "callbackMs": "1066.096/144.274",
+          "activeGapMaxMs": "144.342",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "14",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 8,
+      "time": "21:14:00.921",
+      "clients": [
+        {
+          "client": "StartupPreview",
+          "calls": "22",
+          "callbackMs": "984.930/141.393",
+          "activeGapMaxMs": "141.462",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "22",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 9,
+      "time": "21:14:01.928",
+      "clients": [
+        {
+          "client": "StartupPreview",
+          "calls": "26",
+          "callbackMs": "984.696/170.521",
+          "activeGapMaxMs": "170.579",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "26",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 13,
+      "time": "21:14:03.130",
+      "clients": [
+        {
+          "client": "StartupPreview",
+          "calls": "20",
+          "callbackMs": "1200.451/216.002",
+          "activeGapMaxMs": "216.048",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "20",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 14,
+      "time": "21:14:04.166",
+      "clients": [
+        {
+          "client": "StartupPreview",
+          "calls": "19",
+          "callbackMs": "1034.316/150.223",
+          "activeGapMaxMs": "209.349",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "19",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 17,
+      "time": "21:14:05.259",
+      "clients": [
+        {
+          "client": "StartupPreview",
+          "calls": "25",
+          "callbackMs": "1059.709/110.207",
+          "activeGapMaxMs": "97.456",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "25",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 19,
+      "time": "21:14:06.287",
+      "clients": [
+        {
+          "client": "StartupPreview",
+          "calls": "20",
+          "callbackMs": "995.340/142.874",
+          "activeGapMaxMs": "142.949",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "20",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 26,
+      "time": "21:14:08.540",
+      "clients": [
+        {
+          "client": "Bar",
+          "calls": "1",
+          "callbackMs": "1338.823/1338.823",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "291.107/291.107",
+          "getDCMs": "884.386/884.386",
+          "ULWMs": "57.571/57.571",
+          "continued": "1",
+          "target": "3056x1892",
+          "backend": "WARP"
+        },
+        {
+          "client": "StartupPreview",
+          "calls": "11",
+          "callbackMs": "679.784/129.777",
+          "activeGapMaxMs": "1451.885",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "11",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomLeft",
+          "calls": "5",
+          "callbackMs": "84.140/80.756",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "5",
+          "callbackMs": "54.506/51.688",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "5",
+          "callbackMs": "14.781/11.897",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "5",
+          "callbackMs": "29.101/13.693",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "Settings",
+          "calls": "1",
+          "callbackMs": "0.004/0.004",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "WhiteboardFreeze",
+          "calls": "1",
+          "callbackMs": "0.034/0.034",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 27,
+      "time": "21:14:09.506",
+      "clients": [
+        {
+          "client": "Bar",
+          "calls": "27",
+          "callbackMs": "575.459/124.596",
+          "activeGapMaxMs": "1480.257",
+          "drawMs": "58.120/47.631",
+          "getDCMs": "372.615/122.328",
+          "ULWMs": "16.509/10.423",
+          "continued": "27",
+          "target": "3056x1892",
+          "backend": "WARP"
+        },
+        {
+          "client": "StartupPreview",
+          "calls": "27",
+          "callbackMs": "132.438/13.638",
+          "activeGapMaxMs": "219.503",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "27",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomLeft",
+          "calls": "1",
+          "callbackMs": "0.341/0.341",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "1",
+          "callbackMs": "0.418/0.418",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "1",
+          "callbackMs": "0.320/0.320",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "1",
+          "callbackMs": "0.256/0.256",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 30,
+      "time": "21:14:12.454",
+      "clients": [
+        {
+          "client": "Bar",
+          "calls": "39",
+          "callbackMs": "249.622/16.377",
+          "activeGapMaxMs": "20.675",
+          "drawMs": "21.980/1.524",
+          "getDCMs": "143.528/13.483",
+          "ULWMs": "12.907/1.534",
+          "continued": "39",
+          "target": "3056x1892",
+          "backend": "WARP"
+        },
+        {
+          "client": "StartupPreview",
+          "calls": "39",
+          "callbackMs": "0.938/0.889",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomLeft",
+          "calls": "1",
+          "callbackMs": "17.271/17.271",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "1.769/1.769",
+          "getDCMs": "7.401/7.401",
+          "ULWMs": "0.780/0.780",
+          "continued": "1",
+          "target": "650x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "1",
+          "callbackMs": "8.679/8.679",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "1.290/1.290",
+          "getDCMs": "2.400/2.400",
+          "ULWMs": "0.455/0.455",
+          "continued": "1",
+          "target": "500x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "1",
+          "callbackMs": "5.870/5.870",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "1",
+          "callbackMs": "4.597/4.597",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "WhiteboardFreeze",
+          "calls": "1",
+          "callbackMs": "34.918/34.918",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 31,
+      "time": "21:14:13.532",
+      "clients": [
+        {
+          "client": "Bar",
+          "calls": "12",
+          "callbackMs": "628.466/199.170",
+          "activeGapMaxMs": "143.011",
+          "drawMs": "21.215/8.532",
+          "getDCMs": "341.580/64.817",
+          "ULWMs": "22.713/3.391",
+          "continued": "12",
+          "target": "3700x1892",
+          "backend": "WARP"
+        },
+        {
+          "client": "StartupPreview",
+          "calls": "12",
+          "callbackMs": "0.034/0.017",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomLeft",
+          "calls": "12",
+          "callbackMs": "275.926/67.936",
+          "activeGapMaxMs": "122.439",
+          "drawMs": "7.324/1.617",
+          "getDCMs": "161.989/44.226",
+          "ULWMs": "4.668/1.132",
+          "continued": "9",
+          "target": "650x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "12",
+          "callbackMs": "156.827/31.146",
+          "activeGapMaxMs": "133.023",
+          "drawMs": "8.648/2.929",
+          "getDCMs": "117.746/26.673",
+          "ULWMs": "2.407/0.367",
+          "continued": "9",
+          "target": "500x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "1",
+          "callbackMs": "0.420/0.420",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "1",
+          "callbackMs": "0.423/0.423",
+          "activeGapMaxMs": "106.981",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "WhiteboardFreeze",
+          "calls": "1",
+          "callbackMs": "12.624/12.624",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "time": "21:14:14.532",
+      "clients": [
+        {
+          "client": "Bar",
+          "calls": "8",
+          "callbackMs": "129.690/35.156",
+          "activeGapMaxMs": "255.377",
+          "drawMs": "3.830/1.025",
+          "getDCMs": "94.306/23.545",
+          "ULWMs": "2.470/0.902",
+          "continued": "7",
+          "target": "3700x1892",
+          "backend": "WARP"
+        },
+        {
+          "client": "StartupPreview",
+          "calls": "8",
+          "callbackMs": "0.010/0.002",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomLeft",
+          "calls": "3",
+          "callbackMs": "29.506/18.146",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "1.267/0.473",
+          "getDCMs": "21.258/15.304",
+          "ULWMs": "0.313/0.110",
+          "continued": "0",
+          "target": "650x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "3",
+          "callbackMs": "19.543/7.926",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "1.198/0.422",
+          "getDCMs": "10.999/5.128",
+          "ULWMs": "0.424/0.247",
+          "continued": "0",
+          "target": "500x200",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 33,
+      "time": "21:14:33.425",
+      "clients": [
+        {
+          "client": "PptBottomLeft",
+          "calls": "30",
+          "callbackMs": "201.219/51.242",
+          "activeGapMaxMs": "18.645",
+          "drawMs": "17.114/4.896",
+          "getDCMs": "126.851/40.951",
+          "ULWMs": "8.977/1.456",
+          "continued": "29",
+          "target": "1244x856",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "1",
+          "callbackMs": "2.170/2.170",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.308/0.308",
+          "getDCMs": "0.497/0.497",
+          "ULWMs": "0.126/0.126",
+          "continued": "0",
+          "target": "500x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "1",
+          "callbackMs": "0.309/0.309",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "1",
+          "callbackMs": "0.253/0.253",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 34,
+      "time": "21:14:34.484",
+      "clients": [
+        {
+          "client": "PptBottomLeft",
+          "calls": "26",
+          "callbackMs": "916.541/104.363",
+          "activeGapMaxMs": "108.449",
+          "drawMs": "30.308/5.220",
+          "getDCMs": "794.385/95.722",
+          "ULWMs": "33.499/4.882",
+          "continued": "26",
+          "target": "1244x856",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "3",
+          "callbackMs": "7.573/3.225",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.861/0.295",
+          "getDCMs": "1.776/0.724",
+          "ULWMs": "0.520/0.298",
+          "continued": "0",
+          "target": "500x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "1",
+          "callbackMs": "0.437/0.437",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "1",
+          "callbackMs": "0.362/0.362",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 35,
+      "time": "21:14:35.534",
+      "clients": [
+        {
+          "client": "PptBottomLeft",
+          "calls": "43",
+          "callbackMs": "541.860/100.331",
+          "activeGapMaxMs": "100.376",
+          "drawMs": "21.669/1.363",
+          "getDCMs": "435.010/94.618",
+          "ULWMs": "18.922/2.704",
+          "continued": "43",
+          "target": "1244x856",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "2",
+          "callbackMs": "4.579/2.531",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.514/0.264",
+          "getDCMs": "0.942/0.511",
+          "ULWMs": "0.283/0.185",
+          "continued": "0",
+          "target": "500x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "1",
+          "callbackMs": "0.382/0.382",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "1",
+          "callbackMs": "0.290/0.290",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 36,
+      "time": "21:14:36.542",
+      "clients": [
+        {
+          "client": "PptBottomLeft",
+          "calls": "48",
+          "callbackMs": "551.020/41.662",
+          "activeGapMaxMs": "51.960",
+          "drawMs": "29.434/1.206",
+          "getDCMs": "420.416/35.751",
+          "ULWMs": "29.759/5.774",
+          "continued": "48",
+          "target": "1244x856",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 37,
+      "time": "21:14:48.427",
+      "clients": [
+        {
+          "client": "PptBottomLeft",
+          "calls": "37",
+          "callbackMs": "541.759/81.465",
+          "activeGapMaxMs": "27.868",
+          "drawMs": "22.813/1.035",
+          "getDCMs": "358.103/23.291",
+          "ULWMs": "77.778/70.270",
+          "continued": "36",
+          "target": "1244x856",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 38,
+      "time": "21:14:49.432",
+      "clients": [
+        {
+          "client": "PptBottomLeft",
+          "calls": "43",
+          "callbackMs": "342.250/23.622",
+          "activeGapMaxMs": "99.472",
+          "drawMs": "26.047/1.136",
+          "getDCMs": "214.854/17.106",
+          "ULWMs": "15.869/2.350",
+          "continued": "42",
+          "target": "1244x856",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "1",
+          "callbackMs": "3.008/3.008",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.293/0.293",
+          "getDCMs": "0.822/0.822",
+          "ULWMs": "0.226/0.226",
+          "continued": "0",
+          "target": "500x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "1",
+          "callbackMs": "0.576/0.576",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "1",
+          "callbackMs": "0.494/0.494",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "WhiteboardFreeze",
+          "calls": "1",
+          "callbackMs": "83.808/83.808",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 39,
+      "time": "21:14:56.801",
+      "clients": [
+        {
+          "client": "PptBottomLeft",
+          "calls": "7",
+          "callbackMs": "100.267/64.024",
+          "activeGapMaxMs": "18.024",
+          "drawMs": "4.619/1.221",
+          "getDCMs": "81.766/57.808",
+          "ULWMs": "2.988/1.980",
+          "continued": "6",
+          "target": "1244x856",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "1",
+          "callbackMs": "4.048/4.048",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.336/0.336",
+          "getDCMs": "0.834/0.834",
+          "ULWMs": "0.193/0.193",
+          "continued": "0",
+          "target": "500x200",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "1",
+          "callbackMs": "0.418/0.418",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "1",
+          "callbackMs": "0.365/0.365",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 44,
+      "time": "21:14:57.802",
+      "clients": [
+        {
+          "client": "Bar",
+          "calls": "36",
+          "callbackMs": "198.191/13.254",
+          "activeGapMaxMs": "55.438",
+          "drawMs": "14.766/0.775",
+          "getDCMs": "102.939/9.005",
+          "ULWMs": "26.026/1.524",
+          "continued": "34",
+          "target": "3700x1892",
+          "backend": "WARP"
+        },
+        {
+          "client": "StartupPreview",
+          "calls": "34",
+          "callbackMs": "0.039/0.002",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomLeft",
+          "calls": "21",
+          "callbackMs": "435.056/66.301",
+          "activeGapMaxMs": "74.244",
+          "drawMs": "10.070/1.317",
+          "getDCMs": "363.871/61.289",
+          "ULWMs": "13.644/2.181",
+          "continued": "18",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptBottomRight",
+          "calls": "18",
+          "callbackMs": "39.633/5.404",
+          "activeGapMaxMs": "57.135",
+          "drawMs": "3.606/0.414",
+          "getDCMs": "12.762/3.364",
+          "ULWMs": "3.392/2.426",
+          "continued": "15",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleLeft",
+          "calls": "4",
+          "callbackMs": "1.368/0.415",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "PptMiddleRight",
+          "calls": "4",
+          "callbackMs": "1.175/0.345",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "WhiteboardFreeze",
+          "calls": "2",
+          "callbackMs": "0.794/0.777",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 45,
+      "time": "21:14:59.314",
+      "clients": [
+        {
+          "client": "Bar",
+          "calls": "49",
+          "callbackMs": "283.108/17.017",
+          "activeGapMaxMs": "23.765",
+          "drawMs": "35.580/7.099",
+          "getDCMs": "149.553/12.185",
+          "ULWMs": "23.059/1.436",
+          "continued": "49",
+          "target": "3700x1892",
+          "backend": "WARP"
+        },
+        {
+          "client": "StartupPreview",
+          "calls": "48",
+          "callbackMs": "0.047/0.001",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "Settings",
+          "calls": "1",
+          "callbackMs": "590.499/590.499",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "1",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    },
+    {
+      "line": 47,
+      "time": "21:15:00.385",
+      "clients": [
+        {
+          "client": "Bar",
+          "calls": "15",
+          "callbackMs": "136.719/24.541",
+          "activeGapMaxMs": "599.795",
+          "drawMs": "17.279/2.090",
+          "getDCMs": "56.252/18.660",
+          "ULWMs": "17.699/6.819",
+          "continued": "14",
+          "target": "3700x1892",
+          "backend": "WARP"
+        },
+        {
+          "client": "StartupPreview",
+          "calls": "15",
+          "callbackMs": "0.023/0.003",
+          "activeGapMaxMs": "0.000",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "0",
+          "target": "0x0",
+          "backend": "WARP"
+        },
+        {
+          "client": "Settings",
+          "calls": "29",
+          "callbackMs": "886.902/389.779",
+          "activeGapMaxMs": "606.227",
+          "drawMs": "0.000/0.000",
+          "getDCMs": "0.000/0.000",
+          "ULWMs": "0.000/0.000",
+          "continued": "29",
+          "target": "0x0",
+          "backend": "WARP"
+        }
+      ]
+    }
+  ]
+}

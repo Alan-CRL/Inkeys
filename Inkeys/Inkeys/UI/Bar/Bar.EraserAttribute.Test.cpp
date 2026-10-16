@@ -2231,6 +2231,156 @@ namespace Inkeys::UI::Bar
 							expect(pixels.good(),"exact mask BGRA saved");readable->Unmap();
 						}
 					}
+					// 真实生产绘制验证共享光源快照，不能只检查 setter 回读值。
+					if(probe.GetDeviceContext())
+					{
+						auto* dc=probe.GetDeviceContext();
+						const auto alphaPixels=[&](const BarUiFrameLightingSnapshot& snapshot)
+						{
+							probe.SetFrameLightingSnapshot(snapshot);
+							dc->SetTransform(D2D1::IdentityMatrix());
+							probe.BeginFrameDraw(dc,D2D1::RectF(0,0,width,height));
+							(void)probe.Shape(dc,shape,BarUiInheritClass(100,80));
+							probe.FinishFrameDrawCommands(dc);
+							HDC source=nullptr;
+							HRESULT hr=probe.GetGdiInteropRenderTarget()->GetDC(D2D1_DC_INITIALIZE_MODE_COPY,&source);
+							if(SUCCEEDED(hr)) {const RECT unchanged{};hr=probe.GetGdiInteropRenderTarget()->ReleaseDC(&unchanged);}
+							const HRESULT end=probe.EndFrameDraw(dc);
+							if(SUCCEEDED(hr))hr=end;
+							ComPtr<ID2D1Bitmap1> readback;
+							const auto properties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+								probe.GetTargetBitmap()->GetPixelFormat());
+							if(SUCCEEDED(hr))hr=dc->CreateBitmap(D2D1::SizeU(width,height),nullptr,0,&properties,&readback);
+							if(SUCCEEDED(hr))hr=readback->CopyFromBitmap(nullptr,probe.GetTargetBitmap(),nullptr);
+							D2D1_MAPPED_RECT mapped{};if(SUCCEEDED(hr))hr=readback->Map(D2D1_MAP_OPTIONS_READ,&mapped);
+							expect(SUCCEEDED(hr),"shared lighting snapshot transaction and alpha readback");
+							std::size_t pixels=0;
+							if(SUCCEEDED(hr))
+							{
+								for(UINT y=0;y<height;++y)for(UINT x=0;x<width;++x)
+									if(mapped.bits[y*mapped.pitch+x*4+3])++pixels;
+								readback->Unmap();
+							}
+							return pixels;
+						};
+						BarUiFrameLightingSnapshot hidden{};hidden.primaryLight={200,125};hidden.primaryRadius=480;
+						hidden.primaryLightVisible=false;hidden.edgeLightingEnabled=true;
+						expect(alphaPixels(hidden)==0,"hidden primary light does not draw merely because its radius is retained");
+						auto cursor=hidden;cursor.primaryRadius=0;cursor.cursorLight={200,125};
+						cursor.cursorRadius=240;cursor.cursorIntensity=1;cursor.cursorLightVisible=true;
+						expect(alphaPixels(cursor)>0,"cursor-only lighting renders without a primary radius");
+						auto disabled=cursor;disabled.edgeLightingEnabled=false;
+						expect(alphaPixels(disabled)==0,"snapshot edge-light disable suppresses all light passes");
+						shape.framePct->SetDirect(0.30);
+						expect(alphaPixels(hidden)>0,"base frame remains visible when both lights are hidden");
+					}
+					// 真正的全帧与保留像素局部重绘比较：确保跳过发生，且不是同一裁剪路径自证。
+					{
+						constexpr UINT targetWidth=1024,targetHeight=512;
+						const auto buttonMetrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
+						const auto initializeButton=[&](BarButtonClass& button,const wchar_t* label)
+						{
+							button.hide=false;
+							button.button.Initialization(0,0,70,70,4,4,1,RGB(45,85,110),RGB(220,230,240));
+							button.button.enable.Initialization(true);button.button.pct.SetDirect(0.65);
+							button.button.framePct.emplace(0.30);button.button.frameLightPct.emplace(1.0);
+							button.button.frameRendering=BarUiFrameRenderingEnum::PointLight;
+							button.icon.Initialization(0,buttonMetrics.iconOffsetYDip,RGB(255,255,255),std::nullopt);
+							button.icon.InitializationFromString(LR"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><path fill="#fff" d="M4 4H24V24H4Z"/></svg>)SVG");
+							button.icon.enable.Initialization(true);button.icon.pct.SetDirect(1);
+							button.icon.SetWH(28,28);button.icon.w.SetDirect(button.icon.w.tar);button.icon.h.SetDirect(button.icon.h.tar);
+							button.name.Initialization(0,buttonMetrics.primaryOffsetYDip,buttonMetrics.primarySlotWidthDip,
+								buttonMetrics.primarySlotHeightDip,label,buttonMetrics.primaryFontSizeDip,RGB(255,255,255));
+							button.name.enable.Initialization(true);button.name.pct.SetDirect(1);
+						};
+						for(const double zoom:{1.0,1.5,2.0})for(const UINT dpi:{96u,144u,192u})
+						{
+							BarUIRendering full(&owner),retained(&owner);
+							const auto epoch=RenderPipeline::GetDeviceEpoch();
+							const bool ready=SUCCEEDED(full.EnsureDeviceResources(epoch,targetWidth,targetHeight))
+								&&SUCCEEDED(retained.EnsureDeviceResources(epoch,targetWidth,targetHeight));
+							expect(ready,"shared dirty cull production target setup");if(!ready)continue;
+							std::array<BarButtonClass,2> referenceButtons,partialButtons;
+							for(auto* buttons:{&referenceButtons,&partialButtons}){
+								initializeButton((*buttons)[0],L"Prev");initializeButton((*buttons)[1],L"Next");
+								for(auto& button:*buttons){button.pressScale.SetDirect(dpi==96?1.0:dpi==144?0.94:1.07);
+									button.icon.angle.SetDirect(17);button.icon.contentScale=1.08;button.name.contentScale=1.05;}
+							}
+							BarUiWordClass secondary;secondary.Initialization(0,31,50,13,L"/12",11,RGB(235,235,235));
+							secondary.enable.Initialization(true);secondary.pct.SetDirect(1);
+							BarUiShapeClass sidePanel(0,0,76,76,7,7,1,RGB(25,30,36),RGB(200,210,220));
+							sidePanel.enable.Initialization(true);sidePanel.pct.SetDirect(0.85);sidePanel.frameRendering=BarUiFrameRenderingEnum::PointLight;
+							sidePanel.framePct.emplace(0.25);sidePanel.frameLightPct.emplace(1);
+							const auto popup=dpi==96?D2D1::Matrix3x2F::Identity():dpi==144
+								?D2D1::Matrix3x2F::Translation(24.5F,12.25F)
+								:D2D1::Matrix3x2F::Scale(1.03F,0.91F)*D2D1::Matrix3x2F::Rotation(4,D2D1::Point2F(100,100))
+									*D2D1::Matrix3x2F::Translation(24.5F,12.25F);
+							const auto fullClip=D2D1::RectF(0,0,targetWidth*96.0F/dpi,targetHeight*96.0F/dpi);
+							// 独立推导一个包含左按钮和光晕的宽松 dirty，右侧按钮仍明确在外。
+							D2D1_RECT_F dirty{100000,100000,-100000,-100000};
+							for(const double x:{-15.0*zoom,105.0*zoom})for(const double y:{-15.0*zoom,105.0*zoom}){
+								const FLOAT px=static_cast<FLOAT>(x*popup._11+y*popup._21+popup._31);
+								const FLOAT py=static_cast<FLOAT>(x*popup._12+y*popup._22+popup._32);
+								dirty.left=(std::min)(dirty.left,px);dirty.top=(std::min)(dirty.top,py);
+								dirty.right=(std::max)(dirty.right,px);dirty.bottom=(std::max)(dirty.bottom,py);
+							}
+							const auto draw=[&](BarUIRendering& renderer,std::array<BarButtonClass,2>& buttons,bool changed,const D2D1_RECT_F& clip)
+							{
+								auto* dc=renderer.GetDeviceContext();dc->SetDpi(static_cast<FLOAT>(dpi),static_cast<FLOAT>(dpi));
+								dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);dc->SetTransform(D2D1::IdentityMatrix());
+								renderer.SetFrameZoom(zoom);renderer.SetFrameDiffuseReferenceZoom(zoom*1.1);
+								renderer.SetFrameDiffuseMaskGeometryScale(1.06);
+								BarUiFrameLightingSnapshot lighting{};lighting.primaryLight={180,100};lighting.primaryRadius=480;
+								lighting.primaryLightVisible=true;lighting.edgeLightingEnabled=true;renderer.SetFrameLightingSnapshot(lighting);
+								buttons[0].button.fill->SetDirect(changed?RGB(210,90,25):RGB(45,85,110));
+								buttons[0].name.SetStringImmediate(changed?L"Changed":L"Prev");
+								renderer.BeginFrameDraw(dc,clip);dc->SetTransform(popup);
+								renderer.PushPanelOpacity(dc,D2D1::RectF(0,0,230*static_cast<FLOAT>(zoom),90*static_cast<FLOAT>(zoom)),0.82);
+								(void)DrawBarBackgroundVisual(renderer,dc,sidePanel,BarUiInheritClass(147,7));
+								BarButtonDrawOptions options;options.secondary=&secondary;
+								(void)DrawBarButtonVisual(renderer,dc,buttons[0],BarUiInheritClass(10,10),options);
+								(void)DrawBarButtonVisual(renderer,dc,buttons[1],BarUiInheritClass(150,10),options);
+								dc->PopLayer();dc->SetTransform(D2D1::IdentityMatrix());renderer.FinishFrameDrawCommands(dc);
+								HDC source=nullptr;HRESULT hr=renderer.GetGdiInteropRenderTarget()->GetDC(D2D1_DC_INITIALIZE_MODE_COPY,&source);
+								if(SUCCEEDED(hr)){const RECT unchanged{};hr=renderer.GetGdiInteropRenderTarget()->ReleaseDC(&unchanged);}
+								const HRESULT end=renderer.EndFrameDraw(dc);return SUCCEEDED(hr)&&SUCCEEDED(end);
+							};
+							expect(draw(full,referenceButtons,false,fullClip)&&draw(retained,partialButtons,false,fullClip),"shared dirty cull seed full frames");
+							expect(draw(full,referenceButtons,true,fullClip),"shared dirty cull independent full reference");
+							const auto expected=ReadSvgProofPixels(full.GetDeviceContext(),full.GetTargetBitmap());
+							expect(draw(retained,partialButtons,true,dirty),"shared dirty cull retained partial transaction");
+							const auto actual=ReadSvgProofPixels(retained.GetDeviceContext(),retained.GetTargetBitmap());
+							expect(!expected.empty()&&actual==expected,"shared dirty cull retains exact BGRA with DPI/zoom/press/popup/light/layer and secondary text");
+							expect(retained.GetFrameCulledDrawCount()>=2,"shared dirty cull really rejects standard button and independent panel draws");
+							expect(partialButtons[1].button.inhX==150&&partialButtons[1].button.inhY==10,"culled standard button still publishes current inherited hit geometry");
+							report<<"[Ui3DirtyCull] zoom="<<zoom<<" dpi="<<dpi<<" rejected="<<retained.GetFrameCulledDrawCount()<<" exactPixels="<<(actual==expected)<<'\n';
+							full.DiscardDeviceResources();retained.DiscardDeviceResources();
+						}
+						// 未知自定义内容可能超出按钮，必须实际执行；普通 glyph/shape 仍可各自裁剪。
+						BarUIRendering custom(&owner);const bool customReady=SUCCEEDED(custom.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),256,128));
+						expect(customReady,"shared dirty cull custom path target");
+						if(customReady){
+							auto* dc=custom.GetDeviceContext();custom.SetFrameZoom(1);dc->SetTransform(D2D1::IdentityMatrix());
+							BarButtonClass button;initializeButton(button,L"Outside");unsigned calls=0;
+							BarButtonDrawOptions options;options.content=[&](BarUIRendering& renderer,ID2D1DeviceContext* context,BarButtonClass&,const BarButtonVisualInheritance&){
+								++calls;auto* brush=renderer.ContentSolidBrush(RGB(255,0,0));if(!brush)return false;
+								context->FillRectangle(D2D1::RectF(5,5,15,15),brush);return true;
+							};
+							custom.BeginFrameDraw(dc,D2D1::RectF(0,0,40,40));
+							(void)DrawBarButtonVisual(custom,dc,button,BarUiInheritClass(150,10),options);
+							custom.FinishFrameDrawCommands(dc);expect(SUCCEEDED(custom.EndFrameDraw(dc)),"shared dirty cull custom transaction");
+							const auto pixel=ReadEraserTestPixel(dc,custom.GetTargetBitmap(),10,10);
+							expect(calls==1&&pixel[2]>0&&pixel[3]>0,"unbounded custom callback is not rejected with button chrome");
+							expect(custom.ShouldDrawFrameBounds(dc,D2D1::RectF(1000,1000,1010,1010)),"no active dirty clip always preserves original draw path");
+							custom.BeginFrameDraw(dc,D2D1::RectF(0,0,40,40));
+							const auto invalid=D2D1::RectF((std::numeric_limits<FLOAT>::quiet_NaN)(),0,10,10);
+							expect(custom.ShouldDrawFrameBounds(dc,invalid),"invalid bounds conservatively bypass rejection");
+							{auto finiteProbe=std::make_unique<Ui3SvgProbe>(0xB380);SvgObservationScope scope(finiteProbe.get());
+								expect(custom.ShouldDrawFrameBounds(dc,D2D1::RectF(1000,1000,1010,1010)),"finite SVG resource observation keeps original draw calls");}
+							custom.FinishFrameDrawCommands(dc);expect(SUCCEEDED(custom.EndFrameDraw(dc)),"shared dirty cull fallback transaction");
+						}
+						custom.DiscardDeviceResources();
+					}
 					probe.DiscardDeviceResources();finished.store(true,std::memory_order_release);
 					return RenderPipeline::FrameResult::Idle;
 				});
@@ -2245,7 +2395,7 @@ namespace Inkeys::UI::Bar
 			}
 			if(started)scheduler.Stop();
 		}
-		// 生产 Scene 的 Widget 自持图标缓存必须随独立 WARP device epoch 重建。
+		// 生产分页按钮的图标缓存必须随独立 WARP device epoch 重建。
 		{
 			const auto epochA=RenderPipeline::GetDeviceEpoch();
 			RenderPipeline::DeviceEpoch epochB;
@@ -2263,36 +2413,30 @@ namespace Inkeys::UI::Bar
 				: E_POINTER;
 			expect(SUCCEEDED(warpHr),"independent WARP/D2D epoch initializes");
 
-			BarSurfaceScene scene;
-			BarSurfaceBackgroundSpec background;
-			background.bounds={0,0,80,80};
-			background.visible=false;
-			std::array<BarSurfaceWidgetSpec,1> widgets{};
-			widgets[0].id=1;
-			widgets[0].bounds={5,5,75,75};
-			widgets[0].iconResource=L"barSelect";
-			widgets[0].iconSizeDip=32;
-			widgets[0].useThemeColors=false;
-			widgets[0].content=RGB(255,255,255);
-			const bool configured=scene.Configure(background,widgets)
-				&& scene.SetBounds({0,0,80,80},1.0F);
-			expect(configured,"production Scene icon configures");
+			BarPageSurface scene;
+			BarPageSurfaceContent content;
+			content.whiteboard=true;
+			content.currentPage=L"1";
+			content.totalPage=L"/3";
+			const bool configured=scene.ConfigurePagination(content)
+				&& scene.SetBounds({0,0,305,80},1.0F);
+			(void)scene.Advance(std::chrono::steady_clock::now());
+			expect(configured,"production PageSurface icon configures");
 			const RECT presentation=scene.PresentationBounds();
 			const UINT width=static_cast<UINT>(presentation.right-presentation.left);
 			const UINT height=static_cast<UINT>(presentation.bottom-presentation.top);
-			const auto frameTime=std::chrono::steady_clock::now();
-			auto drawScene=[&](const RenderPipeline::DeviceEpoch& epoch,UINT targetWidth,
+			auto frameTime=std::chrono::steady_clock::now();
+			auto drawPageSurface=[&](const RenderPipeline::DeviceEpoch& epoch,UINT targetWidth,
 				UINT targetHeight,std::vector<unsigned char>& pixels)
 			{
 				if(FAILED(scene.EnsureDeviceResources(epoch,targetWidth,targetHeight)))return false;
 				auto* context=scene.DeviceContext();
 				if(!context)return false;
-				context->BeginDraw();
-				context->SetTransform(D2D1::Matrix3x2F::Identity());
-				context->Clear(D2D1::ColorF(0,0,0,0));
+				scene.Renderer().BeginFrameDraw(context,D2D1::RectF(0,0,
+					static_cast<FLOAT>(targetWidth),static_cast<FLOAT>(targetHeight)));
 				const bool rendered=scene.Render(context,frameTime).rendered;
-				const HRESULT endDraw=context->EndDraw();
-				scene.HandleFrameEndDrawResult(endDraw);
+				scene.Renderer().FinishFrameDrawCommands(context);
+				const HRESULT endDraw=scene.Renderer().EndFrameDraw(context);
 				if(!rendered || FAILED(endDraw))return false;
 				ComPtr<ID2D1Image> image;
 				context->GetTarget(&image);
@@ -2318,29 +2462,53 @@ namespace Inkeys::UI::Bar
 			{
 				std::vector<unsigned char> baseline,afterRelease,preserved,
 					afterImplicitRecreate,afterResize;
-				const bool drewBaseline=drawScene(epochA,width,height,baseline);
-				expect(drewBaseline,"Scene icon renders in first epoch");
+				const bool drewBaseline=drawPageSurface(epochA,width,height,baseline);
+				expect(drewBaseline,"PageSurface icon renders in first epoch");
 				if(drewBaseline)
 				{
 					bool visible=false;
 					for(size_t pixel=3;pixel<baseline.size();pixel+=4)
 						visible|=baseline[pixel]!=0;
-					expect(visible,"Scene SVG contributes visible pixels");
+					expect(visible,"PageSurface SVG contributes visible pixels");
+					// 主栏主题切换必须直接作用于分页的真实背景，不能另行固定为深色。
+					const bool originalTheme=owner.barStyle.darkStyle;
+					for(const bool dark:{false,true})
+					{
+						owner.barStyle.darkStyle=dark;
+						for(int frame=0;frame<40;++frame){frameTime+=std::chrono::milliseconds(20);(void)scene.Advance(frameTime);}
+						std::vector<unsigned char> themed;
+						const bool rendered=drawPageSurface(epochA,width,height,themed);
+						expect(rendered,"PageSurface redraws after the shared main theme changes");
+						const UINT sampleX=static_cast<UINT>(77-presentation.left),sampleY=static_cast<UINT>(40-presentation.top);
+						if(rendered&&sampleX<width&&sampleY<height)
+						{
+							const auto at=(static_cast<size_t>(sampleY)*width+sampleX)*4;
+							const auto expected=GetThemeColor(BarThemeColorEnum::Surface);
+							const auto premultiplied=[](int channel){return static_cast<int>(std::lround(channel*BarMainBarFillOpacity));};
+							expect(std::abs(int(themed[at+3])-premultiplied(255))<=1
+								&&std::abs(int(themed[at])-premultiplied(GetBValue(expected)))<=2
+								&&std::abs(int(themed[at+1])-premultiplied(GetGValue(expected)))<=2
+								&&std::abs(int(themed[at+2])-premultiplied(GetRValue(expected)))<=2,
+								"PageSurface dark/light pixels follow the same UI3 surface color as the main bar");
+						}
+					}
+					owner.barStyle.darkStyle=originalTheme;
+					for(int frame=0;frame<40;++frame){frameTime+=std::chrono::milliseconds(20);(void)scene.Advance(frameTime);}
 					scene.ReleaseDeviceResources();
-					const bool drewAfterRelease=drawScene(epochB,width,height,afterRelease);
-					expect(drewAfterRelease,"Scene icon renders after explicit release on new epoch");
+					const bool drewAfterRelease=drawPageSurface(epochB,width,height,afterRelease);
+					expect(drewAfterRelease,"PageSurface icon renders after explicit release on new epoch");
 					if(drewAfterRelease)
 					{
 						expect(afterRelease==baseline,"new epoch retains exact BGRA icon pixels");
 						expect(scene.EnsureDeviceResources(epochA,0,height)==E_INVALIDARG,
 						"invalid target does not replace working epoch");
-						expect(drawScene(epochB,width,height,preserved)
-						&& preserved==afterRelease,"failed setup preserves current Scene pixels");
-						expect(drawScene(epochA,width,height,afterImplicitRecreate)
+						expect(drawPageSurface(epochB,width,height,preserved)
+						&& preserved==afterRelease,"failed setup preserves current PageSurface pixels");
+						expect(drawPageSurface(epochA,width,height,afterImplicitRecreate)
 						&& afterImplicitRecreate==baseline,
 						"implicit epoch recreation retains exact BGRA icon pixels");
-						expect(drawScene(epochA,width+8,height+8,afterResize),
-						"target resize recreates Scene resources");
+						expect(drawPageSurface(epochA,width+8,height+8,afterResize),
+						"target resize recreates PageSurface resources");
 					if(afterResize.size()==static_cast<size_t>(width+8)*(height+8)*4)
 					{
 						bool samePixels=true;

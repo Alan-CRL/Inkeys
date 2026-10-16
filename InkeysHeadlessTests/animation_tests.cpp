@@ -27,6 +27,7 @@ int RunWakeSignalTests();
 int RunPresentDecisionTests();
 int RunSurfaceTests();
 int RunMessageTests();
+int RunUi3InputTests();
 int RunWindowTests();
 int RunWindowCommandCompletionTests();
 int RunWindowExitVisibilityTests();
@@ -1668,6 +1669,7 @@ int main(int argc, char** argv)
 	failureCount += RunPresentDecisionTests();
 	failureCount += RunSurfaceTests();
 	failureCount += RunMessageTests();
+	failureCount += RunUi3InputTests();
 	failureCount += RunMessageBoxTests(runWindowTests);
 	failureCount += RunWindowCommandCompletionTests();
 	if (runWindowTests) failureCount += RunWindowTests();

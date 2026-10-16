@@ -42,6 +42,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
 #include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
+#include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
 #include "Inkeys/UI/StartupPlacement.h"
 #include "PptSettingsPersistence.h"
 #include "resource.h"
@@ -1308,6 +1309,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
+	// 多目标 UI3 验收只替换最终 HWND 提交，不创建或显示产品窗口。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-multitarget-benchmark", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3MultiTargetOffscreenBenchmark();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-input-worker-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunSharedInteractionWorkerTests();
 	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-map-test", -1, TRUE) == CSTR_EQUAL)

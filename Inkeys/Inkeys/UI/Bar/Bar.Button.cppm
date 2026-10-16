@@ -199,6 +199,12 @@ public:
 		if (x >= 0 && x < list.size()) return list.at(x).get();
 		return nullptr;
 	}
+	// 一次持锁取得强引用快照，帧内不逐按钮重锁，也不暴露替换后的悬空指针。
+	[[nodiscard]] vector<shared_ptr<BarButtonClass>> Snapshot() const
+	{
+		shared_lock lock(mt);
+		return list;
+	}
 	void Replace(vector<shared_ptr<BarButtonClass>> next)
 	{
 		unique_lock lock(mt);
@@ -217,7 +223,7 @@ public:
 	}
 
 protected:
-	shared_mutex mt;
+	mutable shared_mutex mt;
 	vector<shared_ptr<BarButtonClass>> list;
 };
 

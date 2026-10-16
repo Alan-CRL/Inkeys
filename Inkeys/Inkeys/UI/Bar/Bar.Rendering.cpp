@@ -40,6 +40,51 @@ import Inkeys.Window;
 
 namespace
 {
+	bool TryMapDrawBoundsToDevice(ID2D1DeviceContext* context,
+		const D2D1_RECT_F& bounds, D2D1_RECT_F& mapped) noexcept
+	{
+		if (!context || !std::isfinite(bounds.left) || !std::isfinite(bounds.top)
+			|| !std::isfinite(bounds.right) || !std::isfinite(bounds.bottom)
+			|| bounds.left >= bounds.right || bounds.top >= bounds.bottom) return false;
+		D2D1_MATRIX_3X2_F matrix{}; context->GetTransform(&matrix);
+		for (const FLOAT value : { matrix._11, matrix._12, matrix._21,
+			matrix._22, matrix._31, matrix._32 }) if (!std::isfinite(value)) return false;
+		FLOAT dpiX = 96.0F, dpiY = 96.0F;
+		if (context->GetUnitMode() != D2D1_UNIT_MODE_PIXELS) context->GetDpi(&dpiX, &dpiY);
+		if (!std::isfinite(dpiX) || !std::isfinite(dpiY) || dpiX <= 0 || dpiY <= 0) return false;
+		const double scaleX = dpiX / 96.0, scaleY = dpiY / 96.0;
+		bool first = true;
+		for (const FLOAT x : { bounds.left, bounds.right })
+			for (const FLOAT y : { bounds.top, bounds.bottom })
+			{
+				const FLOAT deviceX = static_cast<FLOAT>((x * static_cast<double>(matrix._11)
+					+ y * static_cast<double>(matrix._21) + matrix._31) * scaleX);
+				const FLOAT deviceY = static_cast<FLOAT>((x * static_cast<double>(matrix._12)
+					+ y * static_cast<double>(matrix._22) + matrix._32) * scaleY);
+				if (!std::isfinite(deviceX) || !std::isfinite(deviceY)) return false;
+				if (first) { mapped = { deviceX, deviceY, deviceX, deviceY }; first = false; }
+				else { mapped.left = (std::min)(mapped.left, deviceX); mapped.top = (std::min)(mapped.top, deviceY);
+					mapped.right = (std::max)(mapped.right, deviceX); mapped.bottom = (std::max)(mapped.bottom, deviceY); }
+			}
+		return true;
+	}
+
+	double FrameBorderDrawOutset(double thickness, BarUiFrameRenderingEnum rendering,
+		double zoom, double referenceZoom, double geometryScale) noexcept
+	{
+		if (!std::isfinite(thickness) || !std::isfinite(geometryScale))
+			return std::numeric_limits<double>::infinity();
+		double stroke = std::abs(thickness * zoom);
+		if (rendering == BarUiFrameRenderingEnum::PointLight)
+		{
+			// 与现有 dirty 外扩同源，额外保留稳定 blur 倍率和动画遮罩的完整描边。
+			stroke = (std::max)(stroke, stroke * std::abs(geometryScale));
+			stroke += BarRenderingAttribute::pointLightDiffuseExtraWidth
+				* (std::max)(zoom, referenceZoom);
+		}
+		return stroke + BarRenderingAttribute::dirtyAntialiasPadding;
+	}
+
 	void ObserveSvgRectClip(ID2D1DeviceContext* context, const D2D1_RECT_F& rect) noexcept
 	{
 		if (!Inkeys::UI::Bar::CurrentUi3SvgScope()) return;
@@ -119,7 +164,65 @@ namespace
 }
 
 // 具体渲染
-BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = barUISetClassT; }
+BarUIRendering::BarUIRendering(BarUISetClass* owner)
+{
+	if (!owner) return;
+	// 兼容主栏构造入口：依赖压缩为显式服务，基础绘制不再读取完整主栏对象。
+	services_.typography = [owner] { return owner->barMedia.formatCache.get(); };
+	services_.resetDeviceCaches = [owner]
+	{
+		for (const auto& [key, svg] : owner->svgMap) if (svg) svg->ResetCache();
+		for (const auto& [key, png] : owner->pngMap) if (png) png->ResetCache();
+		owner->barButtonSet.ResetIconCaches();
+	};
+	services_.mainLightingInput = [owner]
+	{
+		BarUiMainLightingInput input;
+		const auto mainIt = owner->superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
+		const auto barIt = owner->shapeMap.find(BarUISetShapeEnum::MainBar);
+		if (mainIt != owner->superellipseMap.end() && mainIt->second)
+		{
+			const auto& main = *mainIt->second;
+			input.anchors[0] = D2D1::Point2F(static_cast<FLOAT>(main.x.val),
+				static_cast<FLOAT>(main.y.val + main.h.val / 2.0));
+			input.anchorAvailable[0] = true;
+			constexpr BarButtonPresetEnum presets[] = {BarButtonPresetEnum::Select,
+				BarButtonPresetEnum::Draw, BarButtonPresetEnum::Eraser,
+				BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Pierce};
+			if (barIt != owner->shapeMap.end() && barIt->second)
+			{
+				const auto& bar = *barIt->second;
+				const double left = main.x.val + bar.x.val - bar.w.val / 2.0;
+				const double top = main.y.val + bar.y.val - bar.h.val / 2.0;
+				for (size_t index = 0; index < std::size(presets); ++index)
+					if (const auto* button = owner->barButtonSet.preset[static_cast<int>(presets[index])])
+					{
+						input.anchors[index + 1] = D2D1::Point2F(
+							static_cast<FLOAT>(left + button->button.x.val),
+							static_cast<FLOAT>(top + button->button.y.val + button->button.h.val / 2.0));
+						input.anchorAvailable[index + 1] = true;
+					}
+			}
+		}
+		{
+			std::lock_guard lock(owner->borderCursorLightMutex);
+			input.cursorScreenPoint = owner->borderCursorLightScreenPoint;
+			input.cursorSerial = owner->borderCursorLightSerial;
+			input.cursorAvailable = owner->borderCursorInputAvailable && owner->borderCursorLightReady;
+		}
+		return input;
+	};
+}
+
+BarFormatCache* BarUIRendering::GetTypographyCache()
+{
+	if (services_.typography)
+		if (auto* cache = services_.typography()) return cache;
+	if (!ownedTypography_)
+		if (auto factory = SharedDWriteFactory())
+			ownedTypography_ = std::make_unique<BarFormatCache>(factory.Get());
+	return ownedTypography_.get();
+}
 
 void BarUIRendering::ConfigureLocalizedTypography()
 {
@@ -202,15 +305,7 @@ void BarUIRendering::DiscardDeviceResources()
 
 void BarUIRendering::DiscardDeviceDependentCaches()
 {
-	if (barUISetClass)
-	{
-		// D2D 位图属于当前 device generation；保留 SVG 文本和 PNG 解码像素，仅丢上传缓存。
-		for (const auto& [key, svg] : barUISetClass->svgMap)
-			if (svg) svg->ResetCache();
-		for (const auto& [key, png] : barUISetClass->pngMap)
-			if (png) png->ResetCache();
-		barUISetClass->barButtonSet.ResetIconCaches();
-	}
+	if (services_.resetDeviceCaches) services_.resetDeviceCaches();
 	frameGradientBrushCache.clear();
 	frameDiffuseMaskCache.clear();
 	frameGeometryDiffuseMaskCache.clear();
@@ -253,6 +348,79 @@ void BarUIRendering::DiscardDeviceDependentCaches()
 	frameDiffuseExactMaskPromotionFrameSerial = 0;
 	frameDirtyClipActive = false;
 	frameDirtyClipRect = {};
+	frameDirtyClipDeviceRect = {};
+	frameDirtyClipContext = nullptr;
+	frameDirtyClipDeviceValid = false;
+	frameCulledDrawCount = 0;
+}
+
+double BarUIRendering::GetFrameShapeDrawOutset(const BarUiShapeClass& shape) const noexcept
+{
+	if (!shape.frame) return BarRenderingAttribute::dirtyAntialiasPadding;
+	return FrameBorderDrawOutset(shape.ft ? static_cast<double>(shape.ft->val) : 4.0,
+		shape.frameRendering, frameZoom, frameDiffuseReferenceZoom, frameDiffuseMaskGeometryScale);
+}
+
+bool BarUIRendering::ShouldDrawFrameBounds(ID2D1DeviceContext* context,
+	const D2D1_RECT_F& bounds, double outset) noexcept
+{
+	if (!frameDirtyClipActive || !frameDirtyClipDeviceValid || context != frameDirtyClipContext
+		|| !std::isfinite(outset) || outset < 0.0) return true;
+	// 有限提交的 SVG 证明必须保留原观察顺序；跳过整颗按钮不能伪造资源/覆盖成功。
+	const auto* observation = Inkeys::UI::Bar::CurrentUi3SvgScope();
+	if (observation && observation->probe) return true;
+	const auto envelope = D2D1::RectF(static_cast<FLOAT>(bounds.left - outset),
+		static_cast<FLOAT>(bounds.top - outset), static_cast<FLOAT>(bounds.right + outset),
+		static_cast<FLOAT>(bounds.bottom + outset));
+	D2D1_RECT_F deviceBounds{};
+	if (!TryMapDrawBoundsToDevice(context, envelope, deviceBounds)) return true;
+	// clip 和物体各留设备像素余量；旋转、按压和 popup 缩放都经同一当前矩阵。
+	constexpr FLOAT padding = static_cast<FLOAT>(BarRenderingAttribute::dirtyAntialiasPadding);
+	if (deviceBounds.right + padding >= frameDirtyClipDeviceRect.left - padding
+		&& deviceBounds.bottom + padding >= frameDirtyClipDeviceRect.top - padding
+		&& deviceBounds.left - padding <= frameDirtyClipDeviceRect.right + padding
+		&& deviceBounds.top - padding <= frameDirtyClipDeviceRect.bottom + padding) return true;
+	++frameCulledDrawCount;
+	return false;
+}
+
+void BarUIRendering::PushPanelOpacity(ID2D1DeviceContext* context,
+	const D2D1_RECT_F& bounds, double opacity)
+{
+	if (!context) return;
+	// 一个面板只合成一次透明度；明确包络，避免高水位位图成为每层分配尺寸。
+	const FLOAT zoom=static_cast<FLOAT>(frameDiffuseReferenceZoom>0.0?frameDiffuseReferenceZoom:frameZoom);
+	const FLOAT outset=static_cast<FLOAT>((BarRenderingAttribute::pointLightDiffuseExtraWidth
+		+BarButtonFrameThicknessDip)*zoom+BarRenderingAttribute::dirtyAntialiasPadding);
+	const auto envelope=D2D1::RectF(bounds.left-outset,bounds.top-outset,bounds.right+outset,bounds.bottom+outset);
+	context->PushLayer(D2D1::LayerParameters(envelope, nullptr,
+		D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1::IdentityMatrix(),
+		static_cast<FLOAT>((std::clamp)(opacity, 0.0, 1.0))), nullptr);
+}
+
+void BarUIRendering::BeginFrameDraw(ID2D1DeviceContext* context,
+	const D2D1_RECT_F& dirtyRect)
+{
+	if (!context) return;
+	context->BeginDraw();
+	PushFrameDirtyClip(context, dirtyRect);
+	const auto transparent = D2D1::ColorF(0, 0.0F);
+	Inkeys::UI::Bar::ObserveUi3SvgClear(context);
+	context->Clear(&transparent);
+}
+
+void BarUIRendering::FinishFrameDrawCommands(ID2D1DeviceContext* context)
+{
+	PopFrameDirtyClip(context);
+}
+
+HRESULT BarUIRendering::EndFrameDraw(ID2D1DeviceContext* context)
+{
+	if (!context) return E_POINTER;
+	const HRESULT result = context->EndDraw();
+	HandleFrameEndDrawResult(result);
+	if (ownedTypography_) ownedTypography_->Clean();
+	return result;
 }
 
 void BarUIRendering::PushFrameDirtyClip(
@@ -270,6 +438,9 @@ void BarUIRendering::PushFrameDirtyClip(
 		}
 	}
 	frameDirtyClipRect = dirtyRect;
+	frameCulledDrawCount = 0;
+	frameDirtyClipContext = deviceContext;
+	frameDirtyClipDeviceValid = TryMapDrawBoundsToDevice(deviceContext, dirtyRect, frameDirtyClipDeviceRect);
 	deviceContext->PushAxisAlignedClip(
 		dirtyRect, D2D1_ANTIALIAS_MODE_ALIASED);
 	ObserveSvgRectClip(deviceContext, dirtyRect);
@@ -282,6 +453,8 @@ void BarUIRendering::PopFrameDirtyClip(ID2D1DeviceContext* deviceContext)
 	deviceContext->PopAxisAlignedClip();
 	Inkeys::UI::Bar::ObserveUi3SvgClipPop(deviceContext);
 	frameDirtyClipActive = false;
+	frameDirtyClipContext = nullptr;
+	frameDirtyClipDeviceValid = false;
 }
 
 void BarUIRendering::HandleFrameEndDrawResult(HRESULT endDrawResult)
@@ -502,7 +675,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds, POINT layou
 	COLORREF desiredDrawingPenColor = frameDrawingPenColorInitialized
 		? frameDrawingPenColorTarget : SnapshotPenColor();
 
-	double zoom = barUISetClass ? frameZoom : 0.0;
+	double zoom = frameZoom;
 	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
 	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
 	frameCursorLightRadius = static_cast<FLOAT>(BarBorderCursorLightRadius * zoom);
@@ -546,90 +719,36 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds, POINT layou
 	BarBorderPrimaryAnchorEnum desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::MainButton;
 	D2D1_POINT_2F desiredPrimaryLight = framePrimaryLight;
 	bool primaryTargetAvailable = false;
-	if (barUISetClass)
+	const auto input = services_.mainLightingInput
+		? services_.mainLightingInput() : BarUiMainLightingInput{};
+	if (drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen))
+		desiredDrawingPenColor = SnapshotPenColor();
+	else if (drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape))
+		desiredDrawingPenColor = brush1Color & 0x00FFFFFF;
+	switch (static_cast<StateModeSelectEnum>(drawingMode))
 	{
-		// Geometry 始终使用持久 Brush1 色，不受当前 Pen 子模式影响。
-		if (drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen))
-			desiredDrawingPenColor = SnapshotPenColor();
-		else if (drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape))
-			desiredDrawingPenColor = brush1Color & 0x00FFFFFF;
-		switch (static_cast<StateModeSelectEnum>(drawingMode))
-		{
-		case StateModeSelectEnum::IdtPen:
-			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Draw;
-			break;
-		case StateModeSelectEnum::IdtEraser:
-			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Eraser;
-			break;
-		case StateModeSelectEnum::IdtShape:
-			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Geometry;
-			break;
-		case StateModeSelectEnum::IdtSelection:
-			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Select;
-			break;
-		case StateModeSelectEnum::IdtClickThrough:
-			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Pierce;
-			break;
-		default:
-			break;
-		}
-
-		auto mainButtonIt = barUISetClass->superellipseMap.find(
-			BarUISetSuperellipseEnum::MainButton);
-		if (mainButtonIt != barUISetClass->superellipseMap.end() && mainButtonIt->second)
-		{
-			auto mainButton = mainButtonIt->second;
-			desiredPrimaryLight = D2D1::Point2F(
-				static_cast<FLOAT>(mainButton->x.val * zoom),
-				static_cast<FLOAT>((mainButton->y.val + mainButton->h.val / 2.0) * zoom));
-			primaryTargetAvailable = true;
-
-			BarButtonPresetEnum anchorPreset = BarButtonPresetEnum::None;
-			switch (desiredPrimaryAnchor)
-			{
-			case BarBorderPrimaryAnchorEnum::Select: anchorPreset = BarButtonPresetEnum::Select; break;
-			case BarBorderPrimaryAnchorEnum::Draw: anchorPreset = BarButtonPresetEnum::Draw; break;
-			case BarBorderPrimaryAnchorEnum::Eraser: anchorPreset = BarButtonPresetEnum::Eraser; break;
-			case BarBorderPrimaryAnchorEnum::Geometry: anchorPreset = BarButtonPresetEnum::Geometry; break;
-			case BarBorderPrimaryAnchorEnum::Pierce: anchorPreset = BarButtonPresetEnum::Pierce; break;
-			default: break;
-			}
-
-			auto mainBarIt = barUISetClass->shapeMap.find(BarUISetShapeEnum::MainBar);
-			BarButtonClass* anchorButton = anchorPreset == BarButtonPresetEnum::None
-				? nullptr : barUISetClass->barButtonSet.preset[static_cast<int>(anchorPreset)];
-			if (mainBarIt != barUISetClass->shapeMap.end() && mainBarIt->second && anchorButton)
-			{
-				auto mainBar = mainBarIt->second;
-				double mainBarLeft = mainButton->x.val + mainBar->x.val - mainBar->w.val / 2.0;
-				double mainBarTop = mainButton->y.val + mainBar->y.val - mainBar->h.val / 2.0;
-				// 主光落在当前模式按钮的下边缘中心，控件布局动画时目标也随之更新。
-				desiredPrimaryLight = D2D1::Point2F(
-					static_cast<FLOAT>((mainBarLeft + anchorButton->button.x.val) * zoom),
-					static_cast<FLOAT>((mainBarTop + anchorButton->button.y.val
-						+ anchorButton->button.h.val / 2.0) * zoom));
-			}
-		}
-
-		frameDrawingUsesPenColor =
-			drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen)
-			|| drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape);
+	case StateModeSelectEnum::IdtPen: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Draw; break;
+	case StateModeSelectEnum::IdtEraser: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Eraser; break;
+	case StateModeSelectEnum::IdtShape: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Geometry; break;
+	case StateModeSelectEnum::IdtSelection: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Select; break;
+	case StateModeSelectEnum::IdtClickThrough: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Pierce; break;
+	default: break;
 	}
-
-	unsigned long long cursorSerial = 0;
-	bool cursorInputAvailable = false;
-	if (barUISetClass)
+	size_t anchor = static_cast<size_t>(desiredPrimaryAnchor);
+	if (!input.anchorAvailable[anchor]) anchor = 0;
+	if (input.anchorAvailable[anchor])
 	{
-		lock_guard lock(barUISetClass->borderCursorLightMutex);
-		frameCursorScreenLight = barUISetClass->borderCursorLightScreenPoint;
-		// 旧局部缓存属于最后呈现坐标；松手吸收直移后仍须用同帧布局原点重算。
-		frameCursorLight = D2D1::Point2F(
-			frameCursorScreenLight.x - static_cast<FLOAT>(layoutScreenOrigin.x),
-			frameCursorScreenLight.y - static_cast<FLOAT>(layoutScreenOrigin.y));
-		cursorSerial = barUISetClass->borderCursorLightSerial;
-		cursorInputAvailable = barUISetClass->borderCursorInputAvailable
-			&& barUISetClass->borderCursorLightReady;
+		desiredPrimaryLight = D2D1::Point2F(input.anchors[anchor].x * static_cast<FLOAT>(zoom),
+			input.anchors[anchor].y * static_cast<FLOAT>(zoom));
+		primaryTargetAvailable = true;
 	}
+	frameDrawingUsesPenColor = drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen)
+		|| drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape);
+	const unsigned long long cursorSerial = input.cursorSerial;
+	const bool cursorInputAvailable = input.cursorAvailable;
+	frameCursorScreenLight = input.cursorScreenPoint;
+	frameCursorLight = D2D1::Point2F(frameCursorScreenLight.x - static_cast<FLOAT>(layoutScreenOrigin.x),
+		frameCursorScreenLight.y - static_cast<FLOAT>(layoutScreenOrigin.y));
 
 	bool animationEnabled = BarUiAnimationEnabled;
 	double animationSpeedRate = BarUiAnimationSpeedRate;
@@ -1449,8 +1568,7 @@ BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
 {
 	auto dwriteFactory = SharedDWriteFactory();
 	auto fontCollection = SharedFontCollection();
-	if (!dwriteFactory || !barUISetClass
-		|| !barUISetClass->barMedia.formatCache
+	if (!dwriteFactory || !GetTypographyCache()
 		|| !isfinite(zoom) || zoom <= 0.0F)
 		return nullptr;
 	++thicknessFineDialLabelUseSerial;
@@ -1477,7 +1595,7 @@ BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
 	FLOAT fontSize = static_cast<FLOAT>(
 		BarThicknessFineDialLabelFontSizeDip) * zoom;
 	IDWriteTextFormat* format =
-		barUISetClass->barMedia.formatCache->GetFormat(
+		GetTypographyCache()->GetFormat(
 			fontFamily, fontSize,
 			fontCollection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
 			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
@@ -1515,11 +1633,11 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 	ID2D1DeviceContext* deviceContext,
 	const D2D1_ROUNDED_RECT& roundedRect, FLOAT strokeWidth)
 {
-	if (!deviceContext || strokeWidth <= 0.0F || !barUISetClass
+	if (!deviceContext || strokeWidth <= 0.0F
 		|| frameDiffuseMaskUnavailable) return nullptr;
 	FLOAT standardDeviation = static_cast<FLOAT>(
 		BarRenderingAttribute::pointLightDiffuseExtraWidth / 6.0
-		* frameZoom);
+		* (frameDiffuseReferenceZoom > 0.0 ? frameDiffuseReferenceZoom : frameZoom));
 	if (standardDeviation <= 0.0F) return nullptr;
 
 	auto QuantizeQuarter = [](FLOAT value) -> int
@@ -2113,7 +2231,7 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 	ID2D1DeviceContext* deviceContext, ID2D1Geometry* geometry,
 	FLOAT strokeWidth, int geometryVariantQuarter)
 {
-	if (!deviceContext || !geometry || strokeWidth <= 0.0F || !barUISetClass)
+	if (!deviceContext || !geometry || strokeWidth <= 0.0F)
 		return nullptr;
 	if (frameDiffuseMaskUnavailable) return nullptr;
 	D2D1_RECT_F geometryBounds{};
@@ -2125,7 +2243,7 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 
 	FLOAT standardDeviation = static_cast<FLOAT>(
 		BarRenderingAttribute::pointLightDiffuseExtraWidth / 6.0
-		* frameZoom);
+		* (frameDiffuseReferenceZoom > 0.0 ? frameDiffuseReferenceZoom : frameZoom));
 	auto QuantizeQuarter = [](FLOAT value) -> int
 		{
 			return max(0, static_cast<int>(lround(static_cast<double>(value) * 4.0)));
@@ -2319,7 +2437,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	const D2D1_ROUNDED_RECT* roundedRect,
 	ID2D1Geometry* geometry, int geometryVariantQuarter)
 {
-	if (!deviceContext || (!roundedRect && !geometry) || strokeWidth <= 0.0F || frameLightRadius <= 0.0F)
+	if (!deviceContext || (!roundedRect && !geometry) || strokeWidth <= 0.0F)
 		return false;
 
 	FLOAT baseOpacity = static_cast<FLOAT>(clamp(baseFramePct, 0.0, 1.0));
@@ -2343,7 +2461,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	ComPtr<ID2D1RadialGradientBrush> cursorBrush;
 	FLOAT cursorLightIntensity = frameCursorLightIntensity
 		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
-	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled && frameEdgeLightingEnabled;
 	D2D1_RECT_F lightBounds{};
 	if (roundedRect) lightBounds = roundedRect->rect;
 	else if (geometry && FAILED(geometry->GetBounds(nullptr, &lightBounds)))
@@ -2366,7 +2484,8 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			FLOAT deltaY = (point.y - nearestY) / radiusY;
 			return deltaX * deltaX + deltaY * deltaY <= 1.0F;
 		};
-	bool drawPrimaryLight = edgeLightingEnabled
+	// 半径可以为游标光和基础边框保留，主光可见性必须独立遵守共享快照。
+	bool drawPrimaryLight = edgeLightingEnabled && framePrimaryLightAnchorInitialized
 		&& lightOpacity > 0.0F && primaryLightEnabled
 		&& LightIntersectsBounds(
 			framePrimaryLight, frameLightRadius, frameLightRadius);
@@ -2514,6 +2633,12 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	FLOAT tarZoom = static_cast<FLOAT>(frameZoom);
 	D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(static_cast<FLOAT>(tarX) * tarZoom, static_cast<FLOAT>(tarY) * tarZoom, static_cast<FLOAT>(tarX + tarW) * tarZoom, static_cast<FLOAT>(tarY + tarH) * tarZoom), static_cast<FLOAT>(tarRw) * tarZoom, static_cast<FLOAT>(tarRh) * tarZoom);
 
+	if (!ShouldDrawFrameBounds(deviceContext, roundedRect.rect, GetFrameShapeDrawOutset(shape)))
+	{
+		if (targetRect) BarRenderingAttribute::UnionRectInPlace(*targetRect, BarRenderingAttribute::GetWeigetRect(shape, tarZoom));
+		return false;
+	}
+
 	// Clip
 	if (clip)
 	{
@@ -2640,6 +2765,18 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 
 	double tarN = 4.0;
 	if (superellipse.n.has_value()) tarN = superellipse.n.value().val;
+
+	const auto drawBounds = D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY),
+		static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH));
+	const double outset = superellipse.frame ? FrameBorderDrawOutset(
+		superellipse.ft ? static_cast<double>(superellipse.ft->val) : 4.0,
+		superellipse.frameRendering, frameZoom, frameDiffuseReferenceZoom, frameDiffuseMaskGeometryScale)
+		: BarRenderingAttribute::dirtyAntialiasPadding;
+	if (!ShouldDrawFrameBounds(deviceContext, drawBounds, outset))
+	{
+		if (targetRect) BarRenderingAttribute::UnionRectInPlace(*targetRect, BarRenderingAttribute::GetWeigetRect(superellipse, tarZoom));
+		return false;
+	}
 
 	// 路径只由尺寸、n 与采样精度决定，面板移动时复用局部路径。
 	int segs = clamp(static_cast<int>((tarW + tarH) / 8.0), 24, 128);
@@ -2883,7 +3020,7 @@ bool BarUIRendering::Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, 
 bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight, DWRITE_TEXT_ALIGNMENT textAlign)
 {
 	// 判断是否启用
-	if (word.enable.val == false) return false;
+	if (!deviceContext || word.enable.val == false) return false;
 	if (frameZoom <= 0.0) return false;
 	if (word.size.val <= 0) return false;
 	if (word.w.val <= 0 || word.h.val <= 0) return false;
@@ -2906,6 +3043,10 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	tarX = centerX - tarW / 2.0;
 	tarY = centerY - tarH / 2.0;
 	double tarPct = word.pct.val * contentPct; // 布局透明度与内容切换透明度相乘
+	const auto layoutRect = D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY),
+		static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH));
+	if (!ShouldDrawFrameBounds(deviceContext, layoutRect, BarRenderingAttribute::dirtyAntialiasPadding)) return false;
+	if (!GetTypographyCache()) return false;
 
 	// Word 控件改为存入 wstring
 	wstring tarContent = word.content.GetVal();
@@ -2929,7 +3070,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 
 		textFormat.Attach(tmpTextFormat);*/
 
-		textFormat = barUISetClass->barMedia.formatCache->GetFormat(
+		textFormat = GetTypographyCache()->GetFormat(
 			fontFamily,
 			tarSize,
 			SharedFontCollection().Get(),
@@ -2942,16 +3083,6 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		);
 	}
 	if (!textFormat) return false;
-	// 计算区域
-	D2D1_RECT_F layoutRect;
-	{
-		layoutRect = D2D1::RectF(
-			static_cast<FLOAT>(tarX),
-			static_cast<FLOAT>(tarY),
-			static_cast<FLOAT>(tarX + tarW),
-			static_cast<FLOAT>(tarY + tarH)
-		);
-	}
 	// 渲染到 DC
 	{
 		COLORREF color = word.color.val;
@@ -2978,12 +3109,11 @@ D2D1_SIZE_F BarUIRendering::MeasureText(
 {
 	D2D1_SIZE_F result = D2D1::SizeF();
 	auto dwriteFactory = SharedDWriteFactory();
-	if (content.empty() || !dwriteFactory || !barUISetClass
-		|| !barUISetClass->barMedia.formatCache || fontSize <= 0.0)
+	if (content.empty() || !dwriteFactory || !GetTypographyCache() || fontSize <= 0.0)
 		return result;
 
 	IDWriteTextFormat* textFormat =
-		barUISetClass->barMedia.formatCache->GetFormat(
+		GetTypographyCache()->GetFormat(
 			fontFamily, static_cast<FLOAT>(fontSize),
 			SharedFontCollection().Get(),
 			fontWeight, DWRITE_FONT_STYLE_NORMAL,

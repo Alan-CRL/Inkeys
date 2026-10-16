@@ -13,6 +13,7 @@ module;
 #include <wrl/client.h>
 
 #include "../Bar/Bar.DirtyRegion.h"
+#include "../Bar/Bar.InteractionWorker.h"
 #include "../Whiteboard/Whiteboard.Theme.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
@@ -26,6 +27,7 @@ module;
 #include <cstdarg>
 #include <cstdio>
 #include <cwchar>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -55,9 +57,9 @@ namespace Inkeys::UI::PageControl
 		using FrameResult = Inkeys::UI::RenderPipeline::FrameResult;
 		using FrameStage = Inkeys::UI::RenderPipeline::FrameStage;
 		using FrameStageTimer = Inkeys::UI::RenderPipeline::FrameStageTimer;
-		using Scene = Inkeys::UI::Bar::BarSurfaceScene;
-		using WidgetSpec = Inkeys::UI::Bar::BarSurfaceWidgetSpec;
-		using WidgetId = Inkeys::UI::Bar::BarSurfaceWidgetId;
+		using Scene = Inkeys::UI::Bar::BarPageSurface;
+		using PageContent = Inkeys::UI::Bar::BarPageSurfaceContent;
+		using WidgetId = Inkeys::UI::Bar::BarSurfaceButtonId;
 		using WindowRole = Inkeys::Window::WindowRole;
 
 		constexpr WidgetId DragWidget = 1;
@@ -78,12 +80,6 @@ namespace Inkeys::UI::PageControl
 		[[nodiscard]] double LayoutTransitionDurationSeconds() noexcept
 		{
 			return BarButtonDefaultOperationDurationSeconds;
-		}
-
-		[[nodiscard]] std::chrono::milliseconds LayoutTransitionWallDuration() noexcept
-		{
-			return std::chrono::milliseconds(static_cast<long long>(std::lround(
-				LayoutTransitionDurationSeconds() * 1000.0)));
 		}
 
 		[[nodiscard]] PptKeyboardRepeatTiming QueryPptKeyboardRepeatTiming() noexcept
@@ -151,19 +147,15 @@ namespace Inkeys::UI::PageControl
 
 		struct AnimatedBounds
 		{
+			std::array<BarUiValueClass,5> values;
+			std::chrono::steady_clock::time_point frameTime{};
 			double left = 0.0;
 			double top = 0.0;
 			double right = 1.0;
 			double bottom = 1.0;
 			double scale = 1.0;
-			double startLeft = 0.0;
-			double startTop = 0.0;
-			double startRight = 1.0;
-			double startBottom = 1.0;
-			double startScale = 1.0;
 			RECT target{ 0, 0, 1, 1 };
 			double targetScale = 1.0;
-			std::chrono::steady_clock::time_point started{};
 			bool initialized = false;
 			bool active = false;
 		};
@@ -184,10 +176,6 @@ namespace Inkeys::UI::PageControl
 			bool dragging = false;
 			bool dragPending = false;
 			bool pressedNext = false;
-			DWORD touchId = 0;
-			bool touchActive = false;
-			bool touchPrimary = false;
-			POINT touchLastClient{};
 			POINT dragStartScreen{};
 			PptLayoutState dragStartLayout{};
 			PptLayoutState feasibleLayout{};
@@ -196,13 +184,13 @@ namespace Inkeys::UI::PageControl
 			std::uint64_t suppressedPresentationBusyTraces = 0;
 			std::chrono::steady_clock::time_point pressStarted{};
 			std::chrono::steady_clock::time_point lastRepeat{};
+			std::uint64_t pressedCaptureTicket=0;
 			PptKeyboardRepeatTiming repeatTiming{};
-			std::chrono::steady_clock::time_point layoutTransitionUntil{};
 			std::uint64_t observedRevision = 0;
 			WhiteboardState renderedWhiteboard;
-			double envelopeOffset = 0.0;
-			int envelopeMenu = 0;
 			WhiteboardState pressedWhiteboard;
+			WorkspaceMode pressedMode=WorkspaceMode::Hidden;
+			std::uint64_t pressedPptSession=0;
 			SIZE backingCapacity{ 1, 1 };
 			SIZE committedPresentationSize{};
 			SIZE committedBackingCapacity{};
@@ -250,6 +238,47 @@ namespace Inkeys::UI::PageControl
 		}
 
 		std::array<SurfaceState, 4> surfaces;
+		// 触摸批次只属于 HWND owner，不随渲染对象销毁而从另一线程重置。
+		struct NativeTouchState {DWORD id=0;bool active=false,primary=false;POINT lastClient{};};
+		std::array<NativeTouchState,4> nativeTouches;
+		std::array<std::uint64_t,4> nativeCaptureTickets{};
+		std::atomic_uint64_t nextNativeCaptureTicket=1;
+		constexpr bool ShouldReleasePageCapture(std::uint64_t captured,std::uint64_t requested) noexcept
+		{return captured!=0&&captured==requested;}
+		struct InputPresentation
+		{
+			WorkspaceMode mode=WorkspaceMode::Hidden;
+			WhiteboardState whiteboard;
+			PageControlSurfaceBudget budget;
+			bool visible=false,locked=true;
+			std::uint64_t pptSession=0,semanticRevision=0;
+		};
+		std::mutex inputSnapshotMutex;
+		std::array<InputPresentation,4> inputPresentations;
+		std::atomic_uint64_t inputLifecycle=1;
+		struct InputRegistrationContext {std::size_t index=0;std::uint64_t generation=0;};
+		// 旧 registration 的取消回调可能晚到，代次和内存均保留到共享 worker 排空。
+		std::vector<std::unique_ptr<InputRegistrationContext>> inputContexts;
+		std::uint64_t inputSemanticRevision=0;
+		void CommitInputPresentationLocked(std::size_t index,WorkspaceMode mode,const WhiteboardState& whiteboard,
+			const PageControlSurfaceBudget& budget,bool visible,bool locked,std::uint64_t pptSession)
+		{
+			const auto& previous=inputPresentations[index];
+			const bool same=previous.mode==mode
+				&&(mode!=WorkspaceMode::WhiteboardExpanded||(previous.whiteboard.generation==whiteboard.generation&&previous.whiteboard.currentPage==whiteboard.currentPage))
+				&&(mode!=WorkspaceMode::PptCompact||previous.pptSession==pptSession);
+			const auto identity=same&&previous.semanticRevision?previous.semanticRevision:++inputSemanticRevision;
+			inputPresentations[index]={mode,whiteboard,budget,visible,locked,pptSession,identity};
+		}
+		InputPresentation InputSnapshot(std::size_t index)
+		{std::scoped_lock lock(inputSnapshotMutex);return inputPresentations[index];}
+		std::pair<InputPresentation,Inkeys::UI::Bar::BarSurfaceInputSample> CaptureInputSnapshot(std::size_t index,POINT local)
+		{
+			std::scoped_lock lock(inputSnapshotMutex);const auto input=inputPresentations[index];
+			return {input,input.visible?surfaces[index].scene.SamplePointer(local):Inkeys::UI::Bar::BarSurfaceInputSample{}};
+		}
+
+
 		GroupLayoutBudgetCache groupLayoutBudget;
 		std::atomic_int hiddenTestBlockedUlwSurface = -1;
 		std::atomic_int hiddenTestBlockedResourceSurface = -1;
@@ -277,6 +306,8 @@ namespace Inkeys::UI::PageControl
 		WhiteboardCallbacks whiteboardCallbacks;
 		Inkeys::Display::Subscription displaySubscription;
 		thread_local bool translatingTouch = false;
+		thread_local bool releasingPageCapture = false;
+		constexpr UINT ReleasePageCaptureMessage=WM_APP+0x247;
 
 		[[nodiscard]] constexpr std::size_t Index(Client client) noexcept
 		{
@@ -286,10 +317,11 @@ namespace Inkeys::UI::PageControl
 
 		[[nodiscard]] std::size_t Index(HWND hwnd) noexcept
 		{
+			if(!hwnd)return Roles.size();
 			auto& service = Inkeys::Window::GetService();
 			for (std::size_t index = 0; index < Roles.size(); ++index)
 				if (service.Handle(Roles[index]) == hwnd) return index;
-			return 0;
+			return Roles.size();
 		}
 
 		[[nodiscard]] Surface SurfaceFor(std::size_t index) noexcept
@@ -548,12 +580,16 @@ namespace Inkeys::UI::PageControl
 				: std::to_wstring((std::min)(maximum, value));
 		}
 
-		void InvokeDirection(std::size_t surfaceIndex, bool next)
+		void InvokeDirection(std::size_t surfaceIndex,bool next,WorkspaceMode expectedMode=WorkspaceMode::Hidden)
 		{
 			if (surfaceIndex >= surfaces.size()) return;
-			CloseWhiteboardMenu();
 			std::function<void()> callback;
 			const auto [ppt, whiteboard] = Snapshot();
+			const auto liveMode=ResolveWorkspaceMode(SurfaceFor(surfaceIndex),ppt,whiteboard);
+			if((expectedMode!=WorkspaceMode::Hidden&&expectedMode!=liveMode)
+				||WhiteboardWorkspaceSwitching(whiteboard)
+				||(whiteboard.active&&Inkeys::Window::GetService().WhiteboardWindowGroupMinimized()))return;
+			CloseWhiteboardMenu();
 			{
 				std::scoped_lock lock(callbackMutex);
 				if (whiteboard.active && surfaceIndex < 2)
@@ -590,41 +626,6 @@ namespace Inkeys::UI::PageControl
 			if (callback) callback();
 		}
 
-		void ApplyDarkTheme(WidgetSpec& widget)
-		{
-			widget.useThemeColors = false;
-			widget.fill = GetThemeColor(
-				BarThemeModeEnum::Dark, BarThemeColorEnum::PressedFill);
-			widget.content = GetThemeColor(
-				BarThemeModeEnum::Dark, BarThemeColorEnum::TextPrimary);
-		}
-
-		[[nodiscard]] Inkeys::UI::Bar::BarSurfaceBackgroundSpec BuildBackground(
-			std::size_t index, WorkspaceMode mode, int menu = 0, bool unsaved = false, double envelopeOffset = -1.0)
-		{
-			Inkeys::UI::Bar::BarSurfaceBackgroundSpec background;
-			const bool whiteboard = mode == WorkspaceMode::WhiteboardExpanded;
-			const bool vertical = index >= 2;
-			const double offset = whiteboard && index == 0 ? (envelopeOffset >= 0 ? envelopeOffset : (menu ? std::ceil((std::max)(0.0,-WhiteboardPopupEnvelope(menu).top))+5.0 : 0.0) + (unsaved ? 32.0 : 0.0)) : 0.0;
-			background.bounds = { 0.0, offset,
-				whiteboard ? (index == 0 ? 305.0 : WhiteboardWidthDip)
-					: vertical ? PptCompactShortSideDip : PptCompactLongSideDip,
-				offset + (whiteboard ? WhiteboardHeightDip
-					: vertical ? PptCompactLongSideDip : PptCompactShortSideDip) };
-			background.contentEnvelope=whiteboard && index==0;
-			background.useThemeColors = false;
-			background.fill = GetThemeColor(
-				BarThemeModeEnum::Dark, BarThemeColorEnum::Surface);
-			background.frame = GetThemeColor(
-				BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame);
-			background.cornerRadiusDip = BarMainBarCornerRadiusDip;
-			background.frameThicknessDip =
-				BarButtonFrameThicknessDip;
-			background.fillOpacity = BarMainBarFillOpacity;
-			background.frameOpacity = BarMainBarFrameOpacity;
-			return background;
-		}
-
 		void CloseWhiteboardMenu() noexcept
 		{
 			{ std::scoped_lock lock(snapshotMutex);
@@ -657,170 +658,32 @@ namespace Inkeys::UI::PageControl
 					id<15 ? pressed.pattern : static_cast<int>(id-15), pressed.generation, pressed.currentPage);
 		}
 
-		[[nodiscard]] std::vector<WidgetSpec> BuildWidgets(
-			std::size_t index, WorkspaceMode mode,
-			const PptState& ppt, const WhiteboardState& whiteboard, double envelopeOffset = -1.0)
+		[[nodiscard]] PageContent BuildPageContent(std::size_t index,WorkspaceMode mode,
+			const PptState& ppt,const WhiteboardState& whiteboard)
 		{
-			std::vector<WidgetSpec> widgets(23);
-			const auto inputPolicy = ResolveWorkspaceInputPolicy(mode);
-			auto& drag = widgets[0];
-			drag.id = DragWidget;
-			drag.kind = Inkeys::UI::Bar::BarSurfaceWidgetKind::DragHandle;
-			drag.visible = mode != WorkspaceMode::Hidden;
-			drag.enabled = inputPolicy.drag;
-			drag.interactive = inputPolicy.drag;
-			drag.dragOpacity = mode == WorkspaceMode::PptCompact ? 0.72 : 0.0;
-			ApplyDarkTheme(drag);
-
-			auto& previous = widgets[1];
-			previous.id = PreviousWidget;
-			previous.layoutKind = mode == WorkspaceMode::WhiteboardExpanded
-				? Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardTwoTwo
-				: Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardOneOne;
-			const auto previousContent = ResolveDirectionContentPolicy(
-				mode, false, false);
-			previous.iconResource = previousContent.icon;
-			previous.primaryText = mode == WorkspaceMode::WhiteboardExpanded ? IW(I18nKey.UI.Bar.MainButtons.WhiteboardPreviousLabel) : std::wstring(previousContent.label);
-			previous.iconAngle = ResolveDirectionIconAngle(
-				SurfaceFor(index), mode, false, false);
-			previous.onClick = [index] { InvokeDirection(index, false); };
-			ApplyDarkTheme(previous);
-
-			auto& page = widgets[2];
-			page.id = PageWidget;
-			page.textUpdateMode =
-				Inkeys::UI::Bar::BarSurfaceTextUpdateMode::Immediate;
-			page.layoutKind = mode == WorkspaceMode::WhiteboardExpanded
-				? Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageTwoTwo
-				: (index >= 2
-					? Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageVertical
-					: Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageHorizontal);
-			ApplyDarkTheme(page);
-
-			auto& next = widgets[3];
-			next.id = NextWidget;
-			next.layoutKind = mode == WorkspaceMode::WhiteboardExpanded
-				? Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardTwoTwo
-				: Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardOneOne;
-			const bool nextIsEndShow = IsPptEndPage(
-				ppt.currentPage, ppt.totalPage);
-			const auto nextContent = ResolveDirectionContentPolicy(
-				mode, true, whiteboard.nextIsAdd, nextIsEndShow);
-			next.iconResource = nextContent.icon;
-			next.primaryText = mode == WorkspaceMode::WhiteboardExpanded ? IW(whiteboard.nextIsAdd ? I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel : I18nKey.UI.Bar.MainButtons.WhiteboardNextLabel) : std::wstring(nextContent.label);
-			next.iconAngle = ResolveDirectionIconAngle(
-				SurfaceFor(index), mode, true, whiteboard.nextIsAdd,
-				nextIsEndShow);
-			next.onClick = [index] { InvokeDirection(index, true); };
-			ApplyDarkTheme(next);
-
-			if (mode == WorkspaceMode::WhiteboardExpanded)
-			{
-				// Whiteboard 固定三枚真实 2x2 按钮；PPT-only Drag 槽向外侧收拢。
-				drag.bounds = index == 0
-					? Inkeys::UI::Bar::BarSurfaceDipRect{ 5.0, 5.0, 5.0, 75.0 }
-					: Inkeys::UI::Bar::BarSurfaceDipRect{ 225.0, 5.0, 225.0, 75.0 };
-				previous.bounds = { 5.0, 5.0, 75.0, 75.0 };
-				page.bounds = { 80.0, 5.0, 150.0, 75.0 };
-				next.bounds = { 155.0, 5.0, 225.0, 75.0 };
-				previous.enabled = whiteboard.previousEnabled;
-				previous.interactive = whiteboard.previousInteractive;
-				page.enabled = whiteboard.pageEnabled;
-				page.interactive = whiteboard.pageInteractive;
-				page.primaryText = std::to_wstring(whiteboard.currentPage);
-				page.secondaryText = L"/" + std::to_wstring(whiteboard.totalPage);
-				next.enabled = whiteboard.nextEnabled;
-				next.interactive = whiteboard.nextInteractive;
+			PageContent content;
+			content.surface=static_cast<unsigned>(index);
+			content.whiteboard=mode==WorkspaceMode::WhiteboardExpanded;
+			content.switching=whiteboard.switching;content.pptActive=ppt.presentationVisible;
+			content.nextIsAdd=whiteboard.nextIsAdd;content.nextIsEndShow=IsPptEndPage(ppt.currentPage,ppt.totalPage);
+			content.unsaved=whiteboard.unsaved;content.menu=whiteboard.menu;
+			if(content.whiteboard){
+				content.currentPage=std::to_wstring(whiteboard.currentPage);content.totalPage=L"/"+std::to_wstring(whiteboard.totalPage);
+				content.enabled={whiteboard.previousEnabled,whiteboard.pageEnabled,whiteboard.nextEnabled};
+				content.interactive={whiteboard.previousInteractive,whiteboard.pageInteractive,whiteboard.nextInteractive};
+			}else{
+				const int maximum=index>=2?999:9999;
+				content.currentPage=PageNumber(ppt.currentPage,maximum);content.totalPage=L"/"+PageNumber(ppt.totalPage,maximum);
 			}
-			else
-			{
-				const bool vertical = index >= 2;
-				const auto contracts = ResolvePptWidgetContracts(SurfaceFor(index));
-				drag.bounds = { contracts[0].bounds.left, contracts[0].bounds.top,
-					contracts[0].bounds.right, contracts[0].bounds.bottom };
-				previous.bounds = { contracts[1].bounds.left, contracts[1].bounds.top,
-					contracts[1].bounds.right, contracts[1].bounds.bottom };
-				page.bounds = { contracts[2].bounds.left, contracts[2].bounds.top,
-					contracts[2].bounds.right, contracts[2].bounds.bottom };
-				next.bounds = { contracts[3].bounds.left, contracts[3].bounds.top,
-					contracts[3].bounds.right, contracts[3].bounds.bottom };
-				previous.enabled = previous.interactive = true;
-				page.enabled = page.interactive = true;
-				next.enabled = next.interactive = true;
-				const int maximum = vertical ? 999 : 9999;
-				page.primaryText = PageNumber(ppt.currentPage, maximum);
-				page.secondaryText = L"/" + PageNumber(ppt.totalPage, maximum);
-			}
-			// 所有布局保留同一组实例，PPT/白板切换和菜单反向动画不重建按钮。
-			for (std::size_t i=4;i<widgets.size();++i) {
-				auto& w=widgets[i]; w.id=static_cast<WidgetId>(i+1);
-				w.visible=false; w.interactive=false; w.bounds={230,5,300,75}; ApplyDarkTheme(w);
-			}
-			if (index==0 && mode==WorkspaceMode::WhiteboardExpanded) {
-				using namespace Inkeys::UI::Bar;
-				constexpr double gap=BarButtonGapDip, one=BarButtonOneSideDip, two=BarButtonTwoSideDip;
-				constexpr double menuLeft=190.0, menuTop=-122.5, themeLeft=345.0, themeTop=-301.0;
-				auto& more=widgets[4]; more.visible=true; more.interactive=!whiteboard.switching;
-				more.layoutKind=BarButtonVisualLayoutKind::StandardTwoTwo;
-				more.iconResource=L"barMenu"; more.primaryText=IW(I18nKey.UI.Bar.MainButtons.MoreLabel);
-				const auto row=[&](std::size_t i, const std::wstring& text, const wchar_t* icon) {
-					auto& w=widgets[i]; w.visible=whiteboard.menu!=0; w.interactive=w.visible&&!whiteboard.switching;
-					w.parentPanel=19; w.layoutKind=BarButtonVisualLayoutKind::StandardFourOne; w.primaryLeftAligned=true;
-					const double top=menuTop+gap+(i-5)*(one+gap);
-					w.bounds={menuLeft+gap,top,menuLeft+gap+140,top+one}; w.primaryText=text; w.iconResource=icon;
-				};
-				row(5,IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel),L"barCloseSmall");
-				row(6,IW(I18nKey.UI.Bar.MainButtons.MinimizeWhiteboardLabel),L"barMinimize");
-				row(7,IW(I18nKey.UI.Bar.MainButtons.WhiteboardThemeLabel),L"barPalette");
-				widgets[6].enabled=widgets[6].interactive=widgets[6].interactive&&!ppt.presentationVisible;
-				constexpr std::uint32_t colors[]={0x123B32,0xFFFFFF,0xF5F1E6,0xE5E7EB,0x25282D,0x172A46};
-				const std::wstring labels[]={IW(I18nKey.UI.Bar.MainButtons.WhiteboardBlankLabel),
-					IW(I18nKey.UI.Bar.MainButtons.WhiteboardDotsLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardGridLabel)};
-				for (std::size_t i=0;i<9;++i) {
-					auto& w=widgets[8+i]; w.visible=whiteboard.menu==2; w.interactive=w.visible&&!whiteboard.switching;
-					w.parentPanel=20; w.layoutKind=BarButtonVisualLayoutKind::StandardTwoTwo;
-					const auto rgb=i<6?colors[i]:whiteboard.backgroundRgb;
-					const int pattern=i<6?0:static_cast<int>(i-6);
-					w.selectionIndicator=true; w.selectionVisible=i<6?rgb==whiteboard.backgroundRgb:pattern==whiteboard.pattern;
-					w.iconResource=L"colorSelect";
-					const double x=themeLeft+gap+(i%3)*(two+gap);
-					const double y=themeTop+(i<6?35.0+(i/3)*(two+gap):221.0);
-					w.bounds={x,y,x+two,y+two};
-					if(i>=6) {
-						w.primaryText=labels[i-6];
-						const unsigned luminance=((rgb>>16)&255)*299+((rgb>>8)&255)*587+(rgb&255)*114;
-						w.content=GetThemeColor(luminance>128000?BarThemeModeEnum::Light:BarThemeModeEnum::Dark,
-							BarThemeColorEnum::TextPrimary);
-					}
-					w.contentRevision=static_cast<std::uint64_t>(rgb)*4+pattern;
-					auto resources=std::make_shared<WhiteboardVisual::ThemeDrawingResources>();
-					w.releaseContentResources=[resources] { *resources={}; };
-					w.drawContent=[rgb,pattern,resources,labelled=i>=6](auto* dc,auto rect) {
-						WhiteboardVisual::DrawTheme(dc,rect,rgb,pattern,true,false,resources.get(),labelled);
-					};
-				}
-				auto& menu=widgets[18]; menu.panel=true; menu.visible=whiteboard.menu!=0;
-				menu.popupAnchor=MoreWidget; menu.interactive=false; menu.bounds={menuLeft,menuTop,340,-5};
-				auto& theme=widgets[19]; theme.panel=true; theme.visible=whiteboard.menu==2;
-				theme.popupAnchor=8; theme.parentPanel=19; theme.interactive=false; theme.bounds={themeLeft,themeTop,575,-5};
-				const auto header=[&](std::size_t i,double y,const std::wstring& title) {
-					auto& w=widgets[i]; w.visible=whiteboard.menu==2; w.parentPanel=20; w.header=true; w.interactive=false;
-					w.bounds={themeLeft+gap,y,570,y+25}; w.primaryText=title;
-					w.primaryFontSizeDip=12; w.primaryOffsetYDip=0; w.primarySlotHeightDip=25;
-					w.primaryLeftAligned=true;
-				};
-				header(20,themeTop+gap,IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundColorLabel));
-				header(21,themeTop+191,IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundStyleLabel));
-				auto& divider=widgets[22]; divider.visible=whiteboard.menu==2; divider.parentPanel=20;
-				divider.divider=true; divider.interactive=false; divider.bounds={themeLeft+gap,themeTop+185,570,themeTop+186};
-				const double offset=envelopeOffset>=0?envelopeOffset:WhiteboardMenuHeight(whiteboard);
-				for(auto& widget:widgets) { widget.bounds.top+=offset; widget.bounds.bottom+=offset; }
-				auto& status=widgets[17]; status.visible=whiteboard.unsaved;
-				status.interactive=false; status.bounds={5,5,300,32};
-				status.primaryText=IW(I18nKey.UI.Bar.MainButtons.WhiteboardUnsavedLabel);
-				status.primaryOffsetYDip=0; status.primaryFontSizeDip=14; status.primarySlotHeightDip=20;
-			}
-			return widgets;
+			content.previousLabel=IW(I18nKey.UI.Bar.MainButtons.WhiteboardPreviousLabel);
+			content.nextLabel=IW(whiteboard.nextIsAdd?I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel:I18nKey.UI.Bar.MainButtons.WhiteboardNextLabel);
+			content.moreLabel=IW(I18nKey.UI.Bar.MainButtons.MoreLabel);
+			content.unsavedLabel=IW(I18nKey.UI.Bar.MainButtons.WhiteboardUnsavedLabel);
+			content.actionLabels={IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel),IW(I18nKey.UI.Bar.MainButtons.MinimizeWhiteboardLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardThemeLabel)};
+			content.patternLabels={IW(I18nKey.UI.Bar.MainButtons.WhiteboardBlankLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardDotsLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardGridLabel)};
+			content.sectionLabels={IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundColorLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundStyleLabel)};
+			content.backgroundRgb=whiteboard.backgroundRgb;content.pattern=whiteboard.pattern;
+			return content;
 		}
 
 		[[nodiscard]] bool SameRect(const RECT& left, const RECT& right) noexcept
@@ -884,80 +747,33 @@ namespace Inkeys::UI::PageControl
 			return true;
 		}
 
-		[[nodiscard]] double Ease(double progress) noexcept
+		void AdvanceBounds(AnimatedBounds& animation,std::chrono::steady_clock::time_point now) noexcept
 		{
-			progress = (std::clamp)(progress, 0.0, 1.0);
-			return progress < 0.5
-				? 4.0 * progress * progress * progress
-				: 1.0 - std::pow(-2.0 * progress + 2.0, 3.0) / 2.0;
+			if(animation.frameTime==now)return;
+			const double dt=animation.frameTime.time_since_epoch().count()
+				?(std::clamp)(std::chrono::duration<double>(now-animation.frameTime).count(),0.0,0.05):0;
+			animation.frameTime=now;
+			if(!animation.active || (dt<=0&&BarUiAnimationEnabled))return;
+			const BarUiAnimationAdvanceContextClass frame{
+				dt,static_cast<double>(BarUiAnimationSpeedRate),static_cast<bool>(BarUiAnimationEnabled),false};
+			animation.active=false;
+			for(auto& value:animation.values)animation.active|=BarUiAdvanceAnimation(value,frame).active;
+			animation.left=animation.values[0].val;animation.top=animation.values[1].val;
+			animation.right=animation.values[2].val;animation.bottom=animation.values[3].val;animation.scale=animation.values[4].val;
 		}
 
-		void AdvanceBounds(AnimatedBounds& animation,
+		void RetargetBounds(AnimatedBounds& animation,const RECT& target,double scale,bool animate,
 			std::chrono::steady_clock::time_point now) noexcept
 		{
-			if (!animation.active) return;
-			const double elapsed = std::chrono::duration<double, std::milli>(
-				now - animation.started).count();
-			const double progress = (std::clamp)(elapsed
-				/ static_cast<double>(LayoutTransitionWallDuration().count()),
-				0.0, 1.0);
-			const double value = Ease(progress);
-			auto Mix = [value](double start, double target)
-			{
-				return start + (target - start) * value;
-			};
-			animation.left = Mix(animation.startLeft, animation.target.left);
-			animation.top = Mix(animation.startTop, animation.target.top);
-			animation.right = Mix(animation.startRight, animation.target.right);
-			animation.bottom = Mix(animation.startBottom, animation.target.bottom);
-			animation.scale = Mix(animation.startScale, animation.targetScale);
-			if (progress >= 1.0)
-			{
-				animation.active = false;
-				animation.left = animation.target.left;
-				animation.top = animation.target.top;
-				animation.right = animation.target.right;
-				animation.bottom = animation.target.bottom;
-				animation.scale = animation.targetScale;
-			}
-		}
-
-		void RetargetBounds(AnimatedBounds& animation, const RECT& target,
-			double scale, bool animate,
-			std::chrono::steady_clock::time_point now) noexcept
-		{
-			AdvanceBounds(animation, now);
-			if (!animation.initialized)
-			{
-				animation.left = target.left;
-				animation.top = target.top;
-				animation.right = target.right;
-				animation.bottom = target.bottom;
-				animation.scale = scale;
-				animation.target = target;
-				animation.targetScale = scale;
-				animation.initialized = true;
-				return;
-			}
-			if (SameRect(animation.target, target)
-				&& std::abs(animation.targetScale - scale) < 0.0001) return;
-			animation.startLeft = animation.left;
-			animation.startTop = animation.top;
-			animation.startRight = animation.right;
-			animation.startBottom = animation.bottom;
-			animation.startScale = animation.scale;
-			animation.target = target;
-			animation.targetScale = scale;
-			animation.started = now;
-			animation.active = animate;
-			if (!animate)
-			{
-				animation.left = target.left;
-				animation.top = target.top;
-				animation.right = target.right;
-				animation.bottom = target.bottom;
-				animation.scale = scale;
-			}
+			AdvanceBounds(animation,now);
+			if(animation.initialized&&SameRect(animation.target,target)&&animation.targetScale==scale)return;
+			const bool direct=!animation.initialized||!animate;
+			const double targets[]={static_cast<double>(target.left),static_cast<double>(target.top),static_cast<double>(target.right),static_cast<double>(target.bottom),scale};
+			for(std::size_t i=0;i<animation.values.size();++i)
+				if(direct)animation.values[i].SetDirect(targets[i]);else animation.values[i].SetTar(targets[i],LayoutTransitionDurationSeconds());
+			animation.target=target;animation.targetScale=scale;animation.initialized=true;animation.active=!direct;
+			animation.left=animation.values[0].val;animation.top=animation.values[1].val;
+			animation.right=animation.values[2].val;animation.bottom=animation.values[3].val;animation.scale=animation.values[4].val;
 		}
 
 		[[nodiscard]] RECT CurrentBounds(const AnimatedBounds& animation) noexcept
@@ -972,137 +788,43 @@ namespace Inkeys::UI::PageControl
 			return result;
 		}
 
-		[[nodiscard]] bool ConfigureSurface(std::size_t index, WorkspaceMode desiredMode,
-			const PptState& ppt, const WhiteboardState& whiteboard,
-			const RECT& monitor, const ResolvedSurfaceLayout& target, const WhiteboardState& envelopeState,
-			std::uint64_t revision,
-			std::chrono::steady_clock::time_point now,
-			const char*& failedStage)
+		[[nodiscard]] bool ConfigureSurface(std::size_t index,WorkspaceMode desiredMode,
+			const PptState& ppt,const WhiteboardState& whiteboard,
+			const RECT& monitor,const ResolvedSurfaceLayout& target,const WhiteboardState&,
+			std::uint64_t revision,std::chrono::steady_clock::time_point now,const char*& failedStage)
 		{
-			auto& state = surfaces[index];
-			const WorkspaceMode visualMode = desiredMode == WorkspaceMode::Hidden
-				? (state.sceneConfigured && state.configuredMode != WorkspaceMode::Hidden
-					? state.configuredMode : WorkspaceMode::PptCompact)
-				: desiredMode;
-			const bool modeChanged = state.sceneConfigured
-				&& state.configuredMode != visualMode;
-			const bool contentChanged = state.observedRevision != revision;
-			const double offset=index==0 && visualMode==WorkspaceMode::WhiteboardExpanded?WhiteboardMenuHeight(envelopeState):0.0;
-			if (state.sceneConfigured && !modeChanged && offset!=state.envelopeOffset)
-				state.scene.RebaseLocalOrigin(offset-state.envelopeOffset);
-			const bool popupEnvelopeChanged=offset!=state.envelopeOffset;
-			state.envelopeOffset=offset; state.envelopeMenu=envelopeState.menu;
-
-			if (!state.sceneConfigured)
-			{
-				const auto background = BuildBackground(index, visualMode, whiteboard.menu, whiteboard.unsaved, offset);
-				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard, offset);
-				if (!state.scene.Configure(background, widgets))
-				{
-					failedStage = "scene-configure";
-					return false;
+			auto& state=surfaces[index];
+			const auto visualMode=desiredMode==WorkspaceMode::Hidden
+				?(state.sceneConfigured?state.configuredMode:WorkspaceMode::PptCompact):desiredMode;
+			const bool modeChanged=state.sceneConfigured&&state.configuredMode!=visualMode;
+			if(!state.sceneConfigured || modeChanged || state.observedRevision!=revision){
+				const bool animate=modeChanged&&ShouldAnimateWorkspaceLayout(SurfaceFor(index),state.configuredMode,visualMode,state.targetVisible);
+				if(!state.scene.ConfigurePagination(BuildPageContent(index,visualMode,ppt,whiteboard),animate?LayoutTransitionDurationSeconds():0)){
+					failedStage="pagination-configure";return false;
 				}
-				state.scene.SetHooks({ {}, [index] { RequestSurface(index); } });
-				const bool fadeAtTarget = desiredMode != WorkspaceMode::Hidden
-					&& index < 2;
-				state.scene.SetOpacity(fadeAtTarget || desiredMode == WorkspaceMode::Hidden
-					? 0.0 : 1.0, 0.0);
-				if (fadeAtTarget)
-				{
-					state.scene.SetOpacity(1.0,
-						LayoutTransitionDurationSeconds());
-					state.layoutTransitionUntil = now
-						+ LayoutTransitionWallDuration();
-				}
+				// 相同文字的新业务修订仍须经过成功提交，不能仅更新输入身份就提前确认页面。
+				if(!state.scene.IsInvalidated())state.forceFullPresentation=true;
+				if(!state.sceneConfigured){state.scene.SetHooks({{},[index]{RequestSurface(index);}});state.scene.SetOpacity(0,0);}
 			}
-			else if (modeChanged || ((state.renderedWhiteboard.menu!=whiteboard.menu || popupEnvelopeChanged) && visualMode == WorkspaceMode::WhiteboardExpanded))
-			{
-				const auto background = BuildBackground(index, visualMode, whiteboard.menu, whiteboard.unsaved, offset);
-				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard, offset);
-				const bool animateLayout = ShouldAnimateWorkspaceLayout(SurfaceFor(index),
-						state.configuredMode, visualMode, state.targetVisible);
-				if (!state.scene.TransitionLayout(background, widgets,
-					(animateLayout || whiteboard.menu != 0 || visualMode == WorkspaceMode::WhiteboardExpanded) ? LayoutTransitionDurationSeconds() : 0.0))
-				{
-					failedStage = "scene-transition";
-					return false;
-				}
-				if (modeChanged)
-					state.layoutTransitionUntil = now
-						+ LayoutTransitionWallDuration();
+			const bool wasVisible=state.targetVisible;state.targetVisible=desiredMode!=WorkspaceMode::Hidden;
+			if(modeChanged||(wasVisible&&!state.targetVisible)||(whiteboard.switching&&!state.renderedWhiteboard.switching)){
+				// 工作区交接只投递取消；指针和长按仍由唯一输入 worker 清理。
+				Inkeys::UI::Bar::SurfaceInputEvent cancel;cancel.window=Inkeys::Window::GetService().Handle(Roles[index]);
+				cancel.generation=inputLifecycle.load(std::memory_order_acquire);cancel.message=WM_CANCELMODE;
+				if(cancel.window)(void)Inkeys::UI::Bar::SubmitSurfaceInput(cancel);
 			}
-			else if (contentChanged)
-			{
-				// 相同布局只更新稳定 widget；TransitionLayout 会无条件扩大为整窗 damage。
-				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard, offset);
-				if (visualMode==WorkspaceMode::WhiteboardExpanded) {
-					if(!state.scene.UpdateContent(widgets)) { failedStage="scene-content"; return false; }
-				}
-				else for (const auto& widget : widgets)
-				{
-					if (!state.scene.SetWidgetState(widget.id, widget.visible,
-						widget.enabled, widget.primaryText, widget.secondaryText,
-						widget.iconResource, widget.iconAngle)
-						|| !state.scene.SetWidgetInteractive(
-							widget.id, widget.interactive))
-					{
-						failedStage = "scene-widget";
-						return false;
-					}
-				}
-			}
-
-			const bool wasVisible = state.targetVisible;
-			state.targetVisible = desiredMode != WorkspaceMode::Hidden;
-			const bool entering = !wasVisible && state.targetVisible;
-			if (!state.bounds.initialized && entering && index >= 2)
-			{
-				// 侧栏即使首次帧已可见，也先建立屏外起点以保留侧向出场。
-				RetargetBounds(state.bounds, ResolveHiddenSurfaceBounds(
-					SurfaceFor(index), monitor, target.logicalBounds),
-					target.scale, false, now);
-			}
-			if (state.targetVisible != wasVisible)
-			{
-				state.scene.SetOpacity(state.targetVisible ? 1.0 : 0.0,
-					LayoutTransitionDurationSeconds());
-				state.layoutTransitionUntil = now
-					+ LayoutTransitionWallDuration();
-			}
-			const bool animateBounds = !popupEnvelopeChanged && state.bounds.initialized
-				&& (wasVisible || state.targetVisible)
-				&& (!entering || index >= 2);
-			if (!state.targetVisible && state.bounds.initialized
-				&& ShouldPreserveSurfaceBoundsWhileHiding(SurfaceFor(index)))
-			{
-				// 底栏隐藏时冻结当前 frame，只让透明度退场。
-				AdvanceBounds(state.bounds, now);
-				RetargetBounds(state.bounds, CurrentBounds(state.bounds),
-					state.bounds.scale, false, now);
-			}
-			else
-				RetargetBounds(state.bounds, target.logicalBounds, target.scale,
-					animateBounds, now);
-			AdvanceBounds(state.bounds, now);
-			state.inputLocked = ShouldLockSurfaceInput(state.targetVisible,
-				now < state.layoutTransitionUntil,
-				WhiteboardWorkspaceSwitching(whiteboard));
-			if (state.inputLocked && state.borderCursorPointerInside)
-			{
-				state.borderCursorPointerInside = false;
-				Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
-			}
-			if (!ApplySceneBounds(state, CurrentBounds(state.bounds),
-				static_cast<float>(state.bounds.scale)))
-			{
-				failedStage = "scene-bounds";
-				return false;
-			}
-			// 场景和几何都成功后才承认该发布代，失败仍可重试。
-			state.sceneConfigured = true;
-			state.configuredMode = visualMode;
-			state.observedRevision = revision;
-			state.renderedWhiteboard = whiteboard;
+			const bool entering=!wasVisible&&state.targetVisible;
+			if(!state.bounds.initialized&&entering&&index>=2)
+				RetargetBounds(state.bounds,ResolveHiddenSurfaceBounds(SurfaceFor(index),monitor,target.logicalBounds),target.scale,false,now);
+			if(state.targetVisible!=wasVisible){state.scene.SetOpacity(state.targetVisible?1:0,LayoutTransitionDurationSeconds());}
+			const bool animateBounds=state.bounds.initialized&&(wasVisible||state.targetVisible)&&(!entering||index>=2);
+			if(!state.targetVisible&&state.bounds.initialized&&ShouldPreserveSurfaceBoundsWhileHiding(SurfaceFor(index))){
+				AdvanceBounds(state.bounds,now);RetargetBounds(state.bounds,CurrentBounds(state.bounds),state.bounds.scale,false,now);
+			}else RetargetBounds(state.bounds,target.logicalBounds,target.scale,animateBounds,now);
+			AdvanceBounds(state.bounds,now);
+			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,state.bounds.active,WhiteboardWorkspaceSwitching(whiteboard));
+			if(!ApplySceneBounds(state,CurrentBounds(state.bounds),static_cast<float>(state.bounds.scale))){failedStage="pagination-bounds";return false;}
+			state.sceneConfigured=true;state.configuredMode=visualMode;state.observedRevision=revision;state.renderedWhiteboard=whiteboard;
 			return true;
 		}
 
@@ -1129,13 +851,15 @@ namespace Inkeys::UI::PageControl
 			HRESULT failureHr = S_OK;
 			DWORD failureError = ERROR_SUCCESS;
 			bool resourcesFailed = false;
+			bool pixelsSubmitted = false;
 		};
 
 		[[nodiscard]] PresentSceneResult PresentScene(std::size_t index,
 			SurfaceState& state, HWND hwnd,
 			const FrameContext& frameContext, const RECT& presentationBounds,
 			SIZE backingCapacity, bool forceFullReplacement,
-			bool showDebugFrames, bool lifecycleRendering) noexcept
+			bool showDebugFrames, bool lifecycleRendering,
+			const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>* offscreenSink=nullptr) noexcept
 		{
 			PresentSceneResult result;
 			auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
@@ -1150,7 +874,7 @@ namespace Inkeys::UI::PageControl
 				- presentationBounds.left);
 			const UINT height = static_cast<UINT>(presentationBounds.bottom
 				- presentationBounds.top);
-			if (!hwnd || width == 0 || height == 0)
+			if ((!hwnd && !offscreenSink) || width == 0 || height == 0)
 			{
 				result.failureStage = "invalid-presentation";
 				result.failureError = ERROR_INVALID_WINDOW_HANDLE;
@@ -1196,21 +920,20 @@ namespace Inkeys::UI::PageControl
 			}
 			ComPtr<ID2D1DeviceContext> context(rawContext);
 			ComPtr<ID2D1GdiInteropRenderTarget> gdi(rawGdi);
-			FrameStageTimer drawTimer(diagnostics, FrameStage::Draw);
-			context->BeginDraw();
-			context->SetTransform(D2D1::Matrix3x2F::Identity());
-			context->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
-			const auto renderResult = state.scene.Render(
-				context.Get(), frameContext.frameTime);
-			RECT businessDamage = state.scene.PendingDamage();
+			RECT businessDamage=forceFullReplacement
+				?RECT{0,0,static_cast<LONG>(width),static_cast<LONG>(height)}:state.scene.PendingDamage();
 			const bool businessDamagePending =
 				!Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(businessDamage);
+			if(!businessDamagePending&&!forceFullReplacement&&!lifecycleRendering
+				&&!state.scene.AnimationActive()&&!state.debugFrameSleepLatch.IsPending()&&!state.debugOverlayRefreshPending){
+				result.status=PresentStatus::Success;return result;
+			}
 			const bool retryingNonSleepVisual =
 				ShouldTreatPageControlDamageAsActiveDebugFrame(
 					showDebugFrames, businessDamagePending, forceFullReplacement,
 					state.debugFrameSleepLatch.IsPending());
 			const bool hasActiveRendering = lifecycleRendering
-				|| renderResult.animationActive || retryingNonSleepVisual;
+				|| state.scene.AnimationActive() || retryingNonSleepVisual;
 			const bool finalIdleFrame = state.debugFrameSleepLatch.Update(
 				showDebugFrames, hasActiveRendering);
 			// 最终绿框就在当前帧提交，成功后应直接休眠，不能再唤醒一帧红框。
@@ -1242,6 +965,13 @@ namespace Inkeys::UI::PageControl
 				presentDirty, windowTarget);
 			if (Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(presentDirty))
 				presentDirty = windowTarget;
+			// 与主栏相同：先裁剪，再清理/绘制；保留的大位图不扩大实际工作量。
+			FrameStageTimer drawTimer(diagnostics,FrameStage::Draw);
+			context->SetTransform(D2D1::Matrix3x2F::Identity());
+			state.scene.Renderer().BeginFrameDraw(context.Get(),D2D1::RectF(
+				static_cast<FLOAT>(presentDirty.left),static_cast<FLOAT>(presentDirty.top),
+				static_cast<FLOAT>(presentDirty.right),static_cast<FLOAT>(presentDirty.bottom)));
+			(void)state.scene.Render(context.Get(),frameContext.frameTime);
 			if (showDebugFrames)
 			{
 				// 红/绿框表示本帧 damage，蓝框直接表示当前 HWND 提交边界。
@@ -1277,6 +1007,7 @@ namespace Inkeys::UI::PageControl
 				if (windowBrush)
 					context->DrawRectangle(&windowRect, windowBrush.Get(), frameWidth);
 			}
+			state.scene.Renderer().FinishFrameDrawCommands(context.Get());
 			drawTimer.Stop();
 			HDC source = nullptr;
 			bool presented = false;
@@ -1309,7 +1040,8 @@ namespace Inkeys::UI::PageControl
 				else
 				{
 					SetLastError(ERROR_SUCCESS);
-					presented = UpdateLayeredWindowIndirect(hwnd, &info) != FALSE;
+					presented = offscreenSink ? (*offscreenSink)(info)!=FALSE
+						: UpdateLayeredWindowIndirect(hwnd, &info) != FALSE;
 					if (!presented) ulwError = GetLastError();
 				}
 				ulwTimer.Stop();
@@ -1321,7 +1053,7 @@ namespace Inkeys::UI::PageControl
 			}
 			else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
 			FrameStageTimer endDrawTimer(diagnostics, FrameStage::EndDraw);
-			const HRESULT endDrawHr = context->EndDraw();
+			const HRESULT endDrawHr = state.scene.Renderer().EndFrameDraw(context.Get());
 			endDrawTimer.Stop();
 			if (diagnostics)
 			{
@@ -1334,7 +1066,6 @@ namespace Inkeys::UI::PageControl
 					|| FAILED(endDrawHr) || !presented;
 				diagnostics->presentCommitted = !diagnostics->presentFailed;
 			}
-			state.scene.HandleFrameEndDrawResult(endDrawHr);
 			if (IsDeviceLost(getDcHr) || IsDeviceLost(releaseDcHr)
 				|| IsDeviceLost(endDrawHr))
 			{
@@ -1359,7 +1090,7 @@ namespace Inkeys::UI::PageControl
 				state.scene.ReleaseDeviceResources();
 				return result;
 			}
-			result.status = PresentStatus::Success;
+			result.status = PresentStatus::Success;result.pixelsSubmitted=true;
 			result.debugFrameBounds = showDebugFrames ? frameTarget : RECT{};
 			result.debugWindowBounds = showDebugFrames ? windowTarget : RECT{};
 			return result;
@@ -1380,15 +1111,17 @@ namespace Inkeys::UI::PageControl
 		void SetBoundsDirect(AnimatedBounds& bounds, const RECT& target,
 			double scale) noexcept
 		{
-			bounds.left = bounds.startLeft = target.left;
-			bounds.top = bounds.startTop = target.top;
-			bounds.right = bounds.startRight = target.right;
-			bounds.bottom = bounds.startBottom = target.bottom;
-			bounds.scale = bounds.startScale = scale;
+			bounds.left = target.left;
+			bounds.top = target.top;
+			bounds.right = target.right;
+			bounds.bottom = target.bottom;
+			bounds.scale = scale;
 			bounds.target = target;
 			bounds.targetScale = scale;
 			bounds.initialized = true;
 			bounds.active = false;
+			const double values[]={static_cast<double>(target.left),static_cast<double>(target.top),static_cast<double>(target.right),static_cast<double>(target.bottom),scale};
+			for(std::size_t i=0;i<bounds.values.size();++i)bounds.values[i].SetDirect(values[i]);
 		}
 
 		void ApplyDragPairBoundsDirect(std::size_t pairIndex,
@@ -1495,9 +1228,10 @@ namespace Inkeys::UI::PageControl
 			return false;
 		}
 
-		// 调用方必须持有 renderTransactionMutex；直移和 bounds 提交共享同一事务。
-		void UpdateDragLocked(std::size_t index, POINT screen)
+		// 输入只尝试直移锁；忙时发布绝对候选，由渲染线程提交，不能等 GetDC。
+		void UpdateDrag(std::size_t index, POINT screen)
 		{
+			std::unique_lock renderLock(renderTransactionMutex,std::try_to_lock);
 			auto& state = surfaces[index];
 			const Surface moved = SurfaceFor(index);
 			const bool left = moved == Surface::BottomLeft
@@ -1527,9 +1261,8 @@ namespace Inkeys::UI::PageControl
 			}
 			const auto deviceGeneration =
 				Inkeys::UI::RenderPipeline::GetDeviceEpoch().generation;
-			const auto budget = ResolveGroupBudgetLocked(snapshot, monitor,
-				dpiScale, directMoveRevision.load(std::memory_order_acquire),
-				deviceGeneration, true);
+			const auto budget = renderLock.owns_lock()?ResolveGroupBudgetLocked(snapshot,monitor,
+				dpiScale,directMoveRevision.load(std::memory_order_acquire),deviceGeneration,true):InputSnapshot(index).budget;
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				budget.presentationOutsetDip, budget.bitmapLimit);
 			candidate = ClampPageControlLayout(moved, monitor,
@@ -1547,6 +1280,7 @@ namespace Inkeys::UI::PageControl
 			state.feasibleLayout = candidate;
 			const auto publication = PublishDragCandidate(pairIndex, candidate);
 			if (publication.revision == 0) return;
+			if(!renderLock.owns_lock()){RequestDragPair(pairIndex);return;}
 			PptState previousPpt = ppt;
 			CopyDragPairPosition(pairIndex, previousFeasible, previousPpt.layout);
 			PptState candidatePpt = ppt;
@@ -1889,9 +1623,7 @@ namespace Inkeys::UI::PageControl
 			const Surface surface = SurfaceFor(index);
 			const WorkspaceMode mode = whiteboard.active && Inkeys::Window::GetService().WhiteboardWindowGroupMinimized()
 				? WorkspaceMode::Hidden : ResolveWorkspaceMode(surface, ppt, whiteboard);
-			auto envelopeState=whiteboard;
-			if (index==0 && whiteboard.active && surfaces[index].scene.PopupAnimationActive())
-				envelopeState.menu=(std::max)(whiteboard.menu,surfaces[index].envelopeMenu);
+			const auto& envelopeState=whiteboard;
 			auto target = ResolveSurfaceLayout(surface, monitor,
 				dpiScale, ppt, envelopeState);
 			if (mode == WorkspaceMode::Hidden && index >= 2)
@@ -1899,12 +1631,13 @@ namespace Inkeys::UI::PageControl
 					surface, monitor, target.logicalBounds);
 
 			PresentStatus presentStatus = PresentStatus::Success;
+			PresentSceneResult completedPixels;
+			SIZE completedPresentation{},completedBacking{};
+			bool pixelsSubmitted=false;
 			RECT presentation{};
 			bool keepAnimating = false;
 			bool shouldShow = false;
 			bool pptFrame = false;
-			bool repeatDirection = false;
-			bool repeatNext = false;
 			{
 				FrameStageTimer renderLockTimer(diagnostics, FrameStage::PresentLockWait);
 				std::unique_lock renderLock(renderTransactionMutex);
@@ -1934,46 +1667,12 @@ namespace Inkeys::UI::PageControl
 				}
 				const bool shouldSubscribeLighting =
 					ShouldSubscribePageControlLighting(state.targetVisible,
-						frameContext.frameTime < state.layoutTransitionUntil);
+						state.bounds.active || state.scene.AnimationActive());
 				if (state.lightingSubscribed != shouldSubscribeLighting)
 				{
 					state.scene.SetSharedLightingSubscribed(
 						shouldSubscribeLighting);
 					state.lightingSubscribed = shouldSubscribeLighting;
-				}
-				const auto directionPressPolicy =
-					ResolvePptDirectionPressPolicy(mode, ppt.longPressEnabled);
-				if (!directionPressPolicy.trackLongPress)
-				{
-					state.pressStarted = {};
-					state.lastRepeat = {};
-					state.repeatTiming = {};
-				}
-				const bool hasRepeated =
-					state.lastRepeat.time_since_epoch().count() != 0;
-				if (state.pressStarted.time_since_epoch().count() != 0
-					&& ShouldTriggerPptLongPressRepeat(
-						directionPressPolicy.trackLongPress,
-						frameContext.frameTime - state.pressStarted,
-						hasRepeated,
-						hasRepeated
-							? frameContext.frameTime - state.lastRepeat
-							: std::chrono::steady_clock::duration::zero(),
-						state.repeatTiming))
-				{
-					state.lastRepeat = ResolvePptLongPressRepeatAnchor(
-						state.lastRepeat, frameContext.frameTime,
-						hasRepeated, state.repeatTiming);
-					repeatDirection = true;
-					repeatNext = state.pressedNext;
-					if (!IsPptDirectionActionRepeatable(ResolvePptDirectionAction(
-						repeatNext, ppt.currentPage, ppt.totalPage)))
-					{
-						// 按住 Next 进入结束页时只投递一次 EndShow，随后终止重复。
-						state.pressStarted = {};
-						state.lastRepeat = {};
-						state.repeatTiming = {};
-					}
 				}
 				(void)state.scene.Advance(frameContext.frameTime);
 				presentation = state.scene.PresentationBounds();
@@ -2023,13 +1722,13 @@ namespace Inkeys::UI::PageControl
 				}
 				state.backingCapacity = backing.size;
 				const bool transitionDeadlineActive =
-					frameContext.frameTime < state.layoutTransitionUntil;
+					state.bounds.active || state.scene.AnimationActive();
 				const bool exitTransitionActive = !state.targetVisible
 					&& transitionDeadlineActive;
 				keepAnimating = ShouldContinuePageControlFrame(
 					state.targetVisible, transitionDeadlineActive,
 					state.bounds.active, state.scene.AnimationActive(),
-					state.pressStarted.time_since_epoch().count() != 0);
+					false);
 				shouldShow = ShouldKeepPageControlWindowVisible(
 					state.targetVisible, exitTransitionActive);
 				pptFrame = shouldShow && state.configuredMode == WorkspaceMode::PptCompact;
@@ -2066,21 +1765,10 @@ namespace Inkeys::UI::PageControl
 						|| presentResult.continueRendering;
 					if (presentStatus == PresentStatus::Success)
 					{
-						(void)state.scene.ConsumeDamage();
-						state.committedPresentationSize = presentationSize;
-						state.committedBackingCapacity = backing.size;
-						state.committedDeviceGeneration = frameContext.epoch.generation;
-						state.committedPresentationReady = true;
-						state.forceFullPresentation = false;
-						// 调试快照也属于呈现事务，失败帧不能提前推进绿框锁存。
-						state.lastPresentedDebugFrameBounds =
-							presentResult.debugFrameBounds;
-						state.lastPresentedDebugWindowBounds =
-							presentResult.debugWindowBounds;
-						state.debugOverlayRefreshPending = false;
-						(void)state.debugFrameSleepLatch.CommitPresented();
+						completedPixels=presentResult;completedPresentation=presentationSize;completedBacking=backing.size;
+						pixelsSubmitted=presentResult.pixelsSubmitted;
 					}
-				else
+					else
 					{
 						state.forceFullPresentation = true;
 						if (presentResult.resourcesFailed)
@@ -2093,7 +1781,6 @@ namespace Inkeys::UI::PageControl
 				}
 			}
 			// 业务回调可能反向发布 UI 状态，不能在 Scene/present 事务锁内调用。
-			if (repeatDirection) InvokeDirection(index, repeatNext);
 			if (presentStatus != PresentStatus::Success)
 				return presentStatus == PresentStatus::DeviceLost
 					? FrameResult::DeviceLost : FrameResult::Retry;
@@ -2138,6 +1825,8 @@ namespace Inkeys::UI::PageControl
 			auto& state = surfaces[index];
 			if (!visibilityApplied || (shouldShow && !boundsApplied))
 			{
+				state.forceFullPresentation=true;
+				if(diagnostics){diagnostics->presentCommitted=false;diagnostics->presentFailed=true;}
 				if (pendingDrag.matched)
 					TraceDrag("consume consumer=render surface=%s revision=%llu "
 						"result=failed set_bounds=%d visibility=%d pending=1",
@@ -2179,6 +1868,19 @@ namespace Inkeys::UI::PageControl
 						static_cast<unsigned long long>(pendingDrag.revision));
 				return FrameResult::Retry;
 			}
+			// 命中和 workspace/锁定策略作为一份已呈现状态发布，WndProc 不得读到跨代组合。
+			std::unique_lock inputCommitLock(inputSnapshotMutex);
+			if(pixelsSubmitted){
+				// 像素、位置和可见性全部提交成功后才清除 dirty；失败保留旧命中快照。
+				(void)state.scene.ConsumeDamage();state.committedPresentationSize=completedPresentation;
+				state.committedBackingCapacity=completedBacking;state.committedDeviceGeneration=frameContext.epoch.generation;
+				state.committedPresentationReady=true;state.forceFullPresentation=false;
+				state.lastPresentedDebugFrameBounds=completedPixels.debugFrameBounds;state.lastPresentedDebugWindowBounds=completedPixels.debugWindowBounds;
+				state.debugOverlayRefreshPending=false;(void)state.debugFrameSleepLatch.CommitPresented();
+				state.scene.CommitPresented(shouldShow&&!state.inputLocked);
+			}else if(!shouldShow)state.scene.CommitPresented(false);
+			CommitInputPresentationLocked(index,state.configuredMode,whiteboard,groupBudget,state.targetVisible,state.inputLocked,ppt.layout.session);
+			inputCommitLock.unlock();
 			const auto dragCommit = CommitDragSurface(index, ppt);
 			if (dragCommit.matched)
 				TraceDrag("consume consumer=render surface=%s revision=%llu "
@@ -2199,14 +1901,386 @@ namespace Inkeys::UI::PageControl
 						ERROR_SUCCESS, renderSnapshot, monitor, dpiScale,
 						groupBudget, target.logicalBounds, presentation, true);
 			}
+			if(!keepAnimating)state.scene.SuspendForIdle(frameContext.frameTime);
 			return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
+		}
+
+		void PageControlInputEvent(const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context)
+		{
+			const HWND hwnd=event.window;const auto message=event.message;
+			const auto wParam=event.wParam;const auto lParam=event.lParam;
+			const auto* registration=static_cast<InputRegistrationContext*>(context);
+			if(registration&&(!initialized.load(std::memory_order_acquire)
+				||registration->generation!=inputLifecycle.load(std::memory_order_acquire)))return;
+			const std::size_t index=registration?registration->index:Index(hwnd);
+			if(index>=surfaces.size())return;auto& state=surfaces[index];
+			const auto committed=InputSnapshot(index);
+			if(message==WM_LBUTTONDOWN&&event.captureTicket)state.pressedCaptureTicket=event.captureTicket;
+			if((message==WM_KEYDOWN&&wParam==VK_ESCAPE)||message==WM_CANCELMODE||message==WM_CAPTURECHANGED)CloseWhiteboardMenu();
+			if (message == WM_MOUSEMOVE)
+			{
+				const POINT screen=event.screenPoint;
+
+				if (!committed.visible || committed.locked) return;
+				if (ShouldNotifyPageControlCursorEntered(
+					state.borderCursorPointerInside, event.touch,
+					Inkeys::Message::IsPointerGeneratedMouseMessage(
+						message, event.extraInfo)))
+				{
+					state.borderCursorPointerInside = true;
+					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerEntered();
+				}
+				if (state.dragPending && HasExceededPptDragThreshold(
+					state.dragStartScreen, screen, GetSystemMetrics(SM_CXDRAG),
+					GetSystemMetrics(SM_CYDRAG)))
+				{
+					state.dragPending = false;
+					state.dragging = true;
+					TraceDrag("threshold surface=%s start=(%ld,%ld) current=(%ld,%ld) "
+						"result=dragging",
+						SurfaceName(index), state.dragStartScreen.x,
+						state.dragStartScreen.y, screen.x, screen.y);
+					// Page 的标准 press 到阈值为止；转拖动时必须撤销而不是触发点击。
+					state.scene.CancelPointer();
+				}
+				if (state.dragging)
+				{
+					UpdateDrag(index, screen);
+
+					FlushCommittedDrag(DragPairIndex(index));
+					return;
+				}
+				if (state.dragPending) return;
+				const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+				const auto logical = (event.logicalPointValid?std::optional<POINT>(event.logicalPoint):std::nullopt);
+				if (state.pressStarted.time_since_epoch().count() != 0)
+				{
+					const WidgetId expected = state.pressedNext
+						? NextWidget : PreviousWidget;
+					const bool sameDirectionHit = logical.has_value()
+						&& static_cast<WidgetId>(event.hitButtonId) == expected;
+					if (!ShouldKeepPptLongPressTracking(true,
+						event.captureOwned, sameDirectionHit))
+					{
+						// 拖出箭头后本次按压彻底取消，移回也不能重新启动长按。
+						state.pressStarted = {};
+						state.lastRepeat = {};
+						state.repeatTiming = {};
+					}
+				}
+				if (logical) state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Move,static_cast<WidgetId>(event.hitButtonId));
+				else state.scene.PointerLeave();
+				return;
+			}
+			if (message == WM_MOUSELEAVE)
+			{
+				bool notifyBorderCursor = false;
+				{
+
+					notifyBorderCursor = state.borderCursorPointerInside;
+					state.borderCursorPointerInside = false;
+					if (!state.dragging) state.scene.PointerLeave();
+					state.pressStarted = {};
+					state.lastRepeat = {};
+					state.repeatTiming = {};
+				}
+				if (notifyBorderCursor)
+					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
+				return;
+			}
+			if (message == WM_LBUTTONDOWN)
+			{
+				// 动画帧可以更新命中几何，但排队的 Down 不能跨业务页面或放映会话重新解释。
+				if(event.semanticRevision&&event.semanticRevision!=committed.semanticRevision)return;
+				const auto [livePpt,liveWhiteboard]=Snapshot();
+				if(ResolveWorkspaceMode(SurfaceFor(index),livePpt,liveWhiteboard)!=committed.mode
+					||WhiteboardWorkspaceSwitching(liveWhiteboard)
+					||(committed.mode==WorkspaceMode::PptCompact&&committed.pptSession!=livePpt.layout.session)
+					||(committed.mode==WorkspaceMode::WhiteboardExpanded
+						&&(committed.whiteboard.generation!=liveWhiteboard.generation||committed.whiteboard.currentPage!=liveWhiteboard.currentPage)))return;
+				bool promotePpt = false;
+				bool invokeDirectionOnDown = false;
+				bool invokeNext = false;
+				{
+
+					if (!committed.visible || committed.locked) return;
+					const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+					const auto logical = (event.logicalPointValid?std::optional<POINT>(event.logicalPoint):std::nullopt);
+					if (!logical.has_value()) return;
+					const auto hit = static_cast<WidgetId>(event.hitButtonId);
+					const auto region = PointerRegionForWidget(hit);
+					const auto inputPolicy = ResolveWorkspaceInputPolicy(
+						committed.mode);
+					const bool dragCandidate = inputPolicy.drag
+						&& CanStartPptDrag(region)
+						&&(region!=PptPointerRegion::Background||event.backgroundHit);
+					const auto result = hit == Inkeys::UI::Bar::BarSurfaceNoButton
+						? Inkeys::UI::Bar::BarSurfacePointerResult{}
+						: state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Down,static_cast<WidgetId>(event.hitButtonId));
+					if (!result.consumed && !dragCandidate) return;
+					state.pressedWhiteboard = committed.whiteboard;state.pressedMode=committed.mode;
+					state.pressedPptSession=livePpt.layout.session;
+
+					promotePpt = committed.mode == WorkspaceMode::PptCompact;
+					auto [ppt, whiteboard] = Snapshot();
+					(void)whiteboard;
+					if (dragCandidate)
+					{
+						state.dragging = StartsPptDragImmediately(region);
+						state.dragPending = !state.dragging;
+						state.dragStartScreen = event.screenPoint;
+						const auto [monitor, dpiScale] = LayoutMonitor();
+						ppt = ResolveRuntimePageControlLayout(
+							monitor, dpiScale, ppt);
+						state.dragStartLayout = ppt.layout;
+						state.feasibleLayout = ppt.layout;
+						state.lastDragCandidateTrace = {};
+						state.suppressedDirectCandidateTraces = 0;
+						state.suppressedPresentationBusyTraces = 0;
+						BeginDragTracking(DragPairIndex(index), ppt.layout);
+						TraceDrag("down surface=%s region=%s immediate=%d "
+							"start=(%ld,%ld) position=(%.1f,%.1f)",
+							SurfaceName(index), PointerRegionName(region),
+							state.dragging ? 1 : 0,
+							state.dragStartScreen.x, state.dragStartScreen.y,
+							DragPairIndex(index) == 0 ? ppt.layout.bottomPairWidth
+								: ppt.layout.middlePairWidth,
+							DragPairIndex(index) == 0 ? ppt.layout.bottomPairHeight
+								: ppt.layout.middlePairHeight);
+					}
+					else if (result.pressed == PreviousWidget
+						|| result.pressed == NextWidget)
+					{
+						invokeNext = result.pressed == NextWidget;
+						const bool repeatable = IsPptDirectionActionRepeatable(
+							ResolvePptDirectionAction(
+								invokeNext, ppt.currentPage, ppt.totalPage));
+						const auto pressPolicy = ResolvePptDirectionPressPolicy(
+							committed.mode, ppt.longPressEnabled, repeatable);
+						invokeDirectionOnDown = pressPolicy.invokeOnPointerDown;
+						if (ShouldKeepPptLongPressTracking(
+							pressPolicy.trackLongPress, event.captureOwned, true))
+						{
+							state.pressedNext = invokeNext;
+							state.pressStarted = std::chrono::steady_clock::now();
+							state.lastRepeat = {};
+							state.repeatTiming = QueryPptKeyboardRepeatTiming();
+							RequestSurface(index);
+						}
+					}
+				}
+				// Z 序和业务回调都可能同步进入 Window Service，必须位于 Scene 锁外。
+				if (promotePpt)
+					(void)Inkeys::Window::GetService().PromotePptWindow(Roles[index]);
+				if (invokeDirectionOnDown) InvokeDirection(index,invokeNext,committed.mode);
+				return;
+			}
+			if (message == WM_LBUTTONUP)
+			{
+				state.pressedCaptureTicket=0;
+				const auto [livePpt,liveWhiteboard]=Snapshot();
+				bool dragEnded = false;
+				bool hadDragTracking = false;
+				std::size_t dragPairIndex = DragPairIndex(index);
+				std::uint64_t suppressedDirectCandidateTraces = 0;
+				std::uint64_t suppressedPresentationBusyTraces = 0;
+				bool shouldInvokeClick = false;
+				WorkspaceMode releasedMode = WorkspaceMode::Hidden;
+				WhiteboardState pressedWhiteboard;
+				Inkeys::UI::Bar::BarSurfaceButtonId clicked =
+					Inkeys::UI::Bar::BarSurfaceNoButton;
+				{
+
+					const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+					const bool acceptInput = !committed.locked&&committed.visible&&state.pressedMode==committed.mode
+						&&ResolveWorkspaceMode(SurfaceFor(index),livePpt,liveWhiteboard)==state.pressedMode
+						&&!WhiteboardWorkspaceSwitching(liveWhiteboard)
+						&&(state.pressedMode!=WorkspaceMode::PptCompact||state.pressedPptSession==livePpt.layout.session)
+						&&(state.pressedMode!=WorkspaceMode::WhiteboardExpanded
+							||(state.pressedWhiteboard.generation==liveWhiteboard.generation&&state.pressedWhiteboard.currentPage==liveWhiteboard.currentPage));
+					shouldInvokeClick = acceptInput;
+					releasedMode = committed.mode;
+					pressedWhiteboard = state.pressedWhiteboard;
+					if (acceptInput)
+					{
+						if (const auto logical = (event.logicalPointValid?std::optional<POINT>(event.logicalPoint):std::nullopt))
+							clicked = state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Up,static_cast<WidgetId>(event.hitButtonId)).clicked;
+						else state.scene.CancelPointer();
+					}
+					else state.scene.CancelPointer();
+					hadDragTracking = state.dragging || state.dragPending;
+					dragEnded = acceptInput && state.dragging;
+					state.dragging = false;
+					state.dragPending = false;
+					suppressedDirectCandidateTraces =
+						state.suppressedDirectCandidateTraces;
+					suppressedPresentationBusyTraces =
+						state.suppressedPresentationBusyTraces;
+					state.lastDragCandidateTrace = {};
+					state.suppressedDirectCandidateTraces = 0;
+					state.suppressedPresentationBusyTraces = 0;
+					state.pressStarted = {};
+					state.lastRepeat = {};
+					state.repeatTiming = {};
+				}
+				const auto dragRelease = hadDragTracking
+					? EndDragTracking(dragPairIndex, dragEnded)
+					: PptDragReleaseResult{};
+
+				if (dragEnded)
+				{
+					std::scoped_lock lock(snapshotMutex);
+					publishedRevision.fetch_add(1, std::memory_order_relaxed);
+				}
+				if (shouldInvokeClick && releasedMode == WorkspaceMode::PptCompact
+					&& clicked == PageWidget)
+					InvokePptPreview();
+				else if (shouldInvokeClick
+					&& releasedMode != WorkspaceMode::PptCompact
+					&& (clicked == PreviousWidget || clicked == NextWidget))
+					InvokeDirection(index,clicked==NextWidget,releasedMode);
+				else if(shouldInvokeClick && releasedMode==WorkspaceMode::WhiteboardExpanded && clicked>=MoreWidget)
+					InvokeWhiteboardMenu(clicked, pressedWhiteboard);
+				if (dragRelease.tracked)
+				{
+					TraceDrag("up surface=%s pair=%s revision=%llu dragged=%d "
+						"pending=%d persist=%d position=(%.1f,%.1f) "
+						"suppressed_direct=%llu suppressed_lock_busy=%llu",
+						SurfaceName(index),
+						dragPairIndex == 0 ? "bottom" : "middle",
+						static_cast<unsigned long long>(dragRelease.revision),
+						dragEnded ? 1 : 0, dragRelease.pending ? 1 : 0,
+						dragRelease.persist ? 1 : 0,
+						dragPairIndex == 0
+							? dragRelease.layout.bottomPairWidth
+							: dragRelease.layout.middlePairWidth,
+						dragPairIndex == 0
+							? dragRelease.layout.bottomPairHeight
+							: dragRelease.layout.middlePairHeight,
+						static_cast<unsigned long long>(
+							suppressedDirectCandidateTraces),
+						static_cast<unsigned long long>(
+							suppressedPresentationBusyTraces));
+					if (dragRelease.pending) RequestDragPair(dragPairIndex);
+				}
+				if (dragEnded) RequestAll();
+				if (dragRelease.tracked) FlushCommittedDrag(dragPairIndex);
+				return;
+			}
+			if (message == WM_MOUSEWHEEL)
+			{
+				bool invoke = false;
+				{
+
+					invoke = committed.visible && !committed.locked
+						&& ResolveWorkspaceInputPolicy(
+							committed.mode).wheel;
+				}
+				if (invoke) InvokeDirection(
+					index,GET_WHEEL_DELTA_WPARAM(wParam)<0,WorkspaceMode::PptCompact);
+				return;
+			}
+			if (message == WM_CANCELMODE || message == WM_CAPTURECHANGED)
+			{
+				state.pressedCaptureTicket=0;
+				bool rollbackDrag = false;
+				const std::size_t dragPairIndex = DragPairIndex(index);
+				{
+
+					rollbackDrag = state.dragging || state.dragPending;
+					if(state.borderCursorPointerInside){state.borderCursorPointerInside=false;Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();}
+					state.scene.CancelPointer();
+					state.dragging = false;
+					state.dragPending = false;
+					state.lastDragCandidateTrace = {};
+					state.suppressedDirectCandidateTraces = 0;
+					state.suppressedPresentationBusyTraces = 0;
+					state.pressStarted = {};
+					state.lastRepeat = {};
+					state.repeatTiming = {};
+
+
+
+
+				}
+				if (rollbackDrag)
+				{
+					const auto rollback = RollbackDragTracking(dragPairIndex);
+					if (rollback.tracked)
+					{
+						if (rollback.discardedPending)
+							(void)Inkeys::UI::RenderPipeline::PostControl([dragPairIndex,layout=rollback.layout]{ApplyDragPairBoundsDirect(dragPairIndex,layout);});
+						TraceDrag("cancel surface=%s pair=%s revision=%llu "
+							"discarded_pending=%d rollback_position=(%.1f,%.1f)",
+							SurfaceName(index),
+							dragPairIndex == 0 ? "bottom" : "middle",
+							static_cast<unsigned long long>(rollback.revision),
+							rollback.discardedPending ? 1 : 0,
+							dragPairIndex == 0 ? rollback.layout.bottomPairWidth
+								: rollback.layout.middlePairWidth,
+							dragPairIndex == 0 ? rollback.layout.bottomPairHeight
+								: rollback.layout.middlePairHeight);
+						RequestDragPair(dragPairIndex);
+						FlushCommittedDrag(dragPairIndex);
+					}
+				}
+				// ReleaseCapture 会同步重入 WM_CAPTURECHANGED，必须在呈现锁外执行。
+
+				return;
+			}
+		}
+
+		std::chrono::steady_clock::time_point PageControlInputTick(std::chrono::steady_clock::time_point now,void* context)
+		{
+			const auto* registration=static_cast<InputRegistrationContext*>(context);
+			if(!registration||!initialized.load(std::memory_order_acquire)
+				||registration->generation!=inputLifecycle.load(std::memory_order_acquire))return std::chrono::steady_clock::time_point::max();
+			const auto index=registration->index;
+			if(index>=surfaces.size())return std::chrono::steady_clock::time_point::max();
+			auto& state=surfaces[index];const auto input=InputSnapshot(index);
+			const auto [ppt,whiteboard]=Snapshot();
+			const bool enabled=input.visible&&!input.locked&&ResolvePptDirectionPressPolicy(input.mode,ppt.longPressEnabled).trackLongPress
+				&&!whiteboard.active&&!whiteboard.expandedLayoutTarget&&!WhiteboardWorkspaceSwitching(whiteboard)
+				&&state.pressedPptSession==ppt.layout.session;
+			if(!enabled){state.pressStarted={};state.lastRepeat={};return std::chrono::steady_clock::time_point::max();}
+			if(state.pressStarted.time_since_epoch().count()==0)return std::chrono::steady_clock::time_point::max();
+			const bool repeated=state.lastRepeat.time_since_epoch().count()!=0;
+			if(ShouldTriggerPptLongPressRepeat(true,now-state.pressStarted,repeated,repeated?now-state.lastRepeat:std::chrono::steady_clock::duration::zero(),state.repeatTiming)){
+				state.lastRepeat=ResolvePptLongPressRepeatAnchor(state.lastRepeat,now,repeated,state.repeatTiming);
+				const bool next=state.pressedNext;
+				if(!IsPptDirectionActionRepeatable(ResolvePptDirectionAction(next,ppt.currentPage,ppt.totalPage))){state.pressStarted={};state.lastRepeat={};}
+				InvokeDirection(index,next,WorkspaceMode::PptCompact);
+			}
+			if(state.pressStarted.time_since_epoch().count()==0)return std::chrono::steady_clock::time_point::max();
+			return state.lastRepeat.time_since_epoch().count()?state.lastRepeat+state.repeatTiming.repeatInterval:state.pressStarted+state.repeatTiming.initialDelay;
+		}
+		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context)
+		{
+			const auto hwnd=cancellation.window;
+			const auto* registration=static_cast<InputRegistrationContext*>(context);
+			if(!registration||registration->generation!=inputLifecycle.load(std::memory_order_acquire))return;
+			const auto ticket=cancellation.captureTicket?cancellation.captureTicket:
+				(registration->index<surfaces.size()?surfaces[registration->index].pressedCaptureTicket:0);
+			auto event=cancellation;event.message=WM_CANCELMODE;
+			PageControlInputEvent(event,context);
+			// 捕获只能由窗口 owner 释放；投递不等待该窗口或渲染线程。
+			if(hwnd&&ticket)PostMessageW(hwnd,ReleasePageCaptureMessage,static_cast<WPARAM>(ticket),0);
 		}
 
 		LRESULT CALLBACK PageControlWindowProc(HWND hwnd, UINT message,
 			WPARAM wParam, LPARAM lParam)
 		{
 			const std::size_t index = Index(hwnd);
-			auto& state = surfaces[index];
+			if(index>=surfaces.size())return message==WM_NCHITTEST?HTTRANSPARENT:DefWindowProcW(hwnd,message,wParam,lParam);
+			auto& touch = nativeTouches[index];
+			if(message==ReleasePageCaptureMessage){
+				// 旧代的释放仍需清理它拥有的捕获，但不得释放新 Down 已取得的捕获。
+				if(!ShouldReleasePageCapture(nativeCaptureTickets[index],wParam))return 0;
+				nativeCaptureTickets[index]=0;
+				touch={};
+				releasingPageCapture=true;if(GetCapture()==hwnd)ReleaseCapture();releasingPageCapture=false;return 0;
+			}
+			if(message==WM_CAPTURECHANGED){nativeCaptureTickets[index]=0;if(releasingPageCapture)return 0;}
 			if ((message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN
 				|| message == WM_LBUTTONUP || message == WM_MOUSEWHEEL)
 				&& !translatingTouch
@@ -2242,9 +2316,9 @@ namespace Inkeys::UI::PageControl
 						ScreenToClient(hwnd, &local);
 						PageControlTouchLockState current;
 						{
-							std::unique_lock renderLock(renderTransactionMutex);
-							current = { state.touchId, state.touchActive,
-								state.touchPrimary };
+
+							current = { touch.id, touch.active,
+								touch.primary };
 						}
 						const auto decision = ResolvePageControlTouchSample(
 							current, input.dwID,
@@ -2262,12 +2336,12 @@ namespace Inkeys::UI::PageControl
 							translatingTouch = false;
 						}
 						{
-							std::unique_lock renderLock(renderTransactionMutex);
-							state.touchId = decision.state.id;
-							state.touchActive = decision.state.active;
-							state.touchPrimary = decision.state.primary;
+
+							touch.id = decision.state.id;
+							touch.active = decision.state.active;
+							touch.primary = decision.state.primary;
 							if (decision.message != PageControlTouchMessage::None)
-								state.touchLastClient = decision.state.active
+								touch.lastClient = decision.state.active
 									? local : POINT{};
 						}
 						UINT translated = 0;
@@ -2288,321 +2362,40 @@ namespace Inkeys::UI::PageControl
 				CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(lParam));
 				return 0;
 			}
-			if ((message == WM_KEYDOWN && wParam == VK_ESCAPE) || message == WM_CANCELMODE)
-				CloseWhiteboardMenu();
-			if (message == WM_NCHITTEST)
-			{
-				std::unique_lock renderLock(renderTransactionMutex);
-				if (!state.targetVisible) return HTTRANSPARENT;
-				RECT window{};
-				GetWindowRect(hwnd, &window);
-				const POINT local{ GET_X_LPARAM(lParam) - window.left,
-					GET_Y_LPARAM(lParam) - window.top };
-				const auto logical = state.scene.PresentationToLogical(local);
-				if (!logical.has_value()) return HTTRANSPARENT;
-				const bool backgroundHit = state.scene.HitTestBackground(*logical);
-				const bool widgetHit = state.scene.HitTest(*logical)
-					!= Inkeys::UI::Bar::BarSurfaceNoWidget;
-				// PPT 外框空白也属于拖动面；Whiteboard 仍只接收真实按钮。
-				return ShouldAcceptPageControlClientHit(state.configuredMode,
-					backgroundHit, widgetHit, state.inputLocked,
-					index == 0 && Snapshot().second.menu != 0) ? HTCLIENT : HTTRANSPARENT;
+
+			if(message==WM_NCHITTEST){
+				RECT window{};GetWindowRect(hwnd,&window);
+				const auto [input,sample]=CaptureInputSnapshot(index,{GET_X_LPARAM(lParam)-window.left,GET_Y_LPARAM(lParam)-window.top});
+				if(!input.visible)return HTTRANSPARENT;
+				return ShouldAcceptPageControlClientHit(input.mode,sample.background,sample.hit!=0,input.locked,
+					index==0&&(input.whiteboard.menu!=0||sample.popupBackground))?HTCLIENT:HTTRANSPARENT;
 			}
-			if (message == WM_MOUSEMOVE)
-			{
-				TRACKMOUSEEVENT tracking{ sizeof(tracking), TME_LEAVE, hwnd, 0 };
-				TrackMouseEvent(&tracking);
-				POINT screen{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				ClientToScreen(hwnd, &screen);
-				std::unique_lock renderLock(renderTransactionMutex);
-				if (!state.targetVisible || state.inputLocked) return 0;
-				if (ShouldNotifyPageControlCursorEntered(
-					state.borderCursorPointerInside, translatingTouch,
-					Inkeys::Message::IsPointerGeneratedMouseMessage(
-						message, static_cast<ULONG_PTR>(GetMessageExtraInfo()))))
-				{
-					state.borderCursorPointerInside = true;
-					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerEntered();
+			if(message==WM_MOUSEMOVE||message==WM_MOUSELEAVE||message==WM_LBUTTONDOWN||message==WM_LBUTTONUP
+				||message==WM_MOUSEWHEEL||message==WM_CANCELMODE||message==WM_CAPTURECHANGED||message==WM_KEYDOWN){
+				Inkeys::UI::Bar::SurfaceInputEvent event;event.window=hwnd;event.message=(message==WM_KEYDOWN&&wParam==VK_ESCAPE)?WM_CANCELMODE:message;event.wParam=wParam;event.lParam=lParam;
+				event.extraInfo=static_cast<ULONG_PTR>(GetMessageExtraInfo());event.generation=inputLifecycle.load(std::memory_order_acquire);event.touch=translatingTouch;event.contactId=translatingTouch?touch.id:0;
+				POINT local{GET_X_LPARAM(lParam),GET_Y_LPARAM(lParam)};
+				if(message==WM_MOUSEWHEEL)ScreenToClient(hwnd,&local);
+				event.screenPoint=local;ClientToScreen(hwnd,&event.screenPoint);
+				const auto [input,sample]=CaptureInputSnapshot(index,local);event.logicalPoint=sample.logical;event.logicalPointValid=sample.valid;
+				// PPT 只可从已呈现主矩形的背景拖动；退场中的属性面板仍遮挡，但不是拖动区。
+				event.backgroundHit=sample.primaryBackground;event.hitButtonId=sample.hit;event.presentedRevision=sample.revision;event.semanticRevision=input.semanticRevision;
+				if(message==WM_MOUSEMOVE){TRACKMOUSEEVENT track{sizeof(track),TME_LEAVE,hwnd,0};TrackMouseEvent(&track);}
+				if(message==WM_LBUTTONDOWN&&sample.background){SetCapture(hwnd);
+					if(GetCapture()==hwnd)nativeCaptureTickets[index]=nextNativeCaptureTicket.fetch_add(1,std::memory_order_relaxed);}
+				event.captureOwned=GetCapture()==hwnd;
+				event.captureTicket=nativeCaptureTickets[index];
+				// owner 已完成或马上完成原生释放，worker 只撤销逻辑手势，不能再次释放后续接触。
+				event.nativeCaptureReleased=event.message==WM_CANCELMODE||event.message==WM_CAPTURECHANGED;
+				const bool accepted=Inkeys::UI::Bar::SubmitSurfaceInput(event);
+				if(!accepted&&ShouldReleasePageCapture(nativeCaptureTickets[index],event.captureTicket)&&GetCapture()==hwnd){
+					nativeCaptureTickets[index]=0;releasingPageCapture=true;ReleaseCapture();releasingPageCapture=false;
 				}
-				if (state.dragPending && HasExceededPptDragThreshold(
-					state.dragStartScreen, screen, GetSystemMetrics(SM_CXDRAG),
-					GetSystemMetrics(SM_CYDRAG)))
-				{
-					state.dragPending = false;
-					state.dragging = true;
-					TraceDrag("threshold surface=%s start=(%ld,%ld) current=(%ld,%ld) "
-						"result=dragging",
-						SurfaceName(index), state.dragStartScreen.x,
-						state.dragStartScreen.y, screen.x, screen.y);
-					// Page 的标准 press 到阈值为止；转拖动时必须撤销而不是触发点击。
-					state.scene.CancelPointer();
+				// 先排入 Up，再释放原生捕获；重入 CaptureChanged 只能排在 Up 之后。
+				if((message==WM_LBUTTONUP||event.message==WM_CANCELMODE)&&GetCapture()==hwnd){
+					nativeCaptureTickets[index]=0;
+					releasingPageCapture=true;ReleaseCapture();releasingPageCapture=false;
 				}
-				if (state.dragging)
-				{
-					UpdateDragLocked(index, screen);
-					renderLock.unlock();
-					FlushCommittedDrag(DragPairIndex(index));
-					return 0;
-				}
-				if (state.dragPending) return 0;
-				const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				const auto logical = state.scene.PresentationToLogical(local);
-				if (state.pressStarted.time_since_epoch().count() != 0)
-				{
-					const WidgetId expected = state.pressedNext
-						? NextWidget : PreviousWidget;
-					const bool sameDirectionHit = logical.has_value()
-						&& state.scene.HitTest(*logical) == expected;
-					if (!ShouldKeepPptLongPressTracking(true,
-						GetCapture() == hwnd, sameDirectionHit))
-					{
-						// 拖出箭头后本次按压彻底取消，移回也不能重新启动长按。
-						state.pressStarted = {};
-						state.lastRepeat = {};
-						state.repeatTiming = {};
-					}
-				}
-				if (logical) state.scene.PointerMove(*logical);
-				else state.scene.PointerLeave();
-				return 0;
-			}
-			if (message == WM_MOUSELEAVE)
-			{
-				bool notifyBorderCursor = false;
-				{
-					std::unique_lock renderLock(renderTransactionMutex);
-					notifyBorderCursor = state.borderCursorPointerInside;
-					state.borderCursorPointerInside = false;
-					if (!state.dragging) state.scene.PointerLeave();
-					state.pressStarted = {};
-					state.lastRepeat = {};
-					state.repeatTiming = {};
-				}
-				if (notifyBorderCursor)
-					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
-				return 0;
-			}
-			if (message == WM_LBUTTONDOWN)
-			{
-				bool promotePpt = false;
-				bool invokeDirectionOnDown = false;
-				bool invokeNext = false;
-				{
-					std::unique_lock renderLock(renderTransactionMutex);
-					if (!state.targetVisible || state.inputLocked) return 0;
-					const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-					const auto logical = state.scene.PresentationToLogical(local);
-					if (!logical.has_value()) return 0;
-					const auto hit = state.scene.HitTest(*logical);
-					const auto region = PointerRegionForWidget(hit);
-					const auto inputPolicy = ResolveWorkspaceInputPolicy(
-						state.configuredMode);
-					const bool dragCandidate = inputPolicy.drag
-						&& CanStartPptDrag(region);
-					const auto result = hit == Inkeys::UI::Bar::BarSurfaceNoWidget
-						? Inkeys::UI::Bar::BarSurfacePointerResult{}
-						: state.scene.PointerDown(*logical);
-					if (!result.consumed && !dragCandidate) return 0;
-					state.pressedWhiteboard = state.renderedWhiteboard;
-					SetCapture(hwnd);
-					promotePpt = state.configuredMode == WorkspaceMode::PptCompact;
-					auto [ppt, whiteboard] = Snapshot();
-					(void)whiteboard;
-					if (dragCandidate)
-					{
-						state.dragging = StartsPptDragImmediately(region);
-						state.dragPending = !state.dragging;
-						state.dragStartScreen = local;
-						ClientToScreen(hwnd, &state.dragStartScreen);
-						const auto [monitor, dpiScale] = LayoutMonitor();
-						ppt = ResolveRuntimePageControlLayout(
-							monitor, dpiScale, ppt);
-						state.dragStartLayout = ppt.layout;
-						state.feasibleLayout = ppt.layout;
-						state.lastDragCandidateTrace = {};
-						state.suppressedDirectCandidateTraces = 0;
-						state.suppressedPresentationBusyTraces = 0;
-						BeginDragTracking(DragPairIndex(index), ppt.layout);
-						TraceDrag("down surface=%s region=%s immediate=%d "
-							"start=(%ld,%ld) position=(%.1f,%.1f)",
-							SurfaceName(index), PointerRegionName(region),
-							state.dragging ? 1 : 0,
-							state.dragStartScreen.x, state.dragStartScreen.y,
-							DragPairIndex(index) == 0 ? ppt.layout.bottomPairWidth
-								: ppt.layout.middlePairWidth,
-							DragPairIndex(index) == 0 ? ppt.layout.bottomPairHeight
-								: ppt.layout.middlePairHeight);
-					}
-					else if (result.pressed == PreviousWidget
-						|| result.pressed == NextWidget)
-					{
-						invokeNext = result.pressed == NextWidget;
-						const bool repeatable = IsPptDirectionActionRepeatable(
-							ResolvePptDirectionAction(
-								invokeNext, ppt.currentPage, ppt.totalPage));
-						const auto pressPolicy = ResolvePptDirectionPressPolicy(
-							state.configuredMode, ppt.longPressEnabled, repeatable);
-						invokeDirectionOnDown = pressPolicy.invokeOnPointerDown;
-						if (ShouldKeepPptLongPressTracking(
-							pressPolicy.trackLongPress, GetCapture() == hwnd, true))
-						{
-							state.pressedNext = invokeNext;
-							state.pressStarted = std::chrono::steady_clock::now();
-							state.lastRepeat = {};
-							state.repeatTiming = QueryPptKeyboardRepeatTiming();
-							RequestSurface(index);
-						}
-					}
-				}
-				// Z 序和业务回调都可能同步进入 Window Service，必须位于 Scene 锁外。
-				if (promotePpt)
-					(void)Inkeys::Window::GetService().PromotePptWindow(Roles[index]);
-				if (invokeDirectionOnDown) InvokeDirection(index, invokeNext);
-				return 0;
-			}
-			if (message == WM_LBUTTONUP)
-			{
-				bool dragEnded = false;
-				bool hadDragTracking = false;
-				std::size_t dragPairIndex = DragPairIndex(index);
-				std::uint64_t suppressedDirectCandidateTraces = 0;
-				std::uint64_t suppressedPresentationBusyTraces = 0;
-				bool shouldInvokeClick = false;
-				WorkspaceMode releasedMode = WorkspaceMode::Hidden;
-				WhiteboardState pressedWhiteboard;
-				Inkeys::UI::Bar::BarSurfaceWidgetId clicked =
-					Inkeys::UI::Bar::BarSurfaceNoWidget;
-				{
-					std::unique_lock renderLock(renderTransactionMutex);
-					const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-					const bool acceptInput = !state.inputLocked && state.targetVisible;
-					shouldInvokeClick = acceptInput;
-					releasedMode = state.configuredMode;
-					pressedWhiteboard = state.pressedWhiteboard;
-					if (acceptInput)
-					{
-						if (const auto logical = state.scene.PresentationToLogical(local))
-							clicked = state.scene.PointerUp(*logical, false).clicked;
-						else state.scene.CancelPointer();
-					}
-					else state.scene.CancelPointer();
-					hadDragTracking = state.dragging || state.dragPending;
-					dragEnded = acceptInput && state.dragging;
-					state.dragging = false;
-					state.dragPending = false;
-					suppressedDirectCandidateTraces =
-						state.suppressedDirectCandidateTraces;
-					suppressedPresentationBusyTraces =
-						state.suppressedPresentationBusyTraces;
-					state.lastDragCandidateTrace = {};
-					state.suppressedDirectCandidateTraces = 0;
-					state.suppressedPresentationBusyTraces = 0;
-					state.pressStarted = {};
-					state.lastRepeat = {};
-					state.repeatTiming = {};
-				}
-				const auto dragRelease = hadDragTracking
-					? EndDragTracking(dragPairIndex, dragEnded)
-					: PptDragReleaseResult{};
-				if (GetCapture() == hwnd) ReleaseCapture();
-				if (dragEnded)
-				{
-					std::scoped_lock lock(snapshotMutex);
-					publishedRevision.fetch_add(1, std::memory_order_relaxed);
-				}
-				if (shouldInvokeClick && releasedMode == WorkspaceMode::PptCompact
-					&& clicked == PageWidget)
-					InvokePptPreview();
-				else if (shouldInvokeClick
-					&& releasedMode != WorkspaceMode::PptCompact
-					&& (clicked == PreviousWidget || clicked == NextWidget))
-					InvokeDirection(index, clicked == NextWidget);
-				else if(shouldInvokeClick && releasedMode==WorkspaceMode::WhiteboardExpanded && clicked>=MoreWidget)
-					InvokeWhiteboardMenu(clicked, pressedWhiteboard);
-				if (dragRelease.tracked)
-				{
-					TraceDrag("up surface=%s pair=%s revision=%llu dragged=%d "
-						"pending=%d persist=%d position=(%.1f,%.1f) "
-						"suppressed_direct=%llu suppressed_lock_busy=%llu",
-						SurfaceName(index),
-						dragPairIndex == 0 ? "bottom" : "middle",
-						static_cast<unsigned long long>(dragRelease.revision),
-						dragEnded ? 1 : 0, dragRelease.pending ? 1 : 0,
-						dragRelease.persist ? 1 : 0,
-						dragPairIndex == 0
-							? dragRelease.layout.bottomPairWidth
-							: dragRelease.layout.middlePairWidth,
-						dragPairIndex == 0
-							? dragRelease.layout.bottomPairHeight
-							: dragRelease.layout.middlePairHeight,
-						static_cast<unsigned long long>(
-							suppressedDirectCandidateTraces),
-						static_cast<unsigned long long>(
-							suppressedPresentationBusyTraces));
-					if (dragRelease.pending) RequestDragPair(dragPairIndex);
-				}
-				if (dragEnded) RequestAll();
-				if (dragRelease.tracked) FlushCommittedDrag(dragPairIndex);
-				return 0;
-			}
-			if (message == WM_MOUSEWHEEL)
-			{
-				bool invoke = false;
-				{
-					std::unique_lock renderLock(renderTransactionMutex);
-					invoke = state.targetVisible && !state.inputLocked
-						&& ResolveWorkspaceInputPolicy(
-							state.configuredMode).wheel;
-				}
-				if (invoke) InvokeDirection(
-					index, GET_WHEEL_DELTA_WPARAM(wParam) < 0);
-				return 0;
-			}
-			if (message == WM_CANCELMODE || message == WM_CAPTURECHANGED)
-			{
-				bool rollbackDrag = false;
-				const std::size_t dragPairIndex = DragPairIndex(index);
-				{
-					std::unique_lock renderLock(renderTransactionMutex);
-					rollbackDrag = state.dragging || state.dragPending;
-					state.scene.CancelPointer();
-					state.dragging = false;
-					state.dragPending = false;
-					state.lastDragCandidateTrace = {};
-					state.suppressedDirectCandidateTraces = 0;
-					state.suppressedPresentationBusyTraces = 0;
-					state.pressStarted = {};
-					state.lastRepeat = {};
-					state.repeatTiming = {};
-					state.touchActive = false;
-					state.touchId = 0;
-					state.touchPrimary = false;
-					state.touchLastClient = {};
-				}
-				if (rollbackDrag)
-				{
-					const auto rollback = RollbackDragTracking(dragPairIndex);
-					if (rollback.tracked)
-					{
-						if (rollback.discardedPending)
-							ApplyDragPairBoundsDirect(
-								dragPairIndex, rollback.layout);
-						TraceDrag("cancel surface=%s pair=%s revision=%llu "
-							"discarded_pending=%d rollback_position=(%.1f,%.1f)",
-							SurfaceName(index),
-							dragPairIndex == 0 ? "bottom" : "middle",
-							static_cast<unsigned long long>(rollback.revision),
-							rollback.discardedPending ? 1 : 0,
-							dragPairIndex == 0 ? rollback.layout.bottomPairWidth
-								: rollback.layout.middlePairWidth,
-							dragPairIndex == 0 ? rollback.layout.bottomPairHeight
-								: rollback.layout.middlePairHeight);
-						RequestDragPair(dragPairIndex);
-						FlushCommittedDrag(dragPairIndex);
-					}
-				}
-				// ReleaseCapture 会同步重入 WM_CAPTURECHANGED，必须在呈现锁外执行。
-				if (message == WM_CANCELMODE && GetCapture() == hwnd) ReleaseCapture();
 				return 0;
 			}
 			if (message == WM_ERASEBKGND) return 1;
@@ -2610,324 +2403,431 @@ namespace Inkeys::UI::PageControl
 		}
 	}
 
+	std::function<FrameResult(const FrameContext&)> CreatePageControlOffscreenRenderCallback(
+		unsigned index,std::function<OffscreenSnapshot()> provider,RECT logicalBounds,float scale,
+		std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink,HWND inputIdentity)
+	{
+		struct Fixture
+		{
+			SurfaceState surface;
+			OffscreenSnapshot last;
+			bool configured=false;
+			HWND identity=nullptr;
+		};
+		const auto destroy=[](Fixture* fixture){
+			if(fixture->identity){
+				Inkeys::UI::Bar::UnregisterInteractionSurface(fixture->identity);
+				if(!Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks()){
+					// 即便调用方在共享 worker 释放最后引用，也要等当前 callback 返回后再销毁。
+					if(!QueueUserWorkItem(+[](void* context)->DWORD{
+						if(Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())delete static_cast<Fixture*>(context);
+						return 0;},fixture,WT_EXECUTEDEFAULT))OutputDebugStringA("[PageControlUI3] deferred fixture cleanup could not be queued\n");
+					return;
+				}
+			}
+			delete fixture;
+		};
+		auto fixture=std::shared_ptr<Fixture>(new Fixture,destroy);fixture->identity=inputIdentity;
+		if(inputIdentity){
+			Inkeys::UI::Bar::RegisterInteractionSurface(inputIdentity,1,+[](const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context){
+				auto& scene=static_cast<Fixture*>(context)->surface.scene;
+				using Kind=Inkeys::UI::Bar::BarSurfacePointerEventKind;
+				Kind kind;switch(event.message){
+				case WM_MOUSEMOVE:kind=Kind::Move;break;case WM_LBUTTONDOWN:kind=Kind::Down;break;
+				case WM_LBUTTONUP:kind=Kind::Up;break;case WM_MOUSELEAVE:kind=Kind::Leave;break;
+				case WM_CANCELMODE:case WM_CAPTURECHANGED:kind=Kind::Cancel;break;default:return;
+				}
+				// 无 HWND 提交端约定 screenPoint 是呈现位图内坐标，仍读取最近成功的真实命中帧。
+				const auto sample=scene.SamplePointer(event.screenPoint);(void)scene.ApplyPointer(kind,sample.hit);
+			},nullptr,+[](const Inkeys::UI::Bar::SurfaceInputEvent&,void* context){(void)static_cast<Fixture*>(context)->surface.scene.CancelPointer();},fixture.get(),false);
+		}
+		return [fixture,index,provider=std::move(provider),logicalBounds,scale,sink=std::move(sink)](const FrameContext& frame) mutable
+		{
+			if(index>=4||!provider||!sink)return FrameResult::Idle;
+			const auto snapshot=provider();
+			const auto mode=ResolveWorkspaceMode(SurfaceFor(index),snapshot.ppt,snapshot.whiteboard);
+			if(mode==WorkspaceMode::Hidden){fixture->surface.scene.SuspendForIdle(frame.frameTime);return FrameResult::Idle;}
+			auto& state=fixture->surface;
+			if(!fixture->configured||!ArePptStatesEquivalent(fixture->last.ppt,snapshot.ppt)
+				||!AreWhiteboardStatesEquivalent(fixture->last.whiteboard,snapshot.whiteboard)){
+				const bool modeChanged=fixture->configured&&state.configuredMode!=mode;
+				state.scene.ConfigurePagination(BuildPageContent(index,mode,snapshot.ppt,snapshot.whiteboard),modeChanged?LayoutTransitionDurationSeconds():0);
+				state.configuredMode=mode;state.bounds.scale=scale;
+				state.scene.SetBounds(logicalBounds,scale);state.scene.SetOpacity(1,0);state.scene.SetSharedLightingSubscribed(true);
+				if(!state.scene.IsInvalidated())state.forceFullPresentation=true;
+				fixture->last=snapshot;fixture->configured=true;
+			}
+			(void)state.scene.Advance(frame.frameTime);
+			const RECT presentation=state.scene.PresentationBounds();
+			const SIZE size{presentation.right-presentation.left,presentation.bottom-presentation.top};
+			const SIZE capacity{(std::max)(state.backingCapacity.cx,size.cx),(std::max)(state.backingCapacity.cy,size.cy)};
+			const bool full=state.forceFullPresentation||state.committedDeviceGeneration!=frame.epoch.generation
+				||state.committedPresentationSize.cx!=size.cx||state.committedPresentationSize.cy!=size.cy
+				||state.backingCapacity.cx!=capacity.cx||state.backingCapacity.cy!=capacity.cy;
+			state.backingCapacity=capacity;
+			if(!full&&!state.scene.IsInvalidated()&&!state.scene.AnimationActive()){
+				state.scene.SuspendForIdle(frame.frameTime);return FrameResult::Idle;
+			}
+			const auto result=PresentScene(index,state,nullptr,frame,presentation,capacity,full,false,state.scene.AnimationActive(),&sink);
+			if(result.status!=PresentStatus::Success){state.forceFullPresentation=true;
+				return result.status==PresentStatus::DeviceLost?FrameResult::DeviceLost:FrameResult::Retry;}
+			state.scene.CommitPresented(!snapshot.whiteboard.switching);(void)state.scene.ConsumeDamage();
+			state.committedPresentationSize=size;state.committedBackingCapacity=capacity;
+			state.committedDeviceGeneration=frame.epoch.generation;state.committedPresentationReady=true;state.forceFullPresentation=false;
+			if(!result.continueRendering)state.scene.SuspendForIdle(frame.frameTime);
+			return result.continueRendering?FrameResult::Continue:FrameResult::Idle;
+		};
+	}
+
 	int RunOffscreenTests()
 	{
-		int failures = 0;
-		auto Check = [&](bool valid, const char* message)
-		{
-			if (!valid) { ++failures; std::fprintf(stderr, "[PageControlScene] FAIL %s\n", message); }
-		};
-		const auto epoch = Inkeys::UI::RenderPipeline::GetDeviceEpoch();
-		PptState ppt;
-		ppt.presentationVisible = true;
-		ppt.currentPage = 7;
-		ppt.totalPage = 28;
-		ppt.layout.showMiddlePair = true;
-		WhiteboardState whiteboard;
-		whiteboard.currentPage = 2;
-		whiteboard.totalPage = 4;
-		whiteboard.previousEnabled = whiteboard.nextEnabled = true;
-		whiteboard.previousInteractive = whiteboard.nextInteractive = true;
-		whiteboard.expandedLayoutTarget = whiteboard.active = true;
-		const auto now = std::chrono::steady_clock::now() + 1s;
-		for (const int menu : {0,1,2})
-		for (const auto mode : { WorkspaceMode::PptCompact, WorkspaceMode::WhiteboardExpanded })
-			for (std::size_t index = 0; index < (mode == WorkspaceMode::PptCompact ? 4U : 2U); ++index)
-				for (const float scale : { 0.25F, 1.0F, 5.0F, 12.0F })
-				{
-					if(menu && (index!=0 || mode!=WorkspaceMode::WhiteboardExpanded)) continue;
-					whiteboard.menu=menu;
-					Scene scene;
-					auto background = BuildBackground(index, mode, menu);
-					background.contentEnvelope=false;
-					const auto widgets = BuildWidgets(index, mode, ppt, whiteboard);
-					Check(scene.Configure(background, widgets), "product widgets configure");
-					const LONG width = static_cast<LONG>(std::lround((menu ? std::ceil((std::max)(305.0,WhiteboardPopupEnvelope(menu).right))+5.0 : background.bounds.right) * scale));
-					const LONG height = static_cast<LONG>(std::lround(background.bounds.bottom * scale));
-					Check(scene.SetBounds({ 200, 100, 200 + width, 100 + height }, scale), "effective bounds accepted");
-					scene.SetOpacity(1.0, 0.0);
-					const LONG outset = scene.PresentationOutsetPixels();
-					const auto bounds = scene.PresentationBounds();
-					Check(bounds.right - bounds.left == width + 2 * outset
-						&& bounds.bottom - bounds.top == height + 2 * outset,
-						"presentation adds equal shadow extents on all sides");
-					const UINT targetWidth = static_cast<UINT>(width + 2 * outset + 23);
-					const UINT targetHeight = static_cast<UINT>(height + 2 * outset + 19);
-					const HRESULT setup = scene.EnsureDeviceResources(epoch, targetWidth, targetHeight);
-					Check(SUCCEEDED(setup), "actual Scene backing allocates");
-					if (FAILED(setup)) continue;
-					auto* context = scene.DeviceContext();
-					for(int frame=0;frame<=40;++frame) (void)scene.Advance(now-std::chrono::milliseconds(2000-frame*50));
-					Check(!scene.AnimationActive(),"settled popup shares finite attribute timeline without repeated target changes");
-					context->BeginDraw();
-					context->SetTransform(D2D1::Matrix3x2F::Identity());
-					context->Clear(D2D1::ColorF(0, 0, 0, 0));
-					(void)scene.Render(context, now);
-					Check(SUCCEEDED(context->EndDraw()), "actual Scene renders at final scale");
-					const POINT right{ static_cast<LONG>(background.bounds.right*scale) - (std::max)(1L, static_cast<LONG>(5 * scale)), static_cast<LONG>((background.bounds.top+background.bounds.bottom)*scale/2) };
-					const POINT bottom{ static_cast<LONG>(background.bounds.right*scale/2), height - (std::max)(1L, static_cast<LONG>(5 * scale)) };
-					Check(scene.HitTestBackground(right) && scene.HitTestBackground(bottom),
-						"right and bottom content use the same scale as layout");
-					Check(!scene.PresentationToLogical({ 0, 0 }).has_value(), "transparent margin remains click through");
-					for (const auto& widget : widgets)
-					{
-						if (!widget.visible || !widget.enabled || !widget.interactive || widget.panel || widget.kind == Inkeys::UI::Bar::BarSurfaceWidgetKind::DragHandle) continue;
-						const auto& rectangle = widget.bounds;
-						const POINT center{ static_cast<LONG>((rectangle.left + rectangle.right) * scale / 2),
-							static_cast<LONG>((rectangle.top + rectangle.bottom) * scale / 2) };
-						Check(scene.HitTest(center) == widget.id, "actual button hit matches rendered position");
-					}
-					ComPtr<ID2D1Image> target;
-					context->GetTarget(&target);
-					ComPtr<ID2D1Bitmap1> bitmap;
-					Check(target && SUCCEEDED(target.As(&bitmap)), "render target supports bitmap readback");
-					if (!bitmap) continue;
-					ComPtr<ID2D1Bitmap1> readable;
-					const auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ
-						| D2D1_BITMAP_OPTIONS_CANNOT_DRAW, bitmap->GetPixelFormat());
-					const HRESULT copied = context->CreateBitmap(bitmap->GetPixelSize(), nullptr, 0, &properties, &readable);
-					if (FAILED(copied) || FAILED(readable->CopyFromBitmap(nullptr, bitmap.Get(), nullptr)))
-					{ Check(false, "rendered pixels read back"); continue; }
-					D2D1_MAPPED_RECT mapped{};
-					if (FAILED(readable->Map(D2D1_MAP_OPTIONS_READ, &mapped)))
-					{ Check(false, "readback maps"); continue; }
-					auto Alpha = [&](LONG x, LONG y) { return mapped.bits[y * mapped.pitch + x * 4 + 3]; };
-					Check(Alpha(right.x + outset, right.y + outset) > 16
-						&& Alpha(bottom.x + outset, bottom.y + outset) > 16,
-						"right and bottom body pixels contain visible content instead of one-sided gaps");
-					Check(Alpha(targetWidth - 1, targetHeight - 1) == 0,
-						"extra backing capacity remains outside presentation content");
-					if (mode == WorkspaceMode::WhiteboardExpanded && scale >= 1.0F) {
-						for(const auto slot : {1,3,4}) {
-							if(slot==4 && index!=0) continue;
-							const auto& rect=widgets[slot].bounds; int bright=0;
-							for(LONG y=static_cast<LONG>((rect.top+45)*scale);y<static_cast<LONG>((rect.top+65)*scale);++y)
-								for(LONG x=static_cast<LONG>((rect.left+4)*scale);x<static_cast<LONG>((rect.right-4)*scale);++x) {
-									const auto* p=mapped.bits+(y+outset)*mapped.pitch+(x+outset)*4;
-									if(p[0]>180 && p[1]>180 && p[2]>180) ++bright;
-								}
-							Check(bright>0,"standard 2x2 direction and More label pixels are visible");
-						}
-					}
-					if (menu == 2)
-					{
-						constexpr std::uint32_t colors[] = { 0x123B32, 0xFFFFFF, 0xF5F1E6, 0xE5E7EB, 0x25282D, 0x172A46 };
-						for (std::size_t color = 0; color < 6; ++color)
-						{
-							const auto& rect = widgets[8 + color].bounds;
-							const LONG x = static_cast<LONG>((rect.left + 10) * scale) + outset;
-							const LONG y = static_cast<LONG>((rect.top + 10) * scale) + outset;
-							const auto* pixel = mapped.bits + y * mapped.pitch + x * 4;
-							Check(pixel[0] == (colors[color] & 255)
-								&& pixel[1] == ((colors[color] >> 8) & 255)
-								&& pixel[2] == ((colors[color] >> 16) & 255),
-								"swatch center pixels reproduce the six product background colors");
-						}
-						Check(widgets[5].bounds.Width()==140 && widgets[5].bounds.Height()==32.5,
-							"menu operation rows use exact standard 140x32.5 DIP");
-						Check((widgets[18].bounds.left+widgets[18].bounds.right)/2==(widgets[4].bounds.left+widgets[4].bounds.right)/2,
-							"menu center inherits More button center");
-						Check(widgets[19].bounds.left-widgets[18].bounds.right==5 && background.bounds.top-widgets[18].bounds.bottom==5,
-							"popup gaps use the shared 5 DIP metric");
-						Check(widgets[20].header && widgets[21].header && widgets[22].divider,
-							"theme grouping uses shared UI text and divider shape");
-						Check(widgets[8].selectionIndicator && widgets[8].iconResource==L"colorSelect",
-							"theme selection uses existing pen-color SVG resource");
-						if (scale >= 1.0F)
-						{
-							// 直接检查真实 Scene 的预览像素，不能仅断言 painter 回调存在。
-							auto PreviewRed = [&](std::size_t style, double x, double y)
-							{
-								const auto& rect = widgets[14 + style].bounds;
-								const LONG px = static_cast<LONG>((rect.left + x) * scale) + outset;
-								const LONG py = static_cast<LONG>((rect.top + y) * scale) + outset;
-								return mapped.bits[py * mapped.pitch + px * 4 + 2];
-							};
-							Check(PreviewRed(1, 11, 25) > PreviewRed(0, 11, 25),
-								"dot preview contains a visible dot over the blank background");
-							Check(PreviewRed(2, 11, 34) > PreviewRed(1, 11, 34),
-								"grid preview contains a continuous line outside the dot footprint");
-						}
-					}
-					if(menu==2 && scale==1.0F) {
-						// 原 SVG 的绿圆可见直径约 22 DIP，对应 30 DIP 盒；旧 15 DIP 图标不能通过。
-						const auto& selected=widgets[8].bounds; int minX=70,maxX=-1,minY=70,maxY=-1;
-						for(int y=0;y<70;++y) for(int x=0;x<70;++x) {
-							const auto* pixel=mapped.bits+(static_cast<LONG>(selected.top)+y+outset)*mapped.pitch+(static_cast<LONG>(selected.left)+x+outset)*4;
-							if(pixel[0]>=100 && pixel[0]<=155 && pixel[1]>180 && pixel[2]<30) {
-								minX=(std::min)(minX,x); maxX=(std::max)(maxX,x); minY=(std::min)(minY,y); maxY=(std::max)(maxY,y);
-							}
-						}
-						Check(maxX-minX+1>=21 && maxX-minX+1<=24 && maxY-minY+1>=21 && maxY-minY+1<=24,
-							"selected SVG retains original green fill at twice pen-color selector size");
-						for(const int slot:{14,15,16}) {
-							const auto& rect=widgets[slot].bounds; int bright=0;
-							for(int y=45;y<65;++y) for(int x=4;x<66;++x) {
-								const auto* pixel=mapped.bits+(static_cast<LONG>(rect.top)+y+outset)*mapped.pitch+(static_cast<LONG>(rect.left)+x+outset)*4;
-								if(pixel[0]>180 && pixel[1]>180 && pixel[2]>180) ++bright;
-							}
-							Check(bright>0,"blank dots and grid labels render inside standard 2x2 primary label slot");
-						}
-						auto PatternPixel=[&](int slot,int x,int y) {
-							const auto& rect=widgets[slot].bounds;
-							return mapped.bits[(static_cast<LONG>(rect.top)+y+outset)*mapped.pitch+(static_cast<LONG>(rect.left)+x+outset)*4+2];
-						};
-						Check(std::abs(int(PatternPixel(15,10,24))-int(PatternPixel(15,59,25)))<=2
-							&& std::abs(int(PatternPixel(16,10,9))-int(PatternPixel(16,59,40)))<=2,
-							"dot and grid pixels are centrally symmetric about preview content center");
-					}
-					if(menu==2 && scale==1.0F) {
-						CreateDirectoryW(L"TestResults",nullptr);
-						FILE* output=nullptr; _wfopen_s(&output,L"TestResults/whiteboard-menu-revision.bmp",L"wb");
-						if(output) {
-							BITMAPFILEHEADER file{}; file.bfType=0x4d42; file.bfOffBits=sizeof(file)+sizeof(BITMAPINFOHEADER);
-							file.bfSize=file.bfOffBits+targetWidth*targetHeight*4;
-							BITMAPINFOHEADER info{}; info.biSize=sizeof(info); info.biWidth=targetWidth;
-							info.biHeight=-static_cast<LONG>(targetHeight); info.biPlanes=1; info.biBitCount=32;
-							fwrite(&file,sizeof(file),1,output); fwrite(&info,sizeof(info),1,output);
-							for(UINT y=0;y<targetHeight;++y) fwrite(mapped.bits+y*mapped.pitch,targetWidth*4,1,output);
-							fclose(output);
-						}
-					}
-					readable->Unmap();
-					if(menu==2) {
-						Check(widgets[4].iconResource==L"barMenu" && widgets[4].visible,
-							"left fourth standard button survives expanded theme layout");
-						Check(widgets[8].drawContent && widgets[16].drawContent,
-							"real swatches and grid previews use shared painter");
-						whiteboard.menu=0;
-						Check(scene.TransitionLayout(BuildBackground(index,mode,0,false,background.bounds.top),
-							BuildWidgets(index,mode,ppt,whiteboard,background.bounds.top),0.2),"menu close uses existing Scene transition");
-						// 实际提交关闭中间帧，覆盖 Back 越零和半途反向，而非只连续设置 target。
-						for (int step=0;step<5;++step) {
-							context->BeginDraw(); context->Clear(D2D1::ColorF(0,0,0,0));
-							(void)scene.Render(context,now+std::chrono::milliseconds(30*(step+1)));
-							Check(SUCCEEDED(context->EndDraw()),"closing Back frame renders valid geometry");
-						}
-						whiteboard.menu=1;
-						Check(scene.TransitionLayout(BuildBackground(index,mode,1,false,background.bounds.top),
-							BuildWidgets(index,mode,ppt,whiteboard,background.bounds.top),0.2),"menu reversal reuses widget instances");
-						for (int step=0;step<8;++step) {
-							context->BeginDraw(); context->Clear(D2D1::ColorF(0,0,0,0));
-							(void)scene.Render(context,now+std::chrono::milliseconds(150+30*(step+1)));
-							Check(SUCCEEDED(context->EndDraw()),"reversed Back frame renders valid geometry");
-						}
-						scene.ReleaseDeviceResources();
-						Check(SUCCEEDED(scene.EnsureDeviceResources(epoch,targetWidth,targetHeight)),
-							"menu resources rebuild after device release");
-					}
-				}
-		// 真实 PPT 稳定实例进入白板，逐帧对照共享属性 motion，不复制独立 easing。
-		{
-			using namespace Inkeys::UI::Bar;
-			const double savedSpeed=BarUiAnimationSpeedRate; const bool savedEnabled=BarUiAnimationEnabled;
-			for(const double speed:{0.5,1.0,2.0}) for(const float scale:{0.75F,1.5F}) {
-				BarUiAnimationSpeedRate=speed; BarUiAnimationEnabled=false;
-				WhiteboardState state=whiteboard; state.menu=2;
-				const double offset=WhiteboardMenuHeight(state);
-				const auto openBackground=BuildBackground(0,WorkspaceMode::WhiteboardExpanded,2,false,offset);
-				const auto openWidgets=BuildWidgets(0,WorkspaceMode::WhiteboardExpanded,ppt,state,offset);
-				const LONG width=static_cast<LONG>(std::ceil((WhiteboardPopupEnvelope(2).right+5)*scale));
-				const LONG height=static_cast<LONG>(std::ceil((offset+80)*scale));
-				Scene scene;
-				Check(scene.Configure(BuildBackground(0,WorkspaceMode::PptCompact),BuildWidgets(0,WorkspaceMode::PptCompact,ppt,state)),"cold PPT configures stable popup slots");
-				state.menu=0;
-				Check(scene.TransitionLayout(BuildBackground(0,WorkspaceMode::WhiteboardExpanded,0,false,offset),
-					BuildWidgets(0,WorkspaceMode::WhiteboardExpanded,ppt,state,offset),0),"cold PPT transitions to whiteboard without replacing slots");
-				Check(scene.SetBounds({-1800,-320,-1800+width,-320+height},scale),"negative-screen origin accepted");
-				const auto start=now+10s; (void)scene.Advance(start-16ms); (void)scene.Advance(start);
-				Check(!scene.AnimationActive(),"cold PPT content transitions settle before idle popup start");
-				const LONG outset=scene.PresentationOutsetPixels();
-				const HRESULT setup=scene.EnsureDeviceResources(epoch,width+2*outset+4,height+2*outset+4);
-				Check(SUCCEEDED(setup),"animated production scene resources allocate"); if(FAILED(setup)) continue;
-				const auto bodyPresentation=scene.PresentationBounds();
-				BarUiAnimationEnabled=true; state.menu=2;
-				Check(scene.TransitionLayout(openBackground,openWidgets,0.4),"joint popup open reuses PPT instances");
-				EraserSurfaceMotion parent,child; parent.Retarget(true,0.4); child.Retarget(true,0.4,&parent.Timeline());
-				FrameAnimationClock referenceClock; (void)referenceClock.Tick(start); referenceClock.SuspendForIdle(start);
-				auto RectFor=[&](WidgetId id) { for(const auto& item:scene.Layout().widgets) if(item.id==id) return item.localPixels; return RECT{}; };
-				auto Expected=[&](const WidgetSpec& item,EraserSurfacePose pose) {
-					const auto r=pose.Apply({item.bounds.left,item.bounds.top,item.bounds.right,item.bounds.bottom});
-					return RECT{static_cast<LONG>(std::floor(r.left*scale)),static_cast<LONG>(std::floor(r.top*scale)),
-						static_cast<LONG>(std::ceil(r.right*scale)),static_cast<LONG>(std::ceil(r.bottom*scale))};
-				};
-				for(int frame=1;frame<=60;++frame) {
-					const auto time=start+std::chrono::milliseconds(frame*16);
-					const double popupDt=referenceClock.Tick(time);
-					(void)parent.Advance({popupDt,speed,true,false}); (void)child.Advance({popupDt,speed,true,false}); (void)scene.Advance(time);
-					const auto& p=openWidgets[18].bounds; const auto& a=openWidgets[4].bounds;
-					const auto pp=ResolveEraserSurfacePose({p.left,p.top,p.right,p.bottom},{a.left,a.top,a.right,a.bottom},parent.Geometry(),60);
-					const auto& c=openWidgets[19].bounds; const auto& ca=openWidgets[7].bounds;
-					const auto cp=ComposeEraserPose(pp,ResolveEraserSurfacePose({c.left,c.top,c.right,c.bottom},
-						{ca.left,ca.top,ca.right,ca.bottom},child.Geometry(),60));
-					const auto ep=Expected(openWidgets[18],pp),ec=Expected(openWidgets[19],cp),ap=RectFor(19),ac=RectFor(20);
-					if(frame==1 && (!EqualRect(&ep,&ap) || !EqualRect(&ec,&ac)))
-						std::fprintf(stderr,"[PageControlScene] pose speed=%.1f dpi=%.2f dt=%.3f expected=(%ld,%ld,%ld,%ld)/(%ld,%ld,%ld,%ld) actual=(%ld,%ld,%ld,%ld)/(%ld,%ld,%ld,%ld)\n",
-							speed,scale,popupDt,ep.left,ep.top,ep.right,ep.bottom,ec.left,ec.top,ec.right,ec.bottom,
-							ap.left,ap.top,ap.right,ap.bottom,ac.left,ac.top,ac.right,ac.bottom);
-					Check(EqualRect(&ep,&ap) && EqualRect(&ec,&ac),"intermediate parent and child exactly match shared attribute motion at each speed");
-					auto* dc=scene.DeviceContext(); dc->BeginDraw(); dc->Clear(D2D1::ColorF(0,0,0,0)); (void)scene.Render(dc,time);
-					Check(SUCCEEDED(dc->EndDraw()),"shared popup intermediate frame draws successfully");
-					const auto afterRender=RectFor(20); Check(EqualRect(&ac,&afterRender),"Advance and Render at one frameTime do not double advance");
-					const auto presented=scene.PresentationBounds(),logical=scene.LogicalBounds();
-					Check(presented.left<=logical.left+ac.left && presented.top<=logical.top+ac.top
-						&& presented.right>=logical.left+ac.right && presented.bottom>=logical.top+ac.bottom,
-						"actual presented crop contains composed child at every sampled pose");
-					const auto color=RectFor(9); const POINT center{(color.left+color.right)/2,(color.top+color.bottom)/2};
-					const POINT client{logical.left+center.x-presented.left,logical.top+center.y-presented.top};
-					const auto mapped=scene.PresentationToLogical(client);
-					Check(mapped && mapped->x==center.x && mapped->y==center.y,"cropped client maps to logical pixels across DPI and negative origin");
-					if(frame==10) {
-						state.backgroundRgb=0xFFFFFF;
-						Check(scene.UpdateContent(BuildWidgets(0,WorkspaceMode::WhiteboardExpanded,ppt,state,offset)),"theme selection uses content-only update");
-						(void)scene.Advance(time); const auto afterContent=RectFor(20);
-						Check(EqualRect(&ac,&afterContent),"content update preserves pose and same-frame clock");
-					}
-				}
-				// 真实 PPT 初始化后的面板填充与 More 分割线必须有像素，不能只验证其 spec。
-				{
-					auto* dc=scene.DeviceContext(); ComPtr<ID2D1Image> image; dc->GetTarget(&image);
-					ComPtr<ID2D1Bitmap1> bitmap,readable; if(image) (void)image.As(&bitmap);
-					if(bitmap) {
-						const auto properties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,bitmap->GetPixelFormat());
-						Check(SUCCEEDED(dc->CreateBitmap(bitmap->GetPixelSize(),nullptr,0,&properties,&readable)),"cold PPT chrome readback allocates");
-						if(readable && SUCCEEDED(readable->CopyFromBitmap(nullptr,bitmap.Get(),nullptr))) {
-							D2D1_MAPPED_RECT pixels{};
-							if(SUCCEEDED(readable->Map(D2D1_MAP_OPTIONS_READ,&pixels))) {
-								const auto presented=scene.PresentationBounds(),logical=scene.LogicalBounds();
-								auto Pixel=[&](double x,double y) {
-									const LONG px=static_cast<LONG>(std::floor(x*scale))+logical.left-presented.left;
-									const LONG py=static_cast<LONG>(std::floor(y*scale))+logical.top-presented.top;
-									return pixels.bits+py*pixels.pitch+px*4;
-								};
-								// frame 10 已切换纯白背景，标签须沿用同一文字槽并转为可读的深色。
-								for(const int slot:{14,15,16}) {
-									const auto& rect=openWidgets[slot].bounds; int dark=0;
-									for(int y=45;y<65;++y) for(int x=4;x<66;++x) {
-										const auto* pixel=Pixel(rect.left+x,rect.top+y);
-										if(pixel[0]<100 && pixel[1]<100 && pixel[2]<100 && pixel[3]>220) ++dark;
-									}
-									Check(dark>0,"light-background style labels retain readable dark text inside standard 2x2 slot");
-								}
-								Check(Pixel(193,offset-80)[3]>120,"cold PPT to whiteboard applies opaque menu panel chrome");
-								Check(Pixel(360,offset-115.5)[2]>35,"cold PPT to whiteboard applies shared More divider fill");
-								readable->Unmap();
-							} else Check(false,"cold PPT chrome maps");
-						} else Check(false,"cold PPT chrome copies");
-					} else Check(false,"cold PPT chrome target supports readback");
-				}
-				Check(!scene.PopupAnimationActive(),"popup finishes independent of other button feedback");
-				// 动画禁用即刻回到主体，不等待按钮 hover 的五秒退场。
-				BarUiAnimationEnabled=false; state.menu=0;
-				Check(scene.TransitionLayout(BuildBackground(0,WorkspaceMode::WhiteboardExpanded,0,false,offset),
-					BuildWidgets(0,WorkspaceMode::WhiteboardExpanded,ppt,state,offset),0.4),"disabled close accepted");
-				(void)scene.Advance(start+2s); Check(!scene.PopupAnimationActive(),"disabled animation closes parent and child immediately");
-				const auto closed=scene.PresentationBounds(); Check(EqualRect(&closed,&bodyPresentation),"HWND envelope returns to body after popup close");
+		int failures=0;
+		const auto Check=[&](bool valid,const char* why){if(!valid){++failures;std::fprintf(stderr,"[PageControlUI3] FAIL %s\n",why);}};
+		const auto epoch=Inkeys::UI::RenderPipeline::GetDeviceEpoch();
+		PptState ppt;ppt.presentationVisible=true;ppt.currentPage=7;ppt.totalPage=28;ppt.layout.showMiddlePair=true;
+		WhiteboardState wb;wb.expandedLayoutTarget=wb.active=true;wb.currentPage=2;wb.totalPage=4;
+		wb.previousEnabled=wb.previousInteractive=wb.nextEnabled=wb.nextInteractive=true;
+		const auto origin=std::chrono::steady_clock::now()+1s;
+		Check(ShouldReleasePageCapture(7,7)&&!ShouldReleasePageCapture(8,7)&&!ShouldReleasePageCapture(0,7),
+			"retired release clears only the native capture it originally owned");
+		for(const auto mode:{WorkspaceMode::PptCompact,WorkspaceMode::WhiteboardExpanded})
+		for(std::size_t index=0;index<(mode==WorkspaceMode::PptCompact?4U:2U);++index)
+		for(const int menu:{0,1,2})
+		for(const float scale:{0.25F,1.0F,1.5F,2.0F}){
+			if(menu&&(index!=0||mode!=WorkspaceMode::WhiteboardExpanded))continue;
+			wb.menu=menu;Scene surface;
+			const auto content=BuildPageContent(index,mode,ppt,wb);
+			Check(surface.ConfigurePagination(content),"real button list and fixed properties configure");
+			const double width=mode==WorkspaceMode::WhiteboardExpanded?(index==0?305.0:230.0):(index>=2?42.5:165.0);
+			const double height=mode==WorkspaceMode::WhiteboardExpanded?80.0:(index>=2?165.0:42.5);
+			Check(surface.SetBounds({200,100,200+static_cast<LONG>(std::ceil(width*scale)),100+static_cast<LONG>(std::ceil(height*scale))},scale),"base geometry accepts effective scale");
+			for(int frame=0;frame<=45;++frame)(void)surface.Advance(origin+frame*20ms);
+			Check(!surface.AnimationActive(),"shared button and panel animations settle");
+			const auto bounds=surface.PresentationBounds();
+			const UINT w=bounds.right-bounds.left,h=bounds.bottom-bounds.top;
+			const HRESULT setup=surface.EnsureDeviceResources(epoch,w+23,h+19);
+			Check(SUCCEEDED(setup),"independent target owns device resources without a main Bar owner");if(FAILED(setup))continue;
+			auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();
+			renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
+			(void)surface.Render(dc,origin+900ms);renderer.FinishFrameDrawCommands(dc);
+			Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"real shared draw transaction succeeds");
+			surface.CommitPresented();(void)surface.ConsumeDamage();
+			Check(!surface.HitTestBackground({0,0}),"rounded transparent corner passes through");
+			Check(surface.HitTestBackground({static_cast<LONG>(width*scale/2),static_cast<LONG>(height*scale/2)}),"rendered root and hit geometry agree");
+			for(const auto& button:surface.Layout().buttons){if(!button.visible||!button.interactive||button.id==1)continue;
+				const POINT point{(button.localPixels.left+button.localPixels.right)/2,(button.localPixels.top+button.localPixels.bottom)/2};
+				Check(surface.HitTest(point)==button.id,"shared hit snapshot matches each rendered button");
 			}
-			BarUiAnimationSpeedRate=savedSpeed; BarUiAnimationEnabled=savedEnabled;
+			ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap;
+			Check(image&&SUCCEEDED(image.As(&bitmap)),"target supports pixel readback");if(!bitmap)continue;
+			ComPtr<ID2D1Bitmap1> cpu;const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+			if(FAILED(dc->CreateBitmap(bitmap->GetPixelSize(),nullptr,0,&props,&cpu))||FAILED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr))){Check(false,"readback copy succeeds");continue;}
+			D2D1_MAPPED_RECT mapped{};if(FAILED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped))){Check(false,"pixel map succeeds");continue;}
+			const auto Pixel=[&](double x,double y){const LONG px=static_cast<LONG>(std::lround(x*scale))+200-bounds.left;
+				const LONG py=static_cast<LONG>(std::lround(y*scale))+100-bounds.top;
+				return mapped.bits+py*mapped.pitch+px*4;};
+			const bool provePageMorph=mode==WorkspaceMode::PptCompact&&index==0&&scale==1;
+			const auto PageSlotPixels=[&]{std::vector<BYTE> bytes;
+				for(int y=5;y<38;++y)for(int x=53;x<123;++x){const auto* pixel=Pixel(x,y);bytes.insert(bytes.end(),pixel,pixel+4);}return bytes;};
+			const auto originalPagePixels=provePageMorph?PageSlotPixels():std::vector<BYTE>{};
+			if(scale>=1){
+				const auto page=surface.Layout().buttons[2].localPixels;unsigned bright=0;
+				for(LONG y=page.top+2;y<page.bottom-2;++y)for(LONG x=page.left+2;x<page.right-2;++x){
+					const auto* pixel=mapped.bits+(y+100-bounds.top)*mapped.pitch+(x+200-bounds.left)*4;
+					if(pixel[0]>120&&pixel[1]>120&&pixel[2]>120)++bright;}
+				Check(bright>10,"current and total page text are actually drawn");
+				if(menu==2){const auto* white=Pixel(460,-231);Check(white[0]>230&&white[1]>230&&white[2]>230,"theme white square is filled");
+					const auto* a=Pixel(436,-55);const auto* b=Pixel(484,-55);Check(std::abs(int(a[2])-int(b[2]))<3,"dot texture is symmetric about content center");
+						const auto* green=Pixel(377,-231);Check(green[1]>160&&green[2]<60,"selection uses the original green SVG at double swatch size");
+						const auto* fill=Pixel(356,-260);Check(std::abs(int(fill[2])-18)<3&&std::abs(int(fill[1])-59)<3,"selected swatch has no extra outer highlight");
+				}
+			}
+			Check(mapped.bits[3]==0,"presentation margin remains transparent");cpu->Unmap();
+			if(provePageMorph){
+				auto matching=wb;matching.menu=0;matching.currentPage=ppt.currentPage;matching.totalPage=ppt.totalPage;
+				surface.ConfigurePagination(BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,matching),LayoutTransitionDurationSeconds());
+				(void)surface.Advance(origin+900ms);renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
+				(void)surface.Render(dc,origin+900ms);renderer.FinishFrameDrawCommands(dc);
+				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"page morph reversal frame draws through common renderer");
+				if(SUCCEEDED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr))&&SUCCEEDED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped))){
+					Check(PageSlotPixels()==originalPagePixels,"same-frame PPT to whiteboard retarget preserves both page text slots exactly");cpu->Unmap();
+				}else Check(false,"page morph readback succeeds");
+			}
+			const auto before=surface.PresentedGeneration();
+			if(mode==WorkspaceMode::WhiteboardExpanded&&index==0){
+				auto changed=content;changed.menu=menu?0:2;surface.ConfigurePagination(changed);
+				(void)surface.Advance(origin+920ms);
+				Check(surface.PresentedGeneration()==before,"uncommitted candidate never replaces input snapshot");
+				const auto midway=surface.PresentationBounds();changed.menu=menu;surface.ConfigurePagination(changed);
+				(void)surface.Advance(origin+920ms);const auto reversed=surface.PresentationBounds();
+				Check(EqualRect(&midway,&reversed),"same-frame reversal continues the current UI3 pose");
+			}
+			surface.ReleaseDeviceResources();Check(SUCCEEDED(surface.EnsureDeviceResources(epoch,w+23,h+19)),"device resources rebuild with stable button instances");
 		}
-		std::fprintf(stderr, "[PageControlScene] failures=%d\n", failures);
-		return failures;
+		// 无 HWND 的故障注入走实际 GetDC/ReleaseDC/EndDraw 事务，不以数学动画冒充呈现。
+		OffscreenSnapshot snapshot{ppt,wb};snapshot.whiteboard.menu=2;
+		unsigned submitted=0;bool reject=true;
+		auto callback=CreatePageControlOffscreenRenderCallback(0,[&]{return snapshot;},{0,0,305,80},1,
+			[&](const UPDATELAYEREDWINDOWINFO& info){++submitted;Check(info.hdcSrc!=nullptr&&info.psize->cx>0,"headless sink receives real GetDC");return reject?FALSE:TRUE;});
+		Inkeys::UI::RenderPipeline::FrameContext frame;frame.epoch=epoch;frame.frameTime=origin;
+		Check(callback(frame)==FrameResult::Retry,"failed final sink keeps a pending transaction");
+		reject=false;frame.frameTime+=20ms;Check(callback(frame)!=FrameResult::Retry&&submitted>=2,"successful retry uses production transaction");
+		for(int i=0;i<45;++i){frame.frameTime+=20ms;(void)callback(frame);}
+		const auto beforeIdentityOnly=submitted;++snapshot.ppt.targetRevision;reject=true;frame.frameTime+=20ms;
+		Check(callback(frame)==FrameResult::Retry&&submitted==beforeIdentityOnly+1,
+			"same-text business revision still waits for an actual successful presentation");
+		reject=false;frame.frameTime+=20ms;Check(callback(frame)!=FrameResult::Retry,"identity-only presentation retries safely");
+		{
+			SurfaceState state;auto content=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,wb);content.menu=0;
+			state.scene.ConfigurePagination(content);state.scene.SetBounds({0,0,305,80},1);state.scene.SetOpacity(1,0);
+			auto time=origin+2s;for(int i=0;i<=45;++i)(void)state.scene.Advance(time+i*20ms);time+=900ms;
+			bool fail=false;RECT actualDirty{};SIZE actualViewport{};auto testEpoch=epoch;
+			std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink=[&](const auto& info){
+				actualDirty=info.prcDirty?*info.prcDirty:RECT{0,0,info.psize->cx,info.psize->cy};actualViewport=*info.psize;return fail?FALSE:TRUE;};
+			const auto present=[&](bool full){
+				FrameContext context;context.epoch=testEpoch;context.frameTime=time;
+				(void)state.scene.Advance(time);const auto bounds=state.scene.PresentationBounds();
+				const SIZE size{bounds.right-bounds.left,bounds.bottom-bounds.top};
+				state.backingCapacity={(std::max)(state.backingCapacity.cx,size.cx),(std::max)(state.backingCapacity.cy,size.cy)};
+				const auto result=PresentScene(0,state,nullptr,context,bounds,state.backingCapacity,full,false,state.scene.AnimationActive(),&sink);
+				if(result.status==PresentStatus::Success&&result.pixelsSubmitted){state.scene.CommitPresented();(void)state.scene.ConsumeDamage();}
+				return result;
+			};
+			struct TargetPixels {UINT width=0,height=0;std::vector<BYTE> bytes;};
+			const auto readPixels=[&]{
+				TargetPixels result;auto* dc=state.scene.DeviceContext();ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
+				if(!image||FAILED(image.As(&bitmap)))return result;
+				const auto size=bitmap->GetPixelSize();const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+				if(FAILED(dc->CreateBitmap(size,nullptr,0,&props,&cpu))||FAILED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr)))return result;
+				D2D1_MAPPED_RECT mapped{};if(FAILED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped)))return result;
+				result.width=size.width;result.height=size.height;result.bytes.resize(static_cast<std::size_t>(size.width)*size.height*4);
+				for(UINT y=0;y<size.height;++y)std::copy_n(mapped.bits+y*mapped.pitch,size.width*4,result.bytes.data()+static_cast<std::size_t>(y)*size.width*4);
+				cpu->Unmap();return result;
+			};
+			Check(present(true).status==PresentStatus::Success,"initial real transaction commits");
+			const auto committed=state.scene.PresentedGeneration();Check(state.scene.HitTest({265,40})==5,"committed More hit is available");
+			content.menu=2;state.scene.ConfigurePagination(content);time+=20ms;(void)state.scene.Advance(time);
+			const auto pose=state.scene.PresentationBounds();fail=true;
+			Check(present(true).status==PresentStatus::Retry,"actual final-submit failure is reported");
+			const auto afterFailure=state.scene.PresentationBounds();
+			Check(state.scene.PresentedGeneration()==committed&&state.scene.HitTest({265,40})==5,"failed present preserves the committed generation and hit");
+			Check(!Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(state.scene.PendingDamage()),"failed present retains dirty work");
+			Check(EqualRect(&pose,&afterFailure),"Render after Advance does not advance the same batch twice");
+			hiddenTestBlockedResourceSurface.store(0,std::memory_order_release);time+=20ms;
+			Check(present(true).resourcesFailed&&state.scene.PresentedGeneration()==committed,"resource failure also preserves committed input");
+			hiddenTestBlockedResourceSurface.store(-1,std::memory_order_release);fail=false;time+=20ms;
+			Check(present(true).status==PresentStatus::Success&&state.scene.PresentedGeneration()>committed,"successful retry publishes the new input frame");
+			for(int i=1;i<=45;++i)(void)state.scene.Advance(time+i*20ms);time+=900ms;(void)present(true);
+			const auto beforePage=readPixels();
+			content.currentPage=L"3";state.scene.ConfigurePagination(content);state.scene.SetOpacity(1,0);
+			const auto pageDamage=state.scene.PendingDamage();const auto openBounds=state.scene.PresentationBounds();
+			Check(pageDamage.right-pageDamage.left<(openBounds.right-openBounds.left)/3
+				&&pageDamage.bottom-pageDamage.top<(openBounds.bottom-openBounds.top)/2,
+				"page-only update with both panels open keeps damage bounded to the page button");
+			time+=20ms;Check(present(false).status==PresentStatus::Success,"open panel page update uses a real partial transaction");
+			const auto afterPage=readPixels();std::size_t changedInside=0,changedOutside=0;
+			if(beforePage.width==afterPage.width&&beforePage.height==afterPage.height&&beforePage.bytes.size()==afterPage.bytes.size()){
+				for(UINT y=0;y<beforePage.height;++y)for(UINT x=0;x<beforePage.width;++x){
+					const auto offset=(static_cast<std::size_t>(y)*beforePage.width+x)*4;
+					if(!std::equal(beforePage.bytes.begin()+offset,beforePage.bytes.begin()+offset+4,afterPage.bytes.begin()+offset)){
+						if(x>=static_cast<UINT>(actualDirty.left)&&x<static_cast<UINT>(actualDirty.right)&&y>=static_cast<UINT>(actualDirty.top)&&y<static_cast<UINT>(actualDirty.bottom))++changedInside;else ++changedOutside;
+					}
+				}
+			}
+			Check(changedInside>0&&changedOutside==0,"real partial page text pixels change while the open menu, theme and backing remainder stay intact");
+			state.scene.ConfigurePagination(content);state.scene.SetOpacity(1,0);
+			Check(!state.scene.IsInvalidated(),"identical content and settled opacity do not request another frame");
+			const auto gapAlpha=[&](const TargetPixels& pixels){
+				const auto bounds=state.scene.PresentationBounds();const LONG x=77-bounds.left,y=40-bounds.top;
+				return x>=0&&y>=0&&static_cast<UINT>(x)<pixels.width&&static_cast<UINT>(y)<pixels.height
+					?static_cast<unsigned>(pixels.bytes[(static_cast<std::size_t>(y)*pixels.width+x)*4+3]):0U;
+			};
+			const unsigned fullAlpha=gapAlpha(afterPage);
+			state.scene.SetOpacity(0.5,0.3);time+=20ms;(void)present(false);
+			state.scene.SetOpacity(0.5,0);Check(present(false).status==PresentStatus::Success,"zero-duration same-target opacity snap submits the current frame");
+			const unsigned snappedAlpha=gapAlpha(readPixels());
+			Check(fullAlpha>100&&std::abs(static_cast<int>(snappedAlpha*2)-static_cast<int>(fullAlpha))<=2,
+				"explicit zero-duration opacity snap finishes an unsettled same-target animation");
+			state.scene.SetOpacity(1,0);(void)present(false);
+			const SIZE largeBacking=state.backingCapacity;
+			content.menu=0;state.scene.ConfigurePagination(content);
+			for(int i=1;i<=45;++i)(void)state.scene.Advance(time+i*20ms);time+=900ms;(void)present(true);
+			Check(state.backingCapacity.cx==largeBacking.cx&&state.backingCapacity.cy==largeBacking.cy,"closing keeps only backing capacity");
+			state.scene.PointerMove({40,40});time+=20ms;
+			Check(present(false).status==PresentStatus::Success,"closed toolbar hover uses real partial transaction");
+			Check(actualDirty.right-actualDirty.left<actualViewport.cx/2&&actualViewport.cy<largeBacking.cy,
+				"closed hover clips work before drawing instead of clearing the high-water bitmap");
+			const auto pagePixels=[&] {
+				auto* dc=state.scene.DeviceContext();ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
+				if(!image||FAILED(image.As(&bitmap)))return 0U;
+				const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+				if(FAILED(dc->CreateBitmap(bitmap->GetPixelSize(),nullptr,0,&props,&cpu))||FAILED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr)))return 0U;
+				D2D1_MAPPED_RECT mapped{};if(FAILED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped)))return 0U;
+				const auto bounds=state.scene.PresentationBounds();unsigned count=0;
+				for(int y=7;y<73;++y)for(int x=82;x<148;++x){const auto* p=mapped.bits+(y-bounds.top)*mapped.pitch+(x-bounds.left)*4;
+					if(p[0]>120&&p[1]>120&&p[2]>120)++count;}
+				cpu->Unmap();return count;
+			};
+			for(const bool epochChange:{false,true}){
+				state.scene.PointerMove({190,40});time+=20ms;(void)state.scene.Advance(time);
+				Check(!Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(state.scene.PendingDamage()),"rebuild starts with only partial hover damage");
+				if(epochChange)++testEpoch.generation;else state.backingCapacity.cx+=23;
+				Check(present(true).status==PresentStatus::Success&&pagePixels()>10,
+					"new target or epoch redraws the entire viewport despite partial preexisting damage");
+				state.scene.PointerLeave();time+=20ms;(void)present(false);
+			}
+			for(int i=1;i<=280;++i)(void)state.scene.Advance(time+i*20ms);time+=5600ms;
+			{
+				// 真实调度回调提供诊断 TLS；两次热态呈现继续使用同一 epoch、几何和高水位位图。
+				Inkeys::UI::RenderPipeline::Scheduler scheduler;std::atomic_bool completed=false;
+				bool transactionOk=false,reused=false,diagnosticsAvailable=false;
+				const bool capture=scheduler.ConfigureRawCapture(16);
+				const bool started=capture&&scheduler.Start([&](auto now){FrameContext context;context.epoch=testEpoch;context.frameTime=now;return context;});
+				const bool registered=started&&scheduler.Register(Client::PptBottomLeft,[&](const FrameContext&){
+					BarUiFrameLightingSnapshot light;light.edgeLightingEnabled=light.cursorLightVisible=true;
+					light.cursorLight=D2D1::Point2F(40,40);light.cursorRadius=120;light.cursorIntensity=1;
+					state.scene.Renderer().SetFrameLightingSnapshot(light);
+					auto* diagnostics=Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();diagnosticsAvailable=diagnostics!=nullptr;
+					transactionOk=true;
+					for(int warm=0;warm<3;++warm){state.scene.Invalidate();transactionOk&=present(false).status==PresentStatus::Success;}
+					auto* context=state.scene.DeviceContext();auto* gdi=state.scene.GdiInteropRenderTarget();
+					const auto before=diagnostics?diagnostics->light:Inkeys::UI::RenderPipeline::LightingDiagnostics{};
+					for(int sample=0;sample<2;++sample){state.scene.Invalidate();transactionOk&=present(false).status==PresentStatus::Success;}
+					reused=diagnostics&&state.scene.DeviceContext()==context&&state.scene.GdiInteropRenderTarget()==gdi
+						&&diagnostics->light.roundedParentCreate==before.roundedParentCreate
+						&&diagnostics->light.geometryParentCreate==before.geometryParentCreate
+						&&diagnostics->light.roundedParentHit>before.roundedParentHit;
+					completed.store(true,std::memory_order_release);return FrameResult::Idle;
+				});
+				if(registered){const auto deadline=std::chrono::steady_clock::now()+5s;
+					while(!completed.load(std::memory_order_acquire)&&std::chrono::steady_clock::now()<deadline)std::this_thread::sleep_for(1ms);}
+				scheduler.Stop();
+				Check(registered&&completed.load(std::memory_order_acquire)&&transactionOk&&diagnosticsAvailable,
+					"hot reuse probe executes real scheduled GetDC transactions with production diagnostics");
+				Check(reused,"closed high-water target reuses context and rounded masks across repeated hot presentations");
+			}
+			state.scene.SuspendForIdle(time);const auto sleeping=state.scene.PresentationBounds();
+			content.menu=2;state.scene.ConfigurePagination(content);time+=10s;(void)state.scene.Advance(time);
+			const auto resumed=state.scene.PresentationBounds();Check(EqualRect(&sleeping,&resumed),"first frame after long idle resumes at zero UI3 dt");
+			time+=20ms;(void)state.scene.Advance(time);const auto moving=state.scene.PresentationBounds();
+			Check(!EqualRect(&resumed,&moving),"shared clock advances on the following batch");
+			for(int i=1;i<=45;++i)(void)state.scene.Advance(time+i*20ms);time+=900ms;(void)present(true);
+			auto compact=BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{});state.scene.ConfigurePagination(compact,LayoutTransitionDurationSeconds());
+			time+=20ms;(void)state.scene.Advance(time);const auto middle=state.scene.Layout();
+			Check(middle.buttons[4].visible&&!middle.buttons[4].enabled,"outgoing More remains drawable while the new PPT layout cannot activate it");
+			Check(present(true).status==PresentStatus::Success&&state.scene.HitTest({265,40})!=5,"intermediate transition commits the matching non-actionable hit frame");
+			unsigned retired=0;const auto retiredBounds=state.scene.PresentationBounds();
+			for(const auto& button:middle.buttons)if(button.id>=6&&button.visible){
+				++retired;Check(!button.enabled,"outgoing popup buttons remain visible but cannot activate under PPT");
+				const POINT center{(button.localPixels.left+button.localPixels.right)/2,(button.localPixels.top+button.localPixels.bottom)/2};
+				const auto sample=state.scene.SamplePointer({center.x-retiredBounds.left,center.y-retiredBounds.top});
+				Check(sample.background&&sample.popupBackground&&!sample.primaryBackground&&!sample.hit,
+					"committed retiring popup occlusion is distinct from the draggable root background");
+				Check(ShouldAcceptPageControlClientHit(WorkspaceMode::WhiteboardExpanded,sample.background,false,false,sample.popupBackground),
+					"visible retiring popup cannot pass a click through to whiteboard ink");
+			}
+			Check(retired>0,"real shared panel closing frame is exercised before retirement completes");
+			const auto rootSample=state.scene.SamplePointer({77-retiredBounds.left,25-retiredBounds.top});
+			Check(rootSample.background&&rootSample.primaryBackground&&!rootSample.popupBackground,
+				"same committed frame identifies the original pagination root independently");
+			const auto inFlight=state.scene.Layout();const auto inFlightBounds=state.scene.PresentationBounds();
+			compact.currentPage=L"8";state.scene.ConfigurePagination(compact);
+			compact.backgroundRgb=0xFFFFFF;compact.pattern=2;state.scene.ConfigurePagination(compact);
+			const auto retained=state.scene.Layout();const auto retainedBounds=state.scene.PresentationBounds();
+			bool sameGeometry=EqualRect(&inFlightBounds,&retainedBounds)!=FALSE;
+			for(std::size_t i=0;i<inFlight.buttons.size();++i)sameGeometry&=EqualRect(&inFlight.buttons[i].localPixels,&retained.buttons[i].localPixels)!=FALSE;
+			Check(sameGeometry,"page and unrelated theme updates preserve all current geometry during an in-flight workspace morph");
+			Check(present(false).status==PresentStatus::Success,"content update during a morph uses the current shared render pose");
+			// Cubic起步阶段小于一个像素，逐批推进后验证连续运动，避免把取整平台误判为动画停止。
+			for(int i=0;i<5;++i){time+=20ms;(void)state.scene.Advance(time);}const auto continued=state.scene.Layout();
+			Check(state.scene.AnimationActive()&&!EqualRect(&retained.buttons[1].localPixels,&continued.buttons[1].localPixels),"the original layout morph continues across following shared frames without snapping");
+		}
+		{
+			Scene surface;surface.ConfigurePagination(BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{}));surface.SetBounds({200,100,365,143},1);
+			for(int i=0;i<=45;++i)(void)surface.Advance(origin+20s+i*20ms);surface.CommitPresented();
+			unsigned wakes=0;surface.SetHooks({{},[&]{++wakes;}});surface.SetSharedLightingSubscribed(true);
+			Inkeys::UI::Bar::BarSurfaceSharedLighting light;light.edgeLightingEnabled=light.cursorVisible=true;light.cursorIntensity=1;light.cursorRadiusPixels=30;
+			light.cursorScreenX=-10000;light.cursorScreenY=-10000;Scene::PublishSharedLighting(light);wakes=0;
+			light.cursorScreenX=-9990;Scene::PublishSharedLighting(light);Check(wakes==0,"far cursor changes do not wake unrelated targets");
+			light.cursorScreenX=205;light.cursorScreenY=120;Scene::PublishSharedLighting(light);Check(wakes>0,"cursor entering a committed border wakes it");wakes=0;
+			light.cursorScreenX=-9000;light.cursorScreenY=-9000;Scene::PublishSharedLighting(light);Check(wakes>0,"cursor leaving wakes the previous lit border");wakes=0;
+			light.cursorScreenX=-8990;Scene::PublishSharedLighting(light);Check(wakes==0,"subsequent far cursor movement remains idle");
+			surface.Reset();wakes=0;light.cursorScreenX=205;light.cursorScreenY=120;Scene::PublishSharedLighting(light);
+			Check(wakes==0,"reset removes the old target lighting subscription and hooks");
+		}
+		{
+			// 直接驱动与共享 worker 注册的同一个 handler/tick；不创建 HWND 或调用真实 PPT。
+			const bool wasInitialized=initialized.load(std::memory_order_acquire);
+			const auto oldPpt=publishedPpt;const auto oldWhiteboard=publishedWhiteboard;
+			const auto oldInput=InputSnapshot(0);auto oldSurface=std::move(surfaces[0]);surfaces[0]=SurfaceState{};
+			const auto oldPptCallbacks=pptCallbacks;const auto oldWhiteboardCallbacks=whiteboardCallbacks;
+			const auto oldRevision=publishedRevision.load(std::memory_order_acquire);
+			std::array<PptDragCommitTracker,2> oldDragTrackers;{std::scoped_lock lock(dragCommitMutex);oldDragTrackers=dragCommitTrackers;}
+			unsigned pptNext=0,whiteboardNext=0;
+			pptCallbacks.nextPage=[&]{++pptNext;};whiteboardCallbacks.nextPage=[&]{++whiteboardNext;};
+			publishedPpt=ppt;publishedPpt.layout.session=101;publishedPpt.longPressEnabled=true;publishedWhiteboard={};
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::PptCompact,{}, {},true,false,publishedPpt.layout.session);}
+			initialized.store(true,std::memory_order_release);
+			Inkeys::UI::Bar::SurfaceInputEvent event;event.message=WM_LBUTTONDOWN;event.hitButtonId=4;
+			event.logicalPointValid=event.captureOwned=true;event.logicalPoint={140,20};
+			event.semanticRevision=InputSnapshot(0).semanticRevision;
+			InputRegistrationContext registration{0,inputLifecycle.load(std::memory_order_acquire)};
+			void* const context=&registration;
+			event.hitButtonId=0;event.logicalPoint={400,-60};event.backgroundHit=false;
+			PageControlInputEvent(event,context);
+			Check(!surfaces[0].dragPending&&!surfaces[0].dragging,"retiring popup background cannot begin PPT pair drag on the real worker handler");
+			event.logicalPoint={50,20};event.backgroundHit=true;PageControlInputEvent(event,context);
+			Check(surfaces[0].dragPending,"committed PPT root background still begins ordinary pair drag");
+			event.message=WM_LBUTTONUP;PageControlInputEvent(event,context);
+			event.message=WM_LBUTTONDOWN;event.hitButtonId=3;event.backgroundHit=false;PageControlInputEvent(event,context);
+			Check(surfaces[0].dragPending,"explicit page button retains its PPT drag behavior");
+			event.message=WM_CANCELMODE;PageControlInputEvent(event,context);
+			event.message=WM_LBUTTONDOWN;event.hitButtonId=4;event.logicalPoint={140,20};
+			PageControlInputEvent(event,context);Check(pptNext==1,"PPT pointer Down invokes its own workspace action");
+			publishedPpt.currentPage=8;++publishedPpt.targetRevision;
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::PptCompact,{}, {},true,false,publishedPpt.layout.session);}
+			Check(InputSnapshot(0).semanticRevision==event.semanticRevision,"PPT page revisions preserve the session input identity");
+			const auto repeatTime=surfaces[0].pressStarted+surfaces[0].repeatTiming.initialDelay;
+			(void)PageControlInputTick(repeatTime,context);Check(pptNext==2,"PPT repeat survives normal page revisions");
+			publishedWhiteboard=wb;publishedWhiteboard.menu=1;
+			(void)PageControlInputTick(repeatTime+100ms,context);
+			Check(pptNext==2&&whiteboardNext==0&&publishedWhiteboard.menu==1,"old PPT repeat neither advances whiteboard nor dismisses its menu");
+			publishedWhiteboard.generation=7;publishedWhiteboard.currentPage=2;
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::WhiteboardExpanded,publishedWhiteboard,{},true,false,publishedPpt.layout.session);}
+			PageControlInputEvent(event,context);
+			Check(pptNext==2&&whiteboardNext==0,"queued PPT Down cannot be reinterpreted after a whiteboard frame commits");
+			event.semanticRevision=InputSnapshot(0).semanticRevision;
+			event.message=WM_LBUTTONDOWN;PageControlInputEvent(event,context);
+			publishedWhiteboard.generation=8;publishedWhiteboard.currentPage=3;
+			event.message=WM_LBUTTONUP;PageControlInputEvent(event,context);
+			Check(whiteboardNext==0,"whiteboard Up cannot act on a different loaded page generation");
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::WhiteboardExpanded,publishedWhiteboard,{},true,false,publishedPpt.layout.session);}
+			event.semanticRevision=InputSnapshot(0).semanticRevision;
+			event.message=WM_LBUTTONDOWN;PageControlInputEvent(event,context);event.message=WM_LBUTTONUP;PageControlInputEvent(event,context);
+			Check(whiteboardNext==1,"valid whiteboard click uses the same button state machine");
+			++publishedWhiteboard.generation;++publishedWhiteboard.currentPage;
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::WhiteboardExpanded,publishedWhiteboard,{},true,false,publishedPpt.layout.session);}
+			event.message=WM_LBUTTONDOWN;PageControlInputEvent(event,context);event.message=WM_LBUTTONUP;PageControlInputEvent(event,context);
+			Check(whiteboardNext==1,"queued whiteboard Down cannot act after another page frame commits");
+			InputRegistrationContext retired{0,registration.generation-1};publishedWhiteboard.menu=1;
+			event.message=WM_LBUTTONDOWN;PageControlInputEvent(event,&retired);PageControlInputCancel({},&retired);
+			Check(whiteboardNext==1&&publishedWhiteboard.menu==1,"retired lifecycle callbacks cannot cancel or act on the new workspace");
+			publishedWhiteboard={};++publishedPpt.layout.session;
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::PptCompact,{}, {},true,false,publishedPpt.layout.session);}
+			event.semanticRevision=InputSnapshot(0).semanticRevision;++publishedPpt.layout.session;
+			PageControlInputEvent(event,context);Check(pptNext==2,"queued Down is rejected when the live PPT session already changed");
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::PptCompact,{}, {},true,false,publishedPpt.layout.session);}
+			PageControlInputEvent(event,context);Check(pptNext==2,"queued Down is rejected after the replacement PPT frame commits");
+			publishedPpt=oldPpt;publishedWhiteboard=oldWhiteboard;pptCallbacks=oldPptCallbacks;whiteboardCallbacks=oldWhiteboardCallbacks;
+			publishedRevision.store(oldRevision,std::memory_order_release);whiteboardMenuOpen.store(oldWhiteboard.menu!=0,std::memory_order_release);
+			{std::scoped_lock lock(dragCommitMutex);dragCommitTrackers=oldDragTrackers;}
+			initialized.store(wasInitialized,std::memory_order_release);
+			{std::scoped_lock lock(inputSnapshotMutex);inputPresentations[0]=oldInput;surfaces[0]=std::move(oldSurface);}
+		}
+		std::fprintf(stderr,"[PageControlUI3] failures=%d\n",failures);return failures?1:0;
 	}
 
 	int RunHiddenWindowTests()
@@ -3085,7 +2985,7 @@ namespace Inkeys::UI::PageControl
 					for (const auto& state : surfaces)
 						if (state.observedRevision != expectedRevision
 							|| state.bounds.active || state.scene.AnimationActive()
-							|| now < state.layoutTransitionUntil
+							|| state.scene.AnimationActive()
 							|| !state.committedPresentationReady)
 							return false;
 					return true;
@@ -3222,7 +3122,24 @@ namespace Inkeys::UI::PageControl
 			referenceCount.store(previous + 1, std::memory_order_release);
 			return true;
 		}
+		// Release 可由 HWND owner 发起异步排空；禁止新代复用仍被旧 worker 引用的对象。
+		if(!inputContexts.empty()){
+			if(!Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())return false;
+			// 上一代异步清理可能尚未调度成功；排空后由新 Acquire 补齐，不能继承旧手势或资源。
+			{std::unique_lock renderLock(renderTransactionMutex);std::scoped_lock inputLock(inputSnapshotMutex);
+				inputPresentations={};for(auto& surface:surfaces)surface=SurfaceState{};groupLayoutBudget={};}
+			inputContexts.clear();
+		}
 		initialized.store(true, std::memory_order_release);
+		const auto lifecycle=inputLifecycle.fetch_add(1,std::memory_order_acq_rel)+1;
+		for(std::size_t index=0;index<Roles.size();++index){
+			const HWND hwnd=Inkeys::Window::GetService().Handle(Roles[index]);
+			if(hwnd){
+				auto context=std::make_unique<InputRegistrationContext>(InputRegistrationContext{index,lifecycle});
+				Inkeys::UI::Bar::RegisterInteractionSurface(hwnd,lifecycle,PageControlInputEvent,PageControlInputTick,PageControlInputCancel,context.get());
+				inputContexts.push_back(std::move(context));
+			}
+		}
 		for (std::size_t index = 0; index < Clients.size(); ++index)
 		{
 			if (!Inkeys::UI::RenderPipeline::Register(Clients[index],
@@ -3234,6 +3151,8 @@ namespace Inkeys::UI::PageControl
 				for (std::size_t registered = 0; registered < index; ++registered)
 					Inkeys::UI::RenderPipeline::Unregister(Clients[registered]);
 				initialized.store(false, std::memory_order_release);
+				for(const auto role:Roles)Inkeys::UI::Bar::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
+				(void)Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks();
 				return false;
 			}
 		}
@@ -3259,6 +3178,7 @@ namespace Inkeys::UI::PageControl
 		}
 		referenceCount.store(0, std::memory_order_release);
 		initialized.store(false, std::memory_order_release);
+		for(const auto role:Roles)Inkeys::UI::Bar::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
 		displaySubscription.Reset();
 		for (const Client client : Clients)
 			Inkeys::UI::RenderPipeline::Unregister(client);
@@ -3279,14 +3199,24 @@ namespace Inkeys::UI::PageControl
 			std::scoped_lock dragLock(dragCommitMutex);
 			dragCommitTrackers = {};
 		}
-		std::unique_lock renderLock(renderTransactionMutex);
-		for (auto& surface : surfaces)
-		{
-			surface.scene.Reset();
-			surface.scene.ReleaseDeviceResources();
-			surface = SurfaceState{};
+		const auto reset=[] {
+			std::unique_lock renderLock(renderTransactionMutex);
+			std::scoped_lock inputLock(inputSnapshotMutex);inputPresentations={};
+			for(auto& surface:surfaces)surface=SurfaceState{};
+			groupLayoutBudget={};
+		};
+		if(Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())reset();
+		else{
+			// 窗口 owner 不能等待可能正在向它提交窗口效果的 worker；排空后再销毁内部对象。
+			(void)QueueUserWorkItem(+[](void*)->DWORD{
+				std::scoped_lock lifecycleLock(lifecycleMutex);
+				if(referenceCount.load(std::memory_order_acquire)!=0)return 0;
+				if(!Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())return 0;
+				std::unique_lock renderLock(renderTransactionMutex);
+				std::scoped_lock inputLock(inputSnapshotMutex);inputPresentations={};
+				for(auto& surface:surfaces)surface=SurfaceState{};groupLayoutBudget={};return 0;
+			},nullptr,WT_EXECUTEDEFAULT);
 		}
-		groupLayoutBudget = {};
 	}
 
 	WNDPROC WindowProc() noexcept { return PageControlWindowProc; }
@@ -3358,7 +3288,7 @@ namespace Inkeys::UI::PageControl
 		if (!ppt.presentationVisible || whiteboard.expandedLayoutTarget
 			|| whiteboard.active || WhiteboardWorkspaceSwitching(whiteboard)
 			|| delta == 0) return;
-		InvokeDirection(0, delta < 0);
+		InvokeDirection(0,delta<0,WorkspaceMode::PptCompact);
 	}
 
 	void SetDebugEnabled(bool enabled) noexcept
@@ -3395,50 +3325,10 @@ namespace Inkeys::UI::PageControl
 	{
 		CloseWhiteboardMenu();
 		(void)Inkeys::Window::GetService().CancelPointerCapture();
-		std::array<bool, 2> rollbackPairs{};
-		{
-			std::unique_lock renderLock(renderTransactionMutex);
-			for (std::size_t index = 0; index < surfaces.size(); ++index)
-			{
-				auto& surface = surfaces[index];
-				rollbackPairs[DragPairIndex(index)] =
-					rollbackPairs[DragPairIndex(index)]
-					|| surface.dragging || surface.dragPending;
-				surface.scene.CancelPointer();
-				surface.dragging = false;
-				surface.dragPending = false;
-				surface.lastDragCandidateTrace = {};
-				surface.suppressedDirectCandidateTraces = 0;
-				surface.suppressedPresentationBusyTraces = 0;
-				surface.pressStarted = {};
-				surface.lastRepeat = {};
-				surface.repeatTiming = {};
-				surface.touchActive = false;
-				surface.touchId = 0;
-				surface.touchPrimary = false;
-				surface.touchLastClient = {};
-			}
+		for(const auto role:Roles){
+			Inkeys::UI::Bar::SurfaceInputEvent event;event.window=Inkeys::Window::GetService().Handle(role);
+			event.generation=inputLifecycle.load(std::memory_order_acquire);event.message=WM_CANCELMODE;
+			if(event.window)(void)Inkeys::UI::Bar::SubmitSurfaceInput(event);
 		}
-		for (std::size_t pairIndex = 0;
-			pairIndex < rollbackPairs.size(); ++pairIndex)
-		{
-			if (!rollbackPairs[pairIndex]) continue;
-			const auto rollback = RollbackDragTracking(pairIndex);
-			if (!rollback.tracked) continue;
-			if (rollback.discardedPending)
-				ApplyDragPairBoundsDirect(pairIndex, rollback.layout);
-			TraceDrag("cancel-all pair=%s revision=%llu discarded_pending=%d "
-				"rollback_position=(%.1f,%.1f)",
-				pairIndex == 0 ? "bottom" : "middle",
-				static_cast<unsigned long long>(rollback.revision),
-				rollback.discardedPending ? 1 : 0,
-				pairIndex == 0 ? rollback.layout.bottomPairWidth
-					: rollback.layout.middlePairWidth,
-				pairIndex == 0 ? rollback.layout.bottomPairHeight
-					: rollback.layout.middlePairHeight);
-			RequestDragPair(pairIndex);
-			FlushCommittedDrag(pairIndex);
-		}
-		RequestAll();
 	}
 }

@@ -3,25 +3,21 @@ module;
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-
 #include <d2d1_1.h>
-#include <dwrite_1.h>
 #include <windows.h>
-
+#include <array>
 #include <chrono>
-#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string>
 #include <vector>
 
 export module Inkeys.UI.Bar:Scene;
-
 export import Inkeys.UI.Bar.Metrics;
 export import Inkeys.UI.Bar.SurfaceLayout;
+export class BarUIRendering;
 import Inkeys.UI.RenderPipeline;
 
 export namespace Inkeys::UI::Bar
@@ -29,241 +25,129 @@ export namespace Inkeys::UI::Bar
 	struct BarSurfaceBackgroundSpec
 	{
 		BarSurfaceDipRect bounds{};
-		COLORREF fill = RGB(0, 0, 0);
-		COLORREF frame = RGB(0, 0, 0);
+		COLORREF fill = RGB(0, 0, 0), frame = RGB(0, 0, 0);
 		bool useThemeColors = true;
-		double cornerRadiusDip = 0.0;
-		double frameThicknessDip = 0.0;
-		double fillOpacity = 1.0;
-		double frameOpacity = 0.0;
+		double cornerRadiusDip = 0, frameThicknessDip = 0;
+		double fillOpacity = 1, frameOpacity = 0;
 		bool visible = true;
-		bool contentEnvelope = false;
 		std::function<void(ID2D1DeviceContext*, D2D1_RECT_F)> drawContent;
 	};
 
-	using BarSurfaceWidgetId = std::uint32_t;
-	inline constexpr BarSurfaceWidgetId BarSurfaceNoWidget = 0;
-
-	enum class BarSurfaceWidgetKind : std::uint8_t
+	using BarSurfaceButtonId = std::uint32_t;
+	inline constexpr BarSurfaceButtonId BarSurfaceNoButton = 0;
+	struct BarPageSurfaceContent
 	{
-		Button,
-		DragHandle,
+		unsigned surface = 0;
+		bool whiteboard = false, switching = false, pptActive = false;
+		bool nextIsAdd = false, nextIsEndShow = false, unsaved = false;
+		int menu = 0;
+		std::array<bool, 3> enabled{ true, true, true };
+		std::array<bool, 3> interactive{ true, true, true };
+		std::wstring currentPage, totalPage;
+		std::wstring previousLabel, nextLabel, moreLabel, unsavedLabel;
+		std::array<std::wstring, 3> actionLabels;
+		std::array<std::wstring, 3> patternLabels;
+		std::array<std::wstring, 2> sectionLabels;
+		std::uint32_t backgroundRgb = 0x123B32;
+		int pattern = 0;
 	};
 
-	enum class BarSurfaceTextUpdateMode : std::uint8_t
+	struct BarSurfaceButtonLayout
 	{
-		Animated,
-		Immediate,
-	};
-
-	struct BarSurfaceWidgetSpec
-	{
-		BarSurfaceWidgetId id = BarSurfaceNoWidget;
-		BarSurfaceWidgetKind kind = BarSurfaceWidgetKind::Button;
-		BarButtonVisualLayoutKind layoutKind =
-			BarButtonVisualLayoutKind::Custom;
-		BarSurfaceDipRect bounds{};
-		bool visible = true;
-		bool enabled = true;
-		// 临时输入锁不改变控件的 enabled 外观和内容透明度。
-		bool interactive = true;
-		bool selected = false;
-		bool panel = false;
-		// 子面板由共享属性动效驱动；内容只声明父项，继承整块姿态。
-		BarSurfaceWidgetId parentPanel = BarSurfaceNoWidget;
-		BarSurfaceWidgetId popupAnchor = BarSurfaceNoWidget;
-		bool divider = false;
-		bool header = false;
-		bool selectionIndicator = false;
-		bool selectionVisible = false;
-		bool primaryLeftAligned = false;
-		std::wstring iconResource;
-		std::wstring primaryText;
-		std::wstring secondaryText;
-		BarSurfaceTextUpdateMode textUpdateMode =
-			BarSurfaceTextUpdateMode::Animated;
-		std::optional<double> iconAngle;
-		double iconSizeDip = BarButtonTwoTwoIconSizeDip;
-		double iconOffsetXDip = 0.0;
-		double iconOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
-		double primaryFontSizeDip = BarButtonTwoTwoIconSizeDip;
-		double primaryOffsetXDip = 0.0;
-		double primaryOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
-		double primarySlotWidthDip = 0.0;
-		double primarySlotHeightDip = BarButtonTwoTwoIconSizeDip;
-		double secondaryFontSizeDip = BarButtonTwoTwoLabelFontSizeDip;
-		double secondaryOffsetXDip = 0.0;
-		double secondaryOffsetYDip = BarButtonTwoTwoLabelOffsetYDip;
-		double secondarySlotWidthDip = 0.0;
-		double secondarySlotHeightDip = BarButtonTwoTwoLabelHeightDip;
-		double dragOpacity = 0.72;
-		COLORREF fill = RGB(0, 0, 0);
-		COLORREF content = RGB(0, 0, 0);
-		bool useThemeColors = true;
-		std::uint64_t contentRevision = 0;
-		std::function<void()> releaseContentResources;
-		std::function<void()> onClick;
-		std::function<void(ID2D1DeviceContext*, D2D1_RECT_F)> drawContent;
-	};
-
-	struct BarSurfaceWidgetLayout
-	{
-		BarSurfaceWidgetId id = BarSurfaceNoWidget;
-		BarSurfaceWidgetKind kind = BarSurfaceWidgetKind::Button;
+		BarSurfaceButtonId id = 0;
 		RECT localPixels{};
-		bool visible = false;
-		bool enabled = false;
-		bool interactive = false;
-		bool selected = false;
+		bool visible = false, enabled = false, interactive = false;
 	};
-
-	struct BarSurfaceLayout
+	struct BarPageSurfaceLayout
 	{
-		RECT logicalBounds{};
-		RECT presentationBounds{};
-		// 兼容旧调用方；该字段与 logicalBounds 保持相同的全局像素矩形。
-		RECT surfacePixels{};
-		float dpiScale = 1.0F;
-		std::vector<BarSurfaceWidgetLayout> widgets;
+		RECT logicalBounds{}, presentationBounds{};
+		float dpiScale = 1;
+		std::vector<BarSurfaceButtonLayout> buttons;
 	};
-
-	enum class BarSurfacePointerEventKind : std::uint8_t
-	{
-		Move,
-		Leave,
-		Down,
-		Up,
-		Cancel,
-	};
-
 	struct BarSurfacePointerResult
 	{
-		BarSurfaceWidgetId hover = BarSurfaceNoWidget;
-		BarSurfaceWidgetId pressed = BarSurfaceNoWidget;
-		BarSurfaceWidgetId clicked = BarSurfaceNoWidget;
-		bool hoverChanged = false;
-		bool pressedChanged = false;
-		bool consumed = false;
+		BarSurfaceButtonId hover = 0, pressed = 0, clicked = 0;
+		bool hoverChanged = false, pressedChanged = false, consumed = false;
 	};
-
+	enum class BarSurfacePointerEventKind { Move, Down, Up, Leave, Cancel };
+	struct BarSurfaceInputSample
+	{
+		POINT logical{};
+		BarSurfaceButtonId hit = 0;
+		bool valid = false, background = false, primaryBackground = false, popupBackground = false;
+		std::uint64_t revision = 0;
+	};
 	struct BarSurfaceRenderResult
 	{
-		bool rendered = false;
-		bool animationActive = false;
-		bool invalidated = false;
+		bool rendered = false, animationActive = false, invalidated = false;
 		RECT damage{};
 	};
-
 	struct BarSurfaceHooks
 	{
-		// invalidate 只标记该 surface；wake 负责唤醒独立的 RenderPipeline client。
-		std::function<void()> invalidate;
-		std::function<void()> wake;
+		std::function<void()> invalidate, wake;
 	};
-
-	// Main Bar 以屏幕像素发布两路光源；各 Surface 只做本地 presentation 映射。
 	struct BarSurfaceSharedLighting
 	{
-		double primaryScreenX = 0.0;
-		double primaryScreenY = 0.0;
-		double primaryRadiusPixels = 0.0;
-		double cursorScreenX = 0.0;
-		double cursorScreenY = 0.0;
-		double cursorRadiusPixels = 0.0;
-		double cursorIntensity = 0.0;
+		double primaryScreenX = 0, primaryScreenY = 0, primaryRadiusPixels = 0;
+		double cursorScreenX = 0, cursorScreenY = 0, cursorRadiusPixels = 0;
+		double cursorIntensity = 0;
 		COLORREF drawingPenColor = RGB(0, 0, 0);
-		double drawingPenColorBlend = 0.0;
-		double drawingLightOpacity = 1.0;
-		bool primaryVisible = false;
-		bool cursorVisible = false;
-		bool edgeLightingEnabled = false;
+		double drawingPenColorBlend = 0, drawingLightOpacity = 1;
+		bool primaryVisible = false, cursorVisible = false, edgeLightingEnabled = false;
 	};
 
-	class BarSurfaceScene
+	// 这里只保留分页的数据适配；按钮、输入、动画和渲染事务由主栏公共函数执行。
+	// More/Theme 是两个固定属性面板，不是可递归的 UI 节点图。
+	class BarPageSurface
 	{
 	public:
-		BarSurfaceScene();
-		~BarSurfaceScene();
-		BarSurfaceScene(const BarSurfaceScene&) = delete;
-		BarSurfaceScene& operator=(const BarSurfaceScene&) = delete;
-		BarSurfaceScene(BarSurfaceScene&&) noexcept;
-		BarSurfaceScene& operator=(BarSurfaceScene&&) noexcept;
-
-		// 配置背景和按钮拓扑；同一 id 的按钮会保留 hover/pressed 状态。
-		bool Configure(const BarSurfaceBackgroundSpec& background,
-			std::span<const BarSurfaceWidgetSpec> widgets);
-		// 按标准 twoTwo 网格横排三个按钮；调用方只需提供按钮内容和回调。
-		bool ConfigureHorizontalTwoTwoGroup(
-			const BarSurfaceBackgroundSpec& background,
-			std::span<const BarSurfaceWidgetSpec> widgets);
-		// 按屏幕边缘定位的通用横向组；自动写入 logical bounds 和各按钮局部 DIP 布局。
-		bool ConfigureHorizontalGroup(
-			const BarSurfaceBackgroundSpec& background,
-			std::span<const BarSurfaceWidgetSpec> widgets,
-			const BarSurfaceHorizontalGroupSpec& group);
-		bool SetWidgets(std::span<const BarSurfaceWidgetSpec> widgets);
-		bool UpdateContent(std::span<const BarSurfaceWidgetSpec> widgets);
-		// 复用稳定 id，从当前呈现几何连续过渡到新背景和按钮布局。
-		bool TransitionLayout(const BarSurfaceBackgroundSpec& background,
-			std::span<const BarSurfaceWidgetSpec> widgets,
-			double durationSeconds = 0.2);
-		bool SetWidgetState(BarSurfaceWidgetId id, bool visible, bool enabled,
-			std::wstring primaryText = {}, std::wstring secondaryText = {},
-			std::optional<std::wstring> iconResource = std::nullopt,
-			std::optional<double> iconAngle = std::nullopt);
-		bool SetWidgetInteractive(BarSurfaceWidgetId id, bool interactive);
-		bool SetWidgetSelected(BarSurfaceWidgetId id, bool selected);
-		bool SetBounds(RECT logicalBounds, float dpiScale) noexcept;
-		void RebaseLocalOrigin(double deltaY) noexcept;
-		void SetBackground(const BarSurfaceBackgroundSpec& background);
-		void SetOpacity(double opacity,
-			double durationSeconds = 0.2) noexcept;
-		void SetDamageOutsetDip(double outsetDip) noexcept;
-		void SetHooks(BarSurfaceHooks hooks);
-		// 两路光源都由 Main Bar 计算；Surface 不创建本地第三光源状态。
-		void SetSharedLightingSubscribed(bool subscribed) noexcept;
-		static void PublishSharedLighting(
-			const BarSurfaceSharedLighting& lighting) noexcept;
-
+		BarPageSurface();
+		~BarPageSurface();
+		BarPageSurface(const BarPageSurface&) = delete;
+		BarPageSurface& operator=(const BarPageSurface&) = delete;
+		BarPageSurface(BarPageSurface&&) noexcept;
+		BarPageSurface& operator=(BarPageSurface&&) noexcept;
+		bool ConfigurePagination(const BarPageSurfaceContent&, double durationSeconds = 0);
+		bool ConfigureBackground(const BarSurfaceBackgroundSpec&);
+		bool SetBounds(RECT, float) noexcept;
+		void SetOpacity(double, double durationSeconds = 0.2) noexcept;
+		void SetHooks(BarSurfaceHooks);
+		void SetSharedLightingSubscribed(bool) noexcept;
+		static void PublishSharedLighting(const BarSurfaceSharedLighting&) noexcept;
 		void Reset() noexcept;
 		void ReleaseDeviceResources() noexcept;
 		void Invalidate() noexcept;
 		[[nodiscard]] bool IsInvalidated() const noexcept;
 		[[nodiscard]] RECT PendingDamage() const noexcept;
 		[[nodiscard]] RECT ConsumeDamage() noexcept;
-		[[nodiscard]] BarSurfaceLayout Layout() const;
+		[[nodiscard]] BarPageSurfaceLayout Layout() const;
 		[[nodiscard]] RECT LogicalBounds() const noexcept;
 		[[nodiscard]] RECT PresentationBounds() const noexcept;
 		[[nodiscard]] LONG PresentationOutsetPixels() const noexcept;
-		[[nodiscard]] HRESULT EnsureDeviceResources(
-			const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch,
-			UINT width, UINT height);
+		[[nodiscard]] HRESULT EnsureDeviceResources(const Inkeys::UI::RenderPipeline::DeviceEpoch&, UINT, UINT);
 		[[nodiscard]] ID2D1DeviceContext* DeviceContext() const noexcept;
 		[[nodiscard]] ID2D1GdiInteropRenderTarget* GdiInteropRenderTarget() const noexcept;
-		void HandleFrameEndDrawResult(HRESULT result);
-		// 由 HWND 局部坐标转为逻辑内容坐标；透明 presentation margin 返回 nullopt。
-		[[nodiscard]] std::optional<POINT> PresentationToLogical(
-			POINT presentationLocalPixels) const noexcept;
-		// 与背景实际绘制使用同一动画圆角，透明 margin/圆角像素不参与命中。
-		[[nodiscard]] bool HitTestBackground(POINT localPixels) const noexcept;
-		[[nodiscard]] BarSurfaceWidgetId HitTest(POINT localPixels) const noexcept;
-		[[nodiscard]] BarSurfaceWidgetId HitTestPresentation(
-			POINT presentationLocalPixels) const noexcept;
-
-		BarSurfacePointerResult PointerMove(POINT localPixels) noexcept;
+		[[nodiscard]] BarUIRendering& Renderer() noexcept;
+		void HandleFrameEndDrawResult(HRESULT);
+		// 输入仅查询上次成功提交的快照，候选帧失败不能提前移动命中区域。
+		void CommitPresented(bool inputEnabled = true) noexcept;
+		[[nodiscard]] std::uint64_t PresentedGeneration() const noexcept;
+		[[nodiscard]] std::optional<POINT> PresentationToLogical(POINT) const noexcept;
+		[[nodiscard]] bool HitTestBackground(POINT) const noexcept;
+		[[nodiscard]] BarSurfaceButtonId HitTest(POINT) const noexcept;
+		[[nodiscard]] BarSurfaceButtonId HitTestPresentation(POINT) const noexcept;
+		[[nodiscard]] BarSurfaceInputSample SamplePointer(POINT) const noexcept;
+		BarSurfacePointerResult ApplyPointer(BarSurfacePointerEventKind,BarSurfaceButtonId) noexcept;
+		BarSurfacePointerResult PointerMove(POINT) noexcept;
 		BarSurfacePointerResult PointerLeave() noexcept;
-		BarSurfacePointerResult PointerDown(POINT localPixels) noexcept;
-		BarSurfacePointerResult PointerUp(
-			POINT localPixels, bool invokeCallback = true) noexcept;
+		BarSurfacePointerResult PointerDown(POINT) noexcept;
+		BarSurfacePointerResult PointerUp(POINT, bool invokeCallback = false) noexcept;
 		BarSurfacePointerResult CancelPointer() noexcept;
-
-		// 渲染线程调用；该函数只提交本 surface 的 Shape/Button，不改变其他 Bar client。
-		BarSurfaceRenderResult Render(ID2D1DeviceContext* deviceContext,
-			std::chrono::steady_clock::time_point frameTime);
-		[[nodiscard]] bool Advance(std::chrono::steady_clock::time_point frameTime) noexcept;
+		[[nodiscard]] bool Advance(std::chrono::steady_clock::time_point) noexcept;
+		void SuspendForIdle(std::chrono::steady_clock::time_point) noexcept;
 		[[nodiscard]] bool AnimationActive() const noexcept;
 		[[nodiscard]] bool PopupAnimationActive() const noexcept;
-
+		BarSurfaceRenderResult Render(ID2D1DeviceContext*, std::chrono::steady_clock::time_point);
 	private:
 		struct Impl;
 		std::unique_ptr<Impl> impl_;

@@ -53,7 +53,7 @@ export namespace Inkeys::UI::Bar
 		}
 		return envelope;
 	}
-	class EraserSurfaceMotion
+	class BarAttributePanelMotion
 	{
 	public:
 		bool Retarget(bool open,double duration,const BarUiTimelineClass* parent=nullptr)
@@ -92,6 +92,31 @@ export namespace Inkeys::UI::Bar
 		BarUiPctClass opacity_{0.0};
 		BarUiTimelineClass timeline_;
 	};
+	using EraserSurfaceMotion = BarAttributePanelMotion;
+	struct BarAttributePanelFrame
+	{
+		EraserSurfacePose pose;
+		double opacity = 0.0;
+		bool visible = false;
+	};
+	// 固定属性与白板面板统一从触发按钮解析几何、父级姿态及透明度，不各自编排递归图。
+	inline BarAttributePanelFrame ResolveBarAttributePanelFrame(
+		const BarAttributePanelMotion& motion, EraserAttributeRect panel,
+		EraserAttributeRect anchor, double compactWidth,
+		const BarAttributePanelFrame* parent = nullptr) noexcept
+	{
+		BarAttributePanelFrame frame;
+		frame.pose = ResolveEraserSurfacePose(panel, anchor, motion.Geometry(), compactWidth);
+		frame.opacity = motion.Opacity();
+		frame.visible = motion.Visible() && frame.opacity > 0.000001;
+		if (parent)
+		{
+			frame.pose = ComposeEraserPose(parent->pose, frame.pose);
+			frame.opacity *= parent->opacity;
+			frame.visible = frame.visible && parent->visible && frame.opacity > 0.000001;
+		}
+		return frame;
+	}
 	struct EraserAttributePresentation
 	{
 		EraserAttributeLayout geometry;

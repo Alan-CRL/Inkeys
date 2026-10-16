@@ -16,7 +16,7 @@ module;
 
 export module Inkeys.UI.PageControl;
 
-import Inkeys.UI.Bar.EraserAttributeMotion;
+import Inkeys.UI.RenderPipeline;
 
 export namespace Inkeys::UI::PageControl
 {
@@ -674,22 +674,6 @@ export namespace Inkeys::UI::PageControl
 		int menu = 0;
 	};
 
-	inline const Inkeys::UI::Bar::EraserAttributeRect WhiteboardMenuPanel{190,-122.5,340,-5};
-	inline const Inkeys::UI::Bar::EraserAttributeRect WhiteboardMoreAnchor{230,5,300,75};
-	inline const Inkeys::UI::Bar::EraserAttributeRect WhiteboardThemePanel{345,-301,575,-5};
-	inline const Inkeys::UI::Bar::EraserAttributeRect WhiteboardThemeAnchor{195,-42.5,335,-10};
-	[[nodiscard]] inline auto WhiteboardPopupEnvelope(int menu) noexcept
-	{
-		using namespace Inkeys::UI::Bar;
-		return menu==2?ResolveEraserPopupEnvelope(WhiteboardThemePanel,WhiteboardThemeAnchor,60,
-			WhiteboardMenuPanel,WhiteboardMoreAnchor):ResolveEraserPopupEnvelope(WhiteboardMenuPanel,WhiteboardMoreAnchor,60);
-	}
-	[[nodiscard]] inline double WhiteboardMenuHeight(const WhiteboardState& state) noexcept
-	{
-		return (state.menu?std::ceil((std::max)(0.0,-WhiteboardPopupEnvelope(state.menu).top))+5.0:0.0)
-			+(state.unsaved?32.0:0.0);
-	}
-
 	[[nodiscard]] inline bool ArePptStatesEquivalent(
 		const PptState& left, const PptState& right) noexcept
 	{
@@ -1030,8 +1014,8 @@ export namespace Inkeys::UI::PageControl
 			? PptCompactLongSideDip : PptCompactShortSideDip;
 		if (result.mode == WorkspaceMode::WhiteboardExpanded)
 		{
-			widthDip = surface == Surface::BottomLeft ? (whiteboard.menu ? std::ceil((std::max)(305.0,WhiteboardPopupEnvelope(whiteboard.menu).right))+5.0 : 305.0) : WhiteboardWidthDip;
-			heightDip = WhiteboardHeightDip + (surface == Surface::BottomLeft ? WhiteboardMenuHeight(whiteboard) : 0.0);
+			widthDip = surface == Surface::BottomLeft ? 305.0 : WhiteboardWidthDip;
+			heightDip = WhiteboardHeightDip;
 		}
 		else if (result.vertical)
 			scale *= NormalizeRuntimeControlScale(ppt.layout.middlePairScale);
@@ -1289,4 +1273,15 @@ export namespace Inkeys::UI::PageControl
 	void NotifyLayoutChanged() noexcept;
 	bool RequestWhiteboardMenuDismiss() noexcept;
 	void CancelPointerCapture() noexcept;
+	struct OffscreenSnapshot
+	{
+		PptState ppt;
+		WhiteboardState whiteboard;
+	};
+	// 与产品共用内容投影、脏区和 GetDC 事务，仅替换最后的 HWND 提交。
+	[[nodiscard]] std::function<Inkeys::UI::RenderPipeline::FrameResult(
+		const Inkeys::UI::RenderPipeline::FrameContext&)>
+		CreatePageControlOffscreenRenderCallback(unsigned index,
+			std::function<OffscreenSnapshot()> provider,RECT logicalBounds,float scale,
+			std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink,HWND inputIdentity=nullptr);
 }
