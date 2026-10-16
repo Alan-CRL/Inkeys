@@ -1,10 +1,19 @@
-# Draw3 性能诊断包 2
+# Draw3 性能诊断包 3
 
-本包收集 Draw3 的硬件/初始化环境、真实绘制帧、按调用位置与匿名资源代次区分的图形调用耗时，以及真实 RTS 输入到软件成功呈现的延迟。新版能力标记为 `INKEYS_DRAW3_DIAGNOSTICS_V2`，包 revision/capture schema 为 2，启动/完成身份 schema 仍为 1。用户运行 CMD 即会为本次启动开启性能采集，无须提前在实验选项里打开其他调试输出，也不会修改用户的性能输出配置。诊断包不自动输入、不更改帧率或绘制算法，结果保存在本机，不自动上传。
+本包包含独立合成小缓冲区与兆芯可选 DEFAULT 上传修复，并收集 Draw3 的硬件/初始化环境、真实绘制帧、图形调用耗时，以及真实 RTS 输入到软件成功呈现的延迟。能力标记为 `INKEYS_DRAW3_DIAGNOSTICS_V3`，包/probe revision 为 3；原始 capture schema 仍为 2，启动/完成身份 schema 仍为 1。分析器保留 v1/v2 原始结果可读。用户运行 CMD 即会开启性能采集，无须提前打开其他调试输出，也不会自动改动硬件加速、兆芯兼容或性能输出配置。诊断包不自动输入、不更改帧率，结果保存在本机，不自动上传。
 
 先完整解压与软件架构匹配的诊断包，正常退出所有已运行的 Inkeys。双击 `Run-Draw3-Performance.cmd`，硬件查询结束后软件会按原有 SuperTop/UIAccess 流程启动；需要系统权限提示时按正常方式处理。开始书写、复现问题，完成后从软件正常退出。**软件正常退出后，采集器还会顺序运行最多 8 分钟的独立无窗口 HW/WARP 资源对照，请在完成前保留 CMD 窗口。** 对照完成后自动生成中文 `report.md` 和 `summary.json`；CMD 会显示结果目录和退出码。启动器先退出不代表测试完成，采集器等待最终进程的身份与导出握手。
 
 建议每轮用 **30–45 秒** 完成慢速书写、快速转弯、连续 Down/Move/Up 和问题最容易出现的工具，再留几秒空闲后写第一笔；不同工具、切页/撤销、间歇卡顿可以分别运行几轮。采集使用固定容量，达到容量后保留前缀且计掉样，不覆盖已有样本。高帧率/高输入频率会较快用满容量；长时间运行的分位数可能只代表前半程，报告会标为部分证据。偶发问题若发生在容量满后，需要用新一轮结果定位。软件崩溃/强制退出可能丢失尚未导出的内存数据，硬件和已落盘文件会保留。
+
+兆芯实机请完成两轮真实产品 A/B：
+
+1. 在“设置 → 实验选项”保持“启用绘图硬件加速”开启，打开“为兆芯设备启用兼容模式”，正常退出，再由 CMD 启动新一轮采集。
+2. 用普通笔连续书写、转弯和抬笔，再测荧光笔、形状、光标、撤销/切页；记下动作、分辨率、缩放与体感。正常退出并等离屏矩阵结束，结果标注“兼容开”。
+3. 关闭“为兆芯设备启用兼容模式”，正常退出并由 CMD 重启，保持同一显示设置、工具、笔宽、动作顺序和近似时长重复采集，标注“兼容关（优化普通方案）”。两个选项均在重启后生效。
+4. 检查报告的请求配置和实际策略：兼容开应为硬件后端 + `default_update_subresource`，兼容关应为硬件后端 + `dynamic_map`。兼容请求与实际启用分别记录；使用 WARP、非兆芯 GPU 或适配器识别不可用时，勾选兼容也不会自动变成 DEFAULT。
+
+v3 后测会在每轮自动做同一离屏负载的普通/兼容成对测试，**单轮离屏对照不能代替上述两轮真实书写 A/B**。请把两轮完整目录一起回传，便于判断是否保留兆芯兼容方案。高通 GPU 使用 ARM64 包、保持硬件加速开启及兼容默认值；实际上传应为普通动态路径，可与另外采集的 v2 比较。若另测 WARP，关闭硬件加速后重启，单独标注；不要混入硬件普通/兼容 A/B。
 
 可在终端指定 EXE（必须与包 manifest 的 SHA256 一致）及输出位置：
 
@@ -36,6 +45,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Analyze-Draw3-Performa
 | `host-NNNN/resources.csv` / `graphics-calls.csv` / `slow-graphics-calls.csv` / `graphics-groups.csv` | 资源描述/设备代次、Map/写入/Unmap/绑定/复制/清理/Draw/Present 细项、独立慢前缀及全程有界分组 |
 | `graphics-call-summary.csv` / `top-long-graphics-calls.csv` / `frame-graphics-summary.csv` | 全程分组总量/最大值、有限明细分布、最慢 100 调用、逐帧 leaf 与明细区间并集/未归因残差 |
 | `resource-probes/matrix.json` / `cNNN/*` / `resource-probe-comparison.csv` | 后测固定 profile、原始 request/start/result/stage、父进程退出/超时/双流账目、逐 case 原始 CSV 与可比 HW/WARP 结果；短 ordinal 目录避免重复长 case 名 |
+| `resource-upload-pairs.csv` | v3 同 backend 的优化普通动态 / DEFAULT 兼容成对负载，CPU measure 比值、独立 GPU 命令区间、drain 和不可比原因 |
 | `summary.json` / `report.md` / `top-long-frames.csv` | 有效分母、分位数、完整性问题及最慢 100 帧相关因素 |
 | `bootstrap.stdout.txt` / `bootstrap.stderr.txt` / `ordinary-logs` | 原启动器双流及本轮普通日志辅助证据；不作为最终 owner 唯一证明 |
 
@@ -47,11 +57,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Analyze-Draw3-Performa
 
 新增调用存储为完整前缀 8192 条、独立 ≥1 ms 慢前缀 4096 条、2048 个固定分组、512 次资源创建尝试。完整/慢前缀可能包含同一次调用，离线按 call_serial 去重；后者不是完整全程 top-N，满后同样停止保留。全程分组继续维护 count/total/min/max/fail/bytes，容量满的分组另计。明细 P50/P95 只代表有选择偏向的保留样本，不能称为全会话分位数。逐帧固定 leaf 统计在明细饱和后继续；原始细项区间并集仅解释已保留、非嵌套且 accounting_valid 的片段，prior、跨帧未知、父子 span 不重复相加，非法计量时不报告精确残差。void API 没有 HRESULT，不补造 S_OK；未注册资源和缺失描述显式列出。
 
-资源矩阵使用 `draw3-resource-v2-fixed`：20 个固定 profile × HW/WARP，共 40 个串行独立进程，覆盖 3.2 MB/小 InkData、4.8 MB Highlighter、48 B 常量（字段写/memcpy/volatile）、DISCARD/合法 NO_OVERWRITE、DEFAULT+UpdateSubresource、合成、2/3/6 Draw、1080p clear/copy 和小尺寸 staging readback。每个 case 冷轮 1 次、warmup 1 次、measure 4 次；原生总墙钟预算 8 秒，父进程单项上限 20 秒、矩阵上限 480 秒，挂住的驱动调用由独立 worker 外部截止。预算耗尽后剩余 case 记 skipped，不重跑或自动改变工作量。
+资源矩阵使用 `draw3-resource-v3-fixed`：28 个固定 profile × HW/WARP，共 56 个串行独立进程。前 40 项保留 v2 的资源/工作量语义，覆盖 3.2 MB/小 InkData、4.8 MB Highlighter、48 B 常量、DISCARD/合法 NO_OVERWRITE、DEFAULT、旧大小合成、2/3/6 Draw、1080p clear/copy 和小 staging readback；其中旧大合成只用于历史定位，不能冒充优化后的普通方案。新增 16 项为墨迹/荧光笔 × 64×64/3840×2160 × 优化普通/兼容 × HW/WARP；两侧使用相同 shader、实际写入字节和两次 Draw，均有独立 256 B 动态合成 buffer，只写 32 B 全目标矩形。墨迹普通路径按能力使用合法 NO_OVERWRITE 追加，否则 DISCARD；荧光笔普通路径与生产相同逐批 DISCARD；兼容路径局部 UpdateSubresource，偏移为 0。两侧都在主绘制后复制 operator add，再执行小资源合成，主几何/完整目标合成相同。每 case 冷轮 1 次、warmup 1 次、measure 4 次；原生预算仍 8 秒，父进程单项 20 秒、矩阵总上限 480 秒。预算耗尽后剩余项记 skipped，不重跑或改变工作量。
 
 只有本轮成功创建并持有的 probe worker 可以被超时终止；终止后最多等待 3 秒确认退出，未确认则停止后续矩阵。父进程并行持续排空 stdout/stderr，每流只保留前 1 MiB，之后继续读并记录丢弃字节；单个原始文件上限 4 MiB、调用最多 4096 行、矩阵磁盘预算 64 MiB。每个 case 使用独占新目录，并严格核验 session/case/PID/FILETIME/EXE/目录/backend/profile/工作量和真实退出码，单项 unsupported/failed/timeout/crash 不掩盖产品采集状态。产品退出后重新校验 EXE SHA 并在后测期间持有只读文件句柄，防更新替换 EXE 后收到未知参数。
 
-矩阵使用独立离屏资源及内嵌 301/302 shader 合同，不复用产品 Host/文档/RTS，也不改变产品的资源创建、Map flags、设备选择或绘制算法。冷轮与 warmup 不从原始数据中丢弃。同为 48B 常量资源，`production_field_stores` 实际写 36B，memcpy/volatile 写 48B（包含 padding）；`case_definition.write_bytes` 保留准确字节数，跨写法不能声称完全等写入量。只有完整且身份/同 profile/大小/写入量/迭代/shader 身份匹配的 HW/WARP measure 数据才给 CPU 调用区间比值，GPU 未就绪不补零；WARP 更快只能提示 backend 敏感，不能直接证明驱动 bug。矩阵专有的一次 Flush/有界 drain 成本独立记录，不能当作生产路径行为或 shader 忙时。若不支持该路径，原始失败/阶段/adapter/flags 仍有诊断价值。
+矩阵使用独立离屏资源及内嵌 301/302 shader 合同，不复用产品 Host/文档/RTS，独立测试不会临时改写产品配置或当前运行的上传策略。冷轮与 warmup 不从原始数据中丢弃。同为 48B 常量资源，`production_field_stores` 实际写 36B，memcpy/volatile 写 48B（包含 padding）；`case_definition.write_bytes` 保留准确字节数，跨写法不能声称完全等写入量。只有完整且身份/同 profile/大小/写入量/迭代/shader 身份匹配的 HW/WARP measure 数据才给 CPU 调用区间比值，GPU 未就绪不补零；WARP 更快只能提示 backend 敏感，不能直接证明驱动 bug。矩阵专有的一次 Flush/有界 drain 成本独立记录，不能当作生产路径行为或 shader 忙时。若不支持该路径，原始失败/阶段/adapter/flags 仍有诊断价值。v3 成对结果只接受两侧实际 adapter、shader 身份、尺寸、字节和工作量都匹配的完整样本，CPU 合计比值单列，不将其当成完整 4K 产品胜者；GPU measure 和 drain 分别报告，缺样/不支持不填 0。
 
 成功 Present 返回证明软件提交过程到达完成边界，不能证明原始输入坐标的像素已物理显示，也不是触笔到光子延迟。报告给出瓶颈候选及对应阶段/因素，WARP、ULW Map/拷贝、Modeler、大脏区等相关现象不能单独认定某个 CPU/GPU 型号为根因。`disabled_path_contract` 只记录正常模式的静态隔离合同，本包报告没有正常模式性能实测。
 
@@ -63,4 +73,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Analyze-Draw3-Performa
 .\Test-Draw3-Performance.ps1
 ```
 
-包生成器核对 PE 架构及精确 v2 能力标记，拒绝只有旧性能参数字面量的 EXE；并把 EXE、全部 5 个用户脚本/CMD/README 文件及其 SHA256、每 raw 文件 schema 和资源 profile manifest 装入单独的目录和 ZIP。这个静态检查不是实际运行能力证明；它避免对没有入口的旧 EXE 发未知参数而意外打开产品窗口。正式交付须使用本任务构建验证过的版本。源码目录未带 EXE/manifest，不能直接向任意旧 EXE 启动诊断。
+包生成器核对 PE 架构及精确 v3 能力标记，拒绝只有旧性能参数字面量的 EXE；并把 EXE、全部 5 个用户脚本/CMD/README 文件及其 SHA256、每 raw 文件 schema 和资源 profile manifest 装入单独的目录和 ZIP。这个静态检查不是实际运行能力证明；它避免对没有入口的旧 EXE 发未知参数而意外打开产品窗口。正式交付须使用本任务构建验证过的版本。源码目录未带 EXE/manifest，不能直接向任意旧 EXE 启动诊断。

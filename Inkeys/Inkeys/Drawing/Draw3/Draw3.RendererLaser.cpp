@@ -168,19 +168,13 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const size_t remaining = drawPoints.size() - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
-			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_laser_coverage_map_ink_data"), performancePass_))) return -1;
-			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_laser_coverage_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), batchCount * sizeof(InkPoint), 0); }, [&] { std::memcpy(mapped.pData, drawPoints.data() + startIndex,
-				batchCount * sizeof(InkPoint)); });
-			performanceCopy.Finish();
-			if (performance_) performance_->CopiedBytes(batchCount * sizeof(InkPoint));
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_laser_coverage_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), drawPoints.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(InkPoint)), 0, D3D11_MAP_WRITE_DISCARD,
+				PerformanceGraphicsRole::InkData,
+				PerformanceGraphicsSite("draw_laser_coverage_map_ink_data"), PerformanceGraphicsSite("draw_laser_coverage_memcpy_ink_data"),
+				PerformanceGraphicsSite("draw_laser_coverage_unmap_1"), PerformanceGraphicsSite("draw_laser_coverage_update_ink_data")))) return -1;
 
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
 			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
 				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
 			PerformanceGraphicsSite("draw_laser_coverage_map_global_constants"), performancePass_))) return -1;
@@ -411,18 +405,12 @@ namespace Inkeys::Drawing::Draw3
 		while (startIndex < dots.size())
 		{
 			const size_t batchCount = std::min(dots.size() - startIndex, kMaxBufferCapacity);
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), dots.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(LaserDot)), 0, D3D11_MAP_WRITE_DISCARD,
+				PerformanceGraphicsRole::InkData,
+				PerformanceGraphicsSite("draw_laser_dots_map_ink_data"), PerformanceGraphicsSite("draw_laser_dots_memcpy_ink_data"),
+				PerformanceGraphicsSite("draw_laser_dots_unmap_1"), PerformanceGraphicsSite("draw_laser_dots_update_ink_data")))) return;
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_laser_dots_map_ink_data"), performancePass_))) return;
-			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_laser_dots_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), batchCount * sizeof(LaserDot), 0); }, [&] { std::memcpy(mapped.pData, dots.data() + startIndex,
-				batchCount * sizeof(LaserDot)); });
-			performanceCopy.Finish();
-			if (performance_) performance_->CopiedBytes(batchCount * sizeof(LaserDot));
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_laser_dots_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
 			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
 				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
 			PerformanceGraphicsSite("draw_laser_dots_map_global_constants"), performancePass_))) return;

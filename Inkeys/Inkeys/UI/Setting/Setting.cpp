@@ -1362,6 +1362,8 @@ SettingSessionCoroutine RunSettingSession()
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
+				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
@@ -7682,7 +7684,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
-						inkeys3PanelHeight += 395.0f;
+						inkeys3PanelHeight += 625.0f;
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -7774,6 +7776,26 @@ SettingSessionCoroutine RunSettingSession()
 										Experimental.Inkeys3.PerformanceOutput;
 									QueueConfigWrite();
 								}, 90.0f);
+
+							// 两项仅持久化下次启动偏好，不重建当前绘图设备。
+							drawConsoleOutput("绘图硬件加速",
+								IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.N),
+								IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.E),
+								Experimental.Inkeys3.EnableHardwareAcceleration, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration =
+										Experimental.Inkeys3.EnableHardwareAcceleration;
+									QueueConfigWrite();
+								}, 110.0f);
+							drawConsoleOutput("兆芯绘图兼容模式",
+								IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N),
+								IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E),
+								Experimental.Inkeys3.EnableZhaoxinCompatibility, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility =
+										Experimental.Inkeys3.EnableZhaoxinCompatibility;
+									QueueConfigWrite();
+								}, 110.0f);
 
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

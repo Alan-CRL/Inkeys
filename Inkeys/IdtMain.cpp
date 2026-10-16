@@ -36,6 +36,7 @@ import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.transparent_presentation;
+import Inkeys.Drawing.Draw3.graphics_initialization;
 
 #include "IdtMain.h"
 #include "Inkeys/Helper/FailedCleanupDeadline.h"
@@ -692,6 +693,58 @@ namespace
 					return 1;
 				}
 			}
+			stage = "Draw3 device preferences";
+			Inkeys::Config deviceDefaults;
+			if (!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility ||
+				!writeBytes(mainConfig, "{}") || !deviceDefaults.ReadAll() ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
+			{
+				std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences defaulted off\n", stderr);
+				return 1;
+			}
+			for (const bool hardware : { false, true })
+				for (const bool compatibility : { false, true })
+				{
+					deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = hardware;
+					deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = compatibility;
+					Inkeys::Config restoredDevice;
+					if (!deviceDefaults.Write() || !restoredDevice.ReadAll() ||
+						restoredDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						restoredDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
+					{
+						std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences did not round-trip\n", stderr);
+						return 1;
+					}
+					Inkeys::Config copiedDevice;
+					copiedDevice = restoredDevice;
+					Inkeys::Config miniDevice;
+					if (!miniDevice.ReadMini({ "Experimental.Inkeys3.Draw3.EnableHardwareAcceleration",
+						"Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility" }) ||
+						miniDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						miniDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility ||
+						copiedDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						copiedDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
+						return 1;
+					const auto uploadInfo = restoredDevice.GetUploadInfo();
+					if (uploadInfo.find("EnableHardwareAcceleration") != std::string::npos ||
+						uploadInfo.find("EnableZhaoxinCompatibility") != std::string::npos) return 1;
+				}
+			for (const char* invalid : { "0", "1", "\"false\"", "null", "{}", "[]" })
+			{
+				Inkeys::Config invalidDevice;
+				const std::string invalidJson = "{\"Experimental\":{\"Inkeys3\":{\"Draw3\":{" +
+					std::string("\"EnableHardwareAcceleration\":") + invalid +
+					",\"EnableZhaoxinCompatibility\":" + invalid + "}}}}";
+				if (!writeBytes(mainConfig, invalidJson) || !invalidDevice.ReadAll() ||
+					!invalidDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+					!invalidDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
+				{
+					std::fputs("[ConfigBoundary] FAIL: non-bool Draw3 device preferences were accepted\n", stderr);
+					return 1;
+				}
+			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
 			std::filesystem::create_directories(root / "fresh" / "opt");
@@ -702,7 +755,7 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
 				return 1;
 			}
-			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation and touch reconnect preferences\n", stderr);
+			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation, touch reconnect and Draw3 device preferences\n", stderr);
 			return 0;
 		}
 		catch (...)
@@ -1276,6 +1329,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return 2;
 		}
 		if (performanceLaunch.Enabled()) performanceLaunchState = &performanceLaunch;
+		// 显式无窗口诊断按 argv 验参，错误参数不能落入产品窗口初始化。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-device-policy-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunGraphicsDeviceSelectionTest();
+		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
@@ -1377,7 +1438,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
-	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-map-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunRendererMapCompatibilityTest();
@@ -3331,6 +3391,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		// 配置只在启动时捕获；DComp 回退与运行期设备恢复复用同一份偏好。
+		draw3StartOptions.enableHardwareAcceleration =
+			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+		draw3StartOptions.enableZhaoxinCompatibility =
+			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 		if (performanceLaunch.Enabled()) draw3StartOptions.performanceOutputDirectory = performanceLaunch.OutputDirectory();
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =

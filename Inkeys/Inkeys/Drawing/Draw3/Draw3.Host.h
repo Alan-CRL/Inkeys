@@ -197,6 +197,9 @@ namespace Inkeys::Drawing::Draw3
 		std::wstring performanceOutputDirectory;
 		bool enableRuntimeMetrics = false;
 		std::size_t runtimeMetricsMaximumSamples = 32768;
+		// 启动时按值捕获；设备丢失后重建仍沿用本次运行偏好。
+		bool enableHardwareAcceleration = true;
+		bool enableZhaoxinCompatibility = true;
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。

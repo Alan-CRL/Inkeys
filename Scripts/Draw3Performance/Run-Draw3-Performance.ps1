@@ -159,12 +159,12 @@ try {
     if ([IO.Directory]::Exists($resultRoot)) { throw '会话目录已经存在' }
     [void][IO.Directory]::CreateDirectory($resultRoot)
     $startedUtc=[DateTime]::UtcNow
-    Write-PerfJson (Join-Path $resultRoot 'collector-session.json') @{schema_version=1; capture_schema=2; package_revision=2; skip_resource_probes=[bool]$SkipResourceProbes; session_id=$sessionId; started_utc=$startedUtc.ToString('o'); exe_path=$ExePath; exe_sha256=$exeHash; exe_file_version=[Diagnostics.FileVersionInfo]::GetVersionInfo($ExePath).FileVersion; exe_architecture=$manifest['exe_architecture']; argv=@('--draw3-performance',$resultRoot); package_id=$manifest['package_id']; launch_timeout_seconds=$LaunchTimeoutSeconds; capture_timeout_seconds=$CaptureTimeoutSeconds}
+    Write-PerfJson (Join-Path $resultRoot 'collector-session.json') @{schema_version=1; capture_schema=2; package_revision=3; skip_resource_probes=[bool]$SkipResourceProbes; session_id=$sessionId; started_utc=$startedUtc.ToString('o'); exe_path=$ExePath; exe_sha256=$exeHash; exe_file_version=[Diagnostics.FileVersionInfo]::GetVersionInfo($ExePath).FileVersion; exe_architecture=$manifest['exe_architecture']; argv=@('--draw3-performance',$resultRoot); package_id=$manifest['package_id']; launch_timeout_seconds=$LaunchTimeoutSeconds; capture_timeout_seconds=$CaptureTimeoutSeconds}
     [IO.File]::Copy([IO.Path]::GetFullPath($ManifestPath),(Join-Path $resultRoot 'diagnostic-manifest.json'),$false)
     [IO.File]::WriteAllText((Join-Path $resultRoot 'observations.txt'),"请记录卡顿发生的时间、工具、动作、是否刚从空闲恢复、是否切页/撤销，以及体感不跟手的描述。此文件属于人工观察。" + [Environment]::NewLine,(New-Object Text.UTF8Encoding($true)))
     Write-Host '正在测试前收集硬件快照，完成后这些查询会全部退出。'
     Collect-Hardware $resultRoot $HardwareTimeoutSeconds
-    Write-Host '诊断包 2：软件即将启动。正常书写并复现卡顿，完成后从软件正常退出。'
+    Write-Host '诊断包 3：软件即将启动。正常书写并复现卡顿，完成后从软件正常退出。'
     Write-Host '软件退出后自动执行最多 8 分钟的无窗口资源对照。完成前请保留本窗口，随后自动生成报告。'
     Write-Host ('结果目录: ' + $resultRoot)
     $argumentText='--draw3-performance "' + $resultRoot.TrimEnd('\') + '"'

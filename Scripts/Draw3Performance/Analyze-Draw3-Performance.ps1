@@ -218,12 +218,12 @@ function Write-GraphicsAnalysisFiles([string]$Root) {
 function Analyze-ResourceMatrix([string]$Root,$Launch) {
     # 对照失败与产品采集完整性分开；其 CSV 错误写入矩阵自己的 issues。
     $issues=New-Object Collections.ArrayList; $totals=@{analysis_truncated=0L;validation_issues=0L}
-    $ms=@{status='not_collected';reason='没有资源矩阵；v1原包未采集该对照';cases=(New-Object Collections.ArrayList);pairs=(New-Object Collections.ArrayList);issues=$issues}
+    $ms=@{status='not_collected';reason='没有资源矩阵；v1原包未采集该对照';cases=(New-Object Collections.ArrayList);pairs=(New-Object Collections.ArrayList);upload_pairs=(New-Object Collections.ArrayList);issues=$issues}
     $matrixRoot=Join-Path $Root 'resource-probes';$matrixPath=Join-Path $matrixRoot 'matrix.json'
     $csvRows=New-Object Collections.ArrayList
     if (-not [IO.File]::Exists($matrixPath)) {Save-AnalysisCsv (Join-Path $Root 'resource-probe-comparison.csv') @('case_id','status','reason','identity_verified','measure_api_sum_ms','hardware_to_warp_measure_ratio') @();return $ms}
     try {
-        $matrix=Read-PerfJson $matrixPath;[void](Get-PerfJsonInteger $matrix 'schema_version' 1 1);[void](Get-PerfJsonInteger $matrix 'probe_revision' 2 2)
+        $matrix=Read-PerfJson $matrixPath;[void](Get-PerfJsonInteger $matrix 'schema_version' 1 1);$revision=Get-PerfJsonInteger $matrix 'probe_revision' 2 3
         $ms.status=[string]$matrix['status'];$ms.reason=[string]$matrix['reason'];$ms['profile']=$matrix['profile']
         if (@('complete','partial','skipped','running') -cnotcontains $ms.status) {throw '未知matrix status'}
         if ($ms.status -eq 'skipped') {return $ms}
@@ -233,14 +233,14 @@ function Analyze-ResourceMatrix([string]$Root,$Launch) {
         $expected=$matrix['expected_cases'];$entries=$matrix['cases'];$list=$matrix['list']
         if ($expected -isnot [Collections.IList] -or $entries -isnot [Collections.IList] -or $expected.Count -gt 64 -or $entries.Count -gt 64) {throw 'matrix case列表超界/类型非法'}
         if ($expected.Count -eq 0) {return $ms}
-        [void](Get-PerfJsonInteger $list 'schema_version' 1 1);[void](Get-PerfJsonInteger $list 'probe_revision' 2 2)
-        if ($list['capability_marker'] -cne 'INKEYS_DRAW3_DIAGNOSTICS_V2' -or $list['profile'] -cne 'draw3-resource-v2-fixed' -or (Get-PerfJsonInteger $list 'case_count' 1 64) -ne $expected.Count) {throw 'matrix list能力/版本/数量不符'}
+        if ((Test-PerfProbeContract $list) -ne $revision -or $matrix['profile'] -cne $list['profile'] -or (Get-PerfJsonInteger $list 'case_count' 1 64) -ne $expected.Count) {throw 'matrix list能力/版本/数量不符'}
         $definitions=@{};$caseDirectories=@{};$caseOrdinal=0;foreach ($case in $expected) {$id=Get-PerfJsonString $case 'case_id';if ($id -cnotmatch '^[a-z0-9][a-z0-9_-]{0,95}$' -or $definitions.ContainsKey($id)) {throw 'matrix重复或非法case ID'};$definitions[$id]=$case;$caseOrdinal++;$caseDirectories[$id]='c'+$caseOrdinal.ToString('D3')}
-        $seen=@{};$profiles=@{}
+        $seen=@{};$profiles=@{};$uploadWorkloads=@{}
+        foreach ($case in $expected) {if ($case.ContainsKey('paired_workload')) {$key=[string]$case['requested_backend']+'/'+[string]$case['paired_workload'];if (-not $uploadWorkloads.ContainsKey($key)) {$uploadWorkloads[$key]=@{}}}}
         foreach ($entry in $entries) {
             $id=[string]$entry['case_id'];$case=$definitions[$id]
             if (-not $case -or $seen.ContainsKey($id)) {throw 'matrix未知/重复case结果'};$seen[$id]=$true
-            $caseSummary=@{case_id=$id;profile_id=$case['profile_id'];requested_backend=$case['requested_backend'];status=$entry['status'];reason=$entry['reason'];identity_verified=$false;resource_bytes=$case['resource_bytes'];write_bytes=$case['write_bytes'];draws_per_iteration=$case['draws_per_iteration'];update_method=$case['update_method'];constant_write_method=$case['constant_write_method'];cold_api_sum_ms=$null;warmup_api_sum_ms=$null;measure_api_sum_ms=$null;drain_api_sum_ms=$null;thread_cpu_ms=$null;process_cpu_ms=$null;hardware_to_warp_measure_ratio=$null;operations=@{};gpu_status=$null}
+            $caseSummary=@{case_id=$id;profile_id=$case['profile_id'];requested_backend=$case['requested_backend'];status=$entry['status'];reason=$entry['reason'];identity_verified=$false;resource_bytes=$case['resource_bytes'];write_bytes=$case['write_bytes'];draws_per_iteration=$case['draws_per_iteration'];update_method=$case['update_method'];constant_write_method=$case['constant_write_method'];paired_workload=$case['paired_workload'];upload_policy=$case['upload_policy'];effective_upload_policy=$null;cold_api_sum_ms=$null;warmup_api_sum_ms=$null;measure_api_sum_ms=$null;drain_api_sum_ms=$null;thread_cpu_ms=$null;process_cpu_ms=$null;hardware_to_warp_measure_ratio=$null;operations=@{};gpu_status=$null}
             [void]$ms.cases.Add($caseSummary);[void]$csvRows.Add($caseSummary)
             if ($entry['status'] -eq 'skipped') {continue}
             $caseLeaf=Get-PerfJsonString $entry 'directory';if ($caseLeaf -cnotmatch '^c[0-9]{3}$' -or $caseLeaf -cne $caseDirectories[$id]) {throw 'matrix case相对目录非法/顺序不符'}
@@ -254,7 +254,7 @@ function Analyze-ResourceMatrix([string]$Root,$Launch) {
                 $caseSummary.status=Test-PerfProbeResult $result $start $list $case ([string]$matrix['session_id']) $originalDirectory $observed $caseDirectory
                 $caseSummary.identity_verified=$true;$caseSummary.reason=$result['reason'];$caseSummary.thread_cpu_ms=$result['thread_cpu_ms'];$caseSummary.process_cpu_ms=$result['process_cpu_ms'];$caseSummary.gpu_status=$result['gpu_status']
                 foreach ($field in @('status','exit_code','pid','process_start_filetime_utc','exe_path','stopped_confirmed')) {if ([string]$observed[$field] -cne [string]$entry['worker'][$field]) {throw ('matrix/worker-status不符: '+$field)}}
-                $frequency=[double](Get-PerfJsonInteger $result 'qpc_frequency');$phaseSums=@{cold=0.0;warmup=0.0;measure=0.0;drain=0.0;initialization=0.0};$phaseCounts=@{cold=0L;warmup=0L;measure=0L;drain=0L;initialization=0L};$phaseIterations=@{cold=@{};warmup=@{};measure=@{};drain=@{};initialization=@{}};$callIds=@{};$rawDrawCounts=@{};$gpuDrawCounts=@{}
+                $frequency=[double](Get-PerfJsonInteger $result 'qpc_frequency');$phaseSums=@{cold=0.0;warmup=0.0;measure=0.0;drain=0.0;initialization=0.0};$phaseCounts=@{cold=0L;warmup=0L;measure=0L;drain=0L;initialization=0L};$phaseIterations=@{cold=@{};warmup=@{};measure=@{};drain=@{};initialization=@{}};$callIds=@{};$rawDrawCounts=@{};$gpuDrawCounts=@{};$pairedUploads=@{}
                 $before=[long]$totals.validation_issues;$resourceTable=@{}
                 $resourceAction={param($resource)
                     if ($null -eq $resource) {return}
@@ -266,8 +266,16 @@ function Analyze-ResourceMatrix([string]$Root,$Launch) {
                 $resourceRows=Csv-Rows (Join-Path $caseDirectory 'resources.csv') @('resource_id','role','resource_kind','byte_width','width','height','format','usage','bind_flags','cpu_access_flags','misc_flags','structure_byte_stride','create_hresult') $resourceAction 64
                 $caseSummary['resources']=$resourceTable.Values;$caseSummary['resource_rows']=$resourceRows
                 if ($caseSummary.status -eq 'complete' -and $resourceRows -eq 0) {throw 'probe complete缺少资源描述'}
+                if ($case.ContainsKey('paired_workload') -and $caseSummary.status -eq 'complete') {
+                    $primary=$resourceTable['1'];$composite=$resourceTable['8'];$target=$resourceTable['3']
+                    if (-not $primary -or -not $composite -or -not $target -or (Number $primary 'byte_width') -ne $case['resource_bytes'] -or (Number $composite 'byte_width') -ne 256 -or (Number $composite 'usage') -ne 2 -or (Number $composite 'structure_byte_stride') -ne 16 -or (Number $target 'width') -ne $case['width'] -or (Number $target 'height') -ne $case['height']) {throw 'v3成对资源描述/目标尺寸不符'}
+                    $usage=2;$cpuAccess=65536;if ($case['upload_policy'] -ceq 'compatibility_default') {$usage=0;$cpuAccess=0}
+                    if ((Number $primary 'usage') -ne $usage -or (Number $primary 'cpu_access_flags') -ne $cpuAccess -or (Number $composite 'cpu_access_flags') -ne 65536) {throw 'v3上传资源usage/CPU权限不符'}
+                    $caseSummary.effective_upload_policy=Get-PerfJsonString $result 'effective_upload_policy'
+                    if (($usage -eq 0 -and $caseSummary.effective_upload_policy -cne 'default_update_subresource') -or ($usage -eq 2 -and @('dynamic_discard_then_no_overwrite','dynamic_discard_each_batch') -cnotcontains $caseSummary.effective_upload_policy)) {throw 'v3实际上传策略不符'}
+                }
                 $probeGpu=@{rows=0L;statuses=@{};ready_samples=0L;ready_draw_samples=0L;ready_measure_draw_samples=0L;draw_calls=0L;empty_or_unmeasured_samples=0L;command_interval=$null;draw_command_interval=$null;evidence_reason='没有ready且带真实Draw/完整marker的GPU样本；不填0'}
-                $gpuValues=New-Object 'Collections.Generic.List[double]';$gpuDrawValues=New-Object 'Collections.Generic.List[double]';$gpuIds=@{}
+                $gpuValues=New-Object 'Collections.Generic.List[double]';$gpuDrawValues=New-Object 'Collections.Generic.List[double]';$gpuMeasureValues=New-Object 'Collections.Generic.List[double]';$gpuIds=@{}
                 $probeGpuAction={param($sample)
                     if ($null -eq $sample) {return}
                     foreach ($field in @('iteration','frequency','begin_timestamp','end_timestamp','draw_calls','marker_mask')) {[void](Number $sample $field)}
@@ -281,13 +289,15 @@ function Analyze-ResourceMatrix([string]$Root,$Launch) {
                         $freq=Number $sample 'frequency';$a=Number $sample 'begin_timestamp';$b=Number $sample 'end_timestamp'
                         if ($freq -le 0 -or $a -eq 0 -or $b -lt $a -or (Number $sample 'marker_mask') -ne 3) {throw 'probe ready GPU缺少有效端点/frequency/marker'}
                         $ms=[double]($b-$a)*1000.0/$freq;$probeGpu.ready_samples++;$gpuValues.Add($ms)
-                        if ((Number $sample 'draw_calls') -gt 0) {$probeGpu.ready_draw_samples++;$gpuDrawValues.Add($ms);if ($phase -eq 'measure') {$probeGpu.ready_measure_draw_samples++}}
+                        if ((Number $sample 'draw_calls') -gt 0) {$probeGpu.ready_draw_samples++;$gpuDrawValues.Add($ms);if ($phase -eq 'measure') {$probeGpu.ready_measure_draw_samples++;$gpuMeasureValues.Add($ms)}}
                         else {$probeGpu.empty_or_unmeasured_samples++}
                     } else {$probeGpu.empty_or_unmeasured_samples++}
                 }
                 $probeGpuRows=Csv-Rows (Join-Path $caseDirectory 'gpu.csv') @('phase','iteration','status','frequency','begin_timestamp','end_timestamp','draw_calls','marker_mask') $probeGpuAction 6
                 if ($probeGpuRows -ne 6 -or $gpuIds.Count -ne 6) {throw 'probe GPU固定6个阶段行缺失/多余'}
                 $probeGpu.command_interval=Distribution $gpuValues;$probeGpu.draw_command_interval=Distribution $gpuDrawValues
+                $caseSummary['measure_gpu_interval_sum_ms']=$null
+                if ($gpuMeasureValues.Count -eq 4) {$sum=0.0;foreach ($value in $gpuMeasureValues) {$sum+=$value};$caseSummary['measure_gpu_interval_sum_ms']=$sum}
                 if ($probeGpu.ready_draw_samples -gt 0) {$probeGpu.evidence_reason='实际Draw的immediate命令流区间，含CPU提交空隙；不是shader纯忙时'}
                 if ($probeGpu.ready_samples -gt 0 -and $probeGpu.ready_draw_samples -eq 0) {$probeGpu.evidence_reason='仅clear/copy/readback命令窗口，没有Draw；不能评价shader'}
                 if ($Case['draws_per_iteration'] -eq 0 -and $probeGpu.statuses['not_started'] -eq 6) {$probeGpu.evidence_reason='CPU-only更新对照未开启GPU query；not_started合法且没有GPU时间'}
@@ -299,6 +309,14 @@ function Analyze-ResourceMatrix([string]$Root,$Launch) {
                     foreach ($field in @('iteration','resource_id','related_resource_id','map_type','map_flags','subresource','offset_bytes','size_bytes','vertex_count','instance_count')) {[void](Number $call $field)}
                     $phase=[string]$call.phase;if (-not $phaseSums.ContainsKey($phase)) {throw 'probe未知phase'}
                     if ([string]$call.operation -ceq 'draw') {Count-Key $rawDrawCounts ($phase+'/'+(Number $call 'iteration'))}
+                    if ($case.ContainsKey('paired_workload') -and [string]$call.operation -ceq 'draw' -and ((Number $call 'vertex_count') -ne 6 -or (Number $call 'instance_count') -ne 1 -or @('1','8') -cnotcontains [string]$call.resource_id)) {throw 'v3成对实际Draw顶点/实例/资源不符'}
+                    if ($case.ContainsKey('paired_workload') -and @('cold','warmup','measure') -ccontains $phase -and @('write_copy','update_subresource') -ccontains [string]$call.operation -and @('1','8') -ccontains [string]$call.resource_id) {
+                        $key=$phase+'/'+(Number $call 'iteration')+'/'+$call.resource_id
+                        if ($pairedUploads.ContainsKey($key)) {throw 'v3重复资源上传'}
+                        $pairedUploads[$key]=Number $call 'size_bytes'
+                        if ($call.resource_id -eq '8' -and (Number $call 'offset_bytes') -ne 0) {throw 'v3小合成非零offset'}
+                        if ($case['upload_policy'] -ceq 'compatibility_default' -and $call.resource_id -eq '1' -and ((Number $call 'offset_bytes') -ne 0 -or [string]$call.operation -cne 'update_subresource')) {throw 'v3兼容路径未按offset0局部更新'}
+                    }
                     foreach ($field in @('resource_id','related_resource_id')) {if ((Number $call $field) -gt 0 -and -not $resourceTable.ContainsKey([string]$call[$field])) {throw ('probe调用引用缺失资源: '+$field)}}
                     $available=Flag $call 'hresult_available';if ($available) {[void](Signed $call 'hresult')} elseif ([string]$call.hresult -ne '') {throw 'probe void API伪造HRESULT'}
                     if (-not (Flag $call 'valid_interval')) {return}
@@ -314,11 +332,13 @@ function Analyze-ResourceMatrix([string]$Root,$Launch) {
                 if ($caseSummary.status -eq 'complete') {
                     # 用raw实际Draw逐轮交叉核验，不把result/definition重复声明当工作量证据。
                     for ($iteration=0;$iteration -lt 6;$iteration++) {$phase='measure';if ($iteration -eq 0) {$phase='cold'};if ($iteration -eq 1) {$phase='warmup'};$key=$phase+'/'+$iteration;$drawCount=0L;if ($rawDrawCounts.ContainsKey($key)) {$drawCount=$rawDrawCounts[$key]};if ($drawCount -ne $case['draws_per_iteration'] -or $gpuDrawCounts[$key] -ne $drawCount) {throw ('probe实际Draw分母与definition/GPU不符: '+$key)}}
+                    if ($case.ContainsKey('paired_workload')) {for ($iteration=0;$iteration -lt 6;$iteration++) {$phase='measure';if ($iteration -eq 0) {$phase='cold'};if ($iteration -eq 1) {$phase='warmup'};$key=$phase+'/'+$iteration;if ($pairedUploads[$key+'/1'] -ne $case['write_bytes'] -or $pairedUploads[$key+'/8'] -ne 32) {throw ('v3实际上传字节/阶段不完整: '+$key)}}}
                 }
                 foreach ($phase in @('cold','warmup','measure','drain')) {if ($phaseCounts[$phase] -gt 0) {$caseSummary[$phase+'_api_sum_ms']=$phaseSums[$phase]}}
                 foreach ($g in $caseSummary.operations.Values) {$g['distribution']=Distribution $g.values;$g.Remove('values')}
                 if ($caseSummary.status -eq 'complete' -and $null -ne $caseSummary.measure_api_sum_ms -and $phaseCounts.measure -gt 0) {
                     $profile=[string]$case['profile_id'];if (-not $profiles.ContainsKey($profile)) {$profiles[$profile]=@{}};$profiles[$profile][[string]$case['requested_backend']]=@{row=$caseSummary;definition=$case;result=$result}
+                    if ($case.ContainsKey('paired_workload')) {$key=[string]$case['requested_backend']+'/'+[string]$case['paired_workload'];$policy=Get-PerfJsonString $case 'upload_policy';if ($uploadWorkloads[$key].ContainsKey($policy)) {throw 'v3重复成对策略'};$uploadWorkloads[$key][$policy]=@{row=$caseSummary;definition=$case;result=$result}}
                 }
             } catch {if ($entry['status'] -ne 'timeout' -and $entry['status'] -ne 'termination_unconfirmed') {$caseSummary.status='invalid_result'};$caseSummary.identity_verified=$false;$caseSummary.reason=$_.Exception.Message;$ms.status='partial';Add-Issue ($id+': '+$caseSummary.reason)}
         }
@@ -332,13 +352,42 @@ function Analyze-ResourceMatrix([string]$Root,$Launch) {
                 [void]$ms.pairs.Add(@{profile_id=$profile;hardware_measure_api_sum_ms=$hardware.row.measure_api_sum_ms;warp_measure_api_sum_ms=$warp.row.measure_api_sum_ms;hardware_to_warp_ratio=$ratio;comparison_scope='four_measured_iterations_CPU_leaf_API_intervals_not_GPU_busy';reason='同profile大小/写入量/迭代与shader身份匹配；冷轮/warmup另列'})
             }
         }
+        foreach ($key in ($uploadWorkloads.Keys | Sort-Object)) {
+            $pair=$uploadWorkloads[$key];$parts=$key.Split('/');$row=@{requested_backend=$parts[0];paired_workload=$parts[1];status='unavailable';reason='缺少完整且身份验证成功的两侧测量';dynamic_measure_api_sum_ms=$null;default_measure_api_sum_ms=$null;dynamic_to_default_cpu_ratio=$null;dynamic_measure_gpu_interval_ms=$null;default_measure_gpu_interval_ms=$null;dynamic_drain_ms=$null;default_drain_ms=$null;cpu_lower_policy=$null;comparison_scope='four_measured_iterations_CPU_leaf_API_only_independent_offscreen_contract_not_full_product_AB'}
+            if ($pair.ContainsKey('optimized_dynamic') -and $pair.ContainsKey('compatibility_default')) {
+                $dynamic=$pair.optimized_dynamic;$compat=$pair.compatibility_default;$comparable=$true
+                foreach ($field in @('resource_bytes','write_bytes','draws_per_iteration','width','height','constant_write_method','composite_resource_bytes','composite_write_bytes','composite_update_method','workload_contract')) {if ([string]$dynamic.definition[$field] -cne [string]$compat.definition[$field]) {$comparable=$false}}
+                foreach ($field in @('vertex_resource_id','pixel_resource_id','vertex_bytes','pixel_bytes','vertex_fnv1a64','pixel_fnv1a64')) {if ([string]$dynamic.result['shader'][$field] -cne [string]$compat.result['shader'][$field]) {$comparable=$false}}
+                foreach ($field in @('available','vendor_id','device_id','subsystem_id','revision','driver_version_available','driver_version')) {if ([string]$dynamic.result['adapter'][$field] -cne [string]$compat.result['adapter'][$field]) {$comparable=$false}}
+                if ($dynamic.result['adapter']['available'] -ne $true -or $compat.result['adapter']['available'] -ne $true) {$comparable=$false}
+                if ($comparable -and $compat.row.measure_api_sum_ms -gt 0) {
+                    $row.status='comparable';$row.reason='同backend/adapter/shader/工作量，小合成两侧均256B；比值只代表CPU调用区间，不裁定整体流畅度'
+                    $row.dynamic_measure_api_sum_ms=$dynamic.row.measure_api_sum_ms;$row.default_measure_api_sum_ms=$compat.row.measure_api_sum_ms;$row.dynamic_to_default_cpu_ratio=[double]$dynamic.row.measure_api_sum_ms/$compat.row.measure_api_sum_ms
+                    $row.dynamic_measure_gpu_interval_ms=$dynamic.row.measure_gpu_interval_sum_ms;$row.default_measure_gpu_interval_ms=$compat.row.measure_gpu_interval_sum_ms;$row.dynamic_drain_ms=$dynamic.row.drain_api_sum_ms;$row.default_drain_ms=$compat.row.drain_api_sum_ms
+                    $row.cpu_lower_policy='equal';if ($row.dynamic_to_default_cpu_ratio -gt 1) {$row.cpu_lower_policy='compatibility_default'};if ($row.dynamic_to_default_cpu_ratio -lt 1) {$row.cpu_lower_policy='optimized_dynamic'}
+                } else {$row.reason='两侧adapter/shader/资源/工作量不匹配，或DEFAULT时间不可用于比值'}
+            }
+            [void]$ms.upload_pairs.Add($row)
+        }
     } catch {$ms.status='partial';$ms.reason=$_.Exception.Message;Add-Issue $ms.reason}
-    finally {Save-AnalysisCsv (Join-Path $Root 'resource-probe-comparison.csv') @('case_id','profile_id','requested_backend','status','reason','identity_verified','resource_bytes','write_bytes','draws_per_iteration','update_method','constant_write_method','cold_api_sum_ms','warmup_api_sum_ms','measure_api_sum_ms','drain_api_sum_ms','thread_cpu_ms','process_cpu_ms','max_measure_call_ms','max_measure_operation','max_measure_site','max_measure_resource_id','max_measure_resource_role','gpu_status','gpu_ready_draw_samples','gpu_ready_samples','gpu_nonready_samples','gpu_evidence_reason','hardware_to_warp_measure_ratio') $csvRows}
+    finally {Save-AnalysisCsv (Join-Path $Root 'resource-probe-comparison.csv') @('case_id','profile_id','requested_backend','status','reason','identity_verified','resource_bytes','write_bytes','draws_per_iteration','update_method','constant_write_method','paired_workload','upload_policy','effective_upload_policy','cold_api_sum_ms','warmup_api_sum_ms','measure_api_sum_ms','drain_api_sum_ms','thread_cpu_ms','process_cpu_ms','max_measure_call_ms','max_measure_operation','max_measure_site','max_measure_resource_id','max_measure_resource_role','gpu_status','gpu_ready_draw_samples','gpu_ready_samples','gpu_nonready_samples','gpu_evidence_reason','hardware_to_warp_measure_ratio') $csvRows
+        Save-AnalysisCsv (Join-Path $Root 'resource-upload-pairs.csv') @('requested_backend','paired_workload','status','reason','dynamic_measure_api_sum_ms','default_measure_api_sum_ms','dynamic_to_default_cpu_ratio','cpu_lower_policy','dynamic_measure_gpu_interval_ms','default_measure_gpu_interval_ms','dynamic_drain_ms','default_drain_ms','comparison_scope') $ms.upload_pairs
+    }
     return $ms
 }
 
 function Append-ResourceMatrixReport($Builder,$Matrix) {
     [void]$Builder.AppendLine('')
+    if ($Matrix.upload_pairs.Count -gt 0) {
+        [void]$Builder.AppendLine('v3 优化普通上传 / 兼容上传成对结果（两侧均使用256B独立合成资源）：')
+        [void]$Builder.AppendLine('')
+        [void]$Builder.AppendLine('| backend / 工作量 | 状态 | dynamic CPU ms | DEFAULT CPU ms | dynamic/DEFAULT | dynamic GPU区间 ms | DEFAULT GPU区间 ms | dynamic drain ms | DEFAULT drain ms |')
+        [void]$Builder.AppendLine('|---|---|---:|---:|---:|---:|---:|---:|---:|')
+        foreach ($pair in $Matrix.upload_pairs) {[void]$Builder.AppendLine('| '+$pair.requested_backend+' / '+$pair.paired_workload+' | '+$pair.status+' | '+(Display-Number $pair.dynamic_measure_api_sum_ms)+' | '+(Display-Number $pair.default_measure_api_sum_ms)+' | '+(Display-Number $pair.dynamic_to_default_cpu_ratio)+' | '+(Display-Number $pair.dynamic_measure_gpu_interval_ms)+' | '+(Display-Number $pair.default_measure_gpu_interval_ms)+' | '+(Display-Number $pair.dynamic_drain_ms)+' | '+(Display-Number $pair.default_drain_ms)+' |')}
+        [void]$Builder.AppendLine('')
+        [void]$Builder.AppendLine('数值为4个measure迭代合计；比值>1仅说明DEFAULT的CPU叶调用提交更快。GPU区间含CPU提交空隙，缺样不填0，冷轮/预热/drain另列。两侧独立离屏实现301/302 shader合同，不是完整Host/RTS/呈现回放；最终是否保留兼容策略仍需同一设备开/关兼容并重启后的真实产品A/B采集。不可比原因及drain见resource-upload-pairs.csv。')
+        [void]$Builder.AppendLine('')
+    }
     [void]$Builder.AppendLine('独立矩阵可比较数值（CPU leaf API 区间合计，冷轮/warmup 与 drain 分开）：')
     [void]$Builder.AppendLine('')
     [void]$Builder.AppendLine('| 固定 profile | HW measure ms | WARP measure ms | HW/WARP |')
@@ -709,11 +758,11 @@ $renderDistributions=@{}; foreach ($key in $renderGroups.Keys) {$g=$renderGroups
 $matrixSummary=Analyze-ResourceMatrix $CaptureRoot $launch
 $graphicsSummary=@{};foreach ($key in $graphics.Keys) {$graphicsSummary[$key]=$graphics[$key]};$graphicsSummary.groups=@($graphics.groups | Sort-Object -Property @{Expression={$_.total_ms};Descending=$true} | Select-Object -First 256);$graphicsSummary['groups_in_csv']=$graphics.groups.Count;$graphicsSummary['groups_json_limit']=256
 $batchDistribution=Distribution $metrics['frame_consumed_batches'];$inputBatchCounts=@{unit='consumed_callback_batches_per_retained_owner_frame';frames=$batchDistribution.count;mean_batches=$batchDistribution.mean_ms;p50_batches=$batchDistribution.p50_ms;p95_batches=$batchDistribution.p95_ms;p99_batches=$batchDistribution.p99_ms;max_batches=$batchDistribution.max_ms;p99_reason=$batchDistribution.p99_reason}
-$summary=@{schema_version=2;capture_schema=$captureSchema;analyzer_revision=2;input_batch_counts=$inputBatchCounts;graphics=$graphicsSummary;gpu_coverage=$gpuCoverage;render_groups=$renderDistributions;resource_matrix=$matrixSummary;status=$status;session_id=$recordedSession;capture_identity_verified=$captureIdentityVerified;generated_utc=[DateTime]::UtcNow.ToString('o');totals=$totals;distributions=$distributions;input_phases=$phases;input_tool_phases=$toolPhases;gpu_statuses=$gpuStatuses;hardware=$hardware;hosts=$hosts;issues=$issues;analysis_limits=@{hosts=$hostBudget;frames=$frameBudget;input_rows=$rowBudget;gpu_rows=$rowBudget;values_per_distribution=$metricBudget;tool_phase_groups=40;csv_bytes=67108864;csv_line_chars=16384;issue_details=256;top_frames=100};percentile_method='nearest_rank_ceiling_n_times_p';p99_minimum_samples=1000;latency_boundary='RTS_callback_to_real_content_software_Present_return';stage_relationship='inclusive_nested_do_not_sum';normal_mode_evidence='disabled_path_contract 为静态声明；本报告不是正常模式性能实测'}
+$summary=@{schema_version=2;capture_schema=$captureSchema;analyzer_revision=3;input_batch_counts=$inputBatchCounts;graphics=$graphicsSummary;gpu_coverage=$gpuCoverage;render_groups=$renderDistributions;resource_matrix=$matrixSummary;status=$status;session_id=$recordedSession;capture_identity_verified=$captureIdentityVerified;generated_utc=[DateTime]::UtcNow.ToString('o');totals=$totals;distributions=$distributions;input_phases=$phases;input_tool_phases=$toolPhases;gpu_statuses=$gpuStatuses;hardware=$hardware;hosts=$hosts;issues=$issues;analysis_limits=@{hosts=$hostBudget;frames=$frameBudget;input_rows=$rowBudget;gpu_rows=$rowBudget;values_per_distribution=$metricBudget;tool_phase_groups=40;csv_bytes=67108864;csv_line_chars=16384;issue_details=256;top_frames=100};percentile_method='nearest_rank_ceiling_n_times_p';p99_minimum_samples=1000;latency_boundary='RTS_callback_to_real_content_software_Present_return';stage_relationship='inclusive_nested_do_not_sum';normal_mode_evidence='disabled_path_contract 为静态声明；本报告不是正常模式性能实测'}
 Write-PerfJson (Join-Path $CaptureRoot 'summary.json') $summary
 
 $report=New-Object Text.StringBuilder
-[void]$report.AppendLine('# Draw3 性能诊断包 2 分析报告（兼容 v1）')
+[void]$report.AppendLine('# Draw3 性能诊断包 3 分析报告（兼容 v1/v2）')
 [void]$report.AppendLine('')
 [void]$report.AppendLine('采集完整性：**' + $status + '**。这是数据完整性状态，不是性能 PASS。')
 [void]$report.AppendLine('帧分母 seen/retained/dropped：' + $totals.frames_seen + '/' + $totals.frames_retained + '/' + $totals.frames_dropped + '；CSV 有效/非法：' + $totals.frames_valid + '/' + $totals.frames_invalid + '。')
@@ -786,6 +835,8 @@ foreach ($hostRecord in $hosts) {
     [void]$report.AppendLine('- '+$hostRecord.host+' 保留前缀覆盖墙钟 ms：'+(Display-Number $hostRecord.coverage_ms)+'；初始化 status：'+$hostStatus+'。')
     if ($hostRecord.initialization) {
         [void]$report.AppendLine('  实际 driver_type='+$hostRecord.initialization['actual_driver_type']+'，presenter_mode='+$hostRecord.initialization['presenter_mode']+'，adapter_available='+$hostRecord.initialization['adapter_available']+'，adapter='+$hostRecord.initialization['adapter_description']+'，feature_level='+$hostRecord.initialization['feature_level']+'。实际设备来自软件；hardware.json 的 WMI 是测试前快照。')
+        $policy=$hostRecord.initialization['structured_upload_policy'];if (-not $policy) {$policy='不可用（旧包或未到资源初始化）'}
+        [void]$report.AppendLine('  绘图硬件加速请求='+[string]$hostRecord.initialization['hardware_acceleration_requested']+'，兆芯兼容请求='+[string]$hostRecord.initialization['zhaoxin_compatibility_requested']+'，兼容实际启用='+[string]$hostRecord.initialization['zhaoxin_compatibility_effective']+'，大型资源实际上传='+$policy+'，原因='+[string]$hostRecord.initialization['zhaoxin_compatibility_reason']+'，策略识别adapter可用='+[string]$hostRecord.initialization['upload_policy_adapter_available']+'。空白表示未采集，不能按默认值推断。')
         $dpi=$hostRecord.initialization['target_effective_dpi']; if ($null -eq $dpi -or [double]$dpi -le 0) { $dpi=$null }
         [void]$report.AppendLine('  实际目标 DPI='+ (Display-Number $dpi)+'，显示快照 generation='+$hostRecord.initialization['display_snapshot_generation']+'，topology='+$hostRecord.initialization['display_topology']+'，像素尺寸='+$hostRecord.initialization['display_pixel_width']+'×'+$hostRecord.initialization['display_pixel_height']+'，Modeler DPI scale='+$hostRecord.initialization['model_dpi_scale']+'，目标 FPS='+$hostRecord.initialization['target_fps']+'。这是输出的实际上下文快照，不能证明每个历史帧配置相同。')
         [void]$report.AppendLine('')

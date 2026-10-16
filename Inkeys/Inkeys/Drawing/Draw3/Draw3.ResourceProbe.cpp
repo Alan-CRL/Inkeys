@@ -20,6 +20,8 @@
 #include <string_view>
 #include <vector>
 
+import Inkeys.Drawing.Draw3.renderer;
+
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 
@@ -28,12 +30,12 @@ namespace Inkeys::Drawing::Draw3
 	namespace
 	{
 		using Microsoft::WRL::ComPtr;
-		constexpr char kMarker[] = "INKEYS_DRAW3_DIAGNOSTICS_V2";
-		constexpr char kProfile[] = "draw3-resource-v2-fixed";
+		constexpr char kMarker[] = "INKEYS_DRAW3_DIAGNOSTICS_V3";
+		constexpr char kProfile[] = "draw3-resource-v3-fixed";
 		constexpr char kComparisonPath[] = "offscreen_embedded_301_302_contract";
 		constexpr unsigned kBudgetMs = 8000, kCallCapacity = 4096, kIterations = 6;
 		enum class Work { Ink, Constant, Highlighter, Composite, ClearCopy, Readback };
-		enum class Update { Discard, NoOverwrite, Default };
+		enum class Update { Discard, NoOverwrite, Default, OptimizedDynamic };
 		enum class Write { Fields, Memcpy, Volatile };
 		struct Case
 		{
@@ -43,6 +45,7 @@ namespace Inkeys::Drawing::Draw3
 			Update update = Update::Discard;
 			Write write = Write::Fields;
 			unsigned width = 64, height = 64;
+			const char* pair = "";
 		};
 		constexpr Case kCases[] = {
 			{ "ink_large_discard_idle", Work::Ink, 3200000, 32, 0 },
@@ -66,7 +69,16 @@ namespace Inkeys::Drawing::Draw3
 			{ "target1080_clear_copy", Work::ClearCopy, 8294400, 8294400, 0,
 				Update::Default, Write::Memcpy, 1920, 1080 },
 			{ "target64_readback", Work::Readback, 16384, 16384, 0,
-				Update::Default, Write::Memcpy }
+				Update::Default, Write::Memcpy },
+			// 两侧都用独立小合成资源；不把旧版大合成的成本混入普通/兼容对照。
+			{ "paired_ink64_dynamic", Work::Ink, 3200000, 32, 2, Update::OptimizedDynamic, Write::Fields, 64, 64, "ink64" },
+			{ "paired_ink64_default", Work::Ink, 3200000, 32, 2, Update::Default, Write::Fields, 64, 64, "ink64" },
+			{ "paired_ink4k_dynamic", Work::Ink, 3200000, 32, 2, Update::OptimizedDynamic, Write::Fields, 3840, 2160, "ink4k" },
+			{ "paired_ink4k_default", Work::Ink, 3200000, 32, 2, Update::Default, Write::Fields, 3840, 2160, "ink4k" },
+			{ "paired_highlighter64_dynamic", Work::Highlighter, 4800000, 48, 2, Update::OptimizedDynamic, Write::Fields, 64, 64, "highlighter64" },
+			{ "paired_highlighter64_default", Work::Highlighter, 4800000, 48, 2, Update::Default, Write::Fields, 64, 64, "highlighter64" },
+			{ "paired_highlighter4k_dynamic", Work::Highlighter, 4800000, 48, 2, Update::OptimizedDynamic, Write::Fields, 3840, 2160, "highlighter4k" },
+			{ "paired_highlighter4k_default", Work::Highlighter, 4800000, 48, 2, Update::Default, Write::Fields, 3840, 2160, "highlighter4k" }
 		};
 		struct Constants
 		{
@@ -80,7 +92,7 @@ namespace Inkeys::Drawing::Draw3
 		struct Highlighter { float x1, y1, x2, y2, halfWidth, halfHeight; };
 		static_assert(sizeof(Constants) == 48 && offsetof(Constants, operation) == 32);
 		static_assert(sizeof(Point) == 16 && sizeof(Highlighter) == 24);
-		static_assert(std::size(kCases) == 20);
+		static_assert(std::size(kCases) == 28);
 
 		std::int64_t Qpc() noexcept
 		{
@@ -144,6 +156,7 @@ namespace Inkeys::Drawing::Draw3
 		const char* UpdateName(Update update) noexcept
 		{
 			return update == Update::Default ? "default_update_subresource" :
+				update == Update::OptimizedDynamic ? "dynamic_capability_gated_ring" :
 				update == Update::NoOverwrite ? "discard_then_no_overwrite" : "write_discard";
 		}
 		const char* WriteName(Write write) noexcept
@@ -163,12 +176,20 @@ namespace Inkeys::Drawing::Draw3
 			result["width"] = test.width; result["height"] = test.height;
 			result["update_method"] = UpdateName(test.update);
 			result["constant_write_method"] = WriteName(test.write);
+			if (*test.pair)
+			{
+				result["paired_workload"] = test.pair;
+				result["upload_policy"] = test.update == Update::Default ? "compatibility_default" : "optimized_dynamic";
+				result["composite_resource_bytes"] = 256; result["composite_write_bytes"] = 32;
+				result["composite_update_method"] = "write_discard";
+				result["workload_contract"] = "primary_draw_copy_small_composite_draw_v3";
+			}
 			return result;
 		}
 		Json::Value Envelope()
 		{
 			Json::Value result;
-			result["schema_version"] = 1; result["probe_revision"] = 2;
+			result["schema_version"] = 1; result["probe_revision"] = 3;
 			result["capability_marker"] = kMarker; result["profile"] = kProfile;
 			result["comparison_path"] = kComparisonPath;
 			return result;
@@ -421,6 +442,16 @@ namespace Inkeys::Drawing::Draw3
 					if (!Failure(device_->CreateShaderResourceView(immutable_.Get(), &view, primarySRV_.GetAddressOf()),
 						"create_immutable_srv")) return false;
 				}
+				if (*test_.pair)
+				{
+					D3D11_BUFFER_DESC composite = { 256, D3D11_USAGE_DYNAMIC, D3D11_BIND_SHADER_RESOURCE,
+						D3D11_CPU_ACCESS_WRITE, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, 16 };
+					if (!Failure(Buffer(8, "dedicated_composite_vertices", composite, composite_), "create_composite_buffer")) return false;
+					D3D11_SHADER_RESOURCE_VIEW_DESC view{}; view.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+					view.Buffer.NumElements = 16;
+					if (!Failure(device_->CreateShaderResourceView(composite_.Get(), &view, compositeSRV_.GetAddressOf()),
+						"create_composite_srv")) return false;
+				}
 				if (!CreateTargets() || !CreatePipeline()) return false;
 				CreateQueries();
 				return true;
@@ -513,15 +544,16 @@ namespace Inkeys::Drawing::Draw3
 					output.BlendOp = output.BlendOpAlpha = i ? D3D11_BLEND_OP_MIN : D3D11_BLEND_OP_MAX;
 					output.RenderTargetWriteMask = i ? D3D11_COLOR_WRITE_ENABLE_RED : D3D11_COLOR_WRITE_ENABLE_ALL;
 				}
-				if (test_.work == Work::Composite)
+				if (!Failure(device_->CreateBlendState(&blend, blend_.GetAddressOf()), "create_production_blend")) return false;
+				if (test_.work == Work::Composite || *test_.pair)
 				{
 					blend = {}; auto& output = blend.RenderTarget[0]; output.BlendEnable = TRUE;
 					output.SrcBlend = output.SrcBlendAlpha = D3D11_BLEND_ONE;
 					output.DestBlend = D3D11_BLEND_SRC1_COLOR; output.DestBlendAlpha = D3D11_BLEND_SRC1_ALPHA;
 					output.BlendOp = output.BlendOpAlpha = D3D11_BLEND_OP_ADD;
 					output.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+					if (!Failure(device_->CreateBlendState(&blend, compositeBlend_.GetAddressOf()), "create_composite_blend")) return false;
 				}
-				if (!Failure(device_->CreateBlendState(&blend, blend_.GetAddressOf()), "create_production_blend")) return false;
 				D3D11_RASTERIZER_DESC raster{}; raster.FillMode = D3D11_FILL_SOLID;
 				raster.CullMode = D3D11_CULL_NONE; raster.DepthClipEnable = TRUE;
 				if (!Failure(device_->CreateRasterizerState(&raster, raster_.GetAddressOf()), "create_raster")) return false;
@@ -555,12 +587,12 @@ namespace Inkeys::Drawing::Draw3
 				if (std::strcmp(sample.status, "pending") != 0) return;
 				context_->End(sample.end.Get()); context_->End(sample.disjoint.Get());
 			}
-			Constants ConstantData(unsigned offset) const noexcept
+			Constants ConstantData(unsigned offset, bool composite = false) const noexcept
 			{
 				Constants value{};
 				value.width = static_cast<float>(test_.width); value.height = static_cast<float>(test_.height);
-				value.shape = test_.work == Work::Composite ? 1.0f : test_.work == Work::Highlighter ? 3.0f : 0.0f;
-				value.offset = offset / (test_.work == Work::Highlighter ? 24 : 16);
+				value.shape = composite || test_.work == Work::Composite ? 1.0f : test_.work == Work::Highlighter ? 3.0f : 0.0f;
+				value.offset = composite ? 0 : offset / (test_.work == Work::Highlighter ? 24 : 16);
 				value.color[0] = 0.2f; value.color[1] = 0.5f; value.color[2] = 0.8f; value.color[3] = 0.8f;
 				return value;
 			}
@@ -580,20 +612,23 @@ namespace Inkeys::Drawing::Draw3
 				std::memcpy(output->color, value.color, sizeof(value.color));
 				output->shape = value.shape; output->offset = value.offset; output->operation = value.operation;
 			}
-			bool UpdateBuffer(ID3D11Buffer* buffer, unsigned id, bool constant, unsigned offset)
+			bool UpdateBuffer(ID3D11Buffer* buffer, unsigned id, bool constant, unsigned offset, bool composite = false)
 			{
-				const auto value = ConstantData(offset);
-				const unsigned bytes = constant ? (test_.work == Work::Constant ? test_.writeBytes : 36) : test_.writeBytes;
+				const auto value = ConstantData(offset, composite);
+				const unsigned bytes = constant ? (test_.work == Work::Constant ? test_.writeBytes : 36) : composite ? 32 : test_.writeBytes;
 				std::array<unsigned char, 4096> data{};
 				if (constant) std::memcpy(data.data(), &value, 48);
-				else if (test_.work == Work::Highlighter)
+				else if (!composite && test_.work == Work::Highlighter)
 				{
-					const Highlighter primitive{ 8, 8, 56, 56, 2, 8 }; std::memcpy(data.data(), &primitive, 24);
+					const Highlighter primitive{ 8, 8, *test_.pair ? static_cast<float>(test_.width - 8) : 56,
+						*test_.pair ? static_cast<float>(test_.height - 8) : 56, 2, 8 }; std::memcpy(data.data(), &primitive, 24);
 					std::memcpy(data.data() + 24, &primitive, 24);
 				}
 				else
 				{
-					const Point points[] = { { 8, 8, 3, 0 }, { 56, 56, 3, 0 } };
+					const Point points[] = { { composite ? 0.0f : 8.0f, composite ? 0.0f : 8.0f, 3, 0 },
+						{ *test_.pair ? static_cast<float>(test_.width - (composite ? 0 : 8)) : 56,
+						  *test_.pair ? static_cast<float>(test_.height - (composite ? 0 : 8)) : 56, 3, 0 } };
 					std::memcpy(data.data(), points, sizeof(points));
 				}
 				Call call; call.resource = id; call.bytes = bytes;
@@ -609,7 +644,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 				D3D11_MAPPED_SUBRESOURCE mapped{};
 				call.operation = "map"; call.site = constant ? "map_constant48" : "map_structured";
-				call.map = buffer == primary_.Get() && test_.update == Update::NoOverwrite && iteration_ > 0
+				call.map = buffer == primary_.Get() && (test_.update == Update::NoOverwrite ||
+					(test_.update == Update::OptimizedDynamic && test_.work != Work::Highlighter && SUCCEEDED(capsResult_) && caps_.MapNoOverwriteOnDynamicBufferSRV)) && iteration_ > 0
 					? D3D11_MAP_WRITE_NO_OVERWRITE : D3D11_MAP_WRITE_DISCARD;
 				if (!Failure(HCall(call, [&] { return context_->Map(buffer, 0,
 					static_cast<D3D11_MAP>(call.map), 0, &mapped); }), call.site)) return false;
@@ -626,6 +662,21 @@ namespace Inkeys::Drawing::Draw3
 			bool Iterate()
 			{
 				if (test_.work == Work::ClearCopy || test_.work == Work::Readback) return TextureIteration();
+				if (*test_.pair)
+				{
+					const unsigned offset = test_.update == Update::OptimizedDynamic && test_.work != Work::Highlighter && SUCCEEDED(capsResult_) &&
+						caps_.MapNoOverwriteOnDynamicBufferSRV ? iteration_ * test_.writeBytes : 0;
+					if (!UpdateBuffer(primary_.Get(), 1, false, offset) || !UpdateBuffer(global_.Get(), 2, true, offset)) return false;
+					BindAndDraw();
+					Call call; call.operation = "bind"; call.site = "paired_unbind_targets";
+					VCall(call, [&] { context_->OMSetRenderTargets(0, nullptr, nullptr); });
+					call.operation = "copy"; call.site = "paired_operator_add_copy"; call.resource = 5; call.related = 3;
+					call.bytes = test_.width * test_.height * 4;
+					VCall(call, [&] { context_->CopyResource(copy_.Get(), target_.Get()); });
+					if (!UpdateBuffer(composite_.Get(), 8, false, 0, true) || !UpdateBuffer(global_.Get(), 2, true, 0, true)) return false;
+					BindAndDraw(true);
+					return !Expired();
+				}
 				for (unsigned draw = 0; draw < (std::max)(1u, test_.draws); ++draw)
 				{
 					if (Expired()) return false;
@@ -638,21 +689,22 @@ namespace Inkeys::Drawing::Draw3
 				}
 				return true;
 			}
-			void BindAndDraw()
+			void BindAndDraw(bool compositeStage = false)
 			{
+				const bool composite = compositeStage || test_.work == Work::Composite;
 				Call call; call.operation = "bind"; call.resource = 3;
 				ID3D11RenderTargetView* outputs[] = { targetRTV_.Get(), retainRTV_.Get() };
-				call.site = "om_targets"; VCall(call, [&] { context_->OMSetRenderTargets(test_.work == Work::Composite ? 1 : 2, outputs, nullptr); });
+				call.site = "om_targets"; VCall(call, [&] { context_->OMSetRenderTargets(composite ? 1 : 2, outputs, nullptr); });
 				call.site = "ia_layout"; VCall(call, [&] { context_->IASetInputLayout(nullptr); });
 				call.site = "ia_topology"; VCall(call, [&] { context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); });
 				call.site = "vs_shader"; VCall(call, [&] { context_->VSSetShader(vertex_.Get(), nullptr, 0); });
-				ID3D11ShaderResourceView* source = primarySRV_.Get(); call.resource = test_.work == Work::Constant ? 7 : 1;
-				call.site = "vs_srv"; VCall(call, [&] { context_->VSSetShaderResources(test_.work == Work::Highlighter ? 3 : 0, 1, &source); });
+				ID3D11ShaderResourceView* source = compositeStage ? compositeSRV_.Get() : primarySRV_.Get(); call.resource = compositeStage ? 8 : test_.work == Work::Constant ? 7 : 1;
+				call.site = "vs_srv"; VCall(call, [&] { context_->VSSetShaderResources(!composite && test_.work == Work::Highlighter ? 3 : 0, 1, &source); });
 				ID3D11Buffer* constants = global_.Get(); call.resource = test_.work == Work::Constant ? 1 : 2;
 				call.site = "vs_constants"; VCall(call, [&] { context_->VSSetConstantBuffers(0, 1, &constants); });
 				call.site = "ps_shader"; VCall(call, [&] { context_->PSSetShader(pixel_.Get(), nullptr, 0); });
 				call.site = "ps_constants"; VCall(call, [&] { context_->PSSetConstantBuffers(0, 1, &constants); });
-				if (test_.work == Work::Composite)
+				if (composite)
 				{
 					ID3D11ShaderResourceView* sources[] = { copySRV_.Get(), retainSRV_.Get(), nullptr, copySRV_.Get(), retainSRV_.Get() };
 					call.site = "ps_composite_sources"; call.resource = 5; call.related = 4;
@@ -660,11 +712,11 @@ namespace Inkeys::Drawing::Draw3
 				}
 				ID3D11SamplerState* sampler = sampler_.Get(); call.site = "ps_sampler";
 				VCall(call, [&] { context_->PSSetSamplers(0, 1, &sampler); });
-				call.site = "om_blend"; VCall(call, [&] { context_->OMSetBlendState(blend_.Get(), nullptr, 0xffffffff); });
+				call.site = "om_blend"; VCall(call, [&] { context_->OMSetBlendState(composite ? compositeBlend_.Get() : blend_.Get(), nullptr, 0xffffffff); });
 				call.site = "rs_state"; VCall(call, [&] { context_->RSSetState(raster_.Get()); });
 				D3D11_VIEWPORT viewport{ 0, 0, static_cast<float>(test_.width), static_cast<float>(test_.height), 0, 1 };
 				call.site = "rs_viewport"; VCall(call, [&] { context_->RSSetViewports(1, &viewport); });
-				call.operation = "draw"; call.site = "production_shader_draw"; call.resource = test_.work == Work::Constant ? 7 : 1;
+				call.operation = "draw"; call.site = compositeStage ? "paired_composite_shader_draw" : "production_shader_draw"; call.resource = compositeStage ? 8 : test_.work == Work::Constant ? 7 : 1;
 				call.vertices = 6; call.instances = 1; VCall(call, [&] { context_->Draw(6, 0); }); ++gpu_[iteration_].draws;
 				ID3D11ShaderResourceView* nulls[6]{};
 				call.operation = "bind"; call.site = "vs_unbind"; VCall(call, [&] { context_->VSSetShaderResources(0, 6, nulls); });
@@ -699,6 +751,8 @@ namespace Inkeys::Drawing::Draw3
 				if (!context_) return;
 				if (!test_.draws && test_.work != Work::ClearCopy && test_.work != Work::Readback)
 				{ drainComplete_ = true; return; }
+				// 缺少 EVENT 就无法确认这批 GPU 工作完成，不能导出完整对照。
+				if (!completion_) { partial_ = true; reason_ = "gpu_completion_query_unavailable"; }
 				if (completion_) context_->End(completion_.Get());
 				Call call; call.operation = "flush"; call.site = "probe_only_batch_flush";
 				VCall(call, [&] { context_->Flush(); });
@@ -764,6 +818,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			int Export()
 			{
+				if (device_) Failure(device_->GetDeviceRemovedReason(), "device_removed_after_work");
 				const auto end = Qpc(); const auto threadEnd = CpuTime(false), processEnd = CpuTime(true);
 				auto result = identity_; int exit = unsupported_ ? 3 : FAILED(firstResult_) ? 4 : partial_ ? 5 : 0;
 				if (completed_[2] != 4 && exit == 0) { exit = 5; reason_ = "iterations_incomplete"; }
@@ -786,6 +841,8 @@ namespace Inkeys::Drawing::Draw3
 				result["caps"]["map_no_overwrite_dynamic_srv"] = SUCCEEDED(capsResult_) && caps_.MapNoOverwriteOnDynamicBufferSRV;
 				result["caps"]["map_no_overwrite_dynamic_cb"] = SUCCEEDED(capsResult_) && caps_.MapNoOverwriteOnDynamicConstantBuffer;
 				result["shader"] = shader_; result["cold_iterations_completed"] = completed_[0];
+				if (*test_.pair) result["effective_upload_policy"] = test_.update == Update::Default ? "default_update_subresource" :
+					test_.work != Work::Highlighter && SUCCEEDED(capsResult_) && caps_.MapNoOverwriteOnDynamicBufferSRV ? "dynamic_discard_then_no_overwrite" : "dynamic_discard_each_batch";
 				result["warmup_iterations_completed"] = completed_[1]; result["measured_iterations_completed"] = completed_[2];
 				result["calls_seen"] = seen_; result["calls_retained"] = retained_; result["calls_dropped"] = seen_ - retained_;
 				result["invalid_intervals"] = invalid_; result["drain_complete"] = drainComplete_;
@@ -812,12 +869,12 @@ namespace Inkeys::Drawing::Draw3
 			D3D_FEATURE_LEVEL feature_{}; D3D11_FEATURE_DATA_D3D11_OPTIONS caps_{};
 			Json::Value identity_, adapter_, shader_;
 			ComPtr<ID3D11Device> device_; ComPtr<ID3D11DeviceContext> context_;
-			ComPtr<ID3D11Buffer> primary_, global_, immutable_;
+			ComPtr<ID3D11Buffer> primary_, global_, immutable_, composite_;
 			ComPtr<ID3D11Texture2D> target_, retain_, copy_, staging_;
 			ComPtr<ID3D11RenderTargetView> targetRTV_, retainRTV_;
-			ComPtr<ID3D11ShaderResourceView> primarySRV_, retainSRV_, copySRV_;
+			ComPtr<ID3D11ShaderResourceView> primarySRV_, retainSRV_, copySRV_, compositeSRV_;
 			ComPtr<ID3D11VertexShader> vertex_; ComPtr<ID3D11PixelShader> pixel_;
-			ComPtr<ID3D11BlendState> blend_; ComPtr<ID3D11RasterizerState> raster_;
+			ComPtr<ID3D11BlendState> blend_, compositeBlend_; ComPtr<ID3D11RasterizerState> raster_;
 			ComPtr<ID3D11SamplerState> sampler_; ComPtr<ID3D11Query> completion_;
 			std::array<Gpu, kIterations> gpu_{};
 			std::array<unsigned char, 64 * 64 * 4> readback_{};
@@ -842,7 +899,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto expired = WaitForEvent([](BOOL*) -> HRESULT { return S_OK; }, [] { return false; }, [&] { ++eventPauses; });
 			if (expired.complete || expired.result != S_FALSE || expired.polls || eventPauses != 2) ++failures;
 			const auto list = CaseList();
-			if (list["cases"].size() != 40 || list["probe_revision"].asInt() != 2) ++failures;
+			if (list["cases"].size() != 56 || list["probe_revision"].asInt() != 3) ++failures;
 			std::vector<std::string> names;
 			for (const auto& entry : list["cases"])
 			{
@@ -853,6 +910,21 @@ namespace Inkeys::Drawing::Draw3
 				if (!test || Definition(*test, warp) != entry) ++failures;
 				if (test && test->update == Update::NoOverwrite && 6u * 6u * 32u > test->bytes) ++failures;
 			}
+			unsigned paired = 0;
+			for (const auto& test : kCases)
+				if (*test.pair)
+				{
+					++paired; unsigned matches = 0;
+					for (const auto& other : kCases)
+						if (std::strcmp(test.pair, other.pair) == 0 && test.update != other.update)
+						{
+							++matches;
+							if (test.bytes != other.bytes || test.writeBytes != other.writeBytes || test.draws != 2 ||
+								other.draws != 2 || test.width != other.width || test.height != other.height || test.work != other.work) ++failures;
+						}
+					if (matches != 1 || test.writeBytes * kIterations > test.bytes) ++failures;
+				}
+			if (paired != 8) ++failures;
 			bool warp = false;
 			if (FindCase(L"hardware-unknown", warp) || SessionValid(L"../x") || SessionValid(L"") ||
 				SessionValid(std::wstring(129, L'a')) || !SessionValid(L"draw3-20261015_1234.abcd")) ++failures;
@@ -915,6 +987,8 @@ namespace Inkeys::Drawing::Draw3
 			{ exitCode = Stdout(JsonText(CaseList())) ? 0 : 4; return true; }
 			if (argc == 2 && std::wstring_view(argv[1]) == L"--draw3-resource-probe-test")
 			{ exitCode = CpuTest(); return true; }
+			if (argc == 2 && std::wstring_view(argv[1]) == L"--draw3-resource-probe-upload-test")
+			{ exitCode = RunRendererUploadValidation(); return true; }
 			if (argc != 5 || std::wstring_view(argv[1]) != L"--draw3-resource-probe" || !SessionValid(argv[4])) return true;
 			bool warp = false; const auto test = FindCase(argv[2], warp);
 			const std::filesystem::path directory(argv[3]);

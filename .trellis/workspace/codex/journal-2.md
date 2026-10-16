@@ -581,3 +581,37 @@ Verify-Packages.py对每个ZIP逐stream核验，精确7个用户文件，ZIP/目
 ### Status
 
 [OK] **Completed**
+
+
+## Session 104: Draw3 兆芯兼容修复与 v3 双架构诊断包交付
+<!-- trellis-session: v=2 fp=a921618c0dc9a252 -->
+
+**Date**: 2026-10-15
+**Task**: Draw3 兆芯兼容修复与 v3 双架构诊断包交付
+**Branch**: `diagnostic/performance`
+
+### Summary
+
+独立合成小缓冲、兆芯可选DEFAULT上传、硬件加速与兼容开关；Debug/Release原生门禁、56项离屏和双架构v3包验证通过，待用户目标机A/B回传。
+
+完整验证、双架构ZIP路径及SHA256：`.trellis/tasks/archive/2026-10/10-15-draw3-zhaoxin-diagnostics-v3/validation.md`。
+
+### Main Changes
+
+- 合成256B小资源；兆芯DEFAULT按实际字节上传；两个默认开启的重启生效开关；v3公平配对诊断与双架构ZIP
+
+### Git Commits
+
+(No commits - 按用户规则保留未提交的实现修改)
+
+### Testing
+
+- [OK] Debug ARM64+Release ARM64/x64 solution exit0；各7CLI通过；Headless通过；WinPS/pwsh267；最终56/56矩阵和8/8可比pair；两ZIP完整校验
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户兆芯兼容开/关真实产品A/B、高通v2/v3回传后判断流畅度与兼容策略取舍

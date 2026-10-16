@@ -180,3 +180,14 @@ Pen/HardPen/形状/Highlighter 可有真实内容 software Present proof。Laser
 | hardware失败后静默换WARP再比较 | 每case backend固定、unsupported/failed独立 |
 | 常量字段36B与memcpy48B声称单因素 | 披露实际字节和其他差异，只给有限解释 |
 | EXE更新后沿用旧hash发新argv | 执行前重验SHA并持读锁覆盖matrix |
+
+## 诊断包 v3：生产修复策略与同规格成对对照（2026-10-15）
+
+- 用户文件仍7项；新包静态能力literal为INKEYS_DRAW3_DIAGNOSTICS_V3，diagnostic_package_version/package_revision/probe_revision=3，profile=draw3-resource-v3-fixed，capture_schema仍2，原始session/frames/gpu为2，其余raw与身份schema不变。v1/v2输入继续可分析，旧包缺失的新策略字段保持null/未知，不推断默认true。
+- 初始化记录hardware_acceleration_preference(detail0=requested)与structured_upload_policy(detail0=compat requested,detail1=effective,detail2=DEFAULT,detail3=adapter identity available)。initialization.json导出请求/实际上传策略和不可用原因，实际driver/vendor仍取产品创建的device；设置勾选不能代替兼容实际启用证据。
+- 首40个profile/backend case的工作量保留；追加16case=4workload×2upload policy×HW/WARP。workload是ink或highlighter加独立256B合成，在64×64与3840×2160目标上运行；两侧均按相同数据量和shader工作，合成覆盖完整目标。普通侧使用dynamic+能力允许的追加/不支持则DISCARD，兼容侧DEFAULT每批offset0。
+- 每轮primary Draw、复制/合成工作固定；资源描述、写入量/偏移/flags、shader/adapter身份、实际策略和逐轮Draw必须通过原始行交叉验证。兼容与普通只在同backend、同workload与全部合同匹配时给CPU比值。CPU leaf、GPU区间、排空分别列示，不能把CPU提交更快解释为完整产品/物理显示胜者。
+- 总case56，原生8s/case、父20s/case、矩阵480s与双流/磁盘预算保持。Draw/ClearCopy/Readback没有EVENT完成query时必须partial(reason=gpu_completion_query_unavailable)，不得导出complete。timestamp query缺失但EVENT真实drain成功可以保留CPU比较，GPU仍不可用；CPU-only对照不额外要求GPU工作。
+- 采集不修改用户配置。实机产品A/B由用户保持硬件加速开启、对兆芯兼容开关分别开/关、退出并由CMD重启，保持显示/工具/动作近似相同；两轮请求与实际策略均需核对。每轮正常退出后的自动离屏pair不能冒称同一轮产品书写A/B。高通普通动态路径可与另外回传的v2对照。
+- --draw3-resource-probe-upload-test在GUI前接管，执行产品renderer方法的真实WARP离屏资源/像素读回；不创建HWND/swapchain/Host。--draw3-device-policy-test通过argv解析、额外参数返回2，纯CPU设备选择测试不创建D3D。
+- 必测v3成功、缺侧/partial、不同shader/adapter/工作拒绝、GPU不可用、未drain不可complete；v1/v2旧fixture和真实v2只读副本回归。开发机协议/像素正确性验证不能代替目标兆芯/高通完整4K/RTS/呈现体验。

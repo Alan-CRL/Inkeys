@@ -1224,6 +1224,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				Json::Value init;
 				init["schema_version"] = 1; init["events"] = Json::Value(Json::arrayValue);
+				for (const char* field : { "hardware_acceleration_requested", "zhaoxin_compatibility_requested",
+					"zhaoxin_compatibility_effective", "upload_policy_adapter_available", "structured_upload_policy" }) init[field] = Json::Value();
 				for (std::size_t i = 0; i < p.initCount; ++i)
 				{
 					const auto& v = p.initialization[i]; Json::Value event;
@@ -1232,8 +1234,24 @@ namespace Inkeys::Drawing::Draw3
 					event["succeeded"] = v.succeeded;
 					for (std::size_t j = 0; j < v.detail.size(); ++j) event["detail" + std::to_string(j)] = U64(v.detail[j]);
 					init["events"].append(event);
+					// 启动请求与实际策略分别导出；旧包缺事件时保持未知，不能猜成默认开启。
+					if (v.stage && std::strcmp(v.stage, "hardware_acceleration_preference") == 0)
+						init["hardware_acceleration_requested"] = v.detail[0] != 0;
+					if (v.stage && std::strcmp(v.stage, "structured_upload_policy") == 0)
+					{
+						init["zhaoxin_compatibility_requested"] = v.detail[0] != 0;
+						init["zhaoxin_compatibility_effective"] = v.detail[1] != 0;
+						init["structured_upload_policy"] = v.detail[2] ? "default_update_subresource" : "dynamic_map";
+						init["upload_policy_adapter_available"] = v.detail[3] != 0;
+					}
 				}
 				init["actual_driver_type"] = p.driver; init["feature_level"] = p.feature;
+				init["zhaoxin_compatibility_reason"] = Json::Value();
+				if (init["zhaoxin_compatibility_requested"].isBool())
+					init["zhaoxin_compatibility_reason"] = init["zhaoxin_compatibility_effective"].asBool() ? "enabled_for_zhaoxin_hardware" :
+					!init["zhaoxin_compatibility_requested"].asBool() ? "disabled_by_user" :
+					p.driver != D3D_DRIVER_TYPE_HARDWARE ? "software_or_nonhardware_backend" :
+					!init["upload_policy_adapter_available"].asBool() ? "adapter_identity_unavailable" : "adapter_vendor_not_zhaoxin";
 				init["adapter_available"] = p.adapterAvailable;
 				init["adapter_description"] = p.adapterAvailable ? Utf8(p.adapter.Description) : "";
 				init["vendor_id"] = p.adapter.VendorId; init["device_id"] = p.adapter.DeviceId;
@@ -1256,12 +1274,12 @@ namespace Inkeys::Drawing::Draw3
 			}
 			Json::Value session;
 			session["schema_version"] = 2; session["qpc_frequency"] = Json::Int64(Frequency());
-			session["diagnostic_package_version"] = 2;
+			session["diagnostic_package_version"] = 3;
 			for (const char* file : { "session.json", "frames.csv", "gpu.csv" }) session["raw_schemas"][file] = 2;
 			for (const char* file : { "initialization.json", "input-events.csv", "graphics-calls.csv", "slow-graphics-calls.csv", "graphics-groups.csv", "resources.csv" })
 				session["raw_schemas"][file] = 1;
 			session["capabilities"] = Json::Value(Json::arrayValue);
-			for (const char* capability : { "graphics_leaf_calls", "resource_identity", "bounded_slow_calls", "all_call_groups", "graphics_work_gpu_sampling" })
+			for (const char* capability : { "graphics_leaf_calls", "resource_identity", "bounded_slow_calls", "all_call_groups", "graphics_work_gpu_sampling", "startup_upload_policy", "dedicated_composite_vertices" })
 				session["capabilities"].append(capability);
 			session["status"] = unavailable || Frequency() <= 0 ? "unavailable" : startupFailed ? "startup_failed" : runFailed ? "run_failed" : "complete";
 			session["unavailable"] = unavailable || Frequency() <= 0;

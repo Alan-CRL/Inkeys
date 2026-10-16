@@ -191,6 +191,9 @@ export namespace Inkeys::Drawing::Draw3
 		RECT rect = {};
 	};
 
+	// 显式诊断入口：仅 WARP 离屏资源与真实绘制/读回，不创建窗口或交换链。
+	int RunRendererUploadValidation() noexcept;
+
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
 	class InkRenderer
 	{
@@ -226,6 +229,8 @@ export namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<ID3D11Buffer> laserStyleCB;
 		Microsoft::WRL::ComPtr<ID3D11Buffer> inkDataBuffer;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> inkDataSRV;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> compositeVertexBuffer;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> compositeVertexSRV;
 		Microsoft::WRL::ComPtr<ID3D11Buffer> highlighterPrimitiveBuffer;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> highlighterPrimitiveSRV;
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> operatorSampler;
@@ -344,9 +349,17 @@ export namespace Inkeys::Drawing::Draw3
 		// 调整交换链和三层画布尺寸，并保留左上角交集内容。
 		bool Resize(IDXGISwapChain1* swapChain, UINT width, UINT height);
 		// 初始化渲染器及其固定资源。
-		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver);
+		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver,
+			bool enableZhaoxinCompatibility = true);
 
 	private:
+		friend int RunRendererUploadValidation() noexcept;
+		bool useDefaultStructuredUpload_ = false;
+		bool CreateFixedResources(D3D_DRIVER_TYPE driver);
+		HRESULT UploadStructuredBuffer(ID3D11Buffer* buffer, const void* data, UINT bytes,
+			UINT offset, D3D11_MAP mapType, PerformanceGraphicsRole role,
+			PerformanceGraphicsSite mapSite, PerformanceGraphicsSite copySite,
+			PerformanceGraphicsSite unmapSite, PerformanceGraphicsSite updateSite);
 		PerformanceSession* performance_ = nullptr;
 		PerformanceGraphicsPass performancePass_ = PerformanceGraphicsPass::Unknown;
 		PerformanceGraphicsArguments TraceArguments(ID3D11Resource* resource = nullptr,

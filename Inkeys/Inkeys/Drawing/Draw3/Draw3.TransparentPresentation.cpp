@@ -1079,7 +1079,8 @@ namespace Inkeys::Drawing::Draw3
 				swapChain.Get(), "Draw3 created");
 
 			// 传递实际创建后端，不用适配器名称或 vendor 猜测 WARP。
-			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height, graphics->driverType))
+			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height,
+				graphics->driverType, options.enableZhaoxinCompatibility))
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
@@ -1284,7 +1285,8 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 所有旧设备引用已由调用方 GPU cache 和 presenter 释放，随后在同一绘制线程重建。
 			*impl_->graphics = {};
-			if (!InitializeGraphicsDevice(*impl_->graphics, impl_->performance))
+			if (!InitializeGraphicsDevice(*impl_->graphics, impl_->performance,
+				impl_->options.enableHardwareAcceleration))
 			{
 				impl_->lastFailure = failure;
 				return false;

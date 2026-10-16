@@ -166,6 +166,7 @@ try {
     $huge=Capture 'byte-budget'; $large=[IO.File]::OpenWrite((Join-Path $huge 'host-0001\frames.csv')); $large.SetLength(67108865); $large.Dispose()
     $s=Analyze $huge; Assert ($s['status'] -eq 'incomplete' -and $s['totals']['analysis_truncated'] -gt 0) 'CSV byte budget bounded refusal'
     . (Join-Path $scriptDirectory 'Tests/Test-V2-Fixtures.ps1')
+    . (Join-Path $scriptDirectory 'Tests/Test-V3-Fixtures.ps1')
     # 整个 mock 仅创建无窗口控制台 fixture，模拟 SuperTop 的初始退出和最终身份。
     $windowsPs=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     foreach ($behavior in @('complete','missing_completion','wrong_identity','wrong_exe','wrong_completion','double_stream','late')) {
@@ -215,12 +216,12 @@ try {
     Assert ($cmdProcess.WaitForExit(10000) -and $cmdProcess.ExitCode -eq 1) 'CMD preserves PowerShell failure exit through pause'; $cmdProcess.Dispose()
     $fakeExe=Join-Path $testRoot 'package-fixture.exe'; $pe=New-Object byte[] 512
     $pe[0]=0x4d; $pe[1]=0x5a; $pe[0x3c]=0x80; $pe[0x80]=0x50; $pe[0x81]=0x45; $pe[0x84]=0x64; $pe[0x85]=0xaa
-    $literal=[Text.Encoding]::Unicode.GetBytes('--draw3-performance'); [Array]::Copy($literal,0,$pe,256,$literal.Length); [IO.File]::WriteAllBytes($fakeExe,$pe); $rejected=$false; try {Test-PerfV2Capability $fakeExe} catch {$rejected=$true}; Assert $rejected 'old performance literal-only PE refused without launch'; $marker=[Text.Encoding]::ASCII.GetBytes('INKEYS_DRAW3_DIAGNOSTICS_V2'); [Array]::Copy($marker,0,$pe,384,$marker.Length); [IO.File]::WriteAllBytes($fakeExe,$pe)
+    $literal=[Text.Encoding]::Unicode.GetBytes('--draw3-performance'); [Array]::Copy($literal,0,$pe,256,$literal.Length); [IO.File]::WriteAllBytes($fakeExe,$pe); $rejected=$false; try {Test-PerfV3Capability $fakeExe} catch {$rejected=$true}; Assert $rejected 'old performance literal-only PE refused without launch'; $oldMarker=[Text.Encoding]::ASCII.GetBytes('INKEYS_DRAW3_DIAGNOSTICS_V2'); [Array]::Copy($oldMarker,0,$pe,384,$oldMarker.Length); [IO.File]::WriteAllBytes($fakeExe,$pe); $rejected=$false; try {Test-PerfV3Capability $fakeExe} catch {$rejected=$true}; Assert $rejected 'v2 sentinel refused for v3 package without launch'; $marker=[Text.Encoding]::ASCII.GetBytes('INKEYS_DRAW3_DIAGNOSTICS_V3'); [Array]::Copy($marker,0,$pe,384,$marker.Length); [IO.File]::WriteAllBytes($fakeExe,$pe)
     $packageOutput=Join-Path $testRoot 'packaged'
     & (Join-Path $scriptDirectory 'Build-Package.ps1') -ExePath $fakeExe -OutputDirectory $packageOutput
     $packageFolders=@(Get-ChildItem -LiteralPath $packageOutput | Where-Object {$_.PSIsContainer}); Assert ($packageFolders.Length -eq 1) 'single unique package directory'
     $pack=Read-PerfJson (Join-Path $packageFolders[0].FullName 'diagnostic-manifest.json')
-    Assert ($pack['capture_schema'] -eq 2 -and $pack['package_revision'] -eq 2 -and $pack['capability_marker'] -ceq 'INKEYS_DRAW3_DIAGNOSTICS_V2') 'package v2 identity exact marker and revision'
+    Assert ($pack['capture_schema'] -eq 2 -and $pack['package_revision'] -eq 3 -and $pack['capability_marker'] -ceq 'INKEYS_DRAW3_DIAGNOSTICS_V3') 'package v3 identity exact marker and revision'
     Assert ($pack['exe_architecture'] -eq 'arm64' -and $pack['exe_sha256'] -eq (Get-PerfSha256 $fakeExe)) 'package PE machine and EXE SHA identity'
     foreach ($name in $pack['script_sha256'].Keys) { Assert ($pack['script_sha256'][$name] -eq (Get-PerfSha256 (Join-Path $packageFolders[0].FullName $name))) ('package script SHA '+$name) }
     Add-Type -AssemblyName System.IO.Compression.FileSystem

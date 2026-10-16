@@ -1529,7 +1529,8 @@ namespace Inkeys::Drawing::Draw3
 					const auto graphicsStart = performance ? performance->Clock() : 0;
 					renderer.SetPerformanceSession(performance.get());
 					presentation.SetPerformanceSession(performance.get());
-					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics, performance.get());
+					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics, performance.get(),
+						startOptions.enableHardwareAcceleration);
 					if (performance) performance->Initialization("graphics_ready", graphicsStart, graphicsInitialized ? S_OK : E_FAIL, graphicsInitialized);
 					std::cout << "[Draw3Diag][startup] stage=graphics result="
 						<< (graphicsInitialized ? "ready" : "failed")
@@ -1559,6 +1560,8 @@ namespace Inkeys::Drawing::Draw3
 						presentationOptions.allowDirectComposition =
 							startOptions.allowDirectComposition;
 						presentationOptions.failedCleanup = failedCleanup;
+						presentationOptions.enableHardwareAcceleration = startOptions.enableHardwareAcceleration;
+						presentationOptions.enableZhaoxinCompatibility = startOptions.enableZhaoxinCompatibility;
 						graphicsInitialized = presentation.Initialize(windowHandle,
 							presentationWindowHandle, graphics, renderer,
 							static_cast<UINT>((std::max)(1, size.width)),

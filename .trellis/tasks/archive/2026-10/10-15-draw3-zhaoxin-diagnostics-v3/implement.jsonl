@@ -1,0 +1,5 @@
+{"reason":"最小修改、中文注释、编码/资源生命周期","file":".trellis/spec/native-desktop/cpp-conventions.md"}
+{"reason":"唯一Host、启动/重建设备与线程边界","file":".trellis/spec/native-desktop/draw3-integration.md"}
+{"reason":"有界诊断、身份、无窗口与包兼容合同","file":".trellis/spec/native-desktop/draw3-performance-diagnostics.md"}
+{"reason":"实验配置持久化与i18n","file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md"}
+{"reason":"结构化布局、offset、混合与拆批","file":".trellis/spec/shaders/cpu-gpu-contracts.md"}

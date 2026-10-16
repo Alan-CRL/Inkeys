@@ -325,24 +325,31 @@ function Get-PerfExeArchitecture([string]$Path) {
     } finally { $reader.Dispose(); $stream.Dispose() }
 }
 
-function Test-PerfV2Capability([string]$Path) {
+function Test-PerfV3Capability([string]$Path) {
     # sentinel 是已引用的正式能力合同，旧版只有性能参数字面量也必须拒绝。
     $bytes=[IO.File]::ReadAllBytes($Path)
-    $marker='INKEYS_DRAW3_DIAGNOSTICS_V2'
-    if ([Text.Encoding]::ASCII.GetString($bytes).IndexOf($marker,[StringComparison]::Ordinal) -lt 0 -and [Text.Encoding]::Unicode.GetString($bytes).IndexOf($marker,[StringComparison]::Ordinal) -lt 0) { throw 'EXE 缺少诊断包 2 能力标记；拒绝向旧 EXE 发送新参数' }
+    $marker='INKEYS_DRAW3_DIAGNOSTICS_V3'
+    if ([Text.Encoding]::ASCII.GetString($bytes).IndexOf($marker,[StringComparison]::Ordinal) -lt 0 -and [Text.Encoding]::Unicode.GetString($bytes).IndexOf($marker,[StringComparison]::Ordinal) -lt 0) { throw 'EXE 缺少诊断包 3 能力标记；拒绝向旧 EXE 发送新参数' }
+}
+
+function Test-PerfProbeContract($Record) {
+    [void](Get-PerfJsonInteger $Record 'schema_version' 1 1)
+    $revision=Get-PerfJsonInteger $Record 'probe_revision' 2 3
+    if ((Get-PerfJsonString $Record 'capability_marker') -cne ('INKEYS_DRAW3_DIAGNOSTICS_V'+$revision) -or (Get-PerfJsonString $Record 'profile') -cne ('draw3-resource-v'+$revision+'-fixed') -or (Get-PerfJsonString $Record 'comparison_path') -cne 'offscreen_embedded_301_302_contract') {throw 'probe 能力/profile/版本不匹配'}
+    return $revision
 }
 
 function Test-PerfPackageManifest($Manifest,[string]$Executable,[string]$ScriptDirectory) {
     [void](Get-PerfJsonInteger $Manifest 'schema_version' 1 1)
     [void](Get-PerfJsonInteger $Manifest 'capture_schema' 2 2)
-    [void](Get-PerfJsonInteger $Manifest 'package_revision' 2 2)
-    [void](Get-PerfJsonInteger $Manifest 'diagnostic_package_version' 2 2)
+    [void](Get-PerfJsonInteger $Manifest 'package_revision' 3 3)
+    [void](Get-PerfJsonInteger $Manifest 'diagnostic_package_version' 3 3)
     [void](Get-PerfJsonInteger $Manifest 'resource_probe_schema' 1 1)
-    [void](Get-PerfJsonInteger $Manifest 'probe_revision' 2 2)
-    if ((Get-PerfJsonString $Manifest 'capability_marker') -cne 'INKEYS_DRAW3_DIAGNOSTICS_V2' -or (Get-PerfJsonString $Manifest 'command_line') -cne '--draw3-performance' -or (Get-PerfJsonString $Manifest 'resource_probe_command') -cne '--draw3-resource-probe' -or (Get-PerfJsonString $Manifest 'resource_probe_list_command') -cne '--draw3-resource-probe-list') { throw '包 manifest 的正式能力/入口不支持' }
+    [void](Get-PerfJsonInteger $Manifest 'probe_revision' 3 3)
+    if ((Get-PerfJsonString $Manifest 'capability_marker') -cne 'INKEYS_DRAW3_DIAGNOSTICS_V3' -or (Get-PerfJsonString $Manifest 'resource_probe_profile') -cne 'draw3-resource-v3-fixed' -or (Get-PerfJsonString $Manifest 'command_line') -cne '--draw3-performance' -or (Get-PerfJsonString $Manifest 'resource_probe_command') -cne '--draw3-resource-probe' -or (Get-PerfJsonString $Manifest 'resource_probe_list_command') -cne '--draw3-resource-probe-list') { throw '包 manifest 的正式能力/入口不支持' }
     if ((Get-PerfJsonString $Manifest 'exe_sha256') -cne (Get-PerfSha256 $Executable)) { throw 'EXE SHA256 与包 manifest 不符；请使用配套诊断包' }
     if ((Get-PerfJsonString $Manifest 'exe_architecture') -cne (Get-PerfExeArchitecture $Executable)) { throw 'EXE PE 架构与 manifest 不符' }
-    Test-PerfV2Capability $Executable
+    Test-PerfV3Capability $Executable
     $hashes=$Manifest['script_sha256']; if ($hashes -isnot [Collections.IDictionary] -or $hashes.Count -ne 5) { throw '用户文件 SHA256 清单不完整' }
     foreach ($name in @('Run-Draw3-Performance.cmd','Run-Draw3-Performance.ps1','Analyze-Draw3-Performance.ps1','Performance.Common.ps1','README.md')) {
         if ((Get-PerfJsonString $hashes $name) -cne (Get-PerfSha256 (Join-Path $ScriptDirectory $name))) { throw ('用户文件 SHA256 不符: '+$name) }
@@ -392,7 +399,8 @@ function Invoke-PerfOwnedWorker([string]$Executable,$Arguments,[string]$Director
 }
 
 function Test-PerfProbeIdentity($Record,$List,$Case,[string]$SessionId,[string]$CaseDirectory,$Observed) {
-    [void](Get-PerfJsonInteger $Record 'schema_version' 1 1); [void](Get-PerfJsonInteger $Record 'probe_revision' 2 2)
+    $revision=Test-PerfProbeContract $Record
+    if ($revision -ne (Get-PerfJsonInteger $List 'probe_revision' 2 3)) {throw 'probe record/list版本不符'}
     foreach ($name in @('capability_marker','profile','comparison_path')) { if ((Get-PerfJsonString $Record $name) -cne [string]$List[$name]) { throw ('probe 合同不符: '+$name) } }
     foreach ($name in @('case_id','profile_id','requested_backend')) { if ((Get-PerfJsonString $Record $name) -cne [string]$Case[$name]) { throw ('probe case 身份不符: '+$name) } }
     if ((Get-PerfJsonString $Record 'session_id') -cne $SessionId -or (Get-PerfJsonInteger $Record 'final_pid' 1 2147483647) -ne $Observed['pid']) { throw 'probe session/PID 不符' }
@@ -413,10 +421,15 @@ function Test-PerfProbeResult($Result,$Start,$List,$Case,[string]$SessionId,[str
     $definition=$Result['case_definition']; if ($definition -isnot [Collections.IDictionary]) { throw 'probe 缺少 case_definition' }
     foreach ($name in @('case_id','profile_id','requested_backend','update_method','constant_write_method')) { if ((Get-PerfJsonString $definition $name) -cne [string]$Case[$name]) { throw ('probe 工作量不符: '+$name) } }
     foreach ($name in @('resource_bytes','write_bytes','draws_per_iteration','width','height')) { if ((Get-PerfJsonInteger $definition $name) -ne (Get-PerfJsonInteger $Case $name)) { throw ('probe 工作量不符: '+$name) } }
+    if ($Case.ContainsKey('paired_workload')) {
+        foreach ($name in @('paired_workload','upload_policy','composite_update_method','workload_contract')) {if ((Get-PerfJsonString $definition $name) -cne (Get-PerfJsonString $Case $name)) {throw ('probe 成对合同不符: '+$name)}}
+        foreach ($name in @('composite_resource_bytes','composite_write_bytes')) {if ((Get-PerfJsonInteger $definition $name) -ne (Get-PerfJsonInteger $Case $name)) {throw ('probe 合成工作量不符: '+$name)}}
+    }
     foreach ($name in @('calls_seen','calls_retained','calls_dropped','invalid_intervals','cold_iterations_completed','warmup_iterations_completed','measured_iterations_completed','qpc_frequency','start_qpc','end_qpc')) { [void](Get-PerfJsonInteger $Result $name) }
     if ($Result['calls_seen'] -ne ($Result['calls_retained']+$Result['calls_dropped']) -or $Result['calls_retained'] -gt 4096) { throw 'probe 调用计数不符' }
     if ($Result['drain_complete'] -isnot [bool]) { throw 'probe drain_complete 类型非法' }
     if ($status -eq 'complete') {
+        if ($Result['drain_complete'] -ne $true) { throw 'probe complete 缺少批次完成确认' }
         if ((Get-PerfJsonString $Result 'actual_backend') -cne [string]$Case['requested_backend'] -or $Result['qpc_frequency'] -le 0 -or $Result['start_qpc'] -le 0 -or $Result['end_qpc'] -lt $Result['start_qpc'] -or $Result['measured_iterations_completed'] -ne $List['measured_iterations'] -or $Result['warmup_iterations_completed'] -ne $List['warmup_iterations'] -or $Result['cold_iterations_completed'] -ne $List['cold_iterations'] -or $Result['calls_dropped'] -ne 0 -or $Result['invalid_intervals'] -ne 0) { throw 'probe complete 缺少同backend/工作量/有效时间/完整计量' }
     }
     foreach ($field in @('thread_cpu_ms','process_cpu_ms')) {
@@ -436,7 +449,7 @@ function Invoke-PerfResourceMatrix([string]$Root,[string]$Executable,[string]$Se
     if ($CaseTimeoutSeconds -lt 1 -or $CaseTimeoutSeconds -gt 20 -or $MatrixTimeoutSeconds -lt 1 -or $MatrixTimeoutSeconds -gt 480) { throw '资源矩阵超时超出固定上限' }
     $matrixRoot=Join-Path $Root 'resource-probes'; if ([IO.Directory]::Exists($matrixRoot)) { throw '资源矩阵目录已存在，不覆盖或重跑初次对照' }
     [void][IO.Directory]::CreateDirectory($matrixRoot); $path=Join-Path $matrixRoot 'matrix.json'
-    $matrix=@{schema_version=1;probe_revision=2;status='running';reason=$null;session_id=$SessionId;exe_path=$Executable;exe_sha256=$ExeHash;started_utc=[DateTime]::UtcNow.ToString('o');profile='draw3-resource-v2-fixed';case_timeout_seconds=$CaseTimeoutSeconds;matrix_timeout_seconds=$MatrixTimeoutSeconds;stdout_byte_limit=1048576;stderr_byte_limit=1048576;cleanup_reserve_seconds=6;raw_file_byte_limit=4194304;disk_byte_budget=67108864;product_stopped_confirmed=$ProductStopped;normal_shutdown=$NormalShutdown;expected_cases=@();cases=(New-Object Collections.ArrayList)}
+    $matrix=@{schema_version=1;probe_revision=3;status='running';reason=$null;session_id=$SessionId;exe_path=$Executable;exe_sha256=$ExeHash;started_utc=[DateTime]::UtcNow.ToString('o');profile='draw3-resource-v3-fixed';case_timeout_seconds=$CaseTimeoutSeconds;matrix_timeout_seconds=$MatrixTimeoutSeconds;stdout_byte_limit=1048576;stderr_byte_limit=1048576;cleanup_reserve_seconds=6;raw_file_byte_limit=4194304;disk_byte_budget=67108864;product_stopped_confirmed=$ProductStopped;normal_shutdown=$NormalShutdown;expected_cases=@();cases=(New-Object Collections.ArrayList)}
     if ($Skip) { $matrix.status='skipped'; $matrix.reason='explicit_skip_resource_probes' }
     elseif (-not $ProductStopped -or -not $NormalShutdown) { $matrix.status='skipped'; $matrix.reason='skipped_product_not_confirmed_stopped' }
     foreach ($name in $ProductNames) { if ([Diagnostics.Process]::GetProcessesByName([string]$name).Length -gt 0) { $matrix.status='skipped'; $matrix.reason='skipped_product_process_present' } }
@@ -451,8 +464,8 @@ function Invoke-PerfResourceMatrix([string]$Root,[string]$Executable,[string]$Se
         $matrix['list_worker']=$observed
         if ($observed.status -ne 'exited' -or $observed.exit_code -ne 0 -or $observed.stopped_confirmed -ne $true -or $observed.drains_complete -ne $true -or $observed.stdout_seen_bytes -gt 1048576) { throw 'probe-list 未有效完成；不发送任何 case 参数' }
         $list=Read-PerfJson (Join-Path $listDirectory 'stdout.txt')
-        [void](Get-PerfJsonInteger $list 'schema_version' 1 1); [void](Get-PerfJsonInteger $list 'probe_revision' 2 2)
-        if ((Get-PerfJsonString $list 'capability_marker') -cne 'INKEYS_DRAW3_DIAGNOSTICS_V2' -or (Get-PerfJsonString $list 'profile') -cne 'draw3-resource-v2-fixed' -or (Get-PerfJsonString $list 'comparison_path') -cne 'offscreen_embedded_301_302_contract') { throw 'probe-list 能力/profile 不支持' }
+        $revision=Test-PerfProbeContract $list
+        $matrix.probe_revision=$revision;$matrix.profile=$list['profile']
         [void](Get-PerfJsonInteger $list 'native_budget_ms' 1 8000); [void](Get-PerfJsonInteger $list 'call_capacity' 1 4096)
         foreach ($name in @('cold_iterations','warmup_iterations')) { [void](Get-PerfJsonInteger $list $name 1 1) }; [void](Get-PerfJsonInteger $list 'measured_iterations' 4 4)
         $count=Get-PerfJsonInteger $list 'case_count' 1 64
@@ -475,7 +488,7 @@ function Invoke-PerfResourceMatrix([string]$Root,[string]$Executable,[string]$Se
             if ((Get-PerfDirectoryBytes $matrixRoot) -gt 67108864) { $stopReason='matrix_disk_budget'; [void]$matrix.cases.Add(@{case_id=$id;directory=$caseLeaf;status='skipped';reason=$stopReason;identity_verified=$false}); continue }
             $caseDirectory=Join-Path $matrixRoot $caseLeaf
             if ([IO.Directory]::Exists($caseDirectory)) { throw 'case 目录已存在，拒绝复用' }; [void][IO.Directory]::CreateDirectory($caseDirectory)
-            Write-PerfJson (Join-Path $caseDirectory 'request.json') @{schema_version=1;probe_revision=2;session_id=$SessionId;case_id=$id;exe_path=$Executable;exe_sha256=$ExeHash;output_directory=$caseDirectory;case_definition=$case;outer_timeout_ms=[Math]::Min($CaseTimeoutSeconds*1000,$remaining);created_utc=[DateTime]::UtcNow.ToString('o');identity_policy='new_case_directory_and_held_PID_FILETIME_EXE'}
+            Write-PerfJson (Join-Path $caseDirectory 'request.json') @{schema_version=1;probe_revision=$revision;session_id=$SessionId;case_id=$id;exe_path=$Executable;exe_sha256=$ExeHash;output_directory=$caseDirectory;case_definition=$case;outer_timeout_ms=[Math]::Min($CaseTimeoutSeconds*1000,$remaining);created_utc=[DateTime]::UtcNow.ToString('o');identity_policy='new_case_directory_and_held_PID_FILETIME_EXE'}
             $observed=Invoke-PerfOwnedWorker $Executable (@($PrefixArguments)+@('--draw3-resource-probe',$id,$caseDirectory,$SessionId)) $caseDirectory ([Math]::Min($CaseTimeoutSeconds*1000,$remaining)) $matrixRoot
             $entry=@{case_id=$id;directory=$caseLeaf;profile_id=$case['profile_id'];requested_backend=$case['requested_backend'];status=$observed.status;reason=$observed.reason;identity_verified=$false;worker=$observed}
             try {

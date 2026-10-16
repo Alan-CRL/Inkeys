@@ -64,7 +64,7 @@ namespace Inkeys::Drawing::Draw3
 			const size_t remaining = totalPoints - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
-			if (!mapNoOverwriteOnDynamicBufferSRV ||
+			if (useDefaultStructuredUpload_ || !mapNoOverwriteOnDynamicBufferSRV ||
 				m_bufferHead + batchCount > kMaxBufferCapacity)
 			{
 				// 不支持动态 SRV 扩展时每批丢弃；支持时仅在环形缓冲区写满后丢弃。
@@ -72,18 +72,14 @@ namespace Inkeys::Drawing::Draw3
 				m_bufferHead = 0;
 			}
 
-			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0, mapType, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_stroke_map_ink_data"), performancePass_))) return -1;
-			auto* destination = static_cast<InkPoint*>(mapped.pData);
-			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_stroke_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), batchCount * sizeof(InkPoint), m_bufferHead * sizeof(InkPoint)); }, [&] { std::memcpy(destination + m_bufferHead, points.data() + startIndex, batchCount * sizeof(InkPoint)); });
-			performanceCopy.Finish();
-			if (performance_) performance_->CopiedBytes(batchCount * sizeof(InkPoint)); // 把本批点写入结构化缓冲区。
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_stroke_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, m_bufferHead * sizeof(InkPoint)); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
+			const auto bufferOffset = static_cast<uint32_t>(m_bufferHead);
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), points.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(InkPoint)), bufferOffset * sizeof(InkPoint),
+				mapType, PerformanceGraphicsRole::InkData,
+				PerformanceGraphicsSite("draw_stroke_map_ink_data"), PerformanceGraphicsSite("draw_stroke_memcpy_ink_data"),
+				PerformanceGraphicsSite("draw_stroke_unmap_1"), PerformanceGraphicsSite("draw_stroke_update_ink_data")))) return -1;
 
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
 			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
 			PerformanceGraphicsSite("draw_stroke_map_global_constants"), performancePass_))) return -1;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
@@ -94,7 +90,7 @@ namespace Inkeys::Drawing::Draw3
 				constants->height = viewportHeight;
 				constants->color = color;
 				constants->shapeType = static_cast<float>(static_cast<uint32_t>(shape));
-				constants->bufferOffset = static_cast<uint32_t>(m_bufferHead); // 着色器用偏移定位当前批次的起点。
+				constants->bufferOffset = bufferOffset; // 上传后 head 已推进，着色器仍使用本批起点。
 				constants->operatorKind = static_cast<uint32_t>(operatorKind);
 			});
 			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
@@ -127,7 +123,6 @@ namespace Inkeys::Drawing::Draw3
 			ID3D11ShaderResourceView* nullResources[] = { nullptr };
 			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
 			PerformanceGraphicsSite("draw_stroke_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResources)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, nullResources); });
-			m_bufferHead += batchCount;
 			// 相邻批次共享一个端点，避免分段处出现断裂。
 			startIndex += batchCount - 1;
 		}
@@ -143,20 +138,13 @@ namespace Inkeys::Drawing::Draw3
 		while (startIndex < primitives.size())
 		{
 			const size_t batchCount = std::min(primitives.size() - startIndex, kMaxBufferCapacity);
-			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(PerformanceMap(performance_, context.Get(), highlighterPrimitiveBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::HighlighterData,
-			PerformanceGraphicsSite("draw_highlighter_primitives_map_highlighter_data"), performancePass_))) return -1;
-			auto* destination = static_cast<HighlighterPrimitive*>(mapped.pData);
-			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::HighlighterData,
-			PerformanceGraphicsSite("draw_highlighter_primitives_memcpy_highlighter_data"), [&] { return TraceArguments(highlighterPrimitiveBuffer.Get(), batchCount * sizeof(HighlighterPrimitive), 0); }, [&] { std::memcpy(destination, primitives.data() + startIndex,
-				batchCount * sizeof(HighlighterPrimitive)); });
-			performanceCopy.Finish();
-			if (performance_) performance_->CopiedBytes(batchCount * sizeof(HighlighterPrimitive)); // 每个 primitive 可独立批处理，不再共享易翻转的四边形端点。
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::HighlighterData,
-			PerformanceGraphicsSite("draw_highlighter_primitives_unmap_1"), [&] { return TraceArguments(highlighterPrimitiveBuffer.Get(), 0, 0); }, [&] { context->Unmap(highlighterPrimitiveBuffer.Get(), 0); });
+			if (FAILED(UploadStructuredBuffer(highlighterPrimitiveBuffer.Get(), primitives.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(HighlighterPrimitive)), 0, D3D11_MAP_WRITE_DISCARD,
+				PerformanceGraphicsRole::HighlighterData,
+				PerformanceGraphicsSite("draw_highlighter_primitives_map_highlighter_data"), PerformanceGraphicsSite("draw_highlighter_primitives_memcpy_highlighter_data"),
+				PerformanceGraphicsSite("draw_highlighter_primitives_unmap_1"), PerformanceGraphicsSite("draw_highlighter_primitives_update_highlighter_data")))) return -1;
 
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
 			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
 			PerformanceGraphicsSite("draw_highlighter_primitives_map_global_constants"), performancePass_))) return -1;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
@@ -167,7 +155,7 @@ namespace Inkeys::Drawing::Draw3
 				constants->height = viewportHeight;
 				constants->color = color;
 				constants->shapeType = 3.0f;
-				constants->bufferOffset = 0; // DISCARD 在 D3D11 核心路径即可使用，不依赖动态 SRV 的 NO_OVERWRITE 扩展。
+				constants->bufferOffset = 0; // 两种上传策略均逐批从零开始，不依赖 NO_OVERWRITE。
 				constants->operatorKind = static_cast<uint32_t>(operatorKind);
 			});
 			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::GlobalConstants,
@@ -225,7 +213,7 @@ namespace Inkeys::Drawing::Draw3
 				primitives.size() - startIndex, kMaximumPrimitiveBatch);
 			const size_t pointCount = batchCount * 2;
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
-			if (!mapNoOverwriteOnDynamicBufferSRV ||
+			if (useDefaultStructuredUpload_ || !mapNoOverwriteOnDynamicBufferSRV ||
 				m_bufferHead + pointCount > kMaxBufferCapacity)
 			{
 				// Shape 与普通笔共用动态 SRV，能力不足时也必须逐批从零偏移上传。
@@ -233,19 +221,14 @@ namespace Inkeys::Drawing::Draw3
 				m_bufferHead = 0;
 			}
 
-			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0, mapType, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_shape_primitives_map_ink_data"), performancePass_))) return -1;
-			auto* destination = static_cast<InkPoint*>(mapped.pData);
-			PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_shape_primitives_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), batchCount * sizeof(ShapePrimitive), m_bufferHead * sizeof(InkPoint)); }, [&] { std::memcpy(destination + m_bufferHead, primitives.data() + startIndex,
-				batchCount * sizeof(ShapePrimitive)); });
-			performanceCopy.Finish();
-			if (performance_) performance_->CopiedBytes(batchCount * sizeof(ShapePrimitive)); // 两个连续 InkPoint 槽描述一个 analytic shape。
-			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_shape_primitives_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, m_bufferHead * sizeof(InkPoint)); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
+			const auto bufferOffset = static_cast<uint32_t>(m_bufferHead);
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), primitives.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(ShapePrimitive)), bufferOffset * sizeof(InkPoint),
+				mapType, PerformanceGraphicsRole::InkData,
+				PerformanceGraphicsSite("draw_shape_primitives_map_ink_data"), PerformanceGraphicsSite("draw_shape_primitives_memcpy_ink_data"),
+				PerformanceGraphicsSite("draw_shape_primitives_unmap_1"), PerformanceGraphicsSite("draw_shape_primitives_update_ink_data")))) return -1;
 
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
 			if (FAILED(PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
 				D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
 			PerformanceGraphicsSite("draw_shape_primitives_map_global_constants"), performancePass_))) return -1;
@@ -257,7 +240,7 @@ namespace Inkeys::Drawing::Draw3
 				constants->height = viewportHeight;
 				constants->color = color;
 				constants->shapeType = static_cast<float>(static_cast<uint32_t>(kind));
-				constants->bufferOffset = static_cast<uint32_t>(m_bufferHead);
+				constants->bufferOffset = bufferOffset;
 				constants->operatorKind = static_cast<uint32_t>(operatorKind);
 				constants->padding[0] = shapeRoundedCornerRadiusPixels_;
 				constants->padding[1] = 0.0f;
@@ -293,7 +276,6 @@ namespace Inkeys::Drawing::Draw3
 			ID3D11ShaderResourceView* nullResource[] = { nullptr };
 			PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Bind, PerformanceGraphicsRole::LayerTexture,
 			PerformanceGraphicsSite("draw_shape_primitives_v_s_set_shader_resources_2"), [&] { return TraceArguments(TraceViewResource((nullResource)[0]), 0, 0, nullptr, 0, 1); }, [&] { context->VSSetShaderResources(0, 1, nullResource); });
-			m_bufferHead += pointCount;
 			startIndex += batchCount;
 		}
 		return 0;
@@ -423,24 +405,17 @@ namespace Inkeys::Drawing::Draw3
 			{ appearance.outlineWidth, appearance.fillAlpha, 0.0f, 0.0f }
 		};
 
-		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		const HRESULT inkMapResult = PerformanceMap(performance_, context.Get(), inkDataBuffer.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_transient_drawing_cursor_map_ink_data"), performancePass_);
-		if (FAILED(inkMapResult))
+		const HRESULT inkUploadResult = UploadStructuredBuffer(inkDataBuffer.Get(), cursorData, sizeof(cursorData),
+			0, D3D11_MAP_WRITE_DISCARD, PerformanceGraphicsRole::InkData,
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_map_ink_data"), PerformanceGraphicsSite("draw_transient_drawing_cursor_memcpy_ink_data"),
+			PerformanceGraphicsSite("draw_transient_drawing_cursor_unmap_1"), PerformanceGraphicsSite("draw_transient_drawing_cursor_update_ink_data"));
+		if (FAILED(inkUploadResult))
 		{
-			recordGpu("map-ink-data", inkMapResult, false);
+			recordGpu("upload-ink-data", inkUploadResult, false);
 			return;
 		}
-		PerformanceScope performanceCopy(performance_, PerformanceStage::UploadCopy);
-		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::WriteCopy, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_transient_drawing_cursor_memcpy_ink_data"), [&] { return TraceArguments(inkDataBuffer.Get(), sizeof(cursorData), 0); }, [&] { std::memcpy(mapped.pData, cursorData, sizeof(cursorData)); });
-		performanceCopy.Finish();
-		if (performance_) performance_->CopiedBytes(sizeof(cursorData));
-		PerformanceGraphicsVoid(performance_, PerformanceGraphicsOperation::Unmap, PerformanceGraphicsRole::InkData,
-			PerformanceGraphicsSite("draw_transient_drawing_cursor_unmap_1"), [&] { return TraceArguments(inkDataBuffer.Get(), 0, 0); }, [&] { context->Unmap(inkDataBuffer.Get(), 0); });
-		m_bufferHead = 2;
 
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		const HRESULT constantsMapResult = PerformanceMap(performance_, context.Get(), globalCB.Get(), 0,
 			D3D11_MAP_WRITE_DISCARD, 0, &mapped, 0, PerformanceGraphicsRole::GlobalConstants,
 			PerformanceGraphicsSite("draw_transient_drawing_cursor_map_global_constants"), performancePass_);
