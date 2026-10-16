@@ -423,12 +423,12 @@ namespace
 	void ApplySettingTheme(HWND hwnd) noexcept
 	{
 		// ImGui/ImFluent 只在渲染线程帧边界换色，系统主题消息不覆盖用户偏好。
-		Design::ApplyPalette(setlist.settingDarkMode);
+		const auto backdrop = settingBackdropMode.load(memory_order_acquire);
+		Design::ApplyPalette(setlist.settingDarkMode, backdrop);
 		ImFluent::GetStyle().NavItemHeight = 36.0F;
 		Widgets::style.ApplyGlobal(Design::ScrollbarTrackSize);
 		Design::ApplyScrollbars();
-		if (settingBackdropMode.load(memory_order_acquire)
-			!= Inkeys::UI::Setting::BackdropMode::Solid)
+		if (backdrop != Inkeys::UI::Setting::BackdropMode::Solid)
 		{
 			ImFluent::GetStyle().Colors[ImFluentCol_SolidBgBase].w = 0.0F;
 			ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w = 0.0F;
@@ -458,7 +458,7 @@ namespace
 		const auto backdrop = ApplySettingBackdrop(hwnd, darkMode);
 		if (settingBackdropMode.exchange(backdrop, memory_order_acq_rel) != backdrop)
 		{
-			// 可选材质成功/回退后，由渲染线程统一更新根背景的 alpha。
+			// 可选材质成功/回退后，由渲染线程统一更新表面及根背景的 alpha。
 			settingThemeSerial.fetch_add(1, memory_order_release);
 			Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
 		}
@@ -2340,7 +2340,7 @@ SettingSessionCoroutine RunSettingSession()
 						// 根背景可为 Mica 透明，但 caption 始终以当前主题底色覆盖系统强调色。
 						drawList->AddRectFilled(origin,
 							{ origin.x + ImGui::GetWindowSize().x, origin.y + titleBarGeometry.height },
-							Design::AppBase);
+							Design::PaletteForTheme(Design::IsDarkMode()).appBase);
 						const bool active = settingWindowActive.load(memory_order_acquire);
 						const ImRect iconBounds = ToImRect(titleBarGeometry.icon, origin);
 						if (TextureSettingSign[0])

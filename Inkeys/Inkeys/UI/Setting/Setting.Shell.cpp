@@ -505,7 +505,7 @@ namespace Inkeys::UI::Setting::Design
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Pixels(8.0F));
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, Pixels(1.0F));
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0.0F, Pixels(RowGap) });
-			ImGui::PushStyleColor(ImGuiCol_PopupBg, GetPalette().cardSecondary);
+			ImGui::PushStyleColor(ImGuiCol_PopupBg, PaletteForTheme(IsDarkMode()).cardSecondary);
 			ImGui::PushStyleColor(ImGuiCol_Border, Stroke);
 			ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, IM_COL32(0, 0, 0, 0));
 			const auto popupFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Setting.Design.h"
+#include "Setting.Theme.h"
 #include "Setting.Typography.h"
 #include "imfluent/imfluent.h"
 #include <functional>
@@ -124,5 +125,5 @@ namespace Inkeys::UI::Setting::Design
 		const char* actionLabel = nullptr);
 	void ApplyScrollbars();
 	// 在渲染线程帧边界调用，不触碰字体、纹理、设备或持久化。
-	void ApplyPalette(bool darkMode = false);
+	void ApplyPalette(bool darkMode = false, BackdropMode backdrop = BackdropMode::Solid);
 }

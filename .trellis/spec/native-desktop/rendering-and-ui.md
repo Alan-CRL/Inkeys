@@ -2201,3 +2201,26 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 - Correct：精确值比较在Clear之前，保留Continue和时钟，事务帧强制实际提交，只在Present==S_OK发布快照；旧backend失败进入真实Render重试。
 - Wrong：用缩字号隐藏英文版权，或以持续 hover 每帧重置装饰动效。
 - Correct：真实字体决定换行和区域高度；仅 hover 上升沿触发一次，缓存稳定后复用，操作命中区域不随图标运动。
+
+## 设置原生材质表面合同
+
+### 1. Scope / Trigger
+修改 Setting 主题、大表面透明度、浮层或主页缓存时适用；不将 ImFluent 壁纸 backdrop 接入已有原生 Mica/Acrylic。
+
+### 2. Signatures
+`Design::ApplyPalette(bool darkMode = false, BackdropMode backdrop = BackdropMode::Solid)` 仅在渲染线程帧边界调用。默认参数保持旧的纯色调用语义。
+
+### 3. Contracts
+Solid 原样复制 `PaletteForTheme`。原生 Mica/Acrylic 仅改变 appBase/pageSurface/card/cardSecondary alpha 为 204/230/245/245，RGB、文字、图标、按钮边框、焦点和全局 style.Alpha 保持不变。标题栏和菜单/弹出层使用基础实色；特别是 ComboBox 与上游 flyout 局部覆盖的 SolidBgQuarternary 必须不透明，不能仅保证全局 PopupBg。正文直接使用材质化 PageSurface。
+
+### 4. Validation & Error Matrix
+原生材质成功或回退后更新 settingThemeSerial，由渲染线程重新调色并使提交缓存失效；主页 key 的 dark/backdrop/material 区分当前帧。材质不可用时恢复完整纯色填充，不沿用旧 alpha。不得降低整个控件透明度模拟材质。
+
+### 5. Good / Base / Bad Cases
+Good：浅深主题下大表面透出原生材质，浮层可读；Base：Solid 与原配色完全一致；Bad：只改 PopupBg，但 ComboBox 局部覆盖仍使用半透明 PageSurface token。
+
+### 6. Tests Required
+现有 DPI 夹具覆盖三个背景模式、RGB/alpha、前景边框不变、实际 popup 填充、材质与纯色往返；离屏 WARP 对真实 Mica/Acrylic 调色板执行缓存重放与完整渲染 RGBA 比较。完整 Debug ARM64 solution 与 --no-window --setting-home-only；GUI 仅在用户明确授权时运行。
+
+### 7. Wrong vs Correct
+Wrong：`SolidBgQuarternary = GetPalette().pageSurface`，浮层随正文变透明。Correct：该 token 保持 `PaletteForTheme(IsDarkMode()).pageSurface`，正文仍用材质化表面。

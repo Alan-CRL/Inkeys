@@ -1051,6 +1051,47 @@ namespace
 			&& Brightness(dark.textPrimary) > Brightness(dark.card)
 			&& Brightness(light.textPrimary) < Brightness(light.card),
 			"light and dark semantic surfaces retain opposite readable text contrast");
+		// 每个 DPI 都覆盖原生材质和不支持系统的纯色回退，不削弱控件边缘。
+		for (bool materialDark : { false, true })
+		{
+			Design::ApplyPalette(materialDark);
+			const auto solid = Design::GetPalette();
+			const auto solidFluent = ImFluent::GetStyle();
+			const float styleAlpha = ImGui::GetStyle().Alpha;
+			for (auto backdrop : { BackdropMode::Mica, BackdropMode::Acrylic, BackdropMode::Solid })
+			{
+				Design::ApplyPalette(materialDark, backdrop);
+				const auto& palette = Design::GetPalette();
+				const bool material = backdrop != BackdropMode::Solid;
+				const ImU32 surfaces[]{ palette.appBase, palette.pageSurface, palette.card, palette.cardSecondary };
+				const ImU32 bases[]{ solid.appBase, solid.pageSurface, solid.card, solid.cardSecondary };
+				const ImU32 alphas[]{ 204, 230, 245, 245 };
+				for (int i = 0; i < 4; ++i)
+					checks.Expect((surfaces[i] & ~IM_COL32_A_MASK) == (bases[i] & ~IM_COL32_A_MASK)
+						&& (surfaces[i] >> IM_COL32_A_SHIFT) == (material ? alphas[i] : 255),
+						"native material changes only surface alpha; Solid restores exact opaque RGB");
+				checks.Expect(palette.textPrimary == solid.textPrimary && palette.textSecondary == solid.textSecondary
+					&& palette.textDisabled == solid.textDisabled && palette.stroke == solid.stroke
+					&& palette.accent == solid.accent && ImGui::GetStyle().Alpha == styleAlpha,
+					"material preserves readable foregrounds, strokes and global style alpha");
+				for (int i = 0; i < ImFluentCol_COUNT; ++i)
+				{
+					if (i == ImFluentCol_CardBgDefault || i == ImFluentCol_CardBgSecondary
+						|| i == ImFluentCol_SolidBgBase) continue;
+					checks.Expect(ImGui::ColorConvertFloat4ToU32(ImFluent::GetStyle().Colors[i])
+						== ImGui::ColorConvertFloat4ToU32(solidFluent.Colors[i]),
+						"material preserves all Fluent control fills, borders, focus and icon colors");
+				}
+				checks.Expect(ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_PopupBg]) == solid.cardSecondary
+					&& ImFluent::GetStyle().Colors[ImFluentCol_LayerFillAlt].w == 1.0F
+					&& ImFluent::GetStyle().Colors[ImFluentCol_LayerFillDefault].w == 1.0F
+					&& ImFluent::GetStyle().Colors[ImFluentCol_SolidBgQuarternary].w == 1.0F
+					&& ImGui::GetStyle().Colors[ImGuiCol_MenuBarBg].w == 1.0F
+					&& ImGui::GetStyle().Colors[ImGuiCol_TitleBgActive].w == 1.0F,
+					"menus, modal popups and overlay navigation retain opaque readable surfaces");
+			}
+		}
+		Design::ApplyPalette(false);
 		const auto* activePalette = &Design::GetPalette();
 		const auto* textAlias = &Design::TextPrimary;
 		for (int transition = 0; transition < 3; ++transition)
@@ -1177,7 +1218,7 @@ namespace
 		Design::ApplyPalette(false);
 	}
 
-	void CheckComboBoxInteraction(Checks& checks, ImFont* regular, float scale)
+	void CheckComboBoxInteraction(Checks& checks, ImFont* regular, float scale, BackdropMode backdrop)
 	{
 		auto& io = ImGui::GetIO();
 		const auto previousFlags = io.ConfigFlags;
@@ -1188,7 +1229,7 @@ namespace
 		io.ConfigInputTrickleEventQueue = false;
 		io.DisplaySize = ImVec2(640 * scale, 420 * scale);
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, Design::BodyText.size);
-		Design::ApplyPalette(false);
+		Design::ApplyPalette(false, backdrop);
 		const char* options[]{ "First", "Second", "Third", "Fourth" };
 		std::array<int, 2> selected{ 2, 0 }, changes{};
 		std::array<ImRect, 2> bounds{};
@@ -1256,6 +1297,13 @@ namespace
 			"real combo mouse click opens only its own popup");
 		if (frame.popup)
 		{
+			// 检查真正提交的浮层顶点，避免颜色 scope 恢复后掩盖弹层透明回归。
+			const ImU32 opaqueBackground = Design::PaletteForTheme(false).pageSurface;
+			bool hasOpaqueFill = false;
+			for (const auto& vertex : frame.popup->DrawList->VtxBuffer)
+				if (vertex.col == opaqueBackground) { hasOpaqueFill = true; break; }
+			checks.Expect(hasOpaqueFill,
+				"actual combo popup emits opaque background vertices for Solid, Mica and Acrylic");
 			const auto rowMin = frame.popup->DC.CursorStartPos;
 			const float top = (std::max)(rowMin.y, bounds[1].Min.y);
 			const float bottom = (std::min)(rowMin.y + ImFluent::FluentDpx(ImFluent::GetStyle().ControlHeight), bounds[1].Max.y);
@@ -4092,7 +4140,8 @@ int RunSettingDesignTests()
 		ImGui::End();
 		ImGui::Render();
 		CheckDrawData(checks);
-		CheckComboBoxInteraction(checks, fonts[0], scale);
+		for (auto backdrop : { BackdropMode::Solid, BackdropMode::Mica, BackdropMode::Acrylic })
+			CheckComboBoxInteraction(checks, fonts[0], scale, backdrop);
 		CheckDrawData(checks);
 		CheckMultilineRowAnimations(checks, fonts, fontDirectory, scale);
 		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);

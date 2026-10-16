@@ -1418,11 +1418,22 @@ namespace Inkeys::UI::Setting::Design
 		style.Colors[ImGuiCol_ScrollbarGrabActive] = ImGui::ColorConvertU32ToFloat4(GetPalette().scrollbarActive);
 	}
 
-	void ApplyPalette(bool darkMode)
+	void ApplyPalette(bool darkMode, BackdropMode backdrop)
 	{
 		// 只在帧边界换色；SetAccentColor 会重建 preset，项目 token 最后覆盖。
 		activeDarkMode = ResolveThemeMode(darkMode) == ThemeMode::Dark;
 		activePalette = PaletteForTheme(activeDarkMode);
+		// 只让原生材质参与大表面合成；纯色回退及前景、描边保持原样。
+		if (backdrop != BackdropMode::Solid)
+		{
+			auto alpha = [](ImU32 value, int opacity) {
+				return (value & ~IM_COL32_A_MASK) | (static_cast<ImU32>(opacity) << IM_COL32_A_SHIFT);
+			};
+			activePalette.appBase = alpha(activePalette.appBase, 204);
+			activePalette.pageSurface = alpha(activePalette.pageSurface, 230);
+			activePalette.card = alpha(activePalette.card, 245);
+			activePalette.cardSecondary = alpha(activePalette.cardSecondary, 245);
+		}
 		ImFluent::SetThemePreset(activeDarkMode ? ImFluentThemePreset_Dark : ImFluentThemePreset_Light);
 		ImFluent::SetAccentColor(ImColor(Accent));
 		auto& style = ImFluent::GetStyle();
@@ -1443,10 +1454,13 @@ namespace Inkeys::UI::Setting::Design
 		style.Colors[ImFluentCol_CardBgSecondary] = color(colors.cardSecondary);
 		style.Colors[ImFluentCol_CardStrokeDefault] = color(Stroke);
 		style.Colors[ImFluentCol_CardStrokeSolid] = color(Stroke);
-		style.Colors[ImFluentCol_LayerFillDefault] = color(colors.cardSecondary);
-		style.Colors[ImFluentCol_LayerFillAlt] = color(colors.cardSecondary);
+		// 浮层和输入控件也复用 LayerFill，保持实色，避免底层文字直接透出。
+		const auto& solidColors = PaletteForTheme(activeDarkMode);
+		const auto overlay = color(solidColors.cardSecondary);
+		style.Colors[ImFluentCol_LayerFillDefault] = overlay;
+		style.Colors[ImFluentCol_LayerFillAlt] = overlay;
 		style.Colors[ImFluentCol_SolidBgBase] = color(AppBase);
-		style.Colors[ImFluentCol_SolidBgQuarternary] = color(PageSurface);
+		style.Colors[ImFluentCol_SolidBgQuarternary] = color(solidColors.pageSurface);
 		style.Colors[ImFluentCol_SubtleFillSecondary] = color(colors.subtleHover);
 		style.Colors[ImFluentCol_SubtleFillTertiary] = color(colors.subtlePressed);
 		style.Colors[ImFluentCol_AccentFillSelectedTextBg] = color(colors.selection);
@@ -1457,10 +1471,10 @@ namespace Inkeys::UI::Setting::Design
 		imguiColors[ImGuiCol_TextDisabled] = color(colors.textDisabled);
 		imguiColors[ImGuiCol_WindowBg] = color(AppBase);
 		imguiColors[ImGuiCol_ChildBg] = { 0.0F, 0.0F, 0.0F, 0.0F };
-		imguiColors[ImGuiCol_PopupBg] = color(colors.cardSecondary);
+		imguiColors[ImGuiCol_PopupBg] = overlay;
 		imguiColors[ImGuiCol_TitleBg] = imguiColors[ImGuiCol_TitleBgActive]
-			= imguiColors[ImGuiCol_TitleBgCollapsed] = color(AppBase);
-		imguiColors[ImGuiCol_MenuBarBg] = color(colors.cardSecondary);
+			= imguiColors[ImGuiCol_TitleBgCollapsed] = color(solidColors.appBase);
+		imguiColors[ImGuiCol_MenuBarBg] = overlay;
 		imguiColors[ImGuiCol_Header] = imguiColors[ImGuiCol_HeaderActive] = color(colors.subtleHover);
 		imguiColors[ImGuiCol_HeaderHovered] = color(colors.subtlePressed);
 		imguiColors[ImGuiCol_TabSelected] = imguiColors[ImGuiCol_TabDimmedSelected] = color(colors.cardSecondary);

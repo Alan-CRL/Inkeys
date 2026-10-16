@@ -840,13 +840,17 @@ namespace
 	void CheckMaterialCache(Checks& checks, Offscreen& renderer)
 	{
 		const auto originalAlpha=ImGui::GetStyle().Alpha;
+		const bool dark=Design::IsDarkMode();
 		const auto originalBackground=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
-		for (int material=0;material<4;++material)
+		for (int material=0;material<6;++material)
 		{
-			const bool solid=material!=1;
+			const bool solid=material!=1 && material<4;
+			// 实际分层调色板也走 GPU 捕获/重放，与纯透明根背景分别验证。
+			Design::ApplyPalette(dark, material==4 ? Inkeys::UI::Setting::BackdropMode::Mica
+				: material==5 ? Inkeys::UI::Setting::BackdropMode::Acrylic : Inkeys::UI::Setting::BackdropMode::Solid);
 			ImGui::GetStyle().Alpha=material==2 ? .6F : originalAlpha;
 			ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
-			ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w=material==1 ? 0 : material==3 ? .6F : originalBackground.w;
+			ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w=!solid ? 0 : material==3 ? .6F : originalBackground.w;
 			Design::HomeMotionState state; const std::uint64_t serial=80+material;
 			for (int frame=0;frame<8 && !state.preparation.revealReady;++frame)
 			{
@@ -870,9 +874,10 @@ namespace
 				checks.Expect(cached==full,"Solid/Mica/partial-alpha cached RGBA including transparent AA equals real full render exactly");
 			}
 		}
+		Design::ApplyPalette(dark);
 		ImGui::GetStyle().Alpha=originalAlpha; ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
 		renderer.pageCache.Reset();
-		std::cout<<"[HomeWARP] cache-materials=4 phases-per-material=3 comparison=exact-RGBA\n";
+		std::cout<<"[HomeWARP] cache-materials=6 phases-per-material=3 comparison=exact-RGBA\n";
 	}
 
 	void CheckPreparedKeyboard(Checks& checks, Offscreen& renderer)

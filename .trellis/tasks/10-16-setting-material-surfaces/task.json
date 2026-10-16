@@ -1,0 +1,29 @@
+{
+  "id": "setting-material-surfaces",
+  "name": "setting-material-surfaces",
+  "title": "设置窗口材质表面与原生背景协调",
+  "description": "保留原生 Mica/Acrylic 与纯色回退，选择性调整侧栏、正文与卡片透明度，保持按钮边界及文本清晰，并验证缓存和无窗口渲染。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-16",
+  "completedAt": null,
+  "branch": "fluent",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "implementation_complete": "true",
+    "validation": "passed"
+  }
+}
