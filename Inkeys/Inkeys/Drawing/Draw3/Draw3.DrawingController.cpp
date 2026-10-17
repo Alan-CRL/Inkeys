@@ -49,6 +49,7 @@
 #include "Draw3.Presentation.h"
 #include "Draw3.TimerPeriod.h"
 #include "Draw3.SpeedEraser.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 #pragma comment(lib, "winmm.lib")
 
@@ -470,6 +471,64 @@ namespace Inkeys::Drawing::Draw3
 			runtimes[page] = {};
 			return true;
 		}
+		// 复用 UInk 精确参数协议，白板隐藏历史不维护另一套 Shape 字段映射。
+		Json::Value ShapeMetadataJson(const draw3::uink::UInkMessagePackValue& value, unsigned depth = 0)
+		{
+			using V = draw3::uink::UInkMessagePackValue;
+			if (depth > 16) throw std::runtime_error("shape metadata depth");
+			if (std::holds_alternative<std::monostate>(value.value)) return {};
+			if (const auto* p = std::get_if<bool>(&value.value)) return *p;
+			if (const auto* p = std::get_if<int64_t>(&value.value)) return Json::Value(Json::Int64(*p));
+			if (const auto* p = std::get_if<uint64_t>(&value.value)) return Json::Value(Json::UInt64(*p));
+			if (const auto* p = std::get_if<float>(&value.value)) return Json::Value(*p);
+			if (const auto* p = std::get_if<double>(&value.value)) return Json::Value(*p);
+			if (const auto* p = std::get_if<std::string>(&value.value)) return Json::Value(*p);
+			if (const auto* p = std::get_if<V::Array>(&value.value))
+			{
+				Json::Value result(Json::arrayValue);
+				for (const auto& item : *p) result.append(ShapeMetadataJson(item, depth + 1));
+				return result;
+			}
+			if (const auto* p = std::get_if<V::Map>(&value.value))
+			{
+				Json::Value result(Json::objectValue);
+				for (const auto& [key, item] : *p)
+				{
+					const auto* name = std::get_if<std::string>(&key.value);
+					if (!name || result.isMember(*name)) throw std::runtime_error("shape metadata key");
+					result[*name] = ShapeMetadataJson(item, depth + 1);
+				}
+				return result;
+			}
+			throw std::runtime_error("unsupported shape metadata value");
+		}
+		draw3::uink::UInkMessagePackValue ShapeMetadataValue(const Json::Value& value, unsigned depth = 0)
+		{
+			using V = draw3::uink::UInkMessagePackValue;
+			if (depth > 16) throw std::runtime_error("shape metadata depth");
+			V result;
+			if (value.isNull()) return result;
+			if (value.isBool()) result.value = value.asBool();
+			else if (value.isUInt64()) result.value = uint64_t(value.asUInt64());
+			else if (value.isInt64()) result.value = int64_t(value.asInt64());
+			else if (value.isNumeric()) result.value = value.asDouble();
+			else if (value.isString()) result.value = value.asString();
+			else if (value.isArray())
+			{
+				V::Array array;
+				for (const auto& item : value) array.push_back(ShapeMetadataValue(item, depth + 1));
+				result.value = std::move(array);
+			}
+			else if (value.isObject())
+			{
+				V::Map map;
+				for (const auto& key : value.getMemberNames())
+					map.emplace_back(V{key}, ShapeMetadataValue(value[key], depth + 1));
+				result.value = std::move(map);
+			}
+			else throw std::runtime_error("unsupported shape metadata JSON");
+			return result;
+		}
 		Json::Value WhiteboardStrokeJson(const InkStroke& stroke)
 		{
 			Json::Value value(Json::objectValue);
@@ -477,6 +536,8 @@ namespace Inkeys::Drawing::Draw3
 			value["rgb"] = stroke.Style().fallbackRgb;
 			value["opacity"] = stroke.Style().opacity;
 			value["texture"] = stroke.Style().texture;
+			if (stroke.Shape()) value["shape"] = ShapeMetadataJson(
+				draw3::uink::EncodeInkeysShapeMetadata(*stroke.Shape()));
 			value["points"] = Json::Value(Json::arrayValue);
 			for (const auto& point : stroke.Points())
 			{
@@ -487,7 +548,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 		std::optional<InkStroke> WhiteboardStrokeFromJson(const Json::Value& value)
 		{
-			if (!value.isObject() || !value["type"].isUInt() || value["type"].asUInt() > 6 ||
+			if (!value.isObject() || !value["type"].isUInt() || value["type"].asUInt() > 7 ||
 				!value["points"].isArray() || !value["rgb"].isUInt() || !value["opacity"].isNumeric() ||
 				!value["texture"].isUInt() || value["texture"].asUInt() > 65535) return {};
 			StoredInkStyle style{ static_cast<StoredInkType>(value["type"].asUInt()), value["rgb"].asUInt(),
@@ -498,7 +559,14 @@ namespace Inkeys::Drawing::Draw3
 				if (!p.isArray() || p.size() != 3 || !p[0].isNumeric() || !p[1].isNumeric() || !p[2].isNumeric()) return {};
 				points.push_back({ p[0].asFloat(), p[1].asFloat(), p[2].asFloat() });
 			}
-			InkStroke result(style, std::move(points));
+			std::optional<draw3::shapes::ShapeObject> shape;
+			if (value.isMember("shape"))
+			{
+				auto decoded = draw3::uink::DecodeInkeysShapeMetadata(ShapeMetadataValue(value["shape"]));
+				if (decoded.status != draw3::uink::Draw3ShapeMetadataStatus::Valid || !decoded.shape) return {};
+				shape = std::move(decoded.shape);
+			}
+			InkStroke result(style, std::move(points), std::nullopt, std::move(shape));
 			if (!result.IsValid()) return {};
 			return result;
 		}
@@ -529,7 +597,7 @@ namespace Inkeys::Drawing::Draw3
 					std::vector<StoredInkPoint> points;
 					for (const auto& p : stroke.points) points.push_back({p.x,p.y,p.width});
 					InkStroke stored({static_cast<StoredInkType>(stroke.style.kind), stroke.style.fallbackRgb,
-						stroke.style.opacity, static_cast<uint16_t>(stroke.style.texture)}, std::move(points));
+						stroke.style.opacity, static_cast<uint16_t>(stroke.style.texture)}, std::move(points), std::nullopt, stroke.shape);
 					value["boundary"].append(WhiteboardStrokeJson(stored));
 				}
 			}
@@ -585,6 +653,7 @@ namespace Inkeys::Drawing::Draw3
 					draw3::uink::Draw3UInkStrokeSnapshot s;
 					s.style = {static_cast<draw3::uink::Draw3UInkStrokeKind>(stroke->Style().inkType),
 						stroke->Style().opacity, stroke->Style().fallbackRgb, stroke->Style().texture};
+					s.shape = stroke->Shape();
 					for (const auto& p : stroke->Points()) s.points.push_back({p.x,p.y,p.width});
 					boundary.strokes.push_back(std::move(s));
 				}
@@ -1241,6 +1310,8 @@ namespace Inkeys::Drawing::Draw3
 				return Draw3UInkStrokeKind::OutlineRectangle;
 			case StoredInkType::FilledRectangle:
 				return Draw3UInkStrokeKind::FilledRectangle;
+			case StoredInkType::Shape:
+				return Draw3UInkStrokeKind::Shape;
 			default: return std::nullopt;
 			}
 		}
@@ -1324,6 +1395,7 @@ namespace Inkeys::Drawing::Draw3
 						UInkKindForStoredType(stroke.Style().inkType);
 					if (!kind) return false;
 					draw3::uink::Draw3UInkStrokeSnapshot outputStroke;
+					outputStroke.shape = stroke.Shape();
 					outputStroke.style = { *kind, stroke.Style().opacity,
 						stroke.Style().fallbackRgb, stroke.Style().texture };
 					outputStroke.undoId =
@@ -1420,6 +1492,7 @@ namespace Inkeys::Drawing::Draw3
 						const auto kind = UInkKindForStoredType(stroke.Style().inkType);
 						if (!kind) return std::nullopt;
 						draw3::uink::Draw3UInkStrokeSnapshot outputStroke;
+						outputStroke.shape = stroke.Shape();
 						outputStroke.style = { *kind, stroke.Style().opacity,
 							stroke.Style().fallbackRgb, stroke.Style().texture };
 						outputStroke.undoId = static_cast<std::uint32_t>(output.strokes.size());
@@ -1645,6 +1718,8 @@ namespace Inkeys::Drawing::Draw3
 							inkType = StoredInkType::OutlineRectangle; break;
 						case draw3::uink::Draw3UInkStrokeKind::FilledRectangle:
 							inkType = StoredInkType::FilledRectangle; break;
+						case draw3::uink::Draw3UInkStrokeKind::Shape:
+							inkType = StoredInkType::Shape; break;
 						default: return std::nullopt;
 						}
 						std::vector<StoredInkPoint> points;
@@ -1653,7 +1728,7 @@ namespace Inkeys::Drawing::Draw3
 						InkStroke stroke({ inkType, sourceStroke.style.fallbackRgb,
 							sourceStroke.style.opacity,
 							static_cast<std::uint16_t>(sourceStroke.style.texture) },
-							std::move(points));
+							std::move(points), std::nullopt, sourceStroke.shape);
 						const auto strokeIndex = canvas->AppendStroke(std::move(stroke));
 						if (!strokeIndex) return std::nullopt;
 						const auto footprint = BuildStrokeTileFootprint(
@@ -4942,6 +5017,84 @@ namespace Inkeys::Drawing::Draw3
 		return failures == 0 ? 0 : 1;
 	}
 
+
+	int RunShapeDocumentProductionTest() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool ok, const char* label) {
+			if (!ok) { ++failures; std::fprintf(stderr, "[Shape.Document] FAIL %s\n", label); }
+		};
+		try
+		{
+			using namespace draw3::shapes;
+			ShapeObject circle; circle.id[0] = 1; circle.kind = Kind::Circle;
+			circle.geometry.start = {80,80}; circle.geometry.radius = 24;
+			circle.style.fill = true; circle.style.fillRgb = 0x1255AA; circle.style.fillOpacity = 0.4f;
+			ShapeObject compound; compound.id[0] = 2; compound.kind = Kind::Compound;
+			ShapePart part; part.id = 1; part.kind = Kind::Rectangle;
+			part.geometry.start = {130,40}; part.geometry.end = {180,90};
+			compound.parts.push_back(part); part.id = 2; part.kind = Kind::Line;
+			part.geometry.start = {130,90}; part.geometry.end = {190,130};
+			compound.parts.push_back(part);
+			std::array<uint8_t,16> pageId{}; pageId[0] = 7;
+			InkPage page{InkGuid(pageId)}; auto* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
+			CanvasPageRuntimeState runtime;
+			for (const auto& shape : {circle, compound})
+			{
+				InkStroke stroke({StoredInkType::Shape, 0, 1, 0}, {}, std::nullopt, shape);
+				check(stroke.IsValid() && stroke.ShapeGeometry(), "generic immutable geometry");
+				auto footprint = BuildStrokeTileFootprint(stroke);
+				CreationTransaction transaction; check(transaction.Preview(shape), "creation preview");
+				const auto command = transaction.Commit();
+				auto index = command ? canvas->AppendShape(*command) : std::nullopt;
+				check(index && footprint, "append generic transaction and footprint");
+				if (!index || !footprint) return failures + 1;
+				check(runtime.history.AppendStroke(*index, *footprint).has_value(), "one compound history item");
+				runtime.beforeStates.push_back(*index + 1); runtime.afterStates.push_back(*index + 2);
+			}
+			check(runtime.history.UndoLastVisible().has_value(), "undo compound once");
+			const auto captured = WhiteboardHistoryJson(page, runtime);
+			Json::StreamWriterBuilder writer; writer["indentation"] = "";
+			const auto text = Json::writeString(writer, captured);
+			Json::CharReaderBuilder builder; builder["rejectDupKeys"] = true;
+			std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+			Json::Value encoded; std::string parseError;
+			check(reader->parse(text.data(), text.data()+text.size(), &encoded, &parseError), "cold history JSON bytes roundtrip");
+			InkPage restored{InkGuid(pageId)}; CanvasPageRuntimeState restoredRuntime;
+			check(RestoreWhiteboardHistory(encoded, restored, restoredRuntime), "restore hidden generic redo");
+			const auto* restoredCanvas = restored.FindCanvas(kDefaultDeviceKey);
+			check(restoredCanvas && restoredCanvas->Strokes().size() == 2 &&
+				restoredCanvas->Strokes()[0].Shape() == std::optional<ShapeObject>(circle) &&
+				restoredCanvas->Strokes()[1].Shape() == std::optional<ShapeObject>(compound), "identity and exact parameters survive cold history");
+			check(restoredRuntime.history.RedoDepth() == 1, "redo depth survives cold history");
+			const auto redo = restoredRuntime.history.LastRedoItem();
+			check(redo && restoredRuntime.history.RedoLastUndone(*redo), "redo compound once");
+			check(!canvas->AppendStroke(InkStroke({StoredInkType::Shape,0,1,0},{},std::nullopt,circle)), "duplicate identity rejected");
+			for (auto type : {StoredInkType::SolidLine,StoredInkType::DashedLine,
+				StoredInkType::OutlineRectangle,StoredInkType::FilledRectangle})
+			{
+				InkStroke legacy({type,0x223344,0.5f,0},{{10,20,4},{100,120,4}});
+				auto roundtrip = WhiteboardStrokeFromJson(WhiteboardStrokeJson(legacy));
+				check(legacy.IsValid() && legacy.Shape() && roundtrip &&
+					roundtrip->Shape() == legacy.Shape(), "legacy adapter identity roundtrip");
+				if (legacy.Shape())
+				{
+					auto mismatched = *legacy.Shape(); mismatched.geometry.start.x += 10;
+					check(!InkStroke(legacy.Style(), {{10,20,4},{100,120,4}}, std::nullopt, mismatched).IsValid(),
+						"legacy geometry metadata mismatch rejected");
+					mismatched = *legacy.Shape(); mismatched.style.strokeRgb ^= 0xFF;
+					check(!InkStroke(legacy.Style(), {{10,20,4},{100,120,4}}, std::nullopt, mismatched).IsValid(),
+						"legacy style metadata mismatch rejected");
+				}
+			}
+			auto corrupt = encoded; corrupt["strokes"][0]["shape"]["revision"] = 0;
+			InkPage rejected{InkGuid(pageId)}; CanvasPageRuntimeState rejectedRuntime;
+			check(!RestoreWhiteboardHistory(corrupt, rejected, rejectedRuntime), "corrupt metadata rejected");
+		}
+		catch (const std::exception& e) { ++failures; std::fprintf(stderr,"[Shape.Document] exception %s\n", e.what()); }
+		std::fprintf(stderr,"[Shape.Document] failures=%d\n", failures);
+		return failures;
+	}
 
 	int RunWhiteboardStorageProductionTest() noexcept
 	{
@@ -8260,6 +8413,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto kind = UInkKindForStoredType(stroke.Style().inkType);
 				if (!kind) return std::nullopt;
 				draw3::uink::Draw3UInkStrokeSnapshot outputStroke;
+				outputStroke.shape = stroke.Shape();
 				outputStroke.style = { *kind, stroke.Style().opacity,
 					stroke.Style().fallbackRgb, stroke.Style().texture };
 				outputStroke.undoId = static_cast<std::uint32_t>(output.strokes.size());
@@ -8282,7 +8436,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto* page = doc->PageAt(index); if (!page) return false;
 				auto canvas = captureCanvasTail(*page, runtimes[index], 0); if (!canvas) return false;
 				Json::Value history = WhiteboardHistoryJson(*page, runtimes[index]);
-				history["version"] = 1;
+				history["version"] = 2;
 				history["rgb"] = whiteboardThemes[index].backgroundRgb;
 				history["pattern"] = static_cast<unsigned>(whiteboardThemes[index].pattern);
 				Json::StreamWriterBuilder writer; writer["indentation"] = "";
@@ -8345,7 +8499,7 @@ namespace Inkeys::Drawing::Draw3
 								builder["rejectDupKeys"] = true;
 								std::unique_ptr<Json::CharReader> reader(builder.newCharReader()); std::string error;
 								if (encoded && reader->parse(encoded->data(), encoded->data() + encoded->size(), &history, &error) &&
-									history["version"].isInt() && history["version"].asInt() == 1 && history["rgb"].isUInt() && history["pattern"].isUInt())
+									history["version"].isInt() && (history["version"].asInt() == 1 || history["version"].asInt() == 2) && history["rgb"].isUInt() && history["pattern"].isUInt())
 								{
 									WhiteboardTheme theme{history["rgb"].asUInt(), static_cast<WhiteboardPattern>(history["pattern"].asUInt())};
 									InkPage page(doc->PageAt(result.page)->PageGuid()); CanvasPageRuntimeState runtime;
@@ -11708,6 +11862,8 @@ namespace Inkeys::Drawing::Draw3
 					inkType = StoredInkType::OutlineRectangle; break;
 				case draw3::uink::Draw3UInkStrokeKind::FilledRectangle:
 					inkType = StoredInkType::FilledRectangle; break;
+				case draw3::uink::Draw3UInkStrokeKind::Shape:
+					inkType = StoredInkType::Shape; break;
 				default: return std::nullopt;
 				}
 				std::vector<StoredInkPoint> points;
@@ -11716,7 +11872,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto strokeIndex = canvas->AppendStroke(InkStroke({ inkType,
 					sourceStroke.style.fallbackRgb, sourceStroke.style.opacity,
 					static_cast<std::uint16_t>(sourceStroke.style.texture) },
-					std::move(points)));
+					std::move(points), std::nullopt, sourceStroke.shape));
 				if (!strokeIndex) return std::nullopt;
 				const auto footprint = BuildStrokeTileFootprint(
 					canvas->Strokes()[*strokeIndex]);

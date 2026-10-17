@@ -366,6 +366,10 @@ IDR_DRAW3_LASER_UPDATE_CS SHADER                 "Inkeys\\Drawing\\Draw3\\Assets
 
 IDR_DRAW3_LASER_EMIT_CS SHADER                   "Inkeys\\Drawing\\Draw3\\Assets\\laserParticleEmitCS.cso"
 
+IDR_DRAW3_SHAPE_PIXEL_SHADER SHADER              "Inkeys\\Drawing\\Draw3\\Assets\\shapePixelShader.cso"
+
+IDR_DRAW3_SHAPE_VERTEX_SHADER SHADER             "Inkeys\\Drawing\\Draw3\\Assets\\shapeVertexShader.cso"
+
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////
 

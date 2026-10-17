@@ -45,6 +45,7 @@ export namespace draw3::uink
 		Draw3UInkImportStatus status = Draw3UInkImportStatus::InvalidDocument;
 		std::optional<Draw3UInkExportSnapshot> snapshot;
 		std::string error;
+		std::vector<UInkDiagnostic> diagnostics;
 	};
 
 	UInkExtra MakeInkeysBindingExtra(Draw3UInkImportBindingMode mode);

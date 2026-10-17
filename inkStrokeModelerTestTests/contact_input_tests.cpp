@@ -47,6 +47,7 @@ int RunInkHistoryTests();
 int RunLaserIncrementalCoverageTests();
 int RunPenCursorTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
+int RunShapeCoreTests();
 int RunUInkTests();
 int RunUInkPageFileTests();
 int RunFinalizedTailPersistenceTests(const draw3::InkStroke& stroke);
@@ -3460,6 +3461,8 @@ int wmain(int argc, wchar_t* argv[])
 	// 仅运行共享文件编解码/事务回归，避开完整默认套件的 GPU 测试。
 	if (argc == 2 && wcscmp(argv[1], L"--uink-page-file-only") == 0)
 		return RunUInkPageFileTests() == 0 ? 0 : 1;
+	if (argc == 2 && wcscmp(argv[1], L"--shape-core-only") == 0)
+		return RunShapeCoreTests() == 0 ? 0 : 1;
 	if (argc == 2 && wcscmp(argv[1], L"--uink-file-only") == 0)
 		return RunUInkTests() + RunUInkPageFileTests() == 0 ? 0 : 1;
 	if (argc == 4 && wcscmp(argv[1], L"--benchmark") == 0)
@@ -3512,6 +3515,7 @@ int wmain(int argc, wchar_t* argv[])
 	state.failures += RunInkHistoryTests();
 	state.failures += RunLaserIncrementalCoverageTests();
 	state.failures += RunPenCursorTests();
+	state.failures += RunShapeCoreTests();
 	state.failures += RunUInkTests();
 	state.failures += RunUInkPageFileTests();
 	state.failures += RunThinStrokeGpuTests();

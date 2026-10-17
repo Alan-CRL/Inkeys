@@ -151,4 +151,11 @@
     </ResourceCompile>
   </ItemGroup>
   <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.filters.props" />
+  <ItemGroup>
+    <ClCompile Include="draw3\shape_core.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+    <ClInclude Include="draw3\shape_core.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="draw3\shape_uink_metadata.inl"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="draw3\shape_uink_standard.inl"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="draw3\shape_uink_import.inl"><Filter>头文件</Filter></ClInclude>
+  </ItemGroup>
 </Project>

@@ -28,6 +28,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 module Inkeys.Drawing.Draw3.auto_save;
 
@@ -1030,6 +1031,18 @@ namespace Inkeys::Drawing::Draw3
 				add(pointCount > (std::numeric_limits<std::uint64_t>::max)() / pointSize
 					? (std::numeric_limits<std::uint64_t>::max)()
 					: pointCount * pointSize);
+				if (stroke.shape)
+				{
+					// optional 的静态部分已计入 sizeof(stroke)，另计参数和部件的动态存储。
+					const auto addArray = [&](size_t count, size_t stride) noexcept {
+						const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
+						add(count > maximum / stride ? maximum : count * stride);
+					};
+					addArray(stroke.shape->geometry.vertices.size(), sizeof(draw3::shapes::Vec2));
+					addArray(stroke.shape->parts.size(), sizeof(draw3::shapes::ShapePart));
+					for (const auto& part : stroke.shape->parts)
+						addArray(part.geometry.vertices.size(), sizeof(draw3::shapes::Vec2));
+				}
 			}
 		}
 		return bytes;

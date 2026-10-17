@@ -63,6 +63,8 @@ export namespace Inkeys::Drawing::Draw3
 	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
 	int RunDraw3ContentProofProductionProbe() noexcept;
 	int RunWhiteboardStorageProductionTest() noexcept;
+	// 无窗口：参数图形、复合历史、旧图形身份及白板冷恢复。
+	int RunShapeDocumentProductionTest() noexcept;
 
 	struct DrawingControllerRuntimeObserver
 	{

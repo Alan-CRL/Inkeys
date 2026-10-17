@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 #include <cstddef>
 #include <cstdint>
 #include <d3d11.h>
@@ -246,6 +247,11 @@ export namespace Inkeys::Drawing::Draw3
 		int DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
 			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color,
 			InkOperatorKind operatorKind = InkOperatorKind::Draw);
+		// 通用图形接入当前操作层；内部先按材质合成，最后一次提交到调用方 MRT。
+		bool DrawShapeObject(const ::draw3::shapes::ShapeObject& object,
+			float originX = 0, float originY = 0, float displayScale = 1);
+		bool DrawShapeRenderData(const ::draw3::shapes::RenderData& data,
+			float originX = 0, float originY = 0);
 		// 按 DPI 配置固定 4 DIP 圆角。
 		void ConfigureShapePrimitives(float dpiScale) noexcept;
 		// 以零像素视口预热 shape 16..19，避免首次选用时驱动延迟编译。
@@ -334,6 +340,24 @@ export namespace Inkeys::Drawing::Draw3
 		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver);
 
 	private:
+		// 与设备同寿命的独立 shader/b4，以及按当前目标尺寸惰性分配的操作层。
+		bool EnsureShapePipeline();
+		bool EnsureShapeLayers();
+		bool DrawShapeBatch(const ::draw3::shapes::RenderBatch&, float originX, float originY);
+		bool ResolveShapeLayer(const OperatorLayerResources&, ID3D11RenderTargetView* const*, RECT);
+		Microsoft::WRL::ComPtr<ID3D11VertexShader> shapeVertexShader_;
+		Microsoft::WRL::ComPtr<ID3D11PixelShader> shapePixelShader_;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> shapeCB_;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> shapeOrderedBlend_;
+		OperatorLayerResources shapeMaterialLayer_, shapeCompositeLayer_;
+		struct ShapeRenderCacheEntry
+		{
+			::draw3::shapes::ObjectId id;
+			uint64_t revision;
+			float displayScale;
+			::draw3::shapes::RenderData data;
+		};
+		std::vector<ShapeRenderCacheEntry> shapeRenderCache_;
 		// 创建 BGRA8 Add 与 R16F Retain 两张尺寸相关纹理。
 		bool CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer);
 		bool CreateLaserCoverageResources(UINT width, UINT height, LaserCoverageResources& layer);

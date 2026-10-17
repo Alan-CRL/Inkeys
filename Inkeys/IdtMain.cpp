@@ -52,6 +52,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include <fstream>
 #include <iterator>
 
+int RunShapeCoreTests();
+
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
@@ -69,6 +71,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "IdtTime.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 #include "Inkeys/Drawing/Draw3/Draw3.HiddenWindowTest.h"
+#include "Inkeys/Drawing/Draw3/Draw3.ShapeRendererTests.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PerformanceProbe.h"
 #include "Inkeys/Drawing/Draw3/Draw3.HistoryProbe.h"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
@@ -1209,6 +1212,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-shape-renderer-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunShapeRendererTests();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-shape-core-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return RunShapeCoreTests() + Inkeys::Drawing::Draw3::RunShapeDocumentProductionTest();
+		}
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
 		{

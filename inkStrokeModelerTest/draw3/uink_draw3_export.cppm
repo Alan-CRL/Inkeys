@@ -1,5 +1,6 @@
 ﻿module;
 
+#include "shape_core.h"
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -21,6 +22,7 @@ export namespace draw3::uink
 		DashedLine,
 		OutlineRectangle,
 		FilledRectangle,
+		Shape,
 	};
 
 	struct Draw3UInkStrokeStyle
@@ -44,6 +46,7 @@ export namespace draw3::uink
 		std::vector<Draw3UInkPoint> points;
 		uint32_t undoId = 0;
 		bool renderOnlyWhenLatest = false;
+		std::optional<shapes::ShapeObject> shape;
 	};
 
 	struct Draw3UInkClearSnapshot
@@ -116,6 +119,16 @@ export namespace draw3::uink
 		Draw3UInkCapabilityReport capabilities;
 		std::vector<UInkDiagnostic> diagnostics;
 	};
+
+	enum class Draw3ShapeMetadataStatus : uint8_t { Valid, UnsupportedVersion, Invalid };
+	struct Draw3ShapeMetadataResult
+	{
+		Draw3ShapeMetadataStatus status = Draw3ShapeMetadataStatus::Invalid;
+		std::optional<shapes::ShapeObject> shape;
+	};
+	// 与白板历史共用精确值协议；分组索引由 UInk 标准部件额外携带。
+	UInkMessagePackValue EncodeInkeysShapeMetadata(const shapes::ShapeObject& shape);
+	Draw3ShapeMetadataResult DecodeInkeysShapeMetadata(const UInkMessagePackValue& value) noexcept;
 
 	Draw3UInkExportResult ExportDraw3SnapshotToUInk(
 		const Draw3UInkExportSnapshot& snapshot);

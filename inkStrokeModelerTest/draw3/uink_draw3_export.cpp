@@ -1,5 +1,6 @@
 ﻿module;
 
+#include "shape_core.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -22,6 +23,9 @@ import draw3.uink_codec;
 
 namespace draw3::uink
 {
+#include "shape_uink_metadata.inl"
+#include "shape_uink_standard.inl"
+
 	namespace
 	{
 		void AddExportDiagnostic(std::vector<UInkDiagnostic>& diagnostics,
@@ -87,13 +91,13 @@ namespace draw3::uink
 		{
 			return kind == Draw3UInkStrokeKind::Pen ||
 				kind == Draw3UInkStrokeKind::Highlighter ||
-				kind == Draw3UInkStrokeKind::Eraser || IsShapeKind(kind);
+				kind == Draw3UInkStrokeKind::Eraser || kind == Draw3UInkStrokeKind::Shape || IsShapeKind(kind);
 		}
 
-		bool ValidateSnapshotStroke(const Draw3UInkStrokeSnapshot& stroke) noexcept
+		bool ValidateSnapshotStroke(const Draw3UInkStrokeSnapshot& stroke)
 		{
 			if (!IsKnownStrokeKind(stroke.style.kind) || stroke.style.texture != 0 ||
-				stroke.points.empty() || !std::isfinite(stroke.style.opacity) ||
+				(stroke.points.empty() && stroke.style.kind != Draw3UInkStrokeKind::Shape) || !std::isfinite(stroke.style.opacity) ||
 				stroke.style.opacity < 0.0f || stroke.style.opacity > 1.0f ||
 				stroke.style.fallbackRgb > 0xffffff) return false;
 			for (const Draw3UInkPoint& point : stroke.points)
@@ -101,10 +105,23 @@ namespace draw3::uink
 				if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
 					!IsFinitePositive(point.width)) return false;
 			}
+			if (stroke.shape && ((!IsShapeKind(stroke.style.kind) && stroke.style.kind != Draw3UInkStrokeKind::Shape) ||
+				!shapes::Validate(*stroke.shape))) return false;
+			if (stroke.style.kind == Draw3UInkStrokeKind::Shape && !stroke.shape) return false;
 			if (IsShapeKind(stroke.style.kind))
 			{
 				if (stroke.points.size() != 2 || stroke.points[0].width != stroke.points[1].width)
 					return false;
+				if (stroke.shape)
+				{
+					const auto expectedLegacy = static_cast<shapes::LegacyKind>(
+						static_cast<uint32_t>(stroke.style.kind) - static_cast<uint32_t>(Draw3UInkStrokeKind::SolidLine) + 1);
+					const auto& object = *stroke.shape;
+					if (object.legacyKind != expectedLegacy || object.geometry.start != shapes::Vec2{ stroke.points[0].x, stroke.points[0].y } ||
+						object.geometry.end != shapes::Vec2{ stroke.points[1].x, stroke.points[1].y } || object.style.width != stroke.points[0].width ||
+						(object.style.stroke ? object.style.strokeRgb : object.style.fillRgb) != stroke.style.fallbackRgb ||
+						(object.style.stroke ? object.style.strokeOpacity : object.style.fillOpacity) != stroke.style.opacity) return false;
+				}
 				if ((stroke.style.kind == Draw3UInkStrokeKind::OutlineRectangle ||
 					stroke.style.kind == Draw3UInkStrokeKind::FilledRectangle) &&
 					(stroke.points[0].x == stroke.points[1].x ||
@@ -348,6 +365,7 @@ namespace draw3::uink
 			std::map<uint32_t, std::array<uint8_t, 16>> pageGuidsByIndex;
 			std::set<std::tuple<std::optional<std::array<uint8_t, 16>>,
 				std::array<uint8_t, 16>>> canvasKeys;
+			std::set<shapes::ObjectId> shapeIds;
 			const auto canvases = CanonicalCanvases(snapshot);
 			for (std::size_t canonicalIndex = 0; canonicalIndex < canvases.size(); ++canonicalIndex)
 			{
@@ -434,13 +452,41 @@ namespace draw3::uink
 						return result;
 					}
 					if (stroke)
-						canvas.content.push_back(ConvertStroke(*stroke,
-							static_cast<uint32_t>(index), snapshot.dpiScale,
-							result.capabilities));
+					{
+						if (stroke->shape && !shapeIds.insert(stroke->shape->id).second)
+						{
+							result.status = Draw3UInkExportStatus::InvalidSourceStroke;
+							AddExportDiagnostic(result.diagnostics, "snapshot.shape.duplicateId");
+							return result;
+						}
+						if (stroke->style.kind == Draw3UInkStrokeKind::Shape)
+						{
+							if (!AppendParametricShape(*stroke, canvas, result.capabilities))
+							{
+								result.status = Draw3UInkExportStatus::InvalidSourceStroke;
+								return result;
+							}
+						}
+						else
+						{
+							auto converted = ConvertStroke(*stroke,
+								static_cast<uint32_t>(canvas.content.size()), snapshot.dpiScale, result.capabilities);
+							if (stroke->shape)
+							{
+								auto metadata = EncodeInkeysShapeMetadata(*stroke->shape);
+								auto& map = std::get<ShapeMap>(metadata.value);
+								ShapeField(map, "partIndex", ShapeValue(uint64_t{ 0 }));
+								ShapeField(map, "partCount", ShapeValue(uint64_t{ 1 }));
+								std::get<UInkShape>(converted).extra = ShapeMap{
+									{ ShapeValue(std::string("inkeysShape")), std::move(metadata) } };
+							}
+							canvas.content.push_back(std::move(converted));
+						}
+					}
 					else
 					{
 						UInkClear outputClear;
-						outputClear.contentId = static_cast<uint32_t>(index);
+						outputClear.contentId = static_cast<uint32_t>(canvas.content.size());
 						outputClear.undoId = clear->undoId;
 						outputClear.extra = clear->extra;
 						canvas.content.push_back(std::move(outputClear));

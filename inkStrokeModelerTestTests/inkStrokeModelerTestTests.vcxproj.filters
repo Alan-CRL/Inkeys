@@ -154,4 +154,13 @@
     </ClCompile>
   </ItemGroup>
   <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.filters.props" />
+  <ItemGroup>
+    <ClCompile Include="shape_core_tests.cpp"><Filter>Tests</Filter></ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\shape_core.cpp"><Filter>draw3</Filter></ClCompile>
+    <ClInclude Include="shape_uink_tests.inl"><Filter>Tests</Filter></ClInclude>
+    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_core.h"><Filter>draw3</Filter></ClInclude>
+    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_metadata.inl"><Filter>draw3</Filter></ClInclude>
+    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_standard.inl"><Filter>draw3</Filter></ClInclude>
+    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_import.inl"><Filter>draw3</Filter></ClInclude>
+  </ItemGroup>
 </Project>

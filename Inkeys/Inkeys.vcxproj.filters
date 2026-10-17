@@ -504,6 +504,8 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.h"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClInclude>
+    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_core.h"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -2129,6 +2131,10 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererLaser.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererShapes.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\shape_core.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTestTests\shape_core_tests.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2544,6 +2550,9 @@
     <None Include="IdtWindow.h">
       <Filter>头文件</Filter>
     </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shape.hlsli"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shapeVertexShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shapePixelShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
     <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli">
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </None>
@@ -2616,6 +2625,8 @@
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\shapePixelShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\shapeVertexShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></FxCompile>
     <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl">
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </FxCompile>

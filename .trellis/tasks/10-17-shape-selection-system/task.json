@@ -1,0 +1,37 @@
+{
+  "id": "shape-selection-system",
+  "name": "shape-selection-system",
+  "title": "Inkeys3 图形绘制与选择系统",
+  "description": "统一参数化图形、创建、选择编辑、几何关联、历史与 UInk；本轮完成 Phase0→1 及通用 shader 准备，不加 UI 按钮。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-17-shape-phase0-architecture",
+    "10-17-shape-phase1-foundation",
+    "10-17-shape-phase2-tools",
+    "10-17-shape-phase3-selection",
+    "10-17-shape-phase4-geometry",
+    "10-17-shape-phase5-snapping",
+    "10-17-shape-phase6-relations",
+    "10-17-shape-phase7-ink-selection"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Phase0/Phase1及通用shader准备已完成；Phase2–7保持planning。本轮无UI按钮，未commit/push。",
+  "meta": {
+    "validation": ".trellis/tasks/10-17-shape-phase1-foundation/validation.md"
+  }
+}

@@ -21,6 +21,7 @@
 #include <windows.h>
 
 #include "Draw3.SpeedEraser.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 module Inkeys.Drawing.Draw3.ink_prediction;
 
@@ -1080,6 +1081,17 @@ namespace Inkeys::Drawing::Draw3
 		renderer.SetScreenSize(static_cast<float>(target.width),
 			static_cast<float>(target.height));
 		renderer.SetOperatorTarget(*target.operatorLayer);
+		if (style.inkType == StoredInkType::Shape)
+		{
+			const auto* geometry = stroke.ShapeGeometry();
+			if (!stroke.Shape() || !geometry ||
+				!renderer.DrawShapeObject(*stroke.Shape(), target.originX, target.originY)) return {};
+			const auto& b = geometry->bounds;
+			return { true, ClampRectToCanvas({SaturatingFloorToLong(double(b.left)-target.originX),
+				SaturatingFloorToLong(double(b.top)-target.originY),
+				SaturatingCeilToLong(double(b.right)-target.originX),
+				SaturatingCeilToLong(double(b.bottom)-target.originY)}, target.width, target.height) };
+		}
 		if (const std::optional<ShapePrimitiveKind> shapeKind =
 			ShapeKindForStoredType(style.inkType))
 		{

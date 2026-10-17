@@ -284,6 +284,7 @@
 	<ClCompile Include="draw3\uink_file.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="draw3\shape_core.cpp" />
 	<ClCompile Include="draw3\uink_draw3_export.cpp" />
 	<ClCompile Include="draw3\uink_draw3_export.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -359,6 +360,10 @@
     <None Include="renderer2.h" />
     <ClInclude Include="laserParticleResource.h" />
     <ClInclude Include="resource.h" />
+	<ClInclude Include="draw3\shape_core.h" />
+	<ClInclude Include="draw3\shape_uink_metadata.inl" />
+	<ClInclude Include="draw3\shape_uink_standard.inl" />
+	<ClInclude Include="draw3\shape_uink_import.inl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shader.hlsl">

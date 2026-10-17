@@ -1,0 +1,34 @@
+{
+  "id": "shape-phase1-foundation",
+  "name": "shape-phase1-foundation",
+  "title": "Phase 1 参数化基础与渲染准备",
+  "description": "实现共享 Shape 核心、几何查询、独立 shader、历史与 UInk 接入及无窗口验收。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-17",
+  "completedAt": "2026-10-17",
+  "branch": "feature/shape",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-17-shape-model",
+    "10-17-shape-geometry",
+    "10-17-shape-rendering",
+    "10-17-shape-persistence",
+    "10-17-shape-validation"
+  ],
+  "parent": "10-17-shape-selection-system",
+  "relatedFiles": [],
+  "notes": "已完成并通过对应验证；详情见Phase1/validation.md。用户未授权commit/push，未归档。",
+  "meta": {
+    "validation": ".trellis/tasks/10-17-shape-phase1-foundation/validation.md"
+  }
+}

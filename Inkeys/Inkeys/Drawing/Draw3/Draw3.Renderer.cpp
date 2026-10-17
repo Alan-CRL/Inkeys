@@ -354,9 +354,24 @@ namespace Inkeys::Drawing::Draw3
 
 	bool InkRenderer::CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
-		if (!device || !context || !swapChain || width == 0 || height == 0) return false;
-		if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D),
-			reinterpret_cast<void**>(backBufferTexture.ReleaseAndGetAddressOf())))) return false; // 取得最终呈现缓冲区。
+		if (!device || !context || width == 0 || height == 0) return false;
+		if (swapChain)
+		{
+			if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+				reinterpret_cast<void**>(backBufferTexture.ReleaseAndGetAddressOf())))) return false;
+		}
+		else
+		{
+			// 无窗口测试仍创建正式 renderer 的全部离屏资源，不需要 HWND 或 Present。
+			D3D11_TEXTURE2D_DESC offscreen = {};
+			offscreen.Width = width; offscreen.Height = height;
+			offscreen.MipLevels = 1; offscreen.ArraySize = 1;
+			offscreen.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			offscreen.SampleDesc.Count = 1;
+			offscreen.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+			if (FAILED(device->CreateTexture2D(&offscreen, nullptr,
+				backBufferTexture.ReleaseAndGetAddressOf()))) return false;
+		}
 		if (FAILED(device->CreateRenderTargetView(backBufferTexture.Get(), nullptr,
 			backBufferRTV.ReleaseAndGetAddressOf()))) return false;
 
@@ -409,6 +424,8 @@ namespace Inkeys::Drawing::Draw3
 		backBufferRTV.Reset();
 		backBufferTexture.Reset();
 		ReleaseTrustedL2SnapshotResources();
+		shapeMaterialLayer_ = {};
+		shapeCompositeLayer_ = {};
 		layerL2RTV.Reset();
 		layerL2Texture.Reset();
 		layerL1.addRTV.Reset();
@@ -439,6 +456,11 @@ namespace Inkeys::Drawing::Draw3
 	{
 		laserParticleSystem_.Release();
 		ReleaseSizeDependentResources();
+		shapeVertexShader_.Reset();
+		shapePixelShader_.Reset();
+		shapeCB_.Reset();
+		shapeOrderedBlend_.Reset();
+		shapeRenderCache_.clear();
 		vertexShader.Reset();
 		pixelShader.Reset();
 		globalCB.Reset();
@@ -637,7 +659,7 @@ namespace Inkeys::Drawing::Draw3
 		samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
 		if (FAILED(device->CreateSamplerState(&samplerDescription, operatorSampler.ReleaseAndGetAddressOf()))) return false;
 		CreateTrustedL2SnapshotPipeline(); // 可选 pass 失败时仅禁用动态快照兜底。
-		return LoadShaders(driver);
+		return LoadShaders(driver) && EnsureShapePipeline();
 	}
 
 	bool InkRenderer::LoadShaders(D3D_DRIVER_TYPE driver)

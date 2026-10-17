@@ -1,0 +1,28 @@
+{
+  "id": "shape-phase0-architecture",
+  "name": "shape-phase0-architecture",
+  "title": "Phase 0 现状调查与架构设计",
+  "description": "记录实际代码、模块线程边界、创建状态机、兼容性与后续阶段依赖。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-17",
+  "completedAt": "2026-10-17",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-17-shape-selection-system",
+  "relatedFiles": [],
+  "notes": "已完成并通过对应验证；详情见Phase1/validation.md。用户未授权commit/push，未归档。",
+  "meta": {
+    "validation": ".trellis/tasks/10-17-shape-phase1-foundation/validation.md"
+  }
+}

@@ -4,6 +4,9 @@
 #include <cmath>
 #include <optional>
 #include <utility>
+#include <cstring>
+#include <objbase.h>
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 module Inkeys.Drawing.Draw3.ink_document;
 
@@ -24,7 +27,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool knownType = style.inkType == StoredInkType::Pen ||
 				style.inkType == StoredInkType::Highlighter ||
 				style.inkType == StoredInkType::Eraser ||
-				IsStoredShapeType(style.inkType);
+				IsStoredShapeType(style.inkType) || style.inkType == StoredInkType::Shape;
 			return knownType && std::isfinite(style.opacity) &&
 				style.opacity >= 0.0f && style.opacity <= 1.0f;
 		}
@@ -52,9 +55,51 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	InkStroke::InkStroke(StoredInkStyle style,
-		std::vector<StoredInkPoint> points, std::optional<size_t> debugTailSegmentStart) noexcept
-		: style_(style), points_(std::move(points))
+		std::vector<StoredInkPoint> points, std::optional<size_t> debugTailSegmentStart,
+		std::optional<draw3::shapes::ShapeObject> shape)
+		: style_(style), points_(std::move(points)), shape_(std::move(shape))
 	{
+		// 旧图形只在首次物化时生成身份；复制快照和撤销恢复保留同一个对象。
+		if (!shape_ && IsStoredShapeType(style_.inkType) && points_.size() == 2)
+		{
+			GUID guid{};
+			if (SUCCEEDED(CoCreateGuid(&guid)))
+			{
+				draw3::shapes::ObjectId id{};
+				std::memcpy(id.data(), &guid, id.size());
+				const auto kind = static_cast<draw3::shapes::LegacyKind>(
+					static_cast<unsigned>(style_.inkType) - 2);
+				shape_ = draw3::shapes::MakeLegacyShape(kind,
+					{points_[0].x, points_[0].y}, {points_[1].x, points_[1].y},
+					points_[0].width, style_.fallbackRgb, style_.opacity, id);
+			}
+			else legacyIdentityFailed_ = true;
+		}
+		if (shape_ && (IsStoredShapeType(style_.inkType) || style_.inkType == StoredInkType::Shape))
+		{
+			shapeValid_ = static_cast<bool>(draw3::shapes::Validate(*shape_));
+			// 旧表示用于兼容绘制，精确快照用于保存；两者必须描述同一对象。
+			if (shapeValid_ && IsStoredShapeType(style_.inkType))
+			{
+				if (points_.size() != 2) shapeValid_ = false;
+				else
+				{
+					auto expected = draw3::shapes::MakeLegacyShape(
+						static_cast<draw3::shapes::LegacyKind>(static_cast<unsigned>(style_.inkType) - 2),
+						{points_[0].x,points_[0].y},{points_[1].x,points_[1].y},
+						points_[0].width,style_.fallbackRgb,style_.opacity,shape_->id);
+					if (expected) { expected->revision = shape_->revision; expected->creationMode = shape_->creationMode; }
+					shapeValid_ = expected && *expected == *shape_;
+				}
+			}
+
+			if (shapeValid_ && style_.inkType == StoredInkType::Shape)
+			{
+				auto geometry = std::make_shared<draw3::shapes::GeometryResult>();
+				shapeValid_ = draw3::shapes::BuildGeometry(*shape_, *geometry);
+				if (shapeValid_) shapeGeometry_ = std::move(geometry);
+			}
+		}
 		if (style_.inkType == StoredInkType::Pen && debugTailSegmentStart &&
 			*debugTailSegmentStart + 1 > *debugTailSegmentStart &&
 			*debugTailSegmentStart + 1 < points_.size())
@@ -71,6 +116,16 @@ namespace Inkeys::Drawing::Draw3
 		return style_;
 	}
 
+	const std::optional<draw3::shapes::ShapeObject>& InkStroke::Shape() const noexcept
+	{
+		return shape_;
+	}
+
+	const draw3::shapes::GeometryResult* InkStroke::ShapeGeometry() const noexcept
+	{
+		return shapeGeometry_.get();
+	}
+
 	std::span<const StoredInkPoint> InkStroke::Points() const noexcept
 	{
 		return { points_.data(), points_.size() };
@@ -78,6 +133,10 @@ namespace Inkeys::Drawing::Draw3
 
 	bool InkStroke::IsValid() const noexcept
 	{
+		if (legacyIdentityFailed_) return false;
+		if (style_.inkType == StoredInkType::Shape)
+			return IsValidStyle(style_) && shapeValid_ && shapeGeometry_;
+		if (shape_ && !shapeValid_) return false;
 		if (!IsValidStyle(style_) || points_.empty() ||
 			!std::all_of(points_.begin(), points_.end(), IsValidPoint)) return false;
 		if (!IsStoredShapeType(style_.inkType)) return true;
@@ -120,8 +179,21 @@ namespace Inkeys::Drawing::Draw3
 	std::optional<size_t> InkCanvas::AppendStroke(InkStroke stroke)
 	{
 		if (!stroke.IsValid()) return std::nullopt;
+		// 同一画布的不同逻辑项不能占用同一个稳定身份。
+		if (stroke.Shape())
+			for (const auto& existing : strokes_)
+				if (existing.Shape() && existing.Shape()->id == stroke.Shape()->id) return std::nullopt;
 		strokes_.push_back(std::move(stroke));
 		return strokes_.size() - 1;
+	}
+
+	std::optional<size_t> InkCanvas::AppendShape(const draw3::shapes::ShapeCommand& command)
+	{
+		if (command.kind != draw3::shapes::CommandKind::Create) return std::nullopt;
+		std::optional<draw3::shapes::ShapeObject> shape;
+		if (!draw3::shapes::ApplyCommand(command, shape) || !shape) return std::nullopt;
+		return AppendStroke(InkStroke({StoredInkType::Shape, shape->style.strokeRgb,
+			shape->style.strokeOpacity, 0}, {}, std::nullopt, std::move(shape)));
 	}
 
 	void InkCanvas::ClearStrokes() noexcept

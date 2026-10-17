@@ -117,6 +117,7 @@
 	<ClCompile Include="laser_incremental_coverage_tests.cpp" />
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
+	<ClCompile Include="shape_core_tests.cpp" />
 	<ClCompile Include="uink_tests.cpp" />
 	<ClCompile Include="uink_page_file_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" Link="draw3\Draw3.AutoSave.cpp" />
@@ -165,6 +166,7 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm" Link="draw3\uink_file.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\shape_core.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp" Link="draw3\uink_draw3_export.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm" Link="draw3\uink_draw3_export.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -222,6 +224,13 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.props" />
+  <ItemGroup>
+	<ClInclude Include="shape_uink_tests.inl" />
+	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_core.h" />
+	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_metadata.inl" />
+	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_standard.inl" />
+	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_import.inl" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

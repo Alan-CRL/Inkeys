@@ -10,6 +10,7 @@
 #pragma comment(lib, "advapi32.lib")
 #endif
 
+#include "../inkStrokeModelerTest/draw3/shape_core.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -3575,6 +3576,8 @@ namespace
 			middle->operations.empty() && middle->intervalOrdinal == 1);
 	}
 
+#include "shape_uink_tests.inl"
+
 	void TestDraw3Export(TestState& state)
 	{
 		InkCanvasCollection collection(Draw3Guid(
@@ -3829,6 +3832,7 @@ int RunUInkTests()
 	TestLatestVisibility(state);
 	TestClearContent(state);
 	TestDraw3Export(state);
+	TestParametricShapePersistence(state);
 	ResetUInkFileTestFaultInjection();
 	if (state.failures == 0)
 		std::cout << "All UInk persistence tests passed." << std::endl;
