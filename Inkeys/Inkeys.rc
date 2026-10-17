@@ -351,8 +351,6 @@ BARSHAPEDOTTED           UI                      "src\\UI\\barShapeDotted.svg"
 
 BARSHAPEDASHDOT          UI                      "src\\UI\\barShapeDashDot.svg"
 
-BARSHAPECOLOR            UI                      "src\\UI\\barShapeColor.svg"
-
 BARSHAPEPOLYGON3         UI                      "src\\UI\\barShapePolygon3.svg"
 
 BARSHAPEPOLYGON4         UI                      "src\\UI\\barShapePolygon4.svg"

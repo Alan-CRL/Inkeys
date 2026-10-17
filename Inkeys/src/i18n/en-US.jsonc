@@ -139,9 +139,7 @@
         "SolidLabel": "Solid",
         "DashedLabel": "Dashed",
         "DottedLabel": "Dotted",
-        "DashDotLabel": "Dash-dot",
-        "AdjustThicknessLabel": "Fine adjustment",
-        "ColorLabel": "Color"
+        "DashDotLabel": "Dash-dot"
       },
       "ColorPicker":
       {

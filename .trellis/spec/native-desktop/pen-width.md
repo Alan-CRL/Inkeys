@@ -63,4 +63,4 @@ auto metrics = GetPenWidthMetrics(snapshot.state);
 ```
 
 ## P2 图形家族扩展
-开放Line/Arrow复用StraightLine槽，其他闭合预设复用Rectangle槽；不新增每模板宽度策略或跟随普通笔的关系。GetShapeStyle发布DIP；Shape进入既有Slider/FineDial时量程采用Brush，不继承上次Highlighter/Laser的Pen记忆。预设、精调、预览和最终canvas转换仍遵循前述同代Context与单次DPI合同。
+开放Line/Arrow复用StraightLine槽，其他闭合预设复用Rectangle槽；不新增每模板宽度策略或跟随普通笔的关系。GetShapeStyle发布DIP；图形面板只提供无数字斜向三档预设，不提供独立Slider/FineDial；精细调节沿用普通画笔既有入口。预设、精调、预览和最终canvas转换仍遵循前述同代Context与单次DPI合同。

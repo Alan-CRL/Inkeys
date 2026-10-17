@@ -1508,9 +1508,7 @@ void BarButtonSetClass::ResetIconCaches()
 void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 {
 	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
-	if (!whiteboard && ((stateMode.StateModeSelect != StateModeSelectEnum::IdtPen &&
-		!(stateMode.StateModeSelect == StateModeSelectEnum::IdtShape &&
-			(barUISet.barState.geometryThicknessEditing || barUISet.barState.geometryColorEditing)))
+	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 		|| barUISet.barState.fold
 		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible()))
 	{
@@ -1521,14 +1519,6 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible()))
 	{
 		barUISet.barState.geometryAttribute = false;
-	}
-	if (!barUISet.barState.drawAttribute || stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
-	{
-		// 先收起借用子树，再清身份；否则切回 Pen 后会误把旧面板当成完整画笔属性。
-		if (barUISet.barState.geometryThicknessEditing || barUISet.barState.geometryColorEditing)
-			barUISet.barState.drawAttribute = false;
-		barUISet.barState.geometryThicknessEditing = false;
-		barUISet.barState.geometryColorEditing = false;
 	}
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
 	// 折叠收起浮窗；Redo 仍可用时收成 2×1，而不是重新弹出。
@@ -2374,6 +2364,28 @@ namespace Inkeys::UI::Bar
 			default: return {2, 2};
 			}
 		};
+		if (kind == BarButtonListLayoutKind::GeometryGrid)
+		{
+			// 图形类别自有排列：标准2×2按钮按行布置，最多六列；没有更多的分组/溢出语义。
+			const auto count = std::count_if(buttons.begin(), buttons.end(), [](const auto& button) { return button && button->IsVisible(); });
+			const int columns = (std::min)(6, (std::max)(1, static_cast<int>(count)));
+			int index = 0;
+			for (const auto& button : buttons)
+			{
+				if (!button || !button->IsVisible()) continue;
+				const int column = index % columns, row = index / columns;
+				BarButtonListPlacement placement;
+				placement.button = button; placement.column = column * 2; placement.row = row * 2;
+				placement.columnSpan = placement.rowSpan = 2; placement.width = placement.height = two;
+				placement.x = column * twoStep + two / 2; placement.y = row * twoStep + two / 2;
+				layout.placements.push_back(std::move(placement)); ++index;
+			}
+			const int rows = (index + columns - 1) / columns;
+			layout.subColumns = index ? columns * 2 : 0; layout.explicitRows = layout.totalRows = rows * 2;
+			layout.width = index ? columns * two + (columns - 1) * gap : 0;
+			layout.height = rows ? rows * two + (rows - 1) * gap : 0;
+			return layout;
+		}
 		if (kind == BarButtonListLayoutKind::GroupedGrid)
 		{
 			const auto count = (std::max)(size_t{1}, buttons.size() + secondGroup.size());
@@ -2436,7 +2448,13 @@ namespace Inkeys::UI::Bar
 			const bool visible = button->IsVisible();
 			if (kind == BarButtonListLayoutKind::SingleRow)
 			{
-				p.x = x + p.width / 2.0; p.y = gap + p.height / 2.0;
+				// 单行属性list的分隔项跟随同一打包结果，细线居中且不额外占一枚按钮高度。
+				if (button->preset == BarButtonPresetEnum::Divider)
+				{
+					p.width = BarButtonFrameThicknessDip; p.height = one - 4;
+					p.columnSpan = p.rowSpan = 1;
+				}
+				p.x = x + p.width / 2.0; p.y = gap + (button->preset == BarButtonPresetEnum::Divider ? one : p.height) / 2.0;
 				if (visible) x += p.width + gap;
 				width = x;
 			}
@@ -2519,7 +2537,9 @@ void BarUISetClass::PreparePresentedButtonHits()
 	std::unordered_map<const void*,Inkeys::UI::Bar::BarButtonHitSnapshot> visualHits;
 	for(const auto& [id,shape]:shapeMap)if(shape)
 		visualHits.emplace(shape.get(),Inkeys::UI::Bar::ResolveBarShapeHitSnapshot(*shape,
-			BarUiInheritClass(shape->inhX,shape->inhY), IsDrawAttributeVisualAllowed(barState, id)));
+			BarUiInheritClass(shape->inhX,shape->inhY),
+			// 新面板独立发布命中，原透明控件不再接受输入。
+			id < BarUISetShapeEnum::GeometryAttributeBar || id > BarUISetShapeEnum::GeometryAttributeBar_Close));
 	for(const auto& [id,shape]:superellipseMap)if(shape)
 	{
 		Inkeys::UI::Bar::BarButtonHitSnapshot hit;

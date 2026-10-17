@@ -1958,11 +1958,12 @@ void SyncDraw3State() {
 
 白板 UI3 统一轮使用公共固定属性面板计算、动态 presentation crop、140×32.5 操作行与完整 2×2 主题按钮；已移除独立 popup clock、递归 pose 和旧 springLayout。尺寸、选中 SVG、同帧坐标及 opacity 目标防振荡合同见 [whiteboard.md](whiteboard.md#ui3-统一菜单与主题合同覆盖截图轮旧尺寸)。
 
-## P2 图形属性面板与共享属性子视图
+## P2 图形属性面板
 
 - 图形面板只扩展原geometry子树，上方最多6列11类别；中间按需参数区；底部样式|线型|粗细，不增加分类导航。全部控件使用BarButtonClass共享按压/回弹/光源/Advance/Draw和成功呈现hit。参数区高度/位置/透明度连续，动画未稳不接收对应新命中。
 - 圆单入口按圆心/外接两SVG切换；正多边形3–12边按钮，未选中/稳定展开/动画开启每1.8s SVG轮播，选中固定实际边数。轮播仅视觉，不写业务参数；按下/隐藏/选中/关闭动画/退出撤销timer，沿已有WM_TIMER只唤醒到期帧的生命周期。
-- Geometry借用原Slider/FineDial/ColorPicker时保持IdtShape、既有颜色宽度槽、同代revision。BeginGeometryAttributeEdit记录工具/工作区/页/白板generation/PPT target；输入availability与Fine最终提交即时重验，不只等渲染取消。正常关闭返回同图形面板，取消/互斥/工具或页面变化不得重开。
-- 借用子树的可见性、绘制与呈现命中必须同源门禁。PreparePresentedButtonHits允许透明交互背景，不能用pct=0证明旧控件不命中；隐藏的笔型/颜色/宽度控件需显式禁用，手工预览、滑块和调色背景同样受门禁约束，hover不得重新打开背景。离开子视图后恢复正常画笔控件。
 - 复用既有异步memory适配，控件点击不得同步磁盘写入阻塞UI3 worker。CLI离屏fixture隔离偏好路径，验证完整生产主栏子树及真实像素/呈现hit，不能只测试新面板的独立绘制。
 - Geometry主栏长标签仍使用原70 DIP槽，仅该按钮按当前/待切换目标文字测宽调整字号；透明中点换字前须完成缩小，不得每帧先发默认字号再覆盖目标。`BarUiWordClass::TargetContent()`在同一content timeline锁中只读目标；三语完整主栏测试逐帧验证字宽。Shape帧公共光源颜色取同帧图形颜色，Pen保留原Brush记忆槽。
+
+- 按用户修正：图形粗细只保留原斜向、无数字的三档按钮，无精调三角/滑块；线型也用斜向图标。关闭旁不加颜色入口，不借用DrawAttribute/Slider/FineDial/ColorPicker子树；类别持有独立list并使用图形自己的GeometryGrid排列，不套用More的GroupedGrid及关闭栏尺寸；按钮复用UI3公共配置、绘制、推进与呈现命中能力。
+- 图形底部属性区独立持有attributeList_，按样式/分隔线/线型/分隔线/粗细解析SingleRow目标；业务显隐与退场绘制分离，局部横坐标通过共享BarUiAdvanceAnimation推进，不逐帧SetDirect覆盖重排动画。底行锚定当前panel.bottom - 5 DIP - buttonHeight；布局及父高度动画中底部净距都保持5 DIP（fit/面板pose缩放后乘相同scale）。隐藏目标立即禁用输入，但保留当前透明度直至退场结束；自定义粗细内容也消费共享当前opacity。属性/参数行在位置或显隐透明度未稳定时禁用本行新命中，hover/press反馈不纳入此门禁；Tab/箭头跳过disabled项，Enter/Space同样验证已呈现hit资格。命中只发布成功呈现的当前矩形。

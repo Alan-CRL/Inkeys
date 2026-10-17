@@ -139,9 +139,7 @@
         "SolidLabel": "实线",
         "DashedLabel": "虚线",
         "DottedLabel": "点线",
-        "DashDotLabel": "点划线",
-        "AdjustThicknessLabel": "精细调节",
-        "ColorLabel": "颜色"
+        "DashDotLabel": "点划线"
       },
       "ColorPicker":
       {

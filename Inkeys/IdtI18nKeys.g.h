@@ -143,8 +143,6 @@ inline constexpr struct I18nKeyRoot
                 const char* DashedLabel = "UI/Bar/GeometryAttributes/DashedLabel";
                 const char* DottedLabel = "UI/Bar/GeometryAttributes/DottedLabel";
                 const char* DashDotLabel = "UI/Bar/GeometryAttributes/DashDotLabel";
-                const char* AdjustThicknessLabel = "UI/Bar/GeometryAttributes/AdjustThicknessLabel";
-                const char* ColorLabel = "UI/Bar/GeometryAttributes/ColorLabel";
             } GeometryAttributes{};
             struct Node__UI__Bar__ColorPicker
             {
