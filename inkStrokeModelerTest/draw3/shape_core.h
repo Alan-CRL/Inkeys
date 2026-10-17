@@ -30,6 +30,23 @@ namespace draw3::shapes
 	};
 	enum class Kind : uint32_t { Line, Rectangle, Circle, Ellipse, Polyline, Polygon, Compound };
 	enum class CreationMode : uint32_t { Drag, CenterRadius, Points, MultiStage, Parameters };
+	enum class PresetKind : uint32_t { Line, Arrow, Rectangle, RoundedRectangle, Circle, Ellipse, Triangle, Parallelogram, Rhombus, Trapezoid, RegularPolygon };
+	enum class FillMode : uint32_t { Outline, Fill, OutlineAndFill };
+	struct ToolSpec
+	{
+		PresetKind preset = PresetKind::Line;
+		CreationMode creationMode = CreationMode::Drag;
+		uint32_t sides = 3;
+		float rectangleCornerRadius = 4; // Bridge 使用 DIP；构造参数和工厂使用局部画布像素。
+		bool operator==(const ToolSpec&) const = default;
+	};
+	// 局部构造参数是真值；geometry/parts 必须由同一构造器派生，保存后仍可按模板编辑。
+	struct Construction
+	{
+		ToolSpec tool;
+		Vec2 start, end;
+		bool operator==(const Construction&) const = default;
+	};
 	enum class LinePattern : uint32_t { Solid, Dashed, Dotted, DashDot };
 	enum class LegacyKind : uint32_t { None, SolidLine, DashedLine, OutlineRectangle, FilledRectangle };
 	struct ShapeStyle
@@ -61,6 +78,7 @@ namespace draw3::shapes
 		ShapeStyle style;
 		std::vector<ShapePart> parts;
 		LegacyKind legacyKind = LegacyKind::None;
+		std::optional<Construction> construction;
 		bool operator==(const ShapeObject&) const = default;
 	};
 	struct Bounds
@@ -98,6 +116,7 @@ namespace draw3::shapes
 	};
 	struct GeometryResult { std::vector<GeometryPart> parts; Bounds bounds; };
 	enum class PrimitiveKind : uint32_t { Segment, Triangle, Ellipse, RoundedRectangle };
+	inline constexpr uint32_t kPrimitiveForceSolid = 16; // 同一覆盖批次中的实线箭头不参与箭杆虚线。
 	struct alignas(16) GpuPrimitive
 	{
 		Vec2 p0, p1, p2, p3;
@@ -153,6 +172,8 @@ namespace draw3::shapes
 	HitResult HitTest(const ShapeObject&, const GeometryResult&, Vec2 point, float tolerance = 0);
 	bool IsDashVisible(float pathDistance, const ShapeStyle&) noexcept;
 	Bounds UnionBounds(Bounds, Bounds) noexcept;
+	std::optional<ShapeObject> MakePresetShape(const ToolSpec&, Vec2 start, Vec2 end,
+		const ShapeStyle&, const ObjectId&, uint64_t revision = 1, std::string* error = nullptr);
 	std::optional<ShapeObject> MakeLegacyShape(LegacyKind, Vec2 start, Vec2 end,
 		float width, uint32_t rgb, float opacity, ObjectId);
 	class GeometryCache

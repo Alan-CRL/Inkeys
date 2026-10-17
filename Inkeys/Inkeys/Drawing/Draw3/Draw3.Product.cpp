@@ -102,6 +102,9 @@ namespace Inkeys::Drawing::Draw3
 		merged.widthDip = state.widthDip;
 		merged.penWidthContext = state.penWidthContext;
 		merged.colorRgba = state.colorRgba;
+		// 图形构造与样式必须随绘制属性同代发布，不能遗留桥接中的旧工具参数。
+		merged.shapeTool = state.shapeTool;
+		merged.shapeStyle = state.shapeStyle;
 		merged.paintDevice = state.paintDevice;
 		merged.eraserInputs = state.eraserInputs;
 		merged.selectionMode = state.selectionMode;

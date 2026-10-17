@@ -1106,24 +1106,17 @@ void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
 void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode)
 {
 	static mutex mtx;
-	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
-	bool rectangle = selected
-		&& stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1;
-	int styleKey = selected ? (rectangle ? 2 : 1) : 0;
+	const bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
+	const auto tool = GetShapeToolSpec(stateMode);
+	const int styleKey = selected ? 1 + static_cast<int>(tool.preset) * 100
+		+ static_cast<int>(tool.creationMode) * 16 + static_cast<int>(tool.sides) : 0;
 	if (geometryButtonStyleKey == styleKey) return;
-
 	lock_guard<mutex> lock(mtx);
 	if (geometryButtonStyleKey == styleKey) return;
-	auto button = preset[(int)BarButtonPresetEnum::Geometry];
+	auto* button = preset[(int)BarButtonPresetEnum::Geometry];
 	if (!button) return;
-	const wchar_t* resourceName = !selected
-		? L"barGeometry" : (rectangle
-			? L"barShapeRectangle" : L"barShapeStraightLine");
-	const wstring label = !selected
-		? IW(I18nKey.UI.Bar.MainButtons.GeometryLabel)
-		: (rectangle ? IW(I18nKey.UI.Bar.MainButtons.RectangleLabel)
-			: IW(I18nKey.UI.Bar.MainButtons.StraightLineLabel));
-	button->TransitionContent(resourceName, label);
+	button->TransitionContent(selected ? Inkeys::UI::Bar::ShapeToolIconResource(tool) : L"barGeometry",
+		selected ? Inkeys::UI::Bar::ShapeToolLabel(tool.preset) : IW(I18nKey.UI.Bar.MainButtons.GeometryLabel));
 	geometryButtonStyleKey = styleKey;
 }
 
@@ -1515,8 +1508,9 @@ void BarButtonSetClass::ResetIconCaches()
 void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 {
 	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
-	if (whiteboard) barUISet.barState.geometryAttribute = false;
-	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+	if (!whiteboard && ((stateMode.StateModeSelect != StateModeSelectEnum::IdtPen &&
+		!(stateMode.StateModeSelect == StateModeSelectEnum::IdtShape &&
+			(barUISet.barState.geometryThicknessEditing || barUISet.barState.geometryColorEditing)))
 		|| barUISet.barState.fold
 		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible()))
 	{
@@ -1527,6 +1521,14 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible()))
 	{
 		barUISet.barState.geometryAttribute = false;
+	}
+	if (!barUISet.barState.drawAttribute || stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
+	{
+		// 先收起借用子树，再清身份；否则切回 Pen 后会误把旧面板当成完整画笔属性。
+		if (barUISet.barState.geometryThicknessEditing || barUISet.barState.geometryColorEditing)
+			barUISet.barState.drawAttribute = false;
+		barUISet.barState.geometryThicknessEditing = false;
+		barUISet.barState.geometryColorEditing = false;
 	}
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
 	// 折叠收起浮窗；Redo 仍可用时收成 2×1，而不是重新弹出。
@@ -2174,7 +2176,34 @@ namespace Inkeys::UI::Bar
 		Set(button.name.y, metrics.primaryOffsetYDip);
 		Set(button.name.w, metrics.primarySlotWidthDip);
 		Set(button.name.h, metrics.primarySlotHeightDip);
-		Set(button.name.size, button.LabelFontSize(metrics.primaryFontSizeDip));
+		double labelSize = button.LabelFontSize(metrics.primaryFontSizeDip);
+		if (button.preset == BarButtonPresetEnum::Geometry && metrics.primarySlotWidthDip > 4 && labelSize > 0)
+		{
+			// Geometry由唯一主栏render owner配置；测量当前字和待切换字，先收字号再跨透明中点换字。
+			struct LabelFitCache
+			{
+				wstring current, target, family, locale;
+				double slot = 0, sourceSize = 0, fitted = 0;
+				unsigned long long generation = 0;
+			};
+			static thread_local LabelFitCache cache;
+			const auto current = button.name.content.GetVal(), target = button.name.TargetContent();
+			auto& renderer = barUISet.spec;
+			if (cache.current != current || cache.target != target || cache.family != renderer.GetFontFamily() ||
+				cache.locale != renderer.GetTextLocale() || cache.slot != metrics.primarySlotWidthDip ||
+				cache.sourceSize != labelSize || cache.generation != renderer.GetDeviceGeneration())
+			{
+				const double measured = (std::max)(renderer.MeasureText(current, labelSize, DWRITE_FONT_WEIGHT_BOLD).width,
+					renderer.MeasureText(target, labelSize, DWRITE_FONT_WEIGHT_BOLD).width);
+				const double available = metrics.primarySlotWidthDip - 4;
+				const double fitted = measured > available ? labelSize * available / measured : labelSize;
+				cache = {current, target, renderer.GetFontFamily(), renderer.GetTextLocale(), metrics.primarySlotWidthDip,
+					labelSize, fitted, renderer.GetDeviceGeneration()};
+			}
+			labelSize = cache.fitted;
+			if (labelSize * scale < button.name.size.val) button.name.size.SetDirect(labelSize * scale);
+		}
+		Set(button.name.size, labelSize);
 	}
 
 	namespace
@@ -2490,7 +2519,7 @@ void BarUISetClass::PreparePresentedButtonHits()
 	std::unordered_map<const void*,Inkeys::UI::Bar::BarButtonHitSnapshot> visualHits;
 	for(const auto& [id,shape]:shapeMap)if(shape)
 		visualHits.emplace(shape.get(),Inkeys::UI::Bar::ResolveBarShapeHitSnapshot(*shape,
-			BarUiInheritClass(shape->inhX,shape->inhY)));
+			BarUiInheritClass(shape->inhX,shape->inhY), IsDrawAttributeVisualAllowed(barState, id)));
 	for(const auto& [id,shape]:superellipseMap)if(shape)
 	{
 		Inkeys::UI::Bar::BarButtonHitSnapshot hit;

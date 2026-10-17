@@ -2,6 +2,7 @@
 
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.WhiteboardModel.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 #include "../../Business/PenWidthPolicy.hpp"
 
 #include <array>
@@ -34,7 +35,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		DashedLine,
 		OutlineRectangle,
 		FilledRectangle,
-		ConfiguredEraser // 普通橡皮按输入入口配置；FixedEraser/SpeedEraser仍是显式工具。
+		ConfiguredEraser, // 普通橡皮按输入入口配置；FixedEraser/SpeedEraser仍是显式工具。
+		Shape // 通用参数图形；既有工具编号不变。
 	};
 
 	// 绘制线程记录最近一次正常结束的实际笔类，供产品 UI 恢复临时切换前的模式。
@@ -197,6 +199,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Tool tool = Tool::Pen;
 		std::uint32_t colorRgba = 0x000000FFu;
 		double widthDip = 2.0;
+		draw3::shapes::ToolSpec shapeTool;
+		draw3::shapes::ShapeStyle shapeStyle; // width 是 DIP，在 Down 时转换一次。
 		Inkeys::Business::PenWidth::Context penWidthContext;
 		int paintDevice = 1; // 0 大屏，1 笔电；沿用已有绘图设备选项。
 		SpeedEraser::InputSettings eraserInputs;

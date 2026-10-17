@@ -64,7 +64,7 @@
 			else if (*name != "partIndex" && *name != "partCount") return false;
 		}
 		uint32_t index = 0, count = 0;
-		return reference && id && id->Bytes() == root.id && version == 1 && revision == root.revision &&
+		return reference && id && id->Bytes() == root.id && version == (root.construction ? 2u : 1u) && revision == root.revision &&
 			ShapeGroupNumber(metadata, "partIndex", index) && index == partIndex &&
 			ShapeGroupNumber(metadata, "partCount", count) && count == partCount;
 	}

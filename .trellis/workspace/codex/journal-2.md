@@ -452,3 +452,37 @@
 ### Next Steps
 
 - 任务已完成并归档，继续正常使用或按原流程发布；问题再现时采集诊断证据。未推送远程。
+
+
+## Session 107: P2 基础图形 UI3 与预测交付
+<!-- trellis-session: v=2 fp=c7a48bd8093584e5 -->
+
+**Date**: 2026-10-17
+**Task**: P2 基础图形 UI3 与预测交付
+**Branch**: `feature/shape`
+
+### Summary
+
+完成11类单笔图形、UI3面板/SVG与参数、预测/历史/保存；ARM64、GPU306、UI6238及相关回归通过。
+
+### Main Changes
+
+- 统一Preset/Construction真值，扩展业务版本快照与UInk v2，保留旧四图形兼容路径。
+- 实现UI3图形面板、圆两模式、3–12边与轮播，复用宽度/颜色并修复场景失效和透明命中。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo与shared solution Debug|ARM64 exit0；全部CPU/UInk/保存/Headless/i18n通过。
+- [OK] 生产GPU306 cases / 0 failures，UI6238 checks / 0 failures，1439次实际场景提交；无GUI/无HWND。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实施P3选择编辑及绘制提示；逐点折线/任意多边形在P3后独立实施；真机和实体输入待人工验收。

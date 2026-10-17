@@ -17,6 +17,9 @@ public:
 	IdtAtomic<bool> fold = false;
 	IdtAtomic<bool> drawAttribute = false;
 	IdtAtomic<bool> geometryAttribute = false;
+	// 借用既有属性控件时保持 Shape 身份，正常关闭后回到图形面板。
+	IdtAtomic<bool> geometryThicknessEditing = false;
+	IdtAtomic<bool> geometryColorEditing = false;
 	IdtAtomic<bool> eraserAttribute = false;
 	IdtAtomic<bool> eraserSensitivityOpen = false;
 	// 撤回属性：点击主栏撤回后展开，内置单 70x70 Redo；继续点 Undo/Redo 保持展开。

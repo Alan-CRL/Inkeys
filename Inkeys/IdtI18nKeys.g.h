@@ -124,7 +124,27 @@ inline constexpr struct I18nKeyRoot
             struct Node__UI__Bar__GeometryAttributes
             {
                 const char* StraightLineLabel = "UI/Bar/GeometryAttributes/StraightLineLabel";
+                const char* ArrowLabel = "UI/Bar/GeometryAttributes/ArrowLabel";
                 const char* RectangleLabel = "UI/Bar/GeometryAttributes/RectangleLabel";
+                const char* RoundedRectangleLabel = "UI/Bar/GeometryAttributes/RoundedRectangleLabel";
+                const char* CircleLabel = "UI/Bar/GeometryAttributes/CircleLabel";
+                const char* EllipseLabel = "UI/Bar/GeometryAttributes/EllipseLabel";
+                const char* TriangleLabel = "UI/Bar/GeometryAttributes/TriangleLabel";
+                const char* ParallelogramLabel = "UI/Bar/GeometryAttributes/ParallelogramLabel";
+                const char* RhombusLabel = "UI/Bar/GeometryAttributes/RhombusLabel";
+                const char* TrapezoidLabel = "UI/Bar/GeometryAttributes/TrapezoidLabel";
+                const char* RegularPolygonLabel = "UI/Bar/GeometryAttributes/RegularPolygonLabel";
+                const char* CircleCenterLabel = "UI/Bar/GeometryAttributes/CircleCenterLabel";
+                const char* CircleBoundsLabel = "UI/Bar/GeometryAttributes/CircleBoundsLabel";
+                const char* OutlineLabel = "UI/Bar/GeometryAttributes/OutlineLabel";
+                const char* FillLabel = "UI/Bar/GeometryAttributes/FillLabel";
+                const char* OutlineFillLabel = "UI/Bar/GeometryAttributes/OutlineFillLabel";
+                const char* SolidLabel = "UI/Bar/GeometryAttributes/SolidLabel";
+                const char* DashedLabel = "UI/Bar/GeometryAttributes/DashedLabel";
+                const char* DottedLabel = "UI/Bar/GeometryAttributes/DottedLabel";
+                const char* DashDotLabel = "UI/Bar/GeometryAttributes/DashDotLabel";
+                const char* AdjustThicknessLabel = "UI/Bar/GeometryAttributes/AdjustThicknessLabel";
+                const char* ColorLabel = "UI/Bar/GeometryAttributes/ColorLabel";
             } GeometryAttributes{};
             struct Node__UI__Bar__ColorPicker
             {

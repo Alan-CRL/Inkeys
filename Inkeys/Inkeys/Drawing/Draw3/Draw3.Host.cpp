@@ -1308,6 +1308,7 @@ namespace Inkeys::Drawing::Draw3
 			case Bridge::Tool::DashedLine: tool = DrawingTool::DashedLine; break;
 			case Bridge::Tool::OutlineRectangle: tool = DrawingTool::OutlineRectangle; break;
 			case Bridge::Tool::FilledRectangle: tool = DrawingTool::FilledRectangle; break;
+			case Bridge::Tool::Shape: tool = DrawingTool::Shape; break;
 			default: break;
 			}
 			window.SetActiveTool(tool);
@@ -1318,7 +1319,8 @@ namespace Inkeys::Drawing::Draw3
 			window.SetEraserInputs(state.eraserInputs);
 			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
 				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
-			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext);
+			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext,
+				state.shapeTool, state.shapeStyle);
 			if (state.workspace != Bridge::Workspace::Presentation &&
 				(workspace.load(std::memory_order_acquire) != state.workspace || restoreLatestScene))
 			{

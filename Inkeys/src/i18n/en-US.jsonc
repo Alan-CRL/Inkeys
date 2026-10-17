@@ -121,7 +121,27 @@
       "GeometryAttributes":
       {
         "StraightLineLabel": "Line",
-        "RectangleLabel": "Rect."
+        "ArrowLabel": "Arrow",
+        "RectangleLabel": "Rectangle",
+        "RoundedRectangleLabel": "Rounded rect.",
+        "CircleLabel": "Circle",
+        "EllipseLabel": "Ellipse",
+        "TriangleLabel": "Triangle",
+        "ParallelogramLabel": "Parallelogram",
+        "RhombusLabel": "Rhombus",
+        "TrapezoidLabel": "Trapezoid",
+        "RegularPolygonLabel": "Regular polygon",
+        "CircleCenterLabel": "Center and radius",
+        "CircleBoundsLabel": "Bounding square",
+        "OutlineLabel": "Outline",
+        "FillLabel": "Fill",
+        "OutlineFillLabel": "Outline and fill",
+        "SolidLabel": "Solid",
+        "DashedLabel": "Dashed",
+        "DottedLabel": "Dotted",
+        "DashDotLabel": "Dash-dot",
+        "AdjustThicknessLabel": "Fine adjustment",
+        "ColorLabel": "Color"
       },
       "ColorPicker":
       {

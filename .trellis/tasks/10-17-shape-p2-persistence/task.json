@@ -1,0 +1,28 @@
+{
+  "id": "shape-p2-persistence",
+  "name": "shape-p2-persistence",
+  "title": "P2 持久化集成",
+  "description": "P2 持久化集成；遵循父任务已批准设计与验证。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-17",
+  "completedAt": "2026-10-17",
+  "branch": "feature/shape",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-17-shape-phase2-tools",
+  "relatedFiles": [],
+  "notes": "依赖构造真值。交付v2构造元数据与v1读取，UInk10标准几何降级，复合引用，Desktop/PPT/白板冷页redo与Clear。真实文件236对象/240标准部件矩阵及损坏版本回归。",
+  "meta": {
+    "validation": ".trellis/tasks/10-17-shape-phase2-tools/validation.md"
+  }
+}

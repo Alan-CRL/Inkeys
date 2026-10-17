@@ -1073,6 +1073,11 @@ namespace
 
 namespace Inkeys::UI::Bar
 {
+	bool ApplyBarThicknessPresetIfRevision(int preset, std::uint64_t revision, bool save)
+	{
+		// 与既有画笔按钮共用异步保存，图形面板不能在输入 worker 同步写盘。
+		return SetInteractionPenWidthPresetIfRevision(preset, revision, save);
+	}
 	bool RegisterInteractionSurface(HWND window, std::uint64_t generation, SurfaceInputHandler handler,
 		SurfaceInputTick tick, SurfaceInputCancel cancel, void* context, bool nativeWindow)
 	{
@@ -1659,7 +1664,7 @@ namespace
 				&& !barUISet.barState.fold
 				&& (annotation
 					? static_cast<bool>(drawAttribute.penTypeMenuOpen)
-						&& !stateMode.laserActive
+						&& !IsLaserToolActive(stateMode)
 						&& PenModeSupportsAnnotationLine(
 							stateMode.Pen.ModeSelect)
 					: static_cast<bool>(
@@ -1680,8 +1685,7 @@ namespace
 
 			auto sliderHit = barUISet.shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
-			bool sliderAvailable = stateMode.StateModeSelect
-				== StateModeSelectEnum::IdtPen
+			bool sliderAvailable = IsBarThicknessEditingMode(stateMode, barUISet.barState)
 				&& barUISet.barState.drawAttribute && !barUISet.barState.fold
 				&& GetBarThicknessSliderRange(
 					stateMode.Pen.ModeSelect,
@@ -1720,6 +1724,7 @@ namespace
 	}
 	void ProcessBarPointerLeave()
 	{
+		if (barUISet.geometryAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		if (barUISet.recallAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		// 原生窗口线程统一处理离开反馈，解除边缘光效的重新激活限制。
@@ -1820,6 +1825,15 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			barUISet.HandleBorderCursorGraceTimeout(hWnd);
 			return 0;
 		}
+		if (wParam == Inkeys::UI::Bar::GeometryCarouselTimerId)
+		{
+			KillTimer(hWnd, Inkeys::UI::Bar::GeometryCarouselTimerId);
+			unsigned retryMs = 0;
+			if (barUISet.geometryAttribute.PollCarouselTimer(retryMs)) barUISet.UpdateRendering(false);
+			else if (retryMs) SetTimer(hWnd, Inkeys::UI::Bar::GeometryCarouselTimerId, retryMs, nullptr);
+			return 0;
+		}
+
 		if (wParam == BarRecallChromeIdleTimerId)
 		{
 			// 浮窗静止时渲染线程在休眠。到期只唤醒一帧；提前触发则按剩余时间重装。
@@ -2163,8 +2177,54 @@ void BarUISetClass::ClosePenTypeMenu()
 	CloseAnnotationTooltip();
 }
 
+void BarUISetClass::BeginGeometryAttributeEdit(bool thickness)
+{
+	const auto tool = GetStateModeSnapshot();
+	if (tool.StateModeSelect != StateModeSelectEnum::IdtShape) return;
+	const auto scene = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+	const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+	{
+		std::scoped_lock lock(geometryEditSceneMutex);
+		geometryEditWorkspace = static_cast<int>(scene.workspace);
+		geometryEditPage = scene.page;
+		geometryEditRuntimePage = runtime.currentPageIndex;
+		geometryEditGeneration = runtime.whiteboardGeneration;
+		geometryEditPresentation = scene.presentationTarget;
+		geometryEditTool = GetShapeToolSpec(tool);
+	}
+	CloseThicknessSlider(true); CloseColorPicker(true); ClosePenTypeMenu();
+	barState.geometryAttribute = false;
+	barState.drawAttribute = true;
+	barState.geometryThicknessEditing = thickness;
+	barState.geometryColorEditing = !thickness;
+	if (thickness)
+	{
+		barState.drawAttributeBar.thicknessSliderPinned = true;
+		barState.drawAttributeBar.thicknessViewMode = ThicknessViewMode::Slider;
+	}
+	else barState.drawAttributeBar.colorPickerOpen = true;
+}
+bool BarUISetClass::GeometryAttributeEditContextCurrent() const
+{
+	const auto scene = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+	const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+	const auto tool = GetStateModeSnapshot();
+	std::scoped_lock lock(geometryEditSceneMutex);
+	return tool.StateModeSelect == StateModeSelectEnum::IdtShape && GetShapeToolSpec(tool) == geometryEditTool &&
+		static_cast<int>(scene.workspace) == geometryEditWorkspace && scene.page == geometryEditPage &&
+		scene.presentationTarget == geometryEditPresentation && runtime.currentPageIndex == geometryEditRuntimePage &&
+		runtime.whiteboardGeneration == geometryEditGeneration;
+}
+
 void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
 {
+	if (barState.geometryThicknessEditing)
+	{
+		const bool returnToShapes = !cancelCapture && barState.drawAttribute && !barState.fold && GeometryAttributeEditContextCurrent();
+		barState.geometryThicknessEditing = false;
+		barState.drawAttribute = false;
+		if (returnToShapes) barState.geometryAttribute = true;
+	}
 	bool gestureActive =
 		barState.drawAttributeBar.thicknessSliderPressed
 		|| barState.drawAttributeBar.thicknessSliderDragging
@@ -2209,6 +2269,13 @@ void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
 
 void BarUISetClass::CloseColorPicker(bool cancelCapture)
 {
+	if (barState.geometryColorEditing)
+	{
+		const bool returnToShapes = !cancelCapture && barState.drawAttribute && !barState.fold && GeometryAttributeEditContextCurrent();
+		barState.geometryColorEditing = false;
+		barState.drawAttribute = false;
+		if (returnToShapes) barState.geometryAttribute = true;
+	}
 	auto& picker = barState.drawAttributeBar;
 	bool gestureActive = picker.colorPickerPointerPressed
 		|| picker.colorPickerPointerCapture;
@@ -2238,6 +2305,9 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 
 void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 {
+	barState.geometryThicknessEditing = false;
+	barState.geometryColorEditing = false;
+	geometryAttribute.Close(*this);
 	eraserAttribute.Close(*this);
 	recallAttribute.Close(*this);
 	barState.drawAttribute = false;
@@ -2273,6 +2343,7 @@ void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 	KillTimer(hWnd, BarThicknessAnnotationTooltipGraceTimerId);
 	KillTimer(hWnd, BarThicknessOverflowTooltipGraceTimerId);
 	KillTimer(hWnd, BarRecallChromeIdleTimerId);
+	geometryAttribute.StopCarousel();
 	barState.drawAttributeBar.thicknessSliderCapture = false;
 	barState.drawAttributeBar.colorPickerPointerCapture = false;
 	ReleaseBarNativeCapture(hWnd, mainNativeCaptureOwnership.Current(hWnd));
@@ -2844,6 +2915,24 @@ public:
 			session.CommitThicknessFineDialSelection();
 			require(cleared() && GetPenWidth() == highlighterWidth && bridgeRevision() == beforeStaleCommit,
 				"fine-dial-stale-commit-no-write");
+			stage = "shape-borrowed-context";
+			ChangeStateModeToShape();
+			::barUISet.BeginGeometryAttributeEdit(true); shared.thicknessViewMode = ThicknessViewMode::FineDial;
+			session.stateMode = GetStateModeSnapshot();
+			require(session.ThicknessSliderAvailable(), "shape-fine-current-context-available");
+			const auto shapeWidth = GetPenWidth();
+			begin(shapeWidth + 2.0); const auto shapeRevision = StateModeTransitionRevision();
+			session.thicknessFineDialRawValue += 1.0; session.thicknessFineDialDirty = true;
+			session.PublishThicknessFineDialCandidate();
+			// 模拟页面/工作区令牌失效；不切业务工具，因此单独revision检查无法发现。
+			{ std::lock_guard lock(::barUISet.geometryEditSceneMutex); ++::barUISet.geometryEditPage; }
+			require(StateModeTransitionRevision() == shapeRevision && !session.ThicknessSliderAvailable(), "shape-fine-rejects-stale-context-before-next-render");
+			require(session.CommitThicknessFineDialSelection(false) == 0 && GetPenWidth() == shapeWidth && cleared(), "shape-fine-stale-context-never-commits");
+			::barUISet.BeginGeometryAttributeEdit(false); session.stateMode = GetStateModeSnapshot();
+			require(session.ColorPickerAvailable(), "shape-color-current-context-available");
+			{ std::lock_guard lock(::barUISet.geometryEditSceneMutex); ++::barUISet.geometryEditPage; }
+			require(!session.ColorPickerAvailable(), "shape-color-rejects-stale-context-before-next-render");
+			::barUISet.CollapseAuxiliaryPanels(false);
 			require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "fine-dial-stays-isolated");
 			std::fputs("[StateModeProduction] PASS: FineDial stale physics, cross-generation inertia, cancel and stale commit\n", stderr);
 			return 0;
@@ -3075,9 +3164,9 @@ private:
 
 	bool ThicknessSliderAvailable()
 		{
-			return stateMode.StateModeSelect
-				== StateModeSelectEnum::IdtPen
-				&& !stateMode.laserActive
+			return IsBarThicknessEditingMode(stateMode, barState)
+				&& (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape || barUISet.GeometryAttributeEditContextCurrent())
+				&& !IsLaserToolActive(stateMode)
 				&& barState.drawAttribute && !barState.fold
 				&& GetBarThicknessSliderRange(
 					stateMode.Pen.ModeSelect,
@@ -3210,11 +3299,15 @@ private:
 			double candidate = Inkeys::UI::Bar::Detail::StepFineDialDip(
 				thicknessFineDialOriginDip, thicknessFineDialRawValue,
 				thicknessFineDialRangeMin, thicknessFineDialRangeMax);
+			const auto commitTool = GetStateModeSnapshot();
+			const bool shapeContextCurrent = commitTool.StateModeSelect != StateModeSelectEnum::IdtShape ||
+				(barState.geometryThicknessEditing && barUISet.GeometryAttributeEditContextCurrent());
 			bool shouldCommit = candidateActive
 				&& thicknessFineDialDirty
 				&& !thicknessFineDialCommitIssued
 				&& thicknessFineDialModeRevision == StateModeTransitionRevision()
-				&& abs(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip - candidate)
+				&& shapeContextCurrent
+				&& abs(GetPenWidthMetrics(commitTool).resolvedWidthDip - candidate)
 					> 0.000001;
 			thicknessFineDialCommitIssued = true;
 			thicknessFineDialPhase = ThicknessFineDialPhase::Idle;
@@ -3230,7 +3323,7 @@ private:
 					++committedRevision;
 				else committedRevision = 0;
 			}
-			if (StateModeTransitionRevision() != committedRevision) committedRevision = 0;
+			if (!shapeContextCurrent || StateModeTransitionRevision() != committedRevision) committedRevision = 0;
 			barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
 			barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
 			thicknessFineDialModeRevision = 0;
@@ -3500,13 +3593,13 @@ private:
 					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1;
 			case IndependentHoverTargetEnum::DrawAttributePenTypeExtension:
 				return !barState.fold
-					&& !stateMode.laserActive
+					&& !IsLaserToolActive(stateMode)
 					&& PenModeSupportsAnnotationLine(
 						stateMode.Pen.ModeSelect)
 					&& !barState.drawAttributeBar.penTypeExtensionPress;
 			case IndependentHoverTargetEnum::DrawAttributePenTypeFreeLine:
 				return !barState.fold
-					&& !stateMode.laserActive
+					&& !IsLaserToolActive(stateMode)
 					&& barState.drawAttributeBar.penTypeMenuOpen
 					&& PenModeSupportsAnnotationLine(
 						stateMode.Pen.ModeSelect)
@@ -3532,7 +3625,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			case IndependentHoverTargetEnum::DrawAttributeAnnotationClose:
 				return !barState.fold
 					&& barState.drawAttributeBar.penTypeMenuOpen
-					&& !stateMode.laserActive
+					&& !IsLaserToolActive(stateMode)
 					&& barState.drawAttributeBar.thicknessAnnotationPinned
 					&& PenModeSupportsAnnotationLine(
 						stateMode.Pen.ModeSelect);
@@ -3541,12 +3634,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					&& barState.drawAttributeBar.thicknessOverflowPinned
 					&& barState.drawAttributeBar.thicknessOverflowHintPresent;
 			case IndependentHoverTargetEnum::DrawAttributeColorPickerTone:
-				return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+				return IsBarColorEditingMode(stateMode, barState)
 					&& !barState.fold
 					&& barState.drawAttributeBar.colorPickerOpen
 					&& !barState.drawAttributeBar.colorPickerTonePress;
 			case IndependentHoverTargetEnum::DrawAttributeColorPickerClose:
-				return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+				return IsBarColorEditingMode(stateMode, barState)
 					&& !barState.fold
 					&& barState.drawAttributeBar.colorPickerOpen
 					&& !barState.drawAttributeBar.colorPickerClosePress;
@@ -3607,7 +3700,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 	bool AnnotationTooltipAvailable()
 	{
 		return barState.drawAttribute && !barState.fold
-			&& !stateMode.laserActive
+			&& !IsLaserToolActive(stateMode)
 			&& barState.drawAttributeBar.penTypeMenuOpen
 				&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 		}
@@ -3622,7 +3715,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 	bool ColorPickerAvailable()
 	{
-		return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+		return IsBarColorEditingMode(stateMode, barState)
+			&& (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape || barUISet.GeometryAttributeEditContextCurrent())
 			&& barState.drawAttribute && !barState.fold;
 	}
 
@@ -3902,6 +3996,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		geometry.straightLinePress = geometry.rectanglePress = geometry.closePress = false;
 		geometry.thicknessFinePress = geometry.thicknessMediumPress = geometry.thicknessCoarsePress = false;
 		barState.moreClosePress = false; BarColorPickerEntryPressed = false;
+		barUISet.geometryAttribute.ResetPointerFeedback();
 		barUISet.eraserAttribute.ResetPointerFeedback(); barUISet.recallAttribute.ResetPointerFeedback();
 		CancelThicknessFineDialSelection();
 		CloseThicknessSlider(true); CloseColorPicker(true); ClosePenTypeMenu();
@@ -3946,6 +4041,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		if (msg.message == WM_KEYDOWN || msg.message == WM_KEYUP
 			|| msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP)
 		{
+			if (barUISet.geometryAttribute.Keyboard(barUISet, msg.vkcode,
+				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
+				return BarInteractionStageResult::Consumed;
 			if (barUISet.eraserAttribute.Keyboard(barUISet, msg.vkcode,
 				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
 				return BarInteractionStageResult::Consumed;
@@ -5134,93 +5232,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 	InteractionTask<BarInteractionStageResult> HandleGeometryPointerStage()
 	{
-			bool continueFlag = true;
-
-			// 几何属性按钮：按下即缩小，拖出取消，抬起后等待新的指针移动再恢复悬停。
-			if (continueFlag && barState.geometryAttribute
-				&& stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-			{
-				struct GeometryButtonInteraction
-				{
-					BarUISetShapeEnum shape;
-					IdtAtomic<bool>* pressed;
-					optional<ShapeModeSelectEnum> shapeMode;
-					int thicknessPresetIndex;
-					bool closePanel;
-				};
-				const GeometryButtonInteraction geometryButtons[] =
-				{
-					{ BarUISetShapeEnum::GeometryAttributeBar_StraightLine,
-						&barState.geometryAttributeBar.straightLinePress,
-						ShapeModeSelectEnum::IdtShapeStraightLine1, -1, false },
-					{ BarUISetShapeEnum::GeometryAttributeBar_Rectangle,
-						&barState.geometryAttributeBar.rectanglePress,
-						ShapeModeSelectEnum::IdtShapeRectangle1, -1, false },
-					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessFine,
-						&barState.geometryAttributeBar.thicknessFinePress,
-						nullopt, 0, false },
-					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessMedium,
-						&barState.geometryAttributeBar.thicknessMediumPress,
-						nullopt, 1, false },
-					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse,
-						&barState.geometryAttributeBar.thicknessCoarsePress,
-						nullopt, 2, false },
-					{ BarUISetShapeEnum::GeometryAttributeBar_Close,
-						&barState.geometryAttributeBar.closePress,
-						nullopt, -1, true },
-				};
-				for (const auto& button : geometryButtons)
-				{
-					auto shape = shapeMap[button.shape];
-					if (!shape || !IsPresentedBarVisualHit(barUISet, shape, msg.x, msg.y))
-						continue;
-
-					continueFlag = false;
-					if (msg.message == WM_LBUTTONDOWN)
-					{
-						const auto geometryAtPress = GetStateModeVersionedSnapshot();
-						if (geometryAtPress.state.StateModeSelect != StateModeSelectEnum::IdtShape)
-							continue;
-						*button.pressed = true;
-						StopIndependentHover(hoveredIndependentButton, true, true);
-						hoveredIndependentButton = IndependentHoverTargetEnum::None;
-						UpdateRendering(false);
-						while (true)
-						{
-							if (!(co_await AwaitNextBarInteractionMessage(
-								msg, EM_MOUSE, floating_window)))
-							{
-								co_return BarInteractionStageResult::Shutdown;
-							}
-							if (!IsPresentedBarVisualHit(barUISet, shape, msg.x, msg.y)) break;
-							if (!msg.lbutton)
-							{
-							if (StateModeTransitionRevision() != geometryAtPress.revision)
-								break;
-								if (button.closePanel)
-									barState.geometryAttribute = false;
-								else if (button.shapeMode.has_value())
-								{
-									SetShapeModeSelectIfRevision(
-										button.shapeMode.value(), geometryAtPress.revision);
-								}
-								else SetInteractionPenWidthPresetIfRevision(button.thicknessPresetIndex,
-									geometryAtPress.revision);
-								UpdateRendering();
-								break;
-							}
-						}
-						*button.pressed = false;
-						UpdateRendering(false);
-						SuppressHoverUntilPointerMove();
-						ClearBarInteractionMessages(EM_MOUSE, floating_window);
-					}
-					break;
-				}
-			}
-			co_return continueFlag
-				? BarInteractionStageResult::PassThrough
-				: BarInteractionStageResult::Consumed;
+		// 图形按钮在公共指针分发前消费成功呈现快照，避免与旧属性命中重复。
+		co_return BarInteractionStageResult::PassThrough;
 	}
 
 	InteractionTask<BarInteractionStageResult> HandleThicknessAndFineDialPointerStage()
@@ -5262,8 +5275,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								&& !rangeTransitionConsumesPress)
 							{
 				const auto gestureState = GetStateModeVersionedSnapshot();
-				PenModeSelectEnum gesturePenMode =
-					gestureState.state.Pen.ModeSelect;
+				PenModeSelectEnum gesturePenMode = gestureState.state.Pen.ModeSelect;
+				const auto gestureTopMode = gestureState.state.StateModeSelect;
+				const auto gestureShapeMode = gestureState.state.Shape.ModeSelect;
 				auto gestureRevision = gestureState.revision;
 								auto range = GetBarThicknessSliderRange(
 									gesturePenMode, barStyle.dpiZoom, gestureState.state);
@@ -5921,10 +5935,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										if (!hasInput)
 										{
 											bool samePenMode =
-												stateMode.StateModeSelect
-													== StateModeSelectEnum::IdtPen
-												&& stateMode.Pen.ModeSelect
-													== gesturePenMode;
+												ThicknessSliderAvailable() && stateMode.StateModeSelect == gestureTopMode
+										&& (gestureTopMode == StateModeSelectEnum::IdtShape ? stateMode.Shape.ModeSelect == gestureShapeMode : stateMode.Pen.ModeSelect == gesturePenMode);
 											if (!samePenMode
 												|| !barState.drawAttribute
 												|| barState.fold)
@@ -5989,10 +6001,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										}
 
 										bool samePenMode =
-											stateMode.StateModeSelect
-												== StateModeSelectEnum::IdtPen
-											&& stateMode.Pen.ModeSelect
-												== gesturePenMode;
+											ThicknessSliderAvailable() && stateMode.StateModeSelect == gestureTopMode
+										&& (gestureTopMode == StateModeSelectEnum::IdtShape ? stateMode.Shape.ModeSelect == gestureShapeMode : stateMode.Pen.ModeSelect == gesturePenMode);
 										if (!samePenMode
 											|| !barState.drawAttribute
 											|| barState.fold)
@@ -6398,10 +6408,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										&& !touchGestureCancelled
 										&& !offSignal && !msg.lbutton
 										&& barState.drawAttribute && !barState.fold
-										&& stateMode.StateModeSelect
-											== StateModeSelectEnum::IdtPen
-										&& stateMode.Pen.ModeSelect
-											== gesturePenMode;
+										&& ThicknessSliderAvailable() && stateMode.StateModeSelect == gestureTopMode
+										&& (gestureTopMode == StateModeSelectEnum::IdtShape ? stateMode.Shape.ModeSelect == gestureShapeMode : stateMode.Pen.ModeSelect == gesturePenMode);
 									bool activationPreviewHandoffPending = fineDialGesture
 										&& barState.drawAttributeBar.thicknessViewMode
 											== ThicknessViewMode::FineDial
@@ -6636,7 +6644,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			{
 
 				// 颜色选择
-				if (continueFlag && msg.message == WM_LBUTTONDOWN)
+				if (continueFlag && msg.message == WM_LBUTTONDOWN && ColorPickerAvailable())
 				{
 					shared_ptr<BarUiShapeClass> activeSwatch;
 					for (int i = static_cast<int>(
@@ -6673,7 +6681,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								co_return BarInteractionStageResult::Shutdown;
 							}
-							if (!msg.lbutton) break;
+							if (!msg.lbutton || !ColorPickerAvailable()) break;
 
 							for (int i = static_cast<int>(
 								BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
@@ -6697,7 +6705,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 
 				// 粗细预设和滑块固定入口
-				if (continueFlag && barState.drawAttribute)
+				if (continueFlag && barState.drawAttribute && (ThicknessSliderAvailable() || IsLaserToolActive(stateMode)))
 				{
 					struct ThicknessButtonInteraction
 					{
@@ -6736,7 +6744,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								const auto toolRevisionAtPress = pressState.revision;
 								const bool laserPresetAtPress =
 									IsLaserThicknessPresetMode(pressState.state);
-								if (pressState.state.StateModeSelect != StateModeSelectEnum::IdtPen ||
+								if ((!IsBarThicknessEditingMode(pressState.state, barState) && !laserPresetAtPress) ||
 									(!laserPresetAtPress && !PenModeUsesThicknessPresets(
 										pressState.state.Pen.ModeSelect, pressState.state)) ||
 									(laserPresetAtPress && button.presetIndex < 0))
@@ -6787,7 +6795,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 													auto thicknessSliderRange = GetBarThicknessSliderRange(
 														pressState.state.Pen.ModeSelect, barStyle.dpiZoom, pressState.state);
 													bool fineDialConfirmationAllowed =
-														stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+														IsBarThicknessEditingMode(stateMode, barState)
 														&& thicknessSliderRange.supported
 														&& barState.drawAttribute && !barState.fold
 														&& barState.drawAttributeBar.thicknessViewMode
@@ -6837,10 +6845,14 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					}
 				}
 
+				// 借用属性不开放笔型切换；旧呈现帧尚未被替换时也不能误切成画笔。
+				if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
+					co_return continueFlag ? BarInteractionStageResult::PassThrough : BarInteractionStageResult::Consumed;
+
 				// 当前选中且支持标注线的笔型才拥有扩展菜单入口。
 				if (continueFlag && barState.drawAttribute
 					&& !barState.fold
-					&& !stateMode.laserActive
+					&& !IsLaserToolActive(stateMode)
 					&& PenModeSupportsAnnotationLine(
 						stateMode.Pen.ModeSelect))
 				{
@@ -7121,6 +7133,14 @@ public:
 				HandleBottomDockIndicatorOcclusion();
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
 			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
+
+			if (barUISet.geometryAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
+			{
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
+				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
+				continue;
+			}
 
 			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
 			{
@@ -7710,6 +7730,12 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 	AddShape(shapeMap[BarUISetShapeEnum::MainBar], true);
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar], false);
 	AddShape(shapeMap[BarUISetShapeEnum::GeometryAttributeBar], false);
+	for (const RECT& bounds : geometryAttribute.PresentedRegions())
+		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
+			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+				bottomDockSnapshot.horizontalMapping.rigidOverlayTranslationXDip,
+				bottomDockSnapshot.rigidTranslationDip, frameZoom);
+
 	for (const RECT& bounds : eraserAttribute.PresentedRegions())
 		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
 			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
@@ -8569,7 +8595,7 @@ namespace Inkeys::UI::Bar
 		const bool eraserKey = vkCode == VK_ESCAPE || vkCode == VK_TAB || vkCode == VK_LEFT
 			|| vkCode == VK_RIGHT || vkCode == VK_RETURN || vkCode == VK_SPACE;
 		// 撤回属性复用同一组键盘路由键（Escape/Tab/方向/回车/空格）。
-		const bool auxPanelWantsKeyboard = barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
+		const bool auxPanelWantsKeyboard = barUISet.geometryAttribute.WantsKeyboard() || barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
 		if (eraserKey && !offSignal && floating_window && auxPanelWantsKeyboard
 			&& (GetForegroundWindow() == floating_window || (GetCursorPos(&pointer) && WindowFromPoint(pointer) == floating_window)))
 		{
@@ -8582,7 +8608,7 @@ namespace Inkeys::UI::Bar
 			|| vkCode == 'W' || vkCode == 'S';
 		if (!movementKey || offSignal || !floating_window
 			|| !IsWindow(floating_window)
-			|| stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+			|| !IsBarColorEditingMode(stateMode, barUISet.barState)
 			|| barUISet.barState.fold || !barUISet.barState.drawAttribute
 			|| !barUISet.barState.drawAttributeBar.colorPickerOpen)
 			return false;

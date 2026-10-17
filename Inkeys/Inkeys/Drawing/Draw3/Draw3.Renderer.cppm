@@ -247,6 +247,9 @@ export namespace Inkeys::Drawing::Draw3
 		int DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
 			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color,
 			InkOperatorKind operatorKind = InkOperatorKind::Draw);
+		// 混合新旧多点图形时保留旧 shader 像素，但逐对象按 source-over 提交。
+		bool DrawOrderedLegacyShapePrimitive(const ShapePrimitive& primitive,
+			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color);
 		// 通用图形接入当前操作层；内部先按材质合成，最后一次提交到调用方 MRT。
 		bool DrawShapeObject(const ::draw3::shapes::ShapeObject& object,
 			float originX = 0, float originY = 0, float displayScale = 1);

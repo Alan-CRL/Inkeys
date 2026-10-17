@@ -121,7 +121,27 @@
       "GeometryAttributes":
       {
         "StraightLineLabel": "直线",
-        "RectangleLabel": "矩形"
+        "ArrowLabel": "箭头",
+        "RectangleLabel": "矩形",
+        "RoundedRectangleLabel": "圆角矩形",
+        "CircleLabel": "圆",
+        "EllipseLabel": "椭圆",
+        "TriangleLabel": "三角形",
+        "ParallelogramLabel": "平行四边形",
+        "RhombusLabel": "菱形",
+        "TrapezoidLabel": "梯形",
+        "RegularPolygonLabel": "正多边形",
+        "CircleCenterLabel": "圆心绘制",
+        "CircleBoundsLabel": "外接绘制",
+        "OutlineLabel": "仅描边",
+        "FillLabel": "仅填充",
+        "OutlineFillLabel": "描边和填充",
+        "SolidLabel": "实线",
+        "DashedLabel": "虚线",
+        "DottedLabel": "点线",
+        "DashDotLabel": "点划线",
+        "AdjustThicknessLabel": "精细调节",
+        "ColorLabel": "颜色"
       },
       "ColorPicker":
       {

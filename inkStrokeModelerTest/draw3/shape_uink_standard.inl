@@ -93,7 +93,7 @@
 			if (index != 0)
 			{
 				auto& reference = std::get<ShapeMap>(metadata.value);
-				ShapeField(reference, "version", ShapeValue(uint64_t{ 1 }));
+				ShapeField(reference, "version", ShapeValue(uint64_t{ source.shape->construction ? 2u : 1u }));
 				ShapeField(reference, "id", ShapeValue(FormatUInkGuid(UInkGuid(source.shape->id))));
 				ShapeField(reference, "revision", ShapeValue(source.shape->revision));
 				ShapeField(reference, "reference", ShapeValue(true));

@@ -18,3 +18,6 @@ UInk 标准几何承担可显示降级；extra[inkeysShape] version1 携带完�
 
 ## 风险与回退
 GPU布局、全画布与tile坐标、透明叠加、复合展开后的contentId、白板redo是重点。保留旧四形兼容路径，可撤回新增通用路径而不改变旧文件。Win7/Win10真机与笔触手感未实测须单独标记。禁止为环境错误污染源码或修改工具链。
+
+## P2完成后的接口与后续依赖
+ShapeObject增加可选Construction，ToolSpec区分11类Preset、创建模式与模板参数；Construction的起终点/边数/矩形局部圆角为真值，几何由MakePresetShape生成并校验。UInk10使用inkeysShape v2保存构造语义，兼容v1。业务新状态按版本整包发布，Down冻结，真实Up最终化；原四类兼容路径保留。UI3采用独立GeometryAttribute子树并复用既有精调/颜色。P3编辑需从Construction重新生成几何，不得只修改派生顶点；P3实现绘制提示/完成/回退/取消后，独立shape-point-tools再实现逐点折线和闭合多边形。完整P2合同与验收见对应design.md/validation.md。

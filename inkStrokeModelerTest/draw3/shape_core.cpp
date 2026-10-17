@@ -49,6 +49,101 @@ namespace
 			Finite(s.width) && s.width > 0 && Finite(s.dashOffset) &&
 			static_cast<uint32_t>(s.linePattern) <= static_cast<uint32_t>(LinePattern::DashDot);
 	}
+	bool ExpandPreset(const Construction& c, const ShapeStyle& style, ShapeObject& out, std::string& error)
+	{
+		const auto& tool = c.tool;
+		if (static_cast<uint32_t>(tool.preset) > static_cast<uint32_t>(PresetKind::RegularPolygon) ||
+			tool.sides < 3 || tool.sides > 12 || !Finite(tool.rectangleCornerRadius) || tool.rectangleCornerRadius < 0 ||
+			!Finite(c.start) || !Finite(c.end))
+		{ error = "invalid construction parameters"; return false; }
+		const bool center = tool.creationMode == CreationMode::CenterRadius;
+		if (tool.preset == PresetKind::Circle ? !center && tool.creationMode != CreationMode::Drag :
+			tool.preset == PresetKind::RegularPolygon ? !center : tool.creationMode != CreationMode::Drag)
+		{ error = "unsupported preset creation mode"; return false; }
+		out.creationMode = tool.creationMode;
+		const Vec2 start = c.start, end = c.end;
+		const float length = Distance(start, end);
+		if (tool.preset == PresetKind::Line || tool.preset == PresetKind::Arrow ||
+			tool.preset == PresetKind::RegularPolygon || (tool.preset == PresetKind::Circle && center))
+		{
+			if (!(length > 0)) { error = "empty construction"; return false; }
+		}
+		const float l = std::min(start.x, end.x), r = std::max(start.x, end.x);
+		const float t = std::min(start.y, end.y), b = std::max(start.y, end.y);
+		const float w = r - l, h = b - t, cx = l + w * .5f, cy = t + h * .5f;
+		if (tool.preset != PresetKind::Line && tool.preset != PresetKind::Arrow &&
+			tool.preset != PresetKind::Circle && tool.preset != PresetKind::RegularPolygon && !(w > 0 && h > 0))
+		{ error = "empty construction"; return false; }
+		switch (tool.preset)
+		{
+		case PresetKind::Line:
+			out.kind = Kind::Line; out.geometry.start = start; out.geometry.end = end; break;
+		case PresetKind::Arrow:
+		{
+			if (!style.stroke || style.fill) { error = "open arrow requires stroke only"; return false; }
+			out.kind = Kind::Compound;
+			ShapePart shaft; shaft.id = 1; shaft.kind = Kind::Line;
+			shaft.geometry.start = start; shaft.geometry.end = end;
+			// 短箭头按长度收缩，粗线箭头保留可辨认的头部，不生成倒向箭杆。
+			const float head = std::min(length * .4f, std::max(length * .2f, style.width * 3));
+			const Vec2 direction{ (end.x - start.x) / length, (end.y - start.y) / length };
+			const Vec2 base{ end.x - direction.x * head, end.y - direction.y * head };
+			ShapePart tip; tip.id = 2; tip.kind = Kind::Polyline; tip.style = style;
+			tip.style->linePattern = LinePattern::Solid;
+			tip.geometry.vertices = { { base.x - direction.y * head * .5f, base.y + direction.x * head * .5f },
+				end, { base.x + direction.y * head * .5f, base.y - direction.x * head * .5f } };
+			out.parts = { std::move(shaft), std::move(tip) }; break;
+		}
+		case PresetKind::Rectangle:
+		case PresetKind::RoundedRectangle:
+			out.kind = Kind::Rectangle; out.geometry.start = { l,t }; out.geometry.end = { r,b };
+			// 普通矩形切换填充/线型仍保留旧 4 DIP 轮廓；圆角参数已在 Down 转换一次。
+			out.geometry.radius = tool.preset == PresetKind::RoundedRectangle ? std::min(w, h) * .2f :
+				std::min(tool.rectangleCornerRadius, std::min(w, h) * .5f);
+			break;
+		case PresetKind::Circle:
+		{
+			out.kind = Kind::Circle;
+			const float side = std::max(w, h);
+			if (!center && !(side > 0)) { error = "empty construction"; return false; }
+			out.geometry.radius = center ? length : side * .5f;
+			// 外接法固定落笔角，拖动端点投影到较长边确定的正方形角上。
+			out.geometry.start = center ? start : Vec2{ start.x + (end.x < start.x ? -1 : 1) * side * .5f,
+				start.y + (end.y < start.y ? -1 : 1) * side * .5f };
+			break;
+		}
+		case PresetKind::Ellipse:
+			out.kind = Kind::Ellipse; out.geometry.start = { cx,cy }; out.geometry.end = { w * .5f,h * .5f }; break;
+		case PresetKind::Triangle:
+			out.kind = Kind::Polygon; out.geometry.vertices = { { cx,t }, { r,b }, { l,b } }; break;
+		case PresetKind::Parallelogram:
+			out.kind = Kind::Polygon; out.geometry.vertices = { { l + w * .25f,t }, { r,t }, { r - w * .25f,b }, { l,b } }; break;
+		case PresetKind::Rhombus:
+			out.kind = Kind::Polygon; out.geometry.vertices = { { cx,t }, { r,cy }, { cx,b }, { l,cy } }; break;
+		case PresetKind::Trapezoid:
+			out.kind = Kind::Polygon; out.geometry.vertices = { { l + w * .25f,t }, { r - w * .25f,t }, { r,b }, { l,b } }; break;
+		case PresetKind::RegularPolygon:
+			out.kind = Kind::Polygon; out.geometry.vertices.reserve(tool.sides);
+			out.geometry.vertices.push_back(end);
+			for (uint32_t i = 1; i < tool.sides; ++i)
+			{
+				const double angle = 2 * kPi * i / tool.sides, x = double(end.x) - start.x, y = double(end.y) - start.y;
+				out.geometry.vertices.push_back({ static_cast<float>(start.x + x * std::cos(angle) - y * std::sin(angle)),
+					static_cast<float>(start.y + x * std::sin(angle) + y * std::cos(angle)) });
+			}
+			break;
+		}
+		return true;
+	}
+	bool SameGeometry(const Geometry& a, const Geometry& b)
+	{
+		// 序列化参数跨架构重算时允许浮点尾差，但不能容许可编辑参数与显示轮廓漂移。
+		auto scalar = [](float x, float y) { return std::abs(x - y) <= 4 * std::numeric_limits<float>::epsilon() * std::max({ 1.0f,std::abs(x),std::abs(y) }); };
+		auto point = [&](Vec2 x, Vec2 y) { return scalar(x.x, y.x) && scalar(x.y, y.y); };
+		if (!point(a.start, b.start) || !point(a.end, b.end) || !scalar(a.radius, b.radius) || a.vertices.size() != b.vertices.size()) return false;
+		for (size_t i = 0; i < a.vertices.size(); ++i) if (!point(a.vertices[i], b.vertices[i])) return false;
+		return true;
+	}
 	bool OnSegment(Vec2 a, Vec2 b, Vec2 p)
 	{
 		return Cross(a, b, p) == 0 && p.x >= std::min(a.x, b.x) && p.x <= std::max(a.x, b.x) &&
@@ -322,6 +417,23 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 	if (!ValidTransform(object.transform) || !ValidStyle(object.style) ||
 		static_cast<uint32_t>(object.creationMode) > static_cast<uint32_t>(CreationMode::Parameters) ||
 		static_cast<uint32_t>(object.legacyKind) > static_cast<uint32_t>(LegacyKind::FilledRectangle)) return { "invalid object transform or style" };
+	if (object.construction)
+	{
+		ShapeObject expected;
+		std::string error;
+		if (!ExpandPreset(*object.construction, object.style, expected, error)) return { error };
+		if (object.legacyKind != LegacyKind::None || object.kind != expected.kind || object.creationMode != expected.creationMode ||
+			!SameGeometry(object.geometry, expected.geometry) || object.parts.size() != expected.parts.size())
+			return { "construction does not match derived geometry" };
+		if (object.construction->tool.preset == PresetKind::RegularPolygon && !Similarity(object.transform))
+			return { "regular polygon requires uniform orthogonal transform" };
+		for (size_t i = 0; i < object.parts.size(); ++i)
+		{
+			const auto& a = object.parts[i]; const auto& b = expected.parts[i];
+			if (a.id != b.id || a.kind != b.kind || !SameGeometry(a.geometry, b.geometry) || a.transform != b.transform || a.style != b.style)
+				return { "construction does not match derived parts" };
+		}
+	}
 	if (object.legacyKind != LegacyKind::None)
 	{
 		const bool line = object.legacyKind == LegacyKind::SolidLine || object.legacyKind == LegacyKind::DashedLine;
@@ -389,6 +501,12 @@ bool BuildGeometry(const ShapeObject& object, GeometryResult& result, const Buil
 	}
 	else if (!build(0, object.kind, object.geometry, object.transform, object.style))
 	{ SetError(error, failure); return false; }
+	if (object.construction && object.construction->tool.preset == PresetKind::RegularPolygon)
+	{
+		auto& controls = next.parts.front().controls;
+		controls.push_back({ 0, static_cast<uint32_t>(controls.size()), ControlKind::Center,
+			ApplyTransform(object.transform, object.construction->start) });
+	}
 	result = std::move(next); SetError(error, {}); return true;
 }
 
@@ -454,7 +572,17 @@ bool BuildRenderData(const ShapeObject& object, RenderData& result, const BuildO
 					batch.primitives.push_back(p);
 				}
 			}
-			if (!batch.primitives.empty()) next.batches.push_back(std::move(batch));
+			if (!batch.primitives.empty())
+			{
+				// 箭头的两部件保留各自命中/降级语义，GPU 同材质只做一次覆盖并集。
+				if (object.construction && object.construction->tool.preset == PresetKind::Arrow && part.partId == 2)
+				{
+					for (auto& primitive : batch.primitives) primitive.flags |= kPrimitiveForceSolid;
+					auto& shaft = next.batches.front().primitives;
+					shaft.insert(shaft.end(), batch.primitives.begin(), batch.primitives.end());
+				}
+				else next.batches.push_back(std::move(batch));
+			}
 		}
 	}
 	result = std::move(next); return true;
@@ -492,6 +620,18 @@ HitResult HitTest(const ShapeObject& object, const GeometryResult& geometry, Vec
 			if (path.closed && PointInPath(path, point)) return { object.id, part->partId, HitKind::Fill, 0 };
 	}
 	return none;
+}
+std::optional<ShapeObject> MakePresetShape(const ToolSpec& tool, Vec2 start, Vec2 end,
+	const ShapeStyle& style, const ObjectId& id, uint64_t revision, std::string* error)
+{
+	ShapeObject object; object.id = id; object.revision = revision; object.style = style;
+	object.construction = Construction{ tool,start,end };
+	std::string failure;
+	if (!ValidStyle(style) || !ExpandPreset(*object.construction, style, object, failure))
+	{ SetError(error, failure.empty() ? "invalid construction style" : failure); return std::nullopt; }
+	const auto validation = Validate(object);
+	if (!validation) { SetError(error, validation.error); return std::nullopt; }
+	SetError(error, {}); return object;
 }
 std::optional<ShapeObject> MakeLegacyShape(LegacyKind kind, Vec2 start, Vec2 end,
 	float width, uint32_t rgb, float opacity, ObjectId id)

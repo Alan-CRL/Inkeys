@@ -39,6 +39,18 @@ import Inkeys.Message;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
 
+// 借用属性控件不切换业务工具；Shape 的 Laser 记忆不影响当前图形。
+inline bool IsBarThicknessEditingMode(const StateModeClass& tool, const BarStateClass& panel) noexcept
+{
+	return (tool.StateModeSelect == StateModeSelectEnum::IdtPen && !IsLaserToolActive(tool)) ||
+		(tool.StateModeSelect == StateModeSelectEnum::IdtShape && panel.geometryThicknessEditing);
+}
+inline bool IsBarColorEditingMode(const StateModeClass& tool, const BarStateClass& panel) noexcept
+{
+	return tool.StateModeSelect == StateModeSelectEnum::IdtPen ||
+		(tool.StateModeSelect == StateModeSelectEnum::IdtShape && panel.geometryColorEditing);
+}
+
 // ====================
 // 动画
 
@@ -342,6 +354,79 @@ namespace Inkeys::UI::Bar
 	export void PublishBorderCursorSurfaceBounds(
 		unsigned int index, const RECT& bounds, bool visible) noexcept;
 }
+namespace Inkeys::UI::Bar
+{
+	wstring ShapeToolIconResource(const draw3::shapes::ToolSpec& tool,
+		std::optional<unsigned> carouselSides = std::nullopt);
+	wstring ShapeToolLabel(draw3::shapes::PresetKind preset);
+	bool ApplyBarThicknessPresetIfRevision(int preset, std::uint64_t revision, bool save = true);
+	inline constexpr UINT_PTR GeometryCarouselTimerId = 0x494B4305;
+	struct GeometryAttributePresentation
+	{
+		EraserAttributeRect panel;
+		std::array<EraserAttributeRect,36> items{};
+		std::array<BarButtonHitSnapshot,36> hits{};
+		EraserSurfacePose pose;
+		double zoom = 1, opacity = 0;
+		bool visible = false, acceptsInput = false;
+		draw3::shapes::ToolSpec tool{};
+	};
+}
+
+// 图形面板仅保存拓扑和资源，按钮行为与动画交给共享 BarButton 运行时。
+class BarGeometryAttributePanel
+{
+public:
+	bool Advance(BarUISetClass& owner, const StateModeClass& state, double dt, double speed,
+		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY,
+		const BarUiTimelineClass* parentTimeline = nullptr, bool dragPlacementLocked = false);
+	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
+	void CommitPresented();
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
+	bool ResetPointerFeedback();
+	void Close(BarUISetClass& owner);
+	void StopCarousel() noexcept;
+	bool PollCarouselTimer(unsigned& retryMs,
+		std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+	RECT Bounds() const;
+	std::array<RECT,1> PresentedRegions() const;
+	Inkeys::UI::Bar::GeometryAttributePresentation PresentationSnapshot() const;
+	bool Changed() const noexcept { return changed_; }
+	bool Active() const noexcept { return active_; }
+	bool WantsKeyboard() const noexcept { return visible_.load(); }
+private:
+	friend class BarGeometryAttributeTestAccess;
+	void Initialize();
+	void Execute(BarUISetClass& owner, int item, std::uint64_t revision);
+	void UpdateCarousel(bool enabled);
+	mutable std::mutex presentationMutex_, carouselMutex_;
+	Inkeys::UI::Bar::GeometryAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::EraserAttributeRect previousPanel_, previousAnchor_;
+	Inkeys::UI::Bar::BarAttributePanelMotion motion_;
+	std::array<BarButtonClass,36> buttons_;
+	std::array<wstring,36> resourceTargets_, labelTargets_;
+	std::array<BarUiShapeClass,4> dividers_;
+	BarUiShapeClass surface_;
+	BarUiValueClass width_{0}, height_{0};
+	bool initialized_ = false, changed_ = false, active_ = false, previousBelow_ = false;
+	bool sideSwitch_ = false, hadOpen_ = false;
+	int appliedHover_ = -1, parameterGroup_ = 0;
+	double parameterOpacity_ = 0;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	std::uint64_t pressRevision_ = 0;
+	IdtAtomic<bool> pressCancelled_ = false;
+	std::chrono::steady_clock::time_point carouselDeadline_{};
+	bool carouselEnabled_ = false, carouselArmed_ = false;
+	unsigned carouselSides_ = 3;
+	std::array<double,3> thicknessPreviewWidths_{};
+	wstring measuredLabels_;
+	double measuredColumnWidth_ = 70;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	unsigned long long deviceGeneration_ = 0;
+};
+
 // 控件枚举
 enum class BarUISetShapeEnum : int
 {
@@ -492,6 +577,43 @@ enum class BarUISetWordEnum : int
 		GeometryAttributeBar_ThicknessCoarseNumber,
 	};
 
+// 借用子树时显式撤销非当前属性的绘制和呈现命中；透明 hit 本身不能靠 pct 隐藏。
+inline bool IsDrawAttributeVisualAllowed(const BarStateClass& panel, BarUISetShapeEnum key) noexcept
+{
+	// 原面板不再呈现；保留枚举和资源，但撤销旧透明控件的命中。
+	if (key >= BarUISetShapeEnum::GeometryAttributeBar && key <= BarUISetShapeEnum::GeometryAttributeBar_Close) return false;
+	if (!panel.geometryThicknessEditing && !panel.geometryColorEditing) return true;
+	if (key < BarUISetShapeEnum::DrawAttributeBar_ColorSelect1 || key > BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner) return true;
+	if (panel.geometryColorEditing)
+		return key <= BarUISetShapeEnum::DrawAttributeBar_ColorSelect12 || key >= BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel;
+	return (key >= BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect && key <= BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupCircle)
+		|| key == BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge || key == BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit
+		|| key == BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup || key == BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit;
+}
+inline bool IsDrawAttributeVisualAllowed(const BarStateClass& panel, BarUISetSvgEnum key) noexcept
+{
+	if (!panel.geometryThicknessEditing && !panel.geometryColorEditing) return true;
+	if (key < BarUISetSvgEnum::DrawAttributeBar_ColorSelect1 || key > BarUISetSvgEnum::DrawAttributeBar_ColorPickerToneMoon) return true;
+	if (panel.geometryColorEditing)
+		return key <= BarUISetSvgEnum::DrawAttributeBar_ColorSelect11 || key >= BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check;
+	return key == BarUISetSvgEnum::DrawAttributeBar_ThicknessAdjust || key == BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo
+		|| key == BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose;
+}
+inline bool IsDrawAttributeVisualAllowed(const BarStateClass& panel, BarUISetWordEnum key) noexcept
+{
+	if (!panel.geometryThicknessEditing && !panel.geometryColorEditing) return true;
+	if (key < BarUISetWordEnum::DrawAttributeBar_Brush1 || key >= BarUISetWordEnum::GeometryAttributeBar_StraightLine) return true;
+	if (panel.geometryColorEditing)
+		return key >= BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb && key <= BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel;
+	return (key >= BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay && key <= BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber)
+		|| key == BarUISetWordEnum::DrawAttributeBar_ThicknessHoldLockLabel || key == BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText
+		|| key == BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody || key == BarUISetWordEnum::DrawAttributeBar_ThicknessPreviewPopupNumber;
+}
+inline bool IsDrawAttributeVisualAllowed(const BarStateClass& panel, BarUISetPngEnum) noexcept
+{
+	return !panel.geometryThicknessEditing;
+}
+
 enum class BarBorderCursorTrackingStateEnum : int
 {
 	Dormant,
@@ -565,6 +687,14 @@ export class BarUISetClass
 {
 public:
 	BarUISetClass() : spec(this) {};
+	void BeginGeometryAttributeEdit(bool thickness);
+	bool GeometryAttributeEditContextCurrent() const;
+	mutable std::mutex geometryEditSceneMutex;
+	int geometryEditWorkspace = -1;
+	std::size_t geometryEditPage = 0, geometryEditRuntimePage = 0;
+	std::uint64_t geometryEditGeneration = 0;
+	std::shared_ptr<const void> geometryEditPresentation;
+	draw3::shapes::ToolSpec geometryEditTool;
 
 	// 渲染
 	[[nodiscard]] bool Rendering();
@@ -611,6 +741,7 @@ public:
 		Inkeys::UI::StartupPlacement::CenteredBottomBar;
 	BarStateClass barState;
 	BarStyleClass barStyle;
+	BarGeometryAttributePanel geometryAttribute;
 	BarEraserAttributePanel eraserAttribute;
 	BarRecallAttributePanel recallAttribute;
 	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
@@ -1165,6 +1296,7 @@ protected:
 	atomic<unsigned long long> bottomDockDeferredTransitionSerial = 0;
 	atomic<unsigned long long> bottomDockPresentedTransitionSerial = 0;
 
+	friend class BarGeometryAttributeTestAccess;
 	friend class BarUIRendering;
 	friend class BarRenderLoopCoordinator;
 	friend LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -1189,6 +1321,7 @@ namespace Inkeys::UI::Bar
 		const Inkeys::UI::RenderPipeline::FrameContext&)> CreateBarOffscreenRenderCallback(
 		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present);
 	export int RunUi3MultiTargetOffscreenBenchmark();
+	export int RunGeometryAttributeOffscreenTest();
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(

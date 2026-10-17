@@ -171,6 +171,8 @@ namespace Inkeys::Drawing::Draw3
 		double DiameterForTool(DrawingTool tool,
 			const ProductVisualStyle& visualStyle)
 		{
+			if (tool == DrawingTool::Shape)
+				return visualStyle.shapeStyle.width;
 			if (tool == DrawingTool::Pen || tool == DrawingTool::HardPen ||
 				tool == DrawingTool::Highlighter ||
 				IsShapeDrawingTool(tool))
@@ -298,6 +300,7 @@ namespace Inkeys::Drawing::Draw3
 			const ProductVisualStyle& right) noexcept
 		{
 			return left.colorRgba == right.colorRgba && left.widthDip == right.widthDip &&
+				left.shapeTool == right.shapeTool && left.shapeStyle == right.shapeStyle &&
 				left.penWidthContext.revision == right.penWidthContext.revision &&
 				Inkeys::Business::PenWidth::EquivalentContext(
 					left.penWidthContext, right.penWidthContext);
@@ -1290,6 +1293,11 @@ namespace Inkeys::Drawing::Draw3
 				style.inkType = StoredInkType::FilledRectangle;
 				style.opacity = color.w;
 				return style;
+			case DrawingTool::Shape:
+				style.inkType = StoredInkType::Shape;
+				style.fallbackRgb = visualStyle.shapeStyle.strokeRgb;
+				style.opacity = visualStyle.shapeStyle.strokeOpacity;
+				return style;
 			default:
 				return std::nullopt; // Laser 是瞬时视觉，不进入文档。
 			}
@@ -1836,6 +1844,14 @@ namespace Inkeys::Drawing::Draw3
 		{
 			ShapePrimitive primitive = {};
 			ShapePrimitiveKind kind = ShapePrimitiveKind::SolidLine;
+			// 新模板只在端点变化时构造一次；实时层直接消费派生数据，避免污染最终对象缓存。
+			bool generic = false;
+			draw3::shapes::ToolSpec tool;
+			draw3::shapes::ShapeStyle style;
+			draw3::shapes::ObjectId id = {};
+			uint64_t revision = 0;
+			std::optional<draw3::shapes::ShapeObject> object;
+			draw3::shapes::RenderData renderData;
 			DirectX::XMFLOAT2 rawEndpoint = {};
 			DirectX::XMFLOAT2 modeledEndpoint = {};
 			bool active = false;
@@ -2141,6 +2157,13 @@ namespace Inkeys::Drawing::Draw3
 				"ActiveStroke Reset clears all tail input trace provenance");
 		}
 
+		DrawingTool ResolveContactDrawingTool(DrawingTool downTool, DrawingTool batchTool) noexcept
+		{
+			// 图形属性只影响下一次落笔；兼容枚举与通用描述必须采用同一份当前工具。
+			// 普通笔/橡皮等物理批次仍沿用原有锁定政策。
+			return IsShapeDrawingTool(downTool) && IsShapeDrawingTool(batchTool) ? downTool : batchTool;
+		}
+
 		void CaptureProductStrokeStyle(RuntimeStroke& runtime,
 			const WindowController& window) noexcept
 		{
@@ -2245,16 +2268,84 @@ namespace Inkeys::Drawing::Draw3
 				handle.record->ContactId();
 		}
 
+		bool InitializeRuntimeShape(RuntimeStroke& runtime) noexcept
+		{
+			auto& shape = runtime.shape;
+			shape.Reset();
+			shape.generic = runtime.tool == DrawingTool::Shape;
+			shape.kind = ShapeKindForTool(runtime.tool);
+			shape.rawEndpoint = { runtime.stroke.inputStartPoint.x, runtime.stroke.inputStartPoint.y };
+			shape.primitive.start = runtime.stroke.inputStartPoint;
+			shape.primitive.start.time = 0.0f;
+			shape.primitive.end = { shape.rawEndpoint.x, shape.rawEndpoint.y, 0.0f, 0.0f };
+			if (shape.generic)
+			{
+				InkGuid identity;
+				if (!TryCreateInkGuid(identity)) return false;
+				shape.id = identity.Bytes();
+				shape.tool = runtime.visualStyle.shapeTool;
+				if (shape.tool.preset == draw3::shapes::PresetKind::Rectangle)
+					shape.tool.rectangleCornerRadius *= static_cast<float>(
+						Inkeys::Business::PenWidth::SystemScale(runtime.visualStyle.penWidthContext));
+				shape.style = runtime.visualStyle.shapeStyle;
+				// baseDiameter 已沿产品 DIP 策略转换；后续帧不能再次乘 DPI。
+				shape.style.width = runtime.stroke.widthEstimator.baseDiameter;
+			}
+			shape.active = true;
+			shape.visualChanged = true;
+			return true;
+		}
+
 		bool SetShapeVisualEndpoint(
-			RuntimeShapeState& shape, DirectX::XMFLOAT2 endpoint) noexcept
+			RuntimeShapeState& shape, DirectX::XMFLOAT2 endpoint)
 		{
 			if (!std::isfinite(endpoint.x) || !std::isfinite(endpoint.y)) return false;
 			if (shape.primitive.end.x == endpoint.x &&
 				shape.primitive.end.y == endpoint.y) return false;
+			if (shape.generic)
+			{
+				if (shape.revision == (std::numeric_limits<uint64_t>::max)()) return false;
+				const uint64_t revision = shape.revision + 1;
+				auto candidate = draw3::shapes::MakePresetShape(shape.tool,
+					{ shape.primitive.start.x, shape.primitive.start.y }, { endpoint.x, endpoint.y },
+					shape.style, shape.id, revision);
+				draw3::shapes::RenderData data;
+				if (candidate && !draw3::shapes::BuildRenderData(*candidate, data)) return false;
+				// 零面积中间态清掉旧预览；raw Up 为零面积时同样不留下文档对象。
+				shape.object = std::move(candidate);
+				shape.renderData = std::move(data);
+				shape.revision = revision;
+			}
 			shape.primitive.end.x = endpoint.x;
 			shape.primitive.end.y = endpoint.y;
 			shape.visualChanged = true;
 			return true;
+		}
+
+		RECT RuntimeShapeBounds(const RuntimeShapeState& shape, int width, int height) noexcept
+		{
+			if (!shape.generic) return RectFromShapePrimitive(shape.primitive, shape.kind, width, height);
+			const auto& bounds = shape.renderData.bounds;
+			if (!bounds.valid) return {};
+			return ClampRectToCanvas({ SaturatingFloorToLong(bounds.left), SaturatingFloorToLong(bounds.top),
+				SaturatingCeilToLong(bounds.right), SaturatingCeilToLong(bounds.bottom) }, width, height);
+		}
+
+		std::optional<InkStroke> FinalizeRuntimeShape(RuntimeShapeState& shape,
+			StoredInkStyle style, const InkViewport& viewport)
+		{
+			// 即使上一帧仍显示 prediction，创建事务也只能取物理终点。
+			SetShapeVisualEndpoint(shape, shape.rawEndpoint);
+			if (shape.primitive.end.x != shape.rawEndpoint.x ||
+				shape.primitive.end.y != shape.rawEndpoint.y) return std::nullopt;
+			if (!shape.generic) return FinalizeStoredShape(shape.primitive, style, viewport.x, viewport.y);
+			if (!shape.object) return std::nullopt;
+			auto object = *shape.object;
+			// 保留局部构造参数，通过对象变换进入文档坐标；重放时仅扣当前 viewport。
+			object.transform.dx += viewport.x;
+			object.transform.dy += viewport.y;
+			InkStroke stroke(style, {}, std::nullopt, std::move(object));
+			return stroke.IsValid() ? std::optional<InkStroke>(std::move(stroke)) : std::nullopt;
 		}
 
 		enum class StoredStrokeCommitMode { NormalUp, Fatal };
@@ -2328,8 +2419,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!style) return reject("transient_tool"); // Laser 永远是瞬态视觉。
 			CaptureTailRuntimeProvenance(runtime);
 			std::optional<InkStroke> finalizedStroke = runtime.shape.active
-				? FinalizeStoredShape(runtime.shape.primitive, *style,
-					runtime.viewport.x, runtime.viewport.y)
+				? FinalizeRuntimeShape(runtime.shape, *style, runtime.viewport)
 				: FinalizeStoredStroke(runtime.stroke, *style, liveTipTaperSeconds,
 					runtime.rebuildPoints, runtime.viewport.x, runtime.viewport.y);
 			if (!finalizedStroke) return reject("finalize");
@@ -2338,8 +2428,15 @@ namespace Inkeys::Drawing::Draw3
 			if (!footprint) return reject("footprint");
 			// Canvas 追加后即使 history 失败也不能重试，否则可能产生重复的孤儿 Stroke。
 			runtime.cpuCommitAttempted = true;
-			const std::optional<size_t> strokeIndex =
-				canvas->AppendStroke(std::move(*finalizedStroke));
+			std::optional<size_t> strokeIndex;
+			if (runtime.shape.generic && finalizedStroke->Shape())
+			{
+				draw3::shapes::CreationTransaction creation;
+				if (!creation.Preview(*finalizedStroke->Shape())) return reject("create_preview");
+				const auto command = creation.Commit();
+				if (command) strokeIndex = canvas->AppendShape(*command);
+			}
+			else strokeIndex = canvas->AppendStroke(std::move(*finalizedStroke));
 			if (!strokeIndex) return reject("canvas_append");
 			pageRuntime.history.DiscardRedoBranch();
 			// CPU 追加已创建新分支；后续 history/GPU 失败也不能复活旧 Clear 重做。
@@ -3712,6 +3809,7 @@ namespace Inkeys::Drawing::Draw3
 			case DrawingTool::DashedLine: return "DashedLine";
 			case DrawingTool::OutlineRectangle: return "OutlineRectangle";
 			case DrawingTool::FilledRectangle: return "FilledRectangle";
+			case DrawingTool::Shape: return "Shape";
 			default: return "Pen";
 			}
 		}
@@ -3968,6 +4066,24 @@ namespace Inkeys::Drawing::Draw3
 			InkRenderer& renderer, std::vector<ShapePrimitive>& scratch)
 		{
 			bool succeeded = true;
+			if (std::any_of(active.begin(), active.end(), [](const RuntimeStroke* runtime) {
+				return runtime && !runtime->ended && runtime->shape.generic;
+			}))
+			{
+				// 通用图形逐对象有序合成；混合旧工具时也不能按几何类型重排多点 contact。
+				for (const auto* runtime : active)
+				{
+					if (!runtime || runtime->ended || runtime->cancelled || !runtime->shape.active) continue;
+					renderer.SetOperatorTarget(renderer.layerL0);
+					if (runtime->shape.generic)
+					{
+						if (!renderer.DrawShapeRenderData(runtime->shape.renderData)) return false;
+					}
+					else if (!renderer.DrawOrderedLegacyShapePrimitive(runtime->shape.primitive,
+						runtime->shape.kind, ColorForTool(DrawingTool::Pen, runtime->visualStyle))) return false;
+				}
+				return true;
+			}
 			constexpr std::array<ShapePrimitiveKind, 4> kKinds = {
 				ShapePrimitiveKind::SolidLine,
 				ShapePrimitiveKind::DashedLine,
@@ -4018,8 +4134,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					ActiveStroke& stroke = runtime->stroke;
 					stroke.lastL0Rect = {};
-					stroke.currentL0Rect = RectFromShapePrimitive(runtime->shape.primitive,
-						runtime->shape.kind, width, height);
+					stroke.currentL0Rect = RuntimeShapeBounds(runtime->shape, width, height);
 					UnionRectInPlace(dirty, stroke.currentL0Rect);
 					continue;
 				}
@@ -5018,6 +5133,229 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 
+	int RunPresetCreationProductionTest()
+	{
+		using namespace draw3::shapes;
+		int failures = 0;
+		const auto check = [&](bool ok, const char* label) {
+			if (!ok) { ++failures; std::fprintf(stderr, "[Shape.Create] FAIL %s\n", label); }
+		};
+		ContactInputCoordinator input;
+		WindowController window;
+		InkGuid workspace, pageId, endId;
+		if (!TryCreateInkGuid(workspace) || !TryCreateInkGuid(pageId) || !TryCreateInkGuid(endId)) return 1;
+		InkCanvasCollection document(workspace);
+		if (!document.AppendPage(pageId) || !document.AppendPage(endId)) return 1;
+		auto* canvas = document.PageAt(0)->GetOrCreateCanvas(kDefaultDeviceKey, { 25, -18, 1 });
+		if (!canvas || !document.PageAt(1)->GetOrCreateCanvas(kDefaultDeviceKey)) return 1;
+		std::vector<CanvasPageRuntimeState> pages(2);
+		uint64_t token = 1;
+		uint32_t contactId = 0;
+		Inkeys::Business::PenWidth::Context context;
+		context.effectiveDpi = 144;
+		ShapeStyle style; style.width = 2.25f; style.strokeRgb = style.fillRgb = 0x1874D2;
+		style.strokeOpacity = style.fillOpacity = 0.4f;
+		auto configuration = CreateStrokeModelConfiguration(144);
+		ApplyPredictionMode(configuration.modelParams, configuration.kalmanPredictorParams);
+		const auto begin = [&](ToolSpec spec, DrawingTool selectedTool = DrawingTool::Shape,
+			std::optional<DrawingTool> inheritedTool = std::nullopt) {
+			window.SetActiveTool(selectedTool);
+			window.SetProductVisualStyle(0x1874D266, style.width, context, spec, style);
+			ContactSnapshot down; down.position = { 80, 70 }; down.qpc = 100000 + ++contactId;
+			if (!input.PublishDown(0x5A90, contactId, InputDeviceType::Pen, down)) throw std::runtime_error("shape creation fixture initialization failed");
+			ContactRecord* record = nullptr;
+			while (input.TryDequeue(record)) if (record) break;
+			if (!record) throw std::runtime_error("shape creation fixture initialization failed");
+			auto runtime = std::make_unique<RuntimeStroke>(configuration.expectedSpeed);
+			runtime->handle = { record, record->Generation() };
+			runtime->inUse = true;
+			runtime->selectedTool = ResolveContactDrawingTool(window.ActiveTool(), inheritedTool.value_or(window.ActiveTool()));
+			runtime->tool = runtime->selectedTool;
+			runtime->ownerWorkspaceGuid = workspace; runtime->ownerPageGuid = pageId;
+			runtime->ownerPageIndex = 0; runtime->viewport = canvas->Viewport();
+			runtime->lastInputSnapshot = record->DownSnapshot();
+			runtime->lastConsumedSequence = runtime->lastInputSnapshot.sequence;
+			CaptureProductStrokeStyle(*runtime, window);
+			const float width = CanvasDiameterForTool(runtime->tool, runtime->visualStyle, 9.0f);
+			ResetNominalStroke(*runtime, width, configuration, StrokeWidthMode::Fixed);
+			runtime->stroke.hasInputStartPoint = true;
+			runtime->stroke.inputStartPoint = {80,70,width * 0.5f,0};
+			if (!InitializeRuntimeShape(*runtime)) throw std::runtime_error("shape creation fixture initialization failed");
+			return runtime;
+		};
+		const auto finish = [&](RuntimeStroke& runtime, Vec2 endpoint, bool cancel = false) {
+			auto terminal = runtime.lastInputSnapshot;
+			terminal.position = { endpoint.x, endpoint.y }; terminal.qpc += 100;
+			const auto id = runtime.handle.record->ContactId();
+			const bool published = cancel ? input.PublishCancelled(0x5A90, id, terminal)
+				: input.PublishUp(0x5A90, id, terminal);
+			if (!published || !input.TryReadSnapshot(runtime.handle, terminal)) throw std::runtime_error("shape creation fixture initialization failed");
+			runtime.lastInputSnapshot = terminal; runtime.lastConsumedSequence = terminal.sequence;
+			runtime.shape.rawEndpoint = {endpoint.x, endpoint.y};
+			runtime.ended = true; runtime.cancelled = cancel;
+			const auto result = CommitRuntimeStoredStrokeCpu(runtime, document, pages, 0, 0,
+				StoredStrokeCommitMode::NormalUp, [&] { return token++; });
+			input.Recycle(runtime.handle);
+			return result;
+		};
+		for (unsigned preset = 0; preset <= static_cast<unsigned>(PresetKind::RegularPolygon); ++preset)
+			for (float direction : { -1.0f, 1.0f })
+			{
+				ToolSpec spec; spec.preset = static_cast<PresetKind>(preset);
+				if (spec.preset == PresetKind::Circle || spec.preset == PresetKind::RegularPolygon)
+					spec.creationMode = CreationMode::CenterRadius;
+				auto runtime = begin(spec);
+				const ObjectId id = runtime->shape.id;
+				check(IsZeroId(id) == false && !runtime->shape.object, "Down reserves stable identity without zero-area object");
+				check(std::abs(runtime->shape.style.width - 3.375f) < 0.0001f,
+					"fractional DIP converted exactly once independently of model DPI");
+				std::array<ink::stroke_model::Result, 1> prediction;
+				prediction[0].position = ink::stroke_model::Vec2(80 + 100 * direction, 150);
+				const auto endpoint = ResolveShapeLiveEndpoint(prediction, {110,90}, true, {120,100}, false);
+				check(SetShapeVisualEndpoint(runtime->shape, endpoint) && runtime->shape.object &&
+					runtime->shape.object->construction->end == Vec2{endpoint.x,endpoint.y}, "prediction rebuilds complete preset geometry");
+				const RECT predicted = RuntimeShapeBounds(runtime->shape, 400, 300);
+				const auto revision = runtime->shape.revision;
+				check(!SetShapeVisualEndpoint(runtime->shape, endpoint) && revision == runtime->shape.revision,
+					"stationary preview keeps geometry and revision cached");
+				// 发布下一工具后，先前 contact 的模式、线宽和颜色保持独立。
+				window.SetProductVisualStyle(0xFF0000FF, 30, {}, {}, {});
+				const Vec2 realEnd{80 + 40 * direction, 105};
+				const auto committed = finish(*runtime, realEnd);
+				check(committed && pages[0].history.Items().size() == canvas->Strokes().size(), "one Up enters one logical history item");
+				if (!committed) continue;
+				const auto& stored = canvas->Strokes()[committed->strokeIndex];
+				auto canvasTool = spec;
+				if (canvasTool.preset == PresetKind::Rectangle) canvasTool.rectangleCornerRadius *= 1.5f;
+				check(stored.Shape() && stored.Shape()->id == id && stored.Shape()->construction->tool == canvasTool &&
+					stored.Shape()->construction->end == realEnd && stored.Shape()->style == runtime->shape.style &&
+					stored.Shape()->transform.dx == 25 && stored.Shape()->transform.dy == -18,
+					"raw Up, Down style, stable identity and viewport survive finalization");
+				if (spec.preset == PresetKind::Rectangle)
+					check(stored.Shape() && stored.Shape()->geometry.radius == 6 &&
+						stored.Shape()->construction->tool.rectangleCornerRadius == 6,
+						"rectangle 4 DIP corner captured once as 6 canvas pixels at 150 percent DPI");
+				RECT dirty = predicted; UnionRectInPlace(dirty, RuntimeShapeBounds(runtime->shape,400,300));
+				check(!IsEmptyRect(dirty) && dirty.left <= predicted.left && dirty.right >= predicted.right,
+					"prediction and real terminal dirty bounds are both retained");
+			}
+		ToolSpec circle; circle.preset = PresetKind::Circle;
+		auto first = begin(circle);
+		ToolSpec polygon; polygon.preset = PresetKind::RegularPolygon;
+		polygon.creationMode = CreationMode::CenterRadius; polygon.sides = 12;
+		auto second = begin(polygon);
+		SetShapeVisualEndpoint(first->shape, {150,120}); SetShapeVisualEndpoint(second->shape,{145,130});
+		check(first->shape.id != second->shape.id && first->shape.object->kind == Kind::Circle &&
+			second->shape.object->construction->tool.sides == 12, "parallel contacts retain distinct tool snapshots and identities");
+		const auto firstResult = finish(*first,{120,90});
+		const auto secondResult = finish(*second,{125,100});
+		check(firstResult && secondResult && firstResult->strokeIndex + 1 == secondResult->strokeIndex,
+			"parallel compound or polygon creation preserves one item per terminal");
+		// 与 acquire 共用生产工具选择器，覆盖旧枚举/通用模板互切且首笔仍在接触中的情形。
+		auto genericFirst = begin(circle); SetShapeVisualEndpoint(genericFirst->shape,{145,130});
+		ToolSpec rectangle; rectangle.preset = PresetKind::Rectangle;
+		auto legacySecond = begin(rectangle,DrawingTool::OutlineRectangle,genericFirst->selectedTool);
+		SetShapeVisualEndpoint(legacySecond->shape,{150,140});
+		auto genericThird = begin(polygon,DrawingTool::Shape,legacySecond->selectedTool);
+		SetShapeVisualEndpoint(genericThird->shape,{155,145});
+		check(genericFirst->tool == DrawingTool::Shape && genericFirst->shape.tool == circle &&
+			legacySecond->tool == DrawingTool::OutlineRectangle && !legacySecond->shape.generic &&
+			legacySecond->shape.kind == ShapePrimitiveKind::OutlineRectangle &&
+			genericThird->tool == DrawingTool::Shape && genericThird->shape.tool == polygon &&
+			genericFirst->shape.id != genericThird->shape.id,
+			"overlapping shape Downs use current complete legacy/generic selection while existing contacts stay fixed");
+		check(finish(*genericFirst,{120,110}) && finish(*legacySecond,{125,115}) && finish(*genericThird,{130,120}),
+			"mixed overlapping shape tools commit independently");
+		check(ResolveContactDrawingTool(DrawingTool::Shape,DrawingTool::Pen) == DrawingTool::Pen &&
+			ResolveContactDrawingTool(DrawingTool::Eraser,DrawingTool::Shape) == DrawingTool::Shape &&
+			ResolveContactDrawingTool(DrawingTool::Pen,DrawingTool::Eraser) == DrawingTool::Eraser,
+			"nonshape physical batch tool locking remains unchanged");
+		const size_t count = canvas->Strokes().size();
+		auto cancelled = begin(circle); SetShapeVisualEndpoint(cancelled->shape,{160,130});
+		check(!finish(*cancelled,{150,120},true) && canvas->Strokes().size() == count, "cancelled preview leaves no document or history item");
+		auto zero = begin(circle); SetShapeVisualEndpoint(zero->shape,{160,130});
+		check(!finish(*zero,{80,70}) && !zero->shape.object && canvas->Strokes().size() == count,
+			"raw zero-area Up removes prediction and does not commit");
+		const auto modeled = ResolveShapeLiveEndpoint({}, {110,100}, true, {120,105}, false);
+		const auto raw = ResolveShapeLiveEndpoint({}, {110,100}, false, {120,105}, false);
+		check(modeled.x == 110 && raw.x == 120 &&
+			ResolveShapeLiveEndpoint({}, {110,100}, true, {120,105}, true).x == 120,
+			"disabled or failed prediction retains model/raw fallback policy");
+		// 实际 modeler 生成 prediction，再经生产端点选择与模板构造，验证没有绕开现有预测器。
+		auto modeledRuntime = begin(polygon);
+		check(modeledRuntime->stroke.modeler.Reset(configuration.modelParams).ok(), "modeler Reset for generic shape");
+		for (int sample = 0; sample < 24; ++sample)
+		{
+			ink::stroke_model::Input modelInput{
+				.event_type = sample == 0 ? ink::stroke_model::Input::EventType::kDown : ink::stroke_model::Input::EventType::kMove,
+				.position = ink::stroke_model::Vec2(80 + 4 * sample,70 + 2 * sample),
+				.time = ink::stroke_model::Time(sample / 120.0), .pressure = 0.5f };
+			check(modeledRuntime->stroke.modeler.Update(modelInput, modeledRuntime->stroke.modeledResults).ok(), "modeler accepts generic contact sample");
+			ExtractShapeModeledEndpoint(*modeledRuntime);
+		}
+		const bool predictedOk = modeledRuntime->stroke.modeler.Predict(modeledRuntime->stroke.predictedResults).ok();
+		const auto predictedEnd = ResolveShapeLiveEndpoint(modeledRuntime->stroke.predictedResults,
+			modeledRuntime->shape.modeledEndpoint, modeledRuntime->shape.hasModeledEndpoint, {172,116},false);
+		check(predictedOk && !modeledRuntime->stroke.predictedResults.empty() &&
+			SetShapeVisualEndpoint(modeledRuntime->shape,predictedEnd) && modeledRuntime->shape.object,
+			"production predictor drives full regular-polygon preview");
+		check(finish(*modeledRuntime,{172,116}).has_value(), "real-model contact finishes through the same create command");
+		check(pages[0].history.UndoLastVisible().has_value(), "generic shape undo is one logical step");
+		auto continuation = CaptureClearRedoContinuation(*document.PageAt(0), pages[0]);
+		pages[0].clearRedoContinuation = continuation; pages[0].clearRedoAvailable = true;
+		const auto encoded = WhiteboardHistoryJson(*document.PageAt(0), pages[0]);
+		InkPage restored(pageId); CanvasPageRuntimeState restoredHistory;
+		check(RestoreWhiteboardHistory(encoded,restored,restoredHistory) && restoredHistory.history.RedoDepth() == 1 &&
+			restoredHistory.clearRedoContinuation &&
+			restoredHistory.clearRedoContinuation->runtime.history.RedoDepth() == pages[0].history.Items().size() &&
+			!restoredHistory.clearRedoContinuation->runtime.history.LastVisibleItem(),
+			"constructed shapes and hidden redo survive cold-page Clear continuation");
+		if (restoredHistory.clearRedoContinuation)
+		{
+			auto& forward = *restoredHistory.clearRedoContinuation;
+			const auto* forwardCanvas = forward.page.FindCanvas(kDefaultDeviceKey);
+			bool exactForward = forwardCanvas && forwardCanvas->Strokes().size() == canvas->Strokes().size();
+			// Clear 后继必须从空态按原顺序重做全部项，不只是保留源页最后一个隐藏项。
+			for (size_t index = 0; exactForward && index < canvas->Strokes().size(); ++index)
+			{
+				const auto next = forward.runtime.history.LastRedoItem();
+				exactForward = next && next->index == index && forward.runtime.history.RedoLastUndone(*next) &&
+					forwardCanvas->Strokes()[index].Shape() == canvas->Strokes()[index].Shape();
+			}
+			check(exactForward && forward.runtime.history.RedoDepth() == 0 &&
+				forward.runtime.history.LastVisibleItem() &&
+				forward.runtime.history.LastVisibleItem()->index + 1 == canvas->Strokes().size(),
+				"cold Clear continuation redoes every original object in order with exact construction and stable identity");
+		}
+		const auto* restoredCanvas = restored.FindCanvas(kDefaultDeviceKey);
+		check(restoredCanvas && restoredCanvas->Strokes().back().Shape() == canvas->Strokes().back().Shape(),
+			"cold history preserves precise v2 construction and object identity");
+		std::optional<draw3::uink::Draw3UInkExportSnapshot> desktopSnapshot;
+		DrawingControllerRuntimeObserver observer; observer.context = &desktopSnapshot;
+		observer.desktopAutoSaveRequested = [](void* context, DesktopAutoSaveTrigger, draw3::uink::Draw3UInkExportSnapshot&& snapshot) {
+			*static_cast<std::optional<draw3::uink::Draw3UInkExportSnapshot>*>(context) = std::move(snapshot); return true;
+		};
+		DesktopAutoSavePolicy policy;
+		check(CaptureDesktopAutoSaveForScene(Bridge::Workspace::Desktop, DesktopAutoSaveTrigger::Exit,
+			{&document,&pages,0}, {}, policy, true,1.5f,observer) && desktopSnapshot &&
+			desktopSnapshot->canvases[0].strokes.front().shape == canvas->Strokes().front().Shape(),
+			"Desktop production snapshot retains exact constructed shape");
+		Bridge::PresentationTarget target; target.key.bytes[0] = 1; target.totalPages = 1;
+		target.sourceIdentity = "shape-test"; target.presentationName = "shape-test";
+		std::optional<draw3::uink::UInkGuid> file;
+		const auto ppt = BuildPresentationSaveRequest(document,pages,0,target,file,1,1.5f,{});
+		check(ppt && ppt->snapshot.canvases[0].strokes.front().shape == canvas->Strokes().front().Shape(),
+			"PPT production snapshot retains exact constructed shape");
+		check(restoredHistory.history.LastRedoItem() && restoredHistory.history.RedoLastUndone(*restoredHistory.history.LastRedoItem()),
+			"cold-page generic redo remains editable as one object");
+		auto branch = begin(circle);
+		check(finish(*branch,{130,115}).has_value() && pages[0].history.RedoDepth() == 0 &&
+			!pages[0].clearRedoContinuation && !pages[0].clearRedoAvailable,
+			"new generic create discards hidden redo and Clear continuation");
+		std::fprintf(stderr, "[Shape.Create] failures=%d\n",failures);
+		return failures;
+	}
+
 	int RunShapeDocumentProductionTest() noexcept
 	{
 		int failures = 0;
@@ -5026,6 +5364,7 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
+			failures += RunPresetCreationProductionTest();
 			using namespace draw3::shapes;
 			ShapeObject circle; circle.id[0] = 1; circle.kind = Kind::Circle;
 			circle.geometry.start = {80,80}; circle.geometry.radius = 24;
@@ -9292,7 +9631,9 @@ namespace Inkeys::Drawing::Draw3
 						return true;
 					}
 				}
-				DrawingTool batchTool = window_.ActiveTool();
+				const DrawingTool downTool = window_.ActiveTool();
+				const ProductVisualStyle downVisualStyle = window_.ProductVisualStyleSnapshot();
+				DrawingTool batchTool = downTool;
 				uint32_t batchEraserWidthModeRevision =
 					synchronizeSpeedEraserHoverMode();
 				EraserWidthMode batchEraserWidthMode = EraserWidthModeForRevision(
@@ -9332,7 +9673,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						if (!hasActiveBatchContact)
 						{
-							batchTool = activeRuntime->selectedTool; // 后加入 contact 沿用首个物理批次状态。
+							batchTool = ResolveContactDrawingTool(downTool, activeRuntime->selectedTool);
 							// 不复制第一个contact已解析出的模式；后续入口仍各自解析。
 							batchEraserInputs=activeRuntime->eraserInputs;
 							batchEraserPolicy=activeRuntime->eraserPolicy;
@@ -9756,7 +10097,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
 				runtime->tool = tool;
 				// 产品样式与工具一样在 Down 时锁存，活动笔划和断触续接不读取后续修改。
-				CaptureProductStrokeStyle(*runtime, window_);
+				runtime->visualStyle = downVisualStyle;
 				runtime->eraserWidthMode = batchEraserWidthMode;
 				runtime->eraserWidthModeRevision = batchEraserWidthModeRevision;
 				runtime->suppressPressure = suppressPressure;
@@ -9851,17 +10192,15 @@ namespace Inkeys::Drawing::Draw3
 				stroke.inputStartPoint = {
 					down.position.x, down.position.y, initialDiameter * 0.5f, 0.0f };
 				stroke.hasInputStartPoint = true;
-				if (IsShapeDrawingTool(runtime->tool))
+				if (IsShapeDrawingTool(runtime->tool) && !InitializeRuntimeShape(*runtime))
 				{
-					RuntimeShapeState& shape = runtime->shape;
-					shape.active = true;
-					shape.kind = ShapeKindForTool(runtime->tool);
-					shape.rawEndpoint = { down.position.x, down.position.y };
-					shape.primitive.start = stroke.inputStartPoint;
-					shape.primitive.start.time = 0.0f;
-					shape.primitive.end = {
-						down.position.x, down.position.y, 0.0f, 0.0f };
-					shape.visualChanged = true;
+					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
+					RejectStrokeInitialization(input_, handle, down);
+					runtime->cancelled = true;
+					handBackSpeedEraserController(*runtime);
+					runtime->handle = {};
+					runtime->inUse = false;
+					return false;
 				}
 				const Input downInput{
 					.event_type = Input::EventType::kDown,
@@ -14275,8 +14614,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						stroke.predictedResults.clear();
 					}
-					stroke.currentL0Rect = RectFromShapePrimitive(runtime->shape.primitive,
-						runtime->shape.kind, size.width, size.height);
+					stroke.currentL0Rect = RuntimeShapeBounds(runtime->shape, size.width, size.height);
 					if (runtime->shape.visualChanged)
 					{
 						shapeLayerNeedsRebuild = true;
@@ -14635,6 +14973,8 @@ namespace Inkeys::Drawing::Draw3
 						UnionRectInPlace(frameDirty, runtime->visibleDirty);
 						continue; // Laser 稳定预乘颜色层保留到生命周期结束，永不 resolve 到 L2。
 					}
+					// 新模板的点击/零面积 Up 是正常取消，既不写历史也不触发完成回调。
+					if (runtime->shape.generic && !runtime->shape.object) runtime->cancelled = true;
 					if (!runtime->cancelled)
 					{
 						const double completedTipTaperSeconds = runtime->tool == DrawingTool::Pen
@@ -14971,8 +15311,7 @@ namespace Inkeys::Drawing::Draw3
 							runtime->shape.rawEndpoint : runtime->shape.modeledEndpoint;
 						// 预测矩形的边不必包含真实矩形；只有实际绘制末点与已采纳末点相同才认证Live Shape。
 						realContribution = runtime->shape.primitive.end.x == realEnd.x && runtime->shape.primitive.end.y == realEnd.y;
-						if (realContribution) realBounds = RectFromShapePrimitive(runtime->shape.primitive,
-							runtime->shape.kind, size.width, size.height);
+						if (realContribution) realBounds = RuntimeShapeBounds(runtime->shape, size.width, size.height);
 					}
 					else if (!runtime->stroke.realPoints.empty())
 					{

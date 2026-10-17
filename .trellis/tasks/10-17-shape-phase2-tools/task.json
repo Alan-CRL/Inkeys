@@ -2,8 +2,8 @@
   "id": "shape-phase2-tools",
   "name": "shape-phase2-tools",
   "title": "Phase 2 图形面板与基础图形",
-  "description": "既有 UI3 布局、新图形构造与创建入口；依赖 Phase1。",
-  "status": "planning",
+  "description": "已完成11类单笔图形、UI3面板/参数/样式/SVG、预测与历史保存；逐点工具延期至P3后。",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,16 +11,24 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-10-17",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-10-17",
+  "branch": "feature/shape",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "10-17-shape-p2-model",
+    "10-17-shape-p2-preview",
+    "10-17-shape-p2-ui",
+    "10-17-shape-p2-persistence",
+    "10-17-shape-p2-validation"
+  ],
   "parent": "10-17-shape-selection-system",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "build04 ARM64 exit0；GPU306/UI6238均0失败；CPU/UInk/保存/Headless/i18n/格式检查通过；真机手感待人工验收。本轮未commit/push。",
+  "meta": {
+    "validation": ".trellis/tasks/10-17-shape-phase2-tools/validation.md"
+  }
 }

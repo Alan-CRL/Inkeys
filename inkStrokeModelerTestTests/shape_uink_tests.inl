@@ -130,7 +130,7 @@
 		{
 			auto& map = std::get<UInkMessagePackValue::Map>(std::get<UInkShape>(content).extra->front().second.value);
 			for (auto& pair : map)
-				if (std::get<std::string>(pair.first.value) == "version") pair.second = Value(uint64_t{ 2 });
+				if (std::get<std::string>(pair.first.value) == "version") pair.second = Value(uint64_t{ 99 });
 		}
 		const auto fallback = ImportDraw3UInkDocument(unknown);
 		UINK_CHECK(state, fallback.status == Draw3UInkImportStatus::Success && fallback.snapshot && !fallback.diagnostics.empty());
@@ -176,4 +176,120 @@
 			UINK_CHECK(state, recovered.snapshot && recovered.snapshot->canvases[0].intervalOrdinal == 1 &&
 				recovered.snapshot->canvases[0].strokes.empty() && recovered.snapshot->canvases[0].operations.size() == 8);
 		}
+	}
+
+	void TestConstructedShapePersistence(TestState& state)
+	{
+		using namespace draw3::shapes;
+		Draw3UInkExportSnapshot snapshot;
+		snapshot.fileGuid = Guid("10000000-0000-4000-8000-00000000f041");
+		snapshot.workspaceGuid = Guid("30000000-0000-4000-8000-00000000f041");
+		Draw3UInkCanvasSnapshot canvas;
+		canvas.pageGuid = Guid("50000000-0000-4000-8000-00000000f041"); canvas.pageNumber = 1;
+		std::vector<ToolSpec> tools;
+		for (uint32_t value = 0; value <= uint32_t(PresetKind::RegularPolygon); ++value)
+		{
+			const auto preset = static_cast<PresetKind>(value);
+			tools.push_back({ preset,preset == PresetKind::Circle || preset == PresetKind::RegularPolygon ? CreationMode::CenterRadius : CreationMode::Drag,3 });
+			if (preset == PresetKind::Rectangle) tools.back().rectangleCornerRadius = 6; // 150% 屏幕已捕获的 4 DIP。
+		}
+		tools.push_back({ PresetKind::Circle,CreationMode::Drag,3 });
+		for (uint32_t sides = 4; sides <= 12; ++sides) tools.push_back({ PresetKind::RegularPolygon,CreationMode::CenterRadius,sides });
+		size_t wireCount = 0;
+		for (const auto& tool : tools)
+		{
+			const bool open = tool.preset == PresetKind::Line || tool.preset == PresetKind::Arrow;
+			for (uint32_t pattern = 0; pattern < 4; ++pattern) for (uint32_t fill = 0; fill < (open ? 1u : 3u); ++fill)
+			{
+				ShapeStyle style; style.width = 5; style.strokeRgb = 0x123456; style.fillRgb = 0x654321;
+				style.strokeOpacity = .55f; style.fillOpacity = .3f; style.stroke = fill != 1; style.fill = fill != 0;
+				style.linePattern = static_cast<LinePattern>(pattern); style.dashOffset = 2;
+				auto id = Guid("70000000-0000-4000-8000-00000000f041").Bytes();
+				id[15] = static_cast<uint8_t>(canvas.strokes.size());
+				const auto object = MakePresetShape(tool, { 20,30 }, { 140,110 }, style, id, 17);
+				UINK_CHECK(state, object);
+				if (!object) continue;
+				const auto metadata = EncodeInkeysShapeMetadata(*object);
+				const auto decoded = DecodeInkeysShapeMetadata(metadata);
+				UINK_CHECK(state, decoded.status == Draw3ShapeMetadataStatus::Valid && decoded.shape == object);
+				Draw3UInkStrokeSnapshot stroke; stroke.style.kind = Draw3UInkStrokeKind::Shape;
+				stroke.shape = *object; stroke.undoId = static_cast<uint32_t>(canvas.strokes.size());
+				canvas.strokes.push_back(std::move(stroke));
+				wireCount += object->kind == Kind::Compound ? object->parts.size() : 1;
+			}
+		}
+		snapshot.canvases.push_back(canvas);
+		const auto exported = ExportDraw3SnapshotToUInk(snapshot);
+		UINK_CHECK(state, exported.document && exported.capabilities.shapeCount == canvas.strokes.size());
+		if (!exported.document) return;
+		UINK_CHECK(state, exported.document->canvases[0].content.size() == wireCount);
+		// 文件写读覆盖所有模板、两种圆、所有边数、四线型和三种样式；恢复仍是单个逻辑对象。
+		TempDirectory temporary;
+		UINK_CHECK(state, temporary.IsValid());
+		if (!temporary.IsValid()) return;
+		UInkEditingSession session; session.document = *exported.document;
+		UInkSaveOptions options; options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+		const auto path = temporary.File(L"constructed-shapes.uink");
+		UINK_CHECK(state, SaveUInkFile(path, session, options).status == UInkSaveStatus::Committed);
+		const auto read = ReadUInkFile(path);
+		UINK_CHECK(state, read.status == UInkReadStatus::Complete && read.document);
+		if (!read.document) return;
+		const auto restored = ImportDraw3UInkDocument(*read.document);
+		UINK_CHECK(state, restored.snapshot && restored.snapshot->canvases[0].strokes.size() == canvas.strokes.size());
+		if (restored.snapshot && restored.snapshot->canvases[0].strokes.size() == canvas.strokes.size())
+			for (size_t i = 0; i < canvas.strokes.size(); ++i)
+				UINK_CHECK(state, restored.snapshot->canvases[0].strokes[i].shape == canvas.strokes[i].shape && restored.snapshot->canvases[0].strokes[i].undoId == i);
+		auto field = [](UInkMessagePackValue& value, const char* name) -> UInkMessagePackValue*
+		{
+			for (auto& pair : std::get<UInkMessagePackValue::Map>(value.value))
+				if (std::get<std::string>(pair.first.value) == name) return &pair.second;
+			return nullptr;
+		};
+		const auto metadata = EncodeInkeysShapeMetadata(*canvas.strokes.back().shape);
+		for (uint64_t sides : { 2u,13u,7u })
+		{
+			auto malformed = metadata;
+			*field(*field(*field(malformed, "construction"), "tool"), "sides") = Value(sides);
+			UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::Invalid);
+		}
+		auto malformed = metadata;
+		*field(*field(*field(malformed, "construction"), "tool"), "rectangleCornerRadius") = Value(-1.0f);
+		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::Invalid);
+		malformed = metadata;
+		*field(*field(malformed, "construction"), "end") = Value(UInkMessagePackValue::Array{ Value(999.0f),Value(100.0f) });
+		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::Invalid);
+		malformed = metadata;
+		*field(malformed, "version") = Value(uint64_t{ 1 });
+		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::Invalid);
+		malformed = metadata;
+		*field(malformed, "construction") = Value(UInkMessagePackValue::Map{});
+		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::Invalid);
+		malformed = EncodeInkeysShapeMetadata(*canvas.strokes.front().shape);
+		*field(malformed, "version") = Value(uint64_t{ 99 });
+		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::UnsupportedVersion);
+		// v2 复合引用不能退回 v1，也不能在支持的版本里偷偷丢弃构造信息。
+		auto mismatch = *exported.document;
+		bool testedReference = false;
+		for (auto& content : mismatch.canvases[0].content)
+		{
+			auto& extra = std::get<UInkShape>(content).extra->front().second;
+			if (field(extra, "reference"))
+			{
+				*field(extra, "version") = Value(uint64_t{ 1 }); testedReference = true; break;
+			}
+		}
+		UINK_CHECK(state, testedReference && ImportDraw3UInkDocument(mismatch).status != Draw3UInkImportStatus::Success);
+		auto unknown = *exported.document;
+		auto standard = *exported.document;
+		for (size_t i = 0; i < unknown.canvases[0].content.size(); ++i)
+		{
+			auto& extra = std::get<UInkShape>(unknown.canvases[0].content[i]).extra->front().second;
+			*field(extra, "version") = Value(uint64_t{ 99 });
+			auto& part = std::get<UInkShape>(standard.canvases[0].content[i]);
+			part.extra.reset(); part.undoId = static_cast<uint32_t>(i);
+		}
+		const auto fallback = ImportDraw3UInkDocument(unknown);
+		UINK_CHECK(state, fallback.snapshot && !fallback.diagnostics.empty() && fallback.snapshot->canvases[0].strokes.size() == wireCount);
+		UINK_CHECK(state, ImportDraw3UInkDocument(standard).status == Draw3UInkImportStatus::Success);
+		std::cout << "Constructed shape UInk cases: " << canvas.strokes.size() << " objects / " << wireCount << " standard parts" << std::endl;
 	}

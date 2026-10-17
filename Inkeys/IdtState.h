@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include "Inkeys/Business/PenWidthPolicy.hpp"
+#include "../inkStrokeModelerTest/draw3/shape_core.h"
 
 enum class StateModeSelectEnum
 {
@@ -38,10 +39,17 @@ enum class ShapeModeSelectEnum
 	IdtShapeDashedLine1,
 	IdtShapeTriangle1,
 	IdtShapeRectangle1,
-	IdtShapeCircle1
+	IdtShapeCircle1,
+	IdtShapeArrow1,
+	IdtShapeRoundedRectangle1,
+	IdtShapeEllipse1,
+	IdtShapeParallelogram1,
+	IdtShapeRhombus1,
+	IdtShapeTrapezoid1,
+	IdtShapeRegularPolygon1
 };
 
-// 当前情况下 直线 和 矩形 绘制的样式跟随画笔
+// 开放图形与闭合图形分别复用现有直线、矩形的颜色和宽度槽。
 
 class StateModeClass
 {
@@ -115,6 +123,12 @@ public:
 	struct
 	{
 		ShapeModeSelectEnum ModeSelect;
+		// 创建方式、视觉样式与类别独立；仅会话记忆，不新增启动配置。
+		draw3::shapes::CreationMode circleMode = draw3::shapes::CreationMode::CenterRadius;
+		std::uint32_t polygonSides = 3;
+		draw3::shapes::FillMode fillMode = draw3::shapes::FillMode::Outline;
+		draw3::shapes::LinePattern openPattern = draw3::shapes::LinePattern::Solid;
+		draw3::shapes::LinePattern closedPattern = draw3::shapes::LinePattern::Solid;
 
 		struct
 		{
@@ -182,6 +196,16 @@ bool ChangeStateModeToShape();
 bool SetShapeModeSelect(ShapeModeSelectEnum shape);
 bool SetShapeModeSelectIfRevision(ShapeModeSelectEnum shape,
 	std::uint64_t expectedRevision);
+draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcept;
+draw3::shapes::ShapeStyle GetShapeStyle(const StateModeClass& snapshot) noexcept;
+draw3::shapes::FillMode GetShapeFillMode(const StateModeClass& snapshot) noexcept;
+bool IsOpenShapeTool(const StateModeClass& snapshot) noexcept;
+bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expectedRevision);
+bool SetShapeFillModeIfRevision(draw3::shapes::FillMode mode, std::uint64_t expectedRevision);
+bool SetShapeLinePatternIfRevision(draw3::shapes::LinePattern pattern, std::uint64_t expectedRevision);
+bool SetShapeCircleModeIfRevision(draw3::shapes::CreationMode mode, std::uint64_t expectedRevision);
+bool SetShapePolygonSidesIfRevision(std::uint32_t sides, std::uint64_t expectedRevision);
+int RunShapeToolStateProductionTest() noexcept;
 bool ChangeStateModeToEraser();
 bool ChangeStateModeToTouchTest();
 // 将当前工具与显式选择模式发布到 Draw3 bridge。

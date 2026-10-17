@@ -26,3 +26,15 @@
 
 ## 验证边界
 内部--draw3-shape-core-test验证共享核心及生产文档/白板历史；--draw3-shape-renderer-test使用正式renderer、嵌入资源及离屏纹理，不创建HWND。共享测试--shape-core-only、--uink-file-only覆盖模型、协议与文件事务。完整构建和真机验证状态见本轮任务validation.md，Win11离屏测试不替代Win7/Win10实机。
+
+## P2 预设构造与活动创建合同
+
+- `PresetKind`为11个单笔模板；`ToolSpec`分离类别/创建模式/边数，`Construction{tool,start,end}`保存局部构造真值。`MakePresetShape`生成低级几何与复合部件；Validate拒绝构造参数与派生几何漂移。控制点/命中/渲染/导出继续消费同一几何结果。
+- 圆心圆与正多边形采用CenterRadius（中心到半径点/首顶点）；外接框圆采用Drag，正方形边长取max(abs(dx),abs(dy))。正多边形仅3–12边，首顶点跟随手势保持规则约束。
+- 普通矩形的`rectangleCornerRadius`在Bridge为DIP，Down时按同代SystemScale转换一次，construction中为局部画布像素，factory钳制半短边。轮廓不随样式/线型切换改变。圆角矩形独立，半径短边1/5。
+- 箭头是一个Compound，杆按所选线型，头为实线Polyline。头部segment携带GpuPrimitive.flags bit16(kPrimitiveForceSolid)，同色覆盖在同一批次求并集，不能拆成source-over造成半透明接缝加深。64字节GPU布局和旧shader协议不变。
+- Bridge::Tool/DrawingTool仅追加Shape，完整发布ToolSpec/ShapeStyle；DIP只在Down转一次。活动contact捕获不可变完整快照与稳定ID，预测仅替换预览端点，raw Up重新生成最终对象，一次Create进入一个逻辑历史项。新退化图形或Cancel不留项。
+- 仅shape-family→shape-family允许后续Down采用当前工具，已有接触不变；普通Pen/Eraser原批次锁政策保持。不得让旧primitive枚举与新模板描述跨代组合。
+- 带construction的inkeysShape写v2，原对象仍可v1，读v1/v2。复合reference版本必须匹配根。UInk维持10与标准几何降级，白板嵌套元数据复用同codec；变换应用于对象transform，不能只移动派生geometry而遗漏construction。
+- 回归必须覆盖生产Coordinator/modeler/raw-Up/history/cold-redo、全部预设与样式、活动RenderData对比最终带viewport变换重放、标准文件恢复和旧四图形像素基线。仅CPU的工厂测试不能替代生产接线验证。
+- 产品接线必须包括`Draw3.Product::PublishProductState`绘制属性白名单的shapeTool/shapeStyle，不能只加Bridge字段和Host消费。通用PS覆盖率使用`SV_Position.xy + shapeOrigin`像素中心，禁止以投影插值坐标代替；全画布与tile需保持逐字节一致。

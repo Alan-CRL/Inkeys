@@ -2,7 +2,7 @@
   "id": "shape-phase3-selection",
   "name": "shape-phase3-selection",
   "title": "Phase 3 选择与浮动编辑",
-  "description": "SelectionOverlay 与图形变换、属性编辑及编辑历史；依赖 Phase1/2。",
+  "description": "SelectionOverlay、图形变换/属性编辑/历史及主栏上方绘制提示；依赖已完成Phase1/2，提示供后续逐点与空间几何复用。",
   "status": "planning",
   "dev_type": null,
   "scope": null,

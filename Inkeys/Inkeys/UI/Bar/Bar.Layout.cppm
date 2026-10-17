@@ -83,6 +83,7 @@ export
 		PenModeSelectEnum mode, double dpiZoom, const StateModeClass& snapshot)
 	{
 		using namespace Inkeys::Business::PenWidth;
+		if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape) mode = PenModeSelectEnum::IdtPenSoftPen;
 		const double scale = SystemScale(snapshot.penWidthContext);
 		BarThicknessSliderRange range;
 		Family family = Family::Brush;
@@ -304,6 +305,7 @@ export
 		PenModeSelectEnum mode, size_t index, const StateModeClass& snapshot)
 	{
 		using namespace Inkeys::Business::PenWidth;
+		if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape) mode = PenModeSelectEnum::IdtPenSoftPen;
 		return Resolve({ Source::Preset, index < 3 ? static_cast<Preset>(index)
 			: Preset::Medium, 3.0 }, mode == PenModeSelectEnum::IdtPenHighlighter1
 			? Family::Highlighter : Family::Brush, snapshot.penWidthContext);
@@ -420,7 +422,8 @@ export
 	bool PenModeUsesThicknessPresets(PenModeSelectEnum mode,
 		const StateModeClass& snapshot)
 	{
-		return !snapshot.laserActive
+		if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape) mode = PenModeSelectEnum::IdtPenSoftPen;
+		return !IsLaserToolActive(snapshot)
 			&& (PenModeUsesBrushThickness(mode)
 			|| mode == PenModeSelectEnum::IdtPenHighlighter1);
 	}

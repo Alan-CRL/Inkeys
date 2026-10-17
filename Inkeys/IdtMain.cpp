@@ -1239,6 +1239,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return Inkeys::Drawing::Draw3::RunRendererHardwarePixelTest();
 		}
+		if (count > 1 && wcscmp(arguments[1], L"--ui3-geometry-attribute-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Bar::RunGeometryAttributeOffscreenTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--shape-tool-state-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return RunShapeToolStateProductionTest();
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
 			// 先退出启动链；测试中的宽色 setter 不保存，FineDial 只检查失效/取消提交。

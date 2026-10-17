@@ -150,6 +150,94 @@ namespace Inkeys::Drawing::Draw3
 						check(rendered && alpha(pixels, 64, 64) == (shape.style.fill ? 255 : 0) &&
 							alpha(pixels, 2, 2) == 0, "analytic/contour kind x style x pattern");
 					}
+			// P2 预设通过正式 factory/renderer/嵌入 shader；同一对象再走 tile 原点路径。
+			for (unsigned preset = 0; preset <= static_cast<unsigned>(PresetKind::RegularPolygon); ++preset)
+				for (unsigned appearance = 0; appearance < 3; ++appearance)
+					for (unsigned pattern = 0; pattern < 4; ++pattern)
+					{
+						const auto kind = static_cast<PresetKind>(preset);
+						const bool open = kind == PresetKind::Line || kind == PresetKind::Arrow;
+						if (open && appearance != 0) continue;
+						ToolSpec tool; tool.preset = kind;
+						if (kind == PresetKind::Circle || kind == PresetKind::RegularPolygon)
+							tool.creationMode = CreationMode::CenterRadius;
+						tool.sides = 7;
+						auto base = object(); base.style.stroke = appearance != 1;
+						base.style.fill = appearance != 0; base.style.linePattern = static_cast<LinePattern>(pattern);
+						base.style.strokeOpacity = base.style.fillOpacity = 0.5f;
+						const bool centered = tool.creationMode == CreationMode::CenterRadius;
+						const auto shape = MakePresetShape(tool, centered ? Vec2{64,64} : Vec2{24,24},
+							centered ? Vec2{98,70} : Vec2{104,102},base.style,base.id);
+						bool rendered = shape && render(*shape,reference);
+						bool nonempty = false;
+						if (rendered) for (size_t offset = 3; offset < reference.size(); offset += 4)
+							nonempty |= reference[offset] > 0;
+						// 活动层直接消费 RenderData，最终对象带 viewport 变换；两条生产路径应逐像素一致。
+						bool liveAndStoredMatch = rendered;
+						if (liveAndStoredMatch)
+						{
+							RenderData liveData;
+							renderer.ClearOperatorLayer(renderer.layerL0); renderer.SetOperatorTarget(renderer.layerL0);
+							liveAndStoredMatch = BuildRenderData(*shape,liveData) && renderer.DrawShapeRenderData(liveData) &&
+								read(pixels) && pixels == reference;
+							auto stored = *shape;
+							stored.transform.dx += 25; stored.transform.dy -= 18; ++stored.revision;
+							liveAndStoredMatch = render(stored,pixels,25,-18) && liveAndStoredMatch;
+							if (liveAndStoredMatch) for (size_t pixel = 0; pixel < pixels.size(); ++pixel)
+								liveAndStoredMatch &= std::abs(int(pixels[pixel]) - int(reference[pixel])) <= 1;
+						}
+						check(liveAndStoredMatch,"active RenderData matches final transformed object and viewport replay");
+						bool tileMatches = rendered && render(*shape,pixels,32,32,64);
+						if (tileMatches)
+						{
+							size_t differing = 0; int maxDelta = 0;
+							for (int y = 0; y < 64; ++y) for (int x = 0; x < 64; ++x)
+								for (int channel = 0; channel < 4; ++channel)
+								{
+									const int actual = pixels[(y * 128 + x) * 4 + channel];
+									const int expected = reference[((y + 32) * 128 + x + 32) * 4 + channel];
+									if (actual != expected) { ++differing; maxDelta = std::max(maxDelta,std::abs(actual - expected)); }
+								}
+							tileMatches = differing == 0;
+							if (!tileMatches) std::fprintf(stderr,"[ShapeRenderer] tile differences preset=%u style=%u pattern=%u channels=%zu maxDelta=%d\n",
+								preset,appearance,pattern,differing,maxDelta);
+						}
+						char name[128]; std::snprintf(name,sizeof(name),"preset=%u style=%u pattern=%u nonempty and tile-equivalent",preset,appearance,pattern);
+						check(rendered && nonempty && tileMatches && alpha(reference,2,2) == 0,name);
+					}
+			ToolSpec arrowTool; arrowTool.preset = PresetKind::Arrow;
+			auto arrowBase = object(); arrowBase.style.width = 6; arrowBase.style.strokeOpacity = 0.5f;
+			arrowBase.style.linePattern = LinePattern::Dashed;
+			const auto arrow = MakePresetShape(arrowTool,{20,64.5f},{105,64.5f},arrowBase.style,arrowBase.id);
+			bool arrowCoverage = arrow && render(*arrow,pixels);
+			if (arrowCoverage)
+			{
+				GeometryResult geometry;
+				arrowCoverage = BuildGeometry(*arrow,geometry);
+				// 选择头部两条边中点：即使对应箭杆虚线相位为间隔，也必须保持实线半透明。
+				for (const auto& part : geometry.parts) if (part.partId == 2)
+					for (const auto& contour : part.paths)
+						for (size_t edge = 1; edge < contour.points.size(); ++edge)
+						{
+							const auto a = contour.points[edge - 1], b = contour.points[edge];
+							const int x = static_cast<int>((a.x + b.x) * 0.5f), y = static_cast<int>((a.y + b.y) * 0.5f);
+							arrowCoverage &= std::abs(alpha(pixels,x,y) - 128) <= 1;
+						}
+				arrowCoverage &= alpha(pixels,55,64) == 0 && std::abs(alpha(pixels,104,64) - 128) <= 1;
+				for (size_t offset = 3; offset < pixels.size(); offset += 4) arrowCoverage &= pixels[offset] <= 128;
+			}
+			check(arrowCoverage,"dashed shaft, solid arrow head and half-transparent union at tip");
+			// 混合旧/新 contact 按 Down 顺序 source-over；颜色分量 MAX 会产生不同像素。
+			auto overlay = object(); overlay.kind = Kind::Rectangle;
+			overlay.geometry.start = {30,30}; overlay.geometry.end = {95,95};
+			overlay.style.stroke = false; overlay.style.fill = true; overlay.style.fillRgb = 0x0000FF; overlay.style.fillOpacity = 0.5f;
+			const ShapePrimitive oldRectangle{{20,20,3,0},{110,110,0,0}};
+			renderer.SetScreenSize(128,128); renderer.ClearOperatorLayer(renderer.layerL0); renderer.SetOperatorTarget(renderer.layerL0);
+			const bool mixed = renderer.DrawShapeObject(overlay) &&
+				renderer.DrawOrderedLegacyShapePrimitive(oldRectangle,ShapePrimitiveKind::FilledRectangle,{1,0,0,0.5f}) && read(pixels);
+			const auto crossing = (64 * 128 + 64) * 4;
+			check(mixed && std::abs(pixels[crossing + 2] - 128) <= 2 && std::abs(pixels[crossing] - 64) <= 2 &&
+				std::abs(pixels[crossing + 3] - 192) <= 2,"mixed legacy/new objects preserve source-over order");
 			// 100:1 椭圆尖端内侧到轮廓很近，近似解析 SDF 曾把这里误判为空白。
 			auto slenderEllipse = object();
 			slenderEllipse.kind = Kind::Ellipse;

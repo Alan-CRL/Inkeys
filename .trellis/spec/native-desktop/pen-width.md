@@ -61,3 +61,6 @@ SetPenWidth(round(preset * barDpi));
 SetPenWidthPresetIfRevision(1, snapshot.revision);
 auto metrics = GetPenWidthMetrics(snapshot.state);
 ```
+
+## P2 图形家族扩展
+开放Line/Arrow复用StraightLine槽，其他闭合预设复用Rectangle槽；不新增每模板宽度策略或跟随普通笔的关系。GetShapeStyle发布DIP；Shape进入既有Slider/FineDial时量程采用Brush，不继承上次Highlighter/Laser的Pen记忆。预设、精调、预览和最终canvas转换仍遵循前述同代Context与单次DPI合同。

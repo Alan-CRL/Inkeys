@@ -118,6 +118,39 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
+	bool InkRenderer::DrawOrderedLegacyShapePrimitive(const ShapePrimitive& primitive,
+		ShapePrimitiveKind kind, DirectX::XMFLOAT4 color)
+	{
+		if (!context || !EnsureShapePipeline() || !EnsureShapeLayers()) return false;
+		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> saved[2];
+		ID3D11RenderTargetView* targets[2] = {};
+		context->OMGetRenderTargets(2, targets, nullptr);
+		saved[0].Attach(targets[0]); saved[1].Attach(targets[1]);
+		if (!targets[0] || !targets[1]) return false;
+		struct Restore
+		{
+			ID3D11DeviceContext* context;
+			ID3D11RenderTargetView** targets;
+			~Restore()
+			{
+				ID3D11ShaderResourceView* nulls[] = { nullptr, nullptr };
+				ID3D11Buffer* buffer = nullptr;
+				context->VSSetShaderResources(0, 1, nulls);
+				context->PSSetShaderResources(1, 2, nulls);
+				context->VSSetConstantBuffers(4, 1, &buffer);
+				context->PSSetConstantBuffers(4, 1, &buffer);
+				context->OMSetRenderTargets(2, targets, nullptr);
+			}
+		} restore{ context.Get(), targets };
+		ClearOperatorLayer(shapeMaterialLayer_);
+		SetOperatorTarget(shapeMaterialLayer_);
+		if (DrawShapePrimitives(std::span<const ShapePrimitive>(&primitive, 1), kind, color) < 0)
+			return false;
+		// 旧图元仍由原 shader 产生，统一有序解析仅用于混合通用图形的活动层。
+		return ResolveShapeLayer(shapeMaterialLayer_, targets,
+			{ 0, 0, static_cast<LONG>(viewportWidth), static_cast<LONG>(viewportHeight) });
+	}
+
 	bool InkRenderer::DrawShapeObject(const ::draw3::shapes::ShapeObject& object,
 		float originX, float originY, float displayScale)
 	{

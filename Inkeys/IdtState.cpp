@@ -158,17 +158,21 @@ namespace
 
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 		{
-			switch (stateMode.Shape.ModeSelect)
+			const auto spec = GetShapeToolSpec(stateMode);
+			const auto style = GetShapeStyle(stateMode);
+			// 旧四类继续走像素兼容路径，其余样式交给通用 Shape renderer。
+			if (spec.preset == draw3::shapes::PresetKind::Line)
 			{
-			case ShapeModeSelectEnum::IdtShapeStraightLine1:
-				return Tool::SolidLine;
-			case ShapeModeSelectEnum::IdtShapeDashedLine1:
-				return Tool::DashedLine;
-			case ShapeModeSelectEnum::IdtShapeRectangle1:
-				return Tool::OutlineRectangle;
-			default:
-				return Tool::SolidLine;
+				if (style.linePattern == draw3::shapes::LinePattern::Solid) return Tool::SolidLine;
+				if (style.linePattern == draw3::shapes::LinePattern::Dashed) return Tool::DashedLine;
 			}
+			if (spec.preset == draw3::shapes::PresetKind::Rectangle &&
+				style.linePattern == draw3::shapes::LinePattern::Solid)
+			{
+				if (style.stroke && !style.fill) return Tool::OutlineRectangle;
+				if (!style.stroke && style.fill) return Tool::FilledRectangle;
+			}
+			return Tool::Shape;
 		}
 
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
@@ -223,6 +227,8 @@ namespace
 		state.eraserInputs = ReadEraserPreferences();
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
+		state.shapeTool = GetShapeToolSpec(stateMode);
+		state.shapeStyle = GetShapeStyle(stateMode);
 		state.selectionMode =
 			IsComputerInteractionMode(stateMode.StateModeSelect);
 		state.autoSaveEnabled = setlist.saveSetting.enable;
@@ -881,12 +887,8 @@ namespace
         }
         else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
         {
-            if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
-                stateMode.Shape.Rectangle1.widthSelection = selection;
-            else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
-                stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
-                stateMode.Shape.StraightLine1.widthSelection = selection;
-            else return false;
+            if (IsOpenShapeTool(stateMode)) stateMode.Shape.StraightLine1.widthSelection = selection;
+            else stateMode.Shape.Rectangle1.widthSelection = selection;
         }
         else return false;
         ResolveWidthSlotsLocked();
@@ -919,7 +921,7 @@ Inkeys::Business::PenWidth::Selection GetPenWidthSelection(const StateModeClass&
 {
     if (IsLaserToolActive(snapshot)) return snapshot.Pen.Laser.widthSelection;
     if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
-        return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+        return !IsOpenShapeTool(snapshot)
             ? snapshot.Shape.Rectangle1.widthSelection : snapshot.Shape.StraightLine1.widthSelection;
     return snapshot.StateModeSelect == StateModeSelectEnum::IdtPen &&
         snapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
@@ -994,13 +996,8 @@ bool SetPenColor(COLORREF targetColor, bool setMemory)
 	}
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
-			stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
-			stateMode.Shape.StraightLine1.color = targetColor;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
-			stateMode.Shape.Rectangle1.color = targetColor;
-		else
-			return false;
+		if (IsOpenShapeTool(stateMode)) stateMode.Shape.StraightLine1.color = targetColor;
+		else stateMode.Shape.Rectangle1.color = targetColor;
 	}
 	else
 		return false;
@@ -1028,7 +1025,7 @@ float GetPenWidth(const StateModeClass& snapshot) noexcept
 	}
 	if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+		return !IsOpenShapeTool(snapshot)
 			? snapshot.Shape.Rectangle1.width
 			: snapshot.Shape.StraightLine1.width;
 	}
@@ -1054,7 +1051,7 @@ COLORREF GetPenColor(const StateModeClass& snapshot) noexcept
 	}
 	if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+		return !IsOpenShapeTool(snapshot)
 			? snapshot.Shape.Rectangle1.color
 			: snapshot.Shape.StraightLine1.color;
 	}
@@ -1335,19 +1332,23 @@ bool ChangeStateModeToShape()
 static bool SetShapeModeSelectImpl(ShapeModeSelectEnum shape,
 	const std::uint64_t* expectedRevision)
 {
-	if (shape != ShapeModeSelectEnum::IdtShapeStraightLine1 &&
-		shape != ShapeModeSelectEnum::IdtShapeDashedLine1 &&
-		shape != ShapeModeSelectEnum::IdtShapeRectangle1)
+	if (static_cast<unsigned>(shape) > static_cast<unsigned>(ShapeModeSelectEnum::IdtShapeRegularPolygon1))
 		return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		if (expectedRevision && stateModeTransitionRevision.load(
 			std::memory_order_relaxed) != *expectedRevision)
 			return false;
-		// 同形状重复点击只更新用户意图版本，旧 PPT 结果仍不能回写。
+		// 旧入口中的直线/虚线同时指定线型；重复点击仍推进意图，但不能漏掉独立线型变化。
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
-		if (stateMode.Shape.ModeSelect == shape) return false;
+		auto pattern = stateMode.Shape.openPattern;
+		if (shape == ShapeModeSelectEnum::IdtShapeStraightLine1)
+			pattern = draw3::shapes::LinePattern::Solid;
+		else if (shape == ShapeModeSelectEnum::IdtShapeDashedLine1)
+			pattern = draw3::shapes::LinePattern::Dashed;
+		if (stateMode.Shape.ModeSelect == shape && stateMode.Shape.openPattern == pattern) return false;
 		stateMode.Shape.ModeSelect = shape;
+		stateMode.Shape.openPattern = pattern;
 	}
 	SyncDraw3State();
 	return true;
@@ -1362,6 +1363,143 @@ bool SetShapeModeSelectIfRevision(ShapeModeSelectEnum shape,
 	std::uint64_t expectedRevision)
 {
 	return SetShapeModeSelectImpl(shape, &expectedRevision);
+}
+
+draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcept
+{
+	using namespace draw3::shapes;
+	ToolSpec result;
+	switch (snapshot.Shape.ModeSelect)
+	{
+	case ShapeModeSelectEnum::IdtShapeArrow1: result.preset = PresetKind::Arrow; break;
+	case ShapeModeSelectEnum::IdtShapeRectangle1: result.preset = PresetKind::Rectangle; break;
+	case ShapeModeSelectEnum::IdtShapeRoundedRectangle1: result.preset = PresetKind::RoundedRectangle; break;
+	case ShapeModeSelectEnum::IdtShapeCircle1: result.preset = PresetKind::Circle; break;
+	case ShapeModeSelectEnum::IdtShapeEllipse1: result.preset = PresetKind::Ellipse; break;
+	case ShapeModeSelectEnum::IdtShapeTriangle1: result.preset = PresetKind::Triangle; break;
+	case ShapeModeSelectEnum::IdtShapeParallelogram1: result.preset = PresetKind::Parallelogram; break;
+	case ShapeModeSelectEnum::IdtShapeRhombus1: result.preset = PresetKind::Rhombus; break;
+	case ShapeModeSelectEnum::IdtShapeTrapezoid1: result.preset = PresetKind::Trapezoid; break;
+	case ShapeModeSelectEnum::IdtShapeRegularPolygon1: result.preset = PresetKind::RegularPolygon; break;
+	default: result.preset = PresetKind::Line; break;
+	}
+	result.creationMode = result.preset == PresetKind::Circle ? snapshot.Shape.circleMode :
+		result.preset == PresetKind::RegularPolygon ? CreationMode::CenterRadius : CreationMode::Drag;
+	result.sides = snapshot.Shape.polygonSides;
+	return result;
+}
+
+bool IsOpenShapeTool(const StateModeClass& snapshot) noexcept
+{
+	const auto kind = GetShapeToolSpec(snapshot).preset;
+	return kind == draw3::shapes::PresetKind::Line || kind == draw3::shapes::PresetKind::Arrow;
+}
+
+draw3::shapes::FillMode GetShapeFillMode(const StateModeClass& snapshot) noexcept
+{
+	return IsOpenShapeTool(snapshot) ? draw3::shapes::FillMode::Outline : snapshot.Shape.fillMode;
+}
+
+draw3::shapes::ShapeStyle GetShapeStyle(const StateModeClass& snapshot) noexcept
+{
+	using namespace draw3::shapes;
+	ShapeStyle style;
+	const auto fill = GetShapeFillMode(snapshot);
+	style.stroke = fill != draw3::shapes::FillMode::Fill;
+	style.fill = fill != draw3::shapes::FillMode::Outline;
+	const COLORREF color = GetPenColor(snapshot);
+	style.strokeRgb = style.fillRgb = (static_cast<uint32_t>(GetRValue(color)) << 16) |
+		(static_cast<uint32_t>(GetGValue(color)) << 8) | GetBValue(color);
+	style.strokeOpacity = style.fillOpacity = GetEffectivePenOpacity(snapshot);
+	style.width = static_cast<float>(GetPenWidthMetrics(snapshot).resolvedWidthDip);
+	style.linePattern = IsOpenShapeTool(snapshot) ? snapshot.Shape.openPattern : snapshot.Shape.closedPattern;
+	if (snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
+		style.linePattern = LinePattern::Dashed;
+	return style;
+}
+
+namespace
+{
+	template<class Change> bool ChangeShapeProperty(std::uint64_t expected, Change change)
+	{
+		bool changed = false;
+		{
+			std::scoped_lock lock(stateModeTransitionMutex);
+			if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape ||
+				stateModeTransitionRevision.load(std::memory_order_relaxed) != expected) return false;
+			changed = change();
+			// 重复有效点击仍记录用户意图，过期的属性手势不得覆盖较新选择。
+			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+		}
+		if (changed) SyncDraw3State();
+		return changed;
+	}
+}
+
+bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expected)
+{
+	using namespace draw3::shapes;
+	ShapeModeSelectEnum mode;
+	switch (preset)
+	{
+	case PresetKind::Line: mode = ShapeModeSelectEnum::IdtShapeStraightLine1; break;
+	case PresetKind::Arrow: mode = ShapeModeSelectEnum::IdtShapeArrow1; break;
+	case PresetKind::Rectangle: mode = ShapeModeSelectEnum::IdtShapeRectangle1; break;
+	case PresetKind::RoundedRectangle: mode = ShapeModeSelectEnum::IdtShapeRoundedRectangle1; break;
+	case PresetKind::Circle: mode = ShapeModeSelectEnum::IdtShapeCircle1; break;
+	case PresetKind::Ellipse: mode = ShapeModeSelectEnum::IdtShapeEllipse1; break;
+	case PresetKind::Triangle: mode = ShapeModeSelectEnum::IdtShapeTriangle1; break;
+	case PresetKind::Parallelogram: mode = ShapeModeSelectEnum::IdtShapeParallelogram1; break;
+	case PresetKind::Rhombus: mode = ShapeModeSelectEnum::IdtShapeRhombus1; break;
+	case PresetKind::Trapezoid: mode = ShapeModeSelectEnum::IdtShapeTrapezoid1; break;
+	case PresetKind::RegularPolygon: mode = ShapeModeSelectEnum::IdtShapeRegularPolygon1; break;
+	default: return false;
+	}
+	return ChangeShapeProperty(expected, [&] {
+		const bool changed = stateMode.Shape.ModeSelect != mode;
+		stateMode.Shape.ModeSelect = mode;
+		return changed;
+	});
+}
+
+bool SetShapeFillModeIfRevision(draw3::shapes::FillMode mode, std::uint64_t expected)
+{
+	if (static_cast<unsigned>(mode) > static_cast<unsigned>(draw3::shapes::FillMode::OutlineAndFill)) return false;
+	return ChangeShapeProperty(expected, [&] {
+		if (IsOpenShapeTool(stateMode)) return false;
+		const bool changed = stateMode.Shape.fillMode != mode;
+		stateMode.Shape.fillMode = mode; return changed;
+	});
+}
+bool SetShapeLinePatternIfRevision(draw3::shapes::LinePattern pattern, std::uint64_t expected)
+{
+	if (static_cast<unsigned>(pattern) > static_cast<unsigned>(draw3::shapes::LinePattern::DashDot)) return false;
+	return ChangeShapeProperty(expected, [&] {
+		auto& current = IsOpenShapeTool(stateMode) ? stateMode.Shape.openPattern : stateMode.Shape.closedPattern;
+		const bool changed = current != pattern || stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1;
+		current = pattern;
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
+			stateMode.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
+		return changed;
+	});
+}
+bool SetShapeCircleModeIfRevision(draw3::shapes::CreationMode mode, std::uint64_t expected)
+{
+	if (mode != draw3::shapes::CreationMode::CenterRadius && mode != draw3::shapes::CreationMode::Drag) return false;
+	return ChangeShapeProperty(expected, [&] {
+		if (GetShapeToolSpec(stateMode).preset != draw3::shapes::PresetKind::Circle) return false;
+		const bool changed = stateMode.Shape.circleMode != mode;
+		stateMode.Shape.circleMode = mode; return changed;
+	});
+}
+bool SetShapePolygonSidesIfRevision(std::uint32_t sides, std::uint64_t expected)
+{
+	if (sides < 3 || sides > 12) return false;
+	return ChangeShapeProperty(expected, [&] {
+		if (GetShapeToolSpec(stateMode).preset != draw3::shapes::PresetKind::RegularPolygon) return false;
+		const bool changed = stateMode.Shape.polygonSides != sides;
+		stateMode.Shape.polygonSides = sides; return changed;
+	});
 }
 
 bool ChangeStateModeToEraser()
@@ -1383,6 +1521,93 @@ bool ChangeStateModeToTouchTest()
 {
 	// 输入测试尚未接入 Draw3，入口由设置页隐藏。
 	return false;
+}
+
+int RunShapeToolStateProductionTest() noexcept
+{
+	using namespace draw3::shapes;
+	using Inkeys::Drawing::Draw3::Bridge::Tool;
+	if (Inkeys::Drawing::Draw3::ProductRunning() || Inkeys::Window::GetService().Running()) return 2;
+	int failures = 0;
+	const auto check = [&](bool ok, const char* name) {
+		if (!ok) { ++failures; std::fprintf(stderr, "[ShapeToolState] FAIL %s\n", name); }
+	};
+	try
+	{
+		ChangeStateModeToShape();
+		const auto defaults = GetStateModeSnapshot();
+		check(defaults.Shape.circleMode == CreationMode::CenterRadius && defaults.Shape.polygonSides == 3 &&
+			defaults.Shape.fillMode == draw3::shapes::FillMode::Outline, "session defaults");
+		for (unsigned i = 0; i <= static_cast<unsigned>(PresetKind::RegularPolygon); ++i)
+		{
+			const auto preset = static_cast<PresetKind>(i);
+			(void)SetShapeToolPresetIfRevision(preset, StateModeTransitionRevision());
+			const auto snapshot = GetStateModeVersionedSnapshot();
+			const auto bridge = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+			check(GetShapeToolSpec(snapshot.state).preset == preset && bridge.shapeTool == GetShapeToolSpec(snapshot.state), "all presets projected");
+			check(bridge.shapeStyle == GetShapeStyle(snapshot.state), "atomic style projection");
+			const float otherWidth = IsOpenShapeTool(snapshot.state) ? snapshot.state.Shape.Rectangle1.width : snapshot.state.Shape.StraightLine1.width;
+			check(SetPenWidthIfRevision(7.25, snapshot.revision, false), "shape explicit DIP accepted");
+			const auto width = GetStateModeSnapshot();
+			check(GetPenWidth(width) == 7.25f && (IsOpenShapeTool(width) ? width.Shape.Rectangle1.width : width.Shape.StraightLine1.width) == otherWidth,
+				"only correct width family modified");
+			check(SetPenColor(RGB(19, 37, 61), false) && GetPenColor() == RGB(19, 37, 61), "shape color uses existing slot");
+		}
+		(void)SetShapeToolPresetIfRevision(PresetKind::Circle, StateModeTransitionRevision());
+		check(SetShapeCircleModeIfRevision(CreationMode::Drag, StateModeTransitionRevision()), "circle bbox selected");
+		const auto stale = StateModeTransitionRevision();
+		check(SetShapeCircleModeIfRevision(CreationMode::CenterRadius, stale), "circle center selected");
+		check(!SetShapeCircleModeIfRevision(CreationMode::Drag, stale) && GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius,
+			"stale mode cannot overwrite new mode");
+		(void)SetShapeToolPresetIfRevision(PresetKind::RegularPolygon, StateModeTransitionRevision());
+		for (unsigned n = 3; n <= 12; ++n)
+		{
+			(void)SetShapePolygonSidesIfRevision(n, StateModeTransitionRevision());
+			check(GetShapeToolSpec(GetStateModeSnapshot()).sides == n, "3 to12 sides");
+		}
+		const auto before = GetStateModeVersionedSnapshot();
+		check(!SetShapePolygonSidesIfRevision(2, before.revision) && !SetShapePolygonSidesIfRevision(13, before.revision) &&
+			StateModeTransitionRevision() == before.revision, "invalid parameters do not mutate state");
+		for (unsigned p = 0; p <= static_cast<unsigned>(LinePattern::DashDot); ++p)
+		{
+			(void)SetShapeLinePatternIfRevision(static_cast<LinePattern>(p), StateModeTransitionRevision());
+			for (unsigned f = 0; f <= static_cast<unsigned>(draw3::shapes::FillMode::OutlineAndFill); ++f)
+			{
+				(void)SetShapeFillModeIfRevision(static_cast<draw3::shapes::FillMode>(f), StateModeTransitionRevision());
+				const auto snapshot = GetStateModeSnapshot();
+				const auto style = GetShapeStyle(snapshot);
+				check(style.linePattern == static_cast<LinePattern>(p) && style.stroke == (f != 1) && style.fill == (f != 0), "independent styles and patterns");
+			}
+		}
+		(void)SetShapeToolPresetIfRevision(PresetKind::Arrow, StateModeTransitionRevision());
+		check(IsOpenShapeTool(GetStateModeSnapshot()) && !GetShapeStyle(GetStateModeSnapshot()).fill, "open tools hide retained fill");
+		(void)SetShapeLinePatternIfRevision(LinePattern::Dotted, StateModeTransitionRevision());
+		(void)SetShapeToolPresetIfRevision(PresetKind::Circle, StateModeTransitionRevision());
+		check(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::OutlineAndFill && GetShapeStyle(GetStateModeSnapshot()).linePattern == LinePattern::DashDot,
+			"closed style memory independent of open tool");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Line, StateModeTransitionRevision());
+		check(Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().tool == Tool::Shape, "dotted line uses generic renderer");
+		(void)SetShapeLinePatternIfRevision(LinePattern::Solid, StateModeTransitionRevision());
+		check(Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().tool == Tool::SolidLine, "solid line retains compatibility path");
+		(void)SetShapeLinePatternIfRevision(LinePattern::Dashed, StateModeTransitionRevision());
+		check(Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().tool == Tool::DashedLine, "dashed line retains compatibility path");
+		(void)SetShapeLinePatternIfRevision(LinePattern::Dotted, StateModeTransitionRevision());
+		check(SetShapeModeSelectIfRevision(ShapeModeSelectEnum::IdtShapeStraightLine1, StateModeTransitionRevision()) &&
+			GetShapeStyle(GetStateModeSnapshot()).linePattern == LinePattern::Solid &&
+			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().tool == Tool::SolidLine,
+			"legacy same Line selection restores its specified solid pattern");
+		const auto sameLineIntent = StateModeTransitionRevision();
+		const auto sameLineBridge = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision;
+		check(!SetShapeModeSelectIfRevision(ShapeModeSelectEnum::IdtShapeStraightLine1, sameLineIntent) &&
+			StateModeTransitionRevision() == sameLineIntent + 1 &&
+			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision == sameLineBridge,
+			"unchanged legacy click updates user intent without duplicate publication");
+		ChangeStateModeToSelection();
+		check(!SetShapePolygonSidesIfRevision(6, StateModeTransitionRevision()), "inactive tool rejects properties");
+	}
+	catch (...) { ++failures; std::fprintf(stderr, "[ShapeToolState] unexpected exception\n"); }
+	std::fprintf(stderr, "Shape tool state: %d failure(s)\n", failures);
+	return failures ? 1 : 0;
 }
 
 int RunStateModeProductionTest() noexcept
@@ -1420,6 +1645,7 @@ int RunStateModeProductionTest() noexcept
 		const auto sameProjection = [](const Bridge::ProductState& a, const Bridge::ProductState& b)
 		{
 			return a.tool == b.tool && a.colorRgba == b.colorRgba && a.widthDip == b.widthDip &&
+				a.shapeTool == b.shapeTool && a.shapeStyle == b.shapeStyle &&
 				a.paintDevice == b.paintDevice && a.eraserInputs == b.eraserInputs &&
 				a.selectionMode == b.selectionMode && a.autoSaveEnabled == b.autoSaveEnabled &&
 				a.page == b.page && a.hasPage == b.hasPage && a.workspace == b.workspace &&
@@ -2008,7 +2234,7 @@ bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 		stateModeInfo->brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 2.0f : 1.0f;
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-		stateModeInfo->brushMode = stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1 ? 4.0f : 3.0f;
+		stateModeInfo->brushMode = !IsOpenShapeTool(stateMode) ? 4.0f : 3.0f;
 	else
 		return false;
 	return true;

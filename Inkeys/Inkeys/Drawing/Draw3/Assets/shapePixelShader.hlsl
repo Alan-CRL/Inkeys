@@ -26,7 +26,8 @@ ShapeOutput main(ShapePixelInput input)
         output.retain = ShapeRetain.Load(location).rrrr;
         return output;
     }
-    float2 samplePosition = input.pixel + shapeOrigin;
+    // 使用真实像素中心，避免插值 TEXCOORD 在整画布与 tile 的投影间产生舍入差异。
+    float2 samplePosition = input.position.xy + shapeOrigin;
     float2 p0 = input.a.xy, p1 = input.a.zw, p2 = input.b.xy;
     float halfWidth = input.c.z;
     uint kind = asuint(input.d.x), flags = asuint(input.d.y);
@@ -41,7 +42,8 @@ ShapeOutput main(ShapePixelInput input)
         float clamped = clamp(projection, 0, segmentLength);
         float crossDistance = abs(ShapeCross(relative, tangent));
         float endpoint = abs(projection - clamped);
-        float gap = DashDistance(input.c.x + clamped, halfWidth * 2);
+        // 箭头头部与箭杆共用覆盖批次，但头部始终为实线。
+        float gap = (flags & 16) != 0 ? 0 : DashDistance(input.c.x + clamped, halfWidth * 2);
         distance = length(float2(max(endpoint, gap), crossDistance)) - halfWidth;
     }
     else if (kind == 1)

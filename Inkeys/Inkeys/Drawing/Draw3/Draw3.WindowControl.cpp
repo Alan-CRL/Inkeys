@@ -430,7 +430,7 @@ namespace Inkeys::Drawing::Draw3
 
 	void WindowController::SetActiveTool(DrawingTool tool) noexcept
 	{
-		if (static_cast<uint32_t>(tool) > static_cast<uint32_t>(DrawingTool::FilledRectangle))
+		if (static_cast<uint32_t>(tool) > static_cast<uint32_t>(DrawingTool::Shape))
 			return;
 		activeTool_.store(tool, std::memory_order_release);
 		RequestDrawingCursorRender();
@@ -541,12 +541,14 @@ namespace Inkeys::Drawing::Draw3
 
 	void WindowController::SetProductVisualStyle(
 		uint32_t colorRgba, double widthDip,
-		const Inkeys::Business::PenWidth::Context& context) noexcept
+		const Inkeys::Business::PenWidth::Context& context,
+		const draw3::shapes::ToolSpec& shapeTool,
+		const draw3::shapes::ShapeStyle& shapeStyle) noexcept
 	{
 		if (!Inkeys::Business::PenWidth::IsValidDip(widthDip)) widthDip = 3.0f;
 		{
 			std::scoped_lock lock(productVisualStyleMutex_);
-			productVisualStyle_ = { colorRgba, widthDip, context };
+			productVisualStyle_ = { colorRgba, widthDip, context, shapeTool, shapeStyle };
 		}
 		RequestDrawingCursorRender();
 		RequestControlWake();
@@ -633,7 +635,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		const int32_t activeTool = activeDrawingCursorTool_.load(std::memory_order_acquire);
 		if (activeTool >= static_cast<int32_t>(DrawingTool::Pen) &&
-			activeTool <= static_cast<int32_t>(DrawingTool::FilledRectangle))
+			activeTool <= static_cast<int32_t>(DrawingTool::Shape))
 			return static_cast<DrawingTool>(activeTool);
 		return ActiveTool();
 	}

@@ -319,6 +319,60 @@ BARSHAPESTRAIGHTLINE    UI                      "src\\UI\\barShapeStraightLine.s
 
 BARSHAPERECTANGLE       UI                      "src\\UI\\barShapeRectangle.svg"
 
+BARSHAPEARROW            UI                      "src\\UI\\barShapeArrow.svg"
+
+BARSHAPEROUNDEDRECTANGLE UI                      "src\\UI\\barShapeRoundedRectangle.svg"
+
+BARSHAPECIRCLECENTER     UI                      "src\\UI\\barShapeCircleCenter.svg"
+
+BARSHAPECIRCLEBOUNDS     UI                      "src\\UI\\barShapeCircleBounds.svg"
+
+BARSHAPEELLIPSE          UI                      "src\\UI\\barShapeEllipse.svg"
+
+BARSHAPETRIANGLE         UI                      "src\\UI\\barShapeTriangle.svg"
+
+BARSHAPEPARALLELOGRAM    UI                      "src\\UI\\barShapeParallelogram.svg"
+
+BARSHAPERHOMBUS          UI                      "src\\UI\\barShapeRhombus.svg"
+
+BARSHAPETRAPEZOID        UI                      "src\\UI\\barShapeTrapezoid.svg"
+
+BARSHAPEOUTLINE          UI                      "src\\UI\\barShapeOutline.svg"
+
+BARSHAPEFILL             UI                      "src\\UI\\barShapeFill.svg"
+
+BARSHAPEOUTLINEFILL      UI                      "src\\UI\\barShapeOutlineFill.svg"
+
+BARSHAPESOLID            UI                      "src\\UI\\barShapeSolid.svg"
+
+BARSHAPEDASHED           UI                      "src\\UI\\barShapeDashed.svg"
+
+BARSHAPEDOTTED           UI                      "src\\UI\\barShapeDotted.svg"
+
+BARSHAPEDASHDOT          UI                      "src\\UI\\barShapeDashDot.svg"
+
+BARSHAPECOLOR            UI                      "src\\UI\\barShapeColor.svg"
+
+BARSHAPEPOLYGON3         UI                      "src\\UI\\barShapePolygon3.svg"
+
+BARSHAPEPOLYGON4         UI                      "src\\UI\\barShapePolygon4.svg"
+
+BARSHAPEPOLYGON5         UI                      "src\\UI\\barShapePolygon5.svg"
+
+BARSHAPEPOLYGON6         UI                      "src\\UI\\barShapePolygon6.svg"
+
+BARSHAPEPOLYGON7         UI                      "src\\UI\\barShapePolygon7.svg"
+
+BARSHAPEPOLYGON8         UI                      "src\\UI\\barShapePolygon8.svg"
+
+BARSHAPEPOLYGON9         UI                      "src\\UI\\barShapePolygon9.svg"
+
+BARSHAPEPOLYGON10        UI                      "src\\UI\\barShapePolygon10.svg"
+
+BARSHAPEPOLYGON11        UI                      "src\\UI\\barShapePolygon11.svg"
+
+BARSHAPEPOLYGON12        UI                      "src\\UI\\barShapePolygon12.svg"
+
 COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg"
 
 COLORCUSTOM             PNG                     "src\\UI\\color\\colorCustom.png"

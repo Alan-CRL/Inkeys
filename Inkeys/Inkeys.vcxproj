@@ -978,6 +978,8 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm" />

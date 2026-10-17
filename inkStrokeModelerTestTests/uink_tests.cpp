@@ -3833,6 +3833,7 @@ int RunUInkTests()
 	TestClearContent(state);
 	TestDraw3Export(state);
 	TestParametricShapePersistence(state);
+	TestConstructedShapePersistence(state);
 	ResetUInkFileTestFaultInjection();
 	if (state.failures == 0)
 		std::cout << "All UInk persistence tests passed." << std::endl;

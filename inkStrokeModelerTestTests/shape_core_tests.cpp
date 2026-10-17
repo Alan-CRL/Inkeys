@@ -240,6 +240,102 @@ int RunShapeCoreTests()
 	SHAPE_CHECK(!ApplyCommand(edit, target) && target == beforeFailure);
 	SHAPE_CHECK(transaction.Preview(line)); transaction.Cancel();
 	SHAPE_CHECK(!transaction.Candidate() && !transaction.Commit());
+	// 预设与创建模式、样式分别校验；工厂必须为每种模板生成同一套渲染/查询几何。
+	for (uint32_t value = 0; value <= static_cast<uint32_t>(PresetKind::RegularPolygon); ++value)
+	{
+		ToolSpec tool; tool.preset = static_cast<PresetKind>(value);
+		if (tool.preset == PresetKind::Circle || tool.preset == PresetKind::RegularPolygon) tool.creationMode = CreationMode::CenterRadius;
+		const bool open = tool.preset == PresetKind::Line || tool.preset == PresetKind::Arrow;
+		for (uint32_t pattern = 0; pattern < 4; ++pattern) for (uint32_t fill = 0; fill < (open ? 1u : 3u); ++fill)
+		{
+			ShapeStyle style; style.width = 5; style.strokeRgb = 0x224466; style.fillRgb = 0x113355;
+			style.strokeOpacity = .5f; style.fillOpacity = .3f; style.linePattern = static_cast<LinePattern>(pattern);
+			style.stroke = fill != 1; style.fill = fill != 0;
+			const auto preset = MakePresetShape(tool, { 20,30 }, { 140,110 }, style, Id(9), 42, &error);
+			SHAPE_CHECK(preset && preset->id == Id(9) && preset->revision == 42 && preset->style == style);
+			SHAPE_CHECK(preset && preset->construction == (Construction{ tool,{ 20,30 },{ 140,110 } }));
+			if (!preset) continue;
+			SHAPE_CHECK(BuildGeometry(*preset, geometry) && geometry.bounds.valid);
+			SHAPE_CHECK(BuildRenderData(*preset, render) && !render.batches.empty());
+			invalid = *preset;
+			invalid.geometry.radius += 1; SHAPE_CHECK(!Validate(invalid));
+			invalid = *preset; invalid.creationMode = CreationMode::Points; SHAPE_CHECK(!Validate(invalid));
+			if (tool.preset == PresetKind::Arrow)
+			{
+				SHAPE_CHECK(preset->parts.size() == 2 && preset->parts[1].style->linePattern == LinePattern::Solid);
+				SHAPE_CHECK(render.batches.size() == 1 && render.batches[0].primitives.size() == 3);
+				SHAPE_CHECK(render.batches[0].style.linePattern == style.linePattern);
+				SHAPE_CHECK(render.batches[0].primitives[0].flags == 0 && render.batches[0].primitives[1].flags == kPrimitiveForceSolid);
+				const auto& tip = preset->parts[1].geometry.vertices;
+				SHAPE_CHECK(HitTest(*preset, geometry, { (tip[0].x + tip[1].x) * .5f,(tip[0].y + tip[1].y) * .5f }).partId == 2);
+				invalid = *preset; invalid.parts[1].geometry.vertices[0].x += 5; SHAPE_CHECK(!Validate(invalid));
+			}
+		}
+	}
+	const Vec2 corners[] = { { 0,0 },{ 120,0 },{ 120,80 },{ 0,80 } };
+	for (const PresetKind kind : { PresetKind::Rectangle,PresetKind::RoundedRectangle,PresetKind::Ellipse,
+		PresetKind::Triangle,PresetKind::Parallelogram,PresetKind::Rhombus,PresetKind::Trapezoid })
+	{
+		const ToolSpec tool{ kind,CreationMode::Drag,3 };
+		const auto reference = MakePresetShape(tool, corners[0], corners[2], {}, Id(9));
+		SHAPE_CHECK(reference);
+		for (size_t i = 0; i < 4; ++i)
+		{
+			const auto reverse = MakePresetShape(tool, corners[i], corners[(i + 2) % 4], {}, Id(9));
+			SHAPE_CHECK(reverse && reference && reverse->geometry == reference->geometry);
+		}
+		SHAPE_CHECK(!MakePresetShape(tool, { 0,0 }, { 100,0 }, {}, Id(9)));
+	}
+	for (uint32_t sides = 3; sides <= 12; ++sides)
+	{
+		const ToolSpec tool{ PresetKind::RegularPolygon,CreationMode::CenterRadius,sides };
+		const auto regular = MakePresetShape(tool, { 25,50 }, { 140,87 }, {}, Id(10));
+		SHAPE_CHECK(regular && regular->geometry.vertices.size() == sides && regular->geometry.vertices.front() == (Vec2{ 140,87 }));
+		if (!regular) continue;
+		const auto& vertices = regular->geometry.vertices;
+		const float edge = std::hypot(vertices[0].x - vertices[1].x, vertices[0].y - vertices[1].y);
+		for (size_t i = 1; i < vertices.size(); ++i)
+			SHAPE_CHECK(std::abs(std::hypot(vertices[i].x - vertices[(i + 1) % sides].x, vertices[i].y - vertices[(i + 1) % sides].y) - edge) < .001f);
+		SHAPE_CHECK(BuildGeometry(*regular, geometry));
+		const auto controls = ControlPoints(geometry);
+		SHAPE_CHECK(controls.size() == sides + 1 && controls.back().kind == ControlKind::Center && controls.back().position == (Vec2{ 25,50 }));
+		invalid = *regular; invalid.transform.m11 = 2; SHAPE_CHECK(!Validate(invalid));
+	}
+	// 已捕获的矩形圆角是画布单位，样式和当前显示比例不能再次改变轮廓。
+	ToolSpec rectangleTool{ PresetKind::Rectangle,CreationMode::Drag,3 }; rectangleTool.rectangleCornerRadius = 8;
+	const auto compatibleRectangle = MakeLegacyShape(LegacyKind::OutlineRectangle,{ 0,0 },{ 40,40 },4,0,1,Id(10));
+	GeometryResult compatibleGeometry;
+	SHAPE_CHECK(compatibleRectangle && BuildGeometry(*compatibleRectangle,compatibleGeometry,{ 2,.25f }));
+	for (uint32_t pattern = 0; pattern < 4; ++pattern) for (uint32_t fill = 0; fill < 3; ++fill)
+	{
+		ShapeStyle style; style.linePattern = static_cast<LinePattern>(pattern); style.stroke = fill != 1; style.fill = fill != 0;
+		const auto styledRectangle = MakePresetShape(rectangleTool,{ 0,0 },{ 40,40 },style,Id(10));
+		SHAPE_CHECK(styledRectangle && styledRectangle->geometry.radius == 8 && BuildGeometry(*styledRectangle,geometry,{ 2,.25f }));
+		SHAPE_CHECK(geometry.parts[0].geometry == compatibleGeometry.parts[0].geometry &&
+			geometry.parts[0].paths[0].points == compatibleGeometry.parts[0].paths[0].points);
+	}
+	const auto narrowPresetRectangle = MakePresetShape(rectangleTool,{ 0,0 },{ 6,40 },{},Id(10));
+	SHAPE_CHECK(narrowPresetRectangle && narrowPresetRectangle->geometry.radius == 3 &&
+		narrowPresetRectangle->construction->tool.rectangleCornerRadius == 8);
+	rectangleTool.rectangleCornerRadius = -1;
+	SHAPE_CHECK(!MakePresetShape(rectangleTool,{ 0,0 },{ 40,40 },{},Id(10)));
+	rectangleTool.rectangleCornerRadius = std::numeric_limits<float>::quiet_NaN();
+	SHAPE_CHECK(!MakePresetShape(rectangleTool,{ 0,0 },{ 40,40 },{},Id(10)));
+	const auto centerCircle = MakePresetShape({ PresetKind::Circle,CreationMode::CenterRadius,3 }, { 0,0 }, { 3,4 }, {}, Id(10));
+	SHAPE_CHECK(centerCircle && centerCircle->geometry.radius == 5 && centerCircle->geometry.start == (Vec2{ 0,0 }));
+	for (float x : { -1.0f,1.0f }) for (float y : { -1.0f,1.0f })
+	{
+		const auto boxCircle = MakePresetShape({ PresetKind::Circle,CreationMode::Drag,3 }, { 10,10 }, { 10 + 20 * x,10 + 10 * y }, {}, Id(10));
+		SHAPE_CHECK(boxCircle && boxCircle->geometry.radius == 10 && boxCircle->geometry.start == (Vec2{ 10 + 10 * x,10 + 10 * y }));
+	}
+	SHAPE_CHECK(!MakePresetShape({}, { 0,0 }, { 0,0 }, {}, Id(9), 1, &error) && !error.empty());
+	SHAPE_CHECK(!MakePresetShape({}, { 0,0 }, { 20,30 }, {}, {}, 1, &error));
+	SHAPE_CHECK(!MakePresetShape({}, { 0,0 }, { 20,30 }, {}, Id(9), 0, &error));
+	SHAPE_CHECK(!MakePresetShape({ static_cast<PresetKind>(99),CreationMode::Drag,3 }, { 0,0 }, { 20,30 }, {}, Id(9)));
+	SHAPE_CHECK(!MakePresetShape({ PresetKind::RegularPolygon,CreationMode::CenterRadius,2 }, { 0,0 }, { 20,30 }, {}, Id(9)));
+	SHAPE_CHECK(!MakePresetShape({ PresetKind::RegularPolygon,CreationMode::CenterRadius,13 }, { 0,0 }, { 20,30 }, {}, Id(9)));
+	SHAPE_CHECK(!MakePresetShape({ PresetKind::Circle,CreationMode::Points,3 }, { 0,0 }, { 20,30 }, {}, Id(9)));
+	SHAPE_CHECK(!MakePresetShape({}, { std::numeric_limits<float>::quiet_NaN(),0 }, { 20,30 }, {}, Id(9)));
 	std::cout << "Shape core tests: " << failures << " failure(s)\n";
 	return failures;
 }

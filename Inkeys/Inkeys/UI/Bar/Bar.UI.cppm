@@ -409,6 +409,8 @@ public:
 	bool TransitionToString(const wstring& contentT, optional<double> durT = nullopt,
 		double keyframeProgressT = 0.5, double middleScaleT = 0.8);
 	bool SetStringImmediate(const wstring& contentT);
+	// 布局读取待切换内容，不提前改动透明中点之前仍在显示的文字。
+	wstring TargetContent();
 	bool AdvanceContentTransition(double dt, double speedRate);
 	void CancelContentTransition();
 

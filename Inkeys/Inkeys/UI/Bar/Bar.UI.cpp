@@ -837,6 +837,13 @@ bool BarUiWordClass::TransitionToString(const wstring& contentT, optional<double
 			return true;
 		});
 }
+wstring BarUiWordClass::TargetContent()
+{
+	return contentTransitionTimeline.Transaction([&](BarUiKeyframeTimelineClass::LockedView& timeline)
+	{
+		return timeline.IsActive() ? transitionContent.GetTar() : content.GetTar();
+	});
+}
 bool BarUiWordClass::SetStringImmediate(const wstring& contentT)
 {
 	return ApplyBarImmediateContentUpdate(contentTransitionTimeline,

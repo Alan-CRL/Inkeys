@@ -1,0 +1,28 @@
+{
+  "id": "shape-p2-validation",
+  "name": "shape-p2-validation",
+  "title": "P2 集成验收",
+  "description": "P2 集成验收；遵循父任务已批准设计与验证。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-17",
+  "completedAt": "2026-10-17",
+  "branch": "feature/shape",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-17-shape-phase2-tools",
+  "relatedFiles": [],
+  "notes": "依赖其余4子任务。交付完整native ARM64 solution、共享solution、CPU/GPU/UI/UInk/Headless/i18n/diff证据。Trellis check全范围审查；保留真机与实体输入未测边界，不commit/push。",
+  "meta": {
+    "validation": ".trellis/tasks/10-17-shape-phase2-tools/validation.md"
+  }
+}
