@@ -452,3 +452,41 @@
 ### Next Steps
 
 - 任务已完成并归档，继续正常使用或按原流程发布；问题再现时采集诊断证据。未推送远程。
+
+
+## Session 106: UI 指针会话与窗口外拖动验收结案
+<!-- trellis-session: v=2 fp=25219a53c1c6d535 -->
+
+**Date**: 2026-10-17
+**Task**: UI 指针会话与窗口外拖动验收结案
+**Branch**: `feature/hook`
+
+### Summary
+
+用户于2026-10-17确认人工验收基本通过，明确授权提交并结束当前任务；实现、测试和spec已提交，当前任务已归档，保留Win7 WM_TOUCH及现有两种hook，不推送远程。
+
+### Main Changes
+
+- Bar/PPT 保留原生点击入口，连续拖动通过私有 Raw Mouse 通道补充，Raw 不进入 HiMsg。
+- 统一来源/代次及双路终态；修正未绑定 Raw 一秒取消、绑定后静默门控和显示重基准抓手偏移，并保留有界诊断。
+- 同步输入与呈现合同、生产策略回归及用户验收记录；仅归档 ui-pointer-session。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f2494f4e5537d4742f8c4c77a30b2442269ea4f5` | fix(input): unify UI drag sessions with native events and raw mouse |
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 通过，最终增量构建0警告0错误。
+- [OK] InkeysHeadlessTests --no-window、状态模式和笔宽生产探针均退出0；独立Trellis审查通过。
+- [OK] 用户人工验收基本通过；收尾未改产品代码，未重复运行GUI或构建，未扩大设备/UIPI覆盖声明。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务完成；若后续设备问题复现，沿用 UiPointerDrag 日志单独调查。未推送远程。
