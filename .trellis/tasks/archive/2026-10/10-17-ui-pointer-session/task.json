@@ -3,7 +3,7 @@
   "name": "ui-pointer-session",
   "title": "UI 指针会话与窗口外拖动（保留现有 hook）",
   "description": "为 Bar 与 PPT 控件建立共享 Raw Mouse 接入和来源归属会话，保留 Win7 WM_TOUCH 路径与现有键盘鼠标 hook。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "ui-pointer-input",
   "package": null,
@@ -11,11 +11,11 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-10-17",
-  "completedAt": null,
+  "completedAt": "2026-10-17",
   "branch": "feature/hook",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "f2494f4e5537d4742f8c4c77a30b2442269ea4f5",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -41,6 +41,6 @@
     "Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h",
     "InkeysHeadlessTests/bar_bottom_dock_tests.cpp"
   ],
-  "notes": "2026-10-17 user reports manual acceptance basically passed and explicitly authorizes committing and closing this task. Existing independent check, full Debug|ARM64 build/final0warnings, --no-window and both production probes passed. No product changes during close-out. Preserve hook and activation/privilege policies. API limits remain documented; no additional Win7/device/UIPI coverage asserted. Complete task by work commit, Trellis archive and session journal; do not push.",
+  "notes": "2026-10-17 user reports manual acceptance basically passed and authorizes commit and task closure. Work commit f2494f4e5537d4742f8c4c77a30b2442269ea4f5 records the full implementation, tests, specs and acceptance. Existing independent check, Debug|ARM64 build, --no-window and both production probes passed; no product changes during close-out. Hook/activation/privilege policies preserved. Retain documented API limits without asserting additional device/UIPI coverage. Archive only this task and record journal; no push.",
   "meta": {}
 }
