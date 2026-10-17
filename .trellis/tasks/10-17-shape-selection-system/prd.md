@@ -43,3 +43,5 @@ P2 已提交 2e3a4f26，形状面板限定修正已提交 384c5838（无 push）
 ### 后续主栏 UI 完成记录
 
 用户已批准 A 方案并完成实现与验收：36 类（11 可用、25 禁用），类别区按需滚动，固定参数/属性/关闭入口，保留底部 5 DIP。原生 ARM64 完整构建及 UI 621101 项检查、相邻四项与 Headless 均通过；详见 shape-future-toolbar-ui/validation.md。仅补 UI，不代表 P3–7 的绘制/编辑能力已完成。本轮新增修改未提交或 push。
+
+主栏UI子任务已提交 1d4b5472 并归档至 .trellis/tasks/archive/2026-10/10-17-shape-future-toolbar-ui；总任务继续，P3/P4尚未启动实施。

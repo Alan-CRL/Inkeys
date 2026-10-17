@@ -2,4 +2,4 @@
 {"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "disabled输入/当前帧命中/动画/布局回归"}
 {"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "SVG嵌入、三语资源覆盖"}
 {"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "原生ARM64 solution构建与无窗口验证"}
-{"file": ".trellis/tasks/10-17-shape-future-toolbar-ui/research/ui-catalog-and-layout.md", "reason": "独立审查目录扩容/disabled门禁/小屏与生产测试覆盖"}
+{"file": ".trellis/tasks/archive/2026-10/10-17-shape-future-toolbar-ui/research/ui-catalog-and-layout.md", "reason": "独立审查目录扩容/disabled门禁/小屏与生产测试覆盖"}
