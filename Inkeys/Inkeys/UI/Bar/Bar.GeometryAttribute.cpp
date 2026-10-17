@@ -22,15 +22,19 @@ extern const double BarDrawAttributeSurfaceOpacity;
 
 namespace
 {
-	constexpr int CategoryCount = 11, CircleCenter = 11, CircleBox = 12;
-	constexpr int SidesBegin = 13, StyleBegin = 23, PatternBegin = 26;
-	constexpr int ThicknessBegin = 30, ThicknessCount = 3, CloseButton = 33;
+	constexpr int CategoryCount = GeometryCategoryCount, CircleCenter = GeometryCircleCenter, CircleBox = GeometryCircleBox;
+	constexpr int SidesBegin = GeometrySidesBegin, StyleBegin = GeometryStyleBegin, PatternBegin = GeometryPatternBegin;
+	constexpr int ThicknessBegin = GeometryThicknessBegin, ThicknessCount = GeometryThicknessCount, CloseButton = GeometryCloseButton;
 	// -1/-2为属性list内部的两枚分隔项，不占用户控件/命中索引。
-	constexpr std::array<int,12> AttributeItems{23,24,25,-1,26,27,28,29,-2,30,31,32};
-	constexpr std::array<PresetKind, CategoryCount> Categories{
-		PresetKind::Line, PresetKind::Arrow, PresetKind::Rectangle, PresetKind::RoundedRectangle,
-		PresetKind::Circle, PresetKind::Ellipse, PresetKind::Triangle, PresetKind::Parallelogram,
-		PresetKind::Rhombus, PresetKind::Trapezoid, PresetKind::RegularPolygon };
+	constexpr std::array<int,12> AttributeItems{StyleBegin,StyleBegin+1,StyleBegin+2,-1,
+		PatternBegin,PatternBegin+1,PatternBegin+2,PatternBegin+3,-2,ThicknessBegin,ThicknessBegin+1,ThicknessBegin+2};
+	EraserAttributeRect Intersection(EraserAttributeRect a, EraserAttributeRect b)
+	{
+		const EraserAttributeRect result{(std::max)(a.left,b.left),(std::max)(a.top,b.top),(std::min)(a.right,b.right),(std::min)(a.bottom,b.bottom)};
+		return result.Width() > 0 && result.Height() > 0 ? result : EraserAttributeRect{};
+	}
+	bool Contains(EraserAttributeRect r, double x, double y)
+	{ return r.Width() > 0 && r.Height() > 0 && x >= r.left && x < r.right && y >= r.top && y < r.bottom; }
 	D2D1_RECT_F PixelRect(EraserAttributeRect r, double zoom)
 	{
 		return D2D1::RectF(static_cast<float>(r.left * zoom), static_cast<float>(r.top * zoom),
@@ -59,7 +63,7 @@ namespace
 	wstring ItemLabel(int item)
 	{
 		const auto& t = I18nKey.UI.Bar.GeometryAttributes;
-		if (item < CategoryCount) return ShapeToolLabel(Categories[item]);
+		if (item >= 0 && item < CategoryCount) return ShapeCategoryLabel(item);
 		if (item == CircleCenter) return I18n::getWOr(t.CircleCenterLabel, L"圆心绘制");
 		if (item == CircleBox) return I18n::getWOr(t.CircleBoundsLabel, L"外接绘制");
 		if (item >= SidesBegin && item < StyleBegin) return std::to_wstring(item - SidesBegin + 3);
@@ -67,6 +71,7 @@ namespace
 	}
 	wstring ItemResource(int item)
 	{
+		if (item >= 0 && item < CategoryCount) return ShapeCategoryCatalog()[item].resource;
 		if (item == CircleCenter) return L"barShapeCircleCenter";
 		if (item == CircleBox) return L"barShapeCircleBounds";
 		if (item >= StyleBegin && item < PatternBegin)
@@ -80,6 +85,54 @@ namespace
 
 namespace Inkeys::UI::Bar
 {
+	const std::array<ShapeCategoryDescriptor, GeometryCategoryCount>& ShapeCategoryCatalog()
+	{
+		const auto& t = I18nKey.UI.Bar.GeometryAttributes;
+		static const std::array<ShapeCategoryDescriptor, GeometryCategoryCount> catalog{{
+			{L"line",L"barShapeStraightLine",t.StraightLineLabel,L"直线",PresetKind::Line},
+			{L"arrow",L"barShapeArrow",t.ArrowLabel,L"箭头",PresetKind::Arrow},
+			{L"rectangle",L"barShapeRectangle",t.RectangleLabel,L"矩形",PresetKind::Rectangle},
+			{L"roundedRectangle",L"barShapeRoundedRectangle",t.RoundedRectangleLabel,L"圆角矩形",PresetKind::RoundedRectangle},
+			{L"circle",L"barShapeCircleCenter",t.CircleLabel,L"圆",PresetKind::Circle},
+			{L"ellipse",L"barShapeEllipse",t.EllipseLabel,L"椭圆",PresetKind::Ellipse},
+			{L"triangle",L"barShapeTriangle",t.TriangleLabel,L"三角形",PresetKind::Triangle},
+			{L"parallelogram",L"barShapeParallelogram",t.ParallelogramLabel,L"平行四边形",PresetKind::Parallelogram},
+			{L"rhombus",L"barShapeRhombus",t.RhombusLabel,L"菱形",PresetKind::Rhombus},
+			{L"trapezoid",L"barShapeTrapezoid",t.TrapezoidLabel,L"梯形",PresetKind::Trapezoid},
+			{L"regularPolygon",L"barShapePolygon3",t.RegularPolygonLabel,L"正多边形",PresetKind::RegularPolygon},
+			{L"polyline",L"barShapePolyline",t.PolylineLabel,L"折线",std::nullopt},
+			{L"polygon",L"barShapePolygon",t.PolygonLabel,L"多边形",std::nullopt},
+			{L"arc",L"barShapeArc",t.ArcLabel,L"圆弧",std::nullopt},
+			{L"sector",L"barShapeSector",t.SectorLabel,L"扇形",std::nullopt},
+			{L"angle",L"barShapeAngle",t.AngleLabel,L"角度",std::nullopt},
+			{L"parallel",L"barShapeParallel",t.ParallelLabel,L"平行线",std::nullopt},
+			{L"perpendicular",L"barShapePerpendicular",t.PerpendicularLabel,L"垂直线",std::nullopt},
+			{L"cuboid",L"barShapeCuboid",t.CuboidLabel,L"长方体",std::nullopt},
+			{L"cube",L"barShapeCube",t.CubeLabel,L"正方体",std::nullopt},
+			{L"cylinder",L"barShapeCylinder",t.CylinderLabel,L"圆柱",std::nullopt},
+			{L"cone",L"barShapeCone",t.ConeLabel,L"圆锥",std::nullopt},
+			{L"prism",L"barShapePrism",t.PrismLabel,L"棱柱",std::nullopt},
+			{L"pyramid",L"barShapePyramid",t.PyramidLabel,L"棱锥",std::nullopt},
+			{L"numberLine",L"barShapeNumberLine",t.NumberLineLabel,L"数轴",std::nullopt},
+			{L"cartesian",L"barShapeCartesian",t.CartesianLabel,L"直角坐标系",std::nullopt},
+			{L"grid",L"barShapeGrid",t.GridLabel,L"网格",std::nullopt},
+			{L"coordinatePoint",L"barShapeCoordinatePoint",t.CoordinatePointLabel,L"坐标点",std::nullopt},
+			{L"parabola",L"barShapeParabola",t.ParabolaLabel,L"抛物线",std::nullopt},
+			{L"reciprocal",L"barShapeReciprocal",t.ReciprocalLabel,L"反比例",std::nullopt},
+			{L"hyperbola",L"barShapeHyperbola",t.HyperbolaLabel,L"双曲线",std::nullopt},
+			{L"sine",L"barShapeSine",t.SineLabel,L"正弦",std::nullopt},
+			{L"cosine",L"barShapeCosine",t.CosineLabel,L"余弦",std::nullopt},
+			{L"tangent",L"barShapeTangent",t.TangentLabel,L"正切",std::nullopt},
+			{L"exponential",L"barShapeExponential",t.ExponentialLabel,L"指数",std::nullopt},
+			{L"logarithmic",L"barShapeLogarithmic",t.LogarithmicLabel,L"对数",std::nullopt}
+		}};
+		return catalog;
+	}
+	wstring ShapeCategoryLabel(size_t index)
+	{
+		const auto& catalog = ShapeCategoryCatalog();
+		return index < catalog.size() ? I18n::getWOr(catalog[index].labelKey, catalog[index].fallbackLabel) : wstring{};
+	}
 	wstring ShapeToolIconResource(const ToolSpec& tool, std::optional<unsigned> carouselSides)
 	{
 		switch (tool.preset)
@@ -143,7 +196,7 @@ void BarGeometryAttributePanel::Initialize()
 		b.name.Initialization(0, 0, 70, 25, ItemLabel(i), BarButtonTwoTwoLabelFontSizeDip, GetThemeColor(BarThemeColorEnum::TextPrimary));
 		b.name.enable.Initialization(true); b.name.pct.SetDirect(1);
 		b.icon.Initialization(0, 0, GetThemeColor(BarThemeColorEnum::TextPrimary), GetThemeColor(BarThemeColorEnum::TextPrimary));
-		const auto resource = i < CategoryCount ? ShapeToolIconResource(ToolSpec{Categories[i]}) : ItemResource(i);
+		const auto resource = ItemResource(i);
 		b.icon.enable.Initialization(!resource.empty()); b.icon.pct.SetDirect(1);
 		if (!resource.empty()) b.icon.InitializationFromResource(L"UI", resource);
 		resourceTargets_[i] = resource; labelTargets_[i] = ItemLabel(i);
@@ -180,6 +233,11 @@ void BarGeometryAttributePanel::Initialize()
 	attributeList_.Replace(std::move(attributes));
 	attributeLayout_ = ResolveBarButtonListLayout(attributeList_.Snapshot(), BarButtonListLayoutKind::SingleRow);
 	attributeMaxWidth_ = attributeLayout_.width;
+	for (auto* part : {&scrollRail_, &scrollThumb_})
+	{
+		part->Initialization(0, 0, 1, 1, 3, 3, 0, GetThemeColor(BarThemeColorEnum::TextPrimary), GetThemeColor(BarThemeColorEnum::TextPrimary));
+		part->enable.Initialization(true); part->pct.SetDirect(part == &scrollRail_ ? 0.08 : 0.35);
+	}
 	initialized_ = true;
 }
 
@@ -244,22 +302,32 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const auto standard = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
 	const bool typographyChanged = measuredFontFamily_ != owner.spec.GetFontFamily() || measuredLocale_ != owner.spec.GetTextLocale()
 		|| measuredDeviceGeneration_ != owner.spec.GetDeviceGeneration();
-	// 图形自己的关闭区、参数区与属性行；类别网格不与更多的关闭侧栏或分组布局耦合。
-	const double targetWidth = (std::max)(categoryLayout_.width + BarButtonGapDip * 3 + BarButtonOneSideDip, attributeMaxWidth_);
-	const double parameterHeight = circle || polygon ? BarButtonOneSideDip + BarButtonGapDip * 2 + 1 : 0;
-	// 下方属性行上下各留5DIP；其垂直位置只依附当前面板底边，不单独追逐绝对Y目标。
-	const double baseHeight = categoryLayout_.height + BarButtonGapDip * 4 + 1 + BarButtonOneSideDip;
-	const double targetHeight = baseHeight + parameterHeight;
+	// 固定属性/参数保持原尺寸；有限空间只收缩类别视口，先比较主栏两侧真实可用高度。
+	const double g = BarButtonGapDip, smallSide = BarButtonOneSideDip, gap = 10;
+	const double targetWidth = (std::max)(categoryLayout_.width + g * 3 + smallSide, attributeMaxWidth_);
+	const double parameterHeight = circle || polygon ? smallSide + g * 2 + 1 : 0;
+	const double fixedHeight = g * 4 + 1 + smallSide;
+	const double widthFit = (std::min)(1.0, work.Width() / targetWidth);
+	const double aboveSpace = (std::max)(0.0, (std::min)(main->inhY - gap, work.bottom) - work.top);
+	const double belowSpace = (std::max)(0.0, work.bottom - (std::max)(main->inhY + main->h.val + gap, work.top));
+	bool below = owner.barState.widgetPosition.primaryBar;
+	const double fullHeight = (categoryLayout_.height + fixedHeight + parameterHeight) * widthFit;
+	if (fullHeight > (below ? belowSpace : aboveSpace) && (below ? aboveSpace : belowSpace) > (below ? belowSpace : aboveSpace)) below = !below;
+	if (dragPlacementLocked && hadOpen_) below = previousBelow_;
+	const double availableHeight = below ? belowSpace : aboveSpace;
+	// 不足一整行才沿用极小工作区fit；正常场景不会为六行目录缩小文字和属性。
+	const double targetViewport = (std::clamp)(availableHeight / (std::max)(0.001, widthFit) - fixedHeight - parameterHeight,
+		BarButtonTwoSideDip, categoryLayout_.height);
+	const double targetHeight = targetViewport + fixedHeight + parameterHeight;
 	const bool initializeLayout = !hadOpen_;
 	const BarUiAnimationAdvanceContextClass context{dt, speed, static_cast<bool>(BarUiAnimationEnabled), false};
-	if (!hadOpen_) { width_.SetDirect(targetWidth); height_.SetDirect(targetHeight); }
-	else { width_.SetTar(targetWidth, BarUiDefaultOperationDur); height_.SetTar(targetHeight, BarUiDefaultOperationDur); }
-	for (auto* value : {&width_, &height_})
+	if (initializeLayout) { width_.SetDirect(targetWidth); height_.SetDirect(targetHeight); viewportHeight_.SetDirect(targetViewport); }
+	else { width_.SetTar(targetWidth, BarUiDefaultOperationDur); height_.SetTar(targetHeight, BarUiDefaultOperationDur); viewportHeight_.SetTar(targetViewport, BarUiDefaultOperationDur); }
+	for (auto* value : {&width_, &height_, &viewportHeight_})
 	{
 		if (context.animationEnabled && dt <= 0 && !value->IsSame()) { active_ = true; continue; }
 		const auto result = BarUiAdvanceAnimation(*value, context); changed_ |= result.changed; active_ |= result.active;
 	}
-	const bool below = owner.barState.widgetPosition.primaryBar;
 	if (open && hadOpen_ && below != previousBelow_ && !dragPlacementLocked) sideSwitch_ = true;
 	if (!hadOpen_ || !open) previousBelow_ = below;
 	changed_ |= motion_.Retarget(open && !sideSwitch_, sideSwitch_ ? static_cast<double>(BarUiDefaultOperationDur) / 2 : static_cast<double>(BarUiDefaultOperationDur),
@@ -275,41 +343,72 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const double width = (std::max)(1.0, static_cast<double>(width_.val));
 	const double height = (std::max)(1.0, static_cast<double>(height_.val));
 	double left = EraserRectCenterX(trigger) - width / 2;
-	const double gap = 10;
 	double top = previousBelow_ ? main->inhY + main->h.val + gap : main->inhY - height - gap;
 	if (width <= work.Width()) left = (std::clamp)(left, work.left, work.right - width);
-	if (height <= work.Height()) top = (std::clamp)(top, work.top, work.bottom - height);
 	EraserAttributeRect panel{left, top, left + width, top + height};
 	if (dragPlacementLocked && open && previousPanel_.Width() > 0)
 	{
-		panel = OffsetEraserRect(previousPanel_, EraserRectCenterX(trigger) - EraserRectCenterX(previousAnchor_),
+		const auto moved = OffsetEraserRect(previousPanel_, EraserRectCenterX(trigger) - EraserRectCenterX(previousAnchor_),
 			EraserRectCenterY(trigger) - EraserRectCenterY(previousAnchor_));
+		// 拖栏只冻结跟随位置/展开侧，视口的同帧尺寸仍须一致，避免工作区变更后复用旧高。
+		panel = {moved.left,moved.top,moved.left+width,moved.top+height};
 	}
+	left = panel.left; top = panel.top;
 	previousPanel_ = panel; previousAnchor_ = trigger;
 	auto pf = ResolveBarAttributePanelFrame(motion_, panel, trigger, 60);
-	// 小工作区只缩放本次运行的面板，不改用户倍率或按钮尺寸偏好。
-	const double fit = (std::min)({1.0, work.Width() / width, work.Height() / height});
+	EraserAttributeRect sideWork = work;
+	if (previousBelow_) sideWork.top = (std::clamp)(main->inhY + main->h.val + gap, work.top, work.bottom);
+	else sideWork.bottom = (std::clamp)(main->inhY - gap, work.top, work.bottom);
+	if (sideWork.Height() <= 0) sideWork = work;
+	// 回弹姿态也限制在所选侧；fit只影响本次面板，不写回用户倍率。
+	const double fit = (std::min)({1.0, work.Width() / width, sideWork.Height() / height});
 	if (fit > 0 && fit < 1)
 	{
 		const double cx = EraserRectCenterX(panel), cy = EraserRectCenterY(panel);
 		pf.pose.x = cx + (pf.pose.x - cx) * fit; pf.pose.y = cy + (pf.pose.y - cy) * fit; pf.pose.scale *= fit;
 	}
-	pf.pose = FitEraserSurfacePose(pf.pose, panel, work);
-	GeometryAttributePresentation next; next.zoom = zoom; next.pose = pf.pose;
-	next.opacity = pf.opacity; next.visible = pf.visible; next.tool = tool;
-	next.acceptsInput = open && !sideSwitch_ && !motion_.Active() && width_.IsSame() && height_.IsSame();
+	const double boundedScale = (std::min)({pf.pose.scale, work.Width() / width, sideWork.Height() / height});
+	if (boundedScale > 0 && boundedScale < pf.pose.scale)
+	{
+		const auto current = pf.pose.Apply(panel); const double cx = EraserRectCenterX(current), cy = EraserRectCenterY(current);
+		pf.pose.scale = boundedScale; pf.pose.x = cx - EraserRectCenterX(panel) * boundedScale; pf.pose.y = cy - EraserRectCenterY(panel) * boundedScale;
+	}
+	pf.pose = FitEraserSurfacePose(pf.pose, panel, sideWork);
+	const double viewport = (std::clamp)(static_cast<double>(viewportHeight_.val), 1.0, (std::max)(1.0,height - fixedHeight));
+	const double baseHeight = viewport + fixedHeight;
+	const double scrollMaximum = (std::max)(0.0, categoryLayout_.height - viewport);
+	const double requestedScroll = (std::clamp)(scrollRequest_.load(), 0.0, scrollMaximum);
+	if (initializeLayout) scroll_.SetDirect(requestedScroll);
+	else scroll_.SetTar(requestedScroll, BarUiDefaultOperationDur, std::nullopt, false,
+		{BarUiCurveEnum::EaseOutCubic,BarUiCurveEnum::EaseOutCubic,0,false});
+	if (context.animationEnabled && dt <= 0 && !scroll_.IsSame()) active_ = true;
+	else { const auto advanced = BarUiAdvanceAnimation(scroll_,context); changed_ |= advanced.changed; active_ |= advanced.active; }
+	const double offset = (std::clamp)(static_cast<double>(scroll_.val),0.0,scrollMaximum);
+	GeometryAttributePresentation next; next.zoom = zoom; next.pose = pf.pose; next.workArea = work;
+	next.opacity = pf.opacity; next.visible = pf.visible; next.tool = tool; next.below = previousBelow_;
+	next.acceptsInput = open && !sideSwitch_ && !motion_.Active() && width_.IsSame() && height_.IsSame() && viewportHeight_.IsSame();
+	next.categoriesAcceptInput = next.acceptsInput && scroll_.IsSame() && !scrollDragging_;
+	next.scrollOffset = offset; next.scrollMaximum = scrollMaximum; next.categoryViewportHeight = viewport; next.categoryContentHeight = categoryLayout_.height;
 	next.panel = pf.pose.Apply(panel);
-	std::array<EraserAttributeRect,34> slots{}; std::array<EraserAttributeRect,2> lines{};
-	const double g = BarButtonGapDip, smallSide = BarButtonOneSideDip;
+	next.categoryClip = pf.pose.Apply({left+g,top+g,left+g+categoryLayout_.width,top+g+viewport});
+	if (scrollMaximum > 0.000001)
+	{
+		const EraserAttributeRect track{left+width-g-smallSide,top+g+smallSide+g,left+width-g,top+g+viewport};
+		const double thumbHeight = (std::min)(track.Height(),(std::max)(24.0,track.Height()*viewport/categoryLayout_.height));
+		const double thumbTop = track.top + (track.Height()-thumbHeight)*offset/scrollMaximum;
+		next.scrollTrack = pf.pose.Apply(track);
+		next.scrollThumb = pf.pose.Apply({EraserRectCenterX(track)-3,thumbTop,EraserRectCenterX(track)+3,thumbTop+thumbHeight});
+	}
+	std::array<EraserAttributeRect,GeometryControlCount> slots{}; std::array<EraserAttributeRect,2> lines{};
 	const double gridLeft = left + g;
 	for (size_t i = 0; i < categoryLayout_.placements.size(); ++i)
 	{
 		const auto& item = categoryLayout_.placements[i];
-		const double x = gridLeft + item.x - item.width / 2, y = top + g + item.y - item.height / 2;
+		const double x = gridLeft + item.x - item.width / 2, y = top + g + item.y - item.height / 2 - offset;
 		slots[i] = {x, y, x + item.width, y + item.height};
 	}
 	slots[CloseButton] = {left + width - g - smallSide, top + g, left + width - g, top + g + smallSide};
-	double y = top + categoryLayout_.height + g * 2;
+	double y = top + viewport + g * 2;
 	lines[0] = {left + g, y, left + width - g, y + 1}; y += 1 + g;
 	const double parameterTop = y;
 	const double circleWidth = (width - g * 3) / 2;
@@ -348,7 +447,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 			slots[item] = {x, attributeTop, x + smallSide, attributeTop + smallSide};
 		}
 	}
-	const int requestedHover = hovered_;
+	const int requestedHover = !next.categoriesAcceptInput && hovered_ < CategoryCount ? -1 : hovered_.load();
 	if (requestedHover != appliedHover_)
 	{
 		if (appliedHover_ >= 0) StopBarButtonHoverVisual(*buttons_[appliedHover_], false);
@@ -363,7 +462,8 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		const bool wanted = i < CategoryCount || i == CloseButton || ((i == CircleCenter || i == CircleBox) && circle)
 			|| (i >= SidesBegin && i < StyleBegin && polygon) || (i >= StyleBegin && i < PatternBegin && showStyle)
 			|| (i >= PatternBegin && i < CloseButton && showStroke);
-		const bool selected = i < CategoryCount ? tool.preset == Categories[i]
+		const bool available = i >= CategoryCount || ShapeCategoryCatalog()[i].preset.has_value();
+		const bool selected = i < CategoryCount ? available && tool.preset == *ShapeCategoryCatalog()[i].preset
 			: i == CircleCenter ? tool.creationMode == CreationMode::CenterRadius
 			: i == CircleBox ? tool.creationMode == CreationMode::Drag
 			: i >= SidesBegin && i < StyleBegin ? tool.sides == static_cast<unsigned>(i - SidesBegin + 3)
@@ -371,9 +471,9 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 			: i >= PatternBegin && i < ThicknessBegin ? static_cast<int>(style.linePattern) == i - PatternBegin
 			: i >= ThicknessBegin && i < ThicknessBegin + ThicknessCount ? IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, i - ThicknessBegin, owner.barStyle.dpiZoom, state) : false;
 		wstring resource = ItemResource(i), label = ItemLabel(i);
-		if (i < CategoryCount)
+		if (i < CategoryCount && available)
 		{
-			auto itemTool = tool; itemTool.preset = Categories[i];
+			auto itemTool = tool; itemTool.preset = *ShapeCategoryCatalog()[i].preset;
 			if (itemTool.preset == PresetKind::Circle) itemTool.creationMode = state.Shape.circleMode;
 			resource = ShapeToolIconResource(itemTool, i == 10 && tool.preset != PresetKind::RegularPolygon ? std::optional<unsigned>(carouselSides) : std::nullopt);
 		}
@@ -402,12 +502,13 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 			resourceTargets_[i] = resource; labelTargets_[i] = label;
 		}
 		if (!wanted && focused_ == i) focused_ = -1;
-		b.state->state = selected ? BarWidgetState::Selected : BarWidgetState::None;
-		SetBarButtonPressedVisual(b, wanted && pressed_ == i && !pressCancelled_);
-		RetargetBarButtonInteractionVisual(b, wanted && pf.visible, true, selected, BarButtonHoverTransitionDuration);
+		b.state->state = !available ? BarWidgetState::Disable : selected ? BarWidgetState::Selected : BarWidgetState::None;
+		SetBarButtonPressedVisual(b, available && wanted && pressed_ == i && !pressCancelled_);
+		RetargetBarButtonInteractionVisual(b, wanted && pf.visible, available, selected, BarButtonHoverTransitionDuration);
 		if (initializeLayout)
 		{
-			b.icon.pct.SetDirect(wanted ? 1 : 0); b.name.pct.SetDirect(wanted ? 1 : 0);
+			const double opacity = wanted ? (available ? 1.0 : BarButtonDisabledContentOpacity) : 0;
+			b.icon.pct.SetDirect(opacity); b.name.pct.SetDirect(opacity);
 			if (!wanted) { b.button.pct.SetDirect(0); b.button.frameLightPct->SetDirect(0); }
 		}
 		const double scale = pf.pose.scale;
@@ -431,7 +532,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		b.name.enable.Initialization(!label.empty()); b.icon.enable.Initialization(!resource.empty());
 		// 退出中的控件继续按同一帧时钟推进，不能以业务hidden强制落定共享透明度。
 		const BarButtonAnimationContext buttonContext{dt, speed, context.animationEnabled, false,
-			(wanted || HasButtonOpacity(b)) && pf.visible, wanted && !selected};
+			(wanted || HasButtonOpacity(b)) && pf.visible, available && wanted && !selected};
 		const auto result = AdvanceBarButtonVisual(b, buttonContext); changed_ |= result.changed; active_ |= result.active;
 		if (i >= StyleBegin && i < CloseButton) attributesAcceptInput &= b.icon.pct.IsSame() && b.name.pct.IsSame();
 		else if (i >= CircleCenter && i < StyleBegin) parametersAcceptInput &= b.icon.pct.IsSame() && b.name.pct.IsSame();
@@ -440,7 +541,14 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		Place(b.button, next.items[i]);
 		next.hits[i] = ResolveBarButtonHitSnapshot(b, BarUiInheritClass(b.button.inhX, b.button.inhY));
 		next.hits[i].visible = next.visible && drawn;
-		next.hits[i].enabled = next.acceptsInput && wanted && (b.icon.pct.val > 0.01 || b.name.pct.val > 0.01);
+		next.hits[i].enabled = next.hits[i].enabled && next.acceptsInput && available && wanted && (b.icon.pct.val > 0.01 || b.name.pct.val > 0.01);
+		if (i < CategoryCount)
+		{
+			const auto clipped = Intersection(next.items[i],next.categoryClip);
+			next.hits[i].visible &= clipped.Width() > 0 && clipped.Height() > 0;
+			next.hits[i].boundsDip = PixelRect(clipped,1);
+			next.hits[i].enabled &= next.categoriesAcceptInput && next.hits[i].visible;
+		}
 	}
 	// 退场与移动控件可能暂时重叠，只给对应行加布局门禁；类别仍可响应并反向重定向动画。
 	for (int item = StyleBegin; item < CloseButton; ++item) next.hits[item].enabled &= attributesAcceptInput;
@@ -476,10 +584,21 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		d.ft->SetDirect(BarButtonFrameThicknessDip * scale); d.rw->SetDirect(BarUiDividerRadius * scale); d.rh->SetDirect(BarUiDividerRadius * scale);
 		d.fill->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame)); d.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 	}
+	const bool scrollShown = next.scrollTrack.Height() > 0;
+	const EraserAttributeRect rail{EraserRectCenterX(next.scrollTrack)-2*scale,next.scrollTrack.top,
+		EraserRectCenterX(next.scrollTrack)+2*scale,next.scrollTrack.bottom};
+	Place(scrollRail_,scrollShown ? rail : EraserAttributeRect{}); Place(scrollThumb_,next.scrollThumb);
+	for (auto* part : {&scrollRail_,&scrollThumb_})
+	{
+		part->enable.Initialization(scrollShown); part->fill->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
+		part->rw->SetDirect(3*scale); part->rh->SetDirect(3*scale);
+	}
+	// 工作区事实也随成功呈现换代；上侧轨道即使未移动，旧滚动捕获仍须失效。
+	changed_ |= frame_.workArea != next.workArea || frame_.scrollThumb != next.scrollThumb || frame_.categoryClip != next.categoryClip || frame_.categoriesAcceptInput != next.categoriesAcceptInput;
 	changed_ |= frame_.panel != next.panel || frame_.items != next.items || frame_.opacity != next.opacity || frame_.visible != next.visible || frame_.zoom != next.zoom;
 	frame_ = next;
 	UpdateCarousel(open && next.acceptsInput && attributesAcceptInput && parametersAcceptInput
-		&& static_cast<bool>(BarUiAnimationEnabled) && tool.preset != PresetKind::RegularPolygon && pressed_ < 0);
+		&& next.categoriesAcceptInput && static_cast<bool>(BarUiAnimationEnabled) && tool.preset != PresetKind::RegularPolygon && pressed_ < 0);
 	return changed_ || active_;
 }
 
@@ -530,7 +649,15 @@ void BarGeometryAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContex
 			if (brush) context->DrawRoundedRectangle(D2D1::RoundedRect(rect, 3, 3), brush, 1);
 		}
 	};
-	for (size_t i = 0; i < CircleCenter; ++i) drawButton(i);
+	context->PushAxisAlignedClip(PixelRect(frame_.categoryClip, frame_.zoom), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+	for (size_t i = 0; i < CircleCenter; ++i)
+		if (Intersection(frame_.items[i],frame_.categoryClip).Width() > 0) drawButton(i);
+	context->PopAxisAlignedClip();
+	if (scrollRail_.enable.val)
+	{
+		renderer.Shape(context,scrollRail_,BarUiInheritClass(scrollRail_.inhX,scrollRail_.inhY));
+		renderer.Shape(context,scrollThumb_,BarUiInheritClass(scrollThumb_.inhX,scrollThumb_.inhY));
+	}
 	drawButton(CloseButton);
 	for (size_t index = 0; index < AttributeItems.size(); ++index)
 	{
@@ -567,17 +694,22 @@ std::array<RECT,1> BarGeometryAttributePanel::PresentedRegions() const
 }
 void BarGeometryAttributePanel::Close(BarUISetClass& owner)
 {
-	owner.barState.geometryAttribute = false; visible_ = false; ResetPointerFeedback(); focused_ = -1; StopCarousel();
+	owner.barState.geometryAttribute = false; visible_ = false; ResetPointerFeedback(); scrollRequest_ = 0; focused_ = -1; StopCarousel();
 }
 bool BarGeometryAttributePanel::ResetPointerFeedback()
 {
-	const bool changed = hovered_ >= 0 || pressed_ >= 0;
-	hovered_ = -1; pressed_ = -1; pressCancelled_ = true; return changed;
+	const bool changed = hovered_ >= 0 || pressed_ >= 0 || scrollDragging_;
+	hovered_ = -1; pressed_ = -1; scrollDragging_ = false; pressCancelled_ = true; return changed;
 }
 void BarGeometryAttributePanel::Execute(BarUISetClass& owner, int item, std::uint64_t revision)
 {
-	if (StateModeTransitionRevision() != revision) return;
-	if (item < CategoryCount) SetShapeToolPresetIfRevision(Categories[item], revision);
+	if (item < 0 || item >= GeometryControlCount || StateModeTransitionRevision() != revision) return;
+	if (item < CategoryCount)
+	{
+		const auto preset = ShapeCategoryCatalog()[item].preset;
+		if (!preset) return; // 禁用目录项在动作入口也拒绝，不可退化为默认直线。
+		SetShapeToolPresetIfRevision(*preset, revision);
+	}
 	else if (item == CircleCenter || item == CircleBox) SetShapeCircleModeIfRevision(item == CircleCenter ? CreationMode::CenterRadius : CreationMode::Drag, revision);
 	else if (item >= SidesBegin && item < StyleBegin) SetShapePolygonSidesIfRevision(item - SidesBegin + 3, revision);
 	else if (item >= StyleBegin && item < PatternBegin) SetShapeFillModeIfRevision(static_cast<draw3::shapes::FillMode>(item - StyleBegin), revision);
@@ -589,12 +721,57 @@ void BarGeometryAttributePanel::Execute(BarUISetClass& owner, int item, std::uin
 bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled, bool contactPointer)
 {
 	if (cancelled) { const bool owned = ResetPointerFeedback(); if (owned) owner.UpdateRendering(false); return owned; }
-	const auto f = PresentationSnapshot(); if (!f.visible && pressed_ < 0) return false;
+	const auto f = PresentationSnapshot(); if (!f.visible && pressed_ < 0 && !scrollDragging_) return false;
 	const double x = message.x / f.zoom, y = message.y / f.zoom;
 	const bool inside = f.visible && BarUiRoundedRectContainsPoint(message.x, message.y, f.zoom,
 		f.panel.left, f.panel.top, f.panel.Width(), f.panel.Height(), BarMainBarCornerRadiusDip * f.pose.scale, BarMainBarCornerRadiusDip * f.pose.scale);
+	const auto currentState = GetStateModeVersionedSnapshot();
+	const bool ownsTool = owner.barState.geometryAttribute && currentState.state.StateModeSelect == StateModeSelectEnum::IdtShape;
+	if (scrollDragging_)
+	{
+		// 捕获丢失、业务切换、工作区/倍率变化都结束旧拖动；旧轨道不可解释新的指针坐标。
+		const bool valid = ownsTool && f.visible && f.acceptsInput && currentState.revision == scrollRevision_
+			&& f.workArea == scrollGesture_.workArea && f.scrollTrack == scrollGesture_.scrollTrack && f.scrollMaximum == scrollGesture_.scrollMaximum
+			&& f.zoom == scrollGesture_.zoom && f.pose.scale == scrollGesture_.pose.scale;
+		if (!valid) { ResetPointerFeedback(); owner.UpdateRendering(false); return true; }
+		if (message.message == WM_MOUSEMOVE || message.message == WM_LBUTTONUP)
+		{
+			const double travel = scrollGesture_.scrollTrack.Height() - scrollGesture_.scrollThumb.Height();
+			if (travel > 0) scrollRequest_ = (std::clamp)(scrollDragOffset_ + (y-scrollDragY_)*f.scrollMaximum/travel,0.0,f.scrollMaximum);
+			if (message.message == WM_LBUTTONUP) scrollDragging_ = false;
+			owner.UpdateRendering(false); return true;
+		}
+		return true;
+	}
+	if (message.message == WM_MOUSEWHEEL)
+	{
+		if (ownsTool && f.acceptsInput && f.scrollMaximum > 0 && (Contains(f.categoryClip,x,y) || Contains(f.scrollTrack,x,y)))
+		{
+			// 同一worker连续滚轮累积目标，不依赖尚未呈现的动画位置；先撤销可能的按钮按下。
+			ResetPointerFeedback(); focused_ = -1; StopCarousel();
+			scrollRequest_ = (std::clamp)((std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum)
+				- static_cast<double>(message.wheel)/WHEEL_DELTA*(BarButtonTwoSideDip+BarButtonGapDip),0.0,f.scrollMaximum);
+			owner.UpdateRendering(false);
+		}
+		return inside;
+	}
+	if ((message.message == WM_LBUTTONDOWN || message.message == WM_LBUTTONDBLCLK)
+		&& ownsTool && f.acceptsInput && Contains(f.scrollTrack,x,y))
+	{
+		ResetPointerFeedback(); focused_ = -1; StopCarousel(); scrollDragging_ = true;
+		scrollGesture_ = f; scrollRevision_ = currentState.revision; scrollDragY_ = y; scrollDragOffset_ = f.scrollOffset;
+		if (!Contains(f.scrollThumb,x,y))
+		{
+			const double travel = f.scrollTrack.Height()-f.scrollThumb.Height();
+			if (travel > 0) scrollDragOffset_ = (std::clamp)((y-f.scrollTrack.top-f.scrollThumb.Height()/2)*f.scrollMaximum/travel,0.0,f.scrollMaximum);
+			scrollRequest_ = scrollDragOffset_;
+		}
+		owner.UpdateRendering(false); return true;
+	}
+	const bool scrollPending = abs((std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum)-f.scrollOffset) > 0.000001;
 	int hit = -1;
-	if (inside && f.acceptsInput) for (size_t i = 0; i < f.hits.size(); ++i) if (HitTestBarButton(f.hits[i], x, y)) { hit = static_cast<int>(i); break; }
+	if (inside && f.acceptsInput) for (size_t i = 0; i < f.hits.size(); ++i)
+		if (!(i < CategoryCount && scrollPending) && HitTestBarButton(f.hits[i],x,y)) { hit = static_cast<int>(i); break; }
 	if (message.message == WM_MOUSEMOVE)
 	{
 		if (pressed_ >= 0 && hit != pressed_) pressCancelled_ = true;
@@ -628,14 +805,25 @@ bool BarGeometryAttributePanel::Keyboard(BarUISetClass& owner, BYTE key, bool do
 	const auto f = PresentationSnapshot(); if (!f.acceptsInput) return true;
 	if (key == VK_RETURN || key == VK_SPACE)
 	{
-		if (focused_ >= 0 && focused_ < static_cast<int>(f.hits.size()) && f.hits[focused_].visible && f.hits[focused_].enabled)
+		const bool scrollPending = scrollDragging_ || abs((std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum)-f.scrollOffset) > 0.000001;
+		if (focused_ >= 0 && focused_ < static_cast<int>(f.hits.size()) && !(focused_ < CategoryCount && scrollPending) && f.hits[focused_].visible && f.hits[focused_].enabled)
 			Execute(owner, focused_, GetStateModeVersionedSnapshot().revision); return true;
 	}
 	const int delta = key == VK_LEFT || (key == VK_TAB && (GetKeyState(VK_SHIFT) & 0x8000)) ? -1 : 1;
 	int focus = focused_; for (size_t attempts = 0; attempts < buttons_.size(); ++attempts)
 	{
 		focus = (focus + delta + static_cast<int>(buttons_.size())) % static_cast<int>(buttons_.size());
-		if (f.hits[focus].visible && f.hits[focus].enabled) break;
+		if (focus < CategoryCount ? ShapeCategoryCatalog()[focus].preset.has_value() : f.hits[focus].visible && f.hits[focus].enabled) break;
 	}
-	focused_ = focus; hovered_ = -1; owner.UpdateRendering(false); return true;
+	focused_ = focus; hovered_ = -1;
+	if (focus < CategoryCount && f.pose.scale > 0)
+	{
+		const double itemTop = (f.items[focus].top-f.categoryClip.top)/f.pose.scale+f.scrollOffset;
+		const double itemBottom = itemTop+f.items[focus].Height()/f.pose.scale;
+		double requested = (std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum);
+		if (itemTop < requested) requested = itemTop;
+		else if (itemBottom > requested+f.categoryViewportHeight) requested = itemBottom-f.categoryViewportHeight;
+		scrollRequest_ = (std::clamp)(requested,0.0,f.scrollMaximum);
+	}
+	owner.UpdateRendering(false); return true;
 }

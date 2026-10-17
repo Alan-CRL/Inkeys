@@ -27,11 +27,12 @@
     "10-17-shape-phase5-snapping",
     "10-17-shape-phase6-relations",
     "10-17-shape-phase7-ink-selection",
-    "10-17-shape-point-tools"
+    "10-17-shape-point-tools",
+    "10-17-shape-future-toolbar-ui"
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "P1已提交e59703ec；P2完成并通过集成验收。P3–7及P3后的逐点工具保持planning。P2未commit/push。",
+  "notes": "P1已提交e59703ec；P2已提交2e3a4f26；面板修正已提交384c5838。shape-future-toolbar-ui已完成A方案并验收，36类UI/新25类禁用/类别区按需滚动；本轮未commit/push。P3–7绘制/编辑及P3后逐点工具仍planning。",
   "meta": {
     "validation": ".trellis/tasks/10-17-shape-phase2-tools/validation.md"
   }

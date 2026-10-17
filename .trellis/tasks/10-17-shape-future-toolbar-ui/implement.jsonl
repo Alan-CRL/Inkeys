@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "主栏所属层、公共UI与窗口边界"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI3按钮/list/动画/呈现命中与形状面板合同"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "SVG资源与三语生成链"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++模块、线程与最小修改规范"}
+{"file": ".trellis/tasks/10-17-shape-future-toolbar-ui/research/ui-catalog-and-layout.md", "reason": "真实UI3禁用三处资格、目录索引、六行尺寸与工作区取舍"}

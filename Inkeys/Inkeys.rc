@@ -371,6 +371,56 @@ BARSHAPEPOLYGON11        UI                      "src\\UI\\barShapePolygon11.svg
 
 BARSHAPEPOLYGON12        UI                      "src\\UI\\barShapePolygon12.svg"
 
+BARSHAPEPOLYLINE        UI                      "src\\UI\\barShapePolyline.svg"
+
+BARSHAPEPOLYGON         UI                      "src\\UI\\barShapePolygon.svg"
+
+BARSHAPEARC             UI                      "src\\UI\\barShapeArc.svg"
+
+BARSHAPESECTOR          UI                      "src\\UI\\barShapeSector.svg"
+
+BARSHAPEANGLE           UI                      "src\\UI\\barShapeAngle.svg"
+
+BARSHAPEPARALLEL        UI                      "src\\UI\\barShapeParallel.svg"
+
+BARSHAPEPERPENDICULAR   UI                      "src\\UI\\barShapePerpendicular.svg"
+
+BARSHAPECUBOID          UI                      "src\\UI\\barShapeCuboid.svg"
+
+BARSHAPECUBE            UI                      "src\\UI\\barShapeCube.svg"
+
+BARSHAPECYLINDER        UI                      "src\\UI\\barShapeCylinder.svg"
+
+BARSHAPECONE            UI                      "src\\UI\\barShapeCone.svg"
+
+BARSHAPEPRISM           UI                      "src\\UI\\barShapePrism.svg"
+
+BARSHAPEPYRAMID         UI                      "src\\UI\\barShapePyramid.svg"
+
+BARSHAPENUMBERLINE      UI                      "src\\UI\\barShapeNumberLine.svg"
+
+BARSHAPECARTESIAN       UI                      "src\\UI\\barShapeCartesian.svg"
+
+BARSHAPEGRID            UI                      "src\\UI\\barShapeGrid.svg"
+
+BARSHAPECOORDINATEPOINT UI                      "src\\UI\\barShapeCoordinatePoint.svg"
+
+BARSHAPEPARABOLA        UI                      "src\\UI\\barShapeParabola.svg"
+
+BARSHAPERECIPROCAL      UI                      "src\\UI\\barShapeReciprocal.svg"
+
+BARSHAPEHYPERBOLA       UI                      "src\\UI\\barShapeHyperbola.svg"
+
+BARSHAPESINE            UI                      "src\\UI\\barShapeSine.svg"
+
+BARSHAPECOSINE          UI                      "src\\UI\\barShapeCosine.svg"
+
+BARSHAPETANGENT         UI                      "src\\UI\\barShapeTangent.svg"
+
+BARSHAPEEXPONENTIAL     UI                      "src\\UI\\barShapeExponential.svg"
+
+BARSHAPELOGARITHMIC     UI                      "src\\UI\\barShapeLogarithmic.svg"
+
 COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg"
 
 COLORCUSTOM             PNG                     "src\\UI\\color\\colorCustom.png"

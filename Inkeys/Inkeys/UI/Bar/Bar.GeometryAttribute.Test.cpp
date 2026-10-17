@@ -41,6 +41,10 @@ public:
 	static auto Attributes(const BarGeometryAttributePanel& p) { return p.attributeList_.Snapshot(); }
 	static auto Candidate(const BarGeometryAttributePanel& p) { return p.frame_; }
 	static int Focused(const BarGeometryAttributePanel& p) { return p.focused_; }
+	static void Focus(BarGeometryAttributePanel& p, int item) { p.focused_ = item; }
+	static void Execute(BarGeometryAttributePanel& p, BarUISetClass& owner, int item, std::uint64_t revision) { p.Execute(owner, item, revision); }
+	static double ScrollRequest(const BarGeometryAttributePanel& p) { return p.scrollRequest_; }
+	static bool ScrollDragging(const BarGeometryAttributePanel& p) { return p.scrollDragging_; }
 	static void MoveRoot(BarUISetClass& owner, double x, double y)
 	{
 		const auto root = owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
@@ -62,6 +66,29 @@ public:
 
 namespace
 {
+	// 逐字段比较完整业务快照，不能用含padding的memcmp，也不能只看当前工具名。
+	bool SameBusinessSnapshot(const StateModeVersionedSnapshot& before, const StateModeVersionedSnapshot& after)
+	{
+		if (before.revision != after.revision) return false;
+		const auto& a = before.state; const auto& b = after.state;
+		auto selection = [](const auto& x, const auto& y) { return x.source == y.source && x.preset == y.preset && x.explicitDip == y.explicitDip; };
+		auto stroke = [&](const auto& x, const auto& y) { return x.width == y.width && x.color == y.color && selection(x.widthSelection, y.widthSelection); };
+		return a.StateModeSelect == b.StateModeSelect && a.StateModeSelectTarget == b.StateModeSelectTarget && a.StateModeSelectEcho == b.StateModeSelectEcho &&
+			a.laserActive == b.laserActive && a.lastAnnotationMode == b.lastAnnotationMode &&
+			a.penWidthContext.revision == b.penWidthContext.revision && a.penWidthContext.paintDevice == b.penWidthContext.paintDevice &&
+			a.penWidthContext.effectiveDpi == b.penWidthContext.effectiveDpi && a.penWidthContext.pixelWidth == b.penWidthContext.pixelWidth && a.penWidthContext.pixelHeight == b.penWidthContext.pixelHeight &&
+			a.Pen.ModeSelect == b.Pen.ModeSelect && stroke(a.Pen.Brush1, b.Pen.Brush1) && a.Pen.Brush1.widthPreset == b.Pen.Brush1.widthPreset &&
+			stroke(a.Pen.Highlighter1, b.Pen.Highlighter1) && a.Pen.Highlighter1.widthPreset == b.Pen.Highlighter1.widthPreset &&
+			stroke(a.Pen.Laser, b.Pen.Laser) && std::equal(std::begin(a.Pen.Laser.widthPreset), std::end(a.Pen.Laser.widthPreset), std::begin(b.Pen.Laser.widthPreset)) &&
+			a.Shape.ModeSelect == b.Shape.ModeSelect && a.Shape.circleMode == b.Shape.circleMode && a.Shape.polygonSides == b.Shape.polygonSides &&
+			a.Shape.fillMode == b.Shape.fillMode && a.Shape.openPattern == b.Shape.openPattern && a.Shape.closedPattern == b.Shape.closedPattern &&
+			stroke(a.Shape.StraightLine1, b.Shape.StraightLine1) && stroke(a.Shape.Rectangle1, b.Shape.Rectangle1);
+	}
+	EraserAttributeRect Intersect(EraserAttributeRect a, EraserAttributeRect b)
+	{
+		const EraserAttributeRect result{(std::max)(a.left, b.left), (std::max)(a.top, b.top), (std::min)(a.right, b.right), (std::min)(a.bottom, b.bottom)};
+		return result.Width() > 0 && result.Height() > 0 ? result : EraserAttributeRect{};
+	}
 	std::vector<unsigned char> ReadPixels(ID2D1DeviceContext* dc, ID2D1Bitmap1* target, const D2D1_RECT_U* crop = nullptr)
 	{
 		ComPtr<ID2D1Bitmap1> readable;
@@ -161,21 +188,21 @@ namespace Inkeys::UI::Bar
 		owner.spec.SetFrameZoom(1); preset(PresetKind::Line);
 		expect(!owner.geometryAttribute.Active(), "stable panel sleeps between carousel deadlines");
 		auto f = owner.geometryAttribute.PresentationSnapshot();
-		expect(f.visible && f.acceptsInput && f.items[23].Width() == 0 && f.items[26].Width() > 0, "line hides fill style and keeps stroke controls");
+		expect(f.visible && f.acceptsInput && f.items[GeometryStyleBegin].Width() == 0 && f.items[GeometryPatternBegin].Width() > 0, "line hides fill style and keeps stroke controls");
 		const auto list = BarGeometryAttributeTestAccess::Categories(owner.geometryAttribute);
 		const auto grid = ResolveBarButtonListLayout(list, BarButtonListLayoutKind::GeometryGrid);
-		expect(list.size() == 11 && grid.subColumns == 12 && grid.totalRows == 4 && !grid.showDivider, "shape-owned list uses its independent six-column policy");
-		expect(f.items.size() == 34 && f.items[33].left > f.items[5].right, "close is the only side-rail entry");
+		expect(list.size() == GeometryCategoryCount && grid.subColumns == 12 && grid.totalRows == 12 && !grid.showDivider, "shape-owned list uses its independent six-column policy");
+		expect(f.items.size() == GeometryControlCount && f.items[GeometryCloseButton].left > f.items[5].right, "close is the only side-rail entry");
 		expect(f.items[0].top == f.items[5].top && f.items[6].top > f.items[0].top && f.items[6].left == f.items[0].left,
 			"shape list keeps row-major geometry order and wraps after six categories");
-		for (const size_t count : {size_t{1}, size_t{6}, size_t{7}, size_t{11}})
+		for (const size_t count : {size_t{1}, size_t{6}, size_t{7}, size_t{11}, size_t{12}, size_t{35}, size_t{36}})
 		{
 			const std::vector<std::shared_ptr<BarButtonClass>> subset(list.begin(), list.begin() + count);
 			const auto shapeGrid = ResolveBarButtonListLayout(subset, BarButtonListLayoutKind::GeometryGrid);
 			expect(shapeGrid.placements.size() == count && shapeGrid.subColumns <= 12 && !shapeGrid.showDivider, "shape policy bounds only its own visible categories");
 		}
 		const auto standard = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
-		for (int i = 0; i < 11; ++i)
+		for (int i = 0; i < GeometryCategoryCount; ++i)
 		{
 			const auto& button = *list[i];
 			expect(button.size == BarButtonSizeEnum::twoTwo && f.items[i].Width() == standard.buttonWidthDip && f.items[i].Height() == standard.buttonHeightDip,
@@ -203,6 +230,45 @@ namespace Inkeys::UI::Bar
 		expect(BarGeometryAttributeTestAccess::CarouselSides(owner.geometryAttribute) != carouselBefore && GetShapeToolSpec(GetStateModeSnapshot()) == selectedBefore, "carousel does not mutate actual sides or selection");
 		expect(!owner.geometryAttribute.Active(), "content transition settles before next timer");
 
+		const auto& catalog = ShapeCategoryCatalog();
+		expect(catalog.size() == 36 && GeometryImplementedCategoryCount == 11 && GeometryControlCount == 59, "approved catalog has 36 UI tools and keeps only eleven business presets");
+		for (int i = 0; i < GeometryCategoryCount; ++i)
+		{
+			expect(catalog[i].key && catalog[i].resource && !ShapeCategoryLabel(i).empty(), "every catalog entry has stable UI key resource and label");
+			expect(catalog[i].preset.has_value() == (i < GeometryImplementedCategoryCount), "future catalog tools do not invent business preset mappings");
+			for (int j = 0; j < i; ++j) expect(std::wstring(catalog[i].key) != catalog[j].key, "catalog UI keys are unique");
+		}
+		for (int item = GeometryImplementedCategoryCount; item < GeometryCategoryCount; ++item)
+		{
+			caseContext = "disabled tool=" + std::to_string(item);
+			const auto before = GetStateModeVersionedSnapshot();
+			pointer(WM_MOUSEMOVE, item, false); tick(10);
+			for (bool contact : {false, true})
+			{
+				expect(pointer(WM_LBUTTONDOWN, item, true, contact), "disabled category consumes pointer down instead of canvas fallthrough"); tick(5);
+				expect(pointer(WM_LBUTTONUP, item, false, contact), "disabled category consumes pointer up instead of canvas fallthrough");
+				pointer(WM_LBUTTONDBLCLK, item, true, contact); pointer(WM_LBUTTONUP, item, false, contact);
+				ExMessage lost{}; owner.geometryAttribute.Pointer(owner, lost, true, contact); tick(40);
+				expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "disabled mouse and contact actions preserve all business fields and revision");
+			}
+			BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute, owner, item, before.revision);
+			BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute, item);
+			owner.geometryAttribute.Keyboard(owner, VK_RETURN, true); owner.geometryAttribute.Keyboard(owner, VK_SPACE, true);
+			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "direct Execute and stale forced keyboard focus cannot activate future tool");
+			const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item);
+			expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - 0.30) < 0.000001 && std::abs(button.name.pct.val - 0.30) < 0.000001,
+				"future tools use shared disabled state and 0.30 icon label opacity");
+			expect(button.pressScale.val == 1 && !f.hits[item].enabled, "future tools do not acquire successful press feedback or action hit");
+		}
+		for (BYTE key : {static_cast<BYTE>(VK_TAB), static_cast<BYTE>(VK_LEFT), static_cast<BYTE>(VK_RIGHT)})
+			for (int i = 0; i < GeometryControlCount * 2; ++i)
+			{
+				owner.geometryAttribute.Keyboard(owner, key, true);
+				const int focus = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
+				expect(focus < GeometryImplementedCategoryCount || focus >= GeometryCategoryCount, "keyboard navigation skips all twenty-five disabled categories");
+			}
+		owner.geometryAttribute.ResetPointerFeedback(); caseContext.clear(); tick(90);
+
 		// 真实共享按钮按压/回弹，命中几何不跟随 draw-only pressScale 收缩。
 		f = owner.geometryAttribute.PresentationSnapshot(); const auto beforeHit = f.items[1];
 		pointer(WM_MOUSEMOVE, 1, false); tick(15); pointer(WM_LBUTTONDOWN, 1, true); tick(10);
@@ -219,20 +285,20 @@ namespace Inkeys::UI::Bar
 		pointer(WM_LBUTTONDOWN, 2, true);
 		ExMessage cancel{}; owner.geometryAttribute.Pointer(owner, cancel, true, true); pointer(WM_LBUTTONUP, 2, false, true); tick(60);
 		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse, "capture cancellation leaves tool unchanged");
-		for (int i = 0; i < 11; ++i) { click(i, i % 2 != 0); expect(static_cast<int>(GetShapeToolSpec(GetStateModeSnapshot()).preset) == i, "every category commits through normalized pointer path"); }
+		for (int i = 0; i < GeometryImplementedCategoryCount; ++i) { click(i, i % 2 != 0); expect(static_cast<int>(GetShapeToolSpec(GetStateModeSnapshot()).preset) == i, "every category commits through normalized pointer path"); }
 		expect(!BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute), "selected polygon stops carousel");
 		for (unsigned sides = 3; sides <= 12; ++sides)
 		{
-			click(13 + sides - 3); const auto tool = GetShapeToolSpec(GetStateModeSnapshot());
+			click(GeometrySidesBegin + sides - 3); const auto tool = GetShapeToolSpec(GetStateModeSnapshot());
 			expect(tool.sides == sides && ShapeToolIconResource(tool) == L"barShapePolygon" + std::to_wstring(sides), "numeric sides select exact centered polygon icon");
 		}
 		preset(PresetKind::Circle); f = owner.geometryAttribute.PresentationSnapshot();
-		expect(f.items[11].Width() > 0 && f.items[13].Width() == 0, "circle displays two mode options only");
-		click(12); expect(GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::Drag, "bounding square mode");
-		click(11); expect(GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius, "center radius mode");
-		click(24); f = owner.geometryAttribute.PresentationSnapshot();
-		expect(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::Fill && f.items[26].Width() == 0 && f.items[30].Width() == 0, "fill-only hides line and width groups");
-		click(25); for (int pattern = 0; pattern < 4; ++pattern) { click(26 + pattern); expect(static_cast<int>(GetShapeStyle(GetStateModeSnapshot()).linePattern) == pattern, "line pattern current revision setter"); }
+		expect(f.items[GeometryCircleCenter].Width() > 0 && f.items[GeometrySidesBegin].Width() == 0, "circle displays two mode options only");
+		click(GeometryCircleBox); expect(GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::Drag, "bounding square mode");
+		click(GeometryCircleCenter); expect(GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius, "center radius mode");
+		click(GeometryStyleBegin + 1); f = owner.geometryAttribute.PresentationSnapshot();
+		expect(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::Fill && f.items[GeometryPatternBegin].Width() == 0 && f.items[GeometryThicknessBegin].Width() == 0, "fill-only hides line and width groups");
+		click(GeometryStyleBegin + 2); for (int pattern = 0; pattern < 4; ++pattern) { click(GeometryPatternBegin + pattern); expect(static_cast<int>(GetShapeStyle(GetStateModeSnapshot()).linePattern) == pattern, "line pattern current revision setter"); }
 		preset(PresetKind::Line); expect(GetShapeStyle(GetStateModeSnapshot()).linePattern == LinePattern::Solid, "open and closed line memories independent");
 		preset(PresetKind::Rectangle); expect(GetShapeStyle(GetStateModeSnapshot()).linePattern == LinePattern::DashDot, "closed shape pattern persists across tools");
 		for (int presetIndex = 0; presetIndex < 3; ++presetIndex)
@@ -241,12 +307,12 @@ namespace Inkeys::UI::Bar
 			expect(ApplyBarThicknessPresetIfRevision(presetIndex, before.revision, false), "existing preset adapter accepts current shape"); tick(60);
 			for (int i = 0; i < 3; ++i)
 			{
-				const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, 30 + i);
+				const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, GeometryThicknessBegin + i);
 				expect(!button.name.enable.val && !button.icon.enable.val && button.name.content.GetVal().empty(), "three thickness buttons contain no numeric label or extra SVG");
 				expect((button.state->state == BarWidgetState::Selected) == (i == presetIndex), "three existing presets preserve selected feedback");
 			}
 		}
-		click(33); expect(!owner.barState.geometryAttribute && !owner.barState.drawAttribute, "only side-rail button closes panel without opening another view");
+		click(GeometryCloseButton); expect(!owner.barState.geometryAttribute && !owner.barState.drawAttribute, "only side-rail button closes panel without opening another view");
 		owner.barState.geometryAttribute = true; tick(90);
 
 		// 正式资源、三语、DPI、上下展开、主题与设备代次均通过实际面板渲染。
@@ -264,7 +330,7 @@ namespace Inkeys::UI::Bar
 				preset(below ? PresetKind::Circle : PresetKind::RegularPolygon); tick(60);
 				f = owner.geometryAttribute.PresentationSnapshot();
 				expect(f.visible && f.acceptsInput && f.panel.left >= 0 && f.panel.top >= 0 && f.panel.right <= 1200 && f.panel.bottom <= 800, "panel and parameters fit both expansion sides");
-				for (int i = 0; i < 11; ++i)
+				for (int i = 0; i < GeometryCategoryCount; ++i)
 				{
 					const auto& b = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i);
 					expect(owner.spec.MeasureText(b.name.content.GetVal(), b.name.size.val, DWRITE_FONT_WEIGHT_BOLD).width <= b.name.w.val + 0.5, "localized category label fits shared standard slot");
@@ -274,10 +340,10 @@ namespace Inkeys::UI::Bar
 				owner.geometryAttribute.Draw(owner.spec, dc); const HRESULT hr = dc->EndDraw(); expect(SUCCEEDED(hr), "production panel draw completes");
 				const auto pixels = ReadPixels(dc, owner.spec.GetTargetBitmap());
 				expect(!pixels.empty() && std::any_of(pixels.begin(), pixels.end(), [](auto v) { return v != 0; }), "production panel produces actual pixels");
-				for (int i = 0; i < 11; ++i) expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i).icon.cacheBitmap != nullptr, "every category rasterizes embedded SVG");
+				for (int i = 0; i < GeometryCategoryCount; ++i) expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i).icon.cacheBitmap != nullptr, "every category rasterizes embedded SVG");
 				if (scale == 1 && !dark && !below && language == std::wstring(L"zh-CN"))
 				{
-					for (int item = 26; item < 33; ++item)
+					for (int item = GeometryPatternBegin; item < GeometryCloseButton; ++item)
 					{
 						const auto rect = f.items[item]; const auto color = static_cast<COLORREF>(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item).name.color.val);
 						unsigned ink = 0; double covariance = 0;
@@ -424,6 +490,59 @@ namespace Inkeys::UI::Bar
 			if (offset + 4 > scenePixels.size()) return std::array<unsigned char,4>{};
 			return std::array<unsigned char,4>{scenePixels[offset], scenePixels[offset + 1], scenePixels[offset + 2], scenePixels[offset + 3]};
 		};
+		struct DisabledInkEvidence { unsigned covered = 0; double peak = 0; bool Visible() const { return covered >= 3 && peak > 0.12; } };
+		auto disabledInk = [&](EraserAttributeRect icon, EraserAttributeRect cell, COLORREF foreground)
+		{
+			DisabledInkEvidence evidence;
+			auto straight = [&](double x, double y)
+			{
+				const auto value = pixel(x, y); std::array<double,3> color{};
+				for (int c = 0; c < 3; ++c) color[c] = value[3] ? (std::min)(255.0, value[c] * 255.0 / value[3]) : 0;
+				return color;
+			};
+			// 内容透明度0.30由公共按钮提供；以实际空白边带为背景，验证真实ULW中仍存在SVG轮廓。
+			const auto a = straight(cell.left + cell.Width() * 0.05, EraserRectCenterY(icon));
+			const auto b = straight(cell.right - cell.Width() * 0.05, EraserRectCenterY(icon));
+			const std::array<double,3> ink{static_cast<double>(GetBValue(foreground)), static_cast<double>(GetGValue(foreground)), static_cast<double>(GetRValue(foreground))};
+			std::array<double,3> background{}, direction{}; double norm = 0;
+			for (int c = 0; c < 3; ++c) { background[c] = (a[c] + b[c]) / 2; direction[c] = background[c] - ink[c]; norm += direction[c] * direction[c]; }
+			if (norm < 100) return evidence;
+			for (LONG y = static_cast<LONG>(ceil(icon.top)); y < icon.bottom; ++y)
+				for (LONG x = static_cast<LONG>(ceil(icon.left)); x < icon.right; ++x)
+				{
+					const auto sample = straight(x, y); double projected = 0, residual = 0;
+					for (int c = 0; c < 3; ++c) projected += (background[c] - sample[c]) * direction[c];
+					const double coverage = (std::clamp)(projected / norm, 0.0, 1.0);
+					for (int c = 0; c < 3; ++c) { const auto difference = sample[c] - background[c] + coverage * direction[c]; residual += difference * difference; }
+					if (pixel(x, y)[3] > 180 && residual < 30 * 30) { evidence.peak = (std::max)(evidence.peak, coverage); if (coverage > 0.08) ++evidence.covered; }
+				}
+			return evidence;
+		};
+		std::array<unsigned,GeometryCategoryCount> futurePixelCases{};
+		auto checkFuturePixels = [&](const GeometryAttributePresentation& presented)
+		{
+			for (int i = GeometryImplementedCategoryCount; i < GeometryCategoryCount; ++i)
+			{
+				const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i);
+				const EraserAttributeRect image{button.icon.inhX, button.icon.inhY, button.icon.inhX + button.icon.w.val, button.icon.inhY + button.icon.h.val};
+				const auto clipped = Intersect(image, presented.categoryClip);
+				if (clipped.Width() < image.Width() - 0.01 || clipped.Height() < image.Height() - 0.01) continue;
+				expect(button.icon.cacheBitmap != nullptr && !button.icon.svg.GetVal().empty() && FindResourceW(nullptr, ShapeCategoryCatalog()[i].resource, L"UI"),
+					"visible future category rasterizes its own formally embedded SVG");
+				const auto icon = clientRect(image, presented), cell = clientRect(presented.items[i], presented);
+				const COLORREF color = button.icon.color1->val;
+				const auto evidence = disabledInk(icon, cell, color);
+				const auto row = presented.items[GeometryStyleBegin].Width() > 0 ? presented.items[GeometryStyleBegin] : presented.items[GeometryPatternBegin];
+				const double gap = 5 * presented.pose.scale;
+				const EraserAttributeRect blank{presented.panel.right - gap - image.Width(), row.top + (row.Height() - image.Height()) / 2,
+					presented.panel.right - gap, row.top + (row.Height() + image.Height()) / 2};
+				const auto negative = clientRect(blank, presented); const auto empty = disabledInk(negative, negative, color);
+				expect(evidence.Visible(), "actual emitted disabled SVG has visible 0.30 content over the local background");
+				expect(!empty.Visible(), "identical disabled SVG pixel oracle rejects same-size real blank footer crop");
+				if (!evidence.Visible() || empty.Visible()) report << "DisabledInk item=" << i << " peak=" << evidence.peak << " covered=" << evidence.covered << " blankPeak=" << empty.peak << " [" << caseContext << "]\n";
+				++futurePixelCases[i];
+			}
+		};
 		struct DiagonalInkEvidence
 		{
 			double peak = 0, diagonalMean = 0, reverseMean = 0;
@@ -481,7 +600,7 @@ namespace Inkeys::UI::Bar
 		auto rowGeometry = [&](const GeometryAttributePresentation& presented)
 		{
 			bool any = false; double bottom = 0;
-			for (int i = 23; i < 33; ++i) if (presented.items[i].Width() > 0)
+			for (int i = GeometryStyleBegin; i < GeometryCloseButton; ++i) if (presented.items[i].Width() > 0)
 			{
 				const auto rect = presented.items[i]; const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i);
 				expect(rect.left >= presented.panel.left - 0.01 && rect.right <= presented.panel.right + 0.01 &&
@@ -510,33 +629,48 @@ namespace Inkeys::UI::Bar
 				"runtime fit contains complete panel in actual work area");
 			const bool closed = wanted != PresetKind::Line && wanted != PresetKind::Arrow;
 			const bool stroke = !closed || fill != draw3::shapes::FillMode::Fill;
-			for (int i = 0; i < 34; ++i)
+			expect(presented.categoryViewportHeight > 0 && presented.categoryContentHeight >= presented.categoryViewportHeight - 0.01 &&
+				presented.scrollOffset >= -0.01 && presented.scrollOffset <= presented.scrollMaximum + 0.01, "category viewport and offset obey actual production scroll limits");
+			expect(presented.categoryClip.left >= presented.panel.left && presented.categoryClip.top >= presented.panel.top &&
+				presented.categoryClip.right <= presented.panel.right && presented.categoryClip.bottom <= presented.panel.bottom, "category clip remains inside panel while fixed controls stay outside its scroll content");
+			for (int i = 0; i < GeometryControlCount; ++i)
 			{
-				const bool shown = i < 11 || i == 33 || ((i == 11 || i == 12) && wanted == PresetKind::Circle) ||
-					(i >= 13 && i < 23 && wanted == PresetKind::RegularPolygon) || (i >= 23 && i < 26 && closed) || (i >= 26 && i < 33 && stroke);
+				const bool shown = i < GeometryCategoryCount || i == GeometryCloseButton || ((i == GeometryCircleCenter || i == GeometryCircleBox) && wanted == PresetKind::Circle) ||
+					(i >= GeometrySidesBegin && i < GeometryStyleBegin && wanted == PresetKind::RegularPolygon) || (i >= GeometryStyleBegin && i < GeometryPatternBegin && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);
 				const auto rect = presented.items[i]; const auto& hit = presented.hits[i];
-				expect((rect.Width() > 0) == shown && hit.visible == shown, "stable attribute visibility follows current shape and fill applicability");
+				const auto visibleRect = i < GeometryCategoryCount ? Intersect(rect, presented.categoryClip) : rect;
+				const bool actuallyVisible = shown && visibleRect.Width() > 0;
+				expect((rect.Width() > 0) == shown && hit.visible == actuallyVisible, "visibility separates complete category geometry from clipped presented hits");
 				if (!shown) continue;
-				expect(rect.left >= presented.panel.left - 0.01 && rect.top >= presented.panel.top - 0.01 &&
-					rect.right <= presented.panel.right + 0.01 && rect.bottom <= presented.panel.bottom + 0.01,
-					"all visible categories parameters and attributes fit actual panel bounds");
-				const auto emitted = clientRect(rect, presented);
-				expect(emitted.left >= -1 && emitted.top >= -1 && emitted.right <= receipt.size.cx + 1 && emitted.bottom <= receipt.size.cy + 1,
-					"all visible shape controls survive complete production crop");
-				if (i >= 11 && i < 23)
-					expect(rect.top >= presented.parameterClip.top - 0.01 && rect.bottom <= presented.parameterClip.bottom + 0.01,
-						"stable parameter buttons fit the exact clip used by production draw");
-				expect(HitTestBarButton(hit, EraserRectCenterX(rect), EraserRectCenterY(rect)), "successful production presentation owns current button center");
-				expect(std::abs(hit.boundsDip.left - rect.left) < 0.02 && std::abs(hit.boundsDip.top - rect.top) < 0.02 &&
-					std::abs(hit.boundsDip.right - rect.right) < 0.02 && std::abs(hit.boundsDip.bottom - rect.bottom) < 0.02,
-					"presented hit uses same complete rectangle as actual draw");
-				if (i < 11)
+				if (actuallyVisible)
+				{
+					expect(visibleRect.left >= presented.panel.left - 0.01 && visibleRect.top >= presented.panel.top - 0.01 &&
+						visibleRect.right <= presented.panel.right + 0.01 && visibleRect.bottom <= presented.panel.bottom + 0.01,
+						"visible category clips parameters and attributes fit actual panel bounds");
+					const auto emitted = clientRect(visibleRect, presented);
+					expect(emitted.left >= -1 && emitted.top >= -1 && emitted.right <= receipt.size.cx + 1 && emitted.bottom <= receipt.size.cy + 1,
+						"all visible shape control pixels survive complete production crop");
+					if (i >= GeometryCircleCenter && i < GeometryStyleBegin)
+						expect(rect.top >= presented.parameterClip.top - 0.01 && rect.bottom <= presented.parameterClip.bottom + 0.01,
+							"stable parameter buttons fit the exact clip used by production draw");
+					const bool actionable = i >= GeometryCategoryCount || i < GeometryImplementedCategoryCount;
+					expect(hit.enabled == actionable && HitTestBarButton(hit, EraserRectCenterX(visibleRect), EraserRectCenterY(visibleRect)) == actionable,
+						"successful presentation enables current visible implemented controls and rejects future categories");
+					expect(std::abs(hit.boundsDip.left - visibleRect.left) < 0.02 && std::abs(hit.boundsDip.top - visibleRect.top) < 0.02 &&
+						std::abs(hit.boundsDip.right - visibleRect.right) < 0.02 && std::abs(hit.boundsDip.bottom - visibleRect.bottom) < 0.02,
+						"presented hit uses the same clipped geometry as actual draw");
+				}
+				else expect(!hit.enabled, "fully clipped categories cannot receive actions");
+				if (i < GeometryCategoryCount)
 				{
 					const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i);
 					expect(owner.spec.MeasureText(button.name.content.GetVal(), button.name.size.val, DWRITE_FONT_WEIGHT_BOLD).width <= button.name.w.val + 0.5,
 						"actual scene localized category label fits measured shared slot");
+					if (i >= GeometryImplementedCategoryCount)
+						expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - 0.30) < 0.000001 && std::abs(button.name.pct.val - 0.30) < 0.000001,
+							"disabled future category retains shared 0.30 content without becoming selected");
 				}
-				if (i >= 26 && i < 33)
+				if (i >= GeometryPatternBegin && i < GeometryCloseButton)
 				{
 					const auto target = clientRect(rect, presented); unsigned ink = 0;
 					int nearestDistance = 1000, maxAlpha = 0; std::array<unsigned char,4> nearest{};
@@ -561,7 +695,7 @@ namespace Inkeys::UI::Bar
 						const double gap = 5 * presented.pose.scale;
 						const EraserAttributeRect blank{presented.panel.right - gap - rect.Width(), rect.top, presented.panel.right - gap, rect.bottom};
 						double lastAttributeRight = 0;
-						for (int item = 23; item < 33; ++item) if (presented.items[item].Width() > 0)
+						for (int item = GeometryStyleBegin; item < GeometryCloseButton; ++item) if (presented.items[item].Width() > 0)
 							lastAttributeRight = (std::max)(lastAttributeRight, presented.items[item].right);
 						expect(blank.left > lastAttributeRight + gap, "AA negative control lies in actual blank panel row beyond all attribute buttons");
 						const auto empty = diagonalInk(clientRect(blank, presented), color);
@@ -589,7 +723,7 @@ namespace Inkeys::UI::Bar
 					expect(actualInk, "actual emitted bottom-row crop contains line-pattern or thickness ink");
 				}
 			}
-			rowGeometry(presented);
+			rowGeometry(presented); checkFuturePixels(presented);
 		};
 		captureScene = true; BarUiAnimationEnabled = false; owner.geometryAttribute.ResetPointerFeedback();
 		unsigned sceneCases = 0;
@@ -604,7 +738,7 @@ namespace Inkeys::UI::Bar
 				sceneTick(2);
 				BarGeometryAttributeTestAccess::MoveRoot(owner, 80, below ? 80 : height - 80); sceneTick(2);
 				expect(static_cast<bool>(owner.barState.widgetPosition.primaryBar) == below, "actual main-bar position chooses intended expansion side");
-				for (int shape = 0; shape < 11; ++shape) for (int fill = 0; fill < 3; ++fill)
+				for (int shape = 0; shape < GeometryImplementedCategoryCount; ++shape) for (int fill = 0; fill < 3; ++fill)
 				{
 					caseContext = "scene=" + std::to_string(++sceneCases) + " shape=" + std::to_string(shape) + " fill=" + std::to_string(fill) +
 						" scale=" + std::to_string(scale) + " small=" + std::to_string(smallWork) + " below=" + std::to_string(below);
@@ -618,6 +752,7 @@ namespace Inkeys::UI::Bar
 				}
 			}
 		}
+		for (int i = GeometryImplementedCategoryCount; i < GeometryCategoryCount; ++i) expect(futurePixelCases[i] > 0, "all twenty-five future resources have real emitted pixel evidence");
 		report << "Complete production scene configurations=" << sceneCases << " AA pixel cases=" << antialiasAccepted << '\n'; caseContext = "animated attributes";
 		const auto attributes = BarGeometryAttributeTestAccess::Attributes(owner.geometryAttribute);
 		expect(attributes.size() == 12 && attributes[3]->preset == BarButtonPresetEnum::Divider && attributes[8]->preset == BarButtonPresetEnum::Divider,
@@ -631,6 +766,116 @@ namespace Inkeys::UI::Bar
 			const auto style = GetStateModeVersionedSnapshot(); SetShapeFillModeIfRevision(fill, style.revision);
 			owner.barState.fold = false; owner.barState.geometryAttribute = true; owner.UpdateRendering();
 		};
+		// A方案通过生产呈现/输入回放：只滚动类别，参数、属性和关闭入口保持固定。
+		caseContext = "category viewport scrolling";
+		selectScene(PresetKind::Circle, draw3::shapes::FillMode::Outline); sceneTick(2);
+		const auto spacious = owner.geometryAttribute.PresentationSnapshot();
+		expect(spacious.scrollMaximum == 0 && std::abs(spacious.categoryViewportHeight - spacious.categoryContentHeight) < 0.01,
+			"normal workspace displays all six catalog rows without a scrollbar");
+		BarGeometryAttributeTestAccess::Display(owner, 460, 420); sceneTick(2); BarGeometryAttributeTestAccess::MoveRoot(owner, 80, 340); sceneTick(2);
+		auto scrollFrame = owner.geometryAttribute.PresentationSnapshot();
+		expect(scrollFrame.scrollMaximum > 0 && scrollFrame.categoryViewportHeight < scrollFrame.categoryContentHeight &&
+			scrollFrame.scrollTrack.Width() > 0 && scrollFrame.scrollThumb.Height() < scrollFrame.scrollTrack.Height(), "restricted workspace retains fixed rows and exposes a real category viewport scrollbar");
+		const auto smallMain = owner.shapeMap[BarUISetShapeEnum::MainBar];
+		const EraserAttributeRect mainBounds{smallMain->inhX, smallMain->inhY, smallMain->inhX + smallMain->w.val, smallMain->inhY + smallMain->h.val};
+		expect(Intersect(scrollFrame.panel, mainBounds).Width() == 0, "restricted panel chooses an expansion region that keeps the main toolbar reachable");
+		expect(scrollFrame.pose.scale > 0.9, "ordinary restricted workspace preserves useful button size by scrolling instead of shrinking all six rows");
+		auto panelPoint = [&](USHORT type, double x, double y, bool held = false, bool contact = false, short wheel = 0)
+		{
+			const auto current = owner.geometryAttribute.PresentationSnapshot(); ExMessage message{};
+			message.message = type; message.lbutton = held; message.x = static_cast<short>(std::lround(x * current.zoom)); message.y = static_cast<short>(std::lround(y * current.zoom)); message.wheel = wheel;
+			return owner.geometryAttribute.Pointer(owner, message, false, contact);
+		};
+		auto wheel = [&](short amount)
+		{
+			const auto current = owner.geometryAttribute.PresentationSnapshot();
+			return panelPoint(WM_MOUSEWHEEL, EraserRectCenterX(current.categoryClip), EraserRectCenterY(current.categoryClip), false, false, amount);
+		};
+		expect(SavePng(L"Build/shape-p2-ui/panel-scroll-top.png", scenePixels, receipt.size.cx, receipt.size.cy), "restricted viewport top writes actual emitted crop");
+		const auto fixed = scrollFrame; const auto beforeScroll = GetStateModeVersionedSnapshot();
+		BarUiAnimationEnabled = true; expect(wheel(-WHEEL_DELTA), "category wheel is consumed by its own viewport");
+		const double firstRequest = BarGeometryAttributeTestAccess::ScrollRequest(owner.geometryAttribute);
+		expect(firstRequest > 0, "first wheel publishes a positive scroll intent without a UI thread geometry write");
+		expect(wheel(-WHEEL_DELTA) && BarGeometryAttributeTestAccess::ScrollRequest(owner.geometryAttribute) >= firstRequest, "consecutive wheel input accumulates unpresented intent");
+		unsigned intermediate = 0;
+		for (int i = 0; i < 8; ++i)
+		{
+			sceneTick(1); const auto current = owner.geometryAttribute.PresentationSnapshot(); rowGeometry(current);
+			if (current.scrollOffset > 0 && current.scrollOffset < BarGeometryAttributeTestAccess::ScrollRequest(owner.geometryAttribute) - 0.01) ++intermediate;
+			expect(current.items[GeometryCloseButton] == fixed.items[GeometryCloseButton] && current.items[GeometryPatternBegin] == fixed.items[GeometryPatternBegin] && current.items[GeometryCircleCenter] == fixed.items[GeometryCircleCenter],
+				"category scrolling leaves close parameter and attribute rows fixed throughout shared animation");
+			if (!current.categoriesAcceptInput)
+			{
+				for (int item = 0; item < GeometryCategoryCount; ++item) expect(!current.hits[item].enabled, "scroll animation disables only category action hits");
+				BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute, 0); owner.geometryAttribute.Keyboard(owner, VK_RETURN, true);
+				expect(SameBusinessSnapshot(beforeScroll, GetStateModeVersionedSnapshot()), "Enter cannot execute an unpresented category during animated scroll");
+			}
+		}
+		expect(intermediate >= 2, "scroll offsets pass through multiple shared animation samples"); sceneTick(90);
+		BarUiAnimationEnabled = false;
+		for (int i = 0; i < 20; ++i) wheel(-WHEEL_DELTA); sceneTick(2);
+		scrollFrame = owner.geometryAttribute.PresentationSnapshot();
+		expect(std::abs(scrollFrame.scrollOffset - scrollFrame.scrollMaximum) < 0.01 && scrollFrame.categoriesAcceptInput, "wheel clamps at the last row and restores category input after settle");
+		checkStableScene(PresetKind::Circle, draw3::shapes::FillMode::Outline);
+		expect(SavePng(L"Build/shape-p2-ui/panel-scroll-bottom.png", scenePixels, receipt.size.cx, receipt.size.cy), "restricted viewport bottom writes actual emitted crop");
+		for (int i = GeometryImplementedCategoryCount; i < GeometryCategoryCount; ++i)
+		{
+			const auto current = owner.geometryAttribute.PresentationSnapshot(); const auto visible = Intersect(current.items[i], current.categoryClip);
+			const auto before = GetStateModeVersionedSnapshot();
+			if (visible.Width() > 0)
+			{
+				expect(panelPoint(WM_LBUTTONDOWN, EraserRectCenterX(visible), EraserRectCenterY(visible), true, true), "visible disabled scrolled category blocks contact from reaching canvas");
+				panelPoint(WM_LBUTTONUP, EraserRectCenterX(visible), EraserRectCenterY(visible), false, true);
+			}
+			BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute, owner, i, before.revision);
+			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "future tools remain inert at scrolled presentation and direct action entry");
+		}
+		// 滚到底时Tab跨过所有未来项，使首个真实工具进入视口，呈现前不能执行旧坐标。
+		BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute, GeometryCloseButton);
+		const auto keyboardBefore = GetStateModeVersionedSnapshot();
+		owner.geometryAttribute.Keyboard(owner, VK_TAB, true); owner.geometryAttribute.Keyboard(owner, VK_RETURN, true);
+		expect(BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) == 0 && SameBusinessSnapshot(keyboardBefore, GetStateModeVersionedSnapshot()), "Tab brings real category into view and Enter waits for a successful visible snapshot");
+		sceneTick(2); scrollFrame = owner.geometryAttribute.PresentationSnapshot();
+		expect(scrollFrame.scrollOffset == 0 && scrollFrame.hits[0].enabled && scrollFrame.hits[0].visible, "keyboard focus scrolls first implemented tool fully into view");
+		for (int i = 0; i < GeometryImplementedCategoryCount - 1; ++i) { owner.geometryAttribute.Keyboard(owner, VK_RIGHT, true); sceneTick(2); }
+		scrollFrame = owner.geometryAttribute.PresentationSnapshot();
+		const int focused = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
+		expect(focused == GeometryImplementedCategoryCount - 1 && scrollFrame.hits[focused].enabled && scrollFrame.hits[focused].visible &&
+			scrollFrame.items[focused].top >= scrollFrame.categoryClip.top - 0.01 && scrollFrame.items[focused].bottom <= scrollFrame.categoryClip.bottom + 0.01, "keyboard navigates only real tools and brings second-row focus fully inside viewport");
+		// 宽触控轨道通过公共Down/Move/Up回放，同时覆盖取消和跨代/跨工作区失效。
+		for (bool contact : {false, true})
+		{
+			for (int i = 0; i < 20; ++i) wheel(WHEEL_DELTA); sceneTick(2); scrollFrame = owner.geometryAttribute.PresentationSnapshot();
+			const auto before = GetStateModeVersionedSnapshot(); const double x = EraserRectCenterX(scrollFrame.scrollTrack), y = EraserRectCenterY(scrollFrame.scrollThumb);
+			expect(panelPoint(WM_LBUTTONDOWN,x,y,true,contact) && BarGeometryAttributeTestAccess::ScrollDragging(owner.geometryAttribute), "scrollbar track captures mouse or normalized pen touch contact");
+			panelPoint(WM_MOUSEMOVE,x,scrollFrame.scrollTrack.bottom + 60,true,contact); sceneTick(2);
+			panelPoint(WM_LBUTTONUP,x,scrollFrame.scrollTrack.bottom + 60,false,contact); sceneTick(2);
+			const auto end = owner.geometryAttribute.PresentationSnapshot();
+			expect(!BarGeometryAttributeTestAccess::ScrollDragging(owner.geometryAttribute) && std::abs(end.scrollOffset-end.scrollMaximum)<0.01 && SameBusinessSnapshot(before,GetStateModeVersionedSnapshot()), "scrollbar outside release clamps bottom and preserves all drawing business state");
+			expect(panelPoint(WM_LBUTTONDOWN,EraserRectCenterX(end.scrollTrack),EraserRectCenterY(end.scrollThumb),true,contact), "bottom thumb accepts another contact");
+			ExMessage lost{}; expect(owner.geometryAttribute.Pointer(owner,lost,true,contact), "capture loss cancels active scrollbar gesture");
+			const double cancelledRequest = BarGeometryAttributeTestAccess::ScrollRequest(owner.geometryAttribute);
+			panelPoint(WM_MOUSEMOVE,x,end.scrollTrack.top-60,true,contact); panelPoint(WM_LBUTTONUP,x,end.scrollTrack.top-60,false,contact); sceneTick(2);
+			expect(!BarGeometryAttributeTestAccess::ScrollDragging(owner.geometryAttribute) && BarGeometryAttributeTestAccess::ScrollRequest(owner.geometryAttribute)==cancelledRequest, "late events cannot continue a cancelled scrollbar drag");
+		}
+		scrollFrame = owner.geometryAttribute.PresentationSnapshot();
+		panelPoint(WM_LBUTTONDOWN,EraserRectCenterX(scrollFrame.scrollTrack),EraserRectCenterY(scrollFrame.scrollThumb),true,true);
+		{ const auto current=GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(PresetKind::Rectangle,current.revision); }
+		panelPoint(WM_MOUSEMOVE,EraserRectCenterX(scrollFrame.scrollTrack),scrollFrame.scrollTrack.top,true,true);
+		expect(!BarGeometryAttributeTestAccess::ScrollDragging(owner.geometryAttribute), "business revision invalidates old scrollbar gesture"); sceneTick(2);
+		scrollFrame=owner.geometryAttribute.PresentationSnapshot();
+		panelPoint(WM_LBUTTONDOWN,EraserRectCenterX(scrollFrame.scrollTrack),EraserRectCenterY(scrollFrame.scrollThumb),true,true);
+		BarGeometryAttributeTestAccess::Display(owner,460,380); sceneTick(2);
+		panelPoint(WM_MOUSEMOVE,EraserRectCenterX(scrollFrame.scrollTrack),scrollFrame.scrollTrack.top,true,true);
+		expect(!BarGeometryAttributeTestAccess::ScrollDragging(owner.geometryAttribute), "workspace and track generation change invalidate old scrollbar geometry");
+		// 呈现失败不能把滚动候选的裁剪与命中发布到交互侧。
+		const auto previousScroll=owner.geometryAttribute.PresentationSnapshot(); wheel(WHEEL_DELTA); rejectNextPresent=true; sceneTick(1);
+		const auto failedScroll=owner.geometryAttribute.PresentationSnapshot();
+		expect(failedScroll.items==previousScroll.items && failedScroll.categoryClip==previousScroll.categoryClip && failedScroll.scrollOffset==previousScroll.scrollOffset,
+			"failed actual scroll presentation retains previous successful clip coordinates and offset");
+		previousPixels.clear(); sceneTick(2);
+		BarGeometryAttributeTestAccess::Display(owner,1200,800); sceneTick(2); BarGeometryAttributeTestAccess::MoveRoot(owner,80,650); sceneTick(2);
+		caseContext = "animated attributes";
 		selectScene(PresetKind::Rectangle, draw3::shapes::FillMode::Outline); sceneTick(2);
 		auto previewContrast = [&](int item, const GeometryAttributePresentation& current)
 		{
@@ -645,10 +890,10 @@ namespace Inkeys::UI::Bar
 		{
 			const auto start = owner.geometryAttribute.PresentationSnapshot();
 			std::array<double,10> startOpacity{};
-			for (int i = 0; i < 10; ++i) startOpacity[i] = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, 23 + i).name.pct.val;
-			const double firstContrast = previewContrast(31, start);
-			if (start.hits[26].enabled)
-				for (int attempt = 0; attempt < 34 && BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) != 26; ++attempt)
+			for (int i = 0; i < 10; ++i) startOpacity[i] = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, GeometryStyleBegin + i).name.pct.val;
+			const double firstContrast = previewContrast(GeometryThicknessBegin + 1, start);
+			if (start.hits[GeometryPatternBegin].enabled)
+				for (int attempt = 0; attempt < GeometryControlCount && BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) != GeometryPatternBegin; ++attempt)
 					owner.geometryAttribute.Keyboard(owner, VK_TAB, true);
 			std::array<std::vector<double>,10> positions, opacities;
 			std::vector<double> partialThicknessContrast;
@@ -658,10 +903,10 @@ namespace Inkeys::UI::Bar
 				sceneTick(1); const auto current = owner.geometryAttribute.PresentationSnapshot(); rowGeometry(current);
 				if (frame == 1)
 				{
-					const int item = current.items[26].Width() > 0 ? 26 : 23;
+					const int item = current.items[GeometryPatternBegin].Width() > 0 ? GeometryPatternBegin : GeometryStyleBegin;
 					const auto rect = current.items[item]; const auto before = GetStateModeVersionedSnapshot();
 					const int focusedAttribute = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-					if (focusedAttribute < 0 || (focusedAttribute >= 23 && focusedAttribute < 33))
+					if (focusedAttribute < 0 || (focusedAttribute >= GeometryStyleBegin && focusedAttribute < GeometryCloseButton))
 					{
 						owner.geometryAttribute.Keyboard(owner, VK_RETURN, true);
 						expect(StateModeTransitionRevision() == before.revision, "keyboard Enter cannot commit an attribute while its group reflows or retires");
@@ -672,34 +917,34 @@ namespace Inkeys::UI::Bar
 					owner.geometryAttribute.Pointer(owner, down);
 					ExMessage up = down; up.message = WM_LBUTTONUP; up.lbutton = false; owner.geometryAttribute.Pointer(owner, up);
 					expect(StateModeTransitionRevision() == before.revision, "intermediate attribute reflow Down Up cannot mutate tool or style");
-					for (int attempt = 0; attempt < 34; ++attempt)
+					for (int attempt = 0; attempt < GeometryControlCount; ++attempt)
 					{
 						owner.geometryAttribute.Keyboard(owner, VK_TAB, true); const int focused = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-						expect(focused < 0 || (current.hits[focused].visible && current.hits[focused].enabled), "keyboard traversal skips retiring or reflow-disabled controls");
+						expect(focused < 0 || focused < GeometryImplementedCategoryCount || (current.hits[focused].visible && current.hits[focused].enabled), "keyboard traversal skips disabled future retiring or reflowing controls");
 					}
 				}
-				for (int item = 23; item < 33; ++item)
+				for (int item = GeometryStyleBegin; item < GeometryCloseButton; ++item)
 				{
 					const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item);
-					opacities[item - 23].push_back(button.name.pct.val);
-					if (current.items[item].Width() > 0) positions[item - 23].push_back((current.items[item].left - current.panel.left) / current.pose.scale);
+					opacities[item - GeometryStyleBegin].push_back(button.name.pct.val);
+					if (current.items[item].Width() > 0) positions[item - GeometryStyleBegin].push_back((current.items[item].left - current.panel.left) / current.pose.scale);
 					if (button.name.pct.tar == 0 && button.name.pct.val > 0.01)
 						expect(!current.hits[item].enabled, "retiring attribute cannot accept a fresh press during fade");
 				}
-				const double opacity = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, 31).name.pct.val;
-				if (startOpacity[8] > 0.99 && opacity > 0.2 && opacity < 0.8) partialThicknessContrast.push_back(previewContrast(31, current));
+				const double opacity = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, GeometryThicknessBegin + 1).name.pct.val;
+				if (startOpacity[8] > 0.99 && opacity > 0.2 && opacity < 0.8) partialThicknessContrast.push_back(previewContrast(GeometryThicknessBegin + 1, current));
 			}
 			const auto end = owner.geometryAttribute.PresentationSnapshot();
 			for (int i = 0; i < 10; ++i)
 			{
-				const double finalOpacity = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i + 23).name.pct.val;
+				const double finalOpacity = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i + GeometryStyleBegin).name.pct.val;
 				if (std::abs(finalOpacity - startOpacity[i]) > 0.9)
 					expect(std::count_if(opacities[i].begin(), opacities[i].end(), [](double v) { return v > 0.05 && v < 0.95; }) >= 2,
 						"attribute content visibility traverses intermediate opacity values");
-				if (start.items[i + 23].Width() > 0 && end.items[i + 23].Width() > 0 && positions[i].size() > 2)
+				if (start.items[i + GeometryStyleBegin].Width() > 0 && end.items[i + GeometryStyleBegin].Width() > 0 && positions[i].size() > 2)
 				{
-					const double initial = (start.items[i + 23].left - start.panel.left) / start.pose.scale;
-					const double final = (end.items[i + 23].left - end.panel.left) / end.pose.scale;
+					const double initial = (start.items[i + GeometryStyleBegin].left - start.panel.left) / start.pose.scale;
+					const double final = (end.items[i + GeometryStyleBegin].left - end.panel.left) / end.pose.scale;
 					if (std::abs(final - initial) > 2)
 					{
 						expect(std::abs(positions[i][0] - initial) < std::abs(final - initial) * 0.8,
@@ -710,7 +955,7 @@ namespace Inkeys::UI::Bar
 					}
 				}
 			}
-			if (startOpacity[8] > 0.99 && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, 31).name.pct.val < 0.01)
+			if (startOpacity[8] > 0.99 && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, GeometryThicknessBegin + 1).name.pct.val < 0.01)
 				expect(firstContrast > 10 && std::any_of(partialThicknessContrast.begin(), partialThicknessContrast.end(), [&](double v) { return v > 1 && v < firstContrast * 0.9; }),
 					"actual thickness content fades in emitted pixels before leaving the list");
 			checkStableScene(nextShape, nextFill);
@@ -750,12 +995,14 @@ namespace Inkeys::UI::Bar
 		selectScene(PresetKind::Circle, draw3::shapes::FillMode::Outline); scenePointer(WM_LBUTTONUP, 2, false); sceneTick(2);
 		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Circle, "actual presented stale press cannot overwrite newer tool revision");
 		const auto beforeClick = GetStateModeVersionedSnapshot();
-		scenePointer(WM_LBUTTONDOWN, 27, true); scenePointer(WM_LBUTTONUP, 27, false); sceneTick(2);
+		scenePointer(WM_LBUTTONDOWN, GeometryPatternBegin + 1, true); scenePointer(WM_LBUTTONUP, GeometryPatternBegin + 1, false); sceneTick(2);
 		expect(StateModeTransitionRevision() > beforeClick.revision && GetShapeStyle(GetStateModeSnapshot()).linePattern == LinePattern::Dashed,
 			"settled attribute list restores real presented pointer action");
 		owner.spec.DiscardDeviceResources(); previousPixels.clear(); sceneTick(2); checkStableScene(PresetKind::Circle, draw3::shapes::FillMode::Outline);
-		for (int item = 0; item < 11; ++item) expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item).icon.cacheBitmap != nullptr,
-			"hidden-to-visible production resources rasterize after device cache rebuild");
+		for (int item = 0; item < GeometryCategoryCount; ++item)
+			if (owner.geometryAttribute.PresentationSnapshot().hits[item].visible)
+				expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item).icon.cacheBitmap != nullptr,
+					"visible production resources rasterize after device cache rebuild");
 		owner.geometryAttribute.ResetPointerFeedback(); sceneTick(360);
 		const unsigned settledCommits = actualCommits; sceneTick(20, false);
 		expect(actualCommits == settledCommits && sceneResult == RenderPipeline::FrameResult::Idle && !owner.geometryAttribute.Active(),
@@ -771,7 +1018,7 @@ namespace Inkeys::UI::Bar
 		for (const wchar_t* language : {L"zh-CN", L"zh-TW", L"en-US"})
 		{
 			expect(I18n::load(1, L"JSON", language), "main geometry label language loads"); owner.spec.ConfigureLocalizedTypography();
-			for (int i = 0; i < 11; ++i)
+			for (int i = 0; i < GeometryImplementedCategoryCount; ++i)
 			{
 				const auto s = GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(static_cast<PresetKind>(i), s.revision);
 				owner.UpdateRendering();
