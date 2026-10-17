@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <windows.h>
 #include <json/json.h>
 
@@ -623,7 +624,7 @@ namespace Inkeys::Drawing::Draw3
 					const auto diagnostic = std::find_if(saved.diagnostics.begin(), saved.diagnostics.end(),
 						[](const auto& value) { return value.systemError != 0; });
 					// 使用原 UInk result 的真实错误，不能拿 caller 的 stale LastError 猜原因。
-					std::fprintf(stderr, "[Draw3.Presentation.TestIo] stage=4 uink_status=%u system_error=%u error_available=%u path_chars=%zu diagnostic_code=%u diagnostic_error=%u\n",
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.Presentation.TestIo] stage=4 uink_status=%u system_error=%u error_available=%u path_chars=%zu diagnostic_code=%u diagnostic_error=%u\n",
 						static_cast<unsigned>(saved.status), saved.systemError, saved.systemError != 0 ? 1u : 0u, path.size(),
 						diagnostic == saved.diagnostics.end() ? 0u : static_cast<unsigned>(diagnostic->code),
 						diagnostic == saved.diagnostics.end() ? 0u : diagnostic->systemError);
@@ -745,7 +746,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 						std::uint32_t error = 0;
 						if (!TryRemoveOwnedUInkVersion(version.authority, error))
-							std::fprintf(stderr, "[Draw3.Presentation] action=collect_version result=retained error=%u\n", error);
+							DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=collect_version result=retained error=%u\n", error);
 					}
 					// 两索引真实 deny-write/delete HANDLE 和目录 leases 均持有到最后一次删除结束。
 				}
@@ -928,7 +929,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			for (std::size_t index = 0; index < selection.tracks.size(); ++index)
 				if (index != selection.selected && !selection.tracks[index].indexValid)
-					std::fprintf(stderr, "[Draw3.Presentation] action=select_track result=retained_invalid track=%u\n",
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=select_track result=retained_invalid track=%u\n",
 						static_cast<unsigned>(selection.tracks[index].track));
 			return true;
 		}
@@ -1149,7 +1150,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// 此三边界未保存原 Win32 error，明确只观测已失败站点，不伪造数值。
 				if (faults.logSaveIoDiagnostics)
-					std::fprintf(stderr, "[Draw3.Presentation.TestIo] stage=%u error_available=0\n", stage);
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.Presentation.TestIo] stage=%u error_available=0\n", stage);
 			};
 			if (faults.writeDelayMilliseconds != 0)
 				Sleep(faults.writeDelayMilliseconds);
@@ -1566,6 +1567,12 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const std::wstring path = JoinPath(root, WidenAscii(found->relativePath));
 			const auto read = ReadUInkFile(path);
+			if (read.status == UInkReadStatus::IoError)
+			{
+				// 暂时读失败不能证明源已变化，交给 Controller 现有的有界退避。
+				completion.status = PresentationPersistenceStatus::IoError;
+				return completion;
+			}
 			if (read.status != UInkReadStatus::Complete || !read.document ||
 				(read.provenance.containsInvalidCompleteBlocks ||
 					read.provenance.contentSequenceRecovered) ||
@@ -1707,8 +1714,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
-				std::fputs("[Draw3.Presentation] action=completion result=failed reason=exception\n",
-					stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=completion result=failed reason=exception\n");
 				return;
 			}
 			if (callback) callback(context);
@@ -1770,14 +1776,14 @@ namespace Inkeys::Drawing::Draw3
 					}
 					if (completion.operation == PresentationPersistenceOperation::Save &&
 						completion.status != PresentationPersistenceStatus::Committed)
-						std::fprintf(stderr,
+						DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 							"[Draw3.Presentation] action=save result=failed status=%s revision=%llu\n",
 							PersistenceStatusName(completion.status),
 							static_cast<unsigned long long>(completion.mutationRevision));
 					else if (completion.operation == PresentationPersistenceOperation::Load &&
 						completion.status != PresentationPersistenceStatus::Loaded &&
 						completion.status != PresentationPersistenceStatus::NotFound)
-						std::fprintf(stderr,
+						DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 							"[Draw3.Presentation] action=load result=failed status=%s\n",
 							PersistenceStatusName(completion.status));
 					PushCompletion(std::move(completion));
@@ -1785,8 +1791,7 @@ namespace Inkeys::Drawing::Draw3
 				catch (...)
 				{
 					// 连 completion payload 的复制失败也不能逃出 owned worker。
-					std::fputs("[Draw3.Presentation] action=worker result=failed reason=exception\n",
-						stderr);
+					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=worker result=failed reason=exception\n");
 				}
 			}
 		}

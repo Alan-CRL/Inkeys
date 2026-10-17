@@ -1,0 +1,53 @@
+{
+  "id": "canvas-f4-settings-capture-fix",
+  "name": "canvas-f4-settings-capture-fix",
+  "title": "F4：设置隐藏时收束鼠标捕获",
+  "description": "设置所属线程在隐藏/结束会话时清理自身捕获和输入状态，保护其他窗口捕获。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-15",
+  "completedAt": null,
+  "branch": "bugfix/draw3",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-14-canvas-freeze-investigation",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "parent_requirement": "R4 / F4",
+    "scope_authorization": "user-requested-F1-F4-repairs",
+    "planning_review": "approved: user explicitly said 批准，并开始修复 after final F1-F4 summary",
+    "functional_dependencies": [],
+    "execution_dependencies": [
+      "parent-final-planning-review",
+      "main-session-build-and-integration"
+    ],
+    "implementation_started": true,
+    "implementation_complete": true,
+    "independent_code_review": "passed; local findings repaired before final build",
+    "fix_validation_report": ".trellis/tasks/10-14-canvas-freeze-investigation/research/fix-validation.md",
+    "fix_validation": {
+      "solution_debug_arm64": "exit-0-final-4188e2eb39cc",
+      "headless_no_window": "exit-0",
+      "production_cli": "F1/F2/F3 all passed; F1 extra argv expected exit2",
+      "storage_autosave": "exit-0",
+      "default_window_tests": "exit-1; unlocked repeat 11 failures (original 8 plus 3 existing owner/topmost-order assertions); HEAD A/B proves one existing prepromoted failure condition only; full suite not green",
+      "product_gui": "F1 stdout backpressure mouse GUI passed, resume and actual paused exit0/0.9615s; F4 console-off mouse GUI passed, four strong-trigger rounds, reopen/Explorer/tools and actual held exit0/1.2343s; final SHA unchanged",
+      "physical_touch_pen_win7_multimonitor": "not-run",
+      "isolated_setting_capture_tests": "exit-0; actual RunSettingCaptureTests and product Window objects; PASS setting capture ownership",
+      "stderr_full_pipe_gui": "not-run independently; production CLI full stderr Stop94ms passed",
+      "f4_first_gui_runner": "probe-time-limit at600s, forced=true, not normal-exit proof; second short run exited normally",
+      "office_console_quickedit": "not-run"
+    },
+    "targeted_acceptance": "implementation, independent review, final builds, production regressions and F1/F4 mouse GUI complete; full default HWND suite still fails; no physical-device or original-incident claim"
+  }
+}

@@ -38,6 +38,8 @@ import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.transparent_presentation;
 
 #include "IdtMain.h"
+#include "Inkeys/Drawing/Draw3/Draw3.DiagnosticOutput.h"
+#include "Inkeys/Drawing/Draw3/Draw3.PptTiming.h"
 #include "Inkeys/Helper/FailedCleanupDeadline.h"
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
 #include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
@@ -1206,6 +1208,30 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// 诊断输出自检严格早退，harness 关闭时也不能落入普通 GUI。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-diagnostic-output-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::Drawing::Draw3::DiagnosticOutput::RunProductionTest([]() noexcept
+			{
+				using namespace Inkeys::Drawing::Draw3;
+				SetCursorDiagnosticsEnabled(true);
+				RecordCursorDiagnostic("helper=production message=中文 value=%d", 42);
+				FlushCursorDiagnostics();
+				LogFrameTiming(1, 2, 3, 4, 1.25, 16.0, false);
+				LogHResult("[diagnostic-helper]", E_FAIL);
+				LogWin32Error("[diagnostic-helper]", ERROR_INVALID_HANDLE);
+				SetEnvironmentVariableW(L"INKEYS_PPT_TIMING", L"1");
+				TracePptTiming("diagnostic-helper", 1, 2);
+				SetCursorDiagnosticsEnabled(false);
+			});
+#else
+			return 2;
+#endif
+		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
@@ -1360,6 +1386,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest();
 
+	// 进程级 owner 兜住启动失败返回；Host/RTS 退出后才停止独立输出器。
+	Inkeys::Drawing::Draw3::DiagnosticOutput::Session draw3DiagnosticOutput;
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
 	bool touchAreaConsoleOutputEnabled = false;
@@ -2634,8 +2662,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
 			}
+			(void)draw3DiagnosticOutput.Start();
 			if (win7DiagnosticsEnabled)
-				std::fprintf(stderr, "[Draw3Win7Diagnostics] enabled=1 draw3=1 cursor=1\n");
+				Inkeys::Drawing::Draw3::DiagnosticOutput::Printf(
+					Inkeys::Drawing::Draw3::DiagnosticOutput::Stream::Error,
+					"[Draw3Win7Diagnostics] enabled=1 draw3=1 cursor=1\n");
 			Inkeys::Drawing::Draw3::SetCursorDiagnosticsEnabled(
 				cursorConsoleOutputEnabled);
 			if (touchAreaConsoleOutputEnabled)
@@ -3381,6 +3412,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();
+		// 若此前没有输出端，延后控制台建立后保留普通 Draw3 错误输出。
+		(void)draw3DiagnosticOutput.Start();
 	}
 	jthread pptLinkageThread;
 	if (!isolatedStartupFailure) pptLinkageThread = jthread(PPTLinkageMain);
@@ -3498,6 +3531,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::UI::RenderPipeline::Shutdown();
 	displaySubscription.Reset();
 	Inkeys::Display::Shutdown();
+	(void)draw3DiagnosticOutput.Stop();
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 

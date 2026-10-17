@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <cstring>
@@ -54,7 +55,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool compatibilityRetry = std::strcmp(attempt, "fallback") == 0;
 			if (SUCCEEDED(result) && !StartupEnvironmentDiagnosticsEnabled() &&
 				driverType == D3D_DRIVER_TYPE_HARDWARE && !compatibilityRetry) return;
-			std::cout << "[Draw3Diag][device] driver=" << DriverTypeName(driverType)
+			DiagnosticOutput::Line() << "[Draw3Diag][device] driver=" << DriverTypeName(driverType)
 				<< " levels=" << levelSet << " attempt=" << attempt
 				<< " hresult=0x" << std::hex
 				<< static_cast<unsigned long>(result) << std::dec << std::endl;
@@ -101,15 +102,15 @@ namespace Inkeys::Drawing::Draw3
 		if (FAILED(result))
 		{
 			// 保留硬件最终 HRESULT，再记录 WARP 尝试，避免现场只能看到“回退成功”。
-			std::cout << "Hardware device initialization failed. Falling back to WARP." << std::endl;
+			DiagnosticOutput::Line() << "Hardware device initialization failed. Falling back to WARP." << std::endl;
 			result = CreateCompatibleDevice(D3D_DRIVER_TYPE_WARP, creationFlags, // 硬件失败时退到软件光栅，方便诊断和兼容。
 				resources.device, resources.featureLevel, resources.context);
 			if (FAILED(result))
 			{
-				std::cout << "[Draw3Diag][device] final=failed hardware_hresult=0x" << std::hex
+				DiagnosticOutput::Line() << "[Draw3Diag][device] final=failed hardware_hresult=0x" << std::hex
 					<< static_cast<unsigned long>(hardwareResult) << " warp_hresult=0x"
 					<< static_cast<unsigned long>(result) << std::dec << std::endl;
-				std::cout << "Failed to initialize a D3D11 device with both Hardware and WARP." << std::endl;
+				DiagnosticOutput::Line() << "Failed to initialize a D3D11 device with both Hardware and WARP." << std::endl;
 				return false;
 			}
 			resources.driverType = D3D_DRIVER_TYPE_WARP;
@@ -122,8 +123,8 @@ namespace Inkeys::Drawing::Draw3
 		if (StartupEnvironmentDiagnosticsEnabled())
 		{
 			// 恢复启动时的设备环境输出，但不影响始终保留的错误诊断。
-			std::cout << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
-			std::cout << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
+			DiagnosticOutput::Line() << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
+			DiagnosticOutput::Line() << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
 		}
 
 		resources.dxgiDevice.Reset();

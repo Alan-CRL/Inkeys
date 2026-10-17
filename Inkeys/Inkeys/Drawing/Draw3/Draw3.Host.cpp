@@ -1,3 +1,4 @@
+#include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Host.h"
 #include <dxgi.h>
 #include "Draw3.PptTiming.h"
@@ -108,7 +109,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 工程的 Debug/Release 配置共用 NDEBUG 定义，配置名由交付构建命令记录；
 			// 这里只输出不会被配置宏误判的编译身份。
-			std::cout << "[Draw3Diag][build] id=draw3-" << __DATE__ << "T" << __TIME__
+			DiagnosticOutput::Line() << "[Draw3Diag][build] id=draw3-" << __DATE__ << "T" << __TIME__
 				<< " arch=" << Draw3BuildArchitectureName()
 				<< " msvc=" << _MSC_VER << std::endl;
 		}
@@ -126,7 +127,7 @@ namespace Inkeys::Drawing::Draw3
 				const BOOL clientRectOk = valid && GetClientRect(window, &clientRect);
 				DWORD processId = 0;
 				const DWORD threadId = valid ? GetWindowThreadProcessId(window, &processId) : 0;
-				std::cout << "[Draw3Diag][window] event=" << eventName << " role=" << role
+				DiagnosticOutput::Line() << "[Draw3Diag][window] event=" << eventName << " role=" << role
 					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
 					<< " valid=" << std::dec << (valid ? 1 : 0)
 					<< " visible=" << (visible ? 1 : 0)
@@ -663,7 +664,7 @@ namespace Inkeys::Drawing::Draw3
 				self->lastDiagnosticPresentSucceeded != succeeded;
 			if (diagnosticTargetChanged || diagnosticRecovery)
 			{
-				std::cout << "[Draw3Diag][present] event="
+				DiagnosticOutput::Line() << "[Draw3Diag][present] event="
 					<< (succeeded ? (diagnosticRecovery ? "recovery" : "success") : "failure")
 					<< " mode=" << TransparentPresentModeName(self->presentation.ActiveMode())
 					<< " target=" << HostOutputTargetName(outputTarget)
@@ -892,7 +893,7 @@ namespace Inkeys::Drawing::Draw3
 				status == DesktopAutoSaveSubmitStatus::Existing) return true;
 			const char* reason = status == DesktopAutoSaveSubmitStatus::Closed
 				? "closed" : "invalid";
-			std::fprintf(stderr,
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 				"[Draw3.AutoSave] action=submit trigger=%s result=failed reason=%s\n",
 				trigger == DesktopAutoSaveTrigger::Exit ? "exit" : "clear", reason);
 			return false;
@@ -914,7 +915,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto status = self->presentationAutoSave.SubmitSave(std::move(request));
 			if (status == PresentationPersistenceSubmitStatus::Accepted ||
 				status == PresentationPersistenceSubmitStatus::ReplacedPending) return true;
-			std::fputs("[Draw3.Presentation] action=save_submit result=failed\n", stderr);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=save_submit result=failed\n");
 			return false;
 		}
 
@@ -925,7 +926,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!self) return false;
 			if (self->presentationAutoSave.SubmitLoad(std::move(request)) ==
 				PresentationPersistenceSubmitStatus::Accepted) return true;
-			std::fputs("[Draw3.Presentation] action=load_submit result=failed\n", stderr);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=load_submit result=failed\n");
 			return false;
 		}
 
@@ -995,7 +996,7 @@ namespace Inkeys::Drawing::Draw3
 				!d.touchUnlocked?"waiting-startup-displacement":!a.referenceFresh?"reference-expired":
 				!a.active?"waiting-accepted-movement":"area-floor-active";
 			if(d.eraserContact || d.preview)
-				std::fprintf(stderr,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
 					static_cast<unsigned long long>(sequence),SpeedEraser::InputEntryName(d.entry),
 					d.eraserKind==SpeedEraser::EraserKind::Speed?"Speed":"Fixed",SpeedEraser::PenResponseName(d.formalPenResponse),
 					d.developmentResponseOverride,d.sessionInherited,d.sessionReason,d.hoverSeconds,d.downSeconds,d.frameSeconds,d.previousShownDiameterPx,d.downDiameterPx,
@@ -1018,7 +1019,7 @@ namespace Inkeys::Drawing::Draw3
 				d.cursorVisible?d.cursorDiameterPx:-1.0f,d.eraserContact?d.nextRadiusPx*2:-1.0f,
 				d.speed,d.sweepSpeed,SpeedEraser::MotionUnitName(d.motionUnit),d.qualified,d.evidenceSeconds*1000,
 				a.sample.rawWidth,a.sample.rawHeight,a.widthDip,a.heightDip,a.active);
-			OutputDebugStringA(inputText);std::fputs(inputText,stderr);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, inputText, true);
 			if(d.eraserContact && d.eraserKind==SpeedEraser::EraserKind::Speed &&
 				(d.response==SpeedEraser::ResponseModel::DirectTouch ||
 					d.response==SpeedEraser::ResponseModel::ScreenPenHybrid))
@@ -1033,7 +1034,7 @@ namespace Inkeys::Drawing::Draw3
 					f.motionGrowthPermitted,f.areaGrowthPermitted,f.holdRemainingSeconds*1000,f.holdReason,
 					f.decreaseProgressSeconds*1000,f.decreaseConfirmationSeconds*1000,f.decreasePending,f.shrinking,
 					d.sweeping,f.decreaseReason,static_cast<unsigned long long>(f.decreaseResetCount),f.lastDecreaseResetReason);
-				OutputDebugStringA(followText);std::fputs(followText,stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, followText, true);
 			}
 			char text[3072]{};
 			if(!d.active)
@@ -1041,7 +1042,7 @@ namespace Inkeys::Drawing::Draw3
 				std::snprintf(text,sizeof(text),"[TouchArea] seq=%llu event=%s gate=%s contact=%d inputType=%u source=%s cursorPx=%.3f requested=%d\n",
 					static_cast<unsigned long long>(sequence),event,gate,contact,d.inputType,
 					SpeedEraser::SourceKindName(source.kind),d.cursorDiameterPx,requested);
-				OutputDebugStringA(text);std::fputs(text,stderr);return;
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, text, true);return;
 			}
 			std::snprintf(text,sizeof(text),
 				"[TouchArea] seq=%llu event=%s gate=%s contact=%d speedMode=%d inputType=%u source=%s recognition=%u tcid=%u cid=%u sourceGen=%llu\n"
@@ -1063,7 +1064,7 @@ namespace Inkeys::Drawing::Draw3
 				a.referenceFloorDip,a.activeFloorDip,a.active,a.areaFloorAboveStandard,
 				d.speed,d.evidenceSeconds*1000,d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx,d.historyRadiusPx,
 				static_cast<unsigned long long>(d.realPointCount),d.idleSeconds*1000,d.needsAnimation);
-			std::fprintf(stderr,"[FineBand] seq=%llu speed=%.3f unit=%s held=%d enter=%.3f release=%.3f change=%.3f direction=%d targetDIP=%.3f actualDIP=%.3f areaFloorDIP=%.3f animate=%d\n",
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[FineBand] seq=%llu speed=%.3f unit=%s held=%d enter=%.3f release=%.3f change=%.3f direction=%d targetDIP=%.3f actualDIP=%.3f areaFloorDIP=%.3f animate=%d\n",
 				static_cast<unsigned long long>(sequence),d.fine.speed,SpeedEraser::MotionUnitName(d.motionUnit),
 				d.fine.held,d.fine.enterProgress,d.fine.releaseProgress,d.fine.changeProgress,d.fine.direction,
 				d.targetDiameterDip,d.effectiveDiameterDip,a.activeFloorDip,d.needsAnimation);
@@ -1083,10 +1084,8 @@ namespace Inkeys::Drawing::Draw3
 				d.maximumLogGrowthPerSecond,d.largeLogGrowthPerSecond,
 				d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx*2);
 			// 只在帧级诊断入口限频输出，不在 RTS packet 热路径写日志，也不持快照锁输出。
-			OutputDebugStringA(text);
-			std::fputs(text,stderr);
-			OutputDebugStringA(curveText);
-			std::fputs(curveText,stderr);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, text, true);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, curveText, true);
 		}
 
 		static void ObserveDrawingActivity(void* context, bool active) noexcept
@@ -1199,7 +1198,7 @@ namespace Inkeys::Drawing::Draw3
 					edid.rawPhysicalWidthCm,edid.rawPhysicalHeightCm,physicalSize.available,
 					physicalSize.widthCm,physicalSize.heightCm,
 					edidMonitor?PhysicalReasonName(physicalSize.unavailableReason):"NoMonitor");
-				OutputDebugStringA(displayText);std::fputs(displayText,stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, displayText, true);
 			}
 			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
 			scale.revision = previous.revision;
@@ -1361,8 +1360,7 @@ namespace Inkeys::Drawing::Draw3
 			Bridge::Command command;
 			if (!bridge.TryConsume(command))
 			{
-				std::fputs("[Draw3.Input] action=command_wake result=failed reason=bridge_empty\n",
-					stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Input] action=command_wake result=failed reason=bridge_empty\n");
 				return;
 			}
 			// 每个独立 Command marker 只执行一条 scene-stamped 命令。
@@ -1474,10 +1472,10 @@ namespace Inkeys::Drawing::Draw3
 			presentationAutoSave.CloseAndDrain();
 			if (!options.autoSaveRoot.empty() && !autoSave.Start(
 				options.autoSaveRoot, this, &WakeForPresentationPersistence))
-				std::fputs("[Draw3.AutoSave] action=start result=failed\n", stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=start result=failed\n");
 			if (!options.autoSaveRoot.empty() && !presentationAutoSave.Start(
 				options.autoSaveRoot, this, &WakeForPresentationPersistence))
-				std::fputs("[Draw3.Presentation] action=start result=failed\n", stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=start result=failed\n");
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection || options.enableRuntimeMetrics);
 			if (options.enableRuntimeMetrics) runtimeMetrics.inputBaseline = input.DiagnosticsSnapshot();
 			window.SetInputCoordinator(&input);
@@ -1499,7 +1497,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				bool initialized = false;
 				bool graphicsInitialized = false;
-					std::cout << "[Draw3Diag][startup] stage=begin hwnd=0x" << std::hex
+					DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=begin hwnd=0x" << std::hex
 						<< reinterpret_cast<UINT_PTR>(attachedWindow.load(std::memory_order_acquire))
 						<< " selectionHwnd=0x"
 						<< reinterpret_cast<UINT_PTR>(attachedPresentationWindow.load(std::memory_order_acquire))
@@ -1510,7 +1508,7 @@ namespace Inkeys::Drawing::Draw3
 					const HWND presentationWindowHandle =
 						attachedPresentationWindow.load(std::memory_order_acquire);
 					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics);
-					std::cout << "[Draw3Diag][startup] stage=graphics result="
+					DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=graphics result="
 						<< (graphicsInitialized ? "ready" : "failed")
 						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(windowHandle)
 						<< " selectionHwnd=0x" << reinterpret_cast<UINT_PTR>(presentationWindowHandle)
@@ -1543,7 +1541,7 @@ namespace Inkeys::Drawing::Draw3
 							static_cast<UINT>((std::max)(1, size.width)),
 							static_cast<UINT>((std::max)(1, size.height)), presentationCallbacks,
 							presentationOptions);
-						std::cout << "[Draw3Diag][startup] stage=presenter result="
+						DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=presenter result="
 							<< (graphicsInitialized ? "ready" : "failed")
 							<< " mode=" << TransparentPresentModeName(presentation.ActiveMode())
 							<< " renderer=0x" << std::hex << reinterpret_cast<UINT_PTR>(&renderer)
@@ -1577,14 +1575,14 @@ namespace Inkeys::Drawing::Draw3
 						bool stylusSucceededValue = false;
 						{
 							std::unique_lock lock(startupMutex);
-							std::cout << "[Draw3Diag][startup] gate=rts-ready state=waiting" << std::endl;
+							DiagnosticOutput::Line() << "[Draw3Diag][startup] gate=rts-ready state=waiting" << std::endl;
 							startupCondition.wait(lock, [this, &token]
 								{ return stylusDecision || token.stop_requested(); });
 							stylusDecisionValue = stylusDecision;
 							stylusSucceededValue = stylusSucceeded;
 							stylusApproved = stylusDecision && stylusSucceeded && !token.stop_requested();
 						}
-						std::cout << "[Draw3Diag][startup] gate=rts-ready result="
+						DiagnosticOutput::Line() << "[Draw3Diag][startup] gate=rts-ready result="
 							<< (stylusApproved ? "open" : "closed")
 							<< " decision=" << (stylusDecisionValue ? 1 : 0)
 							<< " stylus=" << (stylusSucceededValue ? 1 : 0)
@@ -1613,7 +1611,7 @@ namespace Inkeys::Drawing::Draw3
 							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get());
-							std::cout << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
+							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
 								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
 								<< std::dec << std::endl;
 							if (startOptions.startupMilestone)
@@ -1624,7 +1622,7 @@ namespace Inkeys::Drawing::Draw3
 							presentation.SetOutputTarget(window.SelectionMode()
 								? TransparentOutputTarget::SelectionUlw
 								: TransparentOutputTarget::PrimaryDrawpad);
-							std::cout << "[Draw3Diag][startup] stage=first-frame attempt target="
+							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=first-frame attempt target="
 								<< HostOutputTargetName(ToHostOutputTarget(presentation.RequestedOutputTarget()))
 								<< " revision=" << presentation.RequestedOutputRevision()
 								<< " size=" << committedWidth.load(std::memory_order_acquire)
@@ -1638,7 +1636,7 @@ namespace Inkeys::Drawing::Draw3
 									runtimeMetrics.unavailable.store(true, std::memory_order_release);
 							}
 							initialized = lastPresentSucceeded.load(std::memory_order_acquire);
-							std::cout << "[Draw3Diag][startup] stage=first-frame result="
+							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=first-frame result="
 								<< (initialized ? "committed" : "failed")
 								<< " target=" << HostOutputTargetName(
 									ToHostOutputTarget(presentation.RequestedOutputTarget()))
@@ -1658,13 +1656,13 @@ namespace Inkeys::Drawing::Draw3
 				{
 					failedCleanup.BeginKnownFailure();
 					// 初始化失败也必须完成握手；保留异常原因供隐藏测试和现场诊断。
-					std::fprintf(stderr, "[Draw3] startup failed: %s\n", exception.what());
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3] startup failed: %s\n", exception.what());
 					initialized = false;
 				}
 				catch (...)
 				{
 					failedCleanup.BeginKnownFailure();
-					std::fputs("[Draw3] startup failed: unknown exception\n", stderr);
+					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3] startup failed: unknown exception\n");
 					initialized = false;
 				}
 				// Signal 由此 owner 按值持有，覆盖失败握手与随后全部 GPU 释放。
@@ -1687,14 +1685,14 @@ namespace Inkeys::Drawing::Draw3
 					{
 						runtimeMetrics.runFailed.store(true, std::memory_order_release);
 						// 绘制循环异常必须收敛到宿主停止，不能穿出 jthread 触发 terminate。
-						std::fprintf(stderr, "[Draw3] drawing loop stopped: %s\n",
+						DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3] drawing loop stopped: %s\n",
 							exception.what());
 						window.RequestExit();
 					}
 					catch (...)
 					{
 						runtimeMetrics.runFailed.store(true, std::memory_order_release);
-						std::fputs("[Draw3] drawing loop stopped: unknown exception\n", stderr);
+						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3] drawing loop stopped: unknown exception\n");
 						window.RequestExit();
 					}
 				}
@@ -1861,12 +1859,10 @@ namespace Inkeys::Drawing::Draw3
 							!running.load(std::memory_order_acquire);
 					});
 				if (!exitAutoSavePrepared)
-					std::fputs("[Draw3.AutoSave] action=exit_barrier result=failed reason=controller_stopped\n",
-						stderr);
+					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_barrier result=failed reason=controller_stopped\n");
 			}
 			else
-				std::fputs("[Draw3.AutoSave] action=exit_barrier result=failed reason=bridge_closed\n",
-					stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_barrier result=failed reason=bridge_closed\n");
 			// worker 无超时排空后才允许绘制线程销毁 Document/Controller。
 			autoSave.CloseAndDrain();
 			presentationAutoSave.CloseAndDrain();

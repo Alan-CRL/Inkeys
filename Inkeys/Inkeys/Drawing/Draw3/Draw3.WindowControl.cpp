@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <windows.h>
 #include <windowsx.h>
 #include <dwmapi.h>
@@ -574,7 +575,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!IsValidDrawingCursorAppearance(appearance))
 		{
-			std::cout << "Invalid drawing cursor appearance for tool="
+			DiagnosticOutput::Line() << "Invalid drawing cursor appearance for tool="
 				<< static_cast<uint32_t>(tool) << std::endl;
 			return false;
 		}
@@ -1067,9 +1068,9 @@ namespace Inkeys::Drawing::Draw3
 				realMouseTakeover, hide));
 		if (length > 0)
 		{
-			std::cout.write(line, (std::min)(
+			DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, (std::min)(
 				static_cast<size_t>(length), sizeof(line) - 1));
-			std::cout.flush();
+			DiagnosticOutput::Wake();
 		}
 	}
 
@@ -1094,9 +1095,9 @@ namespace Inkeys::Drawing::Draw3
 			accepted ? 1u : 0u, reason ? reason : "unknown");
 		if (length > 0)
 		{
-			std::cout.write(line, (std::min)(
+			DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, (std::min)(
 				static_cast<size_t>(length), sizeof(line) - 1));
-			std::cout.flush();
+			DiagnosticOutput::Wake();
 		}
 	}
 #endif
@@ -1221,9 +1222,9 @@ namespace Inkeys::Drawing::Draw3
 						realMouseTakeover, hide));
 				if (length > 0)
 				{
-					std::cout.write(line, (std::min)(
+					DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, (std::min)(
 						static_cast<size_t>(length), sizeof(line) - 1));
-					std::cout.flush();
+					DiagnosticOutput::Wake();
 				}
 			}
 		}

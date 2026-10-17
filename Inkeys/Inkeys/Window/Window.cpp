@@ -1722,7 +1722,8 @@ namespace Inkeys::Window
 				}
 				if (shutdownRequested_.load(std::memory_order_acquire))
 				{
-					ShowWindow(hwnd, SW_HIDE);
+					if (IsSetting(command.role)) (void)HideSettingWindow(hwnd);
+					else ShowWindow(hwnd, SW_HIDE);
 					return false;
 				}
 				ReportCommandResult(command, succeeded,
@@ -1731,6 +1732,13 @@ namespace Inkeys::Window
 				return succeeded;
 			}
 			case CommandType::Hide:
+				if (IsSetting(command.role))
+				{
+					const bool hidden = HideSettingWindow(hwnd);
+					const DWORD error = hidden ? ERROR_SUCCESS : GetLastError();
+					ReportCommandResult(command, hidden, error, hwnd);
+					return hidden;
+				}
 				ShowWindow(hwnd, SW_HIDE);
 				if (IsPpt(command.role) && IsWindowVisible(hwnd))
 				{
@@ -1925,15 +1933,30 @@ namespace Inkeys::Window
 			return false;
 		}
 
+		[[nodiscard]] bool HideSettingWindow(HWND hwnd) noexcept
+		{
+			DWORD error = ERROR_SUCCESS;
+			// 仅在 HWND owner thread 收束设置自己的捕获，不影响已转交给主栏/画布的输入。
+			if (GetCapture() == hwnd)
+			{
+				SetLastError(ERROR_SUCCESS);
+				const bool released = ReleaseCapture() != FALSE;
+				const DWORD releaseError = released ? ERROR_SUCCESS : GetLastError();
+				if (GetCapture() == hwnd)
+					error = releaseError == ERROR_SUCCESS ? ERROR_GEN_FAILURE : releaseError;
+			}
+			ShowWindow(hwnd, SW_HIDE);
+			if (IsWindowVisible(hwnd) && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+			SetLastError(error);
+			return error == ERROR_SUCCESS;
+		}
+
 		[[nodiscard]] bool HideUserWindowsInGroup(bool settingGroup) noexcept
 		{
 			if (settingGroup)
 			{
 				if (const HWND hwnd = Handle(WindowRole::Setting); hwnd && IsWindow(hwnd))
-				{
-					ShowWindow(hwnd, SW_HIDE);
-					return !IsWindowVisible(hwnd);
-				}
+					return HideSettingWindow(hwnd);
 				return true;
 			}
 

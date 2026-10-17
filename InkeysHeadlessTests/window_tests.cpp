@@ -52,6 +52,29 @@ namespace
 		return DefWindowProcW(hwnd, message, wParam, lParam);
 	}
 
+	constexpr UINT kSettingShutdownOnShow = WM_APP + 75;
+	thread_local Inkeys::Window::Service* settingShutdownOnShow = nullptr;
+
+	LRESULT CALLBACK SettingCaptureProbeProc(HWND hwnd, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		if (message == kSettingShutdownOnShow)
+		{
+			settingShutdownOnShow = reinterpret_cast<Inkeys::Window::Service*>(lParam);
+			return 0;
+		}
+		if (message == WM_SHOWWINDOW && wParam && settingShutdownOnShow)
+		{
+			auto* service = settingShutdownOnShow;
+			settingShutdownOnShow = nullptr;
+			(void)SetCapture(hwnd);
+			service->BeginShutdown();
+		}
+		// 此测试窗口只核验 WindowService，不模拟完整 Setting/ImGui 会话。
+		if (message == WM_CAPTURECHANGED) return 0;
+		return ExitGateWindowProc(hwnd, message, wParam, lParam);
+	}
+
 	template<std::size_t WindowCount>
 	[[nodiscard]] bool ContainsWindow(
 		const std::array<HWND, WindowCount>& windows, HWND candidate) noexcept
@@ -295,6 +318,110 @@ int RunWindowExitVisibilityTests()
 	}
 	if (!failures)
 		std::cout << "PASS exit visibility gate" << '\n';
+	return failures;
+}
+
+int RunSettingCaptureTests()
+{
+	using namespace Inkeys::Window;
+	int failures = 0;
+	const auto check = [&](bool condition, const char* name)
+	{
+		if (!condition)
+		{
+			std::cerr << "FAILED setting capture: " << name << '\n';
+			++failures;
+		}
+	};
+	std::vector<WindowSpec> specs;
+	for (const auto role : { WindowRole::Freeze, WindowRole::DrawpadPresentation,
+		WindowRole::Drawpad, WindowRole::Bar, WindowRole::Setting })
+	{
+		WindowSpec spec;
+		spec.role = role;
+		spec.className = L"Inkeys.Window.SettingCapture."
+			+ std::to_wstring(static_cast<unsigned>(role));
+		spec.x = -25000;
+		spec.y = -25000;
+		spec.width = 16;
+		spec.height = 16;
+		spec.bindMessages = false;
+		if (role == WindowRole::Setting || role == WindowRole::Bar)
+			spec.windowProc = SettingCaptureProbeProc;
+		specs.push_back(std::move(spec));
+	}
+
+	Service service(8);
+	const bool started = service.Start(std::move(specs));
+	check(started, "service starts");
+	if (!started) return failures;
+	const HWND setting = service.Handle(WindowRole::Setting);
+	const HWND bar = service.Handle(WindowRole::Bar);
+	const auto captureFor = [&](WindowRole role)
+	{
+		GUITHREADINFO info{};
+		info.cbSize = sizeof(info);
+		const bool queried = GetGUIThreadInfo(service.OwnerThreadId(role), &info) != FALSE;
+		check(queried, "query real owner capture");
+		return queried ? info.hwndCapture : nullptr;
+	};
+
+	for (const bool owned : { false, true })
+	{
+		check(service.SetSettingOwnedByDrawpad(owned), "set setting owner");
+		check(service.Show(WindowRole::Setting), "show setting before capture");
+		check(SendMessageW(setting, kExitGateCapture, 0, 0) != 0
+			&& captureFor(WindowRole::Setting) == setting,
+			"setting captures on its owner thread");
+		check(service.Hide(WindowRole::Setting) && !IsWindowVisible(setting)
+			&& captureFor(WindowRole::Setting) == nullptr,
+			"hide releases setting capture");
+
+		check(SendMessageW(setting, kExitGateCapture, 0, 0) != 0,
+			"hidden setting recaptures for repeated hide regression");
+		check(service.Hide(WindowRole::Setting)
+			&& captureFor(WindowRole::Setting) == nullptr,
+			"repeated hide still releases setting capture");
+
+		check(service.Show(WindowRole::Setting) && service.Show(WindowRole::Bar),
+			"show setting and bar before capture transfer");
+		check(SendMessageW(setting, kExitGateCapture, 0, 0) != 0
+			&& SendMessageW(bar, kExitGateCapture, 0, 0) != 0
+			&& captureFor(WindowRole::Bar) == bar,
+			"capture transfers to a different window");
+		if (owned)
+			check(SendMessageW(setting, kExitGateReadCapture, 0, 0)
+				== reinterpret_cast<LRESULT>(bar),
+				"owned setting sees other window capture in attached input queue");
+		check(service.Hide(WindowRole::Setting)
+			&& captureFor(WindowRole::Bar) == bar,
+			"hiding setting preserves other window capture");
+		(void)SendMessageW(bar, WM_CANCELMODE, 0, 0);
+		check(captureFor(WindowRole::Bar) == nullptr, "release test bar capture");
+
+		check(service.Show(WindowRole::Setting)
+			&& SendMessageW(setting, kExitGateCapture, 0, 0) != 0,
+			"setting captures before hide all");
+		check(service.HideAllUserWindows() && !IsWindowVisible(setting)
+			&& captureFor(WindowRole::Setting) == nullptr,
+			"hide all releases setting capture");
+	}
+
+	// 在真实 ShowWindow 回调期间关门，覆盖 Execute(Show) 的退出隐藏回退。
+	check(service.SetSettingOwnedByDrawpad(true), "attach before show shutdown race");
+	(void)SendMessageW(setting, kSettingShutdownOnShow, 0,
+		reinterpret_cast<LPARAM>(&service));
+	check(!service.Show(WindowRole::Setting) && !IsWindowVisible(setting)
+		&& captureFor(WindowRole::Setting) == nullptr,
+		"shutdown during show hides and releases setting capture");
+	check(SendMessageW(setting, kExitGateCapture, 0, 0) != 0,
+		"hidden setting captures after shutdown gate");
+	check(service.HideAllUserWindows()
+		&& captureFor(WindowRole::Setting) == nullptr,
+		"shutdown hide all still releases setting capture");
+	service.StopAndJoin();
+	check(!IsWindow(setting) && !IsWindow(bar), "capture test windows are destroyed");
+	if (!failures) std::cout << "PASS setting capture ownership" << '\n';
 	return failures;
 }
 
@@ -768,5 +895,6 @@ int RunWindowTests()
 		&& service.Running() && service.Ready(WindowRole::Bar), "restart");
 	service.StopAndJoin();
 	failures += RunWindowExitVisibilityTests();
+	failures += RunSettingCaptureTests();
 	return failures;
 }

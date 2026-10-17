@@ -452,3 +452,73 @@
 ### Next Steps
 
 - 任务已完成并归档，继续正常使用或按原流程发布；问题再现时采集诊断证据。未推送远程。
+
+
+## Session 102: 画布 F1–F4 修复与生产回归
+<!-- trellis-session: v=2 fp=3eab8ec1da9c5f29 -->
+
+**Date**: 2026-10-15
+**Task**: 画布 F1–F4 修复与生产回归
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+四项修复和独立检查已完成；完整ARM64 solution、独立存储目标和非GUI生产回归通过，独立capture窗口回归通过；整套owner前置条件失败已取得原HEAD A/B，完整产品鼠标验证等待解除LockApp锁屏。
+
+### Main Changes
+
+- 新增独立有界诊断输出器；保留PPT IoError；修复橡皮idle Move唤醒；设置隐藏释放自身capture并失效旧会话。
+- 同步四项七节可执行规范、调用消费者登记与任务验证记录。
+
+### Git Commits
+
+（未创建 commit；修复已实施。）
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug ARM64与独立存储目标exit0；F1/F2/F3生产CLI、存储回归、Headless --no-window通过。
+- [未通过] 默认窗口整套exit1共8项owner检查失败；相同预置顶Z序条件在原HEAD也复现。独立真实capture测试exit0，不将整套记绿。
+
+### Status
+
+**进行中：代码及针对性回归完成，完整 GUI 验收待解锁。**
+
+### Next Steps
+
+- 解锁后完成F1背压/F4按住隐藏的完整产品GUI验收，并复测整套窗口。
+
+
+## Session 104: 画布 F1–F4 解锁后完整产品 GUI 验收
+<!-- trellis-session: v=2 fp=9ebbe4b42cb690a4 -->
+
+**Date**: 2026-10-15
+**Task**: 画布 F1–F4 解锁后完整产品 GUI 验收
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+同一最终ARM64二进制的F1 stdout背压及F4无诊断捕获强触发完整产品鼠标GUI通过；真实停读/按住退出分别约0.9615s和1.2343s且exit0/forcedfalse。解锁后的默认完整窗口套件仍exit1/11fail，HEAD A/B不替全部失败归因；物理触摸笔与原始用户现场保留未确认。
+
+### Main Changes
+
+- 本轮未改产品源码，补齐原始截图、窗口/pipe状态、真实退出码、SHA、验收和四项任务元数据；测试窗口已清理，原Explorer保留。
+
+### Git Commits
+
+（未创建 commit；本次为修复后的 GUI 验收。）
+
+### Testing
+
+- [OK] F1停读期间新线、实际擦除、Clear/Undo及设置响应；恢复后full11874输出可见，再次停读正常退出。
+- [OK] F4四轮按住Alt+F4捕获在Up前释放；普通X、重开首次Language、Explorer/选择返回、画笔橡皮及按住正常退出通过。
+- [OK] 沿用最终完整Solution/独立存储构建、F1/F2/F3生产CLI、Headless无窗口与独立capture通过；五任务manifest及产品BOM/CRLF检查通过。
+
+- [未通过] 解锁后默认完整 HWND 套件 exit1/11 fail；A/B仅证明一个既有预置顶条件，未逐项确认所有失败根因。
+
+### Status
+
+**本轮针对性修复验收完成；默认 HWND 整套未通过，原用户现场调查保留。**
+
+### Next Steps
+
+- 默认完整HWND的owner/Z序11项失败、物理触摸/笔及原始现场归因仍保留；未自动归档，不commit/push。
