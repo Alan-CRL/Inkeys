@@ -13,6 +13,9 @@ module;
 #include <d2d1helper.h>
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.BottomDock.h"
+#include "../../Input/UiPointerInput.h"
+#include "../../Window/Window.MessageDispatch.h"
+#include <optional>
 #include "Bar.I18nFormat.h"
 #include "Bar.WindowGeometry.h"
 #include "Bar.PresentationProbe.h"
@@ -56,6 +59,7 @@ constexpr short BarTouchPointerMessageMarker = SHRT_MIN;
 constexpr short BarTouchCancelMessageMarker = SHRT_MIN + 1;
 constexpr short BarTouchDirectDragScreenMessageMarker = SHRT_MIN + 2;
 constexpr short BarTouchCancelScreenMessageMarker = SHRT_MIN + 3;
+constexpr short BarPointerCancelMessageMarker = SHRT_MIN + 4;
 constexpr WPARAM BarThicknessSliderCaptureStop = 0;
 constexpr WPARAM BarThicknessSliderCaptureStart = 1;
 constexpr WPARAM BarThicknessSliderCaptureCancel = 2;
@@ -258,6 +262,12 @@ void MarkBarTouchPointerMessage(ExMessage& message, bool cancelled = false,
 
 bool IsBarTouchPointerMessage(const ExMessage& message)
 {
+	if (message.message != WM_MOUSEMOVE && message.message != WM_LBUTTONDOWN
+		&& message.message != WM_LBUTTONUP && message.message != WM_LBUTTONDBLCLK)
+		return false;
+	const auto marker = static_cast<unsigned short>(message.wheel);
+	if (message.message != WM_MOUSEWHEEL && message.message != WM_MOUSEHWHEEL
+		&& (marker & 0x8000u) && (marker & 0x3fffu) >= 16) return true;
 	return message.message != WM_MOUSEWHEEL
 		&& (message.wheel == BarTouchPointerMessageMarker
 			|| message.wheel == BarTouchCancelMessageMarker
@@ -267,9 +277,23 @@ bool IsBarTouchPointerMessage(const ExMessage& message)
 
 bool IsBarTouchCancelMessage(const ExMessage& message)
 {
+	if (message.message != WM_MOUSEMOVE && message.message != WM_LBUTTONDOWN
+		&& message.message != WM_LBUTTONUP && message.message != WM_LBUTTONDBLCLK)
+		return false;
+	const auto marker = static_cast<unsigned short>(message.wheel);
+	if (message.message != WM_MOUSEWHEEL && message.message != WM_MOUSEHWHEEL
+		&& (marker & 0xc000u) == 0xc000u
+		&& (marker & 0x3fffu) >= 16) return true;
 	return message.message != WM_MOUSEWHEEL
 		&& (message.wheel == BarTouchCancelMessageMarker
 			|| message.wheel == BarTouchCancelScreenMessageMarker);
+}
+
+bool IsBarPointerCancelMessage(const ExMessage& message)
+{
+	return IsBarTouchCancelMessage(message)
+		|| (message.message == WM_CANCELMODE
+			&& message.wheel == BarPointerCancelMessageMarker);
 }
 
 bool IsBarTouchScreenMessage(const ExMessage& message)
@@ -371,6 +395,194 @@ bool BarLayoutToScreen(POINT& point)
 	return true;
 }
 
+namespace
+{
+	namespace Pointer = Inkeys::Input::UiPointer;
+	Pointer::MouseChannel barPointerMouse;
+	std::atomic_uint64_t barPointerCancelSerial{ 0 };
+	std::atomic_uint64_t barPointerActiveOrdinal{ 0 };
+	std::atomic_uint64_t barPointerRequestedCancel{ 0 };
+	std::uint64_t barPointerNextOrdinal = 0;
+	struct BarQueuedPointerSample
+	{
+		unsigned short token = 0;
+		Pointer::Sample sample{};
+		std::uint64_t cancelSerial = 0;
+		Pointer::MouseGesture mouseAdmission;
+	};
+	std::mutex barPointerMetadataMutex;
+	std::array<BarQueuedPointerSample, 1024> barPointerMetadata{};
+	unsigned short barPointerNextToken = 16;
+	struct BarTouchProducerState
+	{
+		HANDLE source = nullptr;
+		DWORD id = 0;
+		bool active = false;
+		bool primary = false;
+		POINT point{};
+		std::uint64_t generation = 0;
+	} barTouchProducer;
+	std::uint64_t barTouchGeneration = 0;
+	// 原生鼠标代次由窗口线程生成，迟到的 Up 不能结束下一次按下。
+	std::uint64_t barNativeMouseGeneration = 0;
+	std::uint64_t barNativeMouseActiveGeneration = 0;
+	// 下列会话字段只由交互线程写；窗口线程仅发布 metadata / cancel serial。
+	Pointer::Session barPointerSession;
+	Pointer::MouseGesture barMouseGesture;
+	Pointer::Sample barPointerLatest{};
+	bool barPointerSampleReady = false;
+	bool barMouseArmed = false;
+	std::uint64_t barPointerModeRevision = 0;
+	std::uint64_t barFixtureTouchGeneration = 0;
+	bool barPointerFoldAtDown = false;
+	std::uint64_t barPointerObservedCancel = 0;
+	std::optional<BarQueuedPointerSample> barPointerPending;
+	ExMessage barPointerPendingMessage{};
+
+	// 只由交互线程记录已消费样本；不跨线程读取 producer 的可变状态。
+	struct BarPointerDragDiagnostics
+	{
+		bool active = false;
+		std::uint64_t nativeConsumed = 0, rawConsumed = 0;
+		std::uint64_t nativeAccepted = 0, rawAccepted = 0;
+		Pointer::Sample nativeLatest{}, rawLatest{};
+		bool rawBound = false, rawDisabled = false;
+		DWORD rawActivityTime = 0;
+	} barPointerDragDiagnostics;
+
+	void RecordBarDragPointerArrival(bool raw, const Pointer::Sample& sample)
+	{
+		auto& trace = barPointerDragDiagnostics;
+		if (!trace.active) return;
+		if (raw) { ++trace.rawConsumed; trace.rawLatest = sample; }
+		else { ++trace.nativeConsumed; trace.nativeLatest = sample; }
+	}
+
+	void RecordBarDragPointerDecision(bool raw, bool accepted)
+	{
+		auto& trace = barPointerDragDiagnostics;
+		if (!trace.active) return;
+		if (accepted) ++(raw ? trace.rawAccepted : trace.nativeAccepted);
+		trace.rawBound = barMouseGesture.RawBound();
+		trace.rawDisabled = barMouseGesture.RawDisabled();
+		trace.rawActivityTime = barMouseGesture.RawActivityTime();
+	}
+
+	void PublishBarPointerCancellation()
+	{
+		barPointerCancelSerial.fetch_add(1, std::memory_order_release);
+		barPointerMouse.Cancel();
+	}
+
+	void RequestBarPointerCancellation()
+	{
+		const auto ordinal = barPointerActiveOrdinal.load(std::memory_order_acquire);
+		if (ordinal) barPointerRequestedCancel.store(ordinal, std::memory_order_release);
+	}
+
+	bool EnqueueBarPointerSample(HWND window, ExMessage message,
+		const Pointer::Sample& sample)
+	{
+		std::lock_guard lock(barPointerMetadataMutex);
+		const unsigned short token = barPointerNextToken++;
+		if (barPointerNextToken >= 0x4000u) barPointerNextToken = 16;
+		auto& metadata = barPointerMetadata[token % barPointerMetadata.size()];
+		metadata = { token, sample,
+			barPointerCancelSerial.load(std::memory_order_acquire) };
+		// 仅固化入队时的来源准入；实际会话、业务与 Raw 认领仍只在交互线程推进。
+		if (sample.source == Pointer::Source::Mouse && sample.kind == Pointer::Kind::Down)
+			(void)metadata.mouseAdmission.Begin(sample);
+		// 非滚轮 wheel 仅携带 Bar 私有索引，HiMsg 不解释它，也不承载 Raw Mouse。
+		message.wheel = static_cast<short>(token
+			| (sample.source == Pointer::Source::Touch ? 0x8000u : 0u)
+			| (sample.kind == Pointer::Kind::Cancel ? 0x4000u : 0u));
+		message.category = EM_MOUSE;
+		if (Inkeys::Window::Enqueue(window, message)) return true;
+		barPointerCancelSerial.fetch_add(1, std::memory_order_release);
+		return false;
+	}
+
+	bool DecodeBarPointerSample(ExMessage& message, BarQueuedPointerSample& queued)
+	{
+		const auto marker = static_cast<unsigned short>(message.wheel);
+		const unsigned short token = marker & 0x3fffu;
+		if (message.message == WM_MOUSEWHEEL || message.message == WM_MOUSEHWHEEL
+			|| token < 16) return false;
+		std::lock_guard lock(barPointerMetadataMutex);
+		auto& stored = barPointerMetadata[token % barPointerMetadata.size()];
+		if (stored.token != token)
+		{
+			queued.sample.kind = Pointer::Kind::Cancel;
+			queued.sample.screen = barPointerLatest.screen;
+			queued.cancelSerial = barPointerObservedCancel;
+			message = {};
+			message.message = WM_CANCELMODE;
+			message.wheel = BarPointerCancelMessageMarker;
+			return true;
+		}
+		queued = stored;
+		stored.token = 0;
+		if (queued.sample.source == Pointer::Source::Touch)
+			MarkBarTouchPointerMessage(message,
+				queued.sample.kind == Pointer::Kind::Cancel, true);
+		else message.wheel = 0;
+		return true;
+	}
+
+	void FinishBarPointerSession()
+	{
+		RecordBarDragPointerDecision(false, false);
+		if (barMouseArmed) barPointerMouse.FinishMouse();
+		barMouseArmed = false;
+		barPointerActiveOrdinal.store(0, std::memory_order_release);
+		barPointerSession.Reset();
+		barMouseGesture.Reset();
+	}
+
+	bool BarPointerSessionActive()
+	{
+		return barPointerSession.Active() || barMouseGesture.Active();
+	}
+
+	void PrepareBarMouseDragTracking()
+	{
+		if (!barMouseGesture.Active() || barMouseArmed) return;
+		// 只有连续交互候选准备私有补充；注册或配对失败不影响 HiMsg 点击。
+		const auto& down = barMouseGesture.Latest();
+		barMouseArmed = barPointerMouse.BeginMouse(down.screen, down.messageTime);
+	}
+
+	void BeginBarMouseDrag()
+	{
+		(void)barMouseGesture.BeginDrag();
+	}
+
+	void MakeBarPointerCancel(ExMessage& message)
+	{
+		FinishBarPointerSession();
+		barPointerLatest.kind = Pointer::Kind::Cancel;
+		message = {};
+		message.category = EM_MOUSE;
+		message.message = WM_CANCELMODE;
+		message.wheel = BarPointerCancelMessageMarker;
+		message.x = SHRT_MIN;
+		message.y = SHRT_MIN;
+	}
+
+	ULONGLONG BarPointerSampleTick()
+	{
+		return barPointerSampleReady ? barPointerLatest.tick : GetTickCount64();
+	}
+
+	POINT BarPointerScreenPoint(const ExMessage& message)
+	{
+		if (barPointerSampleReady) return barPointerLatest.screen;
+		POINT point{ message.x, message.y };
+		if (!IsBarTouchScreenMessage(message)) BarLayoutToScreen(point);
+		return point;
+	}
+}
+
 void PrepareBarInteractionMessage(ExMessage& message,
 	bool preserveTouchScreenCoordinates,
 	BarTouchScreenSample* touchScreenSample = nullptr)
@@ -378,7 +590,8 @@ void PrepareBarInteractionMessage(ExMessage& message,
 	if (touchScreenSample) touchScreenSample->ready = false;
 	if (IsBarTouchScreenMessage(message))
 	{
-		const POINT screenPoint{ message.x, message.y };
+		const POINT screenPoint = barPointerSampleReady
+			? barPointerLatest.screen : POINT{ message.x, message.y };
 		if (touchScreenSample)
 		{
 			touchScreenSample->point = screenPoint;
@@ -455,89 +668,231 @@ namespace Inkeys::UI::Bar
 	}
 }
 
+bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
+	bool preserveScreenCoordinates, BarTouchScreenSample* screenSample)
+{
+	if (screenSample) screenSample->ready = false;
+	for (;;)
+	{
+		const auto ordinal = barPointerActiveOrdinal.load(std::memory_order_acquire);
+		if (ordinal && barPointerRequestedCancel.load(std::memory_order_acquire) == ordinal)
+		{
+			MakeBarPointerCancel(message);
+			return true;
+		}
+		if (BarPointerSessionActive()
+			&& (barMouseGesture.SourceReplaced()
+				|| !Pointer::CheckInputDesktop()
+				|| GetStateModeVersionedSnapshot().revision != barPointerModeRevision
+				|| static_cast<bool>(barUISet.barState.fold) != barPointerFoldAtDown))
+		{
+			// 系统桌面失效在 owner 上撤销触摸租约；工具/折叠切换只取消当前交互。
+			if (!Pointer::CheckInputDesktop())
+				PostMessageW(window, WM_CANCELMODE, 0, 0);
+			MakeBarPointerCancel(message);
+			return true;
+		}
+		const auto cancelSerial = barPointerCancelSerial.load(std::memory_order_acquire);
+		if (barPointerObservedCancel != cancelSerial)
+		{
+			barPointerObservedCancel = cancelSerial;
+			if (BarPointerSessionActive())
+			{
+				MakeBarPointerCancel(message);
+				return true;
+			}
+		}
+		Pointer::Sample sample;
+		if ((filter & EM_MOUSE) && barMouseArmed && barPointerMouse.TryPop(sample))
+		{
+			RecordBarDragPointerArrival(true, sample);
+			const bool cancelled = sample.kind == Pointer::Kind::Cancel;
+			const bool accepted = barMouseGesture.AcceptRaw(sample);
+			RecordBarDragPointerDecision(true, accepted);
+			if (cancelled)
+			{
+				barPointerMouse.FinishMouse();
+				barMouseArmed = false;
+				// 共享策略区分未绑定补充与拖动传输失效；不以业务已拖动扩大取消。
+				if (accepted)
+				{
+					MakeBarPointerCancel(message);
+					return true;
+				}
+			}
+			if (!accepted) continue;
+			sample = barMouseGesture.Latest();
+			barPointerLatest = sample;
+			barPointerSampleReady = true;
+			message = {};
+			message.category = EM_MOUSE;
+			message.message = sample.kind == Pointer::Kind::Up ? WM_LBUTTONUP : WM_MOUSEMOVE;
+			message.lbutton = sample.kind != Pointer::Kind::Up;
+			POINT point = sample.screen;
+			BarScreenToLayout(point);
+			message.x = static_cast<short>(clamp<LONG>(point.x, SHRT_MIN, SHRT_MAX));
+			message.y = static_cast<short>(clamp<LONG>(point.y, SHRT_MIN, SHRT_MAX));
+			ApplyBarBottomDockRigidHitTest(message);
+			if (screenSample) *screenSample = { sample.screen, true };
+			if (sample.kind == Pointer::Kind::Up)
+			{
+				barMouseArmed = false;
+				barPointerActiveOrdinal.store(0, std::memory_order_release);
+				barPointerMouse.FinishMouse();
+			}
+			return true;
+		}
+		BarQueuedPointerSample queued;
+		bool hasMetadata = false;
+		if (barPointerPending)
+		{
+			message = barPointerPendingMessage;
+			queued = *barPointerPending;
+			barPointerPending.reset();
+			hasMetadata = true;
+		}
+		else
+		{
+			if (!Inkeys::Window::TryGet(window, message,
+				static_cast<Inkeys::Message::Filter>(filter))) return false;
+			if (!Inkeys::UI::Bar::ObserveAuthorizedFixtureDequeue(FixtureWireFromMessage(message))) return false;
+			hasMetadata = (filter & EM_MOUSE) && IsBarCoordinateMessage(message.message)
+				&& DecodeBarPointerSample(message, queued);
+		}
+		if (hasMetadata) RecordBarDragPointerArrival(false, queued.sample);
+		if (hasMetadata && queued.cancelSerial < barPointerObservedCancel) continue;
+		if (IsBarPointerCancelMessage(message))
+		{
+			if (hasMetadata && queued.sample.kind == Pointer::Kind::Cancel
+				&& queued.sample.source == Pointer::Source::Touch
+				&& !barPointerSession.Accept(queued.sample)) continue;
+			MakeBarPointerCancel(message);
+			return true;
+		}
+		const bool touch = IsBarTouchPointerMessage(message);
+		const bool down = message.message == WM_LBUTTONDOWN || message.message == WM_LBUTTONDBLCLK;
+		const bool pointer = down || message.message == WM_MOUSEMOVE || message.message == WM_LBUTTONUP;
+		if (!pointer)
+		{
+			if (BarPointerSessionActive() && IsBarCoordinateMessage(message.message)) continue;
+			PrepareBarInteractionMessage(message, preserveScreenCoordinates, screenSample);
+			return true;
+		}
+		if (!hasMetadata)
+		{
+			queued.sample.source = touch ? Pointer::Source::Touch : Pointer::Source::Mouse;
+			queued.sample.kind = down ? Pointer::Kind::Down
+				: message.message == WM_LBUTTONUP ? Pointer::Kind::Up : Pointer::Kind::Move;
+			queued.sample.screen = POINT{ message.x, message.y };
+			if (!IsBarTouchScreenMessage(message)) BarLayoutToScreen(queued.sample.screen);
+			queued.sample.tick = GetTickCount64();
+			queued.sample.generation = touch
+				? (down ? ++barFixtureTouchGeneration
+					: barPointerSession.Latest().generation) : 0;
+			queued.cancelSerial = barPointerObservedCancel;
+		}
+		sample = queued.sample;
+		if (!hasMetadata) RecordBarDragPointerArrival(false, sample);
+		if (down)
+		{
+			if (BarPointerSessionActive())
+			{
+				if (!touch && barPointerSession.Active()) continue;
+				barPointerPending = queued;
+				barPointerPendingMessage = message;
+				MakeBarPointerCancel(message);
+				return true;
+			}
+			if (touch) (void)barPointerSession.Begin(sample);
+			else if (hasMetadata)
+			{
+				barMouseGesture = queued.mouseAdmission;
+				if (!barMouseGesture.Active() || barMouseGesture.SourceReplaced())
+				{
+					barMouseGesture.Reset();
+					continue;
+				}
+			}
+			else if (!barMouseGesture.Begin(sample)) continue;
+			barPointerActiveOrdinal.store(++barPointerNextOrdinal, std::memory_order_release);
+			barPointerModeRevision = GetStateModeVersionedSnapshot().revision;
+			barPointerFoldAtDown = barUISet.barState.fold;
+		}
+		else if (touch)
+		{
+			const bool accepted = barPointerSession.Accept(sample);
+			RecordBarDragPointerDecision(false, accepted);
+			if (!accepted) continue;
+		}
+		else if (barMouseGesture.Active())
+		{
+			const bool accepted = barMouseGesture.AcceptNative(sample);
+			RecordBarDragPointerDecision(false, accepted);
+			if (!accepted) continue;
+			sample = barMouseGesture.Latest();
+			if (sample.screen.x != queued.sample.screen.x || sample.screen.y != queued.sample.screen.y)
+			{
+				POINT layoutPoint = sample.screen;
+				BarScreenToLayout(layoutPoint);
+				message.x = static_cast<short>(clamp<LONG>(layoutPoint.x, SHRT_MIN, SHRT_MAX));
+				message.y = static_cast<short>(clamp<LONG>(layoutPoint.y, SHRT_MIN, SHRT_MAX));
+			}
+			if (sample.kind == Pointer::Kind::Cancel)
+			{
+				MakeBarPointerCancel(message);
+				return true;
+			}
+		}
+		else if (barPointerSession.Active() || sample.kind == Pointer::Kind::Up
+			|| message.lbutton) continue;
+		if (sample.kind == Pointer::Kind::Up)
+		{
+			if (barMouseArmed) barPointerMouse.FinishMouse();
+			barMouseArmed = false;
+			barPointerActiveOrdinal.store(0, std::memory_order_release);
+		}
+		barPointerLatest = sample;
+		barPointerSampleReady = true;
+		PrepareBarInteractionMessage(message, preserveScreenCoordinates, screenSample);
+		return true;
+	}
+}
+
 bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd,
 	bool preserveTouchScreenCoordinates = false,
 	BarTouchScreenSample* touchScreenSample = nullptr)
 {
-	// 保持原有轮询粒度，同时让退出时的 join 可终止。
 	while (!offSignal)
 	{
-		if (Inkeys::Window::TryGet(hWnd, message,
-			static_cast<Inkeys::Message::Filter>(filter)))
-		{
-			if (!Inkeys::UI::Bar::ObserveAuthorizedFixtureDequeue(FixtureWireFromMessage(message))) return false;
-			// 普通命中在消费时转换；拖动循环保留整次 contact 的绝对屏幕采样。
-			PrepareBarInteractionMessage(message,
-				preserveTouchScreenCoordinates, touchScreenSample);
-			return true;
-		}
+		if (TryReadBarPointerMessage(message, filter, hWnd,
+			preserveTouchScreenCoordinates, touchScreenSample)) return true;
 		this_thread::sleep_for(chrono::milliseconds(1));
 	}
 	return false;
 }
 
-bool TryGetBarInteractionMessage(
-	ExMessage* message, BYTE filter, bool removeMessage, HWND hWnd,
-	BarTouchScreenSample* touchScreenSample = nullptr)
+bool TryGetBarInteractionMessage(ExMessage* message, BYTE filter,
+	bool removeMessage, HWND hWnd, BarTouchScreenSample* touchScreenSample = nullptr)
 {
-	// 旧交互路径全部是成功即消费，HiMsg 不提供 peek 语义。
-	if (!message || !removeMessage || !Inkeys::Window::TryGet(
-		hWnd, *message, static_cast<Inkeys::Message::Filter>(filter)))
-		return false;
-	if (!Inkeys::UI::Bar::ObserveAuthorizedFixtureDequeue(FixtureWireFromMessage(*message))) return false;
-	PrepareBarInteractionMessage(*message, false, touchScreenSample);
-	return true;
+	return message && removeMessage && TryReadBarPointerMessage(
+		*message, filter, hWnd, false, touchScreenSample);
 }
 
-void ClearBarInteractionMessages(BYTE filter, HWND hWnd)
+void ClearBarInteractionMessages(BYTE filter, HWND)
 {
-	const auto removed = Inkeys::Window::Clear(
-		hWnd, static_cast<Inkeys::Message::Filter>(filter));
-	Inkeys::UI::Bar::ObserveAuthorizedFixtureClear(filter, removed);
+	Inkeys::UI::Bar::ObserveAuthorizedFixtureClear(filter, 0);
+	// 只退休本次会话；不能清掉 HiMsg 中下一次 Down 或另一来源的输入。
+	FinishBarPointerSession();
 }
 
-void QueueBarThicknessSliderEnd(HWND hWnd)
+void QueueBarThicknessSliderEnd(HWND)
 {
-	if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
-	{
-		Inkeys::UI::Bar::RejectAuthorizedFixtureSource(Inkeys::UI::Bar::Ui3FixtureSourceFailure::UnsupportedState);
-		return;
-	}
-	if (!hWnd) return;
-	POINT point{};
-	if (!GetCursorPos(&point)) point = {};
-	BarScreenToLayout(point);
-
-	ExMessage message{};
-	message.message = WM_LBUTTONUP;
-	message.x = static_cast<short>(clamp<LONG>(
-		point.x, SHRT_MIN, SHRT_MAX));
-	message.y = static_cast<short>(clamp<LONG>(
-		point.y, SHRT_MIN, SHRT_MAX));
-	message.lbutton = false;
-
-	(void)Inkeys::Window::Enqueue(hWnd, message);
+	RequestBarPointerCancellation();
 }
 
-void QueueBarColorPickerEnd(HWND hWnd)
+void QueueBarColorPickerEnd(HWND)
 {
-	if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
-	{
-		Inkeys::UI::Bar::RejectAuthorizedFixtureSource(Inkeys::UI::Bar::Ui3FixtureSourceFailure::UnsupportedState);
-		return;
-	}
-	if (!hWnd) return;
-	POINT point{};
-	if (!GetCursorPos(&point)) point = {};
-	BarScreenToLayout(point);
-
-	ExMessage message{};
-	message.message = WM_LBUTTONUP;
-	message.x = static_cast<short>(clamp<LONG>(point.x, SHRT_MIN, SHRT_MAX));
-	message.y = static_cast<short>(clamp<LONG>(point.y, SHRT_MIN, SHRT_MAX));
-	message.lbutton = false;
-
-	(void)Inkeys::Window::Enqueue(hWnd, message);
+	RequestBarPointerCancellation();
 }
 
 // ====================
@@ -545,9 +900,15 @@ void QueueBarColorPickerEnd(HWND hWnd)
 
 LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	if (msg == WM_CREATE)
+	{
+		(void)Pointer::AttachRawMouse(hWnd);
+		return DefWindowProcW(hWnd, msg, wParam, lParam);
+	}
 	if (msg == WM_DESTROY)
 	{
 		barUISet.ShutdownWindowInput(hWnd);
+		Pointer::DetachRawMouse(hWnd);
 		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 	if (msg == WM_CANCELMODE)
@@ -584,9 +945,12 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_INPUT:
 	{
-		Inkeys::Drawing::Draw3::RecordCursorRawInput(lParam);
-		// Raw Input 只负责唤醒并读取系统光标，WM_INPUT 仍交给默认过程完成清理。
-		barUISet.RegisterBorderCursorLight(hWnd);
+		if (Pointer::HandleRawMouse(lParam))
+		{
+			Inkeys::Drawing::Draw3::RecordCursorRawInput(lParam);
+			barUISet.RegisterBorderCursorLight(hWnd);
+		}
+		// 私有有序通道供交互线程消费，默认过程仍负责 HRAWINPUT 清理。
 		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 
@@ -785,54 +1149,9 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_CAPTURECHANGED:
 	{
-		if (barUISet.barState.drawAttributeBar.colorPickerPointerCapture)
-		{
-			auto& picker = barUISet.barState.drawAttributeBar;
-			picker.colorPickerPointerCapture = false;
-			picker.colorPickerPointerPressed = false;
-			picker.colorPickerHoldHintActive = false;
-			picker.colorPickerHoldLocked = false;
-			picker.colorPickerHoldProgress = 0.0f;
-			QueueBarColorPickerEnd(hWnd);
-			barUISet.UpdateRendering(false);
-			return 0;
-		}
-		if (barUISet.barState.drawAttributeBar.thicknessSliderCapture)
-		{
-			// 捕获被其他窗口夺走时，合成抬起事件唤醒阻塞式手势循环。
-				barUISet.barState.drawAttributeBar.thicknessViewMode =
-					ThicknessViewMode::Preview;
-				barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderPinned = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderDragging = false;
-				barUISet.barState.drawAttributeBar.thicknessPreviewDragging = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderPressed = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
-				barUISet.barState.drawAttributeBar.thicknessFineDialVisualWidth = 0.0f;
-				barUISet.barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
-				barUISet.barState.drawAttributeBar.thicknessFineDialDragging = false;
-				barUISet.barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialRangeTransitionActive = false;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewActive = false;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialActivationDwellActive = false;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewProgress = 0.0f;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewVisualWidth = 0.0f;
-				barUISet.barState.drawAttributeBar
-					.thicknessFineDialPopupExitLatchRequested = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderHoldHintActive = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderHoldLocked = false;
-				barUISet.barState.drawAttributeBar.thicknessSliderHoldProgress = 0.0f;
-				barUISet.CloseDrawAttributeTooltips();
-				QueueBarThicknessSliderEnd(hWnd);
-				barUISet.UpdateRendering(false);
-				return 0;
-		}
+		// Raw Mouse / WM_TOUCH 拥有手势终态；捕获只是兼容设施，丢失不能伪造 Up。
+		barUISet.barState.drawAttributeBar.colorPickerPointerCapture = false;
+		barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 
@@ -873,140 +1192,90 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_TOUCH:
 	{
-		// 由于是专门使用 static 来存储当前窗口的触摸信息，所以该过程函数仅能给 barWindow 使用。
-
-		static DWORD activeTouchId = 0;   // 0表示无活动ID
-		static bool isTouchActive = false;
-		static bool activeTouchIsPrimary = false;
-		static short activeTouchX = 0;
-		static short activeTouchY = 0;
-
-		UINT cInputs = LOWORD(wParam);
-		vector<TOUCHINPUT> inputs(cInputs);
-		if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, inputs.data(), sizeof(TOUCHINPUT)))
+		const UINT count = LOWORD(wParam);
+		vector<TOUCHINPUT> inputs(count);
+		if (GetTouchInputInfo(reinterpret_cast<HTOUCHINPUT>(lParam), count,
+			inputs.data(), sizeof(TOUCHINPUT)))
 		{
-			POINT pt;
-			bool hasPrimaryTouch = false;
-			bool fallbackTouchLocked = false;
-
-			for (UINT i = 0; i < cInputs; i++)
-			{
-				if (inputs[i].dwFlags & TOUCHEVENTF_PRIMARY)
+			bool hasPrimary = false;
+			for (const auto& input : inputs)
+				hasPrimary = hasPrimary || (input.dwFlags & TOUCHEVENTF_PRIMARY) != 0;
+			bool fallbackLocked = false;
+			auto PublishTouch = [&](Pointer::Kind kind, POINT point)
 				{
-					hasPrimaryTouch = true;
-					break;
-				}
-			}
-
-			for (UINT i = 0; i < cInputs; i++)
-			{
-				const TOUCHINPUT& ti = inputs[i];
-				bool isPrimaryTouch = (ti.dwFlags & TOUCHEVENTF_PRIMARY) != 0;
-				bool canLockFallbackTouch = !hasPrimaryTouch && !isTouchActive && !fallbackTouchLocked;
-
-				double xO = static_cast<double>(ti.x) / 100.0;
-				double yO = static_cast<double>(ti.y) / 100.0;
-
-				pt.x = static_cast<LONG>(xO + 0.5);
-				pt.y = static_cast<LONG>(yO + 0.5);
-
-				if ((ti.dwFlags & TOUCHEVENTF_DOWN) && (isPrimaryTouch || canLockFallbackTouch))
-				{
-					if (isTouchActive && activeTouchId != ti.dwID)
+					Pointer::Sample sample;
+					sample.kind = kind;
+					sample.source = Pointer::Source::Touch;
+					sample.screen = point;
+					sample.messageTime = static_cast<DWORD>(GetMessageTime());
+					sample.tick = Inkeys::Window::MessageDispatch::PostedTick(sample.messageTime);
+					sample.generation = barTouchProducer.generation;
+					sample.device = reinterpret_cast<std::uintptr_t>(barTouchProducer.source);
+					sample.contact = barTouchProducer.id;
+					ExMessage translated{};
+					translated.message = kind == Pointer::Kind::Down ? WM_LBUTTONDOWN
+						: kind == Pointer::Kind::Move ? WM_MOUSEMOVE : WM_LBUTTONUP;
+					translated.x = static_cast<short>(clamp<LONG>(point.x, SHRT_MIN, SHRT_MAX));
+					translated.y = static_cast<short>(clamp<LONG>(point.y, SHRT_MIN, SHRT_MAX));
+					translated.lbutton = kind == Pointer::Kind::Down || kind == Pointer::Kind::Move;
+					if (!EnqueueBarPointerSample(hWnd, translated, sample))
 					{
-						activeTouchId = 0;
-						isTouchActive = false;
-						activeTouchIsPrimary = false;
-						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
-
-						{
-							ExMessage msgMouse = {};
-							msgMouse.message = WM_LBUTTONUP;
-							msgMouse.x = activeTouchX;
-							msgMouse.y = activeTouchY;
-							msgMouse.lbutton = false;
-							MarkBarTouchPointerMessage(msgMouse, true, true);
-
-							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
-						}
+						barPointerMouse.EndTouch(barTouchProducer.generation);
+						barTouchProducer = {};
 					}
-
-					// 如果当前无 activeID，则锁定 primary touch；没有 primary 标志时兜底第一个 DOWN 点
-					if (!isTouchActive)
+				};
+			// 新 primary 先取消旧 fallback，再处理旧 Up，避免旧触点产生点击。
+			for (int pass = 0; pass < 2; ++pass)
+			for (const auto& input : inputs)
+			{
+				const bool primary = (input.dwFlags & TOUCHEVENTF_PRIMARY) != 0;
+				if (primary != (pass == 0)) continue;
+				const POINT point{ static_cast<LONG>(std::lround(input.x / 100.0)),
+					static_cast<LONG>(std::lround(input.y / 100.0)) };
+				const bool sameContact = barTouchProducer.active
+					&& barTouchProducer.source == input.hSource
+					&& barTouchProducer.id == input.dwID;
+				const bool fallback = !hasPrimary && !barTouchProducer.active && !fallbackLocked;
+				if ((input.dwFlags & TOUCHEVENTF_DOWN) && (primary || fallback))
+				{
+					if (barTouchProducer.active && !sameContact)
 					{
-						activeTouchId = ti.dwID;
-						isTouchActive = true;
-						activeTouchIsPrimary = isPrimaryTouch;
-						fallbackTouchLocked = !isPrimaryTouch;
+						PublishTouch(Pointer::Kind::Cancel, barTouchProducer.point);
+						barPointerMouse.EndTouch(barTouchProducer.generation);
+						barTouchProducer = {};
+					}
+					if (!barTouchProducer.active)
+					{
+						const auto generation = ++barTouchGeneration;
+						if (!barPointerMouse.BeginTouch(generation)) continue;
+						barTouchProducer = { input.hSource, input.dwID, true,
+							primary, point, generation };
+						fallbackLocked = !primary;
 						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
-
-						activeTouchX = pt.x;
-						activeTouchY = pt.y;
-
-						{
-							ExMessage msgMouse = {};
-							msgMouse.message = WM_LBUTTONDOWN;
-							msgMouse.x = pt.x;
-							msgMouse.y = pt.y;
-							msgMouse.lbutton = true;
-							MarkBarTouchPointerMessage(msgMouse, false, true);
-
-							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
-						}
+						PublishTouch(Pointer::Kind::Down, point);
 					}
 				}
-				bool canTranslateActiveTouch = isTouchActive && ti.dwID == activeTouchId && (isPrimaryTouch || !activeTouchIsPrimary || !hasPrimaryTouch);
-
-				if ((ti.dwFlags & TOUCHEVENTF_MOVE) && canTranslateActiveTouch)
+				if (!barTouchProducer.active || barTouchProducer.source != input.hSource
+					|| barTouchProducer.id != input.dwID) continue;
+				if (primary) barTouchProducer.primary = true;
+				barTouchProducer.point = point;
+				if (input.dwFlags & TOUCHEVENTF_MOVE) PublishTouch(Pointer::Kind::Move, point);
+				if (input.dwFlags & TOUCHEVENTF_UP)
 				{
-					if (isTouchActive && ti.dwID == activeTouchId)
-					{
-						if (isPrimaryTouch) activeTouchIsPrimary = true;
-						activeTouchX = pt.x;
-						activeTouchY = pt.y;
-
-						{
-							ExMessage msgMouse = {};
-							msgMouse.message = WM_MOUSEMOVE;
-							msgMouse.x = pt.x;
-							msgMouse.y = pt.y;
-							msgMouse.lbutton = true;
-							MarkBarTouchPointerMessage(msgMouse, false, true);
-
-							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
-						}
-					}
+					PublishTouch(Pointer::Kind::Up, point);
+					barPointerMouse.EndTouch(barTouchProducer.generation);
+					barTouchProducer = {};
+					Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
 				}
-				if ((ti.dwFlags & TOUCHEVENTF_UP) && canTranslateActiveTouch)
-				{
-					if (isTouchActive && ti.dwID == activeTouchId)
-					{
-						activeTouchId = 0;
-						isTouchActive = false;
-						activeTouchIsPrimary = false;
-						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
-
-						activeTouchX = pt.x;
-						activeTouchY = pt.y;
-
-						{
-							ExMessage msgMouse = {};
-							msgMouse.message = WM_LBUTTONUP;
-							msgMouse.x = pt.x;
-							msgMouse.y = pt.y;
-							msgMouse.lbutton = false;
-							MarkBarTouchPointerMessage(msgMouse, false, true);
-
-							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
-						}
-					}
-				}
-
 			}
 		}
-
-		CloseTouchInputHandle((HTOUCHINPUT)lParam);
-
+		else
+		{
+			PublishBarPointerCancellation();
+			barPointerMouse.EndTouch(barTouchProducer.generation);
+			barTouchProducer = {};
+		}
+		CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(lParam));
 		return 0;
 	}
 
@@ -1183,6 +1452,9 @@ void BarUISetClass::DisarmRecallChromeIdleTimer() noexcept
 
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
+	PublishBarPointerCancellation();
+	barPointerMouse.EndTouch(barTouchProducer.generation);
+	barTouchProducer = {};
 	eraserAttribute.ResetPointerFeedback();
 	recallAttribute.ResetPointerFeedback();
 	if (!hWnd) return;
@@ -2158,7 +2430,7 @@ private:
 			else thicknessFineDialDirty = thicknessFineDialDirty || inheritedAdjustment;
 			thicknessFineDialRawValue = startValue;
 			thicknessFineDialVelocity = 0.0;
-			thicknessFineDialGrabTick = GetTickCount64();
+			thicknessFineDialGrabTick = BarPointerSampleTick();
 			thicknessFineDialCommitIssued = false;
 			thicknessFineDialPhase = ThicknessFineDialPhase::Dragging;
 			barState.drawAttributeBar.thicknessFineDialDragging = true;
@@ -2646,6 +2918,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			if (!palette || palette->w.val <= 0.0 || palette->h.val <= 0.0)
 				return;
 
+			PrepareBarMouseDragTracking();
+			BeginBarMouseDrag(); // 选色板按下即进入连续选色，不借用普通按钮的点击提交。
 			COLORREF finalColor = GetPenColor();
 			auto ApplyClientPoint = [&](int clientX, int clientY)
 				{
@@ -2665,10 +2939,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					finalColor = GetPenColor();
 				};
 
-			POINT stablePoint{
-				static_cast<LONG>(gestureMessage.x),
-				static_cast<LONG>(gestureMessage.y) };
-			BarLayoutToScreen(stablePoint);
+			POINT stablePoint = BarPointerScreenPoint(gestureMessage);
 			POINT activeScreenPoint = stablePoint;
 			ULONGLONG stableStartTick = GetTickCount64();
 			double stableThreshold = BarColorPickerHoldStillnessPx
@@ -2721,22 +2992,18 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			if (!TryGetBarInteractionMessage(
 				&gestureMessage, EM_MOUSE, true, floating_window))
 			{
-				if (!ColorPickerAvailable() || !picker.colorPickerOpen
-					|| (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)
-						&& !gestureMessage.lbutton))
+				if (!ColorPickerAvailable() || !picker.colorPickerOpen)
 					break;
 				// 触摸不会保证同步系统鼠标位置，静止期间沿用最后一个触点坐标。
 				UpdateHold(activeScreenPoint);
 				std::this_thread::sleep_for(std::chrono::milliseconds(8));
 				continue;
 			}
-			if (!ColorPickerAvailable() || !picker.colorPickerOpen) break;
+			if (IsBarPointerCancelMessage(gestureMessage)
+				|| !ColorPickerAvailable() || !picker.colorPickerOpen) break;
 			if (gestureMessage.message == WM_MOUSEMOVE && gestureMessage.lbutton)
 			{
-				POINT screenPoint{
-					static_cast<LONG>(gestureMessage.x),
-					static_cast<LONG>(gestureMessage.y) };
-				BarLayoutToScreen(screenPoint);
+				POINT screenPoint = BarPointerScreenPoint(gestureMessage);
 				activeScreenPoint = screenPoint;
 				if (!picker.colorPickerHoldLocked)
 					ApplyClientPoint(gestureMessage.x, gestureMessage.y);
@@ -2753,8 +3020,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		if (captured)
 			SendMessage(floating_window, BarColorPickerCaptureMessage,
 				BarColorPickerCaptureStop, 0);
-		bool completed = captured && !offSignal
-			&& !gestureMessage.lbutton && ColorPickerAvailable()
+		bool completed = !offSignal
+			&& !IsBarPointerCancelMessage(gestureMessage)
+			&& gestureMessage.message == WM_LBUTTONUP && !gestureMessage.lbutton && ColorPickerAvailable()
 			&& picker.colorPickerOpen;
 		picker.colorPickerPointerPressed = false;
 		picker.colorPickerHoldHintActive = false;
@@ -2769,6 +3037,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 	BarInteractionStageResult FinishInteraction()
 		{
+			FinishBarPointerSession();
 			barState.drawAttributeBar.laserPress = false;
 			CloseThicknessSlider(false);
 			CloseColorPicker(false);
@@ -3380,6 +3649,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (!pickerClose->IsClick(
 								msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
@@ -3414,6 +3684,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (!pickerTone->IsClick(
 								msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
@@ -3466,6 +3737,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (!customSwatch->IsClick(
 								msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
@@ -3566,6 +3838,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						{
 							return BarInteractionStageResult::Shutdown;
 						}
+						if (IsBarPointerCancelMessage(msg)) break;
 						if (closeHit->IsClick(
 							msg.x, msg.y, barStyle.zoom))
 						{
@@ -3604,6 +3877,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						{
 							return BarInteractionStageResult::Shutdown;
 						}
+						if (IsBarPointerCancelMessage(msg)) break;
 						if (infoHit->IsClick(
 							msg.x, msg.y, barStyle.zoom))
 						{
@@ -3690,6 +3964,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (!freeLine->IsClick(
 								msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
@@ -3750,6 +4025,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (!moreClose->IsClick(msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
@@ -3791,6 +4067,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								{
 									return BarInteractionStageResult::Shutdown;
 								}
+								if (IsBarPointerCancelMessage(msg)) break;
 								if (!button->button.IsClick(msg.x, msg.y, barStyle.zoom)) break;
 								if (!msg.lbutton)
 								{
@@ -3967,6 +4244,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								{
 									return BarInteractionStageResult::Shutdown;
 								}
+								if (IsBarPointerCancelMessage(msg)) break;
 								ApplyBarBottomDockBodyHitTestFromRigid(msg);
 								if (doubleClickContinuation || temp->button.IsClick(msg.x, msg.y, barStyle.zoom))
 								{
@@ -4100,6 +4378,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (!shape->IsClick(msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
@@ -4170,6 +4449,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								&& !fineActivationCorridorConsumed
 								&& !rangeTransitionConsumesPress)
 							{
+				PrepareBarMouseDragTracking();
 				const auto gestureState = GetStateModeVersionedSnapshot();
 				PenModeSelectEnum gesturePenMode =
 					gestureState.state.Pen.ModeSelect;
@@ -4226,10 +4506,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									}
 								}
 
-								POINT startScreenPoint{
-									static_cast<LONG>(msg.x),
-									static_cast<LONG>(msg.y) };
-								BarLayoutToScreen(startScreenPoint);
+								POINT startScreenPoint = BarPointerScreenPoint(msg);
 								double pressScreenX =
 									static_cast<double>(
 										startScreenPoint.x);
@@ -4389,7 +4666,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											static_cast<double>(finalWidth - initialWidth))
 											> 0.000001;
 										AddThicknessFineDialSample(
-											screenX, GetTickCount64());
+											screenX, BarPointerSampleTick());
 										return visualChanged;
 									};
 
@@ -4615,6 +4892,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											fineDialGesture = true;
 											precisionRelativeGesture = false;
 											gestureDragged = true;
+											BeginBarMouseDrag();
 											barState.drawAttributeBar.thicknessViewMode =
 												ThicknessViewMode::FineDial;
 											barState.drawAttributeBar.thicknessSliderHover = false;
@@ -4657,6 +4935,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											}
 											// 仅接续本控件自己的提交版本，不接管期间到达的新工具/显示状态。
 											gestureRevision = committedRevision;
+											barPointerModeRevision = committedRevision;
 											initialWidth = GetPenWidthMetrics(committedState.state).resolvedWidthDip;
 											finalWidth = initialWidth;
 											lastCandidateWidth = initialWidth;
@@ -4670,6 +4949,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											grabOffsetScreenX = screenX - committedThumbCenter;
 											valueAdjustAllowed = true;
 											gestureDragged = true;
+											BeginBarMouseDrag();
 											barState.drawAttributeBar.thicknessViewMode =
 												ThicknessViewMode::Slider;
 											barState.drawAttributeBar.thicknessSliderHover = false;
@@ -4824,7 +5104,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 									while (!offSignal)
 									{
-										// 用 peek 轮询，便于静止计时在无新消息时也能推进。
+										// 无输入时仍推进停留计时；模式快照不能冻结在按下时。
+										stateMode = GetStateModeSnapshot();
 										if (!TryGetBarInteractionMessage(
 											&msg, EM_MOUSE, true, floating_window))
 										{
@@ -4840,10 +5121,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												penModeChanged = !samePenMode;
 												break;
 											}
-											if (!Inkeys::Inputs::IsKeyBoardDown(
-												VK_LBUTTON)
-												&& !msg.lbutton)
-												break;
 
 											if (pointerUsesTouchCoordinates)
 											{
@@ -4871,8 +5148,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											else if (!fineDialPopupReturnGesture
 												|| gestureDragged)
 											{
-											POINT cursorPoint{};
-											if (GetCursorPos(&cursorPoint))
+											POINT cursorPoint = BarPointerScreenPoint(msg);
+											if (barPointerSampleReady)
 											{
 												POINT clientPoint = cursorPoint;
 														BarScreenToLayout(clientPoint);
@@ -4892,7 +5169,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											continue;
 										}
 
-										if (IsBarTouchCancelMessage(msg))
+										if (IsBarPointerCancelMessage(msg))
 										{
 											touchGestureCancelled = true;
 											break;
@@ -4914,10 +5191,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										if (msg.message == WM_MOUSEMOVE
 											&& msg.lbutton)
 										{
-											POINT screenPoint{
-												static_cast<LONG>(msg.x),
-												static_cast<LONG>(msg.y) };
-											BarLayoutToScreen(screenPoint);
+											POINT screenPoint = BarPointerScreenPoint(msg);
 											double screenX =
 												static_cast<double>(
 													screenPoint.x);
@@ -4944,7 +5218,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											if (fineDialGesture)
 											{
 												if (screenX != fineDialAnchorScreenX)
+												{
 													gestureDragged = true;
+													BeginBarMouseDrag();
+												}
 												if (ApplyFineDialScreenX(screenX))
 												{
 													lastMoveScreenX = screenX;
@@ -4993,6 +5270,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												{
 													// 浮窗与 Thumb 共用绝对投影，并保留按下时的 X 抓取偏移。
 													gestureDragged = true;
+													BeginBarMouseDrag();
 													barState.drawAttributeBar
 														.thicknessSliderDragging = true;
 													BeginFineActivationRecognition();
@@ -5031,6 +5309,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												{
 													// 超过 5 DIP 后永久归类为 Preview 拖动，回到原点也不再触发点击。
 													gestureDragged = true;
+													BeginBarMouseDrag();
 													barState.drawAttributeBar
 														.thicknessPreviewDragging = true;
 													UpdateRendering(false);
@@ -5057,6 +5336,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												&& screenX != pressScreenX)
 											{
 												gestureDragged = true;
+												BeginBarMouseDrag();
 												barState.drawAttributeBar
 													.thicknessSliderDragging = true;
 												UpdateRendering(false);
@@ -5086,6 +5366,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										{
 											// 仅水平位移会把按下手势切换为真实的滑轨拖动。
 											gestureDragged = true;
+											BeginBarMouseDrag();
 											// 圆点未完全出现时，滑动只用于区分点击/拖动，不进入候选拖动态。
 											if (valueAdjustAllowed
 												&& !barState.drawAttributeBar
@@ -5147,19 +5428,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										{
 											if (fineDialGesture)
 											{
-												POINT screenPoint{
-													static_cast<LONG>(msg.x),
-													static_cast<LONG>(msg.y) };
-														BarLayoutToScreen(screenPoint);
+												POINT screenPoint = BarPointerScreenPoint(msg);
 												ApplyFineDialScreenX(
 													static_cast<double>(screenPoint.x));
 											}
 											else if (fineDialPopupReturnGesture)
 											{
-												POINT screenPoint{
-													static_cast<LONG>(msg.x),
-													static_cast<LONG>(msg.y) };
-														BarLayoutToScreen(screenPoint);
+												POINT screenPoint = BarPointerScreenPoint(msg);
 												double screenX = static_cast<double>(screenPoint.x);
 												double screenY = static_cast<double>(screenPoint.y);
 												lastTouchScreenX = screenX;
@@ -5181,10 +5456,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											}
 											else if (sliderPopupGesture)
 											{
-												POINT screenPoint{
-													static_cast<LONG>(msg.x),
-													static_cast<LONG>(msg.y) };
-														BarLayoutToScreen(screenPoint);
+												POINT screenPoint = BarPointerScreenPoint(msg);
 												double screenX = static_cast<double>(screenPoint.x);
 												double screenY = static_cast<double>(screenPoint.y);
 												lastTouchScreenX = screenX;
@@ -5194,6 +5466,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 														screenX, screenY))
 												{
 													gestureDragged = true;
+													BeginBarMouseDrag();
 													barState.drawAttributeBar
 														.thicknessSliderDragging = true;
 												}
@@ -5207,10 +5480,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											}
 											else if (directTouchPreviewGesture)
 											{
-												POINT screenPoint{
-													static_cast<LONG>(msg.x),
-													static_cast<LONG>(msg.y) };
-														BarLayoutToScreen(screenPoint);
+												POINT screenPoint = BarPointerScreenPoint(msg);
 												double moveDx = static_cast<double>(
 													screenPoint.x) - pressScreenX;
 												double moveDy = static_cast<double>(
@@ -5220,6 +5490,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 														> touchDragThresholdSquared)
 												{
 													gestureDragged = true;
+													BeginBarMouseDrag();
 													barState.drawAttributeBar
 														.thicknessPreviewDragging = true;
 												}
@@ -5231,14 +5502,14 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											}
 											else if (precisionRelativeGesture)
 											{
-												POINT screenPoint{
-													static_cast<LONG>(msg.x),
-													static_cast<LONG>(msg.y) };
-														BarLayoutToScreen(screenPoint);
+												POINT screenPoint = BarPointerScreenPoint(msg);
 												if (!gestureDragged
 													&& static_cast<double>(screenPoint.x)
 														!= pressScreenX)
+												{
 													gestureDragged = true;
+													BeginBarMouseDrag();
+												}
 												if (gestureDragged)
 													ApplyCandidateWidth(
 														ProjectRelativePreviewWidth(
@@ -5276,8 +5547,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											&& !fineDragActivationArmed
 											&& !fineActivationDwellTracking)
 										{
-											POINT cursorPoint{};
-											if (GetCursorPos(&cursorPoint))
+											POINT cursorPoint = BarPointerScreenPoint(msg);
+											if (barPointerSampleReady)
 											{
 												UpdateHoldLockState(
 													static_cast<double>(cursorPoint.x),
@@ -5304,7 +5575,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										.thicknessSliderHoldLocked = false;
 									barState.drawAttributeBar
 										.thicknessSliderHoldProgress = 0.0f;
-									bool gestureCompleted = gestureCaptured
+									bool gestureCompleted = msg.message == WM_LBUTTONUP
 										&& !touchGestureCancelled
 										&& !offSignal && !msg.lbutton
 										&& barState.drawAttribute && !barState.fold
@@ -5580,6 +5851,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								UpdateRendering();
 							};
 						ApplySwatch(activeSwatch);
+						PrepareBarMouseDragTracking();
+						BeginBarMouseDrag(); // 色块拖选按下即改色，结束仅退休连续会话。
 
 						// 只有色块内的 Down 才启动拖选，穿过间隙后仍可切到新色块。
 						while (true)
@@ -5589,6 +5862,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (!msg.lbutton) break;
 
 							for (int i = static_cast<int>(
@@ -5682,6 +5956,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									{
 										return BarInteractionStageResult::Shutdown;
 									}
+									if (IsBarPointerCancelMessage(msg)) break;
 									if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
 									{
 										if (!msg.lbutton)
@@ -5783,6 +6058,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								{
 									return BarInteractionStageResult::Shutdown;
 								}
+								if (IsBarPointerCancelMessage(msg)) break;
 								if (!extension->IsClick(
 									msg.x, msg.y, barStyle.zoom)) break;
 								if (!msg.lbutton)
@@ -5856,6 +6132,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						{
 							if (!WaitForBarInteractionMessage(msg, EM_MOUSE, floating_window))
 								return BarInteractionStageResult::Shutdown;
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (obj->IsClick(msg.x, msg.y, barStyle.zoom) && !msg.lbutton)
 							{
 								clickCompleted = true;
@@ -5891,6 +6168,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
 							{
 							if (!msg.lbutton)
@@ -5925,6 +6203,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							if (!WaitForBarInteractionMessage(
 								msg, EM_MOUSE, floating_window))
 								return BarInteractionStageResult::Shutdown;
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
 							{
 								if (!msg.lbutton)
@@ -5958,6 +6237,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								return BarInteractionStageResult::Shutdown;
 							}
+							if (IsBarPointerCancelMessage(msg)) break;
 							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
 							{
 							if (!msg.lbutton)
@@ -6026,7 +6306,7 @@ public:
 			if (pollResult == BarInteractionStageResult::Consumed) continue;
 			if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
 			{
-				if (IsBarTouchCancelMessage(msg)) continue;
+				if (IsBarPointerCancelMessage(msg)) continue;
 				// 所有辅助面板/工具写入前核同一 frozen Pen 与 closed aux 前提。
 				if (!Inkeys::UI::Bar::PermitAuthorizedFixturePointerStages(
 					barUISet.ReadFiniteSignature(GetStateModeVersionedSnapshot()))) break;
@@ -6041,7 +6321,7 @@ public:
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
 			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
 
-			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
+			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg)))
 			{
 				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
@@ -6049,7 +6329,7 @@ public:
 				continue;
 			}
 			// 撤回属性与橡皮同级早处理；二者互斥，同时最多一个展开。
-			if (barUISet.recallAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
+			if (barUISet.recallAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg)))
 			{
 				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
@@ -6094,7 +6374,7 @@ private:
 			seekMessage.y = static_cast<short>(clamp<LONG>(
 				currentTouchScreenSample.point.y, SHRT_MIN, SHRT_MAX));
 			MarkBarTouchPointerMessage(seekMessage,
-				IsBarTouchCancelMessage(message), true);
+				IsBarPointerCancelMessage(message), true);
 		}
 		currentTouchScreenSample.ready = false;
 		return (barUISet.*memberAccess.seek)(seekMessage);
@@ -6219,92 +6499,15 @@ void BarUISetClass::Interact()
 bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 {
 	if (!hWnd) return false;
-	if (!enabled)
-	{
-		bool wasRegistered = false;
-		{
-			lock_guard lock(borderCursorLightMutex);
-			wasRegistered = borderCursorRawInputRegistered;
-			// 先关闭逻辑入口，注销失败时迟到的 WM_INPUT 也不会继续唤醒渲染。
-			borderCursorRawInputRegistered = false;
-			borderCursorInputAvailable = false;
-		}
-		if (!wasRegistered) return true;
-
-		RAWINPUTDEVICE rawInputDevice{};
-		rawInputDevice.usUsagePage = 0x01;
-		rawInputDevice.usUsage = 0x02;
-		rawInputDevice.dwFlags = RIDEV_REMOVE;
-		rawInputDevice.hwndTarget = nullptr;
-		if (RegisterRawInputDevices(&rawInputDevice, 1, sizeof(rawInputDevice)))
-		{
-			Inkeys::Drawing::Draw3::RecordCursorDiagnostic(
-				"raw-registration stage=bar-remove known=1 active=0 hwnd=%p", static_cast<void*>(hWnd));
-			return true;
-		}
-
-		DWORD removalError = GetLastError();
-		Inkeys::Drawing::Draw3::RecordCursorDiagnostic(
-			"raw-registration stage=bar-remove known=0 ok=0 error=%lu hwnd=%p",
-			static_cast<unsigned long>(removalError), static_cast<void*>(hWnd));
-		bool needLog = false;
-		{
-			lock_guard lock(borderCursorLightMutex);
-			if (!borderCursorRemovalFailureLogged)
-			{
-				borderCursorRemovalFailureLogged = true;
-				needLog = true;
-			}
-		}
-		if (needLog && IDTLogger) IDTLogger->error(
-			"[BarUISetClass::SetBorderCursorRawInputEnabled] 注销全局鼠标 Raw Input 失败, error={}",
-			removalError);
-		return false;
-	}
-
+	// 光效休眠只关闭观察状态，不能注销拖动与 PageControl 共用的鼠标输入。
+	const bool available = enabled && (Pointer::RawMouseAvailable()
+		|| Pointer::AttachRawMouse(hWnd));
 	{
 		lock_guard lock(borderCursorLightMutex);
-		if (borderCursorRawInputRegistered) return true;
-		if (borderCursorRegistrationFailureLogged) return false;
+		borderCursorRawInputRegistered = available;
+		borderCursorInputAvailable = available;
 	}
-
-	RAWINPUTDEVICE rawInputDevice{};
-	rawInputDevice.usUsagePage = 0x01; // Generic Desktop Controls
-	rawInputDevice.usUsage = 0x02; // Mouse
-	rawInputDevice.dwFlags = RIDEV_INPUTSINK;
-	rawInputDevice.hwndTarget = hWnd;
-	if (!RegisterRawInputDevices(&rawInputDevice, 1, sizeof(rawInputDevice)))
-	{
-		DWORD registrationError = GetLastError();
-		Inkeys::Drawing::Draw3::RecordCursorDiagnostic(
-			"raw-registration stage=bar-add known=0 ok=0 error=%lu hwnd=%p",
-			static_cast<unsigned long>(registrationError), static_cast<void*>(hWnd));
-		bool needLog = false;
-		{
-			lock_guard lock(borderCursorLightMutex);
-			borderCursorInputAvailable = false;
-			borderCursorRawInputRegistered = false;
-			if (!borderCursorRegistrationFailureLogged)
-			{
-				borderCursorRegistrationFailureLogged = true;
-				needLog = true;
-			}
-		}
-		if (needLog && IDTLogger) IDTLogger->error(
-			"[BarUISetClass::SetBorderCursorRawInputEnabled] 注册全局鼠标 Raw Input 失败, error={}",
-			registrationError);
-		return false;
-	}
-
-	{
-		lock_guard lock(borderCursorLightMutex);
-		borderCursorInputAvailable = true;
-		borderCursorRawInputRegistered = true;
-	}
-	Inkeys::Drawing::Draw3::RecordCursorDiagnostic(
-		"raw-registration stage=bar-add known=1 active=1 hwnd=%p flags=0x%lx",
-		static_cast<void*>(hWnd), static_cast<unsigned long>(rawInputDevice.dwFlags));
-	return true;
+	return !enabled || available;
 }
 
 void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
@@ -6683,22 +6886,15 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		result.allowClick = false;
 		return result;
 	}
-	auto IsLeftButtonDown = []() -> bool
-		{
-			// HWND 移动后可能收不到抬手消息，拖动循环必须以系统实时按键态结束。
-			return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-		};
-	const bool touchGesture = IsBarTouchPointerMessage(msg);
-	if (touchGesture && IsBarTouchCancelMessage(msg))
+	if (!msg.lbutton || IsBarPointerCancelMessage(msg))
 	{
 		result.allowClick = false;
 		return result;
 	}
-	if ((touchGesture && (!msg.lbutton || IsBarTouchCancelMessage(msg)))
-		|| (!touchGesture && !IsLeftButtonDown())) return result;
 
 	auto mainButton = superellipseMap[BarUISetSuperellipseEnum::MainButton];
 	if (!mainButton) return result;
+	PrepareBarMouseDragTracking();
 
 	const BarPendingDisplaySnapshot initialDisplaySnapshot =
 		PendingDisplaySnapshot();
@@ -6734,7 +6930,6 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		initialDisplaySnapshot.serial
 			!= initialPresentedSnapshot.displaySerial
 		|| abs(initialTargetZoom - presentedZoom) > 0.000001;
-	const POINT initialMonitorOrigin = initialPresentedSnapshot.monitorOrigin;
 	const POINT initialPresentedTranslation =
 		initialPresentedSnapshot.directTranslation;
 	const BarBottomDockMode initialMode = initialPresentedSnapshot.mode;
@@ -6833,23 +7028,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				* interactionZoom / 2.0;
 		};
 
-	POINT startPointer{};
-	if (touchGesture)
-	{
-		if (IsBarTouchScreenMessage(msg))
-			startPointer = POINT{ msg.x, msg.y };
-		else startPointer = POINT{
-			msg.x + initialMonitorOrigin.x + initialPresentedTranslation.x,
-			msg.y + initialMonitorOrigin.y + initialPresentedTranslation.y };
-	}
-	else if (!GetCursorPos(&startPointer))
-	{
-		// 初始采样失败等价于取消手势，不能把默认结果误当成一次点击。
-		result.allowClick = false;
-		FinishDirectWindowDrag();
-		if (!offSignal) UpdateRendering(false);
-		return result;
-	}
+	const POINT startPointer = BarPointerScreenPoint(msg);
 	POINT previousPointer = startPointer;
 	const double actualMainCenterScreenX =
 		initialPresentedSnapshot.mainCenterScreenX;
@@ -6986,6 +7165,66 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			return publication;
 		};
 
+	double diagnosticDesiredCenterX = actualMainCenterScreenX;
+	double diagnosticDesiredCenterY = actualMainCenterScreenY;
+	ULONGLONG diagnosticLastTick = 0;
+	bool diagnosticEnvironmentChanged = false;
+	barPointerDragDiagnostics = {};
+	barPointerDragDiagnostics.active = true;
+	RecordBarDragPointerArrival(false, barPointerLatest);
+	RecordBarDragPointerDecision(false, true);
+	auto LogDragDiagnostics = [&](const char* event, bool force = false)
+		{
+			const auto now = GetTickCount64();
+			if (!force && now - diagnosticLastTick < 500) return;
+			diagnosticLastTick = now;
+			if (!IDTLogger) return;
+			const auto presented = BottomDockPresentedSnapshot();
+			const auto pending = PendingDisplaySnapshot();
+			POINT cursor{};
+			const bool cursorValid = GetCursorPos(&cursor) != FALSE;
+			GUITHREADINFO ownerInfo{ sizeof(GUITHREADINFO) };
+			const bool ownerInfoValid = GetGUIThreadInfo(
+				GetWindowThreadProcessId(floating_window, nullptr), &ownerInfo) != FALSE;
+			const auto& trace = barPointerDragDiagnostics;
+			// 光标只用于对比样本/呈现，不生成移动，也不据此推断按键状态。
+			IDTLogger->info(
+				"[UiPointerDrag] event={} tick={} session={} source={} active={} dragging={} "
+				"native={}/{} last=({},{},t{},k{},g{}) raw={}/{} last=({},{},t{},k{},g{},c{}) "
+				"armed={} bound={} disabled={} rawActivity={} accepted=({},{},t{},k{}) "
+				"cursor=({},{},valid{}) grab=({},{}) desired=({},{}) "
+				"presented=({},{},rawX{},rigidY{}) applied=({},{}) presentedTranslation=({},{}) "
+				"display={}/{} zoom={}/{} "
+				"monitor=({},{},{},{}) transition={}/{} envChanged={} "
+				"foreground={} capture={} ownerInfo={} cancelled={} moveFailed={}",
+				event, now, barPointerLatest.generation, static_cast<int>(barPointerLatest.source),
+				BarPointerSessionActive(), barMouseGesture.Dragging(),
+				trace.nativeConsumed, trace.nativeAccepted,
+				trace.nativeLatest.screen.x, trace.nativeLatest.screen.y,
+				trace.nativeLatest.messageTime, static_cast<int>(trace.nativeLatest.kind),
+				trace.nativeLatest.generation, trace.rawConsumed, trace.rawAccepted,
+				trace.rawLatest.screen.x, trace.rawLatest.screen.y,
+				trace.rawLatest.messageTime, static_cast<int>(trace.rawLatest.kind),
+				trace.rawLatest.generation, static_cast<int>(trace.rawLatest.cancelReason),
+				barMouseArmed, trace.rawBound, trace.rawDisabled, trace.rawActivityTime,
+				barPointerLatest.screen.x, barPointerLatest.screen.y,
+				barPointerLatest.messageTime, static_cast<int>(barPointerLatest.kind),
+				cursor.x, cursor.y, cursorValid, grabOffsetScreenX, grabOffsetScreenY,
+				diagnosticDesiredCenterX, diagnosticDesiredCenterY,
+				presented.mainCenterScreenX, presented.mainCenterScreenY,
+				presented.rawMainCenterScreenX, presented.rigidTranslationDip * presented.zoom,
+				appliedDeltaX, appliedDeltaY, presented.directTranslation.x, presented.directTranslation.y,
+				presented.displaySerial, pending.serial, presented.zoom, ResolveInteractionZoom(pending),
+				presented.monitorBounds.left, presented.monitorBounds.top,
+				presented.monitorBounds.right, presented.monitorBounds.bottom,
+				presented.transitionSerial, awaitedTransitionSerial, diagnosticEnvironmentChanged,
+				reinterpret_cast<std::uintptr_t>(GetForegroundWindow()),
+				reinterpret_cast<std::uintptr_t>(ownerInfo.hwndCapture), ownerInfoValid,
+				gestureCancelled, directMoveFailed);
+			diagnosticEnvironmentChanged = false;
+		};
+	LogDragDiagnostics("begin", true);
+
 	auto ApplyAbsolutePointer = [&](POINT pointer)
 		{
 			const double stepX = static_cast<double>(pointer.x - previousPointer.x);
@@ -6996,7 +7235,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			previousPointer = pointer;
 			auto RebasePointerForPresentedEnvironment = [&](const auto& presented)
 				{
-					// 显示环境变化只消费未形变坐标；视觉果冻不能回灌抓手和捕获阈值。
+					// 显示环境只更新布局基准；受限或滞后的呈现位置不能重设抓住的逻辑点。
 					baseMainCenterScreenX = presented.rawMainCenterScreenX
 						- presented.directTranslation.x
 						- presented.horizontalMapping.rigidGripTranslationXDip * presented.zoom;
@@ -7004,10 +7243,6 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 						- presented.directTranslation.y;
 					bodyToMainCenterScreenX = presented.rawBodyCenterScreenX
 						- presented.rawMainCenterScreenX;
-					grabOffsetScreenX = pointer.x - presented.rawMainCenterScreenX;
-					grabOffsetScreenY = pointer.y
-						- (presented.mainCenterScreenY
-							+ presented.rigidTranslationDip * presented.zoom);
 					const double floatingBottom = pointer.y - grabOffsetScreenY
 						+ VisibleHalfHeightScreen();
 						const double dockCenter = ResolveBarBottomDockCenterScreenY(
@@ -7027,6 +7262,13 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				};
 			auto AdoptPresentedEnvironment = [&](const auto& presented)
 				{
+					if (abs(presented.zoom - interactionZoom) > 0.000001)
+					{
+						grabOffsetScreenX = ScaleBarDragGrabOffsetForZoom(
+							grabOffsetScreenX, interactionZoom, presented.zoom);
+						grabOffsetScreenY = ScaleBarDragGrabOffsetForZoom(
+							grabOffsetScreenY, interactionZoom, presented.zoom);
+					}
 					interactionZoom = presented.zoom;
 					maximumInteractionZoom = max(
 						maximumInteractionZoom, interactionZoom);
@@ -7051,6 +7293,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				AdoptPresentedEnvironment(presented);
 				RebasePointerForPresentedEnvironment(presented);
 				displayEnvironmentAwaited = false;
+				diagnosticEnvironmentChanged = true;
 			}
 			if (awaitedTransitionSerial != 0
 				&& presented.transitionSerial >= awaitedTransitionSerial)
@@ -7138,6 +7381,8 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			if (dockUpdate.mode == BarBottomDockMode::BottomDocked)
 				downwardDetachBlockedAtRelease = false;
 
+			diagnosticDesiredCenterX = desiredMainCenterScreenX;
+			diagnosticDesiredCenterY = desiredMainCenterScreenY;
 			const LONG pixelDeltaX = static_cast<LONG>(lround(
 				desiredMainCenterScreenX - baseMainCenterScreenX));
 			const LONG pixelDeltaY = static_cast<LONG>(lround(
@@ -7224,52 +7469,31 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			return translationChanged || publication.visualChanged;
 		};
 
-	if (touchGesture)
+	ExMessage pointerMessage = msg;
+	while (!offSignal && !directMoveFailed)
 	{
-		ExMessage touchMessage = msg;
-		while (!offSignal && !directMoveFailed)
+		// 无输入时也输出限频摘要，才能区分流中断与已到达样本被仲裁拒绝。
+		LogDragDiagnostics("tracking");
+		if (!TryReadBarPointerMessage(pointerMessage, EM_MOUSE, floating_window, true, nullptr))
 		{
-			if (!WaitForBarInteractionMessage(
-				touchMessage, EM_MOUSE, floating_window, true))
-			{
-				gestureCancelled = true;
-				break;
-			}
-			if (!IsBarTouchPointerMessage(touchMessage)) continue;
-			if (IsBarTouchCancelMessage(touchMessage))
-			{
-				gestureCancelled = true;
-				break;
-			}
+			this_thread::sleep_for(chrono::milliseconds(1));
+			continue;
+		}
+		if (IsBarPointerCancelMessage(pointerMessage))
+		{
+			gestureCancelled = true;
+			break;
+		}
+		(void)ApplyAbsolutePointer(BarPointerScreenPoint(pointerMessage));
+		if (!ShouldAllowBarBottomDockClick(false, false, result.modeChanged,
+			result.rawPathLength, maximumElasticTravelScreen, maximumInteractionZoom))
+			BeginBarMouseDrag(); // 沿用原点击阈值；阈值内 Raw Up 不能触发折叠。
+		if (pointerMessage.message == WM_LBUTTONUP) break;
+	}
 
-			POINT pointer{};
-			if (IsBarTouchScreenMessage(touchMessage))
-				pointer = POINT{ touchMessage.x, touchMessage.y };
-			else pointer = POINT{
-				touchMessage.x + initialMonitorOrigin.x
-					+ initialPresentedTranslation.x,
-				touchMessage.y + initialMonitorOrigin.y
-					+ initialPresentedTranslation.y };
-			(void)ApplyAbsolutePointer(pointer);
-			if (!touchMessage.lbutton
-				|| touchMessage.message == WM_LBUTTONUP) break;
-		}
-	}
-	else
-	{
-		POINT point = startPointer;
-		while (!offSignal && !directMoveFailed)
-		{
-			if (!IsLeftButtonDown()) break;
-			if (!GetCursorPos(&point))
-			{
-				gestureCancelled = true;
-				break;
-			}
-			if (!ApplyAbsolutePointer(point) && !directMoveFailed)
-				this_thread::sleep_for(chrono::milliseconds(15));
-		}
-	}
+	if (offSignal) gestureCancelled = true;
+	LogDragDiagnostics("end", true);
+	barPointerDragDiagnostics.active = false;
 
 	if (directMoveFailed)
 	{
@@ -7344,9 +7568,8 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		directMoveFailed, gestureCancelled, result.modeChanged,
 		result.rawPathLength, maximumElasticTravelScreen,
 		maximumInteractionZoom);
-	POINT releasePoint{};
-	if (result.allowClick && ReadBarPointerPosition(&releasePoint)
-		&& BarScreenToLayout(releasePoint)
+	POINT releasePoint = BarPointerScreenPoint(pointerMessage);
+	if (result.allowClick && BarScreenToLayout(releasePoint)
 		&& IsBottomDockIndicatorPresentedAt(releasePoint.x, releasePoint.y))
 		result.allowClick = false;
 	return result;
@@ -7393,10 +7616,15 @@ namespace Inkeys::UI::Bar
 			message, extraInfo))
 			return { Inkeys::Message::Action::Discard, 0 };
 		if (!IsBarCoordinateMessage(message)) return {};
+		// 普通 Down/Move/Up 始终保留 HiMsg 入口；Raw 只在控件拖动状态机中补充。
 
 		// 在窗口线程入队时就固化屏幕坐标，避免 resize 后用新原点解释旧 client 消息。
+		Inkeys::Window::MessageDispatch::Sample posted;
+		const bool hasPosted = Inkeys::Window::MessageDispatch::TryGet(
+			hwnd, message, wParam, lParam, posted);
 		POINT point{};
-		if (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL)
+		if (hasPosted) point = posted.screen;
+		else if (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL)
 		{
 			point.x = GET_X_LPARAM(lParam);
 			point.y = GET_Y_LPARAM(lParam);
@@ -7407,6 +7635,7 @@ namespace Inkeys::UI::Bar
 			point.x = GET_X_LPARAM(messagePosition);
 			point.y = GET_Y_LPARAM(messagePosition);
 		}
+		const POINT screenPoint = point;
 		BarScreenToLayout(point);
 
 		ExMessage queued{};
@@ -7421,7 +7650,24 @@ namespace Inkeys::UI::Bar
 		queued.lbutton = (keyState & MK_LBUTTON) != 0;
 		queued.mbutton = (keyState & MK_MBUTTON) != 0;
 		queued.rbutton = (keyState & MK_RBUTTON) != 0;
-		(void)Inkeys::Window::Enqueue(hwnd, queued);
+		if (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL)
+			(void)Inkeys::Window::Enqueue(hwnd, queued);
+		else
+		{
+			Pointer::Sample sample;
+			sample.source = Pointer::Source::Mouse;
+			sample.kind = message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK
+				? Pointer::Kind::Down : message == WM_LBUTTONUP
+				? Pointer::Kind::Up : Pointer::Kind::Move;
+			if (sample.kind == Pointer::Kind::Down)
+				barNativeMouseActiveGeneration = ++barNativeMouseGeneration;
+			sample.generation = barNativeMouseActiveGeneration;
+			if (sample.kind == Pointer::Kind::Up) barNativeMouseActiveGeneration = 0;
+			sample.screen = screenPoint;
+			sample.messageTime = hasPosted ? posted.time : static_cast<DWORD>(GetMessageTime());
+			sample.tick = Inkeys::Window::MessageDispatch::PostedTick(sample.messageTime);
+			(void)EnqueueBarPointerSample(hwnd, queued, sample);
+		}
 		return { Inkeys::Message::Action::Discard, 0 };
 	}
 

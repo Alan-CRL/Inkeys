@@ -94,10 +94,10 @@ export namespace Inkeys::UI::PageControl
 	}
 
 	[[nodiscard]] constexpr bool ShouldKeepPptLongPressTracking(
-		bool repeatEnabled, bool captureOwned,
+		bool repeatEnabled, bool sessionOwned,
 		bool sameDirectionHit) noexcept
 	{
-		return repeatEnabled && captureOwned && sameDirectionHit;
+		return repeatEnabled && sessionOwned && sameDirectionHit;
 	}
 
 	[[nodiscard]] constexpr bool ShouldTriggerPptLongPressRepeat(
@@ -131,6 +131,7 @@ export namespace Inkeys::UI::PageControl
 		std::uint32_t id = 0;
 		bool active = false;
 		bool primary = false;
+		std::uintptr_t source = 0;
 	};
 
 	enum class PageControlTouchMessage : std::uint8_t
@@ -153,7 +154,8 @@ export namespace Inkeys::UI::PageControl
 		ResolvePageControlTouchSample(
 			PageControlTouchLockState current, std::uint32_t id,
 			bool down, bool move, bool up, bool primary,
-			bool batchHasPrimary, bool fallbackLocked) noexcept
+			bool batchHasPrimary, bool fallbackLocked,
+			std::uintptr_t source = 0) noexcept
 	{
 		PageControlTouchDecision result{ current,
 			PageControlTouchMessage::None, false, fallbackLocked };
@@ -162,14 +164,15 @@ export namespace Inkeys::UI::PageControl
 		// 某些触摸驱动不提供 PRIMARY，此时一批只允许首个 DOWN 兜底接管。
 		if (down && (primary || canLockFallback))
 		{
-			if (result.state.active && result.state.id != id)
+			if (result.state.active
+				&& (result.state.id != id || result.state.source != source))
 			{
 				result.state = {};
 				result.cancelPrevious = true;
 			}
 			if (!result.state.active)
 			{
-				result.state = { id, true, primary };
+				result.state = { id, true, primary, source };
 				result.message = PageControlTouchMessage::Down;
 				if (!primary) result.fallbackLocked = true;
 			}
@@ -177,6 +180,7 @@ export namespace Inkeys::UI::PageControl
 
 		const bool canTranslate = result.state.active
 			&& result.state.id == id
+			&& result.state.source == source
 			&& (primary || !result.state.primary || !batchHasPrimary);
 		if (result.message == PageControlTouchMessage::None
 			&& move && canTranslate)

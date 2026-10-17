@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
+#include "../Inkeys/Inkeys/Input/UiPointerInput.h"
 
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar.Metrics;
@@ -73,6 +74,165 @@ namespace
 			"shared primary light maps from screen into presentation pixels");
 		Check(cursor.x == 82.0 && cursor.y == 92.0,
 			"surface maps the Main Bar cursor without creating a local position");
+	}
+
+	void TestNativeMouseAndDragSupplement()
+	{
+		namespace Pointer = Inkeys::Input::UiPointer;
+		const auto NativeDown = [](std::uint64_t generation, DWORD time)
+		{
+			Pointer::Sample sample;
+			sample.kind = Pointer::Kind::Down;
+			sample.screen = { 100, 100 };
+			sample.generation = generation;
+			sample.messageTime = time;
+			sample.tick = time;
+			return sample;
+		};
+		// Page 低于阈值仍是点击，Raw 注册失败或超时都不能阻止原生 Up。
+		for (const bool rawAvailable : { false, true })
+		{
+			Pointer::Testing::ResetProvider(rawAvailable);
+			Pointer::Testing::SetClock(1000);
+			Pointer::MouseChannel channel;
+			Pointer::MouseGesture gesture;
+			const auto down = NativeDown(1, 1000);
+			Check(gesture.Begin(down), "PPT native press starts before optional raw claim");
+			Check(channel.BeginMouse(down.screen, down.messageTime) == rawAvailable,
+				"PPT optional drag claim reflects availability without owning the click");
+			Pointer::Testing::SetClock(2001);
+			Pointer::Testing::PollPendingMouse();
+			Pointer::Sample packet;
+			while (channel.TryPop(packet))
+				Check(!gesture.AcceptRaw(packet),
+					"PPT pending raw cancellation never completes a page click");
+			auto up = down;
+			up.kind = Pointer::Kind::Up;
+			up.screen = { 101, 100 };
+			up.messageTime = 2002;
+			Check(!HasExceededPptDragThreshold(down.screen, up.screen, 8, 6)
+				&& gesture.AcceptNative(up) && !gesture.Active(),
+				"PPT page candidate completes native click despite unavailable raw");
+		}
+		// 三类拖动入口在没有 Raw Down 时，越过补充启动期限仍继续消费原生轨迹。
+		for (const auto region : { PptPointerRegion::Background,
+			PptPointerRegion::Page, PptPointerRegion::DragHandle })
+		{
+			Pointer::Testing::ResetProvider();
+			Pointer::Testing::SetClock(10000);
+			Pointer::MouseChannel channel;
+			Pointer::MouseGesture gesture;
+			Pointer::Session session;
+			const auto down = NativeDown(5, 10000);
+			Check(CanStartPptDrag(region) && gesture.Begin(down)
+				&& session.Begin(down) == Pointer::BeginResult::Started
+				&& channel.BeginMouse(down.screen, down.messageTime),
+				"PPT native drag starts while optional Raw remains unbound");
+			if (StartsPptDragImmediately(region)) (void)gesture.BeginDrag();
+			auto move = down;
+			move.kind = Pointer::Kind::Move;
+			move.screen.x += 80;
+			move.tick = move.messageTime = 10001;
+			Check(gesture.AcceptNative(move) && session.Accept(gesture.Latest())
+				&& HasExceededPptDragThreshold(down.screen, move.screen, 8, 6)
+				&& gesture.BeginDrag(), "PPT enters actual drag before the one-second deadline");
+			int cancelCount = 0;
+			for (DWORD offset : { 999u, 1000u, 1500u, 5000u })
+			{
+				Pointer::Testing::SetClock(10000 + offset);
+				Pointer::Testing::PollPendingMouse();
+				Pointer::Sample packet;
+				while (channel.TryPop(packet))
+				{
+					++cancelCount;
+					Check(packet.kind == Pointer::Kind::Cancel && packet.generation == 0
+						&& !gesture.AcceptRaw(packet) && gesture.Active() && session.Active(),
+						"PPT unbound Raw timeout does not cancel actual native pair drag");
+					channel.FinishMouse();
+				}
+				Check(cancelCount == (offset < 1000 ? 0 : 1),
+					"PPT optional startup deadline expires once without terminating drag");
+				move.screen.x += 10;
+				move.tick = move.messageTime = 10000 + offset;
+				Check(gesture.AcceptNative(move) && session.Accept(gesture.Latest())
+					&& session.Active() && session.Latest().screen.x == move.screen.x,
+					"PPT native pair movement stays effective for multiple seconds");
+			}
+			move.kind = Pointer::Kind::Up;
+			move.tick = move.messageTime = 16000;
+			Check(gesture.AcceptNative(move) && session.Accept(gesture.Latest())
+				&& !session.Active() && !gesture.AcceptNative(move),
+				"PPT native drag ends exactly once on the user's real release");
+		}
+		Pointer::Testing::ResetProvider();
+		for (const auto region : { PptPointerRegion::Background,
+			PptPointerRegion::Page, PptPointerRegion::DragHandle })
+		for (const bool rawEndsFirst : { false, true })
+		{
+			Pointer::MouseGesture gesture;
+			Pointer::Session session;
+			const auto down = NativeDown(2, 3000);
+			Check(CanStartPptDrag(region) && gesture.Begin(down)
+				&& session.Begin(down) == Pointer::BeginResult::Started,
+				"PPT native hit establishes candidate before any raw packet");
+			if (StartsPptDragImmediately(region)) (void)gesture.BeginDrag();
+			auto raw = down;
+			raw.generation = 90;
+			raw.device = 7;
+			Check(!gesture.AcceptRaw(raw), "PPT raw Down cannot dispatch a second press");
+			if (!StartsPptDragImmediately(region))
+			{
+				raw.kind = Pointer::Kind::Move;
+				raw.screen = { 103, 100 };
+				raw.messageTime = 3001;
+				Check(gesture.AcceptRaw(raw) && session.Accept(gesture.Latest())
+					&& !HasExceededPptDragThreshold(down.screen, raw.screen, 8, 6),
+					"PPT candidate accepts supplemental movement below drag threshold");
+			}
+			raw.kind = Pointer::Kind::Move;
+			raw.screen = { 180, 110 };
+			raw.messageTime = 3002;
+			Check(gesture.AcceptRaw(raw) && session.Accept(gesture.Latest())
+				&& HasExceededPptDragThreshold(down.screen, raw.screen, 8, 6)
+				&& gesture.BeginDrag(),
+				"PPT raw movement can cross original threshold outside the window");
+			raw.kind = Pointer::Kind::Up;
+			raw.messageTime = 3003;
+			auto nativeUp = down;
+			nativeUp.kind = Pointer::Kind::Up;
+			nativeUp.screen = raw.screen;
+			nativeUp.messageTime = raw.messageTime;
+			const bool ended = rawEndsFirst
+				? gesture.AcceptRaw(raw) : gesture.AcceptNative(nativeUp);
+			Check(ended && session.Accept(gesture.Latest()) && !session.Active(),
+				"PPT first valid drag Up retires original native session");
+			Check(!(rawEndsFirst ? gesture.AcceptNative(nativeUp) : gesture.AcceptRaw(raw)),
+				"PPT alternate late Up cannot finish the same pair twice");
+			const auto nextDown = NativeDown(3, 3010);
+			Check(gesture.Begin(nextDown)
+				&& session.Begin(nextDown) == Pointer::BeginResult::Started
+				&& !gesture.AcceptNative(nativeUp) && !gesture.AcceptRaw(raw)
+				&& session.Active(),
+				"PPT old terminal cannot retire the next native press");
+		}
+		{
+			Pointer::MouseGesture gesture;
+			const auto down = NativeDown(4, 4000);
+			Check(gesture.Begin(down), "PPT page tap starts on native Down");
+			auto raw = down;
+			raw.generation = 99;
+			raw.device = 8;
+			(void)gesture.AcceptRaw(raw);
+			raw.kind = Pointer::Kind::Up;
+			raw.messageTime = 4001;
+			Check(!gesture.AcceptRaw(raw) && gesture.Active(),
+				"PPT raw Up without a real drag never opens page preview");
+			auto up = down;
+			up.kind = Pointer::Kind::Up;
+			up.messageTime = 4002;
+			Check(gesture.AcceptNative(up), "PPT native Up still completes the page tap");
+		}
+		Pointer::Testing::ResetProvider();
 	}
 
 	void TestCompactWidgetContracts()
@@ -881,6 +1041,30 @@ namespace
 		Check(decision.message == PageControlTouchMessage::Up
 			&& !decision.state.active,
 			"replacement touch up clears the lock");
+
+		state = ResolvePageControlTouchSample({}, 40,
+			true, false, false, true, true, false, 100).state;
+		decision = ResolvePageControlTouchSample(state, 40,
+			false, true, false, true, true, false, 200);
+		Check(decision.message == PageControlTouchMessage::None
+			&& decision.state.active && decision.state.source == 100,
+			"same contact id from another touch device cannot move the active pointer");
+		decision = ResolvePageControlTouchSample(state, 40,
+			false, false, true, true, true, false, 200);
+		Check(decision.message == PageControlTouchMessage::None
+			&& decision.state.active && decision.state.source == 100,
+			"same contact id from another touch device cannot release the active pointer");
+		decision = ResolvePageControlTouchSample(state, 40,
+			true, false, false, false, false, false, 200);
+		Check(decision.message == PageControlTouchMessage::None
+			&& !decision.cancelPrevious && decision.state.source == 100,
+			"fallback from another device cannot replace an active primary pointer");
+		decision = ResolvePageControlTouchSample(state, 40,
+			true, false, false, true, true, false, 200);
+		Check(decision.message == PageControlTouchMessage::Down
+			&& decision.cancelPrevious && decision.state.active
+			&& decision.state.id == 40 && decision.state.source == 200,
+			"primary same-id Down from a new device cancels before replacing ownership");
 	}
 
 	void TestWhiteboardLayoutTargetAndReadiness()
@@ -1120,6 +1304,7 @@ int RunPageControlTests()
 	TestSharedButtonInheritance();
 	TestSharedSurfaceLightingMapping();
 	TestCompactWidgetContracts();
+	TestNativeMouseAndDragSupplement();
 	TestEndShowContentTargets();
 	TestDragCommitHandoff();
 	TestVersionedDragPublication();

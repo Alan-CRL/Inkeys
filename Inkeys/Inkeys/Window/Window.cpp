@@ -6,6 +6,7 @@ module;
 
 #include "../Helper/FailedCleanupDeadline.h"
 #include "Window.CommandCompletion.h"
+#include "Window.MessageDispatch.h"
 
 #include <array>
 #include <atomic>
@@ -932,6 +933,7 @@ namespace Inkeys::Window
 					if (message.message == WM_QUIT)
 						break;
 					TranslateMessage(&message);
+					const MessageDispatch::Scope dispatchScope(message);
 					DispatchMessageW(&message);
 				}
 				if (!eventHandle)

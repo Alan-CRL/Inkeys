@@ -472,6 +472,8 @@
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
+    <ClInclude Include="Inkeys\Input\UiPointerInput.h" />
+    <ClInclude Include="Inkeys\Window\Window.MessageDispatch.h" />
     <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h" />
     <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h" />
     <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h" />
@@ -859,6 +861,7 @@
 	<ClCompile Include="Inkeys\Business\ComponentActions.cpp" />
 	<ClCompile Include="Inkeys\Business\ComponentActions.cppm" />
 	<ClCompile Include="Inkeys\Business\LegacyDrawState.cpp" />
+	<ClCompile Include="Inkeys\Input\UiPointerInput.cpp" />
 	<ClCompile Include="Inkeys\Input\MouseHook.cpp" />
 	<ClCompile Include="Inkeys\Input\MouseHook.cppm" />
 	<ClCompile Include="Inkeys\Message\Message.cpp" />

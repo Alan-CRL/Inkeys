@@ -62,6 +62,7 @@ int RunPenWidthTests();
 int RunEraserAttributeTests();
 int RunRecallAttributeTests();
 int RunPresentationDescriptorTests();
+int RunUiPointerTests();
 
 namespace
 {
@@ -1699,6 +1700,7 @@ int main(int argc, char** argv)
 	failureCount += RunEraserAttributeTests();
 	failureCount += RunRecallAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
+	failureCount += RunUiPointerTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

@@ -103,7 +103,7 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 
 `【直接确认】` Bar 注册的 `WM_TOUCH` 会把主接触（包括当前系统上报的 Pen）转换成带内部来源标记的 `ExMessage`。Windows 同时可能为同一接触派发 Pointer 兼容鼠标消息，其 `GetMessageExtraInfo()` 的来源签名为 `0xFF515700`（掩码 `0xFFFFFF00`）。
 
-`【直接确认】` Pointer 兼容鼠标副本必须在 Bar 的窗口过程和 HiMsg 入队回调两个入口都丢弃；不带该签名的真实鼠标消息仍正常入队。低位 `0x80` 只能用于诊断 Pen/Touch 分类，不能决定一次接触的输入归属，因为同一支笔的 Down/Up 可能出现不同低位值。触摸长按右键抑制依赖这条单一 `WM_TOUCH` 路径，不得重新保留 Pen 兼容鼠标分支。
+`【直接确认】` Pointer 兼容鼠标副本必须在 Bar 的窗口过程和 HiMsg 入队回调两个入口都丢弃；真实鼠标 Down/Move/Up 保留原有 HiMsg 入口及原生按压代次；普通点击不依赖 Raw。Raw 仅在连续拖动状态机中补充越界 Move/Up，不进入 HiMsg，不能替尚未拖动的候选提交点击。低位 `0x80` 只能用于诊断 Pen/Touch 分类，不能决定一次接触的输入归属，因为同一支笔的 Down/Up 可能出现不同低位值。触摸长按右键抑制依赖这条单一 `WM_TOUCH` 路径，不得重新保留 Pen 兼容鼠标分支。
 
 按钮点击完成必须等待明确的 `WM_LBUTTONUP`；`WM_MOUSEMOVE` 的 `MK_LBUTTON` 缺失不能被解释为抬起，否则会把接触或窗口激活阶段的移动误判为第二次点击。
 
@@ -417,7 +417,7 @@ headless先在旧代码运行红灯用例，再验证平台/迟滞/单跳/双向
 - 来源需区分 API 不存在（api=0）、调用失败（api=1 ok=0 error）、成功返回未知（api=1 ok=1 device=0）；同时记录 origin 和 InSendMessageEx 的 sent 标志。sent=0 不能单独证明来源是物理设备。来源查询保存并恢复调用方 LastError。
 - 末触点记录包含实际比较坐标、消息时间、via=pointer/compat-mouse。兼容 Mouse 无完整 Pointer ID 时 touchId=0，不能把 extra 低位猜成完整 ID；primary=0/1/2 分别表示未知/非主触点/主触点。
 - 按键位只能说明消息状态，不能确认物理鼠标来源。schema=2 日志已证明 `!buttonDown` 例外会放行 device=0 origin=IMO_SYSTEM 的 Move；修复将已确认的系统来源判定置于按键/位置回退之前。纯函数通过不等于设备验收。
-- Raw Input 只观察现有 Bar 接收入口，记录初始注册状态及后续注册/注销成功或失败。落笔可能注销接收；缺少 raw-mouse 行不证明没有真实鼠标操作。不得为了诊断在第二个 HWND 重复注册同一设备类。
+- Raw Input 只观察现有 Bar 接收入口，记录初始注册状态及后续注册/注销成功或失败。共享交互注册不随落笔/光效休眠注销；光效观察仍可停止，缺少 raw-mouse 行不证明没有真实鼠标操作。不得为了诊断在第二个 HWND 重复注册同一设备类。
 - 定长日志截断必须包含 `[truncated]`；丢失/截断时事件链检查不能报告证据完整。verify_cursor_trace.py 检查真实输出的来源接管到呈现序列，其无匹配结果不等于全部光标行为正确。
 
 ## Scenario: Draw3 Contact Closing 与拒收路由回收
