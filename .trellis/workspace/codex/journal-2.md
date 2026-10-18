@@ -452,3 +452,63 @@
 ### Next Steps
 
 - 任务已完成并归档，继续正常使用或按原流程发布；问题再现时采集诊断证据。未推送远程。
+
+
+## Session 110: PptCOM 修复提交归档与覆盖层置顶调查
+<!-- trellis-session: v=2 fp=a934026df8791edd -->
+
+**Date**: 2026-10-18
+**Task**: PptCOM 修复提交归档与覆盖层置顶调查
+**Branch**: `bugfix/pptcom`
+
+### Summary
+
+按用户授权提交 PptCOM 修复并归档任务，保留实机验收未验证；只读核查覆盖层 owner、根置顶与 PPT 穿插风险。
+
+### Main Changes
+
+本次按用户明确要求创建本地提交并结束 PptCOM Trellis 任务；保留 SSH 签名，不执行 push。
+
+- WORK: 0eb1c7c587b8b284d103ae865ea29ea59e444677，dynamic 属性/方法访问、确定性 COM 所有权、raw IDispatch 事件连接和解绑重试、busy/基础控制与墨迹能力隔离、测试及 DLL 同步。
+- ARCHIVE: 184cf86e，任务已 completed 并移入 .trellis/tasks/archive/2026-10/10-18-pptcom-dynamic-compatibility，清除活动指针并关联 WORK 提交。
+- 既有最终验证：x64/ARM64 托管真实 COM 各 43 cases、0 failures；完整 InkeysRepo.sln Debug|ARM64 和同一产物 --no-window 通过；DLL/嵌入资源哈希匹配，TLB 与原版一致。
+- 本轮仅更新收尾记录及修复新文档 EOF 空行；暂存 diff --check 通过。未重复运行已完成构建，未启动 GUI/Office。
+- PRD AC10 与真实 PowerPoint2007/2010、WPP2013、现代 Office、损坏 COM 反馈设备、进程及时退出及下一文稿实机验收仍 NOT VERIFIED。按用户指示归档不等于将其标成通过。
+
+用户另要求只读调查覆盖层置顶。此次未改动该功能，也未新建 Trellis 任务。
+
+静态确认：
+- 实际编译 Inkeys/Inkeys/Window/Window.cpp 与 Window.Legacy.cpp；Inkeys/IdtWindow.cpp 仅为 None 项，不作为当前置顶实现依据。
+- OverlayRoot 优先 MagnifierHost，其次 Freeze/Drawpad/Bar；普通链为 MagnifierHost -> Freeze -> DrawpadPresentation -> Drawpad。Bar 及四个 PptBottom/Middle Left/Right 均以 Drawpad 为 owner，是同级顶层 WS_POPUP，而非互相拥有的链。
+- Window.cpp:1870 RefreshTopmost 只对根调用 HWND_TOPMOST/HWND_NOTOPMOST，SWP_NOACTIVATE；keepTopmost = overlayTopmost && !whiteboardWindowMode。Win32 将 topmost band 传播给 owned popup，所以“没有对每个窗口独立 TOPMOST”不代表上方窗口不是 topmost。
+- Window.cpp:1696 与 1890 的 Show/PromotePpt：先 Bar HWND_TOP，再将目标翻页窗插到 Bar 后；未显式逐一对四窗和两个画布排序。USER32 仍可能连带调整 owner，不能将两次 API 调用理解为只会移动两个 HWND。
+- PageControl.cpp:2004 每个成功可见呈现独立调用 Show，2325 pointer down 调用 PromotePptWindow；DirectMove 使用 NOZORDER/NOOWNERZORDER，移动自身不负责修复被外部改变的顺序。
+- Ppt.cpp:30/243：首次 visible 提交请求根刷新，失败继续 pending；成功清除 pending，visible 保持 true 时不因外部遮挡重触发。
+- Window.Legacy.cpp:155-189 周期根刷新，ticks*10ms；配置默认 topSleepTime=3，即 3 秒，可选 100ms/500ms/1s/3s/5s/10s/30s。topWindowNow 可提前唤醒等待。
+- IdtPlug-in.cpp:478-502 业务操作可将焦点交给当前 PPT；没有在交接成功后立即刷新整组窗口。SetForegroundWindow 本身不证明 PPT 是 topmost。
+- Window.cpp:1878-1887 返回值依据根 SetWindowPos，未复核全组 style、GW_OWNER 或相对 PPT 的实际 Z 序。Window.Legacy.cpp:49-76 仅失败/恢复转换采样整组，Ppt.cpp 日志采根；API 成功而视觉遮挡不一定触发诊断。
+- 白板显式 NOTOPMOST，IdtState.cpp:1833 进入降层，1968 退出恢复；需区分是否发生白板切换，而非把所有情形等同根刷新失败。
+- 仓库 window_tests.cpp:507-532 已有隐藏 ownerless topmost 竞争窗及根刷新后整组高于竞争窗/连续性的断言；本轮未执行创建 HWND 的测试，因此不能当作本轮实测结果。
+
+判断及边界：
+- owner 规则保障 owned 高于自己的 owner，不承诺外部窗口永不进入 owned 同级窗口之间；topmost 保障高于普通窗口，不能保证永远高于另一个 topmost 窗口。
+- “主栏/右翻页在 PPT 上，左翻页/画布在下”与外部层级变化后局部显示/提层、缺少整组实际顺序校验的机制相容，但还没有故障时刻窗口快照，不能据此宣称该次具体根因已经证实。更不能只凭没有显示判断窗口真的在下层。
+- 若当时 PPT 非 topmost 且覆盖层所有窗口确实 topmost/可见/有内容，普通 Z 序不应造成该遮挡；应检查模式降层、owner/style 被改变，或者显隐/呈现失败。COM basic 降级也可能保留翻页而不启用墨迹画布，不能混为同一证据。
+- 后续若继续修复，应先在异常时记录全组与 PPT 的 hwnd/PID/TID、GW_OWNER、topmost/visible、bounds、前后台 Z 邻居及绘制/白板/放映能力、present 结果，核对根刷新/单窗 Show/点击提层/焦点交接的前后顺序；不直接改成所有节点独立 TOPMOST。
+
+参考原始资料：
+- https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
+- https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#owned-windows
+- https://devblogs.microsoft.com/oldnewthing/20051121-10/?p=33263
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0eb1c7c5` | fix(pptcom): restore dynamic compatibility and deterministic COM cleanup |
+| `184cf86e` | chore: archive pptcom dynamic compatibility task |
+
+### Status
+
+[OK] **Completed**
