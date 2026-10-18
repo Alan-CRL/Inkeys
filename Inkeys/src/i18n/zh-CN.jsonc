@@ -476,6 +476,19 @@
     },
     "Experimental":
     {
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "启用绘图硬件加速",
+          "E": "使用显卡加速画布绘制，关闭后使用软件绘制。出现绘制异常或严重卡顿时可尝试关闭；重启软件后生效。"
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "为兆芯设备启用兼容模式",
+          "E": "在兆芯 GPU 上使用兼容上传方案，其他 GPU 不受影响。可关闭此项对比绘制性能；重启软件后生效。"
+        }
+      },
       "ConsoleOutput":
       {
         "TouchArea":

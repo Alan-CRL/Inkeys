@@ -513,3 +513,11 @@ Good：正序算格、仅X镜像、纯空间策略用稳定目标。Bad：逆转
 
 ### 7. Data flow
 Settings原子配置→frame配置快照→完整稳定宽度→受锁约束的side策略→独立IconOrder X镜像→统一布局动画/继承/hit/damage。工具和文档状态不变。
+
+## Draw3 绘图设备与兆芯兼容偏好（2026-10-15）
+
+- INKEYS_CONFIG_SCHEMA 新增 Experimental.Inkeys3.Draw3.EnableHardwareAcceleration=true、EnableZhaoxinCompatibility=true，均NoUpload严格bool。缺键/非法类型沿用schema默认true；不迁移传统deploy.json。
+- 实验设置卡片名称为“启用绘图硬件加速”“为兆芯设备启用兼容模式”。仅保存到main.json，说明重启生效；不运行中重建设备、不改变UI RenderPipeline后端或DComp开关。
+- IdtMain 使用configOnce捕获到HostStartOptions，再按值转交TransparentPresentationOptions。初始设备、DComp失败替换与device-lost恢复必须复用同一启动快照，不读取设置页刚写的实时config。
+- hardware=false直接WARP；true先Hardware，失败才WARP。compat=true仅实际Hardware+adapter VendorId0x1D17启用DEFAULT上传，false/其他GPU/WARP使用普通动态路径。
+- GUI前 --draw3-device-policy-test 覆盖生产设备选择helper的调用顺序/回退/失败；--config-boundary-test覆盖默认/四组合真实读写/ReadMini/赋值/NoUpload/非法类型。两入口均不创建HWND。

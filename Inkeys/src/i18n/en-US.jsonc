@@ -476,6 +476,19 @@
     },
     "Experimental":
     {
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "Enable drawing hardware acceleration",
+          "E": "Use the GPU to draw the canvas. Try disabling this to use software rendering if drawing is incorrect or very slow. Restart Inkeys to apply."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Enable Zhaoxin compatibility mode",
+          "E": "Use a compatible upload path on Zhaoxin GPUs. Other GPUs are unaffected. Disable to compare drawing performance. Restart Inkeys to apply."
+        }
+      },
       "ConsoleOutput":
       {
         "TouchArea":

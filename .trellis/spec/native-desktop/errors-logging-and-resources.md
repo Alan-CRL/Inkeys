@@ -319,6 +319,7 @@ Window Service、Draw3 Host/RTS/透明 presenter 的外层可观察 bool/catch �
 - 每个 presenter startup mode 的可恢复失败有局部 Dormant scope，实际失败后跨 ReleaseAttempt 和 fallback log；最后/required mode 向 outer 继承原 tick。成功及已清理可恢复失败都真 Complete 后才能下一模式，Recover/Resize/Present 不混入 startup timer。FLIP/HW-WARP/DComp→ULW/两DWM禁用不变。
 - Main 首 Host 失败 scope 继续跨原 warn、StopProduct 和旧 Window.StopAndJoin，真 Complete 后且意图为空才开始新 Window/ULW scope。旧 Cancelled Signal 不会重新激活新代。
 - RTS Disable/Remove 返回 FAILED 且有有效 publisher 时，在 CloseAll/Release/清 coordinator 前 FailUnprovenProducerStop；临时 removedPlugin 引用保留。SUCCEEDED 仅说明 HRESULT，不证明 provider callbacks/其它窗口 producer 已静止；成功排空与 Reset 的时序仍须真实交错证据。
+- RTS扩展/基础X/Y可恢复尝试使用独立scope，清理及日志后真实Complete/join，成功恢复Host signal；不能把旧失败deadline带入健康后端。callback关闭位/在途数同原子，等待最后lease的event通知；候选输入不发布Down。鼠标后端另由owner确认停止/终态/捕获释放，不能用RTS Shutdown冒充；详见input-and-ink的回退合同。
 
 ### 4. Validation & Error Matrix
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.MouseInput.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "../../Helper/FailedCleanupDeadline.h"
@@ -112,7 +113,7 @@ namespace Inkeys::Drawing::Draw3
 		};
 	}
 
-	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一 RTS 生产。
+	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一选定后端生产。
 	inline constexpr UINT kDraw3HiddenTestContactMessage = WM_APP + 0x3D3u;
 	inline constexpr WPARAM kHiddenTestMouseFlag = 0x100u;
 	inline constexpr WPARAM kHiddenTestRightMouseFlag = 0x1000u;
@@ -161,12 +162,20 @@ namespace Inkeys::Drawing::Draw3
 		SelectionUlw,
 	};
 
+	enum class HostInputMode : std::uint8_t
+	{
+		Disabled,
+		RtsExtended,
+		RtsBasicXY,
+		Win32Mouse,
+	};
+
 	enum class HostStartupStage : std::uint8_t
 	{
 		WindowAttached,
 		GraphicsReady,
 		PresenterReady,
-		RtsReady,
+		InputReady,
 		ControllerReady,
 		FirstFrameCommitted,
 	};
@@ -194,6 +203,9 @@ namespace Inkeys::Drawing::Draw3
 		// 显式诊断只在本次 run 创建会话；越界容量仅关闭指标，不阻止产品启动。
 		bool enableRuntimeMetrics = false;
 		std::size_t runtimeMetricsMaximumSamples = 32768;
+		// 启动时按值捕获；呈现回退与设备丢失后的恢复沿用本代偏好。
+		bool enableHardwareAcceleration = true;
+		bool enableZhaoxinCompatibility = true;
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
@@ -240,6 +252,7 @@ namespace Inkeys::Drawing::Draw3
 		bool firstFrameReady = false;
 		bool lastPresentSucceeded = false;
 		HostPresentationMode presentationMode = HostPresentationMode::Automatic;
+		HostInputMode inputMode = HostInputMode::Disabled;
 		std::uint64_t presentCount = 0;
 		std::uint64_t successfulPresentCount = 0;
 		std::uint64_t partialPresentCount = 0;
