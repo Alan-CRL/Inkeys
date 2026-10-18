@@ -8,7 +8,7 @@
 
 - 新独立 IID `D7A63F98-43B8-4BA1-A875-B55A5A04DC3E`：`IPptCOMSessionState.GetSlideShowState(long afterRevision)`、`EndSlideShowIfSession(long expectedShowSessionRevision)`。旧 IPptCOMServer 的 IID、顺序和 v1 descriptor 不变。
 - 状态 envelope 恰含 `schemaVersion/stateRevision/showSessionRevision/bindingRevision/lifecycle/pageStatus/descriptor`。生命周期 `Active/Inactive/Unknown`；页状态 `Valid/EndScreen/Unknown`；descriptor 仍由原严格解析器校验。
-- `Ppt::PublishSession(uint64_t,bool,HWND)`、`PublishPageState(int,int,uint64_t targetRevision=0)`、`ResetPositions()`；业务回执 `pagePresented(session,target,current,total)`。
+- `Ppt::PublishSession(uint64_t,bool,HWND)`、`PublishPageState(int,int,uint64_t targetRevision=0,PageStateMode=InkReady)`、`ResetPositions()`；业务回执 `pagePresented(session,target,current,total)`。
 - `PublishProductPresentationUiReady(PresentationReadyIdentity)`、`SetProductPresentationInputSuspended(expectedIdentity,bool)`；target/ready 均含 `sessionRevision` 与 `PresentationPageKind`。Slide 用真实 `pageIndex<N`/SlideID；EndScreen 用内部 `pageIndex=N`、无 SlideID，`totalPages=N` 不变。
 - `MessageBox::FallbackPolicy.enabled` 默认true，本入口置false；`MessageBox::IsShowing()` 覆盖排队/模态及回退调用期。`Bar::SetEndShowRequestCallback(function<void(uint64_t)>)` 与 `CompleteEndShowRequest(requestId)` 按请求配对。
 - `TracePptTiming(stage,session,target,observedQpc=0)`；环境变量 `INKEYS_PPT_TIMING=1` 开启，默认关闭。原生 `[PptGate]` 仅输出数字/布尔：`sessionActive` 是活动状态、`sessionId` 是 `localSession`、`trustedTarget` 是可信目标布尔；`publish_accepted/document_ready/page_ui_ready` 用同 `sessionId` 与 target revision 关联。日志不写文稿路径、标题或墨迹，单次阶段差不是光学或 P95。
@@ -18,8 +18,12 @@
 
 ### 状态来源、调度与身份
 
-- COM getter 只取 owner 发布的不可变缓存；相同 revision 返回空字符串，不能在 getter 扫描 Office。事件保留原页码读取并唤醒既有 owner；descriptor 刷新优先于慢维护，ROT/绑定/原轮询兼容路线不因快速唤醒重复运行。
-- descriptor HWND 是 native 会话准入的必要值。PowerPoint 强类型接口能读取 HWND 时，同一对象的反射 IDispatch 属性可能返回成员不存在；读取器必须在此标量上复用强类型 HWND，非 PIA 提供方沿用 late-bound。不能只通过固定 HWND/PID 的 FakeAccessor 证明真实 PowerPoint 准入。
+- COM getter只取owner发布的纯值缓存；相同revision返回空字符串。事件只作轻量代次/唤醒提示，owner负责常规dynamic读取和命令，不能在getter/事件handler跨线程扫描长期root。descriptor恢复优先于慢维护，busy重试不受稳定3秒复核deadline挡住。
+- 可信COM活动场次与可信窗口/墨迹target分开：HWND=0不取消已证实的COM场次，不用IsWindow(0)推断退出。基础页码和对象定向上/下页、同场退出沿用现有控件；没有可信窗口时不抢焦点、不猜测OS目标。
+- HWND保留用户已确认dynamic读不到的包装标量例外；Win32后备必须有关联文稿/提供方进程/放映窗口的证据，标题或候选唯一不是独立身份。页级墨迹和OS焦点仍验证非零窗口及当前场次，不能只用固定HWND/PID的FakeAccessor宣称真实兼容。
+- 基础控制页码不代表画布已加载，不写PptInfoStateBuffer、不发送pagePresented/Draw3 UI-ready；以PageStateMode的Pending/BasicControl/InkReady显式区分发布模式，不能凭targetRevision=0假装ready。提升为可信墨迹目标仍走完整target→Present→UI ack，旧Presentation目标必须隔离。
+- UI内部pageAckEpoch随页码、target或mode变化推进，相同publication幂等；该代次必须来自实际PageControl渲染快照，经commit tracker传至五参内部回执。Ppt在同一stateMutex内校验代次并转发原四参native纯值回执，防止同数字同target的Pending→InkReady恢复接收旧帧。它不改变COM/Draw3 wire schema。
+- 无事件时比较本次成功取得show的COM identity；旧对象的Active属性仍能读取不代表仍是当前show。更换时明确转移窗口所有权并推进场次，明确showCount=0后废弃旧show。Count缺成员可由fresh show文稿identity与View/页证据判断，属性失败本身不证明结束。
 - 每场放映有独立 session revision；begin/end/读取候选存在 generation 屏障。旧事件、迟到候选不能复活旧会话。异常和属性缺失属于 Unknown，不凭失败猜测结束；明确 View.State Done 才分类 EndScreen。
 - `View.State==5` 的 EndScreen 可在 `View.Slide` 不可用时读取同一次 `Slides` 的完整、唯一、正数 SlideID 拓扑；descriptor 保持旧 schema、`currentPage=0/currentSlideId=null`。忙碌/坏拓扑为 Unavailable/TransientBusy，绝不把部分 SlideID 或普通 Unavailable 放入结束页目标。State 3/4 的临时黑白屏不是结束页。
 - native 新路径在放映期有界16ms观测，未放映100ms；旧 DLL 放映兼容路径保留50ms。16ms 是调度策略，不是实测端到端延迟承诺。必须保留 descriptor/原始页一致性、文稿 key、binding/target/session revision、SlideID/index 校验。
@@ -47,7 +51,7 @@
 - 进入时展开低栏变居中低栏，主体下沿距放映屏幕底边5 DIP；普通展开保持；收起保持位置，原低栏解除约束不跳变。真实退出时展开居中并恢复工作区底边；收起保持。只在 session 边沿应用，白板场景优先。
 - 主栏和四分页控件不互为位置障碍；共享光标光效接收区域不属于排斥逻辑。
 - 仅主栏 EndShow 点击确认。PageControl 结束图标/滚轮/长按及原生 Esc/Office 退出不新增确认。请求携带 session 和 request id，过期完成不能解除新请求。MessageBox 在业务线程且不持渲染/窗口锁，默认取消、关闭取消、失败关闭，不走系统回退。
-- 确认执行时再次校验 managed session。返回1才代表匹配目标的 Exit 调用成功；0为过期/状态不匹配，-1为失败/超时。未实际执行的超时请求不能迟到执行。取消、失败或新会话不改变模式。
+- 确认执行时再次校验managed session。返回1才代表匹配目标的Exit调用成功；0为过期/状态不匹配，-1为失败/超时。尚未执行的超时请求取消后不得迟到执行；已经进入Office的COM调用不能靠等待超时撤销，不得盲目重发。COM对象定向退出不以HWND非零为共同前提，但取得View后仍需核对同场generation/对象；取消、失败或新会话不改变模式。
 - 焦点只在有效进入和明确业务动作后交接，验证 HWND/PID/当前会话/前台；设置、颜色编辑和任何 MessageBox 请求期间不抢焦点。绘制、拖动、渲染和轮询不调用焦点转移。
 
 ## 4. Validation & Error Matrix
@@ -113,7 +117,7 @@ CommitVersionedPairPosition(); // 始终；仅 toggle/end/reset 冻结保存请�
 
 ### 3. Contracts
 
-- `PptComService` owner 每次维护时读取 `SlideShowWindow.View`，释放本次获取的 View；跨线程 getter 只读按 session/binding/window 配对的纯值缓存。WPS 可有活动会话但 typed HWND 为 0，不把该值单独当作拒绝接管的依据。
+- `PptComService` owner 每次维护时读取 `SlideShowWindow.View`，释放本次获取的 View；跨线程 getter 只读按 session/binding/window 配对的纯值缓存。WPS 可有活动会话但 typed HWND 为 0，managed仍维护基础控制与工具缓存；native自动接管须另外取得当前可靠窗口和已呈现的可信墨迹目标，避免退出Office笔后没有可用画布。
 - 标准 `PointerType=Pen` 映射画笔；可用的 `LaserPointerEnabled=true` 优先映射激光笔。当前 PIA 无此属性，激光状态按名称 late-bound；荧光笔仅在提供方明确返回其名称时映射，不猜测未知整数，也不把标准 Pen 推断成荧光笔。
 - 退出原生工具请求走同一 owner 邮箱，超时请求不能稍后执行；owner 重读工具、关激光/复位指针并确认已退出。native 仅在同一 service/session 且原生退出成功、用户工具 revision 未变化后接管，成功才消耗 `AutoTakeOverOnce`。
 - `kPptLoadingPageEnabled=false` 同时隐藏设置卡片和阻断 `FreezePPT` 触发；旧配置值及加载画面实现仍保留。
@@ -124,7 +128,7 @@ CommitVersionedPairPosition(); // 始终；仅 toggle/end/reset 冻结保存请�
 | --- | --- |
 | Office 忙碌、未知工具或 native 原生退出失败 | 不切换 Draw3，不消耗一次性接管；下一次维护可重试 |
 | 退出请求等待时换场或用户换工具 | 拒绝迟到接管，不覆盖新场次/新工具 |
-| WPS Active 但 typed HWND 为 0 | 依靠 session/binding 缓存读取，native 继续校验实际 descriptor/HWND |
+| WPS Active 但 typed HWND 为 0 | 依靠 session/binding 缓存保留基础控制；窗口与墨迹目标未获证实时不自动接管 Office 笔、不抢焦点 |
 | `ShowLoadingScreen=true` 的旧文件 | 设置入口不可见且本场不触发加载页，磁盘值不被改写 |
 
 ### 5. Good / Base / Bad Cases

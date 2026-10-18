@@ -546,6 +546,7 @@ export namespace Inkeys::UI::PageControl
 	{
 		std::uint64_t publicationRevision = 0;
 		std::uint64_t targetRevision = 0;
+		std::uint64_t pageAckEpoch = 0;
 		bool presentationVisible = false;
 		bool longPressEnabled = false;
 		int currentPage = -1;
@@ -595,6 +596,7 @@ export namespace Inkeys::UI::PageControl
 		std::uint64_t target = 0;
 		int current = -1;
 		int total = -1;
+		std::uint64_t pageAckEpoch = 0;
 		std::uint8_t required = 0;
 		std::uint8_t committed = 0;
 		bool acknowledged = false;
@@ -616,12 +618,13 @@ export namespace Inkeys::UI::PageControl
 		void Publish(const PptState& state, std::uint8_t visibleMask) noexcept
 		{
 			if (session != state.layout.session || target != state.targetRevision
-				|| current != state.currentPage || total != state.totalPage)
+				|| current != state.currentPage || total != state.totalPage
+				|| pageAckEpoch != state.pageAckEpoch)
 			{
 				const auto visible = presentedPpt;
 				const auto pending = pendingPptPresentation;
 				*this = { state.layout.session, state.targetRevision,
-					state.currentPage, state.totalPage };
+					state.currentPage, state.totalPage, state.pageAckEpoch };
 				presentedPpt = visible;
 				pendingPptPresentation = pending;
 			}
@@ -635,7 +638,8 @@ export namespace Inkeys::UI::PageControl
 		bool Commit(const PptState& state, std::uint8_t mask) noexcept
 		{
 			if (session != state.layout.session || target != state.targetRevision
-				|| current != state.currentPage || total != state.totalPage) return false;
+				|| current != state.currentPage || total != state.totalPage
+				|| pageAckEpoch != state.pageAckEpoch) return false;
 			committed |= mask;
 			if (acknowledged || session == 0 || target == 0
 				|| current == 0 || current < -1 || total <= 0 ||
@@ -672,6 +676,7 @@ export namespace Inkeys::UI::PageControl
 					|| (std::isnan(first) && std::isnan(second));
 			};
 		return left.targetRevision == right.targetRevision
+			&& left.pageAckEpoch == right.pageAckEpoch
 			&& left.layout.session == right.layout.session
 			&& left.layout.epoch == right.layout.epoch
 			&& left.layout.pairVersions == right.layout.pairVersions
@@ -720,7 +725,7 @@ export namespace Inkeys::UI::PageControl
 		std::function<void()> viewShow;
 		std::function<void()> endShow;
 		std::function<void(std::size_t, PptLayoutState)> commitPosition;
-		std::function<void(std::uint64_t, std::uint64_t, int, int)> pagePresented;
+		std::function<void(std::uint64_t, std::uint64_t, int, int, std::uint64_t)> pagePresented;
 	};
 
 	struct WhiteboardCallbacks

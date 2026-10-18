@@ -42,10 +42,71 @@ int RunPptSessionTests()
 	check(ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", endTopology)).snapshot.has_value() &&
 		!ParsePptSessionSnapshot(envelope(L"Active", L"Valid", endTopology)).snapshot,
 		"only EndScreen envelope can authorize a zero-current-page stable topology");
+	const auto stableEnd = ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", endTopology));
+	check(stableEnd.snapshot && Inkeys::Drawing::Draw3::ResolveEndScreenTarget(stableEnd.snapshot->descriptor)
+		&& ResolvePptControlPage(*stableEnd.snapshot, -1, 3).known
+		&& !ResolvePptControlPage(*stableEnd.snapshot, 3, 3).known
+		&& !ResolvePptControlPage(*stableEnd.snapshot, -1, 4).known,
+		"stable end topology still requires matching raw end state and total before writable admission");
 	check(ParsePptSessionSnapshot(envelope(L"Unknown", L"Unknown", unavailable)).snapshot.has_value(),
 		"read failures stay unknown instead of exiting the workspace");
 	check(!ParsePptSessionSnapshot(envelope(L"Active", L"Valid", unavailable)).snapshot,
 		"unavailable descriptor cannot open input through valid status");
+	const std::wstring scalarOnly = LR"({"schemaVersion":1,"provider":"PowerPoint","status":"Unavailable","fullName":"","presentationName":"","applicationProcessId":0,"slideShowHwnd":0,"currentPage":2,"totalPage":3,"currentSlideId":null,"slideIds":[],"bindingRevision":9})";
+	const auto parsedBasic = ParsePptSessionSnapshot(envelope(L"Active", L"Unknown", scalarOnly));
+	check(parsedBasic.snapshot && ResolvePptControlPage(*parsedBasic.snapshot, 2, 3).known
+		&& !Inkeys::Drawing::Draw3::ResolvePresentationTarget(parsedBasic.snapshot->descriptor),
+		"real wire parser accepts fresh scalar controls while refusing an ink identity");
+	if (valid.snapshot)
+	{
+		auto windowless = *valid.snapshot;
+		windowless.descriptor.slideShowHwnd = 0;
+		windowless.descriptor.applicationProcessId = 0;
+		const auto basic = ResolvePptControlPage(windowless, 2, 3);
+		check(CanStartPptControlSession(windowless) && basic.known
+			&& basic.currentPage == 2 && basic.totalPage == 3,
+			"fresh owner page keeps basic controls without a typed HWND");
+		check(!ResolvePptControlPage(windowless, 1, 3).known
+			&& !ResolvePptControlPage(windowless, 2, 4).known,
+			"raw and owner page disagreement cannot publish fresh basic numbers");
+		windowless.descriptor.status =
+			Inkeys::Drawing::Draw3::PresentationDescriptorStatus::PageIndexFallback;
+		windowless.descriptor.slideIds.clear();
+		windowless.descriptor.currentSlideId.reset();
+		windowless.descriptor.fullName.clear();
+		windowless.descriptor.presentationName.clear();
+		check(ResolvePptControlPage(windowless, 2, 3).known,
+			"missing metadata and stable IDs do not block basic page controls");
+		windowless.pageStatus = PptPageStatus::Unknown;
+		windowless.descriptor.status =
+			Inkeys::Drawing::Draw3::PresentationDescriptorStatus::Unavailable;
+		check(ResolvePptControlPage(windowless, 2, 3).known,
+			"fresh scalar page evidence survives a metadata-unavailable descriptor");
+		windowless.descriptor.status =
+			Inkeys::Drawing::Draw3::PresentationDescriptorStatus::TransientBusy;
+		check(CanStartPptControlSession(windowless)
+			&& !ResolvePptControlPage(windowless, 2, 3).known,
+			"busy preserves an active scene without making an old raw page fresh");
+		windowless.lifecycle = PptLifecycle::Unknown;
+		check(!CanStartPptControlSession(windowless),
+			"a failed activity probe cannot create a basic control session");
+	}
+	const auto basicEnd = ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", unavailable));
+	check(basicEnd.snapshot && ResolvePptControlPage(*basicEnd.snapshot, -1, 3).known
+		&& !ResolvePptControlPage(*basicEnd.snapshot, 3, 3).known
+		&& !Inkeys::Drawing::Draw3::ResolveEndScreenTarget(basicEnd.snapshot->descriptor),
+		"explicit end state can publish basic controls without fabricating topology");
+	// Done/Count 是本次证据；缺拓扑和 HWND 时也只发布基础结束控制，不生成墨迹目标。
+	const std::wstring scalarEnd = LR"({"schemaVersion":1,"provider":"Wps","status":"Unavailable","fullName":"C:\\Lessons\\Deck.pptx","presentationName":"Deck.pptx","applicationProcessId":0,"slideShowHwnd":0,"currentPage":0,"totalPage":3,"currentSlideId":null,"slideIds":[],"bindingRevision":9})";
+	const auto parsedBasicEnd = ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", scalarEnd));
+	check(parsedBasicEnd.snapshot
+		&& ResolvePptControlPage(*parsedBasicEnd.snapshot, -1, 3).known
+		&& ResolvePptControlPage(*parsedBasicEnd.snapshot, -1, 3).currentPage == -1
+		&& ResolvePptControlPage(*parsedBasicEnd.snapshot, -1, 3).totalPage == 3
+		&& !ResolvePptControlPage(*parsedBasicEnd.snapshot, -1, 4).known
+		&& !Inkeys::Drawing::Draw3::ResolvePresentationTarget(parsedBasicEnd.snapshot->descriptor)
+		&& !Inkeys::Drawing::Draw3::ResolveEndScreenTarget(parsedBasicEnd.snapshot->descriptor),
+		"fresh windowless Done wire keeps basic end controls while refusing all ink targets");
 
 	PptSessionToken original{ 1, 2, 3, 4, 5, 6, true, true };
 	check(MatchesPptSession(original, original), "current request matches exact session");
@@ -56,6 +117,37 @@ int RunPptSessionTests()
 	check(!MatchesPptSession(original, reopened), "new service instance rejects old command");
 	reopened = original; reopened.active = false;
 	check(!MatchesPptSession(original, reopened), "ended show rejects queued command");
+	auto noWindow = original;
+	noWindow.showWindow = 0; noWindow.processId = 0;
+	check(!IsPptWindowConfirmedEnded(noWindow, false, 0)
+		&& MatchesPptSession(noWindow, noWindow),
+		"HWND zero is an unknown window, not proof of COM show exit");
+	check(IsPptWindowConfirmedEnded(original, false, 0)
+		&& IsPptWindowConfirmedEnded(original, true, original.processId + 1)
+		&& !IsPptWindowConfirmedEnded(original, true, 0),
+		"only a destroyed window or successfully observed different owner ends the show");
+	original.processStartTime = 100;
+	check(IsPptWindowConfirmedEnded(original, true, original.processId, 200)
+		&& !IsPptWindowConfirmedEnded(original, true, original.processId, 0),
+		"known process creation identity detects PID reuse without guessing on query failure");
+	if (valid.snapshot)
+	{
+		auto sameShow = *valid.snapshot;
+		auto matching = noWindow;
+		matching.showSessionRevision = sameShow.showSessionRevision;
+		matching.bindingRevision = sameShow.bindingRevision;
+		check(MatchesPptShowSession(matching, matching.serviceGeneration, sameShow),
+			"basic scene identity is independent of a window and drawing readiness");
+		sameShow.lifecycle = PptLifecycle::Unknown;
+		check(MatchesPptShowSession(matching, matching.serviceGeneration, sameShow),
+			"same show read failure may retain the previous suspended display");
+		++sameShow.bindingRevision;
+		check(!MatchesPptShowSession(matching, matching.serviceGeneration, sameShow),
+			"new document cannot borrow an old scene or ink after busy");
+		--sameShow.bindingRevision; ++sameShow.showSessionRevision;
+		check(!MatchesPptShowSession(matching, matching.serviceGeneration, sameShow),
+			"windowless reentry still requires a new control session");
+	}
 
 	BarA2CallbackDispatcher dispatcher;
 	std::uint64_t first = 0, second = 0;

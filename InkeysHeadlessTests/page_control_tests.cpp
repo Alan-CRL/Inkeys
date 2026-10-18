@@ -423,6 +423,26 @@ namespace
 		endGate.Publish(end, 0);
 		Check(endGate.Commit(end, 0),
 			"hidden end controls cannot hold the matching target indefinitely");
+
+		PptPageCommitState recovery;
+		auto beforePause = page;
+		beforePause.pageAckEpoch = 10;
+		recovery.Publish(beforePause, 3);
+		Check(recovery.Commit(beforePause, 3), "initial page epoch commits normally");
+		auto pending = beforePause;
+		pending.targetRevision = 0;
+		++pending.pageAckEpoch;
+		recovery.Publish(pending, 3);
+		Check(!recovery.Commit(beforePause, 3), "pause rejects previously captured surface commits");
+		auto resumed = beforePause;
+		resumed.pageAckEpoch += 2;
+		recovery.Publish(resumed, 3);
+		Check(!ArePptStatesEquivalent(beforePause, resumed)
+			&& !recovery.Commit(beforePause, 3)
+			&& !recovery.Commit(resumed, 1) && recovery.Commit(resumed, 2),
+			"same numbers and target require new epoch surfaces before acknowledging recovery");
+		recovery.Publish(resumed, 3);
+		Check(!recovery.Commit(resumed, 3), "same publication epoch remains idempotent after acknowledgment");
 	}
 
 	void TestHideAndPageCommitRace()

@@ -155,6 +155,36 @@ export namespace Inkeys::UI::Ppt
 		int currentPage = -1;
 		int totalPage = -1;
 	};
+	enum class PageStateMode : std::uint8_t { Pending, BasicControl, InkReady };
+	struct PagePresentationState
+	{
+		int currentPage = -1;
+		int totalPage = -1;
+		std::uint64_t targetRevision = 0;
+		PageStateMode mode = PageStateMode::Pending;
+		std::uint64_t pageAckEpoch = 0;
+
+		constexpr void Publish(int current, int total, std::uint64_t target,
+			PageStateMode nextMode) noexcept
+		{
+			if (currentPage != current || totalPage != total || targetRevision != target
+				|| mode != nextMode) ++pageAckEpoch;
+			currentPage = current;
+			totalPage = total;
+			targetRevision = target;
+			mode = nextMode;
+		}
+
+		[[nodiscard]] constexpr bool CanAcknowledge(int current, int total,
+			std::uint64_t target, std::uint64_t epoch) const noexcept
+		{
+			// 基础数字和暂存旧显示不代表 Draw3 已呈现，不能转发墨迹回执。
+			return mode == PageStateMode::InkReady && target != 0
+				&& epoch == pageAckEpoch
+				&& target == targetRevision && current == currentPage && total == totalPage
+				&& total > 0 && (current == -1 || (current > 0 && current <= total));
+		}
+	};
 
 	[[nodiscard]] constexpr PageStatePublication ResolvePageStateForPublication(
 		int readyCurrentPage, int readyTotalPage,
@@ -524,7 +554,8 @@ export namespace Inkeys::UI::Ppt
 	void PublishPresentationVisible(bool visible) noexcept;
 	void PublishSession(std::uint64_t session, bool active, HWND showWindow) noexcept;
 	void PublishPageState(int currentPage, int totalPage,
-		std::uint64_t targetRevision = 0) noexcept;
+		std::uint64_t targetRevision = 0,
+		PageStateMode mode = PageStateMode::InkReady) noexcept;
 	void ResetPositions() noexcept;
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept;
 	void QueueGlobalWheel(short delta) noexcept;

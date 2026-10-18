@@ -49,8 +49,9 @@ Win32 window message
 
 ### COM 属性成为跨层准入条件时
 
-- [ ] 同一属性的强类型/vtable 和 IDispatch/反射读取能力是否真的相同？从真实提供方读取生产适配器，比较两条路径；字典 FakeAccessor 的固定值不能证明真实 COM 暴露了该成员。
-- [ ] native 新增非零 HWND、PID、页身份等必要条件时，上游 reader 的可选/失败兜底是否会悄悄产出零值？保留失败原因和可复现的真实读取证据。
+- [ ] 常规生产读取是否真正使用dynamic，只有有依据的成员才保留包装例外？比较真实提供方的dynamic、强类型/vtable及受限成员能力；字典FakeAccessor不能证明COM binder和旧版提供方均支持。
+- [ ] native新增非零HWND、PID、页身份条件时，是否只限制确需该身份的墨迹/OS功能，而没有把dynamic仍可用的基础控制一起关掉？基础页码不能伪造画布ready，未知窗口不凭唯一标题补成强身份。
+- [ ] 每笔COM返回是否独立单次释放或明确转移，避免同identity漏配平和列表alias双释放？命令的View/Navigation与部分事件连接也要计入；GC/FinalRelease不能让错误账本变绿。
 
 ### Event-backed two-stage state publication
 

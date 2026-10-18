@@ -1703,7 +1703,7 @@ namespace Inkeys::UI::PageControl
 				if (!pageCommit.Commit(frame, committedMask)) return;
 				visible = pageCommit.required != 0;
 			}
-			std::function<void(std::uint64_t, std::uint64_t, int, int)> callback;
+			std::function<void(std::uint64_t, std::uint64_t, int, int, std::uint64_t)> callback;
 			{
 				std::scoped_lock lock(callbackMutex);
 				callback = pptCallbacks.pagePresented;
@@ -1711,7 +1711,7 @@ namespace Inkeys::UI::PageControl
 			Inkeys::Drawing::Draw3::TracePptTiming(visible ? "page-ui-commit" : "page-ui-hidden",
 				frame.layout.session, frame.targetRevision);
 			if (callback) callback(frame.layout.session, frame.targetRevision,
-				frame.currentPage, frame.totalPage);
+				frame.currentPage, frame.totalPage, frame.pageAckEpoch);
 		}
 
 		void LogWindowCommitState(std::size_t index, HWND hwnd,
@@ -2619,7 +2619,7 @@ namespace Inkeys::UI::PageControl
 		{
 			std::atomic_int acknowledged = 0;
 			SetPptCallbacks({ .pagePresented = [&](std::uint64_t,
-				std::uint64_t, int, int) { acknowledged.fetch_add(1); } });
+				std::uint64_t, int, int, std::uint64_t) { acknowledged.fetch_add(1); } });
 			auto WaitFor = [&](auto&& predicate)
 			{
 				const auto deadline = std::chrono::steady_clock::now() + 5s;
