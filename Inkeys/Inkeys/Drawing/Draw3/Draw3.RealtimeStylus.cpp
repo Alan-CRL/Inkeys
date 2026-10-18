@@ -18,6 +18,7 @@
 #include <memory>
 #include <vector>
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.RtsStartup.h"
 #include "../../Helper/FailedCleanupDeadline.h"
 #include <windows.h>
 #include <RTSCOM.h>
@@ -1052,6 +1053,8 @@ namespace Inkeys::Drawing::Draw3
 			bool CopyTouchAreaContexts(const SpeedEraser::InputSource& requested,
 				std::array<RtsContextDecoder,kContextDecoderCapacity>& result,size_t& count) noexcept
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return false;
 				count=0;
 				// 只复制已有 context；遇 lifecycle 写入就交给下一次低频诊断，不等待、不查硬件。
 				RtsPacketStateGuard access(stateGate_);
@@ -1066,6 +1069,11 @@ namespace Inkeys::Drawing::Draw3
 				}
 				return true;
 			}
+
+			HRESULT CallbackGateResult() const noexcept { return callbackGate_.ReadyResult(); }
+			void CloseCallbacks() noexcept { callbackGate_.Close(); }
+			bool DrainCallbacks() const noexcept { return callbackGate_.WaitUntilDrained(); }
+			void EnableContactPublication() noexcept { contactPublication_.Enable(); }
 
 			HRESULT MarshalerResult() const noexcept
 			{
@@ -1087,6 +1095,8 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE RealTimeStylusEnabled(IRealTimeStylus* source,
 				ULONG contextCount, const TABLET_CONTEXT_ID* contextIds) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 				if (!source || (contextCount > 0 && !contextIds)) return E_INVALIDARG;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("RealTimeStylusEnabled", nullptr, nullptr, contextCount, 0,
@@ -1103,6 +1113,8 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE RealTimeStylusDisabled(IRealTimeStylus*,
 				ULONG, const TABLET_CONTEXT_ID*) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("RealTimeStylusDisabled", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, true, false);
@@ -1116,6 +1128,8 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE StylusInRange(IRealTimeStylus* source,
 				TABLET_CONTEXT_ID contextId, STYLUS_ID) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 				if (source)
 				{
 					RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
@@ -1127,6 +1141,8 @@ namespace Inkeys::Drawing::Draw3
 
 			HRESULT STDMETHODCALLTYPE StylusOutOfRange(IRealTimeStylus*, TABLET_CONTEXT_ID, STYLUS_ID) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("StylusOutOfRange", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, true, false);
@@ -1138,6 +1154,10 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE StylusDown(IRealTimeStylus* source, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
+				const auto allowContactDown = contactPublication_.CaptureDown();
+
 				// 产品构建不启用旧 RTS 宏；通过有界 Cursor 队列观察真实输入到达与发布。
 				RecordInputDiagnostic("Down", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
 				if (!source || !stylusInfo || !packet)
@@ -1165,6 +1185,8 @@ namespace Inkeys::Drawing::Draw3
 					RecordInputDiagnostic("Down", "touchpad", stylusInfo, decoder);
 					return S_OK;
 				}
+				// 候选实例只建立 decoder，不保留旧 Down；就绪前按下必须抬起后重新落笔。
+				if (!allowContactDown) return S_OK;
 				// 设备模态切换不依赖坐标包解码；Win7 也能在 Touch Down 时清掉旧 Mouse Hover。
 				NotifyRtsStylusDownCursor(decoder->deviceType, drawingCursorSink_);
 
@@ -1218,13 +1240,15 @@ namespace Inkeys::Drawing::Draw3
 					deviceType = rightButtonDown && !leftButtonDown
 						? InputDeviceType::MouseRight : InputDeviceType::MouseLeft;
 				}
-				bool published = false;
-				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
-					published = interruptionSimulation_.PublishDown(
-						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
-				else
-					published = coordinator_.PublishDown(
-						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
+				const bool published = allowContactDown.PublishDown([&]() noexcept
+				{
+					if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+						return interruptionSimulation_.PublishDown(
+							stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
+					else
+						return coordinator_.PublishDown(
+							stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
+				});
 				if (!published)
 				{
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
@@ -1242,6 +1266,9 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE StylusUp(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
+
 				RecordInputDiagnostic("Up", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
 				if (!stylusInfo)
 				{
@@ -1321,6 +1348,8 @@ namespace Inkeys::Drawing::Draw3
 				const StylusInfo* stylusInfo, ULONG packetCount,
 				ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
 					packetBufferLength % packetCount != 0) return E_INVALIDARG;
 				const ULONG propertyCount = packetBufferLength / packetCount;
@@ -1347,6 +1376,9 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE Packets(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG packetCount, ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
+
 				const bool tracePacket = ShouldRecordInputPacket();
 				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
 					packetBufferLength % packetCount != 0)
@@ -1416,6 +1448,8 @@ namespace Inkeys::Drawing::Draw3
 
 			HRESULT STDMETHODCALLTYPE TabletAdded(IRealTimeStylus* source, IInkTablet* tablet) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 				if (!source || !tablet) return E_INVALIDARG;
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				TABLET_CONTEXT_ID contextId = 0;
@@ -1442,6 +1476,8 @@ namespace Inkeys::Drawing::Draw3
 
 			HRESULT STDMETHODCALLTYPE TabletRemoved(IRealTimeStylus* source, LONG) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("TabletRemoved", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, true, false);
@@ -1456,6 +1492,8 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE Error(IRealTimeStylus*, IStylusPlugin*, RealTimeStylusDataInterest dataInterest,
 				HRESULT errorCode, LONG_PTR*) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("Error", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, false, false, errorCode,
@@ -1473,6 +1511,8 @@ namespace Inkeys::Drawing::Draw3
 
 			HRESULT STDMETHODCALLTYPE UpdateMapping(IRealTimeStylus* source) override
 			{
+				RtsStartup::CallbackGate::Lease callback(callbackGate_);
+				if (!callback) return S_OK;
 				if (!source) return E_INVALIDARG;
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				PublishDefaultPenCursor();
@@ -1753,6 +1793,8 @@ namespace Inkeys::Drawing::Draw3
 				return decoderSlotIndex == kContextDecoderCapacity ? nullptr : decoder;
 			}
 
+			RtsStartup::CallbackGate callbackGate_;
+			RtsStartup::ContactPublicationGate contactPublication_;
 			std::atomic<ULONG> referenceCount_ = 1;
 			ContactInputCoordinator& coordinator_;
 			[[no_unique_address]] InterruptedStrokeSimulation<
@@ -2434,11 +2476,13 @@ namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<IStylusSyncPlugin> plugin;
 		ContactInputCoordinator* coordinator = nullptr;
 		DrawingCursorEventSink* drawingCursorSink = nullptr;
-		// 成功后可持有 Cancelled Signal，其进程寿命 publisher 仍可处理停止证明失败。
+		// 尝试期使用独立监督，成功后恢复 Host 的有效 lifetime signal。
 		Shutdown::FailedCleanupSignal failedCleanup;
 		bool comInitialized = false;
 		bool pluginAdded = false;
 		bool initialized = false;
+		bool basicPacketDescription = false;
+		RtsStartup::AttemptResult startupResult;
 		// 只保护诊断借用与插件释放；不把诊断锁带入 RTS callback 或 COM 调用。
 		mutable std::mutex diagnosticsMutex;
 		StylusSyncPlugin* diagnosticsPlugin = nullptr;
@@ -2469,7 +2513,42 @@ namespace Inkeys::Drawing::Draw3
 			failedCleanup.BeginKnownFailure();
 			return false;
 		}
+		const bool initialized = RtsStartup::InitializeWithFallback(failedCleanup,
+			[&](RtsStartup::PacketProfile profile, Shutdown::FailedCleanupSignal signal)
+			{
+				const bool ready = InitializeAttempt(window, coordinator, drawingCursorSink, signal,
+					profile == RtsStartup::PacketProfile::BasicXY);
+				return ready ? RtsStartup::AttemptResult{} : impl_->startupResult;
+			},
+			[&]() noexcept { Shutdown(); },
+			[&](RtsStartup::PacketProfile profile, const RtsStartup::AttemptResult& outcome)
+			{
+				const bool basic = profile == RtsStartup::PacketProfile::BasicXY;
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					"[RTS] attempt=%u profile=%s stage=%s hr=0x%08lx initialized=%d cleanup=%s\n",
+					basic ? 2u : 1u, RtsStartup::ProfileName(profile), RtsStartup::StageName(outcome.stage),
+					static_cast<unsigned long>(outcome.result), outcome.Ready(), outcome.Ready() ? "not-needed" : "complete");
+			});
+		// 成功实例不能继续借用已取消的 attempt signal。
+		if (initialized) impl_->failedCleanup = failedCleanup;
+		return initialized;
+	}
+
+	bool RealTimeStylusInput::InitializeAttempt(HWND window, ContactInputCoordinator& coordinator,
+		DrawingCursorEventSink* drawingCursorSink, Shutdown::FailedCleanupSignal failedCleanup,
+		bool basicPacketDescription)
+	{
 		impl_->failedCleanup = failedCleanup;
+		impl_->startupResult = {};
+		impl_->basicPacketDescription = basicPacketDescription;
+		const auto observe = [&](RtsStartup::FailureStage stage, HRESULT result) noexcept
+		{
+			if (FAILED(result))
+			{
+				impl_->startupResult = { stage, result };
+				impl_->failedCleanup.BeginKnownFailure();
+			}
+		};
 		impl_->coordinator = &coordinator;
 		impl_->drawingCursorSink = drawingCursorSink;
 		DWORD windowProcessId = 0;
@@ -2497,6 +2576,7 @@ namespace Inkeys::Drawing::Draw3
 			<< std::dec << std::endl;
 
 		HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		observe(RtsStartup::FailureStage::Com, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.coInitializeResult = result;
 #endif
@@ -2515,6 +2595,7 @@ namespace Inkeys::Drawing::Draw3
 
 		result = CoCreateInstance(__uuidof(RealTimeStylus), nullptr, CLSCTX_INPROC_SERVER,
 			IID_PPV_ARGS(impl_->stylus.ReleaseAndGetAddressOf()));
+		observe(RtsStartup::FailureStage::Create, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.createStylusResult = result;
 #endif
@@ -2525,11 +2606,11 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
 #endif
-			Shutdown();
 			return false;
 		}
 
 		result = impl_->stylus->put_HWND(reinterpret_cast<HANDLE_PTR>(window));
+		observe(RtsStartup::FailureStage::Hwnd, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.putHwndResult = result;
 #endif
@@ -2541,6 +2622,7 @@ namespace Inkeys::Drawing::Draw3
 		if (SUCCEEDED(result))
 		{
 			result = impl_->stylus->SetAllTabletsMode(TRUE); // 同时接收鼠标、笔和触摸。
+			observe(RtsStartup::FailureStage::AllTablets, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.setAllTabletsModeResult = result;
 #endif
@@ -2552,34 +2634,23 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if (SUCCEEDED(result))
 		{
-			const GUID* desiredPacketProperties = kExtendedPacketProperties.data();
-			const ULONG desiredPacketPropertyCount =
-				static_cast<ULONG>(kExtendedPacketProperties.size());
-			const HRESULT desiredPacketResult = impl_->stylus->SetDesiredPacketDescription(
+			const GUID* desiredPacketProperties = basicPacketDescription
+				? kRequiredPacketProperties.data() : kExtendedPacketProperties.data();
+			const ULONG desiredPacketPropertyCount = static_cast<ULONG>(basicPacketDescription
+				? kRequiredPacketProperties.size() : kExtendedPacketProperties.size());
+			result = impl_->stylus->SetDesiredPacketDescription(
 				desiredPacketPropertyCount, desiredPacketProperties);
-			result = desiredPacketResult;
+			observe(RtsStartup::FailureStage::PacketDescription, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-			traceState.desiredPacketDescriptionResult = desiredPacketResult;
-#endif
-			if (FAILED(result))
-			{
-				LogHResult("Set desired RealTimeStylus packet description", result);
-				const HRESULT requiredResult = impl_->stylus->SetDesiredPacketDescription(
-					static_cast<ULONG>(kRequiredPacketProperties.size()), kRequiredPacketProperties.data());
-				result = requiredResult;
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-				traceState.fallbackPacketDescriptionResult = requiredResult;
-#endif
-			}
+			if (basicPacketDescription) traceState.fallbackPacketDescriptionResult = result;
+			else traceState.desiredPacketDescriptionResult = result;
 			if (SUCCEEDED(result))
 			{
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-				traceState.selectedPacketPropertyCount = SUCCEEDED(desiredPacketResult)
-					? desiredPacketPropertyCount : static_cast<ULONG>(kRequiredPacketProperties.size());
-				traceState.selectedPacketDescription = SUCCEEDED(desiredPacketResult)
-					? "X,Y,Pressure,XTilt,YTilt,Azimuth,Altitude,Width,Height" : "X,Y";
-#endif
+				traceState.selectedPacketPropertyCount = desiredPacketPropertyCount;
+				traceState.selectedPacketDescription = basicPacketDescription
+					? "X,Y" : "X,Y,Pressure,XTilt,YTilt,Azimuth,Altitude,Width,Height";
 			}
+#endif
 		}
 		if (FAILED(result))
 		{
@@ -2606,6 +2677,7 @@ namespace Inkeys::Drawing::Draw3
 		if (SUCCEEDED(result))
 		{
 			result = impl_->stylus.As(&impl_->stylus3);
+			observe(RtsStartup::FailureStage::InputConfiguration, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.queryStylus3Result = result;
 #endif
@@ -2613,6 +2685,7 @@ namespace Inkeys::Drawing::Draw3
 		if (SUCCEEDED(result))
 		{
 			result = impl_->stylus3->put_MultiTouchEnabled(TRUE);
+			observe(RtsStartup::FailureStage::InputConfiguration, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.enableMultiTouchResult = result;
 #endif
@@ -2637,22 +2710,22 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
 #endif
-			Shutdown();
 			return false;
 		}
 
 		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, drawingCursorSink);
 		if (!plugin)
 		{
+			observe(RtsStartup::FailureStage::PluginAllocation, E_OUTOFMEMORY);
 			impl_->failedCleanup.BeginKnownFailure();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
 #endif
-			Shutdown();
 			return false;
 		}
 		if (FAILED(plugin->MarshalerResult()))
 		{
+			observe(RtsStartup::FailureStage::Marshaler, plugin->MarshalerResult());
 			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("CoCreateFreeThreadedMarshaler", plugin->MarshalerResult());
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -2660,7 +2733,13 @@ namespace Inkeys::Drawing::Draw3
 			logTrace();
 #endif
 			plugin->Release();
-			Shutdown();
+			return false;
+		}
+		if (FAILED(plugin->CallbackGateResult()))
+		{
+			observe(RtsStartup::FailureStage::PluginGate, plugin->CallbackGateResult());
+			LogHResult("Create RTS callback drain event", plugin->CallbackGateResult());
+			plugin->Release();
 			return false;
 		}
 		impl_->plugin.Attach(plugin);
@@ -2669,6 +2748,7 @@ namespace Inkeys::Drawing::Draw3
 			impl_->diagnosticsPlugin=plugin;
 		}
 		result = impl_->stylus->AddStylusSyncPlugin(0, impl_->plugin.Get());
+		observe(RtsStartup::FailureStage::AddPlugin, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.marshalerResult = plugin->MarshalerResult();
 		traceState.addPluginResult = result;
@@ -2680,12 +2760,12 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
 #endif
-			Shutdown();
 			return false;
 		}
 		impl_->pluginAdded = true;
 
 		result = impl_->stylus->put_Enabled(TRUE);
+		observe(RtsStartup::FailureStage::Enable, result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.enableStylusResult = result;
 #endif
@@ -2696,7 +2776,6 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
 #endif
-			Shutdown();
 			return false;
 		}
 		impl_->initialized = true;
@@ -2709,36 +2788,46 @@ namespace Inkeys::Drawing::Draw3
 	void RealTimeStylusInput::Shutdown() noexcept
 	{
 		if (!impl_) return;
+		auto* plugin = static_cast<StylusSyncPlugin*>(impl_->plugin.Get());
+		// 先单调关业务准入；禁止持 state/diagnostics 锁调用可能同步回调的 COM。
+		if (plugin) plugin->CloseCallbacks();
 		{
 			std::scoped_lock lock(impl_->diagnosticsMutex);
-			impl_->diagnosticsPlugin=nullptr;
+			impl_->diagnosticsPlugin = nullptr;
 		}
+		Microsoft::WRL::ComPtr<IStylusSyncPlugin> removedPlugin;
 		if (impl_->stylus)
 		{
-			const HRESULT disableResult = impl_->stylus->put_Enabled(FALSE); // 先停止产生新的同步回调。
-			// plugin 已加入却未确认停止时，保留业务对象并接管当前线程，禁止释放后 Reset。
-			if (FAILED(disableResult) && impl_->pluginAdded && impl_->failedCleanup.HasPublisher())
+			const HRESULT disableResult = impl_->stylus->put_Enabled(FALSE);
+			// 状态核实仍属于本次已知失败清理，不能给它重置或延长截止。
+			if (FAILED(disableResult)) impl_->failedCleanup.BeginKnownFailure();
+			const auto disabled = RtsStartup::VerifyDisabled(disableResult, [&](BOOL* enabled) noexcept
+				{ return impl_->stylus->get_Enabled(enabled); });
+			if (!disabled.StopProven() && impl_->pluginAdded)
 				impl_->failedCleanup.FailUnprovenProducerStop();
-			if (FAILED(disableResult)) LogHResult("Disable RealTimeStylus", disableResult);
+			if (FAILED(disableResult))
+			{
+				LogHResult("Disable RealTimeStylus", disableResult);
+				LogHResult("Verify RealTimeStylus enabled state after disable failure", disabled.enabledResult);
+			}
 			if (impl_->pluginAdded)
 			{
-				IStylusSyncPlugin* removedPlugin = nullptr;
-				const HRESULT removeResult = impl_->stylus->RemoveStylusSyncPlugin(0, &removedPlugin);
-				// removedPlugin 的临时强引用也留在 noreturn 栈，不能提前 Release 冒充静止。
-				if (FAILED(removeResult) && impl_->failedCleanup.HasPublisher())
-					impl_->failedCleanup.FailUnprovenProducerStop();
-				if (FAILED(removeResult)) LogHResult("RemoveStylusSyncPlugin", removeResult);
-				if (removedPlugin) removedPlugin->Release();
+				const HRESULT removeResult = impl_->stylus->RemoveStylusSyncPlugin(
+					0, removedPlugin.ReleaseAndGetAddressOf());
+				// 两个强引用都保留到 COM 释放之后；失败不得先撤借用对象再继续降级。
+				if (FAILED(removeResult)) impl_->failedCleanup.FailUnprovenProducerStop();
 				impl_->pluginAdded = false;
 			}
 		}
+		if (plugin && !plugin->DrainCallbacks()) impl_->failedCleanup.FailUnprovenProducerStop();
 		if (impl_->coordinator) impl_->coordinator->CloseAllProducerContacts(QueryQpc());
 		if (impl_->drawingCursorSink) impl_->drawingCursorSink->ClearPenCursorSample();
-		impl_->plugin.Reset();
 		impl_->stylus3.Reset();
 		impl_->stylus.Reset();
+		removedPlugin.Reset();
+		impl_->plugin.Reset();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-		FlushRtsCallbackTrace(); // 释放 RTS 与插件引用后再统一格式化，失败清理路径也不会并发 callback。
+		FlushRtsCallbackTrace();
 #endif
 		impl_->coordinator = nullptr;
 		impl_->drawingCursorSink = nullptr;
@@ -2748,6 +2837,17 @@ namespace Inkeys::Drawing::Draw3
 			CoUninitialize();
 			impl_->comInitialized = false;
 		}
+	}
+
+	bool RealTimeStylusInput::UsesBasicPacketDescription() const noexcept
+	{
+		return impl_ && impl_->initialized && impl_->basicPacketDescription;
+	}
+
+	void RealTimeStylusInput::EnableContactPublication() noexcept
+	{
+		if (impl_ && impl_->initialized && impl_->plugin)
+			static_cast<StylusSyncPlugin*>(impl_->plugin.Get())->EnableContactPublication();
 	}
 
 	bool RealTimeStylusInput::TraceTouchAreaDiagnostics(const SpeedEraser::InputSource& requested) const noexcept

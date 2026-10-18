@@ -492,6 +492,8 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RtsStartup.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.MouseInput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
     <ClInclude Include="Inkeys\Business\PptSession.h" />
     <ClInclude Include="PptSettingsPersistence.h" />

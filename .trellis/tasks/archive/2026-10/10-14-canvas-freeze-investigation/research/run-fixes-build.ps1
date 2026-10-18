@@ -4,7 +4,12 @@ param(
     [switch]$StorageTests
 )
 $ErrorActionPreference = 'Stop'
-$canvasRepo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
+# 归档层级会变化，以 solution 标记定位仓库。
+$canvasRepo = $PSScriptRoot
+while ($canvasRepo -and -not (Test-Path -LiteralPath (Join-Path $canvasRepo 'InkeysRepo.sln') -PathType Leaf)) {
+    $canvasRepo = Split-Path -Parent $canvasRepo
+}
+if (-not $canvasRepo) { throw 'Repository root (InkeysRepo.sln) was not found.' }
 $canvasOutput = Join-Path $canvasRepo 'Build/CanvasFreezeInvestigation/fixes'
 New-Item -ItemType Directory -Path $canvasOutput -Force | Out-Null
 if ($LogName -notmatch '^[a-zA-Z0-9-]+$') { throw 'LogName must be a simple task log name.' }

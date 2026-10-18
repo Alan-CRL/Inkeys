@@ -15,7 +15,10 @@ import re
 
 
 RESEARCH = Path(__file__).resolve().parent
-ROOT = RESEARCH.parents[3]
+# 归档层级会变化，以 solution 标记定位仓库。
+ROOT = next((p for p in RESEARCH.parents if (p / "InkeysRepo.sln").is_file()), None)
+if ROOT is None:
+    raise RuntimeError("Repository root (InkeysRepo.sln) was not found.")
 DRAW = ROOT / "Inkeys/Inkeys/Drawing/Draw3"
 
 

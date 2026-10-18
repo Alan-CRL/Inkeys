@@ -34,6 +34,8 @@ import Inkeys.UI.StartupPreview;
 import Inkeys.Startup.Progress;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.graphics_initialization;
+import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.transparent_presentation;
 
@@ -52,6 +54,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <io.h>
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
@@ -649,6 +652,58 @@ namespace
 					return 1;
 				}
 			}
+			stage = "Draw3 device preferences";
+			Inkeys::Config deviceDefaults;
+			if (!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility ||
+				!writeBytes(mainConfig, "{}") || !deviceDefaults.ReadAll() ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
+			{
+				std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences defaulted off\n", stderr);
+				return 1;
+			}
+			for (const bool hardware : { false, true })
+				for (const bool compatibility : { false, true })
+				{
+					deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = hardware;
+					deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = compatibility;
+					Inkeys::Config restoredDevice;
+					if (!deviceDefaults.Write() || !restoredDevice.ReadAll() ||
+						restoredDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						restoredDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
+					{
+						std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences did not round-trip\n", stderr);
+						return 1;
+					}
+					Inkeys::Config copiedDevice;
+					copiedDevice = restoredDevice;
+					Inkeys::Config miniDevice;
+					if (!miniDevice.ReadMini({ "Experimental.Inkeys3.Draw3.EnableHardwareAcceleration",
+						"Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility" }) ||
+						miniDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						miniDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility ||
+						copiedDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						copiedDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
+						return 1;
+					const auto uploadInfo = restoredDevice.GetUploadInfo();
+					if (uploadInfo.find("EnableHardwareAcceleration") != std::string::npos ||
+						uploadInfo.find("EnableZhaoxinCompatibility") != std::string::npos) return 1;
+				}
+			for (const char* invalid : { "0", "1", "\"false\"", "null", "{}", "[]" })
+			{
+				Inkeys::Config invalidDevice;
+				const std::string invalidJson = "{\"Experimental\":{\"Inkeys3\":{\"Draw3\":{" +
+					std::string("\"EnableHardwareAcceleration\":") + invalid +
+					",\"EnableZhaoxinCompatibility\":" + invalid + "}}}}";
+				if (!writeBytes(mainConfig, invalidJson) || !invalidDevice.ReadAll() ||
+					!invalidDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+					!invalidDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
+				{
+					std::fputs("[ConfigBoundary] FAIL: non-bool Draw3 device preferences were accepted\n", stderr);
+					return 1;
+				}
+			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
 			std::filesystem::create_directories(root / "fresh" / "opt");
@@ -659,7 +714,7 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
 				return 1;
 			}
-			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation and touch reconnect preferences\n", stderr);
+			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation, touch reconnect and Draw3 device preferences\n", stderr);
 			return 0;
 		}
 		catch (...)
@@ -926,7 +981,7 @@ namespace
 				observation->trace.graceDeadline = firstGrace;
 			}
 			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
-			if (!observation) IDTLogger->warn("[主线程][IdtMain] Draw3 DComp 初始化失败，重建隐藏窗口链并回退 ULW");
+			if (!observation) IDTLogger->warn("[主线程][IdtMain] Draw3 Host 启动失败，重建隐藏窗口链并以 ULW 重试");
 			const HWND oldDrawpad = observation ? drawpad_window : nullptr;
 			const HWND oldPresentation = observation ? windowService.Handle(
 				Inkeys::Window::WindowRole::DrawpadPresentation) : nullptr;
@@ -1204,6 +1259,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	int supervisorExitCode = 0;
 	if (Inkeys::Shutdown::TryRunShutdownSupervisorEarly(
 		GetCommandLineW(), supervisorExitCode)) return supervisorExitCode;
+	// 自检沿用启动方的重定向；必要时补齐 CRT stderr 句柄，不创建交互控制台。
+	const auto runDraw3SelfTest = [](auto&& test)
+	{
+		const HANDLE errorHandle = GetStdHandle(STD_ERROR_HANDLE);
+		if (!errorHandle || errorHandle == INVALID_HANDLE_VALUE)
+		{
+			const int descriptor = _fileno(stderr);
+			const intptr_t redirected = descriptor >= 0 ? _get_osfhandle(descriptor) : -1;
+			if (redirected != -1 && redirected != -2)
+				(void)SetStdHandle(STD_ERROR_HANDLE, reinterpret_cast<HANDLE>(redirected));
+		}
+		Inkeys::Drawing::Draw3::DiagnosticOutput::Session diagnostics;
+		(void)diagnostics.Start();
+		const int result = test();
+		(void)diagnostics.Stop();
+		return result;
+	};
 	constexpr wchar_t kHostMetricsSmokeArg[] = L"--draw3-host-metrics-smoke";
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
@@ -1239,10 +1311,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			if (count != 2) return 2;
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
-			return Inkeys::Drawing::Draw3::RunPresentationCompletionDeliveryTest();
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPresentationCompletionDeliveryTest(); });
 #else
 			return 2;
 #endif
+		}
+		// 生产策略和上传回归仅使用离屏资源；严格验参后在任何产品 HWND 初始化前返回。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-device-policy-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunGraphicsDeviceSelectionTest(); });
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-renderer-upload-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererUploadValidation(); });
 		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
@@ -1250,7 +1337,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		{
 			LocalFree(arguments);
 			if (count != 2) return 2;
-			return Inkeys::Drawing::Draw3::RunRendererPixelTest();
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererPixelTest(); });
 		}
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test-hardware", -1, TRUE) == CSTR_EQUAL)
@@ -1258,7 +1345,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			// 硬件探针与 WARP 分开，缺硬件时明确退出，不进入产品初始化。
 			LocalFree(arguments);
 			if (count != 2) return 2;
-			return Inkeys::Drawing::Draw3::RunRendererHardwarePixelTest();
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererHardwarePixelTest(); });
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
@@ -1284,20 +1371,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			// 生产几何自检在配置、单实例和窗口初始化之前退出。
 			LocalFree(arguments);
 			if (count != 2) return 2;
-			return Inkeys::Drawing::Draw3::RunPenTaperProductionProbe();
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPenTaperProductionProbe(); });
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-width-test") == 0)
 		{
 			LocalFree(arguments);
 			if (count != 2) return 2;
-			return Inkeys::Drawing::Draw3::RunPenWidthProductionProbe();
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPenWidthProductionProbe(); });
 		}
 		// argv 识别也覆盖给 mode 加引号的合法写法；坏形状不能落入普通 GUI。
 		if (count > 1 && wcscmp(arguments[1], kHostMetricsSmokeArg) == 0)
 		{
 			int result = 2;
 			if (count == 4 && wcscmp(arguments[2], L"--output-root") == 0)
-				result = Inkeys::Drawing::Draw3::RunHiddenWindowRuntimeMetricsSmoke(arguments[3]);
+				result = runDraw3SelfTest([&] { return Inkeys::Drawing::Draw3::RunHiddenWindowRuntimeMetricsSmoke(arguments[3]); });
 			LocalFree(arguments);
 			return result;
 		}
@@ -1348,55 +1435,55 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-map-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunRendererMapCompatibilityTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererMapCompatibilityTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-commit-failure-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunRendererFailureCommitTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererFailureCommitTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-laser-raster-failure-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunLaserRasterFailureTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunLaserRasterFailureTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-parked-desktop-exit-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunParkedDesktopExitAutoSaveTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunParkedDesktopExitAutoSaveTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-parked-ppt-retained-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunParkedPresentationRetainedSaveTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunParkedPresentationRetainedSaveTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-loaded-retained-install-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunPresentationLoadedRetainedInstallTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPresentationLoadedRetainedInstallTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-pending-topology-load-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunPendingPresentationTopologyLoadTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPendingPresentationTopologyLoadTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-control-fence-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunDraw3ControlFenceProductionProbe();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunDraw3ControlFenceProductionProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-fallback-stable-controller-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunFallbackStableControllerIsolationProbe();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunFallbackStableControllerIsolationProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-fallback-stable-lane-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunFallbackStableControllerLaneProbe();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunFallbackStableControllerLaneProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-ppt-current-load-retry-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunPresentationCurrentLoadRetryProbe();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPresentationCurrentLoadRetryProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-geometry-benchmark", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunDraw3GeometryBenchmark();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunDraw3GeometryBenchmark(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-history-benchmark", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunDraw3HistoryBenchmark();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunDraw3HistoryBenchmark(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-ulw-copy-benchmark", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunUlwDirtyCopyBenchmark();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunUlwDirtyCopyBenchmark(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--page-control-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::PageControl::RunHiddenWindowTests();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-eraser-hidden-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true);
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
 
 	// 进程级 owner 兜住启动失败返回；Host/RTS 退出后才停止独立输出器。
 	Inkeys::Drawing::Draw3::DiagnosticOutput::Session draw3DiagnosticOutput;
@@ -3257,6 +3344,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		// 启动时捕获设备偏好；呈现回退和设备恢复沿用本代快照。
+		draw3StartOptions.enableHardwareAcceleration =
+			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+		draw3StartOptions.enableZhaoxinCompatibility =
+			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
@@ -3273,8 +3365,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					Milestone::Draw3GraphicsReady); break;
 				case Stage::PresenterReady: (void)Inkeys::Startup::Report(
 					Milestone::Draw3PresenterReady); break;
-				case Stage::RtsReady: (void)Inkeys::Startup::Report(
-					Milestone::Draw3RtsReady); break;
+				case Stage::InputReady: (void)Inkeys::Startup::Report(
+					Milestone::Draw3InputReady); break;
 				case Stage::ControllerReady: (void)Inkeys::Startup::Report(
 					Milestone::Draw3ControllerReady); break;
 				case Stage::FirstFrameCommitted: (void)Inkeys::Startup::Report(

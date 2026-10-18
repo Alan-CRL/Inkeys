@@ -75,6 +75,10 @@ namespace Inkeys::Drawing::Draw3
 
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
+		// 内部 stop 只取消/释放捕获；不可被 productStopping 或 Running 闸门丢弃。
+		// 不持 productCallMutex 跨 owner 完成等待，Stop 的外层已 drain 普通调用。
+		if (message == Detail::kMouseInputOwnerMessage && wParam == Detail::kMouseInputStop)
+			return productHost.ForwardMessage(window, message, wParam, lParam);
 		if (productStopping.load(std::memory_order_acquire))
 			return DefWindowProcW(window, message, wParam, lParam);
 		std::scoped_lock callLock(productCallMutex);
@@ -204,7 +208,9 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 	namespace DiagnosticOutput = Inkeys::Drawing::Draw3::DiagnosticOutput;
 	try
 	{
-		if (Inkeys::Drawing::Draw3::ProductRunning())
+		if ((msg == Inkeys::Drawing::Draw3::Detail::kMouseInputOwnerMessage &&
+			wParam == Inkeys::Drawing::Draw3::Detail::kMouseInputStop) ||
+			Inkeys::Drawing::Draw3::ProductRunning())
 			return Inkeys::Drawing::Draw3::ForwardProductMessage(hWnd, msg, wParam, lParam);
 	}
 	catch (const std::exception& exception)

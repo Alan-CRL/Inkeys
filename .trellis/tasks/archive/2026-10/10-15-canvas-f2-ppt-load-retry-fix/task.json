@@ -13,7 +13,7 @@
   "createdAt": "2026-10-15",
   "completedAt": "2026-10-18",
   "branch": "bugfix/draw3",
-  "base_branch": "main",
+  "base_branch": "dev",
   "worktree_path": null,
   "commit": "68cd297da63642d58fd755da20ec4c8bac42bd1a",
   "pr_url": null,

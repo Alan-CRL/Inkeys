@@ -14,7 +14,10 @@ def main():
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--output-label", default="")
     args = parser.parse_args()
-    repo = Path(__file__).resolve().parents[4]
+    # 归档层级会变化，以 solution 标记定位仓库。
+    repo = next((p for p in Path(__file__).resolve().parents if (p / "InkeysRepo.sln").is_file()), None)
+    if repo is None:
+        raise RuntimeError("Repository root (InkeysRepo.sln) was not found.")
     binaries = repo / "Build/ARM64/Debug"
     output = repo / "Build/CanvasFreezeInvestigation/fixes/regressions"
     if args.output_label:

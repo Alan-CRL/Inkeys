@@ -18,7 +18,10 @@ def main():
     parser.add_argument("--max-seconds", type=float, default=240)
     args = parser.parse_args()
     run = args.run_directory.resolve()
-    repo = Path(__file__).resolve().parents[4]
+    # 归档层级会变化，以 solution 标记定位仓库。
+    repo = next((p for p in Path(__file__).resolve().parents if (p / "InkeysRepo.sln").is_file()), None)
+    if repo is None:
+        raise RuntimeError("Repository root (InkeysRepo.sln) was not found.")
     allowed = (repo / "Build/CanvasFreezeInvestigation/fixes").resolve()
     if not run.is_relative_to(allowed) or not run.name.startswith("run-"):
         raise ValueError("Only this task's isolated fixes/run-* directory is allowed")

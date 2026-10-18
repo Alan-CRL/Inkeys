@@ -12,6 +12,7 @@
 #include <windows.h>
 #include "Draw3.Bridge.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.MouseInput.h"
 
 export module Inkeys.Drawing.Draw3.window_control;
 
@@ -135,6 +136,9 @@ export namespace Inkeys::Drawing::Draw3
 		// Debug 下启用有界 RTS 初始化与回调诊断。
 		void SetRtsTraceEnabled(bool enabled) noexcept;
 #endif
+		// mode 启闭通过 HWND owner 同步确认；返回前旧鼠标 producer 已停止。
+		bool SetMouseCompatibilityEnabled(bool enabled) noexcept;
+		void CloseMouseInputAdmission() noexcept;
 		// 返回窗口句柄。
 		HWND Handle() const;
 		// 返回当前客户区尺寸。
@@ -232,6 +236,9 @@ export namespace Inkeys::Drawing::Draw3
 
 	private:
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+		void CancelMouseInput(HWND window, bool captureLost = false) noexcept;
+		void ReleaseMouseCapture(HWND window) noexcept;
+		void HandleCompatibilityMouse(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
 		void QueueCanvasCommand(CanvasCommand command);
 		void RequestDrawingCursorRender() noexcept;
@@ -260,6 +267,15 @@ export namespace Inkeys::Drawing::Draw3
 			bool accepted, const char* reason) noexcept;
 #endif
 
+		Detail::MouseInputState<ContactInputCoordinator, ContactSnapshot,
+			InputDeviceType, ContactPhase> mouseInput_;
+		std::atomic_bool mouseCompatibilitySelected_ = false;
+		std::atomic_bool mouseOwnerStopped_ = true;
+		std::atomic_bool mouseStartAllowed_ = false;
+		HANDLE mouseOwnerControlEvents_[2] = {};
+		std::atomic_bool mouseOwnerControlSucceeded_[2] = {};
+		unsigned mouseDispatchDepth_ = 0; // 仅 owner；直接停止不能等待自己的外层输入回调。
+		DWORD mouseStartTick_ = 0; // 仅 owner 读写，拒绝模式就绪前已经排队的 Down。
 		std::atomic<HWND> window_ = nullptr;
 		// 外部 HWND 的消息来自 Window Service 线程，绘制线程也会读取该状态。
 		std::atomic<bool> externalWindow_ = false;

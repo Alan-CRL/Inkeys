@@ -170,6 +170,8 @@
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
 	<ClCompile Include="draw3_bridge_tests.cpp" />
 	<ClCompile Include="draw3_contact_tests.cpp" />
+	<ClCompile Include="draw3_rts_startup_tests.cpp" />
+	<ClCompile Include="draw3_mouse_input_tests.cpp" />
 	<ClCompile Include="update_security_tests.cpp" />
 	<ClCompile Include="speed_eraser_tests.cpp" />
 	<ClCompile Include="pen_width_tests.cpp" />

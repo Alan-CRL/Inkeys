@@ -7,16 +7,16 @@
 `【直接确认】` 当前产品输入主链位于 `Draw3.RealtimeStylus.*`、`Draw3.ContactInput.*` 和 `Draw3.DrawingController.*`；Draw2 输入源码保留但不参与产品编译或启动：
 
 ~~~text
-主 Drawpad RealTimeStylus ─> ContactInputCoordinator mailbox
+主 Drawpad 选定输入后端（RTS / Win32Mouse）─> ContactInputCoordinator mailbox
                                         │
                                         └─> DrawingController / document / runtime history / final backbuffer
 ~~~
 
 `RealTimeStylusInput` 是主 Drawpad 的唯一 RTS producer，并保留 `SetAllTabletsMode(TRUE)`；辅助 DrawpadPresentation 不绑定 RTS、WndProc mailbox 或输入门禁。`CSyncEventHandlerRTS`/`TouchMode` 描述仅属于保留的 Draw2 历史实现，不应反推 Draw3 的产品选择模式。
 
-Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 producer，再唤醒并结束绘制线程；`DrawpadMsgCallback` 只把主 Drawpad 消息转发到唯一 Host。
+Draw3 Host 在图形资源准备后才选择 RTS 或 Win32Mouse 输入，退出时先停止选定 producer，再唤醒并结束绘制线程；`DrawpadMsgCallback` 只把主 Drawpad 消息转发到唯一 Host。
 
-`【直接确认】` `WindowController::HandleWindowMessage` 的 `WM_MOUSE*` 接受/拒绝仅控制 `PublishMouseCursorSample` 光标反馈；绘制 contact 仍由 RTS `StylusDown -> coordinator.PublishDown` 提供。不得用 `accepted-mouse` 或 `mouseContact` 证明绘制 Down 已被准入，也不得把光标兼容过滤直接当成落笔失败的根因。
+`【直接确认】` 在 RtsExtended / RtsBasicXY 模式，`WindowController::HandleWindowMessage` 的 `WM_MOUSE*` 接受/拒绝仅控制 `PublishMouseCursorSample` 光标反馈，绘制 contact 由 RTS `StylusDown -> coordinator.PublishDown` 提供；Win32Mouse 模式才由独立兼容分支发布绘制 contact。正常RTS模式不得用 `accepted-mouse` 或 `mouseContact` 证明绘制 Down 已被准入，也不得把光标兼容过滤直接当成落笔失败的根因。
 
 `【直接确认】` 产品未定义独立 demo 的 `DRAW3_RTS_DIAGNOSTICS` 宏；旧 `RecordCallback/FlushRtsCallbackTrace` 不会因开启 ConsoleOutput 而出现。产品 `ConsoleOutput.Cursor` 的运行期开关通过现有有界队列提供 `rts-input event=Down/Up reason=arrival/published/失败原因`，Packets 每 plugin 至多每秒一次。`published=1` 是 producer mailbox 发布证据，仍须分别验证 controller 准入与 GPU 像素。
 
@@ -108,18 +108,51 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 
 按钮点击完成必须等待明确的 `WM_LBUTTONUP`；`WM_MOUSEMOVE` 的 `MK_LBUTTON` 缺失不能被解释为抬起，否则会把接触或窗口激活阶段的移动误判为第二次点击。
 
-## RTS 初始化与回退
+## RTS 初始化与鼠标兼容回退（2026-10-18）
 
-`【直接确认】`：
+### 1. Scope / Trigger
 
-- `IdtRts.cpp` 的不同初始化路径包含关闭 flicks、启用多点触摸、注册 stylus plugin 等操作；
-- 初始化/插件注册失败会写日志并允许鼠标回退；
-- 画板窗口处理 tablet gesture、触摸注册和光标显示；
-- 实际输入模式还读取配置和硬件/窗口状态。
+产品 Draw3 启动输入初始化适用；历史 `IdtRts.cpp::SafeRTSInit` / `useMouseInput` 不参与产品编译，不能作为当前兜底已接线的证明。
 
-`【合理推断】` 现有 SafeRTSInit 和鼠标回退是启动兼容边界。改变 RTS 初始化时应保留可诊断的失败路径，除非任务明确决定取消回退并验证启动行为。
+### 2. Signatures
 
-`【待确认】` 仓库没有给出各 Windows 版本、触摸屏、数位笔驱动和 RTS 版本的正式支持矩阵。
+- `RealTimeStylusInput::Initialize / UsesBasicPacketDescription / EnableContactPublication / Shutdown`；生产共享编排和 callback lease 位于 `Draw3.RtsStartup.h`。
+- `HostInputMode::{Disabled,RtsExtended,RtsBasicXY,Win32Mouse}`；`HostStartupStage::InputReady` 对应 `Milestone::Draw3InputReady`，保持原进度槽/权重。
+- `WindowController::SetMouseCompatibilityEnabled / CloseMouseInputAdmission` 和 `Draw3.MouseInput.h` 的生产鼠标状态；只向现有 ContactInputCoordinator 发布。
+
+### 3. Contracts
+
+- 按完整RTS→基础X/Y→Win32Mouse串行选择，每档最多一次。基础档覆盖扩展SetDesired失败及设置成功后Enable失败，使用新RTS实例；保留all-tablets/多点设置，不枚举额外开关或固定延时重试。
+- 每次可恢复RTS尝试有独立Dormant失败清理scope，停止/排空并真实Complete/join后才能下一档；成功实例恢复Host signal。Disable失败时必须成功get_Enabled读回明确FALSE，才可继续Remove及排空；已加入插件但仍启用或状态未知、Remove失败、排空未证明或deadline过期均不能启用下一producer。
+- 同步插件所有业务回调先取单原子关闭位+在途计数的lease，Shutdown先关门，再无内部锁Disable/Remove，等最后lease的event通知后才能终止contact和释放借用对象；不能只看计数零越过最后通知尾部。
+- 候选RTS可建立decoder但不发布业务Down，选定输入后才开放；就绪前按下必须抬起后重新Down。不能在drawing consumer存活时ResetForNextRun清失败候选队列。
+- 每代只有一个绘制producer。RTS模式WM_MOUSE仍只处理原光标，不重复落笔；Win32Mouse从正常RTS的promoted/Touch barrier过滤之前接收真实鼠标及系统已提升的单点鼠标消息，Pointer不再提供第二条绘制流。
+- 鼠标左右键复用MouseLeft/MouseRight语义；单活动流、另一键先结束旧流，迟到旧Up不结束新流。保留有符号客户区坐标和未知压力/面积；Move不能凭空创建Down。
+- 捕获由owner线程设置/释放并读回。CaptureChanged/CancelMode/隐藏/销毁/Stop取消活动contact；MouseLeave不是Up。停止须owner串行确认和转发排空，之后才能撤Coordinator/Reset；RTS Shutdown不能代替鼠标停产证明。
+- 鼠标降级记录warning和真实input_mode，不冒报rts_ready成功，不新增阻塞提示或设置项。基础档不承诺原压感；鼠标档不承诺压感、多点、笔尾/触觉，系统不提升鼠标消息时不保证对应Pen/Touch可用。
+
+### 4. Validation & Error Matrix
+
+| 情形 | 必须结果 |
+|---|---|
+| 完整RTS成功 | 不试X/Y，不启用WM_MOUSE绘制 |
+| 扩展描述失败，或扩展Enable=0x80070057 | 安全清理旧attempt后用新实例试X/Y一次 |
+| RTS不可用且安全停产 | owner确认Win32Mouse后才打开输入就绪门 |
+| Disable失败但成功读回Enabled=FALSE | 继续必需的Remove和drain，全部完成后才可降级，与publisher是否存在无关 |
+| 已加入插件且Disable失败读回仍启用/状态未知、Remove/drain失败或Expired | 不启用新输入，不释放仍借用对象，受控致命收口 |
+| 重复/迟到Up、捕获丢失、Stop交错 | 恰好一个终态，新代次不继承旧contact或mode |
+
+### 5. Good / Base / Bad Cases
+
+Good：扩展Enable失败→X/Y成功；或两档失败→鼠标就绪并经原Controller绘制。Base：完整RTS保持原能力。Bad：只重试SetDesired、吞停产错误、RTS和WM_MOUSE同时发布、把光标移动当作绘制兜底。
+
+### 6. Tests Required
+
+生产共享RTS编排/清理scope/lease/publication gate故障注入；生产鼠标状态→真实Coordinator；完整Solution Debug|ARM64与Headless `--no-window`。这些不能证明真实COM/驱动接受X/Y、实际首帧、owner捕获或系统Pen/Touch提升，现场/授权窗口验收单列。
+
+### 7. Wrong vs Correct
+
+Wrong：依赖旧Facade转发或把RTS false改为true放行。Correct：选择真实输入后端、完成旧producer停产，并通过同一Contact/Controller/历史保存链。通用进程自动重启不是本合同的替代。
 
 ## 历史 Draw2 笔画生命周期
 

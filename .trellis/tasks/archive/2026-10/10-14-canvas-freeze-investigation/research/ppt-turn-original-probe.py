@@ -1,7 +1,10 @@
 """Read-only source-excerpt probe. It is NOT the full PptInfo loop or Host."""
 from pathlib import Path
 import hashlib, json, subprocess, os
-root = Path(__file__).resolve().parents[4]
+# 归档层级会变化，以 solution 标记定位仓库。
+root = next((p for p in Path(__file__).resolve().parents if (p / "InkeysRepo.sln").is_file()), None)
+if root is None:
+    raise RuntimeError("Repository root (InkeysRepo.sln) was not found.")
 out = root / 'Build/CanvasFreezeInvestigation/ppt-turn-20261017/events'
 out.mkdir(parents=True, exist_ok=True)
 plugin = root / 'Inkeys/IdtPlug-in.cpp'

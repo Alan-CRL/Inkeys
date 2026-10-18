@@ -6,7 +6,12 @@ param(
     [string]$OutputDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
-$taskProbeRepo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
+# 归档层级会变化，以 solution 标记定位仓库。
+$taskProbeRepo = $PSScriptRoot
+while ($taskProbeRepo -and -not (Test-Path -LiteralPath (Join-Path $taskProbeRepo 'InkeysRepo.sln') -PathType Leaf)) {
+    $taskProbeRepo = Split-Path -Parent $taskProbeRepo
+}
+if (-not $taskProbeRepo) { throw 'Repository root (InkeysRepo.sln) was not found.' }
 if (-not $CacheDirectory) { $CacheDirectory = Join-Path $taskProbeRepo 'Inkeys/Cache/ARM64/Debug' }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $taskProbeRepo 'Build/CanvasFreezeInvestigation/presentation-load-probe' }
 $taskProbeOut = [IO.Path]::GetFullPath($OutputDirectory)
