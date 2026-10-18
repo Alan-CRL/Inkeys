@@ -25,6 +25,9 @@ import Inkeys.Drawing.Draw3.window_control;
 #include <condition_variable>
 #include <cstdio>
 #include <exception>
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+#include <filesystem>
+#endif
 #include <iostream>
 #include <limits>
 #include <mutex>
@@ -36,6 +39,21 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		std::uint64_t DrainPresentationCompletions(PresentationAutoSaveService& service,
+			std::shared_ptr<const PresentationPersistenceCompletion>& pending,
+			WindowController& window) noexcept
+		{
+			std::uint64_t notFound = 0;
+			while (pending || service.TryTakeCompletion(pending))
+			{
+				if (!window.TryEnqueuePresentationCompletion(pending)) break;
+				if (pending->operation == PresentationPersistenceOperation::Load &&
+					pending->status == PresentationPersistenceStatus::NotFound) ++notFound;
+				pending.reset();
+			}
+			return notFound;
+		}
+
 		UINT QueryCompatibleWindowDpi(HWND hwnd) noexcept
 		{
 			if (!hwnd) return 96;
@@ -176,6 +194,153 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	int RunPresentationCompletionDeliveryTest() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool result, const char* message)
+		{
+			if (!result)
+			{
+				++failures;
+				std::fprintf(stderr, "[Draw3PptCompletion] FAIL: %s\n", message);
+			}
+		};
+		try
+		{
+			WindowController window;
+			ContactInputCoordinator input;
+			window.SetInputCoordinator(&input);
+			const auto clearWakes = [&]
+			{
+				ContactRecord* record = nullptr;
+				while (input.TryDequeue(record))
+					if (!record) input.AcknowledgeControlWake();
+			};
+			Bridge::PresentationTarget target;
+			for (std::size_t i = 0; i < target.key.bytes.size(); ++i)
+				target.key.bytes[i] = static_cast<std::uint8_t>(i + 1);
+			target.bindingMode = Bridge::SlideBindingMode::StableSlideId;
+			target.sourceIdentity = "path:c:\\draw3-completion-test\\deck.pptx";
+			target.presentationName = "deck.pptx";
+			target.provider = "PowerPoint";
+			target.bindingToken = "PowerPoint:12:34:1";
+			target.slideIds = { 101 };
+			target.slideId = 101;
+			target.totalPages = 1;
+			target.bindingRevision = 1;
+			target.targetRevision = 1;
+			auto first = std::make_shared<PresentationPersistenceCompletion>();
+			first->target = target;
+			first->slotGeneration = 1;
+			auto second = std::make_shared<PresentationPersistenceCompletion>(*first);
+			second->slotGeneration = 2;
+			CanvasCommand clear;
+			clear.type = CanvasCommandType::Clear;
+			CanvasCommand undo;
+			undo.type = CanvasCommandType::Undo;
+			CanvasCommand scene;
+			scene.type = CanvasCommandType::SetPresentationTarget;
+			scene.presentationTarget = std::make_shared<Bridge::PresentationTarget>(target);
+			window.EnqueueCanvasCommand(clear);
+			window.EnqueueCanvasCommand(scene);
+			check(window.TryEnqueuePresentationCompletion(first), "first terminal enters reserved slot");
+			check(!window.TryEnqueuePresentationCompletion(second), "occupied slot cannot overwrite terminal");
+			for (std::uint64_t revision : { 2, 3 })
+			{
+				target.targetRevision = revision;
+				scene.presentationTarget = std::make_shared<Bridge::PresentationTarget>(target);
+				window.EnqueueCanvasCommand(scene);
+			}
+			window.EnqueueCanvasCommand(undo);
+			CanvasCommand command;
+			check(window.TryDequeueCanvasCommand(command) && command.type == clear.type,
+				"ordinary command before terminal keeps FIFO");
+			check(window.TryDequeueCanvasCommand(command) && command.type == scene.type &&
+				command.presentationTarget->targetRevision == 1, "target coalescing cannot cross terminal barrier");
+			clearWakes();
+			const auto beforeWake = input.CaptureWakeGeneration();
+			check(window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion == first,
+				"reserved terminal preserves payload identity");
+			check(input.CaptureWakeGeneration() != beforeWake, "terminal consumption wakes next retained delivery");
+			check(window.TryDequeueCanvasCommand(command) && command.type == scene.type &&
+				command.presentationTarget->targetRevision == 3, "adjacent targets after barrier still coalesce");
+			check(window.TryDequeueCanvasCommand(command) && command.type == undo.type &&
+				!window.HasPendingCanvasCommand(), "ordinary command after terminal keeps FIFO");
+			check(window.TryEnqueuePresentationCompletion(second) && window.HasPendingCanvasCommand(),
+				"terminal alone keeps command boundary pending");
+			window.DetachExternal();
+			check(!window.HasPendingCanvasCommand() && !window.TryDequeueCanvasCommand(command),
+				"stop clears terminal slot and barrier count");
+			window.SetInputCoordinator(&input);
+
+			// 使用真实 service 和 Host 共用 drain；不初始化 HWND、GPU 或 RTS。
+			wchar_t temporary[MAX_PATH]{};
+			const DWORD temporaryLength = GetTempPathW(MAX_PATH, temporary);
+			check(temporaryLength != 0 && temporaryLength < MAX_PATH, "private fixture root available");
+			if (temporaryLength == 0 || temporaryLength >= MAX_PATH) return 1;
+			const auto root = std::filesystem::path(temporary) /
+				(L"InkeysPptCompletion-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+					std::to_wstring(GetTickCount64()));
+			PresentationAutoSaveService service;
+			check(service.Start(root.wstring()), "real completion service starts");
+			target.targetRevision = 4;
+			for (std::uint64_t generation : { 11, 12, 13 })
+			{
+				PresentationLoadRequest request{ target };
+				request.slotGeneration = generation;
+				check(service.SubmitLoad(std::move(request)) == PresentationPersistenceSubmitStatus::Accepted,
+					"real service accepts each identity-stamped request");
+			}
+			service.CloseAndDrain();
+			std::shared_ptr<const PresentationPersistenceCompletion> pending;
+			window.EnqueueCanvasCommand(clear);
+			check(DrainPresentationCompletions(service, pending, window) == 1 && pending &&
+				pending->slotGeneration == 12, "full slot retains second terminal in Host");
+			window.EnqueueCanvasCommand(undo);
+			check(window.TryDequeueCanvasCommand(command) && command.type == clear.type,
+				"real delivery follows earlier ordinary command");
+			check(window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion &&
+				command.presentationPersistenceCompletion->slotGeneration == 11, "first real terminal delivered once");
+			check(DrainPresentationCompletions(service, pending, window) == 1 && pending &&
+				pending->slotGeneration == 13, "third terminal retained while second waits");
+			check(window.TryDequeueCanvasCommand(command) && command.type == undo.type,
+				"later terminal cannot overtake already queued ordinary command");
+			check(window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion &&
+				command.presentationPersistenceCompletion->slotGeneration == 12, "second terminal not starved");
+			check(DrainPresentationCompletions(service, pending, window) == 1 && !pending,
+				"last terminal drains without a new persistence event or user input");
+			check(window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion &&
+				command.presentationPersistenceCompletion->slotGeneration == 13 && !window.HasPendingCanvasCommand(),
+				"all accepted terminals delivered in order");
+			check(window.TryEnqueuePresentationCompletion(first), "fixture leaves old terminal pending");
+			pending = second;
+			window.DetachExternal();
+			pending.reset(); // 与 Host Stop 的 owner-join 后清理一致。
+			check(service.Start(root.wstring()), "service restarts after drain");
+			target.targetRevision = 5;
+			check(service.SubmitLoad({ target }) == PresentationPersistenceSubmitStatus::Accepted,
+				"new generation load accepted");
+			service.CloseAndDrain();
+			check(DrainPresentationCompletions(service, pending, window) == 1 &&
+				window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion &&
+				command.presentationPersistenceCompletion->target.targetRevision == 5 &&
+				!window.HasPendingCanvasCommand() && !pending, "restart cannot deliver stale terminal");
+			window.SetInputCoordinator(nullptr);
+			std::error_code error;
+			std::filesystem::remove_all(root, error);
+		}
+		catch (...)
+		{
+			check(false, "completion delivery fixture completes without exception");
+		}
+		if (failures == 0)
+			std::fputs("[Draw3PptCompletion] PASS: reserved FIFO terminal, real Host drain, wake and restart\n", stderr);
+		return failures == 0 ? 0 : 1;
+	}
+
+#endif
+
 	struct Host::Impl
 	{
 		struct RuntimeMetricsState
@@ -202,6 +367,8 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::StateBridge bridge;
 		DesktopAutoSaveService autoSave;
 		PresentationAutoSaveService presentationAutoSave;
+		// 只由绘制 owner 访问；槽占用时保留终态，下一次 General wake 再交付。
+		std::shared_ptr<const PresentationPersistenceCompletion> pendingPresentationCompletion;
 		ContactInputCoordinator input;
 		WindowController window;
 		std::mutex commandPublishMutex;
@@ -1383,19 +1550,10 @@ namespace Inkeys::Drawing::Draw3
 
 		void PumpPresentationCompletions()
 		{
-			PresentationPersistenceCompletion completion;
-			while (presentationAutoSave.TryTakeCompletion(completion))
-			{
-				if (startOptions.enableHiddenTestContactInjection &&
-					completion.operation == PresentationPersistenceOperation::Load &&
-					completion.status == PresentationPersistenceStatus::NotFound)
-					hiddenPresentationNotFound.fetch_add(1, std::memory_order_acq_rel);
-				CanvasCommand command;
-				command.type = CanvasCommandType::PresentationPersistenceCompleted;
-				command.presentationPersistenceCompletion = std::make_shared<
-					PresentationPersistenceCompletion>(std::move(completion));
-				window.EnqueueCanvasCommand(std::move(command));
-			}
+			const auto notFound = DrainPresentationCompletions(
+				presentationAutoSave, pendingPresentationCompletion, window);
+			if (startOptions.enableHiddenTestContactInjection)
+				hiddenPresentationNotFound.fetch_add(notFound, std::memory_order_acq_rel);
 		}
 
 		void PumpDesktopCompletions()
@@ -1724,6 +1882,7 @@ namespace Inkeys::Drawing::Draw3
 				EndDrawingActivity();
 				window.SetInputCoordinator(nullptr);
 				window.DetachExternal();
+				pendingPresentationCompletion.reset();
 				attachedWindow.store(nullptr, std::memory_order_release);
 				attachedPresentationWindow.store(nullptr, std::memory_order_release);
 				hiddenTestContactInjectionEnabled = false;
@@ -1745,6 +1904,7 @@ namespace Inkeys::Drawing::Draw3
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
+			pendingPresentationCompletion.reset();
 			attachedWindow.store(nullptr, std::memory_order_release);
 			attachedPresentationWindow.store(nullptr, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = false;
@@ -1796,6 +1956,7 @@ namespace Inkeys::Drawing::Draw3
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
+			pendingPresentationCompletion.reset();
 			attachedWindow.store(nullptr, std::memory_order_release);
 			attachedPresentationWindow.store(nullptr, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = false;
@@ -1874,6 +2035,7 @@ namespace Inkeys::Drawing::Draw3
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
+			pendingPresentationCompletion.reset();
 			attachedWindow.store(nullptr, std::memory_order_release);
 			attachedPresentationWindow.store(nullptr, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = false;
@@ -2200,7 +2362,12 @@ namespace Inkeys::Drawing::Draw3
 			Bridge::ReadyIdentityFor(*state.presentationTarget) != expected) return false;
 		impl_->suspendedPresentationTarget = suspended ? std::optional(expected) : std::nullopt;
 		// Unknown/结束页可能把数字改成占位；恢复时必须等待当前 UI 再次确认。
-		if (suspended) impl_->uiReadyPresentationTarget.reset();
+		if (suspended)
+		{
+			impl_->uiReadyPresentationTarget.reset();
+			// UI 可合并掉中间的占位页；恢复时换 target revision，要求真实呈现及新回执。
+			(void)impl_->bridge.RequirePresentationTargetRefresh(expected);
+		}
 		impl_->RefreshPresentationInputGateLocked();
 		return true;
 	}

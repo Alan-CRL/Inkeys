@@ -274,6 +274,8 @@ namespace Inkeys::Drawing::Draw3
 			// Host generation 之间不得继承上一代异步 completion 或画布命令。
 			const std::scoped_lock lock(canvasCommandMutex_);
 			canvasCommands_.clear();
+			presentationCompletion_.reset();
+			commandsBeforePresentationCompletion_ = 0;
 		}
 		RECT client = {};
 		if (!GetClientRect(window, &client)) return false;
@@ -307,6 +309,8 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
 			canvasCommands_.clear();
+			presentationCompletion_.reset();
+			commandsBeforePresentationCompletion_ = 0;
 		}
 		if (!wasAttached) return;
 		if (const HWND window = window_.load(std::memory_order_acquire))
@@ -351,17 +355,33 @@ namespace Inkeys::Drawing::Draw3
 
 	bool WindowController::TryDequeueCanvasCommand(CanvasCommand& command)
 	{
-		const std::scoped_lock lock(canvasCommandMutex_);
-		if (canvasCommands_.empty()) return false;
-		command = canvasCommands_.front();
-		canvasCommands_.pop_front();
+		bool tookCompletion = false;
+		{
+			const std::scoped_lock lock(canvasCommandMutex_);
+			if (presentationCompletion_ && commandsBeforePresentationCompletion_ == 0)
+			{
+				command = {};
+				command.type = CanvasCommandType::PresentationPersistenceCompleted;
+				command.presentationPersistenceCompletion = std::move(presentationCompletion_);
+				tookCompletion = true;
+			}
+			else
+			{
+				if (canvasCommands_.empty()) return false;
+				command = std::move(canvasCommands_.front());
+				canvasCommands_.pop_front();
+				if (presentationCompletion_) --commandsBeforePresentationCompletion_;
+			}
+		}
+		// 不持命令锁发布 wake；Host 可能仍保留下一份终态，不能依赖新输入才继续。
+		if (tookCompletion) RequestControlWake();
 		return true;
 	}
 
 	bool WindowController::HasPendingCanvasCommand() noexcept
 	{
 		const std::scoped_lock lock(canvasCommandMutex_);
-		return !canvasCommands_.empty();
+		return presentationCompletion_ || !canvasCommands_.empty();
 	}
 
 	bool WindowController::ConsumeResizeRequest(WindowSize& size)
@@ -412,6 +432,8 @@ namespace Inkeys::Drawing::Draw3
 			// 尚未接受的相邻绝对目标可合并；中间的 Clear/Undo/保存屏障绝不跨越。
 			if (command.type == CanvasCommandType::SetPresentationTarget &&
 				!canvasCommands_.empty() &&
+				// 预留终态也构成 FIFO 屏障，不能把其前方目标与后方目标合并。
+				(!presentationCompletion_ || commandsBeforePresentationCompletion_ < canvasCommands_.size()) &&
 				canvasCommands_.back().type == CanvasCommandType::SetPresentationTarget)
 				canvasCommands_.back() = std::move(command);
 			else canvasCommands_.push_back(std::move(command));
@@ -562,6 +584,20 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::EnqueueCanvasCommand(CanvasCommand command)
 	{
 		QueueCanvasCommand(command);
+	}
+
+	bool WindowController::TryEnqueuePresentationCompletion(
+		const std::shared_ptr<const PresentationPersistenceCompletion>& completion) noexcept
+	{
+		if (!completion) return false;
+		{
+			const std::scoped_lock lock(canvasCommandMutex_);
+			if (presentationCompletion_) return false;
+			presentationCompletion_ = completion;
+			commandsBeforePresentationCompletion_ = canvasCommands_.size();
+		}
+		RequestControlWake();
+		return true;
 	}
 
 	void WindowController::RequestExit() noexcept

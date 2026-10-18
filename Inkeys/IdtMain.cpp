@@ -1232,6 +1232,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return 2;
 #endif
 		}
+		// 完成回执自检严格早退，坏参数和关闭harness都不得进入普通窗口。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-ppt-completion-delivery-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::Drawing::Draw3::RunPresentationCompletionDeliveryTest();
+#else
+			return 2;
+#endif
+		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)

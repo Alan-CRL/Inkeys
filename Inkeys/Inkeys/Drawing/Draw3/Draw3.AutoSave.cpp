@@ -267,7 +267,9 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<unsigned long long>(hash));
 				handle_ = CreateMutexW(nullptr, FALSE, name);
 				if (!handle_) return false;
-				const DWORD wait = WaitForSingleObject(handle_, INFINITE);
+				// 另一存活实例长期持锁时返回失败，不能让保存/恢复队列无限等待。
+				constexpr DWORD kIndexMutexWaitMilliseconds = 1000;
+				const DWORD wait = WaitForSingleObject(handle_, kIndexMutexWaitMilliseconds);
 				acquired_ = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
 				if (!acquired_)
 				{

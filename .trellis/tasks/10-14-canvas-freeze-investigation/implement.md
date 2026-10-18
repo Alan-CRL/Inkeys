@@ -63,3 +63,37 @@
 ## 2026-10-17 用户调整优先级
 
 用户要求先提交已完成的 F1–F4 改动。默认窗口套件的 11 项 owner/Z序失败保留为后续暂缓事项，本次不继续修复；随后优先调查新反馈：PPT 翻页后画布卡死。该调查应覆盖翻页事件、页面目标、加载完成及输入准入完整链路，既有 F2 冷槽 IoError 实验不替代这一新现场的归因。新方向仅调查，不默认实施额外行为修复。
+
+
+## 2026-10-17 执行更新
+
+- [ ] PPT target reconciliation 修复及真实共享逻辑无窗口红绿回归。
+- [ ] 原 11 项窗口失败的源码归因、最小修复和编译验证；本轮禁止窗口运行回归。
+- [ ] 画布准入恢复矩阵，修复确认的持久等待缺口并保留数据安全门。
+- [ ] 独立 Trellis 检查，主会话串行完整 Debug|ARM64 solution build 与 --no-window / 明确无窗口 CLI。
+- [ ] 更新本轮实际结果/未覆盖项，不创建新的 commit/push，不归档尚有现场验证的父任务。
+
+
+## 2026-10-17 本轮结果
+
+PPT目标交错、同页暂停回执、PPT存储锁等待及Setting带内排序已实现并独立审查。完整solution、存储目标编译及无窗口回归全部通过，见 research/followup-validation.md。原11项HWND断言未运行，其中3项根排序仍未定位；父任务保持in_progress，不将这几项标成完成。所有GUI/Office/真实输入设备验证延后；本轮未commit/push。
+
+
+## 2026-10-18 收尾授权更新
+
+用户现已开放电脑操控，要求完成剩余任务并收尾。覆盖先前禁止窗口的限制；允许完整HWND测试、隔离产品GUI、真实PowerPoint测试。无新增commit/push授权。窗口测试/GUI串行，由根会话统一操作；沿用现有补丁和证据，不复写用户改动。最终验收以重新构建产物为准。
+
+## 2026-10-18 已完成验证与最后门
+
+- [x] PPT/桌面索引锁真实worker超时、释放后恢复及非空旧墨迹保护；存储目标编译和两组测试退出0。
+- [x] PPT accepted终态预留、worker异常原身份、无分配发布/取出与Host FIFO交接，真实operator new注入和生产CLI通过。
+- [x] 当前无诊断构建完整Headless --no-window与生产PPT retry/topology/retained/control-fence回归通过。
+- [x] 真实产品设置强触发三轮、首次重开点击、普通X、Explorer/选择往返、实际擦除、Clear/Undo；详见research/gui-ppt-validation-20261018.md。
+- [x] 真实PowerPoint普通/快速/持笔翻页、结束页返回、放映重入及Inkeys分页按钮；每步目标/UI回执及新像素验证通过。同页黑屏未触发Host suspend，不替代同页暂停组件证明。
+- [x] 窗口实际band遗漏和可见Setting刷新回归已修复；最终清理后重建12轮专项、默认全套及同最终产物GUI通过，保持严格全树断言。
+- [x] 最终编码/换行、最小diff、独立审查及任务元数据已核对；无commit会话记录见workspace。
+
+
+## 2026-10-18 最终验收
+
+最终solution Debug|ARM64 exit0；同最终Headless12轮窗口专项和默认完整suite全绿；最终产品6项正常CLI exit0、坏参数2；PPT/Desktop真实存储目标测试exit0。最终console-off GUI在周期刷新后实际设置capture正常、隐藏后Up前释放，落笔/idle橡皮/PPT持笔翻页/Explorer/设置首次点击及按住正常退出通过。独立源码复核通过。统一SHA、原始失败及最终证据、设备和资源边界见research/final-validation-20261018.md。上文10-17禁止GUI及未解决根三项为历史，不再是当前状态。本轮工程验收结束；不新增commit/push、不自动归档。

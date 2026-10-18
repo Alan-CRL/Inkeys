@@ -1,8 +1,8 @@
 {
   "id": "canvas-freeze-investigation",
   "name": "canvas-freeze-investigation",
-  "title": "画布卡死调查与F1–F4修复",
-  "description": "保留三轮调查证据，规划并修复F1诊断背压、F2冷槽IoError分类、F3橡皮idle Move唤醒、F4设置隐藏捕获残留；四项独立验收并集成验证，用户原始现场根因仍待确认。",
+  "title": "画布卡死调查、窗口排序与PPT准入恢复",
+  "description": "保留原始F1–F4调查及已提交修复；完成后续11项窗口断言、PPT目标/同页恢复、持久化锁等待及PPT终态交接修复，最终构建、组件及真实GUI验收完成；原用户共同根因未确认。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -26,15 +26,15 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-10-18工程验收已完成；用户随后明确授权提交改动并结束相关任务。原F1–F4提交68cd297d保持；本轮提交后归档，不push、不执行dev合并。",
   "meta": {
-    "investigation_status": "third-window-audit-complete; F4-hidden-settings-capture-validated",
-    "root_cause_status": "reported-user-incidents-unconfirmed; F1-full-gui; F2-F3-components; F4-full-gui-tool-input-only",
-    "behavior_fix": "F1-F4 implemented and targeted acceptance complete; full default HWND suite exit1/11; original user incidents unconfirmed",
+    "investigation_status": "followup-engineering-acceptance-complete-2026-10-18",
+    "root_cause_status": "reported-user-incidents-unconfirmed; final-Win11-ARM64-mouse-PowerPoint-and-window-acceptance-passed; physical-touch-pen-WPS-unverified",
+    "behavior_fix": "F1-F4 committed; followup window/PPT/admission fixes implemented and final acceptance passed",
     "solution_debug_arm64": "passed-with-complete-local-provider",
     "headless_no_window": "passed",
-    "cleanup_status": "all three owned GUI processes exited/cleaned; no owned HWND remains; original Downloads Explorer preserved; final hashes unchanged",
-    "head_gui_status": "console-off-window-sequences-complete; F4-trigger-and-recovery; full-product-touch-baseline-not-established",
+    "cleanup_status": "final Inkeys exit0/1.688s; failed prior GUI exit0/1.547s; own PowerPoint normal Close/Quit; user VS/Explorer preserved",
+    "head_gui_status": "final B495 console-off Setting/capture/eraser/PPT-held-flip/Explorer/normal-exit pass",
     "planning_review": "approved: user explicitly said 批准，并开始修复 after final F1-F4 summary",
     "implementation_started": true,
     "implementation_complete": true,
@@ -53,6 +53,28 @@
       "f4_first_gui_runner": "probe-time-limit at600s, forced=true, not normal-exit proof; second short run exited normally",
       "office_console_quickedit": "not-run"
     },
-    "targeted_acceptance": "implementation, independent review, final builds, production regressions and F1/F4 mouse GUI complete; full default HWND suite still fails; no physical-device or original-incident claim"
+    "targeted_acceptance": "engineering implementation, independent review, final builds, targeted CLI/storage and mouse PowerPoint/Settings GUI complete; original incident/physical devices unconfirmed",
+    "fix_commit": "68cd297da63642d58fd755da20ec4c8bac42bd1a",
+    "window_order_followup": "final exact cleaned Headless 12/12 specialty plus default full exit0; visible Setting after RootRefresh and final product clicks pass",
+    "active_investigation": "PPT target convergence + window owner/topmost + canvas admission recovery",
+    "ppt_turn_finding": "descriptor convergence and same-page ack repaired; final real PowerPoint held flip+return pass; broader A35 matrix recorded by own SHA",
+    "followup_implementation": "window root/band/owner+visible Setting; PPT pending descriptor and same-page revision; bounded PPT/Desktop mutex; accepted PPT terminal ownership+FIFO",
+    "followup_validation_constraint": "superseded on 2026-10-18 by explicit GUI authorization; root serializes GUI and executable runs",
+    "followup_validation": {
+      "solution": "exit0 Debug ARM64 final-20261018-owned-setting",
+      "headless_full": "exit0 82.547s; SHA8f68e6e65ff1",
+      "window_contract": "12/12 exit0 same final SHA; original11 intentions+visible Setting refresh+full tree/capture/native controls",
+      "production_cli": "6 normal exit0 final SHAb49504f99956; completion extra argv expected2 without GUI",
+      "storage_autosave": "PPT and Desktop actual worker suites exit0; operator-new injection, lock timeout/recovery, nonempty file protection",
+      "product_gui": "final SHAb49504f99956 consoleoff pass; capture hide beforeUp; ink/eraser idle; held PPT flip+return; Explorer; Settings first-click/X; held normalexit0/1.688s",
+      "independent_review": "passed; final visibleSetting correction reviewed again; no blockers or assertion weakening",
+      "physical_touch_pen_wps_win7_multimonitor": "not-run",
+      "report": ".trellis/tasks/10-14-canvas-freeze-investigation/research/final-validation-20261018.md"
+    },
+    "final_validation_report": ".trellis/tasks/10-14-canvas-freeze-investigation/research/final-validation-20261018.md",
+    "verification_complete": true,
+    "workflow_checkpoint": "engineering-verified; user-authorized-commit-and-task-archive",
+    "fix_validation_scope": "2026-10-15 original F1-F4 historical results; final 2026-10-18 result is followup_validation",
+    "integration_target": "dev (user plans merge; no merge performed)"
   }
 }

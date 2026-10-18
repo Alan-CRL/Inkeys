@@ -138,12 +138,8 @@ namespace
 			lock_guard lock(pptSessionMutex);
 			if (!currentPptSession.active || currentPptSession.localSession != session
 				|| currentPptSession.serviceGeneration != pptComGeneration.load(std::memory_order_acquire)
-				|| !expectedPptUiTarget || expectedPptUiTarget->targetRevision != revision
-				|| (expectedPptUiTarget->pageKind ==
-					Inkeys::Drawing::Draw3::Bridge::PresentationPageKind::EndScreen
-					? page != -1 || expectedPptUiTarget->pageIndex != expectedPptUiTarget->totalPages
-					: page <= 0 || expectedPptUiTarget->pageIndex != static_cast<std::uint32_t>(page - 1))
-				|| total <= 0 || expectedPptUiTarget->totalPages != static_cast<std::uint32_t>(total)) return;
+				|| !expectedPptUiTarget || !Inkeys::Business::MatchesPptPageUi(
+					*expectedPptUiTarget, session, revision, page, total)) return;
 			ready = Inkeys::Drawing::Draw3::Bridge::ReadyIdentityFor(*expectedPptUiTarget);
 		}
 		(void)Inkeys::Drawing::Draw3::PublishProductPresentationUiReady(*ready);
@@ -515,7 +511,8 @@ void PptInfo()
 	std::uint64_t observedStateRevision = 0;
 	IPptCOMSessionStatePtr sessionApi;
 	std::optional<PptSessionSnapshot> cachedState;
-	std::optional<D3::Bridge::PresentationTarget> cachedTarget;
+	PptTargetCache targetCache;
+	auto& cachedTarget = targetCache.target;
 	int lastRawPage = -2, lastRawTotal = -2;
 	std::int64_t firstObservationQpc = 0, descriptorAcceptanceQpc = 0;
 	std::uint64_t tracedTargetRevision = 0;
@@ -739,17 +736,14 @@ void PptInfo()
 				QueuePptUiBusinessCommand(PptUiBusinessCommand::Focus);
 				descriptorChanged = true;
 			}
-			if ((trustedPage || trustedEndScreen) && session.active &&
-				(descriptorChanged || !cachedTarget))
-			{
-				cachedTarget = trustedEndScreen
-					? D3::ResolveEndScreenTarget(*descriptor)
-					: D3::ResolvePresentationTarget(*descriptor);
-				if (cachedTarget) cachedTarget->sessionRevision = session.localSession;
-				LARGE_INTEGER acceptedAt{};
-				QueryPerformanceCounter(&acceptedAt);
-				descriptorAcceptanceQpc = acceptedAt.QuadPart;
-			}
+		}
+		// 即使本轮不能接受 raw/descriptor，也记住尚未应用的 descriptor。
+		if (targetCache.Update(descriptorChanged || legacyDescriptor.has_value(), descriptor,
+			session.active && trustedPage, session.active && trustedEndScreen, session.localSession))
+		{
+			LARGE_INTEGER acceptedAt{};
+			QueryPerformanceCounter(&acceptedAt);
+			descriptorAcceptanceQpc = acceptedAt.QuadPart;
 		}
 		// COM getter 之后服务槽仍可能换代；旧缓存不能直接进入新的 Host/UI 交接。
 		const bool currentService = serviceGeneration == pptComGeneration.load(std::memory_order_acquire);
@@ -767,7 +761,7 @@ void PptInfo()
 			trustedPage = false;
 			trustedEndScreen = false;
 		}
-		const bool trustedTarget = cachedTarget &&
+		const bool trustedTarget = targetCache.Current() &&
 			((trustedPage && cachedTarget->pageKind == D3::Bridge::PresentationPageKind::Slide) ||
 				(trustedEndScreen && cachedTarget->pageKind ==
 					D3::Bridge::PresentationPageKind::EndScreen));
@@ -879,7 +873,8 @@ void PptInfo()
 					PptInfoStateBuffer = cachedTarget->pageKind ==
 						D3::Bridge::PresentationPageKind::EndScreen
 						? PptInfoStateStruct{ -1, static_cast<int>(cachedTarget->totalPages) }
-						: PptInfoStateStruct{ rawPage, rawTotal };
+						: PptInfoStateStruct{ static_cast<int>(cachedTarget->pageIndex + 1),
+						static_cast<int>(cachedTarget->totalPages) };
 				else targetRevision = 0;
 			}
 		}

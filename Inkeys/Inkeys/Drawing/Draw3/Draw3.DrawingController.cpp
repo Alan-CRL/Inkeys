@@ -4431,11 +4431,26 @@ namespace Inkeys::Drawing::Draw3
 				runtime.lastConsumedSequence = consumed.sequence;
 				std::vector<RuntimeStroke*> active{ &runtime };
 				const uint64_t generation = input.CaptureWakeGeneration();
-				const ULONGLONG beforeDeadline = GetTickCount64();
-				WaitForEraserIdle(input, active, generation, 15, true, [] { return false; });
-				check(GetTickCount64() - beforeDeadline >= 10 &&
-					input.CaptureWakeGeneration() == generation &&
-					input.DiagnosticsSnapshot().activeWaits == 1,
+				// GetTickCount64 的 10–16ms 粒度可能把正确的 15ms 等待量成 0；跨多个 tick 并用 QPC 时钟验收。
+				constexpr double deadlineTimeoutMilliseconds = 64.0;
+				constexpr double deadlineToleranceMilliseconds = 1.0;
+				const ULONGLONG beforeDeadlineTick = GetTickCount64();
+				const auto beforeDeadline = std::chrono::steady_clock::now();
+				WaitForEraserIdle(input, active, generation, deadlineTimeoutMilliseconds, true, [] { return false; });
+				const double elapsedMilliseconds = std::chrono::duration<double, std::milli>(
+					std::chrono::steady_clock::now() - beforeDeadline).count();
+				const uint64_t deadlineGeneration = input.CaptureWakeGeneration();
+				const auto deadlineDiagnostics = input.DiagnosticsSnapshot();
+				const bool deadlineExpired = elapsedMilliseconds >=
+					deadlineTimeoutMilliseconds - deadlineToleranceMilliseconds &&
+					deadlineGeneration == generation && deadlineDiagnostics.activeWaits == 1;
+				if (!deadlineExpired)
+					std::fprintf(stderr, "[Draw3EraserIdleWake] deadline actual: steady_ms=%.3f tick_ms=%llu timeout_ms=%.3f tolerance_ms=%.3f generation=%llu expected_generation=%llu active_waits=%llu expected_active_waits=1\n",
+						elapsedMilliseconds, static_cast<unsigned long long>(GetTickCount64() - beforeDeadlineTick),
+						deadlineTimeoutMilliseconds, deadlineToleranceMilliseconds,
+						static_cast<unsigned long long>(deadlineGeneration), static_cast<unsigned long long>(generation),
+						static_cast<unsigned long long>(deadlineDiagnostics.activeWaits));
+				check(deadlineExpired,
 					"stationary deadline expires without fake input, frame polling or extra wake");
 				WaitForEraserIdle(input, active, generation, 0, false, [] { return true; });
 				check(input.DiagnosticsSnapshot().activeWaits == 1,
