@@ -5,13 +5,21 @@
 #endif
 
 #include "../../../resource.h"
+#include "../../../IdtStart.h"
+#include "Draw3.ShaderCompatibility.h"
+#include "Draw3.Win7GuardedShader.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdio>
 #include <cstdint>
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
+#include <utility>
 #include <windows.h>
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
 #include <wrl/client.h>
 
 module Inkeys.Drawing.Draw3.renderer;
@@ -38,6 +46,46 @@ namespace Inkeys::Drawing::Draw3
 			HGLOBAL memory = ::LoadResource(module, resource);
 			if (!memory) return { nullptr, 0 };
 			return { ::LockResource(memory), static_cast<size_t>(::SizeofResource(module, resource)) };
+		}
+
+		bool ExactDiagnosticEnvironmentEnabled(const wchar_t* name) noexcept
+		{
+			wchar_t value[2] = {};
+			return GetEnvironmentVariableW(name, value, ARRAYSIZE(value)) == 1 && value[0] == L'1';
+		}
+
+		// 仅诊断初始化时计算实际所选字节码的 SHA；不把生成时的预期 hash 冒充当前资源身份。
+		void ReportSelectedPixelShader(const ShaderBlob& blob, bool guarded, HRESULT result) noexcept
+		{
+			char hash[65] = "unavailable";
+			BCRYPT_ALG_HANDLE algorithm = nullptr;
+			BCRYPT_HASH_HANDLE state = nullptr;
+			DWORD objectSize = 0, returned = 0;
+			std::array<UCHAR, 32> digest = {};
+			std::array<UCHAR, 4096> object = {};
+			if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) >= 0)
+			{
+				if (BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&objectSize),
+					sizeof(objectSize), &returned, 0) >= 0 && objectSize > 0 && objectSize <= object.size())
+				{
+					if (BCryptCreateHash(algorithm, &state, object.data(), objectSize, nullptr, 0, 0) >= 0)
+					{
+						if (BCryptHashData(state, static_cast<PUCHAR>(const_cast<void*>(blob.data)),
+							static_cast<ULONG>(blob.size), 0) >= 0 &&
+							BCryptFinishHash(state, digest.data(), static_cast<ULONG>(digest.size()), 0) >= 0)
+							for (size_t index = 0; index < digest.size(); ++index)
+								std::snprintf(hash + index * 2, 3, "%02X", digest[index]);
+						BCryptDestroyHash(state);
+					}
+				}
+				BCryptCloseAlgorithmProvider(algorithm, 0);
+			}
+			char message[256] = {};
+			std::snprintf(message, sizeof(message),
+				"[Draw3ShaderSelection] actual=%s sha256=%s bytes=%zu create_hr=0x%08X\n",
+				guarded ? "guarded" : "original", hash, blob.size, static_cast<unsigned int>(result));
+			std::fputs(message, stdout);
+			OutputDebugStringA(message);
 		}
 
 		void ReportLaserParticleUnavailableOnce() noexcept
@@ -206,6 +254,52 @@ namespace Inkeys::Drawing::Draw3
 	{
 		ClearLaserCoverage(laserCompositedColor);
 		ClearLaserIncrementalCoverage();
+		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
+		laserBakeScratchColor_ = {}; // Laser 生命周期结束后归还按需分配的全尺寸 scratch。
+	}
+
+	bool InkRenderer::BeginLaserBake()
+	{
+		if (!device || !context || !laserCompositedColor.texture ||
+			!laserCompositedColor.rtv) return false;
+		D3D11_TEXTURE2D_DESC committedDescription = {};
+		laserCompositedColor.texture->GetDesc(&committedDescription);
+		if (committedDescription.Width == 0 || committedDescription.Height == 0) return false;
+		if (laserBakeScratchColor_.texture)
+		{
+			D3D11_TEXTURE2D_DESC scratchDescription = {};
+			laserBakeScratchColor_.texture->GetDesc(&scratchDescription);
+			if (scratchDescription.Width != committedDescription.Width ||
+				scratchDescription.Height != committedDescription.Height ||
+				scratchDescription.Format != committedDescription.Format)
+				laserBakeScratchColor_ = {};
+		}
+		if (!laserBakeScratchColor_.texture &&
+			!CreateLaserCoverageResources(committedDescription.Width,
+				committedDescription.Height, laserBakeScratchColor_))
+		{
+			laserBakeScratchColor_ = {};
+			return false;
+		}
+		if (!laserBakeScratchColor_.rtv || !laserBakeScratchColor_.srv) return false;
+		// 先解绑读写槽，再从最后已提交颜色复制；失败重试永远从同一状态起步。
+		UnbindLaserCoverageShaderResources();
+		context->OMSetRenderTargets(0, nullptr, nullptr);
+		context->CopyResource(laserBakeScratchColor_.texture.Get(),
+			laserCompositedColor.texture.Get());
+		return true;
+	}
+
+	ID3D11RenderTargetView* InkRenderer::LaserBakeTarget() const noexcept
+	{
+		return laserBakeScratchColor_.rtv.Get();
+	}
+
+	void InkRenderer::CommitLaserBake() noexcept
+	{
+		UnbindLaserCoverageShaderResources();
+		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
+		std::swap(laserCompositedColor, laserBakeScratchColor_);
 	}
 
 	bool InkRenderer::CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer)
@@ -332,6 +426,7 @@ namespace Inkeys::Drawing::Draw3
 		laserCompositedColor.rtv.Reset();
 		laserCompositedColor.srv.Reset();
 		laserCompositedColor.texture.Reset();
+		laserBakeScratchColor_ = {};
 		laserStrokeCoverage.rtv.Reset();
 		laserStrokeCoverage.srv.Reset();
 		laserStrokeCoverage.texture.Reset();
@@ -369,6 +464,7 @@ namespace Inkeys::Drawing::Draw3
 		laserIncrementalCoverageEnabled_ = false;
 		laserIncrementalCoverageUnavailable_ = false;
 		m_bufferHead = 0;
+		mapNoOverwriteOnDynamicBufferSRV = false;
 		viewportWidth = 0.0f;
 		viewportHeight = 0.0f;
 	}
@@ -415,10 +511,20 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
-	bool InkRenderer::Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height)
+	bool InkRenderer::Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver)
 	{
 		device = inDevice; // 渲染器只借用外部统一创建的 D3D 设备。
 		context = inContext;
+		if (!device || !context)
+		{
+			mapNoOverwriteOnDynamicBufferSRV = false;
+			return false;
+		}
+		D3D11_FEATURE_DATA_D3D11_OPTIONS deviceOptions = {};
+		// Win7 Platform Update/旧驱动可拒绝动态 SRV 的 NO_OVERWRITE；按本次设备查询，失败即回退。
+		mapNoOverwriteOnDynamicBufferSRV = SUCCEEDED(device->CheckFeatureSupport(
+			D3D11_FEATURE_D3D11_OPTIONS, &deviceOptions, sizeof(deviceOptions))) &&
+			deviceOptions.MapNoOverwriteOnDynamicBufferSRV != FALSE;
 		Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
 		Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
 		if (SUCCEEDED(device.As(&dxgiDevice)) && dxgiDevice &&
@@ -434,7 +540,8 @@ namespace Inkeys::Drawing::Draw3
 		constantBufferDescription.ByteWidth = sizeof(LaserStyleConstants);
 		if (FAILED(device->CreateBuffer(&constantBufferDescription, nullptr,
 			laserStyleCB.ReleaseAndGetAddressOf()))) return false;
-		ConfigureLaserStyle(1.0f);
+		ConfigureLaserStyle(1.0f,
+			DirectX::XMFLOAT4(1.0f, 16.0f / 255.0f, 0.0f, 1.0f));
 
 		D3D11_BLEND_DESC blendDescription = {};
 		blendDescription.IndependentBlendEnable = TRUE;
@@ -530,18 +637,30 @@ namespace Inkeys::Drawing::Draw3
 		samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
 		if (FAILED(device->CreateSamplerState(&samplerDescription, operatorSampler.ReleaseAndGetAddressOf()))) return false;
 		CreateTrustedL2SnapshotPipeline(); // 可选 pass 失败时仅禁用动态快照兜底。
-		return LoadShaders();
+		return LoadShaders(driver);
 	}
 
-	bool InkRenderer::LoadShaders()
+	bool InkRenderer::LoadShaders(D3D_DRIVER_TYPE driver)
 	{
 		const ShaderBlob vertexShaderBlob =
 			LoadShaderFromResource(IDR_DRAW3_INK_VERTEX_SHADER);
-		const ShaderBlob pixelShaderBlob =
-			LoadShaderFromResource(IDR_DRAW3_INK_PIXEL_SHADER);
+		const bool diagnostics = ExactDiagnosticEnvironmentEnabled(L"INKEYS_DRAW3_WIN7_DIAGNOSTICS");
+		wchar_t guardedOverride[2] = {};
+		const DWORD overrideLength = GetEnvironmentVariableW(L"INKEYS_DRAW3_WIN7_GUARDED_SHADER",
+			guardedOverride, ARRAYSIZE(guardedOverride));
+		// 复用 RtlGetVersion 的真实版本查询，不依赖正常启动才赋值的全局版本状态。
+		const auto version = GetWindowsVersion();
+		const bool guarded = shader_compatibility::UseGuardedPixelShader(
+			version.majorVersion, version.minorVersion, driver, diagnostics,
+			overrideLength == 1 ? std::wstring_view(guardedOverride, 1) : std::wstring_view{});
+		const ShaderBlob pixelShaderBlob = guarded
+			? ShaderBlob{ Draw3Win7GuardedShader::Bytecode, sizeof(Draw3Win7GuardedShader::Bytecode) }
+			: LoadShaderFromResource(IDR_DRAW3_INK_PIXEL_SHADER);
 		if (!vertexShaderBlob.data || !pixelShaderBlob.data) return false;
 		if (FAILED(device->CreateVertexShader(vertexShaderBlob.data, vertexShaderBlob.size, nullptr, vertexShader.ReleaseAndGetAddressOf()))) return false;
-		if (FAILED(device->CreatePixelShader(pixelShaderBlob.data, pixelShaderBlob.size, nullptr, pixelShader.ReleaseAndGetAddressOf()))) return false;
+		const HRESULT pixelResult = device->CreatePixelShader(pixelShaderBlob.data, pixelShaderBlob.size, nullptr, pixelShader.ReleaseAndGetAddressOf());
+		if (diagnostics) ReportSelectedPixelShader(pixelShaderBlob, guarded, pixelResult);
+		if (FAILED(pixelResult)) return false; // 不静默切回原版，否则会把候选创建失败误记为实测通过。
 		const ShaderBlob updateShaderBlob =
 			LoadShaderFromResource(IDR_DRAW3_LASER_UPDATE_CS);
 		const ShaderBlob emitShaderBlob =

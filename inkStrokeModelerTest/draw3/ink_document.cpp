@@ -190,4 +190,9 @@ namespace draw3
 	{
 		return { pages_.data(), pages_.size() };
 	}
+
+	std::vector<InkPage> InkCanvasCollection::TakePages() noexcept
+	{
+		return std::move(pages_);
+	}
 }

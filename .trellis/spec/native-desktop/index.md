@@ -2,19 +2,23 @@
 
 本层主要覆盖 Inkeys/Inkeys.vcxproj 中的 Windows 桌面程序，并记录仓库内独立 Timeout Solution 的工程边界。证据等级沿用 [../index.md](../index.md)；现状、推断、待确认和历史/兼容路径不能互相替代。
 
-**【直接确认】** 主程序同时编译传统 Draw2/PPT 等 Idt* 业务子系统和 Inkeys/Inkeys 下的 C++20 module。UI3 已是唯一悬浮栏入口；`IdtFloating` 与旧 `IdtWindow` 源码仅以工程 `None` 项暂存，不参与产品编译。
+**【直接确认】** 主程序编译 Idt* 业务协调与 Inkeys/Inkeys 下的 C++20 module；生产画布已由 IdtDrawpadFacade 和唯一 Draw3 Host 接管，旧 Draw2/键盘转译不参与编译。UI3 已是唯一悬浮栏入口；`IdtFloating` 与旧 `IdtWindow` 源码仅以工程 `None` 项暂存，不参与产品编译。
 
 ## 文档索引
 
 - [directory-structure.md](directory-structure.md)：Solution、目录、文件归属与第三方边界。
-- [build-and-compatibility.md](build-and-compatibility.md)：构建入口、配置、依赖和 Windows 兼容约束。
+- [build-and-compatibility.md](build-and-compatibility.md)：构建入口、Harness 发布边界、artifact 交接合同和 Windows 兼容约束。
 - [cpp-conventions.md](cpp-conventions.md)：命名、模块、注释、共享状态和并发习惯。
 - [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工。
+- [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
+- [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。
 - [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
+- [eraser-attributes.md](eraser-attributes.md)：UI3橡皮属性、全局尺寸/灵敏度、五入口事务及Clear回撤/重做合同。
 - [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
+- [startup-preview.md](startup-preview.md)：SuperTop 后启动预览、程序化灰色占位、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
 
 PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../ppt-interop/index.md)。
 
@@ -24,7 +28,7 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 2. 确认项目文件是否需要登记新源码、module、资源、shader 或 manifest。
 3. 对渲染和输入修改，先画清窗口线程、渲染线程与共享状态的所有权。
 4. 对配置修改，先确认字段实际位于 `opt/deploy.json` 的 `SetListStruct` 路径，还是 `Inkeys/Config/main.json` 的 `Inkeys::Config` class / `Inkeys::config` instance；二者当前并存且用途不同。
-5. 构建主程序时遵守仓库根 AGENTS.md 的完整 Solution 与 ARM64 MSBuild 要求。
+5. 构建主程序时遵守仓库根 AGENTS.md 的完整 Solution 与 `Debug | 当前设备原生架构` 要求；跨平台风险按任务额外补充。
 
 ## 实施前决策门（阻塞）
 
@@ -35,12 +39,12 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 ## 已直接确认的边界
 
 - wWinMain 位于 Inkeys/IdtMain.cpp。新增其他入口会改变现有进程模型，属于架构变更，而不是本 Spec 已批准的路线。
-- Draw3 由唯一 Host/RTS 绑定 Window Service 已创建的主 `WindowRole::Drawpad` HWND；同一 Host 可把 `WindowRole::DrawpadPresentation` sibling 作为 selection-only ULW 呈现目标，但辅助窗不绑定输入、document 或第二套 runtime。Draw3 的 D3D11.1 device、swap chain 和 DComp/DWM/ULW presenter 均独立于 `Inkeys.UI.RenderPipeline`，资源 ID 301-304 由 `draw3-integration.md` 统一维护。
-- `Inkeys.UI.RenderPipeline` 在 UI 客户端启动前创建共享 D3D11 WARP、D2D 1.1 factory/device 和 DWrite 对象；UI3 Bar、五个 PPT 控件与 Setting 共享同一 device epoch 和唯一串行渲染线程。
+- Draw3 由唯一 Host/RTS 绑定 Window Service 已创建的主 `WindowRole::Drawpad` HWND；同一 Host 可把 `WindowRole::DrawpadPresentation` 前置表面作为 selection-only ULW 呈现目标，但辅助窗不绑定输入、document 或第二套 runtime。Draw3 的 D3D11.1 device、swap chain 和 presenter 均独立于 `Inkeys.UI.RenderPipeline`；首发目标仅允许 DComp/ULW，两种 DWM 实现禁用。H0 曾未对齐，2026-09-27 工作区已做源码修补，真实 Win7 与运行期故障仍待验证。资源 ID 301-304 由 `draw3-integration.md` 统一维护。
+- `Inkeys.UI.RenderPipeline` 在 UI 客户端启动前创建共享 D3D11 WARP、D2D 1.1 factory/device 和 DWrite 对象；UI3 Bar、`Inkeys.UI.PageControl` 的四个分页客户端、Whiteboard Freeze 与 Setting 共享同一 device epoch 和唯一串行渲染线程。
 - 设置窗口的已编译产品实现是普通 Win32 顶层窗口上的 Dear ImGui + Direct3D 11；它复用 RenderPipeline 的 WARP device/immediate context，并独占 discard swap chain、RTV、图片 SRV 和 ImGui session。
 - RTS 笔/触摸与鼠标回退都构造 TouchMode 记录，并写入 TouchPos、TouchList、TouchTemp 等共享状态。
 - 画布合成、撤销历史和按 PPT 页保存的墨迹彼此有关，不能只验证屏幕上的即时笔迹。
-- 主 Solution 中 Inkeys 依赖 PptCOM；Timeout 属于另一个 Solution，且本次未发现主产品引用。
+- 主 Solution 中 Inkeys 与 PptCOM 无项目依赖或自动复制，DLL/TLB 保持跟踪供本地独立构建；发布 CI 交接同次 artifacts。Timeout 属于另一个 Solution，且本次未发现主产品引用。
 - `InkeysHeadlessTests` 覆盖 Surface、HiMsg、窗口合同和 UI3 算法；受限环境必须用 `--no-window` 跳过会创建 HWND 的窗口测试。
 
 ## 历史/兼容与待确认

@@ -1,0 +1,4 @@
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"审查最小改动、线程边界、注释和格式"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"审查稳定居中根节点所有权、预测 viewport 及 hover 双轴坐标数据流"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"审查构建入口、架构和无窗口验证状态"}
+{"file":".trellis/tasks/08-23-ui3-centered-bar-collapse-animation-root-fix/research/root-cause.md","reason":"逐项核对修复是否截断录像对应的完整根因链"}

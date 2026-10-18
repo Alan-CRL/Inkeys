@@ -17,6 +17,22 @@ export import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys::UI::Bar
 {
+	struct BarSurfacePoint
+	{
+		double x = 0.0;
+		double y = 0.0;
+	};
+
+	[[nodiscard]] constexpr BarSurfacePoint
+		ResolveBarSurfaceScreenPoint(double screenX, double screenY,
+			LONG logicalLeft, LONG logicalTop, LONG presentationOutset) noexcept
+	{
+		return {
+			screenX - static_cast<double>(logicalLeft) + presentationOutset,
+			screenY - static_cast<double>(logicalTop) + presentationOutset,
+		};
+	}
+
 	// Surface 布局只保存 DIP 语义；每个 target 再独立转换为像素。
 	struct BarSurfaceDipRect
 	{

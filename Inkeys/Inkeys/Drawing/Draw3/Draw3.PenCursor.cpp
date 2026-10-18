@@ -165,12 +165,41 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	SpeedEraser::InputSource DrawingCursorSampleMailbox::LoadInputSource() const noexcept
+	{
+		SpeedEraser::InputSource source;
+		source.kind = static_cast<SpeedEraser::SourceKind>(source_kind_.load(std::memory_order_relaxed));
+		source.recognition = static_cast<SpeedEraser::SourceRecognition>(source_recognition_.load(std::memory_order_relaxed));
+		source.contextId = source_contextId_.load(std::memory_order_relaxed);
+		source.cursorId = source_cursorId_.load(std::memory_order_relaxed);
+		source.generation = source_generation_.load(std::memory_order_relaxed);
+		source.mappedMonitor = source_mappedMonitor_.load(std::memory_order_relaxed);
+		source.mappedLeft = source_mappedLeft_.load(std::memory_order_relaxed);
+		source.mappedTop = source_mappedTop_.load(std::memory_order_relaxed);
+		source.mappedWidth = source_mappedWidth_.load(std::memory_order_relaxed);
+		source.mappedHeight = source_mappedHeight_.load(std::memory_order_relaxed);
+		return source;
+	}
+	void DrawingCursorSampleMailbox::StoreInputSource(const SpeedEraser::InputSource& source) noexcept
+	{
+		source_kind_.store(static_cast<uint32_t>(source.kind),std::memory_order_relaxed);
+		source_recognition_.store(static_cast<uint32_t>(source.recognition),std::memory_order_relaxed);
+		source_contextId_.store(source.contextId,std::memory_order_relaxed);
+		source_cursorId_.store(source.cursorId,std::memory_order_relaxed);
+		source_generation_.store(source.generation,std::memory_order_relaxed);
+		source_mappedMonitor_.store(source.mappedMonitor,std::memory_order_relaxed);
+		source_mappedLeft_.store(source.mappedLeft,std::memory_order_relaxed);
+		source_mappedTop_.store(source.mappedTop,std::memory_order_relaxed);
+		source_mappedWidth_.store(source.mappedWidth,std::memory_order_relaxed);
+		source_mappedHeight_.store(source.mappedHeight,std::memory_order_relaxed);
+	}
+
 	bool DrawingCursorSampleMailbox::Publish(DrawingCursorSample sample) noexcept
 	{
 		if (!std::isfinite(sample.x) || !std::isfinite(sample.y)) sample.valid = false;
 		while (writerLatch_.test_and_set(std::memory_order_acquire)) YieldProcessor();
 
-		const bool changed = valid_.load(std::memory_order_relaxed) != (sample.valid ? 1u : 0u) ||
+		const bool changed = LoadInputSource() != sample.source || valid_.load(std::memory_order_relaxed) != (sample.valid ? 1u : 0u) ||
 			inverted_.load(std::memory_order_relaxed) != (sample.inverted ? 1u : 0u) ||
 			inContact_.load(std::memory_order_relaxed) != (sample.inContact ? 1u : 0u) ||
 			!FloatEqual(x_.load(std::memory_order_relaxed), sample.x) ||
@@ -181,6 +210,7 @@ namespace Inkeys::Drawing::Draw3
 		x_.store(sample.x, std::memory_order_relaxed);
 		y_.store(sample.y, std::memory_order_relaxed);
 		qpc_.store(sample.qpc, std::memory_order_relaxed);
+		StoreInputSource(sample.source);
 		valid_.store(sample.valid ? 1u : 0u, std::memory_order_relaxed);
 		inverted_.store(sample.inverted ? 1u : 0u, std::memory_order_relaxed);
 		inContact_.store(sample.inContact ? 1u : 0u, std::memory_order_relaxed);
@@ -208,6 +238,7 @@ namespace Inkeys::Drawing::Draw3
 			candidate.x = x_.load(std::memory_order_relaxed);
 			candidate.y = y_.load(std::memory_order_relaxed);
 			candidate.qpc = qpc_.load(std::memory_order_relaxed);
+			candidate.source = LoadInputSource();
 			candidate.valid = valid_.load(std::memory_order_relaxed) != 0;
 			candidate.inverted = inverted_.load(std::memory_order_relaxed) != 0;
 			candidate.inContact = inContact_.load(std::memory_order_relaxed) != 0;
@@ -364,10 +395,19 @@ namespace Inkeys::Drawing::Draw3
 		case DrawingCursorPointerAuthority::Mouse:
 			return !mouseUsesSystemCursor && mouseSampleValid;
 		case DrawingCursorPointerAuthority::Touch:
-			return false;
+			return true;
 		default:
 			return penSampleValid || (mouseSampleValid && !mouseUsesSystemCursor);
 		}
+	}
+
+	DrawingCursorPointerAuthority ResolveDrawingCursorVisualAuthority(
+		DrawingCursorPointerAuthority persistentOwner, bool touchCursorSuppressed,
+		bool touchPanActive, bool realMouseTakeoverDuringTouchPan) noexcept
+	{
+		if (touchPanActive && realMouseTakeoverDuringTouchPan)
+			return DrawingCursorPointerAuthority::Mouse;
+		return touchCursorSuppressed ? DrawingCursorPointerAuthority::Touch : persistentOwner;
 	}
 
 	DrawingCursorPointerAuthority ResolveDrawingCursorOwnerForPointerEvent(
@@ -408,14 +448,60 @@ namespace Inkeys::Drawing::Draw3
 	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 		bool pointerApiAvailable, bool penSampleValid,
 		bool touchBarrierKnown, uint32_t mouseMessageTick,
-		uint32_t touchBarrierTick) noexcept
+		uint32_t touchBarrierTick,
+		INPUT_MESSAGE_DEVICE_TYPE inputSource) noexcept
 	{
 		if (promotedPointerMessage) return true;
 		// Windows 消息 tick 会回绕；有符号差值 <= 0 表示消息早于或等于 Touch barrier。
 		if (touchBarrierKnown &&
 			static_cast<LONG>(mouseMessageTick - touchBarrierTick) <= 0) return true;
+		// 来源标记可捕获没有 promoted 签名的兼容 Mouse，Win7 缺失时沿用旧判断。
+		if (inputSource == IMDT_TOUCH || inputSource == IMDT_PEN) return true;
+		if (inputSource == IMDT_MOUSE || inputSource == IMDT_TOUCHPAD) return false;
 		// Pointer API 能可靠过滤 Pen 提升消息；剩余 WM_MOUSE* 来自真实鼠标。
 		return !pointerApiAvailable && penSampleValid;
+	}
+
+	bool ShouldIgnoreUnattributedTouchMouseMove(bool touchSuppressed,
+		INPUT_MESSAGE_DEVICE_TYPE inputSource, bool touchPositionKnown,
+		int touchX, int touchY, int mouseX, int mouseY) noexcept
+	{
+		return touchSuppressed && inputSource == IMDT_UNAVAILABLE &&
+			touchPositionKnown && mouseX == touchX && mouseY == touchY;
+	}
+
+	MouseCursorMessageFilterResult FilterMouseCursorMessage(
+		const MouseCursorMessageFilterInput& input) noexcept
+	{
+		MouseCursorMessageFilterResult result;
+		result.sourceRejected = ShouldIgnoreMouseCursorMessage(input.promotedPointerMessage,
+			input.pointerApiAvailable, input.penSampleValid, input.touchBarrierKnown,
+			input.messageTick, input.touchBarrierTick, input.inputSource);
+		if (result.sourceRejected)
+		{
+			const bool stale = input.touchBarrierKnown &&
+				static_cast<LONG>(input.messageTick - input.touchBarrierTick) <= 0;
+			result.rejectionReason = input.promotedPointerMessage ? "promoted-pointer" :
+				stale ? "stale-touch-barrier" : input.inputSource == IMDT_TOUCH ? "source-touch" :
+				input.inputSource == IMDT_PEN ? "source-pen" : "pen-compatibility-filter";
+			return result;
+		}
+		// 系统注入的 Move 不是设备接管证据；按键位及任一触点坐标都不能使它重新发布 Mouse。
+		result.systemRejected = input.message == WM_MOUSEMOVE && input.touchSuppressed &&
+			input.sourceQuerySucceeded && input.inputSource == IMDT_UNAVAILABLE && input.origin == IMO_SYSTEM;
+		if (result.systemRejected)
+		{
+			result.rejectionReason = "system-touch-move";
+			return result;
+		}
+		// API 缺失/失败等仍沿用原位置回退；不能把所有未知来源或应用注入一并归为系统来源。
+		const bool touchPositionMove = input.message == WM_MOUSEMOVE &&
+			ShouldIgnoreUnattributedTouchMouseMove(input.touchSuppressed, input.inputSource,
+				input.touchPositionKnown, input.touchX, input.touchY, input.mouseX, input.mouseY);
+		result.buttonBypass = touchPositionMove && input.buttonDown;
+		result.positionRejected = touchPositionMove && !input.buttonDown;
+		if (result.positionRejected) result.rejectionReason = "unattributed-touch-position";
+		return result;
 	}
 
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,

@@ -2,6 +2,8 @@ module;
 
 #include <windows.h>
 
+#include "../Helper/FailedCleanupDeadline.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -22,13 +24,10 @@ export namespace Inkeys::Window
 		Freeze,
 		DrawpadPresentation,
 		Drawpad,
-		WhiteboardLeft,
-		WhiteboardRight,
 		PptBottomLeft,
 		PptBottomRight,
 		PptMiddleLeft,
 		PptMiddleRight,
-		PptExitShow,
 		Bar,
 		Setting,
 		DisplayObserver,
@@ -71,6 +70,16 @@ export namespace Inkeys::Window
 			false, false };
 	}
 
+	[[nodiscard]] constexpr bool RequiresOverlayActivationStyleTransition(
+		WindowRole role, OverlayActivationMode from,
+		OverlayActivationMode to) noexcept
+	{
+		const auto before = ResolveOverlayActivationStyle(role, from);
+		const auto after = ResolveOverlayActivationStyle(role, to);
+		return before.setExStyle != after.setExStyle
+			|| before.clearExStyle != after.clearExStyle;
+	}
+
 	struct WindowSpec
 	{
 		WindowRole role = WindowRole::Bar;
@@ -108,10 +117,12 @@ export namespace Inkeys::Window
 		Service(Service&&) = delete;
 		Service& operator=(Service&&) = delete;
 
-		[[nodiscard]] bool Start(std::vector<WindowSpec> specs);
+		[[nodiscard]] bool Start(std::vector<WindowSpec> specs,
+			Shutdown::FailedCleanupSignal failedCleanup = {});
 		void StopAndJoin() noexcept;
 		void Stop() noexcept;
 		[[nodiscard]] bool Running() const noexcept;
+		void BeginShutdown() noexcept;
 
 		[[nodiscard]] HWND Handle(WindowRole role) const noexcept;
 		[[nodiscard]] bool Ready(WindowRole role) const noexcept;
@@ -129,10 +140,15 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool Show(WindowRole role);
 		[[nodiscard]] bool Hide(WindowRole role);
 		[[nodiscard]] bool HideAllUserWindows();
+		// 受控退出用：只投递给各 HWND owner，不等待可能已经卡住的 owner 完成。
+		[[nodiscard]] bool RequestHideAllUserWindows();
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
-			DrawpadSurfaceVisibility visibility);
+			DrawpadSurfaceVisibility visibility,
+			std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
 		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
+		// Setting 保持顶层应用窗口，只在自身 owner thread 动态加入或离开 Drawpad owner 链。
+		[[nodiscard]] bool SetSettingOwnedByDrawpad(bool enabled);
 		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。
 		[[nodiscard]] bool SetExtendedStyleFlags(
 			WindowRole role, DWORD setMask, DWORD clearMask);
@@ -143,7 +159,10 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
 		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
 		[[nodiscard]] bool CancelPointerCapture();
-			[[nodiscard]] bool RequestTopmostRefresh();
+			// 启动可指定有限等待预算；普通刷新保留原有同步行为。
+			[[nodiscard]] bool RequestTopmostRefresh(DWORD timeoutMilliseconds = INFINITE);
+			// 成功 refresh 后在内部锁外调用；传空函数可注销并 drain 正在执行的回调。
+			void SetTopmostRefreshObserver(std::function<void()> callback);
 			[[nodiscard]] bool SetOverlayTopmost(bool topmost);
 			[[nodiscard]] bool OverlayTopmost() const noexcept;
 			// 无焦点 overlay 不会被 Explorer 当成普通全屏窗；显式标记后任务栏才会让出。

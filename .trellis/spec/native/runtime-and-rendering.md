@@ -110,7 +110,7 @@ Correct：`64ms DIP 累计路程 -> 非对称确认/释放 + 有界转折保护 
 
 ### 2. Signatures
 
-- `DrawingTool { Pen=0, Highlighter=1, Eraser=2, Laser=3, SolidLine=4, DashedLine=5, OutlineRectangle=6, FilledRectangle=7 }`
+- 当前已集成产品 `Draw3.WindowControl.cppm` 的 `DrawingTool { Pen=0, HardPen=1, Highlighter=2, Eraser=3, Laser=4, SolidLine=5, DashedLine=6, OutlineRectangle=7, FilledRectangle=8 }`。旧独立 demo/早期提交的数值不能用于当前产品；传输和断触身份判断应使用枚举值，不留硬编码整数。
 - `StoredInkType { Pen=0, Highlighter=1, Eraser=2, SolidLine=3, DashedLine=4, OutlineRectangle=5, FilledRectangle=6 }`
 - `ShapePrimitiveKind { SolidLine=16, DashedLine=17, OutlineRectangle=18, FilledRectangle=19 }`
 - `ResolveShapeLiveEndpoint(predictedResults, modeledEndpoint, hasModeledEndpoint, rawEndpoint)`
@@ -119,7 +119,7 @@ Correct：`64ms DIP 累计路程 -> 非对称确认/释放 + 有界转折保护 
 - `RectFromShapePrimitive(primitive, kind, width, height)`
 - `BuildStrokeTileFootprint(stroke, visibleBounds)`
 
-上述枚举都是 append-only 数值协议；不得重排既有值或把 shader `0..15` 复用于 Shape。
+`StoredInkType` 是持久化数值协议，`ShapePrimitiveKind` 是 CPU/HLSL 数值合同；这两者的既有值不得重排，shader `0..15` 不复用于 Shape。`DrawingTool` 是当前运行期工具身份，其具体值以产品模块定义为准；不要把它与 UInk 的 `StoredInkType` 混为同一序列化合同。修改其值时须同步核对 Bridge、Host、Controller、断触续接和测试。
 
 ### 3. Contracts
 
@@ -189,12 +189,12 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 
 ### 3. Contracts
 
-- Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和 Touch；`laserMultiTouchDrawingEnabled` 默认关闭，此时只接受第一根活动 Touch，后续 Touch Down 直接回收且不打断第一根，运行中切换只影响之后开始的 contact。开启后恢复多 Touch；Laser 继续跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
+- Laser 在 Down 时把当前 `ProductVisualStyle`（包括独立的 Laser RGB）锁定到该 contact/layer，支持 Pen、Mouse 和 Touch；Hover 使用最新样式，已 Down 轨迹不得因之后调色而重染。`laserMultiTouchDrawingEnabled` 默认关闭，此时只接受第一根活动 Touch，后续 Touch Down 直接回收且不打断第一根，运行中切换只影响之后开始的 contact。开启后恢复多 Touch；Laser 继续跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
 - 已完成 Laser 使用独立 `R8G8B8A8_UNORM` 预乘颜色层，任何 Laser 几何都不得进入 L2。单 contact 快路中，`t7` `laserStrokeCoverage` 保存按时间保护边界推进的稳定真实前缀，`t9` `laserLiveCoverage` 保存当前真实尾部和 prediction；两者在 shape `13` 逐通道取 `max` 后只调用一次 `ResolveLaserMaterial`。L1/L0 交界保留一个重叠点，稳定前缀只接受已确认 `realPoints`，所以 prediction 回缩不会污染稳定 coverage。
 - `t9` 只由绘制线程在首次观察 `ActiveTool() == Laser` 时按需创建并预热，创建后直到 renderer 释放都保留；资源创建/Resize 失败只记录一次并把当前会话降级为完整重绘。没有选择 Laser 的会话不分配该缓冲。
 - 单个有效 Laser layer 且 coverage 可用时使用增量快路；出现第二个 layer、Cancel/状态异常或资源不可用后，当前批次锁定完整重绘直到最后一次 Bake。完整路径继续逐笔清理 `t7`、按 Down 顺序 source-over，不能把不同 contact 放入同一次 MAX。
 - 多 contact 完整路径只把稳定 delta 与旧/新 live bounds 加入最终 `frameDirty`；每层只清理 `layer.bounds ∩ frameDirty`，scissor 资源可用时在同一 scissor 内仍上传和绘制完整 layer 几何，再按原 Down 顺序 resolve。scissor 创建失败只失去像素裁剪优化，由矩形 quad 保持相同输出范围；draw 结束必须恢复普通 rasterizer state，不能影响粒子、其他工具或 presenter。
-- 96 DPI 默认实体总直径为 5px，白芯直径约 1.67px，红色实体轮廓外每侧固定扩散 5px，因此完整视觉直径为 15px；漫反射 coverage 在实体边界为 1，使用平方曲线向外单调衰减并在 5px 外缘为 0，红粉外缘高光只混合 RGB 而不额外增加 alpha。`LaserDot`、Touch 笔尖和固定宽度轨迹复用同一尺寸契约。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 缩放实体、白芯和内侧散射，外部 5px 漫反射只随 DPI 缩放；无效压力保持上一宽度，prediction 继承最后真实实体半径，Mouse/Touch 固定基准宽度。
+- 96 DPI 默认实体总直径为 5px，白芯直径约 1.67px，实体外壳 RGB 必须等于该 layer 锁定的 Laser 颜色，轮廓外每侧固定扩散 5px，因此完整视觉直径为 15px；漫反射 coverage 在实体边界为 1，使用平方曲线向外单调衰减并在 5px 外缘为 0，外缘高光由同一颜色派生且只混合 RGB，不额外增加 alpha。`LaserDot`、Touch 笔尖和固定宽度轨迹复用同一尺寸/颜色契约。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 缩放实体、白芯和内侧散射，外部 5px 漫反射只随 DPI 缩放；无效压力保持上一宽度，prediction 继承最后真实实体半径，Mouse/Touch 固定基准宽度。
 - 多支 Laser 按 Down 顺序分层，后 Down 的整支轨迹位于上层；较早结束的 contact 保留最终 CPU 几何直到同批最后一支抬起，同一笔自交仍以 coverage 并集避免重复加深。
 - 粒子默认关闭，外部可通过设置接口按需开启；启用后只使用 FL11_0+ 的 D3D11 Compute Shader 固定池：`2048` 个 `80 bytes` 的 `LaserGpuParticle` 槽（总计 `163840 bytes`），以及同一缓冲的 `u0` UAV/VS `t8` SRV。创建 buffer 时不分配 CPU 零数组，必须用 GPU `resetAll` 初始化；失败只降级为无粒子。没有路径点/路径头资源、Append/Consume、间接绘制或 GPU 回读；整笔逐帧重绘和 Resize 都不得重建 GPU 粒子。
 - 出生位置直接取当前 `l0DrawPoints.back()`；切线从 L0 尾部反向查找最后一个非退化段，重复点沿用上一有效切线。真实首次移动前没有方向时不发射，也不累计会在之后补出的 Down 余量。prediction 只影响新粒子的出生位置/切线，不影响密度。
@@ -203,7 +203,7 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 - 每粒只保存屏幕位置、固定速度、年龄/寿命、实际累计/最大行程、出生/当前半径、Alpha、亮度和呼吸状态。实际推进速度与 Alpha 均乘 `1-smoothstep(0,1,age/lifetime)`，运动 `dt <= 1/30s`，年龄使用实际 wall time。前 10% 最大行程保持出生半径，之后按实际累计行程 smoothstep 缩至 20%。
 - 粒子出生后不再读取 L0、真实点、prediction 或 contact 状态。Up/Cancel 只停止新发射；prediction 回缩、急弯和最后 Up 均不得修正存量位置/速度。禁止路径追赶、generation/弧长/segment cursor、端点受阻淡出和 prediction correction。
 - 出生点可在白芯内沿所选法线随机偏移。基础亮度以 72% 尺寸层级和 28% 独立随机样本混合后映射到 `0.42–1.0`，因此大粒子通常更亮、小粒子通常更暗但范围仍重叠。`0.8–1.4Hz` 随机相位呼吸以 `0.12` 振幅在 `0.2s` 渐入且只改变 RGB；核心 Alpha 只使用生命周期曲线。
-- Compute 顺序固定为 `VS t8 unbind -> 一次绑定 CS u0 -> 可选 update -> 按请求原顺序 emit -> 统一 CS unbind`；多 contact request 共享同一个 UAV 绑定周期，但 seed、spawn cursor 和 dispatch 顺序不变。绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。每个 dirty frame 的顺序固定为 `L2 + 普通 L1/L0` 合成、粒子、已烘干 Laser 颜色层、shape `13` 的稳定/live coverage、Laser tip、普通 cursor、Present；粒子因此仍在激光主体下方。VS 令辉光半径为当前核心半径的 `2.0` 倍加 `2 × dpiScale` 地板，并传递出生基础亮度；PS 粒子核心直接复用激光红色外套 `borderColor=(1.0, 11/255, 30/255)`，只乘生命周期/呼吸亮度，不再向白混合。辉光保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 衰减，所有输出继续使用预乘 Alpha。
+- Compute 顺序固定为 `VS t8 unbind -> 一次绑定 CS u0 -> 可选 update -> 按请求原顺序 emit -> 统一 CS unbind`；多 contact request 共享同一个 UAV 绑定周期，但 seed、spawn cursor 和 dispatch 顺序不变。绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。每个 dirty frame 的顺序固定为 `L2 + 普通 L1/L0` 合成、粒子、已烘干 Laser 颜色层、shape `13` 的稳定/live coverage、Laser tip、普通 cursor、Present；粒子因此仍在激光主体下方。VS 令辉光半径为当前核心半径的 `2.0` 倍加 `2 × dpiScale` 地板，并传递出生基础亮度；PS 粒子核心直接复用当前配置的 Laser `borderColor`，只乘生命周期/呼吸亮度，不再向白混合。粒子辉光仍保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 衰减，所有输出继续使用预乘 Alpha。
 - CPU 把同一帧实际发射请求合成一个未裁剪保守包络，按最大减速弹道、白芯出生偏移、最大粒子半径、辉光和 AA 扩展；每个帧批次在最大寿命 1 秒后独立到期。Tracker 保存原始包络，每帧只执行一次 prune/snapshot，idle、timer、simulation、draw 和 dirty 决策共同复用；包络按当前画布逐帧裁剪，Resize 后不得复用旧画布裁剪结果。snapshot 无存活批次、无刚到期批次且无新请求时不得 Dispatch 或 DrawInstanced；批次刚到期仍提交最后一次 update 清理 GPU alive 槽，并用上一帧 bounds 清除一次旧像素，但不再 DrawInstanced。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `1.0s`，固定 `0.8s` smooth fade。当前批次实际安排过粒子时，有效 Hold 为 `max(公开设置值, maximumLifetimeSeconds)`，默认下限即 `1.0s`，但 setter/getter 值不变。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake；关闭后下一帧 reset GPU 状态并 union 旧保守 bounds。
@@ -216,6 +216,7 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 | Down/Up 多 contact | 只有最后一根 Up 启动 Hold；中间 Up 不改变 opacity |
 | 多指开关关闭 | 第一根 Touch 正常绘制；其仍活动时忽略后续 Touch Down，Pen/Mouse 和既有 contact 不受影响 |
 | Hold/Fade 新 Down | 旧稳定颜色层全组恢复满亮并重新计时 |
+| Laser 调色发生在 Hover / 已 Down 期间 | Hover 下一帧使用新 RGB；已 Down 的每个 layer、Touch tip 和留存轨迹保持各自 Down 时锁定的 RGB |
 | 非法 hold seconds | setter 返回 `false`，旧值保持不变且不发布设置 |
 | Laser Up | 清除 prediction；同批最后 Up 才有序烘入稳定颜色层，不 reconnect、不 resolve 到 L2 |
 | 粒子关闭 | 下一帧 reset GPU 粒子池、清空保守脏区并 union 旧 bounds |
@@ -235,7 +236,7 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 
 ### 5. Good / Base / Bad Cases
 
-- Good：白芯与厚红边在深色、混合背景可见，深红粉粒子辉光在白底可辨；新粒子从笔尖两侧法线喷射，急弯和 prediction 回缩不改变旧粒子。
+- Good：白芯与所选颜色的厚外壳在深色、混合背景可见，粒子辉光在白底可辨；新粒子从笔尖两侧法线喷射，急弯和 prediction 回缩不改变旧粒子。
 - Base：默认关闭多指绘图时仅第一根 Touch 生成轨迹和 tip；开启后各活动 Touch 显示独立 tip。GPU 不可用时只有粒子降级，抬笔后已有粒子按自身最长 1 秒寿命继续减速、缩小和淡出。
 - Bad：关闭多指后中断已经开始的 Touch、让被忽略的第二根 Touch 在第一根抬起时中途接管，或让粒子绑定/重采样整条路径、用 prediction 位移提高密度、预测回缩后瞬移已有粒子、同时绑定粒子 UAV 与 VS SRV、用 GPU readback 决定 dirty。
 
@@ -243,7 +244,7 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 
 - 断言按键 4/枚举、最后 Up 计时、1.0s Hold、0.8s fade、运行中设置变化和非法输入。
 - 断言多指配置默认关闭、setter/getter 往返，以及关闭时第二根 Touch Down 被忽略、开启时进入既有多 contact Laser 路径。
-- 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；静态核对漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
+- 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；以非红色样式静态核对实体外壳 RGB 精确等于所选颜色、Hover 立即更新、已 Down layer 不重染，以及漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
 - 增量状态测试必须断言时间保护边界单调推进、L1/L0 共享一个连接点、prediction 回缩不后退稳定游标、自交 dirty union 不丢失、第二 contact 锁定 fallback、稳定 delta 与旧/新 live dirty、Resize/Clear/resource failure 重建，以及 `max(t7,t9)` 与完整 coverage union 的 CPU 等价性；静态核对 t9、shape `13`、矩形 shape 以 `globalColor` 生成 quad、t6-t9 解绑与 scissor 恢复契约。
 - 断言默认关闭；开启后覆盖 Down 零爆发、首次真实移动后静止 6/s、移动每 2.5 DIP 密度、72/s 与全局 96 上限且不积压、双侧法线与 `±25°` 偏转、连续偏小尺寸分布、尺寸/亮度正相关、尺寸/射程弱反向相关、`10–17 DIP/s` 速度、`0.7–1.0s` 寿命和不超过 8.5 DIP 的标称行程、速度/Alpha 曲线单调性、按行程缩至 20%、比例辉光和核心色相层级、亮度呼吸不改 Alpha、出生锚点取 L0 前端、Up/prediction 跳变不改变存量运动、1 秒有效 Hold 下限、帧批次 dirty 到期、单次 snapshot、空闲零命令、批量 request 顺序、80-byte CPU/HLSL layout、GPU reset 初始化和 resize 重裁剪。
 - Debug/Release ARM64 全解决方案构建、VS/PS/两个 CS 均以 SM5.0 编译并嵌入；人工覆盖慢/快画、急弯、长按、路径追加、多接触、Resize、ULW、开关和 Hold/Fade。
@@ -377,6 +378,8 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 
 ## Stroke Modeling Invariants
 
+主产品新增的弧长/笔身直径约束与停笔重平滑见 [Input and Ink：笔锋长度约束](../native-desktop/input-and-ink.md#scenario-draw3-笔锋长度约束与停笔重平滑)。它保留原有笔锋起点和预测保护窗口；独立 demo 不在此次行为调整范围内，不能以其测试代替主产品生产 probe。
+
 - 输入时间使用单调递增的 logical time，来源是 wall-clock delta。
 - 小于 `0.25px` 的原始移动视为抖动。
 - 普通笔 `SimulatedPressure` 使用相邻有效原始点的速度，不使用 modeled/predicted velocity。
@@ -386,9 +389,97 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 - 普通笔 `HardwarePressure` 使用模型插值后的 `[0,1]` pressure 映射基准直径的 `0.2–1.4` 倍；Down 压力缺失时整笔回退 `SimulatedPressure`，后续偶发缺失保持上一真实宽度。
 - 普通笔 L0 实时笔锋：`HardwarePressure` 禁用 tip taper；`SimulatedPressure`/`Fixed` 启用。taper 后仅做空间公切线安全投影（斜率 `0.95`、双向），不再套用稳定笔宽时间限速。
 - L1 保护窗口仍使用配置 `liveTipDuration + predictionDuration`，与 tip 是否绘制解耦。
-- 视觉连续三帧稳定后可冻结停笔更新，移动时解除冻结。
+- 普通 Pen/HardPen 的停笔冻结必须先满足下文的模型收敛合同，再确认视觉连续三帧稳定；其他工具保持既有三帧视觉门槛。`idleFrozen` 只停止继续生成同点模型/几何，不代表停止活动 contact 的 mailbox 轮询或 Present 调度。
 
 依据：`StrokeWidthEstimator::Append`、`UpdateRawPositionAndDetectMovement`、`UpdateIdleFreezeState`、`RebuildPredictedPoints`。
+
+## Scenario: 普通笔停笔模型收敛与冻结
+
+### 1. Scope / Trigger
+
+修改 Pen/HardPen 的 `StrokeModeler` 输入、prediction、L0 笔锋、idle freeze 或活动 contact 帧循环时，必须应用本合同。中心线收敛与模拟笔锋老化是两个独立条件：停笔后位置追上 raw，笔锋随显示时间消退为基础半径；不能把模型末点到位或重复 prediction 当成完整视觉收敛。
+
+### 2. Signatures
+
+- `IsModeledTipSettled(span<Result>, rawEndpoint, frameIntervalSeconds) -> bool`。
+- `ShouldStartEndpointSettling(sampleAgeSeconds, frameIntervalSeconds) -> bool`、`BeginEndpointAdmission`、`AppendEndpointBoundedModeledPoints`。
+- `AppendRecoveryModeledPoints(ActiveStroke&, span<Result>, rawEndpoint, inputSpeed)`：固定 `EndpointAdmissionState::recoveryOrigin`，安全模型后缀解除恢复。
+- `ResolvePenModelInputTime(ActiveStroke&, realTime, lastModelTime, frameIntervalSeconds) -> double`；`ActiveStroke::{logicalInputTime,lastMovementInputTime}` 使用真实显示时间，`modelTimeOffset/modelClockStopped` 仅服务模型时间压缩，`useDisplayTime` 仅对普通笔开启。
+- `UpdateIdleFreezeState(ActiveStroke&, rawMoved, modelSettled, liveTipDurationSeconds)`。
+- `LockPenTerminalState(ActiveStroke&, physicalUpTime, lastRawMove, rawUp)` / `ClearPenTerminalState` / `ResolvePenDisplayTime`；首次物理 Up 保存可选显示时间和 `terminalFirstPoint`，成功续接才解除。
+- `AppendTerminalFallbackPoint(ActiveStroke&, finalPoint)`：模型失败回退同样不得替换物理 Up 边界之前的点，精确同位不追加重复点。
+- `CapturePenTerminalTrace(ActiveStroke&) noexcept`：仅在隐藏诊断开启时采样有界模型/接纳尾段，不修改几何、半径或输入状态；不代表末钩已被修正。
+- 产品隐藏测试通过 `DrawingControllerRuntimeObserver::penDiagnostics` 发布 `PenRuntimeDiagnostics` 到 `HostRuntimeSnapshot::pen`；回调只在 `enableHiddenTestContactInjection` 下安装。
+- 每个 `RuntimeStroke` 独立保存 `modelInputThisFrame` 与 `stationaryModelAdvanceBlocked`；产品 Pen 与 HardPen 应用本合同，测试宿主的 Pen 保持同构。
+
+### 3. Contracts
+
+- `StrokeModeler::Predict` 不改变模型内部状态，不能单独证明 modeled tip 已追到 raw endpoint。活动普通笔在本帧没有 model input、未结束、未 reconnect、未 frozen 且尚未收敛时，必须以最近接受进入模型路径的 `lastModelSnapshot` 位置和最后有效 stylus 状态补送一次同点 `kMove`。
+- 合成输入时间由本帧 QPC 扣除已收敛静止偏移映射到模型时间，并且至少为 `lastModelInputTime + 1us`；转换 modeled point 时传 `inputSpeed=-1`。不得写入 `lastSpeedSnapshot`、滤波速度、真实 snapshot QPC 或压力/角度采样基线。宽度估算器内部时间仍使用模型轴，不能被显示时间覆盖。
+- 单个空帧的 sample age 不超过一个目标帧间隔时仍是 Tracking，保留 Kalman prediction；超过该门槛才进入 settling。stationary/terminal `Update` 复用有界 scratch，并只保留最新内部 `Result` 作为收敛证据，不得累计进正常 `modeledResults`。
+- settling 与 physical Up 对 scratch 使用停止边界：可见中心线到 raw endpoint 的距离单调接近，不越过 endpoint plane `0.05px`。首次触边、越界或不再接近时至多钉住一个精确 raw endpoint；其后的内部回摆继续用于收敛，但不得增长 `realPoints`、L0/L1、shader 输入或 Stored 候选。physical Up 的整批输出也不得只检查最后一点。
+- visual-pinned 后恢复 Move/reconnect 必须固定旧停点作为衔接起点，按新的真实方向过滤残余回摆前缀，再接纳安全模型后缀并解除恢复。不得对每份新 raw 重新钉住 endpoint，不能要求原始整批全通过才恢复 prediction/L1；空帧沿用相同恢复状态，真正反向运动不沿用旧方向。
+- 模拟笔锋只改变显示半径，基础 `realPoints.r` 与压感/真实速度独立。显示时间持续推进，不依赖最后一个几何点的时间；同点模型推进与 kUp 的未来样本不得重置笔锋年龄。停笔恢复基础半径不追加重复点；活动、完成和 Stored 使用相同规则，同位 Up 不重新收尖。
+- 上述持续老化仅适用于仍按住的笔。物理 Up 首次锁定真实事件 QPC 对应显示时间；Mouse/Touch/Pen 完成、候选等待和 Stored 均使用此时间，不用帧/超时/模型时间继续养粗。成功续接解除，重新进入实时显示；prediction 仍不持久化，硬件压感不叠加模拟笔锋。
+- 高速大曲率转弯时运动阶段的建模轨迹可能偏向物理轨迹外侧，Up连接真实终点仍会产生拐动；此问题尚待研究。不得将局部终态cubic重建或“末点到位”的测试视为已解决运动阶段偏差；未经验证不要重新引入尾段曲率/半径补偿。
+- 已完全收敛的长静止区间不进入后续模型积分时间差；真实 QPC 和显示时间不压缩。恢复输入必须有界、单调且遵守 `max_outputs_per_call`，不能靠 Reset、巨量重复样本或改库预算掩盖。
+- modeled tip 只有在末端位置误差不超过 `0.05px`，并且 `|velocity| * targetFrameInterval` 不超过 `0.05px` 时才算收敛；endpoint、frame interval、position、velocity 任一缺失、非有限或非正时间均不得报告收敛。
+- 一旦模型收敛，立即停止 stationary `Update`，但继续重算尚未消退的模拟笔锋。只有可见端点到位、笔锋老化完成，且 L0 position/radius 连续三帧稳定后才冻结。L1 保护可变尾部，不能提前提交仍会改变半径的点。禁止用固定额外延迟代替位置/速度证据。
+- stationary `Update` 明确失败时按 contact 锁存 `stationaryModelAdvanceBlocked`，只记录一次且不追加点、不伪造 settled/frozen；新 Down 必须重置该锁存，下一份成功真实 model input 或成功 reconnect 才解除。空 prediction 不等于模型失败。
+- Highlighter、Eraser、Laser、Shape 不接入 stationary advance，保持原有冻结和工具生命周期。活动 contact 为读取只更新 mailbox 的 Move 仍可按帧轮询；本合同约束的是模型/几何点增长，不承诺停止 Present。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需行为 |
+|---|---|
+| 无新 snapshot，末端仍有位置误差 | 用最后接受进入模型路径的 snapshot 同点推进；不制造速度样本 |
+| 位置暂时接近但单帧 velocity 位移超限 | 不报告 settled，不冻结 |
+| 位置与 velocity 均收敛、笔锋仍缩细 | 停止模型补送，继续显示老化，不增加几何点 |
+| 模型、可见端点、笔锋老化全部收敛 | 三帧 L0 视觉稳定后 frozen |
+| prediction disabled 或为空 | 仍以 modeled Result 判定，不能因 prediction 空而提前冻结 |
+| stationary `Update` 失败 | 单 contact 锁存并只记录一次；等待成功真实输入恢复 |
+| RuntimeStroke 从对象池复用 | 新 Down 清除旧笔的失败锁存和每帧输入状态 |
+| 新真实 Move / stylus 状态变化 | 走真实 Update、解除 idle freeze；成功时解除失败锁存 |
+| 多 contact 一动一停 | 每个 runtime 独立推进、收敛、冻结和恢复 |
+| visual-pinned 后恢复 Move / reconnect | 固定旧停点过滤不安全前缀；安全后缀即可恢复 Tracking，不硬连新的 raw |
+| 长停后同位 Up | 形状/半径与停稳时一致，不重新强制收尖 |
+| 长停后 Move / Up | 压缩已收敛的模型时间，保留真实显示/速度时间，输出仍有界 |
+| 快速 Up 后断触等待/延迟完成 | 锁定同一物理 Up 显示时间，不能继续消锋变粗 |
+| 高速大曲率末端拐动 | 保留有界观测与已有端点安全，当前暂缓修复，不套用局部曲线补偿 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：低速移动后停住，modeler 在 scratch 中追到 raw endpoint；现有尾点逐帧恢复基础粗细后 frozen；同位 Up 无变化，再移动接回平滑曲线而不是逐 raw 硬钉。
+- Base：Highlighter/Eraser/Laser/Shape 继续走原路径；prediction 关闭时普通笔仍可凭 modeled position/velocity 收敛。
+- Bad：只重复 `Predict`、只延长 timeout、只比较两帧 L0、用末点时间冻结细尾，或收敛后仍持续向 shader 输入重复点。
+
+### 6. Tests Required
+
+- 用真实 `StrokeModeler` 证明重复 `Predict` 不推进内部结果，而同点 `kMove` 会在有界帧数和输出点预算内收敛。
+- 覆盖 30/60/120/240 FPS、低/中/高速及 Kalman/StrokeEnd/Disabled 的 endpoint distance/plane 单调性；内部 settled 必须直接在 `<=200ms` 诊断预算内断言，不能以 visual-pinned 时间替代。
+- 必须真正逐帧推进模型/L0/控制器验证十秒及超长 idle 的输出预算；空循环重复断言点数不构成覆盖。断言尾点半径随显示时间恢复基础值，同位 Up/Stored 不重新缩细。
+- 覆盖 1px/8、16、33、80、120ms 的稀疏真实输入与不同渲染率；检查恢复前缀全拒、后续批安全跨越及 prediction/L1 解锁，覆盖同向、直角、反向与整段 terminal 几何。
+- 覆盖真实 Up 时间锁定、晚处理/候选超时/成功续接、三个设备入口、停稳 Up 不重新收尖及原 Move/L1 边界保护；不得用这些测试宣称高速曲率外偏末钩已修复。
+- 执行 `inkStrokeModelerTest.sln Debug|ARM64`、模型回归测试、完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window` 与 Draw3 hidden 集成测试。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：Predict 不推进模型，重复结果稳定不能证明笔尖已追上。
+modeler.Predict(predicted);
+if (AreL0VisualsClose(current, previous)) stroke.idleFrozen = true;
+
+// Wrong：新 raw 反复重建停止门禁，模型落后时就硬连 raw，导致多边形与不解锁。
+BeginEndpointAdmission(stroke, newRaw);
+AppendEndpointBoundedModeledPoints(stroke, scratch, inputSpeed, rawTime);
+
+// Correct（恢复输入分支）：保留旧停点，只丢弃不安全前缀。
+AppendRecoveryModeledPoints(stroke, scratch, newRaw, inputSpeed);
+// 即使没有新增点也推进显示时间；是否继续模型积分由独立收敛条件决定。
+stroke.logicalInputTime = frameRealTime;
+RebuildL0DrawPoints(stroke, liveTipDuration, shape, width, height);
+UpdateIdleFreezeState(stroke, rawMoved, modelSettled, liveTipDuration);
+~~~
 
 ## Scenario: RTS Interrupted Stroke Reconnect
 
@@ -912,6 +1003,8 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 ### 2. Signatures
 
 - `CanvasRuntimeHistory::AppendStroke / LastVisibleItem / UndoLastVisible / LastRedoItem / RedoLastUndone / DiscardRedoBranch / RedoDepth`
+- `CanvasPageRuntimeState { history, rasterState, beforeStates, afterStates, undoFloor, intervalOrdinal, intervalLoadPending, previousClearUndoAvailable, clearRedoAvailable, boundaryFallback, clearRedoContinuation }`
+- `UInkClear { type=6, contentId, undoId, extra? }`
 - `UndoCachePolicy { byteBudget=64 MiB, maxEntries=20 }`
 - `CompositionCachePolicy { byteBudget=192 MiB }`
 - `InkHistoryGpuCache::CapturePreimage / RestorePreimage / RestoreComposition`
@@ -920,12 +1013,15 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 
 ### 3. Contracts
 
-- Stored Stroke 不保存 visibility 或缓存；每个 Page/Device Canvas 使用绘制线程独占的 `CanvasRuntimeHistory` sidecar。成功撤回把隐藏项压入该 Canvas 的 LIFO redo 栈；成功重做恢复 visibility、previous-visible 链、可见 Tile 引用和 composition generation。两者都不删除 append-only Stroke/RenderItem。
-- 新 Stored Stroke 一旦成功追加到 `InkCanvas`，必须在 footprint、RenderItem 和 GPU 提交前调用 `DiscardRedoBranch()`；之后任一步失败也不能复活旧分支。Laser、Cancelled、翻页、Resize 和 viewport 移动不清空 redo。
+- Stored Stroke 不保存 visibility 或缓存；每个 Page/Device Canvas 使用绘制线程独占的 `CanvasRuntimeHistory` sidecar。runtime history 只表示当前 Clear 区间内的 Stroke，成功撤回把隐藏项压入该 Canvas 的 LIFO redo 栈；成功重做恢复 visibility、previous-visible 链、可见 Tile 引用和 composition generation。
+- Clear 不是 RenderItem/GPU operator。有效 Clear 先把当前可见 tail 封存为 UInk Type 6 边界，再执行 `InkCanvas::ClearStrokes + fresh CanvasRuntimeHistory + 全量透明 GPU/瞬态重置`；空内容不创建边界。这样 durable 后 controller 不再保留 Clear 前 Stroke/history。
+- `LastVisibleItem()` 表示当前区间最后一条可见 Stroke。`undoFloor` 只密封普通持久化导入根；Clear Undo 恢复的最近画布以 `undoFloor=0、intervalOrdinal=0` 物化，全部 Stroke 可逐笔 Undo，后续持久化将它写成 canonical 新根并截断更早 Clear。`previousClearUndoAvailable` 独立限制跨 Clear：当前区间到 floor 时最多恢复一次最近画布，成功后消费，恢复画布撤空后不得继续进入更早区间。Eraser Stroke 即使视觉为空仍算内容。
+- 新 Stored Stroke 一旦成功追加到 `InkCanvas`，必须在 footprint、RenderItem 和 GPU 提交前调用 `DiscardRedoBranch()`；之后任一步失败也不能复活旧分支。同时清 `clearRedoAvailable/clearRedoContinuation` 并取消本页旧 interval load；Desktop迟到恢复还须验请求history revision，新增后再撤空也不能复活旧请求。Laser、Cancelled、翻页、Resize 和 viewport 移动不清空 redo。
 - 热前像使用 `128x128 BGRA8` screen-local block。Canvas `128x128` undo tile 只确定受影响屏幕范围；小数 viewport 下一个 Canvas tile 可覆盖 129 个屏幕像素，必须拆成相邻 screen block，不能直接写入单个 slice。默认 `64 MiB / 20 entries` 对应 1024 槽；顺序固定为 `Raster L1 -> Capture unchanged L2 -> Resolve L2 -> Commit ticket`。Capture/restore 要求 page、item、raster state、viewport float 值和窗口尺寸完全一致；viewport 只需有限，不要求整数。Copy 只在绘制线程提交，不 Map/readback/wait。
 - 冷路径使用 32 RenderItem 的叶 Block 和 `256x256` operator tile；每槽为 `BGRA8 Add + R16F Retain = 384 KiB`，默认 `192 MiB = 512 slots`。组合固定为 `Later(Earlier(Below))`；CPU topology/generation 永久保留，GPU 节点只作 LRU 可淘汰缓存。
 - 撤回路径依次为 `hot_preimage -> composition_cache/composition_rebuild -> ordered_tile_replay`。冷撤回只处理被撤项的 composition tiles，候选画面成功后才提交 visibility；失败时恢复原可见范围。缓存预算为 0 或资源失败只能降低性能，不能删除 CPU history。
-- 重做只接受 `rasterState == beforeStates[item.index]`。可信 L2 的正常顺序固定为 `DrawStoredStroke -> CapturePreimage(current L2) -> ApplyOperatorLayers -> RedoLastUndone(expected) -> rasterState=afterStates[index] -> CommitPreimage`；不增加 postimage、GPU 资源、readback 或 wait。热前像不可用只降低下一次 Undo 性能，不改变已成功的 redo。
+- 重做只接受 `rasterState == beforeStates[item.index]`。Stroke 的可信 L2 顺序固定为 `DrawStoredStroke -> CapturePreimage(current L2) -> ApplyOperatorLayers -> RedoLastUndone(expected) -> rasterState=afterStates[index] -> CommitPreimage`。Clear Undo 保存同页有限 `ClearRedoContinuation { InkPage, CanvasPageRuntimeState }` CPU值副本，含隐藏后继Stroke/redo/raster，清嵌套指针避免环，不保存GPU后像。Redo先耗尽旧区间Stroke redo，再重做Clear安装后继空态，随后按原Stroke路径重做到最新；不得把Clear伪装为RenderItem。
+- Desktop恢复点保留源 `pageGuid/loadHistoryRevision`，真实Undo与availability须属当前页；安装要求有效pending、Desktop工作区、同页、atFloor与revision匹配。PPT PreviousInterval要求pending、非零ordinal、目标前一区间与atFloor；失败不消费恢复点，成功候选保目标页当前viewport。PPT新根后RedoClear按current ordinal+1安装后继；所有park淘汰入口拒绝forward或stroke redo，相关拓扑页保完整CPU历史。
 - `viewportVisibleClear == false` 时，重做前只针对候选 composition tiles 按当前隐藏 history 执行 `composition_cache/composition_rebuild/ordered_tile_replay`，得到权威背景后再直接绘制 Stored Stroke。候选完全屏外时只提交 visibility/state，等待后续视口恢复显示。
 - Redo 的 raster/resolve/visibility 任一步失败都取消未提交热前像并保留隐藏项和 redo 候选；若 L2 可能已部分写入，必须按当前隐藏 history 恢复受影响 Tile。回滚失败时把 viewport 标记为不清晰并请求权威刷新。
 - GPU history pass 的 array SRV/RTV 必须各自限制为单 slice；所有公开 composition 操作的全部出口解绑 `t0..t13`、`b2` 和 RTV，并恢复全画布 viewport/raster state。没有 `ID3D11DeviceContext1` 时仍可用 transparent scratch copy 清理 L2 tile。
@@ -943,6 +1039,9 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 | Redo expected 或 raster state 不匹配 | 不改变 visibility/redo 栈；请求权威刷新处理不可信 L2 |
 | Redo raster/resolve/visibility 失败 | 取消未提交热前像，恢复当前隐藏 history；候选仍可重试 |
 | Undo 后成功追加新 Stored Stroke | 立即清空该页 redo；后续 RenderItem/GPU 失败也不恢复旧分支 |
+| 当前区间 Undo 到 `undoFloor` | 有跨 Clear 资格时，Desktop 消费最近恢复点，PPT 最多请求一次 `intervalOrdinal-1`；恢复画布以 floor 0 逐笔撤空 |
+| `A -> Clear -> B -> Clear -> C` | 当前只合成 C；撤空 C 后最多加载 B，B 可继续逐笔撤空，但不得加载 A |
+| 空内容 Clear | no-op，不写 UInk Clear、不替换 runtime、不改变 raster state 或 revision |
 | 翻页、Resize、viewport 移动 | 保留各 Canvas redo 栈；只失效不兼容的显示缓存或热前像 |
 | Cache policy 降低 | 先淘汰最旧热项/LRU 节点；提高预算不恢复已淘汰内容 |
 | Resize | 丢弃不兼容热前像、更新 raster generation；保留 Canvas-local footprint 和 tile 索引，并从 CPU history 恢复当前页 |
@@ -951,15 +1050,16 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 
 ### 5. Good / Base / Bad Cases
 
-- Good：`A/B/C -> Undo C/B -> Redo B/C` 按稳定 ID 恢复顺序；redo 直接局部绘制并重新捕获当前 L2，下一次 Undo 可再次命中热前像。
+- Good：当前区间 Stroke redo 直接局部绘制并重备热前像；到 `undoFloor` 后最多物化最近旧区间并全量 replay，恢复出的 Stroke 可撤空且不再跨 Clear，其他 Page/Slide 不变。
 - Base：composition budget 为 0 时仍可按当前隐藏顺序逐 tile 重放；屏外 redo 只恢复运行时 visibility，空白页切换只清空并呈现透明 L2。
-- Bad：为 redo 保存全尺寸后像、先弹 redo/恢复 visibility 再尝试 GPU 绘制，或 Undo 后新笔成功 Append 仍保留旧 redo 分支。
+- Bad：为 redo 保存全尺寸后像、先弹 redo/恢复 visibility 再尝试 GPU 绘制、把 Clear 当成 runtime RenderItem，或 durable 后仍让全部旧区间常驻 controller 内存。
 
 ### 6. Tests Required
 
 - CPU 测试断言 4K 为 510 个 128 tile、默认 1024/20 热预算、512 composition 槽、FIFO/LRU/pin 和 0 禁用。
 - 覆盖 Pen/Highlighter/Eraser、单点、负坐标、屏外/极端有限坐标、AA padding 和跨 4K 稀疏对角线 footprint；小数正负 viewport 的 screen block 每边不得超过 128，且边缘 partial block 必须落在窗口内。
-- 覆盖稳定 RenderItem 顺序、连续 O(1) 尾撤回、`A/B/C -> Undo C/B -> Redo B/C`、错误 expected 不变、隐藏分支后 append 清空 redo、每页隔离、Tile 引用、32 项 Block、范围分解、visibility identity、旧 tile membership 清理和局部 generation 失效。
+- 覆盖稳定 RenderItem 顺序、连续 O(1) 尾撤回、`A/B/C -> Undo C/B -> Redo B/C`、`undoFloor` 截止、Clear 恢复画布逐笔撤空且第二次跨边界被拒绝、空 Clear、错误 expected 不变、隐藏分支后 append 清空 redo、每页隔离、Tile 引用、32 项 Block、范围分解、visibility identity、旧 tile membership 清理和局部 generation 失效。
+- 真实隐藏Host验证Desktop/PPT `A1/A2→Clear→B1/B2`：Undo B→Undo Clear→Undo A到空停止，Redo A→Clear→B到最新；覆盖新Stroke取消、跨页、canonical durable clean/dirty park重入和空页availability。CPU probe须共用生产late-load predicates，用真实追加/Undo验证旧revision在再回floor后仍拒绝，恢复点保留且新请求可接受。
 - 静态核对首次提交顺序、Redo 的 draw/capture/resolve/visibility/state/commit 顺序、`6`/`VK_NUMPAD6` 自动重复过滤、无 readback/postimage/wait、单 slice SRV、所有 pass 解绑、事务式 cold undo/redo、FIFO Canvas command 和控制台字段。
 - Debug/Release ARM64 完整解决方案 Rebuild并运行两套控制台测试；可见窗口和 D3D Debug Layer 未执行时必须明确标记未验证，不能用静态检查替代。
 
@@ -972,6 +1072,10 @@ Correct：`选择最后可见项 -> 热前像命中则复制；否则只在受�
 Wrong：`Redo -> 先恢复 visible/弹栈 -> 尝试绘制或复用后像；失败后历史和 L2 分叉。`
 
 Correct：`校验 beforeState -> 必要时恢复隐藏态背景 -> 直接绘制并捕获前像 -> resolve 成功后提交 visibility/state -> commit 热前像；失败保持候选隐藏并恢复受影响 Tile。`
+
+Wrong：`AppendClear RenderItem -> 透明 operator 覆盖旧像素 -> 全部 Clear 前 Stroke/history 永久驻留 controller。`
+
+Correct：`封存 UInk Type 6 -> fresh runtime + 全量透明 Present -> durable 后释放 fallback -> 到 floor 时按 page/interval 严格加载。`
 
 ## Highlighter Geometry
 

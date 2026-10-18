@@ -15,6 +15,18 @@
     <ClCompile Include="contact_input_tests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="modeler_baseline_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="modeler_adaptive_tail_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="modeler_tail_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="thin_stroke_gpu_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
 	<ClCompile Include="highlighter_geometry_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
@@ -30,7 +42,16 @@
 	<ClCompile Include="pen_cursor_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
+	<ClCompile Include="uink_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+    <ClCompile Include="desktop_autosave_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
     <ClCompile Include="runtime_benchmark.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="presentation_autosave_tests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp">
@@ -53,6 +74,24 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm">
 	  <Filter>draw3</Filter>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp">
 	  <Filter>draw3</Filter>
 	</ClCompile>
@@ -114,4 +153,5 @@
       <Filter>draw3</Filter>
     </ClCompile>
   </ItemGroup>
+  <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.filters.props" />
 </Project>

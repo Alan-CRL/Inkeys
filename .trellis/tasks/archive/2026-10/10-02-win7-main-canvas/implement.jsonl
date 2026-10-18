@@ -1,0 +1,34 @@
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "区分 Draw3 首帧与 StartupPreview/Bar 覆盖层门控"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Win7 兼容边界与 ARM64 完整 Solution 构建合同"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Win32 窗口、绘制线程、D3D 和透明 presenter 跨层排查"}
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "原生桌面规范索引，指向需按改动点读取的 Draw3 与窗口合同"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/draw3-render-path.md", "reason": "已核对的主画布链路、状态边界和可证伪诊断字段"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "Win7 GPU分界、独立WARP/硬件证据、显式全量ULW对照与限频耗时"}
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "b0/t0字段与PS signature/预乘Add-Retain"}
+{"file": ".trellis/spec/shaders/build-and-encoding.md", "reason": "保持正式shader构建链和8个原CSO，诊断新增资产身份"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/capture-113850-analysis-20261004.md", "reason": "新VM完整日志与用户橡皮触发刷新的可见边界"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/shader-split-113850-20261004.md", "reason": "compiled Cursor执行路径/真实signature及微型PS对照设计"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/one-click-plan-20261005.md", "reason": "单CMD整合采集、完整PS序列/分支分界及所有权/验证范围"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/capture-224620-summary-20261006.md", "reason": "最新18项全部结果及当前WARP在ULW前失去输出，保留硬件另一路径和缺三阶段边界"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/shader-224620-analysis-20261006.md", "reason": "哨兵仍在typeguard内/合法NULL合同及下一compact路由和同原PS资源绑定A-B-A约束"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/check-capture-224620-20261006.md", "reason": "独立现场6hash/18项/正常输入与源/故障边界核验"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/comprehensive-plan-20261006.md", "reason": "全面单CMD矩阵实现边界、硬件/WARP CLI、所有权与验证"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/comprehensive-gpu-implementation-20261006.md", "reason": "2026-10-06 comprehensive candidate evidence"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/comprehensive-collector-implementation-20261006.md", "reason": "2026-10-06 comprehensive candidate evidence"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/verification-comprehensive-20261006.md", "reason": "2026-10-06 comprehensive candidate evidence"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/quality-comprehensive-20261006.md", "reason": "2026-10-06 comprehensive candidate evidence"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/dots-web-crosscheck-20261007.md", "reason": "Public flip evidence and dual-source output/blend controls; no new Win7 capture"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/capture-233715-summary-20261008.md", "reason": "Actual Win7 87-case DefaultInk causal boundary and pending guarded-tail verification"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/capture-233715-shader-review-20261008.md", "reason": "Independent actual DXBC DefaultInk boundary and compiled static candidates"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/guarded-package-plan-20261008.md", "reason": "User authorized effect-preserving original/guarded runtime package"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/guarded-gpu-implementation-20261008.md", "reason": "Complete math-preserving candidate source, DXBC and 105-case contract"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/guarded-collector-implementation-20261008.md", "reason": "105/69/18 actual collector and strict independent guarded result contract"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/check-guarded-20261008.md", "reason": "Independent control flow, actual pixel output and effect preservation review"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/quality-guarded-20261008.md", "reason": "Frozen local quality gate; Win7 optical acceptance remains pending"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/verification-guarded-20261008.md", "reason": "Final candidate ZIP identity, local real probes and Win7 acceptance boundary"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/formal-warp-plan-20261009.md", "reason": "Verified Win7 WARP automatic complete shader fix scope and explicit original A/B contract"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/capture-232746-233615-analysis-20261008.md", "reason": "Actual Aero on/off complete guarded shader acceptance and residual freeze boundary"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/check-aero-guarded-20261008.md", "reason": "Independent real DXBC math preservation and actual driver gate review"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/verification-formal-warp-20261009.md", "reason": "Formal default fix package identity and local verification with real Win7 prior shader acceptance"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/closure-20261010.md", "reason": "Final user-approved scope, identity, real Win7 acceptance, residual boundaries and archival quality gate"}
+{"file": ".trellis/tasks/archive/2026-10/10-02-win7-main-canvas/research/check-capture-233116-234725-20261010.md", "reason": "Independent actual WARP/Hardware and normal startup evidence"}

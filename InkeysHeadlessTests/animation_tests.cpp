@@ -17,27 +17,52 @@
 #include <utility>
 #include <vector>
 
+#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h"
+
 import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.Bar.Metrics;
 
 int RunWakeSignalTests();
 int RunPresentDecisionTests();
 int RunSurfaceTests();
 int RunMessageTests();
 int RunWindowTests();
+int RunWindowCommandCompletionTests();
+int RunWindowExitVisibilityTests();
+int RunMessageBoxTests(bool runWindowTests);
+int RunMessageBoxVisualTests(const char* outputDirectory);
+int RunMessageBoxFirstFrameChildTest();
 int RunDirtyRegionTests();
 int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
+int RunDraw3ContactInputBenchmarks();
+int RunUpdateSecurityTests();
 int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
+int RunStartupProgressTests();
+int RunStartupPreviewStateTests();
+int RunConfigMetadataTests();
+int RunBarPresentationAlphaTests();
+int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
 int RunPptUiTests();
+int RunPptSessionTests();
+int RunPageControlTests();
 int RunWhiteboardUiTests();
+int RunFreezeStateTests();
+int RunMagnifierCoordinatorTests();
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
 int RunDraw3BridgeTests();
 int RunDraw3ContactInputTests();
 int RunDraw3ShapeRecognitionTests();
+int RunSpeedEraserTests();
+int RunPenWidthTests();
+int RunEraserAttributeTests();
+int RunRecallAttributeTests();
+int RunPresentationDescriptorTests();
 
 namespace
 {
@@ -54,6 +79,78 @@ namespace
 	bool Near(double lhs, double rhs, double epsilon = 0.000001)
 	{
 		return std::abs(lhs - rhs) <= epsilon;
+	}
+
+	void TestLocalizedFormatFallbacks()
+	{
+		using Inkeys::UI::Bar::Detail::FormatFrameRateText;
+		using Inkeys::UI::Bar::Detail::FormatThicknessText;
+
+		Check(FormatThicknessText(L"Size {}", 42) == L"Size 42",
+			"localized thickness format");
+		Check(FormatThicknessText(L"Size {", 42) == L"42",
+			"localized thickness malformed fallback");
+		using Inkeys::UI::Bar::Detail::FormatWidthDipNumber;
+		using Inkeys::UI::Bar::Detail::FormatWidthDipText;
+		using Inkeys::UI::Bar::Detail::StepFineDialDip;
+		Check(FormatWidthDipText(L"Size {}", 3.0) == L"Size 3",
+			"exact integer width label without unit");
+		Check(FormatWidthDipNumber(1.9393939393939394) == L"2",
+			"fractional classroom width label rounds for display");
+		Check(FormatWidthDipNumber(4.5) == L"5"
+			&& FormatWidthDipNumber(4.49) == L"4",
+			"width display rounds positive half upward");
+		Check(FormatWidthDipNumber(65535.999) == L"65536",
+			"large fractional width label rounds safely");
+		Check(FormatWidthDipNumber(0.36) == L"1",
+			"sub-one width label never displays zero");
+		Check(FormatWidthDipNumber(std::numeric_limits<double>::quiet_NaN()) == L"1"
+			&& FormatWidthDipNumber(std::numeric_limits<double>::infinity()) == L"1"
+			&& FormatWidthDipNumber(-1.0) == L"1",
+			"invalid width label uses safe display fallback");
+		Check(FormatWidthDipText(L"broken {", 1.9393939393939394) == L"2",
+			"malformed width translation retains integer without unit");
+		const double fineOrigin = 1.9393939393939394;
+		Check(Near(StepFineDialDip(fineOrigin, fineOrigin, 0.1, 30.0), fineOrigin),
+			"FineDial entering fractional value preserves origin");
+		Check(Near(StepFineDialDip(fineOrigin, fineOrigin + 0.5, 0.1, 30.0), fineOrigin + 1.0)
+			&& Near(StepFineDialDip(fineOrigin, fineOrigin - 0.5, 0.1, 30.0), fineOrigin - 1.0),
+			"FineDial half-step directions preserve origin fraction");
+		Check(FormatFrameRateText(L"{:.1f}/{:.1f}", 60.0, 120.0,
+			L"Unavailable") == L"60.0/120.0",
+			"localized frame rate format");
+		Check(FormatFrameRateText(L"{:.1f}/{:.1f", 60.0, 120.0,
+			L"Unavailable") == L"Unavailable",
+			"localized frame rate malformed fallback");
+	}
+
+	void TestSharedBarButtonRuntime()
+	{
+		using namespace Inkeys::UI::Bar;
+		const auto oneOne = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardOneOne);
+		const auto twoOne = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardTwoOne);
+		const auto twoTwo = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardTwoTwo);
+		Check(Near(oneOne.buttonWidthDip, BarButtonOneSideDip)
+			&& Near(oneOne.buttonHeightDip, BarButtonOneSideDip)
+			&& Near(oneOne.iconSizeDip, 20.0)
+			&& Near(oneOne.iconOffsetXDip, 0.0)
+			&& Near(oneOne.iconOffsetYDip, 0.0),
+			"shared oneOne metrics match Main Bar");
+		Check(Near(twoOne.buttonWidthDip, BarButtonTwoSideDip)
+			&& Near(twoOne.buttonHeightDip, BarButtonOneSideDip)
+			&& Near(twoOne.iconSizeDip, 18.0)
+			&& Near(twoOne.iconOffsetXDip, -21.0)
+			&& Near(twoOne.primaryOffsetXDip, 11.5),
+			"shared twoOne metrics match Main Bar");
+		Check(Near(twoTwo.buttonWidthDip, BarButtonTwoSideDip)
+			&& Near(twoTwo.buttonHeightDip, BarButtonTwoSideDip)
+			&& Near(twoTwo.iconSizeDip, BarButtonTwoTwoIconSizeDip)
+			&& Near(twoTwo.iconOffsetYDip, BarButtonTwoTwoIconOffsetYDip)
+			&& Near(twoTwo.primaryOffsetYDip, BarButtonTwoTwoLabelOffsetYDip),
+			"shared twoTwo metrics match Main Bar");
 	}
 
 	void TestBarThicknessVisualTransitions()
@@ -263,13 +360,13 @@ namespace
 			"old and new pen extension visuals cross fade together");
 		Check(ResolveBarAnnotationPopupTitle(
 			BarThicknessPreviewVisualKind::SoftPen)
-				== L"标注线（粗细固定，暂未支持）"
+				== BarAnnotationPopupTitleKind::FixedThicknessUnsupported
 			&& ResolveBarAnnotationPopupTitle(
 				BarThicknessPreviewVisualKind::HardPen)
-				== L"启用标注线（暂不可用）"
+				== BarAnnotationPopupTitleKind::Unavailable
 			&& ResolveBarAnnotationPopupTitle(
 				BarThicknessPreviewVisualKind::Highlighter)
-				== L"启用标注线（暂不可用）",
+				== BarAnnotationPopupTitleKind::Unavailable,
 			"annotation popup title follows its latched pen anchor");
 
 		auto phase = BarLaserPreviewPhase::NonLaserStable;
@@ -660,10 +757,114 @@ namespace
 		auto immediate = immediateContentTransition.Advance(0.01, 1.0);
 		Check(immediate.reachedKeyframe && immediate.finished,
 			"zero-duration content transition applies immediately");
+		BarUiKeyframeTimelineClass disabledContentTransition;
+		disabledContentTransition.Start(1.0, 0.5);
+		const auto idleContent = disabledContentTransition.Advance(0.0, 1.0e12);
+		Check(!idleContent.finished && disabledContentTransition.IsActive(),
+			"zero-time idle frame preserves enabled content transition");
+		const bool previousAnimationEnabled = BarUiAnimationEnabled;
+		BarUiAnimationEnabled = false;
+		const auto disabledContent = disabledContentTransition.Advance(0.0, 1.0e12);
+		BarUiAnimationEnabled = previousAnimationEnabled;
+		Check(disabledContent.reachedKeyframe && disabledContent.finished
+			&& Near(disabledContent.progress, 1.0)
+			&& !disabledContentTransition.IsActive(),
+			"disabled content transition commits its keyframe on the idle wake");
+	}
+
+	void TestCenteredHiddenButtonRejoinsLayoutBatch()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (bool opensRight : { true, false })
+			for (double zoom : { 1.0, 1.5 })
+				for (double initialWidth : { 400.0, 560.0 })
+				{
+					BarUiValueClass hiddenX(190.0);
+					hiddenX.SetTar(115.0, 0.4);
+					BarUiAdvanceAnimation(hiddenX, { 0.1, 1.0, true, false });
+					const double childStart = hiddenX.val;
+					const double finalWidth = initialWidth - (childStart - 115.0) * 2.0;
+					const double side = opensRight ? 1.0 : -1.0;
+					BarUiValueClass barWidth(initialWidth);
+					BarUiValueClass barX(side * (50.0 + initialWidth / 2.0));
+					const auto startRoot = ResolveBarBottomDockCenteredRootPlacement(
+						960.0, 81.0, barX.val, barWidth.val + 1.0);
+					const double startScreen = (startRoot.mainCenterDip + barX.val
+						- barWidth.val / 2.0 + childStart) * zoom;
+					const BarUiCurveSpecClass curve{
+						BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
+					barWidth.SetTar(finalWidth, 0.4, std::nullopt, false, curve);
+					barX.SetTar(side * (50.0 + finalWidth / 2.0), 0.4, std::nullopt, false, curve);
+					// 来源锚点仍是 115；旧 SetTar 的同目标早退会留下另一条局部时间线。
+					Check(BarUiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, true, curve),
+						"new layout batch rejoins a hidden child already travelling to the same anchor");
+					for (int frame = 0; frame < 30; ++frame)
+					{
+						Check(!BarUiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, false, curve),
+							"ordinary centered frames do not restart hidden-child animation");
+						BarUiAdvanceAnimation(hiddenX, { 1.0 / 60.0, 1.0, true, false });
+						BarUiAdvanceAnimation(barX, { 1.0 / 60.0, 1.0, true, false });
+						BarUiAdvanceAnimation(barWidth, { 1.0 / 60.0, 1.0, true, false });
+						const auto root = ResolveBarBottomDockCenteredRootPlacement(
+							960.0, 81.0, barX.val, barWidth.val + 1.0);
+						const double screen = (root.mainCenterDip + barX.val
+							- barWidth.val / 2.0 + hiddenX.val) * zoom;
+						Check(Near(screen, startScreen),
+							"cancelling child and centered-root displacements never produce a horizontal bob");
+						Check(Near((root.bodyLeftDip + root.bodyRightDip) / 2.0, 960.0),
+							"hidden child retarget keeps the visible union exactly centered");
+					}
+				}
+	}
+
+	void TestColorSwatchThicknessFollowsPanelScale()
+	{
+		// 使用真实动画模块验证单一最终目标；RenderLoop 的目标来源另做静态审查。
+		constexpr double expandedWidth = 370.0;
+		constexpr double compactWidth = 60.0;
+		constexpr std::array<double, 6> unevenSteps{ 0.008, 0.029, 0.05, 0.011, 0.022, 0.017 };
+		for (bool initiallyOpen : { true, false })
+			for (bool reverseMidway : { false, true })
+				for (bool uneven : { false, true })
+				{
+					BarUiValueClass panelWidth(initiallyOpen ? expandedWidth : compactWidth);
+					BarUiValueClass thickness(panelWidth.val / expandedWidth);
+					BarUiTimelineClass timeline;
+					timeline.Restart(0.4);
+					bool opening = !initiallyOpen;
+					for (int frame = 0; frame < 90; ++frame)
+					{
+						if (reverseMidway && frame == 8)
+						{
+							opening = !opening;
+							timeline.Restart(0.4);
+						}
+						const double targetWidth = opening ? expandedWidth : compactWidth;
+						const auto curve = opening
+							? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
+						const double phase = timeline.GetProgress();
+						const BarUiCurveSpecClass curveSpec{ curve, curve, phase, phase > 0.0 };
+						const double remaining = timeline.GetRemainingDuration();
+						// 同目标重复提交不重启，改变目标时从当前比例续接同一批次。
+						panelWidth.SetTar(targetWidth, remaining, std::nullopt, false, curveSpec);
+						thickness.SetTar(targetWidth / expandedWidth,
+							remaining, std::nullopt, false, curveSpec);
+						const double dt = uneven ? unevenSteps[frame % unevenSteps.size()] : 1.0 / 60.0;
+						const BarUiAnimationAdvanceContextClass context{ dt, 1.0, true, false };
+						if (!panelWidth.IsSame()) BarUiAdvanceAnimation(panelWidth, context);
+						if (!thickness.IsSame()) BarUiAdvanceAnimation(thickness, context);
+						timeline.Advance(dt, 1.0);
+						Check(Near(thickness.val / (panelWidth.val / expandedWidth), 1.0),
+							"single swatch thickness target preserves panel scale through back easing and reversal");
+					}
+					Check(panelWidth.IsSame() && thickness.IsSame() && !timeline.IsActive(),
+						"swatch and panel settle together without sustaining hidden animation");
+				}
 	}
 
 	void TestTargetsAndAdvancement()
 	{
+		TestCenteredHiddenButtonRejoinsLayoutBatch();
 		BarUiValueClass value(0.0);
 		Check(value.SetTar(10.0, 1.0), "new value target starts animation");
 		Check(!value.SetTar(10.0, 1.0), "same value target is a no-op");
@@ -675,6 +876,55 @@ namespace
 		Check(Near(value.startV, interruptedAt), "interruption captures current visual value");
 		Check(value.SetTar(20.0, 1.0, std::nullopt, true),
 			"force restart accepts the same target");
+
+		// 模拟 Draw 到 Selection：主栏自身只推进 x/w，根节点每帧由联合边界反推。
+		BarUiValueClass centeredCollapseX(250.0);
+		BarUiValueClass centeredCollapseWidth(400.0);
+		const BarUiCurveSpecClass centeredCollapseCurve{
+			BarUiCurveEnum::EaseOutCubic,
+			BarUiCurveEnum::EaseOutCubic,
+			0.0,
+			false,
+		};
+		bool collapseWidthMonotonic = true;
+		bool centeredBodyInvariant = true;
+		double previousCollapseWidth = centeredCollapseWidth.val;
+		double previousRootCenter = 0.0;
+		bool rootMovedWithCollapse = false;
+		centeredCollapseX.SetTar(
+			150.0, 0.4, std::nullopt, false, centeredCollapseCurve);
+		centeredCollapseWidth.SetTar(
+			200.0, 0.4, std::nullopt, false, centeredCollapseCurve);
+		for (int frame = 0; frame < 30; ++frame)
+		{
+			BarUiAdvanceAnimation(centeredCollapseX,
+				BarUiAnimationAdvanceContextClass{
+					1.0 / 60.0, 1.0, true, false });
+			BarUiAdvanceAnimation(centeredCollapseWidth,
+				BarUiAnimationAdvanceContextClass{
+					1.0 / 60.0, 1.0, true, false });
+			const auto placement =
+				Inkeys::UI::Bar::ResolveBarBottomDockCenteredRootPlacement(
+					960.0, 80.0, centeredCollapseX.val,
+					centeredCollapseWidth.val);
+			collapseWidthMonotonic &= centeredCollapseWidth.val
+				<= previousCollapseWidth + 0.000001;
+			centeredBodyInvariant &= placement.valid
+				&& Near((placement.bodyLeftDip + placement.bodyRightDip)
+					/ 2.0, 960.0);
+			if (frame > 0)
+				rootMovedWithCollapse |= placement.mainCenterDip
+					> previousRootCenter + 0.000001;
+			previousCollapseWidth = centeredCollapseWidth.val;
+			previousRootCenter = placement.mainCenterDip;
+		}
+		Check(collapseWidthMonotonic && centeredBodyInvariant
+			&& rootMovedWithCollapse && centeredCollapseX.IsSame()
+			&& centeredCollapseWidth.IsSame()
+			&& Near(centeredCollapseX.val, 150.0)
+			&& Near(centeredCollapseWidth.val, 200.0)
+			&& Near(previousRootCenter, 855.0),
+			"centered Draw to Selection collapse keeps every presented union centered");
 
 		BarUiValueClass middle(0.0);
 		middle.SetTar(1.0, 1.0, 0.8);
@@ -693,6 +943,53 @@ namespace
 			quantized, BarUiAnimationAdvanceContextClass{ 0.0001, 1.0, true, false });
 		Check(!quantizedFrame.changed && quantizedFrame.active,
 			"quantized color remains scheduled when the pixel value is unchanged");
+
+		// 休眠后的首帧 dt 为零，数值、颜色和透明度都不能瞬间落到目标。
+		BarUiValueClass idleValue(0.0);
+		idleValue.SetTar(10.0, 1.0);
+		auto idleValueFrame = BarUiAdvanceAnimation(idleValue,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idleValueFrame.changed && idleValueFrame.active
+			&& Near(idleValue.val, 0.0) && Near(idleValue.progress, 0.0),
+			"zero-time wake preserves the pending value animation");
+		BarUiColorClass idleColor(RGB(0, 0, 0));
+		idleColor.SetTar(RGB(255, 255, 255), 1.0);
+		auto idleColorFrame = BarUiAdvanceAnimation(idleColor,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idleColorFrame.changed && idleColorFrame.active
+			&& idleColor.val == RGB(0, 0, 0) && Near(idleColor.progress, 0.0),
+			"zero-time wake preserves the pending color animation");
+		BarUiPctClass idlePct(0.0);
+		idlePct.SetTar(1.0, 1.0);
+		auto idlePctFrame = BarUiAdvanceAnimation(idlePct,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idlePctFrame.changed && idlePctFrame.active
+			&& Near(idlePct.val, 0.0) && Near(idlePct.progress, 0.0),
+			"zero-time wake preserves the pending opacity animation");
+		BarUiAdvanceAnimation(idleValue,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		BarUiAdvanceAnimation(idleColor,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		BarUiAdvanceAnimation(idlePct,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		Check(Near(idleValue.val, 5.0) && idleColor.val == RGB(128, 128, 128)
+			&& Near(idlePct.val, 0.7071067811865476),
+			"animations resume their original trajectory after the zero-time wake");
+		BarUiValueClass disabledIdleValue(0.0);
+		disabledIdleValue.SetTar(10.0, 1.0);
+		BarUiColorClass disabledIdleColor(RGB(0, 0, 0));
+		disabledIdleColor.SetTar(RGB(255, 255, 255), 1.0);
+		BarUiPctClass disabledIdlePct(0.0);
+		disabledIdlePct.SetTar(1.0, 1.0);
+		const BarUiAnimationAdvanceContextClass disabledIdleContext{ 0.0,
+			1.0e12, false, false };
+		Check(!BarUiAdvanceAnimation(disabledIdleValue, disabledIdleContext).active
+			&& !BarUiAdvanceAnimation(disabledIdleColor, disabledIdleContext).active
+			&& !BarUiAdvanceAnimation(disabledIdlePct, disabledIdleContext).active
+			&& Near(disabledIdleValue.val, 10.0)
+			&& disabledIdleColor.val == RGB(255, 255, 255)
+			&& Near(disabledIdlePct.val, 1.0),
+			"animation-disabled targets replace immediately even on an idle wake");
 
 		BarUiColorClass disabledHover(RGB(0, 0, 0));
 		disabledHover.animateWhenDisabled = true;
@@ -856,6 +1153,37 @@ namespace
 				return timeline.IsCurrentGeneration(startGeneration);
 			});
 		Check(!oldGenerationCurrent, "cancel rejects the prior generation");
+
+		BarUiKeyframeTimelineClass immediateTimeline;
+		immediateTimeline.Start(1.0, 0.5);
+		std::wstring currentImmediate = L"old";
+		std::wstring targetImmediate = L"old";
+		std::wstring pendingImmediate = L"stale";
+		double immediateScale = 0.8;
+		double immediateOpacity = 0.4;
+		const bool immediateChanged = ApplyBarImmediateContentUpdate(
+			immediateTimeline,
+			[&]
+			{
+				return currentImmediate != L"fresh"
+					|| targetImmediate != L"fresh";
+			},
+			[&]
+			{
+				currentImmediate = targetImmediate = pendingImmediate = L"fresh";
+				immediateScale = 1.0;
+				immediateOpacity = 1.0;
+			});
+		const auto cancelledAdvance = immediateTimeline.Advance(1.0, 1.0);
+		Check(immediateChanged && !immediateTimeline.IsActive()
+			&& !cancelledAdvance.reachedKeyframe
+			&& currentImmediate == L"fresh" && targetImmediate == L"fresh"
+			&& pendingImmediate == L"fresh" && Near(immediateScale, 1.0)
+			&& Near(immediateOpacity, 1.0),
+			"immediate content cancels stale keyframe without a late rewrite");
+		Check(ShouldKeepBarContentVisibleForExit(true, true, true, true)
+			&& !ShouldKeepBarContentVisibleForExit(false, true, true, true),
+			"only animated empty content remains visible for its exit transition");
 
 		std::wstring requestedTarget = L"old";
 		uint64_t requestedGeneration = 0;
@@ -1300,17 +1628,40 @@ namespace
 int main(int argc, char** argv)
 {
 	bool benchmark = false;
+	bool penWidthOnly = false;
+	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
+	bool exitVisibilityGateOnly = false;
+	bool messageBoxFirstFrameChild = false;
+	const char* messageBoxVisualOutput = nullptr;
 	for (int index = 1; index < argc; ++index)
 	{
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
+		penWidthOnly |= argument == "--pen-width-only";
+		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
+		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
 		runWindowTests &= argument != "--no-window";
+		exitVisibilityGateOnly |= argument == "--exit-visibility-gate-test";
+		if (argument == "--message-box-visual-test" && index + 1 < argc)
+			messageBoxVisualOutput = argv[++index];
 	}
+	if (penWidthOnly) return RunPenWidthTests();
+	if (messageBoxFirstFrameChild)
+		return RunMessageBoxFirstFrameChildTest();
+	if (messageBoxVisualOutput)
+		return RunMessageBoxVisualTests(messageBoxVisualOutput);
+	if (draw3ContactBenchmark)
+		return RunDraw3ContactInputBenchmarks();
+	if (exitVisibilityGateOnly)
+		return RunWindowExitVisibilityTests();
 
 	TestCurvesAndTimelines();
+	TestLocalizedFormatFallbacks();
+	TestSharedBarButtonRuntime();
 	TestBarThicknessVisualTransitions();
+	TestColorSwatchThicknessFollowsPanelScale();
 	TestTargetsAndAdvancement();
 	TestKeyframeTimelineTransactions();
 	TestConcurrentAnimationPublication();
@@ -1318,21 +1669,38 @@ int main(int argc, char** argv)
 	failureCount += RunPresentDecisionTests();
 	failureCount += RunSurfaceTests();
 	failureCount += RunMessageTests();
+	failureCount += RunMessageBoxTests(runWindowTests);
+	failureCount += RunWindowCommandCompletionTests();
 	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
 	failureCount += RunWindowGeometryTests();
 	failureCount += RunFramePacingTests(benchmark);
 	failureCount += RunToggleClickCoalescerTests();
 	failureCount += RunRenderSchedulerTests();
+	failureCount += RunStartupProgressTests();
+	failureCount += RunStartupPreviewStateTests();
+	failureCount += RunConfigMetadataTests();
+	failureCount += RunBarPresentationAlphaTests();
+	failureCount += RunUi3HarnessDisabledTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
+	failureCount += RunPptSessionTests();
+	failureCount += RunPageControlTests();
 	failureCount += RunWhiteboardUiTests();
+	failureCount += RunFreezeStateTests();
+	failureCount += RunMagnifierCoordinatorTests();
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
 	failureCount += RunBarBottomDockTests();
 	failureCount += RunDraw3BridgeTests();
 	failureCount += RunDraw3ContactInputTests();
 	failureCount += RunDraw3ShapeRecognitionTests();
+	failureCount += RunUpdateSecurityTests();
+	failureCount += RunSpeedEraserTests();
+	failureCount += RunPenWidthTests();
+	failureCount += RunEraserAttributeTests();
+	failureCount += RunRecallAttributeTests();
+	failureCount += RunPresentationDescriptorTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

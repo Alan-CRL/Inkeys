@@ -1,6 +1,7 @@
 module;
 
 #include "../../../IdtMain.h"
+#include "../../../IdtState.h"
 
 #include <string>
 #include <unordered_map>
@@ -35,9 +36,11 @@ enum class BarButtonPresetEnum : int
 
 	Whiteboard,
 	Freeze,
+	EndShow,
 
 	More,
-	Setting
+	Setting,
+	Pierce
 };
 
 class BarButtonStateClass
@@ -74,11 +77,14 @@ public:
 	// 拷贝构造函数，深拷贝所有数据成员，mutex新建
 	BarButtonClass(const BarButtonClass& other)
 		: size(other.size),
+		baseSize(other.baseSize),
+		baseUserVisible(other.baseUserVisible),
 		preset(other.preset),
 		id(other.id),
 		userVisible(other.userVisible),
 		hide(other.hide),
 		only(other.only),
+		compactMultilineLabel(other.compactMultilineLabel),
 		button(other.button),
 		hoverStage(other.hoverStage),
 		pressScale(other.pressScale),
@@ -96,10 +102,20 @@ public:
 	{
 		return userVisible.load() && !hide.load();
 	}
+	// 新增英文长标签使用两行，局部缩小字号，不改变现有按钮网格。
+	double LabelFontSize(double standardFontSize) const
+	{
+		return (preset == BarButtonPresetEnum::Select || preset == BarButtonPresetEnum::Pierce)
+			&& (compactMultilineLabel || name.content.GetVal().find(L'\n') != wstring::npos)
+			? 9.0 : standardFontSize;
+	}
 	// 图标和文字只在内容实际变化时启动同一套缩放、淡出与回弹过程。
 	bool TransitionContent(const wstring& iconResourceName, const wstring& label);
 
 public:
+	// 基准元数据由注册/Load更新；运行时有效值只由统一主栏投影提交。
+	IdtAtomic<BarButtonSizeEnum> baseSize = BarButtonSizeEnum::twoTwo;
+	IdtAtomic<bool> baseUserVisible = true;
 	IdtAtomic<BarButtonSizeEnum> size;
 	IdtAtomic<BarButtonPresetEnum> preset = BarButtonPresetEnum::None;
 	std::string id;
@@ -107,6 +123,7 @@ public:
 	IdtAtomic<bool> userVisible = true;
 	IdtAtomic<bool> hide = true;
 	IdtAtomic<bool> only = true;
+	IdtAtomic<bool> compactMultilineLabel = false;
 
 	// 绘制记录
 	IdtAtomic<double> lastDrawX = 0.0;
@@ -204,9 +221,19 @@ protected:
 	vector<shared_ptr<BarButtonClass>> list;
 };
 
+struct BarMainButtonLayoutEntry
+{
+	const BarButtonClass* identity = nullptr;
+	BarButtonSizeEnum size = BarButtonSizeEnum::twoTwo;
+	bool visible = false;
+	bool operator==(const BarMainButtonLayoutEntry&) const = default;
+};
+
 class BarButtonSetClass
 {
 public:
+	// 只保护基准、列表和有效投影/目标扫描；不跨窗口等待、面板Close或呈现。
+	mutable recursive_mutex presentationMutex;
 	BarButtonListClass buttonList;
 	IdtAtomic<int> tot = 0; // 顺序列顶，开
 
@@ -236,18 +263,23 @@ bool RegisterButton(
 		void PresetInitialization();
 		void RegisterBuiltInComponents();
 		void StateUpdate();
-		void UpdateDrawButtonStyle();
-		void UpdateWhiteboardButtonStyle();
+		void StateUpdate(const StateModeClass& stateMode);
+		void PrepareMainPanels(const StateModeClass& stateMode);
+		void UpdateMainPresentation(const StateModeClass& stateMode);
+		vector<BarMainButtonLayoutEntry> MainLayoutSnapshot();
+		void ExecuteClearClick(bool doubleClickContinuation);
 
 		void Load();
 		void SyncLegacyExtensionButtons();
 		void ResetIconCaches();
 
 	protected:
-		void UpdateEraserButtonStyle();
-		void UpdateGeometryButtonStyle();
-		void PresetHoming();
-		void CalcState();
+		void UpdateDrawButtonStyle(const StateModeClass& stateMode);
+		void UpdateWhiteboardButtonStyle(bool active);
+		void ApplyMainPresentationLocked(const StateModeClass& stateMode);
+		void UpdateEraserButtonStyle(const StateModeClass& stateMode);
+		void UpdateGeometryButtonStyle(const StateModeClass& stateMode);
+		void PresetHoming(const StateModeClass& stateMode);
 		static Inkeys::BarButtonSizeKind ToConfigSize(BarButtonSizeEnum size);
 		static BarButtonSizeEnum ToRuntimeSize(Inkeys::BarButtonSizeKind size);
 		static bool IsExactFixedZonePermutation(
@@ -270,16 +302,21 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 
 		mutable shared_mutex registrationMutex;
 		IdtAtomic<int> drawButtonStyleKey = -1;
-		IdtAtomic<int> whiteboardButtonStyleKey = -1;
 		IdtAtomic<int> eraserButtonStyleKey = -1;
 		IdtAtomic<int> geometryButtonStyleKey = -1;
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;
 		vector<std::string> registrationOrder;
 		shared_ptr<BarButtonClass> boundaryDividers[2];
 		shared_ptr<BarButtonClass> moreButton;
+		// 运行时插在 Recall 前，不进入 FixedButtonsA1。
+		shared_ptr<BarButtonClass> mainRedoButton;
+		// 运行时依附定格，不注册旧 Pierce 持久化 ID。
+		shared_ptr<BarButtonClass> mainPierceButton;
 		mutable mutex moreSnapshotMutex;
 		BarMoreButtonSnapshotClass moreSnapshot;
 		mutex legacyOrderMutex;
 		vector<std::string> legacyActiveOrder;
 		bool legacyOrderInitialized = false;
+		bool clearAttemptedForDoubleClick = false;
+		bool clearAcceptedForDoubleClick = false;
 	};

@@ -19,11 +19,14 @@ namespace Inkeys::Drawing::Draw3
 	Host& ProductHost() noexcept { return productHost; }
 
 	bool StartProduct(HWND drawpad, HWND drawpadPresentation,
-		HostStyleCallbacks callbacks, HostStartOptions options)
+		HostStyleCallbacks callbacks, HostStartOptions options,
+		HostRuntimeCallbacks runtimeCallbacks)
 	{
 		std::scoped_lock lock(productMutex);
 		if (productStopping.load(std::memory_order_acquire)) return false;
-		return productHost.Start(drawpad, drawpadPresentation, callbacks, options);
+		options.requirePresentationUiReady = true;
+		return productHost.Start(drawpad, drawpadPresentation, callbacks, options,
+			runtimeCallbacks);
 	}
 
 	void StopProduct() noexcept
@@ -88,8 +91,12 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::ProductState merged = productHost.ProductBridge().Snapshot();
 		merged.tool = state.tool;
 		merged.widthDip = state.widthDip;
+		merged.penWidthContext = state.penWidthContext;
 		merged.colorRgba = state.colorRgba;
+		merged.paintDevice = state.paintDevice;
+		merged.eraserInputs = state.eraserInputs;
 		merged.selectionMode = state.selectionMode;
+		merged.autoSaveEnabled = state.autoSaveEnabled;
 		productHost.PublishState(merged);
 	}
 
@@ -98,22 +105,77 @@ namespace Inkeys::Drawing::Draw3
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire)) return;
-		Bridge::ProductState state = productHost.ProductBridge().Snapshot();
-		state.workspace = workspace;
-		state.hasPage = false;
-		productHost.PublishState(state);
+		if (productHost.ProductBridge().PublishWorkspace(workspace))
+			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}
 
-	void PublishProductPage(std::uint32_t page) noexcept
+	std::optional<std::uint64_t> PublishProductPresentationTarget(
+		const Bridge::PresentationTarget& target) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return std::nullopt;
+		std::scoped_lock callLock(productCallMutex);
+		if (productStopping.load(std::memory_order_acquire) ||
+			!productHost.Running()) return std::nullopt;
+		bool changed = false;
+		const auto revision = productHost.ProductBridge().PublishPresentationTarget(
+			target, &changed);
+		if (changed) productHost.PublishState(productHost.ProductBridge().Snapshot());
+		return revision;
+	}
+
+	bool PublishProductPresentationUiReady(
+		const Bridge::PresentationReadyIdentity& identity) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) &&
+			productHost.PublishPresentationUiReady(identity);
+	}
+
+	bool SetProductPresentationInputSuspended(
+		const Bridge::PresentationReadyIdentity& expected, bool suspended) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) &&
+			productHost.SetPresentationInputSuspended(expected, suspended);
+	}
+
+	void ClearProductPresentationTarget() noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire)) return;
-		// 页码只覆盖快照中的页面字段，避免 PPT 线程回写陈旧工具状态。
+		if (productHost.ProductBridge().ClearPresentationTarget())
+			productHost.PublishState(productHost.ProductBridge().Snapshot());
+	}
+
+	bool PublishProductPage(std::uint32_t page) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		if (productStopping.load(std::memory_order_acquire)
+			|| !productHost.Running()) return false;
+		// 兼容入口也必须同步文稿目标，不能制造只有页码变化的半状态。
 		Bridge::ProductState state = productHost.ProductBridge().Snapshot();
+		if (state.hasPage && state.page == page) return true;
+		if (state.presentationTarget)
+		{
+			Bridge::PresentationTarget target = *state.presentationTarget;
+			if (page >= target.totalPages) return false;
+			target.pageIndex = page;
+			target.slideId = target.bindingMode == Bridge::SlideBindingMode::StableSlideId
+				? std::optional<std::int32_t>(target.slideIds[page]) : std::nullopt;
+			const bool published = productHost.ProductBridge().PublishPresentationTarget(
+				target).has_value();
+			if (published)
+				productHost.PublishState(productHost.ProductBridge().Snapshot());
+			return published;
+		}
 		state.page = page;
 		state.hasPage = true;
 		productHost.PublishState(state);
+		return true;
 	}
 
 	Bridge::CommandResult PublishProductCommand(Bridge::CommandType command) noexcept
@@ -121,7 +183,8 @@ namespace Inkeys::Drawing::Draw3
 		if (productStopping.load(std::memory_order_acquire))
 			return Bridge::CommandResult::NotRunning;
 		std::scoped_lock callLock(productCallMutex);
-		if (productStopping.load(std::memory_order_acquire))
+		if (productStopping.load(std::memory_order_acquire) ||
+			!productHost.Running())
 			return Bridge::CommandResult::NotRunning;
 		return productHost.PublishCommand(command);
 	}

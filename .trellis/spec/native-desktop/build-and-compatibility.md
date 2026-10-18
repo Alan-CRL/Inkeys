@@ -7,31 +7,31 @@
 `【直接确认】` 仓库根 `AGENTS.md` 对自动化代理明确要求：
 
 - 构建 `InkeysRepo.sln`，不要单独构建 `Inkeys/Inkeys.vcxproj`；
-- 使用 `Debug | ARM64`；
-- 使用 ARM64 host 的 `MSBuild.exe`；
+- 使用 `Debug | 当前设备原生架构`；
+- 使用当前设备原生架构对应的 host `MSBuild.exe`（例如 x64 设备用 x64 host，ARM64 设备用 ARM64 host）；
 - 构建超时至少 5 分钟；
-- 原因是 `Inkeys` 依赖 `PptCOM`，完整 Solution 构建用于生成并带入 DLL/TLB。
+- 这是本机整体开发验证入口；本次发布流水线任务已明确授权独立构建。`PptCOM` 与 native 工程不再有项目依赖或自动复制，接口变更时必须另行同步同次生成的 DLL/TLB 后再验证 native。
 
 等价参数形式为：
 
 ~~~text
-MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64
+MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=<NativePlatform>
 ~~~
 
-`MSBuild.exe` 的绝对路径取决于本机 Visual Studio 安装，不在 Spec 中硬编码。本次 Bootstrap 及本轮证据审计均未执行构建，因此不把上述配置写成“已经构建通过”。
+`MSBuild.exe` 的绝对路径取决于本机 Visual Studio 安装，不在 Spec 中硬编码。Release 或非当前原生架构（Win32/x64/ARM64 中未覆盖者）可以作为任务或风险要求下的额外平台证据，但不能替代当前 AGENTS 要求的 `Debug | 当前设备原生架构` 完整 Solution 验证。构建是否通过必须引用具体任务验证记录，不能由本规范的入口说明推出。
 
-`【历史/兼容】` `GithubRes/CompilationProcess_zh-CN.md` 另有面向一般贡献者的路径：使用仓库内预编译 `PptCOM.dll`/`PptCOM.tlb` 时，可取消项目依赖并单独构建 `Inkeys`。它与当前 `AGENTS.md` 的代理规则适用对象不同；Codex 应遵守 `AGENTS.md`，普通开发者的正式首选流程仍为 `【待确认】`。
+`【直接确认】` 发布 CI 独立构建 `PptCOM/PptCOM.csproj` 和 `Inkeys/Inkeys.vcxproj`，以本次 artifact 交接 DLL/TLB。本机日常代理验证仍遵守上述 Solution 入口；独立 native 构建的 `SolutionDir` 默认回到仓库根，产物仍在 `Build/`。
 
 ## Solution 与工程配置事实
 
 | 证据 | `【直接确认】`的内容 | 不能据此推出 |
 | --- | --- | --- |
 | `InkeysRepo.sln` | 声明 `Debug/Release × Win32/x64/ARM64`；包含 `Inkeys`、`PptCOM` 和 `I18n` Solution Folder | 六种组合都已成功构建或运行 |
-| `InkeysRepo.sln` 的 `ProjectDependencies` | `Inkeys` 依赖 GUID `{A7B02228-179F-4B8E-BA8F-82D50066FB66}`，与 `PptCOM/PptCOM.csproj` 的 `ProjectGuid` 一致 | `Inkeys.vcxproj` 内的重复引用一定无害 |
+| `InkeysRepo.sln` / `Inkeys/Inkeys.vcxproj` | Inkeys 对 PptCOM 的 solution 依赖及两处 ProjectReference 已移除；测试工程保留，但三个 Release 配置均不默认构建测试 | native 构建会自动获得最新 DLL/TLB |
 | `Inkeys/Inkeys.vcxproj` | Windows/Unicode 可执行程序，v143、SDK `10.0.26100.0`、C++20、`/utf-8`、module dependency scan、静态 CRT | 这些设置构成完整运行兼容矩阵 |
 | `Inkeys/Inkeys.vcxproj` | 输出目录是 `Build/$(Platform)/$(Configuration)`；中间目录是 `Inkeys/Cache/...`；ARM64 定义 `IMGUI_DISABLE_SSE` | ARM64 已覆盖所有第三方库和 Office 组合 |
 | `InkeysRepo.sln` 的项目配置映射 | 主 Solution 的各项配置把 `PptCOM` 映射到 `Release | Any CPU` | AnyCPU 与任意 Office 位数组合都已验证 |
-| `.github/workflows/build-windows.yml` | CI 被配置为用完整 Solution 构建 `Release` 的 Win32、x64、ARM64 | 当前或历次 CI 实际成功；本轮未查询运行记录 |
+| `.github/workflows/build-windows.yml` | PptCOM 单次 AnyCPU 构建后，Windows 2022 分别构建 native Release Win32/x64/ARM64 | 当前 CI 已实际完成构建或运行验证 |
 
 ## Vcpkg 集成
 
@@ -56,6 +56,7 @@ MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64
 | unordered-dense | 4.7.0 |
 | spdlog | 1.17.0 |
 | opencv4 | 4.10.0#3 |
+| abseil | 20250512.1#0 |
 
 `【直接确认】` `Vcpkg` 是第三方依赖子模块。本项目代码任务不得递归修改它；依赖变更应同时审查 manifest、triplet、许可和随附第三方产物。
 
@@ -113,9 +114,56 @@ Correct：使用上述 `opencv4` 对象和四个显式 feature，版本通过 `v
 
 ## PptCOM 构建链
 
-`【直接确认】` `PptCOM/PptCOM.csproj` 是 .NET Framework 4.0、AnyCPU class library，引用 `Package/` 下的 Office/PowerPoint Interop。其 `AfterBuild` 调用 SDK 4.0 的 `TlbExp.exe` 生成 `PptCOM.tlb`，再将 DLL/TLB 复制到 `Inkeys/`。
+`【直接确认】` `PptCOM/PptCOM.csproj` 是 .NET Framework 4.0、AnyCPU class library，引用 `Package/` 下的 Office/PowerPoint Interop。其 `ExportTlb` 构建后目标调用 SDK 4.0 的 `TlbExp.exe`，仅在自身输出目录生成 TLB，不复制 DLL/TLB。`Inkeys/PptCOM.dll` 与 TLB 均继续 Git 跟踪，维护者在 PptCOM 源码变化后手动同步；CI 必须下载同次构建的两者并覆盖现有资源与 `#import` 位置。
 
-`【待确认；风险观察，不是已确认缺陷】` `Inkeys/Inkeys.vcxproj` 尾部有两个都指向 `..\PptCOM\PptCOM.csproj` 的 `ProjectReference`，分别记录 `{66F84848-5C28-4398-80D7-78F6189FC442}` 与 `{404F6E99-A0CA-45B2-8CAA-A2D819DA8EFF}`；两者都不同于 csproj/Solution 使用的 `{A7B02228-179F-4B8E-BA8F-82D50066FB66}`。本轮未运行 MSBuild，无法判断 Visual Studio/MSBuild 的实际解析结果，也不能据此断言重复引用导致构建错误。修改前应由维护者确认它们是历史兼容项还是应清理的工程异常。
+## Scenario: Harness 发布边界与独立构建
+
+### 1. Scope / Trigger
+
+修改 native Harness 编译条件、Windows 发布 job或 artifact 交接时应用本合同。Win32 的 `Bar.Presentation.Test.cpp` 曾在 32 位宿主工具链报 C1002；独立 headless 测试成功不能代替主项目验证。
+
+### 2. Signatures
+
+~~~text
+MSBuild PptCOM/PptCOM.csproj /p:Configuration=Release /p:Platform=AnyCPU
+MSBuild Inkeys/Inkeys.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PreferredToolArchitecture=x64 /p:EnableUi3PresentationHarness=false
+# Debug 默认 true；Release 默认 false；显式 true 保留测试入口。
+~~~
+
+`pptcom` job 输出 DLL 与同次 TLB 的 artifact ID，供 native 构建按 ID 下载。
+
+### 3. Contracts
+
+- `EnableUi3PresentationHarness` 使用统一 0/1 编译宏。关闭后移除 runner、授权测试实现及固定测试轨迹，保留无 fixture 时的产品输入/渲染连接；内部 Harness 参数必须在窗口初始化前非零退出，共用诊断与关闭监督不受影响。
+- CI 显式 x64 宿主与目标架构分离；工程默认保留 ARM64 本机原生宿主，其余 64 位宿主选择相应工具。不得把 PreferredToolArchitecture 当作目标 Platform。
+- `check → pptcom → build matrix → package → upload`。PptCOM 仅初始化 MSBuild、NuGet、.NET 4.0 引用程序集；native 仅初始化子模块/vcpkg，不做 .NET 安装或 solution NuGet restore。
+- DLL 与同次 TLB 独立传递。下载以本次 job 的 artifact ID 为准，不按同名跨运行搜索。
+- 每个 EXE 的 IDR_DLL1 字节 SHA-256 必须等于选定 DLL；检查不能执行 EXE。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理 |
+| --- | --- |
+| 初始化、构建、artifact 上传/下载失败 | job 失败 |
+| DLL/TLB 下载内容或 EXE 内嵌 DLL 不一致 | 阻止后续处理 |
+| Release 收到内部 Harness 参数 | 初始化 GUI 前非零退出 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：三架构都嵌入同一个选定 DLL。
+- Base：本地随附 DLL/TLB 继续跟踪并由维护者手动同步。
+- Bad：按名称消费旧 artifact，或仅禁用独立测试工程以处理主项目 C1002。
+
+### 6. Tests Required
+
+静态检查 YAML/PowerShell/工程 XML、job 依赖、Release 项目映射、工程属性 off/on 与实际宿主路径；独立 PptCOM DLL/TLB 生成且不覆盖本地资源；Win32 Release Harness off/on 构建；ARM64 Debug Solution 与 headless `--no-window`。产物模拟覆盖缺失输入、rerun 精确产物选择和清理。真实三架构 artifact 留待 Actions 验收。
+
+### 7. Wrong vs Correct
+
+~~~text
+Wrong: msbuild InkeysRepo.sln Release，再按名称下载任意同名 DLL。
+Correct: 独立构建 PptCOM → 选择本次 DLL/TLB ID → native 下载 ID 并构建 → Package 收集本次产物。
+~~~
 
 ## 随附依赖与第三方边界
 
@@ -144,8 +192,21 @@ Correct：使用上述 `opencv4` 对象和四个显式 feature，版本通过 `v
 
 以下除第一项外是根据当前构建结构形成的 `【合理推断】` 审查清单，不是声称仓库已有完整发布政策：
 
-1. `【直接确认；AGENTS.md】` Codex 使用完整 Solution、`Debug | ARM64`、ARM64 MSBuild host，超时至少 5 分钟。
+1. `【直接确认；AGENTS.md】` Codex 使用完整 Solution、`Debug | 当前设备原生架构`、对应架构 MSBuild host，超时至少 5 分钟。
 2. 新增源码、module、资源或 manifest 时，核对 `Inkeys/Inkeys.vcxproj` 的 Item 类型和条件配置。
 3. 涉及平台宏、SIMD、指针宽度或 Win32 API 时，分别检查 Win32、x64、ARM64，而不是从单一配置外推。
 4. 兼容性结论必须记录实际运行过的 Windows、架构和 Office/WPS 组合；未运行的只写“配置存在”或“项目声明”。
 5. 不提交 `Build/`、`Inkeys/Cache/`、`VcpkgInstalled/`、`PptCOM/obj/` 等生成输出。
+
+## 发布压缩包内容与命名
+
+`【直接确认；发布要求】` `.github/workflows/build-windows.yml` 的三个完整发布 ZIP 保持原有顶层架构目录（`Inkeys`、`Inkeys64`、`InkeysArm64`），目录内仅含 `Inkeys.exe` 与 `Tips.txt`。不额外复制 README、NOTICE 或第三方许可证；仓库中的许可文件保持原位。更新 ZIP 根目录仍仅含 `Inkeys.exe`。
+
+- 完整包：`Inkeys<editionDate>-<arch>.zip`。
+- 更新包：`UpatePackage-Inkeys<editionDate>-<arch>.zip`，前缀按发布要求保留此拼写。
+- `<arch>` 为 `x86`、`x64`、`arm64`，不附加渠道或中文版本标签。
+- `<editionDate>` 使用源码完整字符串：当前 `3.0.0-20261010a`；后续源码改为 `3.0.0` 或 `3.0.1` 时，包名自然不再含日期后缀。
+- `update.txt` 的九个下载 URL 与三个包大小字段必须对应上述更新包的实际名称与长度；哈希仍针对待替换 EXE。
+- `Tips.txt` 的中英文快速开始文案由 workflow 生成，保留已有构建信息尾段。
+
+验证应在隔离目录执行实际 `Compress-Archive` 命令，枚举三架构完整包与更新包的 ZIP entries，并检查带日期及纯版本号的名称、更新 URL、包大小和 Tips 文本。不能仅凭命令或仓库中存在文件推断发布包内容。

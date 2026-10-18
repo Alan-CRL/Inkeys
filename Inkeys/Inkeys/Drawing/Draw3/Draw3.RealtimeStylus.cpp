@@ -10,9 +10,14 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <cstdio>
 #include <limits>
 #include <mutex>
 #include <new>
+#include <memory>
+#include <vector>
+#include "Draw3.SpeedEraser.h"
+#include "../../Helper/FailedCleanupDeadline.h"
 #include <windows.h>
 #include <RTSCOM.h>
 #include <RTSCOM_i.c>
@@ -71,6 +76,7 @@ namespace Inkeys::Drawing::Draw3
 			PROPERTY_METRICS metrics = {};
 			ULONG index = 0;
 			bool present = false;
+			GUID guid = {};
 		};
 
 		class RtsPacketStateGuard
@@ -411,12 +417,61 @@ namespace Inkeys::Drawing::Draw3
 			uint32_t syntheticContactSequence_ = 0;
 		};
 
+		using PointerSourceList = std::vector<SpeedEraser::InputSource>;
+
+		std::shared_ptr<const PointerSourceList> ReadPointerSources()
+		{
+			// 只在 context 构建/映射通知时枚举，Win7 不产生任何现代 API 硬导入。
+			const HMODULE user32=GetModuleHandleW(L"user32.dll");
+			const auto devices=reinterpret_cast<decltype(&GetPointerDevices)>(GetProcAddress(user32,"GetPointerDevices"));
+			const auto cursors=reinterpret_cast<decltype(&GetPointerDeviceCursors)>(GetProcAddress(user32,"GetPointerDeviceCursors"));
+			const auto rects=reinterpret_cast<decltype(&GetPointerDeviceRects)>(GetProcAddress(user32,"GetPointerDeviceRects"));
+			if(!devices || !cursors || !rects)return {};
+			try
+			{
+				UINT32 count=0;
+				if(!devices(&count,nullptr) || count==0 || count>64)return {};
+				std::vector<POINTER_DEVICE_INFO> list(count);
+				if(!devices(&count,list.data()) || count>list.size())return {};
+				auto result=std::make_shared<PointerSourceList>();
+				for(UINT32 i=0;i<count;++i)
+				{
+					SpeedEraser::InputSource source;
+					switch(list[i].pointerDeviceType)
+					{
+					case POINTER_DEVICE_TYPE_INTEGRATED_PEN: source.kind=SpeedEraser::SourceKind::IntegratedPen;break;
+					case POINTER_DEVICE_TYPE_EXTERNAL_PEN: source.kind=SpeedEraser::SourceKind::ExternalPen;break;
+					case POINTER_DEVICE_TYPE_TOUCH: source.kind=SpeedEraser::SourceKind::Touch;break;
+					case POINTER_DEVICE_TYPE_TOUCH_PAD: source.kind=SpeedEraser::SourceKind::TouchPad;break;
+					default: continue;
+					}
+					RECT device{},screen{};
+					if(rects(list[i].device,&device,&screen) && device.right>device.left && device.bottom>device.top &&
+						screen.right>screen.left && screen.bottom>screen.top)
+					{
+						source.mappedMonitor=reinterpret_cast<uintptr_t>(list[i].monitor);
+						source.mappedLeft=screen.left;source.mappedTop=screen.top;
+						source.mappedWidth=screen.right-screen.left;source.mappedHeight=screen.bottom-screen.top;
+					}
+					UINT32 n=0;
+					if(!cursors(list[i].device,&n,nullptr) || n>4096 || result->size()+n>4096)return {};
+					std::vector<POINTER_DEVICE_CURSOR_INFO> ids(n);
+					if(n && (!cursors(list[i].device,&n,ids.data()) || n>ids.size()))return {};
+					for(UINT32 j=0;j<n;++j){source.cursorId=ids[j].cursorId;result->push_back(source);}
+				}
+				std::sort(result->begin(),result->end(),[](const auto& a,const auto& b){return a.cursorId<b.cursorId;});
+				return result;
+			}
+			catch(...){return {};}
+		}
+
 		struct RtsContextDecoder
 		{
 			TABLET_CONTEXT_ID tabletContextId = 0;
 			ULONG propertyCount = 0;
 			ULONG xIndex = 0;
 			ULONG yIndex = 1;
+			PacketPropertyMetadata xAxis, yAxis;
 			PacketPropertyMetadata pressure;
 			PacketPropertyMetadata xTilt;
 			PacketPropertyMetadata yTilt;
@@ -428,10 +483,28 @@ namespace Inkeys::Drawing::Draw3
 			float positionScaleY = 1.0f;
 			float contactScaleX = 1.0f;
 			float contactScaleY = 1.0f;
+			SpeedEraser::ContactLengthTransform widthTransform, heightTransform;
 			InputDeviceType deviceType = InputDeviceType::Pen;
 			uint64_t generation = 0;
+			bool modernSourceApi = false, sourceDeviceKnown = false, capabilitiesKnown = false, integrated = false;
+			std::shared_ptr<const PointerSourceList> pointerSources;
 			bool valid = false;
 		};
+
+		SpeedEraser::ContactLengthMetrics LengthMetrics(const PacketPropertyMetadata& property) noexcept
+		{
+			return {static_cast<uint32_t>(property.metrics.Units),property.metrics.fResolution,
+				property.metrics.nLogicalMin,property.metrics.nLogicalMax,property.present};
+		}
+
+		void PrepareAreaTransforms(RtsContextDecoder& decoder) noexcept
+		{
+			// 与该代位置使用同一线性映射；只有面积属性经物理单位/分辨率比例换算。
+			decoder.widthTransform=SpeedEraser::ResolveContactLengthTransform(
+				LengthMetrics(decoder.xAxis),LengthMetrics(decoder.width),decoder.positionScaleX);
+			decoder.heightTransform=SpeedEraser::ResolveContactLengthTransform(
+				LengthMetrics(decoder.yAxis),LengthMetrics(decoder.height),decoder.positionScaleY);
+		}
 
 		struct RtsActiveContactBinding
 		{
@@ -642,6 +715,7 @@ namespace Inkeys::Drawing::Draw3
 					decoder.positionScaleX = positionScaleX;
 					decoder.positionScaleY = positionScaleY;
 					decoder.generation = generation_;
+					PrepareAreaTransforms(decoder);
 					decoder.valid = true;
 					decoders_[index] = decoder;
 				}
@@ -659,6 +733,7 @@ namespace Inkeys::Drawing::Draw3
 					decoder.positionScaleX = sharedPositionScaleX_;
 					decoder.positionScaleY = sharedPositionScaleY_;
 					decoder.generation = generation_;
+					PrepareAreaTransforms(decoder);
 					decoder.valid = true;
 					slot = decoder;
 					return true;
@@ -749,6 +824,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto captureProperty = [&](PacketPropertyMetadata& target, ULONG index)
 				{
 					target.metrics = properties[index].PropertyMetrics;
+					target.guid = properties[index].guid;
 					target.index = index;
 					target.present = true;
 				};
@@ -757,11 +833,13 @@ namespace Inkeys::Drawing::Draw3
 				if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_X))
 				{
 					decoder.xIndex = index;
+					captureProperty(decoder.xAxis,index);
 					hasX = true;
 				}
 				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_Y))
 				{
 					decoder.yIndex = index;
+					captureProperty(decoder.yAxis,index);
 					hasY = true;
 				}
 				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE))
@@ -781,6 +859,31 @@ namespace Inkeys::Drawing::Draw3
 			}
 			decoder.propertyCount = propertyCount;
 			return hasX && hasY;
+		}
+
+		SpeedEraser::InputSource SourceForCursor(const RtsContextDecoder& decoder,uint32_t cursorId) noexcept
+		{
+			SpeedEraser::InputSource result;
+			bool matched=false,ambiguous=false;
+			if(decoder.pointerSources)
+			{
+				const auto& list=*decoder.pointerSources;
+				const auto it=std::lower_bound(list.begin(),list.end(),cursorId,
+					[](const auto& item,uint32_t id){return item.cursorId<id;});
+				matched=it!=list.end() && it->cursorId==cursorId;
+				ambiguous=matched && it+1!=list.end() && (it+1)->cursorId==cursorId;
+				if(matched && !ambiguous)result=*it;
+			}
+			result.kind=SpeedEraser::ClassifySource(decoder.sourceDeviceKnown?static_cast<uint32_t>(decoder.deviceType):4u,
+				decoder.modernSourceApi,decoder.capabilitiesKnown,decoder.integrated,result.kind,matched,ambiguous);
+			result.recognition=ambiguous || (matched && result.kind==SpeedEraser::SourceKind::Unknown)
+				? SpeedEraser::SourceRecognition::Conflict
+				: matched ? SpeedEraser::SourceRecognition::PointerCursor
+				: decoder.capabilitiesKnown && decoder.modernSourceApi ? SpeedEraser::SourceRecognition::RtsCapabilities
+				: SpeedEraser::SourceRecognition::Unknown;
+			if(result.kind==SpeedEraser::SourceKind::Unknown)result.mappedMonitor=0;
+			result.contextId=decoder.tabletContextId;result.cursorId=cursorId;result.generation=decoder.generation;
+			return result;
 		}
 
 		bool BuildContextDecoder(IRealTimeStylus* source, TABLET_CONTEXT_ID contextId,
@@ -820,16 +923,26 @@ namespace Inkeys::Drawing::Draw3
 					TabletDeviceKind kind = TDK_Pen;
 					if (SUCCEEDED(tablet2->get_DeviceKind(&kind)))
 					{
+						decoder.sourceDeviceKnown = true;
 						if (kind == TDK_Touch) deviceType = InputDeviceType::Touch;
 						else if (kind == TDK_Mouse) deviceType = InputDeviceType::MouseLeft;
 					}
 				}
 			}
 
+			decoder.modernSourceApi=GetProcAddress(GetModuleHandleW(L"user32.dll"),"GetPointerType")!=nullptr;
+			if(decoder.modernSourceApi && tablet)
+			{
+				TabletHardwareCapabilities caps{};
+				decoder.capabilitiesKnown=SUCCEEDED(tablet->get_HardwareCapabilities(&caps));
+				decoder.integrated=decoder.capabilitiesKnown && (caps & THWC_Integrated)!=0;
+				decoder.pointerSources=ReadPointerSources();
+			}
 			decoder.tabletContextId = contextId;
 			decoder.contactScaleX = contactScaleX;
 			decoder.contactScaleY = contactScaleY;
 			decoder.deviceType = deviceType;
+
 			candidate = decoder;
 			return true;
 		}
@@ -869,13 +982,22 @@ namespace Inkeys::Drawing::Draw3
 				snapshot.orientation = angles.orientation;
 			}
 			snapshot.contactSize = {};
+			snapshot.rawContactSize = {};
+			snapshot.contactAreaUnits=SpeedEraser::ContactAreaUnits::Missing;
+			if(decoder.width.present && decoder.width.index<propertyCount)
+				snapshot.rawContactSize.width=static_cast<float>(packet[decoder.width.index]);
+			if(decoder.height.present && decoder.height.index<propertyCount)
+				snapshot.rawContactSize.height=static_cast<float>(packet[decoder.height.index]);
 			if (decoder.width.present && decoder.height.present &&
 				decoder.width.index < propertyCount && decoder.height.index < propertyCount)
 			{
-				// 接触面积保留各 context 的比例；位置统一使用 lifecycle 的首 context 比例。
-				snapshot.contactSize = DecodeContactSize(decoder.deviceType,
-					packet[decoder.width.index], packet[decoder.height.index],
-					decoder.contactScaleX, decoder.contactScaleY);
+				if(decoder.deviceType==InputDeviceType::Touch)
+				{
+					const auto area=SpeedEraser::ConvertContactArea(snapshot.rawContactSize.width,
+						snapshot.rawContactSize.height,decoder.widthTransform,decoder.heightTransform);
+					snapshot.contactSize={area.widthPx,area.heightPx};
+					snapshot.contactAreaUnits=area.units;
+				}
 			}
 			snapshot.qpc = qpc;
 			snapshot.phase = phase;
@@ -923,6 +1045,25 @@ namespace Inkeys::Drawing::Draw3
 					return S_OK;
 				}
 				return E_NOINTERFACE;
+			}
+
+
+			bool CopyTouchAreaContexts(const SpeedEraser::InputSource& requested,
+				std::array<RtsContextDecoder,kContextDecoderCapacity>& result,size_t& count) noexcept
+			{
+				count=0;
+				// 只复制已有 context；遇 lifecycle 写入就交给下一次低频诊断，不等待、不查硬件。
+				RtsPacketStateGuard access(stateGate_);
+				if(!access)return false;
+				for(size_t i=0;i<kContextDecoderCapacity;++i)
+				{
+					const auto* decoder=decoderCache_.DecoderAt(i);
+					if(!decoder || decoder->deviceType!=InputDeviceType::Touch)continue;
+					if(requested.contextId && (decoder->tabletContextId!=requested.contextId ||
+						decoder->generation!=requested.generation))continue;
+					result[count++]=*decoder;
+				}
+				return true;
 			}
 
 			HRESULT MarshalerResult() const noexcept
@@ -996,18 +1137,31 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE StylusDown(IRealTimeStylus* source, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
-				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
+				// 产品构建不启用旧 RTS 宏；通过有界 Cursor 队列观察真实输入到达与发布。
+				RecordInputDiagnostic("Down", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
+				if (!source || !stylusInfo || !packet)
+				{
+					RecordInputDiagnostic("Down", "invalid-argument", stylusInfo);
+					return E_INVALIDARG;
+				}
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				size_t decoderSlotIndex = kContextDecoderCapacity;
 				const RtsContextDecoder* decoder = ResolveContextDecoder(
 					source, stylusInfo->tcid, nullptr, decoderSlotIndex);
 				if (!decoder)
 				{
+					RecordInputDiagnostic("Down", "no-decoder", stylusInfo);
 					PublishDefaultPenCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("StylusDown", stylusInfo, nullptr, 1, propertyCount,
 						packet, nullptr, false, false);
 #endif
+					return S_OK;
+				}
+				// 触控板板面不进入擦屏接触链；它控制的桌面指针仍走原鼠标通道。
+				if(SourceForCursor(*decoder,stylusInfo->cid).kind==SpeedEraser::SourceKind::TouchPad)
+				{
+					RecordInputDiagnostic("Down", "touchpad", stylusInfo, decoder);
 					return S_OK;
 				}
 				// 设备模态切换不依赖坐标包解码；Win7 也能在 Touch Down 时清掉旧 Mouse Hover。
@@ -1027,6 +1181,7 @@ namespace Inkeys::Drawing::Draw3
 					decoder->generation, decoder->deviceType, true };
 				if (activeBindings_.Insert(binding) != RtsBindingInsertResult::Inserted)
 				{
+					RecordInputDiagnostic("Down", "binding-failed", stylusInfo, decoder);
 					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
@@ -1039,6 +1194,8 @@ namespace Inkeys::Drawing::Draw3
 				if (!DecodeSnapshot(*decoder, propertyCount, packet,
 					ContactPhase::Down, QueryQpc(), snapshot))
 				{
+					RecordInputDiagnostic("Down", "decode-failed", stylusInfo, decoder,
+						nullptr, false, 1, propertyCount);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
 					PublishDefaultPenCursor(); // 解码失败时不能把旧 Hover visual 留在接触位置。
@@ -1048,6 +1205,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					return S_OK;
 				}
+				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				PublishPenCursor(decoder, stylusInfo, true, snapshot);
@@ -1075,13 +1233,20 @@ namespace Inkeys::Drawing::Draw3
 				RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
 					packet, &snapshot, true, published, S_OK, 0, deviceType, true);
 #endif
+				RecordInputDiagnostic("Down", published ? "published" : "publish-failed",
+					stylusInfo, decoder, &snapshot, published, 1, propertyCount);
 				return published ? S_OK : E_OUTOFMEMORY;
 			}
 
 			HRESULT STDMETHODCALLTYPE StylusUp(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
-				if (!stylusInfo) return E_INVALIDARG;
+				RecordInputDiagnostic("Up", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
+				if (!stylusInfo)
+				{
+					RecordInputDiagnostic("Up", "invalid-argument", stylusInfo);
+					return E_INVALIDARG;
+				}
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				const RtsActiveContactBinding* binding = activeBindings_.Find(
 					stylusInfo->tcid, stylusInfo->cid);
@@ -1091,7 +1256,9 @@ namespace Inkeys::Drawing::Draw3
 				if (!packet)
 				{
 					PublishDefaultPenCursor();
-					CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					const bool published = CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					RecordInputDiagnostic("Up", "no-packet-cancel", stylusInfo,
+						binding ? decoderCache_.Resolve(*binding) : nullptr, nullptr, published);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 					if (bindingKnown)
 						NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
@@ -1106,6 +1273,8 @@ namespace Inkeys::Drawing::Draw3
 					// 坏 Up 包不能把 contact 永久留在 Producing；协调器会沿用最后有效位置闭合。
 					const bool published = CloseProducerContact(
 						stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					RecordInputDiagnostic("Up", decoder ? "decode-failed-cancel" : "no-decoder-cancel",
+						stylusInfo, decoder, nullptr, published, 1, propertyCount);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 					if (bindingKnown)
 						NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
@@ -1115,6 +1284,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					return S_OK;
 				}
+				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				PublishDefaultPenCursor(); // Up 只清除接触光标，后续 InAir/Pointer 样本再恢复真实 Hover。
@@ -1131,6 +1301,8 @@ namespace Inkeys::Drawing::Draw3
 				RecordCallback("StylusUp", stylusInfo, decoder, 1, propertyCount,
 					packet, &snapshot, true, published);
 #endif
+				RecordInputDiagnostic("Up", published ? "published" : "publish-failed",
+					stylusInfo, decoder, &snapshot, published, 1, propertyCount);
 				return S_OK;
 			}
 
@@ -1164,6 +1336,7 @@ namespace Inkeys::Drawing::Draw3
 					lastPacket, decoded ? &snapshot : nullptr, decoded, false);
 #endif
 				if (!decoded) return S_OK;
+				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				PublishPenCursor(decoder, stylusInfo, false, snapshot);
@@ -1173,13 +1346,21 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE Packets(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG packetCount, ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
+				const bool tracePacket = ShouldRecordInputPacket();
 				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
-					packetBufferLength % packetCount != 0) return E_INVALIDARG;
+					packetBufferLength % packetCount != 0)
+				{
+					if (tracePacket) RecordInputDiagnostic("Packets", "invalid-argument", stylusInfo,
+						nullptr, nullptr, false, packetCount);
+					return E_INVALIDARG;
+				}
 				const ULONG propertyCount = packetBufferLength / packetCount;
 				const LONG* lastPacket = packets + static_cast<size_t>(packetCount - 1) * propertyCount;
 				RtsPacketStateGuard stateAccess(stateGate_);
 				if (!stateAccess)
 				{
+					if (tracePacket) RecordInputDiagnostic("Packets", "state-busy", stylusInfo,
+						nullptr, nullptr, false, packetCount, propertyCount);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("Packets", stylusInfo, nullptr, packetCount, propertyCount,
 						lastPacket, nullptr, false, false);
@@ -1193,12 +1374,15 @@ namespace Inkeys::Drawing::Draw3
 				if (!decoder || !DecodeSnapshot(*decoder, propertyCount, lastPacket,
 					ContactPhase::Move, QueryQpc(), snapshot))
 				{
+					if (tracePacket) RecordInputDiagnostic("Packets", decoder ? "decode-failed" : "no-binding-decoder",
+						stylusInfo, decoder, nullptr, false, packetCount, propertyCount);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 						lastPacket, nullptr, false, false);
 #endif
 					return S_OK;
 				}
+				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				bool published = false;
@@ -1212,6 +1396,8 @@ namespace Inkeys::Drawing::Draw3
 				RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 					lastPacket, &snapshot, true, published);
 #endif
+				if (tracePacket) RecordInputDiagnostic("Packets", published ? "published" : "publish-failed",
+					stylusInfo, decoder, &snapshot, published, packetCount, propertyCount);
 				return S_OK;
 			}
 
@@ -1340,6 +1526,32 @@ namespace Inkeys::Drawing::Draw3
 			}
 #endif
 
+			void RecordInputDiagnostic(const char* event, const char* reason,
+				const StylusInfo* stylusInfo, const RtsContextDecoder* decoder = nullptr,
+				const ContactSnapshot* snapshot = nullptr, bool published = false,
+				ULONG packetCount = 1, ULONG propertyCount = 0) noexcept
+			{
+				if (!CursorDiagnosticsEnabled()) return;
+				RecordCursorDiagnostic("rts-input event=%s reason=%s tcid=%u cid=%u deviceKnown=%u device=%u decoded=%u published=%u packets=%u properties=%u x=%.1f y=%.1f",
+					event, reason, stylusInfo ? static_cast<unsigned>(stylusInfo->tcid) : 0u,
+					stylusInfo ? static_cast<unsigned>(stylusInfo->cid) : 0u,
+					decoder ? 1u : 0u, decoder ? static_cast<unsigned>(decoder->deviceType) : 0u,
+					snapshot ? 1u : 0u, published ? 1u : 0u,
+					static_cast<unsigned>(packetCount), static_cast<unsigned>(propertyCount),
+					snapshot ? snapshot->position.x : 0.0f, snapshot ? snapshot->position.y : 0.0f);
+			}
+
+			bool ShouldRecordInputPacket() noexcept
+			{
+				if (!CursorDiagnosticsEnabled()) return false;
+				// Packets 可并发读取；诊断每秒仅抢占一次，不等待、不改变输入 gate。
+				const ULONGLONG tick = GetTickCount64();
+				ULONGLONG previous = lastInputPacketDiagnosticTick_.load(std::memory_order_relaxed);
+				return (previous == 0 || (tick >= previous && tick - previous >= 1000)) &&
+					lastInputPacketDiagnosticTick_.compare_exchange_strong(
+						previous, tick, std::memory_order_relaxed);
+			}
+
 			void PublishPenCursor(const RtsContextDecoder* decoder,
 				const StylusInfo* stylusInfo, bool inContact,
 				const ContactSnapshot& snapshot) noexcept
@@ -1353,6 +1565,7 @@ namespace Inkeys::Drawing::Draw3
 				sample.valid = true;
 				sample.inverted = stylusInfo->bIsInvertedCursor != FALSE;
 				sample.inContact = inContact;
+				sample.source = snapshot.source;
 				drawingCursorSink_->PublishPenCursorSample(sample);
 			}
 
@@ -1549,6 +1762,7 @@ namespace Inkeys::Drawing::Draw3
 			// lifecycle/Down/Up 串行写普通数组；只有 Packets/InAir 做一次无等待只读尝试。
 			std::mutex stateWriterMutex_;
 			std::atomic<uint32_t> stateGate_ = 0;
+			std::atomic<ULONGLONG> lastInputPacketDiagnosticTick_ = 0;
 			RtsDecoderCache decoderCache_;
 			RtsActiveBindingTable activeBindings_;
 		};
@@ -1747,6 +1961,7 @@ namespace Inkeys::Drawing::Draw3
 		decoder.contactScaleY = contactScaleY;
 		decoder.deviceType = deviceType;
 		decoder.generation = 1;
+		PrepareAreaTransforms(decoder);
 		decoder.valid = true;
 		result.decoded = DecodeSnapshot(decoder, static_cast<ULONG>(decodedPropertyCount),
 			packetValues.data(), ContactPhase::Move, 1234, result.snapshot);
@@ -1948,6 +2163,51 @@ namespace Inkeys::Drawing::Draw3
 			bindings.Find(contextId, 6u) == nullptr;
 	}
 
+	bool RtsSourceRoutingForTesting() noexcept
+	{
+		using namespace SpeedEraser;
+		RtsContextDecoder integrated,external;
+		integrated.deviceType=external.deviceType=InputDeviceType::Pen;
+		integrated.sourceDeviceKnown=external.sourceDeviceKnown=true;
+		integrated.modernSourceApi=external.modernSourceApi=true;
+		integrated.capabilitiesKnown=external.capabilitiesKnown=true;
+		integrated.integrated=true;
+		integrated.tabletContextId=11;external.tabletContextId=22;
+		integrated.generation=5;external.generation=6;
+		auto list=std::make_shared<PointerSourceList>();
+		InputSource a;a.kind=SourceKind::IntegratedPen;a.cursorId=17;a.mappedMonitor=1;
+		a.mappedWidth=1920;a.mappedHeight=1080;
+		InputSource b=a;b.kind=SourceKind::ExternalPen;b.cursorId=18;b.mappedMonitor=2;
+		list->push_back(a);list->push_back(b);
+		integrated.pointerSources=external.pointerSources=list;
+		const auto pen=SourceForCursor(integrated,17),tablet=SourceForCursor(external,18);
+		if(pen.kind!=SourceKind::IntegratedPen || tablet.kind!=SourceKind::ExternalPen ||
+			pen.contextId!=11 || tablet.contextId!=22 || pen.generation!=5)return false;
+		if(SourceForCursor(integrated,18).kind!=SourceKind::Unknown)return false;
+		integrated.modernSourceApi=false;
+		if(SourceForCursor(integrated,17).kind!=SourceKind::Unknown)return false;
+		integrated.modernSourceApi=true;integrated.pointerSources.reset();
+		const auto missing=SourceForCursor(integrated,17);
+		if(missing.kind!=SourceKind::IntegratedPen || missing.mappedMonitor!=0)return false;
+		list->insert(list->begin(),a);integrated.pointerSources=list;
+		if(SourceForCursor(integrated,17).kind!=SourceKind::Unknown)return false;
+		// 实际 contact mailbox 保留 Down 的元数据、倒转和压力；Move 不混入另一来源。
+		ContactInputCoordinator coordinator;
+		ContactSnapshot snapshot;snapshot.position={10,20};snapshot.qpc=100;
+		snapshot.source=pen;snapshot.pressure=0.73f;snapshot.isInvertedCursor=true;
+		if(!coordinator.PublishDown(11,17,InputDeviceType::Pen,snapshot))return false;
+		ContactRecord* record=nullptr;
+		if(!coordinator.TryDequeue(record) || !record)return false;
+		const ContactHandle handle{record,record->Generation()};
+		snapshot.position.x=12;snapshot.qpc=110;snapshot.source=tablet;
+		if(!coordinator.PublishMove(11,17,snapshot))return false;
+		ContactSnapshot actual;
+		const bool passed=coordinator.TryReadSnapshot(handle,actual) && actual.source==pen &&
+			actual.pressure==0.73f && actual.isInvertedCursor && record->DeviceType()==InputDeviceType::Pen;
+		coordinator.PublishUp(11,17,snapshot);coordinator.Recycle(handle);
+		return passed;
+	}
+
 	bool RtsLifecycleUpdateMappingForTesting() noexcept
 	{
 		RtsDecoderCache cache;
@@ -2034,6 +2294,9 @@ namespace Inkeys::Drawing::Draw3
 		staged[0].propertyCount = 4;
 		staged[0].width = { {}, 2, true };
 		staged[0].height = { {}, 3, true };
+		const PROPERTY_METRICS axis={0,10000,PROPERTY_UNITS_CENTIMETERS,1000.0f};
+		staged[0].xAxis={axis,0,true};staged[0].yAxis={axis,1,true};
+		staged[0].width.metrics=axis;staged[0].height.metrics=axis;
 		staged[0].contactScaleX = 2.0f;
 		staged[0].contactScaleY = 3.0f;
 		staged[1] = MakeTestingDecoder(101);
@@ -2043,7 +2306,8 @@ namespace Inkeys::Drawing::Draw3
 		ContactSnapshot snapshot;
 		return decoder && DecodeSnapshot(*decoder, 4, packet.data(), ContactPhase::Move, 1, snapshot) &&
 			snapshot.position.x == 10.0f && snapshot.position.y == 10.0f &&
-			snapshot.contactSize.width == 10.0f && snapshot.contactSize.height == 12.0f;
+			snapshot.contactAreaUnits == SpeedEraser::ContactAreaUnits::CanvasPixels &&
+			snapshot.contactSize.width == 1.25f && snapshot.contactSize.height == 2.0f;
 	}
 
 	bool RtsErrorPreservesDecoderLifecycleForTesting() noexcept
@@ -2169,9 +2433,14 @@ namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<IStylusSyncPlugin> plugin;
 		ContactInputCoordinator* coordinator = nullptr;
 		DrawingCursorEventSink* drawingCursorSink = nullptr;
+		// 成功后可持有 Cancelled Signal，其进程寿命 publisher 仍可处理停止证明失败。
+		Shutdown::FailedCleanupSignal failedCleanup;
 		bool comInitialized = false;
 		bool pluginAdded = false;
 		bool initialized = false;
+		// 只保护诊断借用与插件释放；不把诊断锁带入 RTS callback 或 COM 调用。
+		mutable std::mutex diagnosticsMutex;
+		StylusSyncPlugin* diagnosticsPlugin = nullptr;
 	};
 
 	RealTimeStylusInput::RealTimeStylusInput()
@@ -2192,9 +2461,14 @@ namespace Inkeys::Drawing::Draw3
 #endif
 
 	bool RealTimeStylusInput::Initialize(HWND window, ContactInputCoordinator& coordinator,
-		DrawingCursorEventSink* drawingCursorSink)
+		DrawingCursorEventSink* drawingCursorSink, Shutdown::FailedCleanupSignal failedCleanup)
 	{
-		if (!window || impl_->initialized) return false;
+		if (!window || impl_->initialized)
+		{
+			failedCleanup.BeginKnownFailure();
+			return false;
+		}
+		impl_->failedCleanup = failedCleanup;
 		impl_->coordinator = &coordinator;
 		impl_->drawingCursorSink = drawingCursorSink;
 		DWORD windowProcessId = 0;
@@ -2227,6 +2501,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("CoInitializeEx(COINIT_MULTITHREADED)", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2244,6 +2519,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("CoCreateInstance(RealTimeStylus)", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2256,7 +2532,11 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.putHwndResult = result;
 #endif
-		if (FAILED(result)) LogHResult("Bind RealTimeStylus HWND", result);
+		if (FAILED(result))
+		{
+			impl_->failedCleanup.BeginKnownFailure();
+			LogHResult("Bind RealTimeStylus HWND", result);
+		}
 		if (SUCCEEDED(result))
 		{
 			result = impl_->stylus->SetAllTabletsMode(TRUE); // 同时接收鼠标、笔和触摸。
@@ -2264,7 +2544,11 @@ namespace Inkeys::Drawing::Draw3
 			traceState.setAllTabletsModeResult = result;
 #endif
 		}
-		if (FAILED(result)) LogHResult("Set RealTimeStylus all-tablets mode", result);
+		if (FAILED(result))
+		{
+			impl_->failedCleanup.BeginKnownFailure();
+			LogHResult("Set RealTimeStylus all-tablets mode", result);
+		}
 		if (SUCCEEDED(result))
 		{
 			const GUID* desiredPacketProperties = kExtendedPacketProperties.data();
@@ -2296,7 +2580,11 @@ namespace Inkeys::Drawing::Draw3
 #endif
 			}
 		}
-		if (FAILED(result)) LogHResult("Set RealTimeStylus packet description", result);
+		if (FAILED(result))
+		{
+			impl_->failedCleanup.BeginKnownFailure();
+			LogHResult("Set RealTimeStylus packet description", result);
+		}
 		if (SUCCEEDED(result))
 		{
 			Microsoft::WRL::ComPtr<IRealTimeStylus2> stylus2;
@@ -2343,6 +2631,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("Configure RealTimeStylus multi-contact input", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2354,6 +2643,7 @@ namespace Inkeys::Drawing::Draw3
 		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, drawingCursorSink);
 		if (!plugin)
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
 #endif
@@ -2362,6 +2652,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if (FAILED(plugin->MarshalerResult()))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("CoCreateFreeThreadedMarshaler", plugin->MarshalerResult());
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.marshalerResult = plugin->MarshalerResult();
@@ -2372,6 +2663,10 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 		impl_->plugin.Attach(plugin);
+		{
+			std::scoped_lock lock(impl_->diagnosticsMutex);
+			impl_->diagnosticsPlugin=plugin;
+		}
 		result = impl_->stylus->AddStylusSyncPlugin(0, impl_->plugin.Get());
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.marshalerResult = plugin->MarshalerResult();
@@ -2379,6 +2674,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("AddStylusSyncPlugin", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2394,6 +2690,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("Enable RealTimeStylus", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2411,14 +2708,24 @@ namespace Inkeys::Drawing::Draw3
 	void RealTimeStylusInput::Shutdown() noexcept
 	{
 		if (!impl_) return;
+		{
+			std::scoped_lock lock(impl_->diagnosticsMutex);
+			impl_->diagnosticsPlugin=nullptr;
+		}
 		if (impl_->stylus)
 		{
 			const HRESULT disableResult = impl_->stylus->put_Enabled(FALSE); // 先停止产生新的同步回调。
+			// plugin 已加入却未确认停止时，保留业务对象并接管当前线程，禁止释放后 Reset。
+			if (FAILED(disableResult) && impl_->pluginAdded && impl_->failedCleanup.HasPublisher())
+				impl_->failedCleanup.FailUnprovenProducerStop();
 			if (FAILED(disableResult)) LogHResult("Disable RealTimeStylus", disableResult);
 			if (impl_->pluginAdded)
 			{
 				IStylusSyncPlugin* removedPlugin = nullptr;
 				const HRESULT removeResult = impl_->stylus->RemoveStylusSyncPlugin(0, &removedPlugin);
+				// removedPlugin 的临时强引用也留在 noreturn 栈，不能提前 Release 冒充静止。
+				if (FAILED(removeResult) && impl_->failedCleanup.HasPublisher())
+					impl_->failedCleanup.FailUnprovenProducerStop();
 				if (FAILED(removeResult)) LogHResult("RemoveStylusSyncPlugin", removeResult);
 				if (removedPlugin) removedPlugin->Release();
 				impl_->pluginAdded = false;
@@ -2440,6 +2747,68 @@ namespace Inkeys::Drawing::Draw3
 			CoUninitialize();
 			impl_->comInitialized = false;
 		}
+	}
+
+	bool RealTimeStylusInput::TraceTouchAreaDiagnostics(const SpeedEraser::InputSource& requested) const noexcept
+	{
+		std::array<RtsContextDecoder,kContextDecoderCapacity> contexts;
+		size_t count=0;bool copied=false;
+		{
+			std::scoped_lock lock(impl_->diagnosticsMutex);
+			if(impl_->diagnosticsPlugin)
+				copied=impl_->diagnosticsPlugin->CopyTouchAreaContexts(requested,contexts,count);
+		}
+		// 释放生命周期/缓存锁之后才格式化和输出；不依赖 DRAW3_RTS_DIAGNOSTICS。
+		if(!copied || count==0)
+		{
+			std::fprintf(stderr,"[TouchAreaDevice] cache=%s requestedTcid=%u requestedGen=%llu touchContexts=%zu (no substitute Mouse/Pen metadata)\n",
+				copied?"no-matching-touch":"not-ready-or-busy",requested.contextId,
+				static_cast<unsigned long long>(requested.generation),count);
+			return false;
+		}
+		for(size_t i=0;i<count;++i)
+		{
+			const auto& d=contexts[i];
+			const auto source=SourceForCursor(d,requested.contextId?requested.cursorId:0);
+			std::fprintf(stderr,
+				"[TouchAreaDevice] cache=snapshot tcid=%u gen=%llu cid=%u inputType=Touch source=%s recognition=%u kindKnown=%d capsKnown=%d integrated=%d modernAPI=%d mappedMonitor=%p mappedRect=(%d,%d,%d,%d) mapping=%s\n",
+				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),source.cursorId,
+				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),d.sourceDeviceKnown,d.capabilitiesKnown,
+				d.integrated,d.modernSourceApi,reinterpret_cast<void*>(source.mappedMonitor),
+				source.mappedLeft,source.mappedTop,source.mappedWidth,source.mappedHeight,
+				requested.contextId?"same-cursor-source":"awaiting-touch-cursor");
+			std::fprintf(stderr,
+				"[TouchAreaDevice] tcid=%u gen=%llu contextScale=%.9gx%.9g contextMeaning=ink-to-digitizer positionScale=%.9gx%.9g positionMeaning=canvasPx=packetXY*sharedPositionScale lengthMeaning=span/resolution->axis-units->position-linear-part translationApplied=0 extraContextScaleApplied=0\n",
+				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),
+				d.contactScaleX,d.contactScaleY,d.positionScaleX,d.positionScaleY);
+			const std::array<const PacketPropertyMetadata*,4> properties={&d.xAxis,&d.yAxis,&d.width,&d.height};
+			constexpr const char* labels[]={"X","Y","WIDTH","HEIGHT"};
+			for(size_t j=0;j<properties.size();++j)
+			{
+				const auto& p=*properties[j];const auto& g=p.guid;
+				char guid[40]{};
+				std::snprintf(guid,sizeof(guid),"{%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+					static_cast<unsigned long>(g.Data1),static_cast<unsigned>(g.Data2),static_cast<unsigned>(g.Data3),
+					static_cast<unsigned>(g.Data4[0]),static_cast<unsigned>(g.Data4[1]),
+					static_cast<unsigned>(g.Data4[2]),static_cast<unsigned>(g.Data4[3]),
+					static_cast<unsigned>(g.Data4[4]),static_cast<unsigned>(g.Data4[5]),
+					static_cast<unsigned>(g.Data4[6]),static_cast<unsigned>(g.Data4[7]));
+				std::fprintf(stderr,"[TouchAreaDevice] tcid=%u gen=%llu %s present=%d guid=%s index=%ld Units=%u(%s) fResolution=%.9g nLogicalMin=%ld nLogicalMax=%ld\n",
+					static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),labels[j],p.present,guid,
+					p.present?static_cast<long>(p.index):-1L,static_cast<unsigned>(p.metrics.Units),
+					SpeedEraser::ContactPropertyUnitName(p.metrics.Units),p.metrics.fResolution,p.metrics.nLogicalMin,p.metrics.nLogicalMax);
+			}
+			for(size_t j=0;j<2;++j)
+			{
+				const auto& transform=j==0?d.widthTransform:d.heightTransform;
+				std::fprintf(stderr,"[TouchAreaDevice] tcid=%u gen=%llu %s status=%s unitConverted=%d resolutionAdjusted=%d spanToAxis=%.12g spanToCanvasPx=%.12g\n",
+					static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),j==0?"WIDTH/X":"HEIGHT/Y",
+					SpeedEraser::ContactAreaUnitsName(transform.status),transform.unitConverted,transform.resolutionAdjusted,
+					transform.spanToAxis,transform.spanToCanvas);
+			}
+		}
+		std::fflush(stderr);
+		return true;
 	}
 
 	bool RealTimeStylusInput::IsInitialized() const noexcept

@@ -37,6 +37,8 @@
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="PptCOM.cs" />
+    <Compile Include="PresentationDescriptor.cs" />
+    <Compile Include="SlideShowSession.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
@@ -52,14 +54,11 @@
       <EmbedInteropTypes>False</EmbedInteropTypes>
     </Reference>
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Web.Extensions" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <PropertyGroup>
-    <ZhjOutputDir>$(SolutionDir)Inkeys\</ZhjOutputDir>
-  </PropertyGroup>
-  <Target Name="ExportTlbAndCopyDll" AfterTargets="Build">
+  <!-- 类型库随本次 DLL 一起交给发布流水线，构建不再覆盖 Inkeys 中的本地文件。 -->
+  <Target Name="ExportTlb" AfterTargets="Build">
     <Exec Command="&quot;$(SDK40ToolsPath)TlbExp.exe&quot; &quot;$(TargetPath)&quot; /out:&quot;$(TargetDir)$(AssemblyName).tlb&quot;" />
-    <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(ZhjOutputDir)" />
-    <Copy SourceFiles="$(TargetDir)$(AssemblyName).tlb" DestinationFolder="$(ZhjOutputDir)" />
   </Target>
 </Project>

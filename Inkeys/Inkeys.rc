@@ -51,6 +51,8 @@ END
 // PNG
 //
 
+IDR_MESSAGE_BOX_ERROR   PNG                     "src\\message_box\\error.png"
+
 ICON1                   PNG                     "src\\write.png"
 
 SIGN1                   PNG                     "src\\sign.png"
@@ -301,6 +303,8 @@ BARSETTING              UI                      "src\\UI\\barSetting.svg"
 
 BARERASER               UI                      "src\\UI\\barEraser.svg"
 
+BARAUTOERASER           UI                      "src\\UI\\barAutoEraser.svg"
+
 BARCLEAN                UI                      "src\\UI\\barClean.svg"
 
 BARPIERCE               UI                      "src\\UI\\barPierce.svg"
@@ -336,6 +340,8 @@ BARQUESTION             UI                      "src\\UI\\barQuestion.svg"
 BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
 
 BARMORE                 UI                      "src\\UI\\barMore.svg"
+
+BARENDSHOW              UI                      "src\\UI\\barEndShow.svg"
 
 BARADD                  UI                      "src\\UI\\barAdd.svg"
 

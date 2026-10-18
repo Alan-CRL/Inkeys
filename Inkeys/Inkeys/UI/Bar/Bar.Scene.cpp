@@ -14,6 +14,8 @@ module;
 #include <utility>
 #include <windows.h>
 
+#include "Bar.DirtyRegion.h"
+
 module Inkeys.UI.Bar;
 import :Scene;
 import :Main;
@@ -95,7 +97,8 @@ namespace Inkeys::UI::Bar
 		[[nodiscard]] float NormalizeScale(float scale) noexcept
 		{
 			if (!std::isfinite(scale) || scale <= 0.0F) return 1.0F;
-			return (std::clamp)(scale, 0.5F, 4.0F);
+			// 接收已按屏幕与资源限制解析的有效缩放，不再套用 DPI/用户配置范围。
+			return (std::max)(scale, 1.0F / 65536.0F);
 		}
 
 		[[nodiscard]] COLORREF ThemeOr(COLORREF value,
@@ -104,28 +107,414 @@ namespace Inkeys::UI::Bar
 			return useTheme ? GetThemeColor(themeColor) : value;
 		}
 
-		std::mutex sharedPrimaryLightRegistryMutex;
-		std::vector<BarSurfaceScene*> sharedPrimaryLightScenes;
-		BarSurfaceSharedPrimaryLight sharedPrimaryLight{};
-		std::uint64_t sharedPrimaryLightGeneration = 0;
+		std::mutex sharedLightingRegistryMutex;
+		std::vector<BarSurfaceScene*> sharedLightingScenes;
+		BarSurfaceSharedLighting sharedLighting{};
+		std::uint64_t sharedLightingGeneration = 0;
 
-		[[nodiscard]] bool SameSharedPrimaryLight(
-			const BarSurfaceSharedPrimaryLight& left,
-			const BarSurfaceSharedPrimaryLight& right) noexcept
+		[[nodiscard]] bool SameSharedLighting(
+			const BarSurfaceSharedLighting& left,
+			const BarSurfaceSharedLighting& right) noexcept
 		{
-			return std::abs(left.screenX - right.screenX) <= 0.01
-				&& std::abs(left.screenY - right.screenY) <= 0.01
-				&& std::abs(left.radiusPixels - right.radiusPixels) <= 0.01
+			return std::abs(left.primaryScreenX - right.primaryScreenX) <= 0.01
+				&& std::abs(left.primaryScreenY - right.primaryScreenY) <= 0.01
+				&& std::abs(left.primaryRadiusPixels
+					- right.primaryRadiusPixels) <= 0.01
+				&& std::abs(left.cursorScreenX - right.cursorScreenX) <= 0.01
+				&& std::abs(left.cursorScreenY - right.cursorScreenY) <= 0.01
+				&& std::abs(left.cursorRadiusPixels
+					- right.cursorRadiusPixels) <= 0.01
+				&& std::abs(left.cursorIntensity
+					- right.cursorIntensity) <= 0.000001
 				&& (left.drawingPenColor & 0x00FFFFFF)
 					== (right.drawingPenColor & 0x00FFFFFF)
 				&& std::abs(left.drawingPenColorBlend
 					- right.drawingPenColorBlend) <= 0.000001
 				&& std::abs(left.drawingLightOpacity
 					- right.drawingLightOpacity) <= 0.000001
-				&& left.visible == right.visible
+				&& left.primaryVisible == right.primaryVisible
+				&& left.cursorVisible == right.cursorVisible
 				&& left.edgeLightingEnabled == right.edgeLightingEnabled;
 		}
 
+		[[nodiscard]] bool SameSharedPrimaryLighting(
+			const BarSurfaceSharedLighting& left,
+			const BarSurfaceSharedLighting& right) noexcept
+		{
+			return std::abs(left.primaryScreenX - right.primaryScreenX) <= 0.01
+				&& std::abs(left.primaryScreenY - right.primaryScreenY) <= 0.01
+				&& std::abs(left.primaryRadiusPixels
+					- right.primaryRadiusPixels) <= 0.01
+				&& (left.drawingPenColor & 0x00FFFFFF)
+					== (right.drawingPenColor & 0x00FFFFFF)
+				&& std::abs(left.drawingPenColorBlend
+					- right.drawingPenColorBlend) <= 0.000001
+				&& std::abs(left.drawingLightOpacity
+					- right.drawingLightOpacity) <= 0.000001
+				&& left.primaryVisible == right.primaryVisible
+				&& left.edgeLightingEnabled == right.edgeLightingEnabled;
+		}
+
+		[[nodiscard]] bool SameSharedCursorLighting(
+			const BarSurfaceSharedLighting& left,
+			const BarSurfaceSharedLighting& right) noexcept
+		{
+			return std::abs(left.cursorScreenX - right.cursorScreenX) <= 0.01
+				&& std::abs(left.cursorScreenY - right.cursorScreenY) <= 0.01
+				&& std::abs(left.cursorRadiusPixels
+					- right.cursorRadiusPixels) <= 0.01
+				&& std::abs(left.cursorIntensity
+					- right.cursorIntensity) <= 0.000001
+				&& (left.drawingPenColor & 0x00FFFFFF)
+					== (right.drawingPenColor & 0x00FFFFFF)
+				&& std::abs(left.drawingPenColorBlend
+					- right.drawingPenColorBlend) <= 0.000001
+				&& std::abs(left.drawingLightOpacity
+					- right.drawingLightOpacity) <= 0.000001
+				&& left.cursorVisible == right.cursorVisible
+				&& left.edgeLightingEnabled == right.edgeLightingEnabled;
+		}
+
+	}
+
+	struct BarSurfaceLightBorder
+	{
+		RECT outerBounds{};
+		RECT contentBounds{};
+		bool contributes = false;
+	};
+
+	struct BarSurfaceCursorLightDamageResolution
+	{
+		RECT current{};
+		RECT damage{};
+	};
+
+	[[nodiscard]] BarSurfaceCursorLightDamageResolution
+		ResolveBarSurfaceCursorLightDamage(
+		const RECT& previous,
+		const RECT& influenceBounds,
+		std::span<const BarSurfaceLightBorder> borders) noexcept
+	{
+		BarSurfaceCursorLightDamageResolution result;
+		for (const auto& border : borders)
+		{
+			if (!border.contributes) continue;
+			BarDirtyRegionTracker::UnionInPlace(result.current,
+				ResolveBarLightBorderDamage(border.outerBounds,
+					border.contentBounds, influenceBounds));
+		}
+		result.damage = previous;
+		BarDirtyRegionTracker::UnionInPlace(result.damage, result.current);
+		return result;
+	}
+
+	BarUiFrameLightingSnapshot ResolveBarSurfaceFrameLightingSnapshot(
+		const BarSurfaceSharedLighting& lighting,
+		const RECT& logicalBounds, LONG presentationOutset) noexcept
+	{
+		BarUiFrameLightingSnapshot snapshot;
+		const auto primaryPoint = ResolveBarSurfaceScreenPoint(
+			lighting.primaryScreenX, lighting.primaryScreenY,
+			logicalBounds.left, logicalBounds.top, presentationOutset);
+		snapshot.primaryLight = D2D1::Point2F(
+			static_cast<FLOAT>(primaryPoint.x),
+			static_cast<FLOAT>(primaryPoint.y));
+		snapshot.primaryRadius = static_cast<FLOAT>(
+			std::isfinite(lighting.primaryRadiusPixels)
+				&& lighting.primaryRadiusPixels > 0.0
+				? lighting.primaryRadiusPixels : 0.0);
+		const auto cursorPoint = ResolveBarSurfaceScreenPoint(
+			lighting.cursorScreenX, lighting.cursorScreenY,
+			logicalBounds.left, logicalBounds.top, presentationOutset);
+	snapshot.cursorLight = D2D1::Point2F(
+			static_cast<FLOAT>(cursorPoint.x),
+			static_cast<FLOAT>(cursorPoint.y));
+		snapshot.cursorScreenLight = D2D1::Point2F(
+			static_cast<FLOAT>(lighting.cursorScreenX),
+			static_cast<FLOAT>(lighting.cursorScreenY));
+		snapshot.cursorRadius = static_cast<FLOAT>(
+			std::isfinite(lighting.cursorRadiusPixels)
+				&& lighting.cursorRadiusPixels > 0.0
+				? lighting.cursorRadiusPixels : 0.0);
+		snapshot.cursorIntensity = static_cast<FLOAT>(
+			std::isfinite(lighting.cursorIntensity)
+				? std::clamp(lighting.cursorIntensity, 0.0, 1.0) : 0.0);
+		snapshot.drawingPenColor = lighting.drawingPenColor;
+		snapshot.drawingPenColorBlend = lighting.drawingPenColorBlend;
+		snapshot.drawingLightOpacity = lighting.drawingLightOpacity;
+		snapshot.primaryLightVisible = lighting.primaryVisible;
+		snapshot.cursorLightVisible = lighting.cursorVisible;
+		snapshot.edgeLightingEnabled = lighting.edgeLightingEnabled;
+		return snapshot;
+	}
+
+	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage)
+	{
+		if (!hoverPct || !hoverFill || !hoverStage) return false;
+		hoverPct->animateWhenDisabled = true;
+		hoverFill->animateWhenDisabled = true;
+		const BarUiCurveSpecClass curve{
+			BarUiCurveEnum::EaseOutSine,
+			BarUiCurveEnum::EaseOutSine, 0.0, false };
+		hoverFill->SetTar(GetThemeColor(BarThemeColorEnum::PressedFill),
+			BarButtonHoverTransitionDuration, curve);
+		hoverPct->SetTar(BarButtonHoverOpacity,
+			BarButtonHoverTransitionDuration, std::nullopt, true, curve);
+		*hoverStage = BarButtonHoverStageEnum::Showing;
+		return true;
+	}
+
+	bool StopBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage, bool immediate, bool preserveVisual)
+	{
+		if (!hoverPct || !hoverStage) return false;
+		if (immediate)
+		{
+			*hoverStage = BarButtonHoverStageEnum::None;
+			// 按下时保留当前视觉值交给按压态续接，隐藏等场景仍立即清零。
+			if (!preserveVisual) hoverPct->SetDirect(0.0);
+			hoverPct->animateWhenDisabled = false;
+			if (hoverFill) hoverFill->animateWhenDisabled = false;
+		}
+		else
+		{
+			// 离开后保持背景颜色，透明度自然降为零后再结束悬停。
+			hoverPct->animateWhenDisabled = true;
+			if (hoverFill) hoverFill->animateWhenDisabled = true;
+			*hoverStage = BarButtonHoverStageEnum::Fading;
+			const BarUiCurveSpecClass curve{
+				BarUiCurveEnum::EaseOutSine,
+				BarUiCurveEnum::EaseOutSine, 0.0, false };
+			hoverPct->SetTar(0.0,
+				BarButtonHoverTransitionDuration,
+				std::nullopt, true, curve);
+		}
+		return true;
+	}
+
+	bool StartBarButtonHoverVisual(BarButtonClass& button) noexcept
+	{
+		if (button.preset == BarButtonPresetEnum::Divider
+			|| !button.button.fill.has_value()) return false;
+		// 属性面板的 Shape 与完整按钮共用悬停动画，按钮仅保留自身门控。
+		return StartBarButtonHoverVisual(&button.button.pct,
+			&button.button.fill.value(), &button.hoverStage);
+	}
+
+	bool StopBarButtonHoverVisual(BarButtonClass& button, bool immediate,
+		bool preserveVisual) noexcept
+	{
+		if (button.preset == BarButtonPresetEnum::Divider)
+		{
+			button.hoverStage = BarButtonHoverStageEnum::None;
+			button.state->emph = BarWidgetEmphasize::None;
+			button.pressScale.SetDirect(1.0);
+			button.button.pct.animateWhenDisabled = false;
+			if (button.button.fill.has_value())
+				button.button.fill->animateWhenDisabled = false;
+			return true;
+		}
+		if (!button.button.fill.has_value()) return false;
+		return StopBarButtonHoverVisual(&button.button.pct,
+			&button.button.fill.value(), &button.hoverStage, immediate, preserveVisual);
+	}
+
+	bool UpdateBarButtonHoverVisual(BarButtonClass& button, bool visible,
+		bool hoverAllowed, double fadeDurationSeconds) noexcept
+	{
+		auto Finish = [&]() noexcept
+			{
+				button.hoverStage = BarButtonHoverStageEnum::None;
+				button.button.pct.animateWhenDisabled = false;
+				if (button.button.fill.has_value())
+					button.button.fill->animateWhenDisabled = false;
+			};
+		if (!visible)
+		{
+			if (button.hoverStage != BarButtonHoverStageEnum::None)
+				button.button.pct.SetDirect(0.0);
+			Finish();
+			return true;
+		}
+		if (!hoverAllowed)
+		{
+			Finish();
+			return true;
+		}
+		if (button.hoverStage == BarButtonHoverStageEnum::Showing
+			&& button.button.pct.IsSame())
+		{
+			button.hoverStage = BarButtonHoverStageEnum::Fading;
+			const BarUiCurveSpecClass curve{
+				BarUiCurveEnum::EaseInSine,
+				BarUiCurveEnum::EaseInSine, 0.0, false };
+			button.button.pct.SetTar(0.0, fadeDurationSeconds,
+				std::nullopt, true, curve);
+			return true;
+		}
+		if (button.hoverStage == BarButtonHoverStageEnum::Fading
+			&& button.button.pct.IsSame())
+		{
+			Finish();
+			return true;
+		}
+		return false;
+	}
+
+	void SetBarButtonPressedVisual(BarButtonClass& button, bool pressed) noexcept
+	{
+		button.state->emph = pressed
+			? BarWidgetEmphasize::Pressed : BarWidgetEmphasize::None;
+	}
+
+	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
+		bool visible, bool enabled, bool selected,
+		double durationMilliseconds, std::optional<COLORREF> contentColorOverride) noexcept
+	{
+		const bool pressed = button.state->emph
+			== BarWidgetEmphasize::Pressed;
+		if (!visible) button.button.pct.SetTar(0.0, durationMilliseconds);
+		else if (pressed)
+			button.button.pct.SetTar(BarButtonPressedOpacity,
+				durationMilliseconds);
+		else if (selected)
+			button.button.pct.SetTar(0.20, durationMilliseconds);
+		else if (button.hoverStage == BarButtonHoverStageEnum::None)
+			button.button.pct.SetTar(0.0, durationMilliseconds);
+
+		if (button.button.fill.has_value())
+			button.button.fill->SetTar(GetThemeColor(selected
+				? BarThemeColorEnum::Accent
+				: BarThemeColorEnum::PressedFill));
+		if (button.button.frameLightPct.has_value())
+			button.button.frameLightPct->SetTar(
+				visible && enabled && selected
+					? (pressed ? BarButtonPressedLightOpacity : 1.0)
+					: 0.0,
+				durationMilliseconds);
+		button.pressScale.SetTar(
+			pressed ? BarButtonPressScale : 1.0,
+			static_cast<double>(BarUiDefaultOperationDur),
+			std::nullopt, false,
+			pressed ? BarButtonPressCurve() : BarButtonReleaseCurve());
+
+		const double contentOpacity = visible
+			? (enabled ? 1.0 : BarButtonDisabledContentOpacity) : 0.0;
+		button.icon.pct.SetTar(contentOpacity,
+			BarButtonHoverTransitionDuration);
+		button.name.pct.SetTar(contentOpacity,
+			BarButtonHoverTransitionDuration);
+		// 调用方已有禁用颜色时，共用同一个目标，避免同帧正常/灰色反复重启动画。
+		const COLORREF contentColor = contentColorOverride.value_or(GetThemeColor(selected
+			? BarThemeColorEnum::Accent
+			: BarThemeColorEnum::TextPrimary));
+		if (button.icon.color1.has_value())
+			button.icon.color1->SetTar(contentColor);
+		button.name.color.SetTar(contentColor);
+	}
+
+	BarButtonVisualInheritance PrepareBarButtonVisualInheritance(
+		BarButtonClass& button, const BarUiInheritClass& inherit,
+		BarUiWordClass* secondary) noexcept
+	{
+		const BarUiInheritClass buttonInherit = button.button.UpInh(inherit);
+		const auto iconPoint = ResolveBarButtonChildTopLeft(
+			buttonInherit.x, buttonInherit.y,
+			button.button.w.val, button.button.h.val,
+			button.icon.x.val, button.icon.y.val,
+			button.icon.w.val, button.icon.h.val);
+		const BarUiInheritClass iconInherit = button.icon.UpInh(
+			BarUiInheritClass(iconPoint.x, iconPoint.y));
+		const auto primaryPoint = ResolveBarButtonChildTopLeft(
+			buttonInherit.x, buttonInherit.y,
+			button.button.w.val, button.button.h.val,
+			button.name.x.val, button.name.y.val,
+			button.name.w.val, button.name.h.val);
+		const BarUiInheritClass primaryInherit = button.name.UpInh(
+			BarUiInheritClass(primaryPoint.x, primaryPoint.y));
+		std::optional<BarUiInheritClass> secondaryInherit;
+		if (secondary)
+		{
+			const auto secondaryPoint = ResolveBarButtonChildTopLeft(
+				buttonInherit.x, buttonInherit.y,
+				button.button.w.val, button.button.h.val,
+				secondary->x.val, secondary->y.val,
+				secondary->w.val, secondary->h.val);
+			secondaryInherit = secondary->UpInh(
+				BarUiInheritClass(secondaryPoint.x, secondaryPoint.y));
+		}
+		return { buttonInherit, iconInherit, primaryInherit,
+			secondaryInherit };
+	}
+
+	bool DrawBarButtonVisual(BarUIRendering& renderer,
+		ID2D1DeviceContext* deviceContext, BarButtonClass& button,
+		const BarUiInheritClass& inherit,
+		const BarButtonDrawOptions& options)
+	{
+		if (!deviceContext) return false;
+		const auto visualInheritance = PrepareBarButtonVisualInheritance(
+			button, inherit, options.secondary);
+		D2D1_MATRIX_3X2_F originalTransform{};
+		deviceContext->GetTransform(&originalTransform);
+		double pressScale = button.pressScale.val;
+		if (!std::isfinite(pressScale) || pressScale <= 0.0)
+			pressScale = 1.0;
+		const bool transformChanged =
+			std::abs(pressScale - 1.0) > 0.000001;
+		if (transformChanged)
+		{
+			const FLOAT zoom = static_cast<FLOAT>(renderer.GetFrameZoom());
+			const FLOAT centerX = static_cast<FLOAT>(
+				(visualInheritance.button.x + button.button.w.val / 2.0) * zoom);
+			const FLOAT centerY = static_cast<FLOAT>(
+				(visualInheritance.button.y + button.button.h.val / 2.0) * zoom);
+			deviceContext->SetTransform(D2D1::Matrix3x2F::Scale(
+				static_cast<FLOAT>(pressScale),
+				static_cast<FLOAT>(pressScale),
+				D2D1::Point2F(centerX, centerY)) * originalTransform);
+		}
+
+		bool rendered = renderer.Shape(
+			deviceContext, button.button, visualInheritance.button);
+		if (button.preset != BarButtonPresetEnum::Divider)
+		{
+			if (button.iconKind == BarButtonIconKindEnum::Png)
+			{
+				button.pngIcon.x.SetDirect(button.icon.x.val);
+				button.pngIcon.y.SetDirect(button.icon.y.val);
+				button.pngIcon.w.SetDirect(button.icon.w.val);
+				button.pngIcon.h.SetDirect(button.icon.h.val);
+				button.pngIcon.angle.SetDirect(button.icon.angle.val);
+				button.pngIcon.pct.SetDirect(button.icon.pct.val);
+				button.pngIcon.enable.val = button.icon.enable.val;
+				button.pngIcon.enable.tar = button.icon.enable.tar;
+				rendered = renderer.Png(deviceContext, button.pngIcon,
+					button.pngIcon.UpInh(visualInheritance.icon)) || rendered;
+			}
+			else
+				rendered = renderer.Svg(deviceContext, button.icon,
+					visualInheritance.icon) || rendered;
+			rendered = renderer.Word(deviceContext, button.name,
+				visualInheritance.primary,
+				options.primaryWeight) || rendered;
+			if (options.secondary && visualInheritance.secondary)
+				rendered = renderer.Word(deviceContext, *options.secondary,
+					*visualInheritance.secondary,
+					options.secondaryWeight) || rendered;
+		}
+		if (transformChanged) deviceContext->SetTransform(originalTransform);
+		return rendered;
+	}
+
+	bool DrawBarBackgroundVisual(BarUIRendering& renderer,
+		ID2D1DeviceContext* deviceContext, BarUiShapeClass& background,
+		const BarUiInheritClass& inherit, RECT* targetRect, bool clip)
+	{
+		return renderer.Shape(deviceContext, background, inherit,
+			targetRect, clip);
 	}
 
 	struct BarSurfaceScene::Impl
@@ -134,10 +523,9 @@ namespace Inkeys::UI::Bar
 		{
 			BarSurfaceWidgetSpec spec{};
 			std::shared_ptr<BarButtonClass> button;
+			BarUiShapeClass dragHandle;
 			BarUiWordClass secondary;
 			bool hasSecondary = false;
-			bool hover = false;
-			bool pressed = false;
 			RECT lastPixels{};
 		};
 
@@ -146,6 +534,7 @@ namespace Inkeys::UI::Bar
 		BarUISetClass rendererOwner;
 		BarSurfaceBackgroundSpec background{};
 		BarUiShapeClass backgroundShape;
+		BarUiPctClass surfaceOpacity;
 		std::vector<Widget> widgets;
 		RECT logicalBounds{ 0, 0, 1, 1 };
 		float dpiScale = 1.0F;
@@ -158,13 +547,47 @@ namespace Inkeys::UI::Bar
 		std::chrono::steady_clock::time_point lastFrame{};
 		bool animationActive = false;
 		BarSurfaceHooks hooks;
-		bool sharedPrimaryLightSubscribed = false;
-		std::uint64_t appliedSharedPrimaryLightGeneration = 0;
-		BarSurfaceSharedPrimaryLight appliedSharedPrimaryLight{};
-		RECT appliedSharedPrimaryLightBounds{};
-		LONG appliedSharedPrimaryLightOutset = -1;
+		bool sharedLightingSubscribed = false;
+		std::uint64_t appliedSharedLightingGeneration = 0;
+		BarSurfaceSharedLighting appliedSharedLighting{};
+		RECT appliedSharedLightingBounds{};
+		LONG appliedSharedLightingOutset = -1;
 		POINT pointerLocal{};
-		bool pointerKnown = false;
+		bool hoverSuppressed = false;
+		POINT hoverSuppressionPoint{};
+		RECT cursorLightDamageBounds{};
+
+		[[nodiscard]] RECT WidgetPixelsLocked(const Widget& widget) const noexcept
+		{
+			const double scale = dpiScale > 0.0F ? dpiScale : 1.0F;
+			const double width = (std::max)(0.0,
+				static_cast<double>(widget.button->button.w.val));
+			const double height = (std::max)(0.0,
+				static_cast<double>(widget.button->button.h.val));
+			const double left = widget.button->button.x.val - width / 2.0;
+			const double top = widget.button->button.y.val - height / 2.0;
+			return RECT{
+				static_cast<LONG>(std::floor(left * scale)),
+				static_cast<LONG>(std::floor(top * scale)),
+				static_cast<LONG>(std::ceil((left + width) * scale)),
+				static_cast<LONG>(std::ceil((top + height) * scale)) };
+		}
+
+		void SyncDragHandleGeometryLocked(Widget& widget) noexcept
+		{
+			if (widget.spec.kind != BarSurfaceWidgetKind::DragHandle) return;
+			const double width = (std::max)(0.0,
+				static_cast<double>(widget.button->button.w.val));
+			const double height = (std::max)(0.0,
+				static_cast<double>(widget.button->button.h.val));
+			const bool vertical = width <= height;
+			const double length = (std::max)(2.0,
+				(std::min)(vertical ? height : width, 20.0));
+			widget.dragHandle.x.SetDirect(widget.button->button.x.val);
+			widget.dragHandle.y.SetDirect(widget.button->button.y.val);
+			widget.dragHandle.w.SetDirect(vertical ? 2.0 : length);
+			widget.dragHandle.h.SetDirect(vertical ? length : 2.0);
+		}
 
 		[[nodiscard]] RECT LocalSurfaceRect() const noexcept
 		{
@@ -197,6 +620,94 @@ namespace Inkeys::UI::Bar
 			return RECT{ 0, 0,
 				logicalBounds.right - logicalBounds.left + outset * 2,
 				logicalBounds.bottom - logicalBounds.top + outset * 2 };
+		}
+
+		bool IncludePresentationDamageLocked(const RECT& rect) noexcept
+		{
+			const RECT damage = ClipToSurface(rect, PresentationLocalRect());
+			if (IsEmpty(damage)) return false;
+			UnionInPlace(pendingDamage, damage);
+			invalidated = true;
+			return true;
+		}
+
+		[[nodiscard]] BarSurfaceLightBorder ShapeLightBorderLocked(
+			const BarUiShapeClass& shape, double visualScale = 1.0) const noexcept
+		{
+			BarSurfaceLightBorder result;
+			if (!std::isfinite(visualScale) || visualScale <= 0.0
+				|| !shape.enable.val || !shape.frame.has_value()
+				|| shape.frameRendering != BarUiFrameRenderingEnum::PointLight
+				|| shape.w.val <= 0.0 || shape.h.val <= 0.0
+				|| shape.frameCursorLightIntensityScale <= 0.0)
+				return result;
+
+			double lightOpacity = shape.frameLightPct.has_value()
+				? static_cast<double>(shape.frameLightPct->val)
+				: (shape.framePct.has_value()
+					? static_cast<double>(shape.framePct->val)
+					: static_cast<double>(shape.pct.val));
+			if (!shape.frameLightPct.has_value()
+				&& shape.frameLightOpacitySource
+					== BarUiFrameLightOpacitySourceEnum::ObjectPct)
+				lightOpacity = static_cast<double>(shape.pct.val);
+			const double frameThickness = shape.ft.has_value()
+				? static_cast<double>(shape.ft->val) : 4.0;
+			if (!std::isfinite(lightOpacity) || lightOpacity <= 0.0001
+				|| !std::isfinite(frameThickness) || frameThickness <= 0.0)
+				return result;
+
+			const double scale = static_cast<double>(dpiScale);
+			const LONG outset = DamageOutsetPixels();
+			const double halfWidth = shape.w.val * visualScale / 2.0;
+			const double halfHeight = shape.h.val * visualScale / 2.0;
+			result.contentBounds = RECT{
+				static_cast<LONG>(std::floor(
+					(shape.x.val - halfWidth) * scale)) + outset,
+				static_cast<LONG>(std::floor(
+					(shape.y.val - halfHeight) * scale)) + outset,
+				static_cast<LONG>(std::ceil(
+					(shape.x.val + halfWidth) * scale)) + outset,
+				static_cast<LONG>(std::ceil(
+					(shape.y.val + halfHeight) * scale)) + outset,
+			};
+			const LONG frameOutset = static_cast<LONG>(std::ceil((
+				frameThickness + BarRenderingAttribute::pointLightDiffuseExtraWidth)
+				* scale * visualScale))
+				+ BarRenderingAttribute::dirtyAntialiasPadding;
+			result.outerBounds = Inflate(result.contentBounds, frameOutset);
+			result.contributes = true;
+			return result;
+		}
+
+		bool UpdateCursorLightDamageLocked(bool cursorLightChanged) noexcept
+		{
+			std::vector<BarSurfaceLightBorder> borders;
+			borders.reserve(widgets.size() + 1);
+			const bool surfaceVisible = surfaceOpacity.val > 0.0001;
+			if (surfaceVisible && background.visible)
+				borders.push_back(ShapeLightBorderLocked(backgroundShape));
+			if (surfaceVisible)
+			{
+				for (const auto& widget : widgets)
+				{
+					if (!widget.button || !widget.spec.visible
+						|| widget.spec.kind != BarSurfaceWidgetKind::Button)
+						continue;
+					borders.push_back(ShapeLightBorderLocked(
+						widget.button->button, widget.button->pressScale.val));
+				}
+			}
+			const auto resolved = ResolveBarSurfaceCursorLightDamage(
+				cursorLightDamageBounds,
+				rendererOwner.spec.GetFrameCursorLightDamageBounds(), borders);
+			const bool boundsChanged = !EqualRect(
+				&cursorLightDamageBounds, &resolved.current);
+			// 返回本次新旧光照的实际贡献，不受之前累计 damage 是否相同影响。
+			const bool damageContributed = (cursorLightChanged || boundsChanged)
+				&& IncludePresentationDamageLocked(resolved.damage);
+			cursorLightDamageBounds = resolved.current;
+			return damageContributed;
 		}
 
 		[[nodiscard]] std::optional<POINT> LogicalPointFromPresentation(
@@ -243,43 +754,45 @@ namespace Inkeys::UI::Bar
 			return nullptr;
 		}
 
-		void ApplySharedPrimaryLightLocked(
-			const BarSurfaceSharedPrimaryLight& light,
+		void ResetWidgetDeviceCachesLocked() noexcept
+		{
+			// Scene 的稳定按钮不在 rendererOwner 的注册表中，设备切换时需单独丢弃上传位图。
+			for (auto& widget : widgets)
+			{
+				if (!widget.button) continue;
+				widget.button->icon.ResetCache();
+				widget.button->pngIcon.ResetCache();
+			}
+		}
+
+		bool ApplySharedLightingLocked(
+			const BarSurfaceSharedLighting& lighting,
 			std::uint64_t generation)
 		{
 			const LONG outset = DamageOutsetPixels();
-			if (appliedSharedPrimaryLightGeneration == generation
-				&& EqualRect(&appliedSharedPrimaryLightBounds, &logicalBounds)
-				&& appliedSharedPrimaryLightOutset == outset)
-				return;
+			if (appliedSharedLightingGeneration == generation
+				&& EqualRect(&appliedSharedLightingBounds, &logicalBounds)
+				&& appliedSharedLightingOutset == outset)
+				return false;
 
-			BarUiFrameLightingSnapshot snapshot;
-			snapshot.primaryLight = D2D1::Point2F(
-				static_cast<FLOAT>(light.screenX
-					- static_cast<double>(logicalBounds.left) + outset),
-				static_cast<FLOAT>(light.screenY
-					- static_cast<double>(logicalBounds.top) + outset));
-			snapshot.primaryRadius = static_cast<FLOAT>(
-				std::isfinite(light.radiusPixels) && light.radiusPixels > 0.0
-					? light.radiusPixels : 0.0);
-			snapshot.drawingPenColor = light.drawingPenColor;
-			snapshot.drawingPenColorBlend = light.drawingPenColorBlend;
-			snapshot.drawingLightOpacity = light.drawingLightOpacity;
-			snapshot.primaryLightVisible = light.visible;
-			snapshot.edgeLightingEnabled = light.edgeLightingEnabled;
+			const bool mappingChanged = !EqualRect(
+				&appliedSharedLightingBounds, &logicalBounds)
+				|| appliedSharedLightingOutset != outset;
+			const bool primaryChanged = mappingChanged
+				|| !SameSharedPrimaryLighting(appliedSharedLighting, lighting);
+			const bool cursorChanged = mappingChanged
+				|| !SameSharedCursorLighting(appliedSharedLighting, lighting);
+			const auto snapshot = ResolveBarSurfaceFrameLightingSnapshot(
+				lighting, logicalBounds, outset);
 			rendererOwner.spec.SetFrameLightingSnapshot(snapshot);
-			appliedSharedPrimaryLight = light;
-			appliedSharedPrimaryLightGeneration = generation;
-			appliedSharedPrimaryLightBounds = logicalBounds;
-			appliedSharedPrimaryLightOutset = outset;
-		}
-
-		[[nodiscard]] bool CursorLightTargetLocked() const noexcept
-		{
-			if (!pointerKnown || hovered == BarSurfaceNoWidget) return false;
-			const auto* widget = FindWidgetLocked(hovered);
-			return widget && widget->spec.visible && widget->spec.enabled
-				&& widget->spec.interactive && widget->spec.selected;
+			const bool cursorDamageContributed = cursorChanged
+				&& UpdateCursorLightDamageLocked(true);
+			if (primaryChanged) IncludeFullDamageLocked();
+			appliedSharedLighting = lighting;
+			appliedSharedLightingGeneration = generation;
+			appliedSharedLightingBounds = logicalBounds;
+			appliedSharedLightingOutset = outset;
+			return primaryChanged || cursorDamageContributed;
 		}
 
 		void InitializeBackgroundLocked()
@@ -303,8 +816,6 @@ namespace Inkeys::UI::Bar
 			backgroundShape.frameLightColor =
 				BarUiFrameLightColorEnum::PenWhenDrawing;
 			backgroundShape.framePrimaryLightEnabled = true;
-			backgroundShape.frameCursorLightIntensityScale =
-				BarButtonCursorLightIntensity;
 			backgroundShape.pct.SetDirect((std::clamp)(background.fillOpacity,
 				0.0, 1.0));
 			if (!backgroundShape.framePct.has_value())
@@ -315,11 +826,77 @@ namespace Inkeys::UI::Bar
 				backgroundShape.frameLightPct.emplace(0.0);
 			backgroundShape.frameLightPct->SetDirect((std::clamp)(
 				background.frameOpacity, 0.0, 1.0));
+			if (!std::isfinite(surfaceOpacity.val))
+				surfaceOpacity.SetDirect(1.0);
+		}
+
+		void ApplySharedButtonMetricsLocked(Widget& widget)
+		{
+			if (widget.spec.layoutKind
+				== BarButtonVisualLayoutKind::Custom) return;
+			const auto metrics = ResolveBarButtonVisualMetrics(
+				widget.spec.layoutKind);
+			widget.spec.iconSizeDip = metrics.iconSizeDip;
+			widget.spec.iconOffsetXDip = metrics.iconOffsetXDip;
+			widget.spec.iconOffsetYDip = metrics.iconOffsetYDip;
+			widget.spec.primaryFontSizeDip = metrics.primaryFontSizeDip;
+			widget.spec.primaryOffsetXDip = metrics.primaryOffsetXDip;
+			widget.spec.primaryOffsetYDip = metrics.primaryOffsetYDip;
+			widget.spec.primarySlotWidthDip = metrics.primarySlotWidthDip;
+			widget.spec.primarySlotHeightDip = metrics.primarySlotHeightDip;
+			widget.spec.secondaryFontSizeDip = metrics.secondaryFontSizeDip;
+			widget.spec.secondaryOffsetXDip = metrics.secondaryOffsetXDip;
+			widget.spec.secondaryOffsetYDip = metrics.secondaryOffsetYDip;
+			widget.spec.secondarySlotWidthDip = metrics.secondarySlotWidthDip;
+			widget.spec.secondarySlotHeightDip = metrics.secondarySlotHeightDip;
+			if (widget.button)
+			{
+				switch (widget.spec.layoutKind)
+				{
+				case BarButtonVisualLayoutKind::StandardOneOne:
+					widget.button->size = BarButtonSizeEnum::oneOne;
+					break;
+				case BarButtonVisualLayoutKind::StandardTwoOne:
+				case BarButtonVisualLayoutKind::PageHorizontal:
+					widget.button->size = BarButtonSizeEnum::twoOne;
+					break;
+				case BarButtonVisualLayoutKind::StandardTwoTwo:
+				case BarButtonVisualLayoutKind::PageTwoTwo:
+					widget.button->size = BarButtonSizeEnum::twoTwo;
+					break;
+				default:
+					break;
+				}
+			}
+
+			if (widget.spec.layoutKind
+				!= BarButtonVisualLayoutKind::PageHorizontal) return;
+			if (!rendererOwner.barMedia.formatCache)
+				rendererOwner.barMedia.LoadFormat();
+			const auto primary = rendererOwner.spec.MeasureText(
+				widget.spec.primaryText, metrics.primaryFontSizeDip,
+				DWRITE_FONT_WEIGHT_BOLD);
+			const auto secondary = rendererOwner.spec.MeasureText(
+				widget.spec.secondaryText, metrics.secondaryFontSizeDip,
+				DWRITE_FONT_WEIGHT_NORMAL);
+			const double primaryWidth = (std::max)(1.0,
+				static_cast<double>(primary.width));
+			const double secondaryWidth = (std::max)(1.0,
+				static_cast<double>(secondary.width));
+			const double totalWidth = primaryWidth + secondaryWidth;
+			widget.spec.primarySlotWidthDip = primaryWidth;
+			widget.spec.secondarySlotWidthDip = secondaryWidth;
+			widget.spec.primaryOffsetXDip =
+				-totalWidth / 2.0 + primaryWidth / 2.0;
+			widget.spec.secondaryOffsetXDip =
+				-totalWidth / 2.0 + primaryWidth + secondaryWidth / 2.0;
 		}
 
 		void InitializeButtonLocked(Widget& widget)
 		{
 			if (!widget.button) widget.button = std::make_shared<BarButtonClass>();
+			widget.button->size = BarButtonSizeEnum::twoTwo;
+			ApplySharedButtonMetricsLocked(widget);
 			const auto fill = ThemeOr(widget.spec.fill, widget.spec.useThemeColors,
 				BarThemeColorEnum::PressedFill);
 			const auto content = ThemeOr(widget.spec.content,
@@ -329,7 +906,6 @@ namespace Inkeys::UI::Bar
 			const double centerX = widget.spec.bounds.left + width / 2.0;
 			const double centerY = widget.spec.bounds.top + height / 2.0;
 
-			widget.button->size = BarButtonSizeEnum::twoTwo;
 			widget.button->userVisible = widget.spec.visible;
 			widget.button->hide = !widget.spec.visible;
 			widget.button->only = true;
@@ -359,7 +935,12 @@ namespace Inkeys::UI::Bar
 				&& widget.spec.primarySlotHeightDip > 0.0
 				? widget.spec.primarySlotHeightDip
 				: BarButtonTwoTwoIconSizeDip;
-			widget.button->name.Initialization(0.0, primaryOffsetY, width,
+			const double primarySlotWidth = std::isfinite(
+				widget.spec.primarySlotWidthDip)
+				&& widget.spec.primarySlotWidthDip > 0.0
+				? widget.spec.primarySlotWidthDip : width;
+			widget.button->name.Initialization(widget.spec.primaryOffsetXDip,
+				primaryOffsetY, primarySlotWidth,
 				primarySlotHeight, widget.spec.primaryText,
 				std::isfinite(widget.spec.primaryFontSizeDip)
 					? widget.spec.primaryFontSizeDip : BarButtonTwoTwoIconSizeDip,
@@ -368,28 +949,30 @@ namespace Inkeys::UI::Bar
 			widget.button->name.pct.SetDirect(1.0);
 
 			widget.hasSecondary = !widget.spec.secondaryText.empty();
-			if (widget.hasSecondary)
-			{
-				const double secondaryOffsetY = std::isfinite(
-					widget.spec.secondaryOffsetYDip)
-					? widget.spec.secondaryOffsetYDip
-					: BarButtonTwoTwoLabelOffsetYDip;
-				const double secondarySlotHeight = std::isfinite(
-					widget.spec.secondarySlotHeightDip)
-					&& widget.spec.secondarySlotHeightDip > 0.0
-					? widget.spec.secondarySlotHeightDip
-					: BarButtonTwoTwoLabelHeightDip;
-				widget.secondary.Initialization(0.0, secondaryOffsetY, width,
-					secondarySlotHeight, widget.spec.secondaryText,
-					std::isfinite(widget.spec.secondaryFontSizeDip)
-						? widget.spec.secondaryFontSizeDip
-						: BarButtonTwoTwoLabelFontSizeDip, content);
-				widget.secondary.enable.Initialization(true);
-				widget.secondary.pct.SetDirect(1.0);
-			}
+			const double secondaryOffsetY = std::isfinite(
+				widget.spec.secondaryOffsetYDip)
+				? widget.spec.secondaryOffsetYDip
+				: BarButtonTwoTwoLabelOffsetYDip;
+			const double secondarySlotHeight = std::isfinite(
+				widget.spec.secondarySlotHeightDip)
+				&& widget.spec.secondarySlotHeightDip > 0.0
+				? widget.spec.secondarySlotHeightDip
+				: BarButtonTwoTwoLabelHeightDip;
+			const double secondarySlotWidth = std::isfinite(
+				widget.spec.secondarySlotWidthDip)
+				&& widget.spec.secondarySlotWidthDip > 0.0
+				? widget.spec.secondarySlotWidthDip : width;
+			widget.secondary.Initialization(widget.spec.secondaryOffsetXDip,
+				secondaryOffsetY, secondarySlotWidth, secondarySlotHeight,
+				widget.spec.secondaryText,
+				std::isfinite(widget.spec.secondaryFontSizeDip)
+					? widget.spec.secondaryFontSizeDip
+					: BarButtonTwoTwoLabelFontSizeDip, content);
+			widget.secondary.enable.Initialization(widget.hasSecondary);
+			widget.secondary.pct.SetDirect(1.0);
 
-			widget.button->icon.Initialization(0.0,
-				widget.hasSecondary && std::isfinite(widget.spec.iconOffsetYDip)
+			widget.button->icon.Initialization(widget.spec.iconOffsetXDip,
+				std::isfinite(widget.spec.iconOffsetYDip)
 					? widget.spec.iconOffsetYDip : 0.0,
 				content, std::nullopt);
 			widget.button->icon.enable.Initialization(false);
@@ -411,40 +994,59 @@ namespace Inkeys::UI::Bar
 			}
 			widget.button->clickFunc = widget.spec.onClick;
 			widget.lastPixels = DipToPixels(widget.spec.bounds, dpiScale);
+			const auto handleColor = GetThemeColor(
+				BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame);
+			widget.dragHandle.Initialization(centerX, centerY, 2.0, 20.0,
+				1.0, 1.0, std::nullopt, handleColor, std::nullopt);
+			widget.dragHandle.enable.Initialization(
+				widget.spec.kind == BarSurfaceWidgetKind::DragHandle);
+			widget.dragHandle.pct.SetDirect(widget.spec.dragOpacity);
+			SyncDragHandleGeometryLocked(widget);
 		}
 
 		void ApplyButtonInteractionTargetsLocked(Widget& widget)
 		{
+			if (widget.spec.kind == BarSurfaceWidgetKind::DragHandle)
+			{
+				widget.button->button.pct.SetTar(0.0,
+					BarButtonHoverTransitionDuration);
+				widget.button->pressScale.SetTar(1.0,
+					static_cast<double>(BarUiDefaultOperationDur));
+				return;
+			}
 			const bool enabled = widget.spec.visible && widget.spec.enabled;
-			const double opacity = !enabled ? 0.0
-				: widget.pressed ? BarButtonPressedOpacity
-				: widget.hover ? BarButtonHoverOpacity : 0.0;
-			widget.button->button.pct.SetTar(opacity,
+			SetBarButtonPressedVisual(*widget.button,
+				pressed == widget.spec.id);
+			widget.button->state->state = widget.spec.selected
+				? BarWidgetState::Selected : BarWidgetState::None;
+			RetargetBarButtonInteractionVisual(*widget.button,
+				widget.spec.visible, enabled, widget.spec.selected,
 				BarButtonHoverTransitionDuration);
-			if (widget.button->button.frameLightPct.has_value())
-				widget.button->button.frameLightPct->SetTar(
-					enabled && widget.spec.selected
-						? BarButtonPressedLightOpacity
-						: 0.0, BarButtonHoverTransitionDuration);
-			widget.button->pressScale.SetTar(
-				widget.pressed ? BarButtonPressScale : 1.0,
-				static_cast<double>(BarUiDefaultOperationDur), std::nullopt,
-				false, widget.pressed ? BarButtonPressCurve() : BarButtonReleaseCurve());
 		}
 
 		void ApplyButtonTargetsLocked(Widget& widget)
 		{
+			if (widget.spec.kind == BarSurfaceWidgetKind::Button)
+				(void)UpdateBarButtonHoverVisual(*widget.button,
+					widget.spec.visible,
+					widget.spec.enabled && widget.spec.interactive
+						&& !widget.spec.selected,
+					BarButtonHoverFadeDurationSeconds);
 			ApplyButtonInteractionTargetsLocked(widget);
 			const bool enabled = widget.spec.visible && widget.spec.enabled;
 			// 禁用只关闭交互和背景反馈，内容仍以低透明度可读。
 			const double contentOpacity = enabled ? 1.0
 				: BarButtonDisabledContentOpacity;
-			widget.button->icon.pct.SetTar(contentOpacity,
+			widget.button->icon.pct.SetTar(
+				widget.spec.iconResource.empty() ? 0.0 : contentOpacity,
 				BarButtonHoverTransitionDuration);
 			widget.button->name.pct.SetTar(contentOpacity,
 				BarButtonHoverTransitionDuration);
 			if (widget.hasSecondary)
 				widget.secondary.pct.SetTar(contentOpacity,
+					BarButtonHoverTransitionDuration);
+			if (widget.spec.kind == BarSurfaceWidgetKind::DragHandle)
+				widget.dragHandle.pct.SetTar(widget.spec.dragOpacity,
 					BarButtonHoverTransitionDuration);
 		}
 
@@ -460,23 +1062,29 @@ namespace Inkeys::UI::Bar
 			double speed = static_cast<double>(BarUiAnimationSpeedRate);
 			if (!std::isfinite(speed) || speed <= 0.0) speed = 1.0;
 			rendererOwner.spec.SetFrameZoom(dpiScale);
-			const LONG outset = DamageOutsetPixels();
-			const D2D1_POINT_2F cursor = D2D1::Point2F(
-				static_cast<FLOAT>(pointerLocal.x + outset),
-				static_cast<FLOAT>(pointerLocal.y + outset));
-			if (rendererOwner.spec.PrepareSurfaceCursorLight(
-				dt, cursor, CursorLightTargetLocked()))
-				IncludeFullDamageLocked();
 			const BarUiAnimationAdvanceContextClass context{
 				dt, speed, static_cast<bool>(BarUiAnimationEnabled), false };
 			bool active = false;
+			const auto includeBackground = [&](const auto& advance)
+				{
+					active = active || advance.active;
+					if (advance.changed) IncludeFullDamageLocked();
+				};
+			includeBackground(BarUiAdvanceAnimation(backgroundShape.x, context));
+			includeBackground(BarUiAdvanceAnimation(backgroundShape.y, context));
+			includeBackground(BarUiAdvanceAnimation(backgroundShape.w, context));
+			includeBackground(BarUiAdvanceAnimation(backgroundShape.h, context));
+			includeBackground(BarUiAdvanceAnimation(backgroundShape.rw.value(), context));
+			includeBackground(BarUiAdvanceAnimation(backgroundShape.rh.value(), context));
+			includeBackground(BarUiAdvanceAnimation(surfaceOpacity, context));
 			for (auto& widget : widgets)
 			{
+				const RECT previousPixels = widget.lastPixels;
 				ApplyButtonTargetsLocked(widget);
 				const auto include = [&](const auto& result)
 				{
 					active = active || result.active;
-					if (result.changed) IncludeDamageLocked(widget.lastPixels);
+					if (result.changed) IncludeDamageLocked(previousPixels);
 				};
 				if (widget.button->icon.AdvanceContentTransition(dt, speed))
 				{
@@ -497,11 +1105,42 @@ namespace Inkeys::UI::Bar
 				include(BarUiAdvanceAnimation(widget.button->button.pct, context));
 				include(BarUiAdvanceAnimation(widget.button->button.frameLightPct.value(), context));
 				include(BarUiAdvanceAnimation(widget.button->pressScale, context));
+				include(BarUiAdvanceAnimation(widget.button->button.x, context));
+				include(BarUiAdvanceAnimation(widget.button->button.y, context));
+				include(BarUiAdvanceAnimation(widget.button->button.w, context));
+				include(BarUiAdvanceAnimation(widget.button->button.h, context));
+				include(BarUiAdvanceAnimation(widget.button->button.rw.value(), context));
+				include(BarUiAdvanceAnimation(widget.button->button.rh.value(), context));
+				include(BarUiAdvanceAnimation(widget.button->icon.x, context));
+				include(BarUiAdvanceAnimation(widget.button->icon.y, context));
+				include(BarUiAdvanceAnimation(widget.button->icon.w, context));
+				include(BarUiAdvanceAnimation(widget.button->icon.h, context));
 				include(BarUiAdvanceAnimation(widget.button->icon.angle, context));
 				include(BarUiAdvanceAnimation(widget.button->icon.pct, context));
+				include(BarUiAdvanceAnimation(widget.button->name.x, context));
+				include(BarUiAdvanceAnimation(widget.button->name.y, context));
+				include(BarUiAdvanceAnimation(widget.button->name.w, context));
+				include(BarUiAdvanceAnimation(widget.button->name.h, context));
+				include(BarUiAdvanceAnimation(widget.button->name.size, context));
 				include(BarUiAdvanceAnimation(widget.button->name.pct, context));
 				if (widget.hasSecondary)
+				{
+					include(BarUiAdvanceAnimation(widget.secondary.x, context));
+					include(BarUiAdvanceAnimation(widget.secondary.y, context));
+					include(BarUiAdvanceAnimation(widget.secondary.w, context));
+					include(BarUiAdvanceAnimation(widget.secondary.h, context));
+					include(BarUiAdvanceAnimation(widget.secondary.size, context));
 					include(BarUiAdvanceAnimation(widget.secondary.pct, context));
+				}
+				if (widget.spec.kind == BarSurfaceWidgetKind::DragHandle)
+					include(BarUiAdvanceAnimation(widget.dragHandle.pct, context));
+				SyncDragHandleGeometryLocked(widget);
+				widget.lastPixels = WidgetPixelsLocked(widget);
+				if (!EqualRect(&previousPixels, &widget.lastPixels))
+				{
+					IncludeDamageLocked(previousPixels);
+					IncludeDamageLocked(widget.lastPixels);
+				}
 			}
 			animationActive = active;
 			return active;
@@ -512,43 +1151,74 @@ namespace Inkeys::UI::Bar
 			const RECT logical = LocalSurfaceRect();
 			if (!PtInRect(&logical, localPixels))
 				return BarSurfaceNoWidget;
-			const double scale = dpiScale > 0.0F ? dpiScale : 1.0F;
-			const double xDip = static_cast<double>(localPixels.x) / scale;
-			const double yDip = static_cast<double>(localPixels.y) / scale;
+			// 拖动条可覆盖页码按钮的一小段区域，必须优先命中。
 			for (auto it = widgets.rbegin(); it != widgets.rend(); ++it)
 			{
+				if (it->spec.kind != BarSurfaceWidgetKind::DragHandle
+					|| !it->spec.visible || !it->spec.enabled
+					|| !it->spec.interactive) continue;
+				if (PtInRect(&it->lastPixels, localPixels))
+					return it->spec.id;
+			}
+			for (auto it = widgets.rbegin(); it != widgets.rend(); ++it)
+			{
+				if (it->spec.kind == BarSurfaceWidgetKind::DragHandle) continue;
 				if (!it->spec.visible || !it->spec.enabled
 					|| !it->spec.interactive) continue;
-				const auto& bounds = it->spec.bounds;
-				if (xDip >= bounds.left && xDip < bounds.right
-					&& yDip >= bounds.top && yDip < bounds.bottom)
+				const double width = it->button->button.w.val;
+				const double height = it->button->button.h.val;
+				const double left = static_cast<double>(
+					it->button->button.x.val) - width / 2.0;
+				const double top = static_cast<double>(
+					it->button->button.y.val) - height / 2.0;
+				const double radiusX = it->button->button.rw.has_value()
+					? static_cast<double>(it->button->button.rw->val) : 0.0;
+				const double radiusY = it->button->button.rh.has_value()
+					? static_cast<double>(it->button->button.rh->val) : 0.0;
+				if (BarUiRoundedRectContainsPoint(localPixels.x, localPixels.y,
+					dpiScale, left, top, width, height, radiusX, radiusY))
 					return it->spec.id;
 			}
 			return BarSurfaceNoWidget;
+		}
+
+		[[nodiscard]] bool HitTestBackgroundLocked(POINT localPixels) const noexcept
+		{
+			if (!background.visible || !backgroundShape.enable.val) return false;
+			const double width = static_cast<double>(backgroundShape.w.val);
+			const double height = static_cast<double>(backgroundShape.h.val);
+			const double left = static_cast<double>(backgroundShape.x.val) - width / 2.0;
+			const double top = static_cast<double>(backgroundShape.y.val) - height / 2.0;
+			const double radiusX = backgroundShape.rw.has_value()
+				? static_cast<double>(backgroundShape.rw->val) : 0.0;
+			const double radiusY = backgroundShape.rh.has_value()
+				? static_cast<double>(backgroundShape.rh->val) : 0.0;
+			return BarUiRoundedRectContainsPoint(localPixels.x, localPixels.y,
+				dpiScale, left, top, width, height, radiusX, radiusY);
 		}
 	};
 
 	BarSurfaceScene::BarSurfaceScene()
 		: impl_(std::make_unique<Impl>())
 	{
-		std::lock_guard lock(sharedPrimaryLightRegistryMutex);
-		sharedPrimaryLightScenes.push_back(this);
+		std::lock_guard lock(sharedLightingRegistryMutex);
+		sharedLightingScenes.push_back(this);
 	}
 
 	BarSurfaceScene::~BarSurfaceScene()
 	{
-		std::lock_guard lock(sharedPrimaryLightRegistryMutex);
-		sharedPrimaryLightScenes.erase(
-			std::remove(sharedPrimaryLightScenes.begin(),
-				sharedPrimaryLightScenes.end(), this),
-			sharedPrimaryLightScenes.end());
+		std::lock_guard lock(sharedLightingRegistryMutex);
+		sharedLightingScenes.erase(
+			std::remove(sharedLightingScenes.begin(),
+				sharedLightingScenes.end(), this),
+			sharedLightingScenes.end());
 	}
 
 	BarSurfaceScene::BarSurfaceScene(BarSurfaceScene&& other) noexcept
 		: impl_(std::move(other.impl_))
 	{
-		std::lock_guard lock(sharedPrimaryLightRegistryMutex);
-		for (auto& scene : sharedPrimaryLightScenes)
+		std::lock_guard lock(sharedLightingRegistryMutex);
+		for (auto& scene : sharedLightingScenes)
 			if (scene == &other) scene = this;
 	}
 
@@ -556,12 +1226,12 @@ namespace Inkeys::UI::Bar
 	{
 		if (this == &other) return *this;
 		{
-			std::lock_guard lock(sharedPrimaryLightRegistryMutex);
-			sharedPrimaryLightScenes.erase(
-				std::remove(sharedPrimaryLightScenes.begin(),
-					sharedPrimaryLightScenes.end(), this),
-				sharedPrimaryLightScenes.end());
-			for (auto& scene : sharedPrimaryLightScenes)
+			std::lock_guard lock(sharedLightingRegistryMutex);
+			sharedLightingScenes.erase(
+				std::remove(sharedLightingScenes.begin(),
+					sharedLightingScenes.end(), this),
+				sharedLightingScenes.end());
+			for (auto& scene : sharedLightingScenes)
 				if (scene == &other) scene = this;
 		}
 		impl_ = std::move(other.impl_);
@@ -576,6 +1246,7 @@ namespace Inkeys::UI::Bar
 			std::lock_guard lock(impl_->mutex);
 			impl_->background = background;
 			impl_->InitializeBackgroundLocked();
+			impl_->surfaceOpacity.SetDirect(1.0);
 			impl_->widgets.clear();
 			impl_->widgets.reserve(copy.size());
 			for (auto& spec : copy)
@@ -589,8 +1260,9 @@ namespace Inkeys::UI::Bar
 			impl_->hovered = BarSurfaceNoWidget;
 			impl_->pressed = BarSurfaceNoWidget;
 			impl_->pointerCaptured = false;
-			impl_->pointerKnown = false;
 			impl_->pointerLocal = {};
+			impl_->hoverSuppressed = false;
+			impl_->hoverSuppressionPoint = {};
 			impl_->IncludeFullDamageLocked();
 		}
 		BarSurfaceHooks hooks;
@@ -671,6 +1343,10 @@ namespace Inkeys::UI::Bar
 		for (auto& spec : copy)
 		{
 			if (spec.id == BarSurfaceNoWidget) continue;
+			Impl::Widget normalized;
+			normalized.spec = spec;
+			impl_->ApplySharedButtonMetricsLocked(normalized);
+			spec = std::move(normalized.spec);
 			Impl::Widget* existing = impl_->FindWidgetLocked(spec.id);
 			if (!existing)
 			{
@@ -683,7 +1359,9 @@ namespace Inkeys::UI::Bar
 				continue;
 			}
 			const RECT oldPixels = existing->lastPixels;
-			const bool visualSpec = existing->spec.visible == spec.visible
+			const bool visualSpec = existing->spec.kind == spec.kind
+				&& existing->spec.layoutKind == spec.layoutKind
+				&& existing->spec.visible == spec.visible
 				&& existing->spec.enabled == spec.enabled
 				&& existing->spec.selected == spec.selected
 				&& existing->spec.bounds.left == spec.bounds.left
@@ -692,7 +1370,26 @@ namespace Inkeys::UI::Bar
 				&& existing->spec.bounds.bottom == spec.bounds.bottom
 				&& existing->spec.iconResource == spec.iconResource
 				&& existing->spec.primaryText == spec.primaryText
-				&& existing->spec.secondaryText == spec.secondaryText;
+				&& existing->spec.secondaryText == spec.secondaryText
+				&& existing->spec.textUpdateMode == spec.textUpdateMode
+				&& existing->spec.iconAngle == spec.iconAngle
+				&& existing->spec.iconSizeDip == spec.iconSizeDip
+				&& existing->spec.iconOffsetXDip == spec.iconOffsetXDip
+				&& existing->spec.iconOffsetYDip == spec.iconOffsetYDip
+				&& existing->spec.primaryFontSizeDip == spec.primaryFontSizeDip
+				&& existing->spec.primaryOffsetXDip == spec.primaryOffsetXDip
+				&& existing->spec.primaryOffsetYDip == spec.primaryOffsetYDip
+				&& existing->spec.primarySlotWidthDip == spec.primarySlotWidthDip
+				&& existing->spec.primarySlotHeightDip == spec.primarySlotHeightDip
+				&& existing->spec.secondaryFontSizeDip == spec.secondaryFontSizeDip
+				&& existing->spec.secondaryOffsetXDip == spec.secondaryOffsetXDip
+				&& existing->spec.secondaryOffsetYDip == spec.secondaryOffsetYDip
+				&& existing->spec.secondarySlotWidthDip == spec.secondarySlotWidthDip
+				&& existing->spec.secondarySlotHeightDip == spec.secondarySlotHeightDip
+				&& existing->spec.dragOpacity == spec.dragOpacity
+				&& existing->spec.fill == spec.fill
+				&& existing->spec.content == spec.content
+				&& existing->spec.useThemeColors == spec.useThemeColors;
 			if (visualSpec && existing->spec.interactive == spec.interactive)
 				continue;
 			if (visualSpec)
@@ -702,12 +1399,13 @@ namespace Inkeys::UI::Bar
 				existing->spec.interactive = spec.interactive;
 				if (!spec.interactive)
 				{
-					existing->hover = false;
 					if (impl_->hovered == existing->spec.id)
 						impl_->hovered = BarSurfaceNoWidget;
+					(void)StopBarButtonHoverVisual(
+						*existing->button, true);
 					if (impl_->pressed == existing->spec.id)
 					{
-						existing->pressed = false;
+						SetBarButtonPressedVisual(*existing->button, false);
 						impl_->pressed = BarSurfaceNoWidget;
 						impl_->pointerCaptured = false;
 					}
@@ -718,13 +1416,7 @@ namespace Inkeys::UI::Bar
 				continue;
 			}
 			impl_->IncludeDamageLocked(oldPixels);
-			const bool hover = existing->hover;
-			const bool pressed = existing->pressed;
 			existing->spec = std::move(spec);
-			existing->hover = hover && existing->spec.visible
-				&& existing->spec.interactive;
-			existing->pressed = pressed && existing->spec.visible
-				&& existing->spec.interactive;
 			impl_->InitializeButtonLocked(*existing);
 			impl_->IncludeDamageLocked(existing->lastPixels);
 			changed = true;
@@ -736,6 +1428,194 @@ namespace Inkeys::UI::Bar
 			if (hooks.invalidate) hooks.invalidate();
 			if (hooks.wake) hooks.wake();
 		}
+		return true;
+	}
+
+	bool BarSurfaceScene::TransitionLayout(
+		const BarSurfaceBackgroundSpec& background,
+		std::span<const BarSurfaceWidgetSpec> widgets,
+		double durationMilliseconds)
+	{
+		std::vector<BarSurfaceWidgetSpec> copy(widgets.begin(), widgets.end());
+		if (!std::isfinite(durationMilliseconds) || durationMilliseconds < 0.0)
+			durationMilliseconds = BarUiDefaultOperationDur;
+		BarSurfaceHooks hooks;
+		{
+			std::lock_guard lock(impl_->mutex);
+			impl_->IncludeFullDamageLocked();
+			impl_->background = background;
+			const double backgroundWidth = (std::max)(0.0,
+				background.bounds.Width());
+			const double backgroundHeight = (std::max)(0.0,
+				background.bounds.Height());
+			impl_->backgroundShape.x.SetTar(
+				background.bounds.left + backgroundWidth / 2.0,
+				durationMilliseconds);
+			impl_->backgroundShape.y.SetTar(
+				background.bounds.top + backgroundHeight / 2.0,
+				durationMilliseconds);
+			impl_->backgroundShape.w.SetTar(backgroundWidth, durationMilliseconds);
+			impl_->backgroundShape.h.SetTar(backgroundHeight, durationMilliseconds);
+			impl_->backgroundShape.rw->SetTar(background.cornerRadiusDip,
+				durationMilliseconds);
+			impl_->backgroundShape.rh->SetTar(background.cornerRadiusDip,
+				durationMilliseconds);
+			impl_->backgroundShape.pct.SetTar((std::clamp)(
+				background.fillOpacity, 0.0, 1.0), durationMilliseconds);
+			impl_->backgroundShape.framePct->SetTar((std::clamp)(
+				background.frameOpacity, 0.0, 1.0), durationMilliseconds);
+			impl_->backgroundShape.frameLightPct->SetTar((std::clamp)(
+				background.frameOpacity, 0.0, 1.0), durationMilliseconds);
+			impl_->backgroundShape.enable.val = background.visible;
+			impl_->backgroundShape.enable.tar = background.visible;
+
+			for (auto& spec : copy)
+			{
+				if (spec.id == BarSurfaceNoWidget) continue;
+				auto* widget = impl_->FindWidgetLocked(spec.id);
+				if (!widget)
+				{
+					Impl::Widget next;
+					next.spec = std::move(spec);
+					impl_->InitializeButtonLocked(next);
+					impl_->widgets.emplace_back(std::move(next));
+					continue;
+				}
+
+				const RECT oldPixels = widget->lastPixels;
+				const bool iconChanged = widget->spec.iconResource
+					!= spec.iconResource;
+				const bool primaryChanged = widget->spec.primaryText
+					!= spec.primaryText;
+				const bool secondaryChanged = widget->spec.secondaryText
+					!= spec.secondaryText;
+				widget->spec = std::move(spec);
+				impl_->ApplySharedButtonMetricsLocked(*widget);
+				const double width = (std::max)(0.0,
+					widget->spec.bounds.Width());
+				const double height = (std::max)(0.0,
+					widget->spec.bounds.Height());
+				const double centerX = widget->spec.bounds.left + width / 2.0;
+				const double centerY = widget->spec.bounds.top + height / 2.0;
+				widget->button->button.x.SetTar(centerX, durationMilliseconds);
+				widget->button->button.y.SetTar(centerY, durationMilliseconds);
+				widget->button->button.w.SetTar(width, durationMilliseconds);
+				widget->button->button.h.SetTar(height, durationMilliseconds);
+				widget->button->button.enable.val = widget->spec.visible;
+				widget->button->button.enable.tar = widget->spec.visible;
+				widget->button->userVisible = widget->spec.visible;
+				widget->button->hide = !widget->spec.visible;
+				widget->button->clickFunc = widget->spec.onClick;
+				widget->button->name.x.SetTar(widget->spec.primaryOffsetXDip,
+					durationMilliseconds);
+				widget->button->name.y.SetTar(widget->spec.primaryOffsetYDip,
+					durationMilliseconds);
+				widget->button->name.w.SetTar(
+					widget->spec.primarySlotWidthDip > 0.0
+						? widget->spec.primarySlotWidthDip : width,
+					durationMilliseconds);
+				widget->button->name.h.SetTar(widget->spec.primarySlotHeightDip,
+					durationMilliseconds);
+				widget->button->name.size.SetTar(widget->spec.primaryFontSizeDip,
+					durationMilliseconds);
+				widget->secondary.x.SetTar(widget->spec.secondaryOffsetXDip,
+					durationMilliseconds);
+				widget->secondary.y.SetTar(widget->spec.secondaryOffsetYDip,
+					durationMilliseconds);
+				widget->secondary.w.SetTar(
+					widget->spec.secondarySlotWidthDip > 0.0
+						? widget->spec.secondarySlotWidthDip : width,
+					durationMilliseconds);
+				widget->secondary.h.SetTar(widget->spec.secondarySlotHeightDip,
+					durationMilliseconds);
+				widget->secondary.size.SetTar(widget->spec.secondaryFontSizeDip,
+					durationMilliseconds);
+				widget->button->icon.x.SetTar(widget->spec.iconOffsetXDip,
+					durationMilliseconds);
+				widget->button->icon.y.SetTar(widget->spec.iconOffsetYDip,
+					durationMilliseconds);
+				widget->button->icon.w.SetTar(widget->spec.iconSizeDip,
+					durationMilliseconds);
+				widget->button->icon.h.SetTar(widget->spec.iconSizeDip,
+					durationMilliseconds);
+				if (iconChanged && !widget->spec.iconResource.empty())
+				{
+					(void)widget->button->icon.TransitionToResource(
+						L"UI", widget->spec.iconResource,
+						durationMilliseconds);
+					widget->button->icon.enable.val = true;
+					widget->button->icon.enable.tar = true;
+				}
+				if (widget->spec.iconAngle.has_value())
+					widget->button->icon.angle.SetTar(
+						*widget->spec.iconAngle, durationMilliseconds);
+				if (primaryChanged)
+				{
+					if (widget->spec.textUpdateMode
+						== BarSurfaceTextUpdateMode::Immediate)
+						(void)widget->button->name.SetStringImmediate(
+							widget->spec.primaryText);
+					else
+						(void)widget->button->name.TransitionToString(
+							widget->spec.primaryText, durationMilliseconds);
+				}
+				if (secondaryChanged)
+				{
+					if (widget->spec.textUpdateMode
+						== BarSurfaceTextUpdateMode::Immediate)
+						(void)widget->secondary.SetStringImmediate(
+							widget->spec.secondaryText);
+					else
+						(void)widget->secondary.TransitionToString(
+							widget->spec.secondaryText, durationMilliseconds);
+				}
+				const bool keepPrimaryForExit = ShouldKeepBarContentVisibleForExit(
+					widget->spec.textUpdateMode == BarSurfaceTextUpdateMode::Animated,
+					primaryChanged, widget->spec.primaryText.empty(),
+					widget->button->name.enable.val);
+				widget->button->name.enable.val = keepPrimaryForExit
+					|| !widget->spec.primaryText.empty();
+				widget->button->name.enable.tar =
+					widget->button->name.enable.val;
+				const bool keepSecondaryForExit = ShouldKeepBarContentVisibleForExit(
+					widget->spec.textUpdateMode == BarSurfaceTextUpdateMode::Animated,
+					secondaryChanged, widget->spec.secondaryText.empty(),
+					widget->secondary.enable.val);
+				widget->hasSecondary = keepSecondaryForExit
+					|| !widget->spec.secondaryText.empty();
+				widget->secondary.enable.val = widget->hasSecondary;
+				widget->secondary.enable.tar = widget->hasSecondary;
+				if (!iconChanged || !widget->spec.iconResource.empty())
+				{
+					widget->button->icon.enable.val =
+						!widget->spec.iconResource.empty();
+					widget->button->icon.enable.tar =
+						!widget->spec.iconResource.empty();
+				}
+				if (!widget->spec.visible || !widget->spec.interactive)
+				{
+					(void)StopBarButtonHoverVisual(
+						*widget->button, true);
+					SetBarButtonPressedVisual(*widget->button, false);
+					if (impl_->hovered == widget->spec.id)
+						impl_->hovered = BarSurfaceNoWidget;
+					if (impl_->pressed == widget->spec.id)
+					{
+						impl_->pressed = BarSurfaceNoWidget;
+						impl_->pointerCaptured = false;
+					}
+				}
+				if (widget->spec.kind == BarSurfaceWidgetKind::DragHandle)
+					widget->dragHandle.pct.SetTar(widget->spec.dragOpacity,
+						durationMilliseconds);
+				impl_->SyncDragHandleGeometryLocked(*widget);
+				impl_->IncludeDamageLocked(oldPixels);
+			}
+			impl_->animationActive = true;
+			hooks = impl_->hooks;
+		}
+		if (hooks.invalidate) hooks.invalidate();
+		if (hooks.wake) hooks.wake();
 		return true;
 	}
 
@@ -768,6 +1648,31 @@ namespace Inkeys::UI::Bar
 			widget->spec.enabled = enabled;
 			widget->spec.primaryText = std::move(primaryText);
 			widget->spec.secondaryText = std::move(secondaryText);
+			impl_->ApplySharedButtonMetricsLocked(*widget);
+			const double buttonWidth = widget->spec.bounds.Width();
+			const double primaryWidth = widget->spec.primarySlotWidthDip > 0.0
+				? widget->spec.primarySlotWidthDip : buttonWidth;
+			const double secondaryWidth = widget->spec.secondarySlotWidthDip > 0.0
+				? widget->spec.secondarySlotWidthDip : buttonWidth;
+			if (widget->spec.textUpdateMode
+				== BarSurfaceTextUpdateMode::Immediate)
+			{
+				widget->button->name.x.SetDirect(widget->spec.primaryOffsetXDip);
+				widget->button->name.w.SetDirect(primaryWidth);
+				widget->secondary.x.SetDirect(widget->spec.secondaryOffsetXDip);
+				widget->secondary.w.SetDirect(secondaryWidth);
+			}
+			else
+			{
+				widget->button->name.x.SetTar(widget->spec.primaryOffsetXDip,
+					BarUiDefaultOperationDur);
+				widget->button->name.w.SetTar(primaryWidth,
+					BarUiDefaultOperationDur);
+				widget->secondary.x.SetTar(widget->spec.secondaryOffsetXDip,
+					BarUiDefaultOperationDur);
+				widget->secondary.w.SetTar(secondaryWidth,
+					BarUiDefaultOperationDur);
+			}
 			if (iconChanged)
 			{
 				widget->spec.iconResource = std::move(*iconResource);
@@ -787,20 +1692,44 @@ namespace Inkeys::UI::Bar
 					BarUiDefaultOperationDur);
 			}
 			if (primaryTextChanged)
-				(void)widget->button->name.TransitionToString(
-					widget->spec.primaryText);
-			widget->button->name.enable.val = !widget->spec.primaryText.empty();
-			widget->button->name.enable.tar = !widget->spec.primaryText.empty();
+			{
+				if (widget->spec.textUpdateMode
+					== BarSurfaceTextUpdateMode::Immediate)
+					(void)widget->button->name.SetStringImmediate(
+						widget->spec.primaryText);
+				else
+					(void)widget->button->name.TransitionToString(
+						widget->spec.primaryText);
+			}
+			const bool keepPrimaryForExit = ShouldKeepBarContentVisibleForExit(
+				widget->spec.textUpdateMode == BarSurfaceTextUpdateMode::Animated,
+				primaryTextChanged, widget->spec.primaryText.empty(),
+				widget->button->name.enable.val);
+			widget->button->name.enable.val = keepPrimaryForExit
+				|| !widget->spec.primaryText.empty();
+			widget->button->name.enable.tar = widget->button->name.enable.val;
 			widget->button->userVisible = visible;
 			widget->button->hide = !visible;
 			widget->button->button.enable.val = visible;
 			widget->button->button.enable.tar = visible;
-			widget->hasSecondary = !widget->spec.secondaryText.empty();
+			const bool keepSecondaryForExit = ShouldKeepBarContentVisibleForExit(
+				widget->spec.textUpdateMode == BarSurfaceTextUpdateMode::Animated,
+				secondaryTextChanged, widget->spec.secondaryText.empty(),
+				widget->secondary.enable.val);
+			widget->hasSecondary = keepSecondaryForExit
+				|| !widget->spec.secondaryText.empty();
 			if (widget->hasSecondary)
 			{
 				if (secondaryTextChanged)
-					(void)widget->secondary.TransitionToString(
-						widget->spec.secondaryText);
+				{
+					if (widget->spec.textUpdateMode
+						== BarSurfaceTextUpdateMode::Immediate)
+						(void)widget->secondary.SetStringImmediate(
+							widget->spec.secondaryText);
+					else
+						(void)widget->secondary.TransitionToString(
+							widget->spec.secondaryText);
+				}
 				widget->secondary.enable.val = true;
 				widget->secondary.enable.tar = true;
 			}
@@ -812,11 +1741,11 @@ namespace Inkeys::UI::Bar
 			if (!visible && impl_->hovered == id)
 			{
 				impl_->hovered = BarSurfaceNoWidget;
-				widget->hover = false;
+				(void)StopBarButtonHoverVisual(*widget->button, true);
 			}
 			if (!visible && impl_->pressed == id)
 			{
-				widget->pressed = false;
+				SetBarButtonPressedVisual(*widget->button, false);
 				impl_->pressed = BarSurfaceNoWidget;
 				impl_->pointerCaptured = false;
 			}
@@ -846,10 +1775,10 @@ namespace Inkeys::UI::Bar
 			{
 				if (impl_->hovered == id)
 					impl_->hovered = BarSurfaceNoWidget;
-				widget->hover = false;
+				(void)StopBarButtonHoverVisual(*widget->button, true);
 				if (impl_->pressed == id)
 				{
-					widget->pressed = false;
+					SetBarButtonPressedVisual(*widget->button, false);
 					impl_->pressed = BarSurfaceNoWidget;
 					impl_->pointerCaptured = false;
 				}
@@ -896,11 +1825,11 @@ namespace Inkeys::UI::Bar
 				|| impl_->dpiScale != NormalizeScale(dpiScale);
 			impl_->logicalBounds = logicalBounds;
 			impl_->dpiScale = NormalizeScale(dpiScale);
-			impl_->appliedSharedPrimaryLightOutset = -1;
+			impl_->appliedSharedLightingOutset = -1;
 			for (auto& widget : impl_->widgets)
 			{
 				impl_->IncludeDamageLocked(widget.lastPixels);
-				widget.lastPixels = DipToPixels(widget.spec.bounds, impl_->dpiScale);
+				widget.lastPixels = impl_->WidgetPixelsLocked(widget);
 			}
 			if (changed) impl_->IncludeFullDamageLocked();
 			hooks = impl_->hooks;
@@ -924,6 +1853,33 @@ namespace Inkeys::UI::Bar
 		if (hooks.wake) hooks.wake();
 	}
 
+	void BarSurfaceScene::SetOpacity(
+		double opacity, double durationSeconds) noexcept
+	{
+		if (!std::isfinite(opacity)) opacity = 1.0;
+		if (!std::isfinite(durationSeconds) || durationSeconds < 0.0)
+			durationSeconds = BarUiDefaultOperationDur;
+		BarSurfaceHooks hooks;
+		{
+			std::lock_guard lock(impl_->mutex);
+			const double target = (std::clamp)(opacity, 0.0, 1.0);
+			if (durationSeconds == 0.0)
+			{
+				// Hidden 初始态必须同时提交 current/target，不能留下无人推进的动画。
+				impl_->surfaceOpacity.SetDirect(target);
+			}
+			else
+			{
+				impl_->surfaceOpacity.SetTar(target, durationSeconds);
+				impl_->animationActive = true;
+			}
+			impl_->IncludeFullDamageLocked();
+			hooks = impl_->hooks;
+		}
+		if (hooks.invalidate) hooks.invalidate();
+		if (hooks.wake) hooks.wake();
+	}
+
 	void BarSurfaceScene::SetDamageOutsetDip(double outsetDip) noexcept
 	{
 		BarSurfaceHooks hooks;
@@ -931,7 +1887,7 @@ namespace Inkeys::UI::Bar
 			std::lock_guard lock(impl_->mutex);
 			impl_->damageOutsetDip = std::isfinite(outsetDip)
 				? (std::max)(0.0, outsetDip) : kDefaultDamageOutsetDip;
-			impl_->appliedSharedPrimaryLightOutset = -1;
+			impl_->appliedSharedLightingOutset = -1;
 			impl_->IncludeFullDamageLocked();
 			hooks = impl_->hooks;
 		}
@@ -945,22 +1901,23 @@ namespace Inkeys::UI::Bar
 		impl_->hooks = std::move(hooks);
 	}
 
-	void BarSurfaceScene::SetSharedPrimaryLightSubscribed(bool subscribed) noexcept
+	void BarSurfaceScene::SetSharedLightingSubscribed(bool subscribed) noexcept
 	{
 		BarSurfaceHooks hooks;
 		{
-			std::scoped_lock registryLock(sharedPrimaryLightRegistryMutex);
+			std::scoped_lock registryLock(sharedLightingRegistryMutex);
 			std::lock_guard lock(impl_->mutex);
-			impl_->sharedPrimaryLightSubscribed = subscribed;
-			impl_->appliedSharedPrimaryLightGeneration = 0;
-			impl_->appliedSharedPrimaryLightOutset = -1;
+			impl_->sharedLightingSubscribed = subscribed;
+			impl_->appliedSharedLightingGeneration = 0;
+			impl_->appliedSharedLightingOutset = -1;
 			if (subscribed)
-				impl_->ApplySharedPrimaryLightLocked(
-					sharedPrimaryLight, sharedPrimaryLightGeneration);
+				impl_->ApplySharedLightingLocked(
+					sharedLighting, sharedLightingGeneration);
 			else
 			{
 				impl_->rendererOwner.spec.SetFrameLightingSnapshot({});
-				impl_->appliedSharedPrimaryLight = {};
+				impl_->appliedSharedLighting = {};
+				impl_->cursorLightDamageBounds = {};
 			}
 			impl_->IncludeFullDamageLocked();
 			hooks = impl_->hooks;
@@ -969,25 +1926,25 @@ namespace Inkeys::UI::Bar
 		if (hooks.wake) hooks.wake();
 	}
 
-	void BarSurfaceScene::PublishSharedPrimaryLight(
-		const BarSurfaceSharedPrimaryLight& light) noexcept
+	void BarSurfaceScene::PublishSharedLighting(
+		const BarSurfaceSharedLighting& lighting) noexcept
 	{
 		std::vector<BarSurfaceHooks> hooksToNotify;
 		{
-			std::scoped_lock registryLock(sharedPrimaryLightRegistryMutex);
-			if (SameSharedPrimaryLight(sharedPrimaryLight, light)) return;
-			sharedPrimaryLight = light;
-			++sharedPrimaryLightGeneration;
-			for (auto* scene : sharedPrimaryLightScenes)
+			std::scoped_lock registryLock(sharedLightingRegistryMutex);
+			if (SameSharedLighting(sharedLighting, lighting)) return;
+			sharedLighting = lighting;
+			++sharedLightingGeneration;
+			for (auto* scene : sharedLightingScenes)
 			{
 				if (!scene || !scene->impl_) continue;
 				std::lock_guard lock(scene->impl_->mutex);
-				if (!scene->impl_->sharedPrimaryLightSubscribed) continue;
-				scene->impl_->appliedSharedPrimaryLightGeneration = 0;
-				scene->impl_->ApplySharedPrimaryLightLocked(
-					sharedPrimaryLight, sharedPrimaryLightGeneration);
-				scene->impl_->IncludeFullDamageLocked();
-				hooksToNotify.push_back(scene->impl_->hooks);
+				if (!scene->impl_->sharedLightingSubscribed) continue;
+				scene->impl_->appliedSharedLightingGeneration = 0;
+				// 仍保存最新光照快照，仅唤醒本次确实需要重绘的订阅者。
+				if (scene->impl_->ApplySharedLightingLocked(
+					sharedLighting, sharedLightingGeneration))
+					hooksToNotify.push_back(scene->impl_->hooks);
 			}
 		}
 		for (const auto& hooks : hooksToNotify)
@@ -1005,8 +1962,9 @@ namespace Inkeys::UI::Bar
 			impl_->hovered = BarSurfaceNoWidget;
 			impl_->pressed = BarSurfaceNoWidget;
 			impl_->pointerCaptured = false;
-			impl_->pointerKnown = false;
 			impl_->pointerLocal = {};
+			impl_->rendererOwner.spec.SetFrameLightingSnapshot({});
+			impl_->cursorLightDamageBounds = {};
 			impl_->lastFrame = {};
 			impl_->animationActive = false;
 			impl_->pendingDamage = {};
@@ -1021,6 +1979,7 @@ namespace Inkeys::UI::Bar
 	{
 		std::lock_guard lock(impl_->mutex);
 		impl_->rendererOwner.spec.DiscardDeviceResources();
+		impl_->ResetWidgetDeviceCachesLocked();
 	}
 
 	void BarSurfaceScene::Invalidate() noexcept
@@ -1067,7 +2026,7 @@ namespace Inkeys::UI::Bar
 		result.widgets.reserve(impl_->widgets.size());
 		for (const auto& widget : impl_->widgets)
 			result.widgets.push_back(BarSurfaceWidgetLayout{
-				widget.spec.id, widget.lastPixels,
+				widget.spec.id, widget.spec.kind, widget.lastPixels,
 				widget.spec.visible, widget.spec.enabled,
 				widget.spec.interactive,
 				widget.spec.selected });
@@ -1097,7 +2056,17 @@ namespace Inkeys::UI::Bar
 		UINT width, UINT height)
 	{
 		std::lock_guard lock(impl_->mutex);
-		return impl_->rendererOwner.spec.EnsureDeviceResources(epoch, width, height);
+		auto& renderer = impl_->rendererOwner.spec;
+		const auto targetSize = renderer.GetTargetBitmapSize();
+		// 与 renderer 的复用条件一致；仅成功重建后丢弃 Scene 自持的上传缓存。
+		const bool needsRecreation = renderer.GetDeviceGeneration() != epoch.generation
+			|| !renderer.GetDeviceContext() || !renderer.GetTargetBitmap()
+			|| !renderer.GetGdiInteropRenderTarget()
+			|| targetSize.width != width || targetSize.height != height;
+		const HRESULT result = renderer.EnsureDeviceResources(epoch, width, height);
+		if (SUCCEEDED(result) && needsRecreation)
+			impl_->ResetWidgetDeviceCachesLocked();
+		return result;
 	}
 
 	ID2D1DeviceContext* BarSurfaceScene::DeviceContext() const noexcept
@@ -1125,6 +2094,12 @@ namespace Inkeys::UI::Bar
 		return impl_->LogicalPointFromPresentation(presentationLocalPixels);
 	}
 
+	bool BarSurfaceScene::HitTestBackground(POINT localPixels) const noexcept
+	{
+		std::lock_guard lock(impl_->mutex);
+		return impl_->HitTestBackgroundLocked(localPixels);
+	}
+
 	BarSurfaceWidgetId BarSurfaceScene::HitTest(POINT localPixels) const noexcept
 	{
 		std::lock_guard lock(impl_->mutex);
@@ -1145,23 +2120,38 @@ namespace Inkeys::UI::Bar
 	{
 		BarSurfacePointerResult result;
 		BarSurfaceHooks hooks;
+		bool requestRender = false;
 		{
 			std::lock_guard lock(impl_->mutex);
 			impl_->pointerLocal = localPixels;
-			impl_->pointerKnown = true;
-			const auto next = impl_->HitTestLocked(localPixels);
+			if (impl_->hoverSuppressed
+				&& (impl_->hoverSuppressionPoint.x != localPixels.x
+					|| impl_->hoverSuppressionPoint.y != localPixels.y))
+				impl_->hoverSuppressed = false;
+			const auto next = impl_->pointerCaptured || impl_->hoverSuppressed
+				? BarSurfaceNoWidget : impl_->HitTestLocked(localPixels);
 			result.hoverChanged = next != impl_->hovered;
 			if (result.hoverChanged)
 			{
 				if (auto* old = impl_->FindWidgetLocked(impl_->hovered))
 				{
-					old->hover = false;
-					impl_->IncludeDamageLocked(old->lastPixels);
+					if (old->spec.kind == BarSurfaceWidgetKind::Button)
+					{
+						(void)StopBarButtonHoverVisual(*old->button, false);
+						impl_->ApplyButtonInteractionTargetsLocked(*old);
+						impl_->IncludeDamageLocked(old->lastPixels);
+						requestRender = true;
+					}
 				}
 				if (auto* current = impl_->FindWidgetLocked(next))
 				{
-					current->hover = true;
-					impl_->IncludeDamageLocked(current->lastPixels);
+					if (current->spec.kind == BarSurfaceWidgetKind::Button)
+					{
+						(void)StartBarButtonHoverVisual(*current->button);
+						impl_->ApplyButtonInteractionTargetsLocked(*current);
+						impl_->IncludeDamageLocked(current->lastPixels);
+						requestRender = true;
+					}
 				}
 				impl_->hovered = next;
 			}
@@ -1170,7 +2160,7 @@ namespace Inkeys::UI::Bar
 			result.consumed = result.hover != BarSurfaceNoWidget;
 			hooks = impl_->hooks;
 		}
-		if (result.hoverChanged)
+		if (requestRender)
 		{
 			if (hooks.invalidate) hooks.invalidate();
 			if (hooks.wake) hooks.wake();
@@ -1182,21 +2172,27 @@ namespace Inkeys::UI::Bar
 	{
 		BarSurfacePointerResult result;
 		BarSurfaceHooks hooks;
+		bool requestRender = false;
 		{
 			std::lock_guard lock(impl_->mutex);
-			impl_->pointerKnown = false;
+			impl_->hoverSuppressed = false;
 			result.hoverChanged = impl_->hovered != BarSurfaceNoWidget;
 			if (auto* old = impl_->FindWidgetLocked(impl_->hovered))
 			{
-				old->hover = false;
-				impl_->IncludeDamageLocked(old->lastPixels);
+				if (old->spec.kind == BarSurfaceWidgetKind::Button)
+				{
+					(void)StopBarButtonHoverVisual(*old->button, false);
+					impl_->ApplyButtonInteractionTargetsLocked(*old);
+					impl_->IncludeDamageLocked(old->lastPixels);
+					requestRender = true;
+				}
 			}
 			impl_->hovered = BarSurfaceNoWidget;
 			result.hover = BarSurfaceNoWidget;
 			result.pressed = impl_->pressed;
 			hooks = impl_->hooks;
 		}
-		if (result.hoverChanged)
+		if (requestRender)
 		{
 			if (hooks.invalidate) hooks.invalidate();
 			if (hooks.wake) hooks.wake();
@@ -1211,22 +2207,28 @@ namespace Inkeys::UI::Bar
 		{
 			std::lock_guard lock(impl_->mutex);
 			impl_->pointerLocal = localPixels;
-			impl_->pointerKnown = true;
 			const auto target = impl_->HitTestLocked(localPixels);
 			if (target == BarSurfaceNoWidget) return result;
 			if (impl_->pressed != target)
 			{
 				if (auto* old = impl_->FindWidgetLocked(impl_->pressed))
 				{
-					old->pressed = false;
+					SetBarButtonPressedVisual(*old->button, false);
+					impl_->ApplyButtonInteractionTargetsLocked(*old);
 					impl_->IncludeDamageLocked(old->lastPixels);
 				}
 				if (auto* current = impl_->FindWidgetLocked(target))
 				{
-					current->pressed = true;
+					if (current->spec.kind == BarSurfaceWidgetKind::Button)
+					{
+						(void)StopBarButtonHoverVisual(
+							*current->button, true, true);
+					}
+					impl_->ApplyButtonInteractionTargetsLocked(*current);
 					impl_->IncludeDamageLocked(current->lastPixels);
 				}
 				impl_->pressed = target;
+				impl_->hovered = BarSurfaceNoWidget;
 				result.pressedChanged = true;
 			}
 			impl_->pointerCaptured = true;
@@ -1243,7 +2245,8 @@ namespace Inkeys::UI::Bar
 		return result;
 	}
 
-	BarSurfacePointerResult BarSurfaceScene::PointerUp(POINT localPixels) noexcept
+	BarSurfacePointerResult BarSurfaceScene::PointerUp(
+		POINT localPixels, bool invokeCallback) noexcept
 	{
 		BarSurfacePointerResult result;
 		std::function<void()> callback;
@@ -1251,22 +2254,32 @@ namespace Inkeys::UI::Bar
 		{
 			std::lock_guard lock(impl_->mutex);
 			impl_->pointerLocal = localPixels;
-			impl_->pointerKnown = true;
 			const auto target = impl_->HitTestLocked(localPixels);
 			const auto down = impl_->pressed;
 			if (auto* old = impl_->FindWidgetLocked(down))
 			{
-				old->pressed = false;
+				SetBarButtonPressedVisual(*old->button, false);
+				impl_->ApplyButtonInteractionTargetsLocked(*old);
 				impl_->IncludeDamageLocked(old->lastPixels);
 			}
 			impl_->pressed = BarSurfaceNoWidget;
 			impl_->pointerCaptured = false;
+			if (down != BarSurfaceNoWidget)
+			{
+				impl_->hoverSuppressed = true;
+				impl_->hoverSuppressionPoint = localPixels;
+			}
 			result.pressedChanged = down != BarSurfaceNoWidget;
 			if (down != BarSurfaceNoWidget && down == target)
 			{
 				if (const auto* widget = impl_->FindWidgetLocked(down))
-					callback = widget->spec.onClick;
-				result.clicked = down;
+				{
+					if (widget->spec.kind == BarSurfaceWidgetKind::Button)
+					{
+						callback = widget->spec.onClick;
+						result.clicked = down;
+					}
+				}
 			}
 			result.hover = impl_->hovered;
 			result.pressed = BarSurfaceNoWidget;
@@ -1278,7 +2291,7 @@ namespace Inkeys::UI::Bar
 			if (hooks.invalidate) hooks.invalidate();
 			if (hooks.wake) hooks.wake();
 		}
-		if (callback) callback();
+		if (invokeCallback && callback) callback();
 		return result;
 	}
 
@@ -1288,19 +2301,29 @@ namespace Inkeys::UI::Bar
 		BarSurfaceHooks hooks;
 		{
 			std::lock_guard lock(impl_->mutex);
+			result.hoverChanged = impl_->hovered != BarSurfaceNoWidget;
+			if (auto* hovered = impl_->FindWidgetLocked(impl_->hovered))
+			{
+				(void)StopBarButtonHoverVisual(*hovered->button, true);
+				impl_->ApplyButtonInteractionTargetsLocked(*hovered);
+				impl_->IncludeDamageLocked(hovered->lastPixels);
+			}
 			if (auto* old = impl_->FindWidgetLocked(impl_->pressed))
 			{
-				old->pressed = false;
+				SetBarButtonPressedVisual(*old->button, false);
+				impl_->ApplyButtonInteractionTargetsLocked(*old);
 				impl_->IncludeDamageLocked(old->lastPixels);
 			}
 			result.pressedChanged = impl_->pressed != BarSurfaceNoWidget;
+			impl_->hovered = BarSurfaceNoWidget;
 			impl_->pressed = BarSurfaceNoWidget;
 			impl_->pointerCaptured = false;
-			impl_->pointerKnown = false;
+			impl_->hoverSuppressed = true;
+			impl_->hoverSuppressionPoint = impl_->pointerLocal;
 			result.hover = impl_->hovered;
 			hooks = impl_->hooks;
 		}
-		if (result.pressedChanged)
+		if (result.pressedChanged || result.hoverChanged)
 		{
 			if (hooks.invalidate) hooks.invalidate();
 			if (hooks.wake) hooks.wake();
@@ -1338,74 +2361,80 @@ namespace Inkeys::UI::Bar
 		BarSurfaceRenderResult result;
 		if (!deviceContext) return result;
 		BarSurfaceHooks hooks;
-		BarSurfaceSharedPrimaryLight sharedLight;
-		std::uint64_t sharedLightGeneration = 0;
+		BarSurfaceSharedLighting frameLighting;
+		std::uint64_t frameLightingGeneration = 0;
 		{
-			std::lock_guard registryLock(sharedPrimaryLightRegistryMutex);
-			sharedLight = sharedPrimaryLight;
-			sharedLightGeneration = sharedPrimaryLightGeneration;
+			std::lock_guard registryLock(sharedLightingRegistryMutex);
+			frameLighting = sharedLighting;
+			frameLightingGeneration = sharedLightingGeneration;
 		}
 		{
 			std::lock_guard lock(impl_->mutex);
 			if (!impl_->rendererOwner.barMedia.formatCache)
 				impl_->rendererOwner.barMedia.LoadFormat();
-			if (impl_->sharedPrimaryLightSubscribed)
-				impl_->ApplySharedPrimaryLightLocked(
-					sharedLight, sharedLightGeneration);
+			if (impl_->sharedLightingSubscribed)
+				impl_->ApplySharedLightingLocked(
+					frameLighting, frameLightingGeneration);
 			impl_->rendererOwner.spec.SetFrameZoom(impl_->dpiScale);
+			if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
+			{
+				const auto lighting = impl_->rendererOwner.spec.SnapshotFrameLighting();
+				diagnostics->lightFlags = (lighting.edgeLightingEnabled ? 1u : 0u)
+					| (lighting.primaryLightVisible ? 2u : 0u)
+					| (lighting.cursorLightVisible ? 4u : 0u)
+					| (lighting.cursorIntensity > 0.0001F ? 8u : 0u);
+			}
 			result.invalidated = impl_->invalidated;
 			result.damage = impl_->pendingDamage;
 			(void)impl_->AdvanceAnimationsLocked(frameTime);
-			const auto savedZoom = impl_->dpiScale;
 			D2D1_MATRIX_3X2_F originalTransform{};
 			deviceContext->GetTransform(&originalTransform);
 			const LONG outset = impl_->DamageOutsetPixels();
 			deviceContext->SetTransform(D2D1::Matrix3x2F::Translation(
 				static_cast<FLOAT>(outset), static_cast<FLOAT>(outset)));
+			const FLOAT surfaceOpacity = static_cast<FLOAT>((std::clamp)(
+				static_cast<double>(impl_->surfaceOpacity.val), 0.0, 1.0));
+			const bool opacityLayer = surfaceOpacity < 0.9999F;
+			if (opacityLayer)
+				deviceContext->PushLayer(D2D1::LayerParameters(
+					D2D1::InfiniteRect(), nullptr,
+					D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+					D2D1::IdentityMatrix(), surfaceOpacity), nullptr);
 			if (impl_->background.visible)
 			{
-				result.rendered = impl_->rendererOwner.spec.Shape(deviceContext,
+				result.rendered = DrawBarBackgroundVisual(
+					impl_->rendererOwner.spec, deviceContext,
 					impl_->backgroundShape,
-					BarUiInheritClass(impl_->backgroundShape.inhX,
-						impl_->backgroundShape.inhY)) || result.rendered;
+					BarUiInheritClass(
+						impl_->backgroundShape.x.val
+							- impl_->backgroundShape.w.val / 2.0,
+						impl_->backgroundShape.y.val
+							- impl_->backgroundShape.h.val / 2.0)) || result.rendered;
 			}
 			for (auto& widget : impl_->widgets)
 			{
 				if (!widget.spec.visible) continue;
-				const auto inherit = widget.button->button.Inherit();
-				D2D1_MATRIX_3X2_F buttonTransform{};
-				deviceContext->GetTransform(&buttonTransform);
-				double pressScale = widget.button->pressScale.val;
-				if (!std::isfinite(pressScale) || pressScale <= 0.0) pressScale = 1.0;
-				if (std::abs(pressScale - 1.0) > 0.000001)
+				if (widget.spec.kind == BarSurfaceWidgetKind::DragHandle)
 				{
-					const FLOAT cx = static_cast<FLOAT>(
-						(inherit.x + widget.button->button.w.val / 2.0) * savedZoom);
-					const FLOAT cy = static_cast<FLOAT>(
-						(inherit.y + widget.button->button.h.val / 2.0) * savedZoom);
-					deviceContext->SetTransform(D2D1::Matrix3x2F::Scale(
-						static_cast<FLOAT>(pressScale), static_cast<FLOAT>(pressScale),
-						D2D1::Point2F(cx, cy)) * buttonTransform);
+					result.rendered = impl_->rendererOwner.spec.Shape(deviceContext,
+						widget.dragHandle,
+						BarUiInheritClass(
+							widget.dragHandle.x.val - widget.dragHandle.w.val / 2.0,
+							widget.dragHandle.y.val - widget.dragHandle.h.val / 2.0))
+						|| result.rendered;
+					continue;
 				}
-				result.rendered = impl_->rendererOwner.spec.Shape(deviceContext,
-					widget.button->button, inherit) || result.rendered;
-				if (!widget.spec.iconResource.empty())
-					result.rendered = impl_->rendererOwner.spec.Svg(deviceContext,
-						widget.button->icon,
-						widget.button->icon.Inherit(BarUiInheritEnum::Center,
-							widget.button->button)) || result.rendered;
-				if (!widget.spec.primaryText.empty())
-					result.rendered = impl_->rendererOwner.spec.Word(deviceContext,
-						widget.button->name,
-						widget.button->name.Inherit(BarUiInheritEnum::Center,
-							widget.button->button), DWRITE_FONT_WEIGHT_BOLD) || result.rendered;
-				if (widget.hasSecondary)
-					result.rendered = impl_->rendererOwner.spec.Word(deviceContext,
-						widget.secondary,
-						widget.secondary.Inherit(BarUiInheritEnum::Center,
-							widget.button->button), DWRITE_FONT_WEIGHT_NORMAL) || result.rendered;
-				deviceContext->SetTransform(buttonTransform);
+				const auto inherit = BarUiInheritClass(
+					widget.button->button.x.val - widget.button->button.w.val / 2.0,
+					widget.button->button.y.val - widget.button->button.h.val / 2.0);
+				BarButtonDrawOptions options;
+				options.secondary = widget.hasSecondary
+					? &widget.secondary : nullptr;
+				result.rendered = DrawBarButtonVisual(
+					impl_->rendererOwner.spec, deviceContext,
+					*widget.button, inherit, options) || result.rendered;
 			}
+			if (opacityLayer) deviceContext->PopLayer();
 			deviceContext->SetTransform(originalTransform);
 			result.animationActive = impl_->animationActive;
 			hooks = impl_->hooks;

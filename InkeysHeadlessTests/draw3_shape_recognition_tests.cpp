@@ -403,6 +403,17 @@ namespace
 
 		std::vector<StoredInkPoint> unrelated = {
 			{ 200.0f, 200.0f, 5.0f }, { 240.0f, 230.0f, 5.0f } };
+		// 尾段调试与识别条件标记必须独立，避免合并后的构造参数互相覆盖。
+		InkStroke conditionalTail(style, unrelated, std::size_t{ 0 }, true);
+		if (!Expect(conditionalTail.DebugTailSegmentStart() == std::size_t{ 0 } &&
+			conditionalTail.RenderOnlyWhenLatest(),
+			"tail diagnostics coexist with conditional metadata")) ++failures;
+		conditionalTail.SetRenderOnlyWhenLatest(false);
+		if (!Expect(conditionalTail.DebugTailSegmentStart() == std::size_t{ 0 } &&
+			!conditionalTail.RenderOnlyWhenLatest() &&
+			!InkStroke(style, unrelated).DebugTailSegmentStart(),
+			"conditional changes preserve tail diagnostics and default metadata")) ++failures;
+
 		const auto unrelatedIndex = canvas->AppendStroke(InkStroke(style, std::move(unrelated)));
 		const auto unrelatedFootprint = unrelatedIndex
 			? BuildStrokeTileFootprint(canvas->Strokes()[*unrelatedIndex]) : std::nullopt;

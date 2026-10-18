@@ -13,8 +13,6 @@
 #include <span>
 #include <windows.h>
 
-#pragma comment(lib, "ink_stroke_modeler_merge.lib")
-
 module draw3.ink_prediction;
 
 namespace draw3

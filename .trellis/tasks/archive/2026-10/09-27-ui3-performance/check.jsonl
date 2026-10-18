@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "Rendering failure and resource review"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI3 render and dirty contracts"}
+{"file": ".trellis/spec/native-desktop/ui3-render-diagnostics.md", "reason": "Timing and recovery semantics"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/architecture-and-validation.md", "reason": "Production bottleneck hypotheses"}

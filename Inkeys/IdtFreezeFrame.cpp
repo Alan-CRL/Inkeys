@@ -1,6 +1,8 @@
 ﻿import Inkeys.Helper.Thread;
 import Inkeys.Text.Font;
 import Inkeys.Window;
+import Inkeys.Startup.Progress;
+import Inkeys.UI.Freeze;
 
 #include "IdtFreezeFrame.h"
 
@@ -9,7 +11,6 @@ import Inkeys.Display;
 #include "IdtDraw.h"
 #include "IdtI18n.h"
 #include "IdtImage.h"
-#include "IdtMagnification.h"
 #include "IdtPlug-in.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
@@ -50,14 +51,18 @@ void FreezeFrameWindow()
 	Inkeys::Graphics::DibSurface freeze_background, PptSign;
 	const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 	const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
-	if (!monitor) return;
+	if (!monitor)
+	{
+		(void)Inkeys::Startup::ReportFailure(0xF002u);
+		return;
+	}
 	const int monitorHeight = monitor->pixelHeight;
-	const int freezeHeight = setlist.regularSetting.avoidFullScreen
-		? monitorHeight - 1
-		: monitorHeight;
+	// 固定保留 1 像素，避免被系统判定为全屏；旧 AvoidFullScreen 配置已废弃。
+	const int freezeHeight = monitorHeight - 1;
 	if (!freeze_background.resize(monitor->pixelWidth, freezeHeight))
 	{
 		if (IDTLogger) IDTLogger->error("[定格线程][FreezeFrameWindow] 创建 DIB Surface 失败");
+		(void)Inkeys::Startup::ReportFailure(0xF003u);
 		return;
 	}
 	RECT freezeBounds{ monitor->bounds.left, monitor->bounds.top,
@@ -90,12 +95,17 @@ void FreezeFrameWindow()
 	ulwi.dwFlags = ULW_ALPHA;
 
 	ulwi.hdcSrc = freeze_background.dc();
-	(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+	if (SubmitFreezeSurface(freeze_window, &ulwi, false))
+	{
+		(void)Inkeys::Startup::Report(
+			Inkeys::Startup::Milestone::FreezeFirstFrameCommitted);
+		IdtWindowsIsVisible.freezeWindow = true;
+	}
+	else
+		(void)Inkeys::Startup::ReportFailure(0xF001u);
 
-	IdtWindowsIsVisible.freezeWindow = true;
 	//ShowWindow(freeze_window, SW_SHOW);
 
-	FreezeFrame.update = true;
 	int wait = 0;
 	bool show_freeze_window = false;
 
@@ -105,81 +115,59 @@ void FreezeFrameWindow()
 		this_thread::sleep_for(chrono::milliseconds(20));
 		if (WhiteboardFreezeSurfaceOwned()) continue;
 
-		if (magnificationReady)
+		if (Inkeys::UI::Freeze::IsActive())
 		{
-			if (FreezeFrame.mode == 1)
+			show_freeze_window = true;
+			while (!offSignal)
 			{
-				if (!show_freeze_window)
-				{
-					RequestUpdateMagWindow = 1;
-					show_freeze_window = true;
-				}
+				if (!Inkeys::UI::Freeze::IsActive()) break;
 
-				while (!offSignal)
+				if (FreezeRecall > 0)
 				{
-					if (FreezeFrame.mode != 1 || PptInfoState.TotalPage != -1) break;
+					freeze_background.clear();
 
-					if (FreezeRecall > 0)
+					DrawFilledSurfaceRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, FreezeRecall)), RGBA(0, 0, 0, min(150, FreezeRecall)), 2, true, SmoothingModeHighQuality, &freeze_background);
+
+					wchar_t buffer[100];
+					if (RecallImageTm.tm_mday == 0) swprintf_s(buffer, L"超级恢复");
+					else swprintf_s(buffer, L"超级恢复 %02d月%02d日 %02d:%02d:%02d", RecallImageTm.tm_mon + 1, RecallImageTm.tm_mday, RecallImageTm.tm_hour, RecallImageTm.tm_min, RecallImageTm.tm_sec);
+
+					Graphics graphics(freeze_background.dc());
+					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
+					SolidBrush WordBrush(ToGdiplusColor(RGBA(255, 255, 255, min(255, FreezeRecall)), true));
+					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+					{
+						fwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
+						fwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
+						fwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
+						fwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
+					}
+					graphics.DrawString(buffer, -1, &gp_font, ToGdiplusRect(fwords_rect), &stringFormat, &WordBrush);
+
+					ulwi.hdcSrc = freeze_background.dc();
+					(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+
+					FreezeRecall -= 10;
+					if (FreezeRecall <= 0)
 					{
 						freeze_background.clear();
-
-						DrawFilledSurfaceRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, FreezeRecall)), RGBA(0, 0, 0, min(150, FreezeRecall)), 2, true, SmoothingModeHighQuality, &freeze_background);
-
-						wchar_t buffer[100];
-						if (RecallImageTm.tm_mday == 0) swprintf_s(buffer, L"超级恢复");
-						else swprintf_s(buffer, L"超级恢复 %02d月%02d日 %02d:%02d:%02d", RecallImageTm.tm_mon + 1, RecallImageTm.tm_mday, RecallImageTm.tm_hour, RecallImageTm.tm_min, RecallImageTm.tm_sec);
-
-						Graphics graphics(freeze_background.dc());
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(ToGdiplusColor(RGBA(255, 255, 255, min(255, FreezeRecall)), true));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							fwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
-							fwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
-							fwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
-							fwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
-						}
-						graphics.DrawString(buffer, -1, &gp_font, ToGdiplusRect(fwords_rect), &stringFormat, &WordBrush);
-
 						ulwi.hdcSrc = freeze_background.dc();
 						(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
-
-						FreezeRecall -= 10;
-
-						if (FreezeRecall <= 0)
-						{
-							freeze_background.clear();
-							ulwi.hdcSrc = freeze_background.dc();
-							(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
-
-							if (FreezeRecall <= 0) FreezeRecall = 0;
-							break;
-						}
+						FreezeRecall = 0;
+						break;
 					}
-
-					this_thread::sleep_for(chrono::milliseconds(20));
 				}
-
-				if (PptInfoState.TotalPage != -1) FreezeFrame.mode = 0;
-				FreezeFrame.update = true;
+				this_thread::sleep_for(chrono::milliseconds(20));
 			}
-			else if (show_freeze_window)
-			{
+		}
+		else if (show_freeze_window)
+		{
 			freeze_background.clear();
 			ulwi.hdcSrc = freeze_background.dc();
-				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
-
-				RequestUpdateMagWindow = 0;
-				show_freeze_window = false;
-			}
+			(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+			show_freeze_window = false;
 		}
-		else if (FreezeFrame.mode == 1)
-		{
-			FreezeFrame.mode = 0;
-			FreezeFrame.select = false;
-		}
-
-		if (FreezeFrame.mode != 1 && FreezePPT)
+		if (!Inkeys::UI::Freeze::IsActive() && FreezePPT)
 		{
 			if (!show_freeze_window)
 			{
@@ -236,7 +224,7 @@ void FreezeFrameWindow()
 			}
 			FreezePPT = false;
 		}
-		if (FreezeFrame.mode != 1 && FreezeRecall)
+		if (!Inkeys::UI::Freeze::IsActive() && FreezeRecall)
 		{
 			while (!offSignal)
 			{

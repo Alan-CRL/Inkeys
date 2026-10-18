@@ -4,6 +4,24 @@
 
 namespace Inkeys::Drawing::Draw3::Bridge
 {
+	namespace
+	{
+		bool SamePresentationTargetIgnoringRevision(
+			const PresentationTarget& left, const PresentationTarget& right) noexcept
+		{
+			return left.key == right.key && left.bindingMode == right.bindingMode &&
+				left.sourceIdentity == right.sourceIdentity &&
+				left.presentationName == right.presentationName &&
+				left.provider == right.provider && left.bindingToken == right.bindingToken &&
+				left.slideIds == right.slideIds && left.slideId == right.slideId &&
+				left.pageKind == right.pageKind &&
+				left.pageIndex == right.pageIndex && left.totalPages == right.totalPages &&
+				left.bindingRevision == right.bindingRevision &&
+				left.sessionRevision == right.sessionRevision &&
+				left.processLocalIdentity == right.processLocalIdentity;
+		}
+	}
+
 	StateBridge::StateBridge(std::size_t capacity) noexcept
 		: capacity_((std::max)(std::size_t{1}, capacity))
 	{
@@ -19,8 +37,77 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			state.page = state_.page;
 			state.hasPage = true;
 		}
+		if (state.workspace == Workspace::Presentation && !state.presentationTarget)
+			state.presentationTarget = state_.presentationTarget;
+		else if (state.workspace != Workspace::Presentation)
+			state.presentationTarget.reset();
 		state.revision = state_.revision + 1;
 		state_ = state;
+	}
+
+	bool StateBridge::PublishWorkspace(Workspace workspace) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return false;
+		const bool clearPage = workspace != Workspace::Presentation;
+		if (state_.workspace == workspace && (!clearPage || !state_.hasPage))
+			return false;
+		state_.workspace = workspace;
+		if (clearPage)
+		{
+			state_.page = 0;
+			state_.hasPage = false;
+			state_.presentationTarget.reset();
+		}
+		++state_.revision;
+		return true;
+	}
+
+	std::optional<std::uint64_t> StateBridge::PublishPresentationTarget(
+		const PresentationTarget& target, bool* changed) noexcept
+	{
+		if (changed) *changed = false;
+		if (target.key.IsZero() || target.sourceIdentity.empty() ||
+			!ValidPresentationPage(target)) return std::nullopt;
+
+		std::scoped_lock lock(mutex_);
+		if (!running_) return std::nullopt;
+		if (state_.workspace == Workspace::Presentation && state_.presentationTarget)
+		{
+			if (SamePresentationTargetIgnoringRevision(*state_.presentationTarget, target))
+				return state_.presentationTarget->targetRevision;
+		}
+		if (nextTargetRevision_ == 0) nextTargetRevision_ = 1;
+		try
+		{
+			auto published = std::make_shared<PresentationTarget>(target);
+			published->targetRevision = nextTargetRevision_++;
+			state_.workspace = Workspace::Presentation;
+			state_.page = published->pageIndex;
+			state_.hasPage = true;
+			state_.presentationTarget = std::move(published);
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
+		++state_.revision;
+		if (changed) *changed = true;
+		return state_.presentationTarget->targetRevision;
+	}
+
+	bool StateBridge::ClearPresentationTarget() noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return false;
+		if (state_.workspace == Workspace::Presentation &&
+			!state_.presentationTarget && !state_.hasPage) return false;
+		state_.workspace = Workspace::Presentation;
+		state_.presentationTarget.reset();
+		state_.page = 0;
+		state_.hasPage = false;
+		++state_.revision;
+		return true;
 	}
 
 	ProductState StateBridge::Snapshot() const noexcept
@@ -35,19 +122,38 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		if (!running_) return CommandResult::NotRunning;
 		// 尚未准备好的能力保留显式空接口，产品入口可据此隐藏。
 		if (type == CommandType::Save || type == CommandType::SuperRecovery ||
-			type == CommandType::AutoStraighten || type == CommandType::InputTest)
+			type == CommandType::AutoStraighten || type == CommandType::InputTest ||
+			type == CommandType::PrepareExitAutoSave)
 			return CommandResult::Unsupported;
 		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
-		commands_.push_back({ type, nextSequence_++ });
+		try
+		{
+			Command command{ type, nextSequence_, state_.workspace };
+			// 命令固定发布时的文稿身份，避免稍后的 latest state 改变其作用画布。
+			if (state_.workspace == Workspace::Presentation)
+				command.presentationTarget = state_.presentationTarget;
+			commands_.push_back(std::move(command));
+			++nextSequence_;
+		}
+		catch (...)
+		{
+			return CommandResult::QueueFull;
+		}
 		return CommandResult::Accepted;
 	}
 
 	bool StateBridge::TryConsume(Command& command) noexcept
 	{
 		std::scoped_lock lock(mutex_);
-		if (commands_.empty()) return false;
-		command = commands_.front();
-		commands_.pop_front();
+		if (!commands_.empty())
+		{
+			command = std::move(commands_.front());
+			commands_.pop_front();
+			return true;
+		}
+		if (!finalCommand_) return false;
+		command = std::move(*finalCommand_);
+		finalCommand_.reset();
 		return true;
 	}
 
@@ -55,7 +161,9 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 		std::scoped_lock lock(mutex_);
 		commands_.clear();
+		finalCommand_.reset();
 		nextSequence_ = 1;
+		// Host 重启也不复用目标编号，避免旧 UI/ready completion 命中新一代。
 		state_ = {};
 		running_ = true;
 	}
@@ -64,7 +172,28 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 		std::scoped_lock lock(mutex_);
 		running_ = false;
-		commands_.clear();
+	}
+
+	bool StateBridge::StopWithFinalCommand(CommandType finalCommand) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return false;
+		try
+		{
+			Command command{ finalCommand, nextSequence_, state_.workspace };
+			if (state_.workspace == Workspace::Presentation)
+				command.presentationTarget = state_.presentationTarget;
+			// 固定槽不受业务队列容量影响，并且只在队列排空后消费。
+			finalCommand_ = std::move(command);
+			++nextSequence_;
+			running_ = false;
+			return true;
+		}
+		catch (...)
+		{
+			running_ = false;
+			return false;
+		}
 	}
 
 	bool StateBridge::Running() const noexcept

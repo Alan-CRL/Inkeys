@@ -46,27 +46,18 @@ void NextPptSlides(int check);
 void PreviousPptSlides();
 void EndPptShow();
 void FocusPptShow();
+// 可信会话生命周期，不等同于分页控件可见或一次 COM 页数读数。
+bool PptSessionActive();
 
 void PPTLinkageMain();
 
 bool IsPowerPointRunAsAdminSet();
-class CheckEndShowClass
-{
-public:
-	CheckEndShowClass()
-	{
-		isChecking = false;
-	}
-public:
-	IdtAtomic<bool> isChecking;
-	bool Check();
-};
-extern CheckEndShowClass CheckEndShow;
 
 // --------------------------------------------------
 // 其他插件
 
 void StartDesktopDrawpadBlocker();
+bool LaunchVerifiedDesktopDrawpadBlocker(bool runAsAdmin);
 
 class ShortcutAssistantClass
 {

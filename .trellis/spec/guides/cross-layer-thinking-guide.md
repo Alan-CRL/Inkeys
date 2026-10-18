@@ -14,7 +14,7 @@ Win32 window message
   -> InkRenderer CPU buffers and operator layers
   -> HLSL coverage/operator output
   -> L2/backbuffer
-  -> DirectComposition/DWM/ULW presenter
+  -> DirectComposition/ULW presenter
 ```
 
 对每条边界确认：
@@ -38,10 +38,44 @@ Win32 window message
 
 依据：`WindowController::HandleWindowMessage`、`ConsumeResizeRequest`、`DrawingController::ProcessPendingResize`。
 
+### Owner WndProc to render/presentation thread
+
+- owner WndProc 不得阻塞等待一个可能被渲染线程持有、且渲染线程又可能同步等待 owner 执行 Window Service 提交的锁。PageControl 直移只能 `try_lock`；每个候选先发布 latest-wins 绝对布局，锁忙或窗口移动失败时保留 pending 并显式请求 pair render，下一条输入或渲染兜底都必须收敛到最新绝对目标，不能假定一定还有后续 `WM_MOUSEMOVE`。
+- PageControl 纯平移成功只顺序移动成对 HWND、推进内部 bounds/mailbox revision 并同步第三光源接受区；不得调用 `Scene::SetBounds`、制造 visual damage 或请求渲染。渲染帧在取得 `renderTransactionMutex` 后、进入 Configure/ULW 前必须复核直移 revision，避免旧快照在直移后把窗口拉回。
+- `ReleaseCapture` 会同步重入 `WM_CAPTURECHANGED`。PageControl 的 `WM_CANCELMODE` 必须先在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后再调用 `ReleaseCapture`；Window Service 撤销必须覆盖四个 PageControl HWND。对 `SetWindowPos`、同步 `SendMessage` 等其他可重入调用，应按实际重入消息审查其是否会再次取得调用点仍持有的非递归锁，不能用笼统的“线程安全”判断代替锁图。
+- 透明 presentation margin 与共享圆角背景之外的像素必须继续返回 `HTTRANSPARENT`。PPT 的“非按钮背景可拖动”只覆盖实际背景 shape，不等于整个矩形 HWND 都可接收输入。
+
+依据：`PageControlWindowProc`、`PptDragCommitTracker`、`RenderSurface`、`Window::Service::ApplyCancelPointerCapture`、`BarSurfaceScene::HitTestBackground`。
+
+### COM 属性成为跨层准入条件时
+
+- [ ] 同一属性的强类型/vtable 和 IDispatch/反射读取能力是否真的相同？从真实提供方读取生产适配器，比较两条路径；字典 FakeAccessor 的固定值不能证明真实 COM 暴露了该成员。
+- [ ] native 新增非零 HWND、PID、页身份等必要条件时，上游 reader 的可选/失败兜底是否会悄悄产出零值？保留失败原因和可复现的真实读取证据。
+
+### Event-backed two-stage state publication
+
+- 跨层状态先区分事实源与 ready 状态：COM 页码是外部事实，Draw3 document runtime 是 native ready，`PptInfoStateBuffer` 是 UI 可发布边界；后层不得提前复述前层尚未完成的目标。
+- 同一发布状态若同时驱动视觉与业务动作，验收必须贯通事实源、发布值、视觉解析、动作解析和最终 dispatcher/业务入口；只在末端测试中手工构造状态并验证图标，不能证明生产状态可达或交互语义已经同步切换。
+- 外部来源没有 native 事件时使用短且有上限的复核；进入 native runtime 后以单调 revision + condition variable 唤醒，并始终保留 predicate 与超时。事件只减少等待延迟，不能跳过 ready 判定。
+- Host 启停会重置 bridge。发布入口只能在运行实例实际接受请求后报告成功，并对相同绝对状态幂等；调用方周期复核，使重启后自动重发，而不是缓存一个可能在 reset 中丢失的“已发送”标志。
+
+依据：`PptInfo`、`PublishProductPage`、`HostRuntimeRevisionSignal`、`PptInfoStateBuffer`。
+
+### Drawing engine replacement to product UI
+
+- Draw2/Draw3 等绘制引擎替换不能只对照墨迹、页面和呈现结果；必须从旧绘制活动入口反查所有产品副作用，包括 Bar 次级界面收起、第三鼠标光休眠、capture/cancel、窗口层级和业务回调。
+- 绘制核心只发布全部 physical contact 的聚合活动状态，不直接依赖 UI。Controller 在命令边界与帧末发布 `0→1/1→0`，Host 再去重并在正常退出、异常和 stop/join 后补 false，产品层最后转发给 Bar。
+- 迁移既有控件时逐项对照手势阶段和配置传播：可命中区域、Down/Up 触发点、系统拖动阈值、长按首次延迟/重复节拍、移出与 capture cancel，以及键盘/滚轮是否只执行业务而不伪造 Pointer 视觉。
+- 回归测试至少同时覆盖纯逻辑时序、跨层 callback 链和源码静态入口；只测试末端状态 helper 不能证明上游引擎确实发出了事件。
+
+依据：`MultiFingerDrawing`、`DrawingControllerRuntimeObserver`、`HostRuntimeCallbacks`、`PageControlWindowProc`、`HandleCanvasDrawingActivity`。
+
 ### Model to render points
 
 - 原始鼠标速度只用于普通笔宽估算，预测点继承最后真实笔宽。
 - 最新 snapshot 覆盖采样改变了速度采样节奏；每份真实速度只滤波一次，第一份速度不得回写已可见起笔，半径仍需时间/距离双限速。
+- 停笔分别核对模型位置/速度、可见端点与模拟笔锋老化；不新增点时显示时间仍须推进，冻结后的长时间差不能直接成为下一次模型积分。见 [普通笔停笔合同](../native/runtime-and-rendering.md#scenario-普通笔停笔模型收敛与冻结)。
+- 恢复测试必须经过真实帧入口与 L0 半径构建；只检查模型末点或在不推进帧的空循环中断言点数，不证明停笔/续画视觉正确。
 - 活动 contact 的提交游标必须单调前进，已进入 L1 的稳定前缀不能重复提交。
 - Up 收尾是否只从确认真实点生成 Stored Stroke；Pen 是否烘入 taper、去重连接点并排除 prediction/time。
 - 荧光笔固定矩形的 8:1 half size、0.25px 去重、sweep coverage 和 dirty bounds 必须一起检查。
@@ -73,7 +107,8 @@ Win32 window message
 - 窗口创建链必须按 `ShouldPreconfigureNoRedirectionBitmap -> WindowController 独立窗口线程 -> CreateWindowExW -> DComp ConfigureWindow` 检查；不能只看 presenter 初始化阶段。
 - `WS_EX_NOREDIRECTIONBITMAP` 是 DComp 的创建期窗口契约。创建后缺失时记录并回退，不用 `SetWindowLongPtr` 补设。
 - 修改窗口线程、创建样式或 `.vcxproj` 时必须比较 Debug/Release，并验证初始化事件、`GWLP_USERDATA` 路由和关闭等待都能完成。
-- 所有适配器统一按 DirectComposition、DWM extended frame、ULW 初始化；厂商、架构或 OS 标签本身不能改变顺序。
+- 首发自动候选顺序为 DirectComposition、ULW；两种 DWM 透明模式禁用，强制请求也须拒绝。厂商、架构或 OS 标签本身不能改变顺序。
+- Windows 7 SP1 + 仅 KB2670838 的项目实测支持 `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL`；保持 FLIP 交换链，不因公开文档描述差异自行回退到 bitblt。硬件 FL11.0 有/无及 WARP 的实际呈现须分别验证。
 - 每次新模式尝试前清理上一模式的 presenter、renderer 和 swapchain 状态。
 - GPU 路径保留真透明 alpha；仅 ULW CPU 输出副本叠加 `1/255` alpha 命中测试底层。
 - presenter 初始化成功只证明 API/资源链可用，不证明桌面合成后的可见 alpha 正确；新增适配器或呈现路径时必须在真实桌面背景上验证透明结果。

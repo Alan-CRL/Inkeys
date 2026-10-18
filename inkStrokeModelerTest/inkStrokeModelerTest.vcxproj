@@ -271,6 +271,31 @@
 	<ClCompile Include="draw3\ink_document.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="draw3\uink_model.cpp" />
+	<ClCompile Include="draw3\uink_model.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\uink_codec.cpp" />
+	<ClCompile Include="draw3\uink_codec_encode.cpp" />
+	<ClCompile Include="draw3\uink_codec.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\uink_file.cpp" />
+	<ClCompile Include="draw3\uink_file.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\uink_draw3_export.cpp" />
+	<ClCompile Include="draw3\uink_draw3_export.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\uink_draw3_import.cpp" />
+	<ClCompile Include="draw3\uink_draw3_import.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\uink_draw3_capture.cpp" />
+	<ClCompile Include="draw3\uink_draw3_capture.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
 	<ClCompile Include="draw3\ink_history.cpp" />
 	<ClCompile Include="draw3\ink_history.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -428,6 +453,7 @@
     <ResourceCompile Include="inkStrokeModelerTest.rc" />
     <ResourceCompile Include="laserParticleShaders.rc" />
   </ItemGroup>
+  <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <!-- FXC 10.1 不接受源文件开头的 UTF-8 BOM，编译前只在中间目录生成无 BOM 副本。 -->
   <Target Name="PrepareFxcCompatibleHlsl" BeforeTargets="FxCompile"

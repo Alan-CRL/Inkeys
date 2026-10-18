@@ -13,7 +13,8 @@ namespace Inkeys::Drawing::Draw3
 	Host& ProductHost() noexcept;
 	bool StartProduct(HWND drawpad, HWND drawpadPresentation,
 		HostStyleCallbacks callbacks = {},
-		HostStartOptions options = {});
+		HostStartOptions options = {},
+		HostRuntimeCallbacks runtimeCallbacks = {});
 	void StopProduct() noexcept;
 	bool ProductRunning() noexcept;
 	bool ProductFirstFrameReady() noexcept;
@@ -25,7 +26,15 @@ namespace Inkeys::Drawing::Draw3
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 	void PublishProductState(const Bridge::ProductState& state) noexcept;
 	void PublishProductWorkspace(Bridge::Workspace workspace) noexcept;
-	void PublishProductPage(std::uint32_t page) noexcept;
+	std::optional<std::uint64_t> PublishProductPresentationTarget(
+		const Bridge::PresentationTarget& target) noexcept;
+	void ClearProductPresentationTarget() noexcept;
+	bool PublishProductPresentationUiReady(
+		const Bridge::PresentationReadyIdentity& identity) noexcept;
+	bool SetProductPresentationInputSuspended(
+		const Bridge::PresentationReadyIdentity& expected, bool suspended) noexcept;
+	// 仅运行中的 Host 接受页请求；相同绝对页幂等成功，调用方可安全周期复核。
+	bool PublishProductPage(std::uint32_t page) noexcept;
 	Bridge::CommandResult PublishProductCommand(Bridge::CommandType command) noexcept;
 	void SetProductActivationAllowed(bool enabled) noexcept;
 }

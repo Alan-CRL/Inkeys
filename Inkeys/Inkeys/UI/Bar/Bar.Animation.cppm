@@ -13,7 +13,6 @@ module;
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <string_view>
 #include <utility>
 
 export module Inkeys.UI.Bar.Animation;
@@ -238,12 +237,18 @@ export
 		}
 	}
 
-	inline wstring_view ResolveBarAnnotationPopupTitle(
+	enum class BarAnnotationPopupTitleKind : uint8_t
+	{
+		Unavailable,
+		FixedThicknessUnsupported,
+	};
+
+	inline BarAnnotationPopupTitleKind ResolveBarAnnotationPopupTitle(
 		BarThicknessPreviewVisualKind anchorKind) noexcept
 	{
 		return anchorKind == BarThicknessPreviewVisualKind::SoftPen
-			? L"标注线（粗细固定，暂未支持）"
-			: L"启用标注线（暂不可用）";
+			? BarAnnotationPopupTitleKind::FixedThicknessUnsupported
+			: BarAnnotationPopupTitleKind::Unavailable;
 	}
 
 	// Laser 预览的阶段只由当前视觉端点决定，反向时不重置任何动画值。
@@ -613,16 +618,10 @@ export
 			if (!active) return result;
 
 			double currentDuration = duration;
-			if (!isfinite(currentDuration) || currentDuration <= 0.0)
-			{
-				result.progress = 1.0;
-				result.reachedKeyframe = !keyframeTriggered;
-				result.finished = true;
-				progress = 1.0;
-				keyframeTriggered = true;
-				active = false;
-				return result;
-			}
+			// 关闭动画时内容关键帧也须在本帧提交，不能因 idle 首帧 dt=0 留一帧旧图标。
+			if (!static_cast<bool>(BarUiAnimationEnabled)
+				|| !isfinite(currentDuration) || currentDuration <= 0.0)
+				return FinishLocked();
 			if (!isfinite(dt) || dt <= 0.0 || !isfinite(speedRate) || speedRate <= 0.0)
 				return result;
 
@@ -640,6 +639,20 @@ export
 				result.finished = true;
 				active = false;
 			}
+			return result;
+		}
+		BarUiKeyframeTimelineResultClass FinishLocked()
+		{
+			BarUiKeyframeTimelineResultClass result;
+			result.generation = generation;
+			result.progress = clamp(progress, 0.0, 1.0);
+			if (!active) return result;
+			result.progress = 1.0;
+			result.reachedKeyframe = !keyframeTriggered;
+			result.finished = true;
+			progress = 1.0;
+			keyframeTriggered = true;
+			active = false;
 			return result;
 		}
 		void CopyStateLocked(const BarUiKeyframeTimelineClass& other)
@@ -661,6 +674,30 @@ export
 		bool active = false;
 		uint64_t generation = 0;
 	};
+
+	// 实时内容更新与旧关键帧取消必须处于同一事务，避免旧帧在返回后覆盖新内容。
+	template <typename Changed, typename Apply>
+	bool ApplyBarImmediateContentUpdate(
+		BarUiKeyframeTimelineClass& timeline,
+		Changed&& changed, Apply&& apply)
+	{
+		return timeline.Transaction(
+			[&](BarUiKeyframeTimelineClass::LockedView& locked)
+			{
+				const bool contentChanged = static_cast<bool>(changed());
+				const bool result = locked.IsActive() || contentChanged;
+				locked.Cancel();
+				apply();
+				return result;
+			});
+	}
+
+	[[nodiscard]] constexpr bool ShouldKeepBarContentVisibleForExit(
+		bool animated, bool contentChanged,
+		bool targetEmpty, bool currentlyVisible) noexcept
+	{
+		return animated && contentChanged && targetEmpty && currentlyVisible;
+	}
 
 	struct BarUiAnimationAdvanceContextClass;
 	struct BarUiAnimationAdvanceResultClass;
@@ -845,6 +882,14 @@ export
 			BarUiValueClass& value,
 			const BarUiAnimationAdvanceContextClass& context);
 	};
+
+	// 新布局批次也接管同目标的在途位置，避免局部轨迹与父栏使用不同相位。
+	inline bool BarUiSetLayoutPositionTarget(BarUiValueClass& value,
+		double target, double duration, bool newLayoutBatch,
+		const BarUiCurveSpecClass& curve)
+	{
+		return value.SetTar(target, duration, nullopt, newLayoutBatch, curve);
+	}
 
 	class BarUiColorClass
 	{

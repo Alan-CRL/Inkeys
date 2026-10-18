@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.SpeedEraser.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -58,10 +60,14 @@ export namespace Inkeys::Drawing::Draw3
 		float tilt = -1.0f;
 		float orientation = -1.0f;
 		bool isInvertedCursor = false;
-		SizeF contactSize = {};
+		SizeF contactSize = {}; // 仅元数据可解释时为画布像素；失败保留未知值。
+		SizeF rawContactSize = {};
+		SpeedEraser::ContactAreaUnits contactAreaUnits = SpeedEraser::ContactAreaUnits::Missing;
 		int64_t qpc = 0;
 		ContactPhase phase = ContactPhase::Down;
 		uint64_t sequence = 0;
+		uint64_t admissionRevision = 0; // Down 在入口锁存页边界代次，Move 不改变归属。
+		SpeedEraser::InputSource source;
 	};
 
 	// 仅允许使用所有目标架构上始终无锁的平凡标量。
@@ -98,7 +104,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<T> value_ = {};
 	};
 
-	// 地址在协调器生命周期内稳定；生产完成后仅由绘制线程回收。
+	// 地址在协调器生命周期内稳定；普通终态由消费者回收，已交出的 Closing 由 producer 发布终态后回收。
 	struct alignas(64) ContactRecord
 	{
 		ContactRecord() = default;
@@ -126,6 +132,9 @@ export namespace Inkeys::Drawing::Draw3
 		IdtAtomic<float> tilt_;
 		IdtAtomic<float> orientation_;
 		IdtAtomic<uint32_t> isInvertedCursor_;
+		IdtAtomic<float> rawContactWidth_;
+		IdtAtomic<float> rawContactHeight_;
+		IdtAtomic<uint32_t> contactAreaUnits_;
 		IdtAtomic<float> width_;
 		IdtAtomic<float> height_;
 		IdtAtomic<int64_t> qpc_;
@@ -145,6 +154,22 @@ export namespace Inkeys::Drawing::Draw3
 		explicit operator bool() const noexcept { return record != nullptr; }
 	};
 
+	// 仅供无窗口测试：在 route 真正进入 Closing 后由测试线程显式放行。
+	struct ContactClosePauseForTesting
+	{
+		std::atomic<bool> entered = false;
+		std::atomic<bool> resume = false;
+	};
+
+#if defined(DRAW3_CONTACT_TESTING)
+	// 测试拥有 callback/context；启用前准备，消费者 join 后才可销毁。
+	struct CommandFallbackMissHookForTesting
+	{
+		void* context = nullptr;
+		void (*callback)(void* context) noexcept = nullptr;
+	};
+#endif
+
 	// 只读输入诊断；仅在显式启用后累计热路径计数。
 	struct ContactInputDiagnosticsSnapshot
 	{
@@ -155,9 +180,17 @@ export namespace Inkeys::Drawing::Draw3
 		uint64_t terminalPublished = 0;
 		uint64_t recycled = 0;
 		uint64_t controlWakes = 0;
+		uint64_t controlWakeEnqueueFailures = 0;
+		uint64_t controlWakeInlineRecoveries = 0;
 		uint64_t activeWaits = 0;
 		size_t slotCapacity = 0;
 		size_t occupiedSlots = 0;
+	};
+
+	enum class ControlWakeKind : uint8_t
+	{
+		General,
+		Command,
 	};
 
 	// 协调 RTS 生产者与唯一绘制消费者，并在完全空闲时提供内核等待。
@@ -188,8 +221,15 @@ export namespace Inkeys::Drawing::Draw3
 
 		// 读取 generation 匹配的跨字段一致快照。
 		bool TryReadSnapshot(ContactHandle handle, ContactSnapshot& snapshot) const noexcept;
-		// 绘制线程在完成 L2 提交后归还 slot。
+		// 绘制线程归还已完成 slot；若 producer 仍在 Closing，则交出 handle 由其终态回收。
 		void Recycle(ContactHandle handle) noexcept;
+		// 被拒收或收尾的 contact 保留物理 route 到终态；Closing 竞态由 producer 延后回收。
+		void DiscardUntilTerminal(ContactHandle handle) noexcept;
+		void SetAdmissionBlocked(bool blocked) noexcept;
+		bool AdmissionBlocked() const noexcept;
+		uint64_t AdmissionRevision() const noexcept;
+		bool ContactAdmitted(ContactHandle handle) const noexcept;
+		bool HasQuarantinedContacts() const noexcept;
 		// RTS 停止回调后取消仍由生产者持有的全部 contact。
 		void CloseAllProducerContacts(int64_t qpc) noexcept;
 
@@ -200,8 +240,26 @@ export namespace Inkeys::Drawing::Draw3
 		bool HasPendingWork() const noexcept;
 		// 窗口请求已经原子发布后，合并投递一次控制唤醒。
 		bool PublishControlWake() noexcept;
+		// Bridge 业务命令须先预约，再接受命令，最后发布独立的输入顺序屏障。
+		bool TryReserveCommandWake() noexcept;
+		void CancelReservedCommandWake() noexcept;
+		void PublishReservedCommandWake() noexcept;
+		// 单消费绘制线程在取出空记录后读取本次控制事件类别。
+		ControlWakeKind LastDequeuedControlWakeKind() const noexcept;
+		// 无窗口故障测试：只让下一次 control token 入队失败，默认关闭。
+		void FailNextControlWakeEnqueueForTesting() noexcept;
+		void FailNextCommandWakeEnqueueForTesting() noexcept;
+#if defined(DRAW3_CONTACT_TESTING)
+		// 仅测试构建：下一次 Command fallback 判空后、实体出队前调用一次。
+		void SetNextCommandFallbackMissHookForTesting(
+			CommandFallbackMissHookForTesting* hook) noexcept;
+#endif
+		void PauseNextCloseAfterRouteClosedForTesting(
+			ContactClosePauseForTesting* pause) noexcept;
 		// 消费 ControlWake 后先清 pending，再复查全部窗口请求。
 		void AcknowledgeControlWake() noexcept;
+		// 仅在上一代生产者和绘制线程均停止后调用，清除旧代际排队事件。
+		void ResetForNextRun() noexcept;
 		// 捕获活动等待使用的单调 wake generation。
 		uint64_t CaptureWakeGeneration() const noexcept;
 		// 等待 generation 变化或帧预算到期；返回 true 表示被输入/控制请求打断。

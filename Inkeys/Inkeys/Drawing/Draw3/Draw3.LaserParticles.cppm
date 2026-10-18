@@ -43,7 +43,7 @@ export namespace Inkeys::Drawing::Draw3
 		float glowGreen = 0.32f;
 		float glowBlue = 0.40f;
 		float glowAlpha = 0.18f;                     // 0.28→0.18 辉光更浅
-		// 粒子核心已直接使用激光 border 红；以下两项保留配置兼容，PS 不再参与核心色相。
+		// 粒子核心直接使用激光所选 border 色；以下两项保留配置兼容，PS 不再参与核心色相。
 		float coreColorWhiteMix = 0.0f;
 		float coreColorWhiteMixJitter = 0.0f;
 		float minimumBrightness = 0.42f;

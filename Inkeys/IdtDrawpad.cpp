@@ -89,39 +89,6 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		// 全局状态变量
 		bool checkEndShowIsChecking = CheckEndShow.isChecking;
 
-		// PPT模式：按键反馈
-		if (PptInfoState.TotalPage != -1 && !checkEndShowIsChecking)
-		{
-			// 检查按下的键
-			switch (pKeyInfo->vkCode)
-			{
-			case VK_SPACE:  // 空格键
-			case VK_NEXT:   // PgDn
-			case VK_RIGHT:  // 右箭头
-			case VK_DOWN:   // 下箭头
-			case VK_RETURN: // Enter
-			{
-				if (Inkeys::Inputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
-					Inkeys::UI::Ppt::FlashPageDirection(true);
-				break;
-			}
-
-			case VK_PRIOR:  // PgUp
-			case VK_LEFT:   // 左箭头
-			case VK_UP:     // 上箭头
-			case VK_BACK:   // Backsapce
-			{
-				if (Inkeys::Inputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
-					Inkeys::UI::Ppt::FlashPageDirection(false);
-				break;
-			}
-
-			case VK_ESCAPE: // ESC
-			{
-				break;
-			}
-			}
-		}
 		// 传递拦截（主要是快捷键）
 		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
 		{

@@ -12,7 +12,11 @@ namespace
 	using Inkeys::UI::Bar::BarPresentDecision;
 	using Inkeys::UI::Bar::BarPresentDemand;
 	using Inkeys::UI::Bar::BarPresentFailureClass;
+	using Inkeys::UI::Bar::BarPresentMappingMode;
+	using Inkeys::UI::Bar::BarPresentMappingTracker;
+	using Inkeys::UI::Bar::BarPresentMappingTuple;
 	using Inkeys::UI::Bar::IsBarSharedDeviceLost;
+	using Inkeys::UI::Bar::ShouldForceBarFullWindowReplacement;
 
 	int failureCount = 0;
 
@@ -282,6 +286,55 @@ namespace
 			&& !decision.ShouldPresent(),
 			"successful present clears retry and demand");
 	}
+
+	void TestPresentMappingUsesSuccessfulTuple()
+	{
+		constexpr BarPresentMappingTuple baseline{
+			POINT{ 10, 20 }, SIZE{ 300, 80 }, SIZE{ 512, 256 }, 7 };
+		BarPresentMappingTracker tracker;
+		Check(tracker.Resolve(baseline)
+			== BarPresentMappingMode::FullReplacement,
+			"first mapping replaces the full window");
+
+		tracker.CommitPresented(baseline);
+		Check(tracker.Resolve(baseline) == BarPresentMappingMode::LocalDirty,
+			"stable successful mapping allows local dirty");
+		Check(!ShouldForceBarFullWindowReplacement(
+				false, BarPresentMappingMode::LocalDirty)
+			&& ShouldForceBarFullWindowReplacement(
+				true, BarPresentMappingMode::LocalDirty)
+			&& ShouldForceBarFullWindowReplacement(
+				false, BarPresentMappingMode::FullReplacement),
+			"viewport and present mapping share one full replacement decision");
+
+		constexpr std::array changedMappings{
+			BarPresentMappingTuple{
+				POINT{ 11, 20 }, SIZE{ 300, 80 }, SIZE{ 512, 256 }, 7 },
+			BarPresentMappingTuple{
+				POINT{ 10, 20 }, SIZE{ 301, 80 }, SIZE{ 512, 256 }, 7 },
+			BarPresentMappingTuple{
+				POINT{ 10, 20 }, SIZE{ 300, 80 }, SIZE{ 513, 256 }, 7 },
+			BarPresentMappingTuple{
+				POINT{ 10, 20 }, SIZE{ 300, 80 }, SIZE{ 512, 256 }, 8 },
+		};
+		for (const auto& changed : changedMappings)
+			Check(tracker.Resolve(changed)
+				== BarPresentMappingMode::FullReplacement,
+				"each mapping tuple field requires full replacement");
+
+		const auto failedCandidate = changedMappings.front();
+		Check(tracker.Resolve(failedCandidate)
+			== BarPresentMappingMode::FullReplacement
+			&& tracker.Resolve(failedCandidate)
+				== BarPresentMappingMode::FullReplacement,
+			"failed candidate remains full replacement on retry");
+		Check(tracker.Resolve(baseline) == BarPresentMappingMode::LocalDirty,
+			"failed candidate does not advance the successful tuple");
+		tracker.CommitPresented(failedCandidate);
+		Check(tracker.Resolve(failedCandidate)
+			== BarPresentMappingMode::LocalDirty,
+			"successful retry commits the candidate mapping");
+	}
 }
 
 int RunPresentDecisionTests()
@@ -295,5 +348,6 @@ int RunPresentDecisionTests()
 	TestResourceResetForcesFullDirtyWithoutLosingDemand();
 	TestRepeatedFailureUsesBoundedBackoff();
 	TestFailureRecoveryTriggers();
+	TestPresentMappingUsesSuccessfulTuple();
 	return failureCount;
 }

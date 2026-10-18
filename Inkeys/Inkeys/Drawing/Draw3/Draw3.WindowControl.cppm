@@ -7,13 +7,18 @@
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <windows.h>
+#include "Draw3.Bridge.h"
+#include "Draw3.SpeedEraser.h"
 
 export module Inkeys.Drawing.Draw3.window_control;
 
 import Inkeys.Drawing.Draw3.contact_input;
+import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.pen_cursor;
+export import Inkeys.Drawing.Draw3.presentation_auto_save;
 
 export namespace Inkeys::Drawing::Draw3
 {
@@ -74,7 +79,8 @@ export namespace Inkeys::Drawing::Draw3
 	struct ProductVisualStyle
 	{
 		uint32_t colorRgba = 0x000000FFu;
-		float widthDip = 2.0f;
+		double widthDip = 2.0;
+		Inkeys::Business::PenWidth::Context penWidthContext;
 	};
 
 	enum class CanvasCommandType : uint8_t
@@ -86,7 +92,11 @@ export namespace Inkeys::Drawing::Draw3
 		TranslateViewport,
 		Redo,
 		SetPage,
-		SetWorkspace
+		SetWorkspace,
+		SetPresentationTarget,
+		DesktopPersistenceCompleted,
+		PresentationPersistenceCompleted,
+		PrepareExitAutoSave,
 	};
 
 	struct CanvasCommand
@@ -96,6 +106,11 @@ export namespace Inkeys::Drawing::Draw3
 		float deltaY = 0.0f;
 		std::size_t pageIndex = 0;
 		std::uint8_t workspace = 0;
+		std::shared_ptr<const Bridge::PresentationTarget> presentationTarget;
+		std::shared_ptr<const DesktopPersistenceCompletion>
+			desktopPersistenceCompletion;
+		std::shared_ptr<const PresentationPersistenceCompletion>
+			presentationPersistenceCompletion;
 	};
 
 	using SetExtendedStyleFlagsCallback = bool(*)(
@@ -128,6 +143,8 @@ export namespace Inkeys::Drawing::Draw3
 		void CommitSize(int width, int height);
 		// 按真实按键发布顺序消费低频画布命令。
 		bool TryDequeueCanvasCommand(CanvasCommand& command);
+		// 控制 marker 边界只读查询；不弹出队列，也不触碰 HWND。
+		bool HasPendingCanvasCommand() noexcept;
 		// 消费一次窗口缩放请求并返回目标尺寸。
 		bool ConsumeResizeRequest(WindowSize& size);
 		// 消费一次全画布呈现请求。
@@ -148,6 +165,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 选择模式与穿透样式解耦；绘制线程据此管理高精度计时器。
 		bool SelectionMode() const noexcept;
 		void SetSelectionMode(bool enabled) noexcept;
+		bool AutoSaveEnabled() const noexcept;
+		void SetAutoSaveEnabled(bool enabled) noexcept;
 		// Presentation 保持 click-through/不激活；白板绘制面由生命周期事务显式开放激活。
 		void SetActivationAllowed(bool enabled) noexcept;
 		// 返回当前橡皮宽度模式；活动批次仍使用其 Down 时锁定值。
@@ -155,8 +174,23 @@ export namespace Inkeys::Drawing::Draw3
 		// 返回每次 C 切换都变化的模式 revision，供绘制线程淘汰陈旧 Hover OC。
 		uint32_t ActiveEraserWidthModeRevision() const noexcept;
 		void SetEraserWidthMode(EraserWidthMode mode) noexcept;
-		// 产品状态只发布原子样式快照，实际绘制仍由绘制线程消费。
-		void SetProductVisualStyle(uint32_t colorRgba, float widthDip) noexcept;
+		void SetEraserInputs(const SpeedEraser::InputSettings& settings);
+		SpeedEraser::InputSettings EraserInputsSnapshot() const;
+		void SetEraserToolPolicy(SpeedEraser::EraserToolPolicy policy) noexcept { eraserToolPolicy_.store(policy); }
+		SpeedEraser::EraserToolPolicy EraserToolPolicySnapshot() const noexcept { return eraserToolPolicy_.load(); }
+		// 独立实验开关仅在批次 Down 锁存，不让它使 Mouse/Pen 的 Hover 标尺失效。
+		void SetTouchContactAreaAssistance(bool enabled) noexcept { touchContactAreaAssistance_.store(enabled); }
+		bool TouchContactAreaAssistance() const noexcept { return touchContactAreaAssistance_.load(); }
+		uint64_t MouseCanvasExitRevision() const noexcept { return mouseCanvasExitRevision_.load(); }
+		void SetEraserDiagnosticsEnabled(bool enabled) noexcept { eraserDiagnosticsEnabled_.store(enabled); }
+		bool EraserDiagnosticsEnabled() const noexcept { return eraserDiagnosticsEnabled_.load(); }
+		void SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale);
+		SpeedEraser::DisplayScale SpeedEraserDisplayScaleSnapshot() const;
+		void SetSpeedEraserDeviceMode(SpeedEraser::DeviceMode mode);
+		SpeedEraser::DeviceMode SpeedEraserDeviceModeSnapshot() const;
+		// 宽度和显示上下文同锁发布，实际绘制仍由绘制线程消费。
+		void SetProductVisualStyle(uint32_t colorRgba, double widthDip,
+			const Inkeys::Business::PenWidth::Context& context = {}) noexcept;
 		ProductVisualStyle ProductVisualStyleSnapshot() const noexcept;
 		void EnqueueCanvasCommand(CanvasCommand command);
 		void RequestExit() noexcept;
@@ -171,9 +205,12 @@ export namespace Inkeys::Drawing::Draw3
 		void SetActiveDrawingCursorTool(DrawingTool tool) noexcept;
 		void ClearActiveDrawingCursorTool() noexcept;
 		DrawingTool EffectiveDrawingCursorTool() const noexcept;
+		// 返回当前视觉归属；Touch 只暂时覆盖，不写入持久 Pen/Mouse owner。
 		DrawingCursorPointerAuthority CursorOwner() const noexcept;
 		bool ReadPenCursorSample(DrawingCursorSample& sample) const noexcept;
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
+		// 仅由Host隐藏注入门调用；复用正常光标发布，不安装真实鼠标离窗跟踪。
+		void PublishHiddenTestMouseCursor(const DrawingCursorSample& sample) noexcept;
 		// 绘制线程发布直接跟手平移状态，窗口线程据此抑制 Pen 接触反馈。
 		void SetTouchPanActive(bool active) noexcept;
 		bool TouchPanActive() const noexcept;
@@ -197,6 +234,7 @@ export namespace Inkeys::Drawing::Draw3
 		void RequestDrawingCursorRender() noexcept;
 		void QueueSystemCursorRefresh() noexcept;
 		void SetDrawingCursorOwner(DrawingCursorPointerAuthority owner) noexcept;
+		void SetTouchCursorSuppressed(bool suppressed) noexcept;
 		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
 		void NotifyTouchContactBegin(bool trackActiveContact,
 			uint32_t touchBarrierTick) noexcept;
@@ -204,8 +242,10 @@ export namespace Inkeys::Drawing::Draw3
 		void ClearMouseCursorSample() noexcept;
 		bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 			bool penSampleValid, bool touchBarrierKnown,
-			uint32_t mouseMessageTick, uint32_t touchBarrierTick) const noexcept;
+			uint32_t mouseMessageTick, uint32_t touchBarrierTick,
+			INPUT_MESSAGE_DEVICE_TYPE inputSource) const noexcept;
 		void ApplyWindowCursor(const char* trigger) noexcept;
+		void RecordMouseCursorDiagnosticState(uint64_t eventId, const char* phase) const noexcept;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		void TraceCursorState(const char* eventName, uint32_t pointerId,
 			POINTER_INPUT_TYPE pointerType, bool pointerTypeKnown,
@@ -242,16 +282,37 @@ export namespace Inkeys::Drawing::Draw3
 		// 高 32 位为有效标志，低 32 位保存 Windows uptime tick，保证跨线程一致快照。
 		std::atomic<uint64_t> latestTouchInputBarrierTick_ = 0;
 		std::atomic<uint32_t> activeTouchContactCount_ = 0;
+		// 仅 Drawpad 窗口线程读写；用于识别抬指后原位的来源未知 MouseMove。
+		bool lastTouchMousePositionKnown_ = false;
+		int lastTouchMouseX_ = 0;
+		int lastTouchMouseY_ = 0;
+		// 以下字段只补充取证，不参与光标接管判断。兼容 Mouse 无完整 pointerId 时记 0。
+		uint32_t lastTouchMouseDiagnosticTick_ = 0;
+		uint32_t lastTouchMouseDiagnosticPointerId_ = 0;
+		uint32_t lastTouchMouseDiagnosticPrimary_ = 0; // 0 未知、1 非主触点、2 主触点。
+		bool lastTouchMouseDiagnosticFromPointer_ = false;
+		uint64_t cursorMouseDiagnosticEvent_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<bool> selectionMode_ = true;
+		std::atomic<bool> autoSaveEnabled_ = false;
 		std::atomic<bool> activationAllowed_ = false;
 		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;
+		// 完整标尺在同一个锁内复制，不能拼接跨 generation 的独立原子字段。
+		std::atomic<bool> touchContactAreaAssistance_ = false;
+		std::atomic<bool> eraserDiagnosticsEnabled_ = false;
+		mutable std::mutex speedEraserConfigMutex_;
+		SpeedEraser::DisplayScale speedEraserDisplayScale_;
+		SpeedEraser::InputSettings eraserInputs_;
+		std::atomic<SpeedEraser::EraserToolPolicy> eraserToolPolicy_ = SpeedEraser::EraserToolPolicy::ByEntry;
+		SpeedEraser::DeviceMode speedEraserDeviceMode_ = SpeedEraser::DeviceMode::Laptop;
 		// 产品颜色按 0xRRGGBBAA 保存，默认使用不透明黑色。
-		std::atomic<uint32_t> productColorRgba_ = 0x000000FFu;
-		std::atomic<float> productWidthDip_ = 2.0f;
+		mutable std::mutex productVisualStyleMutex_;
+		ProductVisualStyle productVisualStyle_;
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
 		std::atomic<DrawingCursorPointerAuthority> cursorOwner_ =
 			DrawingCursorPointerAuthority::Unknown;
+		// Touch Up 后继续抑制旧主光标，直到真实 Mouse/Pen 输入接管。
+		std::atomic<bool> touchCursorSuppressed_ = false;
 		std::atomic<bool> systemCursorRefreshPosted_ = false;
 		std::atomic<bool> mouseUsesSystemCursor_ = true;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -273,10 +334,14 @@ export namespace Inkeys::Drawing::Draw3
 		DrawingCursorAppearance eraserCursorAppearance_ = {};
 		DrawingCursorAppearance laserCursorAppearance_ = {};
 		HCURSOR defaultCursor_ = nullptr;
+		// 仅窗口线程使用，避免相同系统光标决策反复刷控制台。
+		uint64_t lastCursorSystemDiagnosticKey_ = 0;
+		bool cursorSystemDiagnosticKnown_ = false;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
 		std::atomic<uint32_t> suppressedPenPointerId_ = 0;
 		bool lastHapticPenInfoKnown_ = false;
 		bool lastHapticPenInfoEraser_ = false;
 		bool trackingMouseLeave_ = false;
+		std::atomic<uint64_t> mouseCanvasExitRevision_ = 0;
 	};
 }

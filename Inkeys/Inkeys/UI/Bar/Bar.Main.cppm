@@ -1,18 +1,28 @@
 ﻿module;
 
 #include "../../../IdtMain.h"
+#include "../../../IdtState.h"
 
 #include <d2d1_1.h>
 #include <dwrite_1.h>
 #include <wrl/client.h>
 #include <array>
+#include <chrono>
 #include <cstdint>
+#include <mutex>
+#include <optional>
 #include "Bar.BottomDock.h"
+#include "../StartupPlacement.h"
+#include "Bar.PresentationProbe.h"
+#include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
 
 export module Inkeys.UI.Bar:Main;
 
 import :UI;
 import :State;
+import Inkeys.UI.Bar.EraserAttributeMotion;
+import Inkeys.UI.Bar.RecallAttributeMotion;
+export import Inkeys.UI.Bar.RecallChrome;
 import :Button;
 import :Format;
 export import :Rendering;
@@ -69,6 +79,169 @@ protected:
 // 前向声明
 class BarUISetClass;
 class BarRenderLoopCoordinator;
+
+class BarEraserAttributePanel
+{
+public:
+	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
+		RECT workArea, POINT origin, double rigidX, double rigidY,
+		const BarUiTimelineClass* parentTimeline = nullptr,
+		bool dragPlacementLocked = false,
+		std::optional<bool> eraserSelected = std::nullopt);
+	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
+	void CommitPresented();
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool ResetPointerFeedback();
+	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
+	void Close(BarUISetClass& owner);
+	RECT Bounds() const;
+	std::array<RECT,3> PresentedRegions() const;
+	Inkeys::UI::Bar::EraserAttributePresentation PresentationSnapshot() const;
+	bool Changed() const noexcept { return changed_; }
+	bool Active() const noexcept { return active_; }
+	bool WantsKeyboard() const noexcept { return visible_.load(); }
+	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
+private:
+	void Initialize();
+	void Execute(BarUISetClass& owner, int item);
+	void DrawPreview(BarUIRendering& renderer, ID2D1DeviceContext* context, size_t index);
+	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::EraserAttributeRect rect, double scale = 1.0);
+	mutable std::mutex presentationMutex_;
+	Inkeys::UI::Bar::EraserAttributeLayout layout_;
+	Inkeys::UI::Bar::EraserAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::EraserAttributeLayoutInput stableLayoutInput_, dragLayoutInput_;
+	double zoom_ = 1;
+	bool initialized_ = false, changed_ = false, active_ = false;
+	bool hasStableLayoutInput_ = false, dragPlacementLocked_ = false;
+	bool releaseSwitchLayoutLocked_ = false, sideSwitchActive_ = false;
+	double sideSwitchExpandDuration_ = 0;
+	bool previousBelow_ = false, previousReversed_ = false;
+	int menuSide_ = -1;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	bool returnToSelectionOnClear_ = false;
+	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
+	std::array<BarButtonClass,10> buttons_;
+	std::array<BarUiShapeClass,2> dividers_;
+	BarUiShapeClass automaticDivider_;
+	BarUiSVGClass automaticArrow_;
+	std::array<BarUiShapeClass,3> circles_, circleSelectionRings_;
+	std::array<BarUiValueClass,3> circleSelection_, circleHover_, circlePress_;
+	BarUiShapeClass surface_, menu_;
+	BarUiWordClass title_;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
+	unsigned long long deviceGeneration_ = 0;
+	int selectedSize_ = 32, sensitivity_ = 1;
+	Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState automatic_ =
+		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;
+};
+
+// 撤回属性：单 70x70 Redo 按钮，开合/换边/命中语义与橡皮属性一致，无子菜单。
+class BarRecallAttributePanel
+{
+public:
+	bool Advance(BarUISetClass& owner, const Inkeys::UI::Bar::RecallChromeView& chrome,
+		bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
+		RECT workArea, POINT origin, double rigidX, double rigidY,
+		const BarUiTimelineClass* parentTimeline = nullptr,
+		bool dragPlacementLocked = false);
+	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
+	void CommitPresented();
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool ResetPointerFeedback();
+	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
+	void Close(BarUISetClass& owner);
+	RECT Bounds() const;
+	std::array<RECT,3> PresentedRegions() const;
+	Inkeys::UI::Bar::RecallAttributePresentation PresentationSnapshot() const;
+	bool Changed() const noexcept { return changed_; }
+	bool Active() const noexcept { return active_; }
+	bool WantsKeyboard() const noexcept { return visible_.load(); }
+private:
+	void Initialize();
+	void Execute(BarUISetClass& owner, int item);
+	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::RecallAttributeRect rect, double scale = 1.0);
+	mutable std::mutex presentationMutex_;
+	Inkeys::UI::Bar::RecallAttributeLayout layout_;
+	Inkeys::UI::Bar::RecallAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::RecallAttributeLayoutInput stableLayoutInput_, dragLayoutInput_;
+	double zoom_ = 1;
+	bool initialized_ = false, changed_ = false, active_ = false;
+	bool hasStableLayoutInput_ = false, dragPlacementLocked_ = false;
+	bool releaseSwitchLayoutLocked_ = false, sideSwitchActive_ = false;
+	double sideSwitchExpandDuration_ = 0;
+	bool previousBelow_ = false;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	Inkeys::UI::Bar::RecallSurfaceMotion panelMotion_;
+	BarButtonClass redoButton_;
+	BarUiShapeClass surface_;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
+	unsigned long long deviceGeneration_ = 0;
+};
+
+
+namespace Inkeys::UI::Bar
+{
+	// 隐藏按钮继续留在运行时列表，位置跟随来源按钮；渲染与离屏回归共用。
+	void AnchorHiddenBarButton(BarButtonSetClass& buttons, bool folded,
+		BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset,
+		const std::function<void(BarUiValueClass&, double)>& setPositionTarget);
+
+	// Main Bar 与跨 HWND surface 共用这些行为入口，调用方只保留资源和拓扑。
+	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage);
+	bool StopBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage, bool immediate,
+		bool preserveVisual = false);
+	bool StartBarButtonHoverVisual(BarButtonClass& button) noexcept;
+	bool StopBarButtonHoverVisual(BarButtonClass& button, bool immediate,
+		bool preserveVisual = false) noexcept;
+	bool UpdateBarButtonHoverVisual(BarButtonClass& button, bool visible,
+		bool hoverAllowed, double fadeDurationSeconds) noexcept;
+	void SetBarButtonPressedVisual(BarButtonClass& button, bool pressed) noexcept;
+	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
+		bool visible, bool enabled, bool selected,
+		double durationSeconds, std::optional<COLORREF> contentColor = std::nullopt) noexcept;
+
+	struct BarButtonDrawOptions
+	{
+		BarUiWordClass* secondary = nullptr;
+		DWRITE_FONT_WEIGHT primaryWeight = DWRITE_FONT_WEIGHT_BOLD;
+		DWRITE_FONT_WEIGHT secondaryWeight = DWRITE_FONT_WEIGHT_NORMAL;
+	};
+
+	struct BarButtonVisualInheritance
+	{
+		BarUiInheritClass button;
+		BarUiInheritClass icon;
+		BarUiInheritClass primary;
+		std::optional<BarUiInheritClass> secondary;
+	};
+
+	// 显式父坐标是唯一真值；绘制与 dirty 必须先建立同一条继承链。
+	[[nodiscard]] BarButtonVisualInheritance
+		PrepareBarButtonVisualInheritance(BarButtonClass& button,
+			const BarUiInheritClass& inherit,
+			BarUiWordClass* secondary = nullptr) noexcept;
+
+	bool DrawBarButtonVisual(BarUIRendering& renderer,
+		ID2D1DeviceContext* deviceContext, BarButtonClass& button,
+		const BarUiInheritClass& inherit,
+		const BarButtonDrawOptions& options = {});
+	bool DrawBarBackgroundVisual(BarUIRendering& renderer,
+		ID2D1DeviceContext* deviceContext, BarUiShapeClass& background,
+		const BarUiInheritClass& inherit, RECT* targetRect = nullptr,
+		bool clip = false);
+
+	// PageControl 只登记窗口事实；第三光源仍由 Main Bar 的唯一状态机拥有。
+	export void NotifyBorderCursorSurfacePointerEntered() noexcept;
+	export void NotifyBorderCursorSurfacePointerLeft() noexcept;
+	export void PublishBorderCursorSurfaceBounds(
+		unsigned int index, const RECT& bounds, bool visible) noexcept;
+}
 // 控件枚举
 enum class BarUISetShapeEnum : int
 {
@@ -259,6 +432,12 @@ struct BarBottomDockPresentedSnapshot
 		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
 	bool recoveryActive = false;
 	Inkeys::UI::Bar::BarBottomDockVerticalMapping mapping{};
+	Inkeys::UI::Bar::BarBottomDockCenterMode centerMode =
+		Inkeys::UI::Bar::BarBottomDockCenterMode::Centered;
+	Inkeys::UI::Bar::BarBottomDockPhase centerPhase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	Inkeys::UI::Bar::BarBottomDockHorizontalMapping horizontalMapping{};
+	double centerElasticOffsetDip = 0.0;
 	double elasticOffsetDip = 0.0;
 	double rigidTranslationDip = 0.0;
 	double zoom = 1.0;
@@ -270,6 +449,13 @@ struct BarBottomDockPresentedSnapshot
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
+	double rawMainCenterScreenX = 0.0;
+	double bodyCenterScreenX = 0.0;
+	double visualBodyCenterScreenX = 0.0;
+	double rawBodyCenterScreenX = 0.0;
+	bool indicatorVisible = false;
+	bool indicatorOccluding = false;
+	RECT indicatorBounds{};
 	unsigned long long transitionSerial = 0;
 	unsigned long long serial = 0;
 };
@@ -281,7 +467,7 @@ public:
 	BarUISetClass() : spec(this) {};
 
 	// 渲染
-	void Rendering();
+	[[nodiscard]] bool Rendering();
 	void StopRendering();
 	// 鼠标交互
 	void Interact();
@@ -290,6 +476,22 @@ public:
 	{
 		return toggleClickCoalescer.TryBegin(channel);
 	}
+	void RequestBottomDockCenterAfterExpand() noexcept
+	{
+		bottomDockCenterAutoCaptureRequested.store(true, memory_order_release);
+	}
+	void ClearBottomDockCenterForFold() noexcept
+	{
+		BeginBottomDockTransition();
+		bottomDockCenterMode.store(
+			Inkeys::UI::Bar::BarBottomDockCenterMode::Free,
+			memory_order_relaxed);
+		bottomDockCenterPhase.store(
+			Inkeys::UI::Bar::BarBottomDockPhase::Stable,
+			memory_order_relaxed);
+		bottomDockCenterElasticOffsetDip.store(0.0, memory_order_relaxed);
+		(void)FinishBottomDockTransition(true);
+	}
 
 public:
 	BarWindowPosClass barWindow;
@@ -297,8 +499,22 @@ public:
 	BarButtonSetClass barButtonSet;
 	BarUIRendering spec;
 
+	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
+	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
+	Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar;
 	BarStateClass barState;
 	BarStyleClass barStyle;
+	BarEraserAttributePanel eraserAttribute;
+	BarRecallAttributePanel recallAttribute;
+	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
+	std::mutex recallChromeMutex;
+	Inkeys::UI::Bar::RecallChromeState recallChrome{};
+	// 本次统一投影发布的view供布局颜色和弹窗共用，不在getter再次拼实时输入。
+	Inkeys::UI::Bar::RecallChromeView recallChromePresentation{};
+	// 用墙钟期限，不累加动画 dt。主栏休眠时动画时钟会停，并且恢复后的第一帧 dt 为 0。
+	std::chrono::steady_clock::time_point recallChromeIdleDeadline{};
+	bool recallChromeIdleArmed = false;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
@@ -332,8 +548,26 @@ public:
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
+	Inkeys::UI::Bar::Ui3FiniteSignature ReadFiniteSignature(const StateModeVersionedSnapshot& tool);
 	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
 	void CollapseAuxiliaryPanels(bool cancelCapture = true);
+	// 主栏点击展开对应 2×2；关闭只收面板，布局等 3 秒空闲后调整。
+	void OpenRecallFromUndo();
+	void OpenRecallFromRedo();
+	void NoteRecallPopupRedo();
+	bool ActivateRecallPopupCommand();
+	void NoteRecallPopupDismissed();
+	void ClearRecallForDrawing();
+	void SettleRecallChromeForWorkspace();
+	bool AdvanceRecallChromeIdle(double dtSeconds);
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView();
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView(bool compactSelection);
+	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
+	void ArmRecallChromeIdleTimer() noexcept;
+	void DisarmRecallChromeIdleTimer() noexcept;
+	void ArmRecallChromeIdleDeadline();
+	// 到期返回 true 并唤醒渲染；未到期时 retryMs 为剩余时间。
+	bool PollRecallChromeIdleTimer(unsigned& retryMs);
 	void StartDisplayTracking();
 	void StopDisplayTracking() noexcept;
 	void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot) noexcept;
@@ -410,6 +644,28 @@ public:
 				bottomDockPresentedRigidTranslationDip.load(memory_order_relaxed);
 			snapshot.mapping.rigidOverlayTranslationYDip =
 				snapshot.rigidTranslationDip;
+			snapshot.centerMode = bottomDockPresentedCenterMode.load(
+				memory_order_relaxed);
+			snapshot.centerPhase = bottomDockPresentedCenterPhase.load(
+				memory_order_relaxed);
+			snapshot.horizontalMapping.baseLeftDip =
+				bottomDockPresentedBaseLeftDip.load(memory_order_relaxed);
+			snapshot.horizontalMapping.baseRightDip =
+				bottomDockPresentedBaseRightDip.load(memory_order_relaxed);
+			snapshot.horizontalMapping.visualLeftDip =
+				bottomDockPresentedVisualLeftDip.load(memory_order_relaxed);
+			snapshot.horizontalMapping.visualRightDip =
+				bottomDockPresentedVisualRightDip.load(memory_order_relaxed);
+			snapshot.horizontalMapping.scaleX = max(0.000001,
+				bottomDockPresentedScaleX.load(memory_order_relaxed));
+			snapshot.horizontalMapping.rigidGripTranslationXDip =
+				bottomDockPresentedRigidGripTranslationXDip.load(
+					memory_order_relaxed);
+			snapshot.horizontalMapping.rigidOverlayTranslationXDip =
+				bottomDockPresentedRigidTranslationXDip.load(
+					memory_order_relaxed);
+			snapshot.centerElasticOffsetDip =
+				bottomDockPresentedCenterElasticOffsetDip.load(memory_order_relaxed);
 			snapshot.zoom = Inkeys::UI::Bar::NormalizeBarBottomDockZoom(
 				bottomDockPresentedZoom.load(memory_order_relaxed));
 			snapshot.monitorOrigin = POINT{
@@ -435,9 +691,28 @@ public:
 				bottomDockPresentedMainCenterScreenX.load(memory_order_relaxed);
 			snapshot.mainCenterScreenY =
 				bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed);
+			snapshot.rawMainCenterScreenX =
+				bottomDockPresentedRawMainCenterScreenX.load(memory_order_relaxed);
+			snapshot.bodyCenterScreenX =
+				bottomDockPresentedBodyCenterScreenX.load(memory_order_relaxed);
+			snapshot.visualBodyCenterScreenX =
+				bottomDockPresentedVisualBodyCenterScreenX.load(
+					memory_order_relaxed);
+			snapshot.rawBodyCenterScreenX =
+				bottomDockPresentedRawBodyCenterScreenX.load(memory_order_relaxed);
+			snapshot.indicatorVisible =
+				bottomDockIndicatorPresentedVisible.load(memory_order_relaxed);
+			snapshot.indicatorOccluding =
+				bottomDockIndicatorPresentedOccluding.load(memory_order_relaxed);
+			snapshot.indicatorBounds = RECT{
+				bottomDockIndicatorPresentedLeft.load(memory_order_relaxed),
+				bottomDockIndicatorPresentedTop.load(memory_order_relaxed),
+				bottomDockIndicatorPresentedRight.load(memory_order_relaxed),
+				bottomDockIndicatorPresentedBottom.load(memory_order_relaxed) };
 			snapshot.transitionSerial =
 				bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
 			snapshot.serial = serialBefore;
+			std::atomic_thread_fence(std::memory_order_acquire);
 			if (bottomDockPresentedMappingSerial.load(memory_order_acquire)
 				== serialBefore) return snapshot;
 		}
@@ -447,6 +722,16 @@ public:
 		const auto snapshot = BottomDockPresentedSnapshot();
 		return static_cast<int>(lround(static_cast<double>(visualY)
 			- snapshot.rigidTranslationDip * snapshot.zoom));
+	}
+	POINT BottomDockRigidHitTestPoint(POINT visualPoint) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const auto resolved = Inkeys::UI::Bar::
+			ResolveBarBottomDockRigidHitTestPoint(
+				visualPoint.x, visualPoint.y, snapshot.horizontalMapping,
+				snapshot.mapping, snapshot.zoom);
+		return POINT{ static_cast<LONG>(lround(resolved.logicalX)),
+			static_cast<LONG>(lround(resolved.logicalY)) };
 	}
 	int BottomDockRigidVisualY(int rigidY) const noexcept
 	{
@@ -461,6 +746,64 @@ public:
 			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelY(
 				static_cast<double>(visualY), snapshot.mapping, snapshot.zoom)));
 	}
+	int BottomDockRigidHitTestX(int visualX) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(static_cast<double>(visualX)
+			- snapshot.horizontalMapping.rigidOverlayTranslationXDip
+				* snapshot.zoom));
+	}
+	int BottomDockRigidVisualX(int rigidX) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(static_cast<double>(rigidX)
+			+ snapshot.horizontalMapping.rigidOverlayTranslationXDip
+				* snapshot.zoom));
+	}
+	int BottomDockBodyHitTestX(int visualX) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelX(
+				static_cast<double>(visualX), snapshot.horizontalMapping,
+				snapshot.zoom)));
+	}
+	int BottomDockGripHitTestX(int visualX) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockGripPixelX(
+				static_cast<double>(visualX), snapshot.horizontalMapping,
+				snapshot.zoom)));
+	}
+	int BottomDockGripHitTestXFromRigid(int rigidX,
+		int* visualX = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const int resolvedVisualX = static_cast<int>(lround(
+			static_cast<double>(rigidX)
+				+ snapshot.horizontalMapping.rigidOverlayTranslationXDip
+					* snapshot.zoom));
+		if (visualX) *visualX = resolvedVisualX;
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockGripPixelX(
+				static_cast<double>(resolvedVisualX), snapshot.horizontalMapping,
+				snapshot.zoom)));
+	}
+	int BottomDockBodyHitTestXFromRigid(int rigidX,
+		int* visualX = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const int resolvedVisualX = static_cast<int>(lround(
+			static_cast<double>(rigidX)
+				+ snapshot.horizontalMapping.rigidOverlayTranslationXDip
+					* snapshot.zoom));
+		if (visualX) *visualX = resolvedVisualX;
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelX(
+				static_cast<double>(resolvedVisualX), snapshot.horizontalMapping,
+				snapshot.zoom)));
+	}
 	int BottomDockBodyHitTestYFromRigid(int rigidY,
 		int* visualY = nullptr) const noexcept
 	{
@@ -474,19 +817,71 @@ public:
 				static_cast<double>(resolvedVisualY), snapshot.mapping,
 				snapshot.zoom)));
 	}
+	POINT BottomDockBodyHitTestPointFromRigid(POINT rigidPoint,
+		POINT* visualPoint = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const auto resolved = Inkeys::UI::Bar::
+			ResolveBarBottomDockBodyHitTestPointFromRigid(
+				rigidPoint.x, rigidPoint.y, snapshot.horizontalMapping,
+				snapshot.mapping, snapshot.zoom);
+		if (visualPoint)
+			*visualPoint = POINT{ static_cast<LONG>(lround(resolved.visualX)),
+				static_cast<LONG>(lround(resolved.visualY)) };
+		return POINT{ static_cast<LONG>(lround(resolved.logicalX)),
+			static_cast<LONG>(lround(resolved.logicalY)) };
+	}
+	POINT BottomDockGripHitTestPointFromRigid(POINT rigidPoint,
+		POINT* visualPoint = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const auto resolved = Inkeys::UI::Bar::
+			ResolveBarBottomDockGripHitTestPointFromRigid(
+				rigidPoint.x, rigidPoint.y, snapshot.horizontalMapping,
+				snapshot.mapping, snapshot.zoom);
+		if (visualPoint)
+			*visualPoint = POINT{ static_cast<LONG>(lround(resolved.visualX)),
+				static_cast<LONG>(lround(resolved.visualY)) };
+		return POINT{ static_cast<LONG>(lround(resolved.logicalX)),
+			static_cast<LONG>(lround(resolved.logicalY)) };
+	}
 	RECT BottomDockBodyVisualBounds(RECT bounds) const noexcept
 	{
 		const auto snapshot = BottomDockPresentedSnapshot();
 		return Inkeys::UI::Bar::TransformBarBottomDockBodyRect(
-			bounds, snapshot.mapping, snapshot.zoom);
+			bounds, snapshot.horizontalMapping, snapshot.mapping, snapshot.zoom);
+	}
+	RECT BottomDockGripVisualBounds(RECT bounds) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return Inkeys::UI::Bar::TransformBarBottomDockGripRect(
+			bounds, snapshot.horizontalMapping, snapshot.mapping, snapshot.zoom);
 	}
 	RECT BottomDockRigidVisualBounds(RECT bounds) const noexcept
 	{
 		const auto snapshot = BottomDockPresentedSnapshot();
 		return Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+			snapshot.horizontalMapping.rigidOverlayTranslationXDip,
 			snapshot.rigidTranslationDip, snapshot.zoom);
 	}
+	bool IsBottomDockIndicatorPresentedAt(LONG x, LONG y) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return Inkeys::UI::Bar::IsBarBottomDockIndicatorHit(
+			snapshot.indicatorVisible && snapshot.indicatorOccluding,
+			snapshot.indicatorBounds, x, y);
+	}
+
 protected:
+	void BeginBottomDockTransition() noexcept
+	{
+		Inkeys::UI::Bar::BeginBarBottomDockTransition(bottomDockTransitionSerial);
+	}
+	unsigned long long FinishBottomDockTransition(bool deferWindowMove = false) noexcept
+	{
+		return Inkeys::UI::Bar::FinishBarBottomDockTransition(
+			bottomDockTransitionSerial, bottomDockDeferredTransitionSerial, deferWindowMove);
+	}
 	// 调用方持有 directWindowDragMutex；直移只重基准屏幕位置，不改变已呈现位图。
 	void RebaseBottomDockPresentedWindow(POINT directTranslation,
 		POINT screenDelta = {}) noexcept
@@ -496,6 +891,7 @@ protected:
 		directWindowPresentedTranslationY.store(
 			directTranslation.y, memory_order_relaxed);
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_acq_rel);
+		std::atomic_thread_fence(std::memory_order_release);
 		bottomDockPresentedDirectTranslationX.store(
 			directTranslation.x, memory_order_relaxed);
 		bottomDockPresentedDirectTranslationY.store(
@@ -507,6 +903,18 @@ protected:
 		bottomDockPresentedMainCenterScreenY.store(
 			bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed)
 				+ screenDelta.y,
+			memory_order_relaxed);
+		bottomDockPresentedRawMainCenterScreenX.store(
+			bottomDockPresentedRawMainCenterScreenX.load(memory_order_relaxed)
+				+ screenDelta.x,
+			memory_order_relaxed);
+		bottomDockPresentedBodyCenterScreenX.store(
+			bottomDockPresentedBodyCenterScreenX.load(memory_order_relaxed)
+				+ screenDelta.x,
+			memory_order_relaxed);
+		bottomDockPresentedRawBodyCenterScreenX.store(
+			bottomDockPresentedRawBodyCenterScreenX.load(memory_order_relaxed)
+				+ screenDelta.x,
 			memory_order_relaxed);
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
@@ -533,6 +941,7 @@ protected:
 
 	mutex borderCursorLightMutex;
 	D2D1_POINT_2F borderCursorLightPoint = D2D1::Point2F();
+	D2D1_POINT_2F borderCursorLightScreenPoint = D2D1::Point2F();
 	unsigned long long borderCursorLightSerial = 0;
 	bool borderCursorInputAvailable = false;
 	bool borderCursorLightReady = false;
@@ -545,7 +954,7 @@ protected:
 	BarBorderCursorTrackingStateEnum borderCursorTrackingState =
 		BarBorderCursorTrackingStateEnum::Dormant;
 	ULONGLONG borderCursorGraceDeadlineTick = 0;
-	array<RECT, 6> borderCursorVisibleRegions{};
+	array<RECT, 10> borderCursorVisibleRegions{};
 	size_t borderCursorVisibleRegionCount = 0;
 
 	// ULW 与主按钮直移共用几何锁；位移使用原子目标，交互线程不等待慢提交。
@@ -578,6 +987,13 @@ protected:
 	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockPhase =
 		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
 	atomic<double> bottomDockElasticOffsetDip = 0.0;
+	atomic<Inkeys::UI::Bar::BarBottomDockCenterMode> bottomDockCenterMode =
+		Inkeys::UI::Bar::BarBottomDockCenterMode::Centered;
+	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockCenterPhase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	atomic<double> bottomDockCenterElasticOffsetDip = 0.0;
+	atomic<bool> bottomDockIndicatorGestureEligible = false;
+	atomic<bool> bottomDockCenterAutoCaptureRequested = false;
 	atomic<unsigned long long> bottomDockPresentedMappingSerial = 0;
 	atomic<Inkeys::UI::Bar::BarBottomDockMode> bottomDockPresentedMode =
 		Inkeys::UI::Bar::BarBottomDockMode::BottomDocked;
@@ -592,6 +1008,19 @@ protected:
 	atomic<double> bottomDockPresentedScaleY = 1.0;
 	atomic<double> bottomDockPresentedRigidGripYDip = 0.0;
 	atomic<double> bottomDockPresentedRigidTranslationDip = 0.0;
+	atomic<Inkeys::UI::Bar::BarBottomDockCenterMode>
+		bottomDockPresentedCenterMode =
+			Inkeys::UI::Bar::BarBottomDockCenterMode::Centered;
+	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockPresentedCenterPhase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	atomic<double> bottomDockPresentedCenterElasticOffsetDip = 0.0;
+	atomic<double> bottomDockPresentedBaseLeftDip = 0.0;
+	atomic<double> bottomDockPresentedBaseRightDip = 0.0;
+	atomic<double> bottomDockPresentedVisualLeftDip = 0.0;
+	atomic<double> bottomDockPresentedVisualRightDip = 0.0;
+	atomic<double> bottomDockPresentedScaleX = 1.0;
+	atomic<double> bottomDockPresentedRigidGripTranslationXDip = 0.0;
+	atomic<double> bottomDockPresentedRigidTranslationXDip = 0.0;
 	atomic<double> bottomDockPresentedZoom = 1.0;
 	atomic<LONG> bottomDockPresentedDisplayLeft = 0;
 	atomic<LONG> bottomDockPresentedDisplayTop = 0;
@@ -607,7 +1036,18 @@ protected:
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedMainCenterScreenY = 0.0;
+	atomic<double> bottomDockPresentedRawMainCenterScreenX = 0.0;
+	atomic<double> bottomDockPresentedBodyCenterScreenX = 0.0;
+	atomic<double> bottomDockPresentedVisualBodyCenterScreenX = 0.0;
+	atomic<double> bottomDockPresentedRawBodyCenterScreenX = 0.0;
+	atomic<bool> bottomDockIndicatorPresentedVisible = false;
+	atomic<bool> bottomDockIndicatorPresentedOccluding = false;
+	atomic<LONG> bottomDockIndicatorPresentedLeft = 0;
+	atomic<LONG> bottomDockIndicatorPresentedTop = 0;
+	atomic<LONG> bottomDockIndicatorPresentedRight = 0;
+	atomic<LONG> bottomDockIndicatorPresentedBottom = 0;
 	atomic<bool> bottomDockDragActive = false;
+	atomic<double> bottomDockDragRigidGripScreenX = 0.0;
 	atomic<double> bottomDockDragRigidGripScreenY = 0.0;
 	atomic<bool> bottomDockRecoveryActive = false;
 	atomic<unsigned long long> bottomDockTransitionSerial = 0;
@@ -625,16 +1065,49 @@ export extern BarUISetClass barUISet;
 
 namespace Inkeys::UI::Bar
 {
+	export struct PresentationAlphaDiagnostics final
+	{
+		std::uint8_t requested = 255;
+		std::uint8_t committed = 255;
+		bool transparentCommitted = false;
+		bool opaqueCommitted = false;
+	};
+
 	export WNDPROC WindowProc() noexcept;
+	export int RunEraserAttributeOffscreenTest();
+	export int RunThicknessFineDialProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
-	export void Initialization();
+	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar);
+	export void RequestPresentationAlpha(std::uint8_t alpha) noexcept;
+	export std::uint8_t CommittedPresentationAlpha() noexcept;
+	export std::uint8_t RequestedPresentationAlpha() noexcept;
+	export PresentationAlphaDiagnostics SnapshotPresentationAlphaDiagnostics() noexcept;
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
+	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
+	export void RefreshToolState() noexcept;
+	export void SetPptPresentationActive(bool active) noexcept;
+	export bool PptPresentationActive() noexcept;
+	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;
+	export std::optional<bool> ConsumePptSceneTransition() noexcept;
+	export HWND PptPresentationWindow() noexcept;
+	export HMONITOR PptSceneMonitor() noexcept;
+	export void UpdatePptSceneMonitor(HWND window) noexcept;
+	export double SceneBottomDockInsetDip() noexcept;
+	export void SetBusinessFocusCallback(std::function<void()> callback);
+	export void NotifyPptBusinessAction();
+	export bool PptBusinessFocusAllowed() noexcept;
+	export void SetEndShowRequestCallback(std::function<void(std::uint64_t)> callback);
+	export void CompleteEndShowRequest(std::uint64_t request) noexcept;
+	export void SetEndShowCallback(std::function<void()> callback);
+	export void RequestEndShow();
+	export void CompleteEndShowRequest() noexcept;
 	export void SetWhiteboardActive(bool active) noexcept;
 	export void CollapseAuxiliaryPanels(bool cancelCapture = true) noexcept;
 	export bool WhiteboardActive() noexcept;

@@ -7,26 +7,61 @@
 #include <atomic>
 #include <compare>
 #include <cstddef>
+#include <d3d11.h>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.SpeedEraser.h"
+#include "Draw3.PenDiagnostics.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
+import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.ink_document;
 import Inkeys.Drawing.Draw3.ink_history;
 import Inkeys.Drawing.Draw3.ink_history_gpu;
 import Inkeys.Drawing.Draw3.ink_prediction;
+import Inkeys.Drawing.Draw3.presentation_auto_save;
 import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.runtime_metrics;
 import Inkeys.Drawing.Draw3.transparent_presentation;
 import Inkeys.Drawing.Draw3.window_control;
 
+namespace Inkeys::Drawing::Draw3
+{
+	struct DrawingControllerMetricsState;
+}
+
 export namespace Inkeys::Drawing::Draw3
 {
+	// 无 HWND：验证生产 DIP 转换、光标及 Down 样式锁存，保留连续浮点宽度。
+	int RunPenWidthProductionProbe() noexcept;
+	// 显式无窗口诊断入口：用生产 Laser 烘干路径验证真实 WARP Map 失败。
+	int RunLaserRasterFailureProductionProbe(InkRenderer& renderer,
+		ID3D11Buffer* unwritableInkBuffer) noexcept;
+	// 无 HWND、无磁盘：同一生产 Exit 捕获入口验证停放 Desktop 的源身份。
+	int RunParkedDesktopExitAutoSaveTest() noexcept;
+	// 无 HWND、无磁盘：生产 PPT 快照构造验证活动/停放槽的 retained 身份。
+	int RunParkedPresentationRetainedSaveTest() noexcept;
+	// 无 HWND、无磁盘：生产 PPT 加载 materialize/安装/再保存的 retained 身份。
+	int RunPresentationLoadedRetainedInstallTest() noexcept;
+	// 无 HWND、无磁盘：PPT 冷加载期间新旧 SlideID 拓扑双向投影。
+	int RunPendingPresentationTopologyLoadTest() noexcept;
+	// 无 HWND 策略红测：旧 page-index 与新 Stable 绝不能自动按 ordinal 共用槽。
+	int RunFallbackStableControllerIsolationProbe() noexcept;
+	// 无 HWND：通过 Run 共用的 PPT CPU 槽切换事务验证 fallback/Stable 双轨隔离。
+	int RunFallbackStableControllerLaneProbe() noexcept;
+	// 无 HWND：PPT Current Load 一次瞬态失败后的同目标有界重试。
+	int RunPresentationCurrentLoadRetryProbe() noexcept;
+	// 无 HWND：复用 Run 的 ingress 批次函数验证命令屏障前后不吞新 Down。
+	int RunDraw3ControlFenceProductionProbe() noexcept;
+	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
+	int RunDraw3ContentProofProductionProbe() noexcept;
+
 	struct DrawingControllerRuntimeObserver
 	{
 		void* context = nullptr;
@@ -37,8 +72,20 @@ export namespace Inkeys::Drawing::Draw3
 			std::size_t, std::size_t) = nullptr;
 		void (*documentReady)(void*, std::size_t, std::size_t) = nullptr;
 		void (*currentPageContentChanged)(void*, bool, std::uint64_t) = nullptr;
-		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t) = nullptr;
-		void (*controlWake)(void*) = nullptr;
+		void (*strokeCompleted)(void*, Bridge::CompletedStrokeKind) = nullptr;
+		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t,
+			const Bridge::PresentationReadyIdentity*) = nullptr;
+		void (*controlWake)(void*, ControlWakeKind) = nullptr;
+		bool (*desktopAutoSaveRequested)(void*, DesktopAutoSaveTrigger,
+			draw3::uink::Draw3UInkExportSnapshot&&) = nullptr;
+		bool (*desktopLoadRequested)(void*, draw3::uink::UInkGuid) = nullptr;
+		bool (*presentationSaveRequested)(void*, PresentationSaveRequest&&) = nullptr;
+		bool (*presentationLoadRequested)(void*, PresentationLoadRequest&&) = nullptr;
+		void (*drawingActivityChanged)(void*, bool) = nullptr;
+		void (*eraserDiagnostics)(void*, const SpeedEraser::Diagnostics&) = nullptr;
+		void (*penDiagnostics)(void*, const PenRuntimeDiagnostics&) = nullptr;
+		void (*runtimeMetricsPhaseProgress)(void*, const RuntimeMetricsPhaseProgress&) noexcept = nullptr;
+		void (*historyAvailabilityChanged)(void*, bool, bool) = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。
@@ -49,6 +96,7 @@ export namespace Inkeys::Drawing::Draw3
 			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 			DrawingControllerRuntimeObserver observer = {},
 			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr);
+		~DrawingController();
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
 		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
@@ -90,7 +138,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 运行 RTS 多 contact 绘制循环；完全空闲时阻塞在零自旋信号量。
 		void Run();
 	private:
-		void CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
+		bool CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
 		bool PresentFrame(RECT dirty, bool presentFull);
 
 		ContactInputCoordinator& input_;
@@ -114,6 +162,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::optional<InkCanvasCollection> document_;
 		size_t currentPageIndex_ = 0;
 		RuntimeMetricsSession* metrics_ = nullptr;
+		std::unique_ptr<DrawingControllerMetricsState> metricsState_;
+		bool metricsUnavailable_ = false;
 		PenHapticFeedback* haptics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;

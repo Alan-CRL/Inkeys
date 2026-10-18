@@ -52,9 +52,21 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	InkStroke::InkStroke(StoredInkStyle style,
-		std::vector<StoredInkPoint> points, bool renderOnlyWhenLatest) noexcept
+		std::vector<StoredInkPoint> points, std::optional<size_t> debugTailSegmentStart,
+		bool renderOnlyWhenLatest) noexcept
 		: style_(style), points_(std::move(points)),
-		renderOnlyWhenLatest_(renderOnlyWhenLatest) {}
+		renderOnlyWhenLatest_(renderOnlyWhenLatest)
+	{
+		if (style_.inkType == StoredInkType::Pen && debugTailSegmentStart &&
+			*debugTailSegmentStart + 1 > *debugTailSegmentStart &&
+			*debugTailSegmentStart + 1 < points_.size())
+			debugTailSegmentStart_ = debugTailSegmentStart;
+	}
+
+	std::optional<size_t> InkStroke::DebugTailSegmentStart() const noexcept
+	{
+		return debugTailSegmentStart_;
+	}
 
 	const StoredInkStyle& InkStroke::Style() const noexcept
 	{
@@ -217,8 +229,21 @@ namespace Inkeys::Drawing::Draw3
 		return index < pages_.size() ? &pages_[index] : nullptr;
 	}
 
+	bool InkCanvasCollection::ReplacePage(size_t index, InkPage replacement) noexcept
+	{
+		if (index >= pages_.size() || replacement.PageGuid().IsZero() ||
+			replacement.PageGuid() != pages_[index].PageGuid()) return false;
+		pages_[index] = std::move(replacement);
+		return true;
+	}
+
 	std::span<const InkPage> InkCanvasCollection::Pages() const noexcept
 	{
 		return { pages_.data(), pages_.size() };
+	}
+
+	std::vector<InkPage> InkCanvasCollection::TakePages() noexcept
+	{
+		return std::move(pages_);
 	}
 }

@@ -585,7 +585,17 @@ function Compare-Language {
 
 		$baseNewlineCount = Get-NewlineCount -Value $baseMap[$key]
 		$targetNewlineCount = Get-NewlineCount -Value $targetValue
-		if ($baseNewlineCount -ne $targetNewlineCount) {
+		# 两枚主栏长标签按语言排版为一行或两行；其他文案继续严格匹配换行。
+		$allowsLocalizedLineBreak = $key -in @(
+			'UI/Bar/MainButtons/SelectClearLabel',
+			'UI/Bar/MainButtons/ClickThroughLabel'
+		)
+		$hasNewlineMismatch = if ($allowsLocalizedLineBreak) {
+			$baseNewlineCount -gt 1 -or $targetNewlineCount -gt 1
+		} else {
+			$baseNewlineCount -ne $targetNewlineCount
+		}
+		if ($hasNewlineMismatch) {
 			$newlineMismatch.Add([pscustomobject]@{
 					Key = $key
 					Base = $baseNewlineCount

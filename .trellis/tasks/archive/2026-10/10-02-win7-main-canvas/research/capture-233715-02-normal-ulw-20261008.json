@@ -1,0 +1,101 @@
+{
+  "input_counts": {
+    "mouse_accepted": 1887,
+    "mouse_rejected": 0,
+    "cursor_before_draw": 11,
+    "cursor_after_draw": 11,
+    "rts_down_published": 21,
+    "rts_up_published": 21,
+    "rts_packets_published": 17,
+    "undo": 2,
+    "autosave_capture": 1,
+    "autosave_committed": 1
+  },
+  "ulw": {
+    "DrawpadPresentation": {
+      "samples": 4,
+      "source_nonzero_samples": 0,
+      "source_rgb_nonzero_samples": 0,
+      "api_success": 4,
+      "overrides": {
+        "0": 4
+      },
+      "dirty_parameters": {
+        "null": 3,
+        "rect": 1
+      },
+      "max_final_alpha": 0
+    },
+    "Drawpad": {
+      "samples": 32,
+      "source_nonzero_samples": 0,
+      "source_rgb_nonzero_samples": 0,
+      "api_success": 32,
+      "overrides": {
+        "0": 32
+      },
+      "dirty_parameters": {
+        "null": 1,
+        "rect": 31
+      },
+      "max_final_alpha": 1
+    }
+  },
+  "selected_lines": [
+    {
+      "file": "console.stdout.txt",
+      "line": 20,
+      "text": "[UlwDirtyRect] Draw3 created swapchain desc: size=1920x1080 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=UNSPECIFIED scaling=0 flags=0x0"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 30,
+      "text": "[Draw3Diag][ulw-pixels] role=DrawpadPresentation hwnd=0x1c0358 tick=57715752 dirty=(0,0,1920,1080) full=1 dirtyParameter=null fullUpdateOverride=0 copy_map_ms=63 rows_ms=0 ulw_ms=47 api=success error=0 underlay=0 pixels=2073600 sourceAlphaNonzero=0 sourceRgbNonzero=0 sourceMaxBgra=(0,0,0,0) sourceAlphaBounds=(0,0,0,0) sourcePremul=1 finalDibAlphaNonzero=0 finalDibRgbNonzero=0 finalDibMaxBgra=(0,0,0,0) finalDibAlphaBounds=(0,0,0,0) finalDibPremul=1 samplePos=(0,0) sampleSourceBgra=(0,0,0,0) sampleFinalBgra=(0,0,0,0)"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 44,
+      "text": "[Draw3Diag][ulw-pixels] role=Drawpad hwnd=0x3601c4 tick=57719589 dirty=(0,0,1920,1080) full=1 dirtyParameter=null fullUpdateOverride=0 copy_map_ms=15 rows_ms=32 ulw_ms=46 api=success error=0 underlay=1 pixels=2073600 sourceAlphaNonzero=0 sourceRgbNonzero=0 sourceMaxBgra=(0,0,0,0) sourceAlphaBounds=(0,0,0,0) sourcePremul=1 finalDibAlphaNonzero=2073600 finalDibRgbNonzero=0 finalDibMaxBgra=(0,0,0,1) finalDibAlphaBounds=(0,0,1920,1080) finalDibPremul=1 samplePos=(0,0) sampleSourceBgra=(0,0,0,0) sampleFinalBgra=(0,0,0,1)"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 205,
+      "text": "[Draw3Diag][ulw-pixels] role=Drawpad hwnd=0x3601c4 tick=57720681 dirty=(728,786,738,796) full=0 dirtyParameter=rect fullUpdateOverride=0 copy_map_ms=0 rows_ms=0 ulw_ms=0 api=success error=0 underlay=1 pixels=100 sourceAlphaNonzero=0 sourceRgbNonzero=0 sourceMaxBgra=(0,0,0,0) sourceAlphaBounds=(0,0,0,0) sourcePremul=1 finalDibAlphaNonzero=100 finalDibRgbNonzero=0 finalDibMaxBgra=(0,0,0,1) finalDibAlphaBounds=(728,786,738,796) finalDibPremul=1 samplePos=(728,786) sampleSourceBgra=(0,0,0,0) sampleFinalBgra=(0,0,0,1)"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 12418,
+      "text": "[Draw3Diag][ulw-pixels] role=DrawpadPresentation hwnd=0x1c0358 tick=57762100 dirty=(0,0,1920,1080) full=1 dirtyParameter=null fullUpdateOverride=0 copy_map_ms=0 rows_ms=31 ulw_ms=0 api=success error=0 underlay=0 pixels=2073600 sourceAlphaNonzero=0 sourceRgbNonzero=0 sourceMaxBgra=(0,0,0,0) sourceAlphaBounds=(0,0,0,0) sourcePremul=1 finalDibAlphaNonzero=0 finalDibRgbNonzero=0 finalDibMaxBgra=(0,0,0,0) finalDibAlphaBounds=(0,0,0,0) finalDibPremul=1 samplePos=(0,0) sampleSourceBgra=(0,0,0,0) sampleFinalBgra=(0,0,0,0)"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 7,
+      "text": "[Draw3Diag][device] driver=Hardware levels=11_1,11_0 attempt=preferred hresult=0x887a0004"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 9,
+      "text": "[Draw3Diag][device] driver=WARP levels=11_1,11_0 attempt=preferred hresult=0x0"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 12424,
+      "text": "[Undo] page=1 item=6 path=hot_preimage hot_remaining=6"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 12426,
+      "text": "[Undo] page=1 item=5 path=hot_preimage hot_remaining=5"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 12427,
+      "text": "[Draw3.AutoSave] action=capture trigger=clear strokes=5 bytes=19019 elapsed_ms=0.048"
+    },
+    {
+      "file": "console.stdout.txt",
+      "line": 12428,
+      "text": "[Draw3.AutoSave] action=commit request=4fe2346a-6f08-4e9f-aa09-bac40820a83c trigger=clear result=committed"
+    }
+  ]
+}

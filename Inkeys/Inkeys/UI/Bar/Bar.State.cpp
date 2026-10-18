@@ -2,13 +2,18 @@ module;
 
 #include "../../../IdtMain.h"
 
+#include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
 #include "Bar.BottomDock.h"
+#include "Bar.MainLayoutPolicy.h"
+#include "Bar.I18nFormat.h"
 
 module Inkeys.UI.Bar;
 import :State;
 
 import :Main;
+import Inkeys.Other.Config;
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {
@@ -20,13 +25,19 @@ void BarStateClass::PositionUpdate(double tarZoom)
 	}
 	if (barUISet.IsBottomDockLayoutLocked())
 	{
-		// 拖动中逻辑坐标不变；抬手吸收 x 后允许按中轴触发现有横向换边动画。
-		double x = barUISet.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
-		double monW = static_cast<double>(barUISet.barWindow.w);
-		widgetPosition.mainBar = Inkeys::UI::Bar::ResolveBarMainBarRightSide(x, monW);
 		// 底栏及脱离回弹阶段仍强制次级面板向上，避免纵向翻边。
 		widgetPosition.primaryBar = false;
+		const auto presented = barUISet.BottomDockPresentedSnapshot();
+		const double x = barUISet.superellipseMap[
+			BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
+		const double windowWidth = static_cast<double>(barUISet.barWindow.w);
+		if (Inkeys::UI::Bar::NormalizeBarExpandDirectionAdjustment(
+			Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load())
+			== Inkeys::UI::Bar::BarExpandDirectionAdjustment::Centerline)
+			widgetPosition.mainBar =
+				Inkeys::UI::Bar::ResolveBarBottomDockPositionMainBarSide(
+					presented.centerMode, x, windowWidth,
+					widgetPosition.mainBar);
 		return;
 	}
 
@@ -37,8 +48,12 @@ void BarStateClass::PositionUpdate(double tarZoom)
 	double monH = static_cast<double>(barUISet.barWindow.h);
 
 	// 判断主栏所有位置
-	if (x <= monW / 2.0) widgetPosition.mainBar = true;
-	else widgetPosition.mainBar = false;
+	// 空间模式由渲染线程拿到完整稳定目标宽度后判定，此处不能按中轴覆盖已选侧。
+	if (Inkeys::UI::Bar::NormalizeBarExpandDirectionAdjustment(
+		Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load())
+		== Inkeys::UI::Bar::BarExpandDirectionAdjustment::Centerline
+		&& isfinite(monW) && monW > 0.0)
+		widgetPosition.mainBar = Inkeys::UI::Bar::ResolveBarMainBarRightSide(x, monW);
 
 	// 判断菜单上下位置
 	if (y <= monH * 2.0 / 5.0) widgetPosition.primaryBar = true;
@@ -48,8 +63,12 @@ void BarStateClass::PositionUpdate(double tarZoom)
 }
 void BarStateClass::ThicknessDisplayUpdate()
 {
-	int penThickness = static_cast<int>(GetPenWidth());
-	wstring tar = L"粗细" + format(L" {:>3}", clamp(penThickness, 0, 999));
+	ThicknessDisplayUpdate(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip);
+}
+void BarStateClass::ThicknessDisplayUpdate(double penWidth)
+{
+	wstring tar = Inkeys::UI::Bar::Detail::FormatWidthDipText(
+		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat), penWidth);
 
 	barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->content.SetTar(tar);
 }

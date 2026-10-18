@@ -47,17 +47,23 @@ enum class BarBorderPrimaryAnchorEnum : int
 	Draw,
 	Eraser,
 	Geometry,
+	Pierce,
 };
 
-// Surface Scene 只消费已经计算完成的共享第一光源，不复制 MainBar 的状态机。
+// Surface 只消费 Main Bar 已经计算完成的两路光源，不复制第三光源状态机。
 export struct BarUiFrameLightingSnapshot
 {
 	D2D1_POINT_2F primaryLight = D2D1::Point2F();
 	FLOAT primaryRadius = 0.0F;
+	D2D1_POINT_2F cursorLight = D2D1::Point2F();
+	D2D1_POINT_2F cursorScreenLight = D2D1::Point2F();
+	FLOAT cursorRadius = 0.0F;
+	FLOAT cursorIntensity = 0.0F;
 	COLORREF drawingPenColor = RGB(0, 0, 0);
 	double drawingPenColorBlend = 0.0;
 	double drawingLightOpacity = 1.0;
 	bool primaryLightVisible = false;
+	bool cursorLightVisible = false;
 	bool edgeLightingEnabled = false;
 };
 
@@ -76,7 +82,16 @@ public:
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
-	bool PrepareFrameLighting(double animationDtSeconds,
+	void ConfigureLocalizedTypography();
+	[[nodiscard]] const wstring& GetFontFamily() const noexcept
+	{
+		return fontFamily;
+	}
+	[[nodiscard]] const wstring& GetTextLocale() const noexcept
+	{
+		return textLocale;
+	}
+	bool PrepareFrameLighting(double animationDtSeconds, POINT layoutScreenOrigin,
 		int drawingMode, int penMode, COLORREF brush1Color,
 		COLORREF highlighterColor);
 	[[nodiscard]] RECT GetFramePrimaryLightDamageBounds() const noexcept;
@@ -93,14 +108,13 @@ public:
 		SnapshotFrameLighting() const noexcept;
 	void SetFrameLightingSnapshot(
 		const BarUiFrameLightingSnapshot& snapshot) noexcept;
-	// Surface 只提供本地指针与 selected 能力，淡入/淡出仍沿用 Bar 光源参数。
-	[[nodiscard]] bool PrepareSurfaceCursorLight(
-		double animationDtSeconds,
-		D2D1_POINT_2F localCursor,
-		bool cursorTargetVisible) noexcept;
 	void SetFrameZoom(double zoom)
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
+	}
+	[[nodiscard]] double GetFrameZoom() const noexcept
+	{
+		return frameZoom;
 	}
 	HRESULT EnsureDeviceResources(const Ui3RenderDeviceEpoch& epoch,
 		UINT32 targetWidth, UINT32 targetHeight);
@@ -111,6 +125,10 @@ public:
 	[[nodiscard]] ID2D1GdiInteropRenderTarget* GetGdiInteropRenderTarget() const noexcept
 	{
 		return gdiInteropRenderTarget.Get();
+	}
+	[[nodiscard]] ID2D1Bitmap1* GetTargetBitmap() const noexcept
+	{
+		return targetBitmap.Get();
 	}
 	[[nodiscard]] unsigned long long GetDeviceGeneration() const noexcept
 	{
@@ -317,6 +335,7 @@ protected:
 	D2D1_POINT_2F framePrimaryLightStart = D2D1::Point2F();
 	D2D1_POINT_2F framePrimaryLightTarget = D2D1::Point2F();
 	D2D1_POINT_2F frameCursorLight = D2D1::Point2F();
+	D2D1_POINT_2F frameCursorScreenLight = D2D1::Point2F();
 	D2D1_POINT_2F frameLocalCursorLight = D2D1::Point2F();
 	FLOAT frameCursorLightIntensity = 0.0F;
 	FLOAT frameCursorLightIntensityStart = 0.0F;
@@ -402,6 +421,8 @@ protected:
 	array<ThicknessFineDialLabelCacheClass, 64>
 		thicknessFineDialLabelCache{};
 	unsigned long long thicknessFineDialLabelUseSerial = 0;
+	wstring fontFamily = L"HarmonyOS Sans SC";
+	wstring textLocale = L"zh-cn";
 	SuperellipseGeometryCacheClass superellipseGeometryCache;
 	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;

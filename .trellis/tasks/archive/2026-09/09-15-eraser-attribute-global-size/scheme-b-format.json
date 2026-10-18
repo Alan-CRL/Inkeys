@@ -1,0 +1,133 @@
+{
+  "baseline": "af22b4a6deafb14fd4fb90316c1c4ccd839e1b75",
+  "original_validation_unchanged": true,
+  "original_dll_sha256": "779908b2acc9f37241a4c59c36822685e87a07c4bc886bde22d9d167e68fe117",
+  "files": [
+    {
+      "file": ".trellis/spec/native-desktop/eraser-attributes.md",
+      "bom": false,
+      "crlf": 80,
+      "lf": 0
+    },
+    {
+      "file": ".trellis/tasks/09-15-eraser-attribute-global-size/prd.md",
+      "bom": false,
+      "crlf": 20,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/IdtI18nKeys.g.h",
+      "bom": false,
+      "crlf": 560,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys.rc",
+      "bom": false,
+      "crlf": 380,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys.vcxproj",
+      "bom": false,
+      "crlf": 1378,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys.vcxproj.filters",
+      "bom": false,
+      "crlf": 2547,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.HiddenWindowTest.cpp",
+      "bom": false,
+      "crlf": 1170,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.cpp",
+      "bom": false,
+      "crlf": 0,
+      "lf": 1463
+    },
+    {
+      "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h",
+      "bom": false,
+      "crlf": 0,
+      "lf": 526
+    },
+    {
+      "file": "Inkeys/Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp",
+      "bom": true,
+      "crlf": 327,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys/UI/Bar/Bar.EraserAttribute.cpp",
+      "bom": true,
+      "crlf": 467,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys/UI/Bar/Bar.EraserAttributeLayout.cppm",
+      "bom": true,
+      "crlf": 152,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys/UI/Bar/Bar.Interaction.cpp",
+      "bom": true,
+      "crlf": 6799,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys/UI/Bar/Bar.Main.cppm",
+      "bom": true,
+      "crlf": 1009,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp",
+      "bom": false,
+      "crlf": 13039,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/src/i18n/en-US.jsonc",
+      "bom": false,
+      "crlf": 557,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/src/i18n/zh-CN.jsonc",
+      "bom": false,
+      "crlf": 557,
+      "lf": 0
+    },
+    {
+      "file": "Inkeys/src/i18n/zh-TW.jsonc",
+      "bom": false,
+      "crlf": 557,
+      "lf": 0
+    },
+    {
+      "file": "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj",
+      "bom": false,
+      "crlf": 182,
+      "lf": 0
+    },
+    {
+      "file": "InkeysHeadlessTests/eraser_attribute_tests.cpp",
+      "bom": true,
+      "crlf": 152,
+      "lf": 0
+    },
+    {
+      "file": "Scripts/i18n.zh-CN.snapshot.jsonc",
+      "bom": false,
+      "crlf": 557,
+      "lf": 0
+    }
+  ]
+}

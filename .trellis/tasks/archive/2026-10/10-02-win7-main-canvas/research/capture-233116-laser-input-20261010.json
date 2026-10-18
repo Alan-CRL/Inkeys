@@ -1,0 +1,51 @@
+{
+  "mouse_total": 3593,
+  "mouse_accepted": 3593,
+  "zero_x_events": 1104,
+  "distinct_y": 668,
+  "first": {
+    "event": 2014,
+    "line": 12956,
+    "trace_tick": 61765865,
+    "x": 0,
+    "y": 1079,
+    "accepted": true
+  },
+  "last": {
+    "event": 3117,
+    "line": 20023,
+    "trace_tick": 61791231,
+    "x": 0,
+    "y": 986,
+    "accepted": true
+  },
+  "duration_ms": 25366,
+  "raw_first": {
+    "line": 12952,
+    "lparam": "4370000",
+    "x_low_word": 0,
+    "y_high_word": 1079
+  },
+  "raw_last": {
+    "line": 20019,
+    "lparam": "3da0000",
+    "x_low_word": 0,
+    "y_high_word": 986
+  },
+  "recovery": {
+    "event": 3118,
+    "line": 20032,
+    "trace_tick": 61791559,
+    "x": 1,
+    "y": 984,
+    "accepted": true
+  },
+  "raw_recovery": {
+    "line": 20028,
+    "lparam": "3d80001",
+    "x_low_word": 1,
+    "y_high_word": 984
+  },
+  "x0_laser_tips_during_interval": 113,
+  "boundary": "Raw Windows LPARAM already carries X=0 before Draw3 filtering; VM capture integration is plausible but not uniquely proved."
+}

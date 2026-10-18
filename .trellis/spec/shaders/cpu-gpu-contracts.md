@@ -1,4 +1,4 @@
-﻿# CPU/GPU Contracts
+# CPU/GPU Contracts
 
 ## Structured Buffers
 
@@ -11,6 +11,8 @@ float2 position + float radius + float time = 16 bytes
 ```
 
 C++ 用 `static_assert(sizeof(InkPoint) == 16)`，D3D buffer 的 `StructureByteStride` 使用 `sizeof(InkPoint)`，HLSL 在 `t0` 读取。
+
+`t0 InkData` 是绑定为 SRV 的动态结构化缓冲区。`D3D11_MAP_WRITE_NO_OVERWRITE` 对这种缓冲区是 D3D11.1 可选设备能力，不能仅凭 FL11.0 或 Platform Update 假定可用；renderer 初始化时查询 `D3D11_FEATURE_D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，查询失败按不支持处理。支持时保持现有环形写入/越界 DISCARD；不支持时每批 `WRITE_DISCARD` 并把 `m_bufferHead` 与 VS `globalBufferOffset` 同步置零，普通笔和 Shape 都适用。荧光笔及 Laser 的现有 DISCARD 路径不因该门禁改动。Win7 SP1+仅 KB2670838 的 Hardware FL11.0/WARP 两格仍需真机验证，不得以 Win11 WARP 测试替代。
 
 ### ShapePrimitive
 
@@ -59,10 +61,10 @@ float2 halfSize
 |---|---|
 | `radii` | `laserRadii`（基准白芯半径、基准实体外半径、固定漫反射宽度、基准散射半宽） |
 | `coreColor` | `laserCoreColor` |
-| `scatterColor` | `laserScatterColor` |
-| `borderColor` | `laserBorderColor` |
-| `edgeColor` | `laserEdgeColor`（RGB 为红粉外缘高亮，alpha 为 RGB 混合强度） |
-| `glowColor` | `laserGlowColor`（alpha 为实体边界处的漫反射峰值） |
+| `scatterColor` | `laserScatterColor`（由所选 Laser RGB 向白色混合） |
+| `borderColor` | `laserBorderColor`（RGB 精确等于当前 pass 的 Laser 颜色） |
+| `edgeColor` | `laserEdgeColor`（RGB 为同色系外缘高亮，alpha 为 RGB 混合强度） |
+| `glowColor` | `laserGlowColor`（RGB 跟随所选 Laser 颜色，alpha 为实体边界处的漫反射峰值） |
 | `parameters.x/y/z/w` | `laserParameters.x/y/z/w`（组 opacity、DPI scale、外缘 glow 下/上阈值） |
 
 新增字段必须保持 16 字节对齐，并同步 `renderer.cppm/.cpp`、`ink.hlsli` 与 shape `7/8/9/10/11/12/13` 的绑定。
@@ -217,14 +219,64 @@ History operator array 的 RTV 和 SRV 都必须限制为单个 array slice。�
 
 ## Geometry And Bounds
 
+普通圆笔的亚像素 AA 另见下方“Thin Round Ink Coverage”；不得用 SDF 导数下限或最小几何半径代替有限宽度覆盖。
+
 - VS 为圆胶囊和荧光笔固定矩形 sweep 生成覆盖形状的 quad/AABB。
 - PS 使用 signed distance 与 `fwidth`/`smoothstep` 做抗锯齿；高亮 sweep 的零等值线由 X/Y/线段法线半平面交集确定。
 - CPU dirty bounds 必须至少覆盖 VS 生成范围；当前普遍预留 2px 几何扩展和 3px bounds padding。
 - Shape `16/17` 的 VS 生成扩宽线段 OBB，PS 分别计算整段 capsule 或 analytic dashed capsules；零长度必须退化为半线宽圆点。Shape `18/19` 的 VS 先对任意方向端点取 `min/max`，PS 使用 rounded-box SDF；圆角把 `globalPadding.x` 钳制到短边一半，Outline 使用 `abs(boxDistance) - halfWidth`，Filled 直接使用 box distance。
 - Shape dirty/history bounds 必须与上述几何同步：Line/Outline 扩展半线宽和 AA，Filled 只扩展 AA；Outline history 遍历四边而非整个内部，Filled 覆盖完整规范化矩形。
-- Laser shape `7` 的 `InkPoint.r` 是红色实体外半径。96 DPI 基准实体半径为 2.5px，白芯半径是实体半径的 `1/3`，漫反射在实体轮廓外固定扩展 5px；压力只改变实体/白芯/散射比例，不改变 5px 漫反射。PS 必须复用实体 signed distance，以平方曲线令 coverage 在实体边界为 1、5px 外缘为 0；红粉高光只混合 diffuse RGB，禁止通过额外 source-over 层抬高渐变 alpha。VS、PS、Hover/Touch `LaserDot.radius`、粒子红边锚点和 CPU bounds 必须复用 `renderer.cppm` 的尺寸契约。
+- Laser shape `7` 的 `InkPoint.r` 是彩色实体外半径。96 DPI 基准实体半径为 2.5px，白芯半径是实体半径的 `1/3`，漫反射在实体轮廓外固定扩展 5px；压力只改变实体/白芯/散射比例，不改变 5px 漫反射。PS 必须复用实体 signed distance，以平方曲线令 coverage 在实体边界为 1、5px 外缘为 0；同色系高光只混合 diffuse RGB，禁止通过额外 source-over 层抬高渐变 alpha。VS、PS、Hover/Touch `LaserDot.radius`、粒子外壳锚点和 CPU bounds 必须复用 `renderer.cppm` 的尺寸契约。
 - 普通笔零长度或一端圆包含另一端时退化为较大端点圆；高亮零长度退化为固定竖直矩形。
 - `InkPoint` 中出现 NaN 时 PS discard；CPU 仍应避免生成非有限输入。
+
+## Scenario: Thin Round Ink Coverage
+
+### 1. Scope / Trigger
+
+仅适用于 `globalShapeType == 0` 的绘制 operator。调整薄线 AA 时必须同步两侧 PS 并进行实际着色器离屏回读；橡皮、Laser、解析形状和 cursor 保持各自覆盖规则。
+
+### 2. Signatures
+
+`InkPoint`/`PS_INPUT`/`GlobalShaderConstants` 布局不变。薄线计算输入为胶囊 SDF 距离 `d` 与最近生成圆半径 `r`，输出标量 coverage，继续进入既有预乘 Add/Retain。
+
+### 3. Contracts
+
+- 对 abs 距离使用 `fwidth(d)` 会在像素 quad 横跨细线中心时相消，不能用它作为薄线唯一像素尺度。
+- `C(s)=1-smoothstep(-0.75,0.75,s)`；薄线 coverage=`saturate(C(d)-C(d+2*r))`。局部半径<=0.5px 使用该值，0.5–1px 平滑过渡，>=1px 保持原 AA。
+- 薄线距离/最近生成圆使用 PS 的 `SV_Position.xy` 真实像素中心；OBB 的 `pixPos` 插值会受栅格顶点量化影响，不能让几何分段改变薄线取样位置。旧 AA 的坐标/导数规则保持不变。
+- 半径由 uneven capsule 的实际最近生成圆确定，包含圆/零长先处理；侧边插值不得用不匹配的简单纵向投影代替，也不能在退化法线处除零。
+- 几何半径不变；零宽透明。Add/MAX、Retain/MIN 与预乘输出不变，禁止叠加混合掩盖接缝。保留 VS 2px、CPU 3px padding。
+- 恒宽长线连续积分覆盖宽度随2r变化；BGRA8量化、采样相位与圆帽距离滤波近似必须在报告中区分，不声称任意短胶囊的严格二维面积积分。
+
+### 4. Validation & Error Matrix
+
+| 输入 | 预期 |
+|---|---|
+| 零半径绘制 | coverage=0，不残留最低宽度灰线 |
+| 浅斜细线跨 quad 中心 | 不因 SDF 导数归零而形成异常透明断口 |
+| r=0.5/1px 附近 | 两种 AA 平滑交接，不出现宽度台阶 |
+| 零长或端点圆包含 | 使用较大生成圆，避免除零/NaN |
+| 同一几何重复绘制 | MAX/MIN 幂等，不重复加深 |
+| 非绘制 type0 或其他 shape | 保持原覆盖和 operator 行为 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：0.1px浅斜线以亚像素覆盖连续呈现，确认点半径和文档宽度不变。
+- Base：常规粗笔保持原 AA，端帽按同一距离滤波近似。
+- Bad：把半径钳到0.5px、只给fwidth加下限，或把MAX换成加法。
+
+### 6. Tests Required
+
+实际D3D绘制并回读BGRA8 Add/R16 Retain：直径0/.05/.1/.25/.5/1/2/4px、水平/浅斜/45/90度、XY 1/8px相位；检查主轴截面、有效积分宽度、分段/整段、重复、L0/L1拆分、变半径、圆帽、包含圆和零长。检查红色黑底/黑色白底预乘合成，误差预算应包含1/255量化而非随失败任意放宽。
+
+半径<=0.5px 的等宽共线分段保持严格量化误差对照。过渡/粗线不能把旧导数 AA 自带的图元分段差异误判为新回归：用未改动的 Erase coverage 实测各图元旧 AA，再结合有限宽度计算与指定 blend 权重逐像素对照。L0/L1 合成必须与同一分段几何一次绘制一致；这不等同于断言旧 AA 对任意几何细分完全不变。
+
+### 7. Wrong vs Correct
+
+Wrong：`alpha = smoothstep(... max(fwidth(d), epsilon) ...)` 是薄线唯一覆盖；或 `r=max(r,0.5)`。
+
+Correct：`thin=C(d)-C(d+2*r)`，以固定屏幕像素滤波同时计入两侧边缘，再在0.5–1px半径范围与既有AA平滑交接。
 
 ## Scenario: Ordered Multi-Laser Composition
 
@@ -263,14 +315,14 @@ History operator array 的 RTV 和 SRV 都必须限制为单个 array slice。�
 
 ### 5. Good/Base/Bad Cases
 
-- Good：两支交叉笔分别 MAX 后按 Down 顺序 resolve，上层红色实体可覆盖下层白芯。
+- Good：两支不同颜色的交叉笔分别 MAX 后，以各自 Down 锁定的 `LaserStyleConstants` 按 Down 顺序 resolve，上层彩色实体可覆盖下层白芯。
 - Base：单支笔自交仍只解析一次 coverage，不在交叉处重复加深。
 - Bad：先把所有 contact MAX 到同一 coverage；这会丢失笔身份，无法实现有序覆盖。
 
 ### 6. Tests Required
 
 - 断言 96 DPI 的实体直径 5px、白芯直径约 1.67px、漫反射每侧 5px，且 DPI/压力换算符合固定漫反射契约。
-- 静态核对 `LaserDiffuseCoverage(0)=1`、`LaserDiffuseCoverage(diffuseExtent)=0` 且区间内单调；`ResolveLaserMaterial` 在红色实体外只能由单一 diffuse 层决定 alpha，红粉高光不得再次 source-over 抬高透明度。
+- 静态核对 `LaserDiffuseCoverage(0)=1`、`LaserDiffuseCoverage(diffuseExtent)=0` 且区间内单调；`ResolveLaserMaterial` 在彩色实体外只能由单一 diffuse 层决定 alpha，同色系高光不得再次 source-over 抬高透明度。
 - 断言 `LaserDot.radius`、固定宽度轨迹半径和 Touch/Hover 尺寸一致，`LaserStyleConstants == 112 bytes`。
 - 断言 CPU dirty bounds 覆盖实体半径、固定漫反射和 AA padding；人工验证反向 Down 顺序、较老笔继续书写、取消、resize、Hold/Fade 与静态 Hold 零 Present。
 - 增量状态测试必须断言时间保护边界单调推进、L1/L0 共享一个连接点、prediction 回缩不后退稳定游标、自交 dirty union 不丢失、第二 contact 锁定 fallback、Resize/Clear/resource failure 重建，以及 `max(t7,t9)` 与完整 coverage union 的 CPU 等价性；静态核对 t9、shape `13` 和 t6-t9 解绑契约。
@@ -336,7 +388,7 @@ if (singleContact && liveCoverageAvailable) {
 - UpdateCS 用实际 wall time 累计年龄，用最多 `1/30s` 的 motion dt 推进；固定速度和 Alpha 都乘 `1-smoothstep(0,1,age/lifetime)`。粒子按实际累计行程计算尺寸，前 10% 保持出生半径，之后 smoothstep 到 20%；达到自身寿命立即死亡。
 - 粒子出生后 UpdateCS 不再读取路径、画笔、prediction 或 Up 状态；Up/Cancel 只停止 CPU 新请求。禁止 path slot/generation、弧长、segment cursor、端点阻塞淡出、路径追赶和 prediction correction。
 - 每粒写入 `0.42–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。呼吸亮度只乘核心/辉光 RGB，不乘 Alpha。
-- shape `10` 的 VS 以 `currentRadius * glowRadiusScale + 2 * dpiScale` 得到逐粒辉光范围，默认 `glowRadiusScale=2.0`，并把出生基础亮度通过现有 `p2` 传给 PS；PS 核心直接使用 `borderColor=(1.0, 11/255, 30/255)`，只乘生命周期/呼吸亮度，不再向白混合。辉光使用 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 距离衰减，继续输出预乘 Alpha operator-resolve。
+- shape `10` 的 VS 以 `currentRadius * glowRadiusScale + 2 * dpiScale` 得到逐粒辉光范围，默认 `glowRadiusScale=2.0`，并把出生基础亮度通过现有 `p2` 传给 PS；PS 核心直接使用当前 `LaserStyleConstants.borderColor`，只乘生命周期/呼吸亮度，不再向白混合。粒子辉光仍使用 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 距离衰减，继续输出预乘 Alpha operator-resolve。
 
 ### 4. Validation & Error Matrix
 

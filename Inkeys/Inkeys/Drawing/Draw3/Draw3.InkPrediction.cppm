@@ -16,6 +16,8 @@
 #include <DirectXMath.h>
 #include <ink_stroke_modeler/stroke_modeler.h>
 
+#include "Draw3.SpeedEraser.h"
+
 export module Inkeys.Drawing.Draw3.ink_prediction;
 
 import Inkeys.Drawing.Draw3.contact_input;
@@ -61,92 +63,10 @@ export namespace Inkeys::Drawing::Draw3
 	// 选择当前工具的宽度来源；LaserPressure 与 SpeedEraser 使用各自独立策略。
 	enum class StrokeWidthMode { SimulatedPressure, HardwarePressure, LaserPressure, Fixed, SpeedEraser };
 
-	inline constexpr float kSpeedEraserMinimumDiameterPx = 20.0f;
-	inline constexpr float kSpeedEraserNormalDiameterPx = 50.0f;
-	inline constexpr float kSpeedEraserMaximumDiameterPx = 200.0f;
-
-	enum class SpeedEraserStartKind : uint32_t { Hover, Touch };
-
-	// 以 DIP 路程、转折保护和非对称时间滞回维护单个指针的笔速橡皮直径。
-	class SpeedEraserOcController
-	{
-	public:
-		void Reset(float positionX, float positionY, double timeSeconds,
-			SpeedEraserStartKind startKind = SpeedEraserStartKind::Hover) noexcept;
-		float UpdatePosition(float positionX, float positionY,
-			double timeSeconds, float dpiScale) noexcept;
-		float Advance(double timeSeconds) noexcept;
-		void PauseForReconnect(double timeSeconds) noexcept;
-		float ResumeFromReconnect(float positionX, float positionY,
-			double timeSeconds, float dpiScale) noexcept;
-		float Diameter() const noexcept { return currentDiameter_; }
-		float TargetDiameter() const noexcept { return targetDiameter_; }
-		bool IsPaused() const noexcept { return paused_; }
-		bool NeedsAnimation(double timeSeconds) const noexcept;
-
-	private:
-		struct MotionSegment
-		{
-			double startTime = 0.0;
-			double endTime = 0.0;
-			float distanceDip = 0.0f;
-			float directionX = 0.0f;
-			float directionY = 0.0f;
-		};
-
-		static constexpr size_t kSegmentCapacity = 64;
-		std::array<MotionSegment, kSegmentCapacity> segments_ = {};
-		size_t segmentStart_ = 0;
-		size_t segmentCount_ = 0;
-		float acceptedPositionX_ = 0.0f;
-		float acceptedPositionY_ = 0.0f;
-		double acceptedTime_ = 0.0;
-		double lastAdvanceTime_ = 0.0;
-		double pauseTime_ = 0.0;
-		double decreaseCandidateTime_ = 0.0;
-		double middleReachedTime_ = 0.0;
-		double reverseCandidateTime_ = 0.0;
-		double turnGuardUntil_ = 0.0;
-		double turnGuardHardDeadline_ = 0.0;
-		float totalTravelDip_ = 0.0f;
-		float directionTravelDip_ = 0.0f;
-		float directionSumX_ = 0.0f;
-		float directionSumY_ = 0.0f;
-		float reliableDirectionX_ = 0.0f;
-		float reliableDirectionY_ = 0.0f;
-		float reverseDirectionX_ = 0.0f;
-		float reverseDirectionY_ = 0.0f;
-		float reverseTravelDip_ = 0.0f;
-		float turnRearmTravelDip_ = 8.0f;
-		float turnGuardDiameter_ = kSpeedEraserMinimumDiameterPx;
-		float currentDiameter_ = kSpeedEraserMinimumDiameterPx;
-		float targetDiameter_ = kSpeedEraserMinimumDiameterPx;
-		bool touchStartup_ = false;
-		bool initialized_ = false;
-		bool paused_ = false;
-		bool hasReliableDirection_ = false;
-		bool reverseCandidate_ = false;
-		bool decreaseCandidate_ = false;
-		bool decreaseCandidateCoherent_ = false;
-		bool waitAtMiddle_ = false;
-
-		void AddSegment(const MotionSegment& segment) noexcept;
-		void UpdateDirection(const MotionSegment& segment,
-			float previousWindowDistance, double timeSeconds) noexcept;
-		void ShiftTimeBase(double deltaSeconds) noexcept;
-		float MotionDistance(double timeSeconds) const noexcept;
-		float ResolveTargetDiameter(double timeSeconds) const noexcept;
-		float StepDiameter(double timeSeconds,
-			bool coherentMotionUpdate = false) noexcept;
-	};
-
-	struct SpeedEraserWidthInterval
-	{
-		double startTimeSeconds = 0.0;
-		double endTimeSeconds = 0.0;
-		float startDiameter = kSpeedEraserMinimumDiameterPx;
-		float endDiameter = kSpeedEraserMinimumDiameterPx;
-	};
+	// 产品与无窗口测试共用同一套尺度、历史动态和宽度边界。
+	using SpeedEraserStartKind = SpeedEraser::StartKind;
+	using SpeedEraserOcController = SpeedEraser::Controller;
+	using SpeedEraserWidthInterval = SpeedEraser::WidthInterval;
 
 	// 按模型点时间在相邻两次真实输入的 OC 直径间插值。
 	float InterpolateSpeedEraserDiameter(
@@ -489,14 +409,83 @@ export namespace Inkeys::Drawing::Draw3
 		InkPoint AppendLaserPressure(const ink::stroke_model::Result& result);
 	};
 
+	// 记录停笔/抬笔阶段的 raw 终点边界，只允许可见尾端单调接近该点。
+	struct EndpointAdmissionState
+	{
+		DirectX::XMFLOAT2 endpoint = {};
+		DirectX::XMFLOAT2 approachDirection = {};
+		float previousDistance = 0.0f;
+		bool active = false;
+		bool hasApproachDirection = false;
+		bool visualPinned = false;
+		bool recovering = false;
+		DirectX::XMFLOAT2 recoveryOrigin = {};
+	};
+
+	struct EndpointAdmissionResult
+	{
+		size_t acceptedResultCount = 0;
+		bool endpointPinned = false;
+		bool geometryChanged = false;
+	};
+
 	// 标记当前几何切片是否包含整笔的真实起点或可见终点。
 	// 保存一个 contact 的模型结果、预测结果和三层提交状态。
+	struct TailRawSample
+	{
+		DirectX::XMFLOAT2 position;
+		double physicalTime = 0;
+		size_t firstPoint = 0;
+	};
+
+	// 仅显式诊断启用时由消费者写入；固定数值状态不延长 contact 生命周期。
+	struct TailInputDiagnostic
+	{
+		bool enabled = false;
+		uint64_t snapshots = 0, moves = 0, maxSkippedSnapshots = 0, reconnects = 0;
+		uint64_t handleValue = 0, generation = 0;
+		uint32_t tcid = 0, cid = 0, device = 0, source = 0, tool = 0, rgb = 0;
+		// 整笔初始 Down 与接续后的当前 contact 分开归属，不能跨代次比较 sequence。
+		uint64_t initialHandleValue = 0, initialGeneration = 0;
+		uint32_t initialTcid = 0, initialCid = 0, initialDevice = 0, initialSource = 0;
+		uint64_t contactDownSequence = 0;
+		int64_t contactDownQpc = 0;
+		DirectX::XMFLOAT2 contactDownPosition = {};
+		uint32_t sourceRecognition = 0, sourceContext = 0, sourceCursor = 0;
+		uint64_t sourceGeneration = 0;
+		double styleWidthDip = 0;
+		float canvasOffsetX = 0, canvasOffsetY = 0;
+		int64_t qpcOrigin = 0;
+		uint64_t downSequence = 0, lastNonterminalSequence = 0;
+		uint64_t terminalPriorSequence = 0, terminalSequence = 0, currentSequence = 0;
+		int64_t downQpc = 0, lastNonterminalQpc = 0, terminalPriorQpc = 0, terminalQpc = 0;
+		DirectX::XMFLOAT2 downPosition = {}, lastNonterminalPosition = {};
+		DirectX::XMFLOAT2 terminalPriorPosition = {}, terminalPosition = {};
+		uint64_t upSequence = 0;
+		int64_t upQpc = 0;
+		DirectX::XMFLOAT2 upPosition = {};
+		double upModelTime = 0;
+		int32_t upStatus = -1;
+		uint64_t upProduced = 0, upAccepted = 0, upGeometryAdded = 0;
+		bool upFallback = false, upEndpointPinned = false;
+	};
+
 	struct ActiveStroke
 	{
 		ink::stroke_model::StrokeModeler modeler;
+		TailInputDiagnostic tailInputDiagnostic;
 		std::vector<ink::stroke_model::Result> modeledResults;
+		// stationary/terminal Update 复用该 scratch，避免累计 modeledResults 无界增长。
+		std::vector<ink::stroke_model::Result> modelScratch;
 		std::vector<ink::stroke_model::Result> predictedResults;
 		std::vector<InkPoint> realPoints;
+		// 仅保存真实模型输入的物理尾窗；固定容量避免长笔划累计 raw。
+		std::array<TailRawSample, 64> tailRawSamples = {};
+		size_t tailRawCount = 0;
+		// 模型边界独立于可选 raw；固定容量且只访问最近 160ms。
+		struct TailModelBoundary { double physicalTime = 0; size_t firstPoint = 0; };
+		std::array<TailModelBoundary, 128> tailModelBoundaries = {};
+		size_t tailModelBoundaryCount = 0;
 		std::vector<InkPoint> predictedPoints;
 		std::vector<InkPoint> l0DrawPoints;
 		std::vector<InkPoint> previousL0DrawPoints;
@@ -518,8 +507,29 @@ export namespace Inkeys::Drawing::Draw3
 		bool idleFrozen = false;
 		int visualStableFrameCount = 0;
 		double lastMovementInputTime = 0.0;
+		// 停笔有效弧长只允许缩短；运动/显示时间保证续画和延迟 Up 不继承错误封顶。
+		std::optional<double> liveTipLength;
+		double liveTipMovementTime = 0.0;
+		double liveTipDisplayTime = 0.0;
 		double lastFrameWallTime = 0.0;
 		double logicalInputTime = 0.0;
+		// 物理 Up 锁住显示年龄与修改边界，断触等待不能继续养粗或重写 Move。
+		std::optional<double> terminalDisplayTime;
+		size_t terminalFirstPoint = 0;
+		DirectX::XMFLOAT2 terminalRawMove = {};
+		DirectX::XMFLOAT2 terminalRawUp = {};
+		bool captureTerminalTrace = false;
+		size_t terminalModelCount = 0;
+		size_t terminalAcceptedCount = 0;
+		std::array<DirectX::XMFLOAT2, 8> terminalModelTrace = {};
+		std::array<DirectX::XMFLOAT2, 8> terminalAcceptedTrace = {};
+		// 模型可以跳过已经收敛的静止时间；显示/真实测速仍使用原始时间轴。
+		double modelTimeOffset = 0.0;
+		bool modelClockStopped = false;
+		bool useDisplayTime = false;
+		ink::stroke_model::Result latestModeledResult = {};
+		EndpointAdmissionState endpointAdmission = {};
+		bool hasLatestModeledResult = false;
 
 		ActiveStroke(float baseDiameter, float expectedSpeed,
 			StrokeWidthMode widthModeValue = StrokeWidthMode::SimulatedPressure,
@@ -535,7 +545,24 @@ export namespace Inkeys::Drawing::Draw3
 	// 原地重建荧光笔几何并复用 primitive 容量，供每帧 L0 热路径使用。
 	void RebuildHighlighterGeometry(
 		std::span<const InkPoint> points, HighlighterGeometry& output);
+	// 首次物理 Up 锁定显示时间和可修改尾段边界。
+	void LockPenTerminalState(ActiveStroke& stroke, double physicalUpTime,
+		DirectX::XMFLOAT2 lastRawMove, DirectX::XMFLOAT2 rawUp) noexcept;
+	// 成功续接后恢复实时显示年龄，下一次 Up 重新捕获边界。
+	void ClearPenTerminalState(ActiveStroke& stroke) noexcept;
+	double ResolvePenDisplayTime(const ActiveStroke& stroke) noexcept;
+	// 模型失败时保留真实 Up，且不能回写物理 Up 前的确认点。
+	void AppendTerminalFallbackPoint(ActiveStroke& stroke, const InkPoint& finalPoint);
+	// 有界记录模型与接纳尾段供诊断，不修改笔迹几何。
+	void CapturePenTerminalTrace(ActiveStroke& stroke) noexcept;
+	// 无 HWND：直接验证生产笔锋几何、真实模型停笔和完成/Stored 时间边界。
+	int RunPenTaperProductionProbe() noexcept;
 	// 用已确认真实点生成普通笔完成态尾段，并烘入最终笔锋宽度。
+	// 进程显式环境开关，默认关闭；Move 热路径只读取 Down 锁存的 enabled。
+	bool IsPenTailTraceEnabled() noexcept;
+	void RecordPenTailModelBoundary(ActiveStroke& stroke, double physicalTime) noexcept;
+	void RecordPenTailRawInput(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 position, double physicalTime) noexcept;
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output);
 	// 把完成态真实点转换为不含 time/prediction 的持久 Stroke；scratch 由绘制线程复用。
@@ -612,9 +639,41 @@ export namespace Inkeys::Drawing::Draw3
 		float dpiScale, int width, int height);
 	// 更新原始坐标并判断是否发生有效移动。
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition);
-	// 在视觉稳定后冻结停笔输入。
-	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved, double liveTipDurationSeconds);
+	// 建模笔尖到达原始终点且单帧剩余位移足够小时才视为收敛。
+	bool IsModeledTipSettled(
+		std::span<const ink::stroke_model::Result> modeledResults,
+		DirectX::XMFLOAT2 rawEndpoint, double frameIntervalSeconds) noexcept;
+	// 首个短暂空帧继续保留运动期 prediction，超过一个目标帧才进入停笔收敛。
+	bool ShouldStartEndpointSettling(
+		double sampleAgeSeconds, double frameIntervalSeconds) noexcept;
+	// 保存最近一次成功 Update 的末端状态，scratch 清空后仍可判断内部收敛。
+	void CaptureLatestModeledResult(ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> modeledResults) noexcept;
+	// 返回固定大小的最新建模末端视图。
+	std::span<const ink::stroke_model::Result> LatestModeledTip(
+		const ActiveStroke& stroke) noexcept;
+	// 以当前可见尾点为起点，建立 raw endpoint 的单调接纳边界。
+	void BeginEndpointAdmission(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 endpoint) noexcept;
+	// 只转换 scratch 中的安全前缀；触边/折返时钉住一个精确 raw endpoint。
+	EndpointAdmissionResult AppendEndpointBoundedModeledPoints(
+		ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> modeledResults,
+		float inputSpeed, double endpointTime, bool pinEndpointAtEnd = false);
+	// 恢复正常 Tracking 后解除终点门禁，但保留 scratch 容量和最新内部状态。
+	void ClearEndpointAdmission(ActiveStroke& stroke) noexcept;
+	// 固定旧可见停点，过滤恢复运动中的残余回摆前缀，不补新的 raw 直线。
+	void AppendRecoveryModeledPoints(ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> results,
+		DirectX::XMFLOAT2 rawEndpoint, float inputSpeed);
+	// 只压缩已收敛的静止段，保持送入模型的时间严格单调。
+	double ResolvePenModelInputTime(ActiveStroke& stroke, double realTime,
+		double lastModelTime, double frameIntervalSeconds) noexcept;
+	// 模型与视觉均稳定后冻结停笔输入。
+	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved,
+		bool modelSettled, double liveTipDurationSeconds);
 	// 转换尚未处理的真实建模结果；SpeedEraser 必须显式提供本次原始输入宽度区间。
+	bool AppendEraserSizeAnchor(ActiveStroke& stroke, const SpeedEraserWidthInterval& interval);
 	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed = -1.0f,
 		const SpeedEraserWidthInterval* speedEraserWidth = nullptr);
 	// 使用笔宽估算器副本重建预测绘制点。
@@ -624,15 +683,20 @@ export namespace Inkeys::Drawing::Draw3
 	// 重建当前 L0 的真实尾部和预测点。
 	void RebuildL0DrawPoints(ActiveStroke& stroke, double liveTipDurationSeconds,
 		StrokeShape shape, int width, int height);
+	struct LiveRasterSubmission
+	{
+		RECT dirty = {};
+		bool succeeded = true; // 空几何是合法 no-op，提交失败必须与空 dirty 区分。
+	};
 	// 将保护窗口之前的稳定前缀提交到 L1。
-	RECT CommitStablePrefixToL1(ActiveStroke& stroke, double liveTipDurationSeconds,
+	LiveRasterSubmission CommitStablePrefixToL1(ActiveStroke& stroke, double liveTipDurationSeconds,
 		double predictionDurationSeconds, DirectX::XMFLOAT4 color, StrokeShape shape,
 		InkRenderer& renderer, int width, int height);
 	// 橡皮不保留 L0，直接把新增真实点（含单击圆点）提交到 L1。
-	RECT CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
+	LiveRasterSubmission CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
 		InkRenderer& renderer, int width, int height);
 	// 清空并重绘当前 L0 实时内容。
-	void DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
+	bool DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkRenderer& renderer, bool clearLayer = true);
 }
 

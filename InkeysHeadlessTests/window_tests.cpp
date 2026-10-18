@@ -2,11 +2,301 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <future>
 #include <iostream>
 #include <string>
 #include <vector>
 
+#include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+
 import Inkeys.Window;
+
+namespace
+{
+	constexpr UINT kSettingOwnerProbe = WM_APP + 74;
+
+	LRESULT CALLBACK SettingOwnerProbeProc(HWND hwnd, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		if (message == kSettingOwnerProbe)
+		{
+			auto* service = reinterpret_cast<Inkeys::Window::Service*>(lParam);
+			return service->SetSettingOwnedByDrawpad(wParam != 0);
+		}
+		return DefWindowProcW(hwnd, message, wParam, lParam);
+	}
+
+	constexpr UINT kExitGateBlockOwner = WM_APP + 71;
+	constexpr UINT kExitGateCapture = WM_APP + 72;
+	constexpr UINT kExitGateReadCapture = WM_APP + 73;
+	HANDLE exitGateEntered = nullptr;
+	HANDLE exitGateRelease = nullptr;
+
+	LRESULT CALLBACK ExitGateWindowProc(HWND hwnd, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		if (message == kExitGateBlockOwner)
+		{
+			if (exitGateEntered) SetEvent(exitGateEntered);
+			if (exitGateRelease) (void)WaitForSingleObject(exitGateRelease, 5000);
+			return 0;
+		}
+		if (message == kExitGateCapture)
+		{
+			(void)SetCapture(hwnd);
+			return GetCapture() == hwnd;
+		}
+		if (message == kExitGateReadCapture)
+			return reinterpret_cast<LRESULT>(GetCapture());
+		return DefWindowProcW(hwnd, message, wParam, lParam);
+	}
+
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool ContainsWindow(
+		const std::array<HWND, WindowCount>& windows, HWND candidate) noexcept
+	{
+		for (const HWND hwnd : windows)
+			if (hwnd == candidate) return true;
+		return false;
+	}
+
+	[[nodiscard]] int ZOrderIndex(HWND target) noexcept
+	{
+		int index = 0;
+		for (HWND hwnd = GetTopWindow(nullptr); hwnd;
+			hwnd = GetWindow(hwnd, GW_HWNDNEXT), ++index)
+		{
+			if (hwnd == target) return index;
+		}
+		return -1;
+	}
+
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool IsContinuousOwnerTree(
+		const std::array<HWND, WindowCount>& windows) noexcept
+	{
+		int first = -1;
+		int last = -1;
+		std::size_t found = 0;
+		int index = 0;
+		for (HWND hwnd = GetTopWindow(nullptr); hwnd;
+			hwnd = GetWindow(hwnd, GW_HWNDNEXT), ++index)
+		{
+			if (!ContainsWindow(windows, hwnd)) continue;
+			if (first < 0) first = index;
+			last = index;
+			++found;
+		}
+		return found == WindowCount && first >= 0
+			&& last - first + 1 == static_cast<int>(WindowCount);
+	}
+
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool IsOwnerTreeAbove(
+		const std::array<HWND, WindowCount>& windows, HWND reference) noexcept
+	{
+		const int referenceIndex = ZOrderIndex(reference);
+		if (referenceIndex < 0) return false;
+		for (const HWND hwnd : windows)
+		{
+			const int index = ZOrderIndex(hwnd);
+			if (index < 0 || index >= referenceIndex) return false;
+		}
+		return true;
+	}
+
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool IsOwnerTreeBelow(
+		const std::array<HWND, WindowCount>& windows, HWND reference) noexcept
+	{
+		const int referenceIndex = ZOrderIndex(reference);
+		if (referenceIndex < 0) return false;
+		for (const HWND hwnd : windows)
+		{
+			const int index = ZOrderIndex(hwnd);
+			if (index <= referenceIndex) return false;
+		}
+		return true;
+	}
+}
+
+int RunWindowCommandCompletionTests()
+{
+	using namespace Inkeys::Window::Detail;
+	int failures = 0;
+	const auto check = [&](bool passed, const char* name)
+	{
+		if (!passed) { ++failures; std::cerr << "FAIL " << name << '\n'; }
+	};
+	for (const bool value : { false, true })
+	{
+		std::promise<bool> completion;
+		auto result = completion.get_future();
+		completion.set_value(value);
+		check(WaitForCommandResult(result, std::chrono::steady_clock::now()
+			+ std::chrono::seconds(1)) == value, "bounded command preserves result");
+	}
+	std::promise<bool> pending;
+	auto result = pending.get_future();
+	const auto start = std::chrono::steady_clock::now();
+	const CommandDeadline deadline = start + std::chrono::milliseconds(20);
+	check(!WaitForCommandResult(result, deadline), "stalled owner command times out");
+	check(std::chrono::steady_clock::now() - start < std::chrono::seconds(2),
+		"stalled owner wait stays bounded");
+	check(CommandExpired(deadline), "late queued command is rejected");
+	// 调用方已失败返回，队列仍能安全完成 promise；迟到成功不改变超时结果。
+	pending.set_value(true);
+	check(result.get(), "late completion remains safe after timeout");
+	check(!CommandExpired({}), "ordinary commands have no startup deadline");
+	std::promise<bool> ordinary;
+	auto ordinaryResult = ordinary.get_future();
+	ordinary.set_value(true);
+	check(WaitForCommandResult(ordinaryResult, {}), "ordinary completion unchanged");
+	std::cout << "[WindowCommandCompletion] failures=" << failures << '\n';
+	return failures;
+}
+
+int RunWindowExitVisibilityTests()
+{
+	using namespace Inkeys::Window;
+	using namespace std::chrono_literals;
+	int failures = 0;
+	auto check = [&](bool condition, const char* name)
+	{
+		if (!condition)
+		{
+			std::cerr << "FAILED exit visibility: " << name << '\n';
+			++failures;
+		}
+	};
+	auto specs = [](const wchar_t* suffix)
+	{
+		std::vector<WindowSpec> result;
+		for (const auto role : { WindowRole::MagnifierHost, WindowRole::Freeze,
+			WindowRole::DrawpadPresentation, WindowRole::Drawpad })
+		{
+			WindowSpec spec;
+			spec.role = role;
+			spec.className = std::wstring(L"Inkeys.Window.ExitGate.") + suffix
+				+ std::to_wstring(static_cast<unsigned>(role));
+			spec.x = -25000;
+			spec.y = -25000;
+			spec.width = 16;
+			spec.height = 16;
+			spec.bindMessages = false;
+			if (role == WindowRole::Drawpad)
+				spec.windowProc = ExitGateWindowProc;
+			result.push_back(std::move(spec));
+		}
+		return result;
+	};
+
+	// owner 停在自建消息中；HideAll 排在旧 Show 前，关闭后 Show 不得再显画布。
+	{
+		Service service(8);
+		check(service.Start(specs(L"Queued")), "queued service starts");
+		const HWND primary = service.Handle(WindowRole::Drawpad);
+		const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
+		if (primary && presentation)
+		{
+			check(service.SetDrawpadSurfaceVisibility(
+				DrawpadSurfaceVisibility::Primary), "primary visible before shutdown");
+			check(SendMessageW(primary, kExitGateCapture, 0, 0) != 0,
+				"owner captures primary before shutdown");
+			exitGateEntered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			exitGateRelease = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			check(exitGateEntered && exitGateRelease, "owner block events");
+			if (exitGateEntered && exitGateRelease)
+			{
+				check(PostMessageW(primary, kExitGateBlockOwner, 0, 0) != FALSE,
+					"owner block posted");
+				const bool entered = WaitForSingleObject(exitGateEntered, 2000)
+					== WAIT_OBJECT_0;
+				check(entered, "owner blocked before queue");
+				if (entered)
+				{
+					check(service.RequestHideAllUserWindows(), "hide queued first");
+					auto lateShow = std::async(std::launch::async, [&]
+						{ return service.Show(WindowRole::Drawpad); });
+					check(lateShow.wait_for(50ms) == std::future_status::timeout,
+						"late show waits behind owner");
+					service.BeginShutdown();
+					SetEvent(exitGateRelease);
+					const bool shown = lateShow.get();
+					const bool primaryVisible = IsWindowVisible(primary) != FALSE;
+					const bool presentationVisible = IsWindowVisible(presentation) != FALSE;
+					std::cout << "[ExitVisibilityQueued] show=" << shown
+						<< " primaryVisible=" << primaryVisible
+						<< " presentationVisible=" << presentationVisible << '\n';
+					check(!shown && !primaryVisible && !presentationVisible,
+						"late show cannot restore either surface");
+					check(SendMessageW(primary, kExitGateReadCapture, 0, 0) == 0,
+						"hide all releases owner primary capture");
+				}
+				else SetEvent(exitGateRelease);
+			}
+			if (exitGateEntered) CloseHandle(exitGateEntered);
+			if (exitGateRelease) CloseHandle(exitGateRelease);
+			exitGateEntered = nullptr;
+			exitGateRelease = nullptr;
+		}
+		service.StopAndJoin();
+	}
+
+	// 旧 stillDesired 已进入回调时再关门；owner 返回后必须再次复核。
+	{
+		Service service(8);
+		check(service.Start(specs(L"Callback")), "callback service starts");
+		const HWND primary = service.Handle(WindowRole::Drawpad);
+		const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
+		if (primary && presentation)
+		{
+			const HANDLE entered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			const HANDLE release = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			check(entered && release, "callback block events");
+			if (entered && release)
+			{
+				auto oldVisibility = std::async(std::launch::async, [&]
+				{
+					return service.SetDrawpadSurfaceVisibility(
+						DrawpadSurfaceVisibility::Primary, [&]
+						{
+							SetEvent(entered);
+							(void)WaitForSingleObject(release, 5000);
+							return true;
+						});
+				});
+				const bool enteredCallback = WaitForSingleObject(entered, 2000)
+					== WAIT_OBJECT_0;
+				check(enteredCallback, "old visibility callback entered");
+				service.BeginShutdown();
+				SetEvent(release);
+				const bool applied = oldVisibility.get();
+				const bool primaryVisible = IsWindowVisible(primary) != FALSE;
+				const bool presentationVisible = IsWindowVisible(presentation) != FALSE;
+				std::cout << "[ExitVisibilityCallback] applied=" << applied
+					<< " primaryVisible=" << primaryVisible
+					<< " presentationVisible=" << presentationVisible << '\n';
+				check(!applied && !primaryVisible && !presentationVisible,
+					"old callback cannot restore primary");
+				check(!service.SetDrawpadSurfaceVisibility(
+					DrawpadSurfaceVisibility::Presentation)
+					&& !service.Show(WindowRole::DrawpadPresentation)
+					&& !IsWindowVisible(primary) && !IsWindowVisible(presentation),
+					"post-shutdown presentation requests fail closed");
+				check(service.SetDrawpadSurfaceVisibility(
+					DrawpadSurfaceVisibility::Hidden), "hidden remains allowed");
+			}
+			if (entered) CloseHandle(entered);
+			if (release) CloseHandle(release);
+		}
+		service.StopAndJoin();
+	}
+	if (!failures)
+		std::cout << "PASS exit visibility gate" << '\n';
+	return failures;
+}
 
 int RunWindowTests()
 {
@@ -49,15 +339,13 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::Freeze, L"Freeze"));
 	specs.push_back(makeSpec(WindowRole::DrawpadPresentation, L"DrawpadPresentation"));
 	specs.push_back(makeSpec(WindowRole::Drawpad, L"Drawpad"));
-	specs.push_back(makeSpec(WindowRole::WhiteboardLeft, L"WhiteboardLeft"));
-	specs.push_back(makeSpec(WindowRole::WhiteboardRight, L"WhiteboardRight"));
 	specs.push_back(makeSpec(WindowRole::PptBottomLeft, L"PptBottomLeft"));
 	specs.push_back(makeSpec(WindowRole::PptBottomRight, L"PptBottomRight"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleRight, L"PptMiddleRight"));
-	specs.push_back(makeSpec(WindowRole::PptExitShow, L"PptExitShow"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
+	settingSpec.windowProc = SettingOwnerProbeProc;
 	settingSpec.style = WS_POPUP;
 	settingSpec.exStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 	specs.push_back(std::move(settingSpec));
@@ -76,13 +364,10 @@ int RunWindowTests()
 		WindowRole::Freeze,
 		WindowRole::DrawpadPresentation,
 		WindowRole::Drawpad,
-		WindowRole::WhiteboardLeft,
-		WindowRole::WhiteboardRight,
 		WindowRole::PptBottomLeft,
 		WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft,
 		WindowRole::PptMiddleRight,
-		WindowRole::PptExitShow,
 		WindowRole::Bar,
 		WindowRole::Setting,
 		WindowRole::DisplayObserver,
@@ -101,13 +386,10 @@ int RunWindowTests()
 		&& service.OwnerThreadId(WindowRole::Freeze) == overlayThread
 		&& service.OwnerThreadId(WindowRole::DrawpadPresentation) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Drawpad) == overlayThread
-		&& service.OwnerThreadId(WindowRole::WhiteboardLeft) == overlayThread
-		&& service.OwnerThreadId(WindowRole::WhiteboardRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptBottomLeft) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptBottomRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptMiddleLeft) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptMiddleRight) == overlayThread
-		&& service.OwnerThreadId(WindowRole::PptExitShow) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Bar) == overlayThread
 		&& service.OwnerThreadId(WindowRole::DisplayObserver) == overlayThread,
 		"single overlay owner thread");
@@ -119,32 +401,69 @@ int RunWindowTests()
 	const HWND freeze = service.Handle(WindowRole::Freeze);
 	const HWND drawpadPresentation = service.Handle(WindowRole::DrawpadPresentation);
 	const HWND drawpad = service.Handle(WindowRole::Drawpad);
-	const HWND whiteboardLeft = service.Handle(WindowRole::WhiteboardLeft);
-	const HWND whiteboardRight = service.Handle(WindowRole::WhiteboardRight);
 	const HWND pptBottomLeft = service.Handle(WindowRole::PptBottomLeft);
 	const HWND pptBottomRight = service.Handle(WindowRole::PptBottomRight);
 	const HWND pptMiddleLeft = service.Handle(WindowRole::PptMiddleLeft);
 	const HWND pptMiddleRight = service.Handle(WindowRole::PptMiddleRight);
-	const HWND pptExitShow = service.Handle(WindowRole::PptExitShow);
 	const HWND bar = service.Handle(WindowRole::Bar);
 	const HWND setting = service.Handle(WindowRole::Setting);
 	const HWND observer = service.Handle(WindowRole::DisplayObserver);
+	const std::array overlayOwnerTree{
+		magnifierHost,
+		freeze,
+		drawpadPresentation,
+		drawpad,
+		pptBottomLeft,
+		pptBottomRight,
+		pptMiddleLeft,
+		pptMiddleRight,
+		bar,
+	};
+	const std::array nonRootOverlayWindows{
+		freeze,
+		drawpadPresentation,
+		drawpad,
+		pptBottomLeft,
+		pptBottomRight,
+		pptMiddleLeft,
+		pptMiddleRight,
+		bar,
+	};
 	check(service.OverlayRoot() == magnifierHost, "overlay root");
 	check(GetParent(magnifierChild) == magnifierHost, "magnifier child parent");
 	check(GetWindow(freeze, GW_OWNER) == magnifierHost, "freeze owner");
 	check(GetWindow(drawpadPresentation, GW_OWNER) == freeze,
 		"drawpad presentation freeze owner");
-	check(GetWindow(drawpad, GW_OWNER) == freeze, "drawpad owner");
-	check(GetWindow(whiteboardLeft, GW_OWNER) == drawpad
-		&& GetWindow(whiteboardRight, GW_OWNER) == drawpad,
-		"whiteboard controls drawpad owner");
+	check(GetWindow(drawpad, GW_OWNER) == drawpadPresentation,
+		"drawpad presentation owner");
 	check(GetWindow(pptBottomLeft, GW_OWNER) == drawpad
 		&& GetWindow(pptBottomRight, GW_OWNER) == drawpad
 		&& GetWindow(pptMiddleLeft, GW_OWNER) == drawpad
-		&& GetWindow(pptMiddleRight, GW_OWNER) == drawpad
-		&& GetWindow(pptExitShow, GW_OWNER) == drawpad, "five ppt drawpad owner");
+		&& GetWindow(pptMiddleRight, GW_OWNER) == drawpad, "four ppt drawpad owner");
 	check(GetWindow(bar, GW_OWNER) == drawpad, "bar drawpad owner");
 	check(GetWindow(setting, GW_OWNER) == nullptr, "setting no owner");
+	check((GetWindowLongPtrW(drawpad, GWL_STYLE) & WS_CHILD) == 0,
+		"drawpad remains a top-level owned popup");
+	auto barAboveDrawpadSurfaces = [&]() noexcept
+		{
+			const int barIndex = ZOrderIndex(bar);
+			return barIndex >= 0 && barIndex < ZOrderIndex(drawpad)
+				&& barIndex < ZOrderIndex(drawpadPresentation);
+		};
+	check(service.Show(WindowRole::Bar), "show bar for drawpad surface ordering");
+	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Presentation)
+		&& !IsWindowVisible(drawpad) && IsWindowVisible(drawpadPresentation)
+		&& IsWindowVisible(bar) && barAboveDrawpadSurfaces(),
+		"bar stays above both drawpad surfaces in presentation mode");
+	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Primary)
+		&& IsWindowVisible(drawpad) && !IsWindowVisible(drawpadPresentation)
+		&& IsWindowVisible(bar) && barAboveDrawpadSurfaces(),
+		"bar stays above both drawpad surfaces in primary mode");
+	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Hidden)
+		&& service.Hide(WindowRole::Bar)
+		&& !IsWindowVisible(drawpad) && !IsWindowVisible(drawpadPresentation)
+		&& !IsWindowVisible(bar),
+		"drawpad surface test restores hidden owner tree");
 	check(FindWindowExW(HWND_MESSAGE, nullptr,
 		L"Inkeys.Window.Tests.DisplayObserver", nullptr) == observer,
 		"observer message-only");
@@ -178,24 +497,119 @@ int RunWindowTests()
 		&& (GetWindowLongPtrW(setting, GWL_STYLE) & WS_VISIBLE), "show command");
 	check(service.Hide(WindowRole::Setting)
 		&& !(GetWindowLongPtrW(setting, GWL_STYLE) & WS_VISIBLE), "hide command");
-	check(!(GetWindowLongPtrW(freeze, GWL_EXSTYLE) & WS_EX_TOPMOST)
-		&& !(GetWindowLongPtrW(drawpad, GWL_EXSTYLE) & WS_EX_TOPMOST)
-		&& !(GetWindowLongPtrW(pptBottomLeft, GWL_EXSTYLE) & WS_EX_TOPMOST)
-		&& !(GetWindowLongPtrW(bar, GWL_EXSTYLE) & WS_EX_TOPMOST),
+	bool nonRootTopmost = false;
+	for (const HWND hwnd : nonRootOverlayWindows)
+		nonRootTopmost = nonRootTopmost
+			|| (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+	check(!nonRootTopmost,
 		"non-root has no independent topmost before refresh");
+
+	// 竞争窗保持隐藏，验证根刷新会把完整 owner 树作为连续整体抬升。
+	const HWND competingTopmost = CreateWindowExW(
+		WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+		L"Static", L"Window test competing topmost", WS_POPUP,
+		400, 400, 120, 80, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+	check(competingTopmost != nullptr, "create hidden competing topmost");
+	if (competingTopmost)
+	{
+		check(SetWindowPos(competingTopmost, HWND_TOPMOST, 0, 0, 0, 0,
+			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE,
+			"position hidden competing topmost");
+		check(!IsWindowVisible(magnifierHost)
+			&& !IsWindowVisible(competingTopmost),
+			"topmost ordering probe remains hidden");
+		check(IsContinuousOwnerTree(overlayOwnerTree)
+			&& IsOwnerTreeBelow(overlayOwnerTree, competingTopmost),
+			"competing topmost starts above continuous owner tree");
+	}
 	check(service.RequestTopmostRefresh(), "root-only topmost refresh");
-		check(service.SetOverlayTopmost(false) && !service.OverlayTopmost()
-			&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
-			"persistent overlay notopmost refresh");
-		check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
-		check(service.SetOverlayFullscreen(true) && service.OverlayFullscreen()
-			&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
-			"fullscreen mark persists independently of topmost");
-		check(service.SetOverlayFullscreen(false) && !service.OverlayFullscreen(),
-			"fullscreen mark clears without restoring topmost");
-		check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
-			&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
-			"persistent overlay topmost restore");
+	check((GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0,
+		"overlay root receives topmost style");
+	if (competingTopmost)
+	{
+		check(IsContinuousOwnerTree(overlayOwnerTree)
+			&& IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
+			"hidden root refresh raises continuous owner tree above competitor");
+	}
+	check(service.SetOverlayTopmost(false) && !service.OverlayTopmost()
+		&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+		"persistent overlay notopmost refresh");
+	if (competingTopmost)
+		check(IsOwnerTreeBelow(overlayOwnerTree, competingTopmost),
+			"notopmost owner tree returns below competing topmost");
+	check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
+	check(service.SetOverlayFullscreen(true) && service.OverlayFullscreen()
+		&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+		"fullscreen mark persists independently of topmost");
+	check(service.SetOverlayFullscreen(false) && !service.OverlayFullscreen(),
+		"fullscreen mark clears without restoring topmost");
+	check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
+		&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+		"persistent overlay topmost restore");
+	check(service.Show(WindowRole::Setting),
+		"show setting before owner attach");
+	const DWORD settingOwnerThread = service.OwnerThreadId(WindowRole::Setting);
+	const auto settingStyleBeforeOwner = GetWindowLongPtrW(setting, GWL_STYLE);
+	const auto settingExStyleBeforeOwner = GetWindowLongPtrW(setting, GWL_EXSTYLE);
+	const auto settingIconBeforeOwner =
+		reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0));
+	std::atomic_int settingRefreshes = 0;
+	service.SetTopmostRefreshObserver([&] { ++settingRefreshes; });
+	// Setting 线程不能等待根刷新；attach 已成功但准备失败时必须回滚 owner。
+	check(SendMessageW(setting, kSettingOwnerProbe, TRUE,
+		reinterpret_cast<LPARAM>(&service)) == FALSE,
+		"setting thread rejects attach requiring root refresh");
+	check(GetWindow(setting, GW_OWNER) == nullptr,
+		"failed setting preparation restores original owner");
+	check(service.SetSettingOwnedByDrawpad(true), "setting attach owner");
+	check(settingRefreshes.load() == 1, "setting attach immediately refreshes root");
+	check(service.SetSettingOwnedByDrawpad(true) && settingRefreshes.load() == 1,
+		"unchanged correct setting owner avoids repeated root refresh");
+	service.SetTopmostRefreshObserver({});
+	check(GetWindow(setting, GW_OWNER) == drawpad,
+		"setting joins drawpad owner chain");
+	check((GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"visible selection setting immediately rises above both canvases on attach");
+	check(service.OwnerThreadId(WindowRole::Setting) == settingOwnerThread,
+		"setting owner thread remains stable");
+	check(settingOwnerThread != service.OwnerThreadId(WindowRole::Drawpad),
+		"setting keeps dedicated owner thread");
+	check(GetWindowLongPtrW(setting, GWL_STYLE) == settingStyleBeforeOwner
+		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & ~WS_EX_TOPMOST)
+			== (settingExStyleBeforeOwner & ~WS_EX_TOPMOST)
+		&& reinterpret_cast<HICON>(SendMessageW(
+			setting, WM_GETICON, ICON_BIG, 0)) == settingIconBeforeOwner,
+		"setting owner attach preserves app window contract");
+	check(service.Hide(WindowRole::Setting) && service.Show(WindowRole::Setting)
+		&& IsWindowVisible(setting)
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"owned setting reshow immediately stays above both canvases");
+	check(service.SetOverlayTopmost(false)
+		&& service.SetSettingOwnedByDrawpad(true)
+		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0
+		&& service.Show(WindowRole::Setting)
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"setting immediate ordering respects non-topmost root policy");
+	check(service.SetOverlayTopmost(true), "restore root policy after setting show");
+	check(service.SetSettingOwnedByDrawpad(false)
+		&& service.SetSettingOwnedByDrawpad(false),
+		"setting detach owner idempotent");
+	check(GetWindow(setting, GW_OWNER) == nullptr
+		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0,
+		"setting detach leaves topmost owner chain");
+	if (competingTopmost)
+		check(ZOrderIndex(setting) > ZOrderIndex(competingTopmost),
+			"setting detach returns below competing topmost");
+	if (competingTopmost)
+		check(IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
+			"topmost restore raises the complete owner tree again");
 	const HWND focusBeforePromote = Service::LastFocusWindow();
 	check(service.PromotePptWindow(WindowRole::PptMiddleRight), "promote ppt below bar");
 	check(GetWindow(bar, GW_HWNDNEXT) == pptMiddleRight
@@ -210,16 +624,22 @@ int RunWindowTests()
 		"reshown ppt remains drawpad sibling below bar");
 	check(Service::LastFocusWindow() == focusBeforePromote,
 		"reshow ppt does not activate");
+	if (competingTopmost)
+		check(IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
+			"bar and promoted ppt remain above competing topmost");
+	if (competingTopmost)
+		check(DestroyWindow(competingTopmost) != FALSE,
+			"destroy hidden competing topmost");
 
 	// 白板模式只把 Freeze 变成 taskbar anchor，其余窗口仍保持 owned popup。
 	for (const auto role : {
 		WindowRole::MagnifierHost, WindowRole::Freeze,
-		WindowRole::DrawpadPresentation, WindowRole::Drawpad,
-		WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
 		WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
-		WindowRole::PptExitShow, WindowRole::Bar })
+		WindowRole::Bar })
 		check(service.Show(role), "show whiteboard group member");
+	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Primary),
+		"show primary drawpad for whiteboard group");
 	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
 	const auto whiteboardFreezeExStyle = static_cast<DWORD>(
 		GetWindowLongPtrW(freeze, GWL_EXSTYLE));
@@ -233,11 +653,12 @@ int RunWindowTests()
 		"whiteboard Drawpad accepts activation without a taskbar button");
 	check(service.MinimizeWhiteboardWindowGroup(), "minimize whiteboard window group");
 	check(IsIconic(freeze) && !IsWindowVisible(drawpad)
-		&& !IsWindowVisible(whiteboardLeft) && !IsWindowVisible(whiteboardRight)
+		&& !IsWindowVisible(pptBottomLeft) && !IsWindowVisible(pptBottomRight)
 		&& !IsWindowVisible(bar), "minimize hides the complete whiteboard group");
 	check(service.RestoreWhiteboardWindowGroup(), "restore whiteboard window group");
 	check(IsWindowVisible(freeze) && IsWindowVisible(drawpad)
-		&& IsWindowVisible(whiteboardLeft) && IsWindowVisible(whiteboardRight)
+		&& !IsWindowVisible(drawpadPresentation)
+		&& IsWindowVisible(pptBottomLeft) && IsWindowVisible(pptBottomRight)
 		&& IsWindowVisible(bar), "restore returns the prior whiteboard visible state");
 	check(service.LeaveWhiteboardWindowMode(), "leave whiteboard window mode");
 	const auto presentationFreezeExStyle = static_cast<DWORD>(
@@ -287,6 +708,10 @@ int RunWindowTests()
 	auto replacementBar = makeSpec(WindowRole::Bar, L"ReplacementBar");
 	check(service.Create(std::move(replacementBar))
 		&& IsWindow(service.Handle(WindowRole::Bar)), "create leaf on owner thread");
+	check(service.Destroy(WindowRole::Setting) && !IsWindow(setting),
+		"destroy setting on owner thread");
+	check(!service.SetSettingOwnedByDrawpad(true),
+		"setting owner command rejects missing setting handle");
 
 	std::array<HWND, static_cast<std::size_t>(WindowRole::Count)> handles{};
 	for (const auto role : roles)
@@ -301,11 +726,47 @@ int RunWindowTests()
 			"reverse lifecycle cleanup");
 	}
 
+	std::vector<WindowSpec> incompleteSpecs;
+	incompleteSpecs.push_back(makeSpec(WindowRole::Setting, L"IncompleteSetting"));
+	check(service.Start(std::move(incompleteSpecs)), "start setting without drawpad");
+	check(!service.SetSettingOwnedByDrawpad(true),
+		"setting owner command rejects missing drawpad");
+	check(service.SetSettingOwnedByDrawpad(false),
+		"setting detach remains idempotent without drawpad");
+	service.StopAndJoin();
+
+	std::vector<WindowSpec> incompleteChainSpecs;
+	incompleteChainSpecs.push_back(makeSpec(WindowRole::Freeze, L"IncompleteFreeze"));
+	incompleteChainSpecs.push_back(makeSpec(WindowRole::Drawpad, L"IncompleteDrawpad"));
+	check(!service.Start(std::move(incompleteChainSpecs)),
+		"static drawpad rejects missing presentation owner");
+
+	std::vector<WindowSpec> dynamicChainSpecs;
+	dynamicChainSpecs.push_back(makeSpec(WindowRole::MagnifierHost, L"DynamicMagnifier"));
+	dynamicChainSpecs.push_back(makeSpec(WindowRole::Freeze, L"DynamicFreeze"));
+	check(service.Start(std::move(dynamicChainSpecs)), "start dynamic drawpad chain");
+	auto orphanDynamicDrawpad = makeSpec(WindowRole::Drawpad, L"OrphanDynamicDrawpad");
+	check(!service.Create(std::move(orphanDynamicDrawpad)),
+		"dynamic drawpad rejects missing presentation owner");
+	auto dynamicPresentation = makeSpec(
+		WindowRole::DrawpadPresentation, L"DynamicPresentation");
+	auto dynamicDrawpad = makeSpec(WindowRole::Drawpad, L"DynamicDrawpad");
+	check(service.Create(std::move(dynamicPresentation))
+		&& service.Create(std::move(dynamicDrawpad)),
+		"create dynamic drawpad surfaces");
+	check(GetWindow(service.Handle(WindowRole::DrawpadPresentation), GW_OWNER) ==
+		service.Handle(WindowRole::Freeze)
+		&& GetWindow(service.Handle(WindowRole::Drawpad), GW_OWNER) ==
+		service.Handle(WindowRole::DrawpadPresentation),
+		"dynamic drawpad surface owner chain");
+	service.StopAndJoin();
+
 	// stop 后可以重新创建新的 owner threads 和 channels。
 	std::vector<WindowSpec> restartSpecs;
 	restartSpecs.push_back(makeSpec(WindowRole::Bar, L"RestartBar"));
 	check(service.Start(std::move(restartSpecs))
 		&& service.Running() && service.Ready(WindowRole::Bar), "restart");
 	service.StopAndJoin();
+	failures += RunWindowExitVisibilityTests();
 	return failures;
 }

@@ -9,6 +9,7 @@ module;
 export module Inkeys.UI.Bar:Theme;
 
 import :State;
+import Inkeys.UI.Bar.Metrics;
 
 // Bar 主题模式，当前先只区分深浅色。
 export enum class BarThemeModeEnum : int
@@ -74,8 +75,11 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 
 	switch (color)
 	{
-	case BarThemeColorEnum::Surface: return RGB(24, 24, 24);
-	case BarThemeColorEnum::SurfaceFrame: return RGB(255, 255, 255);
+	case BarThemeColorEnum::Surface: return RGB(BarDarkSurfaceColorChannel,
+		BarDarkSurfaceColorChannel, BarDarkSurfaceColorChannel);
+	case BarThemeColorEnum::SurfaceFrame: return RGB(
+		BarDarkSurfaceFrameColorChannel, BarDarkSurfaceFrameColorChannel,
+		BarDarkSurfaceFrameColorChannel);
 	case BarThemeColorEnum::TextPrimary: return RGB(255, 255, 255);
 	case BarThemeColorEnum::Accent: return RGB(88, 255, 236);
 	case BarThemeColorEnum::PressedFill: return RGB(127, 127, 127);

@@ -52,6 +52,8 @@
   <ImportGroup Label="Shared" />
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
+	<!-- Debug 测试沿用项目既有 /MT 配置，因此 Vcpkg 也必须选择 Release 静态库。 -->
+	<VcpkgConfiguration Condition="'$(Configuration)'=='Debug'">Release</VcpkgConfiguration>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
@@ -102,13 +104,29 @@
   </ItemDefinitionGroup>
   <ItemGroup>
 	<ClCompile Include="canvas_navigation_tests.cpp" />
-    <ClCompile Include="contact_input_tests.cpp" />
+	<ClCompile Include="contact_input_tests.cpp" />
+	<ClCompile Include="modeler_baseline_tests.cpp" />
+    <ClCompile Include="modeler_tail_tests.cpp" />
+    <ClCompile Include="modeler_adaptive_tail_tests.cpp" />
+	<ClCompile Include="thin_stroke_gpu_tests.cpp" />
+	<ClCompile Include="desktop_autosave_tests.cpp" />
+	<ClCompile Include="presentation_autosave_tests.cpp" />
 	<ClCompile Include="highlighter_geometry_tests.cpp" />
 	<ClCompile Include="ink_document_tests.cpp" />
 	<ClCompile Include="ink_history_tests.cpp" />
 	<ClCompile Include="laser_incremental_coverage_tests.cpp" />
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
+	<ClCompile Include="uink_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" Link="draw3\Draw3.AutoSave.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm" Link="draw3\Draw3.AutoSave.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" Link="draw3\Draw3.Presentation.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp" Link="draw3\Draw3.PresentationAutoSave.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm" Link="draw3\Draw3.PresentationAutoSave.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp" Link="draw3\contact_input.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cppm" Link="draw3\contact_input.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -127,6 +145,31 @@
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cpp" Link="draw3\ink_document.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm" Link="draw3\ink_document.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp" Link="draw3\uink_model.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm" Link="draw3\uink_model.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp" Link="draw3\uink_codec.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp" Link="draw3\uink_codec_encode.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm" Link="draw3\uink_codec.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp" Link="draw3\uink_file.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm" Link="draw3\uink_file.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp" Link="draw3\uink_draw3_export.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm" Link="draw3\uink_draw3_export.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp" Link="draw3\uink_draw3_import.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm" Link="draw3\uink_draw3_import.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cpp" Link="draw3\uink_draw3_capture.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cppm" Link="draw3\uink_draw3_capture.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp" Link="draw3\ink_history.cpp" />
@@ -168,6 +211,12 @@
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj">
+      <Project>{a49d68f7-0a7e-4160-9c96-6b59b0c9aa85}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

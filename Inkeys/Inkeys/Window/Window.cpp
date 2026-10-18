@@ -4,9 +4,13 @@ module;
 #include <shobjidl.h>
 #include <windows.h>
 
+#include "../Helper/FailedCleanupDeadline.h"
+#include "Window.CommandCompletion.h"
+
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <deque>
 #include <future>
@@ -49,17 +53,12 @@ namespace
 	[[nodiscard]] constexpr bool IsPpt(WindowRole role) noexcept
 	{
 		return role >= WindowRole::PptBottomLeft
-			&& role <= WindowRole::PptExitShow;
-	}
-
-	[[nodiscard]] constexpr bool IsWhiteboard(WindowRole role) noexcept
-	{
-		return role == WindowRole::WhiteboardLeft || role == WindowRole::WhiteboardRight;
+			&& role <= WindowRole::PptMiddleRight;
 	}
 
 	[[nodiscard]] constexpr bool IsUiPopup(WindowRole role) noexcept
 	{
-		return IsPpt(role) || IsWhiteboard(role) || role == WindowRole::Bar;
+		return IsPpt(role) || role == WindowRole::Bar;
 	}
 
 	[[nodiscard]] constexpr int OverlayChainPosition(WindowRole role) noexcept
@@ -74,6 +73,50 @@ namespace
 		}
 	}
 
+	[[nodiscard]] const wchar_t* DrawpadSurfaceVisibilityName(
+		Inkeys::Window::DrawpadSurfaceVisibility visibility) noexcept
+	{
+		switch (visibility)
+		{
+		case Inkeys::Window::DrawpadSurfaceVisibility::Primary: return L"primary";
+		case Inkeys::Window::DrawpadSurfaceVisibility::Presentation: return L"presentation";
+		case Inkeys::Window::DrawpadSurfaceVisibility::Hidden: return L"hidden";
+		default: return L"unknown";
+		}
+	}
+
+	void LogDrawpadSurfaceState(const wchar_t* eventName,
+		Inkeys::Window::DrawpadSurfaceVisibility requested,
+		DWORD error, HWND primary, HWND presentation) noexcept
+	{
+		const auto logWindow = [eventName, requested, error](
+			const wchar_t* role, HWND hwnd) noexcept
+		{
+			const bool valid = hwnd && IsWindow(hwnd);
+			RECT bounds{};
+			const bool boundsValid = valid && GetWindowRect(hwnd, &bounds);
+			const LONG_PTR exStyle = valid ? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
+			std::fwprintf(stderr,
+				L"[DrawpadSurface] event=%s requested=%s role=%s hwnd=0x%llX "
+				L"owner=0x%llX previous=0x%llX valid=%u visible=%u topmost=%u "
+				L"layered=%u transparent=%u error=%lu boundsOk=%u bounds=(%ld,%ld,%ld,%ld)\n",
+				eventName, DrawpadSurfaceVisibilityName(requested), role,
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(
+					valid ? GetWindow(hwnd, GW_OWNER) : nullptr)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(
+					valid ? GetWindow(hwnd, GW_HWNDPREV) : nullptr)),
+				valid ? 1u : 0u, valid && IsWindowVisible(hwnd) ? 1u : 0u,
+				(exStyle & WS_EX_TOPMOST) ? 1u : 0u,
+				(exStyle & WS_EX_LAYERED) ? 1u : 0u,
+				(exStyle & WS_EX_TRANSPARENT) ? 1u : 0u, error,
+				boundsValid ? 1u : 0u,
+				bounds.left, bounds.top, bounds.right, bounds.bottom);
+		};
+		logWindow(L"Drawpad", primary);
+		logWindow(L"DrawpadPresentation", presentation);
+	}
+
 	[[nodiscard]] const wchar_t* DefaultClassName(WindowRole role) noexcept
 	{
 		switch (role)
@@ -83,13 +126,10 @@ namespace
 		case WindowRole::Freeze: return L"Inkeys.Window.Freeze";
 		case WindowRole::DrawpadPresentation: return L"Inkeys.Window.DrawpadPresentation";
 		case WindowRole::Drawpad: return L"Inkeys.Window.Drawpad";
-		case WindowRole::WhiteboardLeft: return L"Inkeys.Window.WhiteboardLeft";
-		case WindowRole::WhiteboardRight: return L"Inkeys.Window.WhiteboardRight";
 		case WindowRole::PptBottomLeft: return L"Inkeys.Window.PptBottomLeft";
 		case WindowRole::PptBottomRight: return L"Inkeys.Window.PptBottomRight";
 		case WindowRole::PptMiddleLeft: return L"Inkeys.Window.PptMiddleLeft";
 		case WindowRole::PptMiddleRight: return L"Inkeys.Window.PptMiddleRight";
-		case WindowRole::PptExitShow: return L"Inkeys.Window.PptExitShow";
 		case WindowRole::Bar: return L"Inkeys.Window.Bar";
 		case WindowRole::Setting: return L"Inkeys.Window.Setting";
 		case WindowRole::DisplayObserver: return L"Inkeys.Window.DisplayObserver";
@@ -157,49 +197,63 @@ namespace Inkeys::Window
 			Stop();
 		}
 
-		[[nodiscard]] bool Start(std::vector<WindowSpec> specs)
+		[[nodiscard]] bool Start(std::vector<WindowSpec> specs,
+			Shutdown::FailedCleanupSignal failedCleanup)
 		{
 			std::scoped_lock lifecycleLock(lifecycleMutex_);
+			if (shutdownRequested_.load(std::memory_order_acquire))
+				return false;
 			if (running_.load(std::memory_order_acquire))
 				return false;
 
-			ResetState();
-			for (auto& spec : specs)
+			try
 			{
-				if (!IsValidRole(spec.role) || specs_[RoleIndex(spec.role)].has_value())
+				ResetState();
+				for (auto& spec : specs)
+				{
+					if (!IsValidRole(spec.role) || specs_[RoleIndex(spec.role)].has_value())
+						return false;
+					if (spec.width <= 0 || spec.height <= 0)
+						return false;
+					configured_[RoleIndex(spec.role)].store(true, std::memory_order_relaxed);
+					specs_[RoleIndex(spec.role)] = std::move(spec);
+				}
+
+				overlayEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+				settingEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+				std::promise<bool> overlayPromise;
+				std::promise<bool> settingPromise;
+				auto overlayReady = overlayPromise.get_future();
+				auto settingReady = settingPromise.get_future();
+				running_.store(true, std::memory_order_release);
+
+				overlayThread_ = std::jthread(
+					[this, failedCleanup, promise = std::move(overlayPromise)](std::stop_token token) mutable
+					{
+						RunGroup(false, token, std::move(promise), failedCleanup);
+					});
+				settingThread_ = std::jthread(
+					[this, failedCleanup, promise = std::move(settingPromise)](std::stop_token token) mutable
+					{
+						RunGroup(true, token, std::move(promise), failedCleanup);
+					});
+
+				const bool started = overlayReady.get() && settingReady.get();
+				if (!started)
+				{
+					failedCleanup.BeginKnownFailure();
+					StopUnlocked();
 					return false;
-				if (spec.width <= 0 || spec.height <= 0)
-					return false;
-				configured_[RoleIndex(spec.role)].store(true, std::memory_order_relaxed);
-				specs_[RoleIndex(spec.role)] = std::move(spec);
+				}
+				return true;
 			}
-
-			overlayEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-			settingEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-			std::promise<bool> overlayPromise;
-			std::promise<bool> settingPromise;
-			auto overlayReady = overlayPromise.get_future();
-			auto settingReady = settingPromise.get_future();
-			running_.store(true, std::memory_order_release);
-
-			overlayThread_ = std::jthread(
-				[this, promise = std::move(overlayPromise)](std::stop_token token) mutable
-				{
-					RunGroup(false, token, std::move(promise));
-				});
-			settingThread_ = std::jthread(
-				[this, promise = std::move(settingPromise)](std::stop_token token) mutable
-				{
-					RunGroup(true, token, std::move(promise));
-				});
-
-			const bool started = overlayReady.get() && settingReady.get();
-			if (!started)
+			catch (...)
 			{
+				// thread/promise 的部分启动失败仍先建立截止，再等待已创建 owner。
+				failedCleanup.BeginKnownFailure();
 				StopUnlocked();
 				return false;
 			}
-			return true;
 		}
 
 		void Stop() noexcept
@@ -211,6 +265,12 @@ namespace Inkeys::Window
 		[[nodiscard]] bool Running() const noexcept
 		{
 			return running_.load(std::memory_order_acquire);
+		}
+
+		void BeginShutdown() noexcept
+		{
+			// 正式退出意图一经接受就不可撤销；此处不得等待可能已卡住的 HWND owner。
+			shutdownRequested_.store(true, std::memory_order_release);
 		}
 
 		[[nodiscard]] HWND Handle(WindowRole role) const noexcept
@@ -237,13 +297,10 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow,
 				WindowRole::Bar,
 				WindowRole::DisplayObserver,
 			};
@@ -300,6 +357,8 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool Show(WindowRole role)
 		{
+			// 已加入画布链的设置在显示前同步抬升根；选择态保留普通窗口语义。
+			if (IsSetting(role) && !PrepareSettingZOrder(true)) return false;
 			return Submit(role, CommandType::Show);
 		}
 
@@ -332,6 +391,13 @@ namespace Inkeys::Window
 			return overlayHidden && settingHidden;
 		}
 
+		[[nodiscard]] bool RequestHideAllUserWindows()
+		{
+			const bool overlayQueued = SubmitNoWait(WindowRole::Bar, CommandType::HideAll);
+			const bool settingQueued = SubmitNoWait(WindowRole::Setting, CommandType::HideAll);
+			return overlayQueued && settingQueued;
+		}
+
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds)
 		{
 			Command command;
@@ -342,12 +408,14 @@ namespace Inkeys::Window
 		}
 
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
-			DrawpadSurfaceVisibility visibility)
+			DrawpadSurfaceVisibility visibility,
+			std::function<bool()> stillDesired)
 		{
 			Command command;
 			command.type = CommandType::SetDrawpadSurfaceVisibility;
 			command.role = WindowRole::Drawpad;
 			command.drawpadVisibility = visibility;
+			command.stillDesired = std::move(stillDesired);
 			return Submit(std::move(command));
 		}
 
@@ -358,6 +426,84 @@ namespace Inkeys::Window
 			command.role = role;
 			command.enabled = enabled;
 			return Submit(std::move(command));
+		}
+
+		[[nodiscard]] bool SetSettingOwnedByDrawpad(bool enabled)
+		{
+			Command command;
+			command.type = CommandType::SetSettingOwnedByDrawpad;
+			command.role = WindowRole::Setting;
+			command.enabled = enabled;
+			const HWND setting = Handle(WindowRole::Setting);
+			const HWND previousOwner = setting ? GetWindow(setting, GW_OWNER) : nullptr;
+			if (!Submit(std::move(command))) return false;
+			if (!enabled) return true;
+			if (!PrepareSettingZOrder(previousOwner != Handle(WindowRole::Drawpad)))
+			{
+				// 层级准备失败时在 Setting 线程恢复原 owner，避免留下半完成的归属。
+				if (previousOwner != Handle(WindowRole::Drawpad))
+				{
+					Command rollback;
+					rollback.type = CommandType::SetSettingOwnedByDrawpad;
+					rollback.role = WindowRole::Setting;
+					rollback.enabled = previousOwner != nullptr;
+					rollback.settingOwner = previousOwner;
+					(void)Submit(std::move(rollback));
+				}
+				return false;
+			}
+			return setting && setting == Handle(WindowRole::Setting)
+				&& IsWindow(setting) && GetWindow(setting, GW_OWNER) == Handle(WindowRole::Drawpad)
+				&& Handle(WindowRole::Drawpad) != nullptr;
+		}
+
+		[[nodiscard]] bool SettingAboveDrawpads(HWND setting) const noexcept
+		{
+			const HWND primary = Handle(WindowRole::Drawpad);
+			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
+			if (!setting || !primary || !presentation) return false;
+			bool primaryBelow = false;
+			bool presentationBelow = false;
+			for (HWND below = GetWindow(setting, GW_HWNDNEXT); below;
+				below = GetWindow(below, GW_HWNDNEXT))
+			{
+				primaryBelow |= below == primary;
+				presentationBelow |= below == presentation;
+				if (primaryBelow && presentationBelow) return true;
+			}
+			return false;
+		}
+
+		[[nodiscard]] bool PrepareSettingZOrder(bool forceRefresh)
+		{
+			const HWND setting = Handle(WindowRole::Setting);
+			if (!setting || !IsWindow(setting)) return false;
+			const HWND owner = GetWindow(setting, GW_OWNER);
+			if (!owner) return true;
+			if (owner != Handle(WindowRole::Drawpad) || !IsWindow(owner)) return false;
+			const HWND root = OverlayRoot();
+			const bool topmost = overlayTopmost_.load(std::memory_order_acquire)
+				&& !whiteboardWindowMode_.load(std::memory_order_acquire);
+			const auto matches = [&]() noexcept
+			{
+				return setting == Handle(WindowRole::Setting) && IsWindow(setting)
+					&& owner == Handle(WindowRole::Drawpad) && IsWindow(owner)
+					&& GetWindow(setting, GW_OWNER) == owner
+					&& root && root == OverlayRoot() && IsWindow(root)
+					&& topmost == (overlayTopmost_.load(std::memory_order_acquire)
+						&& !whiteboardWindowMode_.load(std::memory_order_acquire))
+					&& ((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) == topmost
+					&& ((GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) == topmost
+					&& SettingAboveDrawpads(setting);
+			};
+			if (forceRefresh || !matches())
+			{
+				// 根操作可能同步向 owned 窗口发消息；设置线程不能等待 overlay 线程。
+				if (GetCurrentThreadId() == settingThreadId_.load(std::memory_order_acquire))
+					return false;
+				if (!RequestTopmostRefresh()) return false;
+			}
+			return matches();
 		}
 
 		[[nodiscard]] bool SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
@@ -403,9 +549,46 @@ namespace Inkeys::Window
 			return Submit(WindowRole::Freeze, CommandType::CancelPointerCapture);
 		}
 
-		[[nodiscard]] bool RequestTopmostRefresh()
+		[[nodiscard]] bool RequestTopmostRefresh(DWORD timeoutMilliseconds = INFINITE)
 		{
-			return Submit(WindowRole::MagnifierHost, CommandType::RefreshTopmost);
+			Command command;
+			command.role = WindowRole::MagnifierHost;
+			command.type = CommandType::RefreshTopmost;
+			if (timeoutMilliseconds != INFINITE)
+				command.deadline = std::chrono::steady_clock::now()
+					+ std::chrono::milliseconds(timeoutMilliseconds);
+			const bool refreshed = Submit(std::move(command));
+			if (!refreshed) return false;
+			std::function<void()> callback;
+			{
+				std::scoped_lock lock(topmostObserverMutex_);
+				callback = topmostRefreshObserver_;
+				if (callback) ++topmostObserverActiveCalls_;
+			}
+			if (callback)
+			{
+				topmostObserverExecuting_ = true;
+				try { callback(); }
+				catch (...) {}
+				topmostObserverExecuting_ = false;
+				{
+					std::scoped_lock lock(topmostObserverMutex_);
+					--topmostObserverActiveCalls_;
+				}
+				topmostObserverCondition_.notify_all();
+			}
+			return true;
+		}
+
+		void SetTopmostRefreshObserver(std::function<void()> callback)
+		{
+			std::unique_lock lock(topmostObserverMutex_);
+			topmostRefreshObserver_ = {};
+			if (!topmostObserverExecuting_)
+				(void)topmostObserverCondition_.wait_for(lock,
+					std::chrono::milliseconds(1500), [this]
+					{ return topmostObserverActiveCalls_ == 0; });
+			topmostRefreshObserver_ = std::move(callback);
 		}
 
 			[[nodiscard]] bool SetOverlayTopmost(bool topmost)
@@ -474,6 +657,7 @@ namespace Inkeys::Window
 			SetDrawpadSurfaceVisibility,
 			SetBounds,
 			SetClickThrough,
+			SetSettingOwnedByDrawpad,
 			SetExtendedStyleFlags,
 			SetWhiteboardWindowMode,
 			MinimizeWhiteboardGroup,
@@ -483,7 +667,11 @@ namespace Inkeys::Window
 			PromotePpt,
 			BindMessages,
 			UnbindMessages,
+			Count,
 		};
+
+		static constexpr std::size_t CommandCount =
+			static_cast<std::size_t>(CommandType::Count);
 
 		struct Command
 		{
@@ -491,14 +679,17 @@ namespace Inkeys::Window
 			WindowRole role = WindowRole::Bar;
 			RECT bounds{};
 			bool enabled = false;
+			std::optional<HWND> settingOwner;
 			DrawpadSurfaceVisibility drawpadVisibility =
 				DrawpadSurfaceVisibility::Hidden;
+			std::function<bool()> stillDesired;
 			DWORD setMask = 0;
 			DWORD clearMask = 0;
 			bool whiteboardMode = false;
 			Message::BindOptions bindOptions{};
 			std::optional<WindowSpec> spec;
 			std::shared_ptr<std::promise<bool>> completion;
+			Detail::CommandDeadline deadline;
 		};
 
 		struct CommandQueue
@@ -530,6 +721,77 @@ namespace Inkeys::Window
 			return IsValidRole(role) ? &records_[RoleIndex(role)] : nullptr;
 		}
 
+		[[nodiscard]] static bool ShouldReportCommandFailure(
+			CommandType type) noexcept
+		{
+			return type == CommandType::Show || type == CommandType::Hide ||
+				type == CommandType::SetDrawpadSurfaceVisibility ||
+				type == CommandType::SetBounds ||
+				type == CommandType::SetSettingOwnedByDrawpad ||
+				type == CommandType::RefreshTopmost ||
+				type == CommandType::PromotePpt;
+		}
+
+		[[nodiscard]] static const wchar_t* CommandName(
+			CommandType type) noexcept
+		{
+			switch (type)
+			{
+			case CommandType::Show: return L"Show";
+			case CommandType::Hide: return L"Hide";
+			case CommandType::SetDrawpadSurfaceVisibility:
+				return L"SetDrawpadSurfaceVisibility";
+			case CommandType::SetBounds: return L"SetBounds";
+			case CommandType::SetSettingOwnedByDrawpad:
+				return L"SetSettingOwnedByDrawpad";
+			case CommandType::RefreshTopmost: return L"RefreshTopmost";
+			case CommandType::PromotePpt: return L"PromotePpt";
+			default: return L"Other";
+			}
+		}
+
+		void ReportCommandResult(const Command& command, bool succeeded,
+			DWORD error, HWND hwnd) noexcept
+		{
+			if (!ShouldReportCommandFailure(command.type) ||
+				!IsValidRole(command.role)) return;
+			auto& failureActive = commandFailureActive_[
+				static_cast<std::size_t>(command.type)][RoleIndex(command.role)];
+			const bool recovered = succeeded && failureActive;
+			if (succeeded)
+			{
+				if (!recovered) return;
+				failureActive = false;
+			}
+			else
+			{
+				if (failureActive) return;
+				failureActive = true;
+			}
+
+			RECT bounds{};
+			if (hwnd) (void)GetWindowRect(hwnd, &bounds);
+			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
+			const LONG_PTR exStyle = hwnd
+				? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
+			wchar_t diagnostic[640]{};
+			swprintf_s(diagnostic,
+				L"Inkeys.Window command %s: operation=%s role=%u error=%lu "
+				L"hwnd=0x%llX owner=0x%llX valid=%d visible=%d topmost=%d "
+				L"bounds=(%ld,%ld,%ld,%ld)\n",
+				recovered ? L"recovered" : L"failed", CommandName(command.type),
+				static_cast<unsigned>(command.role),
+				error,
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(owner)),
+				hwnd && IsWindow(hwnd) ? 1 : 0,
+				hwnd && IsWindowVisible(hwnd) ? 1 : 0,
+				(exStyle & WS_EX_TOPMOST) != 0 ? 1 : 0,
+				bounds.left, bounds.top, bounds.right, bounds.bottom);
+			OutputDebugStringW(diagnostic);
+			std::fwprintf(stderr, L"%s", diagnostic);
+		}
+
 			void ResetState()
 			{
 				overlayTopmost_.store(true, std::memory_order_release);
@@ -553,6 +815,8 @@ namespace Inkeys::Window
 				record.lifecycleActive = false;
 				record.className.clear();
 			}
+			for (auto& commandFailures : commandFailureActive_)
+				commandFailures.fill(false);
 			{
 				std::scoped_lock lock(overlayCommands_.mutex, settingCommands_.mutex);
 				overlayCommands_.commands.clear();
@@ -563,7 +827,8 @@ namespace Inkeys::Window
 		void StopUnlocked() noexcept
 		{
 			if (!running_.exchange(false, std::memory_order_acq_rel) &&
-				!overlayThread_.joinable() && !settingThread_.joinable())
+				!overlayThread_.joinable() && !settingThread_.joinable() &&
+				!overlayEvent_ && !settingEvent_)
 				return;
 
 			overlayThread_.request_stop();
@@ -602,7 +867,8 @@ namespace Inkeys::Window
 			}
 		}
 
-			void RunGroup(bool settingGroup, std::stop_token token, std::promise<bool> readyPromise)
+			void RunGroup(bool settingGroup, std::stop_token token, std::promise<bool> readyPromise,
+				Shutdown::FailedCleanupSignal failedCleanup)
 			{
 				const DWORD threadId = GetCurrentThreadId();
 				(settingGroup ? settingThreadId_ : overlayThreadId_).store(
@@ -614,16 +880,20 @@ namespace Inkeys::Window
 				bool created = false;
 				try
 				{
-					created = CreateGroup(settingGroup, threadId);
+					created = CreateGroup(settingGroup, threadId, failedCleanup);
+					if (!created) failedCleanup.BeginKnownFailure();
 					readyPromise.set_value(created);
 				}
 				catch (...)
 				{
+					failedCleanup.BeginKnownFailure();
+					created = false;
 					try { readyPromise.set_value(false); }
 					catch (...) {}
 				}
 				if (!created)
 				{
+					failedCleanup.BeginKnownFailure();
 					DestroyGroup(settingGroup);
 					(settingGroup ? settingThreadId_ : overlayThreadId_).store(
 						0, std::memory_order_release);
@@ -681,7 +951,8 @@ namespace Inkeys::Window
 				if (comOwned) CoUninitialize();
 			}
 
-		[[nodiscard]] bool CreateGroup(bool settingGroup, DWORD threadId)
+		[[nodiscard]] bool CreateGroup(bool settingGroup, DWORD threadId,
+			Shutdown::FailedCleanupSignal failedCleanup)
 		{
 			constexpr WindowRole overlayCreationOrder[] = {
 				WindowRole::MagnifierHost,
@@ -689,13 +960,10 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow,
 				WindowRole::Bar,
 				WindowRole::DisplayObserver,
 			};
@@ -703,13 +971,14 @@ namespace Inkeys::Window
 			if (settingGroup)
 			{
 				const auto& spec = specs_[RoleIndex(WindowRole::Setting)];
-				if (!spec || CreateWindowFor(*spec, nullptr, threadId)) return true;
+				if (!spec || CreateStartupWindowFor(*spec, nullptr, threadId, failedCleanup)) return true;
 				if (spec->optional)
 				{
 					configured_[RoleIndex(WindowRole::Setting)].store(
 						false, std::memory_order_release);
 					return true;
 				}
+				failedCleanup.BeginKnownFailure();
 				return false;
 			}
 
@@ -728,14 +997,44 @@ namespace Inkeys::Window
 					roleOwner = Handle(WindowRole::MagnifierHost);
 				else if (role == WindowRole::DisplayObserver)
 					roleOwner = HWND_MESSAGE;
-				else if (role == WindowRole::DrawpadPresentation ||
-					role == WindowRole::Drawpad)
+				else if (role == WindowRole::DrawpadPresentation)
+				{
 					roleOwner = Handle(WindowRole::Freeze);
+					if (!roleOwner)
+					{
+						if (!spec->optional)
+						{
+							failedCleanup.BeginKnownFailure();
+							return false;
+						}
+						configured_[RoleIndex(role)].store(false, std::memory_order_release);
+						continue;
+					}
+				}
+				else if (role == WindowRole::Drawpad)
+				{
+					// 主 Drawpad 挂到 presentation surface 下，Bar/PPT 才会稳定高于两块画布。
+					roleOwner = Handle(WindowRole::DrawpadPresentation);
+					if (!roleOwner)
+					{
+						if (!spec->optional)
+						{
+							failedCleanup.BeginKnownFailure();
+							return false;
+						}
+						configured_[RoleIndex(role)].store(false, std::memory_order_release);
+						continue;
+					}
+				}
 				else if (IsUiPopup(role))
 					roleOwner = Handle(WindowRole::Drawpad);
-				if (!CreateWindowFor(*spec, roleOwner, threadId))
+				if (!CreateStartupWindowFor(*spec, roleOwner, threadId, failedCleanup))
 				{
-					if (!spec->optional) return false;
+					if (!spec->optional)
+					{
+						failedCleanup.BeginKnownFailure();
+						return false;
+					}
 					configured_[RoleIndex(role)].store(false, std::memory_order_release);
 					continue;
 				}
@@ -747,10 +1046,35 @@ namespace Inkeys::Window
 			return true;
 		}
 
+		[[nodiscard]] bool CreateStartupWindowFor(const WindowSpec& spec, HWND owner,
+			DWORD threadId, Shutdown::FailedCleanupSignal failedCleanup)
+		{
+			if (!spec.optional || !failedCleanup.HasPublisher())
+				return CreateWindowFor(spec, owner, threadId, failedCleanup);
+			// optional 的失败只约束本次 rollback，真 join 后才继续下一普通创建。
+			Shutdown::FailedCleanupDeadline optionalCleanup(failedCleanup.Publisher());
+			optionalCleanup.PrepareOrFatal();
+			const auto optionalSignal = optionalCleanup.Signal();
+			bool created = false;
+			try
+			{
+				created = CreateWindowFor(spec, owner, threadId, optionalSignal);
+			}
+			catch (...)
+			{
+				// 未处理异常将使整个 group 失败，后续 DestroyGroup 继承同一原 tick。
+				failedCleanup.BeginKnownFailure(optionalSignal.BeginKnownFailure());
+				throw;
+			}
+			optionalCleanup.CompleteOrFatal();
+			return created;
+		}
+
 		[[nodiscard]] bool CreateWindowFor(
 			const WindowSpec& spec,
 			HWND owner,
-			DWORD threadId)
+			DWORD threadId,
+			Shutdown::FailedCleanupSignal failedCleanup = {})
 		{
 			auto& record = records_[RoleIndex(spec.role)];
 			// 每次创建都绑定自己的生命周期描述，动态重建不会误用旧回调。
@@ -759,10 +1083,10 @@ namespace Inkeys::Window
 			{
 				bool prepared = false;
 				try { prepared = spec.beforeCreate(); }
-				catch (...) {}
+				catch (...) { failedCleanup.BeginKnownFailure(); }
 				if (!prepared)
 				{
-					RollbackCreation(record);
+					RollbackCreation(record, failedCleanup);
 					return false;
 				}
 				record.lifecycleActive = true;
@@ -793,7 +1117,7 @@ namespace Inkeys::Window
 					record.classRegistered = true;
 				else if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
 				{
-					RollbackCreation(record);
+					RollbackCreation(record, failedCleanup);
 					return false;
 				}
 			}
@@ -841,12 +1165,19 @@ namespace Inkeys::Window
 			if (!hwnd)
 			{
 				const DWORD createError = GetLastError();
+				if (spec.role == WindowRole::Drawpad ||
+					spec.role == WindowRole::DrawpadPresentation)
+					LogDrawpadSurfaceState(L"window-create-failed",
+						DrawpadSurfaceVisibility::Hidden, createError,
+						Handle(WindowRole::Drawpad),
+						Handle(WindowRole::DrawpadPresentation));
+				failedCleanup.BeginKnownFailure();
 				wchar_t diagnostic[256]{};
 				swprintf_s(diagnostic, L"Inkeys.Window create failed: role=%u error=%lu class=%s\n",
 					static_cast<unsigned>(spec.role), createError, record.className.c_str());
 				OutputDebugStringW(diagnostic);
 				std::fwprintf(stderr, L"%s", diagnostic);
-				RollbackCreation(record);
+				RollbackCreation(record, failedCleanup);
 				return false;
 			}
 			if (!record.lifecycleActive)
@@ -859,7 +1190,7 @@ namespace Inkeys::Window
 				record.messagesBound = record.channel->Bind(hwnd, spec.messageOptions);
 				if (!record.messagesBound)
 				{
-					RollbackCreation(record);
+					RollbackCreation(record, failedCleanup);
 					return false;
 				}
 			}
@@ -871,16 +1202,29 @@ namespace Inkeys::Window
 				SendMessageW(hwnd, WM_SETICON, ICON_SMALL,
 					reinterpret_cast<LPARAM>(windowClass.hIconSm));
 			}
-			ShowWindow(hwnd, spec.visible
+			ShowWindow(hwnd, spec.visible &&
+				!shutdownRequested_.load(std::memory_order_acquire)
 				? (IsSetting(spec.role) ? SW_SHOW : SW_SHOWNOACTIVATE)
 				: SW_HIDE);
+			if (spec.role == WindowRole::Drawpad ||
+				spec.role == WindowRole::DrawpadPresentation)
+			{
+				const auto initialSurface = !spec.visible
+					? DrawpadSurfaceVisibility::Hidden
+					: spec.role == WindowRole::Drawpad
+						? DrawpadSurfaceVisibility::Primary
+						: DrawpadSurfaceVisibility::Presentation;
+				LogDrawpadSurfaceState(L"window-created", initialSurface,
+					ERROR_SUCCESS, Handle(WindowRole::Drawpad),
+					Handle(WindowRole::DrawpadPresentation));
+			}
 			record.ready.store(true, std::memory_order_release);
 			if (spec.created)
 			{
 				try { spec.created(hwnd); }
 				catch (...)
 				{
-					RollbackCreation(record);
+					RollbackCreation(record, failedCleanup);
 					return false;
 				}
 			}
@@ -891,13 +1235,10 @@ namespace Inkeys::Window
 		{
 			constexpr WindowRole overlayDestructionOrder[] = {
 				WindowRole::Bar,
-				WindowRole::PptExitShow,
 				WindowRole::PptMiddleRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptBottomLeft,
-				WindowRole::WhiteboardRight,
-				WindowRole::WhiteboardLeft,
 				WindowRole::Drawpad,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Freeze,
@@ -924,8 +1265,21 @@ namespace Inkeys::Window
 				(void)record.channel->Unbind(hwnd);
 				record.messagesBound = false;
 			}
+			if ((role == WindowRole::Drawpad ||
+				role == WindowRole::DrawpadPresentation) && hwnd)
+				LogDrawpadSurfaceState(L"window-destroying",
+					DrawpadSurfaceVisibility::Hidden, ERROR_SUCCESS,
+					Handle(WindowRole::Drawpad),
+					Handle(WindowRole::DrawpadPresentation));
 			if (hwnd && IsWindow(hwnd))
 				DestroyWindow(hwnd);
+			if (role == WindowRole::Drawpad ||
+				role == WindowRole::DrawpadPresentation)
+				LogDrawpadSurfaceState(L"window-destroyed",
+					DrawpadSurfaceVisibility::Hidden, ERROR_SUCCESS,
+					role == WindowRole::Drawpad ? nullptr : Handle(WindowRole::Drawpad),
+					role == WindowRole::DrawpadPresentation
+						? nullptr : Handle(WindowRole::DrawpadPresentation));
 			record.hwnd.store(nullptr, std::memory_order_release);
 			record.threadId.store(0, std::memory_order_release);
 			if (record.channel)
@@ -941,8 +1295,11 @@ namespace Inkeys::Window
 			record.className.clear();
 		}
 
-		static void RollbackCreation(WindowRecord& record) noexcept
+		static void RollbackCreation(WindowRecord& record,
+			Shutdown::FailedCleanupSignal failedCleanup) noexcept
 		{
+			// 已知失败必须先激活，再进入 channel/DestroyWindow/lifecycle 清理。
+			failedCleanup.BeginKnownFailure();
 			record.ready.store(false, std::memory_order_release);
 			const HWND hwnd = record.hwnd.load(std::memory_order_acquire);
 			if (hwnd && record.messagesBound && record.channel)
@@ -985,6 +1342,28 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
+		[[nodiscard]] bool SubmitNoWait(WindowRole role, CommandType type)
+		{
+			Command command;
+			command.type = type;
+			command.role = role;
+			if (!running_.load(std::memory_order_acquire) || !IsValidRole(role))
+				return false;
+			CommandQueue& queue = IsSetting(role) ? settingCommands_ : overlayCommands_;
+			HANDLE eventHandle = IsSetting(role) ? settingEvent_ : overlayEvent_;
+			const DWORD ownerThreadId = (IsSetting(role)
+				? settingThreadId_ : overlayThreadId_).load(std::memory_order_acquire);
+			if (ownerThreadId && ownerThreadId == GetCurrentThreadId())
+				return Execute(command);
+			{
+				std::scoped_lock lock(queue.mutex);
+				if (!running_.load(std::memory_order_acquire)) return false;
+				queue.commands.push_back(std::move(command));
+			}
+			if (eventHandle) SetEvent(eventHandle);
+			return true;
+		}
+
 		[[nodiscard]] bool Submit(WindowRole role, CommandType type, bool mode)
 		{
 			Command command;
@@ -1005,6 +1384,7 @@ namespace Inkeys::Window
 			// WNDPROC/lifecycle hook 可能在所属线程内调用服务，此时直接执行避免自锁。
 			if (ownerThreadId && ownerThreadId == GetCurrentThreadId())
 				return Execute(command);
+			const auto deadline = command.deadline;
 			command.completion = std::make_shared<std::promise<bool>>();
 			auto result = command.completion->get_future();
 			{
@@ -1014,7 +1394,7 @@ namespace Inkeys::Window
 				queue.commands.push_back(std::move(command));
 			}
 			if (eventHandle) SetEvent(eventHandle);
-			return result.get();
+			return Detail::WaitForCommandResult(result, deadline);
 		}
 
 		void DrainCommands(CommandQueue& queue)
@@ -1046,13 +1426,10 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow,
 				WindowRole::Bar,
 			};
 			struct WindowStyleSnapshot
@@ -1065,9 +1442,14 @@ namespace Inkeys::Window
 			};
 			std::vector<WindowStyleSnapshot> snapshots;
 			snapshots.reserve(std::size(roles));
-			auto RestoreVisibility = [](const WindowStyleSnapshot& snapshot) noexcept
+			auto RestoreVisibility = [this](const WindowStyleSnapshot& snapshot) noexcept
 			{
 				if (!snapshot.hwnd || !IsWindow(snapshot.hwnd)) return;
+				if (shutdownRequested_.load(std::memory_order_acquire))
+				{
+					ShowWindow(snapshot.hwnd, SW_HIDE);
+					return;
+				}
 				if (snapshot.visible)
 					ShowWindow(snapshot.hwnd, snapshot.iconic
 						? SW_SHOWMINNOACTIVE : SW_SHOWNOACTIVATE);
@@ -1091,6 +1473,12 @@ namespace Inkeys::Window
 			bool succeeded = true;
 			for (const WindowRole role : roles)
 			{
+				// 分页 HWND 与 Bar 的激活样式不变，不能为无效重写制造隐藏帧。
+				if (!RequiresOverlayActivationStyleTransition(role,
+					whiteboard ? OverlayActivationMode::Presentation
+						: OverlayActivationMode::Whiteboard,
+					whiteboard ? OverlayActivationMode::Whiteboard
+						: OverlayActivationMode::Presentation)) continue;
 				const auto* record = Record(role);
 				const HWND hwnd = record ? record->hwnd.load(std::memory_order_acquire)
 					: nullptr;
@@ -1098,10 +1486,6 @@ namespace Inkeys::Window
 				const auto target = ResolveOverlayActivationStyle(role,
 					whiteboard ? OverlayActivationMode::Whiteboard
 						: OverlayActivationMode::Presentation);
-				const DWORD baseStyle = record->activeSpec
-					? record->activeSpec->exStyle : 0;
-				const LONG_PTR desired = static_cast<LONG_PTR>(
-					(baseStyle | target.setExStyle) & ~target.clearExStyle);
 				SetLastError(ERROR_SUCCESS);
 				const LONG_PTR previousStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
 				if (!previousStyle && GetLastError() != ERROR_SUCCESS)
@@ -1109,6 +1493,10 @@ namespace Inkeys::Window
 					succeeded = false;
 					break;
 				}
+				// 只切换激活策略负责的位，保留 click-through 等运行时样式。
+				const LONG_PTR desired =
+					(previousStyle | static_cast<LONG_PTR>(target.setExStyle))
+					& ~static_cast<LONG_PTR>(target.clearExStyle);
 				snapshots.push_back({ hwnd, previousStyle,
 					IsWindowVisible(hwnd) != FALSE, IsIconic(hwnd) != FALSE, false });
 				// Shell 要求动态 APPWINDOW/TOOLWINDOW 先隐藏，再 FrameChanged 后恢复。
@@ -1154,10 +1542,9 @@ namespace Inkeys::Window
 			constexpr WindowRole roles[] = {
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow, WindowRole::Bar,
+				WindowRole::Bar,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -1182,29 +1569,36 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool ApplyRestoreWhiteboardGroup() noexcept
 		{
+			if (shutdownRequested_.load(std::memory_order_acquire)) return false;
 			if (!whiteboardWindowMode_.load(std::memory_order_acquire)) return false;
 			if (!whiteboardGroupMinimized_.load(std::memory_order_acquire)) return true;
 			constexpr WindowRole roles[] = {
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow, WindowRole::Bar,
+				WindowRole::Bar,
 			};
 			const HWND anchor = Handle(WindowRole::Freeze);
 			if (!anchor || !IsWindow(anchor)) return false;
 			// 先释放锁存再触发 WM_SIZE，系统恢复消息只需观察到一次结算。
 			whiteboardGroupMinimized_.store(false, std::memory_order_release);
 			ShowWindow(anchor, SW_RESTORE);
-			if (!whiteboardVisibleBeforeMinimize_[RoleIndex(WindowRole::Freeze)])
+			if (shutdownRequested_.load(std::memory_order_acquire) ||
+				!whiteboardVisibleBeforeMinimize_[RoleIndex(WindowRole::Freeze)])
 				ShowWindow(anchor, SW_HIDE);
 			for (const WindowRole role : roles)
 			{
+				if (shutdownRequested_.load(std::memory_order_acquire)) break;
 				if (role == WindowRole::Freeze) continue;
 				if (!whiteboardVisibleBeforeMinimize_[RoleIndex(role)]) continue;
 				if (const HWND hwnd = Handle(role); hwnd && IsWindow(hwnd))
 					ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+			}
+			if (shutdownRequested_.load(std::memory_order_acquire))
+			{
+				(void)HideUserWindowsInGroup(false);
+				return false;
 			}
 			return true;
 		}
@@ -1212,8 +1606,9 @@ namespace Inkeys::Window
 		[[nodiscard]] bool ApplyCancelPointerCapture() noexcept
 		{
 			constexpr WindowRole roles[] = {
-				WindowRole::Drawpad, WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight, WindowRole::Bar,
+				WindowRole::Drawpad, WindowRole::PptBottomLeft,
+				WindowRole::PptBottomRight, WindowRole::PptMiddleLeft,
+				WindowRole::PptMiddleRight, WindowRole::Bar,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -1227,8 +1622,21 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool Execute(const Command& command)
 		{
+			// 启动调用已超时的排队刷新不能在 owner 恢复后重新修改窗口层级。
+			if (Detail::CommandExpired(command.deadline)) return false;
 			if (command.type == CommandType::HideAll)
 				return HideUserWindowsInGroup(IsSetting(command.role));
+			if (shutdownRequested_.load(std::memory_order_acquire))
+			{
+				// 旧队列中的显示事务不能越过正式退出；隐藏和销毁仍可排空。
+				if (command.type == CommandType::Show ||
+					command.type == CommandType::Create ||
+					command.type == CommandType::SetWhiteboardWindowMode ||
+					command.type == CommandType::RestoreWhiteboardGroup ||
+					(command.type == CommandType::SetDrawpadSurfaceVisibility &&
+						command.drawpadVisibility != DrawpadSurfaceVisibility::Hidden))
+					return false;
+			}
 			// 这些事务可能需要处理一组 HWND，不能被单角色 HWND 前置检查短路。
 			if (command.type == CommandType::SetWhiteboardWindowMode)
 				return ApplyWhiteboardWindowMode(command.whiteboardMode);
@@ -1246,7 +1654,11 @@ namespace Inkeys::Window
 				return DestroyDynamic(command.role);
 			if (command.type != CommandType::RefreshTopmost
 				&& (!record || !hwnd || !IsWindow(hwnd)))
+			{
+				ReportCommandResult(command, false,
+					ERROR_INVALID_WINDOW_HANDLE, hwnd);
 				return false;
+			}
 
 			switch (command.type)
 			{
@@ -1254,9 +1666,26 @@ namespace Inkeys::Window
 			case CommandType::Destroy:
 				return false;
 			case CommandType::Show:
+			{
+				bool succeeded = true;
+				DWORD error = ERROR_SUCCESS;
 				if (IsSetting(command.role))
 				{
 					ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+					if (GetWindow(hwnd, GW_OWNER)
+						&& GetWindow(hwnd, GW_OWNER) == Handle(WindowRole::Drawpad))
+					{
+						// 只调整当前继承窗口带内的顺序，不独立设置 TOPMOST。
+						SetLastError(ERROR_SUCCESS);
+						succeeded = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+							SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+						if (succeeded) succeeded = SettingAboveDrawpads(hwnd);
+						if (!succeeded)
+						{
+							error = GetLastError();
+							if (error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+						}
+					}
 					// Setting 是普通应用窗口；每次打开都交还键盘焦点。
 					(void)SetForegroundWindow(hwnd);
 					(void)SetActiveWindow(hwnd);
@@ -1268,29 +1697,86 @@ namespace Inkeys::Window
 					if (IsPpt(command.role))
 					{
 						const HWND bar = Handle(WindowRole::Bar);
-						if (!bar || !IsWindow(bar) ||
-							!SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
-								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) ||
-							!SetWindowPos(hwnd, bar, 0, 0, 0, 0,
-								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
-							return false;
+						if (!bar || !IsWindow(bar))
+						{
+							succeeded = false;
+							error = ERROR_INVALID_WINDOW_HANDLE;
+						}
+						else
+						{
+							SetLastError(ERROR_SUCCESS);
+							succeeded = SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
+								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+							if (succeeded)
+								succeeded = SetWindowPos(hwnd, bar, 0, 0, 0, 0,
+									SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+							if (!succeeded) error = GetLastError();
+						}
+					}
+					if (succeeded && IsPpt(command.role)
+						&& !IsWindowVisible(hwnd))
+					{
+						succeeded = false;
+						error = ERROR_GEN_FAILURE;
 					}
 				}
-				return true;
+				if (shutdownRequested_.load(std::memory_order_acquire))
+				{
+					ShowWindow(hwnd, SW_HIDE);
+					return false;
+				}
+				ReportCommandResult(command, succeeded,
+					error == ERROR_SUCCESS && !succeeded ? ERROR_GEN_FAILURE : error,
+					hwnd);
+				return succeeded;
+			}
 			case CommandType::Hide:
 				ShowWindow(hwnd, SW_HIDE);
+				if (IsPpt(command.role) && IsWindowVisible(hwnd))
+				{
+					ReportCommandResult(command, false, ERROR_GEN_FAILURE, hwnd);
+					return false;
+				}
+				ReportCommandResult(command, true, ERROR_SUCCESS, hwnd);
 				return true;
 			case CommandType::HideAll:
 				return false;
 			case CommandType::SetDrawpadSurfaceVisibility:
-				return ApplyDrawpadSurfaceVisibility(command.drawpadVisibility);
+			{
+				// 提交前在窗口 owner thread 复核版本，过期退出不能撤销新笔的 capture。
+				if (command.stillDesired && !command.stillDesired()) return false;
+				if (command.drawpadVisibility != DrawpadSurfaceVisibility::Hidden &&
+					shutdownRequested_.load(std::memory_order_acquire)) return false;
+				SetLastError(ERROR_SUCCESS);
+				const bool succeeded =
+					ApplyDrawpadSurfaceVisibility(command.drawpadVisibility);
+				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				ReportCommandResult(command, succeeded, error, hwnd);
+				return succeeded;
+			}
 			case CommandType::SetBounds:
-				if (command.role == WindowRole::Drawpad)
-					return ApplyDrawpadBounds(command.bounds);
-				return SetWindowPos(hwnd, nullptr, command.bounds.left,
-					command.bounds.top, command.bounds.right - command.bounds.left,
-					command.bounds.bottom - command.bounds.top,
-					SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
+			{
+				SetLastError(ERROR_SUCCESS);
+				const bool succeeded = command.role == WindowRole::Drawpad
+					? ApplyDrawpadBounds(command.bounds)
+					: SetWindowPos(hwnd, nullptr, command.bounds.left,
+						command.bounds.top, command.bounds.right - command.bounds.left,
+						command.bounds.bottom - command.bounds.top,
+						SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
+				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+				bool applied = succeeded;
+				if (applied && IsPpt(command.role))
+				{
+					RECT actual{};
+					applied = GetWindowRect(hwnd, &actual) != FALSE
+						&& EqualRect(&actual, &command.bounds) != FALSE;
+					if (!applied) error = ERROR_GEN_FAILURE;
+				}
+				if (!applied && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				ReportCommandResult(command, applied, error, hwnd);
+				return applied;
+			}
 			case CommandType::SetClickThrough:
 			{
 				LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
@@ -1304,6 +1790,63 @@ namespace Inkeys::Window
 					hwnd, nullptr, 0, 0, 0, 0,
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
 					SWP_NOACTIVATE | SWP_FRAMECHANGED) != FALSE;
+			}
+			case CommandType::SetSettingOwnedByDrawpad:
+			{
+				const HWND drawpad = Handle(WindowRole::Drawpad);
+				if (command.enabled && !command.settingOwner && (!drawpad || !IsWindow(drawpad)))
+				{
+					ReportCommandResult(command, false,
+						ERROR_INVALID_WINDOW_HANDLE, hwnd);
+					return false;
+				}
+
+				const HWND desiredOwner = command.settingOwner.value_or(
+					command.enabled ? drawpad : nullptr);
+				const HWND previousOwner = GetWindow(hwnd, GW_OWNER);
+				bool succeeded = true;
+				DWORD error = ERROR_SUCCESS;
+				if (previousOwner != desiredOwner)
+				{
+					// GWLP_HWNDPARENT 对顶层 WS_POPUP 修改的是 owner；命令固定在 Setting 线程执行。
+					SetLastError(ERROR_SUCCESS);
+					const LONG_PTR previous = SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT,
+						reinterpret_cast<LONG_PTR>(desiredOwner));
+					error = GetLastError();
+					succeeded = previous != 0 || error == ERROR_SUCCESS;
+					if (succeeded && GetWindow(hwnd, GW_OWNER) != desiredOwner)
+					{
+						succeeded = false;
+						error = ERROR_GEN_FAILURE;
+					}
+				}
+
+				if (succeeded && !command.enabled)
+				{
+					SetLastError(ERROR_SUCCESS);
+					succeeded = SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+					if (!succeeded)
+					{
+						error = GetLastError();
+						if (error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+					}
+				}
+
+				if (!succeeded && GetWindow(hwnd, GW_OWNER) != previousOwner)
+				{
+					// 后半段失败时恢复原 owner，禁止留下只完成一半的窗口关系。
+					SetLastError(ERROR_SUCCESS);
+					const LONG_PTR restored = SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT,
+						reinterpret_cast<LONG_PTR>(previousOwner));
+					const DWORD rollbackError = GetLastError();
+					if ((restored == 0 && rollbackError != ERROR_SUCCESS) ||
+						GetWindow(hwnd, GW_OWNER) != previousOwner)
+						error = rollbackError == ERROR_SUCCESS
+							? ERROR_GEN_FAILURE : rollbackError;
+				}
+				ReportCommandResult(command, succeeded, error, hwnd);
+				return succeeded;
 			}
 			case CommandType::SetExtendedStyleFlags:
 			{
@@ -1331,10 +1874,16 @@ namespace Inkeys::Window
 					// Whiteboard 是普通可激活窗口组，任何外部刷新都不得把它重新推回 TOPMOST。
 					const bool keepTopmost = overlayTopmost_.load(std::memory_order_acquire)
 						&& !whiteboardWindowMode_.load(std::memory_order_acquire);
-					if (!root || !SetWindowPos(
+					SetLastError(ERROR_SUCCESS);
+					const bool succeeded = root && SetWindowPos(
 						root, keepTopmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
-						return false;
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+					DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+					if (!root) error = ERROR_INVALID_WINDOW_HANDLE;
+					else if (!succeeded && error == ERROR_SUCCESS)
+						error = ERROR_GEN_FAILURE;
+					ReportCommandResult(command, succeeded, error, root);
+					if (!succeeded) return false;
 					ApplyOverlayFullscreen(root);
 					return true;
 				}
@@ -1342,12 +1891,23 @@ namespace Inkeys::Window
 			{
 				if (!IsPpt(command.role)) return false;
 				const HWND bar = Handle(WindowRole::Bar);
-				if (!bar || !IsWindow(bar)) return false;
+				if (!bar || !IsWindow(bar))
+				{
+					ReportCommandResult(command, false,
+						ERROR_INVALID_WINDOW_HANDLE, hwnd);
+					return false;
+				}
 				// no-activate 窗口没有焦点自动排序：Bar 固定最上，交互 PPT 紧随其后。
-				if (!SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
-					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) return false;
-				return SetWindowPos(hwnd, bar, 0, 0, 0, 0,
+				SetLastError(ERROR_SUCCESS);
+				bool succeeded = SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+				if (succeeded)
+					succeeded = SetWindowPos(hwnd, bar, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				ReportCommandResult(command, succeeded, error, hwnd);
+				return succeeded;
 			}
 			case CommandType::BindMessages:
 				if (!record->channel) return false;
@@ -1359,6 +1919,8 @@ namespace Inkeys::Window
 				if (!record->channel || !record->messagesBound) return false;
 				record->messagesBound = !record->channel->Unbind(hwnd);
 				return !record->messagesBound;
+			case CommandType::Count:
+				return false;
 			}
 			return false;
 		}
@@ -1368,7 +1930,10 @@ namespace Inkeys::Window
 			if (settingGroup)
 			{
 				if (const HWND hwnd = Handle(WindowRole::Setting); hwnd && IsWindow(hwnd))
+				{
 					ShowWindow(hwnd, SW_HIDE);
+					return !IsWindowVisible(hwnd);
+				}
 				return true;
 			}
 
@@ -1378,21 +1943,34 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow,
 				WindowRole::Bar,
 			};
+			bool hidden = true;
+			const HWND captured = GetCapture();
+			if (captured)
+			{
+				for (const auto role : overlayRoles)
+				{
+					if (Handle(role) != captured) continue;
+					// 隐藏透明画布前撤销本 owner 的 capture，避免退出期继续吞掉桌面输入。
+					if (!ReleaseCapture() && GetCapture() == captured)
+						hidden = false;
+					break;
+				}
+			}
 			for (const auto role : overlayRoles)
 			{
 				if (const HWND hwnd = Handle(role); hwnd && IsWindow(hwnd))
+				{
 					ShowWindow(hwnd, SW_HIDE);
+					if (IsWindowVisible(hwnd)) hidden = false;
+				}
 			}
-			return true;
+			return hidden;
 		}
 
 		[[nodiscard]] bool ApplyDrawpadSurfaceVisibility(
@@ -1400,9 +1978,45 @@ namespace Inkeys::Window
 		{
 			const HWND primary = Handle(WindowRole::Drawpad);
 			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
+			const bool wasPrimaryVisible = primary && IsWindowVisible(primary);
+			const bool wasPresentationVisible = presentation && IsWindowVisible(presentation);
+			const auto complete = [&](bool succeeded, DWORD error) noexcept
+			{
+				// 只在可见性变化或失败时采样窗口快照，并恢复 Win32 错误供命令层记录。
+				const bool changed = wasPrimaryVisible !=
+					(primary && IsWindowVisible(primary)) || wasPresentationVisible !=
+					(presentation && IsWindowVisible(presentation));
+				if (!succeeded || changed)
+					LogDrawpadSurfaceState(succeeded ? L"visibility-applied"
+						: L"visibility-failed", visibility, error, primary, presentation);
+				SetLastError(error);
+				return succeeded;
+			};
 			if (!primary || !presentation || !IsWindow(primary) || !IsWindow(presentation))
-				return false;
+			{
+				return complete(false, ERROR_INVALID_WINDOW_HANDLE);
+			}
+			if (visibility != DrawpadSurfaceVisibility::Primary && GetCapture() == primary)
+			{
+				// 仅释放本次要撤下的主画布捕获，不向主栏或分页控件广播取消消息。
+				if (!ReleaseCapture() && GetCapture() == primary)
+				{
+					const DWORD error = GetLastError();
+					ShowWindow(primary, SW_HIDE);
+					ShowWindow(presentation, SW_HIDE);
+					return complete(false,
+						error == ERROR_SUCCESS ? ERROR_GEN_FAILURE : error);
+				}
+			}
 
+			const auto matchesVisibility = [&]() noexcept
+			{
+				return (IsWindowVisible(primary) != FALSE) ==
+					(visibility == DrawpadSurfaceVisibility::Primary) &&
+					(IsWindowVisible(presentation) != FALSE) ==
+					(visibility == DrawpadSurfaceVisibility::Presentation);
+			};
+			DWORD deferredError = ERROR_SUCCESS;
 			HDWP positions = BeginDeferWindowPos(2);
 			if (positions)
 			{
@@ -1414,25 +2028,55 @@ namespace Inkeys::Window
 						? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
 				positions = DeferWindowPos(positions, primary, nullptr,
 					0, 0, 0, 0, primaryFlags);
-				if (positions)
+				if (!positions)
+					deferredError = GetLastError();
+				else
+				{
 					positions = DeferWindowPos(positions, presentation, nullptr,
 						0, 0, 0, 0, presentationFlags);
-				if (positions && EndDeferWindowPos(positions)) return true;
+					if (!positions) deferredError = GetLastError();
+				}
+			}
+			else deferredError = GetLastError();
+			if (positions)
+			{
+				if (EndDeferWindowPos(positions))
+				{
+					if (visibility != DrawpadSurfaceVisibility::Hidden &&
+						shutdownRequested_.load(std::memory_order_acquire))
+					{
+						ShowWindow(primary, SW_HIDE);
+						ShowWindow(presentation, SW_HIDE);
+						return complete(false, ERROR_OPERATION_ABORTED);
+					}
+					// USER32 返回成功后仍读回两窗；旧主窗可见会继续拦截桌面输入。
+					if (matchesVisibility()) return complete(true, ERROR_SUCCESS);
+					deferredError = ERROR_GEN_FAILURE;
+				}
+				else deferredError = GetLastError();
 			}
 
 			// 批量切换失败时先清空两窗可见性，再显示唯一目标，禁止 alpha 叠加。
 			ShowWindow(primary, SW_HIDE);
 			ShowWindow(presentation, SW_HIDE);
+			if (visibility != DrawpadSurfaceVisibility::Hidden &&
+				shutdownRequested_.load(std::memory_order_acquire))
+			{
+				return complete(false, ERROR_OPERATION_ABORTED);
+			}
 			if (visibility == DrawpadSurfaceVisibility::Primary)
 				ShowWindow(primary, SW_SHOWNOACTIVATE);
 			else if (visibility == DrawpadSurfaceVisibility::Presentation)
 				ShowWindow(presentation, SW_SHOWNOACTIVATE);
-			return (visibility == DrawpadSurfaceVisibility::Primary
-				? IsWindowVisible(primary) != FALSE
-				: visibility == DrawpadSurfaceVisibility::Presentation
-					? IsWindowVisible(presentation) != FALSE
-					: IsWindowVisible(primary) == FALSE &&
-						IsWindowVisible(presentation) == FALSE);
+			if (matchesVisibility())
+			{
+				return complete(true, ERROR_SUCCESS);
+			}
+			// 目标表面失败时保留安全的双隐藏状态，由状态线程按最新版本重试。
+			ShowWindow(primary, SW_HIDE);
+			ShowWindow(presentation, SW_HIDE);
+			return complete(false, deferredError == ERROR_SUCCESS
+				? ERROR_GEN_FAILURE : deferredError);
 		}
 
 		[[nodiscard]] bool ApplyDrawpadBounds(const RECT& bounds) noexcept
@@ -1440,7 +2084,10 @@ namespace Inkeys::Window
 			const HWND primary = Handle(WindowRole::Drawpad);
 			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
 			if (!primary || !presentation || !IsWindow(primary) || !IsWindow(presentation))
+			{
+				SetLastError(ERROR_INVALID_WINDOW_HANDLE);
 				return false;
+			}
 			const int width = bounds.right - bounds.left;
 			const int height = bounds.bottom - bounds.top;
 			HDWP positions = BeginDeferWindowPos(2);
@@ -1473,10 +2120,14 @@ namespace Inkeys::Window
 				owner = Handle(WindowRole::Drawpad);
 				if (!owner) return false;
 			}
-			else if (spec.role == WindowRole::DrawpadPresentation ||
-				spec.role == WindowRole::Drawpad)
+			else if (spec.role == WindowRole::DrawpadPresentation)
 			{
 				owner = Handle(WindowRole::Freeze);
+				if (!owner) return false;
+			}
+			else if (spec.role == WindowRole::Drawpad)
+			{
+				owner = Handle(WindowRole::DrawpadPresentation);
 				if (!owner) return false;
 			}
 			else if (!IsSetting(spec.role))
@@ -1547,7 +2198,7 @@ namespace Inkeys::Window
 			}
 			if (role == WindowRole::Drawpad)
 			{
-				for (auto popup = WindowRole::WhiteboardLeft;
+				for (auto popup = WindowRole::PptBottomLeft;
 					popup <= WindowRole::Bar;
 					popup = static_cast<WindowRole>(static_cast<unsigned>(popup) + 1))
 					if (Handle(popup)) return false;
@@ -1562,6 +2213,7 @@ namespace Inkeys::Window
 		std::array<std::atomic_bool, RoleCount> configured_{};
 		std::array<WindowRecord, RoleCount> records_{};
 		std::atomic_bool running_ = false;
+		std::atomic_bool shutdownRequested_ = false;
 		std::jthread overlayThread_;
 		std::jthread settingThread_;
 		std::atomic<DWORD> overlayThreadId_ = 0;
@@ -1571,12 +2223,21 @@ namespace Inkeys::Window
 		CommandQueue overlayCommands_;
 		CommandQueue settingCommands_;
 		std::mutex lifecycleMutex_;
+		std::array<std::array<bool, RoleCount>, CommandCount>
+			commandFailureActive_{};
 			std::atomic_bool overlayTopmost_ = true;
+			std::mutex topmostObserverMutex_;
+			std::condition_variable topmostObserverCondition_;
+			std::function<void()> topmostRefreshObserver_;
+			std::size_t topmostObserverActiveCalls_ = 0;
+			static thread_local bool topmostObserverExecuting_;
 			std::atomic_bool overlayFullscreen_ = false;
 			std::atomic_bool whiteboardWindowMode_ = false;
 			std::atomic_bool whiteboardGroupMinimized_ = false;
 			std::array<bool, RoleCount> whiteboardVisibleBeforeMinimize_{};
 		};
+
+	thread_local bool Service::Impl::topmostObserverExecuting_ = false;
 
 	Service::Service(std::size_t messageCapacity)
 		: impl_(std::make_unique<Impl>(messageCapacity))
@@ -1585,14 +2246,16 @@ namespace Inkeys::Window
 
 	Service::~Service() = default;
 
-	bool Service::Start(std::vector<WindowSpec> specs)
+	bool Service::Start(std::vector<WindowSpec> specs,
+		Shutdown::FailedCleanupSignal failedCleanup)
 	{
-		return impl_->Start(std::move(specs));
+		return impl_->Start(std::move(specs), std::move(failedCleanup));
 	}
 
 	void Service::StopAndJoin() noexcept { impl_->Stop(); }
 	void Service::Stop() noexcept { StopAndJoin(); }
 	bool Service::Running() const noexcept { return impl_->Running(); }
+	void Service::BeginShutdown() noexcept { impl_->BeginShutdown(); }
 	HWND Service::Handle(WindowRole role) const noexcept { return impl_->Handle(role); }
 	bool Service::Ready(WindowRole role) const noexcept { return impl_->Ready(role); }
 	bool Service::AllReady() const noexcept { return impl_->AllReady(); }
@@ -1614,12 +2277,19 @@ namespace Inkeys::Window
 	bool Service::Show(WindowRole role) { return impl_->Show(role); }
 	bool Service::Hide(WindowRole role) { return impl_->Hide(role); }
 	bool Service::HideAllUserWindows() { return impl_->HideAllUserWindows(); }
-	bool Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility visibility)
+	bool Service::RequestHideAllUserWindows() { return impl_->RequestHideAllUserWindows(); }
+	bool Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility visibility,
+		std::function<bool()> stillDesired)
 	{
-		return impl_->SetDrawpadSurfaceVisibility(visibility);
+		return impl_->SetDrawpadSurfaceVisibility(visibility,
+			std::move(stillDesired));
 	}
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
 	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }
+	bool Service::SetSettingOwnedByDrawpad(bool enabled)
+	{
+		return impl_->SetSettingOwnedByDrawpad(enabled);
+	}
 		bool Service::SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
 		{
 			return impl_->SetExtendedStyleFlags(role, setMask, clearMask);
@@ -1648,7 +2318,12 @@ namespace Inkeys::Window
 		{
 			return impl_->CancelPointerCapture();
 		}
-		bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
+		bool Service::RequestTopmostRefresh(DWORD timeoutMilliseconds)
+		{ return impl_->RequestTopmostRefresh(timeoutMilliseconds); }
+		void Service::SetTopmostRefreshObserver(std::function<void()> callback)
+		{
+			impl_->SetTopmostRefreshObserver(std::move(callback));
+		}
 		bool Service::SetOverlayTopmost(bool topmost) { return impl_->SetOverlayTopmost(topmost); }
 		bool Service::OverlayTopmost() const noexcept { return impl_->OverlayTopmost(); }
 		bool Service::SetOverlayFullscreen(bool fullscreen)

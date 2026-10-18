@@ -1,0 +1,9 @@
+{
+  "command": [
+    "Build/ARM64/Debug/Inkeys.exe",
+    "--draw3-renderer-map-test"
+  ],
+  "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw",
+  "exit": 0,
+  "seconds": 0.1508825999990222
+}

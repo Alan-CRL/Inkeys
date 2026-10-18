@@ -380,12 +380,11 @@ int GetStopTimingError()
 {
 	const auto snapshot = Inkeys::Display::GetSnapshot();
 	const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
-	if (!monitor || setlist.paintDevice == 1 ||
-		monitor->edid.physicalHeightCm == 0 || monitor->edid.physicalWidthCm == 0) return 5;
+	if (!monitor || setlist.paintDevice == 1 || !monitor->physicalSize.available) return 5;
 	return min(0.3f * static_cast<float>(monitor->pixelWidth) /
-		static_cast<float>(monitor->edid.physicalHeightCm),
+		static_cast<float>(monitor->physicalSize.widthCm),
 		0.5f * static_cast<float>(monitor->pixelHeight) /
-		static_cast<float>(monitor->edid.physicalHeightCm));
+		static_cast<float>(monitor->physicalSize.heightCm));
 }
 float drawingScale = 1.0f;
 float GetDrawingScale()

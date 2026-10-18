@@ -61,12 +61,27 @@
     <Filter Include="Modules\Inkeys\UI\Ppt">
       <UniqueIdentifier>{cd7bf888-8809-4d4d-a204-bef48c6718c4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\UI\PageControl">
+      <UniqueIdentifier>{164ef41b-2085-4bcb-8854-3f3277726105}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Modules\Inkeys\UI\Whiteboard">
       <UniqueIdentifier>{5de71bc8-ced2-45ae-bffd-b081b69eb30a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\Freeze">
+      <UniqueIdentifier>{f1b4b267-6b02-4b38-a951-7f9dfb4f30d4}</UniqueIdentifier>
     </Filter>
     <Filter Include="Modules\Inkeys\UI\RenderPipeline">
       <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
     </Filter>
+	<Filter Include="Modules\Inkeys\UI\StartupPreview">
+	  <UniqueIdentifier>{9f4a2cc1-a03b-4a87-9b84-23ba06bc3cc0}</UniqueIdentifier>
+	</Filter>
+	<Filter Include="Modules\Inkeys\Startup">
+	  <UniqueIdentifier>{a34ee98c-79a7-4129-a37f-abca38605aa2}</UniqueIdentifier>
+	</Filter>
+	<Filter Include="Modules\Inkeys\UI\MessageBox">
+	  <UniqueIdentifier>{94b0fa6a-4d16-47d4-bda0-2b3688939a44}</UniqueIdentifier>
+	</Filter>
     <Filter Include="Modules\Inkeys\Conv">
       <UniqueIdentifier>{1522c836-7846-41b3-bbd8-93034e6b9495}</UniqueIdentifier>
     </Filter>
@@ -273,19 +288,52 @@
     <ClInclude Include="IdtMain.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Helper\FailedCleanupRealCases.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentationProbe.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.Presentation.Source.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
     <ClInclude Include="IdtAtomic.h">
       <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h">
+      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
+	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h">
+	  <Filter>Modules\Inkeys\UI\Bar</Filter>
+	</ClInclude>
+	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h">
+	  <Filter>Modules\Inkeys\UI\Freeze</Filter>
+	</ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.A2.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="IdtRts.h">
@@ -453,13 +501,28 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\PptSession.h" />
+    <ClInclude Include="PptSettingsPersistence.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h">
@@ -467,6 +530,9 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Net\UpdatePathSafety.h">
+      <Filter>Modules\Inkeys\Net</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
@@ -481,6 +547,12 @@
       <Filter>Modules\Inkeys\Business</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Business\PenToolState.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\PenWidthPolicy.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\PenWidthPreferences.hpp">
       <Filter>Modules\Inkeys\Business</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Window\Window.Legacy.hpp">
@@ -1718,6 +1790,18 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallChrome.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeMotion.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttribute.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
@@ -1734,6 +1818,15 @@
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationProbe.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Source.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Test.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp">
@@ -1775,6 +1868,12 @@
     <ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm">
       <Filter>Modules\Inkeys\UI\Ppt</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\PageControl\PageControl.cppm">
+      <Filter>Modules\Inkeys\UI\PageControl</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\PageControl\PageControl.cpp">
+      <Filter>Modules\Inkeys\UI\PageControl</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp">
       <Filter>Modules\Inkeys\UI\Ppt</Filter>
     </ClCompile>
@@ -1784,12 +1883,33 @@
     <ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp">
       <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm">
+      <Filter>Modules\Inkeys\UI\Freeze</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm">
       <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp">
       <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
     </ClCompile>
+	<ClCompile Include="Inkeys\Startup\Startup.Progress.cppm">
+	  <Filter>Modules\Inkeys\Startup</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\Startup\Startup.Progress.cpp">
+	  <Filter>Modules\Inkeys\Startup</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cppm">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cpp">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cppm">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cpp">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
     <ClCompile Include="Inkeys\Load\Load.cppm">
       <Filter>Modules\Inkeys\Load</Filter>
     </ClCompile>
@@ -1821,6 +1941,15 @@
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\FailedCleanupDeadline.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Ui3PresentationFixtureAuth.cpp">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm">
@@ -1880,6 +2009,18 @@
     <ClCompile Include="Inkeys\Window\Window.Legacy.cpp">
       <Filter>Modules\Inkeys\Window</Filter>
     </ClCompile>
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cppm">
+	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cpp">
+	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Layout.cpp">
+	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Window.cpp">
+	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+	</ClCompile>
     <ClCompile Include="Inkeys\Display\Display.cppm">
       <Filter>Modules\Inkeys\Display</Filter>
     </ClCompile>
@@ -1901,6 +2042,21 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2000,6 +2156,9 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.StrokeGeometry.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2024,7 +2183,20 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.FailedCleanupFixture.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Business\PptSession.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp">
@@ -2037,6 +2209,9 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
+	<Image Include="src\message_box\error.png">
+	  <Filter>资源文件</Filter>
+	</Image>
     <Image Include="src\endshow.png">
       <Filter>资源文件</Filter>
     </Image>
@@ -2333,6 +2508,9 @@
     <None Include="src\UI\barEraser.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barAutoEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barDivider.svg">
       <Filter>资源文件</Filter>
     </None>
@@ -2466,4 +2644,5 @@
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </FxCompile>
   </ItemGroup>
+  <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.filters.props" />
 </Project>

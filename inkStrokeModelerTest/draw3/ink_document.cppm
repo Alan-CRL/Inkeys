@@ -151,6 +151,7 @@ export namespace draw3
 		InkPage* PageAt(size_t index) noexcept;
 		const InkPage* PageAt(size_t index) const noexcept;
 		std::span<const InkPage> Pages() const noexcept;
+		std::vector<InkPage> TakePages() noexcept;
 
 	private:
 		InkGuid workspaceGuid_;

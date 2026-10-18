@@ -17,6 +17,10 @@ public:
 	IdtAtomic<bool> fold = false;
 	IdtAtomic<bool> drawAttribute = false;
 	IdtAtomic<bool> geometryAttribute = false;
+	IdtAtomic<bool> eraserAttribute = false;
+	IdtAtomic<bool> eraserSensitivityOpen = false;
+	// 撤回属性：点击主栏撤回后展开，内置单 70x70 Redo；继续点 Undo/Redo 保持展开。
+	IdtAtomic<bool> recallAttribute = false;
 	// 更多浮层状态同步到主栏入口的 Selected 视觉；折叠主栏时强制关闭。
 	IdtAtomic<bool> moreExpanded = false;
 	IdtAtomic<bool> moreClosePress = false;
@@ -46,9 +50,9 @@ public:
 		IdtAtomic<bool> thicknessPreviewDragging = false;
 		IdtAtomic<bool> thicknessSliderPressed = false;
 		IdtAtomic<bool> thicknessSliderCapture = false;
-		IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
+		IdtAtomic<double> thicknessSliderCandidateWidth = 0.0;
 		// FineDial 只共享渲染所需快照；运动阶段、速度和采样环留在交互线程。
-		IdtAtomic<float> thicknessFineDialVisualWidth = 0.0f;
+		IdtAtomic<double> thicknessFineDialVisualWidth = 0.0;
 		IdtAtomic<bool> thicknessFineDialCandidateActive = false;
 		IdtAtomic<bool> thicknessFineDialDragging = false;
 		IdtAtomic<bool> thicknessFineDialPhysicsActive = false;
@@ -58,7 +62,7 @@ public:
 		IdtAtomic<bool> thicknessFineDialActivationPreviewActive = false;
 		IdtAtomic<bool> thicknessFineDialActivationDwellActive = false;
 		IdtAtomic<float> thicknessFineDialActivationPreviewProgress = 0.0f;
-		IdtAtomic<float> thicknessFineDialActivationPreviewVisualWidth = 0.0f;
+		IdtAtomic<double> thicknessFineDialActivationPreviewVisualWidth = 0.0;
 		// 仅正常 FineDial -> Preview 退出请求渲染侧锁存 Popup 当前位置。
 		IdtAtomic<bool> thicknessFineDialPopupExitLatchRequested = false;
 		// 拖动改值后静止保持：提示/进度/锁定，跨交互与渲染线程共享。
@@ -114,6 +118,7 @@ public:
 
 	void PositionUpdate(double tarZoom);
 	void ThicknessDisplayUpdate();
+	void ThicknessDisplayUpdate(double penWidth);
 };
 class BarStyleClass
 {

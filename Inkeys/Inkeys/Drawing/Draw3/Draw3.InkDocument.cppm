@@ -90,7 +90,10 @@ export namespace Inkeys::Drawing::Draw3
 	{
 	public:
 		InkStroke(StoredInkStyle style, std::vector<StoredInkPoint> points,
+			std::optional<size_t> debugTailSegmentStart = std::nullopt,
 			bool renderOnlyWhenLatest = false) noexcept;
+		// 临时诊断元数据随内存 Stroke 重绘，不写入文档或改变持久样式。
+		std::optional<size_t> DebugTailSegmentStart() const noexcept;
 
 		const StoredInkStyle& Style() const noexcept;
 		std::span<const StoredInkPoint> Points() const noexcept;
@@ -101,6 +104,7 @@ export namespace Inkeys::Drawing::Draw3
 	private:
 		StoredInkStyle style_ = {};
 		std::vector<StoredInkPoint> points_;
+		std::optional<size_t> debugTailSegmentStart_;
 		bool renderOnlyWhenLatest_ = false;
 	};
 
@@ -159,7 +163,11 @@ export namespace Inkeys::Drawing::Draw3
 		std::optional<size_t> AppendPage(InkPage newPage);
 		InkPage* PageAt(size_t index) noexcept;
 		const InkPage* PageAt(size_t index) const noexcept;
+		// 仅在恢复事务提交阶段替换同一索引页；Page GUID 必须保持不变。
+		bool ReplacePage(size_t index, InkPage replacement) noexcept;
 		std::span<const InkPage> Pages() const noexcept;
+		// 仅由绘制线程在 Presentation 拓扑迁移时取走整组页面，保持 GUID 和 Canvas 内容。
+		std::vector<InkPage> TakePages() noexcept;
 
 	private:
 		InkGuid workspaceGuid_;

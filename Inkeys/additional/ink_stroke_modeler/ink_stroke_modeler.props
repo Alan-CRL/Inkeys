@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildThisFileDirectory)ink_stroke_modeler.sources.props" />
+  <PropertyGroup>
+    <InkStrokeModelerCanonicalIncludeDirectory>$(MSBuildThisFileDirectory)..\</InkStrokeModelerCanonicalIncludeDirectory>
+    <VcpkgConfiguration>Release</VcpkgConfiguration>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <!-- 使用 vcpkg 同版头/库；installed Abseil 头优先于保留的 .0 头副本。 -->
+      <AdditionalIncludeDirectories>$(_ZVcpkgCurrentInstalledDir)include;$(InkStrokeModelerCanonicalIncludeDirectory);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)terminal_tail_reconstructor.h" />
+    <ClCompile Include="@(InkStrokeModelerSource)">
+      <InkStrokeModelerRuntime>true</InkStrokeModelerRuntime>
+      <!-- 仅 Modeler 保持旧 MinSizeRel 条件，自有 Debug 代码继续沿用原配置。 -->
+      <CompileAs>CompileAsCpp</CompileAs>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+      <EnableModules>false</EnableModules>
+      <Optimization>MinSpace</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <OmitFramePointers Condition="'$(Platform)'=='Win32'">true</OmitFramePointers>
+      <OmitFramePointers Condition="'$(Platform)'!='Win32'"></OmitFramePointers>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;_ITERATOR_DEBUG_LEVEL=0</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <SDLCheck>false</SDLCheck>
+      <ObjectFileName>$(IntDir)ink_modeler_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+  <Target Name="ValidateInkStrokeModelerProvider" BeforeTargets="PrepareForBuild">
+    <!-- 路径和 Release 库选择来自固定 vcpkg 集成，不能静默使用旧头或 Debug ABI。 -->
+    <Error Condition="'$(VcpkgEnabled)'!='true' or '$(_ZVcpkgCurrentInstalledDir)'=='' or '$(VcpkgAutoLink)'=='false'"
+           Text="Ink Stroke Modeler requires the repository vcpkg provider and automatic static library linking." />
+    <Error Condition="'$(_ZVcpkgNormalizedConfiguration)'!='Release'"
+           Text="Ink Stroke Modeler requires vcpkg Release libraries for /MT and NDEBUG." />
+  </Target>
+  <Target Name="SetInkStrokeModelerObjectPaths" BeforeTargets="PrepareForBuild">
+    <!-- 后导入的输出目录覆盖生效后再取 IntDir，避免与业务同名 obj 或基线目录混用。 -->
+    <ItemGroup>
+      <ClCompile Condition="'%(ClCompile.InkStrokeModelerRuntime)'=='true'">
+        <ObjectFileName>$(IntDir)ink_modeler_%(Filename).obj</ObjectFileName>
+      </ClCompile>
+    </ItemGroup>
+  </Target>
+</Project>

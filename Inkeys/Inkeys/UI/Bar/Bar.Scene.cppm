@@ -42,9 +42,24 @@ export namespace Inkeys::UI::Bar
 	using BarSurfaceWidgetId = std::uint32_t;
 	inline constexpr BarSurfaceWidgetId BarSurfaceNoWidget = 0;
 
+	enum class BarSurfaceWidgetKind : std::uint8_t
+	{
+		Button,
+		DragHandle,
+	};
+
+	enum class BarSurfaceTextUpdateMode : std::uint8_t
+	{
+		Animated,
+		Immediate,
+	};
+
 	struct BarSurfaceWidgetSpec
 	{
 		BarSurfaceWidgetId id = BarSurfaceNoWidget;
+		BarSurfaceWidgetKind kind = BarSurfaceWidgetKind::Button;
+		BarButtonVisualLayoutKind layoutKind =
+			BarButtonVisualLayoutKind::Custom;
 		BarSurfaceDipRect bounds{};
 		bool visible = true;
 		bool enabled = true;
@@ -54,15 +69,23 @@ export namespace Inkeys::UI::Bar
 		std::wstring iconResource;
 		std::wstring primaryText;
 		std::wstring secondaryText;
+		BarSurfaceTextUpdateMode textUpdateMode =
+			BarSurfaceTextUpdateMode::Animated;
 		std::optional<double> iconAngle;
 		double iconSizeDip = BarButtonTwoTwoIconSizeDip;
+		double iconOffsetXDip = 0.0;
 		double iconOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
 		double primaryFontSizeDip = BarButtonTwoTwoIconSizeDip;
+		double primaryOffsetXDip = 0.0;
 		double primaryOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
+		double primarySlotWidthDip = 0.0;
 		double primarySlotHeightDip = BarButtonTwoTwoIconSizeDip;
 		double secondaryFontSizeDip = BarButtonTwoTwoLabelFontSizeDip;
+		double secondaryOffsetXDip = 0.0;
 		double secondaryOffsetYDip = BarButtonTwoTwoLabelOffsetYDip;
+		double secondarySlotWidthDip = 0.0;
 		double secondarySlotHeightDip = BarButtonTwoTwoLabelHeightDip;
+		double dragOpacity = 0.72;
 		COLORREF fill = RGB(0, 0, 0);
 		COLORREF content = RGB(0, 0, 0);
 		bool useThemeColors = true;
@@ -72,6 +95,7 @@ export namespace Inkeys::UI::Bar
 	struct BarSurfaceWidgetLayout
 	{
 		BarSurfaceWidgetId id = BarSurfaceNoWidget;
+		BarSurfaceWidgetKind kind = BarSurfaceWidgetKind::Button;
 		RECT localPixels{};
 		bool visible = false;
 		bool enabled = false;
@@ -123,16 +147,21 @@ export namespace Inkeys::UI::Bar
 		std::function<void()> wake;
 	};
 
-	// MainBar 以全局像素发布第一光源；各 Scene 在自己的 presentation target 内映射。
-	struct BarSurfaceSharedPrimaryLight
+	// Main Bar 以屏幕像素发布两路光源；各 Surface 只做本地 presentation 映射。
+	struct BarSurfaceSharedLighting
 	{
-		double screenX = 0.0;
-		double screenY = 0.0;
-		double radiusPixels = 0.0;
+		double primaryScreenX = 0.0;
+		double primaryScreenY = 0.0;
+		double primaryRadiusPixels = 0.0;
+		double cursorScreenX = 0.0;
+		double cursorScreenY = 0.0;
+		double cursorRadiusPixels = 0.0;
+		double cursorIntensity = 0.0;
 		COLORREF drawingPenColor = RGB(0, 0, 0);
 		double drawingPenColorBlend = 0.0;
 		double drawingLightOpacity = 1.0;
-		bool visible = false;
+		bool primaryVisible = false;
+		bool cursorVisible = false;
 		bool edgeLightingEnabled = false;
 	};
 
@@ -159,6 +188,10 @@ export namespace Inkeys::UI::Bar
 			std::span<const BarSurfaceWidgetSpec> widgets,
 			const BarSurfaceHorizontalGroupSpec& group);
 		bool SetWidgets(std::span<const BarSurfaceWidgetSpec> widgets);
+		// 复用稳定 id，从当前呈现几何连续过渡到新背景和按钮布局。
+		bool TransitionLayout(const BarSurfaceBackgroundSpec& background,
+			std::span<const BarSurfaceWidgetSpec> widgets,
+			double durationSeconds = 0.2);
 		bool SetWidgetState(BarSurfaceWidgetId id, bool visible, bool enabled,
 			std::wstring primaryText = {}, std::wstring secondaryText = {},
 			std::optional<std::wstring> iconResource = std::nullopt,
@@ -167,12 +200,14 @@ export namespace Inkeys::UI::Bar
 		bool SetWidgetSelected(BarSurfaceWidgetId id, bool selected);
 		bool SetBounds(RECT logicalBounds, float dpiScale) noexcept;
 		void SetBackground(const BarSurfaceBackgroundSpec& background);
+		void SetOpacity(double opacity,
+			double durationSeconds = 0.2) noexcept;
 		void SetDamageOutsetDip(double outsetDip) noexcept;
 		void SetHooks(BarSurfaceHooks hooks);
-		// 订阅者只在共享第一光源的最终像素变化时被唤醒。
-		void SetSharedPrimaryLightSubscribed(bool subscribed) noexcept;
-		static void PublishSharedPrimaryLight(
-			const BarSurfaceSharedPrimaryLight& light) noexcept;
+		// 两路光源都由 Main Bar 计算；Surface 不创建本地第三光源状态。
+		void SetSharedLightingSubscribed(bool subscribed) noexcept;
+		static void PublishSharedLighting(
+			const BarSurfaceSharedLighting& lighting) noexcept;
 
 		void Reset() noexcept;
 		void ReleaseDeviceResources() noexcept;
@@ -193,6 +228,8 @@ export namespace Inkeys::UI::Bar
 		// 由 HWND 局部坐标转为逻辑内容坐标；透明 presentation margin 返回 nullopt。
 		[[nodiscard]] std::optional<POINT> PresentationToLogical(
 			POINT presentationLocalPixels) const noexcept;
+		// 与背景实际绘制使用同一动画圆角，透明 margin/圆角像素不参与命中。
+		[[nodiscard]] bool HitTestBackground(POINT localPixels) const noexcept;
 		[[nodiscard]] BarSurfaceWidgetId HitTest(POINT localPixels) const noexcept;
 		[[nodiscard]] BarSurfaceWidgetId HitTestPresentation(
 			POINT presentationLocalPixels) const noexcept;
@@ -200,7 +237,8 @@ export namespace Inkeys::UI::Bar
 		BarSurfacePointerResult PointerMove(POINT localPixels) noexcept;
 		BarSurfacePointerResult PointerLeave() noexcept;
 		BarSurfacePointerResult PointerDown(POINT localPixels) noexcept;
-		BarSurfacePointerResult PointerUp(POINT localPixels) noexcept;
+		BarSurfacePointerResult PointerUp(
+			POINT localPixels, bool invokeCallback = true) noexcept;
 		BarSurfacePointerResult CancelPointer() noexcept;
 
 		// 渲染线程调用；该函数只提交本 surface 的 Shape/Button，不改变其他 Bar client。

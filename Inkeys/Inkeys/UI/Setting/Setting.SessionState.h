@@ -3,9 +3,60 @@
 #include <dxgi.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace Inkeys::UI::Setting
 {
+	enum class BarButtonClickAction : std::uint8_t
+	{
+		ShowAndActivate,
+		Activate,
+		Hide,
+	};
+
+	[[nodiscard]] constexpr BarButtonClickAction ResolveBarButtonClickAction(
+		bool visible, bool focused) noexcept
+	{
+		if (!visible) return BarButtonClickAction::ShowAndActivate;
+		return focused ? BarButtonClickAction::Hide
+			: BarButtonClickAction::Activate;
+	}
+
+	class StartupPreviewPreference final
+	{
+	public:
+		explicit constexpr StartupPreviewPreference(bool enabled = true) noexcept
+			: startupEnabled_(enabled), configuredEnabled_(enabled) {}
+
+		[[nodiscard]] constexpr bool StartupEnabled() const noexcept
+		{
+			return startupEnabled_;
+		}
+
+		[[nodiscard]] constexpr bool ConfiguredEnabled() const noexcept
+		{
+			return configuredEnabled_;
+		}
+
+		[[nodiscard]] constexpr bool SetConfigured(bool enabled) noexcept
+		{
+			if (configuredEnabled_ == enabled) return false;
+			configuredEnabled_ = enabled;
+			writePending_ = true;
+			return true;
+		}
+
+		[[nodiscard]] constexpr bool ConsumeWritePending() noexcept
+		{
+			return std::exchange(writePending_, false);
+		}
+
+	private:
+		bool startupEnabled_ = true;
+		bool configuredEnabled_ = true;
+		bool writePending_ = false;
+	};
+
 	[[nodiscard]] constexpr bool IsSharedDeviceLoss(HRESULT result) noexcept
 	{
 		return result == DXGI_ERROR_DEVICE_REMOVED

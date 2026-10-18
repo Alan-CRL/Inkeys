@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认 Inkeys.Display 所属层与修改前检查项"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"遵守显示快照、订阅、并发及最小修改合同"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"遵守 Win32、SetupAPI、注册表资源与失败路径规则"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"遵守 Windows 兼容与 ARM64 完整 Solution 构建要求"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对显示数据从采集到传统消费者的跨层契约"}
+{"file":".trellis/tasks/archive/2026-08/08-14-unified-display-management-ui3-dpi/design.md","reason":"保留既有 Inkeys.Display 快照与 fallback 设计边界"}

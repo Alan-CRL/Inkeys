@@ -1,0 +1,4 @@
+capacity current=1600x1200, after_peak=4800x3600, retained=1
+reserved source=(-522,18), window=2644x1164, capacity_contains=0
+viewport width: lighting_active=2644, settled=84, retained_until_idle=1
+centered endpoint model: anchor_x=655, capacity_right=1573, viewport_right=1753, contains=0

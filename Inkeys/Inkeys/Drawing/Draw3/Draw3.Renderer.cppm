@@ -29,7 +29,7 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr float kShapeRoundedCornerRadiusAt96Dpi = 4.0f;
 	inline constexpr float kShapeDashLengthToWidthRatio = 4.0f;
 	inline constexpr float kShapeDashGapToWidthRatio = 6.0f;
-	// Laser 的 InkPoint.r 统一表示红色实体外半径；漫反射宽度不随压力变化。
+	// Laser 的 InkPoint.r 统一表示彩色实体外半径；漫反射宽度不随压力变化。
 	constexpr float LaserSolidRadius(float dpiScale = 1.0f) noexcept
 	{
 		return kLaserSolidDiameterAt96Dpi * 0.5f * dpiScale;
@@ -127,7 +127,7 @@ export namespace Inkeys::Drawing::Draw3
 	static_assert(sizeof(HighlighterPrimitive) == 24,
 		"HighlighterPrimitive 必须与结构化缓冲区布局保持一致");
 
-	// Laser 笔尖的 radius 是红色实体外半径；粒子改由独立 GPU 缓冲区保存。
+	// Laser 笔尖的 radius 是彩色实体外半径；粒子改由独立 GPU 缓冲区保存。
 	struct LaserDot
 	{
 		float x = 0.0f;
@@ -225,6 +225,8 @@ export namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<ID3D11DepthStencilState> dsState;
 
 		size_t m_bufferHead = 0;
+		// 仅在当前 D3D11 device 显式支持动态 SRV 的 NO_OVERWRITE 时使用环形写入。
+		bool mapNoOverwriteOnDynamicBufferSRV = false;
 		static constexpr size_t kMaxBufferCapacity = 200000;
 		float viewportWidth = 0.0f;
 		float viewportHeight = 0.0f;
@@ -253,17 +255,21 @@ export namespace Inkeys::Drawing::Draw3
 		// 把可变压力胶囊写入当前 Laser coverage，四通道使用 MAX 累积。
 		int DrawLaserCoverage(std::span<const InkPoint> points, RECT scissorRect = {});
 		// 将单笔 coverage 解析为材质，并按 source-over 叠加到目标。
-		void ResolveLaserStrokeCoverage(
+		bool ResolveLaserStrokeCoverage(
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity = 1.0f);
 		// 对稳定 L1 与实时 L0 coverage 逐通道取 MAX 后，只解析一次 Laser 材质。
 		bool ResolveLaserIncrementalCoverage(
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity = 1.0f);
 		// 将已烘干的预乘颜色层按整组 opacity 叠加到目标。
-		void ResolveLaserCompositedColor(
+		bool ResolveLaserCompositedColor(
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity);
 		// 以不混合的矩形写零局部清理单笔 scratch。
-		void ClearLaserCoverageRect(RECT rect);
+		bool ClearLaserCoverageRect(RECT rect);
 		bool ClearLaserLiveCoverageRect(RECT rect);
+		// Bake 只改独立 scratch；全部 pass 成功后才交换成可见稳定颜色。
+		bool BeginLaserBake();
+		ID3D11RenderTargetView* LaserBakeTarget() const noexcept;
+		void CommitLaserBake() noexcept;
 		// 仅在绘制线程选择 Laser 后创建 L0 coverage；失败会永久降级到完整重绘。
 		bool EnsureLaserIncrementalCoverageResources();
 		bool LaserIncrementalCoverageAvailable() const noexcept;
@@ -275,8 +281,9 @@ export namespace Inkeys::Drawing::Draw3
 		// 在主循环开始前提交零像素 draw call，迫使驱动提前 JIT 编译所有激光着色器路径。
 		// 消除 Qualcomm/Adreno 等延迟编译驱动的首笔卡顿；对 Nvidia/AMD/Intel/WARP 无额外开销。
 		void WarmUpLaserShaders() noexcept;
-		// 按 DPI 配置白芯、实体外套、散射和固定漫反射尺寸。
-		void ConfigureLaserStyle(float dpiScale) noexcept;
+		// 按 DPI 与所选颜色配置白芯、实体外套、散射和固定漫反射尺寸。
+		void ConfigureLaserStyle(float dpiScale,
+			DirectX::XMFLOAT4 shellColor) noexcept;
 		void ConfigureLaserParticles(
 			const LaserParticleConfig& configuration, float dpiScale) noexcept;
 		bool LaserParticlesAvailable() const noexcept;
@@ -324,7 +331,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 调整交换链和三层画布尺寸，并保留左上角交集内容。
 		bool Resize(IDXGISwapChain1* swapChain, UINT width, UINT height);
 		// 初始化渲染器及其固定资源。
-		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height);
+		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver);
 
 	private:
 		// 创建 BGRA8 Add 与 R16F Retain 两张尺寸相关纹理。
@@ -342,7 +349,7 @@ export namespace Inkeys::Drawing::Draw3
 			ID3D11ShaderResourceView* secondarySource = nullptr,
 			UINT secondarySourceSlot = 0);
 		// 从资源中加载并创建墨迹着色器。
-		bool LoadShaders();
+		bool LoadShaders(D3D_DRIVER_TYPE driver);
 		float shapeRoundedCornerRadiusPixels_ = kShapeRoundedCornerRadiusAt96Dpi;
 		LaserStyleConstants laserStyleConstants_ = {};
 		uint64_t laserStyleGeneration_ = 1;
@@ -358,6 +365,8 @@ export namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<IDXGIAdapter3> videoMemoryAdapter_;
 		// 单 contact Laser 的实时尾部 coverage 按需创建，避免非 Laser 会话分配额外画布。
 		LaserCoverageResources laserLiveCoverage;
+		// 仅在完成笔画的事务烘干时按需分配，与已提交 t6 同尺寸。
+		LaserCoverageResources laserBakeScratchColor_;
 		bool laserIncrementalCoverageEnabled_ = false;
 		bool laserIncrementalCoverageUnavailable_ = false;
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> trustedL2SnapshotTexture_;

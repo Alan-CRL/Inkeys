@@ -1,5 +1,7 @@
 #pragma once
 #include "IdtMain.h"
+#include "PptSettingsPersistence.h"
+#include "Inkeys/Business/PenWidthPolicy.hpp"
 
 bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath);
 bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath);
@@ -39,7 +41,8 @@ struct SetListStruct
 #pragma endregion
 
 #pragma region 绘制
-	int paintDevice;
+	// 设置渲染与后台同步并发读写，沿用可复制的原子配置字段。
+	IdtAtomic<int> paintDevice;
 	IdtAtomic<bool> disableRTS;
 
 	bool liftStraighten, waitStraighten;
@@ -50,6 +53,7 @@ struct SetListStruct
 	struct
 	{
 		int eraserMode; // 0压感粗细 1笔速粗细 2固定粗细
+		bool savedFixedChoice = false; // 迁移用：只认磁盘中明确的2，不认隐式/未知值回退。
 		int eraserSize;
 	}eraserSetting;
 
@@ -155,6 +159,9 @@ string CaptureSettingJson();
 bool WriteSettingJson(const string& jsonContent);
 bool WriteSetting();
 
+// PPT 加载页的配置和实现保留，样式重做前统一禁用。
+inline constexpr bool kPptLoadingPageEnabled = false;
+
 struct PptComSetListStruct
 {
 	PptComSetListStruct()
@@ -219,6 +226,10 @@ extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
 bool PptComReadSettingPositionOnly();
 string CapturePptComSettingJson();
+string CapturePptComPositionSettingJson(Inkeys::PptSettings::Positions positions, bool remember);
+Inkeys::PptSettings::Positions SavedPptComPositions();
+Inkeys::PptSettings::Positions RestorablePptComPositions();
+string RetryPptComSettingJson();
 bool WritePptComSettingJson(const string& jsonContent);
 bool PptComWriteSetting();
 
@@ -306,3 +317,7 @@ bool DdbWriteInteraction(bool change, bool close);
 
 bool GetMemory();
 bool SetMemory();
+
+// 显示上下文就绪后初始化中档一次；本版暂停启动记忆/预设恢复，必须先于首次输入准入。
+void InitializePenWidthPreferences(Inkeys::Business::PenWidth::Context context);
+int RunPenWidthPreferencesProductionTest() noexcept;

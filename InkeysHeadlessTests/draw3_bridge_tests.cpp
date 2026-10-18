@@ -1,9 +1,13 @@
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TimerPeriod.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <thread>
 
 namespace
 {
@@ -53,17 +57,19 @@ namespace
 			"default snapshot starts at revision zero")) ++failures;
 		if (!Expect(initial.selectionMode,
 			"default product state starts in selection mode")) ++failures;
-		if (!Expect(initial.workspace == Workspace::Presentation,
-			"default product state starts in presentation workspace")) ++failures;
+		if (!Expect(initial.workspace == Workspace::Desktop,
+			"default product state starts in desktop workspace")) ++failures;
 
 		ProductState first{};
 		first.colorRgba = 0x12345678u;
 		first.widthDip = 4.5f;
+		first.autoSaveEnabled = true;
 		first.revision = 99;
 		bridge.PublishState(first);
 		const ProductState firstSnapshot = bridge.Snapshot();
 		if (!Expect(firstSnapshot.colorRgba == 0x12345678u
 			&& firstSnapshot.widthDip == 4.5f
+			&& firstSnapshot.autoSaveEnabled
 			&& firstSnapshot.revision == 1,
 			"publish owns the next revision")) ++failures;
 
@@ -90,6 +96,51 @@ namespace
 			&& preservedPage.page == 6
 			&& preservedPage.workspace == Workspace::Whiteboard,
 			"tool state publication preserves page and workspace")) ++failures;
+
+		if (!Expect(bridge.PublishWorkspace(Workspace::Desktop),
+			"explicit desktop publication changes workspace")) ++failures;
+		const ProductState desktop = bridge.Snapshot();
+		if (!Expect(desktop.workspace == Workspace::Desktop && !desktop.hasPage
+			&& desktop.page == 0,
+			"desktop publication clears stale PPT page identity")) ++failures;
+		if (!Expect(!bridge.PublishWorkspace(Workspace::Desktop),
+			"repeated desktop publication is idempotent")) ++failures;
+		if (!Expect(bridge.PublishWorkspace(Workspace::Presentation)
+			&& bridge.Snapshot().workspace == Workspace::Presentation,
+			"presentation is an explicit third workspace")) ++failures;
+	}
+
+	void TestPresentationSessionIdentity(int& failures)
+	{
+		StateBridge bridge;
+		PresentationTarget target;
+		target.key.bytes[0] = 1;
+		target.sourceIdentity = "path:c:\\session.pptx";
+		target.totalPages = 2;
+		target.bindingRevision = 7;
+		target.sessionRevision = 11;
+		const auto first = bridge.PublishPresentationTarget(target);
+		const auto old = ReadyIdentityFor(*bridge.Snapshot().presentationTarget);
+		const auto repeat = bridge.PublishPresentationTarget(target);
+		if (!Expect(first == repeat, "same session and absolute target publication is idempotent")) ++failures;
+		++target.sessionRevision;
+		const auto reopened = bridge.PublishPresentationTarget(target);
+		const auto current = ReadyIdentityFor(*bridge.Snapshot().presentationTarget);
+		if (!Expect(first && reopened && *first != *reopened && old != current &&
+			current.sessionRevision == target.sessionRevision,
+			"same file and page in a new show cannot match an old ready or UI ack")) ++failures;
+		bridge.Publish(CommandType::Clear);
+		target.pageIndex = 1;
+		bridge.PublishPresentationTarget(target);
+		Command captured;
+		if (!Expect(bridge.TryConsume(captured) && captured.presentationTarget &&
+			ReadyIdentityFor(*captured.presentationTarget) == current,
+			"page change preserves the accepted command session and target")) ++failures;
+		const auto beforeReset = bridge.Snapshot().presentationTarget->targetRevision;
+		bridge.Reset();
+		const auto afterReset = bridge.PublishPresentationTarget(target);
+		if (!Expect(afterReset && *afterReset > beforeReset,
+			"Host reset does not reuse target revisions from an old UI commit")) ++failures;
 	}
 
 	void TestCommandQueue(int& failures)
@@ -115,6 +166,52 @@ namespace
 		if (!Expect(minimumCapacity.Publish(CommandType::Redo) == CommandResult::Accepted
 			&& minimumCapacity.Publish(CommandType::Clear) == CommandResult::QueueFull,
 			"zero capacity is normalized to one")) ++failures;
+
+		PresentationTarget targetA{};
+		targetA.key.bytes[0] = 0xA;
+		targetA.sourceIdentity = "path:a.pptx";
+		targetA.bindingToken = "binding:a";
+		targetA.bindingMode = SlideBindingMode::StableSlideId;
+		targetA.slideIds = { 101 };
+		targetA.slideId = 101;
+		targetA.totalPages = 1;
+		PresentationTarget targetB = targetA;
+		targetB.key.bytes[0] = 0xB;
+		targetB.sourceIdentity = "path:b.pptx";
+		targetB.bindingToken = "binding:b";
+
+		StateBridge desktopAfterClear;
+		const auto targetARevision = desktopAfterClear.PublishPresentationTarget(targetA);
+		desktopAfterClear.Publish(CommandType::Clear);
+		desktopAfterClear.PublishWorkspace(Workspace::Desktop);
+		if (!Expect(desktopAfterClear.TryConsume(command) && targetARevision &&
+			command.type == CommandType::Clear &&
+			command.workspace == Workspace::Presentation &&
+			command.presentationTarget &&
+			command.presentationTarget->key == targetA.key &&
+			desktopAfterClear.Snapshot().workspace == Workspace::Desktop,
+			"A Clear keeps the A scene before the latest Desktop transition"))
+			++failures;
+
+		StateBridge bAfterUndo;
+		bAfterUndo.PublishPresentationTarget(targetA);
+		bAfterUndo.Publish(CommandType::Undo);
+		bAfterUndo.Publish(CommandType::Redo);
+		const auto targetBRevision = bAfterUndo.PublishPresentationTarget(targetB);
+		if (!Expect(bAfterUndo.TryConsume(command) && targetBRevision &&
+			command.type == CommandType::Undo &&
+			command.workspace == Workspace::Presentation &&
+			command.presentationTarget &&
+			command.presentationTarget->key == targetA.key &&
+			bAfterUndo.Snapshot().presentationTarget &&
+			bAfterUndo.Snapshot().presentationTarget->key == targetB.key,
+			"A Undo keeps the A scene before the latest B target")) ++failures;
+		if (!Expect(bAfterUndo.TryConsume(command) &&
+			command.type == CommandType::Redo &&
+			command.workspace == Workspace::Presentation &&
+			command.presentationTarget &&
+			command.presentationTarget->key == targetA.key,
+			"A Redo keeps the A scene before the latest B target")) ++failures;
 	}
 
 	void TestUnsupportedAndLifecycle(int& failures)
@@ -123,7 +220,8 @@ namespace
 		if (!Expect(bridge.Publish(CommandType::Save) == CommandResult::Unsupported
 			&& bridge.Publish(CommandType::SuperRecovery) == CommandResult::Unsupported
 			&& bridge.Publish(CommandType::AutoStraighten) == CommandResult::Unsupported
-			&& bridge.Publish(CommandType::InputTest) == CommandResult::Unsupported,
+			&& bridge.Publish(CommandType::InputTest) == CommandResult::Unsupported
+			&& bridge.Publish(CommandType::PrepareExitAutoSave) == CommandResult::Unsupported,
 			"not-ready commands remain explicitly unsupported")) ++failures;
 
 		if (!Expect(bridge.Publish(CommandType::NextPage) == CommandResult::Accepted,
@@ -135,10 +233,10 @@ namespace
 		bridge.Publish(CommandType::PreviousPage);
 		bridge.Stop();
 		if (!Expect(!bridge.Running()
-			&& !bridge.TryConsume(command)
+			&& bridge.TryConsume(command) && command.type == CommandType::PreviousPage
 			&& bridge.Publish(CommandType::Clear) == CommandResult::NotRunning
 			&& bridge.Publish(CommandType::Save) == CommandResult::NotRunning,
-			"stop closes and clears the command bridge")) ++failures;
+			"stop closes producers and preserves accepted commands")) ++failures;
 
 		ProductState stoppedState{};
 		stoppedState.colorRgba = 0xFFFFFFFFu;
@@ -156,6 +254,32 @@ namespace
 		if (!Expect(bridge.Publish(CommandType::Redo) == CommandResult::Accepted
 			&& bridge.TryConsume(command) && command.sequence == 1,
 			"reset restarts command sequence")) ++failures;
+
+		bridge.Reset();
+		PresentationTarget exitTarget{};
+		exitTarget.key.bytes[0] = 0xA;
+		exitTarget.sourceIdentity = "path:a.pptx";
+		exitTarget.bindingToken = "binding:a";
+		exitTarget.totalPages = 1;
+		bridge.PublishPresentationTarget(exitTarget);
+		bridge.Publish(CommandType::Clear);
+		if (!Expect(bridge.StopWithFinalCommand(CommandType::PrepareExitAutoSave)
+			&& bridge.TryConsume(command) && command.type == CommandType::Clear
+			&& command.presentationTarget && command.presentationTarget->key == exitTarget.key
+			&& bridge.TryConsume(command) &&
+				command.type == CommandType::PrepareExitAutoSave &&
+				command.presentationTarget && command.presentationTarget->key == exitTarget.key
+			&& !bridge.TryConsume(command),
+			"shutdown barrier stays behind every accepted command in its captured scene"))
+			++failures;
+
+		StateBridge fullBridge(1);
+		if (!Expect(fullBridge.Publish(CommandType::Undo) == CommandResult::Accepted
+			&& fullBridge.StopWithFinalCommand(CommandType::PrepareExitAutoSave)
+			&& fullBridge.TryConsume(command) && command.type == CommandType::Undo
+			&& fullBridge.TryConsume(command) &&
+				command.type == CommandType::PrepareExitAutoSave,
+			"shutdown barrier bypasses a full business queue")) ++failures;
 	}
 
 	void TestEraserModeMapping(int& failures)
@@ -224,7 +348,65 @@ namespace
 
 	void TestDrawpadPresentationPlan(int& failures)
 	{
-		if (!Expect(SelectionUsesAuxiliaryOutput(true, Workspace::Presentation)
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		desired.workspace = Workspace::Desktop;
+		desired.selectionMode = true;
+		HostRuntimeSnapshot ready{};
+		ready.firstFrameReady = true;
+		ready.workspace = desired.workspace;
+		ready.selectionMode = true;
+		ready.requestedOutputTarget = ready.readyOutputTarget = HostOutputTarget::SelectionUlw;
+		ready.requestedOutputRevision = ready.readyOutputRevision = 3;
+		ready.contentRevision = ready.presentedContentRevision = 8;
+		if (!Expect(DrawpadPresentationReady(desired, ready),
+			"desktop retained ink selection accepts matching output")) ++failures;
+		const auto reject = [&](HostRuntimeSnapshot candidate, const char* reason)
+		{
+			if (!Expect(!DrawpadPresentationReady(desired, candidate), reason)) ++failures;
+		};
+		auto pending = ready; pending.firstFrameReady = false;
+		reject(pending, "initial frame pending retains previous surface");
+		pending = ready; pending.workspace = Workspace::Presentation;
+		reject(pending, "PPT exit cannot commit the old workspace frame");
+		pending = ready; pending.selectionMode = false;
+		reject(pending, "PPT pen frame cannot satisfy desktop selection");
+		pending = ready; pending.requestedOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		reject(pending, "pending auxiliary target retains previous surface");
+		pending = ready; pending.readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		reject(pending, "primary ready cannot satisfy auxiliary output");
+		pending = ready; --pending.readyOutputRevision;
+		reject(pending, "previous output generation cannot commit");
+		pending = ready; --pending.presentedContentRevision;
+		reject(pending, "same content bool with stale ink revision cannot commit");
+		pending = ready; pending.commandScenePending = true;
+		reject(pending, "command replay cannot commit an intermediate scene");
+		desired.selectionMode = false;
+		if (!Expect(!DrawpadPresentationReady(desired, ready),
+			"selection frame cannot satisfy a newer pen intent")) ++failures;
+		ready.selectionMode = false;
+		ready.requestedOutputTarget = ready.readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		if (!Expect(DrawpadPresentationReady(desired, ready),
+			"pen handoff accepts the preheated primary frame")) ++failures;
+		pending = ready; --pending.presentedContentRevision;
+		reject(pending, "pen handoff also waits for matching content revision");
+		desired.workspace = Workspace::Presentation;
+		ready.workspace = Workspace::Presentation;
+		if (!Expect(!DrawpadPresentationReady(desired, ready),
+			"PPT requires a trusted target identity")) ++failures;
+		PresentationTarget target{};
+		target.sessionRevision = 5; target.targetRevision = 10;
+		desired.presentationTarget = std::make_shared<const PresentationTarget>(target);
+		ready.presentationReady = ReadyIdentityFor(target);
+		if (!Expect(DrawpadPresentationReady(desired, ready),
+			"matching PPT target frame is eligible for handoff")) ++failures;
+		++target.targetRevision;
+		desired.presentationTarget = std::make_shared<const PresentationTarget>(target);
+		if (!Expect(!DrawpadPresentationReady(desired, ready),
+			"new PPT target rejects old same-mode ready identity")) ++failures;
+
+		if (!Expect(SelectionUsesAuxiliaryOutput(true, Workspace::Desktop)
+			&& SelectionUsesAuxiliaryOutput(true, Workspace::Presentation)
 			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Whiteboard)
 			&& !SelectionUsesAuxiliaryOutput(false, Workspace::Whiteboard),
 			"whiteboard selection stays on the primary drawpad")) ++failures;
@@ -241,16 +423,153 @@ namespace
 			DrawpadPresentationSurface::Primary,
 			"drawing mode uses the primary surface")) ++failures;
 	}
+
+	void TestPageRuntimeRevisionPolicy(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostRuntimeRevisionSignal;
+		HostRuntimeRevisionSignal signal;
+		std::atomic_bool running = true;
+		const std::uint64_t initialRevision = signal.Revision();
+		if (!Expect(!signal.PublishPageChange(2, 8, 2, 8)
+			&& signal.Revision() == initialRevision
+			&& !signal.WaitForChange(initialRevision, 1, running),
+			"stable page runtime neither publishes nor wakes")) ++failures;
+
+		std::atomic_bool pageWaitCompleted = false;
+		std::jthread pageWaiter([&]
+			{
+				pageWaitCompleted.store(signal.WaitForChange(
+					initialRevision, 1000, running), std::memory_order_release);
+			});
+		const bool pagePublished = signal.PublishPageChange(2, 8, 3, 8);
+		pageWaiter.join();
+		const std::uint64_t pageRevision = signal.Revision();
+		if (!Expect(pagePublished && pageRevision != initialRevision
+			&& pageWaitCompleted.load(std::memory_order_acquire),
+			"page index change publishes revision and wakes waiter")) ++failures;
+
+		std::atomic_bool countWaitCompleted = false;
+		std::jthread countWaiter([&]
+			{
+				countWaitCompleted.store(signal.WaitForChange(
+					pageRevision, 1000, running), std::memory_order_release);
+			});
+		const bool countPublished = signal.PublishPageChange(3, 8, 3, 9);
+		countWaiter.join();
+		if (!Expect(countPublished && signal.Revision() != pageRevision
+			&& countWaitCompleted.load(std::memory_order_acquire),
+			"page count change publishes revision and wakes waiter")) ++failures;
+
+		bool repeatedWakePrompt = true;
+		for (int iteration = 0; iteration < 64 && repeatedWakePrompt; ++iteration)
+		{
+			const std::uint64_t revision = signal.Revision();
+			std::atomic_bool waitEntered = false;
+			std::atomic_bool waitCompleted = false;
+			std::jthread waiter([&]
+				{
+					waitEntered.store(true, std::memory_order_release);
+					waitCompleted.store(signal.WaitForChange(
+						revision, 1000, running), std::memory_order_release);
+				});
+			while (!waitEntered.load(std::memory_order_acquire)) std::this_thread::yield();
+			const auto publishedAt = std::chrono::steady_clock::now();
+			signal.Publish();
+			waiter.join();
+			repeatedWakePrompt = waitCompleted.load(std::memory_order_acquire)
+				&& std::chrono::steady_clock::now() - publishedAt
+				< std::chrono::milliseconds(750);
+		}
+		if (!Expect(repeatedWakePrompt,
+			"repeated revision handoff cannot lose the condition-variable wake")) ++failures;
+
+		const std::uint64_t stopRevision = signal.Revision();
+		std::atomic_bool stopWaitCompleted = false;
+		std::jthread stopWaiter([&]
+			{
+				stopWaitCompleted.store(signal.WaitForChange(
+					stopRevision, 1000, running), std::memory_order_release);
+			});
+		running.store(false, std::memory_order_release);
+		signal.NotifyAll();
+		stopWaiter.join();
+		if (!Expect(stopWaitCompleted.load(std::memory_order_acquire),
+			"host stop notification releases runtime waiter")) ++failures;
+	}
+
+	void TestPptWaitObservationBoundary(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostRuntimeRevisionSignal;
+		HostRuntimeRevisionSignal signal;
+		std::atomic_bool running = true;
+		double oldMilliseconds = 0.0, capturedMilliseconds = 0.0;
+		constexpr int samples = 8;
+		for (int sample = 0; sample < samples; ++sample)
+		{
+			const auto beforeDecision = signal.Revision();
+			// 确定性安排：ready 正好发生在业务判断与开始等待之间。
+			signal.Publish();
+			const auto oldStart = std::chrono::steady_clock::now();
+			const bool oldWoke = signal.WaitForChange(signal.Revision(), 50, running);
+			const auto fixedStart = std::chrono::steady_clock::now();
+			const bool capturedWoke = signal.WaitForChange(beforeDecision, 50, running);
+			const auto finished = std::chrono::steady_clock::now();
+			oldMilliseconds += std::chrono::duration<double, std::milli>(fixedStart - oldStart).count();
+			capturedMilliseconds += std::chrono::duration<double, std::milli>(finished - fixedStart).count();
+			if (!Expect(!oldWoke && capturedWoke,
+				"ready between decision and wait is preserved by the captured revision")) ++failures;
+		}
+		std::cout << "[PptWaitBoundary] synthetic samples=" << samples
+			<< " old_basis_mean_ms=" << oldMilliseconds / samples
+			<< " captured_basis_mean_ms=" << capturedMilliseconds / samples << '\n';
+	}
+
+	struct DrawingActivityCalls
+	{
+		int started = 0;
+		int ended = 0;
+	};
+
+	void RecordDrawingActivity(void* context, bool active) noexcept
+	{
+		auto* calls = static_cast<DrawingActivityCalls*>(context);
+		if (!calls) return;
+		if (active) ++calls->started;
+		else ++calls->ended;
+	}
+
+	void TestDrawingActivityLifecycle(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostDrawingActivityState;
+		HostDrawingActivityState state;
+		DrawingActivityCalls calls;
+		if (!Expect(!state.Publish(false, &calls, &RecordDrawingActivity)
+			&& state.Publish(true, &calls, &RecordDrawingActivity)
+			&& !state.Publish(true, &calls, &RecordDrawingActivity)
+			&& state.Publish(false, &calls, &RecordDrawingActivity)
+			&& calls.started == 1 && calls.ended == 1 && !state.Active(),
+			"false-to-true-to-true-to-false publishes one start and end")) ++failures;
+
+		state.Publish(true, &calls, &RecordDrawingActivity);
+		if (!Expect(state.EndIfActive(&calls, &RecordDrawingActivity)
+			&& !state.EndIfActive(&calls, &RecordDrawingActivity)
+			&& calls.started == 2 && calls.ended == 2 && !state.Active(),
+			"host stop or exception completes one active drawing interval")) ++failures;
+	}
 }
 
 int RunDraw3BridgeTests()
 {
 	int failures = 0;
 	TestProductState(failures);
+	TestPresentationSessionIdentity(failures);
 	TestCommandQueue(failures);
 	TestUnsupportedAndLifecycle(failures);
 	TestEraserModeMapping(failures);
 	TestTimerPeriodController(failures);
 	TestDrawpadPresentationPlan(failures);
+	TestPageRuntimeRevisionPolicy(failures);
+	TestDrawingActivityLifecycle(failures);
+	TestPptWaitObservationBoundary(failures);
 	return failures;
 }
