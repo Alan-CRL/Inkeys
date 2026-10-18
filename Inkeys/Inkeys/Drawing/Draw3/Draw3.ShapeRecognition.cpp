@@ -1,6 +1,7 @@
 ﻿module;
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -71,7 +72,7 @@ namespace Inkeys::Drawing::Draw3
 					timestamp.LowPart = fileTime.dwLowDateTime;
 					timestamp.HighPart = fileTime.dwHighDateTime;
 					std::ostringstream output;
-					output << "[ShapeRecognitionDataset] record=startup format_version=2 session_id="
+					output << "[ShapeRecognitionDataset] record=startup format_version=3 session_id="
 						<< ShapeRecognitionSessionId() << " pid=" << GetCurrentProcessId()
 						<< " start_filetime_utc=" << timestamp.QuadPart
 						<< " qpc=" << CurrentQpc() << "\n";
@@ -145,7 +146,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		ShapeRecognitionStrokePathDiagnostics BuildLoggedStrokePath(
-			const RenderItemState& item, const InkStroke& stroke, float dpiScale)
+			const RenderItemState& item, const InkStroke& stroke, const CV::ShapeRecognitionContext& context)
 		{
 			ShapeRecognitionStrokePathDiagnostics result;
 			result.itemId = item.id;
@@ -161,7 +162,8 @@ namespace Inkeys::Drawing::Draw3
 					? index * (stroke.Points().size() - 1) / (loggedCount - 1) : 0;
 				const StoredInkPoint& point = stroke.Points()[sourceIndex];
 				result.pointsDip.push_back({
-					point.x / dpiScale, point.y / dpiScale, point.width / dpiScale });
+					point.x * context.dipPerPixelX, point.y * context.dipPerPixelY,
+					point.width * std::sqrt(context.dipPerPixelX * context.dipPerPixelY) });
 			}
 			return result;
 		}
@@ -228,7 +230,7 @@ namespace Inkeys::Drawing::Draw3
 			const std::int64_t qpc = CurrentQpc();
 			std::ostringstream output;
 			output << std::fixed << std::setprecision(4) << std::boolalpha;
-			output << "[ShapeRecognitionDataset] record=pen_up_begin format_version=2 session_id=" <<
+			output << "[ShapeRecognitionDataset] record=pen_up_begin format_version=3 session_id=" <<
 				sessionId << " pen_up_id=" << penUpId << " qpc=" << qpc <<
 				" dpi_scale=" << diagnostics.dpiScale << " collected_strokes=" <<
 				diagnostics.collectedStrokeCount << " collected_points=" <<
@@ -259,6 +261,7 @@ namespace Inkeys::Drawing::Draw3
 				switch (attempt.outcome)
 				{
 				case ShapeRecognitionAttemptOutcome::Accepted: outcome = "accepted"; break;
+				case ShapeRecognitionAttemptOutcome::NotSelected: outcome = "not_selected"; break;
 				case ShapeRecognitionAttemptOutcome::MissingReplacementWidth:
 					outcome = "missing_replacement_width"; break;
 				case ShapeRecognitionAttemptOutcome::InvalidReplacement:
@@ -275,16 +278,18 @@ namespace Inkeys::Drawing::Draw3
 						? pixels / vision.dpiScale
 						: (std::numeric_limits<float>::quiet_NaN)();
 				};
+				const auto xDip = [&](float p) { return p * vision.context.dipPerPixelX; };
+				const auto yDip = [&](float p) { return p * vision.context.dipPerPixelY; };
 				output << "[ShapeRecognitionDataset] record=attempt session_id=" << sessionId <<
 					" pen_up_id=" << penUpId << " candidate_id=" << index <<
 					" strokes=" << attempt.strokeCount << " source_points=" <<
 					attempt.sourcePointCount << " sampled_points=" << vision.sampledPointCount <<
 					" bounds_px=[" << attempt.bounds.left << ',' << attempt.bounds.top << ',' <<
 					attempt.bounds.right << ',' << attempt.bounds.bottom << "] bounds_dip=[" <<
-					toDip(static_cast<float>(attempt.bounds.left)) << ',' <<
-					toDip(static_cast<float>(attempt.bounds.top)) << ',' <<
-					toDip(static_cast<float>(attempt.bounds.right)) << ',' <<
-					toDip(static_cast<float>(attempt.bounds.bottom)) << "] stroke_ids=[";
+					xDip(static_cast<float>(attempt.bounds.left)) << ',' <<
+					yDip(static_cast<float>(attempt.bounds.top)) << ',' <<
+					xDip(static_cast<float>(attempt.bounds.right)) << ',' <<
+					yDip(static_cast<float>(attempt.bounds.bottom)) << "] stroke_ids=[";
 				for (std::size_t itemIndex = 0; itemIndex < attempt.sourceItems.size(); ++itemIndex)
 				{
 					if (itemIndex != 0) output << ',';
@@ -349,6 +354,9 @@ namespace Inkeys::Drawing::Draw3
 					" max_axis_deviation_deg=" << vision.maximumAxisDeviationDegrees <<
 					" weighted_axis_deviation_deg=" << vision.weightedAxisDeviationDegrees <<
 					" worst_corner_score=" << vision.worstCornerScore <<
+					" corner_transition_dip=" << vision.cornerTransitionDip <<
+					" endpoint_closure_gap_dip=" << vision.endpointClosureGapDip <<
+					" corner_coverage_allowance=" << vision.cornerCoverageAllowance <<
 					" confidence=" << vision.confidence << '\n';
 				for (std::size_t edge = 0; edge < 4; ++edge)
 				{
@@ -394,11 +402,37 @@ namespace Inkeys::Drawing::Draw3
 					{
 						if (pointIndex != 0) output << ',';
 						const CV::InkPoint& point = stroke.sampledPoints[pointIndex];
-						output << '(' << toDip(point.x) << ':' << toDip(point.y) << ':' <<
+						output << '(' << xDip(point.x) << ':' << yDip(point.y) << ':' <<
 							toDip(point.width) << ')';
 					}
 					output << "]\n";
 				}
+				for (std::size_t m = 0; m < vision.hypothesisCount; ++m)
+				{
+					const auto& model = vision.hypotheses[m];
+					output << "[ShapeRecognitionDataset] record=model session_id=" << sessionId <<
+						" pen_up_id=" << penUpId << " candidate_id=" << index <<
+						" model=" << CV::ShapeModelKindName(model.model) << " quality=" << model.quality <<
+						" residual=" << model.residual << " coverage=" << model.coverage << " inlier_ratio=" << model.inlierRatio <<
+						" eligible=" << model.eligible << " can_correct=" << model.canCorrect <<
+						" reject_reason=" << CV::ShapeRecognitionRejectReasonName(model.rejectionReason) <<
+						" tolerance_dip=" << model.toleranceDip << " tolerance_x_dip=" << model.toleranceDipX <<
+						" tolerance_y_dip=" << model.toleranceDipY << " fitted_angle_deg=" << model.fittedAngleDegrees <<
+						" snap_displacement_dip=" << model.snapDisplacementDip << " fitted_corners_px=[";
+					for (std::size_t c = 0; c < model.fittedCorners.size(); ++c)
+					{
+						if (c) output << ',';
+						output << '(' << model.fittedCorners[c].x << ':' << model.fittedCorners[c].y << ')';
+					}
+					output << "] correction_bounds_px=[" << model.correction.left << ',' << model.correction.top << ',' <<
+						model.correction.right << ',' << model.correction.bottom << "]\n";
+				}
+				output << "[ShapeRecognitionDataset] record=selection session_id=" << sessionId <<
+					" pen_up_id=" << penUpId << " candidate_id=" << index << " scalar_px_basis=geometric_mean_dpi model_margin=" << vision.modelMargin <<
+					" dip_per_pixel_x=" << vision.context.dipPerPixelX << " dip_per_pixel_y=" << vision.context.dipPerPixelY <<
+					" physical_trusted=" << vision.context.physicalScaleTrusted <<
+					" scale_fallback=" << CV::ShapeScaleFallbackReasonName(vision.context.scaleFallbackReason) <<
+					" mm_per_dip_x=" << vision.context.millimetersPerDipX << " mm_per_dip_y=" << vision.context.millimetersPerDipY << '\n';
 				output << "[ShapeRecognitionDataset] record=thresholds session_id=" << sessionId <<
 					" pen_up_id=" << penUpId << " candidate_id=" << index << " max_strokes=" <<
 					threshold.maximumStrokeCount << " max_points_per_stroke=" <<
@@ -407,13 +441,11 @@ namespace Inkeys::Drawing::Draw3
 					threshold.resampleSpacingDip << " min_short_dip=" <<
 					threshold.minimumShortSideDip << " min_short_width_multiple=" <<
 					threshold.minimumShortSideWidthMultiple << " max_aspect=" <<
-					threshold.maximumAspectRatio << " min_rectangularity=" <<
-					threshold.minimumRectangularity << " quad_epsilon_ratios=[" <<
+					threshold.maximumAspectRatio << " quad_epsilon_ratios=[" <<
 					threshold.approximationEpsilonRatios[0] << ',' <<
 					threshold.approximationEpsilonRatios[1] << ',' <<
 					threshold.approximationEpsilonRatios[2] << ',' <<
-					threshold.approximationEpsilonRatios[3] << "] max_quad_corner_ratio=" <<
-					threshold.maximumQuadCornerDistanceRatio << " edge_band_dip=[" <<
+					threshold.approximationEpsilonRatios[3] << "] edge_band_dip=[" <<
 					threshold.minimumEdgeBandDip << ',' << threshold.maximumEdgeBandDip <<
 					"] edge_band_short_ratio=" << threshold.edgeBandShortSideRatio <<
 					" edge_band_width_multiple=" << threshold.edgeBandWidthMultiple <<
@@ -426,7 +458,18 @@ namespace Inkeys::Drawing::Draw3
 					threshold.maximumOffEdgeRatio << " path_ratio=[" <<
 					threshold.minimumPathPerimeterRatio << ',' <<
 					threshold.maximumPathPerimeterRatio << "] min_confidence=" <<
-					threshold.minimumConfidence << '\n';
+					threshold.minimumConfidence << " min_model_margin=" << threshold.minimumModelMargin <<
+					" max_snap_angle_deg=" << threshold.maximumSnapAngleDegrees <<
+					" max_snap_displacement_ratio=" << threshold.maximumSnapDisplacementRatio <<
+					" max_corner_angle_deviation_deg=" << threshold.maximumCornerAngleDeviationDegrees <<
+					" max_opposite_edge_deviation_deg=" << threshold.maximumOppositeEdgeDeviationDegrees <<
+					" max_corner_gap_ratio=" << threshold.maximumCornerGapRatio <<
+					" max_edge_gap_ratio=" << threshold.maximumEdgeGapRatio <<
+					" corner_transition_short_ratio=" << threshold.cornerTransitionShortSideRatio <<
+					" max_closure_arc_ratio=" << threshold.maximumClosureArcRatio <<
+					" max_closure_distance_ratio=" << threshold.maximumClosureDistanceRatio <<
+					" max_corner_coverage_allowance=" << threshold.maximumCornerCoverageAllowance <<
+					" physical_noise_mm=" << threshold.physicalNoiseMillimeters << '\n';
 				output << "[ShapeRecognitionDataset] record=outcome session_id=" << sessionId <<
 					" pen_up_id=" << penUpId << " candidate_id=" << index << " outcome=" <<
 					outcome << " accepted=" << vision.accepted << " reject_reason=" <<
@@ -443,7 +486,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			output << "[ShapeRecognitionDataset] record=pen_up_end session_id=" << sessionId <<
 				" pen_up_id=" << penUpId << " accepted=" << diagnostics.accepted <<
-				" accepted_strokes=" << diagnostics.acceptedStrokeCount << '\n';
+				" accepted_strokes=" << diagnostics.acceptedStrokeCount <<
+				" selection_reason=" << CV::ShapeRecognitionRejectReasonName(diagnostics.selectionReason) <<
+				" selection_margin=" << diagnostics.selectionMargin << '\n';
 			WriteShapeRecognitionConsoleText(output.str());
 		}
 		catch (...)
@@ -500,18 +545,97 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
+	ShapeRecognitionScaleSnapshot CaptureShapeRecognitionScale(
+		const SpeedEraser::DisplayScale& display, const SpeedEraser::InputSource& source) noexcept
+	{
+		ShapeRecognitionScaleSnapshot result;
+		result.context.dipPerPixelX = display.dipPerPixelX;
+		result.context.dipPerPixelY = display.dipPerPixelY;
+		result.displayGeneration = display.generation; result.monitor = display.monitor;
+		result.sourceGeneration = source.generation; result.sourceContext = source.contextId;
+		result.sourceCursor = source.cursorId; result.sourceKind = static_cast<std::uint32_t>(source.kind);
+		result.physicalAvailable = display.physicalAvailable && display.logicalOutputKnown &&
+			display.monitor != 0 && display.pixelWidth > 0 && display.pixelHeight > 0 &&
+			std::isfinite(display.dipPerPixelX) && std::isfinite(display.dipPerPixelY) &&
+			display.dipPerPixelX > 0 && display.dipPerPixelY > 0 &&
+			std::isfinite(display.cmPerPixelX) && std::isfinite(display.cmPerPixelY) &&
+			display.cmPerPixelX > 0 && display.cmPerPixelY > 0;
+		if (result.physicalAvailable && display.dipPerPixelX > 0 && display.dipPerPixelY > 0)
+		{
+			result.context.millimetersPerDipX = 10 * display.cmPerPixelX / display.dipPerPixelX;
+			result.context.millimetersPerDipY = 10 * display.cmPerPixelY / display.dipPerPixelY;
+		}
+		const bool direct = source.kind == SpeedEraser::SourceKind::IntegratedPen || source.kind == SpeedEraser::SourceKind::Touch;
+		const bool recognized = source.recognition != SpeedEraser::SourceRecognition::Unknown && source.recognition != SpeedEraser::SourceRecognition::Conflict;
+		const bool mapped = source.mappedMonitor == display.monitor && source.mappedMonitor != 0 &&
+			source.mappedWidth == display.pixelWidth && source.mappedHeight == display.pixelHeight &&
+			source.mappedLeft == display.desktopLeft && source.mappedTop == display.desktopTop;
+		result.context.physicalScaleTrusted = result.physicalAvailable && direct && recognized && mapped;
+		result.context.scaleFallbackReason = !result.physicalAvailable ? CV::ShapeScaleFallbackReason::PhysicalUnavailable :
+			!direct ? CV::ShapeScaleFallbackReason::IndirectInput : !recognized ? CV::ShapeScaleFallbackReason::UnrecognizedSource :
+			!mapped ? CV::ShapeScaleFallbackReason::MappingMismatch : CV::ShapeScaleFallbackReason::None;
+		return result;
+	}
+
+	CV::ShapeRecognitionContext ResolveShapeRecognitionContext(
+		const ShapeRecognitionScaleSnapshot& current,
+		std::span<const ShapeStrokeProvenance> provenance,
+		std::span<const RenderItemId> items) noexcept
+	{
+		auto result = current.context;
+		result.physicalScaleTrusted = false;
+		if (!current.physicalAvailable) return result;
+		result.scaleFallbackReason = CV::ShapeScaleFallbackReason::MissingProvenance;
+		if (items.empty()) return result;
+		const ShapeRecognitionScaleSnapshot* first = nullptr;
+		for (const auto id : items)
+		{
+			const auto entry = std::find_if(provenance.begin(), provenance.end(), [&](const auto& value) { return value.item == id; });
+			if (entry == provenance.end()) return result;
+			const auto& scale = entry->scale;
+			if (!scale.context.physicalScaleTrusted)
+			{
+				result.scaleFallbackReason = scale.context.scaleFallbackReason;
+				return result;
+			}
+			if (scale.monitor != current.monitor ||
+				scale.displayGeneration != current.displayGeneration ||
+				scale.context.dipPerPixelX != current.context.dipPerPixelX || scale.context.dipPerPixelY != current.context.dipPerPixelY ||
+				scale.context.millimetersPerDipX != current.context.millimetersPerDipX ||
+				scale.context.millimetersPerDipY != current.context.millimetersPerDipY)
+			{
+				result.scaleFallbackReason = CV::ShapeScaleFallbackReason::DisplayChanged;
+				return result;
+			}
+			if (first && (scale.sourceGeneration != first->sourceGeneration || scale.sourceContext != first->sourceContext ||
+				scale.sourceCursor != first->sourceCursor || scale.sourceKind != first->sourceKind))
+			{
+				result.scaleFallbackReason = CV::ShapeScaleFallbackReason::SourceChanged;
+				return result;
+			}
+			first = &scale;
+		}
+		result.physicalScaleTrusted = true;
+		result.scaleFallbackReason = CV::ShapeScaleFallbackReason::None;
+		return result;
+	}
+
 	std::optional<ShapeCorrectionPlan> BuildShapeCorrectionPlan(
 		const InkCanvas& canvas, const CanvasRuntimeHistory& history,
-		float dpiScale, ShapeRecognitionDatasetDiagnostics* diagnostics) noexcept
+		const ShapeRecognitionScaleSnapshot& current,
+		std::span<const ShapeStrokeProvenance> provenance, ShapeRecognitionDatasetDiagnostics* diagnostics) noexcept
 	{
+		const float dpiScale = 1 / std::sqrt(current.context.dipPerPixelX * current.context.dipPerPixelY);
 		if (diagnostics)
 		{
 			*diagnostics = {};
 			diagnostics->dpiScale = dpiScale;
+			diagnostics->context = current.context;
 		}
 		try
 		{
-			if (!std::isfinite(dpiScale) || dpiScale <= 0.0f)
+			if (!std::isfinite(current.context.dipPerPixelX) || !std::isfinite(current.context.dipPerPixelY) ||
+				current.context.dipPerPixelX <= 0 || current.context.dipPerPixelY <= 0)
 			{
 				if (diagnostics) diagnostics->collectionStopReason =
 					ShapeCandidateCollectionStopReason::InvalidDpiScale;
@@ -618,115 +742,105 @@ namespace Inkeys::Drawing::Draw3
 				diagnostics->strokes.reserve(candidates.size());
 				for (const RenderItemState* item : candidates)
 					diagnostics->strokes.push_back(BuildLoggedStrokePath(
-						*item, strokes[item->strokeIndex], dpiScale));
+						*item, strokes[item->strokeIndex], current.context));
 			}
 
-			for (std::size_t candidateCount = candidates.size();
-				candidateCount > 0; --candidateCount)
+			std::array<CV::ShapeHypothesis, 30> hypotheses;
+			std::size_t hypothesisCount = 0;
+			for (std::size_t candidateCount = candidates.size(); candidateCount > 0; --candidateCount)
 			{
-				const std::size_t beginIndex = candidates.size() - candidateCount;
+				const auto beginIndex = candidates.size() - candidateCount;
 				ShapeRecognitionAttemptDiagnostics* attempt = nullptr;
 				if (diagnostics)
 				{
-					diagnostics->attempts.emplace_back();
-					attempt = &diagnostics->attempts.back();
+					diagnostics->attempts.emplace_back(); attempt = &diagnostics->attempts.back();
 					attempt->strokeCount = candidateCount;
-					attempt->sourceItems.reserve(candidateCount);
 					attempt->style = strokes[candidates.back()->strokeIndex].Style();
 					attempt->bounds = candidates[beginIndex]->pixelBounds;
 				}
-				std::vector<std::vector<CV::InkPoint>> ownedPoints(candidateCount);
+				std::array<RenderItemId, 6> items;
+				std::vector<std::vector<CV::InkPoint>> owned(candidateCount);
 				std::vector<CV::InkStrokeView> views;
-				views.reserve(candidateCount);
-				std::vector<float> replacementWidths;
-				for (std::size_t index = 0; index < candidateCount; ++index)
+				std::size_t pointCount = 0;
+				bool overBudget = false;
+				for (std::size_t i = 0; i < candidateCount; ++i)
 				{
-					const RenderItemState& item = *candidates[beginIndex + index];
-					const InkStroke& stroke = strokes[item.strokeIndex];
+					const auto& item = *candidates[beginIndex + i]; items[i] = item.id;
+					const auto& stroke = strokes[item.strokeIndex];
+					if (stroke.Points().size() > 1024 * 1024 - pointCount) { overBudget = true; break; }
+					pointCount += stroke.Points().size();
+					owned[i].reserve(stroke.Points().size());
+					for (const auto& p : stroke.Points()) owned[i].push_back({ p.x,p.y,p.width });
+					views.push_back({ owned[i] });
 					if (attempt)
 					{
-						attempt->sourceItems.push_back(item.id);
-						attempt->sourcePointCount += stroke.Points().size();
-						attempt->bounds.left = std::min(
-							attempt->bounds.left, item.pixelBounds.left);
-						attempt->bounds.top = std::min(
-							attempt->bounds.top, item.pixelBounds.top);
-						attempt->bounds.right = std::max(
-							attempt->bounds.right, item.pixelBounds.right);
-						attempt->bounds.bottom = std::max(
-							attempt->bounds.bottom, item.pixelBounds.bottom);
+						attempt->sourceItems.push_back(item.id); attempt->sourcePointCount += stroke.Points().size();
+						attempt->bounds.left = std::min(attempt->bounds.left, item.pixelBounds.left);
+						attempt->bounds.top = std::min(attempt->bounds.top, item.pixelBounds.top);
+						attempt->bounds.right = std::max(attempt->bounds.right, item.pixelBounds.right);
+						attempt->bounds.bottom = std::max(attempt->bounds.bottom, item.pixelBounds.bottom);
 					}
-					ownedPoints[index].reserve(stroke.Points().size());
-					for (const StoredInkPoint& point : stroke.Points())
-					{
-						ownedPoints[index].push_back({ point.x, point.y, point.width });
-						if (point.width > 0.0f) replacementWidths.push_back(point.width);
-					}
-					views.push_back({ ownedPoints[index] });
 				}
-				CV::ShapeRecognitionDiagnostics* visionDiagnostics =
-					attempt ? &attempt->vision : nullptr;
-				const CV::ShapeResult recognized = CV::RecognizeInkShape(
-					views, dpiScale, visionDiagnostics);
-				if (recognized.type != CV::ShapeType::AxisAlignedRectangle)
+				if (overBudget)
 				{
-					if (attempt) attempt->outcome =
-						ShapeRecognitionAttemptOutcome::VisionRejected;
+					if (attempt) attempt->vision.rejectionReason = CV::ShapeRecognitionRejectReason::SourcePointLimit;
 					continue;
 				}
-				if (replacementWidths.empty())
+				const auto context = ResolveShapeRecognitionContext(current, provenance, { items.data(),candidateCount });
+				auto evaluation = CV::EvaluateInkShapes(views, context, attempt ? &attempt->vision : nullptr);
+				for (std::size_t i = 0; i < evaluation.count; ++i)
 				{
-					if (attempt) attempt->outcome =
-						ShapeRecognitionAttemptOutcome::MissingReplacementWidth;
-					continue;
+					auto h = evaluation.hypotheses[i]; h.group = candidateCount;
+					hypotheses[hypothesisCount++] = h;
 				}
-
-				auto median = replacementWidths.begin() + replacementWidths.size() / 2;
-				std::nth_element(replacementWidths.begin(), median, replacementWidths.end());
-				const float replacementWidth = *median;
-				if (attempt) attempt->representativeWidth = replacementWidth;
-				StoredInkStyle replacementStyle =
-					strokes[candidates.back()->strokeIndex].Style();
-				replacementStyle.inkType = StoredInkType::OutlineRectangle;
-				std::vector<StoredInkPoint> rectanglePoints = {
-					{ recognized.rectangle.left, recognized.rectangle.top, replacementWidth },
-					{ recognized.rectangle.right, recognized.rectangle.bottom, replacementWidth }
-				};
-				InkStroke replacement(replacementStyle, std::move(rectanglePoints));
-				if (!replacement.IsValid())
-				{
-					if (attempt) attempt->outcome =
-						ShapeRecognitionAttemptOutcome::InvalidReplacement;
-					continue;
-				}
-				std::optional<StrokeTileFootprint> footprint =
-					BuildStrokeTileFootprint(replacement);
-				if (!footprint)
-				{
-					if (attempt) attempt->outcome =
-						ShapeRecognitionAttemptOutcome::FootprintFailed;
-					continue;
-				}
-
-				std::vector<RenderItemId> sourceItems;
-				sourceItems.reserve(candidateCount);
-				for (std::size_t index = beginIndex; index < candidates.size(); ++index)
-				{
-					sourceItems.push_back(candidates[index]->id);
-					IncludeFootprint(*footprint, *candidates[index]);
-				}
-				NormalizeTiles(footprint->undoTiles);
-				NormalizeTiles(footprint->compositionTiles);
-				if (attempt)
-				{
-					attempt->outcome = ShapeRecognitionAttemptOutcome::Accepted;
-					diagnostics->accepted = true;
-					diagnostics->acceptedStrokeCount = candidateCount;
-				}
-				return ShapeCorrectionPlan(std::move(sourceItems),
-					std::move(replacement), std::move(*footprint), recognized.confidence);
+				if (attempt && evaluation.result.type != CV::ShapeType::Unknown)
+					attempt->outcome = ShapeRecognitionAttemptOutcome::NotSelected;
 			}
-			return std::nullopt;
+			// 全部后缀评估完才选结果；未支持输出的闭合模型同样保留竞争资格。
+			const auto selection = CV::SelectShapeHypothesis({ hypotheses.data(),hypothesisCount }, current.context);
+			if (diagnostics) { diagnostics->selectionReason = selection.rejectionReason; diagnostics->selectionMargin = selection.margin; }
+			if (selection.rejectionReason != CV::ShapeRecognitionRejectReason::None) return std::nullopt;
+			const auto& winner = hypotheses[selection.index];
+			const auto beginIndex = candidates.size() - winner.group;
+			ShapeRecognitionAttemptDiagnostics* attempt = diagnostics ? &diagnostics->attempts[beginIndex] : nullptr;
+			std::vector<float> widths;
+			std::vector<RenderItemId> sourceItems;
+			for (std::size_t i = beginIndex; i < candidates.size(); ++i)
+			{
+				sourceItems.push_back(candidates[i]->id);
+				for (const auto& point : strokes[candidates[i]->strokeIndex].Points()) if (point.width > 0) widths.push_back(point.width);
+			}
+			if (widths.empty())
+			{
+				if (attempt) attempt->outcome = ShapeRecognitionAttemptOutcome::MissingReplacementWidth;
+				return std::nullopt;
+			}
+			auto median = widths.begin() + widths.size() / 2;
+			std::nth_element(widths.begin(), median, widths.end());
+			const float width = *median;
+			if (attempt) attempt->representativeWidth = width;
+			auto style = strokes[candidates.back()->strokeIndex].Style(); style.inkType = StoredInkType::OutlineRectangle;
+			const auto& rectangle = winner.correction;
+			InkStroke replacement(style, { { rectangle.left,rectangle.top,width },{ rectangle.right,rectangle.bottom,width } });
+			if (!replacement.IsValid())
+			{
+				if (attempt) attempt->outcome = ShapeRecognitionAttemptOutcome::InvalidReplacement;
+				return std::nullopt;
+			}
+			auto footprint = BuildStrokeTileFootprint(replacement);
+			if (!footprint)
+			{
+				if (attempt) attempt->outcome = ShapeRecognitionAttemptOutcome::FootprintFailed;
+				return std::nullopt;
+			}
+			for (std::size_t i = beginIndex; i < candidates.size(); ++i) IncludeFootprint(*footprint, *candidates[i]);
+			NormalizeTiles(footprint->undoTiles); NormalizeTiles(footprint->compositionTiles);
+			if (attempt)
+			{
+				attempt->outcome = ShapeRecognitionAttemptOutcome::Accepted;
+				diagnostics->accepted = true; diagnostics->acceptedStrokeCount = winner.group;
+			}
+			return ShapeCorrectionPlan(std::move(sourceItems), std::move(replacement), std::move(*footprint), winner.quality);
 		}
 		catch (...)
 		{
@@ -742,4 +856,13 @@ namespace Inkeys::Drawing::Draw3
 			return std::nullopt;
 		}
 	}
+	std::optional<ShapeCorrectionPlan> BuildShapeCorrectionPlan(
+		const InkCanvas& canvas, const CanvasRuntimeHistory& history, float dpiScale,
+		ShapeRecognitionDatasetDiagnostics* diagnostics) noexcept
+	{
+		ShapeRecognitionScaleSnapshot current;
+		current.context.dipPerPixelX = current.context.dipPerPixelY = 1 / dpiScale;
+		return BuildShapeCorrectionPlan(canvas, history, current, {}, diagnostics);
+	}
+
 }

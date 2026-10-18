@@ -406,6 +406,8 @@ namespace Inkeys::Drawing::Draw3
 		struct CanvasPageRuntimeState
 		{
 			CanvasRuntimeHistory history;
+			std::array<ShapeStrokeProvenance, 6> shapeRecognitionProvenance = {};
+			std::size_t shapeRecognitionProvenanceCount = 0;
 			InkRasterStateToken rasterState = 0;
 			std::vector<InkRasterStateToken> beforeStates;
 			std::vector<InkRasterStateToken> afterStates;
@@ -2211,6 +2213,22 @@ namespace Inkeys::Drawing::Draw3
 				pageRuntime.rasterState = afterState;
 				pageRuntime.clearRedoAvailable = false;
 			}
+			// 只旁挂最近六笔的来源快照，不写入文档，也不保留 contact 指针。
+			if (pageRuntime.shapeRecognitionProvenanceCount == pageRuntime.shapeRecognitionProvenance.size())
+			{
+				std::move(pageRuntime.shapeRecognitionProvenance.begin() + 1,
+					pageRuntime.shapeRecognitionProvenance.end(), pageRuntime.shapeRecognitionProvenance.begin());
+				--pageRuntime.shapeRecognitionProvenanceCount;
+			}
+			auto scale = CaptureShapeRecognitionScale(runtime.speedEraserDisplayScale,
+				runtime.handle.record->DownSnapshot().source);
+			if (mode != StoredStrokeCommitMode::NormalUp ||
+				runtime.handle.record->DownSnapshot().source != runtime.lastInputSnapshot.source)
+			{
+				scale.context.physicalScaleTrusted = false;
+				scale.context.scaleFallbackReason = CV::ShapeScaleFallbackReason::SourceChanged;
+			}
+			pageRuntime.shapeRecognitionProvenance[pageRuntime.shapeRecognitionProvenanceCount++] = { *renderItem, scale };
 			return StoredStrokeCpuCommit{ *strokeIndex, *renderItem,
 				beforeState, afterState };
 		}
@@ -13008,8 +13026,11 @@ namespace Inkeys::Drawing::Draw3
 			const bool diagnosticsEnabled = ShapeRecognitionDiagnosticsEnabled();
 			std::optional<ShapeRecognitionDatasetDiagnostics> diagnostics;
 			if (diagnosticsEnabled) diagnostics.emplace();
+			// 识别消费实时显示尺度；物理标尺再逐笔核对来源及显示代次。
+			const auto recognitionScale = CaptureShapeRecognitionScale(window_.SpeedEraserDisplayScaleSnapshot(), {});
 			std::optional<ShapeCorrectionPlan> plan = BuildShapeCorrectionPlan(
-				*canvas, runtime.history, configuration_.dpiScale,
+				*canvas, runtime.history, recognitionScale,
+				{ runtime.shapeRecognitionProvenance.data(), runtime.shapeRecognitionProvenanceCount },
 				diagnostics ? &*diagnostics : nullptr);
 			if (diagnostics)
 				WriteShapeRecognitionDatasetDiagnostics(*diagnostics);

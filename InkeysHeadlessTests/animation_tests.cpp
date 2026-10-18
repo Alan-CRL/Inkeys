@@ -1627,6 +1627,8 @@ namespace
 
 int main(int argc, char** argv)
 {
+	if (argc == 2 && std::string_view(argv[1]) == "--shape-recognition-only")
+		return RunDraw3ShapeRecognitionTests();
 	bool benchmark = false;
 	bool penWidthOnly = false;
 	bool draw3ContactBenchmark = false;

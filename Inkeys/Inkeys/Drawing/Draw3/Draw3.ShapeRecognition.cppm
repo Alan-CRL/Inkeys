@@ -1,5 +1,9 @@
 ﻿module;
 
+#include "Draw3.SpeedEraser.h"
+
+#include <array>
+#include <span>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -15,6 +19,30 @@ import Inkeys.Drawing.Draw3.ink_history;
 
 export namespace Inkeys::Drawing::Draw3
 {
+	struct ShapeRecognitionScaleSnapshot
+	{
+		CV::ShapeRecognitionContext context;
+		std::uint64_t displayGeneration = 0;
+		std::uintptr_t monitor = 0;
+		std::uint64_t sourceGeneration = 0;
+		std::uint32_t sourceContext = 0, sourceCursor = 0, sourceKind = 0;
+		bool physicalAvailable = false;
+	};
+
+	struct ShapeStrokeProvenance
+	{
+		RenderItemId item;
+		ShapeRecognitionScaleSnapshot scale;
+	};
+
+	// 只读取显示和来源事实，不继承速度橡皮的响应/调测策略。
+	ShapeRecognitionScaleSnapshot CaptureShapeRecognitionScale(
+		const SpeedEraser::DisplayScale& display, const SpeedEraser::InputSource& source) noexcept;
+	CV::ShapeRecognitionContext ResolveShapeRecognitionContext(
+		const ShapeRecognitionScaleSnapshot& current,
+		std::span<const ShapeStrokeProvenance> provenance,
+		std::span<const RenderItemId> items) noexcept;
+
 	struct ShapeCorrectionPlan
 	{
 		std::vector<RenderItemId> sourceItems;
@@ -77,6 +105,7 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		VisionRejected = 0,
 		Accepted,
+		NotSelected,
 		MissingReplacementWidth,
 		InvalidReplacement,
 		FootprintFailed,
@@ -116,6 +145,9 @@ export namespace Inkeys::Drawing::Draw3
 		std::vector<ShapeRecognitionAttemptDiagnostics> attempts;
 		std::size_t acceptedStrokeCount = 0;
 		bool accepted = false;
+		CV::ShapeRecognitionContext context;
+		CV::ShapeRecognitionRejectReason selectionReason = CV::ShapeRecognitionRejectReason::NoViableModel;
+		float selectionMargin = 0.0f;
 	};
 
 	void SetShapeRecognitionDiagnosticsEnabled(bool enabled) noexcept;
@@ -126,6 +158,12 @@ export namespace Inkeys::Drawing::Draw3
 		ShapeCandidateCollectionStopReason reason) noexcept;
 	void WriteShapeRecognitionDatasetDiagnostics(
 		const ShapeRecognitionDatasetDiagnostics& diagnostics) noexcept;
+
+	std::optional<ShapeCorrectionPlan> BuildShapeCorrectionPlan(
+		const InkCanvas& canvas, const CanvasRuntimeHistory& history,
+		const ShapeRecognitionScaleSnapshot& current,
+		std::span<const ShapeStrokeProvenance> provenance,
+		ShapeRecognitionDatasetDiagnostics* diagnostics = nullptr) noexcept;
 
 	std::optional<ShapeCorrectionPlan> BuildShapeCorrectionPlan(
 		const InkCanvas& canvas, const CanvasRuntimeHistory& history,

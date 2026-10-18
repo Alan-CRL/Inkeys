@@ -299,8 +299,8 @@ PumpBridgeState();
 ### 2. Signatures
 
 - `Inkeys.CV.ShapeRecognition::RecognizeInkShape(std::span<const InkStrokeView>, float dpiScale) noexcept -> ShapeResult`；导出接口不得包含 `cv::` 类型，OpenCV 头文件只存在于实现单元。
-- `RecognizeInkShape(..., ShapeRecognitionDiagnostics* diagnostics = nullptr) noexcept`；诊断结构只含自有枚举、标量、数组和矩形，不得暴露 `cv::` 类型。
-- `ShapeRecognitionThresholds` 中绝对尺度字段使用 `*Dip` 命名；`ShapeRecognitionDiagnostics` 同时返回实际 `dpiScale`、`edgeBand`（画布 px）与 `edgeBandDip`，四角证据返回各 epsilon 的 corner count、选中 epsilon 及角点距离。
+- `EvaluateInkShapes(strokes, ShapeRecognitionContext, diagnostics) noexcept -> ShapeEvaluation` 返回矩形、直线、椭圆、三角形、一般四边形候选；`SelectShapeHypothesis(...)` 统一仲裁。`RecognizeInkShape` 保留 context 与旧 float dpiScale 包装。导出接口只含自有类型，不得暴露 `cv::` 类型。
+- `ShapeRecognitionThresholds` 中绝对尺度字段使用 `*Dip` 命名；`ShapeRecognitionDiagnostics` 返回 context 的实际 X/Y DIP 标尺、基础/实际方向容差与物理标尺回退原因；多尺度候选记录角点数和 epsilon，模型记录最终拟合角点及修正边界。旧标量 `_px` 以几何平均 DPI 为参考（`scalar_px_basis=geometric_mean_dpi`），点坐标 `_px` 保持真实画布坐标。
 - `Experimental.Inkeys3.ConsoleOutput.ShapeRecognition : bool = false`；`SetShapeRecognitionDiagnosticsEnabled(bool)` 只在进程启动读取配置后设置。
 - `BuildShapeCorrectionPlan(..., ShapeRecognitionDatasetDiagnostics* diagnostics = nullptr) noexcept` 与 `WriteShapeRecognitionDatasetDiagnostics(...) noexcept` 分离采集和输出。
 - `InkStroke::{RenderOnlyWhenLatest(), SetRenderOnlyWhenLatest(bool)}` 保存独立于 Undo 的内容元数据。
@@ -309,14 +309,19 @@ PumpBridgeState();
 
 ### 3. Contracts
 
-- 当前 MVP 只识别水平/竖直矩形。候选必须以最新 Stroke 结尾，由最近最多 6 条连续、同样式、active 且 effectively visible 的 Pen 构成；遇到其他工具、条件/隐藏项、Redo 间隙或样式变化立即截断，并从最大后缀向小后缀尝试。
+- 当前只输出水平/竖直矩形，但五类模型都参与竞争，未支持形状胜出也必须保留原稿。候选以最新 Stroke 结尾，由最近最多 6 条连续、同样式、active 且 effectively visible 的 Pen 构成；沿用工具/条件/隐藏/Redo/样式边界，评估全部后缀后再统一选择。闭合候选优先于其末笔的开放直线；等价矩形合并，质量差不超过 0.02 时包含有效重复描边，不同几何分差不足 0.08 时拒识。
 - 只有绘制 contact、手势手指、重连候选、导航和待处理输入全部为空，且最终 Pen 已提交后才消费一次触发。识别失败不反复尝试同一 history revision。
 - 数据集诊断默认关闭且只在非 Release 实验页显示；开关文案必须说明下次启动生效。独立开启时应在 Draw3 启动前分配控制台，但不得顺带开启 Draw3 设备/驱动环境诊断。
 - 同一次最终抬笔尝试只读取一次诊断原子开关。关闭时不得构造 dataset/attempt 容器或格式化字符串，并向 CV/adapter 传 `nullptr`；开启时从最大到最小后缀记录候选停止原因、笔画/点数、DPI、样式、输入与视觉边界、实际中位笔宽、替换宽度、所有几何指标/阈值、置信度、结果和明确拒绝码。绝对量输出键必须以 `_px`/`_dip` 标明单位。
 - `median_width_px` 必须来自视觉诊断的实际输入中位宽；`replacement_width_px` 只在生成修正结果时赋值，拒绝样本保持 0。诊断 writer 必须 `noexcept` 并在分配/控制台异常时关闭失败，不能终止绘制线程。
 - 候选样式只比较 Pen 类型、RGB、opacity 和 texture；采样点 width 受压力影响，不得用于切断跨 Stroke 候选。width 只参与最小尺寸、边带和最终替换宽度计算。
 - 识别器最多处理每笔 1024 个采样点、总计 4096 点；非法坐标/DPI、超限、OpenCV 异常或任一硬门槛失败都返回 `Unknown`。所有绝对容差先以 DIP 计算并只转换一次到画布 px；同一几何与 width 同比例缩放后，1x/2x DPI 必须得到等价分类和 DIP 容差。
-- 四角证据必须在 `approxPolyDP` 周长 `2%/3%/4%/5%` 中至少一个得到凸四边形，且其顶点与轴对齐包围框角点最大距离不超过短边 `18%`。矩形度门槛 `0.82` 用于分离圆/椭圆；单边/总覆盖分离 U/C/缺边；角点距离、边带残差及偏轴分离平行四边形/倾斜矩形。原始长段偏轴除全局平均外还必须逐边计算加权平均，避免锯齿被整边 `fitLine` 抹平。
+- 在局部 DIP 坐标中弧长采样；多尺度轮廓简化和 `minAreaRect` 只生成初值，最多 6 轮边归属/Huber 直线/共享正交方向拟合，包围框不再固定识别边带。短边必须达到 `max(64 DIP, 8×中位笔宽 DIP)`，长宽比最多 6；每边实测覆盖至少 0.70、常规总覆盖至少 0.85，每笔解释比例至少 0.70，整体离群弧长不超过 0.15。四角须有相邻两边支撑，并约束单边最大缺口。四角各边的实测起止缺口均在 `max(2×容差,0.15×短边)` 内，且直边中段连续（未获闭合许可的内部缺口不超过 4 DIP）时，允许至多 0.05 的角区总覆盖缺失，实测总覆盖仍不得低于 0.80；质量中的 C 始终为实测值。
+- 统一质量 `Q=0.50×(1-E)+0.30×C+0.20×I-0.01×(参数数-2)`，其中 E 是截断归一化弧长残差，C 为边界覆盖，I 为解释比例；至少 0.80 且相对其他有效解释有 0.08 优势。近似矩形的自由四边形折叠到同一家族；明显非正交且质量改善充分的四边形保留竞争资格。
+- 矩形最多一处缺口可凭两端实际笔画端点获得闭合许可：投影端点与缺口边缘相差不超过 4 DIP，实际端点间距不超过 `max(2×容差,0.30×短边)`、沿模型边界缺口不超过 `max(2×容差,0.35×短边)`；不补造笔迹、不增加实测覆盖/解释比例/质量分，也不得绕过每边覆盖要求。其余缺口继续执行原门槛，缺边或多处大开口必须拒绝。
+- 局部直线性使用固定弧长窗口并逐边检查，不随原始采样密度变化；矩形角区过渡长度为 `min(0.25×短边,max(2×容差,0.20×短边))`，转角窗口不作为直边偏轴，直边中段仍检查持续锯齿和偏轴。拟合边仍检查相邻正交和对边平行。扶正角度最多 10°，最大角点位移不超过 `max(2×容差, 0.20×短边)`，围绕拟合中心保留宽高，明显倾斜或修正过大时保留原稿。
+- 识别读取 Window 实时显示快照的 X/Y DIP 标尺。CPU 提交旁挂最近 6 笔自有数值来源记录，按 item generation 隔离，不写入 uink、不保留 contact 指针。只有全部笔画为映射匹配的可信直接输入、来源及显示代次一致且物理尺寸可用时启用 EDID；未知/间接/混合/失效来源回退 DIP，诊断明确记录 physical_unavailable/indirect_input/mapping_mismatch/missing_provenance/display_changed/source_changed 等原因。速度橡皮响应和调测覆盖不影响识别。
+- 基础容差为 `clamp(max(6,0.04×短边,0.75×中位笔宽),6,14)` DIP；物理先验 1.5 mm 按法线方向换算，仅允许基础值 75%～125% 范围且最大 14 DIP。各模型共享标尺，物理信息不增加质量分。
 - 条件可见性按 active 序列从后向前计算：`visible = active && (!renderOnlyWhenLatest || 后方不存在 active 非条件项)`。修正时原稿设为条件项，追加的 `OutlineRectangle` 保持非条件；因此矩形存在时隐藏原稿，撤回矩形后末尾条件原稿整体恢复可见。
 - 撤回矩形仍只消耗一个历史项；之后原稿按原 Stroke 顺序逐笔撤回。Redo 先隐藏条件原稿再恢复矩形。撤回矩形后追加新内容时，必须先把当前末尾条件组固化为普通内容并同步 document sidecar，再丢弃 Redo 分支。
 - 修正、Undo 和 Redo 的 dirty rect、热前像与 composition restore 必须覆盖原稿和矩形 footprint 的 Tile 并集。先用预演 history 生成目标画面，GPU 成功后才提交 CPU history、document 元数据、raster token 和 redo 游标。
@@ -331,7 +336,9 @@ PumpBridgeState();
 | 同一 Pen 的不同 Stroke 压力宽度变化 | 继续收集候选；不得报 `style_mismatch` |
 | DPI 从 1x 变为 2x，坐标/width 同比例缩放 | 分类、归一化矩形和 `edgeBandDip` 等价 |
 | 2% 简化为 5 角，但 3%–5% 存在合法四角 | 继续执行覆盖/偏轴验证，不因首个 epsilon 早退 |
-| 圆、缺边或持续锯齿恰好进入自适应边带 | 分别由矩形度/覆盖/逐边局部偏轴拒绝，不靠缩窄 DIP 边带 |
+| 圆、缺边或持续锯齿恰好进入自适应边带 | 分别由模型竞争/覆盖/固定弧长局部直线性拒绝 |
+| 圆钝转角、单个端点收尾缺口或四边小断角 | 有充分直边支撑时允许修正，C/Q 不因闭合许可或角区豁免增加 |
+| 内部绕行造成缺口、两处大开口或主要边为曲线 | 不得套用单个端点闭合许可，保留原稿 |
 | 诊断格式化或控制台写入异常 | 吞掉诊断异常，识别、修正与绘制线程继续正常运行 |
 | history/document 预演或修正 Stroke 追加失败 | 回滚暂存尾项，不设置条件标记 |
 | GPU restore 在提交前失败或可能部分写入 | 用旧 history 重放受影响 Tile；仍失败则请求权威刷新，CPU 状态保持旧值 |
@@ -341,7 +348,7 @@ PumpBridgeState();
 ### 5. Good / Base / Bad Cases
 
 - Good：四笔矩形被替换为同色、同透明度、同中位笔宽的 `OutlineRectangle`；Undo 一次恢复全部原稿，Redo 再次隐藏原稿并显示矩形。
-- Good：开启数据集输出后，`format_version=2` 用 `record=startup/pen_up_begin/stroke/attempt/geometry/fit/edge/stroke_fit/thresholds/outcome/pen_up_end` 记录全部后缀；`stroke_fit.sampled_points_dip` 保留该候选实际送入识别器的弧长重采样点，拒绝样本仍保留真实 `median_width_px`/`median_width_dip`、DPI、视觉边界及 `primary_reject_reason`。
+- Good：开启数据集输出后，`format_version=3` 用 `record=startup/pen_up_begin/stroke/attempt/geometry/fit/edge/stroke_fit/thresholds/outcome/pen_up_end` 记录全部后缀，并增加 model/selection 记录各模型质量、结构拒绝码、拟合角点、修正边界、分差、扶正位移和尺度来源；fit 额外记录 `corner_transition_dip`、`endpoint_closure_gap_dip`、`corner_coverage_allowance`，与实测覆盖/最大缺口分开，thresholds 输出对应门槛；`stroke_fit.sampled_points_dip` 保留该候选实际送入识别器的弧长重采样点，拒绝样本仍保留真实 `median_width_px`/`median_width_dip`、DPI、视觉边界及 `primary_reject_reason`。
 - Good：粗糙单笔矩形在 2% 产生局部额外凸点时可由更大 epsilon 恢复四角证据；同样本按 1x/2x 缩放后结果一致。
 - Base：候选不是矩形或仍有活动输入时完全保持普通 Pen 流程；单笔闭合、乱序反向、允许的小断角、压力变化和重复边仍按同一合同判断。
 - Bad：把 `renderOnlyWhenLatest` 当作 `active=false`、只更新 document 或 history 一侧、跨过隐藏/异样式项拼候选、用 replacement width 冒充拒绝样本中位笔宽，或在 GPU restore 前提交 CPU 游标。
@@ -350,14 +357,15 @@ PumpBridgeState();
 ### 6. Tests Required
 
 - 识别正例覆盖标准四笔、单笔闭合、乱序/反向、轻微抖动、小断角、粗糙多尺度四角、压力变化、鼠标低采样、重复边及 1x/2x DPI 等价；负例覆盖小图形、U/C、圆/椭圆、三角形、平行四边形、倾斜矩形、X、缺边、局部锯齿/过大转角、内部乱画和最新无关笔画。
+- 转角/闭合回归覆盖不同半径的圆钝角、边中/角区收尾缺口、乱序反向多笔、小断角总覆盖豁免，以及 1x/1.25x/1.5x/2x 和可信 EDID 等价；断言闭合许可不增加实测覆盖/Q。两处大开口、过大开口、无端点证据的内部绕行、圆角中段锯齿、非正交圆角四边形和带开口椭圆必须保留原稿。
 - History 覆盖修正、Undo、原稿逐笔 Undo、Redo、Redo 分支丢弃、页面隔离、条件尾组 Tile 可见性及可见性操作失败回滚。
 - 触发门分别断言绘制 contact、手势、重连、导航和 pending input 阻止识别，全抬起后同一 revision 只执行一次。
 - 诊断测试覆盖默认关闭/独立切换、accepted 与明确拒绝码、无候选/非 Pen/样式边界、6 笔 history start、formatter 的 DPI/视觉边界/中位宽与替换宽度区分，以及 writer 关闭失败。
-- 构建完整 `InkeysRepo.sln Debug|ARM64`，运行 `InkeysHeadlessTests.exe --no-window` 与 `Inkeys.exe --draw3-hidden-test`；linker map 只允许 OpenCV core/imgproc 对象进入 EXE，PE 导入和输出目录不得出现 OpenCV/FFmpeg DLL。
+- 构建完整 `InkeysRepo.sln Debug|ARM64`，运行 `InkeysHeadlessTests.exe --no-window`；识别可用 `--shape-recognition-only` 独立无窗口验证；只有用户授权 GUI 验证时才运行 `Inkeys.exe --draw3-hidden-test`；linker map 只允许 OpenCV core/imgproc 对象进入 EXE，PE 导入和输出目录不得出现 OpenCV/FFmpeg DLL。
 
 ### 7. Wrong vs Correct
 
-Wrong：`标记原稿 inactive -> 追加 Shape -> GPU 失败后再猜测恢复`；每层重复读取开关；或用 `abs(pointWidth-referenceWidth)` 切断候选、写死 `edgeBand=6px`、固定 `approxPolyDP(..., 0.02)` 必须四角。
+Wrong：`标记原稿 inactive -> 追加 Shape -> GPU 失败后再猜测恢复`；每层重复读取开关；或用 `abs(pointWidth-referenceWidth)` 切断候选、写死 `edgeBand=6px`、将水平包围框或固定四角简化直接当作分类器。
 
 Correct：`复制 history 预演条件可见性 -> 恢复 footprint union -> 成功后原子提交 metadata/history/raster state`；稳定样式不含压力 width，DIP 自适应边带只转换一次，多尺度四角后仍通过矩形度/覆盖/逐边偏轴竞争负类；诊断在 latch 消费后快照一次开关并关闭失败输出。
 
