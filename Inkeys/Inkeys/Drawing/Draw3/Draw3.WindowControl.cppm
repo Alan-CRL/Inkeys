@@ -197,6 +197,9 @@ export namespace Inkeys::Drawing::Draw3
 			const Inkeys::Business::PenWidth::Context& context = {}) noexcept;
 		ProductVisualStyle ProductVisualStyleSnapshot() const noexcept;
 		void EnqueueCanvasCommand(CanvasCommand command);
+		// 单个预留终态槽不分配；占用时调用者保留 payload，消费后唤醒继续交付。
+		bool TryEnqueuePresentationCompletion(
+			const std::shared_ptr<const PresentationPersistenceCompletion>& completion) noexcept;
 		void RequestExit() noexcept;
 		// 配置基础工具的应用内瞬态光标外观；Shape 统一复用 Pen 外观。
 		bool ConfigureDrawingCursor(DrawingTool tool,
@@ -279,6 +282,8 @@ export namespace Inkeys::Drawing::Draw3
 		WindowSize size_ = {};
 		std::mutex canvasCommandMutex_;
 		std::deque<CanvasCommand> canvasCommands_;
+		std::shared_ptr<const PresentationPersistenceCompletion> presentationCompletion_;
+		std::size_t commandsBeforePresentationCompletion_ = 0;
 		std::atomic<bool> resizeRequested_ = false;
 		std::atomic<bool> fullPresentRequested_ = false;
 		std::atomic<bool> compositionChangedRequested_ = false;

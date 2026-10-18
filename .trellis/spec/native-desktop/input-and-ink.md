@@ -76,7 +76,8 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 ### 3. Contracts
 - 关闭时不向控制台输出光标诊断；开启时先建立 Debug 控制台，再启用记录。诊断只观察状态，不改变鼠标、笔、触摸的归属和光标显隐。
 - `InitializeDebugConsole` 保留已有 stdout/stderr 文件或管道重定向；两路均重定向时不创建控制台，只有一路重定向时只初始化缺失输出。采集必须保留启动至退出的全量文件，不能用末屏替代。Win7 PowerShell 2 / 旧 CLR 的 HashAlgorithm 释放使用 public Clear()，不能假设直接 Dispose() 可见；脚本 parser 通过不等于旧 CLR 方法验证。
-- RTS/窗口回调只把定长事件写入有界队列，不直接等待控制台 I/O；绘制线程输出序号、时间、线程和事件，队列溢出必须报告丢弃条数。
+- RTS/窗口/绘制线程只发布定长诊断，不同步等待外部 I/O；统一独立输出 worker 写入 stdout/stderr。序号标识生产事件，跨线程取号与入队可交错；固定队列拥塞丢弃及有界停止见 [F1 合同](canvas-freeze-boundaries.md#f1draw3-标准流诊断不得阻塞绘制与-rts)。
+- 橡皮收敛后的 Move 唤醒必须使用一次订阅、真实已消费 sequence 复查和帧初 generation，含 deadline 分支，见 [F3 合同](canvas-freeze-boundaries.md#f3橡皮-idle-交接必须保留下一次有效-move)。
 - 输入日志需包含 Touch 生命周期、Pointer/Mouse 来源与过滤结果、Pen/Mouse 样本、owner 和系统光标决策。绘制日志需区分主光标与逐触点光标，覆盖形状、位置、尺寸、透明度、Laser 笔尖和本帧呈现结果；移动时可限频，来源和可见性变化必须立即输出。
 
 ### 4. Validation & Error Matrix

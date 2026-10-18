@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <windows.h>
 
 #include <algorithm>
@@ -113,9 +114,9 @@ namespace Inkeys::Drawing::Draw3
 				DrawingCursorDiagnosticVisualReasonName(reason));
 			if (length > 0)
 			{
-				std::cout.write(line, (std::min)(
+				DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, (std::min)(
 					static_cast<size_t>(length), sizeof(line) - 1));
-				std::cout.flush();
+				DiagnosticOutput::Wake();
 			}
 		}
 	}

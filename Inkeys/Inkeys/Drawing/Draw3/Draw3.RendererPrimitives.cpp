@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -312,7 +313,7 @@ namespace Inkeys::Drawing::Draw3
 				boundVsCb && boundVsCb.Get() == globalCB.Get() ? 1u : 0u,
 				boundPsCb && boundPsCb.Get() == globalCB.Get() ? 1u : 0u,
 				boundSrv && boundSrv.Get() == inkDataSRV.Get() ? 1u : 0u);
-			if (length > 0) std::cout.write(line, static_cast<std::streamsize>(
+			if (length > 0) DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, static_cast<std::streamsize>(
 				std::min(static_cast<size_t>(length), sizeof(line) - 1)));
 		};
 		if (!IsValidDrawingCursorAppearance(visual.appearance))

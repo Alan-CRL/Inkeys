@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <algorithm>
 #include <cstdint>
 #include <cwchar>
@@ -338,7 +339,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!IsAvailable())
 				LogUnavailableOnce("no supported pen haptics API was found");
 			else if constexpr (kHapticDebugLoggingEnabled)
-				std::cout << "[Haptics] pen_device_api=" <<
+				DiagnosticOutput::Line() << "[Haptics] pen_device_api=" <<
 					(penDeviceStatics ? "true" : "false") <<
 					" input_manager_api=" <<
 					(inputHapticsSupported ? "true" : "false") << std::endl;
@@ -406,7 +407,7 @@ namespace Inkeys::Drawing::Draw3
 			CachePointerController(controller.Get());
 			attachedPointerId = pointerId;
 			if constexpr (kHapticDebugLoggingEnabled)
-				std::cout << "[Haptics] attached pointer_id=" << pointerId << std::endl;
+				DiagnosticOutput::Line() << "[Haptics] attached pointer_id=" << pointerId << std::endl;
 			return pointerController != nullptr;
 		}
 
@@ -419,7 +420,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool pointerSent = SendPointerDiscrete(waveform, fallback, intensity);
 			const bool sent = pointerSent || SendInputManagerDiscrete(waveform, fallback, intensity);
 			if constexpr (kHapticDebugLoggingEnabled)
-				std::cout << "[Haptics] discrete waveform=0x" << std::hex << waveform
+				DiagnosticOutput::Line() << "[Haptics] discrete waveform=0x" << std::hex << waveform
 					<< " fallback=0x" << fallback << std::dec
 					<< " sent=" << (sent ? "true" : "false")
 					<< " pointer_controller=" << (pointerController ? "true" : "false")
@@ -459,7 +460,7 @@ namespace Inkeys::Drawing::Draw3
 			if constexpr (kHapticDebugLoggingEnabled)
 			{
 				if (lastContinuousTickMs != 0)
-					std::cout << "[Haptics] stop continuous elapsed_ms="
+					DiagnosticOutput::Line() << "[Haptics] stop continuous elapsed_ms="
 						<< NowMilliseconds() - lastContinuousTickMs << std::endl;
 			}
 			lastContinuousTickMs = 0;
@@ -485,11 +486,12 @@ namespace Inkeys::Drawing::Draw3
 				now - lastDebugLogMs < kHapticDebugLogIntervalMs)
 				return;
 			lastDebugLogMs = now;
-			std::cout << "[Haptics] " << reason << " waveform=0x" << std::hex
+			DiagnosticOutput::Line line;
+			line << "[Haptics] " << reason << " waveform=0x" << std::hex
 				<< waveform << " fallback=0x" << fallback;
 			if (result != S_OK)
-				std::cout << " hr=0x" << static_cast<uint32_t>(result);
-			std::cout << std::dec << std::endl;
+				line << " hr=0x" << static_cast<uint32_t>(result);
+			line << std::dec << std::endl;
 		}
 
 		void LogContinuousResult(uint16_t waveform, uint16_t fallback,
@@ -506,31 +508,32 @@ namespace Inkeys::Drawing::Draw3
 			lastContinuousWaveform = waveform;
 			lastContinuousFallback = fallback;
 			lastContinuousDebugLogMs = now;
-			std::cout << "[Haptics] continuous waveform=0x" << std::hex << waveform
+			DiagnosticOutput::Line line;
+			line << "[Haptics] continuous waveform=0x" << std::hex << waveform
 				<< " fallback=0x" << fallback << std::dec
 				<< " sent=" << (sent ? "true" : "false")
 				<< " intensity=";
 			if (HasExplicitIntensity(intensity))
-				std::cout << intensity;
+				line << intensity;
 			else
-				std::cout << "system";
-			std::cout
+				line << "system";
+			line
 				<< " pointer_controller=" << (pointerController ? "true" : "false")
 				<< " input_manager=" << (inputHapticsManager ? "true" : "false")
 				<< " input_api=" << (inputHapticsSupported ? "true" : "false")
 				<< " current_device=";
 			if (hasInputManagerDeviceType)
-				std::cout << lastInputManagerDeviceType;
+				line << lastInputManagerDeviceType;
 			else
-				std::cout << "unknown";
-			std::cout << std::endl;
+				line << "unknown";
+			line << std::endl;
 		}
 
 		void LogUnavailableOnce(const char* reason) noexcept
 		{
 			if (unavailableLogged) return;
 			unavailableLogged = true;
-			std::cout << "[Haptics] unavailable: " << reason << std::endl;
+			DiagnosticOutput::Line() << "[Haptics] unavailable: " << reason << std::endl;
 		}
 
 		void CachePointerController(ISimpleHapticsController* controller) noexcept
@@ -573,15 +576,16 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if constexpr (kHapticDebugLoggingEnabled)
 			{
-				std::cout << "[Haptics] pointer controller feedback_count="
+				DiagnosticOutput::Line line;
+				line << "[Haptics] pointer controller feedback_count="
 					<< pointerFeedback.size()
 					<< " intensity=" << (pointerIntensitySupported ? "true" : "false")
 					<< " duration=" << (pointerDurationSupported ? "true" : "false")
 					<< " play_count=" << (pointerPlayCountSupported ? "true" : "false")
 					<< " waveforms=";
 				for (const FeedbackEntry& entry : pointerFeedback)
-					std::cout << "0x" << std::hex << entry.waveform << " ";
-				std::cout << std::dec << std::endl;
+					line << "0x" << std::hex << entry.waveform << " ";
+				line << std::dec << std::endl;
 			}
 		}
 

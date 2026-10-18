@@ -680,6 +680,7 @@ namespace Inkeys::Drawing::Draw3
 		HANDLE wakeEvent = nullptr;
 		int64_t qpcFrequency = 0;
 		std::atomic<uint64_t> wakeGeneration = 0;
+		std::atomic<bool> idleMoveWakeArmed = false;
 		std::atomic<uint64_t> admissionRevision = 0;
 		std::atomic<size_t> quarantinedContacts = 0;
 		std::atomic<bool> diagnosticsEnabled = false;
@@ -798,7 +799,10 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 		impl_->Count(impl_->movePublished);
-		return true; // Move 只覆盖最新 snapshot，不触发活动帧唤醒。
+		// 活动帧仍合并 Move；只有即将休眠的唯一消费者订阅一次通知。
+		if (impl_->idleMoveWakeArmed.exchange(false, std::memory_order_acq_rel))
+			impl_->SignalWake();
+		return true;
 	}
 
 	bool ContactInputCoordinator::PublishUp(uint32_t tabletContextId, uint32_t contactId,
@@ -1092,6 +1096,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// 仅由所有 producer 已静止且绘制线程已 join 后的 Host::Start 调用；不与 Closing writer 并发。
 		impl_->closePauseForTesting.store(nullptr, std::memory_order_relaxed);
+		impl_->idleMoveWakeArmed.store(false, std::memory_order_relaxed);
 #if defined(DRAW3_CONTACT_TESTING)
 		impl_->commandFallbackMissHookForTesting.store(nullptr, std::memory_order_relaxed);
 #endif
@@ -1120,6 +1125,16 @@ namespace Inkeys::Drawing::Draw3
 		impl_->quarantinedContacts.store(0, std::memory_order_relaxed);
 		impl_->lastDequeuedControlWakeKind = ControlWakeKind::General;
 		if (impl_->wakeEvent) ResetEvent(impl_->wakeEvent);
+	}
+
+	void ContactInputCoordinator::ArmIdleMoveWake() noexcept
+	{
+		(void)impl_->idleMoveWakeArmed.exchange(true, std::memory_order_acq_rel);
+	}
+
+	void ContactInputCoordinator::DisarmIdleMoveWake() noexcept
+	{
+		(void)impl_->idleMoveWakeArmed.exchange(false, std::memory_order_acq_rel);
 	}
 
 	uint64_t ContactInputCoordinator::CaptureWakeGeneration() const noexcept

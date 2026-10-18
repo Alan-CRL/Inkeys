@@ -594,6 +594,21 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	// owner 隐藏时 ReleaseCapture 会同步重入；此通知不访问 ImGui，避免等待渲染锁。
+	if (msg == WM_CAPTURECHANGED) return 0;
+
+	if (msg == WM_SHOWWINDOW && !wParam)
+	{
+		{
+			lock_guard stateLock(settingStateMutex);
+			// FIFO 的原生 Hide 可能晚于重建；仍须收束此时会话，保留最新逻辑显隐。
+			settingSessionState.InvalidateSession();
+		}
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		return 0;
+	}
+
 	if (msg == WM_NCHITTEST)
 	{
 		POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
@@ -8775,6 +8790,11 @@ namespace
 
 		if (settingSession.Done())
 		{
+			{
+				lock_guard stateLock(settingStateMutex);
+				// 当前没有旧 context；在新建前消费 Hide，之后到达的 Hide 仍须下帧收束。
+				settingSessionState.Release();
+			}
 			settingSessionShouldStop.store(false, memory_order_release);
 			settingFrameContext = context;
 			settingFrameResult = FrameResult::Retry;

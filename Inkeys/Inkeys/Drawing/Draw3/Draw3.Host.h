@@ -300,6 +300,11 @@ namespace Inkeys::Drawing::Draw3
 		HostRuntimeMetricsSnapshot runtimeMetrics;
 	};
 
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	// 无窗口生产回归：PPT 终态保留、FIFO 屏障与代际清理。
+	int RunPresentationCompletionDeliveryTest() noexcept;
+#endif
+
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
 	class Host
 	{

@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include "../../../resource.h"
 #include "../../../IdtStart.h"
 #include "Draw3.ShaderCompatibility.h"
@@ -115,8 +116,7 @@ namespace Inkeys::Drawing::Draw3
 			std::snprintf(message, sizeof(message),
 				"[Draw3ShaderSelection] actual=%s sha256=%s bytes=%zu create_hr=0x%08X\n",
 				guarded ? "guarded" : "original", hash, blob.size, static_cast<unsigned int>(result));
-			std::fputs(message, stdout);
-			OutputDebugStringA(message);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Output, message, true);
 		}
 
 		void ReportLaserParticleUnavailableOnce() noexcept

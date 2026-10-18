@@ -15,7 +15,6 @@ import Inkeys.Window;
 namespace
 {
 	constexpr UINT kSettingOwnerProbe = WM_APP + 74;
-
 	LRESULT CALLBACK SettingOwnerProbeProc(HWND hwnd, UINT message,
 		WPARAM wParam, LPARAM lParam)
 	{
@@ -52,6 +51,35 @@ namespace
 		return DefWindowProcW(hwnd, message, wParam, lParam);
 	}
 
+	constexpr UINT kSettingShutdownOnShow = WM_APP + 75;
+	constexpr UINT kSettingNativeHide = WM_APP + 76;
+	thread_local Inkeys::Window::Service* settingShutdownOnShow = nullptr;
+
+	LRESULT CALLBACK SettingCaptureProbeProc(HWND hwnd, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		if (message == kSettingNativeHide)
+		{
+			ShowWindow(hwnd, SW_HIDE);
+			return !IsWindowVisible(hwnd);
+		}
+		if (message == kSettingShutdownOnShow)
+		{
+			settingShutdownOnShow = reinterpret_cast<Inkeys::Window::Service*>(lParam);
+			return 0;
+		}
+		if (message == WM_SHOWWINDOW && wParam && settingShutdownOnShow)
+		{
+			auto* service = settingShutdownOnShow;
+			settingShutdownOnShow = nullptr;
+			(void)SetCapture(hwnd);
+			service->BeginShutdown();
+		}
+		// 此测试窗口只核验 WindowService，不模拟完整 Setting/ImGui 会话。
+		if (message == WM_CAPTURECHANGED) return 0;
+		return ExitGateWindowProc(hwnd, message, wParam, lParam);
+	}
+
 	template<std::size_t WindowCount>
 	[[nodiscard]] bool ContainsWindow(
 		const std::array<HWND, WindowCount>& windows, HWND candidate) noexcept
@@ -73,23 +101,57 @@ namespace
 	}
 
 	template<std::size_t WindowCount>
+	[[nodiscard]] bool HasConsistentOwnerBand(
+		const std::array<HWND, WindowCount>& windows, bool topmost) noexcept
+	{
+		for (const HWND hwnd : windows)
+		{
+			if (!hwnd || !IsWindow(hwnd)
+				|| ((GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != topmost)
+				return false;
+			const HWND owner = GetWindow(hwnd, GW_OWNER);
+			if (ContainsWindow(windows, owner)
+				&& (ZOrderIndex(hwnd) < 0 || ZOrderIndex(hwnd) >= ZOrderIndex(owner)))
+				return false;
+		}
+		return true;
+	}
+
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool IsAdditionalOwnedWindow(
+		const std::array<HWND, WindowCount>& windows, HWND candidate) noexcept
+	{
+		// IME 等合法辅助窗可插入基础成员之间；只接受同进程、可追溯的 owner 后代。
+		const DWORD expectedProcess = GetCurrentProcessId();
+		for (unsigned depth = 0; candidate && depth < 64; ++depth)
+		{
+			DWORD process = 0;
+			if (!GetWindowThreadProcessId(candidate, &process) || process != expectedProcess)
+				return false;
+			if (ContainsWindow(windows, candidate)) return true;
+			candidate = GetWindow(candidate, GW_OWNER);
+		}
+		return false;
+	}
+
+	template<std::size_t WindowCount>
 	[[nodiscard]] bool IsContinuousOwnerTree(
 		const std::array<HWND, WindowCount>& windows) noexcept
 	{
-		int first = -1;
-		int last = -1;
 		std::size_t found = 0;
-		int index = 0;
+		bool unrelatedBetweenMembers = false;
 		for (HWND hwnd = GetTopWindow(nullptr); hwnd;
-			hwnd = GetWindow(hwnd, GW_HWNDNEXT), ++index)
+			hwnd = GetWindow(hwnd, GW_HWNDNEXT))
 		{
-			if (!ContainsWindow(windows, hwnd)) continue;
-			if (first < 0) first = index;
-			last = index;
-			++found;
+			if (ContainsWindow(windows, hwnd))
+			{
+				if (unrelatedBetweenMembers) return false;
+				if (++found == WindowCount) return true;
+			}
+			else if (found && !IsAdditionalOwnedWindow(windows, hwnd))
+				unrelatedBetweenMembers = true;
 		}
-		return found == WindowCount && first >= 0
-			&& last - first + 1 == static_cast<int>(WindowCount);
+		return false;
 	}
 
 	template<std::size_t WindowCount>
@@ -298,6 +360,144 @@ int RunWindowExitVisibilityTests()
 	return failures;
 }
 
+int RunSettingCaptureTests()
+{
+	using namespace Inkeys::Window;
+	int failures = 0;
+	const auto check = [&](bool condition, const char* name)
+	{
+		if (!condition)
+		{
+			std::cerr << "FAILED setting capture: " << name << '\n';
+			++failures;
+		}
+	};
+	std::vector<WindowSpec> specs;
+	for (const auto role : { WindowRole::Freeze, WindowRole::DrawpadPresentation,
+		WindowRole::Drawpad, WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
+		WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight, WindowRole::Bar, WindowRole::Setting })
+	{
+		WindowSpec spec;
+		spec.role = role;
+		spec.className = L"Inkeys.Window.SettingCapture."
+			+ std::to_wstring(static_cast<unsigned>(role));
+		spec.x = -25000;
+		spec.y = -25000;
+		spec.width = 16;
+		spec.height = 16;
+		spec.bindMessages = false;
+		if (role == WindowRole::Setting || role == WindowRole::Bar)
+			spec.windowProc = SettingCaptureProbeProc;
+		specs.push_back(std::move(spec));
+	}
+
+	Service service(8);
+	const bool started = service.Start(std::move(specs));
+	check(started, "service starts");
+	if (!started) return failures;
+	const HWND setting = service.Handle(WindowRole::Setting);
+	const HWND bar = service.Handle(WindowRole::Bar);
+	const auto captureFor = [&](WindowRole role)
+	{
+		GUITHREADINFO info{};
+		info.cbSize = sizeof(info);
+		const bool queried = GetGUIThreadInfo(service.OwnerThreadId(role), &info) != FALSE;
+		check(queried, "query real owner capture");
+		return queried ? info.hwndCapture : nullptr;
+	};
+
+	for (const bool owned : { false, true })
+	{
+		check(service.SetSettingOwnedByDrawpad(owned), "set setting owner");
+		const std::array fallbackTree{ service.Handle(WindowRole::Freeze),
+			service.Handle(WindowRole::DrawpadPresentation), service.Handle(WindowRole::Drawpad),
+			service.Handle(WindowRole::PptBottomLeft), service.Handle(WindowRole::PptBottomRight),
+			service.Handle(WindowRole::PptMiddleLeft), service.Handle(WindowRole::PptMiddleRight), bar, setting };
+		const bool consistent = !owned || HasConsistentOwnerBand(fallbackTree, true);
+		check(consistent, "fallback overlay and owned setting preserve full owner band and order");
+		check(service.Show(WindowRole::Setting), "show setting before capture");
+		check(SendMessageW(setting, kExitGateCapture, 0, 0) != 0
+			&& captureFor(WindowRole::Setting) == setting,
+			"setting captures on its owner thread");
+		check(service.Hide(WindowRole::Setting) && !IsWindowVisible(setting)
+			&& captureFor(WindowRole::Setting) == nullptr,
+			"hide releases setting capture");
+
+		check(SendMessageW(setting, kExitGateCapture, 0, 0) != 0,
+			"hidden setting recaptures for repeated hide regression");
+		check(service.Hide(WindowRole::Setting)
+			&& captureFor(WindowRole::Setting) == nullptr,
+			"repeated hide still releases setting capture");
+
+		check(service.Show(WindowRole::Setting) && service.Show(WindowRole::Bar),
+			"show setting and bar before capture transfer");
+		check(SendMessageW(setting, kExitGateCapture, 0, 0) != 0
+			&& SendMessageW(bar, kExitGateCapture, 0, 0) != 0
+			&& captureFor(WindowRole::Bar) == bar,
+			"capture transfers to a different window");
+		if (owned)
+			check(SendMessageW(setting, kExitGateReadCapture, 0, 0)
+				== reinterpret_cast<LRESULT>(bar),
+				"owned setting sees other window capture in attached input queue");
+		const bool hiddenForTransfer = service.Hide(WindowRole::Setting);
+		const HWND capturedAfterTransferHide = captureFor(WindowRole::Bar);
+		check(hiddenForTransfer, "hide setting after capture transfer");
+		(void)SendMessageW(bar, WM_CANCELMODE, 0, 0);
+		check(captureFor(WindowRole::Bar) == nullptr, "release test bar capture");
+
+		// 同条件仅执行原生 SW_HIDE，区分服务主动清理与系统激活切换带来的取消。
+		check(service.Show(WindowRole::Setting) && service.Show(WindowRole::Bar)
+			&& SendMessageW(setting, kExitGateCapture, 0, 0) != 0
+			&& SendMessageW(bar, kExitGateCapture, 0, 0) != 0
+			&& captureFor(WindowRole::Bar) == bar,
+			"native hide control captures bar");
+		const bool nativeHidden = SendMessageW(setting, kSettingNativeHide, 0, 0) != 0;
+		const HWND nativeCapture = captureFor(WindowRole::Bar);
+		std::cout << "[NativeCaptureHide] owned=" << owned << " hidden=" << nativeHidden
+			<< " bar=" << bar << " capture=" << nativeCapture << '\n';
+		check(nativeHidden, "native hide control hides setting");
+		if (capturedAfterTransferHide != nativeCapture)
+			std::cerr << "capture hide differs from native owned=" << owned
+				<< " serviceCapture=" << capturedAfterTransferHide << " nativeCapture=" << nativeCapture << '\n';
+		// 两次可见窗口隐藏的激活状态可能不同；仅记录原生对照，不将 capture 相等作为合同。
+		(void)SendMessageW(bar, WM_CANCELMODE, 0, 0);
+
+		// 已隐藏窗口不会触发新的激活切换，此时必须保留另一个 HWND 的新捕获。
+		check(!IsWindowVisible(setting)
+			&& SendMessageW(bar, kExitGateCapture, 0, 0) != 0
+			&& captureFor(WindowRole::Bar) == bar, "hidden setting control captures bar");
+		check(service.Hide(WindowRole::Setting)
+			&& captureFor(WindowRole::Bar) == bar,
+			"hiding setting preserves other window capture");
+		(void)SendMessageW(bar, WM_CANCELMODE, 0, 0);
+		check(captureFor(WindowRole::Bar) == nullptr, "release repeated hide bar capture");
+
+		check(service.Show(WindowRole::Setting)
+			&& SendMessageW(setting, kExitGateCapture, 0, 0) != 0,
+			"setting captures before hide all");
+		check(service.HideAllUserWindows() && !IsWindowVisible(setting)
+			&& captureFor(WindowRole::Setting) == nullptr,
+			"hide all releases setting capture");
+	}
+
+	// 在真实 ShowWindow 回调期间关门，覆盖 Execute(Show) 的退出隐藏回退。
+	check(service.SetSettingOwnedByDrawpad(true), "attach before show shutdown race");
+	(void)SendMessageW(setting, kSettingShutdownOnShow, 0,
+		reinterpret_cast<LPARAM>(&service));
+	check(!service.Show(WindowRole::Setting) && !IsWindowVisible(setting)
+		&& captureFor(WindowRole::Setting) == nullptr,
+		"shutdown during show hides and releases setting capture");
+	check(SendMessageW(setting, kExitGateCapture, 0, 0) != 0,
+		"hidden setting captures after shutdown gate");
+	check(service.HideAllUserWindows()
+		&& captureFor(WindowRole::Setting) == nullptr,
+		"shutdown hide all still releases setting capture");
+	service.StopAndJoin();
+	check(!IsWindow(setting) && !IsWindow(bar), "capture test windows are destroyed");
+	if (!failures) std::cout << "PASS setting capture ownership" << '\n';
+	return failures;
+}
+
 int RunWindowTests()
 {
 	using namespace Inkeys::Window;
@@ -310,6 +510,47 @@ int RunWindowTests()
 				++failures;
 			}
 		};
+
+	// 使用真实 HWND 对照：允许 owner 树的辅助后代，但独立竞争窗夹入仍须被拒绝。
+	{
+		const auto create = [](HWND owner, const wchar_t* title)
+		{
+			return CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+				L"Static", title, WS_POPUP, -25000, -25000, 16, 16,
+				owner, nullptr, GetModuleHandleW(nullptr), nullptr);
+		};
+		const HWND root = create(nullptr, L"Owner continuity root");
+		const HWND first = create(root, L"Owner continuity first");
+		const HWND second = create(root, L"Owner continuity second");
+		const HWND auxiliary = create(first, L"Owner continuity auxiliary");
+		const HWND external = create(nullptr, L"Owner continuity external");
+		check(root && first && second && auxiliary && external, "create owner continuity controls");
+		if (root && first && second && auxiliary && external)
+		{
+			const std::array members{ root, first, second };
+			constexpr UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+			check(SetWindowPos(root, HWND_TOP, 0, 0, 0, 0, flags)
+				&& SetWindowPos(first, HWND_TOP, 0, 0, 0, 0, flags | SWP_NOOWNERZORDER)
+				&& SetWindowPos(auxiliary, HWND_TOP, 0, 0, 0, 0, flags | SWP_NOOWNERZORDER)
+				&& SetWindowPos(second, HWND_TOP, 0, 0, 0, 0, flags | SWP_NOOWNERZORDER),
+				"position owned auxiliary between base members");
+			check(ZOrderIndex(second) < ZOrderIndex(auxiliary)
+				&& ZOrderIndex(auxiliary) < ZOrderIndex(first)
+				&& IsAdditionalOwnedWindow(members, auxiliary)
+				&& IsContinuousOwnerTree(members), "owned auxiliary preserves owner tree continuity");
+			check(SetWindowPos(external, second, 0, 0, 0, 0, flags | SWP_NOOWNERZORDER)
+				&& ZOrderIndex(second) < ZOrderIndex(external)
+				&& ZOrderIndex(external) < ZOrderIndex(first),
+				"position independent competitor between base members");
+			check(GetWindow(external, GW_OWNER) == nullptr
+				&& !IsAdditionalOwnedWindow(members, external)
+				&& !IsContinuousOwnerTree(members), "independent window still breaks owner tree continuity");
+			check(SetWindowPos(external, HWND_BOTTOM, 0, 0, 0, 0, flags)
+				&& IsContinuousOwnerTree(members), "owner continuity recovers after competitor leaves");
+		}
+		for (const HWND hwnd : { auxiliary, second, first, root, external })
+			if (hwnd && IsWindow(hwnd)) (void)DestroyWindow(hwnd);
+	}
 
 	std::array<std::atomic<DWORD>, static_cast<std::size_t>(WindowRole::Count)> callbackThreads{};
 	auto makeSpec = [&](WindowRole role, const wchar_t* suffix)
@@ -522,9 +763,59 @@ int RunWindowTests()
 			&& IsOwnerTreeBelow(overlayOwnerTree, competingTopmost),
 			"competing topmost starts above continuous owner tree");
 	}
+	auto logOwnerTree = [&](const char* phase)
+		{
+			std::cerr << "window owner order phase=" << phase
+				<< " continuous=" << IsContinuousOwnerTree(overlayOwnerTree)
+				<< " policy=" << service.OverlayTopmost()
+				<< " whiteboard=" << service.WhiteboardWindowMode()
+				<< " competitorZ=" << ZOrderIndex(competingTopmost) << '\n';
+			for (const HWND member : overlayOwnerTree)
+				std::cerr << " hwnd=" << member << " owner=" << GetWindow(member, GW_OWNER)
+					<< " z=" << ZOrderIndex(member)
+					<< " topmost=" << ((GetWindowLongPtrW(member, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0)
+					<< " visible=" << IsWindowVisible(member) << '\n';
+			const HWND foreground = GetForegroundWindow();
+			DWORD foregroundProcess = 0;
+			const DWORD foregroundThread = GetWindowThreadProcessId(foreground, &foregroundProcess);
+			std::cerr << " foreground=" << foreground << " foregroundPid=" << foregroundProcess
+				<< " foregroundTid=" << foregroundThread
+				<< " overlayHkl=" << GetKeyboardLayout(overlayThread)
+				<< " settingHkl=" << GetKeyboardLayout(service.OwnerThreadId(WindowRole::Setting))
+				<< " foregroundHkl=" << GetKeyboardLayout(foregroundThread) << '\n';
+			// 默认 IME 等系统辅助窗也可能进入 owner 链；失败时保留全部同进程事实。
+			int z = 0;
+			for (HWND candidate = GetTopWindow(nullptr); candidate;
+				candidate = GetWindow(candidate, GW_HWNDNEXT), ++z)
+			{
+				DWORD process = 0;
+				const DWORD thread = GetWindowThreadProcessId(candidate, &process);
+				if (process != GetCurrentProcessId() || ContainsWindow(overlayOwnerTree, candidate))
+					continue;
+				wchar_t title[256]{};
+				wchar_t className[256]{};
+				GetWindowTextW(candidate, title, 256);
+				GetClassNameW(candidate, className, 256);
+				std::wcerr << L" auxiliary hwnd=" << candidate << L" owner=" << GetWindow(candidate, GW_OWNER)
+					<< L" tid=" << thread << L" z=" << z
+					<< L" style=" << GetWindowLongPtrW(candidate, GWL_STYLE)
+					<< L" exstyle=" << GetWindowLongPtrW(candidate, GWL_EXSTYLE)
+					<< L" visible=" << IsWindowVisible(candidate)
+					<< L" class=[" << className << L"] title=[" << title << L"]\n";
+			}
+		};
+	if (competingTopmost && (!IsContinuousOwnerTree(overlayOwnerTree)
+		|| !IsOwnerTreeBelow(overlayOwnerTree, competingTopmost)))
+		logOwnerTree("before-root-refresh");
 	check(service.RequestTopmostRefresh(), "root-only topmost refresh");
+	if (!(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST)
+		|| (competingTopmost && (!IsContinuousOwnerTree(overlayOwnerTree)
+			|| !IsOwnerTreeAbove(overlayOwnerTree, competingTopmost))))
+		logOwnerTree("after-root-refresh");
 	check((GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0,
 		"overlay root receives topmost style");
+	check(HasConsistentOwnerBand(overlayOwnerTree, true),
+		"root topmost refresh propagates band and owner order to every overlay");
 	if (competingTopmost)
 	{
 		check(IsContinuousOwnerTree(overlayOwnerTree)
@@ -537,6 +828,8 @@ int RunWindowTests()
 	if (competingTopmost)
 		check(IsOwnerTreeBelow(overlayOwnerTree, competingTopmost),
 			"notopmost owner tree returns below competing topmost");
+	check(HasConsistentOwnerBand(overlayOwnerTree, false),
+		"root notopmost refresh propagates band and owner order to every overlay");
 	check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
 	check(service.SetOverlayFullscreen(true) && service.OverlayFullscreen()
 		&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
@@ -546,6 +839,17 @@ int RunWindowTests()
 	check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
 		&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
 		"persistent overlay topmost restore");
+	// 已置顶根 + 隐藏 Setting 的 attach 也必须立即收敛，不能靠 Show/激活补救。
+	check(service.SetSettingOwnedByDrawpad(true)
+		&& !IsWindowVisible(setting)
+		&& GetWindow(setting, GW_OWNER) == drawpad
+		&& ZOrderIndex(setting) >= 0
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
+		"hidden setting attach to prepromoted root prepares ordering without show");
+	check(service.SetSettingOwnedByDrawpad(false)
+		&& service.RequestTopmostRefresh(),
+		"restore detached setting and promoted root before visible attach");
 	check(service.Show(WindowRole::Setting),
 		"show setting before owner attach");
 	const DWORD settingOwnerThread = service.OwnerThreadId(WindowRole::Setting);
@@ -562,8 +866,9 @@ int RunWindowTests()
 	check(GetWindow(setting, GW_OWNER) == nullptr,
 		"failed setting preparation restores original owner");
 	check(service.SetSettingOwnedByDrawpad(true), "setting attach owner");
-	check(settingRefreshes.load() == 1, "setting attach immediately refreshes root");
-	check(service.SetSettingOwnedByDrawpad(true) && settingRefreshes.load() == 1,
+	const int attachRefreshes = settingRefreshes.load();
+	check(attachRefreshes == 1, "setting attach refreshes root exactly once");
+	check(service.SetSettingOwnedByDrawpad(true) && settingRefreshes.load() == attachRefreshes,
 		"unchanged correct setting owner avoids repeated root refresh");
 	service.SetTopmostRefreshObserver({});
 	check(GetWindow(setting, GW_OWNER) == drawpad,
@@ -589,6 +894,16 @@ int RunWindowTests()
 		&& ZOrderIndex(setting) < ZOrderIndex(drawpad)
 		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
 		"owned setting reshow immediately stays above both canvases");
+	// 周期根刷新也必须随Drawpad带起已显示的owned Setting，不能只验证Show瞬间。
+	const std::array visibleSettingTree{ magnifierHost, freeze, drawpadPresentation, drawpad,
+		pptBottomLeft, pptBottomRight, pptMiddleLeft, pptMiddleRight, bar, setting };
+	const bool settingSurvivesRefresh = service.RequestTopmostRefresh()
+		&& IsWindowVisible(setting) && GetWindow(setting, GW_OWNER) == drawpad
+		&& HasConsistentOwnerBand(visibleSettingTree, true)
+		&& ZOrderIndex(setting) >= 0 && ZOrderIndex(setting) < ZOrderIndex(drawpad)
+		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation);
+	if (!settingSurvivesRefresh) logOwnerTree("visible-setting-after-root-refresh");
+	check(settingSurvivesRefresh, "root refresh preserves visible owned setting above both canvases");
 	check(service.SetOverlayTopmost(false)
 		&& service.SetSettingOwnedByDrawpad(true)
 		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0
@@ -598,6 +913,9 @@ int RunWindowTests()
 		&& ZOrderIndex(setting) < ZOrderIndex(drawpadPresentation),
 		"setting immediate ordering respects non-topmost root policy");
 	check(service.SetOverlayTopmost(true), "restore root policy after setting show");
+	check(barAboveDrawpadSurfaces(), "root policy restore keeps bar above both canvas owners");
+	if (competingTopmost && !IsOwnerTreeAbove(overlayOwnerTree, competingTopmost))
+		logOwnerTree("after-setting-root-restore");
 	check(service.SetSettingOwnedByDrawpad(false)
 		&& service.SetSettingOwnedByDrawpad(false),
 		"setting detach owner idempotent");
@@ -607,6 +925,8 @@ int RunWindowTests()
 	if (competingTopmost)
 		check(ZOrderIndex(setting) > ZOrderIndex(competingTopmost),
 			"setting detach returns below competing topmost");
+	if (competingTopmost && !IsOwnerTreeAbove(overlayOwnerTree, competingTopmost))
+		logOwnerTree("after-setting-detach");
 	if (competingTopmost)
 		check(IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
 			"topmost restore raises the complete owner tree again");
@@ -624,6 +944,9 @@ int RunWindowTests()
 		"reshown ppt remains drawpad sibling below bar");
 	check(Service::LastFocusWindow() == focusBeforePromote,
 		"reshow ppt does not activate");
+	check(service.RequestTopmostRefresh() && GetWindow(bar, GW_HWNDNEXT) == pptBottomLeft
+		&& HasConsistentOwnerBand(overlayOwnerTree, true),
+		"root refresh preserves promoted ppt sibling order and complete owner band");
 	if (competingTopmost)
 		check(IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
 			"bar and promoted ppt remain above competing topmost");
@@ -641,6 +964,8 @@ int RunWindowTests()
 	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Primary),
 		"show primary drawpad for whiteboard group");
 	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
+	check(service.RequestTopmostRefresh() && HasConsistentOwnerBand(overlayOwnerTree, false),
+		"whiteboard root refresh preserves normal owner band and order");
 	const auto whiteboardFreezeExStyle = static_cast<DWORD>(
 		GetWindowLongPtrW(freeze, GWL_EXSTYLE));
 	const auto whiteboardDrawpadExStyle = static_cast<DWORD>(
@@ -661,6 +986,8 @@ int RunWindowTests()
 		&& IsWindowVisible(pptBottomLeft) && IsWindowVisible(pptBottomRight)
 		&& IsWindowVisible(bar), "restore returns the prior whiteboard visible state");
 	check(service.LeaveWhiteboardWindowMode(), "leave whiteboard window mode");
+	check(service.RequestTopmostRefresh() && HasConsistentOwnerBand(overlayOwnerTree, true),
+		"leaving whiteboard root refresh restores complete owner band and order");
 	const auto presentationFreezeExStyle = static_cast<DWORD>(
 		GetWindowLongPtrW(freeze, GWL_EXSTYLE));
 	check((presentationFreezeExStyle & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) ==
@@ -768,5 +1095,6 @@ int RunWindowTests()
 		&& service.Running() && service.Ready(WindowRole::Bar), "restart");
 	service.StopAndJoin();
 	failures += RunWindowExitVisibilityTests();
+	failures += RunSettingCaptureTests();
 	return failures;
 }

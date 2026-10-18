@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -255,7 +256,7 @@ namespace Inkeys::Drawing::Draw3
 					(static_cast<uint64_t>(GetCurrentThreadId()) << 32);
 				randomState_ = static_cast<uint32_t>(seed ^ (seed >> 32));
 				if (randomState_ == 0) randomState_ = 0x6d2b79f5u;
-				std::cout << "[StrokeReconnectSimulation] enabled=true interval_ms=["
+				DiagnosticOutput::Line() << "[StrokeReconnectSimulation] enabled=true interval_ms=["
 					<< kInterruptedStrokeReconnectSimulationMinimumIntervalMs << ","
 					<< kInterruptedStrokeReconnectSimulationMaximumIntervalMs << "] drop_ms=["
 					<< kInterruptedStrokeReconnectSimulationMinimumDropMs << ","
@@ -2523,7 +2524,8 @@ namespace Inkeys::Drawing::Draw3
 			[&](RtsStartup::PacketProfile profile, const RtsStartup::AttemptResult& outcome)
 			{
 				const bool basic = profile == RtsStartup::PacketProfile::BasicXY;
-				std::fprintf(stderr, "[RTS] attempt=%u profile=%s stage=%s hr=0x%08lx initialized=%d cleanup=%s\n",
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					"[RTS] attempt=%u profile=%s stage=%s hr=0x%08lx initialized=%d cleanup=%s\n",
 					basic ? 2u : 1u, RtsStartup::ProfileName(profile), RtsStartup::StageName(outcome.stage),
 					static_cast<unsigned long>(outcome.result), outcome.Ready(), outcome.Ready() ? "not-needed" : "complete");
 			});
@@ -2565,7 +2567,7 @@ namespace Inkeys::Drawing::Draw3
 		traceState.dataInterest = static_cast<uint32_t>(kProductionRtsDataInterest);
 		auto logTrace = [&]() noexcept { LogRtsInitializationState(traceState); };
 #endif
-		std::cout << "[RTS] initialize currentThread=" << GetCurrentThreadId()
+		DiagnosticOutput::Line() << "[RTS] initialize currentThread=" << GetCurrentThreadId()
 			<< " windowThread=" << windowThreadId
 			<< " digitizer=0x" << std::hex << GetSystemMetrics(SM_DIGITIZER) << std::dec
 			<< " maxTouches=" << GetSystemMetrics(SM_MAXIMUMTOUCHES)
@@ -2697,7 +2699,7 @@ namespace Inkeys::Drawing::Draw3
 			traceState.multiTouchEnabled = multiTouchEnabled;
 #endif
 			if (SUCCEEDED(verifyResult))
-				std::cout << "[RTS] MultiTouchEnabled=" << (multiTouchEnabled ? "true" : "false") << std::endl;
+				DiagnosticOutput::Line() << "[RTS] MultiTouchEnabled=" << (multiTouchEnabled ? "true" : "false") << std::endl;
 			else
 				LogHResult("Read RealTimeStylus multi-touch state", verifyResult);
 		}
@@ -2860,7 +2862,7 @@ namespace Inkeys::Drawing::Draw3
 		// 释放生命周期/缓存锁之后才格式化和输出；不依赖 DRAW3_RTS_DIAGNOSTICS。
 		if(!copied || count==0)
 		{
-			std::fprintf(stderr,"[TouchAreaDevice] cache=%s requestedTcid=%u requestedGen=%llu touchContexts=%zu (no substitute Mouse/Pen metadata)\n",
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[TouchAreaDevice] cache=%s requestedTcid=%u requestedGen=%llu touchContexts=%zu (no substitute Mouse/Pen metadata)\n",
 				copied?"no-matching-touch":"not-ready-or-busy",requested.contextId,
 				static_cast<unsigned long long>(requested.generation),count);
 			return false;
@@ -2869,14 +2871,14 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const auto& d=contexts[i];
 			const auto source=SourceForCursor(d,requested.contextId?requested.cursorId:0);
-			std::fprintf(stderr,
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 				"[TouchAreaDevice] cache=snapshot tcid=%u gen=%llu cid=%u inputType=Touch source=%s recognition=%u kindKnown=%d capsKnown=%d integrated=%d modernAPI=%d mappedMonitor=%p mappedRect=(%d,%d,%d,%d) mapping=%s\n",
 				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),source.cursorId,
 				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),d.sourceDeviceKnown,d.capabilitiesKnown,
 				d.integrated,d.modernSourceApi,reinterpret_cast<void*>(source.mappedMonitor),
 				source.mappedLeft,source.mappedTop,source.mappedWidth,source.mappedHeight,
 				requested.contextId?"same-cursor-source":"awaiting-touch-cursor");
-			std::fprintf(stderr,
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 				"[TouchAreaDevice] tcid=%u gen=%llu contextScale=%.9gx%.9g contextMeaning=ink-to-digitizer positionScale=%.9gx%.9g positionMeaning=canvasPx=packetXY*sharedPositionScale lengthMeaning=span/resolution->axis-units->position-linear-part translationApplied=0 extraContextScaleApplied=0\n",
 				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),
 				d.contactScaleX,d.contactScaleY,d.positionScaleX,d.positionScaleY);
@@ -2892,7 +2894,7 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<unsigned>(g.Data4[2]),static_cast<unsigned>(g.Data4[3]),
 					static_cast<unsigned>(g.Data4[4]),static_cast<unsigned>(g.Data4[5]),
 					static_cast<unsigned>(g.Data4[6]),static_cast<unsigned>(g.Data4[7]));
-				std::fprintf(stderr,"[TouchAreaDevice] tcid=%u gen=%llu %s present=%d guid=%s index=%ld Units=%u(%s) fResolution=%.9g nLogicalMin=%ld nLogicalMax=%ld\n",
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[TouchAreaDevice] tcid=%u gen=%llu %s present=%d guid=%s index=%ld Units=%u(%s) fResolution=%.9g nLogicalMin=%ld nLogicalMax=%ld\n",
 					static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),labels[j],p.present,guid,
 					p.present?static_cast<long>(p.index):-1L,static_cast<unsigned>(p.metrics.Units),
 					SpeedEraser::ContactPropertyUnitName(p.metrics.Units),p.metrics.fResolution,p.metrics.nLogicalMin,p.metrics.nLogicalMax);
@@ -2900,13 +2902,13 @@ namespace Inkeys::Drawing::Draw3
 			for(size_t j=0;j<2;++j)
 			{
 				const auto& transform=j==0?d.widthTransform:d.heightTransform;
-				std::fprintf(stderr,"[TouchAreaDevice] tcid=%u gen=%llu %s status=%s unitConverted=%d resolutionAdjusted=%d spanToAxis=%.12g spanToCanvasPx=%.12g\n",
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[TouchAreaDevice] tcid=%u gen=%llu %s status=%s unitConverted=%d resolutionAdjusted=%d spanToAxis=%.12g spanToCanvasPx=%.12g\n",
 					static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),j==0?"WIDTH/X":"HEIGHT/Y",
 					SpeedEraser::ContactAreaUnitsName(transform.status),transform.unitConverted,transform.resolutionAdjusted,
 					transform.spanToAxis,transform.spanToCanvas);
 			}
 		}
-		std::fflush(stderr);
+		DiagnosticOutput::Wake();
 		return true;
 	}
 

@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <cstdio>
@@ -71,7 +72,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool compatibilityRetry = std::strcmp(attempt, "fallback") == 0;
 			if (SUCCEEDED(result) && !StartupEnvironmentDiagnosticsEnabled() &&
 				driverType == D3D_DRIVER_TYPE_HARDWARE && !compatibilityRetry) return;
-			std::cout << "[Draw3Diag][device] driver=" << DriverTypeName(driverType)
+			DiagnosticOutput::Line() << "[Draw3Diag][device] driver=" << DriverTypeName(driverType)
 				<< " levels=" << levelSet << " attempt=" << attempt
 				<< " hresult=0x" << std::hex
 				<< static_cast<unsigned long>(result) << std::dec << std::endl;
@@ -117,7 +118,7 @@ namespace Inkeys::Drawing::Draw3
 			[&](D3D_DRIVER_TYPE driverType)
 			{
 				if (driverType == D3D_DRIVER_TYPE_WARP && enableHardwareAcceleration)
-					std::cout << "Hardware device initialization failed. Falling back to WARP." << std::endl;
+					DiagnosticOutput::Line() << "Hardware device initialization failed. Falling back to WARP." << std::endl;
 				const HRESULT attemptResult = CreateCompatibleDevice(driverType, creationFlags,
 					resources.device, resources.featureLevel, resources.context);
 				if (driverType == D3D_DRIVER_TYPE_HARDWARE) hardwareResult = attemptResult;
@@ -126,18 +127,19 @@ namespace Inkeys::Drawing::Draw3
 		if (FAILED(result))
 		{
 			// 跳过硬件时不输出虚构的硬件尝试结果。
-			std::cout << "[Draw3Diag][device] final=failed hardware_attempted=" << enableHardwareAcceleration;
+			DiagnosticOutput::Line line;
+			line << "[Draw3Diag][device] final=failed hardware_attempted=" << enableHardwareAcceleration;
 			if (enableHardwareAcceleration)
-				std::cout << " hardware_hresult=0x" << std::hex << static_cast<unsigned long>(hardwareResult) << std::dec;
-			std::cout << " warp_hresult=0x" << std::hex << static_cast<unsigned long>(result) << std::dec << std::endl;
+				line << " hardware_hresult=0x" << std::hex << static_cast<unsigned long>(hardwareResult) << std::dec;
+			line << " warp_hresult=0x" << std::hex << static_cast<unsigned long>(result) << std::dec << std::endl;
 			return false;
 		}
 
 		if (StartupEnvironmentDiagnosticsEnabled())
 		{
 			// 恢复启动时的设备环境输出，但不影响始终保留的错误诊断。
-			std::cout << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
-			std::cout << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
+			DiagnosticOutput::Line() << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
+			DiagnosticOutput::Line() << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
 		}
 
 		resources.dxgiDevice.Reset();
