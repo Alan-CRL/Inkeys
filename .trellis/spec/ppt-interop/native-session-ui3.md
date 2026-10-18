@@ -41,7 +41,8 @@
 
 ### 位置、保存和有效缩放
 
-- facade 拥有运行偏好；PageControl 候选和成功提交按 session、layout epoch、pair version 交接。全局 direct-move revision 只用于过期帧门禁，不是另一组的提交版本。旧完整快照在 ownership 释放后也不得覆盖新位置。
+- facade 拥有运行偏好；PageControl 候选和成功提交按 session、layout epoch、pair version 交接。tracker 候选身份使用同一 D→S 短事务取得的 published 原始布局，runtime fit 只用于手势起点/可行几何及实际呈现；released pending 上开始下一次手势不能在相同 revision 上以 fit 倍率覆盖原始候选。全局 direct-move revision 只用于过期帧门禁，不是另一组的提交版本。旧完整快照在 ownership 释放后也不得覆盖新位置。
+- 拖动候选的最终位置交接必须等同 pair 两面实际几何到位；released pending 继续持有布局，非吸附渲染兜底的纯位置移动不沿旧动画继续滑行；仅中轴吸附Y修正允许140ms的UI3过渡，中间帧不得提前确认pair。Up 使用该事件屏幕终点，保留 Page 阈值内预览及 Arrow/Whiteboard 边界；取消与旧代次不写回新手势。中间竖pair仅在距水平中线及距对应侧边扣除既有间隙后的额外距离均<=20屏幕DIP时吸附，复用BarBottomDockThresholdDip、只按既有布局DPI换算，不随控件倍率放大且不绕过组间碰撞；X仍跟随、两面同一动画时刻且进度单调，较早的render批次时间不得回拉owner已呈现坐标；重复采样/页码/Up不重启，真实打断与Up后旧capture取消分别处理。
 - 拖动永不触发写盘。开关打开/关闭瞬间保存；记忆开启时真正结束放映或正常退出软件保存；关闭后保持冻结位置。每场进入恢复最近一次明确保存请求的冻结基线（当前进程可含尚未完成的请求），新进程恢复实际磁盘值。重置无论开关均更新默认值。
 - 冻结请求基线与 durable saved revision 分开，不能将待保存称为已保存。两个业务队列统一版本仲裁；旧 JSON 跳过。临时文件完整写入/flush 后原子替换；失败保留原文件和原请求重试，不采集后续临时拖动。
 - DPI、用户缩放、最终有效缩放分别归一化；最终值传入 Scene 后不重复 DPI 上下限裁剪。绘制、文字、命中、阴影、presentation 使用相同值。主屏布局边界与 DPI 来自同一显示快照；运行适配不写保存偏好，backing capacity 不决定呈现大小。白板继续独立布局。

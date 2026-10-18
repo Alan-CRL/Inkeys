@@ -1,0 +1,43 @@
+{
+  "id": "ppt-controls-drag-state-layering",
+  "name": "ppt-controls-drag-state-layering",
+  "title": "PPT 控件拖动、吸附、卡死与页码层级异常调查",
+  "description": "修复已批准的1-3项：PPT控件抬手微移、侧竖控件20屏幕DIP中轴/侧边双门槛及140ms UI3吸附、局部停住capture重入防护与诊断；回归既有COM页码修复。第4项仅保留调查/回归，不改置顶策略。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "ppt-controls",
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-18",
+  "completedAt": null,
+  "branch": "bugfix/pptcom",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/PageControl/PageControl.cpp",
+    "Inkeys/Inkeys/UI/PageControl/PageControl.cppm",
+    "Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h",
+    "InkeysHeadlessTests/page_control_tests.cpp",
+    "Inkeys/Inkeys/UI/Ppt/Ppt.cpp",
+    "Inkeys/Inkeys/UI/Ppt/Ppt.cppm",
+    "Inkeys/Inkeys/Window/Window.cpp",
+    "InkeysHeadlessTests/ppt_ui_tests.cpp",
+    "InkeysHeadlessTests/window_tests.cpp"
+  ],
+  "notes": "用户已授权创建任务及调查；未授权实施。保持planning，等待调查方案审批；本轮仅任务文档，不启动GUI/Office或commit/push。调查基线HEAD 13783fe7，PptCOM修复提交0eb1c7c5，反馈版本背景20261014a。 用户补充反馈版本未确认，可能20261010b/20261014a；仅拖动控件停住、主栏可操作；-/-可能已由0eb1c7c5覆盖，须核对而非重复修改。 三路只读研究完成，抬手fallback缓动/过早位置commit、Up终点与缺失中轴snap有明确源码依据；局部停住未定唯一根因，SetCapture重入独立列风险。40屏幕DIP方案待批准，COM/经典owner缺陷默认仅回归。 2026-10-18用户明确“批准并开始修复1-3”，授权实施design/implement中对应范围；40屏幕DIP策略按已审阅设计执行，页码沿用COM修复回归，第4项不实施新层级修改。GUI/Office、commit/push仍未授权。 生产与纯策略测试首轮完成，独立check发现连续拖动raw/fit候选身份覆盖导致released pending失去ownership的反例，已交生产代理同范围修正并补真实离屏回归；修正复审前不构建。 独立审查R1修正复核通过，6个tracked文件冻结，准备完整Debug|ARM64及两个无窗口入口。 2026-10-18最终：完整Debug|ARM64 solution exit0/29.02s、--no-window exit0/99.48s、既有无HWND生产offscreen exit0/24.11s，PageControlScene failures=0；独立复审无遗留阻断项。6个tracked文件保持格式，3个编译输入冻结hash未变，COM DLL/TLB与其余16个调查基线文件未变。用户局部停住现场及真实USER32/鼠标触摸/Office/WPP仍NOT VERIFIED。未commit/push/归档，保留in_progress。 用户追加授权20DIP中轴及扣间隙后侧边距离<=20DIP双门槛，并要求UI3吸附过渡；原40DIP首轮实现结果保留，现按design第4节重做最小修订和自动验证。普通拖动稳定/capture/raw-fit修复维持。 吸附修订独立审查发现owner/render批次时钟倒退R2，已用pair共享sampledAt单调采样补正，真实Scene60→40→80回归已复核；完整审查无其他阻断，6个tracked文件冻结，准备新一轮统一构建。 吸附修订最终：solution exit0/29.95s、headless exit0/77.67s、生产无HWND offscreen exit0/23.66s，PageControlScene failures=0；20双条件1152策略组合及真实140ms动画/单调时钟/Up/打断/锁忙/第二面失败回归均完成。源码冻结hash、编码/CRLF与COM hash保持，真实设备/USER32/Office仍NOT VERIFIED；未commit/push/归档。 2026-10-19用户明确确认改动有效并授权为本任务提交commit；本次沿用原签名配置，不push，不归档。用户反馈不替代此前未执行的具体GUI/Office验收记录。",
+  "meta": {
+    "approval_status": "approved_items_1_3_2026_10_18",
+    "implementation_status": "snap_revision_implemented_independent_review_passed",
+    "research_status": "complete",
+    "verification_status": "snap_revision_automated_passed_device_not_verified",
+    "user_confirmation": "effective_confirmed_2026_10_19",
+    "commit_authorization": "authorized_2026_10_19"
+  }
+}
