@@ -522,3 +522,76 @@
 ### Next Steps
 
 - 默认完整HWND的owner/Z序11项失败、物理触摸/笔及原始现场归因仍保留；未自动归档，不commit/push。
+
+
+## Session 108: 画布卡死后续修复与最终GUI验收
+<!-- trellis-session: v=2 fp=bcaef0bd1fcab65a -->
+
+**Date**: 2026-10-18
+**Task**: 画布卡死后续修复与最终GUI验收
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+完成窗口11项断言后续、PPT目标和终态交接收尾；最终ARM64构建、12轮窗口、默认完整测试和真实设置/PowerPoint GUI通过。
+
+### Main Changes
+
+- 窗口实际band读回与同根继承；保留owned Setting周期刷新可点击。
+- PPT目标收敛、同页新回执、PPT/Desktop锁获取有限等待、Accepted终态FIFO无丢失。
+
+### Git Commits
+
+（本轮未提交代码；工程修复与验收已完成。）
+
+### Testing
+
+- [OK] 最终solution Debug ARM64 exit0；同最终Headless12/12专项和默认全套exit0。
+- [OK] 最终产品6正常CLI exit0、坏参数2；PPT/Desktop实际worker故障注入与锁恢复通过。
+- [OK] 最终无控制台GUI设置capture释放、idle橡皮、持笔PPT翻页、Explorer及按住正常退出0/1.688s；自建PowerPoint正常关闭。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本轮工程验收完成，后续代码尚未提交；无新增commit/push，待用户自行决定代码提交/归档。
+- 物理触摸/笔、WPS、Win7、多屏与用户现场共同根因仍未验证，保留证据边界。
+
+
+## Session 109: 提交画布卡死修复并归档五个相关任务
+<!-- trellis-session: v=2 fp=b2de93bf1136bf21 -->
+
+**Date**: 2026-10-18
+**Task**: 提交画布卡死修复并归档五个相关任务
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+用户授权提交与结束任务；SSH签名重试成功，修复提交6b8bc1d7，父任务及F1–F4四子任务completed并归档。
+
+### Main Changes
+
+- 签名提交窗口/PPT准入、锁等待和终态交接修复，以及完整验收报告。
+- 五个任务归档至.trellis/tasks/archive/2026-10，更新规范、context和记录路径；保留原现场与设备未覆盖边界。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6b8bc1d73c8b7307528520c28fc952004ee3d8f1` | fix(draw3): restore canvas admission across window and PPT transitions |
+| `83d08514142211ba6ed5ca9c669c42ca9b139f55` | chore(trellis): archive completed canvas freeze tasks |
+
+### Testing
+
+- [OK] 复用已完成的最终Debug ARM64构建、12轮窗口、默认完整套件、CLI/存储与真实设置/PPT GUI结果；本轮仅提交及文档状态变更，无新增产品代码。
+- [OK] 五个归档任务context校验通过；提交前git diff --cached --check通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本线程由用户后续合入dev；本轮未push、未执行合并。
