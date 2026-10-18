@@ -94,10 +94,10 @@ Wrong：只等 RtsReady/首帧后刷新；Correct：每代窗口准备失败直�
 
 ## 设备与线程
 
-- Draw3 独立创建 D3D11.1 hardware-first/WARP-fallback 设备、context、DXGI factory、交换链和呈现资源，禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
-- Hardware 与 WARP 都可落在 FL11.0；这不保证动态 SRV 的 `WRITE_NO_OVERWRITE`。生产 renderer 必须在当前设备上查 `D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，不支持或查询失败时普通笔与 Shape 逐批 DISCARD 且 buffer offset 为零；支持设备保留环形路径。此上传门禁与 ULW 的 `FLIP_SEQUENTIAL` 独立，不能为修一项而替换交换链模式。
+- Draw3 独立创建 D3D11.1 设备、context、DXGI factory、交换链和呈现资源；默认 hardware-first/WARP-fallback，启动快照 EnableHardwareAcceleration=false 时直接 WARP，回退/恢复复用同一快照。禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
+- Hardware 与 WARP 都可落在 FL11.0；这不保证动态 SRV 的 `WRITE_NO_OVERWRITE`。除实际 Hardware adapter VendorId=0x1D17 且启动 EnableZhaoxinCompatibility=true 时大结构化资源使用 DEFAULT 局部更新外，动态路径的生产 renderer 必须在当前设备上查 `D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，不支持或查询失败时普通笔与 Shape 逐批 DISCARD 且 buffer offset 为零；支持设备保留环形路径。此上传门禁与 ULW 的 `FLIP_SEQUENTIAL` 独立，不能为修一项而替换交换链模式。
 - UI 线程只向 bridge 发布不可变快照和命令；renderer、document、history、RTS 消费只在 Draw3 绘制线程进行。
-- 进程只允许一套 Draw3 Host、绘制线程和 `RealTimeStylusInput` producer；Desktop、Whiteboard 及每个 `PresentationKey` 的 document/history 是该绘制线程独占的独立 slot。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出顺序固定为停止命令生产、停止 RTS、唤醒绘制线程、执行最终保存屏障并排空 worker、释放双 presenter/设备，最后由 Window Service 销毁两窗。
+- 进程只允许一套 Draw3 Host、绘制线程及选定的 RTS 或 Win32Mouse 输入 producer；Desktop、Whiteboard 及每个 `PresentationKey` 的 document/history 是该绘制线程独占的独立 slot。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出先关闭绘制准入并预约最终保存命令，停止并排空选定输入 producer，再唤醒绘制线程、执行最终保存屏障并排空 worker、释放双 presenter/设备，最后由 Window Service 销毁两窗。
 - `DrawingControllerRuntimeObserver::drawingActivityChanged` 只按全部 physical contact 的聚合值发布 `0→1/1→0`；每个命令消费边界与帧末复核，避免 Down 后提前 `continue` 漏报。Host 通过独立 `HostRuntimeCallbacks` 注入产品通知、再次去重，并在 Run 正常返回、异常或 stop/join 后补发一次 false；Draw3 核心不得直接依赖 Bar。
 
 ## 样式与透明度
@@ -413,11 +413,11 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 
 以下首发选路合同来自 2026-09-27 用户决定；H0 源码仍含 DWM 自动/强制路径。本次工作区已在源码中禁止该选择，但隐藏 HWND、Win7 与运行期设备故障尚未实测，不能把静态选路当作透明呈现 PASS。
 
-- Draw3 自己创建 D3D11.1 hardware-first/WARP-fallback device/context、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
+- Draw3 自己创建 D3D11.1 device/context（默认 hardware-first/WARP-fallback，硬件加速启动偏好关闭时直接 WARP）、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
 - 首发正式 presenter 模式顺序为 DComp -> ULW；DwmBlurBehind2 与 DwmBlurBehind 在自动回退和强制模式中均不可选。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 保持现有 FLIP_SEQUENTIAL swap chain、premultiplied top-down 32-bit DIB、`1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零。
 - 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。首发实现以用户实测为兼容约束，保留 FLIP，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。
-- 只允许一个绑定主 Drawpad 的 `RealTimeStylusInput` producer；Draw2 RTS 不得初始化或重复发布。退出顺序为停止命令生产 -> 停止 RTS -> 唤醒绘制线程 -> 释放双 presenter/device -> Window Service 销毁两窗。
+- 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。
 
 ## 来源任务与验证状态
 
@@ -438,3 +438,7 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 主产品直接编译共享 `inkStrokeModelerTest/draw3/uink_file.cpp`。SaveUInkFile 的 temp/backup/new-recovery 必须使用规范化最终路径的原同父前缀加独立 GUID36 短叶及固定后缀，不再次拼入最终末名；同目录/同卷原子替换、CREATE_NEW、锁、strong source revision/SHA 和最终格式不变。恢复调用者消费实际返回的 opaque recoveryPath，不能按最终 basename 猜恢复文件名。
 
 此短内部名称不承诺任意最终长路径支持：普通父前缀加最长49字符内部叶仍受 Win32 路径边界约束；不以新 manifest/registry/补丁提升最低平台，不授权按后缀清理未知文件。2026-10-01 shared helper 的合法230首存/更新/predecessor严格回归已真实红绿；主产品原PPT长路径C10、Release三架构与Win7真机仍分别待验证。清理创建/身份归属竞态独立F069，命名修补不能证明其已解决。
+
+## 启动输入回退
+
+完整 RTS → 基础 X/Y RTS → Win32Mouse，每档安全停止/排空后才进入下一档。Host按InputReady放行；RTS与窗口鼠标绘制互斥。鼠标owner线程启停、捕获和最终保存的合同见input-and-ink.md。迁移不新增性能采集或资源探针。

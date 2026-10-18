@@ -352,6 +352,8 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnect, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \
 			) \
 			GROUP(ConsoleOutput, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \

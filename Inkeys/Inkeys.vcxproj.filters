@@ -516,6 +516,12 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RtsStartup.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.MouseInput.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Business\PptSession.h" />
     <ClInclude Include="PptSettingsPersistence.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />

@@ -57,6 +57,8 @@ int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
 int RunDraw3BridgeTests();
 int RunDraw3ContactInputTests();
+int RunDraw3RtsStartupTests();
+int RunDraw3MouseInputTests();
 int RunSpeedEraserTests();
 int RunPenWidthTests();
 int RunEraserAttributeTests();
@@ -1693,6 +1695,8 @@ int main(int argc, char** argv)
 	failureCount += RunBarBottomDockTests();
 	failureCount += RunDraw3BridgeTests();
 	failureCount += RunDraw3ContactInputTests();
+	failureCount += RunDraw3RtsStartupTests();
+	failureCount += RunDraw3MouseInputTests();
 	failureCount += RunUpdateSecurityTests();
 	failureCount += RunSpeedEraserTests();
 	failureCount += RunPenWidthTests();

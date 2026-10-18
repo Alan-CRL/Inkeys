@@ -479,6 +479,19 @@ inline constexpr struct I18nKeyRoot
         } Preset{};
         struct Node__SettingsUI__Experimental
         {
+            struct Node__SettingsUI__Experimental__Draw3
+            {
+                struct Node__SettingsUI__Experimental__Draw3__HardwareAcceleration
+                {
+                    const char* N = "SettingsUI/Experimental/Draw3/HardwareAcceleration/N";
+                    const char* E = "SettingsUI/Experimental/Draw3/HardwareAcceleration/E";
+                } HardwareAcceleration{};
+                struct Node__SettingsUI__Experimental__Draw3__ZhaoxinCompatibility
+                {
+                    const char* N = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/N";
+                    const char* E = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/E";
+                } ZhaoxinCompatibility{};
+            } Draw3{};
             struct Node__SettingsUI__Experimental__ConsoleOutput
             {
                 struct Node__SettingsUI__Experimental__ConsoleOutput__TouchArea

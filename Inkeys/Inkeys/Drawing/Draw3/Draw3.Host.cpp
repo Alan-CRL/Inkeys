@@ -303,8 +303,10 @@ namespace Inkeys::Drawing::Draw3
 		std::condition_variable exitAutoSaveCondition;
 		bool exitAutoSavePrepared = false;
 		bool graphicsReady = false;
-		bool stylusDecision = false;
-		bool stylusSucceeded = false;
+		std::atomic<HostInputMode> inputMode = HostInputMode::Disabled;
+		std::atomic_bool inputStopping = false;
+		bool inputDecision = false;
+		bool inputSucceeded = false;
 		bool startupCompleted = false;
 		bool startupSucceeded = false;
 
@@ -555,7 +557,7 @@ namespace Inkeys::Drawing::Draw3
 				: std::nullopt;
 			if (suspendedPresentationTarget != expected) suspendedPresentationTarget.reset();
 			if (uiReadyPresentationTarget != expected) uiReadyPresentationTarget.reset();
-			const bool blocked = commandScenePending || (desired.workspace == Bridge::Workspace::Presentation
+			const bool blocked = inputStopping.load(std::memory_order_acquire) || commandScenePending || (desired.workspace == Bridge::Workspace::Presentation
 				? !expected || readyPresentationTarget != expected ||
 					suspendedPresentationTarget.has_value() ||
 					(startOptions.requirePresentationUiReady && uiReadyPresentationTarget != expected)
@@ -966,7 +968,8 @@ namespace Inkeys::Drawing::Draw3
 				value.inputSource.contextId!=0;
 			if(newlyEnabled || (touch && value.inputSource!=self->lastTouchAreaMetadataSource))
 				self->touchAreaMetadataPending=true;
-			if(self->touchAreaMetadataPending && (newlyEnabled ||
+			if(self->inputMode.load(std::memory_order_acquire) != HostInputMode::Win32Mouse &&
+				self->touchAreaMetadataPending && (newlyEnabled ||
 				now-self->lastTouchAreaMetadataTrace>=std::chrono::seconds(1)))
 			{
 				const auto source=touch?value.inputSource:SpeedEraser::InputSource{};
@@ -1446,6 +1449,8 @@ namespace Inkeys::Drawing::Draw3
 			PrepareRuntimeMetrics(options);
 			// 上一代 Stop 尾部可能留下普通唤醒；新 Bridge 不能消费旧 marker。
 			input.ResetForNextRun();
+			inputMode.store(HostInputMode::Disabled, std::memory_order_release);
+			inputStopping.store(false, std::memory_order_release);
 			bridge.Reset();
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
@@ -1489,8 +1494,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				std::scoped_lock lock(startupMutex);
 				graphicsReady = false;
-				stylusDecision = false;
-				stylusSucceeded = false;
+				inputDecision = false;
+				inputSucceeded = false;
 				startupCompleted = false;
 				startupSucceeded = false;
 			}
@@ -1509,7 +1514,8 @@ namespace Inkeys::Drawing::Draw3
 					const HWND windowHandle = attachedWindow.load(std::memory_order_acquire);
 					const HWND presentationWindowHandle =
 						attachedPresentationWindow.load(std::memory_order_acquire);
-					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics);
+					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics,
+						startOptions.enableHardwareAcceleration);
 					std::cout << "[Draw3Diag][startup] stage=graphics result="
 						<< (graphicsInitialized ? "ready" : "failed")
 						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(windowHandle)
@@ -1538,6 +1544,8 @@ namespace Inkeys::Drawing::Draw3
 						presentationOptions.allowDirectComposition =
 							startOptions.allowDirectComposition;
 						presentationOptions.failedCleanup = failedCleanup;
+						presentationOptions.enableHardwareAcceleration = startOptions.enableHardwareAcceleration;
+						presentationOptions.enableZhaoxinCompatibility = startOptions.enableZhaoxinCompatibility;
 						graphicsInitialized = presentation.Initialize(windowHandle,
 							presentationWindowHandle, graphics, renderer,
 							static_cast<UINT>((std::max)(1, size.width)),
@@ -1571,25 +1579,25 @@ namespace Inkeys::Drawing::Draw3
 					startupCondition.notify_all();
 					if (graphicsInitialized)
 					{
-						// RTS 必须在图形资源准备好后才启用，避免输入 producer 先于 renderer 存活。
-						bool stylusApproved = false;
-						bool stylusDecisionValue = false;
-						bool stylusSucceededValue = false;
+						// 输入必须在图形资源准备好后才启用，避免 producer 先于 renderer 存活。
+						bool inputApproved = false;
+						bool inputDecisionValue = false;
+						bool inputSucceededValue = false;
 						{
 							std::unique_lock lock(startupMutex);
-							std::cout << "[Draw3Diag][startup] gate=rts-ready state=waiting" << std::endl;
+							std::cout << "[Draw3Diag][startup] gate=input-ready state=waiting" << std::endl;
 							startupCondition.wait(lock, [this, &token]
-								{ return stylusDecision || token.stop_requested(); });
-							stylusDecisionValue = stylusDecision;
-							stylusSucceededValue = stylusSucceeded;
-							stylusApproved = stylusDecision && stylusSucceeded && !token.stop_requested();
+								{ return inputDecision || token.stop_requested(); });
+							inputDecisionValue = inputDecision;
+							inputSucceededValue = inputSucceeded;
+							inputApproved = inputDecision && inputSucceeded && !token.stop_requested();
 						}
-						std::cout << "[Draw3Diag][startup] gate=rts-ready result="
-							<< (stylusApproved ? "open" : "closed")
-							<< " decision=" << (stylusDecisionValue ? 1 : 0)
-							<< " stylus=" << (stylusSucceededValue ? 1 : 0)
+						std::cout << "[Draw3Diag][startup] gate=input-ready result="
+							<< (inputApproved ? "open" : "closed")
+							<< " decision=" << (inputDecisionValue ? 1 : 0)
+							<< " input=" << (inputSucceededValue ? 1 : 0)
 							<< " stopped=" << (token.stop_requested() ? 1 : 0) << std::endl;
-						if (stylusApproved)
+						if (inputApproved)
 						{
 							StrokeModelConfiguration configuration =
 								CreateStrokeModelConfiguration(QueryCompatibleWindowDpi(windowHandle));
@@ -1757,25 +1765,55 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		lock.unlock();
-		bool stylusInitialized = false;
+		bool inputInitialized = false;
 		try
 		{
-			stylusInitialized = stylus.Initialize(hwnd, input, &window, failedCleanup);
-			if (!stylusInitialized) failedCleanup.BeginKnownFailure();
-			if (stylusInitialized && startOptions.startupMilestone)
+			const bool stylusInitialized = stylus.Initialize(hwnd, input, &window, failedCleanup);
+			HostInputMode selected = HostInputMode::Disabled;
+			if (stylusInitialized)
+			{
+				selected = stylus.UsesBasicPacketDescription()
+					? HostInputMode::RtsBasicXY : HostInputMode::RtsExtended;
+				stylus.EnableContactPublication();
+				inputInitialized = true;
+			}
+			else
+			{
+				// Initialize false 只表示 RTS 已完整停产；窗口 owner 确认后再打开输入门。
+				if (!window.SetMouseCompatibilityEnabled(true))
+				{
+					failedCleanup.BeginKnownFailure();
+					if (!window.SetMouseCompatibilityEnabled(false))
+						failedCleanup.FailUnprovenProducerStop();
+				}
+				else
+				{
+					selected = HostInputMode::Win32Mouse;
+					inputInitialized = true;
+					std::fputs("[Draw3] RTS unavailable; Win32 mouse compatibility input enabled\n", stderr);
+				}
+			}
+			inputMode.store(selected, std::memory_order_release);
+			const char* modeName = selected == HostInputMode::RtsExtended ? "RtsExtended" :
+				selected == HostInputMode::RtsBasicXY ? "RtsBasicXY" :
+				selected == HostInputMode::Win32Mouse ? "Win32Mouse" : "Disabled";
+			std::cout << "[Draw3] Input initialization result="
+				<< (inputInitialized ? "ready" : "failed") << " input_mode=" << modeName << std::endl;
+			if (!inputInitialized) failedCleanup.BeginKnownFailure();
+			if (inputInitialized && startOptions.startupMilestone)
 				startOptions.startupMilestone(startOptions.startupContext,
-					HostStartupStage::RtsReady);
+					HostStartupStage::InputReady);
 		}
 		catch (...)
 		{
 			failedCleanup.BeginKnownFailure();
-			// 即使 RTS 构造意外抛出，也必须完成握手，不能让绘制线程永久等待。
-			stylusInitialized = false;
+			// 意外异常不降级；仍完成握手，避免绘制 owner 永久等待。
+			inputInitialized = false;
 		}
 		{
 			std::scoped_lock startupLock(startupMutex);
-			stylusSucceeded = stylusInitialized;
-			stylusDecision = true;
+			inputSucceeded = inputInitialized;
+			inputDecision = true;
 		}
 		startupCondition.notify_all();
 
@@ -1786,8 +1824,8 @@ namespace Inkeys::Drawing::Draw3
 		if (!startupSucceededValue)
 		{
 			failedCleanup.BeginKnownFailure();
-			// 失败时先停止 RTS producer，再让绘制线程退出并释放 GPU 资源。
-			stylus.Shutdown();
+			// 失败时先确认最终输入 producer 停止，再让绘制线程退出并释放 GPU 资源。
+			StopInputProducer();
 			window.RequestExit();
 			input.PublishControlWake();
 			if (drawingThread.joinable()) drawingThread.request_stop();
@@ -1818,6 +1856,28 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 		}
 
+		void CloseInputAdmission() noexcept
+		{
+			window.CloseMouseInputAdmission();
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				inputStopping.store(true, std::memory_order_release);
+				RefreshPresentationInputGateLocked();
+			}
+		}
+
+		void StopInputProducer() noexcept
+		{
+			CloseInputAdmission();
+			if (!window.SetMouseCompatibilityEnabled(false))
+			{
+				startOptions.failedCleanup.BeginKnownFailure();
+				startOptions.failedCleanup.FailUnprovenProducerStop();
+			}
+			stylus.Shutdown();
+			inputMode.store(HostInputMode::Disabled, std::memory_order_release);
+		}
+
 		void Stop() noexcept
 		{
 			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
@@ -1832,6 +1892,8 @@ namespace Inkeys::Drawing::Draw3
 				SealRuntimeMetricsRun();
 				return;
 			}
+			// 先关闭 contact 准入，仍保留业务命令通道供下面发布最终保存屏障。
+			CloseInputAdmission();
 			{
 				std::scoped_lock lock(exitAutoSaveMutex);
 				exitAutoSavePrepared = false;
@@ -1848,8 +1910,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else bridge.Stop(); // 预约失败不可接受一个无法送达的最终屏障。
 			}
-			// 再停止 RTS producer；Shutdown 会为仍活动的 contact 发布终止事件。
-			stylus.Shutdown();
+			// 停止选定 producer 并确认 owner drain 后，才发布最终保存屏障。
+			StopInputProducer();
 			if (exitBarrierQueued) input.PublishReservedCommandWake();
 			else input.PublishControlWake();
 			if (exitBarrierQueued)
@@ -1934,6 +1996,7 @@ namespace Inkeys::Drawing::Draw3
 		snapshot.lastPresentSucceeded =
 			impl_->lastPresentSucceeded.load(std::memory_order_acquire);
 		snapshot.presentationMode = impl_->presentationMode.load(std::memory_order_acquire);
+		snapshot.inputMode = impl_->inputMode.load(std::memory_order_acquire);
 		snapshot.presentCount = impl_->presentCount.load(std::memory_order_acquire);
 		snapshot.successfulPresentCount =
 			impl_->successfulPresentCount.load(std::memory_order_acquire);

@@ -34,6 +34,8 @@ import Inkeys.UI.StartupPreview;
 import Inkeys.Startup.Progress;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.graphics_initialization;
+import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.transparent_presentation;
 
@@ -647,6 +649,58 @@ namespace
 					return 1;
 				}
 			}
+			stage = "Draw3 device preferences";
+			Inkeys::Config deviceDefaults;
+			if (!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility ||
+				!writeBytes(mainConfig, "{}") || !deviceDefaults.ReadAll() ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
+			{
+				std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences defaulted off\n", stderr);
+				return 1;
+			}
+			for (const bool hardware : { false, true })
+				for (const bool compatibility : { false, true })
+				{
+					deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = hardware;
+					deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = compatibility;
+					Inkeys::Config restoredDevice;
+					if (!deviceDefaults.Write() || !restoredDevice.ReadAll() ||
+						restoredDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						restoredDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
+					{
+						std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences did not round-trip\n", stderr);
+						return 1;
+					}
+					Inkeys::Config copiedDevice;
+					copiedDevice = restoredDevice;
+					Inkeys::Config miniDevice;
+					if (!miniDevice.ReadMini({ "Experimental.Inkeys3.Draw3.EnableHardwareAcceleration",
+						"Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility" }) ||
+						miniDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						miniDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility ||
+						copiedDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						copiedDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
+						return 1;
+					const auto uploadInfo = restoredDevice.GetUploadInfo();
+					if (uploadInfo.find("EnableHardwareAcceleration") != std::string::npos ||
+						uploadInfo.find("EnableZhaoxinCompatibility") != std::string::npos) return 1;
+				}
+			for (const char* invalid : { "0", "1", "\"false\"", "null", "{}", "[]" })
+			{
+				Inkeys::Config invalidDevice;
+				const std::string invalidJson = "{\"Experimental\":{\"Inkeys3\":{\"Draw3\":{" +
+					std::string("\"EnableHardwareAcceleration\":") + invalid +
+					",\"EnableZhaoxinCompatibility\":" + invalid + "}}}}";
+				if (!writeBytes(mainConfig, invalidJson) || !invalidDevice.ReadAll() ||
+					!invalidDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+					!invalidDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
+				{
+					std::fputs("[ConfigBoundary] FAIL: non-bool Draw3 device preferences were accepted\n", stderr);
+					return 1;
+				}
+			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
 			std::filesystem::create_directories(root / "fresh" / "opt");
@@ -657,7 +711,7 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
 				return 1;
 			}
-			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation and touch reconnect preferences\n", stderr);
+			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation, touch reconnect and Draw3 device preferences\n", stderr);
 			return 0;
 		}
 		catch (...)
@@ -924,7 +978,7 @@ namespace
 				observation->trace.graceDeadline = firstGrace;
 			}
 			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
-			if (!observation) IDTLogger->warn("[主线程][IdtMain] Draw3 DComp 初始化失败，重建隐藏窗口链并回退 ULW");
+			if (!observation) IDTLogger->warn("[主线程][IdtMain] Draw3 Host 启动失败，重建隐藏窗口链并以 ULW 重试");
 			const HWND oldDrawpad = observation ? drawpad_window : nullptr;
 			const HWND oldPresentation = observation ? windowService.Handle(
 				Inkeys::Window::WindowRole::DrawpadPresentation) : nullptr;
@@ -1206,6 +1260,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// 生产策略和上传回归仅使用离屏资源；严格验参后在任何产品 HWND 初始化前返回。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-device-policy-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunGraphicsDeviceSelectionTest();
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-renderer-upload-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunRendererUploadValidation();
+		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
@@ -3214,6 +3283,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		// 启动时捕获设备偏好；呈现回退和设备恢复沿用本代快照。
+		draw3StartOptions.enableHardwareAcceleration =
+			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+		draw3StartOptions.enableZhaoxinCompatibility =
+			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
@@ -3230,8 +3304,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					Milestone::Draw3GraphicsReady); break;
 				case Stage::PresenterReady: (void)Inkeys::Startup::Report(
 					Milestone::Draw3PresenterReady); break;
-				case Stage::RtsReady: (void)Inkeys::Startup::Report(
-					Milestone::Draw3RtsReady); break;
+				case Stage::InputReady: (void)Inkeys::Startup::Report(
+					Milestone::Draw3InputReady); break;
 				case Stage::ControllerReady: (void)Inkeys::Startup::Report(
 					Milestone::Draw3ControllerReady); break;
 				case Stage::FirstFrameCommitted: (void)Inkeys::Startup::Report(

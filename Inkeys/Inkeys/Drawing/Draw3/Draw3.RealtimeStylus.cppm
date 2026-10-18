@@ -37,17 +37,23 @@ export namespace Inkeys::Drawing::Draw3
 		// Debug 下启用有界 RTS diagnostics；Release 不导出该入口。
 		void SetRtsTraceEnabled(bool enabled) noexcept;
 #endif
-		// 初始化 MTA COM、RTS、多点接口和同步插件；任一步失败均返回 false。
+		// 按完整属性、基础 X/Y 各至多一次尝试；失败实例安全清理后才返回 false。
 		bool Initialize(HWND window, ContactInputCoordinator& coordinator,
 			DrawingCursorEventSink* drawingCursorSink = nullptr,
 			Shutdown::FailedCleanupSignal failedCleanup = {});
 		// 先停止回调、移除插件，再取消生产者持有的 contact 并释放 COM。
 		void Shutdown() noexcept;
 		bool IsInitialized() const noexcept;
+		bool UsesBasicPacketDescription() const noexcept;
+		// Host 选定后端并放行输入前开启；候选期的 Down 不会跨越此门。
+		void EnableContactPublication() noexcept;
 		// 空来源补打已缓存的 Touch context；指定来源严格匹配 context/generation/cursor。
 		bool TraceTouchAreaDiagnostics(const SpeedEraser::InputSource& source) const noexcept;
 
 	private:
+		bool InitializeAttempt(HWND window, ContactInputCoordinator& coordinator,
+			DrawingCursorEventSink* drawingCursorSink, Shutdown::FailedCleanupSignal failedCleanup,
+			bool basicPacketDescription);
 		std::unique_ptr<RealTimeStylusInputImpl> impl_;
 	};
 

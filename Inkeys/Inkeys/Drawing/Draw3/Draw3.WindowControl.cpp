@@ -20,6 +20,7 @@
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.MouseInput.h"
 #include "../../Business/PenWidthPolicy.hpp"
 
 module Inkeys.Drawing.Draw3.window_control;
@@ -276,6 +277,19 @@ namespace Inkeys::Drawing::Draw3
 		}
 		RECT client = {};
 		if (!GetClientRect(window, &client)) return false;
+		for (HANDLE& event : mouseOwnerControlEvents_)
+		{
+			event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			if (!event)
+			{
+				for (HANDLE& created : mouseOwnerControlEvents_)
+				{
+					if (created) CloseHandle(created);
+					created = nullptr;
+				}
+				return false;
+			}
+		}
 		exitRequested_.store(false, std::memory_order_release);
 		resizeRequested_.store(false, std::memory_order_release);
 		fullPresentRequested_.store(false, std::memory_order_release);
@@ -321,6 +335,11 @@ namespace Inkeys::Drawing::Draw3
 			std::memory_order_release);
 		touchCursorSuppressed_.store(false, std::memory_order_release);
 		window_.store(nullptr, std::memory_order_release);
+		for (HANDLE& event : mouseOwnerControlEvents_)
+		{
+			if (event) CloseHandle(event);
+			event = nullptr;
+		}
 	}
 
 	LRESULT WindowController::HandleExternalMessage(
@@ -330,6 +349,107 @@ namespace Inkeys::Drawing::Draw3
 			window_.load(std::memory_order_acquire) != window)
 			return DefWindowProcW(window, message, wParam, lParam);
 		return HandleWindowMessage(window, message, wParam, lParam);
+	}
+
+	void WindowController::CloseMouseInputAdmission() noexcept
+	{
+		mouseInput_.CloseAdmission();
+	}
+
+	bool WindowController::SetMouseCompatibilityEnabled(bool enabled) noexcept
+	{
+		mouseStartAllowed_.store(enabled, std::memory_order_release);
+		if (!enabled)
+		{
+			CloseMouseInputAdmission();
+			if (mouseOwnerStopped_.load(std::memory_order_acquire)) return true;
+		}
+		const HWND window = Handle();
+		if (!window || !IsWindow(window)) return false;
+		// pending start 也必须走 owner 停止握手，不能因超时前尚未执行而误认为静止。
+		if (enabled) mouseOwnerStopped_.store(false, std::memory_order_release);
+		const WPARAM operation = enabled ? Detail::kMouseInputStart : Detail::kMouseInputStop;
+		const LPARAM identity = reinterpret_cast<LPARAM>(this);
+		if (GetWindowThreadProcessId(window, nullptr) == GetCurrentThreadId())
+		{
+			if (mouseDispatchDepth_ != 0) return false;
+			return HandleExternalMessage(window, Detail::kMouseInputOwnerMessage, operation, identity) == 1;
+		}
+		const auto operationIndex = static_cast<std::size_t>(operation);
+		const HANDLE completed = mouseOwnerControlEvents_[operationIndex];
+		if (!completed || !ResetEvent(completed)) return false;
+		mouseOwnerControlSucceeded_[operationIndex].store(false, std::memory_order_release);
+		// 队列屏障不能用 SendMessage：它可能在 SetCapture 的 USER32 调用中重入，
+		// 让停止确认先于外层 WM_MOUSE 退栈。PostMessage 在 owner 取下一消息时执行。
+		if (!PostMessageW(window, Detail::kMouseInputOwnerMessage, operation, identity)) return false;
+		// 超时不是停止证明；Host 保留仍被 owner 借用的资源并走致命清理合同。
+		return WaitForSingleObject(completed, 5000) == WAIT_OBJECT_0 &&
+			mouseOwnerControlSucceeded_[operationIndex].load(std::memory_order_acquire);
+	}
+
+	void WindowController::ReleaseMouseCapture(HWND window) noexcept
+	{
+		if (GetCapture() == window) (void)ReleaseCapture();
+	}
+
+	void WindowController::CancelMouseInput(HWND window, bool captureLost) noexcept
+	{
+		LARGE_INTEGER qpc{};
+		QueryPerformanceCounter(&qpc);
+		if (auto* coordinator = inputCoordinator_.load(std::memory_order_acquire))
+		{
+			if (captureLost) mouseInput_.CaptureLost(*coordinator, qpc.QuadPart);
+			else mouseInput_.Cancel(*coordinator, qpc.QuadPart);
+		}
+		ClearMouseCursorSample();
+		ReleaseMouseCapture(window); // 状态已清，WM_CAPTURECHANGED 同步重入不会产生第二终态。
+	}
+
+	void WindowController::HandleCompatibilityMouse(HWND window, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		auto* coordinator = inputCoordinator_.load(std::memory_order_acquire);
+		if (!coordinator) return;
+		// 旧代次排队的 Down/Move/Up 均不能改变新模式，尤其旧 Up 不能结束新笔。
+		if (static_cast<LONG>(static_cast<DWORD>(GetMessageTime()) - mouseStartTick_) <= 0) return;
+		LARGE_INTEGER qpc{};
+		QueryPerformanceCounter(&qpc);
+		const float x = static_cast<float>(GET_X_LPARAM(lParam));
+		const float y = static_cast<float>(GET_Y_LPARAM(lParam));
+		const bool down = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN;
+		const bool up = message == WM_LBUTTONUP || message == WM_RBUTTONUP;
+		const auto button = message == WM_RBUTTONDOWN || message == WM_RBUTTONUP
+			? decltype(mouseInput_)::Right : decltype(mouseInput_)::Left;
+		if (down)
+		{
+			if (mouseInput_.Down(*coordinator, button, x, y, qpc.QuadPart, SelectionMode()))
+			{
+				(void)SetCapture(window);
+				if (GetCapture() != window) mouseInput_.CaptureLost(*coordinator, qpc.QuadPart);
+			}
+		}
+		else if (up) mouseInput_.Up(*coordinator, button, x, y, qpc.QuadPart);
+		else if (message == WM_MOUSEMOVE)
+		{
+			const std::uint32_t held = ((wParam & MK_LBUTTON) ? decltype(mouseInput_)::Left : 0u) |
+				((wParam & MK_RBUTTON) ? decltype(mouseInput_)::Right : 0u);
+			mouseInput_.Move(*coordinator, held, x, y, qpc.QuadPart, SelectionMode());
+		}
+		if (!mouseInput_.Active()) ReleaseMouseCapture(window);
+		SetTouchCursorSuppressed(false);
+		SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
+		DrawingCursorSample sample;
+		sample.x = x;
+		sample.y = y;
+		sample.valid = true;
+		sample.inContact = mouseInput_.Active();
+		sample.qpc = qpc.QuadPart;
+		PublishMouseCursorSample(sample);
+		if (message == WM_MOUSEMOVE && !trackingMouseLeave_)
+		{
+			TRACKMOUSEEVENT tracking = { sizeof(TRACKMOUSEEVENT), TME_LEAVE, window, 0 };
+			trackingMouseLeave_ = TrackMouseEvent(&tracking) != FALSE;
+		}
 	}
 
 	HWND WindowController::Handle() const
@@ -1253,6 +1373,75 @@ namespace Inkeys::Drawing::Draw3
 
 	LRESULT WindowController::HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
+		if (message == Detail::kMouseInputOwnerMessage)
+		{
+			if (lParam != reinterpret_cast<LPARAM>(this) ||
+				(wParam != Detail::kMouseInputStart && wParam != Detail::kMouseInputStop)) return 0;
+			bool succeeded = false;
+			if (mouseDispatchDepth_ == 0 && wParam == Detail::kMouseInputStart)
+			{
+				if (inputCoordinator_.load(std::memory_order_acquire) &&
+					mouseStartAllowed_.load(std::memory_order_acquire) &&
+					!mouseCompatibilitySelected_.load(std::memory_order_acquire))
+				{
+					const std::uint32_t held = ((GetKeyState(VK_LBUTTON) & 0x8000) ? decltype(mouseInput_)::Left : 0u) |
+						((GetKeyState(VK_RBUTTON) & 0x8000) ? decltype(mouseInput_)::Right : 0u);
+					mouseStartTick_ = GetTickCount();
+					mouseInput_.Start(held);
+					mouseOwnerStopped_.store(false, std::memory_order_release);
+					mouseCompatibilitySelected_.store(true, std::memory_order_release);
+					succeeded = true;
+				}
+			}
+			else if (mouseDispatchDepth_ == 0 && wParam == Detail::kMouseInputStop)
+			{
+				mouseInput_.CloseAdmission();
+				CancelMouseInput(window);
+				if (GetCapture() != window)
+				{
+					mouseCompatibilitySelected_.store(false, std::memory_order_release);
+					mouseOwnerStopped_.store(true, std::memory_order_release);
+					succeeded = true;
+				}
+			}
+			// start/stop 独立事件，超时的旧 start 不能冒充后来的 stop 确认。
+			const auto operationIndex = static_cast<std::size_t>(wParam);
+			mouseOwnerControlSucceeded_[operationIndex].store(succeeded, std::memory_order_release);
+			if (mouseOwnerControlEvents_[operationIndex]) SetEvent(mouseOwnerControlEvents_[operationIndex]);
+			return succeeded ? 1 : 0;
+		}
+		const bool compatibility = mouseCompatibilitySelected_.load(std::memory_order_acquire);
+		if (compatibility)
+		{
+			// Pointer 整个生命周期交默认处理，系统提供的单点鼠标提升只走下面一条 producer。
+			if (message >= WM_NCPOINTERUPDATE && message <= WM_POINTERROUTEDRELEASED)
+				return DefWindowProcW(window, message, wParam, lParam);
+			if (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
+				message == WM_RBUTTONDOWN || message == WM_RBUTTONUP || message == WM_MOUSEMOVE)
+			{
+				struct DispatchScope
+				{
+					unsigned& depth;
+					explicit DispatchScope(unsigned& value) noexcept : depth(value) { ++depth; }
+					~DispatchScope() { --depth; }
+				} dispatch(mouseDispatchDepth_);
+				HandleCompatibilityMouse(window, message, wParam, lParam);
+				return 0;
+			}
+			if (message == WM_CANCELMODE || message == WM_KILLFOCUS ||
+				(message == WM_CAPTURECHANGED && reinterpret_cast<HWND>(lParam) != window) ||
+				(message == WM_SHOWWINDOW && !wParam) ||
+				(message == WM_WINDOWPOSCHANGED && lParam &&
+					(reinterpret_cast<const WINDOWPOS*>(lParam)->flags & SWP_HIDEWINDOW)) ||
+				(message == WM_ACTIVATE && LOWORD(wParam) == WA_INACTIVE) ||
+				message == WM_DESTROY || message == WM_CLOSE)
+				CancelMouseInput(window, message == WM_CAPTURECHANGED);
+			if (message == WM_DESTROY)
+			{
+				mouseInput_.CloseAdmission();
+				mouseCompatibilitySelected_.store(false, std::memory_order_release);
+			}
+		}
 		const bool gpuTransparent = gpuTransparentComposition_.load(std::memory_order_acquire); // GPU 透明模式下由 backbuffer 负责背景。
 		switch (message)
 		{
@@ -1475,6 +1664,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		case WM_DESTROY:
+		{
 			penCursorSample_.Clear();
 			mouseCursorSample_.Clear();
 			cursorOwner_.store(
@@ -1490,7 +1680,10 @@ namespace Inkeys::Drawing::Draw3
 			RemoveProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
 			exitRequested_.store(true, std::memory_order_release); // 通知主循环退出。
 			RequestControlWake();
-			if (!externalWindow_.load(std::memory_order_acquire))
+			const bool external = externalWindow_.load(std::memory_order_acquire);
+			if (compatibility && mouseDispatchDepth_ == 0 && GetCapture() != window)
+				mouseOwnerStopped_.store(true, std::memory_order_release);
+			if (!external)
 			{
 				PostQuitMessage(0);
 				return 0;
@@ -1498,6 +1691,7 @@ namespace Inkeys::Drawing::Draw3
 			// Window Service 所在线程还负责其它 overlay HWND，不能被 Draw3
 			// 的外部窗口过程投递 WM_QUIT；交回宿主默认处理即可。
 			return DefWindowProcW(window, message, wParam, lParam);
+		}
 
 		case WM_DWMCOMPOSITIONCHANGED:
 			compositionChangedRequested_.store(true, std::memory_order_release); // DWM 状态变化交给主循环刷新 presenter。
