@@ -16,6 +16,7 @@ import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
 import Inkeys.UI.PageControl;
+import Inkeys.UI.SelectionOverlay;
 import Inkeys.UI.Whiteboard;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
@@ -1238,6 +1239,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			return Inkeys::Drawing::Draw3::RunRendererHardwarePixelTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--ui3-shape-editor-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Bar::RunShapeEditorOffscreenTest();
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--ui3-geometry-attribute-test") == 0)
 		{
@@ -3123,6 +3130,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					spec.whiteboardMinimizedChanged = []
 					{
 						Inkeys::UI::PageControl::NotifyLayoutChanged();
+						Inkeys::UI::SelectionOverlay::NotifyStateChanged();
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::WhiteboardFreeze);
 					};
@@ -3177,6 +3185,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
 		AddOverlayWindow(Inkeys::Window::WindowRole::Bar, L"Inkeys5;", L"Inkeys BarWindow",
 			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc);
+
+		windowSpecs.push_back(Inkeys::UI::SelectionOverlay::MakeWindowSpec());
 
 		Inkeys::Window::WindowSpec settingSpec;
 		settingSpec.role = Inkeys::Window::WindowRole::Setting;
@@ -3395,6 +3405,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return 1;
 		}
 
+		if (!Inkeys::UI::SelectionOverlay::Acquire())
+		{
+			SetOffSignal(1);
+			PublishFatalStartupFailure(0xB003u, L"图形编辑表面初始化失败。");
+		}
 		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
 	}
 	// Draw3 Host 已初始化唯一 RTS producer；不再启动 Draw2 RTS/速度线程。
@@ -3536,6 +3551,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
 	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
 	Inkeys::UI::StartupPreview::Stop();
+	// 当前对象编辑先注销输入和共享渲染，随后才停止画布和窗口owner。
+	Inkeys::UI::SelectionOverlay::Release();
 	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
 	if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
 	Inkeys::UI::Setting::Shutdown();

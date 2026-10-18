@@ -2,6 +2,7 @@
 
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.WhiteboardModel.h"
+#include "Draw3.ShapeInteraction.h"
 #include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 #include "../../Business/PenWidthPolicy.hpp"
 
@@ -184,6 +185,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		InputTest,
 		PrepareExitAutoSave,
 		SetWhiteboardTheme,
+		ShapeInteraction,
 	};
 
 	enum class CommandResult : std::uint8_t
@@ -222,6 +224,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		std::size_t whiteboardPage = 0;
+		std::shared_ptr<const ShapeUiAction> shapeAction;
 	};
 
 	constexpr int NormalizeLegacyEraserMode(int value) noexcept
@@ -247,6 +250,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
+		CommandResult PublishShapeAction(const ShapeUiAction&) noexcept;
 		CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		bool TryConsume(Command& command) noexcept;
 		// 每次 Host 启动前清空旧命令并重新开放桥接。

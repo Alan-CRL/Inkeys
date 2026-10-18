@@ -2,7 +2,7 @@
   "id": "shape-selection-system",
   "name": "shape-selection-system",
   "title": "Inkeys3 图形绘制与选择系统",
-  "description": "统一参数化图形、创建、选择编辑、几何关联、历史与 UInk；Phase0/1/2已完成，后续P3–7及逐点工具保持规划。",
+  "description": "统一参数化图形、创建、选择编辑、几何关联、历史与UInk；Phase0/1/2已完成，本轮P3、逐点与P4限定范围已实现及自动验收，P4剩余和P5–7继续规划。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -32,8 +32,8 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "P1 e59703ec；P2 2e3a4f26；面板修正384c5838；未来图形主栏UI A方案1d4b5472已验证提交并归档。总任务继续，P3/P4及其他阶段仍planning；无push。",
+  "notes": "P1 e59703ec；P2 2e3a4f26；面板修正384c5838；未来图形主栏UI A方案1d4b5472已验证提交并归档。总任务继续，P3/P4及其他阶段仍planning；无push。 2026-10-18：P3当前对象编辑、逐点工具及P4圆弧/扇形/六种空间几何通过生产CPU/GPU/保存/UI离屏验证，21启用/15禁用；本轮未commit/push。",
   "meta": {
-    "validation": ".trellis/tasks/10-17-shape-phase2-tools/validation.md"
+    "validation": ".trellis/tasks/10-17-shape-phase3-selection/validation.md"
   }
 }

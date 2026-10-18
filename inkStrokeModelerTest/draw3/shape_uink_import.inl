@@ -30,7 +30,7 @@
 		return found;
 	}
 	bool ShapeGroupReference(const UInkMessagePackValue& metadata, const shapes::ShapeObject& root,
-		uint32_t partIndex, uint32_t partCount)
+		uint32_t partIndex, uint32_t partCount, const UInkMessagePackValue& rootMetadata)
 	{
 		const auto* map = std::get_if<UInkMessagePackValue::Map>(&metadata.value);
 		if (!map || map->size() != 6) return false;
@@ -63,8 +63,8 @@
 			}
 			else if (*name != "partIndex" && *name != "partCount") return false;
 		}
-		uint32_t index = 0, count = 0;
-		return reference && id && id->Bytes() == root.id && version == (root.construction ? 2u : 1u) && revision == root.revision &&
+		uint32_t index = 0, count = 0, rootVersion = 0;
+		return reference && id && id->Bytes() == root.id && ShapeGroupNumber(rootMetadata, "version", rootVersion) && version == rootVersion && revision == root.revision &&
 			ShapeGroupNumber(metadata, "partIndex", index) && index == partIndex &&
 			ShapeGroupNumber(metadata, "partCount", count) && count == partCount;
 	}

@@ -161,10 +161,23 @@ namespace Inkeys::Drawing::Draw3
 		if (found != shapeRenderCache_.end()) return DrawShapeRenderData(found->data, originX, originY);
 		::draw3::shapes::RenderData data;
 		if (!::draw3::shapes::BuildRenderData(object, data, { displayScale, 0.25f })) return false;
+		// 候选绘制成功后才进入缓存，失败资源不会留下可复用的成功记录。
+		if (!DrawShapeRenderData(data, originX, originY)) return false;
 		// 有界缓存避免长会话删除对象后永久保留所有旧修订。
 		if (shapeRenderCache_.size() >= 128) shapeRenderCache_.erase(shapeRenderCache_.begin());
 		shapeRenderCache_.push_back({ object.id, object.revision, displayScale, std::move(data) });
-		return DrawShapeRenderData(shapeRenderCache_.back().data, originX, originY);
+		return true;
+	}
+
+	void InkRenderer::ClearShapeRenderCache() noexcept
+	{
+		shapeRenderCache_.clear();
+	}
+
+	void InkRenderer::InvalidateShapeCache(const ::draw3::shapes::ObjectId& id) noexcept
+	{
+		shapeRenderCache_.erase(std::remove_if(shapeRenderCache_.begin(), shapeRenderCache_.end(),
+			[&](const ShapeRenderCacheEntry& entry) { return entry.id == id; }), shapeRenderCache_.end());
 	}
 
 	bool InkRenderer::DrawShapeBatch(const ::draw3::shapes::RenderBatch& batch,
@@ -284,13 +297,29 @@ namespace Inkeys::Drawing::Draw3
 			}
 		} restore{ context.Get(), targets };
 		ClearOperatorLayer(shapeCompositeLayer_);
-		for (const auto& batch : data.batches)
+		for (size_t first = 0; first < data.batches.size();)
 		{
+			const auto& material = data.batches[first];
+			size_t end = first + 1;
+			if (!material.fill)
+			{
+				// 同色同透明度的相邻描边共用覆盖层；每批仍保留自己的虚线相位。
+				// 不跨越填充或其他材质，保证复合图形原有 source-over 层序。
+				for (; end < data.batches.size(); ++end)
+				{
+					const auto& next = data.batches[end];
+					if (next.fill || next.style.strokeRgb != material.style.strokeRgb ||
+						next.style.strokeOpacity != material.style.strokeOpacity ||
+						next.style.width != material.style.width) break;
+				}
+			}
 			ClearOperatorLayer(shapeMaterialLayer_);
-			if (!DrawShapeBatch(batch, originX, originY)) return false;
+			for (size_t index = first; index < end; ++index)
+				if (!DrawShapeBatch(data.batches[index], originX, originY)) return false;
 			ID3D11RenderTargetView* composite[] = {
 				shapeCompositeLayer_.addRTV.Get(), shapeCompositeLayer_.retainRTV.Get() };
 			if (!ResolveShapeLayer(shapeMaterialLayer_, composite, rect)) return false;
+			first = end;
 		}
 		// 此前所有 pass 只写独立 scratch；最后一次才发布完整逻辑对象。
 		return ResolveShapeLayer(shapeCompositeLayer_, targets, rect);

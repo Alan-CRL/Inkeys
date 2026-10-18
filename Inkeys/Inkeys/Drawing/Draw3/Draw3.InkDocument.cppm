@@ -127,6 +127,9 @@ export namespace Inkeys::Drawing::Draw3
 		std::optional<size_t> AppendStroke(InkStroke stroke);
 		// 仅接收一次性创建命令；编辑命令将在选择系统阶段接入历史。
 		std::optional<size_t> AppendShape(const draw3::shapes::ShapeCommand& command);
+		// 同层位替换仅允许同一稳定图形身份；非法候选不改变原项。
+		bool ReplaceStroke(size_t index, InkStroke replacement);
+		bool ReplaceShape(size_t index, const draw3::shapes::ShapeCommand& command);
 		// 清空当前 Canvas 的全部最终 Stroke；viewport 保持不变。
 		void ClearStrokes() noexcept;
 

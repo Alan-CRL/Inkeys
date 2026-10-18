@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <variant>
 
 namespace draw3::shapes
 {
@@ -30,7 +31,8 @@ namespace draw3::shapes
 	};
 	enum class Kind : uint32_t { Line, Rectangle, Circle, Ellipse, Polyline, Polygon, Compound };
 	enum class CreationMode : uint32_t { Drag, CenterRadius, Points, MultiStage, Parameters };
-	enum class PresetKind : uint32_t { Line, Arrow, Rectangle, RoundedRectangle, Circle, Ellipse, Triangle, Parallelogram, Rhombus, Trapezoid, RegularPolygon };
+	enum class PresetKind : uint32_t { Line, Arrow, Rectangle, RoundedRectangle, Circle, Ellipse, Triangle, Parallelogram, Rhombus, Trapezoid, RegularPolygon,
+		Polyline, Polygon, Arc, Sector, Cuboid, Cube, Cylinder, Cone, Prism, Pyramid };
 	enum class FillMode : uint32_t { Outline, Fill, OutlineAndFill };
 	struct ToolSpec
 	{
@@ -40,11 +42,22 @@ namespace draw3::shapes
 		float rectangleCornerRadius = 4; // Bridge 使用 DIP；构造参数和工厂使用局部画布像素。
 		bool operator==(const ToolSpec&) const = default;
 	};
+	struct VertexConstruction { std::vector<Vec2> vertices; bool operator==(const VertexConstruction&) const = default; };
+	struct ArcConstruction { float sweepRadians = 0; bool operator==(const ArcConstruction&) const = default; };
+	struct SolidConstruction
+	{
+		Vec2 depth; // 长方体/正方体的投影向量，不冒充真实边长。
+		float height = 0; // 圆柱/圆锥/棱柱/棱锥的局部竖直高度。
+		bool operator==(const SolidConstruction&) const = default;
+	};
+	using ConstructionParameters = std::variant<std::monostate, VertexConstruction, ArcConstruction, SolidConstruction>;
 	// 局部构造参数是真值；geometry/parts 必须由同一构造器派生，保存后仍可按模板编辑。
 	struct Construction
 	{
 		ToolSpec tool;
 		Vec2 start, end;
+		ConstructionParameters parameters;
+		bool legacyArrow = false; // v2旧箭头保留按线长决定头部的公式。
 		bool operator==(const Construction&) const = default;
 	};
 	enum class LinePattern : uint32_t { Solid, Dashed, Dotted, DashDot };
@@ -172,6 +185,14 @@ namespace draw3::shapes
 	HitResult HitTest(const ShapeObject&, const GeometryResult&, Vec2 point, float tolerance = 0);
 	bool IsDashVisible(float pathDistance, const ShapeStyle&) noexcept;
 	Bounds UnionBounds(Bounds, Bounds) noexcept;
+	std::optional<ShapeObject> MakeConstructedShape(const Construction&, const ShapeStyle&,
+		const ObjectId&, uint64_t revision = 1, std::string* error = nullptr);
+	struct ToolCapabilities
+	{
+		bool enabled = false, multiStage = false, points = false, fill = false, regularSides = false;
+	};
+	ToolCapabilities GetToolCapabilities(PresetKind) noexcept;
+	CreationMode DefaultCreationMode(PresetKind) noexcept;
 	std::optional<ShapeObject> MakePresetShape(const ToolSpec&, Vec2 start, Vec2 end,
 		const ShapeStyle&, const ObjectId&, uint64_t revision = 1, std::string* error = nullptr);
 	std::optional<ShapeObject> MakeLegacyShape(LegacyKind, Vec2 start, Vec2 end,

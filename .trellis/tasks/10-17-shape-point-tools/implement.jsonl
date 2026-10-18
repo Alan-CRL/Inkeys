@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "所属层和质量边界"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++/线程/格式"}
+{"file": ".trellis/spec/native-desktop/shapes.md", "reason": "共享模型/渲染/保存"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI3共享按钮/动画/成功快照"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "冷页历史与页面身份"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "资源三语生成"}
+{"file": ".trellis/tasks/10-17-shape-phase3-selection/research/baseline.md", "reason": "实际基线风险"}

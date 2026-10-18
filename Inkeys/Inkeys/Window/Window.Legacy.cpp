@@ -44,6 +44,7 @@ namespace
 		{ Inkeys::Window::WindowRole::PptMiddleLeft, "PptMiddleLeft" },
 		{ Inkeys::Window::WindowRole::PptMiddleRight, "PptMiddleRight" },
 		{ Inkeys::Window::WindowRole::Bar, "Bar" },
+		{ Inkeys::Window::WindowRole::SelectionOverlay, "SelectionOverlay" },
 	};
 
 	void LogTopmostRefreshSnapshot(

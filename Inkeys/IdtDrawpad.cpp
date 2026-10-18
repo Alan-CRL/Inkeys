@@ -1,4 +1,5 @@
 import Inkeys.UI.Bar;
+import Inkeys.UI.SelectionOverlay;
 import Inkeys.UI.Ppt;
 import Inkeys.UI.PageControl;
 import Inkeys.Helper.Thread;
@@ -86,6 +87,12 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				return 1;
 			}
 		}
+
+		// 当前图形编辑与构造会话先消费自身的取消/颜色键，避免同一次 Escape 继续触发画布或 PPT。
+		if (Inkeys::UI::SelectionOverlay::TryQueueKeyboard(
+			static_cast<BYTE>(pKeyInfo->vkCode),
+			wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
+			return 1;
 
 		// UI3 颜色面板打开时由 Bar 交互线程串行处理方向键/WASD；关闭时完全沿用原快捷键与 PPT 路径。
 		if (Inkeys::UI::Bar::TryQueueColorPickerKeyboardInput(

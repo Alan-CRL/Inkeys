@@ -1332,7 +1332,7 @@ bool ChangeStateModeToShape()
 static bool SetShapeModeSelectImpl(ShapeModeSelectEnum shape,
 	const std::uint64_t* expectedRevision)
 {
-	if (static_cast<unsigned>(shape) > static_cast<unsigned>(ShapeModeSelectEnum::IdtShapeRegularPolygon1))
+	if (static_cast<unsigned>(shape) > static_cast<unsigned>(ShapeModeSelectEnum::IdtShapePyramid1))
 		return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
@@ -1381,10 +1381,20 @@ draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcep
 	case ShapeModeSelectEnum::IdtShapeRhombus1: result.preset = PresetKind::Rhombus; break;
 	case ShapeModeSelectEnum::IdtShapeTrapezoid1: result.preset = PresetKind::Trapezoid; break;
 	case ShapeModeSelectEnum::IdtShapeRegularPolygon1: result.preset = PresetKind::RegularPolygon; break;
+	case ShapeModeSelectEnum::IdtShapePolyline1: result.preset = PresetKind::Polyline; break;
+	case ShapeModeSelectEnum::IdtShapePolygon1: result.preset = PresetKind::Polygon; break;
+	case ShapeModeSelectEnum::IdtShapeArc1: result.preset = PresetKind::Arc; break;
+	case ShapeModeSelectEnum::IdtShapeSector1: result.preset = PresetKind::Sector; break;
+	case ShapeModeSelectEnum::IdtShapeCuboid1: result.preset = PresetKind::Cuboid; break;
+	case ShapeModeSelectEnum::IdtShapeCube1: result.preset = PresetKind::Cube; break;
+	case ShapeModeSelectEnum::IdtShapeCylinder1: result.preset = PresetKind::Cylinder; break;
+	case ShapeModeSelectEnum::IdtShapeCone1: result.preset = PresetKind::Cone; break;
+	case ShapeModeSelectEnum::IdtShapePrism1: result.preset = PresetKind::Prism; break;
+	case ShapeModeSelectEnum::IdtShapePyramid1: result.preset = PresetKind::Pyramid; break;
 	default: result.preset = PresetKind::Line; break;
 	}
 	result.creationMode = result.preset == PresetKind::Circle ? snapshot.Shape.circleMode :
-		result.preset == PresetKind::RegularPolygon ? CreationMode::CenterRadius : CreationMode::Drag;
+		DefaultCreationMode(result.preset);
 	result.sides = snapshot.Shape.polygonSides;
 	return result;
 }
@@ -1392,12 +1402,14 @@ draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcep
 bool IsOpenShapeTool(const StateModeClass& snapshot) noexcept
 {
 	const auto kind = GetShapeToolSpec(snapshot).preset;
-	return kind == draw3::shapes::PresetKind::Line || kind == draw3::shapes::PresetKind::Arrow;
+	return kind == draw3::shapes::PresetKind::Line || kind == draw3::shapes::PresetKind::Arrow ||
+		kind == draw3::shapes::PresetKind::Polyline || kind == draw3::shapes::PresetKind::Arc;
 }
 
 draw3::shapes::FillMode GetShapeFillMode(const StateModeClass& snapshot) noexcept
 {
-	return IsOpenShapeTool(snapshot) ? draw3::shapes::FillMode::Outline : snapshot.Shape.fillMode;
+	return !draw3::shapes::GetToolCapabilities(GetShapeToolSpec(snapshot).preset).fill
+		? draw3::shapes::FillMode::Outline : snapshot.Shape.fillMode;
 }
 
 draw3::shapes::ShapeStyle GetShapeStyle(const StateModeClass& snapshot) noexcept
@@ -1453,6 +1465,16 @@ bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_
 	case PresetKind::Rhombus: mode = ShapeModeSelectEnum::IdtShapeRhombus1; break;
 	case PresetKind::Trapezoid: mode = ShapeModeSelectEnum::IdtShapeTrapezoid1; break;
 	case PresetKind::RegularPolygon: mode = ShapeModeSelectEnum::IdtShapeRegularPolygon1; break;
+	case PresetKind::Polyline: mode = ShapeModeSelectEnum::IdtShapePolyline1; break;
+	case PresetKind::Polygon: mode = ShapeModeSelectEnum::IdtShapePolygon1; break;
+	case PresetKind::Arc: mode = ShapeModeSelectEnum::IdtShapeArc1; break;
+	case PresetKind::Sector: mode = ShapeModeSelectEnum::IdtShapeSector1; break;
+	case PresetKind::Cuboid: mode = ShapeModeSelectEnum::IdtShapeCuboid1; break;
+	case PresetKind::Cube: mode = ShapeModeSelectEnum::IdtShapeCube1; break;
+	case PresetKind::Cylinder: mode = ShapeModeSelectEnum::IdtShapeCylinder1; break;
+	case PresetKind::Cone: mode = ShapeModeSelectEnum::IdtShapeCone1; break;
+	case PresetKind::Prism: mode = ShapeModeSelectEnum::IdtShapePrism1; break;
+	case PresetKind::Pyramid: mode = ShapeModeSelectEnum::IdtShapePyramid1; break;
 	default: return false;
 	}
 	return ChangeShapeProperty(expected, [&] {
@@ -1466,7 +1488,7 @@ bool SetShapeFillModeIfRevision(draw3::shapes::FillMode mode, std::uint64_t expe
 {
 	if (static_cast<unsigned>(mode) > static_cast<unsigned>(draw3::shapes::FillMode::OutlineAndFill)) return false;
 	return ChangeShapeProperty(expected, [&] {
-		if (IsOpenShapeTool(stateMode)) return false;
+		if (!draw3::shapes::GetToolCapabilities(GetShapeToolSpec(stateMode).preset).fill) return false;
 		const bool changed = stateMode.Shape.fillMode != mode;
 		stateMode.Shape.fillMode = mode; return changed;
 	});
@@ -1496,7 +1518,7 @@ bool SetShapePolygonSidesIfRevision(std::uint32_t sides, std::uint64_t expected)
 {
 	if (sides < 3 || sides > 12) return false;
 	return ChangeShapeProperty(expected, [&] {
-		if (GetShapeToolSpec(stateMode).preset != draw3::shapes::PresetKind::RegularPolygon) return false;
+		if (!draw3::shapes::GetToolCapabilities(GetShapeToolSpec(stateMode).preset).regularSides) return false;
 		const bool changed = stateMode.Shape.polygonSides != sides;
 		stateMode.Shape.polygonSides = sides; return changed;
 	});
@@ -1538,7 +1560,7 @@ int RunShapeToolStateProductionTest() noexcept
 		const auto defaults = GetStateModeSnapshot();
 		check(defaults.Shape.circleMode == CreationMode::CenterRadius && defaults.Shape.polygonSides == 3 &&
 			defaults.Shape.fillMode == draw3::shapes::FillMode::Outline, "session defaults");
-		for (unsigned i = 0; i <= static_cast<unsigned>(PresetKind::RegularPolygon); ++i)
+		for (unsigned i = 0; i <= static_cast<unsigned>(PresetKind::Pyramid); ++i)
 		{
 			const auto preset = static_cast<PresetKind>(i);
 			(void)SetShapeToolPresetIfRevision(preset, StateModeTransitionRevision());
@@ -1546,6 +1568,9 @@ int RunShapeToolStateProductionTest() noexcept
 			const auto bridge = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
 			check(GetShapeToolSpec(snapshot.state).preset == preset && bridge.shapeTool == GetShapeToolSpec(snapshot.state), "all presets projected");
 			check(bridge.shapeStyle == GetShapeStyle(snapshot.state), "atomic style projection");
+			const auto caps = GetToolCapabilities(preset);
+			check(caps.enabled && GetShapeToolSpec(snapshot.state).creationMode == DefaultCreationMode(preset), "enabled tool publishes correct creation mode");
+			check(caps.fill || (!bridge.shapeStyle.fill && bridge.shapeStyle.stroke), "open paths and solids remain outline only");
 			const float otherWidth = IsOpenShapeTool(snapshot.state) ? snapshot.state.Shape.Rectangle1.width : snapshot.state.Shape.StraightLine1.width;
 			check(SetPenWidthIfRevision(7.25, snapshot.revision, false), "shape explicit DIP accepted");
 			const auto width = GetStateModeSnapshot();
@@ -1565,6 +1590,23 @@ int RunShapeToolStateProductionTest() noexcept
 			(void)SetShapePolygonSidesIfRevision(n, StateModeTransitionRevision());
 			check(GetShapeToolSpec(GetStateModeSnapshot()).sides == n, "3 to12 sides");
 		}
+		// 空间正多边形复用同一份边数状态，描边限制不应覆盖平面图形记住的填充。
+		(void)SetShapeFillModeIfRevision(draw3::shapes::FillMode::OutlineAndFill, StateModeTransitionRevision());
+		for (const auto solid : { PresetKind::Prism, PresetKind::Pyramid })
+		{
+			(void)SetShapeToolPresetIfRevision(solid, StateModeTransitionRevision());
+			for (unsigned sides = 3; sides <= 12; ++sides)
+			{
+				(void)SetShapePolygonSidesIfRevision(sides, StateModeTransitionRevision());
+				check(GetShapeToolSpec(GetStateModeSnapshot()).sides == sides, "solid base sides projected");
+			}
+			check(!SetShapeFillModeIfRevision(draw3::shapes::FillMode::Fill, StateModeTransitionRevision()) &&
+				GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::Outline,
+				"solid rejects fill mutation");
+		}
+		(void)SetShapeToolPresetIfRevision(PresetKind::RegularPolygon, StateModeTransitionRevision());
+		check(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::OutlineAndFill,
+			"solid outline restriction retains closed fill memory");
 		const auto before = GetStateModeVersionedSnapshot();
 		check(!SetShapePolygonSidesIfRevision(2, before.revision) && !SetShapePolygonSidesIfRevision(13, before.revision) &&
 			StateModeTransitionRevision() == before.revision, "invalid parameters do not mutate state");
@@ -1602,6 +1644,35 @@ int RunShapeToolStateProductionTest() noexcept
 			StateModeTransitionRevision() == sameLineIntent + 1 &&
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision == sameLineBridge,
 			"unchanged legacy click updates user intent without duplicate publication");
+		// UI 手势必须携带发布当时的完整身份，队列中的快照不能被发布者随后改写。
+		{
+			using namespace Inkeys::Drawing::Draw3;
+			Bridge::StateBridge queue(2);
+			Bridge::ProductState target;
+			target.workspace = Bridge::Workspace::Whiteboard;
+			queue.PublishState(target);
+			ShapeUiAction action;
+			action.kind = ShapeUiActionKind::PreviewEdit;
+			action.identity.workspace = static_cast<std::uint8_t>(target.workspace);
+			action.identity.session = 17;
+			action.identity.objectRevision = 9;
+			action.identity.pageIndex = 3;
+			action.point = {21, 34};
+			check(queue.PublishShapeAction(action) == Bridge::CommandResult::Accepted, "shape action accepted");
+			action.kind = ShapeUiActionKind::CommitEdit;
+			action.point = {55, 89};
+			check(queue.PublishShapeAction(action) == Bridge::CommandResult::Accepted &&
+				queue.PublishShapeAction(action) == Bridge::CommandResult::QueueFull, "commit barrier respects queue capacity");
+			Bridge::Command first, last;
+			check(queue.TryConsume(first) && queue.TryConsume(last) && first.shapeAction && last.shapeAction &&
+				first.sequence < last.sequence && first.shapeAction->kind == ShapeUiActionKind::PreviewEdit &&
+				first.shapeAction->point == Vec2{21, 34} && last.shapeAction->point == Vec2{55, 89} &&
+				first.shapeAction->identity == action.identity, "shape action immutable identity and ordered commit");
+			action.identity.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Desktop);
+			check(queue.PublishShapeAction(action) == Bridge::CommandResult::Unsupported &&
+				queue.Publish(Bridge::CommandType::ShapeInteraction) == Bridge::CommandResult::Unsupported,
+				"shape action rejects wrong workspace or missing payload");
+		}
 		ChangeStateModeToSelection();
 		check(!SetShapePolygonSidesIfRevision(6, StateModeTransitionRevision()), "inactive tool rejects properties");
 	}

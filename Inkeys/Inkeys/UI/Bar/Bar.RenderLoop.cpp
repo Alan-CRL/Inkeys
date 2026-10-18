@@ -11,6 +11,7 @@ module;
 #include "../../../IdtDraw.h"
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
 #include "Bar.BottomDock.h"
@@ -34,6 +35,7 @@ module;
 
 module Inkeys.UI.Bar;
 import :Main;
+import :Scene;
 import :Rendering;
 import :Scene;
 import :Layout;
@@ -546,6 +548,7 @@ struct BarRenderLoopState
 	std::atomic<unsigned long long>& mainButtonClickPulseSerial;
 	// 初始化和逐帧更新均从模式锁内复制，绘制阶段只读本帧值。
 	StateModeClass stateModeSnapshot = GetStateModeSnapshot();
+	RECT editorAvoidanceBounds{};
 
 	unsigned long long barDeviceResourceFailureGeneration = 0;
 	bool barPresentFailureLogged = false;
@@ -6910,6 +6913,19 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			| (unsupported ? Ui3FiniteLifecycleUnsupportedGesture : 0u));
 	}
 
+	const auto shapeUi = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+	if (shapeUi && shapeUi->object && (state.barState.geometryAttribute || state.barState.drawAttribute || state.barState.eraserAttribute || state.barState.recallAttribute || state.barState.moreExpanded))
+	{
+		Inkeys::Drawing::Draw3::ShapeUiAction close;
+		close.kind = Inkeys::Drawing::Draw3::ShapeUiActionKind::CloseEditor; close.identity = shapeUi->identity;
+		(void)Inkeys::UI::Bar::SubmitShapeUiIntent(close);
+	}
+	const bool promptChanged = owner_.constructionPrompt.Advance(owner_, shapeUi, animationDtSeconds, currentAnimationSpeedRate,
+		frameZoom, state.activeWorkArea, POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y}, state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
+		state.bottomDockMapping.rigidOverlayTranslationYDip);
+	if (promptChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup));
+
 	const bool geometryChanged = owner_.geometryAttribute.Advance(owner_, state.stateModeSnapshot,
 		animationDtSeconds, currentAnimationSpeedRate, frameZoom, state.activeWorkArea,
 		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
@@ -6936,7 +6952,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
 		frame.bottomDockDragActive);
 	if (recallChanged || recallIdleDismissed) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup));
-	return needRendering || geometryChanged || eraserChanged || recallChanged || recallIdleDismissed;
+	return needRendering || promptChanged || geometryChanged || eraserChanged || recallChanged || recallIdleDismissed;
 }
 
 void BarRenderLoopCoordinator::PrepareLightingAndDemand(
@@ -7410,7 +7426,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		const auto dockTargetIndicatorVisualGeometry =
 			ResolveBarBottomDockIndicatorScaledGeometry(
 				dockTargetIndicatorGeometry, dockTargetIndicatorScale);
-		const bool dockTargetIndicatorVisible = dockTargetIndicatorOpacity > 0.000001
+		const bool dockTargetIndicatorVisible = !owner_.constructionPrompt.Visible() && dockTargetIndicatorOpacity > 0.000001
 			&& dockTargetIndicatorScale > 0.000001;
 		RECT dockTargetIndicatorBounds{};
 		RECT dockTargetIndicatorHitBounds{};
@@ -7488,6 +7504,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
+			|| owner_.constructionPrompt.Changed()
 			|| owner_.geometryAttribute.Changed()
 			|| owner_.eraserAttribute.Changed()
 			|| owner_.recallAttribute.Changed()
@@ -7651,6 +7668,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			IncludeShapeBounds(drawAttribute, BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(geometryAttribute, BottomDockBoundsTransform::Rigid);
 			IncludeVisibleBounds(owner_.geometryAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+			IncludeVisibleBounds(owner_.constructionPrompt.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeVisibleBounds(owner_.eraserAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeVisibleBounds(owner_.recallAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanel],
@@ -8240,7 +8258,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						cursorLightInfluence));
 		}
 
-		const RECT geometryBounds = TransformBottomDockBounds(owner_.geometryAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+		RECT geometryBounds = TransformBottomDockBounds(owner_.geometryAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+		BarRenderingAttribute::UnionRectInPlace(geometryBounds, TransformBottomDockBounds(owner_.constructionPrompt.Bounds(), BottomDockBoundsTransform::Rigid));
 		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup), geometryBounds);
 		if (observePrimaryLight) BarRenderingAttribute::UnionRectInPlace(primaryLightDamageBounds,
 			IntersectBarWindowRect(geometryBounds, ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Rigid)));
@@ -8448,6 +8467,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
+			|| owner_.constructionPrompt.Changed()
 			|| owner_.geometryAttribute.Changed()
 			|| owner_.eraserAttribute.Changed()
 			|| owner_.recallAttribute.Changed()
@@ -11345,6 +11365,8 @@ bool presetButton = button.presetIndex >= 0;
 
 		// 绘制函数内部记录的是未套组变换的布局边界，提交时改用同源的实际视觉外框。
 		state.current = currentContentBounds;
+		SetRigidTransform();
+		owner_.constructionPrompt.Draw(state.spec, barDeviceContext);
 		SetBaseTransform();
 		if (dockTargetIndicatorVisible)
 		{
@@ -11861,6 +11883,15 @@ bool presetButton = button.presetIndex >= 0;
 			// 命中与坐标映射共同发布；输入前后校验 serial，不能拼接旧映射和新按钮。
 			owner_.PublishPresentedButtonHits();
 			owner_.geometryAttribute.CommitPresented();
+			// 只在主栏实际外框变化时重新计算编辑浮条避让，稳定光影帧不相互唤醒。
+			const RECT currentEditorAvoidanceBounds{owner_.barWindow.x, owner_.barWindow.y,
+				owner_.barWindow.x + static_cast<LONG>(owner_.barWindow.w), owner_.barWindow.y + static_cast<LONG>(owner_.barWindow.h)};
+			if (!EqualRect(&state.editorAvoidanceBounds, &currentEditorAvoidanceBounds))
+			{
+				state.editorAvoidanceBounds = currentEditorAvoidanceBounds;
+				Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
+			}
+			owner_.constructionPrompt.CommitPresented();
 			owner_.eraserAttribute.CommitPresented();
 			owner_.recallAttribute.CommitPresented();
 			owner_.bottomDockPresentedMappingSerial.fetch_add(

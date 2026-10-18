@@ -3,6 +3,7 @@
 #endif
 #include "Draw3.ShapeRendererTests.h"
 #include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_interaction.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -13,6 +14,10 @@
 #include <wrl/client.h>
 
 import Inkeys.Drawing.Draw3.renderer;
+import Inkeys.Drawing.Draw3.ink_document;
+import Inkeys.Drawing.Draw3.ink_history;
+import Inkeys.Drawing.Draw3.ink_history_gpu;
+import Inkeys.Drawing.Draw3.ink_prediction;
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -205,6 +210,106 @@ namespace Inkeys::Drawing::Draw3
 						char name[128]; std::snprintf(name,sizeof(name),"preset=%u style=%u pattern=%u nonempty and tile-equivalent",preset,appearance,pattern);
 						check(rendered && nonempty && tileMatches && alpha(reference,2,2) == 0,name);
 					}
+			// 所有新增模板直接走正式构造器和 renderer，不用测试专用三角形替代生产几何。
+			for (const auto preset : {PresetKind::Polyline, PresetKind::Polygon, PresetKind::Arc,
+				PresetKind::Sector, PresetKind::Cuboid, PresetKind::Cube, PresetKind::Cylinder,
+				PresetKind::Cone, PresetKind::Prism, PresetKind::Pyramid})
+				for (unsigned pattern = 0; pattern < 4; ++pattern)
+					for (unsigned direction = 0; direction <
+						((preset == PresetKind::Arc || preset == PresetKind::Sector) ? 2u : 1u); ++direction)
+					{
+						Construction construction;
+						construction.tool.preset = preset;
+						construction.tool.creationMode = DefaultCreationMode(preset);
+						construction.tool.sides = 5;
+						construction.start = {25,60}; construction.end = {70,105};
+						if (preset == PresetKind::Polyline || preset == PresetKind::Polygon)
+							construction.parameters = VertexConstruction{preset == PresetKind::Polyline ?
+								std::vector<Vec2>{{24,28},{94,28},{48,102},{104,102}} :
+								std::vector<Vec2>{{24,24},{104,24},{104,104},{64,60},{24,104}}};
+						else if (preset == PresetKind::Arc || preset == PresetKind::Sector)
+						{
+							construction.start = {64,64}; construction.end = {98,64};
+							construction.parameters = ArcConstruction{direction ? -4.4f : 4.4f};
+						}
+						else if (preset == PresetKind::Cuboid || preset == PresetKind::Cube)
+							construction.parameters = SolidConstruction{{23,-32},0};
+						else
+						{
+							construction.start = {25,84}; construction.end = {102,108};
+							if (preset == PresetKind::Prism || preset == PresetKind::Pyramid)
+							{
+								construction.start = {64,96}; construction.end = {95,96};
+							}
+							construction.parameters = SolidConstruction{{},-50};
+						}
+						auto base = object(); base.style.width = 4; base.style.strokeOpacity = 0.5f;
+						base.style.linePattern = static_cast<LinePattern>(pattern);
+						std::string buildError;
+						const auto shape = MakeConstructedShape(construction,base.style,base.id,1,&buildError);
+						RenderData data;
+						bool complete = shape && BuildRenderData(*shape,data,{},&buildError) && render(*shape,reference);
+						bool nonempty = false, halfAlpha = true;
+						if (complete) for (size_t offset = 3; offset < reference.size(); offset += 4)
+						{
+							nonempty |= reference[offset] > 0;
+							halfAlpha &= reference[offset] <= 128;
+						}
+						bool liveMatches = complete;
+						if (liveMatches)
+						{
+							renderer.ClearOperatorLayer(renderer.layerL0); renderer.SetOperatorTarget(renderer.layerL0);
+							liveMatches = renderer.DrawShapeRenderData(data) && read(pixels) && pixels == reference;
+						}
+						bool tilesMatch = complete;
+						for (const int inset : {16,32})
+						{
+							const int extent = 128 - inset * 2;
+							const bool tileRendered = complete && render(*shape,pixels,float(inset),float(inset),float(extent));
+							tilesMatch &= tileRendered;
+							if (tileRendered) for (int y = 0; y < extent; ++y) for (int x = 0; x < extent; ++x)
+								for (int channel = 0; channel < 4; ++channel)
+									tilesMatch &= pixels[(y * 128 + x) * 4 + channel] ==
+										reference[((y + inset) * 128 + x + inset) * 4 + channel];
+						}
+						// 逐批独立描边的最大覆盖是参考并集；hidden Dashed 与 visible 线型均须保留。
+						bool unionMatches = complete;
+						if (complete && shape->kind == Kind::Compound)
+						{
+							std::vector<unsigned char> expected(reference.size(),0);
+							bool hasHidden = false;
+							for (const auto& batch : data.batches)
+							{
+								hasHidden |= batch.style.linePattern == LinePattern::Dashed;
+								RenderData separate; separate.bounds = data.bounds; separate.batches = {batch};
+								renderer.SetScreenSize(128,128); renderer.ClearOperatorLayer(renderer.layerL0);
+								renderer.SetOperatorTarget(renderer.layerL0);
+								if (!renderer.DrawShapeRenderData(separate) || !read(pixels)) { unionMatches = false; break; }
+								for (size_t offset = 0; offset < pixels.size(); ++offset)
+									expected[offset] = std::max(expected[offset],pixels[offset]);
+							}
+							unionMatches &= hasHidden && expected == reference;
+						}
+						char name[160]; std::snprintf(name,sizeof(name),
+							"P3/P4 preset=%u pattern=%u direction=%u active/final, half-alpha union and 64/96 tile pixels",
+							static_cast<unsigned>(preset),pattern,direction);
+						const bool passed = complete && nonempty && halfAlpha && liveMatches && tilesMatch && unionMatches;
+						if (!passed) std::fprintf(stderr,
+							"[ShapeRenderer] complete=%d nonempty=%d halfAlpha=%d live=%d tiles=%d union=%d error=%s\n",
+							complete,nonempty,halfAlpha,liveMatches,tilesMatch,unionMatches,buildError.c_str());
+						check(passed,name);
+					}
+			for (unsigned appearance = 0; appearance < 2; ++appearance)
+			{
+				Construction sector; sector.tool.preset = PresetKind::Sector;
+				sector.tool.creationMode = DefaultCreationMode(PresetKind::Sector);
+				sector.start = {64,64}; sector.end = {98,64}; sector.parameters = ArcConstruction{4.4f};
+				auto base = object(); base.style.stroke = appearance != 0; base.style.fill = true;
+				base.style.strokeOpacity = base.style.fillOpacity = 0.5f;
+				const auto shape = MakeConstructedShape(sector,base.style,base.id);
+				check(shape && render(*shape,pixels) && std::abs(alpha(pixels,75,75) - 128) <= 1 &&
+					alpha(pixels,105,64) == 0,"large sector fill and ordered outline keep interior half alpha");
+			}
 			ToolSpec arrowTool; arrowTool.preset = PresetKind::Arrow;
 			auto arrowBase = object(); arrowBase.style.width = 6; arrowBase.style.strokeOpacity = 0.5f;
 			arrowBase.style.linePattern = LinePattern::Dashed;
@@ -227,6 +332,42 @@ namespace Inkeys::Drawing::Draw3
 				for (size_t offset = 3; offset < pixels.size(); offset += 4) arrowCoverage &= pixels[offset] <= 128;
 			}
 			check(arrowCoverage,"dashed shaft, solid arrow head and half-transparent union at tip");
+			// P3/P4 的连续同材质部件允许各自使用不同线型，不能重复叠加透明度。
+			auto sameMaterial = object(); sameMaterial.kind = Kind::Compound;
+			sameMaterial.style.strokeOpacity = 0.5f;
+			ShapePart horizontal, vertical;
+			horizontal.id = 1; horizontal.kind = Kind::Line;
+			horizontal.geometry.start = {20,64.5f}; horizontal.geometry.end = {108,64.5f};
+			vertical.id = 2; vertical.kind = Kind::Line;
+			vertical.geometry.start = {64.5f,64.5f}; vertical.geometry.end = {64.5f,110};
+			vertical.style = sameMaterial.style; vertical.style->linePattern = LinePattern::Dashed;
+			sameMaterial.parts = {horizontal,vertical};
+			check(render(sameMaterial,pixels) && std::abs(alpha(pixels,64,64) - 128) <= 1 &&
+				alpha(pixels,64,104) == 0 && std::abs(alpha(pixels,64,72) - 128) <= 1,
+				"compound mixed-dash material union retains hidden-edge gaps and half alpha");
+			// 不能跨不同颜色或填充合并相同颜色的部件，否则会改变 A/B/A 层序。
+			auto strokeBarrier = object(); strokeBarrier.kind = Kind::Compound;
+			strokeBarrier.style.strokeOpacity = 0.5f;
+			ShapePart lower = horizontal, middle = horizontal, upper = horizontal;
+			lower.id = 1; middle.id = 2; upper.id = 3;
+			middle.style = strokeBarrier.style; middle.style->strokeRgb = 0x0000FF;
+			strokeBarrier.parts = {lower,middle,upper};
+			const auto barrierPixel = (64 * 128 + 64) * 4;
+			const auto hasOrderedBarrier = [&]()
+			{
+				return std::abs(pixels[barrierPixel] - 64) <= 2 &&
+					std::abs(pixels[barrierPixel + 2] - 160) <= 2 &&
+					std::abs(pixels[barrierPixel + 3] - 224) <= 2;
+			};
+			check(render(strokeBarrier,pixels) && hasOrderedBarrier(),
+				"different stroke material is an ordered barrier for repeated colors");
+			auto fillBarrier = strokeBarrier; fillBarrier.id = object().id;
+			fillBarrier.parts[1].kind = Kind::Rectangle;
+			fillBarrier.parts[1].geometry.start = {40,40}; fillBarrier.parts[1].geometry.end = {90,90};
+			fillBarrier.parts[1].style->stroke = false; fillBarrier.parts[1].style->fill = true;
+			fillBarrier.parts[1].style->fillRgb = 0x0000FF; fillBarrier.parts[1].style->fillOpacity = 0.5f;
+			check(render(fillBarrier,pixels) && hasOrderedBarrier(),
+				"fill separates equal stroke materials and preserves source-over");
 			// 混合旧/新 contact 按 Down 顺序 source-over；颜色分量 MAX 会产生不同像素。
 			auto overlay = object(); overlay.kind = Kind::Rectangle;
 			overlay.geometry.start = {30,30}; overlay.geometry.end = {95,95};
@@ -309,6 +450,19 @@ namespace Inkeys::Drawing::Draw3
 						identical &= pixels[(y * 128 + x) * 4 + channel] ==
 							reference[((y + 32) * 128 + x + 32) * 4 + channel];
 			check(identical, "tile pixels equal full-canvas crop");
+			// 权威页面安装可能复用文件中的 ID/revision，必须显式清掉旧几何缓存。
+			auto restored = object(); restored.kind = Kind::Line;
+			restored.geometry.start = {20,24.5f}; restored.geometry.end = {108,24.5f};
+			bool invalidated = render(restored,reference);
+			restored.geometry.start.y = restored.geometry.end.y = 100.5f;
+			renderer.InvalidateShapeCache(restored.id);
+			invalidated &= render(restored,pixels) && alpha(pixels,64,24) == 0 && alpha(pixels,64,100) == 255;
+			check(invalidated,"per-object invalidation evicts all restored geometry revisions");
+			restored.geometry.start.y = restored.geometry.end.y = 60.5f;
+			renderer.ClearShapeRenderCache();
+			check(render(restored,pixels) && alpha(pixels,64,100) == 0 && alpha(pixels,64,60) == 255,
+				"page installation clear cannot reuse former page shape cache");
+			#include "Draw3.ShapeRendererEditTests.inl"
 			// 超过一批 50000 项；强制不支持 NO_OVERWRITE，验证第二批零偏移上传。
 			RenderData many;
 			many.bounds = { 20,20,100,100,true };
@@ -332,6 +486,17 @@ namespace Inkeys::Drawing::Draw3
 			check(!renderer.DrawShapeObject(compound) && read(pixels) && pixels == reference,
 				"missing upload resource leaves caller operator unchanged");
 			renderer.inkDataBuffer = savedBuffer;
+			// 失败的首次绘制不能缓存为成功；同一权威身份恢复后须重新生成候选。
+			auto failedCandidate = object(); failedCandidate.kind = Kind::Line;
+			failedCandidate.geometry.start = {20,24.5f}; failedCandidate.geometry.end = {108,24.5f};
+			renderer.inkDataBuffer.Reset();
+			const bool rejectedCandidate = !renderer.DrawShapeObject(failedCandidate);
+			renderer.inkDataBuffer = savedBuffer;
+			failedCandidate.geometry.start.y = failedCandidate.geometry.end.y = 100.5f;
+			check(rejectedCandidate && render(failedCandidate,pixels) && alpha(pixels,64,24) == 0 &&
+				alpha(pixels,64,100) == 255,"failed candidate does not publish a reusable render cache entry");
+			// 下一个故障检查仍以当前调用方像素为基准。
+			reference = pixels;
 			D3D11_BUFFER_DESC invalidMapDescription = {};
 			savedBuffer->GetDesc(&invalidMapDescription);
 			invalidMapDescription.Usage = D3D11_USAGE_DEFAULT;

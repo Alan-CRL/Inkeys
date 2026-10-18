@@ -255,6 +255,9 @@ export namespace Inkeys::Drawing::Draw3
 			float originX = 0, float originY = 0, float displayScale = 1);
 		bool DrawShapeRenderData(const ::draw3::shapes::RenderData& data,
 			float originX = 0, float originY = 0);
+		// 页面权威安装清空派生缓存；单对象重放可仅淘汰其全部历史修订。
+		void ClearShapeRenderCache() noexcept;
+		void InvalidateShapeCache(const ::draw3::shapes::ObjectId& id) noexcept;
 		// 按 DPI 配置固定 4 DIP 圆角。
 		void ConfigureShapePrimitives(float dpiScale) noexcept;
 		// 以零像素视口预热 shape 16..19，避免首次选用时驱动延迟编译。

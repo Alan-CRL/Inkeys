@@ -115,23 +115,70 @@ namespace
 		ShapeField(map, "tool", ShapeValue(std::move(tool)));
 		ShapeField(map, "start", ShapePointValue(construction.start));
 		ShapeField(map, "end", ShapePointValue(construction.end));
+		ShapeArray parameters{ ShapeValue(uint64_t(construction.parameters.index())) };
+		if (const auto* points = std::get_if<shapes::VertexConstruction>(&construction.parameters))
+		{
+			ShapeArray vertices;
+			for (auto point : points->vertices) vertices.push_back(ShapePointValue(point));
+			parameters.push_back(ShapeValue(std::move(vertices)));
+		}
+		else if (const auto* arc = std::get_if<shapes::ArcConstruction>(&construction.parameters))
+			parameters.push_back(ShapeValue(arc->sweepRadians));
+		else if (const auto* solid = std::get_if<shapes::SolidConstruction>(&construction.parameters))
+			parameters.push_back(ShapeValue(ShapeArray{ ShapePointValue(solid->depth),ShapeValue(solid->height) }));
+		ShapeField(map, "parameters", ShapeValue(std::move(parameters)));
+		ShapeField(map, "legacyArrow", ShapeValue(construction.legacyArrow));
 		return ShapeValue(std::move(map));
 	}
-	bool ShapeReadConstruction(const UInkMessagePackValue* value, shapes::Construction& construction)
+	bool ShapeReadConstruction(const UInkMessagePackValue* value, shapes::Construction& construction, uint64_t version)
 	{
 		const auto* map = value ? std::get_if<ShapeMap>(&value->value) : nullptr;
-		if (!map || map->size() != 3 || !ShapeUniqueKeys(*map)) return false;
+		if (!map || map->size() != (version == 2 ? 3u : 5u) || !ShapeUniqueKeys(*map)) return false;
 		const auto* toolValue = ShapeFind(*map, "tool");
 		const auto* tool = toolValue ? std::get_if<ShapeMap>(&toolValue->value) : nullptr;
 		uint64_t sides = 0;
 		if (!tool || tool->size() != 4 || !ShapeUniqueKeys(*tool) ||
-			!ShapeEnum(*tool, "preset", construction.tool.preset, uint64_t(shapes::PresetKind::RegularPolygon)) ||
+			!ShapeEnum(*tool, "preset", construction.tool.preset, uint64_t(version == 2 ? shapes::PresetKind::RegularPolygon : shapes::PresetKind::Pyramid)) ||
 			!ShapeEnum(*tool, "creationMode", construction.tool.creationMode, uint64_t(shapes::CreationMode::Parameters)) ||
 			!ShapeUnsigned(ShapeFind(*tool, "sides"), sides) || sides < 3 || sides > 12 ||
 			!ShapeFloat(ShapeFind(*tool, "rectangleCornerRadius"), construction.tool.rectangleCornerRadius) ||
 			!ShapeReadPoint(ShapeFind(*map, "start"), construction.start) ||
 			!ShapeReadPoint(ShapeFind(*map, "end"), construction.end)) return false;
 		construction.tool.sides = static_cast<uint32_t>(sides);
+		if (version == 2)
+		{
+			construction.legacyArrow = construction.tool.preset == shapes::PresetKind::Arrow;
+			return true;
+		}
+		if (!ShapeBool(ShapeFind(*map, "legacyArrow"), construction.legacyArrow)) return false;
+		const auto* parameterValue = ShapeFind(*map, "parameters");
+		const auto* parameters = parameterValue ? std::get_if<ShapeArray>(&parameterValue->value) : nullptr;
+		uint64_t kind = 0;
+		if (!parameters || parameters->empty() || !ShapeUnsigned(&parameters->front(), kind) || kind > 3 ||
+			parameters->size() != (kind ? 2u : 1u)) return false;
+		if (kind == 1)
+		{
+			const auto* vertices = std::get_if<ShapeArray>(&(*parameters)[1].value);
+			if (!vertices || vertices->size() > 16384) return false;
+			shapes::VertexConstruction points; points.vertices.resize(vertices->size());
+			for (size_t i = 0; i < vertices->size(); ++i)
+				if (!ShapeReadPoint(&(*vertices)[i], points.vertices[i])) return false;
+			construction.parameters = std::move(points);
+		}
+		else if (kind == 2)
+		{
+			shapes::ArcConstruction arc;
+			if (!ShapeFloat(&(*parameters)[1], arc.sweepRadians)) return false;
+			construction.parameters = arc;
+		}
+		else if (kind == 3)
+		{
+			const auto* fields = std::get_if<ShapeArray>(&(*parameters)[1].value);
+			shapes::SolidConstruction solid;
+			if (!fields || fields->size() != 2 || !ShapeReadPoint(&(*fields)[0], solid.depth) ||
+				!ShapeFloat(&(*fields)[1], solid.height)) return false;
+			construction.parameters = solid;
+		}
 		return true;
 	}
 	UInkMessagePackValue ShapeTransformValue(const shapes::Transform& transform)
@@ -182,7 +229,7 @@ namespace
 UInkMessagePackValue EncodeInkeysShapeMetadata(const shapes::ShapeObject& shape)
 {
 	ShapeMap map;
-	ShapeField(map, "version", ShapeValue(uint64_t{ shape.construction ? 2u : 1u }));
+	ShapeField(map, "version", ShapeValue(uint64_t{ shape.construction ? 3u : 1u }));
 	ShapeField(map, "id", ShapeValue(FormatUInkGuid(UInkGuid(shape.id))));
 	ShapeField(map, "revision", ShapeValue(shape.revision));
 	ShapeField(map, "kind", ShapeValue(uint64_t(shape.kind)));
@@ -214,7 +261,7 @@ Draw3ShapeMetadataResult DecodeInkeysShapeMetadata(const UInkMessagePackValue& v
 		const auto* map = std::get_if<ShapeMap>(&value.value);
 		uint64_t version = 0;
 		if (!map || !ShapeUniqueKeys(*map) || !ShapeUnsigned(ShapeFind(*map, "version"), version)) return {};
-		if (version != 1 && version != 2) return { Draw3ShapeMetadataStatus::UnsupportedVersion, std::nullopt };
+		if (version != 1 && version != 2 && version != 3) return { Draw3ShapeMetadataStatus::UnsupportedVersion, std::nullopt };
 		shapes::ShapeObject shape;
 		const auto* idValue = ShapeFind(*map, "id");
 		const auto* idText = idValue ? std::get_if<std::string>(&idValue->value) : nullptr;
@@ -248,10 +295,10 @@ Draw3ShapeMetadataResult DecodeInkeysShapeMetadata(const UInkMessagePackValue& v
 			}
 			shape.parts.push_back(std::move(part));
 		}
-		if (version == 2)
+		if (version >= 2)
 		{
 			shape.construction.emplace();
-			if (!ShapeReadConstruction(ShapeFind(*map, "construction"), *shape.construction)) return {};
+			if (!ShapeReadConstruction(ShapeFind(*map, "construction"), *shape.construction, version)) return {};
 		}
 		else if (ShapeFind(*map, "construction")) return {};
 		if (!shapes::Validate(shape)) return {};

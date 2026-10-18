@@ -59,6 +59,7 @@ namespace Inkeys::UI::RenderPipeline
 			Client::PptMiddleRight,
 			Client::Settings,
 			Client::WhiteboardFreeze,
+			Client::SelectionOverlay,
 		};
 
 		[[nodiscard]] constexpr std::size_t Index(Client client) noexcept
@@ -104,7 +105,7 @@ namespace Inkeys::UI::RenderPipeline
 		std::string FormatDiagnostics(const DiagnosticsDetail::DiagnosticsAccumulator& diagnostics)
 		{
 			static constexpr const char* clientNames[]{ "Bar", "StartupPreview", "PptBottomLeft",
-				"PptBottomRight", "PptMiddleLeft", "PptMiddleRight", "Settings", "WhiteboardFreeze" };
+				"PptBottomRight", "PptMiddleLeft", "PptMiddleRight", "Settings", "WhiteboardFreeze", "SelectionOverlay" };
 			static constexpr const char* resultNames[]{ "idle", "continue", "retry", "deviceLost", "stop" };
 			static constexpr const char* stageNames[]{ "presentLockWait", "draw", "getDC", "ULW", "releaseDC", "endDraw",
 				"wakeAndSnapshot", "displayTransition", "submitTargetsAndLayout",

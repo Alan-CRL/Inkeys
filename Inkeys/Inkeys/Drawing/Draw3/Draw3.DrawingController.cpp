@@ -49,7 +49,9 @@
 #include "Draw3.Presentation.h"
 #include "Draw3.TimerPeriod.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.ShapeInteraction.h"
 #include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_interaction.h"
 
 #pragma comment(lib, "winmm.lib")
 
@@ -415,6 +417,10 @@ namespace Inkeys::Drawing::Draw3
 		struct CanvasPageRuntimeState
 		{
 			CanvasRuntimeHistory history;
+			draw3::shapes::RevisionAllocator shapeRevisionAllocator;
+			std::vector<CanvasOperation> operations;
+			size_t operationCursor = 0, operationFloor = 0;
+			bool operationsInitialized = false;
 			InkRasterStateToken rasterState = 0;
 			std::vector<InkRasterStateToken> beforeStates;
 			std::vector<InkRasterStateToken> afterStates;
@@ -427,7 +433,135 @@ namespace Inkeys::Drawing::Draw3
 			std::optional<draw3::uink::Draw3UInkCanvasSnapshot> boundaryFallback;
 			// 只在跨最近 Clear 撤销后保留后继 CPU 分支，不保存 GPU 后像。
 			std::shared_ptr<ClearRedoContinuation> clearRedoContinuation;
+			std::shared_ptr<ClearRedoContinuation> clearUndoHistory; // 最近 Clear 的完整操作历史；只保留一层。
 		};
+
+		std::vector<CanvasOperation> LegacyOperationJournal(const CanvasPageRuntimeState& runtime,
+			size_t& cursor, size_t& floor)
+		{
+			std::vector<CanvasOperation> operations;
+			floor = 0;
+			for (const auto& item : runtime.history.Items()) if (item.visible)
+			{
+				operations.push_back({CanvasOperationKind::Append,item.id,{},{}});
+				if (item.id.index < runtime.undoFloor) floor = operations.size();
+			}
+			cursor = operations.size();
+			const auto redo = runtime.history.RedoIndices();
+			for (auto it = redo.rbegin(); it != redo.rend(); ++it)
+				operations.push_back({CanvasOperationKind::Append,runtime.history.Items()[*it].id,{},{}});
+			return operations;
+		}
+
+		bool HasShapeEditOperations(const CanvasPageRuntimeState& runtime) noexcept
+		{
+			return runtime.operationsInitialized && std::any_of(runtime.operations.begin(),runtime.operations.end(),
+				[](const CanvasOperation& operation) { return operation.kind == CanvasOperationKind::Replace; });
+		}
+
+		void EnsureOperationJournal(CanvasPageRuntimeState& runtime)
+		{
+			if (runtime.operationsInitialized) return;
+			runtime.operations = LegacyOperationJournal(runtime, runtime.operationCursor, runtime.operationFloor);
+			runtime.operationsInitialized = true;
+		}
+
+		void RecordRuntimeAppend(CanvasPageRuntimeState& runtime, RenderItemId item)
+		{
+			// 未使用操作历史的普通笔会话不做全页扫描；第一次 Undo/编辑时再从可见性迁移。
+			if (!runtime.operationsInitialized) return;
+			runtime.operations.resize(runtime.operationCursor);
+			runtime.operations.push_back({CanvasOperationKind::Append,item,{},{}});
+			runtime.operationCursor = runtime.operations.size();
+		}
+
+		bool SameShapeSemantics(draw3::shapes::ShapeObject first, draw3::shapes::ShapeObject second)
+		{
+			first.revision = second.revision = 1;
+			return first == second;
+		}
+
+		template<class AllocateToken>
+		bool ApplyRuntimeJournalCpu(InkCanvas& canvas, CanvasPageRuntimeState& runtime, bool redo,
+			AllocateToken&& allocateToken)
+		{
+			EnsureOperationJournal(runtime);
+			if (redo ? runtime.operationCursor >= runtime.operations.size() :
+				runtime.operationCursor <= runtime.operationFloor) return false;
+			const auto& operation = runtime.operations[redo ? runtime.operationCursor : runtime.operationCursor - 1];
+			const auto* item = runtime.history.Find(operation.item);
+			if (!item || item->strokeIndex >= canvas.Strokes().size()) return false;
+			if (operation.kind == CanvasOperationKind::Append)
+			{
+				if (redo ? !runtime.history.RedoLastUndone(operation.item) :
+					!runtime.history.UndoLastVisible(operation.item)) return false;
+			}
+			else
+			{
+				const auto& expected = redo ? operation.before : operation.after;
+				const auto& replacement = redo ? operation.after : operation.before;
+				const auto& current = canvas.Strokes()[item->strokeIndex];
+				if (!item->visible || !expected || !replacement || !expected->Shape() || !replacement->Shape() ||
+					!current.Shape() || !SameShapeSemantics(*current.Shape(),*expected->Shape())) return false;
+				auto shape = *replacement->Shape();
+				shape.revision = runtime.shapeRevisionAllocator.Next(shape.id,
+					std::max(shape.revision,current.Shape()->revision));
+				InkStroke stroke(replacement->Style(),
+					std::vector<StoredInkPoint>(replacement->Points().begin(),replacement->Points().end()),
+					replacement->DebugTailSegmentStart(),std::move(shape));
+				auto footprint = BuildStrokeTileFootprint(stroke);
+				if (!stroke.IsValid() || !footprint) return false;
+				CanvasRuntimeHistory history = runtime.history;
+				if (!history.UpdateItemGeometry(operation.item,std::move(*footprint)) ||
+					!canvas.ReplaceStroke(item->strokeIndex,std::move(stroke))) return false;
+				runtime.history = std::move(history);
+			}
+			if (redo) ++runtime.operationCursor; else --runtime.operationCursor;
+			runtime.rasterState = allocateToken();
+			return true;
+		}
+
+		struct ShapeEditCpuCommit
+		{
+			size_t strokeIndex = 0;
+			RenderItemId renderItem;
+			InkRasterStateToken beforeState = 0, afterState = 0;
+			std::vector<SignedTileCoordinate> affectedTiles;
+		};
+		template<class AllocateToken>
+		std::optional<ShapeEditCpuCommit> CommitRuntimeShapeEditCpu(InkCanvas& canvas,
+			CanvasPageRuntimeState& runtime, RenderItemId id, const draw3::shapes::ShapeObject& before,
+			const draw3::shapes::ShapeObject& after, AllocateToken&& allocateToken)
+		{
+			const auto* item = runtime.history.Find(id);
+			if (!item || !item->visible || item->strokeIndex >= canvas.Strokes().size() ||
+				before.id != after.id || after.revision <= before.revision) return {};
+			const size_t strokeIndex = item->strokeIndex;
+			const auto& existing = canvas.Strokes()[strokeIndex];
+			if (!existing.Shape() || *existing.Shape() != before) return {};
+			InkStroke replacement({StoredInkType::Shape,after.style.strokeRgb,after.style.strokeOpacity,0},
+				{},std::nullopt,after);
+			auto footprint = BuildStrokeTileFootprint(replacement);
+			if (!replacement.IsValid() || !footprint) return {};
+			// 编辑是低频事务：sidecar 和 journal 在局部候选里完整准备后再替换文档。
+			CanvasPageRuntimeState candidate = runtime;
+			EnsureOperationJournal(candidate);
+			candidate.operations.resize(candidate.operationCursor);
+			candidate.operations.push_back({CanvasOperationKind::Replace,id,existing,replacement});
+			candidate.operationCursor = candidate.operations.size();
+			candidate.history.DiscardRedoBranch();
+			std::vector<SignedTileCoordinate> affected = item->compositionTiles;
+			affected.insert(affected.end(),footprint->compositionTiles.begin(),footprint->compositionTiles.end());
+			std::sort(affected.begin(),affected.end()); affected.erase(std::unique(affected.begin(),affected.end()),affected.end());
+			if (!candidate.history.UpdateItemGeometry(id,std::move(*footprint))) return {};
+			candidate.clearRedoAvailable = false; candidate.clearRedoContinuation.reset(); candidate.intervalLoadPending = false;
+			const auto beforeState = candidate.rasterState;
+			candidate.rasterState = allocateToken();
+			candidate.shapeRevisionAllocator.Next(after.id,after.revision);
+			if (!canvas.ReplaceStroke(strokeIndex,std::move(replacement))) return {};
+			runtime = std::move(candidate);
+			return ShapeEditCpuCommit{strokeIndex,id,beforeState,runtime.rasterState,std::move(affected)};
+		}
 
 		struct ClearRedoContinuation
 		{
@@ -444,15 +578,17 @@ namespace Inkeys::Drawing::Draw3
 					ClearRedoContinuation{ page, runtime });
 				continuation->runtime.clearRedoAvailable = false;
 				continuation->runtime.clearRedoContinuation.reset();
+				continuation->runtime.clearUndoHistory.reset();
 				continuation->runtime.intervalLoadPending = false;
 				continuation->runtime.undoFloor = 0;
-				// 持久化导入根也需回到 Clear 后空态，Redo 才能逐笔前进到原最新分支。
-				while (const auto item = continuation->runtime.history.LastVisibleItem())
-				{
-					if (item->index >= continuation->runtime.beforeStates.size()
-						|| !continuation->runtime.history.UndoLastVisible(*item)) return {};
-					continuation->runtime.rasterState = continuation->runtime.beforeStates[item->index];
-				}
+				// 先回退编辑，再隐藏追加项；Clear redo 才能按原操作顺序恢复后继分支。
+				EnsureOperationJournal(continuation->runtime);
+				continuation->runtime.operationFloor = 0;
+				auto* canvas = continuation->page.FindCanvas(kDefaultDeviceKey);
+				if (!canvas) return {};
+				auto token = continuation->runtime.rasterState;
+				while (continuation->runtime.operationCursor != 0)
+					if (!ApplyRuntimeJournalCpu(*canvas,continuation->runtime,false,[&] { return ++token; })) return {};
 				return continuation;
 			}
 			catch (const std::exception&)
@@ -585,6 +721,20 @@ namespace Inkeys::Drawing::Draw3
 				Json::Value v(Json::arrayValue); v.append(Json::UInt64(item.strokeIndex));
 				v.append(item.visible); v.append(item.compositionBarrier); value["items"].append(std::move(v));
 			}
+			value["operationVersion"] = 3;
+			value["operations"] = Json::Value(Json::arrayValue);
+			size_t cursor = runtime.operationCursor, floor = runtime.operationFloor;
+			const auto operations = runtime.operationsInitialized ? runtime.operations : LegacyOperationJournal(runtime,cursor,floor);
+			value["operationCursor"] = Json::UInt64(cursor);
+			value["operationFloor"] = Json::UInt64(floor);
+			for (const auto& operation : operations)
+			{
+				Json::Value v(Json::objectValue);
+				v["kind"] = static_cast<unsigned>(operation.kind); v["item"] = operation.item.index;
+				if (operation.before) v["before"] = WhiteboardStrokeJson(*operation.before);
+				if (operation.after) v["after"] = WhiteboardStrokeJson(*operation.after);
+				value["operations"].append(std::move(v));
+			}
 			value["redo"] = Json::Value(Json::arrayValue);
 			for (auto index : runtime.history.RedoIndices()) value["redo"].append(index);
 			value["floor"] = Json::UInt64(runtime.undoFloor);
@@ -604,12 +754,14 @@ namespace Inkeys::Drawing::Draw3
 					value["boundary"].append(WhiteboardStrokeJson(stored));
 				}
 			}
+			if (runtime.clearUndoHistory)
+				value["undoBoundary"] = WhiteboardHistoryJson(runtime.clearUndoHistory->page,runtime.clearUndoHistory->runtime);
 			if (runtime.clearRedoContinuation)
 				value["continuation"] = WhiteboardHistoryJson(runtime.clearRedoContinuation->page,
 					runtime.clearRedoContinuation->runtime);
 			return value;
 		}
-		bool RestoreWhiteboardHistory(const Json::Value& value, InkPage& page,
+		bool RestoreWhiteboardHistoryUnchecked(const Json::Value& value, InkPage& page,
 			CanvasPageRuntimeState& runtime, unsigned depth = 0)
 		{
 			if (depth > 1 || !value["strokes"].isArray() || !value["items"].isArray() ||
@@ -617,18 +769,23 @@ namespace Inkeys::Drawing::Draw3
 				!value["interval"].isUInt() || !value["previousClear"].isBool() || !value["clearRedo"].isBool()) return false;
 			auto* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
 			if (!canvas) return false;
+			std::set<draw3::shapes::ObjectId> objectIds;
 			for (const auto& v : value["strokes"])
 			{
 				auto stroke = WhiteboardStrokeFromJson(v);
-				if (!stroke || !canvas->AppendStroke(std::move(*stroke))) return false;
+				if (!stroke || (stroke->Shape() && !objectIds.insert(stroke->Shape()->id).second) ||
+					!canvas->AppendStroke(std::move(*stroke))) return false;
 			}
+			// 每个最终项必须恰好有一个render索引；同ID的operation before/after不在此去重。
+			if (value["items"].size() != canvas->Strokes().size()) return false;
+			std::set<size_t> strokeIndices;
 			std::vector<uint8_t> visible;
 			std::vector<uint32_t> redo;
 			for (const auto& item : value["items"])
 			{
 				if (!item.isArray() || item.size() != 3 || !item[0].isUInt64() || !item[1].isBool() || !item[2].isBool()) return false;
 				const auto index = item[0].asUInt64();
-				if (index >= canvas->Strokes().size()) return false;
+				if (index >= canvas->Strokes().size() || !strokeIndices.insert(static_cast<size_t>(index)).second) return false;
 				auto footprint = BuildStrokeTileFootprint(canvas->Strokes()[index]);
 				if (!footprint || !runtime.history.AppendStroke(index, std::move(*footprint), !item[2].asBool())) return false;
 				visible.push_back(item[1].asBool());
@@ -643,6 +800,62 @@ namespace Inkeys::Drawing::Draw3
 			runtime.previousClearUndoAvailable = value["previousClear"].asBool();
 			runtime.clearRedoAvailable = value["clearRedo"].asBool();
 			runtime.rasterState = visible.size() + 2;
+			// 预先观察隐藏 redo 快照中的修订，首次预览也不能复用冷页历史中的身份。
+			for (const auto& stroke : canvas->Strokes()) if (stroke.Shape())
+				runtime.shapeRevisionAllocator.Next(stroke.Shape()->id,stroke.Shape()->revision);
+			if (value.isMember("operationVersion"))
+			{
+				if (!value["operationVersion"].isUInt() || value["operationVersion"].asUInt() != 3 ||
+					!value["operations"].isArray() || !value["operationCursor"].isUInt64() || !value["operationFloor"].isUInt64() ||
+					value["operationCursor"].asUInt64() > value["operations"].size() ||
+					value["operationFloor"].asUInt64() > value["operationCursor"].asUInt64()) return false;
+				runtime.operationCursor = static_cast<size_t>(value["operationCursor"].asUInt64());
+				runtime.operationFloor = static_cast<size_t>(value["operationFloor"].asUInt64());
+				std::set<uint32_t> appendItems;
+				for (const auto& v : value["operations"])
+				{
+					if (!v.isObject() || !v["kind"].isUInt() || v["kind"].asUInt() > 1 || !v["item"].isUInt() ||
+						v["item"].asUInt() >= runtime.history.Items().size()) return false;
+					CanvasOperation operation; operation.kind = static_cast<CanvasOperationKind>(v["kind"].asUInt());
+					operation.item = runtime.history.Items()[v["item"].asUInt()].id;
+					if (operation.kind == CanvasOperationKind::Replace)
+					{
+						operation.before = WhiteboardStrokeFromJson(v["before"]);
+						operation.after = WhiteboardStrokeFromJson(v["after"]);
+						if (!operation.before || !operation.after || !operation.before->Shape() || !operation.after->Shape() ||
+							operation.before->Shape()->id != operation.after->Shape()->id ||
+							!canvas->Strokes()[runtime.history.Items()[operation.item.index].strokeIndex].Shape() ||
+							operation.before->Shape()->id != canvas->Strokes()[runtime.history.Items()[operation.item.index].strokeIndex].Shape()->id) return false;
+					}
+					else if (v.isMember("before") || v.isMember("after") || !appendItems.insert(operation.item.index).second) return false;
+					if (operation.before && operation.before->Shape())
+						runtime.shapeRevisionAllocator.Next(operation.before->Shape()->id,operation.before->Shape()->revision);
+					if (operation.after && operation.after->Shape())
+						runtime.shapeRevisionAllocator.Next(operation.after->Shape()->id,operation.after->Shape()->revision);
+					runtime.operations.push_back(std::move(operation));
+				}
+				runtime.operationsInitialized = true;
+				// 对整个前后分支做可逆演算，损坏 journal 不能部分替换已打开页面。
+				InkCanvas probe = *canvas; CanvasPageRuntimeState state = runtime;
+				state.operationFloor = 0; auto token = state.rasterState;
+				while (state.operationCursor != 0)
+					if (!ApplyRuntimeJournalCpu(probe,state,false,[&] { return ++token; })) return false;
+				if (state.history.LastVisibleItem()) return false;
+				while (state.operationCursor < state.operations.size())
+					if (!ApplyRuntimeJournalCpu(probe,state,true,[&] { return ++token; })) return false;
+				while (state.operationCursor > runtime.operationCursor)
+					if (!ApplyRuntimeJournalCpu(probe,state,false,[&] { return ++token; })) return false;
+				for (size_t i = 0; i < runtime.history.Items().size(); ++i)
+					if (state.history.Items()[i].visible != runtime.history.Items()[i].visible) return false;
+				for (size_t i = 0; i < canvas->Strokes().size(); ++i)
+					if (canvas->Strokes()[i].Shape() && (!probe.Strokes()[i].Shape() ||
+						!SameShapeSemantics(*canvas->Strokes()[i].Shape(),*probe.Strokes()[i].Shape()))) return false;
+			}
+			else
+			{
+				if (value.isMember("version") && value["version"].asInt() == 3) return false;
+				EnsureOperationJournal(runtime);
+			}
 			if (value.isMember("boundary"))
 			{
 				if (!value["boundary"].isArray()) return false;
@@ -662,12 +875,27 @@ namespace Inkeys::Drawing::Draw3
 				}
 				runtime.boundaryFallback = std::move(boundary);
 			}
+			if (value.isMember("undoBoundary"))
+			{
+				auto boundary = std::make_shared<ClearRedoContinuation>(ClearRedoContinuation{InkPage(page.PageGuid()), {}});
+				if (!RestoreWhiteboardHistoryUnchecked(value["undoBoundary"],boundary->page,boundary->runtime,depth + 1)) return false;
+				runtime.clearUndoHistory = std::move(boundary);
+			}
 			if (value.isMember("continuation"))
 			{
 				auto continuation = std::make_shared<ClearRedoContinuation>(ClearRedoContinuation{InkPage(page.PageGuid()), {}});
-				if (!RestoreWhiteboardHistory(value["continuation"], continuation->page, continuation->runtime, depth + 1)) return false;
+				if (!RestoreWhiteboardHistoryUnchecked(value["continuation"], continuation->page, continuation->runtime, depth + 1)) return false;
 				runtime.clearRedoContinuation = std::move(continuation);
 			}
+			return true;
+		}
+
+		bool RestoreWhiteboardHistory(const Json::Value& value, InkPage& page,
+			CanvasPageRuntimeState& runtime, unsigned depth = 0)
+		{
+			InkPage candidate(page.PageGuid()); CanvasPageRuntimeState candidateRuntime;
+			if (!RestoreWhiteboardHistoryUnchecked(value,candidate,candidateRuntime,depth)) return false;
+			page = std::move(candidate); runtime = std::move(candidateRuntime);
 			return true;
 		}
 
@@ -730,7 +958,7 @@ namespace Inkeys::Drawing::Draw3
 			// UInk 只保存可见 tail；所有淘汰入口都必须保住会话内的前向分支。
 			if (std::any_of(slot.pageRuntimeStates.begin(), slot.pageRuntimeStates.end(),
 				[](const CanvasPageRuntimeState& runtime)
-				{ return runtime.clearRedoContinuation || runtime.history.LastRedoItem().has_value(); })) return false;
+				{ return runtime.clearRedoContinuation || runtime.clearUndoHistory || runtime.history.LastRedoItem().has_value() || HasShapeEditOperations(runtime); })) return false;
 			return ShouldEvictPresentationSlot(slot.fileGuid.has_value(),
 				slot.mutationRevision, slot.queuedRevision, slot.committedRevision, slot.loadPending);
 		}
@@ -1840,6 +2068,8 @@ namespace Inkeys::Drawing::Draw3
 			size_t lastPointIndex = 0;
 		};
 
+		#include "Draw3.ShapeRuntime.inl"
+
 		struct RuntimeShapeState
 		{
 			ShapePrimitive primitive = {};
@@ -1850,6 +2080,9 @@ namespace Inkeys::Drawing::Draw3
 			draw3::shapes::ShapeStyle style;
 			draw3::shapes::ObjectId id = {};
 			uint64_t revision = 0;
+			std::function<uint64_t(const draw3::shapes::ObjectId&,uint64_t)> nextRevision;
+			std::shared_ptr<ShapeConstructionRuntime> construction;
+			bool constructionStepOnly = false, constructionStepDiscarded = false;
 			std::optional<draw3::shapes::ShapeObject> object;
 			draw3::shapes::RenderData renderData;
 			DirectX::XMFLOAT2 rawEndpoint = {};
@@ -2300,13 +2533,29 @@ namespace Inkeys::Drawing::Draw3
 			RuntimeShapeState& shape, DirectX::XMFLOAT2 endpoint)
 		{
 			if (!std::isfinite(endpoint.x) || !std::isfinite(endpoint.y)) return false;
+			if (shape.constructionStepDiscarded && shape.construction)
+			{
+				if (shape.object == shape.construction->preview) return false;
+				shape.object = shape.construction->preview; shape.renderData = shape.construction->renderData;
+				shape.revision = shape.construction->revision; shape.visualChanged = true; return true;
+			}
 			if (shape.primitive.end.x == endpoint.x &&
 				shape.primitive.end.y == endpoint.y) return false;
 			if (shape.generic)
 			{
 				if (shape.revision == (std::numeric_limits<uint64_t>::max)()) return false;
-				const uint64_t revision = shape.revision + 1;
-				auto candidate = draw3::shapes::MakePresetShape(shape.tool,
+				const uint64_t revision = shape.nextRevision ? shape.nextRevision(shape.id,shape.revision) : shape.revision + 1;
+				if (!revision) return false;
+				std::optional<draw3::shapes::ShapeObject> candidate;
+				if (shape.construction)
+				{
+					if (shape.construction->cancelled)
+					{ shape.object.reset(); shape.renderData = {}; shape.visualChanged = true; return true; }
+					shape.construction->session.PreviewDrag({shape.primitive.start.x,shape.primitive.start.y},{endpoint.x,endpoint.y});
+					candidate = shape.construction->session.Candidate();
+					if (candidate) candidate->revision = revision;
+				}
+				else candidate = draw3::shapes::MakePresetShape(shape.tool,
 					{ shape.primitive.start.x, shape.primitive.start.y }, { endpoint.x, endpoint.y },
 					shape.style, shape.id, revision);
 				draw3::shapes::RenderData data;
@@ -2315,11 +2564,58 @@ namespace Inkeys::Drawing::Draw3
 				shape.object = std::move(candidate);
 				shape.renderData = std::move(data);
 				shape.revision = revision;
+				if (shape.construction)
+				{
+					shape.construction->preview = shape.object;
+					shape.construction->renderData = shape.renderData;
+				}
 			}
 			shape.primitive.end.x = endpoint.x;
 			shape.primitive.end.y = endpoint.y;
 			shape.visualChanged = true;
 			return true;
+		}
+
+		bool RefreshConstructionRuntimePreview(ShapeConstructionRuntime& state,
+			const std::function<uint64_t(const draw3::shapes::ObjectId&,uint64_t)>& allocate)
+		{
+			auto object = state.session.Candidate(); draw3::shapes::RenderData data;
+			if (object)
+			{
+				object->revision = allocate ? allocate(object->id,state.revision) : state.revision + 1;
+				if (!object->revision || !draw3::shapes::BuildRenderData(*object,data)) return false;
+				state.revision = object->revision;
+			}
+			state.preview = std::move(object); state.renderData = std::move(data); return true;
+		}
+		// Run和无窗口生产测试共用：真实Up只确认当前阶段，最后一步才允许普通创建提交。
+		bool ConfirmRuntimeConstructionContact(RuntimeStroke& runtime)
+		{
+			if (!runtime.shape.construction) return false;
+			auto& state = *runtime.shape.construction; state.contactActive = false;
+			if (runtime.shape.constructionStepDiscarded)
+			{ runtime.shape.constructionStepOnly = true; RefreshConstructionRuntimePreview(state,runtime.shape.nextRevision); return false; }
+			if (runtime.cancelled || state.cancelled || !state.session.Status().active)
+			{
+				state.session.Cancel(); state.cancelled = true; runtime.shape.constructionStepOnly = true; return false;
+			}
+			const bool confirmed = state.session.ConfirmDrag({runtime.shape.primitive.start.x,runtime.shape.primitive.start.y},
+				{runtime.shape.rawEndpoint.x,runtime.shape.rawEndpoint.y});
+			RefreshConstructionRuntimePreview(state,runtime.shape.nextRevision);
+			if (!confirmed || !state.session.Status().finished)
+			{
+				runtime.shape.constructionStepOnly = true; runtime.shape.object = state.preview;
+				runtime.shape.renderData = state.renderData; return false;
+			}
+			auto object = state.session.Complete();
+			if (object)
+			{
+				object->revision = runtime.shape.nextRevision ? runtime.shape.nextRevision(object->id,state.revision) : state.revision + 1;
+				if (!object->revision) object.reset();
+			}
+			state.completed = object.has_value(); runtime.shape.object = std::move(object);
+			if (runtime.shape.object) runtime.shape.revision = runtime.shape.object->revision;
+			return state.completed;
 		}
 
 		RECT RuntimeShapeBounds(const RuntimeShapeState& shape, int width, int height) noexcept
@@ -2369,7 +2665,8 @@ namespace Inkeys::Drawing::Draw3
 				if (failureReason) *failureReason = reason;
 				return std::nullopt;
 			};
-			if ((mode == StoredStrokeCommitMode::NormalUp && !runtime.ended) ||
+			if ((runtime.shape.construction && !runtime.shape.construction->completed) ||
+				(mode == StoredStrokeCommitMode::NormalUp && !runtime.ended) ||
 				!runtime.inUse || !runtime.handle || runtime.cancelled ||
 				runtime.cpuCommitAttempted || pageIndex >= pageRuntimeStates.size() ||
 				runtime.ownerPageIndex != pageIndex ||
@@ -2454,6 +2751,7 @@ namespace Inkeys::Drawing::Draw3
 			const InkRasterStateToken afterState = allocateToken();
 			pageRuntime.beforeStates.push_back(beforeState);
 			pageRuntime.afterStates.push_back(afterState);
+			RecordRuntimeAppend(pageRuntime, *renderItem);
 			if (mode == StoredStrokeCommitMode::Fatal)
 			{
 				pageRuntime.rasterState = afterState;
@@ -2461,6 +2759,28 @@ namespace Inkeys::Drawing::Draw3
 			}
 			return StoredStrokeCpuCommit{ *strokeIndex, *renderItem,
 				beforeState, afterState };
+		}
+
+		// 多笔Complete的真实创建入口：调用方在候选Canvas上执行，GPU通过后再安装。
+		template<class AllocateToken>
+		std::optional<StoredStrokeCpuCommit> AppendRuntimeConstructedShapeCpu(InkCanvas& canvas,
+			CanvasPageRuntimeState& runtime,const draw3::shapes::ShapeObject& object,AllocateToken&& allocate)
+		{
+			draw3::shapes::CreationTransaction transaction;
+			if (!transaction.Preview(object)) return {};
+			const auto command = transaction.Commit(); if (!command) return {};
+			InkCanvas candidate = canvas; CanvasPageRuntimeState candidateRuntime = runtime;
+			const auto index = candidate.AppendShape(*command); if (!index) return {};
+			auto footprint = BuildStrokeTileFootprint(candidate.Strokes()[*index]); if (!footprint) return {};
+			candidateRuntime.history.DiscardRedoBranch();
+			const auto item = candidateRuntime.history.AppendStroke(*index,std::move(*footprint),true);
+			if (!item || item->index != candidateRuntime.beforeStates.size()) return {};
+			const auto before = candidateRuntime.rasterState, after = allocate();
+			candidateRuntime.beforeStates.push_back(before); candidateRuntime.afterStates.push_back(after); candidateRuntime.rasterState = after;
+			candidateRuntime.clearRedoAvailable = false; candidateRuntime.clearRedoContinuation.reset(); candidateRuntime.intervalLoadPending = false;
+			candidateRuntime.shapeRevisionAllocator.Next(object.id,object.revision); RecordRuntimeAppend(candidateRuntime,*item);
+			canvas = std::move(candidate); runtime = std::move(candidateRuntime);
+			return StoredStrokeCpuCommit{*index,*item,before,after};
 		}
 
 		// 旁挂表只保存 opaque 值键和自有数值，不能给已回收的 contact 延长生存期。
@@ -5356,6 +5676,151 @@ namespace Inkeys::Drawing::Draw3
 		return failures;
 	}
 
+	int RunShapeEditHistoryProductionTest()
+	{
+		int failures = 0;
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr,"[Shape.EditHistory] FAIL %s\n",label); }
+		};
+		using namespace draw3::shapes;
+		std::array<uint8_t,16> pageId{}; pageId[0] = 89;
+		InkPage page{InkGuid(pageId)}; auto* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
+		CanvasPageRuntimeState runtime; InkRasterStateToken token = 100;
+		const auto allocate = [&] { return ++token; };
+		const auto append = [&](InkStroke stroke) -> std::optional<RenderItemId>
+		{
+			auto footprint = BuildStrokeTileFootprint(stroke);
+			const auto index = footprint ? canvas->AppendStroke(std::move(stroke)) : std::nullopt;
+			const auto item = index ? runtime.history.AppendStroke(*index,std::move(*footprint)) : std::nullopt;
+			if (!item) return {};
+			runtime.beforeStates.push_back(runtime.rasterState); runtime.afterStates.push_back(allocate());
+			runtime.rasterState = runtime.afterStates.back(); RecordRuntimeAppend(runtime,*item);
+			return item;
+		};
+		ShapeObject circle; circle.id[0] = 91; circle.kind = Kind::Circle;
+		circle.geometry.start = {80,80}; circle.geometry.radius = 24;
+		const auto first = append(InkStroke({StoredInkType::Shape,0,1,0},{},std::nullopt,circle));
+		if (!first) return 1;
+		ShapeObject edited = circle; edited.geometry.start.x += 300;
+		edited.revision = runtime.shapeRevisionAllocator.Next(edited.id,circle.revision);
+		const auto edit = CommitRuntimeShapeEditCpu(*canvas,runtime,*first,circle,edited,allocate);
+		check(edit && edit->affectedTiles.size() >= 2 && runtime.operations.size() == 2 &&
+			canvas->Strokes().size() == 1 && runtime.history.Items().size() == 1 &&
+			canvas->Strokes()[0].Shape()->id == circle.id,"same index edit preserves identity/order and old/new footprint");
+		const auto pen = append(InkStroke({StoredInkType::Pen,0x55AA11,1,0},{{8,8,4},{90,90,4}}));
+		check(pen && runtime.operations.size() == 3,"ink append shares the shape edit journal");
+		if (!edit || !pen) return failures + 1;
+		check(ApplyRuntimeJournalCpu(*canvas,runtime,false,allocate) && !runtime.history.Find(*pen)->visible &&
+			SameShapeSemantics(*canvas->Strokes()[0].Shape(),edited),"first undo hides newest ordinary ink");
+		check(ApplyRuntimeJournalCpu(*canvas,runtime,false,allocate) &&
+			SameShapeSemantics(*canvas->Strokes()[0].Shape(),circle) &&
+			canvas->Strokes()[0].Shape()->revision > edited.revision,"next undo restores geometry with fresh revision");
+		const auto undoRevision = canvas->Strokes()[0].Shape()->revision;
+		check(ApplyRuntimeJournalCpu(*canvas,runtime,false,allocate) && !runtime.history.LastVisibleItem(),"third undo hides shape creation");
+		check(ApplyRuntimeJournalCpu(*canvas,runtime,true,allocate) && ApplyRuntimeJournalCpu(*canvas,runtime,true,allocate) &&
+			SameShapeSemantics(*canvas->Strokes()[0].Shape(),edited) &&
+			canvas->Strokes()[0].Shape()->revision > undoRevision && ApplyRuntimeJournalCpu(*canvas,runtime,true,allocate),
+			"redo restores create then edit then ink in one operation order");
+		check(ApplyRuntimeJournalCpu(*canvas,runtime,false,allocate) && ApplyRuntimeJournalCpu(*canvas,runtime,false,allocate),
+			"prepare edit and append hidden redo");
+		const auto hidden = WhiteboardHistoryJson(page,runtime);
+		InkPage restored{InkGuid(pageId)}; CanvasPageRuntimeState restoredRuntime;
+		check(RestoreWhiteboardHistory(hidden,restored,restoredRuntime) && restoredRuntime.operationCursor == 1 &&
+			restoredRuntime.operations.size() == 3 && restoredRuntime.history.RedoDepth() == 1,"cold page preserves hidden edit and ink redo");
+		auto* restoredCanvas = restored.FindCanvas(kDefaultDeviceKey);
+		check(restoredCanvas && ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,true,allocate) &&
+			SameShapeSemantics(*restoredCanvas->Strokes()[0].Shape(),edited) &&
+			ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,true,allocate),"cold redo replays edit before hidden ink");
+		auto beforeBranch = *canvas->Strokes()[0].Shape(), branch = beforeBranch;
+		branch.geometry.start.y += 300; branch.revision = runtime.shapeRevisionAllocator.Next(branch.id,beforeBranch.revision);
+		runtime.clearRedoAvailable = true;
+		check(CommitRuntimeShapeEditCpu(*canvas,runtime,*first,beforeBranch,branch,allocate).has_value() &&
+			runtime.operationCursor == 2 && runtime.operations.size() == 2 && runtime.history.RedoDepth() == 0 &&
+			!runtime.clearRedoAvailable && !runtime.clearRedoContinuation,"new edit branch discards future edit/ink/Clear redo");
+		const auto tail = append(InkStroke({StoredInkType::Pen,0x334455,1,0},{{18,18,5},{75,80,5}}));
+		check(tail && tail->index == 2 && canvas->Strokes().size() == 3,"new ink keeps abandoned render index and relative order");
+		const auto continuation = CaptureClearRedoContinuation(page,runtime);
+		check(continuation && continuation->runtime.operationCursor == 0 && !continuation->runtime.history.LastVisibleItem(),
+			"Clear continuation rolls back edits and creates to empty");
+		InkPage cleared{InkGuid(pageId)}; cleared.GetOrCreateCanvas(kDefaultDeviceKey);
+		CanvasPageRuntimeState clearedRuntime; clearedRuntime.clearRedoAvailable = true;
+		clearedRuntime.clearRedoContinuation = continuation;
+		clearedRuntime.clearUndoHistory = std::make_shared<ClearRedoContinuation>(ClearRedoContinuation{page,runtime});
+		const auto clearHistory = WhiteboardHistoryJson(cleared,clearedRuntime);
+		InkPage coldClear{InkGuid(pageId)}; CanvasPageRuntimeState coldClearRuntime;
+		check(RestoreWhiteboardHistory(clearHistory,coldClear,coldClearRuntime) && coldClearRuntime.clearRedoContinuation,
+			"cold Clear saves operation continuation");
+		check(coldClearRuntime.clearUndoHistory && HasShapeEditOperations(coldClearRuntime.clearUndoHistory->runtime),
+			"cold Clear retains full pre-Clear edit journal");
+		if (coldClearRuntime.clearUndoHistory)
+		{
+			auto& boundary = *coldClearRuntime.clearUndoHistory;
+			auto* boundaryCanvas = boundary.page.FindCanvas(kDefaultDeviceKey);
+			check(boundaryCanvas && ApplyRuntimeJournalCpu(*boundaryCanvas,boundary.runtime,false,allocate) &&
+				ApplyRuntimeJournalCpu(*boundaryCanvas,boundary.runtime,false,allocate) &&
+				SameShapeSemantics(*boundaryCanvas->Strokes()[0].Shape(),circle),
+				"restored Clear boundary can undo later ink and then the previous edit");
+		}
+		if (coldClearRuntime.clearRedoContinuation)
+		{
+			auto& saved = *coldClearRuntime.clearRedoContinuation;
+			auto* savedCanvas = saved.page.FindCanvas(kDefaultDeviceKey);
+			bool replayed = savedCanvas != nullptr;
+			while (replayed && saved.runtime.operationCursor < saved.runtime.operations.size())
+				replayed = ApplyRuntimeJournalCpu(*savedCanvas,saved.runtime,true,allocate);
+			check(replayed && savedCanvas->Strokes()[0].Shape() &&
+				SameShapeSemantics(*savedCanvas->Strokes()[0].Shape(),branch) && saved.runtime.history.LastVisibleItem() == tail,
+				"Clear continuation reconstructs edited shape and later ink");
+		}
+		auto corrupt = hidden; corrupt["operations"][1]["before"]["shape"]["id"] = "invalid";
+		const auto preserved = restored.FindCanvas(kDefaultDeviceKey)->Strokes()[0].Shape();
+		check(!RestoreWhiteboardHistory(corrupt,restored,restoredRuntime) &&
+			restored.FindCanvas(kDefaultDeviceKey)->Strokes()[0].Shape() == preserved,"invalid journal leaves previously restored page intact");
+		for (unsigned corruption = 0; corruption < 3; ++corruption)
+		{
+			auto malformed = hidden;
+			for (const char* key : {"operationVersion","operations","operationCursor","operationFloor"}) malformed.removeMember(key);
+			malformed["version"] = 2;
+			if (corruption == 0) malformed["strokes"][1] = malformed["strokes"][0];
+			else if (corruption == 1) malformed["items"][1][0] = malformed["items"][0][0];
+			else { Json::Value removed; malformed["items"].removeIndex(1,&removed); }
+			const auto previousCursor = restoredRuntime.operationCursor;
+			const auto previousCount = restored.FindCanvas(kDefaultDeviceKey)->Strokes().size();
+			check(!RestoreWhiteboardHistory(malformed,restored,restoredRuntime) &&
+				restored.FindCanvas(kDefaultDeviceKey)->Strokes().size() == previousCount &&
+				restored.FindCanvas(kDefaultDeviceKey)->Strokes()[0].Shape() == preserved && restoredRuntime.operationCursor == previousCursor,
+				"duplicate object identity or non-bijective render mapping rejects cold candidate atomically");
+		}
+		InkPage oldPage{InkGuid(pageId)}; CanvasPageRuntimeState oldRuntime;
+		auto oldHistory = hidden;
+		for (const char* key : {"operationVersion","operations","operationCursor","operationFloor"}) oldHistory.removeMember(key);
+		oldHistory["version"] = 2;
+		check(RestoreWhiteboardHistory(oldHistory,oldPage,oldRuntime) && oldRuntime.operationsInitialized,
+			"old v2 cold history migrates append visibility without inventing prior edits");
+		InkStroke legacy({StoredInkType::OutlineRectangle,0x112233,0.5f,0},{{10,10,5},{110,90,5}});
+		InkPage legacyPage{InkGuid(pageId)}; auto* legacyCanvas = legacyPage.GetOrCreateCanvas(kDefaultDeviceKey);
+		CanvasPageRuntimeState legacyRuntime;
+		const auto legacyIndex = legacyCanvas->AppendStroke(legacy);
+		const auto legacyItem = legacyRuntime.history.AppendStroke(*legacyIndex,*BuildStrokeTileFootprint(legacy));
+		legacyRuntime.beforeStates.push_back(0); legacyRuntime.afterStates.push_back(1);
+		auto promoted = *legacy.Shape(); promoted.legacyKind = LegacyKind::None;
+		promoted.revision = legacyRuntime.shapeRevisionAllocator.Next(promoted.id,promoted.revision);
+		check(CommitRuntimeShapeEditCpu(*legacyCanvas,legacyRuntime,*legacyItem,*legacy.Shape(),promoted,allocate).has_value() &&
+			legacyCanvas->Strokes()[0].Style().inkType == StoredInkType::Shape &&
+			ApplyRuntimeJournalCpu(*legacyCanvas,legacyRuntime,false,allocate) &&
+			legacyCanvas->Strokes()[0].Style().inkType == StoredInkType::OutlineRectangle &&
+			legacyCanvas->Strokes()[0].Shape()->revision > promoted.revision,"first edit promotes legacy and undo restores legacy representation with fresh revision");
+		const auto unchanged = legacyCanvas->Strokes()[0].Shape();
+		auto wrongId = promoted; wrongId.id[1] = 99;
+		check(!legacyCanvas->ReplaceStroke(0,InkStroke({StoredInkType::Shape,0,1,0},{},std::nullopt,wrongId)) &&
+			legacyCanvas->Strokes()[0].Shape() == unchanged,"same layer replacement rejects changed stable identity");
+		std::fprintf(stderr,"[Shape.EditHistory] failures=%d\n",failures);
+		return failures;
+	}
+
+	#include "Draw3.ShapeRuntimeTests.inl"
+
 	int RunShapeDocumentProductionTest() noexcept
 	{
 		int failures = 0;
@@ -5365,6 +5830,8 @@ namespace Inkeys::Drawing::Draw3
 		try
 		{
 			failures += RunPresetCreationProductionTest();
+			failures += RunShapeEditHistoryProductionTest();
+			failures += RunShapeInteractionProductionTest();
 			using namespace draw3::shapes;
 			ShapeObject circle; circle.id[0] = 1; circle.kind = Kind::Circle;
 			circle.geometry.start = {80,80}; circle.geometry.radius = 24;
@@ -8571,6 +9038,11 @@ namespace Inkeys::Drawing::Draw3
 		if (observer_.documentReady)
 			observer_.documentReady(observer_.context, currentPageIndex_,
 				document_->Pages().size());
+		ShapeUiRuntime shapeUi;
+		struct ShapePublicationExit { ~ShapePublicationExit() { PublishShapeUiSnapshot({}); } } shapePublicationExit;
+		std::function<bool(RuntimeStroke&)> beginShapeContact;
+		std::function<void(RuntimeStroke&)> finishShapeContact;
+		std::function<void(RECT&,bool)> closeShapeSessions;
 		std::vector<CanvasPageRuntimeState> pageRuntimeStates;
 		pageRuntimeStates.reserve(8);
 		pageRuntimeStates.emplace_back();
@@ -8680,6 +9152,12 @@ namespace Inkeys::Drawing::Draw3
 				const std::optional<RenderItemId> visible = runtime.history.LastVisibleItem();
 				canUndo = visible.has_value() && visible->index >= runtime.undoFloor;
 				canRedo = runtime.history.LastRedoItem().has_value() || runtime.clearRedoAvailable;
+				if (runtime.operationsInitialized)
+				{
+					canUndo = runtime.operationCursor > runtime.operationFloor;
+					canRedo = runtime.operationCursor < runtime.operations.size() || runtime.clearRedoAvailable;
+				}
+				if (!canUndo && runtime.clearUndoHistory) canUndo = true;
 				if (!canUndo)
 				{
 					if (activeWorkspace == Bridge::Workspace::Desktop && desktopClearRecovery &&
@@ -8687,7 +9165,7 @@ namespace Inkeys::Drawing::Draw3
 							document_ ? document_->PageAt(currentPageIndex_) : nullptr))
 						canUndo = true;
 					else if (runtime.previousClearUndoAvailable &&
-						(runtime.intervalOrdinal != 0 || runtime.boundaryFallback) &&
+						(runtime.intervalOrdinal != 0 || runtime.boundaryFallback || runtime.clearUndoHistory) &&
 						(activeWorkspace == Bridge::Workspace::Presentation ||
 							activeWorkspace == Bridge::Workspace::Whiteboard))
 						canUndo = true;
@@ -8775,7 +9253,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto* page = doc->PageAt(index); if (!page) return false;
 				auto canvas = captureCanvasTail(*page, runtimes[index], 0); if (!canvas) return false;
 				Json::Value history = WhiteboardHistoryJson(*page, runtimes[index]);
-				history["version"] = 2;
+				history["version"] = 3;
 				history["rgb"] = whiteboardThemes[index].backgroundRgb;
 				history["pattern"] = static_cast<unsigned>(whiteboardThemes[index].pattern);
 				Json::StreamWriterBuilder writer; writer["indentation"] = "";
@@ -8838,7 +9316,7 @@ namespace Inkeys::Drawing::Draw3
 								builder["rejectDupKeys"] = true;
 								std::unique_ptr<Json::CharReader> reader(builder.newCharReader()); std::string error;
 								if (encoded && reader->parse(encoded->data(), encoded->data() + encoded->size(), &history, &error) &&
-									history["version"].isInt() && (history["version"].asInt() == 1 || history["version"].asInt() == 2) && history["rgb"].isUInt() && history["pattern"].isUInt())
+									history["version"].isInt() && (history["version"].asInt() == 1 || history["version"].asInt() == 2 || history["version"].asInt() == 3) && history["rgb"].isUInt() && history["pattern"].isUInt())
 								{
 									WhiteboardTheme theme{history["rgb"].asUInt(), static_cast<WhiteboardPattern>(history["pattern"].asUInt())};
 									InkPage page(doc->PageAt(result.page)->PageGuid()); CanvasPageRuntimeState runtime;
@@ -10202,6 +10680,11 @@ namespace Inkeys::Drawing::Draw3
 					runtime->inUse = false;
 					return false;
 				}
+				if (beginShapeContact && !beginShapeContact(*runtime))
+				{
+					RejectStrokeInitialization(input_,handle,down); runtime->cancelled = true;
+					runtime->handle = {}; runtime->inUse = false; return false;
+				}
 				const Input downInput{
 					.event_type = Input::EventType::kDown,
 					.position = Vec2(down.position.x, down.position.y),
@@ -10451,6 +10934,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					runtime.shape.rawEndpoint = {
 						snapshot.position.x, snapshot.position.y };
+					if (runtime.shape.construction) runtime.shape.construction->session.ObserveRaw({snapshot.position.x,snapshot.position.y});
 					SetShapeVisualEndpoint(runtime.shape, runtime.shape.rawEndpoint);
 					runtime.stroke.predictedResults.clear();
 					if (metricsState_ && !cancelled)
@@ -10500,6 +10984,7 @@ namespace Inkeys::Drawing::Draw3
 						runtime.shape.rawEndpoint.y != snapshot.position.y;
 					runtime.shape.rawEndpoint = {
 						snapshot.position.x, snapshot.position.y };
+					if (runtime.shape.construction) runtime.shape.construction->session.ObserveRaw({snapshot.position.x,snapshot.position.y});
 				}
 
 				const float deltaX = snapshot.position.x - runtime.lastSpeedSnapshot.position.x;
@@ -11906,6 +12391,9 @@ namespace Inkeys::Drawing::Draw3
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
 			int width, int height)
 		{
+			// 统一权威安装入口也覆盖异步load，不能复用旧页的对象修订缓存或编辑会话。
+			if (closeShapeSessions) closeShapeSessions(frameDirty,false);
+			++shapeUi.documentGeneration; renderer_.ClearShapeRenderCache();
 			if (metricsState_)
 			{
 				metricsScene(true);
@@ -12317,7 +12805,7 @@ namespace Inkeys::Drawing::Draw3
 				if (found == oldRuntimeByPage.end()) continue;
 				CanvasPageRuntimeState& source = pageRuntimeStates[found->second];
 				CanvasPageRuntimeState& destination = rebuilt->pageRuntimeStates[index];
-				if (source.clearRedoContinuation || source.history.LastRedoItem())
+				if (source.clearRedoContinuation || source.clearUndoHistory || source.history.LastRedoItem() || HasShapeEditOperations(source))
 				{
 					// 拓扑重排的 visible 导出会丢隐藏候选，仅前向分支页沿 GUID 保留完整值。
 					const InkPage* original = document_->PageAt(found->second);
@@ -12352,6 +12840,67 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		};
 
+		auto applyReplacementHistory = [&](bool redo, RECT& frameDirty) -> bool
+		{
+			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size()) return false;
+			auto* page = document_->PageAt(currentPageIndex_);
+			auto* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (!canvas) return false;
+			auto& runtime = pageRuntimeStates[currentPageIndex_];
+			EnsureOperationJournal(runtime);
+			if (redo ? runtime.operationCursor >= runtime.operations.size() : runtime.operationCursor <= runtime.operationFloor) return false;
+			const auto operation = runtime.operations[redo ? runtime.operationCursor : runtime.operationCursor - 1];
+			if (operation.kind != CanvasOperationKind::Replace) return false;
+			const auto* previousItem = runtime.history.Find(operation.item);
+			if (!previousItem) return false;
+			InkCanvas candidate = *canvas; CanvasPageRuntimeState candidateRuntime = runtime;
+			if (!ApplyRuntimeJournalCpu(candidate,candidateRuntime,redo,allocateRasterStateToken)) return false;
+			// 失败候选也消耗修订号，重试不能复用已上传过的几何身份。
+			runtime.shapeRevisionAllocator = candidateRuntime.shapeRevisionAllocator;
+			const auto* nextItem = candidateRuntime.history.Find(operation.item);
+			std::vector<SignedTileCoordinate> tiles = previousItem->compositionTiles;
+			tiles.insert(tiles.end(),nextItem->compositionTiles.begin(),nextItem->compositionTiles.end());
+			std::sort(tiles.begin(),tiles.end()); tiles.erase(std::unique(tiles.begin(),tiles.end()),tiles.end());
+			const auto size = window_.Size(); const auto viewport = canvas->Viewport();
+			const HistoryCanvasIdentity identity{page->PageGuid(),kDefaultDeviceKey};
+			const auto key = currentRasterKey();
+			const auto metricsBefore = metricsState_ ? metricsSignature(size.width,size.height) : ContentMetricRasterSignature{};
+			if (metricsState_) metricsState_->BeginLocalWrite(metricsBefore);
+			// 编辑不能使用创建时前像；旧新 footprint 的完整层序必须一起重放。
+			historyGpuCache.DiscardHotPreimages(); historyGpuCache.DiscardCompositionCache(); compositionMaintenance.clear();
+			renderer_.ClearShapeRenderCache(); renderer_.InvalidateTrustedL2Snapshot(); trustedSnapshotSignatureValid = false;
+			const CompositionRestoreRequest request{identity,key,&candidate,&candidateRuntime.history,tiles,
+				candidateRuntime.history.Items().size(),viewport.x,viewport.y,size.width,size.height,true};
+			const bool attempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
+			const auto restored = historyGpuCache.RestoreComposition(request);
+			if (metricsState_) metricsState_->RasterReturned(attempt,restored.path != CompositionRestorePath::Failed,!IsEmptyRect(restored.dirty));
+			UnionRectInPlace(frameDirty,restored.dirty);
+			if (restored.path == CompositionRestorePath::Failed)
+			{
+				historyGpuCache.DiscardCompositionCache(); renderer_.ClearShapeRenderCache();
+				const CompositionRestoreRequest rollback{identity,key,canvas,&runtime.history,tiles,
+					runtime.history.Items().size(),viewport.x,viewport.y,size.width,size.height,true};
+				const bool retry = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
+				const auto recovered = historyGpuCache.RestoreComposition(rollback);
+				if (metricsState_) metricsState_->RasterReturned(retry,recovered.path != CompositionRestorePath::Failed,!IsEmptyRect(recovered.dirty));
+				UnionRectInPlace(frameDirty,recovered.dirty);
+				viewportVisibleClear = false; viewportRefreshPending = true; viewportRefreshClearsTransient = false;
+				return false;
+			}
+			*canvas = std::move(candidate); runtime = std::move(candidateRuntime);
+			renderer_.ClearOperatorLayer(renderer_.layerL1); renderer_.ClearOperatorLayer(renderer_.layerL0);
+			viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(viewportVisibleClear,true);
+			if (metricsState_)
+			{
+				metricsState_->PruneStored(*canvas,runtime);
+				metricsState_->CompleteLocalWrite(metricsBefore,metricsSignature(size.width,size.height),true);
+				metricsState_->InvalidateLiveRasters(); metricsState_->renderAttempt = true;
+			}
+			return true;
+		};
+
+		#include "Draw3.ShapeRuntimeActions.inl"
+
 			auto undoCurrentPage = [&](RECT& frameDirty) -> bool
 		{
 			const auto requestAuthoritativeRecovery = [&]()
@@ -12369,6 +12918,10 @@ namespace Inkeys::Drawing::Draw3
 			InkCanvas* canvas = page
 				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 			CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+			EnsureOperationJournal(runtime);
+			if (runtime.operationCursor <= runtime.operationFloor) return false;
+			if (runtime.operations[runtime.operationCursor - 1].kind == CanvasOperationKind::Replace)
+				return applyReplacementHistory(false,frameDirty);
 			const std::optional<RenderItemId> itemId = runtime.history.LastVisibleItem();
 			if (!page || !canvas || !itemId || itemId->index < runtime.undoFloor)
 			{
@@ -12383,6 +12936,7 @@ namespace Inkeys::Drawing::Draw3
 					" result=noop reason=history_mismatch" << std::endl;
 				return false;
 			}
+			if (runtime.operations[runtime.operationCursor - 1].item != *itemId) return false;
 			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
 			const size_t restoreRangeEnd = static_cast<size_t>(itemId->index) + 1;
 			const HistoryCanvasIdentity canvasIdentity = {
@@ -12489,6 +13043,7 @@ namespace Inkeys::Drawing::Draw3
 			renderer_.ClearOperatorLayer(renderer_.layerL1);
 			renderer_.ClearOperatorLayer(renderer_.layerL0);
 			UnionRectInPlace(frameDirty, dirty);
+			--runtime.operationCursor;
 			const size_t hotRemaining = historyGpuCache.ConsecutiveHotDepth(
 				canvasIdentity, rasterKey, runtime.rasterState);
 			const bool historyEnd = !runtime.history.LastVisibleItem().has_value();
@@ -12524,6 +13079,10 @@ namespace Inkeys::Drawing::Draw3
 			InkCanvas* canvas = page
 				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 			CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+			EnsureOperationJournal(runtime);
+			if (runtime.operationCursor >= runtime.operations.size()) return false;
+			if (runtime.operations[runtime.operationCursor].kind == CanvasOperationKind::Replace)
+				return applyReplacementHistory(true,frameDirty);
 			const std::optional<RenderItemId> itemId = runtime.history.LastRedoItem();
 			if (!page || !canvas || !itemId)
 			{
@@ -12542,16 +13101,10 @@ namespace Inkeys::Drawing::Draw3
 					" result=noop reason=history_mismatch" << std::endl;
 				return false;
 			}
-			const InkRasterStateToken beforeState = runtime.beforeStates[itemId->index];
-			const InkRasterStateToken afterState = runtime.afterStates[itemId->index];
-			if (runtime.rasterState != beforeState)
-			{
-				requestAuthoritativeRecovery();
-				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
-					" item=" << itemId->index <<
-					" result=failed reason=raster_state" << std::endl;
-				return false;
-			}
+			if (runtime.operations[runtime.operationCursor].item != *itemId) return false;
+			// 编辑恢复使用新 raster token，追加重做的前像据当前语义重新建立。
+			const InkRasterStateToken beforeState = runtime.rasterState;
+			const InkRasterStateToken afterState = allocateRasterStateToken();
 
 			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
 			const HistoryCanvasIdentity canvasIdentity = {
@@ -12688,6 +13241,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			runtime.rasterState = afterState;
+			runtime.beforeStates[itemId->index] = beforeState;
+			runtime.afterStates[itemId->index] = afterState;
+			++runtime.operationCursor;
 			bool hotRearmed = false;
 			if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 			{
@@ -12728,6 +13284,18 @@ namespace Inkeys::Drawing::Draw3
 				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 			if (!canvas) return false;
 
+			std::shared_ptr<ClearRedoContinuation> undoHistory;
+			if (HasShapeEditOperations(pageRuntimeStates[currentPageIndex_]))
+			{
+				try
+				{
+					undoHistory = std::make_shared<ClearRedoContinuation>(ClearRedoContinuation{*page,pageRuntimeStates[currentPageIndex_]});
+					undoHistory->runtime.clearUndoHistory.reset(); undoHistory->runtime.clearRedoContinuation.reset();
+					undoHistory->runtime.boundaryFallback.reset(); undoHistory->runtime.clearRedoAvailable = false;
+					undoHistory->runtime.previousClearUndoAvailable = false; undoHistory->runtime.intervalLoadPending = false;
+				}
+				catch (const std::exception&) { return false; }
+			}
 			// 普通 Clear 截断当前页历史；Redo Clear 可安装已准备好的空态前向分支，viewport 保持。
 			const std::uint32_t previousInterval =
 				pageRuntimeStates[currentPageIndex_].intervalOrdinal;
@@ -12753,6 +13321,7 @@ namespace Inkeys::Drawing::Draw3
 				pageRuntimeStates[currentPageIndex_] = std::move(freshRuntime);
 			}
 
+			pageRuntimeStates[currentPageIndex_].clearUndoHistory = std::move(undoHistory);
 			historyGpuCache.DiscardHotPreimages();
 			historyGpuCache.DiscardCompositionCache();
 			compositionMaintenance.clear();
@@ -12808,6 +13377,30 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		};
 
+		auto restoreCurrentPageFromHistory = [&](const std::shared_ptr<ClearRedoContinuation>& boundary,
+			LaserParticleDirtySnapshot& particleSnapshot, RECT& frameDirty, bool& forceFullPresent,
+			int width, int height) -> bool
+		{
+			if (!boundary || !document_ || currentPageIndex_ >= pageRuntimeStates.size()) return false;
+			auto* current = document_->PageAt(currentPageIndex_);
+			if (!current || current->PageGuid() != boundary->page.PageGuid()) return false;
+			const auto* currentCanvas = current->FindCanvas(kDefaultDeviceKey);
+			auto continuation = CaptureClearRedoContinuation(*current,pageRuntimeStates[currentPageIndex_]);
+			InkPage replacement = boundary->page; CanvasPageRuntimeState replacementRuntime = boundary->runtime;
+			auto* canvas = replacement.FindCanvas(kDefaultDeviceKey);
+			if (!currentCanvas || !continuation || !canvas || !canvas->SetViewport(currentCanvas->Viewport())) return false;
+			replacementRuntime.intervalOrdinal = 0; replacementRuntime.previousClearUndoAvailable = false;
+			replacementRuntime.undoFloor = 0; EnsureOperationJournal(replacementRuntime); replacementRuntime.operationFloor = 0;
+			replacementRuntime.clearUndoHistory.reset(); replacementRuntime.boundaryFallback.reset();
+			replacementRuntime.clearRedoAvailable = true; replacementRuntime.clearRedoContinuation = std::move(continuation);
+			if (!document_->ReplacePage(currentPageIndex_,std::move(replacement))) return false;
+			pageRuntimeStates[currentPageIndex_] = std::move(replacementRuntime);
+			if (activeWorkspace == Bridge::Workspace::Desktop) desktopClearRecovery.reset();
+			renderer_.ClearShapeRenderCache();
+			restoreAfterDocumentSlotSwitch(frameDirty,particleSnapshot,forceFullPresent,width,height);
+			return true;
+		};
+
 		auto processCanvasCommands = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot,
 			bool& forceFullPresent, int width, int height)
@@ -12819,8 +13412,25 @@ namespace Inkeys::Drawing::Draw3
 					document_ ? document_->Pages().size() : 0);
 			};
 			CanvasCommand command;
-			while (active.empty() && window_.TryDequeueCanvasCommand(command))
+			while (active.empty() && (!shapeDeferredCommands.empty() || window_.TryDequeueCanvasCommand(command)))
 			{
+				if (!shapeDeferredCommands.empty()) { command = std::move(shapeDeferredCommands.front()); shapeDeferredCommands.pop_front(); }
+				if (command.type == CanvasCommandType::ShapeInteraction)
+				{
+					if (command.shapeAction) processShapeUiAction(*command.shapeAction,frameDirty);
+					continue;
+				}
+				if (command.type == CanvasCommandType::Undo && shapeUi.construction && shapeUi.construction->session.Status().active)
+				{
+					backShapeConstruction(frameDirty); continue;
+				}
+				if (command.type == CanvasCommandType::Clear || command.type == CanvasCommandType::Undo || command.type == CanvasCommandType::Redo ||
+					ShapeCommandChangesScene(command,activeWorkspace,currentPageIndex_,activePresentationTarget) || command.type == CanvasCommandType::TranslateViewport)
+				{
+					closeShapeSessions(frameDirty,true); ++shapeUi.documentGeneration;
+					renderer_.ClearShapeRenderCache();
+				}
+
 				if (command.type == CanvasCommandType::WhiteboardPersistenceCompleted)
 				{
 					consumeWhiteboardCompletions();
@@ -13291,8 +13901,7 @@ namespace Inkeys::Drawing::Draw3
 				interruptNavigationForPenOrMouse("canvas-command");
 				const bool redoClear = command.type == CanvasCommandType::Redo &&
 					currentPageIndex_ < pageRuntimeStates.size() &&
-					pageRuntimeStates[currentPageIndex_].clearRedoAvailable &&
-					!pageRuntimeStates[currentPageIndex_].history.LastRedoItem();
+					CanRedoClearAfterOperations(pageRuntimeStates[currentPageIndex_]);
 				// 重做直接复用唯一Clear事务，包括快照、当前页边界与保存请求。
 				if (command.type == CanvasCommandType::Clear || redoClear)
 				{
@@ -13384,7 +13993,10 @@ namespace Inkeys::Drawing::Draw3
 						CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
 						const auto visible = runtime.history.LastVisibleItem();
 						const bool atFloor = !visible || visible->index < runtime.undoFloor;
-						if (atFloor && activeWorkspace == Bridge::Workspace::Desktop && desktopClearRecovery &&
+						if (atFloor && runtime.clearUndoHistory)
+							restoredBoundary = restoreCurrentPageFromHistory(runtime.clearUndoHistory,
+								particleSnapshot,frameDirty,forceFullPresent,width,height);
+						else if (atFloor && activeWorkspace == Bridge::Workspace::Desktop && desktopClearRecovery &&
 							DesktopRecoveryBelongsToPage(*desktopClearRecovery, page))
 						{
 							if (desktopClearRecovery->canvas &&
@@ -14152,6 +14764,7 @@ namespace Inkeys::Drawing::Draw3
 				particlesEnabledEffective = particlesEnabled;
 
 			RECT frameDirty = {};
+			validateShapeUiContext(frameDirty);
 			UnionRectInPlace(frameDirty, viewportRecoveryDirty);
 			UnionRectInPlace(frameDirty, pendingLaserBakeDirty);
 			pendingLaserBakeDirty = {};
@@ -14186,6 +14799,7 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(frameDirty, currentLaserParticleBounds);
 			}
 			const bool particleAnimationActive = laserParticleSnapshot.hasActive;
+			publishShapeUi();
 			if (selectionMode && !currentPageHasContent() &&
 				auxiliaryCleanVerificationPending && active.empty() &&
 				laserLifecycle.phase == LaserTrailPhase::Inactive &&
@@ -14961,6 +15575,7 @@ namespace Inkeys::Drawing::Draw3
 				// 刚到期批次仍提交最后一次 update，但不再绘制退化实例。
 			}
 
+			drainActiveShapeControlBarrier(frameDirty);
 			if (hasEndedStroke)
 			{
 				renderer_.ClearOperatorLayer(renderer_.layerL1);
@@ -14972,6 +15587,12 @@ namespace Inkeys::Drawing::Draw3
 					{
 						UnionRectInPlace(frameDirty, runtime->visibleDirty);
 						continue; // Laser 稳定预乘颜色层保留到生命周期结束，永不 resolve 到 L2。
+					}
+					if (finishShapeContact) finishShapeContact(*runtime);
+					if (runtime->shape.constructionStepOnly)
+					{
+						UnionRectInPlace(frameDirty,runtime->visibleDirty);
+						continue; // 步骤间只保留活动预览，不能写入文档或烘干L2。
 					}
 					// 新模板的点击/零面积 Up 是正常取消，既不写历史也不触发完成回调。
 					if (runtime->shape.generic && !runtime->shape.object) runtime->cancelled = true;
@@ -14998,6 +15619,7 @@ namespace Inkeys::Drawing::Draw3
 							// 文档对象先成为真值，再从刚追加的同一 Stroke 完成首次 L2 绘制。
 							const std::span<const InkStroke> strokes = canvas->Strokes();
 							const InkStroke& storedStroke = strokes[strokeIndex];
+
 							const RenderItemId renderItem = committed->renderItem;
 							HotPreimageCaptureResult preimageCapture;
 							const InkRasterStateToken afterState = committed->afterState;
@@ -15093,6 +15715,12 @@ namespace Inkeys::Drawing::Draw3
 										runtime->metricVisible = true;
 									}
 								}
+								if (submitted && storedStroke.Shape() && runtime->lastInputSnapshot.qpc >= shapeUi.pendingCompletedQpc)
+								{
+									shapeUi.pendingObject = *storedStroke.Shape(); shapeUi.pendingItem = committed->renderItem;
+									shapeUi.pendingPage = page->PageGuid(); shapeUi.pendingPageIndex = currentPageIndex_;
+									shapeUi.pendingCompletedQpc = runtime->lastInputSnapshot.qpc;
+								}
 								pageRuntime.rasterState = afterState;
 								if (metricsState_)
 									metricsState_->CompleteLocalWrite(metricsBeforeWrite, metricsSignature(size.width, size.height), submitted);
@@ -15134,7 +15762,7 @@ namespace Inkeys::Drawing::Draw3
 				std::erase_if(active, [&](RuntimeStroke* runtime)
 					{
 						if (!runtime->ended) return false;
-						if (!runtime->cancelled && observer_.strokeCompleted)
+						if (!runtime->cancelled && !runtime->shape.constructionStepOnly && observer_.strokeCompleted)
 							observer_.strokeCompleted(observer_.context,
 								CompletedStrokeKindForTool(runtime->tool));
 						if (metricsState_ && (runtime->cancelled || runtime->tool == DrawingTool::Laser ||
@@ -15211,6 +15839,9 @@ namespace Inkeys::Drawing::Draw3
 							rasterSubmissionFailed = true;
 				}
 			}
+
+			renderPendingShapeConstruction(frameDirty,rasterSubmissionFailed,hasEndedStroke || shapeLayerNeedsRebuild || otherLiveLayerNeedsRebuild);
+			publishShapeUi();
 
 			if (haptics_)
 			{

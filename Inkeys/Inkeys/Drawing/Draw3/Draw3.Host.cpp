@@ -1410,6 +1410,8 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand canvas;
 			switch (command.type)
 			{
+			case Bridge::CommandType::ShapeInteraction:
+				canvas.type = CanvasCommandType::ShapeInteraction; canvas.shapeAction = command.shapeAction; break;
 			case Bridge::CommandType::SetWhiteboardTheme:
 				canvas.type = CanvasCommandType::SetWhiteboardTheme;
 				canvas.whiteboardTheme = command.whiteboardTheme;
@@ -2290,6 +2292,16 @@ namespace Inkeys::Drawing::Draw3
 		std::scoped_lock lock(impl_->commandPublishMutex);
 		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
 		const auto result = impl_->bridge.PublishWhiteboardTheme(theme, generation, page);
+		if (result == Bridge::CommandResult::Accepted) impl_->input.PublishReservedCommandWake();
+		else impl_->input.CancelReservedCommandWake();
+		return result;
+	}
+
+	Bridge::CommandResult Host::PublishShapeAction(const ShapeUiAction& action) noexcept
+	{
+		std::scoped_lock lock(impl_->commandPublishMutex);
+		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
+		const auto result = impl_->bridge.PublishShapeAction(action);
 		if (result == Bridge::CommandResult::Accepted) impl_->input.PublishReservedCommandWake();
 		else impl_->input.CancelReservedCommandWake();
 		return result;

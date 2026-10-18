@@ -58,7 +58,7 @@ namespace
 
 	[[nodiscard]] constexpr bool IsUiPopup(WindowRole role) noexcept
 	{
-		return IsPpt(role) || role == WindowRole::Bar;
+		return IsPpt(role) || role == WindowRole::Bar || role == WindowRole::SelectionOverlay;
 	}
 
 	[[nodiscard]] constexpr int OverlayChainPosition(WindowRole role) noexcept
@@ -131,6 +131,7 @@ namespace
 		case WindowRole::PptMiddleLeft: return L"Inkeys.Window.PptMiddleLeft";
 		case WindowRole::PptMiddleRight: return L"Inkeys.Window.PptMiddleRight";
 		case WindowRole::Bar: return L"Inkeys.Window.Bar";
+		case WindowRole::SelectionOverlay: return L"Inkeys.Window.SelectionOverlay";
 		case WindowRole::Setting: return L"Inkeys.Window.Setting";
 		case WindowRole::DisplayObserver: return L"Inkeys.Window.DisplayObserver";
 		default: return L"Inkeys.Window.Unknown";
@@ -306,7 +307,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 				WindowRole::DisplayObserver,
 			};
 			for (const auto role : overlayRoles)
@@ -336,7 +337,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost,
 				WindowRole::Freeze,
 				WindowRole::Drawpad,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 			};
 			for (const auto role : order)
 			{
@@ -974,7 +975,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 				WindowRole::DisplayObserver,
 			};
 
@@ -1244,7 +1245,7 @@ namespace Inkeys::Window
 		void DestroyGroup(bool settingGroup) noexcept
 		{
 			constexpr WindowRole overlayDestructionOrder[] = {
-				WindowRole::Bar,
+				WindowRole::SelectionOverlay, WindowRole::Bar,
 				WindowRole::PptMiddleRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptBottomRight,
@@ -1440,7 +1441,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 			};
 			struct WindowStyleSnapshot
 			{
@@ -1575,7 +1576,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
-				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
+				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight, WindowRole::SelectionOverlay,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -1611,7 +1612,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
-				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
+				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight, WindowRole::SelectionOverlay,
 			};
 			const HWND anchor = Handle(WindowRole::Freeze);
 			if (!anchor || !IsWindow(anchor)) return false;
@@ -1645,7 +1646,7 @@ namespace Inkeys::Window
 			constexpr WindowRole roles[] = {
 				WindowRole::Drawpad, WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight, WindowRole::PptMiddleLeft,
-				WindowRole::PptMiddleRight, WindowRole::Bar,
+				WindowRole::PptMiddleRight, WindowRole::Bar, WindowRole::SelectionOverlay,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -1734,7 +1735,7 @@ namespace Inkeys::Window
 				else
 				{
 					ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-					if (IsPpt(command.role))
+					if (IsPpt(command.role) || command.role == WindowRole::SelectionOverlay)
 					{
 						const HWND bar = Handle(WindowRole::Bar);
 						if (!bar || !IsWindow(bar))
@@ -1926,6 +1927,13 @@ namespace Inkeys::Window
 					ReportCommandResult(command, succeeded, error, root);
 					if (!succeeded) return false;
 					ApplyOverlayFullscreen(root);
+					const HWND editor = Handle(WindowRole::SelectionOverlay);
+					const HWND bar = Handle(WindowRole::Bar);
+					if (editor && bar && IsWindowVisible(editor))
+					{
+						if (!SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) return false;
+						if (!SetWindowPos(editor, bar, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) return false;
+					}
 					return true;
 				}
 			case CommandType::PromotePpt:
@@ -1988,7 +1996,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 			};
 			bool hidden = true;
 			const HWND captured = GetCapture();
@@ -2241,6 +2249,7 @@ namespace Inkeys::Window
 			}
 			if (role == WindowRole::Drawpad)
 			{
+				if (Handle(WindowRole::SelectionOverlay)) return false;
 				for (auto popup = WindowRole::PptBottomLeft;
 					popup <= WindowRole::Bar;
 					popup = static_cast<WindowRole>(static_cast<unsigned>(popup) + 1))

@@ -123,7 +123,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		// 尚未准备好的能力保留显式空接口，产品入口可据此隐藏。
 		if (type == CommandType::Save || type == CommandType::SuperRecovery ||
 			type == CommandType::AutoStraighten || type == CommandType::InputTest ||
-			type == CommandType::PrepareExitAutoSave)
+			type == CommandType::PrepareExitAutoSave || type == CommandType::ShapeInteraction)
 			return CommandResult::Unsupported;
 		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
 		try
@@ -140,6 +140,24 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			return CommandResult::QueueFull;
 		}
 		return CommandResult::Accepted;
+	}
+
+	CommandResult StateBridge::PublishShapeAction(const ShapeUiAction& action) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return CommandResult::NotRunning;
+		if (static_cast<std::uint8_t>(state_.workspace) != action.identity.workspace)
+			return CommandResult::Unsupported;
+		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
+		try
+		{
+			Command command{CommandType::ShapeInteraction,nextSequence_,state_.workspace};
+			command.shapeAction = std::make_shared<const ShapeUiAction>(action);
+			if (state_.workspace == Workspace::Presentation) command.presentationTarget = state_.presentationTarget;
+			commands_.push_back(std::move(command)); ++nextSequence_;
+			return CommandResult::Accepted;
+		}
+		catch (...) { return CommandResult::QueueFull; }
 	}
 
 	CommandResult StateBridge::PublishWhiteboardTheme(WhiteboardTheme theme,

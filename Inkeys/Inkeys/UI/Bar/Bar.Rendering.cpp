@@ -3158,3 +3158,18 @@ D2D1_SIZE_F BarUIRendering::MeasureText(
 	result.height = static_cast<FLOAT>(lineCount * fontSize * 1.4);
 	return result;
 }
+
+void BarUIRendering::ColorPalette(ID2D1DeviceContext* dc, D2D1_RECT_F rect, bool darkTone, bool below, double opacity)
+{
+	if (!dc) return;
+	const D2D1_ROUNDED_RECT rounded{rect, 4, 4};
+	if (auto* hue = GetColorPickerHueGradientBrush(dc, {rect.left,rect.top}, {rect.right,rect.top}))
+	{
+		hue->SetOpacity(static_cast<float>(opacity)); dc->FillRoundedRectangle(rounded, hue);
+		const D2D1_POINT_2F nearPoint{rect.left, below ? rect.top : rect.bottom};
+		const D2D1_POINT_2F farPoint{rect.left, below ? rect.bottom : rect.top};
+		if (auto* tone = GetColorPickerToneGradientBrush(dc, darkTone,
+			darkTone ? nearPoint : farPoint, darkTone ? farPoint : nearPoint, static_cast<float>(opacity)))
+			dc->FillRoundedRectangle(rounded, tone);
+	}
+}

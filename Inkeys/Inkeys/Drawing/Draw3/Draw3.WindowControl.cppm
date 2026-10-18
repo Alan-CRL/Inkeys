@@ -103,11 +103,13 @@ export namespace Inkeys::Drawing::Draw3
 		PrepareExitAutoSave,
 		SetWhiteboardTheme,
 		WhiteboardPersistenceCompleted,
+		ShapeInteraction,
 	};
 
 	struct CanvasCommand
 	{
 		CanvasCommandType type = CanvasCommandType::Undo;
+		std::shared_ptr<const ShapeUiAction> shapeAction;
 		float deltaX = 0.0f;
 		float deltaY = 0.0f;
 		std::size_t pageIndex = 0;

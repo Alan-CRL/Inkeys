@@ -30,6 +30,7 @@ export namespace Inkeys::Window
 		PptMiddleRight,
 		Bar,
 		Setting,
+		SelectionOverlay,
 		DisplayObserver,
 		Count,
 	};

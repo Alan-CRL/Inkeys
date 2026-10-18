@@ -196,6 +196,24 @@ namespace Inkeys::Drawing::Draw3
 			shape->style.strokeOpacity, 0}, {}, std::nullopt, std::move(shape)));
 	}
 
+	bool InkCanvas::ReplaceStroke(size_t index, InkStroke replacement)
+	{
+		if (index >= strokes_.size() || !replacement.IsValid() || !replacement.Shape() ||
+			!strokes_[index].Shape() || strokes_[index].Shape()->id != replacement.Shape()->id) return false;
+		strokes_[index] = std::move(replacement);
+		return true;
+	}
+
+	bool InkCanvas::ReplaceShape(size_t index, const draw3::shapes::ShapeCommand& command)
+	{
+		if (index >= strokes_.size() || command.kind == draw3::shapes::CommandKind::Create ||
+			command.kind == draw3::shapes::CommandKind::Delete) return false;
+		auto candidate = strokes_[index].Shape();
+		if (!draw3::shapes::ApplyCommand(command, candidate) || !candidate) return false;
+		return ReplaceStroke(index, InkStroke({StoredInkType::Shape, candidate->style.strokeRgb,
+			candidate->style.strokeOpacity, 0}, {}, std::nullopt, std::move(candidate)));
+	}
+
 	void InkCanvas::ClearStrokes() noexcept
 	{
 		strokes_.clear();

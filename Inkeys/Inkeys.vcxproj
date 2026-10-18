@@ -880,6 +880,8 @@
 	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cpp" />
 	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cppm" />
 	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cpp" />
+	<ClCompile Include="Inkeys\UI\SelectionOverlay\SelectionOverlay.cppm" />
+	<ClCompile Include="Inkeys\UI\SelectionOverlay\SelectionOverlay.cpp" />
 	<ClCompile Include="Inkeys\UI\PageControl\PageControl.cppm" />
 	<ClCompile Include="Inkeys\UI\PageControl\PageControl.cpp" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
@@ -969,6 +971,8 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.ShapeEditor.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.ConstructionPrompt.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />

@@ -3,7 +3,7 @@
   "name": "shape-phase4-geometry",
   "title": "Phase 4 高级几何",
   "description": "多阶段构造、空间几何与复合控制；依赖 Phase2/3。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-10-17",
   "completedAt": null,
-  "branch": null,
+  "branch": "feature/shape",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,11 @@
   "children": [],
   "parent": "10-17-shape-selection-system",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "2026-10-18：用户批准的P3+逐点+P4限定范围已实现并通过自动验证；无GUI/Computer Use、无commit/push，保留待审阅/提交。 P4仅交付圆弧/扇形及六种空间几何；角度/平行/垂直等剩余项未完成，整体阶段仍in_progress。",
+  "meta": {
+    "reviewReady": true,
+    "validation": ".trellis/tasks/10-17-shape-phase3-selection/validation.md",
+    "validationDate": "2026-10-18",
+    "phaseComplete": false
+  }
 }

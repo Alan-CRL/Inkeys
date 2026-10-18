@@ -6,6 +6,7 @@
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../resource.h"
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include <d2d1_1helper.h>
 #include <wincodec.h>
 #include <crtdbg.h>
@@ -40,6 +41,10 @@ public:
 	static auto Categories(const BarGeometryAttributePanel& p) { return p.categoryList_.Snapshot(); }
 	static auto Attributes(const BarGeometryAttributePanel& p) { return p.attributeList_.Snapshot(); }
 	static auto Candidate(const BarGeometryAttributePanel& p) { return p.frame_; }
+	static auto PromptFrame(const BarConstructionPrompt& p) { return p.presented_; }
+	static const BarUiWordClass& PromptLabel(const BarConstructionPrompt& p) { return p.label_; }
+	static const BarButtonClass& PromptButton(const BarConstructionPrompt& p,int i) { return *p.buttons_[i]; }
+	static bool DockIndicatorVisible(const BarUISetClass& p) { return p.bottomDockIndicatorPresentedVisible.load(); }
 	static int Focused(const BarGeometryAttributePanel& p) { return p.focused_; }
 	static void Focus(BarGeometryAttributePanel& p, int item) { p.focused_ = item; }
 	static void Execute(BarGeometryAttributePanel& p, BarUISetClass& owner, int item, std::uint64_t revision) { p.Execute(owner, item, revision); }
@@ -231,15 +236,16 @@ namespace Inkeys::UI::Bar
 		expect(!owner.geometryAttribute.Active(), "content transition settles before next timer");
 
 		const auto& catalog = ShapeCategoryCatalog();
-		expect(catalog.size() == 36 && GeometryImplementedCategoryCount == 11 && GeometryControlCount == 59, "approved catalog has 36 UI tools and keeps only eleven business presets");
+		expect(catalog.size() == 36 && GeometryImplementedCategoryCount == 21 && GeometryControlCount == 59, "approved catalog has 36 UI tools and has twenty-one enabled business presets");
 		for (int i = 0; i < GeometryCategoryCount; ++i)
 		{
 			expect(catalog[i].key && catalog[i].resource && !ShapeCategoryLabel(i).empty(), "every catalog entry has stable UI key resource and label");
-			expect(catalog[i].preset.has_value() == (i < GeometryImplementedCategoryCount), "future catalog tools do not invent business preset mappings");
+			expect(catalog[i].preset.has_value() == (i < 15 || (i >= 18 && i < 24)), "future catalog tools do not invent business preset mappings");
 			for (int j = 0; j < i; ++j) expect(std::wstring(catalog[i].key) != catalog[j].key, "catalog UI keys are unique");
 		}
-		for (int item = GeometryImplementedCategoryCount; item < GeometryCategoryCount; ++item)
+		for (int item = 0; item < GeometryCategoryCount; ++item)
 		{
+			if (catalog[item].preset) continue;
 			caseContext = "disabled tool=" + std::to_string(item);
 			const auto before = GetStateModeVersionedSnapshot();
 			pointer(WM_MOUSEMOVE, item, false); tick(10);
@@ -265,7 +271,7 @@ namespace Inkeys::UI::Bar
 			{
 				owner.geometryAttribute.Keyboard(owner, key, true);
 				const int focus = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-				expect(focus < GeometryImplementedCategoryCount || focus >= GeometryCategoryCount, "keyboard navigation skips all twenty-five disabled categories");
+				expect(focus < 0 || focus >= GeometryCategoryCount || catalog[focus].preset.has_value(), "keyboard navigation skips all fifteen disabled categories");
 			}
 		owner.geometryAttribute.ResetPointerFeedback(); caseContext.clear(); tick(90);
 
@@ -285,7 +291,8 @@ namespace Inkeys::UI::Bar
 		pointer(WM_LBUTTONDOWN, 2, true);
 		ExMessage cancel{}; owner.geometryAttribute.Pointer(owner, cancel, true, true); pointer(WM_LBUTTONUP, 2, false, true); tick(60);
 		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse, "capture cancellation leaves tool unchanged");
-		for (int i = 0; i < GeometryImplementedCategoryCount; ++i) { click(i, i % 2 != 0); expect(static_cast<int>(GetShapeToolSpec(GetStateModeSnapshot()).preset) == i, "every category commits through normalized pointer path"); }
+		for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].preset) { click(i, i % 2 != 0); expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == *catalog[i].preset, "every enabled category commits through normalized pointer path"); }
+		preset(PresetKind::RegularPolygon); // 全类别遍历现在以Pyramid结束，轮播和边数用例须显式选择原目标。
 		expect(!BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute), "selected polygon stops carousel");
 		for (unsigned sides = 3; sides <= 12; ++sides)
 		{
@@ -521,8 +528,9 @@ namespace Inkeys::UI::Bar
 		std::array<unsigned,GeometryCategoryCount> futurePixelCases{};
 		auto checkFuturePixels = [&](const GeometryAttributePresentation& presented)
 		{
-			for (int i = GeometryImplementedCategoryCount; i < GeometryCategoryCount; ++i)
+			for (int i = 0; i < GeometryCategoryCount; ++i)
 			{
+				if (catalog[i].preset) continue;
 				const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i);
 				const EraserAttributeRect image{button.icon.inhX, button.icon.inhY, button.icon.inhX + button.icon.w.val, button.icon.inhY + button.icon.h.val};
 				const auto clipped = Intersect(image, presented.categoryClip);
@@ -627,7 +635,7 @@ namespace Inkeys::UI::Bar
 			expect(presented.panel.Width() * presented.zoom <= mapping.workArea.right - mapping.workArea.left + 1 &&
 				presented.panel.Height() * presented.zoom <= mapping.workArea.bottom - mapping.workArea.top + 1,
 				"runtime fit contains complete panel in actual work area");
-			const bool closed = wanted != PresetKind::Line && wanted != PresetKind::Arrow;
+			const bool closed = GetToolCapabilities(wanted).fill;
 			const bool stroke = !closed || fill != draw3::shapes::FillMode::Fill;
 			expect(presented.categoryViewportHeight > 0 && presented.categoryContentHeight >= presented.categoryViewportHeight - 0.01 &&
 				presented.scrollOffset >= -0.01 && presented.scrollOffset <= presented.scrollMaximum + 0.01, "category viewport and offset obey actual production scroll limits");
@@ -636,7 +644,7 @@ namespace Inkeys::UI::Bar
 			for (int i = 0; i < GeometryControlCount; ++i)
 			{
 				const bool shown = i < GeometryCategoryCount || i == GeometryCloseButton || ((i == GeometryCircleCenter || i == GeometryCircleBox) && wanted == PresetKind::Circle) ||
-					(i >= GeometrySidesBegin && i < GeometryStyleBegin && wanted == PresetKind::RegularPolygon) || (i >= GeometryStyleBegin && i < GeometryPatternBegin && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);
+					(i >= GeometrySidesBegin && i < GeometryStyleBegin && GetToolCapabilities(wanted).regularSides) || (i >= GeometryStyleBegin && i < GeometryPatternBegin && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);
 				const auto rect = presented.items[i]; const auto& hit = presented.hits[i];
 				const auto visibleRect = i < GeometryCategoryCount ? Intersect(rect, presented.categoryClip) : rect;
 				const bool actuallyVisible = shown && visibleRect.Width() > 0;
@@ -653,7 +661,7 @@ namespace Inkeys::UI::Bar
 					if (i >= GeometryCircleCenter && i < GeometryStyleBegin)
 						expect(rect.top >= presented.parameterClip.top - 0.01 && rect.bottom <= presented.parameterClip.bottom + 0.01,
 							"stable parameter buttons fit the exact clip used by production draw");
-					const bool actionable = i >= GeometryCategoryCount || i < GeometryImplementedCategoryCount;
+					const bool actionable = i >= GeometryCategoryCount || catalog[i].preset.has_value();
 					expect(hit.enabled == actionable && HitTestBarButton(hit, EraserRectCenterX(visibleRect), EraserRectCenterY(visibleRect)) == actionable,
 						"successful presentation enables current visible implemented controls and rejects future categories");
 					expect(std::abs(hit.boundsDip.left - visibleRect.left) < 0.02 && std::abs(hit.boundsDip.top - visibleRect.top) < 0.02 &&
@@ -666,7 +674,7 @@ namespace Inkeys::UI::Bar
 					const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i);
 					expect(owner.spec.MeasureText(button.name.content.GetVal(), button.name.size.val, DWRITE_FONT_WEIGHT_BOLD).width <= button.name.w.val + 0.5,
 						"actual scene localized category label fits measured shared slot");
-					if (i >= GeometryImplementedCategoryCount)
+					if (!catalog[i].preset)
 						expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - 0.30) < 0.000001 && std::abs(button.name.pct.val - 0.30) < 0.000001,
 							"disabled future category retains shared 0.30 content without becoming selected");
 				}
@@ -752,7 +760,7 @@ namespace Inkeys::UI::Bar
 				}
 			}
 		}
-		for (int i = GeometryImplementedCategoryCount; i < GeometryCategoryCount; ++i) expect(futurePixelCases[i] > 0, "all twenty-five future resources have real emitted pixel evidence");
+		for (int i = 0; i < GeometryCategoryCount; ++i) if (!catalog[i].preset) expect(futurePixelCases[i] > 0, "all fifteen future resources have real emitted pixel evidence");
 		report << "Complete production scene configurations=" << sceneCases << " AA pixel cases=" << antialiasAccepted << '\n'; caseContext = "animated attributes";
 		const auto attributes = BarGeometryAttributeTestAccess::Attributes(owner.geometryAttribute);
 		expect(attributes.size() == 12 && attributes[3]->preset == BarButtonPresetEnum::Divider && attributes[8]->preset == BarButtonPresetEnum::Divider,
@@ -818,8 +826,9 @@ namespace Inkeys::UI::Bar
 		expect(std::abs(scrollFrame.scrollOffset - scrollFrame.scrollMaximum) < 0.01 && scrollFrame.categoriesAcceptInput, "wheel clamps at the last row and restores category input after settle");
 		checkStableScene(PresetKind::Circle, draw3::shapes::FillMode::Outline);
 		expect(SavePng(L"Build/shape-p2-ui/panel-scroll-bottom.png", scenePixels, receipt.size.cx, receipt.size.cy), "restricted viewport bottom writes actual emitted crop");
-		for (int i = GeometryImplementedCategoryCount; i < GeometryCategoryCount; ++i)
+		for (int i = 0; i < GeometryCategoryCount; ++i)
 		{
+			if (catalog[i].preset) continue;
 			const auto current = owner.geometryAttribute.PresentationSnapshot(); const auto visible = Intersect(current.items[i], current.categoryClip);
 			const auto before = GetStateModeVersionedSnapshot();
 			if (visible.Width() > 0)
@@ -840,7 +849,7 @@ namespace Inkeys::UI::Bar
 		for (int i = 0; i < GeometryImplementedCategoryCount - 1; ++i) { owner.geometryAttribute.Keyboard(owner, VK_RIGHT, true); sceneTick(2); }
 		scrollFrame = owner.geometryAttribute.PresentationSnapshot();
 		const int focused = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-		expect(focused == GeometryImplementedCategoryCount - 1 && scrollFrame.hits[focused].enabled && scrollFrame.hits[focused].visible &&
+		expect(focused == 23 && scrollFrame.hits[focused].enabled && scrollFrame.hits[focused].visible &&
 			scrollFrame.items[focused].top >= scrollFrame.categoryClip.top - 0.01 && scrollFrame.items[focused].bottom <= scrollFrame.categoryClip.bottom + 0.01, "keyboard navigates only real tools and brings second-row focus fully inside viewport");
 		// 宽触控轨道通过公共Down/Move/Up回放，同时覆盖取消和跨代/跨工作区失效。
 		for (bool contact : {false, true})
@@ -920,7 +929,7 @@ namespace Inkeys::UI::Bar
 					for (int attempt = 0; attempt < GeometryControlCount; ++attempt)
 					{
 						owner.geometryAttribute.Keyboard(owner, VK_TAB, true); const int focused = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-						expect(focused < 0 || focused < GeometryImplementedCategoryCount || (current.hits[focused].visible && current.hits[focused].enabled), "keyboard traversal skips disabled future retiring or reflowing controls");
+						expect(focused < 0 || (focused < GeometryCategoryCount && catalog[focused].preset.has_value()) || (current.hits[focused].visible && current.hits[focused].enabled), "keyboard traversal skips disabled future retiring or reflowing controls");
 					}
 				}
 				for (int item = GeometryStyleBegin; item < GeometryCloseButton; ++item)
@@ -1038,11 +1047,95 @@ namespace Inkeys::UI::Bar
 				if (std::wstring(language) == L"en-US" && i == static_cast<int>(PresetKind::RegularPolygon)) saveScene(L"main-regular-polygon-en.png");
 			}
 		}
+		// 构造提示读取同一生产ULW成功截面，逐槽确认真实文字，不能以面板alpha代替内容。
+		auto checkPromptPixels = [&](const wchar_t* filename)
+		{
+			const auto frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+			GeometryAttributePresentation coordinates;coordinates.zoom=frame.zoom;
+			const auto panel=clientRect(frame.panel,coordinates);
+			const auto background=pixel((panel.left+panel.right)/2,panel.top+3*frame.zoom);
+			const auto ink=[&](EraserAttributeRect rect,COLORREF foreground)
+			{
+				unsigned covered=0;double peak=0;if(background[3]<180)return std::pair{covered,peak};
+				const std::array<double,3> target{double(GetBValue(foreground)),double(GetGValue(foreground)),double(GetRValue(foreground))};
+				std::array<double,3> base{},delta{};double norm=0;
+				for(int c=0;c<3;++c){base[c]=background[c]*255./background[3];delta[c]=target[c]-base[c];norm+=delta[c]*delta[c];}
+				if(norm<100)return std::pair{covered,peak};
+				for(LONG y=static_cast<LONG>(std::ceil(rect.top));y<rect.bottom;++y)for(LONG x=static_cast<LONG>(std::ceil(rect.left));x<rect.right;++x)
+				{
+					const auto raw=pixel(x,y);if(raw[3]<180)continue;
+					std::array<double,3> actual{};double projection=0,residual=0;
+					for(int c=0;c<3;++c){actual[c]=raw[c]*255./raw[3];projection+=(actual[c]-base[c])*delta[c];}projection/=norm;
+					for(int c=0;c<3;++c){const double difference=actual[c]-base[c]-projection*delta[c];residual+=difference*difference;}
+					if(projection>.20&&projection<1.15&&residual<(std::max)(324.,norm*.04)){++covered;peak=(std::max)(peak,projection);}
+				}return std::pair{covered,peak};
+			};
+			const auto checkWord=[&](const BarUiWordClass& word)
+			{
+				expect(word.size.val>0&&word.w.val>0&&word.h.val>0&&!word.content.GetVal().empty(),"construction prompt uses a real positive-size localized word slot");
+				const EraserAttributeRect slot{word.inhX,word.inhY,word.inhX+word.w.val,word.inhY+word.h.val};
+				const auto evidence=ink(clientRect(slot,coordinates),word.color.val);
+				expect(evidence.first>=3&&evidence.second>.35,"actual construction prompt label or action has foreground text pixels beyond its surface");
+				const EraserAttributeRect blank{panel.left+6*frame.zoom,panel.top+2*frame.zoom,panel.right-6*frame.zoom,panel.top+4*frame.zoom};
+				const auto negative=ink(blank,word.color.val);expect(negative.first==0,"construction text oracle rejects actual blank panel padding");
+			};
+			checkWord(BarGeometryAttributeTestAccess::PromptLabel(owner.constructionPrompt));
+			for(int i=0;i<3;++i)if(frame.buttons[i].visible)checkWord(BarGeometryAttributeTestAccess::PromptButton(owner.constructionPrompt,i).name);
+			std::filesystem::create_directories(L"Build/shape-p34-ui");
+			expect(SavePng(std::filesystem::path(L"Build/shape-p34-ui")/filename,scenePixels,receipt.size.cx,receipt.size.cy),"construction prompt PNG uses actual emitted production ULW pixels");
+		};
+		captureScene=true;
+		// 构造提示使用独立状态，同一完整Bar场景呈现；关闭时不污染原dock提示业务。
+		owner.barState.fold = false; owner.barState.geometryAttribute = false;
+		for (const auto presetKind : {PresetKind::Polygon, PresetKind::Arc, PresetKind::Cuboid, PresetKind::Cylinder})
+		{
+			auto construction = std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
+			construction->identity.session = 71; construction->identity.generation = 1;
+			construction->construction.active = true; construction->construction.preset = presetKind;
+			construction->construction.canBack = true; construction->construction.canComplete = presetKind == PresetKind::Polygon;
+			construction->construction.confirmedSteps = 1;
+			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot(construction); owner.UpdateRendering(false); sceneTick(70);
+			expect(owner.constructionPrompt.Visible(), "multi-contact session publishes its own production Bar prompt");
+			const auto regions = owner.constructionPrompt.PresentedRegions();
+			expect(regions[0].right > regions[0].left && regions[0].bottom > regions[0].top,
+				"construction prompt participates in successful presentation and window bounds");
+			expect(!BarGeometryAttributeTestAccess::DockIndicatorVisible(owner), "construction prompt takes priority over dock feedback without overwriting its state");
+			if(presetKind==PresetKind::Polygon)
+			{
+				checkPromptPixels(L"construction-normal.png");
+				const auto frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+				const auto currentMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
+				const EraserAttributeRect mainRect{currentMain->inhX,currentMain->inhY,currentMain->inhX+currentMain->w.val,currentMain->inhY+currentMain->h.val};
+				expect(Intersect(frame.panel,mainRect).Width()==0,"normal-work construction prompt never intersects the actual main bar");
+				expect(frame.panel.bottom+5<=mainRect.top+.01,"normal-work prompt keeps the original five-DIP gap above the main bar");
+			}
+			const auto before = GetStateModeVersionedSnapshot();
+			owner.constructionPrompt.Keyboard(owner, VK_TAB, true); owner.constructionPrompt.Keyboard(owner, VK_RIGHT, true);
+			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "prompt keyboard only navigates construction controls, never changes next-tool style");
+		}
+		BarGeometryAttributeTestAccess::Display(owner,460,420,192); owner.barStyle.configZoom=1;
+		auto smallPrompt = std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
+		smallPrompt->identity.session=72;smallPrompt->identity.generation=1;
+		smallPrompt->construction.active=true;smallPrompt->construction.preset=PresetKind::Polygon;
+		smallPrompt->construction.canBack=smallPrompt->construction.canComplete=true;smallPrompt->construction.confirmedSteps=3;
+		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot(smallPrompt);owner.UpdateRendering(false);sceneTick(90);
+		const auto prompt = BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+		expect(prompt.visible && prompt.input, "fixed-pixel high-DPI construction prompt settles and accepts controls");
+		for(const auto& button:prompt.buttons)
+		{
+			expect(button.visible && button.enabled && button.boundsDip.left>=prompt.panel.left && button.boundsDip.right<=prompt.panel.right &&
+				button.boundsDip.top>=prompt.panel.top && button.boundsDip.bottom<=prompt.panel.bottom,
+				"Finish Back Cancel stay fully inside wrapped prompt without shrinking standard buttons");
+		}
+		checkPromptPixels(L"construction-small-200.png");
+		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({}); owner.UpdateRendering(false); sceneTick(70);
+		expect(!owner.constructionPrompt.Visible(), "finished or cancelled construction prompt retires fully");
 		scene = {}; owner.spec.DiscardDeviceResources();
 		report << "Actual scene commits=" << actualCommits << '\n';
 		globalPath = originalGlobalPath;
 		report << "Geometry UI checks=" << checks << " frames=" << frames << " failures=" << failures << '\n';
 		std::cerr << "Geometry UI checks=" << checks << " frames=" << frames << " failures=" << failures << '\n'; report.close();
+
 		RenderPipeline::Shutdown(); CoUninitialize(); return failures == 0 ? 0 : 1;
 	}
 }

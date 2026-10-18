@@ -54,7 +54,7 @@ namespace
 		shape.w.SetDirect(r.Width()); shape.h.SetDirect(r.Height());
 		shape.UpInh(BarUiInheritClass(r.left, r.top));
 	}
-	bool OpenPreset(PresetKind kind) noexcept { return kind == PresetKind::Line || kind == PresetKind::Arrow; }
+	bool OpenPreset(PresetKind kind) noexcept { return !GetToolCapabilities(kind).fill; }
 	bool HasButtonOpacity(const BarButtonClass& button)
 	{
 		return button.icon.pct.val > 0.000001 || button.name.pct.val > 0.000001 || button.button.pct.val > 0.000001
@@ -100,19 +100,19 @@ namespace Inkeys::UI::Bar
 			{L"rhombus",L"barShapeRhombus",t.RhombusLabel,L"菱形",PresetKind::Rhombus},
 			{L"trapezoid",L"barShapeTrapezoid",t.TrapezoidLabel,L"梯形",PresetKind::Trapezoid},
 			{L"regularPolygon",L"barShapePolygon3",t.RegularPolygonLabel,L"正多边形",PresetKind::RegularPolygon},
-			{L"polyline",L"barShapePolyline",t.PolylineLabel,L"折线",std::nullopt},
-			{L"polygon",L"barShapePolygon",t.PolygonLabel,L"多边形",std::nullopt},
-			{L"arc",L"barShapeArc",t.ArcLabel,L"圆弧",std::nullopt},
-			{L"sector",L"barShapeSector",t.SectorLabel,L"扇形",std::nullopt},
+			{L"polyline",L"barShapePolyline",t.PolylineLabel,L"折线",PresetKind::Polyline},
+			{L"polygon",L"barShapePolygon",t.PolygonLabel,L"多边形",PresetKind::Polygon},
+			{L"arc",L"barShapeArc",t.ArcLabel,L"圆弧",PresetKind::Arc},
+			{L"sector",L"barShapeSector",t.SectorLabel,L"扇形",PresetKind::Sector},
 			{L"angle",L"barShapeAngle",t.AngleLabel,L"角度",std::nullopt},
 			{L"parallel",L"barShapeParallel",t.ParallelLabel,L"平行线",std::nullopt},
 			{L"perpendicular",L"barShapePerpendicular",t.PerpendicularLabel,L"垂直线",std::nullopt},
-			{L"cuboid",L"barShapeCuboid",t.CuboidLabel,L"长方体",std::nullopt},
-			{L"cube",L"barShapeCube",t.CubeLabel,L"正方体",std::nullopt},
-			{L"cylinder",L"barShapeCylinder",t.CylinderLabel,L"圆柱",std::nullopt},
-			{L"cone",L"barShapeCone",t.ConeLabel,L"圆锥",std::nullopt},
-			{L"prism",L"barShapePrism",t.PrismLabel,L"棱柱",std::nullopt},
-			{L"pyramid",L"barShapePyramid",t.PyramidLabel,L"棱锥",std::nullopt},
+			{L"cuboid",L"barShapeCuboid",t.CuboidLabel,L"长方体",PresetKind::Cuboid},
+			{L"cube",L"barShapeCube",t.CubeLabel,L"正方体",PresetKind::Cube},
+			{L"cylinder",L"barShapeCylinder",t.CylinderLabel,L"圆柱",PresetKind::Cylinder},
+			{L"cone",L"barShapeCone",t.ConeLabel,L"圆锥",PresetKind::Cone},
+			{L"prism",L"barShapePrism",t.PrismLabel,L"棱柱",PresetKind::Prism},
+			{L"pyramid",L"barShapePyramid",t.PyramidLabel,L"棱锥",PresetKind::Pyramid},
 			{L"numberLine",L"barShapeNumberLine",t.NumberLineLabel,L"数轴",std::nullopt},
 			{L"cartesian",L"barShapeCartesian",t.CartesianLabel,L"直角坐标系",std::nullopt},
 			{L"grid",L"barShapeGrid",t.GridLabel,L"网格",std::nullopt},
@@ -149,7 +149,9 @@ namespace Inkeys::UI::Bar
 		case PresetKind::Trapezoid: return L"barShapeTrapezoid";
 		case PresetKind::RegularPolygon:
 			return L"barShapePolygon" + std::to_wstring((std::clamp)(carouselSides.value_or(tool.sides), 3u, 12u));
-		default: return L"barGeometry";
+		default:
+			for (const auto& category : ShapeCategoryCatalog()) if (category.preset == tool.preset) return category.resource;
+			return L"barGeometry";
 		}
 	}
 	wstring ShapeToolLabel(PresetKind preset)
@@ -168,7 +170,9 @@ namespace Inkeys::UI::Bar
 		case PresetKind::Rhombus: return I18n::getWOr(t.RhombusLabel, L"菱形");
 		case PresetKind::Trapezoid: return I18n::getWOr(t.TrapezoidLabel, L"梯形");
 		case PresetKind::RegularPolygon: return I18n::getWOr(t.RegularPolygonLabel, L"正多边形");
-		default: return {};
+		default:
+			for (size_t i = 0; i < ShapeCategoryCatalog().size(); ++i) if (ShapeCategoryCatalog()[i].preset == preset) return ShapeCategoryLabel(i);
+			return {};
 		}
 	}
 }
@@ -297,7 +301,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		(workArea.right - origin.x) / zoom - rigidX, (workArea.bottom - origin.y) / zoom - rigidY};
 	const auto tool = GetShapeToolSpec(state); const auto style = GetShapeStyle(state);
 	const bool showStyle = !OpenPreset(tool.preset), showStroke = !showStyle || style.stroke;
-	const bool circle = tool.preset == PresetKind::Circle, polygon = tool.preset == PresetKind::RegularPolygon;
+	const bool circle = tool.preset == PresetKind::Circle, polygon = GetToolCapabilities(tool.preset).regularSides;
 
 	const auto standard = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
 	const bool typographyChanged = measuredFontFamily_ != owner.spec.GetFontFamily() || measuredLocale_ != owner.spec.GetTextLocale()

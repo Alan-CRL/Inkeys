@@ -1,4 +1,5 @@
 ﻿#include "../inkStrokeModelerTest/draw3/shape_core.h"
+#include "../inkStrokeModelerTest/draw3/shape_interaction.h"
 
 #include <algorithm>
 #include <cmath>
@@ -336,6 +337,148 @@ int RunShapeCoreTests()
 	SHAPE_CHECK(!MakePresetShape({ PresetKind::RegularPolygon,CreationMode::CenterRadius,13 }, { 0,0 }, { 20,30 }, {}, Id(9)));
 	SHAPE_CHECK(!MakePresetShape({ PresetKind::Circle,CreationMode::Points,3 }, { 0,0 }, { 20,30 }, {}, Id(9)));
 	SHAPE_CHECK(!MakePresetShape({}, { std::numeric_limits<float>::quiet_NaN(),0 }, { 20,30 }, {}, Id(9)));
+	// P3/P4：所有高级参数走同一工厂、编辑、渲染与快照，不另建运行期历史。
+	for (uint32_t value = uint32_t(PresetKind::Polyline); value <= uint32_t(PresetKind::Pyramid); ++value)
+	{
+		const auto preset = static_cast<PresetKind>(value); const auto capability = GetToolCapabilities(preset);
+		SHAPE_CHECK(capability.enabled && capability.multiStage);
+		for (float sign : { -1.0f,1.0f }) for (uint32_t pattern = 0; pattern < 4; ++pattern)
+		{
+			Construction c; c.tool = { preset,DefaultCreationMode(preset),5 }; c.start = { 30,70 }; c.end = { 130,110 };
+			if (capability.points) c.parameters = VertexConstruction{ { { 10,10 },{ 100,10 },{ 50,40 },{ 100,100 },{ 10,100 } } };
+			else if (preset == PresetKind::Arc || preset == PresetKind::Sector) c.parameters = ArcConstruction{ sign * 4.4f };
+			else if (preset == PresetKind::Cuboid || preset == PresetKind::Cube) c.parameters = SolidConstruction{ { sign * 25,-30 },0 };
+			else c.parameters = SolidConstruction{ {},sign * 60 };
+			ShapeStyle style; style.width = 4; style.strokeOpacity = .5f; style.linePattern = static_cast<LinePattern>(pattern);
+			auto advanced = MakeConstructedShape(c, style, Id(11), 10, &error);
+			SHAPE_CHECK(advanced && Validate(*advanced)); if (!advanced) continue;
+			SHAPE_CHECK(BuildGeometry(*advanced, geometry) && geometry.bounds.valid);
+			SHAPE_CHECK(BuildRenderData(*advanced, render) && !render.batches.empty());
+			if (preset >= PresetKind::Cuboid)
+			{
+				SHAPE_CHECK(advanced->kind == Kind::Compound && advanced->parts.size() >= 4);
+				SHAPE_CHECK(std::any_of(advanced->parts.begin(), advanced->parts.end(), [](const ShapePart& part)
+					{ return part.style && part.style->linePattern == LinePattern::Dashed; }));
+			}
+			const auto handles = BuildEditHandles(*advanced);
+			SHAPE_CHECK(!handles.empty());
+			for (const auto& handle : handles)
+			{
+				// 小幅有效移动，非法的几何约束边界可拒绝，但不允许改写原始快照。
+				const auto before = *advanced; const auto edited = EditShape(before, handle.id, handle.position,
+					{ handle.position.x + 2,handle.position.y - 3 }, 11);
+				if (edited) SHAPE_CHECK(Validate(*edited) && edited->id == before.id && edited->revision == 11 && edited->style.width == before.style.width);
+				SHAPE_CHECK(before == *advanced);
+			}
+			auto moved = EditShape(*advanced, 0, { 0,0 }, { -11,13 }, 11);
+			SHAPE_CHECK(moved && moved->transform.dx == -11 && moved->transform.dy == 13 && moved->construction == advanced->construction);
+			style.width = 7; auto restyled = RestyleShape(*advanced, style, 12);
+			SHAPE_CHECK(restyled && restyled->style.width == 7 && restyled->construction == advanced->construction);
+			auto malformed = c; malformed.parameters = std::monostate{};
+			SHAPE_CHECK(!MakeConstructedShape(malformed, style, Id(11)));
+		}
+	}
+	for (uint32_t value = 0; value <= uint32_t(PresetKind::RegularPolygon); ++value)
+	{
+		const auto preset = static_cast<PresetKind>(value); const auto mode = DefaultCreationMode(preset);
+		const auto object = MakePresetShape({ preset,mode,5 }, { 20,30 }, { 120,90 }, {}, Id(12), 7);
+		SHAPE_CHECK(object); if (!object) continue;
+		const auto handles = BuildEditHandles(*object);
+		if (preset == PresetKind::Circle) SHAPE_CHECK(handles.size() == 2 && handles[0].kind == EditHandleKind::Center);
+		if (preset == PresetKind::Line || preset == PresetKind::Arrow || preset == PresetKind::RegularPolygon) SHAPE_CHECK(handles.size() == 3);
+		if (preset == PresetKind::Ellipse) SHAPE_CHECK(handles.size() == 4);
+		for (const auto& handle : handles)
+		{
+			const auto edited = EditShape(*object, handle.id, handle.position, { handle.position.x + 4,handle.position.y + 3 }, 8);
+			SHAPE_CHECK(edited && edited->style.width == object->style.width && Validate(*edited));
+		}
+		SHAPE_CHECK(!EditShape(*object, 999, { 0,0 }, { 10,10 }, 8));
+		SHAPE_CHECK(!EditShape(*object, 0, { 0,0 }, { 10,10 }, 7));
+	}
+	const auto shortArrow = MakePresetShape({ PresetKind::Arrow,CreationMode::Drag }, { 0,0 }, { 2,0 }, {}, Id(12));
+	SHAPE_CHECK(shortArrow && shortArrow->parts[1].geometry.vertices[0] == (Vec2{ -4,3 }));
+	if (shortArrow)
+	{
+		const auto longer = EditShape(*shortArrow, 1001, { 2,0 }, { 100,0 }, 2);
+		SHAPE_CHECK(longer && longer->parts[1].geometry.vertices[0] == (Vec2{ 94,3 }));
+		ShapeStyle wide = shortArrow->style; wide.width = 5; auto wider = RestyleShape(*shortArrow, wide, 2);
+		SHAPE_CHECK(wider && wider->parts[1].geometry.vertices[0] == (Vec2{ -13,7.5f }));
+	}
+	ConstructionSession session;
+	SHAPE_CHECK(session.Begin({ PresetKind::Polygon,CreationMode::Points }, {}, Id(13)));
+	SHAPE_CHECK(session.ConfirmDrag({ 0,0 }, { 0,0 }) && !session.CanComplete());
+	SHAPE_CHECK(session.PreviewDrag({ 100,0 }, { 120,0 }) && !session.CanComplete()); // 预览点不进入真实顶点。
+	SHAPE_CHECK(session.ConfirmDrag({ 100,0 }, { 100,0 }) && !session.CanComplete());
+	SHAPE_CHECK(session.ConfirmDrag({ 100,100 }, { 100,100 }) && session.CanComplete());
+	SHAPE_CHECK(session.PreviewDrag({ 0,100 }, { -100,100 }));
+	auto completed = session.Complete();
+	SHAPE_CHECK(completed && completed->geometry.vertices.size() == 3 && completed->geometry.vertices.back() == (Vec2{ 100,100 }));
+	SHAPE_CHECK(!session.Status().active);
+	SHAPE_CHECK(session.Begin({ PresetKind::Polygon,CreationMode::Points }, {}, Id(13)));
+	for (Vec2 v : { Vec2{ 0,0 },Vec2{ 100,100 },Vec2{ 0,100 },Vec2{ 100,0 } }) SHAPE_CHECK(session.ConfirmDrag(v, v));
+	SHAPE_CHECK(!session.CanComplete() && !session.Complete());
+	SHAPE_CHECK(session.Back() && session.CanComplete()); session.Cancel();
+	SHAPE_CHECK(!session.Status().active && !session.Candidate());
+	for (PresetKind preset : { PresetKind::Arc,PresetKind::Sector }) for (float sign : { -1.0f,1.0f })
+	{
+		SHAPE_CHECK(session.Begin({ preset,CreationMode::MultiStage }, {}, Id(14)));
+		SHAPE_CHECK(session.ConfirmDrag({ 0,0 }, { 100,0 }) && !session.CanComplete());
+		for (uint32_t i = 1; i <= 24; ++i)
+		{
+			const float angle = sign * 4.4f * i / 24;
+			const Vec2 raw{ 100 * std::cos(angle),100 * std::sin(angle) };
+			session.ObserveRaw(raw);
+			const Vec2 predicted{ 100 * std::cos(angle + sign * .08f),100 * std::sin(angle + sign * .08f) };
+			SHAPE_CHECK(session.PreviewDrag({ 100,0 }, predicted));
+		}
+		const Vec2 final{ 100 * std::cos(sign * 4.4f),100 * std::sin(sign * 4.4f) };
+		SHAPE_CHECK(session.ConfirmDrag({ 100,0 }, final) && session.Status().finished);
+		completed = session.Complete();
+		SHAPE_CHECK(completed && std::abs(std::get<ArcConstruction>(completed->construction->parameters).sweepRadians - sign * 4.4f) < .0001f);
+	}
+	for (uint32_t value = uint32_t(PresetKind::Cuboid); value <= uint32_t(PresetKind::Pyramid); ++value)
+	{
+		const auto preset = static_cast<PresetKind>(value);
+		SHAPE_CHECK(session.Begin({ preset,CreationMode::MultiStage,5 }, {}, Id(14)));
+		SHAPE_CHECK(session.PreviewDrag({ 20,70 }, { 100,100 }));
+		SHAPE_CHECK(session.ConfirmDrag({ 20,70 }, { 100,100 }) && session.Status().confirmedSteps == 1);
+		SHAPE_CHECK(session.PreviewDrag({ 50,80 }, { 90,10 }));
+		SHAPE_CHECK(session.ConfirmDrag({ 50,80 }, { 80,20 }) && session.CanComplete());
+		SHAPE_CHECK(session.Back() && session.Status().confirmedSteps == 1 && !session.CanComplete());
+		SHAPE_CHECK(session.ConfirmDrag({ 50,80 }, { 80,20 })); completed = session.Complete();
+		SHAPE_CHECK(completed && completed->construction && completed->kind == Kind::Compound);
+		if (completed)
+		{
+			const auto& solid = std::get<SolidConstruction>(completed->construction->parameters);
+			SHAPE_CHECK(value <= uint32_t(PresetKind::Cube) ? solid.depth == (Vec2{ 30,-60 }) : solid.height == -60);
+		}
+	}
+	const auto legacyEdit = MakeLegacyShape(LegacyKind::OutlineRectangle, { 0,0 }, { 100,100 }, 4, 0, 1, Id(15));
+	if (legacyEdit)
+	{
+		auto upgraded = EditShape(*legacyEdit, 0, { 0,0 }, { 5,7 }, 2, { 2,.25f });
+		SHAPE_CHECK(upgraded && upgraded->geometry.radius == 8 && upgraded->legacyKind == LegacyKind::None && upgraded->id == legacyEdit->id);
+	}
+	RevisionAllocator revisions;
+	SHAPE_CHECK(revisions.Next(Id(16), 20) == 21 && revisions.Next(Id(16), 4) == 22 && revisions.Next(Id(17), 1) == 2);
+	SHAPE_CHECK(revisions.Next(Id(16), std::numeric_limits<uint64_t>::max()) == 0 && revisions.Next({}) == 0);
+	for (float x : {-1.0f,1.0f}) for (float y : {-1.0f,1.0f})
+	{
+		Construction cube; cube.tool = {PresetKind::Cube,CreationMode::MultiStage}; cube.start = {20,30}; cube.end = {20 + x * 100,30 + y * 35};
+		cube.parameters = SolidConstruction{{25,-40},0};
+		const auto object = MakeConstructedShape(cube,{},Id(18)); SHAPE_CHECK(object);
+		if (!object) continue;
+		SHAPE_CHECK(object->construction->end == (Vec2{20 + x * 100,30 + y * 100}));
+		const auto handles = BuildEditHandles(*object);
+		const auto corner = std::find_if(handles.begin(),handles.end(),[](const EditHandle& h) { return h.id == 1001; });
+		SHAPE_CHECK(corner != handles.end() && corner->position == object->construction->end);
+		if (corner != handles.end())
+		{
+			const auto edited = EditShape(*object,1001,corner->position,{corner->position.x + x * 15,corner->position.y + y * 5},2);
+			SHAPE_CHECK(edited && std::abs(edited->construction->end.x - edited->construction->start.x) ==
+				std::abs(edited->construction->end.y - edited->construction->start.y));
+		}
+	}
 	std::cout << "Shape core tests: " << failures << " failure(s)\n";
 	return failures;
 }

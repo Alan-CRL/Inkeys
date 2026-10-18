@@ -3,7 +3,7 @@
   "name": "shape-phase3-selection",
   "title": "Phase 3 选择与浮动编辑",
   "description": "SelectionOverlay、图形变换/属性编辑/历史及主栏上方绘制提示；依赖已完成Phase1/2，提示供后续逐点与空间几何复用。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-10-17",
   "completedAt": null,
-  "branch": null,
+  "branch": "feature/shape",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,10 @@
   "children": [],
   "parent": "10-17-shape-selection-system",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "2026-10-18：用户批准的P3+逐点+P4限定范围已实现并通过自动验证；无GUI/Computer Use、无commit/push，保留待审阅/提交。",
+  "meta": {
+    "reviewReady": true,
+    "validation": ".trellis/tasks/10-17-shape-phase3-selection/validation.md",
+    "validationDate": "2026-10-18"
+  }
 }

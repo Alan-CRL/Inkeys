@@ -3,7 +3,7 @@
   "name": "shape-point-tools",
   "title": "P3后 逐点折线与任意多边形",
   "description": "P3提示控件完成后接入逐点折线与任意多边形。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-10-17",
   "completedAt": null,
-  "branch": null,
+  "branch": "feature/shape",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,10 @@
   "children": [],
   "parent": "10-17-shape-selection-system",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "2026-10-18：用户批准的P3+逐点+P4限定范围已实现并通过自动验证；无GUI/Computer Use、无commit/push，保留待审阅/提交。",
+  "meta": {
+    "reviewReady": true,
+    "validation": ".trellis/tasks/10-17-shape-phase3-selection/validation.md",
+    "validationDate": "2026-10-18"
+  }
 }

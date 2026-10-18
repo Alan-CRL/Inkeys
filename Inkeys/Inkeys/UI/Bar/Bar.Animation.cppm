@@ -851,6 +851,15 @@ export
 			timelineStartProgress = 0.0;
 			continueTimelinePhase = false;
 		}
+		// 目标窗口改变裁剪原点时平移整条曲线，保持屏幕上的当前值与动画进度。
+		void ShiftOrigin(double delta)
+		{
+			if (!isfinite(delta) || delta == 0) return;
+			BarUiAnimationTransactionGuardClass guard(transaction);
+			val = static_cast<double>(val) + delta; tar = static_cast<double>(tar) + delta;
+			startV = static_cast<double>(startV) + delta; middleV = static_cast<double>(middleV) + delta;
+		}
+
 		void Initialization(double valT,
 			BarUiValueModeEnum modT = BarUiValueModeEnum::Variable,
 			optional<double> desT = nullopt)

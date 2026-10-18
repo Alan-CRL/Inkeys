@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "Bar.InteractionWorker.h"
 #include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
@@ -350,7 +351,7 @@ namespace Inkeys::UI::Bar
 	bool ApplyBarThicknessPresetIfRevision(int preset, std::uint64_t revision, bool save = true);
 	inline constexpr UINT_PTR GeometryCarouselTimerId = 0x494B4305;
 	// 目录属于UI层；没有真实preset的未来工具只占位，不能进入业务状态或文档。
-	inline constexpr int GeometryCategoryCount = 36, GeometryImplementedCategoryCount = 11;
+	inline constexpr int GeometryCategoryCount = 36, GeometryImplementedCategoryCount = 21;
 	inline constexpr int GeometryCircleCenter = GeometryCategoryCount, GeometryCircleBox = GeometryCircleCenter + 1;
 	inline constexpr int GeometrySidesBegin = GeometryCircleBox + 1, GeometryStyleBegin = GeometrySidesBegin + 10;
 	inline constexpr int GeometryPatternBegin = GeometryStyleBegin + 3, GeometryThicknessBegin = GeometryPatternBegin + 4;
@@ -379,6 +380,47 @@ namespace Inkeys::UI::Bar
 		draw3::shapes::ToolSpec tool{};
 	};
 }
+
+// 跨笔构造提示独占状态；沿用居中提示锚点和公共按钮，不覆盖原dock提示状态。
+class BarConstructionPrompt
+{
+	friend class BarGeometryAttributeTestAccess;
+public:
+	bool Advance(BarUISetClass&, std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot>, double dt, double speed,
+		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY);
+	void Draw(BarUIRendering&, ID2D1DeviceContext*);
+	void CommitPresented();
+	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled = false);
+	bool Keyboard(BarUISetClass&, BYTE, bool down);
+	bool Visible() const noexcept { return visible_.load(); }
+	bool Changed() const noexcept { return changed_; }
+	RECT Bounds() const;
+	std::array<RECT,1> PresentedRegions() const;
+private:
+	void Initialize();
+	struct Frame
+	{
+		Inkeys::Drawing::Draw3::ShapeUiIdentity identity;
+		Inkeys::UI::Bar::EraserAttributeRect panel;
+		std::array<Inkeys::UI::Bar::BarButtonHitSnapshot,3> buttons;
+		double zoom = 1, opacity = 0;
+		bool visible = false, input = false;
+	};
+	Frame frame_, presented_;
+	mutable std::mutex mutex_;
+	BarButtonListClass list_;
+	std::array<std::shared_ptr<BarButtonClass>,3> buttons_;
+	std::array<BarUiValueClass,3> x_, y_;
+	BarUiShapeClass surface_;
+	BarUiWordClass label_;
+	BarUiPctClass opacity_{0};
+	BarUiValueClass left_, top_, width_, height_;
+	Inkeys::Drawing::Draw3::ShapeUiIdentity pressedIdentity_;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	int appliedHover_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	bool initialized_ = false, changed_ = false;
+};
 
 // 图形面板仅保存拓扑和资源，按钮行为与动画交给共享 BarButton 运行时。
 class BarGeometryAttributePanel
@@ -717,6 +759,7 @@ public:
 	BarStateClass barState;
 	BarStyleClass barStyle;
 	BarGeometryAttributePanel geometryAttribute;
+	BarConstructionPrompt constructionPrompt;
 	BarEraserAttributePanel eraserAttribute;
 	BarRecallAttributePanel recallAttribute;
 	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。

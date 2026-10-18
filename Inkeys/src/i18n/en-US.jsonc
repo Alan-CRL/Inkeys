@@ -118,6 +118,19 @@
         "ThicknessOverflowTitle": "Ink size exceeds the preview",
         "ThicknessOverflowBody": "The preview size may differ from the drawn ink."
       },
+      "ShapeConstruction":
+      {
+        "NextVertex": "Place the next vertex",
+        "RadiusStep": "Set center and radius",
+        "SweepStep": "Set the arc sweep",
+        "FrontStep": "Set the front face",
+        "DepthStep": "Set depth",
+        "BaseStep": "Set the base",
+        "HeightStep": "Set height",
+        "Complete": "Finish",
+        "Back": "Back",
+        "CancelAction": "Cancel"
+      },
       "GeometryAttributes":
       {
         "StraightLineLabel": "Line",

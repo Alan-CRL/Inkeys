@@ -12,10 +12,35 @@ namespace
 	// SetWindowPos 会同步重入 Drawpad WndProc，调用闸门必须允许同一 owner 线程嵌套。
 	std::recursive_mutex productCallMutex;
 	std::atomic_bool productStopping = false;
+	std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot> shapeUiSnapshot;
+	std::mutex shapeUiRefreshMutex;
+	Inkeys::Drawing::Draw3::ShapeUiRefresh shapeUiRefresh = nullptr;
+	void* shapeUiRefreshContext = nullptr;
 }
 
 namespace Inkeys::Drawing::Draw3
 {
+	std::shared_ptr<const ShapeUiSnapshot> ProductShapeUiSnapshot() noexcept
+	{ return std::atomic_load_explicit(&shapeUiSnapshot,std::memory_order_acquire); }
+	void PublishShapeUiSnapshot(std::shared_ptr<const ShapeUiSnapshot> snapshot) noexcept
+	{
+		std::atomic_store_explicit(&shapeUiSnapshot,std::move(snapshot),std::memory_order_release);
+		std::scoped_lock lock(shapeUiRefreshMutex);
+		if (shapeUiRefresh) shapeUiRefresh(shapeUiRefreshContext);
+	}
+	void SetShapeUiRefreshCallback(ShapeUiRefresh callback, void* context) noexcept
+	{
+		std::scoped_lock lock(shapeUiRefreshMutex);
+		shapeUiRefresh = callback; shapeUiRefreshContext = context;
+	}
+	Bridge::CommandResult PublishShapeUiAction(const ShapeUiAction& action) noexcept
+	{
+		std::scoped_lock lock(productCallMutex);
+		if (productStopping.load(std::memory_order_acquire) || !productHost.Running())
+			return Bridge::CommandResult::NotRunning;
+		return productHost.PublishShapeAction(action);
+	}
+
 	Bridge::CommandResult RequestWhiteboardTheme(const WhiteboardTheme& theme,
 		std::uint64_t generation, std::size_t page) noexcept
 	{
@@ -50,6 +75,7 @@ namespace Inkeys::Drawing::Draw3
 			std::scoped_lock callLock(productCallMutex);
 		}
 		productHost.Stop();
+		PublishShapeUiSnapshot({});
 		productStopping.store(false, std::memory_order_release);
 	}
 

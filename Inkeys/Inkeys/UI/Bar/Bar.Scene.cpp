@@ -10,6 +10,7 @@ module;
 #include <utility>
 #include <windows.h>
 #include "Bar.DirtyRegion.h"
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "Bar.InteractionWorker.h"
 #include "../Whiteboard/Whiteboard.Theme.h"
 
@@ -89,6 +90,9 @@ namespace Inkeys::UI::Bar
 				&& a.edgeLightingEnabled==b.edgeLightingEnabled;
 		}
 	}
+
+	BarSurfaceSharedLighting ReadShapeEditorSharedLighting() noexcept
+	{ std::scoped_lock lock(lightingMutex); return sharedLighting; }
 
 	BarUiFrameLightingSnapshot ResolveBarSurfaceFrameLightingSnapshot(
 		const BarSurfaceSharedLighting& lighting,const RECT& bounds,LONG outset) noexcept
@@ -701,6 +705,8 @@ namespace Inkeys::UI::Bar
 				if(surface->impl_->NeedsLightingUpdate(previous,value))targets.push_back(surface->impl_->SnapshotHooks());
 		}
 		for(const auto& hooks:targets){if(hooks.invalidate)hooks.invalidate();if(hooks.wake)hooks.wake();}
+		const auto shape = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+		if (shape && shape->object) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
 	}
 	void BarPageSurface::Reset() noexcept
 	{

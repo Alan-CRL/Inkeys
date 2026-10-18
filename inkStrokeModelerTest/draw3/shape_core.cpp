@@ -1,4 +1,5 @@
 ﻿#include "shape_core.h"
+#include "shape_interaction.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,13 +50,17 @@ namespace
 			Finite(s.width) && s.width > 0 && Finite(s.dashOffset) &&
 			static_cast<uint32_t>(s.linePattern) <= static_cast<uint32_t>(LinePattern::DashDot);
 	}
+	#include "shape_presets.inl"
 	bool ExpandPreset(const Construction& c, const ShapeStyle& style, ShapeObject& out, std::string& error)
 	{
 		const auto& tool = c.tool;
-		if (static_cast<uint32_t>(tool.preset) > static_cast<uint32_t>(PresetKind::RegularPolygon) ||
+		if (static_cast<uint32_t>(tool.preset) > static_cast<uint32_t>(PresetKind::Pyramid) ||
 			tool.sides < 3 || tool.sides > 12 || !Finite(tool.rectangleCornerRadius) || tool.rectangleCornerRadius < 0 ||
-			!Finite(c.start) || !Finite(c.end))
+			!Finite(c.start) || !Finite(c.end) || (c.legacyArrow && tool.preset != PresetKind::Arrow))
 		{ error = "invalid construction parameters"; return false; }
+		if (tool.preset >= PresetKind::Polyline) return ExpandAdvanced(c, style, out, error);
+		if (!std::holds_alternative<std::monostate>(c.parameters) && !std::holds_alternative<VertexConstruction>(c.parameters))
+		{ error = "unexpected planar parameters"; return false; }
 		const bool center = tool.creationMode == CreationMode::CenterRadius;
 		if (tool.preset == PresetKind::Circle ? !center && tool.creationMode != CreationMode::Drag :
 			tool.preset == PresetKind::RegularPolygon ? !center : tool.creationMode != CreationMode::Drag)
@@ -84,8 +89,8 @@ namespace
 			out.kind = Kind::Compound;
 			ShapePart shaft; shaft.id = 1; shaft.kind = Kind::Line;
 			shaft.geometry.start = start; shaft.geometry.end = end;
-			// 短箭头按长度收缩，粗线箭头保留可辨认的头部，不生成倒向箭杆。
-			const float head = std::min(length * .4f, std::max(length * .2f, style.width * 3));
+			// 新箭头只随线宽改变头部；v2旧文件显式保留原规则。
+			const float head = c.legacyArrow ? std::min(length * .4f, std::max(length * .2f, style.width * 3)) : style.width * 3;
 			const Vec2 direction{ (end.x - start.x) / length, (end.y - start.y) / length };
 			const Vec2 base{ end.x - direction.x * head, end.y - direction.y * head };
 			ShapePart tip; tip.id = 2; tip.kind = Kind::Polyline; tip.style = style;
@@ -132,6 +137,15 @@ namespace
 					static_cast<float>(start.y + x * std::sin(angle) + y * std::cos(angle)) });
 			}
 			break;
+		}
+		if (const auto* vertices = std::get_if<VertexConstruction>(&c.parameters))
+		{
+			if (tool.preset != PresetKind::Triangle && tool.preset != PresetKind::Parallelogram &&
+				tool.preset != PresetKind::Rhombus && tool.preset != PresetKind::Trapezoid)
+			{ error = "unexpected vertex parameters"; return false; }
+			out.geometry.vertices = vertices->vertices;
+			if (!ValidPlanarVertices(tool.preset, vertices->vertices))
+			{ error = "planar constraint violated"; return false; }
 		}
 		return true;
 	}
@@ -425,7 +439,8 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 		if (object.legacyKind != LegacyKind::None || object.kind != expected.kind || object.creationMode != expected.creationMode ||
 			!SameGeometry(object.geometry, expected.geometry) || object.parts.size() != expected.parts.size())
 			return { "construction does not match derived geometry" };
-		if (object.construction->tool.preset == PresetKind::RegularPolygon && !Similarity(object.transform))
+		if ((object.construction->tool.preset == PresetKind::RegularPolygon ||
+			object.construction->tool.preset == PresetKind::Cube) && !Similarity(object.transform))
 			return { "regular polygon requires uniform orthogonal transform" };
 		for (size_t i = 0; i < object.parts.size(); ++i)
 		{
@@ -476,6 +491,14 @@ bool BuildGeometry(const ShapeObject& object, GeometryResult& result, const Buil
 	if (!Finite(options.displayScale) || options.displayScale <= 0 || !Finite(options.maxErrorPixels) ||
 		options.maxErrorPixels <= 0 || options.maxErrorPixels > 0.25f)
 	{ SetError(error, "invalid display scale or curve tolerance"); return false; }
+	ShapeObject sampled = object;
+	if (object.construction && object.construction->tool.preset >= PresetKind::Arc)
+	{
+		std::string failure;
+		if (!ExpandAdvanced(*object.construction, object.style, sampled, failure,
+			options.maxErrorPixels / std::max(1.0f, MaxScale(object.transform))))
+		{ SetError(error, failure); return false; }
+	}
 	GeometryResult next; std::string failure;
 	auto build = [&](uint32_t id, Kind kind, const Geometry& g, const Transform& t, const ShapeStyle& style)
 	{
@@ -483,29 +506,29 @@ bool BuildGeometry(const ShapeObject& object, GeometryResult& result, const Buil
 		if (!BuildPart(id, kind, g, t, style, options, registry, part, failure)) return false;
 		next.bounds = UnionBounds(next.bounds, part.bounds); next.parts.push_back(std::move(part)); return true;
 	};
-	if (object.kind == Kind::Compound)
+	if (sampled.kind == Kind::Compound)
 	{
-		for (const auto& p : object.parts) if (!build(p.id, p.kind, p.geometry,
-			ComposeTransforms(object.transform, p.transform), p.style.value_or(object.style)))
+		for (const auto& p : sampled.parts) if (!build(p.id, p.kind, p.geometry,
+			ComposeTransforms(sampled.transform, p.transform), p.style.value_or(sampled.style)))
 		{ SetError(error, failure); return false; }
 	}
-	else if (object.legacyKind == LegacyKind::OutlineRectangle || object.legacyKind == LegacyKind::FilledRectangle)
+	else if (sampled.legacyKind == LegacyKind::OutlineRectangle || sampled.legacyKind == LegacyKind::FilledRectangle)
 	{
 		// 旧矩形的 4 DIP 圆角随显示比例变化；普通图形半径仍是画布像素，不走此兼容处理。
-		Geometry compatible = object.geometry;
+		Geometry compatible = sampled.geometry;
 		compatible.radius = std::min({ 4.0f * options.displayScale,
 			std::abs(compatible.end.x - compatible.start.x) * .5f,
 			std::abs(compatible.end.y - compatible.start.y) * .5f });
-		if (!build(0, object.kind, compatible, object.transform, object.style))
+		if (!build(0, sampled.kind, compatible, sampled.transform, sampled.style))
 		{ SetError(error, failure); return false; }
 	}
-	else if (!build(0, object.kind, object.geometry, object.transform, object.style))
+	else if (!build(0, sampled.kind, sampled.geometry, sampled.transform, sampled.style))
 	{ SetError(error, failure); return false; }
-	if (object.construction && object.construction->tool.preset == PresetKind::RegularPolygon)
+	if (sampled.construction && sampled.construction->tool.preset == PresetKind::RegularPolygon)
 	{
 		auto& controls = next.parts.front().controls;
 		controls.push_back({ 0, static_cast<uint32_t>(controls.size()), ControlKind::Center,
-			ApplyTransform(object.transform, object.construction->start) });
+			ApplyTransform(sampled.transform, sampled.construction->start) });
 	}
 	result = std::move(next); SetError(error, {}); return true;
 }
@@ -621,17 +644,29 @@ HitResult HitTest(const ShapeObject& object, const GeometryResult& geometry, Vec
 	}
 	return none;
 }
-std::optional<ShapeObject> MakePresetShape(const ToolSpec& tool, Vec2 start, Vec2 end,
-	const ShapeStyle& style, const ObjectId& id, uint64_t revision, std::string* error)
+std::optional<ShapeObject> MakeConstructedShape(const Construction& construction, const ShapeStyle& style,
+	const ObjectId& id, uint64_t revision, std::string* error)
 {
 	ShapeObject object; object.id = id; object.revision = revision; object.style = style;
-	object.construction = Construction{ tool,start,end };
+	object.construction = construction;
+	if (construction.tool.preset == PresetKind::Cube)
+	{
+		// 正面方形角也是参数真值，避免控制点仍落在未投影的raw矩形内。
+		const float side = std::max(std::abs(construction.end.x - construction.start.x),std::abs(construction.end.y - construction.start.y));
+		object.construction->end = {construction.start.x + (construction.end.x < construction.start.x ? -side : side),
+			construction.start.y + (construction.end.y < construction.start.y ? -side : side)};
+	}
 	std::string failure;
 	if (!ValidStyle(style) || !ExpandPreset(*object.construction, style, object, failure))
 	{ SetError(error, failure.empty() ? "invalid construction style" : failure); return std::nullopt; }
 	const auto validation = Validate(object);
 	if (!validation) { SetError(error, validation.error); return std::nullopt; }
 	SetError(error, {}); return object;
+}
+std::optional<ShapeObject> MakePresetShape(const ToolSpec& tool, Vec2 start, Vec2 end,
+	const ShapeStyle& style, const ObjectId& id, uint64_t revision, std::string* error)
+{
+	return MakeConstructedShape(Construction{ tool,start,end }, style, id, revision, error);
 }
 std::optional<ShapeObject> MakeLegacyShape(LegacyKind kind, Vec2 start, Vec2 end,
 	float width, uint32_t rgb, float opacity, ObjectId id)
@@ -708,3 +743,5 @@ std::optional<ShapeCommand> CreationTransaction::Commit(std::string* error)
 }
 void CreationTransaction::Cancel() noexcept { candidate_.reset(); }
 }
+
+#include "shape_interaction.inl"

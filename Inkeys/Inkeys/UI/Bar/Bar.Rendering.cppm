@@ -94,6 +94,8 @@ public:
 public:
 	ID2D1SolidColorBrush* ContentSolidBrush(COLORREF color, double opacity = 1.0)
 	{ return GetFrameSolidColorBrush(deviceContext.Get(), color, opacity); }
+	// 画笔与当前图形共用色板渐变资源和色义，调用方仅适配目标。
+	void ColorPalette(ID2D1DeviceContext*, D2D1_RECT_F, bool darkTone, bool below, double opacity = 1);
 	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);

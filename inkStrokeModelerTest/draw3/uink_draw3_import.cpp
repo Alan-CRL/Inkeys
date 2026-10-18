@@ -167,7 +167,7 @@ namespace draw3::uink
 								bool partValid = true;
 								const auto* partMetadata = ShapeMetadata(part->extra, partValid);
 								if (!partValid || !partMetadata ||
-									!ShapeGroupReference(*partMetadata, *decoded.shape, index, partCount)) return false;
+									!ShapeGroupReference(*partMetadata, *decoded.shape, index, partCount, *metadata)) return false;
 							}
 							contentIndex += partCount - 1;
 							stroke = SnapshotFromShape(std::move(*decoded.shape), sourceUndo);

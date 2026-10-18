@@ -118,6 +118,19 @@
         "ThicknessOverflowTitle": "墨迹粗细超出预览范围",
         "ThicknessOverflowBody": "预览中的粗细可能与绘制粗细不一致。"
       },
+      "ShapeConstruction":
+      {
+        "NextVertex": "落笔确定下一顶点",
+        "RadiusStep": "确定圆心与半径",
+        "SweepStep": "确定圆弧范围",
+        "FrontStep": "确定正面",
+        "DepthStep": "确定深度",
+        "BaseStep": "确定底面",
+        "HeightStep": "确定高度",
+        "Complete": "完成",
+        "Back": "回退",
+        "CancelAction": "取消"
+      },
       "GeometryAttributes":
       {
         "StraightLineLabel": "直线",

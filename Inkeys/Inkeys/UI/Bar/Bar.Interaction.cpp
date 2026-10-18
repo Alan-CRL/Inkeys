@@ -3964,6 +3964,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		if (msg.message == WM_KEYDOWN || msg.message == WM_KEYUP
 			|| msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP)
 		{
+			if (barUISet.constructionPrompt.Keyboard(barUISet, msg.vkcode,
+				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
+				return BarInteractionStageResult::Consumed;
 			if (barUISet.geometryAttribute.Keyboard(barUISet, msg.vkcode,
 				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
 				return BarInteractionStageResult::Consumed;
@@ -7058,6 +7061,8 @@ public:
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
 			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
 
+			if (barUISet.constructionPrompt.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg)))
+				continue;
 			if (barUISet.geometryAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
 			{
 				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
@@ -7654,6 +7659,10 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 	AddShape(shapeMap[BarUISetShapeEnum::MainBar], true);
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar], false);
 	AddShape(shapeMap[BarUISetShapeEnum::GeometryAttributeBar], false);
+	for (const RECT& bounds : constructionPrompt.PresentedRegions())
+		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
+			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+				bottomDockSnapshot.horizontalMapping.rigidOverlayTranslationXDip, bottomDockSnapshot.rigidTranslationDip, frameZoom);
 	for (const RECT& bounds : geometryAttribute.PresentedRegions())
 		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
 			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
@@ -8519,7 +8528,7 @@ namespace Inkeys::UI::Bar
 		const bool eraserKey = vkCode == VK_ESCAPE || vkCode == VK_TAB || vkCode == VK_LEFT
 			|| vkCode == VK_RIGHT || vkCode == VK_RETURN || vkCode == VK_SPACE;
 		// 撤回属性复用同一组键盘路由键（Escape/Tab/方向/回车/空格）。
-		const bool auxPanelWantsKeyboard = barUISet.geometryAttribute.WantsKeyboard() || barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
+		const bool auxPanelWantsKeyboard = barUISet.constructionPrompt.Visible() || barUISet.geometryAttribute.WantsKeyboard() || barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
 		if (eraserKey && !offSignal && floating_window && auxPanelWantsKeyboard
 			&& (GetForegroundWindow() == floating_window || (GetCursorPos(&pointer) && WindowFromPoint(pointer) == floating_window)))
 		{

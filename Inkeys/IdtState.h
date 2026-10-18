@@ -46,7 +46,17 @@ enum class ShapeModeSelectEnum
 	IdtShapeParallelogram1,
 	IdtShapeRhombus1,
 	IdtShapeTrapezoid1,
-	IdtShapeRegularPolygon1
+	IdtShapeRegularPolygon1,
+	IdtShapePolyline1,
+	IdtShapePolygon1,
+	IdtShapeArc1,
+	IdtShapeSector1,
+	IdtShapeCuboid1,
+	IdtShapeCube1,
+	IdtShapeCylinder1,
+	IdtShapeCone1,
+	IdtShapePrism1,
+	IdtShapePyramid1
 };
 
 // 开放图形与闭合图形分别复用现有直线、矩形的颜色和宽度槽。

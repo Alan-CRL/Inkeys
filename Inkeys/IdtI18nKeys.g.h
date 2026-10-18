@@ -121,6 +121,19 @@ inline constexpr struct I18nKeyRoot
                 const char* ThicknessOverflowTitle = "UI/Bar/DrawAttributes/ThicknessOverflowTitle";
                 const char* ThicknessOverflowBody = "UI/Bar/DrawAttributes/ThicknessOverflowBody";
             } DrawAttributes{};
+            struct Node__UI__Bar__ShapeConstruction
+            {
+                const char* NextVertex = "UI/Bar/ShapeConstruction/NextVertex";
+                const char* RadiusStep = "UI/Bar/ShapeConstruction/RadiusStep";
+                const char* SweepStep = "UI/Bar/ShapeConstruction/SweepStep";
+                const char* FrontStep = "UI/Bar/ShapeConstruction/FrontStep";
+                const char* DepthStep = "UI/Bar/ShapeConstruction/DepthStep";
+                const char* BaseStep = "UI/Bar/ShapeConstruction/BaseStep";
+                const char* HeightStep = "UI/Bar/ShapeConstruction/HeightStep";
+                const char* Complete = "UI/Bar/ShapeConstruction/Complete";
+                const char* Back = "UI/Bar/ShapeConstruction/Back";
+                const char* CancelAction = "UI/Bar/ShapeConstruction/CancelAction";
+            } ShapeConstruction{};
             struct Node__UI__Bar__GeometryAttributes
             {
                 const char* StraightLineLabel = "UI/Bar/GeometryAttributes/StraightLineLabel";

@@ -118,6 +118,19 @@
         "ThicknessOverflowTitle": "墨跡粗細超出預覽範圍",
         "ThicknessOverflowBody": "預覽粗細可能與實際繪製粗細不同。"
       },
+      "ShapeConstruction":
+      {
+        "NextVertex": "落筆確定下一頂點",
+        "RadiusStep": "確定圓心與半徑",
+        "SweepStep": "確定圓弧範圍",
+        "FrontStep": "確定正面",
+        "DepthStep": "確定深度",
+        "BaseStep": "確定底面",
+        "HeightStep": "確定高度",
+        "Complete": "完成",
+        "Back": "返回上一步",
+        "CancelAction": "取消"
+      },
       "GeometryAttributes":
       {
         "StraightLineLabel": "直線",

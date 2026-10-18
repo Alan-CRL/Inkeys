@@ -291,5 +291,93 @@
 		const auto fallback = ImportDraw3UInkDocument(unknown);
 		UINK_CHECK(state, fallback.snapshot && !fallback.diagnostics.empty() && fallback.snapshot->canvases[0].strokes.size() == wireCount);
 		UINK_CHECK(state, ImportDraw3UInkDocument(standard).status == Draw3UInkImportStatus::Success);
+		// v3参数覆盖曲线、逐点与全部空间模板；标准降级仍能被无扩展读取器显示。
+		auto advancedSnapshot = snapshot; advancedSnapshot.canvases[0].strokes.clear();
+		for (uint32_t value = uint32_t(PresetKind::Polyline); value <= uint32_t(PresetKind::Pyramid); ++value)
+		{
+			const auto preset = static_cast<PresetKind>(value);
+			for (uint32_t sides : { 3u,5u,12u }) for (float sign : { -1.0f,1.0f })
+			{
+				Construction c; c.tool = { preset,preset == PresetKind::Polyline || preset == PresetKind::Polygon ? CreationMode::Points : CreationMode::MultiStage,sides };
+				c.start = { 30,70 }; c.end = { 130,110 };
+				if (preset == PresetKind::Polyline || preset == PresetKind::Polygon)
+					c.parameters = VertexConstruction{ { { 10,10 },{ 100,10 },{ 45,40 },{ 100,100 },{ 10,100 } } };
+				else if (preset == PresetKind::Arc || preset == PresetKind::Sector) c.parameters = ArcConstruction{ sign * 4.4f };
+				else if (preset == PresetKind::Cuboid || preset == PresetKind::Cube) c.parameters = SolidConstruction{ { sign * 23,-32 },0 };
+				else c.parameters = SolidConstruction{ {},sign * 60 };
+				ShapeStyle style; style.width = 5; style.linePattern = LinePattern::DashDot;
+				style.strokeOpacity = .55f; style.strokeRgb = 0x123456;
+				auto id = Guid("70000000-0000-4000-8000-00000000f042").Bytes(); id[15] = static_cast<uint8_t>(advancedSnapshot.canvases[0].strokes.size());
+				auto object = MakeConstructedShape(c, style, id, 21);
+				UINK_CHECK(state, object); if (!object) continue;
+				const auto encoded = EncodeInkeysShapeMetadata(*object); const auto decoded = DecodeInkeysShapeMetadata(encoded);
+				UINK_CHECK(state, decoded.status == Draw3ShapeMetadataStatus::Valid && decoded.shape == object);
+				auto invalid = encoded;
+				*field(*field(invalid, "construction"), "parameters") = Value(UInkMessagePackValue::Array{ Value(uint64_t{ 99 }) });
+				UINK_CHECK(state, DecodeInkeysShapeMetadata(invalid).status == Draw3ShapeMetadataStatus::Invalid);
+				Draw3UInkStrokeSnapshot stroke; stroke.style.kind = Draw3UInkStrokeKind::Shape; stroke.shape = object;
+				stroke.undoId = static_cast<uint32_t>(advancedSnapshot.canvases[0].strokes.size());
+				advancedSnapshot.canvases[0].strokes.push_back(std::move(stroke));
+			}
+		}
+		const auto advancedExport = ExportDraw3SnapshotToUInk(advancedSnapshot);
+		UINK_CHECK(state, advancedExport.document);
+		if (advancedExport.document)
+		{
+			UInkEditingSession futureSession; futureSession.document = *advancedExport.document;
+			const auto advancedPath = temporary.File(L"advanced-shapes-v3.uink");
+			UINK_CHECK(state, SaveUInkFile(advancedPath, futureSession, options).status == UInkSaveStatus::Committed);
+			const auto advancedRead = ReadUInkFile(advancedPath);
+			UINK_CHECK(state, advancedRead.status == UInkReadStatus::Complete && advancedRead.document);
+			if (advancedRead.document)
+			{
+				const auto restoredAdvanced = ImportDraw3UInkDocument(*advancedRead.document);
+				UINK_CHECK(state, restoredAdvanced.snapshot && restoredAdvanced.snapshot->canvases[0].strokes.size() == advancedSnapshot.canvases[0].strokes.size());
+				if (restoredAdvanced.snapshot && restoredAdvanced.snapshot->canvases[0].strokes.size() == advancedSnapshot.canvases[0].strokes.size())
+					for (size_t i = 0; i < advancedSnapshot.canvases[0].strokes.size(); ++i)
+						UINK_CHECK(state, restoredAdvanced.snapshot->canvases[0].strokes[i].shape == advancedSnapshot.canvases[0].strokes[i].shape);
+			}
+			auto fallbackDocument = *advancedExport.document;
+			for (size_t i = 0; i < fallbackDocument.canvases[0].content.size(); ++i)
+			{
+				auto& part = std::get<UInkShape>(fallbackDocument.canvases[0].content[i]); part.extra.reset(); part.undoId = static_cast<uint32_t>(i);
+			}
+			const auto fallbackAdvanced = ImportDraw3UInkDocument(fallbackDocument);
+			UINK_CHECK(state, fallbackAdvanced.snapshot && fallbackAdvanced.snapshot->canvases[0].strokes.size() == fallbackDocument.canvases[0].content.size());
+		}
+		// 人工重建v2 wire，保留旧箭头公式；重存v3仍不能改变外观或根/引用版本。
+		Construction oldArrow{ { PresetKind::Arrow,CreationMode::Drag },{ 0,0 },{ 100,0 } }; oldArrow.legacyArrow = true;
+		auto old = MakeConstructedShape(oldArrow, {}, Guid("70000000-0000-4000-8000-00000000f043").Bytes(), 9);
+		UINK_CHECK(state, old);
+		if (old)
+		{
+			auto legacyMetadata = EncodeInkeysShapeMetadata(*old); *field(legacyMetadata, "version") = Value(uint64_t{ 2 });
+			auto& constructionMap = std::get<UInkMessagePackValue::Map>(field(legacyMetadata, "construction")->value);
+			constructionMap.erase(std::remove_if(constructionMap.begin(), constructionMap.end(), [](const auto& pair)
+				{ const auto& key = std::get<std::string>(pair.first.value); return key == "parameters" || key == "legacyArrow"; }), constructionMap.end());
+			const auto restoredLegacy = DecodeInkeysShapeMetadata(legacyMetadata);
+			UINK_CHECK(state, restoredLegacy.status == Draw3ShapeMetadataStatus::Valid && restoredLegacy.shape == old);
+			const auto resaved = DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(*old));
+			UINK_CHECK(state, resaved.status == Draw3ShapeMetadataStatus::Valid && resaved.shape == old);
+			auto oldSnapshot = advancedSnapshot; oldSnapshot.canvases[0].strokes.resize(1); oldSnapshot.canvases[0].strokes[0].shape = old;
+			auto oldExport = ExportDraw3SnapshotToUInk(oldSnapshot);
+			UINK_CHECK(state, oldExport.document);
+			if (oldExport.document)
+			{
+				for (size_t i = 0; i < oldExport.document->canvases[0].content.size(); ++i)
+				{
+					auto& wire = std::get<UInkShape>(oldExport.document->canvases[0].content[i]).extra->front().second;
+					*field(wire, "version") = Value(uint64_t{ 2 });
+					if (!i)
+					{
+						auto& fields = std::get<UInkMessagePackValue::Map>(field(wire, "construction")->value);
+						fields.erase(std::remove_if(fields.begin(), fields.end(), [](const auto& pair)
+							{ const auto& key = std::get<std::string>(pair.first.value); return key == "parameters" || key == "legacyArrow"; }), fields.end());
+					}
+				}
+				const auto oldImport = ImportDraw3UInkDocument(*oldExport.document);
+				UINK_CHECK(state, oldImport.snapshot && oldImport.snapshot->canvases[0].strokes[0].shape == old);
+			}
+		}
 		std::cout << "Constructed shape UInk cases: " << canvas.strokes.size() << " objects / " << wireCount << " standard parts" << std::endl;
 	}
