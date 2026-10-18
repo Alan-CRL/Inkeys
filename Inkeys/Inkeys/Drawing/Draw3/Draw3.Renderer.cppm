@@ -337,7 +337,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool Resize(IDXGISwapChain1* swapChain, UINT width, UINT height);
 		// 初始化渲染器及其固定资源。
 		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver,
-			bool enableZhaoxinCompatibility = true);
+			bool enableZhaoxinCompatibility);
 
 	private:
 		friend int RunRendererUploadValidation() noexcept;

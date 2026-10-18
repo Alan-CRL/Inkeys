@@ -417,7 +417,7 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 - 首发正式 presenter 模式顺序为 DComp -> ULW；DwmBlurBehind2 与 DwmBlurBehind 在自动回退和强制模式中均不可选。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 保持现有 FLIP_SEQUENTIAL swap chain、premultiplied top-down 32-bit DIB、`1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零。
 - 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。首发实现以用户实测为兼容约束，保留 FLIP，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。
-- 只允许一个绑定主 Drawpad 的 `RealTimeStylusInput` producer；Draw2 RTS 不得初始化或重复发布。退出顺序为停止命令生产 -> 停止 RTS -> 唤醒绘制线程 -> 释放双 presenter/device -> Window Service 销毁两窗。
+- 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。
 
 ## 来源任务与验证状态
 

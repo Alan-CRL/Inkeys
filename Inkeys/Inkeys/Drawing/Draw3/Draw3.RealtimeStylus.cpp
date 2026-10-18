@@ -2797,9 +2797,17 @@ namespace Inkeys::Drawing::Draw3
 		if (impl_->stylus)
 		{
 			const HRESULT disableResult = impl_->stylus->put_Enabled(FALSE);
-			if (FAILED(disableResult) && impl_->pluginAdded)
+			// 状态核实仍属于本次已知失败清理，不能给它重置或延长截止。
+			if (FAILED(disableResult)) impl_->failedCleanup.BeginKnownFailure();
+			const auto disabled = RtsStartup::VerifyDisabled(disableResult, [&](BOOL* enabled) noexcept
+				{ return impl_->stylus->get_Enabled(enabled); });
+			if (!disabled.StopProven() && impl_->pluginAdded)
 				impl_->failedCleanup.FailUnprovenProducerStop();
-			if (FAILED(disableResult)) LogHResult("Disable RealTimeStylus", disableResult);
+			if (FAILED(disableResult))
+			{
+				LogHResult("Disable RealTimeStylus", disableResult);
+				LogHResult("Verify RealTimeStylus enabled state after disable failure", disabled.enabledResult);
+			}
 			if (impl_->pluginAdded)
 			{
 				const HRESULT removeResult = impl_->stylus->RemoveStylusSyncPlugin(

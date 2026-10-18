@@ -122,7 +122,7 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 ### 3. Contracts
 
 - 按完整RTS→基础X/Y→Win32Mouse串行选择，每档最多一次。基础档覆盖扩展SetDesired失败及设置成功后Enable失败，使用新RTS实例；保留all-tablets/多点设置，不枚举额外开关或固定延时重试。
-- 每次可恢复RTS尝试有独立Dormant失败清理scope，停止/排空并真实Complete/join后才能下一档；成功实例恢复Host signal。Disable/Remove失败、排空未证明或deadline过期不能启用下一producer。
+- 每次可恢复RTS尝试有独立Dormant失败清理scope，停止/排空并真实Complete/join后才能下一档；成功实例恢复Host signal。Disable失败时必须成功get_Enabled读回明确FALSE，才可继续Remove及排空；已加入插件但仍启用或状态未知、Remove失败、排空未证明或deadline过期均不能启用下一producer。
 - 同步插件所有业务回调先取单原子关闭位+在途计数的lease，Shutdown先关门，再无内部锁Disable/Remove，等最后lease的event通知后才能终止contact和释放借用对象；不能只看计数零越过最后通知尾部。
 - 候选RTS可建立decoder但不发布业务Down，选定输入后才开放；就绪前按下必须抬起后重新Down。不能在drawing consumer存活时ResetForNextRun清失败候选队列。
 - 每代只有一个绘制producer。RTS模式WM_MOUSE仍只处理原光标，不重复落笔；Win32Mouse从正常RTS的promoted/Touch barrier过滤之前接收真实鼠标及系统已提升的单点鼠标消息，Pointer不再提供第二条绘制流。
@@ -137,7 +137,8 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 | 完整RTS成功 | 不试X/Y，不启用WM_MOUSE绘制 |
 | 扩展描述失败，或扩展Enable=0x80070057 | 安全清理旧attempt后用新实例试X/Y一次 |
 | RTS不可用且安全停产 | owner确认Win32Mouse后才打开输入就绪门 |
-| Disable/Remove/drain失败或Expired | 不启用新输入，不释放仍借用对象，受控致命收口 |
+| Disable失败但成功读回Enabled=FALSE | 继续必需的Remove和drain，全部完成后才可降级，与publisher是否存在无关 |
+| 已加入插件且Disable失败读回仍启用/状态未知、Remove/drain失败或Expired | 不启用新输入，不释放仍借用对象，受控致命收口 |
 | 重复/迟到Up、捕获丢失、Stop交错 | 恰好一个终态，新代次不继承旧contact或mode |
 
 ### 5. Good / Base / Bad Cases

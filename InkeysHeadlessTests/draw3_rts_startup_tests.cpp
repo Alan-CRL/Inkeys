@@ -83,6 +83,65 @@ namespace
 		outer.CompleteOrFatal();
 	}
 
+	void TestDisableStateVerification(int& failures)
+	{
+		struct Case { HRESULT disable; HRESULT query; BOOL value; bool writes; bool stopped; };
+		const Case cases[] = {
+			{ S_OK, E_FAIL, TRUE, true, true },
+			{ S_FALSE, E_FAIL, TRUE, true, true },
+			{ E_FAIL, S_OK, FALSE, true, true },
+			{ E_INVALIDARG, S_OK, FALSE, true, true },
+			{ E_FAIL, S_OK, TRUE, true, false },
+			{ E_FAIL, S_OK, 2, true, false },
+			{ E_FAIL, E_FAIL, FALSE, true, false },
+			{ E_FAIL, S_OK, FALSE, false, false }
+		};
+		for (const auto& test : cases)
+		{
+			unsigned queries = 0;
+			const auto disabled = VerifyDisabled(test.disable, [&](BOOL* enabled) noexcept
+			{
+				++queries;
+				if (test.writes) *enabled = test.value;
+				return test.query;
+			});
+			if (!Expect(disabled.StopProven() == test.stopped,
+				"Disable failure needs successful, explicitly FALSE state readback")) ++failures;
+			if (!Expect(queries == (FAILED(test.disable) ? 1u : 0u),
+				"successful Disable does not query state")) ++failures;
+		}
+	}
+
+	void TestFailedEnableCleanupWithoutPublisher(bool basicSucceeds, int& failures)
+	{
+		unsigned attempts = 0, cleanups = 0, queries = 0;
+		bool orderValid = true, allStopped = true;
+		// 与产品共享回退编排和停产判定；只注入 Enable/Disable/get_Enabled 的 COM 结果。
+		const bool ready = InitializeWithFallback({},
+			[&](PacketProfile profile, Inkeys::Shutdown::FailedCleanupSignal signal)
+			{
+				orderValid &= cleanups == attempts && !signal.HasPublisher();
+				++attempts;
+				return profile == PacketProfile::BasicXY && basicSucceeds
+					? AttemptResult{} : AttemptResult{ FailureStage::Enable, E_INVALIDARG };
+			},
+			[&]() noexcept
+			{
+				const auto disabled = VerifyDisabled(E_FAIL, [&](BOOL* enabled) noexcept
+				{
+					++queries;
+					*enabled = FALSE;
+					return S_OK;
+				});
+				allStopped &= disabled.StopProven();
+				++cleanups;
+			},
+			[](PacketProfile, const AttemptResult&) {});
+		if (!Expect(ready == basicSucceeds && attempts == 2 && orderValid && allStopped &&
+			cleanups == (basicSucceeds ? 1u : 2u) && queries == cleanups,
+			"no-publisher failed Enable/Disable with confirmed stop reaches BasicXY or returns safe failure")) ++failures;
+	}
+
 	void TestExceptionStopsSelection(int& failures)
 	{
 		Inkeys::Shutdown::FailedCleanupDeadline outer(&PublishUnexpectedFatal);
@@ -193,6 +252,9 @@ int RunDraw3RtsStartupTests()
 	TestAttemptSequence(FailureStage::InputConfiguration, true, failures);
 	TestAttemptSequence(FailureStage::Enable, false, failures);
 	TestAttemptSequence(FailureStage::Create, false, failures);
+	TestDisableStateVerification(failures);
+	TestFailedEnableCleanupWithoutPublisher(true, failures);
+	TestFailedEnableCleanupWithoutPublisher(false, failures);
 	TestExceptionStopsSelection(failures);
 	TestCallbackCloseAndDrain(failures);
 	TestCandidateDownDoesNotPublish(failures);

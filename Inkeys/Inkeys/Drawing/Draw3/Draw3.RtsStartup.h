@@ -38,6 +38,28 @@ namespace Inkeys::Drawing::Draw3::RtsStartup
 		}
 	}
 
+	struct DisableResult
+	{
+		HRESULT disableResult = E_PENDING;
+		HRESULT enabledResult = E_PENDING;
+		BOOL enabled = TRUE;
+		bool StopProven() const noexcept
+		{
+			return SUCCEEDED(disableResult) || (SUCCEEDED(enabledResult) && enabled == FALSE);
+		}
+	};
+
+	// Disable 失败不等于仍在采集；只接受成功读回的明确 FALSE，不按错误码猜状态。
+	// 这份证明不能代替后续 Remove、在途 callback drain 和 COM 引用保活。
+	template<class ReadEnabled>
+	DisableResult VerifyDisabled(HRESULT disableResult, ReadEnabled&& readEnabled) noexcept
+	{
+		DisableResult result;
+		result.disableResult = disableResult;
+		if (FAILED(disableResult)) result.enabledResult = readEnabled(&result.enabled);
+		return result;
+	}
+
 	struct AttemptResult
 	{
 		FailureStage stage = FailureStage::None;
