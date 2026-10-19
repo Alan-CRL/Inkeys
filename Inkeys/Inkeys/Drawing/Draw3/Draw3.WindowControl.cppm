@@ -157,6 +157,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool ConsumeCompositionChangedRequest();
 		// 消费一次合并的瞬态光标重绘请求。
 		bool ConsumeDrawingCursorRenderRequest();
+		// 供产品光标偏好变更发布一次重绘请求，不直接访问 HWND 或 GPU。
+		void RequestDrawingCursorRender() noexcept;
 		// 请求下一帧执行全画布呈现。
 		void RequestFullPresent();
 		// 关联非拥有的输入协调器，使窗口控制请求能唤醒空闲绘制线程。
@@ -241,8 +243,8 @@ export namespace Inkeys::Drawing::Draw3
 		void HandleCompatibilityMouse(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
 		void QueueCanvasCommand(CanvasCommand command);
-		void RequestDrawingCursorRender() noexcept;
 		void QueueSystemCursorRefresh() noexcept;
+		void RestoreTabletInputProperty(HWND window) noexcept;
 		void SetDrawingCursorOwner(DrawingCursorPointerAuthority owner) noexcept;
 		void SetTouchCursorSuppressed(bool suppressed) noexcept;
 		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
@@ -254,7 +256,7 @@ export namespace Inkeys::Drawing::Draw3
 			bool penSampleValid, bool touchBarrierKnown,
 			uint32_t mouseMessageTick, uint32_t touchBarrierTick,
 			INPUT_MESSAGE_DEVICE_TYPE inputSource) const noexcept;
-		void ApplyWindowCursor(const char* trigger) noexcept;
+		void ApplyWindowCursor(const char* trigger, bool forceDiagnostic = false) noexcept;
 		void RecordMouseCursorDiagnosticState(uint64_t eventId, const char* phase) const noexcept;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		void TraceCursorState(const char* eventName, uint32_t pointerId,
@@ -279,6 +281,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<HWND> window_ = nullptr;
 		// 外部 HWND 的消息来自 Window Service 线程，绘制线程也会读取该状态。
 		std::atomic<bool> externalWindow_ = false;
+		std::atomic<HANDLE> previousTabletInputProperty_ = nullptr;
+		std::atomic<bool> tabletInputPropertyInstalled_ = false;
 		WindowSize size_ = {};
 		std::mutex canvasCommandMutex_;
 		std::deque<CanvasCommand> canvasCommands_;
@@ -357,6 +361,9 @@ export namespace Inkeys::Drawing::Draw3
 		HCURSOR defaultCursor_ = nullptr;
 		// 仅窗口线程使用，避免相同系统光标决策反复刷控制台。
 		uint64_t lastCursorSystemDiagnosticKey_ = 0;
+		uint64_t lastCursorSystemDiagnosticTick_ = 0;
+		HWND lastCursorSystemDiagnosticHit_ = nullptr;
+		bool lastCursorSystemDiagnosticApplied_ = false;
 		bool cursorSystemDiagnosticKnown_ = false;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
 		std::atomic<uint32_t> suppressedPenPointerId_ = 0;

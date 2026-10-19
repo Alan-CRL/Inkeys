@@ -1423,6 +1423,7 @@ namespace Inkeys::Drawing::Draw3
 			const Bridge::ProductState state = bridge.Snapshot();
 			if (state.revision == appliedBridgeRevision && !restoreLatestScene) return;
 			appliedBridgeRevision = state.revision;
+
 			window.SetSelectionMode(state.selectionMode);
 			window.SetAutoSaveEnabled(state.autoSaveEnabled);
 			const bool selectionChanged = selectionMode.exchange(state.selectionMode,
@@ -1443,6 +1444,8 @@ namespace Inkeys::Drawing::Draw3
 			default: break;
 			}
 			window.SetActiveTool(tool);
+			// 活动 contact 可能仍锁存旧工具，原始偏好交由 Controller 按实际工具投影。
+			if (drawing) drawing->SetCursorSettings(state.cursorSettings);
 			window.SetSpeedEraserDeviceMode(state.paintDevice == 0
 				? SpeedEraser::DeviceMode::LargeScreen : SpeedEraser::DeviceMode::Laptop);
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
@@ -1777,6 +1780,8 @@ namespace Inkeys::Drawing::Draw3
 							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get());
+							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
+							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
 								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
 								<< std::dec << std::endl;

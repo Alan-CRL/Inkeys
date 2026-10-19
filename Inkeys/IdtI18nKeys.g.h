@@ -413,6 +413,15 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Draw
         {
             const char* N = "SettingsUI/Draw/N";
+            struct Node__SettingsUI__Draw__Cursor
+            {
+                const char* N = "SettingsUI/Draw/Cursor/N";
+                const char* Description = "SettingsUI/Draw/Cursor/Description";
+                const char* MouseStyle = "SettingsUI/Draw/Cursor/MouseStyle";
+                const char* PenStyle = "SettingsUI/Draw/Cursor/PenStyle";
+                const char* DefaultStyle = "SettingsUI/Draw/Cursor/DefaultStyle";
+                const char* DrawingStyle = "SettingsUI/Draw/Cursor/DrawingStyle";
+            } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {
                 const char* N = "SettingsUI/Draw/Effect/N";

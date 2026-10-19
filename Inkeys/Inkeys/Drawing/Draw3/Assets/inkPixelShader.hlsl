@@ -96,6 +96,59 @@ float GetRectangleDist(float2 p, float2 halfSize)
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
 }
 
+float GetPenIconDist(float2 local, float2 halfSize)
+{
+    // 五边形的左上尖端为热点，笔身沿右下延伸；距离仍以像素计算供 1px AA 使用。
+    const float2 vertices[5] = {
+        float2(0.0, 0.0), float2(1.0 / 3.0, 1.0 / 12.0),
+        float2(1.0, 0.75), float2(0.75, 1.0), float2(1.0 / 12.0, 1.0 / 3.0)
+    };
+    float2 p = local + halfSize;
+    float distanceSquared = 1e20;
+    float side = 1.0;
+    float cornerDistance = -1e20;
+    // 24 DIP 图标取 3 DIP 内切圆角；半径随图标等比缩放，尖端不参与。
+    float cornerRadius = min(halfSize.x, halfSize.y) * 0.25;
+    [unroll]
+    for (int edgeIndex = 0; edgeIndex < 5; ++edgeIndex)
+    {
+        float2 start = vertices[edgeIndex] * halfSize * 2.0;
+        float2 end = vertices[(edgeIndex + 1) % 5] * halfSize * 2.0;
+        float2 edge = end - start;
+        float2 delta = p - start;
+        float2 nearest = delta - edge * saturate(dot(delta, edge) / max(dot(edge, edge), 1e-8));
+        distanceSquared = min(distanceSquared, dot(nearest, nearest));
+        side = min(side, edge.x * delta.y - edge.y * delta.x);
+        if (edgeIndex != 0 && cornerRadius > 1e-4)
+        {
+            float2 towardPrev = vertices[(edgeIndex + 4) % 5] * halfSize * 2.0 - start;
+            float previousLength = length(towardPrev);
+            float nextLength = length(edge);
+            if (previousLength > 1e-4 && nextLength > 1e-4)
+            {
+                towardPrev /= previousLength;
+                float2 towardNext = edge / nextLength;
+                float2 bisector = towardPrev + towardNext;
+                float bisectorLength = length(bisector);
+                float cosHalf = saturate(bisectorLength * 0.5);
+                float sinHalf = sqrt(saturate(1.0 - cosHalf * cosHalf));
+                if (cosHalf > 1e-4 && sinHalf > 1e-4)
+                {
+                    // 切点各占相邻边至多 2/5，避免极窄图标的相邻圆角越界或相交。
+                    float radius = min(cornerRadius,
+                        min(previousLength, nextLength) * 0.4 * sinHalf / cosHalf);
+                    float2 center = start + bisector / bisectorLength * (radius / sinHalf);
+                    float2 fromCenter = p - center;
+                    if (dot(fromCenter, towardPrev) < 0.0 && dot(fromCenter, towardNext) < 0.0)
+                        cornerDistance = max(cornerDistance, length(fromCenter) - radius);
+                }
+            }
+        }
+    }
+    float polygonDistance = sqrt(distanceSquared) * (side >= 0.0 ? -1.0 : 1.0);
+    return max(polygonDistance, cornerDistance);
+}
+
 float GetRoundedRectangleDist(float2 p, float2 halfSize, float radius)
 {
     radius = clamp(radius, 0.0, min(halfSize.x, halfSize.y));
@@ -266,17 +319,31 @@ OperatorOutput main(PS_INPUT input)
         return particleOutput;
     }
 
-    if (type >= 4 && type <= 6)
+    if ((type >= 4 && type <= 6) || type == 21)
     {
         float2 local = input.pixPos - input.p1;
-        float distanceToShape = type == 5
-            ? GetRectangleDist(local, input.p2)
-            : length(local) - min(input.p2.x, input.p2.y);
+        float distanceToShape;
+        // 圆角只属于笔形，避免其它光标也执行四角距离计算。
+        [branch]
+        if (type == 21)
+            distanceToShape = GetPenIconDist(local, input.p2);
+        else
+            distanceToShape = type == 5 ? GetRectangleDist(local, input.p2)
+                : length(local) - min(input.p2.x, input.p2.y);
         float outerCoverage = CursorCoverage(distanceToShape);
         float innerCoverage = CursorCoverage(distanceToShape + max(input.r1, 0.0));
+        if (type == 5 && input.uv.x >= 2.0)
+        {
+            // 仅显式高亮矩形将左右内缩减半；旧光标和屏幕笔仍使用原内轮廓。
+            float2 innerHalfSize = input.p2 - max(input.r1, 0.0) * float2(0.5, 1.0);
+            innerCoverage = all(innerHalfSize > 0.0)
+                ? min(outerCoverage, CursorCoverage(GetRectangleDist(local, innerHalfSize))) : 0.0;
+        }
         float outlineCoverage = max(0.0, outerCoverage - innerCoverage);
         float opacity = saturate(input.color.a);
-        float outlineAlpha = outlineCoverage * opacity;
+        // 填充保留工具 alpha；高亮边缘可单独不透明，旧调用上传 0 时保持原公式。
+        float edgeOpacity = input.uv.x > 0.0 ? saturate(input.uv.x - 1.0) : opacity;
+        float outlineAlpha = outlineCoverage * edgeOpacity;
         float fillAlpha = innerCoverage * saturate(input.r2) * opacity;
         float alpha = outlineAlpha + fillAlpha;
         float3 outlineColor = saturate(globalPadding);

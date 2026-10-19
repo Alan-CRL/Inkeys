@@ -328,10 +328,13 @@ namespace Inkeys::Drawing::Draw3
 		}
 		const DrawingCursorAppearance& appearance = visual.appearance;
 		const float shapeType = appearance.shape == DrawingCursorShape::Circle ? 4.0f
-			: appearance.shape == DrawingCursorShape::Rectangle ? 5.0f : 6.0f;
+			: appearance.shape == DrawingCursorShape::Rectangle ? 5.0f
+			: appearance.shape == DrawingCursorShape::PenIcon ? 21.0f : 6.0f;
+		// 只移动瞬态 quad 中心，输入/墨迹坐标仍是 visual.x/y 的笔尖热点。
 		const InkPoint cursorData[2] = {
-			{ visual.x, visual.y, appearance.width * 0.5f, appearance.height * 0.5f },
-			{ appearance.outlineWidth, appearance.fillAlpha, 0.0f, 0.0f }
+			{ visual.x + appearance.centerOffsetX, visual.y + appearance.centerOffsetY,
+				appearance.width * 0.5f, appearance.height * 0.5f },
+			{ appearance.outlineWidth, appearance.fillAlpha, appearance.outlineOpacity + 1.0f, 0.0f }
 		};
 
 		const HRESULT inkUploadResult = UploadStructuredBuffer(inkDataBuffer.Get(), cursorData, sizeof(cursorData),

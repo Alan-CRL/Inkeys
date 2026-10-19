@@ -679,3 +679,26 @@
 ### Next Steps
 
 - 仅本地提交，无push；真实设备、USER32捕获与Office/WPP验收仍未执行。
+
+
+## Session 112: Draw3 光标改动与离笔回弹修复验收归档
+<!-- trellis-session: v=2 fp=3ebbf78557e12612 -->
+
+**Date**: 2026-10-19
+**Task**: Draw3 光标改动与离笔回弹修复验收归档
+**Branch**: `bugfix/cursor`
+
+### Summary
+
+完成光标样式与触摸生命周期改动，修复屏幕笔离开后系统Move错误接管鼠标画笔光标。完整Debug|ARM64与headless --no-window通过，用户2026-10-19确认人工验证通过并要求结束任务，已归档10-18-draw3-cursor-policy。此前未执行的Win7实机验证保持原记录；不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e9e9b1f5` | fix(draw3): refine cursor styles and touch cursor lifecycle |
+| `fb5559ff` | fix(draw3): prevent mouse cursor takeover after pen leaves |
+
+### Status
+
+[OK] **Completed**

@@ -4185,6 +4185,68 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::EndChild();
 					}
 					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.6f;
+						ImGui::PushFont(ImFontMain);
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
+						ImGui::PopFont();
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.5f;
+						ImGui::PushFont(ImFontMain);
+						const auto description = IA(I18nKey.SettingsUI.Draw.Cursor.Description);
+						const float descriptionWidth = (settingItemWidth - 40.0f) * settingGlobalScale;
+						const float descriptionHeight = ImGui::CalcTextSize(description.c_str(), nullptr, false, descriptionWidth).y;
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("绘制光标设置", { settingItemWidth * settingGlobalScale, descriptionHeight + 130.0f * settingGlobalScale },
+							true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 15.0f * settingGlobalScale });
+						ImGui::PushTextWrapPos((settingItemWidth - 20.0f) * settingGlobalScale);
+						ImGui::TextWrapped("%s", description.c_str());
+						ImGui::PopTextWrapPos();
+						const float firstRowY = descriptionHeight + 30.0f * settingGlobalScale;
+						auto& saved = Inkeys::config.Drawing.Cursor;
+						bool cursorChanged = false;
+						const string styles[] = { IA(I18nKey.SettingsUI.Draw.Cursor.DefaultStyle), IA(I18nKey.SettingsUI.Draw.Cursor.DrawingStyle) };
+						const float styleWidth = max(180.0f * settingGlobalScale,
+							max(ImGui::CalcTextSize(styles[0].c_str()).x, ImGui::CalcTextSize(styles[1].c_str()).x) + 45.0f * settingGlobalScale);
+						const auto styleRow = [&](const char* id, const string& label, IdtAtomic<int>& preference, int row)
+						{
+							const float rowY = firstRowY + static_cast<float>(row) * 40.0f * settingGlobalScale;
+							const int selected = preference.load() == 1 ? 1 : 0;
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, rowY + 5.0f * settingGlobalScale });
+							ImGui::TextUnformatted(label.c_str());
+							ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - styleWidth - 20.0f * settingGlobalScale, rowY });
+							ImGui::SetNextItemWidth(styleWidth);
+							if (Widgets::combo.Begin(id, styles[selected].c_str(), 2))
+							{
+								for (int i = 0; i < 2; ++i)
+								{
+									if (Widgets::combo.Selectable(styles[i].c_str(), selected == i) && selected != i)
+									{
+										preference = i;
+										cursorChanged = true;
+									}
+									if (selected == i) ImGui::SetItemDefaultFocus();
+								}
+								Widgets::combo.End();
+							}
+						};
+						styleRow("##鼠标光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.MouseStyle), saved.MouseStyle, 0);
+						styleRow("##笔光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.PenStyle), saved.PenStyle, 1);
+						if (cursorChanged)
+						{
+							// Sync 在设置渲染作用域内转交业务 FIFO，随后冻结同一批配置写盘。
+							SyncDraw3State();
+							QueueConfigWrite();
+						}
+						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar(2);
+						ImGui::PopFont();
+					}
+					{
 						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
 						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
 					}

@@ -574,6 +574,13 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 
 				const auto path = JoinPath(groupPath, name);
+				if (path == "Drawing.Cursor.MouseStyle" || path == "Drawing.Cursor.PenStyle")
+				{
+					// 两种类型只接受整数 0/1；非法值各自恢复系统/圆形默认，不能强转成笔形。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
+					return;
+				}
 				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")
 				{
 					// 先验证 JSON 整数类型与范围，避免超宽整数窄化后成为合法选项。
@@ -792,6 +799,11 @@ namespace Inkeys
 
 		Json::Value outputRoot = autoCleanEnabled ? Json::Value(Json::objectValue) : baseRoot;
 		OverlayDocument(outputRoot);
+		// 边缘已改为输入设备固定策略；即使保留未知键，也不再写回已退役的三个开关。
+		auto& cursorNode = outputRoot["Drawing"]["Cursor"];
+		cursorNode.removeMember("MouseHighlightEdge");
+		cursorNode.removeMember("ScreenPenHighlightEdge");
+		cursorNode.removeMember("DigitizerHighlightEdge");
 
 		if (!WriteDocumentToFile(GetFilePath(), outputRoot)) return false;
 
