@@ -40,6 +40,7 @@
 #include <mmsystem.h>
 
 #include "Draw3.Bridge.h"
+#include "Draw3.Shortcut.h"
 #include "Draw3.PptTiming.h"
 #include "Draw3.Presentation.h"
 #include "Draw3.TimerPeriod.h"
@@ -7831,6 +7832,32 @@ namespace Inkeys::Drawing::Draw3
 			activePresentationMutationRevision =
 				AdvancePresentationMutationRevision(activePresentationMutationRevision);
 		};
+		Shortcuts::Context shortcutContext;
+		std::optional<InkGuid> shortcutPageGuid;
+		auto refreshShortcutContext = [&]() noexcept
+		{
+			const auto* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+			const auto guid = page ? std::optional(page->PageGuid()) : std::nullopt;
+			const auto target = activePresentationTarget
+				? std::optional(Bridge::ReadyIdentityFor(*activePresentationTarget)) : std::nullopt;
+			if (guid != shortcutPageGuid || shortcutContext.scope.pageEpoch == 0 ||
+				shortcutContext.scope.workspace != activeWorkspace ||
+				shortcutContext.scope.pageIndex != currentPageIndex_ ||
+				shortcutContext.scope.presentation != target)
+			{
+				if (++shortcutContext.scope.pageEpoch == 0) ++shortcutContext.scope.pageEpoch;
+				shortcutPageGuid = guid;
+			}
+			shortcutContext.scope.workspace = activeWorkspace;
+			shortcutContext.scope.pageIndex = currentPageIndex_;
+			shortcutContext.scope.presentation = target;
+			shortcutContext.available = page && page->FindCanvas(kDefaultDeviceKey) &&
+				currentPageIndex_ < pageRuntimeStates.size();
+			shortcutContext.hasContent = currentPageIndex_ < pageRuntimeStates.size() &&
+				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
+			if (observer_.shortcutContextChanged)
+				observer_.shortcutContextChanged(observer_.context, shortcutContext);
+		};
 		bool publishedCurrentPageHasContent = false;
 		bool contentRevisionNeedsPresent = false;
 		auto currentPageHasContent = [&]() noexcept
@@ -7872,6 +7899,9 @@ namespace Inkeys::Drawing::Draw3
 		auto publishCurrentPageContent = [&]()
 		{
 			publishHistoryAvailability();
+			// 与呈现用 bool 修订分离：同页新增第二笔/Undo 也必须退休两击候选。
+			if (++shortcutContext.contentRevision == 0) ++shortcutContext.contentRevision;
+			refreshShortcutContext();
 			const bool hasContent = currentPageHasContent();
 			if (hasContent == publishedCurrentPageHasContent) return;
 			publishedCurrentPageHasContent = hasContent;
@@ -11858,10 +11888,33 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
+				struct ShortcutCompletionGuard
+				{
+					DrawingControllerRuntimeObserver& observer;
+					std::uint64_t id;
+					Shortcuts::Result result = Shortcuts::Result::Failed;
+					~ShortcutCompletionGuard() noexcept
+					{
+						if (id && observer.shortcutCompleted)
+							observer.shortcutCompleted(observer.context, id, result);
+					}
+				} shortcutResult{ observer_, command.shortcut ? command.shortcut->requestId : 0 };
+				if (command.shortcut)
+				{
+					refreshShortcutContext();
+					shortcutResult.result = observer_.shortcutCommandAllowed && shortcutContext.available
+						? observer_.shortcutCommandAllowed(observer_.context, *command.shortcut, shortcutContext)
+						: Shortcuts::Result::Stale;
+					if (shortcutResult.result != Shortcuts::Result::Applied) continue;
+					shortcutResult.result = Shortcuts::Result::Failed;
+				}
 				if (metricsState_) metricsState_->frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::Command);
 				if (!CanvasCommandAllowedAfterExitBarrier(currentLoadRetry,
 					command.type))
+				{
+					shortcutResult.result = Shortcuts::Result::Blocked;
 					continue; // 首次最终保存 ACK 后不再接受会写状态或再次保存的命令。
+				}
 				if (command.type == CanvasCommandType::DesktopPersistenceCompleted)
 				{
 					if (!command.desktopPersistenceCompletion || !desktopClearRecovery ||
@@ -12287,8 +12340,16 @@ namespace Inkeys::Drawing::Draw3
 					activePresentationLoadPending || presentationLoadUnresolved(),
 					command.type == CanvasCommandType::PrepareExitAutoSave))
 				{
+					shortcutResult.result = Shortcuts::Result::Blocked;
 					// 恢复未决时，破坏性画布命令与 physical contact 使用同一输入闸门。
 					reportCommand(command.type);
+					continue;
+				}
+				if (command.type == CanvasCommandType::ShortcutFence)
+				{
+					// 入队旧 Down 已由 admission 屏障收尾；此处不再 Clear，也不改历史恢复点。
+					shortcutResult.result = command.shortcut
+						? Shortcuts::ResolveFence(*command.shortcut, shortcutContext) : Shortcuts::Result::Stale;
 					continue;
 				}
 				// 页面、撤回/重做和键盘平移都以命令时刻的固定视口为起点。
@@ -12300,6 +12361,12 @@ namespace Inkeys::Drawing::Draw3
 				// 重做直接复用唯一Clear事务，包括快照、当前页边界与保存请求。
 				if (command.type == CanvasCommandType::Clear || redoClear)
 				{
+					if (command.shortcut && !currentPageHasContent())
+					{
+						shortcutResult.result = Shortcuts::Result::NoContent;
+						reportCommand(command.type);
+						continue;
+					}
 					std::shared_ptr<ClearRedoContinuation> continuation;
 					if (redoClear && pageRuntimeStates[currentPageIndex_].clearRedoContinuation)
 					{
@@ -12364,6 +12431,7 @@ namespace Inkeys::Drawing::Draw3
 					(void)boundaryQueued;
 					// 恢复点建立后再发布真实可用性，避免 Clear 内部空态提前报告不能 Undo。
 					if (cleared) publishCurrentPageContent();
+					shortcutResult.result = cleared ? Shortcuts::Result::Applied : Shortcuts::Result::Failed;
 					reportCommand(command.type);
 					continue;
 				}
@@ -12451,6 +12519,8 @@ namespace Inkeys::Drawing::Draw3
 						}
 						publishCurrentPageContent();
 					}
+					shortcutResult.result = changed || restoredBoundary ? Shortcuts::Result::Applied
+						: Shortcuts::Result::NoContent;
 					reportCommand(command.type);
 					continue;
 				}
@@ -12458,11 +12528,13 @@ namespace Inkeys::Drawing::Draw3
 				{
 					renderer_.InvalidateTrustedL2Snapshot();
 					trustedSnapshotSignatureValid = false;
-					if (redoCurrentPage(frameDirty))
+					const bool redone = redoCurrentPage(frameDirty);
+					if (redone)
 					{
 						markPresentationMutation();
 						publishCurrentPageContent();
 					}
+					shortcutResult.result = redone ? Shortcuts::Result::Applied : Shortcuts::Result::NoContent;
 					reportCommand(command.type);
 					continue;
 				}

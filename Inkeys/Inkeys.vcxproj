@@ -426,6 +426,8 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapse.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapseInteraction.h" />
     <ClInclude Include="Inkeys\Input\MouseHook.Transport.h" />
+    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.h" />
+    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.Transport.h" />
     <ClInclude Include="Inkeys\Business\PptSessionToken.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
@@ -504,6 +506,8 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h" />
     <ClInclude Include="Inkeys\Net\UpdatePathSafety.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
@@ -867,6 +871,7 @@
 	<ClCompile Include="Inkeys\Business\LegacyDrawState.cpp" />
 	<ClCompile Include="Inkeys\Input\UiPointerInput.cpp" />
 	<ClCompile Include="Inkeys\Input\MouseHook.cpp" />
+	<ClCompile Include="Inkeys\Input\KeyboardShortcuts.cpp" />
 	<ClCompile Include="Inkeys\Input\MouseHook.cppm" />
 	<ClCompile Include="Inkeys\Message\Message.cpp" />
 	<ClCompile Include="Inkeys\Message\Message.cppm" />

@@ -9,6 +9,9 @@ module;
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Drawing/Draw3/Draw3.Shortcut.h"
+#include "../../Input/KeyboardShortcuts.h"
+#include <deque>
 #include <cstdio>
 #include <d2d1helper.h>
 #include "../../Window/Window.Legacy.hpp"
@@ -43,12 +46,19 @@ import Inkeys.UI.RenderPipeline;
 import Inkeys.Window;
 import Inkeys.Display;
 import Inkeys.UI.MessageBox;
+import Inkeys.UI.Freeze;
 import Inkeys.Startup.Progress;
 import Inkeys.Drawing.Draw3.diagnostics;
 using Inkeys::UI::Bar::BarToggleChannel;
 using Inkeys::UI::Bar::SetBarButtonPressedVisual;
 using Inkeys::UI::Bar::StartBarButtonHoverVisual;
 using Inkeys::UI::Bar::StopBarButtonHoverVisual;
+#include "Bar.KeyboardShortcuts.h"
+
+int Inkeys::UI::Bar::RunKeyboardShortcutBusinessProductionTest() noexcept
+{
+	return BarKeyboardShortcutOwner<BarShortcutTestBackend>::ProductionTest();
+}
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarThicknessTooltipHoverGraceMs = 100;
@@ -789,6 +799,12 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 {
 	if (screenSample) screenSample->ready = false;
 	barUISet.PollGlobalMouseInput();
+	if (barKeyboardShortcuts.Poll(false))
+	{
+		// 不在嵌套手势中执行命令，先走已有 cancel 路径退出控件引用栈。
+		MakeBarPointerCancel(message);
+		return true;
+	}
 	for (;;)
 	{
 		const auto ordinal = barPointerActiveOrdinal.load(std::memory_order_acquire);
@@ -6414,6 +6430,9 @@ public:
 			Inkeys::Startup::Milestone::BarInteractionReady);
 		while (!offSignal)
 		{
+			// 唯一业务安全点；下方各阶段与嵌套拖动均已退栈。
+			if (barKeyboardShortcuts.Poll(true))
+				this_thread::sleep_for(chrono::milliseconds(1));
 			const auto pollResult = PollInteractionMessage();
 			stateMode = GetStateModeSnapshot();
 			if (pollResult == BarInteractionStageResult::Shutdown) break;
@@ -6458,6 +6477,7 @@ public:
 			if (pointerResult == BarInteractionStageResult::Shutdown) break;
 			if (pointerResult == BarInteractionStageResult::Consumed) continue;
 		}
+		barKeyboardShortcuts.Stop();
 		(void)FinishInteraction();
 	}
 

@@ -1,4 +1,5 @@
 #include "Draw3.Bridge.h"
+#include "Draw3.Shortcut.h"
 
 #include <algorithm>
 
@@ -41,6 +42,10 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			state.presentationTarget = state_.presentationTarget;
 		else if (state.workspace != Workspace::Presentation)
 			state.presentationTarget.reset();
+		const bool sceneChanged = state.workspace != state_.workspace ||
+			state.hasPage != state_.hasPage || (state.hasPage && state.page != state_.page) ||
+			state.presentationTarget != state_.presentationTarget;
+		state.shortcutIntentEpoch = state_.shortcutIntentEpoch + (sceneChanged ? 1 : 0);
 		state.revision = state_.revision + 1;
 		state_ = state;
 	}
@@ -52,6 +57,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		const bool clearPage = workspace != Workspace::Presentation;
 		if (state_.workspace == workspace && (!clearPage || !state_.hasPage))
 			return false;
+		++state_.shortcutIntentEpoch;
 		state_.workspace = workspace;
 		if (clearPage)
 		{
@@ -91,6 +97,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		{
 			return std::nullopt;
 		}
+		++state_.shortcutIntentEpoch;
 		++state_.revision;
 		if (changed) *changed = true;
 		return state_.presentationTarget->targetRevision;
@@ -102,6 +109,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		if (!running_) return false;
 		if (state_.workspace == Workspace::Presentation &&
 			!state_.presentationTarget && !state_.hasPage) return false;
+		++state_.shortcutIntentEpoch;
 		state_.workspace = Workspace::Presentation;
 		state_.presentationTarget.reset();
 		state_.page = 0;
@@ -123,7 +131,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		// 尚未准备好的能力保留显式空接口，产品入口可据此隐藏。
 		if (type == CommandType::Save || type == CommandType::SuperRecovery ||
 			type == CommandType::AutoStraighten || type == CommandType::InputTest ||
-			type == CommandType::PrepareExitAutoSave)
+			type == CommandType::PrepareExitAutoSave || type == CommandType::ShortcutFence)
 			return CommandResult::Unsupported;
 		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
 		try
@@ -139,6 +147,32 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		{
 			return CommandResult::QueueFull;
 		}
+		return CommandResult::Accepted;
+	}
+
+	CommandResult StateBridge::PublishShortcut(CommandType type,
+		std::shared_ptr<const Shortcuts::Request> request) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return CommandResult::NotRunning;
+		if (!request || (type != CommandType::Clear && type != CommandType::Undo &&
+			type != CommandType::Redo && type != CommandType::ShortcutFence)) return CommandResult::Unsupported;
+		const auto presentation = state_.presentationTarget
+			? std::optional(ReadyIdentityFor(*state_.presentationTarget)) : std::nullopt;
+		// 与入队共锁核验触发时身份，绝不把旧快捷键重绑定到最新页面。
+		if (request->scope.intentEpoch != state_.shortcutIntentEpoch ||
+			request->scope.workspace != state_.workspace ||
+			request->scope.presentation != presentation) return CommandResult::NotRunning;
+		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
+		try
+		{
+			Command command{ type, nextSequence_, state_.workspace };
+			command.presentationTarget = state_.presentationTarget;
+			command.shortcut = std::move(request);
+			commands_.push_back(std::move(command));
+			++nextSequence_;
+		}
+		catch (...) { return CommandResult::QueueFull; }
 		return CommandResult::Accepted;
 	}
 

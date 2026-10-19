@@ -338,6 +338,16 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
 			) \
 		) \
+	GROUP(Input, \
+		GROUP(Shortcuts, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ToggleAnnotation, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Undo, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, RedoY, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, RedoShiftZ, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Clear, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Freeze, true) \
+		) \
+	) \
 	GROUP(Drawing, \
 		GROUP(Eraser, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \

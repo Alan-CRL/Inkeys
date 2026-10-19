@@ -14,6 +14,7 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <vector>
 #include <windows.h>
 #include <concurrentqueue/moodycamel/blockingconcurrentqueue.h>
@@ -681,6 +682,8 @@ namespace Inkeys::Drawing::Draw3
 		int64_t qpcFrequency = 0;
 		std::atomic<uint64_t> wakeGeneration = 0;
 		std::atomic<uint64_t> admissionRevision = 0;
+		std::mutex admissionGateMutex; // 仅低频 setter 使用；输入 producer 仍只读原子 revision。
+		bool baseAdmissionBlocked = false, shortcutAdmissionBlocked = false;
 		std::atomic<size_t> quarantinedContacts = 0;
 		std::atomic<bool> diagnosticsEnabled = false;
 		std::atomic<uint64_t> downPublished = 0;
@@ -888,15 +891,25 @@ namespace Inkeys::Drawing::Draw3
 
 	void ContactInputCoordinator::SetAdmissionBlocked(bool blocked) noexcept
 	{
-		uint64_t revision = impl_->admissionRevision.load(std::memory_order_acquire);
-		while ((revision % 2 != 0) != blocked)
+		std::scoped_lock lock(impl_->admissionGateMutex);
+		impl_->baseAdmissionBlocked = blocked;
+		const uint64_t revision = impl_->admissionRevision.load(std::memory_order_acquire);
+		if ((revision % 2 != 0) != (blocked || impl_->shortcutAdmissionBlocked))
 		{
-			if (impl_->admissionRevision.compare_exchange_weak(revision, revision + 1,
-				std::memory_order_acq_rel, std::memory_order_acquire))
-			{
-				(void)PublishControlWake();
-				return;
-			}
+			impl_->admissionRevision.store(revision + 1, std::memory_order_release);
+			(void)PublishControlWake();
+		}
+	}
+
+	void ContactInputCoordinator::SetShortcutAdmissionBlocked(bool blocked) noexcept
+	{
+		std::scoped_lock lock(impl_->admissionGateMutex);
+		impl_->shortcutAdmissionBlocked = blocked;
+		const uint64_t revision = impl_->admissionRevision.load(std::memory_order_acquire);
+		if ((revision % 2 != 0) != (blocked || impl_->baseAdmissionBlocked))
+		{
+			impl_->admissionRevision.store(revision + 1, std::memory_order_release);
+			(void)PublishControlWake();
 		}
 	}
 

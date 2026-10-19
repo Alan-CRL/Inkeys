@@ -152,7 +152,11 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <ClCompile Include="auto_collapse_interaction_tests.cpp" />
+    <ClCompile Include="keyboard_shortcut_config_tests.cpp">
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="mouse_hook_transport_tests.cpp" />
+    <ClCompile Include="keyboard_shortcut_input_tests.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\Input\UiPointerInput.cpp" />
 	<ClCompile Include="dirty_region_tests.cpp" />
 	<ClCompile Include="window_geometry_tests.cpp" />

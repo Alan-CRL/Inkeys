@@ -13,6 +13,7 @@ module;
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Input/KeyboardShortcuts.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Setting.SessionState.h"
 #include "../StartupPlacement.h"
@@ -7660,77 +7661,103 @@ SettingSessionCoroutine RunSettingSession()
 				case settingTabEnum::tab5:
 				{
 					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
-
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
 					ImGui::BeginChild("快捷键", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
-
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+					ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+					ImGui::TextUnformatted(IA(I18nKey.SettingsUI.HotKey.N).c_str());
+
+					ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+					ImGui::PushTextWrapPos(settingItemWidth * settingGlobalScale);
+					ImGui::TextUnformatted(IA(I18nKey.SettingsUI.HotKey.E).c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+
+					auto& shortcuts = Inkeys::config.Input.Shortcuts;
+					IdtAtomic<bool>* values[]{ &shortcuts.ToggleAnnotation, &shortcuts.Undo, &shortcuts.RedoY,
+						&shortcuts.RedoShiftZ, &shortcuts.Clear, &shortcuts.Freeze };
+					const char* combinations[]{ "Ctrl + Alt + X", "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z", "Ctrl + Delete", "Ctrl + Q" };
+					const string names[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationN), IA(I18nKey.SettingsUI.HotKey.UndoN),
+						IA(I18nKey.SettingsUI.HotKey.RedoYN), IA(I18nKey.SettingsUI.HotKey.RedoShiftZN),
+						IA(I18nKey.SettingsUI.HotKey.ClearN), IA(I18nKey.SettingsUI.HotKey.FreezeN) };
+					const string descriptions[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationE), IA(I18nKey.SettingsUI.HotKey.UndoE),
+						IA(I18nKey.SettingsUI.HotKey.RedoYE), IA(I18nKey.SettingsUI.HotKey.RedoShiftZE),
+						IA(I18nKey.SettingsUI.HotKey.ClearE), IA(I18nKey.SettingsUI.HotKey.FreezeE) };
+					const auto shortcutStatus = Inkeys::Input::KeyboardShortcuts::GetStatus();
+					string globalStatus = !shortcutStatus.running ? IA(I18nKey.SettingsUI.HotKey.NotRunning)
+						: !shortcuts.ToggleAnnotation.load() ? (shortcutStatus.hotkeyRegistered
+							? (shortcutStatus.hotkeyError ? IA(I18nKey.SettingsUI.HotKey.UnregisterFailed) : IA(I18nKey.SettingsUI.HotKey.Disabling))
+							: IA(I18nKey.SettingsUI.HotKey.Disabled))
+						: shortcutStatus.hotkeyRegistered ? IA(I18nKey.SettingsUI.HotKey.Registered)
+						: shortcutStatus.hotkeyError ? IA(I18nKey.SettingsUI.HotKey.RegisterFailed) : IA(I18nKey.SettingsUI.HotKey.Registering);
+					if (shortcutStatus.hotkeyError != 0)
+						globalStatus += " (" + to_string(shortcutStatus.hotkeyError) + ")";
+					string hookStatus = !shortcutStatus.hookInstalled ? IA(I18nKey.SettingsUI.HotKey.HookFailed)
+						: shortcutStatus.synchronizationPending ? IA(I18nKey.SettingsUI.HotKey.SynchronizationPending)
+						: IA(I18nKey.SettingsUI.HotKey.HookReady);
+					if (shortcutStatus.hookError != 0) hookStatus += " (" + to_string(shortcutStatus.hookError) + ")";
+					ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+					ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+					ImGui::PushTextWrapPos(settingItemWidth * settingGlobalScale);
+					ImGui::TextUnformatted(globalStatus.c_str());
+					ImGui::TextUnformatted(hookStatus.c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					for (int item = 0; item < 6; ++item)
 					{
-						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.HotKey.N).c_str());
-					}
-
-					{
-						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
-
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-						ImGui::BeginChild("快捷键-输出", { settingContentPanelWidth * settingGlobalScale,565.0f * settingGlobalScale }, true);
-
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						const string title = names[item] + "  (" + combinations[item] + ")";
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						const float titleHeight = ImGui::CalcTextSize(title.c_str(), nullptr, false,
+							(settingRightToggleX - 40.0f) * settingGlobalScale).y;
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						const float descriptionHeight = ImGui::CalcTextSize(descriptions[item].c_str(), nullptr, false,
+							settingDescriptionWidth * settingGlobalScale).y;
+						ImGui::PopFont();
+						// 测量与绘制共用宽度，三语及缩放下不让长说明挤到开关或卡片之外。
+						const float cardHeight = titleHeight + descriptionHeight + 50.0f * settingGlobalScale;
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+						ImGui::PushID(item);
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("固定快捷键", { settingItemWidth * settingGlobalScale,cardHeight }, true,
+							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+						ImGui::PushTextWrapPos((settingRightToggleX - 20.0f) * settingGlobalScale);
+						ImGui::TextUnformatted(title.c_str());
+						ImGui::PopTextWrapPos();
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,30.0f * settingGlobalScale + titleHeight });
+						ImGui::PushTextWrapPos((settingItemWidth - 20.0f) * settingGlobalScale);
+						ImGui::TextUnformatted(descriptions[item].c_str());
+						ImGui::PopTextWrapPos();
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						bool enabled = values[item]->load();
+						ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,20.0f * settingGlobalScale });
+						Widgets::toggle.ToggleBool("##启用固定快捷键", &enabled);
+						if (enabled != values[item]->load())
 						{
-							ImGui::SetCursorPosY(30.0f);
-							wstring text = IW(I18nKey.SettingsUI.HotKey.E);
-
-							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
-
-							std::vector<std::string> lines;
-							std::wstring line, temp;
-							std::wstringstream ss(text);
-
-							while (getline(ss, temp, L'\n'))
-							{
-								bool flag = false;
-								line = L"";
-
-								for (wchar_t ch : temp)
-								{
-									flag = false;
-
-									float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
-									if (text_width > (right_x - left_x))
-									{
-										lines.emplace_back(utf16ToUtf8(line));
-										line = L"", flag = true;
-									}
-
-									line += ch;
-								}
-
-								if (!flag) lines.emplace_back(utf16ToUtf8(line));
-							}
-							for (const auto& temp : lines)
-							{
-								//float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-								//float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
-								//if (text_indentation < 0)  text_indentation = 0;
-								//ImGui::SetCursorPosX(left_x + text_indentation);
-								ImGui::SetCursorPosX(left_x);
-								ImGui::TextUnformatted(temp.c_str());
-							}
-
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-						}
-
-						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							*values[item] = enabled;
+							uint32_t mask = 0;
+							for (int i = 0; i < 6; ++i) if (values[i]->load()) mask |= 1u << i;
+							// 系统注册由键盘线程异步处理，设置渲染期间不等待安装/卸载或业务线程。
+							Inkeys::Input::KeyboardShortcuts::SetEnabled(mask);
+							QueueConfigWrite();
 						}
 						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar(2);
+						ImGui::PopID();
 					}
 
 					{

@@ -271,6 +271,7 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<Bridge::PresentationReadyIdentity> uiReadyPresentationTarget;
 		std::optional<Bridge::PresentationReadyIdentity> suspendedPresentationTarget;
 		bool commandScenePending = false;
+		bool shortcutSelectionHandoffPending = false;
 		bool restoreLatestScene = false;
 		std::atomic<HostOutputTarget> requestedOutputTarget =
 			HostOutputTarget::PrimaryDrawpad;
@@ -283,6 +284,7 @@ namespace Inkeys::Drawing::Draw3
 		Detail::HostRuntimeRevisionSignal runtimeRevision;
 		Detail::HostDrawingActivityState drawingActivity;
 		Detail::HostAcceptedStrokeState acceptedStrokes;
+		Shortcuts::State shortcuts;
 		std::atomic<LONG> lastDirtyLeft = 0;
 		std::atomic<LONG> lastDirtyTop = 0;
 		std::atomic<LONG> lastDirtyRight = 0;
@@ -547,6 +549,33 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		bool ShortcutBaselineBlockedLocked() const noexcept
+		{
+			const auto desired = bridge.Snapshot();
+			const auto expected = desired.presentationTarget
+				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget)) : std::nullopt;
+			return shortcutSelectionHandoffPending || commandScenePending || (desired.workspace == Bridge::Workspace::Presentation
+				? !expected || readyPresentationTarget != expected ||
+					suspendedPresentationTarget.has_value() ||
+					(startOptions.requirePresentationUiReady && uiReadyPresentationTarget != expected)
+				: workspace.load(std::memory_order_acquire) == Bridge::Workspace::Presentation);
+		}
+
+		Shortcuts::Context ShortcutContextLocked() noexcept
+		{
+			auto context = shortcuts.Snapshot();
+			const auto desired = bridge.Snapshot();
+			const auto target = desired.presentationTarget
+				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget)) : std::nullopt;
+			context.available = running.load(std::memory_order_acquire) &&
+				context.scope.pageEpoch != 0 && !ShortcutBaselineBlockedLocked() &&
+				context.scope.workspace == desired.workspace && context.scope.presentation == target &&
+				(!desired.hasPage || context.scope.pageIndex == desired.page);
+			// 即使渲染合并了 A→B→A，也要退休旧意图；内容修订不参与该身份。
+			shortcuts.Publish(context, desired.shortcutIntentEpoch);
+			return shortcuts.Snapshot();
+		}
+
 		// 调用方持有 presentationTargetMutex；发布、ready 和 UI ack 共用这一交接门。
 		void RefreshPresentationInputGateLocked()
 		{
@@ -602,6 +631,7 @@ namespace Inkeys::Drawing::Draw3
 			completedStrokeKind.store(
 				Bridge::CompletedStrokeKind::None, std::memory_order_release);
 			acceptedStrokes.BeginHost();
+			shortcuts.BeginHost();
 			selectionMode.store(true, std::memory_order_release);
 			workspace.store(Bridge::Workspace::Desktop, std::memory_order_release);
 			{
@@ -610,6 +640,8 @@ namespace Inkeys::Drawing::Draw3
 				uiReadyPresentationTarget.reset();
 				suspendedPresentationTarget.reset();
 				input.SetAdmissionBlocked(false);
+				input.SetShortcutAdmissionBlocked(false);
+				shortcutSelectionHandoffPending = false;
 				commandScenePending = false;
 				restoreLatestScene = false;
 			}
@@ -1100,6 +1132,28 @@ namespace Inkeys::Drawing::Draw3
 				self->runtimeCallbacks.drawingActivityChanged);
 		}
 
+		static void ObserveShortcutContext(void* context, Shortcuts::Context value) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			std::scoped_lock lock(self->presentationTargetMutex);
+			self->shortcuts.Publish(value, self->bridge.Snapshot().shortcutIntentEpoch);
+		}
+		static Shortcuts::Result AllowShortcutCommand(void* context,
+			const Shortcuts::Request& request, const Shortcuts::Context& actual) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return Shortcuts::Result::Stale;
+			std::scoped_lock lock(self->presentationTargetMutex);
+			(void)self->ShortcutContextLocked();
+			return self->shortcuts.Authorize(request, actual);
+		}
+		static void CompleteShortcut(void* context, std::uint64_t id, Shortcuts::Result result) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (self) self->shortcuts.Complete(id, result);
+		}
+
 		static void ObserveAcceptedStrokeScene(void* context, const Bridge::AcceptedStrokeBegin& scene) noexcept
 		{
 			auto* self = static_cast<Impl*>(context);
@@ -1272,6 +1326,14 @@ namespace Inkeys::Drawing::Draw3
 			if (state.revision == appliedBridgeRevision && !restoreLatestScene) return;
 			appliedBridgeRevision = state.revision;
 			window.SetSelectionMode(state.selectionMode);
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				if (shortcutSelectionHandoffPending && window.SelectionMode() == bridge.Snapshot().selectionMode)
+				{
+					shortcutSelectionHandoffPending = false;
+					input.SetShortcutAdmissionBlocked(shortcuts.Lease() != 0);
+				}
+			}
 			window.SetAutoSaveEnabled(state.autoSaveEnabled);
 			const bool selectionChanged = selectionMode.exchange(state.selectionMode,
 				std::memory_order_acq_rel) != state.selectionMode;
@@ -1384,19 +1446,21 @@ namespace Inkeys::Drawing::Draw3
 			}
 			// 每个独立 Command marker 只执行一条 scene-stamped 命令。
 			restoreLatestScene = true;
-			EnqueueCommandScene(command);
+			if (!command.shortcut) EnqueueCommandScene(command); // 快捷键只条件执行当前页，禁止重放旧页。
 			CanvasCommand canvas;
 			switch (command.type)
 			{
 			case Bridge::CommandType::Clear: canvas.type = CanvasCommandType::Clear; break;
 			case Bridge::CommandType::Undo: canvas.type = CanvasCommandType::Undo; break;
 			case Bridge::CommandType::Redo: canvas.type = CanvasCommandType::Redo; break;
+			case Bridge::CommandType::ShortcutFence: canvas.type = CanvasCommandType::ShortcutFence; break;
 			case Bridge::CommandType::NextPage: canvas.type = CanvasCommandType::NextPage; break;
 			case Bridge::CommandType::PreviousPage: canvas.type = CanvasCommandType::PreviousPage; break;
 			case Bridge::CommandType::PrepareExitAutoSave:
 				canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
 			default: return;
 			}
+			canvas.shortcut = std::move(command.shortcut);
 			window.EnqueueCanvasCommand(canvas);
 		}
 
@@ -1630,6 +1694,9 @@ namespace Inkeys::Drawing::Draw3
 							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
 							observer.acceptedStrokeBegan = &ObserveAcceptedStroke;
 							observer.acceptedStrokeSceneChanged = &ObserveAcceptedStrokeScene;
+							observer.shortcutContextChanged = &ObserveShortcutContext;
+							observer.shortcutCommandAllowed = &AllowShortcutCommand;
+							observer.shortcutCompleted = &CompleteShortcut;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get());
 							std::cout << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
@@ -1726,6 +1793,7 @@ namespace Inkeys::Drawing::Draw3
 				renderer.ReleaseResources();
 				graphics = {};
 				running.store(false, std::memory_order_release);
+				shortcuts.Stop();
 				contentCondition.notify_all();
 				exitAutoSaveCondition.notify_all();
 				runtimeRevision.NotifyAll();
@@ -1740,6 +1808,7 @@ namespace Inkeys::Drawing::Draw3
 				// owner 创建失败也先监督，再排空已建立的 worker 并解除外部窗口附着。
 				failedCleanup.BeginKnownFailure();
 				running.store(false, std::memory_order_release);
+				shortcuts.Stop();
 				autoSave.CloseAndDrain();
 				presentationAutoSave.CloseAndDrain();
 				EndDrawingActivity();
@@ -1902,6 +1971,7 @@ namespace Inkeys::Drawing::Draw3
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
 			running.store(false, std::memory_order_release);
+			shortcuts.Stop();
 			contentCondition.notify_all();
 			runtimeRevision.NotifyAll();
 			runtimeCallbacks = {};
@@ -2243,9 +2313,79 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
+	Shortcuts::Context Host::ShortcutContext() const noexcept
+	{
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		return impl_->ShortcutContextLocked();
+	}
+
+	std::uint64_t Host::PublishShortcutCommand(Bridge::CommandType type,
+		const Shortcuts::Scope& expected, std::uint64_t leaseId,
+		std::optional<std::uint64_t> expectedContentRevision) noexcept
+	{
+		std::scoped_lock commandLock(impl_->commandPublishMutex);
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		const auto current = impl_->ShortcutContextLocked();
+		if (!current.available || current.scope != expected || impl_->shortcuts.Lease() != leaseId)
+			return 0;
+		const auto id = impl_->shortcuts.Reserve(expected);
+		if (!id) return 0;
+		if (!impl_->input.TryReserveCommandWake())
+		{
+			impl_->shortcuts.Retire(id);
+			return 0;
+		}
+		Bridge::CommandResult result = Bridge::CommandResult::QueueFull;
+		try
+		{
+			auto request = std::make_shared<Shortcuts::Request>();
+			*request = { id, expected, leaseId, expectedContentRevision };
+			result = impl_->bridge.PublishShortcut(type, std::move(request));
+		}
+		catch (...) {}
+		if (result == Bridge::CommandResult::Accepted)
+		{
+			impl_->input.PublishReservedCommandWake();
+			return id;
+		}
+		impl_->input.CancelReservedCommandWake();
+		impl_->shortcuts.Retire(id);
+		return 0;
+	}
+
+	bool Host::TakeShortcutCompletion(std::uint64_t id, Shortcuts::Completion& result) noexcept
+	{
+		return impl_->shortcuts.Take(id, result);
+	}
+	void Host::RetireShortcutRequest(std::uint64_t id) noexcept { impl_->shortcuts.Retire(id); }
+	std::uint64_t Host::AcquireShortcutLease(const Shortcuts::Context& expected,
+		bool requireContentRevision) noexcept
+	{
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		const auto current = impl_->ShortcutContextLocked();
+		if (!current.available || current.scope != expected.scope) return 0;
+		const auto id = impl_->shortcuts.Acquire(expected, requireContentRevision);
+		if (id) impl_->input.SetShortcutAdmissionBlocked(true);
+		return id;
+	}
+	void Host::ReleaseShortcutLease(std::uint64_t id) noexcept
+	{
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		if (impl_->shortcuts.Release(id))
+		{
+			// 状态内核已发布 Selection，但绘制 owner 尚未应用时继续关门，避免 Clear 后插入新笔迹。
+			impl_->shortcutSelectionHandoffPending =
+				impl_->bridge.Snapshot().selectionMode != impl_->window.SelectionMode();
+			impl_->input.SetShortcutAdmissionBlocked(impl_->shortcutSelectionHandoffPending);
+		}
+	}
+
 	Bridge::CommandResult Host::PublishCommand(Bridge::CommandType command) noexcept
 	{
 		std::scoped_lock lock(impl_->commandPublishMutex);
+		// 与 Acquire/Release 共用提交门；已接受的旧命令仍按原 FIFO 在 Clear/Fence 之前完成。
+		std::scoped_lock sceneLock(impl_->presentationTargetMutex);
+		if (!impl_->shortcuts.OrdinaryCommandAllowed(command)) return Bridge::CommandResult::QueueFull;
 		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
 		const Bridge::CommandResult result = impl_->bridge.Publish(command);
 		if (result == Bridge::CommandResult::Accepted)

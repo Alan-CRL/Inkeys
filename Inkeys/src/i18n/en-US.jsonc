@@ -617,7 +617,29 @@
     "HotKey":
     {
       "N": "Hotkeys",
-      "E": "Global Hotkeys:\nCtrl + Win + Alt: Switch select/draw mode\n\nIn Draw Mode:\nCtrl + Q: Freeze\nCtrl + E: Penetrate\nCtrl + Z: Undo/Super Restore\n\nOther/custom hotkeys coming soon."
+      "E": "These fixed combinations can be enabled individually. Custom bindings are not available yet.\nExcept for the global toggle, shortcuts apply only while annotating. Settings text input and modal dialogs take priority. In Select or Click-through mode, the current application receives them.\nThe global toggle remains active during normal settings editing. App modal dialogs pause its action while keeping the combination reserved. AltGr may overlap Ctrl + Alt on international keyboards; disable the global toggle if needed.\nKeyboard shortcuts do not take over PowerPoint navigation.",
+      "ToggleAnnotationN": "Global annotation toggle",
+      "ToggleAnnotationE": "Switch between annotation and Select. Combined style keeps ink when entering Select; Separate style clears the current page first. Returning restores the last annotation tool, without restoring Freeze.",
+      "UndoN": "Undo",
+      "UndoE": "Undo on the current page. Hold to repeat. An empty history never sends Undo to the application underneath.",
+      "RedoYN": "Redo",
+      "RedoYE": "Redo on the current page. Hold to repeat. This combination and Ctrl + Shift + Z have independent switches.",
+      "RedoShiftZN": "Redo (alternate)",
+      "RedoShiftZE": "The same Redo action as Ctrl + Y, with its own enable switch.",
+      "ClearN": "Clear current page",
+      "ClearE": "The first press clears and keeps the tool, even on an empty page. Keep Ctrl held, release Delete, then press Delete again to enter Select in either style. Holding Delete does not count twice. New strokes or other actions reset this sequence.",
+      "FreezeN": "Freeze",
+      "FreezeE": "Toggle screen Freeze. Unavailable in PowerPoint and Whiteboard workspaces. When unavailable, the combination still does not reach the application underneath.",
+      "Registering": "Registering the global toggle",
+      "Disabling": "Disabling the global toggle",
+      "UnregisterFailed": "Global toggle unregistration failed; the combination remains reserved",
+      "Registered": "Global toggle is active",
+      "Disabled": "Global toggle is disabled",
+      "NotRunning": "Keyboard service is not running",
+      "RegisterFailed": "Global toggle registration failed; another program may be using it",
+      "SynchronizationPending": "Synchronizing key state. Release keys in a normal-permission window, then retry.",
+      "HookReady": "Annotation shortcuts are ready",
+      "HookFailed": "Keyboard hook is not installed; annotation shortcuts are unavailable"
     },
     "Community":
     {

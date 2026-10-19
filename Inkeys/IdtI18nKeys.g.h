@@ -621,6 +621,28 @@ inline constexpr struct I18nKeyRoot
         {
             const char* N = "SettingsUI/HotKey/N";
             const char* E = "SettingsUI/HotKey/E";
+            const char* ToggleAnnotationN = "SettingsUI/HotKey/ToggleAnnotationN";
+            const char* ToggleAnnotationE = "SettingsUI/HotKey/ToggleAnnotationE";
+            const char* UndoN = "SettingsUI/HotKey/UndoN";
+            const char* UndoE = "SettingsUI/HotKey/UndoE";
+            const char* RedoYN = "SettingsUI/HotKey/RedoYN";
+            const char* RedoYE = "SettingsUI/HotKey/RedoYE";
+            const char* RedoShiftZN = "SettingsUI/HotKey/RedoShiftZN";
+            const char* RedoShiftZE = "SettingsUI/HotKey/RedoShiftZE";
+            const char* ClearN = "SettingsUI/HotKey/ClearN";
+            const char* ClearE = "SettingsUI/HotKey/ClearE";
+            const char* FreezeN = "SettingsUI/HotKey/FreezeN";
+            const char* FreezeE = "SettingsUI/HotKey/FreezeE";
+            const char* Registering = "SettingsUI/HotKey/Registering";
+            const char* Disabling = "SettingsUI/HotKey/Disabling";
+            const char* UnregisterFailed = "SettingsUI/HotKey/UnregisterFailed";
+            const char* Registered = "SettingsUI/HotKey/Registered";
+            const char* Disabled = "SettingsUI/HotKey/Disabled";
+            const char* NotRunning = "SettingsUI/HotKey/NotRunning";
+            const char* RegisterFailed = "SettingsUI/HotKey/RegisterFailed";
+            const char* SynchronizationPending = "SettingsUI/HotKey/SynchronizationPending";
+            const char* HookReady = "SettingsUI/HotKey/HookReady";
+            const char* HookFailed = "SettingsUI/HotKey/HookFailed";
         } HotKey{};
         struct Node__SettingsUI__Community
         {

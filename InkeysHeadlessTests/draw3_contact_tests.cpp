@@ -1348,10 +1348,45 @@ namespace
 	}
 }
 
+namespace
+{
+	void TestShortcutAdmissionGateComposition(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ContactInputCoordinator input;
+		const auto initial = input.AdmissionRevision();
+		input.SetShortcutAdmissionBlocked(true);
+		const auto leaseRevision = input.AdmissionRevision();
+		if (!Expect(input.AdmissionBlocked() && leaseRevision != initial,
+			"shortcut lease closes real production contact admission")) ++failures;
+		const bool downPublished = input.PublishDown(88, 1, InputDeviceType::Pen,
+			MakeSnapshot(1, 1, ContactPhase::Down));
+		ContactRecord* record = nullptr;
+		while (input.TryDequeue(record) && !record) input.AcknowledgeControlWake();
+		const ContactHandle blockedContact{ record, record ? record->Generation() : 0 };
+		if (!Expect(downPublished && record && !input.ContactAdmitted(blockedContact),
+			"real producer route retains terminal ownership but cannot draw during shortcut transaction")) ++failures;
+		input.PublishUp(88, 1, MakeSnapshot(1, 1, ContactPhase::Up));
+		if (record) input.Recycle(blockedContact);
+		input.SetAdmissionBlocked(true); // 模拟 lease 期间 PPT load/fatal 关闭基础门。
+		input.SetShortcutAdmissionBlocked(false);
+		if (!Expect(input.AdmissionBlocked() && input.AdmissionRevision() == leaseRevision,
+			"releasing shortcut lease preserves independently closed base gate")) ++failures;
+		input.SetShortcutAdmissionBlocked(true);
+		input.SetAdmissionBlocked(false);
+		if (!Expect(input.AdmissionBlocked(),
+			"PPT gate opening does not release an active shortcut lease")) ++failures;
+		input.SetShortcutAdmissionBlocked(false);
+		if (!Expect(!input.AdmissionBlocked() && input.AdmissionRevision() > leaseRevision,
+			"last owner release advances admission revision and allows fresh contacts")) ++failures;
+	}
+}
+
 int RunDraw3ContactInputTests()
 {
 	int failures = 0;
 	TestContactLifecycle(failures);
+	TestShortcutAdmissionGateComposition(failures);
 	TestInvalidAndWakeContracts(failures);
 	TestFailedControlWakeKeepsBridgeLive(failures);
 	TestFailedControlWakeUnderContinuousContacts(failures);

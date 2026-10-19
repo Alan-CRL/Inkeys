@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "../../Helper/FailedCleanupDeadline.h"
@@ -379,6 +380,15 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
+		Shortcuts::Context ShortcutContext() const noexcept;
+		std::uint64_t PublishShortcutCommand(Bridge::CommandType type,
+			const Shortcuts::Scope& expected, std::uint64_t leaseId,
+			std::optional<std::uint64_t> expectedContentRevision = std::nullopt) noexcept;
+		bool TakeShortcutCompletion(std::uint64_t id, Shortcuts::Completion& result) noexcept;
+		void RetireShortcutRequest(std::uint64_t id) noexcept;
+		std::uint64_t AcquireShortcutLease(const Shortcuts::Context& expected,
+			bool requireContentRevision) noexcept;
+		void ReleaseShortcutLease(std::uint64_t id) noexcept;
 		// 生命周期事务控制 Drawpad 是否允许本次鼠标输入激活窗口。
 		void SetActivationAllowed(bool enabled) noexcept;
 		bool PublishPresentationUiReady(

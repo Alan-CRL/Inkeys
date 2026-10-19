@@ -1080,6 +1080,7 @@ namespace Inkeys::UI::Bar
 	export WNDPROC WindowProc() noexcept;
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
+	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =

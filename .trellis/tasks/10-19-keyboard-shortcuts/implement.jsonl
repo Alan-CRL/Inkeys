@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Native ownership and gates"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "State snapshots, modules, minimal diff and encoding"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 solution and no-window boundaries"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "Preserve native/Raw/WM_TOUCH ownership"}
+{"file": ".trellis/spec/native-desktop/mouse-hook-and-autocollapse.md", "reason": "Preserve mouse hook; finite-cost patterns"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "PPT session/page readiness"}
+{"file": ".trellis/tasks/10-19-keyboard-shortcuts/research/spec-context.md", "reason": "Focused excerpts; read full original related chapters before edits"}
+{"file": ".trellis/tasks/10-19-keyboard-shortcuts/decisions.md", "reason": "Latest human separated-mode clear overrides initial preserve"}
+{"file": ".trellis/tasks/10-19-keyboard-shortcuts/research/keyboard-routing.md", "reason": "Current input ownership and dedicated global X"}
+{"file": ".trellis/tasks/10-19-keyboard-shortcuts/research/commands-config.md", "reason": "Conditional command identity, exact Clear results and Config"}
+{"file": ".trellis/tasks/10-19-keyboard-shortcuts/research/win32-contracts.md", "reason": "Official Windows hook/hotkey contracts"}
+{"file": ".trellis/spec/native-desktop/keyboard-shortcuts.md", "reason": "Implemented keyboard ownership, bootstrap and conditional Clear/Selection contract"}

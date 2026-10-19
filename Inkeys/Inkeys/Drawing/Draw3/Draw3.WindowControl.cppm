@@ -11,6 +11,7 @@
 #include <mutex>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
 
 export module Inkeys.Drawing.Draw3.window_control;
@@ -97,6 +98,7 @@ export namespace Inkeys::Drawing::Draw3
 		DesktopPersistenceCompleted,
 		PresentationPersistenceCompleted,
 		PrepareExitAutoSave,
+		ShortcutFence,
 	};
 
 	struct CanvasCommand
@@ -107,6 +109,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::size_t pageIndex = 0;
 		std::uint8_t workspace = 0;
 		std::shared_ptr<const Bridge::PresentationTarget> presentationTarget;
+		std::shared_ptr<const Shortcuts::Request> shortcut;
 		std::shared_ptr<const DesktopPersistenceCompletion>
 			desktopPersistenceCompletion;
 		std::shared_ptr<const PresentationPersistenceCompletion>

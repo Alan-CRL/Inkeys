@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+namespace Inkeys::Drawing::Draw3::Shortcuts { struct Request; }
+
 namespace Inkeys::Drawing::Draw3::Bridge
 {
 	// 产品 UI 与 Draw3 光标/笔迹共同使用的最终荧光笔透明度。
@@ -191,6 +193,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		AutoStraighten,
 		InputTest,
 		PrepareExitAutoSave,
+		ShortcutFence,
 	};
 
 	enum class CommandResult : std::uint8_t
@@ -216,6 +219,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Workspace workspace = Workspace::Desktop;
 		std::shared_ptr<const PresentationTarget> presentationTarget;
 		std::uint64_t revision = 0;
+		std::uint64_t shortcutIntentEpoch = 1; // 页/工作区意图独立于工具和内容修订。
 	};
 
 	struct Command
@@ -224,6 +228,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::uint64_t sequence = 0;
 		Workspace workspace = Workspace::Desktop;
 		std::shared_ptr<const PresentationTarget> presentationTarget;
+		std::shared_ptr<const Shortcuts::Request> shortcut;
 	};
 
 	constexpr int NormalizeLegacyEraserMode(int value) noexcept
@@ -249,6 +254,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
+		CommandResult PublishShortcut(CommandType type,
+			std::shared_ptr<const Shortcuts::Request> request) noexcept;
 		bool TryConsume(Command& command) noexcept;
 		// 每次 Host 启动前清空旧命令并重新开放桥接。
 		void Reset() noexcept;
