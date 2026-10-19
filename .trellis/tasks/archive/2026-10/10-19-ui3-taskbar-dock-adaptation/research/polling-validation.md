@@ -19,3 +19,6 @@ WinEvent过滤/投递、TaskbarCreated、WM_DISPLAYCHANGE/WM_DEVICECHANGE/WM_SET
 
 ## 最终提交与结案授权
 2026-10-19：用户明确要求“为改动提交commit并结束相关任务”。按本轮已通过的Trellis check及完整Debug|ARM64构建提交5秒轮询调整，随后归档本父任务及10-19-taskbar-dock-follow、10-19-canvas-edge-fullscreen-policy两个子任务并记录会话。用户接受当前交付，不将本次结案视为已执行GUI/性能测量；不push。
+
+## 已提交并归档
+用户本次明确授权后，降频工作已提交277b4956；父任务及两个子任务均已于2026-10-19归档，状态completed，当前会话任务指针已清除。归档后context manifests已更新为archive路径并重新校验，保留上述自动验证与未实测边界；未push。
