@@ -520,3 +520,40 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 116: 键盘快捷键与批注往返完成验收
+<!-- trellis-session: v=2 fp=bc8d2bde947f642c -->
+
+**Date**: 2026-10-19
+**Task**: 键盘快捷键与批注往返完成验收
+**Branch**: `feature/hook`
+
+### Summary
+
+用户确认关闭设置后快捷键正常、没有问题；按授权提交实现并归档任务，不push。
+
+### Main Changes
+
+- 独立键盘Hook/全局热键服务，六组固定快捷键与六个Inkeys3独立开关，设置及三语说明更新。
+- 两样式批注/选择往返、具名Clear/Fence结果及短期租约，双Delete和快捷键按压归属；不恢复PPT键盘翻页接管。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `97fbe299` | feat(input): add fixed keyboard shortcuts and annotation roundtrip |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64最终完整链接exit0；一次性关闭增量链接处理本机LNK1000，工程默认未改。
+- [OK] Headless --no-window、状态/快捷键owner及笔宽生产探针均exit0；三语391/391、独立检查、编码与diff检查通过。
+- [OK] 用户人工确认普通快捷键在关闭设置后有效，设置前台优先符合规划；收尾无产品改动，未重复构建/GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务完成；未push，不扩大Win7/UIPI/Office实机验证声明。
