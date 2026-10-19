@@ -492,10 +492,13 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RtsStartup.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.MouseInput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
     <ClInclude Include="Inkeys\Business\PptSession.h" />
     <ClInclude Include="PptSettingsPersistence.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
     <ClInclude Include="Inkeys\Net\UpdatePathSafety.h" />
@@ -1039,6 +1042,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>

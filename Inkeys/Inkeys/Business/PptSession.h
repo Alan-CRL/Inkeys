@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace Inkeys::Business
 {
@@ -41,6 +42,45 @@ namespace Inkeys::Business
 	}
 	[[nodiscard]] PptControlPage ResolvePptControlPage(
 		const PptSessionSnapshot& state, int rawPage, int rawTotal) noexcept;
+
+	// 描述符已观察不等于目标已应用；raw 暂时落后时保留待解析状态。
+	class PptTargetCache
+	{
+	public:
+		std::optional<Drawing::Draw3::Bridge::PresentationTarget> target;
+
+		bool Update(bool descriptorChanged, const Drawing::Draw3::PresentationDescriptor* descriptor,
+			bool trustedPage, bool trustedEndScreen, std::uint64_t session) noexcept
+		{
+			pending_ = pending_ || descriptorChanged || !target
+				|| (target && target->sessionRevision != session);
+			if (!pending_ || !descriptor || session == 0 || (!trustedPage && !trustedEndScreen))
+				return false;
+			auto resolved = trustedEndScreen
+				? Drawing::Draw3::ResolveEndScreenTarget(*descriptor)
+				: Drawing::Draw3::ResolvePresentationTarget(*descriptor);
+			if (!resolved) return false;
+			resolved->sessionRevision = session;
+			target = std::move(resolved);
+			pending_ = false;
+			return true;
+		}
+
+		[[nodiscard]] bool Current() const noexcept { return target.has_value() && !pending_; }
+	private:
+		bool pending_ = true;
+	};
+
+	[[nodiscard]] inline bool MatchesPptPageUi(
+		const Drawing::Draw3::Bridge::PresentationTarget& target,
+		std::uint64_t session, std::uint64_t revision, int page, int total) noexcept
+	{
+		return target.sessionRevision == session && target.targetRevision == revision
+			&& total > 0 && target.totalPages == static_cast<std::uint32_t>(total)
+			&& (target.pageKind == Drawing::Draw3::Bridge::PresentationPageKind::EndScreen
+				? page == -1 && target.pageIndex == target.totalPages
+				: page > 0 && target.pageIndex == static_cast<std::uint32_t>(page - 1));
+	}
 
 	struct PptSessionToken
 	{

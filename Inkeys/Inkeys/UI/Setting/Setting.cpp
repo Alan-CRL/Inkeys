@@ -594,6 +594,21 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	// owner 隐藏时 ReleaseCapture 会同步重入；此通知不访问 ImGui，避免等待渲染锁。
+	if (msg == WM_CAPTURECHANGED) return 0;
+
+	if (msg == WM_SHOWWINDOW && !wParam)
+	{
+		{
+			lock_guard stateLock(settingStateMutex);
+			// FIFO 的原生 Hide 可能晚于重建；仍须收束此时会话，保留最新逻辑显隐。
+			settingSessionState.InvalidateSession();
+		}
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		return 0;
+	}
+
 	if (msg == WM_NCHITTEST)
 	{
 		POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
@@ -1362,6 +1377,8 @@ SettingSessionCoroutine RunSettingSession()
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
+				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
@@ -7681,7 +7698,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
-						inkeys3PanelHeight += 300.0f;
+						inkeys3PanelHeight += 530.0f;
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -7694,13 +7711,13 @@ SettingSessionCoroutine RunSettingSession()
 						}
 
 							auto drawConsoleOutput = [&](const char* id, const string& title,
-								const string& description, bool& value, auto&& commit)
+								const string& description, bool& value, auto&& commit, float cardHeight = 70.0f)
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-								ImGui::BeginChild(id, { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGui::BeginChild(id, { settingItemWidth * settingGlobalScale,cardHeight * settingGlobalScale }, true,
 									ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -7709,8 +7726,14 @@ SettingSessionCoroutine RunSettingSession()
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted(description.c_str());
-								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,25.0f * settingGlobalScale });
+								if (cardHeight > 70.0f)
+								{
+									ImGui::PushTextWrapPos((settingRightToggleX - 20.0f) * settingGlobalScale);
+									ImGui::TextWrapped("%s", description.c_str());
+									ImGui::PopTextWrapPos();
+								}
+								else ImGui::TextUnformatted(description.c_str());
+								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,(cardHeight * 0.5f - 10.0f) * settingGlobalScale });
 								const bool before = value;
 								const string toggleId = "##" + string(id);
 								Widgets::toggle.ToggleBool(toggleId.c_str(), &value);
@@ -7757,6 +7780,25 @@ SettingSessionCoroutine RunSettingSession()
 										Experimental.Inkeys3.CursorConsoleOutput;
 									QueueConfigWrite();
 								});
+							// 两项仅持久化下次启动偏好，不重建当前绘图设备。
+							drawConsoleOutput("绘图硬件加速",
+								IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.N),
+								IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.E),
+								Experimental.Inkeys3.EnableHardwareAcceleration, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration =
+										Experimental.Inkeys3.EnableHardwareAcceleration;
+									QueueConfigWrite();
+								}, 110.0f);
+							drawConsoleOutput("兆芯绘图兼容模式",
+								IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N),
+								IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E),
+								Experimental.Inkeys3.EnableZhaoxinCompatibility, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility =
+										Experimental.Inkeys3.EnableZhaoxinCompatibility;
+									QueueConfigWrite();
+								}, 110.0f);
 
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -8748,6 +8790,11 @@ namespace
 
 		if (settingSession.Done())
 		{
+			{
+				lock_guard stateLock(settingStateMutex);
+				// 当前没有旧 context；在新建前消费 Hide，之后到达的 Hide 仍须下帧收束。
+				settingSessionState.Release();
+			}
 			settingSessionShouldStop.store(false, memory_order_release);
 			settingFrameContext = context;
 			settingFrameResult = FrameResult::Retry;

@@ -501,6 +501,127 @@
 - https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#owned-windows
 - https://devblogs.microsoft.com/oldnewthing/20051121-10/?p=33263
 
+## Session 102: 画布 F1–F4 修复与生产回归
+<!-- trellis-session: v=2 fp=3eab8ec1da9c5f29 -->
+
+**Date**: 2026-10-15
+**Task**: 画布 F1–F4 修复与生产回归
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+四项修复和独立检查已完成；完整ARM64 solution、独立存储目标和非GUI生产回归通过，独立capture窗口回归通过；整套owner前置条件失败已取得原HEAD A/B，完整产品鼠标验证等待解除LockApp锁屏。
+
+### Main Changes
+
+- 新增独立有界诊断输出器；保留PPT IoError；修复橡皮idle Move唤醒；设置隐藏释放自身capture并失效旧会话。
+- 同步四项七节可执行规范、调用消费者登记与任务验证记录。
+
+### Git Commits
+
+（未创建 commit；修复已实施。）
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug ARM64与独立存储目标exit0；F1/F2/F3生产CLI、存储回归、Headless --no-window通过。
+- [未通过] 默认窗口整套exit1共8项owner检查失败；相同预置顶Z序条件在原HEAD也复现。独立真实capture测试exit0，不将整套记绿。
+
+### Status
+
+**进行中：代码及针对性回归完成，完整 GUI 验收待解锁。**
+
+### Next Steps
+
+- 解锁后完成F1背压/F4按住隐藏的完整产品GUI验收，并复测整套窗口。
+
+
+## Session 104: 画布 F1–F4 解锁后完整产品 GUI 验收
+<!-- trellis-session: v=2 fp=9ebbe4b42cb690a4 -->
+
+**Date**: 2026-10-15
+**Task**: 画布 F1–F4 解锁后完整产品 GUI 验收
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+同一最终ARM64二进制的F1 stdout背压及F4无诊断捕获强触发完整产品鼠标GUI通过；真实停读/按住退出分别约0.9615s和1.2343s且exit0/forcedfalse。解锁后的默认完整窗口套件仍exit1/11fail，HEAD A/B不替全部失败归因；物理触摸笔与原始用户现场保留未确认。
+
+### Main Changes
+
+- 本轮未改产品源码，补齐原始截图、窗口/pipe状态、真实退出码、SHA、验收和四项任务元数据；测试窗口已清理，原Explorer保留。
+
+### Git Commits
+
+（未创建 commit；本次为修复后的 GUI 验收。）
+
+### Testing
+
+- [OK] F1停读期间新线、实际擦除、Clear/Undo及设置响应；恢复后full11874输出可见，再次停读正常退出。
+- [OK] F4四轮按住Alt+F4捕获在Up前释放；普通X、重开首次Language、Explorer/选择返回、画笔橡皮及按住正常退出通过。
+- [OK] 沿用最终完整Solution/独立存储构建、F1/F2/F3生产CLI、Headless无窗口与独立capture通过；五任务manifest及产品BOM/CRLF检查通过。
+
+- [未通过] 解锁后默认完整 HWND 套件 exit1/11 fail；A/B仅证明一个既有预置顶条件，未逐项确认所有失败根因。
+
+### Status
+
+**本轮针对性修复验收完成；默认 HWND 整套未通过，原用户现场调查保留。**
+
+### Next Steps
+
+- 默认完整HWND的owner/Z序11项失败、物理触摸/笔及原始现场归因仍保留；未自动归档，不commit/push。
+
+
+## Session 108: 画布卡死后续修复与最终GUI验收
+<!-- trellis-session: v=2 fp=bcaef0bd1fcab65a -->
+
+**Date**: 2026-10-18
+**Task**: 画布卡死后续修复与最终GUI验收
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+完成窗口11项断言后续、PPT目标和终态交接收尾；最终ARM64构建、12轮窗口、默认完整测试和真实设置/PowerPoint GUI通过。
+
+### Main Changes
+
+- 窗口实际band读回与同根继承；保留owned Setting周期刷新可点击。
+- PPT目标收敛、同页新回执、PPT/Desktop锁获取有限等待、Accepted终态FIFO无丢失。
+
+### Git Commits
+
+（本轮未提交代码；工程修复与验收已完成。）
+
+### Testing
+
+- [OK] 最终solution Debug ARM64 exit0；同最终Headless12/12专项和默认全套exit0。
+- [OK] 最终产品6正常CLI exit0、坏参数2；PPT/Desktop实际worker故障注入与锁恢复通过。
+- [OK] 最终无控制台GUI设置capture释放、idle橡皮、持笔PPT翻页、Explorer及按住正常退出0/1.688s；自建PowerPoint正常关闭。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本轮工程验收完成，后续代码尚未提交；无新增commit/push，待用户自行决定代码提交/归档。
+- 物理触摸/笔、WPS、Win7、多屏与用户现场共同根因仍未验证，保留证据边界。
+
+
+## Session 109: 提交画布卡死修复并归档五个相关任务
+<!-- trellis-session: v=2 fp=b2de93bf1136bf21 -->
+
+**Date**: 2026-10-18
+**Task**: 提交画布卡死修复并归档五个相关任务
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+用户授权提交与结束任务；SSH签名重试成功，修复提交6b8bc1d7，父任务及F1–F4四子任务completed并归档。
+
+### Main Changes
+
+- 签名提交窗口/PPT准入、锁等待和终态交接修复，以及完整验收报告。
+- 五个任务归档至.trellis/tasks/archive/2026-10，更新规范、context和记录路径；保留原现场与设备未覆盖边界。
 
 ### Git Commits
 
@@ -508,7 +629,18 @@
 |------|---------|
 | `0eb1c7c5` | fix(pptcom): restore dynamic compatibility and deterministic COM cleanup |
 | `184cf86e` | chore: archive pptcom dynamic compatibility task |
+| `6b8bc1d73c8b7307528520c28fc952004ee3d8f1` | fix(draw3): restore canvas admission across window and PPT transitions |
+| `83d08514142211ba6ed5ca9c669c42ca9b139f55` | chore(trellis): archive completed canvas freeze tasks |
+
+### Testing
+
+- [OK] 复用已完成的最终Debug ARM64构建、12轮窗口、默认完整套件、CLI/存储与真实设置/PPT GUI结果；本轮仅提交及文档状态变更，无新增产品代码。
+- [OK] 五个归档任务context校验通过；提交前git diff --cached --check通过。
 
 ### Status
 
 [OK] **Completed**
+
+### Next Steps
+
+- 本线程由用户后续合入dev；本轮未push、未执行合并。

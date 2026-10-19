@@ -90,8 +90,15 @@ namespace Inkeys::UI::Setting
 	class SessionState
 	{
 	public:
-		void SetVisible(bool visible) noexcept { visible_ = visible; }
+		void SetVisible(bool visible) noexcept
+		{
+			visible_ = visible;
+			// 隐藏会结束本次输入；快速重开也不能复用旧 backend 的按下状态。
+			if (!visible) InvalidateSession();
+		}
 		[[nodiscard]] bool IsVisible() const noexcept { return visible_; }
+		// 原生 Hide 可能晚于新会话；只失效输入，不覆盖更新的 Show 意图。
+		void InvalidateSession() noexcept { sessionInvalidated_ = true; }
 		void SetOccluded(bool occluded) noexcept { occluded_ = occluded; }
 		void QueueResize(std::uint32_t width, std::uint32_t height) noexcept
 		{
@@ -111,7 +118,8 @@ namespace Inkeys::UI::Setting
 			std::uint64_t epoch, bool hasSession) const noexcept
 		{
 			SessionDecision decision;
-			decision.release = hasSession && (!visible_ || (epoch_ && epoch_ != epoch));
+			decision.release = hasSession
+				&& (!visible_ || sessionInvalidated_ || (epoch_ && epoch_ != epoch));
 			decision.rebuild = visible_ && (!hasSession || decision.release);
 			decision.resize = visible_ && hasSession
 				&& resizeSerial_ != consumedResizeSerial_;
@@ -154,11 +162,14 @@ namespace Inkeys::UI::Setting
 		{
 			epoch_ = 0;
 			occluded_ = false;
+			// 只在旧会话已销毁或确认无旧会话的新建边界消费，不由旧帧提交清除。
+			sessionInvalidated_ = false;
 		}
 
 	private:
 		bool visible_ = false;
 		bool occluded_ = false;
+		bool sessionInvalidated_ = false;
 		std::uint64_t epoch_ = 0;
 		std::uint64_t businessCompletion_ = 0;
 		std::uint64_t consumedBusinessCompletion_ = 0;

@@ -74,7 +74,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		if (!running_) return std::nullopt;
 		if (state_.workspace == Workspace::Presentation && state_.presentationTarget)
 		{
-			if (SamePresentationTargetIgnoringRevision(*state_.presentationTarget, target))
+			if (targetRefreshRequired_ != ReadyIdentityFor(*state_.presentationTarget) &&
+				SamePresentationTargetIgnoringRevision(*state_.presentationTarget, target))
 				return state_.presentationTarget->targetRevision;
 		}
 		if (nextTargetRevision_ == 0) nextTargetRevision_ = 1;
@@ -86,6 +87,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			state_.page = published->pageIndex;
 			state_.hasPage = true;
 			state_.presentationTarget = std::move(published);
+			targetRefreshRequired_.reset();
 		}
 		catch (...)
 		{
@@ -94,6 +96,15 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		++state_.revision;
 		if (changed) *changed = true;
 		return state_.presentationTarget->targetRevision;
+	}
+
+	bool StateBridge::RequirePresentationTargetRefresh(const PresentationReadyIdentity& expected) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_ || state_.workspace != Workspace::Presentation || !state_.presentationTarget ||
+			ReadyIdentityFor(*state_.presentationTarget) != expected) return false;
+		targetRefreshRequired_ = expected;
+		return true;
 	}
 
 	bool StateBridge::ClearPresentationTarget() noexcept
@@ -165,6 +176,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		nextSequence_ = 1;
 		// Host 重启也不复用目标编号，避免旧 UI/ready completion 命中新一代。
 		state_ = {};
+		targetRefreshRequired_.reset();
 		running_ = true;
 	}
 

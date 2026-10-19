@@ -100,6 +100,124 @@ namespace
 		input.AcknowledgeControlWake();
 	}
 
+	void TestIdleMoveWakeSubscription(int& failures)
+	{
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (!Expect(condition, name)) ++failures;
+		};
+		for (const InputDeviceType device : { InputDeviceType::Touch, InputDeviceType::Pen,
+			InputDeviceType::MouseLeft, InputDeviceType::MouseRight })
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			check(input.PublishDown(0xF3, 1, device,
+				MakeSnapshot(1, 2, ContactPhase::Down)), "idle subscription device Down accepted");
+			ContactRecord* record = nullptr;
+			if (!input.TryDequeue(record) || !record)
+			{
+				check(false, "idle subscription real Down dequeued");
+				continue;
+			}
+			const ContactHandle handle{ record, record->Generation() };
+			const uint64_t baseline = input.CaptureWakeGeneration();
+			check(input.PublishMove(0xF3, 1, MakeSnapshot(3, 4, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == baseline,
+				"unsubscribed Move still merges without SetEvent");
+			input.ArmIdleMoveWake();
+			auto invalid = MakeSnapshot(3, 4, ContactPhase::Move);
+			invalid.position.x = (std::numeric_limits<float>::quiet_NaN)();
+			check(!input.PublishMove(0xF3, 1, invalid) &&
+				!input.PublishMove(0xF3, 999, MakeSnapshot(3, 4, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == baseline,
+				"invalid and absent-route Moves cannot consume the subscription");
+			for (int index = 0; index < 32; ++index)
+				check(input.PublishMove(0xF3, 1,
+					MakeSnapshot(float(index), 5, ContactPhase::Move)), "subscribed burst Move accepted");
+			ContactSnapshot latest;
+			check(input.CaptureWakeGeneration() == baseline + 1 &&
+				input.TryReadSnapshot(handle, latest) && latest.position.x == 31 &&
+				!input.HasPendingWork() && input.DiagnosticsSnapshot().controlWakes == 0,
+				"one subscribed burst wakes once, retains latest snapshot, and creates no marker");
+			input.DisarmIdleMoveWake();
+			check(input.PublishMove(0xF3, 1, MakeSnapshot(32, 5, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == baseline + 1,
+				"disarmed consumer adds no per-Move wake");
+			input.ArmIdleMoveWake();
+			check(input.PublishUp(0xF3, 1, MakeSnapshot(32, 5, ContactPhase::Up)) &&
+				input.WaitForWake(baseline + 1, 0) &&
+				input.TryReadSnapshot(handle, latest) && latest.phase == ContactPhase::Up,
+				"Up remains a real terminal wake while Move notification is armed");
+			input.DisarmIdleMoveWake();
+			input.Recycle(handle);
+			input.ArmIdleMoveWake();
+			input.ResetForNextRun();
+			const bool restarted = input.PublishDown(0xF3, 2, device,
+				MakeSnapshot(1, 2, ContactPhase::Down)) && input.TryDequeue(record) && record;
+			check(restarted, "next stopped generation accepts a new Down");
+			if (!restarted) continue;
+			const uint64_t afterReset = input.CaptureWakeGeneration();
+			check(!input.TryReadSnapshot(handle, latest) &&
+				input.PublishMove(0xF3, 2, MakeSnapshot(3, 4, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == afterReset,
+				"Reset removes stale subscription and stale contact cannot be read");
+			const ContactHandle next{ record, record->Generation() };
+			input.DiscardUntilTerminal(next);
+			input.ArmIdleMoveWake();
+			check(!input.PublishMove(0xF3, 2, MakeSnapshot(4, 5, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == afterReset &&
+				input.PublishCancelled(0xF3, 2, MakeSnapshot(4, 5, ContactPhase::Cancelled)) &&
+				input.WaitForWake(afterReset, 0) && input.DiagnosticsSnapshot().occupiedSlots == 0,
+				"quarantined Move stays rejected and Cancel still closes its route");
+			input.DisarmIdleMoveWake();
+		}
+	}
+
+	void TestConcurrentIdleMoveBurst(int& failures)
+	{
+		ContactInputCoordinator input;
+		input.EnableDiagnostics(true);
+		std::vector<ContactHandle> handles;
+		for (uint32_t id = 1; id <= 4; ++id)
+		{
+			if (!Expect(input.PublishDown(0xF4, id, InputDeviceType::Touch,
+				MakeSnapshot(float(id), 1, ContactPhase::Down)), "multi-contact Down accepted")) ++failures;
+			ContactRecord* record = nullptr;
+			if (!input.TryDequeue(record) || !record) { ++failures; return; }
+			handles.push_back({ record, record->Generation() });
+		}
+		const uint64_t generation = input.CaptureWakeGeneration();
+		input.ArmIdleMoveWake();
+		std::atomic<bool> start = false, accepted = true;
+		std::vector<std::thread> producers;
+		for (uint32_t id = 1; id <= 4; ++id)
+			producers.emplace_back([&, id]
+			{
+				while (!start.load(std::memory_order_acquire)) YieldProcessor();
+				for (int index = 1; index <= 256; ++index)
+					if (!input.PublishMove(0xF4, id,
+						MakeSnapshot(float(index), float(id), ContactPhase::Move)))
+						accepted.store(false, std::memory_order_relaxed);
+			});
+		start.store(true, std::memory_order_release);
+		for (auto& producer : producers) producer.join();
+		input.DisarmIdleMoveWake();
+		if (!Expect(accepted && input.CaptureWakeGeneration() == generation + 1 &&
+			!input.HasPendingWork() && input.DiagnosticsSnapshot().controlWakes == 0,
+			"four concurrent contacts consume exactly one idle Move subscription")) ++failures;
+		for (uint32_t id = 1; id <= 4; ++id)
+		{
+			ContactSnapshot latest;
+			if (!Expect(input.TryReadSnapshot(handles[id - 1], latest) &&
+				latest.position.x == 256 && latest.position.y == float(id),
+				"each contact retains its own latest concurrent Move")) ++failures;
+			if (!Expect(input.PublishCancelled(0xF4, id,
+				MakeSnapshot(256, float(id), ContactPhase::Cancelled)),
+				"concurrent burst closes normally")) ++failures;
+			input.Recycle(handles[id - 1]);
+		}
+	}
+
 	void TestFailedControlWakeKeepsBridgeLive(int& failures)
 	{
 		using namespace Inkeys::Drawing::Draw3::Bridge;
@@ -1353,6 +1471,8 @@ int RunDraw3ContactInputTests()
 	int failures = 0;
 	TestContactLifecycle(failures);
 	TestInvalidAndWakeContracts(failures);
+	TestIdleMoveWakeSubscription(failures);
+	TestConcurrentIdleMoveBurst(failures);
 	TestFailedControlWakeKeepsBridgeLive(failures);
 	TestFailedControlWakeUnderContinuousContacts(failures);
 	TestFailedControlWakeInterruptsBlockingConsumer(failures);

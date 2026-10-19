@@ -235,6 +235,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool PublishWorkspace(Workspace workspace) noexcept;
 		std::optional<std::uint64_t> PublishPresentationTarget(
 			const PresentationTarget& target, bool* changed = nullptr) noexcept;
+		// 暂停后的同页恢复也必须产生新呈现身份，不能复用一次性的 UI 回执。
+		bool RequirePresentationTargetRefresh(const PresentationReadyIdentity& expected) noexcept;
 		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
@@ -254,6 +256,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::size_t capacity_ = 256;
 		std::uint64_t nextSequence_ = 1;
 		std::uint64_t nextTargetRevision_ = 1;
+		std::optional<PresentationReadyIdentity> targetRefreshRequired_;
 		bool running_ = true;
 	};
 }

@@ -108,6 +108,121 @@ int RunPptSessionTests()
 		&& !Inkeys::Drawing::Draw3::ResolveEndScreenTarget(parsedBasicEnd.snapshot->descriptor),
 		"fresh windowless Done wire keeps basic end controls while refusing all ink targets");
 
+	// 执行生产缓存/Bridge/回执谓词；不创建 HWND，也不模拟 Office 已经呈现。
+	{
+		namespace D3 = Inkeys::Drawing::Draw3;
+		auto desc = valid.snapshot->descriptor;
+		desc.currentPage = 1; desc.currentSlideId = 101;
+		PptTargetCache cache;
+		D3::Bridge::StateBridge bridge;
+		check(cache.Update(true, &desc, true, false, 1) && cache.Current(), "initial target resolves");
+		auto first = bridge.PublishPresentationTarget(*cache.target);
+		cache.target->targetRevision = first.value_or(0);
+		desc.currentPage = 2; desc.currentSlideId = 202;
+		check(!cache.Update(true, &desc, false, false, 1) && !cache.Current(),
+			"raw A with descriptor B retains pending application and rejects stale A");
+		check(cache.Update(false, &desc, true, false, 1) && cache.Current()
+			&& cache.target->pageIndex == 1 && cache.target->slideId == 202,
+			"raw catches up without a new descriptor revision and resolves B");
+		const auto second = bridge.PublishPresentationTarget(*cache.target);
+		cache.target->targetRevision = second.value_or(0);
+		check(second && first && *second != *first
+			&& MatchesPptPageUi(*cache.target, 1, *second, 2, 3)
+			&& !MatchesPptPageUi(*cache.target, 1, *first, 1, 3),
+			"new page accepts only its own UI acknowledgement");
+		for (int tick = 0; tick != 10000; ++tick)
+			check(!cache.Update(false, &desc, true, false, 1) && cache.Current()
+				&& bridge.PublishPresentationTarget(*cache.target) == second,
+				"unchanged heartbeat preserves converged target identity");
+		// raw 先到时仍等待 descriptor；随后多次 descriptor 变化只应用最后可信目标。
+		check(!cache.Update(false, &desc, false, false, 1), "raw-first mismatch does not resolve");
+		desc.currentPage = 3; desc.currentSlideId = 303;
+		check(!cache.Update(true, &desc, false, false, 1), "rapid page C waits for raw");
+		desc.currentPage = 1; desc.currentSlideId = 101;
+		check(cache.Update(true, &desc, true, false, 1) && cache.target->pageIndex == 0,
+			"rapid changes converge to latest trusted descriptor");
+		desc.status = D3::PresentationDescriptorStatus::Unavailable;
+		check(!cache.Update(true, &desc, true, false, 1) && !cache.Current(),
+			"failed resolution cannot publish previous target");
+		desc.status = D3::PresentationDescriptorStatus::StableSlideIds;
+		check(cache.Update(false, &desc, true, false, 1), "failed resolution remains retryable");
+		desc.currentPage = 0; desc.currentSlideId.reset();
+		check(!cache.Update(true, &desc, false, false, 1) &&
+			cache.Update(false, &desc, false, true, 1) && cache.target->pageIndex == 3,
+			"end screen pending update converges without another envelope");
+		cache.target->targetRevision = 9;
+		check(MatchesPptPageUi(*cache.target, 1, 9, -1, 3)
+			&& !MatchesPptPageUi(*cache.target, 1, 9, 3, 3), "end screen requires distinct UI identity");
+		desc.currentPage = 2; desc.currentSlideId = 202;
+		check(cache.Update(true, &desc, true, false, 2) && cache.target->sessionRevision == 2
+			&& !MatchesPptPageUi(*cache.target, 1, 9, 2, 3), "new session rejects previous UI ack");
+		desc.slideIds = {303,202,101};
+		check(cache.Update(true, &desc, true, false, 2) && cache.target->slideIds == desc.slideIds,
+			"same page topology change replaces full target identity");
+		cache.target.reset();
+		check(cache.Update(false, &desc, true, false, 2), "cleared session cache resolves even without notification");
+
+		// UI 没看到暂停占位帧时，原目标曾经 ack 的状态不能吞掉恢复回执。
+		const auto before = bridge.Snapshot().presentationTarget;
+		const auto identity = D3::Bridge::ReadyIdentityFor(*before);
+		for (int tick = 0; tick != 1000; ++tick)
+			check(bridge.RequirePresentationTargetRefresh(identity)
+				&& bridge.Snapshot().presentationTarget->targetRevision == identity.targetRevision,
+				"repeated suspension is idempotent until trusted publication");
+		const auto resumed = bridge.PublishPresentationTarget(*before);
+		check(resumed && *resumed != identity.targetRevision,
+			"same-page resume creates new identity for Present and UI ack");
+		check(!bridge.RequirePresentationTargetRefresh(identity)
+			&& bridge.PublishPresentationTarget(*before) == resumed,
+			"late suspension cannot invalidate resumed page and heartbeat stays stable");
+		const auto resumedTarget = bridge.Snapshot().presentationTarget;
+		check(!MatchesPptPageUi(*resumedTarget, 1, identity.targetRevision, 2, 3)
+			&& MatchesPptPageUi(*resumedTarget, 1, *resumed, 2, 3),
+			"old same-page UI acknowledgement is rejected after resume");
+		const auto resumedIdentity = D3::Bridge::ReadyIdentityFor(*resumedTarget);
+		check(bridge.RequirePresentationTargetRefresh(resumedIdentity), "arm refresh before rejected publication");
+		auto invalid = *resumedTarget;
+		invalid.totalPages = 0;
+		check(!bridge.PublishPresentationTarget(invalid)
+			&& bridge.Snapshot().presentationTarget->targetRevision == *resumed,
+			"invalid publication preserves current target");
+		const auto afterRejected = bridge.PublishPresentationTarget(*resumedTarget);
+		check(afterRejected && *afterRejected != *resumed,
+			"rejected publication retains refresh obligation for valid retry");
+
+		auto beforeClear = bridge.Snapshot().presentationTarget;
+		const auto clearIdentity = D3::Bridge::ReadyIdentityFor(*beforeClear);
+		check(bridge.RequirePresentationTargetRefresh(clearIdentity) && bridge.ClearPresentationTarget()
+			&& !bridge.RequirePresentationTargetRefresh(clearIdentity), "cleared target rejects late refresh");
+		const auto afterClear = bridge.PublishPresentationTarget(*beforeClear);
+		check(afterClear && *afterClear != clearIdentity.targetRevision
+			&& !bridge.RequirePresentationTargetRefresh(clearIdentity)
+			&& bridge.PublishPresentationTarget(*beforeClear) == afterClear,
+			"republication after clear has new stable identity unaffected by old refresh");
+
+		auto beforeReset = bridge.Snapshot().presentationTarget;
+		const auto resetIdentity = D3::Bridge::ReadyIdentityFor(*beforeReset);
+		check(bridge.RequirePresentationTargetRefresh(resetIdentity), "arm refresh before Bridge reset");
+		bridge.Reset();
+		check(!bridge.RequirePresentationTargetRefresh(resetIdentity), "Bridge reset rejects old refresh identity");
+		const auto afterReset = bridge.PublishPresentationTarget(*beforeReset);
+		check(afterReset && *afterReset != resetIdentity.targetRevision
+			&& !bridge.RequirePresentationTargetRefresh(resetIdentity)
+			&& bridge.PublishPresentationTarget(*beforeReset) == afterReset,
+			"Bridge reset preserves revision uniqueness and clears pending refresh");
+
+		const auto previousSession = bridge.Snapshot().presentationTarget;
+		const auto previousIdentity = D3::Bridge::ReadyIdentityFor(*previousSession);
+		check(bridge.RequirePresentationTargetRefresh(previousIdentity), "arm refresh before new session");
+		auto newSession = *previousSession;
+		++newSession.sessionRevision;
+		const auto newRevision = bridge.PublishPresentationTarget(newSession);
+		check(newRevision && *newRevision != previousIdentity.targetRevision
+			&& !bridge.RequirePresentationTargetRefresh(previousIdentity)
+			&& bridge.PublishPresentationTarget(newSession) == newRevision,
+			"new session rejects previous-session refresh and retains stable revision");
+	}
+
 	PptSessionToken original{ 1, 2, 3, 4, 5, 6, true, true };
 	check(MatchesPptSession(original, original), "current request matches exact session");
 	auto reopened = original;
