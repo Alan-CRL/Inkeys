@@ -13,6 +13,8 @@ module;
 #include <d2d1helper.h>
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.BottomDock.h"
+#include "Bar.AutoCollapse.h"
+#include "Bar.AutoCollapseInteraction.h"
 #include "../../Input/UiPointerInput.h"
 #include "../../Window/Window.MessageDispatch.h"
 #include <optional>
@@ -34,6 +36,9 @@ import :Theme;
 import Inkeys.Conv.Color;
 import Inkeys.Message;
 import Inkeys.Other.Inputs;
+import Inkeys.Other.Config;
+import Inkeys.Input.MouseHook;
+import Inkeys.UI.Setting;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Window;
 import Inkeys.Display;
@@ -93,6 +98,7 @@ constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
 constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
 
 std::atomic_uint BarCanvasDrawingActivityCount = 0;
+std::atomic_uint64_t BarAutoCollapseNativeDownSerial{ 0 };
 // 消息线程拥有入口按压态，渲染线程只通过只读接口取得缩放目标。
 IdtAtomic<bool> BarColorPickerEntryPressed = false;
 
@@ -483,6 +489,8 @@ namespace
 	bool EnqueueBarPointerSample(HWND window, ExMessage message,
 		const Pointer::Sample& sample)
 	{
+		if (sample.kind == Pointer::Kind::Down && sample.source == Pointer::Source::Touch)
+			BarAutoCollapseNativeDownSerial.fetch_add(1, std::memory_order_acq_rel);
 		std::lock_guard lock(barPointerMetadataMutex);
 		const unsigned short token = barPointerNextToken++;
 		if (barPointerNextToken >= 0x4000u) barPointerNextToken = 16;
@@ -668,10 +676,119 @@ namespace Inkeys::UI::Bar
 	}
 }
 
+namespace
+{
+	using AcceptedStrokeBegin = Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin;
+	std::mutex barAcceptedStrokeMutex;
+	std::array<AcceptedStrokeBegin, 32> barAcceptedStrokes{};
+	std::size_t barAcceptedStrokeRead = 0, barAcceptedStrokeCount = 0;
+	Inkeys::UI::Bar::OutsideCollapsePending barOutsideCollapse;
+	struct BarAutoCollapseContext
+	{
+		std::uint64_t modeRevision = 0, sceneRevision = 0, inputSerial = 0;
+		int outsidePolicy = 0;
+		Inkeys::UI::Bar::BarBottomDockMode dock{};
+		bool blocked = true, folded = true;
+		bool operator==(const BarAutoCollapseContext&) const = default;
+	} barAutoCollapseContext;
+	std::uint64_t barAutoCollapseContextRevision = 1;
+
+	bool FoldBarAutomatically(bool preserveCurrentDrag = false)
+	{
+		if (barUISet.barState.fold) return false;
+		barUISet.barState.fold = true;
+		if (preserveCurrentDrag)
+			barPointerFoldAtDown = true; // 仅本手势发起的收起可以更新其基线。
+		barUISet.CollapseAuxiliaryPanels(!preserveCurrentDrag);
+		barUISet.ClearBottomDockCenterForFold();
+		Inkeys::UI::Bar::ClearWhiteboardDockLock();
+		barUISet.UpdateRendering(false);
+		return true;
+	}
+
+}
+
+bool BarUISetClass::IsAutoCollapsePointerHit(POINT point)
+{
+	const HWND hit = WindowFromPoint(point);
+	if (hit && (hit == floating_window || IsChild(floating_window, hit))) return true;
+	// 使用成功上屏的区域，不能把整个透明 HWND 包络当成可点击主栏。
+	std::lock_guard lock(barUISet.borderCursorLightMutex);
+	for (std::size_t i = 0; i < barUISet.borderCursorVisibleRegionCount; ++i)
+		if (PtInRect(&barUISet.borderCursorVisibleRegions[i], point)) return true;
+	return false;
+}
+
+void BarUISetClass::PollGlobalMouseInput()
+{
+	using namespace Inkeys::UI::Bar;
+	namespace Hook = Inkeys::Input::MouseHook;
+	const auto mode = GetStateModeVersionedSnapshot();
+	const auto dock = barUISet.bottomDockMode.load(std::memory_order_acquire);
+	const bool blocked = offSignal || !floating_window || !IsWindowVisible(floating_window)
+		|| Inkeys::UI::Setting::IsVisible() || Inkeys::UI::MessageBox::IsShowing();
+	const int outsidePolicy = Inkeys::config.UI.Bar.AutoCollapse.OutsideClick;
+	const BarAutoCollapseContext context{ mode.revision, AutoCollapseSceneRevision(),
+		BarAutoCollapseNativeDownSerial.load(std::memory_order_acquire),
+		outsidePolicy, dock, blocked, static_cast<bool>(barUISet.barState.fold) };
+	if (!(context == barAutoCollapseContext))
+	{
+		barAutoCollapseContext = context;
+		++barAutoCollapseContextRevision;
+		barOutsideCollapse.Cancel();
+	}
+	const bool outsideEnabled = !blocked && !context.folded
+		&& IsComputerInteractionMode(mode.state.StateModeSelect)
+		&& ShouldAutoCollapse(outsidePolicy, dock);
+	Hook::PublishRoute({ !blocked && !IsComputerInteractionMode(mode.state.StateModeSelect),
+		outsideEnabled, barAutoCollapseContextRevision });
+	Hook::Event event;
+	// 顶层及颜色/粗细/Seek 嵌套等待共用此入口，有限批量不会饿死原生输入。
+	for (unsigned int i = 0; i < 16 && Hook::TryPop(event); ++i)
+	{
+		if (event.kind == Hook::Kind::Wheel) Hook::DispatchWheel(event);
+		else if (outsideEnabled && event.contextRevision == barAutoCollapseContextRevision)
+		{
+			if (IsAutoCollapsePointerHit(POINT{ event.screen.x, event.screen.y })) barOutsideCollapse.Cancel();
+			else barOutsideCollapse.Arm(
+				Inkeys::Window::MessageDispatch::PostedTick(event.time),
+				barAutoCollapseContextRevision);
+		}
+	}
+	Hook::PollPptWheel();
+	if (BarAutoCollapseNativeDownSerial.load(std::memory_order_acquire) != context.inputSerial)
+		barOutsideCollapse.Cancel();
+	if (barOutsideCollapse.Take(GetTickCount64(), barAutoCollapseContextRevision, outsideEnabled))
+		FoldBarAutomatically();
+
+	std::array<AcceptedStrokeBegin, 16> notices{};
+	std::size_t count = 0;
+	{
+		std::lock_guard lock(barAcceptedStrokeMutex);
+		while (count < notices.size() && barAcceptedStrokeCount != 0)
+		{
+			notices[count++] = barAcceptedStrokes[barAcceptedStrokeRead];
+			barAcceptedStrokeRead = (barAcceptedStrokeRead + 1) % barAcceptedStrokes.size();
+			--barAcceptedStrokeCount;
+		}
+	}
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		const auto& notice = notices[i];
+		if (offSignal || !Inkeys::Drawing::Draw3::ProductHost().IsAcceptedStrokeCurrent(notice)) continue;
+		const int policy = notice.kind == Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind::Eraser
+			? Inkeys::config.UI.Bar.AutoCollapse.Erasing : Inkeys::config.UI.Bar.AutoCollapse.Drawing;
+		// 已完成的短笔迹仍是有效起笔；只检查场景身份，不检查聚合活动计数。
+		if (ShouldAutoCollapse(policy, barUISet.bottomDockMode.load(std::memory_order_acquire)))
+			FoldBarAutomatically();
+	}
+}
+
 bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 	bool preserveScreenCoordinates, BarTouchScreenSample* screenSample)
 {
 	if (screenSample) screenSample->ready = false;
+	barUISet.PollGlobalMouseInput();
 	for (;;)
 	{
 		const auto ordinal = barPointerActiveOrdinal.load(std::memory_order_acquire);
@@ -932,10 +1049,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	}
 
 	if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN)
-	{
-		if (setlist.regularSetting.clickRecover && ConfirmaNoMouMsgSignal)
-			ConfirmaNoMouMsgSignal = false;
-	}
+		BarAutoCollapseNativeDownSerial.fetch_add(1, std::memory_order_acq_rel);
 
 	switch (msg)
 	{
@@ -7083,6 +7197,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	bool downwardDetachSeen = false;
 	bool downwardDetachBlockedAtRelease = false;
 	bool gestureCancelled = false;
+	DragCollapseGate dragCollapseGate;
 	unsigned long long awaitedTransitionSerial = gestureRebaseSerial;
 	auto PublishPresentationBarrier = [&](POINT pointer)
 		{
@@ -7103,10 +7218,10 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		unsigned long long transitionSerial = 0;
 	};
 	auto PublishDockUpdate = [&](const BarBottomDockDragUpdate& update,
-		const BarBottomDockCenterDragUpdate& centerUpdate)
+		const BarBottomDockCenterDragUpdate& centerUpdate, bool foldedDuringDrag)
 		{
 			DockPublication publication;
-			publication.visualChanged = update.modeChanged || centerUpdate.modeChanged
+			publication.visualChanged = foldedDuringDrag || update.modeChanged || centerUpdate.modeChanged
 				|| abs(update.elasticOffsetDip - lastPublishedElasticDip) > 0.000001
 				|| abs(centerUpdate.elasticOffsetDip
 					- lastPublishedCenterElasticDip) > 0.000001;
@@ -7153,7 +7268,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			}
 			// 偶数 serial 发布在两轴模式、阶段、形变量和位移之后。
 			publication.transitionSerial = FinishBottomDockTransition(
-				update.modeChanged || centerUpdate.modeChanged);
+				update.modeChanged || centerUpdate.modeChanged || foldedDuringDrag);
 			maximumElasticTravelScreen = max(maximumElasticTravelScreen,
 				abs(update.elasticOffsetDip - initialPresentedElasticDip)
 					* interactionZoom);
@@ -7330,6 +7445,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				pointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
 			const BarBottomDockDragUpdate dockUpdate = dockTracker.Update(
 				pointer.y, floatingVisibleBottomScreenY, environment);
+			const bool realDrag = !ShouldAllowBarBottomDockClick(false, false,
+				result.modeChanged || dockUpdate.modeChanged, result.rawPathLength,
+				maximumElasticTravelScreen, maximumInteractionZoom);
+			const bool foldedDuringDrag = !barState.fold && dragCollapseGate.Take(
+				Inkeys::config.UI.Bar.AutoCollapse.Dragging, dockUpdate.mode, realDrag)
+				&& FoldBarAutomatically(true);
 			const double rawMainCenterScreenX = pointer.x - grabOffsetScreenX;
 			const double rawBodyCenterScreenX = rawMainCenterScreenX
 				+ bodyToMainCenterScreenX;
@@ -7405,8 +7526,8 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 					pixelDeltaY, memory_order_release);
 			}
 			const DockPublication publication = PublishDockUpdate(
-				dockUpdate, centerUpdate);
-			if (anyModeChanged)
+				dockUpdate, centerUpdate, foldedDuringDrag);
+			if (anyModeChanged || foldedDuringDrag)
 			{
 				// 捕获/脱离必须先由 ULW 同帧提交新位图和新位置，
 				// 在此之前禁止当前或后续采样用 SetWindowPos 移动上一帧位图。
@@ -7701,6 +7822,21 @@ namespace Inkeys::UI::Bar
 		message.message = keyDown ? WM_KEYDOWN : WM_KEYUP;
 		message.vkcode = vkCode;
 		return Inkeys::Window::Enqueue(floating_window, message);
+	}
+
+	void NotifyCanvasStrokeAccepted(const AcceptedStrokeBegin& notice) noexcept
+	{
+		if (offSignal) return;
+		std::lock_guard lock(barAcceptedStrokeMutex);
+		if (barAcceptedStrokeCount == barAcceptedStrokes.size())
+		{
+			// 候选有界；突发时保留较新的场景，不为每个笔迹分配消息。
+			barAcceptedStrokeRead = (barAcceptedStrokeRead + 1) % barAcceptedStrokes.size();
+			--barAcceptedStrokeCount;
+		}
+		barAcceptedStrokes[(barAcceptedStrokeRead + barAcceptedStrokeCount)
+			% barAcceptedStrokes.size()] = notice;
+		++barAcceptedStrokeCount;
 	}
 
 	void NotifyCanvasDrawingStarted()

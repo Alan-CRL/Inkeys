@@ -324,6 +324,18 @@
         "Centerline": "中軸線",
         "WhenSpaceInsufficient": "當位置不足時"
       },
+      "AutoCollapse":
+      {
+        "N": "自動收起",
+        "Drawing": "繪製時收起主欄",
+        "Erasing": "擦除時收起主欄",
+        "Dragging": "拖動主欄時收起主欄",
+        "OutsideClick": "選取或穿透模式下點擊欄外時收起主欄",
+        "Description": "繪製包含畫筆、形狀和雷射筆；底欄模式包含置中底欄。欄外點擊不包含主欄及其選單、屬性和彈出面板。",
+        "Off": "關閉",
+        "NonBottom": "非底欄模式時",
+        "Always": "任何時候"
+      },
       "StartUp":
       {
         "N": "開機自動執行與啟動行為",

@@ -381,12 +381,6 @@ namespace Inkeys::UI::Ppt
 		PublishSnapshot();
 	}
 
-	void QueueGlobalWheel(short delta) noexcept
-	{
-		if (initialized.load(std::memory_order_acquire))
-			Inkeys::UI::PageControl::QueuePptWheel(delta);
-	}
-
 	void SetDebugEnabled(bool enabled) noexcept
 	{
 		Inkeys::UI::PageControl::SetDebugEnabled(enabled);

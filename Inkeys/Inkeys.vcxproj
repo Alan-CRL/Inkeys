@@ -423,6 +423,10 @@
     <ClInclude Include="IdtAtomic.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.A2.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapse.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapseInteraction.h" />
+    <ClInclude Include="Inkeys\Input\MouseHook.Transport.h" />
+    <ClInclude Include="Inkeys\Business\PptSessionToken.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h" />

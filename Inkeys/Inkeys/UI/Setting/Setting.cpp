@@ -1259,12 +1259,8 @@ SettingSessionCoroutine RunSettingSession()
 
 		int TopSleepTime = setlist.topSleepTime;
 		bool RightClickClose = setlist.RightClickClose;
-		bool BrushRecover = setlist.BrushRecover;
-		bool RubberRecover = setlist.RubberRecover;
 		struct
 		{
-			bool MoveRecover = setlist.regularSetting.moveRecover;
-			bool ClickRecover = setlist.regularSetting.clickRecover;
 			int TeachingSafetyMode = std::clamp(
 				setlist.regularSetting.teachingSafetyMode.load(), 0, 3);
 		}RegularSetting;
@@ -3175,6 +3171,97 @@ SettingSessionCoroutine RunSettingSession()
 										// 只唤醒主栏布局，避免设置渲染期间同步工具或等待窗口线程。
 										preference = i;
 										barUISet.UpdateRendering(false);
+										QueueConfigWrite();
+									}
+									if (selected) ImGui::SetItemDefaultFocus();
+								}
+								Widgets::combo.End();
+							}
+							ImGui::PopStyleVar();
+							ImGui::PopStyleColor();
+							ImGui::PopFont();
+							ImGui::EndChild();
+							ImGui::PopStyleColor();
+							ImGui::PopStyleVar(2);
+						}
+					}
+
+					{
+						// 合并式和分离式共用此块；只保存偏好，后续真实输入由 Bar owner 应用策略。
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str());
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+						ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+						ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+						ImGui::PushTextWrapPos(settingItemWidth * settingGlobalScale);
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.AutoCollapse.Description).c_str());
+						ImGui::PopTextWrapPos();
+						ImGui::PopStyleColor();
+						ImGui::PopFont();
+
+						const string itemNames[] = {
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.Drawing),
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.Erasing),
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.Dragging),
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.OutsideClick)
+						};
+						const string optionNames[] = {
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.Off),
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.NonBottom),
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.Always)
+						};
+						auto& policies = Inkeys::config.UI.Bar.AutoCollapse;
+						IdtAtomic<int>* preferences[] = { &policies.Drawing, &policies.Erasing, &policies.Dragging, &policies.OutsideClick };
+						const char* itemIds[] = { "绘制自动收起", "擦除自动收起", "拖动自动收起", "栏外点击自动收起" };
+						for (int item = 0; item < 4; ++item)
+						{
+							const float cardWidth = settingItemWidth * settingGlobalScale;
+							ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+							float comboWidth = 200.0f * settingGlobalScale;
+							for (const auto& option : optionNames)
+								comboWidth = max(comboWidth, ImGui::CalcTextSize(option.c_str()).x + 45.0f * settingGlobalScale);
+							comboWidth = min(comboWidth, cardWidth - 40.0f * settingGlobalScale);
+							ImGui::PopFont();
+							// 长译文按实际字体换行；窄空间改为上下排列，下拉和标签不会互相覆盖。
+							const bool stacked = cardWidth - comboWidth - 60.0f * settingGlobalScale < 160.0f * settingGlobalScale;
+							const float labelWidth = stacked ? cardWidth - 40.0f * settingGlobalScale
+								: cardWidth - comboWidth - 60.0f * settingGlobalScale;
+							ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+							const float labelHeight = ImGui::CalcTextSize(itemNames[item].c_str(), nullptr, false, labelWidth).y;
+							ImGui::PopFont();
+							const float rowHeight = stacked ? labelHeight + 75.0f * settingGlobalScale
+								: max(60.0f * settingGlobalScale, labelHeight + 40.0f * settingGlobalScale);
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild(itemIds[item], { cardWidth,rowHeight }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							ImFontMain->Scale = 0.6f, ImGui::PushFont(ImFontMain);
+							ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+							ImGui::PushTextWrapPos(20.0f * settingGlobalScale + labelWidth);
+							ImGui::TextUnformatted(itemNames[item].c_str());
+							ImGui::PopTextWrapPos();
+							ImGui::PopFont();
+							ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+							auto& preference = *preferences[item];
+							const int stored = preference.load();
+							const int value = stored >= 0 && stored <= 2 ? stored : (item == 0 ? 1 : 0);
+							ImGui::SetCursorPos({ cardWidth - comboWidth - 20.0f * settingGlobalScale,
+								stacked ? labelHeight + 35.0f * settingGlobalScale : (rowHeight - 30.0f * settingGlobalScale) * 0.5f });
+							ImGui::SetNextItemWidth(comboWidth);
+							ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * settingGlobalScale, 4.0f * settingGlobalScale));
+							if (Widgets::combo.Begin("##自动收起策略", optionNames[value].c_str(), 3))
+							{
+								for (int i = 0; i < 3; ++i)
+								{
+									const bool selected = value == i;
+									if (Widgets::combo.Selectable(optionNames[i].c_str(), selected) && !selected)
+									{
+										preference = i;
 										QueueConfigWrite();
 									}
 									if (selected) ImGui::SetItemDefaultFocus();

@@ -5,6 +5,7 @@ module;
 #endif
 
 #include <windows.h>
+#include "../../Business/PptSessionToken.h"
 
 #include <algorithm>
 #include <array>
@@ -1256,7 +1257,11 @@ export namespace Inkeys::UI::PageControl
 	void SetWhiteboardCallbacks(WhiteboardCallbacks callbacks);
 	void PublishPptState(const PptState& state) noexcept;
 	void PublishWhiteboardState(const WhiteboardState& state) noexcept;
-	void QueuePptWheel(short delta) noexcept;
+	[[nodiscard]] bool CanAcceptPptWheel(const Business::PptSessionToken& session) noexcept;
+	void ConsumePptWheel(const Business::PptSessionToken& session,
+		std::uint64_t routeGeneration, short delta) noexcept;
+	void ResetWheelInput() noexcept;
+	void DrainLocalWheel() noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;
 	void NotifyLayoutChanged() noexcept;
 	void CancelPointerCapture() noexcept;

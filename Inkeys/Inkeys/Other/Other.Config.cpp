@@ -546,7 +546,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
+		void HandleValue(const char* name, T& value, const T& defaultValue, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
 		{
 			if (!canReadFromDocument && !includeWriteOnly) return;
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
@@ -574,6 +574,16 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 
 				const auto path = JoinPath(groupPath, name);
+				if (groupPath.size() == 3 && groupPath[0] == "UI"
+					&& groupPath[1] == "Bar" && groupPath[2] == "AutoCollapse")
+				{
+					// 新策略独立使用 schema 默认值；先验类型与宽度，不能将旧布尔或超宽整数窄化。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : defaultValue.load();
+					return;
+				}
+
 				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")
 				{
 					// 先验证 JSON 整数类型与范围，避免超宽整数窄化后成为合法选项。

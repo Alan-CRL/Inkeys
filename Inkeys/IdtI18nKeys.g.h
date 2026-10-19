@@ -327,6 +327,18 @@ inline constexpr struct I18nKeyRoot
                 const char* Centerline = "SettingsUI/Regular/ToolbarExpansionDirection/Centerline";
                 const char* WhenSpaceInsufficient = "SettingsUI/Regular/ToolbarExpansionDirection/WhenSpaceInsufficient";
             } ToolbarExpansionDirection{};
+            struct Node__SettingsUI__Regular__AutoCollapse
+            {
+                const char* N = "SettingsUI/Regular/AutoCollapse/N";
+                const char* Drawing = "SettingsUI/Regular/AutoCollapse/Drawing";
+                const char* Erasing = "SettingsUI/Regular/AutoCollapse/Erasing";
+                const char* Dragging = "SettingsUI/Regular/AutoCollapse/Dragging";
+                const char* OutsideClick = "SettingsUI/Regular/AutoCollapse/OutsideClick";
+                const char* Description = "SettingsUI/Regular/AutoCollapse/Description";
+                const char* Off = "SettingsUI/Regular/AutoCollapse/Off";
+                const char* NonBottom = "SettingsUI/Regular/AutoCollapse/NonBottom";
+                const char* Always = "SettingsUI/Regular/AutoCollapse/Always";
+            } AutoCollapse{};
             struct Node__SettingsUI__Regular__StartUp
             {
                 const char* N = "SettingsUI/Regular/StartUp/N";

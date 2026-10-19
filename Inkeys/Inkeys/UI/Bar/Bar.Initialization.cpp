@@ -201,11 +201,8 @@ namespace Inkeys::UI::Bar
 			return;
 		}
 
-		(void)Inkeys::Input::MouseHook::Start([&]()
-			{
-				barUISet.barState.fold = true;
-				barUISet.UpdateRendering(false);
-			});
+		if (!Inkeys::Input::MouseHook::Start() && IDTLogger)
+			IDTLogger->warn("[MouseHook] 安装失败，全局滚轮和栏外点击暂不可用");
 		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
 		if (!barUISet.Rendering())
 		{

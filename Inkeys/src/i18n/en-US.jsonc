@@ -324,6 +324,18 @@
         "Centerline": "Screen centerline",
         "WhenSpaceInsufficient": "When space is insufficient"
       },
+      "AutoCollapse":
+      {
+        "N": "Auto-collapse",
+        "Drawing": "Collapse the toolbar when drawing",
+        "Erasing": "Collapse the toolbar when erasing",
+        "Dragging": "Collapse the toolbar when dragging it",
+        "OutsideClick": "Collapse the toolbar when clicking outside in Select or Click-through mode",
+        "Description": "Drawing includes pens, shapes, and the laser pointer. Bottom-docked mode includes centered docking. Outside clicks exclude the toolbar and its menus, properties, and pop-up panels.",
+        "Off": "Off",
+        "NonBottom": "When not bottom-docked",
+        "Always": "Always"
+      },
       "StartUp":
       {
         "N": "Startup",

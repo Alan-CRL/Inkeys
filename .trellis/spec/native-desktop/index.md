@@ -13,6 +13,7 @@
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [ui-pointer-session.md](ui-pointer-session.md)：Bar/PPT 私有 Raw Mouse、WM_TOUCH 来源会话、窗口外拖动与取消合同。
+- [mouse-hook-and-autocollapse.md](mouse-hook-and-autocollapse.md)：有界鼠标 Hook、PPT 滚轮业务入口与独立 Inkeys3 自动收起策略。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
 - [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。

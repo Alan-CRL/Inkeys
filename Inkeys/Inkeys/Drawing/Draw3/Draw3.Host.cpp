@@ -282,6 +282,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic_bool auxiliaryFullFrameClean = false;
 		Detail::HostRuntimeRevisionSignal runtimeRevision;
 		Detail::HostDrawingActivityState drawingActivity;
+		Detail::HostAcceptedStrokeState acceptedStrokes;
 		std::atomic<LONG> lastDirtyLeft = 0;
 		std::atomic<LONG> lastDirtyTop = 0;
 		std::atomic<LONG> lastDirtyRight = 0;
@@ -600,6 +601,7 @@ namespace Inkeys::Drawing::Draw3
 			contentRevision.store(0, std::memory_order_release);
 			completedStrokeKind.store(
 				Bridge::CompletedStrokeKind::None, std::memory_order_release);
+			acceptedStrokes.BeginHost();
 			selectionMode.store(true, std::memory_order_release);
 			workspace.store(Bridge::Workspace::Desktop, std::memory_order_release);
 			{
@@ -1096,6 +1098,21 @@ namespace Inkeys::Drawing::Draw3
 			(void)self->drawingActivity.Publish(active,
 				self->runtimeCallbacks.context,
 				self->runtimeCallbacks.drawingActivityChanged);
+		}
+
+		static void ObserveAcceptedStrokeScene(void* context, const Bridge::AcceptedStrokeBegin& scene) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (self) self->acceptedStrokes.PublishScene(scene);
+		}
+
+		static void ObserveAcceptedStroke(void* context, const Bridge::AcceptedStrokeBegin& value) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self || !self->runtimeCallbacks.acceptedStrokeBegan) return;
+			auto accepted = value;
+			self->acceptedStrokes.Stamp(accepted);
+			self->runtimeCallbacks.acceptedStrokeBegan(self->runtimeCallbacks.context, accepted);
 		}
 
 		void EndDrawingActivity() noexcept
@@ -1611,6 +1628,8 @@ namespace Inkeys::Drawing::Draw3
 								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
 							};
 							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
+							observer.acceptedStrokeBegan = &ObserveAcceptedStroke;
+							observer.acceptedStrokeSceneChanged = &ObserveAcceptedStrokeScene;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get());
 							std::cout << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
@@ -2000,6 +2019,21 @@ namespace Inkeys::Drawing::Draw3
 		snapshot.lastDirtyRect.right = impl_->lastDirtyRight.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.bottom = impl_->lastDirtyBottom.load(std::memory_order_relaxed);
 		return snapshot;
+	}
+
+	bool Host::IsAcceptedStrokeCurrent(const Bridge::AcceptedStrokeBegin& accepted) const noexcept
+	{
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		const auto desired = impl_->bridge.Snapshot();
+		Detail::HostAcceptedStrokeContext current;
+		current.running = impl_->running.load(std::memory_order_acquire);
+		current.desiredWorkspace = desired.workspace;
+		if (desired.presentationTarget)
+			current.desiredPresentation = Bridge::ReadyIdentityFor(*desired.presentationTarget);
+		current.commandScenePending = impl_->commandScenePending;
+		current.admissionBlocked = impl_->input.AdmissionBlocked();
+		return impl_->acceptedStrokes.IsCurrent(accepted, current) &&
+			impl_->running.load(std::memory_order_acquire);
 	}
 
 	bool Host::WaitForRuntimeRevision(std::uint64_t revision,

@@ -83,7 +83,7 @@ Good：Raw 未到而原生 Down/Up 正常，按钮照常执行；越界拖动 Ra
 - 生产 MouseGesture/Session/MouseChannel 的无 HWND 回归：Raw 不可用/缺失/不匹配/超时下原生点击及实际拖动跨999/1000/1500/5000ms继续、候选 Raw Up 禁止提交、早到释放、双终态顺序、相邻代次、单一移动来源、迟绑定时间下限、终态不倒退、溢出前未消费 Raw Down、Touch/Pen 接管开始结束及旧 End、排队 Down 来源快照、绑定后静默接续、50ms事件边界、静止 Raw freshness/native 回放下限、迟 Raw 与恢复 Raw、DWORD时间回绕、native 接续期间 Raw Up。
 - 生产 Bar 抓取纯策略回归覆盖较大越界后回归、重复相同 zoom 的显示发布和真实 zoom 改变后的逻辑抓点保持；静态审查 Seek 实际调用该策略。它不能替代 HWND/设备输入验证。
 - PageControl 生产阈值与共享策略测试：候选点击、Raw 越界转拖动、原生 Up/Raw Up 顺序、旧终态；现有 pair、长按、触点 source/primary/fallback 继续通过。
-- 完整 InkeysRepo.sln Debug|ARM64、InkeysHeadlessTests --no-window 与适用的初始化前生产探针；保留编码/BOM/CRLF，核对 hook 源码与安装/卸载未改变。
+- 完整 InkeysRepo.sln Debug|ARM64、InkeysHeadlessTests --no-window 与适用的初始化前生产探针；保留编码/BOM/CRLF，Raw/Touch 局部任务须核对 hook 源码与安装/卸载未改变；单独授权的 hook 任务另遵守 [mouse-hook-and-autocollapse.md](mouse-hook-and-autocollapse.md)。
 - 管理员前台、真实 Win7 触摸越界、触摸板、笔、UAC/锁屏与跨窗口设备输入需单独验证。无窗口 PASS 不能证明实际 WM_INPUT 接收能力或全面绕过 UIPI。
 
 ## 7. Wrong vs Correct

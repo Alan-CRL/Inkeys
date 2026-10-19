@@ -538,6 +538,109 @@ namespace
 		else ++calls->ended;
 	}
 
+	void TestAcceptedStrokeNoticeLifecycle(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostAcceptedStrokeContext;
+		using Inkeys::Drawing::Draw3::Detail::HostAcceptedStrokeState;
+		using Inkeys::Drawing::Draw3::Detail::HostDrawingActivityState;
+		HostAcceptedStrokeState state;
+		HostAcceptedStrokeContext current;
+		current.running = true;
+		state.BeginHost();
+		AcceptedStrokeBegin scene;
+		scene.sceneGeneration = 1;
+		state.PublishScene(scene);
+		auto accepted = scene;
+		accepted.kind = CompletedStrokeKind::Drawing;
+		state.Stamp(accepted);
+		if (!Expect(state.IsCurrent(accepted, current),
+			"accepted stroke in current CPU scene is valid before any Present acknowledgement")) ++failures;
+
+		HostDrawingActivityState activity;
+		activity.Publish(true, nullptr, nullptr);
+		activity.EndIfActive(nullptr, nullptr);
+		if (!Expect(!activity.Active() && state.IsCurrent(accepted, current),
+			"short stroke ending before UI consumes begin does not retire the notice")) ++failures;
+		auto secondContact = accepted;
+		secondContact.kind = CompletedStrokeKind::Eraser;
+		auto shapeContact = accepted;
+		shapeContact.kind = CompletedStrokeKind::Shape;
+		if (!Expect(state.IsCurrent(secondContact, current) && state.IsCurrent(shapeContact, current),
+			"each accepted eraser or shape in an overlapping batch retains its own kind")) ++failures;
+		auto rejected = accepted;
+		rejected.kind = CompletedStrokeKind::None;
+		if (!Expect(!state.IsCurrent(rejected, current),
+			"scene-only or rejected contact metadata cannot become a begin notice")) ++failures;
+
+		scene.workspace = Workspace::Whiteboard;
+		++scene.sceneGeneration;
+		state.PublishScene(scene);
+		scene.workspace = Workspace::Desktop;
+		++scene.sceneGeneration;
+		state.PublishScene(scene);
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"leaving and returning to the same workspace/page does not revive old begin")) ++failures;
+		accepted = scene;
+		accepted.kind = CompletedStrokeKind::Drawing;
+		state.Stamp(accepted);
+		++scene.sceneGeneration;
+		state.PublishScene(scene);
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"Clear or recovery retires old notice even with identical page coordinates")) ++failures;
+		accepted = scene;
+		accepted.kind = CompletedStrokeKind::Drawing;
+		state.Stamp(accepted);
+		current.desiredWorkspace = Workspace::Whiteboard;
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"new desired workspace rejects old begin before CPU switch completes")) ++failures;
+		current.desiredWorkspace = Workspace::Desktop;
+		current.commandScenePending = true;
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"pending scene command cannot fold the old scene")) ++failures;
+		current.commandScenePending = false;
+		current.running = false;
+		if (!Expect(!state.IsCurrent(accepted, current), "stopped Host rejects begin")) ++failures;
+		current.running = true;
+		state.BeginHost();
+		state.PublishScene(scene);
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"Host restart rejects old begin even when scene generation is reused")) ++failures;
+
+		scene.workspace = Workspace::Presentation;
+		scene.pageIndex = 2;
+		++scene.sceneGeneration;
+		PresentationReadyIdentity presentation;
+		presentation.key.bytes[0] = 3;
+		presentation.pageIndex = 2;
+		presentation.sessionRevision = 7;
+		presentation.targetRevision = 9;
+		scene.presentation = presentation;
+		state.PublishScene(scene);
+		accepted = scene;
+		accepted.kind = CompletedStrokeKind::Eraser;
+		state.Stamp(accepted);
+		current.desiredWorkspace = Workspace::Presentation;
+		current.desiredPresentation = presentation;
+		if (!Expect(state.IsCurrent(accepted, current), "matching PPT begin is valid")) ++failures;
+		current.admissionBlocked = true;
+		if (!Expect(!state.IsCurrent(accepted, current), "suspended PPT rejects pending begin")) ++failures;
+		current.admissionBlocked = false;
+		++current.desiredPresentation->sessionRevision;
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"same PPT page in a reopened show rejects old begin")) ++failures;
+		current.desiredPresentation = presentation;
+		++current.desiredPresentation->targetRevision;
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"new PPT target rejects old begin before scene switch")) ++failures;
+		current.desiredPresentation.reset();
+		if (!Expect(!state.IsCurrent(accepted, current), "unknown PPT target rejects begin")) ++failures;
+		current.desiredPresentation = presentation;
+		scene.pageIndex = 3;
+		state.PublishScene(scene);
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"logical current page is checked independently of presentation target")) ++failures;
+	}
+
 	void TestDrawingActivityLifecycle(int& failures)
 	{
 		using Inkeys::Drawing::Draw3::Detail::HostDrawingActivityState;
@@ -570,6 +673,7 @@ int RunDraw3BridgeTests()
 	TestDrawpadPresentationPlan(failures);
 	TestPageRuntimeRevisionPolicy(failures);
 	TestDrawingActivityLifecycle(failures);
+	TestAcceptedStrokeNoticeLifecycle(failures);
 	TestPptWaitObservationBoundary(failures);
 	return failures;
 }

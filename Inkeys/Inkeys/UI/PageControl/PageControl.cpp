@@ -15,6 +15,7 @@ module;
 #include "../Bar/Bar.DirtyRegion.h"
 #include "../../Drawing/Draw3/Draw3.PptTiming.h"
 #include "../../Input/UiPointerInput.h"
+#include "../../Input/MouseHook.Transport.h"
 #include "../../Window/Window.MessageDispatch.h"
 
 #include <algorithm>
@@ -46,6 +47,34 @@ namespace Inkeys::UI::PageControl
 	namespace
 	{
 		using namespace std::chrono_literals;
+		struct LocalWheelRequest
+		{
+			Business::PptSessionToken session;
+			short delta = 0;
+			std::uint64_t generation = 0;
+		};
+		// 本地 HWND 与 Hook 是不同 producer；本地通道独立有界，不共享 Hook SPSC。
+		std::mutex localWheelMutex;
+		std::array<LocalWheelRequest, 64> localWheels{};
+		std::size_t localWheelRead = 0, localWheelWrite = 0, localWheelCount = 0;
+		std::atomic_uint64_t wheelInputGeneration = 1;
+		Input::HookTransport::WheelAccumulator globalWheelAccumulator;
+		Input::HookTransport::WheelAccumulator localWheelAccumulator;
+		std::uint64_t localWheelSession = 0;
+
+		void EnqueueLocalWheel(short delta) noexcept
+		{
+			if (!delta) return;
+			const auto generation = wheelInputGeneration.load(std::memory_order_acquire);
+			const auto token = Business::CapturePptInputSession();
+			if (!CanAcceptPptWheel(token)) return;
+			std::scoped_lock lock(localWheelMutex);
+			if (localWheelCount == localWheels.size()) return;
+			localWheels[localWheelWrite] = { token, delta, generation };
+			localWheelWrite = (localWheelWrite + 1) % localWheels.size();
+			++localWheelCount;
+		}
+
 		using Microsoft::WRL::ComPtr;
 		using Client = Inkeys::UI::RenderPipeline::Client;
 		using FrameContext = Inkeys::UI::RenderPipeline::FrameContext;
@@ -2818,8 +2847,7 @@ namespace Inkeys::UI::PageControl
 						&& ResolveWorkspaceInputPolicy(
 							state.configuredMode).wheel;
 				}
-				if (invoke) InvokeDirection(
-					index, GET_WHEEL_DELTA_WPARAM(wParam) < 0);
+				if (invoke) EnqueueLocalWheel(GET_WHEEL_DELTA_WPARAM(wParam));
 				return 0;
 			}
 			if (message == WM_CANCELMODE || message == WM_CAPTURECHANGED)
@@ -3298,6 +3326,11 @@ namespace Inkeys::UI::PageControl
 		}
 		referenceCount.store(0, std::memory_order_release);
 		initialized.store(false, std::memory_order_release);
+		wheelInputGeneration.fetch_add(1, std::memory_order_acq_rel);
+		{
+			std::scoped_lock lock(localWheelMutex);
+			localWheelRead = localWheelWrite = localWheelCount = 0;
+		}
 		displaySubscription.Reset();
 		for (const Client client : Clients)
 			Inkeys::UI::RenderPipeline::Unregister(client);
@@ -3385,13 +3418,77 @@ namespace Inkeys::UI::PageControl
 		RequestAll();
 	}
 
-	void QueuePptWheel(short delta) noexcept
+	bool CanAcceptPptWheel(const Business::PptSessionToken& session) noexcept
 	{
+		if (!initialized.load(std::memory_order_acquire) || !session.active) return false;
 		const auto [ppt, whiteboard] = Snapshot();
-		if (!ppt.presentationVisible || whiteboard.expandedLayoutTarget
-			|| whiteboard.active || WhiteboardWorkspaceSwitching(whiteboard)
-			|| delta == 0) return;
-		InvokeDirection(0, delta < 0);
+		return ppt.presentationVisible && ppt.totalPage > 0
+			&& ppt.layout.session == session.localSession
+			&& !whiteboard.expandedLayoutTarget && !whiteboard.active
+			&& !WhiteboardWorkspaceSwitching(whiteboard);
+	}
+
+	void ResetWheelInput() noexcept
+	{
+		// 仅 Bar owner 改累计器；原生线程只捕获原子代次和投递值。
+		wheelInputGeneration.fetch_add(1, std::memory_order_acq_rel);
+		globalWheelAccumulator.Reset();
+		localWheelAccumulator.Reset();
+		localWheelSession = 0;
+	}
+
+	void ConsumePptWheel(const Business::PptSessionToken& session,
+		std::uint64_t routeGeneration, short delta) noexcept
+	{
+		if (!delta || !CanAcceptPptWheel(session)
+			|| !Business::IsCurrentPptInputSession(session))
+		{
+			globalWheelAccumulator.Reset();
+			return;
+		}
+		const auto [ppt, whiteboard] = Snapshot();
+		if (ppt.layout.session != session.localSession || !ppt.presentationVisible
+			|| whiteboard.expandedLayoutTarget || whiteboard.active
+			|| WhiteboardWorkspaceSwitching(whiteboard)) return;
+		const int steps = globalWheelAccumulator.Consume(routeGeneration, delta);
+		// 完整刻度立即尝试既有业务门禁；被节流拒绝的不排队等待以后补翻。
+		for (int remaining = std::abs(steps); remaining > 0; --remaining)
+			Business::QueuePptInputDirection(session, steps < 0, ppt.currentPage, ppt.totalPage);
+	}
+
+	void DrainLocalWheel() noexcept
+	{
+		for (unsigned batch = 0; batch < 16; ++batch)
+		{
+			LocalWheelRequest request;
+			{
+				std::scoped_lock lock(localWheelMutex);
+				if (!localWheelCount) break;
+				request = localWheels[localWheelRead];
+				localWheelRead = (localWheelRead + 1) % localWheels.size();
+				--localWheelCount;
+			}
+			if (request.generation != wheelInputGeneration.load(std::memory_order_acquire)
+				|| !CanAcceptPptWheel(request.session)
+				|| !Business::IsCurrentPptInputSession(request.session))
+			{
+				localWheelAccumulator.Reset();
+				continue;
+			}
+			if (localWheelSession != request.session.localSession)
+			{
+				localWheelSession = request.session.localSession;
+				localWheelAccumulator.Reset();
+			}
+			const auto [ppt, whiteboard] = Snapshot();
+			if (!ppt.presentationVisible || ppt.layout.session != request.session.localSession
+				|| whiteboard.active || whiteboard.expandedLayoutTarget
+				|| WhiteboardWorkspaceSwitching(whiteboard)) continue;
+			const int steps = localWheelAccumulator.Consume(request.generation, request.delta);
+			for (int remaining = std::abs(steps); remaining > 0; --remaining)
+				Business::QueuePptInputDirection(request.session,
+					steps < 0, ppt.currentPage, ppt.totalPage);
+		}
 	}
 
 	void SetDebugEnabled(bool enabled) noexcept

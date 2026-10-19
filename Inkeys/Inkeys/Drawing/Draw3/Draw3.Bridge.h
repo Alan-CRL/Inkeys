@@ -124,6 +124,17 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			target.bindingRevision, target.targetRevision, target.sessionRevision };
 	}
 
+	// 已通过实际工具覆写及初始化的起笔；完成/尾迹不会退休该场景身份。
+	struct AcceptedStrokeBegin
+	{
+		CompletedStrokeKind kind = CompletedStrokeKind::None;
+		Workspace workspace = Workspace::Desktop;
+		std::size_t pageIndex = 0;
+		std::optional<PresentationReadyIdentity> presentation;
+		std::uint64_t sceneGeneration = 0;
+		std::uint64_t hostGeneration = 0;
+	};
+
 	// PPT 的总页数只含真实幻灯片；结束页固定占用同文稿的附加内部页槽。
 	constexpr std::uint32_t PresentationDocumentPageCount(
 		const PresentationTarget& target) noexcept

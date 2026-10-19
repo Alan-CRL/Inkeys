@@ -63,6 +63,9 @@ int RunEraserAttributeTests();
 int RunRecallAttributeTests();
 int RunPresentationDescriptorTests();
 int RunUiPointerTests();
+int RunAutoCollapseTests();
+int RunAutoCollapseInteractionTests();
+int RunMouseHookTransportTests();
 
 namespace
 {
@@ -1701,6 +1704,9 @@ int main(int argc, char** argv)
 	failureCount += RunRecallAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
 	failureCount += RunUiPointerTests();
+	failureCount += RunAutoCollapseTests();
+	failureCount += RunAutoCollapseInteractionTests();
+	failureCount += RunMouseHookTransportTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

@@ -527,6 +527,5 @@ export namespace Inkeys::UI::Ppt
 		std::uint64_t targetRevision = 0) noexcept;
 	void ResetPositions() noexcept;
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept;
-	void QueueGlobalWheel(short delta) noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;
 }

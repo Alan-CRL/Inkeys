@@ -7792,6 +7792,19 @@ namespace Inkeys::Drawing::Draw3
 				*activePresentationTarget, activePresentationSlotGeneration,
 				GetTickCount64());
 		};
+		std::uint64_t acceptedStrokeSceneGeneration = 1;
+		auto acceptedStrokeScene = [&]() noexcept
+		{
+			Bridge::AcceptedStrokeBegin scene;
+			scene.workspace = activeWorkspace;
+			scene.pageIndex = currentPageIndex_;
+			scene.sceneGeneration = acceptedStrokeSceneGeneration;
+			if (activePresentationTarget)
+				scene.presentation = Bridge::ReadyIdentityFor(*activePresentationTarget);
+			return scene;
+		};
+		if (observer_.acceptedStrokeSceneChanged)
+			observer_.acceptedStrokeSceneChanged(observer_.context, acceptedStrokeScene());
 		std::optional<PendingWorkspaceReady> pendingWorkspaceReady;
 		auto stageWorkspaceReady = [&](const Bridge::PresentationTarget* target = nullptr)
 		{
@@ -9321,6 +9334,13 @@ namespace Inkeys::Drawing::Draw3
 					// Down 只重置时间累计；得到首条非退化 L0 切线前不发射。
 				}
 				active.push_back(runtime);
+				if (observer_.acceptedStrokeBegan)
+				{
+					// 只在新笔划真正接纳后通知，临时橡皮用本笔 tool，续接/拒绝不重复。
+					auto accepted = acceptedStrokeScene();
+					accepted.kind = CompletedStrokeKindForTool(runtime->tool);
+					observer_.acceptedStrokeBegan(observer_.context, accepted);
+				}
 				if (haptics_ && runtime->hapticEligible)
 				{
 					if (runtime->invertedCursor)
@@ -10933,6 +10953,10 @@ namespace Inkeys::Drawing::Draw3
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
 			int width, int height)
 		{
+			// 逻辑换页/工作区/恢复/Clear 立即退休旧起笔，不等待 Present 或物理接触归零。
+			if (++acceptedStrokeSceneGeneration == 0) ++acceptedStrokeSceneGeneration;
+			if (observer_.acceptedStrokeSceneChanged)
+				observer_.acceptedStrokeSceneChanged(observer_.context, acceptedStrokeScene());
 			if (metricsState_)
 			{
 				metricsScene(true);
