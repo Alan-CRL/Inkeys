@@ -32,7 +32,7 @@
 
 以ABM_GETAUTOHIDEBAREX的owner/edge、主任务栏API和兼容Shell窗口采样为基础。配置autoHide不等于正在升起，IsWindowVisible不等于实际屏内暴露。归属本屏的矩形/可见带判定实际状态，微小露出条归Hidden；升起目标按完整厚度求稳定top，不逐帧追逐Shell动画rect.top。门限与迟滞抽为可测状态策略。
 
-优先采用非注入WinEvent通知，按Shell进程并再次按缓存HWND、OBJID_WINDOW/CHILDID_SELF过滤。回调只排队，owner线程合并约16–33ms burst；不在回调、UI帧或鼠标Move枚举EDID/任务栏。仅对已确认底部autoHide的缓存窗口启用约200ms轻量矩形兜底，原2秒结构复查负责设置变化/Explorer重建及漏事件恢复；无相关任务栏时停快速采样。
+优先采用非注入WinEvent通知，按Shell进程并再次按缓存HWND、OBJID_WINDOW/CHILDID_SELF过滤。回调只排队，owner线程合并约16–33ms burst；不在回调、UI帧或鼠标Move枚举EDID/任务栏。仅对已确认底部autoHide的缓存窗口启用5秒轻量矩形兜底，结构复查同为5秒，负责设置变化/Explorer重建及漏事件恢复；无相关任务栏时停止显隐兜底采样。用户要求所有任务栏周期轮询至少5秒，WinEvent及系统消息仍及时处理，事件触发的25ms单次合并保留；漏事件时兜底纠正可能等到下次5秒采样。
 
 原始移动样本留在观察器内部，只有逻辑状态、稳定目标线或保护策略变化才进入SemanticallyEquals/generation，避免Shell一段动画触发几十次Bar重定向和PPT刷新。去重/合并不积压；同线程安装/卸载hook；WM_DESTROY对称清理timer/hook；Shutdown与Explorer换代拒绝旧HWND/迟到回调。旧Shell不支持EX/事件时降级，无新Windows版本硬导入、私有注册表或系统任务栏修改。
 

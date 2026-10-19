@@ -10,7 +10,7 @@ Inkeys/Inkeys/UI/StartupPlacement.h及相关现有预览入口：CenteredBottomB
 具体只改实现必要文件，不改PPT业务动作、Draw3画布、设置/缩放配置，不重构无关模块。
 
 ## 观察器到呈现
-新增edge/autoHide/Hidden-Raised-Unknown/稳定anchor，厚度独立。WinEvent只排队，owner合并16–33ms，必要缓存矩形200ms兜底，既有2秒结构复查；数值用于初始策略并按验证调整。逻辑状态变化才发新generation，Shell中间rect不直接成为目标。缓存身份换代、Unknown最近有效回退不跨屏/几何复用。
+新增edge/autoHide/Hidden-Raised-Unknown/稳定anchor，厚度独立。WinEvent只排队，owner事件合并25ms；按用户追加要求，必要缓存矩形兜底及结构复查周期均为5秒。所有任务栏周期轮询至少5秒，事件触发即时刷新及单次合并保持。逻辑状态变化才发新generation，Shell中间rect不直接成为目标。缓存身份换代、Unknown最近有效回退不跨屏/几何复用。
 
 统一纯函数输出dock line及相关保护，渲染/输入tracker/blocked-release/成功呈现屏障/居中启动预览消费同一完整环境，不伪造workArea。真实5DIP和最终UIzoom职责分开；顶部/左右按追加要求与底部Hidden共用屏底5真实屏幕DIP目标。
 

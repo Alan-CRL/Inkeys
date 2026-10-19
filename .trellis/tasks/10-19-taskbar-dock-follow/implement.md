@@ -3,7 +3,7 @@
 - [x] 用户批准父任务规划后才start本子任务；加载本规划、父共享设计及manifest。
 - [x] 记录源码格式/dirty状态，明确只负责Display、Bar、必要CenteredBottomBar预览及相应用例；画布Window policy由另一子任务负责，不覆盖其他修改。
 - [x] 扩展Display逐屏逻辑状态/稳定anchor，复用完整厚度；生产纯策略用例覆盖微小露出条、迟滞、Unknown/失效与多屏。
-- [x] observer接非注入事件合并、条件轻量兜底及2秒结构恢复；检验同值无新generation、旧epoch拒绝、线程/资源对称。
+- [x] observer接非注入事件合并、条件轻量兜底及5秒结构恢复（追加要求：两路周期轮询均至少5秒）；检验同值无新generation、旧epoch拒绝、线程/资源对称。
 - [x] 同一dock-line供渲染/输入/成功呈现环境及启动预览；回归顶/侧/底、真实5DIP、居中/浮动/PPT优先级。
 - [x] 接明确Y过渡状态，排除稳定SetDirect覆盖及第二写者；测试快速反向、同目标幂等、animation off、X不变、拖动/恢复交接。
 - [x] 最终viewport及SetWindowPos直移保护最底1物理行，验证阴影/描边/回弹/极端UI倍率及旧像素清除；不扩为PPT主栏规则修改。

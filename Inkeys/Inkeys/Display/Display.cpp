@@ -798,6 +798,7 @@ namespace
 		}
 	}
 
+	// 周期轮询统一每 5 秒兜底；WinEvent 的 25ms 单次合并仍及时响应。
 	constexpr UINT_PTR taskbarStructureTimer = 0x4954;
 	constexpr UINT_PTR taskbarCoalesceTimer = 0x4955;
 	constexpr UINT_PTR taskbarFallbackTimer = 0x4956;
@@ -874,7 +875,7 @@ namespace
 			if (hook) state.hooks.emplace_back(process, hook);
 		}
 		if (fastFallback && !state.fallbackArmed)
-			state.fallbackArmed = SetTimer(state.hwnd, taskbarFallbackTimer, 200, nullptr) != 0;
+			state.fallbackArmed = SetTimer(state.hwnd, taskbarFallbackTimer, 5000, nullptr) != 0;
 		else if (!fastFallback && state.fallbackArmed)
 		{
 			KillTimer(state.hwnd, taskbarFallbackTimer);
@@ -894,7 +895,7 @@ namespace
 			state.batch.Reset(state.epoch);
 			observerEpoch.store(state.epoch, std::memory_order_release);
 			observerWindow.store(hwnd, std::memory_order_release);
-			SetTimer(hwnd, taskbarStructureTimer, 2000, nullptr);
+			SetTimer(hwnd, taskbarStructureTimer, 5000, nullptr);
 			SyncTaskbarObserver(state);
 		}
 		else if (message == WM_DESTROY && state.hwnd == hwnd)

@@ -53,3 +53,11 @@
 
 ## 提交授权
 2026-10-19：用户明确要求“为改动提交commit”，本任务源码、测试、规范及任务记录按一个工作提交处理，沿用现有SSH签名配置，不push。此前未提交/未获提交授权的表述为验证当时状态；用户本次未要求归档，父子任务暂保留in_progress。消息钩子与定时兜底说明已按Display.cpp现有实现核对，不新增性能优化或修改检测频率。
+
+## 追加任务栏轮询频率要求（2026-10-19）
+用户要求保留钩子，并把所有任务栏轮询间隔调到至少5秒。当前任务内直接调整显隐fallback和结构复查两个周期定时器为5000ms；25ms为事件触发后的单次合并，不属于周期轮询，保持钩子和系统消息即时刷新。漏事件/无钩子时兜底纠正可能等待下一次5秒采样。最小源码diff并保持原编码/CRLF，不新增只验证常量的测试；Trellis check、完整solution Debug|ARM64编译及静态检查验证，无GUI。此前commit授权已用于3e5bb005，本次不自动commit/push。
+
+追加降频已实现并通过Trellis check，新完整solution Debug|ARM64 exit0（14.34秒、0errors/0warnings）。原编码/CRLF及diff检查通过；适用验证与未执行的GUI/算法回归边界见research/polling-validation.md。本次追加修改未commit/push。
+
+## 最终提交与结案授权
+2026-10-19：用户明确要求“为改动提交commit并结束相关任务”。按本轮已通过的Trellis check及完整Debug|ARM64构建提交5秒轮询调整，随后归档本父任务及10-19-taskbar-dock-follow、10-19-canvas-edge-fullscreen-policy两个子任务并记录会话。用户接受当前交付，不将本次结案视为已执行GUI/性能测量；不push。

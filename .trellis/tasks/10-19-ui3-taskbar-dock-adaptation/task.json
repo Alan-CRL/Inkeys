@@ -24,6 +24,6 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-19追加调整完成：顶部/侧边5真实DIP，缩放基准缺省按冻结设备默认大屏分类。新solution Debug|ARM64 exit0(130.11s,0errors/183既有warnings)、Headless --no-window exit0(106.19s)、config-boundary-test exit0(2.65s)，diff/编码检查通过。详见research/followup-validation.md。用户随后明确授权提交本任务改动；无GUI/push，任务保留in_progress，归档另行收尾。",
+  "notes": "既有任务改动已按用户授权提交3e5bb005。2026-10-19用户追加要求任务栏所有周期轮询至少5秒；fallback/structure均改5000ms，钩子与25ms单次事件合并保留。新完整solution Debug|ARM64 exit0(14.34s,0errors/0warnings)，diff/BOM/CRLF检查通过；最终check见research/polling-check.md，验证见research/polling-validation.md。用户已授权提交本轮改动并结束父子任务；无GUI/push。提交后执行归档。",
   "meta": {}
 }
