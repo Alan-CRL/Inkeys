@@ -524,12 +524,13 @@ namespace Inkeys::Drawing::Draw3
 				input.inputSource == IMDT_PEN ? "source-pen" : "pen-compatibility-filter";
 			return result;
 		}
-		// 系统注入的 Move 不是设备接管证据；按键位及任一触点坐标都不能使它重新发布 Mouse。
-		result.systemRejected = input.message == WM_MOUSEMOVE && input.touchSuppressed &&
+		// Pen 离开后仍保持归属；明确系统 Move 不是接管证据，不因按键位/坐标/间隔放行。
+		const bool penOwnsCursor = input.pointerAuthority == DrawingCursorPointerAuthority::Pen;
+		result.systemRejected = input.message == WM_MOUSEMOVE && (input.touchSuppressed || penOwnsCursor) &&
 			input.sourceQuerySucceeded && input.inputSource == IMDT_UNAVAILABLE && input.origin == IMO_SYSTEM;
 		if (result.systemRejected)
 		{
-			result.rejectionReason = "system-touch-move";
+			result.rejectionReason = input.touchSuppressed ? "system-touch-move" : "system-pen-move";
 			return result;
 		}
 		// API 缺失/失败等仍沿用原位置回退；不能把所有未知来源或应用注入一并归为系统来源。

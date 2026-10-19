@@ -228,6 +228,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool touchPositionKnown = false;
 		int touchX = 0, touchY = 0;
 		int mouseX = 0, mouseY = 0;
+		// Pen 清样本后仍保留归属，系统 Move 不能借此恢复旧 Mouse Hover。
+		DrawingCursorPointerAuthority pointerAuthority = DrawingCursorPointerAuthority::Unknown;
 	};
 	struct MouseCursorMessageFilterResult
 	{

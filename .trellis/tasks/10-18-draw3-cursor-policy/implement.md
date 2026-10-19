@@ -178,3 +178,11 @@ Win7 真机视觉、首次 Down 零闪及硬件混合输入目前均未执行；
 ## 2026-10-19 放大笔形圆角（本机编译核验通过）
 
 半径1.5→3 DIP，切线保护1/4→2/5，普通24 DIP四角实际均达到3 DIP，尖端与间隔保持。正式PS仅2常量和2注释变化并同步Win7兼容；独立check、FXC、完整Debug|ARM64构建exit0、最终EXE资源核验与格式检查通过。纯shader参数未重复不含该数学的headless/CLI/i18n。新guarded36380B/F216A0BEAF1C552A91013174795DEA65DF3E6E4BC7EC8E1B43BA31DCC1B91094。详细证据见research/verification-cursor-radius.md；GUI/Win7视觉仍未验收，不commit/push。
+
+## 2026-10-19 Pen离开后Mouse光标回弹修复（本地验证通过）
+
+当前增量以research/pen-mouse-takeover-regression.md为准。用户确认Win11，且默认System正常、仅Drawing画笔光标回弹；对比两样式并核对Controller无Pen空样本向Mouse回退后，补Pen归属清样本后对明确系统注入Move的过滤保护，不通过一秒延时或吞未知来源屏蔽真实Mouse。先生产过滤/Window接线及无窗口回归，独立check后root完整Debug|ARM64和headless验证；不改shader/配置/UI/墨迹，不GUI、不commit/push。
+
+本轮独立check、完整InkeysRepo.sln Debug|ARM64和新headless --no-window均通过（exit0，配置0 failures，最终PASS），新增生产组合回归覆盖两MouseStyle及Pen清样本后的系统Move保护、真实接管和Win7/API回退。保持BOM/CRLF，shader未变；Window接线以实际调用点审查和产品编译核验，无GUI或设备验收。详情见research/verification-pen-mouse-takeover.md；本次未commit/push，任务继续保留待硬件验证。
+
+2026-10-19 用户反馈“人工验证通过”，并授权提交本轮修复、结束任务及提交收尾记录。按该验收归档；此前未运行的Win7实机记录保持事实，不推定为Win7实测通过。本次不push。

@@ -50,7 +50,7 @@
     "Scripts/i18n.zh-CN.snapshot.jsonc",
     "Inkeys/Inkeys/Drawing/Draw3/Draw3.CursorSettings.h"
   ],
-  "notes": "2026-10-19 圆角半径已加倍至3 DIP；四角有效半径、独立check、FXC、完整Debug|ARM64与资源核验通过。仅shader常量不重复headless，GUI/Win7待实测，无commit/push。",
+  "notes": "2026-10-19 用户确认本轮回归人工验证通过，并明确要求提交改动、结束任务及提交收尾记录。既有完整Debug|ARM64与headless均通过；按用户指示归档，未推送。未将此前Win7未运行记录改写为实测通过。",
   "meta": {
     "planning": {
       "date": "2026-10-18",
@@ -95,22 +95,22 @@
     },
     "implementation": {
       "date": "2026-10-19",
-      "status": "cursor-radius-local-verified-awaiting-win7",
-      "code_changes": "implemented-radius-parameters",
-      "independent_check": "pass-exact-radius-constants-and-guarded",
+      "status": "user-accepted-ready-to-archive",
+      "code_changes": "implemented-pen-owned-system-move-filter",
+      "independent_check": "pass-pen-mouse-takeover",
       "build": "pass-exit0-same-config-full-link-prebuild-ilk-preserved",
-      "headless": "not-rerun-shader-constants-only",
+      "headless": "pass-no-window-exit0",
       "win7_hardware": "not-run",
       "gui_run": false,
       "commit_or_push": false,
-      "production_state_cli": "not-rerun-shader-only-previous-revision-pass",
+      "production_state_cli": "not-rerun-input-filter-only",
       "i18n": "unchanged-not-rerun-previous-revision-370-of-370",
-      "shader_resource_check": "pass-current-cso-301-304-guarded-and-actual-ISGN-OSGN",
-      "verification_report": "research/verification-cursor-radius.md",
+      "shader_resource_check": "not-rerun-input-only-source-and-guarded-sha-unchanged",
+      "verification_report": "research/verification-pen-mouse-takeover.md",
       "source_compile_fix": "none-in-current-revision",
-      "verification_report_previous": "research/verification-cursor-geometry.md",
-      "production_pen_width_cli": "not-rerun-shader-only-previous-revision-pass",
-      "first_build_failure": "not-encountered-current-radius-revision",
+      "verification_report_previous": "research/verification-cursor-radius.md",
+      "production_pen_width_cli": "not-rerun-input-filter-only",
+      "first_build_failure": "not-encountered-current-pen-takeover-revision",
       "linker_recovery": "prebuild-preserved-known-incremental-ilk-same-config-full-link",
       "geometry_revision": {
         "status": "local-verified-awaiting-win7",
@@ -134,6 +134,33 @@
         "independent_check": "pass",
         "guarded_bytes": 36380,
         "guarded_sha256": "F216A0BEAF1C552A91013174795DEA65DF3E6E4BC7EC8E1B43BA31DCC1B91094"
+      },
+      "post_pen_takeover_regression": {
+        "status": "user-accepted",
+        "platform_reported": "Windows 11",
+        "baseline_commit": "e9e9b1f5",
+        "build": "pass-exit0",
+        "headless": "pass-no-window-exit0",
+        "verification_report": "research/verification-pen-mouse-takeover.md",
+        "gui_run": false,
+        "commit_or_push": false,
+        "reported_mouse_style": "Drawing-only-System-originally-normal",
+        "independent_check": "pass",
+        "windows11_device": "user-reported-pass-2026-10-19",
+        "win7_device": "not-run",
+        "site_message_evidence": "not-collected",
+        "source_files": 4,
+        "source_format": "preserved-bom-and-crlf",
+        "shader_changed": false
+      },
+      "windows11_hardware": "user-reported-pass-2026-10-19",
+      "user_acceptance": {
+        "date": "2026-10-19",
+        "result": "人工验证通过",
+        "archive_authorized": true,
+        "commit_authorized": true,
+        "push_authorized": false,
+        "scope": "本轮Windows11离笔后Mouse画笔光标回弹；不推定未明确提供的Win7实机结果"
       }
     }
   }

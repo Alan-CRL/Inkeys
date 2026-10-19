@@ -11,6 +11,7 @@
 - `Draw3.CursorSettings.h`：`MouseCursorStyle { System=0, Drawing=1 }`、`PenCursorStyle { Circle=0, PenIcon=1 }`、`CursorSettings`、两个 `Restore*CursorStyle(int)`。
 - `Bridge::ProductState::cursorSettings` 是纯值快照；`Bridge::ResolveMouseCursorStyleForTool(Tool,MouseCursorStyle)` 给出当前工具的有效鼠标策略，`Bridge::ResolveCursorSettingsForTool(Tool,CursorSettings)` 按值生成有效快照并保留独立 PenStyle；原始选择不得被该临时结果覆盖。
 - `DrawingController::SetCursorSettings(const CursorSettings&) noexcept` 只由 Host owner 消费；`ResolvePrimaryDrawingCursorVisual(..., const CursorSettings* productSettings=nullptr, bool penIconAllowed=false, float dpiScale=1.0f)` 在显式接入后应用产品规则。
+- `FilterMouseCursorMessage(const MouseCursorMessageFilterInput&) noexcept`的输入携带当前持久`pointerAuthority`（默认Unknown）；Window RTS光标分支从既有`cursorOwner_`读取，不新增计时/归属状态。
 - `DrawingCursorShape::PenIcon`、`DrawingCursorAppearance::{outlineOpacity,centerOffsetX,centerOffsetY}` 保留既有shader/dirty合同。`WindowController::RequestDrawingCursorRender() noexcept` 只发合并请求和wake，不操作HWND/GPU。
 
 ## 3. Contracts
@@ -47,6 +48,12 @@ Mouse/Pen 选择独立往返，不保存高亮。`MouseHighlightEdge`、`ScreenP
 - 显式productSettings=nullptr时保留旧独立API行为；Pen Contact开关、倒转橡皮、Laser及逐Touch保持。瞬态视觉不进入L0/L1/L2、文档或Undo。
 - 穿透/选择清应用主光标，由当前命中窗口拥有系统光标；保持WindowFromPoint保护，不用全局ShowCursor计数或强制箭头覆盖其它应用。
 
+### Pen离开后的主光标归属
+
+- Pen Up/OutOfRange清Pen样本后仍保留Pen归属；Pen owner配空样本不能回退到旧Mouse样本。Controller的活动runtime只选择实际工具，不得代替新设备输入切换owner。
+- API成功且`IMDT_UNAVAILABLE + IMO_SYSTEM`的`WM_MOUSEMOVE`在Pen归属时拒绝，不发布Mouse样本或改变owner；不限延迟、坐标和按键位。System样式原本不自绘，不能由默认光标正常推断Drawing不会错误回弹。
+- 真实Mouse/TouchPad消息、显式按键Down和新Pen输入继续即时接管；API缺失/失败、未知来源及应用注入保留既有回退，独立Win32Mouse producer不套用该RTS光标过滤。
+
 ### Touch 与 Win7
 
 - 主 Drawpad 的系统触摸反馈始终禁用，无 UI 开关、无持久化布尔值，不迁移/恢复 `HideTouchPointerBeta`。`TABLET_DISABLE_TOUCHUIFORCEOFF` 加入现有 Vista+ 固定策略，首次输入前的窗口属性和 `WM_TABLET_QUERYSYSTEMGESTURESTATUS` 使用同一标志。
@@ -72,6 +79,9 @@ Mouse/Pen 选择独立往返，不保存高亮。`MouseHighlightEdge`、`ScreenP
 | Controller首次收到与默认相同偏好 | 仍同步Window策略；不能因等值早退漏接入 |
 | Unknown/Conflict | 固定高亮；不伪造ScreenPen/ExternalPen身份 |
 | Touch终态/重复Pen离开 | 仍请求隐藏刷新，不恢复旧hover；来源过滤保持 |
+| Pen归属、样本清空、迟到/重复系统Move | 两MouseStyle均无主视觉；不复活旧Mouse mailbox |
+| 真实Mouse/TouchPad移动或按键Down | 即时接管，Drawing恢复PenIcon，System沿既有系统策略 |
+| 来源API缺失/失败或其它未知来源 | 不冒充已确认系统注入；保留Win7及既有回退 |
 | Win7尚未实测 | 待硬件验收，不宣布零闪现/双光标消失 |
 
 ## 5. Good / Base / Bad Cases
@@ -86,6 +96,7 @@ Mouse/Pen 选择独立往返，不保存高亮。`MouseHighlightEdge`、`ScreenP
 - Bridge：只改任一类型仍发布新revision、旧快照不变；调用生产工具helper覆盖两MouseStyle×全部Tool，不复制映射。
 - Resolver：两PenStyle×ScreenPen/Digitizer/Unknown/Conflict，Mouse/Pen相互独立、圆/笔形热点DPI、固定edge与Highlighter填充、工具排除、Contact/Touch/Eraser/Laser回归。
 - 完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window`、i18n sync/check、编码/BOM/EOL与diff --check；GUI需用户明确授权。既有无窗口 `Inkeys.exe --draw3-pen-width-test` 覆盖真实未附着 Window 的活动工具锁存、选择切换与释放后原始偏好恢复，不以纯 helper 断言替代该接线验证。
+- Pen→Mouse回归须使用生产filter、mailbox和visual resolver，参数化System/Drawing，覆盖旧Mouse→Pen Hover/Contact→清样本→约1秒/长间隔/重复系统Move仍隐藏，再覆盖真实Mouse/TouchPad/Down、新Pen恢复与API失败/Win7回退；固定tick只是测试输入，不是产品计时器。
 - 修改光标shader数学时必须同步正式PS与完整Win7 guarded数组，并核对签名、原/还原DefaultInk尾部与正向guard；Win7实际可见行为不能沿用旧二进制或逻辑通过结论。
 - 最终PE资源须逐字节等于项目实际生成的当前CSO；显式/O3参考与项目默认编译选项不同时不能强制同SHA。须区分身份，另核实际产品PS的签名/分支，不能仅靠参考ASM推断工程资源行为。
 

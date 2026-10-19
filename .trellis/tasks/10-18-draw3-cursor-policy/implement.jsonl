@@ -6,3 +6,4 @@
 {"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "产品光标唯一配置和跨层消费合同"}
 {"file": ".trellis/tasks/10-18-draw3-cursor-policy/research/cursor-policy-revision.md", "reason": "当前权威：两种类型选择、鼠标默认系统、固定高亮、荧光笔独立"}
 {"file": ".trellis/tasks/10-18-draw3-cursor-policy/research/cursor-geometry-revision.md", "reason": "当前增量：荧光笔左右高亮减半、四个非笔尖圆角，正式/Win7 guarded同步及无GUI验证"}
+{"file": ".trellis/tasks/10-18-draw3-cursor-policy/research/pen-mouse-takeover-regression.md", "reason": "当前Win11回归：Pen离开后系统Move不得抢回Mouse，真实设备即时恢复与Win7回退"}

@@ -1514,6 +1514,138 @@ namespace
 			"real mouse immediately recovers normal hover at the same position")) ++failures;
 	}
 
+	void TestSystemPenMoveSequence(int& failures)
+	{
+		const DrawingCursorAppearance brush{ DrawingCursorShape::Circle, 9, 9, 0.2f, 0.4f, 0.8f };
+		DrawingCursorAppearance marker{ DrawingCursorShape::Rectangle, 3.75f, 30, 1, 0.8f, 0.2f };
+		marker.opacity = Bridge::kHighlighterCompositeOpacity;
+		marker.fillAlpha = 1;
+		const DrawingCursorSample oldMouse{ .x = 30, .y = 40, .qpc = 100, .valid = true };
+		DrawingCursorSample penHover{ .x = 10, .y = 20, .qpc = 1000, .valid = true };
+		penHover.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+		struct DelayedMove { uint32_t tick; int x, y; bool held; };
+		constexpr DelayedMove delayed[] = {
+			{ 2000, 10, 20, false }, { 2000, 500, 600, false },
+			{ 2000, 500, 600, true }, { 600000, 30, 40, false },
+			{ 0x70000000u, 900, 700, true }
+		};
+		for (const auto style : { MouseCursorStyle::System, MouseCursorStyle::Drawing })
+		{
+			DrawingCursorSampleMailbox penMailbox, mouseMailbox;
+			mouseMailbox.Publish(oldMouse);
+			auto owner = DrawingCursorPointerAuthority::Mouse;
+			MouseCursorMessageFilterInput input{ .pointerApiAvailable = true,
+				.sourceQuerySucceeded = true, .origin = IMO_SYSTEM };
+			MouseCursorMessageFilterResult lastDecision;
+			const auto receiveMouse = [&]()
+			{
+				DrawingCursorSample pen;
+				penMailbox.Read(pen);
+				input.penSampleValid = pen.valid;
+				input.pointerAuthority = owner;
+				lastDecision = FilterMouseCursorMessage(input);
+				if (lastDecision.rejectionReason) return false;
+				owner = ResolveDrawingCursorOwnerForPointerEvent(owner, DrawingCursorPointerAuthority::Mouse);
+				mouseMailbox.Publish({ .x = static_cast<float>(input.mouseX),
+					.y = static_cast<float>(input.mouseY), .qpc = input.messageTick,
+					.valid = true, .inContact = input.buttonDown });
+				return true;
+			};
+			const auto publishPen = [&](DrawingCursorSample sample)
+			{
+				penMailbox.Publish(sample);
+				owner = ResolveDrawingCursorOwnerForPointerEvent(owner, DrawingCursorPointerAuthority::Pen);
+			};
+			const auto primaryVisual = [&](bool highlighter = false)
+			{
+				DrawingCursorSample pen, mouse;
+				penMailbox.Read(pen); mouseMailbox.Read(mouse);
+				const auto settings = Bridge::ResolveCursorSettingsForTool(
+					highlighter ? Bridge::Tool::Highlighter : Bridge::Tool::Pen, { style, PenCursorStyle::Circle });
+				return ResolvePrimaryDrawingCursorVisual(pen, mouse, owner,
+					highlighter ? marker : brush, brush, false, false, false,
+					style == MouseCursorStyle::System, &settings, !highlighter);
+			};
+			// 默认系统样式不会画 Mouse 主视觉；新式会暴露同一错误接管，不能只遮掉图形。
+			if (!Expect(primaryVisual().visible == (style == MouseCursorStyle::Drawing),
+				"only Drawing renders a valid mouse brush sample before pen ownership")) ++failures;
+			DrawingCursorSample before;
+			mouseMailbox.Read(before);
+			for (int phase = 0; phase < 3; ++phase)
+			{
+				if (phase < 2)
+				{
+					auto sample = penHover; sample.inContact = phase == 1;
+					publishPen(sample);
+				}
+				else penMailbox.Clear(); // Up/OutOfRange 清样本并保留 Pen owner。
+				for (const auto& move : delayed)
+				{
+					input.messageTick = move.tick; input.mouseX = move.x; input.mouseY = move.y;
+					input.buttonDown = move.held;
+					const bool accepted = receiveMouse();
+					DrawingCursorSample mouse;
+					mouseMailbox.Read(mouse);
+					const auto visual = primaryVisual();
+					if (!Expect(!accepted && lastDecision.systemRejected &&
+						owner == DrawingCursorPointerAuthority::Pen && mouse.sequence == before.sequence &&
+						Near(mouse.x, oldMouse.x) && Near(mouse.y, oldMouse.y) &&
+						visual.visible == (phase == 0) &&
+						(!visual.visible || (visual.appearance.shape == DrawingCursorShape::Circle && Near(visual.x, penHover.x))),
+						"delayed repeated system moves cannot overwrite pen ownership or the mouse mailbox")) ++failures;
+				}
+			}
+			penMailbox.Clear(); // 重复终态也不能回弹仍在 mailbox 中的旧 Mouse。
+			if (!Expect(!primaryVisual().visible && !primaryVisual(true).visible &&
+				ShouldHideSystemDrawingCursor(owner, false, false, false, true, style == MouseCursorStyle::System),
+				"both styles keep old mouse and highlighter previews hidden after pen leaves")) ++failures;
+
+			struct Takeover { UINT message; INPUT_MESSAGE_DEVICE_TYPE device; INPUT_MESSAGE_ORIGIN_ID origin;
+				bool querySucceeded, pointerApi; };
+			const Takeover takeovers[] = {
+				{ WM_MOUSEMOVE, IMDT_MOUSE, IMO_HARDWARE, true, true },
+				{ WM_MOUSEMOVE, IMDT_TOUCHPAD, IMO_HARDWARE, true, true },
+				{ WM_LBUTTONDOWN, IMDT_UNAVAILABLE, IMO_SYSTEM, true, true },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_SYSTEM, false, true },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_UNAVAILABLE, false, false },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_INJECTED, true, true },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_HARDWARE, true, true },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_UNAVAILABLE, true, true }
+			};
+			for (const auto& takeover : takeovers)
+			{
+				publishPen(penHover); penMailbox.Clear();
+				input.message = takeover.message; input.inputSource = takeover.device; input.origin = takeover.origin;
+				input.sourceQuerySucceeded = takeover.querySucceeded; input.pointerApiAvailable = takeover.pointerApi;
+				input.buttonDown = takeover.message == WM_LBUTTONDOWN;
+				const bool accepted = receiveMouse();
+				const auto visual = primaryVisual();
+				if (!Expect(accepted && owner == DrawingCursorPointerAuthority::Mouse &&
+					!lastDecision.systemRejected && visual.visible == (style == MouseCursorStyle::Drawing) &&
+					(!visual.visible || visual.appearance.shape == DrawingCursorShape::PenIcon) &&
+					ShouldHideSystemDrawingCursor(owner, false, false, false, true, style == MouseCursorStyle::System) ==
+						(style == MouseCursorStyle::Drawing),
+					"real input, button down and existing API fallbacks immediately recover the selected mouse style")) ++failures;
+			}
+			// 真实接管后正常系统刷新仍沿既有 Mouse 行为；新 Pen 可以再次即时接管。
+			input.message = WM_MOUSEMOVE; input.inputSource = IMDT_UNAVAILABLE;
+			input.origin = IMO_SYSTEM; input.sourceQuerySucceeded = input.pointerApiAvailable = true;
+			input.buttonDown = false;
+			if (!Expect(receiveMouse() && owner == DrawingCursorPointerAuthority::Mouse,
+				"system refresh remains accepted after mouse has already taken over")) ++failures;
+			publishPen(penHover);
+			if (!Expect(primaryVisual().visible && primaryVisual().appearance.shape == DrawingCursorShape::Circle &&
+				Near(primaryVisual().x, penHover.x) && !receiveMouse(),
+				"new pen hover immediately recovers pen preview and its system-move protection")) ++failures;
+			penHover.inContact = true; publishPen(penHover); penHover.inContact = false;
+			if (!Expect(!primaryVisual().visible && owner == DrawingCursorPointerAuthority::Pen,
+				"new pen contact preserves its separate contact visibility rule")) ++failures;
+			penMailbox.Clear();
+			if (!Expect(!receiveMouse() && !primaryVisual().visible,
+				"the next pen leave retains protection without a time window")) ++failures;
+		}
+	}
+
 	void TestTouchCursorOwnership(int& failures)
 	{
 		const DrawingCursorSample penHover{ .x = 10.0f, .y = 20.0f, .valid = true };
@@ -1672,6 +1804,7 @@ int RunDraw3ContactInputTests()
 	TestTouchCursorOwnership(failures);
 	TestSystemTouchMoveFilter(failures);
 	TestSystemTouchMoveSequence(failures);
+	TestSystemPenMoveSequence(failures);
 	return failures;
 }
 

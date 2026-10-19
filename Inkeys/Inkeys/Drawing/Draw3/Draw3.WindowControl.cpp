@@ -1983,7 +1983,8 @@ namespace Inkeys::Drawing::Draw3
 				.touchSuppressed = touchCursorSuppressed_.load(std::memory_order_acquire),
 				.touchPositionKnown = lastTouchMousePositionKnown_,
 				.touchX = lastTouchMouseX_, .touchY = lastTouchMouseY_,
-				.mouseX = mouseClientX, .mouseY = mouseClientY
+				.mouseX = mouseClientX, .mouseY = mouseClientY,
+				.pointerAuthority = cursorOwner_.load(std::memory_order_acquire)
 			});
 			if (diagnosticEvent)
 				RecordCursorDiagnostic("mouse-filter event=%llu touchKnown=%u touchX=%d touchY=%d touchTick=%u touchId=%u primary=%u via=%s same=%u sourceReject=%u systemReject=%u positionReject=%u buttonBypass=%u",
