@@ -22,6 +22,8 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="SlideShowSessionTests.cs" />
+    <Compile Include="ManagedCompatibilityTests.cs" />
+    <Compile Include="DispatchFixtureTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PptCOM\PptCOM.csproj">

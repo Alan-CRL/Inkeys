@@ -5,7 +5,7 @@
 )
 $ErrorActionPreference = 'Stop'
 $researchRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $researchRoot '../../../..'))
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $researchRoot '../../../../../..'))
 $assetsRoot = Join-Path $repoRoot 'Inkeys/Inkeys/Drawing/Draw3/Assets'
 $headerPath = Join-Path $repoRoot 'Inkeys/Inkeys/Drawing/Draw3/Draw3.Win7GuardedShader.h'
 [void][IO.Directory]::CreateDirectory($OutputDirectory)

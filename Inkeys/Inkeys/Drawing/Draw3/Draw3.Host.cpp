@@ -1780,6 +1780,8 @@ namespace Inkeys::Drawing::Draw3
 							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get());
+							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
+							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
 								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
 								<< std::dec << std::endl;
