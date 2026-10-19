@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "实施：保留最小diff、编码/CRLF、module与线程边界、同源显示快照。"}
-{"file": ".trellis/tasks/10-18-ppt-controls-drag-state-layering/research/spec-excerpts.md", "reason": "实施：canonical规范的PageControl线程、候选、owner树及位置保存窄摘录，避免大文件注入截断。"}
-{"file": ".trellis/tasks/10-18-ppt-controls-drag-state-layering/research/investigation-summary.md", "reason": "实施：四项需求、证据等级、用户补充及已批准1–3修复范围（调查正文保留历史证据）；已有修复不重复实施。"}
-{"file": ".trellis/tasks/10-18-ppt-controls-drag-state-layering/research/snap-revision-design.md", "reason": "当前用户授权：20DIP中轴+扣间隙后侧边双门槛与短促UI3吸附Y过渡；覆盖旧40DIP，保留普通拖动稳定与真实离屏验证。"}
-{"file": ".trellis/tasks/10-18-ppt-controls-drag-state-layering/research/drag-hang-locks.md", "reason": "实施：真实锁图、局部停住与capture条件自等风险分级、保持D到S顺序与有意义测试。"}
-{"file": ".trellis/tasks/10-18-ppt-controls-drag-state-layering/research/page-state-and-layering.md", "reason": "实施：同场busy/Basic/InkReady/ack及双画布owner已有覆盖，回归且不削弱输入门禁。"}
