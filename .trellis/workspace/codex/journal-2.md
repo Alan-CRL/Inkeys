@@ -679,3 +679,40 @@
 ### Next Steps
 
 - 仅本地提交，无push；真实设备、USER32捕获与Office/WPP验收仍未执行。
+
+
+## Session 113: UI3 taskbar scaling implemented and accepted
+<!-- trellis-session: v=2 fp=b007adc9d691a23d -->
+
+**Date**: 2026-10-19
+**Task**: UI3 taskbar scaling implemented and accepted
+**Branch**: `featrue/zoom`
+
+### Summary
+
+用户确认改动有效并授权提交结案；实现默认任务栏厚度缩放、PPT全局倍率和Zoom2配置重置，完成验证及任务归档。
+
+### Main Changes
+
+- UI3 100%按当前屏任务栏完整厚度计算；保留真实DPI、SettingUI及PPT自身倍率，启动预览与拖动几何同步。
+- 新增默认开启开关，UI.Bar.Zoom2不迁移旧Zoom；三语、配置与算法测试及规范同步。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bf800e4c` | feat(ui3): base UI scaling on taskbar thickness |
+| `f25bccb5` | chore(trellis): archive completed taskbar scaling task |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64构建通过；新产物Headless --no-window及ConfigBoundary通过；i18n与diff检查通过。
+- [OK] 用户确认有效；代理未执行GUI。Codex沙箱MSBuild节点通信及TEMP权限问题按环境处理，未改工程或写盘器。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务已归档；未push。

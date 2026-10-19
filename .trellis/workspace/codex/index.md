@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 111
+- **Total Sessions**: 113
 - **Last Active**: 2026-10-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~681 | Active |
+| `journal-2.md` | ~718 | Active |
 | `journal-1.md` | ~2205 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 113 | 2026-10-19 | UI3 taskbar scaling implemented and accepted | `bf800e4c`, `f25bccb5` | `featrue/zoom` |
 | 111 | 2026-10-19 | PR238审阅修正、dev冲突解决与PPT控件任务结案 | `2791a1cc`, `f3e83110` | `bugfix/pptcom` |
 | 110 | 2026-10-18 | PptCOM 修复提交归档与覆盖层置顶调查 | `0eb1c7c5`, `184cf86e` | `bugfix/pptcom` |
 | 109 | 2026-10-18 | 提交画布卡死修复并归档五个相关任务 | `6b8bc1d73c8b7307528520c28fc952004ee3d8f1`, `83d08514142211ba6ed5ca9c669c42ca9b139f55` | `bugfix/draw3` |
