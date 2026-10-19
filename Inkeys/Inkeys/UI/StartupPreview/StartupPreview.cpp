@@ -502,7 +502,7 @@ namespace Inkeys::UI::StartupPreview
 		[[nodiscard]] float DpiScale(const Runtime& runtime) noexcept
 		{
 			return static_cast<float>(ResolveStartupPreviewScale(
-				runtime.options.dpi, runtime.options.barZoom));
+				runtime.options.dpi, runtime.options.barZoom, runtime.options.uiBaseScale));
 		}
 
 		[[nodiscard]] HRESULT EnsureResources(Runtime& runtime,
@@ -914,13 +914,13 @@ namespace Inkeys::UI::StartupPreview
 
 	RECT ResolveStartupPreviewBounds(const RECT& monitorBounds,
 		const RECT& workArea, double widthDip, double heightDip,
-		UINT dpi, double zoom, StartupPlacement placement) noexcept
+		UINT dpi, double zoom, StartupPlacement placement, double uiBaseScale) noexcept
 	{
 		const bool floating = placement != StartupPlacement::CenteredBottomBar;
 		const double visibleWidthDip = (floating ? 80.0 : widthDip) + 1.0;
 		const double visibleHeightDip = (floating ? 80.0 : heightDip) + 1.0;
 		return ResolveStartupPlacementBounds(placement, monitorBounds, workArea,
-			visibleWidthDip, visibleHeightDip, ResolveStartupPreviewScale(dpi, zoom),
+			visibleWidthDip, visibleHeightDip, ResolveStartupPreviewScale(dpi, zoom, uiBaseScale),
 			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI);
 	}
 
@@ -952,7 +952,7 @@ namespace Inkeys::UI::StartupPreview
 			if (Width(bounds) == 0 || Height(bounds) == 0)
 				bounds = ResolveStartupPreviewBounds(options.monitorBounds, workArea,
 					runtime->options.cachedWidthDip, DefaultStartupBarHeightDip,
-					runtime->options.dpi, runtime->options.barZoom, runtime->options.startupPlacement);
+					runtime->options.dpi, runtime->options.barZoom, runtime->options.startupPlacement, runtime->options.uiBaseScale);
 			if (!runtime->owner.Start(runtime->options.instance, bounds)) return false;
 			runtime->active.store(true, std::memory_order_release);
 			{

@@ -6705,7 +6705,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	auto ResolveInteractionZoom = [&](const BarPendingDisplaySnapshot& snapshot)
 		{
 			return ResolveBarBottomDockInteractionZoom(snapshot.dpi,
-				static_cast<double>(barStyle.configZoom));
+				static_cast<double>(barStyle.configZoom), snapshot.uiBaseScale);
 		};
 	// 吸收阶段不含 ULW；若恰好撞上，只等待这段极短的布局接管。
 	for (;;)

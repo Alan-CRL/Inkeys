@@ -571,7 +571,7 @@ struct BarRenderLoopState
 	bool pptDockPlacementPending = false;
 	bool whiteboardDockAnimationActive = false;
 	double displayCapacityZoom = 1.0;
-	BarUiValueClass displayDpiScale{ 1.0 };
+	BarUiValueClass displayUiBaseScale{ 1.0 };
 	BarUiValueClass displayCenterX{ 0.0 };
 	BarUiValueClass displayCenterY{ 0.0 };
 	BarBottomDockSpringState bottomDockSpring{};
@@ -1177,7 +1177,8 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
 	const double configZoom = max(0.01,
 		static_cast<double>(state.barStyle.configZoom));
-	const double targetZoom = targetDpiScale * configZoom;
+	const double targetUiBaseScale = targetDisplay.uiBaseScale;
+	const double targetZoom = targetUiBaseScale * configZoom;
 	const bool dockLayoutLocked = frame.bottomDockLayoutLocked;
 
 	if (!state.displayTransitionInitialized)
@@ -1186,8 +1187,8 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.activeWorkArea = targetWorkArea;
 			state.activeDisplayDpi = targetDpi;
 			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-		state.displayDpiScale.SetDirect(targetDpiScale);
-		const double initialZoom = targetDpiScale * configZoom;
+		state.displayUiBaseScale.SetDirect(targetUiBaseScale);
+		const double initialZoom = targetUiBaseScale * configZoom;
 		state.displayCenterX.SetDirect(mainButton->x.val * initialZoom);
 		state.displayCenterY.SetDirect(mainButton->y.val * initialZoom);
 		state.displayCapacityZoom = initialZoom;
@@ -1233,7 +1234,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				targetScreenCenterX - targetBounds.left);
 			state.displayCenterY.SetDirect(
 				targetScreenCenterY - targetBounds.top);
-			state.displayDpiScale.SetDirect(targetDpiScale);
+			state.displayUiBaseScale.SetDirect(targetUiBaseScale);
 		}
 		else
 		{
@@ -1250,7 +1251,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.displayCenterY.SetDirect(placement.startLocalCenterY);
 			state.displayCenterX.SetTar(placement.targetLocalCenterX, 0.4);
 			state.displayCenterY.SetTar(placement.targetLocalCenterY, 0.4);
-			state.displayDpiScale.SetTar(targetDpiScale, 0.4);
+			state.displayUiBaseScale.SetTar(targetUiBaseScale, 0.4);
 		}
 		state.displayCapacityZoom = max(state.displayCapacityZoom,
 			max(currentZoom, targetZoom));
@@ -1262,8 +1263,8 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	}
 	else if (dragging)
 	{
-		const double currentDpiScale = max(0.01,
-			static_cast<double>(state.displayDpiScale.val));
+		const double currentUiBaseScale = max(0.01,
+			static_cast<double>(state.displayUiBaseScale.val));
 		const bool displayChanged = serial != state.observedDisplaySerial;
 		const bool totalZoomChanged = abs(static_cast<double>(state.barStyle.zoom)
 			- targetZoom) > 0.000001;
@@ -1304,10 +1305,10 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.unclassifiedDamagePending = true;
 			state.dirtyRegionTracker.ForceFullDamage();
 		}
-		if (abs(currentDpiScale - targetDpiScale) > 0.000001)
+		if (abs(currentUiBaseScale - targetUiBaseScale) > 0.000001)
 		{
 			// displayCenter 已是物理像素；只切换比例即可保持指针下的屏幕中心。
-			state.displayDpiScale.SetDirect(targetDpiScale);
+			state.displayUiBaseScale.SetDirect(targetUiBaseScale);
 			state.displayCapacityZoom = max(
 				state.displayCapacityZoom,
 				max(static_cast<double>(state.barStyle.zoom), targetZoom));
@@ -1322,7 +1323,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	if (!dragging)
 	{
 		const auto dpiResult = BarUiAdvanceAnimation(
-			state.displayDpiScale, animationContext);
+			state.displayUiBaseScale, animationContext);
 		const auto xResult = BarUiAdvanceAnimation(
 			state.displayCenterX, animationContext);
 		const auto yResult = BarUiAdvanceAnimation(
@@ -1332,7 +1333,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		if (state.finiteObserver)
 		{
 			using Inkeys::UI::Bar::Ui3PropertyRole;
-			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, dpiResult.active, state.displayDpiScale.IsSame());
+			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, dpiResult.active, state.displayUiBaseScale.IsSame());
 			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, xResult.active, state.displayCenterX.IsSame());
 			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, yResult.active, state.displayCenterY.IsSame());
 		}
@@ -1342,10 +1343,12 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		// 拖动期间冻结旧显示过渡，零位移基准不能在指针下继续漂移。
 		state.displayTransitionActive = false;
 	}
-	const double currentDpiScale = max(0.01,
-		static_cast<double>(state.displayDpiScale.val));
-	const double currentZoom = currentDpiScale * configZoom;
-	state.barStyle.dpiZoom = currentDpiScale;
+	const double currentUiBaseScale = max(0.01,
+		static_cast<double>(state.displayUiBaseScale.val));
+	const double currentZoom = currentUiBaseScale * configZoom;
+	// 屏幕 DIP/画笔只消费真实 DPI；UI 动画基准允许低于用户倍率下限。
+	state.barStyle.dpiZoom = targetDpiScale;
+	state.barStyle.uiBaseZoom = currentUiBaseScale;
 	state.barStyle.zoom = currentZoom;
 		if (state.whiteboardDockAnimationActive && !state.displayTransitionActive)
 			state.whiteboardDockAnimationActive = false;
@@ -8090,7 +8093,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| abs(state.bottomDockCenterSpring.velocityDipPerSecond) > 0.000001
 			|| abs(state.bottomDockCenterCaptureFarEdgeSpring.velocityDipPerSecond) > 0.000001;
 		state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, dockPending || springPending,
-			!dockPending && !springPending && state.displayCenterX.IsSame() && state.displayCenterY.IsSame() && state.displayDpiScale.IsSame());
+			!dockPending && !springPending && state.displayCenterX.IsSame() && state.displayCenterY.IsSame() && state.displayUiBaseScale.IsSame());
 		const bool unsupported = state.barState.drawAttributeBar.thicknessFineDialPhysicsActive
 			|| state.barState.drawAttributeBar.thicknessFineDialDragging
 			|| state.barState.drawAttributeBar.colorPickerPointerCapture;

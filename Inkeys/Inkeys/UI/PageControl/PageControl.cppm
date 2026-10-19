@@ -563,6 +563,8 @@ export namespace Inkeys::UI::PageControl
 		int currentPage = -1;
 		int totalPage = -1;
 		PptLayoutState layout;
+		// 帧内派生的 UI 全局尺度；不属于用户位置/控件倍率，不参与持久化。
+		float uiScale = 0.0F;
 	};
 
 	[[nodiscard]] inline bool IsPptDragFrameOwned(
@@ -803,6 +805,12 @@ export namespace Inkeys::UI::PageControl
 		return (std::min)(NormalizeScale(scale), 3.0F);
 	}
 
+	[[nodiscard]] inline float ResolvePptUiScale(float dpiScale, float uiScale) noexcept
+	{
+		return std::isfinite(uiScale) && uiScale > 0.0F
+			? NormalizeScale(uiScale) : NormalizeDpiScale(dpiScale);
+	}
+
 	struct PptDragPresentationTarget
 	{
 		RECT bounds{};
@@ -1039,7 +1047,8 @@ export namespace Inkeys::UI::PageControl
 		const bool left = surface == Surface::BottomLeft
 			|| surface == Surface::MiddleLeft;
 		const float normalizedDpi = NormalizeDpiScale(dpiScale);
-		float scale = normalizedDpi;
+		float scale = result.mode == WorkspaceMode::WhiteboardExpanded
+			? normalizedDpi : ResolvePptUiScale(dpiScale, ppt.uiScale);
 		double widthDip = result.vertical
 			? PptCompactShortSideDip : PptCompactLongSideDip;
 		double heightDip = result.vertical
@@ -1106,7 +1115,7 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] inline PptLayoutState ClampPageControlLayout(
 		Surface moved, const RECT& monitor, float dpiScale,
-		PptLayoutState layout) noexcept
+		PptLayoutState layout, float uiScale = 0.0F) noexcept
 	{
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
@@ -1116,7 +1125,7 @@ export namespace Inkeys::UI::PageControl
 			|| moved == Surface::BottomRight;
 		if (bottom)
 		{
-			const float scale = NormalizeDpiScale(dpiScale)
+			const float scale = ResolvePptUiScale(dpiScale, uiScale)
 				* NormalizeRuntimeControlScale(layout.bottomPairScale);
 			const double controlWidth = PptCompactLongSideDip;
 			const double controlHeight = PptCompactShortSideDip;
@@ -1130,7 +1139,7 @@ export namespace Inkeys::UI::PageControl
 		}
 		else
 		{
-			const float scale = NormalizeDpiScale(dpiScale)
+			const float scale = ResolvePptUiScale(dpiScale, uiScale)
 				* NormalizeRuntimeControlScale(layout.middlePairScale);
 			layout.middlePairWidth = (std::clamp)(layout.middlePairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
@@ -1195,7 +1204,7 @@ export namespace Inkeys::UI::PageControl
 			currentCandidate.middlePairWidth = candidate.middlePairWidth;
 			currentCandidate.middlePairHeight = candidate.middlePairHeight;
 		}
-		const auto clamped = ClampPageControlLayout(moved, monitor, dpiScale, currentCandidate);
+		const auto clamped = ClampPageControlLayout(moved, monitor, dpiScale, currentCandidate, ppt.uiScale);
 		result.clamped = bottom
 			? candidate.bottomPairWidth != clamped.bottomPairWidth
 				|| candidate.bottomPairHeight != clamped.bottomPairHeight
@@ -1259,13 +1268,13 @@ export namespace Inkeys::UI::PageControl
 		float presentationOutsetDip = 10.0F, unsigned bitmapLimit = 16384) noexcept
 	{
 		if (!ppt.presentationVisible) return ppt;
-		const float normalizedDpi = NormalizeDpiScale(dpiScale);
+		const float normalizedDpi = ResolvePptUiScale(dpiScale, ppt.uiScale);
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
 		const float height = static_cast<float>((std::max)(1L,
 			monitor.bottom - monitor.top));
 		const LONG gap = static_cast<LONG>(std::lround(
-			PageControlGapDip * normalizedDpi));
+			PageControlGapDip * NormalizeDpiScale(dpiScale)));
 		const bool bottomVisible = ppt.layout.showBottomPair;
 		const bool middleVisible = ppt.layout.showMiddlePair;
 
@@ -1295,10 +1304,10 @@ export namespace Inkeys::UI::PageControl
 			PptCompactLongSideDip, ppt.layout.middlePairScale);
 		if (bottomVisible)
 			ppt.layout = ClampPageControlLayout(Surface::BottomLeft,
-				monitor, normalizedDpi, ppt.layout);
+				monitor, dpiScale, ppt.layout, ppt.uiScale);
 		if (middleVisible)
 			ppt.layout = ClampPageControlLayout(Surface::MiddleLeft,
-				monitor, normalizedDpi, ppt.layout);
+				monitor, dpiScale, ppt.layout, ppt.uiScale);
 
 		auto TryNearest = [](float start, float minimum, float maximum,
 			auto&& invalid, float& resolved)
@@ -1331,11 +1340,11 @@ export namespace Inkeys::UI::PageControl
 			for (int attempt = 0; attempt < 24; ++attempt)
 			{
 				ppt.layout = ClampPageControlLayout(Surface::MiddleLeft,
-					monitor, normalizedDpi, ppt.layout);
+					monitor, dpiScale, ppt.layout, ppt.uiScale);
 				PptLayoutState upper = ppt.layout;
 				upper.middlePairHeight = height;
 				upper = ClampPageControlLayout(Surface::MiddleLeft,
-					monitor, normalizedDpi, upper);
+					monitor, dpiScale, upper, ppt.uiScale);
 				const float limit = upper.middlePairHeight;
 				float resolved = ppt.layout.middlePairHeight;
 				const bool found = TryNearest(ppt.layout.middlePairHeight,
@@ -1344,7 +1353,7 @@ export namespace Inkeys::UI::PageControl
 						PptState next = ppt;
 						next.layout.middlePairHeight = candidate;
 						return PageControlGroupsOverlap(
-							monitor, normalizedDpi, next, gap);
+							monitor, dpiScale, next, gap);
 					}, resolved);
 				if (found)
 				{

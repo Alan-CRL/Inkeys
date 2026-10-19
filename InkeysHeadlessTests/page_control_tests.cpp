@@ -519,6 +519,47 @@ namespace
 			"whiteboard never inherits PPT user scale or position");
 	}
 
+	void TestTaskbarUiScale()
+	{
+		constexpr RECT monitor{ -3840, 0, 3840, 4320 };
+		PptState ppt;
+		ppt.presentationVisible = true;
+		ppt.layout.showBottomPair = ppt.layout.showMiddlePair = true;
+		ppt.layout.bottomPairScale = 1.5F;
+		ppt.layout.middlePairScale = 2.0F;
+		for (const float dpi : { 1.0F, 1.5F, 2.0F })
+			for (const float base : { 0.3F, 0.6F, 0.9F, 1.2F })
+				for (const float user : { 0.5F, 1.0F, 1.5F, 2.0F })
+				{
+					ppt.uiScale = base * user;
+					const auto fitted = ResolveRuntimePageControlLayout(monitor, dpi, ppt);
+					for (const auto surface : { Surface::BottomLeft, Surface::BottomRight,
+						Surface::MiddleLeft, Surface::MiddleRight })
+					{
+						const auto layout = ResolveSurfaceLayout(surface, monitor, dpi, fitted, {});
+						const bool middle = surface == Surface::MiddleLeft || surface == Surface::MiddleRight;
+						Check(std::abs(layout.scale - base * user * (middle ? 2.0F : 1.5F)) < 1e-5F,
+							"all four PPT surfaces multiply UI base, global zoom and local zoom exactly once");
+					}
+					WhiteboardState whiteboard;
+					whiteboard.active = whiteboard.expandedLayoutTarget = true;
+					Check(ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, fitted, whiteboard).scale == dpi,
+						"shared whiteboard surface retains independent DPI scale");
+					auto candidate = fitted.layout;
+					candidate.middlePairHeight = 21.0F * dpi;
+					Check(!ResolvePptDragCandidate(Surface::MiddleLeft, monitor, dpi, fitted,
+						candidate, fitted.layout, 20.0).centerSnapped,
+						"middle snap threshold remains screen DIP regardless of taskbar/global UI scale");
+				}
+		ppt.uiScale = 0.3F;
+		Check(Inkeys::UI::Bar::ResolveBarBottomDockInteractionZoom(192, 0.5, 0.3) == 0.15,
+			"Bar interaction uses taskbar base without DPI double multiplication or half-scale clamp");
+		const auto tiny = ResolveRuntimePageControlLayout({ 0, 0, 180, 100 }, 2, ppt, 10, 64);
+		Check(tiny.layout.bottomPairScale <= ppt.layout.bottomPairScale
+			&& ppt.layout.bottomPairScale == 1.5F,
+			"runtime fit changes only frame local multipliers and preserves saved preferences");
+	}
+
 	void TestIndependentSurfaceFitRegression()
 	{
 		constexpr RECT monitor{ 0, 0, 7680, 4320 };
@@ -1438,6 +1479,7 @@ int RunPageControlTests()
 	TestPagePresentationCommit();
 	TestHideAndPageCommitRace();
 	TestEffectiveScaleAndResources();
+	TestTaskbarUiScale();
 	TestIndependentSurfaceFitRegression();
 	TestDragPureTranslationAndRevisionGate();
 	TestMiddlePairCenterSnap();

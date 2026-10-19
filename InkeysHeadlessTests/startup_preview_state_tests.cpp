@@ -52,6 +52,7 @@ namespace
 		bool enabled = true;
 		double widthDip = 0.0;
 		double zoom = 0.0;
+		bool taskbarBase = false;
 	};
 
 	LegacyConfigResult ReadLegacyStartupPreviewFixture()
@@ -84,7 +85,7 @@ namespace
 		preview["Enable"] = false;
 		// 模拟旧图片方案遗留字段；新 schema 应忽略它且补上缺失宽度默认值。
 		preview["RetiredField"] = "ignored";
-		document["UI"]["Bar"]["Zoom"] = 1.25;
+		document["UI"]["Bar"]["Zoom"] = 1.75;
 		Json::StreamWriterBuilder writer;
 		writer["indentation"] = "";
 		{
@@ -99,13 +100,14 @@ namespace
 		const bool read = config.ReadMini({
 			"Experimental.Inkeys3.UI3.StartupPreview.Enable",
 			"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
-			"UI.Bar.Zoom" });
+			"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase" });
 		return {
 			read,
 			config.Experimental.Inkeys3.UI3.StartupPreview.Enable.load(),
 			config.Experimental.Inkeys3.UI3.StartupPreview.
 				CachedStartupBarWidthDip.load(),
-			config.UI.Bar.Zoom.load(),
+			config.UI.Bar.Zoom2.load(),
+			config.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
 		};
 	}
 	int RunStartupPlacementConfigTests()
@@ -153,15 +155,18 @@ namespace
 		{
 			Json::Value document(Json::objectValue);
 			if (!value.isNull()) document["UI"]["Bar"]["StartupPlacement"] = value;
-			document["UI"]["Bar"]["Zoom"] = 1.25;
+			document["UI"]["Bar"]["Zoom2"] = 1.25;
+			document["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = false;
 			if (!Expect(write(document), "write startup placement input fixture")) { ++failures; continue; }
 			Inkeys::Config mini;
-			const bool miniRead = mini.ReadMini({ "UI.Bar.StartupPlacement", "UI.Bar.Zoom" });
+			const bool miniRead = mini.ReadMini({ "UI.Bar.StartupPlacement", "UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase" });
 			Inkeys::Config all;
 			const bool allRead = all.ReadAll();
-			if (!Expect(miniRead && allRead && mini.UI.Bar.Zoom.load() == 1.25
+			if (!Expect(miniRead && allRead && mini.UI.Bar.Zoom2.load() == 1.25
 				&& mini.UI.Bar.StartupPlacement.load() == expected
-				&& all.UI.Bar.StartupPlacement.load() == expected,
+				&& all.UI.Bar.StartupPlacement.load() == expected
+				&& !mini.UI.Bar.UseTaskbarHeightAsScaleBase.load()
+				&& !all.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
 				"Mini/All normalize missing, illegal and all three startup placements consistently")) ++failures;
 		}
 		Json::Value document(Json::objectValue);
@@ -490,8 +495,8 @@ int RunStartupPreviewStateTests()
 	const auto legacyConfig = ReadLegacyStartupPreviewFixture();
 	if (!Expect(legacyConfig.read && !legacyConfig.enabled
 		&& legacyConfig.widthDip == DefaultCachedStartupBarWidthDip
-		&& legacyConfig.zoom == 1.25,
-		"legacy main.json without cached width keeps the 470 DIP default"))
+		&& legacyConfig.zoom == 1.0 && legacyConfig.taskbarBase,
+		"legacy main.json keeps cached width default and resets old zoom with taskbar base enabled"))
 		++failures;
 	if (!Expect(!ShouldWriteCachedStartupBarWidthDip(470.0, 470.0)
 		&& !ShouldWriteCachedStartupBarWidthDip(470.0, 470.005)
@@ -500,6 +505,14 @@ int RunStartupPreviewStateTests()
 			(std::numeric_limits<double>::quiet_NaN)()),
 		"cached width write suppresses noise and rejects invalid candidates")) ++failures;
 
+	for (const double dpi : { 96.0, 144.0, 192.0 })
+		for (const double user : { 0.5, 1.0, 1.5, 2.0 })
+		{
+			const auto taskbarPixels = ResolveStartupPreviewPixelSize(470.0, dpi, user, 0.3);
+			if (!Expect(taskbarPixels.height == std::lround(24.0 * user)
+				&& ResolveStartupPreviewScale(dpi, user, 0.3) == 0.3 * user,
+				"startup taskbar scale matches Bar physical height without DPI or base clamp")) ++failures;
+		}
 	const auto pixels96 = ResolveStartupPreviewPixelSize(470.0, 96.0, 1.0);
 	const auto pixels120 = ResolveStartupPreviewPixelSize(470.0, 120.0, 1.25);
 	const auto pixels144 = ResolveStartupPreviewPixelSize(470.0, 144.0, 1.5);

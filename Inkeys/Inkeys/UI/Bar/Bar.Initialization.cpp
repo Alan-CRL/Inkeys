@@ -27,6 +27,7 @@ import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.StartupPreview;
 import Inkeys.Startup.Progress;
 import Inkeys.Display;
+import Inkeys.Other.Config;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
 extern const double BarDrawAttributeCompactWidth;
 extern const double BarDrawAttributeCompactScale;
@@ -92,6 +93,8 @@ void BarUISetClass::PublishDisplaySnapshot(
 		pendingWorkAreaBottom.store(monitor->workArea.bottom, memory_order_relaxed);
 		pendingDisplayDpi.store(monitor->effectiveDpiX ? monitor->effectiveDpiX :
 			USER_DEFAULT_SCREEN_DPI, memory_order_relaxed);
+		pendingDisplayUiBaseScale.store(Inkeys::Display::ResolveUiScaleBase(
+			*snapshot, *monitor, Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase), memory_order_relaxed);
 		pendingDisplaySerial.fetch_add(1, memory_order_release);
 	}
 	UpdateRendering(false);
@@ -100,13 +103,9 @@ void BarUISetClass::PublishDisplaySnapshot(
 void BarUISetClass::PublishWindowDpi(UINT dpi) noexcept
 {
 	if (!dpi) return;
-	{
-		lock_guard lock(pendingDisplayPublishMutex);
-		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
-		pendingDisplayDpi.store(dpi, memory_order_relaxed);
-		pendingDisplaySerial.fetch_add(1, memory_order_release);
-	}
-	UpdateRendering(false);
+	// DPI 与任务栏基准来自同一显示快照，避免局部更新拼出跨屏混合数据。
+	(void)Inkeys::Display::Refresh(Inkeys::Display::ChangeReason::Display);
+	PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
 }
 
 void BarUISetClass::StartDisplayTracking()

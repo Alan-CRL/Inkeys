@@ -322,7 +322,8 @@ namespace Inkeys::ConfigDetail
 	) \
 GROUP(UI, \
 			GROUP(Bar, \
-				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom2, 1.0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UseTaskbarHeightAsScaleBase, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, StartupPlacement, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \

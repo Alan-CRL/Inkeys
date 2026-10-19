@@ -24,6 +24,7 @@ export namespace Inkeys::Display
 		Device,
 		Settings,
 		Manual,
+		Taskbar,
 	};
 
 	enum class DisplayTopology : std::uint8_t
@@ -103,6 +104,8 @@ export namespace Inkeys::Display
 		int pixelHeight = 0;
 		UINT effectiveDpiX = USER_DEFAULT_SCREEN_DPI;
 		UINT effectiveDpiY = USER_DEFAULT_SCREEN_DPI;
+		// 完整任务栏厚度（物理像素），0 表示本屏暂无可靠任务栏数据。
+		int taskbarThicknessPx = 0;
 		DWORD orientation = DMDO_DEFAULT;
 		bool primary = false;
 		bool fallback = false;
@@ -163,6 +166,22 @@ export namespace Inkeys::Display
 	[[nodiscard]] std::wstring_view PhysicalSizeUnavailableReasonText(
 		PhysicalSizeUnavailableReason reason) noexcept;
 
+	// 共用任务栏纯计算；baseHeightDip 为主栏主体高度，不含阴影/透明余量。
+	[[nodiscard]] int ResolveTaskbarThickness(const RECT& monitor,
+		const RECT& taskbar, UINT edge) noexcept;
+	[[nodiscard]] HMONITOR ResolveTaskbarOwner(const Snapshot& snapshot,
+		const RECT& taskbar, UINT edge) noexcept;
+	[[nodiscard]] bool ApplyTaskbarSample(Snapshot& snapshot, HMONITOR owner,
+		const RECT& taskbar, UINT edge) noexcept;
+	[[nodiscard]] double ResolveUiScaleBase(UINT dpi, int taskbarThicknessPx,
+		UINT primaryDpi, int primaryTaskbarThicknessPx,
+		bool useTaskbar, double baseHeightDip = 80.0) noexcept;
+	[[nodiscard]] double ResolveUiScaleBase(const Snapshot& snapshot,
+		const MonitorInfo& monitor, bool useTaskbar,
+		double baseHeightDip = 80.0) noexcept;
+	// Mini 仅采样 DPI/任务栏；不枚举 EDID，也不发布正式快照。
+	[[nodiscard]] double QueryUiScaleBase(HMONITOR monitor, bool useTaskbar,
+		double baseHeightDip = 80.0) noexcept;
 	// 启动 Mini 阶段只查询目标屏的有效 DPI，不枚举拓扑/EDID，也不发布显示快照。
 	[[nodiscard]] UINT QueryEffectiveDpi(HMONITOR monitor) noexcept;
 	[[nodiscard]] bool Initialize();

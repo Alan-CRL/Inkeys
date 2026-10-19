@@ -34,6 +34,7 @@ export namespace Inkeys::UI::StartupPreview
 		HINSTANCE instance = nullptr;
 		double cachedWidthDip = DefaultCachedStartupBarWidthDip;
 		double barZoom = 1.0;
+		double uiBaseScale = 0.0;
 		UINT dpi = USER_DEFAULT_SCREEN_DPI;
 		RECT monitorBounds{};
 		RECT workArea{};
@@ -58,7 +59,8 @@ export namespace Inkeys::UI::StartupPreview
 	[[nodiscard]] RECT ResolveStartupPreviewBounds(const RECT& monitorBounds,
 		const RECT& workArea, double widthDip, double heightDip,
 		UINT dpi, double zoom,
-		StartupPlacement placement = StartupPlacement::CenteredBottomBar) noexcept;
+		StartupPlacement placement = StartupPlacement::CenteredBottomBar,
+		double uiBaseScale = 0.0) noexcept;
 
 	[[nodiscard]] bool Start(const StartOptions& options);
 	void Stop() noexcept;

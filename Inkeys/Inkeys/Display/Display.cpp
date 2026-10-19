@@ -2,6 +2,8 @@
 
 #include <windows.h>
 #include <setupapi.h>
+#include <shellapi.h>
+#include <cmath>
 
 #include <algorithm>
 #include <array>
@@ -11,6 +13,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <limits>
 #include <mutex>
 #include <numeric>
 #include <optional>
@@ -20,6 +23,8 @@
 #include <vector>
 
 module Inkeys.Display;
+
+#pragma comment(lib, "shell32.lib")
 
 namespace
 {
@@ -147,6 +152,7 @@ namespace
 			left.pixelHeight == right.pixelHeight &&
 			left.effectiveDpiX == right.effectiveDpiX &&
 			left.effectiveDpiY == right.effectiveDpiY &&
+			left.taskbarThicknessPx == right.taskbarThicknessPx &&
 			left.orientation == right.orientation &&
 			left.primary == right.primary && left.fallback == right.fallback &&
 			left.targetIndex == right.targetIndex && EqualEdid(left.edid, right.edid) &&
@@ -363,6 +369,97 @@ namespace
 		return TRUE;
 	}
 
+	bool IsShellTaskbar(HWND hwnd) noexcept
+	{
+		wchar_t name[64]{};
+		return GetClassNameW(hwnd, name, 64) && (!wcscmp(name, L"Shell_TrayWnd")
+			|| !wcscmp(name, L"Shell_SecondaryTrayWnd"));
+	}
+
+	void SampleTaskbars(Snapshot& snapshot, const Snapshot* previous = nullptr)
+	{
+		struct Owner { HWND hwnd; HMONITOR monitor; UINT edge; };
+		struct Context
+		{
+			Snapshot* snapshot;
+			std::vector<bool> invalid;
+			std::vector<Owner> owners;
+			bool queryFailed = false;
+		};
+		Context context{ &snapshot, std::vector<bool>(snapshot.monitors.size()), {} };
+		for (auto& monitor : snapshot.monitors) monitor.taskbarThicknessPx = 0;
+		for (std::size_t i = 0; i < snapshot.monitors.size(); ++i)
+		{
+			auto& monitor = snapshot.monitors[i];
+			for (UINT edge = ABE_LEFT; edge <= ABE_BOTTOM; ++edge)
+			{
+				APPBARDATA data{};
+				data.cbSize = sizeof(data);
+				data.rc = monitor.bounds;
+				data.uEdge = edge;
+				// EX 通过 monitor 矩形查询所有权；仍调用旧 SHAppBarMessage，旧 Shell 不支持时返回 0。
+				const HWND hwnd = reinterpret_cast<HWND>(SHAppBarMessage(ABM_GETAUTOHIDEBAREX, &data));
+				if (!hwnd || !IsShellTaskbar(hwnd)) continue;
+				context.owners.push_back({ hwnd, monitor.handle, edge });
+				RECT rect{};
+				context.invalid[i] = !GetWindowRect(hwnd, &rect)
+					|| !ApplyTaskbarSample(snapshot, monitor.handle, rect, edge);
+			}
+		}
+		// 系统接口补足普通主任务栏；隐藏矩形可能已移入邻屏，必须优先使用 Shell 给出的 owner。
+		APPBARDATA data{};
+		data.cbSize = sizeof(data);
+		if (SHAppBarMessage(ABM_GETTASKBARPOS, &data))
+		{
+			const HWND main = FindWindowW(L"Shell_TrayWnd", nullptr);
+			const auto owner = std::find_if(context.owners.begin(), context.owners.end(),
+				[main](const Owner& value) { return value.hwnd == main; });
+			const HMONITOR handle = owner != context.owners.end() ? owner->monitor
+				: ResolveTaskbarOwner(snapshot, data.rc, data.uEdge);
+			if (main && handle && owner == context.owners.end())
+				context.owners.push_back({ main, handle, data.uEdge });
+			const auto* monitor = snapshot.Find(handle);
+			if (monitor && !monitor->taskbarThicknessPx)
+				(void)ApplyTaskbarSample(snapshot, handle, data.rc, data.uEdge);
+		}
+		const bool enumerated = EnumWindows([](HWND hwnd, LPARAM value) -> BOOL
+		{
+			if (!IsShellTaskbar(hwnd)) return TRUE;
+			auto& ctx = *reinterpret_cast<Context*>(value);
+			const auto owner = std::find_if(ctx.owners.begin(), ctx.owners.end(),
+				[hwnd](const Owner& item) { return item.hwnd == hwnd; });
+			RECT rect{};
+			const bool queried = GetWindowRect(hwnd, &rect) != FALSE;
+			const HMONITOR handle = owner != ctx.owners.end() ? owner->monitor
+				: queried ? MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST)
+				: MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
+			if (!handle) ctx.queryFailed = true;
+			for (std::size_t i = 0; i < ctx.snapshot->monitors.size(); ++i)
+			{
+				auto& monitor = ctx.snapshot->monitors[i];
+				if (monitor.handle != handle || monitor.taskbarThicknessPx > 0) continue;
+				// 完整厚度不取与屏幕的交集；自动隐藏位置不参与厚度计算。
+				const UINT edge = owner != ctx.owners.end() ? owner->edge
+					: rect.right - rect.left >= rect.bottom - rect.top ? ABE_BOTTOM : ABE_LEFT;
+				ctx.invalid[i] = !queried || !ApplyTaskbarSample(*ctx.snapshot, handle, rect, edge);
+			}
+			return TRUE;
+		}, reinterpret_cast<LPARAM>(&context)) != FALSE;
+		const bool shellUnavailable = std::none_of(snapshot.monitors.begin(), snapshot.monitors.end(),
+			[](const auto& monitor) { return monitor.taskbarThicknessPx > 0; });
+		if (!previous || previous->monitors.size() != snapshot.monitors.size()) return;
+		for (std::size_t i = 0; i < snapshot.monitors.size(); ++i)
+		{
+			auto& monitor = snapshot.monitors[i];
+			const auto* old = previous->Find(monitor.handle);
+			// Explorer 重建/短暂无效时仅复用同屏同 DPI 的可信值；明确移除副屏任务栏则不缓存。
+			if (!monitor.taskbarThicknessPx && (shellUnavailable || !enumerated || context.queryFailed || context.invalid[i]) && old
+				&& old->deviceName == monitor.deviceName && EqualRectValue(old->bounds, monitor.bounds)
+				&& old->effectiveDpiX == monitor.effectiveDpiX && old->effectiveDpiY == monitor.effectiveDpiY)
+				monitor.taskbarThicknessPx = old->taskbarThicknessPx;
+		}
+	}
+
 	[[nodiscard]] std::optional<Snapshot> EnumerateSnapshot()
 	{
 		EnumContext context;
@@ -568,8 +665,21 @@ namespace
 	LRESULT CALLBACK DisplayWindowProc(HWND hwnd, UINT message,
 		WPARAM wParam, LPARAM lParam)
 	{
+		static const UINT taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
+		constexpr UINT_PTR taskbarTimer = 0x4954;
+		if (message == taskbarCreated && taskbarCreated) (void)Refresh(ChangeReason::Taskbar);
 		switch (message)
 		{
+		case WM_CREATE:
+			SetTimer(hwnd, taskbarTimer, 2000, nullptr);
+			break;
+		case WM_TIMER:
+			// 只低频重采任务栏；不重复拓扑/EDID 查询，也不驱动无变化的 UI 帧。
+			if (wParam == taskbarTimer) (void)Refresh(ChangeReason::Taskbar);
+			break;
+		case WM_DESTROY:
+			KillTimer(hwnd, taskbarTimer);
+			break;
 		case WM_DISPLAYCHANGE:
 			(void)Refresh(ChangeReason::Display);
 			break;
@@ -752,6 +862,102 @@ namespace Inkeys::Display
 		Unsubscribe(state);
 	}
 
+	int ResolveTaskbarThickness(const RECT& monitor, const RECT& taskbar, UINT edge) noexcept
+	{
+		const long long width = static_cast<long long>(taskbar.right) - taskbar.left;
+		const long long height = static_cast<long long>(taskbar.bottom) - taskbar.top;
+		const long long monitorWidth = static_cast<long long>(monitor.right) - monitor.left;
+		const long long monitorHeight = static_cast<long long>(monitor.bottom) - monitor.top;
+		if (width <= 0 || height <= 0 || monitorWidth <= 0 || monitorHeight <= 0 || edge > ABE_BOTTOM) return 0;
+		const bool vertical = edge == ABE_LEFT || edge == ABE_RIGHT;
+		const auto thickness = vertical ? width : height;
+		const auto length = vertical ? height : width;
+		const auto monitorLength = vertical ? monitorHeight : monitorWidth;
+		if (length < monitorLength / 2 || thickness < 8
+			|| thickness > (std::min)(monitorWidth, monitorHeight) / 3) return 0;
+		return static_cast<int>(thickness);
+	}
+
+	HMONITOR ResolveTaskbarOwner(const Snapshot& snapshot, const RECT& taskbar, UINT edge) noexcept
+	{
+		HMONITOR result = nullptr;
+		long long best = (std::numeric_limits<long long>::max)();
+		for (const auto& monitor : snapshot.monitors)
+		{
+			const int thickness = ResolveTaskbarThickness(monitor.bounds, taskbar, edge);
+			if (!thickness) continue;
+			const bool vertical = edge == ABE_LEFT || edge == ABE_RIGHT;
+			const LONG start = vertical ? taskbar.top : taskbar.left;
+			const LONG end = vertical ? taskbar.bottom : taskbar.right;
+			const LONG screenStart = vertical ? monitor.bounds.top : monitor.bounds.left;
+			const LONG screenEnd = vertical ? monitor.bounds.bottom : monitor.bounds.right;
+			if ((std::min)(end, screenEnd) - static_cast<long long>((std::max)(start, screenStart))
+				< (static_cast<long long>(screenEnd) - screenStart) / 2) continue;
+			const long long boundary = edge == ABE_LEFT ? monitor.bounds.left
+				: edge == ABE_TOP ? monitor.bounds.top : edge == ABE_RIGHT ? monitor.bounds.right : monitor.bounds.bottom;
+			const long long taskbarNear = vertical ? taskbar.left : taskbar.top;
+			const long long taskbarFar = vertical ? taskbar.right : taskbar.bottom;
+			// 旧 Shell 无 EX 时，用已知 dock edge 判断，不能用隐藏矩形的大部分面积归屏。
+			const auto distance = (std::min)(std::abs(boundary - taskbarNear), std::abs(boundary - taskbarFar));
+			if (distance <= thickness && distance < best) { best = distance; result = monitor.handle; }
+		}
+		return result;
+	}
+
+	bool ApplyTaskbarSample(Snapshot& snapshot, HMONITOR owner,
+		const RECT& taskbar, UINT edge) noexcept
+	{
+		for (auto& monitor : snapshot.monitors)
+			if (monitor.handle == owner)
+			{
+				const int thickness = ResolveTaskbarThickness(monitor.bounds, taskbar, edge);
+				if (!thickness) return false;
+				monitor.taskbarThicknessPx = thickness;
+				return true;
+			}
+		return false;
+	}
+
+	double ResolveUiScaleBase(UINT dpi, int thickness, UINT primaryDpi,
+		int primaryThickness, bool useTaskbar, double baseHeightDip) noexcept
+	{
+		const double dpiScale = static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI;
+		if (!useTaskbar || !std::isfinite(baseHeightDip) || baseHeightDip <= 0.0) return dpiScale;
+		if (thickness > 0) return thickness / baseHeightDip;
+		if (primaryThickness > 0 && primaryDpi > 0)
+			return primaryThickness / baseHeightDip * (dpi ? dpi : USER_DEFAULT_SCREEN_DPI) / primaryDpi;
+		return dpiScale;
+	}
+
+	double ResolveUiScaleBase(const Snapshot& snapshot, const MonitorInfo& monitor,
+		bool useTaskbar, double baseHeightDip) noexcept
+	{
+		const auto* primary = snapshot.Primary();
+		return ResolveUiScaleBase(monitor.effectiveDpiX, monitor.taskbarThicknessPx,
+			primary ? primary->effectiveDpiX : 0, primary ? primary->taskbarThicknessPx : 0,
+			useTaskbar, baseHeightDip);
+	}
+
+	double QueryUiScaleBase(HMONITOR handle, bool useTaskbar, double baseHeightDip) noexcept
+	{
+		Snapshot mini;
+		EnumContext context;
+		EnumDisplayMonitors(nullptr, nullptr, CollectMonitor, reinterpret_cast<LPARAM>(&context));
+		for (const auto& [monitor, info] : context.monitors)
+		{
+			MonitorInfo item;
+			item.handle = monitor;
+			item.bounds = info.rcMonitor;
+			item.effectiveDpiX = QueryEffectiveDpi(monitor);
+			if (info.dwFlags & MONITORINFOF_PRIMARY) mini.primaryIndex = mini.monitors.size();
+			mini.monitors.push_back(std::move(item));
+		}
+		SampleTaskbars(mini);
+		const auto* monitor = mini.Find(handle);
+		return monitor ? ResolveUiScaleBase(mini, *monitor, useTaskbar, baseHeightDip)
+			: ResolveUiScaleBase(QueryEffectiveDpi(handle), 0, 0, 0, useTaskbar, baseHeightDip);
+	}
+
 	UINT QueryEffectiveDpi(HMONITOR monitor) noexcept
 	{
 		MONITORINFOEXW information{};
@@ -770,7 +976,7 @@ namespace Inkeys::Display
 		return Refresh(ChangeReason::Startup);
 	}
 
-	bool Refresh(ChangeReason)
+	bool Refresh(ChangeReason reason)
 	{
 		SnapshotPtr published;
 		bool enumerationSucceeded = false;
@@ -782,9 +988,11 @@ namespace Inkeys::Display
 				if (shuttingDown) return false;
 			}
 
-			auto next = EnumerateSnapshot();
-			enumerationSucceeded = next.has_value();
 			const auto previous = currentSnapshot.load(std::memory_order_acquire);
+			auto next = reason == ChangeReason::Taskbar && previous
+				? std::optional<Snapshot>(*previous) : EnumerateSnapshot();
+			enumerationSucceeded = next.has_value();
+			if (next) SampleTaskbars(*next, previous.get());
 			if (!next)
 			{
 				// 几何枚举失败仍立即撤销旧物理标尺，像素/DPI保留给兼容消费者。

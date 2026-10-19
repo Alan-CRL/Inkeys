@@ -152,3 +152,9 @@ ChangeStateModeToPen(); ExitPptSlideShowAnnotationTool();
 if (ExitPptSlideShowAnnotationTool(server) && SameSession() && SameModeRevision())
     ChangeStateModeToPptAnnotation(tool, expectedRevision);
 ~~~
+
+## PPT 全局 UI 缩放（2026-10-19）
+
+- 四分页使用布局屏幕的任务栏/DPI基准×`UI.Bar.Zoom2`×各自控件倍率，当前仍按主屏布局；`PptState.uiScale`为帧内派生值，不属于保存位置或控件偏好。Bar内结束放映按钮继承Bar尺度，不恢复旧独立退出窗口或兼容exitScale。
+- PageControl几何、运行fit、Clamp、拖动及呈现共用有效UI尺度，20屏幕DIP中轴吸附与屏幕间隙继续仅使用真实DPI。全局倍率不写回PPT各自倍率，白板展开继续独立DPI布局。
+- 全局倍率/开关变化显式RequestAll，不能依赖后续翻页唤醒；页码提交、pair版本和实际几何到位门禁保持原合同。

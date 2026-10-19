@@ -100,7 +100,7 @@ int RunConfigMetadataTests()
 	initial["$Info"]["EditionVersion"] = "untrusted-file-version";
 	initial["$Info"]["UpdateChannel"] = "untrusted-file-channel";
 	initial["$Info"]["Unknown"] = "retain";
-	initial["UI"]["Bar"]["Zoom"] = 1.25;
+	initial["UI"]["Bar"]["Zoom2"] = 1.25;
 	{
 		std::ofstream output(file, std::ios::binary);
 		Json::StreamWriterBuilder writer;
@@ -121,11 +121,11 @@ int RunConfigMetadataTests()
 	const std::string expected = "id=01234567-89ab-cdef-0123-456789abcdef;ed=test-date;pa=arm64;we=test-windows;ch="
 		+ StringToUrlencode(channel) + ";";
 	check(config.GetUploadInfo() == expected, "live sources, exact keys/order and GUID without braces");
-	check(config.ReadAll() && config.UI.Bar.Zoom.load() == 1.25, "X reads normally");
+	check(config.ReadAll() && config.UI.Bar.Zoom2.load() == 1.25, "X reads normally");
 	check(userId == L"{01234567-89ab-cdef-0123-456789abcdef}"
 		&& editionVersion == L"test-version" && setlist.UpdateChannel == channel,
 		"ReadAll cannot overwrite H sources");
-	check(config.ReadMini({ "Info", "$Info", "UI.Bar.Zoom" })
+	check(config.ReadMini({ "Info", "$Info", "UI.Bar.Zoom2" })
 		&& config.GetUploadInfo() == expected, "ReadMini leaves H live and ignores malicious H document");
 	check(config.Write(), "write initial metadata");
 	auto persisted = ReadJson(file);
@@ -147,19 +147,19 @@ int RunConfigMetadataTests()
 		&& persisted["$Info"]["EditionVersion"].asString() == "new-version",
 		"file sees latest bound values");
 	config.ResetToDefaults();
-	check(config.UI.Bar.Zoom.load() == 1.0 && editionVersion == L"new-version"
+	check(config.UI.Bar.Zoom2.load() == 1.0 && editionVersion == L"new-version"
 		&& setlist.UpdateChannel == "Release", "reset restores X only");
-	config.UI.Bar.Zoom = 1.75;
+	config.UI.Bar.Zoom2 = 1.75;
 	config.UI.Bar.ExtensionButtons.Replace({ { "test.extension", Inkeys::BarButtonSizeKind::OneOne, false } });
 	Inkeys::Config copy;
 	copy = config;
 	const auto copiedButtons = copy.UI.Bar.ExtensionButtons.Snapshot();
-	check(copy.UI.Bar.Zoom.load() == 1.75
+	check(copy.UI.Bar.Zoom2.load() == 1.75
 		&& copiedButtons.size() == 1 && copiedButtons.front().Id == "test.extension"
 		&& copy.GetUploadInfo() == config.GetUploadInfo(), "copy preserves X scalars/sequences and H binding");
-	config.UI.Bar.Zoom = 2.0;
+	config.UI.Bar.Zoom2 = 2.0;
 	editionDate = L"after-copy";
-	check(copy.UI.Bar.Zoom.load() == 1.75
+	check(copy.UI.Bar.Zoom2.load() == 1.75
 		&& copy.GetUploadInfo().find("ed=after-copy;") != std::string::npos,
 		"copied X is independent while copied H stays live");
 
@@ -232,15 +232,15 @@ int RunConfigMetadataTests()
 		check(static_cast<bool>(output), "write mode input fixture");
 	};
 	Json::Value modeDocument(Json::objectValue);
-	modeDocument["UI"]["Bar"]["Zoom"] = 1.25;
+	modeDocument["UI"]["Bar"]["Zoom2"] = 1.25;
 	modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
 	writeModeDocument(modeDocument);
 	check(modeConfig.ReadAll() && modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0,
 		"missing mode falls back to combined on ReadAll");
-	modeConfig.UI.Bar.Zoom = 2.5;
+	modeConfig.UI.Bar.Zoom2 = 2.5;
 	modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
 	check(modeConfig.ReadMini({ "UI.Bar.SelectAndClickThroughMode" })
-		&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0 && modeConfig.UI.Bar.Zoom.load() == 2.5,
+		&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0 && modeConfig.UI.Bar.Zoom2.load() == 2.5,
 		"ReadMini missing mode resets only the selected field");
 	for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(2),
 		Json::Value(true), Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)),
@@ -251,16 +251,16 @@ int RunConfigMetadataTests()
 		modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
 		check(modeConfig.ReadAll() && modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0,
 			"ReadAll rejects illegal mode type/value without integer truncation");
-		modeConfig.UI.Bar.Zoom = 2.5;
+		modeConfig.UI.Bar.Zoom2 = 2.5;
 		modeConfig.UI.Bar.SelectAndClickThroughMode = 1;
 		check(modeConfig.ReadMini({ "UI.Bar.SelectAndClickThroughMode" })
-			&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0 && modeConfig.UI.Bar.Zoom.load() == 2.5,
+			&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 0 && modeConfig.UI.Bar.Zoom2.load() == 2.5,
 			"ReadMini normalizes invalid mode without changing unrelated fields");
 	}
 	modeDocument["UI"]["Bar"]["SelectAndClickThroughMode"] = 1;
 	writeModeDocument(modeDocument);
 	check(modeConfig.ReadMini({ "UI.Bar.SelectAndClickThroughMode" })
-		&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 1 && modeConfig.UI.Bar.Zoom.load() == 2.5,
+		&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 1 && modeConfig.UI.Bar.Zoom2.load() == 2.5,
 		"ReadMini loads separate mode without changing unrelated fields");
 
 	// 主栏两项使用生产 schema，覆盖所有合法值、严格类型校验及异步保存所用的冻结副本。
@@ -286,8 +286,8 @@ int RunConfigMetadataTests()
 				"restart restores each toolbar preference value");
 			check(toolbarConfig.GetUploadInfo() == toolbarUpload, "toolbar preferences are not uploaded");
 			preference = defaultValue;
-			toolbarConfig.UI.Bar.Zoom = 2.5;
-			check(toolbarConfig.ReadMini({ path }) && preference.load() == preferenceValue && toolbarConfig.UI.Bar.Zoom.load() == 2.5,
+			toolbarConfig.UI.Bar.Zoom2 = 2.5;
+			check(toolbarConfig.ReadMini({ path }) && preference.load() == preferenceValue && toolbarConfig.UI.Bar.Zoom2.load() == 2.5,
 				"ReadMini loads each toolbar value without altering unrelated fields");
 		}
 		preference = maxValue;
@@ -300,14 +300,14 @@ int RunConfigMetadataTests()
 		toolbarConfig.ResetToDefaults();
 		check(preference.load() == defaultValue, "toolbar preference reset restores schema default");
 		Json::Value toolbarDocument(Json::objectValue);
-		toolbarDocument["UI"]["Bar"]["Zoom"] = 1.25;
+		toolbarDocument["UI"]["Bar"]["Zoom2"] = 1.25;
 		preference = nonDefaultValue;
 		writeModeDocument(toolbarDocument);
 		check(toolbarConfig.ReadAll() && preference.load() == defaultValue,
 			"ReadAll missing toolbar field restores default for existing configurations");
 		preference = nonDefaultValue;
-		toolbarConfig.UI.Bar.Zoom = 2.5;
-		check(toolbarConfig.ReadMini({ path }) && preference.load() == defaultValue && toolbarConfig.UI.Bar.Zoom.load() == 2.5,
+		toolbarConfig.UI.Bar.Zoom2 = 2.5;
+		check(toolbarConfig.ReadMini({ path }) && preference.load() == defaultValue && toolbarConfig.UI.Bar.Zoom2.load() == 2.5,
 			"ReadMini missing toolbar field resets selected preference only");
 		for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(maxValue + 1),
 			Json::Value(true), Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)),
@@ -319,12 +319,97 @@ int RunConfigMetadataTests()
 			check(toolbarConfig.ReadAll() && preference.load() == defaultValue,
 				"ReadAll rejects invalid toolbar type/value without truncation");
 			preference = nonDefaultValue;
-			toolbarConfig.UI.Bar.Zoom = 2.5;
-			check(toolbarConfig.ReadMini({ path }) && preference.load() == defaultValue && toolbarConfig.UI.Bar.Zoom.load() == 2.5,
+			toolbarConfig.UI.Bar.Zoom2 = 2.5;
+			check(toolbarConfig.ReadMini({ path }) && preference.load() == defaultValue && toolbarConfig.UI.Bar.Zoom2.load() == 2.5,
 				"ReadMini normalizes invalid toolbar preference without unrelated changes");
 		}
 	}
 
+	// 改名刻意不导入旧倍率；走真实文件和生产 schema，避免测试复制迁移逻辑。
+	Inkeys::Config scaleConfig;
+	check(scaleConfig.UI.Bar.Zoom2.load() == 1.0
+		&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(), "scale schema defaults to 100 percent and taskbar base");
+	Json::Value scaleDocument(Json::objectValue);
+	scaleDocument["UI"]["Bar"]["Zoom"] = 1.75;
+	writeModeDocument(scaleDocument);
+	scaleConfig.UI.Bar.Zoom2 = 2.0;
+	scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
+	check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.0
+		&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(), "ReadAll ignores old Zoom and supplies new defaults");
+	scaleConfig.UI.Bar.Zoom2 = 2.0;
+	scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
+	check(scaleConfig.ReadMini({ "UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase" })
+		&& scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
+		"startup Mini ignores old Zoom and resets selected scale fields");
+	check(scaleConfig.Write(), "write scale defaults alongside unknown old Zoom");
+	const auto defaultScaleDocument = ReadJson(file);
+	check(defaultScaleDocument["UI"]["Bar"]["Zoom"].asDouble() == 1.75
+		&& defaultScaleDocument["UI"]["Bar"]["Zoom2"].asDouble() == 1.0
+		&& defaultScaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"].asBool(),
+		"unknown old Zoom is retained without migrating it to Zoom2");
+	scaleDocument["UI"]["Bar"]["Zoom2"] = 1.25;
+	for (const bool enabled : { false, true })
+	{
+		scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = enabled;
+		writeModeDocument(scaleDocument);
+		check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.25
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled,
+			"ReadAll honors new key with both keys present and either taskbar preference");
+		scaleConfig.UI.Bar.Zoom2 = 1.5;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
+		check(scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled
+			&& scaleConfig.UI.Bar.Zoom2.load() == 1.5, "Mini taskbar preference leaves zoom untouched");
+		check(scaleConfig.ReadMini({ "UI.Bar.Zoom2" }) && scaleConfig.UI.Bar.Zoom2.load() == 1.25
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled,
+			"Mini new zoom does not read old key or alter taskbar preference");
+		const auto scaleUpload = scaleConfig.GetUploadInfo();
+		scaleConfig.UI.Bar.Zoom2 = 1.5;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
+		check(scaleConfig.GetUploadInfo() == scaleUpload, "zoom and taskbar preference are NoUpload");
+		Inkeys::Config frozenScale;
+		frozenScale = scaleConfig;
+		scaleConfig.UI.Bar.Zoom2 = 2.0;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = enabled;
+		check(frozenScale.UI.Bar.Zoom2.load() == 1.5
+			&& frozenScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() == !enabled && frozenScale.Write(),
+			"frozen scale payload retains both independent captured values");
+		Inkeys::Config restarted;
+		check(restarted.ReadAll() && restarted.UI.Bar.Zoom2.load() == 1.5
+			&& restarted.UI.Bar.UseTaskbarHeightAsScaleBase.load() == !enabled,
+			"both scale values round-trip through frozen write and restart");
+	}
+	for (const Json::Value& invalid : { Json::Value(), Json::Value(0), Json::Value(1), Json::Value(1.0),
+		Json::Value("false"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+	{
+		scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = invalid;
+		writeModeDocument(scaleDocument);
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
+		check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
+			"ReadAll rejects non-boolean taskbar preference and restores true");
+		scaleConfig.UI.Bar.Zoom2 = 1.5;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
+		check(scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() && scaleConfig.UI.Bar.Zoom2.load() == 1.5,
+			"Mini rejects non-boolean taskbar preference without unrelated changes");
+	}
+	for (const Json::Value& invalid : { Json::Value(), Json::Value(true), Json::Value("1.5"),
+		Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+	{
+		scaleDocument["UI"]["Bar"]["Zoom2"] = invalid;
+		writeModeDocument(scaleDocument);
+		scaleConfig.UI.Bar.Zoom2 = 2.0;
+		check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.0,
+			"ReadAll invalid Zoom2 defaults instead of falling back to valid old Zoom");
+		scaleConfig.UI.Bar.Zoom2 = 2.0;
+		check(scaleConfig.ReadMini({ "UI.Bar.Zoom2" }) && scaleConfig.UI.Bar.Zoom2.load() == 1.0,
+			"Mini invalid Zoom2 defaults instead of falling back to valid old Zoom");
+	}
+	scaleConfig.UI.Bar.Zoom2 = 1.5;
+	scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
+	scaleConfig.ResetToDefaults();
+	check(scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
+		"reset restores both new scale defaults");
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;
 }

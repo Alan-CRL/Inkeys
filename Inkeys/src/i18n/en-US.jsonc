@@ -357,10 +357,15 @@
           "Skip3": "Minimal Clock",
           "Skip4": "Year of Horse"
         },
+        "TaskbarScaleBase":
+        {
+          "N": "Use taskbar height as scale base",
+          "E": "At 100%, match taskbar thickness."
+        },
         "BarZoom":
         {
           "N": "Bar UI Scale",
-          "E": "Adjust the main bar and button scale in real time.",
+          "E": "Adjust the bar, buttons and PPT controls in real time.",
           "Ind": "{:.2f}x scale"
         },
         "SettingUIScale":

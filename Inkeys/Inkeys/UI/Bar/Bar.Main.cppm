@@ -422,6 +422,7 @@ struct BarPendingDisplaySnapshot
 	RECT workArea{ 0, 0, 1, 1 };
 	UINT dpi = USER_DEFAULT_SCREEN_DPI;
 	unsigned long long serial = 0;
+	double uiBaseScale = 1.0;
 };
 
 struct BarBottomDockPresentedSnapshot
@@ -591,7 +592,8 @@ public:
 					pendingWorkAreaRight.load(memory_order_relaxed),
 					pendingWorkAreaBottom.load(memory_order_relaxed) },
 				pendingDisplayDpi.load(memory_order_relaxed),
-				serialBefore };
+				serialBefore,
+				pendingDisplayUiBaseScale.load(memory_order_relaxed) };
 			if (pendingDisplaySerial.load(memory_order_acquire) == serialBefore)
 				return snapshot;
 		}
@@ -979,6 +981,7 @@ protected:
 	atomic<LONG> pendingWorkAreaRight = 1;
 	atomic<LONG> pendingWorkAreaBottom = 1;
 	atomic<UINT> pendingDisplayDpi = USER_DEFAULT_SCREEN_DPI;
+	atomic<double> pendingDisplayUiBaseScale = 1.0;
 	atomic<LONG> presentedMonitorOriginX = 0;
 	atomic<LONG> presentedMonitorOriginY = 0;
 	// 交互线程发布目标，渲染线程只回写当前视觉偏移与恢复完成状态。

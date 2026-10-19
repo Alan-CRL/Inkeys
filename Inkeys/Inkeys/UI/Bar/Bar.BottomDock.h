@@ -291,7 +291,7 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] inline double ResolveBarBottomDockInteractionZoom(
-		UINT dpi, double configZoom) noexcept
+		UINT dpi, double configZoom, double uiBaseScale = 0.0) noexcept
 	{
 		const double dpiScale = std::clamp(
 			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI)
@@ -300,7 +300,8 @@ namespace Inkeys::UI::Bar
 		if (!std::isfinite(configZoom) || configZoom <= 0.0)
 			configZoom = 1.0;
 		// 交互阈值只消费一次最终 zoom，不能再叠乘窗口 DPI。
-		return NormalizeBarBottomDockZoom(dpiScale * configZoom);
+		return NormalizeBarBottomDockZoom(
+			(std::isfinite(uiBaseScale) && uiBaseScale > 0.0 ? uiBaseScale : dpiScale) * configZoom);
 	}
 
 		[[nodiscard]] inline double ResolveBarBottomDockInsetPixels(

@@ -2,6 +2,8 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include <shellapi.h>
+#include <cmath>
 
 #include <algorithm>
 #include <array>
@@ -67,6 +69,64 @@ namespace
 int RunDisplayTests()
 {
 	using namespace Inkeys::Display;
+
+	const RECT taskbarMonitor{ -1920, -200, 0, 880 };
+	Check(ResolveTaskbarThickness(taskbarMonitor, { -1920, 832, 0, 880 }, ABE_BOTTOM) == 48
+		&& ResolveTaskbarThickness(taskbarMonitor, { -1920, -200, 0, -152 }, ABE_TOP) == 48
+		&& ResolveTaskbarThickness(taskbarMonitor, { -1920, -200, -1872, 880 }, ABE_LEFT) == 48
+		&& ResolveTaskbarThickness(taskbarMonitor, { -48, -200, 0, 880 }, ABE_RIGHT) == 48,
+		"taskbar thickness resolves all four edges with negative monitor coordinates");
+	Check(ResolveTaskbarThickness(taskbarMonitor, { -1920, 878, 0, 926 }, ABE_BOTTOM) == 48
+		&& ResolveTaskbarThickness(taskbarMonitor, { -1920, 878, 0, 880 }, ABE_BOTTOM) == 0
+		&& ResolveTaskbarThickness(taskbarMonitor, { -1920, 0, 0, 700 }, ABE_BOTTOM) == 0
+		&& ResolveTaskbarThickness(taskbarMonitor, { 0, 0, 0, 0 }, ABE_LEFT) == 0,
+		"auto-hide uses full offscreen thickness and rejects sliver/invalid geometry");
+	for (const UINT dpi : { 96U, 144U, 192U })
+		for (const int thickness : { 24, 48, 72, 96 })
+			for (const double user : { 0.5, 1.0, 1.5, 2.0 })
+			{
+				const double base = ResolveUiScaleBase(dpi, thickness, 96, 48, true);
+				Check(std::abs(80 * base * user - thickness * user) < 1e-9,
+					"UI taskbar base is physical thickness independent of DPI and user multiplier");
+				Check(ResolveUiScaleBase(dpi, thickness, 96, 48, false) == dpi / 96.0,
+					"disabled taskbar base restores real DPI");
+			}
+	Check(std::abs(ResolveUiScaleBase(192, 0, 144, 72, true) - 1.2) < 1e-9
+		&& ResolveUiScaleBase(144, 0, 0, 0, true) == 1.5
+		&& ResolveUiScaleBase(0, -1, 0, -1, true) == 1.0,
+		"absent secondary taskbar scales primary thickness by DPI, unavailable shell falls back to DPI");
+	Snapshot hiddenSnapshot;
+	hiddenSnapshot.monitors.resize(2);
+	hiddenSnapshot.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
+	hiddenSnapshot.monitors[1].handle = reinterpret_cast<HMONITOR>(2);
+	hiddenSnapshot.monitors[0].bounds = { 0, 0, 1920, 1080 };
+	hiddenSnapshot.monitors[1].bounds = { 0, 1080, 1920, 2160 };
+	Check(ResolveTaskbarOwner(hiddenSnapshot, { 0, 1078, 1920, 1126 }, ABE_BOTTOM) == hiddenSnapshot.monitors[0].handle
+		&& ApplyTaskbarSample(hiddenSnapshot, hiddenSnapshot.monitors[0].handle,
+		{ 0, 1078, 1920, 1126 }, ABE_BOTTOM)
+		&& hiddenSnapshot.monitors[0].taskbarThicknessPx == 48
+		&& hiddenSnapshot.monitors[1].taskbarThicknessPx == 0,
+		"autohide owner keeps upper-monitor taskbar when full rectangle lies mostly in lower monitor");
+	hiddenSnapshot.monitors[0].bounds = { -1920, 0, 0, 1080 };
+	hiddenSnapshot.monitors[1].bounds = { 0, 0, 1920, 1080 };
+	hiddenSnapshot.monitors[0].taskbarThicknessPx = 0;
+	Check(ResolveTaskbarOwner(hiddenSnapshot, { -2, 0, 46, 1080 }, ABE_RIGHT) == hiddenSnapshot.monitors[0].handle
+		&& ApplyTaskbarSample(hiddenSnapshot, hiddenSnapshot.monitors[0].handle,
+		{ -2, 0, 46, 1080 }, ABE_RIGHT)
+		&& hiddenSnapshot.monitors[0].taskbarThicknessPx == 48
+		&& hiddenSnapshot.monitors[1].taskbarThicknessPx == 0,
+		"autohide owner keeps left-monitor vertical taskbar when rectangle moves into right monitor");
+	Snapshot scaleSnapshot;
+	scaleSnapshot.monitors.resize(2);
+	scaleSnapshot.monitors[0].effectiveDpiX = 144;
+	scaleSnapshot.monitors[0].taskbarThicknessPx = 72;
+	scaleSnapshot.monitors[1].effectiveDpiX = 192;
+	Check(std::abs(ResolveUiScaleBase(scaleSnapshot, scaleSnapshot.monitors[1], true) - 1.2) < 1e-9,
+		"snapshot scale uses target and primary from the same publication");
+	auto scaleChanged = scaleSnapshot;
+	Check(scaleSnapshot.SemanticallyEquals(scaleChanged), "same taskbar thickness does not publish another generation");
+	scaleChanged.monitors[0].taskbarThicknessPx = 96;
+	Check(!scaleSnapshot.SemanticallyEquals(scaleChanged), "taskbar-only thickness change invalidates display snapshot");
 
 	auto bytes = MakeEdid(52, 29);
 	const auto parsed = ParseEdid(bytes, L"DISPLAY\\ABC1234\\1");

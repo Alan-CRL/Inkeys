@@ -2268,7 +2268,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
-		"UI.Bar.Zoom", "UI.Bar.StartupPlacement" });
+		"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase", "UI.Bar.StartupPlacement" });
 	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
 	const auto startupPlacement = Inkeys::UI::NormalizeStartupPlacement(
 		startupMiniConfig.UI.Bar.StartupPlacement.load());
@@ -2324,15 +2324,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
 				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.
 				CachedStartupBarWidthDip);
-		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom;
+		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom2;
 		previewOptions.dpi = startupDpi;
+		previewOptions.uiBaseScale = Inkeys::Display::QueryUiScaleBase(primaryMonitor,
+			startupMiniConfig.UI.Bar.UseTaskbarHeightAsScaleBase);
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
 		previewOptions.workArea = monitorInfo.rcWork;
 		previewOptions.contentBounds = Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
 			previewOptions.monitorBounds, previewOptions.workArea,
 			previewOptions.cachedWidthDip,
 			Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
-			previewOptions.dpi, previewOptions.barZoom, startupPlacement);
+			previewOptions.dpi, previewOptions.barZoom, startupPlacement, previewOptions.uiBaseScale);
 		previewOptions.progress = &startupProgress;
 		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
 			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
