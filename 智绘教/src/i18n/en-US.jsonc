@@ -113,7 +113,7 @@
       },
       "Inkeys3Update":
       {
-        "N": "Inkeys3 has been officially released!\n\nYou can use the button below to learn more about Inkeys3. Note that the repair feature in the current channel will be temporarily unavailable.",
+        "N": "Inkeys3 is now available in the current update channel!\n\nYou can use the Learn more button below to find out more about Inkeys3. Note that the repair feature in the current channel will be temporarily unavailable.",
 
         "Download": "Update now"
       },
@@ -500,8 +500,8 @@
       "Newer": "Newer than official latest",
       "New": "New version found",
 
-      "Limit": "Inkeys3 has been officially released! but the update is blocked",
-      "Limit2": "Inkeys3 has been officially released! and requires a manual update",
+      "Limit": "Inkeys3 is available in this update channel; update blocked",
+      "Limit2": "Inkeys3 is available in this update channel; manual update required",
       "Info": "View details and update manually",
       "Info2": "Update now",
       "Info3": "Learn more",

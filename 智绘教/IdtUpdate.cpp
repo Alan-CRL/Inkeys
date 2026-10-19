@@ -53,14 +53,14 @@ wstring convertToHttp(const wstring& url)
 
 string GetRefererInfo()
 {
-	string ret;
 	UpdateTargetSnapshot updateTarget = GetUpdateTargetSnapshot();
-	ret += utf16ToUtf8(editionDate) + ",";
-	ret += utf16ToUtf8(programArchitecture) + ",";
-	ret += updateTarget.channel + ",";
-	ret += updateTarget.enableAutoUpdate ? "true," : "false,";
-	ret += utf16ToUtf8(windowsEdition);
-	return ret;
+	// 仅规范化发送副本，保留程序中原有的设备标识。
+	string deviceId = utf16ToUtf8(userId);
+	if (deviceId.size() >= 2 && deviceId.front() == '{' && deviceId.back() == '}')
+		deviceId = deviceId.substr(1, deviceId.size() - 2);
+	return "id=" + deviceId + ";ed=2.0.0-" + utf16ToUtf8(editionDate) +
+		";pa=" + utf16ToUtf8(programArchitecture) + ";we=" + utf16ToUtf8(windowsEdition) +
+		";ch=" + updateTarget.channel + ";";
 }
 
 EditionInfoClass GetEditionInfo(string channel, string arch)
@@ -234,7 +234,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	state->fileSize.store(editionInfo.fileSize.load());
 
 	wstring timestamp = getTimestamp();
-	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize, GetRefererInfo());
+	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize);
 
 	if (reslut)
 	{

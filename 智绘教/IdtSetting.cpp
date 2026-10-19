@@ -47,8 +47,8 @@ struct
 {
 	int width;
 	int height;
-} settingSign[11];
-PDIRECT3DTEXTURE9 TextureSettingSign[11];
+} settingSign[12];
+PDIRECT3DTEXTURE9 TextureSettingSign[12];
 int SettingMainMode = 1;
 
 int SettingWindowX;
@@ -57,6 +57,19 @@ int SettingWindowWidth;
 int SettingWindowHeight;
 
 float settingGlobalScale = 1.0f;
+
+// 沿用设置页按钮样式，局部封装新卡片所需的交互。
+static bool SettingButton(const char* label, const ImVec2& size)
+{
+	ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+	ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+	ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+	bool clicked = ImGui::Button(label, size);
+	ImGui::PopStyleColor(5);
+	return clicked;
+}
 // signal1
 struct
 {
@@ -614,6 +627,42 @@ void SettingMain()
 						}
 
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					// 渐变与手写字标均来自 PNG，按现有设置缩放和纹理生命周期加载。
+					idtLoadImage(&SettingSign, L"PNG", L"Inkeys3Banner", 750 * settingGlobalScale, 100 * settingGlobalScale, true);
+					{
+						int width = settingSign[11].width = SettingSign.getwidth();
+						int height = settingSign[11].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[11]);
 						delete[] data;
 
 						IM_ASSERT(ret);
@@ -2665,7 +2714,7 @@ void SettingMain()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("软件版本#4", { 750.0f * settingGlobalScale,330.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("软件版本#4", { 750.0f * settingGlobalScale,435.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -2772,6 +2821,26 @@ void SettingMain()
 								}
 								ImGui::EndChild();
 							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
+							ImGui::BeginChild("Inkeys3介绍", { 750.0f * settingGlobalScale,100.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							ImGui::SetCursorPos({ 0.0f, 0.0f });
+							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[11], ImVec2((float)settingSign[11].width, (float)settingSign[11].height));
+							ImGui::SetCursorPos({ 630.0f * settingGlobalScale,35.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							if (SettingButton(IA("SettingsUI/Update/Info3").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+								ShellExecuteW(0, 0, L"https://inkeys.top/inkeys3", 0, 0, SW_SHOW);
 
 							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -10362,7 +10431,7 @@ void SettingMain()
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
 							if (ImGui::TextLink(IA("SettingsUI/Update/Info3").c_str()))
 							{
-								ShellExecuteW(0, 0, L"https://www.inkeys.top/inkeys3", 0, 0, SW_SHOW);
+								ShellExecuteW(0, 0, L"https://inkeys.top/inkeys3", 0, 0, SW_SHOW);
 							}
 						}
 

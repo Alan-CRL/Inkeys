@@ -689,6 +689,7 @@
     <Image Include="src\setting\Profile-picture.png" />
     <Image Include="src\setting\Profile_Picture.png" />
     <Image Include="src\setting\SettingSponsor.png" />
+    <Image Include="src\setting\Inkeys3Banner.png" />
     <Image Include="src\sign.png" />
     <Image Include="src\sign1.png" />
     <Image Include="src\sign2.png" />
