@@ -595,6 +595,21 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	// owner 隐藏时 ReleaseCapture 会同步重入；此通知不访问 ImGui，避免等待渲染锁。
+	if (msg == WM_CAPTURECHANGED) return 0;
+
+	if (msg == WM_SHOWWINDOW && !wParam)
+	{
+		{
+			lock_guard stateLock(settingStateMutex);
+			// FIFO 的原生 Hide 可能晚于重建；仍须收束此时会话，保留最新逻辑显隐。
+			settingSessionState.InvalidateSession();
+		}
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		return 0;
+	}
+
 	if (msg == WM_NCHITTEST)
 	{
 		POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
@@ -1359,6 +1374,8 @@ SettingSessionCoroutine RunSettingSession()
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
+				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
@@ -4254,6 +4271,68 @@ SettingSessionCoroutine RunSettingSession()
 						while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						ImGui::EndChild();
 						ImGui::EndChild();
+					}
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.6f;
+						ImGui::PushFont(ImFontMain);
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
+						ImGui::PopFont();
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.5f;
+						ImGui::PushFont(ImFontMain);
+						const auto description = IA(I18nKey.SettingsUI.Draw.Cursor.Description);
+						const float descriptionWidth = (settingItemWidth - 40.0f) * settingGlobalScale;
+						const float descriptionHeight = ImGui::CalcTextSize(description.c_str(), nullptr, false, descriptionWidth).y;
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("绘制光标设置", { settingItemWidth * settingGlobalScale, descriptionHeight + 130.0f * settingGlobalScale },
+							true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 15.0f * settingGlobalScale });
+						ImGui::PushTextWrapPos((settingItemWidth - 20.0f) * settingGlobalScale);
+						ImGui::TextWrapped("%s", description.c_str());
+						ImGui::PopTextWrapPos();
+						const float firstRowY = descriptionHeight + 30.0f * settingGlobalScale;
+						auto& saved = Inkeys::config.Drawing.Cursor;
+						bool cursorChanged = false;
+						const string styles[] = { IA(I18nKey.SettingsUI.Draw.Cursor.DefaultStyle), IA(I18nKey.SettingsUI.Draw.Cursor.DrawingStyle) };
+						const float styleWidth = max(180.0f * settingGlobalScale,
+							max(ImGui::CalcTextSize(styles[0].c_str()).x, ImGui::CalcTextSize(styles[1].c_str()).x) + 45.0f * settingGlobalScale);
+						const auto styleRow = [&](const char* id, const string& label, IdtAtomic<int>& preference, int row)
+						{
+							const float rowY = firstRowY + static_cast<float>(row) * 40.0f * settingGlobalScale;
+							const int selected = preference.load() == 1 ? 1 : 0;
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, rowY + 5.0f * settingGlobalScale });
+							ImGui::TextUnformatted(label.c_str());
+							ImGui::SetCursorPos({ settingItemWidth * settingGlobalScale - styleWidth - 20.0f * settingGlobalScale, rowY });
+							ImGui::SetNextItemWidth(styleWidth);
+							if (Widgets::combo.Begin(id, styles[selected].c_str(), 2))
+							{
+								for (int i = 0; i < 2; ++i)
+								{
+									if (Widgets::combo.Selectable(styles[i].c_str(), selected == i) && selected != i)
+									{
+										preference = i;
+										cursorChanged = true;
+									}
+									if (selected == i) ImGui::SetItemDefaultFocus();
+								}
+								Widgets::combo.End();
+							}
+						};
+						styleRow("##鼠标光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.MouseStyle), saved.MouseStyle, 0);
+						styleRow("##笔光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.PenStyle), saved.PenStyle, 1);
+						if (cursorChanged)
+						{
+							// Sync 在设置渲染作用域内转交业务 FIFO，随后冻结同一批配置写盘。
+							SyncDraw3State();
+							QueueConfigWrite();
+						}
+						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar(2);
+						ImGui::PopFont();
 					}
 					{
 						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
@@ -7795,7 +7874,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
-						inkeys3PanelHeight += 300.0f;
+						inkeys3PanelHeight += 530.0f;
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -7808,13 +7887,13 @@ SettingSessionCoroutine RunSettingSession()
 						}
 
 							auto drawConsoleOutput = [&](const char* id, const string& title,
-								const string& description, bool& value, auto&& commit)
+								const string& description, bool& value, auto&& commit, float cardHeight = 70.0f)
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-								ImGui::BeginChild(id, { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGui::BeginChild(id, { settingItemWidth * settingGlobalScale,cardHeight * settingGlobalScale }, true,
 									ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -7823,8 +7902,14 @@ SettingSessionCoroutine RunSettingSession()
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted(description.c_str());
-								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,25.0f * settingGlobalScale });
+								if (cardHeight > 70.0f)
+								{
+									ImGui::PushTextWrapPos((settingRightToggleX - 20.0f) * settingGlobalScale);
+									ImGui::TextWrapped("%s", description.c_str());
+									ImGui::PopTextWrapPos();
+								}
+								else ImGui::TextUnformatted(description.c_str());
+								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,(cardHeight * 0.5f - 10.0f) * settingGlobalScale });
 								const bool before = value;
 								const string toggleId = "##" + string(id);
 								Widgets::toggle.ToggleBool(toggleId.c_str(), &value);
@@ -7871,6 +7956,25 @@ SettingSessionCoroutine RunSettingSession()
 										Experimental.Inkeys3.CursorConsoleOutput;
 									QueueConfigWrite();
 								});
+							// 两项仅持久化下次启动偏好，不重建当前绘图设备。
+							drawConsoleOutput("绘图硬件加速",
+								IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.N),
+								IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.E),
+								Experimental.Inkeys3.EnableHardwareAcceleration, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration =
+										Experimental.Inkeys3.EnableHardwareAcceleration;
+									QueueConfigWrite();
+								}, 110.0f);
+							drawConsoleOutput("兆芯绘图兼容模式",
+								IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N),
+								IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E),
+								Experimental.Inkeys3.EnableZhaoxinCompatibility, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility =
+										Experimental.Inkeys3.EnableZhaoxinCompatibility;
+									QueueConfigWrite();
+								}, 110.0f);
 
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -8862,6 +8966,11 @@ namespace
 
 		if (settingSession.Done())
 		{
+			{
+				lock_guard stateLock(settingStateMutex);
+				// 当前没有旧 context；在新建前消费 Hide，之后到达的 Hide 仍须下帧收束。
+				settingSessionState.Release();
+			}
 			settingSessionShouldStop.store(false, memory_order_release);
 			settingFrameContext = context;
 			settingFrameResult = FrameResult::Retry;

@@ -168,6 +168,35 @@ namespace
 
 	void TestPageStatePublication()
 	{
+		PagePresentationState publication{ 2, 8, 42, PageStateMode::BasicControl };
+		Check(!publication.CanAcknowledge(2, 8, 42, publication.pageAckEpoch),
+			"basic control mode cannot forward even a nonzero stale ink target ack");
+		publication.Publish(2, 8, 42, PageStateMode::Pending);
+		Check(!publication.CanAcknowledge(2, 8, 42, publication.pageAckEpoch),
+			"busy display retention cannot forward a prior page-ready ack");
+		publication.Publish(2, 8, 42, PageStateMode::InkReady);
+		const auto firstReadyEpoch = publication.pageAckEpoch;
+		Check(publication.CanAcknowledge(2, 8, 42, firstReadyEpoch)
+			&& !publication.CanAcknowledge(2, 8, 41, firstReadyEpoch)
+			&& !publication.CanAcknowledge(3, 8, 42, firstReadyEpoch)
+			&& !publication.CanAcknowledge(2, 9, 42, firstReadyEpoch),
+			"ink mode requires the currently published target and exact page tuple");
+		publication.Publish(2, 8, 42, PageStateMode::Pending);
+		publication.Publish(2, 8, 42, PageStateMode::InkReady);
+		Check(publication.pageAckEpoch != firstReadyEpoch
+			&& !publication.CanAcknowledge(2, 8, 42, firstReadyEpoch)
+			&& publication.CanAcknowledge(2, 8, 42, publication.pageAckEpoch),
+			"same-page busy recovery rejects a late pre-pause frame by captured epoch");
+		const auto recoveredEpoch = publication.pageAckEpoch;
+		publication.Publish(2, 8, 42, PageStateMode::InkReady);
+		Check(publication.pageAckEpoch == recoveredEpoch,
+			"identical page and mode heartbeats do not create needless ack epochs");
+		publication = { -1, 8, 43, PageStateMode::InkReady };
+		Check(publication.CanAcknowledge(-1, 8, 43, publication.pageAckEpoch),
+			"presented end-screen keeps the same explicit ink acknowledgment contract");
+		publication = { 2, 8, 0, PageStateMode::InkReady };
+		Check(!publication.CanAcknowledge(2, 8, 0, publication.pageAckEpoch),
+			"ink mode alone cannot fabricate an accepted target revision");
 		const auto ready = ResolvePageStateForPublication(7, 12, 7, 12);
 		Check(ready.currentPage == 7 && ready.totalPage == 12,
 			"valid COM page publishes the Draw3-ready state");

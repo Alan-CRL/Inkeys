@@ -228,6 +228,8 @@ export namespace Inkeys::Drawing::Draw3
 		void SetAdmissionBlocked(bool blocked) noexcept;
 		// 快捷键租约独立拥有一位门禁，释放不能打开 PPT/load/fatal 的基础门禁。
 		void SetShortcutAdmissionBlocked(bool blocked) noexcept;
+		// 仅用于检测基础门变化；快捷键租约仍通过合并门阻止新输入。
+		bool BaseAdmissionBlocked() const noexcept;
 		bool AdmissionBlocked() const noexcept;
 		uint64_t AdmissionRevision() const noexcept;
 		bool ContactAdmitted(ContactHandle handle) const noexcept;
@@ -262,6 +264,9 @@ export namespace Inkeys::Drawing::Draw3
 		void AcknowledgeControlWake() noexcept;
 		// 仅在上一代生产者和绘制线程均停止后调用，清除旧代际排队事件。
 		void ResetForNextRun() noexcept;
+		// 唯一消费者在休眠前订阅一次成功 Move；arm 后必须复查已消费 sequence。
+		void ArmIdleMoveWake() noexcept;
+		void DisarmIdleMoveWake() noexcept;
 		// 捕获活动等待使用的单调 wake generation。
 		uint64_t CaptureWakeGeneration() const noexcept;
 		// 等待 generation 变化或帧预算到期；返回 true 表示被输入/控制请求打断。

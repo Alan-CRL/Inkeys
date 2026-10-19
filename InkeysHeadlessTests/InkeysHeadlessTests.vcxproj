@@ -129,6 +129,7 @@
 	<ClCompile Include="ppt_session_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
@@ -180,6 +181,8 @@
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
 	<ClCompile Include="draw3_bridge_tests.cpp" />
 	<ClCompile Include="draw3_contact_tests.cpp" />
+	<ClCompile Include="draw3_rts_startup_tests.cpp" />
+	<ClCompile Include="draw3_mouse_input_tests.cpp" />
 	<ClCompile Include="update_security_tests.cpp" />
 	<ClCompile Include="speed_eraser_tests.cpp" />
 	<ClCompile Include="pen_width_tests.cpp" />
@@ -209,6 +212,7 @@
 	<ClInclude Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />

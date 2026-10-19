@@ -18,7 +18,7 @@ int RunMouseHookTransportTests()
 	};
 	Snapshot route;
 	route.route = { true, true, 7 };
-	route.session = { 11, 12, 13, 14, 15, 16, true, true };
+	route.session = { 11, 12, 13, 14, 15, 16, true, true, 0x123456789ABCDEFull };
 	route.generation = 9;
 	Event wheel;
 	wheel.kind = Kind::Wheel;

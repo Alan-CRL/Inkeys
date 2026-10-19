@@ -395,10 +395,12 @@ namespace Inkeys::UI::Bar
 	void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept
 	{
 		bool changed = false;
+		bool windowChanged = false;
 		{
 			std::scoped_lock lock(pptSceneMutex);
 			// 先发布完整载荷，再开放场景边沿；渲染线程不能读到旧窗口或旧 dock 条件。
-			pptPresentationWindow.store(active ? showWindow : nullptr, std::memory_order_release);
+			windowChanged = pptPresentationWindow.exchange(active ? showWindow : nullptr,
+				std::memory_order_acq_rel) != (active ? showWindow : nullptr);
 			changed = pptPresentationActive.exchange(active, std::memory_order_acq_rel) != active;
 			changed = pptSceneState.Publish(session, active) || changed;
 		}
@@ -407,6 +409,10 @@ namespace Inkeys::UI::Bar
 			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
 			// 进出放映都只收起浮窗。回到桌面时若 Redo 仍可用，显示 2×1，不重新弹出。
 			barUISet.SettleRecallChromeForWorkspace();
+		}
+		// 同场窗口锚变化只刷新布局，不重放场次进入和位置恢复。
+		if (changed || windowChanged)
+		{
 			barUISet.UpdateRendering(
 				contentStateUpdatesReady.load(std::memory_order_acquire));
 		}

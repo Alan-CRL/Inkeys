@@ -100,6 +100,124 @@ namespace
 		input.AcknowledgeControlWake();
 	}
 
+	void TestIdleMoveWakeSubscription(int& failures)
+	{
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (!Expect(condition, name)) ++failures;
+		};
+		for (const InputDeviceType device : { InputDeviceType::Touch, InputDeviceType::Pen,
+			InputDeviceType::MouseLeft, InputDeviceType::MouseRight })
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			check(input.PublishDown(0xF3, 1, device,
+				MakeSnapshot(1, 2, ContactPhase::Down)), "idle subscription device Down accepted");
+			ContactRecord* record = nullptr;
+			if (!input.TryDequeue(record) || !record)
+			{
+				check(false, "idle subscription real Down dequeued");
+				continue;
+			}
+			const ContactHandle handle{ record, record->Generation() };
+			const uint64_t baseline = input.CaptureWakeGeneration();
+			check(input.PublishMove(0xF3, 1, MakeSnapshot(3, 4, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == baseline,
+				"unsubscribed Move still merges without SetEvent");
+			input.ArmIdleMoveWake();
+			auto invalid = MakeSnapshot(3, 4, ContactPhase::Move);
+			invalid.position.x = (std::numeric_limits<float>::quiet_NaN)();
+			check(!input.PublishMove(0xF3, 1, invalid) &&
+				!input.PublishMove(0xF3, 999, MakeSnapshot(3, 4, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == baseline,
+				"invalid and absent-route Moves cannot consume the subscription");
+			for (int index = 0; index < 32; ++index)
+				check(input.PublishMove(0xF3, 1,
+					MakeSnapshot(float(index), 5, ContactPhase::Move)), "subscribed burst Move accepted");
+			ContactSnapshot latest;
+			check(input.CaptureWakeGeneration() == baseline + 1 &&
+				input.TryReadSnapshot(handle, latest) && latest.position.x == 31 &&
+				!input.HasPendingWork() && input.DiagnosticsSnapshot().controlWakes == 0,
+				"one subscribed burst wakes once, retains latest snapshot, and creates no marker");
+			input.DisarmIdleMoveWake();
+			check(input.PublishMove(0xF3, 1, MakeSnapshot(32, 5, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == baseline + 1,
+				"disarmed consumer adds no per-Move wake");
+			input.ArmIdleMoveWake();
+			check(input.PublishUp(0xF3, 1, MakeSnapshot(32, 5, ContactPhase::Up)) &&
+				input.WaitForWake(baseline + 1, 0) &&
+				input.TryReadSnapshot(handle, latest) && latest.phase == ContactPhase::Up,
+				"Up remains a real terminal wake while Move notification is armed");
+			input.DisarmIdleMoveWake();
+			input.Recycle(handle);
+			input.ArmIdleMoveWake();
+			input.ResetForNextRun();
+			const bool restarted = input.PublishDown(0xF3, 2, device,
+				MakeSnapshot(1, 2, ContactPhase::Down)) && input.TryDequeue(record) && record;
+			check(restarted, "next stopped generation accepts a new Down");
+			if (!restarted) continue;
+			const uint64_t afterReset = input.CaptureWakeGeneration();
+			check(!input.TryReadSnapshot(handle, latest) &&
+				input.PublishMove(0xF3, 2, MakeSnapshot(3, 4, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == afterReset,
+				"Reset removes stale subscription and stale contact cannot be read");
+			const ContactHandle next{ record, record->Generation() };
+			input.DiscardUntilTerminal(next);
+			input.ArmIdleMoveWake();
+			check(!input.PublishMove(0xF3, 2, MakeSnapshot(4, 5, ContactPhase::Move)) &&
+				input.CaptureWakeGeneration() == afterReset &&
+				input.PublishCancelled(0xF3, 2, MakeSnapshot(4, 5, ContactPhase::Cancelled)) &&
+				input.WaitForWake(afterReset, 0) && input.DiagnosticsSnapshot().occupiedSlots == 0,
+				"quarantined Move stays rejected and Cancel still closes its route");
+			input.DisarmIdleMoveWake();
+		}
+	}
+
+	void TestConcurrentIdleMoveBurst(int& failures)
+	{
+		ContactInputCoordinator input;
+		input.EnableDiagnostics(true);
+		std::vector<ContactHandle> handles;
+		for (uint32_t id = 1; id <= 4; ++id)
+		{
+			if (!Expect(input.PublishDown(0xF4, id, InputDeviceType::Touch,
+				MakeSnapshot(float(id), 1, ContactPhase::Down)), "multi-contact Down accepted")) ++failures;
+			ContactRecord* record = nullptr;
+			if (!input.TryDequeue(record) || !record) { ++failures; return; }
+			handles.push_back({ record, record->Generation() });
+		}
+		const uint64_t generation = input.CaptureWakeGeneration();
+		input.ArmIdleMoveWake();
+		std::atomic<bool> start = false, accepted = true;
+		std::vector<std::thread> producers;
+		for (uint32_t id = 1; id <= 4; ++id)
+			producers.emplace_back([&, id]
+			{
+				while (!start.load(std::memory_order_acquire)) YieldProcessor();
+				for (int index = 1; index <= 256; ++index)
+					if (!input.PublishMove(0xF4, id,
+						MakeSnapshot(float(index), float(id), ContactPhase::Move)))
+						accepted.store(false, std::memory_order_relaxed);
+			});
+		start.store(true, std::memory_order_release);
+		for (auto& producer : producers) producer.join();
+		input.DisarmIdleMoveWake();
+		if (!Expect(accepted && input.CaptureWakeGeneration() == generation + 1 &&
+			!input.HasPendingWork() && input.DiagnosticsSnapshot().controlWakes == 0,
+			"four concurrent contacts consume exactly one idle Move subscription")) ++failures;
+		for (uint32_t id = 1; id <= 4; ++id)
+		{
+			ContactSnapshot latest;
+			if (!Expect(input.TryReadSnapshot(handles[id - 1], latest) &&
+				latest.position.x == 256 && latest.position.y == float(id),
+				"each contact retains its own latest concurrent Move")) ++failures;
+			if (!Expect(input.PublishCancelled(0xF4, id,
+				MakeSnapshot(256, float(id), ContactPhase::Cancelled)),
+				"concurrent burst closes normally")) ++failures;
+			input.Recycle(handles[id - 1]);
+		}
+	}
+
 	void TestFailedControlWakeKeepsBridgeLive(int& failures)
 	{
 		using namespace Inkeys::Drawing::Draw3::Bridge;
@@ -1095,6 +1213,180 @@ namespace
 			"touch eraser contact remains opaque")) ++failures;
 	}
 
+	void TestProductCursorSettings(int& failures)
+	{
+		const DrawingCursorAppearance penAppearance = {
+			DrawingCursorShape::Circle, 9.0f, 9.0f, 0.2f, 0.4f, 0.8f
+		};
+		DrawingCursorAppearance highlighter = {
+			DrawingCursorShape::Rectangle, 3.75f, 30.0f, 1.0f, 0.8f, 0.2f
+		};
+		highlighter.opacity = Bridge::kHighlighterCompositeOpacity;
+		highlighter.fillAlpha = 1.0f;
+		DrawingCursorAppearance eraser = {
+			DrawingCursorShape::EraserGripCircle, 50.0f, 50.0f, 1.0f, 1.0f, 1.0f
+		};
+		eraser.opacity = 0.5f;
+		CursorSettings settings;
+		DrawingCursorSample pen = { .x = 30.0f, .y = 40.0f, .valid = true };
+		DrawingCursorSample mouse = { .x = 60.0f, .y = 70.0f, .valid = true };
+		auto resolve = [&](DrawingCursorPointerAuthority owner,
+			const DrawingCursorAppearance& appearance, Bridge::Tool tool = Bridge::Tool::Pen,
+			bool penIconAllowed = true, float scale = 1.0f, bool erases = false,
+			bool legacyTranslucent = false, bool penContactVisible = false)
+		{
+			const auto effective = Bridge::ResolveCursorSettingsForTool(tool, settings);
+			return ResolvePrimaryDrawingCursorVisual(pen, mouse, owner,
+				appearance, eraser, erases, penContactVisible, legacyTranslucent,
+				true, &effective, penIconAllowed, scale);
+		};
+		const auto mouseOwner = DrawingCursorPointerAuthority::Mouse;
+		const auto penOwner = DrawingCursorPointerAuthority::Pen;
+		if (!Expect(!resolve(mouseOwner, penAppearance).visible &&
+			!resolve(mouseOwner, penAppearance, Bridge::Tool::HardPen).visible &&
+			resolve(penOwner, penAppearance).appearance.shape == DrawingCursorShape::Circle &&
+			resolve(mouseOwner, highlighter, Bridge::Tool::Highlighter, false).visible,
+			"default system mouse and original pen circle leave highlighter preview enabled")) ++failures;
+
+		// 活动 contact 的实际工具可不同于新的产品选择；投影读取原始偏好，不能沿用上一工具的结果。
+		const auto retainedMarker = resolve(mouseOwner, highlighter, Bridge::Tool::Highlighter, false);
+		const auto retainedShape = resolve(mouseOwner, penAppearance, Bridge::Tool::SolidLine, false);
+		const auto restoredBrush = resolve(mouseOwner, penAppearance);
+		if (!Expect(retainedMarker.visible && retainedMarker.appearance.shape == DrawingCursorShape::Rectangle &&
+			!retainedShape.visible && !restoredBrush.visible && settings.mouseStyle == MouseCursorStyle::System,
+			"retained actual marker and shape tools do not erase the raw system brush preference")) ++failures;
+		settings.mouseStyle = MouseCursorStyle::Drawing;
+		const auto icon = resolve(mouseOwner, penAppearance);
+		const RECT bounds = DrawingCursorVisualBounds(icon, 200, 200);
+		if (!Expect(icon.visible && icon.appearance.shape == DrawingCursorShape::PenIcon &&
+			Near(icon.x, 60.0f) && Near(icon.y, 70.0f) &&
+			Near(icon.appearance.width, 24.0f) && Near(icon.appearance.height, 24.0f) &&
+			Near(icon.appearance.centerOffsetX, 12.0f) && Near(icon.appearance.centerOffsetY, 12.0f) &&
+			bounds.left == 58 && bounds.top == 68 && bounds.right == 86 && bounds.bottom == 96,
+			"mouse pen icon keeps upper-left sample hotspot and bounds include the lower-right tail")) ++failures;
+		const auto scaledIcon = resolve(mouseOwner, penAppearance, Bridge::Tool::Pen, true, 2.0f);
+		if (!Expect(Near(scaledIcon.x, icon.x) && Near(scaledIcon.y, icon.y) &&
+			Near(scaledIcon.appearance.width, 48.0f) && Near(scaledIcon.appearance.centerOffsetX, 24.0f),
+			"pen icon scales in DIP without moving its input hotspot")) ++failures;
+		mouse.x = -12.0f; mouse.y = -8.0f;
+		const RECT clipped = DrawingCursorVisualBounds(resolve(mouseOwner, penAppearance), 100, 100);
+		if (!Expect(clipped.left == 0 && clipped.top == 0 && clipped.right == 14 && clipped.bottom == 18,
+			"pen icon clips negative canvas coordinates with its actual offset bounds")) ++failures;
+		mouse.x = 60.0f; mouse.y = 70.0f;
+
+		struct SourceCase { SpeedEraser::SourceKind kind; SpeedEraser::SourceRecognition recognition; bool highlighted; };
+		const SourceCase sources[] = {
+			{ SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities, false },
+			{ SpeedEraser::SourceKind::ExternalPen, SpeedEraser::SourceRecognition::RtsCapabilities, true },
+			{ SpeedEraser::SourceKind::Unknown, SpeedEraser::SourceRecognition::Unknown, true },
+			{ SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::Conflict, true },
+			{ SpeedEraser::SourceKind::ExternalPen, SpeedEraser::SourceRecognition::Conflict, true }
+		};
+		for (const auto mouseStyle : { MouseCursorStyle::System, MouseCursorStyle::Drawing })
+			for (const auto penStyle : { PenCursorStyle::Circle, PenCursorStyle::PenIcon })
+				for (const auto& source : sources)
+				{
+					settings = { mouseStyle, penStyle };
+					pen.source.kind = source.kind;
+					pen.source.recognition = source.recognition;
+					// 两个类型交错并覆盖真实设备/未知/冲突；边缘规则没有可写偏好。
+					for (const auto tool : { Bridge::Tool::Pen, Bridge::Tool::HardPen })
+					{
+						const auto penVisual = resolve(penOwner, penAppearance, tool);
+						const auto mouseVisual = resolve(mouseOwner, penAppearance, tool);
+						if (!Expect(penVisual.visible && penVisual.appearance.shape ==
+							(penStyle == PenCursorStyle::Circle ? DrawingCursorShape::Circle : DrawingCursorShape::PenIcon) &&
+							Near(penVisual.appearance.width, penStyle == PenCursorStyle::Circle ? 9.0f : 24.0f) &&
+							Near(penVisual.appearance.outlineOpacity, source.highlighted ? 1.0f : 0.5f) &&
+							Near(penVisual.appearance.fillAlpha, 0.5f) &&
+							mouseVisual.visible == (mouseStyle == MouseCursorStyle::Drawing) &&
+							(!mouseVisual.visible || (mouseVisual.appearance.shape == DrawingCursorShape::PenIcon &&
+								Near(mouseVisual.appearance.outlineOpacity, 1.0f))),
+							"mouse and pen types stay independent with fixed source-specific brush edges")) ++failures;
+					}
+					const auto mouseMarker = resolve(mouseOwner, highlighter, Bridge::Tool::Highlighter, false);
+					const auto penMarker = resolve(penOwner, highlighter, Bridge::Tool::Highlighter, false);
+					if (!Expect(mouseMarker.visible && penMarker.visible &&
+						mouseMarker.appearance.shape == DrawingCursorShape::Rectangle &&
+						penMarker.appearance.shape == DrawingCursorShape::Rectangle &&
+						Near(mouseMarker.appearance.width, 3.75f) && Near(penMarker.appearance.height, 30.0f) &&
+						Near(mouseMarker.appearance.opacity * mouseMarker.appearance.fillAlpha, 0.35f) &&
+						Near(penMarker.appearance.opacity * penMarker.appearance.fillAlpha, 0.35f) &&
+						Near(mouseMarker.appearance.outlineOpacity, 1.0f) &&
+						Near(penMarker.appearance.outlineOpacity, source.highlighted ? 1.0f : 0.35f),
+						"both type choices preserve marker rectangles, actual width, fill alpha and fixed edges")) ++failures;
+					for (const auto tool : { Bridge::Tool::SolidLine, Bridge::Tool::DashedLine,
+						Bridge::Tool::OutlineRectangle, Bridge::Tool::FilledRectangle })
+					{
+						const auto penShape = resolve(penOwner, penAppearance, tool, false);
+						if (!Expect(!resolve(mouseOwner, penAppearance, tool, false).visible &&
+							penShape.visible && penShape.appearance.shape == DrawingCursorShape::Circle &&
+							Near(penShape.appearance.width, 9.0f) && Near(penShape.appearance.centerOffsetX, 0.0f),
+							"every shape keeps the system mouse cursor and the original pen circle")) ++failures;
+					}
+				}
+
+		settings = { MouseCursorStyle::System, PenCursorStyle::Circle };
+		pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+		const auto screen = resolve(penOwner, penAppearance);
+		settings.penStyle = PenCursorStyle::PenIcon;
+		const auto penIcon = resolve(penOwner, penAppearance, Bridge::Tool::Pen, true, 2.0f);
+		if (!Expect(penIcon.visible && Near(penIcon.x, pen.x) && Near(penIcon.y, pen.y) &&
+			Near(penIcon.appearance.width, 48.0f) && Near(penIcon.appearance.centerOffsetX, 24.0f) &&
+			Near(penIcon.appearance.outlineOpacity, 0.5f) &&
+			!AreDrawingCursorVisualsEquivalent(screen, penIcon) && !resolve(mouseOwner, penAppearance).visible &&
+			AreDrawingCursorVisualsEquivalent(resolve(penOwner, penAppearance),
+				resolve(penOwner, penAppearance, Bridge::Tool::Pen, true, 1, false, true)),
+			"pen-only icon switches preserve mouse selection, screen translucency, DPI and legacy API isolation")) ++failures;
+		pen.inContact = true;
+		if (!Expect(!resolve(penOwner, highlighter, Bridge::Tool::Highlighter, false).visible &&
+			resolve(penOwner, highlighter, Bridge::Tool::Highlighter, false, 1, false, false, true).visible,
+			"product settings preserve the separate pen contact visibility policy")) ++failures;
+		pen.inContact = false;
+		mouse.inContact = true;
+		if (!Expect(!resolve(mouseOwner, penAppearance).visible &&
+			resolve(mouseOwner, highlighter, Bridge::Tool::Highlighter, false).visible,
+			"system mouse brush preference leaves contact highlighter preview enabled")) ++failures;
+		settings.mouseStyle = MouseCursorStyle::Drawing;
+		if (!Expect(resolve(mouseOwner, penAppearance).visible,
+			"optional mouse brush icon remains visible during contact")) ++failures;
+		mouse.inContact = false;
+		settings.mouseStyle = MouseCursorStyle::System;
+		const auto mouseEraser = resolve(mouseOwner, highlighter, Bridge::Tool::ConfiguredEraser, false, 1, true);
+		if (!Expect(mouseEraser.visible && mouseEraser.appearance.shape == DrawingCursorShape::EraserGripCircle &&
+			Near(mouseEraser.appearance.opacity, 0.5f) && Near(mouseEraser.appearance.outlineOpacity, -1.0f),
+			"mouse and pen type choices leave the dedicated eraser cursor unchanged")) ++failures;
+		pen.inverted = true;
+		if (!Expect(Near(resolve(penOwner, highlighter).appearance.opacity, 0.5f),
+			"product appearance does not change inverted eraser hover alpha")) ++failures;
+		pen.inContact = true;
+		if (!Expect(Near(resolve(penOwner, highlighter).appearance.opacity, 1.0f),
+			"product appearance does not change inverted eraser contact alpha")) ++failures;
+		if (!Expect(!resolve(DrawingCursorPointerAuthority::Touch, highlighter).visible,
+			"product cursor types never create a touch primary cursor")) ++failures;
+		pen.inverted = pen.inContact = false;
+		if (!Expect(ResolveLaserDrawingCursorVisual(pen, mouse, penOwner, penAppearance).visible &&
+			ResolveLaserDrawingCursorVisual(pen, mouse, mouseOwner, penAppearance).visible &&
+			!ResolveLaserDrawingCursorVisual(pen, mouse, DrawingCursorPointerAuthority::Touch, penAppearance).visible,
+			"laser keeps its independent hover path and touch primary exclusion")) ++failures;
+		pen.inContact = true;
+		if (!Expect(!ResolveLaserDrawingCursorVisual(pen, mouse, penOwner, penAppearance).visible,
+			"laser contact tip remains owned by the active contact")) ++failures;
+
+		auto changed = icon;
+		changed.appearance.centerOffsetX += 1.0f;
+		if (!Expect(!AreDrawingCursorVisualsEquivalent(icon, changed) &&
+			DrawingCursorVisualBounds(changed, 200, 200).right == bounds.right + 1,
+			"center offset participates in dirty equivalence and bounds")) ++failures;
+		changed = icon; changed.appearance.outlineOpacity = 0.5f;
+		if (!Expect(!AreDrawingCursorVisualsEquivalent(icon, changed),
+			"independent edge alpha participates in stationary redraw equivalence")) ++failures;
+		changed.appearance.centerOffsetY = std::numeric_limits<float>::infinity();
+		if (!Expect(!IsValidDrawingCursorAppearance(changed.appearance) &&
+			DrawingCursorVisualBounds(changed, 200, 200).right == 0,
+			"invalid hotspot offsets cannot reach the renderer or dirty conversion")) ++failures;
+	}
+
 	void TestSystemTouchMoveFilter(int& failures)
 	{
 		MouseCursorMessageFilterInput input{
@@ -1220,6 +1512,138 @@ namespace
 		if (!Expect(receiveMouse() && primaryVisual().visible &&
 			Near(primaryVisual().appearance.opacity, 0.5f),
 			"real mouse immediately recovers normal hover at the same position")) ++failures;
+	}
+
+	void TestSystemPenMoveSequence(int& failures)
+	{
+		const DrawingCursorAppearance brush{ DrawingCursorShape::Circle, 9, 9, 0.2f, 0.4f, 0.8f };
+		DrawingCursorAppearance marker{ DrawingCursorShape::Rectangle, 3.75f, 30, 1, 0.8f, 0.2f };
+		marker.opacity = Bridge::kHighlighterCompositeOpacity;
+		marker.fillAlpha = 1;
+		const DrawingCursorSample oldMouse{ .x = 30, .y = 40, .qpc = 100, .valid = true };
+		DrawingCursorSample penHover{ .x = 10, .y = 20, .qpc = 1000, .valid = true };
+		penHover.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+		struct DelayedMove { uint32_t tick; int x, y; bool held; };
+		constexpr DelayedMove delayed[] = {
+			{ 2000, 10, 20, false }, { 2000, 500, 600, false },
+			{ 2000, 500, 600, true }, { 600000, 30, 40, false },
+			{ 0x70000000u, 900, 700, true }
+		};
+		for (const auto style : { MouseCursorStyle::System, MouseCursorStyle::Drawing })
+		{
+			DrawingCursorSampleMailbox penMailbox, mouseMailbox;
+			mouseMailbox.Publish(oldMouse);
+			auto owner = DrawingCursorPointerAuthority::Mouse;
+			MouseCursorMessageFilterInput input{ .pointerApiAvailable = true,
+				.sourceQuerySucceeded = true, .origin = IMO_SYSTEM };
+			MouseCursorMessageFilterResult lastDecision;
+			const auto receiveMouse = [&]()
+			{
+				DrawingCursorSample pen;
+				penMailbox.Read(pen);
+				input.penSampleValid = pen.valid;
+				input.pointerAuthority = owner;
+				lastDecision = FilterMouseCursorMessage(input);
+				if (lastDecision.rejectionReason) return false;
+				owner = ResolveDrawingCursorOwnerForPointerEvent(owner, DrawingCursorPointerAuthority::Mouse);
+				mouseMailbox.Publish({ .x = static_cast<float>(input.mouseX),
+					.y = static_cast<float>(input.mouseY), .qpc = input.messageTick,
+					.valid = true, .inContact = input.buttonDown });
+				return true;
+			};
+			const auto publishPen = [&](DrawingCursorSample sample)
+			{
+				penMailbox.Publish(sample);
+				owner = ResolveDrawingCursorOwnerForPointerEvent(owner, DrawingCursorPointerAuthority::Pen);
+			};
+			const auto primaryVisual = [&](bool highlighter = false)
+			{
+				DrawingCursorSample pen, mouse;
+				penMailbox.Read(pen); mouseMailbox.Read(mouse);
+				const auto settings = Bridge::ResolveCursorSettingsForTool(
+					highlighter ? Bridge::Tool::Highlighter : Bridge::Tool::Pen, { style, PenCursorStyle::Circle });
+				return ResolvePrimaryDrawingCursorVisual(pen, mouse, owner,
+					highlighter ? marker : brush, brush, false, false, false,
+					style == MouseCursorStyle::System, &settings, !highlighter);
+			};
+			// 默认系统样式不会画 Mouse 主视觉；新式会暴露同一错误接管，不能只遮掉图形。
+			if (!Expect(primaryVisual().visible == (style == MouseCursorStyle::Drawing),
+				"only Drawing renders a valid mouse brush sample before pen ownership")) ++failures;
+			DrawingCursorSample before;
+			mouseMailbox.Read(before);
+			for (int phase = 0; phase < 3; ++phase)
+			{
+				if (phase < 2)
+				{
+					auto sample = penHover; sample.inContact = phase == 1;
+					publishPen(sample);
+				}
+				else penMailbox.Clear(); // Up/OutOfRange 清样本并保留 Pen owner。
+				for (const auto& move : delayed)
+				{
+					input.messageTick = move.tick; input.mouseX = move.x; input.mouseY = move.y;
+					input.buttonDown = move.held;
+					const bool accepted = receiveMouse();
+					DrawingCursorSample mouse;
+					mouseMailbox.Read(mouse);
+					const auto visual = primaryVisual();
+					if (!Expect(!accepted && lastDecision.systemRejected &&
+						owner == DrawingCursorPointerAuthority::Pen && mouse.sequence == before.sequence &&
+						Near(mouse.x, oldMouse.x) && Near(mouse.y, oldMouse.y) &&
+						visual.visible == (phase == 0) &&
+						(!visual.visible || (visual.appearance.shape == DrawingCursorShape::Circle && Near(visual.x, penHover.x))),
+						"delayed repeated system moves cannot overwrite pen ownership or the mouse mailbox")) ++failures;
+				}
+			}
+			penMailbox.Clear(); // 重复终态也不能回弹仍在 mailbox 中的旧 Mouse。
+			if (!Expect(!primaryVisual().visible && !primaryVisual(true).visible &&
+				ShouldHideSystemDrawingCursor(owner, false, false, false, true, style == MouseCursorStyle::System),
+				"both styles keep old mouse and highlighter previews hidden after pen leaves")) ++failures;
+
+			struct Takeover { UINT message; INPUT_MESSAGE_DEVICE_TYPE device; INPUT_MESSAGE_ORIGIN_ID origin;
+				bool querySucceeded, pointerApi; };
+			const Takeover takeovers[] = {
+				{ WM_MOUSEMOVE, IMDT_MOUSE, IMO_HARDWARE, true, true },
+				{ WM_MOUSEMOVE, IMDT_TOUCHPAD, IMO_HARDWARE, true, true },
+				{ WM_LBUTTONDOWN, IMDT_UNAVAILABLE, IMO_SYSTEM, true, true },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_SYSTEM, false, true },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_UNAVAILABLE, false, false },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_INJECTED, true, true },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_HARDWARE, true, true },
+				{ WM_MOUSEMOVE, IMDT_UNAVAILABLE, IMO_UNAVAILABLE, true, true }
+			};
+			for (const auto& takeover : takeovers)
+			{
+				publishPen(penHover); penMailbox.Clear();
+				input.message = takeover.message; input.inputSource = takeover.device; input.origin = takeover.origin;
+				input.sourceQuerySucceeded = takeover.querySucceeded; input.pointerApiAvailable = takeover.pointerApi;
+				input.buttonDown = takeover.message == WM_LBUTTONDOWN;
+				const bool accepted = receiveMouse();
+				const auto visual = primaryVisual();
+				if (!Expect(accepted && owner == DrawingCursorPointerAuthority::Mouse &&
+					!lastDecision.systemRejected && visual.visible == (style == MouseCursorStyle::Drawing) &&
+					(!visual.visible || visual.appearance.shape == DrawingCursorShape::PenIcon) &&
+					ShouldHideSystemDrawingCursor(owner, false, false, false, true, style == MouseCursorStyle::System) ==
+						(style == MouseCursorStyle::Drawing),
+					"real input, button down and existing API fallbacks immediately recover the selected mouse style")) ++failures;
+			}
+			// 真实接管后正常系统刷新仍沿既有 Mouse 行为；新 Pen 可以再次即时接管。
+			input.message = WM_MOUSEMOVE; input.inputSource = IMDT_UNAVAILABLE;
+			input.origin = IMO_SYSTEM; input.sourceQuerySucceeded = input.pointerApiAvailable = true;
+			input.buttonDown = false;
+			if (!Expect(receiveMouse() && owner == DrawingCursorPointerAuthority::Mouse,
+				"system refresh remains accepted after mouse has already taken over")) ++failures;
+			publishPen(penHover);
+			if (!Expect(primaryVisual().visible && primaryVisual().appearance.shape == DrawingCursorShape::Circle &&
+				Near(primaryVisual().x, penHover.x) && !receiveMouse(),
+				"new pen hover immediately recovers pen preview and its system-move protection")) ++failures;
+			penHover.inContact = true; publishPen(penHover); penHover.inContact = false;
+			if (!Expect(!primaryVisual().visible && owner == DrawingCursorPointerAuthority::Pen,
+				"new pen contact preserves its separate contact visibility rule")) ++failures;
+			penMailbox.Clear();
+			if (!Expect(!receiveMouse() && !primaryVisual().visible,
+				"the next pen leave retains protection without a time window")) ++failures;
+		}
 	}
 
 	void TestTouchCursorOwnership(int& failures)
@@ -1357,7 +1781,7 @@ namespace
 		const auto initial = input.AdmissionRevision();
 		input.SetShortcutAdmissionBlocked(true);
 		const auto leaseRevision = input.AdmissionRevision();
-		if (!Expect(input.AdmissionBlocked() && leaseRevision != initial,
+		if (!Expect(input.AdmissionBlocked() && !input.BaseAdmissionBlocked() && leaseRevision != initial,
 			"shortcut lease closes real production contact admission")) ++failures;
 		const bool downPublished = input.PublishDown(88, 1, InputDeviceType::Pen,
 			MakeSnapshot(1, 1, ContactPhase::Down));
@@ -1370,11 +1794,11 @@ namespace
 		if (record) input.Recycle(blockedContact);
 		input.SetAdmissionBlocked(true); // 模拟 lease 期间 PPT load/fatal 关闭基础门。
 		input.SetShortcutAdmissionBlocked(false);
-		if (!Expect(input.AdmissionBlocked() && input.AdmissionRevision() == leaseRevision,
+		if (!Expect(input.AdmissionBlocked() && input.BaseAdmissionBlocked() && input.AdmissionRevision() == leaseRevision,
 			"releasing shortcut lease preserves independently closed base gate")) ++failures;
 		input.SetShortcutAdmissionBlocked(true);
 		input.SetAdmissionBlocked(false);
-		if (!Expect(input.AdmissionBlocked(),
+		if (!Expect(input.AdmissionBlocked() && !input.BaseAdmissionBlocked(),
 			"PPT gate opening does not release an active shortcut lease")) ++failures;
 		input.SetShortcutAdmissionBlocked(false);
 		if (!Expect(!input.AdmissionBlocked() && input.AdmissionRevision() > leaseRevision,
@@ -1388,6 +1812,8 @@ int RunDraw3ContactInputTests()
 	TestContactLifecycle(failures);
 	TestShortcutAdmissionGateComposition(failures);
 	TestInvalidAndWakeContracts(failures);
+	TestIdleMoveWakeSubscription(failures);
+	TestConcurrentIdleMoveBurst(failures);
 	TestFailedControlWakeKeepsBridgeLive(failures);
 	TestFailedControlWakeUnderContinuousContacts(failures);
 	TestFailedControlWakeInterruptsBlockingConsumer(failures);
@@ -1409,9 +1835,11 @@ int RunDraw3ContactInputTests()
 	TestPageAdmissionAndQuarantine(failures);
 	TestClosingDiscardLiveness(failures);
 	TestCursorOpacityContracts(failures);
+	TestProductCursorSettings(failures);
 	TestTouchCursorOwnership(failures);
 	TestSystemTouchMoveFilter(failures);
 	TestSystemTouchMoveSequence(failures);
+	TestSystemPenMoveSequence(failures);
 	return failures;
 }
 

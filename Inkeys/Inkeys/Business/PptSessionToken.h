@@ -14,6 +14,7 @@ namespace Inkeys::Business
 		std::uint32_t processId = 0;
 		bool active = false;
 		bool guardedExitAvailable = false;
+		std::uint64_t processStartTime = 0;
 	};
 	// 捕获与执行保持同一身份，禁止将旧输入重新归属到新放映。
 	[[nodiscard]] constexpr bool MatchesPptSession(
@@ -25,7 +26,8 @@ namespace Inkeys::Business
 			&& expected.showSessionRevision == current.showSessionRevision
 			&& expected.bindingRevision == current.bindingRevision
 			&& expected.showWindow == current.showWindow
-			&& expected.processId == current.processId;
+			&& expected.processId == current.processId
+			&& expected.processStartTime == current.processStartTime;
 	}
 	[[nodiscard]] PptSessionToken CapturePptInputSession() noexcept;
 	[[nodiscard]] bool IsCurrentPptInputSession(const PptSessionToken& token) noexcept;

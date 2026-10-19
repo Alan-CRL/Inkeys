@@ -482,6 +482,148 @@
 - [OK] 完整 InkeysRepo.sln Debug|ARM64 通过，最终增量构建0警告0错误。
 - [OK] InkeysHeadlessTests --no-window、状态模式和笔宽生产探针均退出0；独立Trellis审查通过。
 - [OK] 用户人工验收基本通过；收尾未改产品代码，未重复运行GUI或构建，未扩大设备/UIPI覆盖声明。
+## Session 110: PptCOM 修复提交归档与覆盖层置顶调查
+<!-- trellis-session: v=2 fp=a934026df8791edd -->
+
+**Date**: 2026-10-18
+**Task**: PptCOM 修复提交归档与覆盖层置顶调查
+**Branch**: `bugfix/pptcom`
+
+### Summary
+
+按用户授权提交 PptCOM 修复并归档任务，保留实机验收未验证；只读核查覆盖层 owner、根置顶与 PPT 穿插风险。
+
+### Main Changes
+
+本次按用户明确要求创建本地提交并结束 PptCOM Trellis 任务；保留 SSH 签名，不执行 push。
+
+- WORK: 0eb1c7c587b8b284d103ae865ea29ea59e444677，dynamic 属性/方法访问、确定性 COM 所有权、raw IDispatch 事件连接和解绑重试、busy/基础控制与墨迹能力隔离、测试及 DLL 同步。
+- ARCHIVE: 184cf86e，任务已 completed 并移入 .trellis/tasks/archive/2026-10/10-18-pptcom-dynamic-compatibility，清除活动指针并关联 WORK 提交。
+- 既有最终验证：x64/ARM64 托管真实 COM 各 43 cases、0 failures；完整 InkeysRepo.sln Debug|ARM64 和同一产物 --no-window 通过；DLL/嵌入资源哈希匹配，TLB 与原版一致。
+- 本轮仅更新收尾记录及修复新文档 EOF 空行；暂存 diff --check 通过。未重复运行已完成构建，未启动 GUI/Office。
+- PRD AC10 与真实 PowerPoint2007/2010、WPP2013、现代 Office、损坏 COM 反馈设备、进程及时退出及下一文稿实机验收仍 NOT VERIFIED。按用户指示归档不等于将其标成通过。
+
+用户另要求只读调查覆盖层置顶。此次未改动该功能，也未新建 Trellis 任务。
+
+静态确认：
+- 实际编译 Inkeys/Inkeys/Window/Window.cpp 与 Window.Legacy.cpp；Inkeys/IdtWindow.cpp 仅为 None 项，不作为当前置顶实现依据。
+- OverlayRoot 优先 MagnifierHost，其次 Freeze/Drawpad/Bar；普通链为 MagnifierHost -> Freeze -> DrawpadPresentation -> Drawpad。Bar 及四个 PptBottom/Middle Left/Right 均以 Drawpad 为 owner，是同级顶层 WS_POPUP，而非互相拥有的链。
+- Window.cpp:1870 RefreshTopmost 只对根调用 HWND_TOPMOST/HWND_NOTOPMOST，SWP_NOACTIVATE；keepTopmost = overlayTopmost && !whiteboardWindowMode。Win32 将 topmost band 传播给 owned popup，所以“没有对每个窗口独立 TOPMOST”不代表上方窗口不是 topmost。
+- Window.cpp:1696 与 1890 的 Show/PromotePpt：先 Bar HWND_TOP，再将目标翻页窗插到 Bar 后；未显式逐一对四窗和两个画布排序。USER32 仍可能连带调整 owner，不能将两次 API 调用理解为只会移动两个 HWND。
+- PageControl.cpp:2004 每个成功可见呈现独立调用 Show，2325 pointer down 调用 PromotePptWindow；DirectMove 使用 NOZORDER/NOOWNERZORDER，移动自身不负责修复被外部改变的顺序。
+- Ppt.cpp:30/243：首次 visible 提交请求根刷新，失败继续 pending；成功清除 pending，visible 保持 true 时不因外部遮挡重触发。
+- Window.Legacy.cpp:155-189 周期根刷新，ticks*10ms；配置默认 topSleepTime=3，即 3 秒，可选 100ms/500ms/1s/3s/5s/10s/30s。topWindowNow 可提前唤醒等待。
+- IdtPlug-in.cpp:478-502 业务操作可将焦点交给当前 PPT；没有在交接成功后立即刷新整组窗口。SetForegroundWindow 本身不证明 PPT 是 topmost。
+- Window.cpp:1878-1887 返回值依据根 SetWindowPos，未复核全组 style、GW_OWNER 或相对 PPT 的实际 Z 序。Window.Legacy.cpp:49-76 仅失败/恢复转换采样整组，Ppt.cpp 日志采根；API 成功而视觉遮挡不一定触发诊断。
+- 白板显式 NOTOPMOST，IdtState.cpp:1833 进入降层，1968 退出恢复；需区分是否发生白板切换，而非把所有情形等同根刷新失败。
+- 仓库 window_tests.cpp:507-532 已有隐藏 ownerless topmost 竞争窗及根刷新后整组高于竞争窗/连续性的断言；本轮未执行创建 HWND 的测试，因此不能当作本轮实测结果。
+
+判断及边界：
+- owner 规则保障 owned 高于自己的 owner，不承诺外部窗口永不进入 owned 同级窗口之间；topmost 保障高于普通窗口，不能保证永远高于另一个 topmost 窗口。
+- “主栏/右翻页在 PPT 上，左翻页/画布在下”与外部层级变化后局部显示/提层、缺少整组实际顺序校验的机制相容，但还没有故障时刻窗口快照，不能据此宣称该次具体根因已经证实。更不能只凭没有显示判断窗口真的在下层。
+- 若当时 PPT 非 topmost 且覆盖层所有窗口确实 topmost/可见/有内容，普通 Z 序不应造成该遮挡；应检查模式降层、owner/style 被改变，或者显隐/呈现失败。COM basic 降级也可能保留翻页而不启用墨迹画布，不能混为同一证据。
+- 后续若继续修复，应先在异常时记录全组与 PPT 的 hwnd/PID/TID、GW_OWNER、topmost/visible、bounds、前后台 Z 邻居及绘制/白板/放映能力、present 结果，核对根刷新/单窗 Show/点击提层/焦点交接的前后顺序；不直接改成所有节点独立 TOPMOST。
+
+参考原始资料：
+- https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
+- https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#owned-windows
+- https://devblogs.microsoft.com/oldnewthing/20051121-10/?p=33263
+
+## Session 102: 画布 F1–F4 修复与生产回归
+<!-- trellis-session: v=2 fp=3eab8ec1da9c5f29 -->
+
+**Date**: 2026-10-15
+**Task**: 画布 F1–F4 修复与生产回归
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+四项修复和独立检查已完成；完整ARM64 solution、独立存储目标和非GUI生产回归通过，独立capture窗口回归通过；整套owner前置条件失败已取得原HEAD A/B，完整产品鼠标验证等待解除LockApp锁屏。
+
+### Main Changes
+
+- 新增独立有界诊断输出器；保留PPT IoError；修复橡皮idle Move唤醒；设置隐藏释放自身capture并失效旧会话。
+- 同步四项七节可执行规范、调用消费者登记与任务验证记录。
+
+### Git Commits
+
+（未创建 commit；修复已实施。）
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug ARM64与独立存储目标exit0；F1/F2/F3生产CLI、存储回归、Headless --no-window通过。
+- [未通过] 默认窗口整套exit1共8项owner检查失败；相同预置顶Z序条件在原HEAD也复现。独立真实capture测试exit0，不将整套记绿。
+
+### Status
+
+**进行中：代码及针对性回归完成，完整 GUI 验收待解锁。**
+
+### Next Steps
+
+- 解锁后完成F1背压/F4按住隐藏的完整产品GUI验收，并复测整套窗口。
+
+
+## Session 104: 画布 F1–F4 解锁后完整产品 GUI 验收
+<!-- trellis-session: v=2 fp=9ebbe4b42cb690a4 -->
+
+**Date**: 2026-10-15
+**Task**: 画布 F1–F4 解锁后完整产品 GUI 验收
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+同一最终ARM64二进制的F1 stdout背压及F4无诊断捕获强触发完整产品鼠标GUI通过；真实停读/按住退出分别约0.9615s和1.2343s且exit0/forcedfalse。解锁后的默认完整窗口套件仍exit1/11fail，HEAD A/B不替全部失败归因；物理触摸笔与原始用户现场保留未确认。
+
+### Main Changes
+
+- 本轮未改产品源码，补齐原始截图、窗口/pipe状态、真实退出码、SHA、验收和四项任务元数据；测试窗口已清理，原Explorer保留。
+
+### Git Commits
+
+（未创建 commit；本次为修复后的 GUI 验收。）
+
+### Testing
+
+- [OK] F1停读期间新线、实际擦除、Clear/Undo及设置响应；恢复后full11874输出可见，再次停读正常退出。
+- [OK] F4四轮按住Alt+F4捕获在Up前释放；普通X、重开首次Language、Explorer/选择返回、画笔橡皮及按住正常退出通过。
+- [OK] 沿用最终完整Solution/独立存储构建、F1/F2/F3生产CLI、Headless无窗口与独立capture通过；五任务manifest及产品BOM/CRLF检查通过。
+
+- [未通过] 解锁后默认完整 HWND 套件 exit1/11 fail；A/B仅证明一个既有预置顶条件，未逐项确认所有失败根因。
+
+### Status
+
+**本轮针对性修复验收完成；默认 HWND 整套未通过，原用户现场调查保留。**
+
+### Next Steps
+
+- 默认完整HWND的owner/Z序11项失败、物理触摸/笔及原始现场归因仍保留；未自动归档，不commit/push。
+
+
+## Session 108: 画布卡死后续修复与最终GUI验收
+<!-- trellis-session: v=2 fp=bcaef0bd1fcab65a -->
+
+**Date**: 2026-10-18
+**Task**: 画布卡死后续修复与最终GUI验收
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+完成窗口11项断言后续、PPT目标和终态交接收尾；最终ARM64构建、12轮窗口、默认完整测试和真实设置/PowerPoint GUI通过。
+
+### Main Changes
+
+- 窗口实际band读回与同根继承；保留owned Setting周期刷新可点击。
+- PPT目标收敛、同页新回执、PPT/Desktop锁获取有限等待、Accepted终态FIFO无丢失。
+
+### Git Commits
+
+（本轮未提交代码；工程修复与验收已完成。）
+
+### Testing
+
+- [OK] 最终solution Debug ARM64 exit0；同最终Headless12/12专项和默认全套exit0。
+- [OK] 最终产品6正常CLI exit0、坏参数2；PPT/Desktop实际worker故障注入与锁恢复通过。
+- [OK] 最终无控制台GUI设置capture释放、idle橡皮、持笔PPT翻页、Explorer及按住正常退出0/1.688s；自建PowerPoint正常关闭。
 
 ### Status
 
@@ -506,6 +648,25 @@
 ### Main Changes
 
 - 有界鼠标Hook异步桥、PPT滚轮身份传递与四项Inkeys3独立自动收起策略。
+- 本轮工程验收完成，后续代码尚未提交；无新增commit/push，待用户自行决定代码提交/归档。
+- 物理触摸/笔、WPS、Win7、多屏与用户现场共同根因仍未验证，保留证据边界。
+
+
+## Session 109: 提交画布卡死修复并归档五个相关任务
+<!-- trellis-session: v=2 fp=b2de93bf1136bf21 -->
+
+**Date**: 2026-10-18
+**Task**: 提交画布卡死修复并归档五个相关任务
+**Branch**: `bugfix/draw3`
+
+### Summary
+
+用户授权提交与结束任务；SSH签名重试成功，修复提交6b8bc1d7，父任务及F1–F4四子任务completed并归档。
+
+### Main Changes
+
+- 签名提交窗口/PPT准入、锁等待和终态交接修复，以及完整验收报告。
+- 五个任务归档至.trellis/tasks/archive/2026-10，更新规范、context和记录路径；保留原现场与设备未覆盖边界。
 
 ### Git Commits
 
@@ -549,6 +710,15 @@
 - [OK] 完整InkeysRepo.sln Debug|ARM64最终完整链接exit0；一次性关闭增量链接处理本机LNK1000，工程默认未改。
 - [OK] Headless --no-window、状态/快捷键owner及笔宽生产探针均exit0；三语391/391、独立检查、编码与diff检查通过。
 - [OK] 用户人工确认普通快捷键在关闭设置后有效，设置前台优先符合规划；收尾无产品改动，未重复构建/GUI。
+| `0eb1c7c5` | fix(pptcom): restore dynamic compatibility and deterministic COM cleanup |
+| `184cf86e` | chore: archive pptcom dynamic compatibility task |
+| `6b8bc1d73c8b7307528520c28fc952004ee3d8f1` | fix(draw3): restore canvas admission across window and PPT transitions |
+| `83d08514142211ba6ed5ca9c669c42ca9b139f55` | chore(trellis): archive completed canvas freeze tasks |
+
+### Testing
+
+- [OK] 复用已完成的最终Debug ARM64构建、12轮窗口、默认完整套件、CLI/存储与真实设置/PPT GUI结果；本轮仅提交及文档状态变更，无新增产品代码。
+- [OK] 五个归档任务context校验通过；提交前git diff --cached --check通过。
 
 ### Status
 
@@ -557,3 +727,62 @@
 ### Next Steps
 
 - 任务完成；未push，不扩大Win7/UIPI/Office实机验证声明。
+- 本线程由用户后续合入dev；本轮未push、未执行合并。
+
+
+## Session 111: PR238审阅修正、dev冲突解决与PPT控件任务结案
+<!-- trellis-session: v=2 fp=fb82a88eb36a8c82 -->
+
+**Date**: 2026-10-19
+**Task**: PR238审阅修正、dev冲突解决与PPT控件任务结案
+**Branch**: `bugfix/pptcom`
+
+### Summary
+
+采纳20屏幕DIP双门槛与140ms GUI验收文档修正；合入dev并保留基础控制/HWND升级及描述符待应用缓存，独立复核通过。
+
+### Main Changes
+
+- 解决IdtPlug-in.cpp和日志索引冲突，保留双方修复；归档PPT控件任务并校验归档context。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2791a1cc` | fix(pptcom): resolve dev conflicts and PR 238 review feedback |
+| `f3e83110` | chore(trellis): archive completed PPT controls task |
+
+### Testing
+
+- [OK] 完整Debug ARM64 solution exit0/260.80s；headless --no-window exit0/143.12s；生产offscreen exit0/26.91s，PageControlScene failures=0；格式与冲突检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 仅本地提交，无push；真实设备、USER32捕获与Office/WPP验收仍未执行。
+
+
+## Session 112: Draw3 光标改动与离笔回弹修复验收归档
+<!-- trellis-session: v=2 fp=3ebbf78557e12612 -->
+
+**Date**: 2026-10-19
+**Task**: Draw3 光标改动与离笔回弹修复验收归档
+**Branch**: `bugfix/cursor`
+
+### Summary
+
+完成光标样式与触摸生命周期改动，修复屏幕笔离开后系统Move错误接管鼠标画笔光标。完整Debug|ARM64与headless --no-window通过，用户2026-10-19确认人工验证通过并要求结束任务，已归档10-18-draw3-cursor-policy。此前未执行的Win7实机验证保持原记录；不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e9e9b1f5` | fix(draw3): refine cursor styles and touch cursor lifecycle |
+| `fb5559ff` | fix(draw3): prevent mouse cursor takeover after pen leaves |
+
+### Status
+
+[OK] **Completed**

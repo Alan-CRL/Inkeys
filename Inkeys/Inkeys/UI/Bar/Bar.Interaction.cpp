@@ -427,7 +427,8 @@ namespace
 		Pointer::MouseGesture mouseAdmission;
 	};
 	std::mutex barPointerMetadataMutex;
-	std::array<BarQueuedPointerSample, 1024> barPointerMetadata{};
+	// 大于 4096 条 HiMsg 容量，且为跳过保留 token 后的回绕留余量，避免覆盖未出队样本。
+	std::array<BarQueuedPointerSample, 8192> barPointerMetadata{};
 	unsigned short barPointerNextToken = 16;
 	struct BarTouchProducerState
 	{

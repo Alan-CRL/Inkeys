@@ -127,6 +127,8 @@ namespace PptCOM.Tests
                 };
                 descriptor = Descriptor(graph, failed, 7, out status);
                 Check(status == "EndScreen" && descriptor.status == "Unavailable" &&
+                    descriptor.currentPage == 0 && descriptor.totalPage == 3 &&
+                    descriptor.provider == "PowerPoint" && descriptor.slideShowHwnd == 100 &&
                     descriptor.slideIds.Length == 0 && failed.IsBalanced(),
                     stage + " never publishes incomplete done topology");
                 FakeAccessor busy = new FakeAccessor
@@ -135,7 +137,7 @@ namespace PptCOM.Tests
                     Failure = new COMException("busy", unchecked((int)0x8001010A))
                 };
                 descriptor = Descriptor(graph, busy, 7, out status);
-                Check(status == "EndScreen" && descriptor.status == "TransientBusy" &&
+                Check(status == "Unknown" && descriptor.status == "TransientBusy" &&
                     descriptor.slideIds.Length == 0 && busy.IsBalanced(),
                     stage + " busy done scan stays retryable");
             }
@@ -263,13 +265,18 @@ namespace PptCOM.Tests
             long session = cache.Capture().Session;
             FakeGraph graph = new FakeGraph("WPS Presentation");
             FakeAccessor accessor = new FakeAccessor();
-            Check(SlideShowSessionExit.Execute(new SlideShowExitRequest(session), cache, graph.Window, accessor) == 0,
-                "unknown HWND cannot execute guarded exit");
+            Check(SlideShowSessionExit.Execute(new SlideShowExitRequest(session), cache, graph.Window, accessor) == 1 &&
+                accessor.IsBalanced(), "same COM show can exit without HWND");
+            accessor.Invoked.Clear();
             string status;
             PresentationDescriptorValue first = Descriptor(graph, accessor, 7, out status);
             cache.Publish(cache.Capture(), first, status);
             Check(cache.Capture().Window == 100 && cache.Capture().Session == session,
                 "accepted late-bound descriptor adopts initial HWND without restarting show");
+            graph.Window.Properties["HWND"] = 0L;
+            Check(SlideShowSessionExit.Execute(new SlideShowExitRequest(session), cache, graph.Window, accessor) == 1 &&
+                cache.Capture().Window == 100, "temporarily missing HWND keeps old anchor but permits object-directed exit");
+            accessor.Invoked.Clear();
             graph.Window.Properties["HWND"] = 101L;
             Check(SlideShowSessionExit.Execute(new SlideShowExitRequest(session), cache, graph.Window, accessor) == 0 &&
                 accessor.Invoked.Count == 0, "changed HWND rejected at actual exit execution");

@@ -74,7 +74,7 @@ namespace Inkeys::Input::HookTransport
 	{
 		std::atomic_uint64_t serial = 0;
 		std::atomic_uint64_t context = 0, generation = 0;
-		std::atomic_uint64_t localSession = 0, service = 0, show = 0, binding = 0;
+		std::atomic_uint64_t localSession = 0, service = 0, show = 0, binding = 0, processStartTime = 0;
 		std::atomic_uintptr_t window = 0;
 		std::atomic_uint32_t process = 0;
 		std::atomic_uint32_t flags = 0;
@@ -91,6 +91,7 @@ namespace Inkeys::Input::HookTransport
 			binding.store(value.session.bindingRevision, std::memory_order_relaxed);
 			window.store(value.session.showWindow, std::memory_order_relaxed);
 			process.store(value.session.processId, std::memory_order_relaxed);
+			processStartTime.store(value.session.processStartTime, std::memory_order_relaxed);
 			flags.store((value.route.wheelEnabled ? 1U : 0U)
 				| (value.route.outsideClickEnabled ? 2U : 0U)
 				| (value.session.active ? 4U : 0U)
@@ -109,6 +110,7 @@ namespace Inkeys::Input::HookTransport
 			value.session.bindingRevision = binding.load(std::memory_order_relaxed);
 			value.session.showWindow = window.load(std::memory_order_relaxed);
 			value.session.processId = process.load(std::memory_order_relaxed);
+			value.session.processStartTime = processStartTime.load(std::memory_order_relaxed);
 			const auto bits = flags.load(std::memory_order_relaxed);
 			value.route.wheelEnabled = (bits & 1U) != 0;
 			value.route.outsideClickEnabled = (bits & 2U) != 0;

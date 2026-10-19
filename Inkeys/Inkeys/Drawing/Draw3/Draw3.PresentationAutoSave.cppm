@@ -156,6 +156,16 @@ export namespace Inkeys::Drawing::Draw3
 		RegisterVersion,
 	};
 	using PresentationCollectionAllocationHook = void (*)(void*, PresentationCollectionAllocationStage) noexcept;
+	enum class PresentationCompletionTestStage : std::uint8_t
+	{
+		RequestCompletion,
+		RequestIdentity,
+		RequestQueueNode,
+		WorkerOperation,
+		PublishBegin,
+		PublishEnd,
+	};
+	using PresentationCompletionTestHook = void (*)(void*, PresentationCompletionTestStage) noexcept;
 #endif
 
 	// 仅供无窗口事务测试注入；生产必须保持默认值。
@@ -175,6 +185,8 @@ export namespace Inkeys::Drawing::Draw3
 		void* collectionContext = nullptr;
 		PresentationCollectionAllocationHook collectionAllocationHook = nullptr;
 		void* collectionAllocationContext = nullptr;
+		PresentationCompletionTestHook completionHook = nullptr;
+		void* completionContext = nullptr;
 #endif
 	};
 
@@ -197,6 +209,8 @@ export namespace Inkeys::Drawing::Draw3
 		PresentationPersistenceSubmitStatus SubmitLoad(
 			PresentationLoadRequest request) noexcept;
 		bool TryTakeCompletion(PresentationPersistenceCompletion& completion) noexcept;
+		// Host 直接接管请求接受前预留的 payload，不在取出终态后再次分配。
+		bool TryTakeCompletion(std::shared_ptr<const PresentationPersistenceCompletion>& completion) noexcept;
 		void CloseAndDrain() noexcept;
 		std::string SessionId() const;
 		PresentationPersistenceDiagnostics Diagnostics() const noexcept;

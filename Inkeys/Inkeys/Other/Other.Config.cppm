@@ -349,6 +349,10 @@ GROUP(UI, \
 		) \
 	) \
 	GROUP(Drawing, \
+		GROUP(Cursor, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseStyle, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenStyle, 0) \
+		) \
 		GROUP(Eraser, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BaseDiameterDip, 32) \
@@ -368,6 +372,8 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnect, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \
 			) \
 			GROUP(ConsoleOutput, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \

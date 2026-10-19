@@ -164,7 +164,7 @@ namespace
 		// 未取得可信启动快照前，未知按压整次 Forward；不从失败零值猜测 Up。
 		bridge.ResetProducer();
 		running.store(true, std::memory_order_release);
-		hookHandle = SetWindowsHookExW(WH_KEYBOARD_LL, KeyboardProc, nullptr, 0);
+		hookHandle = SetWindowsHookExW(WH_KEYBOARD_LL, KeyboardProc, GetModuleHandleW(nullptr), 0);
 		hookInstalled.store(hookHandle != nullptr, std::memory_order_release);
 		hookError.store(hookHandle ? 0 : GetLastError(), std::memory_order_relaxed);
 		bool baselineCaptured = BootstrapKeys();

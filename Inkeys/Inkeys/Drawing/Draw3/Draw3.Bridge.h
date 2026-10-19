@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.CursorSettings.h"
 #include "../../Business/PenWidthPolicy.hpp"
 
 #include <array>
@@ -37,6 +38,26 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		FilledRectangle,
 		ConfiguredEraser // 普通橡皮按输入入口配置；FixedEraser/SpeedEraser仍是显式工具。
 	};
+
+	// 鼠标类型只作用于软/硬笔；荧光笔预览独立开启，其余工具保留专用或系统策略。
+	constexpr MouseCursorStyle ResolveMouseCursorStyleForTool(
+		Tool tool, MouseCursorStyle selected) noexcept
+	{
+		switch (tool)
+		{
+		case Tool::Pen:
+		case Tool::HardPen: return selected;
+		case Tool::Highlighter: return MouseCursorStyle::Drawing;
+		default: return MouseCursorStyle::System;
+		}
+	}
+
+	// 仅生成当前实际工具的有效快照，原始鼠标/笔选择不因临时投影丢失。
+	constexpr CursorSettings ResolveCursorSettingsForTool(Tool actualTool, CursorSettings selected) noexcept
+	{
+		selected.mouseStyle = ResolveMouseCursorStyleForTool(actualTool, selected.mouseStyle);
+		return selected;
+	}
 
 	// 绘制线程记录最近一次正常结束的实际笔类，供产品 UI 恢复临时切换前的模式。
 	enum class CompletedStrokeKind : std::uint8_t
@@ -212,6 +233,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Inkeys::Business::PenWidth::Context penWidthContext;
 		int paintDevice = 1; // 0 大屏，1 笔电；沿用已有绘图设备选项。
 		SpeedEraser::InputSettings eraserInputs;
+		CursorSettings cursorSettings;
 		bool selectionMode = true;
 		bool autoSaveEnabled = false;
 		std::uint32_t page = 0;
@@ -251,6 +273,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool PublishWorkspace(Workspace workspace) noexcept;
 		std::optional<std::uint64_t> PublishPresentationTarget(
 			const PresentationTarget& target, bool* changed = nullptr) noexcept;
+		// 暂停后的同页恢复也必须产生新呈现身份，不能复用一次性的 UI 回执。
+		bool RequirePresentationTargetRefresh(const PresentationReadyIdentity& expected) noexcept;
 		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
@@ -272,6 +296,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::size_t capacity_ = 256;
 		std::uint64_t nextSequence_ = 1;
 		std::uint64_t nextTargetRevision_ = 1;
+		std::optional<PresentationReadyIdentity> targetRefreshRequired_;
 		bool running_ = true;
 	};
 }

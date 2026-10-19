@@ -422,6 +422,15 @@
     "Draw":
     {
       "N": "Drawing",
+      "Cursor":
+      {
+        "N": "Cursor",
+        "Description": "The mouse option applies only to soft and hard pens. Highlighters always preview width; shapes use the system cursor. The default pen cursor is circular. Screen pens have no highlighted edges; pen tablets and unrecognized pens have highlighted edges.",
+        "MouseStyle": "Mouse",
+        "PenStyle": "Pen",
+        "DefaultStyle": "Default cursor",
+        "DrawingStyle": "Pen-shaped cursor"
+      },
       "Effect":
       {
         "N": "Drawing Performance",
@@ -488,6 +497,19 @@
     },
     "Experimental":
     {
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "Enable drawing hardware acceleration",
+          "E": "Use the GPU to draw the canvas. Try disabling this to use software rendering if drawing is incorrect or very slow. Restart Inkeys to apply."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Enable Zhaoxin compatibility mode",
+          "E": "Use a compatible upload path on Zhaoxin GPUs. Other GPUs are unaffected. Disable to compare drawing performance. Restart Inkeys to apply."
+        }
+      },
       "ConsoleOutput":
       {
         "TouchArea":

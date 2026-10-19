@@ -503,6 +503,8 @@ namespace Inkeys::Window
 				if (GetCurrentThreadId() == settingThreadId_.load(std::memory_order_acquire))
 					return false;
 				if (!RequestTopmostRefresh()) return false;
+				// 根已置顶时，新接入的 Setting 仍可能留在画布下方；由自身线程补齐带内顺序。
+				if (!Submit(WindowRole::Setting, CommandType::RaiseOwnedSetting)) return false;
 			}
 			return matches();
 		}
@@ -659,6 +661,7 @@ namespace Inkeys::Window
 			SetBounds,
 			SetClickThrough,
 			SetSettingOwnedByDrawpad,
+			RaiseOwnedSetting,
 			SetExtendedStyleFlags,
 			SetWhiteboardWindowMode,
 			MinimizeWhiteboardGroup,
@@ -729,6 +732,7 @@ namespace Inkeys::Window
 				type == CommandType::SetDrawpadSurfaceVisibility ||
 				type == CommandType::SetBounds ||
 				type == CommandType::SetSettingOwnedByDrawpad ||
+				type == CommandType::RaiseOwnedSetting ||
 				type == CommandType::RefreshTopmost ||
 				type == CommandType::PromotePpt;
 		}
@@ -745,6 +749,7 @@ namespace Inkeys::Window
 			case CommandType::SetBounds: return L"SetBounds";
 			case CommandType::SetSettingOwnedByDrawpad:
 				return L"SetSettingOwnedByDrawpad";
+			case CommandType::RaiseOwnedSetting: return L"RaiseOwnedSetting";
 			case CommandType::RefreshTopmost: return L"RefreshTopmost";
 			case CommandType::PromotePpt: return L"PromotePpt";
 			default: return L"Other";
@@ -1632,6 +1637,7 @@ namespace Inkeys::Window
 			{
 				// 旧队列中的显示事务不能越过正式退出；隐藏和销毁仍可排空。
 				if (command.type == CommandType::Show ||
+					command.type == CommandType::RaiseOwnedSetting ||
 					command.type == CommandType::Create ||
 					command.type == CommandType::SetWhiteboardWindowMode ||
 					command.type == CommandType::RestoreWhiteboardGroup ||
@@ -1724,7 +1730,8 @@ namespace Inkeys::Window
 				}
 				if (shutdownRequested_.load(std::memory_order_acquire))
 				{
-					ShowWindow(hwnd, SW_HIDE);
+					if (IsSetting(command.role)) (void)HideSettingWindow(hwnd);
+					else ShowWindow(hwnd, SW_HIDE);
 					return false;
 				}
 				ReportCommandResult(command, succeeded,
@@ -1733,6 +1740,13 @@ namespace Inkeys::Window
 				return succeeded;
 			}
 			case CommandType::Hide:
+				if (IsSetting(command.role))
+				{
+					const bool hidden = HideSettingWindow(hwnd);
+					const DWORD error = hidden ? ERROR_SUCCESS : GetLastError();
+					ReportCommandResult(command, hidden, error, hwnd);
+					return hidden;
+				}
 				ShowWindow(hwnd, SW_HIDE);
 				if (IsPpt(command.role) && IsWindowVisible(hwnd))
 				{
@@ -1792,6 +1806,39 @@ namespace Inkeys::Window
 					hwnd, nullptr, 0, 0, 0, 0,
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
 					SWP_NOACTIVATE | SWP_FRAMECHANGED) != FALSE;
+			}
+			case CommandType::RaiseOwnedSetting:
+			{
+				const HWND owner = Handle(WindowRole::Drawpad);
+				if (!owner || !IsWindow(owner) || GetWindow(hwnd, GW_OWNER) != owner)
+					return false;
+				const HWND root = OverlayRoot();
+				const bool topmost = overlayTopmost_.load(std::memory_order_acquire)
+					&& !whiteboardWindowMode_.load(std::memory_order_acquire);
+				if (!root || !IsWindow(root)
+					|| ((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != topmost)
+					return false;
+				if (((GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != topmost)
+				{
+					// 只在实际band失配时从当前根继承；随后TOP将owned恢复到owner上方。
+					SetLastError(ERROR_SUCCESS);
+					const bool inherited = SetWindowPos(hwnd, root, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) != FALSE;
+					const DWORD inheritError = inherited ? ERROR_SUCCESS : GetLastError();
+					if (!inherited || ((GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != topmost)
+					{
+						ReportCommandResult(command, false, inheritError ? inheritError : ERROR_GEN_FAILURE, hwnd);
+						return false;
+					}
+				}
+				// 不显示、不激活、不改变 owner 的 Z 序；topmost band 继续只由根策略决定。
+				SetLastError(ERROR_SUCCESS);
+				const bool succeeded = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) != FALSE;
+				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				ReportCommandResult(command, succeeded, error, hwnd);
+				return succeeded;
 			}
 			case CommandType::SetSettingOwnedByDrawpad:
 			{
@@ -1876,6 +1923,41 @@ namespace Inkeys::Window
 					// Whiteboard 是普通可激活窗口组，任何外部刷新都不得把它重新推回 TOPMOST。
 					const bool keepTopmost = overlayTopmost_.load(std::memory_order_acquire)
 						&& !whiteboardWindowMode_.load(std::memory_order_acquire);
+					const HWND bar = Handle(WindowRole::Bar);
+					std::array<HWND, 8> ownerOrder{ Handle(WindowRole::Freeze),
+						Handle(WindowRole::DrawpadPresentation), Handle(WindowRole::Drawpad) };
+					struct PptOrderSnapshot
+					{
+						std::array<HWND, 4> targets;
+						std::array<HWND, 4> ordered{};
+						std::size_t expected = 0;
+						std::size_t count = 0;
+					};
+					PptOrderSnapshot pptOrder{ { Handle(WindowRole::PptBottomLeft), Handle(WindowRole::PptBottomRight),
+						Handle(WindowRole::PptMiddleLeft), Handle(WindowRole::PptMiddleRight) } };
+					for (const HWND target : pptOrder.targets) if (target) ++pptOrder.expected;
+					if (keepTopmost && pptOrder.expected)
+					{
+						// 固定四句柄快照保留PPT当前相对Z序；收齐即结束，不在重排中遍历窗口链。
+						SetLastError(ERROR_SUCCESS);
+						(void)EnumWindows([](HWND candidate, LPARAM context) -> BOOL
+							{
+								auto& snapshot = *reinterpret_cast<PptOrderSnapshot*>(context);
+								for (const HWND target : snapshot.targets)
+									if (candidate == target) { snapshot.ordered[snapshot.count++] = candidate; break; }
+								return snapshot.count < snapshot.expected;
+							}, reinterpret_cast<LPARAM>(&pptOrder));
+						const DWORD snapshotError = GetLastError();
+						if (pptOrder.count != pptOrder.expected)
+						{
+							ReportCommandResult(command, false,
+								snapshotError ? snapshotError : ERROR_INVALID_WINDOW_HANDLE, root);
+							return false;
+						}
+					}
+					for (std::size_t index = 0; index < pptOrder.count; ++index)
+						ownerOrder[3 + index] = pptOrder.ordered[pptOrder.count - index - 1];
+					ownerOrder[7] = bar;
 					SetLastError(ERROR_SUCCESS);
 					const bool succeeded = root && SetWindowPos(
 						root, keepTopmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
@@ -1884,10 +1966,80 @@ namespace Inkeys::Window
 					if (!root) error = ERROR_INVALID_WINDOW_HANDLE;
 					else if (!succeeded && error == ERROR_SUCCESS)
 						error = ERROR_GEN_FAILURE;
-					ReportCommandResult(command, succeeded, error, root);
-					if (!succeeded) return false;
+					if (!succeeded)
+					{
+						ReportCommandResult(command, false, error, root);
+						return false;
+					}
+					if (((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != keepTopmost)
+					{
+						// 原生调用可能返回成功但根band未改变；先只校正根，再按原规则传播一次。
+						SetLastError(ERROR_SUCCESS);
+						const bool corrected = SetWindowPos(root, keepTopmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+							0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) != FALSE;
+						error = corrected ? ERROR_SUCCESS : GetLastError();
+						if (!corrected || ((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != keepTopmost)
+						{
+							ReportCommandResult(command, false, error ? error : ERROR_GEN_FAILURE, root);
+							return false;
+						}
+						SetLastError(ERROR_SUCCESS);
+						const bool propagated = SetWindowPos(root, keepTopmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+							0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+						error = propagated ? ERROR_SUCCESS : GetLastError();
+						if (!propagated)
+						{
+							ReportCommandResult(command, false, error ? error : ERROR_GEN_FAILURE, root);
+							return false;
+						}
+					}
 					ApplyOverlayFullscreen(root);
-					return true;
+					if (keepTopmost)
+					{
+						// 基础组按owner先后补齐Z序，原生owner联动保留可见Setting在画布上方。
+						for (const HWND member : ownerOrder)
+						{
+							if (!member || member == root) continue;
+							if (((GetWindowLongPtrW(member, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != keepTopmost)
+							{
+								// Win32传播可能遗漏基础节点；以同一根为锚继承band，禁止逐节点MOST。
+								SetLastError(ERROR_SUCCESS);
+								const bool inherited = IsWindow(root) && SetWindowPos(member, root, 0, 0, 0, 0,
+									SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) != FALSE;
+								const DWORD inheritError = inherited ? ERROR_SUCCESS : GetLastError();
+								if (!inherited || ((GetWindowLongPtrW(member, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != keepTopmost)
+								{
+									ReportCommandResult(command, false, inheritError ? inheritError : ERROR_GEN_FAILURE, member);
+									return false;
+								}
+							}
+							SetLastError(ERROR_SUCCESS);
+							if (!SetWindowPos(member, HWND_TOP, 0, 0, 0, 0,
+								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+							{
+								const DWORD orderError = GetLastError();
+								ReportCommandResult(command, false, orderError ? orderError : ERROR_GEN_FAILURE, member);
+								return false;
+							}
+						}
+					}
+					else if (bar)
+					{
+						// 普通/白板组允许激活，沿用原生owner联动排序，避免NOOWNER造成child落到owner下。
+						SetLastError(ERROR_SUCCESS);
+						if (!SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
+							SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+						{
+							const DWORD orderError = GetLastError();
+							ReportCommandResult(command, false, orderError ? orderError : ERROR_GEN_FAILURE, bar);
+							return false;
+						}
+					}
+					const bool ordered = IsWindow(root)
+						&& ((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) == keepTopmost;
+					error = ordered ? ERROR_SUCCESS : ERROR_GEN_FAILURE;
+					ReportCommandResult(command, ordered, error, root);
+					return ordered;
 				}
 			case CommandType::PromotePpt:
 			{
@@ -1927,15 +2079,30 @@ namespace Inkeys::Window
 			return false;
 		}
 
+		[[nodiscard]] bool HideSettingWindow(HWND hwnd) noexcept
+		{
+			DWORD error = ERROR_SUCCESS;
+			// 仅在 HWND owner thread 收束设置自己的捕获，不影响已转交给主栏/画布的输入。
+			if (GetCapture() == hwnd)
+			{
+				SetLastError(ERROR_SUCCESS);
+				const bool released = ReleaseCapture() != FALSE;
+				const DWORD releaseError = released ? ERROR_SUCCESS : GetLastError();
+				if (GetCapture() == hwnd)
+					error = releaseError == ERROR_SUCCESS ? ERROR_GEN_FAILURE : releaseError;
+			}
+			ShowWindow(hwnd, SW_HIDE);
+			if (IsWindowVisible(hwnd) && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+			SetLastError(error);
+			return error == ERROR_SUCCESS;
+		}
+
 		[[nodiscard]] bool HideUserWindowsInGroup(bool settingGroup) noexcept
 		{
 			if (settingGroup)
 			{
 				if (const HWND hwnd = Handle(WindowRole::Setting); hwnd && IsWindow(hwnd))
-				{
-					ShowWindow(hwnd, SW_HIDE);
-					return !IsWindowVisible(hwnd);
-				}
+					return HideSettingWindow(hwnd);
 				return true;
 			}
 

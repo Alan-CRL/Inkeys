@@ -425,6 +425,15 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Draw
         {
             const char* N = "SettingsUI/Draw/N";
+            struct Node__SettingsUI__Draw__Cursor
+            {
+                const char* N = "SettingsUI/Draw/Cursor/N";
+                const char* Description = "SettingsUI/Draw/Cursor/Description";
+                const char* MouseStyle = "SettingsUI/Draw/Cursor/MouseStyle";
+                const char* PenStyle = "SettingsUI/Draw/Cursor/PenStyle";
+                const char* DefaultStyle = "SettingsUI/Draw/Cursor/DefaultStyle";
+                const char* DrawingStyle = "SettingsUI/Draw/Cursor/DrawingStyle";
+            } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {
                 const char* N = "SettingsUI/Draw/Effect/N";
@@ -491,6 +500,19 @@ inline constexpr struct I18nKeyRoot
         } Preset{};
         struct Node__SettingsUI__Experimental
         {
+            struct Node__SettingsUI__Experimental__Draw3
+            {
+                struct Node__SettingsUI__Experimental__Draw3__HardwareAcceleration
+                {
+                    const char* N = "SettingsUI/Experimental/Draw3/HardwareAcceleration/N";
+                    const char* E = "SettingsUI/Experimental/Draw3/HardwareAcceleration/E";
+                } HardwareAcceleration{};
+                struct Node__SettingsUI__Experimental__Draw3__ZhaoxinCompatibility
+                {
+                    const char* N = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/N";
+                    const char* E = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/E";
+                } ZhaoxinCompatibility{};
+            } Draw3{};
             struct Node__SettingsUI__Experimental__ConsoleOutput
             {
                 struct Node__SettingsUI__Experimental__ConsoleOutput__TouchArea
