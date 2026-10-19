@@ -716,3 +716,38 @@
 ### Next Steps
 
 - 任务已归档；未push。
+
+
+## Session 115: UI3 taskbar docking and canvas policy completed
+<!-- trellis-session: v=2 fp=65edf964e6576402 -->
+
+**Date**: 2026-10-19
+**Task**: UI3 taskbar docking and canvas policy completed
+**Branch**: `featrue/zoom`
+
+### Summary
+
+Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-based scale defaults, and five-second taskbar polling; user authorized signed commits and closure of the parent and both child tasks.
+
+### Main Changes
+
+- Preserved WinEvent-driven updates and one-shot 25ms coalescing; both taskbar periodic polling timers are 5000ms.
+- Archived ui3-taskbar-dock-adaptation, taskbar-dock-follow and canvas-edge-fullscreen-policy with completed metadata and valid archived context references.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3e5bb005` | feat(ui3): adapt taskbar docking and canvas edge policy |
+| `277b4956` | perf(ui3): reduce taskbar polling to five-second intervals |
+| `91f36824` | chore(trellis): archive completed taskbar docking tasks |
+
+### Testing
+
+- [OK] Latest full InkeysRepo.sln Debug ARM64 build passed: exit0, 14.34s, 0errors/0warnings; diff and BOM/CRLF checks passed.
+- [OK] Earlier implementation and device-default follow-up passed fresh Headless --no-window and config-boundary-test; interval-only follow-up did not rerun algorithm tests. No GUI or CPU profiling performed.
+- [OK] All three archived task context manifests validated successfully; current-task pointer cleared.
+
+### Status
+
+[OK] **Completed**
