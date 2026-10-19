@@ -615,6 +615,39 @@ int RunBarBottomDockTests()
 		&& Near(ClampBarBottomDockMainCenterScreenX(
 			650.0, RECT{ 0, 0, 1000, 600 }, 40.0, 1.0), 650.0),
 		"horizontal reversal remains exact and independent");
+	for (double initialZoom : { 1.0, 1.5, 1.875 })
+	{
+		const RECT edgeMonitor{ -1200, -100, 800, 1000 };
+		const double logicalGrabX = 17.0, logicalGrabY = -13.0;
+		double zoom = initialZoom;
+		double grabX = logicalGrabX * zoom, grabY = logicalGrabY * zoom;
+		for (double targetZoom : { initialZoom, initialZoom, 2.0, 0.75, initialZoom })
+		{
+			// 呈现可能仍停在限位处；只用生产缩放策略保持原逻辑抓点。
+			for (double edgePointerX : { -10000.0, 10000.0 })
+			{
+				const double clampedCenter = ClampBarBottomDockMainCenterScreenX(
+					edgePointerX - grabX, edgeMonitor, 40.0, zoom);
+				Check(std::abs(edgePointerX - clampedCenter - grabX) > 1000.0,
+					"large edge excursion separates cursor from constrained visual grip");
+				const double unchangedGrab = ScaleBarDragGrabOffsetForZoom(grabX, zoom, zoom);
+				Check(unchangedGrab == grabX,
+					"repeated display serial at same zoom cannot regrab constrained presentation");
+			}
+			grabX = ScaleBarDragGrabOffsetForZoom(grabX, zoom, targetZoom);
+			grabY = ScaleBarDragGrabOffsetForZoom(grabY, zoom, targetZoom);
+			zoom = targetZoom;
+			Check(Near(grabX / zoom, logicalGrabX) && Near(grabY / zoom, logicalGrabY),
+				"real presented zoom preserves both original logical grab coordinates");
+			for (double center : { -800.0, -100.0, 500.0 })
+			{
+				const double returnedPointer = center + logicalGrabX * zoom;
+				Check(Near(ClampBarBottomDockMainCenterScreenX(
+					returnedPointer - grabX, edgeMonitor, 40.0, zoom), center),
+					"return from large edge excursion restores original grabbed point after zoom");
+			}
+		}
+	}
 	Check(ResolveBarMainBarRightSide(500.0, 1000.0)
 		&& ResolveBarMainBarRightSide(499.99, 1000.0)
 		&& !ResolveBarMainBarRightSide(500.01, 1000.0),

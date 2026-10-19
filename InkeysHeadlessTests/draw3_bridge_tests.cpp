@@ -1,4 +1,5 @@
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Shortcut.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TimerPeriod.h"
@@ -609,6 +610,109 @@ namespace
 		else ++calls->ended;
 	}
 
+	void TestAcceptedStrokeNoticeLifecycle(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostAcceptedStrokeContext;
+		using Inkeys::Drawing::Draw3::Detail::HostAcceptedStrokeState;
+		using Inkeys::Drawing::Draw3::Detail::HostDrawingActivityState;
+		HostAcceptedStrokeState state;
+		HostAcceptedStrokeContext current;
+		current.running = true;
+		state.BeginHost();
+		AcceptedStrokeBegin scene;
+		scene.sceneGeneration = 1;
+		state.PublishScene(scene);
+		auto accepted = scene;
+		accepted.kind = CompletedStrokeKind::Drawing;
+		state.Stamp(accepted);
+		if (!Expect(state.IsCurrent(accepted, current),
+			"accepted stroke in current CPU scene is valid before any Present acknowledgement")) ++failures;
+
+		HostDrawingActivityState activity;
+		activity.Publish(true, nullptr, nullptr);
+		activity.EndIfActive(nullptr, nullptr);
+		if (!Expect(!activity.Active() && state.IsCurrent(accepted, current),
+			"short stroke ending before UI consumes begin does not retire the notice")) ++failures;
+		auto secondContact = accepted;
+		secondContact.kind = CompletedStrokeKind::Eraser;
+		auto shapeContact = accepted;
+		shapeContact.kind = CompletedStrokeKind::Shape;
+		if (!Expect(state.IsCurrent(secondContact, current) && state.IsCurrent(shapeContact, current),
+			"each accepted eraser or shape in an overlapping batch retains its own kind")) ++failures;
+		auto rejected = accepted;
+		rejected.kind = CompletedStrokeKind::None;
+		if (!Expect(!state.IsCurrent(rejected, current),
+			"scene-only or rejected contact metadata cannot become a begin notice")) ++failures;
+
+		scene.workspace = Workspace::Whiteboard;
+		++scene.sceneGeneration;
+		state.PublishScene(scene);
+		scene.workspace = Workspace::Desktop;
+		++scene.sceneGeneration;
+		state.PublishScene(scene);
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"leaving and returning to the same workspace/page does not revive old begin")) ++failures;
+		accepted = scene;
+		accepted.kind = CompletedStrokeKind::Drawing;
+		state.Stamp(accepted);
+		++scene.sceneGeneration;
+		state.PublishScene(scene);
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"Clear or recovery retires old notice even with identical page coordinates")) ++failures;
+		accepted = scene;
+		accepted.kind = CompletedStrokeKind::Drawing;
+		state.Stamp(accepted);
+		current.desiredWorkspace = Workspace::Whiteboard;
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"new desired workspace rejects old begin before CPU switch completes")) ++failures;
+		current.desiredWorkspace = Workspace::Desktop;
+		current.commandScenePending = true;
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"pending scene command cannot fold the old scene")) ++failures;
+		current.commandScenePending = false;
+		current.running = false;
+		if (!Expect(!state.IsCurrent(accepted, current), "stopped Host rejects begin")) ++failures;
+		current.running = true;
+		state.BeginHost();
+		state.PublishScene(scene);
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"Host restart rejects old begin even when scene generation is reused")) ++failures;
+
+		scene.workspace = Workspace::Presentation;
+		scene.pageIndex = 2;
+		++scene.sceneGeneration;
+		PresentationReadyIdentity presentation;
+		presentation.key.bytes[0] = 3;
+		presentation.pageIndex = 2;
+		presentation.sessionRevision = 7;
+		presentation.targetRevision = 9;
+		scene.presentation = presentation;
+		state.PublishScene(scene);
+		accepted = scene;
+		accepted.kind = CompletedStrokeKind::Eraser;
+		state.Stamp(accepted);
+		current.desiredWorkspace = Workspace::Presentation;
+		current.desiredPresentation = presentation;
+		if (!Expect(state.IsCurrent(accepted, current), "matching PPT begin is valid")) ++failures;
+		current.admissionBlocked = true;
+		if (!Expect(!state.IsCurrent(accepted, current), "suspended PPT rejects pending begin")) ++failures;
+		current.admissionBlocked = false;
+		++current.desiredPresentation->sessionRevision;
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"same PPT page in a reopened show rejects old begin")) ++failures;
+		current.desiredPresentation = presentation;
+		++current.desiredPresentation->targetRevision;
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"new PPT target rejects old begin before scene switch")) ++failures;
+		current.desiredPresentation.reset();
+		if (!Expect(!state.IsCurrent(accepted, current), "unknown PPT target rejects begin")) ++failures;
+		current.desiredPresentation = presentation;
+		scene.pageIndex = 3;
+		state.PublishScene(scene);
+		if (!Expect(!state.IsCurrent(accepted, current),
+			"logical current page is checked independently of presentation target")) ++failures;
+	}
+
 	void TestDrawingActivityLifecycle(int& failures)
 	{
 		using Inkeys::Drawing::Draw3::Detail::HostDrawingActivityState;
@@ -627,12 +731,162 @@ namespace
 			&& calls.started == 2 && calls.ended == 2 && !state.Active(),
 			"host stop or exception completes one active drawing interval")) ++failures;
 	}
+	void TestConditionalShortcutCommands(int& failures)
+	{
+		namespace Shortcut = Inkeys::Drawing::Draw3::Shortcuts;
+		StateBridge bridge;
+		Shortcut::State state;
+		state.BeginHost();
+		Shortcut::Context actual;
+		actual.scope.pageEpoch = 1;
+		actual.contentRevision = 5;
+		actual.available = true;
+		actual.hasContent = true;
+		state.Publish(actual, bridge.Snapshot().shortcutIntentEpoch);
+		auto source = state.Snapshot();
+		std::array<std::uint64_t, 3> ids{};
+		const std::array commands{ CommandType::Clear, CommandType::Undo, CommandType::Redo };
+		for (std::size_t i = 0; i != commands.size(); ++i)
+		{
+			ids[i] = state.Reserve(source.scope);
+			auto request = std::make_shared<Shortcut::Request>(Shortcut::Request{ ids[i], source.scope, 0 });
+			if (!Expect(ids[i] && bridge.PublishShortcut(commands[i], request) == CommandResult::Accepted,
+				"shortcut Clear/Undo/Redo reserve exact completion before same-page enqueue")) ++failures;
+		}
+		Command command;
+		for (std::size_t i = 0; i != commands.size(); ++i)
+		{
+			if (!Expect(bridge.TryConsume(command) && command.type == commands[i] && command.shortcut &&
+				command.shortcut->requestId == ids[i] &&
+				state.Authorize(*command.shortcut, actual) == Shortcut::Result::Applied,
+				"production Controller admission keeps same-page FIFO across Clear content revisions")) ++failures;
+			actual.contentRevision++;
+			actual.hasContent = i == 1;
+			state.Publish(actual, source.scope.intentEpoch);
+			state.Complete(ids[i], Shortcut::Result::Applied);
+			Shortcut::Completion result;
+			if (!Expect(state.Take(ids[i], result) && result.source.scope == source.scope &&
+				result.resultContext.contentRevision == actual.contentRevision &&
+				!state.Take(ids[i], result), "named completion contains its exact post-mutation context once")) ++failures;
+		}
+
+		const auto oldScope = state.Snapshot().scope;
+		const auto oldId = state.Reserve(oldScope);
+		Shortcut::Request old{ oldId, oldScope, 0 };
+		actual.scope.pageEpoch = 2;
+		state.Publish(actual, oldScope.intentEpoch);
+		actual.scope.pageEpoch = 3; // A→B→A，页号可以相同，epoch 不复用。
+		state.Publish(actual, oldScope.intentEpoch);
+		if (!Expect(state.Authorize(old, actual) == Shortcut::Result::Stale,
+			"actual Controller page ABA rejects the delayed shortcut")) ++failures;
+		state.Retire(oldId);
+		const auto fresh = state.Snapshot();
+		const auto lease = state.Acquire(fresh, true);
+		const auto ownedId = state.Reserve(fresh.scope);
+		Shortcut::Request owned{ ownedId, fresh.scope, lease };
+		if (!Expect(lease && state.Authorize(owned, actual) == Shortcut::Result::Applied,
+			"compound transaction permits only its own lease-stamped Clear")) ++failures;
+		for (const auto command : { CommandType::Clear, CommandType::Undo, CommandType::Redo })
+			if (!Expect(!state.OrdinaryCommandAllowed(command),
+				"compound lease excludes ordinary mouse content edits until selection commit")) ++failures;
+		if (!Expect(state.OrdinaryCommandAllowed(CommandType::NextPage) &&
+			state.OrdinaryCommandAllowed(CommandType::Save),
+			"compound lease does not rewrite unrelated existing command admission")) ++failures;
+		owned.expectedContentRevision = actual.contentRevision;
+		actual.hasContent = false;
+		if (!Expect(Shortcut::ResolveFence(owned, actual) == Shortcut::Result::NoContent,
+			"production fence accepts exact named empty content without a second Clear")) ++failures;
+		++actual.contentRevision;
+		if (!Expect(Shortcut::ResolveFence(owned, actual) == Shortcut::Result::Stale,
+			"an admitted contact finalized before fence invalidates second-Delete empty proof")) ++failures;
+		--actual.contentRevision;
+		owned.leaseId = 0;
+		if (!Expect(state.Authorize(owned, actual) == Shortcut::Result::Blocked &&
+			!state.Release(lease + 1) && state.Lease() == lease && state.Release(lease),
+			"foreign command and lease release cannot open another transaction gate")) ++failures;
+		for (const auto command : { CommandType::Clear, CommandType::Undo, CommandType::Redo })
+			if (!Expect(state.OrdinaryCommandAllowed(command),
+				"own lease release immediately restores ordinary content commands")) ++failures;
+		state.Retire(ownedId);
+		actual.contentRevision++;
+		state.Publish(actual, fresh.scope.intentEpoch);
+		if (!Expect(!state.Acquire(fresh, true),
+			"new ink or Undo after first Delete rejects stale second-Delete empty proof")) ++failures;
+		const auto beforeRestart = state.Snapshot();
+		state.BeginHost();
+		state.Publish(actual, fresh.scope.intentEpoch);
+		if (!Expect(!state.Reserve(beforeRestart.scope), "Host restart retires all prior shortcut scopes")) ++failures;
+
+		auto request = std::make_shared<Shortcut::Request>();
+		request->requestId = 1;
+		request->scope.workspace = Workspace::Desktop;
+		request->scope.intentEpoch = bridge.Snapshot().shortcutIntentEpoch;
+		auto tool = bridge.Snapshot();
+		tool.tool = Tool::HardPen;
+		bridge.PublishState(tool);
+		if (!Expect(bridge.PublishShortcut(CommandType::Clear, request) == CommandResult::Accepted,
+			"tool publication does not replace stable page identity")) ++failures;
+		bridge.TryConsume(command);
+		bridge.PublishWorkspace(Workspace::Whiteboard);
+		bridge.PublishWorkspace(Workspace::Desktop);
+		if (!Expect(bridge.PublishShortcut(CommandType::Clear, request) != CommandResult::Accepted,
+			"Bridge desired A→B→A rejects old event even if renderer coalesces B")) ++failures;
+
+		PresentationTarget target;
+		target.key.bytes[0] = 7;
+		target.sourceIdentity = "shortcut-probe";
+		target.totalPages = 1;
+		target.sessionRevision = 1;
+		bridge.PublishPresentationTarget(target);
+		request->scope.workspace = Workspace::Presentation;
+		request->scope.intentEpoch = bridge.Snapshot().shortcutIntentEpoch;
+		request->scope.presentation = ReadyIdentityFor(*bridge.Snapshot().presentationTarget);
+		++target.sessionRevision;
+		bridge.PublishPresentationTarget(target);
+		if (!Expect(bridge.PublishShortcut(CommandType::Undo, request) != CommandResult::Accepted,
+			"same page in another PPT show cannot execute old shortcut")) ++failures;
+	}
+
+	void TestShortcutBoundedCompletions(int& failures)
+	{
+		namespace Shortcut = Inkeys::Drawing::Draw3::Shortcuts;
+		Shortcut::State state;
+		state.BeginHost();
+		Shortcut::Context scene;
+		scene.available = true;
+		scene.scope.pageEpoch = 1;
+		state.Publish(scene, 1);
+		const auto context = state.Snapshot();
+		std::array<std::uint64_t, 64> ids{};
+		for (auto& id : ids) id = state.Reserve(context.scope);
+		if (!Expect(ids.front() && ids.back() && !state.Reserve(context.scope),
+			"completion capacity is reserved and bounded before queue acceptance")) ++failures;
+		state.Retire(ids.front());
+		const auto replacement = state.Reserve(context.scope);
+		state.Complete(ids.front(), Shortcut::Result::Applied);
+		Shortcut::Completion completion;
+		if (!Expect(replacement && replacement != ids.front() && !state.Take(replacement, completion),
+			"retired late callback cannot complete reused slot")) ++failures;
+		state.Complete(replacement, Shortcut::Result::Failed);
+		state.Complete(replacement, Shortcut::Result::Applied);
+		if (!Expect(state.Take(replacement, completion) && completion.result == Shortcut::Result::Failed,
+			"real failure is exact and duplicate completion cannot turn it into success")) ++failures;
+		state.Complete(ids[1], Shortcut::Result::NoContent);
+		if (!Expect(state.Take(ids[1], completion) && completion.result == Shortcut::Result::NoContent,
+			"empty Clear proof is distinct from a failed or blocked Clear")) ++failures;
+		state.Stop();
+		if (!Expect(!state.Take(ids[2], completion) && !state.Reserve(context.scope),
+			"Stop retires pending completions and prevents new commands")) ++failures;
+	}
+
 }
 
 int RunDraw3BridgeTests()
 {
 	int failures = 0;
 	TestProductState(failures);
+	TestConditionalShortcutCommands(failures);
+	TestShortcutBoundedCompletions(failures);
 	TestMouseCursorToolProjection(failures);
 	TestPresentationSessionIdentity(failures);
 	TestCommandQueue(failures);
@@ -642,6 +896,7 @@ int RunDraw3BridgeTests()
 	TestDrawpadPresentationPlan(failures);
 	TestPageRuntimeRevisionPolicy(failures);
 	TestDrawingActivityLifecycle(failures);
+	TestAcceptedStrokeNoticeLifecycle(failures);
 	TestPptWaitObservationBoundary(failures);
 	return failures;
 }

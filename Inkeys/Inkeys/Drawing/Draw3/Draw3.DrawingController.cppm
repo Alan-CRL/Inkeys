@@ -13,6 +13,7 @@
 #include <optional>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
 
@@ -86,6 +87,12 @@ export namespace Inkeys::Drawing::Draw3
 		void (*penDiagnostics)(void*, const PenRuntimeDiagnostics&) = nullptr;
 		void (*runtimeMetricsPhaseProgress)(void*, const RuntimeMetricsPhaseProgress&) noexcept = nullptr;
 		void (*historyAvailabilityChanged)(void*, bool, bool) = nullptr;
+		void (*acceptedStrokeBegan)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
+		void (*acceptedStrokeSceneChanged)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
+		void (*shortcutContextChanged)(void*, Shortcuts::Context) noexcept = nullptr;
+		Shortcuts::Result (*shortcutCommandAllowed)(void*, const Shortcuts::Request&,
+			const Shortcuts::Context&) noexcept = nullptr;
+		void (*shortcutCompleted)(void*, std::uint64_t, Shortcuts::Result) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

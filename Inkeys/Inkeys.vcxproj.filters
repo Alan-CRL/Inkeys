@@ -288,6 +288,12 @@
     <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Input\UiPointerInput.h">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.MessageDispatch.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClInclude>
@@ -1991,6 +1997,9 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Business\LegacyDrawState.cpp">
       <Filter>Modules\Inkeys\Business</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Input\UiPointerInput.cpp">
+      <Filter>Modules\Inkeys\Input</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Input\MouseHook.cpp">
       <Filter>Modules\Inkeys\Input</Filter>

@@ -15,6 +15,9 @@ module;
 #include "../Bar/Bar.DirtyRegion.h"
 #include "../Bar/Bar.BottomDock.h"
 #include "../../Drawing/Draw3/Draw3.PptTiming.h"
+#include "../../Input/UiPointerInput.h"
+#include "../../Input/MouseHook.Transport.h"
+#include "../../Window/Window.MessageDispatch.h"
 
 #include <algorithm>
 #include <array>
@@ -46,6 +49,34 @@ namespace Inkeys::UI::PageControl
 	namespace
 	{
 		using namespace std::chrono_literals;
+		struct LocalWheelRequest
+		{
+			Business::PptSessionToken session;
+			short delta = 0;
+			std::uint64_t generation = 0;
+		};
+		// 本地 HWND 与 Hook 是不同 producer；本地通道独立有界，不共享 Hook SPSC。
+		std::mutex localWheelMutex;
+		std::array<LocalWheelRequest, 64> localWheels{};
+		std::size_t localWheelRead = 0, localWheelWrite = 0, localWheelCount = 0;
+		std::atomic_uint64_t wheelInputGeneration = 1;
+		Input::HookTransport::WheelAccumulator globalWheelAccumulator;
+		Input::HookTransport::WheelAccumulator localWheelAccumulator;
+		std::uint64_t localWheelSession = 0;
+
+		void EnqueueLocalWheel(short delta) noexcept
+		{
+			if (!delta) return;
+			const auto generation = wheelInputGeneration.load(std::memory_order_acquire);
+			const auto token = Business::CapturePptInputSession();
+			if (!CanAcceptPptWheel(token)) return;
+			std::scoped_lock lock(localWheelMutex);
+			if (localWheelCount == localWheels.size()) return;
+			localWheels[localWheelWrite] = { token, delta, generation };
+			localWheelWrite = (localWheelWrite + 1) % localWheels.size();
+			++localWheelCount;
+		}
+
 		using Microsoft::WRL::ComPtr;
 		using Client = Inkeys::UI::RenderPipeline::Client;
 		using FrameContext = Inkeys::UI::RenderPipeline::FrameContext;
@@ -56,6 +87,10 @@ namespace Inkeys::UI::PageControl
 		using WidgetSpec = Inkeys::UI::Bar::BarSurfaceWidgetSpec;
 		using WidgetId = Inkeys::UI::Bar::BarSurfaceWidgetId;
 		using WindowRole = Inkeys::Window::WindowRole;
+		namespace PointerInput = Inkeys::Input::UiPointer;
+		constexpr UINT PointerWakeMessage = WM_APP + 0x351;
+		constexpr UINT PointerCancelMessage = WM_APP + 0x352;
+		constexpr UINT_PTR PointerTimer = 0x353;
 
 		constexpr WidgetId DragWidget = 1;
 		constexpr WidgetId PreviousWidget = 2;
@@ -182,6 +217,9 @@ namespace Inkeys::UI::PageControl
 			std::uint64_t pointerGeneration = 0;
 			PptPointerRegion dragRegion = PptPointerRegion::Background;
 			bool pressedNext = false;
+			std::uintptr_t pointerSerial = 0;
+			std::uint64_t pointerPptSession = 0;
+			std::uint64_t pointerLayoutEpoch = 0;
 			DWORD touchId = 0;
 			bool touchActive = false;
 			bool touchPrimary = false;
@@ -244,6 +282,21 @@ namespace Inkeys::UI::PageControl
 			return true;
 		}
 
+		struct PointerClient
+		{
+			PointerInput::MouseChannel mouse;
+			PointerInput::Session session;
+			PointerInput::MouseGesture mouseGesture;
+			std::uint64_t mouseGeneration = 0;
+			bool rawTracking = false;
+			std::uintptr_t touchDevice = 0;
+			std::uint64_t touchGeneration = 0;
+			std::uintptr_t nextSerial = 0;
+			bool draining = false;
+		};
+
+		// 会话仅在 HWND owner 上推进；渲染线程只读 SurfaceState 中的有效性。
+		std::array<PointerClient, 4> pointerClients;
 		struct MiddleSnapState
 		{
 			std::uint64_t session = 0;
@@ -287,6 +340,64 @@ namespace Inkeys::UI::PageControl
 		WhiteboardCallbacks whiteboardCallbacks;
 		Inkeys::Display::Subscription displaySubscription;
 		thread_local bool translatingTouch = false;
+		thread_local const PointerInput::Sample* dispatchedPointer = nullptr;
+		thread_local bool dispatchedMouseAccepted = false;
+
+		struct PointerDispatchScope
+		{
+			const PointerInput::Sample* previous = dispatchedPointer;
+			bool previousTouch = translatingTouch;
+			bool previousMouseAccepted = dispatchedMouseAccepted;
+			explicit PointerDispatchScope(const PointerInput::Sample& sample,
+				bool mouseAccepted = false) noexcept
+			{
+				dispatchedPointer = &sample;
+				dispatchedMouseAccepted = mouseAccepted;
+				translatingTouch = sample.source == PointerInput::Source::Touch;
+			}
+			~PointerDispatchScope()
+			{
+				dispatchedPointer = previous;
+				dispatchedMouseAccepted = previousMouseAccepted;
+				translatingTouch = previousTouch;
+			}
+		};
+
+		[[nodiscard]] POINT PointerScreen(HWND hwnd, LPARAM lParam) noexcept
+		{
+			if (dispatchedPointer) return dispatchedPointer->screen;
+			POINT screen{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+			ClientToScreen(hwnd, &screen);
+			return screen;
+		}
+
+		[[nodiscard]] POINT PointerLocal(HWND hwnd, LPARAM lParam) noexcept
+		{
+			POINT local = PointerScreen(hwnd, lParam);
+			ScreenToClient(hwnd, &local);
+			return local;
+		}
+
+		[[nodiscard]] PointerInput::Sample NativePointerSample(
+			HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) noexcept
+		{
+			PointerInput::Sample sample;
+			sample.kind = message == WM_LBUTTONDOWN ? PointerInput::Kind::Down
+				: message == WM_LBUTTONUP ? PointerInput::Kind::Up : PointerInput::Kind::Move;
+			Inkeys::Window::MessageDispatch::Sample posted;
+			if (Inkeys::Window::MessageDispatch::TryGet(hwnd, message, wParam, lParam, posted))
+			{
+				sample.screen = posted.screen;
+				sample.messageTime = posted.time;
+			}
+			else
+			{
+				sample.screen = PointerScreen(hwnd, lParam);
+				sample.messageTime = static_cast<DWORD>(GetMessageTime());
+			}
+			sample.tick = Inkeys::Window::MessageDispatch::PostedTick(sample.messageTime);
+			return sample;
+		}
 
 		[[nodiscard]] constexpr std::size_t Index(Client client) noexcept
 		{
@@ -296,10 +407,11 @@ namespace Inkeys::UI::PageControl
 
 		[[nodiscard]] std::size_t Index(HWND hwnd) noexcept
 		{
+			if (!hwnd) return Roles.size();
 			auto& service = Inkeys::Window::GetService();
 			for (std::size_t index = 0; index < Roles.size(); ++index)
 				if (service.Handle(Roles[index]) == hwnd) return index;
-			return 0;
+			return Roles.size();
 		}
 
 		[[nodiscard]] Surface SurfaceFor(std::size_t index) noexcept
@@ -1091,6 +1203,19 @@ namespace Inkeys::UI::PageControl
 			state.inputLocked = ShouldLockSurfaceInput(state.targetVisible,
 				now < state.layoutTransitionUntil,
 				WhiteboardWorkspaceSwitching(whiteboard));
+			if (state.pointerActive && (state.inputLocked || modeChanged
+				|| (state.configuredMode == WorkspaceMode::PptCompact
+					&& (state.pointerPptSession != ppt.layout.session
+						|| state.pointerLayoutEpoch != ppt.layout.epoch))))
+			{
+				// 渲染线程只关准入，取消和 pair 回退交回 owner，不能跨线程改会话。
+				state.pointerActive = false;
+				state.pressStarted = {};
+				state.lastRepeat = {};
+				state.repeatTiming = {};
+				(void)PostMessageW(Inkeys::Window::GetService().Handle(Roles[index]),
+					PointerCancelMessage, state.pointerSerial, 0);
+			}
 			if (state.inputLocked && state.borderCursorPointerInside)
 			{
 				state.borderCursorPointerInside = false;
@@ -1976,7 +2101,7 @@ namespace Inkeys::UI::PageControl
 				}
 				const auto directionPressPolicy =
 					ResolvePptDirectionPressPolicy(mode, ppt.longPressEnabled);
-				if (!directionPressPolicy.trackLongPress)
+				if (!directionPressPolicy.trackLongPress || !state.pointerActive)
 				{
 					state.pressStarted = {};
 					state.lastRepeat = {};
@@ -2313,12 +2438,14 @@ namespace Inkeys::UI::PageControl
 			bool promotePpt = false;
 			bool invokeDirection = false;
 			bool invokeNext = false;
+			bool rawDrag = false;
 		};
 
 		template<typename Capture, typename OwnsCapture, typename ToClient, typename Release>
 		[[nodiscard]] PointerDownResult BeginSurfacePointer(
 			std::size_t index, POINT screen, Capture&& capture,
-			OwnsCapture&& ownsCapture, ToClient&& toClient, Release&& release)
+			OwnsCapture&& ownsCapture, ToClient&& toClient, Release&& release,
+			const PointerInput::Sample* pointer = nullptr)
 		{
 			auto& state = surfaces[index];
 			const auto pressedAt = std::chrono::steady_clock::now();
@@ -2369,7 +2496,8 @@ namespace Inkeys::UI::PageControl
 					&& !WhiteboardWorkspaceSwitching(frame.whiteboard)
 					&& logical && state.scene.HitTestBackground(*logical)
 					&& PointerRegionForWidget(hit) == preparedRegion;
-				if (captureOwned && current)
+				// Mouse/Touch 由已验证的来源会话归属；可选 capture 失败不能阻断原生点击和 Raw 拖动。
+				if ((captureOwned || (pointer && pointer->source != PointerInput::Source::Pen)) && current)
 				{
 					const bool dragCandidate = ResolveWorkspaceInputPolicy(preparedMode).drag
 						&& CanStartPptDrag(preparedRegion);
@@ -2377,6 +2505,13 @@ namespace Inkeys::UI::PageControl
 						? Inkeys::UI::Bar::BarSurfacePointerResult{}
 						: state.scene.PointerDown(*logical);
 					result.accepted = press.consumed || dragCandidate;
+					// capture 的同步取消完成后再建立来源归属，避免旧 Cancel 清掉新手势。
+					if (result.accepted && pointer)
+					{
+						auto& client = pointerClients[index];
+						result.accepted = client.session.Begin(*pointer) != PointerInput::BeginResult::Rejected
+							&& (pointer->source != PointerInput::Source::Mouse || client.mouseGesture.Begin(*pointer));
+					}
 					if (result.accepted)
 					{
 						if (index >= 2)
@@ -2385,6 +2520,10 @@ namespace Inkeys::UI::PageControl
 							middleSnap = {};
 						}
 						state.pointerActive = true;
+						state.pointerSerial = ++pointerClients[index].nextSerial;
+						state.pointerPptSession = session;
+						state.pointerLayoutEpoch = epoch;
+						result.rawDrag = dragCandidate;
 						state.dragRegion = preparedRegion;
 						state.dragging = state.dragPending = false;
 						state.pressStarted = {};
@@ -2396,6 +2535,8 @@ namespace Inkeys::UI::PageControl
 						{
 							state.dragging = StartsPptDragImmediately(preparedRegion);
 							state.dragPending = !state.dragging;
+							if (state.dragging && pointer && pointer->source == PointerInput::Source::Mouse)
+								(void)pointerClients[index].mouseGesture.BeginDrag();
 							state.dragStartScreen = screen;
 							const auto [monitor, dpiScale] = LayoutMonitor();
 							const auto budget = ResolveGroupBudgetLocked(frame, monitor, dpiScale,
@@ -2428,7 +2569,7 @@ namespace Inkeys::UI::PageControl
 							const auto policy = ResolvePptDirectionPressPolicy(
 								preparedMode, ppt.longPressEnabled, repeatable);
 							result.invokeDirection = policy.invokeOnPointerDown;
-							if (ShouldKeepPptLongPressTracking(policy.trackLongPress, captureOwned, true))
+							if (ShouldKeepPptLongPressTracking(policy.trackLongPress, state.pointerActive, true))
 							{
 								state.pressedNext = result.invokeNext;
 								state.pressStarted = pressedAt;
@@ -2439,7 +2580,18 @@ namespace Inkeys::UI::PageControl
 					}
 				}
 				if (!result.accepted)
+				{
 					releaseAbandoned = request == state.pointerGeneration || !state.pointerActive;
+					if (request == state.pointerGeneration)
+					{
+						state.scene.CancelPointer();
+						if (pointer)
+						{
+							pointerClients[index].session.Reset();
+							pointerClients[index].mouseGesture.Reset();
+						}
+					}
+				}
 			}
 			if (releaseAbandoned && ownsCapture()) release();
 			return result;
@@ -2521,17 +2673,240 @@ namespace Inkeys::UI::PageControl
 		}
 
 		LRESULT CALLBACK PageControlWindowProc(HWND hwnd, UINT message,
+			WPARAM wParam, LPARAM lParam);
+
+		// 调用者持有 renderTransactionMutex；发布先于下一呈现帧时也要拒绝旧手势。
+		[[nodiscard]] bool PointerWorkspaceCurrentLocked(std::size_t index)
+		{
+			const auto& state = surfaces[index];
+			const auto [ppt, whiteboard] = Snapshot();
+			const auto mode = ResolveWorkspaceMode(SurfaceFor(index), ppt, whiteboard);
+			return state.targetVisible && !state.inputLocked
+				&& mode == state.configuredMode
+				&& !WhiteboardWorkspaceSwitching(whiteboard)
+				&& (mode != WorkspaceMode::PptCompact
+					|| (state.pointerPptSession == ppt.layout.session
+						&& state.pointerLayoutEpoch == ppt.layout.epoch));
+		}
+
+		void DrainPointerMouse(HWND hwnd, std::size_t index)
+		{
+			if (!hwnd) return;
+			auto& client = pointerClients[index];
+			if (client.draining) return;
+			client.draining = true;
+			if (client.session.Active()
+				&& client.session.Latest().source == PointerInput::Source::Mouse
+				&& client.mouseGesture.SourceReplaced())
+				(void)PageControlWindowProc(hwnd, PointerCancelMessage, 0, 0);
+			PointerInput::Sample sample;
+			while (client.mouse.TryPop(sample))
+			{
+				if (!client.session.Active()
+					|| client.session.Latest().source != PointerInput::Source::Mouse) continue;
+				if (sample.kind == PointerInput::Kind::Cancel)
+				{
+					client.rawTracking = false;
+					// 未绑定补充失败只停 Raw；是否取消业务由共享策略按实际 Raw 归属裁决。
+					const bool cancel = client.mouseGesture.AcceptRaw(sample);
+					client.mouse.FinishMouse();
+					if (cancel) (void)PageControlWindowProc(hwnd, PointerCancelMessage, 0, 0);
+					continue;
+				}
+				if (!client.mouseGesture.AcceptRaw(sample)) continue;
+				const auto accepted = client.mouseGesture.Latest();
+				const UINT translated = accepted.kind == PointerInput::Kind::Up
+					? WM_LBUTTONUP : WM_MOUSEMOVE;
+				PointerDispatchScope scope(accepted, true);
+				(void)PageControlWindowProc(hwnd, translated,
+					translated == WM_LBUTTONUP ? 0 : MK_LBUTTON, 0);
+			}
+			client.draining = false;
+		}
+
+		LRESULT CALLBACK PageControlWindowProc(HWND hwnd, UINT message,
 			WPARAM wParam, LPARAM lParam)
 		{
-			const std::size_t index = Index(hwnd);
-			auto& state = surfaces[index];
-			if ((message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN
-				|| message == WM_LBUTTONUP || message == WM_MOUSEWHEEL)
-				&& !translatingTouch
-				&& Inkeys::Message::IsTouchGeneratedMouseMessage(
-					message, GetMessageExtraInfo())) return 0;
 			if (message == WM_TABLET_QUERYSYSTEMGESTURESTATUS)
 				return static_cast<LRESULT>(PageControlTabletGestureStatusFlags);
+			const std::size_t index = Index(hwnd);
+			// 创建早期 Service 尚未发布 HWND，不能误用第一窗的会话。
+			if (index >= surfaces.size()) return DefWindowProcW(hwnd, message, wParam, lParam);
+			auto& state = surfaces[index];
+			auto& client = pointerClients[index];
+			PointerInput::Sample normalizedMouseSample;
+			std::optional<PointerDispatchScope> normalizedMouseScope;
+			if (message == PointerWakeMessage)
+			{
+				DrainPointerMouse(hwnd, index);
+				return 0;
+			}
+			if (message == PointerCancelMessage)
+			{
+				if (wParam != 0)
+				{
+					std::unique_lock renderLock(renderTransactionMutex);
+					if (state.pointerSerial != wParam) return 0;
+				}
+				message = WM_CANCELMODE;
+			}
+			if (message == WM_TIMER && wParam == PointerTimer)
+			{
+				// 仅按住期间轮询桌面有效性并补 drain，处理安全桌面和通知投递失败。
+				if (!PointerInput::CheckInputDesktop())
+				{
+					(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+					return 0;
+				}
+				DrainPointerMouse(hwnd, index);
+				bool cancel = false;
+				{
+					std::unique_lock renderLock(renderTransactionMutex);
+					cancel = client.session.Active()
+						&& (state.inputLocked || !state.targetVisible || !state.pointerActive
+							|| !PointerWorkspaceCurrentLocked(index));
+				}
+				if (cancel) (void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+				else if (!client.session.Active())
+					KillTimer(hwnd, PointerTimer);
+				return 0;
+			}
+			if (!dispatchedPointer && !client.draining
+				&& message != WM_CANCELMODE && message != WM_DESTROY
+				&& message != WM_CAPTURECHANGED
+				&& !(message == WM_SHOWWINDOW && !wParam)
+				&& client.session.Active())
+				DrainPointerMouse(hwnd, index);
+			if (message == WM_SHOWWINDOW && !wParam)
+				(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+			if (message == WM_DESTROY)
+			{
+				(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+				client.mouse.SetWakeWindow(nullptr, 0);
+			}
+			if (!dispatchedPointer
+				&& (message == WM_LBUTTONDOWN || message == WM_MOUSEMOVE || message == WM_LBUTTONUP)
+				&& Inkeys::Message::IsPenGeneratedMouseMessage(message, GetMessageExtraInfo()))
+			{
+				// 笔兼容消息没有物理 Raw Mouse；保留原有 capture 路径并隔离来源。
+				auto sample = NativePointerSample(hwnd, message, wParam, lParam);
+				sample.source = PointerInput::Source::Pen;
+				if (sample.kind == PointerInput::Kind::Down)
+				{
+					if (client.session.Active()
+						&& client.session.Latest().source != PointerInput::Source::Mouse) return 0;
+					if (client.session.Active())
+						(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+					sample.generation = ++client.touchGeneration;
+					if (!client.mouse.BeginTouch(sample.generation)) return 0;
+					if (!SetTimer(hwnd, PointerTimer, 50, nullptr))
+					{
+						(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+						return 0;
+					}
+					for (std::size_t other = 0; other < pointerClients.size(); ++other)
+						if (other != index)
+							DrainPointerMouse(Inkeys::Window::GetService().Handle(Roles[other]), other);
+				}
+				else
+				{
+					if (!client.session.Active()
+						|| client.session.Latest().source != PointerInput::Source::Pen) return 0;
+					sample.generation = client.session.Latest().generation;
+				}
+				PointerDispatchScope scope(sample);
+				(void)PageControlWindowProc(hwnd, message, wParam, 0);
+				if (sample.kind == PointerInput::Kind::Down && !client.session.Active())
+					(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+				if (sample.kind == PointerInput::Kind::Up) client.mouse.EndTouch(sample.generation);
+				return 0;
+			}
+			if ((message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN
+				|| message == WM_LBUTTONUP || message == WM_MOUSEWHEEL)
+				&& !dispatchedPointer
+				&& Inkeys::Message::IsTouchGeneratedMouseMessage(
+					message, GetMessageExtraInfo())) return 0;
+			if (message == WM_LBUTTONDOWN && !dispatchedPointer)
+			{
+				// 原消息立即建立按压；Raw 注册与配对结果不能阻断点击或长按。
+				auto down = NativePointerSample(hwnd, message, wParam, lParam);
+				if (client.session.Active())
+				{
+					if (client.session.Latest().source != PointerInput::Source::Mouse
+						|| static_cast<LONG>(down.messageTime
+							- client.session.Latest().messageTime) < 0) return 0;
+					// 无捕获时旧 Up 可能落在窗外；下一次真实 Down 取消旧按压再重新命中。
+					(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+				}
+				for (std::size_t other = 0; other < pointerClients.size(); ++other)
+				{
+					if (other == index) continue;
+					const HWND otherWindow = Inkeys::Window::GetService().Handle(Roles[other]);
+					DrainPointerMouse(otherWindow, other);
+					if (!pointerClients[other].session.Active()) continue;
+					if (pointerClients[other].session.Latest().source
+						!= PointerInput::Source::Mouse) return 0;
+					(void)PageControlWindowProc(otherWindow, WM_CANCELMODE, 0, 0);
+				}
+				down.generation = ++client.mouseGeneration;
+				PointerDispatchScope scope(down);
+				(void)PageControlWindowProc(hwnd, message, wParam, 0);
+				return 0;
+			}
+			if (!dispatchedPointer
+				&& (message == WM_MOUSEMOVE || message == WM_LBUTTONUP)
+				&& client.session.Active())
+			{
+				if (client.session.Latest().source != PointerInput::Source::Mouse) return 0;
+				if (message == WM_MOUSEMOVE && (wParam & MK_LBUTTON) == 0) return 0;
+				auto sample = NativePointerSample(hwnd, message, wParam, lParam);
+				sample.generation = client.session.Latest().generation;
+				PointerDispatchScope scope(sample);
+				(void)PageControlWindowProc(hwnd, message, wParam, 0);
+				return 0;
+			}
+
+			if ((message == WM_MOUSEMOVE || message == WM_LBUTTONUP)
+				&& dispatchedPointer)
+			{
+				bool invalid = false;
+				{
+					std::unique_lock renderLock(renderTransactionMutex);
+					invalid = client.session.Active()
+						&& (!state.pointerActive || !PointerWorkspaceCurrentLocked(index));
+				}
+				if (invalid)
+				{
+					(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+					return 0;
+				}
+				if (dispatchedPointer->source == PointerInput::Source::Mouse
+					&& !dispatchedMouseAccepted)
+				{
+					if (!client.mouseGesture.AcceptNative(*dispatchedPointer))
+					{
+						if (client.mouseGesture.SourceReplaced())
+							(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+						return 0;
+					}
+					if (client.mouseGesture.Latest().kind == PointerInput::Kind::Cancel)
+					{
+						(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+						return 0;
+					}
+					// 后续末段位移与命中使用归一化终态，不能再读取迟到消息的旧位置。
+					normalizedMouseSample = client.mouseGesture.Latest();
+					normalizedMouseScope.emplace(normalizedMouseSample, true);
+				}
+				// 来源校验先于最终位移；FinishSurfacePointer 统一采用合法 Up 的末段坐标。
+				if (!client.session.Accept(*dispatchedPointer)) return 0;
+			}
+			else if (message == WM_LBUTTONUP) return 0;
+			if (message == WM_CAPTURECHANGED && client.session.Active()
+				&& client.session.Latest().source == PointerInput::Source::Mouse
+				&& client.rawTracking && client.mouseGesture.Dragging())
+				return 0; // 实际拖动允许 Raw 延续；普通按压仍沿用捕获丢失取消。
+
 			if (message == WM_TOUCH)
 			{
 				const UINT count = LOWORD(wParam);
@@ -2555,54 +2930,77 @@ namespace Inkeys::UI::PageControl
 					bool fallbackTouchLocked = false;
 					for (const auto& input : inputs)
 					{
-						POINT local{ TOUCH_COORD_TO_PIXEL(input.x),
-							TOUCH_COORD_TO_PIXEL(input.y) };
-						ScreenToClient(hwnd, &local);
+						const auto device = reinterpret_cast<std::uintptr_t>(input.hSource);
+						const bool down = (input.dwFlags & TOUCHEVENTF_DOWN) != 0;
 						PageControlTouchLockState current;
 						{
 							std::unique_lock renderLock(renderTransactionMutex);
 							current = { state.touchId, state.touchActive,
-								state.touchPrimary };
+								state.touchPrimary, client.touchDevice };
 						}
-						const auto decision = ResolvePageControlTouchSample(
+						auto decision = ResolvePageControlTouchSample(
 							current, input.dwID,
-							(input.dwFlags & TOUCHEVENTF_DOWN) != 0,
+							down,
 							(input.dwFlags & TOUCHEVENTF_MOVE) != 0,
 							(input.dwFlags & TOUCHEVENTF_UP) != 0,
 							(input.dwFlags & TOUCHEVENTF_PRIMARY) != 0,
-							hasPrimaryTouch, fallbackTouchLocked);
+							hasPrimaryTouch, fallbackTouchLocked, device);
 						fallbackTouchLocked = decision.fallbackLocked;
+						if (decision.message == PageControlTouchMessage::Down
+							&& client.session.Active()
+							&& client.session.Latest().source != PointerInput::Source::Touch)
+							decision.cancelPrevious = true;
 						if (decision.cancelPrevious)
+							(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+						if (decision.message == PageControlTouchMessage::None) continue;
+						PointerInput::Sample sample;
+						sample.source = PointerInput::Source::Touch;
+						sample.screen = { TOUCH_COORD_TO_PIXEL(input.x), TOUCH_COORD_TO_PIXEL(input.y) };
+						sample.tick = GetTickCount64();
+						sample.messageTime = input.dwTime;
+						sample.device = device;
+						sample.contact = input.dwID;
+						if (decision.message == PageControlTouchMessage::Down)
 						{
-							translatingTouch = true;
-							(void)PageControlWindowProc(
-								hwnd, WM_CANCELMODE, 0, 0);
-							translatingTouch = false;
+							++client.touchGeneration;
+							if (!client.mouse.BeginTouch(client.touchGeneration)) continue;
+							if (!SetTimer(hwnd, PointerTimer, 50, nullptr))
+							{
+								client.mouse.EndTouch(client.touchGeneration);
+								continue;
+							}
+							// 四个分页窗共用 pair 状态；新触摸先在 owner 上收尾旧鼠标。
+							for (std::size_t other = 0; other < pointerClients.size(); ++other)
+								if (other != index)
+									DrainPointerMouse(Inkeys::Window::GetService().Handle(Roles[other]), other);
+							client.touchDevice = device;
+							sample.kind = PointerInput::Kind::Down;
 						}
+						else sample.kind = decision.message == PageControlTouchMessage::Up
+							? PointerInput::Kind::Up : PointerInput::Kind::Move;
+						sample.generation = client.touchGeneration;
+						POINT local = sample.screen;
+						ScreenToClient(hwnd, &local);
 						{
 							std::unique_lock renderLock(renderTransactionMutex);
 							state.touchId = decision.state.id;
 							state.touchActive = decision.state.active;
 							state.touchPrimary = decision.state.primary;
-							if (decision.message != PageControlTouchMessage::None)
-								state.touchLastClient = decision.state.active
-									? local : POINT{};
+							state.touchLastClient = decision.state.active ? local : POINT{};
 						}
-						UINT translated = 0;
-						if (decision.message == PageControlTouchMessage::Down)
-							translated = WM_LBUTTONDOWN;
-						else if (decision.message == PageControlTouchMessage::Move)
-							translated = WM_MOUSEMOVE;
-						else if (decision.message == PageControlTouchMessage::Up)
-							translated = WM_LBUTTONUP;
-						if (translated == 0) continue;
-						translatingTouch = true;
+						PointerDispatchScope scope(sample);
+						const UINT translated = sample.kind == PointerInput::Kind::Down
+							? WM_LBUTTONDOWN : sample.kind == PointerInput::Kind::Up
+								? WM_LBUTTONUP : WM_MOUSEMOVE;
 						(void)PageControlWindowProc(hwnd, translated,
-							translated == WM_LBUTTONUP ? 0 : MK_LBUTTON,
-							MAKELPARAM(local.x, local.y));
-						translatingTouch = false;
+							translated == WM_LBUTTONUP ? 0 : MK_LBUTTON, 0);
+						if (sample.kind == PointerInput::Kind::Down && !client.session.Active())
+							(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
+						if (sample.kind == PointerInput::Kind::Up)
+							client.mouse.EndTouch(sample.generation);
 					}
 				}
+				else (void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
 				CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(lParam));
 				return 0;
 			}
@@ -2627,15 +3025,15 @@ namespace Inkeys::UI::PageControl
 			{
 				TRACKMOUSEEVENT tracking{ sizeof(tracking), TME_LEAVE, hwnd, 0 };
 				TrackMouseEvent(&tracking);
-				POINT screen{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				ClientToScreen(hwnd, &screen);
+				const POINT screen = PointerScreen(hwnd, lParam);
 				std::unique_lock renderLock(renderTransactionMutex);
 				if (!state.targetVisible || state.inputLocked)
 				{
 					if (state.pointerActive || (wParam & MK_LBUTTON) != 0) TraceRejectedInput(index, "move");
 					return 0;
 				}
-				if (ShouldNotifyPageControlCursorEntered(
+				if ((!dispatchedPointer || WindowFromPoint(screen) == hwnd)
+					&& ShouldNotifyPageControlCursorEntered(
 					state.borderCursorPointerInside, translatingTouch,
 					Inkeys::Message::IsPointerGeneratedMouseMessage(
 						message, static_cast<ULONG_PTR>(GetMessageExtraInfo()))))
@@ -2649,6 +3047,8 @@ namespace Inkeys::UI::PageControl
 				{
 					state.dragPending = false;
 					state.dragging = true;
+					if (client.session.Latest().source == PointerInput::Source::Mouse)
+						(void)client.mouseGesture.BeginDrag();
 					TraceDrag("threshold surface=%s start=(%ld,%ld) current=(%ld,%ld) "
 						"result=dragging",
 						SurfaceName(index), state.dragStartScreen.x,
@@ -2664,7 +3064,7 @@ namespace Inkeys::UI::PageControl
 					return 0;
 				}
 				if (state.dragPending) return 0;
-				const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+				const POINT local = PointerLocal(hwnd, lParam);
 				const auto logical = state.scene.PresentationToLogical(local);
 				if (state.pressStarted.time_since_epoch().count() != 0)
 				{
@@ -2673,7 +3073,7 @@ namespace Inkeys::UI::PageControl
 					const bool sameDirectionHit = logical.has_value()
 						&& state.scene.HitTest(*logical) == expected;
 					if (!ShouldKeepPptLongPressTracking(true,
-						GetCapture() == hwnd, sameDirectionHit))
+						state.pointerActive, sameDirectionHit))
 					{
 						// 拖出箭头后本次按压彻底取消，移回也不能重新启动长按。
 						state.pressStarted = {};
@@ -2692,10 +3092,15 @@ namespace Inkeys::UI::PageControl
 					std::unique_lock renderLock(renderTransactionMutex);
 					notifyBorderCursor = state.borderCursorPointerInside;
 					state.borderCursorPointerInside = false;
-					if (!state.dragging) state.scene.PointerLeave();
-					state.pressStarted = {};
-					state.lastRepeat = {};
-					state.repeatTiming = {};
+					if (!state.pointerActive || (client.session.Active()
+						&& client.session.Latest().source == PointerInput::Source::Mouse
+						&& !state.dragging && !state.dragPending))
+					{
+						if (!state.dragging) state.scene.PointerLeave();
+						state.pressStarted = {};
+						state.lastRepeat = {};
+						state.repeatTiming = {};
+					}
 				}
 				if (notifyBorderCursor)
 					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
@@ -2703,12 +3108,21 @@ namespace Inkeys::UI::PageControl
 			}
 			if (message == WM_LBUTTONDOWN)
 			{
-				POINT screen{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				if (!ClientToScreen(hwnd, &screen)) return 0;
+				const POINT screen = PointerScreen(hwnd, lParam);
 				const auto result = BeginSurfacePointer(index, screen,
 					[hwnd] { SetCapture(hwnd); }, [hwnd] { return GetCapture() == hwnd; },
 					[hwnd](POINT point) { ScreenToClient(hwnd, &point); return point; },
-					[] { ReleaseCapture(); });
+					[] { ReleaseCapture(); }, dispatchedPointer);
+				if (result.accepted && dispatchedPointer->source == PointerInput::Source::Mouse)
+				{
+					// 只有拖动候选申请 Raw 补充；普通点击与长按继续使用原生来源。
+					if (result.rawDrag)
+					{
+						client.mouse.SetWakeWindow(hwnd, PointerWakeMessage);
+						client.rawTracking = client.mouse.BeginMouse(screen, dispatchedPointer->messageTime);
+					}
+					(void)SetTimer(hwnd, PointerTimer, 50, nullptr);
+				}
 				// Z 序和业务回调都可能同步进入 Window Service，必须位于 Scene 锁外。
 				if (result.promotePpt)
 					(void)Inkeys::Window::GetService().PromotePptWindow(Roles[index]);
@@ -2717,11 +3131,17 @@ namespace Inkeys::UI::PageControl
 			}
 			if (message == WM_LBUTTONUP)
 			{
-				const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				POINT screen = local;
-				const bool screenValid = ClientToScreen(hwnd, &screen) != FALSE;
-				const auto result = FinishSurfacePointer(index, local, screen, screenValid,
+				KillTimer(hwnd, PointerTimer);
+				const POINT local = PointerLocal(hwnd, lParam);
+				const POINT screen = PointerScreen(hwnd, lParam);
+				const auto result = FinishSurfacePointer(index, local, screen, true,
 					[](std::size_t surface, POINT point) { UpdateDragLocked(surface, point); });
+				if (dispatchedPointer->source == PointerInput::Source::Mouse)
+				{
+					client.mouse.FinishMouse();
+					client.mouseGesture.Reset();
+					client.rawTracking = false;
+				}
 				// 手势和 tracker 已结束；同步的旧 CaptureChanged 不得回滚刚释放的候选。
 				if (GetCapture() == hwnd) ReleaseCapture();
 				if (result.dragEnded)
@@ -2745,12 +3165,18 @@ namespace Inkeys::UI::PageControl
 						&& ResolveWorkspaceInputPolicy(
 							state.configuredMode).wheel;
 				}
-				if (invoke) InvokeDirection(
-					index, GET_WHEEL_DELTA_WPARAM(wParam) < 0);
+				if (invoke) EnqueueLocalWheel(GET_WHEEL_DELTA_WPARAM(wParam));
 				return 0;
 			}
 			if (message == WM_CANCELMODE || message == WM_CAPTURECHANGED)
 			{
+				KillTimer(hwnd, PointerTimer);
+				client.session.Reset();
+				client.mouseGesture.Reset();
+				client.rawTracking = false;
+				client.mouse.FinishMouse();
+				client.mouse.EndTouch();
+				client.touchDevice = 0;
 				CancelSurfacePointer(index);
 				// ReleaseCapture 会同步重入 WM_CAPTURECHANGED，必须在呈现锁外执行。
 				if (message == WM_CANCELMODE && GetCapture() == hwnd) ReleaseCapture();
@@ -3446,6 +3872,58 @@ namespace Inkeys::UI::PageControl
 			Check(clicked.preview && !clicked.dragEnded && clickMoves == 0,
 				"Page Up within threshold preserves preview without final drag sample");
 
+			// 合并后的真实 Down/Up helper 必须保留来源校验，Mouse/Touch 不依赖 capture 成功。
+			for (const auto source : { PointerInput::Source::Mouse, PointerInput::Source::Touch,
+				PointerInput::Source::Pen })
+			{
+				Prepare();
+				auto& client = pointerClients[0];
+				PointerInput::Sample down;
+				down.kind = PointerInput::Kind::Down;
+				down.source = source;
+				down.screen = ScreenForWidget(0, PageWidget);
+				down.generation = ++client.mouseGeneration;
+				down.messageTime = 100;
+				down.tick = 100;
+				const auto pressed = BeginSurfacePointer(0, down.screen, [] {}, [] { return false; },
+					[&](POINT point) { return ToClient(0, point); }, [] {}, &down);
+				if (source == PointerInput::Source::Pen)
+				{
+					Check(!pressed.accepted && !client.session.Active() && !surfaces[0].pointerActive,
+						"pen compatibility retains capture requirement without creating a stale source");
+					continue;
+				}
+				Check(pressed.accepted && pressed.rawDrag && client.session.Active()
+					&& surfaces[0].dragPending && surfaces[0].pointerPptSession == baseline.layout.session
+					&& surfaces[0].pointerLayoutEpoch == baseline.layout.epoch,
+					"native source binds after capture attempt with current PPT session and drag candidate");
+				auto up = down;
+				up.kind = PointerInput::Kind::Up;
+				up.screen.x += 120;
+				up.screen.y += 70;
+				up.messageTime = 120;
+				up.tick = 120;
+				if (source == PointerInput::Source::Mouse)
+					Check(client.mouseGesture.AcceptNative(up), "native Up remains valid without a Raw claim");
+				Check(client.session.Accept(up), "source ownership validates final Up before geometry changes");
+				int updates = 0;
+				POINT applied{};
+				const auto released = FinishSurfacePointer(0, ToClient(0, up.screen), up.screen, true,
+					[&](std::size_t surface, POINT point)
+					{
+						++updates;
+						applied = point;
+						UpdateDragLocked(surface, point,
+							[](const auto&, const auto&, std::uint64_t) { return false; });
+					});
+				Check(released.dragEnded && !released.preview && updates == 1
+					&& applied.x == up.screen.x && applied.y == up.screen.y && !surfaces[0].pointerActive,
+					"source-validated final Up crosses threshold once and never opens preview");
+				client.mouseGesture.Reset();
+				client.session.Reset();
+				CancelSurfacePointer(0);
+			}
+
 			{
 				std::scoped_lock renderLock(renderTransactionMutex);
 				for (auto& state : surfaces) { state.scene.Reset(); state = SurfaceState{}; }
@@ -3799,6 +4277,11 @@ namespace Inkeys::UI::PageControl
 		}
 		referenceCount.store(0, std::memory_order_release);
 		initialized.store(false, std::memory_order_release);
+		wheelInputGeneration.fetch_add(1, std::memory_order_acq_rel);
+		{
+			std::scoped_lock lock(localWheelMutex);
+			localWheelRead = localWheelWrite = localWheelCount = 0;
+		}
 		displaySubscription.Reset();
 		for (const Client client : Clients)
 			Inkeys::UI::RenderPipeline::Unregister(client);
@@ -3887,13 +4370,77 @@ namespace Inkeys::UI::PageControl
 		RequestAll();
 	}
 
-	void QueuePptWheel(short delta) noexcept
+	bool CanAcceptPptWheel(const Business::PptSessionToken& session) noexcept
 	{
+		if (!initialized.load(std::memory_order_acquire) || !session.active) return false;
 		const auto [ppt, whiteboard] = Snapshot();
-		if (!ppt.presentationVisible || whiteboard.expandedLayoutTarget
-			|| whiteboard.active || WhiteboardWorkspaceSwitching(whiteboard)
-			|| delta == 0) return;
-		InvokeDirection(0, delta < 0);
+		return ppt.presentationVisible && ppt.totalPage > 0
+			&& ppt.layout.session == session.localSession
+			&& !whiteboard.expandedLayoutTarget && !whiteboard.active
+			&& !WhiteboardWorkspaceSwitching(whiteboard);
+	}
+
+	void ResetWheelInput() noexcept
+	{
+		// 仅 Bar owner 改累计器；原生线程只捕获原子代次和投递值。
+		wheelInputGeneration.fetch_add(1, std::memory_order_acq_rel);
+		globalWheelAccumulator.Reset();
+		localWheelAccumulator.Reset();
+		localWheelSession = 0;
+	}
+
+	void ConsumePptWheel(const Business::PptSessionToken& session,
+		std::uint64_t routeGeneration, short delta) noexcept
+	{
+		if (!delta || !CanAcceptPptWheel(session)
+			|| !Business::IsCurrentPptInputSession(session))
+		{
+			globalWheelAccumulator.Reset();
+			return;
+		}
+		const auto [ppt, whiteboard] = Snapshot();
+		if (ppt.layout.session != session.localSession || !ppt.presentationVisible
+			|| whiteboard.expandedLayoutTarget || whiteboard.active
+			|| WhiteboardWorkspaceSwitching(whiteboard)) return;
+		const int steps = globalWheelAccumulator.Consume(routeGeneration, delta);
+		// 完整刻度立即尝试既有业务门禁；被节流拒绝的不排队等待以后补翻。
+		for (int remaining = std::abs(steps); remaining > 0; --remaining)
+			Business::QueuePptInputDirection(session, steps < 0, ppt.currentPage, ppt.totalPage);
+	}
+
+	void DrainLocalWheel() noexcept
+	{
+		for (unsigned batch = 0; batch < 16; ++batch)
+		{
+			LocalWheelRequest request;
+			{
+				std::scoped_lock lock(localWheelMutex);
+				if (!localWheelCount) break;
+				request = localWheels[localWheelRead];
+				localWheelRead = (localWheelRead + 1) % localWheels.size();
+				--localWheelCount;
+			}
+			if (request.generation != wheelInputGeneration.load(std::memory_order_acquire)
+				|| !CanAcceptPptWheel(request.session)
+				|| !Business::IsCurrentPptInputSession(request.session))
+			{
+				localWheelAccumulator.Reset();
+				continue;
+			}
+			if (localWheelSession != request.session.localSession)
+			{
+				localWheelSession = request.session.localSession;
+				localWheelAccumulator.Reset();
+			}
+			const auto [ppt, whiteboard] = Snapshot();
+			if (!ppt.presentationVisible || ppt.layout.session != request.session.localSession
+				|| whiteboard.active || whiteboard.expandedLayoutTarget
+				|| WhiteboardWorkspaceSwitching(whiteboard)) continue;
+			const int steps = localWheelAccumulator.Consume(request.generation, request.delta);
+			for (int remaining = std::abs(steps); remaining > 0; --remaining)
+				Business::QueuePptInputDirection(request.session,
+					steps < 0, ppt.currentPage, ppt.totalPage);
+		}
 	}
 
 	void SetDebugEnabled(bool enabled) noexcept
@@ -3932,6 +4479,7 @@ namespace Inkeys::UI::PageControl
 					|| surface.dragging || surface.dragPending;
 				if (index >= 2 && (surface.pointerActive || surface.dragging || surface.dragPending)) middleSnap = {};
 				surface.scene.CancelPointer();
+				surface.pointerActive = false;
 				surface.dragging = false;
 				surface.dragPending = false;
 				surface.pointerActive = false;

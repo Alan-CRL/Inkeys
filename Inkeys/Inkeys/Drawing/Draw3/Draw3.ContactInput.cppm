@@ -226,6 +226,10 @@ export namespace Inkeys::Drawing::Draw3
 		// 被拒收或收尾的 contact 保留物理 route 到终态；Closing 竞态由 producer 延后回收。
 		void DiscardUntilTerminal(ContactHandle handle) noexcept;
 		void SetAdmissionBlocked(bool blocked) noexcept;
+		// 快捷键租约独立拥有一位门禁，释放不能打开 PPT/load/fatal 的基础门禁。
+		void SetShortcutAdmissionBlocked(bool blocked) noexcept;
+		// 仅用于检测基础门变化；快捷键租约仍通过合并门阻止新输入。
+		bool BaseAdmissionBlocked() const noexcept;
 		bool AdmissionBlocked() const noexcept;
 		uint64_t AdmissionRevision() const noexcept;
 		bool ContactAdmitted(ContactHandle handle) const noexcept;

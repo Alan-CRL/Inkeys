@@ -327,11 +327,27 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ExpandDirectionAdjustment, 1) \
+				GROUP(AutoCollapse, \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Drawing, 1) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Erasing, 0) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Dragging, 0) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, OutsideClick, 0) \
+				) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA1, MakeDefaultFixedButtonsA1()) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarExtensionButtonLayoutEntry>, ExtensionButtons, MakeDefaultExtensionButtons()) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
 			) \
 		) \
+	GROUP(Input, \
+		GROUP(Shortcuts, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ToggleAnnotation, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Undo, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, RedoY, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, RedoShiftZ, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Clear, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Freeze, true) \
+		) \
+	) \
 	GROUP(Drawing, \
 		GROUP(Cursor, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseStyle, 0) \

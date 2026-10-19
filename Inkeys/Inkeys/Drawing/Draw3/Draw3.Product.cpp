@@ -195,6 +195,56 @@ namespace Inkeys::Drawing::Draw3
 		return productHost.PublishCommand(command);
 	}
 
+	Shortcuts::Context CaptureProductShortcutContext() noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return {};
+		std::scoped_lock lock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire)
+			? Shortcuts::Context{} : productHost.ShortcutContext();
+	}
+
+	std::uint64_t PublishProductShortcutCommand(Bridge::CommandType type,
+		const Shortcuts::Scope& expected, std::uint64_t leaseId) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return 0;
+		std::scoped_lock lock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire) ? 0 :
+			productHost.PublishShortcutCommand(type, expected, leaseId);
+	}
+
+	std::uint64_t PublishProductShortcutFence(const Shortcuts::Context& expected,
+		std::uint64_t leaseId) noexcept
+	{
+		if (!leaseId || productStopping.load(std::memory_order_acquire)) return 0;
+		std::scoped_lock lock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire) ? 0 :
+			productHost.PublishShortcutCommand(Bridge::CommandType::ShortcutFence,
+				expected.scope, leaseId, expected.contentRevision);
+	}
+
+	bool TryTakeProductShortcutCompletion(std::uint64_t id,
+		Shortcuts::Completion& completion) noexcept
+	{
+		return productHost.TakeShortcutCompletion(id, completion);
+	}
+	void RetireProductShortcutRequest(std::uint64_t id) noexcept
+	{
+		productHost.RetireShortcutRequest(id);
+	}
+	std::uint64_t AcquireProductShortcutLease(const Shortcuts::Context& expected,
+		bool requireContentRevision) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return 0;
+		std::scoped_lock lock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire) ? 0 :
+			productHost.AcquireShortcutLease(expected, requireContentRevision);
+	}
+	void ReleaseProductShortcutLease(std::uint64_t id) noexcept
+	{
+		std::scoped_lock lock(productCallMutex);
+		productHost.ReleaseShortcutLease(id);
+	}
+
 	void SetProductActivationAllowed(bool enabled) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return;

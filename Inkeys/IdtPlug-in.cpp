@@ -101,24 +101,32 @@ namespace
 	condition_variable pptUiBusinessCondition;
 	deque<PptUiBusinessRequest> pptUiBusinessCommands;
 	atomic_bool pptUiPageCommandOutstanding = false;
+	Inkeys::Business::PptEndShowGate pptEndShowGate;
 	constexpr auto PptPageStateCheckInterval = chrono::milliseconds(16);
 	constexpr auto PptIdleStateCheckInterval = chrono::milliseconds(100);
 	constexpr auto PptVisibilityPublishInterval = chrono::milliseconds(500);
 
-	void QueuePptUiBusinessCommand(PptUiBusinessCommand command, std::uint64_t requestId = 0)
+	void QueuePptUiBusinessCommand(PptUiBusinessCommand command, std::uint64_t requestId = 0,
+		const PptSessionToken* expected = nullptr)
 	{
 		const bool pageCommand = command == PptUiBusinessCommand::Previous ||
 			command == PptUiBusinessCommand::Next;
 		if (pageCommand && pptUiPageCommandOutstanding.exchange(true)) return;
-		PptUiBusinessRequest request{ command, CapturePptSession(), requestId };
+		PptUiBusinessRequest request{ command, expected ? *expected : CapturePptSession(), requestId };
 		try
 		{
 			lock_guard lock(pptUiBusinessMutex);
+			if (command == PptUiBusinessCommand::EndShow && !pptEndShowGate.TryBegin(request.session)) return;
 			pptUiBusinessCommands.push_back(std::move(request));
 		}
 		catch (...)
 		{
 			if (pageCommand) pptUiPageCommandOutstanding = false;
+			if (command == PptUiBusinessCommand::EndShow)
+			{
+				lock_guard lock(pptUiBusinessMutex);
+				pptEndShowGate.Complete(request.session);
+			}
 			if (requestId) Inkeys::UI::Bar::CompleteEndShowRequest(requestId);
 			return;
 		}
@@ -151,6 +159,25 @@ namespace
 	[[nodiscard]] bool IsInRect(long x, long y, const RECT& rect) noexcept
 	{
 		return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+	}
+}
+
+namespace Inkeys::Business
+{
+	PptSessionToken CapturePptInputSession() noexcept { return CapturePptSession(); }
+	bool IsCurrentPptInputSession(const PptSessionToken& token) noexcept
+	{
+		return IsCurrentPptSession(token);
+	}
+	void QueuePptInputDirection(const PptSessionToken& token,
+		bool next, int currentPage, int totalPage) noexcept
+	{
+		if (totalPage <= 0 || !IsCurrentPptSession(token)) return;
+		const auto command = next
+			? (currentPage == -1 ? PptUiBusinessCommand::EndShow : PptUiBusinessCommand::Next)
+			: PptUiBusinessCommand::Previous;
+		// 捕获的 token 原样存入最终业务请求，入队时绝不重新认领当前放映。
+		QueuePptUiBusinessCommand(command, 0, &token);
 	}
 }
 
@@ -1110,13 +1137,19 @@ void PPTLinkageMain()
 		{
 			PptUiBusinessCommand command;
 			std::uint64_t request;
+			PptSessionToken session;
 			~CompleteRequest()
 			{
 				if (command == PptUiBusinessCommand::Previous || command == PptUiBusinessCommand::Next)
 					pptUiPageCommandOutstanding = false;
+				if (command == PptUiBusinessCommand::EndShow)
+				{
+					lock_guard lock(pptUiBusinessMutex);
+					pptEndShowGate.Complete(session);
+				}
 				if (request) Inkeys::UI::Bar::CompleteEndShowRequest(request);
 			}
-		} completion{ command, request.requestId };
+		} completion{ command, request.requestId, request.session };
 		if (!IsCurrentPptSession(request.session)) continue;
 		if (command == PptUiBusinessCommand::Focus)
 		{
@@ -1201,6 +1234,7 @@ void PPTLinkageMain()
 		lock_guard lock(pptUiBusinessMutex);
 		remaining.swap(pptUiBusinessCommands);
 		pptUiPageCommandOutstanding = false;
+		pptEndShowGate.Reset();
 	}
 	for (const auto& request : remaining)
 		if (request.command == PptUiBusinessCommand::PersistSettings)

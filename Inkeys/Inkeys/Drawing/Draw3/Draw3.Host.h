@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
@@ -111,6 +112,57 @@ namespace Inkeys::Drawing::Draw3
 		private:
 			std::atomic_bool active_ = false;
 		};
+
+		struct HostAcceptedStrokeContext
+		{
+			bool running = false;
+			Bridge::Workspace desiredWorkspace = Bridge::Workspace::Desktop;
+			std::optional<Bridge::PresentationReadyIdentity> desiredPresentation;
+			bool commandScenePending = false;
+			bool admissionBlocked = false;
+		};
+
+		// Host 与无窗口测试共享逻辑场景准入；不把延后的 Present 回执当作 CPU 场景。
+		class HostAcceptedStrokeState
+		{
+		public:
+			void BeginHost() noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				if (++hostGeneration_ == 0) ++hostGeneration_;
+				scene_ = {};
+			}
+			void PublishScene(const Bridge::AcceptedStrokeBegin& scene) noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				scene_ = scene;
+			}
+			void Stamp(Bridge::AcceptedStrokeBegin& accepted) const noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				accepted.hostGeneration = hostGeneration_;
+			}
+			[[nodiscard]] bool IsCurrent(const Bridge::AcceptedStrokeBegin& accepted,
+				const HostAcceptedStrokeContext& current) const noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				if (!current.running || current.commandScenePending ||
+					accepted.kind == Bridge::CompletedStrokeKind::None ||
+					accepted.hostGeneration == 0 || accepted.hostGeneration != hostGeneration_ ||
+					accepted.sceneGeneration == 0 || accepted.sceneGeneration != scene_.sceneGeneration ||
+					accepted.workspace != scene_.workspace || accepted.pageIndex != scene_.pageIndex ||
+					accepted.presentation != scene_.presentation ||
+					accepted.workspace != current.desiredWorkspace) return false;
+				return accepted.workspace != Bridge::Workspace::Presentation ||
+					(accepted.presentation && !current.admissionBlocked &&
+						accepted.presentation == current.desiredPresentation);
+			}
+
+		private:
+			mutable std::mutex mutex_;
+			std::uint64_t hostGeneration_ = 0;
+			Bridge::AcceptedStrokeBegin scene_;
+		};
 	}
 
 	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一选定后端生产。
@@ -145,6 +197,7 @@ namespace Inkeys::Drawing::Draw3
 		// 同步发布当前画布目标；产品层在返回前更新 DIP 状态及其 bridge。
 		void (*penWidthContextChanged)(void*,
 			const Inkeys::Business::PenWidth::Context&) noexcept = nullptr;
+		void (*acceptedStrokeBegan)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
 	};
 
 	enum class HostPresentationMode : std::uint8_t
@@ -324,6 +377,8 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// 异步 UI 起笔通知只验证场景/生命周期；短笔结束后同场景仍有效。
+		bool IsAcceptedStrokeCurrent(const Bridge::AcceptedStrokeBegin& accepted) const noexcept;
 		// Caller 仅在成功 Start 后且不并行下一 Start 时读取；未启用 hidden 则 nullopt。
 		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
 		// 保存期望值并唤醒绘制线程，启动前设置也保留到下一次 Start。
@@ -343,6 +398,15 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
+		Shortcuts::Context ShortcutContext() const noexcept;
+		std::uint64_t PublishShortcutCommand(Bridge::CommandType type,
+			const Shortcuts::Scope& expected, std::uint64_t leaseId,
+			std::optional<std::uint64_t> expectedContentRevision = std::nullopt) noexcept;
+		bool TakeShortcutCompletion(std::uint64_t id, Shortcuts::Completion& result) noexcept;
+		void RetireShortcutRequest(std::uint64_t id) noexcept;
+		std::uint64_t AcquireShortcutLease(const Shortcuts::Context& expected,
+			bool requireContentRevision) noexcept;
+		void ReleaseShortcutLease(std::uint64_t id) noexcept;
 		// 生命周期事务控制 Drawpad 是否允许本次鼠标输入激活窗口。
 		void SetActivationAllowed(bool enabled) noexcept;
 		bool PublishPresentationUiReady(
