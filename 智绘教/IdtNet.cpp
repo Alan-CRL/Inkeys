@@ -13,6 +13,7 @@ std::string GetEditionInformation(std::string referer)
 	{
 		{ "Cache-Control", "no-cache" },
 		{ "Pragma", "no-cache" },
+		{ "User-Agent", "Inkeys-Updater/3.0" },
 		{ "Referer", referer.c_str() }
 	};
 
@@ -73,14 +74,15 @@ std::string GetEditionInformation(std::string referer)
 
 	return "Error";
 }
-bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, std::atomic_ullong& downloadedSize, std::string referer)
+bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, std::atomic_ullong& downloadedSize)
 {
 	httplib::Result res;
 	httplib::Headers headers =
 	{
 		{ "Cache-Control", "no-cache" },
 		{ "Pragma", "no-cache" },
-		{ "Referer", referer.c_str() }
+		// 下载请求使用统一 UA，设备与版本信息仅随更新信息请求发送。
+		{ "User-Agent", "Inkeys-Updater/3.0" }
 	};
 
 	std::ofstream file;
@@ -101,7 +103,7 @@ bool DownloadEdition(std::string domain, std::string path, std::wstring director
 			httplib::SSLClient scli(domain);
 			scli.set_follow_location(true);
 			scli.set_connection_timeout(5);
-			res = scli.Get(path.c_str(), callback);
+			res = scli.Get(path.c_str(), headers, callback);
 		}
 		file.close();
 	}
@@ -116,7 +118,7 @@ bool DownloadEdition(std::string domain, std::string path, std::wstring director
 			httplib::Client cli(domain);
 			cli.set_follow_location(true);
 			cli.set_connection_timeout(5);
-			res = cli.Get(path.c_str(), callback);
+			res = cli.Get(path.c_str(), headers, callback);
 		}
 		file.close();
 	}

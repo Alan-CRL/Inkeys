@@ -133,6 +133,8 @@ PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 
 SETTINGSPONSOR          PNG                     "src\\setting\\SettingSponsor.png"
 
+INKEYS3BANNER           PNG                     "src\\setting\\Inkeys3Banner.png"
+
 CUSTOMIZEICO1           PNG                     "src\\ClassIsland.png"
 
 CUSTOMIZEICO2           PNG                     "src\\IslandCaller.png"

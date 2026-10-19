@@ -10,7 +10,7 @@
 #pragma comment(lib, "d3d9")
 
 extern WNDCLASSEXW ImGuiWc;
-extern PDIRECT3DTEXTURE9 TextureSettingSign[11];
+extern PDIRECT3DTEXTURE9 TextureSettingSign[12];
 extern int SettingMainMode;
 
 void SettingWindowBegin();
