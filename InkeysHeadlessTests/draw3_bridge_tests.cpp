@@ -12,6 +12,8 @@
 namespace
 {
 	using namespace Inkeys::Drawing::Draw3::Bridge;
+	using Inkeys::Drawing::Draw3::MouseCursorStyle;
+	using Inkeys::Drawing::Draw3::PenCursorStyle;
 	using Inkeys::Drawing::Draw3::DrawpadPresentationSurface;
 	using Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface;
 	using Inkeys::Drawing::Draw3::TimerPeriodController;
@@ -55,6 +57,9 @@ namespace
 			"default color uses RGBA black")) ++failures;
 		if (!Expect(initial.revision == 0,
 			"default snapshot starts at revision zero")) ++failures;
+		if (!Expect(initial.cursorSettings.mouseStyle == MouseCursorStyle::System
+			&& initial.cursorSettings.penStyle == PenCursorStyle::Circle,
+			"bridge defaults use the system mouse cursor and the original pen circle")) ++failures;
 		if (!Expect(initial.selectionMode,
 			"default product state starts in selection mode")) ++failures;
 		if (!Expect(initial.workspace == Workspace::Desktop,
@@ -108,6 +113,72 @@ namespace
 		if (!Expect(bridge.PublishWorkspace(Workspace::Presentation)
 			&& bridge.Snapshot().workspace == Workspace::Presentation,
 			"presentation is an explicit third workspace")) ++failures;
+
+		const auto beforeCursor = bridge.Snapshot();
+		auto cursorOnly = beforeCursor;
+		cursorOnly.cursorSettings.penStyle = PenCursorStyle::PenIcon;
+		bridge.PublishState(cursorOnly);
+		const auto afterCursor = bridge.Snapshot();
+		if (!Expect(afterCursor.revision == beforeCursor.revision + 1
+			&& afterCursor.cursorSettings == cursorOnly.cursorSettings
+			&& beforeCursor.cursorSettings.penStyle == PenCursorStyle::Circle
+			&& afterCursor.cursorSettings.mouseStyle == beforeCursor.cursorSettings.mouseStyle
+			&& afterCursor.tool == beforeCursor.tool && afterCursor.widthDip == beforeCursor.widthDip,
+			"pen-only cursor updates publish an immutable revision without changing mouse or brush")) ++failures;
+		cursorOnly = afterCursor;
+		cursorOnly.cursorSettings.mouseStyle = MouseCursorStyle::Drawing;
+		bridge.PublishState(cursorOnly);
+		const auto mouseChanged = bridge.Snapshot();
+		if (!Expect(mouseChanged.revision == afterCursor.revision + 1
+			&& mouseChanged.cursorSettings.penStyle == PenCursorStyle::PenIcon
+			&& mouseChanged.cursorSettings.mouseStyle == MouseCursorStyle::Drawing
+			&& afterCursor.cursorSettings.mouseStyle == MouseCursorStyle::System,
+			"mouse-only cursor updates preserve the independently selected pen type")) ++failures;
+	}
+
+	void TestMouseCursorToolProjection(int& failures)
+	{
+		// 断言表直接表达产品规则；调用 Host 使用的生产 helper，不在测试中复制分支。
+		struct ToolCase { Tool tool; MouseCursorStyle systemChoice; MouseCursorStyle drawingChoice; };
+		constexpr ToolCase cases[] = {
+			{ Tool::Pen, MouseCursorStyle::System, MouseCursorStyle::Drawing },
+			{ Tool::HardPen, MouseCursorStyle::System, MouseCursorStyle::Drawing },
+			{ Tool::Highlighter, MouseCursorStyle::Drawing, MouseCursorStyle::Drawing },
+			{ Tool::FixedEraser, MouseCursorStyle::System, MouseCursorStyle::System },
+			{ Tool::SpeedEraser, MouseCursorStyle::System, MouseCursorStyle::System },
+			{ Tool::Laser, MouseCursorStyle::System, MouseCursorStyle::System },
+			{ Tool::SolidLine, MouseCursorStyle::System, MouseCursorStyle::System },
+			{ Tool::DashedLine, MouseCursorStyle::System, MouseCursorStyle::System },
+			{ Tool::OutlineRectangle, MouseCursorStyle::System, MouseCursorStyle::System },
+			{ Tool::FilledRectangle, MouseCursorStyle::System, MouseCursorStyle::System },
+			{ Tool::ConfiguredEraser, MouseCursorStyle::System, MouseCursorStyle::System }
+		};
+		for (const auto& test : cases)
+		{
+			if (!Expect(ResolveMouseCursorStyleForTool(test.tool, MouseCursorStyle::System) == test.systemChoice &&
+				ResolveMouseCursorStyleForTool(test.tool, MouseCursorStyle::Drawing) == test.drawingChoice,
+				"production tool projection keeps highlighter independent and excludes every shape")) ++failures;
+		}
+		const Inkeys::Drawing::Draw3::CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon };
+		const auto marker = ResolveCursorSettingsForTool(Tool::Highlighter, raw);
+		const auto shape = ResolveCursorSettingsForTool(Tool::SolidLine, raw);
+		const auto brush = ResolveCursorSettingsForTool(Tool::Pen, raw);
+		if (!Expect(marker.mouseStyle == MouseCursorStyle::Drawing &&
+			shape.mouseStyle == MouseCursorStyle::System && brush.mouseStyle == MouseCursorStyle::System &&
+			raw.mouseStyle == MouseCursorStyle::System &&
+			marker.penStyle == PenCursorStyle::PenIcon && shape.penStyle == raw.penStyle && brush.penStyle == raw.penStyle,
+			"actual marker-to-shape-to-brush projection preserves raw system preference and independent pen type")) ++failures;
+		using Inkeys::Drawing::Draw3::RestoreMouseCursorStyle;
+		using Inkeys::Drawing::Draw3::RestorePenCursorStyle;
+		if (!Expect(RestoreMouseCursorStyle(0) == MouseCursorStyle::System &&
+			RestoreMouseCursorStyle(1) == MouseCursorStyle::Drawing &&
+			RestoreMouseCursorStyle(-1) == MouseCursorStyle::System &&
+			RestoreMouseCursorStyle(2) == MouseCursorStyle::System &&
+			RestorePenCursorStyle(0) == PenCursorStyle::Circle &&
+			RestorePenCursorStyle(1) == PenCursorStyle::PenIcon &&
+			RestorePenCursorStyle(-1) == PenCursorStyle::Circle &&
+			RestorePenCursorStyle(2) == PenCursorStyle::Circle,
+			"shared cursor restorers accept only one as the optional pen icon")) ++failures;
 	}
 
 	void TestPresentationSessionIdentity(int& failures)
@@ -562,6 +633,7 @@ int RunDraw3BridgeTests()
 {
 	int failures = 0;
 	TestProductState(failures);
+	TestMouseCursorToolProjection(failures);
 	TestPresentationSessionIdentity(failures);
 	TestCommandQueue(failures);
 	TestUnsupportedAndLifecycle(failures);

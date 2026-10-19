@@ -1423,6 +1423,7 @@ namespace Inkeys::Drawing::Draw3
 			const Bridge::ProductState state = bridge.Snapshot();
 			if (state.revision == appliedBridgeRevision && !restoreLatestScene) return;
 			appliedBridgeRevision = state.revision;
+
 			window.SetSelectionMode(state.selectionMode);
 			window.SetAutoSaveEnabled(state.autoSaveEnabled);
 			const bool selectionChanged = selectionMode.exchange(state.selectionMode,
@@ -1443,6 +1444,8 @@ namespace Inkeys::Drawing::Draw3
 			default: break;
 			}
 			window.SetActiveTool(tool);
+			// 活动 contact 可能仍锁存旧工具，原始偏好交由 Controller 按实际工具投影。
+			if (drawing) drawing->SetCursorSettings(state.cursorSettings);
 			window.SetSpeedEraserDeviceMode(state.paintDevice == 0
 				? SpeedEraser::DeviceMode::LargeScreen : SpeedEraser::DeviceMode::Laptop);
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser

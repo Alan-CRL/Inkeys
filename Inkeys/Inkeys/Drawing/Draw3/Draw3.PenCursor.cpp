@@ -42,7 +42,10 @@ namespace Inkeys::Drawing::Draw3
 				FloatEqual(left.outlineWidth, right.outlineWidth) &&
 				FloatEqual(left.outlineRed, right.outlineRed) &&
 				FloatEqual(left.outlineGreen, right.outlineGreen) &&
-				FloatEqual(left.outlineBlue, right.outlineBlue);
+				FloatEqual(left.outlineBlue, right.outlineBlue) &&
+				FloatEqual(left.outlineOpacity, right.outlineOpacity) &&
+				FloatEqual(left.centerOffsetX, right.centerOffsetX) &&
+				FloatEqual(left.centerOffsetY, right.centerOffsetY);
 		}
 
 		const DrawingCursorSample* SelectPrimarySample(
@@ -262,6 +265,12 @@ namespace Inkeys::Drawing::Draw3
 			std::isfinite(appearance.fillAlpha) && std::isfinite(appearance.outlineWidth) &&
 			std::isfinite(appearance.outlineRed) && std::isfinite(appearance.outlineGreen) &&
 			std::isfinite(appearance.outlineBlue) &&
+			std::isfinite(appearance.outlineOpacity) &&
+			std::isfinite(appearance.centerOffsetX) && std::isfinite(appearance.centerOffsetY) &&
+			(appearance.outlineOpacity == -1.0f || appearance.outlineOpacity >= 0.0f) &&
+			appearance.outlineOpacity <= 1.0f &&
+			std::abs(appearance.centerOffsetX) <= kMaximumCursorExtentPx &&
+			std::abs(appearance.centerOffsetY) <= kMaximumCursorExtentPx &&
 			appearance.width > 0.0f && appearance.height > 0.0f &&
 			appearance.width <= kMaximumCursorExtentPx &&
 			appearance.height <= kMaximumCursorExtentPx;
@@ -276,8 +285,11 @@ namespace Inkeys::Drawing::Draw3
 		bool selectedToolIsEraser,
 		bool drawingCursorDuringContactEnabled,
 		bool translucentInkCursorEnabled,
-		bool mouseUsesSystemCursor) noexcept
+		bool mouseUsesSystemCursor, const CursorSettings* productSettings,
+		bool penIconAllowed, float dpiScale) noexcept
 	{
+		if (productSettings)
+			mouseUsesSystemCursor = productSettings->mouseStyle == MouseCursorStyle::System;
 		DrawingCursorVisual visual;
 		const DrawingCursorSample* sample = SelectPrimarySample(
 			penSample, mouseSample, pointerAuthority);
@@ -315,7 +327,32 @@ namespace Inkeys::Drawing::Draw3
 		visual.y = sample->y;
 		visual.appearance = eraser ? eraserAppearance : selectedAppearance;
 		if (eraser && sample->inContact) visual.appearance.opacity = 1.0f;
-		if (pen && !eraser && !translucentInkCursorEnabled &&
+		if (productSettings && !eraser)
+		{
+			// Conflict/Unknown 只回退视觉场景，绝不改写样本身份或橡皮响应。
+			const bool screenPen = pen &&
+				sample->source.recognition != SpeedEraser::SourceRecognition::Conflict &&
+				sample->source.kind == SpeedEraser::SourceKind::IntegratedPen;
+			const bool highlight = !screenPen;
+			const float scale = std::isfinite(dpiScale) && dpiScale > 0.0f
+				? std::clamp(dpiScale, 0.25f, 8.0f) : 1.0f;
+			// 类型选择只允许改变软/硬笔，荧光笔矩形和图形圆形保持原几何。
+			if (penIconAllowed && (pen ? productSettings->penStyle == PenCursorStyle::PenIcon
+				: productSettings->mouseStyle == MouseCursorStyle::Drawing))
+			{
+				visual.appearance.shape = DrawingCursorShape::PenIcon;
+				visual.appearance.width = visual.appearance.height = 24.0f * scale;
+				visual.appearance.centerOffsetX = visual.appearance.width * 0.5f;
+				visual.appearance.centerOffsetY = visual.appearance.height * 0.5f;
+			}
+			visual.appearance.outlineWidth = (highlight ? 1.25f : 0.5f) * scale;
+			visual.appearance.outlineOpacity = highlight ? 1.0f :
+				visual.appearance.opacity * visual.appearance.fillAlpha;
+			const float outline = highlight ? 0.96f : 184.0f / 255.0f;
+			visual.appearance.outlineRed = visual.appearance.outlineGreen =
+				visual.appearance.outlineBlue = outline;
+		}
+		else if (pen && !eraser && !translucentInkCursorEnabled &&
 			visual.appearance.opacity >= 1.0f)
 		{
 			// 只把普通不透明 Pen 提升为实心；荧光笔和 Eraser Hover 保留工具 alpha。
@@ -549,19 +586,21 @@ namespace Inkeys::Drawing::Draw3
 		if (!visual.visible || !IsValidDrawingCursorAppearance(visual.appearance) ||
 			!std::isfinite(visual.x) || !std::isfinite(visual.y) ||
 			canvasWidth <= 0 || canvasHeight <= 0) return {};
+		const double centerX = static_cast<double>(visual.x) + visual.appearance.centerOffsetX;
+		const double centerY = static_cast<double>(visual.y) + visual.appearance.centerOffsetY;
 		const double halfWidth = static_cast<double>(visual.appearance.width) * 0.5 +
 			kCursorBoundsPaddingPx;
 		const double halfHeight = static_cast<double>(visual.appearance.height) * 0.5 +
 			kCursorBoundsPaddingPx;
 		// 先在 double 域裁到画布，再转换为 LONG，避免极大有限坐标触发未定义行为。
 		RECT bounds = {
-			static_cast<LONG>(std::clamp(std::floor(static_cast<double>(visual.x) - halfWidth),
+			static_cast<LONG>(std::clamp(std::floor(centerX - halfWidth),
 				0.0, static_cast<double>(canvasWidth))),
-			static_cast<LONG>(std::clamp(std::floor(static_cast<double>(visual.y) - halfHeight),
+			static_cast<LONG>(std::clamp(std::floor(centerY - halfHeight),
 				0.0, static_cast<double>(canvasHeight))),
-			static_cast<LONG>(std::clamp(std::ceil(static_cast<double>(visual.x) + halfWidth),
+			static_cast<LONG>(std::clamp(std::ceil(centerX + halfWidth),
 				0.0, static_cast<double>(canvasWidth))),
-			static_cast<LONG>(std::clamp(std::ceil(static_cast<double>(visual.y) + halfHeight),
+			static_cast<LONG>(std::clamp(std::ceil(centerY + halfHeight),
 				0.0, static_cast<double>(canvasHeight)))
 		};
 		return bounds.left < bounds.right && bounds.top < bounds.bottom ? bounds : RECT{};

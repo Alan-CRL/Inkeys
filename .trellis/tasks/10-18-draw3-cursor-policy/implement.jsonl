@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "产品边界、窗口/输入所有权及实施前决策门"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "Touch 主光标归属、来源过滤、schema2 与 Win7 shader 合同；长文按阶段主动读取"}
+{"file": ".trellis/spec/native-desktop/draw3-shaders.md", "reason": "正式 HLSL 与 Win7 guarded PS 同步、预乘透明与资源链"}
+{"file": ".trellis/tasks/10-18-draw3-cursor-policy/research/input-cursor-lifecycle.md", "reason": "Win7 可达路径、正常终态、owner-thread 刷新与现场取证边界"}
+{"file": ".trellis/tasks/10-18-draw3-cursor-policy/research/settings-and-history.md", "reason": "旧 Beta 退役与新配置候选、设置 FIFO、i18n、构建约束"}
+{"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "产品光标唯一配置和跨层消费合同"}
+{"file": ".trellis/tasks/10-18-draw3-cursor-policy/research/cursor-policy-revision.md", "reason": "当前权威：两种类型选择、鼠标默认系统、固定高亮、荧光笔独立"}
+{"file": ".trellis/tasks/10-18-draw3-cursor-policy/research/cursor-geometry-revision.md", "reason": "当前增量：荧光笔左右高亮减半、四个非笔尖圆角，正式/Win7 guarded同步及无GUI验证"}

@@ -100,6 +100,7 @@ namespace Inkeys::Drawing::Draw3
 		merged.colorRgba = state.colorRgba;
 		merged.paintDevice = state.paintDevice;
 		merged.eraserInputs = state.eraserInputs;
+		merged.cursorSettings = state.cursorSettings;
 		merged.selectionMode = state.selectionMode;
 		merged.autoSaveEnabled = state.autoSaveEnabled;
 		productHost.PublishState(merged);
