@@ -644,3 +644,38 @@
 ### Next Steps
 
 - 本线程由用户后续合入dev；本轮未push、未执行合并。
+
+
+## Session 111: PR238审阅修正、dev冲突解决与PPT控件任务结案
+<!-- trellis-session: v=2 fp=fb82a88eb36a8c82 -->
+
+**Date**: 2026-10-19
+**Task**: PR238审阅修正、dev冲突解决与PPT控件任务结案
+**Branch**: `bugfix/pptcom`
+
+### Summary
+
+采纳20屏幕DIP双门槛与140ms GUI验收文档修正；合入dev并保留基础控制/HWND升级及描述符待应用缓存，独立复核通过。
+
+### Main Changes
+
+- 解决IdtPlug-in.cpp和日志索引冲突，保留双方修复；归档PPT控件任务并校验归档context。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2791a1cc` | fix(pptcom): resolve dev conflicts and PR 238 review feedback |
+| `f3e83110` | chore(trellis): archive completed PPT controls task |
+
+### Testing
+
+- [OK] 完整Debug ARM64 solution exit0/260.80s；headless --no-window exit0/143.12s；生产offscreen exit0/26.91s，PageControlScene failures=0；格式与冲突检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 仅本地提交，无push；真实设备、USER32捕获与Office/WPP验收仍未执行。
