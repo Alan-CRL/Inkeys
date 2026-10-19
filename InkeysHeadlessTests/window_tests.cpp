@@ -327,6 +327,8 @@ int RunCanvasPolicyTests()
 		&& success.windows[0].visible && !success.windows[1].visible && !success.changedWhileVisible,
 		"whiteboard commits both shapes/properties before restoring exclusive visibility");
 	const int forwardCalls = success.call;
+	auto whiteboardPolicyKey = sameKey;
+	whiteboardPolicyKey.whiteboard = true;
 	for (int failCall = 1; failCall <= forwardCalls; ++failCall)
 	{
 		PairOperations failure;
@@ -337,13 +339,36 @@ int RunCanvasPolicyTests()
 			"any capture/hide/property/region/style/show step failure restores both canvases");
 		if (failure.enteredRollback)
 			check(failure.restoredOrder == std::vector<int>{ 1, 0 }, "pair rollback runs in reverse order");
+		// 完整恢复旧场景后，owner 的同场景检查必须跳过事务，不能周期性双隐藏/显示。
+		std::optional<CanvasPolicyKey> applied = sameKey;
+		const auto completion = ResolveCanvasPolicyCompletion(result, false, false);
+		completion.UpdateApplied(applied, whiteboardPolicyKey);
+		check(applied && *applied == sameKey && !completion.retry && !completion.dirty
+			&& !CanvasPolicyNeedsUpdate(applied, sameKey),
+			"same-geometry full rollback retains old policy and needs no owner retry or old-scene transaction");
 	}
+	// 首次应用失败不能将从未生效的目标登记为 applied；后续显式请求仍可重新应用。
+	PairOperations firstApplication;
+	firstApplication.failCall = 8;
+	const auto firstResult = ApplyCanvasPairTransaction(2, firstApplication);
+	std::optional<CanvasPolicyKey> initiallyEmpty;
+	const auto firstCompletion = ResolveCanvasPolicyCompletion(firstResult, false, false);
+	firstCompletion.UpdateApplied(initiallyEmpty, whiteboardPolicyKey);
+	check(!initiallyEmpty && !firstCompletion.retry && !firstCompletion.dirty
+		&& CanvasPolicyNeedsUpdate(initiallyEmpty, whiteboardPolicyKey),
+		"initial full rollback keeps empty applied state eligible for a later explicit application");
 	PairOperations changedBounds;
 	changedBounds.failCall = 8;
 	const auto boundsRollback = ApplyCanvasPairTransaction(2, changedBounds, false);
 	check(!boundsRollback.succeeded && boundsRollback.rollbackSucceeded
 		&& !changedBounds.windows[0].visible && !changedBounds.windows[1].visible,
 		"old region rollback after changed bounds stays hidden until new geometry converges");
+	std::optional<CanvasPolicyKey> movedApplied = sameKey;
+	const auto movedCompletion = ResolveCanvasPolicyCompletion(boundsRollback, true, false);
+	movedCompletion.UpdateApplied(movedApplied, whiteboardPolicyKey);
+	check(!movedApplied && movedCompletion.retry && !movedCompletion.dirty
+		&& CanvasPolicyNeedsUpdate(movedApplied, sameKey),
+		"changed bounds invalidate old applied key and retain recovery retry after complete rollback");
 	PairOperations rollbackFailure;
 	rollbackFailure.failCall = 8; // 第二窗 property 已更新、region 失败。
 	rollbackFailure.failRollback = true;
@@ -351,6 +376,32 @@ int RunCanvasPolicyTests()
 	check(!failedRollback.succeeded && !failedRollback.rollbackSucceeded
 		&& !rollbackFailure.windows[0].visible && !rollbackFailure.windows[1].visible,
 		"incomplete rollback never reveals mixed canvas policies");
+	std::optional<CanvasPolicyKey> failedApplied = sameKey;
+	const auto failedCompletion = ResolveCanvasPolicyCompletion(failedRollback, false, false);
+	failedCompletion.UpdateApplied(failedApplied, whiteboardPolicyKey);
+	check(!failedApplied && failedCompletion.retry && failedCompletion.dirty,
+		"incomplete rollback clears applied key and retains scene repair plus owner retry");
+	std::optional<CanvasPolicyKey> dirtyApplied = sameKey;
+	const auto dirtyCompletion = ResolveCanvasPolicyCompletion(firstResult, false, true);
+	dirtyCompletion.UpdateApplied(dirtyApplied, whiteboardPolicyKey);
+	check(!dirtyApplied && dirtyCompletion.retry && dirtyCompletion.dirty,
+		"previously dirty scene still needs owner repair after same-geometry complete rollback");
+	// 已在故障隐藏中的旧 region 不可信；捕获失败也不能因未发生写入而停止恢复。
+	PairOperations recoveryCapture;
+	recoveryCapture.failCall = 1;
+	const auto recoveryCaptureResult = ApplyCanvasPairTransaction(2, recoveryCapture, false);
+	check(!recoveryCaptureResult.succeeded && recoveryCaptureResult.rollbackSucceeded,
+		"recovery capture failure leaves transaction unmodified");
+	const auto recoveryCompletion = ResolveCanvasPolicyCompletion(recoveryCaptureResult, true, true);
+	recoveryCompletion.UpdateApplied(failedApplied, whiteboardPolicyKey);
+	check(!failedApplied && recoveryCompletion.retry && recoveryCompletion.dirty,
+		"recovery-hidden or capture-failed state keeps retry and unresolved style until real success");
+	const auto recoveredCompletion = ResolveCanvasPolicyCompletion({ true, true }, true, true);
+	recoveredCompletion.UpdateApplied(failedApplied, whiteboardPolicyKey);
+	check(failedApplied && *failedApplied == whiteboardPolicyKey
+		&& !recoveredCompletion.retry && !recoveredCompletion.dirty
+		&& !CanvasPolicyNeedsUpdate(failedApplied, whiteboardPolicyKey),
+		"successful recovery commits target policy and clears retry plus stale style repair");
 	// 新的隐藏请求覆盖故障前的主表面快照；重试成功也不能重新揭开旧画布。
 	std::optional<bool> recoveryVisible = true;
 	bool recoveryIconic = true;

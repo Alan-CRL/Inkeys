@@ -54,6 +54,7 @@ namespace
 	std::mutex pptBusinessFocusMutex;
 	std::function<void()> pptBusinessFocusCallback;
 	Inkeys::UI::Bar::BarA2CallbackDispatcher endShowDispatcher;
+	std::atomic_uint64_t autoCollapseSceneRevision{ 1 };
 	std::atomic_bool whiteboardActive = false;
 	std::atomic_bool whiteboardBottomDockRequested = false;
 	std::atomic_bool whiteboardDockLockActive = false;
@@ -390,6 +391,11 @@ namespace Inkeys::UI::Bar
 		return pptPresentationActive.load(std::memory_order_acquire);
 	}
 
+	std::uint64_t AutoCollapseSceneRevision() noexcept
+	{
+		return autoCollapseSceneRevision.load(std::memory_order_acquire);
+	}
+
 	void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept
 	{
 		bool changed = false;
@@ -404,6 +410,7 @@ namespace Inkeys::UI::Bar
 		}
 		if (changed)
 		{
+			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
 			// 进出放映都只收起浮窗。回到桌面时若 Redo 仍可用，显示 2×1，不重新弹出。
 			barUISet.SettleRecallChromeForWorkspace();
 		}
@@ -497,6 +504,7 @@ namespace Inkeys::UI::Bar
 			std::memory_order_acq_rel) != active;
 		if (changed)
 		{
+			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
 			// 工作区切换时默认使用拖拽模式，属性浮层保持收起；后续由用户按钮控制展开。
 			barUISet.CollapseAuxiliaryPanels(true);
 		}

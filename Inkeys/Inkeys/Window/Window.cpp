@@ -7,6 +7,7 @@ module;
 #include "../Helper/FailedCleanupDeadline.h"
 #include "Window.CommandCompletion.h"
 #include "Window.CanvasPolicy.h"
+#include "Window.MessageDispatch.h"
 
 #include <array>
 #include <atomic>
@@ -965,6 +966,7 @@ namespace Inkeys::Window
 					if (message.message == WM_QUIT)
 						break;
 					TranslateMessage(&message);
+					const MessageDispatch::Scope dispatchScope(message);
 					DispatchMessageW(&message);
 				}
 				if (!eventHandle)
@@ -1657,7 +1659,7 @@ namespace Inkeys::Window
 				operations.snapshots[count].iconic = record.canvasPolicy.recoveryVisible
 					? record.canvasPolicy.recoveryIconic : IsIconic(hwnd) != FALSE;
 				operations.keys[count++] = key;
-				changed |= !record.canvasPolicy.applied || *record.canvasPolicy.applied != key;
+				changed |= Detail::CanvasPolicyNeedsUpdate(record.canvasPolicy.applied, key);
 				// 故障隐藏后 applied 已清除，后续再失败也不能揭开旧 region。
 				geometryChanged |= record.canvasPolicy.recoveryVisible.has_value();
 				if (record.canvasPolicy.applied)
@@ -1670,28 +1672,23 @@ namespace Inkeys::Window
 				return true;
 			}
 			const auto result = Detail::ApplyCanvasPairTransaction(count, operations, !geometryChanged);
+			const auto completion = Detail::ResolveCanvasPolicyCompletion(
+				result, geometryChanged, canvasPolicyDirty_);
 			for (std::size_t i = 0; i < count; ++i)
 			{
 				auto& policy = operations.records[i]->canvasPolicy;
-				if (result.succeeded)
+				completion.UpdateApplied(policy.applied, operations.keys[i]);
+				if (result.succeeded) policy.recoveryVisible.reset();
+				else if (completion.retry)
 				{
-					policy.applied = operations.keys[i];
-					policy.recoveryVisible.reset();
-				}
-				else
-				{
-					policy.applied.reset();
-					if (!result.rollbackSucceeded || geometryChanged)
-					{
-						// 旧 region 不适用于新 bounds；回滚不揭开画布，重试成功后再恢复原显隐。
-						(void)operations.Hide(i);
-						policy.recoveryVisible = operations.snapshots[i].visible;
-						policy.recoveryIconic = operations.snapshots[i].iconic;
-					}
+					// 旧 region 不适用于新 bounds；回滚不揭开画布，重试成功后再恢复原显隐。
+					(void)operations.Hide(i);
+					policy.recoveryVisible = operations.snapshots[i].visible;
+					policy.recoveryIconic = operations.snapshots[i].iconic;
 				}
 			}
-			canvasPolicyDirty_ = !result.rollbackSucceeded;
-			canvasPolicyRetry_ = !result.succeeded;
+			canvasPolicyDirty_ = completion.dirty;
+			canvasPolicyRetry_ = completion.retry;
 			SetLastError(result.succeeded ? ERROR_SUCCESS : operations.error);
 			return result.succeeded;
 		}

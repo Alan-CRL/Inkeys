@@ -36,6 +36,12 @@ namespace Inkeys::Window::Detail
 		}
 	};
 
+	[[nodiscard]] inline bool CanvasPolicyNeedsUpdate(
+		const std::optional<CanvasPolicyKey>& applied, const CanvasPolicyKey& target) noexcept
+	{
+		return !applied || *applied != target;
+	}
+
 	// 只裁屏幕最后一物理行的交集；保留 HWND/client 尺寸及文档、RTS 标尺。
 	[[nodiscard]] inline RECT CanvasBottomExclusion(const CanvasPolicyKey& key) noexcept
 	{
@@ -103,6 +109,30 @@ namespace Inkeys::Window::Detail
 		bool succeeded = false;
 		bool rollbackSucceeded = true;
 	};
+
+	struct CanvasPolicyCompletion
+	{
+		bool succeeded = false;
+		bool retry = false;
+		bool dirty = false;
+
+		void UpdateApplied(std::optional<CanvasPolicyKey>& applied,
+			const CanvasPolicyKey& target) const noexcept
+		{
+			if (succeeded) applied = target;
+			else if (retry) applied.reset();
+			// 同几何完整回滚已恢复旧策略；保留旧 key，首次应用前的空值也不伪造成功。
+		}
+	};
+
+	[[nodiscard]] inline CanvasPolicyCompletion ResolveCanvasPolicyCompletion(
+		const CanvasTransactionResult& result, bool geometryChanged, bool previouslyDirty) noexcept
+	{
+		// 仅不可信的旧区域需要 owner 重试，已有样式修复意图则保留至真实成功。
+		return { result.succeeded,
+			!result.succeeded && (!result.rollbackSucceeded || geometryChanged || previouslyDirty),
+			!result.succeeded && (previouslyDirty || !result.rollbackSucceeded) };
+	}
 
 	// 双画布先共同隐藏再提交；失败时逆序恢复，回滚不完整时保持双隐藏供原状态循环重试。
 	// Ops 仅封装本事务的 Win32 调用，便于无 HWND 故障注入验证真实提交次序。

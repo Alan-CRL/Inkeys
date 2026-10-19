@@ -221,6 +221,10 @@ namespace
 		state.paintDevice = stateMode.penWidthContext.paintDevice;
 		state.penWidthContext = stateMode.penWidthContext;
 		state.eraserInputs = ReadEraserPreferences();
+		// 光标偏好和当前工具一起发布；设置线程不直接访问绘制对象或 HWND。
+		const auto& cursor = Inkeys::config.Drawing.Cursor;
+		state.cursorSettings.mouseStyle = Inkeys::Drawing::Draw3::RestoreMouseCursorStyle(cursor.MouseStyle.load());
+		state.cursorSettings.penStyle = Inkeys::Drawing::Draw3::RestorePenCursorStyle(cursor.PenStyle.load());
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.selectionMode =
@@ -1223,6 +1227,53 @@ std::uint64_t StateModeTransitionRevision() noexcept
 	return stateModeTransitionRevision.load(std::memory_order_acquire);
 }
 
+bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
+	std::uint64_t expectedRevision, std::uint64_t freezeRevision)
+{
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision ||
+			WhiteboardTransactionActive()) return false;
+		if (restoreAnnotation)
+		{
+			if (!IsComputerInteractionMode(stateMode.StateModeSelect)) return false;
+			auto mode = stateMode.lastAnnotationMode;
+			if (mode != StateModeSelectEnum::IdtPen && mode != StateModeSelectEnum::IdtShape &&
+				mode != StateModeSelectEnum::IdtEraser) mode = StateModeSelectEnum::IdtPen;
+			// 只恢复工具身份，Pen/Shape 子型、激光及宽色记忆均保持原值。
+			stateMode.StateModeSelect = mode;
+			stateMode.StateModeSelectTarget = mode;
+			stateMode.StateModeSelectEcho = mode;
+			BackgroundColorMode = mode == StateModeSelectEnum::IdtEraser ? 0 :
+				(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
+			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+		}
+		else ApplySelectionTransitionLocked();
+	}
+	// 不覆盖等待清空期间由其它意图建立的新定格。
+	(void)Inkeys::UI::Freeze::DeactivateIfRevision(freezeRevision);
+	SyncDraw3State();
+	Inkeys::UI::Bar::RefreshToolState();
+	return true;
+}
+
+bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision)
+{
+	const auto before = GetStateModeVersionedSnapshot();
+	if (before.revision != expectedRevision ||
+		IsComputerInteractionMode(before.state.StateModeSelect) ||
+		!Inkeys::UI::Freeze::IsAvailable()) return false;
+	Inkeys::UI::Freeze::Toggle();
+	const auto toggled = Inkeys::UI::Freeze::Snapshot();
+	if (StateModeTransitionRevision() != expectedRevision)
+	{
+		(void)Inkeys::UI::Freeze::DeactivateIfRevision(toggled.revision);
+		return false;
+	}
+	if (toggled.active) (void)Inkeys::Window::GetService().RequestTopmostRefresh();
+	return true;
+}
+
 bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision)
 {
 	{
@@ -1407,7 +1458,7 @@ int RunStateModeProductionTest() noexcept
 		const auto sameProjection = [](const Bridge::ProductState& a, const Bridge::ProductState& b)
 		{
 			return a.tool == b.tool && a.colorRgba == b.colorRgba && a.widthDip == b.widthDip &&
-				a.paintDevice == b.paintDevice && a.eraserInputs == b.eraserInputs &&
+				a.paintDevice == b.paintDevice && a.eraserInputs == b.eraserInputs && a.cursorSettings == b.cursorSettings &&
 				a.selectionMode == b.selectionMode && a.autoSaveEnabled == b.autoSaveEnabled &&
 				a.page == b.page && a.hasPage == b.hasPage && a.workspace == b.workspace &&
 				a.presentationTarget == b.presentationTarget;
@@ -1686,6 +1737,41 @@ int RunStateModeProductionTest() noexcept
 				bridge.TryConsume(historyCommand) && historyCommand.type == Bridge::CommandType::Redo &&
 				!bridge.TryConsume(historyCommand), "toggle-preserves-content-and-history-fifo-without-clear");
 		}
+		stage = "shortcut-conditional-roundtrip";
+		for (int style = 0; style < 2; ++style)
+		{
+			(void)SetSelectAndClickThroughMode(style);
+			for (const auto tool : rememberedTools)
+			{
+				if (tool == StateModeSelectEnum::IdtPen) ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+				else if (tool == StateModeSelectEnum::IdtShape) ChangeStateModeToShape();
+				else ChangeStateModeToEraser();
+				const auto annotation = GetStateModeVersionedSnapshot();
+				const auto exitMarker = draw3ExitSelectionModeRevision.load(std::memory_order_acquire);
+				require(ToggleFreezeForShortcutIfRevision(annotation.revision), "shortcut-freeze-annotation");
+				const auto freeze = Inkeys::UI::Freeze::Snapshot();
+				require(freeze.active && ChangeStateModeForShortcutIfRevision(false,
+					annotation.revision, freeze.revision) && !Inkeys::UI::Freeze::IsActive() &&
+					GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
+					"shortcut-selection-turns-off-captured-freeze");
+				require(draw3ExitSelectionModeRevision.load(std::memory_order_acquire) == exitMarker,
+					"shortcut-selection-is-not-ppt-exit-marker");
+				require(!ToggleFreezeForShortcutIfRevision(StateModeTransitionRevision()),
+					"shortcut-freeze-refuses-selection");
+				require(ChangeStateModeForShortcutIfRevision(true, StateModeTransitionRevision(),
+					Inkeys::UI::Freeze::Snapshot().revision) && sameState(annotation.state, GetStateModeSnapshot()) &&
+					!Inkeys::UI::Freeze::IsActive(), "shortcut-restores-all-tool-attributes-without-freeze");
+				require(!ChangeStateModeForShortcutIfRevision(false, annotation.revision, freeze.revision),
+					"shortcut-rejects-stale-mode");
+				const auto capturedFreeze = Inkeys::UI::Freeze::Snapshot();
+				require(ToggleFreezeForShortcutIfRevision(StateModeTransitionRevision()), "shortcut-new-freeze");
+				require(ChangeStateModeForShortcutIfRevision(false, StateModeTransitionRevision(), capturedFreeze.revision) &&
+					Inkeys::UI::Freeze::IsActive(), "shortcut-old-freeze-ticket-preserves-new-intent");
+				(void)Inkeys::UI::Freeze::DeactivateIfRevision(Inkeys::UI::Freeze::Snapshot().revision);
+			}
+		}
+		require(Inkeys::UI::Bar::RunKeyboardShortcutBusinessProductionTest() == 0, "shortcut-business-owner");
+		(void)SetSelectAndClickThroughMode(1);
 		Inkeys::UI::Freeze::SetPresentationActive(true);
 		require(ChangeStateModeToClickThrough(), "ppt-clickthrough-still-available");
 		const auto pptClickthrough = GetStateModeVersionedSnapshot();
@@ -1728,7 +1814,7 @@ int RunStateModeProductionTest() noexcept
 			"empty-selection-does-not-publish-clear");
 		require(SetSelectAndClickThroughMode(0), "restore-default-mode");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
-		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough toggle/freezing, clear transaction\n", stderr);
+		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough toggle/freezing, shortcut roundtrip, clear transaction\n", stderr);
 		return 0;
 	}
 	catch (const char* check)

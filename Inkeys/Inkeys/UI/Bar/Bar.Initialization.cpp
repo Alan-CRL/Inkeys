@@ -8,6 +8,7 @@
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Input/KeyboardShortcuts.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "../StartupPlacement.h"
 
@@ -22,6 +23,7 @@ import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
 import Inkeys.Business.ComponentActions;
 import Inkeys.Input.MouseHook;
+import Inkeys.Other.Config;
 import Inkeys.Window;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.StartupPreview;
@@ -215,15 +217,28 @@ namespace Inkeys::UI::Bar
 			return;
 		}
 
-		(void)Inkeys::Input::MouseHook::Start([&]()
-			{
-				barUISet.barState.fold = true;
-				barUISet.UpdateRendering(false);
-			});
+		namespace Keyboard = Inkeys::Input::KeyboardShortcuts;
+		const auto& keys = Inkeys::config.Input.Shortcuts;
+		Keyboard::SetEnabled((keys.ToggleAnnotation.load() ? Keyboard::Flag(Keyboard::Command::ToggleAnnotation) : 0U) |
+			(keys.Undo.load() ? Keyboard::Flag(Keyboard::Command::Undo) : 0U) |
+			(keys.RedoY.load() ? Keyboard::Flag(Keyboard::Command::RedoY) : 0U) |
+			(keys.RedoShiftZ.load() ? Keyboard::Flag(Keyboard::Command::RedoShiftZ) : 0U) |
+			(keys.Clear.load() ? Keyboard::Flag(Keyboard::Command::Clear) : 0U) |
+			(keys.Freeze.load() ? Keyboard::Flag(Keyboard::Command::Freeze) : 0U));
+		const auto keyboardStatus = Keyboard::Start();
+		if (IDTLogger && (!keyboardStatus.hookInstalled ||
+			((keyboardStatus.enabledMask & Keyboard::Flag(Keyboard::Command::ToggleAnnotation)) &&
+				!keyboardStatus.hotkeyRegistered)))
+			IDTLogger->warn("[KeyboardShortcuts] 输入服务状态: hook={}, hotkey={}, hookError={}, hotkeyError={}",
+				keyboardStatus.hookInstalled, keyboardStatus.hotkeyRegistered,
+				keyboardStatus.hookError, keyboardStatus.hotkeyError);
+		if (!Inkeys::Input::MouseHook::Start() && IDTLogger)
+			IDTLogger->warn("[MouseHook] 安装失败，全局滚轮和栏外点击暂不可用");
 		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
 		if (!barUISet.Rendering())
 		{
 			SetContentStateUpdatesReady(false);
+			Keyboard::Stop();
 			Inkeys::Input::MouseHook::Stop();
 			barUISet.StopDisplayTracking();
 			return;
@@ -235,6 +250,7 @@ namespace Inkeys::UI::Bar
 		while (!offSignal) this_thread::sleep_for(chrono::milliseconds(100));
 		SetContentStateUpdatesReady(false);
 		// 先停止输入生产者，再由窗口线程撤销计时器、Raw Input 与 capture。
+		Keyboard::Stop();
 		Inkeys::Input::MouseHook::Stop();
 		// 退出信号与普通渲染请求共用代次通知，唤醒真正休眠的渲染线程。
 		BarAtomic::wait.Notify();

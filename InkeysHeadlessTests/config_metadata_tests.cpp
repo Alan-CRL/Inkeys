@@ -1,5 +1,6 @@
 #include "../Inkeys/IdtConfiguration.h"
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -235,6 +236,80 @@ int RunConfigMetadataTests()
 		output << Json::writeString(builder, document);
 		check(static_cast<bool>(output), "write mode input fixture");
 	};
+	// 使用真实配置验证两个类型独立恢复，退役高亮键不能重建可选边缘策略。
+	Inkeys::Config cursorConfig;
+	const auto cursorUpload = cursorConfig.GetUploadInfo();
+	auto& cursor = cursorConfig.Drawing.Cursor;
+	check(cursor.MouseStyle.load() == 0 && cursor.PenStyle.load() == 0,
+		"cursor defaults use the system mouse and the original circular pen");
+	for (const int mouseStyle : { 0, 1 })
+	{
+		for (const int penStyle : { 0, 1 })
+		{
+			cursor.MouseStyle = mouseStyle;
+			cursor.PenStyle = penStyle;
+			check(cursorConfig.Write(), "write each independent mouse and pen combination");
+			const auto document = ReadJson(file);
+			check(document["Drawing"]["Cursor"]["MouseStyle"].asInt() == mouseStyle
+				&& document["Drawing"]["Cursor"]["PenStyle"].asInt() == penStyle,
+				"both cursor types preserve their own selected value");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && restarted.Drawing.Cursor.MouseStyle.load() == mouseStyle
+				&& restarted.Drawing.Cursor.PenStyle.load() == penStyle,
+				"restart restores all four independent cursor type combinations");
+			check(!document["Drawing"]["Cursor"].isMember("HideSystemTouchFeedback"),
+				"fixed touch cursor hiding has no persisted user toggle");
+		}
+	}
+	const std::array<IdtAtomic<int>*, 2> typePreferences{ &cursor.MouseStyle, &cursor.PenStyle };
+	const std::array<const char*, 2> typeNames{ "MouseStyle", "PenStyle" };
+	for (size_t index = 0; index < typePreferences.size(); ++index)
+	{
+		const std::string path = std::string("Drawing.Cursor.") + typeNames[index];
+		for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(2), Json::Value(true),
+			Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)), Json::Value(Json::arrayValue) })
+		{
+			Json::Value cursorDocument(Json::objectValue);
+			cursorDocument["Drawing"]["Cursor"][typeNames[index]] = invalid;
+			writeModeDocument(cursorDocument);
+			*typePreferences[index] = 1;
+			*typePreferences[1 - index] = 1;
+			cursorConfig.UI.Bar.Zoom2 = 2.5;
+			check(cursorConfig.ReadMini({ path }) && typePreferences[index]->load() == 0
+				&& typePreferences[1 - index]->load() == 1 && cursorConfig.UI.Bar.Zoom2.load() == 2.5,
+				"invalid type restores its own default without coercion or changing the other input");
+		}
+	}
+	writeModeDocument(Json::Value(Json::objectValue));
+	cursor.MouseStyle = 1;
+	cursor.PenStyle = 1;
+	check(cursorConfig.ReadAll() && cursor.MouseStyle.load() == 0 && cursor.PenStyle.load() == 0,
+		"missing cursor fields restore the system mouse and circular pen defaults");
+	Json::Value retiredCursorDocument(Json::objectValue);
+	retiredCursorDocument["Config"]["AutoClean"] = false;
+	retiredCursorDocument["Drawing"]["Cursor"]["MouseStyle"] = 1;
+	retiredCursorDocument["Drawing"]["Cursor"]["PenStyle"] = 0;
+	retiredCursorDocument["Drawing"]["Cursor"]["MouseHighlightEdge"] = false;
+	retiredCursorDocument["Drawing"]["Cursor"]["ScreenPenHighlightEdge"] = true;
+	retiredCursorDocument["Drawing"]["Cursor"]["DigitizerHighlightEdge"] = "false";
+	retiredCursorDocument["Drawing"]["Cursor"]["FutureCursorSetting"] = 37;
+	writeModeDocument(retiredCursorDocument);
+	check(cursorConfig.ReadAll() && cursor.MouseStyle.load() == 1 && cursor.PenStyle.load() == 0,
+		"retired edge values cannot change the selected mouse or pen type");
+	check(cursorConfig.Write(), "write cursor types while preserving unknown configuration");
+	const auto cleanedCursor = ReadJson(file)["Drawing"]["Cursor"];
+	check(!cleanedCursor.isMember("MouseHighlightEdge") && !cleanedCursor.isMember("ScreenPenHighlightEdge")
+		&& !cleanedCursor.isMember("DigitizerHighlightEdge") && cleanedCursor["FutureCursorSetting"].asInt() == 37,
+		"saving removes exactly the three retired edge switches even with AutoClean disabled");
+	Inkeys::Config frozenCursor;
+	frozenCursor = cursorConfig;
+	cursor.MouseStyle = 0;
+	cursor.PenStyle = 1;
+	check(frozenCursor.Write() && ReadJson(file)["Drawing"]["Cursor"]["MouseStyle"].asInt() == 1
+		&& ReadJson(file)["Drawing"]["Cursor"]["PenStyle"].asInt() == 0,
+		"frozen cursor snapshot keeps both captured types independently");
+	check(cursorConfig.GetUploadInfo() == cursorUpload, "cursor type preferences are not uploaded");
+
 	Json::Value modeDocument(Json::objectValue);
 	modeDocument["UI"]["Bar"]["Zoom2"] = 1.25;
 	modeConfig.UI.Bar.SelectAndClickThroughMode = 1;

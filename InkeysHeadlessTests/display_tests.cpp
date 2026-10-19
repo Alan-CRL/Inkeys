@@ -13,6 +13,7 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <thread>
@@ -116,6 +117,76 @@ int RunDisplayTests()
 		&& hiddenSnapshot.monitors[0].taskbarThicknessPx == 48
 		&& hiddenSnapshot.monitors[1].taskbarThicknessPx == 0,
 		"autohide owner keeps left-monitor vertical taskbar when rectangle moves into right monitor");
+	// 共享屏边：常驻 Top 属于下屏，不能因先枚举上屏而被误认成 Bottom。
+	Snapshot sharedBoundary;
+	sharedBoundary.monitors.resize(2);
+	sharedBoundary.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
+	sharedBoundary.monitors[0].bounds = { 0, 0, 1920, 1080 };
+	sharedBoundary.monitors[1].handle = reinterpret_cast<HMONITOR>(2);
+	sharedBoundary.monitors[1].bounds = { 0, 1080, 1920, 2160 };
+	const RECT boundaryTaskbar{ 0, 1080, 1920, 1128 };
+	for (int order = 0; order < 2; ++order)
+	{
+		const auto regular = ResolveTaskbarOwnerCandidate(sharedBoundary, boundaryTaskbar, std::nullopt, false);
+		const auto staleHint = ResolveTaskbarOwnerCandidate(sharedBoundary, boundaryTaskbar, std::nullopt, false,
+			{ reinterpret_cast<HMONITOR>(1), ABE_BOTTOM });
+		Check(regular.monitor == reinterpret_cast<HMONITOR>(2) && regular.edge == ABE_TOP
+			&& staleHint.monitor == regular.monitor && staleHint.edge == regular.edge,
+			"shared-boundary normal taskbar belongs to lower Top regardless of order or weaker history");
+		Check(ResolveTaskbarOwner(sharedBoundary, boundaryTaskbar, ABE_TOP) == reinterpret_cast<HMONITOR>(2)
+			&& ResolveTaskbarOwner(sharedBoundary, boundaryTaskbar, ABE_BOTTOM) == reinterpret_cast<HMONITOR>(1),
+			"known edge distinguishes raised lower Top from fully hidden upper Bottom");
+		Check(!ResolveTaskbarOwnerCandidate(sharedBoundary, boundaryTaskbar, std::nullopt, true).monitor,
+			"unknown auto-hide edge at shared boundary stays unknown without trusted history");
+		std::reverse(sharedBoundary.monitors.begin(), sharedBoundary.monitors.end());
+	}
+
+	struct HiddenOwnerCase { RECT neighbor; RECT taskbar; UINT edge; };
+	const RECT centeredScreen{ -960, -540, 960, 540 };
+	const HiddenOwnerCase hiddenOwnerCases[]{
+		{ { -2880, -540, -960, 540 }, { -1006, -540, -958, 540 }, ABE_LEFT },
+		{ { -960, -1620, 960, -540 }, { -960, -586, 960, -538 }, ABE_TOP },
+		{ { 960, -540, 2880, 540 }, { 958, -540, 1006, 540 }, ABE_RIGHT },
+		{ { -960, 540, 960, 1620 }, { -960, 538, 960, 586 }, ABE_BOTTOM },
+	};
+	for (const auto& sample : hiddenOwnerCases)
+	{
+		sharedBoundary.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
+		sharedBoundary.monitors[0].bounds = centeredScreen;
+		sharedBoundary.monitors[1].handle = reinterpret_cast<HMONITOR>(2);
+		sharedBoundary.monitors[1].bounds = sample.neighbor;
+		for (int order = 0; order < 2; ++order)
+		{
+			const auto known = ResolveTaskbarOwnerCandidate(sharedBoundary, sample.taskbar, sample.edge, true);
+			const auto cached = ResolveTaskbarOwnerCandidate(sharedBoundary, sample.taskbar, std::nullopt, true,
+				{ reinterpret_cast<HMONITOR>(1), sample.edge });
+			Check(known.monitor == reinterpret_cast<HMONITOR>(1) && known.edge == sample.edge
+				&& ResolveTaskbarOwner(sharedBoundary, sample.taskbar, sample.edge) == known.monitor
+				&& cached.monitor == known.monitor && cached.edge == known.edge,
+				"four-edge cross-monitor hidden taskbar keeps known or trusted cached owner with negative origins");
+			Check(!ResolveTaskbarOwnerCandidate(sharedBoundary, sample.taskbar, std::nullopt, true).monitor
+				&& !ResolveTaskbarOwnerCandidate(sharedBoundary, sample.taskbar, std::nullopt, true,
+					{ reinterpret_cast<HMONITOR>(99), sample.edge }).monitor,
+				"ambiguous hidden taskbar does not choose arbitrary monitor or accept absent cached owner");
+			std::reverse(sharedBoundary.monitors.begin(), sharedBoundary.monitors.end());
+		}
+	}
+	sharedBoundary.monitors[0].bounds = sharedBoundary.monitors[1].bounds = centeredScreen;
+	const RECT tiedTaskbar{ -960, 492, 960, 540 };
+	for (int order = 0; order < 2; ++order)
+	{
+		Check(!ResolveTaskbarOwner(sharedBoundary, tiedTaskbar, ABE_BOTTOM)
+			&& !ResolveTaskbarOwnerCandidate(sharedBoundary, tiedTaskbar, ABE_BOTTOM, false).monitor,
+			"known-edge identical monitor geometry remains unknown rather than depend on monitor order");
+		const auto cached = ResolveTaskbarOwnerCandidate(sharedBoundary, tiedTaskbar, ABE_BOTTOM, true,
+			{ reinterpret_cast<HMONITOR>(2), ABE_BOTTOM });
+		Check(cached.monitor == reinterpret_cast<HMONITOR>(2) && cached.edge == ABE_BOTTOM,
+			"matching trusted owner resolves genuine known-edge geometry ties regardless of monitor order");
+		std::reverse(sharedBoundary.monitors.begin(), sharedBoundary.monitors.end());
+	}
+	Check(!ResolveTaskbarOwnerCandidate(sharedBoundary, tiedTaskbar, 99U, true).monitor
+		&& !ResolveTaskbarOwnerCandidate(sharedBoundary, {}, std::nullopt, false).monitor,
+		"invalid known edge or taskbar geometry produces no owner");
 	Snapshot scaleSnapshot;
 	scaleSnapshot.monitors.resize(2);
 	scaleSnapshot.monitors[0].effectiveDpiX = 144;

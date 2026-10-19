@@ -32,13 +32,13 @@ Draw3 Host 在图形资源准备后才选择 RTS 或 Win32Mouse 输入，退出�
 ### 2. Signatures
 - `WindowController::NotifyTouchContactBegin/End`、`CursorOwner()`、`SetTouchCursorSuppressed(bool)`。
 - `ResolveDrawingCursorVisualAuthority(persistentOwner,touchCursorSuppressed,touchPanActive,realMouseTakeoverDuringTouchPan)`。
-- `ShouldIgnoreMouseCursorMessage(..., INPUT_MESSAGE_DEVICE_TYPE inputSource)`；Win8+ 动态获取 `GetCurrentInputMessageSource`，Win7 可为 `IMDT_UNAVAILABLE`。
+- `FilterMouseCursorMessage(const MouseCursorMessageFilterInput&) noexcept`统一处理光标消息，输入`pointerAuthority`为当前持久owner（默认Unknown），不是Pen样本有效位；`ShouldIgnoreMouseCursorMessage(..., INPUT_MESSAGE_DEVICE_TYPE inputSource)`；Win8+ 动态获取 `GetCurrentInputMessageSource`，Win7 可为 `IMDT_UNAVAILABLE`。
 
 ### 3. Contracts
 - Touch Down 临时接管视觉归属为 Touch，隐藏系统箭头与旧 Pen/Mouse 主光标；持久 `cursorOwner_` 不写 Touch。Touch Up/Cancel 不恢复旧 Hover，直到可确认的新 Pen 样本或真实 Mouse/TouchPad 消息接管。各活动 Touch 橡皮圆环仍按自己的 runtime 生成，Up 后随 runtime 清除。
 - Touch Pan 已由真实 Mouse 接管时，后续 Touch 指头不清 Mouse 样本；Pan 结束后若 Mouse 样本仍有效，保留 Mouse 归属。Pen 新 Hover/Contact 解除 Touch 抑制，Win7 不依赖新 Pointer API 才能恢复笔光标。
 - Touch/Pen 提升的 `WM_MOUSE*` 先用 promoted 签名、消息时间屏障与可用的 `INPUT_MESSAGE_SOURCE.deviceType` 过滤；`IMDT_MOUSE/IMDT_TOUCHPAD` 可立即接管。Win7 来源不可用时保留 RTS Touch 与旧过滤链，不使用固定延时压制真实鼠标。
-- API 成功返回 `device=IMDT_UNAVAILABLE + origin=IMO_SYSTEM` 的 `WM_MOUSEMOVE` 在触摸抑制仍有效时必须拒绝；不论按键位、触点坐标是否一致或距离 Touch Up 多久，均不创建 Mouse 样本、不改变 owner。明确 Mouse/TouchPad 来源继续走既有接管策略。
+- API 成功返回 `device=IMDT_UNAVAILABLE + origin=IMO_SYSTEM` 的 `WM_MOUSEMOVE` 在触摸抑制仍有效或持久owner为Pen时必须拒绝；Pen清样本后仍受保护。不论按键位、触点坐标是否一致或距离 Touch/Pen终态多久，均不创建 Mouse 样本、不改变 owner。明确 Mouse/TouchPad 来源继续走既有接管策略。
 - 来源 API 缺失/失败或其它未知来源仍保留已有位置回退；API 查询失败不能被当成已确认的系统注入。Win7 的真实设备行为仍需单独实测。
 - WindowControl 必须直接使用 `FilterMouseCursorMessage` 的过滤结果；来源、时间屏障、系统来源、位置回退和按键例外均位于同一个生产入口，调用处不得再按按键条件绕过其中的规则。日志拒绝原因复用该结果。
 
@@ -48,6 +48,7 @@ Draw3 Host 在图形资源准备后才选择 RTS 或 Win32Mouse 输入，退出�
 | 单指/多指 Touch Down、Move、最后 Up/Cancel | 主光标与箭头隐藏；活动擦除圆环仍在，最后一指终态后消失 |
 | Touch/Pen 提升的 Mouse 消息 | 不发布 Mouse Hover，不抢占 Touch/Pen |
 | Touch Up 后来源未知且停在末触点的 MouseMove | 不解除 Touch 抑制，不重新绘制主悬停圆环 |
+| Pen Up/OutOfRange清样本后、无真实Mouse输入的系统Move | Pen归属保持，旧Mouse不复活；System/Drawing两样式均无应用主视觉 |
 | 后续真实 Mouse/TouchPad 或 Pen 样本 | 立即恢复该设备的既有光标策略 |
 | Touch Pan 中真实 Mouse 已接管 | 后续 Touch 指头不清 Mouse；Pan 停止不回弹到 Touch |
 | Win7 无输入来源 API | 仍用 RTS、promoted 签名及时间屏障；新 Pen Hover 可恢复 |
@@ -58,7 +59,7 @@ Draw3 Host 在图形资源准备后才选择 RTS 或 Win32Mouse 输入，退出�
 - Bad：只在 Touch 活动计数非零时隐藏系统箭头，最后 Up 后旧 Hover/箭头立即回弹；或把 Touch 写成持久 owner 导致新设备无法接管。
 
 ### 6. Tests Required
-Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消息来源过滤、真实 Mouse/Pen 恢复和 Pan 接管；另须调用生产 `FilterMouseCursorMessage` 覆盖系统按键态 Move → Touch Up → 迟到系统 Move → 真实 Mouse 接管，并检查 mailbox 与主光标解析结果。完整 ARM64 Solution 构建。隐藏 Host 测试与真实纯触摸、Pen+Mouse+Touch、Win7 设备验证分别记录结果，不能把纯逻辑通过等同硬件验收。
+Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消息来源过滤、真实 Mouse/Pen 恢复和 Pan 接管；另须调用生产 `FilterMouseCursorMessage` 覆盖系统按键态 Move → Touch Up → 迟到系统 Move → 真实 Mouse 接管，并检查 mailbox 与主光标解析结果；Pen场景增加旧Mouse→Pen Hover/Contact→清Pen样本→迟到/重复系统Move的两MouseStyle对照，以及真实Mouse/TouchPad/Down、新Pen恢复、API缺失/失败和Win7回退。完整 ARM64 Solution 构建。隐藏 Host 测试与真实纯触摸、Pen+Mouse+Touch、Win7 设备验证分别记录结果，不能把纯逻辑通过等同硬件验收。
 
 ### 7. Wrong vs Correct
 - Wrong：Touch Down 只清 Mouse mailbox，仍按旧 Pen/Mouse owner 解析主光标，并在 Touch Up 后依赖 Windows 自动隐藏。
@@ -104,7 +105,7 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 
 `【直接确认】` Bar 注册的 `WM_TOUCH` 会把主接触（包括当前系统上报的 Pen）转换成带内部来源标记的 `ExMessage`。Windows 同时可能为同一接触派发 Pointer 兼容鼠标消息，其 `GetMessageExtraInfo()` 的来源签名为 `0xFF515700`（掩码 `0xFFFFFF00`）。
 
-`【直接确认】` Pointer 兼容鼠标副本必须在 Bar 的窗口过程和 HiMsg 入队回调两个入口都丢弃；不带该签名的真实鼠标消息仍正常入队。低位 `0x80` 只能用于诊断 Pen/Touch 分类，不能决定一次接触的输入归属，因为同一支笔的 Down/Up 可能出现不同低位值。触摸长按右键抑制依赖这条单一 `WM_TOUCH` 路径，不得重新保留 Pen 兼容鼠标分支。
+`【直接确认】` Pointer 兼容鼠标副本必须在 Bar 的窗口过程和 HiMsg 入队回调两个入口都丢弃；真实鼠标 Down/Move/Up 保留原有 HiMsg 入口及原生按压代次；普通点击不依赖 Raw。Raw 仅在连续拖动状态机中补充越界 Move/Up，不进入 HiMsg，不能替尚未拖动的候选提交点击。低位 `0x80` 只能用于诊断 Pen/Touch 分类，不能决定一次接触的输入归属，因为同一支笔的 Down/Up 可能出现不同低位值。触摸长按右键抑制依赖这条单一 `WM_TOUCH` 路径，不得重新保留 Pen 兼容鼠标分支。
 
 按钮点击完成必须等待明确的 `WM_LBUTTONUP`；`WM_MOUSEMOVE` 的 `MK_LBUTTON` 缺失不能被解释为抬起，否则会把接触或窗口激活阶段的移动误判为第二次点击。
 
@@ -451,7 +452,7 @@ headless先在旧代码运行红灯用例，再验证平台/迟滞/单跳/双向
 - 来源需区分 API 不存在（api=0）、调用失败（api=1 ok=0 error）、成功返回未知（api=1 ok=1 device=0）；同时记录 origin 和 InSendMessageEx 的 sent 标志。sent=0 不能单独证明来源是物理设备。来源查询保存并恢复调用方 LastError。
 - 末触点记录包含实际比较坐标、消息时间、via=pointer/compat-mouse。兼容 Mouse 无完整 Pointer ID 时 touchId=0，不能把 extra 低位猜成完整 ID；primary=0/1/2 分别表示未知/非主触点/主触点。
 - 按键位只能说明消息状态，不能确认物理鼠标来源。schema=2 日志已证明 `!buttonDown` 例外会放行 device=0 origin=IMO_SYSTEM 的 Move；修复将已确认的系统来源判定置于按键/位置回退之前。纯函数通过不等于设备验收。
-- Raw Input 只观察现有 Bar 接收入口，记录初始注册状态及后续注册/注销成功或失败。落笔可能注销接收；缺少 raw-mouse 行不证明没有真实鼠标操作。不得为了诊断在第二个 HWND 重复注册同一设备类。
+- Raw Input 只观察现有 Bar 接收入口，记录初始注册状态及后续注册/注销成功或失败。共享交互注册不随落笔/光效休眠注销；光效观察仍可停止，缺少 raw-mouse 行不证明没有真实鼠标操作。不得为了诊断在第二个 HWND 重复注册同一设备类。
 - 定长日志截断必须包含 `[truncated]`；丢失/截断时事件链检查不能报告证据完整。verify_cursor_trace.py 检查真实输出的来源接管到呈现序列，其无匹配结果不等于全部光标行为正确。
 
 ## Scenario: Draw3 Contact Closing 与拒收路由回收

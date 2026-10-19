@@ -13,6 +13,7 @@
 #include <optional>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
 
@@ -86,6 +87,12 @@ export namespace Inkeys::Drawing::Draw3
 		void (*penDiagnostics)(void*, const PenRuntimeDiagnostics&) = nullptr;
 		void (*runtimeMetricsPhaseProgress)(void*, const RuntimeMetricsPhaseProgress&) noexcept = nullptr;
 		void (*historyAvailabilityChanged)(void*, bool, bool) = nullptr;
+		void (*acceptedStrokeBegan)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
+		void (*acceptedStrokeSceneChanged)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
+		void (*shortcutContextChanged)(void*, Shortcuts::Context) noexcept = nullptr;
+		Shortcuts::Result (*shortcutCommandAllowed)(void*, const Shortcuts::Request&,
+			const Shortcuts::Context&) noexcept = nullptr;
+		void (*shortcutCompleted)(void*, std::uint64_t, Shortcuts::Result) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。
@@ -115,6 +122,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 控制普通绘制工具下鼠标使用系统箭头或不透明应用光标；不影响 Eraser/Laser。
 		void SetMouseUsesSystemCursor(bool enabled) noexcept;
 		bool GetMouseUsesSystemCursor() const noexcept;
+		// 由产品 Host 在绘制 owner 同步；首次调用启用独立的鼠标/笔类型。
+		void SetCursorSettings(const CursorSettings& settings) noexcept;
 		// 即时控制激光笔的稀疏粒子点缀，不影响主轨迹和留存计时。
 		void SetLaserParticlesEnabled(bool enabled) noexcept;
 		bool GetLaserParticlesEnabled() const noexcept;
@@ -152,6 +161,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
 		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;
 		std::atomic<bool> translucentInkCursorEnabled_ = false;
+		// 位 2 为产品策略已接入；位 0/1 保存原始鼠标/笔类型，按实际工具临时投影。
+		std::atomic<uint32_t> cursorSettings_ = 0;
 		std::atomic<bool> laserParticlesEnabled_ = false;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;

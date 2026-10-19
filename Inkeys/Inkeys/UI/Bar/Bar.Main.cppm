@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
 #include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
@@ -476,6 +477,8 @@ public:
 	void StopRendering();
 	// 鼠标交互
 	void Interact();
+	// 仅交互 owner 调用，顶层与嵌套等待共享有限批量的 Hook/策略消费。
+	void PollGlobalMouseInput();
 	// 仅合并已经判定为展开/收起的动作，不拦截状态切换和原始输入。
 	bool TryBeginToggle(Inkeys::UI::Bar::BarToggleChannel channel)
 	{
@@ -947,6 +950,7 @@ protected:
 	void ShutdownWindowInput(HWND hWnd);
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
+	bool IsAutoCollapsePointerHit(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 	Inkeys::UI::Bar::BarToggleClickCoalescer toggleClickCoalescer;
 
@@ -1092,6 +1096,7 @@ namespace Inkeys::UI::Bar
 	export WNDPROC WindowProc() noexcept;
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
+	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =
@@ -1134,6 +1139,9 @@ namespace Inkeys::UI::Bar
 	export bool HideWhiteboardSnapIndicator() noexcept;
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
+	export void NotifyCanvasStrokeAccepted(
+		const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& notice) noexcept;
+	export std::uint64_t AutoCollapseSceneRevision() noexcept;
 	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
 
 	bool InitializeWindow(BarUISetClass& barUISet);

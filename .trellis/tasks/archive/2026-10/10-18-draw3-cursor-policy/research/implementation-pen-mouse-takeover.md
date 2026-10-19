@@ -1,0 +1,16 @@
+# Pen 离开后 Mouse 接管回归实施（2026-10-19）
+
+当前基线 e9e9b1f5；用户确认 Win11，仅 MouseStyle=Drawing 时见离笔约1秒后笔形回弹，默认系统样式无此可见现象。本次无现场Cursor消息序列，没有将系统Move候选断言为现场唯一根因，也没有确认一秒计时器。
+
+实施前渲染排查：Controller buildDrawingCursorVisuals 原样读取两个mailbox；只有Eraser收尾动画可能补Mouse样本，Pen路径无此逻辑。primaryRuntime只替换cursorTool，不改owner或样本。SelectPrimarySample在owner=Pen、Pen样本为空时直接返回nullptr；旧Mouse样本仍存在也不回退。ClearPenCursorSample保留owner。因此仅空Pen样本和静置不会自动恢复鼠标笔形。
+
+System/Drawing差异：owner已错误成为Mouse时，System在resolver提前返回无应用visual，而Drawing绘制PenIcon；两者的来源过滤原本相同。CURSORINFO/SUPPRESSED只用于观测，没有进入自绘显隐。系统可能自行隐藏HCURSOR，而Draw3自绘不能从中受益，此解释与用户观察相容，但没有现场flags/消息证明；不读取全局suppressed位来压制真实Mouse。
+
+已定位可达缺口：RTS模式WM_MOUSEMOVE的成功来源查询若为Unavailable+System，只有touchSuppressed保护；Pen owner（包括Clear之后）仍能通过，Window继而把owner改成Mouse并发布新Mouse样本。最小变更只给现有生产Filter输入追加当前persistent owner，把同一明确系统Move保护扩至Pen持有期间；拒绝不修改mailbox/owner。保留真实Mouse/TouchPad、按键Down、API缺失/失败/应用注入、Touch/Pan和独立Win32Mouse producer，不新增计时器/长期状态或改shader/UI/config。
+
+修改范围：PenCursor.cppm/.cpp、WindowControl.cpp的一处RTS过滤接线、既有draw3_contact_tests.cpp生产filter→mailbox→visual回归。无Window模块headless链接，因此不新增窗口harness/导出；Window调用点以静态审查验证，Windows真实派发仍待复测。root统一构建和测试，本代理不执行EXE、Solution或GUI，不做Git写入。
+实际接线使用Window原有cursorOwner_的acquire快照，不使用临时Touch视觉归属。Filter只扩展成功来源查询的Unavailable+System Move；Touch优先保留system-touch-move诊断，新Pen分支记录system-pen-move。其他过滤顺序、真实接管发布、TouchPan及Win32Mouse早返回producer均未改动。
+
+新增一个参数化生产组合回归，System/Drawing共用序列：旧Mouse样本存在，Pen Hover/Contact/Clear以及重复Clear；约一秒、重复、长间隔、不同坐标、按键位均不能改owner或Mouse序列，清Pen后普通笔和荧光笔都无主visual。真实Mouse/TouchPad、Down与API缺失/失败、应用注入等原有回退可接管，Drawing明确恢复PenIcon，System无应用visual；Mouse已接管后的系统Move沿原行为，新Pen Hover/Contact/再次Clear仍可恢复及保护。测试调用生产Filter/owner resolver/mailbox/visual resolver，不复制过滤器，不新增CLI/窗口或对实机来源API造结论。
+
+静态复核完成：三个产品文件保留UTF-8 BOM/CRLF，既有测试文件保留UTF-8无BOM/CRLF；git diff --check通过，无无关产品变更。正式PS与Win7 guarded header对基线SHA256一致。本代理未运行编译、测试EXE或GUI，源码冻结交root统一完整Debug|ARM64及--no-window验证。Windows11现场实际消息及Win7设备效果仍须实机复测；当前证据只证明可达错误接管路径被封堵。

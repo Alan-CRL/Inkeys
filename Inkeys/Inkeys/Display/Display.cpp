@@ -439,18 +439,45 @@ namespace
 			monitor.taskbar.lastKnownExposure = monitor.taskbar.exposure;
 	}
 
+	const TaskbarTarget* FindPreviousTaskbarTarget(const Snapshot& snapshot, const Snapshot* previous,
+		std::span<const TaskbarTarget> targets, HWND hwnd)
+	{
+		if (!hwnd || !previous || targets.empty()) return {};
+		DWORD processId = 0;
+		GetWindowThreadProcessId(hwnd, &processId);
+		if (!processId) return {};
+		for (const auto& target : targets)
+		{
+			if (target.hwnd != hwnd || target.processId != processId) continue;
+			const auto* monitor = snapshot.Find(target.monitor);
+			// 共享屏边的隐藏矩形无法独自消歧，只接受同窗口、进程和显示几何的历史。
+			if (monitor && EqualRectValue(target.bounds, monitor->bounds)
+				&& SameMonitorGeometry(*monitor, previous->Find(target.monitor)))
+				return &target;
+		}
+		return {};
+	}
+
+	TaskbarOwnerInfo TaskbarOwnerHint(const TaskbarTarget* target, bool autoHide) noexcept
+	{
+		return target && target->autoHide == autoHide ? TaskbarOwnerInfo{ target->monitor, target->edge }
+			: TaskbarOwnerInfo{};
+	}
+
 	void SampleTaskbars(Snapshot& snapshot, const Snapshot* previous = nullptr,
 		std::vector<TaskbarTarget>* targets = nullptr)
 	{
 		struct Context
 		{
 			Snapshot* snapshot;
+			const Snapshot* previous;
+			std::span<const TaskbarTarget> previousTargets;
 			std::vector<TaskbarTarget> owners;
 			bool globalAutoHide = false;
 			bool queryFailed = false;
 		};
 		const auto previousTargets = targets ? *targets : std::vector<TaskbarTarget>{};
-		Context context{ &snapshot };
+		Context context{ &snapshot, previous, previousTargets };
 		APPBARDATA data{};
 		data.cbSize = sizeof(data);
 		context.globalAutoHide = (SHAppBarMessage(ABM_GETSTATE, &data) & ABS_AUTOHIDE) != 0;
@@ -472,7 +499,9 @@ namespace
 					RECT rect{};
 					// 旧接口是全局 owner，主任务栏也可能被用户移到副屏，不能直接归主屏。
 					if (legacy && GetWindowRect(legacy, &rect)
-						&& ResolveTaskbarOwner(snapshot, rect, edge) == monitor.handle) hwnd = legacy;
+						&& ResolveTaskbarOwnerCandidate(snapshot, rect, edge, true,
+							TaskbarOwnerHint(FindPreviousTaskbarTarget(snapshot, previous, previousTargets, legacy), true)).monitor
+							== monitor.handle) hwnd = legacy;
 				}
 				if (hwnd && IsShellTaskbar(hwnd))
 					context.owners.push_back({ hwnd, monitor.handle, monitor.bounds, edge, true });
@@ -486,7 +515,8 @@ namespace
 			const auto owner = std::find_if(context.owners.begin(), context.owners.end(),
 				[main](const auto& value) { return value.hwnd == main; });
 			const HMONITOR handle = owner != context.owners.end() ? owner->monitor
-				: ResolveTaskbarOwner(snapshot, data.rc, data.uEdge);
+				: ResolveTaskbarOwnerCandidate(snapshot, data.rc, data.uEdge, context.globalAutoHide,
+					TaskbarOwnerHint(FindPreviousTaskbarTarget(snapshot, previous, previousTargets, main), context.globalAutoHide)).monitor;
 			if (const auto* monitor = snapshot.Find(handle); main && monitor)
 			{
 				const int thickness = ResolveTaskbarThickness(monitor->bounds, data.rc, data.uEdge);
@@ -507,26 +537,13 @@ namespace
 				[hwnd](const auto& owner) { return owner.hwnd == hwnd; })) return TRUE;
 			RECT rect{};
 			if (!GetWindowRect(hwnd, &rect)) { ctx.queryFailed = true; return TRUE; }
-			// 兼容副任务栏：长轴决定候选方向，取与屏边最近的短轴端点，不把隐藏窗归邻屏。
-			long long best = (std::numeric_limits<long long>::max)();
-			TaskbarTarget target;
-			for (const auto& monitor : ctx.snapshot->monitors)
-				for (UINT edge = ABE_LEFT; edge <= ABE_BOTTOM; ++edge)
-				{
-					if (!ResolveTaskbarThickness(monitor.bounds, rect, edge)
-						|| ResolveTaskbarOwner(*ctx.snapshot, rect, edge) != monitor.handle) continue;
-					const bool vertical = edge == ABE_LEFT || edge == ABE_RIGHT;
-					const long long boundary = edge == ABE_LEFT ? monitor.bounds.left
-						: edge == ABE_RIGHT ? monitor.bounds.right : edge == ABE_TOP ? monitor.bounds.top : monitor.bounds.bottom;
-					const auto distance = (std::min)(std::abs(boundary - (vertical ? rect.left : rect.top)),
-						std::abs(boundary - (vertical ? rect.right : rect.bottom)));
-					if (distance < best)
-					{
-						best = distance;
-						target = { hwnd, monitor.handle, monitor.bounds, edge, ctx.globalAutoHide };
-					}
-				}
-			if (target.hwnd) ctx.owners.push_back(target);
+			const auto* cached = FindPreviousTaskbarTarget(*ctx.snapshot, ctx.previous, ctx.previousTargets, hwnd);
+			// GETSTATE 仅是全局/主栏提示，不能覆盖同身份副栏已知的逐屏自动隐藏模式。
+			const bool autoHide = cached ? cached->autoHide : ctx.globalAutoHide;
+			const auto owner = ResolveTaskbarOwnerCandidate(*ctx.snapshot, rect, std::nullopt,
+				autoHide, TaskbarOwnerHint(cached, autoHide));
+			if (const auto* monitor = ctx.snapshot->Find(owner.monitor))
+				ctx.owners.push_back({ hwnd, owner.monitor, monitor->bounds, owner.edge, autoHide });
 			else ctx.queryFailed = true;
 			return TRUE;
 		}, reinterpret_cast<LPARAM>(&context)) != FALSE;
@@ -1124,28 +1141,49 @@ namespace Inkeys::Display
 
 	HMONITOR ResolveTaskbarOwner(const Snapshot& snapshot, const RECT& taskbar, UINT edge) noexcept
 	{
-		HMONITOR result = nullptr;
+		return ResolveTaskbarOwnerCandidate(snapshot, taskbar, edge, true).monitor;
+	}
+
+	TaskbarOwnerInfo ResolveTaskbarOwnerCandidate(const Snapshot& snapshot, const RECT& taskbar,
+		std::optional<UINT> knownEdge, bool autoHide, TaskbarOwnerInfo previous) noexcept
+	{
+		TaskbarOwnerInfo result;
 		long long best = (std::numeric_limits<long long>::max)();
+		bool ambiguous = false, preferred = false;
 		for (const auto& monitor : snapshot.monitors)
-		{
-			const int thickness = ResolveTaskbarThickness(monitor.bounds, taskbar, edge);
-			if (!thickness) continue;
-			const bool vertical = edge == ABE_LEFT || edge == ABE_RIGHT;
-			const LONG start = vertical ? taskbar.top : taskbar.left;
-			const LONG end = vertical ? taskbar.bottom : taskbar.right;
-			const LONG screenStart = vertical ? monitor.bounds.top : monitor.bounds.left;
-			const LONG screenEnd = vertical ? monitor.bounds.bottom : monitor.bounds.right;
-			if ((std::min)(end, screenEnd) - static_cast<long long>((std::max)(start, screenStart))
-				< (static_cast<long long>(screenEnd) - screenStart) / 2) continue;
-			const long long boundary = edge == ABE_LEFT ? monitor.bounds.left
-				: edge == ABE_TOP ? monitor.bounds.top : edge == ABE_RIGHT ? monitor.bounds.right : monitor.bounds.bottom;
-			const long long taskbarNear = vertical ? taskbar.left : taskbar.top;
-			const long long taskbarFar = vertical ? taskbar.right : taskbar.bottom;
-			// 旧 Shell 无 EX 时，用已知 dock edge 判断，不能用隐藏矩形的大部分面积归屏。
-			const auto distance = (std::min)(std::abs(boundary - taskbarNear), std::abs(boundary - taskbarFar));
-			if (distance <= thickness && distance < best) { best = distance; result = monitor.handle; }
-		}
-		return result;
+			for (UINT edge = ABE_LEFT; edge <= ABE_BOTTOM; ++edge)
+			{
+				if (knownEdge && edge != *knownEdge) continue;
+				const int thickness = ResolveTaskbarThickness(monitor.bounds, taskbar, edge);
+				if (!thickness) continue;
+				const bool vertical = edge == ABE_LEFT || edge == ABE_RIGHT;
+				const LONG start = vertical ? taskbar.top : taskbar.left;
+				const LONG end = vertical ? taskbar.bottom : taskbar.right;
+				const LONG screenStart = vertical ? monitor.bounds.top : monitor.bounds.left;
+				const LONG screenEnd = vertical ? monitor.bounds.bottom : monitor.bounds.right;
+				if ((std::min)(end, screenEnd) - static_cast<long long>((std::max)(start, screenStart))
+					< (static_cast<long long>(screenEnd) - screenStart) / 2) continue;
+				const long long boundary = edge == ABE_LEFT ? monitor.bounds.left
+					: edge == ABE_RIGHT ? monitor.bounds.right : edge == ABE_TOP ? monitor.bounds.top : monitor.bounds.bottom;
+				const long long taskbarNear = vertical ? taskbar.left : taskbar.top;
+				const long long taskbarFar = vertical ? taskbar.right : taskbar.bottom;
+				// 常驻栏按对应外沿归属；自动隐藏不能按交集面积，否则跨屏收起会换 owner。
+				const auto distance = autoHide
+					? (std::min)(std::abs(boundary - taskbarNear), std::abs(boundary - taskbarFar))
+					: std::abs(boundary - (edge == ABE_LEFT || edge == ABE_TOP ? taskbarNear : taskbarFar));
+				if (distance > thickness || distance > best) continue;
+				const bool usePrevious = previous.monitor == monitor.handle && previous.edge == edge;
+				if (distance < best || (usePrevious && !preferred))
+				{
+					best = distance;
+					result = { monitor.handle, edge };
+					ambiguous = false;
+					preferred = usePrevious;
+				}
+				else if (!preferred) ambiguous = true;
+			}
+		// 两块屏的同一边界可同时表示一侧收起和另一侧升起；不由枚举顺序猜测。
+		return ambiguous ? TaskbarOwnerInfo{} : result;
 	}
 
 	bool ApplyTaskbarSample(Snapshot& snapshot, HMONITOR owner,

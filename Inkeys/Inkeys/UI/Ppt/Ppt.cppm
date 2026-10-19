@@ -558,6 +558,5 @@ export namespace Inkeys::UI::Ppt
 		PageStateMode mode = PageStateMode::InkReady) noexcept;
 	void ResetPositions() noexcept;
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept;
-	void QueueGlobalWheel(short delta) noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;
 }

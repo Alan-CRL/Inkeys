@@ -3455,6 +3455,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				targetContext.paintDevice = setlist.paintDevice;
 				// Host.Reset 后即使目标未变，也重新发布已恢复的启动偏好。
 				if (!ApplyPenWidthContext(targetContext)) SyncDraw3State();
+			},
+			[](void*, const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& accepted) noexcept
+			{
+				Inkeys::UI::Bar::NotifyCanvasStrokeAccepted(accepted);
 			}
 		};
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,

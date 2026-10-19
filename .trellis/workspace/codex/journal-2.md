@@ -603,8 +603,7 @@
 
 ### Next Steps
 
-- 本轮工程验收完成，后续代码尚未提交；无新增commit/push，待用户自行决定代码提交/归档。
-- 物理触摸/笔、WPS、Win7、多屏与用户现场共同根因仍未验证，保留证据边界。
+- 任务完成；若后续设备问题复现，沿用 UiPointerDrag 日志单独调查。未推送远程。
 
 
 ## Session 109: 提交画布卡死修复并归档五个相关任务
@@ -627,23 +626,15 @@
 
 | Hash | Message |
 |------|---------|
-| `0eb1c7c5` | fix(pptcom): restore dynamic compatibility and deterministic COM cleanup |
-| `184cf86e` | chore: archive pptcom dynamic compatibility task |
-| `6b8bc1d73c8b7307528520c28fc952004ee3d8f1` | fix(draw3): restore canvas admission across window and PPT transitions |
-| `83d08514142211ba6ed5ca9c669c42ca9b139f55` | chore(trellis): archive completed canvas freeze tasks |
+| `11e45053` | feat(input): restore responsive mouse hook and toolbar auto-collapse |
 
 ### Testing
 
-- [OK] 复用已完成的最终Debug ARM64构建、12轮窗口、默认完整套件、CLI/存储与真实设置/PPT GUI结果；本轮仅提交及文档状态变更，无新增产品代码。
-- [OK] 五个归档任务context校验通过；提交前git diff --cached --check通过。
+- [OK] 完整Debug ARM64链接、Headless --no-window、状态模式与笔宽生产探针、三语和独立检查通过；用户确认生效。
 
 ### Status
 
 [OK] **Completed**
-
-### Next Steps
-
-- 本线程由用户后续合入dev；本轮未push、未执行合并。
 
 
 ## Session 111: PR238审阅修正、dev冲突解决与PPT控件任务结案
@@ -681,6 +672,55 @@
 - 仅本地提交，无push；真实设备、USER32捕获与Office/WPP验收仍未执行。
 
 
+## Session 106: UI 指针会话与窗口外拖动验收结案
+<!-- trellis-session: v=2 fp=25219a53c1c6d535 -->
+
+**Date**: 2026-10-17
+**Task**: UI 指针会话与窗口外拖动验收结案
+**Branch**: `feature/hook`
+
+### Summary
+
+用户于2026-10-17确认人工验收基本通过，明确授权提交并结束当前任务；实现、测试和spec已提交，当前任务已归档，保留Win7 WM_TOUCH及现有两种hook，不推送远程。
+
+### Main Changes
+
+- Bar/PPT 保留原生点击入口，连续拖动通过私有 Raw Mouse 通道补充，Raw 不进入 HiMsg。
+- 统一来源/代次及双路终态；修正未绑定 Raw 一秒取消、绑定后静默门控和显示重基准抓手偏移，并保留有界诊断。
+- 同步输入与呈现合同、生产策略回归及用户验收记录；仅归档 ui-pointer-session。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f2494f4e5537d4742f8c4c77a30b2442269ea4f5` | fix(input): unify UI drag sessions with native events and raw mouse |
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 通过，最终增量构建0警告0错误。
+- [OK] InkeysHeadlessTests --no-window、状态模式和笔宽生产探针均退出0；独立Trellis审查通过。
+- [OK] 用户人工验收基本通过；收尾未改产品代码，未重复运行GUI或构建，未扩大设备/UIPI覆盖声明。
+## Session 112: Draw3 光标改动与离笔回弹修复验收归档
+<!-- trellis-session: v=2 fp=3ebbf78557e12612 -->
+
+**Date**: 2026-10-19
+**Task**: Draw3 光标改动与离笔回弹修复验收归档
+**Branch**: `bugfix/cursor`
+
+### Summary
+
+完成光标样式与触摸生命周期改动，修复屏幕笔离开后系统Move错误接管鼠标画笔光标。完整Debug|ARM64与headless --no-window通过，用户2026-10-19确认人工验证通过并要求结束任务，已归档10-18-draw3-cursor-policy。此前未执行的Win7实机验证保持原记录；不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e9e9b1f5` | fix(draw3): refine cursor styles and touch cursor lifecycle |
+| `fb5559ff` | fix(draw3): prevent mouse cursor takeover after pen leaves |
+
+### Status
+
+[OK] **Completed**
 ## Session 113: UI3 taskbar scaling implemented and accepted
 <!-- trellis-session: v=2 fp=b007adc9d691a23d -->
 
@@ -718,6 +758,24 @@
 - 任务已归档；未push。
 
 
+## Session 114: 鼠标钩子、PPT滚轮与主栏自动收起完成验收
+<!-- trellis-session: v=2 fp=73872c230acc5161 -->
+
+**Date**: 2026-10-19
+**Task**: 鼠标钩子、PPT滚轮与主栏自动收起完成验收
+**Branch**: `feature/hook`
+
+### Summary
+
+用户确认改动生效，提交实现并归档任务；无push。
+
+### Main Changes
+
+- 有界鼠标Hook异步桥、PPT滚轮身份传递与四项Inkeys3独立自动收起策略。
+- 本轮工程验收完成，后续代码尚未提交；无新增commit/push，待用户自行决定代码提交/归档。
+- 物理触摸/笔、WPS、Win7、多屏与用户现场共同根因仍未验证，保留证据边界。
+
+
 ## Session 115: UI3 taskbar docking and canvas policy completed
 <!-- trellis-session: v=2 fp=65edf964e6576402 -->
 
@@ -751,3 +809,48 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Status
 
 [OK] **Completed**
+## Session 116: 键盘快捷键与批注往返完成验收
+<!-- trellis-session: v=2 fp=bc8d2bde947f642c -->
+
+**Date**: 2026-10-19
+**Task**: 键盘快捷键与批注往返完成验收
+**Branch**: `feature/hook`
+
+### Summary
+
+用户确认关闭设置后快捷键正常、没有问题；按授权提交实现并归档任务，不push。
+
+### Main Changes
+
+- 独立键盘Hook/全局热键服务，六组固定快捷键与六个Inkeys3独立开关，设置及三语说明更新。
+- 两样式批注/选择往返、具名Clear/Fence结果及短期租约，双Delete和快捷键按压归属；不恢复PPT键盘翻页接管。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `97fbe299` | feat(input): add fixed keyboard shortcuts and annotation roundtrip |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64最终完整链接exit0；一次性关闭增量链接处理本机LNK1000，工程默认未改。
+- [OK] Headless --no-window、状态/快捷键owner及笔宽生产探针均exit0；三语391/391、独立检查、编码与diff检查通过。
+- [OK] 用户人工确认普通快捷键在关闭设置后有效，设置前台优先符合规划；收尾无产品改动，未重复构建/GUI。
+| `0eb1c7c5` | fix(pptcom): restore dynamic compatibility and deterministic COM cleanup |
+| `184cf86e` | chore: archive pptcom dynamic compatibility task |
+| `6b8bc1d73c8b7307528520c28fc952004ee3d8f1` | fix(draw3): restore canvas admission across window and PPT transitions |
+| `83d08514142211ba6ed5ca9c669c42ca9b139f55` | chore(trellis): archive completed canvas freeze tasks |
+
+### Testing
+
+- [OK] 复用已完成的最终Debug ARM64构建、12轮窗口、默认完整套件、CLI/存储与真实设置/PPT GUI结果；本轮仅提交及文档状态变更，无新增产品代码。
+- [OK] 五个归档任务context校验通过；提交前git diff --cached --check通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务完成；未push，不扩大Win7/UIPI/Office实机验证声明。
+- 本线程由用户后续合入dev；本轮未push、未执行合并。

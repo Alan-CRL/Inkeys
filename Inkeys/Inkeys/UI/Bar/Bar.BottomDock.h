@@ -257,6 +257,15 @@ namespace Inkeys::UI::Bar
 		return std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
 	}
 
+	[[nodiscard]] inline double ScaleBarDragGrabOffsetForZoom(
+		double screenOffset, double oldZoom, double newZoom) noexcept
+	{
+		// 抓住的逻辑点不受限位/呈现滞后影响，仅随真正的呈现比例变化缩放。
+		oldZoom = NormalizeBarBottomDockZoom(oldZoom);
+		newZoom = NormalizeBarBottomDockZoom(newZoom);
+		return oldZoom == newZoom ? screenOffset : screenOffset * (newZoom / oldZoom);
+	}
+
 	[[nodiscard]] inline RECT ResolveBarBottomDockIndicatorVisualEnvelope(
 		const BarBottomDockFeedbackGeometry& geometry,
 		double scale, double strokeWidthDip, double gaussianOutsetDip,

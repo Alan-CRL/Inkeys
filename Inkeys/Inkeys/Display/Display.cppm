@@ -115,6 +115,12 @@ export namespace Inkeys::Display
 		int dockTopPx = 0;
 	};
 
+	struct TaskbarOwnerInfo
+	{
+		HMONITOR monitor = nullptr;
+		UINT edge = 0;
+	};
+
 	// owner 消息批次的纯状态机；旧 epoch/重复事件不能重启合并期限。
 	class TaskbarEventBatch
 	{
@@ -209,6 +215,10 @@ export namespace Inkeys::Display
 		const RECT& taskbar, UINT edge) noexcept;
 	[[nodiscard]] HMONITOR ResolveTaskbarOwner(const Snapshot& snapshot,
 		const RECT& taskbar, UINT edge) noexcept;
+	// 未知方向与已知方向共用候选规则；真实歧义无可信历史时返回空 owner。
+	[[nodiscard]] TaskbarOwnerInfo ResolveTaskbarOwnerCandidate(const Snapshot& snapshot,
+		const RECT& taskbar, std::optional<UINT> edge, bool autoHide,
+		TaskbarOwnerInfo previous = {}) noexcept;
 	[[nodiscard]] bool ApplyTaskbarSample(Snapshot& snapshot, HMONITOR owner,
 		const RECT& taskbar, UINT edge) noexcept;
 	[[nodiscard]] int ResolveTaskbarFullThickness(int sampleThicknessPx,
