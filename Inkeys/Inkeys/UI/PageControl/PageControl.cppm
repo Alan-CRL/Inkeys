@@ -320,6 +320,17 @@ export namespace Inkeys::UI::PageControl
 		return dx * 2 >= width || dy * 2 >= height;
 	}
 
+	[[nodiscard]] constexpr bool ShouldStartPptDragOnRelease(
+		WorkspaceMode mode, PptPointerRegion region,
+		bool dragging, bool dragPending, POINT start, POINT current,
+		int thresholdWidth, int thresholdHeight) noexcept
+	{
+		if (!ResolveWorkspaceInputPolicy(mode).drag || !CanStartPptDrag(region))
+			return false;
+		return dragging || (dragPending && HasExceededPptDragThreshold(
+			start, current, thresholdWidth, thresholdHeight));
+	}
+
 	struct DipRect
 	{
 		double left = 0.0;
@@ -546,12 +557,45 @@ export namespace Inkeys::UI::PageControl
 	{
 		std::uint64_t publicationRevision = 0;
 		std::uint64_t targetRevision = 0;
+		std::uint64_t pageAckEpoch = 0;
 		bool presentationVisible = false;
 		bool longPressEnabled = false;
 		int currentPage = -1;
 		int totalPage = -1;
 		PptLayoutState layout;
 	};
+
+	[[nodiscard]] inline bool IsPptDragFrameOwned(
+		const PptDragCommitTracker& tracker, const PptState& frame,
+		std::size_t surfaceIndex) noexcept
+	{
+		if (surfaceIndex >= 4 || !tracker.ownsLayout
+			|| tracker.layout.session != frame.layout.session
+			|| tracker.layout.epoch != frame.layout.epoch) return false;
+		const std::size_t pair = surfaceIndex / 2;
+		if (tracker.layout.pairVersions[pair] != frame.layout.pairVersions[pair])
+			return false;
+		return pair == 0
+			? tracker.layout.bottomPairWidth == frame.layout.bottomPairWidth
+				&& tracker.layout.bottomPairHeight == frame.layout.bottomPairHeight
+				&& tracker.layout.bottomPairScale == frame.layout.bottomPairScale
+			: tracker.layout.middlePairWidth == frame.layout.middlePairWidth
+				&& tracker.layout.middlePairHeight == frame.layout.middlePairHeight
+				&& tracker.layout.middlePairScale == frame.layout.middlePairScale;
+	}
+
+	[[nodiscard]] inline bool IsPptDragGeometryAtTarget(
+		const RECT& actualBounds, float actualScale,
+		const RECT& targetBounds, float targetScale) noexcept
+	{
+		// 几何使用已拟合并舍入的像素矩形，不能把插值中间帧当作最终提交。
+		return actualBounds.left == targetBounds.left
+			&& actualBounds.top == targetBounds.top
+			&& actualBounds.right == targetBounds.right
+			&& actualBounds.bottom == targetBounds.bottom
+			&& std::isfinite(actualScale) && std::isfinite(targetScale)
+			&& std::abs(actualScale - targetScale) <= 0.0001F;
+	}
 
 	[[nodiscard]] inline bool MarkPptDragFrameCommitted(PptDragCommitTracker& tracker,
 		const PptState& frame, std::size_t surfaceIndex) noexcept
@@ -595,6 +639,7 @@ export namespace Inkeys::UI::PageControl
 		std::uint64_t target = 0;
 		int current = -1;
 		int total = -1;
+		std::uint64_t pageAckEpoch = 0;
 		std::uint8_t required = 0;
 		std::uint8_t committed = 0;
 		bool acknowledged = false;
@@ -616,12 +661,13 @@ export namespace Inkeys::UI::PageControl
 		void Publish(const PptState& state, std::uint8_t visibleMask) noexcept
 		{
 			if (session != state.layout.session || target != state.targetRevision
-				|| current != state.currentPage || total != state.totalPage)
+				|| current != state.currentPage || total != state.totalPage
+				|| pageAckEpoch != state.pageAckEpoch)
 			{
 				const auto visible = presentedPpt;
 				const auto pending = pendingPptPresentation;
 				*this = { state.layout.session, state.targetRevision,
-					state.currentPage, state.totalPage };
+					state.currentPage, state.totalPage, state.pageAckEpoch };
 				presentedPpt = visible;
 				pendingPptPresentation = pending;
 			}
@@ -635,7 +681,8 @@ export namespace Inkeys::UI::PageControl
 		bool Commit(const PptState& state, std::uint8_t mask) noexcept
 		{
 			if (session != state.layout.session || target != state.targetRevision
-				|| current != state.currentPage || total != state.totalPage) return false;
+				|| current != state.currentPage || total != state.totalPage
+				|| pageAckEpoch != state.pageAckEpoch) return false;
 			committed |= mask;
 			if (acknowledged || session == 0 || target == 0
 				|| current == 0 || current < -1 || total <= 0 ||
@@ -672,6 +719,7 @@ export namespace Inkeys::UI::PageControl
 					|| (std::isnan(first) && std::isnan(second));
 			};
 		return left.targetRevision == right.targetRevision
+			&& left.pageAckEpoch == right.pageAckEpoch
 			&& left.layout.session == right.layout.session
 			&& left.layout.epoch == right.layout.epoch
 			&& left.layout.pairVersions == right.layout.pairVersions
@@ -720,7 +768,7 @@ export namespace Inkeys::UI::PageControl
 		std::function<void()> viewShow;
 		std::function<void()> endShow;
 		std::function<void(std::size_t, PptLayoutState)> commitPosition;
-		std::function<void(std::uint64_t, std::uint64_t, int, int)> pagePresented;
+		std::function<void(std::uint64_t, std::uint64_t, int, int, std::uint64_t)> pagePresented;
 	};
 
 	struct WhiteboardCallbacks
@@ -1116,6 +1164,94 @@ export namespace Inkeys::UI::PageControl
 			}
 		}
 		return false;
+	}
+
+	struct PptDragCandidateResult
+	{
+		PptLayoutState layout;
+		bool clamped = false;
+		bool collisionRejected = false;
+		bool centerSnapped = false;
+		bool centerBlocked = false;
+	};
+
+	[[nodiscard]] inline PptDragCandidateResult ResolvePptDragCandidate(
+		Surface moved, const RECT& monitor, float dpiScale,
+		const PptState& ppt, PptLayoutState candidate,
+		const PptLayoutState& feasible, double centerSnapDistanceDip) noexcept
+	{
+		const bool bottom = moved == Surface::BottomLeft
+			|| moved == Surface::BottomRight;
+		PptDragCandidateResult result{ ppt.layout };
+		// 原始采样只提供当前 pair 的位置；边界/障碍始终使用本帧实际布局倍率。
+		auto currentCandidate = ppt.layout;
+		if (bottom)
+		{
+			currentCandidate.bottomPairWidth = candidate.bottomPairWidth;
+			currentCandidate.bottomPairHeight = candidate.bottomPairHeight;
+		}
+		else
+		{
+			currentCandidate.middlePairWidth = candidate.middlePairWidth;
+			currentCandidate.middlePairHeight = candidate.middlePairHeight;
+		}
+		const auto clamped = ClampPageControlLayout(moved, monitor, dpiScale, currentCandidate);
+		result.clamped = bottom
+			? candidate.bottomPairWidth != clamped.bottomPairWidth
+				|| candidate.bottomPairHeight != clamped.bottomPairHeight
+			: candidate.middlePairWidth != clamped.middlePairWidth
+				|| candidate.middlePairHeight != clamped.middlePairHeight;
+		if (bottom)
+		{
+			result.layout.bottomPairWidth = clamped.bottomPairWidth;
+			result.layout.bottomPairHeight = clamped.bottomPairHeight;
+		}
+		else
+		{
+			result.layout.middlePairWidth = clamped.middlePairWidth;
+			result.layout.middlePairHeight = clamped.middlePairHeight;
+		}
+		const LONG gap = static_cast<LONG>(std::lround(
+			PageControlGapDip * NormalizeDpiScale(dpiScale)));
+		auto Collides = [&](const PptLayoutState& layout)
+		{
+			PptState next = ppt;
+			next.layout = layout;
+			return PageControlGroupsOverlap(monitor, dpiScale, next, gap);
+		};
+		// 只在用户采样时吸附；两轴额外距离共用屏幕 DIP，不含现有间隙和控件倍率。
+		if (!bottom && std::isfinite(centerSnapDistanceDip)
+			&& centerSnapDistanceDip >= 0.0
+			&& std::abs(result.layout.middlePairHeight)
+				<= centerSnapDistanceDip * NormalizeDpiScale(dpiScale)
+			&& result.layout.middlePairWidth
+				<= centerSnapDistanceDip * NormalizeDpiScale(dpiScale))
+		{
+			auto centered = result.layout;
+			centered.middlePairHeight = 0.0F;
+			if (!Collides(centered))
+			{
+				result.layout = centered;
+				result.centerSnapped = true;
+				return result;
+			}
+			result.centerBlocked = true;
+		}
+		if (Collides(result.layout))
+		{
+			result.collisionRejected = true;
+			if (bottom)
+			{
+				result.layout.bottomPairWidth = feasible.bottomPairWidth;
+				result.layout.bottomPairHeight = feasible.bottomPairHeight;
+			}
+			else
+			{
+				result.layout.middlePairWidth = feasible.middlePairWidth;
+				result.layout.middlePairHeight = feasible.middlePairHeight;
+			}
+		}
+		return result;
 	}
 
 	[[nodiscard]] inline PptState ResolveRuntimePageControlLayout(

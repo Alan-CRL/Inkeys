@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/10-18-pptcom-dynamic-compatibility/research/implementation-review-brief.md","reason":"实施/检查首先遵守用户dynamic优先和确定性释放要求；含所有研究结论与最终范围取舍，详细报告按需读取。"}
+{"file":".trellis/spec/ppt-interop/com-contract.md","reason":"ABI及取得/释放规则；统一InvokeMember/GC依赖条款被本任务用户要求覆盖，实施须同步修订。"}
+{"file":".trellis/spec/ppt-interop/index.md","reason":"PPT边界和旧版本声明；本任务明确保留2007/WPS2013+及重点2010/MSO14。"}
+{"file":".trellis/spec/ppt-interop/native-session-ui3.md","reason":"保留会话/页/墨迹隔离；基础控制状态不伪造Draw3 ready。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"MSBuild solution、DLL/TLB交接；用户Debug|ARM64/ARM64 host/PATH规则优先。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"生产COM适配器能力差异、状态/ready跨层证据与窗口身份检查。"}
