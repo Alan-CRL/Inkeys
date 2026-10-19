@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 106
-- **Last Active**: 2026-10-17
+- **Total Sessions**: 114
+- **Last Active**: 2026-10-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~492 | Active |
+| `journal-2.md` | ~522 | Active |
 | `journal-1.md` | ~2205 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 114 | 2026-10-19 | 鼠标钩子、PPT滚轮与主栏自动收起完成验收 | `11e45053` | `feature/hook` |
 | 106 | 2026-10-17 | UI 指针会话与窗口外拖动验收结案 | `f2494f4e5537d4742f8c4c77a30b2442269ea4f5` | `feature/hook` |
 | 98 | 2026-10-14 | 完成主栏图标顺序与展开方向任务 | `35afa7ee`, `2dd3b344`, `8515d469`, `bec78a29` | `feature/mode` |
 | 97 | 2026-10-14 | 选择与穿透操作模式完成 | `3f3946cf`, `d444f6a7`, `7d5a003f` | `feature/mode` |

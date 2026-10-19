@@ -490,3 +490,33 @@
 ### Next Steps
 
 - 任务完成；若后续设备问题复现，沿用 UiPointerDrag 日志单独调查。未推送远程。
+
+
+## Session 114: 鼠标钩子、PPT滚轮与主栏自动收起完成验收
+<!-- trellis-session: v=2 fp=73872c230acc5161 -->
+
+**Date**: 2026-10-19
+**Task**: 鼠标钩子、PPT滚轮与主栏自动收起完成验收
+**Branch**: `feature/hook`
+
+### Summary
+
+用户确认改动生效，提交实现并归档任务；无push。
+
+### Main Changes
+
+- 有界鼠标Hook异步桥、PPT滚轮身份传递与四项Inkeys3独立自动收起策略。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `11e45053` | feat(input): restore responsive mouse hook and toolbar auto-collapse |
+
+### Testing
+
+- [OK] 完整Debug ARM64链接、Headless --no-window、状态模式与笔宽生产探针、三语和独立检查通过；用户确认生效。
+
+### Status
+
+[OK] **Completed**
