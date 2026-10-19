@@ -704,6 +704,51 @@ namespace
 					return 1;
 				}
 			}
+			stage = "taskbar scale device defaults";
+			struct RestoreDeviceDefault final
+			{
+				bool previous = Inkeys::ConfigDetail::GetDefaultLargeScreenDevice();
+				~RestoreDeviceDefault() { Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(previous); }
+			} restoreDeviceDefault;
+			for (const bool largeScreen : { false, true })
+			{
+				Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(largeScreen);
+				Inkeys::Config scaleDefaults;
+				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen)
+					return 1;
+				for (const char* value : { "missing", "0", "1", "1.0", "\"false\"", "null", "{}", "[]" })
+				{
+					const std::string document = std::string(value) == "missing" ? "{}"
+						: "{\"UI\":{\"Bar\":{\"UseTaskbarHeightAsScaleBase\":" + std::string(value) + "}}}";
+					if (!writeBytes(mainConfig, document)) return 1;
+					scaleDefaults.UI.Bar.Zoom2 = 1.5;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+					if (!scaleDefaults.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen ||
+						scaleDefaults.UI.Bar.Zoom2.load() != 1.5) return 1;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+					if (!scaleDefaults.ReadAll() ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen) return 1;
+				}
+				for (const bool enabled : { false, true })
+				{
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = enabled;
+					Inkeys::Config frozenScale;
+					frozenScale = scaleDefaults;
+					if (!frozenScale.Write()) return 1;
+					Inkeys::Config restoredScale;
+					if (!restoredScale.ReadAll() ||
+						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != enabled ||
+						!restoredScale.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
+						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != enabled) return 1;
+					const auto scaleUpload = restoredScale.GetUploadInfo();
+					restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
+					if (restoredScale.GetUploadInfo() != scaleUpload) return 1;
+				}
+				scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+				scaleDefaults.ResetToDefaults();
+				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen) return 1;
+			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
 			std::filesystem::create_directories(root / "fresh" / "opt");
@@ -714,7 +759,7 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
 				return 1;
 			}
-			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation, touch reconnect and Draw3 device preferences\n", stderr);
+			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation, touch reconnect, Draw3 and device-based UI scale defaults\n", stderr);
 			return 0;
 		}
 		catch (...)
@@ -2264,6 +2309,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	const bool startupPreviewSmokeRequested =
 		!startupPreviewSmokePath.empty();
+	// Mini 和正式配置共用同一次设备缺省；触控设备提前复用正式显示枚举，避免猜测物理尺寸。
+	const bool startupDpiAwarenessReady = EnsureProcessDpiAwareness();
+	const int startupDigitizerStatus = GetSystemMetrics(SM_DIGITIZER);
+	const bool displayInitializedBeforeMini = startupDpiAwarenessReady
+		&& Inkeys::ConfigDetail::HasReadyTouchDevice(startupDigitizerStatus);
+	const bool earlyDisplayInitializeSucceeded = !displayInitializedBeforeMini
+		|| Inkeys::Display::Initialize();
+	const bool defaultLargeScreenDevice = [&]
+	{
+		const auto snapshot = displayInitializedBeforeMini ? Inkeys::Display::GetSnapshot() : nullptr;
+		const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+		return Inkeys::ConfigDetail::ResolveDefaultLargeScreenDevice(startupDigitizerStatus,
+			monitor && monitor->physicalSize.available,
+			monitor ? monitor->physicalSize.widthCm : 0,
+			monitor ? monitor->physicalSize.heightCm : 0);
+	}();
+	Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(defaultLargeScreenDevice);
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
@@ -2289,8 +2351,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	} startupProgressScope{ &startupProgress };
 	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::SuperTopCrossed);
 	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::MiniConfigRead);
-
-	if (!EnsureProcessDpiAwareness())
+	if (!startupDpiAwarenessReady)
 	{
 		PublishFatalStartupFailure(0xD001u,
 			L"Unable to configure process DPI awareness.\n无法配置进程 DPI 感知，程序无法安全启动。");
@@ -2326,15 +2387,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				CachedStartupBarWidthDip);
 		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom2;
 		previewOptions.dpi = startupDpi;
-		previewOptions.uiBaseScale = Inkeys::Display::QueryUiScaleBase(primaryMonitor,
-			startupMiniConfig.UI.Bar.UseTaskbarHeightAsScaleBase);
+		if (const auto taskbarMonitor = Inkeys::Display::QueryTaskbarMonitorInfo(primaryMonitor))
+		{
+			// Mini 的基准倍率和贴底线共用一次 Shell 采样，不依赖稍后完整枚举。
+			previewOptions.dpi = taskbarMonitor->effectiveDpiX;
+			previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
+				taskbarMonitor->effectiveDpiX, taskbarMonitor->taskbarThicknessPx, 0, 0,
+				startupMiniConfig.UI.Bar.UseTaskbarHeightAsScaleBase);
+			previewOptions.desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*taskbarMonitor);
+			monitorInfo.rcMonitor = taskbarMonitor->bounds;
+			monitorInfo.rcWork = taskbarMonitor->workArea;
+		}
+		else previewOptions.uiBaseScale = static_cast<double>(startupDpi) / USER_DEFAULT_SCREEN_DPI;
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
 		previewOptions.workArea = monitorInfo.rcWork;
 		previewOptions.contentBounds = Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
 			previewOptions.monitorBounds, previewOptions.workArea,
 			previewOptions.cachedWidthDip,
 			Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
-			previewOptions.dpi, previewOptions.barZoom, startupPlacement, previewOptions.uiBaseScale);
+			previewOptions.dpi, previewOptions.barZoom, startupPlacement, previewOptions.uiBaseScale,
+			previewOptions.desktopDockLine);
 		previewOptions.progress = &startupProgress;
 		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
 			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
@@ -2531,7 +2603,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 显示器信息初始化
 	{
-		if (!Inkeys::Display::Initialize())
+		if (!(displayInitializedBeforeMini ? earlyDisplayInitializeSucceeded
+			: Inkeys::Display::Initialize()))
 			IDTLogger->warn("[主线程][IdtMain] 显示器枚举失败，使用兼容回退信息");
 		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 		if (displaySnapshot && displaySnapshot->monitors.size() > 1)
@@ -2692,17 +2765,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				else setlist.selectLanguage = 0;
 			}
 			{
-				int digitizerStatus = GetSystemMetrics(SM_DIGITIZER);
-				bool hasTouchDevice = (digitizerStatus & NID_READY) && (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
-				if (hasTouchDevice)
-				{
-					const auto displaySnapshot = Inkeys::Display::GetSnapshot();
-					const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
-					if (!monitor || !monitor->physicalSize.available) setlist.paintDevice = 0, setlist.liftStraighten = true;
-					else if (monitor->physicalSize.widthCm * monitor->physicalSize.heightCm >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
-					else setlist.paintDevice = 1;
-				}
-				else setlist.paintDevice = 1;
+				// 用户保存的 PaintDevice 稍后仍可覆盖；缩放开关只使用启动时冻结的设备缺省。
+				setlist.paintDevice = defaultLargeScreenDevice ? 0 : 1;
+				if (defaultLargeScreenDevice) setlist.liftStraighten = true;
 			}
 			{
 				HDC screenDC = GetDC(nullptr);

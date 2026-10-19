@@ -29,6 +29,7 @@ int RunSurfaceTests();
 int RunMessageTests();
 int RunWindowTests();
 int RunWindowCommandCompletionTests();
+int RunCanvasPolicyTests();
 int RunWindowExitVisibilityTests();
 int RunMessageBoxTests(bool runWindowTests);
 int RunMessageBoxVisualTests(const char* outputDirectory);
@@ -1675,6 +1676,7 @@ int main(int argc, char** argv)
 	failureCount += RunMessageTests();
 	failureCount += RunMessageBoxTests(runWindowTests);
 	failureCount += RunWindowCommandCompletionTests();
+	failureCount += RunCanvasPolicyTests();
 	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
 	failureCount += RunWindowGeometryTests();

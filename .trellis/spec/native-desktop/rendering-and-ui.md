@@ -1981,3 +1981,13 @@ void SyncDraw3State() {
 - Display snapshot包含逐屏 `taskbarThicknessPx`，厚度变化参与语义比较和serial；任务栏低频采样不重复EDID/拓扑枚举，不在渲染或Move热路径查询Shell。自动隐藏用完整矩形而非与屏幕交集或workArea缺口，临时失败仅复用同屏同DPI/几何下可信缓存。
 - finite wire不增加字段：`configZoomBits`历史名称保留，值为`UI基准/真实DPI倍率*用户倍率`，Source以DPI×该值还原UI尺寸；不能再把它当仅用户倍率套用0.5..2裁剪。内部`barStyle.configZoom`仍是用户倍率。
 - 任务栏Shell窗口类只是兼容采样策略；真实自动隐藏、Explorer重建、第三方Shell和跨屏视觉需独立实机证据，无窗口算法测试不能替代。
+
+## 任务栏方向、显隐与主栏贴底（2026-10-19）
+
+- Display 的逐屏 `MonitorInfo.taskbar` 独立发布方向、autoHide、规范化显隐、同屏同几何最近可信状态与稳定 dockTop；完整 `taskbarThicknessPx` 单独维护。隐藏触发条、动画中间矩形或 Unknown 不能当作完整厚度，也不能把主屏 UI 比例回退误作本屏存在任务栏。
+- 桌面顶/左/右任务栏的主栏线为 monitor.bottom-round(5*真实DPI/96)；底部常驻或自动隐藏 Raised 为稳定 taskbar top；底部 autoHide Hidden 为 monitor.bottom-round(5*真实DPI/96)。Unknown 优先同屏同几何可信历史，首次失败按有效 workArea 保守回退。PPT/Whiteboard 原 scene 的 5 屏幕 DIP 优先，不更改业务进入/退出动作。所有线对齐主体描边外沿，不能按透明 HWND 包络计算间隙。
+- 非注入 WinEvent 在既有 DisplayObserver owner 线程安装/卸载，回调只过滤缓存 PID/HWND/object 并排队，不持 refreshMutex、查询 Shell 或通知业务。事件合并 25ms；仅缓存底部 autoHide 存在时约 200ms 轻量矩形兜底，2 秒结构复查负责设置/Explorer 重建。快路径不枚举 EDID/拓扑/全部窗口或更新完整厚度；同值不发布新 generation。epoch 关门与 owner 清理对称，不从任意 Shutdown 调用线程卸载 hook。
+- 完整厚度允许真实变矮：主任务栏位置查询的可信完整值可立即更新；兼容副栏完整对齐的结构样本连续确认后更新。禁止用只增不减缓存永久保留旧高度；快显隐采样不改 UI 缩放标尺。
+- Bar 的 desktopDockLine/protectBottomEdge 和 bounds/workArea/DPI/UI基准一起受 pending/presented 偶数 serial 保护。渲染、输入 tracker/重基准/blocked release 及居中启动预览消费同代数据。仅同屏任务栏线变化不重算用户 X、不把浮动栏吸底；稳定底栏复用原 0.4 秒 Y 属性动画与配置，重复目标不重播，反向从最后成功显示 Y 开始。拖动/吸附交接/恢复与 PPT/Whiteboard 优先，不引入第二个 Y 写者。
+- 桌面底部 autoHide 屏幕的 Bar 最终 viewport（包含最终直移量）下界 exclusive<=monitor.bottom-1，保护主体、描边、光影和回弹。source/size 改变用既有完整 ULW 替换清旧像素，稳定恢复 partial dirty；提交前位移改变须重新校验并保留重试。SetWindowPos 直移越界时保留最新输入目标、改走渲染提交，不能把旧位图直接移到底行。此条件策略与双画布 Desktop/PPT 恒定 1px 策略分别维护。
+- 无窗口几何/状态机/真实动画类和失败路径测试不能代替实际 Explorer 动画时序、Shell 触发、UIAccess、多屏、Win7 或视觉性能验收；实际结果写任务 validation，不从配置存在推导支持结论。

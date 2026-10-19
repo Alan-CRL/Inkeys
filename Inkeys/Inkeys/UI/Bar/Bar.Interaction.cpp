@@ -6816,7 +6816,8 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			initialPresentedSnapshot.workArea,
 			interactionZoom,
 			ResolveDockInsetDip(),
-			ResolveDockDpiScale(initialPresentedSnapshot.dpi) };
+			ResolveDockDpiScale(initialPresentedSnapshot.dpi),
+			initialPresentedSnapshot.desktopDockLine };
 	unsigned long long observedDisplaySerial =
 		initialPresentedSnapshot.displaySerial;
 	bool displayEnvironmentAwaited = initialDisplayTransitionPending;
@@ -6861,10 +6862,13 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			+ initialPresentedSnapshot.rigidTranslationDip * presentedZoom);
 	const double initialFloatingVisibleBottomScreenY =
 		startPointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
-		const double initialDockCenterScreenY = ResolveBarBottomDockCenterScreenY(
+		// 任务栏动画中按下时，抓取已显示的中间位置，不能按终点制造脱离位移。
+		const double initialDockCenterScreenY = initialMode == BarBottomDockMode::BottomDocked
+			&& environment.insetDip <= 0.0
+			? actualMainCenterScreenY : ResolveBarBottomDockCenterScreenY(
 			ResolveBarBottomDockLine(
 				environment.monitorBounds, environment.workArea,
-				environment.insetDip, environment.dpiScale),
+				environment.insetDip, environment.dpiScale, environment.desktopDockLine),
 			bodyHeightDip, strokeWidthDip, interactionZoom);
 	BarBottomDockDragTracker dockTracker;
 	dockTracker.Begin(initialMode, startPointer.y,
@@ -7010,10 +7014,13 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							+ presented.rigidTranslationDip * presented.zoom);
 					const double floatingBottom = pointer.y - grabOffsetScreenY
 						+ VisibleHalfHeightScreen();
-						const double dockCenter = ResolveBarBottomDockCenterScreenY(
+						// 已吸附手势保留成功呈现的基线，新的任务栏终点由松手后的动画消费。
+						const double dockCenter = dockTracker.Mode() == BarBottomDockMode::BottomDocked
+							&& environment.insetDip <= 0.0
+							? presented.mainCenterScreenY : ResolveBarBottomDockCenterScreenY(
 							ResolveBarBottomDockLine(
 								environment.monitorBounds, environment.workArea,
-								environment.insetDip, environment.dpiScale),
+								environment.insetDip, environment.dpiScale, environment.desktopDockLine),
 							bodyHeightDip, strokeWidthDip, interactionZoom);
 					dockTracker.RebaseDockGrip(
 						dockCenter + grabOffsetScreenY, floatingBottom);
@@ -7035,7 +7042,8 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							presented.workArea,
 							interactionZoom,
 							ResolveDockInsetDip(),
-							ResolveDockDpiScale(presented.dpi) };
+							ResolveDockDpiScale(presented.dpi),
+							presented.desktopDockLine };
 					observedDisplaySerial = presented.displaySerial;
 					requestedDisplaySerial = presented.displaySerial;
 					requestedDisplayZoom = interactionZoom;
@@ -7128,7 +7136,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 					const double dockCenterScreenY = ResolveBarBottomDockCenterScreenY(
 						ResolveBarBottomDockLine(environment.monitorBounds,
 							environment.workArea, environment.insetDip,
-							environment.dpiScale), bodyHeightDip,
+							environment.dpiScale, environment.desktopDockLine), bodyHeightDip,
 						strokeWidthDip, interactionZoom);
 				downwardDetachBlockedAtRelease =
 					ShouldKeepBarBottomDockedAfterBlockedDownwardRelease(
@@ -7184,6 +7192,18 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							directWindowPresentedTranslationY.load(memory_order_acquire) };
 						const POINT moveDelta = ResolveBarDirectWindowMoveDelta(
 							desiredTranslation, presentedTranslation);
+						const RECT targetWindow = TranslateBarWindowRect(currentWindowRect, moveDelta);
+						const auto display = PendingDisplaySnapshot();
+						const bool protect = display.protectBottomEdge && ResolveDockInsetDip() <= 0.0;
+						if (!Inkeys::UI::Bar::IsBarWindowAboveTaskbarEdge(targetWindow, display.bounds.bottom, protect))
+						{
+							// 旧位图不能越过底行；保留输入位移，让下一次 ULW 同时更新裁剪和位置。
+							appliedDeltaX = pixelDeltaX;
+							appliedDeltaY = pixelDeltaY;
+							lock.unlock();
+							UpdateRendering(false);
+							return true;
+						}
 						if ((moveDelta.x != 0 || moveDelta.y != 0)
 							&& !SetWindowPos(floating_window, nullptr,
 								currentWindowRect.left + moveDelta.x,

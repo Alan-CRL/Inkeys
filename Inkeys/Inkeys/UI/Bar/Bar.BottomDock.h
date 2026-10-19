@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <limits>
 
 namespace Inkeys::UI::Bar
 {
@@ -248,6 +249,7 @@ namespace Inkeys::UI::Bar
 			double zoom = 1.0;
 			double insetDip = 0.0;
 			double dpiScale = 1.0;
+			double desktopDockLine = std::numeric_limits<double>::quiet_NaN();
 		};
 
 	[[nodiscard]] inline double NormalizeBarBottomDockZoom(double zoom) noexcept
@@ -315,7 +317,8 @@ namespace Inkeys::UI::Bar
 
 		[[nodiscard]] inline double ResolveBarBottomDockLine(
 			const RECT& monitorBounds, const RECT& workArea,
-			double insetDip = 0.0, double dpiScale = 1.0) noexcept
+			double insetDip = 0.0, double dpiScale = 1.0,
+			double desktopDockLine = std::numeric_limits<double>::quiet_NaN()) noexcept
 		{
 			const bool monitorValid = monitorBounds.right > monitorBounds.left
 				&& monitorBounds.bottom > monitorBounds.top;
@@ -326,6 +329,10 @@ namespace Inkeys::UI::Bar
 				// 白板铺满显示器后，底栏贴屏幕底边再上移统一边距，不再跟任务栏工作区。
 				return static_cast<double>(monitorBounds.bottom) - insetPx;
 			}
+			// 桌面任务栏线来自同代 Display 快照；PPT/白板的真实 DIP 场景线优先。
+			if (std::isfinite(desktopDockLine))
+				return std::clamp(desktopDockLine,
+					static_cast<double>(monitorBounds.top), static_cast<double>(monitorBounds.bottom));
 			const bool workAreaValid = workArea.right > workArea.left
 				&& workArea.bottom > workArea.top
 				&& workArea.left >= monitorBounds.left
@@ -676,7 +683,7 @@ namespace Inkeys::UI::Bar
 			const double zoom = NormalizeBarBottomDockZoom(environment.zoom);
 				const double dockLine = ResolveBarBottomDockLine(
 					environment.monitorBounds, environment.workArea,
-					environment.insetDip, environment.dpiScale);
+					environment.insetDip, environment.dpiScale, environment.desktopDockLine);
 			const double thresholdScreen = BarBottomDockThresholdDip * zoom;
 			BarBottomDockDragUpdate result;
 			result.mode = mode_;

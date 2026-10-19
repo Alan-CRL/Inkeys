@@ -52,7 +52,7 @@ mini config 只读取：
 | `Experimental.Inkeys3.UI3.StartupPreview.Enable` | `true`；设置页改动下次启动生效 |
 | `Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip` | `470.0`；总宽度 DIP |
 | `UI.Bar.Zoom2` | 用户倍率，默认1.0；不迁移旧Zoom |
-| `UI.Bar.UseTaskbarHeightAsScaleBase` | 默认true；预览与真实Bar共用任务栏/DPI基准 |
+| `UI.Bar.UseTaskbarHeightAsScaleBase` | 缺省按启动冻结的设备默认分类：大屏true，其余false；显式bool优先；预览与真实Bar共用任务栏/DPI基准 |
 | `UI.Bar.StartupPlacement` | 0居中展开底栏、1左下角主按钮、2右下角主按钮；缺失/非法回退0 |
 
 旧 main.json 缺少新字段时使用默认值；曾写入的旧图片/CRC 字段安全忽略。设置页不暴露 cached width。
@@ -310,3 +310,9 @@ PublishStartupBarWidthDip(CalculateStartupBarTotalWidthDip(mainWidth, layoutWidt
 ### Wrong vs Correct
 - Wrong：GetEnvironmentVariableW返回非0就触发，或enabled[0]==L'1'就接纳长值。
 - Correct：编译测试门、双变量精确1、Preview活动同时满足后，才进入有界注入流程。
+
+## 特殊任务栏的冻结贴底线（2026-10-19）
+
+- Mini 通过一次 `Display::QueryTaskbarMonitorInfo` 同时取得目标屏几何/真实 DPI/任务栏样本，冻结 `StartOptions.desktopDockLine` 与 UI基准，避免分别查询拼接不同显隐时刻；不初始化 observer；普通设备不提前枚举 EDID。为统一按设备分类的缩放默认值，仅 READY 触控设备在 Mini 前执行一次现有 Display::Initialize，冻结主屏物理分类并供后续完整初始化及设备默认赋值复用，不重复枚举；这可能增加触控机器预览出现前等待。schema 本身不触发硬件查询。
+- `ResolveStartupPreviewBounds`、`ResolveStartupPlacementBounds` 与正式 CenteredBottomBar 使用同一可选桌面线。PPT/Whiteboard 场景优先级仍在正式 Bar 层；两角浮动启动语义不变。查询失败时回退既有几何与真实 DPI，不伪造底部 autoHide。
+- Preview 的同线纯几何回归属于无窗口证据；真实首帧与正式 Bar 交接仍按已有呈现验收边界记录。

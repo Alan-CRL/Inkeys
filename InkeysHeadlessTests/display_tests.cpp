@@ -128,6 +128,138 @@ int RunDisplayTests()
 	scaleChanged.monitors[0].taskbarThicknessPx = 96;
 	Check(!scaleSnapshot.SemanticallyEquals(scaleChanged), "taskbar-only thickness change invalidates display snapshot");
 
+	MonitorInfo dockMonitor;
+	dockMonitor.bounds = taskbarMonitor;
+	dockMonitor.workArea = { -1900, -180, 0, 832 };
+	dockMonitor.taskbarThicknessPx = 48;
+	dockMonitor.taskbar = { TaskbarEdge::Bottom, true, TaskbarExposure::Hidden, TaskbarExposure::Hidden, 832 };
+	struct DockGapCase { UINT dpi; int gapPx; };
+	constexpr std::array<DockGapCase, 4> dockGapCases{ { { 96, 5 }, { 120, 6 }, { 144, 8 }, { 192, 10 } } };
+	for (const auto& gap : dockGapCases)
+	{
+		dockMonitor.effectiveDpiY = gap.dpi;
+		Check(ResolveDesktopBottomDockLine(dockMonitor) == 880 - gap.gapPx
+			&& ShouldProtectTaskbarBottomEdge(dockMonitor),
+			"hidden taskbar dock gap uses real screen DIP and protects exactly one physical bottom row");
+		auto raisedMonitor = dockMonitor;
+		raisedMonitor.taskbar.exposure = TaskbarExposure::Raised;
+		Check(ResolveDesktopBottomDockLine(raisedMonitor) == 832,
+			"raised bottom taskbar remains at stable top for every screen DPI");
+		raisedMonitor.taskbar.autoHide = false;
+		Check(ResolveDesktopBottomDockLine(raisedMonitor) == 832,
+			"ordinary bottom taskbar remains at stable top for every screen DPI");
+	}
+	dockMonitor.taskbar.exposure = TaskbarExposure::Raised;
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 832,
+		"raised autohide uses stable full-thickness top rather than animated rect");
+	dockMonitor.taskbar.exposure = TaskbarExposure::Unknown;
+	dockMonitor.taskbar.lastKnownExposure = TaskbarExposure::Raised;
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 832,
+		"unknown exposure preserves last reliable raised target");
+	dockMonitor.taskbar.lastKnownExposure = TaskbarExposure::Hidden;
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 870,
+		"unknown exposure preserves last reliable hidden target");
+	dockMonitor.taskbar.lastKnownExposure = TaskbarExposure::Unknown;
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 832,
+		"unknown exposure without history uses validated work area");
+	for (const RECT bounds : { taskbarMonitor, RECT{ -1920, -1400, 0, -320 } })
+		for (const auto edge : { TaskbarEdge::Left, TaskbarEdge::Top, TaskbarEdge::Right })
+			for (const bool autoHide : { false, true })
+				for (const auto& gap : dockGapCases)
+				{
+					auto sideMonitor = dockMonitor;
+					sideMonitor.bounds = bounds;
+					sideMonitor.workArea = { bounds.left + 20, bounds.top + 20, bounds.right, bounds.bottom - 48 };
+					sideMonitor.effectiveDpiY = gap.dpi;
+					sideMonitor.taskbar.edge = edge;
+					sideMonitor.taskbar.autoHide = autoHide;
+					sideMonitor.taskbar.exposure = autoHide ? TaskbarExposure::Hidden : TaskbarExposure::Raised;
+					Check(ResolveDesktopBottomDockLine(sideMonitor) == bounds.bottom - gap.gapPx
+						&& !ShouldProtectTaskbarBottomEdge(sideMonitor),
+						"top and side taskbars retain five real screen DIP regardless of autohide and other work-area inset");
+				}
+	dockMonitor.taskbar = { TaskbarEdge::Bottom, false, TaskbarExposure::Raised, TaskbarExposure::Raised, 832 };
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 832 && !ShouldProtectTaskbarBottomEdge(dockMonitor),
+		"ordinary bottom taskbar retains stable top without autohide protection");
+	dockMonitor.taskbar = {};
+	dockMonitor.workArea = { -1920, -200, 0, 880 };
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 880,
+		"absent taskbar does not borrow another monitor taskbar or scale fallback");
+	dockMonitor.workArea = { 0, 0, 0, 832 };
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 880,
+		"invalid work area cannot create a desktop dock target");
+
+	auto exposure = TaskbarExposure::Hidden;
+	for (const int visibleHeight : { 0, 1, 2, 3, 8, 20, 23 })
+	{
+		exposure = ResolveTaskbarExposure(taskbarMonitor,
+			{ -1920, 880 - visibleHeight, 0, 928 - visibleHeight }, 48, 96, exposure);
+		Check(exposure == TaskbarExposure::Hidden, "trigger strip and early raise do not churn dock target");
+	}
+	exposure = ResolveTaskbarExposure(taskbarMonitor, { -1920, 856, 0, 904 }, 48, 96, exposure);
+	Check(exposure == TaskbarExposure::Raised, "half-exposed taskbar selects stable raised endpoint");
+	for (const int visibleHeight : { 48, 32, 24, 20, 8, 4 })
+	{
+		exposure = ResolveTaskbarExposure(taskbarMonitor,
+			{ -1920, 880 - visibleHeight, 0, 928 - visibleHeight }, 48, 96, exposure);
+		Check(exposure == TaskbarExposure::Raised, "partial hide retains endpoint until trigger strip");
+	}
+	Check(ResolveTaskbarExposure(taskbarMonitor, { -1920, 878, 0, 926 }, 48, 96, exposure) == TaskbarExposure::Hidden
+		&& ResolveTaskbarExposure(taskbarMonitor, { -1920, 832, 0, 880 }, 48, 96, exposure, false) == TaskbarExposure::Hidden,
+		"small strip or genuinely hidden style returns hidden endpoint");
+	Check(ResolveTaskbarExposure(taskbarMonitor, { -1920, 870, 0, 918 }, 48, 96) == TaskbarExposure::Unknown
+		&& ResolveTaskbarExposure(taskbarMonitor, {}, 48, 96, exposure) == TaskbarExposure::Unknown
+		&& ResolveTaskbarExposure(taskbarMonitor, { 1, 832, 1921, 880 }, 48, 96) == TaskbarExposure::Unknown,
+		"unresolved middle animation and invalid or unrelated geometry stay unknown");
+	Check(ResolveTaskbarExposure(taskbarMonitor, { -1920, 874, 0, 922 }, 48, 192) == TaskbarExposure::Hidden,
+		"high-DPI trigger strip is still hidden");
+	Check(ResolveTaskbarFullThickness(2, 48, true, false) == 48
+		&& ResolveTaskbarFullThickness(24, 48, true, false) == 48
+		&& ResolveTaskbarFullThickness(24, 48, true, true) == 24
+		&& ResolveTaskbarFullThickness(72, 48, true, true) == 72
+		&& ResolveTaskbarFullThickness(24, 48, false, false) == 24,
+		"transient thin rectangles retain scale while trustworthy complete taskbar resize can shrink or grow");
+
+	Snapshot taskbarStateSnapshot;
+	taskbarStateSnapshot.monitors.push_back(dockMonitor);
+	auto stateChanged = taskbarStateSnapshot;
+	stateChanged.monitors[0].taskbar = { TaskbarEdge::Bottom, true, TaskbarExposure::Hidden, TaskbarExposure::Hidden, 832 };
+	Check(!taskbarStateSnapshot.SemanticallyEquals(stateChanged), "normalized taskbar policy changes publication");
+	taskbarStateSnapshot = stateChanged;
+	for (int sample = 0; sample < 60; ++sample)
+	{
+		stateChanged.monitors[0].taskbar.exposure = ResolveTaskbarExposure(taskbarMonitor,
+			{ -1920, 878, 0, 926 }, 48, 96, TaskbarExposure::Hidden);
+		Check(taskbarStateSnapshot.SemanticallyEquals(stateChanged), "repeated shell samples retain semantic generation");
+	}
+	stateChanged.monitors[0].taskbar.exposure = TaskbarExposure::Raised;
+	Check(!taskbarStateSnapshot.SemanticallyEquals(stateChanged), "exposure-only change invalidates publication");
+	stateChanged = taskbarStateSnapshot;
+	stateChanged.monitors[0].taskbar.dockTopPx -= 1;
+	Check(!taskbarStateSnapshot.SemanticallyEquals(stateChanged), "stable dock anchor participates in publication");
+
+	TaskbarEventBatch eventBatch;
+	eventBatch.Reset(1);
+	Check(eventBatch.Queue(1, false) && !eventBatch.Queue(1, false)
+		&& !eventBatch.Queue(1, true), "event burst queues only one owner message while retaining structural work");
+	Check(eventBatch.BeginCoalescing(1) && eventBatch.Queue(1, false)
+		&& !eventBatch.BeginCoalescing(1), "later events cannot restart existing coalesce timer");
+	const auto structuralBatch = eventBatch.Consume(1);
+	Check(structuralBatch && *structuralBatch && !eventBatch.Consume(1),
+		"one timer consumes one merged structural request and ignores duplicate timer delivery");
+	Check(eventBatch.Queue(1, false), "next event can start a new batch");
+	eventBatch.QueueFailed(1);
+	Check(eventBatch.Queue(1, false) && eventBatch.BeginCoalescing(1),
+		"failed PostMessage can be retried without losing pending work");
+	const auto visibilityBatch = eventBatch.Consume(1);
+	Check(visibilityBatch && !*visibilityBatch, "visibility-only batch remains cached sampling");
+	eventBatch.Reset(2);
+	Check(!eventBatch.Queue(1, true) && !eventBatch.BeginCoalescing(1) && !eventBatch.Consume(1)
+		&& eventBatch.Queue(2, false), "old observer epoch cannot enqueue or consume new lifecycle work");
+	eventBatch.Reset();
+	Check(!eventBatch.Queue(2, false) && !eventBatch.BeginCoalescing(2) && !eventBatch.Consume(2),
+		"shutdown gate rejects delayed observer messages");
+
 	auto bytes = MakeEdid(52, 29);
 	const auto parsed = ParseEdid(bytes, L"DISPLAY\\ABC1234\\1");
 	Check(parsed.valid && parsed.status == EdidStatus::Parsed &&

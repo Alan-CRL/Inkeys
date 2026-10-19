@@ -1,0 +1,29 @@
+{
+  "id": "ui3-taskbar-dock-adaptation",
+  "name": "ui3-taskbar-dock-adaptation",
+  "title": "特殊任务栏布局与自动隐藏贴底适配",
+  "description": "规划主栏特殊任务栏位置/自动隐藏显隐贴底与动画，以及双画布Desktop/PPT底1px非全屏、Whiteboard完整覆盖；保留PPT主栏原规则，已批准实现。",
+  "status": "in_progress",
+  "dev_type": "native-desktop",
+  "scope": "ui3",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-19",
+  "completedAt": null,
+  "branch": "featrue/zoom",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-19-taskbar-dock-follow",
+    "10-19-canvas-edge-fullscreen-policy"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-19追加调整完成：顶部/侧边5真实DIP，缩放基准缺省按冻结设备默认大屏分类。新solution Debug|ARM64 exit0(130.11s,0errors/183既有warnings)、Headless --no-window exit0(106.19s)、config-boundary-test exit0(2.65s)，diff/编码检查通过。详见research/followup-validation.md。用户随后明确授权提交本任务改动；无GUI/push，任务保留in_progress，归档另行收尾。",
+  "meta": {}
+}

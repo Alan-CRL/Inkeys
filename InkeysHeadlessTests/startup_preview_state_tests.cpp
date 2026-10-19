@@ -223,6 +223,15 @@ namespace
 						"negative-origin Preview/formal visible stroke envelope has equal 24 DIP margins")) ++failures;
 				}
 			}
+		for (double desktopLine : { 992.0, 1034.0, 1040.0 })
+		{
+			const auto preview = StartupPreview::ResolveStartupPreviewBounds(monitor, work,
+				470.0, 80.0, 120U, 1.75, StartupPlacement::CenteredBottomBar, .6, desktopLine);
+			const auto formal = ResolveStartupPlacementBounds(StartupPlacement::CenteredBottomBar,
+				monitor, work, 471.0, 81.0, .6 * 1.75, 1.25, desktopLine);
+			if (!Expect(EqualRect(&preview, &formal) && formal.bottom == desktopLine,
+				"centered Preview and formal Bar share raised/hidden/side taskbar line at independent UI scale")) ++failures;
+		}
 		return failures;
 	}
 
@@ -495,8 +504,9 @@ int RunStartupPreviewStateTests()
 	const auto legacyConfig = ReadLegacyStartupPreviewFixture();
 	if (!Expect(legacyConfig.read && !legacyConfig.enabled
 		&& legacyConfig.widthDip == DefaultCachedStartupBarWidthDip
-		&& legacyConfig.zoom == 1.0 && legacyConfig.taskbarBase,
-		"legacy main.json keeps cached width default and resets old zoom with taskbar base enabled"))
+		&& legacyConfig.zoom == 1.0 && legacyConfig.taskbarBase
+			== Inkeys::ConfigDetail::GetDefaultLargeScreenDevice(),
+		"legacy main.json keeps cached width and uses frozen device default for taskbar base"))
 		++failures;
 	if (!Expect(!ShouldWriteCachedStartupBarWidthDip(470.0, 470.0)
 		&& !ShouldWriteCachedStartupBarWidthDip(470.0, 470.005)

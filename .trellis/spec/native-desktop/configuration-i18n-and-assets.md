@@ -525,6 +525,6 @@ Settings原子配置→frame配置快照→完整稳定宽度→受锁约束的s
 ## UI3 任务栏缩放基准与倍率新键（2026-10-19）
 
 - `UI.Bar.Zoom2` 取代活动 `Zoom`，默认 `1.0`、NoUpload；旧 `Zoom` 不迁移、不回读。AutoClean=false 时旧键可以按未知数据保留，但初始化、启动 ReadMini、设置、自动 fit 和冻结配置均只使用新键。
-- `UI.Bar.UseTaskbarHeightAsScaleBase` 为严格 bool，默认 `true`、NoUpload。新开关与 UI 倍率改变时同时唤醒 Bar 与四个 PPT 分页；复用设置写盘队列。SettingUI 的传统 `settingGlobalScale` 与 PPT 各自倍率不变。
+- `UI.Bar.UseTaskbarHeightAsScaleBase` 为严格 bool、NoUpload，缺省/非法类型/重置按启动时冻结的设备默认分类决定：大屏为 true，其余为 false；显式保存的 bool 优先。分类沿用 READY 触控且主屏物理面积>=1200cm²或物理信息不可用的现有大屏规则，不读取用户保存或运行中覆盖的 PaintDevice。Config schema 只读已冻结缓存，不在静态初始化查询硬件；构造、Mini、All、Reset 共用此默认。新开关与 UI 倍率改变时同时唤醒 Bar 与四个 PPT 分页；复用设置写盘队列。SettingUI 的传统 `settingGlobalScale` 与 PPT 各自倍率不变。
 - 开启后基准为本屏任务栏完整厚度/80；上下取高、左右取宽。无本屏任务栏时按主屏厚度×本屏DPI/主屏DPI折算，无法取得可信任务栏时回退真实DPI/96。只对用户倍率应用既有50%–200%限制，不裁剪任务栏基准。
 - 配置验证须包含旧键单独存在、新旧并存、Mini/全量、默认/复制/重置、非法bool和NoUpload。Codex沙箱默认TEMP可能禁止MoveFileEx原子替换（ERROR_ACCESS_DENIED）；可为测试进程将TEMP/TMP指向仓库内scratch，不能修改产品写盘器绕过环境限制。

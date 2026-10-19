@@ -526,6 +526,62 @@ namespace
 int RunBarBottomDockTests()
 {
 	using namespace Inkeys::UI::Bar;
+	// 新桌面线与场景 inset 共享生产策略，输入捕获也必须使用相同线。
+	const RECT taskbarMonitor{ -1920, -200, 0, 880 };
+	const RECT staleBottomWork{ -1920, -200, 0, 832 };
+	for (double zoom : { .5, 1.0, 1.875, 3.0 })
+	{
+		for (double desktopLine : { 832.0, 872.0, 880.0 })
+		{
+			Check(ResolveBarBottomDockLine(taskbarMonitor, staleBottomWork, 0.0, 1.5, desktopLine)
+				== desktopLine, "normalized desktop line overrides stale work area");
+			Check(ResolveBarBottomDockLine(taskbarMonitor, staleBottomWork, 5.0, 1.5, desktopLine)
+				== 872.0, "PPT and whiteboard retain real-DPI 5 DIP scene priority");
+			const double center = ResolveBarBottomDockCenterScreenY(desktopLine, 80.0, 1.0, zoom);
+			Check(ResolveBarVisibleBorderBottomScreen(center, 80.0, 1.0, zoom) == desktopLine,
+				"visible stroke docks independently of UI scale and monitor origin");
+			BarBottomDockDragTracker tracker;
+			const BarBottomDockEnvironment env{ taskbarMonitor, staleBottomWork, zoom, 0.0, 1.5, desktopLine };
+			tracker.Begin(BarBottomDockMode::Floating, desktopLine - 100.0 * zoom,
+				desktopLine - 60.0 * zoom, center, env);
+			const auto capture = tracker.Update(center, desktopLine, env);
+			Check(capture.captured && capture.dockLineScreenY == desktopLine,
+				"drag capture consumes the normalized taskbar line from its presented environment");
+		}
+	}
+	for (double zoom : { .5, 1.0, 3.0 })
+	{
+		const double finalCenter = ResolveBarBottomDockCenterScreenY(832.0, 80.0, 1.0, zoom);
+		for (double direction : { -1.0, 1.0 })
+		{
+			const POINT directTranslation{ 11, 7 };
+			const double presentedCenter = finalCenter + direction * 40.0 * zoom + directTranslation.y;
+			const double grabOffset = 7.0 * zoom;
+			const double pointer = presentedCenter + grabOffset + 4.0 * zoom;
+			const double bottom = presentedCenter + 44.5 * zoom;
+			const BarBottomDockEnvironment env{ taskbarMonitor, staleBottomWork, zoom, 0.0, 1.5, 832.0 };
+			BarBottomDockDragTracker tracker;
+			// 终点相距超过脱离阈值，实际已显示位置仍须支持零位移接管。
+			tracker.Begin(BarBottomDockMode::BottomDocked, pointer, bottom,
+				presentedCenter + grabOffset, env);
+			const auto frozen = tracker.Update(pointer, bottom, env);
+			Check(frozen.mode == BarBottomDockMode::BottomDocked && !frozen.detached
+				&& !frozen.modeChanged && std::abs(frozen.elasticOffsetDip - 4.0) < .000001,
+				"grabbing taskbar animation at its presented midpoint does not detach without pointer motion");
+			const auto moved = tracker.Update(pointer + 2.0 * zoom, bottom + 2.0 * zoom, env);
+			Check(!moved.detached && std::abs(moved.elasticOffsetDip - 6.0) < .000001,
+				"mid-animation grab tracks actual pointer displacement rather than final dock distance");
+			const BarBottomDockEnvironment changedEnv{ taskbarMonitor, staleBottomWork, zoom, 0.0, 1.5, 872.0 };
+			const double currentPointer = pointer + 2.0 * zoom;
+			// 新环境已经上屏，但自动移动仍让位于手势；只根据已显示基线重建抓取偏移。
+			const double rebaseGrabOffset = currentPointer - (presentedCenter + 6.0 * zoom);
+			tracker.RebaseDockGrip(presentedCenter + rebaseGrabOffset, bottom + 2.0 * zoom);
+			const auto rebased = tracker.Update(currentPointer, bottom + 2.0 * zoom, changedEnv);
+			Check(!rebased.detached && !rebased.modeChanged
+				&& std::abs(rebased.elasticOffsetDip - 6.0) < .000001,
+				"new taskbar environment during held drag keeps displayed base and elastic displacement");
+		}
+	}
 	TestMainToolbarLayoutPolicy();
 	TestHorizontalCapturePresentedSequence();
 	TestFirstCapturePresentationAcrossNewSamples();

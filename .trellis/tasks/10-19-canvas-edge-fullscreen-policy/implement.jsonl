@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Window/Display/UI3生产边界与质量检查"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "呈现/输入所有权、白板锚点及场景次序"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "既有ARM64 solution构建与兼容目标"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "双画布同Host、窗口owner、固定穿透与尺寸边界"}
+{"file": ".trellis/spec/native/index.md", "reason": "底层输入/渲染边界与质量检查"}
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "resize/输入映射合同，region不得触发尺寸资源重建"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "PPT主栏进退与5真实屏幕DIP规则不变"}
+{"file": ".trellis/tasks/10-19-ui3-taskbar-dock-adaptation/research/canvas-scene-policy.md", "reason": "最终双画布场景矩阵、region+NonRude及白板事务/回滚证据"}

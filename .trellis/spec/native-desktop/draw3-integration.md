@@ -443,3 +443,11 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 ## 启动输入回退
 
 完整 RTS → 基础 X/Y RTS → Win32Mouse，每档安全停止/排空后才进入下一档。Host按InputReady放行；RTS与窗口鼠标绘制互斥。鼠标owner线程启停、捕获和最终保存的合同见input-and-ink.md。迁移不新增性能采集或资源探针。
+
+## 双画布底行与非全屏策略（2026-10-19）
+
+- `Drawpad` 与 `DrawpadPresentation` 在 Desktop/PPT 的实际可见/输入区域始终排除目标屏幕最底 1 **物理像素**；不依赖任务栏方向、autoHide、UI 倍率或 DPI。由 Window Service owner 在线程内设置 window region，保留完整 HWND/client、Host/backbuffer、RTS 标尺和文档坐标；区域外笔迹不删除、不改写持久化。
+- 两窗首次显示前设置公开的 `NonRudeHWND` 属性；调用者传入 WS_VISIBLE 也必须先撤掉，策略成功后才显示。`MarkFullscreenWindow(FALSE)` 只撤销显式标记，不能替代禁止 Shell 自动识别全屏的属性。
+- Whiteboard 恢复两画布创建时的原 region/属性，继续由 Freeze/root 作为既有全屏锚点。退出、进入失败和窗口重建均恢复相应场景；selection 固定穿透、单 Host 与 owner 链不变。
+- scene、实际 bounds/monitor 或 HWND 变化才重新应用；两个角色共同隐藏、应用、核对并恢复可见性后才确认白板 mode。失败逆序回滚；旧 region 不适用于新 bounds 或回滚未收敛时保留双隐藏及原显隐意图，交既有 owner 循环 250ms 失败重试，正常无额外轮询。后来的 Hide/Hidden/HideAll 优先于保存的恢复显隐；连续失败即使已清旧 applied key，也必须保持双隐藏直到真实成功。
+- `Window.CanvasPolicy.h` 的生产区域和双窗事务 helper 由 Headless 无 HWND 测试直接覆盖；测试不证明真实 USER32 重入、DComp/ULW 可见裁剪或 Shell 分类。既有全屏 COM 链仍为 best effort；GUI/Shell/旧系统结果单独记证据。已有 capture 按原输入所有权收尾，不为底行策略擅自取消笔迹。

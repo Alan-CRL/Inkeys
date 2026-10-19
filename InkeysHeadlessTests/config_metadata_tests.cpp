@@ -74,9 +74,13 @@ int RunConfigMetadataTests()
 		std::wstring target = targetArchitecture;
 		std::wstring windows = windowsEdition;
 		std::string channel;
+		bool defaultLargeScreen = Inkeys::ConfigDetail::GetDefaultLargeScreenDevice();
+		int paintDevice = setlist.paintDevice.load();
 		~Restore()
 		{
 			globalPath = path;
+			Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(defaultLargeScreen);
+			setlist.paintDevice = paintDevice;
 			userId = id;
 			editionVersion = version;
 			editionDate = date;
@@ -325,91 +329,133 @@ int RunConfigMetadataTests()
 		}
 	}
 
-	// 改名刻意不导入旧倍率；走真实文件和生产 schema，避免测试复制迁移逻辑。
-	Inkeys::Config scaleConfig;
-	check(scaleConfig.UI.Bar.Zoom2.load() == 1.0
-		&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(), "scale schema defaults to 100 percent and taskbar base");
-	Json::Value scaleDocument(Json::objectValue);
-	scaleDocument["UI"]["Bar"]["Zoom"] = 1.75;
-	writeModeDocument(scaleDocument);
-	scaleConfig.UI.Bar.Zoom2 = 2.0;
-	scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
-	check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.0
-		&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(), "ReadAll ignores old Zoom and supplies new defaults");
-	scaleConfig.UI.Bar.Zoom2 = 2.0;
-	scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
-	check(scaleConfig.ReadMini({ "UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase" })
-		&& scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
-		"startup Mini ignores old Zoom and resets selected scale fields");
-	check(scaleConfig.Write(), "write scale defaults alongside unknown old Zoom");
-	const auto defaultScaleDocument = ReadJson(file);
-	check(defaultScaleDocument["UI"]["Bar"]["Zoom"].asDouble() == 1.75
-		&& defaultScaleDocument["UI"]["Bar"]["Zoom2"].asDouble() == 1.0
-		&& defaultScaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"].asBool(),
-		"unknown old Zoom is retained without migrating it to Zoom2");
-	scaleDocument["UI"]["Bar"]["Zoom2"] = 1.25;
-	for (const bool enabled : { false, true })
+	using Inkeys::ConfigDetail::ResolveDefaultLargeScreenDevice;
+	struct DeviceDefaultCase final
 	{
-		scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = enabled;
-		writeModeDocument(scaleDocument);
-		check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.25
-			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled,
-			"ReadAll honors new key with both keys present and either taskbar preference");
-		scaleConfig.UI.Bar.Zoom2 = 1.5;
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
-		check(scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
-			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled
-			&& scaleConfig.UI.Bar.Zoom2.load() == 1.5, "Mini taskbar preference leaves zoom untouched");
-		check(scaleConfig.ReadMini({ "UI.Bar.Zoom2" }) && scaleConfig.UI.Bar.Zoom2.load() == 1.25
-			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled,
-			"Mini new zoom does not read old key or alter taskbar preference");
-		const auto scaleUpload = scaleConfig.GetUploadInfo();
-		scaleConfig.UI.Bar.Zoom2 = 1.5;
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
-		check(scaleConfig.GetUploadInfo() == scaleUpload, "zoom and taskbar preference are NoUpload");
-		Inkeys::Config frozenScale;
-		frozenScale = scaleConfig;
-		scaleConfig.UI.Bar.Zoom2 = 2.0;
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = enabled;
-		check(frozenScale.UI.Bar.Zoom2.load() == 1.5
-			&& frozenScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() == !enabled && frozenScale.Write(),
-			"frozen scale payload retains both independent captured values");
-		Inkeys::Config restarted;
-		check(restarted.ReadAll() && restarted.UI.Bar.Zoom2.load() == 1.5
-			&& restarted.UI.Bar.UseTaskbarHeightAsScaleBase.load() == !enabled,
-			"both scale values round-trip through frozen write and restart");
-	}
-	for (const Json::Value& invalid : { Json::Value(), Json::Value(0), Json::Value(1), Json::Value(1.0),
-		Json::Value("false"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+		int digitizerStatus;
+		bool sizeAvailable;
+		int widthCm;
+		int heightCm;
+		bool largeScreen;
+	};
+	const DeviceDefaultCase deviceCases[] = {
+		{ 0, false, 0, 0, false },
+		{ NID_READY, false, 0, 0, false },
+		{ NID_INTEGRATED_TOUCH, true, 100, 100, false },
+		{ NID_READY | NID_INTEGRATED_PEN, false, 0, 0, false },
+		{ NID_READY | NID_INTEGRATED_TOUCH, false, 0, 0, true },
+		{ NID_READY | NID_EXTERNAL_TOUCH, false, 0, 0, true },
+		{ NID_READY | NID_INTEGRATED_TOUCH, true, 20, 59, false },
+		{ NID_READY | NID_INTEGRATED_TOUCH, true, 20, 60, true },
+		{ NID_READY | NID_EXTERNAL_TOUCH, true, 20, 61, true },
+	};
+	for (const auto& test : deviceCases)
+		check(ResolveDefaultLargeScreenDevice(test.digitizerStatus, test.sizeAvailable,
+			test.widthCm, test.heightCm) == test.largeScreen,
+			"production startup classifier retains touch readiness, unknown size and inclusive area threshold");
+	for (const bool defaultLargeScreen : { false, true })
 	{
-		scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = invalid;
-		writeModeDocument(scaleDocument);
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
-		check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
-			"ReadAll rejects non-boolean taskbar preference and restores true");
+		// 用户交互模式与硬件缺省相反时，也不能影响 schema 的设备条件缺省。
+		setlist.paintDevice = defaultLargeScreen ? 1 : 0;
+		Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(defaultLargeScreen);
+		// 改名刻意不导入旧倍率；走真实文件和生产 schema，避免测试复制迁移逻辑。
+		Inkeys::Config scaleConfig;
+		check(scaleConfig.UI.Bar.Zoom2.load() == 1.0
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen, "scale schema uses 100 percent and frozen device default");
+		std::error_code removeError;
+		fs::remove(file, removeError);
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		check(!scaleConfig.ReadAll()
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen,
+			"missing file ReadAll still applies frozen device default");
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
 		scaleConfig.UI.Bar.Zoom2 = 1.5;
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
-		check(scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
-			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() && scaleConfig.UI.Bar.Zoom2.load() == 1.5,
-			"Mini rejects non-boolean taskbar preference without unrelated changes");
-	}
-	for (const Json::Value& invalid : { Json::Value(), Json::Value(true), Json::Value("1.5"),
-		Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
-	{
-		scaleDocument["UI"]["Bar"]["Zoom2"] = invalid;
+		check(!scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen
+			&& scaleConfig.UI.Bar.Zoom2.load() == 1.5,
+			"missing file Mini applies only selected device default");
+		Json::Value scaleDocument(Json::objectValue);
+		scaleDocument["UI"]["Bar"]["Zoom"] = 1.75;
 		writeModeDocument(scaleDocument);
 		scaleConfig.UI.Bar.Zoom2 = 2.0;
-		check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.0,
-			"ReadAll invalid Zoom2 defaults instead of falling back to valid old Zoom");
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.0
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen, "ReadAll ignores old Zoom and supplies new defaults");
 		scaleConfig.UI.Bar.Zoom2 = 2.0;
-		check(scaleConfig.ReadMini({ "UI.Bar.Zoom2" }) && scaleConfig.UI.Bar.Zoom2.load() == 1.0,
-			"Mini invalid Zoom2 defaults instead of falling back to valid old Zoom");
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		check(scaleConfig.ReadMini({ "UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase" })
+			&& scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen,
+			"startup Mini ignores old Zoom and resets selected scale fields");
+		check(scaleConfig.Write(), "write scale defaults alongside unknown old Zoom");
+		const auto defaultScaleDocument = ReadJson(file);
+		check(defaultScaleDocument["UI"]["Bar"]["Zoom"].asDouble() == 1.75
+			&& defaultScaleDocument["UI"]["Bar"]["Zoom2"].asDouble() == 1.0
+			&& defaultScaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"].asBool() == defaultLargeScreen,
+			"unknown old Zoom is retained without migrating it to Zoom2");
+		scaleDocument["UI"]["Bar"]["Zoom2"] = 1.25;
+		for (const bool enabled : { false, true })
+		{
+			scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = enabled;
+			writeModeDocument(scaleDocument);
+			check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.25
+				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled,
+				"ReadAll honors new key with both keys present and either taskbar preference");
+			scaleConfig.UI.Bar.Zoom2 = 1.5;
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
+			check(scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
+				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled
+				&& scaleConfig.UI.Bar.Zoom2.load() == 1.5, "Mini taskbar preference leaves zoom untouched");
+			check(scaleConfig.ReadMini({ "UI.Bar.Zoom2" }) && scaleConfig.UI.Bar.Zoom2.load() == 1.25
+				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled,
+				"Mini new zoom does not read old key or alter taskbar preference");
+			const auto scaleUpload = scaleConfig.GetUploadInfo();
+			scaleConfig.UI.Bar.Zoom2 = 1.5;
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
+			check(scaleConfig.GetUploadInfo() == scaleUpload, "zoom and taskbar preference are NoUpload");
+			Inkeys::Config frozenScale;
+			frozenScale = scaleConfig;
+			scaleConfig.UI.Bar.Zoom2 = 2.0;
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = enabled;
+			check(frozenScale.UI.Bar.Zoom2.load() == 1.5
+				&& frozenScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() == !enabled && frozenScale.Write(),
+				"frozen scale payload retains both independent captured values");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && restarted.UI.Bar.Zoom2.load() == 1.5
+				&& restarted.UI.Bar.UseTaskbarHeightAsScaleBase.load() == !enabled,
+				"both scale values round-trip through frozen write and restart");
+		}
+		for (const Json::Value& invalid : { Json::Value(), Json::Value(0), Json::Value(1), Json::Value(1.0),
+			Json::Value("false"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+		{
+			scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = invalid;
+			writeModeDocument(scaleDocument);
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+			check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen,
+				"ReadAll rejects non-boolean taskbar preference and restores device default");
+			scaleConfig.UI.Bar.Zoom2 = 1.5;
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+			check(scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
+				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen && scaleConfig.UI.Bar.Zoom2.load() == 1.5,
+				"Mini rejects non-boolean taskbar preference without unrelated changes");
+		}
+		for (const Json::Value& invalid : { Json::Value(), Json::Value(true), Json::Value("1.5"),
+			Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+		{
+			scaleDocument["UI"]["Bar"]["Zoom2"] = invalid;
+			writeModeDocument(scaleDocument);
+			scaleConfig.UI.Bar.Zoom2 = 2.0;
+			check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.0,
+				"ReadAll invalid Zoom2 defaults instead of falling back to valid old Zoom");
+			scaleConfig.UI.Bar.Zoom2 = 2.0;
+			check(scaleConfig.ReadMini({ "UI.Bar.Zoom2" }) && scaleConfig.UI.Bar.Zoom2.load() == 1.0,
+				"Mini invalid Zoom2 defaults instead of falling back to valid old Zoom");
+		}
+		scaleConfig.UI.Bar.Zoom2 = 1.5;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		scaleConfig.ResetToDefaults();
+		check(scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen,
+			"reset restores both new scale defaults");
 	}
-	scaleConfig.UI.Bar.Zoom2 = 1.5;
-	scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = false;
-	scaleConfig.ResetToDefaults();
-	check(scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
-		"reset restores both new scale defaults");
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;
 }
