@@ -4,5 +4,5 @@
 {"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "启动预览尺寸与真实栏交接"}
 {"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 Solution 与无窗口验证"}
 {"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "PPT运行fit、吸附阈值与提交边界"}
-{"file": ".trellis/tasks/10-19-ui3-taskbar-scale/research/scale-chain.md", "reason": "缩放消费者与真实DPI边界调查"}
-{"file": ".trellis/tasks/10-19-ui3-taskbar-scale/research/configuration-and-settings.md", "reason": "新键重置、设置与测试入口调查"}
+{"file": ".trellis/tasks/archive/2026-10/10-19-ui3-taskbar-scale/research/scale-chain.md", "reason": "缩放消费者与真实DPI边界调查"}
+{"file": ".trellis/tasks/archive/2026-10/10-19-ui3-taskbar-scale/research/configuration-and-settings.md", "reason": "新键重置、设置与测试入口调查"}
