@@ -3701,15 +3701,32 @@ namespace Inkeys::UI::PageControl
 				InputRegistrationContext registration{index,inputLifecycle.load()};
 				PageControlInputEvent(event,&registration);return event;
 			};
-			for(const UINT dpi:{96U,144U})for(const int taskbarThickness:{24,96})for(const float savedOffset:{0.0F,37.0F}){
+			const auto visibleBottomFromPixels=[](SurfaceState& state,const RECT& submitted,SIZE viewport)->std::optional<LONG>{
+				auto* dc=state.scene.DeviceContext();if(!dc)return std::nullopt;
+				ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
+				if(!image||FAILED(image.As(&bitmap)))return std::nullopt;
+				const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+				if(FAILED(dc->CreateBitmap(bitmap->GetPixelSize(),nullptr,0,&props,&cpu))
+					||FAILED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr)))return std::nullopt;
+				D2D1_MAPPED_RECT mapped{};if(FAILED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped)))return std::nullopt;
+				const auto body=state.scene.LogicalBounds();
+				const LONG column=(body.left+body.right)/2-submitted.left;LONG last=-1;
+				if(column>=0&&column<viewport.cx)for(LONG y=0;y<viewport.cy;++y)
+					if(mapped.bits[static_cast<std::size_t>(y)*mapped.pitch+column*4+3])last=y;
+				cpu->Unmap();return last>=0?std::optional<LONG>(submitted.top+last+1):std::nullopt;
+			};
+			for(const UINT dpi:{96U,144U})for(const int taskbarThickness:{24,48,96})
+			for(const float localScale:{1.0F,1.5F})for(const float savedOffset:{0.0F,37.0F}){
 				Prepare();
 				const auto uiScale=static_cast<float>(Inkeys::Display::ResolveUiScaleBase(dpi,taskbarThickness,0,0,
 					Inkeys::Display::UiScaleBaseMode::TaskbarActual));
 				hiddenTestDpi.store(dpi);hiddenTestUiScale.store(uiScale);
 				const auto [layoutMonitor,dpiScale,globalScale]=LayoutMonitor();
 				auto show=baseline;show.presentationActive=true;show.uiScale=globalScale;
-				show.layout.showMiddlePair=false;show.layout.bottomPairScale=1.5F;show.layout.bottomPairHeight=savedOffset;
+				show.layout.showMiddlePair=false;show.layout.bottomPairScale=localScale;show.layout.bottomPairHeight=savedOffset;
 				const auto originalLayout=show.layout;
+				std::array<std::array<RECT,2>,2> pptArrows{};
 				for(int stage=0;stage<3;++stage){
 					WhiteboardState board;board.active=board.expandedLayoutTarget=stage==1;
 					show.presentationVisible=stage!=1;
@@ -3723,6 +3740,16 @@ namespace Inkeys::UI::PageControl
 							Check(ConfigureSurface(index,target.mode,fitted,board,layoutMonitor,target,revision,stamp,false,failed),
 								"PPT-whiteboard-PPT uses the real pagination adapter");
 							(void)surfaces[index].scene.Advance(stamp);
+							if(savedOffset==0&&localScale==1){
+								const auto frameLayout=surfaces[index].scene.Layout();
+								for(std::size_t arrow=0;arrow<2;++arrow){
+									auto rect=frameLayout.buttons[(arrow==0?PreviousWidget:NextWidget)-1].localPixels;
+									OffsetRect(&rect,frameLayout.logicalBounds.left,frameLayout.logicalBounds.top);
+									if(stage==0&&frame==60)pptArrows[index][arrow]=rect;
+									if(stage>0)Check(rect.top==pptArrows[index][arrow].top&&rect.bottom==pptArrows[index][arrow].bottom,
+										"default PPT and whiteboard arrows keep their screen Y throughout the actual layout morph");
+								}
+							}
 						}
 						FrameContext context;context.epoch=epoch;context.frameTime=origin+2s+stage*2s+1200ms;
 						auto& surfaceState=surfaces[index];const auto bounds=surfaceState.scene.PresentationBounds();
@@ -3732,23 +3759,22 @@ namespace Inkeys::UI::PageControl
 						std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink=[&](const auto& info){
 							submitted={info.pptDst->x,info.pptDst->y,info.pptDst->x+info.psize->cx,info.pptDst->y+info.psize->cy};
 							++submissions;return TRUE;};
+						// 关闭光源扩散，只测量主体填充与共享描边；透明 backing/光晕不定义底距。
+						surfaceState.scene.Renderer().SetFrameLightingSnapshot({});
 						const auto result=PresentScene(index,surfaceState,nullptr,context,bounds,surfaceState.backingCapacity,true,false,
 							surfaceState.scene.AnimationActive(),&sink);
-						Check(result.status==PresentStatus::Success&&result.pixelsSubmitted&&submissions==1,
+						Check(result.status==PresentStatus::Success&&result.pixelsSubmitted&&submissions==1&&EqualRect(&submitted,&bounds),
 							"each workspace handoff submits real D2D/GetDC pixels and its screen destination");
 						if(result.status==PresentStatus::Success){surfaceState.scene.CommitPresented();(void)surfaceState.scene.ConsumeDamage();}
-						if(stage!=1){
-							const LONG expected=layoutMonitor.bottom-static_cast<LONG>(std::lround(5*dpiScale))-static_cast<LONG>(savedOffset);
-							const auto logical=surfaceState.scene.LogicalBounds();
-							// 包络向外取整可能多覆盖一像素，按真实提交原点映射逻辑底边。
-							const bool atBottom=logical.bottom==expected&&EqualRect(&submitted,&bounds)
-								&&submitted.top+(logical.bottom-bounds.top)==expected;
-							if(!atBottom)std::fprintf(stderr,"[PageControlUI3] return-bottom index=%zu stage=%d dpi=%u taskbar=%d scale=%.3f offset=%.1f logical=%ld submitted=%ld expected=%ld\n",
-								index,stage,dpi,taskbarThickness,globalScale,savedOffset,logical.bottom,submitted.bottom,expected);
-							Check(atBottom,"PPT returns five screen DIP above monitor bottom without inheriting the taskbar or whiteboard anchor");
-							Check(show.layout.bottomPairHeight==originalLayout.bottomPairHeight&&show.layout.bottomPairScale==originalLayout.bottomPairScale,
-								"workspace handoff preserves saved PPT drag offset and local multiplier");
-						}
+						const LONG expected=layoutMonitor.bottom-static_cast<LONG>(std::lround(5*dpiScale))
+							-(stage==1?0:static_cast<LONG>(savedOffset));
+						const auto paintedBottom=visibleBottomFromPixels(surfaceState,submitted,size);
+						const bool atBottom=paintedBottom&&std::abs(*paintedBottom-expected)<=1;
+						if(!atBottom)std::fprintf(stderr,"[PageControlUI3] visible-bottom index=%zu stage=%d dpi=%u taskbar=%d scale=%.3f local=%.1f offset=%.1f painted=%ld expected=%ld\n",
+							index,stage,dpi,taskbarThickness,globalScale,localScale,savedOffset,paintedBottom.value_or(0),expected);
+						Check(atBottom,"PPT and whiteboard actual fill/stroke pixels retain five screen DIP at every UI scale");
+						Check(show.layout.bottomPairHeight==originalLayout.bottomPairHeight&&show.layout.bottomPairScale==originalLayout.bottomPairScale,
+							"workspace handoff preserves saved PPT drag offset and local multiplier");
 					}
 				}
 			}

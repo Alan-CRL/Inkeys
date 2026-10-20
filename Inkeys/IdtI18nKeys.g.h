@@ -89,6 +89,7 @@ inline constexpr struct I18nKeyRoot
                 const char* WhiteboardNextLabel = "UI/Bar/MainButtons/WhiteboardNextLabel";
                 const char* WhiteboardAddPageLabel = "UI/Bar/MainButtons/WhiteboardAddPageLabel";
                 const char* WhiteboardLabel = "UI/Bar/MainButtons/WhiteboardLabel";
+                const char* ResumeWhiteboardLabel = "UI/Bar/MainButtons/ResumeWhiteboardLabel";
                 const char* CloseWhiteboardLabel = "UI/Bar/MainButtons/CloseWhiteboardLabel";
                 const char* ReturnToShowLabel = "UI/Bar/MainButtons/ReturnToShowLabel";
                 const char* MinimizeWhiteboardLabel = "UI/Bar/MainButtons/MinimizeWhiteboardLabel";

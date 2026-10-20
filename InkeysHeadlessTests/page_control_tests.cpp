@@ -42,6 +42,12 @@ namespace
 		return bounds.bottom - bounds.top;
 	}
 
+	LONG VisibleBodyBottom(const ResolvedSurfaceLayout& layout, double heightDip) noexcept
+	{
+		return layout.logicalBounds.top + static_cast<LONG>(std::ceil(
+			(heightDip + BarButtonFrameThicknessDip / 2.0) * layout.scale));
+	}
+
 	void TestSharedButtonInheritance()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -693,11 +699,11 @@ namespace
 		Check(expanded.scale == 2 && Width(expanded.logicalBounds) == 610
 			&& Height(expanded.logicalBounds) == 160
 			&& expanded.logicalBounds.left == monitor.left + 10
-			&& expanded.logicalBounds.bottom == monitor.bottom - 10
+			&& VisibleBodyBottom(expanded, WhiteboardHeightDip) == monitor.bottom - 10
 			&& expandedRight.scale == 2 && Width(expandedRight.logicalBounds) == 460
 			&& Height(expandedRight.logicalBounds) == 160
 			&& expandedRight.logicalBounds.right == monitor.right - 10
-			&& expandedRight.logicalBounds.bottom == monitor.bottom - 10,
+			&& VisibleBodyBottom(expandedRight, WhiteboardHeightDip) == monitor.bottom - 10,
 			"whiteboard uses independent 305/230 DIP widths and fixed bottom corners without inheriting PPT scale or position");
 	}
 
@@ -722,12 +728,19 @@ namespace
 						const bool middle = surface == Surface::MiddleLeft || surface == Surface::MiddleRight;
 						Check(std::abs(layout.scale - base * user * (middle ? 2.0F : 1.5F)) < 1e-5F,
 							"all four PPT surfaces multiply UI base, global zoom and local zoom exactly once");
-						if (!middle) Check(layout.logicalBounds.bottom == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)),
+						if (!middle) Check(VisibleBodyBottom(layout, PptControlShortSideDip) == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)),
 							"PPT bottom inset stays five screen DIP across global and local UI scales");
 					}
 					WhiteboardState whiteboard;
 					whiteboard.active = whiteboard.expandedLayoutTarget = true;
 					const auto expanded=ResolveSurfaceLayout(Surface::BottomLeft,monitor,dpi,fitted,whiteboard);
+					Check(VisibleBodyBottom(expanded, WhiteboardHeightDip) == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)),
+						"whiteboard fill and stroke retain five screen DIP instead of five UI-scaled DIP");
+					auto defaultPpt = fitted;defaultPpt.layout.bottomPairScale = 1.0F;
+					const auto defaultLayout = ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, defaultPpt, {});
+					Check(defaultLayout.logicalBounds.top == expanded.logicalBounds.top
+						&& defaultLayout.logicalBounds.bottom == expanded.logicalBounds.bottom,
+						"default PPT and whiteboard keep the same body Y anchor at every global scale");
 					Check(std::abs(expanded.scale-base*user)<1e-5F,
 						"whiteboard follows the global UI base and zoom without PPT local zoom or a second DPI multiplier");
 					PptState noShow;noShow.uiScale=base*user;noShow.layout.bottomPairScale=3;
@@ -1189,7 +1202,7 @@ namespace
 			&& Width(expanded.logicalBounds) == 305
 			&& Height(expanded.logicalBounds) == 80
 			&& expanded.logicalBounds.left == 5
-			&& expanded.logicalBounds.bottom == monitor.bottom - 5
+			&& VisibleBodyBottom(expanded, WhiteboardHeightDip) == monitor.bottom - 5
 			&& expandedRight.logicalBounds.right == monitor.right - 5,
 			"whiteboard ignores PPT offsets and stays at fixed bottom corners");
 		Check(hiddenSide.mode == WorkspaceMode::Hidden && !hiddenSide.visible,
@@ -1625,8 +1638,8 @@ namespace
 			moved.layout.bottomPairScale = 1.5F;
 			moved.layout.bottomPairWidth = 17;
 			moved.layout.bottomPairHeight = 37;
-			const auto bounds = ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, moved, {}).logicalBounds;
-			Check(bounds.bottom == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)) - 37
+			const auto movedLayout = ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, moved, {});
+			Check(VisibleBodyBottom(movedLayout, PptControlShortSideDip) == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)) - 37
 				&& moved.layout.bottomPairWidth == 17 && moved.layout.bottomPairHeight == 37,
 				"screen-DIP bottom inset preserves saved PPT drag offsets");
 			auto maxDrag = moved.layout;
@@ -1648,7 +1661,7 @@ namespace
 		const auto clamped = ClampPageControlLayout(Surface::BottomLeft,
 			monitor, 1.0F, dragged);
 		Check(clamped.bottomPairWidth == 155.0F
-			&& clamped.bottomPairHeight == 510.0F,
+			&& clamped.bottomPairHeight == 509.0F,
 			"PPT drag clamp uses its active standard geometry without inheriting whiteboard width");
 	}
 

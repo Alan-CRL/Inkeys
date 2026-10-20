@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.MainLayoutPolicy.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
@@ -530,6 +531,21 @@ namespace
 int RunBarBottomDockTests()
 {
 	using namespace Inkeys::UI::Bar;
+	{
+		int restored = 0, requests = 0;
+		bool requested = true;
+		const auto restore = [&] { ++restored; return false; };
+		const auto request = [&](bool active) { ++requests; requested = active; };
+		DispatchBarWhiteboardButtonAction(requested, true, restore, request);
+		Check(restored == 1 && requests == 0 && requested,
+			"minimized whiteboard restores the current workspace and never falls back on restore failure");
+		DispatchBarWhiteboardButtonAction(requested, false, restore, request);
+		Check(restored == 1 && requests == 1 && !requested,
+			"expanded whiteboard keeps its original close action");
+		DispatchBarWhiteboardButtonAction(requested, false, restore, request);
+		Check(restored == 1 && requests == 2 && requested,
+			"inactive whiteboard keeps its original open action");
+	}
 	// 新桌面线与场景 inset 共享生产策略，输入捕获也必须使用相同线。
 	const RECT taskbarMonitor{ -1920, -200, 0, 880 };
 	const RECT staleBottomWork{ -1920, -200, 0, 832 };

@@ -554,7 +554,8 @@ namespace Inkeys::UI::Bar
 
 	bool HideWhiteboardSnapIndicator() noexcept
 	{
-		return WhiteboardActive();
+		// 白板沿用真实拖动的资格门禁；程序入场/恢复不会建立吸附提示资格。
+		return false;
 	}
 
 	void SetContentStateUpdatesReady(bool ready) noexcept

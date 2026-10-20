@@ -1069,10 +1069,16 @@ export namespace Inkeys::UI::PageControl
 			&& targetContent.cy + targetOutset * 2 <= limit };
 	}
 
-	[[nodiscard]] inline LONG ResolvePptBottomInsetPixels(float dpiScale) noexcept
+	[[nodiscard]] inline LONG ResolvePageControlBottomInsetPixels(float dpiScale) noexcept
 	{
-		// PPT 底边距是屏幕 DIP，不随主栏 UI 倍率或 PPT 局部倍率扩大。
+		// PPT/白板底边距是屏幕 DIP，不随主栏 UI 倍率或 PPT 局部倍率扩大。
 		return static_cast<LONG>(std::lround(PageControlGapDip * NormalizeDpiScale(dpiScale)));
+	}
+
+	[[nodiscard]] inline LONG ResolvePageControlVisibleBottomOffsetPixels(double heightDip, float scale) noexcept
+	{
+		// 公共背景的描边以轮廓线为中心；布局锚定可见外沿，不能按透明 HWND 包络留边。
+		return static_cast<LONG>(std::ceil((heightDip + BarButtonFrameThicknessDip / 2.0) * scale));
 	}
 
 	[[nodiscard]] inline ResolvedSurfaceLayout ResolveSurfaceLayout(
@@ -1116,7 +1122,8 @@ export namespace Inkeys::UI::PageControl
 			// Whiteboard 始终锚定左右下角，不读取或继承 PPT 用户位置。
 			x = left ? monitor.left + edge
 				: monitor.right - edge - width;
-			y = monitor.bottom - edge - height;
+			y = monitor.bottom - ResolvePageControlBottomInsetPixels(dpiScale)
+				- ResolvePageControlVisibleBottomOffsetPixels(heightDip, scale);
 		}
 		else if (result.vertical)
 		{
@@ -1137,7 +1144,8 @@ export namespace Inkeys::UI::PageControl
 				ppt.layout.bottomPairHeight));
 			x = left ? monitor.left + edge + offsetX
 				: monitor.right - edge - offsetX - width;
-			y = monitor.bottom - ResolvePptBottomInsetPixels(dpiScale) - offsetY - height;
+			y = monitor.bottom - ResolvePageControlBottomInsetPixels(dpiScale) - offsetY
+				- ResolvePageControlVisibleBottomOffsetPixels(heightDip, scale);
 		}
 		result.logicalBounds = RECT{ x, y, x + width, y + height };
 		return result;
@@ -1173,8 +1181,9 @@ export namespace Inkeys::UI::PageControl
 					- static_cast<float>((controlWidth + PageControlGapDip) * scale)));
 			layout.bottomPairHeight = (std::clamp)(layout.bottomPairHeight,
 				0.0F, (std::max)(0.0F, height
-					- static_cast<float>((controlHeight + PageControlGapDip) * scale)
-					- static_cast<float>(ResolvePptBottomInsetPixels(dpiScale))));
+					- static_cast<float>(ResolvePageControlVisibleBottomOffsetPixels(controlHeight, scale))
+					- static_cast<float>(PageControlGapDip * scale)
+					- static_cast<float>(ResolvePageControlBottomInsetPixels(dpiScale))));
 		}
 		else
 		{
@@ -1324,8 +1333,9 @@ export namespace Inkeys::UI::PageControl
 			const float maximum = (std::min)(
 				width / static_cast<float>((controlWidth + PageControlGapDip) * 2.0
 					* normalizedDpi),
-				bottom ? (std::max)(0.0F, height - static_cast<float>(ResolvePptBottomInsetPixels(dpiScale)))
-					/ static_cast<float>((controlHeight + PageControlGapDip) * normalizedDpi)
+				// 底部可见高度包含半个共享描边，并为其向外取整预留至多一像素。
+				bottom ? (std::max)(0.0F, height - static_cast<float>(ResolvePageControlBottomInsetPixels(dpiScale)) - 1.0F)
+					/ static_cast<float>((controlHeight + PageControlGapDip + BarButtonFrameThicknessDip / 2.0) * normalizedDpi)
 					: height / static_cast<float>((controlHeight + PageControlGapDip * 2.0) * normalizedDpi));
 			const float resourceMaximum = static_cast<float>((std::max)(1U, bitmapLimit) - 1U)
 				/ static_cast<float>((std::max)(controlWidth, controlHeight)

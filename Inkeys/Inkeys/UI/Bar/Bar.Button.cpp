@@ -574,7 +574,11 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = []() -> void
 				{
-					RequestWhiteboardActive(!WhiteboardRequested());
+					auto& service = Inkeys::Window::GetService();
+					Inkeys::UI::Bar::DispatchBarWhiteboardButtonAction(WhiteboardRequested(),
+						Inkeys::UI::Bar::WhiteboardActive() && service.WhiteboardWindowGroupMinimized(),
+						[&service] { (void)service.RestoreWhiteboardWindowGroup(); },
+						[](bool active) { RequestWhiteboardActive(active); });
 				};
 		}
 
@@ -1040,7 +1044,8 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 		: IW(separate && !selection ? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
 	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label);
 	UpdateDrawButtonStyle(stateMode);
-	UpdateWhiteboardButtonStyle(whiteboard);
+	UpdateWhiteboardButtonStyle(whiteboard,
+		Inkeys::Window::GetService().WhiteboardWindowGroupMinimized());
 	UpdateEraserButtonStyle(stateMode);
 	UpdateGeometryButtonStyle(stateMode);
 }
@@ -1071,7 +1076,7 @@ void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
 			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel));
 	drawButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active)
+void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized)
 {
 	auto whiteboard = preset[(int)BarButtonPresetEnum::Whiteboard];
 	if (!whiteboard) return;
@@ -1080,11 +1085,13 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active)
 		auto label = IW(I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
 		pierce->TransitionContent(L"barPierce", label);
 	}
-	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",
-		active ? (Inkeys::UI::Bar::PptPresentationActive()
-			? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
-			: IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel))
-			: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
+	const bool resume = active && minimized;
+	whiteboard->TransitionContent(active && !resume ? L"barDismiss" : L"barWhiteboard",
+		resume ? IW(I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel)
+			: active ? (Inkeys::UI::Bar::PptPresentationActive()
+				? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
+				: IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel))
+				: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
 }
 void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
 {

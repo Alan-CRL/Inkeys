@@ -12951,9 +12951,10 @@ BarRenderLoopCoordinator::RenderFrame(
 					: state.whiteboardRestoreCenterMode, memory_order_relaxed);
 				(void)owner_.FinishBottomDockTransition(true);
 				state.pptDockPlacementPending = true;
-				state.unclassifiedDamagePending = true;
-				state.presentDecision.RequireVisualRetry();
 			}
+			// 即使浮动或折叠也必须提交按钮内容变化，不能等待下一次悬停或翻页。
+			state.unclassifiedDamagePending = true;
+			state.presentDecision.RequireVisualRetry();
 			state.whiteboardMinimized = minimized;
 		}
 		owner_.directWindowDragPhase.store(BarDirectWindowDragPhase::Idle, memory_order_release);
