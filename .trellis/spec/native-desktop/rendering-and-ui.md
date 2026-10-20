@@ -1988,7 +1988,7 @@ void SyncDraw3State() {
 - Display 的逐屏 `MonitorInfo.taskbar` 独立发布方向、autoHide、规范化显隐、同屏同几何最近可信状态与稳定 dockTop；完整 `taskbarThicknessPx` 单独维护。隐藏触发条、动画中间矩形或 Unknown 不能当作完整厚度，也不能把主屏 UI 比例回退误作本屏存在任务栏。
 - 桌面顶/左/右任务栏的主栏线为 monitor.bottom-round(5*真实DPI/96)；底部常驻或自动隐藏 Raised 为稳定 taskbar top；底部 autoHide Hidden 为 monitor.bottom-round(5*真实DPI/96)。Unknown 优先同屏同几何可信历史，首次失败按有效 workArea 保守回退。PPT/Whiteboard 原 scene 的 5 屏幕 DIP 优先，不更改业务进入/退出动作。所有线对齐主体描边外沿，不能按透明 HWND 包络计算间隙。
 - 非注入 WinEvent 在既有 DisplayObserver owner 线程安装/卸载，回调只过滤缓存 PID/HWND/object 并排队，不持 refreshMutex、查询 Shell 或通知业务。事件合并 25ms；仅缓存底部 autoHide 存在时以 5 秒间隔轻量矩形兜底，结构复查也为 5 秒，负责设置/Explorer 重建。所有任务栏周期轮询间隔至少 5 秒，事件触发的即时刷新与单次合并计时不受此限制。快路径不枚举 EDID/拓扑/全部窗口或更新完整厚度；同值不发布新 generation。epoch 关门与 owner 清理对称，不从任意 Shutdown 调用线程卸载 hook。
-- 任务栏归属的已知方向与兼容枚举共用确定性候选解析。常驻按对应 dock 外沿判定；自动隐藏不能仅按矩形交叠面积归屏。同距离歧义只使用同 HWND/非零 PID、同屏名称/几何/DPI 的可信旧归属，不覆盖更近的新几何；无可靠信息时返回 Unknown，不依赖屏幕/方向遍历顺序。当前 EX 接口优先，副屏可信逐屏 autoHide 缓存优先于弱全局模式提示。
+- 任务栏归属的已知方向与兼容枚举共用确定性候选解析。常驻按对应 dock 外沿判定且距离须小于厚度，拒绝仅接触屏外边界的邻屏矩形（包括单屏 Mini 快照）；自动隐藏保留跨边界候选，不能仅按矩形交叠面积归屏。同距离歧义只使用同 HWND/非零 PID、同屏名称/几何/DPI 的可信旧归属，不覆盖更近的新几何；无可靠信息时返回 Unknown，不依赖屏幕/方向遍历顺序。当前 EX 接口优先，副屏可信逐屏 autoHide 缓存优先于弱全局模式提示。
 - 完整厚度允许真实变矮：主任务栏位置查询的可信完整值可立即更新；兼容副栏完整对齐的结构样本连续确认后更新。禁止用只增不减缓存永久保留旧高度；快显隐采样不改 UI 缩放标尺。
 - Bar 的 desktopDockLine/protectBottomEdge 和 bounds/workArea/DPI/UI基准一起受 pending/presented 偶数 serial 保护。渲染、输入 tracker/重基准/blocked release 及居中启动预览消费同代数据。仅同屏任务栏线变化不重算用户 X、不把浮动栏吸底；稳定底栏复用原 0.4 秒 Y 属性动画与配置，重复目标不重播，反向从最后成功显示 Y 开始。拖动/吸附交接/恢复与 PPT/Whiteboard 优先，不引入第二个 Y 写者。
 - 桌面底部 autoHide 屏幕的 Bar 最终 viewport（包含最终直移量）下界 exclusive<=monitor.bottom-1，保护主体、描边、光影和回弹。source/size 改变用既有完整 ULW 替换清旧像素，稳定恢复 partial dirty；提交前位移改变须重新校验并保留重试。SetWindowPos 直移越界时保留最新输入目标、改走渲染提交，不能把旧位图直接移到底行。此条件策略与双画布 Desktop/PPT 恒定 1px 策略分别维护。

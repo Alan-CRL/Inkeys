@@ -141,6 +141,31 @@ int RunDisplayTests()
 		std::reverse(sharedBoundary.monitors.begin(), sharedBoundary.monitors.end());
 	}
 
+	// Mini 启动查询仅含一屏，不能依赖邻屏的零距离候选排除屏外常驻栏。
+	Snapshot singleScreen;
+	singleScreen.monitors.resize(1);
+	singleScreen.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
+	singleScreen.monitors[0].bounds = { -960, -540, 960, 540 };
+	struct RegularOwnerCase { RECT outside; RECT inside; UINT edge; };
+	const RegularOwnerCase regularOwnerCases[]{
+		{ { -1008, -540, -960, 540 }, { -960, -540, -912, 540 }, ABE_LEFT },
+		{ { -960, -588, 960, -540 }, { -960, -540, 960, -492 }, ABE_TOP },
+		{ { 960, -540, 1008, 540 }, { 912, -540, 960, 540 }, ABE_RIGHT },
+		{ { -960, 540, 960, 588 }, { -960, 492, 960, 540 }, ABE_BOTTOM },
+	};
+	for (const auto& sample : regularOwnerCases)
+	{
+		Check(!ResolveTaskbarOwnerCandidate(singleScreen, sample.outside, std::nullopt, false).monitor
+			&& !ResolveTaskbarOwnerCandidate(singleScreen, sample.outside, sample.edge, false).monitor,
+			"single-screen sample rejects adjacent outside regular taskbar on every edge");
+		const auto inside = ResolveTaskbarOwnerCandidate(singleScreen, sample.inside, std::nullopt, false);
+		Check(inside.monitor == singleScreen.monitors[0].handle && inside.edge == sample.edge,
+			"single-screen sample keeps its own aligned regular taskbar on every edge");
+		const auto hidden = ResolveTaskbarOwnerCandidate(singleScreen, sample.outside, sample.edge, true);
+		Check(hidden.monitor == singleScreen.monitors[0].handle && hidden.edge == sample.edge,
+			"single-screen known-edge auto-hide taskbar may still lie outside screen");
+	}
+
 	struct HiddenOwnerCase { RECT neighbor; RECT taskbar; UINT edge; };
 	const RECT centeredScreen{ -960, -540, 960, 540 };
 	const HiddenOwnerCase hiddenOwnerCases[]{

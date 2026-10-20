@@ -626,15 +626,21 @@
 
 | Hash | Message |
 |------|---------|
-| `11e45053` | feat(input): restore responsive mouse hook and toolbar auto-collapse |
+| `6b8bc1d7` | fix(draw3): restore canvas admission across window and PPT transitions |
+| `83d08514` | chore(trellis): archive completed canvas freeze tasks |
 
 ### Testing
 
-- [OK] 完整Debug ARM64链接、Headless --no-window、状态模式与笔宽生产探针、三语和独立检查通过；用户确认生效。
+- [OK] 复用已完成的最终Debug ARM64构建、12轮窗口、默认完整套件、CLI/存储与真实设置/PPT GUI结果；本轮仅提交及文档状态变更，无新增产品代码。
+- [OK] 五个归档任务context校验通过；提交前git diff --cached --check通过。
 
 ### Status
 
 [OK] **Completed**
+
+### Next Steps
+
+- 本线程由用户后续合入dev；本轮未push、未执行合并。
 
 
 ## Session 111: PR238审阅修正、dev冲突解决与PPT控件任务结案
@@ -772,8 +778,14 @@
 ### Main Changes
 
 - 有界鼠标Hook异步桥、PPT滚轮身份传递与四项Inkeys3独立自动收起策略。
-- 本轮工程验收完成，后续代码尚未提交；无新增commit/push，待用户自行决定代码提交/归档。
+- 已按用户确认提交实现并归档任务；本轮未push。
 - 物理触摸/笔、WPS、Win7、多屏与用户现场共同根因仍未验证，保留证据边界。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `11e45053` | feat(input): restore responsive mouse hook and toolbar auto-collapse |
 
 
 ## Session 115: UI3 taskbar docking and canvas policy completed
@@ -836,16 +848,6 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 - [OK] 完整InkeysRepo.sln Debug|ARM64最终完整链接exit0；一次性关闭增量链接处理本机LNK1000，工程默认未改。
 - [OK] Headless --no-window、状态/快捷键owner及笔宽生产探针均exit0；三语391/391、独立检查、编码与diff检查通过。
 - [OK] 用户人工确认普通快捷键在关闭设置后有效，设置前台优先符合规划；收尾无产品改动，未重复构建/GUI。
-| `0eb1c7c5` | fix(pptcom): restore dynamic compatibility and deterministic COM cleanup |
-| `184cf86e` | chore: archive pptcom dynamic compatibility task |
-| `6b8bc1d73c8b7307528520c28fc952004ee3d8f1` | fix(draw3): restore canvas admission across window and PPT transitions |
-| `83d08514142211ba6ed5ca9c669c42ca9b139f55` | chore(trellis): archive completed canvas freeze tasks |
-
-### Testing
-
-- [OK] 复用已完成的最终Debug ARM64构建、12轮窗口、默认完整套件、CLI/存储与真实设置/PPT GUI结果；本轮仅提交及文档状态变更，无新增产品代码。
-- [OK] 五个归档任务context校验通过；提交前git diff --cached --check通过。
-
 ### Status
 
 [OK] **Completed**
@@ -853,4 +855,3 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Next Steps
 
 - 任务完成；未push，不扩大Win7/UIPI/Office实机验证声明。
-- 本线程由用户后续合入dev；本轮未push、未执行合并。

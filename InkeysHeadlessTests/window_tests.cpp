@@ -276,6 +276,7 @@ int RunCanvasPolicyTests()
 		bool target = true;
 		bool enteredRollback = false;
 		bool changedWhileVisible = false;
+		int rollbackVisibilityRestores = 0;
 		bool Passed() { return ++call != failCall; }
 		bool Capture(std::size_t i)
 		{
@@ -307,6 +308,7 @@ int RunCanvasPolicyTests()
 		bool RestoreVisibility(std::size_t i)
 		{
 			if (!Passed()) return false;
+			if (enteredRollback) ++rollbackVisibilityRestores;
 			windows[i].visible = before[i].visible;
 			return true;
 		}
@@ -338,7 +340,8 @@ int RunCanvasPolicyTests()
 		check(!result.succeeded && result.rollbackSucceeded && failure.windows == before && !failure.scene && !failure.changedWhileVisible,
 			"any capture/hide/property/region/style/show step failure restores both canvases");
 		if (failure.enteredRollback)
-			check(failure.restoredOrder == std::vector<int>{ 1, 0 }, "pair rollback runs in reverse order");
+			check(failure.restoredOrder == std::vector<int>{ 1, 0 }
+				&& failure.rollbackVisibilityRestores == 2, "trusted pair rollback restores in reverse order and then restores both visibility intents");
 		// 完整恢复旧场景后，owner 的同场景检查必须跳过事务，不能周期性双隐藏/显示。
 		std::optional<CanvasPolicyKey> applied = sameKey;
 		const auto completion = ResolveCanvasPolicyCompletion(result, false, false);
@@ -381,8 +384,16 @@ int RunCanvasPolicyTests()
 	failedCompletion.UpdateApplied(failedApplied, whiteboardPolicyKey);
 	check(!failedApplied && failedCompletion.retry && failedCompletion.dirty,
 		"incomplete rollback clears applied key and retains scene repair plus owner retry");
+	// 验证回滚过程本身不恢复可见性，不能只在末尾再次 Hide 后检查最终状态。
+	PairOperations dirtyRollback;
+	dirtyRollback.failCall = 8;
+	const auto dirtyResult = ApplyCanvasPairTransaction(2, dirtyRollback, false);
+	check(!dirtyResult.succeeded && dirtyResult.rollbackSucceeded
+		&& dirtyRollback.enteredRollback && dirtyRollback.rollbackVisibilityRestores == 0
+		&& !dirtyRollback.windows[0].visible && !dirtyRollback.windows[1].visible,
+		"untrusted dirty canvas rollback never restores visibility even before owner retry");
 	std::optional<CanvasPolicyKey> dirtyApplied = sameKey;
-	const auto dirtyCompletion = ResolveCanvasPolicyCompletion(firstResult, false, true);
+	const auto dirtyCompletion = ResolveCanvasPolicyCompletion(dirtyResult, false, true);
 	dirtyCompletion.UpdateApplied(dirtyApplied, whiteboardPolicyKey);
 	check(!dirtyApplied && dirtyCompletion.retry && dirtyCompletion.dirty,
 		"previously dirty scene still needs owner repair after same-geometry complete rollback");

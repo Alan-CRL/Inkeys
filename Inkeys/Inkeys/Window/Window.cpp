@@ -1671,7 +1671,9 @@ namespace Inkeys::Window
 				canvasPolicyRetry_ = false;
 				return true;
 			}
-			const auto result = Detail::ApplyCanvasPairTransaction(count, operations, !geometryChanged);
+			// 已有 dirty 时旧样式同样不可信，回滚期间也不能短暂揭开画布。
+			const auto result = Detail::ApplyCanvasPairTransaction(count, operations,
+				!geometryChanged && !canvasPolicyDirty_);
 			const auto completion = Detail::ResolveCanvasPolicyCompletion(
 				result, geometryChanged, canvasPolicyDirty_);
 			for (std::size_t i = 0; i < count; ++i)
@@ -1681,7 +1683,7 @@ namespace Inkeys::Window
 				if (result.succeeded) policy.recoveryVisible.reset();
 				else if (completion.retry)
 				{
-					// 旧 region 不适用于新 bounds；回滚不揭开画布，重试成功后再恢复原显隐。
+					// 旧区域或样式不可信；回滚不揭开画布，重试成功后再恢复原显隐。
 					(void)operations.Hide(i);
 					policy.recoveryVisible = operations.snapshots[i].visible;
 					policy.recoveryIconic = operations.snapshots[i].iconic;

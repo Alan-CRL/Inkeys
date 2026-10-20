@@ -1171,7 +1171,8 @@ namespace Inkeys::Display
 				const auto distance = autoHide
 					? (std::min)(std::abs(boundary - taskbarNear), std::abs(boundary - taskbarFar))
 					: std::abs(boundary - (edge == ABE_LEFT || edge == ABE_TOP ? taskbarNear : taskbarFar));
-				if (distance > thickness || distance > best) continue;
+				// 常驻栏必须与本屏有厚度方向的交集，拒绝仅贴着屏外边界的邻屏任务栏。
+				if (distance > thickness || (!autoHide && distance >= thickness) || distance > best) continue;
 				const bool usePrevious = previous.monitor == monitor.handle && previous.edge == edge;
 				if (distance < best || (usePrevious && !preferred))
 				{
