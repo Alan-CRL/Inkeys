@@ -928,17 +928,18 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] inline WorkspaceMode ResolveWorkspaceMode(
 		Surface surface, const PptState& ppt,
-		const WhiteboardState& whiteboard) noexcept
+		const WhiteboardState& whiteboard, bool whiteboardMinimized = false) noexcept
 	{
+		if (whiteboard.active && whiteboardMinimized) return WorkspaceMode::Hidden;
 		const bool bottom = surface == Surface::BottomLeft
 			|| surface == Surface::BottomRight;
 		if (whiteboard.expandedLayoutTarget)
 			return bottom ? WorkspaceMode::WhiteboardExpanded
 				: WorkspaceMode::Hidden;
-		if (!ppt.presentationVisible) return WorkspaceMode::Hidden;
-		if (bottom && ppt.layout.showBottomPair)
-			return WorkspaceMode::PptCompact;
-		if (!bottom && ppt.layout.showMiddlePair)
+		// 白板事务只暂时遮挡放映；共享底栏由场次事实保活，不经历隐藏/重新淡入。
+		if (bottom) return ppt.presentationActive && ppt.layout.showBottomPair
+			? WorkspaceMode::PptCompact : WorkspaceMode::Hidden;
+		if (ppt.presentationVisible && ppt.layout.showMiddlePair)
 			return WorkspaceMode::PptCompact;
 		return WorkspaceMode::Hidden;
 	}
@@ -1315,7 +1316,9 @@ export namespace Inkeys::UI::PageControl
 		const RECT& monitor, float dpiScale, PptState ppt,
 		float presentationOutsetDip = 10.0F, unsigned bitmapLimit = 16384) noexcept
 	{
-		if (!ppt.presentationVisible) return ppt;
+		const bool bottomVisible = ppt.presentationActive && ppt.layout.showBottomPair;
+		const bool middleVisible = ppt.presentationVisible && ppt.layout.showMiddlePair;
+		if (!bottomVisible && !middleVisible) return ppt;
 		const float normalizedDpi = ResolvePptUiScale(dpiScale, ppt.uiScale);
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
@@ -1323,8 +1326,6 @@ export namespace Inkeys::UI::PageControl
 			monitor.bottom - monitor.top));
 		const LONG gap = static_cast<LONG>(std::lround(
 			PageControlGapDip * NormalizeDpiScale(dpiScale)));
-		const bool bottomVisible = ppt.layout.showBottomPair;
-		const bool middleVisible = ppt.layout.showMiddlePair;
 
 		auto FitScale = [&](bool visible, bool bottom, double controlWidth,
 			double controlHeight, float& userScale)

@@ -113,6 +113,9 @@ namespace Inkeys::UI::Bar
 		// 列表只管理分页；两个属性面板仍是固定数组，没有第二份控件描述树。
 		BarButtonListClass pagination;
 		std::array<std::shared_ptr<BarButtonClass>,5> pageButtons;
+		std::vector<std::shared_ptr<BarButtonClass>> paginationMembers,buttonRow;
+		std::array<BarSurfaceButtonId,4> paginationDrawOrder{2,3,4,5};
+		std::uint64_t layoutRevision=0;
 		std::array<BarButtonClass,3> actions;
 		std::array<BarButtonClass,9> previews;
 		std::array<BarUiShapeClass,9> previewBackgrounds;
@@ -180,6 +183,8 @@ namespace Inkeys::UI::Bar
 			std::vector<std::shared_ptr<BarButtonClass>> list;
 			for(auto& button:pageButtons){button=std::make_shared<BarButtonClass>();list.push_back(button);}
 			pagination.Replace(std::move(list));
+			paginationMembers=pagination.Snapshot();
+			buttonRow.assign(paginationMembers.begin()+1,paginationMembers.end());
 			const COLORREF surface=GetThemeColor(BarThemeColorEnum::Surface);appliedSurfaceColor=surface;
 			InitializeShape(root,{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip},surface,BarMainBarCornerRadiusDip,BarMainBarFillOpacity,BarMainBarFrameOpacity);
 			InitializeShape(menu,MenuBounds,surface,BarMainBarCornerRadiusDip,0.95,BarMainBarFrameOpacity);
@@ -213,13 +218,12 @@ namespace Inkeys::UI::Bar
 			if(id<=8)return actions[id-6];
 			return previews[id-9];
 		}
-		std::array<BarSurfaceButtonId,4> PaginationDrawOrder() const
+		void UpdatePaginationDrawOrder() noexcept
 		{
-			const auto buttons=pagination.Snapshot();std::array<BarSurfaceButtonId,4> order{};std::size_t count=0;
-			// 与主栏隐藏成员相同：先画退场成员，再画仍可见的按钮，保留原列表内顺序。
-			for(const bool visible:{false,true})for(std::size_t i=1;i<buttons.size();++i)
-				if(buttons[i]&&buttons[i]->IsVisible()==visible)order[count++]=static_cast<BarSurfaceButtonId>(i+1);
-			return order;
+			std::size_t count=0;
+			// 拓扑改变时缓存隐藏优先顺序；热帧与绘制不再复制固定列表。
+			for(const bool visible:{false,true})for(std::size_t i=1;i<paginationMembers.size();++i)
+				if(paginationMembers[i]->IsVisible()==visible)paginationDrawOrder[count++]=static_cast<BarSurfaceButtonId>(i+1);
 		}
 		bool PropertyButtonEnabled(BarSurfaceButtonId id) const noexcept
 		{
@@ -381,38 +385,46 @@ namespace Inkeys::UI::Bar
 			if(initialized&&!backgroundOnly&&content.surface==next.surface&&content.whiteboard==next.whiteboard){UpdateContent(next);return;}
 			const bool direct=!initialized || duration<=0;
 			const bool wb=next.whiteboard,vertical=next.surface>=2,left=next.surface==0,standard=wb||!BarPptCompactPaginationEnabled;
-			const auto rootRect=wb?EraserAttributeRect{0,0,left?BarWhiteboardPaginationLeftWidthDip:BarWhiteboardPaginationWidthDip,BarWhiteboardPaginationHeightDip}:
-				(vertical?EraserAttributeRect{0,0,BarPptPaginationShortSideDip,BarPptPaginationLongSideDip}:
-					EraserAttributeRect{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip});
-			SetShapeBounds(root,rootRect,duration,direct);
-			std::array<EraserAttributeRect,5> rects{};
-			if(wb) rects={EraserAttributeRect{left?5.0:225.0,5,left?5.0:225.0,75},
-				{5,5,75,75},{80,5,150,75},{155,5,225,75},{230,5,300,75}};
-			else if(standard){
-				// 与 PageControl 的 fit/拖动/命中合同共用同一槽位；旧 compact 分支保留。
-				const auto geometry=ResolveBarPptStandardPaginationGeometry(vertical,next.surface==1);
-				const auto rect=[](const auto& r){return EraserAttributeRect{r.left,r.top,r.right,r.bottom};};
-				rects={rect(geometry.drag),rect(geometry.previous),rect(geometry.page),rect(geometry.next),{}};
-			}
-			else if(vertical)rects={EraserAttributeRect{5,5,37.5,15},{5,15,37.5,47.5},{5,52.5,37.5,122.5},{5,127.5,37.5,160},{37.5,127.5,37.5,160}};
-			else if(next.surface==1)rects={EraserAttributeRect{150,5,160,37.5},{5,5,37.5,37.5},{42.5,5,112.5,37.5},{117.5,5,150,37.5},{160,5,160,37.5}};
-			else rects={EraserAttributeRect{5,5,15,37.5},{15,5,47.5,37.5},{52.5,5,122.5,37.5},{127.5,5,160,37.5},{160,5,160,37.5}};
 			for(std::size_t i=0;i<pageButtons.size();++i){
 				pageButtons[i]->hide=(i==0&&wb)||(i==4&&(!wb||!left));
 				pageButtons[i]->size=BarButtonSizeEnum::twoTwo;
 			}
-			const auto members=pagination.Snapshot();
-			const auto row=ResolveBarButtonListLayout(members,BarButtonListLayoutKind::SingleRow);
-			for(std::size_t i=1;i<row.placements.size();++i){
-				const auto& item=row.placements[i];
-				if(wb&&members[i]->IsVisible())rects[i]={item.x-item.width/2,item.y-item.height/2,item.x+item.width/2,item.y+item.height/2};
-				if(!members[i]->IsVisible()){
-					// 自定义 Drag 槽只适配可见几何；隐藏成员沿相邻锚点收拢，尺寸仍由公共布局给出。
-					std::size_t anchor=i;while(anchor>1&&!members[anchor-1]->IsVisible())--anchor;
-					if(anchor>1){const auto& target=rects[anchor-1];const double x=EraserRectCenterX(target),y=EraserRectCenterY(target);
-						rects[i]={x-item.width/2,y-item.height/2,x+item.width/2,y+item.height/2};}
+			UpdatePaginationDrawOrder();++layoutRevision;
+			std::array<EraserAttributeRect,5> rects{};
+			EraserAttributeRect rootRect;
+			if(standard){
+				// 可见标准按钮决定位置和背景尺寸；Drag 仍是无额外间距的自有 lane。
+				const auto row=ResolveBarButtonListLayout(buttonRow,BarButtonListLayoutKind::SingleRow);
+				const double lane=pageButtons[0]->IsVisible()?BarPaginationDragHandleSlotDip:0;
+				const bool leading=next.surface!=1;
+				const double offset=leading?lane:0;
+				rootRect=vertical?EraserAttributeRect{0,0,row.height,row.width+lane}:EraserAttributeRect{0,0,row.width+lane,row.height};
+				for(std::size_t i=0;i<row.placements.size();++i){
+					const auto& item=row.placements[i];
+					EraserAttributeRect rect{item.x-item.width/2+offset,item.y-item.height/2,item.x+item.width/2+offset,item.y+item.height/2};
+					if(!item.button->IsVisible()){
+						std::size_t anchor=i;while(anchor>0&&!row.placements[anchor-1].button->IsVisible())--anchor;
+						if(anchor>0){const auto& target=rects[anchor];
+							const double x=vertical?EraserRectCenterY(target):EraserRectCenterX(target);
+							rect.left=x-item.width/2;rect.right=x+item.width/2;}
+					}
+					rects[i+1]=vertical?EraserAttributeRect{rect.top,rect.left,rect.bottom,rect.right}:rect;
 				}
+				const double start=leading?BarButtonGapDip:row.width-BarButtonGapDip;
+				const EraserAttributeRect drag{start,BarButtonGapDip,start+lane,row.height-BarButtonGapDip};
+				rects[0]=vertical?EraserAttributeRect{drag.top,drag.left,drag.bottom,drag.right}:drag;
 			}
+			else{
+				// 旧紧凑分支继续保留；当前编译期开关统一使用上方的标准列表布局。
+				rootRect=vertical?EraserAttributeRect{0,0,BarPptPaginationShortSideDip,BarPptPaginationLongSideDip}:
+					EraserAttributeRect{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip};
+				if(vertical)rects={EraserAttributeRect{5,5,37.5,15},{5,15,37.5,47.5},{5,52.5,37.5,122.5},{5,127.5,37.5,160},{37.5,127.5,37.5,160}};
+				else if(next.surface==1)rects={EraserAttributeRect{150,5,160,37.5},{5,5,37.5,37.5},{42.5,5,112.5,37.5},{117.5,5,150,37.5},{160,5,160,37.5}};
+				else rects={EraserAttributeRect{5,5,15,37.5},{15,5,47.5,37.5},{52.5,5,122.5,37.5},{127.5,5,160,37.5},{160,5,160,37.5}};
+				const double half=BarButtonTwoSideDip/2,x=EraserRectCenterX(rects[3]),y=EraserRectCenterY(rects[3]);
+				rects[4]={x-half,y-half,x+half,y+half};
+			}
+			SetShapeBounds(root,rootRect,duration,direct);
 			ConfigureButton(*pageButtons[0],BarButtonVisualLayoutKind::Custom,rects[0],L"",L"",0,duration,direct);
 			ConfigureButton(*pageButtons[1],standard?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,
 				rects[1],L"barMore",standard?next.previousLabel:L"",vertical&&!wb?0:-90,duration,direct);
@@ -501,6 +513,39 @@ namespace Inkeys::UI::Bar
 			}
 			if(!EqualRect(&old,&presentation))FullDamage();
 		}
+		void RefreshLighting()
+		{
+			if(!subscribed)return;
+			BarSurfaceSharedLighting light;std::uint64_t revision;
+			{std::scoped_lock lock(lightingMutex);light=sharedLighting;revision=lightingRevision;}
+			if(subscribed&&(appliedLightingRevision!=revision||!EqualRect(&appliedLightingPresentation,&presentation))){
+				const bool mappingChanged=!EqualRect(&appliedLightingPresentation,&presentation);
+				const bool primaryChanged=mappingChanged||light.primaryScreenX!=appliedLighting.primaryScreenX
+					||light.primaryScreenY!=appliedLighting.primaryScreenY||light.primaryRadiusPixels!=appliedLighting.primaryRadiusPixels
+					||light.primaryVisible!=appliedLighting.primaryVisible||light.edgeLightingEnabled!=appliedLighting.edgeLightingEnabled
+					||light.drawingPenColor!=appliedLighting.drawingPenColor||light.drawingPenColorBlend!=appliedLighting.drawingPenColorBlend
+					||light.drawingLightOpacity!=appliedLighting.drawingLightOpacity;
+				renderer.SetFrameLightingSnapshot(ResolveBarSurfaceFrameLightingSnapshot(light,presentation,0));
+				RECT cursorDamage{};
+				if(light.edgeLightingEnabled&&light.cursorVisible&&light.cursorIntensity>0.0001){
+					const auto influence=renderer.GetFrameCursorLightDamageBounds();
+					const auto includeBorder=[&](EraserAttributeRect rect){
+						RECT contentPixels=Pixels(rect,scale);OffsetRect(&contentPixels,logical.left-presentation.left,logical.top-presentation.top);
+						RECT outer=contentPixels;InflateRect(&outer,Outset(),Outset());
+						BarDirtyRegionTracker::UnionInPlace(cursorDamage,ResolveBarLightBorderDamage(outer,contentPixels,influence));
+					};
+					for(std::size_t i=0;i<candidate.panels.size();++i)if(candidate.panelVisible[i])includeBorder(candidate.panels[i]);
+				}
+				if(primaryChanged)FullDamage();
+				else{
+					RECT changedLight=previousCursorDamage;BarDirtyRegionTracker::UnionInPlace(changedLight,cursorDamage);
+					changedLight=IntersectBarDirtyRect(changedLight,{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top});
+					if(!Empty(changedLight)){BarDirtyRegionTracker::UnionInPlace(damage,changedLight);invalidated=true;}
+				}
+				previousCursorDamage=cursorDamage;appliedLighting=light;
+				appliedLightingRevision=revision;appliedLightingPresentation=presentation;
+			}
+		}
 		void UpdateFeedback()
 		{
 			BarSurfaceButtonId newHover,newPressed;
@@ -574,35 +619,7 @@ namespace Inkeys::UI::Bar
 			const auto oldMenu=menuPose,oldTheme=themePose;
 			RefreshGeometry();
 			if(changed || panelsChanged || oldMenu!=menuPose || oldTheme!=themePose)FullDamage();
-			BarSurfaceSharedLighting light;std::uint64_t revision;
-			{std::scoped_lock lock(lightingMutex);light=sharedLighting;revision=lightingRevision;}
-			if(subscribed&&(appliedLightingRevision!=revision||!EqualRect(&appliedLightingPresentation,&presentation))){
-				const bool mappingChanged=!EqualRect(&appliedLightingPresentation,&presentation);
-				const bool primaryChanged=mappingChanged||light.primaryScreenX!=appliedLighting.primaryScreenX
-					||light.primaryScreenY!=appliedLighting.primaryScreenY||light.primaryRadiusPixels!=appliedLighting.primaryRadiusPixels
-					||light.primaryVisible!=appliedLighting.primaryVisible||light.edgeLightingEnabled!=appliedLighting.edgeLightingEnabled
-					||light.drawingPenColor!=appliedLighting.drawingPenColor||light.drawingPenColorBlend!=appliedLighting.drawingPenColorBlend
-					||light.drawingLightOpacity!=appliedLighting.drawingLightOpacity;
-				renderer.SetFrameLightingSnapshot(ResolveBarSurfaceFrameLightingSnapshot(light,presentation,0));
-				RECT cursorDamage{};
-				if(light.edgeLightingEnabled&&light.cursorVisible&&light.cursorIntensity>0.0001){
-					const auto influence=renderer.GetFrameCursorLightDamageBounds();
-					const auto includeBorder=[&](EraserAttributeRect rect){
-						RECT contentPixels=Pixels(rect,scale);OffsetRect(&contentPixels,logical.left-presentation.left,logical.top-presentation.top);
-						RECT outer=contentPixels;InflateRect(&outer,Outset(),Outset());
-						BarDirtyRegionTracker::UnionInPlace(cursorDamage,ResolveBarLightBorderDamage(outer,contentPixels,influence));
-					};
-					for(std::size_t i=0;i<candidate.panels.size();++i)if(candidate.panelVisible[i])includeBorder(candidate.panels[i]);
-				}
-				if(primaryChanged)FullDamage();
-				else{
-					RECT changedLight=previousCursorDamage;BarDirtyRegionTracker::UnionInPlace(changedLight,cursorDamage);
-					changedLight=IntersectBarDirtyRect(changedLight,{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top});
-					if(!Empty(changedLight)){BarDirtyRegionTracker::UnionInPlace(damage,changedLight);invalidated=true;}
-				}
-				previousCursorDamage=cursorDamage;appliedLighting=light;
-				appliedLightingRevision=revision;appliedLightingPresentation=presentation;
-			}
+			RefreshLighting();
 			return active;
 		}
 		BarSurfacePointerResult Pointer(ButtonPointerEvent event,POINT logicalPoint)
@@ -708,7 +725,8 @@ namespace Inkeys::UI::Bar
 		auto& p=*impl_;if(EqualRect(&p.logical,&bounds)&&p.scale==scale)return true;
 		Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
 			Inkeys::UI::RenderPipeline::FrameStage::SubmitTargetsAndLayout);
-		p.logical=bounds;p.scale=scale;p.renderer.SetFrameZoom(scale);p.RefreshGeometry();p.FullDamage();return true;
+		// 几何可在同一 frameTime 的 Advance 后落定；只重映射光源，不再推进动画时钟。
+		p.logical=bounds;p.scale=scale;p.renderer.SetFrameZoom(scale);p.RefreshGeometry();p.RefreshLighting();p.FullDamage();return true;
 	}
 	void BarPageSurface::SetOpacity(double value,double duration) noexcept
 	{
@@ -721,9 +739,14 @@ namespace Inkeys::UI::Bar
 	{std::scoped_lock lock(impl_->inputMutex);impl_->hooks=std::move(hooks);}
 	void BarPageSurface::SetSharedLightingSubscribed(bool value) noexcept
 	{
-		if(!impl_)return;std::scoped_lock lock(lightingMutex);if(impl_->subscribed==value)return;
-		impl_->subscribed=value;
-		if(value)lightingSubscribers.push_back(this);else std::erase(lightingSubscribers,this);
+		if(!impl_)return;
+		{
+			std::scoped_lock lock(lightingMutex);if(impl_->subscribed==value)return;
+			impl_->subscribed=value;
+			if(value)lightingSubscribers.push_back(this);else std::erase(lightingSubscribers,this);
+		}
+		// 订阅可晚于本帧 Advance/SetBounds；锁外重映射，首帧不等待下一次动画或光源发布。
+		if(value){impl_->appliedLightingRevision=0;impl_->RefreshLighting();}
 	}
 	void BarPageSurface::PublishSharedLighting(const BarSurfaceSharedLighting& value) noexcept
 	{
@@ -753,7 +776,7 @@ namespace Inkeys::UI::Bar
 	BarPageSurfaceLayout BarPageSurface::Layout() const
 	{
 		BarPageSurfaceLayout result{impl_->logical,impl_->presentation,impl_->scale};
-		const auto members=impl_->pagination.Snapshot();const auto order=impl_->PaginationDrawOrder();
+		const auto& members=impl_->paginationMembers;const auto& order=impl_->paginationDrawOrder;
 		for(std::size_t i=0;i<impl_->candidate.buttons.size();++i){const auto& hit=impl_->candidate.buttons[i];
 			const auto id=static_cast<BarSurfaceButtonId>(i+1);const auto found=std::find(order.begin(),order.end(),id);
 			const void* identity=i<impl_->pageButtons.size()?(i<members.size()?members[i].get():nullptr):&impl_->Button(id);
@@ -761,6 +784,12 @@ namespace Inkeys::UI::Bar
 				hit.visible,hit.enabled,hit.enabled,identity,found!=order.end()?static_cast<unsigned>(found-order.begin()+1):0,
 				(std::max)(impl_->Button(id).icon.pct.val,impl_->Button(id).name.pct.val)});}
 		return result;
+	}
+	BarPageSurfaceGeometry BarPageSurface::Geometry() const noexcept
+	{
+		auto& p=*impl_;const auto body=Bounds(p.root);
+		return {{body.left,body.top,body.right,body.bottom},p.opacity.val,p.root.pct.val,p.layoutRevision,
+			!p.root.x.IsSame()||!p.root.y.IsSame()||!p.root.w.IsSame()||!p.root.h.IsSame()};
 	}
 	RECT BarPageSurface::LogicalBounds() const noexcept{return impl_->logical;}
 	RECT BarPageSurface::PresentationBounds() const noexcept{return impl_->presentation;}
@@ -863,7 +892,7 @@ namespace Inkeys::UI::Bar
 				SetShapeBounds(p.dragHandle,{EraserRectCenterX(r)-(vertical?1:10),EraserRectCenterY(r)-(vertical?10:1),
 					EraserRectCenterX(r)+(vertical?1:10),EraserRectCenterY(r)+(vertical?10:1)},0,true);p.DrawShape(dc,p.dragHandle);
 			}
-			for(const auto id:p.PaginationDrawOrder())p.DrawButton(dc,id);
+			for(const auto id:p.paginationDrawOrder)p.DrawButton(dc,id);
 			if(p.content.whiteboard&&p.content.surface==0&&p.content.unsaved)p.renderer.Word(dc,p.unsaved,{5,-32},DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_LEADING);
 		}
 		if(layer)dc->PopLayer();dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);

@@ -113,6 +113,7 @@ namespace Inkeys::UI::Bar
 			snapshot.ppt.targetRevision = frame + 1;
 			snapshot.ppt.currentPage = static_cast<int>(frame % 10) + 1;
 			snapshot.ppt.totalPage = 100;
+			snapshot.ppt.presentationActive = workload == Workload::Ppt;
 			snapshot.ppt.presentationVisible = workload == Workload::Ppt;
 			auto& whiteboard = snapshot.whiteboard;
 			whiteboard.expandedLayoutTarget = whiteboard.active = workload == Workload::Whiteboard;

@@ -202,6 +202,8 @@ namespace Inkeys::UI::PageControl
 			double targetScale = 1.0;
 			bool initialized = false;
 			bool active = false;
+			bool sceneSized = false, rightAnchored = false;
+			double anchorX = 0, anchorBottom = 0;
 		};
 
 		struct SurfaceState
@@ -936,8 +938,10 @@ namespace Inkeys::UI::PageControl
 				dt,static_cast<double>(BarUiAnimationSpeedRate),static_cast<bool>(BarUiAnimationEnabled),false};
 			animation.active=false;
 			for(auto& value:animation.values)animation.active|=BarUiAdvanceAnimation(value,frame).active;
-			animation.left=animation.values[0].val;animation.top=animation.values[1].val;
-			animation.right=animation.values[2].val;animation.bottom=animation.values[3].val;animation.scale=animation.values[4].val;
+			if(animation.sceneSized){animation.anchorX=animation.values[0].val;animation.anchorBottom=animation.values[1].val;}
+			else{animation.left=animation.values[0].val;animation.top=animation.values[1].val;
+				animation.right=animation.values[2].val;animation.bottom=animation.values[3].val;}
+			animation.scale=animation.values[4].val;
 		}
 
 		void RetargetBounds(AnimatedBounds& animation,const RECT& target,double scale,bool animate,
@@ -947,12 +951,17 @@ namespace Inkeys::UI::PageControl
 			if(animation.initialized&&SameRect(animation.target,target)&&animation.targetScale==scale
 				&&(animate||!animation.active))return;
 			const bool direct=!animation.initialized||!animate;
-			const double targets[]={static_cast<double>(target.left),static_cast<double>(target.top),static_cast<double>(target.right),static_cast<double>(target.bottom),scale};
+			// 底栏只动画水平/底部锚点和倍率，宽高始终来自 Scene 同帧列表几何。
+			const std::array<double,5> targets=animation.sceneSized
+				?std::array<double,5>{static_cast<double>(animation.rightAnchored?target.right:target.left),static_cast<double>(target.bottom),0,0,scale}
+				:std::array<double,5>{static_cast<double>(target.left),static_cast<double>(target.top),static_cast<double>(target.right),static_cast<double>(target.bottom),scale};
 			for(std::size_t i=0;i<animation.values.size();++i)
 				if(direct)animation.values[i].SetDirect(targets[i]);else animation.values[i].SetTar(targets[i],LayoutTransitionDurationSeconds());
 			animation.target=target;animation.targetScale=scale;animation.initialized=true;animation.active=!direct;
-			animation.left=animation.values[0].val;animation.top=animation.values[1].val;
-			animation.right=animation.values[2].val;animation.bottom=animation.values[3].val;animation.scale=animation.values[4].val;
+			if(animation.sceneSized){animation.anchorX=animation.values[0].val;animation.anchorBottom=animation.values[1].val;}
+			else{animation.left=animation.values[0].val;animation.top=animation.values[1].val;
+				animation.right=animation.values[2].val;animation.bottom=animation.values[3].val;}
+			animation.scale=animation.values[4].val;
 		}
 
 		[[nodiscard]] RECT CurrentBounds(const AnimatedBounds& animation) noexcept
@@ -965,6 +974,19 @@ namespace Inkeys::UI::PageControl
 			if (result.right <= result.left) result.right = result.left + 1;
 			if (result.bottom <= result.top) result.bottom = result.top + 1;
 			return result;
+		}
+
+		bool ApplyCurrentSceneBounds(SurfaceState& state) noexcept
+		{
+			if(state.bounds.sceneSized){
+				const auto geometry=state.scene.Geometry();
+				const double width=std::lround(geometry.bodyBounds.Width()*state.bounds.scale);
+				const double height=std::lround(geometry.bodyBounds.Height()*state.bounds.scale);
+				state.bounds.left=state.bounds.rightAnchored?state.bounds.anchorX-width:state.bounds.anchorX;
+				state.bounds.right=state.bounds.left+width;state.bounds.bottom=state.bounds.anchorBottom;
+				state.bounds.top=state.bounds.bottom-height;
+			}
+			return ApplySceneBounds(state,CurrentBounds(state.bounds),static_cast<float>(state.bounds.scale));
 		}
 
 		[[nodiscard]] bool MiddleSnapMatches(std::size_t index, const PptState& frame,
@@ -1051,6 +1073,7 @@ namespace Inkeys::UI::PageControl
 			bool dragPositionOwned, const char*& failedStage)
 		{
 			auto& state=surfaces[index];
+			state.bounds.sceneSized=index<2;state.bounds.rightAnchored=index==1;
 			const auto visualMode=desiredMode==WorkspaceMode::Hidden
 				?(state.sceneConfigured?state.configuredMode:WorkspaceMode::PptCompact):desiredMode;
 			const bool modeChanged=state.sceneConfigured&&state.configuredMode!=visualMode;
@@ -1102,8 +1125,10 @@ namespace Inkeys::UI::PageControl
 				RetargetBounds(state.bounds,target.logicalBounds,target.scale,animateBounds,now);
 			}
 			AdvanceBounds(state.bounds,now);
-			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,state.bounds.active&&!settleDragPosition,WhiteboardWorkspaceSwitching(whiteboard));
-			if(!ApplySceneBounds(state,CurrentBounds(state.bounds),static_cast<float>(state.bounds.scale))){failedStage="pagination-bounds";return false;}
+			(void)state.scene.Advance(now);
+			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,
+				(state.bounds.active||state.scene.Geometry().layoutAnimating)&&!settleDragPosition,WhiteboardWorkspaceSwitching(whiteboard));
+			if(!ApplyCurrentSceneBounds(state)){failedStage="pagination-bounds";return false;}
 			state.sceneConfigured=true;state.configuredMode=visualMode;state.observedRevision=revision;state.renderedWhiteboard=whiteboard;
 			return true;
 		}
@@ -1388,7 +1413,10 @@ namespace Inkeys::UI::PageControl
 			bounds.targetScale = scale;
 			bounds.initialized = true;
 			bounds.active = false;
-			const double values[]={static_cast<double>(target.left),static_cast<double>(target.top),static_cast<double>(target.right),static_cast<double>(target.bottom),scale};
+			bounds.anchorX=bounds.rightAnchored?target.right:target.left;bounds.anchorBottom=target.bottom;
+			const std::array<double,5> values=bounds.sceneSized
+				?std::array<double,5>{bounds.anchorX,bounds.anchorBottom,0,0,scale}
+				:std::array<double,5>{static_cast<double>(target.left),static_cast<double>(target.top),static_cast<double>(target.right),static_cast<double>(target.bottom),scale};
 			for(std::size_t i=0;i<bounds.values.size();++i)bounds.values[i].SetDirect(values[i]);
 		}
 
@@ -1947,8 +1975,8 @@ namespace Inkeys::UI::PageControl
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				groupBudget.presentationOutsetDip, groupBudget.bitmapLimit);
 			const Surface surface = SurfaceFor(index);
-			const WorkspaceMode mode = whiteboard.active && Inkeys::Window::GetService().WhiteboardWindowGroupMinimized()
-				? WorkspaceMode::Hidden : ResolveWorkspaceMode(surface, ppt, whiteboard);
+			const WorkspaceMode mode = ResolveWorkspaceMode(surface, ppt, whiteboard,
+				Inkeys::Window::GetService().WhiteboardWindowGroupMinimized());
 			const auto& envelopeState=whiteboard;
 			auto target = ResolveSurfaceLayout(surface, monitor,
 				dpiScale, ppt, envelopeState);
@@ -2025,7 +2053,7 @@ namespace Inkeys::UI::PageControl
 					}
 					RetargetBounds(state.bounds, target.logicalBounds,
 						target.scale, false, frameContext.frameTime);
-					if (!ApplySceneBounds(state, target.logicalBounds, target.scale))
+					if (!ApplyCurrentSceneBounds(state))
 					{
 						TraceSurfaceStage(index, "scene-bounds", E_FAIL,
 							ERROR_SUCCESS, renderSnapshot, monitor, dpiScale,
@@ -3138,7 +3166,7 @@ namespace Inkeys::UI::PageControl
 		constexpr std::array<std::uint32_t,6> expectedColors{0x123B32,0x172A46,0x000000,0xFFFFFF,0xE5E7EB,0xF5F1E6};
 		Check(WhiteboardVisual::ThemeColors==expectedColors,"palette row order is green, navy, black then white, light gray, ivory");
 		{
-			PptState show;show.presentationVisible=true;show.currentPage=2;show.totalPage=5;
+			PptState show;show.presentationActive=true;show.presentationVisible=true;show.currentPage=2;show.totalPage=5;
 			WhiteboardState page;page.nextIsAdd=true;
 			const auto normal=BuildPageContent(0,WorkspaceMode::PptCompact,show,page);
 			show.currentPage=-1;const auto end=BuildPageContent(2,WorkspaceMode::PptCompact,show,page);
@@ -3149,7 +3177,7 @@ namespace Inkeys::UI::PageControl
 				"standard PPT Next/EndShow labels remain separate from whiteboard Add");
 		}
 		const auto epoch=Inkeys::UI::RenderPipeline::GetDeviceEpoch();
-		PptState ppt;ppt.presentationVisible=true;ppt.currentPage=7;ppt.totalPage=28;ppt.layout.showMiddlePair=true;
+		PptState ppt;ppt.presentationActive=true;ppt.presentationVisible=true;ppt.currentPage=7;ppt.totalPage=28;ppt.layout.showMiddlePair=true;
 		WhiteboardState wb;wb.expandedLayoutTarget=wb.active=true;wb.currentPage=2;wb.totalPage=4;
 		wb.previousEnabled=wb.previousInteractive=wb.nextEnabled=wb.nextInteractive=true;
 		const auto origin=std::chrono::steady_clock::now()+1s;
@@ -3353,7 +3381,8 @@ namespace Inkeys::UI::PageControl
 			"same-text business revision still waits for an actual successful presentation");
 		reject=false;frame.frameTime+=20ms;Check(callback(frame)!=FrameResult::Retry,"identity-only presentation retries safely");
 		{
-			SurfaceState state;auto content=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,wb);content.menu=0;
+			PptState standalone; // 正常菜单像素与交互基线属于独立白板，活动放映另用显式反例覆盖。
+			SurfaceState state;auto content=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,standalone,wb);content.menu=0;
 			state.scene.ConfigurePagination(content);state.scene.SetBounds({0,0,305,80},1);state.scene.SetOpacity(1,0);
 			auto time=origin+2s;for(int i=0;i<=45;++i)(void)state.scene.Advance(time+i*20ms);time+=900ms;
 			bool fail=false;RECT actualDirty{};SIZE actualViewport{};auto testEpoch=epoch;
@@ -3642,6 +3671,48 @@ namespace Inkeys::UI::PageControl
 			light.cursorScreenX=205;light.cursorScreenY=120;Scene::PublishSharedLighting(light);Check(wakes>0,"cursor entering a committed border wakes it");wakes=0;
 			light.cursorScreenX=-9000;light.cursorScreenY=-9000;Scene::PublishSharedLighting(light);Check(wakes>0,"cursor leaving wakes the previous lit border");wakes=0;
 			light.cursorScreenX=-8990;Scene::PublishSharedLighting(light);Check(wakes==0,"subsequent far cursor movement remains idle");
+			light.primaryVisible=true;light.primaryScreenX=300;light.primaryScreenY=180;light.primaryRadiusPixels=80;
+			light.cursorScreenX=240;light.cursorScreenY=150;Scene::PublishSharedLighting(light);
+			const auto sameFrame=origin+22s;(void)surface.Advance(sameFrame);
+			surface.SetBounds({500,300,860,420},1.5F);const auto movedBounds=surface.PresentationBounds();
+			const UINT movedWidth=movedBounds.right-movedBounds.left,movedHeight=movedBounds.bottom-movedBounds.top;
+			const HRESULT movedSetup=surface.EnsureDeviceResources(epoch,movedWidth,movedHeight);
+			Check(SUCCEEDED(movedSetup),"same-frame lighting move has an independent real target");
+			if(SUCCEEDED(movedSetup)){
+				auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();
+				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(movedWidth),static_cast<FLOAT>(movedHeight)));
+				(void)surface.Render(dc,sameFrame);renderer.FinishFrameDrawCommands(dc);
+				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"Advance then SetBounds then Render share one clock sample");
+				const auto mapped=renderer.SnapshotFrameLighting();
+				Check(std::abs(mapped.primaryLight.x+movedBounds.left-light.primaryScreenX)<0.001
+					&&std::abs(mapped.primaryLight.y+movedBounds.top-light.primaryScreenY)<0.001
+					&&std::abs(mapped.cursorLight.x+movedBounds.left-light.cursorScreenX)<0.001
+					&&std::abs(mapped.cursorLight.y+movedBounds.top-light.cursorScreenY)<0.001,
+					"final same-frame origin and scale map primary and cursor light to their unchanged screen points");
+			}
+			surface.SetSharedLightingSubscribed(false);BarUiFrameLightingSnapshot manual;manual.primaryLight={12,34};manual.cursorLight={56,78};
+			surface.Renderer().SetFrameLightingSnapshot(manual);surface.SetBounds({700,400,940,480},1);(void)surface.Advance(sameFrame);
+			const auto retainedLight=surface.Renderer().SnapshotFrameLighting();
+			Check(retainedLight.primaryLight.x==12&&retainedLight.primaryLight.y==34&&retainedLight.cursorLight.x==56&&retainedLight.cursorLight.y==78,
+				"unsubscribed offscreen lighting remains under the explicit renderer snapshot contract");
+			// 与生产首次显示顺序一致：先推进、落定几何，再订阅，同一时刻直接绘制。
+			surface.SetBounds({900,500,1200,600},1.25F);surface.SetSharedLightingSubscribed(true);
+			const auto subscribedBounds=surface.PresentationBounds();
+			const UINT subscribedWidth=subscribedBounds.right-subscribedBounds.left,subscribedHeight=subscribedBounds.bottom-subscribedBounds.top;
+			const HRESULT subscribedSetup=surface.EnsureDeviceResources(epoch,subscribedWidth,subscribedHeight);
+			Check(SUCCEEDED(subscribedSetup),"late same-frame subscription owns a real rendering target");
+			if(SUCCEEDED(subscribedSetup)){
+				auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();
+				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(subscribedWidth),static_cast<FLOAT>(subscribedHeight)));
+				(void)surface.Render(dc,sameFrame);renderer.FinishFrameDrawCommands(dc);
+				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"late subscription renders without advancing the shared clock again");
+				const auto mapped=renderer.SnapshotFrameLighting();
+				Check(std::abs(mapped.primaryLight.x+subscribedBounds.left-light.primaryScreenX)<0.001
+					&&std::abs(mapped.primaryLight.y+subscribedBounds.top-light.primaryScreenY)<0.001
+					&&std::abs(mapped.cursorLight.x+subscribedBounds.left-light.cursorScreenX)<0.001
+					&&std::abs(mapped.cursorLight.y+subscribedBounds.top-light.cursorScreenY)<0.001,
+					"first subscribed render maps both lights immediately despite same-frame Advance deduplication");
+			}
 			surface.Reset();wakes=0;light.cursorScreenX=205;light.cursorScreenY=120;Scene::PublishSharedLighting(light);
 			Check(wakes==0,"reset removes the old target lighting subscription and hooks");
 		}
@@ -3786,6 +3857,108 @@ namespace Inkeys::UI::PageControl
 					if(mapped.bits[static_cast<std::size_t>(y)*mapped.pitch+column*4+3])last=y;
 				cpu->Unmap();return last>=0?std::optional<LONG>(submitted.top+last+1):std::nullopt;
 			};
+			{
+				// 按产品分步发布工作区事实，直接走 ConfigureSurface/Scene/PresentScene；只替换最终 HWND sink。
+				Prepare();auto show=baseline;WhiteboardState board;bool minimized=false,blockResources=false;
+				auto stamp=origin+3s;unsigned morphFrames=0,submittedFrames=0;
+				std::array<const void*,5> identities{};
+				for(std::size_t i=0;i<identities.size();++i)identities[i]=surfaces[0].scene.Layout().buttons[i].identity;
+				const auto publishShow=[&]{++show.publicationRevision;PublishPptState(show);};
+				const auto publishBoard=[&]{PublishWhiteboardState(board);};
+				const auto tick=[&](bool step=true){
+					if(step)stamp+=20ms;
+					auto snapshot=SnapshotForRender();const auto budget=GroupBudgetForFrame(snapshot,monitor,1,
+						directMoveRevision.load(),epoch.generation,show.uiScale);
+					const auto fitted=ResolveRuntimePageControlLayout(monitor,1,snapshot.ppt,budget.presentationOutsetDip,budget.bitmapLimit);
+					for(std::size_t index=0;index<surfaces.size();++index){
+						const auto mode=ResolveWorkspaceMode(SurfaceFor(index),fitted,snapshot.whiteboard,minimized);
+						auto target=ResolveSurfaceLayout(SurfaceFor(index),monitor,1,fitted,snapshot.whiteboard);
+						if(mode==WorkspaceMode::Hidden&&index>=2)target.logicalBounds=ResolveHiddenSurfaceBounds(SurfaceFor(index),monitor,target.logicalBounds);
+						const char* failed=nullptr;
+						Check(ConfigureSurface(index,mode,fitted,snapshot.whiteboard,monitor,target,snapshot.revision,stamp,false,failed),
+							"staged workspace publication configures the production surface");
+						auto& state=surfaces[index];const auto geometry=state.scene.Geometry();const auto body=state.scene.LogicalBounds();
+						if(index<2){
+							Check(body.right-body.left==static_cast<LONG>(std::lround(geometry.bodyBounds.Width()*state.bounds.scale))
+								&&body.bottom-body.top==static_cast<LONG>(std::lround(geometry.bodyBounds.Height()*state.bounds.scale)),
+								"bottom adapter dimensions come from the same current Scene body instead of another width animation");
+							if(show.presentationActive&&show.layout.showBottomPair&&!minimized){
+								Check(state.targetVisible&&geometry.opacity==1&&geometry.fillOpacity==BarMainBarFillOpacity,
+									"shared live bottom never fades through a delayed visibility or workspace publication gap");
+								if(index==0&&geometry.bodyBounds.Width()>240&&geometry.bodyBounds.Width()<305)++morphFrames;
+							}
+						}
+						const bool active=state.bounds.active||state.scene.AnimationActive();
+						if(!ShouldKeepPageControlWindowVisible(state.targetVisible,!state.targetVisible&&active))continue;
+						const auto bounds=state.scene.PresentationBounds();const SIZE viewport{bounds.right-bounds.left,bounds.bottom-bounds.top};
+						state.backingCapacity={(std::max)(state.backingCapacity.cx,viewport.cx),(std::max)(state.backingCapacity.cy,viewport.cy)};
+						std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink=[&](const auto& info){
+							++submittedFrames;return info.hdcSrc&&info.psize->cx==viewport.cx&&info.psize->cy==viewport.cy
+								&&info.pptDst->x==bounds.left&&info.pptDst->y==bounds.top;};
+						FrameContext frame;frame.epoch=epoch;frame.frameTime=stamp;state.scene.Renderer().SetFrameLightingSnapshot({});
+						const auto result=PresentScene(index,state,nullptr,frame,bounds,state.backingCapacity,true,false,active,&sink);
+						if(blockResources&&index==0)Check(result.status==PresentStatus::Retry&&result.resourcesFailed,"resource failure keeps the staged workspace transaction pending");
+						else{Check(result.status==PresentStatus::Success&&result.pixelsSubmitted,"staged workspace uses real D2D/GetDC/ReleaseDC/EndDraw presentation");
+							if(result.status==PresentStatus::Success){state.scene.CommitPresented(!state.inputLocked);(void)state.scene.ConsumeDamage();}}
+					}
+				};
+				const auto settle=[&]{for(int frame=0;frame<60;++frame)tick();};
+				publishShow();tick();const auto initialGeometry=surfaces[0].scene.Geometry();
+				show.presentationVisible=false;publishShow();for(int frame=0;frame<5;++frame)tick();
+				Check(surfaces[0].configuredMode==WorkspaceMode::PptCompact&&VisiblePptMask(show,board)==3,
+					"early PptInfo visibility suppression keeps the bottom pair and retires the middle pair");
+				board.expandedLayoutTarget=true;publishBoard();tick();
+				for(int frame=0;frame<5;++frame){publishShow();publishBoard();tick();}
+				const auto midGeometry=surfaces[0].scene.Geometry();const auto midLayout=surfaces[0].scene.Layout();
+				Check(midGeometry.bodyBounds.Width()>240&&midGeometry.bodyBounds.Width()<305
+					&&midGeometry.layoutRevision==initialGeometry.layoutRevision+1&&midLayout.buttons[4].contentOpacity>0,
+					"visible list background and More animate together without restarting for duplicate publications");
+				const auto beforeReverse=midGeometry.bodyBounds;
+				board.expandedLayoutTarget=false;board.active=true;publishBoard();tick(false);
+				const auto reverse=surfaces[0].scene.Geometry();
+				Check(reverse.bodyBounds.Width()==beforeReverse.Width()&&reverse.opacity==1,
+					"reverse staged exit continues the current background width without an overall fade");
+				board.expandedLayoutTarget=true;publishBoard();tick(false);settle();
+				Check(surfaces[0].scene.Geometry().bodyBounds.Width()==305&&surfaces[1].scene.Geometry().bodyBounds.Width()==230,
+					"shared visible lists settle to 305 and 230 DIP whiteboard bodies");
+				const auto entered=surfaces[0].scene.Layout();
+				for(std::size_t i=0;i<identities.size();++i)Check(entered.buttons[i].identity==identities[i],"real adapter preserves every pagination list member across workspace reversals");
+				board.expandedLayoutTarget=false;publishBoard();tick();
+				for(int frame=0;frame<5;++frame)tick();
+				const auto exiting=surfaces[0].scene.Layout();
+				Check(exiting.buttons[4].visible&&!exiting.buttons[4].enabled&&exiting.buttons[4].drawOrder<exiting.buttons[3].drawOrder
+					&&exiting.buttons[4].contentOpacity>0&&exiting.buttons[4].contentOpacity<1,
+					"production exit keeps More below Next while its own shared opacity fades");
+				const auto committed=surfaces[0].scene.PresentedGeneration();
+				blockResources=true;hiddenTestBlockedResourceSurface.store(0);tick();
+				Check(surfaces[0].scene.PresentedGeneration()==committed,"failed layout presentation preserves the previous committed input frame");
+				blockResources=false;hiddenTestBlockedResourceSurface.store(-1);tick();
+				board.active=false;publishBoard();settle();
+				const auto beforeVisible=surfaces[0].scene.LogicalBounds();show.presentationVisible=true;publishShow();settle();
+				const auto afterVisible=surfaces[0].scene.LogicalBounds();
+				Check(EqualRect(&beforeVisible,&afterVisible)&&VisiblePptMask(show,board)==15&&morphFrames>2&&submittedFrames>100,
+					"late visible restoration keeps the fitted bottom geometry and restores only the middle hosts");
+				std::array<ID2D1DeviceContext*,2> contexts{surfaces[0].scene.DeviceContext(),surfaces[1].scene.DeviceContext()};
+				const auto settledRevision=surfaces[0].scene.Geometry().layoutRevision;
+				for(int frame=0;frame<8;++frame){++show.currentPage;publishShow();tick();publishShow();tick();}
+				Check(surfaces[0].scene.Geometry().layoutRevision==settledRevision&&surfaces[0].scene.DeviceContext()==contexts[0]
+					&&surfaces[1].scene.DeviceContext()==contexts[1],"page-only and duplicate publications reuse layout and existing device contexts");
+				settle();for(const auto& state:surfaces)Check(!ShouldContinuePageControlFrame(state.targetVisible,
+					state.bounds.active||state.scene.AnimationActive(),state.bounds.active,state.scene.AnimationActive(),false)
+					&&!state.scene.IsInvalidated(),"settled production surfaces return Idle without forced Continue or pending damage");
+				show.layout.showBottomPair=false;publishShow();settle();
+				Check(!surfaces[0].targetVisible&&!surfaces[1].targetVisible&&surfaces[0].scene.Geometry().opacity==0,
+					"explicit PPT visibility setting still hides the shared bottom pair");
+				show.presentationActive=false;show.presentationVisible=true;show.layout.showBottomPair=true;publishShow();settle();
+				Check(!surfaces[0].targetVisible&&surfaces[0].scene.Geometry().opacity==0,"true session end wins over a stale visible publication");
+				show.presentationVisible=false;publishShow();board.active=board.expandedLayoutTarget=true;publishBoard();settle();
+				minimized=true;tick();settle();
+				Check(!surfaces[0].targetVisible&&!surfaces[1].targetVisible&&surfaces[0].scene.Geometry().opacity==0,
+					"standalone whiteboard minimization remains a real shared-host hide");
+				minimized=false;tick();settle();board.active=board.expandedLayoutTarget=false;publishBoard();settle();
+				Check(!surfaces[0].targetVisible&&!surfaces[0].scene.AnimationActive()&&surfaces[0].scene.Geometry().opacity==0,
+					"closing standalone whiteboard completes its normal fade and retires without a live PPT session");
+			}
 			for(const UINT dpi:{96U,144U})for(const int taskbarThickness:{24,48,96})
 			for(const float localScale:{1.0F,1.5F})for(const float savedOffset:{0.0F,37.0F}){
 				Prepare();
@@ -4034,6 +4207,7 @@ namespace Inkeys::UI::PageControl
 			ppt.layout.epoch = 1;
 			ppt.publicationRevision = 1;
 			ppt.targetRevision = 1;
+			ppt.presentationActive = true;
 			ppt.presentationVisible = true;
 			ppt.currentPage = 1;
 			ppt.totalPage = 3;

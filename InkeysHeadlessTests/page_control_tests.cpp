@@ -661,6 +661,7 @@ namespace
 	{
 		constexpr RECT monitor{ 0, 0, 7680, 4320 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showMiddlePair = true;
 		for (const float dpi : { 1.0F, 1.5F, 2.0F, 3.0F, 4.0F })
@@ -711,6 +712,7 @@ namespace
 	{
 		constexpr RECT monitor{ -3840, 0, 3840, 4320 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = ppt.layout.showMiddlePair = true;
 		ppt.layout.bottomPairScale = 1.5F;
@@ -767,6 +769,7 @@ namespace
 	{
 		constexpr RECT monitor{ 0, 0, 7680, 4320 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.bottomPairScale = 3.0F;
@@ -867,6 +870,7 @@ namespace
 		{
 			const int failuresBefore = failureCount;
 			PptState ppt;
+			ppt.presentationActive = true;
 			ppt.presentationVisible = true;
 			ppt.layout.showBottomPair = false;
 			ppt.layout.showMiddlePair = true;
@@ -921,6 +925,7 @@ namespace
 		// 先裁剪再尝试吸附；矮屏能把远候选裁剪进中轴吸附带。
 		constexpr RECT shortMonitor{ -600, -100, 600, 100 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = false;
 		ppt.layout.showMiddlePair = true;
@@ -963,6 +968,7 @@ namespace
 		for (const auto surface : { Surface::MiddleLeft, Surface::MiddleRight })
 		{
 			PptState ppt;
+			ppt.presentationActive = true;
 			ppt.presentationVisible = true;
 			ppt.layout.showBottomPair = true;
 			ppt.layout.showMiddlePair = true;
@@ -998,6 +1004,7 @@ namespace
 		}
 
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = true;
@@ -1097,6 +1104,7 @@ namespace
 	void TestDragFrameOwnershipAndGeometry()
 	{
 		PptState frame;
+		frame.presentationActive = true;
 		frame.presentationVisible = true;
 		frame.layout.session = 4;
 		frame.layout.epoch = 8;
@@ -1164,6 +1172,7 @@ namespace
 	{
 		constexpr RECT monitor{ 0, 0, 1920, 1080 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = true;
@@ -1208,6 +1217,7 @@ namespace
 		Check(hiddenSide.mode == WorkspaceMode::Hidden && !hiddenSide.visible,
 			"whiteboard workspace hides PPT side controls");
 
+		ppt.presentationActive = false;
 		ppt.presentationVisible = false;
 		whiteboard.expandedLayoutTarget = false;
 		whiteboard.active = false;
@@ -1219,6 +1229,7 @@ namespace
 	void TestWorkspaceTransitionAndInputPolicy()
 	{
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = false;
@@ -1477,6 +1488,7 @@ namespace
 	void TestWhiteboardLayoutTargetAndReadiness()
 	{
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		WhiteboardState whiteboard;
@@ -1513,6 +1525,40 @@ namespace
 				WorkspaceMode::PptCompact,
 				WorkspaceMode::WhiteboardExpanded, true),
 			"reverse re-entry immediately retargets expanded from the current frame");
+	}
+
+	void TestSharedBottomWorkspaceVisibility()
+	{
+		PptState ppt;ppt.presentationActive=true;ppt.presentationVisible=true;
+		ppt.layout.showBottomPair=ppt.layout.showMiddlePair=true;
+		ppt.uiScale=1.5F;ppt.layout.bottomPairScale=3.0F;
+		ppt.layout.bottomPairWidth=ppt.layout.bottomPairHeight=10000;
+		constexpr RECT monitor{0,0,800,600};
+		const auto visible=ResolveRuntimePageControlLayout(monitor,1,ppt);
+		ppt.presentationVisible=false;
+		const auto covered=ResolveRuntimePageControlLayout(monitor,1,ppt);
+		Check(ResolveWorkspaceMode(Surface::BottomLeft,ppt,{})==WorkspaceMode::PptCompact
+			&&ResolveWorkspaceMode(Surface::BottomRight,ppt,{})==WorkspaceMode::PptCompact
+			&&ResolveWorkspaceMode(Surface::MiddleLeft,ppt,{})==WorkspaceMode::Hidden,
+			"live bottom survives the staged whiteboard visibility gap while middle controls hide");
+		Check(covered.layout.bottomPairScale==visible.layout.bottomPairScale
+			&&covered.layout.bottomPairWidth==visible.layout.bottomPairWidth
+			&&covered.layout.bottomPairHeight==visible.layout.bottomPairHeight,
+			"covered live bottom still fits and clamps before presentationVisible is restored");
+		Check(covered.layout.middlePairScale==ppt.layout.middlePairScale
+			&&covered.layout.middlePairWidth==ppt.layout.middlePairWidth
+			&&covered.layout.middlePairHeight==ppt.layout.middlePairHeight,
+			"covered middle pair does not join fitting or collision correction");
+		ppt.layout.showBottomPair=false;
+		Check(ResolveWorkspaceMode(Surface::BottomLeft,ppt,{})==WorkspaceMode::Hidden,
+			"live session never overrides the user's bottom pair visibility setting");
+		WhiteboardState board;board.active=board.expandedLayoutTarget=true;
+		Check(ResolveWorkspaceMode(Surface::BottomLeft,ppt,board)==WorkspaceMode::WhiteboardExpanded
+			&&ResolveWorkspaceMode(Surface::BottomLeft,ppt,board,true)==WorkspaceMode::Hidden,
+			"whiteboard list wins the workspace projection while explicit minimization hides it");
+		ppt.presentationActive=false;ppt.presentationVisible=true;ppt.layout.showBottomPair=true;
+		Check(ResolveWorkspaceMode(Surface::BottomLeft,ppt,{})==WorkspaceMode::Hidden,
+			"a truly ended session cannot revive a bottom pair through stale presentationVisible");
 	}
 
 	void TestDirtyInvalidationDeduplication()
@@ -1586,6 +1632,7 @@ namespace
 	{
 		constexpr RECT monitor{ 0, 0, 800, 600 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = true;
@@ -1605,6 +1652,7 @@ namespace
 
 		constexpr RECT tinyMonitor{ -180, -60, 0, 60 };
 		PptState extreme;
+		extreme.presentationActive = true;
 		extreme.presentationVisible = true;
 		extreme.layout.showBottomPair = true;
 		extreme.layout.showMiddlePair = true;
@@ -1633,6 +1681,7 @@ namespace
 		for (const float dpi : { 1.0F, 1.5F, 2.0F })
 		{
 			PptState moved;
+			moved.presentationActive = true;
 			moved.presentationVisible = true;
 			moved.uiScale = 0.6F;
 			moved.layout.bottomPairScale = 1.5F;
@@ -1753,6 +1802,7 @@ int RunPageControlTests()
 	TestWorkspaceTransitionAndInputPolicy();
 	TestTouchTranslationPolicy();
 	TestWhiteboardLayoutTargetAndReadiness();
+	TestSharedBottomWorkspaceVisibility();
 	TestDirtyInvalidationDeduplication();
 	TestRuntimeCollisionFallback();
 	TestA2ProjectionAndMigration();
