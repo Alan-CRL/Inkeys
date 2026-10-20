@@ -302,6 +302,55 @@ namespace
 		AUTOSAVE_CHECK(state, !IsValidDesktopAutoSaveRequest(invalid));
 	}
 
+	void TestIndexMutexTimeoutAndRetry(TestState& state)
+	{
+		TempDirectory temporary;
+		AUTOSAVE_CHECK(state, temporary.IsValid());
+		if (!temporary.IsValid()) return;
+		const fs::path root = temporary.Child(L"mutex-timeout");
+		const std::wstring absolute = fs::absolute(root).wstring();
+		std::wstring folded(absolute.size(), L'\0');
+		AUTOSAVE_CHECK(state, LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_LOWERCASE,
+			absolute.data(), static_cast<int>(absolute.size()), folded.data(),
+			static_cast<int>(folded.size()), nullptr, nullptr, 0) != 0);
+		std::uint64_t hash = 14695981039346656037ull;
+		const auto* bytes = reinterpret_cast<const unsigned char*>(folded.data());
+		for (std::size_t i = 0; i < folded.size() * sizeof(wchar_t); ++i)
+		{ hash ^= bytes[i]; hash *= 1099511628211ull; }
+		const std::string date = "2026-09-01";
+		for (unsigned char byte : date) { hash ^= byte; hash *= 1099511628211ull; }
+		wchar_t name[96] = {};
+		swprintf_s(name, L"Local\\Inkeys_Draw3_DesktopAutoSave_Index_%016llx",
+			static_cast<unsigned long long>(hash));
+		HANDLE held = CreateMutexW(nullptr, FALSE, name);
+		const DWORD acquired = held ? WaitForSingleObject(held, 1000) : WAIT_FAILED;
+		AUTOSAVE_CHECK(state, acquired == WAIT_OBJECT_0);
+		if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
+		{ if (held) CloseHandle(held); return; }
+		DesktopAutoSaveService service;
+		AUTOSAVE_CHECK(state, service.Start(root.wstring()));
+		const auto request = MakeRequest(
+			"aaaaaaaa-0000-4000-8000-000000000001",
+			"bbbbbbbb-0000-4000-8000-000000000001", 1,
+			"cccccccc-0000-4000-8000-000000000001",
+			"2026-09-01", "120000001", 1.0f);
+		AUTOSAVE_CHECK(state, service.SubmitPrepared(request) == DesktopAutoSaveSubmitStatus::Accepted);
+		const bool finished = WaitForIdle(service, std::chrono::seconds(3));
+		AUTOSAVE_CHECK(state, finished && service.Diagnostics().failed == 1
+			&& service.Diagnostics().committed == 0);
+		AUTOSAVE_CHECK(state, !fs::exists(DateDirectory(root, date.c_str()) / L"index.json"));
+		// 红测也先释放锁再drain，避免测试自身永久占用服务。
+		ReleaseMutex(held); CloseHandle(held);
+		service.CloseAndDrain();
+		AUTOSAVE_CHECK(state, service.Start(root.wstring()));
+		AUTOSAVE_CHECK(state, service.SubmitPrepared(request) == DesktopAutoSaveSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		AUTOSAVE_CHECK(state, service.Diagnostics().committed == 1);
+		Json::Value index;
+		AUTOSAVE_CHECK(state, ReadJson(DateDirectory(root, date.c_str()) / L"index.json", index));
+		AUTOSAVE_CHECK(state, VerifyIndexedFiles(DateDirectory(root, date.c_str()), index, state));
+	}
+
 	void TestNoDirectoryBeforeRequest(TestState& state)
 	{
 		TempDirectory temporary;
@@ -846,6 +895,7 @@ int RunDesktopAutoSaveTests()
 	ResetDesktopAutoSaveTestFaultInjection();
 	TestPolicyAndNaming(state);
 	TestNoDirectoryBeforeRequest(state);
+	TestIndexMutexTimeoutAndRetry(state);
 	TestIdempotencyAndFileCollision(state);
 	TestConcurrentServices(state);
 	TestCrossDateAndDrain(state);

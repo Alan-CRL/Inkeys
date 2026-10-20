@@ -7,6 +7,7 @@
 | 路径 | 证据级别与职责 |
 | --- | --- |
 | `PptCOM/PptCOM.cs` | `【直接确认】` 定义 COM-visible `IPptCOMServer`/`PptCOMServer`，连接 PowerPoint/WPS、读取放映状态、控制翻页和窗口 |
+| `PptCOM/ComEventConnection.cs` | `【直接确认】` raw IDispatch事件sink、显式连接点/cookie及失败解绑的owner重试，不物化回调对象RCW |
 | `PptCOM/PptCOM.csproj` | `【直接确认】` .NET Framework 4.0/AnyCPU，Office Interop 引用，构建后 `ExportTlb` 生成自身输出目录 TLB，无 DLL/TLB 自动复制 |
 | `PptCOM/PptCOM.manifest` | `【直接确认】` 被 native 启动路径作为 activation-context manifest 资源/文件使用 |
 | `Inkeys/IdtMain.cpp::wWinMain` | `【直接确认】` 初始化 COM，准备 DLL/TLB/manifest，创建/激活 activation context 并加载 PptCOM DLL |
@@ -23,7 +24,8 @@ IdtMain: COM + activation context + PptCOM.dll
   → IdtPlug-in::CheckPptCom 创建 IPptCOMServer
   → Initialization(&PptInfoState.TotalPage, &CurrentPage, GetOffSignalInteropPointer())
   → PptCOM::PptComService 绑定 PowerPoint 或 WPS并写 native 页码
-  → IPptCOMSessionState 缓存会话 + descriptor，native 校验身份并投递 Draw3 target
+  → IPptCOMSessionState 缓存COM场次 + descriptor；基础控制与可信窗口/墨迹准入分别判定
+  → native仅为可信文稿/页/窗口投递Draw3 target；基础页码不伪造墨迹ready
   → Draw3 收尾旧 contact、切页并成功 Present
   → PptInfo 推进身份匹配的 PptInfoStateBuffer
   → Inkeys.UI.Ppt 把缓冲页码发布给 Inkeys.UI.PageControl 的四个共享窗口
@@ -37,7 +39,9 @@ IdtMain: COM + activation context + PptCOM.dll
 ## 当前实现与支持范围的边界
 
 - `【直接确认】` `PptCOM.cs` 有 Microsoft PowerPoint 和 WPS 的 ROT/COM、进程、窗口与清理分支，并有事件/轮询及 Office-busy 重试。
-- `【历史/兼容】` 代码和文案提及 PowerPoint 2007、WPS 2013+ 等兼容场景，只能证明实现意图或历史声明。
+- `【历史/兼容】` 产品保留PowerPoint2007、WPS2013+既有声明，2026-10-18任务重点核查PowerPoint2010/MSO14；WPP版本不等同微软MSO版本，未有对应版本实机证据不能标通过。
+- `【修改约束】` 常规COM使用dynamic，HWND和事件为已说明依据的包装例外；类型/事件接口异常但dynamic仍可用时保留核心控制和轮询。严重类型信息/IDispatch/激活失效仍可能不可用。
+- `【修改约束】` 所有权按每次COM取得而非identity/变量数配平，禁止以GC/FinalRelease补漏或杀Office作为退出验收；真实提供方关闭与下一文稿打开须单列验收。
 - `【待确认】` 本轮没有运行 Office/WPS；实际支持版本、位数、安装类型、Windows/架构组合和重连行为均不能由分支存在直接确认。
 - `【待确认】` `CheckCOM()` 返回代码常量，native 会调用并保存结果，但未找到比较或拒绝不匹配版本的逻辑；当前不能称其为已实施的版本兼容策略。
 

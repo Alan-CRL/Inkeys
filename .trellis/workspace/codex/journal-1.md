@@ -1837,6 +1837,26 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 - 在 Actions 验收真实 Windows 2022 三架构链路。
 
 
+## Session 63: 恢复 Inkeys3 笔震动反馈与兼容回退
+<!-- trellis-session: v=2 fp=f1cf333becf0ed95 -->
+
+**Date**: 2026-10-11
+**Task**: 恢复 Inkeys3 笔震动反馈与兼容回退
+**Branch**: `bugfix/vibration`
+
+### Summary
+
+追溯 fc9a8b86 迁移遗漏，恢复 Host 触觉注入、UI3 有效笔按钮 Click 与安全生命周期；独立审阅和完整 ARM64 编译/无窗口测试通过。按用户要求未提交。
+
+### Main Changes
+
+- 生产绘制线程管理触觉 COM，精确 Pointer 路由与安全无能力回退
+- 保留 WM_TOUCH/光标语义，增加有界接触凭据及取消/代际校验
+
+### Next Steps
+
+- 实体笔、真实 Win7 和跨驱动关联/混合设备验收；未授权 GUI，本轮未执行
+
 ## Session 64: 阶段1：vcpkg Abseil与Modeler源码基线完成
 <!-- trellis-session: v=2 fp=f8686272ba5b8497 -->
 
@@ -1948,6 +1968,7 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Testing
 
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 exit 0；InkeysHeadlessTests --no-window exit 0；imports/格式/diff 检查通过
 - [OK] 4source和4main Rebuild exit0；4replay19case/128412 bit exact，仅依赖版本metadata变化；3arch各30pairs PASS；Headless no-window0。
 - [OK] 完整InkeysRepo.sln Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check通过。
 

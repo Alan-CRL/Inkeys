@@ -41,16 +41,17 @@ Win32 window message
 ### Owner WndProc to render/presentation thread
 
 - owner WndProc 不得阻塞等待一个可能被渲染线程持有、且渲染线程又可能同步等待 owner 执行 Window Service 提交的锁。PageControl 直移只能 `try_lock`；每个候选先发布 latest-wins 绝对布局，锁忙或窗口移动失败时保留 pending 并显式请求 pair render，下一条输入或渲染兜底都必须收敛到最新绝对目标，不能假定一定还有后续 `WM_MOUSEMOVE`。
-- PageControl 纯平移成功只顺序移动成对 HWND、推进内部 bounds/mailbox revision 并同步第三光源接受区；不得调用 `Scene::SetBounds`、制造 visual damage 或请求渲染。渲染帧在取得 `renderTransactionMutex` 后、进入 Configure/ULW 前必须复核直移 revision，避免旧快照在直移后把窗口拉回。
-- `ReleaseCapture` 会同步重入 `WM_CAPTURECHANGED`。PageControl 的 `WM_CANCELMODE` 必须先在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后再调用 `ReleaseCapture`；Window Service 撤销必须覆盖四个 PageControl HWND。对 `SetWindowPos`、同步 `SendMessage` 等其他可重入调用，应按实际重入消息审查其是否会再次取得调用点仍持有的非递归锁，不能用笼统的“线程安全”判断代替锁图。
+- PageControl 普通拖动纯平移成功只顺序移动成对 HWND、推进内部 bounds/mailbox revision 并同步第三光源接受区；不得调用 `Scene::SetBounds`、制造 visual damage 或请求渲染；中轴吸附的短促 Y 动画中间直移仅发布过期帧屏障、不确认最终 pair，并显式请求续帧，实际几何到位后才提交。渲染帧在取得 `renderTransactionMutex` 后、进入 Configure/ULW 前必须复核直移 revision，避免旧快照在直移后把窗口拉回。
+- `SetCapture` 转移旧 capture 与 `ReleaseCapture` 都可能同步重入 `WM_CAPTURECHANGED`。PageControl Down 必须先在锁外完成旧 capture 清退，再在短锁内复核并建立新 gesture/tracker；不可把捕获简单挪到新 tracker 已建立之后，否则旧 Cancel 会回滚同 pair 新状态。`WM_CANCELMODE` 必须先在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后再调用 `ReleaseCapture`；Window Service 撤销必须覆盖四个 PageControl HWND。对 `SetWindowPos`、同步 `SendMessage` 等其他可重入调用，应按实际重入消息审查其是否会再次取得调用点仍持有的非递归锁，不能用笼统的“线程安全”判断代替锁图。
 - 透明 presentation margin 与共享圆角背景之外的像素必须继续返回 `HTTRANSPARENT`。PPT 的“非按钮背景可拖动”只覆盖实际背景 shape，不等于整个矩形 HWND 都可接收输入。
 
 依据：`PageControlWindowProc`、`PptDragCommitTracker`、`RenderSurface`、`Window::Service::ApplyCancelPointerCapture`、`BarSurfaceScene::HitTestBackground`。
 
 ### COM 属性成为跨层准入条件时
 
-- [ ] 同一属性的强类型/vtable 和 IDispatch/反射读取能力是否真的相同？从真实提供方读取生产适配器，比较两条路径；字典 FakeAccessor 的固定值不能证明真实 COM 暴露了该成员。
-- [ ] native 新增非零 HWND、PID、页身份等必要条件时，上游 reader 的可选/失败兜底是否会悄悄产出零值？保留失败原因和可复现的真实读取证据。
+- [ ] 常规生产读取是否真正使用dynamic，只有有依据的成员才保留包装例外？比较真实提供方的dynamic、强类型/vtable及受限成员能力；字典FakeAccessor不能证明COM binder和旧版提供方均支持。
+- [ ] native新增非零HWND、PID、页身份条件时，是否只限制确需该身份的墨迹/OS功能，而没有把dynamic仍可用的基础控制一起关掉？基础页码不能伪造画布ready，未知窗口不凭唯一标题补成强身份。
+- [ ] 每笔COM返回是否独立单次释放或明确转移，避免同identity漏配平和列表alias双释放？命令的View/Navigation与部分事件连接也要计入；GC/FinalRelease不能让错误账本变绿。
 
 ### Event-backed two-stage state publication
 

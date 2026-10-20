@@ -1,0 +1,30 @@
+{
+  "id": "whiteboard-scene",
+  "name": "whiteboard-scene",
+  "title": "白板入口与场景整合",
+  "description": "入口、PPT转场、底栏恢复及整体回归",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-15",
+  "completedAt": "2026-10-15",
+  "branch": "feature/whiteboard",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-15-whiteboard-v1",
+  "relatedFiles": [],
+  "notes": "实现与自动验证完成；真实 GUI 人工验收由父任务跟踪。未 commit/push，未归档。",
+  "meta": {
+    "approved_plan": "User explicitly requested implementation 2026-10-15",
+    "related_task": "08-17-ui3-whiteboard",
+    "validation": "../10-15-whiteboard-v1/validation.md"
+  }
+}

@@ -87,6 +87,7 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cpp"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.cpp"><Filter>draw3</Filter></ClCompile>

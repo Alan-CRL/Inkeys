@@ -123,6 +123,20 @@ namespace PptCOM
             }
         }
 
+        public bool ObserveWindow(SlideShowObservationStamp stamp, long bindingRevision,
+            bool active, bool replaced, long hwnd)
+        {
+            lock (gate)
+            {
+                if (stamp.Generation != generation || stamp.Binding != binding) return false;
+                // Begin 的回调只提示；真正取得窗口后才完成。无事件也按 COM identity 推进场次。
+                if (active && beginPending) FinishBegin(stamp);
+                else if (active && replaced && knownActive) Begin(bindingRevision);
+                Observe(bindingRevision, active, hwnd);
+                return true;
+            }
+        }
+
         public void PageChanged()
         {
             lock (gate) { ++generation; }
@@ -198,16 +212,20 @@ namespace PptCOM
         }
     }
 
-    internal enum SlideShowOwnerOperation { ExitShow, ExitAnnotation }
+    internal enum SlideShowOwnerOperation { ExitShow, ExitAnnotation, Next, Previous, View, Activate }
 
     internal sealed class SlideShowExitRequest
     {
         private readonly object gate = new object();
         private bool cancelled;
+        private bool executing;
         private bool completed;
         private int result;
         public readonly long Session;
         public readonly SlideShowOwnerOperation Operation;
+        public readonly SlideShowObservationStamp Stamp;
+        public readonly bool HasStamp;
+        public readonly bool Check;
 
         public SlideShowExitRequest(long session, SlideShowOwnerOperation operation = SlideShowOwnerOperation.ExitShow)
         {
@@ -215,7 +233,26 @@ namespace PptCOM
             Operation = operation;
         }
 
+        public SlideShowExitRequest(SlideShowObservationStamp stamp,
+            SlideShowOwnerOperation operation, bool check)
+            : this(stamp.Session, operation)
+        {
+            Stamp = stamp;
+            HasStamp = true;
+            Check = check;
+        }
+
         public bool IsCancelled { get { lock (gate) { return cancelled; } } }
+
+        public bool TryBeginExecution()
+        {
+            lock (gate)
+            {
+                if (cancelled || completed) return false;
+                executing = true;
+                return true;
+            }
+        }
 
         public int Wait(int milliseconds)
         {
@@ -227,7 +264,8 @@ namespace PptCOM
                     int remaining = milliseconds - (int)Math.Min(int.MaxValue, timer.ElapsedMilliseconds);
                     if (remaining <= 0)
                     {
-                        cancelled = true;
+                        // 仅取消尚未进入 Office 的操作；已经执行中的 COM 调用无法撤销或重试。
+                        if (!executing) cancelled = true;
                         return -1;
                     }
                     Monitor.Wait(gate, remaining);
@@ -255,10 +293,18 @@ namespace PptCOM
         private readonly Queue<SlideShowExitRequest> exits = new Queue<SlideShowExitRequest>();
         private long nextMaintenance;
         private bool running;
+        private int ownerThreadId;
+
+        public bool IsOwner { get { return Thread.CurrentThread.ManagedThreadId == ownerThreadId; } }
 
         public void Start()
         {
-            lock (gate) { running = true; nextMaintenance = 0; }
+            lock (gate)
+            {
+                running = true;
+                ownerThreadId = Thread.CurrentThread.ManagedThreadId;
+                nextMaintenance = 0;
+            }
         }
 
         public void Stop()
@@ -266,6 +312,7 @@ namespace PptCOM
             lock (gate)
             {
                 running = false;
+                ownerThreadId = 0;
                 while (exits.Count != 0) exits.Dequeue().Complete(-1);
             }
             wake.Set();
@@ -303,6 +350,11 @@ namespace PptCOM
         private int Request(long session, SlideShowOwnerOperation operation, int milliseconds)
         {
             SlideShowExitRequest request = new SlideShowExitRequest(session, operation);
+            return Request(request, milliseconds);
+        }
+
+        public int Request(SlideShowExitRequest request, int milliseconds)
+        {
             lock (gate)
             {
                 if (!running || exits.Count >= 8) return -1;
@@ -323,7 +375,7 @@ namespace PptCOM
                     request = exits.Dequeue();
                 }
                 int result = -1;
-                try { if (!request.IsCancelled) result = execute(request); }
+                try { if (request.TryBeginExecution()) result = execute(request); }
                 catch { result = -1; }
                 finally { request.Complete(result); }
             }
@@ -333,20 +385,24 @@ namespace PptCOM
     internal static class SlideShowSessionExit
     {
         public static int Execute(SlideShowExitRequest request, SlideShowSessionCache state,
-            object window, ILateBoundComAccessor accessor)
+            object window, ILateBoundComAccessor accessor, Func<object, long> windowResolver = null)
         {
-            if (request.IsCancelled || !state.Matches(request.Session) || window == null) return 0;
+            if (request.IsCancelled || !state.Matches(request.Session) || window == null ||
+                (request.HasStamp && !state.IsCurrent(request.Stamp))) return 0;
             SlideShowObservationStamp stamp = state.Capture();
-            if (stamp.Window == 0) return 0;
             object view = null;
             object hwnd = null;
             try
             {
-                hwnd = accessor.GetProperty(window, "HWND");
-                if (accessor.IsComObject(hwnd)) return -1;
-                long actualWindow = hwnd is IntPtr ? ((IntPtr)hwnd).ToInt64() :
-                    Convert.ToInt64(hwnd, CultureInfo.InvariantCulture);
-                if (actualWindow != stamp.Window) return 0;
+                if (stamp.Window != 0)
+                {
+                    if (windowResolver == null) hwnd = accessor.GetProperty(window, "HWND");
+                    if (accessor.IsComObject(hwnd)) return -1;
+                    long actualWindow = windowResolver != null ? windowResolver(window) :
+                        (hwnd is IntPtr ? ((IntPtr)hwnd).ToInt64() : Convert.ToInt64(hwnd, CultureInfo.InvariantCulture));
+                    // 句柄能力暂不可得不阻断对捕获 COM show 的控制；有新非零锚且不一致则拒绝。
+                    if (actualWindow != 0 && actualWindow != stamp.Window) return 0;
+                }
                 view = accessor.GetProperty(window, "View");
                 // 获取 View 可能泵送 Begin/End；调用前再校验，且绝不重新读取新场次窗口。
                 if (request.IsCancelled || !state.IsCurrent(stamp) || !state.Matches(request.Session)) return 0;
@@ -361,4 +417,5 @@ namespace PptCOM
             }
         }
     }
+
 }

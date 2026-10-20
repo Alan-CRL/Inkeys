@@ -4,8 +4,10 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <d3d11.h>
 #include <dxgi1_2.h>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <windows.h>
@@ -22,6 +24,22 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		template <typename CreateDevice>
+		HRESULT CreateSelectedDevice(bool enableHardwareAcceleration, D3D_DRIVER_TYPE& actualDriver,
+			CreateDevice&& createDevice)
+		{
+			// 显式关闭时跳过硬件尝试；失败回退只适用于已请求的硬件路径。
+			actualDriver = enableHardwareAcceleration ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP;
+			HRESULT result = createDevice(actualDriver);
+			if (enableHardwareAcceleration && FAILED(result))
+			{
+				actualDriver = D3D_DRIVER_TYPE_WARP;
+				result = createDevice(actualDriver);
+			}
+			if (FAILED(result)) actualDriver = D3D_DRIVER_TYPE_UNKNOWN;
+			return result;
+		}
+
 		const char* DriverTypeName(D3D_DRIVER_TYPE driverType)
 		{
 			switch (driverType)
@@ -54,7 +72,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool compatibilityRetry = std::strcmp(attempt, "fallback") == 0;
 			if (SUCCEEDED(result) && !StartupEnvironmentDiagnosticsEnabled() &&
 				driverType == D3D_DRIVER_TYPE_HARDWARE && !compatibilityRetry) return;
-			std::cout << "[Draw3Diag][device] driver=" << DriverTypeName(driverType)
+			DiagnosticOutput::Line() << "[Draw3Diag][device] driver=" << DriverTypeName(driverType)
 				<< " levels=" << levelSet << " attempt=" << attempt
 				<< " hresult=0x" << std::hex
 				<< static_cast<unsigned long>(result) << std::dec << std::endl;
@@ -90,40 +108,38 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources)
+	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources, bool enableHardwareAcceleration)
 	{
 		// 重建时不能让新 device 与旧 adapter/factory 混用。
 		resources = {};
 		const UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT; // 透明窗口路径需要 BGRA backbuffer。
-		const HRESULT hardwareResult = CreateCompatibleDevice(D3D_DRIVER_TYPE_HARDWARE, creationFlags,
-			resources.device, resources.featureLevel, resources.context);
-		HRESULT result = hardwareResult;
+		HRESULT hardwareResult = S_OK;
+		HRESULT result = CreateSelectedDevice(enableHardwareAcceleration, resources.driverType,
+			[&](D3D_DRIVER_TYPE driverType)
+			{
+				if (driverType == D3D_DRIVER_TYPE_WARP && enableHardwareAcceleration)
+					DiagnosticOutput::Line() << "Hardware device initialization failed. Falling back to WARP." << std::endl;
+				const HRESULT attemptResult = CreateCompatibleDevice(driverType, creationFlags,
+					resources.device, resources.featureLevel, resources.context);
+				if (driverType == D3D_DRIVER_TYPE_HARDWARE) hardwareResult = attemptResult;
+				return attemptResult;
+			});
 		if (FAILED(result))
 		{
-			// 保留硬件最终 HRESULT，再记录 WARP 尝试，避免现场只能看到“回退成功”。
-			std::cout << "Hardware device initialization failed. Falling back to WARP." << std::endl;
-			result = CreateCompatibleDevice(D3D_DRIVER_TYPE_WARP, creationFlags, // 硬件失败时退到软件光栅，方便诊断和兼容。
-				resources.device, resources.featureLevel, resources.context);
-			if (FAILED(result))
-			{
-				std::cout << "[Draw3Diag][device] final=failed hardware_hresult=0x" << std::hex
-					<< static_cast<unsigned long>(hardwareResult) << " warp_hresult=0x"
-					<< static_cast<unsigned long>(result) << std::dec << std::endl;
-				std::cout << "Failed to initialize a D3D11 device with both Hardware and WARP." << std::endl;
-				return false;
-			}
-			resources.driverType = D3D_DRIVER_TYPE_WARP;
-		}
-		else
-		{
-			resources.driverType = D3D_DRIVER_TYPE_HARDWARE;
+			// 跳过硬件时不输出虚构的硬件尝试结果。
+			DiagnosticOutput::Line line;
+			line << "[Draw3Diag][device] final=failed hardware_attempted=" << enableHardwareAcceleration;
+			if (enableHardwareAcceleration)
+				line << " hardware_hresult=0x" << std::hex << static_cast<unsigned long>(hardwareResult) << std::dec;
+			line << " warp_hresult=0x" << std::hex << static_cast<unsigned long>(result) << std::dec << std::endl;
+			return false;
 		}
 
 		if (StartupEnvironmentDiagnosticsEnabled())
 		{
 			// 恢复启动时的设备环境输出，但不影响始终保留的错误诊断。
-			std::cout << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
-			std::cout << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
+			DiagnosticOutput::Line() << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
+			DiagnosticOutput::Line() << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
 		}
 
 		resources.dxgiDevice.Reset();
@@ -152,6 +168,47 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 		return true;
+	}
+
+	int RunGraphicsDeviceSelectionTest() noexcept
+	{
+		struct Case
+		{
+			bool enabled;
+			HRESULT hardwareResult, warpResult;
+			D3D_DRIVER_TYPE expectedDriver;
+			unsigned expectedAttempts;
+		};
+		constexpr Case cases[] = {
+			{ true, S_OK, E_NOTIMPL, D3D_DRIVER_TYPE_HARDWARE, 1 },
+			{ true, E_FAIL, S_OK, D3D_DRIVER_TYPE_WARP, 2 },
+			{ true, E_FAIL, E_NOTIMPL, D3D_DRIVER_TYPE_UNKNOWN, 2 },
+			{ false, E_FAIL, S_OK, D3D_DRIVER_TYPE_WARP, 1 },
+			{ false, S_OK, E_NOTIMPL, D3D_DRIVER_TYPE_UNKNOWN, 1 },
+		};
+		for (const auto& test : cases)
+		{
+			unsigned attempts = 0;
+			bool orderValid = true;
+			D3D_DRIVER_TYPE actual = D3D_DRIVER_TYPE_UNKNOWN;
+			const HRESULT result = CreateSelectedDevice(test.enabled, actual,
+				[&](D3D_DRIVER_TYPE requested)
+				{
+					const auto expected = test.enabled && attempts == 0
+						? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP;
+					orderValid = orderValid && requested == expected;
+					++attempts;
+					return requested == D3D_DRIVER_TYPE_HARDWARE ? test.hardwareResult : test.warpResult;
+				});
+			if (!orderValid || attempts != test.expectedAttempts || actual != test.expectedDriver ||
+				result != (test.enabled && SUCCEEDED(test.hardwareResult) ? test.hardwareResult : test.warpResult))
+			{
+				std::fputs("[Draw3DevicePolicy] FAIL: hardware/WARP selection or fallback order\n", stderr);
+				return 1;
+			}
+		}
+		std::fputs("[Draw3DevicePolicy] PASS: direct WARP, hardware preference and failure fallback\n", stderr);
+		return 0;
 	}
 
 	bool IsGraphicsDeviceLostError(HRESULT result) noexcept

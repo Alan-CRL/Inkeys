@@ -6,10 +6,11 @@ module;
 export module Inkeys.UI.Bar.RecallAttributeMotion;
 export import Inkeys.UI.Bar.RecallAttributeLayout;
 import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.Bar.EraserAttributeMotion;
 
 export namespace Inkeys::UI::Bar
 {
-	// 与 EraserSurfaceMotion 逐行一致的开合动画：几何 Back、透明度 Sine，时长由调用方传入默认 0.4s。
+	// 撤回属性只保留自身布局类型，开合时间线与几何解析直接复用共享属性实现。
 	struct RecallSurfacePose
 	{
 		double scale = 1, x = 0, y = 0;
@@ -22,59 +23,17 @@ export namespace Inkeys::UI::Bar
 	inline RecallSurfacePose ResolveRecallSurfacePose(RecallAttributeRect panel, RecallAttributeRect anchor,
 		double geometry, double compactWidth) noexcept
 	{
-		const double compact = (std::clamp)(compactWidth / (std::max)(1.0, panel.Width()), 0.01, 1.0);
-		// Back几何不裁到0..1；只防非正缩放，alpha在独立时间线上有界。
-		const double scale = (std::max)(0.001, compact + (1 - compact) * geometry);
-		const double cx = RecallRectCenterX(anchor) + (RecallRectCenterX(panel) - RecallRectCenterX(anchor)) * geometry;
-		const double cy = RecallRectCenterY(anchor) + (RecallRectCenterY(panel) - RecallRectCenterY(anchor)) * geometry;
-		return {scale, cx - RecallRectCenterX(panel) * scale, cy - RecallRectCenterY(panel) * scale};
+		const auto pose=ResolveEraserSurfacePose({panel.left,panel.top,panel.right,panel.bottom},
+			{anchor.left,anchor.top,anchor.right,anchor.bottom},geometry,compactWidth);
+		return {pose.scale,pose.x,pose.y};
 	}
 	inline RecallSurfacePose FitRecallSurfacePose(RecallSurfacePose pose, RecallAttributeRect shell, RecallAttributeRect work) noexcept
 	{
-		const auto actual = pose.Apply(shell);
-		if (actual.Width() <= work.Width()) pose.x += (std::clamp)(actual.left, work.left, work.right - actual.Width()) - actual.left;
-		if (actual.Height() <= work.Height()) pose.y += (std::clamp)(actual.top, work.top, work.bottom - actual.Height()) - actual.top;
-		return pose;
+		const auto fitted=FitEraserSurfacePose({pose.scale,pose.x,pose.y},
+			{shell.left,shell.top,shell.right,shell.bottom},{work.left,work.top,work.right,work.bottom});
+		return {fitted.scale,fitted.x,fitted.y};
 	}
-	class RecallSurfaceMotion
-	{
-	public:
-		bool Retarget(bool open, double duration, const BarUiTimelineClass* parent = nullptr)
-		{
-			if (open == requested_) return false;
-			requested_ = open; double phase = 0;
-			if (parent && parent->CanJoin()) { duration = parent->GetRemainingDuration(); phase = parent->GetProgress(); }
-			const auto geometry = open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
-			const auto opacity = open ? BarUiCurveEnum::EaseOutSine : BarUiCurveEnum::EaseInSine;
-			geometry_.SetTar(open ? 1 : 0, duration, std::nullopt, false, {geometry, geometry, phase, phase > 0});
-			opacity_.SetTar(open ? 1 : 0, duration, std::nullopt, false, {opacity, opacity, phase, phase > 0});
-			timeline_.Restart(duration); return true;
-		}
-		bool Advance(const BarUiAnimationAdvanceContextClass& context)
-		{
-			// 同一帧内反向只改目标；底层把dt<=0当作立即完成，此处保留当前姿态。
-			if (context.animationEnabled && !context.forceReplace && timeline_.IsActive() && (!std::isfinite(context.dtSeconds) || context.dtSeconds <= 0)) return true;
-			const auto g = BarUiAdvanceAnimation(geometry_, context), a = BarUiAdvanceAnimation(opacity_, context);
-			if (!context.animationEnabled) timeline_.Restart(0); else timeline_.Advance(context.dtSeconds, context.speedRate);
-			// 默认时长恰好落在整帧边界时消除浮点尾差，确保换边中点和绘制属性落在同一帧。
-			if (timeline_.IsActive() && timeline_.GetRemainingDuration() <= 0.000000001)
-			{
-				timeline_.Restart(0); geometry_.SetDirect(requested_ ? 1 : 0); opacity_.SetDirect(requested_ ? 1 : 0);
-				return true;
-			}
-			return g.changed || g.active || a.changed || a.active || timeline_.IsActive();
-		}
-		bool Active() const noexcept { return timeline_.IsActive(); }
-		bool Visible() const noexcept { return requested_ || timeline_.IsActive() || static_cast<double>(opacity_.val) > 0; }
-		double Geometry() const noexcept { return geometry_.val; }
-		double Opacity() const noexcept { return (std::clamp)(static_cast<double>(opacity_.val), 0.0, 1.0); }
-		const BarUiTimelineClass& Timeline() const noexcept { return timeline_; }
-	private:
-		bool requested_ = false;
-		BarUiValueClass geometry_{0.0};
-		BarUiPctClass opacity_{0.0};
-		BarUiTimelineClass timeline_;
-	};
+	using RecallSurfaceMotion = BarAttributePanelMotion;
 	struct RecallAttributePresentation
 	{
 		RecallAttributeLayout geometry;

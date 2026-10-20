@@ -8,6 +8,23 @@
 
 namespace Inkeys::UI::Bar
 {
+	enum class BarWhiteboardButtonAction { Open, Close, Restore };
+	[[nodiscard]] constexpr BarWhiteboardButtonAction ResolveBarWhiteboardButtonAction(
+		bool requested, bool minimized) noexcept
+	{
+		return minimized ? BarWhiteboardButtonAction::Restore
+			: requested ? BarWhiteboardButtonAction::Close : BarWhiteboardButtonAction::Open;
+	}
+	template<class Restore, class Request>
+	void DispatchBarWhiteboardButtonAction(bool requested, bool minimized,
+		Restore&& restore, Request&& request)
+	{
+		const auto action = ResolveBarWhiteboardButtonAction(requested, minimized);
+		if (action == BarWhiteboardButtonAction::Restore)
+			// 恢复失败也保持原白板，不回落成退出或重新进入事务。
+			std::forward<Restore>(restore)();
+		else std::forward<Request>(request)(action == BarWhiteboardButtonAction::Open);
+	}
 	struct BarA2Projection
 	{
 		bool whiteboardTwoTwo = false;
@@ -25,6 +42,7 @@ namespace Inkeys::UI::Bar
 	{
 		if (whiteboardActive) return { whiteboardFeatureEnabled, false, false };
 		BarA2Projection result;
+		result.whiteboardTwoTwo = whiteboardFeatureEnabled;
 		result.freezeVisible = freezeAvailable && !presentationActive;
 		result.endShowVisible = presentationActive;
 		// 穿透依附定格的位置；空页选择不需要穿透，PPT 禁用定格时让穿透独占一格。

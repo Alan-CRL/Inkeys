@@ -1,9 +1,29 @@
 using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Runtime.InteropServices;
 
 namespace PptCOM.Tests
 {
+    // 没有可反射 CLR 属性，必须经生产 DLR 分派；同时记录命令与集合访问。
+    public sealed class DynamicOnlyNode : DynamicObject
+    {
+        public readonly Dictionary<string, object> Values = new Dictionary<string, object>();
+        public readonly List<object> Items = new List<object>();
+        public readonly List<string> Calls = new List<string>();
+        public override bool TryGetMember(GetMemberBinder binder, out object result)
+        { return Values.TryGetValue(binder.Name, out result); }
+        public override bool TrySetMember(SetMemberBinder binder, object value)
+        { Values[binder.Name] = value; return true; }
+        public override bool TryInvokeMember(InvokeMemberBinder binder, object[] args, out object result)
+        {
+            if (binder.Name == "Item") { result = Items[Convert.ToInt32(args[0]) - 1]; return true; }
+            Calls.Add(binder.Name); result = null; return true;
+        }
+        public override bool TryGetIndex(GetIndexBinder binder, object[] indexes, out object result)
+        { result = Items[Convert.ToInt32(indexes[0]) - 1]; return true; }
+    }
+
     internal sealed class FakeNode
     {
         public FakeNode(string name) { Name = name; }
@@ -21,6 +41,7 @@ namespace PptCOM.Tests
         public readonly Dictionary<string, int> Acquired = new Dictionary<string, int>();
         public readonly Dictionary<string, int> Released = new Dictionary<string, int>();
         public readonly List<string> ReleaseOrder = new List<string>();
+        public int ReleaseErrors;
 
         private void ThrowIfRequested(string stage)
         {
@@ -62,6 +83,13 @@ namespace PptCOM.Tests
             Invoked.Add(stage);
         }
 
+        public void SetProperty(object target, string name, object value)
+        {
+            FakeNode node = (FakeNode)target;
+            ThrowIfRequested(node.Name + "." + name);
+            node.Properties[name] = value;
+        }
+
         public bool IsComObject(object value) { return value is FakeNode; }
 
         public void Release(object value)
@@ -73,13 +101,17 @@ namespace PptCOM.Tests
             int released;
             Released.TryGetValue(node.Name, out released);
             if (released >= acquired)
+            {
+                ++ReleaseErrors;
                 throw new InvalidOperationException("release without acquisition: " + node.Name);
+            }
             Released[node.Name] = released + 1;
             ReleaseOrder.Add(node.Name);
         }
 
         public bool IsBalanced()
         {
+            if (ReleaseErrors != 0) return false;
             foreach (KeyValuePair<string, int> pair in Acquired)
             {
                 int released;
@@ -290,7 +322,9 @@ namespace PptCOM.Tests
             Check(Convert.ToInt32(accessor.GetProperty(dispatchWindow, "HWND")) == 456,
                 "production accessor preserves non-PIA HWND dispatch fallback");
             int beforeName = typedCalls;
-            Check((string)accessor.GetProperty(dispatchWindow, "Name") == "dispatch-window" &&
+            var dynamicName = new DynamicOnlyNode();
+            dynamicName.Values["Name"] = "dispatch-window";
+            Check((string)accessor.GetProperty(dynamicName, "Name") == "dispatch-window" &&
                 typedCalls == beforeName, "typed HWND path does not intercept other properties");
             Check(Convert.ToInt32(new MarshalLateBoundComAccessor().GetProperty(dispatchWindow, "HWND")) == 456,
                 "default production adapter falls back for non-PIA object");
@@ -308,13 +342,21 @@ namespace PptCOM.Tests
             }
         }
 
-        public static int Main()
+        public static int Main(string[] args)
         {
+            TestProductionDynamicAccessor();
             TestProductionHwndAccessor();
             TestSuccess("Microsoft PowerPoint", "PowerPoint");
             TestSuccess("WPS Presentation", "Wps");
             TestFallbackAndFailures();
             failures += SlideShowSessionTests.Run();
+            failures += ManagedCompatibilityTests.Run();
+            for (int index = 0; index < args.Length; ++index)
+            {
+                if (args[index] == "--dispatch-fixture" && index + 1 < args.Length)
+                    failures += DispatchFixtureTests.Run(args[++index]);
+                else Check(false, "unknown/incomplete test argument " + args[index]);
+            }
             if (failures != 0)
             {
                 Console.Error.WriteLine("FAILED count=" + failures);
@@ -322,6 +364,44 @@ namespace PptCOM.Tests
             }
             Console.WriteLine("PASS PptCOM descriptor ownership and session/owner contracts");
             return 0;
+        }
+
+        private static void TestProductionDynamicAccessor()
+        {
+            try
+            {
+                var application = new DynamicOnlyNode();
+                var presentation = new DynamicOnlyNode();
+                var window = new DynamicOnlyNode();
+                var view = new DynamicOnlyNode();
+                var slides = new DynamicOnlyNode();
+                var slide = new DynamicOnlyNode();
+                application.Values["Name"] = "WPP";
+                application.Values["Caption"] = "WPP";
+                presentation.Values["Name"] = "Deck.ppt";
+                presentation.Values["FullName"] = "C:\\Deck.ppt";
+                presentation.Values["Slides"] = slides;
+                window.Values["View"] = view;
+                view.Values["State"] = 1;
+                view.Values["Slide"] = slide;
+                slide.Values["SlideID"] = 100;
+                slide.Values["SlideIndex"] = 1;
+                slides.Values["Count"] = 1;
+                slides.Items.Add(slide);
+                var accessor = new MarshalLateBoundComAccessor(delegate { return (int?)0; });
+                string pageStatus;
+                var descriptor = new PresentationDescriptorReader(accessor, null).ReadShow(
+                    application, presentation, window, 5, out pageStatus);
+                Check(descriptor.status == "StableSlideIds" && pageStatus == "Valid" &&
+                    descriptor.currentPage == 1 && descriptor.slideShowHwnd == 0,
+                    "production dynamic-only graph survives typed interface absence");
+                accessor.InvokeMethod(view, "Next");
+                Check(view.Calls.Contains("Next"), "production command uses dynamic");
+            }
+            catch (Exception error)
+            {
+                Check(false, "production dynamic-only adapter: " + error.GetType().Name);
+            }
         }
     }
 }

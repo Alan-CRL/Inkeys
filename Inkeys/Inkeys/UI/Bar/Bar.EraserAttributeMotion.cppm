@@ -35,7 +35,25 @@ export namespace Inkeys::UI::Bar
 		if(actual.Height()<=work.Height())pose.y+=(std::clamp)(actual.top,work.top,work.bottom-actual.Height())-actual.top;
 		return pose;
 	}
-	class EraserSurfaceMotion
+	// 分页、属性面板可共用的保守回弹包络；父/子矩形使用同一曲线极值与姿态组合。
+	inline EraserAttributeRect ResolveEraserPopupEnvelope(EraserAttributeRect panel,EraserAttributeRect anchor,
+		double compactWidth, std::optional<EraserAttributeRect> parentPanel=std::nullopt,
+		std::optional<EraserAttributeRect> parentAnchor=std::nullopt) noexcept
+	{
+		const auto range=BarUiGetCurveExtrema(BarUiCurveEnum::EaseOutBack);
+		const double phases[]={0.0,1.0,range.maximum,1.0-range.maximum};
+		EraserAttributeRect envelope=panel;
+		for(const double child:phases) for(const double parent:phases) {
+			auto pose=ResolveEraserSurfacePose(panel,anchor,child,compactWidth);
+			if(parentPanel && parentAnchor) pose=ComposeEraserPose(
+				ResolveEraserSurfacePose(*parentPanel,*parentAnchor,parent,compactWidth),pose);
+			const auto r=pose.Apply(panel);
+			envelope.left=(std::min)(envelope.left,r.left); envelope.top=(std::min)(envelope.top,r.top);
+			envelope.right=(std::max)(envelope.right,r.right); envelope.bottom=(std::max)(envelope.bottom,r.bottom);
+		}
+		return envelope;
+	}
+	class BarAttributePanelMotion
 	{
 	public:
 		bool Retarget(bool open,double duration,const BarUiTimelineClass* parent=nullptr)
@@ -74,6 +92,31 @@ export namespace Inkeys::UI::Bar
 		BarUiPctClass opacity_{0.0};
 		BarUiTimelineClass timeline_;
 	};
+	using EraserSurfaceMotion = BarAttributePanelMotion;
+	struct BarAttributePanelFrame
+	{
+		EraserSurfacePose pose;
+		double opacity = 0.0;
+		bool visible = false;
+	};
+	// 固定属性与白板面板统一从触发按钮解析几何、父级姿态及透明度，不各自编排递归图。
+	inline BarAttributePanelFrame ResolveBarAttributePanelFrame(
+		const BarAttributePanelMotion& motion, EraserAttributeRect panel,
+		EraserAttributeRect anchor, double compactWidth,
+		const BarAttributePanelFrame* parent = nullptr) noexcept
+	{
+		BarAttributePanelFrame frame;
+		frame.pose = ResolveEraserSurfacePose(panel, anchor, motion.Geometry(), compactWidth);
+		frame.opacity = motion.Opacity();
+		frame.visible = motion.Visible() && frame.opacity > 0.000001;
+		if (parent)
+		{
+			frame.pose = ComposeEraserPose(parent->pose, frame.pose);
+			frame.opacity *= parent->opacity;
+			frame.visible = frame.visible && parent->visible && frame.opacity > 0.000001;
+		}
+		return frame;
+	}
 	struct EraserAttributePresentation
 	{
 		EraserAttributeLayout geometry;

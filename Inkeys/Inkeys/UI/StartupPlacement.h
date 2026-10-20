@@ -33,7 +33,8 @@ namespace Inkeys::UI
 	// width/height 是包含描边的可见包络，不包含 ULW 透明留白；pixelScale 已含 DPI×zoom。
 	[[nodiscard]] inline RECT ResolveStartupPlacementBounds(StartupPlacement placement,
 		const RECT& monitorBounds, const RECT& workArea, double visibleWidthDip,
-		double visibleHeightDip, double pixelScale, double dpiScale = 1.0) noexcept
+		double visibleHeightDip, double pixelScale, double dpiScale = 1.0,
+		double desktopDockLine = std::numeric_limits<double>::quiet_NaN()) noexcept
 	{
 		pixelScale = std::isfinite(pixelScale) && pixelScale > 0.0 ? pixelScale : 1.0;
 		const LONG width = (std::max)(1L, static_cast<LONG>(std::lround(
@@ -51,7 +52,7 @@ namespace Inkeys::UI
 		{
 			const LONG left = monitor.left + (monitor.right - monitor.left - width) / 2;
 			const LONG bottom = static_cast<LONG>(std::lround(
-				Bar::ResolveBarBottomDockLine(monitor, work, 0.0, dpiScale)));
+				Bar::ResolveBarBottomDockLine(monitor, work, 0.0, dpiScale, desktopDockLine)));
 			return { left, bottom - height, left + width, bottom };
 		}
 		const LONG margin = static_cast<LONG>(std::lround(StartupFloatingMarginDip * pixelScale));

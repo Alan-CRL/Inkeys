@@ -17,6 +17,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,6 +28,7 @@ import draw3.uink_file;
 
 #if defined(DRAW3_TESTING)
 void FailNextPresentationCollectionAllocationForTesting() noexcept;
+bool CancelNextPresentationCollectionAllocationForTesting() noexcept;
 std::uint64_t PresentationCollectionAllocationFailuresForTesting() noexcept;
 #endif
 
@@ -2830,6 +2832,215 @@ namespace
 		fs::remove_all(root, error);
 	}
 
+#if defined(DRAW3_TESTING)
+	struct CompletionAllocationActor
+	{
+		PresentationCompletionTestStage expected;
+		unsigned calls = 0;
+		unsigned allocationFreePublications = 0;
+	};
+
+	void CompletionAllocationHook(void* context, PresentationCompletionTestStage stage) noexcept
+	{
+		auto& actor = *static_cast<CompletionAllocationActor*>(context);
+		if (stage == actor.expected &&
+			(actor.calls == 0 || stage == PresentationCompletionTestStage::PublishBegin))
+		{
+			++actor.calls;
+			FailNextPresentationCollectionAllocationForTesting();
+		}
+		if (stage == PresentationCompletionTestStage::PublishEnd &&
+			actor.expected == PresentationCompletionTestStage::PublishBegin &&
+			CancelNextPresentationCollectionAllocationForTesting())
+			++actor.allocationFreePublications;
+	}
+
+	void TestCompletionAllocationFailuresRetainTerminal(TestState& state)
+	{
+		const auto root = MakeRoot();
+		const auto target = MakeTarget();
+		const auto snapshot = MakeSnapshot(target, true);
+		PresentationAutoSaveService service;
+		ResetPresentationAutoSaveTestFaultInjection();
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PRESENTATION_CHECK(state, service.SubmitSave({ target, 1, snapshot }) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		PRESENTATION_CHECK(state, TakeCompletion(service).status == PresentationPersistenceStatus::Committed);
+		const auto files = CapturePresentationFiles(root);
+		PRESENTATION_CHECK(state, files.has_value());
+		if (!files) return;
+
+		for (const auto stage : { PresentationCompletionTestStage::RequestCompletion,
+			PresentationCompletionTestStage::RequestIdentity, PresentationCompletionTestStage::RequestQueueNode })
+		{
+			for (const bool save : { false, true })
+			{
+				ResetPresentationAutoSaveTestFaultInjection();
+				PRESENTATION_CHECK(state, service.Start(root.wstring()));
+				const auto before = service.Diagnostics();
+				const auto failures = PresentationCollectionAllocationFailuresForTesting();
+				CompletionAllocationActor actor{ stage };
+				PresentationAutoSaveTestFaultInjection faults;
+				faults.completionHook = CompletionAllocationHook;
+				faults.completionContext = &actor;
+				SetPresentationAutoSaveTestFaultInjection(faults);
+				const auto submitted = save ? service.SubmitSave({ target, 2, snapshot })
+					: service.SubmitLoad({ target });
+				service.CloseAndDrain();
+				std::shared_ptr<const PresentationPersistenceCompletion> completion;
+				PRESENTATION_CHECK(state, submitted == PresentationPersistenceSubmitStatus::Invalid &&
+					actor.calls == 1 && PresentationCollectionAllocationFailuresForTesting() == failures + 1 &&
+					service.Diagnostics().accepted == before.accepted &&
+					service.Diagnostics().replacedPending == before.replacedPending &&
+					!service.TryTakeCompletion(completion) && PresentationFilesUnchanged(*files));
+			}
+		}
+
+		for (const auto kind : { PresentationLoadKind::Current, PresentationLoadKind::PreviousInterval })
+		{
+			ResetPresentationAutoSaveTestFaultInjection();
+			PRESENTATION_CHECK(state, service.Start(root.wstring()));
+			PresentationLoadRequest request{ target };
+			request.kind = kind;
+			request.slotGeneration = 123;
+			if (kind == PresentationLoadKind::PreviousInterval)
+				request.pageGuid = snapshot.canvases.front().pageGuid;
+			CompletionAllocationActor actor{ PresentationCompletionTestStage::WorkerOperation };
+			PresentationAutoSaveTestFaultInjection faults;
+			faults.completionHook = CompletionAllocationHook;
+			faults.completionContext = &actor;
+			SetPresentationAutoSaveTestFaultInjection(faults);
+			const auto failures = PresentationCollectionAllocationFailuresForTesting();
+			PRESENTATION_CHECK(state, service.SubmitLoad(request) == PresentationPersistenceSubmitStatus::Accepted);
+			service.CloseAndDrain();
+			std::shared_ptr<const PresentationPersistenceCompletion> completion;
+			PRESENTATION_CHECK(state, service.TryTakeCompletion(completion) && completion &&
+				completion->status == PresentationPersistenceStatus::IoError &&
+				completion->operation == PresentationPersistenceOperation::Load &&
+				completion->target == target && completion->slotGeneration == request.slotGeneration &&
+				completion->loadKind == kind && completion->pageGuid == request.pageGuid &&
+				completion->intervalOrdinal == request.intervalOrdinal && !completion->loadedSnapshot &&
+				actor.calls == 1 && PresentationCollectionAllocationFailuresForTesting() == failures + 1 &&
+				PresentationFilesUnchanged(*files));
+		}
+
+		ResetPresentationAutoSaveTestFaultInjection();
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		CompletionAllocationActor actor{ PresentationCompletionTestStage::PublishBegin };
+		PresentationAutoSaveTestFaultInjection faults;
+		faults.completionHook = CompletionAllocationHook;
+		faults.completionContext = &actor;
+		SetPresentationAutoSaveTestFaultInjection(faults);
+		const auto failures = PresentationCollectionAllocationFailuresForTesting();
+		for (std::uint64_t generation : { 124, 125 })
+		{
+			PresentationLoadRequest request{ target };
+			request.slotGeneration = generation;
+			PRESENTATION_CHECK(state, service.SubmitLoad(std::move(request)) == PresentationPersistenceSubmitStatus::Accepted);
+		}
+		service.CloseAndDrain();
+		PRESENTATION_CHECK(state, actor.calls == 2 && actor.allocationFreePublications == 2);
+		for (std::uint64_t generation : { 124, 125 })
+		{
+			std::shared_ptr<const PresentationPersistenceCompletion> completion;
+			FailNextPresentationCollectionAllocationForTesting();
+			const bool took = service.TryTakeCompletion(completion);
+			const bool didNotAllocate = CancelNextPresentationCollectionAllocationForTesting();
+			PRESENTATION_CHECK(state, took && didNotAllocate && completion &&
+				completion->status == PresentationPersistenceStatus::Loaded &&
+				completion->slotGeneration == generation && completion->target == target &&
+				completion->loadedSnapshot && completion->loadedSnapshot->fileGuid == snapshot.fileGuid &&
+				!completion->loadedSnapshot->canvases.front().strokes.empty());
+		}
+		PRESENTATION_CHECK(state, PresentationCollectionAllocationFailuresForTesting() == failures &&
+			PresentationFilesUnchanged(*files));
+		ResetPresentationAutoSaveTestFaultInjection();
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		std::shared_ptr<const PresentationPersistenceCompletion> stale;
+		PRESENTATION_CHECK(state, !service.TryTakeCompletion(stale));
+		service.CloseAndDrain();
+		std::error_code error;
+		fs::remove_all(root, error);
+	}
+#endif
+
+	void TestContendedIndexMutexReturnsFailureAndRecovers(TestState& state)
+	{
+		const fs::path root = MakeRoot();
+		const auto target = MakeTarget();
+		ResetPresentationAutoSaveTestFaultInjection();
+		PresentationAutoSaveService service;
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PRESENTATION_CHECK(state, service.SubmitSave({ target, 1,
+			MakeSnapshot(target, true) }) == PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		PRESENTATION_CHECK(state, TakeCompletion(service).status ==
+			PresentationPersistenceStatus::Committed);
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+
+		// 从实际隔离目录构造跨进程锁名；不能使用用户的存储目录。
+		const auto baseRoot = fs::absolute(root / L"presentation").wstring();
+		std::wstring folded(baseRoot.size(), L'\0');
+		const int foldedCount = LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_LOWERCASE,
+			baseRoot.data(), static_cast<int>(baseRoot.size()), folded.data(),
+			static_cast<int>(folded.size()), nullptr, nullptr, 0);
+		PRESENTATION_CHECK(state, foldedCount != 0);
+		std::uint64_t hash = 14695981039346656037ull;
+		for (const auto byte : std::span(reinterpret_cast<const std::uint8_t*>(
+			folded.data()), folded.size() * sizeof(wchar_t)))
+		{
+			hash ^= byte;
+			hash *= 1099511628211ull;
+		}
+		wchar_t mutexName[96] = {};
+		swprintf_s(mutexName, L"Local\\Inkeys_Draw3_Presentation_Index_%016llx",
+			static_cast<unsigned long long>(hash));
+		HANDLE heldMutex = CreateMutexW(nullptr, FALSE, mutexName);
+		const DWORD acquired = heldMutex ? WaitForSingleObject(heldMutex, 1000) : WAIT_FAILED;
+		PRESENTATION_CHECK(state, acquired == WAIT_OBJECT_0);
+		if (acquired == WAIT_OBJECT_0 || acquired == WAIT_ABANDONED)
+		{
+			PRESENTATION_CHECK(state, service.SubmitSave({ target, 2,
+				MakeSnapshot(target, false) }) == PresentationPersistenceSubmitStatus::Accepted);
+			PRESENTATION_CHECK(state, service.SubmitLoad({ target }) ==
+				PresentationPersistenceSubmitStatus::Accepted);
+			int completions = 0;
+			PresentationPersistenceCompletion completion;
+			const ULONGLONG deadline = GetTickCount64() + 5000;
+			while (completions < 2 && GetTickCount64() < deadline)
+			{
+				if (!service.TryTakeCompletion(completion)) { Sleep(5); continue; }
+				PRESENTATION_CHECK(state, completion.status == PresentationPersistenceStatus::IoError);
+				PRESENTATION_CHECK(state, completion.operation == (completions == 0
+					? PresentationPersistenceOperation::Save : PresentationPersistenceOperation::Load));
+				PRESENTATION_CHECK(state, !completion.loadedSnapshot);
+				++completions;
+			}
+			PRESENTATION_CHECK(state, completions == 2);
+			// 先释放再 drain：旧 INFINITE 实现红测失败也不会挂住测试清理。
+			ReleaseMutex(heldMutex);
+			if (completions != 2)
+			{
+				service.CloseAndDrain();
+				while (service.TryTakeCompletion(completion)) {}
+				PRESENTATION_CHECK(state, service.Start(root.wstring()));
+			}
+			PRESENTATION_CHECK(state, service.SubmitLoad({ target }) ==
+				PresentationPersistenceSubmitStatus::Accepted);
+			service.CloseAndDrain();
+			const auto loaded = TakeCompletion(service);
+			PRESENTATION_CHECK(state, loaded.status == PresentationPersistenceStatus::Loaded &&
+				loaded.mutationRevision == 1 && loaded.loadedSnapshot &&
+				!loaded.loadedSnapshot->canvases.empty() &&
+				loaded.loadedSnapshot->canvases.front().strokes.size() == 1);
+		}
+		else service.CloseAndDrain();
+		if (heldMutex) CloseHandle(heldMutex);
+		std::error_code error;
+		fs::remove_all(root, error);
+	}
+
 	void TestConcurrentWritersShareCaseFoldedMutex(TestState& state)
 	{
 		const fs::path root = MakeRoot();
@@ -3410,7 +3621,11 @@ int RunPresentationAutoSaveTests()
 	TestMultiplePresentationsStayIsolated(state);
 	TestLatestWinsPendingSave(state);
 	TestConcurrentWritersShareCaseFoldedMutex(state);
+	TestContendedIndexMutexReturnsFailureAndRecovers(state);
 	TestWorkerExceptionBecomesCompletion(state);
+#if defined(DRAW3_TESTING)
+	TestCompletionAllocationFailuresRetainTerminal(state);
+#endif
 	TestClearIntervalsPersistAndLoad(state);
 	ResetPresentationAutoSaveTestFaultInjection();
 	return state.failures;

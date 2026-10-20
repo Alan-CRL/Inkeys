@@ -383,13 +383,15 @@ int RunRecallAttributeTests()
 				&& advance.find("b.icon.InitializationFromResource(L\"UI\", iconResource)") != std::string::npos
 				&& advance.find("b.name.SetStringImmediate(label)") != std::string::npos,
 				"popup command identity commits its matching SVG and label together without showing the previous action");
-			expect(advance.find("RetargetBarButtonInteractionVisual(b, presented, commandEnabled, false") != std::string::npos
+			auto compactAdvance = advance;
+			std::erase_if(compactAdvance, [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; });
+			expect(compactAdvance.find("RetargetBarButtonInteractionVisual(b,presented,commandEnabled,false") != std::string::npos
 				&& advance.find("ResolveRecallCommandContentColor") == std::string::npos,
 				"popup uses the same theme and disabled opacity as Clear and Freeze");
-			expect(advance.find("b.icon.AdvanceContentTransition(dt, speed)") != std::string::npos
-				&& advance.find("b.name.AdvanceContentTransition(dt, speed)") != std::string::npos
-				&& advance.find("active_ |= iconContentAdvanced || nameContentAdvanced") != std::string::npos,
-				"production popup advances SVG and Word targets and keeps rendering until their content is committed");
+			// 内容推进已移入经过运行时测试的公共按钮函数，属性面板只负责传入当帧上下文。
+			expect(compactAdvance.find("AdvanceBarButtonVisual(b,buttonFrame)") != std::string::npos
+				&& compactAdvance.find("changed_|=advanced.changed;active_|=advanced.active") != std::string::npos,
+				"production popup delegates content advancement and continued frames to the shared button runtime");
 		}
 		// 源级合同仅补充真实Bar回归：主栏派生唯一应用，业务事件不能再写有效属性。
 		std::ifstream buttonFile(source.parent_path() / "Bar.Button.cpp", std::ios::binary);
@@ -407,9 +409,10 @@ int RunRecallAttributeTests()
 				"final grids and visibility share the same compact Selection and history inputs");
 		}
 		const auto eventsBegin = buttons.find("void BarUISetClass::NoteRecallHistoryAvailability(");
-		expect(eventsBegin != std::string::npos
-			&& buttons.substr(eventsBegin).find("->size =") == std::string::npos
-			&& buttons.substr(eventsBegin).find("->hide =") == std::string::npos
+		const auto eventsEnd = buttons.find("namespace Inkeys::UI::Bar", eventsBegin);
+		expect(eventsBegin != std::string::npos && eventsEnd != std::string::npos
+			&& buttons.substr(eventsBegin, eventsEnd-eventsBegin).find("->size =") == std::string::npos
+			&& buttons.substr(eventsBegin, eventsEnd-eventsBegin).find("->hide =") == std::string::npos
 			&& buttons.find("ApplyRecallChromeVisualsLocked") == std::string::npos,
 			"history notifications and idle expiry only update business state, never main-button grids");
 		const auto loadBegin = buttons.find("void BarButtonSetClass::Load()");
