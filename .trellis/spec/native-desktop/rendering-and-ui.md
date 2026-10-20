@@ -433,12 +433,12 @@ constexpr bool IsPptDirectionActionRepeatable(
 - 每个分页 HWND 独立持有 D2D target/`BarUIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 三枚实例跨 `PptCompact/WhiteboardExpanded` 稳定，Middle 只切 `Hidden/PptCompact`。
 - `BarPageSurface` 只保存每窗分页列表、固定属性数组、PPT-only DragHandle 和公共指针状态的路由；不得保留动态 Widget 构建或独立视觉算法。标准按钮内部位置、hover/press、内容转换、draw、圆角 hit 和动画值调用上述 Bar 入口，适配器只把共享结果映射到本窗 damage/present。
 - 分页标准按钮的 SVG/PNG 位图与 renderer 字体/遮罩缓存按目标及设备代次持有，不构造完整主栏 owner。显式 `ReleaseDeviceResources()` 与成功的 epoch/target 隐式重建须清理相应设备资源；创建失败保留旧资源和待绘制 damage。只有内容、尺寸、颜色或设备域变化才重建对应资源，普通帧不得反复失效。
-- PPT 外框：Bottom `165x42.5 DIP`，Middle `42.5x165 DIP`；Drag slot `10 DIP`、Arrow `32.5x32.5 DIP`、Page 横向 `70x32.5 DIP`/竖向 `32.5x70 DIP`，两侧外边距与真实按钮间距 `5 DIP`。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 主体左侧 `305x80 DIP`（Previous/Page/Next/More）、右侧 `230x80 DIP`（Previous/Page/Next），均使用标准 `70x70 DIP` `2x2` 按钮；左侧菜单另按当前动画向上扩展同一 HWND 包络。
+- PPT 横纵分页默认统一使用白板同源的 `70x70 DIP` `2x2` 按钮：Bottom主体 `240x80 DIP`，Middle主体 `80x240 DIP`，保留 `10 DIP` Drag slot及 `5 DIP` 外边距/按钮间距。尺寸与四槽几何来自共享Bar尺寸源；`BarPptCompactPaginationEnabled=false` 禁用原32.5DIP路径，原紧凑布局、字体与分支继续保留。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 主体左侧 `305x80 DIP`（Previous/Page/Next/More）、右侧 `230x80 DIP`（Previous/Page/Next）；左侧菜单另按当前动画向上扩展同一 HWND 包络。
 - 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `BarButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。分页外框和 Main Bar 外框都保持背景 Shape 默认 `frameCursorLightIntensityScale = 1.0`，不得误用按钮的 `BarButtonCursorLightIntensity`。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
 - `DrawBarButtonVisual` 的显式 `inherit` 是按钮父坐标唯一真值。入口必须先同步 `button.inhX/inhY`，再通过 `ResolveBarButtonChildTopLeft` 解析 SVG、主文字和次文字；Main Bar dirty 与最终 draw 调用同一继承准备入口。禁止读取默认或上一帧父缓存后再把显式 `inherit` 只用于背景 Shape。
 - 四个 PageControl HWND 与 Bar HWND 共同构成第三光源的实际消息接收窗口集合。真实鼠标进入分页 HWND 时只通知 Main Bar 激活既有状态机；离开时由 Main Bar 根据 `WindowFromPoint` 决定 `Inside/Grace`。Raw Input 和 5 秒 timer 始终以 Bar HWND 为 owner；分页只发布成功呈现的屏幕边界用于 240px 邻域裁剪，隐藏或提交失败不得发布假边界。
-- Page 在三种形态中是同一实例。横向页码对加粗当前页与常规 `/总页数` 做整体测量并居中；竖向使用上下行并整体居中；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。Page 数值使用公共即时内容更新：取消旧文字 transition、同帧替换主/次字符串，不调用 `TransitionToString`；PPT/WB 模式变化中的文字槽、字号与按钮几何仍按共享动画从当前值连续重定向，不能因替换字符串而跳到终态。PPT Page 在系统拖动阈值内短按并仍命中时调用既有 `ViewShow` 打开预览，Whiteboard Page 保持 no-op；两者都使用标准 hover/press。Arrow/Add SVG 与语义标签继续使用共享内容转换，不得因即时数字策略被关闭动画。
-- 普通 Previous/Next 始终保留同一 `barMore` SVG 对象，只动画尺寸/位置/角度及 Whiteboard 标签；不得为同资源启动替换。`barMore` 的 `0°` 基准朝上，`MiddleLeft/MiddleRight` 必须统一使用 Previous `0°`（向上）、Next `180°`（向下），不得按左右侧镜像；Bottom PPT/Whiteboard 继续使用 Previous `-90°`、Next `90°`，Whiteboard Add 使用 `0°`。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才用共享内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”，并与几何同批并行推进。
+- Page 在三种形态中是同一实例。PPT横纵分页与Whiteboard默认均使用 `PageTwoTwo` 标准 `2x2` 双行槽；原紧凑横向整体测量及竖向页码分支保留，由同一紧凑开关禁用。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。Page 数值使用公共即时内容更新：取消旧文字 transition、同帧替换主/次字符串，不调用 `TransitionToString`；PPT/WB 模式变化中的文字槽、字号与按钮几何仍按共享动画从当前值连续重定向，不能因替换字符串而跳到终态。PPT Page 在系统拖动阈值内短按并仍命中时调用既有 `ViewShow` 打开预览，Whiteboard Page 保持 no-op；两者都使用标准 hover/press。Arrow/Add SVG 与语义标签继续使用共享内容转换，不得因即时数字策略被关闭动画。
+- 普通 Previous/Next 始终保留同一 `barMore` SVG 对象，只动画尺寸/位置/角度及标准按钮标签；不得为同资源启动替换。`barMore` 的 `0°` 基准朝上，`MiddleLeft/MiddleRight` 必须统一使用 Previous `0°`（向上）、Next `180°`（向下），不得按左右侧镜像；Bottom PPT/Whiteboard 继续使用 Previous `-90°`、Next `90°`，Whiteboard Add 使用 `0°`。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才用共享内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”，并与几何同批并行推进。
 - EndShow A2 与 PageControl 必须共用主栏 `UI/barEndShow` SVG；深色主题由 `TextPrimary` 着色为白色，资源本身遵循主栏 `24x24` 画布、圆角端点/连接和相近线宽，不得继续用固定黑色 `ppt3` PNG。PageControl 仅在 UI 发布态 `totalPage > 0 && currentPage < 0` 时视为结束放映页：Bottom/Middle 的稳定 Next 实例通过现有 Animated 中点内容转换把 `barMore` 切为正向 `0°` 的 `barEndShow`，状态离开结束页后反向切回各 surface 的箭头角度；未知 `-1/-1` 不得误判。同一快照必须让 `ResolvePptDirectionAction` 把结束页 Next 解析为 `EndShow`，并通过 `PptCallbacks::endShow` 直接向 PPT 业务线程退出队列投递，不经过主栏确认 dispatcher；仅主栏 EndShow 点击确认。有效页仍解析为 `NextPage`。会话身份/失败/输入门禁见 [PPT 当前合同](../ppt-interop/native-session-ui3.md)。
 - DragHandle 是 PageControl 自有且仅 PptCompact 存在的 shape/hit region，不属于 Bar 按钮，无 hover/press/click/selected/content 视觉。PPT 成对拖动可从 DragHandle、Page 和未被 Previous/Next 占用的真实圆角背景开始；透明 presentation margin、圆角外像素和 diffuse 光晕继续 `HTTRANSPARENT`，不能把整个矩形 HWND 当作背景。Previous/Next 永远是纯按钮。Page 按下先产生标准 press，超过 `SM_CXDRAG/SM_CYDRAG` 对应系统阈值后取消 press 并转为拖动，阈值内且仍命中 Page 时抬起调用 `ViewShow`，不写位置。Up 必须先验证来源归属，再使用该事件的完整屏幕点按同一阈值采纳最终候选；只有 Up 才越阈值的 Page/background 也按最终拖动处理，不能误触预览。Whiteboard 不创建 DragHandle 或 drag candidate。
 - Bar 与 PageControl 的原生 Down/Move/Up 均按值进入唯一交互 worker；HWND owner 固化采样时间、来源与精确捕获票据，PageControl 只读取成功呈现快照完成准入，业务由 worker 推进。只有连续/拖动路径准备私有 Raw 补充，原生 Up 与 Raw Up 按同一归属去重；Raw 不可用不能阻断普通点击，未过阈值的 Raw Up 不能点击。来源/失败/时序合同见 [ui-pointer-session.md](ui-pointer-session.md)。
@@ -460,7 +460,7 @@ constexpr bool IsPptDirectionActionRepeatable(
 | 条件 | 必须行为 |
 | --- | --- |
 | Main Bar 与 PageControl 对相同 button request/state/time 结果不同 | 测试失败；修共享实现，禁止在 PageControl 加补偿常量 |
-| PPT Arrow 进入 Whiteboard Arrow | 保留同一 `barMore` SVG，只缩放/移动并显示标签 |
+| PPT Arrow 进入 Whiteboard Arrow | 保留同一 `barMore` SVG与标准2×2按钮，从当前尺度/位置连续重定向，标签不重建按钮 |
 | Whiteboard Next Arrow↔Add | 同一按钮在同一批次转换 SVG、标签与几何；语义未变不重启 |
 | raw COM 为 `-1/有效总页数`、ready buffer 为 `-1/-1` | UI 解析为 `-1/有效总页数`；四个 surface 的 Next 动画切为 `barEndShow`/`0°`，动作解析为单次 EndShow，buffer 不变 |
 | raw COM 恢复有效、Draw3 尚未 ready | UI 先离开 EndShow 语义并切回各 surface 的 `barMore` 角度；页码保持未知直到 ready |
@@ -503,7 +503,7 @@ constexpr bool IsPptDirectionActionRepeatable(
 - Good：唯一一条 `WM_MOUSEMOVE` 到达时呈现锁正被占用；WndProc 保存最新绝对候选并唤醒 pair，锁释放后无需第二条移动消息也能完成直移。
 - Good：用户键盘设置为 delay 1/speed 31 时，触摸或鼠标长按在约 `500ms` 后首次重复，后续约 `33ms` 一次；轻微帧量化保留计划相位，渲染或 COM 严重迟到只跳过该次机会，不追赶积压。
 - Good：最后一页进入真实 EndScreen 时先为同文稿附加页取得独立 target/ready，成功 Present 后才发布 `-1/12`；PageControl 的稳定 Next 转为 EndShow，并直接投递原有非确认退出业务。主栏 EndShow 点击才进入 A2 确认。返回真实页同样等待对应画布 ready 再发布数字和开放输入。
-- Base：默认 DPI 下 PPT 为紧凑深色 Bar surface，Whiteboard 左侧四枚、右侧三枚 `2x2`；普通 Arrow 只缩放，Add 才转换内容。
+- Base：PPT横纵使用三枚标准 `2x2` 按钮及原拖动槽；Whiteboard左侧四枚、右侧三枚 `2x2`，两工作区分页UI均跟随主栏全局尺度。普通Arrow复用同一图标，Add/EndShow语义变化才转换内容。
 - Bad：`BarSurfaceScene` 继续维护 local hover/pressed，PageControl 设置 `18 DIP` icon 或 `±13 DIP` text offset，或者复制主栏曲线后声称“复用”。
 - Bad：把 Whiteboard 拖动条叠在 Page 上、让 Whiteboard 继承 PPT wheel/long-press/persist，或把 Bar HWND 传入碰撞求解。
 - Bad：`presentationMutex.try_lock()` 失败后直接丢弃本次候选，并假定下一条 `WM_MOUSEMOVE` 一定会补偿；消息合并或松手会让控件保持原位。
@@ -1491,7 +1491,7 @@ DrawCore(coreBrush);
 ### Setting 外观条件卡片约定
 
 - “动画速率”只在 `Experimental.Inkeys3.UI3.Animation.Enable=true` 时显示；“动态边缘光影”只在 `Experimental.Inkeys3.UI3.EdgeLighting.Enable=true` 时显示。隐藏只影响布局，不得覆盖 `SpeedRate` 或 `EdgeLighting.Dynamic` 的持久化值。
-- 外观容器高度和两个条件卡片的渲染门禁必须读取同一份帧开始快照，按 `5 + showAnimationRate + showDynamicEdgeLighting` 张卡片计算（含任务栏缩放基准开关）；不得分别读取切换前后的 bool，否则同一帧会出现空白或裁剪。
+- 外观容器高度和两个条件卡片的渲染门禁必须读取同一份帧开始快照，按 `5 + showAnimationRate + showDynamicEdgeLighting` 张卡片计算（含任务栏缩放基准三项下拉框）；不得分别读取切换前后的 bool，否则同一帧会出现空白或裁剪。
 - 用户可见标题走 i18n；改标题时保持不可见 ImGui ID 稳定，避免无必要地重置控件身份。
 
 ### Setting 统一渲染与业务队列合同
@@ -1964,7 +1964,7 @@ void SyncDraw3State() {
 ## UI3 任务栏基准与真实 DPI 隔离（2026-10-19）
 
 - `dpiZoom` 保持真实屏幕 DPI/96，用于画笔宽度及屏幕DIP；界面基准独立保存为 `uiBaseZoom`，最终 `zoom=uiBaseZoom*configZoom`。初始化、显示过渡、底栏直移、命中和启动预览必须使用同一 UI 尺度；不把任务栏厚度塞进真实 DPI 字段。
-- 主栏名义主体高取 `BarMainBarHeightDip=80`，不含阴影/透明HWND包络；100%时主体匹配任务栏完整厚度，允许像素舍入。保留启动空间不足时显式降低用户倍率的既有fit行为。
+- 主栏名义主体高取 `BarMainBarHeightDip=80`，不含阴影/透明HWND包络；100%时关闭模式主体为80DIP、任务栏基础量为固定48DIP、任务栏真实量匹配可信任务栏完整厚度，允许像素舍入。仅真实量在无可信样本时回退80DIP；保留启动空间不足时显式降低用户倍率的既有fit行为。
 - Display snapshot包含逐屏 `taskbarThicknessPx`，厚度变化参与语义比较和serial；任务栏低频采样不重复EDID/拓扑枚举，不在渲染或Move热路径查询Shell。自动隐藏用完整矩形而非与屏幕交集或workArea缺口，临时失败仅复用同屏同DPI/几何下可信缓存。
 - finite wire不增加字段：`configZoomBits`历史名称保留，值为`UI基准/真实DPI倍率*用户倍率`，Source以DPI×该值还原UI尺寸；不能再把它当仅用户倍率套用0.5..2裁剪。内部`barStyle.configZoom`仍是用户倍率。
 - 任务栏Shell窗口类只是兼容采样策略；真实自动隐藏、Explorer重建、第三方Shell和跨屏视觉需独立实机证据，无窗口算法测试不能替代。

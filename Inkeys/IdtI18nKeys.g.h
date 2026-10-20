@@ -389,6 +389,9 @@ inline constexpr struct I18nKeyRoot
                 {
                     const char* N = "SettingsUI/Regular/Appearance/TaskbarScaleBase/N";
                     const char* E = "SettingsUI/Regular/Appearance/TaskbarScaleBase/E";
+                    const char* Off = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Off";
+                    const char* Base = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Base";
+                    const char* Actual = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Actual";
                 } TaskbarScaleBase{};
                 struct Node__SettingsUI__Regular__Appearance__BarZoom
                 {

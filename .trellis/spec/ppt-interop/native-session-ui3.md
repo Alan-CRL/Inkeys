@@ -161,6 +161,6 @@ if (ExitPptSlideShowAnnotationTool(server) && SameSession() && SameModeRevision(
 
 ## PPT 全局 UI 缩放（2026-10-19）
 
-- 四分页使用布局屏幕的任务栏/DPI基准×`UI.Bar.Zoom2`×各自控件倍率，当前仍按主屏布局；`PptState.uiScale`为帧内派生值，不属于保存位置或控件偏好。Bar内结束放映按钮继承Bar尺度，不恢复旧独立退出窗口或兼容exitScale。
-- PageControl几何、运行fit、Clamp、拖动及呈现共用有效UI尺度；控件与屏幕边缘的既有间距随控件尺度变化，20屏幕DIP中轴吸附阈值与组间碰撞间隙继续仅使用真实DPI。全局倍率不写回PPT各自倍率，白板展开继续独立DPI布局。
-- 全局倍率/开关变化显式RequestAll，不能依赖后续翻页唤醒；页码提交、pair版本和实际几何到位门禁保持原合同。
+- 四分页使用布局屏幕的主栏三态缩放基准（关闭/DPI、48DIP基础量、任务栏真实量）×`UI.Bar.Zoom2`×各自控件倍率，当前仍按主屏布局；`PptState.uiScale`为帧内派生值，不属于保存位置或控件偏好。Bar内结束放映按钮继承Bar尺度，不恢复旧独立退出窗口或兼容exitScale。
+- PageControl几何、运行fit、Clamp、拖动及呈现共用有效UI尺度；控件与屏幕边缘的既有间距随控件尺度变化，20屏幕DIP中轴吸附阈值与组间碰撞间隙继续仅使用真实DPI。全局倍率不写回PPT各自倍率；白板展开也使用同一主栏任务栏/DPI基准×`UI.Bar.Zoom2`，保留独立位置且不叠加PPT局部倍率。
+- 全局倍率/基准模式变化显式RequestAll，PPT与白板均不能依赖后续翻页唤醒；页码提交、pair版本和实际几何到位门禁保持原合同。横纵PPT默认使用70×70DIP标准按钮及双行页码，原32.5DIP紧凑布局由共享编译期开关禁用并保留源码。

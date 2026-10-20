@@ -576,6 +576,19 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 
 				const auto path = JoinPath(groupPath, name);
+				if (path == "UI.Bar.UseTaskbarHeightAsScaleBase")
+				{
+					// 旧开关 true 必须保留真实任务栏量，不能隐式转成新增的基础量模式 1。
+					if (jsonValue->isBool())
+					{
+						value = jsonValue->asBool() ? 2 : 0;
+						return;
+					}
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : defaultValue.load();
+					return;
+				}
 				if (groupPath.size() == 3 && groupPath[0] == "UI"
 					&& groupPath[1] == "Bar" && groupPath[2] == "AutoCollapse")
 				{

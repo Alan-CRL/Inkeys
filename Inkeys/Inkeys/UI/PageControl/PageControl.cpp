@@ -742,7 +742,8 @@ namespace Inkeys::UI::PageControl
 					? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI;
 				const double userZoom = std::clamp(static_cast<double>(Inkeys::config.UI.Bar.Zoom2), 0.5, 2.0);
 				const float uiScale = static_cast<float>(Inkeys::Display::ResolveUiScaleBase(
-					*snapshot, *monitor, Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase) * userZoom);
+					*snapshot, *monitor, static_cast<Inkeys::Display::UiScaleBaseMode>(
+						Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load())) * userZoom);
 				return { monitor->bounds, static_cast<float>(dpi) / USER_DEFAULT_SCREEN_DPI, uiScale };
 			}
 			return { { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) }, 1.0F, 1.0F };
@@ -850,7 +851,8 @@ namespace Inkeys::UI::PageControl
 				content.currentPage=PageNumber(ppt.currentPage,maximum);content.totalPage=L"/"+PageNumber(ppt.totalPage,maximum);
 			}
 			content.previousLabel=IW(I18nKey.UI.Bar.MainButtons.WhiteboardPreviousLabel);
-			content.nextLabel=IW(whiteboard.nextIsAdd?I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel:I18nKey.UI.Bar.MainButtons.WhiteboardNextLabel);
+			content.nextLabel=IW(content.whiteboard&&whiteboard.nextIsAdd?I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel:
+				!content.whiteboard&&content.nextIsEndShow?I18nKey.UI.Bar.MainButtons.EndPresentationLabel:I18nKey.UI.Bar.MainButtons.WhiteboardNextLabel);
 			content.moreLabel=IW(I18nKey.UI.Bar.MainButtons.MoreLabel);
 			content.unsavedLabel=IW(I18nKey.UI.Bar.MainButtons.WhiteboardUnsavedLabel);
 			content.actionLabels={IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel),IW(I18nKey.UI.Bar.MainButtons.MinimizeWhiteboardLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardThemeLabel)};
@@ -3134,6 +3136,17 @@ namespace Inkeys::UI::PageControl
 		const auto Check=[&](bool valid,const char* why){if(!valid){++failures;std::fprintf(stderr,"[PageControlUI3] FAIL %s\n",why);}};
 		constexpr std::array<std::uint32_t,6> expectedColors{0x123B32,0x172A46,0x000000,0xFFFFFF,0xE5E7EB,0xF5F1E6};
 		Check(WhiteboardVisual::ThemeColors==expectedColors,"palette row order is green, navy, black then white, light gray, ivory");
+		{
+			PptState show;show.presentationVisible=true;show.currentPage=2;show.totalPage=5;
+			WhiteboardState page;page.nextIsAdd=true;
+			const auto normal=BuildPageContent(0,WorkspaceMode::PptCompact,show,page);
+			show.currentPage=-1;const auto end=BuildPageContent(2,WorkspaceMode::PptCompact,show,page);
+			const auto board=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,show,page);
+			Check(normal.nextLabel==IW(I18nKey.UI.Bar.MainButtons.WhiteboardNextLabel)
+				&&end.nextLabel==IW(I18nKey.UI.Bar.MainButtons.EndPresentationLabel)
+				&&board.nextLabel==IW(I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel),
+				"standard PPT Next/EndShow labels remain separate from whiteboard Add");
+		}
 		const auto epoch=Inkeys::UI::RenderPipeline::GetDeviceEpoch();
 		PptState ppt;ppt.presentationVisible=true;ppt.currentPage=7;ppt.totalPage=28;ppt.layout.showMiddlePair=true;
 		WhiteboardState wb;wb.expandedLayoutTarget=wb.active=true;wb.currentPage=2;wb.totalPage=4;
@@ -3146,12 +3159,18 @@ namespace Inkeys::UI::PageControl
 		for(const int menu:{0,1,2})
 		for(const float scale:{0.25F,1.0F,1.5F,2.0F}){
 			if(menu&&(index!=0||mode!=WorkspaceMode::WhiteboardExpanded))continue;
-			wb.menu=menu;Scene surface;
-			const auto content=BuildPageContent(index,mode,ppt,wb);
+			wb.menu=menu;Scene surface;auto framePpt=ppt;framePpt.uiScale=scale;
+			if(mode==WorkspaceMode::WhiteboardExpanded)framePpt.presentationVisible=false;
+			const auto content=BuildPageContent(index,mode,framePpt,wb);
 			Check(surface.ConfigurePagination(content),"real button list and fixed properties configure");
-			const double width=mode==WorkspaceMode::WhiteboardExpanded?(index==0?305.0:230.0):(index>=2?42.5:165.0);
-			const double height=mode==WorkspaceMode::WhiteboardExpanded?80.0:(index>=2?165.0:42.5);
-			Check(surface.SetBounds({200,100,200+static_cast<LONG>(std::ceil(width*scale)),100+static_cast<LONG>(std::ceil(height*scale))},scale),"base geometry accepts effective scale");
+			const double width=mode==WorkspaceMode::WhiteboardExpanded?(index==0?WhiteboardLeftWidthDip:WhiteboardWidthDip)
+				:(index>=2?PptControlShortSideDip:PptControlLongSideDip);
+			const double height=mode==WorkspaceMode::WhiteboardExpanded?WhiteboardHeightDip:(index>=2?PptControlLongSideDip:PptControlShortSideDip);
+			const auto layout=ResolveSurfaceLayout(SurfaceFor(index),{0,0,1920,1080},1.75F,framePpt,
+				mode==WorkspaceMode::WhiteboardExpanded?wb:WhiteboardState{});
+			Check(layout.scale==scale&&layout.logicalBounds.right-layout.logicalBounds.left==static_cast<LONG>(std::lround(width*scale)),
+				"real Scene uses the resolved global UI scale even for standalone whiteboard menus and themes");
+			Check(surface.SetBounds({200,100,200+static_cast<LONG>(std::lround(width*scale)),100+static_cast<LONG>(std::lround(height*scale))},scale),"base geometry accepts effective scale");
 			for(int frame=0;frame<=45;++frame)(void)surface.Advance(origin+frame*20ms);
 			Check(!surface.AnimationActive(),"shared button and panel animations settle");
 			const auto bounds=surface.PresentationBounds();
@@ -3169,6 +3188,22 @@ namespace Inkeys::UI::PageControl
 				const POINT point{(button.localPixels.left+button.localPixels.right)/2,(button.localPixels.top+button.localPixels.bottom)/2};
 				Check(surface.HitTest(point)==button.id,"shared hit snapshot matches each rendered button");
 			}
+			if(mode==WorkspaceMode::PptCompact)for(const auto id:{PreviousWidget,PageWidget,NextWidget}){
+				const auto rect=surface.Layout().buttons[id-1].localPixels;
+				const auto dip=ResolvePptWidgetContracts(SurfaceFor(index))[id-1].bounds;
+				// 命中矩形向外覆盖像素；0.25 倍下 17.5px 的正方形可覆盖 19px，不能比较浮点边长差。
+				const RECT expected{static_cast<LONG>(std::floor(dip.left*scale)),static_cast<LONG>(std::floor(dip.top*scale)),
+					static_cast<LONG>(std::ceil(dip.right*scale)),static_cast<LONG>(std::ceil(dip.bottom*scale))};
+				const bool standard=!BarPptCompactPaginationEnabled&&dip.right-dip.left==BarButtonTwoSideDip
+					&&dip.bottom-dip.top==BarButtonTwoSideDip&&EqualRect(&rect,&expected);
+				if(!standard)std::fprintf(stderr,"[PageControlUI3] size index=%zu scale=%.3f id=%u "
+					"actual=(%ld,%ld,%ld,%ld) expected=(%ld,%ld,%ld,%ld) dip=(%.2f,%.2f,%.2f,%.2f)\n",
+					index,scale,static_cast<unsigned>(id),rect.left,rect.top,rect.right,rect.bottom,
+					expected.left,expected.top,expected.right,expected.bottom,dip.left,dip.top,dip.right,dip.bottom);
+				Check(standard,"production PPT Scene uses standard squares on all four surfaces");
+				const POINT lower{(rect.left+rect.right)/2,rect.top+static_cast<LONG>(BarButtonTwoSideDip*scale*0.8)};
+				Check(surface.HitTest(lower)==id,"standard label region participates in the same committed button hit");
+			}
 			ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap;
 			Check(image&&SUCCEEDED(image.As(&bitmap)),"target supports pixel readback");if(!bitmap)continue;
 			ComPtr<ID2D1Bitmap1> cpu;const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
@@ -3179,15 +3214,25 @@ namespace Inkeys::UI::PageControl
 				const LONG py=static_cast<LONG>(std::lround(y*scale))+100-bounds.top;
 				return mapped.bits+py*mapped.pitch+px*4;};
 			const bool provePageMorph=mode==WorkspaceMode::PptCompact&&index==0&&scale==1;
+			const auto pageSlot=ResolvePptWidgetContracts(SurfaceFor(index))[2].bounds;
 			const auto PageSlotPixels=[&]{std::vector<BYTE> bytes;
-				for(int y=5;y<38;++y)for(int x=53;x<123;++x){const auto* pixel=Pixel(x,y);bytes.insert(bytes.end(),pixel,pixel+4);}return bytes;};
-			const auto originalPagePixels=provePageMorph?PageSlotPixels():std::vector<BYTE>{};
+				for(int y=static_cast<int>(pageSlot.top);y<pageSlot.bottom;++y)
+					for(int x=static_cast<int>(pageSlot.left);x<pageSlot.right;++x){const auto* pixel=Pixel(x,y);bytes.insert(bytes.end(),pixel,pixel+4);}return bytes;};
+			const bool proveContentSlots=mode==WorkspaceMode::PptCompact&&scale==1;
+			const auto originalPagePixels=proveContentSlots?PageSlotPixels():std::vector<BYTE>{};
 			if(scale>=1){
 				const auto page=surface.Layout().buttons[2].localPixels;unsigned bright=0;
 				for(LONG y=page.top+2;y<page.bottom-2;++y)for(LONG x=page.left+2;x<page.right-2;++x){
 					const auto* pixel=mapped.bits+(y+100-bounds.top)*mapped.pitch+(x+200-bounds.left)*4;
 					if(pixel[0]>120&&pixel[1]>120&&pixel[2]>120)++bright;}
 				Check(bright>10,"current and total page text are actually drawn");
+				if(mode==WorkspaceMode::PptCompact)for(const auto id:{PreviousWidget,PageWidget,NextWidget}){
+					const auto rect=surface.Layout().buttons[id-1].localPixels;unsigned labelInk=0;
+					for(LONG y=rect.top+static_cast<LONG>(BarButtonTwoSideDip*scale*0.65);y<rect.bottom-2;++y)
+						for(LONG x=rect.left+2;x<rect.right-2;++x){const auto* pixel=mapped.bits+(y+100-bounds.top)*mapped.pitch+(x+200-bounds.left)*4;
+							if(pixel[0]>120&&pixel[1]>120&&pixel[2]>120)++labelInk;}
+					Check(labelInk>3,"PPT arrows and page totals draw ink in the standard two by two label slot");
+				}
 				if(menu==2){const auto* white=Pixel(360,-181);Check(white[0]>230&&white[1]>230&&white[2]>230,"theme white square is filled");
 					for(std::size_t color=0;color<WhiteboardVisual::ThemeColors.size();++color){
 						const auto rgb=WhiteboardVisual::ThemeColors[color];const auto* swatch=Pixel(358+static_cast<double>(color%3)*75,-258+static_cast<double>(color/3)*75);
@@ -3207,6 +3252,17 @@ namespace Inkeys::UI::PageControl
 				}
 			}
 			Check(mapped.bits[3]==0,"presentation margin remains transparent");cpu->Unmap();
+			if(proveContentSlots){
+				// 同布局翻页必须继续使用 PageTwoTwo；旧横排测宽会改变双行槽位的实际像素。
+				auto changed=content;changed.currentPage=L"8";changed.totalPage=L"/29";
+				surface.ConfigurePagination(changed);surface.ConfigurePagination(content);
+				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
+				(void)surface.Render(dc,origin+900ms);renderer.FinishFrameDrawCommands(dc);
+				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"PPT content-only roundtrip renders through shared standard buttons");
+				if(SUCCEEDED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr))&&SUCCEEDED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped))){
+					Check(PageSlotPixels()==originalPagePixels,"PPT page-number updates never restore compact horizontal slots");cpu->Unmap();
+				}else Check(false,"updated standard page slots can be read back");
+			}
 			if(provePageMorph){
 				auto matching=wb;matching.menu=0;matching.currentPage=ppt.currentPage;matching.totalPage=ppt.totalPage;
 				surface.ConfigurePagination(BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,matching),LayoutTransitionDurationSeconds());
@@ -3449,7 +3505,7 @@ namespace Inkeys::UI::PageControl
 			Check(state.scene.AnimationActive()&&!EqualRect(&retained.buttons[1].localPixels,&continued.buttons[1].localPixels),"the original layout morph continues across following shared frames without snapping");
 		}
 		{
-			Scene surface;surface.ConfigurePagination(BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{}));surface.SetBounds({200,100,365,143},1);
+			Scene surface;surface.ConfigurePagination(BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{}));surface.SetBounds({200,100,200+static_cast<LONG>(PptControlLongSideDip),100+static_cast<LONG>(PptControlShortSideDip)},1);
 			for(int i=0;i<=45;++i)(void)surface.Advance(origin+20s+i*20ms);surface.CommitPresented();
 			unsigned wakes=0;surface.SetHooks({{},[&]{++wakes;}});surface.SetSharedLightingSubscribed(true);
 			Inkeys::UI::Bar::BarSurfaceSharedLighting light;light.edgeLightingEnabled=light.cursorVisible=true;light.cursorIntensity=1;light.cursorRadiusPixels=30;

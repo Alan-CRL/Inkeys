@@ -294,9 +294,11 @@ namespace Inkeys::UI::Bar
 					|| (workload == Workload::Whiteboard && index < 2);
 				const LONG left = (index % 2) ? static_cast<LONG>(1500 * scale) : 0;
 				const LONG top = index < 2 ? static_cast<LONG>(950 * scale) : static_cast<LONG>(450 * scale);
-				const double logicalWidth = workload == Workload::Whiteboard ? (index == 0 ? 305 : 230)
-					: index >= 2 ? 42.5 : 165;
-				const double logicalHeight = workload == Workload::Whiteboard ? 80 : index >= 2 ? 165 : 42.5;
+				const double logicalWidth = workload == Workload::Whiteboard
+					? (index == 0 ? BarWhiteboardPaginationLeftWidthDip : BarWhiteboardPaginationWidthDip)
+					: index >= 2 ? BarPptPaginationShortSideDip : BarPptPaginationLongSideDip;
+				const double logicalHeight = workload == Workload::Whiteboard ? BarWhiteboardPaginationHeightDip
+					: index >= 2 ? BarPptPaginationLongSideDip : BarPptPaginationShortSideDip;
 				const LONG width = static_cast<LONG>(std::ceil(logicalWidth * scale));
 				const LONG height = static_cast<LONG>(std::ceil(logicalHeight * scale));
 				struct PageInputMapping { POINT destination{}; bool ready=false; };

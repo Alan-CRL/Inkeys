@@ -384,8 +384,11 @@
         },
         "TaskbarScaleBase":
         {
-          "N": "Use taskbar height as scale base",
-          "E": "At 100%, match taskbar thickness."
+          "N": "Taskbar scale base",
+          "E": "At 100%: base is 48 DIP; actual follows taskbar size.",
+          "Off": "Off",
+          "Base": "Taskbar base size",
+          "Actual": "Actual taskbar size"
         },
         "BarZoom":
         {

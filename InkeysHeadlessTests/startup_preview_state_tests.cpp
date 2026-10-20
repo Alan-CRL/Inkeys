@@ -25,6 +25,7 @@
 
 #include <json/json.h>
 
+import Inkeys.Display;
 import Inkeys.Other.Config;
 import Inkeys.UI.StartupPreview;
 
@@ -52,7 +53,7 @@ namespace
 		bool enabled = true;
 		double widthDip = 0.0;
 		double zoom = 0.0;
-		bool taskbarBase = false;
+		int taskbarBase = 0;
 	};
 
 	LegacyConfigResult ReadLegacyStartupPreviewFixture()
@@ -165,9 +166,37 @@ namespace
 			if (!Expect(miniRead && allRead && mini.UI.Bar.Zoom2.load() == 1.25
 				&& mini.UI.Bar.StartupPlacement.load() == expected
 				&& all.UI.Bar.StartupPlacement.load() == expected
-				&& !mini.UI.Bar.UseTaskbarHeightAsScaleBase.load()
-				&& !all.UI.Bar.UseTaskbarHeightAsScaleBase.load(),
+				&& mini.UI.Bar.UseTaskbarHeightAsScaleBase.load() == 0
+				&& all.UI.Bar.UseTaskbarHeightAsScaleBase.load() == 0,
 				"Mini/All normalize missing, illegal and all three startup placements consistently")) ++failures;
+		}
+		const std::pair<Json::Value, int> scaleModes[] = {
+			{ Json::Value(false), 0 }, { Json::Value(true), 2 },
+			{ Json::Value(0), 0 }, { Json::Value(1), 1 }, { Json::Value(2), 2 }
+		};
+		for (const auto& [value, expected] : scaleModes)
+		{
+			Json::Value document(Json::objectValue);
+			document["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = value;
+			document["UI"]["Bar"]["Zoom2"] = 1.25;
+			if (!Expect(write(document), "write startup scale mode fixture")) { ++failures; continue; }
+			Inkeys::Config config;
+			if (!Expect(config.ReadMini({ "UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase" })
+				&& config.UI.Bar.UseTaskbarHeightAsScaleBase.load() == expected,
+				"startup Mini distinguishes legacy bool from all three integer modes")) { ++failures; continue; }
+			StartupPreview::StartOptions frozen;
+			frozen.dpi = 144;
+			frozen.barZoom = config.UI.Bar.Zoom2.load();
+			frozen.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(144, 96, 0, 0,
+				static_cast<Inkeys::Display::UiScaleBaseMode>(config.UI.Bar.UseTaskbarHeightAsScaleBase.load()));
+			document["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = (expected + 1) % 3;
+			document["UI"]["Bar"]["Zoom2"] = 2.0;
+			const double expectedHeight = expected == 0 ? 120.0 : expected == 1 ? 72.0 : 96.0;
+			if (!Expect(write(document) && config.ReadAll()
+				&& config.UI.Bar.UseTaskbarHeightAsScaleBase.load() == (expected + 1) % 3
+				&& StartupPreview::ResolveStartupPreviewPixelSize(470.0, frozen.dpi,
+					frozen.barZoom, frozen.uiBaseScale).height == std::lround(expectedHeight * 1.25),
+				"full config read cannot mutate frozen startup scale mode or multiplier")) ++failures;
 		}
 		Json::Value document(Json::objectValue);
 		document["UI"]["Bar"]["StartupPlacement"] = 1;
@@ -505,7 +534,7 @@ int RunStartupPreviewStateTests()
 	if (!Expect(legacyConfig.read && !legacyConfig.enabled
 		&& legacyConfig.widthDip == DefaultCachedStartupBarWidthDip
 		&& legacyConfig.zoom == 1.0 && legacyConfig.taskbarBase
-			== Inkeys::ConfigDetail::GetDefaultLargeScreenDevice(),
+			== (Inkeys::ConfigDetail::GetDefaultLargeScreenDevice() ? 1 : 0),
 		"legacy main.json keeps cached width and uses frozen device default for taskbar base"))
 		++failures;
 	if (!Expect(!ShouldWriteCachedStartupBarWidthDip(470.0, 470.0)
@@ -515,14 +544,22 @@ int RunStartupPreviewStateTests()
 			(std::numeric_limits<double>::quiet_NaN)()),
 		"cached width write suppresses noise and rejects invalid candidates")) ++failures;
 
-	for (const double dpi : { 96.0, 144.0, 192.0 })
-		for (const double user : { 0.5, 1.0, 1.5, 2.0 })
-		{
-			const auto taskbarPixels = ResolveStartupPreviewPixelSize(470.0, dpi, user, 0.3);
-			if (!Expect(taskbarPixels.height == std::lround(24.0 * user)
-				&& ResolveStartupPreviewScale(dpi, user, 0.3) == 0.3 * user,
-				"startup taskbar scale matches Bar physical height without DPI or base clamp")) ++failures;
-		}
+	for (const UINT dpi : { 0U, 96U, 144U, 192U })
+		for (const int thickness : { 0, 24, 96 })
+			for (const double user : { 0.5, 1.0, 1.5, 2.0 })
+				for (const auto mode : { Inkeys::Display::UiScaleBaseMode::Dpi,
+					Inkeys::Display::UiScaleBaseMode::TaskbarBasic, Inkeys::Display::UiScaleBaseMode::TaskbarActual })
+				{
+					const double dpiScale = (dpi ? dpi : 96) / 96.0;
+					const double base = Inkeys::Display::ResolveUiScaleBase(dpi, thickness, 0, 0, mode);
+					const double height = mode == Inkeys::Display::UiScaleBaseMode::TaskbarBasic
+						? 48 * dpiScale : mode == Inkeys::Display::UiScaleBaseMode::TaskbarActual && thickness > 0
+						? thickness : 80 * dpiScale;
+					const auto pixels = ResolveStartupPreviewPixelSize(470.0, dpi, user, base);
+					if (!Expect(pixels.height == std::lround(height * user)
+						&& std::abs(ResolveStartupPreviewScale(dpi, user, base) - base * user) < 1e-9,
+						"startup mode matches Bar height across DPI, actual thickness, missing Shell and user multiplier")) ++failures;
+				}
 	const auto pixels96 = ResolveStartupPreviewPixelSize(470.0, 96.0, 1.0);
 	const auto pixels120 = ResolveStartupPreviewPixelSize(470.0, 120.0, 1.25);
 	const auto pixels144 = ResolveStartupPreviewPixelSize(470.0, 144.0, 1.5);

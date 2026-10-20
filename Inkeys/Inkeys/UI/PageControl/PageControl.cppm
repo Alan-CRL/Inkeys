@@ -18,6 +18,7 @@ module;
 export module Inkeys.UI.PageControl;
 
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys::UI::PageControl
 {
@@ -274,15 +275,18 @@ export namespace Inkeys::UI::PageControl
 		return vertical ? (next ? 180.0 : 0.0) : (next ? 90.0 : -90.0);
 	}
 
-	inline constexpr double PptCompactLongSideDip = 165.0;
-	inline constexpr double PptCompactShortSideDip = 42.5;
-	inline constexpr double PptDragHandleSlotDip = 10.0;
-	inline constexpr double PptArrowButtonSideDip = 32.5;
-	inline constexpr double PptPageButtonLongSideDip = 70.0;
-	inline constexpr double PageControlGapDip = 5.0;
-	inline constexpr double WhiteboardWidthDip = 230.0;
-	inline constexpr double WhiteboardHeightDip = 80.0;
-	inline constexpr double WhiteboardButtonSideDip = 70.0;
+	inline constexpr double PptCompactLongSideDip = BarPptCompactLongSideDip;
+	inline constexpr double PptCompactShortSideDip = BarPptCompactShortSideDip;
+	inline constexpr double PptControlLongSideDip = BarPptPaginationLongSideDip;
+	inline constexpr double PptControlShortSideDip = BarPptPaginationShortSideDip;
+	inline constexpr double PptDragHandleSlotDip = BarPaginationDragHandleSlotDip;
+	inline constexpr double PptArrowButtonSideDip = BarPptCompactPaginationEnabled ? BarButtonOneSideDip : BarButtonTwoSideDip;
+	inline constexpr double PptPageButtonLongSideDip = BarButtonTwoSideDip;
+	inline constexpr double PageControlGapDip = BarButtonGapDip;
+	inline constexpr double WhiteboardWidthDip = BarWhiteboardPaginationWidthDip;
+	inline constexpr double WhiteboardLeftWidthDip = BarWhiteboardPaginationLeftWidthDip;
+	inline constexpr double WhiteboardHeightDip = BarWhiteboardPaginationHeightDip;
+	inline constexpr double WhiteboardButtonSideDip = BarButtonTwoSideDip;
 
 	enum class PptWidgetRole : std::uint8_t
 	{
@@ -374,7 +378,13 @@ export namespace Inkeys::UI::PageControl
 		DipRect previous{};
 		DipRect page{};
 		DipRect next{};
-		if (vertical)
+		if (!BarPptCompactPaginationEnabled)
+		{
+			const auto geometry=Inkeys::UI::Bar::ResolveBarPptStandardPaginationGeometry(vertical,right);
+			const auto rect=[](const auto& r){return DipRect{r.left,r.top,r.right,r.bottom};};
+			drag=rect(geometry.drag);previous=rect(geometry.previous);page=rect(geometry.page);next=rect(geometry.next);
+		}
+		else if (vertical)
 		{
 			drag = { 5.0, 5.0, 37.5, 15.0 };
 			previous = { 5.0, 15.0, 37.5, 47.5 };
@@ -399,11 +409,11 @@ export namespace Inkeys::UI::PageControl
 			PptWidgetContract{ PptWidgetRole::DragHandle, drag,
 				false, false, true, false, false, false, false, false },
 			PptWidgetContract{ PptWidgetRole::Previous, previous,
-				false, true, false, false, true, true, false, false },
+				!BarPptCompactPaginationEnabled, true, false, false, true, true, false, false },
 			PptWidgetContract{ PptWidgetRole::Page, page,
 				true, true, true, true, true, true, true, true },
 			PptWidgetContract{ PptWidgetRole::Next, next,
-				false, true, false, false, true, true, false, false },
+				!BarPptCompactPaginationEnabled, true, false, false, true, true, false, false },
 		};
 	}
 
@@ -1067,16 +1077,15 @@ export namespace Inkeys::UI::PageControl
 			|| surface == Surface::MiddleRight;
 		const bool left = surface == Surface::BottomLeft
 			|| surface == Surface::MiddleLeft;
-		const float normalizedDpi = NormalizeDpiScale(dpiScale);
-		float scale = result.mode == WorkspaceMode::WhiteboardExpanded
-			? normalizedDpi : ResolvePptUiScale(dpiScale, ppt.uiScale);
+		// 所有分页 UI 共用主栏全局尺度；白板只隔离 PPT 的局部倍率与位置。
+		float scale = ResolvePptUiScale(dpiScale, ppt.uiScale);
 		double widthDip = result.vertical
-			? PptCompactShortSideDip : PptCompactLongSideDip;
+			? PptControlShortSideDip : PptControlLongSideDip;
 		double heightDip = result.vertical
-			? PptCompactLongSideDip : PptCompactShortSideDip;
+			? PptControlLongSideDip : PptControlShortSideDip;
 		if (result.mode == WorkspaceMode::WhiteboardExpanded)
 		{
-			widthDip = surface == Surface::BottomLeft ? 305.0 : WhiteboardWidthDip;
+			widthDip = surface == Surface::BottomLeft ? WhiteboardLeftWidthDip : WhiteboardWidthDip;
 			heightDip = WhiteboardHeightDip;
 		}
 		else if (result.vertical)
@@ -1148,8 +1157,8 @@ export namespace Inkeys::UI::PageControl
 		{
 			const float scale = ResolvePptUiScale(dpiScale, uiScale)
 				* NormalizeRuntimeControlScale(layout.bottomPairScale);
-			const double controlWidth = PptCompactLongSideDip;
-			const double controlHeight = PptCompactShortSideDip;
+			const double controlWidth = PptControlLongSideDip;
+			const double controlHeight = PptControlShortSideDip;
 			layout.bottomPairWidth = (std::clamp)(layout.bottomPairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
 					- static_cast<float>((controlWidth + PageControlGapDip) * scale)));
@@ -1164,11 +1173,11 @@ export namespace Inkeys::UI::PageControl
 				* NormalizeRuntimeControlScale(layout.middlePairScale);
 			layout.middlePairWidth = (std::clamp)(layout.middlePairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
-					- static_cast<float>((PptCompactShortSideDip
+					- static_cast<float>((PptControlShortSideDip
 						+ PageControlGapDip) * scale)));
 			const float verticalLimit = (std::max)(0.0F,
 				height / 2.0F - static_cast<float>(
-					(PptCompactLongSideDip / 2.0
+					(PptControlLongSideDip / 2.0
 						+ PageControlGapDip) * scale));
 			layout.middlePairHeight = (std::clamp)(layout.middlePairHeight,
 				-verticalLimit, verticalLimit);
@@ -1319,10 +1328,10 @@ export namespace Inkeys::UI::PageControl
 			userScale = (std::min)({ std::clamp(NormalizeScale(userScale), 0.5F, 3.0F),
 				maximum, screenMaximum, resourceMaximum });
 		};
-		FitScale(bottomVisible, PptCompactLongSideDip,
-			PptCompactShortSideDip, ppt.layout.bottomPairScale);
-		FitScale(middleVisible, PptCompactShortSideDip,
-			PptCompactLongSideDip, ppt.layout.middlePairScale);
+		FitScale(bottomVisible, PptControlLongSideDip,
+			PptControlShortSideDip, ppt.layout.bottomPairScale);
+		FitScale(middleVisible, PptControlShortSideDip,
+			PptControlLongSideDip, ppt.layout.middlePairScale);
 		if (bottomVisible)
 			ppt.layout = ClampPageControlLayout(Surface::BottomLeft,
 				monitor, dpiScale, ppt.layout, ppt.uiScale);

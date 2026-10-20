@@ -279,22 +279,31 @@ namespace
 			&& HasExceededPptDragThreshold(
 				dragStart, POINT{ 100, 103 }, 8, 6),
 			"page press converts to drag only after the centered system threshold");
-		Check(!left[1].displaysText && !left[3].displaysText
+		Check(left[1].displaysText && left[3].displaysText
 			&& left[1].invokesBusinessAction && left[3].invokesBusinessAction,
-			"compact arrows contain no labels and keep page actions");
+			"standard PPT arrows expose labels and retain page actions");
 		Check(left[2].displaysText && left[2].invokesBusinessAction
 			&& left[2].primaryTextBold && left[2].secondaryTextNormal
 			&& left[2].immediateTextUpdate,
 			"PPT page button opens preview with mixed page-number weights");
-		Check(left[0].bounds.left == 5.0 && left[3].bounds.right == 160.0
-			&& right[1].bounds.left == 5.0 && right[0].bounds.right == 160.0,
+		Check(left[0].bounds.left == 5.0 && left[3].bounds.right == PptControlLongSideDip-PageControlGapDip
+			&& right[1].bounds.left == 5.0 && right[0].bounds.right == PptControlLongSideDip-PageControlGapDip,
 			"horizontal drag slot stays on the outer edge");
 		Check(left[0].bounds.right == left[1].bounds.left
 			&& right[3].bounds.right == right[0].bounds.left
 			&& side[0].bounds.bottom == side[1].bounds.top,
 			"drag divider lane touches the adjacent arrow without a third gap");
-		Check(side[0].bounds.top == 5.0 && side[3].bounds.bottom == 160.0,
-			"side layout keeps the drag slot above three compact buttons");
+		Check(side[0].bounds.top == 5.0 && side[3].bounds.bottom == PptControlLongSideDip-PageControlGapDip,
+			"side layout keeps the ten DIP drag slot above three standard buttons");
+		Check(!BarPptCompactPaginationEnabled&&PptCompactLongSideDip==165.0&&PptCompactShortSideDip==42.5
+			&&PptControlLongSideDip==240.0&&PptControlShortSideDip==80.0,
+			"legacy geometry remains available while the production compact path is disabled");
+		for(const auto surface:{Surface::BottomLeft,Surface::BottomRight,Surface::MiddleLeft,Surface::MiddleRight}){
+			const auto buttons=ResolvePptWidgetContracts(surface);
+			for(std::size_t id=1;id<buttons.size();++id)Check(buttons[id].bounds.right-buttons[id].bounds.left==BarButtonTwoSideDip
+				&&buttons[id].bounds.bottom-buttons[id].bounds.top==BarButtonTwoSideDip,
+				"every PPT direction and page button occupies the standard two by two square");
+		}
 		const auto pptPrevious = ResolveDirectionContentPolicy(
 			WorkspaceMode::PptCompact, false, false);
 		const auto whiteboardPrevious = ResolveDirectionContentPolicy(
@@ -716,8 +725,14 @@ namespace
 					}
 					WhiteboardState whiteboard;
 					whiteboard.active = whiteboard.expandedLayoutTarget = true;
-					Check(ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, fitted, whiteboard).scale == dpi,
-						"shared whiteboard surface retains independent DPI scale");
+					const auto expanded=ResolveSurfaceLayout(Surface::BottomLeft,monitor,dpi,fitted,whiteboard);
+					Check(std::abs(expanded.scale-base*user)<1e-5F,
+						"whiteboard follows the global UI base and zoom without PPT local zoom or a second DPI multiplier");
+					PptState noShow;noShow.uiScale=base*user;noShow.layout.bottomPairScale=3;
+					noShow.layout.bottomPairWidth=noShow.layout.bottomPairHeight=300;
+					const auto standalone=ResolveSurfaceLayout(Surface::BottomLeft,monitor,dpi,noShow,whiteboard);
+					Check(standalone.scale==expanded.scale&&EqualRect(&standalone.logicalBounds,&expanded.logicalBounds),
+						"standalone whiteboard uses the same global scale and corner anchor without an active PPT session");
 					auto candidate = fitted.layout;
 					candidate.middlePairHeight = 21.0F * dpi;
 					Check(!ResolvePptDragCandidate(Surface::MiddleLeft, monitor, dpi, fitted,
@@ -912,7 +927,7 @@ namespace
 			RECT{ 0, 0, 1920, 1080 }, 1.0F, ppt, candidate, ppt.layout,
 			BarBottomDockThresholdDip);
 		Check(currentScale.clamped && !currentScale.centerSnapped
-			&& currentScale.layout.middlePairHeight == 496.25F
+			&& currentScale.layout.middlePairHeight == 477.5F
 			&& currentScale.layout.middlePairScale == 0.5F,
 			"candidate clamp uses the current fitted scale instead of the old drag-start scale");
 		candidate = ppt.layout;
@@ -939,7 +954,14 @@ namespace
 			ppt.layout.middlePairScale = 0.5F;
 			ppt.layout.middlePairWidth = 20.0F;
 			ppt.layout.middlePairHeight = sign * 150.0F;
-			ppt.layout.bottomPairHeight = sign > 0.0F ? 450.0F : 577.0F;
+			auto centerFrame = ppt;
+			centerFrame.layout.middlePairHeight = 0.0F;
+			const auto centerBounds = ResolveSurfaceLayout(surface, monitor, 1.0F, centerFrame, {}).logicalBounds;
+			const auto bottomBounds = ResolveSurfaceLayout(Surface::BottomLeft, monitor, 1.0F, ppt, {}).logicalBounds;
+			// 障碍与当前主体中心重叠 5px，19px 自由候选仍须保留组间隙，不依赖旧 165/42.5 尺寸。
+			ppt.layout.bottomPairHeight = static_cast<float>(sign > 0.0F
+				? bottomBounds.top - centerBounds.bottom + PageControlGapDip
+				: bottomBounds.bottom - centerBounds.top - PageControlGapDip);
 			auto candidate = ppt.layout;
 			candidate.middlePairWidth = 19.0F;
 			candidate.middlePairHeight = sign * 19.0F;
@@ -965,9 +987,13 @@ namespace
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = true;
 		ppt.layout.middlePairScale = 0.5F;
-		ppt.layout.bottomPairHeight = 450.0F;
 		ppt.layout.middlePairWidth = 20.0F;
 		ppt.layout.middlePairHeight = 150.0F;
+		auto centerFrame = ppt;
+		centerFrame.layout.middlePairHeight = 0.0F;
+		const auto centerBounds = ResolveSurfaceLayout(Surface::MiddleLeft, monitor, 1.0F, centerFrame, {}).logicalBounds;
+		const auto bottomBounds = ResolveSurfaceLayout(Surface::BottomLeft, monitor, 1.0F, ppt, {}).logicalBounds;
+		ppt.layout.bottomPairHeight = static_cast<float>(bottomBounds.top - centerBounds.bottom + PageControlGapDip);
 		auto candidate = ppt.layout;
 		candidate.middlePairWidth = 19.0F;
 		candidate.middlePairHeight = -80.0F;
@@ -995,7 +1021,8 @@ namespace
 		ppt.layout.session = 7;
 		ppt.layout.epoch = 5;
 		ppt.layout.pairVersions = { 21, 22 };
-		ppt.layout.bottomPairHeight = 592.0F;
+		// 新发布把障碍放到中心上方：只阻挡旧采样，自由中心仍保持两倍标准间隙。
+		ppt.layout.bottomPairHeight = static_cast<float>(bottomBounds.bottom - centerBounds.top + PageControlGapDip * 2);
 		PptState obstructedFree = ppt;
 		obstructedFree.layout.middlePairWidth = candidate.middlePairWidth;
 		obstructedFree.layout.middlePairHeight = candidate.middlePairHeight;
@@ -1130,14 +1157,14 @@ namespace
 		const auto compact = ResolveSurfaceLayout(Surface::BottomLeft,
 			monitor, 1.0F, ppt, whiteboard);
 		Check(compact.mode == WorkspaceMode::PptCompact && compact.visible
-			&& Width(compact.logicalBounds) == 165
-			&& Height(compact.logicalBounds) == 43,
-			"bottom PPT control resolves compact dimensions");
+			&& Width(compact.logicalBounds) == 240
+			&& Height(compact.logicalBounds) == 80,
+			"bottom PPT control resolves standard two by two dimensions");
 		const auto scaled = ResolveSurfaceLayout(Surface::BottomLeft,
 			monitor, 1.5F, ppt, whiteboard);
-		Check(Width(scaled.logicalBounds) == 248
-			&& Height(scaled.logicalBounds) == 64,
-			"compact dimensions scale with DPI");
+		Check(Width(scaled.logicalBounds) == 360
+			&& Height(scaled.logicalBounds) == 120,
+			"standard dimensions scale with DPI fallback");
 		const auto sideVisible = ResolveSurfaceLayout(Surface::MiddleLeft,
 			monitor, 1.0F, ppt, whiteboard);
 		const auto sideHidden = ResolveHiddenSurfaceBounds(
@@ -1595,9 +1622,9 @@ namespace
 		dragged.bottomPairHeight = 10000.0F;
 		const auto clamped = ClampPageControlLayout(Surface::BottomLeft,
 			monitor, 1.0F, dragged);
-		Check(clamped.bottomPairWidth == 230.0F
-			&& clamped.bottomPairHeight == 547.5F,
-			"PPT drag clamp uses compact geometry only");
+		Check(clamped.bottomPairWidth == 155.0F
+			&& clamped.bottomPairHeight == 510.0F,
+			"PPT drag clamp uses its active standard geometry without inheriting whiteboard width");
 	}
 
 	void TestA2ProjectionAndMigration()

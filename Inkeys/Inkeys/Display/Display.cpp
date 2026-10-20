@@ -1287,10 +1287,13 @@ namespace Inkeys::Display
 	}
 
 	double ResolveUiScaleBase(UINT dpi, int thickness, UINT primaryDpi,
-		int primaryThickness, bool useTaskbar, double baseHeightDip) noexcept
+		int primaryThickness, UiScaleBaseMode mode, double baseHeightDip) noexcept
 	{
 		const double dpiScale = static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI;
-		if (!useTaskbar || !std::isfinite(baseHeightDip) || baseHeightDip <= 0.0) return dpiScale;
+		if (!std::isfinite(baseHeightDip) || baseHeightDip <= 0.0) return dpiScale;
+		// 基础量固定为 48 DIP；不依赖 Shell 样本，也不能叠乘任务栏真实厚度。
+		if (mode == UiScaleBaseMode::TaskbarBasic) return 48.0 / baseHeightDip * dpiScale;
+		if (mode != UiScaleBaseMode::TaskbarActual) return dpiScale;
 		if (thickness > 0) return thickness / baseHeightDip;
 		if (primaryThickness > 0 && primaryDpi > 0)
 			return primaryThickness / baseHeightDip * (dpi ? dpi : USER_DEFAULT_SCREEN_DPI) / primaryDpi;
@@ -1298,15 +1301,15 @@ namespace Inkeys::Display
 	}
 
 	double ResolveUiScaleBase(const Snapshot& snapshot, const MonitorInfo& monitor,
-		bool useTaskbar, double baseHeightDip) noexcept
+		UiScaleBaseMode mode, double baseHeightDip) noexcept
 	{
 		const auto* primary = snapshot.Primary();
 		return ResolveUiScaleBase(monitor.effectiveDpiX, monitor.taskbarThicknessPx,
 			primary ? primary->effectiveDpiX : 0, primary ? primary->taskbarThicknessPx : 0,
-			useTaskbar, baseHeightDip);
+			mode, baseHeightDip);
 	}
 
-	double QueryUiScaleBase(HMONITOR handle, bool useTaskbar, double baseHeightDip) noexcept
+	double QueryUiScaleBase(HMONITOR handle, UiScaleBaseMode mode, double baseHeightDip) noexcept
 	{
 		Snapshot mini;
 		EnumContext context;
@@ -1322,8 +1325,8 @@ namespace Inkeys::Display
 		}
 		SampleTaskbars(mini);
 		const auto* monitor = mini.Find(handle);
-		return monitor ? ResolveUiScaleBase(mini, *monitor, useTaskbar, baseHeightDip)
-			: ResolveUiScaleBase(QueryEffectiveDpi(handle), 0, 0, 0, useTaskbar, baseHeightDip);
+		return monitor ? ResolveUiScaleBase(mini, *monitor, mode, baseHeightDip)
+			: ResolveUiScaleBase(QueryEffectiveDpi(handle), 0, 0, 0, mode, baseHeightDip);
 	}
 
 	std::optional<MonitorInfo> QueryTaskbarMonitorInfo(HMONITOR handle) noexcept

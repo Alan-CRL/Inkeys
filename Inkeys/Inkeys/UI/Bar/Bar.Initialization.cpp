@@ -85,7 +85,8 @@ void BarUISetClass::PublishDisplaySnapshot(
 	const double desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*monitor);
 	const bool protectBottomEdge = Inkeys::Display::ShouldProtectTaskbarBottomEdge(*monitor);
 	const double uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
-		*snapshot, *monitor, Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase);
+		*snapshot, *monitor, static_cast<Inkeys::Display::UiScaleBaseMode>(
+			Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load()));
 	{
 		lock_guard lock(pendingDisplayPublishMutex);
 		// 其他屏幕或 Shell 重复采样不能重启本栏的位置动画。

@@ -181,7 +181,7 @@ namespace Inkeys::UI::Bar
 			for(auto& button:pageButtons){button=std::make_shared<BarButtonClass>();list.push_back(button);}
 			pagination.Replace(std::move(list));
 			const COLORREF surface=GetThemeColor(BarThemeColorEnum::Surface);appliedSurfaceColor=surface;
-			InitializeShape(root,{0,0,165,42.5},surface,BarMainBarCornerRadiusDip,BarMainBarFillOpacity,BarMainBarFrameOpacity);
+			InitializeShape(root,{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip},surface,BarMainBarCornerRadiusDip,BarMainBarFillOpacity,BarMainBarFrameOpacity);
 			InitializeShape(menu,MenuBounds,surface,BarMainBarCornerRadiusDip,0.95,BarMainBarFrameOpacity);
 			InitializeShape(theme,ThemeBounds,surface,BarMainBarCornerRadiusDip,0.95,BarMainBarFrameOpacity);
 			InitializeShape(divider,{350,-116,570,-115},GetThemeColor(BarThemeColorEnum::SurfaceFrame),0.5,0.30);
@@ -320,7 +320,7 @@ namespace Inkeys::UI::Bar
 			const bool currentChanged=content.currentPage!=next.currentPage,totalChanged=content.totalPage!=next.totalPage;
 			if(currentChanged||totalChanged){
 				IncludeButton(3);pageButtons[2]->name.SetStringImmediate(next.currentPage);pageTotal.SetStringImmediate(next.totalPage);
-				if(!next.whiteboard&&next.surface<2){
+				if(BarPptCompactPaginationEnabled&&!next.whiteboard&&next.surface<2){
 					auto& name=pageButtons[2]->name;
 					const bool moving=!name.x.IsSame()||!name.w.IsSame()||!name.size.IsSame()
 						||!pageTotal.x.IsSame()||!pageTotal.w.IsSame()||!pageTotal.y.IsSame()||!pageTotal.size.IsSame();
@@ -330,10 +330,10 @@ namespace Inkeys::UI::Bar
 			const auto text=[&](BarSurfaceButtonId id,const std::wstring& icon,const std::wstring& label,double angle=0){
 				ConfigureButtonContent(Button(id),icon,label,angle,BarUiDefaultOperationDur,false);IncludeButton(id);
 			};
-			const bool wb=next.whiteboard,vertical=next.surface>=2;
-			if(content.previousLabel!=next.previousLabel)text(2,L"barMore",wb?next.previousLabel:L"",vertical&&!wb?0:-90);
+			const bool wb=next.whiteboard,vertical=next.surface>=2,standard=wb||!BarPptCompactPaginationEnabled;
+			if(content.previousLabel!=next.previousLabel)text(2,L"barMore",standard?next.previousLabel:L"",vertical&&!wb?0:-90);
 			if(content.nextLabel!=next.nextLabel||content.nextIsAdd!=next.nextIsAdd||content.nextIsEndShow!=next.nextIsEndShow)
-				text(4,wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),wb?next.nextLabel:L"",
+				text(4,wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
 					(wb&&next.nextIsAdd)||(!wb&&next.nextIsEndShow)?0:(vertical&&!wb?180:90));
 			if(content.moreLabel!=next.moreLabel)text(5,L"barMenu",next.moreLabel);
 			const wchar_t* icons[]={L"barCloseSmall",L"barMinimize",L"barPalette"};
@@ -365,13 +365,20 @@ namespace Inkeys::UI::Bar
 		{
 			if(initialized&&!backgroundOnly&&content.surface==next.surface&&content.whiteboard==next.whiteboard){UpdateContent(next);return;}
 			const bool direct=!initialized || duration<=0;
-			const bool wb=next.whiteboard,vertical=next.surface>=2,left=next.surface==0;
-			const auto rootRect=wb?EraserAttributeRect{0,0,left?305.0:230.0,80}:
-				(vertical?EraserAttributeRect{0,0,42.5,165}:EraserAttributeRect{0,0,165,42.5});
+			const bool wb=next.whiteboard,vertical=next.surface>=2,left=next.surface==0,standard=wb||!BarPptCompactPaginationEnabled;
+			const auto rootRect=wb?EraserAttributeRect{0,0,left?BarWhiteboardPaginationLeftWidthDip:BarWhiteboardPaginationWidthDip,BarWhiteboardPaginationHeightDip}:
+				(vertical?EraserAttributeRect{0,0,BarPptPaginationShortSideDip,BarPptPaginationLongSideDip}:
+					EraserAttributeRect{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip});
 			SetShapeBounds(root,rootRect,duration,direct);
 			std::array<EraserAttributeRect,5> rects{};
 			if(wb) rects={EraserAttributeRect{left?5.0:225.0,5,left?5.0:225.0,75},
 				{5,5,75,75},{80,5,150,75},{155,5,225,75},{230,5,300,75}};
+			else if(standard){
+				// 与 PageControl 的 fit/拖动/命中合同共用同一槽位；旧 compact 分支保留。
+				const auto geometry=ResolveBarPptStandardPaginationGeometry(vertical,next.surface==1);
+				const auto rect=[](const auto& r){return EraserAttributeRect{r.left,r.top,r.right,r.bottom};};
+				rects={rect(geometry.drag),rect(geometry.previous),rect(geometry.page),rect(geometry.next),{}};
+			}
 			else if(vertical)rects={EraserAttributeRect{5,5,37.5,15},{5,15,37.5,47.5},{5,52.5,37.5,122.5},{5,127.5,37.5,160},{37.5,127.5,37.5,160}};
 			else if(next.surface==1)rects={EraserAttributeRect{150,5,160,37.5},{5,5,37.5,37.5},{42.5,5,112.5,37.5},{117.5,5,150,37.5},{160,5,160,37.5}};
 			else rects={EraserAttributeRect{5,5,15,37.5},{15,5,47.5,37.5},{52.5,5,122.5,37.5},{127.5,5,160,37.5},{160,5,160,37.5}};
@@ -385,27 +392,27 @@ namespace Inkeys::UI::Bar
 					rects[i]={item.x-item.width/2,item.y-item.height/2,item.x+item.width/2,item.y+item.height/2};}
 			}
 			ConfigureButton(*pageButtons[0],BarButtonVisualLayoutKind::Custom,rects[0],L"",L"",0,duration,direct);
-			ConfigureButton(*pageButtons[1],wb?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,
-				rects[1],L"barMore",wb?next.previousLabel:L"",vertical&&!wb?0:-90,duration,direct);
-			ConfigureButton(*pageButtons[2],wb?BarButtonVisualLayoutKind::PageTwoTwo:
+			ConfigureButton(*pageButtons[1],standard?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,
+				rects[1],L"barMore",standard?next.previousLabel:L"",vertical&&!wb?0:-90,duration,direct);
+			ConfigureButton(*pageButtons[2],standard?BarButtonVisualLayoutKind::PageTwoTwo:
 				(vertical?BarButtonVisualLayoutKind::PageVertical:BarButtonVisualLayoutKind::PageHorizontal),rects[2],L"",L"",0,duration,direct);
 			// 页码属于状态输出：不沿文字切换动画延迟页身份。
 			pageButtons[2]->name.SetStringImmediate(next.currentPage);
 			pageButtons[2]->name.enable.Initialization(true);
 			pageTotal.SetStringImmediate(next.totalPage);
-			const auto metrics=ResolveBarButtonVisualMetrics(wb?BarButtonVisualLayoutKind::PageTwoTwo:
+			const auto metrics=ResolveBarButtonVisualMetrics(standard?BarButtonVisualLayoutKind::PageTwoTwo:
 				(vertical?BarButtonVisualLayoutKind::PageVertical:BarButtonVisualLayoutKind::PageHorizontal));
 			const auto slot=[&](auto& value,double target){if(direct)value.SetDirect(target);else value.SetTar(target,duration);};
 			// 页身份立即更新，字体及双行槽位仍从当前呈现值连续变换。
 			slot(pageTotal.size,metrics.secondaryFontSizeDip);
 			slot(pageTotal.x,metrics.secondaryOffsetXDip);slot(pageTotal.y,metrics.secondaryOffsetYDip);
-			slot(pageTotal.w,metrics.secondarySlotWidthDip?metrics.secondarySlotWidthDip:70);
+			slot(pageTotal.w,metrics.secondarySlotWidthDip?metrics.secondarySlotWidthDip:BarButtonTwoSideDip);
 			slot(pageTotal.h,metrics.secondarySlotHeightDip);pageTotal.enable.Initialization(true);
-			if(!wb&&!vertical){
+			if(!standard&&!vertical){
 				UpdateHorizontalPageWidths(next,true,true,direct,duration);
 			}
-			ConfigureButton(*pageButtons[3],wb?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,rects[3],
-				wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),wb?next.nextLabel:L"",
+			ConfigureButton(*pageButtons[3],standard?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,rects[3],
+				wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
 				(wb&&next.nextIsAdd)||(!wb&&next.nextIsEndShow)?0:(vertical&&!wb?180:90),duration,direct);
 			ConfigureButton(*pageButtons[4],BarButtonVisualLayoutKind::StandardTwoTwo,rects[4],L"barMenu",next.moreLabel,0,duration,direct);
 			const wchar_t* icons[]={L"barCloseSmall",L"barMinimize",L"barPalette"};

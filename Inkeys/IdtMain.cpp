@@ -715,41 +715,55 @@ namespace
 			for (const bool largeScreen : { false, true })
 			{
 				Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(largeScreen);
+				const int defaultMode = largeScreen ? 1 : 0;
 				Inkeys::Config scaleDefaults;
-				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen)
+				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode)
 					return 1;
-				for (const char* value : { "missing", "0", "1", "1.0", "\"false\"", "null", "{}", "[]" })
+				for (const char* value : { "missing", "-1", "3", "1.0", "2.0", "\"1\"", "\"false\"", "4294967297", "null", "{}", "[]" })
 				{
 					const std::string document = std::string(value) == "missing" ? "{}"
 						: "{\"UI\":{\"Bar\":{\"UseTaskbarHeightAsScaleBase\":" + std::string(value) + "}}}";
 					if (!writeBytes(mainConfig, document)) return 1;
 					scaleDefaults.UI.Bar.Zoom2 = 1.5;
-					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 					if (!scaleDefaults.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
-						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode ||
 						scaleDefaults.UI.Bar.Zoom2.load() != 1.5) return 1;
-					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 					if (!scaleDefaults.ReadAll() ||
-						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen) return 1;
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode) return 1;
 				}
-				for (const bool enabled : { false, true })
+				struct ScaleModeCase final
 				{
-					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = enabled;
+					const char* json;
+					int expected;
+				};
+				for (const auto& test : { ScaleModeCase{ "false", 0 }, ScaleModeCase{ "true", 2 },
+					ScaleModeCase{ "0", 0 }, ScaleModeCase{ "1", 1 }, ScaleModeCase{ "2", 2 } })
+				{
+					const std::string document = "{\"UI\":{\"Bar\":{\"UseTaskbarHeightAsScaleBase\":"
+						+ std::string(test.json) + "}}}";
+					if (!writeBytes(mainConfig, document) || !scaleDefaults.ReadAll() ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
+					if (!scaleDefaults.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
 					Inkeys::Config frozenScale;
 					frozenScale = scaleDefaults;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
 					if (!frozenScale.Write()) return 1;
 					Inkeys::Config restoredScale;
 					if (!restoredScale.ReadAll() ||
-						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != enabled ||
+						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected ||
 						!restoredScale.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
-						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != enabled) return 1;
+						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
 					const auto scaleUpload = restoredScale.GetUploadInfo();
-					restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
+					restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
 					if (restoredScale.GetUploadInfo() != scaleUpload) return 1;
 				}
-				scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+				scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 				scaleDefaults.ResetToDefaults();
-				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen) return 1;
+				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode) return 1;
 			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
@@ -2399,18 +2413,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				CachedStartupBarWidthDip);
 		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom2;
 		previewOptions.dpi = startupDpi;
+		const auto scaleBaseMode = static_cast<Inkeys::Display::UiScaleBaseMode>(
+			startupMiniConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load());
 		if (const auto taskbarMonitor = Inkeys::Display::QueryTaskbarMonitorInfo(primaryMonitor))
 		{
 			// Mini 的基准倍率和贴底线共用一次 Shell 采样，不依赖稍后完整枚举。
 			previewOptions.dpi = taskbarMonitor->effectiveDpiX;
 			previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
 				taskbarMonitor->effectiveDpiX, taskbarMonitor->taskbarThicknessPx, 0, 0,
-				startupMiniConfig.UI.Bar.UseTaskbarHeightAsScaleBase);
+				scaleBaseMode);
 			previewOptions.desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*taskbarMonitor);
 			monitorInfo.rcMonitor = taskbarMonitor->bounds;
 			monitorInfo.rcWork = taskbarMonitor->workArea;
 		}
-		else previewOptions.uiBaseScale = static_cast<double>(startupDpi) / USER_DEFAULT_SCREEN_DPI;
+		else previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
+			startupDpi, 0, 0, 0, scaleBaseMode);
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
 		previewOptions.workArea = monitorInfo.rcWork;
 		previewOptions.contentBounds = Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(

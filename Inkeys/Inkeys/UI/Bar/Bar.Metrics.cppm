@@ -7,6 +7,26 @@ export
 	inline constexpr double BarButtonOneSideDip = 32.5;
 	inline constexpr double BarButtonTwoSideDip =
 		BarButtonOneSideDip * 2.0 + BarButtonGapDip;
+	// 旧 compact 视觉保留，当前统一使用标准 2×2；几何和绘制必须消费同一开关。
+	inline constexpr bool BarPptCompactPaginationEnabled = false;
+	inline constexpr double BarPaginationDragHandleSlotDip = BarButtonGapDip * 2.0;
+	inline constexpr double BarPptCompactLongSideDip =
+		BarPaginationDragHandleSlotDip + BarButtonOneSideDip * 2.0
+		+ BarButtonTwoSideDip + BarButtonGapDip * 4.0;
+	inline constexpr double BarPptCompactShortSideDip =
+		BarButtonOneSideDip + BarButtonGapDip * 2.0;
+	inline constexpr double BarPptPaginationLongSideDip =
+		BarPptCompactPaginationEnabled ? BarPptCompactLongSideDip
+		: BarPaginationDragHandleSlotDip + BarButtonTwoSideDip * 3.0 + BarButtonGapDip * 4.0;
+	inline constexpr double BarPptPaginationShortSideDip =
+		BarPptCompactPaginationEnabled ? BarPptCompactShortSideDip
+		: BarButtonTwoSideDip + BarButtonGapDip * 2.0;
+	inline constexpr double BarWhiteboardPaginationWidthDip =
+		BarButtonTwoSideDip * 3.0 + BarButtonGapDip * 4.0;
+	inline constexpr double BarWhiteboardPaginationLeftWidthDip =
+		BarWhiteboardPaginationWidthDip + BarButtonTwoSideDip + BarButtonGapDip;
+	inline constexpr double BarWhiteboardPaginationHeightDip =
+		BarButtonTwoSideDip + BarButtonGapDip * 2.0;
 	inline constexpr double BarButtonCornerRadiusDip = 4.0;
 	inline constexpr double BarButtonFrameThicknessDip = 1.0;
 	inline constexpr double BarButtonTwoTwoIconSizeDip = 28.0;
@@ -75,6 +95,54 @@ export namespace Inkeys::UI::Bar
 	{
 		return mainButtonTargetWidthDip
 			+ BarMainButtonToMainBarGapDip + layoutTotalWidthDip;
+	}
+
+	struct BarPaginationDipRect
+	{
+		double left = 0.0;
+		double top = 0.0;
+		double right = 0.0;
+		double bottom = 0.0;
+	};
+
+	struct BarPptStandardPaginationGeometry
+	{
+		BarPaginationDipRect drag;
+		BarPaginationDipRect previous;
+		BarPaginationDipRect page;
+		BarPaginationDipRect next;
+	};
+
+	[[nodiscard]] constexpr BarPptStandardPaginationGeometry
+		ResolveBarPptStandardPaginationGeometry(bool vertical, bool right) noexcept
+	{
+		constexpr double gap = BarButtonGapDip;
+		constexpr double side = BarButtonTwoSideDip;
+		constexpr double slot = BarPaginationDragHandleSlotDip;
+		if (vertical)
+		{
+			return {
+				{ gap, gap, gap + side, gap + slot },
+				{ gap, gap + slot, gap + side, gap + slot + side },
+				{ gap, 2 * gap + slot + side, gap + side, 2 * gap + slot + 2 * side },
+				{ gap, 3 * gap + slot + 2 * side, gap + side, 3 * gap + slot + 3 * side },
+			};
+		}
+		if (right)
+		{
+			return {
+				{ 3 * gap + 3 * side, gap, 3 * gap + 3 * side + slot, gap + side },
+				{ gap, gap, gap + side, gap + side },
+				{ 2 * gap + side, gap, 2 * gap + 2 * side, gap + side },
+				{ 3 * gap + 2 * side, gap, 3 * gap + 3 * side, gap + side },
+			};
+		}
+		return {
+			{ gap, gap, gap + slot, gap + side },
+			{ gap + slot, gap, gap + slot + side, gap + side },
+			{ 2 * gap + slot + side, gap, 2 * gap + slot + 2 * side, gap + side },
+			{ 3 * gap + slot + 2 * side, gap, 3 * gap + slot + 3 * side, gap + side },
+		};
 	}
 
 	// 标准按钮内部几何只在这里解析，主栏与分页不得各写一份偏移。

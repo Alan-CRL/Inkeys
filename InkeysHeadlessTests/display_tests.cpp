@@ -86,16 +86,27 @@ int RunDisplayTests()
 		for (const int thickness : { 24, 48, 72, 96 })
 			for (const double user : { 0.5, 1.0, 1.5, 2.0 })
 			{
-				const double base = ResolveUiScaleBase(dpi, thickness, 96, 48, true);
+				const double base = ResolveUiScaleBase(dpi, thickness, 96, 48, UiScaleBaseMode::TaskbarActual);
 				Check(std::abs(80 * base * user - thickness * user) < 1e-9,
-					"UI taskbar base is physical thickness independent of DPI and user multiplier");
-				Check(ResolveUiScaleBase(dpi, thickness, 96, 48, false) == dpi / 96.0,
+					"UI actual taskbar base is physical thickness independent of DPI and user multiplier");
+				Check(ResolveUiScaleBase(dpi, thickness, 96, 48, UiScaleBaseMode::Dpi) == dpi / 96.0,
 					"disabled taskbar base restores real DPI");
+				const double basic = ResolveUiScaleBase(dpi, thickness, 96, 48, UiScaleBaseMode::TaskbarBasic);
+				Check(std::abs(80 * basic * user - 48 * dpi / 96.0 * user) < 1e-9,
+					"UI basic taskbar base keeps 48 DIP at 100 percent independent of actual thickness");
 			}
-	Check(std::abs(ResolveUiScaleBase(192, 0, 144, 72, true) - 1.2) < 1e-9
-		&& ResolveUiScaleBase(144, 0, 0, 0, true) == 1.5
-		&& ResolveUiScaleBase(0, -1, 0, -1, true) == 1.0,
-		"absent secondary taskbar scales primary thickness by DPI, unavailable shell falls back to DPI");
+	for (const UINT dpi : { 0U, 96U, 144U, 192U })
+		for (const int thickness : { -1, 0, 24, 96 })
+		{
+			const double dpiScale = (dpi ? dpi : 96) / 96.0;
+			Check(std::abs(ResolveUiScaleBase(dpi, thickness, 0, 0, UiScaleBaseMode::TaskbarBasic)
+				- 0.6 * dpiScale) < 1e-9,
+				"basic taskbar mode retains 48 DIP without Shell samples and defaults missing DPI to 96");
+		}
+	Check(std::abs(ResolveUiScaleBase(192, 0, 144, 72, UiScaleBaseMode::TaskbarActual) - 1.2) < 1e-9
+		&& ResolveUiScaleBase(144, 0, 0, 0, UiScaleBaseMode::TaskbarActual) == 1.5
+		&& ResolveUiScaleBase(0, -1, 0, -1, UiScaleBaseMode::TaskbarActual) == 1.0,
+		"actual taskbar mode retains primary DPI and unavailable Shell fallbacks");
 	Snapshot hiddenSnapshot;
 	hiddenSnapshot.monitors.resize(2);
 	hiddenSnapshot.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
@@ -217,8 +228,14 @@ int RunDisplayTests()
 	scaleSnapshot.monitors[0].effectiveDpiX = 144;
 	scaleSnapshot.monitors[0].taskbarThicknessPx = 72;
 	scaleSnapshot.monitors[1].effectiveDpiX = 192;
-	Check(std::abs(ResolveUiScaleBase(scaleSnapshot, scaleSnapshot.monitors[1], true) - 1.2) < 1e-9,
+	Check(std::abs(ResolveUiScaleBase(scaleSnapshot, scaleSnapshot.monitors[1], UiScaleBaseMode::TaskbarActual) - 1.2) < 1e-9,
 		"snapshot scale uses target and primary from the same publication");
+	scaleSnapshot.monitors[0].taskbarThicknessPx = 96;
+	Check(std::abs(ResolveUiScaleBase(scaleSnapshot, scaleSnapshot.monitors[1], UiScaleBaseMode::TaskbarActual) - 1.6) < 1e-9
+		&& std::abs(ResolveUiScaleBase(scaleSnapshot, scaleSnapshot.monitors[1], UiScaleBaseMode::TaskbarBasic) - 1.2) < 1e-9
+		&& ResolveUiScaleBase(scaleSnapshot, scaleSnapshot.monitors[1], UiScaleBaseMode::Dpi) == 2.0,
+		"snapshot basic mode ignores primary fallback thickness while actual mode follows it");
+	scaleSnapshot.monitors[0].taskbarThicknessPx = 72;
 	auto scaleChanged = scaleSnapshot;
 	Check(scaleSnapshot.SemanticallyEquals(scaleChanged), "same taskbar thickness does not publish another generation");
 	scaleChanged.monitors[0].taskbarThicknessPx = 96;
