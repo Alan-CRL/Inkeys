@@ -72,6 +72,8 @@ namespace
 	std::optional<Inkeys::Drawing::Draw3::Bridge::PresentationTarget> expectedPptUiTarget;
 	std::atomic_uint64_t pptComGeneration = 0;
 	std::atomic_bool pptExitDialogActive = false;
+	std::atomic_bool pptControlAvailable = false;
+	std::atomic_bool pptWindowControlAvailable = false;
 
 	PptSessionToken CapturePptSession()
 	{
@@ -80,7 +82,8 @@ namespace
 	}
 	bool IsCurrentPptSession(const PptSessionToken& token)
 	{
-		return token.serviceGeneration == pptComGeneration.load(std::memory_order_acquire) &&
+		return pptControlAvailable.load(std::memory_order_acquire) &&
+			token.serviceGeneration == pptComGeneration.load(std::memory_order_acquire) &&
 			Inkeys::Business::MatchesPptSession(token, CapturePptSession());
 	}
 	enum class PptUiBusinessCommand : unsigned char
@@ -98,24 +101,32 @@ namespace
 	condition_variable pptUiBusinessCondition;
 	deque<PptUiBusinessRequest> pptUiBusinessCommands;
 	atomic_bool pptUiPageCommandOutstanding = false;
+	Inkeys::Business::PptEndShowGate pptEndShowGate;
 	constexpr auto PptPageStateCheckInterval = chrono::milliseconds(16);
 	constexpr auto PptIdleStateCheckInterval = chrono::milliseconds(100);
 	constexpr auto PptVisibilityPublishInterval = chrono::milliseconds(500);
 
-	void QueuePptUiBusinessCommand(PptUiBusinessCommand command, std::uint64_t requestId = 0)
+	void QueuePptUiBusinessCommand(PptUiBusinessCommand command, std::uint64_t requestId = 0,
+		const PptSessionToken* expected = nullptr)
 	{
 		const bool pageCommand = command == PptUiBusinessCommand::Previous ||
 			command == PptUiBusinessCommand::Next;
 		if (pageCommand && pptUiPageCommandOutstanding.exchange(true)) return;
-		PptUiBusinessRequest request{ command, CapturePptSession(), requestId };
+		PptUiBusinessRequest request{ command, expected ? *expected : CapturePptSession(), requestId };
 		try
 		{
 			lock_guard lock(pptUiBusinessMutex);
+			if (command == PptUiBusinessCommand::EndShow && !pptEndShowGate.TryBegin(request.session)) return;
 			pptUiBusinessCommands.push_back(std::move(request));
 		}
 		catch (...)
 		{
 			if (pageCommand) pptUiPageCommandOutstanding = false;
+			if (command == PptUiBusinessCommand::EndShow)
+			{
+				lock_guard lock(pptUiBusinessMutex);
+				pptEndShowGate.Complete(request.session);
+			}
 			if (requestId) Inkeys::UI::Bar::CompleteEndShowRequest(requestId);
 			return;
 		}
@@ -138,12 +149,8 @@ namespace
 			lock_guard lock(pptSessionMutex);
 			if (!currentPptSession.active || currentPptSession.localSession != session
 				|| currentPptSession.serviceGeneration != pptComGeneration.load(std::memory_order_acquire)
-				|| !expectedPptUiTarget || expectedPptUiTarget->targetRevision != revision
-				|| (expectedPptUiTarget->pageKind ==
-					Inkeys::Drawing::Draw3::Bridge::PresentationPageKind::EndScreen
-					? page != -1 || expectedPptUiTarget->pageIndex != expectedPptUiTarget->totalPages
-					: page <= 0 || expectedPptUiTarget->pageIndex != static_cast<std::uint32_t>(page - 1))
-				|| total <= 0 || expectedPptUiTarget->totalPages != static_cast<std::uint32_t>(total)) return;
+				|| !expectedPptUiTarget || !Inkeys::Business::MatchesPptPageUi(
+					*expectedPptUiTarget, session, revision, page, total)) return;
 			ready = Inkeys::Drawing::Draw3::Bridge::ReadyIdentityFor(*expectedPptUiTarget);
 		}
 		(void)Inkeys::Drawing::Draw3::PublishProductPresentationUiReady(*ready);
@@ -152,6 +159,25 @@ namespace
 	[[nodiscard]] bool IsInRect(long x, long y, const RECT& rect) noexcept
 	{
 		return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+	}
+}
+
+namespace Inkeys::Business
+{
+	PptSessionToken CapturePptInputSession() noexcept { return CapturePptSession(); }
+	bool IsCurrentPptInputSession(const PptSessionToken& token) noexcept
+	{
+		return IsCurrentPptSession(token);
+	}
+	void QueuePptInputDirection(const PptSessionToken& token,
+		bool next, int currentPage, int totalPage) noexcept
+	{
+		if (totalPage <= 0 || !IsCurrentPptSession(token)) return;
+		const auto command = next
+			? (currentPage == -1 ? PptUiBusinessCommand::EndShow : PptUiBusinessCommand::Next)
+			: PptUiBusinessCommand::Previous;
+		// 捕获的 token 原样存入最终业务请求，入队时绝不重新认领当前放映。
+		QueuePptUiBusinessCommand(command, 0, &token);
 	}
 }
 
@@ -461,15 +487,29 @@ namespace
 			reinterpret_cast<void**>(&result));
 		return result;
 	}
+	std::uint64_t PptProcessStartTime(DWORD processId)
+	{
+		if (!processId) return 0;
+		const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+		if (!process) return 0;
+		FILETIME created{}, exited{}, kernel{}, user{};
+		const bool read = GetProcessTimes(process, &created, &exited, &kernel, &user) != 0;
+		CloseHandle(process);
+		return read ? (static_cast<std::uint64_t>(created.dwHighDateTime) << 32)
+			| created.dwLowDateTime : 0;
+	}
 	bool FocusPptSession(const PptSessionToken& token)
 	{
-		if (!IsCurrentPptSession(token) || pptExitDialogActive.load()
+		if (!IsCurrentPptSession(token) || !pptWindowControlAvailable.load(std::memory_order_acquire)
+			|| pptExitDialogActive.load()
 			|| Inkeys::UI::MessageBox::IsShowing()
 			|| !Inkeys::UI::Bar::PptBusinessFocusAllowed()) return false;
 		const HWND target = reinterpret_cast<HWND>(token.showWindow);
 		DWORD processId = 0;
 		if (!target || !IsWindow(target) || !IsWindowVisible(target)
 			|| !GetWindowThreadProcessId(target, &processId) || processId != token.processId) return false;
+		if (Inkeys::Business::IsPptWindowConfirmedEnded(token, true, processId,
+			PptProcessStartTime(processId))) return false;
 		const HWND foreground = GetForegroundWindow();
 		if (foreground == target) return true;
 		const HWND settings = Inkeys::Window::GetService().Handle(Inkeys::Window::WindowRole::Setting);
@@ -515,7 +555,8 @@ void PptInfo()
 	std::uint64_t observedStateRevision = 0;
 	IPptCOMSessionStatePtr sessionApi;
 	std::optional<PptSessionSnapshot> cachedState;
-	std::optional<D3::Bridge::PresentationTarget> cachedTarget;
+	PptTargetCache targetCache;
+	auto& cachedTarget = targetCache.target;
 	int lastRawPage = -2, lastRawTotal = -2;
 	std::int64_t firstObservationQpc = 0, descriptorAcceptanceQpc = 0;
 	std::uint64_t tracedTargetRevision = 0;
@@ -523,6 +564,7 @@ void PptInfo()
 	bool observationPending = false;
 	int publishedPage = -2, publishedTotal = -2;
 	std::uint64_t publishedTarget = UINT64_MAX, publishedSession = 0;
+	auto publishedPageMode = Inkeys::UI::Ppt::PageStateMode::Pending;
 	int publishedVisible = -1;
 	auto nextVisibility = chrono::steady_clock::time_point::min();
 	auto nextMaintenance = chrono::steady_clock::time_point::min();
@@ -551,6 +593,8 @@ void PptInfo()
 	{
 		auto session = CapturePptSession();
 		if (!session.active) return;
+		pptControlAvailable.store(false, std::memory_order_release);
+		pptWindowControlAvailable.store(false, std::memory_order_release);
 		{
 			lock_guard lock(pptSessionMutex);
 			currentPptSession.active = false;
@@ -660,6 +704,10 @@ void PptInfo()
 			if (ending.active) TraceTrueExit("inactive", ending);
 			EndSession();
 		}
+		const bool ownerActive = stateReliable && sessionApi && cachedState
+			&& CanStartPptControlSession(*cachedState);
+		auto controlPage = ownerActive
+			? ResolvePptControlPage(*cachedState, rawPage, rawTotal) : PptControlPage{};
 		bool trustedPage = stateReliable && lifecycle == PptLifecycle::Active
 			&& pageStatus == PptPageStatus::Valid && descriptor
 			&& rawPage > 0 && rawTotal > 0
@@ -668,30 +716,34 @@ void PptInfo()
 		bool trustedEndScreen = stateReliable && sessionApi &&
 			lifecycle == PptLifecycle::Active && pageStatus == PptPageStatus::EndScreen &&
 			descriptor && descriptor->status == D3::PresentationDescriptorStatus::StableSlideIds &&
+			// raw 已回到真实页或总数已变时，旧结束页拓扑不能继续开放写入。
+			controlPage.known && controlPage.currentPage == -1 &&
 			descriptor->currentPage == 0 && descriptor->totalPage > 0;
 		auto session = CapturePptSession();
 		bool confirmedWindowEnd = false;
-		if (session.active)
+		bool controlSessionAvailable = false;
+		bool windowControlAvailable = false;
+		bool focusAfterStart = false;
+		if (session.active && session.showWindow != 0)
 		{
 			const HWND capturedWindow = reinterpret_cast<HWND>(session.showWindow);
 			DWORD ownerProcess = 0;
 			// COM/服务槽暂时不可用不是退出；已销毁或被别的进程复用的窗口才证明旧场次结束。
-			const bool windowGone = !IsWindow(capturedWindow);
-			const bool windowReused = !windowGone &&
-				GetWindowThreadProcessId(capturedWindow, &ownerProcess) != 0 &&
-				ownerProcess != session.processId;
-			if ((windowGone || windowReused) && MatchesPptSession(session, CapturePptSession()))
+			const bool windowExists = IsWindow(capturedWindow) != 0;
+			if (windowExists) GetWindowThreadProcessId(capturedWindow, &ownerProcess);
+			if (IsPptWindowConfirmedEnded(session, windowExists, ownerProcess,
+				PptProcessStartTime(ownerProcess)) && MatchesPptSession(session, CapturePptSession()))
 			{
 				confirmedWindowEnd = true;
 				exitedThisTick = true;
 				exitModeRevision = StateModeTransitionRevision();
-				TraceTrueExit(windowGone ? "show-window-lost" : "show-window-reused", session);
+				TraceTrueExit(!windowExists ? "show-window-lost" : "show-window-reused", session);
 				EndSession();
 				session = CapturePptSession();
 			}
 		}
 		if (stateReliable && lifecycle == PptLifecycle::Active && descriptor
-			&& (trustedPage || pageStatus == PptPageStatus::EndScreen))
+			&& (ownerActive || trustedPage || pageStatus == PptPageStatus::EndScreen))
 		{
 			const auto showRevision = sessionApi ? cachedState->showSessionRevision : 0;
 			HWND showWindow = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(descriptor->slideShowHwnd));
@@ -703,29 +755,34 @@ void PptInfo()
 					processId == static_cast<DWORD>(descriptor->applicationProcessId));
 			// 扩展会话一旦可靠结束，迟到的同场缓存不能以复用 HWND 再次开启。
 			const bool endedSessionSnapshot = sessionApi && !session.active && session.localSession != 0 &&
-				session.serviceGeneration == serviceGeneration && session.showSessionRevision == showRevision;
+				session.serviceGeneration == serviceGeneration && session.showSessionRevision == showRevision
+				&& session.bindingRevision == descriptor->bindingRevision;
 			if (!descriptorWindowMatches || endedSessionSnapshot)
 			{
-				// 窗口身份校验同时约束场次和画布目标，不能借旧场次发布另一窗口的缓存。
+				// 窗口身份只授权墨迹/焦点；HWND0 不阻断 owner 已证实的 COM 基础控制。
 				trustedPage = false;
 				trustedEndScreen = false;
-				pageStatus = PptPageStatus::Unknown;
 			}
-			if (descriptorWindowMatches && !endedSessionSnapshot &&
+			const bool controlSessionAllowed = !endedSessionSnapshot &&
+				(descriptorWindowMatches || (ownerActive && descriptor->slideShowHwnd == 0));
+			if (!controlSessionAllowed) controlPage = {};
+			if (controlSessionAllowed &&
 				(!session.active || session.serviceGeneration != serviceGeneration
 				|| session.showSessionRevision != showRevision
 				|| session.bindingRevision != descriptor->bindingRevision
-				|| session.showWindow != reinterpret_cast<std::uintptr_t>(showWindow)))
+				|| (!sessionApi && session.showWindow != reinterpret_cast<std::uintptr_t>(showWindow))))
 			{
 				EndSession();
 				session = { ++localSessionSequence, serviceGeneration, showRevision,
-					descriptor->bindingRevision, reinterpret_cast<std::uintptr_t>(showWindow),
-					processId, true, sessionApi != nullptr };
+					descriptor->bindingRevision, descriptorWindowMatches
+						? reinterpret_cast<std::uintptr_t>(showWindow) : 0,
+					descriptorWindowMatches ? processId : 0, true, sessionApi != nullptr,
+					descriptorWindowMatches ? PptProcessStartTime(processId) : 0 };
 				{
 					lock_guard lock(pptSessionMutex);
 					currentPptSession = session;
 				}
-				ppt_show = showWindow;
+				ppt_show = reinterpret_cast<HWND>(session.showWindow);
 				std::wstringstream title(GetPptTitle());
 				getline(title, ppt_title);
 				getline(title, ppt_software);
@@ -733,23 +790,44 @@ void PptInfo()
 				if (kPptLoadingPageEnabled && !ppt_title_recond[ppt_title] &&
 					pptComSetlist.showLoadingScreen) FreezePPT = true;
 				pptTakeoverConsumedInCurrentShow = false;
-				Inkeys::UI::Ppt::PublishSession(session.localSession, true, showWindow);
+				Inkeys::UI::Ppt::PublishSession(session.localSession, true, ppt_show);
 				Inkeys::UI::Freeze::SetPresentationActive(true);
 				barUISet.UpdateRendering();
-				QueuePptUiBusinessCommand(PptUiBusinessCommand::Focus);
+				focusAfterStart = descriptorWindowMatches;
 				descriptorChanged = true;
 			}
-			if ((trustedPage || trustedEndScreen) && session.active &&
-				(descriptorChanged || !cachedTarget))
+			else if (controlSessionAllowed && descriptorWindowMatches &&
+				(session.showWindow != reinterpret_cast<std::uintptr_t>(showWindow)
+					|| session.processId != processId || ppt_show != showWindow))
 			{
-				cachedTarget = trustedEndScreen
-					? D3::ResolveEndScreenTarget(*descriptor)
-					: D3::ResolvePresentationTarget(*descriptor);
-				if (cachedTarget) cachedTarget->sessionRevision = session.localSession;
-				LARGE_INTEGER acceptedAt{};
-				QueryPerformanceCounter(&acceptedAt);
-				descriptorAcceptanceQpc = acceptedAt.QuadPart;
+				// 同场由基础控制提升到可靠窗口，只更新锚点，避免伪造退出/重入。
+				session.showWindow = reinterpret_cast<std::uintptr_t>(showWindow);
+				session.processId = processId;
+				session.processStartTime = PptProcessStartTime(processId);
+				{
+					lock_guard lock(pptSessionMutex);
+					currentPptSession = session;
+				}
+				ppt_show = showWindow;
+				Inkeys::UI::Ppt::PublishSession(session.localSession, true, showWindow);
+				descriptorChanged = true;
 			}
+			else if (controlSessionAllowed && !descriptorWindowMatches && controlPage.known && ppt_show)
+			{
+				// 仍保留历史锚用于检测销毁；当前基础控件布局/焦点不借用未知窗口。
+				ppt_show = nullptr;
+				Inkeys::UI::Ppt::PublishSession(session.localSession, true, nullptr);
+			}
+			controlSessionAvailable = controlSessionAllowed && session.active;
+			windowControlAvailable = controlSessionAvailable && descriptorWindowMatches;
+		}
+		// 即使本轮不能接受 raw/descriptor，也记住尚未应用的 descriptor。
+		if (targetCache.Update(descriptorChanged || legacyDescriptor.has_value(), descriptor,
+			session.active && trustedPage, session.active && trustedEndScreen, session.localSession))
+		{
+			LARGE_INTEGER acceptedAt{};
+			QueryPerformanceCounter(&acceptedAt);
+			descriptorAcceptanceQpc = acceptedAt.QuadPart;
 		}
 		// COM getter 之后服务槽仍可能换代；旧缓存不能直接进入新的 Host/UI 交接。
 		const bool currentService = serviceGeneration == pptComGeneration.load(std::memory_order_acquire);
@@ -759,7 +837,14 @@ void PptInfo()
 			trustedPage = false;
 			trustedEndScreen = false;
 			pageStatus = PptPageStatus::Unknown;
+			controlSessionAvailable = false;
+			windowControlAvailable = false;
+			controlPage = {};
 		}
+		pptControlAvailable.store(controlSessionAvailable, std::memory_order_release);
+		pptWindowControlAvailable.store(windowControlAvailable, std::memory_order_release);
+		if (focusAfterStart && windowControlAvailable)
+			QueuePptUiBusinessCommand(PptUiBusinessCommand::Focus);
 		if (cachedTarget && (session.serviceGeneration != serviceGeneration ||
 			cachedTarget->sessionRevision != session.localSession ||
 			cachedTarget->bindingRevision != session.bindingRevision))
@@ -767,10 +852,16 @@ void PptInfo()
 			trustedPage = false;
 			trustedEndScreen = false;
 		}
-		const bool trustedTarget = cachedTarget &&
+		const bool trustedTarget = targetCache.Current() &&
 			((trustedPage && cachedTarget->pageKind == D3::Bridge::PresentationPageKind::Slide) ||
 				(trustedEndScreen && cachedTarget->pageKind ==
 					D3::Bridge::PresentationPageKind::EndScreen));
+		const bool basicControl = controlSessionAvailable && controlPage.known && !trustedTarget;
+		if (!trustedTarget)
+		{
+			lock_guard lock(pptSessionMutex);
+			expectedPptUiTarget.reset();
+		}
 		const bool whiteboard = WhiteboardTransactionActive();
 		static const bool tracePptGate = []() noexcept
 		{
@@ -786,7 +877,7 @@ void PptInfo()
 				GetWindowThreadProcessId(reinterpret_cast<HWND>(
 					static_cast<std::uintptr_t>(descriptor->slideShowHwnd)), &showOwner);
 			IDTLogger->info(
-				"[PptGate] lifecycle={} pageStatus={} raw={}/{} descStatus={} desc={}/{} ids={} showOwner={} descPid={} sessionActive={} sessionId={} trustedTarget={} trustedPage={} trustedEnd={} whiteboard={} hostRunning={}",
+				"[PptGate] lifecycle={} pageStatus={} raw={}/{} descStatus={} desc={}/{} ids={} showOwner={} descPid={} sessionActive={} sessionId={} trustedTarget={} trustedPage={} trustedEnd={} control={} windowControl={} basic={} whiteboard={} hostRunning={}",
 				static_cast<int>(lifecycle), static_cast<int>(pageStatus), rawPage, rawTotal,
 				descriptor ? static_cast<int>(descriptor->status) : -1,
 				descriptor ? descriptor->currentPage : 0,
@@ -794,18 +885,26 @@ void PptInfo()
 				descriptor ? descriptor->slideIds.size() : 0,
 				showOwner, descriptor ? descriptor->applicationProcessId : 0,
 				session.active, session.localSession, static_cast<bool>(trustedTarget), trustedPage,
-				trustedEndScreen, whiteboard, D3::ProductRunning());
+				trustedEndScreen, controlSessionAvailable, windowControlAvailable, basicControl,
+				whiteboard, D3::ProductRunning());
 		}
 		const auto bridge = D3::ProductHost().ProductBridge().Snapshot();
 		if (!whiteboard && session.active && !trustedTarget)
 		{
 			const bool sameBinding = currentService && session.serviceGeneration == serviceGeneration
-				&& (!cachedState || (cachedState->bindingRevision == session.bindingRevision
-					&& cachedState->showSessionRevision == session.showSessionRevision));
-			if (sameBinding && bridge.presentationTarget)
+				&& (!cachedState || MatchesPptShowSession(session, serviceGeneration, *cachedState));
+			if (!basicControl && sameBinding && bridge.presentationTarget
+				&& bridge.presentationTarget->sessionRevision == session.localSession
+				&& bridge.presentationTarget->bindingRevision == session.bindingRevision)
 				(void)D3::SetProductPresentationInputSuspended(
 					D3::Bridge::ReadyIdentityFor(*bridge.presentationTarget), true);
-			else D3::ClearProductPresentationTarget();
+			else
+			{
+				// 新文稿/基础模式先撤销旧墨迹目标；原始数字不能把旧画布带到新场。
+				D3::ClearProductPresentationTarget();
+				cachedTarget.reset();
+				PptInfoStateBuffer = { -1, -1 };
+			}
 		}
 		std::uint64_t targetRevision = 0;
 		if (!whiteboard && !session.active && (confirmedWindowEnd ||
@@ -879,7 +978,8 @@ void PptInfo()
 					PptInfoStateBuffer = cachedTarget->pageKind ==
 						D3::Bridge::PresentationPageKind::EndScreen
 						? PptInfoStateStruct{ -1, static_cast<int>(cachedTarget->totalPages) }
-						: PptInfoStateStruct{ rawPage, rawTotal };
+						: PptInfoStateStruct{ static_cast<int>(cachedTarget->pageIndex + 1),
+						static_cast<int>(cachedTarget->totalPages) };
 				else targetRevision = 0;
 			}
 		}
@@ -892,31 +992,48 @@ void PptInfo()
 			Inkeys::UI::Ppt::PublishPresentationVisible(visible);
 		}
 		int page = PptInfoStateBuffer.CurrentPage, total = PptInfoStateBuffer.TotalPage;
+		auto pageMode = Inkeys::UI::Ppt::PageStateMode::Pending;
 		if (!session.active) { page = -1; total = -1; }
+		else if (basicControl)
+		{
+			page = controlPage.currentPage;
+			total = controlPage.totalPage;
+			pageMode = Inkeys::UI::Ppt::PageStateMode::BasicControl;
+		}
 		else if (stateReliable && pageStatus == PptPageStatus::EndScreen &&
 			trustedEndScreen && targetRevision != 0)
 		{
 			page = -1;
 			total = static_cast<int>(cachedTarget->totalPages);
+			pageMode = Inkeys::UI::Ppt::PageStateMode::InkReady;
 		}
-		else if (stateReliable && pageStatus == PptPageStatus::EndScreen)
+		else if (trustedPage && targetRevision != 0)
 		{
-			// 等真正呈现到独立结束页后再切换数字；旧墨迹与新页码不可短暂错配。
-			targetRevision = 0;
+			pageMode = Inkeys::UI::Ppt::PageStateMode::InkReady;
 		}
-		else if (!trustedPage) { page = -1; total = -1; }
+		else if (currentService && publishedSession == session.localSession
+			&& (!cachedState || MatchesPptShowSession(session, serviceGeneration, *cachedState)))
+		{
+			// 同场 busy 保留已显示数字，但显式 Pending 阻断旧回执和新写入。
+			page = publishedPage;
+			total = publishedTotal;
+		}
+		else { page = -1; total = -1; }
 		if (!whiteboard && (page != publishedPage || total != publishedTotal
-			|| targetRevision != publishedTarget || session.localSession != publishedSession))
+			|| targetRevision != publishedTarget || session.localSession != publishedSession
+			|| pageMode != publishedPageMode))
 		{
 			publishedPage = page; publishedTotal = total;
 			publishedTarget = targetRevision; publishedSession = session.localSession;
-			Inkeys::UI::Ppt::PublishPageState(page, total, targetRevision);
+			publishedPageMode = pageMode;
+			Inkeys::UI::Ppt::PublishPageState(page, total, targetRevision, pageMode);
 		}
 		if (whiteboard) { publishedPage = -2; publishedTarget = UINT64_MAX; }
 		if (now >= nextMaintenance)
 		{
 			nextMaintenance = now + PptVisibilityPublishInterval;
-			if (session.active && !whiteboard && currentService && server &&
+			if (session.active && !whiteboard && trustedTarget && targetRevision != 0
+				&& currentService && server &&
 				config.PlugIn.PPTHelper.AutoTakeOver &&
 				!pptTakeoverConsumedInCurrentShow)
 			{
@@ -1020,13 +1137,19 @@ void PPTLinkageMain()
 		{
 			PptUiBusinessCommand command;
 			std::uint64_t request;
+			PptSessionToken session;
 			~CompleteRequest()
 			{
 				if (command == PptUiBusinessCommand::Previous || command == PptUiBusinessCommand::Next)
 					pptUiPageCommandOutstanding = false;
+				if (command == PptUiBusinessCommand::EndShow)
+				{
+					lock_guard lock(pptUiBusinessMutex);
+					pptEndShowGate.Complete(session);
+				}
 				if (request) Inkeys::UI::Bar::CompleteEndShowRequest(request);
 			}
-		} completion{ command, request.requestId };
+		} completion{ command, request.requestId, request.session };
 		if (!IsCurrentPptSession(request.session)) continue;
 		if (command == PptUiBusinessCommand::Focus)
 		{
@@ -1111,6 +1234,7 @@ void PPTLinkageMain()
 		lock_guard lock(pptUiBusinessMutex);
 		remaining.swap(pptUiBusinessCommands);
 		pptUiPageCommandOutstanding = false;
+		pptEndShowGate.Reset();
 	}
 	for (const auto& request : remaining)
 		if (request.command == PptUiBusinessCommand::PersistSettings)

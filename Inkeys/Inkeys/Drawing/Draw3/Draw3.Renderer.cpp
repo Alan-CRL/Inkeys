@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include "../../../resource.h"
 #include "../../../IdtStart.h"
 #include "Draw3.ShaderCompatibility.h"
@@ -13,10 +14,12 @@
 #include <array>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
 #include <utility>
+#include <vector>
 #include <windows.h>
 #include <bcrypt.h>
 #pragma comment(lib, "bcrypt.lib")
@@ -28,8 +31,37 @@ namespace Inkeys::Drawing::Draw3
 {
 	using renderer_detail::GlobalShaderConstants;
 
+	HRESULT InkRenderer::UploadStructuredBuffer(ID3D11Buffer* buffer, const void* data, UINT bytes,
+		UINT offset, D3D11_MAP mapType)
+	{
+		if (!buffer || !data || !context || !device || !bytes) return E_INVALIDARG;
+		if (useDefaultStructuredUpload_)
+		{
+			// DEFAULT 每批从零更新实际字节；保留大容量，但避开大动态资源的映射成本。
+			if (offset != 0) return E_INVALIDARG;
+			const D3D11_BOX range = { 0, 0, 0, bytes, 1, 1 };
+			context->UpdateSubresource(buffer, 0, &range, data, 0, 0);
+			// UpdateSubresource 是 void；设备失效单独查询，不能伪造该 API 的 HRESULT。
+			return device->GetDeviceRemovedReason();
+		}
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		const HRESULT result = context->Map(buffer, 0, mapType, 0, &mapped);
+		if (FAILED(result)) return result;
+		std::memcpy(static_cast<unsigned char*>(mapped.pData) + offset, data, bytes);
+		context->Unmap(buffer, 0);
+		// Laser/Cursor 的 DISCARD 同样开启新一代墨迹数据，后续 NO_OVERWRITE 必须越过已用区。
+		if (buffer == inkDataBuffer.Get()) m_bufferHead = (offset + bytes) / sizeof(InkPoint);
+		return result;
+	}
+
 	namespace
 	{
+		constexpr bool UseZhaoxinDefaultUpload(bool enabled, D3D_DRIVER_TYPE driver,
+			bool identityAvailable, UINT vendor) noexcept
+		{
+			return enabled && driver == D3D_DRIVER_TYPE_HARDWARE && identityAvailable && vendor == 0x1D17;
+		}
+
 		struct ShaderBlob
 		{
 			const void* data;
@@ -84,8 +116,7 @@ namespace Inkeys::Drawing::Draw3
 			std::snprintf(message, sizeof(message),
 				"[Draw3ShaderSelection] actual=%s sha256=%s bytes=%zu create_hr=0x%08X\n",
 				guarded ? "guarded" : "original", hash, blob.size, static_cast<unsigned int>(result));
-			std::fputs(message, stdout);
-			OutputDebugStringA(message);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Output, message, true);
 		}
 
 		void ReportLaserParticleUnavailableOnce() noexcept
@@ -113,7 +144,7 @@ namespace Inkeys::Drawing::Draw3
 		const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
 		RECT rect, OperatorLayerMergeMode mergeMode)
 	{
-		if (!dstRTV || !stableLayer.addSRV || !stableLayer.retainSRV ||
+		if (!dstRTV || !compositeVertexBuffer || !compositeVertexSRV || !stableLayer.addSRV || !stableLayer.retainSRV ||
 			!liveLayer.addSRV || !liveLayer.retainSRV) return false;
 		rect.left = std::max(0L, rect.left);
 		rect.top = std::max(0L, rect.top);
@@ -126,10 +157,9 @@ namespace Inkeys::Drawing::Draw3
 			{ static_cast<float>(rect.right), static_cast<float>(rect.bottom), 0.0f, 0.0f }
 		};
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(inkDataBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
-		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints)); // 复用墨迹缓冲区传入要混合的矩形范围。
-		context->Unmap(inkDataBuffer.Get(), 0);
-		m_bufferHead = 2;
+		if (FAILED(context->Map(compositeVertexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints)); // 合成仅更新独立小资源，不能打断墨迹环形追加。
+		context->Unmap(compositeVertexBuffer.Get(), 0);
 
 		if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
@@ -145,7 +175,7 @@ namespace Inkeys::Drawing::Draw3
 		context->IASetInputLayout(nullptr);
 		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		context->VSSetShader(vertexShader.Get(), nullptr, 0);
-		ID3D11ShaderResourceView* shaderResources[] = { inkDataSRV.Get() };
+		ID3D11ShaderResourceView* shaderResources[] = { compositeVertexSRV.Get() };
 		context->VSSetShaderResources(0, 1, shaderResources);
 		ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
 		context->VSSetConstantBuffers(0, 1, constantBuffers);
@@ -445,6 +475,8 @@ namespace Inkeys::Drawing::Draw3
 		laserStyleCB.Reset();
 		inkDataBuffer.Reset();
 		inkDataSRV.Reset();
+		compositeVertexBuffer.Reset();
+		compositeVertexSRV.Reset();
 		highlighterPrimitiveBuffer.Reset();
 		highlighterPrimitiveSRV.Reset();
 		operatorSampler.Reset();
@@ -465,6 +497,7 @@ namespace Inkeys::Drawing::Draw3
 		laserIncrementalCoverageUnavailable_ = false;
 		m_bufferHead = 0;
 		mapNoOverwriteOnDynamicBufferSRV = false;
+		useDefaultStructuredUpload_ = false;
 		viewportWidth = 0.0f;
 		viewportHeight = 0.0f;
 	}
@@ -511,10 +544,12 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
-	bool InkRenderer::Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver)
+	bool InkRenderer::Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver,
+		bool enableZhaoxinCompatibility)
 	{
 		device = inDevice; // 渲染器只借用外部统一创建的 D3D 设备。
 		context = inContext;
+		useDefaultStructuredUpload_ = false;
 		if (!device || !context)
 		{
 			mapNoOverwriteOnDynamicBufferSRV = false;
@@ -530,8 +565,18 @@ namespace Inkeys::Drawing::Draw3
 		if (SUCCEEDED(device.As(&dxgiDevice)) && dxgiDevice &&
 			SUCCEEDED(dxgiDevice->GetAdapter(adapter.ReleaseAndGetAddressOf())) && adapter)
 			adapter.As(&videoMemoryAdapter_); // Win7/旧 DXGI 查询失败时仅禁用显存指标。
+		DXGI_ADAPTER_DESC adapterDescription = {};
+		const HRESULT adapterResult = adapter ? adapter->GetDesc(&adapterDescription) : E_NOINTERFACE;
+		const bool adapterIdentityAvailable = SUCCEEDED(adapterResult);
+		// 按实际绘图 GPU 选择，不把兆芯 CPU + 其他显卡误判为兼容设备。
+		useDefaultStructuredUpload_ = UseZhaoxinDefaultUpload(enableZhaoxinCompatibility,
+			driver, adapterIdentityAvailable, adapterDescription.VendorId);
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
+		return CreateFixedResources(driver);
+	}
 
+	bool InkRenderer::CreateFixedResources(D3D_DRIVER_TYPE driver)
+	{
 		D3D11_BUFFER_DESC constantBufferDescription = {
 			sizeof(GlobalShaderConstants), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER,
 			D3D11_CPU_ACCESS_WRITE, 0, 0
@@ -607,9 +652,9 @@ namespace Inkeys::Drawing::Draw3
 
 		D3D11_BUFFER_DESC inkBufferDescription = {};
 		inkBufferDescription.ByteWidth = static_cast<UINT>(kMaxBufferCapacity * sizeof(InkPoint));
-		inkBufferDescription.Usage = D3D11_USAGE_DYNAMIC;
+		inkBufferDescription.Usage = useDefaultStructuredUpload_ ? D3D11_USAGE_DEFAULT : D3D11_USAGE_DYNAMIC;
 		inkBufferDescription.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-		inkBufferDescription.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		inkBufferDescription.CPUAccessFlags = useDefaultStructuredUpload_ ? 0 : D3D11_CPU_ACCESS_WRITE;
 		inkBufferDescription.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 		inkBufferDescription.StructureByteStride = sizeof(InkPoint);
 		if (FAILED(device->CreateBuffer(&inkBufferDescription, nullptr, inkDataBuffer.ReleaseAndGetAddressOf()))) return false; // CPU 每帧写点，GPU 着色器按结构化缓冲区读取。
@@ -627,6 +672,17 @@ namespace Inkeys::Drawing::Draw3
 			highlighterPrimitiveBuffer.ReleaseAndGetAddressOf()))) return false;
 		if (FAILED(device->CreateShaderResourceView(highlighterPrimitiveBuffer.Get(), &shaderResourceDescription,
 			highlighterPrimitiveSRV.ReleaseAndGetAddressOf()))) return false; // 荧光笔几何单独上传，避免改变普通墨迹点布局。
+
+		// 合成矩形只需两个点，专用小动态资源避免 DISCARD 整个 3.2 MB 墨迹缓冲区。
+		D3D11_BUFFER_DESC compositeDescription = inkBufferDescription;
+		compositeDescription.ByteWidth = 256;
+		compositeDescription.Usage = D3D11_USAGE_DYNAMIC;
+		compositeDescription.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		if (FAILED(device->CreateBuffer(&compositeDescription, nullptr,
+			compositeVertexBuffer.ReleaseAndGetAddressOf()))) return false;
+		shaderResourceDescription.Buffer.NumElements = compositeDescription.ByteWidth / sizeof(InkPoint);
+		if (FAILED(device->CreateShaderResourceView(compositeVertexBuffer.Get(), &shaderResourceDescription,
+			compositeVertexSRV.ReleaseAndGetAddressOf()))) return false;
 
 		D3D11_SAMPLER_DESC samplerDescription = {};
 		samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT; // 混合图层按像素采样，不做线性模糊。
@@ -672,5 +728,241 @@ namespace Inkeys::Drawing::Draw3
 		if (!particlesReady)
 			ReportLaserParticleUnavailableOnce();
 		return true;
+	}
+
+	int RunRendererUploadValidation() noexcept
+	{
+		try
+		{
+			int failures = 0;
+			const auto check = [&](bool condition, const char* name) {
+				if (!condition) { ++failures; std::fprintf(stderr, "[Draw3Upload] FAIL %s\n", name); }
+				return condition;
+			};
+			check(UseZhaoxinDefaultUpload(true, D3D_DRIVER_TYPE_HARDWARE, true, 0x1D17) &&
+				!UseZhaoxinDefaultUpload(false, D3D_DRIVER_TYPE_HARDWARE, true, 0x1D17) &&
+				!UseZhaoxinDefaultUpload(true, D3D_DRIVER_TYPE_WARP, true, 0x1D17) &&
+				!UseZhaoxinDefaultUpload(true, D3D_DRIVER_TYPE_HARDWARE, false, 0x1D17) &&
+				!UseZhaoxinDefaultUpload(true, D3D_DRIVER_TYPE_HARDWARE, true, 0x5143), "compatibility policy gates");
+			Microsoft::WRL::ComPtr<ID3D11Device> testDevice;
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext> testContext;
+			constexpr D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_0 };
+			D3D_FEATURE_LEVEL actualLevel = {};
+			if (!check(SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, ARRAYSIZE(levels), D3D11_SDK_VERSION,
+				testDevice.GetAddressOf(), &actualLevel, testContext.GetAddressOf())), "offscreen WARP device")) return 1;
+			D3D11_FEATURE_DATA_D3D11_OPTIONS options = {};
+			const bool canAppend = SUCCEEDED(testDevice->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,
+				&options, sizeof(options))) && options.MapNoOverwriteOnDynamicBufferSRV;
+			std::vector<unsigned char> referencePixels;
+			// 两种动态能力分支与 DEFAULT 都调用产品 Draw 方法，不通过测试替身模拟上传。
+			for (int mode = 0; mode < 3; ++mode)
+			{
+				if (mode == 1 && !canAppend) continue;
+				InkRenderer renderer;
+				renderer.device = testDevice;
+				renderer.context = testContext;
+				renderer.useDefaultStructuredUpload_ = mode == 2;
+				renderer.mapNoOverwriteOnDynamicBufferSRV = mode == 1;
+				if (!check(renderer.CreateFixedResources(D3D_DRIVER_TYPE_WARP), "production fixed resources")) return 1;
+				D3D11_BUFFER_DESC description = {};
+				renderer.inkDataBuffer->GetDesc(&description);
+				check(description.ByteWidth == 3200000 && description.Usage ==
+					(mode == 2 ? D3D11_USAGE_DEFAULT : D3D11_USAGE_DYNAMIC) &&
+					description.CPUAccessFlags == (mode == 2 ? 0u : D3D11_CPU_ACCESS_WRITE), "ink resource policy");
+				renderer.highlighterPrimitiveBuffer->GetDesc(&description);
+				check(description.ByteWidth == 4800000 && description.Usage ==
+					(mode == 2 ? D3D11_USAGE_DEFAULT : D3D11_USAGE_DYNAMIC), "highlighter resource policy");
+				renderer.compositeVertexBuffer->GetDesc(&description);
+				check(description.ByteWidth == 256 && description.Usage == D3D11_USAGE_DYNAMIC &&
+					description.StructureByteStride == sizeof(InkPoint), "independent composite resource");
+				D3D11_TEXTURE2D_DESC targetDescription = {};
+				targetDescription.Width = targetDescription.Height = 64;
+				targetDescription.MipLevels = targetDescription.ArraySize = targetDescription.SampleDesc.Count = 1;
+				targetDescription.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				targetDescription.Usage = D3D11_USAGE_DEFAULT;
+				targetDescription.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+				if (!check(SUCCEEDED(testDevice->CreateTexture2D(&targetDescription, nullptr,
+					renderer.backBufferTexture.GetAddressOf())) && SUCCEEDED(testDevice->CreateRenderTargetView(
+					renderer.backBufferTexture.Get(), nullptr, renderer.backBufferRTV.GetAddressOf())) &&
+					renderer.CreateOperatorLayerResources(64, 64, renderer.layerL1) &&
+					renderer.CreateOperatorLayerResources(64, 64, renderer.layerL0) &&
+					renderer.CreateLaserCoverageResources(64, 64, renderer.laserStrokeCoverage), "offscreen render targets")) return 1;
+				renderer.SetScreenSize(64, 64);
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+				renderer.ClearOperatorLayer(renderer.layerL1);
+				renderer.ClearOperatorLayer(renderer.layerL0);
+				const auto readBytes = [&](ID3D11Buffer* source, UINT offset, const void* expected,
+					UINT bytes, const char* name) {
+					D3D11_BUFFER_DESC readDescription = {};
+					source->GetDesc(&readDescription);
+					readDescription.Usage = D3D11_USAGE_STAGING;
+					readDescription.BindFlags = readDescription.MiscFlags = readDescription.StructureByteStride = 0;
+					readDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+					Microsoft::WRL::ComPtr<ID3D11Buffer> readback;
+					if (!check(SUCCEEDED(testDevice->CreateBuffer(&readDescription, nullptr,
+						readback.GetAddressOf())), "create upload readback")) return false;
+					// 常量缓冲区也按完整资源复制，避免测试使用不支持的局部 CB copy。
+					testContext->CopyResource(readback.Get(), source);
+					D3D11_MAPPED_SUBRESOURCE mapped = {};
+					if (!check(SUCCEEDED(testContext->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+						"map upload readback")) return false;
+					const bool same = std::memcmp(static_cast<unsigned char*>(mapped.pData) + offset, expected, bytes) == 0;
+					testContext->Unmap(readback.Get(), 0);
+					return check(same, name);
+				};
+				const auto checkOffset = [&](UINT expected) {
+					readBytes(renderer.globalCB.Get(), 12, &expected, sizeof(expected), "shader batch offset");
+				};
+				const auto composite = [&] {
+					const size_t head = renderer.m_bufferHead;
+					check(renderer.ApplyOperatorLayers(renderer.backBufferRTV.Get(), renderer.layerL1,
+						renderer.layerL0, { 0, 0, 64, 64 }), "production composite submission");
+					check(renderer.m_bufferHead == head, "composite preserves ink head");
+					const InkPoint rectangle[] = { { 0, 0, 0, 0 }, { 64, 64, 0, 0 } };
+					readBytes(renderer.compositeVertexBuffer.Get(), 0, rectangle, sizeof(rectangle), "composite rectangle bytes");
+				};
+				D3D11_BUFFER_DESC rejectedDescription = {};
+				renderer.compositeVertexBuffer->GetDesc(&rejectedDescription);
+				rejectedDescription.Usage = D3D11_USAGE_DEFAULT;
+				rejectedDescription.CPUAccessFlags = 0;
+				Microsoft::WRL::ComPtr<ID3D11Buffer> rejectedComposite;
+				if (!check(SUCCEEDED(testDevice->CreateBuffer(&rejectedDescription, nullptr,
+					rejectedComposite.GetAddressOf())), "non-mappable composite fault resource")) return 1;
+				const auto writableComposite = renderer.compositeVertexBuffer;
+				renderer.compositeVertexBuffer = rejectedComposite;
+				check(!renderer.ApplyOperatorLayers(renderer.backBufferRTV.Get(), renderer.layerL1,
+					renderer.layerL0, { 0, 0, 64, 64 }) && renderer.m_bufferHead == 0, "composite Map failure preserves ink state");
+				renderer.compositeVertexBuffer = writableComposite;
+				const std::array<InkPoint, 2> first = { InkPoint{ 8, 12, 3, 0 }, InkPoint{ 52, 12, 3, 1 } };
+				const std::array<InkPoint, 2> second = { InkPoint{ 8, 28, 3, 2 }, InkPoint{ 52, 28, 3, 3 } };
+				const DirectX::XMFLOAT4 red(1, 0, 0, 1), green(0, 1, 0, 1);
+				if (mode == 2)
+				{
+					const InkPoint seed[] = { first[0], first[1], second[0], second[1] };
+					const D3D11_BOX seedRange = { 0, 0, 0, sizeof(seed), 1, 1 };
+					testContext->UpdateSubresource(renderer.inkDataBuffer.Get(), 0, &seedRange, seed, 0, 0);
+				}
+				renderer.SetOperatorTarget(renderer.layerL1);
+				check(renderer.DrawStroke(first, red) == 0, "first production stroke");
+				if (mode == 2) readBytes(renderer.inkDataBuffer.Get(), sizeof(first), second.data(), sizeof(second), "DEFAULT only updates active bytes");
+				checkOffset(0);
+				composite();
+				readBytes(renderer.inkDataBuffer.Get(), 0, first.data(), sizeof(first), "composite leaves ink bytes intact");
+				renderer.SetOperatorTarget(renderer.layerL0);
+				check(renderer.DrawStroke(second, green) == 0, "second production stroke");
+				const UINT secondOffset = mode == 1 ? 2 : 0;
+				checkOffset(secondOffset);
+				readBytes(renderer.inkDataBuffer.Get(), secondOffset * sizeof(InkPoint), second.data(), sizeof(second), "second stroke byte range");
+				if (mode == 1) readBytes(renderer.inkDataBuffer.Get(), 0, first.data(), sizeof(first), "NO_OVERWRITE retains first batch");
+				composite();
+				const std::array<ShapePrimitive, 1> shape = { ShapePrimitive{ { 14, 42, 2, 0 }, { 48, 42, 0, 0 } } };
+				const UINT shapeOffset = mode == 1 ? static_cast<UINT>(renderer.m_bufferHead) : 0;
+				renderer.SetOperatorTarget(renderer.layerL0);
+				check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, red) == 0, "production analytic shape");
+				checkOffset(shapeOffset);
+				readBytes(renderer.inkDataBuffer.Get(), shapeOffset * sizeof(InkPoint), shape.data(), sizeof(shape), "shape bytes");
+				const std::array<HighlighterPrimitive, 1> highlighter = { HighlighterPrimitive{ { 30, 32 }, { 34, 32 }, { 1.25f, 12 } } };
+				check(renderer.DrawHighlighterPrimitives(highlighter, green) == 0, "production highlighter");
+				checkOffset(0);
+				readBytes(renderer.highlighterPrimitiveBuffer.Get(), 0, highlighter.data(), sizeof(highlighter), "highlighter bytes");
+				composite();
+				DrawingCursorVisual cursor{};
+				cursor.visible = true; cursor.x = 54; cursor.y = 54;
+				cursor.appearance.width = cursor.appearance.height = 8;
+				cursor.appearance.red = 1;
+				renderer.DrawTransientDrawingCursor(cursor);
+				const InkPoint cursorData[] = { { 54, 54, 4, 4 }, { 0.5f, 0.5f, 0, 0 } };
+				readBytes(renderer.inkDataBuffer.Get(), 0, cursorData, sizeof(cursorData), "cursor uses selected upload path");
+				checkOffset(0);
+				renderer.SetOperatorTarget(renderer.layerL0);
+				check(renderer.DrawStroke(first, red) == 0, "cursor to stroke interleave");
+				checkOffset(mode == 1 ? 2 : 0);
+				renderer.ClearLaserCoverage(renderer.laserStrokeCoverage);
+				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
+				check(renderer.DrawLaserCoverage(first) == 0, "production laser coverage");
+				readBytes(renderer.inkDataBuffer.Get(), 0, first.data(), sizeof(first), "laser coverage upload bytes");
+				renderer.SetOperatorTarget(renderer.layerL0);
+				check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, red) == 0, "laser to shape interleave");
+				checkOffset(mode == 1 ? 2 : 0);
+				check(renderer.ResolveLaserStrokeCoverage(renderer.backBufferRTV.Get(), { 0, 0, 64, 64 }), "laser resolve");
+				const std::array<LaserDot, 1> dots = { LaserDot{ 12, 52, 2.5f, 1 } };
+				renderer.DrawLaserDots(dots);
+				readBytes(renderer.inkDataBuffer.Get(), 0, dots.data(), sizeof(dots), "laser dot upload bytes");
+				checkOffset(0);
+				renderer.SetOperatorTarget(renderer.layerL0);
+				check(renderer.DrawStroke(second, green) == 0, "laser dots to stroke interleave");
+				checkOffset(mode == 1 ? 1 : 0);
+
+				// 同一命令序列的实际像素必须一致，避免只验证 CPU 内容而漏掉 Draw 顺序/偏移。
+				testContext->OMSetRenderTargets(0, nullptr, nullptr);
+				targetDescription.Usage = D3D11_USAGE_STAGING;
+				targetDescription.BindFlags = 0;
+				targetDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> pixelReadback;
+				if (!check(SUCCEEDED(testDevice->CreateTexture2D(&targetDescription, nullptr,
+					pixelReadback.GetAddressOf())), "pixel staging texture")) return 1;
+				testContext->CopyResource(pixelReadback.Get(), renderer.backBufferTexture.Get());
+				D3D11_MAPPED_SUBRESOURCE pixels = {};
+				if (!check(SUCCEEDED(testContext->Map(pixelReadback.Get(), 0, D3D11_MAP_READ, 0, &pixels)), "pixel readback")) return 1;
+				std::vector<unsigned char> currentPixels(64 * 64 * 4);
+				for (UINT row = 0; row < 64; ++row) std::memcpy(currentPixels.data() + row * 64 * 4,
+					static_cast<unsigned char*>(pixels.pData) + row * pixels.RowPitch, 64 * 4);
+				testContext->Unmap(pixelReadback.Get(), 0);
+				if (mode == 0) referencePixels = currentPixels;
+				else check(currentPixels == referencePixels, "dynamic/DEFAULT tool and composite pixels identical");
+				check(std::any_of(currentPixels.begin(), currentPixels.end(), [](unsigned char value) { return value != 0; }),
+					"rendered pixels are nonempty");
+
+				// 两次更新和 Draw 之间不回读/等待，实际像素验证旧批次没有被后一次更新覆盖。
+				renderer.ClearOperatorLayer(renderer.layerL1);
+				renderer.ClearOperatorLayer(renderer.layerL0);
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+				renderer.SetOperatorTarget(renderer.layerL1);
+				check(renderer.DrawStroke(first, red) == 0 && renderer.DrawStroke(second, green) == 0,
+					"consecutive update and Draw submissions");
+				composite();
+				testContext->OMSetRenderTargets(0, nullptr, nullptr);
+				testContext->CopyResource(pixelReadback.Get(), renderer.backBufferTexture.Get());
+				if (!check(SUCCEEDED(testContext->Map(pixelReadback.Get(), 0, D3D11_MAP_READ, 0, &pixels)),
+					"consecutive Draw pixel readback")) return 1;
+				const auto* redPixel = static_cast<const unsigned char*>(pixels.pData) + 12 * pixels.RowPitch + 12 * 4;
+				const auto* greenPixel = static_cast<const unsigned char*>(pixels.pData) + 28 * pixels.RowPitch + 12 * 4;
+				check(redPixel[2] > 240 && redPixel[1] < 8 && redPixel[0] < 8 && redPixel[3] > 240 &&
+					greenPixel[1] > 240 && greenPixel[2] < 8 && greenPixel[0] < 8 && greenPixel[3] > 240,
+					"both consecutive batches rendered with their own data");
+				testContext->Unmap(pixelReadback.Get(), 0);
+
+				// 越界拆批仍共享笔端点；最终批次与回卷偏移由真实上传读回验证。
+				std::vector<InkPoint> longStroke(InkRenderer::kMaxBufferCapacity + 2, { -100, -100, 0, 0 });
+				longStroke[InkRenderer::kMaxBufferCapacity - 1] = { 20, 20, 2, 1 };
+				longStroke[InkRenderer::kMaxBufferCapacity] = { 28, 20, 2, 2 };
+				longStroke.back() = { 36, 20, 2, 3 };
+				renderer.SetOperatorTarget(renderer.layerL0);
+				check(renderer.DrawStroke(longStroke, red) == 0, "multi-batch stroke and wrap");
+				check(renderer.m_bufferHead == (mode == 2 ? 0u : 3u), "final stroke batch head");
+				checkOffset(0);
+				readBytes(renderer.inkDataBuffer.Get(), 0, longStroke.data() + InkRenderer::kMaxBufferCapacity - 1,
+					3 * sizeof(InkPoint), "multi-batch shared endpoint");
+				std::vector<ShapePrimitive> shapes(InkRenderer::kMaxBufferCapacity / 2 + 1,
+					ShapePrimitive{ { -100, -100, 0, 0 }, { -90, -90, 0, 0 } });
+				shapes.back() = shape.front();
+				check(renderer.DrawShapePrimitives(shapes, ShapePrimitiveKind::SolidLine, red) == 0, "multi-batch shapes");
+				checkOffset(0);
+				readBytes(renderer.inkDataBuffer.Get(), 0, &shapes.back(), sizeof(ShapePrimitive), "final shape batch");
+				std::vector<HighlighterPrimitive> highlights(InkRenderer::kMaxBufferCapacity + 1,
+					HighlighterPrimitive{ { -100, -100 }, { -90, -90 }, { 1.25f, 25 } });
+				highlights.back() = highlighter.front();
+				check(renderer.DrawHighlighterPrimitives(highlights, green) == 0, "multi-batch highlighter");
+				readBytes(renderer.highlighterPrimitiveBuffer.Get(), 0, &highlights.back(), sizeof(HighlighterPrimitive), "final highlighter batch");
+				testContext->ClearState();
+				renderer.ReleaseResources();
+				std::fprintf(stderr, "[Draw3Upload] mode=%s completed\n", mode == 2 ? "DEFAULT" : mode == 1 ? "dynamic_append" : "dynamic_discard");
+			}
+			if (!canAppend) std::fputs("[Draw3Upload] NO_OVERWRITE unavailable on WARP; append case skipped\n", stderr);
+			std::fprintf(stderr, "[Draw3Upload] %s failures=%d no_hwnd=1 no_swapchain=1\n", failures ? "FAIL" : "PASS", failures);
+			return failures ? 1 : 0;
+		}
+		catch (...) { std::fputs("[Draw3Upload] FAIL unexpected exception\n", stderr); return 1; }
 	}
 }

@@ -9,6 +9,8 @@
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DisplayTransition.h"
 
+import Inkeys.UI.Bar.Animation;
+
 namespace
 {
 	int failureCount = 0;
@@ -50,5 +52,29 @@ int RunBarDisplayTransitionTests()
 	Check(std::abs(EaseBarDisplayTransition(0.25) - 0.0625) < 0.000001 &&
 		std::abs(EaseBarDisplayTransition(0.5) - 0.5) < 0.000001,
 		"display transition uses ease-in-out cubic");
+	for (bool docked : { false, true })
+		for (bool dragging : { false, true })
+			for (bool recovering : { false, true })
+				for (bool desktop : { false, true })
+					for (bool pending : { false, true })
+						for (bool scene : { false, true })
+							Check(CanAnimateBarTaskbarDockY(docked, dragging, recovering, desktop, pending, scene)
+								== (docked && !dragging && !recovering && desktop && !pending && !scene),
+								"taskbar animation respects drag/recovery/floating/PPT/whiteboard ownership");
+	BarUiValueClass x(617.0), y(1034.5);
+	Check(RetargetBarTaskbarDockY(y, 991.5, 1034.5) && y.val == 1034.5,
+		"taskbar rise starts at successful screen Y");
+	(void)BarUiAdvanceAnimation(y, BarUiAnimationAdvanceContextClass{ .1, 1.0, true, false });
+	const double before = y.val;
+	Check(!RetargetBarTaskbarDockY(y, 991.5, 1034.5) && y.val == before,
+		"repeated taskbar sample neither resets Y nor restarts animation");
+	(void)BarUiAdvanceAnimation(y, BarUiAnimationAdvanceContextClass{ .1, 1.0, true, false });
+	Check(y.val < before, "same target continues its existing animation");
+	const double lastPresented = before + 2.0;
+	Check(RetargetBarTaskbarDockY(y, 1034.5, lastPresented) && y.val == lastPresented,
+		"rapid reverse starts from last presented Y rather than uncommitted candidate");
+	(void)BarUiAdvanceAnimation(y, BarUiAnimationAdvanceContextClass{ .1, 1.0, false, false });
+	Check(y.IsSame() && y.val == 1034.5 && x.val == 617.0 && x.tar == 617.0,
+		"animation off settles immediately and taskbar transition changes only Y");
 	return failureCount;
 }

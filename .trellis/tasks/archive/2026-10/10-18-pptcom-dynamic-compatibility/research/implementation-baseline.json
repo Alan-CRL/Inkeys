@@ -1,0 +1,124 @@
+{
+  "head": "5d319bbf5c520dec97dcb37ad2fcc7e26d029bbb",
+  "files": {
+    "PptCOM/PptCOM.cs": {
+      "head_sha256": "f92d512122d57771e3e0a522a6df914b0b7f845a9152dea0bde2f9e5bfb232ef",
+      "bom": "utf-8-sig",
+      "crlf": 0,
+      "lf": 2187,
+      "bytes": 87869
+    },
+    "PptCOM/PresentationDescriptor.cs": {
+      "head_sha256": "4c01fb69df55c32443a5640024eff3d2d308ae4f0c4928ef7e2248e9b154c899",
+      "bom": "utf-8-sig",
+      "crlf": 0,
+      "lf": 462,
+      "bytes": 18465
+    },
+    "PptCOM/SlideShowSession.cs": {
+      "head_sha256": "68837e53035e3f2311d48e609f0dc88a7dbac93c1473c00ef1f49ab341b5e5fe",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 364,
+      "bytes": 12929
+    },
+    "PptCOM.Tests/Program.cs": {
+      "head_sha256": "ef878cf76fed753e13aff90f4b1f49d855558c864f5acd9d218d1e3b01f1346c",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 327,
+      "bytes": 14982
+    },
+    "PptCOM.Tests/SlideShowSessionTests.cs": {
+      "head_sha256": "c52ce0ebae2451d360f4e9b92bfe904d2806e9012ad463625160cf559ab516b0",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 439,
+      "bytes": 25826
+    },
+    "Inkeys/IdtPlug-in.cpp": {
+      "head_sha256": "e8438eaefa030fb8732f380d355f973d144bd621c083c0136b3eae60d43f1e19",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 1434,
+      "bytes": 48776
+    },
+    "Inkeys/Inkeys/Business/PptSession.h": {
+      "head_sha256": "7e73045b04f6398188ad73f690119d3e1867d0ddde39a7e557a5f46860d72a60",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 54,
+      "bytes": 1745
+    },
+    "Inkeys/Inkeys/Business/PptSession.cpp": {
+      "head_sha256": "2e37745ccf868df6d294ea97d98b3b6025e1b64c05f69954d58bb3df8aa42db6",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 115,
+      "bytes": 4578
+    },
+    "Inkeys/Inkeys/UI/Ppt/Ppt.cpp": {
+      "head_sha256": "1c0f3adefe322806feb851f451d1221cac9d3e86dfad7d95b8291f2c1728cd87",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 394,
+      "bytes": 12344
+    },
+    "Inkeys/Inkeys/UI/Ppt/Ppt.cppm": {
+      "head_sha256": "a5d2aeec4a576ea8c0ddc2a28f73baa50ce94a248611a67cbc92011fc0767322",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 532,
+      "bytes": 17967
+    },
+    "InkeysHeadlessTests/ppt_session_tests.cpp": {
+      "head_sha256": "c2e4728864f663a2160fee606a357abf63b6332ba1ed56933eab260e0ec377ae",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 106,
+      "bytes": 6909
+    },
+    "InkeysHeadlessTests/ppt_ui_tests.cpp": {
+      "head_sha256": "a32afa66c2534fb7dd00071d60d60ac4705cc6fc424952acfd995c57f4250252",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 426,
+      "bytes": 18505
+    },
+    ".trellis/spec/ppt-interop/com-contract.md": {
+      "head_sha256": "5f00c1ecfb5d2d32f5692363bd9544bef5a0da95166d48eedd5f653b7d9cb3d8",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 193,
+      "bytes": 15762
+    },
+    ".trellis/spec/ppt-interop/native-session-ui3.md": {
+      "head_sha256": "8b2e1f27f55c246d30f962c084a097713f21ba2a42d5e9f6d596a54c0e62ad17",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 149,
+      "bytes": 16961
+    },
+    ".trellis/spec/ppt-interop/index.md": {
+      "head_sha256": "fbab8e989a57aa7cbea48dbe5aef6e93a7db69e44361b36952d79710f2829d01",
+      "bom": "none",
+      "crlf": 0,
+      "lf": 56,
+      "bytes": 4794
+    },
+    "Inkeys/PptCOM.dll": {
+      "working_sha256": "ab34c31f9510be311439b798a35d6980d5da609d55622c8dfad339e97733c105",
+      "bytes": 67584
+    },
+    "Inkeys/PptCOM.tlb": {
+      "working_sha256": "c652b5dd0603576033b2e0d15869be103f23ffdcaa2a1984e53f3b6a14dba606",
+      "bytes": 6640
+    }
+  },
+  "pre_native_build_exe": {
+    "path": "Build/ARM64/Debug/Inkeys.exe",
+    "sha256": "7282e94e6feb51a1410c3188cca2590eac6ce0b95957cb32cc503eb39f73d5c9",
+    "embedded_pptcom_sha256": "ab34c31f9510be311439b798a35d6980d5da609d55622c8dfad339e97733c105",
+    "note": "实施后、首次native构建和DLL交接前，只以LoadLibraryEx数据文件方式检查；未执行EXE。"
+  }
+}

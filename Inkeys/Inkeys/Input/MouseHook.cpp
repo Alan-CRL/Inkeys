@@ -1,154 +1,70 @@
 module;
 
 #include "../../IdtMain.h"
-
-#include "../../IdtConfiguration.h"
-#include "../../IdtDraw.h"
-#include "../../IdtPlug-in.h"
-#include "../../IdtState.h"
-#include "../Window/Window.Legacy.hpp"
+#include "MouseHook.Transport.h"
 
 #include <atomic>
-#include <chrono>
 #include <future>
-#include <functional>
 #include <mutex>
 #include <thread>
 
 module Inkeys.Input.MouseHook;
 import Inkeys.Other.Inputs;
-import Inkeys.UI.Ppt;
 import Inkeys.UI.PageControl;
-import Inkeys.Window;
 
 namespace
 {
-	using Clock = std::chrono::steady_clock;
-
-	std::mutex lifecycleMutex;
+	namespace Transport = Inkeys::Input::HookTransport;
+	std::mutex operationMutex;
+	std::mutex wakeMutex;
 	std::jthread hookThread;
 	HANDLE wakeEvent = nullptr;
 	HHOOK hookHandle = nullptr;
-	Inkeys::Input::MouseHook::CollapseCallback collapseCallback;
 	std::atomic_bool running = false;
-	std::atomic_bool clickCollapsePending = false;
-	std::atomic_bool mouseUpPending = false;
-	Clock::time_point clickCollapseDeadline;
-	Clock::time_point mouseUpDeadline;
-	UINT mouseUpMessage = 0;
+	std::atomic_uint64_t lifecycleGeneration = 0;
+	std::atomic<DWORD> routeHeartbeat = 0;
+	Transport::Bridge bridge;
+	Transport::Snapshot ownerRoute;
 
 	void WakeHookThread() noexcept
 	{
-		std::scoped_lock lock(lifecycleMutex);
-		if (wakeEvent)
-			(void)SetEvent(wakeEvent);
-	}
-
-	void ScheduleClickCollapse() noexcept
-	{
-		clickCollapseDeadline = Clock::now() + std::chrono::milliseconds(100);
-		clickCollapsePending.store(true, std::memory_order_release);
-		WakeHookThread();
-	}
-
-	void ScheduleMouseUp(UINT message) noexcept
-	{
-		mouseUpMessage = message;
-		mouseUpDeadline = Clock::now() + std::chrono::milliseconds(500);
-		mouseUpPending.store(true, std::memory_order_release);
-		WakeHookThread();
-	}
-
-	void ProcessPendingActions()
-	{
-		const auto now = Clock::now();
-		if (clickCollapsePending.load(std::memory_order_acquire)
-			&& clickCollapseDeadline <= now
-			&& clickCollapsePending.exchange(false, std::memory_order_acq_rel))
-		{
-			Inkeys::Input::MouseHook::CollapseCallback callback;
-			{
-				std::scoped_lock lock(lifecycleMutex);
-				callback = collapseCallback;
-			}
-			if (callback)
-				callback();
-		}
-
-		// Draw3 的 Window Service 已在原 WndProc 路径消费鼠标抬起消息；
-		// 不再通过旧 RTS 全局补发第二份输入。
-	}
-
-	[[nodiscard]] DWORD NextWaitTimeout() noexcept
-	{
-		const auto noDeadline = Clock::time_point((Clock::duration::max)());
-		auto deadline = noDeadline;
-		if (clickCollapsePending.load(std::memory_order_acquire))
-			deadline = clickCollapseDeadline;
-		if (mouseUpPending.load(std::memory_order_acquire))
-			deadline = (std::min)(deadline, mouseUpDeadline);
-		if (deadline == noDeadline)
-			return INFINITE;
-		const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-			deadline - Clock::now());
-		return remaining.count() <= 0
-			? 0
-			: static_cast<DWORD>((std::min)(remaining.count(),
-				static_cast<long long>(MAXDWORD - 1)));
+		std::scoped_lock lock(wakeMutex);
+		if (wakeEvent) (void)SetEvent(wakeEvent);
 	}
 
 	LRESULT CALLBACK HookProc(int code, WPARAM message, LPARAM lParam)
 	{
-		if (code < 0 || !running.load(std::memory_order_acquire)
-			|| message == WM_MOUSEMOVE)
+		const auto lifecycle = lifecycleGeneration.load(std::memory_order_acquire);
+		if (Transport::BypassHook(code, running.load(std::memory_order_acquire), message == WM_MOUSEMOVE))
 			return CallNextHookEx(hookHandle, code, message, lParam);
 
-		if (message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN || message == WM_RBUTTONDOWN)
+		unsigned button = 0;
+		bool down = false;
+		switch (message)
 		{
-			const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
-			const HWND menuWindow = Inkeys::Window::GetService().Handle(Inkeys::Window::WindowRole::PptBottomLeft);
-			const HWND target = WindowFromPoint(mouse->pt);
-			// Hook 只投递收起请求，不等待窗口/渲染线程；原点击继续交给画布或其他窗口。
-			if (menuWindow && target != menuWindow && !IsChild(menuWindow, target))
-				(void)Inkeys::UI::PageControl::RequestWhiteboardMenuDismiss();
+		case WM_LBUTTONDOWN: button = VK_LBUTTON; down = true; break;
+		case WM_MBUTTONDOWN: button = VK_MBUTTON; down = true; break;
+		case WM_RBUTTONDOWN: button = VK_RBUTTON; down = true; break;
+		case WM_LBUTTONUP: button = VK_LBUTTON; break;
+		case WM_MBUTTONUP: button = VK_MBUTTON; break;
+		case WM_RBUTTONUP: button = VK_RBUTTON; break;
 		}
+		if (button) Inkeys::Inputs::SetKeyBoardDown(static_cast<BYTE>(button), down);
+		if (!lParam || (message != WM_MOUSEWHEEL && !down))
+			return CallNextHookEx(hookHandle, code, message, lParam);
 
-		if (message == WM_LBUTTONDOWN)
-			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
-		else if (message == WM_LBUTTONUP)
-		{
-			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
-		}
-		else if (message == WM_MBUTTONDOWN)
-			Inkeys::Inputs::SetKeyBoardDown(VK_MBUTTON, true);
-		else if (message == WM_MBUTTONUP)
-			Inkeys::Inputs::SetKeyBoardDown(VK_MBUTTON, false);
-		else if (message == WM_RBUTTONDOWN)
-			Inkeys::Inputs::SetKeyBoardDown(VK_RBUTTON, true);
-		else if (message == WM_RBUTTONUP)
-		{
-			Inkeys::Inputs::SetKeyBoardDown(VK_RBUTTON, false);
-		}
-
-		if (message == WM_MOUSEWHEEL
-			&& !IsComputerInteractionMode(GetStateModeSnapshot().StateModeSelect)
-			&& PptInfoState.TotalPage != -1)
-		{
-			const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
-			const short wheel = GET_WHEEL_DELTA_WPARAM(mouse->mouseData);
-			// Hook 只写入 UI3 交互队列，具体命令由共享渲染线程串行处理。
-			Inkeys::UI::Ppt::QueueGlobalWheel(wheel);
-			return 1;
-		}
-
-		if ((message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN
-			|| message == WM_RBUTTONDOWN)
-			&& setlist.regularSetting.clickRecover
-			&& IsComputerInteractionMode(GetStateModeSnapshot().StateModeSelect))
-		{
-			ScheduleClickCollapse();
-		}
-
+		const auto& mouse = *reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
+		Transport::Event event;
+		event.kind = message == WM_MOUSEWHEEL ? Transport::Kind::Wheel : Transport::Kind::OutsideCandidate;
+		event.screen = { mouse.pt.x, mouse.pt.y };
+		event.time = mouse.time;
+		event.button = button;
+		event.delta = message == WM_MOUSEWHEEL ? static_cast<short>(HIWORD(mouse.mouseData)) : 0;
+		event.flags = mouse.flags;
+		event.extraInfo = mouse.dwExtraInfo;
+		const auto admission = bridge.TryCommit(event, GetTickCount(),
+			routeHeartbeat.load(std::memory_order_acquire), lifecycle);
+		if (admission == Transport::Admission::Suppress) return 1;
 		return CallNextHookEx(hookHandle, code, message, lParam);
 	}
 
@@ -157,103 +73,115 @@ namespace
 		MSG message{};
 		(void)PeekMessageW(&message, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
 		HANDLE localWakeEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-		if (!localWakeEvent)
+		if (!localWakeEvent) { startup.set_value(false); return; }
 		{
-			startup.set_value(false);
-			return;
-		}
-		{
-			std::scoped_lock lock(lifecycleMutex);
+			std::scoped_lock lock(wakeMutex);
 			wakeEvent = localWakeEvent;
 		}
-
 		std::stop_callback stopCallback(stopToken, [] { WakeHookThread(); });
 		hookHandle = SetWindowsHookExW(WH_MOUSE_LL, HookProc, nullptr, 0);
 		if (!hookHandle)
 		{
-			{
-				std::scoped_lock lock(lifecycleMutex);
-				wakeEvent = nullptr;
-			}
+			std::scoped_lock lock(wakeMutex);
+			wakeEvent = nullptr;
 			CloseHandle(localWakeEvent);
 			startup.set_value(false);
 			return;
 		}
-
 		running.store(true, std::memory_order_release);
 		startup.set_value(true);
-		while (!stopToken.stop_requested() && !offSignal)
+		bool quit = false;
+		while (!stopToken.stop_requested() && !offSignal && !quit)
 		{
-			const DWORD waitResult = MsgWaitForMultipleObjectsEx(
-				1, &localWakeEvent, NextWaitTimeout(), QS_ALLINPUT,
-				MWMO_INPUTAVAILABLE);
-			if (waitResult == WAIT_TIMEOUT || waitResult == WAIT_OBJECT_0)
+			const DWORD result = MsgWaitForMultipleObjectsEx(
+				1, &localWakeEvent, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+			if (result == WAIT_OBJECT_0) continue;
+			if (result != WAIT_OBJECT_0 + 1) break;
+			while (!stopToken.stop_requested() && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
 			{
-				ProcessPendingActions();
-				continue;
-			}
-			if (waitResult != WAIT_OBJECT_0 + 1)
-				break;
-			while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
-			{
-				if (message.message == WM_QUIT)
-					break;
+				if (message.message == WM_QUIT) { quit = true; break; }
 				TranslateMessage(&message);
 				DispatchMessageW(&message);
 			}
-			ProcessPendingActions();
 		}
-
 		running.store(false, std::memory_order_release);
-		clickCollapsePending.store(false, std::memory_order_release);
-		mouseUpPending.store(false, std::memory_order_release);
-		UnhookWindowsHookEx(hookHandle);
+		UnhookWindowsHookEx(hookHandle); // 由安装线程卸载，不在业务线程持锁调用。
 		hookHandle = nullptr;
 		{
-			std::scoped_lock lock(lifecycleMutex);
+			std::scoped_lock lock(wakeMutex);
 			wakeEvent = nullptr;
 		}
 		CloseHandle(localWakeEvent);
+	}
+
+	void StopLocked() noexcept
+	{
+		running.store(false, std::memory_order_release);
+		lifecycleGeneration.fetch_add(1, std::memory_order_acq_rel);
+		if (!hookThread.joinable()) return;
+		hookThread.request_stop();
+		WakeHookThread();
+		hookThread.join();
 	}
 }
 
 namespace Inkeys::Input::MouseHook
 {
-	bool Start(CollapseCallback callback)
+	bool Start()
 	{
-		Stop();
+		std::scoped_lock lock(operationMutex);
+		StopLocked();
 		std::promise<bool> startup;
 		auto result = startup.get_future();
+		try
 		{
-			std::scoped_lock lock(lifecycleMutex);
-			collapseCallback = std::move(callback);
+			hookThread = std::jthread(Run, std::move(startup));
+			if (result.get()) return true;
 		}
-		hookThread = std::jthread(Run, std::move(startup));
-		if (result.get())
-			return true;
-		Stop();
+		catch (...) { /* 线程或启动通信失败同安装失败一样回退，不影响原生输入。 */ }
+		StopLocked();
 		return false;
 	}
-
 	void Stop() noexcept
 	{
-		if (hookThread.joinable())
+		std::scoped_lock lock(operationMutex);
+		StopLocked();
+	}
+	void PublishRoute(const Route& requested) noexcept
+	{
+		auto next = requested;
+		const auto token = Business::CapturePptInputSession();
+		next.wheelEnabled = next.wheelEnabled && token.active
+			&& UI::PageControl::CanAcceptPptWheel(token);
+		if (ownerRoute.route.wheelEnabled != next.wheelEnabled
+			|| ownerRoute.route.outsideClickEnabled != next.outsideClickEnabled
+			|| ownerRoute.route.contextRevision != next.contextRevision
+			|| (!Business::MatchesPptSession(ownerRoute.session, token)
+				&& (ownerRoute.session.active || token.active)))
 		{
-			hookThread.request_stop();
-			WakeHookThread();
-			hookThread.join();
+			ownerRoute.route = next;
+			ownerRoute.session = token;
+			++ownerRoute.generation;
+			bridge.Publish(ownerRoute);
+			UI::PageControl::ResetWheelInput();
 		}
-		std::scoped_lock lock(lifecycleMutex);
-		collapseCallback = {};
+		routeHeartbeat.store(GetTickCount(), std::memory_order_release);
 	}
-
-	void CancelPendingCollapse() noexcept
+	bool TryPop(Event& event) noexcept
 	{
-		clickCollapsePending.store(false, std::memory_order_release);
+		for (unsigned retired = 0; retired < 16 && bridge.TryPop(event); ++retired)
+		{
+			if (event.lifecycleGeneration == lifecycleGeneration.load(std::memory_order_acquire)
+				&& event.routeGeneration == ownerRoute.generation) return true;
+		}
+		return false;
 	}
-
-	void CancelPendingMouseUp() noexcept
+	void DispatchWheel(const Event& event) noexcept
 	{
-		mouseUpPending.store(false, std::memory_order_release);
+		if (event.kind != Kind::Wheel || event.routeGeneration != ownerRoute.generation
+			|| event.lifecycleGeneration != lifecycleGeneration.load(std::memory_order_acquire)
+			|| !ownerRoute.route.wheelEnabled) return;
+		UI::PageControl::ConsumePptWheel(event.session, event.routeGeneration, event.delta);
 	}
+	void PollPptWheel() noexcept { UI::PageControl::DrainLocalWheel(); }
 }

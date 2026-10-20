@@ -172,6 +172,10 @@ bool SetSelectAndClickThroughMode(int mode);
 void ToggleFreezeFromButton();
 std::uint64_t StateModeTransitionRevision() noexcept;
 bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision);
+// 快捷键事务使用普通选择内核，不登记 PPT 真退出标识；恢复时沿用工具属性。
+bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
+	std::uint64_t expectedRevision, std::uint64_t freezeRevision);
+bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision);
 bool ChangeStateModeToPen();
 enum class PenToolSelectionEnum : std::uint8_t { SoftPen, HardPen, Highlighter, Laser };
 bool PenToolSelectionWouldChange(PenToolSelectionEnum tool);

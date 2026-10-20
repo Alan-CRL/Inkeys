@@ -375,13 +375,14 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFramePresentation;
 	};
 
 	[[nodiscard]] double CurrentBarBottomDockLine(
-		const RECT& monitorBounds, const RECT& workArea, UINT dpi) noexcept
+		const RECT& monitorBounds, const RECT& workArea, UINT dpi,
+		double desktopDockLine) noexcept
 	{
 		const double dpiScale = clamp(
 			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) /
 			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
 		const double insetDip = Inkeys::UI::Bar::SceneBottomDockInsetDip();
-		return ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale);
+		return ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale, desktopDockLine);
 	}
 
 enum class BarDirtyFixedVisual : BarDirtyVisualKey
@@ -585,8 +586,12 @@ struct BarRenderLoopState
 	HMONITOR desktopMonitor = nullptr;
 	bool desktopRestorePending = false;
 	bool whiteboardDockAnimationActive = false;
+	bool taskbarDockAnimationActive = false;
+	bool taskbarDockRetargetPending = false;
+	double activeDesktopDockLine = 1.0;
+	bool activeProtectBottomEdge = false;
 	double displayCapacityZoom = 1.0;
-	BarUiValueClass displayDpiScale{ 1.0 };
+	BarUiValueClass displayUiBaseScale{ 1.0 };
 	BarUiValueClass displayCenterX{ 0.0 };
 	BarUiValueClass displayCenterY{ 0.0 };
 	BarBottomDockSpringState bottomDockSpring{};
@@ -1189,13 +1194,13 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		const RECT targetBounds = targetDisplay.bounds;
 		const RECT targetWorkArea = targetDisplay.workArea;
 		const UINT targetDpi = targetDisplay.dpi;
-		state.activeDisplayDpi = targetDpi;
 		const double targetDpiScale = clamp(
 			static_cast<double>(targetDpi ? targetDpi : USER_DEFAULT_SCREEN_DPI) /
 			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
 	const double configZoom = max(0.01,
 		static_cast<double>(state.barStyle.configZoom));
-	const double targetZoom = targetDpiScale * configZoom;
+	const double targetUiBaseScale = targetDisplay.uiBaseScale;
+	const double targetZoom = targetUiBaseScale * configZoom;
 	const bool dockLayoutLocked = frame.bottomDockLayoutLocked;
 
 	if (!state.displayTransitionInitialized)
@@ -1204,8 +1209,8 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.activeWorkArea = targetWorkArea;
 			state.activeDisplayDpi = targetDpi;
 			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-		state.displayDpiScale.SetDirect(targetDpiScale);
-		const double initialZoom = targetDpiScale * configZoom;
+		state.displayUiBaseScale.SetDirect(targetUiBaseScale);
+		const double initialZoom = targetUiBaseScale * configZoom;
 		state.displayCenterX.SetDirect(mainButton->x.val * initialZoom);
 		state.displayCenterY.SetDirect(mainButton->y.val * initialZoom);
 		state.displayCapacityZoom = initialZoom;
@@ -1227,7 +1232,17 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			: 0.0;
 		const double halfWidth = mainButton->GetW() * targetZoom / 2.0 + frameHalf;
 		const double halfHeight = mainButton->GetH() * targetZoom / 2.0 + frameHalf;
-		if (dockLayoutLocked && !state.pptDockPlacementPending)
+		const bool geometryUnchanged = EqualRect(&state.activeMonitorBounds, &targetBounds)
+			&& state.activeDisplayDpi == targetDpi
+			&& abs(state.displayUiBaseScale.tar - targetUiBaseScale) <= 0.000001;
+		if (geometryUnchanged)
+		{
+			// Shell 显隐只改变目标线，不重算用户 X 或把浮动栏吸到底边。
+			state.taskbarDockRetargetPending = state.taskbarDockRetargetPending
+				|| Inkeys::UI::Bar::ShouldRetargetBarTaskbarDockY(
+					state.activeDesktopDockLine, targetDisplay.desktopDockLine);
+		}
+		else if (dockLayoutLocked && !state.pptDockPlacementPending)
 		{
 			// 底栏换屏或缩放时直接重算几何，保证可见 stroke 始终贴住 dock 线。
 			const double oldScreenCenterX = state.monitorOrigin.x + oldLocalX;
@@ -1237,7 +1252,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 					mainButton->GetW() / 2.0
 						+ frameHalf / targetZoom, targetZoom);
 				const double dockLine = CurrentBarBottomDockLine(
-					targetBounds, targetWorkArea, targetDpi);
+					targetBounds, targetWorkArea, targetDpi, targetDisplay.desktopDockLine);
 				const double targetScreenCenterY = ResolveBarBottomDockCenterScreenY(
 					dockLine, state.mainButtonBaseSize,
 					mainButton->ft.has_value()
@@ -1251,7 +1266,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				targetScreenCenterX - targetBounds.left);
 			state.displayCenterY.SetDirect(
 				targetScreenCenterY - targetBounds.top);
-			state.displayDpiScale.SetDirect(targetDpiScale);
+			state.displayUiBaseScale.SetDirect(targetUiBaseScale);
 		}
 		else
 		{
@@ -1268,7 +1283,12 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.displayCenterY.SetDirect(placement.startLocalCenterY);
 			state.displayCenterX.SetTar(placement.targetLocalCenterX, 0.4);
 			state.displayCenterY.SetTar(placement.targetLocalCenterY, 0.4);
-			state.displayDpiScale.SetTar(targetDpiScale, 0.4);
+			state.displayUiBaseScale.SetTar(targetUiBaseScale, 0.4);
+		}
+		if (!geometryUnchanged)
+		{
+			state.taskbarDockAnimationActive = false;
+			state.taskbarDockRetargetPending = false;
 		}
 		state.displayCapacityZoom = max(state.displayCapacityZoom,
 			max(currentZoom, targetZoom));
@@ -1280,13 +1300,18 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	}
 	else if (dragging)
 	{
-		const double currentDpiScale = max(0.01,
-			static_cast<double>(state.displayDpiScale.val));
+		const double currentUiBaseScale = max(0.01,
+			static_cast<double>(state.displayUiBaseScale.val));
 		const bool displayChanged = serial != state.observedDisplaySerial;
 		const bool totalZoomChanged = abs(static_cast<double>(state.barStyle.zoom)
 			- targetZoom) > 0.000001;
 		if (displayChanged || totalZoomChanged)
 		{
+			const bool taskbarOnlyChange = !totalZoomChanged
+				&& Inkeys::UI::Bar::SceneBottomDockInsetDip() <= 0.0
+				&& EqualRect(&state.activeMonitorBounds, &targetBounds)
+				&& state.activeDisplayDpi == targetDpi
+				&& abs(currentUiBaseScale - targetUiBaseScale) <= 0.000001;
 			const double currentBaseCenterScreenX = state.monitorOrigin.x
 				+ state.displayCenterX.val;
 			const double currentBaseCenterScreenY = state.monitorOrigin.y
@@ -1299,11 +1324,12 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				state.activeDisplayDpi = targetDpi;
 				state.displayCenterX.SetDirect(
 					currentBaseCenterScreenX - targetBounds.left);
-				if (frame.bottomDockMode == BarBottomDockMode::BottomDocked)
+				// 单独的任务栏变化不在已按住的指针下移动 Y 基线。
+				if (frame.bottomDockMode == BarBottomDockMode::BottomDocked && !taskbarOnlyChange)
 				{
 					const double targetDockCenterScreenY =
 						ResolveBarBottomDockCenterScreenY(
-							CurrentBarBottomDockLine(targetBounds, targetWorkArea, targetDpi),
+							CurrentBarBottomDockLine(targetBounds, targetWorkArea, targetDpi, targetDisplay.desktopDockLine),
 							state.mainButtonBaseSize,
 						mainButton->ft.has_value()
 							? static_cast<double>(mainButton->ft.value().tar)
@@ -1322,10 +1348,10 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.unclassifiedDamagePending = true;
 			state.dirtyRegionTracker.ForceFullDamage();
 		}
-		if (abs(currentDpiScale - targetDpiScale) > 0.000001)
+		if (abs(currentUiBaseScale - targetUiBaseScale) > 0.000001)
 		{
 			// displayCenter 已是物理像素；只切换比例即可保持指针下的屏幕中心。
-			state.displayDpiScale.SetDirect(targetDpiScale);
+			state.displayUiBaseScale.SetDirect(targetUiBaseScale);
 			state.displayCapacityZoom = max(
 				state.displayCapacityZoom,
 				max(static_cast<double>(state.barStyle.zoom), targetZoom));
@@ -1334,13 +1360,63 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		}
 	}
 
+	// 显示目标与输入屏障发布同一环境；输入仍只在成功呈现后切换抓取基准。
+	state.activeMonitorBounds = targetBounds;
+	state.activeWorkArea = targetWorkArea;
+	state.activeDisplayDpi = targetDpi;
+	if (dragging && state.activeDesktopDockLine != targetDisplay.desktopDockLine)
+		state.taskbarDockRetargetPending = true;
+	state.activeDesktopDockLine = targetDisplay.desktopDockLine;
+	state.activeProtectBottomEdge = targetDisplay.protectBottomEdge;
+	const bool desktopDock = Inkeys::UI::Bar::SceneBottomDockInsetDip() <= 0.0;
+	const bool allowTaskbarAnimation = Inkeys::UI::Bar::CanAnimateBarTaskbarDockY(
+		frame.bottomDockMode == BarBottomDockMode::BottomDocked, dragging,
+		frame.bottomDockRecoveryActive || frame.bottomDockPhase != BarBottomDockPhase::Stable
+			|| frame.bottomDockCenterPhase != BarBottomDockPhase::Stable, desktopDock,
+		!state.initialBottomDockPlacementApplied || state.whiteboardDockPlacementPending
+			|| state.pptDockPlacementPending, state.whiteboardDockAnimationActive);
+	if (!allowTaskbarAnimation && state.taskbarDockAnimationActive)
+	{
+		// 起拖或恢复接管时停止旧插值；稳定后再向最新桌面线收敛。
+		const auto presented = owner_.BottomDockPresentedSnapshot();
+		const double frozenY = presented.serial != 0
+			&& EqualRect(&presented.monitorBounds, &targetBounds)
+			? presented.mainCenterScreenY - state.monitorOrigin.y - presented.directTranslation.y
+			: mainButton->y.val * max(0.01, static_cast<double>(state.barStyle.zoom));
+		// 新手势使用实际已呈现的中心，不能接管尚未上屏的动画候选。
+		state.displayCenterY.SetDirect(frozenY);
+		state.taskbarDockAnimationActive = false;
+		state.taskbarDockRetargetPending = true;
+	}
+	if (!desktopDock || frame.bottomDockMode != BarBottomDockMode::BottomDocked)
+		state.taskbarDockRetargetPending = false;
+	if (allowTaskbarAnimation && state.taskbarDockRetargetPending)
+	{
+		const double nextY = ResolveBarBottomDockCenterScreenY(
+			state.activeDesktopDockLine, state.mainButtonBaseSize,
+			mainButton->ft.has_value() ? static_cast<double>(mainButton->ft.value().tar) : 0.0,
+			state.displayUiBaseScale.val * configZoom) - state.monitorOrigin.y;
+		if (Inkeys::UI::Bar::ShouldRetargetBarTaskbarDockY(state.displayCenterY.tar, nextY))
+		{
+			// 快速反向从最后成功显示的 Y 开始，不能从尚未提交的候选帧起跳。
+			const auto presented = owner_.BottomDockPresentedSnapshot();
+			const double presentedY = presented.serial != 0
+				&& EqualRect(&presented.monitorBounds, &targetBounds)
+				? presented.mainCenterScreenY - state.monitorOrigin.y - presented.directTranslation.y
+				: static_cast<double>(state.displayCenterY.val);
+			state.taskbarDockAnimationActive = Inkeys::UI::Bar::RetargetBarTaskbarDockY(
+				state.displayCenterY, nextY, presentedY);
+		}
+		state.taskbarDockRetargetPending = false;
+	}
+
 	const BarUiAnimationAdvanceContextClass animationContext{
 		frame.animationDtSeconds, frame.animationSpeedRate,
 		true == BarUiAnimationEnabled, false };
 	if (!dragging)
 	{
 		const auto dpiResult = BarUiAdvanceAnimation(
-			state.displayDpiScale, animationContext);
+			state.displayUiBaseScale, animationContext);
 		const auto xResult = BarUiAdvanceAnimation(
 			state.displayCenterX, animationContext);
 		const auto yResult = BarUiAdvanceAnimation(
@@ -1350,7 +1426,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		if (state.finiteObserver)
 		{
 			using Inkeys::UI::Bar::Ui3PropertyRole;
-			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, dpiResult.active, state.displayDpiScale.IsSame());
+			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, dpiResult.active, state.displayUiBaseScale.IsSame());
 			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, xResult.active, state.displayCenterX.IsSame());
 			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, yResult.active, state.displayCenterY.IsSame());
 		}
@@ -1360,21 +1436,28 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		// 拖动期间冻结旧显示过渡，零位移基准不能在指针下继续漂移。
 		state.displayTransitionActive = false;
 	}
-	const double currentDpiScale = max(0.01,
-		static_cast<double>(state.displayDpiScale.val));
-	const double currentZoom = currentDpiScale * configZoom;
-	state.barStyle.dpiZoom = currentDpiScale;
+	const double currentUiBaseScale = max(0.01,
+		static_cast<double>(state.displayUiBaseScale.val));
+	const double currentZoom = currentUiBaseScale * configZoom;
+	// 屏幕 DIP/画笔只消费真实 DPI；UI 动画基准允许低于用户倍率下限。
+	state.barStyle.dpiZoom = targetDpiScale;
+	state.barStyle.uiBaseZoom = currentUiBaseScale;
 	state.barStyle.zoom = currentZoom;
 		if (state.whiteboardDockAnimationActive && !state.displayTransitionActive)
 			state.whiteboardDockAnimationActive = false;
+		if (state.taskbarDockAnimationActive && state.displayCenterY.IsSame())
+			state.taskbarDockAnimationActive = false;
 		if (!dragging && state.initialBottomDockPlacementApplied
 			&& !state.whiteboardDockAnimationActive
+			&& !state.taskbarDockAnimationActive
+			// 恢复仍持有 Y 时保留旧基线，稳定后再播放待处理的任务栏过渡。
+			&& !(desktopDock && state.taskbarDockRetargetPending && !allowTaskbarAnimation)
 			&& !state.whiteboardDockPlacementPending
 			&& !state.pptDockPlacementPending
 			&& frame.bottomDockMode == BarBottomDockMode::BottomDocked)
 		{
 			const double dockLine = CurrentBarBottomDockLine(
-				state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi);
+				state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi, state.activeDesktopDockLine);
 			state.displayCenterY.SetDirect(ResolveBarBottomDockCenterScreenY(
 				dockLine, state.mainButtonBaseSize,
 				mainButton->ft.has_value()
@@ -2720,7 +2803,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					mainButton->GetW() / 2.0 + mainFrameHalfDip,
 					placementZoom);
 				const double dockLine = CurrentBarBottomDockLine(
-					state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi);
+					state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi, state.activeDesktopDockLine);
 				const double strokeWidthDip = max(
 				mainButton->ft.has_value()
 					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
@@ -2738,7 +2821,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				const RECT visible = Inkeys::UI::ResolveStartupPlacementBounds(
 					owner_.startupPlacement, state.activeMonitorBounds, state.activeWorkArea,
 					visibleWidth, state.mainButtonBaseSize + strokeWidthDip,
-					placementZoom, state.barStyle.dpiZoom);
+					placementZoom, state.barStyle.dpiZoom, state.activeDesktopDockLine);
 				screenCenterX = floatingStartup
 					? (static_cast<double>(visible.left) + visible.right) / 2.0
 					: visible.left - bodyLeftDip * placementZoom;
@@ -7268,6 +7351,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				if (clearFloatingRecovery)
 					owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
 				state.bottomDockFrameTransitionSerial = owner_.FinishBottomDockTransition();
+				// 阶段刚收敛时至少再消费一帧，不能让待处理任务栏目标随零形变一起 idle。
+				if (state.taskbarDockRetargetPending) needRendering = true;
 			}
 			state.bottomDockFramePhase = BarBottomDockPhase::Stable;
 			if (!centerSpringActive && !centerCaptureFarEdgeActive)
@@ -7316,7 +7401,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| abs(state.bottomDockCenterSpring.velocityDipPerSecond) > 0.000001
 			|| abs(state.bottomDockCenterCaptureFarEdgeSpring.velocityDipPerSecond) > 0.000001;
 		state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, dockPending || springPending,
-			!dockPending && !springPending && state.displayCenterX.IsSame() && state.displayCenterY.IsSame() && state.displayDpiScale.IsSame());
+			!dockPending && !springPending && state.displayCenterX.IsSame() && state.displayCenterY.IsSame() && state.displayUiBaseScale.IsSame());
 		const bool unsupported = state.barState.drawAttributeBar.thicknessFineDialPhysicsActive
 			|| state.barState.drawAttributeBar.thicknessFineDialDragging
 			|| state.barState.drawAttributeBar.colorPickerPointerCapture;
@@ -9273,7 +9358,22 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.viewportController.Resolve(
 				currentContentBounds, predictedEnvelope, layoutBounds,
 				viewportPadding, settleViewport, viewportTranslation);
-		const RECT candidateViewport = viewportDecision.viewport;
+		const bool protectBottomEdge = state.activeProtectBottomEdge
+			&& Inkeys::UI::Bar::SceneBottomDockInsetDip() <= 0.0;
+		const RECT candidateViewport = Inkeys::UI::Bar::ClipBarViewportForTaskbarEdge(
+			viewportDecision.viewport, state.monitorOrigin,
+			state.bottomDockFrameTransitionTranslation,
+			state.activeMonitorBounds.bottom, protectBottomEdge);
+		if (Inkeys::UI::Bar::IsBarWindowRectEmpty(candidateViewport))
+		{
+			// 失效的越屏位移没有可提交区域；等待新的输入/显示唤醒，不能零尺寸 ULW 热重试。
+			state.presentationAlpha.CompleteAttempt(false);
+			state.dirtyRegionTracker.RetainForRetry(true);
+			state.presentDecision.RequireVisualRetry();
+			state.barMedia.formatCache->Clean();
+			state.animationClock.SuspendForIdle();
+			return BarRenderLoopStageResult::Idle;
+		}
 		const POINT candidateSource{
 			candidateViewport.left - state.capacityOrigin.x,
 			candidateViewport.top - state.capacityOrigin.y };
@@ -12120,6 +12220,7 @@ bool presetButton = button.presetIndex >= 0;
 		SIZE presentedSize{};
 		POINT directTranslation{};
 		bool deferWindowPresentation = false;
+		bool taskbarEdgePresentationDeferred = false;
 		FrameStageTimer presentLockTimer(diagnostics, FrameStage::PresentLockWait);
 		Inkeys::UI::Bar::BarWindowPresentationTransaction directDragTransaction(
 			owner_.directWindowDragMutex, owner_.committedWindowScreenBoundsReady);
@@ -12171,6 +12272,13 @@ bool presetButton = button.presetIndex >= 0;
 			presentedDestination = {
 				state.monitorOrigin.x + candidateViewport.left + directTranslation.x,
 				state.monitorOrigin.y + candidateViewport.top + directTranslation.y };
+			// 直移可在绘制期间变化；新位移若越过保护行，整帧重试后重新裁剪 source/size。
+			const RECT candidateWindow{ presentedDestination.x, presentedDestination.y,
+				presentedDestination.x + candidateWidth, presentedDestination.y + candidateHeight };
+			taskbarEdgePresentationDeferred = candidateHeight <= 0
+				|| !Inkeys::UI::Bar::IsBarWindowAboveTaskbarEdge(candidateWindow,
+					state.activeMonitorBounds.bottom, protectBottomEdge);
+			deferWindowPresentation = deferWindowPresentation || taskbarEdgePresentationDeferred;
 			POINT ptSrc = candidateSource;
 			presentedSize = { candidateWidth, candidateHeight };
 			if (!deferWindowPresentation && barGdiInterop)
@@ -12228,7 +12336,8 @@ bool presetButton = button.presetIndex >= 0;
 			// 更新的形态已取代此位图；EndDraw 仍成对结束，但不消费任何成功快照。
 			state.presentationAlpha.CompleteAttempt(false);
 			state.dirtyRegionTracker.RetainForRetry(true);
-			state.presentDecision.RequireFullDirtyRetry();
+			if (taskbarEdgePresentationDeferred) state.presentDecision.RequireVisualRetry();
+			else state.presentDecision.RequireFullDirtyRetry();
 			if (FAILED(endDrawHr))
 				state.presentDecision.RecordFailure(
 					Inkeys::UI::Bar::BarPresentFailureClass::EndDraw,
@@ -12379,6 +12488,10 @@ bool presetButton = button.presetIndex >= 0;
 				state.activeWorkArea.right, memory_order_relaxed);
 			owner_.bottomDockPresentedWorkAreaBottom.store(
 				state.activeWorkArea.bottom, memory_order_relaxed);
+			owner_.bottomDockPresentedDesktopDockLine.store(
+				state.activeDesktopDockLine, memory_order_relaxed);
+			owner_.bottomDockPresentedProtectBottomEdge.store(
+				state.activeProtectBottomEdge, memory_order_relaxed);
 			owner_.bottomDockPresentedDisplayDpi.store(
 				state.activeDisplayDpi, memory_order_relaxed);
 			owner_.bottomDockPresentedDisplaySerial.store(
@@ -12769,6 +12882,10 @@ BarRenderLoopCoordinator::RenderFrame(
 		const auto transition = state.workspaceScene.Update(Inkeys::UI::Bar::WhiteboardActive(), PptPresentationActive());
 		if (transition != BarWorkspaceTransition::Keep)
 		{
+			if (state.taskbarDockAnimationActive)
+				state.displayCenterY.SetDirect(state.displayCenterY.val);
+			state.taskbarDockAnimationActive = false;
+			state.taskbarDockRetargetPending = false;
 			if (transition == BarWorkspaceTransition::Enter)
 			{
 				state.desktopDockMode = owner_.bottomDockMode.load(memory_order_acquire);
@@ -12819,6 +12936,10 @@ BarRenderLoopCoordinator::RenderFrame(
 			&& Inkeys::Window::GetService().WhiteboardWindowGroupMinimized();
 		if (state.whiteboardMinimized != minimized)
 		{
+			if (state.taskbarDockAnimationActive)
+				state.displayCenterY.SetDirect(state.displayCenterY.val);
+			state.taskbarDockAnimationActive = false;
+			state.taskbarDockRetargetPending = false;
 			// 暂停/恢复只移动现有底栏，桌面快照仍由上面的工作区状态机独占。
 			if (ShouldPlaceBarWorkspaceDock(state.barState.fold, owner_.bottomDockMode.load(memory_order_acquire))
 				&& transition != BarWorkspaceTransition::Leave)

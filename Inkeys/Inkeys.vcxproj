@@ -425,6 +425,12 @@
     <ClInclude Include="IdtAtomic.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.A2.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapse.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapseInteraction.h" />
+    <ClInclude Include="Inkeys\Input\MouseHook.Transport.h" />
+    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.h" />
+    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.Transport.h" />
+    <ClInclude Include="Inkeys\Business\PptSessionToken.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h" />
@@ -475,6 +481,8 @@
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.InteractionWorker.h" />
+    <ClInclude Include="Inkeys\Input\UiPointerInput.h" />
+    <ClInclude Include="Inkeys\Window\Window.MessageDispatch.h" />
     <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h" />
     <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h" />
     <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h" />
@@ -489,18 +497,24 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RtsStartup.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.MouseInput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
     <ClInclude Include="Inkeys\Business\PptSession.h" />
     <ClInclude Include="PptSettingsPersistence.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h" />
     <ClInclude Include="Inkeys\Net\UpdatePathSafety.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
@@ -862,7 +876,9 @@
 	<ClCompile Include="Inkeys\Business\ComponentActions.cpp" />
 	<ClCompile Include="Inkeys\Business\ComponentActions.cppm" />
 	<ClCompile Include="Inkeys\Business\LegacyDrawState.cpp" />
+	<ClCompile Include="Inkeys\Input\UiPointerInput.cpp" />
 	<ClCompile Include="Inkeys\Input\MouseHook.cpp" />
+	<ClCompile Include="Inkeys\Input\KeyboardShortcuts.cpp" />
 	<ClCompile Include="Inkeys\Input\MouseHook.cppm" />
 	<ClCompile Include="Inkeys\Message\Message.cpp" />
 	<ClCompile Include="Inkeys\Message\Message.cppm" />
@@ -1047,6 +1063,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>

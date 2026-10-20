@@ -2461,6 +2461,13 @@ int RunRenderSchedulerTests()
 		ready.initialStableSignature = FiniteSignature(); ready.mainAnchorBits[0] = std::bit_cast<std::uint64_t>(123.0); ready.mainAnchorBits[1] = std::bit_cast<std::uint64_t>(456.0);
 		Ui3FixtureBoundPoint point;
 		const bool bound = TryBindUi3FixturePoint(mainRows[0], ready, 7, point) && point.x == 123 && point.y == 456 && point.attempt == 8;
+		// wire 的 DPI 相对倍率可以低于 0.5；既有 fixture 仍只允许零偏移输入。
+		auto taskbarReady = ready;
+		taskbarReady.initialStableSignature.dpi = 192;
+		taskbarReady.initialStableSignature.configZoomBits = std::bit_cast<std::uint64_t>(0.15);
+		if (!Expect(IsUi3FiniteSignatureValid(taskbarReady.initialStableSignature)
+			&& TryBindUi3FixturePoint(mainRows[0], taskbarReady, 7, point) && point.x == 123,
+			"finite signature and source accept DPI-relative taskbar UI ratio below half")) ++failures;
 		const bool generation = !TryBindUi3FixturePoint(mainRows[0], ready, 8, point);
 		ready.anchorMappingSerial = 3; const bool odd = !TryBindUi3FixturePoint(mainRows[0], ready, 7, point); ready.anchorMappingSerial = 2;
 		ready.mainAnchorBits[0] = std::bit_cast<std::uint64_t>(40000.0); const bool range = !TryBindUi3FixturePoint(mainRows[0], ready, 7, point);

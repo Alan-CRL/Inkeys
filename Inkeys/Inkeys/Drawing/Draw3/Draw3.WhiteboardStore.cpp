@@ -1,4 +1,5 @@
 ﻿module;
+#include "Draw3.DiagnosticOutput.h"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -99,7 +100,7 @@ namespace Inkeys::Drawing::Draw3
      }
     }
     catch (...) { result.success = false; }
-    if (!result.success) std::fputs("[Whiteboard.Store] operation failed; retaining warm page\n", stderr);
+    if (!result.success) DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Whiteboard.Store] operation failed; retaining warm page\n");
     {
      std::scoped_lock lock(mutex);
      completed.push_back(std::move(result));

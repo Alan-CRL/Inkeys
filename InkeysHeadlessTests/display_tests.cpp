@@ -2,6 +2,8 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include <shellapi.h>
+#include <cmath>
 
 #include <algorithm>
 #include <array>
@@ -11,6 +13,7 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <thread>
@@ -67,6 +70,291 @@ namespace
 int RunDisplayTests()
 {
 	using namespace Inkeys::Display;
+
+	const RECT taskbarMonitor{ -1920, -200, 0, 880 };
+	Check(ResolveTaskbarThickness(taskbarMonitor, { -1920, 832, 0, 880 }, ABE_BOTTOM) == 48
+		&& ResolveTaskbarThickness(taskbarMonitor, { -1920, -200, 0, -152 }, ABE_TOP) == 48
+		&& ResolveTaskbarThickness(taskbarMonitor, { -1920, -200, -1872, 880 }, ABE_LEFT) == 48
+		&& ResolveTaskbarThickness(taskbarMonitor, { -48, -200, 0, 880 }, ABE_RIGHT) == 48,
+		"taskbar thickness resolves all four edges with negative monitor coordinates");
+	Check(ResolveTaskbarThickness(taskbarMonitor, { -1920, 878, 0, 926 }, ABE_BOTTOM) == 48
+		&& ResolveTaskbarThickness(taskbarMonitor, { -1920, 878, 0, 880 }, ABE_BOTTOM) == 0
+		&& ResolveTaskbarThickness(taskbarMonitor, { -1920, 0, 0, 700 }, ABE_BOTTOM) == 0
+		&& ResolveTaskbarThickness(taskbarMonitor, { 0, 0, 0, 0 }, ABE_LEFT) == 0,
+		"auto-hide uses full offscreen thickness and rejects sliver/invalid geometry");
+	for (const UINT dpi : { 96U, 144U, 192U })
+		for (const int thickness : { 24, 48, 72, 96 })
+			for (const double user : { 0.5, 1.0, 1.5, 2.0 })
+			{
+				const double base = ResolveUiScaleBase(dpi, thickness, 96, 48, true);
+				Check(std::abs(80 * base * user - thickness * user) < 1e-9,
+					"UI taskbar base is physical thickness independent of DPI and user multiplier");
+				Check(ResolveUiScaleBase(dpi, thickness, 96, 48, false) == dpi / 96.0,
+					"disabled taskbar base restores real DPI");
+			}
+	Check(std::abs(ResolveUiScaleBase(192, 0, 144, 72, true) - 1.2) < 1e-9
+		&& ResolveUiScaleBase(144, 0, 0, 0, true) == 1.5
+		&& ResolveUiScaleBase(0, -1, 0, -1, true) == 1.0,
+		"absent secondary taskbar scales primary thickness by DPI, unavailable shell falls back to DPI");
+	Snapshot hiddenSnapshot;
+	hiddenSnapshot.monitors.resize(2);
+	hiddenSnapshot.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
+	hiddenSnapshot.monitors[1].handle = reinterpret_cast<HMONITOR>(2);
+	hiddenSnapshot.monitors[0].bounds = { 0, 0, 1920, 1080 };
+	hiddenSnapshot.monitors[1].bounds = { 0, 1080, 1920, 2160 };
+	Check(ResolveTaskbarOwner(hiddenSnapshot, { 0, 1078, 1920, 1126 }, ABE_BOTTOM) == hiddenSnapshot.monitors[0].handle
+		&& ApplyTaskbarSample(hiddenSnapshot, hiddenSnapshot.monitors[0].handle,
+		{ 0, 1078, 1920, 1126 }, ABE_BOTTOM)
+		&& hiddenSnapshot.monitors[0].taskbarThicknessPx == 48
+		&& hiddenSnapshot.monitors[1].taskbarThicknessPx == 0,
+		"autohide owner keeps upper-monitor taskbar when full rectangle lies mostly in lower monitor");
+	hiddenSnapshot.monitors[0].bounds = { -1920, 0, 0, 1080 };
+	hiddenSnapshot.monitors[1].bounds = { 0, 0, 1920, 1080 };
+	hiddenSnapshot.monitors[0].taskbarThicknessPx = 0;
+	Check(ResolveTaskbarOwner(hiddenSnapshot, { -2, 0, 46, 1080 }, ABE_RIGHT) == hiddenSnapshot.monitors[0].handle
+		&& ApplyTaskbarSample(hiddenSnapshot, hiddenSnapshot.monitors[0].handle,
+		{ -2, 0, 46, 1080 }, ABE_RIGHT)
+		&& hiddenSnapshot.monitors[0].taskbarThicknessPx == 48
+		&& hiddenSnapshot.monitors[1].taskbarThicknessPx == 0,
+		"autohide owner keeps left-monitor vertical taskbar when rectangle moves into right monitor");
+	// 共享屏边：常驻 Top 属于下屏，不能因先枚举上屏而被误认成 Bottom。
+	Snapshot sharedBoundary;
+	sharedBoundary.monitors.resize(2);
+	sharedBoundary.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
+	sharedBoundary.monitors[0].bounds = { 0, 0, 1920, 1080 };
+	sharedBoundary.monitors[1].handle = reinterpret_cast<HMONITOR>(2);
+	sharedBoundary.monitors[1].bounds = { 0, 1080, 1920, 2160 };
+	const RECT boundaryTaskbar{ 0, 1080, 1920, 1128 };
+	for (int order = 0; order < 2; ++order)
+	{
+		const auto regular = ResolveTaskbarOwnerCandidate(sharedBoundary, boundaryTaskbar, std::nullopt, false);
+		const auto staleHint = ResolveTaskbarOwnerCandidate(sharedBoundary, boundaryTaskbar, std::nullopt, false,
+			{ reinterpret_cast<HMONITOR>(1), ABE_BOTTOM });
+		Check(regular.monitor == reinterpret_cast<HMONITOR>(2) && regular.edge == ABE_TOP
+			&& staleHint.monitor == regular.monitor && staleHint.edge == regular.edge,
+			"shared-boundary normal taskbar belongs to lower Top regardless of order or weaker history");
+		Check(ResolveTaskbarOwner(sharedBoundary, boundaryTaskbar, ABE_TOP) == reinterpret_cast<HMONITOR>(2)
+			&& ResolveTaskbarOwner(sharedBoundary, boundaryTaskbar, ABE_BOTTOM) == reinterpret_cast<HMONITOR>(1),
+			"known edge distinguishes raised lower Top from fully hidden upper Bottom");
+		Check(!ResolveTaskbarOwnerCandidate(sharedBoundary, boundaryTaskbar, std::nullopt, true).monitor,
+			"unknown auto-hide edge at shared boundary stays unknown without trusted history");
+		std::reverse(sharedBoundary.monitors.begin(), sharedBoundary.monitors.end());
+	}
+
+	// Mini 启动查询仅含一屏，不能依赖邻屏的零距离候选排除屏外常驻栏。
+	Snapshot singleScreen;
+	singleScreen.monitors.resize(1);
+	singleScreen.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
+	singleScreen.monitors[0].bounds = { -960, -540, 960, 540 };
+	struct RegularOwnerCase { RECT outside; RECT inside; UINT edge; };
+	const RegularOwnerCase regularOwnerCases[]{
+		{ { -1008, -540, -960, 540 }, { -960, -540, -912, 540 }, ABE_LEFT },
+		{ { -960, -588, 960, -540 }, { -960, -540, 960, -492 }, ABE_TOP },
+		{ { 960, -540, 1008, 540 }, { 912, -540, 960, 540 }, ABE_RIGHT },
+		{ { -960, 540, 960, 588 }, { -960, 492, 960, 540 }, ABE_BOTTOM },
+	};
+	for (const auto& sample : regularOwnerCases)
+	{
+		Check(!ResolveTaskbarOwnerCandidate(singleScreen, sample.outside, std::nullopt, false).monitor
+			&& !ResolveTaskbarOwnerCandidate(singleScreen, sample.outside, sample.edge, false).monitor,
+			"single-screen sample rejects adjacent outside regular taskbar on every edge");
+		const auto inside = ResolveTaskbarOwnerCandidate(singleScreen, sample.inside, std::nullopt, false);
+		Check(inside.monitor == singleScreen.monitors[0].handle && inside.edge == sample.edge,
+			"single-screen sample keeps its own aligned regular taskbar on every edge");
+		const auto hidden = ResolveTaskbarOwnerCandidate(singleScreen, sample.outside, sample.edge, true);
+		Check(hidden.monitor == singleScreen.monitors[0].handle && hidden.edge == sample.edge,
+			"single-screen known-edge auto-hide taskbar may still lie outside screen");
+	}
+
+	struct HiddenOwnerCase { RECT neighbor; RECT taskbar; UINT edge; };
+	const RECT centeredScreen{ -960, -540, 960, 540 };
+	const HiddenOwnerCase hiddenOwnerCases[]{
+		{ { -2880, -540, -960, 540 }, { -1006, -540, -958, 540 }, ABE_LEFT },
+		{ { -960, -1620, 960, -540 }, { -960, -586, 960, -538 }, ABE_TOP },
+		{ { 960, -540, 2880, 540 }, { 958, -540, 1006, 540 }, ABE_RIGHT },
+		{ { -960, 540, 960, 1620 }, { -960, 538, 960, 586 }, ABE_BOTTOM },
+	};
+	for (const auto& sample : hiddenOwnerCases)
+	{
+		sharedBoundary.monitors[0].handle = reinterpret_cast<HMONITOR>(1);
+		sharedBoundary.monitors[0].bounds = centeredScreen;
+		sharedBoundary.monitors[1].handle = reinterpret_cast<HMONITOR>(2);
+		sharedBoundary.monitors[1].bounds = sample.neighbor;
+		for (int order = 0; order < 2; ++order)
+		{
+			const auto known = ResolveTaskbarOwnerCandidate(sharedBoundary, sample.taskbar, sample.edge, true);
+			const auto cached = ResolveTaskbarOwnerCandidate(sharedBoundary, sample.taskbar, std::nullopt, true,
+				{ reinterpret_cast<HMONITOR>(1), sample.edge });
+			Check(known.monitor == reinterpret_cast<HMONITOR>(1) && known.edge == sample.edge
+				&& ResolveTaskbarOwner(sharedBoundary, sample.taskbar, sample.edge) == known.monitor
+				&& cached.monitor == known.monitor && cached.edge == known.edge,
+				"four-edge cross-monitor hidden taskbar keeps known or trusted cached owner with negative origins");
+			Check(!ResolveTaskbarOwnerCandidate(sharedBoundary, sample.taskbar, std::nullopt, true).monitor
+				&& !ResolveTaskbarOwnerCandidate(sharedBoundary, sample.taskbar, std::nullopt, true,
+					{ reinterpret_cast<HMONITOR>(99), sample.edge }).monitor,
+				"ambiguous hidden taskbar does not choose arbitrary monitor or accept absent cached owner");
+			std::reverse(sharedBoundary.monitors.begin(), sharedBoundary.monitors.end());
+		}
+	}
+	sharedBoundary.monitors[0].bounds = sharedBoundary.monitors[1].bounds = centeredScreen;
+	const RECT tiedTaskbar{ -960, 492, 960, 540 };
+	for (int order = 0; order < 2; ++order)
+	{
+		Check(!ResolveTaskbarOwner(sharedBoundary, tiedTaskbar, ABE_BOTTOM)
+			&& !ResolveTaskbarOwnerCandidate(sharedBoundary, tiedTaskbar, ABE_BOTTOM, false).monitor,
+			"known-edge identical monitor geometry remains unknown rather than depend on monitor order");
+		const auto cached = ResolveTaskbarOwnerCandidate(sharedBoundary, tiedTaskbar, ABE_BOTTOM, true,
+			{ reinterpret_cast<HMONITOR>(2), ABE_BOTTOM });
+		Check(cached.monitor == reinterpret_cast<HMONITOR>(2) && cached.edge == ABE_BOTTOM,
+			"matching trusted owner resolves genuine known-edge geometry ties regardless of monitor order");
+		std::reverse(sharedBoundary.monitors.begin(), sharedBoundary.monitors.end());
+	}
+	Check(!ResolveTaskbarOwnerCandidate(sharedBoundary, tiedTaskbar, 99U, true).monitor
+		&& !ResolveTaskbarOwnerCandidate(sharedBoundary, {}, std::nullopt, false).monitor,
+		"invalid known edge or taskbar geometry produces no owner");
+	Snapshot scaleSnapshot;
+	scaleSnapshot.monitors.resize(2);
+	scaleSnapshot.monitors[0].effectiveDpiX = 144;
+	scaleSnapshot.monitors[0].taskbarThicknessPx = 72;
+	scaleSnapshot.monitors[1].effectiveDpiX = 192;
+	Check(std::abs(ResolveUiScaleBase(scaleSnapshot, scaleSnapshot.monitors[1], true) - 1.2) < 1e-9,
+		"snapshot scale uses target and primary from the same publication");
+	auto scaleChanged = scaleSnapshot;
+	Check(scaleSnapshot.SemanticallyEquals(scaleChanged), "same taskbar thickness does not publish another generation");
+	scaleChanged.monitors[0].taskbarThicknessPx = 96;
+	Check(!scaleSnapshot.SemanticallyEquals(scaleChanged), "taskbar-only thickness change invalidates display snapshot");
+
+	MonitorInfo dockMonitor;
+	dockMonitor.bounds = taskbarMonitor;
+	dockMonitor.workArea = { -1900, -180, 0, 832 };
+	dockMonitor.taskbarThicknessPx = 48;
+	dockMonitor.taskbar = { TaskbarEdge::Bottom, true, TaskbarExposure::Hidden, TaskbarExposure::Hidden, 832 };
+	struct DockGapCase { UINT dpi; int gapPx; };
+	constexpr std::array<DockGapCase, 4> dockGapCases{ { { 96, 5 }, { 120, 6 }, { 144, 8 }, { 192, 10 } } };
+	for (const auto& gap : dockGapCases)
+	{
+		dockMonitor.effectiveDpiY = gap.dpi;
+		Check(ResolveDesktopBottomDockLine(dockMonitor) == 880 - gap.gapPx
+			&& ShouldProtectTaskbarBottomEdge(dockMonitor),
+			"hidden taskbar dock gap uses real screen DIP and protects exactly one physical bottom row");
+		auto raisedMonitor = dockMonitor;
+		raisedMonitor.taskbar.exposure = TaskbarExposure::Raised;
+		Check(ResolveDesktopBottomDockLine(raisedMonitor) == 832,
+			"raised bottom taskbar remains at stable top for every screen DPI");
+		raisedMonitor.taskbar.autoHide = false;
+		Check(ResolveDesktopBottomDockLine(raisedMonitor) == 832,
+			"ordinary bottom taskbar remains at stable top for every screen DPI");
+	}
+	dockMonitor.taskbar.exposure = TaskbarExposure::Raised;
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 832,
+		"raised autohide uses stable full-thickness top rather than animated rect");
+	dockMonitor.taskbar.exposure = TaskbarExposure::Unknown;
+	dockMonitor.taskbar.lastKnownExposure = TaskbarExposure::Raised;
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 832,
+		"unknown exposure preserves last reliable raised target");
+	dockMonitor.taskbar.lastKnownExposure = TaskbarExposure::Hidden;
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 870,
+		"unknown exposure preserves last reliable hidden target");
+	dockMonitor.taskbar.lastKnownExposure = TaskbarExposure::Unknown;
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 832,
+		"unknown exposure without history uses validated work area");
+	for (const RECT bounds : { taskbarMonitor, RECT{ -1920, -1400, 0, -320 } })
+		for (const auto edge : { TaskbarEdge::Left, TaskbarEdge::Top, TaskbarEdge::Right })
+			for (const bool autoHide : { false, true })
+				for (const auto& gap : dockGapCases)
+				{
+					auto sideMonitor = dockMonitor;
+					sideMonitor.bounds = bounds;
+					sideMonitor.workArea = { bounds.left + 20, bounds.top + 20, bounds.right, bounds.bottom - 48 };
+					sideMonitor.effectiveDpiY = gap.dpi;
+					sideMonitor.taskbar.edge = edge;
+					sideMonitor.taskbar.autoHide = autoHide;
+					sideMonitor.taskbar.exposure = autoHide ? TaskbarExposure::Hidden : TaskbarExposure::Raised;
+					Check(ResolveDesktopBottomDockLine(sideMonitor) == bounds.bottom - gap.gapPx
+						&& !ShouldProtectTaskbarBottomEdge(sideMonitor),
+						"top and side taskbars retain five real screen DIP regardless of autohide and other work-area inset");
+				}
+	dockMonitor.taskbar = { TaskbarEdge::Bottom, false, TaskbarExposure::Raised, TaskbarExposure::Raised, 832 };
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 832 && !ShouldProtectTaskbarBottomEdge(dockMonitor),
+		"ordinary bottom taskbar retains stable top without autohide protection");
+	dockMonitor.taskbar = {};
+	dockMonitor.workArea = { -1920, -200, 0, 880 };
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 880,
+		"absent taskbar does not borrow another monitor taskbar or scale fallback");
+	dockMonitor.workArea = { 0, 0, 0, 832 };
+	Check(ResolveDesktopBottomDockLine(dockMonitor) == 880,
+		"invalid work area cannot create a desktop dock target");
+
+	auto exposure = TaskbarExposure::Hidden;
+	for (const int visibleHeight : { 0, 1, 2, 3, 8, 20, 23 })
+	{
+		exposure = ResolveTaskbarExposure(taskbarMonitor,
+			{ -1920, 880 - visibleHeight, 0, 928 - visibleHeight }, 48, 96, exposure);
+		Check(exposure == TaskbarExposure::Hidden, "trigger strip and early raise do not churn dock target");
+	}
+	exposure = ResolveTaskbarExposure(taskbarMonitor, { -1920, 856, 0, 904 }, 48, 96, exposure);
+	Check(exposure == TaskbarExposure::Raised, "half-exposed taskbar selects stable raised endpoint");
+	for (const int visibleHeight : { 48, 32, 24, 20, 8, 4 })
+	{
+		exposure = ResolveTaskbarExposure(taskbarMonitor,
+			{ -1920, 880 - visibleHeight, 0, 928 - visibleHeight }, 48, 96, exposure);
+		Check(exposure == TaskbarExposure::Raised, "partial hide retains endpoint until trigger strip");
+	}
+	Check(ResolveTaskbarExposure(taskbarMonitor, { -1920, 878, 0, 926 }, 48, 96, exposure) == TaskbarExposure::Hidden
+		&& ResolveTaskbarExposure(taskbarMonitor, { -1920, 832, 0, 880 }, 48, 96, exposure, false) == TaskbarExposure::Hidden,
+		"small strip or genuinely hidden style returns hidden endpoint");
+	Check(ResolveTaskbarExposure(taskbarMonitor, { -1920, 870, 0, 918 }, 48, 96) == TaskbarExposure::Unknown
+		&& ResolveTaskbarExposure(taskbarMonitor, {}, 48, 96, exposure) == TaskbarExposure::Unknown
+		&& ResolveTaskbarExposure(taskbarMonitor, { 1, 832, 1921, 880 }, 48, 96) == TaskbarExposure::Unknown,
+		"unresolved middle animation and invalid or unrelated geometry stay unknown");
+	Check(ResolveTaskbarExposure(taskbarMonitor, { -1920, 874, 0, 922 }, 48, 192) == TaskbarExposure::Hidden,
+		"high-DPI trigger strip is still hidden");
+	Check(ResolveTaskbarFullThickness(2, 48, true, false) == 48
+		&& ResolveTaskbarFullThickness(24, 48, true, false) == 48
+		&& ResolveTaskbarFullThickness(24, 48, true, true) == 24
+		&& ResolveTaskbarFullThickness(72, 48, true, true) == 72
+		&& ResolveTaskbarFullThickness(24, 48, false, false) == 24,
+		"transient thin rectangles retain scale while trustworthy complete taskbar resize can shrink or grow");
+
+	Snapshot taskbarStateSnapshot;
+	taskbarStateSnapshot.monitors.push_back(dockMonitor);
+	auto stateChanged = taskbarStateSnapshot;
+	stateChanged.monitors[0].taskbar = { TaskbarEdge::Bottom, true, TaskbarExposure::Hidden, TaskbarExposure::Hidden, 832 };
+	Check(!taskbarStateSnapshot.SemanticallyEquals(stateChanged), "normalized taskbar policy changes publication");
+	taskbarStateSnapshot = stateChanged;
+	for (int sample = 0; sample < 60; ++sample)
+	{
+		stateChanged.monitors[0].taskbar.exposure = ResolveTaskbarExposure(taskbarMonitor,
+			{ -1920, 878, 0, 926 }, 48, 96, TaskbarExposure::Hidden);
+		Check(taskbarStateSnapshot.SemanticallyEquals(stateChanged), "repeated shell samples retain semantic generation");
+	}
+	stateChanged.monitors[0].taskbar.exposure = TaskbarExposure::Raised;
+	Check(!taskbarStateSnapshot.SemanticallyEquals(stateChanged), "exposure-only change invalidates publication");
+	stateChanged = taskbarStateSnapshot;
+	stateChanged.monitors[0].taskbar.dockTopPx -= 1;
+	Check(!taskbarStateSnapshot.SemanticallyEquals(stateChanged), "stable dock anchor participates in publication");
+
+	TaskbarEventBatch eventBatch;
+	eventBatch.Reset(1);
+	Check(eventBatch.Queue(1, false) && !eventBatch.Queue(1, false)
+		&& !eventBatch.Queue(1, true), "event burst queues only one owner message while retaining structural work");
+	Check(eventBatch.BeginCoalescing(1) && eventBatch.Queue(1, false)
+		&& !eventBatch.BeginCoalescing(1), "later events cannot restart existing coalesce timer");
+	const auto structuralBatch = eventBatch.Consume(1);
+	Check(structuralBatch && *structuralBatch && !eventBatch.Consume(1),
+		"one timer consumes one merged structural request and ignores duplicate timer delivery");
+	Check(eventBatch.Queue(1, false), "next event can start a new batch");
+	eventBatch.QueueFailed(1);
+	Check(eventBatch.Queue(1, false) && eventBatch.BeginCoalescing(1),
+		"failed PostMessage can be retried without losing pending work");
+	const auto visibilityBatch = eventBatch.Consume(1);
+	Check(visibilityBatch && !*visibilityBatch, "visibility-only batch remains cached sampling");
+	eventBatch.Reset(2);
+	Check(!eventBatch.Queue(1, true) && !eventBatch.BeginCoalescing(1) && !eventBatch.Consume(1)
+		&& eventBatch.Queue(2, false), "old observer epoch cannot enqueue or consume new lifecycle work");
+	eventBatch.Reset();
+	Check(!eventBatch.Queue(2, false) && !eventBatch.BeginCoalescing(2) && !eventBatch.Consume(2),
+		"shutdown gate rejects delayed observer messages");
 
 	auto bytes = MakeEdid(52, 29);
 	const auto parsed = ParseEdid(bytes, L"DISPLAY\\ABC1234\\1");

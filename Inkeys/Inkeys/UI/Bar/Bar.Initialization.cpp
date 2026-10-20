@@ -8,6 +8,7 @@
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Input/KeyboardShortcuts.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "../StartupPlacement.h"
 #include "Bar.InteractionWorker.h"
@@ -23,11 +24,13 @@ import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
 import Inkeys.Business.ComponentActions;
 import Inkeys.Input.MouseHook;
+import Inkeys.Other.Config;
 import Inkeys.Window;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.StartupPreview;
 import Inkeys.Startup.Progress;
 import Inkeys.Display;
+import Inkeys.Other.Config;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
 extern const double BarDrawAttributeCompactWidth;
 extern const double BarDrawAttributeCompactScale;
@@ -79,10 +82,24 @@ void BarUISetClass::PublishDisplaySnapshot(
 		? snapshot->Find(Inkeys::UI::Bar::PptSceneMonitor()) : nullptr;
 	if (!monitor && snapshot) monitor = snapshot->Primary();
 	if (!monitor) return;
+	const double desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*monitor);
+	const bool protectBottomEdge = Inkeys::Display::ShouldProtectTaskbarBottomEdge(*monitor);
+	const double uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
+		*snapshot, *monitor, Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase);
 	{
 		lock_guard lock(pendingDisplayPublishMutex);
+		// 其他屏幕或 Shell 重复采样不能重启本栏的位置动画。
+		const auto previous = PendingDisplaySnapshot();
+		if (previous.serial != 0
+			&& EqualRect(&previous.bounds, &monitor->bounds)
+			&& EqualRect(&previous.workArea, &monitor->workArea)
+			&& previous.dpi == (monitor->effectiveDpiX ? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI)
+			&& previous.uiBaseScale == uiBaseScale
+			&& previous.desktopDockLine == desktopDockLine
+			&& previous.protectBottomEdge == protectBottomEdge) return;
 		// 奇数 serial 表示发布中；读方只接受同一偶数 serial 的完整快照。
 		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+		std::atomic_thread_fence(memory_order_release);
 		pendingDisplayLeft.store(monitor->bounds.left, memory_order_relaxed);
 		pendingDisplayTop.store(monitor->bounds.top, memory_order_relaxed);
 		pendingDisplayRight.store(monitor->bounds.right, memory_order_relaxed);
@@ -93,6 +110,9 @@ void BarUISetClass::PublishDisplaySnapshot(
 		pendingWorkAreaBottom.store(monitor->workArea.bottom, memory_order_relaxed);
 		pendingDisplayDpi.store(monitor->effectiveDpiX ? monitor->effectiveDpiX :
 			USER_DEFAULT_SCREEN_DPI, memory_order_relaxed);
+		pendingDisplayUiBaseScale.store(uiBaseScale, memory_order_relaxed);
+		pendingDesktopDockLine.store(desktopDockLine, memory_order_relaxed);
+		pendingProtectBottomEdge.store(protectBottomEdge, memory_order_relaxed);
 		pendingDisplaySerial.fetch_add(1, memory_order_release);
 	}
 	UpdateRendering(false);
@@ -101,13 +121,9 @@ void BarUISetClass::PublishDisplaySnapshot(
 void BarUISetClass::PublishWindowDpi(UINT dpi) noexcept
 {
 	if (!dpi) return;
-	{
-		lock_guard lock(pendingDisplayPublishMutex);
-		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
-		pendingDisplayDpi.store(dpi, memory_order_relaxed);
-		pendingDisplaySerial.fetch_add(1, memory_order_release);
-	}
-	UpdateRendering(false);
+	// DPI 与任务栏基准来自同一显示快照，避免局部更新拼出跨屏混合数据。
+	(void)Inkeys::Display::Refresh(Inkeys::Display::ChangeReason::Display);
+	PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
 }
 
 void BarUISetClass::StartDisplayTracking()
@@ -202,15 +218,28 @@ namespace Inkeys::UI::Bar
 			return;
 		}
 
-		(void)Inkeys::Input::MouseHook::Start([&]()
-			{
-				barUISet.barState.fold = true;
-				barUISet.UpdateRendering(false);
-			});
+		namespace Keyboard = Inkeys::Input::KeyboardShortcuts;
+		const auto& keys = Inkeys::config.Input.Shortcuts;
+		Keyboard::SetEnabled((keys.ToggleAnnotation.load() ? Keyboard::Flag(Keyboard::Command::ToggleAnnotation) : 0U) |
+			(keys.Undo.load() ? Keyboard::Flag(Keyboard::Command::Undo) : 0U) |
+			(keys.RedoY.load() ? Keyboard::Flag(Keyboard::Command::RedoY) : 0U) |
+			(keys.RedoShiftZ.load() ? Keyboard::Flag(Keyboard::Command::RedoShiftZ) : 0U) |
+			(keys.Clear.load() ? Keyboard::Flag(Keyboard::Command::Clear) : 0U) |
+			(keys.Freeze.load() ? Keyboard::Flag(Keyboard::Command::Freeze) : 0U));
+		const auto keyboardStatus = Keyboard::Start();
+		if (IDTLogger && (!keyboardStatus.hookInstalled ||
+			((keyboardStatus.enabledMask & Keyboard::Flag(Keyboard::Command::ToggleAnnotation)) &&
+				!keyboardStatus.hotkeyRegistered)))
+			IDTLogger->warn("[KeyboardShortcuts] 输入服务状态: hook={}, hotkey={}, hookError={}, hotkeyError={}",
+				keyboardStatus.hookInstalled, keyboardStatus.hotkeyRegistered,
+				keyboardStatus.hookError, keyboardStatus.hotkeyError);
+		if (!Inkeys::Input::MouseHook::Start() && IDTLogger)
+			IDTLogger->warn("[MouseHook] 安装失败，全局滚轮和栏外点击暂不可用");
 		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
 		if (!barUISet.Rendering())
 		{
 			SetContentStateUpdatesReady(false);
+			Keyboard::Stop();
 			Inkeys::Input::MouseHook::Stop();
 			barUISet.StopDisplayTracking();
 			return;
@@ -222,6 +251,7 @@ namespace Inkeys::UI::Bar
 		while (!offSignal) this_thread::sleep_for(chrono::milliseconds(100));
 		SetContentStateUpdatesReady(false);
 		// 先停止输入生产者，再由窗口线程撤销计时器、Raw Input 与 capture。
+		Keyboard::Stop();
 		Inkeys::Input::MouseHook::Stop();
 		// 退出信号与普通渲染请求共用代次通知，唤醒真正休眠的渲染线程。
 		BarAtomic::wait.Notify();

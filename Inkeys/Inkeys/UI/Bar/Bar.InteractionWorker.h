@@ -167,6 +167,8 @@ namespace Inkeys::UI::Bar
 		WPARAM wParam = 0;
 		LPARAM lParam = 0;
 		ULONG_PTR extraInfo = 0;
+		DWORD messageTime = 0;
+		ULONGLONG tick = 0;
 		POINT screenPoint{};
 		POINT logicalPoint{};
 		std::uint64_t generation = 0;

@@ -7,9 +7,12 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <string_view>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
+#include "../Inkeys/Inkeys/Input/UiPointerInput.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar.Metrics;
@@ -73,6 +76,165 @@ namespace
 			"shared primary light maps from screen into presentation pixels");
 		Check(cursor.x == 82.0 && cursor.y == 92.0,
 			"surface maps the Main Bar cursor without creating a local position");
+	}
+
+	void TestNativeMouseAndDragSupplement()
+	{
+		namespace Pointer = Inkeys::Input::UiPointer;
+		const auto NativeDown = [](std::uint64_t generation, DWORD time)
+		{
+			Pointer::Sample sample;
+			sample.kind = Pointer::Kind::Down;
+			sample.screen = { 100, 100 };
+			sample.generation = generation;
+			sample.messageTime = time;
+			sample.tick = time;
+			return sample;
+		};
+		// Page 低于阈值仍是点击，Raw 注册失败或超时都不能阻止原生 Up。
+		for (const bool rawAvailable : { false, true })
+		{
+			Pointer::Testing::ResetProvider(rawAvailable);
+			Pointer::Testing::SetClock(1000);
+			Pointer::MouseChannel channel;
+			Pointer::MouseGesture gesture;
+			const auto down = NativeDown(1, 1000);
+			Check(gesture.Begin(down), "PPT native press starts before optional raw claim");
+			Check(channel.BeginMouse(down.screen, down.messageTime) == rawAvailable,
+				"PPT optional drag claim reflects availability without owning the click");
+			Pointer::Testing::SetClock(2001);
+			Pointer::Testing::PollPendingMouse();
+			Pointer::Sample packet;
+			while (channel.TryPop(packet))
+				Check(!gesture.AcceptRaw(packet),
+					"PPT pending raw cancellation never completes a page click");
+			auto up = down;
+			up.kind = Pointer::Kind::Up;
+			up.screen = { 101, 100 };
+			up.messageTime = 2002;
+			Check(!HasExceededPptDragThreshold(down.screen, up.screen, 8, 6)
+				&& gesture.AcceptNative(up) && !gesture.Active(),
+				"PPT page candidate completes native click despite unavailable raw");
+		}
+		// 三类拖动入口在没有 Raw Down 时，越过补充启动期限仍继续消费原生轨迹。
+		for (const auto region : { PptPointerRegion::Background,
+			PptPointerRegion::Page, PptPointerRegion::DragHandle })
+		{
+			Pointer::Testing::ResetProvider();
+			Pointer::Testing::SetClock(10000);
+			Pointer::MouseChannel channel;
+			Pointer::MouseGesture gesture;
+			Pointer::Session session;
+			const auto down = NativeDown(5, 10000);
+			Check(CanStartPptDrag(region) && gesture.Begin(down)
+				&& session.Begin(down) == Pointer::BeginResult::Started
+				&& channel.BeginMouse(down.screen, down.messageTime),
+				"PPT native drag starts while optional Raw remains unbound");
+			if (StartsPptDragImmediately(region)) (void)gesture.BeginDrag();
+			auto move = down;
+			move.kind = Pointer::Kind::Move;
+			move.screen.x += 80;
+			move.tick = move.messageTime = 10001;
+			Check(gesture.AcceptNative(move) && session.Accept(gesture.Latest())
+				&& HasExceededPptDragThreshold(down.screen, move.screen, 8, 6)
+				&& gesture.BeginDrag(), "PPT enters actual drag before the one-second deadline");
+			int cancelCount = 0;
+			for (DWORD offset : { 999u, 1000u, 1500u, 5000u })
+			{
+				Pointer::Testing::SetClock(10000 + offset);
+				Pointer::Testing::PollPendingMouse();
+				Pointer::Sample packet;
+				while (channel.TryPop(packet))
+				{
+					++cancelCount;
+					Check(packet.kind == Pointer::Kind::Cancel && packet.generation == 0
+						&& !gesture.AcceptRaw(packet) && gesture.Active() && session.Active(),
+						"PPT unbound Raw timeout does not cancel actual native pair drag");
+					channel.FinishMouse();
+				}
+				Check(cancelCount == (offset < 1000 ? 0 : 1),
+					"PPT optional startup deadline expires once without terminating drag");
+				move.screen.x += 10;
+				move.tick = move.messageTime = 10000 + offset;
+				Check(gesture.AcceptNative(move) && session.Accept(gesture.Latest())
+					&& session.Active() && session.Latest().screen.x == move.screen.x,
+					"PPT native pair movement stays effective for multiple seconds");
+			}
+			move.kind = Pointer::Kind::Up;
+			move.tick = move.messageTime = 16000;
+			Check(gesture.AcceptNative(move) && session.Accept(gesture.Latest())
+				&& !session.Active() && !gesture.AcceptNative(move),
+				"PPT native drag ends exactly once on the user's real release");
+		}
+		Pointer::Testing::ResetProvider();
+		for (const auto region : { PptPointerRegion::Background,
+			PptPointerRegion::Page, PptPointerRegion::DragHandle })
+		for (const bool rawEndsFirst : { false, true })
+		{
+			Pointer::MouseGesture gesture;
+			Pointer::Session session;
+			const auto down = NativeDown(2, 3000);
+			Check(CanStartPptDrag(region) && gesture.Begin(down)
+				&& session.Begin(down) == Pointer::BeginResult::Started,
+				"PPT native hit establishes candidate before any raw packet");
+			if (StartsPptDragImmediately(region)) (void)gesture.BeginDrag();
+			auto raw = down;
+			raw.generation = 90;
+			raw.device = 7;
+			Check(!gesture.AcceptRaw(raw), "PPT raw Down cannot dispatch a second press");
+			if (!StartsPptDragImmediately(region))
+			{
+				raw.kind = Pointer::Kind::Move;
+				raw.screen = { 103, 100 };
+				raw.messageTime = 3001;
+				Check(gesture.AcceptRaw(raw) && session.Accept(gesture.Latest())
+					&& !HasExceededPptDragThreshold(down.screen, raw.screen, 8, 6),
+					"PPT candidate accepts supplemental movement below drag threshold");
+			}
+			raw.kind = Pointer::Kind::Move;
+			raw.screen = { 180, 110 };
+			raw.messageTime = 3002;
+			Check(gesture.AcceptRaw(raw) && session.Accept(gesture.Latest())
+				&& HasExceededPptDragThreshold(down.screen, raw.screen, 8, 6)
+				&& gesture.BeginDrag(),
+				"PPT raw movement can cross original threshold outside the window");
+			raw.kind = Pointer::Kind::Up;
+			raw.messageTime = 3003;
+			auto nativeUp = down;
+			nativeUp.kind = Pointer::Kind::Up;
+			nativeUp.screen = raw.screen;
+			nativeUp.messageTime = raw.messageTime;
+			const bool ended = rawEndsFirst
+				? gesture.AcceptRaw(raw) : gesture.AcceptNative(nativeUp);
+			Check(ended && session.Accept(gesture.Latest()) && !session.Active(),
+				"PPT first valid drag Up retires original native session");
+			Check(!(rawEndsFirst ? gesture.AcceptNative(nativeUp) : gesture.AcceptRaw(raw)),
+				"PPT alternate late Up cannot finish the same pair twice");
+			const auto nextDown = NativeDown(3, 3010);
+			Check(gesture.Begin(nextDown)
+				&& session.Begin(nextDown) == Pointer::BeginResult::Started
+				&& !gesture.AcceptNative(nativeUp) && !gesture.AcceptRaw(raw)
+				&& session.Active(),
+				"PPT old terminal cannot retire the next native press");
+		}
+		{
+			Pointer::MouseGesture gesture;
+			const auto down = NativeDown(4, 4000);
+			Check(gesture.Begin(down), "PPT page tap starts on native Down");
+			auto raw = down;
+			raw.generation = 99;
+			raw.device = 8;
+			(void)gesture.AcceptRaw(raw);
+			raw.kind = Pointer::Kind::Up;
+			raw.messageTime = 4001;
+			Check(!gesture.AcceptRaw(raw) && gesture.Active(),
+				"PPT raw Up without a real drag never opens page preview");
+			auto up = down;
+			up.kind = Pointer::Kind::Up;
+			up.messageTime = 4002;
+			Check(gesture.AcceptNative(up), "PPT native Up still completes the page tap");
+		}
+		Pointer::Testing::ResetProvider();
 	}
 
 	void TestCompactWidgetContracts()
@@ -269,16 +431,7 @@ namespace
 			&& tracker.pending,
 			"stale render acknowledgement cannot clear the latest candidate");
 
-		// 注入一次 try_lock 竞争：fallback 显式请求 pair，mailbox 保留最终候选。
-		const bool presentationLockAvailable = false;
-		const bool fallbackRequestedPair = !presentationLockAvailable;
-		if (presentationLockAvailable)
-			(void)MarkPptDragSurfaceCommitted(
-				tracker, 11, PptDragCommittedSurfaceMask);
-		Check(fallbackRequestedPair && tracker.pending
-			&& tracker.layout.bottomPairWidth == 65.0F,
-			"presentation lock contention retains the final movement sample");
-
+		// 这里只验证 mailbox，不把它当作呈现锁竞争或真实几何提交的证据。
 		const auto release = ReleasePptDragTracking(tracker, true);
 		Check(release.tracked && release.pending && release.persist
 			&& tracker.ownsLayout,
@@ -428,6 +581,26 @@ namespace
 		endGate.Publish(end, 0);
 		Check(endGate.Commit(end, 0),
 			"hidden end controls cannot hold the matching target indefinitely");
+
+		PptPageCommitState recovery;
+		auto beforePause = page;
+		beforePause.pageAckEpoch = 10;
+		recovery.Publish(beforePause, 3);
+		Check(recovery.Commit(beforePause, 3), "initial page epoch commits normally");
+		auto pending = beforePause;
+		pending.targetRevision = 0;
+		++pending.pageAckEpoch;
+		recovery.Publish(pending, 3);
+		Check(!recovery.Commit(beforePause, 3), "pause rejects previously captured surface commits");
+		auto resumed = beforePause;
+		resumed.pageAckEpoch += 2;
+		recovery.Publish(resumed, 3);
+		Check(!ArePptStatesEquivalent(beforePause, resumed)
+			&& !recovery.Commit(beforePause, 3)
+			&& !recovery.Commit(resumed, 1) && recovery.Commit(resumed, 2),
+			"same numbers and target require new epoch surfaces before acknowledging recovery");
+		recovery.Publish(resumed, 3);
+		Check(!recovery.Commit(resumed, 3), "same publication epoch remains idempotent after acknowledgment");
 	}
 
 	void TestHideAndPageCommitRace()
@@ -519,6 +692,47 @@ namespace
 			"whiteboard uses independent 305/230 DIP widths and fixed bottom corners without inheriting PPT scale or position");
 	}
 
+	void TestTaskbarUiScale()
+	{
+		constexpr RECT monitor{ -3840, 0, 3840, 4320 };
+		PptState ppt;
+		ppt.presentationVisible = true;
+		ppt.layout.showBottomPair = ppt.layout.showMiddlePair = true;
+		ppt.layout.bottomPairScale = 1.5F;
+		ppt.layout.middlePairScale = 2.0F;
+		for (const float dpi : { 1.0F, 1.5F, 2.0F })
+			for (const float base : { 0.3F, 0.6F, 0.9F, 1.2F })
+				for (const float user : { 0.5F, 1.0F, 1.5F, 2.0F })
+				{
+					ppt.uiScale = base * user;
+					const auto fitted = ResolveRuntimePageControlLayout(monitor, dpi, ppt);
+					for (const auto surface : { Surface::BottomLeft, Surface::BottomRight,
+						Surface::MiddleLeft, Surface::MiddleRight })
+					{
+						const auto layout = ResolveSurfaceLayout(surface, monitor, dpi, fitted, {});
+						const bool middle = surface == Surface::MiddleLeft || surface == Surface::MiddleRight;
+						Check(std::abs(layout.scale - base * user * (middle ? 2.0F : 1.5F)) < 1e-5F,
+							"all four PPT surfaces multiply UI base, global zoom and local zoom exactly once");
+					}
+					WhiteboardState whiteboard;
+					whiteboard.active = whiteboard.expandedLayoutTarget = true;
+					Check(ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, fitted, whiteboard).scale == dpi,
+						"shared whiteboard surface retains independent DPI scale");
+					auto candidate = fitted.layout;
+					candidate.middlePairHeight = 21.0F * dpi;
+					Check(!ResolvePptDragCandidate(Surface::MiddleLeft, monitor, dpi, fitted,
+						candidate, fitted.layout, 20.0).centerSnapped,
+						"middle snap threshold remains screen DIP regardless of taskbar/global UI scale");
+				}
+		ppt.uiScale = 0.3F;
+		Check(Inkeys::UI::Bar::ResolveBarBottomDockInteractionZoom(192, 0.5, 0.3) == 0.15,
+			"Bar interaction uses taskbar base without DPI double multiplication or half-scale clamp");
+		const auto tiny = ResolveRuntimePageControlLayout({ 0, 0, 180, 100 }, 2, ppt, 10, 64);
+		Check(tiny.layout.bottomPairScale <= ppt.layout.bottomPairScale
+			&& ppt.layout.bottomPairScale == 1.5F,
+			"runtime fit changes only frame local multipliers and preserves saved preferences");
+	}
+
 	void TestIndependentSurfaceFitRegression()
 	{
 		constexpr RECT monitor{ 0, 0, 7680, 4320 };
@@ -604,6 +818,304 @@ namespace
 		Check(IsPageControlFrameRevisionCurrent(17, 17)
 			&& !IsPageControlFrameRevisionCurrent(17, 18),
 			"frame revision gate rejects stale work before presentation");
+	}
+
+	void TestMiddlePairCenterSnap()
+	{
+		using Inkeys::UI::Bar::BarBottomDockThresholdDip;
+		constexpr std::array monitors{
+			RECT{ 0, 0, 3840, 2160 },
+			RECT{ -2200, -1300, 1641, 861 },
+		};
+		for (const auto& monitor : monitors)
+		for (const float dpi : { 1.0F, 1.5F, 2.0F })
+		for (const float controlScale : { 0.5F, 1.0F, 2.5F, 3.0F })
+		for (const auto surface : { Surface::MiddleLeft, Surface::MiddleRight })
+		for (const float sign : { -1.0F, 1.0F })
+		for (const float distanceDip : { 19.9F, 20.0F, 20.1F })
+		for (const float edgeDistanceDip : { 19.9F, 20.0F, 20.1F, 120.0F })
+		{
+			const int failuresBefore = failureCount;
+			PptState ppt;
+			ppt.presentationVisible = true;
+			ppt.layout.showBottomPair = false;
+			ppt.layout.showMiddlePair = true;
+			ppt.layout.middlePairScale = controlScale;
+			ppt.layout.middlePairWidth = 20.0F;
+			PptLayoutState candidate = ppt.layout;
+			candidate.middlePairWidth = edgeDistanceDip * dpi;
+			candidate.middlePairHeight = sign * distanceDip * dpi;
+			const auto resolved = ResolvePptDragCandidate(surface, monitor,
+				dpi, ppt, candidate, ppt.layout, BarBottomDockThresholdDip);
+			const bool inside = distanceDip <= 20.0F && edgeDistanceDip <= 20.0F;
+			Check(resolved.centerSnapped == inside && !resolved.centerBlocked
+				&& !resolved.collisionRejected && !resolved.clamped
+				&& resolved.layout.middlePairHeight
+					== (inside ? 0.0F : candidate.middlePairHeight)
+				&& resolved.layout.middlePairWidth == candidate.middlePairWidth
+				&& resolved.layout.middlePairScale == controlScale,
+				"middle snap requires both inclusive 20 screen DIP bands independent of control scale");
+			PptState projected = ppt;
+			projected.layout = resolved.layout;
+			const auto left = ResolveSurfaceLayout(Surface::MiddleLeft,
+				monitor, dpi, projected, {});
+			const auto right = ResolveSurfaceLayout(Surface::MiddleRight,
+				monitor, dpi, projected, {});
+			Check(left.logicalBounds.top == right.logicalBounds.top
+				&& left.logicalBounds.bottom == right.logicalBounds.bottom
+				&& left.logicalBounds.left - monitor.left
+					== monitor.right - right.logicalBounds.right,
+				"snapping keeps both side controls symmetric and at the same height");
+			const auto scaledGap = static_cast<LONG>(std::lround(
+				PageControlGapDip * left.scale));
+			const auto extraDistance = static_cast<LONG>(std::lround(
+				candidate.middlePairWidth));
+			Check(left.logicalBounds.left - monitor.left - scaledGap == extraDistance
+				&& monitor.right - right.logicalBounds.right - scaledGap == extraDistance,
+				"edge eligibility measures extra distance after the existing scaled gap");
+			if (inside)
+			{
+				// 主体中心允许整数除法带来的半像素误差，不补边缘或阴影偏移。
+				Check(std::abs(static_cast<double>(left.logicalBounds.top)
+					+ left.logicalBounds.bottom - monitor.top - monitor.bottom) <= 1.0,
+					"snapped body center follows the selected monitor with odd pixel rounding");
+			}
+			if (failureCount != failuresBefore)
+				std::cerr << "  snap case origin=" << monitor.left << ',' << monitor.top
+					<< " dpi=" << dpi << " scale=" << controlScale
+					<< " surface=" << static_cast<int>(surface)
+					<< " distanceDip=" << sign * distanceDip
+					<< " edgeDistanceDip=" << edgeDistanceDip << '\n';
+		}
+
+		// 先裁剪再尝试吸附；矮屏能把远候选裁剪进中轴吸附带。
+		constexpr RECT shortMonitor{ -600, -100, 600, 100 };
+		PptState ppt;
+		ppt.presentationVisible = true;
+		ppt.layout.showBottomPair = false;
+		ppt.layout.showMiddlePair = true;
+		auto candidate = ppt.layout;
+		candidate.middlePairHeight = 10000.0F;
+		const auto clamped = ResolvePptDragCandidate(Surface::MiddleLeft,
+			shortMonitor, 1.0F, ppt, candidate, ppt.layout,
+			BarBottomDockThresholdDip);
+		Check(clamped.clamped && clamped.centerSnapped
+			&& clamped.layout.middlePairHeight == 0.0F,
+			"middle candidate is clamped before the center snap decision");
+
+		// 拖动起点的旧倍率不能限制本帧已经重新拟合的可移动范围。
+		ppt.layout.middlePairScale = 0.5F;
+		candidate = ppt.layout;
+		candidate.middlePairScale = 3.0F;
+		candidate.middlePairHeight = 10000.0F;
+		const auto currentScale = ResolvePptDragCandidate(Surface::MiddleLeft,
+			RECT{ 0, 0, 1920, 1080 }, 1.0F, ppt, candidate, ppt.layout,
+			BarBottomDockThresholdDip);
+		Check(currentScale.clamped && !currentScale.centerSnapped
+			&& currentScale.layout.middlePairHeight == 496.25F
+			&& currentScale.layout.middlePairScale == 0.5F,
+			"candidate clamp uses the current fitted scale instead of the old drag-start scale");
+		candidate = ppt.layout;
+		candidate.bottomPairHeight = 19.0F;
+		const auto bottom = ResolvePptDragCandidate(Surface::BottomRight,
+			RECT{ 0, 0, 1920, 1080 }, 1.0F, ppt, candidate, ppt.layout,
+			BarBottomDockThresholdDip);
+		Check(!bottom.centerSnapped && !bottom.centerBlocked
+			&& bottom.layout.bottomPairHeight == 19.0F,
+			"middle center snapping does not alter bottom pair drag offsets");
+	}
+
+	void TestMiddleSnapCollisionFallback()
+	{
+		using Inkeys::UI::Bar::BarBottomDockThresholdDip;
+		constexpr RECT monitor{ 0, 0, 1920, 1080 };
+		for (const float sign : { -1.0F, 1.0F })
+		for (const auto surface : { Surface::MiddleLeft, Surface::MiddleRight })
+		{
+			PptState ppt;
+			ppt.presentationVisible = true;
+			ppt.layout.showBottomPair = true;
+			ppt.layout.showMiddlePair = true;
+			ppt.layout.middlePairScale = 0.5F;
+			ppt.layout.middlePairWidth = 20.0F;
+			ppt.layout.middlePairHeight = sign * 150.0F;
+			ppt.layout.bottomPairHeight = sign > 0.0F ? 450.0F : 577.0F;
+			auto candidate = ppt.layout;
+			candidate.middlePairWidth = 19.0F;
+			candidate.middlePairHeight = sign * 19.0F;
+			PptState free = ppt;
+			free.layout = candidate;
+			PptState centered = free;
+			centered.layout.middlePairHeight = 0.0F;
+			Check(!PageControlGroupsOverlap(monitor, 1.0F, free, 5)
+				&& PageControlGroupsOverlap(monitor, 1.0F, centered, 5),
+				"collision fixture has a feasible free candidate and an obstructed center");
+			const auto resolved = ResolvePptDragCandidate(surface, monitor,
+				1.0F, ppt, candidate, ppt.layout, BarBottomDockThresholdDip);
+			Check(resolved.centerBlocked && !resolved.centerSnapped
+				&& !resolved.collisionRejected
+				&& resolved.layout.middlePairWidth == candidate.middlePairWidth
+				&& resolved.layout.middlePairHeight == candidate.middlePairHeight
+				&& resolved.layout.bottomPairHeight == ppt.layout.bottomPairHeight,
+				"blocked center retains a feasible free movement without pushing the bottom pair");
+		}
+
+		PptState ppt;
+		ppt.presentationVisible = true;
+		ppt.layout.showBottomPair = true;
+		ppt.layout.showMiddlePair = true;
+		ppt.layout.middlePairScale = 0.5F;
+		ppt.layout.bottomPairHeight = 450.0F;
+		ppt.layout.middlePairWidth = 20.0F;
+		ppt.layout.middlePairHeight = 150.0F;
+		auto candidate = ppt.layout;
+		candidate.middlePairWidth = 19.0F;
+		candidate.middlePairHeight = -80.0F;
+		const auto rejected = ResolvePptDragCandidate(Surface::MiddleLeft,
+			monitor, 1.0F, ppt, candidate, ppt.layout,
+			BarBottomDockThresholdDip);
+		Check(rejected.collisionRejected && !rejected.centerSnapped
+			&& rejected.layout.middlePairWidth == ppt.layout.middlePairWidth
+			&& rejected.layout.middlePairHeight == ppt.layout.middlePairHeight,
+			"a colliding diagonal candidate rolls back the whole moved pair");
+		candidate.middlePairHeight = 120.0F;
+		const auto recovered = ResolvePptDragCandidate(Surface::MiddleLeft,
+			monitor, 1.0F, ppt, candidate, rejected.layout,
+			BarBottomDockThresholdDip);
+		Check(!recovered.collisionRejected
+			&& recovered.layout.middlePairWidth == candidate.middlePairWidth
+			&& recovered.layout.middlePairHeight == candidate.middlePairHeight,
+			"a later feasible candidate still moves after a collision rejection");
+
+		// 候选可能来自旧拖动起点，另一组的新位置与身份必须采用当前发布。
+		candidate.middlePairHeight = 19.0F;
+		candidate.session = 1;
+		candidate.epoch = 1;
+		candidate.pairVersions = { 1, 2 };
+		ppt.layout.session = 7;
+		ppt.layout.epoch = 5;
+		ppt.layout.pairVersions = { 21, 22 };
+		ppt.layout.bottomPairHeight = 592.0F;
+		PptState obstructedFree = ppt;
+		obstructedFree.layout.middlePairWidth = candidate.middlePairWidth;
+		obstructedFree.layout.middlePairHeight = candidate.middlePairHeight;
+		auto freeCenter = obstructedFree;
+		freeCenter.layout.middlePairHeight = 0.0F;
+		Check(PageControlGroupsOverlap(monitor, 1.0F, obstructedFree, 5)
+			&& !PageControlGroupsOverlap(monitor, 1.0F, freeCenter, 5),
+			"new bottom publication obstructs the raw candidate but leaves its center feasible");
+		const auto current = ResolvePptDragCandidate(Surface::MiddleLeft,
+			monitor, 1.0F, ppt, candidate, rejected.layout,
+			BarBottomDockThresholdDip);
+		Check(current.centerSnapped && !current.collisionRejected
+			&& current.layout.middlePairHeight == 0.0F
+			&& current.layout.bottomPairHeight == ppt.layout.bottomPairHeight
+			&& current.layout.session == ppt.layout.session
+			&& current.layout.epoch == ppt.layout.epoch
+			&& current.layout.pairVersions == ppt.layout.pairVersions,
+			"current pair geometry and identity win over a stale drag-start snapshot");
+	}
+
+	void TestPptReleaseDragDecision()
+	{
+		constexpr POINT start{ -100, -200 };
+		for (const auto region : { PptPointerRegion::Page, PptPointerRegion::Background })
+		{
+			Check(!ShouldStartPptDragOnRelease(WorkspaceMode::PptCompact,
+				region, false, true, start, POINT{ -97, -198 }, 8, 6),
+				"pending release inside the system threshold preserves click or preview");
+			for (const POINT end : { POINT{ -104, -200 }, POINT{ -96, -200 },
+				POINT{ -100, -203 }, POINT{ -100, -197 } })
+			{
+				Check(ShouldStartPptDragOnRelease(WorkspaceMode::PptCompact,
+					region, false, true, start, end, 8, 6),
+					"Up crossing the same centered drag threshold starts a final drag sample");
+			}
+			Check(ShouldStartPptDragOnRelease(WorkspaceMode::PptCompact,
+				region, true, false, start, start, 8, 6)
+				&& !ShouldStartPptDragOnRelease(WorkspaceMode::PptCompact,
+					region, false, false, start, POINT{ 100, 100 }, 8, 6),
+				"an active drag samples Up while a cleared gesture cannot restart");
+		}
+		Check(ShouldStartPptDragOnRelease(WorkspaceMode::PptCompact,
+			PptPointerRegion::DragHandle, true, false, start, start, 8, 6),
+			"an immediate drag handle also retains its final release sample");
+		for (const auto region : { PptPointerRegion::Previous, PptPointerRegion::Next })
+			Check(!ShouldStartPptDragOnRelease(WorkspaceMode::PptCompact,
+				region, false, true, start, POINT{ 100, 100 }, 8, 6),
+				"arrow release never converts a page action into a drag");
+		for (const auto mode : { WorkspaceMode::Hidden, WorkspaceMode::WhiteboardExpanded })
+			Check(!ShouldStartPptDragOnRelease(mode, PptPointerRegion::Page,
+				false, true, start, POINT{ 100, 100 }, 8, 6)
+				&& !ShouldStartPptDragOnRelease(mode, PptPointerRegion::DragHandle,
+					true, false, start, POINT{ 100, 100 }, 8, 6),
+				"hidden or Whiteboard release cannot publish a stale PPT drag");
+	}
+
+	void TestDragFrameOwnershipAndGeometry()
+	{
+		PptState frame;
+		frame.presentationVisible = true;
+		frame.layout.session = 4;
+		frame.layout.epoch = 8;
+		frame.layout.pairVersions = { 10, 11 };
+		PptDragCommitTracker tracker;
+		BeginPptDragTracking(tracker, frame.layout);
+		frame.layout.bottomPairWidth = 100.0F;
+		frame.layout.bottomPairHeight = 75.0F;
+		(void)PublishPptDragCandidate(tracker, frame.layout, 10);
+		PptDragCommitTracker idleMiddle;
+		Check(IsPptDragFrameOwned(tracker, frame, 0)
+			&& IsPptDragFrameOwned(tracker, frame, 1)
+			&& !IsPptDragFrameOwned(idleMiddle, frame, 2)
+			&& !IsPptDragFrameOwned(tracker, frame, 4),
+			"drag ownership covers the complete pair rather than only the pressed surface");
+		(void)ReleasePptDragTracking(tracker, true);
+		Check(IsPptDragFrameOwned(tracker, frame, 0)
+			&& IsPptDragFrameOwned(tracker, frame, 1),
+			"released pending drag keeps final-geometry ownership on both peers");
+		auto otherPairUpdated = frame;
+		++otherPairUpdated.layout.pairVersions[1];
+		otherPairUpdated.layout.middlePairHeight = 80.0F;
+		++otherPairUpdated.publicationRevision;
+		Check(IsPptDragFrameOwned(tracker, otherPairUpdated, 0),
+			"another pair publication does not interrupt current final-geometry ownership");
+		for (int staleKind = 0; staleKind < 5; ++staleKind)
+		{
+			auto stale = frame;
+			if (staleKind == 0) ++stale.layout.session;
+			if (staleKind == 1) ++stale.layout.epoch;
+			if (staleKind == 2) --stale.layout.pairVersions[0];
+			if (staleKind == 3) --stale.layout.bottomPairHeight;
+			if (staleKind == 4) stale.layout.bottomPairScale = 1.5F;
+			Check(!IsPptDragFrameOwned(tracker, stale, 0),
+				"another session epoch candidate or geometry cannot borrow drag ownership");
+		}
+		constexpr RECT target{ -320, 175, -119, 254 };
+		Check(IsPptDragGeometryAtTarget(target, 1.0F, target, 1.0F)
+			&& IsPptDragGeometryAtTarget(target, 1.00005F, target, 1.0F)
+			&& !IsPptDragGeometryAtTarget(target, 1.0002F, target, 1.0F),
+			"actual geometry requires stable pixel bounds and the existing scale tolerance");
+		for (const float invalidScale : { (std::numeric_limits<float>::infinity)(),
+			(std::numeric_limits<float>::quiet_NaN)() })
+			Check(!IsPptDragGeometryAtTarget(target, invalidScale, target, 1.0F)
+				&& !IsPptDragGeometryAtTarget(target, 1.0F, target, invalidScale),
+				"non-finite actual or target scale cannot complete final drag geometry");
+		for (int edge = 0; edge < 4; ++edge)
+		{
+			auto intermediate = target;
+			if (edge == 0) --intermediate.left;
+			if (edge == 1) --intermediate.top;
+			if (edge == 2) ++intermediate.right;
+			if (edge == 3) ++intermediate.bottom;
+			Check(!IsPptDragGeometryAtTarget(intermediate, 1.0F, target, 1.0F),
+				"one pixel of intermediate motion cannot count as final drag geometry");
+		}
+		Check(!MarkPptDragFrameCommitted(tracker, frame, 0) && tracker.pending
+			&& MarkPptDragFrameCommitted(tracker, frame, 1)
+			&& CompletePptDragPersistence(tracker, 10)
+			&& !IsPptDragFrameOwned(tracker, frame, 0),
+			"pair completion and runtime handoff release final-geometry ownership");
 	}
 
 	void TestWorkspaceAndDpiLayouts()
@@ -894,6 +1406,30 @@ namespace
 		Check(decision.message == PageControlTouchMessage::Up
 			&& !decision.state.active,
 			"replacement touch up clears the lock");
+
+		state = ResolvePageControlTouchSample({}, 40,
+			true, false, false, true, true, false, 100).state;
+		decision = ResolvePageControlTouchSample(state, 40,
+			false, true, false, true, true, false, 200);
+		Check(decision.message == PageControlTouchMessage::None
+			&& decision.state.active && decision.state.source == 100,
+			"same contact id from another touch device cannot move the active pointer");
+		decision = ResolvePageControlTouchSample(state, 40,
+			false, false, true, true, true, false, 200);
+		Check(decision.message == PageControlTouchMessage::None
+			&& decision.state.active && decision.state.source == 100,
+			"same contact id from another touch device cannot release the active pointer");
+		decision = ResolvePageControlTouchSample(state, 40,
+			true, false, false, false, false, false, 200);
+		Check(decision.message == PageControlTouchMessage::None
+			&& !decision.cancelPrevious && decision.state.source == 100,
+			"fallback from another device cannot replace an active primary pointer");
+		decision = ResolvePageControlTouchSample(state, 40,
+			true, false, false, true, true, false, 200);
+		Check(decision.message == PageControlTouchMessage::Down
+			&& decision.cancelPrevious && decision.state.active
+			&& decision.state.id == 40 && decision.state.source == 200,
+			"primary same-id Down from a new device cancels before replacing ownership");
 	}
 
 	void TestWhiteboardLayoutTargetAndReadiness()
@@ -1133,6 +1669,7 @@ int RunPageControlTests()
 	TestSharedButtonInheritance();
 	TestSharedSurfaceLightingMapping();
 	TestCompactWidgetContracts();
+	TestNativeMouseAndDragSupplement();
 	TestEndShowContentTargets();
 	TestDragCommitHandoff();
 	TestVersionedDragPublication();
@@ -1140,8 +1677,13 @@ int RunPageControlTests()
 	TestPagePresentationCommit();
 	TestHideAndPageCommitRace();
 	TestEffectiveScaleAndResources();
+	TestTaskbarUiScale();
 	TestIndependentSurfaceFitRegression();
 	TestDragPureTranslationAndRevisionGate();
+	TestMiddlePairCenterSnap();
+	TestMiddleSnapCollisionFallback();
+	TestPptReleaseDragDecision();
+	TestDragFrameOwnershipAndGeometry();
 	TestWorkspaceAndDpiLayouts();
 	TestWorkspaceTransitionAndInputPolicy();
 	TestTouchTranslationPolicy();

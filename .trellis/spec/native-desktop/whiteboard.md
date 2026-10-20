@@ -57,7 +57,7 @@
 - BeginFrameDraw 必须在 Clear 和实际 draw 前设置脏区裁剪；FinishFrameDrawCommands 在 GetDC 前清空 clip/layer，GetDC/ReleaseDC/EndFrameDraw 与主栏同一事务。高水位只保留容量，实际提交、命中、dirty 和光源映射使用同帧当前包络。
 - 预览底色、边框、圆角和反馈复用 renderer 的 Shape/按钮能力，纹理仅绘制内容；不再维护 ThemeDrawingResources 及自有圆角裁剪缓存。一个属性每帧只有一个最终目标，禁止标准图标尺寸或 opacity 先写默认值再覆盖造成永久重定向。
 - 成功完成绘制/GDI/提交/必要窗口交接后才发布命中与几何、消费 dirty；失败保留旧已呈现快照和待绘制状态。PPT 成对拖动/布局 revision/pagePresented 门禁保持。
-- 一个主栏交互 worker 公平处理全部目标；手势等待采用非阻塞续接，WndProc 仅标准化/入队和即时原生捕获。Move 可合并但不能跨 Down/Up/Cancel；fixture 来源保留精确队列出处。输入发布反馈、render 独占视觉对象；长按计时不在 render 执行业务。对话框和保存采用异步结果或原服务队列。退出显式唤醒邮箱，静置不靠轮询维持。
+- 一个主栏交互 worker 公平处理全部目标；手势等待采用非阻塞续接，WndProc 仅标准化/入队和即时原生捕获。Move 可合并但不能跨 Down/Up/Cancel；fixture 来源保留精确队列出处。输入发布反馈、render 独占视觉对象；长按计时不在 render 执行业务。对话框和保存采用异步结果或原服务队列。退出显式唤醒邮箱；生产 Hook 的100ms租约收包不请求渲染，离屏 worker 静置只等待邮箱或手势期限。
 - 无窗口 --ui3-multitarget-benchmark 运行实际主栏协调器及分页提交，保留 D2D/GetDC/ReleaseDC/EndDraw，仅替换最终 HWND sink；120 帧预热、600 活动帧、三轮、1/1.5/2 倍率，保存 raw callback/batch、时钟单位和丢样本计数。热态批次 P95≤16.67ms/P99≤33.4ms 为目标，另查成功主栏提交间隔及收起后静置。结果必须引用任务 validation，不能把此规范或公式测试当作性能通过。
 - 默认不启动 GUI。无窗口像素/吞吐不证明真实 ULW/DWM、任务栏、跨屏或 Office 动画；这些仍须明确列人工未验证项。
 
