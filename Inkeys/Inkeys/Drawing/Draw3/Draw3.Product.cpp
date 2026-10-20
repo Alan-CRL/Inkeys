@@ -1,3 +1,4 @@
+#include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Product.h"
 #include "Draw3.HapticDiagnostics.h"
 
@@ -105,6 +106,10 @@ namespace Inkeys::Drawing::Draw3
 
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
+		// 内部 stop 只取消/释放捕获；不可被 productStopping 或 Running 闸门丢弃。
+		// 不持 productCallMutex 跨 owner 完成等待，Stop 的外层已 drain 普通调用。
+		if (message == Detail::kMouseInputOwnerMessage && wParam == Detail::kMouseInputStop)
+			return productHost.ForwardMessage(window, message, wParam, lParam);
 		if (productStopping.load(std::memory_order_acquire))
 			return DefWindowProcW(window, message, wParam, lParam);
 		// 先声明日志 scope：正常返回/异常时都先释放生命周期锁，再输出诊断。
@@ -128,6 +133,7 @@ namespace Inkeys::Drawing::Draw3
 		merged.colorRgba = state.colorRgba;
 		merged.paintDevice = state.paintDevice;
 		merged.eraserInputs = state.eraserInputs;
+		merged.cursorSettings = state.cursorSettings;
 		merged.selectionMode = state.selectionMode;
 		merged.autoSaveEnabled = state.autoSaveEnabled;
 		productHost.PublishState(merged);
@@ -222,6 +228,56 @@ namespace Inkeys::Drawing::Draw3
 		return productHost.PublishCommand(command);
 	}
 
+	Shortcuts::Context CaptureProductShortcutContext() noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return {};
+		std::scoped_lock lock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire)
+			? Shortcuts::Context{} : productHost.ShortcutContext();
+	}
+
+	std::uint64_t PublishProductShortcutCommand(Bridge::CommandType type,
+		const Shortcuts::Scope& expected, std::uint64_t leaseId) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return 0;
+		std::scoped_lock lock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire) ? 0 :
+			productHost.PublishShortcutCommand(type, expected, leaseId);
+	}
+
+	std::uint64_t PublishProductShortcutFence(const Shortcuts::Context& expected,
+		std::uint64_t leaseId) noexcept
+	{
+		if (!leaseId || productStopping.load(std::memory_order_acquire)) return 0;
+		std::scoped_lock lock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire) ? 0 :
+			productHost.PublishShortcutCommand(Bridge::CommandType::ShortcutFence,
+				expected.scope, leaseId, expected.contentRevision);
+	}
+
+	bool TryTakeProductShortcutCompletion(std::uint64_t id,
+		Shortcuts::Completion& completion) noexcept
+	{
+		return productHost.TakeShortcutCompletion(id, completion);
+	}
+	void RetireProductShortcutRequest(std::uint64_t id) noexcept
+	{
+		productHost.RetireShortcutRequest(id);
+	}
+	std::uint64_t AcquireProductShortcutLease(const Shortcuts::Context& expected,
+		bool requireContentRevision) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return 0;
+		std::scoped_lock lock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire) ? 0 :
+			productHost.AcquireShortcutLease(expected, requireContentRevision);
+	}
+	void ReleaseProductShortcutLease(std::uint64_t id) noexcept
+	{
+		std::scoped_lock lock(productCallMutex);
+		productHost.ReleaseShortcutLease(id);
+	}
+
 	void SetProductActivationAllowed(bool enabled) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return;
@@ -233,19 +289,22 @@ namespace Inkeys::Drawing::Draw3
 
 LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	namespace DiagnosticOutput = Inkeys::Drawing::Draw3::DiagnosticOutput;
 	try
 	{
-		if (Inkeys::Drawing::Draw3::ProductRunning())
+		if ((msg == Inkeys::Drawing::Draw3::Detail::kMouseInputOwnerMessage &&
+			wParam == Inkeys::Drawing::Draw3::Detail::kMouseInputStop) ||
+			Inkeys::Drawing::Draw3::ProductRunning())
 			return Inkeys::Drawing::Draw3::ForwardProductMessage(hWnd, msg, wParam, lParam);
 	}
 	catch (const std::exception& exception)
 	{
 		// WndProc 不能让 C++ 异常穿过 USER32，否则 CRT 会直接 abort。
-		std::fprintf(stderr, "[Draw3] drawpad message stopped: %s\n", exception.what());
+		DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3] drawpad message stopped: %s\n", exception.what());
 	}
 	catch (...)
 	{
-		std::fputs("[Draw3] drawpad message stopped: unknown exception\n", stderr);
+		DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3] drawpad message stopped: unknown exception\n");
 	}
 
 	// Host 启动前仍由默认 WndProc 接管，避免向尚未附着的控制器发送消息。

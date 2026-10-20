@@ -915,6 +915,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			bool modeSucceeded = true;
 			auto snapshot = ProductHost().RuntimeSnapshot();
+			// 每次启动都是空历史，不能继承上一个 Host 的可用性快照。
+			modeSucceeded &= Check(!snapshot.canUndo && !snapshot.canRedo,
+				"fresh host starts with Undo and Redo unavailable", failures);
 			const auto modeDownBaseline=snapshot.inputDownPublished;
 			const auto modeRecycledBaseline=snapshot.inputRecycled;
 			modeSucceeded &= Check(snapshot.running && snapshot.firstFrameReady &&
@@ -978,13 +981,9 @@ namespace Inkeys::Drawing::Draw3
 			Bridge::ProductState selectionState{};
 			selectionState.selectionMode = true;
 			PublishProductState(selectionState);
-			// 模拟退出时 Selection 先于完整 ULW 帧到达，窗口事务先撤下旧主窗。
-			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
-				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
-				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
-				"waiting Selection hides the old primary HWND", failures);
-			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
-				"hiding Selection releases primary Drawpad capture on its owner thread", failures);
+			// Selection 输出尚未就绪时保留旧表面，正常交接不制造双隐藏空档。
+			modeSucceeded &= Check(IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"pending Selection keeps the previous primary frame visible", failures);
 			modeSucceeded &= Check(WaitUntil([primaryReady]
 			{
 				const auto state = ProductHost().RuntimeSnapshot();
@@ -1003,6 +1002,8 @@ namespace Inkeys::Drawing::Draw3
 					(WS_EX_LAYERED | WS_EX_TRANSPARENT)) ==
 					(WS_EX_LAYERED | WS_EX_TRANSPARENT),
 				"ready Selection restores only the layered through surface", failures);
+			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
+				"ready Selection handoff releases primary capture on its owner thread", failures);
 			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
 				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
 				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
@@ -1012,6 +1013,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// 通过隐藏 Drawpad 的 WndProc mailbox 注入完整 Down/Move/Up，
 				// 不调用 SendInput，也不绕过真实绘制线程直接访问 Renderer。
+				// Service 诊断跨 Host 启动累计，Host 的 NotFound 每次归零；只比较本次增量。
+				const auto commandPersistenceBaseline = ProductHost().HiddenPersistenceSnapshot();
 				const auto beforeContact = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(beforeContact.completedStrokeKind ==
 					Bridge::CompletedStrokeKind::None,
@@ -1187,6 +1190,99 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(!afterBlockedOlderCanvasUndo.currentPageHasContent && afterBlockedOlderCanvasUndo.contentRevision==recoveredCanvasEmpty.contentRevision,"recovered canvas root cannot cross an older Clear",failures);
 				PublishProductCommand(Bridge::CommandType::Redo);
 				modeSucceeded &= Check(WaitUntil([afterBlockedOlderCanvasUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterBlockedOlderCanvasUndo.redoCommandCount && s.currentPageHasContent;}),"Redo after recovered canvas Undo restores a stroke",failures);
+				// 真实 Host/绘制线程回归：最近 Clear 的旧区间可撤空，前向重做仍保留后续两笔。
+				const auto exerciseClearContinuation = [&](const char* scope, auto&& pageIsolation)
+				{
+					std::fprintf(stderr, "[ClearRedoContinuation] workspace=%s begin\n", scope);
+					bool succeeded = true;
+					const auto stroke = [&](int y)
+					{
+						const auto before = ProductHost().RuntimeSnapshot();
+						return postContact(HiddenTestContactPhase::Down, 44, y)
+							&& postContact(HiddenTestContactPhase::Move, 96, y + 8)
+							&& postContact(HiddenTestContactPhase::Up, 148, y + 16)
+							&& WaitUntil([before]
+							{
+								const auto state = ProductHost().RuntimeSnapshot();
+								return state.inputRecycled > before.inputRecycled && state.currentPageHasContent;
+							});
+					};
+					const auto command = [&](Bridge::CommandType type, bool content, const char* name)
+					{
+						const auto before = ProductHost().RuntimeSnapshot();
+						const bool accepted = PublishProductCommand(type) == Bridge::CommandResult::Accepted;
+						return Check(accepted && WaitUntil([before, type, content]
+						{
+							const auto state = ProductHost().RuntimeSnapshot();
+							const bool processed = type == Bridge::CommandType::Clear
+								? state.clearCommandCount > before.clearCommandCount
+								: type == Bridge::CommandType::Undo
+									? state.undoCommandCount > before.undoCommandCount
+									: state.redoCommandCount > before.redoCommandCount;
+							return processed && state.currentPageHasContent == content;
+						}), name, failures);
+					};
+					succeeded &= command(Bridge::CommandType::Clear, false, "continuation setup seals the older interval");
+					succeeded &= Check(stroke(40) && stroke(72), "continuation A has two committed strokes", failures);
+					succeeded &= command(Bridge::CommandType::Clear, false, "continuation seals A behind the latest Clear");
+					succeeded &= Check(stroke(112) && stroke(152), "continuation B has two committed strokes", failures);
+					succeeded &= command(Bridge::CommandType::Undo, true, "continuation Undo B2 preserves B1");
+					succeeded &= command(Bridge::CommandType::Undo, false, "continuation Undo B1 reaches the latest Clear");
+					succeeded &= command(Bridge::CommandType::Undo, true, "continuation Undo Clear restores A");
+					succeeded &= pageIsolation(true);
+					succeeded &= command(Bridge::CommandType::Undo, true, "continuation Undo A2 preserves A1");
+					succeeded &= command(Bridge::CommandType::Undo, false, "continuation Undo A1 reaches its sealed root");
+					const auto empty = ProductHost().RuntimeSnapshot();
+					succeeded &= command(Bridge::CommandType::Undo, false, "continuation older Clear Undo is consumed as noop");
+					succeeded &= Check(ProductHost().RuntimeSnapshot().contentRevision == empty.contentRevision
+						&& !ProductHost().RuntimeSnapshot().canUndo,
+						"continuation never enters the interval before A", failures);
+					succeeded &= command(Bridge::CommandType::Redo, true, "continuation Redo A1 precedes Clear");
+					succeeded &= pageIsolation(false);
+					succeeded &= command(Bridge::CommandType::Redo, true, "continuation Redo A2 precedes Clear");
+					succeeded &= command(Bridge::CommandType::Redo, false, "continuation Redo Clear presents its empty boundary");
+					succeeded &= Check(ProductHost().RuntimeSnapshot().canRedo,
+						"continuation Clear keeps B redo available", failures);
+					succeeded &= command(Bridge::CommandType::Redo, true, "continuation Redo B1 continues after Clear");
+					succeeded &= Check(ProductHost().RuntimeSnapshot().canRedo,
+						"continuation B2 remains after B1", failures);
+					succeeded &= command(Bridge::CommandType::Redo, true, "continuation Redo B2 reaches the original latest state");
+					succeeded &= Check(!ProductHost().RuntimeSnapshot().canRedo,
+						"continuation is exhausted only after the original latest stroke", failures);
+					succeeded &= command(Bridge::CommandType::Undo, true, "branch test Undo B2");
+					succeeded &= command(Bridge::CommandType::Undo, false, "branch test Undo B1");
+					succeeded &= command(Bridge::CommandType::Undo, true, "branch test restore A before new ink");
+					succeeded &= Check(stroke(192) && !ProductHost().RuntimeSnapshot().canRedo,
+						"new committed ink cancels the old Clear and forward B branch", failures);
+					const auto branched = ProductHost().RuntimeSnapshot();
+					succeeded &= command(Bridge::CommandType::Redo, true, "cancelled continuation Redo is consumed without clearing new ink");
+					succeeded &= Check(ProductHost().RuntimeSnapshot().contentRevision == branched.contentRevision,
+						"cancelled continuation does not mutate the new branch", failures);
+					std::fprintf(stderr, "[ClearRedoContinuation] workspace=%s result=%s\n", scope, succeeded ? "PASS" : "FAIL");
+					return succeeded;
+				};
+				modeSucceeded &= exerciseClearContinuation("Desktop", [&](bool)
+				{
+					const auto original = ProductHost().RuntimeSnapshot();
+					if (!Check(PublishProductCommand(Bridge::CommandType::NextPage) == Bridge::CommandResult::Accepted,
+						"continuation Desktop NextPage accepted", failures)) return false;
+					if (!Check(WaitUntil([original]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.nextPageCommandCount > original.nextPageCommandCount && state.currentPageIndex == original.currentPageIndex + 1;
+					}), "continuation moves to another Desktop page", failures)) return false;
+					const auto other = ProductHost().RuntimeSnapshot();
+					if (!Check(other.currentPageHasContent || !other.canUndo,
+						"empty Desktop page does not borrow another page Clear undo", failures)) return false;
+					if (!Check(PublishProductCommand(Bridge::CommandType::PreviousPage) == Bridge::CommandResult::Accepted,
+						"continuation Desktop PreviousPage accepted", failures)) return false;
+					return Check(WaitUntil([original, other]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.previousPageCommandCount > other.previousPageCommandCount
+							&& state.currentPageIndex == original.currentPageIndex && state.currentPageHasContent && state.canRedo;
+					}), "continuation returns to its own Desktop page with A and forward redo intact", failures);
+				});
 				const auto desktopBeforeInk = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 56, 72) &&
 					postContact(HiddenTestContactPhase::Move, 104, 96) &&
@@ -1319,6 +1415,76 @@ namespace Inkeys::Drawing::Draw3
 				PublishProductCommand(Bridge::CommandType::Redo);
 				modeSucceeded &= Check(WaitUntil([afterBlockedPresentationUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterBlockedPresentationUndo.redoCommandCount && s.currentPageHasContent;}),"Presentation stroke Redo remains available after boundary restore",failures);
 
+				const auto presentationRoot = std::filesystem::path(options.autoSaveRoot) / L"presentation";
+				const auto readTargetAIndex = [&]
+				{
+					std::ifstream file(presentationRoot / L"index.json", std::ios::binary);
+					Json::CharReaderBuilder reader;
+					Json::Value index;
+					std::string parseError;
+					if (file && Json::parseFromStream(reader, file, &index, &parseError))
+						for (const auto& entry : index["entries"])
+							if (entry["sourceIdentity"].asString() == targetA.sourceIdentity
+								&& entry["presentationKey"].asString() == FormatPresentationKey(targetA.key))
+								return entry;
+					return Json::Value{};
+				};
+				const auto beforeContinuationRevision = readTargetAIndex()["mutationRevision"].asUInt64();
+				modeSucceeded &= exerciseClearContinuation("Presentation", [&](bool canonicalRootJustRestored)
+				{
+					// accepted 包含 Save/Load，初次 NotFound 也计入 failed；合并请求不重复计 accepted。
+					if (!Check(WaitUntil([&]
+					{
+						const auto saved = ProductHost().HiddenPersistenceSnapshot();
+						if (!saved || !commandPersistenceBaseline) return false;
+						const auto accepted = saved->presentationAccepted - commandPersistenceBaseline->presentationAccepted;
+						const auto committed = saved->presentationCommitted - commandPersistenceBaseline->presentationCommitted;
+						const auto loaded = saved->presentationLoaded - commandPersistenceBaseline->presentationLoaded;
+						const auto failed = saved->presentationFailed - commandPersistenceBaseline->presentationFailed;
+						const auto notFound = saved->presentationNotFound - commandPersistenceBaseline->presentationNotFound;
+						return committed != 0 && committed + loaded + failed == accepted && failed == notFound;
+					}), "continuation persistence requests reach their successful terminal states", failures)) return false;
+					// 首次离页必须读取新索引指向的 A 根文件，不能只靠 worker 计数或 Clear 前的旧 A。
+					if (canonicalRootJustRestored && !Check(WaitUntil([&]
+					{
+						const auto entry = readTargetAIndex();
+						if (entry.isNull() || entry["mutationRevision"].asUInt64() <= beforeContinuationRevision) return false;
+						const auto fileGuid = draw3::uink::ParseUInkGuid(entry["fileGuid"].asString());
+						const auto workspaceGuid = draw3::uink::ParseUInkGuid(entry["workspaceGuid"].asString());
+						if (!fileGuid || !workspaceGuid) return false;
+						const auto read = draw3::uink::ReadUInkFile(
+							(presentationRoot / entry["relativePath"].asString()).wstring());
+						if (read.status != draw3::uink::UInkReadStatus::Complete || !read.document) return false;
+						draw3::uink::Draw3UInkImportExpectation expectation;
+						expectation.fileGuid = *fileGuid;
+						expectation.hostId = FormatPresentationKey(targetA.key);
+						expectation.bindingMode = draw3::uink::Draw3UInkImportBindingMode::StableSlideId;
+						expectation.slideIds = targetA.slideIds;
+						expectation.knownSlideIds = targetA.slideIds;
+						expectation.pageCount = targetA.totalPages;
+						expectation.allowEndScreen = true;
+						const auto imported = draw3::uink::ImportApplicationOwnedPresentation(*read.document, expectation);
+						if (!imported.snapshot || imported.snapshot->workspaceGuid != *workspaceGuid
+							|| imported.snapshot->activeCanvases.size() != Bridge::PresentationDocumentPageCount(targetA)) return false;
+						// 保存包含独立结束页；按真实 SlideID 验证 A，不能把结束页当作普通页。
+						const auto& canvases = imported.snapshot->activeCanvases;
+						const auto canvas = std::find_if(canvases.begin(), canvases.end(), [&](const auto& page)
+						{ return page.slideId == targetA.slideId; });
+						const auto endScreen = std::find_if(canvases.begin(), canvases.end(), [](const auto& page)
+						{ return draw3::uink::InkeysPageKind(page.extra) == draw3::uink::UInkInkeysPageKind::EndScreen; });
+						return canvas != canvases.end() && canvas->intervalOrdinal == 0 && canvas->strokes.size() == 2
+							&& endScreen != canvases.end() && !endScreen->slideId && endScreen->strokes.empty()
+							&& endScreen->pageGuid != canvas->pageGuid;
+					}), "continuation canonical root is durable before parking", failures)) return false;
+					const auto other = PublishProductPresentationTarget(targetB);
+					if (!other || !waitForPresentation(targetB, *other, false,
+						"continuation parks A while B stays isolated")) return false;
+					if (!Check(!ProductHost().RuntimeSnapshot().canUndo,
+						"new empty Presentation page has no synthetic Clear undo", failures)) return false;
+					const auto returned = PublishProductPresentationTarget(targetA);
+					return returned && waitForPresentation(targetA, *returned, true,
+						"continuation returns to warm A without losing its stroke and Clear redo");
+				});
 				const auto firstBRevision = PublishProductPresentationTarget(targetB);
 				modeSucceeded &= Check(firstBRevision.has_value(),
 					"switch directly from A to B", failures);
@@ -2488,7 +2654,8 @@ namespace Inkeys::Drawing::Draw3
 			};
 			clearProbe("backbuffer.clear", backBuffer.Get(), backRtv.Get());
 			clearProbe("offscreen.clear", offscreen.Get(), offscreenRtv.Get());
-			const bool initialized = swapChain && renderer.Init(device.Get(), context.Get(), swapChain.Get(), size, size, driver);
+			// 隔离 fixture 不读取产品配置；显式固定兼容策略，避免依赖 Init 默认参数。
+			const bool initialized = swapChain && renderer.Init(device.Get(), context.Get(), swapChain.Get(), size, size, driver, true);
 			std::fprintf(stderr, "[Draw3PixelTest] renderer_init=%d vs=%p ps=%p ink_buffer=%p global_cb=%p srv=%p\n",
 				initialized, static_cast<void*>(renderer.vertexShader.Get()), static_cast<void*>(renderer.pixelShader.Get()),
 				static_cast<void*>(renderer.inkDataBuffer.Get()), static_cast<void*>(renderer.globalCB.Get()),
@@ -3486,7 +3653,8 @@ namespace Inkeys::Drawing::Draw3
 			"Laser test creates FLIP composition swapchain without HWND", failures)) return 1;
 
 		InkRenderer renderer;
-		if (!Check(renderer.Init(device.Get(), context.Get(), swapChain.Get(), 64, 64, D3D_DRIVER_TYPE_WARP),
+		// 独立 WARP fixture 保持默认兼容偏好；实际 WARP 不启用兆芯专用上传。
+		if (!Check(renderer.Init(device.Get(), context.Get(), swapChain.Get(), 64, 64, D3D_DRIVER_TYPE_WARP, true),
 			"Laser test initializes production renderer and shaders", failures))
 		{
 			context->ClearState();

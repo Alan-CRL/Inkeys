@@ -62,6 +62,7 @@ namespace PptCOM
     {
         object GetProperty(object target, string name);
         object GetItem(object collection, int oneBasedIndex);
+        void SetProperty(object target, string name, object value);
         void InvokeMethod(object target, string name);
         bool IsComObject(object value);
         void Release(object value);
@@ -105,25 +106,72 @@ namespace PptCOM
 
         public object GetProperty(object target, string name)
         {
+            if (target == null) throw new ArgumentNullException("target");
             if (name == "HWND")
             {
                 int? hwnd = typedSlideShowHwnd(target);
                 if (hwnd.HasValue) return hwnd.Value;
             }
-            // 非 PowerPoint 接口继续走原 late-bound 路径；类型接口的 busy/失败不伪装成成功。
-            return Invoke(target, name, BindingFlags.GetProperty, null);
+            // HWND 已证实受限，非 PIA 提供方只在此标量允许反射；busy 不重复调用。
+            if (name == "HWND") return Invoke(target, name, BindingFlags.GetProperty, null);
+            // 字符串只是测试边界，生产逐成员使用真正的 dynamic，不回退到反射。
+            dynamic value = target;
+            switch (name)
+            {
+                case "Application": return value.Application;
+                case "ActivePresentation": return value.ActivePresentation;
+                case "Presentation": return value.Presentation;
+                case "SlideShowWindow": return value.SlideShowWindow;
+                case "SlideShowWindows": return value.SlideShowWindows;
+                case "Presentations": return value.Presentations;
+                case "Name": return value.Name;
+                case "Caption": return value.Caption;
+                case "FullName": return value.FullName;
+                case "View": return value.View;
+                case "State": return value.State;
+                case "Slide": return value.Slide;
+                case "Slides": return value.Slides;
+                case "Count": return value.Count;
+                case "SlideIndex": return value.SlideIndex;
+                case "SlideID": return value.SlideID;
+                case "Active": return value.Active;
+                case "SlideNavigation": return value.SlideNavigation;
+                case "PointerType": return value.PointerType;
+                case "LaserPointerEnabled": return value.LaserPointerEnabled;
+                default: throw new MissingMemberException(name);
+            }
         }
 
         public object GetItem(object collection, int oneBasedIndex)
         {
-            return Invoke(collection, "Item",
-                BindingFlags.GetProperty | BindingFlags.InvokeMethod,
-                new object[] { oneBasedIndex });
+            return ((dynamic)collection).Item(oneBasedIndex);
+        }
+
+        public void SetProperty(object target, string name, object value)
+        {
+            dynamic instance = target;
+            switch (name)
+            {
+                case "Visible": instance.Visible = Convert.ToBoolean(value, CultureInfo.InvariantCulture); break;
+                case "LaserPointerEnabled": instance.LaserPointerEnabled = Convert.ToBoolean(value, CultureInfo.InvariantCulture); break;
+                case "PointerType":
+                    instance.PointerType = (Microsoft.Office.Interop.PowerPoint.PpSlideShowPointerType)
+                        Convert.ToInt32(value, CultureInfo.InvariantCulture); break;
+                default: throw new MissingMemberException(name);
+            }
         }
 
         public void InvokeMethod(object target, string name)
         {
-            Invoke(target, name, BindingFlags.InvokeMethod, null);
+            dynamic value = target;
+            switch (name)
+            {
+                case "Exit": value.Exit(); break;
+                case "Next": value.Next(); break;
+                case "Previous": value.Previous(); break;
+                case "Activate": value.Activate(); break;
+                default: throw new MissingMemberException(name);
+            }
         }
 
         public bool IsComObject(object value)
@@ -150,13 +198,20 @@ namespace PptCOM
         private const int MaximumSlides = 10000;
         private readonly ILateBoundComAccessor accessor;
         private readonly Func<IntPtr, int> processIdResolver;
+        private readonly Func<object, object, object, long> windowResolver;
 
         public PresentationDescriptorReader(ILateBoundComAccessor accessor,
             Func<IntPtr, int> processIdResolver)
+            : this(accessor, processIdResolver, null) { }
+
+        public PresentationDescriptorReader(ILateBoundComAccessor accessor,
+            Func<IntPtr, int> processIdResolver,
+            Func<object, object, object, long> windowResolver)
         {
             if (accessor == null) throw new ArgumentNullException("accessor");
             this.accessor = accessor;
             this.processIdResolver = processIdResolver;
+            this.windowResolver = windowResolver;
         }
 
         private static bool IsBusy(Exception exception)
@@ -254,13 +309,31 @@ namespace PptCOM
             object presentation, object slideShowWindow, long bindingRevision)
         {
             string ignored;
-            return Read(application, presentation, slideShowWindow, bindingRevision, false, out ignored);
+            var result = Read(application, presentation, slideShowWindow, bindingRevision, false, out ignored);
+            return ValidateIdentity(result, ref ignored);
         }
 
         public PresentationDescriptorValue ReadShow(object application,
             object presentation, object slideShowWindow, long bindingRevision, out string pageStatus)
         {
-            return Read(application, presentation, slideShowWindow, bindingRevision, true, out pageStatus);
+            var result = Read(application, presentation, slideShowWindow, bindingRevision, true, out pageStatus);
+            return ValidateIdentity(result, ref pageStatus);
+        }
+
+        private static PresentationDescriptorValue ValidateIdentity(
+            PresentationDescriptorValue descriptor, ref string pageStatus)
+        {
+            if ((descriptor.status == "StableSlideIds" || descriptor.status == "PageIndexFallback") &&
+                descriptor.fullName.Length == 0 &&
+                descriptor.presentationName.Length == 0)
+            {
+                // 保留本次 fresh 页码供基础控件使用，缺身份绝不生成墨迹 ready。
+                descriptor.status = "Unavailable";
+                descriptor.currentSlideId = null;
+                descriptor.slideIds = new int[0];
+                pageStatus = "Unknown";
+            }
+            return descriptor;
         }
 
         private PresentationDescriptorValue Read(object application,
@@ -282,9 +355,9 @@ namespace PptCOM
                 descriptor.provider = ResolveProvider(applicationName, applicationCaption);
                 descriptor.fullName = TryGetString(presentation, "FullName");
                 descriptor.presentationName = TryGetString(presentation, "Name");
-                if (descriptor.fullName.Length == 0 &&
-                    descriptor.presentationName.Length == 0) return descriptor;
-                descriptor.slideShowHwnd = TryGetHwnd(slideShowWindow);
+                // 名称只影响持久化身份，不能挡住仍然有效的基本页码与对象定向控制。
+                descriptor.slideShowHwnd = windowResolver == null ? TryGetHwnd(slideShowWindow) :
+                    windowResolver(application, presentation, slideShowWindow);
                 if (descriptor.slideShowHwnd != 0 && processIdResolver != null)
                     descriptor.applicationProcessId = processIdResolver(
                         new IntPtr(descriptor.slideShowHwnd));
@@ -403,6 +476,16 @@ namespace PptCOM
                     descriptor.status = "TransientBusy";
                     descriptor.currentSlideId = null;
                     descriptor.slideIds = new int[0];
+                    pageStatus = "Unknown";
+                    return descriptor;
+                }
+                if (endScreen && descriptor.totalPage > 0 && descriptor.totalPage <= MaximumSlides)
+                {
+                    // 已确认结束状态与同次总页数，但没有可信拓扑；仅保留基础结束页显示证据。
+                    descriptor.status = "Unavailable";
+                    descriptor.currentSlideId = null;
+                    descriptor.slideIds = new int[0];
+                    pageStatus = "EndScreen";
                     return descriptor;
                 }
                 // 当前页序号来自同一次 View.Slide；拓扑失败时只做显式页码退化。

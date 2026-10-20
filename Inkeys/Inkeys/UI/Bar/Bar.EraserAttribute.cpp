@@ -180,7 +180,8 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	const bool selected = eraserSelected.has_value() ? *eraserSelected
 		: GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtEraser;
 	const bool shouldClose=owner.barState.fold || !selected ||
-		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded;
+		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded ||
+		owner.barState.recallAttribute;
 	if(shouldClose)Close(owner);
 	const bool open=owner.barState.eraserAttribute;if(!open)owner.barState.eraserSensitivityOpen=false;
 	const bool menuOpen=owner.barState.eraserSensitivityOpen;visible_=open;

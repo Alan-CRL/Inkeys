@@ -1,0 +1,18 @@
+{
+  "phase": "planning",
+  "tasks": {
+    "10-14-canvas-freeze-investigation": "planning",
+    "10-15-canvas-f1-diagnostic-output-fix": "planning",
+    "10-15-canvas-f2-ppt-load-retry-fix": "planning",
+    "10-15-canvas-f3-eraser-idle-wake-fix": "planning",
+    "10-15-canvas-f4-settings-capture-fix": "planning"
+  },
+  "task_files_checked": 65,
+  "context_validation": "passed; each entry exists and within injection cap; oversized specs use child-side full-load contract",
+  "placeholder_errors": false,
+  "product_diff": "",
+  "eol_conversion_notices_preserved": 22,
+  "errors": [],
+  "new_build_or_runtime_tests": "not run; planning artifacts only",
+  "final_review": "awaiting user approval of latest F1-F4 summary"
+}

@@ -398,6 +398,26 @@ namespace
 
 int RunWindowGeometryTests()
 {
+	const POINT origin{ -1920, -200 };
+	const RECT oversized{ 100, 900, 700, 1200 };
+	Check(IsBarWindowRectEmpty(ClipBarViewportForTaskbarEdge(
+		RECT{ 100, 1100, 700, 1200 }, origin, POINT{}, 880, true)),
+		"entirely excluded viewport is empty so renderer can wait for a new environment without ULW retry");
+	for (LONG dy : { -31L, 0L, 20L, 57L })
+	{
+		const POINT translation{ 17, dy };
+		const RECT clipped = ClipBarViewportForTaskbarEdge(oversized, origin, translation, 880, true);
+		const RECT screen = TranslateBarWindowRect(clipped, POINT{ origin.x + translation.x, origin.y + translation.y });
+		Check(screen.bottom == 879 && clipped.left == oversized.left && clipped.top == oversized.top,
+			"final viewport protects exactly one physical row including direct translation");
+		Check(IsBarWindowAboveTaskbarEdge(screen, 880, true)
+			&& !IsBarWindowAboveTaskbarEdge(TranslateBarWindowRect(screen, POINT{ 0, 1 }), 880, true),
+			"safe direct move is allowed but crossing the protected row requires ULW crop");
+		Check(SameBarWindowRect(ClipBarViewportForTaskbarEdge(oversized, origin, translation, 880, false), oversized),
+			"PPT and ordinary taskbars preserve the previous Bar viewport");
+		const RECT safe = ClipBarViewportForTaskbarEdge(RECT{ 10, 20, 50, 30 }, origin, translation, 880, true);
+		Check(SameBarWindowRect(safe, RECT{ 10, 20, 50, 30 }), "already safe viewport does not resize");
+	}
 	TestViewportPresentationTransactionDuringDrag();
 	TestCoordinateRoundTrip();
 	TestAnimationEnvelopeUsesSegmentDelta();

@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -62,7 +63,7 @@ namespace Inkeys::Drawing::Draw3
 			const size_t remaining = totalPoints - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
-			if (!mapNoOverwriteOnDynamicBufferSRV ||
+			if (useDefaultStructuredUpload_ || !mapNoOverwriteOnDynamicBufferSRV ||
 				m_bufferHead + batchCount > kMaxBufferCapacity)
 			{
 				// 不支持动态 SRV 扩展时每批丢弃；支持时仅在环形缓冲区写满后丢弃。
@@ -70,11 +71,11 @@ namespace Inkeys::Drawing::Draw3
 				m_bufferHead = 0;
 			}
 
+			const auto bufferOffset = static_cast<uint32_t>(m_bufferHead);
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), points.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(InkPoint)), bufferOffset * sizeof(InkPoint), mapType))) return -1;
+
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0, mapType, 0, &mapped))) return -1;
-			auto* destination = static_cast<InkPoint*>(mapped.pData);
-			std::memcpy(destination + m_bufferHead, points.data() + startIndex, batchCount * sizeof(InkPoint)); // 把本批点写入结构化缓冲区。
-			context->Unmap(inkDataBuffer.Get(), 0);
 
 			if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
@@ -82,7 +83,7 @@ namespace Inkeys::Drawing::Draw3
 			constants->height = viewportHeight;
 			constants->color = color;
 			constants->shapeType = static_cast<float>(static_cast<uint32_t>(shape));
-			constants->bufferOffset = static_cast<uint32_t>(m_bufferHead); // 着色器用偏移定位当前批次的起点。
+			constants->bufferOffset = bufferOffset; // 上传后 head 已推进，着色器仍使用本批起点。
 			constants->operatorKind = static_cast<uint32_t>(operatorKind);
 			context->Unmap(globalCB.Get(), 0);
 
@@ -101,7 +102,6 @@ namespace Inkeys::Drawing::Draw3
 
 			ID3D11ShaderResourceView* nullResources[] = { nullptr };
 			context->VSSetShaderResources(0, 1, nullResources);
-			m_bufferHead += batchCount;
 			// 相邻批次共享一个端点，避免分段处出现断裂。
 			startIndex += batchCount - 1;
 		}
@@ -117,13 +117,10 @@ namespace Inkeys::Drawing::Draw3
 		while (startIndex < primitives.size())
 		{
 			const size_t batchCount = std::min(primitives.size() - startIndex, kMaxBufferCapacity);
+			if (FAILED(UploadStructuredBuffer(highlighterPrimitiveBuffer.Get(), primitives.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(HighlighterPrimitive)), 0, D3D11_MAP_WRITE_DISCARD))) return -1;
+
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(highlighterPrimitiveBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
-			auto* destination = static_cast<HighlighterPrimitive*>(mapped.pData);
-			std::memcpy(destination, primitives.data() + startIndex,
-				batchCount * sizeof(HighlighterPrimitive)); // 每个 primitive 可独立批处理，不再共享易翻转的四边形端点。
-			context->Unmap(highlighterPrimitiveBuffer.Get(), 0);
 
 			if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
@@ -131,7 +128,7 @@ namespace Inkeys::Drawing::Draw3
 			constants->height = viewportHeight;
 			constants->color = color;
 			constants->shapeType = 3.0f;
-			constants->bufferOffset = 0; // DISCARD 在 D3D11 核心路径即可使用，不依赖动态 SRV 的 NO_OVERWRITE 扩展。
+			constants->bufferOffset = 0; // 两种上传策略均逐批从零开始，不依赖 NO_OVERWRITE。
 			constants->operatorKind = static_cast<uint32_t>(operatorKind);
 			context->Unmap(globalCB.Get(), 0);
 
@@ -175,7 +172,7 @@ namespace Inkeys::Drawing::Draw3
 				primitives.size() - startIndex, kMaximumPrimitiveBatch);
 			const size_t pointCount = batchCount * 2;
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
-			if (!mapNoOverwriteOnDynamicBufferSRV ||
+			if (useDefaultStructuredUpload_ || !mapNoOverwriteOnDynamicBufferSRV ||
 				m_bufferHead + pointCount > kMaxBufferCapacity)
 			{
 				// Shape 与普通笔共用动态 SRV，能力不足时也必须逐批从零偏移上传。
@@ -183,12 +180,11 @@ namespace Inkeys::Drawing::Draw3
 				m_bufferHead = 0;
 			}
 
+			const auto bufferOffset = static_cast<uint32_t>(m_bufferHead);
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), primitives.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(ShapePrimitive)), bufferOffset * sizeof(InkPoint), mapType))) return -1;
+
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0, mapType, 0, &mapped))) return -1;
-			auto* destination = static_cast<InkPoint*>(mapped.pData);
-			std::memcpy(destination + m_bufferHead, primitives.data() + startIndex,
-				batchCount * sizeof(ShapePrimitive)); // 两个连续 InkPoint 槽描述一个 analytic shape。
-			context->Unmap(inkDataBuffer.Get(), 0);
 
 			if (FAILED(context->Map(globalCB.Get(), 0,
 				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
@@ -197,7 +193,7 @@ namespace Inkeys::Drawing::Draw3
 			constants->height = viewportHeight;
 			constants->color = color;
 			constants->shapeType = static_cast<float>(static_cast<uint32_t>(kind));
-			constants->bufferOffset = static_cast<uint32_t>(m_bufferHead);
+			constants->bufferOffset = bufferOffset;
 			constants->operatorKind = static_cast<uint32_t>(operatorKind);
 			constants->padding[0] = shapeRoundedCornerRadiusPixels_;
 			constants->padding[1] = 0.0f;
@@ -219,7 +215,6 @@ namespace Inkeys::Drawing::Draw3
 
 			ID3D11ShaderResourceView* nullResource[] = { nullptr };
 			context->VSSetShaderResources(0, 1, nullResource);
-			m_bufferHead += pointCount;
 			startIndex += batchCount;
 		}
 		return 0;
@@ -318,7 +313,7 @@ namespace Inkeys::Drawing::Draw3
 				boundVsCb && boundVsCb.Get() == globalCB.Get() ? 1u : 0u,
 				boundPsCb && boundPsCb.Get() == globalCB.Get() ? 1u : 0u,
 				boundSrv && boundSrv.Get() == inkDataSRV.Get() ? 1u : 0u);
-			if (length > 0) std::cout.write(line, static_cast<std::streamsize>(
+			if (length > 0) DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, static_cast<std::streamsize>(
 				std::min(static_cast<size_t>(length), sizeof(line) - 1)));
 		};
 		if (!IsValidDrawingCursorAppearance(visual.appearance))
@@ -333,23 +328,24 @@ namespace Inkeys::Drawing::Draw3
 		}
 		const DrawingCursorAppearance& appearance = visual.appearance;
 		const float shapeType = appearance.shape == DrawingCursorShape::Circle ? 4.0f
-			: appearance.shape == DrawingCursorShape::Rectangle ? 5.0f : 6.0f;
+			: appearance.shape == DrawingCursorShape::Rectangle ? 5.0f
+			: appearance.shape == DrawingCursorShape::PenIcon ? 21.0f : 6.0f;
+		// 只移动瞬态 quad 中心，输入/墨迹坐标仍是 visual.x/y 的笔尖热点。
 		const InkPoint cursorData[2] = {
-			{ visual.x, visual.y, appearance.width * 0.5f, appearance.height * 0.5f },
-			{ appearance.outlineWidth, appearance.fillAlpha, 0.0f, 0.0f }
+			{ visual.x + appearance.centerOffsetX, visual.y + appearance.centerOffsetY,
+				appearance.width * 0.5f, appearance.height * 0.5f },
+			{ appearance.outlineWidth, appearance.fillAlpha, appearance.outlineOpacity + 1.0f, 0.0f }
 		};
 
-		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		const HRESULT inkMapResult = context->Map(inkDataBuffer.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-		if (FAILED(inkMapResult))
+		const HRESULT inkUploadResult = UploadStructuredBuffer(inkDataBuffer.Get(), cursorData, sizeof(cursorData),
+			0, D3D11_MAP_WRITE_DISCARD);
+		if (FAILED(inkUploadResult))
 		{
-			recordGpu("map-ink-data", inkMapResult, false);
+			recordGpu("upload-ink-data", inkUploadResult, false);
 			return;
 		}
-		std::memcpy(mapped.pData, cursorData, sizeof(cursorData));
-		context->Unmap(inkDataBuffer.Get(), 0);
-		m_bufferHead = 2;
+
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
 
 		const HRESULT constantsMapResult = context->Map(globalCB.Get(), 0,
 			D3D11_MAP_WRITE_DISCARD, 0, &mapped);

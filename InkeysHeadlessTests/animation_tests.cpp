@@ -28,6 +28,8 @@ int RunPresentDecisionTests();
 int RunSurfaceTests();
 int RunMessageTests();
 int RunWindowTests();
+int RunWindowCommandCompletionTests();
+int RunCanvasPolicyTests();
 int RunWindowExitVisibilityTests();
 int RunMessageBoxTests(bool runWindowTests);
 int RunMessageBoxVisualTests(const char* outputDirectory);
@@ -57,10 +59,19 @@ int RunBarBottomDockTests();
 int RunDraw3HapticTests();
 int RunDraw3BridgeTests();
 int RunDraw3ContactInputTests();
+int RunDraw3RtsStartupTests();
+int RunDraw3MouseInputTests();
 int RunSpeedEraserTests();
 int RunPenWidthTests();
 int RunEraserAttributeTests();
+int RunRecallAttributeTests();
 int RunPresentationDescriptorTests();
+int RunUiPointerTests();
+int RunAutoCollapseTests();
+int RunKeyboardShortcutConfigTests();
+int RunKeyboardShortcutInputTests();
+int RunAutoCollapseInteractionTests();
+int RunMouseHookTransportTests();
 
 namespace
 {
@@ -1625,6 +1636,9 @@ namespace
 
 int main(int argc, char** argv)
 {
+	// 窗口契约可单独复跑，避免定位 USER32 交错时重复耗时的算法矩阵。
+	if (argc == 2 && std::string_view(argv[1]) == "--window-contract-only")
+		return RunWindowTests();
 	bool benchmark = false;
 	bool penWidthOnly = false;
 	bool draw3ContactBenchmark = false;
@@ -1668,6 +1682,8 @@ int main(int argc, char** argv)
 	failureCount += RunSurfaceTests();
 	failureCount += RunMessageTests();
 	failureCount += RunMessageBoxTests(runWindowTests);
+	failureCount += RunWindowCommandCompletionTests();
+	failureCount += RunCanvasPolicyTests();
 	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
 	failureCount += RunWindowGeometryTests();
@@ -1692,11 +1708,20 @@ int main(int argc, char** argv)
 	failureCount += RunDraw3HapticTests();
 	failureCount += RunDraw3BridgeTests();
 	failureCount += RunDraw3ContactInputTests();
+	failureCount += RunDraw3RtsStartupTests();
+	failureCount += RunDraw3MouseInputTests();
 	failureCount += RunUpdateSecurityTests();
 	failureCount += RunSpeedEraserTests();
 	failureCount += RunPenWidthTests();
 	failureCount += RunEraserAttributeTests();
+	failureCount += RunRecallAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
+	failureCount += RunUiPointerTests();
+	failureCount += RunAutoCollapseTests();
+	failureCount += RunKeyboardShortcutConfigTests();
+	failureCount += RunKeyboardShortcutInputTests();
+	failureCount += RunAutoCollapseInteractionTests();
+	failureCount += RunMouseHookTransportTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

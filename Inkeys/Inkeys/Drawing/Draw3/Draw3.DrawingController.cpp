@@ -1,4 +1,5 @@
 ﻿module;
+#include "Draw3.DiagnosticOutput.h"
 #include "Assets/EraserGripVisual.h"
 
 #ifndef NOMINMAX
@@ -17,6 +18,7 @@
 #include <deque>
 #include <d3d11.h>
 #include <exception>
+#include <filesystem>
 #include <DirectXMath.h>
 #include <iostream>
 #include <initializer_list>
@@ -42,6 +44,7 @@
 #include "Draw3.Bridge.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.HapticDiagnostics.h"
+#include "Draw3.Shortcut.h"
 #include "Draw3.PptTiming.h"
 #include "Draw3.Presentation.h"
 #include "Draw3.TimerPeriod.h"
@@ -55,6 +58,7 @@ import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.canvas_navigation;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.pen_cursor;
+import draw3.uink_file;
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -298,6 +302,15 @@ namespace Inkeys::Drawing::Draw3
 					left.penWidthContext, right.penWidthContext);
 		}
 
+		CursorSettings ResolveCursorSettingsForDrawingTool(DrawingTool tool, CursorSettings selected) noexcept
+		{
+			// 只归类光标策略，不改写实际工具；其它工具共用 System 类别。
+			const Bridge::Tool policyTool = tool == DrawingTool::Pen ? Bridge::Tool::Pen :
+				tool == DrawingTool::HardPen ? Bridge::Tool::HardPen :
+				tool == DrawingTool::Highlighter ? Bridge::Tool::Highlighter : Bridge::Tool::SolidLine;
+			return Bridge::ResolveCursorSettingsForTool(policyTool, selected);
+		}
+
 		void ConfigureProductInkCursorAppearances(WindowController& window,
 			const ProductVisualStyle& visualStyle, float dpiScale)
 		{
@@ -376,7 +389,7 @@ namespace Inkeys::Drawing::Draw3
 			InkGuid created(bytes);
 			if (created.IsZero())
 			{
-				std::cout << "CoCreateGuid returned a nil ink document GUID." << std::endl;
+				DiagnosticOutput::Line() << "CoCreateGuid returned a nil ink document GUID." << std::endl;
 				return false;
 			}
 			output = created;
@@ -390,17 +403,19 @@ namespace Inkeys::Drawing::Draw3
 			InkPage page(pageGuid);
 			if (!page.GetOrCreateCanvas(kDefaultDeviceKey))
 			{
-				std::cout << "Failed to create the default ink canvas for a new page." << std::endl;
+				DiagnosticOutput::Line() << "Failed to create the default ink canvas for a new page." << std::endl;
 				return std::nullopt;
 			}
 			const std::optional<size_t> pageIndex = document.AppendPage(std::move(page));
 			if (!pageIndex)
 			{
-				std::cout << "Failed to append a unique ink document page." << std::endl;
+				DiagnosticOutput::Line() << "Failed to append a unique ink document page." << std::endl;
 				return std::nullopt;
 			}
 			return pageIndex;
 		}
+
+		struct ClearRedoContinuation;
 
 		struct CanvasPageRuntimeState
 		{
@@ -415,7 +430,42 @@ namespace Inkeys::Drawing::Draw3
 			bool previousClearUndoAvailable = true; // 跨 Clear 恢复成功后消费，阻止进入更早画布。
 			bool clearRedoAvailable = false; // 仅Clear撤销恢复后有效，新笔迹提交会取消。
 			std::optional<draw3::uink::Draw3UInkCanvasSnapshot> boundaryFallback;
+			// 只在跨最近 Clear 撤销后保留后继 CPU 分支，不保存 GPU 后像。
+			std::shared_ptr<ClearRedoContinuation> clearRedoContinuation;
 		};
+
+		struct ClearRedoContinuation
+		{
+			InkPage page;
+			CanvasPageRuntimeState runtime;
+		};
+
+		std::shared_ptr<ClearRedoContinuation> CaptureClearRedoContinuation(
+			const InkPage& page, const CanvasPageRuntimeState& runtime)
+		{
+			try
+			{
+				auto continuation = std::make_shared<ClearRedoContinuation>(
+					ClearRedoContinuation{ page, runtime });
+				continuation->runtime.clearRedoAvailable = false;
+				continuation->runtime.clearRedoContinuation.reset();
+				continuation->runtime.intervalLoadPending = false;
+				continuation->runtime.undoFloor = 0;
+				// 持久化导入根也需回到 Clear 后空态，Redo 才能逐笔前进到原最新分支。
+				while (const auto item = continuation->runtime.history.LastVisibleItem())
+				{
+					if (item->index >= continuation->runtime.beforeStates.size()
+						|| !continuation->runtime.history.UndoLastVisible(*item)) return {};
+					continuation->runtime.rasterState = continuation->runtime.beforeStates[item->index];
+				}
+				return continuation;
+			}
+			catch (const std::exception&)
+			{
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.ClearRedo] result=failed reason=cpu_snapshot\n");
+				return {};
+			}
+		}
 
 		struct DesktopClearRecovery
 		{
@@ -424,7 +474,35 @@ namespace Inkeys::Drawing::Draw3
 			bool diskSaveRequested = false;
 			bool diskReady = false;
 			bool loadPending = false;
+			InkGuid pageGuid;
+			std::uint64_t loadHistoryRevision = 0;
 		};
+
+		bool DesktopRecoveryBelongsToPage(const DesktopClearRecovery& recovery,
+			const InkPage* page) noexcept
+		{
+			return page && page->PageGuid() == recovery.pageGuid;
+		}
+
+		bool CanInstallDesktopClearRecovery(const DesktopClearRecovery& recovery,
+			bool wasPending, Bridge::Workspace workspace, const InkPage* page,
+			const CanvasPageRuntimeState* runtime) noexcept
+		{
+			if (!wasPending || workspace != Bridge::Workspace::Desktop || !runtime
+				|| !DesktopRecoveryBelongsToPage(recovery, page)
+				|| runtime->history.Revision() != recovery.loadHistoryRevision) return false;
+			const auto visible = runtime->history.LastVisibleItem();
+			return !visible || visible->index < runtime->undoFloor;
+		}
+
+		bool CanInstallPreviousClearInterval(const CanvasPageRuntimeState& runtime,
+			std::uint32_t completedInterval) noexcept
+		{
+			if (!runtime.intervalLoadPending || runtime.intervalOrdinal == 0
+				|| completedInterval + 1 != runtime.intervalOrdinal) return false;
+			const auto visible = runtime.history.LastVisibleItem();
+			return !visible || visible->index < runtime.undoFloor;
+		}
 
 		struct DrawingDocumentSlot
 		{
@@ -442,6 +520,16 @@ namespace Inkeys::Drawing::Draw3
 			bool loadPending = false;
 			std::uint64_t slotGeneration = 0;
 		};
+
+		bool CanEvictPresentationCpuSlot(const DrawingDocumentSlot& slot) noexcept
+		{
+			// UInk 只保存可见 tail；所有淘汰入口都必须保住会话内的前向分支。
+			if (std::any_of(slot.pageRuntimeStates.begin(), slot.pageRuntimeStates.end(),
+				[](const CanvasPageRuntimeState& runtime)
+				{ return runtime.clearRedoContinuation || runtime.history.LastRedoItem().has_value(); })) return false;
+			return ShouldEvictPresentationSlot(slot.fileGuid.has_value(),
+				slot.mutationRevision, slot.queuedRevision, slot.committedRevision, slot.loadPending);
+		}
 
 		struct PresentationLaneKey
 		{
@@ -615,14 +703,10 @@ namespace Inkeys::Drawing::Draw3
 				{
 					isolated = std::move(prepared);
 					destination = &isolated;
-					std::fputs("[Draw3.Presentation] action=switch result=isolated reason=topology_conflict\n",
-						stderr);
+					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=switch result=isolated reason=topology_conflict\n");
 				}
 				SwapActiveDocumentSlot(active, *destination);
-				if (previousLane && source.document &&
-					ShouldEvictPresentationSlot(source.fileGuid.has_value(),
-						source.mutationRevision, source.queuedRevision,
-						source.committedRevision, source.loadPending))
+				if (previousLane && source.document && CanEvictPresentationCpuSlot(source))
 					parkedSlots.erase(*previousLane);
 				activeKey = topologyConflict
 					? std::nullopt : std::optional<Bridge::PresentationKey>(target.key);
@@ -779,7 +863,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					scheduled_ = false;
 					if (!manualOnly_)
-						std::fprintf(stderr,
+						DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 							"[Draw3.Presentation] action=current_load_retry result=manual_required attempts=%u generation=%llu\n",
 							automaticAttempts_,
 							static_cast<unsigned long long>(generation));
@@ -790,7 +874,7 @@ namespace Inkeys::Drawing::Draw3
 				deadlineMs_ = nowMs > UINT64_MAX - delay ? UINT64_MAX : nowMs + delay;
 				scheduled_ = true;
 				manualOnly_ = false;
-				std::fprintf(stderr,
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 					"[Draw3.Presentation] action=current_load_retry result=scheduled attempt=%u delay_ms=%llu generation=%llu\n",
 					static_cast<unsigned>(automaticAttempts_ + 1),
 					static_cast<unsigned long long>(delay),
@@ -860,8 +944,7 @@ namespace Inkeys::Drawing::Draw3
 			try { capture(); }
 			catch (...)
 			{
-				std::fputs("[Draw3.AutoSave] action=exit_snapshot result=failed reason=exception\n",
-					stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_snapshot result=failed reason=exception\n");
 			}
 			acknowledge();
 		}
@@ -1098,8 +1181,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!item.visible) continue;
 					if (item.strokeIndex >= strokes.size())
 					{
-						std::fputs("[Draw3.AutoSave] action=capture result=failed reason=history_mismatch\n",
-							stderr);
+						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=capture result=failed reason=history_mismatch\n");
 						return false;
 					}
 					const InkStroke& stroke = strokes[item.strokeIndex];
@@ -1124,7 +1206,7 @@ namespace Inkeys::Drawing::Draw3
 				const bool accepted = observer.desktopAutoSaveRequested(
 					observer.context, trigger, std::move(snapshot));
 				if (accepted && acceptedFileGuid) *acceptedFileGuid = *fileGuid;
-				std::fprintf(stdout,
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
 					"[Draw3.AutoSave] action=capture trigger=%s strokes=%zu bytes=%llu elapsed_ms=%.3f\n",
 					trigger == DesktopAutoSaveTrigger::Exit ? "exit" : "clear", strokeCount,
 					static_cast<unsigned long long>(estimatedBytes),
@@ -1133,8 +1215,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
-				std::fputs("[Draw3.AutoSave] action=capture result=failed reason=exception\n",
-					stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=capture result=failed reason=exception\n");
 				return false;
 			}
 		}
@@ -1256,7 +1337,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
-				std::fputs("[Draw3.Presentation] action=capture result=failed\n", stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=capture result=failed\n");
 				return std::nullopt;
 			}
 		}
@@ -1516,8 +1597,7 @@ namespace Inkeys::Drawing::Draw3
 			catch (...)
 			{
 				if (targetCopyFailed) *targetCopyFailed = true;
-				std::fputs("[Draw3.Presentation] action=load_install result=failed reason=target_copy\n",
-					stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=load_install result=failed reason=target_copy\n");
 				return false;
 			}
 			// 目标深拷贝可能分配；先准备成功，以下同槽转移均保证不抛异常。
@@ -1646,6 +1726,208 @@ namespace Inkeys::Drawing::Draw3
 			bool hasLaserParticleTangent = false;
 		};
 
+
+		void CaptureTailRuntimeProvenance(RuntimeStroke& runtime) noexcept
+		{
+			auto& trace = runtime.stroke.tailInputDiagnostic;
+			if (!trace.enabled) return;
+			trace.handleValue = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(runtime.handle.record));
+			trace.generation = runtime.handle.generation;
+			if (runtime.handle)
+			{
+				trace.tcid = runtime.handle.record->TabletContextId();
+				trace.cid = runtime.handle.record->ContactId();
+				trace.device = static_cast<uint32_t>(runtime.handle.record->DeviceType());
+			}
+			trace.tool = static_cast<uint32_t>(runtime.tool);
+			trace.rgb = PackStoredRgb(ColorForTool(runtime.tool, runtime.visualStyle));
+			trace.styleWidthDip = runtime.visualStyle.widthDip;
+			trace.canvasOffsetX = runtime.viewport.x;
+			trace.canvasOffsetY = runtime.viewport.y;
+			trace.qpcOrigin = runtime.qpcOrigin;
+		}
+
+		void NoteTailInputSnapshot(RuntimeStroke& runtime, const ContactSnapshot& snapshot) noexcept
+		{
+			auto& trace = runtime.stroke.tailInputDiagnostic;
+			if (!trace.enabled || snapshot.sequence == trace.currentSequence) return;
+			// seqlock 每次发布递增2；同一 contact 的差值才可解释为未消费快照。
+			if (trace.currentSequence && snapshot.sequence > trace.currentSequence)
+			{
+				const uint64_t published = (snapshot.sequence - trace.currentSequence) / 2;
+				if (published > 1) trace.maxSkippedSnapshots = std::max(trace.maxSkippedSnapshots, published - 1);
+			}
+			trace.currentSequence = snapshot.sequence;
+			++trace.snapshots;
+			if (snapshot.phase == ContactPhase::Move) ++trace.moves;
+			if (snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled)
+			{
+				trace.terminalPriorSequence = trace.lastNonterminalSequence;
+				trace.terminalPriorQpc = trace.lastNonterminalQpc;
+				trace.terminalPriorPosition = trace.lastNonterminalPosition;
+				trace.terminalSequence = snapshot.sequence;
+				trace.terminalQpc = snapshot.qpc;
+				trace.terminalPosition = { snapshot.position.x, snapshot.position.y };
+			}
+			else
+			{
+				trace.lastNonterminalSequence = snapshot.sequence;
+				trace.lastNonterminalQpc = snapshot.qpc;
+				trace.lastNonterminalPosition = { snapshot.position.x, snapshot.position.y };
+			}
+		}
+
+		void BeginTailInputDiagnostic(RuntimeStroke& runtime, const ContactSnapshot& down,
+			bool reconnect, bool enabled) noexcept
+		{
+			auto& trace = runtime.stroke.tailInputDiagnostic;
+			if (!reconnect) trace = {};
+			if (!enabled) return;
+			trace.enabled = true;
+			if (reconnect) ++trace.reconnects;
+			else
+			{
+				trace.downSequence = down.sequence;
+				trace.downQpc = down.qpc;
+				trace.downPosition = { down.position.x, down.position.y };
+			}
+			// 新 handle 的序列重新从 Down 起算；累计计数与整笔初始 Down 仍保留。
+			trace.currentSequence = 0;
+			trace.contactDownSequence = down.sequence;
+			trace.contactDownQpc = down.qpc;
+			trace.contactDownPosition = { down.position.x, down.position.y };
+			// 接续成功不再有当前终态；旧 Up 不得冒充新 contact 的抬笔证据。
+			trace.terminalPriorSequence = trace.terminalSequence = trace.upSequence = 0;
+			trace.terminalPriorQpc = trace.terminalQpc = trace.upQpc = 0;
+			trace.terminalPriorPosition = trace.terminalPosition = trace.upPosition = {};
+			trace.upModelTime = 0;
+			trace.upStatus = -1;
+			trace.upProduced = trace.upAccepted = trace.upGeometryAdded = 0;
+			trace.upFallback = trace.upEndpointPinned = false;
+			trace.source = static_cast<uint32_t>(down.source.kind);
+			trace.sourceRecognition = static_cast<uint32_t>(down.source.recognition);
+			trace.sourceContext = down.source.contextId;
+			trace.sourceCursor = down.source.cursorId;
+			trace.sourceGeneration = down.source.generation;
+			CaptureTailRuntimeProvenance(runtime);
+			if (!reconnect)
+			{
+				trace.initialHandleValue = trace.handleValue;
+				trace.initialGeneration = trace.generation;
+				trace.initialTcid = trace.tcid; trace.initialCid = trace.cid;
+				trace.initialDevice = trace.device; trace.initialSource = trace.source;
+			}
+			NoteTailInputSnapshot(runtime, down);
+		}
+
+		void BeginTailModelUpDiagnostic(RuntimeStroke& runtime, const ContactSnapshot& up,
+			double modelTime) noexcept
+		{
+			auto& trace = runtime.stroke.tailInputDiagnostic;
+			if (!trace.enabled) return;
+			trace.upSequence = up.sequence;
+			trace.upQpc = up.qpc;
+			trace.upPosition = { up.position.x, up.position.y };
+			trace.upModelTime = modelTime;
+			trace.upStatus = -1;
+			trace.upProduced = trace.upAccepted = trace.upGeometryAdded = 0;
+			trace.upFallback = trace.upEndpointPinned = false;
+		}
+
+		static_assert(std::is_trivially_copyable_v<TailInputDiagnostic> && sizeof(TailInputDiagnostic) <= 512);
+
+		template<class Check>
+		void CheckTailInputDiagnosticContract(Check&& check)
+		{
+			ContactInputCoordinator input;
+			RuntimeStroke runtime(100);
+			runtime.tool = DrawingTool::Pen;
+			ContactSnapshot down;
+			down.position = { 20, 30 };
+			down.qpc = 1000;
+			down.source.kind = SpeedEraser::SourceKind::ExternalPen;
+			ContactRecord* record = nullptr;
+			const bool ready = input.PublishDown(0xB5, 1, InputDeviceType::Pen, down) &&
+				input.TryDequeue(record) && record;
+			check(ready, "tail input trace real contact setup");
+			if (!ready) return;
+			runtime.handle = { record, record->Generation() };
+			down = record->DownSnapshot();
+			BeginTailInputDiagnostic(runtime, down, false, false);
+			NoteTailInputSnapshot(runtime, down);
+			check(!runtime.stroke.tailInputDiagnostic.enabled &&
+				runtime.stroke.tailInputDiagnostic.snapshots == 0,
+				"disabled tail trace does not collect input");
+			BeginTailInputDiagnostic(runtime, down, false, true); // 仅 probe 显式启用，不改变进程开关。
+			ContactSnapshot sample = down;
+			sample.position = { 22, 31 }; sample.qpc = 2000;
+			check(input.PublishMove(0xB5, 1, sample), "tail trace first coalesced Move");
+			sample.position = { 24, 32 }; sample.qpc = 3000;
+			check(input.PublishMove(0xB5, 1, sample), "tail trace second coalesced Move");
+			sample.position = { 200, 250 }; sample.qpc = 4000;
+			ContactSnapshot terminal;
+			const bool ended = input.PublishUp(0xB5, 1, sample) && input.TryReadSnapshot(runtime.handle, terminal);
+			check(ended, "tail trace consumes terminal after coalesced Moves");
+			if (!ended) return;
+			NoteTailInputSnapshot(runtime, terminal);
+			// 和生产路径一样先记录再覆盖 lastInput；重复 deferred Up 不能再计数。
+			runtime.lastInputSnapshot = terminal;
+			runtime.lastConsumedSequence = terminal.sequence;
+			NoteTailInputSnapshot(runtime, terminal);
+			BeginTailModelUpDiagnostic(runtime, terminal, .003);
+			const auto initial = runtime.stroke.tailInputDiagnostic;
+			check(initial.snapshots == 2 && initial.moves == 0 && initial.maxSkippedSnapshots == 2 &&
+				initial.terminalPriorSequence == down.sequence && initial.terminalPriorQpc == down.qpc &&
+				initial.terminalPriorPosition.x == 20 && initial.terminalPriorPosition.y == 30 &&
+				initial.terminalPosition.x == 200 && initial.terminalPosition.y == 250 &&
+				initial.upSequence == terminal.sequence && initial.upStatus == -1 &&
+				initial.initialHandleValue == initial.handleValue && initial.initialGeneration == initial.generation &&
+				initial.initialTcid == 0xB5 && initial.initialCid == 1 &&
+				initial.contactDownSequence == down.sequence && initial.contactDownQpc == down.qpc,
+				"Down plus Up trace retains prior position and skipped seqlock publications");
+			input.Recycle(runtime.handle);
+			sample.position = { 201, 251 }; sample.qpc = 5000;
+			sample.source.kind = SpeedEraser::SourceKind::IntegratedPen;
+			record = nullptr;
+			const bool reconnected = input.PublishDown(0xB5, 2, InputDeviceType::Pen, sample) &&
+				input.TryDequeue(record) && record;
+			check(reconnected, "tail trace reconnect contact setup");
+			if (!reconnected) return;
+			runtime.handle = { record, record->Generation() };
+			const auto resumedDown = record->DownSnapshot();
+			BeginTailInputDiagnostic(runtime, resumedDown, true, true);
+			const auto reconnectStart = runtime.stroke.tailInputDiagnostic;
+			check(reconnectStart.terminalSequence == 0 && reconnectStart.terminalPriorSequence == 0 &&
+				reconnectStart.upSequence == 0 && reconnectStart.upStatus == -1 &&
+				reconnectStart.terminalQpc == 0 && reconnectStart.upQpc == 0 &&
+				reconnectStart.initialHandleValue == initial.handleValue && reconnectStart.initialGeneration == initial.generation &&
+				reconnectStart.initialTcid == 0xB5 && reconnectStart.initialCid == 1 &&
+				reconnectStart.initialSource == static_cast<uint32_t>(SpeedEraser::SourceKind::ExternalPen) &&
+				reconnectStart.contactDownSequence == resumedDown.sequence && reconnectStart.contactDownQpc == 5000 &&
+				reconnectStart.contactDownPosition.x == 201 && reconnectStart.contactDownPosition.y == 251,
+				"reconnect trace distinguishes original/current contact and discards old terminal evidence");
+			sample.position = { 202, 252 }; sample.qpc = 6000;
+			ContactSnapshot move;
+			const bool moved = input.PublishMove(0xB5, 2, sample) && input.TryReadSnapshot(runtime.handle, move);
+			check(moved, "tail trace reconnect Move read");
+			if (moved) NoteTailInputSnapshot(runtime, move);
+			const auto resumed = runtime.stroke.tailInputDiagnostic;
+			check(resumed.snapshots == 4 && resumed.moves == 1 && resumed.reconnects == 1 &&
+				resumed.maxSkippedSnapshots == 2 && resumed.downQpc == 1000 &&
+				resumed.downPosition.x == 20 && resumed.cid == 2 &&
+				resumed.generation == runtime.handle.generation &&
+				resumed.source == static_cast<uint32_t>(SpeedEraser::SourceKind::IntegratedPen),
+				"reconnect preserves cumulative trace and resets contact sequence gap basis");
+			check(input.PublishCancelled(0xB5, 2, sample), "tail trace test contact retirement");
+			input.Recycle(runtime.handle);
+			runtime.stroke.Reset(5, 100, StrokeWidthMode::Fixed);
+			check(!runtime.stroke.tailInputDiagnostic.enabled &&
+				runtime.stroke.tailInputDiagnostic.snapshots == 0 &&
+				runtime.stroke.tailInputDiagnostic.lastNonterminalSequence == 0 &&
+				runtime.stroke.tailInputDiagnostic.initialHandleValue == 0 &&
+				runtime.stroke.tailInputDiagnostic.contactDownSequence == 0,
+				"ActiveStroke Reset clears all tail input trace provenance");
+		}
 
 		void CaptureProductStrokeStyle(RuntimeStroke& runtime,
 			const WindowController& window) noexcept
@@ -1832,6 +2114,7 @@ namespace Inkeys::Drawing::Draw3
 			const std::optional<StoredInkStyle> style =
 				StoredStyleForTool(runtime.tool, runtime.visualStyle);
 			if (!style) return reject("transient_tool"); // Laser 永远是瞬态视觉。
+			CaptureTailRuntimeProvenance(runtime);
 			std::optional<InkStroke> finalizedStroke = runtime.shape.active
 				? FinalizeStoredShape(runtime.shape.primitive, *style,
 					runtime.viewport.x, runtime.viewport.y)
@@ -1847,6 +2130,10 @@ namespace Inkeys::Drawing::Draw3
 				canvas->AppendStroke(std::move(*finalizedStroke));
 			if (!strokeIndex) return reject("canvas_append");
 			pageRuntime.history.DiscardRedoBranch();
+			// CPU 追加已创建新分支；后续 history/GPU 失败也不能复活旧 Clear 重做。
+			pageRuntime.clearRedoAvailable = false;
+			pageRuntime.clearRedoContinuation.reset();
+			pageRuntime.intervalLoadPending = false;
 			const std::optional<RenderItemId> renderItem =
 				pageRuntime.history.AppendStroke(*strokeIndex, std::move(*footprint), true);
 			const RenderItemState* visibleItem = renderItem
@@ -3277,6 +3564,60 @@ namespace Inkeys::Drawing::Draw3
 				});
 		}
 
+		bool EraserContactsIdle(const std::vector<RuntimeStroke*>& active,
+			bool navigationActive, double seconds) noexcept
+		{
+			return HasPhysicalContact(active) && !navigationActive &&
+				std::all_of(active.begin(), active.end(), [&](const RuntimeStroke* runtime)
+				{
+					return runtime && (runtime->ended || runtime->awaitingReconnect ||
+						(runtime->stroke.widthMode == StrokeWidthMode::SpeedEraser &&
+						 !runtime->speedEraserOc.NeedsAnimation(seconds) &&
+						 runtime->speedEraserOc.SecondsSinceMovement(seconds) >=
+							runtime->speedEraserOc.Configuration().idleStartSeconds));
+				});
+		}
+
+		enum class EraserIdleWaitStage { BeforeArm, AfterArm, BeforeWait };
+		struct IgnoreEraserIdleWaitStage
+		{
+			void operator()(EraserIdleWaitStage) const noexcept {}
+		};
+
+		template <typename ExitRequested, typename Observe = IgnoreEraserIdleWaitStage>
+		void WaitForEraserIdle(ContactInputCoordinator& input,
+			const std::vector<RuntimeStroke*>& active, uint64_t frameWakeGeneration,
+			double timeoutMilliseconds, bool hasDeadline, ExitRequested&& exitRequested,
+			Observe observe = {})
+		{
+			observe(EraserIdleWaitStage::BeforeArm);
+			input.ArmIdleMoveWake();
+			struct Subscription
+			{
+				ContactInputCoordinator& input;
+				~Subscription() { input.DisarmIdleMoveWake(); }
+			} subscription{ input };
+			observe(EraserIdleWaitStage::AfterArm);
+			// arm 前到达的 Move 不会发通知；以真实 mailbox 序号补齐最后消费到入睡的缺口。
+			for (const RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended || runtime->awaitingReconnect) continue;
+				ContactSnapshot latest;
+				if (!input.TryReadSnapshot(runtime->handle, latest) ||
+					latest.sequence != runtime->lastConsumedSequence ||
+					latest.phase == ContactPhase::Up || latest.phase == ContactPhase::Cancelled)
+					return; // 不稳定快照也回外层重读，不能在未核准时无限休眠。
+			}
+			observe(EraserIdleWaitStage::BeforeWait);
+			if (hasDeadline)
+			{
+				if (!exitRequested()) input.WaitForWake(frameWakeGeneration, timeoutMilliseconds);
+				return;
+			}
+			// 沿用帧初 generation；复查后发生的通知不能被新的 generation 捕获吞掉。
+			while (!exitRequested() && !input.WaitForWake(frameWakeGeneration, 1000.0)) {}
+		}
+
 		HapticToolFeedback HapticToolForDrawingTool(DrawingTool tool) noexcept
 		{
 			switch (tool)
@@ -3699,6 +4040,34 @@ namespace Inkeys::Drawing::Draw3
 		{
 			using namespace Inkeys::Business::PenWidth;
 			WindowController window; // 不附着 HWND，不初始化 Host/RTS/GPU。
+			{
+				const CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon };
+				const auto expectCursorProjection = [&](MouseCursorStyle expected)
+				{
+					const auto effective = ResolveCursorSettingsForDrawingTool(window.EffectiveDrawingCursorTool(), raw);
+					window.SetMouseUsesSystemCursor(effective.mouseStyle == MouseCursorStyle::System);
+					check(effective.mouseStyle == expected &&
+						window.GetMouseUsesSystemCursor() == (expected == MouseCursorStyle::System) &&
+						effective.penStyle == PenCursorStyle::PenIcon && raw.mouseStyle == MouseCursorStyle::System,
+						"actual-tool cursor projection preserves raw preferences and synchronizes the Window policy");
+				};
+				// 使用真实 Window 的活动工具锁存/释放，不创建 contact、HWND 或新测试入口。
+				window.SetActiveDrawingCursorTool(DrawingTool::Highlighter);
+				window.SetActiveTool(DrawingTool::Pen);
+				expectCursorProjection(MouseCursorStyle::Drawing);
+				window.SetActiveTool(DrawingTool::SolidLine);
+				expectCursorProjection(MouseCursorStyle::Drawing);
+				window.SetActiveDrawingCursorTool(DrawingTool::SolidLine);
+				window.SetActiveTool(DrawingTool::Highlighter);
+				expectCursorProjection(MouseCursorStyle::System);
+				window.ClearActiveDrawingCursorTool();
+				expectCursorProjection(MouseCursorStyle::Drawing);
+				window.SetActiveTool(DrawingTool::Pen);
+				expectCursorProjection(MouseCursorStyle::System);
+				window.SetActiveTool(DrawingTool::HardPen);
+				expectCursorProjection(MouseCursorStyle::System);
+				window.SetActiveTool(DrawingTool::Pen);
+			}
 			const auto configuration = CreateStrokeModelConfiguration(96);
 			constexpr DrawingTool ordinaryTools[] = { DrawingTool::Pen, DrawingTool::HardPen,
 				DrawingTool::SolidLine, DrawingTool::DashedLine,
@@ -3957,6 +4326,206 @@ namespace Inkeys::Drawing::Draw3
 		return failures;
 	}
 
+	int RunEraserIdleWakeProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3EraserIdleWake] FAIL: %s\n", name);
+		};
+		try
+		{
+			const auto makeSnapshot = [](float x, ContactPhase phase)
+			{
+				ContactSnapshot snapshot;
+				snapshot.position = { x, 1.0f };
+				snapshot.phase = phase;
+				snapshot.qpc = 1;
+				return snapshot;
+			};
+			for (const InputDeviceType device : { InputDeviceType::Touch, InputDeviceType::Pen,
+				InputDeviceType::MouseLeft, InputDeviceType::MouseRight })
+				for (const bool hasDeadline : { false, true })
+				for (int arrival = 0; arrival < 4; ++arrival)
+				{
+					ContactInputCoordinator input;
+					input.EnableDiagnostics(true);
+					if (!input.PublishDown(0xF3, 1, device, makeSnapshot(1, ContactPhase::Down)))
+					{
+						check(false, "device Down enters the real coordinator");
+						continue;
+					}
+					ContactRecord* record = nullptr;
+					if (!input.TryDequeue(record) || !record)
+					{
+						check(false, "device Down is consumed before the idle handoff");
+						continue;
+					}
+					RuntimeStroke runtime(1000.0f);
+					runtime.handle = { record, record->Generation() };
+					runtime.stroke.widthMode = StrokeWidthMode::SpeedEraser;
+					ContactSnapshot consumed;
+					if (!input.TryReadSnapshot(runtime.handle, consumed)) return 1;
+					runtime.lastConsumedSequence = consumed.sequence;
+					SpeedEraser::InputSource source;
+					source.kind = device == InputDeviceType::Touch ? SpeedEraser::SourceKind::Touch :
+						device == InputDeviceType::Pen ? SpeedEraser::SourceKind::IntegratedPen :
+						SpeedEraser::SourceKind::Mouse;
+					const auto config = SpeedEraser::ResolveConfig({}, SpeedEraser::DeviceMode::Laptop, source);
+					if (device == InputDeviceType::Touch)
+						runtime.speedEraserOc.Reset(1, 1, 0, SpeedEraserStartKind::Touch, config);
+					else runtime.speedEraserOc.BeginContact(nullptr, 1, 1, 0, config);
+					for (int frame = 1; frame <= 600; ++frame)
+						runtime.speedEraserOc.Advance(frame / 60.0);
+					std::vector<RuntimeStroke*> active{ &runtime };
+					check(EraserContactsIdle(active, false, 10.0),
+						"real SpeedEraser reaches the same idle predicate used by Run");
+					const uint64_t frameGeneration = input.CaptureWakeGeneration();
+					struct Events
+					{
+						HANDLE entered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+						HANDLE resume = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+						HANDLE done = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+						~Events()
+						{
+							if (entered) CloseHandle(entered);
+							if (resume) CloseHandle(resume);
+							if (done) CloseHandle(done);
+						}
+					} events;
+					if (!events.entered || !events.resume || !events.done) return 1;
+					std::atomic<bool> exitRequested = false;
+					bool resumed = true, observedMove = false;
+					const EraserIdleWaitStage pauseStage = arrival == 0 ? EraserIdleWaitStage::BeforeArm :
+						arrival == 1 ? EraserIdleWaitStage::AfterArm : EraserIdleWaitStage::BeforeWait;
+					std::thread consumer([&]
+					{
+						WaitForEraserIdle(input, active, frameGeneration, 2000, hasDeadline,
+							[&] { return exitRequested.load(std::memory_order_acquire); },
+							[&](EraserIdleWaitStage stage)
+							{
+								if (stage != pauseStage) return;
+								SetEvent(events.entered);
+								if (arrival != 3)
+									resumed = WaitForSingleObject(events.resume, 5000) == WAIT_OBJECT_0;
+							});
+						ContactSnapshot latest;
+						observedMove = input.TryReadSnapshot(runtime.handle, latest) &&
+							latest.phase == ContactPhase::Move && latest.position.x == 20 &&
+							latest.sequence > runtime.lastConsumedSequence;
+						if (observedMove)
+						{
+							runtime.lastConsumedSequence = latest.sequence;
+							runtime.speedEraserOc.UpdatePosition(latest.position.x, latest.position.y, 11.0);
+						}
+						SetEvent(events.done);
+					});
+					bool entered = WaitForSingleObject(events.entered, 5000) == WAIT_OBJECT_0;
+					if (entered && arrival == 3)
+					{
+						const ULONGLONG deadline = GetTickCount64() + 5000;
+						while (input.DiagnosticsSnapshot().activeWaits == 0 && GetTickCount64() < deadline)
+							Sleep(1);
+						entered = input.DiagnosticsSnapshot().activeWaits == 1 &&
+							WaitForSingleObject(events.done, 20) == WAIT_TIMEOUT;
+					}
+					const ULONGLONG publishedAt = GetTickCount64();
+					const bool published = entered && input.PublishMove(0xF3, 1,
+						makeSnapshot(20, ContactPhase::Move));
+					const uint64_t afterMove = input.CaptureWakeGeneration();
+					SetEvent(events.resume);
+					const bool completed = WaitForSingleObject(events.done, 250) == WAIT_OBJECT_0;
+					const ULONGLONG elapsed = GetTickCount64() - publishedAt;
+					if (!completed)
+					{
+						// 只在断言已失败后通知退出，以免失败测试留下无限等待线程。
+						exitRequested.store(true, std::memory_order_release);
+						input.PublishControlWake();
+					}
+					consumer.join();
+					check(entered && published && resumed && completed && observedMove && elapsed < 250 &&
+						afterMove == frameGeneration + (arrival == 0 ? 0 : 1) &&
+						input.DiagnosticsSnapshot().controlWakes == 0 && !input.HasPendingWork(),
+						"Move at each arm/recheck/wait boundary is consumed without Up or extra control wake");
+					const uint64_t afterIdle = input.CaptureWakeGeneration();
+					check(input.PublishMove(0xF3, 1, makeSnapshot(21, ContactPhase::Move)) &&
+						input.CaptureWakeGeneration() == afterIdle,
+						"return from idle handoff leaves Move subscription disarmed");
+					check(input.PublishUp(0xF3, 1, makeSnapshot(21, ContactPhase::Up)),
+						"idle recovery preserves a later real Up");
+					input.Recycle(runtime.handle);
+				}
+			{
+				ContactInputCoordinator input;
+				input.EnableDiagnostics(true);
+				check(input.PublishDown(0xF3, 1, InputDeviceType::Touch,
+					makeSnapshot(1, ContactPhase::Down)), "deadline fixture Down accepted");
+				ContactRecord* record = nullptr;
+				if (!input.TryDequeue(record) || !record) return 1;
+				RuntimeStroke runtime(1000.0f);
+				runtime.handle = { record, record->Generation() };
+				ContactSnapshot consumed;
+				if (!input.TryReadSnapshot(runtime.handle, consumed)) return 1;
+				runtime.lastConsumedSequence = consumed.sequence;
+				std::vector<RuntimeStroke*> active{ &runtime };
+				const uint64_t generation = input.CaptureWakeGeneration();
+				// GetTickCount64 的 10–16ms 粒度可能把正确的 15ms 等待量成 0；跨多个 tick 并用 QPC 时钟验收。
+				constexpr double deadlineTimeoutMilliseconds = 64.0;
+				constexpr double deadlineToleranceMilliseconds = 1.0;
+				const ULONGLONG beforeDeadlineTick = GetTickCount64();
+				const auto beforeDeadline = std::chrono::steady_clock::now();
+				WaitForEraserIdle(input, active, generation, deadlineTimeoutMilliseconds, true, [] { return false; });
+				const double elapsedMilliseconds = std::chrono::duration<double, std::milli>(
+					std::chrono::steady_clock::now() - beforeDeadline).count();
+				const uint64_t deadlineGeneration = input.CaptureWakeGeneration();
+				const auto deadlineDiagnostics = input.DiagnosticsSnapshot();
+				const bool deadlineExpired = elapsedMilliseconds >=
+					deadlineTimeoutMilliseconds - deadlineToleranceMilliseconds &&
+					deadlineGeneration == generation && deadlineDiagnostics.activeWaits == 1;
+				if (!deadlineExpired)
+					std::fprintf(stderr, "[Draw3EraserIdleWake] deadline actual: steady_ms=%.3f tick_ms=%llu timeout_ms=%.3f tolerance_ms=%.3f generation=%llu expected_generation=%llu active_waits=%llu expected_active_waits=1\n",
+						elapsedMilliseconds, static_cast<unsigned long long>(GetTickCount64() - beforeDeadlineTick),
+						deadlineTimeoutMilliseconds, deadlineToleranceMilliseconds,
+						static_cast<unsigned long long>(deadlineGeneration), static_cast<unsigned long long>(generation),
+						static_cast<unsigned long long>(deadlineDiagnostics.activeWaits));
+				check(deadlineExpired,
+					"stationary deadline expires without fake input, frame polling or extra wake");
+				WaitForEraserIdle(input, active, generation, 0, false, [] { return true; });
+				check(input.DiagnosticsSnapshot().activeWaits == 1,
+					"ExitRequested returns before another infinite idle wait");
+				try
+				{
+					WaitForEraserIdle(input, active, generation, 0, false, [] { return false; },
+						[](EraserIdleWaitStage stage) { if (stage == EraserIdleWaitStage::AfterArm) throw 1; });
+					check(false, "fixture exception crosses an armed scope");
+				}
+				catch (...) {}
+				check(input.PublishMove(0xF3, 1, makeSnapshot(2, ContactPhase::Move)) &&
+					input.CaptureWakeGeneration() == generation,
+					"deadline, stop and exceptional exits all disarm the subscription");
+				check(input.PublishCancelled(0xF3, 1, makeSnapshot(2, ContactPhase::Cancelled)),
+					"Cancel still publishes terminal after idle scope exits");
+				const uint64_t terminalGeneration = input.CaptureWakeGeneration();
+				WaitForEraserIdle(input, active, terminalGeneration, 0, false, [] { return false; });
+				check(input.DiagnosticsSnapshot().activeWaits == 1,
+					"unconsumed terminal cancels sleep even with an already captured wake");
+				input.Recycle(runtime.handle);
+				WaitForEraserIdle(input, active, terminalGeneration, 0, false, [] { return false; });
+				check(input.DiagnosticsSnapshot().activeWaits == 1,
+					"unreadable stale handle conservatively cancels sleep");
+			}
+		}
+		catch (...)
+		{
+			check(false, "production idle protocol fixture completes without exception");
+		}
+		if (failures == 0)
+			std::fputs("[Draw3EraserIdleWake] PASS: four device paths, four race windows, deadlines and idle lifecycle\n", stderr);
+		return failures;
+	}
+
 	int RunDraw3ControlFenceProductionProbe() noexcept
 	{
 		int failures = 0;
@@ -3966,6 +4535,8 @@ namespace Inkeys::Drawing::Draw3
 			++failures;
 			std::fprintf(stderr, "[Draw3ControlFence] FAIL: %s\n", name);
 		};
+		CheckTailInputDiagnosticContract(check);
+		failures += RunEraserIdleWakeProductionProbe();
 		ContactInputCoordinator input;
 		WindowController window;
 		const auto snapshot = [](ContactPhase phase)
@@ -4317,6 +4888,297 @@ namespace Inkeys::Drawing::Draw3
 		return failures == 0 ? 0 : 1;
 	}
 
+	// 同一 CLI 的真实 worker/文件回归；不创建 Host、HWND 或 Office 实例。
+	int RunPresentationWorkerLoadRetryProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3PptLoadRetry] FAIL: %s\n", name);
+		};
+		try
+		{
+			struct FixtureDirectory
+			{
+				std::filesystem::path path;
+				~FixtureDirectory()
+				{
+					// 只删除本次以唯一临时名成功创建的私有 fixture 根。
+					std::error_code error;
+					if (!path.empty()) std::filesystem::remove_all(path, error);
+				}
+			} directory;
+			wchar_t temporary[MAX_PATH] = {}, unique[MAX_PATH] = {};
+			const DWORD length = GetTempPathW(MAX_PATH, temporary);
+			if (!length || length >= MAX_PATH ||
+				!GetTempFileNameW(temporary, L"PFR", 0, unique) ||
+				!DeleteFileW(unique) || !CreateDirectoryW(unique, nullptr))
+			{
+				check(false, "private worker fixture root is created");
+				return 1;
+			}
+			directory.path = unique;
+			struct FileLease
+			{
+				HANDLE handle = INVALID_HANDLE_VALUE;
+				~FileLease() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
+			};
+			const auto readBytes = [](const std::filesystem::path& path)
+				-> std::optional<std::string>
+			{
+				FileLease file{ CreateFileW(path.c_str(), GENERIC_READ,
+					FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+					OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr) };
+				LARGE_INTEGER size = {};
+				if (file.handle == INVALID_HANDLE_VALUE || !GetFileSizeEx(file.handle, &size) ||
+					size.QuadPart < 0 || size.QuadPart > 16 * 1024 * 1024) return std::nullopt;
+				std::string bytes(static_cast<size_t>(size.QuadPart), '\0');
+				DWORD read = 0;
+				if (!ReadFile(file.handle, bytes.data(), static_cast<DWORD>(bytes.size()),
+					&read, nullptr) || read != bytes.size()) return std::nullopt;
+				return bytes;
+			};
+			const auto writeBytes = [](const std::filesystem::path& path, const std::string& bytes)
+			{
+				FileLease file{ CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+					CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+				DWORD written = 0;
+				return file.handle != INVALID_HANDLE_VALUE &&
+					WriteFile(file.handle, bytes.data(), static_cast<DWORD>(bytes.size()),
+						&written, nullptr) && written == bytes.size();
+			};
+			Bridge::PresentationTarget target;
+			target.key.bytes[0] = 0xB2;
+			target.sourceIdentity = "path:c:\\lessons\\worker-retry.pptx";
+			target.presentationName = "worker-retry.pptx";
+			target.bindingMode = Bridge::SlideBindingMode::StableSlideId;
+			target.totalPages = 1;
+			target.slideIds = { 101 };
+			target.slideId = 101;
+			target.bindingRevision = 1;
+			target.targetRevision = 5;
+			target.sessionRevision = 9;
+			constexpr std::uint64_t generation = 7, revision = 3;
+			draw3::uink::Draw3UInkExportSnapshot source;
+			source.fileGuid = *draw3::uink::ParseUInkGuid("11111111-1111-4111-8111-111111111111");
+			source.workspaceGuid = *draw3::uink::ParseUInkGuid("22222222-2222-4222-8222-222222222222");
+			source.workspaceType = 2;
+			source.hostId = FormatPresentationKey(target.key);
+			source.workspaceExtra = draw3::uink::MakeInkeysBindingExtra(
+				draw3::uink::Draw3UInkImportBindingMode::StableSlideId);
+			source.assignedIndependentUndoGroups = true;
+			draw3::uink::Draw3UInkCanvasSnapshot canvas;
+			canvas.pageGuid = *draw3::uink::ParseUInkGuid("33333333-3333-4333-8333-333333333333");
+			canvas.pageNumber = 1;
+			canvas.slideId = 101;
+			canvas.extra = source.workspaceExtra;
+			draw3::uink::Draw3UInkStrokeSnapshot stroke;
+			stroke.points = { { 10.0f, 20.0f, 4.0f }, { 30.0f, 40.0f, 4.0f } };
+			canvas.strokes.push_back(std::move(stroke));
+			source.canvases.push_back(std::move(canvas));
+			PresentationAutoSaveService service;
+			if (!service.Start(directory.path.wstring()))
+			{
+				check(false, "real worker starts");
+				return 1;
+			}
+			const auto take = [&](PresentationPersistenceCompletion& completion)
+			{
+				const ULONGLONG deadline = GetTickCount64() + 5000;
+				do
+				{
+					if (service.TryTakeCompletion(completion)) return true;
+					Sleep(1);
+				} while (GetTickCount64() < deadline);
+				check(false, "real worker completion arrives before fixture deadline");
+				return false;
+			};
+			PresentationSaveRequest save{ target, revision, source };
+			save.slotGeneration = generation;
+			if (service.SubmitSave(std::move(save)) != PresentationPersistenceSubmitStatus::Accepted)
+			{
+				check(false, "known nonempty snapshot is accepted");
+				return 1;
+			}
+			PresentationPersistenceCompletion committed;
+			if (!take(committed)) return 1;
+			check(committed.status == PresentationPersistenceStatus::Committed,
+				"known nonempty snapshot is durably committed");
+			if (committed.status != PresentationPersistenceStatus::Committed) return 1;
+			std::filesystem::path savedFile;
+			std::size_t savedFiles = 0;
+			for (const auto& file : std::filesystem::directory_iterator(
+				directory.path / L"presentation" / L"files"))
+				if (file.is_regular_file() && file.path().extension() == L".uink")
+				{
+					savedFile = file.path();
+					++savedFiles;
+				}
+			check(savedFiles == 1, "fixture selects the sole real committed UInk");
+			if (savedFiles != 1) return 1;
+			const auto indexPath = directory.path / L"presentation" / L"index.json";
+			const auto originalFile = readBytes(savedFile), originalIndex = readBytes(indexPath);
+			const auto originalRead = draw3::uink::ReadUInkFile(savedFile.wstring());
+			check(originalFile && originalIndex && originalRead.sourceRevision &&
+				originalRead.status == draw3::uink::UInkReadStatus::Complete,
+				"committed fixture has a strict readable source revision");
+			if (!originalFile || !originalIndex || !originalRead.sourceRevision) return 1;
+			int submitted = 0;
+			const auto submit = [&](PresentationLoadRequest&& request)
+			{
+				check(request.target == target && request.slotGeneration == generation &&
+					request.kind == PresentationLoadKind::Current,
+					"real retry keeps Current target and generation unchanged");
+				++submitted;
+				return service.SubmitLoad(std::move(request)) ==
+					PresentationPersistenceSubmitStatus::Accepted;
+			};
+			FileLease occupied{ CreateFileW(savedFile.c_str(), GENERIC_READ, 0, nullptr,
+				OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr) };
+			if (occupied.handle == INVALID_HANDLE_VALUE)
+			{
+				check(false, "real UInk file is held without sharing");
+				return 1;
+			}
+			bool pending = SubmitCurrentPresentationLoad(target, generation, submit);
+			PresentationPersistenceCompletion blocked;
+			if (!pending || !take(blocked)) return 1;
+			check(blocked.status == PresentationPersistenceStatus::IoError &&
+				blocked.target == target && blocked.slotGeneration == generation &&
+				blocked.loadKind == PresentationLoadKind::Current && !blocked.loadedSnapshot,
+				"exclusive file access remains real IoError, never SourceChanged or empty");
+			pending = false;
+			PresentationCurrentLoadRetry retry;
+			if (blocked.status == PresentationPersistenceStatus::IoError)
+				retry.OnIoError(target, generation, 1000);
+			else retry.OnTerminalFailure();
+			check(PresentationLoadUnresolved(Bridge::Workspace::Presentation, false, 0) &&
+				!TrySubmitCurrentLoadAtRunSafePoint(retry, target, generation, 1249,
+					pending, false, false, submit) && submitted == 1,
+				"real failed load stays closed and cannot submit before its deadline");
+			CloseHandle(occupied.handle);
+			occupied.handle = INVALID_HANDLE_VALUE;
+			const bool retried = TrySubmitCurrentLoadAtRunSafePoint(retry, target,
+				generation, 1250, pending, false, false, submit);
+			check(retried && pending && submitted == 2 &&
+				!TrySubmitCurrentLoadAtRunSafePoint(retry, target, generation, 1250,
+					pending, false, false, submit),
+				"budget schedules exactly one same-target real retry");
+			if (!retried) return 1;
+			PresentationPersistenceCompletion loaded;
+			if (!take(loaded)) return 1;
+			check(PresentationLoadedForLane(loaded) && loaded.loadedSnapshot &&
+				loaded.mutationRevision == revision,
+				"unlocked file returns a strict nonempty Loaded completion");
+			if (!PresentationLoadedForLane(loaded)) return 1;
+			std::uint64_t nextToken = 1;
+			auto materialized = MaterializePresentationSlot(*loaded.loadedSnapshot,
+				target, loaded.mutationRevision, [&] { return nextToken++; });
+			std::optional<InkCanvasCollection> document;
+			std::vector<CanvasPageRuntimeState> runtimes;
+			std::size_t page = 0;
+			std::optional<Bridge::PresentationTarget> installedTarget;
+			RetainedPresentationSlides retained;
+			std::optional<draw3::uink::UInkGuid> fileGuid;
+			std::uint64_t mutation = 0, queued = 0, committedRevision = 0;
+			const bool initialized = InstallLoadedActivePresentationSlot(materialized, target,
+				{ document, runtimes, page, installedTarget, retained, fileGuid,
+					mutation, queued, committedRevision });
+			pending = false;
+			if (initialized) retry.Cancel();
+			const InkCanvas* installedCanvas = document && document->PageAt(0)
+				? document->PageAt(0)->FindCanvas(kDefaultDeviceKey) : nullptr;
+			check(initialized && installedTarget == target && installedCanvas &&
+				installedCanvas->Strokes().size() == 1 &&
+				installedCanvas->Strokes()[0].Points().size() == 2 &&
+				installedCanvas->Strokes()[0].Points()[0].x == 10.0f &&
+				mutation == revision && committedRevision == revision &&
+				!PresentationLoadUnresolved(Bridge::Workspace::Presentation, initialized, mutation),
+				"real materialize/install recovers original ink before admitting input");
+			check(readBytes(savedFile) == originalFile && readBytes(indexPath) == originalIndex,
+				"sharing failure and recovery do not rewrite committed UInk or index");
+
+			const auto rejectedLoad = [&](const Bridge::PresentationTarget& requested,
+				PresentationPersistenceStatus expected, const char* name)
+			{
+				PresentationLoadRequest request{ requested };
+				request.slotGeneration = generation;
+				if (service.SubmitLoad(std::move(request)) != PresentationPersistenceSubmitStatus::Accepted)
+				{
+					check(false, "strict failure fixture Load is submitted");
+					return;
+				}
+				PresentationPersistenceCompletion rejected;
+				if (!take(rejected)) return;
+				PresentationCurrentLoadRetry protectedRetry;
+				if (rejected.status == PresentationPersistenceStatus::IoError)
+					protectedRetry.OnIoError(requested, generation, 0);
+				else protectedRetry.OnTerminalFailure();
+				bool rejectedPending = false;
+				int unexpectedSubmits = 0;
+				check(rejected.status == expected && !PresentationLoadedForLane(rejected) &&
+					!PresentationEmptyLaneVerified(rejected) && !rejected.loadedSnapshot &&
+					!protectedRetry.TrySubmit(requested, generation, 10000, rejectedPending,
+						false, [&](PresentationLoadRequest&&) { ++unexpectedSubmits; return true; }) &&
+					unexpectedSubmits == 0 &&
+					PresentationLoadUnresolved(Bridge::Workspace::Presentation, false, 0), name);
+			};
+			Bridge::PresentationTarget collision = target;
+			collision.key.bytes[0] ^= 1;
+			rejectedLoad(collision, PresentationPersistenceStatus::CrossProcessConflictDeferred,
+				"real source/key identity conflict remains protected without retry");
+			check(readBytes(savedFile) == originalFile && readBytes(indexPath) == originalIndex,
+				"identity rejection preserves committed bytes");
+			Json::Value index;
+			Json::CharReaderBuilder builder;
+			std::string errors;
+			const auto reader = std::unique_ptr<Json::CharReader>(builder.newCharReader());
+			if (!reader || !reader->parse(originalIndex->data(),
+				originalIndex->data() + originalIndex->size(), &index, &errors)) return 1;
+			index["entries"][0]["workspaceGuid"] = "44444444-4444-4444-8444-444444444444";
+			Json::StreamWriterBuilder writer;
+			check(writeBytes(indexPath, Json::writeString(writer, index)),
+				"workspace identity mismatch fixture is written");
+			rejectedLoad(target, PresentationPersistenceStatus::Invalid,
+				"real workspace mismatch remains Invalid and cannot install empty ink");
+			check(writeBytes(indexPath, *originalIndex), "fixture index is restored");
+			auto editing = draw3::uink::CreateUInkEditingSession(originalRead,
+				draw3::uink::UInkEditingSource::ApplicationOwned);
+			if (!editing || !editing->document.headerExtension) return 1;
+			editing->document.headerExtension->explanation = "external revision change";
+			check(draw3::uink::SaveUInkFile(savedFile.wstring(), *editing).status ==
+				draw3::uink::UInkSaveStatus::Committed, "valid changed revision fixture commits");
+			rejectedLoad(target, PresentationPersistenceStatus::SourceChanged,
+				"real valid but changed source revision remains terminal");
+			check(writeBytes(savedFile, *originalFile), "fixture UInk is restored before corruption");
+			std::string corrupt = *originalFile;
+			corrupt[0] ^= 0x7F;
+			check(writeBytes(savedFile, corrupt), "bad header fixture is written");
+			rejectedLoad(target, PresentationPersistenceStatus::SourceChanged,
+				"real corrupt header is not reclassified as transient IoError");
+			check(readBytes(savedFile) == std::optional<std::string>(corrupt) &&
+				readBytes(indexPath) == originalIndex,
+				"failed strict loads do not write blank data over damaged or indexed ink");
+			corrupt = originalFile->substr(0, originalFile->size() - 1);
+			check(writeBytes(savedFile, corrupt), "truncated tail fixture is written");
+			rejectedLoad(target, PresentationPersistenceStatus::SourceChanged,
+				"real truncated tail remains protected instead of transient IoError");
+			check(readBytes(savedFile) == std::optional<std::string>(corrupt) &&
+				readBytes(indexPath) == originalIndex,
+				"tail rejection preserves damaged bytes and the committed index");
+			service.CloseAndDrain();
+		}
+		catch (...)
+		{
+			check(false, "real worker fixture completes without exception");
+		}
+		if (failures == 0)
+			std::fputs("[Draw3PptLoadRetry] PASS: real worker sharing failure, retry, strict install and rejection\n", stderr);
+		return failures;
+	}
+
 	int RunPresentationCurrentLoadRetryProbe() noexcept
 	{
 		int failures = 0;
@@ -4511,6 +5373,7 @@ namespace Inkeys::Drawing::Draw3
 			target, generation, 1250, directExitPending, false, true, submit) &&
 			!directExitPending && submitted == beforeDirectExit,
 			"ExitRequested suppresses a due retry at the Run safe point");
+		failures += RunPresentationWorkerLoadRetryProbe();
 		if (failures == 0)
 			std::fputs("[Draw3PptLoadRetry] PASS: bounded same-target Current recovery\n",
 				stderr);
@@ -6365,6 +7228,37 @@ namespace Inkeys::Drawing::Draw3
 					captured.snapshot->canvases[0].strokes.size() == 1,
 					"pre-seal snapshot keeps completed old stroke only");
 				input.SetAdmissionBlocked(true);
+				CanvasPageRuntimeState& delayedPage = desktopRuntimes[0];
+				delayedPage.undoFloor = 1;
+				delayedPage.intervalOrdinal = 3;
+				delayedPage.intervalLoadPending = true;
+				DesktopClearRecovery delayedRecovery;
+				delayedRecovery.pageGuid = desktop.PageAt(0)->PageGuid();
+				delayedRecovery.fileGuid = draw3::uink::UInkGuid(guid(0x41).Bytes());
+				delayedRecovery.loadPending = true;
+				delayedRecovery.loadHistoryRevision = delayedPage.history.Revision();
+				delayedRecovery.canvas.emplace();
+				delayedRecovery.canvas->pageGuid = draw3::uink::UInkGuid(delayedRecovery.pageGuid.Bytes());
+				const auto desktopAdmission = [&](bool pending, Bridge::Workspace workspace,
+					const InkPage* page = nullptr)
+				{
+					return CanInstallDesktopClearRecovery(delayedRecovery, pending, workspace,
+						page ? page : desktop.PageAt(0), &delayedPage);
+				};
+				check(desktopAdmission(true, Bridge::Workspace::Desktop), "matching Desktop load may replace its sealed root");
+				check(!desktopAdmission(false, Bridge::Workspace::Desktop), "cancelled Desktop load is rejected");
+				check(!desktopAdmission(true, Bridge::Workspace::Presentation), "Desktop load cannot install into Presentation");
+				check(!desktopAdmission(true, Bridge::Workspace::Desktop, presentation.PageAt(0)), "Desktop load cannot overwrite another page GUID");
+				check(!CanInstallDesktopClearRecovery(delayedRecovery, true, Bridge::Workspace::Desktop,
+					 nullptr, &delayedPage), "missing Desktop page rejects the load");
+				check(!CanInstallDesktopClearRecovery(delayedRecovery, true, Bridge::Workspace::Desktop,
+					 desktop.PageAt(0), nullptr), "missing Desktop runtime rejects the load");
+				check(CanInstallPreviousClearInterval(delayedPage, 2), "matching Presentation interval may install at floor");
+				check(!CanInstallPreviousClearInterval(delayedPage, 1), "wrong Presentation interval is rejected");
+				delayedPage.undoFloor = 0;
+				check(!desktopAdmission(true, Bridge::Workspace::Desktop), "visible Desktop ink above floor blocks replacement");
+				check(!CanInstallPreviousClearInterval(delayedPage, 2), "visible Presentation ink above floor blocks replacement");
+				delayedPage.undoFloor = 1;
 				InkRasterStateToken nextToken = 3;
 				const auto sealed = CommitRuntimeStoredStrokeCpu(activePen, desktop,
 					desktopRuntimes, 0, 0.0, StoredStrokeCommitMode::Fatal,
@@ -6375,6 +7269,29 @@ namespace Inkeys::Drawing::Draw3
 					captured.snapshot->canvases[0].strokes.size() == 2 &&
 					captured.snapshot->canvases[0].strokes[1].points.back().x == 55.0f,
 					"fatal CPU seal appends accepted real Move, excludes prediction");
+				// 上面的真实生产 CPU 追加必须取消请求；再次 Undo 到 floor 也不能接受旧回执。
+				check(!delayedPage.intervalLoadPending, "real CPU stroke append cancels the Presentation interval request");
+				check(!desktopAdmission(true, Bridge::Workspace::Desktop), "new CPU stroke rejects the old Desktop load revision");
+				check(!CanInstallPreviousClearInterval(delayedPage, 2), "new CPU stroke rejects the old Presentation load");
+				const auto newItem = delayedPage.history.LastVisibleItem();
+				check(newItem && delayedPage.history.UndoLastVisible(*newItem), "actual history can return new ink to the sealed floor");
+				check(!desktopAdmission(true, Bridge::Workspace::Desktop), "returning to floor still rejects an earlier Desktop history revision");
+				check(!CanInstallPreviousClearInterval(delayedPage, 2), "returning to floor cannot revive a cancelled Presentation request");
+				check(delayedRecovery.canvas && delayedRecovery.fileGuid &&
+					delayedRecovery.canvas->pageGuid.Bytes() == delayedRecovery.pageGuid.Bytes(),
+					"rejected loads leave the recovery point and locator intact for retry");
+				delayedRecovery.loadPending = false;
+				check(!desktopAdmission(delayedRecovery.loadPending, Bridge::Workspace::Desktop), "failed load clears only pending admission");
+				delayedRecovery.loadPending = true;
+				delayedRecovery.loadHistoryRevision = delayedPage.history.Revision();
+				check(desktopAdmission(delayedRecovery.loadPending, Bridge::Workspace::Desktop), "a fresh Desktop retry may reuse the preserved recovery point");
+				delayedPage.intervalLoadPending = true;
+				check(CanInstallPreviousClearInterval(delayedPage, 2), "a fresh Presentation retry may install the same boundary");
+				delayedPage.intervalOrdinal = 0;
+				check(!CanInstallPreviousClearInterval(delayedPage, 2), "canonical root cannot accept an old interval completion");
+				delayedPage.intervalLoadPending = false;
+				delayedPage.undoFloor = 0;
+				check(newItem && delayedPage.history.RedoLastUndone(*newItem), "restore the probe history after late-load negative cases");
 				const size_t afterPen = desktopRuntimes[0].history.Items().size();
 				check(!CommitRuntimeStoredStrokeCpu(activePen, desktop, desktopRuntimes,
 					0, 0.0, StoredStrokeCommitMode::Fatal,
@@ -7132,6 +8049,20 @@ namespace Inkeys::Drawing::Draw3
 		return window_.GetMouseUsesSystemCursor();
 	}
 
+	void DrawingController::SetCursorSettings(const CursorSettings& settings) noexcept
+	{
+		const CursorSettings effective = ResolveCursorSettingsForDrawingTool(
+			window_.EffectiveDrawingCursorTool(), settings);
+		const bool system = effective.mouseStyle == MouseCursorStyle::System;
+		const bool systemChanged = window_.GetMouseUsesSystemCursor() != system;
+		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
+		window_.SetMouseUsesSystemCursor(system);
+		const uint32_t packed = 4u | (settings.mouseStyle == MouseCursorStyle::Drawing ? 1u : 0u) |
+			(settings.penStyle == PenCursorStyle::PenIcon ? 2u : 0u);
+		if (cursorSettings_.exchange(packed, std::memory_order_acq_rel) != packed &&
+			!systemChanged) window_.RequestDrawingCursorRender();
+	}
+
 	void DrawingController::SetLaserParticlesEnabled(bool enabled) noexcept
 	{
 		laserParticlesEnabled_.store(enabled, std::memory_order_release);
@@ -7363,7 +8294,7 @@ namespace Inkeys::Drawing::Draw3
 		if (!renderer_.Resize(presentation_.SwapChain(), requestedSize.width, requestedSize.height)) // 先重建所有尺寸相关 D3D 资源。
 		{
 			if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
-			std::cout << "Failed to resize D3D resources to " << requestedSize.width << "x" << requestedSize.height << std::endl;
+			DiagnosticOutput::Line() << "Failed to resize D3D resources to " << requestedSize.width << "x" << requestedSize.height << std::endl;
 			presentation_.MarkRuntimeFailure();
 			graphicsRecoveryPending_ = true;
 			return false;
@@ -7371,7 +8302,7 @@ namespace Inkeys::Drawing::Draw3
 		if (!presentation_.Resize(requestedSize.width, requestedSize.height)) // 再通知当前透明呈现器更新外部资源。
 		{
 			if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
-			std::cout << "Failed to resize transparent presenter to " << requestedSize.width << "x" << requestedSize.height << std::endl;
+			DiagnosticOutput::Line() << "Failed to resize transparent presenter to " << requestedSize.width << "x" << requestedSize.height << std::endl;
 			graphicsRecoveryPending_ = presentation_.RecoveryPending();
 			return false;
 		}
@@ -7465,6 +8396,19 @@ namespace Inkeys::Drawing::Draw3
 				*activePresentationTarget, activePresentationSlotGeneration,
 				GetTickCount64());
 		};
+		std::uint64_t acceptedStrokeSceneGeneration = 1;
+		auto acceptedStrokeScene = [&]() noexcept
+		{
+			Bridge::AcceptedStrokeBegin scene;
+			scene.workspace = activeWorkspace;
+			scene.pageIndex = currentPageIndex_;
+			scene.sceneGeneration = acceptedStrokeSceneGeneration;
+			if (activePresentationTarget)
+				scene.presentation = Bridge::ReadyIdentityFor(*activePresentationTarget);
+			return scene;
+		};
+		if (observer_.acceptedStrokeSceneChanged)
+			observer_.acceptedStrokeSceneChanged(observer_.context, acceptedStrokeScene());
 		std::optional<PendingWorkspaceReady> pendingWorkspaceReady;
 		auto stageWorkspaceReady = [&](const Bridge::PresentationTarget* target = nullptr)
 		{
@@ -7491,6 +8435,32 @@ namespace Inkeys::Drawing::Draw3
 			activePresentationMutationRevision =
 				AdvancePresentationMutationRevision(activePresentationMutationRevision);
 		};
+		Shortcuts::Context shortcutContext;
+		std::optional<InkGuid> shortcutPageGuid;
+		auto refreshShortcutContext = [&]() noexcept
+		{
+			const auto* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+			const auto guid = page ? std::optional(page->PageGuid()) : std::nullopt;
+			const auto target = activePresentationTarget
+				? std::optional(Bridge::ReadyIdentityFor(*activePresentationTarget)) : std::nullopt;
+			if (guid != shortcutPageGuid || shortcutContext.scope.pageEpoch == 0 ||
+				shortcutContext.scope.workspace != activeWorkspace ||
+				shortcutContext.scope.pageIndex != currentPageIndex_ ||
+				shortcutContext.scope.presentation != target)
+			{
+				if (++shortcutContext.scope.pageEpoch == 0) ++shortcutContext.scope.pageEpoch;
+				shortcutPageGuid = guid;
+			}
+			shortcutContext.scope.workspace = activeWorkspace;
+			shortcutContext.scope.pageIndex = currentPageIndex_;
+			shortcutContext.scope.presentation = target;
+			shortcutContext.available = page && page->FindCanvas(kDefaultDeviceKey) &&
+				currentPageIndex_ < pageRuntimeStates.size();
+			shortcutContext.hasContent = currentPageIndex_ < pageRuntimeStates.size() &&
+				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
+			if (observer_.shortcutContextChanged)
+				observer_.shortcutContextChanged(observer_.context, shortcutContext);
+		};
 		bool publishedCurrentPageHasContent = false;
 		bool contentRevisionNeedsPresent = false;
 		auto currentPageHasContent = [&]() noexcept
@@ -7498,8 +8468,43 @@ namespace Inkeys::Drawing::Draw3
 			return currentPageIndex_ < pageRuntimeStates.size() &&
 				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
 		};
+		bool publishedCanUndo = false;
+		bool publishedCanRedo = false;
+		auto publishHistoryAvailability = [&]()
+		{
+			bool canUndo = false;
+			bool canRedo = false;
+			if (currentPageIndex_ < pageRuntimeStates.size())
+			{
+				const CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+				const std::optional<RenderItemId> visible = runtime.history.LastVisibleItem();
+				canUndo = visible.has_value() && visible->index >= runtime.undoFloor;
+				canRedo = runtime.history.LastRedoItem().has_value() || runtime.clearRedoAvailable;
+				if (!canUndo)
+				{
+					if (activeWorkspace == Bridge::Workspace::Desktop && desktopClearRecovery &&
+						DesktopRecoveryBelongsToPage(*desktopClearRecovery,
+							document_ ? document_->PageAt(currentPageIndex_) : nullptr))
+						canUndo = true;
+					else if (runtime.previousClearUndoAvailable &&
+						(runtime.intervalOrdinal != 0 || runtime.boundaryFallback) &&
+						(activeWorkspace == Bridge::Workspace::Presentation ||
+							activeWorkspace == Bridge::Workspace::Whiteboard))
+						canUndo = true;
+				}
+			}
+			if (canUndo == publishedCanUndo && canRedo == publishedCanRedo) return;
+			publishedCanUndo = canUndo;
+			publishedCanRedo = canRedo;
+			if (observer_.historyAvailabilityChanged)
+				observer_.historyAvailabilityChanged(observer_.context, canUndo, canRedo);
+		};
 		auto publishCurrentPageContent = [&]()
 		{
+			publishHistoryAvailability();
+			// 与呈现用 bool 修订分离：同页新增第二笔/Undo 也必须退休两击候选。
+			if (++shortcutContext.contentRevision == 0) ++shortcutContext.contentRevision;
+			refreshShortcutContext();
 			const bool hasContent = currentPageHasContent();
 			if (hasContent == publishedCurrentPageHasContent) return;
 			publishedCurrentPageHasContent = hasContent;
@@ -7589,7 +8594,7 @@ namespace Inkeys::Drawing::Draw3
 		if (!historyGpuCache.Initialize(
 			renderer_, appliedUndoPolicy, appliedCompositionPolicy))
 		{
-			std::cout << "[InkHistory] GPU cache unavailable; history restore may fail."
+			DiagnosticOutput::Line() << "[InkHistory] GPU cache unavailable; history restore may fail."
 				<< std::endl;
 		}
 		std::deque<CompositionMaintenanceItem> compositionMaintenance;
@@ -7607,7 +8612,7 @@ namespace Inkeys::Drawing::Draw3
 		if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled)
 			effectiveInvertedPenEraserEnabled =
 				invertedPenEraserEnabled_.load(std::memory_order_acquire);
-		std::cout << "[StrokeReconnect] enabled=" <<
+		DiagnosticOutput::Line() << "[StrokeReconnect] enabled=" <<
 			(GetInterruptedStrokeReconnectEnabled() ? "true" : "false") <<
 			" window_ms=" << kInterruptedStrokeReconnectWindowSeconds * 1000.0 <<
 			" prediction_endpoint_base_px=" <<
@@ -7660,7 +8665,7 @@ namespace Inkeys::Drawing::Draw3
 			if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
 				metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(strokeModelParams); }); !status.ok())
 			{
-				std::cout << "Failed to preheat stroke model: " << status.message() << std::endl;
+				DiagnosticOutput::Line() << "Failed to preheat stroke model: " << status.message() << std::endl;
 				return;
 			}
 			strokePool.push_back(std::move(runtime)); // 首批模型和 predictor 在接收 Down 前完成分配。
@@ -8171,7 +9176,7 @@ namespace Inkeys::Drawing::Draw3
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(strokeModelParams); }); !status.ok())
 				{
-					std::cout << "Failed to initialize expanded stroke model: " << status.message() << std::endl;
+					DiagnosticOutput::Line() << "Failed to initialize expanded stroke model: " << status.message() << std::endl;
 					return nullptr;
 				}
 				runtime->inUse = true;
@@ -8524,7 +9529,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					if (!reconnectRuntime && diagnosticRuntime)
 					{
-						std::cout << "[StrokeReconnect] rejected device=" <<
+						DiagnosticOutput::Line() << "[StrokeReconnect] rejected device=" <<
 							InputDeviceTypeName(deviceType) << " tool=" << DrawingToolName(tool) <<
 							" new_tcid=" << handle.record->TabletContextId() <<
 							" new_cid=" << handle.record->ContactId() <<
@@ -8637,6 +9642,10 @@ namespace Inkeys::Drawing::Draw3
 						metricsState_ ? metricsState_->metricFrequency : 0, [&] { return reconnectRuntime->stroke.modeler.Update(
 						reconnectInput, reconnectModelOutput); }); status.ok())
 					{
+						// 模型确认续接后再记录 raw，失败不能淘汰旧笔划的物理尾窗。
+						if (reconnectRuntime->tool == DrawingTool::Pen || reconnectRuntime->tool == DrawingTool::HardPen)
+							RecordPenTailRawInput(reconnectRuntime->stroke, {down.position.x, down.position.y},
+								QpcDeltaSeconds(down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency));
 						reconnectRuntime->stationaryModelAdvanceBlocked = false;
 						const double gapSeconds = reconnectResult.gapMilliseconds / 1000.0;
 						const float alpha = std::clamp(static_cast<float>(
@@ -8673,6 +9682,8 @@ namespace Inkeys::Drawing::Draw3
 						}
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
 						reconnectRuntime->handle = handle;
+						BeginTailInputDiagnostic(*reconnectRuntime, down, true,
+							reconnectRuntime->stroke.tailInputDiagnostic.enabled);
 						reconnectRuntime->lastSpeedSnapshot = down;
 						reconnectRuntime->lastInputSnapshot = down;
 						reconnectRuntime->lastModelSnapshot = modelDown;
@@ -8701,7 +9712,7 @@ namespace Inkeys::Drawing::Draw3
 						reconnectRuntime->stroke.visualStableFrameCount = 0;
 						if (!reconnectRuntime->stroke.useDisplayTime)
 							reconnectRuntime->stroke.lastMovementInputTime = inputTime;
-						std::cout << "[StrokeReconnect] linked device=" << InputDeviceTypeName(deviceType) <<
+						DiagnosticOutput::Line() << "[StrokeReconnect] linked device=" << InputDeviceTypeName(deviceType) <<
 							" tool=" << DrawingToolName(tool) <<
 							" new_tcid=" << handle.record->TabletContextId() <<
 							" new_cid=" << handle.record->ContactId() <<
@@ -8750,7 +9761,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						if (reconnectRuntime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
 							reconnectRuntime->speedEraserOc = reconnectOcBefore;
-						std::cout << "Failed to continue interrupted stroke: " << status.message() << std::endl;
+						DiagnosticOutput::Line() << "Failed to continue interrupted stroke: " << status.message() << std::endl;
 					}
 				}
 
@@ -8850,7 +9861,7 @@ namespace Inkeys::Drawing::Draw3
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(modelParams); }); !status.ok())
 				{
-					std::cout << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
 					RejectStrokeInitialization(input_, handle, down);
 					runtime->cancelled = true;
@@ -8867,6 +9878,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->lastModelSnapshot = modelDown;
 				runtime->lastConsumedSequence = down.sequence;
 				runtime->qpcOrigin = down.qpc;
+				BeginTailInputDiagnostic(*runtime, down, false, IsPenTailTraceEnabled());
 				runtime->lastModelInputTime = 0.0;
 				runtime->diagnosticStrokeId = observer_.penDiagnostics ? ++nextDiagnosticStrokeId : 0;
 				runtime->diagnosticModelUpdates = observer_.penDiagnostics ? 1 : 0;
@@ -8903,12 +9915,14 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = down.tilt,
 					.orientation = down.orientation
 				};
+				if (runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen)
+					RecordPenTailRawInput(stroke, {down.position.x, down.position.y}, 0.0);
 				runtime->modelInputThisFrame = true;
 				runtime->stationaryModelAdvanceBlocked = false;
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Update(downInput, stroke.modeledResults); }); !status.ok())
 				{
-					std::cout << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
 					RejectStrokeInitialization(input_, handle, down);
 					runtime->cancelled = true;
@@ -8985,6 +9999,13 @@ namespace Inkeys::Drawing::Draw3
 					// Down 只重置时间累计；得到首条非退化 L0 切线前不发射。
 				}
 				active.push_back(runtime);
+				if (observer_.acceptedStrokeBegan)
+				{
+					// 只在新笔划真正接纳后通知，临时橡皮用本笔 tool，续接/拒绝不重复。
+					auto accepted = acceptedStrokeScene();
+					accepted.kind = CompletedStrokeKindForTool(runtime->tool);
+					observer_.acceptedStrokeBegan(observer_.context, accepted);
+				}
 				return true;
 			};
 
@@ -9075,6 +10096,9 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
+				if (runtime.tool == DrawingTool::Pen || runtime.tool == DrawingTool::HardPen)
+					RecordPenTailRawInput(runtime.stroke, {snapshot.position.x, snapshot.position.y},
+						QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency));
 				runtime.modelInputThisFrame = true;
 				const bool sanitizeEndpoint =
 					(runtime.tool == DrawingTool::Pen ||
@@ -9082,18 +10106,28 @@ namespace Inkeys::Drawing::Draw3
 				if (sanitizeEndpoint) runtime.stroke.modelScratch.clear();
 				auto& modelOutput = sanitizeEndpoint
 					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				const bool traceUp = runtime.stroke.tailInputDiagnostic.enabled;
+				const size_t traceOutputBefore = traceUp ? modelOutput.size() : 0;
+				const size_t traceRealBefore = traceUp ? runtime.stroke.realPoints.size() : 0;
+				BeginTailModelUpDiagnostic(runtime, snapshot, inputTime);
 				const auto metricsGeometryBefore = metricsState_ ? CaptureMetricGeometry(runtime) : MetricGeometrySnapshot{};
 				if (absl::Status status = updateContactModel(
 					runtime, upInput, inputTime, modelOutput); status.ok())
 				{
+					if (traceUp) runtime.stroke.tailInputDiagnostic.upStatus = 0;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
 					else if (sanitizeEndpoint)
 					{
 						BeginEndpointAdmission(runtime.stroke,
 							{ snapshot.position.x, snapshot.position.y });
-						AppendEndpointBoundedModeledPoints(runtime.stroke,
+						const auto accepted = AppendEndpointBoundedModeledPoints(runtime.stroke,
 							runtime.stroke.modelScratch, -1.0f,
 							runtime.stroke.lastMovementInputTime, true);
+						if (traceUp)
+						{
+							runtime.stroke.tailInputDiagnostic.upAccepted = accepted.acceptedResultCount;
+							runtime.stroke.tailInputDiagnostic.upEndpointPinned = accepted.endpointPinned;
+						}
 					}
 					else AppendRuntimeModeledPoints(runtime, -1.0f, inputTime);
 					if (metricsState_ && !cancelled)
@@ -9103,9 +10137,21 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else
 				{
-					std::cout << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
+					if (traceUp)
+					{
+						runtime.stroke.tailInputDiagnostic.upStatus = static_cast<int32_t>(status.code());
+						runtime.stroke.tailInputDiagnostic.upFallback = !runtime.shape.active;
+					}
 					if (!runtime.shape.active)
 						appendTerminalFallback(runtime, snapshot, inputTime);
+				}
+				if (traceUp)
+				{
+					auto& trace = runtime.stroke.tailInputDiagnostic;
+					trace.upProduced = modelOutput.size() >= traceOutputBefore ? modelOutput.size() - traceOutputBefore : 0;
+					trace.upGeometryAdded = runtime.stroke.realPoints.size() >= traceRealBefore ? runtime.stroke.realPoints.size() - traceRealBefore : 0;
+					if (!sanitizeEndpoint && trace.upStatus == 0) trace.upAccepted = trace.upGeometryAdded;
 				}
 				if (runtime.shape.active)
 				{
@@ -9133,6 +10179,7 @@ namespace Inkeys::Drawing::Draw3
 				ContactSnapshot snapshot;
 				if (!input_.TryReadSnapshot(runtime.handle, snapshot) ||
 					snapshot.sequence == runtime.lastConsumedSequence) return false;
+				NoteTailInputSnapshot(runtime, snapshot); // 必须先保存 Up 之前的已消费位置。
 				runtime.lastConsumedSequence = snapshot.sequence;
 				runtime.lastInputSnapshot = snapshot;
 				if (metricsState_)
@@ -9245,7 +10292,11 @@ namespace Inkeys::Drawing::Draw3
 							{ runtime.lastSpeedSnapshot.position.x, runtime.lastSpeedSnapshot.position.y },
 							{ snapshot.position.x, snapshot.position.y });
 					runtime.stroke.logicalInputTime = std::max(runtime.stroke.logicalInputTime, inputTime);
-					if (positionMoved) runtime.stroke.lastMovementInputTime = inputTime;
+					if (positionMoved)
+					{
+						runtime.stroke.lastMovementInputTime = inputTime;
+						runtime.stroke.liveTipLength.reset(); // 真实位置已变，即使 QPC 相同也不能继承停笔封顶。
+					}
 					inputTime = ResolvePenModelInputTime(runtime.stroke, inputTime,
 						runtime.lastModelInputTime, 1.0 / configuration_.timingProfile.target_fps);
 				}
@@ -9265,6 +10316,9 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
+				if (endpointTool)
+					RecordPenTailRawInput(runtime.stroke, {snapshot.position.x, snapshot.position.y},
+						QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency));
 				bool modelUpdateSucceeded = false;
 				runtime.modelInputThisFrame = true;
 				const bool boundedEndpointUpdate = endpointTool &&
@@ -9272,11 +10326,16 @@ namespace Inkeys::Drawing::Draw3
 				if (boundedEndpointUpdate) runtime.stroke.modelScratch.clear();
 				auto& modelOutput = boundedEndpointUpdate
 					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				const bool traceUp = runtime.stroke.tailInputDiagnostic.enabled && input.event_type == Input::EventType::kUp;
+				const size_t traceOutputBefore = traceUp ? modelOutput.size() : 0;
+				const size_t traceRealBefore = traceUp ? runtime.stroke.realPoints.size() : 0;
+				if (traceUp) BeginTailModelUpDiagnostic(runtime, snapshot, inputTime);
 				const auto metricsGeometryBefore = metricsState_ ? CaptureMetricGeometry(runtime) : MetricGeometrySnapshot{};
 				if (absl::Status status = updateContactModel(
 					runtime, input, inputTime, modelOutput); status.ok())
 				{
 					modelUpdateSucceeded = true;
+					if (traceUp) runtime.stroke.tailInputDiagnostic.upStatus = 0;
 					runtime.stationaryModelAdvanceBlocked = false;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
 					else if (boundedEndpointUpdate)
@@ -9288,9 +10347,14 @@ namespace Inkeys::Drawing::Draw3
 						{
 							BeginEndpointAdmission(runtime.stroke,
 								{ snapshot.position.x, snapshot.position.y });
-							AppendEndpointBoundedModeledPoints(runtime.stroke,
+							const auto accepted = AppendEndpointBoundedModeledPoints(runtime.stroke,
 								runtime.stroke.modelScratch, inputSpeed,
 								runtime.stroke.lastMovementInputTime, terminal);
+							if (traceUp)
+							{
+								runtime.stroke.tailInputDiagnostic.upAccepted = accepted.acceptedResultCount;
+								runtime.stroke.tailInputDiagnostic.upEndpointPinned = accepted.endpointPinned;
+							}
 						}
 					}
 					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
@@ -9301,11 +10365,23 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else
 				{
-					std::cout << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
+					if (traceUp)
+					{
+						runtime.stroke.tailInputDiagnostic.upStatus = static_cast<int32_t>(status.code());
+						runtime.stroke.tailInputDiagnostic.upFallback = terminal && !deferUp && !runtime.shape.active;
+					}
 					if (runtime.shape.active)
 						runtime.shape.rawFallbackRequired = true;
 					if (terminal && !deferUp && !runtime.shape.active)
 						appendTerminalFallback(runtime, snapshot, inputTime);
+				}
+				if (traceUp)
+				{
+					auto& trace = runtime.stroke.tailInputDiagnostic;
+					trace.upProduced = modelOutput.size() >= traceOutputBefore ? modelOutput.size() - traceOutputBefore : 0;
+					trace.upGeometryAdded = runtime.stroke.realPoints.size() >= traceRealBefore ? runtime.stroke.realPoints.size() - traceRealBefore : 0;
+					if (!boundedEndpointUpdate && trace.upStatus == 0) trace.upAccepted = trace.upGeometryAdded;
 				}
 				if (terminal && endpointTool && (modelUpdateSucceeded || !deferUp))
 					CapturePenTerminalTrace(runtime.stroke);
@@ -10001,8 +11077,12 @@ namespace Inkeys::Drawing::Draw3
 				if (AbsoluteQpcSeconds(mouseSample.qpc, qpcFrequency) <= mouseSpeedEraser().LastEventSeconds())
 					mouseSample.inContact = false;
 			}
+			const uint32_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
+			CursorSettings cursorSettings{
+				.mouseStyle = (cursorSettingsBits & 1u) != 0 ? MouseCursorStyle::Drawing : MouseCursorStyle::System,
+				.penStyle = (cursorSettingsBits & 2u) != 0 ? PenCursorStyle::PenIcon : PenCursorStyle::Circle
+			};
 			DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
-			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 			const DrawingCursorPointerAuthority cursorAuthority = window_.CursorOwner();
 			const bool primaryUsesPen = cursorAuthority == DrawingCursorPointerAuthority::Pen ||
 				(cursorAuthority == DrawingCursorPointerAuthority::Unknown && penSample.valid);
@@ -10021,6 +11101,13 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			if(primaryRuntime)cursorTool=primaryRuntime->tool;
+			if ((cursorSettingsBits & 4u) != 0)
+			{
+				// 同一实际工具投影同时控制系统箭头和应用预览，不能用新选择覆盖活动笔画。
+				cursorSettings = ResolveCursorSettingsForDrawingTool(cursorTool, cursorSettings);
+				window_.SetMouseUsesSystemCursor(cursorSettings.mouseStyle == MouseCursorStyle::System);
+			}
+			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			bool primaryCursorSourceVisible = false;
 			size_t runtimeCursorSourceCount = 0;
@@ -10050,7 +11137,10 @@ namespace Inkeys::Drawing::Draw3
 					cursorTool == DrawingTool::Eraser,
 					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
 					translucentInkCursorEnabled_.load(std::memory_order_acquire),
-					mouseUsesSystemCursor);
+					mouseUsesSystemCursor,
+					(cursorSettingsBits & 4u) != 0 ? &cursorSettings : nullptr,
+					cursorTool == DrawingTool::Pen || cursorTool == DrawingTool::HardPen,
+					ProductTargetScale(currentProductVisualStyle));
 				if (primary.visible &&
 					primary.appearance.shape == DrawingCursorShape::EraserGripCircle)
 				{
@@ -10386,13 +11476,13 @@ namespace Inkeys::Drawing::Draw3
 			{
 				multipleCursorSourceTraceActive = true;
 				multipleCursorSourceTraceKey = traceKey;
-				std::cout << "[CURSOR_TRACE][cursor-sources] count=" <<
+				DiagnosticOutput::Line() << "[CURSOR_TRACE][cursor-sources] count=" <<
 					visibleCursorSourceCount << " primaryVisible=" <<
 					(primaryCursorSourceVisible ? 1u : 0u) << " runtimeSources=" <<
 					runtimeCursorSourceCount << " cursorOwner=" <<
 					static_cast<unsigned>(window_.CursorOwner()) << " tool=" <<
 					DrawingToolName(cursorTool) << std::endl;
-				std::cout << "[CURSOR_TRACE][primary-samples] pen={valid=" <<
+				DiagnosticOutput::Line() << "[CURSOR_TRACE][primary-samples] pen={valid=" <<
 					(penSample.valid ? 1u : 0u) << ",contact=" <<
 					(penSample.inContact ? 1u : 0u) << ",inverted=" <<
 					(penSample.inverted ? 1u : 0u) << ",qpc=" << penSample.qpc <<
@@ -10410,7 +11500,7 @@ namespace Inkeys::Drawing::Draw3
 						runtime->metricDeviceType == InputDeviceType::Touch &&
 						(runtime->tool == DrawingTool::Eraser ||
 							runtime->tool == DrawingTool::Laser);
-					std::cout << "[CURSOR_TRACE][active-runtime] index=" << traceIndex++ <<
+					DiagnosticOutput::Line() << "[CURSOR_TRACE][active-runtime] index=" << traceIndex++ <<
 						" tcid=" << (record ? record->TabletContextId() : 0) <<
 						" cid=" << (record ? record->ContactId() : 0) <<
 						" generation=" << runtime->handle.generation <<
@@ -10515,7 +11605,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (*pageIndex + 1 != pageRuntimeStates.size())
 			{
-				std::cout << "[InkHistory] page/runtime index mismatch." << std::endl;
+				DiagnosticOutput::Line() << "[InkHistory] page/runtime index mismatch." << std::endl;
 				return std::nullopt;
 			}
 			pageRuntimeStates.back().rasterState = allocateRasterStateToken();
@@ -10547,15 +11637,17 @@ namespace Inkeys::Drawing::Draw3
 
 		auto canEvictPresentationSlot = [](const DrawingDocumentSlot& slot) noexcept
 		{
-			return ShouldEvictPresentationSlot(slot.fileGuid.has_value(),
-				slot.mutationRevision, slot.queuedRevision,
-				slot.committedRevision, slot.loadPending);
+			return CanEvictPresentationCpuSlot(slot);
 		};
 
 			auto resetGpuForPageSwitch = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
 			int width, int height)
 		{
+			// 逻辑换页/工作区/恢复/Clear 立即退休旧起笔，不等待 Present 或物理接触归零。
+			if (++acceptedStrokeSceneGeneration == 0) ++acceptedStrokeSceneGeneration;
+			if (observer_.acceptedStrokeSceneChanged)
+				observer_.acceptedStrokeSceneChanged(observer_.context, acceptedStrokeScene());
 			if (metricsState_)
 			{
 				metricsScene(true);
@@ -10678,7 +11770,7 @@ namespace Inkeys::Drawing::Draw3
 				else queued = capture();
 				if (queued) ++queuedCount;
 				if (eligible && !queued)
-					std::fprintf(stderr,
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 						"[Draw3.AutoSave] action=exit_snapshot reason=%s source=%s result=not_queued\n",
 						reason, source);
 			};
@@ -10725,7 +11817,7 @@ namespace Inkeys::Drawing::Draw3
 					});
 			}
 			if (fatal)
-				std::fprintf(stderr,
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 					"[Draw3.AutoSave] action=fatal_exit_snapshot reason=%s eligible=%zu queued=%zu durable=pending_worker\n",
 					reason, eligibleCount, queuedCount);
 		};
@@ -10753,7 +11845,7 @@ namespace Inkeys::Drawing::Draw3
 					runtime->handle, cutoffSnapshot) &&
 					cutoffSnapshot.phase == ContactPhase::Cancelled;
 				if (cancelledAtCutoff)
-					std::fprintf(stderr,
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 						"[Draw3.AutoSave] action=fatal_cpu_seal result=skipped reason=producer_cancel contact=%u\n",
 						runtime->handle.record->ContactId());
 				if (!cancelledAtCutoff && !runtime->cancelled &&
@@ -10782,7 +11874,7 @@ namespace Inkeys::Drawing::Draw3
 						else
 						{
 							++failed;
-							std::fprintf(stderr,
+							DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 								"[Draw3.AutoSave] action=fatal_cpu_seal result=failed reason=%s contact=%u generation=%llu\n",
 								commitReason, runtime->handle.record->ContactId(),
 								static_cast<unsigned long long>(runtime->handle.generation));
@@ -10791,18 +11883,18 @@ namespace Inkeys::Drawing::Draw3
 					catch (const std::bad_alloc&)
 					{
 						++failed;
-						std::fputs("[Draw3.AutoSave] action=fatal_cpu_seal result=failed reason=allocation\n", stderr);
+						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=fatal_cpu_seal result=failed reason=allocation\n");
 					}
 					catch (const std::exception& error)
 					{
 						++failed;
-						std::fprintf(stderr,
+						DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 							"[Draw3.AutoSave] action=fatal_cpu_seal result=failed reason=exception detail=%s\n",
 							 error.what());
 					}
 				}
 			}
-			std::fprintf(stderr,
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 				"[Draw3.AutoSave] action=fatal_cpu_seal reason=%s eligible=%zu committed=%zu failed=%zu durable=pending_worker\n",
 				reason, eligible, committed, failed);
 			captureExitAutoSave(true, reason);
@@ -10953,6 +12045,14 @@ namespace Inkeys::Drawing::Draw3
 				if (found == oldRuntimeByPage.end()) continue;
 				CanvasPageRuntimeState& source = pageRuntimeStates[found->second];
 				CanvasPageRuntimeState& destination = rebuilt->pageRuntimeStates[index];
+				if (source.clearRedoContinuation || source.history.LastRedoItem())
+				{
+					// 拓扑重排的 visible 导出会丢隐藏候选，仅前向分支页沿 GUID 保留完整值。
+					const InkPage* original = document_->PageAt(found->second);
+					if (!original || !rebuilt->document->ReplacePage(index, *original)) return false;
+					destination = source;
+					continue;
+				}
 				destination.undoFloor = (std::min)(
 					source.undoFloor, destination.history.Items().size());
 				destination.intervalOrdinal = source.intervalOrdinal;
@@ -10990,7 +12090,7 @@ namespace Inkeys::Drawing::Draw3
 			};
 			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
 			{
-				std::cout << "[Undo] result=noop reason=no_canvas" << std::endl;
+				DiagnosticOutput::Line() << "[Undo] result=noop reason=no_canvas" << std::endl;
 				return false;
 			}
 			InkPage* page = document_->PageAt(currentPageIndex_);
@@ -11000,14 +12100,14 @@ namespace Inkeys::Drawing::Draw3
 			const std::optional<RenderItemId> itemId = runtime.history.LastVisibleItem();
 			if (!page || !canvas || !itemId || itemId->index < runtime.undoFloor)
 			{
-				std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+				DiagnosticOutput::Line() << "[Undo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=empty" << std::endl;
 				return false;
 			}
 			const RenderItemState* item = runtime.history.Find(*itemId);
 			if (!item || itemId->index >= runtime.beforeStates.size())
 			{
-				std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+				DiagnosticOutput::Line() << "[Undo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=history_mismatch" << std::endl;
 				return false;
 			}
@@ -11033,7 +12133,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!runtime.history.UndoLastVisible(*itemId))
 				{
 					requestAuthoritativeRecovery();
-					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+					DiagnosticOutput::Line() << "[Undo] page=" << (currentPageIndex_ + 1) <<
 						" result=failed reason=visibility" << std::endl;
 					return false;
 				}
@@ -11092,7 +12192,7 @@ namespace Inkeys::Drawing::Draw3
 					requestAuthoritativeRecovery();
 					UnionRectInPlace(frameDirty, restored.dirty);
 					UnionRectInPlace(frameDirty, rollback.dirty);
-					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+					DiagnosticOutput::Line() << "[Undo] page=" << (currentPageIndex_ + 1) <<
 						" item=" << itemId->index <<
 						" result=failed reason=restore rollback=" <<
 						CompositionRestorePathName(rollback.path) << std::endl;
@@ -11105,7 +12205,7 @@ namespace Inkeys::Drawing::Draw3
 					requestAuthoritativeRecovery();
 					UnionRectInPlace(frameDirty, restored.dirty);
 					UnionRectInPlace(frameDirty, rollback.dirty);
-					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+					DiagnosticOutput::Line() << "[Undo] page=" << (currentPageIndex_ + 1) <<
 						" result=failed reason=visibility rollback=" <<
 						CompositionRestorePathName(rollback.path) << std::endl;
 					return false;
@@ -11127,11 +12227,12 @@ namespace Inkeys::Drawing::Draw3
 				metricsState_->InvalidateLiveRasters();
 				metricsState_->renderAttempt = true;
 			}
-			std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+			DiagnosticOutput::Line undoDiagnostic;
+			undoDiagnostic << "[Undo] page=" << (currentPageIndex_ + 1) <<
 				" item=" << itemId->index << " path=" << path <<
 				" hot_remaining=" << hotRemaining;
-			if (historyEnd) std::cout << " history_end=true";
-			std::cout << std::endl;
+			if (historyEnd) undoDiagnostic << " history_end=true";
+			undoDiagnostic << std::endl;
 			return true;
 		};
 
@@ -11145,7 +12246,7 @@ namespace Inkeys::Drawing::Draw3
 			};
 			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
 			{
-				std::cout << "[Redo] result=noop reason=no_canvas" << std::endl;
+				DiagnosticOutput::Line() << "[Redo] result=noop reason=no_canvas" << std::endl;
 				return false;
 			}
 			InkPage* page = document_->PageAt(currentPageIndex_);
@@ -11155,7 +12256,7 @@ namespace Inkeys::Drawing::Draw3
 			const std::optional<RenderItemId> itemId = runtime.history.LastRedoItem();
 			if (!page || !canvas || !itemId)
 			{
-				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=empty" << std::endl;
 				return false;
 			}
@@ -11166,7 +12267,7 @@ namespace Inkeys::Drawing::Draw3
 				itemId->index >= runtime.afterStates.size() ||
 				item->strokeIndex >= strokes.size())
 			{
-				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=history_mismatch" << std::endl;
 				return false;
 			}
@@ -11175,7 +12276,7 @@ namespace Inkeys::Drawing::Draw3
 			if (runtime.rasterState != beforeState)
 			{
 				requestAuthoritativeRecovery();
-				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" item=" << itemId->index <<
 					" result=failed reason=raster_state" << std::endl;
 				return false;
@@ -11223,7 +12324,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					requestAuthoritativeRecovery();
 					UnionRectInPlace(frameDirty, dirty);
-					std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 						" item=" << itemId->index <<
 						" result=failed reason=base_restore" << std::endl;
 					return false;
@@ -11247,7 +12348,7 @@ namespace Inkeys::Drawing::Draw3
 				renderer_.ClearOperatorLayer(renderer_.layerL1);
 				renderer_.ClearOperatorLayer(renderer_.layerL0);
 				UnionRectInPlace(frameDirty, dirty);
-				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" item=" << itemId->index << " base=" << basePath <<
 					" result=failed reason=raster" << std::endl;
 				return false;
@@ -11292,7 +12393,7 @@ namespace Inkeys::Drawing::Draw3
 				renderer_.ClearOperatorLayer(renderer_.layerL0);
 				const CompositionRestorePath rollbackPath = rollbackRedoPixels();
 				UnionRectInPlace(frameDirty, dirty);
-				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" item=" << itemId->index << " base=" << basePath <<
 					" result=failed reason=resolve rollback=" <<
 					CompositionRestorePathName(rollbackPath) << std::endl;
@@ -11308,7 +12409,7 @@ namespace Inkeys::Drawing::Draw3
 				renderer_.ClearOperatorLayer(renderer_.layerL0);
 				const CompositionRestorePath rollbackPath = rollbackRedoPixels();
 				UnionRectInPlace(frameDirty, dirty);
-				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" item=" << itemId->index << " base=" << basePath <<
 					" result=failed reason=visibility rollback=" <<
 					CompositionRestorePathName(rollbackPath) << std::endl;
@@ -11336,7 +12437,7 @@ namespace Inkeys::Drawing::Draw3
 				metricsState_->InvalidateLiveRasters();
 				metricsState_->renderAttempt = true;
 			}
-			std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+			DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 				" item=" << itemId->index << " base=" << basePath <<
 				" path=direct_draw hot_rearmed=" << (hotRearmed ? "true" : "false") <<
 				" redo_remaining=" << runtime.history.RedoDepth() << std::endl;
@@ -11345,7 +12446,8 @@ namespace Inkeys::Drawing::Draw3
 
 			auto clearCurrentPage = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot,
-			bool& forceFullPresent, int width, int height) -> bool
+			bool& forceFullPresent, int width, int height,
+			std::shared_ptr<ClearRedoContinuation> continuation = {}) -> bool
 		{
 			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size() ||
 				!currentPageHasContent())
@@ -11355,17 +12457,30 @@ namespace Inkeys::Drawing::Draw3
 				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 			if (!canvas) return false;
 
-			// Clear 截断当前页全部文档与历史；viewport 留在 Canvas 对象中。
+			// 普通 Clear 截断当前页历史；Redo Clear 可安装已准备好的空态前向分支，viewport 保持。
 			const std::uint32_t previousInterval =
 				pageRuntimeStates[currentPageIndex_].intervalOrdinal;
 			if (activeWorkspace == Bridge::Workspace::Presentation &&
 				previousInterval == UINT32_MAX) return false;
-			canvas->ClearStrokes();
-			CanvasPageRuntimeState freshRuntime;
-			freshRuntime.rasterState = allocateRasterStateToken();
-			if (activeWorkspace == Bridge::Workspace::Presentation)
-				freshRuntime.intervalOrdinal = previousInterval + 1;
-			pageRuntimeStates[currentPageIndex_] = std::move(freshRuntime);
+			if (continuation)
+			{
+				InkCanvas* nextCanvas = continuation->page.FindCanvas(kDefaultDeviceKey);
+				if (!nextCanvas || !nextCanvas->SetViewport(canvas->Viewport())
+					|| !document_->ReplacePage(currentPageIndex_, std::move(continuation->page))) return false;
+				continuation->runtime.intervalOrdinal = activeWorkspace == Bridge::Workspace::Presentation
+					? previousInterval + 1 : 0;
+				continuation->runtime.previousClearUndoAvailable = true;
+				pageRuntimeStates[currentPageIndex_] = std::move(continuation->runtime);
+			}
+			else
+			{
+				canvas->ClearStrokes();
+				CanvasPageRuntimeState freshRuntime;
+				freshRuntime.rasterState = allocateRasterStateToken();
+				if (activeWorkspace == Bridge::Workspace::Presentation)
+					freshRuntime.intervalOrdinal = previousInterval + 1;
+				pageRuntimeStates[currentPageIndex_] = std::move(freshRuntime);
+			}
 
 			historyGpuCache.DiscardHotPreimages();
 			historyGpuCache.DiscardCompositionCache();
@@ -11404,14 +12519,19 @@ namespace Inkeys::Drawing::Draw3
 			const InkPage* current = document_->PageAt(currentPageIndex_);
 			if (!current || current->PageGuid().Bytes() != snapshot.pageGuid.Bytes())
 				return false;
+			auto continuation = CaptureClearRedoContinuation(*current, pageRuntimeStates[currentPageIndex_]);
+			if (!continuation) return false;
 			auto materialized = materializeCanvasPage(snapshot, false);
-			if (!materialized || !document_->ReplacePage(
-				currentPageIndex_, std::move(materialized->first))) return false;
+			const InkCanvas* currentCanvas = current->FindCanvas(kDefaultDeviceKey);
+			InkCanvas* restoredCanvas = materialized ? materialized->first.FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (!currentCanvas || !restoredCanvas || !restoredCanvas->SetViewport(currentCanvas->Viewport())
+				|| !document_->ReplacePage(currentPageIndex_, std::move(materialized->first))) return false;
 			pageRuntimeStates[currentPageIndex_] = std::move(materialized->second);
 			// 恢复画布成为新的历史根；后续保存同步截断更早 Clear 区间。
 			pageRuntimeStates[currentPageIndex_].intervalOrdinal = 0;
 			pageRuntimeStates[currentPageIndex_].previousClearUndoAvailable = false;
 			pageRuntimeStates[currentPageIndex_].clearRedoAvailable = true;
+			pageRuntimeStates[currentPageIndex_].clearRedoContinuation = std::move(continuation);
 			restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 				forceFullPresent, width, height);
 			return true;
@@ -11430,10 +12550,33 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
+				struct ShortcutCompletionGuard
+				{
+					DrawingControllerRuntimeObserver& observer;
+					std::uint64_t id;
+					Shortcuts::Result result = Shortcuts::Result::Failed;
+					~ShortcutCompletionGuard() noexcept
+					{
+						if (id && observer.shortcutCompleted)
+							observer.shortcutCompleted(observer.context, id, result);
+					}
+				} shortcutResult{ observer_, command.shortcut ? command.shortcut->requestId : 0 };
+				if (command.shortcut)
+				{
+					refreshShortcutContext();
+					shortcutResult.result = observer_.shortcutCommandAllowed && shortcutContext.available
+						? observer_.shortcutCommandAllowed(observer_.context, *command.shortcut, shortcutContext)
+						: Shortcuts::Result::Stale;
+					if (shortcutResult.result != Shortcuts::Result::Applied) continue;
+					shortcutResult.result = Shortcuts::Result::Failed;
+				}
 				if (metricsState_) metricsState_->frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::Command);
 				if (!CanvasCommandAllowedAfterExitBarrier(currentLoadRetry,
 					command.type))
+				{
+					shortcutResult.result = Shortcuts::Result::Blocked;
 					continue; // 首次最终保存 ACK 后不再接受会写状态或再次保存的命令。
+				}
 				if (command.type == CanvasCommandType::DesktopPersistenceCompleted)
 				{
 					if (!command.desktopPersistenceCompletion || !desktopClearRecovery ||
@@ -11453,7 +12596,14 @@ namespace Inkeys::Drawing::Draw3
 						else desktopClearRecovery->diskSaveRequested = false;
 						continue;
 					}
+					const bool wasPending = desktopClearRecovery->loadPending;
 					desktopClearRecovery->loadPending = false;
+					const InkPage* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+					const CanvasPageRuntimeState* runtime = currentPageIndex_ < pageRuntimeStates.size()
+						? &pageRuntimeStates[currentPageIndex_] : nullptr;
+					// 新笔迹、换页或已取消的请求不能被迟到的磁盘恢复覆盖。
+					if (!CanInstallDesktopClearRecovery(*desktopClearRecovery,
+						wasPending, activeWorkspace, page, runtime)) continue;
 					if (completion.status == DesktopPersistenceStatus::Loaded &&
 						completion.loadedSnapshot &&
 						completion.loadedSnapshot->canvases.size() == 1 &&
@@ -11568,16 +12718,20 @@ namespace Inkeys::Drawing::Draw3
 								if (!page || page->PageGuid().Bytes() != completion.pageGuid->Bytes())
 									continue;
 								CanvasPageRuntimeState& pending = (*runtimes)[index];
-								if (!pending.intervalLoadPending || pending.intervalOrdinal == 0 ||
-									completion.intervalOrdinal + 1 != pending.intervalOrdinal)
+								if (!CanInstallPreviousClearInterval(pending, completion.intervalOrdinal))
 									return std::nullopt;
+								auto continuation = CaptureClearRedoContinuation(*page, pending);
+								if (!continuation) return std::nullopt;
 								auto materialized = materializeCanvasPage(*source, false);
-								if (!materialized || !targetDocument->ReplacePage(
-									index, std::move(materialized->first))) return std::nullopt;
+								const InkCanvas* currentCanvas = page->FindCanvas(kDefaultDeviceKey);
+								InkCanvas* restoredCanvas = materialized ? materialized->first.FindCanvas(kDefaultDeviceKey) : nullptr;
+								if (!currentCanvas || !restoredCanvas || !restoredCanvas->SetViewport(currentCanvas->Viewport())
+									|| !targetDocument->ReplacePage(index, std::move(materialized->first))) return std::nullopt;
 								(*runtimes)[index] = std::move(materialized->second);
 								(*runtimes)[index].intervalOrdinal = 0;
 								(*runtimes)[index].previousClearUndoAvailable = false;
 								(*runtimes)[index].clearRedoAvailable = true;
+								(*runtimes)[index].clearRedoContinuation = std::move(continuation);
 								return index;
 							}
 							return std::nullopt;
@@ -11654,7 +12808,7 @@ namespace Inkeys::Drawing::Draw3
 							else
 							{
 								currentLoadRetry.OnTerminalFailure();
-								std::fprintf(stderr,
+								DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 									"[Draw3.Presentation] action=current_load result=manual_required status=%u generation=%llu\n",
 									static_cast<unsigned>(completion.status),
 									static_cast<unsigned long long>(activePresentationSlotGeneration));
@@ -11675,7 +12829,7 @@ namespace Inkeys::Drawing::Draw3
 								// 物化或目标复制失败时，不将空槽发布成已恢复。
 								activePresentationPersistenceInitialized = false;
 								currentLoadRetry.OnTerminalFailure();
-								std::fprintf(stderr,
+								DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 									"[Draw3.Presentation] action=current_load result=manual_required status=install_failed generation=%llu\n",
 									static_cast<unsigned long long>(activePresentationSlotGeneration));
 								continue;
@@ -11762,7 +12916,7 @@ namespace Inkeys::Drawing::Draw3
 							StablePresentationTopologyChanged(*activePresentationTarget, target);
 						if (stableTopologyChange && !RebindStablePresentationTopology(target))
 						{
-							std::fputs("[Draw3.Presentation] action=rebind result=failed\n", stderr);
+							DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=rebind result=failed\n");
 							continue;
 						}
 						activePresentationTarget = std::move(cpuSwitch.preparedTarget);
@@ -11771,8 +12925,7 @@ namespace Inkeys::Drawing::Draw3
 						Bridge::PresentationDocumentPageCount(target) ||
 						document_->Pages().size() != Bridge::PresentationDocumentPageCount(target))
 					{
-						std::fputs("[Draw3.Presentation] action=switch result=isolated reason=page_count\n",
-							stderr);
+						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=switch result=isolated reason=page_count\n");
 						continue;
 					}
 					currentPageIndex_ = target.pageIndex;
@@ -11848,18 +13001,45 @@ namespace Inkeys::Drawing::Draw3
 					activePresentationLoadPending || presentationLoadUnresolved(),
 					command.type == CanvasCommandType::PrepareExitAutoSave))
 				{
+					shortcutResult.result = Shortcuts::Result::Blocked;
 					// 恢复未决时，破坏性画布命令与 physical contact 使用同一输入闸门。
 					reportCommand(command.type);
+					continue;
+				}
+				if (command.type == CanvasCommandType::ShortcutFence)
+				{
+					// 入队旧 Down 已由 admission 屏障收尾；此处不再 Clear，也不改历史恢复点。
+					shortcutResult.result = command.shortcut
+						? Shortcuts::ResolveFence(*command.shortcut, shortcutContext) : Shortcuts::Result::Stale;
 					continue;
 				}
 				// 页面、撤回/重做和键盘平移都以命令时刻的固定视口为起点。
 				interruptNavigationForPenOrMouse("canvas-command");
 				const bool redoClear = command.type == CanvasCommandType::Redo &&
 					currentPageIndex_ < pageRuntimeStates.size() &&
-					pageRuntimeStates[currentPageIndex_].clearRedoAvailable;
+					pageRuntimeStates[currentPageIndex_].clearRedoAvailable &&
+					!pageRuntimeStates[currentPageIndex_].history.LastRedoItem();
 				// 重做直接复用唯一Clear事务，包括快照、当前页边界与保存请求。
 				if (command.type == CanvasCommandType::Clear || redoClear)
 				{
+					if (command.shortcut && !currentPageHasContent())
+					{
+						shortcutResult.result = Shortcuts::Result::NoContent;
+						reportCommand(command.type);
+						continue;
+					}
+					std::shared_ptr<ClearRedoContinuation> continuation;
+					if (redoClear && pageRuntimeStates[currentPageIndex_].clearRedoContinuation)
+					{
+						const auto& saved = *pageRuntimeStates[currentPageIndex_].clearRedoContinuation;
+						const InkPage* current = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+						if (!current || current->PageGuid() != saved.page.PageGuid()
+							|| !(continuation = CaptureClearRedoContinuation(saved.page, saved.runtime)))
+						{
+							reportCommand(command.type);
+							continue;
+						}
+					}
 					std::optional<draw3::uink::Draw3UInkCanvasSnapshot> preClear;
 					if (document_ && currentPageIndex_ < pageRuntimeStates.size())
 						if (const InkPage* page = document_->PageAt(currentPageIndex_))
@@ -11870,7 +13050,7 @@ namespace Inkeys::Drawing::Draw3
 									? activePresentationTarget->slideId : std::nullopt);
 					if (currentPageHasContent() && !preClear)
 					{
-						std::fputs("[Draw3.Clear] result=failed reason=snapshot\n", stderr);
+						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Clear] result=failed reason=snapshot\n");
 						reportCommand(command.type);
 						continue;
 					}
@@ -11894,13 +13074,14 @@ namespace Inkeys::Drawing::Draw3
 						desktopDiskRequested = captureDesktopAutoSave(
 							DesktopAutoSaveTrigger::Clear, &desktopFileGuid);
 					const bool cleared = clearCurrentPage(frameDirty, particleSnapshot,
-						forceFullPresent, width, height);
+						forceFullPresent, width, height, std::move(continuation));
 					if (cleared && activeWorkspace == Bridge::Workspace::Desktop)
 					{
 						// 第二次有效 Clear 会替换更老的恢复点。
+						const InkGuid recoveryPageGuid(preClear->pageGuid.Bytes());
 						desktopClearRecovery = DesktopClearRecovery{
 							std::move(*preClear), desktopFileGuid,
-							desktopDiskRequested, false, false };
+							desktopDiskRequested, false, false, recoveryPageGuid };
 						desktopAutoSavePolicy.CompleteDesktopClear();
 					}
 					else if (cleared && (activeWorkspace == Bridge::Workspace::Presentation ||
@@ -11909,6 +13090,9 @@ namespace Inkeys::Drawing::Draw3
 						pageRuntimeStates[currentPageIndex_].boundaryFallback =
 							std::move(*preClear);
 					(void)boundaryQueued;
+					// 恢复点建立后再发布真实可用性，避免 Clear 内部空态提前报告不能 Undo。
+					if (cleared) publishCurrentPageContent();
+					shortcutResult.result = cleared ? Shortcuts::Result::Applied : Shortcuts::Result::Failed;
 					reportCommand(command.type);
 					continue;
 				}
@@ -11930,31 +13114,31 @@ namespace Inkeys::Drawing::Draw3
 					{
 						InkPage* page = document_->PageAt(currentPageIndex_);
 						CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
-						if (activeWorkspace == Bridge::Workspace::Desktop &&
-							desktopClearRecovery && page)
+						const auto visible = runtime.history.LastVisibleItem();
+						const bool atFloor = !visible || visible->index < runtime.undoFloor;
+						if (atFloor && activeWorkspace == Bridge::Workspace::Desktop && desktopClearRecovery &&
+							DesktopRecoveryBelongsToPage(*desktopClearRecovery, page))
 						{
 							if (desktopClearRecovery->canvas &&
 								page->PageGuid().Bytes() ==
 									desktopClearRecovery->canvas->pageGuid.Bytes())
 							{
-								auto recovery = std::move(*desktopClearRecovery->canvas);
-								auto locator = desktopClearRecovery->fileGuid;
-								desktopClearRecovery.reset();
-								restoredBoundary = restoreCurrentPageFromSnapshot(recovery,
+								restoredBoundary = restoreCurrentPageFromSnapshot(*desktopClearRecovery->canvas,
 									particleSnapshot, frameDirty, forceFullPresent, width, height);
-								if (!restoredBoundary)
-									desktopClearRecovery = DesktopClearRecovery{
-										std::move(recovery), locator, false, false, false };
+								if (restoredBoundary) desktopClearRecovery.reset();
 							}
 							else if (desktopClearRecovery->diskReady &&
 								desktopClearRecovery->fileGuid &&
 								!desktopClearRecovery->loadPending &&
 								observer_.desktopLoadRequested)
+							{
 								desktopClearRecovery->loadPending =
-									observer_.desktopLoadRequested(observer_.context,
-										*desktopClearRecovery->fileGuid);
+									observer_.desktopLoadRequested(observer_.context, *desktopClearRecovery->fileGuid);
+								if (desktopClearRecovery->loadPending)
+									desktopClearRecovery->loadHistoryRevision = runtime.history.Revision();
+							}
 						}
-						else if (runtime.previousClearUndoAvailable &&
+						else if (atFloor && runtime.previousClearUndoAvailable &&
 							(activeWorkspace == Bridge::Workspace::Presentation ||
 							activeWorkspace == Bridge::Workspace::Whiteboard) &&
 							page && (runtime.intervalOrdinal != 0 || runtime.boundaryFallback) &&
@@ -11962,9 +13146,7 @@ namespace Inkeys::Drawing::Draw3
 						{
 							if (runtime.boundaryFallback)
 							{
-								auto fallback = std::move(*runtime.boundaryFallback);
-								runtime.boundaryFallback.reset();
-								restoredBoundary = restoreCurrentPageFromSnapshot(fallback,
+								restoredBoundary = restoreCurrentPageFromSnapshot(*runtime.boundaryFallback,
 									particleSnapshot, frameDirty, forceFullPresent, width, height);
 							}
 							else if (activePresentationTarget &&
@@ -11985,8 +13167,7 @@ namespace Inkeys::Drawing::Draw3
 					}
 					if (changed)
 					{
-						// 继续撤回恢复画布后，Redo 应沿笔迹历史前进，不能再重放 Clear。
-						pageRuntimeStates[currentPageIndex_].clearRedoAvailable = false;
+						// 恢复画布先沿 Stroke redo 前进；栈耗尽后仍保留原 Clear 和后继分支。
 						markPresentationMutation();
 						publishCurrentPageContent();
 					}
@@ -11999,6 +13180,8 @@ namespace Inkeys::Drawing::Draw3
 						}
 						publishCurrentPageContent();
 					}
+					shortcutResult.result = changed || restoredBoundary ? Shortcuts::Result::Applied
+						: Shortcuts::Result::NoContent;
 					reportCommand(command.type);
 					continue;
 				}
@@ -12006,11 +13189,13 @@ namespace Inkeys::Drawing::Draw3
 				{
 					renderer_.InvalidateTrustedL2Snapshot();
 					trustedSnapshotSignatureValid = false;
-					if (redoCurrentPage(frameDirty))
+					const bool redone = redoCurrentPage(frameDirty);
+					if (redone)
 					{
 						markPresentationMutation();
 						publishCurrentPageContent();
 					}
+					shortcutResult.result = redone ? Shortcuts::Result::Applied : Shortcuts::Result::NoContent;
 					reportCommand(command.type);
 					continue;
 				}
@@ -12067,7 +13252,7 @@ namespace Inkeys::Drawing::Draw3
 						const std::optional<size_t> appended = appendBlankPageWithRuntime();
 						if (!appended)
 						{
-							std::cout << "[Page] key=0 result=failed reason=create current=" <<
+							DiagnosticOutput::Line() << "[Page] key=0 result=failed reason=create current=" <<
 								(currentPageIndex_ + 1) << " count=" <<
 								document_->Pages().size() << std::endl;
 							reportCommand(command.type);
@@ -12084,7 +13269,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else if (command.type == CanvasCommandType::PreviousPage)
 				{
-					std::cout << "[Page] key=8 result=noop reason=first current=1 count=" <<
+					DiagnosticOutput::Line() << "[Page] key=8 result=noop reason=first current=1 count=" <<
 						pageCount << std::endl;
 					reportCommand(command.type);
 					continue;
@@ -12096,7 +13281,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						if (!appendBlankPageWithRuntime())
 						{
-							std::cout << "[Page] key=page result=failed reason=create target=" <<
+							DiagnosticOutput::Line() << "[Page] key=page result=failed reason=create target=" <<
 								(command.pageIndex + 1) << " count=" <<
 								document_->Pages().size() << std::endl;
 							reportCommand(command.type);
@@ -12133,7 +13318,7 @@ namespace Inkeys::Drawing::Draw3
 					viewportRefreshPending = true;
 					viewportRefreshClearsTransient = false;
 				}
-				std::cout << "[Page] key=" << key << " action=" << action <<
+				DiagnosticOutput::Line() << "[Page] key=" << key << " action=" << action <<
 					" current=" << (currentPageIndex_ + 1) << " count=" <<
 					document_->Pages().size() << " path=" <<
 					CompositionRestorePathName(restored.path) << std::endl;
@@ -12246,7 +13431,7 @@ namespace Inkeys::Drawing::Draw3
 				historyGpuCache.Release();
 				if (!presentation_.RecoverFromRuntimeFailure())
 				{
-					std::cout << "Failed to recover Draw3 graphics after HRESULT 0x" <<
+					DiagnosticOutput::Line() << "Failed to recover Draw3 graphics after HRESULT 0x" <<
 						std::hex << static_cast<unsigned long>(failure) << std::dec << std::endl;
 					// 绘制线程仍持有已完成文档；先交给原保存 worker，再退出失效设备。
 					captureGraphicsFatalExit("presenter_recovery");
@@ -12269,7 +13454,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!historyGpuCache.Initialize(
 					renderer_, appliedUndoPolicy, appliedCompositionPolicy))
 				{
-					std::cout << "Failed to rebuild Draw3 GPU history cache after device recovery." << std::endl;
+					DiagnosticOutput::Line() << "Failed to rebuild Draw3 GPU history cache after device recovery." << std::endl;
 					captureGraphicsFatalExit("history_cache_rebuild");
 					window_.RequestExit();
 					break;
@@ -12327,7 +13512,7 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(viewportRecoveryDirty, fullCanvas);
 				renderer_.WarmUpLaserShaders();
 				renderer_.WarmUpShapeShaders();
-				std::cout << "Recovered Draw3 graphics with mode " <<
+				DiagnosticOutput::Line() << "Recovered Draw3 graphics with mode " <<
 					TransparentPresentModeName(presentation_.ActiveMode()) << "." << std::endl;
 			}
 			if (!laserIncrementalEnsureAttempted &&
@@ -12391,7 +13576,7 @@ namespace Inkeys::Drawing::Draw3
 					viewportRefreshPending = true;
 					viewportRefreshClearsTransient = false;
 				}
-				std::cout << "[InkHistory] resize generation=" <<
+				DiagnosticOutput::Line() << "[InkHistory] resize generation=" <<
 					rasterPipelineGeneration << " path=" <<
 					CompositionRestorePathName(resizedPage.path) << std::endl;
 				const LiveRasterSubmission rebuilt = RebuildActiveLayers(active, renderer_,
@@ -13040,6 +14225,7 @@ namespace Inkeys::Drawing::Draw3
 						BeginEndpointAdmission(runtime->stroke, rawEndpoint);
 					}
 					runtime->stroke.modelScratch.clear();
+					RecordPenTailModelBoundary(runtime->stroke, frameRealTime);
 					AppendEndpointBoundedModeledPoints(runtime->stroke,
 						runtime->stroke.modelScratch, -1.0f,
 						runtime->stroke.lastMovementInputTime, true);
@@ -13066,6 +14252,7 @@ namespace Inkeys::Drawing::Draw3
 					stationaryInput, runtime->stroke.modelScratch); }); status.ok())
 				{
 					runtime->lastModelInputTime = frameInputTime;
+					RecordPenTailModelBoundary(runtime->stroke, frameRealTime);
 					if (runtime->stroke.endpointAdmission.recovering)
 						AppendRecoveryModeledPoints(runtime->stroke, runtime->stroke.modelScratch,
 							rawEndpoint, -1.0f);
@@ -13080,7 +14267,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					runtime->stationaryModelAdvanceBlocked = true;
 					// 同一次停笔不再逐帧重试失败输入；下一份成功真实输入会解除锁存。
-					std::cout << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
 				}
 			}
 			const double inputLaserHold = laserHoldDurationSeconds_.load(std::memory_order_acquire);
@@ -13689,7 +14876,7 @@ namespace Inkeys::Drawing::Draw3
 											viewportVisibleClear, false);
 									viewportRefreshPending = true;
 									viewportRefreshClearsTransient = false;
-									std::cout << "[InkHistory] stored stroke raster failed page=" <<
+									DiagnosticOutput::Line() << "[InkHistory] stored stroke raster failed page=" <<
 										(currentPageIndex_ + 1) << " item=" << strokeIndex <<
 										std::endl;
 								}
@@ -13698,7 +14885,7 @@ namespace Inkeys::Drawing::Draw3
 						else
 						{
 							if (metricsState_) metricsState_->Invalidate(MetricKey(runtime->handle), ContentMetricInvalidationReason::ContentSuperseded);
-							std::cout << "Failed to append completed stroke to the current ink canvas."
+							DiagnosticOutput::Line() << "Failed to append completed stroke to the current ink canvas."
 								<< std::endl;
 						}
 					}
@@ -14002,7 +15189,7 @@ namespace Inkeys::Drawing::Draw3
 				if (consecutiveRasterFailures == 1 ||
 					nowTick - lastRasterFailureLogTick >= 1000)
 				{
-					std::fprintf(stderr,
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 						"[Draw3.Raster] submission failed; attempts=%u device=0x%08X\n",
 						consecutiveRasterFailures, static_cast<unsigned>(deviceReason));
 					lastRasterFailureLogTick = nowTick;
@@ -14073,14 +15260,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (metrics_ && !hasPhysicalContactAfterFrame)
 				metrics_->EndActiveFrameSequence();
-			const bool eraserIdle = hasPhysicalContactAfterFrame && !navigationActive &&
-				std::all_of(active.begin(),active.end(),[&](const RuntimeStroke* r)
-				{
-					return r && (r->ended || r->awaitingReconnect ||
-						(r->stroke.widthMode==StrokeWidthMode::SpeedEraser &&
-						 !r->speedEraserOc.NeedsAnimation(mouseVisualSeconds) &&
-						 r->speedEraserOc.SecondsSinceMovement(mouseVisualSeconds)>=r->speedEraserOc.Configuration().idleStartSeconds));
-				});
+			const bool eraserIdle = EraserContactsIdle(active, navigationActive, mouseVisualSeconds);
 			if (rasterSubmissionFailed && (active.empty() || eraserIdle))
 			{
 				// 错误帧无 Present；idle 时等待真实唤醒或有限重试间隔，避免无限满速循环。
@@ -14150,11 +15330,10 @@ namespace Inkeys::Drawing::Draw3
 					: QpcDeltaSeconds(nearestDeadlineQpc,
 						waitStartQpc.QuadPart, qpcFrequency) * 1000.0;
 				if (metrics_) metrics_->BeginIdle(GetQpcTimeMilliseconds());
-				if(eraserIdle && nearestDeadlineQpc==(std::numeric_limits<int64_t>::max)())
-				{
-					// 现有API的0是轮询；收敛后只等唤醒，不因按住而重新请求帧。
-					while(!window_.ExitRequested() && !input_.WaitForWake(frameWakeGeneration,1000.0)) {}
-				}
+				if (eraserIdle)
+					WaitForEraserIdle(input_, active, frameWakeGeneration, timeoutMilliseconds,
+						nearestDeadlineQpc != (std::numeric_limits<int64_t>::max)(),
+						[&] { return window_.ExitRequested(); });
 				else input_.WaitForWake(frameWakeGeneration, timeoutMilliseconds);
 				if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 			}
@@ -14163,14 +15342,14 @@ namespace Inkeys::Drawing::Draw3
 		catch (const std::bad_alloc&)
 		{
 			if (metricsState_) metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
-			std::fputs("[Draw3.AutoSave] action=run_exception result=not_queued reason=allocation\n", stderr);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=run_exception result=not_queued reason=allocation\n");
 			throw;
 		}
 		catch (const std::exception& error)
 		{
 			if (metricsState_) metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
 			// Run 的局部 history 仍存活时尽力封口；随后原异常继续交 Host 受控退出。
-			std::fprintf(stderr, "[Draw3.AutoSave] action=run_exception reason=%s\n", error.what());
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=run_exception reason=%s\n", error.what());
 			// CPU 追加中途抛错可能留下半事务；数量不齐时不导出可疑 history。
 			const bool activeHistoryConsistent = document_ &&
 				pageRuntimeStates.size() == document_->Pages().size() &&
@@ -14179,13 +15358,13 @@ namespace Inkeys::Drawing::Draw3
 					{ return page.history.Items().size() == page.beforeStates.size() &&
 						page.beforeStates.size() == page.afterStates.size(); });
 			if (!activeHistoryConsistent)
-				std::fputs("[Draw3.AutoSave] action=run_exception result=not_queued reason=history_state\n", stderr);
+				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=run_exception result=not_queued reason=history_state\n");
 			if (!fatalCaptureAttempted && activeHistoryConsistent)
 			{
 				try { captureGraphicsFatalExit("run_exception"); }
 				catch (const std::exception& captureError)
 				{
-					std::fprintf(stderr,
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 						"[Draw3.AutoSave] action=run_exception result=not_queued detail=%s\n",
 						captureError.what());
 				}

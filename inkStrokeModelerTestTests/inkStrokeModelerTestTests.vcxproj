@@ -105,6 +105,9 @@
   <ItemGroup>
 	<ClCompile Include="canvas_navigation_tests.cpp" />
 	<ClCompile Include="contact_input_tests.cpp" />
+	<ClCompile Include="modeler_baseline_tests.cpp" />
+    <ClCompile Include="modeler_tail_tests.cpp" />
+    <ClCompile Include="modeler_adaptive_tail_tests.cpp" />
 	<ClCompile Include="thin_stroke_gpu_tests.cpp" />
 	<ClCompile Include="desktop_autosave_tests.cpp" />
 	<ClCompile Include="presentation_autosave_tests.cpp" />
@@ -115,6 +118,7 @@
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
 	<ClCompile Include="uink_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" Link="draw3\Draw3.DiagnosticOutput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" Link="draw3\Draw3.AutoSave.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm" Link="draw3\Draw3.AutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -213,6 +217,7 @@
       <Project>{a49d68f7-0a7e-4160-9c96-6b59b0c9aa85}</Project>
     </ProjectReference>
   </ItemGroup>
+  <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

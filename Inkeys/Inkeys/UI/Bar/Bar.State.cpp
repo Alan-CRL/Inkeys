@@ -6,12 +6,14 @@ module;
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
 #include "Bar.BottomDock.h"
+#include "Bar.MainLayoutPolicy.h"
 #include "Bar.I18nFormat.h"
 
 module Inkeys.UI.Bar;
 import :State;
 
 import :Main;
+import Inkeys.Other.Config;
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {
@@ -29,10 +31,13 @@ void BarStateClass::PositionUpdate(double tarZoom)
 		const double x = barUISet.superellipseMap[
 			BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
 		const double windowWidth = static_cast<double>(barUISet.barWindow.w);
-		widgetPosition.mainBar =
-			Inkeys::UI::Bar::ResolveBarBottomDockPositionMainBarSide(
-				presented.centerMode, x, windowWidth,
-				widgetPosition.mainBar);
+		if (Inkeys::UI::Bar::NormalizeBarExpandDirectionAdjustment(
+			Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load())
+			== Inkeys::UI::Bar::BarExpandDirectionAdjustment::Centerline)
+			widgetPosition.mainBar =
+				Inkeys::UI::Bar::ResolveBarBottomDockPositionMainBarSide(
+					presented.centerMode, x, windowWidth,
+					widgetPosition.mainBar);
 		return;
 	}
 
@@ -43,8 +48,12 @@ void BarStateClass::PositionUpdate(double tarZoom)
 	double monH = static_cast<double>(barUISet.barWindow.h);
 
 	// 判断主栏所有位置
-	if (x <= monW / 2.0) widgetPosition.mainBar = true;
-	else widgetPosition.mainBar = false;
+	// 空间模式由渲染线程拿到完整稳定目标宽度后判定，此处不能按中轴覆盖已选侧。
+	if (Inkeys::UI::Bar::NormalizeBarExpandDirectionAdjustment(
+		Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load())
+		== Inkeys::UI::Bar::BarExpandDirectionAdjustment::Centerline
+		&& isfinite(monW) && monW > 0.0)
+		widgetPosition.mainBar = Inkeys::UI::Bar::ResolveBarMainBarRightSide(x, monW);
 
 	// 判断菜单上下位置
 	if (y <= monH * 2.0 / 5.0) widgetPosition.primaryBar = true;

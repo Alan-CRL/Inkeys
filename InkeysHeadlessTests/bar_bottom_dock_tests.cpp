@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.MainLayoutPolicy.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
@@ -455,6 +456,66 @@ namespace
 			}
 	}
 
+	void TestMainToolbarLayoutPolicy()
+	{
+		using namespace Inkeys::UI::Bar;
+		const bool mirrors[4][2]{{true,false},{false,true},{false,false},{true,true}};
+		for (int order = 0; order < 4; ++order)
+			for (int side = 0; side < 2; ++side)
+			{
+				const auto policy = NormalizeBarIconOrder(order);
+				Check(MirrorBarMainIconsX(policy, side != 0) == mirrors[order][side],
+					"four icon orders preserve their physical horizontal order on both expansion sides");
+				const double first = ResolveBarMainIconX(40.0, 380.0, policy, side != 0);
+				const double last = ResolveBarMainIconX(340.0, 380.0, policy, side != 0);
+				Check((first < last) != mirrors[order][side], "only horizontal coordinates are mirrored");
+			}
+		Check(NormalizeBarIconOrder(-1) == BarIconOrder::FollowMainButton
+			&& NormalizeBarIconOrder(4) == BarIconOrder::FollowMainButton
+			&& NormalizeBarExpandDirectionAdjustment(-1) == BarExpandDirectionAdjustment::WhenSpaceInsufficient,
+			"invalid internal layout settings normalize to defaults");
+		for (double origin : {-1920.0, 0.0, 1920.0})
+			for (double zoom : {0.6, 1.0, 1.5, 2.0})
+			{
+				BarMainExpansionInput input{origin, origin + 1000.0 * zoom,
+					origin + 500.0 * zoom, zoom, 40.0, 10.0, 300.0, 0.5, 0.5};
+				Check(ResolveBarMainExpansionSide(input, true) && !ResolveBarMainExpansionSide(input, false),
+					"both sides fit retains current direction across monitors and zoom");
+				BarMainExpansionCache cache;
+				input.mainCenterScreenX = origin + 800.0 * zoom;
+				bool side = cache.Resolve(input, true);
+				Check(!side, "only the opposite side fits flips once");
+				for (int frame = 0; frame < 180; ++frame)
+				{
+					side = cache.Resolve(input, side);
+					Check(!side, "same stable geometry cannot repeatedly flip during animation");
+				}
+				input.mainCenterScreenX = origin + 400.0 * zoom;
+				Check(!cache.Resolve(input, side), "crossing the centerline with enough room keeps the chosen side");
+				input.layoutWidthDip = 700.0;
+				input.mainCenterScreenX = origin + 500.0 * zoom;
+				Check(ResolveBarMainExpansionSide(input,true) && !ResolveBarMainExpansionSide(input,false),
+					"neither side fits retains either selected direction without translating the root");
+				input.mainCenterScreenX = origin + 200.0 * zoom;
+				input.layoutWidthDip = 300.0;
+				Check(cache.Resolve(input,false), "real position change can flip back when only right fits");
+				input.directionLocked = true;
+				Check(!ResolveBarMainExpansionSide(input,false), "centered and whiteboard direction locks win over space policy");
+				input.adjustment = BarExpandDirectionAdjustment::Centerline;
+				Check(!ResolveBarMainExpansionSide(input,false), "direction lock also wins over centerline policy");
+				input.directionLocked = false;
+				Check(ResolveBarMainExpansionSide(input,false), "explicit centerline option retains legacy classification");
+			}
+		BarMainExpansionInput edge{0.0,1000.0,600.0,1.0,40.0,10.0,349.5,0.5,0.5};
+		Check(ResolveBarMainExpansionSide(edge,true), "pixel-aligned exact target envelope fits");
+		edge.layoutWidthDip += 0.01;
+		Check(!ResolveBarMainExpansionSide(edge,true), "subpixel overflow rounds outward and switches to the fitting side");
+		edge.monitorRight = edge.monitorLeft;
+		Check(ResolveBarMainExpansionSide(edge,true), "invalid monitor bounds preserve the selected side");
+		edge.monitorRight = 1000.0; edge.zoom = std::numeric_limits<double>::quiet_NaN();
+		Check(ResolveBarMainExpansionSide(edge,true), "invalid scale cannot trigger a direction change");
+	}
+
 	bool RectEquals(const RECT& value, const RECT& expected)
 	{
 		return value.left == expected.left && value.top == expected.top
@@ -465,6 +526,63 @@ namespace
 int RunBarBottomDockTests()
 {
 	using namespace Inkeys::UI::Bar;
+	// 新桌面线与场景 inset 共享生产策略，输入捕获也必须使用相同线。
+	const RECT taskbarMonitor{ -1920, -200, 0, 880 };
+	const RECT staleBottomWork{ -1920, -200, 0, 832 };
+	for (double zoom : { .5, 1.0, 1.875, 3.0 })
+	{
+		for (double desktopLine : { 832.0, 872.0, 880.0 })
+		{
+			Check(ResolveBarBottomDockLine(taskbarMonitor, staleBottomWork, 0.0, 1.5, desktopLine)
+				== desktopLine, "normalized desktop line overrides stale work area");
+			Check(ResolveBarBottomDockLine(taskbarMonitor, staleBottomWork, 5.0, 1.5, desktopLine)
+				== 872.0, "PPT and whiteboard retain real-DPI 5 DIP scene priority");
+			const double center = ResolveBarBottomDockCenterScreenY(desktopLine, 80.0, 1.0, zoom);
+			Check(ResolveBarVisibleBorderBottomScreen(center, 80.0, 1.0, zoom) == desktopLine,
+				"visible stroke docks independently of UI scale and monitor origin");
+			BarBottomDockDragTracker tracker;
+			const BarBottomDockEnvironment env{ taskbarMonitor, staleBottomWork, zoom, 0.0, 1.5, desktopLine };
+			tracker.Begin(BarBottomDockMode::Floating, desktopLine - 100.0 * zoom,
+				desktopLine - 60.0 * zoom, center, env);
+			const auto capture = tracker.Update(center, desktopLine, env);
+			Check(capture.captured && capture.dockLineScreenY == desktopLine,
+				"drag capture consumes the normalized taskbar line from its presented environment");
+		}
+	}
+	for (double zoom : { .5, 1.0, 3.0 })
+	{
+		const double finalCenter = ResolveBarBottomDockCenterScreenY(832.0, 80.0, 1.0, zoom);
+		for (double direction : { -1.0, 1.0 })
+		{
+			const POINT directTranslation{ 11, 7 };
+			const double presentedCenter = finalCenter + direction * 40.0 * zoom + directTranslation.y;
+			const double grabOffset = 7.0 * zoom;
+			const double pointer = presentedCenter + grabOffset + 4.0 * zoom;
+			const double bottom = presentedCenter + 44.5 * zoom;
+			const BarBottomDockEnvironment env{ taskbarMonitor, staleBottomWork, zoom, 0.0, 1.5, 832.0 };
+			BarBottomDockDragTracker tracker;
+			// 终点相距超过脱离阈值，实际已显示位置仍须支持零位移接管。
+			tracker.Begin(BarBottomDockMode::BottomDocked, pointer, bottom,
+				presentedCenter + grabOffset, env);
+			const auto frozen = tracker.Update(pointer, bottom, env);
+			Check(frozen.mode == BarBottomDockMode::BottomDocked && !frozen.detached
+				&& !frozen.modeChanged && std::abs(frozen.elasticOffsetDip - 4.0) < .000001,
+				"grabbing taskbar animation at its presented midpoint does not detach without pointer motion");
+			const auto moved = tracker.Update(pointer + 2.0 * zoom, bottom + 2.0 * zoom, env);
+			Check(!moved.detached && std::abs(moved.elasticOffsetDip - 6.0) < .000001,
+				"mid-animation grab tracks actual pointer displacement rather than final dock distance");
+			const BarBottomDockEnvironment changedEnv{ taskbarMonitor, staleBottomWork, zoom, 0.0, 1.5, 872.0 };
+			const double currentPointer = pointer + 2.0 * zoom;
+			// 新环境已经上屏，但自动移动仍让位于手势；只根据已显示基线重建抓取偏移。
+			const double rebaseGrabOffset = currentPointer - (presentedCenter + 6.0 * zoom);
+			tracker.RebaseDockGrip(presentedCenter + rebaseGrabOffset, bottom + 2.0 * zoom);
+			const auto rebased = tracker.Update(currentPointer, bottom + 2.0 * zoom, changedEnv);
+			Check(!rebased.detached && !rebased.modeChanged
+				&& std::abs(rebased.elasticOffsetDip - 6.0) < .000001,
+				"new taskbar environment during held drag keeps displayed base and elastic displacement");
+		}
+	}
+	TestMainToolbarLayoutPolicy();
 	TestHorizontalCapturePresentedSequence();
 	TestFirstCapturePresentationAcrossNewSamples();
 	TestOldFloatingFrameCannotAcknowledgeCapture();
@@ -553,6 +671,39 @@ int RunBarBottomDockTests()
 		&& Near(ClampBarBottomDockMainCenterScreenX(
 			650.0, RECT{ 0, 0, 1000, 600 }, 40.0, 1.0), 650.0),
 		"horizontal reversal remains exact and independent");
+	for (double initialZoom : { 1.0, 1.5, 1.875 })
+	{
+		const RECT edgeMonitor{ -1200, -100, 800, 1000 };
+		const double logicalGrabX = 17.0, logicalGrabY = -13.0;
+		double zoom = initialZoom;
+		double grabX = logicalGrabX * zoom, grabY = logicalGrabY * zoom;
+		for (double targetZoom : { initialZoom, initialZoom, 2.0, 0.75, initialZoom })
+		{
+			// 呈现可能仍停在限位处；只用生产缩放策略保持原逻辑抓点。
+			for (double edgePointerX : { -10000.0, 10000.0 })
+			{
+				const double clampedCenter = ClampBarBottomDockMainCenterScreenX(
+					edgePointerX - grabX, edgeMonitor, 40.0, zoom);
+				Check(std::abs(edgePointerX - clampedCenter - grabX) > 1000.0,
+					"large edge excursion separates cursor from constrained visual grip");
+				const double unchangedGrab = ScaleBarDragGrabOffsetForZoom(grabX, zoom, zoom);
+				Check(unchangedGrab == grabX,
+					"repeated display serial at same zoom cannot regrab constrained presentation");
+			}
+			grabX = ScaleBarDragGrabOffsetForZoom(grabX, zoom, targetZoom);
+			grabY = ScaleBarDragGrabOffsetForZoom(grabY, zoom, targetZoom);
+			zoom = targetZoom;
+			Check(Near(grabX / zoom, logicalGrabX) && Near(grabY / zoom, logicalGrabY),
+				"real presented zoom preserves both original logical grab coordinates");
+			for (double center : { -800.0, -100.0, 500.0 })
+			{
+				const double returnedPointer = center + logicalGrabX * zoom;
+				Check(Near(ClampBarBottomDockMainCenterScreenX(
+					returnedPointer - grabX, edgeMonitor, 40.0, zoom), center),
+					"return from large edge excursion restores original grabbed point after zoom");
+			}
+		}
+	}
 	Check(ResolveBarMainBarRightSide(500.0, 1000.0)
 		&& ResolveBarMainBarRightSide(499.99, 1000.0)
 		&& !ResolveBarMainBarRightSide(500.01, 1000.0),

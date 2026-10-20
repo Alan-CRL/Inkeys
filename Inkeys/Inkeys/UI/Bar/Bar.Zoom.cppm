@@ -8,6 +8,8 @@ import :Main;
 import :Atomic;
 
 import Inkeys.Other.Config;
+import Inkeys.Display;
+import Inkeys.UI.PageControl;
 
 namespace
 {
@@ -47,6 +49,10 @@ namespace
 
 	double GetStartupDpiZoom()
 	{
+		const auto snapshot = Inkeys::Display::GetSnapshot();
+		const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+		if (monitor && monitor->effectiveDpiX)
+			return static_cast<double>(monitor->effectiveDpiX) / USER_DEFAULT_SCREEN_DPI;
 		HDC screenDC = GetDC(nullptr);
 		double scale = 1.0;
 
@@ -64,7 +70,7 @@ namespace
 
 	void RefreshZoom(BarUISetClass& barUISet)
 	{
-		barUISet.barStyle.zoom = barUISet.barStyle.dpiZoom.load() * barUISet.barStyle.configZoom.load();
+		barUISet.barStyle.zoom = barUISet.barStyle.uiBaseZoom.load() * barUISet.barStyle.configZoom.load();
 	}
 
 	void SetMainButtonPosition(BarUiSuperellipseClass& mainButton, double x, double y)
@@ -149,10 +155,17 @@ export namespace Inkeys::UI::Bar::Zoom
 {
 	void Initialize(BarUISetClass& barUISet)
 	{
-		double configZoom = RoundConfigZoom(Inkeys::config.UI.Bar.Zoom.load());
-		Inkeys::config.UI.Bar.Zoom = configZoom;
+		double configZoom = RoundConfigZoom(Inkeys::config.UI.Bar.Zoom2.load());
+		Inkeys::config.UI.Bar.Zoom2 = configZoom;
 
 		barUISet.barStyle.dpiZoom = GetStartupDpiZoom();
+		const auto snapshot = Inkeys::Display::GetSnapshot();
+		const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+		barUISet.barStyle.uiBaseZoom = monitor
+			? Inkeys::Display::ResolveUiScaleBase(*snapshot, *monitor,
+				Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase)
+			: Inkeys::Display::QueryUiScaleBase(MonitorFromPoint(POINT{}, MONITOR_DEFAULTTOPRIMARY),
+				Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase);
 		barUISet.barStyle.configZoom = configZoom;
 		RefreshZoom(barUISet);
 		barUISet.barStyle.initialZoomFitPending = true;
@@ -161,14 +174,16 @@ export namespace Inkeys::UI::Bar::Zoom
 	void FitInitialAfterMainBarLayout(BarUISetClass& barUISet, double mainBarWidth)
 	{
 		if (!barUISet.barStyle.initialZoomFitPending.exchange(false)) return;
+		// 角落只显示 80 DIP 按钮，不能按尚未展开的整栏缩小启动轮廓。
+		if (barUISet.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar) return;
 
 		auto mainButton = GetMainButton(barUISet);
 		auto mainBar = GetMainBar(barUISet);
 		if (!mainButton || !mainBar) return;
 
-		double dpiZoom = barUISet.barStyle.dpiZoom;
+		double uiBaseZoom = barUISet.barStyle.uiBaseZoom;
 		double currentZoom = barUISet.barStyle.zoom;
-		if (!isfinite(dpiZoom) || dpiZoom <= 0.0 || !isfinite(currentZoom) || currentZoom <= 0.0) return;
+		if (!isfinite(uiBaseZoom) || uiBaseZoom <= 0.0 || !isfinite(currentZoom) || currentZoom <= 0.0) return;
 		if (!isfinite(mainBarWidth) || mainBarWidth <= 0.0) return;
 
 		if (ClampMainButtonToScreen(barUISet))
@@ -190,21 +205,31 @@ export namespace Inkeys::UI::Bar::Zoom
 		double fitZoom = min(windowWidth / requiredWidth, windowHeight / requiredHeight);
 		if (!isfinite(fitZoom) || fitZoom <= 0.0 || fitZoom >= currentZoom) return;
 
-		double fitConfigZoom = FloorConfigZoom(fitZoom / dpiZoom);
+		double fitConfigZoom = FloorConfigZoom(fitZoom / uiBaseZoom);
 		if (fitConfigZoom >= barUISet.barStyle.configZoom.load()) return;
 
-		Inkeys::config.UI.Bar.Zoom = fitConfigZoom;
+		Inkeys::config.UI.Bar.Zoom2 = fitConfigZoom;
 		ApplyConfigZoom(barUISet, fitConfigZoom, false);
+		Inkeys::UI::PageControl::NotifyLayoutChanged();
 		Inkeys::config.Write();
 	}
 }
 
 export namespace Inkeys::UI::Bar
 {
+	void RefreshScaleBase()
+	{
+		barUISet.PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
+		barUISet.UpdateRendering(false);
+		Inkeys::UI::PageControl::NotifyLayoutChanged();
+	}
+
 	void SetConfigZoom(double configZoom)
 	{
 		configZoom = RoundConfigZoom(configZoom);
 
+		Inkeys::config.UI.Bar.Zoom2 = configZoom;
 		ApplyConfigZoom(barUISet, configZoom, true);
+		Inkeys::UI::PageControl::NotifyLayoutChanged();
 	}
 }

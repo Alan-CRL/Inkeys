@@ -65,6 +65,8 @@
       "MainButtons":
       {
         "SelectLabel": "Select",
+        "SelectClearLabel": "Select\n(Clear)",
+        "ClickThroughLabel": "Click-\nthrough",
         "MoveLabel": "Move",
         "DrawLabel": "Draw",
         "LaserLabel": "Laser",
@@ -77,6 +79,7 @@
         "RectangleLabel": "Rectangle",
         "StraightLineLabel": "Line",
         "UndoLabel": "Undo",
+        "RedoLabel": "Redo",
         "ClearLabel": "Clear",
         "WhiteboardLabel": "Board",
         "CloseWhiteboardLabel": "Close",
@@ -297,6 +300,42 @@
     "Regular":
     {
       "N": "General",
+      "SelectAndClickThrough":
+      {
+        "N": "Select and Click-through",
+        "Combined": "Combined",
+        "Separate": "Separate",
+        "CombinedDescription": "Use Select to operate your computer with no ink displayed or with ink kept visible.",
+        "SeparateDescription": "Use Select to clear ink and operate your computer, or Click-through to interact with underlying windows while keeping ink visible.",
+        "ClickThrough": "Click-through",
+        "ClickThroughDescription": "Keep ink visible while allowing clicks and touch input to pass through the annotation layer to the windows underneath."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "Main toolbar icon order",
+        "FollowMainButton": "Follow main button",
+        "FollowMainButtonReverse": "Follow main button (reverse)",
+        "LeftToRight": "Left to right",
+        "RightToLeft": "Right to left"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Main toolbar expansion direction",
+        "Centerline": "Screen centerline",
+        "WhenSpaceInsufficient": "When space is insufficient"
+      },
+      "AutoCollapse":
+      {
+        "N": "Auto-collapse",
+        "Drawing": "Collapse the toolbar when drawing",
+        "Erasing": "Collapse the toolbar when erasing",
+        "Dragging": "Collapse the toolbar when dragging it",
+        "OutsideClick": "Collapse the toolbar when clicking outside in Select or Click-through mode",
+        "Description": "Drawing includes pens, shapes, and the laser pointer. Bottom-docked mode includes centered docking. Outside clicks exclude the toolbar and its menus, properties, and pop-up panels.",
+        "Off": "Off",
+        "NonBottom": "When not bottom-docked",
+        "Always": "Always"
+      },
       "StartUp":
       {
         "N": "Startup",
@@ -330,10 +369,15 @@
           "Skip3": "Minimal Clock",
           "Skip4": "Year of Horse"
         },
+        "TaskbarScaleBase":
+        {
+          "N": "Use taskbar height as scale base",
+          "E": "At 100%, match taskbar thickness."
+        },
         "BarZoom":
         {
           "N": "Bar UI Scale",
-          "E": "Adjust the main bar and button scale in real time.",
+          "E": "Adjust the bar, buttons and PPT controls in real time.",
           "Ind": "{:.2f}x scale"
         },
         "SettingUIScale":
@@ -383,15 +427,34 @@
     "Draw":
     {
       "N": "Drawing",
+      "Cursor":
+      {
+        "N": "Cursor",
+        "Description": "The mouse option applies only to soft and hard pens. Highlighters always preview width; shapes use the system cursor. The default pen cursor is circular. Screen pens have no highlighted edges; pen tablets and unrecognized pens have highlighted edges.",
+        "MouseStyle": "Mouse",
+        "PenStyle": "Pen",
+        "DefaultStyle": "Default cursor",
+        "DrawingStyle": "Pen-shaped cursor"
+      },
       "Effect":
       {
         "N": "Drawing Performance",
         "Device":
         {
-          "N": "Input Device",
-          "E": "Optimize for selected device.",
-          "Touch": "Touch Screen",
-          "MousePen": "Mouse, Pen, or Graphics Tablet"
+          "N": "Choose an interaction mode",
+          "Touch": "Large-Screen Touch Mode",
+          "MousePen": "Desktop Mode",
+          "TouchE": "For writing and interacting directly on large touchscreens in classrooms, meeting rooms, and similar settings.",
+          "MousePenE": "For PCs, tablets, and mouse-operated large displays, with mouse, pen, graphics tablet, or touch input."
+        }
+      },
+      "Touch":
+      {
+        "N": "Touch",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "Reconnect interrupted strokes",
+          "E": "When touch briefly drops out and resumes in the same direction, the app tries to join both parts into one stroke, reducing gaps. When disabled, lifting your finger ends the stroke."
         }
       },
       "Eraser":
@@ -425,8 +488,33 @@
         }
       }
     },
+    "Preset":
+    {
+      "N": "Presets",
+      "StartupPlacement":
+      {
+        "N": "Position after startup",
+        "E": "The centered bottom bar starts expanded. The bottom-left and bottom-right floating windows show only the main button. Changes take effect the next time Inkeys starts.",
+        "CenteredBottomBar": "Centered bottom bar",
+        "BottomLeftFloating": "Bottom-left floating window",
+        "BottomRightFloating": "Bottom-right floating window"
+      }
+    },
     "Experimental":
     {
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "Enable drawing hardware acceleration",
+          "E": "Use the GPU to draw the canvas. Try disabling this to use software rendering if drawing is incorrect or very slow. Restart Inkeys to apply."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Enable Zhaoxin compatibility mode",
+          "E": "Use a compatible upload path on Zhaoxin GPUs. Other GPUs are unaffected. Disable to compare drawing performance. Restart Inkeys to apply."
+        }
+      },
       "ConsoleOutput":
       {
         "Haptics":
@@ -561,7 +649,29 @@
     "HotKey":
     {
       "N": "Hotkeys",
-      "E": "Global Hotkeys:\nCtrl + Win + Alt: Switch select/draw mode\n\nIn Draw Mode:\nCtrl + Q: Freeze\nCtrl + E: Penetrate\nCtrl + Z: Undo/Super Restore\n\nOther/custom hotkeys coming soon."
+      "E": "These fixed combinations can be enabled individually. Custom bindings are not available yet.\nExcept for the global toggle, shortcuts apply only while annotating. Settings text input and modal dialogs take priority. In Select or Click-through mode, the current application receives them.\nThe global toggle remains active during normal settings editing. App modal dialogs pause its action while keeping the combination reserved. AltGr may overlap Ctrl + Alt on international keyboards; disable the global toggle if needed.\nKeyboard shortcuts do not take over PowerPoint navigation.",
+      "ToggleAnnotationN": "Global annotation toggle",
+      "ToggleAnnotationE": "Switch between annotation and Select. Combined style keeps ink when entering Select; Separate style clears the current page first. Returning restores the last annotation tool, without restoring Freeze.",
+      "UndoN": "Undo",
+      "UndoE": "Undo on the current page. Hold to repeat. An empty history never sends Undo to the application underneath.",
+      "RedoYN": "Redo",
+      "RedoYE": "Redo on the current page. Hold to repeat. This combination and Ctrl + Shift + Z have independent switches.",
+      "RedoShiftZN": "Redo (alternate)",
+      "RedoShiftZE": "The same Redo action as Ctrl + Y, with its own enable switch.",
+      "ClearN": "Clear current page",
+      "ClearE": "The first press clears and keeps the tool, even on an empty page. Keep Ctrl held, release Delete, then press Delete again to enter Select in either style. Holding Delete does not count twice. New strokes or other actions reset this sequence.",
+      "FreezeN": "Freeze",
+      "FreezeE": "Toggle screen Freeze. Unavailable in PowerPoint and Whiteboard workspaces. When unavailable, the combination still does not reach the application underneath.",
+      "Registering": "Registering the global toggle",
+      "Disabling": "Disabling the global toggle",
+      "UnregisterFailed": "Global toggle unregistration failed; the combination remains reserved",
+      "Registered": "Global toggle is active",
+      "Disabled": "Global toggle is disabled",
+      "NotRunning": "Keyboard service is not running",
+      "RegisterFailed": "Global toggle registration failed; another program may be using it",
+      "SynchronizationPending": "Synchronizing key state. Release keys in a normal-permission window, then retry.",
+      "HookReady": "Annotation shortcuts are ready",
+      "HookFailed": "Keyboard hook is not installed; annotation shortcuts are unavailable"
     },
     "Community":
     {

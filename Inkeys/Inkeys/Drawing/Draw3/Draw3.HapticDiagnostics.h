@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Draw3.DiagnosticOutput.h"
 #include <atomic>
 #include <cstdio>
 #include <cstdint>
@@ -34,13 +35,13 @@ namespace Inkeys::Drawing::Draw3::HapticDiagnostics
 			if (!active) return;
 			productMessageOutput = nullptr;
 			for (unsigned i = 0; i < count; ++i)
-				std::fwrite(lines[i], 1, lengths[i], stderr);
+				DiagnosticOutput::Write(DiagnosticOutput::Stream::Error, lines[i], lengths[i]);
 			if (dropped)
 			{
 				char line[128];
 				const int length = std::snprintf(line, sizeof(line),
 					"[PenHaptics] event=log_drop scope=product_message count=%u\n", dropped);
-				if (length > 0) std::fwrite(line, 1, static_cast<std::size_t>(length), stderr);
+				if (length > 0) DiagnosticOutput::Write(DiagnosticOutput::Stream::Error, line, static_cast<std::size_t>(length));
 			}
 		}
 		void Append(const char* line, std::size_t length) noexcept
@@ -67,6 +68,6 @@ namespace Inkeys::Drawing::Draw3::HapticDiagnostics
 		if (count <= 0) return;
 		const auto length = static_cast<std::size_t>(count) < sizeof(line) ? count : sizeof(line) - 1;
 		if (productMessageOutput) productMessageOutput->Append(line, length);
-		else std::fwrite(line, 1, length, stderr);
+		else DiagnosticOutput::Write(DiagnosticOutput::Stream::Error, line, length);
 	}
 }

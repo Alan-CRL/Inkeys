@@ -89,7 +89,10 @@ export namespace Inkeys::Drawing::Draw3
 	class InkStroke
 	{
 	public:
-		InkStroke(StoredInkStyle style, std::vector<StoredInkPoint> points) noexcept;
+		InkStroke(StoredInkStyle style, std::vector<StoredInkPoint> points,
+			std::optional<size_t> debugTailSegmentStart = std::nullopt) noexcept;
+		// 临时诊断元数据随内存 Stroke 重绘，不写入文档或改变持久样式。
+		std::optional<size_t> DebugTailSegmentStart() const noexcept;
 
 		const StoredInkStyle& Style() const noexcept;
 		std::span<const StoredInkPoint> Points() const noexcept;
@@ -98,6 +101,7 @@ export namespace Inkeys::Drawing::Draw3
 	private:
 		StoredInkStyle style_ = {};
 		std::vector<StoredInkPoint> points_;
+		std::optional<size_t> debugTailSegmentStart_;
 	};
 
 	class InkCanvas

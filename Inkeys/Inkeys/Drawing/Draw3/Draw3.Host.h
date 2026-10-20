@@ -2,6 +2,8 @@
 
 #include "Draw3.Bridge.h"
 #include "Draw3.HapticRequest.h"
+#include "Draw3.Shortcut.h"
+#include "Draw3.MouseInput.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "../../Helper/FailedCleanupDeadline.h"
@@ -111,9 +113,60 @@ namespace Inkeys::Drawing::Draw3
 		private:
 			std::atomic_bool active_ = false;
 		};
+
+		struct HostAcceptedStrokeContext
+		{
+			bool running = false;
+			Bridge::Workspace desiredWorkspace = Bridge::Workspace::Desktop;
+			std::optional<Bridge::PresentationReadyIdentity> desiredPresentation;
+			bool commandScenePending = false;
+			bool admissionBlocked = false;
+		};
+
+		// Host 与无窗口测试共享逻辑场景准入；不把延后的 Present 回执当作 CPU 场景。
+		class HostAcceptedStrokeState
+		{
+		public:
+			void BeginHost() noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				if (++hostGeneration_ == 0) ++hostGeneration_;
+				scene_ = {};
+			}
+			void PublishScene(const Bridge::AcceptedStrokeBegin& scene) noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				scene_ = scene;
+			}
+			void Stamp(Bridge::AcceptedStrokeBegin& accepted) const noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				accepted.hostGeneration = hostGeneration_;
+			}
+			[[nodiscard]] bool IsCurrent(const Bridge::AcceptedStrokeBegin& accepted,
+				const HostAcceptedStrokeContext& current) const noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				if (!current.running || current.commandScenePending ||
+					accepted.kind == Bridge::CompletedStrokeKind::None ||
+					accepted.hostGeneration == 0 || accepted.hostGeneration != hostGeneration_ ||
+					accepted.sceneGeneration == 0 || accepted.sceneGeneration != scene_.sceneGeneration ||
+					accepted.workspace != scene_.workspace || accepted.pageIndex != scene_.pageIndex ||
+					accepted.presentation != scene_.presentation ||
+					accepted.workspace != current.desiredWorkspace) return false;
+				return accepted.workspace != Bridge::Workspace::Presentation ||
+					(accepted.presentation && !current.admissionBlocked &&
+						accepted.presentation == current.desiredPresentation);
+			}
+
+		private:
+			mutable std::mutex mutex_;
+			std::uint64_t hostGeneration_ = 0;
+			Bridge::AcceptedStrokeBegin scene_;
+		};
 	}
 
-	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一 RTS 生产。
+	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一选定后端生产。
 	inline constexpr UINT kDraw3HiddenTestContactMessage = WM_APP + 0x3D3u;
 	inline constexpr WPARAM kHiddenTestMouseFlag = 0x100u;
 	inline constexpr WPARAM kHiddenTestRightMouseFlag = 0x1000u;
@@ -152,6 +205,7 @@ namespace Inkeys::Drawing::Draw3
 		// 同步发布当前画布目标；产品层在返回前更新 DIP 状态及其 bridge。
 		void (*penWidthContextChanged)(void*,
 			const Inkeys::Business::PenWidth::Context&) noexcept = nullptr;
+		void (*acceptedStrokeBegan)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
 	};
 
 	enum class HostPresentationMode : std::uint8_t
@@ -169,12 +223,20 @@ namespace Inkeys::Drawing::Draw3
 		SelectionUlw,
 	};
 
+	enum class HostInputMode : std::uint8_t
+	{
+		Disabled,
+		RtsExtended,
+		RtsBasicXY,
+		Win32Mouse,
+	};
+
 	enum class HostStartupStage : std::uint8_t
 	{
 		WindowAttached,
 		GraphicsReady,
 		PresenterReady,
-		RtsReady,
+		InputReady,
 		ControllerReady,
 		FirstFrameCommitted,
 	};
@@ -202,6 +264,9 @@ namespace Inkeys::Drawing::Draw3
 		// 显式诊断只在本次 run 创建会话；越界容量仅关闭指标，不阻止产品启动。
 		bool enableRuntimeMetrics = false;
 		std::size_t runtimeMetricsMaximumSamples = 32768;
+		// 启动时按值捕获；呈现回退与设备丢失后的恢复沿用本代偏好。
+		bool enableHardwareAcceleration = true;
+		bool enableZhaoxinCompatibility = true;
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
@@ -248,6 +313,7 @@ namespace Inkeys::Drawing::Draw3
 		bool firstFrameReady = false;
 		bool lastPresentSucceeded = false;
 		HostPresentationMode presentationMode = HostPresentationMode::Automatic;
+		HostInputMode inputMode = HostInputMode::Disabled;
 		std::uint64_t presentCount = 0;
 		std::uint64_t successfulPresentCount = 0;
 		std::uint64_t partialPresentCount = 0;
@@ -269,6 +335,8 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		bool canUndo = false;
+		bool canRedo = false;
 		std::uint64_t contentRevision = 0;
 		Bridge::CompletedStrokeKind completedStrokeKind =
 			Bridge::CompletedStrokeKind::None;
@@ -293,6 +361,11 @@ namespace Inkeys::Drawing::Draw3
 		HostRuntimeMetricsSnapshot runtimeMetrics;
 	};
 
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	// 无窗口生产回归：PPT 终态保留、FIFO 屏障与代际清理。
+	int RunPresentationCompletionDeliveryTest() noexcept;
+#endif
+
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
 	class Host
 	{
@@ -312,8 +385,12 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// 异步 UI 起笔通知只验证场景/生命周期；短笔结束后同场景仍有效。
+		bool IsAcceptedStrokeCurrent(const Bridge::AcceptedStrokeBegin& accepted) const noexcept;
 		// Caller 仅在成功 Start 后且不并行下一 Start 时读取；未启用 hidden 则 nullopt。
 		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
+		// 保存期望值并唤醒绘制线程，启动前设置也保留到下一次 Start。
+		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;
@@ -332,6 +409,15 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
+		Shortcuts::Context ShortcutContext() const noexcept;
+		std::uint64_t PublishShortcutCommand(Bridge::CommandType type,
+			const Shortcuts::Scope& expected, std::uint64_t leaseId,
+			std::optional<std::uint64_t> expectedContentRevision = std::nullopt) noexcept;
+		bool TakeShortcutCompletion(std::uint64_t id, Shortcuts::Completion& result) noexcept;
+		void RetireShortcutRequest(std::uint64_t id) noexcept;
+		std::uint64_t AcquireShortcutLease(const Shortcuts::Context& expected,
+			bool requireContentRevision) noexcept;
+		void ReleaseShortcutLease(std::uint64_t id) noexcept;
 		// 生命周期事务控制 Drawpad 是否允许本次鼠标输入激活窗口。
 		void SetActivationAllowed(bool enabled) noexcept;
 		bool PublishPresentationUiReady(

@@ -19,6 +19,8 @@ public:
 	IdtAtomic<bool> geometryAttribute = false;
 	IdtAtomic<bool> eraserAttribute = false;
 	IdtAtomic<bool> eraserSensitivityOpen = false;
+	// 撤回属性：点击主栏撤回后展开，内置单 70x70 Redo；继续点 Undo/Redo 保持展开。
+	IdtAtomic<bool> recallAttribute = false;
 	// 更多浮层状态同步到主栏入口的 Selected 视觉；折叠主栏时强制关闭。
 	IdtAtomic<bool> moreExpanded = false;
 	IdtAtomic<bool> moreClosePress = false;
@@ -123,6 +125,8 @@ class BarStyleClass
 public:
 	IdtAtomic<bool> darkStyle = true;
 	IdtAtomic<double> dpiZoom = 1.0;
+	// UI 基准独立于真实 DPI，画笔尺寸仍只使用 dpiZoom。
+	IdtAtomic<double> uiBaseZoom = 1.0;
 	IdtAtomic<double> configZoom = 1.0;
 	IdtAtomic<double> zoom = 1.0;
 	IdtAtomic<bool> initialZoomFitPending = false;

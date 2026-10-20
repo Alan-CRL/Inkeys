@@ -14,8 +14,15 @@ enum class StateModeSelectEnum
 	IdtEraser,
 	IdtShape,
 
-	IdtTouchTest
+	IdtTouchTest,
+	IdtClickThrough
 };
+
+constexpr bool IsComputerInteractionMode(StateModeSelectEnum mode) noexcept
+{
+	return mode == StateModeSelectEnum::IdtSelection ||
+		mode == StateModeSelectEnum::IdtClickThrough;
+}
 enum class PenModeSelectEnum
 {
 	// Brush1 是历史名称，当前默认工具语义为软笔；保留别名避免旧调用失效。
@@ -71,6 +78,8 @@ public:
 	StateModeSelectEnum StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 	// 记录最后选择的笔型是否为 Laser；离开 Pen 时保留，返回 Pen 时恢复。
 	bool laserActive = false;
+	// 穿透退出或切到定格时只恢复顶层工具，具体笔型与属性仍使用原有记忆。
+	StateModeSelectEnum lastAnnotationMode = StateModeSelectEnum::IdtPen;
 	Inkeys::Business::PenWidth::Context penWidthContext;
 
 	struct
@@ -155,8 +164,18 @@ float GetEffectivePenOpacity();
 float GetEffectivePenOpacity(const StateModeClass& snapshot) noexcept;
 
 bool ChangeStateModeToSelection();
+bool ChangeStateModeToSelectionFromButton();
+bool ChangeStateModeToClickThrough();
+bool ToggleClickThroughFromButton();
+int GetSelectAndClickThroughMode() noexcept;
+bool SetSelectAndClickThroughMode(int mode);
+void ToggleFreezeFromButton();
 std::uint64_t StateModeTransitionRevision() noexcept;
 bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision);
+// 快捷键事务使用普通选择内核，不登记 PPT 真退出标识；恢复时沿用工具属性。
+bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
+	std::uint64_t expectedRevision, std::uint64_t freezeRevision);
+bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision);
 bool ChangeStateModeToPen();
 enum class PenToolSelectionEnum : std::uint8_t { SoftPen, HardPen, Highlighter, Laser };
 bool PenToolSelectionWouldChange(PenToolSelectionEnum tool);

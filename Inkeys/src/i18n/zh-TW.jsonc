@@ -1,4 +1,4 @@
-// 你可以在此文件中使用 // 作為行註釋，但塊註釋和尾隨逗號等其他 JSONC 功能不受支持。
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
 // You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
 {
   "Language": "zh-TW",
@@ -65,6 +65,8 @@
       "MainButtons":
       {
         "SelectLabel": "選擇",
+        "SelectClearLabel": "選擇(清空)",
+        "ClickThroughLabel": "穿透",
         "MoveLabel": "拖動",
         "DrawLabel": "繪製",
         "LaserLabel": "雷射筆",
@@ -77,6 +79,7 @@
         "RectangleLabel": "矩形",
         "StraightLineLabel": "直線",
         "UndoLabel": "復原",
+        "RedoLabel": "重做",
         "ClearLabel": "清空",
         "WhiteboardLabel": "白板",
         "CloseWhiteboardLabel": "關閉白板",
@@ -297,6 +300,42 @@
     "Regular":
     {
       "N": "常規",
+      "SelectAndClickThrough":
+      {
+        "N": "選擇與穿透",
+        "Combined": "合併式",
+        "Separate": "分離式",
+        "CombinedDescription": "透過「選擇」統一操作電腦，涵蓋無墨跡與保留墨跡兩種狀態。",
+        "SeparateDescription": "「選擇」清空墨跡後操作電腦；「穿透」保留墨跡並操作下方視窗。",
+        "ClickThrough": "穿透",
+        "ClickThroughDescription": "保留螢幕上的墨跡，讓點擊與觸控穿過註記層，操作下方視窗。"
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "主欄圖示順序",
+        "FollowMainButton": "跟隨主按鈕",
+        "FollowMainButtonReverse": "跟隨主按鈕（反向）",
+        "LeftToRight": "從左到右",
+        "RightToLeft": "從右到左"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "主欄展開方向調整",
+        "Centerline": "中軸線",
+        "WhenSpaceInsufficient": "當位置不足時"
+      },
+      "AutoCollapse":
+      {
+        "N": "自動收起",
+        "Drawing": "繪製時收起主欄",
+        "Erasing": "擦除時收起主欄",
+        "Dragging": "拖動主欄時收起主欄",
+        "OutsideClick": "選擇或穿透模式下點擊欄外時收起主欄",
+        "Description": "繪製包含畫筆、形狀和雷射筆；底欄模式包含置中底欄。欄外點擊不包含主欄及其選單、屬性和彈出面板。",
+        "Off": "關閉",
+        "NonBottom": "非底欄模式時",
+        "Always": "任何時候"
+      },
       "StartUp":
       {
         "N": "開機自動執行與啟動行為",
@@ -330,10 +369,15 @@
           "Skip3": "極簡時鐘",
           "Skip4": "馬年迎新"
         },
+        "TaskbarScaleBase":
+        {
+          "N": "以工作列高度作為縮放基準",
+          "E": "100% 時主欄與工作列等高；垂直工作列取寬度。"
+        },
         "BarZoom":
         {
           "N": "主欄 UI 縮放",
-          "E": "即時調整主欄和按鈕的縮放比例。",
+          "E": "即時調整主欄、按鈕和 PPT 控制項的縮放比例。",
           "Ind": "{:.2f} 倍縮放"
         },
         "SettingUIScale":
@@ -383,15 +427,34 @@
     "Draw":
     {
       "N": "繪圖",
+      "Cursor":
+      {
+        "N": "游標",
+        "Description": "滑鼠選項僅影響軟筆和硬筆；螢光筆始終預覽粗細，形狀使用系統游標。筆的預設游標為圓形。螢幕筆關閉邊緣高亮，繪圖板和無法辨識的筆開啟邊緣高亮。",
+        "MouseStyle": "滑鼠",
+        "PenStyle": "筆",
+        "DefaultStyle": "預設游標",
+        "DrawingStyle": "畫筆游標"
+      },
       "Effect":
       {
         "N": "繪圖效果優化",
         "Device":
         {
-          "N": "繪圖裝置",
-          "E": "我們會根據不同裝置型別優化使用體驗。",
-          "Touch": "觸控螢幕",
-          "MousePen": "滑鼠、手寫筆或數位板"
+          "N": "選擇互動模式",
+          "Touch": "大螢幕觸控模式",
+          "MousePen": "桌面互動模式",
+          "TouchE": "適用於教室、會議室等情境，直接在觸控大螢幕上書寫與操作。",
+          "MousePenE": "適用於個人電腦、平板及以滑鼠操控的大螢幕，兼顧滑鼠、觸控筆、繪圖板與觸控操作。"
+        }
+      },
+      "Touch":
+      {
+        "N": "觸摸",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "斷觸接續",
+          "E": "觸控書寫時，若螢幕短暫失去接觸後又沿原方向恢復，將嘗試把兩段筆跡接成一筆，減少斷線。關閉後，每次抬起都會結束目前筆畫。"
         }
       },
       "Eraser":
@@ -425,8 +488,33 @@
         }
       }
     },
+    "Preset":
+    {
+      "N": "預設",
+      "StartupPlacement":
+      {
+        "N": "啟動後位置",
+        "E": "置中的底部工具列會展開顯示主工具列；左下角或右下角懸浮視窗只顯示主按鈕。變更將於下次啟動時生效。",
+        "CenteredBottomBar": "置中底部工具列",
+        "BottomLeftFloating": "左下角懸浮視窗",
+        "BottomRightFloating": "右下角懸浮視窗"
+      }
+    },
     "Experimental":
     {
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "啟用繪圖硬體加速",
+          "E": "使用顯示卡加速畫布繪製，關閉後使用軟體繪製。出現繪製異常或嚴重卡頓時可嘗試關閉；重新啟動軟體後生效。"
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "為兆芯裝置啟用相容模式",
+          "E": "在兆芯 GPU 上使用相容上傳方案，其他 GPU 不受影響。可關閉此項比較繪製效能；重新啟動軟體後生效。"
+        }
+      },
       "ConsoleOutput":
       {
         "Haptics":
@@ -561,7 +649,29 @@
     "HotKey":
     {
       "N": "快捷鍵",
-      "E": "全域快捷鍵：\nCtrl + Win + Alt 切換選擇 / 繪圖模式\n\n繪圖模式下：\nCtrl + Q 定格\nCtrl + E 穿透\nCtrl + Z 撤回 / 超級回復\n\n其他快捷鍵與自訂快捷鍵功能測試中，敬請期待"
+      "E": "目前僅提供以下固定組合，可分別開啟或關閉，暫不支援自訂。\n除全域往返外，其餘快捷鍵僅在批註狀態有效；設定文字輸入與模態對話框優先。選擇或穿透狀態下交由目前應用程式處理。\n全域往返在設定一般編輯期間仍生效；應用程式模態對話框期間暫停動作，但仍保留該組合。國際鍵盤的 AltGr 可能與 Ctrl + Alt 衝突，可單獨關閉全域往返。\n鍵盤快捷鍵不接管 PPT 翻頁。",
+      "ToggleAnnotationN": "全域往返",
+      "ToggleAnnotationE": "批註與選擇之間往返。合併式進入選擇時保留墨跡；分離式先清空目前頁面。返回時恢復最近的批註工具，不恢復定格。",
+      "UndoN": "復原",
+      "UndoE": "復原目前頁面的操作，按住可連續復原。沒有可復原內容時也不會復原下層應用程式。",
+      "RedoYN": "重做",
+      "RedoYE": "重做目前頁面的操作，按住可連續重做。此組合與 Ctrl + Shift + Z 可獨立開關。",
+      "RedoShiftZN": "重做（另一組合）",
+      "RedoShiftZE": "與 Ctrl + Y 執行相同的重做操作，可單獨開啟或關閉。",
+      "ClearN": "清空目前頁面",
+      "ClearE": "第一次清空並保持工具，空白頁也不進入選擇。持續按住 Ctrl，放開 Delete 後再按一次即可進入選擇，兩種樣式相同。長按 Delete 不算兩次；期間新落筆或執行其他操作會重設兩次按壓。",
+      "FreezeN": "定格",
+      "FreezeE": "切換螢幕定格。PPT 與白板工作區不可用；不可用時不會觸發下層應用程式的同名快捷鍵。",
+      "Registering": "正在註冊全域往返",
+      "Disabling": "正在關閉全域往返",
+      "UnregisterFailed": "全域往返取消註冊失敗，該組合仍被保留",
+      "Registered": "全域往返已生效",
+      "Disabled": "全域往返已關閉",
+      "NotRunning": "鍵盤服務尚未執行",
+      "RegisterFailed": "全域往返註冊失敗，組合可能被其他程式占用",
+      "SynchronizationPending": "正在同步按鍵狀態；請在一般權限視窗中放開按鍵後重試。",
+      "HookReady": "批註快捷鍵已就緒",
+      "HookFailed": "鍵盤鉤子未安裝，批註快捷鍵不可用"
     },
     "Community":
     {

@@ -10,6 +10,7 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.A2.h"
 #include "Bar.BottomDock.h"
+#include "Bar.MainLayoutPolicy.h"
 #include "Bar.PresentDecision.h"
 #include "Bar.PresentationProbe.h"
 #include <bit>
@@ -53,6 +54,7 @@ namespace
 	std::mutex pptBusinessFocusMutex;
 	std::function<void()> pptBusinessFocusCallback;
 	Inkeys::UI::Bar::BarA2CallbackDispatcher endShowDispatcher;
+	std::atomic_uint64_t autoCollapseSceneRevision{ 1 };
 	std::atomic_bool whiteboardActive = false;
 	std::atomic_bool whiteboardBottomDockRequested = false;
 	std::atomic_bool whiteboardDockLockActive = false;
@@ -233,6 +235,9 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 		| (barState.geometryAttribute ? 4u : 0u) | (barState.moreExpanded ? 8u : 0u)
 		| (barState.eraserAttribute ? 16u : 0u) | (barState.eraserSensitivityOpen ? 32u : 0u)
 		| (auxClosed ? 64u : 0u);
+	// 空闲签名位记录两项布局配置，不改变既有测试DTO尺寸。
+	signature.flags |= BarMainLayoutSignatureFlags(NormalizeBarIconOrder(Inkeys::config.UI.Bar.IconOrder.load()),
+		NormalizeBarExpandDirectionAdjustment(Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load()));
 	signature.validMask = 1;
 	// 宽/色/工具版本来自同一快照，不用独立getter拼接不同代状态。
 	signature.stateMode = static_cast<std::uint32_t>(tool.state.StateModeSelect);
@@ -250,6 +255,7 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 	signature.validMask |= 8;
 	signature.darkStyle = barStyle.darkStyle ? 1u : 0u;
 	signature.validMask |= 16;
+	double uiBaseScale = 0.0;
 	// 环境只做一次非阻塞读取；锁忙/未知display不填零冒充有效mask。
 	{
 		unique_lock displayLock(pendingDisplayPublishMutex, std::try_to_lock);
@@ -261,11 +267,14 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 			{
 				signature.displaySerial = serial;
 				signature.dpi = dpi;
+				uiBaseScale = pendingDisplayUiBaseScale.load(std::memory_order_relaxed);
 				signature.validMask |= 32 | 64;
 			}
 		}
 	}
-	const double configZoom = barStyle.configZoom;
+	// wire 保留原字段名，倍率含 UI 基准/DPI 校正；Source 的 DPI×倍率仍还原真实 UI scale。
+	const double configZoom = uiBaseScale * USER_DEFAULT_SCREEN_DPI
+		/ (signature.dpi ? signature.dpi : USER_DEFAULT_SCREEN_DPI) * barStyle.configZoom;
 	signature.configZoomBits = std::bit_cast<std::uint64_t>(configZoom);
 	if (isfinite(configZoom) && configZoom > 0.0) signature.validMask |= 128;
 	if (Inkeys::UI::Bar::WhiteboardActive() || Inkeys::UI::Bar::PptPresentationActive()) signature.validMask = 0;
@@ -274,12 +283,11 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 
 void BarUISetClass::UpdateRendering(bool updateState)
 {
+	// 历史/绘制回调的false请求只唤醒，不能等待可能回入其owner的状态锁。
 	static mutex mtx;
-	lock_guard<mutex> lock(mtx);
-
-	// 状态更新
 	if (updateState)
 	{
+		lock_guard<mutex> lock(mtx);
 		// 按钮、面板归位和粗细文字使用同一工具代次，再统一发布渲染请求。
 		const auto stateMode = GetStateModeSnapshot();
 		barButtonSet.StateUpdate(stateMode);
@@ -354,6 +362,17 @@ namespace Inkeys::UI::Bar
 			barUISet.UpdateRendering();
 	}
 
+	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo)
+	{
+		barUISet.NoteRecallHistoryAvailability(canUndo, canRedo);
+	}
+
+	void RefreshToolState() noexcept
+	{
+		// 设置切模式即使未改变墨迹或工具，也必须重新计算按钮；早期 CLI 尚未建好预设。
+		barUISet.UpdateRendering(contentStateUpdatesReady.load(std::memory_order_acquire));
+	}
+
 	bool CurrentPageHasContent() noexcept
 	{
 		return currentPageHasContent;
@@ -372,18 +391,35 @@ namespace Inkeys::UI::Bar
 		return pptPresentationActive.load(std::memory_order_acquire);
 	}
 
+	std::uint64_t AutoCollapseSceneRevision() noexcept
+	{
+		return autoCollapseSceneRevision.load(std::memory_order_acquire);
+	}
+
 	void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept
 	{
 		bool changed = false;
+		bool windowChanged = false;
 		{
 			std::scoped_lock lock(pptSceneMutex);
 			// 先发布完整载荷，再开放场景边沿；渲染线程不能读到旧窗口或旧 dock 条件。
-			pptPresentationWindow.store(active ? showWindow : nullptr, std::memory_order_release);
+			windowChanged = pptPresentationWindow.exchange(active ? showWindow : nullptr,
+				std::memory_order_acq_rel) != (active ? showWindow : nullptr);
 			changed = pptPresentationActive.exchange(active, std::memory_order_acq_rel) != active;
 			changed = pptSceneState.Publish(session, active) || changed;
 		}
-		if (changed) barUISet.UpdateRendering(
-			contentStateUpdatesReady.load(std::memory_order_acquire));
+		if (changed)
+		{
+			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
+			// 进出放映都只收起浮窗。回到桌面时若 Redo 仍可用，显示 2×1，不重新弹出。
+			barUISet.SettleRecallChromeForWorkspace();
+		}
+		// 同场窗口锚变化只刷新布局，不重放场次进入和位置恢复。
+		if (changed || windowChanged)
+		{
+			barUISet.UpdateRendering(
+				contentStateUpdatesReady.load(std::memory_order_acquire));
+		}
 	}
 	std::optional<bool> ConsumePptSceneTransition() noexcept
 	{
@@ -468,6 +504,7 @@ namespace Inkeys::UI::Bar
 			std::memory_order_acq_rel) != active;
 		if (changed)
 		{
+			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
 			// 工作区切换时默认使用拖拽模式，属性浮层保持收起；后续由用户按钮控制展开。
 			barUISet.CollapseAuxiliaryPanels(true);
 		}

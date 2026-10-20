@@ -7,16 +7,16 @@
 `【直接确认】` 当前产品输入主链位于 `Draw3.RealtimeStylus.*`、`Draw3.ContactInput.*` 和 `Draw3.DrawingController.*`；Draw2 输入源码保留但不参与产品编译或启动：
 
 ~~~text
-主 Drawpad RealTimeStylus ─> ContactInputCoordinator mailbox
+主 Drawpad 选定输入后端（RTS / Win32Mouse）─> ContactInputCoordinator mailbox
                                         │
                                         └─> DrawingController / document / runtime history / final backbuffer
 ~~~
 
 `RealTimeStylusInput` 是主 Drawpad 的唯一 RTS producer，并保留 `SetAllTabletsMode(TRUE)`；辅助 DrawpadPresentation 不绑定 RTS、WndProc mailbox 或输入门禁。`CSyncEventHandlerRTS`/`TouchMode` 描述仅属于保留的 Draw2 历史实现，不应反推 Draw3 的产品选择模式。
 
-Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 producer，再唤醒并结束绘制线程；`DrawpadMsgCallback` 只把主 Drawpad 消息转发到唯一 Host。
+Draw3 Host 在图形资源准备后才选择 RTS 或 Win32Mouse 输入，退出时先停止选定 producer，再唤醒并结束绘制线程；`DrawpadMsgCallback` 只把主 Drawpad 消息转发到唯一 Host。
 
-`【直接确认】` `WindowController::HandleWindowMessage` 的 `WM_MOUSE*` 接受/拒绝仅控制 `PublishMouseCursorSample` 光标反馈；绘制 contact 仍由 RTS `StylusDown -> coordinator.PublishDown` 提供。不得用 `accepted-mouse` 或 `mouseContact` 证明绘制 Down 已被准入，也不得把光标兼容过滤直接当成落笔失败的根因。
+`【直接确认】` 在 RtsExtended / RtsBasicXY 模式，`WindowController::HandleWindowMessage` 的 `WM_MOUSE*` 接受/拒绝仅控制 `PublishMouseCursorSample` 光标反馈，绘制 contact 由 RTS `StylusDown -> coordinator.PublishDown` 提供；Win32Mouse 模式才由独立兼容分支发布绘制 contact。正常RTS模式不得用 `accepted-mouse` 或 `mouseContact` 证明绘制 Down 已被准入，也不得把光标兼容过滤直接当成落笔失败的根因。
 
 `【直接确认】` 产品未定义独立 demo 的 `DRAW3_RTS_DIAGNOSTICS` 宏；旧 `RecordCallback/FlushRtsCallbackTrace` 不会因开启 ConsoleOutput 而出现。产品 `ConsoleOutput.Cursor` 的运行期开关通过现有有界队列提供 `rts-input event=Down/Up reason=arrival/published/失败原因`，Packets 每 plugin 至多每秒一次。`published=1` 是 producer mailbox 发布证据，仍须分别验证 controller 准入与 GPU 像素。
 
@@ -32,13 +32,13 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 ### 2. Signatures
 - `WindowController::NotifyTouchContactBegin/End`、`CursorOwner()`、`SetTouchCursorSuppressed(bool)`。
 - `ResolveDrawingCursorVisualAuthority(persistentOwner,touchCursorSuppressed,touchPanActive,realMouseTakeoverDuringTouchPan)`。
-- `ShouldIgnoreMouseCursorMessage(..., INPUT_MESSAGE_DEVICE_TYPE inputSource)`；Win8+ 动态获取 `GetCurrentInputMessageSource`，Win7 可为 `IMDT_UNAVAILABLE`。
+- `FilterMouseCursorMessage(const MouseCursorMessageFilterInput&) noexcept`统一处理光标消息，输入`pointerAuthority`为当前持久owner（默认Unknown），不是Pen样本有效位；`ShouldIgnoreMouseCursorMessage(..., INPUT_MESSAGE_DEVICE_TYPE inputSource)`；Win8+ 动态获取 `GetCurrentInputMessageSource`，Win7 可为 `IMDT_UNAVAILABLE`。
 
 ### 3. Contracts
 - Touch Down 临时接管视觉归属为 Touch，隐藏系统箭头与旧 Pen/Mouse 主光标；持久 `cursorOwner_` 不写 Touch。Touch Up/Cancel 不恢复旧 Hover，直到可确认的新 Pen 样本或真实 Mouse/TouchPad 消息接管。各活动 Touch 橡皮圆环仍按自己的 runtime 生成，Up 后随 runtime 清除。
 - Touch Pan 已由真实 Mouse 接管时，后续 Touch 指头不清 Mouse 样本；Pan 结束后若 Mouse 样本仍有效，保留 Mouse 归属。Pen 新 Hover/Contact 解除 Touch 抑制，Win7 不依赖新 Pointer API 才能恢复笔光标。
 - Touch/Pen 提升的 `WM_MOUSE*` 先用 promoted 签名、消息时间屏障与可用的 `INPUT_MESSAGE_SOURCE.deviceType` 过滤；`IMDT_MOUSE/IMDT_TOUCHPAD` 可立即接管。Win7 来源不可用时保留 RTS Touch 与旧过滤链，不使用固定延时压制真实鼠标。
-- API 成功返回 `device=IMDT_UNAVAILABLE + origin=IMO_SYSTEM` 的 `WM_MOUSEMOVE` 在触摸抑制仍有效时必须拒绝；不论按键位、触点坐标是否一致或距离 Touch Up 多久，均不创建 Mouse 样本、不改变 owner。明确 Mouse/TouchPad 来源继续走既有接管策略。
+- API 成功返回 `device=IMDT_UNAVAILABLE + origin=IMO_SYSTEM` 的 `WM_MOUSEMOVE` 在触摸抑制仍有效或持久owner为Pen时必须拒绝；Pen清样本后仍受保护。不论按键位、触点坐标是否一致或距离 Touch/Pen终态多久，均不创建 Mouse 样本、不改变 owner。明确 Mouse/TouchPad 来源继续走既有接管策略。
 - 来源 API 缺失/失败或其它未知来源仍保留已有位置回退；API 查询失败不能被当成已确认的系统注入。Win7 的真实设备行为仍需单独实测。
 - WindowControl 必须直接使用 `FilterMouseCursorMessage` 的过滤结果；来源、时间屏障、系统来源、位置回退和按键例外均位于同一个生产入口，调用处不得再按按键条件绕过其中的规则。日志拒绝原因复用该结果。
 
@@ -48,6 +48,7 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 | 单指/多指 Touch Down、Move、最后 Up/Cancel | 主光标与箭头隐藏；活动擦除圆环仍在，最后一指终态后消失 |
 | Touch/Pen 提升的 Mouse 消息 | 不发布 Mouse Hover，不抢占 Touch/Pen |
 | Touch Up 后来源未知且停在末触点的 MouseMove | 不解除 Touch 抑制，不重新绘制主悬停圆环 |
+| Pen Up/OutOfRange清样本后、无真实Mouse输入的系统Move | Pen归属保持，旧Mouse不复活；System/Drawing两样式均无应用主视觉 |
 | 后续真实 Mouse/TouchPad 或 Pen 样本 | 立即恢复该设备的既有光标策略 |
 | Touch Pan 中真实 Mouse 已接管 | 后续 Touch 指头不清 Mouse；Pan 停止不回弹到 Touch |
 | Win7 无输入来源 API | 仍用 RTS、promoted 签名及时间屏障；新 Pen Hover 可恢复 |
@@ -58,7 +59,7 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 - Bad：只在 Touch 活动计数非零时隐藏系统箭头，最后 Up 后旧 Hover/箭头立即回弹；或把 Touch 写成持久 owner 导致新设备无法接管。
 
 ### 6. Tests Required
-Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消息来源过滤、真实 Mouse/Pen 恢复和 Pan 接管；另须调用生产 `FilterMouseCursorMessage` 覆盖系统按键态 Move → Touch Up → 迟到系统 Move → 真实 Mouse 接管，并检查 mailbox 与主光标解析结果。完整 ARM64 Solution 构建。隐藏 Host 测试与真实纯触摸、Pen+Mouse+Touch、Win7 设备验证分别记录结果，不能把纯逻辑通过等同硬件验收。
+Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消息来源过滤、真实 Mouse/Pen 恢复和 Pan 接管；另须调用生产 `FilterMouseCursorMessage` 覆盖系统按键态 Move → Touch Up → 迟到系统 Move → 真实 Mouse 接管，并检查 mailbox 与主光标解析结果；Pen场景增加旧Mouse→Pen Hover/Contact→清Pen样本→迟到/重复系统Move的两MouseStyle对照，以及真实Mouse/TouchPad/Down、新Pen恢复、API缺失/失败和Win7回退。完整 ARM64 Solution 构建。隐藏 Host 测试与真实纯触摸、Pen+Mouse+Touch、Win7 设备验证分别记录结果，不能把纯逻辑通过等同硬件验收。
 
 ### 7. Wrong vs Correct
 - Wrong：Touch Down 只清 Mouse mailbox，仍按旧 Pen/Mouse owner 解析主光标，并在 Touch Up 后依赖 Windows 自动隐藏。
@@ -76,7 +77,8 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 ### 3. Contracts
 - 关闭时不向控制台输出光标诊断；开启时先建立 Debug 控制台，再启用记录。诊断只观察状态，不改变鼠标、笔、触摸的归属和光标显隐。
 - `InitializeDebugConsole` 保留已有 stdout/stderr 文件或管道重定向；两路均重定向时不创建控制台，只有一路重定向时只初始化缺失输出。采集必须保留启动至退出的全量文件，不能用末屏替代。Win7 PowerShell 2 / 旧 CLR 的 HashAlgorithm 释放使用 public Clear()，不能假设直接 Dispose() 可见；脚本 parser 通过不等于旧 CLR 方法验证。
-- RTS/窗口回调只把定长事件写入有界队列，不直接等待控制台 I/O；绘制线程输出序号、时间、线程和事件，队列溢出必须报告丢弃条数。
+- RTS/窗口/绘制线程只发布定长诊断，不同步等待外部 I/O；统一独立输出 worker 写入 stdout/stderr。序号标识生产事件，跨线程取号与入队可交错；固定队列拥塞丢弃及有界停止见 [F1 合同](canvas-freeze-boundaries.md#f1draw3-标准流诊断不得阻塞绘制与-rts)。
+- 橡皮收敛后的 Move 唤醒必须使用一次订阅、真实已消费 sequence 复查和帧初 generation，含 deadline 分支，见 [F3 合同](canvas-freeze-boundaries.md#f3橡皮-idle-交接必须保留下一次有效-move)。
 - 输入日志需包含 Touch 生命周期、Pointer/Mouse 来源与过滤结果、Pen/Mouse 样本、owner 和系统光标决策。绘制日志需区分主光标与逐触点光标，覆盖形状、位置、尺寸、透明度、Laser 笔尖和本帧呈现结果；移动时可限频，来源和可见性变化必须立即输出。
 
 ### 4. Validation & Error Matrix
@@ -103,22 +105,55 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 
 `【直接确认】` Bar 注册的 `WM_TOUCH` 会把主接触（包括当前系统上报的 Pen）转换成带内部来源标记的 `ExMessage`。Windows 同时可能为同一接触派发 Pointer 兼容鼠标消息，其 `GetMessageExtraInfo()` 的来源签名为 `0xFF515700`（掩码 `0xFFFFFF00`）。
 
-`【直接确认】` Pointer 兼容鼠标副本必须在 Bar 的窗口过程和 HiMsg 入队回调两个入口都丢弃；不带该签名的真实鼠标消息仍正常入队。低位 `0x80` 只能用于诊断 Pen/Touch 分类，不能决定一次接触的输入归属，因为同一支笔的 Down/Up 可能出现不同低位值。触摸长按右键抑制依赖这条单一 `WM_TOUCH` 路径，不得重新保留 Pen 兼容鼠标分支。
+`【直接确认】` Pointer 兼容鼠标副本必须在 Bar 的窗口过程和 HiMsg 入队回调两个入口都丢弃；真实鼠标 Down/Move/Up 保留原有 HiMsg 入口及原生按压代次；普通点击不依赖 Raw。Raw 仅在连续拖动状态机中补充越界 Move/Up，不进入 HiMsg，不能替尚未拖动的候选提交点击。低位 `0x80` 只能用于诊断 Pen/Touch 分类，不能决定一次接触的输入归属，因为同一支笔的 Down/Up 可能出现不同低位值。触摸长按右键抑制依赖这条单一 `WM_TOUCH` 路径，不得重新保留 Pen 兼容鼠标分支。
 
 按钮点击完成必须等待明确的 `WM_LBUTTONUP`；`WM_MOUSEMOVE` 的 `MK_LBUTTON` 缺失不能被解释为抬起，否则会把接触或窗口激活阶段的移动误判为第二次点击。
 
-## RTS 初始化与回退
+## RTS 初始化与鼠标兼容回退（2026-10-18）
 
-`【直接确认】`：
+### 1. Scope / Trigger
 
-- `IdtRts.cpp` 的不同初始化路径包含关闭 flicks、启用多点触摸、注册 stylus plugin 等操作；
-- 初始化/插件注册失败会写日志并允许鼠标回退；
-- 画板窗口处理 tablet gesture、触摸注册和光标显示；
-- 实际输入模式还读取配置和硬件/窗口状态。
+产品 Draw3 启动输入初始化适用；历史 `IdtRts.cpp::SafeRTSInit` / `useMouseInput` 不参与产品编译，不能作为当前兜底已接线的证明。
 
-`【合理推断】` 现有 SafeRTSInit 和鼠标回退是启动兼容边界。改变 RTS 初始化时应保留可诊断的失败路径，除非任务明确决定取消回退并验证启动行为。
+### 2. Signatures
 
-`【待确认】` 仓库没有给出各 Windows 版本、触摸屏、数位笔驱动和 RTS 版本的正式支持矩阵。
+- `RealTimeStylusInput::Initialize / UsesBasicPacketDescription / EnableContactPublication / Shutdown`；生产共享编排和 callback lease 位于 `Draw3.RtsStartup.h`。
+- `HostInputMode::{Disabled,RtsExtended,RtsBasicXY,Win32Mouse}`；`HostStartupStage::InputReady` 对应 `Milestone::Draw3InputReady`，保持原进度槽/权重。
+- `WindowController::SetMouseCompatibilityEnabled / CloseMouseInputAdmission` 和 `Draw3.MouseInput.h` 的生产鼠标状态；只向现有 ContactInputCoordinator 发布。
+
+### 3. Contracts
+
+- 按完整RTS→基础X/Y→Win32Mouse串行选择，每档最多一次。基础档覆盖扩展SetDesired失败及设置成功后Enable失败，使用新RTS实例；保留all-tablets/多点设置，不枚举额外开关或固定延时重试。
+- 每次可恢复RTS尝试有独立Dormant失败清理scope，停止/排空并真实Complete/join后才能下一档；成功实例恢复Host signal。Disable失败时必须成功get_Enabled读回明确FALSE，才可继续Remove及排空；已加入插件但仍启用或状态未知、Remove失败、排空未证明或deadline过期均不能启用下一producer。
+- 同步插件所有业务回调先取单原子关闭位+在途计数的lease，Shutdown先关门，再无内部锁Disable/Remove，等最后lease的event通知后才能终止contact和释放借用对象；不能只看计数零越过最后通知尾部。
+- 候选RTS可建立decoder但不发布业务Down，选定输入后才开放；就绪前按下必须抬起后重新Down。不能在drawing consumer存活时ResetForNextRun清失败候选队列。
+- 每代只有一个绘制producer。RTS模式WM_MOUSE仍只处理原光标，不重复落笔；Win32Mouse从正常RTS的promoted/Touch barrier过滤之前接收真实鼠标及系统已提升的单点鼠标消息，Pointer不再提供第二条绘制流。
+- 鼠标左右键复用MouseLeft/MouseRight语义；单活动流、另一键先结束旧流，迟到旧Up不结束新流。保留有符号客户区坐标和未知压力/面积；Move不能凭空创建Down。
+- 捕获由owner线程设置/释放并读回。CaptureChanged/CancelMode/隐藏/销毁/Stop取消活动contact；MouseLeave不是Up。停止须owner串行确认和转发排空，之后才能撤Coordinator/Reset；RTS Shutdown不能代替鼠标停产证明。
+- 鼠标降级记录warning和真实input_mode，不冒报rts_ready成功，不新增阻塞提示或设置项。基础档不承诺原压感；鼠标档不承诺压感、多点、笔尾/触觉，系统不提升鼠标消息时不保证对应Pen/Touch可用。
+
+### 4. Validation & Error Matrix
+
+| 情形 | 必须结果 |
+|---|---|
+| 完整RTS成功 | 不试X/Y，不启用WM_MOUSE绘制 |
+| 扩展描述失败，或扩展Enable=0x80070057 | 安全清理旧attempt后用新实例试X/Y一次 |
+| RTS不可用且安全停产 | owner确认Win32Mouse后才打开输入就绪门 |
+| Disable失败但成功读回Enabled=FALSE | 继续必需的Remove和drain，全部完成后才可降级，与publisher是否存在无关 |
+| 已加入插件且Disable失败读回仍启用/状态未知、Remove/drain失败或Expired | 不启用新输入，不释放仍借用对象，受控致命收口 |
+| 重复/迟到Up、捕获丢失、Stop交错 | 恰好一个终态，新代次不继承旧contact或mode |
+
+### 5. Good / Base / Bad Cases
+
+Good：扩展Enable失败→X/Y成功；或两档失败→鼠标就绪并经原Controller绘制。Base：完整RTS保持原能力。Bad：只重试SetDesired、吞停产错误、RTS和WM_MOUSE同时发布、把光标移动当作绘制兜底。
+
+### 6. Tests Required
+
+生产共享RTS编排/清理scope/lease/publication gate故障注入；生产鼠标状态→真实Coordinator；完整Solution Debug|ARM64与Headless `--no-window`。这些不能证明真实COM/驱动接受X/Y、实际首帧、owner捕获或系统Pen/Touch提升，现场/授权窗口验收单列。
+
+### 7. Wrong vs Correct
+
+Wrong：依赖旧Facade转发或把RTS false改为true放行。Correct：选择真实输入后端、完成旧producer停产，并通过同一Contact/Controller/历史保存链。通用进程自动重启不是本合同的替代。
 
 ## 历史 Draw2 笔画生命周期
 
@@ -417,7 +452,7 @@ headless先在旧代码运行红灯用例，再验证平台/迟滞/单跳/双向
 - 来源需区分 API 不存在（api=0）、调用失败（api=1 ok=0 error）、成功返回未知（api=1 ok=1 device=0）；同时记录 origin 和 InSendMessageEx 的 sent 标志。sent=0 不能单独证明来源是物理设备。来源查询保存并恢复调用方 LastError。
 - 末触点记录包含实际比较坐标、消息时间、via=pointer/compat-mouse。兼容 Mouse 无完整 Pointer ID 时 touchId=0，不能把 extra 低位猜成完整 ID；primary=0/1/2 分别表示未知/非主触点/主触点。
 - 按键位只能说明消息状态，不能确认物理鼠标来源。schema=2 日志已证明 `!buttonDown` 例外会放行 device=0 origin=IMO_SYSTEM 的 Move；修复将已确认的系统来源判定置于按键/位置回退之前。纯函数通过不等于设备验收。
-- Raw Input 只观察现有 Bar 接收入口，记录初始注册状态及后续注册/注销成功或失败。落笔可能注销接收；缺少 raw-mouse 行不证明没有真实鼠标操作。不得为了诊断在第二个 HWND 重复注册同一设备类。
+- Raw Input 只观察现有 Bar 接收入口，记录初始注册状态及后续注册/注销成功或失败。共享交互注册不随落笔/光效休眠注销；光效观察仍可停止，缺少 raw-mouse 行不证明没有真实鼠标操作。不得为了诊断在第二个 HWND 重复注册同一设备类。
 - 定长日志截断必须包含 `[truncated]`；丢失/截断时事件链检查不能报告证据完整。verify_cursor_trace.py 检查真实输出的来源接管到呈现序列，其无匹配结果不等于全部光标行为正确。
 
 ## Scenario: Draw3 Contact Closing 与拒收路由回收
@@ -631,3 +666,44 @@ Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW 
 - Wrong：Part2仍故障就称默认修复失败，或者把DXGI创建成功与GPU非透明像素/最终桌面可见混为一项。
 - Correct：Part2显式guard0保留原版，普通启动按auto；核实际所选byte SHA、GPU源/DIB和人工观察。`completed-with-failures` 包含刻意运行的原版 WARP 失败，不代替独立 `guarded-status` 和实际画布验收。2026-10-10 用户已确认新 EXE 两种后端普通启动正常；仍将偶发输入、定格观察与主画布修复验收分开记录。
 - 输入坐标边界：先解码 `mouse-source` 的原始 `lParam`，再对照 `mouse event`、sample 和 laser-tip。连续原消息 X 已为 0 且 accepted=1 时，不能把横向卡住归因于 shader/ULW；若没有系统 `GetCursorPos`、裁剪范围或虚拟机鼠标接管证据，也不能仅凭 Ctrl+Alt 恢复唯一归因 VMware。
+
+## Scenario: Draw3 笔锋长度约束与停笔重平滑
+
+### 1. Scope / Trigger
+修改主产品普通笔模拟笔锋的形状、停笔追赶或完成尾段时适用。源任务 `.trellis/tasks/10-11-pen-taper-shape-and-stop-smoothing`；独立 demo 的行为不随本合同改变。数学/无窗口模型验证不等于实际设备的可见手感验收。
+
+### 2. Signatures
+- `RebuildL0DrawPoints`、`BuildCompletedPenTail`、`FinalizeStoredStroke` 共用主产品收锋规则。
+- `RunPenTaperProductionProbe()` 与早退出 CLI `Inkeys.exe --draw3-pen-taper-test`；无 HWND，不进入正常 Host/RTS/配置启动链。
+- `ResolvePenDisplayTime` 仍优先使用已锁定的物理 `terminalDisplayTime`。
+
+### 3. Contracts
+- L0 包含完整笔锋和 prediction；100% 起点沿用末端时间回看 configured live-tip duration 的原有计算。不得把 L0 最早点当成收锋起点，也不得改变 prediction 长度或 L1 保护窗口/提交游标。
+- 原候选笔锋内以中心线弧长和未收锋最大笔身直径 D 计算有效长度 L；`S(x)=u*u*(3-2*u), u=clamp(x,0,1)`，端头比例 `1-0.7*S(L/(2D))`。L>=2D 为30%，L=D为65%，L=0.5D约89%，L=0为100%。有效区间内再按归一化弧长SmoothStep从100%连接到端头比例。
+- 每帧从未经模拟收锋的真实/预测半径重新生成；不把上一帧已收锋半径作为基础输入。保留胶囊公切线安全约束，L1共享连接点和真实中心线路径不改。
+- 停笔的显示年龄以最近真实运动和既有预测时间参考计算，合成model输出不能刷新年龄。有效长度按现有T平滑压缩并以上一帧长度封顶；真实Move/新Down/Reset解除旧限制。实际位置变化及成功重连须明确清除长度缓存，不能只比较时间值，因为不同真实Move可具有相同QPC时间戳。前段恢复笔身宽度，剩余过渡整体重算，不能以恢复为粗半径的圆头直接覆盖旧细尾。
+- 压缩边界在段内时只对派生几何加入插值连接点，不改`realPoints`、基础压感/速度估算、L1前缀或CPU/GPU结构布局。旧/新L0 bounds共同进入dirty。
+- 活动态、完成尾段及Stored使用同一形状求解；缓存的长度/时间须与运动及显示时间兼容。较晚live帧的缓存不得污染较早物理Up；Up锁定后延迟处理不继续老化，长停同位Up不重新收尖。
+- 硬件压感、HardPen及禁用taper的工具沿用现有行为；没有新配置或UInk格式迁移。
+
+### 4. Validation & Error Matrix
+| 条件 | 必需行为 |
+| --- | --- |
+| 零长度/重复点/同一时间戳的追赶点 | 弧长求解有界，无除零、NaN或突发整段变粗 |
+| 粗笔短锋 | 依据L/D限制收细程度，不强制到30% |
+| 停笔后模型继续追加点 | 不刷新真实运动时间，不重新拉长已消退的有效笔锋 |
+| 新真实Move/对象复用 | 解除旧停笔长度限制，恢复正常收锋 |
+| 物理Up时间早于最后live计算 | 忽略不兼容的未来缓存，按物理Up时间生成完成几何 |
+| 终态迟到/保存/重放 | 已锁定宽度不继续随帧时间变化 |
+
+### 5. Good / Base / Bad Cases
+- Good：长细锋停下后在原范围内压缩过渡，长度不足2D时端头逐渐变粗，停稳为100%；完成/Stored同规则。
+- Base：正常移动的100%起点及L0/L1/预测保护窗口保持原设计。
+- Bad：整段L0从最早点开始收尖、按重复点时间越界删除细尾、或使用上一帧收锋半径累计收细。
+
+### 6. Tests Required
+生产probe覆盖长度比例/阈值连续性、粗细及小数宽、弧线与稀疏/重复/同时间点、真实模型30/60/120/240FPS及预测模式的逐帧停笔、L1连接/dirty/真实点不改写、续画/多笔、快速/长停/延迟Up与Stored。完整`InkeysRepo.sln Debug|ARM64`和`InkeysHeadlessTests.exe --no-window`；可见GUI/实体设备结果单独记录。
+
+### 7. Wrong vs Correct
+- Wrong：`pointAge -> radius立即回到base -> 粗端帽覆盖旧细尾`；或`ApplyTaper(previousL0DrawPoints)`累计缩放。
+- Correct：`原笔锋范围 -> 原始半径 + 弧长 -> 压缩有效长度 -> 整段SmoothStep -> 公切线安全 -> 新/旧L0 dirty`。
