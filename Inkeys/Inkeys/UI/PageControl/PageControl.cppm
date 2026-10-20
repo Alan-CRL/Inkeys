@@ -579,6 +579,8 @@ export namespace Inkeys::UI::PageControl
 		std::uint64_t publicationRevision = 0;
 		std::uint64_t targetRevision = 0;
 		std::uint64_t pageAckEpoch = 0;
+		// 白板期间放映控件不可见，但场次仍存活；菜单可用性不能由可见位推断。
+		bool presentationActive = false;
 		bool presentationVisible = false;
 		bool longPressEnabled = false;
 		int currentPage = -1;
@@ -751,6 +753,7 @@ export namespace Inkeys::UI::PageControl
 			&& left.layout.session == right.layout.session
 			&& left.layout.epoch == right.layout.epoch
 			&& left.layout.pairVersions == right.layout.pairVersions
+			&& left.presentationActive == right.presentationActive
 			&& left.presentationVisible == right.presentationVisible
 			&& left.longPressEnabled == right.longPressEnabled
 			&& left.currentPage == right.currentPage
@@ -1066,6 +1069,12 @@ export namespace Inkeys::UI::PageControl
 			&& targetContent.cy + targetOutset * 2 <= limit };
 	}
 
+	[[nodiscard]] inline LONG ResolvePptBottomInsetPixels(float dpiScale) noexcept
+	{
+		// PPT 底边距是屏幕 DIP，不随主栏 UI 倍率或 PPT 局部倍率扩大。
+		return static_cast<LONG>(std::lround(PageControlGapDip * NormalizeDpiScale(dpiScale)));
+	}
+
 	[[nodiscard]] inline ResolvedSurfaceLayout ResolveSurfaceLayout(
 		Surface surface, const RECT& monitor, float dpiScale,
 		const PptState& ppt, const WhiteboardState& whiteboard) noexcept
@@ -1128,7 +1137,7 @@ export namespace Inkeys::UI::PageControl
 				ppt.layout.bottomPairHeight));
 			x = left ? monitor.left + edge + offsetX
 				: monitor.right - edge - offsetX - width;
-			y = monitor.bottom - edge - offsetY - height;
+			y = monitor.bottom - ResolvePptBottomInsetPixels(dpiScale) - offsetY - height;
 		}
 		result.logicalBounds = RECT{ x, y, x + width, y + height };
 		return result;
@@ -1164,8 +1173,8 @@ export namespace Inkeys::UI::PageControl
 					- static_cast<float>((controlWidth + PageControlGapDip) * scale)));
 			layout.bottomPairHeight = (std::clamp)(layout.bottomPairHeight,
 				0.0F, (std::max)(0.0F, height
-					- static_cast<float>((controlHeight
-						+ PageControlGapDip * 2.0) * scale)));
+					- static_cast<float>((controlHeight + PageControlGapDip) * scale)
+					- static_cast<float>(ResolvePptBottomInsetPixels(dpiScale))));
 		}
 		else
 		{
@@ -1308,15 +1317,16 @@ export namespace Inkeys::UI::PageControl
 		const bool bottomVisible = ppt.layout.showBottomPair;
 		const bool middleVisible = ppt.layout.showMiddlePair;
 
-		auto FitScale = [&](bool visible, double controlWidth,
+		auto FitScale = [&](bool visible, bool bottom, double controlWidth,
 			double controlHeight, float& userScale)
 		{
 			if (!visible) return;
 			const float maximum = (std::min)(
 				width / static_cast<float>((controlWidth + PageControlGapDip) * 2.0
 					* normalizedDpi),
-				height / static_cast<float>((controlHeight
-					+ PageControlGapDip * 2.0) * normalizedDpi));
+				bottom ? (std::max)(0.0F, height - static_cast<float>(ResolvePptBottomInsetPixels(dpiScale)))
+					/ static_cast<float>((controlHeight + PageControlGapDip) * normalizedDpi)
+					: height / static_cast<float>((controlHeight + PageControlGapDip * 2.0) * normalizedDpi));
 			const float resourceMaximum = static_cast<float>((std::max)(1U, bitmapLimit) - 1U)
 				/ static_cast<float>((std::max)(controlWidth, controlHeight)
 					+ 2.0 * presentationOutsetDip) / normalizedDpi;
@@ -1328,9 +1338,9 @@ export namespace Inkeys::UI::PageControl
 			userScale = (std::min)({ std::clamp(NormalizeScale(userScale), 0.5F, 3.0F),
 				maximum, screenMaximum, resourceMaximum });
 		};
-		FitScale(bottomVisible, PptControlLongSideDip,
+		FitScale(bottomVisible, true, PptControlLongSideDip,
 			PptControlShortSideDip, ppt.layout.bottomPairScale);
-		FitScale(middleVisible, PptControlShortSideDip,
+		FitScale(middleVisible, false, PptControlShortSideDip,
 			PptControlLongSideDip, ppt.layout.middlePairScale);
 		if (bottomVisible)
 			ppt.layout = ClampPageControlLayout(Surface::BottomLeft,

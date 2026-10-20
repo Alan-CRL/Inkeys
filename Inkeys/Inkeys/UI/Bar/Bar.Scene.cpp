@@ -355,7 +355,14 @@ namespace Inkeys::UI::Bar
 			}
 			for(std::size_t i=0;i<next.enabled.size();++i)if(content.enabled[i]!=next.enabled[i]||content.interactive[i]!=next.interactive[i])IncludeButton(static_cast<BarSurfaceButtonId>(2+i));
 			if(content.switching!=next.switching)for(BarSurfaceButtonId id=1;id<=17;++id)IncludeButton(id);
-			if(content.pptActive!=next.pptActive)IncludeButton(7);
+			if(content.pptActive!=next.pptActive){
+				IncludeButton(7);
+				// 放映恢复时同步撤销 Minimize 的旧反馈，禁用态不能残留按压底色或释放点击。
+				if(next.pptActive){
+					std::scoped_lock lock(inputMutex);
+					if(hover==7||pressed==7){pointer.Reset();hover=pressed=0;feedbackDirty=true;}
+				}
+			}
 			content=next;
 			const bool menuChanged=menuMotion.Retarget(wb&&next.surface==0&&next.menu!=0,BarUiDefaultOperationDur);
 			const bool themeChanged=themeMotion.Retarget(wb&&next.surface==0&&next.menu==2,BarUiDefaultOperationDur,&menuMotion.Timeline());

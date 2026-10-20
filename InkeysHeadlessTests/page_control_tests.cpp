@@ -722,6 +722,8 @@ namespace
 						const bool middle = surface == Surface::MiddleLeft || surface == Surface::MiddleRight;
 						Check(std::abs(layout.scale - base * user * (middle ? 2.0F : 1.5F)) < 1e-5F,
 							"all four PPT surfaces multiply UI base, global zoom and local zoom exactly once");
+						if (!middle) Check(layout.logicalBounds.bottom == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)),
+							"PPT bottom inset stays five screen DIP across global and local UI scales");
 					}
 					WhiteboardState whiteboard;
 					whiteboard.active = whiteboard.expandedLayoutTarget = true;
@@ -1518,6 +1520,10 @@ namespace
 		PptState changedPpt = ppt;
 		Check(ArePptStatesEquivalent(ppt, changedPpt),
 			"identical PPT snapshots are deduplicated");
+		changedPpt.presentationActive = true;
+		Check(!ArePptStatesEquivalent(ppt, changedPpt),
+			"live session changes publish while PPT controls remain hidden by whiteboard");
+		changedPpt = ppt;
 		changedPpt.currentPage = 2;
 		Check(!ArePptStatesEquivalent(ppt, changedPpt),
 			"PPT page changes still publish");
@@ -1611,6 +1617,25 @@ namespace
 		}
 		Check(!PageControlGroupsOverlap(tinyMonitor, 1.5F, fitted, 8),
 			"tiny monitor fitting keeps bottom and side groups separated");
+		for (const float dpi : { 1.0F, 1.5F, 2.0F })
+		{
+			PptState moved;
+			moved.presentationVisible = true;
+			moved.uiScale = 0.6F;
+			moved.layout.bottomPairScale = 1.5F;
+			moved.layout.bottomPairWidth = 17;
+			moved.layout.bottomPairHeight = 37;
+			const auto bounds = ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, moved, {}).logicalBounds;
+			Check(bounds.bottom == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)) - 37
+				&& moved.layout.bottomPairWidth == 17 && moved.layout.bottomPairHeight == 37,
+				"screen-DIP bottom inset preserves saved PPT drag offsets");
+			auto maxDrag = moved.layout;
+			maxDrag.bottomPairHeight = 10000;
+			moved.layout = ClampPageControlLayout(Surface::BottomLeft, monitor, dpi, maxDrag, moved.uiScale);
+			const auto clampedBounds = ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, moved, {}).logicalBounds;
+			Check(clampedBounds.top >= monitor.top && clampedBounds.top <= monitor.top + 5,
+				"PPT drag clamp uses the same fixed bottom inset at the opposite screen edge");
+		}
 		Check(extreme.layout.bottomPairWidth == original.layout.bottomPairWidth
 			&& extreme.layout.middlePairHeight == original.layout.middlePairHeight
 			&& extreme.layout.bottomPairScale == original.layout.bottomPairScale

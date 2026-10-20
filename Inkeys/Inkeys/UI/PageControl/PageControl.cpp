@@ -823,9 +823,10 @@ namespace Inkeys::UI::PageControl
 				RequestAll(); return;
 			}
 			if(id==6 || id==7) {
+				if(id==7 && Snapshot().first.presentationActive) return;
 				CloseWhiteboardMenu();
 				if(id==6 && callbacks.closeWhiteboard) callbacks.closeWhiteboard();
-				if(id==7 && !Snapshot().first.presentationVisible) (void)Inkeys::Window::GetService().MinimizeWhiteboardWindowGroup();
+				if(id==7) (void)Inkeys::Window::GetService().MinimizeWhiteboardWindowGroup();
 			}
 			constexpr auto& colors=WhiteboardVisual::ThemeColors;
 			if(id>=9 && id<=17 && callbacks.changeTheme)
@@ -839,7 +840,7 @@ namespace Inkeys::UI::PageControl
 			PageContent content;
 			content.surface=static_cast<unsigned>(index);
 			content.whiteboard=mode==WorkspaceMode::WhiteboardExpanded;
-			content.switching=whiteboard.switching;content.pptActive=ppt.presentationVisible;
+			content.switching=whiteboard.switching;content.pptActive=ppt.presentationActive;
 			content.nextIsAdd=whiteboard.nextIsAdd;content.nextIsEndShow=IsPptEndPage(ppt.currentPage,ppt.totalPage);
 			content.unsaved=whiteboard.unsaved;content.menu=whiteboard.menu;
 			if(content.whiteboard){
@@ -3398,6 +3399,63 @@ namespace Inkeys::UI::PageControl
 			Check(changedInside>0&&changedOutside==0,"real partial page text pixels change while the open menu, theme and backing remainder stay intact");
 			state.scene.ConfigurePagination(content);state.scene.SetOpacity(1,0);
 			Check(!state.scene.IsInvalidated(),"identical content and settled opacity do not request another frame");
+			{
+				// 比较真实 SVG/文字像素，而不只断言菜单按钮的 enabled 标志。
+				const auto rowPixels=[&]{
+					const auto pixels=readPixels();const auto bounds=state.scene.PresentationBounds();
+					const auto row=state.scene.Layout().buttons[6].localPixels;
+					std::vector<BYTE> result;
+					for(LONG y=row.top;y<row.bottom;++y)for(LONG x=row.left;x<row.right;++x){
+						const LONG px=x-bounds.left,py=y-bounds.top;
+						if(px<0||py<0||static_cast<UINT>(px)>=pixels.width||static_cast<UINT>(py)>=pixels.height)return std::vector<BYTE>{};
+						const auto offset=(static_cast<std::size_t>(py)*pixels.width+px)*4;
+						result.insert(result.end(),pixels.bytes.begin()+offset,pixels.bytes.begin()+offset+4);
+					}
+					return result;
+				};
+				const auto settle=[&]{for(int i=1;i<=60;++i)(void)state.scene.Advance(time+i*20ms);time+=1200ms;
+					return present(true).status==PresentStatus::Success;};
+				Check(state.scene.HitTest({265,-64})==7,"standalone whiteboard Minimize is available");
+				const auto normal=rowPixels();const auto row=state.scene.Layout().buttons[6].localPixels;
+				Check(state.scene.PointerMove({265,-64}).hover==7&&state.scene.PointerDown({265,-64}).pressed==7,
+					"enabled Minimize uses shared hover and press ownership");
+				time+=20ms;(void)present(true);
+				auto hiddenShow=ppt;hiddenShow.presentationVisible=false;hiddenShow.presentationActive=true;
+				auto liveContent=content;liveContent.pptActive=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,hiddenShow,wb).pptActive;
+				state.scene.ConfigurePagination(liveContent);
+				Check(settle()&&!state.scene.Layout().buttons[6].enabled&&state.scene.HitTest({265,-64})==0,
+					"live PPT disables Minimize even when its own page controls are hidden");
+				const auto disabled=rowPixels();
+				Check(!normal.empty()&&disabled.size()==normal.size(),"Minimize normal and disabled pixel rows are readable");
+				if(!normal.empty()&&disabled.size()==normal.size()){
+					const auto width=row.right-row.left;const auto background=(static_cast<std::size_t>(2)*width+width-3)*4;
+					std::array<unsigned,2> ink{};std::array<double,2> error{};
+					for(std::size_t pixel=0;pixel<normal.size()/4;++pixel){
+						const auto offset=pixel*4;unsigned contrast=0;
+						for(int channel=0;channel<3;++channel)contrast+=std::abs(int(normal[offset+channel])-normal[background+channel]);
+						if(contrast<180)continue;
+						const auto part=pixel%width<28?0U:1U;++ink[part];
+						for(int channel=0;channel<3;++channel){
+							const double expected=normal[background+channel]+(int(normal[offset+channel])-normal[background+channel])*BarButtonDisabledContentOpacity;
+							error[part]+=std::abs(disabled[offset+channel]-expected);
+						}
+					}
+					const bool sharedOpacity=ink[0]>5&&ink[1]>5&&error[0]/(ink[0]*3)<3&&error[1]/(ink[1]*3)<3;
+					if(!sharedOpacity)std::fprintf(stderr,"[PageControlUI3] Minimize ink=(%u,%u) error=(%.2f,%.2f) background=(%u,%u,%u)\n",
+						ink[0],ink[1],error[0],error[1],static_cast<unsigned>(normal[background]),static_cast<unsigned>(normal[background+1]),static_cast<unsigned>(normal[background+2]));
+					Check(sharedOpacity,"Minimize icon and text use the shared disabled opacity after clearing the old pressed background");
+				}
+				state.scene.ConfigurePagination(content);Check(settle()&&state.scene.HitTest({265,-64})==7,
+					"ending the hidden PPT session restores Minimize through the same content update");
+				Check(state.scene.PointerUp({265,-64}).clicked==0,"disabled old press cannot revive when PPT ends before Up");
+				Check(rowPixels()==normal,"Minimize restores its original normal icon, text and background pixels");
+				state.scene.ConfigurePagination(liveContent);Check(settle(),"Minimize re-enters disabled state");
+				const auto disabledIdle=rowPixels();
+				Check(state.scene.PointerMove({265,-64}).hover==0&&state.scene.PointerDown({265,-64}).pressed==0
+					&&state.scene.PointerUp({265,-64}).clicked==0,"disabled Minimize rejects hover, press and click");
+				Check(settle()&&rowPixels()==disabledIdle,"disabled Minimize never paints hover or pressed feedback");
+				state.scene.ConfigurePagination(content);Check(settle(),"standalone menu state restores after disabled regression");
+			}
 			const auto gapAlpha=[&](const TargetPixels& pixels){
 				const auto bounds=state.scene.PresentationBounds();const LONG x=77-bounds.left,y=40-bounds.top;
 				return x>=0&&y>=0&&static_cast<UINT>(x)<pixels.width&&static_cast<UINT>(y)<pixels.height
@@ -3554,6 +3612,10 @@ namespace Inkeys::UI::PageControl
 			publishedWhiteboard=wb;publishedWhiteboard.menu=1;
 			(void)PageControlInputTick(repeatTime+100ms,context);
 			Check(pptNext==2&&whiteboardNext==0&&publishedWhiteboard.menu==1,"old PPT repeat neither advances whiteboard nor dismisses its menu");
+			publishedPpt.presentationActive=true;publishedPpt.presentationVisible=false;
+			InvokeWhiteboardMenu(7,publishedWhiteboard);
+			Check(publishedWhiteboard.menu==1,"stale Minimize cannot close the menu or act while hidden PPT remains live");
+			publishedPpt.presentationActive=false;publishedPpt.presentationVisible=true;
 			std::vector<std::uint32_t> selectedColors;
 			whiteboardCallbacks.changeTheme=[&](std::uint32_t rgb,int,std::uint64_t,int){selectedColors.push_back(rgb);};
 			for(WidgetId id=9;id<=14;++id)InvokeWhiteboardMenu(id,publishedWhiteboard);
@@ -3639,6 +3701,58 @@ namespace Inkeys::UI::PageControl
 				InputRegistrationContext registration{index,inputLifecycle.load()};
 				PageControlInputEvent(event,&registration);return event;
 			};
+			for(const UINT dpi:{96U,144U})for(const int taskbarThickness:{24,96})for(const float savedOffset:{0.0F,37.0F}){
+				Prepare();
+				const auto uiScale=static_cast<float>(Inkeys::Display::ResolveUiScaleBase(dpi,taskbarThickness,0,0,
+					Inkeys::Display::UiScaleBaseMode::TaskbarActual));
+				hiddenTestDpi.store(dpi);hiddenTestUiScale.store(uiScale);
+				const auto [layoutMonitor,dpiScale,globalScale]=LayoutMonitor();
+				auto show=baseline;show.presentationActive=true;show.uiScale=globalScale;
+				show.layout.showMiddlePair=false;show.layout.bottomPairScale=1.5F;show.layout.bottomPairHeight=savedOffset;
+				const auto originalLayout=show.layout;
+				for(int stage=0;stage<3;++stage){
+					WhiteboardState board;board.active=board.expandedLayoutTarget=stage==1;
+					show.presentationVisible=stage!=1;
+					const auto fitted=ResolveRuntimePageControlLayout(layoutMonitor,dpiScale,show);
+					const auto revision=publishedRevision.fetch_add(1)+1;
+					for(std::size_t index=0;index<2;++index){
+						const auto target=ResolveSurfaceLayout(SurfaceFor(index),layoutMonitor,dpiScale,fitted,board);
+						const char* failed=nullptr;
+						for(int frame=0;frame<=60;++frame){
+							const auto stamp=origin+2s+stage*2s+frame*20ms;
+							Check(ConfigureSurface(index,target.mode,fitted,board,layoutMonitor,target,revision,stamp,false,failed),
+								"PPT-whiteboard-PPT uses the real pagination adapter");
+							(void)surfaces[index].scene.Advance(stamp);
+						}
+						FrameContext context;context.epoch=epoch;context.frameTime=origin+2s+stage*2s+1200ms;
+						auto& surfaceState=surfaces[index];const auto bounds=surfaceState.scene.PresentationBounds();
+						const SIZE size{bounds.right-bounds.left,bounds.bottom-bounds.top};
+						surfaceState.backingCapacity={(std::max)(surfaceState.backingCapacity.cx,size.cx),(std::max)(surfaceState.backingCapacity.cy,size.cy)};
+						RECT submitted{};unsigned submissions=0;
+						std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink=[&](const auto& info){
+							submitted={info.pptDst->x,info.pptDst->y,info.pptDst->x+info.psize->cx,info.pptDst->y+info.psize->cy};
+							++submissions;return TRUE;};
+						const auto result=PresentScene(index,surfaceState,nullptr,context,bounds,surfaceState.backingCapacity,true,false,
+							surfaceState.scene.AnimationActive(),&sink);
+						Check(result.status==PresentStatus::Success&&result.pixelsSubmitted&&submissions==1,
+							"each workspace handoff submits real D2D/GetDC pixels and its screen destination");
+						if(result.status==PresentStatus::Success){surfaceState.scene.CommitPresented();(void)surfaceState.scene.ConsumeDamage();}
+						if(stage!=1){
+							const LONG expected=layoutMonitor.bottom-static_cast<LONG>(std::lround(5*dpiScale))-static_cast<LONG>(savedOffset);
+							const auto logical=surfaceState.scene.LogicalBounds();
+							// 包络向外取整可能多覆盖一像素，按真实提交原点映射逻辑底边。
+							const bool atBottom=logical.bottom==expected&&EqualRect(&submitted,&bounds)
+								&&submitted.top+(logical.bottom-bounds.top)==expected;
+							if(!atBottom)std::fprintf(stderr,"[PageControlUI3] return-bottom index=%zu stage=%d dpi=%u taskbar=%d scale=%.3f offset=%.1f logical=%ld submitted=%ld expected=%ld\n",
+								index,stage,dpi,taskbarThickness,globalScale,savedOffset,logical.bottom,submitted.bottom,expected);
+							Check(atBottom,"PPT returns five screen DIP above monitor bottom without inheriting the taskbar or whiteboard anchor");
+							Check(show.layout.bottomPairHeight==originalLayout.bottomPairHeight&&show.layout.bottomPairScale==originalLayout.bottomPairScale,
+								"workspace handoff preserves saved PPT drag offset and local multiplier");
+						}
+					}
+				}
+			}
+			hiddenTestDpi.store(USER_DEFAULT_SCREEN_DPI);hiddenTestUiScale.store(baseline.uiScale);
 			initialized.store(true,std::memory_order_release);
 			{
 				Prepare();

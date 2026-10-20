@@ -623,6 +623,28 @@ int RunBarBottomDockTests()
 			&& Near(ResolveBarBottomDockInsetPixels(5.0, 1.5), 8.0),
 			"five DIP inset matches page-bar physical margin");
 
+	for (const double dpi : { 1.0, 1.5, 2.0 })
+		for (const LONG taskbarHeight : { 24L, 96L })
+			for (const double zoom : { 0.3, 0.9, 1.8 })
+			{
+				BarPptSceneState show;
+				BarWorkspaceSceneState workspace;
+				(void)show.Publish(1, true);
+				(void)show.Take();
+				Check(workspace.Update(false, show.active) == BarWorkspaceTransition::Enter
+					&& workspace.Update(true, show.active) == BarWorkspaceTransition::Switch
+					&& !show.Take()
+					&& workspace.Update(false, show.active) == BarWorkspaceTransition::Switch,
+					"whiteboard return keeps the live PPT dock scene without replaying a session edge");
+				const RECT work{ monitor.left, monitor.top, monitor.right, monitor.bottom - taskbarHeight };
+				const double line = ResolveBarBottomDockLine(monitor, work,
+					ResolveBarWorkspaceBottomInsetDip(false, false, show.active, false), dpi, work.bottom);
+				const double center = ResolveBarBottomDockCenterScreenY(line, 80, 1, zoom);
+				Check(Near(ResolveBarVisibleBorderBottomScreen(center, 80, 1, zoom),
+					monitor.bottom - std::round(5 * dpi)),
+					"PPT main bar returns below the taskbar dock line at five screen DIP for every UI scale");
+			}
+
 	for (double zoom : { 1.0, 1.5, 1.875 })
 	{
 		const double center = ResolveBarBottomDockCenterScreenY(
