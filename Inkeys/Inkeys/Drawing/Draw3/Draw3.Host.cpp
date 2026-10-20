@@ -402,6 +402,7 @@ namespace Inkeys::Drawing::Draw3
 		RealTimeStylusInput stylus;
 		std::unique_ptr<DrawingController> drawing;
 		std::atomic_bool interruptedStrokeReconnectEnabled = true;
+		std::atomic_bool drawingHapticsEnabled = true;
 		std::jthread drawingThread;
 		std::atomic_bool running = false;
 		std::atomic_bool firstFrameReady = false;
@@ -1489,6 +1490,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool reconnectEnabled = interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
 			if (drawing && drawing->GetInterruptedStrokeReconnectEnabled() != reconnectEnabled)
 				drawing->SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
+			if (drawing) drawing->SetDrawingHapticsEnabled(drawingHapticsEnabled.load(std::memory_order_acquire));
 			PumpDisplayScale();
 			{
 				std::scoped_lock lock(presentationTargetMutex);
@@ -2511,7 +2513,14 @@ namespace Inkeys::Drawing::Draw3
 	}
 	Haptics::Context Host::HapticContext() const noexcept
 	{
-		return Running() ? Haptics::Context{ impl_->hapticClicks.Run(), impl_->window.HapticPointerRevision() } : Haptics::Context{};
+		return Haptics::ButtonContext(Running() ? impl_->hapticClicks.Run() : 0);
+	}
+	void Host::SetHapticPreferences(bool drawingEnabled, bool buttonsEnabled) noexcept
+	{
+		impl_->drawingHapticsEnabled.store(drawingEnabled, std::memory_order_release);
+		impl_->hapticClicks.SetEnabled(buttonsEnabled);
+		// 空闲或悬停预设也必须收敛，COM 的停止和恢复仍由绘制 owner 执行。
+		(void)impl_->input.PublishControlWake();
 	}
 	bool Host::PublishHapticClick(const Haptics::Click& source,
 		HostHapticClickDiagnostics* diagnostics) noexcept

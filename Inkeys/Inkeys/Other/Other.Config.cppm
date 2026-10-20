@@ -368,6 +368,10 @@ GROUP(UI, \
 		) \
 	) \
 	GROUP(Drawing, \
+		GROUP(Haptics, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Drawing, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Buttons, true) \
+		) \
 		GROUP(Cursor, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseStyle, 0) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenStyle, 0) \

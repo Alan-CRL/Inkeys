@@ -430,6 +430,12 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Draw
         {
             const char* N = "SettingsUI/Draw/N";
+            struct Node__SettingsUI__Draw__Haptics
+            {
+                const char* N = "SettingsUI/Draw/Haptics/N";
+                const char* Drawing = "SettingsUI/Draw/Haptics/Drawing";
+                const char* Buttons = "SettingsUI/Draw/Haptics/Buttons";
+            } Haptics{};
             struct Node__SettingsUI__Draw__Cursor
             {
                 const char* N = "SettingsUI/Draw/Cursor/N";

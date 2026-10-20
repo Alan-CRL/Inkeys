@@ -20,7 +20,7 @@
   "subtasks": [],
   "children": [],
   "parent": null,
-  "relatedFiles": [],
-  "notes": "",
+  "relatedFiles": [".trellis/spec/native-desktop/pen-haptics.md", ".trellis/spec/native-desktop/rendering-and-ui.md", "Inkeys/Inkeys/Other/Other.Config.cppm", "Inkeys/Inkeys/UI/Bar/Bar.Haptics.h"],
+  "notes": "2026-10-20 延续笔触觉任务：先合并 dev 26dbe340（merge 347ea174），再增加独立默认开启配置与全主栏/属性按钮反馈；后续新增形状/按钮须遵守 pen-haptics 接入合同。任务保持 in_progress。",
   "meta": {}
 }

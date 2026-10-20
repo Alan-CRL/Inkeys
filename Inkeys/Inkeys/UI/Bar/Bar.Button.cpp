@@ -82,6 +82,7 @@ void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
 	}
 	if (action != BarClearClickAction::PublishClear)
 	{
+		Inkeys::UI::Bar::Haptics::RejectButtonAction();
 		clearAttemptedForDoubleClick = false;
 		clearAcceptedForDoubleClick = false;
 		return;
@@ -93,6 +94,7 @@ void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
 	clearAttemptedForDoubleClick = true;
 	clearAcceptedForDoubleClick =
 		result == Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
+	if (!clearAcceptedForDoubleClick) Inkeys::UI::Bar::Haptics::RejectButtonAction();
 }
 
 bool BarButtonSetClass::RegisterButton(
@@ -311,16 +313,16 @@ void BarButtonSetClass::PresetInitialization()
 				{
 					// 真 Draw callback 第一业务写前再核当前 Up 和同一个 Pen baseline。
 					if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute,
-						Inkeys::UI::Bar::Ui3FixtureActionPoint::Callback)) return;
+						Inkeys::UI::Bar::Ui3FixtureActionPoint::Callback)) { Inkeys::UI::Bar::Haptics::RejectButtonAction(); return; }
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 					{
 						Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::UnsupportedState);
 						if (ChangeStateModeToPen())
 						{
-							(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(Inkeys::UI::Bar::Haptics::acceptedClick);
 							barUISet.barState.drawAttribute = false;
 							barUISet.barState.geometryAttribute = false;
 						}
+						else Inkeys::UI::Bar::Haptics::RejectButtonAction();
 					}
 					else
 					{
@@ -328,11 +330,11 @@ void BarButtonSetClass::PresetInitialization()
 							BarToggleChannel::DrawAttribute))
 						{
 							Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::RejectedByBusiness);
+							Inkeys::UI::Bar::Haptics::RejectButtonAction();
 							return;
 						}
 						// 只在真实toggle接受点标记，之后仍走原决策与StateUpdate规范化。
 						Inkeys::UI::Bar::MarkCurrentUi3FiniteBusinessAccepted();
-						(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(Inkeys::UI::Bar::Haptics::acceptedClick);
 						const auto decision = ResolveBarDrawButtonToggleDecision(
 							barUISet.barState.drawAttribute);
 						if (decision.openDrawAttribute)
@@ -384,15 +386,14 @@ void BarButtonSetClass::PresetInitialization()
 							selectedMode == StateModeSelectEnum::IdtSelection &&
 							Inkeys::UI::Bar::CurrentPageHasContent());
 						ChangeStateModeToEraser();
-						(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(Inkeys::UI::Bar::Haptics::acceptedClick);
 					}
 					else if (barUISet.TryBeginToggle(BarToggleChannel::EraserAttribute))
 					{
 						const bool open = !barUISet.barState.eraserAttribute;
 						barUISet.CollapseAuxiliaryPanels();
 						barUISet.barState.eraserAttribute = open;
-						(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(Inkeys::UI::Bar::Haptics::acceptedClick);
 					}
+					else Inkeys::UI::Bar::Haptics::RejectButtonAction();
 				};
 		}
 
@@ -434,11 +435,12 @@ void BarButtonSetClass::PresetInitialization()
 							barUISet.barState.drawAttribute = false;
 							barUISet.barState.geometryAttribute = false;
 						}
+						else Inkeys::UI::Bar::Haptics::RejectButtonAction();
 					}
 					else
 					{
 						if (!barUISet.TryBeginToggle(
-							BarToggleChannel::GeometryAttribute)) return;
+							BarToggleChannel::GeometryAttribute)) { Inkeys::UI::Bar::Haptics::RejectButtonAction(); return; }
 						bool open = !static_cast<bool>(barUISet.barState.geometryAttribute);
 						if (open)
 						{
@@ -631,7 +633,7 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					ToggleFreezeFromButton();
+					if (!ToggleFreezeFromButton()) Inkeys::UI::Bar::Haptics::RejectButtonAction();
 				};
 		}
 
@@ -1664,12 +1666,12 @@ void BarUISetClass::ArmRecallChromeIdleDeadline()
 
 void BarUISetClass::OpenRecallFromUndo()
 {
-	EngageRecallCommand(*this, false);
+	if (!EngageRecallCommand(*this, false)) Inkeys::UI::Bar::Haptics::RejectButtonAction();
 }
 
 void BarUISetClass::OpenRecallFromRedo()
 {
-	EngageRecallCommand(*this, true);
+	if (!EngageRecallCommand(*this, true)) Inkeys::UI::Bar::Haptics::RejectButtonAction();
 }
 
 void BarUISetClass::NoteRecallPopupRedo()

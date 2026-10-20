@@ -112,3 +112,29 @@ $nativeMsbuild = & $vsLocator -latest -products '*' -find 'MSBuild\Current\Bin\a
 ## 2026-10-20 人工验收与提交检查
 用户确认 Surface 超轻薄触控笔 2 人工测试通过，并授权本轮提交，明确要求不要结束任务。复核本次附件 f05e1928-8355-4e66-8c3a-5166e7261164：18 对 RTS Down/Up，18 次 canvas_identity 均 matched=1；61 次 click_consume 均 attached=1/current=1/sent=1，对应 61 次 Click 发送；32 次连续发送包含 27 次 Ink 和 5 次 Eraser，发送 HRESULT 均为 0。同一 Pointer 范围内连续多笔能在 Up 停止后重新发送，不再因等待缺席的 Pointer Down/Update 丢失反馈。日志本身没有 Highlighter 实际发送记录，不单独据此声称该波形已验证；实体震感通过以用户反馈为依据。
 本轮未修改触觉实现，复用最终 repair-build-20261020-verified.log 与 repair-headless-20261020-verified.log 的构建/无窗口验证；补充提交差异及格式检查。提交包含诊断、已批准修复、测试与任务记录；保留工作区中无关的 IDT_RELEASE 开关修改和 DrawingController 格式改动。Trellis 状态保持 in_progress，不执行 finish/archive/push。
+
+## 2026-10-20 后续实施：设置与全按钮反馈
+- [x] 获取 origin/dev 26dbe340，解决输入/主栏/设置/诊断冲突并完成独立静态复核，合并提交 347ea174。
+- [x] 备份并三方核对原有本地改动：dev 已包含 IDT_RELEASE 注释和对应格式调整，恢复后工作区无额外差异；保留 stash efd0a149 及 runtime 备份。
+- [x] 添加新配置、绘制设置卡片与三语文案，独立实时开关及旧请求失效。
+- [x] 降低按钮反馈强度，覆盖主栏/More/形状/绘制属性/橡皮/撤销重做属性的业务接受点。
+- [x] 增加能力回退、开关代际、全按钮共享接受边界回归；独立全范围复核。
+- [x] 完整 Debug|ARM64 solution、--no-window、i18n check、diff/编码检查；不启动 GUI。
+- [x] 更新按钮/形状新增接入合同，记录人工验收限制；不提交新增功能、不结束任务。
+
+实现与复核：新增 Drawing.Haptics.Drawing / Buttons（默认 true），设置→绘制卡片持久化并立即通知 Host；关闭绘制反馈由 owner 停止发送但保留有效范围，按钮独立启停且清除旧代际请求。按钮统一单次 Click、请求强度 0.35，能力不足沿既有路径回退，发送失败不增加力度重试。主栏注册回调、More、形状、颜色/粗细快捷及笔/橡皮/撤销重做属性共享业务接受边界；拖动、取消、禁用/拒绝动作、鼠标/触摸和重复回调不发送笔确认。复核补齐 Freeze 不可用或状态未改变时的拒绝结果。画布 Leave/模式变化仅失效画布绑定，不截断合法按钮确认；保持 dev 的输入、光标、快捷键和窗口行为。
+
+最终验证（2026-10-20）：原生 ARM64 MSBuild 构建 InkeysRepo.sln Debug|ARM64 /p:LinkIncremental=false 退出 0，耗时 2分18秒，0 errors、166 warnings（既有第三方/工具链警告未作范围外调整）。首轮仅新增 fake 测试误调用私有 helper，已改为通过真实 AttachPointerId 入口绑定，再构建通过。InkeysHeadlessTests.exe --no-window、Inkeys.exe --config-boundary-test、Inkeys.exe --state-mode-production-test 均退出 0；后两者在产品初始化前进入独立无窗口测试分支。配置测试覆盖默认/缺省字段和四种开关组合的实际写入读回；状态测试含 Freeze 被拒绝断言。i18n check（en-US/zh-TW 各 408/408）、git diff --check、32份差异文件 UTF-8/BOM/EOL 检查通过。dumpbin /imports 确认可选 GetPointerCursorId / WinRT 入口没有静态依赖。
+
+证据位于 .trellis/.runtime/restore-pen-haptics/：preferences-build-20261020-verified.log、preferences-headless-20261020.log、preferences-config-20261020.out.log、preferences-state-20261020.out.log、preferences-imports-20261020.log。产物 Build/ARM64/Debug/Inkeys.exe（2026-10-20 09:14:45）。本轮未启动 GUI；新按钮覆盖、开关组合和 0.35 强度的实体笔体感待人工验收，先前人工通过不替代本轮验收。pen-haptics.md 与 rendering-and-ui.md 已建立未来按钮/形状扩展接入关系。任务保持 in_progress；仅 dev 合并提交 347ea174，新增功能未提交、未 push、未 finish/archive。
+
+2026-10-20 体感调参：用户反馈 0.35 偏弱，按要求将统一按钮 Click 请求强度改为 0.75。现有后端回归使用 kButtonHapticIntensity，自动覆盖新值，无需复制数值或修改测试逻辑。书写强度、按钮接线及能力回退保持原样；任务仍进行中，不提交。
+0.75 调参验证：完整 InkeysRepo.sln Debug|ARM64 构建退出 0，0 errors、16 warnings，耗时 1分15秒；日志 intensity075-build.log。diff 与 UTF-8/BOM/EOL 检查通过。本轮仅统一常量与文档变更，未重复执行上一轮已通过的完整无窗口测试，未启动 GUI，实体体感待用户复测。
+
+## 2026-10-20 按钮反馈间歇丢失修复
+用户日志 98eb9ecc 显示多数 Pointer/Touch Down/Up 已精确匹配，却在 bar_click 接受入口被拒绝；成功请求均以 intensity=0.750、hr=0 发送。优先核查新增 ButtonMotionGate 使用系统鼠标拖动像素阈值误判笔点击微移的问题，使触觉资格遵从实际控件的点击/拖动业务判断，并保留来源匹配、取消和去重。补充真实日志位移回归、独立检查、完整构建和无窗口测试；不修改书写反馈、不提交、不结束任务。
+实现与独立复核：去掉普通按钮的全局 ButtonMotionGate，仅连续选色板保留局部轻点判定；颜色快捷按钮按跨色块业务动作锁存拖选，返回原色也不反馈。真实 Pointer Up/同一接触/有效期/取消/去重条件不变，反馈仍为 0.75。新增实测微移的共享接受回归；bar_click 细分缺凭据/非 Up/接触不符，bar_invalidate 在锁外记录有效凭据首次失效边沿，重复失效静默。独立检查确认主栏 Seek、粗细连续调整、选色板和取消边界无新的反馈回归。
+完整 InkeysRepo.sln Debug|ARM64 构建退出 0，0 errors、7 warnings，耗时41秒；日志 button-jitter-build.log。32份差异文件 UTF-8/BOM/EOL 和 git diff --check 通过。
+最终无窗口验证：InkeysHeadlessTests.exe --no-window 退出 0（button-jitter-headless.log），包括本轮接受策略回归。产物 Build/ARM64/Debug/Inkeys.exe（2026-10-20 12:50:50）。未启动 GUI，实体连续点击与微移体感待用户复测；任务保持 in_progress，未 commit/push/finish/archive。
+
+最终验收：用户确认按钮间歇丢失修复生效，要求最终按钮强度调整为 0.5，明确不再编译和测试，并授权提交及结束任务。源码及当前规范已同步 0.5；现有可执行产物仍为上轮 0.75，最终常量未重编译。此前构建、回归和人工结果见上文。

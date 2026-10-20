@@ -8318,6 +8318,7 @@ namespace Inkeys::Drawing::Draw3
 	void DrawingController::Run()
 	{
 		bool hapticCanvasBound = false;
+		bool previousDrawingHapticsEnabled = drawingHapticsEnabled_;
 		uint64_t hapticCanvasRevision = 0;
 		Haptics::CanvasPointerRequest hapticCanvasPointer;
 		DrawingTool hapticPresetTool = DrawingTool::Pen;
@@ -8678,7 +8679,7 @@ namespace Inkeys::Drawing::Draw3
 		};
 		const auto canvasHapticsAvailable = [&]() noexcept
 		{
-			return hapticCanvasBound && hapticCanvasRevision == window_.HapticPointerRevision() && (hapticPenContacts() <= 1) &&
+			return drawingHapticsEnabled_ && hapticCanvasBound && hapticCanvasRevision == window_.HapticPointerRevision() && (hapticPenContacts() <= 1) &&
 				Haptics::ContinuousAllowed(window_.SelectionMode(), window_.HapticSurfaceVisible(),
 					window_.ActiveTool() == DrawingTool::Laser, input_.AdmissionBlocked(),
 					input_.HasQuarantinedContacts(), window_.TouchPanActive(), window_.PenContactSuppressedForTouchPan());
@@ -13784,20 +13785,25 @@ namespace Inkeys::Drawing::Draw3
 			if (haptics_)
 			{
 					haptics_->LogDiagnosticsSnapshot();
-				const Haptics::Context context{ hapticClicks_ ? hapticClicks_->Run() : 0,
-					window_.HapticPointerRevision() };
+				const auto context = Haptics::ButtonContext(hapticClicks_ ? hapticClicks_->Run() : 0);
+				const auto canvasRevision = window_.HapticPointerRevision();
 				const bool continuousAllowed = (hapticPenContacts() <= 1) && Haptics::ContinuousAllowed(window_.SelectionMode(),
 					window_.HapticSurfaceVisible(), window_.ActiveTool() == DrawingTool::Laser,
 					input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), touchGesture.PanActive(),
 					suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan());
+				// 绘制开关不作废范围身份，也不停止独立按钮反馈；恢复时允许重设悬停波形。
+				const bool drawingReenabled = drawingHapticsEnabled_ && !previousDrawingHapticsEnabled;
+				if (!drawingHapticsEnabled_ && previousDrawingHapticsEnabled && hapticCanvasBound)
+					haptics_->StopFeedback();
+				previousDrawingHapticsEnabled = drawingHapticsEnabled_;
 				const bool leave = window_.ConsumeHapticPointerLeave();
 					bool sourceCurrent = true;
 				// Hover 预设也属于连续反馈；Selection/隐藏/Laser/Pan 无需等第一笔才停止。
-				if (leave || (hapticCanvasBound && (!continuousAllowed ||
-						hapticCanvasRevision != context.canvas)) ||
+				if (Haptics::CanvasBindingInvalid(hapticCanvasBound, leave, continuousAllowed,
+						hapticCanvasRevision == canvasRevision) ||
 						(hapticUiSource && !(sourceCurrent = hapticUiSource->Current(context, GetTickCount64()))))
 				{
-						HapticDiagnostics::Log("canvas_detach", "leave=%d allowed=%d bound=%d revision_match=%d tool_match=%d source_current=%d", leave, continuousAllowed, hapticCanvasBound, hapticCanvasRevision == context.canvas, hapticPresetTool == window_.ActiveTool(), sourceCurrent);
+						HapticDiagnostics::Log("canvas_detach", "leave=%d allowed=%d bound=%d revision_match=%d tool_match=%d source_current=%d", leave, continuousAllowed, hapticCanvasBound, hapticCanvasRevision == canvasRevision, hapticPresetTool == window_.ActiveTool(), sourceCurrent);
 					haptics_->DetachPointer();
 					hapticCanvasBound = false;
 					hapticUiSource.reset();
@@ -13850,7 +13856,7 @@ namespace Inkeys::Drawing::Draw3
 						}
 					}
 					// Up 已停止后，下次匹配的 RTS Down 会重排范围请求；工具变化无需再次等待 Enter。
-					if (canvasHapticsAvailable() && hapticPresetTool != window_.ActiveTool() && hapticPenContacts() == 0)
+					if (canvasHapticsAvailable() && (drawingReenabled || hapticPresetTool != window_.ActiveTool()) && hapticPenContacts() == 0)
 					{
 						hapticPresetTool = window_.ActiveTool();
 						haptics_->TickContinuous(hapticCanvasPointer.eraserHint ? HapticContinuousFeedback::InkContinuous :
@@ -13875,8 +13881,8 @@ namespace Inkeys::Drawing::Draw3
 						hapticCanvasBound = false;
 						hapticUiSource.reset();
 							const bool attached = haptics_->AttachPointerId(click->pointerId);
-							const bool current = attached && click->Current({ hapticClicks_->Run(), window_.HapticPointerRevision() }, GetTickCount64());
-							const bool sent = current && haptics_->PlayDiscrete(HapticDiscreteFeedback::Click);
+							const bool current = attached && click->Current(Haptics::ButtonContext(hapticClicks_->Run()), GetTickCount64());
+							const bool sent = current && haptics_->PlayDiscrete(HapticDiscreteFeedback::Click, kButtonHapticIntensity);
 							HapticDiagnostics::Log("click_consume", "pointer=%u attached=%d current=%d sent=%d", click->pointerId, attached, current, sent);
 							if (sent) hapticUiSource = std::move(click);
 						else haptics_->DetachPointer();

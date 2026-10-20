@@ -438,7 +438,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto current = HapticDiagnostics::generation.load(std::memory_order_relaxed);
 			if (lastDiagnosticGeneration == current) return;
 			lastDiagnosticGeneration = current;
-			// 开关可在 Host 初始化后打开：从绘制线程报告已缓存的能力探测结果。
+			// 启动启用诊断后，从绘制线程报告已缓存的能力探测结果。
 			HapticDiagnostics::Log("snapshot", "initialized=%d runtime=%d stage=%s error=%lu ro_hr=0x%08x exports=%d%d%d%d%d pen_factory_hr=0x%08x pen_factory=%d controller=%d feedback_enabled=%d",
 				initialized, runtimeAvailable, api.diagnosticStage, api.diagnosticError,
 				static_cast<unsigned>(api.diagnosticHr), api.roInitialize != nullptr,
@@ -772,19 +772,21 @@ namespace Inkeys::Drawing::Draw3
 				return SUCCEEDED(result);
 			}
 			HRESULT result = E_FAIL;
-			if (pointerPlayCountSupported)
+			// 一次按钮确认优先使用单次强度 API，避免时长接口把 Click 拉长。
+			if (pointerIntensitySupported)
+				result = pointerController->SendHapticFeedbackWithIntensity(feedback, intensity);
+			else if (pointerPlayCountSupported)
 				result = pointerController->SendHapticFeedbackForPlayCount(
 					feedback, intensity, 1, { 0 });
 			else if (pointerDurationSupported)
 				result = pointerController->SendHapticFeedbackForDuration(
 					feedback, intensity, { kDiscreteDurationTicks });
-			else if (pointerIntensitySupported)
-				result = pointerController->SendHapticFeedbackWithIntensity(feedback, intensity);
 			else
 				result = pointerController->SendHapticFeedback(feedback);
 			if (diagnosticsEnabled)
-				HapticDiagnostics::Log("send", "kind=discrete pointer=%u waveform=0x%x fallback=0x%x chosen_waveform=0x%x hr=0x%08x",
-					attachedPointerId, waveform, fallback, chosenWaveform, static_cast<unsigned>(result));
+				HapticDiagnostics::Log("send", "kind=discrete pointer=%u waveform=0x%x fallback=0x%x chosen_waveform=0x%x intensity=%.3f explicit_intensity=%d hr=0x%08x",
+					attachedPointerId, waveform, fallback, chosenWaveform, intensity,
+					pointerIntensitySupported || pointerPlayCountSupported || pointerDurationSupported, static_cast<unsigned>(result));
 			return SUCCEEDED(result);
 		}
 

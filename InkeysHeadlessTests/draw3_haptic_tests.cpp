@@ -22,6 +22,13 @@ int RunDraw3HapticTests()
 			boundary == 3, boundary == 4, boundary == 5, boundary == 6),
 			"selection/hidden/laser/admission/quarantine/pan/suppression stops preset");
 	}
+	check(!Haptics::CanvasBindingInvalid(false, true, false, false),
+		"canvas leave/selection/reset does not detach independent UI feedback");
+	check(Haptics::CanvasBindingInvalid(true, true, true, true) &&
+		Haptics::CanvasBindingInvalid(true, false, false, true) &&
+		Haptics::CanvasBindingInvalid(true, false, true, false) &&
+		!Haptics::CanvasBindingInvalid(true, false, true, true),
+		"canvas binding still ends on leave, admission or range invalidation");
 	for (unsigned token = 0; token <= BH::SlotCount; ++token)
 		for (unsigned flags = 0; flags < 4; ++flags)
 		{
@@ -205,5 +212,43 @@ int RunDraw3HapticTests()
 	check(!mailbox.Take(context, 5252, &dropped) && dropped.dropped == 1 &&
 		std::string_view(dropped.lastReason) == "expired",
 		"expired queued source reports its drop before backend");
+	// UI 接受点切换 Selection/Laser/隐藏会改变画布范围，不能撤销自己的按钮反馈。
+	Haptics::CanvasPointerMailbox canvasForButton;
+	context = Haptics::ButtonContext(mailbox.Run());
+	auto canvasIndependentClick = source(5800);
+	check(mailbox.Publish(canvasIndependentClick, context, 5802), "UI click publishes before canvas transition");
+	check(canvasForButton.Observe(11, false, true, false, 33), "prepare actual canvas range transition");
+	const auto beforeCanvasReset = canvasForButton.Revision();
+	canvasForButton.Reset();
+	check(canvasForButton.Revision() != beforeCanvasReset && mailbox.Take(Haptics::ButtonContext(mailbox.Run()), 5803) == canvasIndependentClick &&
+		canvasIndependentClick->Current(Haptics::ButtonContext(mailbox.Run()), 5803),
+		"canvas transition does not cancel accepted UI feedback");
+	// 禁用即时清队列并失效已取走的凭据；关闭/开启之间不能重放旧按下。
+	const auto oldRun = context.run;
+	auto queuedBeforeDisable = source(6000);
+	auto takenBeforeDisable = source(6000);
+	check(mailbox.Publish(takenBeforeDisable, context, 6002) && mailbox.Take(context, 6002) == takenBeforeDisable &&
+		mailbox.Publish(queuedBeforeDisable, context, 6002), "prepare queued and in-flight preference requests");
+	mailbox.SetEnabled(false);
+	check(mailbox.Run() == 0 && !mailbox.Take(context, 6003) && !queuedBeforeDisable->valid &&
+		!takenBeforeDisable->Current({mailbox.Run(), context.canvas}, 6003) &&
+		!mailbox.Publish(source(6000), context, 6003, &rejection) && std::string_view(rejection) == "disabled",
+		"disabled buttons reject publication and invalidate queued and in-flight clicks");
+	mailbox.SetEnabled(true);
+	context.run = mailbox.Run();
+	check(context.run && context.run != oldRun && !mailbox.Publish(takenBeforeDisable, context, 6004) &&
+		!mailbox.Take(context, 6004), "quick off/on cannot resurrect old credentials");
+	check(mailbox.Publish(source(6000), context, 6004), "reenabled buttons accept fresh credentials");
+	mailbox.SetEnabled(true);
+	check(mailbox.Run() == context.run && mailbox.Take(context, 6004), "unchanged option preserves valid button request");
+	mailbox.SetEnabled(false);
+	mailbox.Stop();
+	mailbox.Start();
+	check(mailbox.Run() == 0, "disabled preference persists across Host restart");
+	mailbox.Stop();
+	mailbox.SetEnabled(true);
+	check(mailbox.Run() == 0, "reenabling stopped Host cannot open publication");
+	mailbox.Start();
+	check(mailbox.Run() != 0, "later Host start respects enabled preference");
 	return failures;
 }

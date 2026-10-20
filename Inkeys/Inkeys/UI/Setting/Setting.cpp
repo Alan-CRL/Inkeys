@@ -4288,6 +4288,43 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 						ImFontMain->Scale = 0.6f;
 						ImGui::PushFont(ImFontMain);
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Haptics.N).c_str());
+						ImGui::PopFont();
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("笔震动反馈", { settingItemWidth * settingGlobalScale,120.0f * settingGlobalScale },
+							true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f;
+						ImGui::PushFont(ImFontMain);
+						const auto hapticRow = [&](const char* id, const string& label, IdtAtomic<bool>& preference, float rowY)
+						{
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, rowY * settingGlobalScale });
+							ImGui::TextUnformatted(label.c_str());
+							bool enabled = preference;
+							ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, rowY * settingGlobalScale });
+							Widgets::toggle.ToggleBool(id, &enabled);
+							if (enabled != preference.load())
+							{
+								// 写盘复用配置队列；运行时只发布期望，由绘制 owner 操作触觉设备。
+								preference = enabled;
+								auto& saved = Inkeys::config.Drawing.Haptics;
+								Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(saved.Drawing, saved.Buttons);
+								QueueConfigWrite();
+							}
+						};
+						hapticRow("##绘制时震动反馈", IA(I18nKey.SettingsUI.Draw.Haptics.Drawing), Inkeys::config.Drawing.Haptics.Drawing, 20.0f);
+						hapticRow("##按钮震动反馈", IA(I18nKey.SettingsUI.Draw.Haptics.Buttons), Inkeys::config.Drawing.Haptics.Buttons, 75.0f);
+						ImGui::PopFont();
+						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar(2);
+					}
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.6f;
+						ImGui::PushFont(ImFontMain);
 						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
 						ImGui::PopFont();
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);

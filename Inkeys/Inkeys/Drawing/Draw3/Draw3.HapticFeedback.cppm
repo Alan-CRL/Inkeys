@@ -11,10 +11,12 @@ export module Inkeys.Drawing.Draw3.haptic_feedback;
 
 export namespace Inkeys::Drawing::Draw3
 {
-	// 当前原型的触觉总开关；后续接入 Inkeys3 配置系统后替换这里。
+	// 后端默认可用；绘制/按钮偏好由 Host 独立门禁控制。
 	inline constexpr bool kPenHapticFeedbackDefaultEnabled = true;
 	// 负值表示不覆盖 Windows/设备的触觉强度设置。
 	inline constexpr double kSystemDefaultHapticIntensity = -1.0;
+	// 按钮使用轻量单次 Click；不覆盖书写时的系统强度。
+	inline constexpr double kButtonHapticIntensity = 0.5;
 
 	// 预留给 RTS 书写反馈的连续触觉波形，数值对应 HID usage ID。
 	enum class HapticContinuousFeedback : uint16_t

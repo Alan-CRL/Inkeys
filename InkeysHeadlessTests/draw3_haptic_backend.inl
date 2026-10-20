@@ -32,23 +32,27 @@
 		{
 			FakeFeedbackList feedback;
 			int sends = 0, stops = 0;
+			int intensitySends = 0, playCountSends = 0, durationSends = 0;
+			bool supportsIntensity = true, supportsPlayCount = false, supportsDuration = false;
 			bool failSend = false, failCapability = false;
 			uint16_t waveform = 0;
 			double intensity = -1;
 			HRESULT STDMETHODCALLTYPE get_Id(HSTRING*) override { return E_NOTIMPL; }
 			HRESULT STDMETHODCALLTYPE get_SupportedFeedback(IVectorViewSimpleHapticsControllerFeedback** value) override
 			{ if (failCapability) return E_FAIL; *value = &feedback; (*value)->AddRef(); return S_OK; }
-			HRESULT STDMETHODCALLTYPE get_IsIntensitySupported(boolean* value) override { *value = true; return S_OK; }
-			HRESULT STDMETHODCALLTYPE get_IsPlayCountSupported(boolean* value) override { *value = false; return S_OK; }
-			HRESULT STDMETHODCALLTYPE get_IsPlayDurationSupported(boolean* value) override { *value = false; return S_OK; }
+			HRESULT STDMETHODCALLTYPE get_IsIntensitySupported(boolean* value) override { *value = supportsIntensity; return S_OK; }
+			HRESULT STDMETHODCALLTYPE get_IsPlayCountSupported(boolean* value) override { *value = supportsPlayCount; return S_OK; }
+			HRESULT STDMETHODCALLTYPE get_IsPlayDurationSupported(boolean* value) override { *value = supportsDuration; return S_OK; }
 			HRESULT STDMETHODCALLTYPE get_IsReplayPauseIntervalSupported(boolean*) override { return E_NOTIMPL; }
 			HRESULT STDMETHODCALLTYPE StopFeedback() override { ++stops; return S_OK; }
 			HRESULT STDMETHODCALLTYPE SendHapticFeedback(ISimpleHapticsControllerFeedback* value) override
 			{ ++sends; value->get_Waveform(&waveform); intensity = -1; return failSend ? E_FAIL : S_OK; }
 			HRESULT STDMETHODCALLTYPE SendHapticFeedbackWithIntensity(ISimpleHapticsControllerFeedback* value, double explicitIntensity) override
-			{ auto result = SendHapticFeedback(value); intensity = explicitIntensity; return result; }
-			HRESULT STDMETHODCALLTYPE SendHapticFeedbackForDuration(ISimpleHapticsControllerFeedback*, double, TimeSpanAbi) override { return E_NOTIMPL; }
-			HRESULT STDMETHODCALLTYPE SendHapticFeedbackForPlayCount(ISimpleHapticsControllerFeedback*, double, int32_t, TimeSpanAbi) override { return E_NOTIMPL; }
+			{ ++intensitySends; auto result = SendHapticFeedback(value); intensity = explicitIntensity; return result; }
+			HRESULT STDMETHODCALLTYPE SendHapticFeedbackForDuration(ISimpleHapticsControllerFeedback* value, double explicitIntensity, TimeSpanAbi) override
+			{ ++durationSends; auto result = SendHapticFeedback(value); intensity = explicitIntensity; return result; }
+			HRESULT STDMETHODCALLTYPE SendHapticFeedbackForPlayCount(ISimpleHapticsControllerFeedback* value, double explicitIntensity, int32_t count, TimeSpanAbi) override
+			{ ++playCountSends; if (count != 1) return E_INVALIDARG; auto result = SendHapticFeedback(value); intensity = explicitIntensity; return result; }
 		};
 		struct FakePen2 : FakeInspectable<IPenDevice2>
 		{
@@ -128,6 +132,30 @@
 		disabled.SetEnabled(false);
 		check(!disabled.AttachPointerId(1) && !disabled.TickContinuous(HapticContinuousFeedback::InkContinuous) &&
 			!disabled.PlayDiscrete(HapticDiscreteFeedback::Click), "disabled backend does not initialize or send");
+		// 真实后端能力选择：有强度接口时只发一次轻 Click；缺能力与失败均保持可选。
+		for (unsigned capabilities : { 7u, 2u, 4u, 0u })
+		{
+			FakeController button;
+			button.supportsIntensity = (capabilities & 1) != 0;
+			button.supportsPlayCount = (capabilities & 2) != 0;
+			button.supportsDuration = (capabilities & 4) != 0;
+			FakePenFactory buttonFactory;
+			buttonFactory.pen.property.controller = &button;
+			PenHapticFeedbackImpl buttons;
+			buttons.initialized = true;
+			buttons.allowInputManagerFallback = false;
+			buttons.penDeviceStatics = &buttonFactory;
+			check(buttons.AttachPointerId(1), "button capabilities acquired through exact pen binding");
+			check(buttons.PlayDiscrete(HapticDiscreteFeedback::Click, kButtonHapticIntensity) &&
+				button.sends == 1 && button.waveform == 0x1003 &&
+				button.intensity == (capabilities ? kButtonHapticIntensity : -1), "button gentle Click and capability fallback");
+			check(button.intensitySends == (capabilities == 7) && button.playCountSends == (capabilities == 2) &&
+				button.durationSends == (capabilities == 4), "single intensity call preferred over count/duration");
+			button.failSend = true;
+			check(!buttons.PlayDiscrete(HapticDiscreteFeedback::Click, kButtonHapticIntensity) && button.sends == 2,
+				"failed gentle Click does not retry at a stronger intensity");
+			buttons.Shutdown();
+		}
 		FakeController controller;
 		FakePenFactory factory;
 		factory.pen.property.controller = &controller;

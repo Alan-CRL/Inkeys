@@ -18,6 +18,9 @@ namespace Inkeys::Drawing::Draw3::Haptics
 		bool operator==(const Context&) const = default;
 	};
 
+	// UI 操作自身可以切换/隐藏画布；点击资格由 Host/开关代际和接触凭据决定。
+	inline Context ButtonContext(std::uint64_t run) noexcept { return { run, 0 }; }
+
 	// 同一接触的消息、按下上下文和绘制请求共用凭据，取消不依赖队列空位。
 	struct ClickSource
 	{
@@ -42,6 +45,12 @@ namespace Inkeys::Drawing::Draw3::Haptics
 		bool quarantined, bool pan, bool suppressed) noexcept
 	{
 		return !selection && visible && !laser && !blocked && !quarantined && !pan && !suppressed;
+	}
+
+	// 画布范围变化只终止画布绑定，不能截断刚被选择/隐藏按钮启动的独立反馈。
+	inline bool CanvasBindingInvalid(bool bound, bool leave, bool allowed, bool revisionMatches) noexcept
+	{
+		return bound && (leave || !allowed || !revisionMatches);
 	}
 
 	struct CanvasPointerRequest
@@ -174,15 +183,26 @@ namespace Inkeys::Drawing::Draw3::Haptics
 	{
 	public:
 		std::uint64_t Run() const noexcept { return run_.load(std::memory_order_acquire); }
+		// 按钮开关只更新 Click 代际；不触碰画布范围，快速关开也不能复活旧请求。
+		void SetEnabled(bool enabled) noexcept
+		{
+			std::lock_guard lock(mutex_);
+			if (enabled_ == enabled) return;
+			enabled_ = enabled;
+			Clear();
+			run_.store(running_ && enabled_ ? ++serial_ : 0, std::memory_order_release);
+		}
 		void Start() noexcept
 		{
 			std::lock_guard lock(mutex_);
 			Clear();
-			run_.store(++serial_, std::memory_order_release);
+			running_ = true;
+			run_.store(enabled_ ? ++serial_ : 0, std::memory_order_release);
 		}
 		void Stop() noexcept
 		{
 			std::lock_guard lock(mutex_);
+			running_ = false;
 			run_.store(0, std::memory_order_release);
 			Clear();
 		}
@@ -191,6 +211,7 @@ namespace Inkeys::Drawing::Draw3::Haptics
 		{
 			std::lock_guard lock(mutex_);
 			if (rejection) *rejection = "none";
+			if (!enabled_) { if (rejection) *rejection = "disabled"; return false; }
 			if (!source) { if (rejection) *rejection = "missing_source"; return false; }
 			if (current.run != Run()) { if (rejection) *rejection = "run_changed"; return false; }
 			if (!source->Current(current, now))
@@ -245,5 +266,7 @@ namespace Inkeys::Drawing::Draw3::Haptics
 		std::array<Click, 8> pending_{};
 		std::atomic<std::uint64_t> run_ = 0;
 		std::uint64_t serial_ = 0;
+		bool enabled_ = true;
+		bool running_ = false;
 	};
 }

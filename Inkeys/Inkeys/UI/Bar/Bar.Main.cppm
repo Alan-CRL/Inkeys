@@ -91,7 +91,7 @@ public:
 		std::optional<bool> eraserSelected = std::nullopt);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
-	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
 	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
@@ -104,7 +104,7 @@ public:
 	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
 	void Initialize();
-	void Execute(BarUISetClass& owner, int item);
+	bool Execute(BarUISetClass& owner, int item);
 	void DrawPreview(BarUIRendering& renderer, ID2D1DeviceContext* context, size_t index);
 	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::EraserAttributeRect rect, double scale = 1.0);
 	mutable std::mutex presentationMutex_;
@@ -149,7 +149,7 @@ public:
 		bool dragPlacementLocked = false);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
-	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
 	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
@@ -161,7 +161,7 @@ public:
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
 	void Initialize();
-	void Execute(BarUISetClass& owner, int item);
+	bool Execute(BarUISetClass& owner, int item);
 	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::RecallAttributeRect rect, double scale = 1.0);
 	mutable std::mutex presentationMutex_;
 	Inkeys::UI::Bar::RecallAttributeLayout layout_;

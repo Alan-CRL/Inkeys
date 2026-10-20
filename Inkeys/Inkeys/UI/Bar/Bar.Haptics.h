@@ -40,11 +40,13 @@ namespace Inkeys::UI::Bar::Haptics
 			unsigned recent = 0, source = 0, time = 0, point = 0;
 		};
 		// 调用方串行锁只覆盖内存和入/出队记账，不跨业务回调或 WinRT。
-		void Invalidate(UINT pointer = 0) noexcept
+		unsigned Invalidate(UINT pointer = 0) noexcept
 		{
+			unsigned invalidated = 0;
 			for (auto& slot : slots_)
 				if (slot.source && (!pointer || slot.source->pointerId == pointer))
-					slot.source->valid.store(false, std::memory_order_release);
+					invalidated += slot.source->valid.exchange(false, std::memory_order_acq_rel) ? 1u : 0u;
+			return invalidated;
 		}
 		void Observe(UINT phase, const PointerSample& sample, Context context,
 			std::uint64_t now) noexcept
@@ -184,16 +186,37 @@ namespace Inkeys::UI::Bar::Haptics
 		std::array<Slot, SlotCount> slots_{};
 	};
 
+	// 仅用于连续选色板的轻点反馈；普通按钮必须沿用业务点击判定，不能额外按像素否决。
+	class ButtonMotionGate
+	{
+	public:
+		void Begin(POINT point, LONG x, LONG y) noexcept { origin_ = point; x_ = x > 0 ? x : 1; y_ = y > 0 ? y : 1; click_ = true; }
+		void Observe(POINT point) noexcept
+		{
+			const auto dx = static_cast<long long>(point.x) - origin_.x;
+			const auto dy = static_cast<long long>(point.y) - origin_.y;
+			if (dx > x_ || dx < -x_ || dy > y_ || dy < -y_) click_ = false;
+		}
+		void Cancel() noexcept { click_ = false; }
+		bool IsClick() const noexcept { return click_; }
+	private:
+		POINT origin_{};
+		LONG x_ = 1, y_ = 1;
+		bool click_ = false;
+	};
 	inline Click AcceptedClick(const Click& down, const Click& up, UINT message, bool cancel) noexcept
 	{
 		return message == WM_LBUTTONUP && !cancel && down && down == up ? down : Click{};
 	}
 	// 仅交互线程的真实 callback scope 设置；程序化按钮回调没有凭据。
 	inline thread_local Click acceptedClick;
+	inline thread_local bool buttonActionAccepted = true;
+	inline void RejectButtonAction() noexcept { if (acceptedClick) buttonActionAccepted = false; }
 	struct AcceptedClickScope
 	{
 		Click previous;
-		explicit AcceptedClickScope(Click source) : previous(std::move(acceptedClick)) { acceptedClick = std::move(source); }
-		~AcceptedClickScope() { acceptedClick = std::move(previous); }
+		bool previousAccepted = buttonActionAccepted;
+		explicit AcceptedClickScope(Click source) : previous(std::move(acceptedClick)) { acceptedClick = std::move(source); buttonActionAccepted = true; }
+		~AcceptedClickScope() { acceptedClick = std::move(previous); buttonActionAccepted = previousAccepted; }
 	};
 }

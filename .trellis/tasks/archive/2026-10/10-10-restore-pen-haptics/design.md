@@ -57,3 +57,12 @@ Bar 在现有 Pointer/Touch 事件处理完成后输出原始 `dwMask`、来源�
 原先 RTS Down 一律清绑定并等待后续 in-contact Pointer 的规则，与真实 RTS 输入序列不兼容；普通 Up 一律清除设备范围身份也会阻断同一次悬停中的后续笔划。应区分 Pointer 范围身份与 RTS 笔划生命周期：被动取得当前 Pointer 的 tablet cursor 信息，在已有来源和唯一性边界内核对 RTS cursor；有效同笔落笔保留绑定，普通抬笔停止本笔反馈并保留范围身份用于下一笔。离开、取消、身份冲突、多笔歧义、隐藏/选择/Laser/Pan/隔离仍停止或解绑。不得靠全局最近笔、坐标或 RTS ID 充当 Pointer ID。
 Bar 的 TIMEFROMSYSTEM 标志只是时间来源说明；缺失时允许提供方时间参与精确关联，但不把它当作可信时钟。Down/Up 都必须匹配明确 Pen、同来源、同阶段、精确时间和原始点、唯一候选；新鲜度与生命周期使用本进程单调时钟。保留原消息翻译、取消、接受点与提交去重。跨 API 关联仍是应用策略，驱动不匹配时只放弃反馈。
 本轮不改变波形、默认强度、后端回退或窗口输入路线；复用现有诊断，并删改只服务于错误重绑前提的状态和测试。日志验收须证明落笔不再无故 Detach、同范围多笔可发送、按钮 Click 到达后端；API 成功仍不代替实体震感。
+
+## 2026-10-20 设置及按钮扩展设计（取代先前仅工具/类型范围）
+先合并 origin/dev 26dbe340；合并提交 347ea174 保留新输入会话、光标、快捷键、形状与主栏行为。触觉凭据附着在 dev 私有消息 metadata，禁止复用已被 metadata 占用的 wheel token 编码。诊断输出接入 dev 有界异步 DiagnosticOutput。
+配置路径采用 Drawing.Haptics.Drawing / Drawing.Haptics.Buttons，均为默认 true 的 IdtAtomic<bool>，走现有 Config schema 与 QueueConfigWrite。Host 控制唤醒把更改交给绘制 owner；绘制开关仅停止/恢复连续反馈，保留可核验范围身份，不能改变画布输入准入或使按钮代际持续失效。按钮开关改变时清队列并更换触觉请求代际，关闭/再开启不能复活旧点击。
+按钮使用 Click 波形、显式强度 0.5；支持强度时优先单次 SendHapticFeedbackWithIntensity，不支持时沿既有可选能力回退。绘制仍使用系统默认强度。强度数值是待实体笔调试的产品初值，不能用 API 成功证明主观体感。
+各 UI 状态机在业务接受边界发布带 Down/Up 同接触凭据的请求；主栏、形状/粗细表使用共享接受点，颜色拖选仅正常 Up 确认一次。命中/消费消息不等于接受，取消/拖出/禁用/连续 Move 不发送。Eraser/Recall 等独立状态机显式报告接受结果，避免修改动作接口或用全局最近笔。新增主栏注册项/形状表项应自动继承公共反馈路径；新独立控件必须接入明确接受点并补充取消/去重回归。
+依据：Microsoft pen haptics sample/API 文档明确支持能力探测及强度调用：https://learn.microsoft.com/en-us/windows/uwp/ui-input/pen-haptics 。不引入新 SDK/静态 WinRT API 依赖。
+
+补充：全按钮路径中 Selection/Laser/隐藏动作会使 canvas revision 自行变化。UI 点击使用独立 ButtonContext(run)；canvas范围revision仅约束连续反馈，不重写旧凭据。保留按钮开关/Host启停代际、来源、取消、Up/有效期与去重门禁；canvas Leave/Reset 不应停止独立UI绑定。动作前提前发Click不能解决owner消费竞态，也会错误反馈被拒动作，因此不采用。

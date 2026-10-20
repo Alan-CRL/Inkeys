@@ -404,6 +404,7 @@ namespace Inkeys::Drawing::Draw3
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 		Haptics::Context HapticContext() const noexcept;
+		void SetHapticPreferences(bool drawingEnabled, bool buttonsEnabled) noexcept;
 		bool PublishHapticClick(const Haptics::Click& source,
 			HostHapticClickDiagnostics* diagnostics = nullptr) noexcept;
 		Bridge::StateBridge& ProductBridge() noexcept;

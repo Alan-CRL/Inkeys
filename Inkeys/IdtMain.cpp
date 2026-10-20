@@ -653,6 +653,28 @@ namespace
 					return 1;
 				}
 			}
+			stage = "pen haptic configuration";
+			Inkeys::Config hapticDefaults;
+			if (!hapticDefaults.Drawing.Haptics.Drawing || !hapticDefaults.Drawing.Haptics.Buttons ||
+				!writeBytes(mainConfig, "{}") || !hapticDefaults.ReadAll() ||
+				!hapticDefaults.Drawing.Haptics.Drawing || !hapticDefaults.Drawing.Haptics.Buttons)
+			{
+				std::fputs("[ConfigBoundary] FAIL: pen haptic defaults were not enabled\n", stderr);
+				return 1;
+			}
+			for (const bool drawing : { false, true }) for (const bool buttons : { false, true })
+			{
+				hapticDefaults.Drawing.Haptics.Drawing = drawing;
+				hapticDefaults.Drawing.Haptics.Buttons = buttons;
+				Inkeys::Config restoredHaptics;
+				if (!hapticDefaults.Write() || !restoredHaptics.ReadAll() ||
+					restoredHaptics.Drawing.Haptics.Drawing.load() != drawing ||
+					restoredHaptics.Drawing.Haptics.Buttons.load() != buttons)
+				{
+					std::fputs("[ConfigBoundary] FAIL: independent pen haptic preferences did not round-trip\n", stderr);
+					return 1;
+				}
+			}
 			stage = "Draw3 device preferences";
 			Inkeys::Config deviceDefaults;
 			if (!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
@@ -2794,6 +2816,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
 			InitializeEraserInputPreferences();
+			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
+				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
 				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
 			{

@@ -315,12 +315,13 @@ void BarRecallAttributePanel::Close(BarUISetClass& owner)
 	// 面板可立即关闭，但主栏尺寸与命令身份仍遵守 3 秒保护。
 	if (wasOpen) owner.NoteRecallPopupDismissed();
 }
-void BarRecallAttributePanel::Execute(BarUISetClass& owner, int item)
+bool BarRecallAttributePanel::Execute(BarUISetClass& owner, int item)
 {
-	if (item != 0) return;
-	if (!owner.ActivateRecallPopupCommand()) return;
+	if (item != 0) return false;
+	if (!owner.ActivateRecallPopupCommand()) return false;
 	Inkeys::UI::Bar::NotifyPptBusinessAction();
 	owner.UpdateRendering(false);
+	return true;
 }
 bool BarRecallAttributePanel::ResetPointerFeedback()
 {
@@ -329,8 +330,9 @@ bool BarRecallAttributePanel::ResetPointerFeedback()
 	StopBarButtonHoverVisual(redoButton_, false);
 	return changed;
 }
-bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled, bool contactPointer)
+bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled, bool contactPointer, bool* accepted)
 {
+	if (accepted) *accepted = false;
 	const auto f = PresentationSnapshot();
 	if (!f.panelVisible && pressed_ < 0) return false;
 	const auto& geometry = f.geometry; const double x = message.x / f.zoom, y = message.y / f.zoom;
@@ -365,7 +367,7 @@ bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& mes
 		const int pressed = pressed_;
 		pressed_ = -1;
 		const int action = ResolveRecallAttributeRelease(pressed, hit, inside, cancelled);
-		if (action >= 0 && owner.barState.recallAttribute) Execute(owner, action);
+		if (action >= 0 && owner.barState.recallAttribute) { const bool performed = Execute(owner, action); if (accepted) *accepted = performed; }
 		if (contactPointer) ResetPointerFeedback();
 		if (pressed >= 0 || contactPointer) owner.UpdateRendering(false); return inside || pressed >= 0;
 	}

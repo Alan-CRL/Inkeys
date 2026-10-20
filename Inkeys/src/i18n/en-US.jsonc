@@ -427,6 +427,12 @@
     "Draw":
     {
       "N": "Drawing",
+      "Haptics":
+      {
+        "N": "Pen Haptic Feedback",
+        "Drawing": "Haptic Feedback While Drawing",
+        "Buttons": "Button Haptic Feedback"
+      },
       "Cursor":
       {
         "N": "Cursor",
