@@ -1355,6 +1355,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				bool HapticsConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Haptics;
 				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
 			}Inkeys3;
 		}Experimental;
@@ -7393,7 +7394,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
-						inkeys3PanelHeight += 300.0f;
+						inkeys3PanelHeight += 375.0f;
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -7460,6 +7461,15 @@ SettingSessionCoroutine RunSettingSession()
 										Experimental.Inkeys3.Draw3ConsoleOutput;
 									QueueConfigWrite();
 								});
+							drawConsoleOutput("测试触控反馈",
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Haptics.N),
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Haptics.E),
+								Experimental.Inkeys3.HapticsConsoleOutput, [&]
+								{
+								// 与其他控制台诊断一致，保存配置后由下次启动统一创建控制台。
+									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Haptics = Experimental.Inkeys3.HapticsConsoleOutput;
+									QueueConfigWrite();
+							});
 							drawConsoleOutput("光标调试信息",
 								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N),
 								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E),

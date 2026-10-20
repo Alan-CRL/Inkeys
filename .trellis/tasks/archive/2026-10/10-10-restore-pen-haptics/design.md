@@ -42,3 +42,18 @@ WndProc 在原消息有效期内动态查询 Pointer API；TOUCHEVENTF_PEN 可�
 
 ## 最终实现收敛
 CanvasPointerMailbox 统一 Pointer pending、停止信号和 RTS 重置边界。RTS 新 Pen Down 先清旧 pending/绑定，随后新鲜的 in-contact Pointer 才可恢复；RTS 不直接对旧控制器 Tick。活动笔工具与候选波形不一致、多笔或隔离时省略反馈。取到有效新请求时同锁结算此前 leave，避免下一帧误停新反馈。token、按下 session 和 Host 请求共用 shared_ptr 凭据及 atomic invalidation，无需额外设备注册表或线程。组合时序回归在 draw3_haptic_backend.inl，独立 token/mailbox 回归在 draw3_haptic_tests.cpp。
+
+## 设备实测后的诊断扩展
+使用现有 Experimental.Inkeys3.ConsoleOutput 配置族和实验选项控制台输出卡片。日志是旁路，只读取源线程已有信息；按阶段输出一致前缀、结果与明确原因，特别覆盖当前整条链没有设备发送的失败点。热路径限频或按接触/操作边沿记录，不打印每帧重复数据，不持有跨线程锁执行输出，不改变触觉资格、游标/RTS 处理或可选能力回退。后端已有编译期禁用的日志需要转成运行时可控，并在早期初始化与失败分支提供充分证据。
+
+设备日志表明设置页即时启用会在运行中创建控制台，已改为仅写配置；`IdtMain` 下次启动读取配置后统一启用日志、初始化控制台。Bar 的 `TOUCHEVENTF_PEN` 为真且 Pointer/Touch 时间相等，但 `TOUCHINPUTMASKF_TIMEFROMSYSTEM` 缺失，`BindDown` 在比较来源和位置前返回 `no_system_time`，继而 Host 报 `missing_source`，按钮 Click 未到设备。Canvas 的 `WM_POINTERENTER` 为非接触，虽绑定笔控制器并发送 `InkContinuous(0x100b)` 返回成功，日志中没有接触 Pointer 的准入/发送记录；仅能确认 API 接受了该次预设调用，不能解释实体笔体感或认定书写路径已正常。后续设备调试应单独核对接触消息和硬件响应，本轮不改变匹配门槛或触觉发送策略。
+
+## 本次定向日志边界
+Bar 在现有 Pointer/Touch 事件处理完成后输出原始 `dwMask`、来源句柄、系统时间、屏幕坐标与候选逐项失败原因；保持严格匹配和原触摸转译。Canvas 在 RTS Down/Up 重置边界、窗口 Pointer 接触消息和绘制线程候选消费边界输出可按 pointerId/revision 对照的信息；对未送达消息只能通过上下游记录判定，不伪造事件。后端连续/离散调用记录真实 HRESULT、波形与是否使用 pointer controller；`sent=true` 仅代表 API 返回成功。所有新输出在原有 `[PenHaptics]` 开关下按事件边沿/状态变化限频，先退出锁再打印，不额外探测设备或改变时序敏感输入分支。
+
+产品消息转发的生命周期锁保持原范围；仅在诊断启用时，用同线程四条定长缓冲暂存其内的触觉日志，scope 声明早于锁，保证正常返回/异常均先解锁再输出。嵌套消息归入外层，满额只统计诊断丢弃，关闭时不初始化大缓冲或触碰 TLS。Host 点击发布改为回传小型拒绝快照，由 Product 解锁后记录。后端同一 pointer/请求/回退/实际波形/强度模式/HRESULT 最多每秒记录一次，状态变化或新一轮发送立即输出；不改变原发送及失败重试。
+
+## 2026-10-20 已批准的生命周期纠正（取代上文最终实现收敛）
+原先 RTS Down 一律清绑定并等待后续 in-contact Pointer 的规则，与真实 RTS 输入序列不兼容；普通 Up 一律清除设备范围身份也会阻断同一次悬停中的后续笔划。应区分 Pointer 范围身份与 RTS 笔划生命周期：被动取得当前 Pointer 的 tablet cursor 信息，在已有来源和唯一性边界内核对 RTS cursor；有效同笔落笔保留绑定，普通抬笔停止本笔反馈并保留范围身份用于下一笔。离开、取消、身份冲突、多笔歧义、隐藏/选择/Laser/Pan/隔离仍停止或解绑。不得靠全局最近笔、坐标或 RTS ID 充当 Pointer ID。
+Bar 的 TIMEFROMSYSTEM 标志只是时间来源说明；缺失时允许提供方时间参与精确关联，但不把它当作可信时钟。Down/Up 都必须匹配明确 Pen、同来源、同阶段、精确时间和原始点、唯一候选；新鲜度与生命周期使用本进程单调时钟。保留原消息翻译、取消、接受点与提交去重。跨 API 关联仍是应用策略，驱动不匹配时只放弃反馈。
+本轮不改变波形、默认强度、后端回退或窗口输入路线；复用现有诊断，并删改只服务于错误重绑前提的状态和测试。日志验收须证明落笔不再无故 Detach、同范围多笔可发送、按钮 Click 到达后端；API 成功仍不代替实体震感。

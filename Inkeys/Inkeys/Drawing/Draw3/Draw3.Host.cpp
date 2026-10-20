@@ -1,4 +1,5 @@
 #include "Draw3.Host.h"
+#include "Draw3.HapticDiagnostics.h"
 #include <dxgi.h>
 #include "Draw3.PptTiming.h"
 #include "Draw3.SpeedEraser.h"
@@ -1483,7 +1484,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// COM 的创建、调用和析构都留在此 owner；异常/首帧失败同样配对清理。
 				PenHapticFeedback haptics(false);
-				(void)haptics.Initialize();
+				const bool hapticReady = haptics.Initialize();
+				HapticDiagnostics::Log("host", "backend_initialized=%d run=%llu", hapticReady, static_cast<unsigned long long>(hapticClicks.Run()));
 				bool initialized = false;
 				bool graphicsInitialized = false;
 					std::cout << "[Draw3Diag][startup] stage=begin hwnd=0x" << std::hex
@@ -2148,9 +2150,14 @@ namespace Inkeys::Drawing::Draw3
 	{
 		return Running() ? Haptics::Context{ impl_->hapticClicks.Run(), impl_->window.HapticPointerRevision() } : Haptics::Context{};
 	}
-	bool Host::PublishHapticClick(const Haptics::Click& source) noexcept
+	bool Host::PublishHapticClick(const Haptics::Click& source,
+		HostHapticClickDiagnostics* diagnostics) noexcept
 	{
-		if (!impl_->hapticClicks.Publish(source, HapticContext(), GetTickCount64())) return false;
+		const auto context = HapticContext();
+		const auto now = GetTickCount64();
+		if (diagnostics) diagnostics->context = context;
+		if (!impl_->hapticClicks.Publish(source, context, now,
+			diagnostics ? &diagnostics->rejection : nullptr)) return false;
 		(void)impl_->input.PublishControlWake();
 		return true;
 	}

@@ -149,93 +149,79 @@
 		backend.DetachPointer();
 		check(controller.stops > stops && !backend.continuousFeedbackStarted && !backend.pointerController,
 			"hover preset detach stops and releases");
-		// 生产 mailbox 驱动真实后端 fake；次序不明时只停止，不能沿用上一支笔。
+		// 同一生产 mailbox 的 Begin/End 驱动真实后端 fake，重放实测只有 Enter/RTS/Leave 的序列。
 		{
 			Haptics::CanvasPointerMailbox pointers;
-			Haptics::CanvasPointerRequest empty;
-			pointers.Reset();
-			check(!pointers.Take(empty) && pointers.TakeLeave(), "empty poll preserves pending stop");
-			auto drain = [&](unsigned penContacts, bool waveformMatches = true)
+			Haptics::CanvasPointerRequest request, bound;
+			auto consume = [&](HapticContinuousFeedback feedback)
 			{
 				if (pointers.TakeLeave()) backend.DetachPointer();
-				Haptics::CanvasPointerRequest request;
-				if (!pointers.Take(request)) return;
-				backend.DetachPointer();
-				if (Haptics::ContinuousCandidateAllowed(penContacts, request.inContact, waveformMatches) &&
-					request.revision == pointers.Revision() && backend.AttachPointerId(request.pointerId))
-					backend.TickContinuous(request.eraserHint ? HapticContinuousFeedback::InkContinuous :
-						HapticContinuousFeedback::ChiselMarkerContinuous, -1);
+				if (!pointers.Take(request)) return false;
+				const bool reuse = backend.pointerController && Haptics::SameCanvasBinding(bound, request);
+				if (!reuse) backend.DetachPointer();
+				if (request.revision != pointers.Revision() || (!reuse && !backend.AttachPointerId(request.pointerId))) return false;
+				bound = request;
+				return backend.TickContinuous(feedback, -1);
 			};
-			pointers.Observe(1, false, true, false);
-			check(pointers.Inspect().pending.pointerId == 1 && pointers.Inspect().pending.pointerId == 1,
-				"diagnostic snapshots never consume pending Pointer");
-			drain(0);
-			check(backend.attachedPointerId == 1 && backend.continuousFeedbackStarted, "fresh hover preset uses observed pen");
-			// 窗口线程在 TakeLeave 和 Take 之间重置并发布新接触，旧停止不能留到下一帧。
-			check(!pointers.TakeLeave(), "owner consumed leave before interleaved contact");
-			pointers.Reset(true);
-			check(pointers.Observe(1, false, false, true), "new contact published between owner polls");
-			Haptics::CanvasPointerRequest interleaved;
-			check(pointers.Take(interleaved) && !pointers.Inspect().leave,
-				"taking fresh request settles its preceding stop atomically");
-			backend.DetachPointer();
-			check(Haptics::ContinuousCandidateAllowed(1, interleaved.inContact, true) &&
-				interleaved.revision == pointers.Revision() && backend.AttachPointerId(interleaved.pointerId) &&
-				backend.TickContinuous(HapticContinuousFeedback::ChiselMarkerContinuous, -1),
-				"interleaved fresh request restores feedback on observed pen");
-			const int stopsAfterRestore = controller.stops;
-			drain(1);
-			check(controller.stops == stopsAfterRestore && backend.continuousFeedbackStarted,
-				"next frame cannot stop new binding with preceding leave");
-			int sent = controller.sends;
-			const int stopped = controller.stops;
-			const auto oldRevision = pointers.Revision();
-			pointers.Observe(1, false, true, true);
-			pointers.Reset(true); // 新 RTS Down 使此前 pending Pointer 也失效。
-			drain(1);
-			check(controller.sends == sent && controller.stops > stopped && !backend.pointerController &&
-				pointers.Revision() != oldRevision, "RTS Down stops old hover and clears earlier Pointer request/Bar epoch");
-			check(!pointers.Observe(1, false, false, false), "old hover Update cannot satisfy contact refresh");
-			drain(1);
-			check(controller.sends == sent, "RTS-first order cannot send to previous hover pen");
-			factory.supportedId = 2;
-			check(pointers.Observe(2, true, true, true), "new observed contact accepted after RTS Down");
-			drain(1);
-			check(controller.sends == ++sent && backend.attachedPointerId == 2 && controller.waveform == 0x100B,
-				"fresh inverted contact gets required Ink on its own pen");
-			pointers.Observe(3, false, true, true); // 反向次序：Pointer Down 已排队，RTS Down 随后到达。
-			pointers.Reset(true);
-			drain(1);
-			check(controller.sends == sent && !backend.pointerController, "Pointer-first request invalidated by newer RTS Down");
-			factory.supportedId = 3;
-			check(pointers.Observe(3, false, false, true), "next fresh in-contact Update can restore after Pointer-first order");
-			drain(1);
-			check(controller.sends == ++sent && backend.attachedPointerId == 3, "only fresh contact restarts continuous feedback");
-			check(!pointers.Observe(3, false, false, true), "ordinary repeated Update does not rebind or resend");
-			pointers.Reset(true);
-			pointers.Observe(3, false, true, true);
-			drain(2);
-			check(controller.sends == sent && !backend.pointerController, "multiple RTS pens drop ambiguous preset");
+			const char* reason = nullptr;
+			check(!pointers.Observe(1, false, true, false, 0), "missing optional cursor API is safe no-op");
+			check(pointers.Observe(1, false, true, false, 21), "hover records exact pointer/tablet cursor");
+			check(consume(HapticContinuousFeedback::InkContinuous), "hover preset");
+			const auto rangeRevision = pointers.Revision();
+			const int hoverAttempts = factory.attempts;
+			const int hoverStops = controller.stops;
+			const int hoverSends = controller.sends;
+			check(pointers.Begin(21, 7, 0, true, false) && consume(HapticContinuousFeedback::InkContinuous) &&
+				factory.attempts == hoverAttempts && controller.stops == hoverStops && controller.sends == hoverSends,
+				"first same-range Down preserves hover controller/preset without lookup or stop");
+			check(pointers.End(7, 0, false), "first contact ends normally"); backend.StopFeedback();
+			for (uint64_t generation : { 1ULL, 2ULL, 3ULL })
+			{
+				const int beforeDownStops = controller.stops, beforeDownSends = controller.sends;
+				check(pointers.Begin(21, 7, generation, true, false, &reason), "RTS Down resumes same range without Pointer Update");
+				check(pointers.Revision() == rangeRevision, "ordinary stroke keeps range epoch");
+				check(consume(HapticContinuousFeedback::ChiselMarkerContinuous) && controller.waveform == 0x100E,
+					"locked highlighter waveform starts on each RTS stroke");
+				check(factory.attempts == hoverAttempts && controller.stops == beforeDownStops && controller.sends == beforeDownSends + 1,
+					"normal Up then Down resends on retained controller without reattachment");
+				check(pointers.End(7, generation, false), "normal Up retains range");
+				backend.StopFeedback();
+				check(!backend.continuousFeedbackStarted && !pointers.Take(request), "Up stops and clears pending stroke request");
+			}
+			check(pointers.Begin(21, 8, 4, true, false), "next contact starts");
+			check(!pointers.End(7, 3, true), "late old terminal cannot cancel next contact");
+			check(consume(HapticContinuousFeedback::InkContinuous), "next contact survives old cancellation");
+			pointers.Reset(); backend.DetachPointer();
+			check(!pointers.Begin(21, 8, 5, true, false, &reason) && !pointers.Take(request), "Leave removes old range");
+			check(!pointers.Observe(1, false, false, true, 21), "late Update cannot resurrect range");
+			check(pointers.Observe(1, true, true, true, 21), "RTS-first accepts later matching Pointer Down");
+			check(consume(HapticContinuousFeedback::InkContinuous), "inverted exact pen gets Ink");
+			check(pointers.End(8, 5, true), "cancel accepted"); backend.DetachPointer();
+			check(!pointers.Begin(21, 9, 6, true, false), "cancel requires fresh range");
 			pointers.Reset();
-			drain(1);
-			check(!pointers.Observe(3, false, false, true) && controller.sends == sent,
-				"multiple-to-single terminal cannot revive old binding with late Update");
-			pointers.Observe(3, false, true, false);
-			drain(1);
-			check(controller.sends == sent, "hover cannot borrow another active RTS contact");
-			pointers.Observe(3, false, true, true);
-			drain(1, false);
-			check(controller.sends == sent, "locked runtime tool mismatch drops optional preset");
-			pointers.Observe(3, false, true, true);
-			pointers.Reset(); // Up/Cancel 清 pending，直到新的 Enter/Down 才允许新生命周期。
-			drain(0);
-			check(!pointers.Observe(3, false, false, true) && controller.sends == sent,
-				"Up/cancel drops pending and late in-contact Update");
-			pointers.Observe(3, false, true, true);
-			drain(1);
-			check(controller.sends == ++sent && backend.attachedPointerId == 3, "fresh Down can reuse numeric ID after terminal");
+			check(pointers.Observe(1, false, true, false, 21) && pointers.Begin(21, 9, 7, true, false),
+				"Pointer-first pending Enter survives matching RTS Down");
+			check(consume(HapticContinuousFeedback::InkContinuous), "Pointer-first sends without another Pointer event");
+			check(!pointers.Begin(22, 10, 8, true, false, &reason) && !pointers.Take(request), "different cursor cannot borrow hover device");
+			check(!pointers.Observe(1, false, true, true, 21), "mismatching Pointer cannot borrow active RTS pen");
+			pointers.Reset(); pointers.Observe(1, false, true, false, 21);
+			check(!pointers.Begin(21, 11, 9, false, false) && !pointers.Take(request), "unknown/conflicting RTS source clears range");
+			pointers.Reset(); pointers.Observe(1, false, true, false, 21);
+			check(!pointers.Begin(21, 11, 10, true, true) && !pointers.Take(request), "multiple pens invalidate ambiguous range");
+			pointers.Reset(); pointers.Observe(1, false, true, false, 21);
+			pointers.Begin(21, 12, 11, true, false, nullptr, 4, 100);
+			check(!pointers.End(12, 11, true, 5), "other tablet terminal cannot cancel contact");
+			pointers.End(12, 11, false, 4);
+			check(!pointers.Begin(21, 12, 12, true, false, nullptr, 4, 101), "source generation change rejects retained range");
+			pointers.Reset(); pointers.Observe(1, false, true, false, 21);
+			pointers.Begin(21, 12, 13, true, false);
+			pointers.Reset(); pointers.Observe(1, false, true, false, 21);
+			check(!pointers.End(12, 13, true) && pointers.Take(request), "reset invalidates old terminal ownership before new Enter");
+			pointers.Reset(); pointers.TakeLeave();
+			const auto emptyRevision = pointers.Revision();
+			pointers.Reset(); pointers.Reset();
+			check(pointers.Revision() == emptyRevision && !pointers.TakeLeave(), "idle blocked frames do not invalidate UI click epoch");
 			backend.DetachPointer();
-			factory.supportedId = 1;
 		}
 		check(backend.AttachPointerId(1) && backend.PlayDiscrete(HapticDiscreteFeedback::Success, -1) && controller.waveform == 0x1003,
 			"discrete optional waveform falls back to Click");

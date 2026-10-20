@@ -18,6 +18,7 @@ module;
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
 #include "Bar.Haptics.h"
+#include "../../Drawing/Draw3/Draw3.HapticDiagnostics.h"
 
 #ifdef MessageBox
 #undef MessageBox
@@ -281,6 +282,8 @@ namespace
 			else barHapticTokens.Observe(message,
 				{ id, cursor, info.sourceDevice, info.ptPixelLocationRaw, info.dwTime }, context, GetTickCount64());
 		}
+		if (message == WM_POINTERDOWN || message == WM_POINTERUP)
+			Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_pointer", "phase=%u pointer=%u type=%u valid=%d flags=0x%x cursor=%u source=%p time=%lu point=%ld,%ld run=%llu", message, id, info.pointerType, valid, info.pointerFlags, cursor, info.sourceDevice, info.dwTime, info.ptPixelLocationRaw.x, info.ptPixelLocationRaw.y, static_cast<unsigned long long>(context.run));
 	}
 }
 
@@ -324,8 +327,9 @@ bool DequeueBarInteractionMessage(HWND window, ExMessage& message, BYTE filter)
 
 void AcceptBarHapticClick(const BarHaptics::Click& down, const ExMessage& up)
 {
-	(void)Inkeys::Drawing::Draw3::PublishProductHapticClick(
-		BarHaptics::AcceptedClick(down, currentHapticMessage, up.message, IsBarTouchCancelMessage(up)));
+	const auto click = BarHaptics::AcceptedClick(down, currentHapticMessage, up.message, IsBarTouchCancelMessage(up));
+	const bool accepted = click && Inkeys::Drawing::Draw3::PublishProductHapticClick(click);
+	Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_click", "accepted=%d pointer=%u reason=%s", accepted, click ? click->pointerId : 0, click ? (accepted ? "queued" : "host_rejected") : "no_matching_pen_contact");
 }
 
 struct BarTouchScreenSample
@@ -977,12 +981,17 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					// 如果当前无 activeID，则锁定 primary touch；没有 primary 标志时兜底第一个 DOWN 点
 					if (!isTouchActive)
 					{
+						const bool hapticDiagnostic = Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled();
+						const char* hapticMatchReason = "none";
+						BarHaptics::ContactTokens::MatchDiagnostics hapticMatches{};
 						{
 							std::lock_guard lock(barHapticMutex);
 							activeHapticSource.reset();
-							activeHapticToken = barHapticTokens.BindDown(ti, pt, GetTickCount64());
+							activeHapticToken = barHapticTokens.BindDown(ti, pt, GetTickCount64(),
+								hapticDiagnostic ? &hapticMatchReason : nullptr, hapticDiagnostic ? &hapticMatches : nullptr);
 							activeHapticSource = barHapticTokens.Hold(activeHapticToken);
 						}
+						if (hapticDiagnostic) Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_touch", "phase=down touch=%u flags=0x%lx mask=0x%lx source=%p time=%lu point=%ld,%ld token=%u match=%s candidates=%u/%u/%u/%u", ti.dwID, ti.dwFlags, ti.dwMask, ti.hSource, ti.dwTime, pt.x, pt.y, activeHapticToken, hapticMatchReason, hapticMatches.recent, hapticMatches.source, hapticMatches.time, hapticMatches.point);
 						activeTouchId = ti.dwID;
 						isTouchActive = true;
 						activeTouchIsPrimary = isPrimaryTouch;
@@ -1008,7 +1017,19 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 				if ((ti.dwFlags & TOUCHEVENTF_MOVE) && canTranslateActiveTouch)
 				{
-					{ std::lock_guard lock(barHapticMutex); activeHapticToken = barHapticTokens.Touch(activeHapticToken, ti, pt, false); }
+					const bool hapticDiagnostic = Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled();
+					const unsigned tokenBefore = hapticDiagnostic ? activeHapticToken : 0;
+					const char* hapticMatchReason = "none";
+					{
+						std::lock_guard lock(barHapticMutex);
+						activeHapticToken = barHapticTokens.Touch(activeHapticToken, ti, pt, false,
+							hapticDiagnostic ? &hapticMatchReason : nullptr);
+					}
+					// token 首次失效才记录 Move；高频正常移动不写日志。
+					if (hapticDiagnostic && tokenBefore && !activeHapticToken)
+						Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_touch", "phase=move touch=%u flags=0x%lx mask=0x%lx source=%p time=%lu point=%ld,%ld token_before=%u token=%u match=%s",
+							ti.dwID, ti.dwFlags, ti.dwMask, ti.hSource, ti.dwTime, pt.x, pt.y,
+							tokenBefore, activeHapticToken, hapticMatchReason);
 					if (isTouchActive && ti.dwID == activeTouchId)
 					{
 						if (isPrimaryTouch) activeTouchIsPrimary = true;
@@ -1029,7 +1050,18 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 				}
 				if ((ti.dwFlags & TOUCHEVENTF_UP) && canTranslateActiveTouch)
 				{
-					{ std::lock_guard lock(barHapticMutex); activeHapticToken = barHapticTokens.Touch(activeHapticToken, ti, pt, true); }
+					const bool hapticDiagnostic = Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled();
+					const unsigned tokenBefore = hapticDiagnostic ? activeHapticToken : 0;
+					const char* hapticMatchReason = "none";
+					{
+						std::lock_guard lock(barHapticMutex);
+						activeHapticToken = barHapticTokens.Touch(activeHapticToken, ti, pt, true,
+							hapticDiagnostic ? &hapticMatchReason : nullptr);
+					}
+					if (hapticDiagnostic)
+						Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_touch", "phase=up touch=%u flags=0x%lx mask=0x%lx source=%p time=%lu point=%ld,%ld token_before=%u token=%u match=%s",
+							ti.dwID, ti.dwFlags, ti.dwMask, ti.hSource, ti.dwTime, pt.x, pt.y,
+							tokenBefore, activeHapticToken, hapticMatchReason);
 					if (isTouchActive && ti.dwID == activeTouchId)
 					{
 						activeTouchId = 0;

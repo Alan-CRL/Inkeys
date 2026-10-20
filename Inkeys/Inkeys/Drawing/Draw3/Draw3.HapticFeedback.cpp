@@ -17,6 +17,7 @@
 #include <new>
 #include <vector>
 #include <windows.h>
+#include "Draw3.HapticDiagnostics.h"
 #include <wrl/client.h>
 #if defined(DRAW3_HAPTIC_TESTING)
 #include "Draw3.HapticRequest.h"
@@ -30,7 +31,6 @@ namespace Inkeys::Drawing::Draw3
 	{
 		constexpr int64_t kDiscreteDurationTicks = 22LL * 10000LL;
 		constexpr int kMaximumCachedFeedbackCount = 64;
-		constexpr bool kHapticDebugLoggingEnabled = false;
 		constexpr uint64_t kHapticDebugLogIntervalMs = 1000;
 		constexpr int kRoInitMultiThreaded = 1;
 		constexpr int32_t kHapticDeviceTypePen = 2;
@@ -177,12 +177,21 @@ namespace Inkeys::Drawing::Draw3
 			WindowsDeleteStringFunction windowsDeleteString = nullptr;
 			bool initialized = false;
 			bool available = false;
+			const char* diagnosticStage = "not_started";
+			DWORD diagnosticError = 0;
+			HRESULT diagnosticHr = E_PENDING;
 
 			bool Load() noexcept
 			{
 				if (available) return true;
 				if (!combase) combase = loadLibrary(L"combase.dll");
-				if (!combase) return false;
+				if (!combase)
+				{
+					diagnosticStage = "missing_combase";
+					diagnosticError = GetLastError();
+					HapticDiagnostics::Log("runtime", "reason=%s error=%lu", diagnosticStage, diagnosticError);
+					return false;
+				}
 				roInitialize = reinterpret_cast<RoInitializeFunction>(
 					getProcAddress(combase, "RoInitialize"));
 				roUninitialize = reinterpret_cast<RoUninitializeFunction>(
@@ -195,6 +204,14 @@ namespace Inkeys::Drawing::Draw3
 					getProcAddress(combase, "WindowsDeleteString"));
 				available = roInitialize && roUninitialize && roGetActivationFactory &&
 					windowsCreateString && windowsDeleteString;
+				if (!available)
+				{
+					diagnosticStage = "missing_export";
+					HapticDiagnostics::Log("runtime", "reason=%s ro_init=%d ro_uninit=%d ro_factory=%d create_string=%d delete_string=%d",
+						diagnosticStage, roInitialize != nullptr, roUninitialize != nullptr,
+						roGetActivationFactory != nullptr, windowsCreateString != nullptr,
+						windowsDeleteString != nullptr);
+				}
 				return available;
 			}
 
@@ -203,8 +220,20 @@ namespace Inkeys::Drawing::Draw3
 				if (!Load()) return false;
 				if (initialized) return true;
 				const HRESULT result = roInitialize(kRoInitMultiThreaded);
-				if (result == RPC_E_CHANGED_MODE) return true; // 线程已有 COM apartment 时仍尝试运行时激活。
-				if (FAILED(result)) return false;
+				diagnosticHr = result;
+				if (result == RPC_E_CHANGED_MODE)
+				{
+					diagnosticStage = "changed_mode";
+					HapticDiagnostics::Log("runtime", "ro_initialize=%s hr=0x%08x", diagnosticStage, static_cast<unsigned>(result));
+					return true; // 线程已有 COM apartment 时仍尝试运行时激活。
+				}
+				if (FAILED(result))
+				{
+					diagnosticStage = "ro_initialize_failed";
+					HapticDiagnostics::Log("runtime", "ro_initialize=%s hr=0x%08x", diagnosticStage, static_cast<unsigned>(result));
+					return false;
+				}
+				diagnosticStage = "ready";
 				initialized = true; // S_FALSE 也需要配对 RoUninitialize。
 				return true;
 			}
@@ -221,6 +250,9 @@ namespace Inkeys::Drawing::Draw3
 				roGetActivationFactory = nullptr;
 				windowsCreateString = nullptr;
 				windowsDeleteString = nullptr;
+				diagnosticStage = "not_started";
+				diagnosticError = 0;
+				diagnosticHr = E_PENDING;
 			}
 
 			HRESULT GetFactory(const wchar_t* className, REFIID iid, void** factory) noexcept
@@ -306,6 +338,9 @@ namespace Inkeys::Drawing::Draw3
 		uint16_t activeContinuousFallback = 0;
 		bool enabled = kPenHapticFeedbackDefaultEnabled;
 		bool initialized = false;
+		bool runtimeAvailable = false;
+		HRESULT penFactoryResult = E_PENDING;
+		uint64_t lastDiagnosticGeneration = 0;
 		bool continuousFeedbackStarted = false;
 		bool inputHapticsSupported = false;
 		bool pointerIntensitySupported = false;
@@ -318,6 +353,14 @@ namespace Inkeys::Drawing::Draw3
 		uint16_t lastContinuousWaveform = 0;
 		uint16_t lastContinuousFallback = 0;
 		uint64_t lastContinuousDebugLogMs = 0;
+		bool hasPointerContinuousDebugState = false;
+		uint32_t lastPointerContinuousPointerId = 0;
+		uint16_t lastPointerContinuousWaveform = 0;
+		uint16_t lastPointerContinuousFallback = 0;
+		uint16_t lastPointerContinuousChosenWaveform = 0;
+		bool lastPointerContinuousExplicitIntensity = false;
+		HRESULT lastPointerContinuousResult = E_PENDING;
+		uint64_t lastPointerContinuousDebugLogMs = 0;
 		bool hasInputManagerDeviceType = false;
 		int32_t lastInputManagerDeviceType = 0;
 
@@ -330,10 +373,13 @@ namespace Inkeys::Drawing::Draw3
 				LogUnavailableOnce("WinRT runtime is not available");
 				return false;
 			}
+			runtimeAvailable = true;
 
 			void* factory = nullptr;
 			HRESULT result = api.GetFactory(L"Windows.Devices.Input.PenDevice",
 				__uuidof(IPenDeviceStatics), &factory);
+			penFactoryResult = result;
+			HapticDiagnostics::Log("factory", "name=PenDevice hr=0x%08x present=%d", static_cast<unsigned>(result), factory != nullptr);
 			if (SUCCEEDED(result))
 				penDeviceStatics.Attach(static_cast<IPenDeviceStatics*>(factory));
 
@@ -351,8 +397,8 @@ namespace Inkeys::Drawing::Draw3
 
 			if (!IsAvailable())
 				LogUnavailableOnce("no supported pen haptics API was found");
-			else if constexpr (kHapticDebugLoggingEnabled)
-				std::cout << "[Haptics] pen_device_api=" <<
+			else if (HapticDiagnostics::Enabled())
+				std::cout << "[PenHaptics] event=backend pen_device_api=" <<
 					(penDeviceStatics ? "true" : "false") <<
 					" input_manager_api=" <<
 					(inputHapticsSupported ? "true" : "false") << std::endl;
@@ -371,6 +417,8 @@ namespace Inkeys::Drawing::Draw3
 			attachedPointerId = 0;
 			lastAttachAttemptPointerId = 0;
 			initialized = false;
+			runtimeAvailable = false;
+			penFactoryResult = E_PENDING;
 			inputHapticsSupported = false;
 			pointerIntensitySupported = false;
 			pointerPlayCountSupported = false;
@@ -383,13 +431,29 @@ namespace Inkeys::Drawing::Draw3
 			return penDeviceStatics || inputHapticsSupported;
 		}
 
+		void LogDiagnosticsSnapshot() noexcept
+		{
+			if (!HapticDiagnostics::Enabled()) return;
+			const auto current = HapticDiagnostics::generation.load(std::memory_order_relaxed);
+			if (lastDiagnosticGeneration == current) return;
+			lastDiagnosticGeneration = current;
+			// 开关可在 Host 初始化后打开：从绘制线程报告已缓存的能力探测结果。
+			HapticDiagnostics::Log("snapshot", "initialized=%d runtime=%d stage=%s error=%lu ro_hr=0x%08x exports=%d%d%d%d%d pen_factory_hr=0x%08x pen_factory=%d controller=%d feedback_enabled=%d",
+				initialized, runtimeAvailable, api.diagnosticStage, api.diagnosticError,
+				static_cast<unsigned>(api.diagnosticHr), api.roInitialize != nullptr,
+				api.roUninitialize != nullptr, api.roGetActivationFactory != nullptr,
+				api.windowsCreateString != nullptr, api.windowsDeleteString != nullptr,
+				static_cast<unsigned>(penFactoryResult), penDeviceStatics != nullptr,
+				pointerController != nullptr, enabled);
+		}
+
 		bool AttachPointerId(uint32_t pointerId) noexcept
 		{
-			if (!enabled || pointerId == 0) return false;
+			if (!enabled || pointerId == 0) { HapticDiagnostics::Log("attach", "pointer=%u reason=disabled_or_zero", pointerId); return false; }
 			if (!initialized) Initialize();
-			if (!penDeviceStatics) return false;
+			if (!penDeviceStatics) { HapticDiagnostics::Log("attach", "pointer=%u reason=no_pen_factory", pointerId); return false; }
 			if (pointerController && pointerId == attachedPointerId) return true;
-			if (!pointerController && pointerId == lastAttachAttemptPointerId) return false;
+			if (!pointerController && pointerId == lastAttachAttemptPointerId) { HapticDiagnostics::Log("attach", "pointer=%u reason=cached_failure", pointerId); return false; }
 			if (pointerController && pointerId != attachedPointerId)
 			{
 				// 新 PointerId 绑定失败时不能继续使用旧笔的 controller，避免串笔反馈。
@@ -406,21 +470,21 @@ namespace Inkeys::Drawing::Draw3
 			Microsoft::WRL::ComPtr<IPenDevice> penDevice;
 			HRESULT result = penDeviceStatics->GetFromPointerId(
 				pointerId, penDevice.ReleaseAndGetAddressOf());
-			if (FAILED(result) || !penDevice) return false;
+			if (FAILED(result) || !penDevice) { HapticDiagnostics::Log("attach", "pointer=%u stage=GetFromPointerId hr=0x%08x present=%d", pointerId, static_cast<unsigned>(result), penDevice != nullptr); return false; }
 
 			Microsoft::WRL::ComPtr<IPenDevice2> penDevice2;
 			result = penDevice.As(&penDevice2);
-			if (FAILED(result) || !penDevice2) return false;
+			if (FAILED(result) || !penDevice2) { HapticDiagnostics::Log("attach", "pointer=%u stage=IPenDevice2 hr=0x%08x present=%d", pointerId, static_cast<unsigned>(result), penDevice2 != nullptr); return false; }
 
 			Microsoft::WRL::ComPtr<ISimpleHapticsController> controller;
 			result = penDevice2->get_SimpleHapticsController(
 				controller.ReleaseAndGetAddressOf());
-			if (FAILED(result) || !controller) return false;
+			if (FAILED(result) || !controller) { HapticDiagnostics::Log("attach", "pointer=%u stage=SimpleHapticsController hr=0x%08x present=%d", pointerId, static_cast<unsigned>(result), controller != nullptr); return false; }
 
 			CachePointerController(controller.Get());
 			attachedPointerId = pointerId;
-			if constexpr (kHapticDebugLoggingEnabled)
-				std::cout << "[Haptics] attached pointer_id=" << pointerId << std::endl;
+			if (HapticDiagnostics::Enabled())
+				std::cout << "[PenHaptics] event=backend attached pointer_id=" << pointerId << std::endl;
 			return pointerController != nullptr;
 		}
 
@@ -435,14 +499,14 @@ namespace Inkeys::Drawing::Draw3
 
 		bool PlayDiscrete(HapticDiscreteFeedback feedback, double intensity) noexcept
 		{
-			if (!enabled) return false;
+			if (!enabled) { HapticDiagnostics::Log("send", "reason=disabled"); return false; }
 			if (!initialized) Initialize();
 			const uint16_t waveform = ToWaveform(feedback);
 			const uint16_t fallback = ToWaveform(FallbackDiscreteHapticFeedback(feedback));
 			const bool pointerSent = SendPointerDiscrete(waveform, fallback, intensity);
 			const bool sent = pointerSent || SendInputManagerDiscrete(waveform, fallback, intensity);
-			if constexpr (kHapticDebugLoggingEnabled)
-				std::cout << "[Haptics] discrete waveform=0x" << std::hex << waveform
+			if (HapticDiagnostics::Enabled())
+				std::cout << "[PenHaptics] event=backend discrete waveform=0x" << std::hex << waveform
 					<< " fallback=0x" << fallback << std::dec
 					<< " sent=" << (sent ? "true" : "false")
 					<< " pointer_controller=" << (pointerController ? "true" : "false")
@@ -454,7 +518,7 @@ namespace Inkeys::Drawing::Draw3
 
 		bool TickContinuous(HapticContinuousFeedback feedback, double intensity) noexcept
 		{
-			if (!enabled) return false;
+			if (!enabled) { HapticDiagnostics::Log("send", "reason=disabled"); return false; }
 			if (!initialized) Initialize();
 			const uint16_t waveform = ToWaveform(feedback);
 			const uint16_t fallback = ToWaveform(
@@ -479,10 +543,11 @@ namespace Inkeys::Drawing::Draw3
 
 		void StopFeedback() noexcept
 		{
-			if constexpr (kHapticDebugLoggingEnabled)
+			if (HapticDiagnostics::Enabled())
 			{
+				hasPointerContinuousDebugState = false;
 				if (lastContinuousTickMs != 0)
-					std::cout << "[Haptics] stop continuous elapsed_ms="
+					std::cout << "[PenHaptics] event=backend stop continuous elapsed_ms="
 						<< NowMilliseconds() - lastContinuousTickMs << std::endl;
 			}
 			lastContinuousTickMs = 0;
@@ -490,7 +555,11 @@ namespace Inkeys::Drawing::Draw3
 			activeContinuousFallback = 0;
 			continuousFeedbackStarted = false;
 			hasContinuousDebugState = false;
-			if (pointerController) pointerController->StopFeedback();
+			if (pointerController)
+			{
+				const HRESULT result = pointerController->StopFeedback();
+				HapticDiagnostics::Log("send", "kind=stop hr=0x%08x", static_cast<unsigned>(result));
+			}
 			if (inputHapticsManager)
 			{
 				boolean stopped = false;
@@ -502,13 +571,13 @@ namespace Inkeys::Drawing::Draw3
 		void LogDebugFailure(const char* reason, uint16_t waveform,
 			uint16_t fallback, HRESULT result = S_OK) noexcept
 		{
-			if constexpr (!kHapticDebugLoggingEnabled) return;
+			if (!HapticDiagnostics::Enabled()) return;
 			const uint64_t now = NowMilliseconds();
 			if (lastDebugLogMs != 0 &&
 				now - lastDebugLogMs < kHapticDebugLogIntervalMs)
 				return;
 			lastDebugLogMs = now;
-			std::cout << "[Haptics] " << reason << " waveform=0x" << std::hex
+			std::cout << "[PenHaptics] event=backend " << reason << " waveform=0x" << std::hex
 				<< waveform << " fallback=0x" << fallback;
 			if (result != S_OK)
 				std::cout << " hr=0x" << static_cast<uint32_t>(result);
@@ -518,7 +587,7 @@ namespace Inkeys::Drawing::Draw3
 		void LogContinuousResult(uint16_t waveform, uint16_t fallback,
 			bool sent, double intensity, uint64_t now) noexcept
 		{
-			if constexpr (!kHapticDebugLoggingEnabled) return;
+			if (!HapticDiagnostics::Enabled()) return;
 			if (hasContinuousDebugState && lastContinuousSent == sent &&
 				lastContinuousWaveform == waveform &&
 				lastContinuousFallback == fallback &&
@@ -529,7 +598,7 @@ namespace Inkeys::Drawing::Draw3
 			lastContinuousWaveform = waveform;
 			lastContinuousFallback = fallback;
 			lastContinuousDebugLogMs = now;
-			std::cout << "[Haptics] continuous waveform=0x" << std::hex << waveform
+			std::cout << "[PenHaptics] event=backend continuous waveform=0x" << std::hex << waveform
 				<< " fallback=0x" << fallback << std::dec
 				<< " sent=" << (sent ? "true" : "false")
 				<< " intensity=";
@@ -549,11 +618,38 @@ namespace Inkeys::Drawing::Draw3
 			std::cout << std::endl;
 		}
 
+		void LogPointerContinuousResult(uint16_t waveform, uint16_t fallback,
+			uint16_t chosenWaveform, bool explicitIntensity, HRESULT result) noexcept
+		{
+			const uint64_t now = NowMilliseconds();
+			// 失败仍按原策略逐帧重试；仅在状态变化或间隔到期时输出发送证据。
+			if (hasPointerContinuousDebugState &&
+				lastPointerContinuousPointerId == attachedPointerId &&
+				lastPointerContinuousWaveform == waveform &&
+				lastPointerContinuousFallback == fallback &&
+				lastPointerContinuousChosenWaveform == chosenWaveform &&
+				lastPointerContinuousExplicitIntensity == explicitIntensity &&
+				lastPointerContinuousResult == result &&
+				now - lastPointerContinuousDebugLogMs < kHapticDebugLogIntervalMs)
+				return;
+			hasPointerContinuousDebugState = true;
+			lastPointerContinuousPointerId = attachedPointerId;
+			lastPointerContinuousWaveform = waveform;
+			lastPointerContinuousFallback = fallback;
+			lastPointerContinuousChosenWaveform = chosenWaveform;
+			lastPointerContinuousExplicitIntensity = explicitIntensity;
+			lastPointerContinuousResult = result;
+			lastPointerContinuousDebugLogMs = now;
+			HapticDiagnostics::Log("send", "kind=continuous pointer=%u waveform=0x%x fallback=0x%x chosen_waveform=0x%x explicit_intensity=%d hr=0x%08x",
+				attachedPointerId, waveform, fallback, chosenWaveform, explicitIntensity,
+				static_cast<unsigned>(result));
+		}
+
 		void LogUnavailableOnce(const char* reason) noexcept
 		{
-			if (unavailableLogged) return;
+			if (unavailableLogged || !HapticDiagnostics::Enabled()) return;
 			unavailableLogged = true;
-			std::cout << "[Haptics] unavailable: " << reason << std::endl;
+			std::cout << "[PenHaptics] event=backend unavailable: " << reason << std::endl;
 		}
 
 		void CachePointerController(ISimpleHapticsController* controller) noexcept
@@ -593,22 +689,24 @@ namespace Inkeys::Drawing::Draw3
 				if (FAILED(feedback->get_Waveform(&waveform))) continue;
 				pointerFeedback[index] = { waveform, feedback };
 			}
-			if constexpr (kHapticDebugLoggingEnabled)
+			if (HapticDiagnostics::Enabled())
 			{
-				std::cout << "[Haptics] pointer controller feedback_count="
-					<< pointerFeedback.size()
+				const auto feedbackCount = std::count_if(pointerFeedback.begin(), pointerFeedback.end(),
+					[](const FeedbackEntry& entry) { return entry.feedback != nullptr; });
+				std::cout << "[PenHaptics] event=backend pointer controller feedback_count="
+					<< feedbackCount
 					<< " intensity=" << (pointerIntensitySupported ? "true" : "false")
 					<< " duration=" << (pointerDurationSupported ? "true" : "false")
 					<< " play_count=" << (pointerPlayCountSupported ? "true" : "false")
 					<< " waveforms=";
 				for (const FeedbackEntry& entry : pointerFeedback)
-					std::cout << "0x" << std::hex << entry.waveform << " ";
+					if (entry.feedback) std::cout << "0x" << std::hex << entry.waveform << " ";
 				std::cout << std::dec << std::endl;
 			}
 		}
 
 		ISimpleHapticsControllerFeedback* FindFeedback(
-			uint16_t waveform, uint16_t fallback) noexcept
+			uint16_t waveform, uint16_t fallback, uint16_t* chosenWaveform = nullptr) noexcept
 		{
 			const auto matches = [](const FeedbackEntry& entry, uint16_t value)
 				{
@@ -619,14 +717,20 @@ namespace Inkeys::Drawing::Draw3
 			if (iterator == pointerFeedback.end())
 				iterator = std::find_if(pointerFeedback.begin(), pointerFeedback.end(),
 					[&](const FeedbackEntry& entry) { return matches(entry, fallback); });
+			// 复用本次查找已选中的缓存项，诊断不额外调用设备接口。
+			if (chosenWaveform)
+				*chosenWaveform = iterator == pointerFeedback.end() ? 0 : iterator->waveform;
 			return iterator == pointerFeedback.end() ? nullptr : iterator->feedback.Get();
 		}
 
 		bool SendPointerContinuous(uint16_t waveform, uint16_t fallback,
 			double intensity) noexcept
 		{
-			if (!pointerController) return false;
-			ISimpleHapticsControllerFeedback* feedback = FindFeedback(waveform, fallback);
+			if (!pointerController) { LogDebugFailure("no_controller", waveform, fallback); return false; }
+			const bool diagnosticsEnabled = HapticDiagnostics::Enabled();
+			uint16_t chosenWaveform = 0;
+			ISimpleHapticsControllerFeedback* feedback = FindFeedback(waveform, fallback,
+				diagnosticsEnabled ? &chosenWaveform : nullptr);
 			if (!feedback)
 			{
 				LogDebugFailure("pointer waveform is not supported", waveform, fallback);
@@ -638,6 +742,9 @@ namespace Inkeys::Drawing::Draw3
 				result = pointerController->SendHapticFeedbackWithIntensity(feedback, intensity);
 			else
 				result = pointerController->SendHapticFeedback(feedback);
+			if (diagnosticsEnabled)
+				LogPointerContinuousResult(waveform, fallback, chosenWaveform,
+					pointerIntensitySupported && HasExplicitIntensity(intensity), result);
 			if (FAILED(result))
 				LogDebugFailure("pointer continuous send failed", waveform, fallback, result);
 			return SUCCEEDED(result);
@@ -646,11 +753,20 @@ namespace Inkeys::Drawing::Draw3
 		bool SendPointerDiscrete(uint16_t waveform, uint16_t fallback,
 			double intensity) noexcept
 		{
-			if (!pointerController) return false;
-			ISimpleHapticsControllerFeedback* feedback = FindFeedback(waveform, fallback);
-			if (!feedback) return false;
+			if (!pointerController) { HapticDiagnostics::Log("send", "reason=no_controller waveform=0x%x", waveform); return false; }
+			const bool diagnosticsEnabled = HapticDiagnostics::Enabled();
+			uint16_t chosenWaveform = 0;
+			ISimpleHapticsControllerFeedback* feedback = FindFeedback(waveform, fallback,
+				diagnosticsEnabled ? &chosenWaveform : nullptr);
+			if (!feedback) { HapticDiagnostics::Log("send", "reason=unsupported_discrete_waveform waveform=0x%x fallback=0x%x", waveform, fallback); return false; }
 			if (!HasExplicitIntensity(intensity))
-				return SUCCEEDED(pointerController->SendHapticFeedback(feedback));
+			{
+				const HRESULT result = pointerController->SendHapticFeedback(feedback);
+				if (diagnosticsEnabled)
+					HapticDiagnostics::Log("send", "kind=discrete pointer=%u waveform=0x%x fallback=0x%x chosen_waveform=0x%x hr=0x%08x",
+						attachedPointerId, waveform, fallback, chosenWaveform, static_cast<unsigned>(result));
+				return SUCCEEDED(result);
+			}
 			HRESULT result = E_FAIL;
 			if (pointerPlayCountSupported)
 				result = pointerController->SendHapticFeedbackForPlayCount(
@@ -662,6 +778,9 @@ namespace Inkeys::Drawing::Draw3
 				result = pointerController->SendHapticFeedbackWithIntensity(feedback, intensity);
 			else
 				result = pointerController->SendHapticFeedback(feedback);
+			if (diagnosticsEnabled)
+				HapticDiagnostics::Log("send", "kind=discrete pointer=%u waveform=0x%x fallback=0x%x chosen_waveform=0x%x hr=0x%08x",
+					attachedPointerId, waveform, fallback, chosenWaveform, static_cast<unsigned>(result));
 			return SUCCEEDED(result);
 		}
 
@@ -777,6 +896,11 @@ namespace Inkeys::Drawing::Draw3
 	bool PenHapticFeedback::IsAvailable() const noexcept
 	{
 		return impl_ && impl_->IsAvailable();
+	}
+
+	void PenHapticFeedback::LogDiagnosticsSnapshot() noexcept
+	{
+		if (impl_) impl_->LogDiagnosticsSnapshot();
 	}
 
 	bool PenHapticFeedback::AttachPointerId(uint32_t pointerId) noexcept

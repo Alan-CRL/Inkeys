@@ -40,7 +40,9 @@
 
 在同一个PowerShell调用中：
 ~~~powershell
+$buildSearchPath = [Environment]::GetEnvironmentVariable('Path', 'Process')
 Remove-Item Env:PATH -ErrorAction SilentlyContinue
+[Environment]::SetEnvironmentVariable('Path', $buildSearchPath, 'Process')
 $env:MSBUILDDISABLENODEREUSE = '1'
 $vsLocator = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
 $nativeMsbuild = & $vsLocator -latest -products '*' -find 'MSBuild\Current\Bin\arm64\MSBuild.exe' | Select-Object -First 1
@@ -62,3 +64,51 @@ $nativeMsbuild = & $vsLocator -latest -products '*' -find 'MSBuild\Current\Bin\a
 - [x] 新增 native-desktop/pen-haptics.md 并更新索引，完整证据见 validation.md。
 - [x] 按用户规则保留未提交改动；归档和日志均 --no-commit。
 - [ ] 实体震感、真实 Win7、跨驱动关联与混合设备 GUI：本轮授权范围外，保留设备验收。
+
+## 设备实测后的追加执行
+- [x] 添加实验室“测试触控反馈”默认关闭持久化开关和中英繁文案；根据设备反馈改为重启后生效。
+- [x] 在 Bar/产品入口/Host/Controller/后端关键接受与拒绝边界增加结构化、可关联、有限频控制台诊断；失败路径不影响原业务。
+- [x] 独立 trellis-check 核对跨线程、锁、输入/光标不变和诊断覆盖。
+- [x] 完整 InkeysRepo.sln Debug|ARM64、已有 --no-window、i18n check、diff/BOM/EOL 验证。
+- [x] 保持任务进行中，不归档；用户本轮未要求 commit/push。
+
+验证记录：InkeysRepo.sln Debug|ARM64 使用 ARM64 原生 MSBuild，通过命令行 LinkIncremental=false 后成功；首次增量链接发生 MSVC 内部 LNK1000，未修改项目配置。InkeysHeadlessTests.exe --no-window 退出 0，Scripts/i18n.ps1 check、git diff --check 和原有 BOM/CRLF 检查通过。实体笔反馈与真实设备日志仍需用户实测。
+
+设备日志复核：Bar 笔触摸因缺 `TOUCHINPUTMASKF_TIMEFROMSYSTEM` 被拒绝，Click 没有进入发送层；Canvas 记录的成功发送来自非接触 `WM_POINTERENTER`，不能替代书写接触或实体震感验证。本轮只修开关生效时机，震动逻辑保持现状；当前任务继续进行，不提交。
+
+本轮验证：`Scripts/i18n.ps1 check` 与 `git -c diff.ignoreSubmodules=all diff --check` 通过；`InkeysRepo.sln Debug|ARM64` 的增量构建和完整 Rebuild 均在多个无关源码/标准库头文件报 MSVC `C1902 Program database manager mismatch`，属于本机构建链故障，未改项目配置绕过。Rebuild 清除了旧的 headless exe 且未能重新生成，因此本轮无法执行 `--no-window`；前一轮通过记录不代表本轮已编译验证。
+
+## 当前定向日志实施（2026-10-11）
+- [x] Bar 原始 Pointer/Touch 字段与匹配失败阶段可在单次笔按钮操作中对照；不放宽身份校验。
+- [x] Canvas RTS 接触、Pointer 入站/拒绝、绘制线程重置/绑定/停止可按接触时序对照；不改变输入或光标。
+- [x] 后端实际发送 HRESULT、波形、控制器身份可判读；不把 API 成功写成实体震感成功。
+- [x] diff/编码/i18n、完整 ARM64 solution 构建及无窗口测试通过；C1902 已定位为沙箱限制并通过同配置沙箱外验证。
+- [x] 保持任务 in_progress、不提交、不启动 GUI；等待用户下一份实体设备日志后再定修复策略。
+
+2026-10-20 恢复验证：当前 PowerShell 删除 `Env:PATH` 会删除整个搜索路径，需先保存原值并恢复为单一 `Path`，既避免重复键也保留 vcpkg 子进程的搜索环境。沙箱内独立的一行 C++ `/ZI /FS /c` 探针同样报 `C1902`，相同命令在沙箱外退出 0，确认是 runner/PDB 运行限制；不修改源码、SDK 或项目配置绕过。后续完整构建按同一原有 solution 配置在沙箱外验证。
+
+2026-10-20 独立 trellis-check 已通过本轮六项定向诊断复核，含 Pointer Update 拒绝可见性、RTS 身份、Bar Up/Move 失效、外层产品锁外输出、真实发送 HRESULT/最终缓存波形、重复失败及多 Pointer 满槽限频。缓存满时不轮换，省略 Update 的饱和计数附于下一条边沿/状态日志；Pen 保留槽位。诊断最长 detail 保守估算低于 384 字节，原准入/匹配/发送/重试/光标动作不变，原 BOM/CRLF 保持。
+
+本轮最终验证（2026-10-20）：ARM64 原生 MSBuild 构建 `InkeysRepo.sln Debug|ARM64 /p:LinkIncremental=false` 退出 0，耗时 5分52秒、0 error；既有第三方/SDK 等 warning 未作范围外处理。相同产物 `Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window` 退出 0。`git diff HEAD --check`、11份定向源码 UTF-8/BOM/全CRLF 对照、`Scripts/i18n.ps1 check` 均通过。构建日志为 `.trellis/.runtime/restore-pen-haptics/diagnostics-build-20261020-verified.log`，测试日志为同目录 `diagnostics-headless-20261020.log`。没有启动 GUI、提交或归档；实体震动问题等待此诊断版的设备日志继续定位。
+
+建议设备取证顺序：确认“测试触控反馈”已开启并重启，保留从启动开始的完整控制台输出；先在普通笔模式悬停后绘制一笔并抬起，再用笔点击类型按钮、选择荧光笔并再绘制一笔。Bar 的 candidates 按 recent/source/time/point 顺序报告严格条件下的候选数；以 `rts_contact`、`canvas_reset`、`canvas_ingress`、`canvas_pointer` 和 `send` 对照接触与设备请求，不能把 `hr=0` 当作实体震感已验证。
+
+## 2026-10-20 实测修复执行（用户已批准）
+- [x] 分离画布范围身份与 RTS 笔划生命周期；被动 cursor 核对，修复 Enter 后没有 Pointer Down/Update 的多笔路径。
+- [x] 修正 Bar Down/Up 提供方时间匹配，保留来源、唯一性、单调时钟有效期和取消去重。
+- [x] 删除失效的 require-contact 等前提及旧测试断言，增加真实事件顺序回归与负例。
+- [x] 独立检查输入/光标无副作用、身份失效、跨线程和可选平台回退；更新 spec。
+- [x] 完整 Debug|ARM64 solution 构建、--no-window 测试、diff 和原始编码/换行检查。
+- [x] 保持任务 in_progress，不 commit/push、不归档，说明实体设备待验收。
+
+2026-10-20 修复实现与独立检查：CanvasPointerMailbox 以动态 Pointer tablet cursor 核对 RTS 来源，并用 tablet context/contact/generation 与 range revision 保护终态所有权；普通 Up 只停止当前笔，下一笔可重新排入有效范围，Controller 恢复已验证活动笔划的波形 Tick。删除 requireContact/ContinuousCandidateAllowed 旧前提。Reset 对空状态幂等，拒绝 Pointer 并失效范围时也唤醒 owner。Bar 移除 Down/Up 的 TIMEFROMSYSTEM 一票否决，保留提供方时间精确关联和本进程单调时钟有效期。
+独立 trellis-check 无剩余阻断项；用例覆盖实测 Enter 后三笔 RTS、两种到达顺序、来源冲突/多笔/代际/迟到终态、空门禁代际稳定以及真实 mask=0x4 点击链路。自动用例覆盖生产共享 mailbox 与 ABI fake 后端，不等于完整 GUI 事件循环或实体震感验收。7 份本轮代码/测试文件严格 UTF-8、原 BOM、CRLF 检查及 git diff HEAD --check 通过；本轮基线保存在 runtime/restore-pen-haptics/repair-baseline，保留既有未提交格式及用户修改。
+
+首次修复构建（repair-build-20261020.log）退出 0、0 errors、118 warnings，耗时 1分15秒；相应无窗口测试退出 0。最终复核进一步移除同范围 RTS Down 的不必要 Detach/设备工厂重查：SameCanvasBinding 在生产与测试共用 pointer/cursor/range revision 校验，首次落笔延续悬停预设，Up 后下一笔只重发，不重复 Attach。独立复核通过；此最终修改另行重新构建和测试。
+
+最终修复验证（2026-10-20）：ARM64 原生 MSBuild 构建 InkeysRepo.sln Debug|ARM64 /p:LinkIncremental=false 退出 0，0 errors、118 warnings，耗时 57秒；最终 InkeysHeadlessTests.exe --no-window 退出 0，包含同范围控制器复用与提供方时间关联的新增回归。日志为 repair-build-20261020-verified.log 与 repair-headless-20261020-verified.log，位于 .trellis/.runtime/restore-pen-haptics/。7份修改源码/测试 UTF-8/BOM/CRLF 和 git diff HEAD --check 通过；dumpbin /imports 确认 GetPointerCursorId 与可选 WinRT 入口无静态导入。使用既有已证实可用的沙箱外构建/无窗口测试方式，无环境绕过源码修改。
+可交付产物：Build/ARM64/Debug/Inkeys.exe（2026-10-20 08:41:42）。独立检查包含最终 SameCanvasBinding 复用修改，通过。尚未执行实体设备/GUI/真实 Win7 验收；建议同一次进入画布连续写三笔、用笔切换荧光笔/橡皮后再写，并核对鼠标/手指不产生笔 Click。诊断继续重启生效，canvas_identity 可看到 cursor、recognition、matched/reason；按钮应由 matched token 到 click_consume/send discrete。任务维持 in_progress，本轮无暂存、commit、push 或归档。
+
+## 2026-10-20 人工验收与提交检查
+用户确认 Surface 超轻薄触控笔 2 人工测试通过，并授权本轮提交，明确要求不要结束任务。复核本次附件 f05e1928-8355-4e66-8c3a-5166e7261164：18 对 RTS Down/Up，18 次 canvas_identity 均 matched=1；61 次 click_consume 均 attached=1/current=1/sent=1，对应 61 次 Click 发送；32 次连续发送包含 27 次 Ink 和 5 次 Eraser，发送 HRESULT 均为 0。同一 Pointer 范围内连续多笔能在 Up 停止后重新发送，不再因等待缺席的 Pointer Down/Update 丢失反馈。日志本身没有 Highlighter 实际发送记录，不单独据此声称该波形已验证；实体震感通过以用户反馈为依据。
+本轮未修改触觉实现，复用最终 repair-build-20261020-verified.log 与 repair-headless-20261020-verified.log 的构建/无窗口验证；补充提交差异及格式检查。提交包含诊断、已批准修复、测试与任务记录；保留工作区中无关的 IDT_RELEASE 开关修改和 DrawingController 格式改动。Trellis 状态保持 in_progress，不执行 finish/archive/push。

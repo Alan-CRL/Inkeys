@@ -1,5 +1,6 @@
 #include "../Inkeys/Inkeys/UI/Bar/Bar.Haptics.h"
 #include <iostream>
+#include <string_view>
 
 import Inkeys.Drawing.Draw3.haptic_feedback;
 
@@ -60,8 +61,10 @@ int RunDraw3HapticTests()
 	auto up = tokens.Dequeued(wire);
 	check(!BH::AcceptedClick(down, up, WM_MOUSEMOVE, false) && !BH::AcceptedClick(down, up, WM_LBUTTONUP, true) &&
 		!BH::AcceptedClick({}, up, WM_LBUTTONUP, false), "move/cancel/mouse/touch cannot authorize click");
+	const char* rejection = nullptr;
 	check(mailbox.Publish(BH::AcceptedClick(down, up, WM_LBUTTONUP, false), context, 1011) &&
-		!mailbox.Publish(down, context, 1012), "one accepted click at most once");
+		!mailbox.Publish(down, context, 1012, &rejection) &&
+		std::string_view(rejection) == "duplicate", "duplicate click reports its rejection");
 	check(mailbox.Take(context, 1012) == down && !mailbox.Take(context, 1012), "one owner consumption");
 	check(!down->Current({context.run, context.canvas + 1}, 1012), "newer canvas presence rejects old Bar click");
 	check(!down->Current(context, 1261), "UI stall expires click without changing operation");
@@ -85,28 +88,79 @@ int RunDraw3HapticTests()
 		check(BH::acceptedClick == held, "real callback has scoped source");
 	}
 	check(!BH::acceptedClick, "programmatic callback has no source");
-	for (unsigned failure = 0; failure < 6; ++failure)
+	// 实测 Surface 的 mask=0x4 使用提供方时间；Down/Up 必须完整通过原业务凭据链。
+	for (const DWORD mask : { DWORD(TOUCHINPUTMASKF_TIMEFROMSYSTEM), DWORD(TOUCHINPUTMASKF_CONTACTAREA) })
 	{
 		BH::ContactTokens tracker;
 		auto pointer = sample;
 		auto input = touch;
+		input.dwMask = mask;
+		input.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_DOWN;
 		tracker.Observe(WM_POINTERDOWN, pointer, context, 2000);
-		if (failure == 0) input.dwFlags = TOUCHEVENTF_DOWN;
-		if (failure == 1) input.dwMask = 0;
-		if (failure == 2) input.hSource = reinterpret_cast<HANDLE>(99);
-		if (failure == 3) ++input.dwTime;
-		POINT point = pointer.point;
-		if (failure == 4) ++point.x;
-		check(!tracker.BindDown(input, point, failure == 5 ? 2101 : 2001),
-			"touch/untrusted time/different device/time/position/stale association drops metadata");
-	}
-	{
-		BH::ContactTokens tracker;
-		tracker.Observe(WM_POINTERDOWN, sample, context, 2000);
-		auto ambiguous = sample;
-		++ambiguous.id;
-		tracker.Observe(WM_POINTERDOWN, ambiguous, context, 2000);
-		check(!tracker.BindDown(touch, sample.point, 2001), "ambiguous pen candidates rejected");
+		const auto token = tracker.BindDown(input, pointer.point, 2001);
+		check(token != 0, "system/provider time exact Pen Down binds");
+		const auto press = tracker.Hold(token);
+		++pointer.time; input.dwTime = pointer.time;
+		input.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_UP;
+		tracker.Observe(WM_POINTERUP, pointer, context, 2010);
+		check(tracker.Touch(token, input, pointer.point, true) == token, "system/provider time exact Pen Up seals");
+		const auto click = BH::AcceptedClick(press, tracker.Hold(token), WM_LBUTTONUP, false);
+		check(mailbox.Publish(click, context, 2011) && mailbox.Take(context, 2012) == press,
+			"system/provider contact reaches accepted click mailbox");
+		check(!mailbox.Publish(click, context, 2012), "provider time retains submitted de-duplication");
+		check(press && !press->Current(context, 2261), "provider time retains Up expiry");
+		for (unsigned failure = 0; failure < 6; ++failure)
+		{
+			BH::ContactTokens rejected;
+			auto candidate = sample;
+			auto raw = touch;
+			raw.dwMask = mask;
+			raw.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_DOWN;
+			rejected.Observe(WM_POINTERDOWN, candidate, context, 2000);
+			if (failure == 0) raw.dwFlags = TOUCHEVENTF_DOWN;
+			if (failure == 1) raw.hSource = reinterpret_cast<HANDLE>(99);
+			if (failure == 2) ++raw.dwTime;
+			POINT point = candidate.point;
+			if (failure == 3) ++point.x;
+			check(!rejected.BindDown(raw, point, failure == 4 ? 2101 : failure == 5 ? 1999 : 2001),
+				"provider time preserves pen/source/time/point/freshness checks");
+		}
+		{
+			BH::ContactTokens ambiguous;
+			ambiguous.Observe(WM_POINTERDOWN, sample, context, 2000);
+			auto other = sample;
+			++other.id;
+			ambiguous.Observe(WM_POINTERDOWN, other, context, 2000);
+			auto raw = touch;
+			raw.dwMask = mask;
+			check(!ambiguous.BindDown(raw, sample.point, 2001), "provider time ambiguous candidates rejected");
+		}
+		// 所有终态反例都先成功绑定 Down，确保实际检验 Up/取消失效链。
+		for (unsigned failure = 0; failure < 8; ++failure)
+		{
+			BH::ContactTokens rejected;
+			auto candidate = sample;
+			auto raw = touch;
+			raw.dwMask = mask;
+			raw.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_DOWN;
+			rejected.Observe(WM_POINTERDOWN, candidate, context, 2000);
+			const auto wireToken = rejected.BindDown(raw, candidate.point, 2001);
+			const auto lease = rejected.Hold(wireToken);
+			check(wireToken != 0, "negative Up case starts with valid Pen Down");
+			++candidate.time; raw.dwTime = candidate.time;
+			raw.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_UP;
+			if (failure != 0) rejected.Observe(WM_POINTERUP, candidate, context, 2010);
+			if (failure == 1) ++raw.dwTime;
+			if (failure == 2) raw.hSource = reinterpret_cast<HANDLE>(99);
+			if (failure == 3) ++raw.dwID;
+			if (failure == 4) raw.dwFlags = TOUCHEVENTF_UP;
+			POINT point = candidate.point;
+			if (failure == 5) ++point.y;
+			if (failure == 6) rejected.Cancel(wireToken);
+			if (failure == 7) rejected.Invalidate(candidate.id);
+			check(!rejected.Touch(wireToken, raw, point, true) && lease && !lease->Current(context, 2011),
+				"provider time missing/mismatched Up or cancel invalidates click");
+		}
 	}
 	{
 		BH::ContactTokens tracker;
@@ -134,15 +188,22 @@ int RunDraw3HapticTests()
 	};
 	std::array<Haptics::Click, 8> pending;
 	for (auto& item : pending) { item = source(4000); check(mailbox.Publish(item, context, 4002), "bounded mailbox accepts free slot"); }
-	check(!mailbox.Publish(source(4000), context, 4002), "full mailbox rejects only feedback");
+	check(!mailbox.Publish(source(4000), context, 4002, &rejection) &&
+		std::string_view(rejection) == "mailbox_full", "full mailbox reports optional feedback rejection");
 	pending[0]->valid = false;
-	check(mailbox.Take(context, 4003) == pending[1], "cancellation bypasses full queue");
+	Haptics::ClickTakeDiagnostics dropped;
+	check(mailbox.Take(context, 4003, &dropped) == pending[1] && dropped.dropped == 1 &&
+		dropped.lastPointerId == pending[0]->pointerId &&
+		std::string_view(dropped.lastReason) == "cancelled",
+		"cancelled queued click reports its first discarded contact");
 	mailbox.Stop();
 	check(!mailbox.Take(context, 4004) && !mailbox.Publish(source(4000), context, 4004), "Host stop closes pending clicks");
 	mailbox.Start();
 	check(!mailbox.Publish(source(4000), {mailbox.Run(), context.canvas}, 4004), "old run cannot cross restart");
 	context.run = mailbox.Run();
 	check(mailbox.Publish(source(5000), context, 5002), "fresh run accepts new contact");
-	check(!mailbox.Take(context, 5252), "expired queued source never reaches backend");
+	check(!mailbox.Take(context, 5252, &dropped) && dropped.dropped == 1 &&
+		std::string_view(dropped.lastReason) == "expired",
+		"expired queued source reports its drop before backend");
 	return failures;
 }

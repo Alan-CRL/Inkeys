@@ -50,6 +50,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include <iterator>
 
 #include "IdtConfiguration.h"
+#include "Inkeys/Drawing/Draw3/Draw3.HapticDiagnostics.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtFreezeFrame.h"
@@ -2460,8 +2461,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 			cursorConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.Cursor || win7DiagnosticsEnabled;
+			Inkeys::Drawing::Draw3::HapticDiagnostics::SetEnabled(
+				config.Experimental.Inkeys3.ConsoleOutput.Haptics);
 			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
-				cursorConsoleOutputEnabled)
+				cursorConsoleOutputEnabled || Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled())
 			{
 				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();

@@ -79,6 +79,7 @@ export namespace Inkeys::Drawing::Draw3
 		void SetEnabled(bool enabled) noexcept;
 		bool IsEnabled() const noexcept;
 		bool IsAvailable() const noexcept;
+		void LogDiagnosticsSnapshot() noexcept;
 		bool AttachPointerId(uint32_t pointerId) noexcept;
 		void DetachPointer() noexcept;
 		bool PlayDiscrete(HapticDiscreteFeedback feedback,

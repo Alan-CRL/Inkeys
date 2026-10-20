@@ -138,6 +138,13 @@ namespace Inkeys::Drawing::Draw3
 		bool (*setExtendedStyleFlags)(void*, DWORD, DWORD) = nullptr;
 	};
 
+	// 只复制拒绝快照；控制台输出由产品调用方退出生命周期闸门后执行。
+	struct HostHapticClickDiagnostics
+	{
+		const char* rejection = nullptr;
+		Haptics::Context context;
+	};
+
 	struct HostRuntimeCallbacks
 	{
 		void* context = nullptr;
@@ -320,7 +327,8 @@ namespace Inkeys::Drawing::Draw3
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 		Haptics::Context HapticContext() const noexcept;
-		bool PublishHapticClick(const Haptics::Click& source) noexcept;
+		bool PublishHapticClick(const Haptics::Click& source,
+			HostHapticClickDiagnostics* diagnostics = nullptr) noexcept;
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;

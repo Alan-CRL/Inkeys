@@ -35,6 +35,10 @@ namespace Inkeys::UI::Bar::Haptics
 	class ContactTokens
 	{
 	public:
+		struct MatchDiagnostics
+		{
+			unsigned recent = 0, source = 0, time = 0, point = 0;
+		};
 		// 调用方串行锁只覆盖内存和入/出队记账，不跨业务回调或 WinRT。
 		void Invalidate(UINT pointer = 0) noexcept
 		{
@@ -81,38 +85,66 @@ namespace Inkeys::UI::Bar::Haptics
 				}
 			}
 		}
-		unsigned BindDown(const TOUCHINPUT& touch, POINT point, std::uint64_t now) noexcept
+		unsigned BindDown(const TOUCHINPUT& touch, POINT point, std::uint64_t now,
+			const char** reason = nullptr, MatchDiagnostics* diagnostics = nullptr) noexcept
 		{
-			if (!(touch.dwFlags & TOUCHEVENTF_PEN) || !(touch.dwMask & TOUCHINPUTMASKF_TIMEFROMSYSTEM)) return 0;
+			if (reason) *reason = "no_recent_pointer";
+			if (!(touch.dwFlags & TOUCHEVENTF_PEN)) { if (reason) *reason = "non_pen"; return 0; }
+			// 提供方时间也只做同阶段精确比较；新鲜度独立使用本进程单调时钟。
 			unsigned result = 0;
 			for (unsigned i = 0; i < slots_.size(); ++i)
 			{
 				auto& slot = slots_[i];
 				if (!slot.source || !slot.source->valid || slot.bound || now < slot.source->downAt ||
-					now - slot.source->downAt > 100 || !Matches(slot.down, touch, point)) continue;
-				if (result) return 0; // 身份歧义时保留点击，只省略触觉。
+					now - slot.source->downAt > 100) continue;
+				if (diagnostics) ++diagnostics->recent;
+				if (slot.down.device != touch.hSource) { if (reason) *reason = "source_mismatch"; continue; }
+				if (diagnostics) ++diagnostics->source;
+				if (slot.down.time != touch.dwTime) { if (reason) *reason = "time_mismatch"; continue; }
+				if (diagnostics) ++diagnostics->time;
+				if (slot.down.point.x != point.x || slot.down.point.y != point.y)
+				{ if (reason) *reason = "point_mismatch"; continue; }
+				if (diagnostics) ++diagnostics->point;
+				if (result) { if (reason) *reason = "ambiguous"; return 0; } // 身份歧义时只省略触觉。
 				result = i + 1;
 			}
 			if (result)
 			{
+				if (reason) *reason = "matched";
 				auto& slot = slots_[result - 1];
 				slot.touch = touch.dwID;
 				slot.bound = true;
 			}
 			return result;
 		}
-		unsigned Touch(unsigned token, const TOUCHINPUT& touch, POINT point, bool up) noexcept
+		unsigned Touch(unsigned token, const TOUCHINPUT& touch, POINT point, bool up,
+			const char** reason = nullptr) noexcept
 		{
+			if (reason) *reason = "no_token";
 			if (!token || token > SlotCount) return 0;
 			auto& slot = slots_[token - 1];
-			if (!slot.source || !slot.source->valid || !slot.bound) return 0;
-			if (!(touch.dwFlags & TOUCHEVENTF_PEN) || slot.touch != touch.dwID ||
-				slot.down.device != touch.hSource || (up && (!(touch.dwMask & TOUCHINPUTMASKF_TIMEFROMSYSTEM) ||
-				!slot.source->upAt || !Matches(slot.up, touch, point))))
+			if (!slot.source || !slot.source->valid || !slot.bound)
 			{
+				if (reason) *reason = !slot.source ? "missing_source" : !slot.source->valid
+					? "invalid_source" : "unbound";
+				return 0;
+			}
+			if (!(touch.dwFlags & TOUCHEVENTF_PEN) || slot.touch != touch.dwID ||
+				slot.down.device != touch.hSource || (up && (!slot.source->upAt ||
+				!Matches(slot.up, touch, point))))
+			{
+				// Up 必须与已观察到的同一 Pointer 终态精确匹配，不能用 Down 代替。
+				if (reason)
+					*reason = !(touch.dwFlags & TOUCHEVENTF_PEN) ? "non_pen"
+					: slot.touch != touch.dwID ? "touch_id_mismatch"
+					: slot.down.device != touch.hSource ? "source_mismatch"
+					: !slot.source->upAt ? "no_pointer_up"
+					: slot.up.device != touch.hSource ? "up_source_mismatch"
+					: slot.up.time != touch.dwTime ? "up_time_mismatch" : "up_point_mismatch";
 				slot.source->valid.store(false, std::memory_order_release);
 				return 0;
 			}
+			if (reason) *reason = up ? "matched_up" : "held";
 			return token;
 		}
 		void Cancel(unsigned token) noexcept
@@ -137,7 +169,7 @@ namespace Inkeys::UI::Bar::Haptics
 	private:
 		static bool Matches(const PointerSample& pointer, const TOUCHINPUT& touch, POINT point) noexcept
 		{
-			// WM_TOUCH ID 与 Pointer ID 没有等价保证；仅接受同源、同系统时刻、同屏幕点。
+			// WM_TOUCH ID 与 Pointer ID 没有等价保证；仅接受同源、同阶段时间值、同屏幕点。
 			return pointer.device == touch.hSource && pointer.time == touch.dwTime &&
 				pointer.point.x == point.x && pointer.point.y == point.y;
 		}

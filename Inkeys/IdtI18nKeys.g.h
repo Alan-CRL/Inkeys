@@ -432,6 +432,11 @@ inline constexpr struct I18nKeyRoot
         {
             struct Node__SettingsUI__Experimental__ConsoleOutput
             {
+                struct Node__SettingsUI__Experimental__ConsoleOutput__Haptics
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/Haptics/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/Haptics/E";
+                } Haptics{};
                 struct Node__SettingsUI__Experimental__ConsoleOutput__TouchArea
                 {
                     const char* N = "SettingsUI/Experimental/ConsoleOutput/TouchArea/N";

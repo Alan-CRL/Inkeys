@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -226,7 +227,11 @@ export namespace Inkeys::Drawing::Draw3
 		bool ConsumeHapticPointer(Haptics::CanvasPointerRequest& request);
 		bool ConsumeHapticPointerLeave();
 		std::uint64_t HapticPointerRevision() const noexcept { return hapticPointers_.Revision(); }
-		void ResetHapticPointer(bool requireContact = false) noexcept { hapticPointers_.Reset(requireContact); }
+		void ResetHapticPointer() noexcept { hapticPointers_.Reset(); }
+		bool BeginHapticContact(uint32_t cursor, uint32_t contact, uint64_t generation, bool trusted, bool anotherPen, const char** reason, uint32_t context, uint64_t sourceGeneration) noexcept
+		{ return hapticPointers_.Begin(cursor, contact, generation, trusted, anotherPen, reason, context, sourceGeneration); }
+		bool EndHapticContact(uint32_t contact, uint64_t generation, bool cancelled, uint32_t context) noexcept
+		{ return hapticPointers_.End(contact, generation, cancelled, context); }
 		bool HapticSurfaceVisible() const noexcept { return hapticSurfaceVisible_.load(std::memory_order_acquire); }
 		// 返回主循环是否应该退出。
 		bool ExitRequested() const;
@@ -277,6 +282,16 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<int> pendingResizeHeight_ = 0;
 		void RequestHapticPointerLeave() noexcept;
 		Haptics::CanvasPointerMailbox hapticPointers_;
+		// 仅窗口线程在诊断启用时更新；重复拒绝的 Update 不逐帧输出。
+		struct HapticIngressDiagnostic
+		{
+			bool known = false;
+			uint32_t pointerId = 0, state = 0;
+			uint64_t revision = 0;
+			const char* reason = "none";
+		};
+		std::array<HapticIngressDiagnostic, 8> hapticIngressDiagnostics_{};
+		uint64_t hapticIngressUpdatesOmitted_ = 0;
 		std::atomic_bool hapticSurfaceVisible_ = false;
 		std::atomic<bool> touchPanActive_ = false;
 		std::atomic<bool> realMouseTakeoverDuringTouchPan_ = false;

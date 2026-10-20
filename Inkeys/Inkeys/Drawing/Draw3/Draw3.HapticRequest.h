@@ -47,69 +47,129 @@ namespace Inkeys::Drawing::Draw3::Haptics
 	struct CanvasPointerRequest
 	{
 		std::uint32_t pointerId = 0;
+		std::uint32_t cursorId = 0;
 		bool eraserHint = false;
 		bool inContact = false;
 		std::uint64_t revision = 0;
 	};
 
-	inline bool ContinuousCandidateAllowed(unsigned penContacts, bool inContact, bool waveformMatches) noexcept
+	inline bool SameCanvasBinding(const CanvasPointerRequest& bound, const CanvasPointerRequest& request) noexcept
 	{
-		return penContacts <= 1 && (penContacts == 0 || (inContact && waveformMatches));
+		return request.pointerId && request.cursorId && request.revision && bound.pointerId == request.pointerId &&
+			bound.cursorId == request.cursorId && bound.revision == request.revision;
 	}
-
-	// RTS 与 Pointer 无通用身份换算：新 RTS Down 清掉旧请求，只等随后明确的接触消息。
+	// Pointer 范围身份与 RTS 笔划分开：普通抬笔停止播放，但下一笔仍可核对同一 tablet cursor。
 	class CanvasPointerMailbox
 	{
 	public:
 		struct State { CanvasPointerRequest pending; bool leave; };
-		State Inspect() const noexcept
-		{
-			std::lock_guard lock(mutex_);
-			return { pending_, leave_ };
-		}
+		State Inspect() const noexcept { std::lock_guard lock(mutex_); return { pending_, leave_ }; }
 		std::uint64_t Revision() const noexcept { return revision_.load(std::memory_order_acquire); }
-		void Reset(bool requireContact = false) noexcept
+		void Reset() noexcept
 		{
 			std::lock_guard lock(mutex_);
-			revision_.fetch_add(1, std::memory_order_acq_rel);
-			pending_ = {};
-			leave_ = true;
-			requireContact_ = requireContact;
+			if (range_.pointerId || pending_.pointerId || contactValid_) ClearRange();
+			activeCursor_ = 0; contactValid_ = false;
 		}
-		bool Observe(std::uint32_t pointerId, bool eraserHint, bool start, bool inContact) noexcept
+		bool Begin(std::uint32_t cursor, std::uint32_t contact, std::uint64_t generation,
+			bool trusted, bool anotherPen, const char** reason = nullptr, std::uint32_t context = 0, std::uint64_t sourceGeneration = 0) noexcept
 		{
 			std::lock_guard lock(mutex_);
-			if (!pointerId || (!start && !requireContact_) || (requireContact_ && !inContact)) return false;
+			activeCursor_ = trusted && !anotherPen ? cursor : 0;
+			contact_ = contact; generation_ = generation; context_ = context; contactValid_ = true;
+			contactRangeRevision_ = range_.revision;
+			if (!activeCursor_ || (range_.pointerId && (range_.cursorId != activeCursor_ || (sourceGeneration_ && sourceGeneration_ != sourceGeneration))))
+			{
+				ClearRange();
+				if (reason) *reason = anotherPen ? "multiple_pens" : !activeCursor_ ? "unknown_cursor" : "cursor_mismatch";
+				return false;
+			}
+			sourceGeneration_ = sourceGeneration;
+			pending_ = range_;
+			if (reason) *reason = range_.pointerId ? "matched_range" : "await_range";
+			return range_.pointerId != 0;
+		}
+		bool End(std::uint32_t contact, std::uint64_t generation, bool cancelled, std::uint32_t context = 0) noexcept
+		{
+			std::lock_guard lock(mutex_);
+			// 旧接触迟到的终态不能停止后来一笔或清掉后来进入的范围。
+			if (!contactValid_ || contact != contact_ || generation != generation_ || context != context_) return false;
+			contactValid_ = false;
+			if (range_.pointerId && contactRangeRevision_ != range_.revision) { activeCursor_ = 0; return false; }
+			activeCursor_ = 0;
+			pending_ = {};
+			if (cancelled) ClearRange();
+			return true;
+		}
+		bool Observe(std::uint32_t pointerId, bool eraserHint, bool start, bool inContact,
+			std::uint32_t cursorId, const char** reason = nullptr) noexcept
+		{
+			std::lock_guard lock(mutex_);
+			if (!pointerId || !cursorId || !start || (activeCursor_ && activeCursor_ != cursorId))
+			{
+				if (reason) *reason = !pointerId ? "zero_pointer" : !cursorId ? "unknown_cursor"
+					: !start ? "no_new_request" : "cursor_mismatch";
+				if (start && (!cursorId || (activeCursor_ && activeCursor_ != cursorId))) ClearRange();
+				return false;
+			}
+			// 同一范围的 Pointer Down 不另建代际；RTS 已负责每笔重新预设。
+			if (range_.pointerId == pointerId && range_.cursorId == cursorId && range_.eraserHint == eraserHint)
+			{ if (reason) *reason = "same_range"; return false; }
+			const bool awaitingRange = !range_.pointerId;
+			if (reason) *reason = "queued";
 			const auto revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
-			pending_ = { pointerId, eraserHint, inContact, revision };
-			requireContact_ = false;
+			range_ = pending_ = { pointerId, cursorId, eraserHint, inContact, revision };
+			if (contactValid_ && awaitingRange) contactRangeRevision_ = revision;
+			if (!contactValid_) sourceGeneration_ = 0;
 			return true;
 		}
 		bool Take(CanvasPointerRequest& request) noexcept
 		{
 			std::lock_guard lock(mutex_);
-			request = pending_;
-			pending_ = {};
+			request = pending_; pending_ = {};
 			if (!request.pointerId) return false;
-			// 消费新请求时会先停止旧反馈，同锁结算此前的 leave，避免下一帧误停新绑定。
 			leave_ = false;
 			return true;
 		}
 		bool TakeLeave() noexcept
 		{
 			std::lock_guard lock(mutex_);
-			const bool result = leave_;
-			leave_ = false;
-			return result;
+			const bool result = leave_; leave_ = false; return result;
 		}
 	private:
+		void ClearRange() noexcept
+		{
+			revision_.fetch_add(1, std::memory_order_acq_rel);
+			range_ = pending_ = {}; leave_ = true; sourceGeneration_ = 0;
+		}
 		mutable std::mutex mutex_;
 		std::atomic<std::uint64_t> revision_ = 0;
-		CanvasPointerRequest pending_;
-		bool leave_ = false;
-		bool requireContact_ = false;
+		CanvasPointerRequest pending_, range_;
+		std::uint32_t activeCursor_ = 0, contact_ = 0, context_ = 0;
+		std::uint64_t generation_ = 0, sourceGeneration_ = 0, contactRangeRevision_ = 0;
+		bool leave_ = false, contactValid_ = false;
 	};
-
+	// 只返回丢弃信息；由调用方在 mailbox 锁外输出诊断日志。
+	struct ClickTakeDiagnostics
+	{
+		unsigned dropped = 0;
+		std::uint32_t lastPointerId = 0;
+		const char* lastReason = "none";
+	};
+	inline const char* ClickInactiveReason(const ClickSource& source, Context current,
+		std::uint64_t now) noexcept
+	{
+		if (!current.run) return "host_stopped";
+		if (source.context != current) return "context_changed";
+		if (!source.pointerId) return "missing_pointer";
+		if (!source.valid.load(std::memory_order_acquire)) return "cancelled";
+		const auto up = source.upAt.load(std::memory_order_acquire);
+		if (!up) return "not_released";
+		if (now < up || now < source.downAt) return "clock_order";
+		if (now - up > ClickLifetimeMs || now - source.downAt > ContactLifetimeMs)
+			return "expired";
+		return "not_current";
+	}
 	class ClickMailbox
 	{
 	public:
@@ -126,27 +186,49 @@ namespace Inkeys::Drawing::Draw3::Haptics
 			run_.store(0, std::memory_order_release);
 			Clear();
 		}
-		bool Publish(const Click& source, Context current, std::uint64_t now) noexcept
+		bool Publish(const Click& source, Context current, std::uint64_t now,
+			const char** rejection = nullptr) noexcept
 		{
 			std::lock_guard lock(mutex_);
-			if (!source || current.run != Run() || !source->Current(current, now)) return false;
+			if (rejection) *rejection = "none";
+			if (!source) { if (rejection) *rejection = "missing_source"; return false; }
+			if (current.run != Run()) { if (rejection) *rejection = "run_changed"; return false; }
+			if (!source->Current(current, now))
+			{
+				if (rejection) *rejection = ClickInactiveReason(*source, current, now);
+				return false;
+			}
 			for (auto& pending : pending_)
 			{
 				if (pending && !pending->Current(current, now)) pending.reset();
 				if (pending) continue;
-				if (source->submitted.exchange(true, std::memory_order_acq_rel)) return false;
+				if (source->submitted.exchange(true, std::memory_order_acq_rel))
+				{
+					if (rejection) *rejection = "duplicate";
+					return false;
+				}
 				pending = source;
 				return true;
 			}
+			if (rejection) *rejection = "mailbox_full";
 			return false;
 		}
-		Click Take(Context current, std::uint64_t now) noexcept
+		Click Take(Context current, std::uint64_t now,
+			ClickTakeDiagnostics* diagnostics = nullptr) noexcept
 		{
 			std::lock_guard lock(mutex_);
+			if (diagnostics) *diagnostics = {};
 			for (auto& pending : pending_)
 			{
 				Click result = std::move(pending);
 				if (result && current.run == Run() && result->Current(current, now)) return result;
+				if (result && diagnostics)
+				{
+					++diagnostics->dropped;
+					diagnostics->lastPointerId = result->pointerId;
+					diagnostics->lastReason = current.run != Run() ? "run_changed"
+						: ClickInactiveReason(*result, current, now);
+				}
 			}
 			return {};
 		}
