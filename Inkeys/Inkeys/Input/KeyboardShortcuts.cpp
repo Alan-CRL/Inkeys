@@ -292,6 +292,7 @@ namespace Inkeys::Input::KeyboardShortcuts
 		return status;
 	}
 	void PublishRoute(const RouteSnapshot& route) noexcept { bridge.PublishRoute(route); }
+	void PublishWhiteboardMenuEpoch(std::uint64_t epoch) noexcept { bridge.PublishWhiteboardMenuEpoch(epoch); }
 	bool TryPop(Intent& intent) noexcept
 	{
 		const auto currentService = lifecycle.load(std::memory_order_acquire);

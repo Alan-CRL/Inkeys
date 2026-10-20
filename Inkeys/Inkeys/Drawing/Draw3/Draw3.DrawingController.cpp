@@ -46,6 +46,8 @@
 #include <mmsystem.h>
 
 #include "Draw3.Bridge.h"
+#include "Draw3.HapticRequest.h"
+#include "Draw3.HapticDiagnostics.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.PptTiming.h"
 #include "Draw3.Presentation.h"
@@ -62,11 +64,37 @@ import Inkeys.Drawing.Draw3.canvas_navigation;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.pen_cursor;
 import draw3.uink_file;
+import draw3.uink_page_file;
 
 namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		std::vector<WhiteboardTheme> InitializeWhiteboardThemes(const DrawingControllerRuntimeObserver& observer)
+		{
+			return {ValidWhiteboardTheme(observer.whiteboardDefaultTheme) ? observer.whiteboardDefaultTheme : WhiteboardTheme{}};
+		}
+
+		void ExtendWhiteboardThemes(std::vector<WhiteboardTheme>& themes, std::size_t target, std::size_t current)
+		{
+			if (target >= themes.size()) themes.resize(target + 1, themes[current]);
+		}
+
+		bool ApplyWhiteboardThemeCommand(const CanvasCommand& command, Bridge::Workspace workspace,
+			bool loading, std::uint64_t generation, std::size_t page, WhiteboardTheme& current,
+			std::uint64_t& revision, const DrawingControllerRuntimeObserver& observer)
+		{
+			// 只有当前页真正接受的变更才记忆默认值；恢复、重复和过期请求都不回写偏好。
+			if (workspace != Bridge::Workspace::Whiteboard || loading || command.whiteboardGeneration != generation
+				|| command.pageIndex != page || !ValidWhiteboardTheme(command.whiteboardTheme)) return false;
+			if (current != command.whiteboardTheme)
+			{
+				current = command.whiteboardTheme; ++revision;
+				if (observer.whiteboardThemeEdited) observer.whiteboardThemeEdited(observer.context, current);
+			}
+			return true;
+		}
+
 		template<class Process>
 		void DrainIngressBatch(ContactInputCoordinator& input, WindowController& window,
 			bool& commandBoundaryPending, Process&& process)
@@ -550,8 +578,9 @@ namespace Inkeys::Drawing::Draw3
 					runtime.clearRedoContinuation->runtime);
 			return value;
 		}
+		template<typename AllocateToken>
 		bool RestoreWhiteboardHistory(const Json::Value& value, InkPage& page,
-			CanvasPageRuntimeState& runtime, unsigned depth = 0)
+			CanvasPageRuntimeState& runtime, AllocateToken& allocateToken, unsigned depth = 0)
 		{
 			if (depth > 1 || !value["strokes"].isArray() || !value["items"].isArray() ||
 				!value["redo"].isArray() || !value["floor"].isUInt64() ||
@@ -573,17 +602,27 @@ namespace Inkeys::Drawing::Draw3
 				auto footprint = BuildStrokeTileFootprint(canvas->Strokes()[index]);
 				if (!footprint || !runtime.history.AppendStroke(index, std::move(*footprint), !item[2].asBool())) return false;
 				visible.push_back(item[1].asBool());
-				// 冷页没有热前像，每项仍需要不同的逻辑 raster token。
-				runtime.beforeStates.push_back(runtime.afterStates.size() + 1);
-				runtime.afterStates.push_back(runtime.afterStates.size() + 2);
 			}
 			for (const auto& v : value["redo"]) { if (!v.isUInt()) return false; redo.push_back(v.asUInt()); }
 			if (!runtime.history.RestoreVisibility(visible, redo) || value["floor"].asUInt64() > visible.size()) return false;
+			// 冷页重建可见链与 redo 弹出链；丢弃分支不能把相邻 item 序号当作栅格前驱。
+			InkRasterStateToken state = allocateToken();
+			for (const auto isVisible : visible)
+			{
+				runtime.beforeStates.push_back(state);
+				runtime.afterStates.push_back(allocateToken());
+				if (isVisible) state = runtime.afterStates.back();
+			}
+			runtime.rasterState = state;
+			for (auto it = redo.rbegin(); it != redo.rend(); ++it)
+			{
+				runtime.beforeStates[*it] = state;
+				state = runtime.afterStates[*it];
+			}
 			runtime.undoFloor = static_cast<size_t>(value["floor"].asUInt64());
 			runtime.intervalOrdinal = value["interval"].asUInt();
 			runtime.previousClearUndoAvailable = value["previousClear"].asBool();
 			runtime.clearRedoAvailable = value["clearRedo"].asBool();
-			runtime.rasterState = visible.size() + 2;
 			if (value.isMember("boundary"))
 			{
 				if (!value["boundary"].isArray()) return false;
@@ -605,9 +644,22 @@ namespace Inkeys::Drawing::Draw3
 			if (value.isMember("continuation"))
 			{
 				auto continuation = std::make_shared<ClearRedoContinuation>(ClearRedoContinuation{InkPage(page.PageGuid()), {}});
-				if (!RestoreWhiteboardHistory(value["continuation"], continuation->page, continuation->runtime, depth + 1)) return false;
+				if (!RestoreWhiteboardHistory(value["continuation"], continuation->page, continuation->runtime, allocateToken, depth + 1)) return false;
 				runtime.clearRedoContinuation = std::move(continuation);
 			}
+			return true;
+		}
+
+		bool CanRedoFromRasterState(const CanvasPageRuntimeState& runtime, RenderItemId item) noexcept
+		{
+			return item.index < runtime.beforeStates.size() && item.index < runtime.afterStates.size() &&
+				runtime.rasterState == runtime.beforeStates[item.index];
+		}
+
+		bool CommitRedoRasterState(CanvasPageRuntimeState& runtime, RenderItemId item)
+		{
+			if (!CanRedoFromRasterState(runtime, item) || !runtime.history.RedoLastUndone(item)) return false;
+			runtime.rasterState = runtime.afterStates[item.index];
 			return true;
 		}
 
@@ -5525,9 +5577,54 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 
+	int RunWhiteboardThemePreferenceProductionTest(WhiteboardTheme initial) noexcept
+	{
+		int failures=0;
+		const auto check=[&](bool ok,const char* label){if(!ok){++failures;std::fprintf(stderr,"[Whiteboard.ThemeTest] FAIL %s\n",label);}};
+		try
+		{
+			struct Capture { unsigned count=0; WhiteboardTheme last; } capture;
+			DrawingControllerRuntimeObserver observer;observer.context=&capture;observer.whiteboardDefaultTheme=initial;
+			observer.whiteboardThemeEdited=[](void* context,WhiteboardTheme theme) noexcept{
+				auto& value=*static_cast<Capture*>(context);++value.count;value.last=theme;};
+			auto themes=InitializeWhiteboardThemes(observer);
+			check(themes.size()==1&&themes[0]==initial&&capture.count==0,"new Controller first page consumes the injected persisted theme without writing it back");
+			const WhiteboardTheme edited{initial.backgroundRgb==0xFFFFFF?0x172A46u:0xFFFFFFu,
+				initial.pattern==WhiteboardPattern::Grid?WhiteboardPattern::Dots:WhiteboardPattern::Grid};
+			CanvasCommand command;command.type=CanvasCommandType::SetWhiteboardTheme;command.whiteboardTheme=edited;
+			command.whiteboardGeneration=9;command.pageIndex=0;std::uint64_t revision=1;
+			check(ApplyWhiteboardThemeCommand(command,Bridge::Workspace::Whiteboard,false,9,0,themes[0],revision,observer)
+				&&themes[0]==edited&&revision==2&&capture.count==1&&capture.last==edited,"accepted theme mutation publishes one successful preference notification");
+			check(ApplyWhiteboardThemeCommand(command,Bridge::Workspace::Whiteboard,false,9,0,themes[0],revision,observer)
+				&&revision==2&&capture.count==1,"unchanged theme command does not persist or dirty the page again");
+			const auto reject=[&](Bridge::Workspace workspace,bool loading,std::uint64_t generation,std::size_t page,WhiteboardTheme requested){
+				auto stale=command;stale.whiteboardTheme=requested;
+				check(!ApplyWhiteboardThemeCommand(stale,workspace,loading,generation,page,themes[0],revision,observer)
+					&&themes[0]==edited&&revision==2&&capture.count==1,"rejected theme request preserves the page and last successful preference");};
+			reject(Bridge::Workspace::Desktop,false,9,0,initial);reject(Bridge::Workspace::Presentation,false,9,0,initial);
+			reject(Bridge::Workspace::Whiteboard,true,9,0,initial);reject(Bridge::Workspace::Whiteboard,false,10,0,initial);
+			reject(Bridge::Workspace::Whiteboard,false,9,1,initial);
+			reject(Bridge::Workspace::Whiteboard,false,9,0,{0x1000000,WhiteboardPattern::Blank});
+			reject(Bridge::Workspace::Whiteboard,false,9,0,{0,static_cast<WhiteboardPattern>(3)});
+			ExtendWhiteboardThemes(themes,1,0);check(themes[1]==edited,"new page inherits the current page theme");
+			command.pageIndex=1;command.whiteboardTheme=initial;
+			check(ApplyWhiteboardThemeCommand(command,Bridge::Workspace::Whiteboard,false,9,1,themes[1],revision,observer)
+				&&capture.count==2&&capture.last==initial,"last successful edit can differ from an older page theme");
+			ExtendWhiteboardThemes(themes,2,0);
+			check(themes[0]==edited&&themes[1]==initial&&themes[2]==edited&&capture.count==2&&capture.last==initial,
+				"adding from an older page preserves existing themes and current-page inheritance without replacing the remembered preference");
+			const auto restarted=InitializeWhiteboardThemes(observer);
+			check(restarted[0]==initial&&capture.count==2,"fresh Controller initialization stays independent of existing page themes");
+			observer.whiteboardDefaultTheme={0x1000000,WhiteboardPattern::Blank};
+			check(InitializeWhiteboardThemes(observer)[0]==WhiteboardTheme{},"invalid injected default falls back to dark green blank");
+		}
+		catch (...) { ++failures; }
+		return failures?1:0;
+	}
+
 	int RunWhiteboardStorageProductionTest() noexcept
 	{
-		int failures = 0;
+		int failures = RunWhiteboardThemePreferenceProductionTest({});
 		const auto check = [&](bool ok, const char* label)
 		{
 			if (!ok) { ++failures; std::fprintf(stderr, "[Whiteboard.StorageTest] FAIL %s\n", label); }
@@ -5536,6 +5633,58 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const auto id = draw3::uink::CreateUInkGuid();
 			if (!id) return 1;
+			uint64_t nextHistoryRasterStateToken = 1000;
+			auto allocateHistoryRasterStateToken = [&]() { return nextHistoryRasterStateToken++; };
+			const auto undoHistory = [](CanvasPageRuntimeState& state)
+			{
+				const auto item = state.history.LastVisibleItem();
+				if (!item || item->index >= state.beforeStates.size() || !state.history.UndoLastVisible(*item)) return false;
+				state.rasterState = state.beforeStates[item->index];
+				return true;
+			};
+			const auto redoHistory = [](CanvasPageRuntimeState& state)
+			{
+				const auto item = state.history.LastRedoItem();
+				return item && CommitRedoRasterState(state, *item);
+			};
+			// A、B、Undo B、C 保留隐藏旧分支；冷恢复后仍须能沿 A、C 往返，不能按 item 序号拼接。
+			InkPage branch(InkGuid(id->Bytes())); CanvasPageRuntimeState branchRuntime;
+			auto* branchCanvas = branch.GetOrCreateCanvas(kDefaultDeviceKey);
+			if (!branchCanvas) return 1;
+			branchRuntime.rasterState = allocateHistoryRasterStateToken();
+			for (int index = 0; index < 3; ++index)
+			{
+				InkStroke stroke({}, {{float(index),0,2},{float(index+10),10,2}});
+				auto footprint = BuildStrokeTileFootprint(stroke);
+				auto added = branchCanvas->AppendStroke(std::move(stroke));
+				if (!footprint || !added || !branchRuntime.history.AppendStroke(*added, std::move(*footprint))) return 1;
+				branchRuntime.beforeStates.push_back(branchRuntime.rasterState);
+				branchRuntime.afterStates.push_back(allocateHistoryRasterStateToken());
+				branchRuntime.rasterState = branchRuntime.afterStates.back();
+				if (index == 1) check(undoHistory(branchRuntime), "branch fixture undoes B before adding C");
+			}
+			InkPage restoredBranch(branch.PageGuid()); CanvasPageRuntimeState restoredBranchRuntime;
+			check(RestoreWhiteboardHistory(WhiteboardHistoryJson(branch, branchRuntime), restoredBranch,
+				restoredBranchRuntime, allocateHistoryRasterStateToken), "branched cold history restored");
+			check(restoredBranchRuntime.history.Items().size() == 3 && restoredBranchRuntime.history.RedoDepth() == 0,
+				"abandoned B remains hidden without a redo candidate");
+			check(undoHistory(restoredBranchRuntime) && undoHistory(restoredBranchRuntime) &&
+				!restoredBranchRuntime.history.LastVisibleItem(), "cold branch undoes C then A to empty");
+			check(redoHistory(restoredBranchRuntime) && redoHistory(restoredBranchRuntime) &&
+				restoredBranchRuntime.history.LastVisibleItem() && restoredBranchRuntime.history.LastVisibleItem()->index == 2,
+				"production raster guard and commit redo A then C across abandoned B");
+			check(undoHistory(restoredBranchRuntime) && undoHistory(restoredBranchRuntime), "prepare fully undone cold page");
+			InkPage fullyUndone(branch.PageGuid()); CanvasPageRuntimeState fullyUndoneRuntime;
+			check(RestoreWhiteboardHistory(WhiteboardHistoryJson(restoredBranch, restoredBranchRuntime), fullyUndone,
+				fullyUndoneRuntime, allocateHistoryRasterStateToken) && !fullyUndoneRuntime.history.LastVisibleItem() &&
+				fullyUndoneRuntime.history.RedoDepth() == 2 && redoHistory(fullyUndoneRuntime) && redoHistory(fullyUndoneRuntime),
+				"fully undone cold page retains the empty root and complete forward branch");
+			InkPage empty(branch.PageGuid()); CanvasPageRuntimeState emptyRuntime;
+			if (!empty.GetOrCreateCanvas(kDefaultDeviceKey)) return 1;
+			InkPage restoredEmpty(branch.PageGuid()); CanvasPageRuntimeState restoredEmptyRuntime;
+			check(RestoreWhiteboardHistory(WhiteboardHistoryJson(empty, emptyRuntime), restoredEmpty,
+				restoredEmptyRuntime, allocateHistoryRasterStateToken) && restoredEmptyRuntime.rasterState != 0 &&
+				!undoHistory(restoredEmptyRuntime) && !redoHistory(restoredEmptyRuntime), "empty cold page has one valid root and no history operation");
 			// composition swap chain 不绑定 HWND；测试只绘制离屏资源，不 Present。
 			Microsoft::WRL::ComPtr<ID3D11Device> gpuDevice;
 			Microsoft::WRL::ComPtr<ID3D11DeviceContext> gpuContext;
@@ -5653,15 +5802,90 @@ namespace Inkeys::Drawing::Draw3
 						check(retry.Take(failure) && failure.success,"retry succeeds after IO recovery");
 						const auto session = std::filesystem::directory_iterator(blocked / L"whiteboard")->path();
 						const auto indexPath = session / L"current";
-						std::filesystem::remove(indexPath);
-						std::filesystem::create_directory(indexPath);
-						check(retry.Save(request), "index failure queued"); retry.Drain();
-						check(retry.Take(failure) && !failure.success, "index commit failure is not durable");
-						std::filesystem::remove(indexPath);
-						check(retry.Save(request), "index retry queued"); retry.Drain();
+						check(retry.Save(request), "establish current and backup"); retry.Drain();
+						check(retry.Take(failure) && failure.success, "two committed versions ready before index failure");
+						std::vector<draw3::uink::UInkPageFileDirectory> previousVersions;
+						for (const auto& entry : std::filesystem::directory_iterator(session)) if (entry.path().extension() == L".uink")
+						{
+							auto version = draw3::uink::ScanUInkPageFile(entry.path().wstring());
+							if (version) previousVersions.push_back(std::move(*version));
+						}
+						check(previousVersions.size() == 2, "current and backup are independently readable");
+						const auto countFiles = [&](const wchar_t* extension)
+						{
+							size_t count = 0;
+							for (const auto& entry : std::filesystem::directory_iterator(session))
+								if (entry.path().extension() == extension) ++count;
+							return count;
+						};
+						const auto oldHistory = std::get<std::string>(request.snapshot.canvases.front().extra->front().second.value);
+						auto edited = request; ++edited.revision;
+						auto editedHistory = history; editedHistory["pattern"] = 1u;
+						const auto newHistory = Json::writeString(writer, editedHistory);
+						edited.snapshot.canvases.front().extra->front().second.value = newHistory;
+						const auto matchesPage = [&](const std::optional<draw3::uink::UInkDocument>& value, const std::string& encoded)
+						{
+							if (!value || value->canvases.size() != 1) return false;
+							const auto& stored = value->canvases.front();
+							if (stored.pageGuid != request.pages[0] || stored.content.size() != 2 || !stored.extra || stored.extra->size() != 2) return false;
+							// 生产导出器在私有历史之外追加 active 标记；逐键验证两项，不能假定 extra 只有历史。
+							bool foundHistory = false, foundPageState = false;
+							for (const auto& pair : *stored.extra)
+							{
+								const auto* key = std::get_if<std::string>(&pair.first.value);
+								const auto* text = std::get_if<std::string>(&pair.second.value);
+								if (!key || !text) return false;
+								if (*key == "inkeysWhiteboardHistory")
+								{
+									if (foundHistory || *text != encoded) return false;
+									foundHistory = true;
+								}
+								else if (*key == "inkeysPageState")
+								{
+									if (foundPageState || *text != "active") return false;
+									foundPageState = true;
+								}
+								else return false;
+							}
+							return foundHistory && foundPageState;
+						};
+						const auto exportedFixture = draw3::uink::ExportDraw3SnapshotToUInk(request.snapshot);
+						check(matchesPage(exportedFixture.document, oldHistory), "index failure fixture matches the production history and active marker");
+						// 拒绝替换已有索引，但保留原索引文件与两个 durable 版本；失败不得积累整文稿孤儿。
+						const auto closeIndex = [](void* handle) { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); };
+						std::unique_ptr<void, decltype(closeIndex)> heldIndex(CreateFileW(indexPath.c_str(), GENERIC_READ,
+							FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr), closeIndex);
+						if (heldIndex.get() == INVALID_HANDLE_VALUE) return 1;
+						std::array<char, 128> indexName{}; DWORD indexNameSize = 0;
+						if (!ReadFile(heldIndex.get(), indexName.data(), static_cast<DWORD>(indexName.size()), &indexNameSize, nullptr) || !indexNameSize) return 1;
+						const auto oldCurrent = draw3::uink::ScanUInkPageFile((session / std::string(indexName.data(), indexNameSize)).wstring());
+						if (!oldCurrent) return 1;
+						for (int attempt = 0; attempt < 3; ++attempt)
+						{
+							check(retry.Save(edited), "index failure queued"); retry.Drain();
+							check(retry.Take(failure) && !failure.success, "index commit failure is not durable");
+							check(countFiles(L".uink") == 2 && countFiles(L".tmp") == 0,
+								"repeated index failures remove only their owned version and temporary index");
+							for (const auto& version : previousVersions)
+							{
+								auto retained = draw3::uink::ReadUInkPageFile(version, request.pages[0]);
+								check(retained.status == draw3::uink::UInkReadStatus::Complete && matchesPage(retained.document, oldHistory),
+									"index failure preserves both previous version identities and content");
+							}
+							retry.Load(0, request.pages[0], 73); retry.Drain();
+							check(retry.Take(failure) && failure.success && matchesPage(failure.document, oldHistory),
+								"failed index publication keeps the worker on its previous directory");
+						}
+						heldIndex.reset();
+						check(retry.Save(edited), "index retry queued"); retry.Drain();
 						check(retry.Take(failure) && failure.success, "index retry durable");
+						check(countFiles(L".uink") == 2 && countFiles(L".tmp") == 0, "successful retry retains only current and backup");
+						const auto retainedCurrent = draw3::uink::ReadUInkPageFile(*oldCurrent, request.pages[0]);
+						check(retainedCurrent.status == draw3::uink::UInkReadStatus::Complete && matchesPage(retainedCurrent.document, oldHistory),
+							"successful retry keeps the old current as a readable backup");
 						retry.Load(0, request.pages[0], 73); retry.Drain();
-						check(retry.Take(failure) && failure.success && failure.generation == 73, "load preserves request generation");
+						check(retry.Take(failure) && failure.success && failure.generation == 73 && matchesPage(failure.document, newHistory),
+							"index retry publishes the edited page and preserves request generation");
 					}
 					check(store.Save(std::move(request)), "enqueue page"); store.Drain();
 					WhiteboardStoreCompletion result;
@@ -5684,13 +5908,29 @@ namespace Inkeys::Drawing::Draw3
 					Json::Value history; std::string error;
 					if (!encoded || !reader->parse(encoded->data(),encoded->data()+encoded->size(),&history,&error)) {check(false,"history JSON");break;}
 					InkPage restored(InkGuid(ordered[index].Bytes())); CanvasPageRuntimeState state;
-					check(RestoreWhiteboardHistory(history,restored,state),"cold history restored");
+					const auto firstFreshToken = nextHistoryRasterStateToken;
+					check(RestoreWhiteboardHistory(history,restored,state,allocateHistoryRasterStateToken),"cold history restored");
+					check(state.rasterState >= firstFreshToken && state.rasterState < nextHistoryRasterStateToken,
+						"restored page receives fresh runtime tokens instead of serialized item ordinals");
 					if (index == 0) check(state.boundaryFallback && state.boundaryFallback->strokes.size() == 1 &&
 						state.clearRedoAvailable && state.clearRedoContinuation &&
 						state.clearRedoContinuation->runtime.history.RedoDepth() == 3,"Clear boundary and continuation survive unload");
+					if (index == 0 && state.clearRedoContinuation)
+					{
+						auto& continuation = state.clearRedoContinuation->runtime;
+						check(redoHistory(continuation) && redoHistory(continuation) && redoHistory(continuation),
+							"cold Clear continuation passes the production raster guard for every forward stroke");
+					}
 					check(state.history.RedoDepth()==1 && state.history.LastRedoItem().has_value(),"redo candidate retained");
-					if (auto redo=state.history.LastRedoItem()) check(state.history.RedoLastUndone(*redo),"cold redo executes");
-					check(state.history.UndoLastVisible().has_value(),"cold undo executes");
+					if (auto redo=state.history.LastRedoItem())
+					{
+						auto stale = state; stale.rasterState = 0;
+						check(!CommitRedoRasterState(stale, *redo) && stale.history.RedoDepth() == 1,
+							"production redo still rejects an unrelated raster without consuming history");
+						check(CanRedoFromRasterState(state, *redo) && CommitRedoRasterState(state, *redo),
+							"saved Undo then cold load passes the production redo guard and commit");
+					}
+					check(undoHistory(state) && redoHistory(state),"cold undo and redo execute repeatedly");
 					check(history["pattern"].asUInt()==index%3,"per-page theme restored");
 				}
 				// 请求未知页不得伪造成功的空页。
@@ -8262,7 +8502,7 @@ namespace Inkeys::Drawing::Draw3
 	DrawingController::DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 		TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 		DrawingControllerRuntimeObserver observer,
-		RuntimeMetricsSession* metrics, PenHapticFeedback* haptics)
+		RuntimeMetricsSession* metrics, PenHapticFeedback* haptics, Haptics::ClickMailbox* hapticClicks)
 		: input_(input), window_(window), renderer_(renderer),
 		presentation_(presentation), configuration_(std::move(configuration)), observer_(observer),
 		inputWidthModeSettings_(configuration_.inputWidthModes),
@@ -8275,7 +8515,7 @@ namespace Inkeys::Drawing::Draw3
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
 			? configuration_.laserHoldDurationSeconds : 1.0), metrics_(metrics),
-			metricsState_(DrawingControllerMetricsState::Prepare(metrics)), haptics_(haptics)
+			metricsState_(DrawingControllerMetricsState::Prepare(metrics)), haptics_(haptics), hapticClicks_(hapticClicks)
 	{
 		// 指标预备失败仅关闭诊断，不能影响正常输入/模型/画质或启动。
 		metricsUnavailable_ = metrics && !metricsState_;
@@ -8645,6 +8885,12 @@ namespace Inkeys::Drawing::Draw3
 
 	void DrawingController::Run()
 	{
+		bool hapticCanvasBound = false;
+		bool previousDrawingHapticsEnabled = drawingHapticsEnabled_;
+		uint64_t hapticCanvasRevision = 0;
+		Haptics::CanvasPointerRequest hapticCanvasPointer;
+		DrawingTool hapticPresetTool = DrawingTool::Pen;
+		Haptics::Click hapticUiSource;
 		if (metricsState_) metricsState_->BeginPrewarm();
 		struct MetricsRunExit
 		{
@@ -8678,9 +8924,15 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<CanvasPageRuntimeState> pageRuntimeStates;
 		pageRuntimeStates.reserve(8);
 		pageRuntimeStates.emplace_back();
+		uint64_t nextRasterStateToken = 1;
+		auto allocateRasterStateToken = [&]()
+		{
+			if (nextRasterStateToken == 0) nextRasterStateToken = 1;
+			return nextRasterStateToken++;
+		};
 		DrawingDocumentSlot desktopSlot;
 		DrawingDocumentSlot whiteboardSlot;
-		std::vector<WhiteboardTheme> whiteboardThemes(1);
+		auto whiteboardThemes = InitializeWhiteboardThemes(observer_);
 		struct WhiteboardPageState
 		{
 			std::uint64_t revision = 1, queued = 0, saved = 0;
@@ -8990,7 +9242,7 @@ namespace Inkeys::Drawing::Draw3
 								{
 									WhiteboardTheme theme{history["rgb"].asUInt(), static_cast<WhiteboardPattern>(history["pattern"].asUInt())};
 									InkPage page(doc->PageAt(result.page)->PageGuid()); CanvasPageRuntimeState runtime;
-									if (history["pattern"].asUInt() <= 2 && ValidWhiteboardTheme(theme) && RestoreWhiteboardHistory(history, page, runtime) &&
+									if (history["pattern"].asUInt() <= 2 && ValidWhiteboardTheme(theme) && RestoreWhiteboardHistory(history, page, runtime, allocateRasterStateToken) &&
 										doc->ReplacePage(result.page, std::move(page)))
 									{
 										runtimes[result.page] = std::move(runtime); whiteboardThemes[result.page] = theme;
@@ -9035,12 +9287,6 @@ namespace Inkeys::Drawing::Draw3
 				configuration_.dpiScale, observer_, acceptedFileGuid);
 		};
 		publishCurrentPageContent();
-		uint64_t nextRasterStateToken = 1;
-		auto allocateRasterStateToken = [&]()
-		{
-			if (nextRasterStateToken == 0) nextRasterStateToken = 1;
-			return nextRasterStateToken++;
-		};
 		pageRuntimeStates.front().rasterState = allocateRasterStateToken();
 		uint64_t rasterPipelineGeneration = 1;
 		auto metricsSignature = [&](int width, int height) noexcept -> ContentMetricRasterSignature
@@ -9146,6 +9392,18 @@ namespace Inkeys::Drawing::Draw3
 			strokePool.push_back(std::move(runtime)); // 首批模型和 predictor 在接收 Down 前完成分配。
 		}
 		std::vector<RuntimeStroke*> active;
+		const auto hapticPenContacts = [&]() noexcept
+		{
+			return static_cast<unsigned>(std::count_if(active.begin(), active.end(), [](const RuntimeStroke* runtime)
+				{ return runtime && runtime->metricDeviceType == InputDeviceType::Pen && !runtime->ended && !runtime->awaitingReconnect; }));
+		};
+		const auto canvasHapticsAvailable = [&]() noexcept
+		{
+			return drawingHapticsEnabled_ && hapticCanvasBound && hapticCanvasRevision == window_.HapticPointerRevision() && (hapticPenContacts() <= 1) &&
+				Haptics::ContinuousAllowed(window_.SelectionMode(), window_.HapticSurfaceVisible(),
+					window_.ActiveTool() == DrawingTool::Laser, input_.AdmissionBlocked(),
+					input_.HasQuarantinedContacts(), window_.TouchPanActive(), window_.PenContactSuppressedForTouchPan());
+		};
 		uint64_t nextDiagnosticStrokeId = 0;
 		auto publishPenDiagnostics = [&](const RuntimeStroke& runtime,
 			std::span<const InkPoint> visible)
@@ -9683,6 +9941,32 @@ namespace Inkeys::Drawing::Draw3
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
 				const InputDeviceType deviceType = handle.record->DeviceType();
+				if (deviceType == InputDeviceType::Pen && haptics_)
+				{
+					// RTS 和 Pointer 共用 tablet cursor 身份；不依赖 RTS 接管期间缺席的 Pointer Down。
+					if (HapticDiagnostics::Enabled())
+					{
+						// RTS 接触 ID 不是 Pointer ID；只用已有来源、画布坐标和时刻对照。
+						HapticDiagnostics::Log("rts_contact", "phase=down tcid=%u cid=%u generation=%llu sequence=%llu source_kind=%u source_context=%u source_cursor=%u source_generation=%llu canvas_point=%.7g,%.7g inverted=%d qpc=%lld",
+							handle.record->TabletContextId(), handle.record->ContactId(),
+							static_cast<unsigned long long>(handle.generation), static_cast<unsigned long long>(down.sequence),
+							static_cast<unsigned>(down.source.kind), down.source.contextId, down.source.cursorId,
+							static_cast<unsigned long long>(down.source.generation), down.position.x, down.position.y,
+							down.isInvertedCursor, static_cast<long long>(down.qpc));
+						HapticDiagnostics::Log("canvas_contact", "reason=rts_down cid=%u generation=%llu bound=%d revision=%llu tick=%llu",
+							handle.record->ContactId(), static_cast<unsigned long long>(handle.generation), hapticCanvasBound,
+							static_cast<unsigned long long>(window_.HapticPointerRevision()), static_cast<unsigned long long>(GetTickCount64()));
+					}
+					const char* reason = nullptr;
+					const bool trusted = down.source.cursorId && down.source.recognition != SpeedEraser::SourceRecognition::Unknown &&
+						down.source.recognition != SpeedEraser::SourceRecognition::Conflict;
+					const bool matched = window_.BeginHapticContact(down.source.cursorId, handle.record->ContactId(),
+						handle.generation, trusted, hapticPenContacts() != 0, &reason, handle.record->TabletContextId(), down.source.generation);
+					HapticDiagnostics::Log("canvas_identity", "cursor=%u recognition=%u matched=%d reason=%s",
+						down.source.cursorId, static_cast<unsigned>(down.source.recognition), matched, reason);
+					if (!matched) { haptics_->DetachPointer(); hapticCanvasBound = false; }
+					hapticUiSource.reset();
+				}
 				const bool penBeganDuringTouchPan = deviceType == InputDeviceType::Pen &&
 					penDownBelongsToTouchPan(down.qpc);
 				if (deviceType == InputDeviceType::Pen &&
@@ -10149,12 +10433,6 @@ namespace Inkeys::Drawing::Draw3
 						reconnectRuntime->stroke.visualStableFrameCount = 0;
 						if (!reconnectRuntime->stroke.useDisplayTime)
 							reconnectRuntime->stroke.lastMovementInputTime = inputTime;
-						if (haptics_ && reconnectRuntime->hapticEligible)
-						{
-							if (reconnectRuntime->invertedCursor)
-								haptics_->StopFeedback(); // 倒转笔尾需在真正接触后重新提交波形。
-							haptics_->TickContinuous(HapticFeedbackForRuntime(*reconnectRuntime));
-						}
 						DiagnosticOutput::Line() << "[StrokeReconnect] linked device=" << InputDeviceTypeName(deviceType) <<
 							" tool=" << DrawingToolName(tool) <<
 							" new_tcid=" << handle.record->TabletContextId() <<
@@ -10449,12 +10727,6 @@ namespace Inkeys::Drawing::Draw3
 					accepted.kind = CompletedStrokeKindForTool(runtime->tool);
 					observer_.acceptedStrokeBegan(observer_.context, accepted);
 				}
-				if (haptics_ && runtime->hapticEligible)
-				{
-					if (runtime->invertedCursor)
-						haptics_->StopFeedback(); // 倒转笔尾不沿用悬停预热的同波形状态。
-					haptics_->TickContinuous(HapticFeedbackForRuntime(*runtime));
-				}
 				return true;
 			};
 
@@ -10662,6 +10934,29 @@ namespace Inkeys::Drawing::Draw3
 				const float distanceSquared = deltaX * deltaX + deltaY * deltaY;
 				const bool terminal = snapshot.phase == ContactPhase::Up ||
 					snapshot.phase == ContactPhase::Cancelled;
+				if (terminal && runtime.metricDeviceType == InputDeviceType::Pen && haptics_)
+				{
+					// 普通 Up 停止本笔但保留范围；取消和身份失效仍完全解绑。
+					if (HapticDiagnostics::Enabled())
+					{
+						HapticDiagnostics::Log("rts_contact", "phase=%s tcid=%u cid=%u generation=%llu sequence=%llu source_kind=%u source_context=%u source_cursor=%u source_generation=%llu canvas_point=%.7g,%.7g inverted=%d qpc=%lld",
+							snapshot.phase == ContactPhase::Up ? "up" : "cancel", runtime.handle.record->TabletContextId(),
+							runtime.handle.record->ContactId(), static_cast<unsigned long long>(runtime.handle.generation),
+							static_cast<unsigned long long>(snapshot.sequence), static_cast<unsigned>(snapshot.source.kind),
+							snapshot.source.contextId, snapshot.source.cursorId, static_cast<unsigned long long>(snapshot.source.generation),
+							snapshot.position.x, snapshot.position.y, snapshot.isInvertedCursor, static_cast<long long>(snapshot.qpc));
+						HapticDiagnostics::Log("canvas_contact", "reason=rts_terminal cid=%u generation=%llu bound=%d revision=%llu tick=%llu",
+							runtime.handle.record->ContactId(), static_cast<unsigned long long>(runtime.handle.generation), hapticCanvasBound,
+							static_cast<unsigned long long>(window_.HapticPointerRevision()), static_cast<unsigned long long>(GetTickCount64()));
+					}
+					if (window_.EndHapticContact(runtime.handle.record->ContactId(), runtime.handle.generation,
+						snapshot.phase == ContactPhase::Cancelled, runtime.handle.record->TabletContextId()))
+					{
+						haptics_->StopFeedback();
+						if (snapshot.phase == ContactPhase::Cancelled) { haptics_->DetachPointer(); hapticCanvasBound = false; }
+					hapticUiSource.reset();
+				}
+				}
 				if (terminal && runtime.metricDeviceType == InputDeviceType::Touch &&
 					runtime.touchGestureKey != 0)
 					touchGesture.OnTouchUp(runtime.touchGestureKey);
@@ -10869,15 +11164,6 @@ namespace Inkeys::Drawing::Draw3
 							runtime.speedEraserOc.PauseForReconnect(
 								AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency));
 						}
-						const bool anotherPenContactActive = std::any_of(active.begin(), active.end(),
-							[&](const RuntimeStroke* candidate)
-							{
-								return candidate && candidate != &runtime &&
-									candidate->hapticEligible && !candidate->ended &&
-									!candidate->awaitingReconnect;
-							});
-						if (haptics_ && runtime.hapticEligible && !anotherPenContactActive)
-							haptics_->StopFeedback();
 						runtime.reconnectVisualRefresh = true;
 						runtime.deferredUpSnapshot = snapshot;
 						runtime.reconnectDirection = direction;
@@ -10898,7 +11184,6 @@ namespace Inkeys::Drawing::Draw3
 				return positionMoved || stylusStateChanged || shapeRawChanged || deferUp;
 			};
 
-		bool hapticContinuousActive = false;
 		auto sealPresentationContacts = [&]()
 		{
 			const uint64_t revision = input_.AdmissionRevision();
@@ -10929,8 +11214,13 @@ namespace Inkeys::Drawing::Draw3
 			rightMouseSpeedEraser.CancelVisual();
 			penEraserHoverLane.Invalidate();
 			invertedPenEraserHoverLane.Invalidate();
-			if (haptics_) haptics_->StopFeedback();
-			hapticContinuousActive = false;
+			if (haptics_)
+			{
+				window_.ResetHapticPointer();
+				haptics_->DetachPointer();
+			}
+			hapticCanvasBound = false;
+			hapticUiSource.reset();
 			if (metricsState_) metricsState_->ObserveIndependentClear();
 			renderer_.ClearAllLaserCoverage();
 			renderer_.ResetLaserParticles();
@@ -12716,7 +13006,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const InkRasterStateToken beforeState = runtime.beforeStates[itemId->index];
 			const InkRasterStateToken afterState = runtime.afterStates[itemId->index];
-			if (runtime.rasterState != beforeState)
+			if (!CanRedoFromRasterState(runtime, *itemId))
 			{
 				requestAuthoritativeRecovery();
 				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
@@ -12844,7 +13134,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			// GPU 画面成功后才提交 visibility；失败仍可再次按 6 重试。
-			if (!runtime.history.RedoLastUndone(*itemId))
+			if (!CommitRedoRasterState(runtime, *itemId))
 			{
 				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 					historyGpuCache.CancelPreimage(preimageCapture.ticket);
@@ -12859,7 +13149,6 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 
-			runtime.rasterState = afterState;
 			bool hotRearmed = false;
 			if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 			{
@@ -13412,16 +13701,10 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (command.type == CanvasCommandType::SetWhiteboardTheme)
 				{
-					// 页代次与页码共同门控，旧菜单请求不能跨工作区或翻页生效。
 					if (activeWorkspace == Bridge::Workspace::Whiteboard &&
-						!whiteboardLoading && command.whiteboardGeneration == whiteboardGeneration &&
-						command.pageIndex == currentPageIndex_ && ValidWhiteboardTheme(command.whiteboardTheme))
-					{
-						if (whiteboardThemes[currentPageIndex_] != command.whiteboardTheme)
-							++whiteboardPages[currentPageIndex_].revision;
-						whiteboardThemes[currentPageIndex_] = command.whiteboardTheme;
+						ApplyWhiteboardThemeCommand(command, activeWorkspace, whiteboardLoading.has_value(), whiteboardGeneration,
+						currentPageIndex_, whiteboardThemes[currentPageIndex_], whiteboardPages[currentPageIndex_].revision, observer_))
 						publishWhiteboard();
-					}
 					continue;
 				}
 				if (command.type == CanvasCommandType::SetWorkspace)
@@ -13787,8 +14070,7 @@ namespace Inkeys::Drawing::Draw3
 				(void)capturePresentationAutoSave();
 				if (activeWorkspace == Bridge::Workspace::Whiteboard)
 				{
-					if (targetPageIndex >= whiteboardThemes.size())
-						whiteboardThemes.resize(targetPageIndex + 1, whiteboardThemes[currentPageIndex_]);
+					ExtendWhiteboardThemes(whiteboardThemes, targetPageIndex, currentPageIndex_);
 					whiteboardPages.resize(whiteboardThemes.size());
 					saveWhiteboard();
 					if (whiteboardPages[targetPageIndex].cold)
@@ -14296,38 +14578,108 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (haptics_)
 			{
-				if (window_.ConsumeHapticPointerLeave())
-				{
-					hapticContinuousActive = false;
+					haptics_->LogDiagnosticsSnapshot();
+				const auto context = Haptics::ButtonContext(hapticClicks_ ? hapticClicks_->Run() : 0);
+				const auto canvasRevision = window_.HapticPointerRevision();
+				const bool continuousAllowed = (hapticPenContacts() <= 1) && Haptics::ContinuousAllowed(window_.SelectionMode(),
+					window_.HapticSurfaceVisible(), window_.ActiveTool() == DrawingTool::Laser,
+					input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), touchGesture.PanActive(),
+					suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan());
+				// 绘制开关不作废范围身份，也不停止独立按钮反馈；恢复时允许重设悬停波形。
+				const bool drawingReenabled = drawingHapticsEnabled_ && !previousDrawingHapticsEnabled;
+				if (!drawingHapticsEnabled_ && previousDrawingHapticsEnabled && hapticCanvasBound)
 					haptics_->StopFeedback();
-				}
-				uint32_t pointerId = 0;
-				bool pointerEraserHint = false;
-				if (window_.ConsumeHapticPointerId(pointerId, pointerEraserHint))
+				previousDrawingHapticsEnabled = drawingHapticsEnabled_;
+				const bool leave = window_.ConsumeHapticPointerLeave();
+					bool sourceCurrent = true;
+				// Hover 预设也属于连续反馈；Selection/隐藏/Laser/Pan 无需等第一笔才停止。
+				if (Haptics::CanvasBindingInvalid(hapticCanvasBound, leave, continuousAllowed,
+						hapticCanvasRevision == canvasRevision) ||
+						(hapticUiSource && !(sourceCurrent = hapticUiSource->Current(context, GetTickCount64()))))
 				{
-					if (input_.AdmissionBlocked() || input_.HasQuarantinedContacts() ||
-						touchGesture.PanActive() || suppressPenUntilRelease ||
-						window_.PenContactSuppressedForTouchPan())
-					{
-						hapticContinuousActive = false;
-						haptics_->StopFeedback();
+						HapticDiagnostics::Log("canvas_detach", "leave=%d allowed=%d bound=%d revision_match=%d tool_match=%d source_current=%d", leave, continuousAllowed, hapticCanvasBound, hapticCanvasRevision == canvasRevision, hapticPresetTool == window_.ActiveTool(), sourceCurrent);
+					haptics_->DetachPointer();
+					hapticCanvasBound = false;
+					hapticUiSource.reset();
+				}
+				Haptics::CanvasPointerRequest pointer;
+				if (window_.ConsumeHapticPointer(pointer))
+				{
+						if (HapticDiagnostics::Enabled()) HapticDiagnostics::Log("canvas_pointer", "pointer=%u contact=%d revision=%llu allowed=%d pen_contacts=%u tick=%llu selection=%d visible=%d laser=%d admission=%d quarantine=%d pan=%d suppressed=%d", pointer.pointerId, pointer.inContact, static_cast<unsigned long long>(pointer.revision), continuousAllowed, hapticPenContacts(), static_cast<unsigned long long>(GetTickCount64()), window_.SelectionMode(), window_.HapticSurfaceVisible(), window_.ActiveTool() == DrawingTool::Laser, input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), touchGesture.PanActive(), suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan());
+						// 同范围 RTS Down 保留悬停时取得的控制器；仅新范围或失败重试重新解析设备。
+						const bool reuseBinding = hapticCanvasBound && Haptics::SameCanvasBinding(hapticCanvasPointer, pointer);
+						if (!reuseBinding) { haptics_->DetachPointer(); hapticCanvasBound = false; }
+					hapticUiSource.reset();
+					hapticPresetTool = window_.ActiveTool();
+						auto feedback = pointer.eraserHint ? HapticContinuousFeedback::InkContinuous :
+						ResolveContinuousHapticFeedback(HapticToolForDrawingTool(hapticPresetTool));
+						bool identityMatches = true;
+						for (const auto* runtime : active)
+						{
+							if (!runtime || runtime->metricDeviceType != InputDeviceType::Pen || runtime->ended || runtime->awaitingReconnect) continue;
+							const auto& source = runtime->lastInputSnapshot.source;
+							identityMatches = identityMatches && runtime->hapticEligible && source.cursorId == pointer.cursorId &&
+								source.recognition != SpeedEraser::SourceRecognition::Unknown && source.recognition != SpeedEraser::SourceRecognition::Conflict;
+							feedback = HapticFeedbackForRuntime(*runtime);
+						}
+						const bool candidate = continuousAllowed && pointer.cursorId && identityMatches &&
+							pointer.revision == window_.HapticPointerRevision();
+						if (HapticDiagnostics::Enabled()) HapticDiagnostics::Log("canvas_gate", "pointer=%u cursor=%u candidate=%d identity_match=%d contacts=%u revision_match=%d", pointer.pointerId, pointer.cursorId, candidate, identityMatches, hapticPenContacts(), pointer.revision == window_.HapticPointerRevision());
+						if (!candidate && reuseBinding) { haptics_->DetachPointer(); hapticCanvasBound = false; }
+						if (candidate && (reuseBinding || haptics_->AttachPointerId(pointer.pointerId)))
+						{
+							hapticCanvasPointer = pointer;
+						hapticCanvasRevision = pointer.revision;
+						hapticCanvasBound = true;
+						if (canvasHapticsAvailable()) haptics_->TickContinuous(feedback);
 					}
-					else if (haptics_->AttachPointerId(pointerId))
+				}
+					if (canvasHapticsAvailable())
 					{
-						if (window_.ActiveTool() == DrawingTool::Laser)
+						for (const auto* runtime : active)
 						{
-							haptics_->StopFeedback();
-							// Laser 只提供视觉反馈，不预启动或维持触觉波形。
+							if (!runtime || runtime->metricDeviceType != InputDeviceType::Pen || runtime->ended || runtime->awaitingReconnect) continue;
+							const auto& source = runtime->lastInputSnapshot.source;
+							if (runtime->hapticEligible && source.cursorId == hapticCanvasPointer.cursorId &&
+								source.recognition != SpeedEraser::SourceRecognition::Unknown && source.recognition != SpeedEraser::SourceRecognition::Conflict)
+								haptics_->TickContinuous(HapticFeedbackForRuntime(*runtime));
+							else
+							{
+								window_.ResetHapticPointer(); haptics_->DetachPointer(); hapticCanvasBound = false;
+							}
 						}
-						else
-						{
-							// 笔尾需在 RTS Down 前预启动橡皮波形，RTS 仍在 Down 时校验真实工具。
-							const HapticContinuousFeedback hapticFeedback = pointerEraserHint
-								? HapticContinuousFeedback::InkContinuous
-								: ResolveContinuousHapticFeedback(
-									HapticToolForDrawingTool(window_.ActiveTool()));
-							haptics_->TickContinuous(hapticFeedback);
-						}
+					}
+					// Up 已停止后，下次匹配的 RTS Down 会重排范围请求；工具变化无需再次等待 Enter。
+					if (canvasHapticsAvailable() && (drawingReenabled || hapticPresetTool != window_.ActiveTool()) && hapticPenContacts() == 0)
+					{
+						hapticPresetTool = window_.ActiveTool();
+						haptics_->TickContinuous(hapticCanvasPointer.eraserHint ? HapticContinuousFeedback::InkContinuous :
+							ResolveContinuousHapticFeedback(HapticToolForDrawingTool(hapticPresetTool)));
+					}
+					// 门禁失效时范围也作废，之后不能仅凭 RTS Down 复活跨场景旧身份。
+					if (!continuousAllowed) window_.ResetHapticPointer();
+				if (hapticClicks_)
+				{
+						for (;;)
+					{
+							Haptics::ClickTakeDiagnostics dropped;
+							auto click = hapticClicks_->Take(context, GetTickCount64(),
+								HapticDiagnostics::Enabled() ? &dropped : nullptr);
+							if (dropped.dropped)
+								HapticDiagnostics::Log("click_drop", "count=%u last_pointer=%u reason=%s",
+									dropped.dropped, dropped.lastPointerId, dropped.lastReason);
+							if (!click) break;
+						// UI 操作不能抢占正在书写的笔或 Pan；独立凭据不成为 RTS 的连续绑定。
+							if (!active.empty() || touchGesture.PanActive() || input_.HasQuarantinedContacts()) { HapticDiagnostics::Log("click_gate", "pointer=%u reason=active_or_pan_or_quarantine", click->pointerId); continue; }
+						haptics_->DetachPointer();
+						hapticCanvasBound = false;
+						hapticUiSource.reset();
+							const bool attached = haptics_->AttachPointerId(click->pointerId);
+							const bool current = attached && click->Current(Haptics::ButtonContext(hapticClicks_->Run()), GetTickCount64());
+							const bool sent = current && haptics_->PlayDiscrete(HapticDiscreteFeedback::Click, kButtonHapticIntensity);
+							HapticDiagnostics::Log("click_consume", "pointer=%u attached=%d current=%d sent=%d", click->pointerId, attached, current, sent);
+							if (sent) hapticUiSource = std::move(click);
+						else haptics_->DetachPointer();
 					}
 				}
 			}
@@ -14492,11 +14844,6 @@ namespace Inkeys::Drawing::Draw3
 				!speedEraserHoverAnimating &&
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty))
 			{
-				if (hapticContinuousActive && haptics_)
-				{
-					haptics_->StopFeedback();
-					hapticContinuousActive = false;
-				}
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
 				if (metricsState_) metricsState_->Finish(); // idle/Hold等待不能混入render wall。
 				lastActiveFrameStartMs = 0.0;
@@ -15427,31 +15774,6 @@ namespace Inkeys::Drawing::Draw3
 					}
 						if (!DrawActiveShapePrimitives(active, renderer_, shapePrimitiveScratch))
 							rasterSubmissionFailed = true;
-				}
-			}
-
-			if (haptics_)
-			{
-				RuntimeStroke* hapticRuntime = nullptr;
-				for (RuntimeStroke* runtime : active)
-				{
-					if (runtime && runtime->hapticEligible &&
-						!runtime->ended && !runtime->awaitingReconnect)
-					{
-						hapticRuntime = runtime;
-						break;
-					}
-				}
-				if (hapticRuntime)
-				{
-					hapticContinuousActive = haptics_->TickContinuous(
-					HapticFeedbackForRuntime(*hapticRuntime)) ||
-						hapticContinuousActive;
-				}
-				else if (hapticContinuousActive)
-				{
-					haptics_->StopFeedback();
-					hapticContinuousActive = false;
 				}
 			}
 

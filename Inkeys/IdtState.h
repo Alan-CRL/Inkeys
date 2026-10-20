@@ -169,7 +169,7 @@ bool ChangeStateModeToClickThrough();
 bool ToggleClickThroughFromButton();
 int GetSelectAndClickThroughMode() noexcept;
 bool SetSelectAndClickThroughMode(int mode);
-void ToggleFreezeFromButton();
+bool ToggleFreezeFromButton();
 std::uint64_t StateModeTransitionRevision() noexcept;
 bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision);
 // 快捷键事务使用普通选择内核，不登记 PPT 真退出标识；恢复时沿用工具属性。
@@ -206,6 +206,8 @@ void RequestWhiteboardActive(bool active) noexcept;
 bool WhiteboardRequested() noexcept;
 bool WhiteboardActive() noexcept;
 bool WhiteboardTransactionActive() noexcept;
+// 0 表示白板事务期间不可准入；非零身份仅随白板意图切换，普通翻页不退休它。
+std::uint64_t PptInputWorkspaceEpoch() noexcept;
 void RequestWhiteboardPreviousPage() noexcept;
 void RequestWhiteboardNextPage() noexcept;
 void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept;

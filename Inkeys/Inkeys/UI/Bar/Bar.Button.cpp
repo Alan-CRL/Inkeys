@@ -14,6 +14,7 @@ module;
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
 #include "Bar.InteractionWorker.h"
+#include "Bar.Haptics.h"
 
 #include <d2d1_1.h>
 #include <algorithm>
@@ -84,6 +85,7 @@ void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
 	}
 	if (action != BarClearClickAction::PublishClear)
 	{
+		Inkeys::UI::Bar::Haptics::RejectButtonAction();
 		clearAttemptedForDoubleClick = false;
 		clearAcceptedForDoubleClick = false;
 		return;
@@ -95,6 +97,7 @@ void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
 	clearAttemptedForDoubleClick = true;
 	clearAcceptedForDoubleClick =
 		result == Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
+	if (!clearAcceptedForDoubleClick) Inkeys::UI::Bar::Haptics::RejectButtonAction();
 }
 
 bool BarButtonSetClass::RegisterButton(
@@ -313,7 +316,7 @@ void BarButtonSetClass::PresetInitialization()
 				{
 					// 真 Draw callback 第一业务写前再核当前 Up 和同一个 Pen baseline。
 					if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute,
-						Inkeys::UI::Bar::Ui3FixtureActionPoint::Callback)) return;
+						Inkeys::UI::Bar::Ui3FixtureActionPoint::Callback)) { Inkeys::UI::Bar::Haptics::RejectButtonAction(); return; }
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 					{
 						Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::UnsupportedState);
@@ -322,6 +325,7 @@ void BarButtonSetClass::PresetInitialization()
 							barUISet.barState.drawAttribute = false;
 							barUISet.barState.geometryAttribute = false;
 						}
+						else Inkeys::UI::Bar::Haptics::RejectButtonAction();
 					}
 					else
 					{
@@ -329,6 +333,7 @@ void BarButtonSetClass::PresetInitialization()
 							BarToggleChannel::DrawAttribute))
 						{
 							Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::RejectedByBusiness);
+							Inkeys::UI::Bar::Haptics::RejectButtonAction();
 							return;
 						}
 						// 只在真实toggle接受点标记，之后仍走原决策与StateUpdate规范化。
@@ -391,6 +396,7 @@ void BarButtonSetClass::PresetInitialization()
 						barUISet.CollapseAuxiliaryPanels();
 						barUISet.barState.eraserAttribute = open;
 					}
+					else Inkeys::UI::Bar::Haptics::RejectButtonAction();
 				};
 		}
 
@@ -432,11 +438,12 @@ void BarButtonSetClass::PresetInitialization()
 							barUISet.barState.drawAttribute = false;
 							barUISet.barState.geometryAttribute = false;
 						}
+						else Inkeys::UI::Bar::Haptics::RejectButtonAction();
 					}
 					else
 					{
 						if (!barUISet.TryBeginToggle(
-							BarToggleChannel::GeometryAttribute)) return;
+							BarToggleChannel::GeometryAttribute)) { Inkeys::UI::Bar::Haptics::RejectButtonAction(); return; }
 						bool open = !static_cast<bool>(barUISet.barState.geometryAttribute);
 						if (open)
 						{
@@ -577,7 +584,7 @@ void BarButtonSetClass::PresetInitialization()
 					auto& service = Inkeys::Window::GetService();
 					Inkeys::UI::Bar::DispatchBarWhiteboardButtonAction(WhiteboardRequested(),
 						Inkeys::UI::Bar::WhiteboardActive() && service.WhiteboardWindowGroupMinimized(),
-						[&service] { (void)service.RestoreWhiteboardWindowGroup(); },
+						[&service] { if (!service.RestoreWhiteboardWindowGroup()) Inkeys::UI::Bar::Haptics::RejectButtonAction(); },
 						[](bool active) { RequestWhiteboardActive(active); });
 				};
 		}
@@ -633,7 +640,7 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					ToggleFreezeFromButton();
+					if (!ToggleFreezeFromButton()) Inkeys::UI::Bar::Haptics::RejectButtonAction();
 				};
 		}
 
@@ -799,7 +806,8 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 				break;
 			default:
 				// 组件 Shell/COM/URI 与 quickDraw join 交给有序业务队列，不阻塞 UI3 worker。
-				(void)Inkeys::UI::Bar::QueueInteractionComponentAction([action] { ExecuteBuiltInComponentAction(action); });
+				if (!Inkeys::UI::Bar::QueueInteractionComponentAction([action] { ExecuteBuiltInComponentAction(action); }))
+					Inkeys::UI::Bar::Haptics::RejectButtonAction();
 				break;
 			}
 		};
@@ -1685,12 +1693,12 @@ void BarUISetClass::ArmRecallChromeIdleDeadline()
 
 void BarUISetClass::OpenRecallFromUndo()
 {
-	EngageRecallCommand(*this, false);
+	if (!EngageRecallCommand(*this, false)) Inkeys::UI::Bar::Haptics::RejectButtonAction();
 }
 
 void BarUISetClass::OpenRecallFromRedo()
 {
-	EngageRecallCommand(*this, true);
+	if (!EngageRecallCommand(*this, true)) Inkeys::UI::Bar::Haptics::RejectButtonAction();
 }
 
 void BarUISetClass::NoteRecallPopupRedo()

@@ -3,6 +3,7 @@ module;
 #include "../../IdtMain.h"
 #include "../../IdtConfiguration.h"
 
+#include <cstdint>
 #include <initializer_list>
 #include <mutex>
 #include <shared_mutex>
@@ -22,6 +23,14 @@ export namespace Inkeys
 	{
 		NoUpload,
 		Upload
+	};
+
+	// 颜色和纹理一次发布/复制，异步配置快照不能混用两次选择的字段。
+	struct WhiteboardThemePreference
+	{
+		std::uint32_t backgroundRgb = 0x123B32;
+		std::uint32_t pattern = 0;
+		friend bool operator==(const WhiteboardThemePreference&, const WhiteboardThemePreference&) = default;
 	};
 
 	namespace BarButtonId
@@ -368,6 +377,13 @@ GROUP(UI, \
 		) \
 	) \
 	GROUP(Drawing, \
+		GROUP(Whiteboard, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<WhiteboardThemePreference>, DefaultTheme, WhiteboardThemePreference{}) \
+		) \
+		GROUP(Haptics, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Drawing, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Buttons, true) \
+		) \
 		GROUP(Cursor, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseStyle, 0) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenStyle, 0) \
@@ -397,6 +413,7 @@ GROUP(UI, \
 			GROUP(ConsoleOutput, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Draw3, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Haptics, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchArea, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
 			) \
@@ -461,6 +478,7 @@ namespace Inkeys
 		bool ReadAll();
 		bool ReadMini(std::initializer_list<std::string_view> paths);
 		bool Write();
+		bool SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept;
 		std::string GetUploadInfo();
 		std::wstring GetFilePath() const;
 		void ResetToDefaults();

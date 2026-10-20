@@ -115,6 +115,55 @@ int RunKeyboardShortcutInputTests()
 		K::Intent intent;
 		check(f.bridge.TryPop(intent) && intent.command == K::Command::Undo, "fresh terminal after injected interleave emits physical Undo");
 	}
+	{
+		Fixture f;
+		// 菜单独立于普通批注命令/六个配置开关；Owned 后整次按压不能泄漏给后台 PPT。
+		f.route.annotation=false;f.route.modal=true;f.route.businessReady=false;
+		f.route.whiteboardMenuInput=true;f.enabled=0;f.Publish();f.bridge.PublishWhiteboardMenuEpoch(41);
+		check(!f.Send(0x1b,true,true),"injected Escape cannot establish physical menu ownership");
+		check(f.Send(0x1b,true),"fresh physical Escape owns the active whiteboard menu");
+		K::Intent dismiss;
+		check(f.bridge.TryPop(dismiss)&&dismiss.command==K::Command::DismissWhiteboardMenu
+			&&dismiss.whiteboardMenuEpoch==41&&!dismiss.repeat,"menu Escape carries its exact instance and service route");
+		f.bridge.PublishWhiteboardMenuEpoch(0);f.route.whiteboardMenuInput=false;++f.route.foreground;f.Publish();
+		check(!f.Send(0x1b,false,true),"injected Escape Up cannot release the physical ticket");
+		check(f.Send(0x1b,true)&&!f.bridge.TryPop(dismiss),"owned Escape repeat stays consumed after menu/foreground changes without resubmitting");
+		check(f.Send(0x1b,false)&&!f.Send(0x1b,false),"owned Escape Up is consumed exactly once");
+		check(!f.Send(0x1b,true),"Escape without a menu forwards the initial Down");
+		f.route.whiteboardMenuInput=true;f.Publish();f.bridge.PublishWhiteboardMenuEpoch(42);
+		check(!f.Send(0x1b,true)&&!f.Send(0x1b,false),"opening a menu cannot seize an already Forward Escape press");
+		check(f.Send(0x1b,true)&&f.bridge.TryPop(dismiss)&&dismiss.whiteboardMenuEpoch==42,
+			"a later physical Escape can own the reopened menu");
+	}
+	{
+		T::Bridge bridge;auto route=Route();route.whiteboardMenuInput=true;bridge.PublishRoute(route);bridge.PublishWhiteboardMenuEpoch(7);
+		std::array<bool,256> held{};held[0x1b]=true;bridge.SeedInitialState(held);
+		check(!bridge.Synchronized()&&!bridge.HandleKey(Key(0x1b,true),17,100,K::AllEnabled,5,9),
+			"Escape held at hook installation stays Forward until a real Up");
+		check(!bridge.HandleKey(Key(0x1b,false),17,100,K::AllEnabled,5,9)&&bridge.Synchronized(),
+			"real startup Escape Up completes its guarded baseline");
+		check(bridge.HandleKey(Key(0x1b,true),17,100,K::AllEnabled,5,9),"fresh Escape after held bootstrap acquires ownership");
+	}
+	for(unsigned gate=0;gate<7;++gate){
+		Fixture f;f.route.whiteboardMenuInput=true;f.bridge.PublishWhiteboardMenuEpoch(8);
+		if(gate==0)f.route.whiteboardMenuInput=false;
+		if(gate==1)f.route.textInput=true;
+		if(gate==2)f.bridge.PublishWhiteboardMenuEpoch(0);
+		f.Publish();
+		if(gate==3)(void)f.Send(0xa2,true);
+		if(gate==4)(void)f.Send(0xa4,true,true);
+		const bool consumed=gate>=5?f.bridge.HandleKey(Key(0x1b,true),gate==6?99:f.route.foreground,gate==5?351:100,f.enabled,5,9):f.Send(0x1b,true);
+		K::Intent intent;
+		check(!consumed&&!f.bridge.TryPop(intent),"menu Escape rejects ineligible, editing, empty, modified, injected-modifier and stale routes");
+	}
+	{
+		Fixture f;f.route.whiteboardMenuInput=true;f.Publish();f.bridge.PublishWhiteboardMenuEpoch(9);
+		for(unsigned i=0;i<256;++i){check(f.Send(0x1b,true),"saturated menu Escape Down remains owned");check(f.Send(0x1b,false),"saturated menu Escape Up remains owned");}
+		K::Status status;f.bridge.ReadCounters(status);
+		check(status.submitted==255&&status.dropped==1,"menu Escape respects the existing bounded transport without leaking full-queue presses");
+		K::Intent intent;unsigned count=0;while(f.bridge.TryPop(intent)){++count;check(intent.whiteboardMenuEpoch==9,"full queue preserves exact menu instance");}
+		check(count==255,"dropped menu Escape cannot become a ghost command");
+	}
 	for (const auto command : { K::Command::Undo, K::Command::RedoY, K::Command::RedoShiftZ,
 		K::Command::Clear, K::Command::Freeze })
 	{

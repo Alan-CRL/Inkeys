@@ -1,4 +1,5 @@
 #include "../Inkeys/Inkeys/Input/UiPointerInput.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.Haptics.h"
 #include "../Inkeys/Inkeys/Window/Window.MessageDispatch.h"
 
 #include <iostream>
@@ -990,6 +991,38 @@ int RunUiPointerTests()
         native.kind = Kind::Up;
         native.messageTime = 10060;
         check(!gesture.AcceptNative(native), "UI native Up cannot complete fallback gesture twice");
+    }
+    {
+        namespace Haptic = Inkeys::UI::Bar::Haptics;
+        Haptic::ButtonMotionGate motion;
+        check(!motion.IsClick(), "Haptic palette tap needs a new Down");
+        motion.Begin({ 100, 100 }, 4, 4);
+        motion.Observe({ 103, 98 });
+        check(motion.IsClick(), "Haptic palette tap tolerates small pen jitter");
+        motion.Observe({ 105, 100 });
+        motion.Observe({ 100, 100 });
+        check(!motion.IsClick(), "Haptic palette drag cannot regain tap feedback by returning");
+        motion.Begin({ 100, 100 }, 4, 4);
+        motion.Cancel();
+        check(!motion.IsClick(), "Haptic cancelled palette gesture cannot tap");
+        auto pen = std::make_shared<Inkeys::Drawing::Draw3::Haptics::ClickSource>();
+        check(!Haptic::AcceptedClick(pen, {}, WM_LBUTTONUP, false), "Haptic mouse Up cannot inherit pen Down");
+        check(!Haptic::AcceptedClick(pen, pen, WM_MOUSEMOVE, false), "Haptic lost button Move is not accepted Up");
+        check(!Haptic::AcceptedClick(pen, pen, WM_LBUTTONUP, true), "Haptic dragged or cancelled release rejected");
+        check(Haptic::AcceptedClick(pen, pen, WM_LBUTTONUP, false) == pen, "Haptic accepted button retains exact contact");
+        // 普通按钮由业务命中接受，不能被选色板轻点的移动门限再次否决。
+        motion.Begin({ 100, 100 }, 4, 4);
+        motion.Observe({ 115, 110 });
+        check(!motion.IsClick() && Haptic::AcceptedClick(pen, pen, WM_LBUTTONUP, false) == pen,
+            "Haptic accepted ordinary button survives pen motion beyond mouse drag threshold");
+        {
+            Haptic::AcceptedClickScope callback(pen);
+            Haptic::RejectButtonAction();
+            check(!Haptic::buttonActionAccepted, "Haptic business rejection suppresses callback feedback");
+            { Haptic::AcceptedClickScope nested({}); check(Haptic::buttonActionAccepted, "Haptic callback has fresh decision"); }
+            check(!Haptic::buttonActionAccepted, "Haptic nested callback restores outer rejection");
+        }
+        check(!Haptic::acceptedClick && Haptic::buttonActionAccepted, "Haptic scope does not leak into programmatic callback");
     }
     Testing::ResetProvider(false);
     return failures;

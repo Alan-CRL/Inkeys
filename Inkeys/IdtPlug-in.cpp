@@ -119,6 +119,7 @@ namespace
 		std::uint64_t requestId = 0;
 		std::string settingsPayload;
 		PptFocusForeground focusForeground;
+		std::uint64_t inputWorkspaceEpoch = 0;
 	};
 	mutex pptUiBusinessMutex;
 	condition_variable pptUiBusinessCondition;
@@ -137,6 +138,7 @@ namespace
 		if (pageCommand && pptUiPageCommandOutstanding.exchange(true)) return;
 		PptUiBusinessRequest request{ command, expected ? *expected : CapturePptSession(), requestId };
 		request.focusForeground = foreground ? *foreground : CapturePptForeground();
+		if(pageCommand)request.inputWorkspaceEpoch=PptInputWorkspaceEpoch();
 		try
 		{
 			lock_guard lock(pptUiBusinessMutex);
@@ -594,6 +596,9 @@ namespace
 		if (command != PptUiBusinessCommand::Focus && command != PptUiBusinessCommand::Previous
 			&& command != PptUiBusinessCommand::Next) return false;
 		if (!IsCurrentPptSession(request.session)) return true;
+		// 已排队的翻页不能跨白板意图往返；只约束 page action，不误退有效的显式焦点请求。
+		if(command!=PptUiBusinessCommand::Focus && (!request.inputWorkspaceEpoch
+			|| request.inputWorkspaceEpoch!=PptInputWorkspaceEpoch()))return true;
 		if (command == PptUiBusinessCommand::Previous)
 		{
 			if (pptFocusTestHooks) ++pptFocusTestHooks->previous;
@@ -619,7 +624,7 @@ int RunPptFocusProductionTest() noexcept
 	try
 	{
 		if (Inkeys::Window::GetService().Running() || Inkeys::Drawing::Draw3::ProductRunning()
-			|| pptFocusTestHooks) return 2;
+			|| pptFocusTestHooks || WhiteboardTransactionActive()) return 2;
 		{
 			lock_guard lock(pptUiBusinessMutex);
 			if (!pptUiBusinessCommands.empty()) return 2;
@@ -634,6 +639,7 @@ int RunPptFocusProductionTest() noexcept
 			PptInfoStateStruct page = PptInfoState;
 			~Restore()
 			{
+				RequestWhiteboardActive(false);
 				pptFocusTestHooks = nullptr;
 				{ lock_guard lock(pptSessionMutex); currentPptSession = session; }
 				pptComGeneration = generation;
@@ -735,6 +741,36 @@ int RunPptFocusProductionTest() noexcept
 				session.showWindow), true, true, session);
 		check(fake.activations == 5 && pptUiBusinessCommands.empty(),
 			"known-window-recovery-and-repeat-publication-do-not-refocus-background-show");
+		const int previousBefore=fake.previous,nextBefore=fake.next,focusBefore=fake.activations;
+		const auto initialWorkspace=PptInputWorkspaceEpoch();
+		fake.state.foreground=external;
+		QueuePptUiBusinessCommand(PptUiBusinessCommand::Previous);const auto beforeWhiteboard=pop();
+		RequestWhiteboardActive(true);
+		check(!PptInputWorkspaceEpoch(),"whiteboard-intent-closes-page-admission");
+		(void)DispatchPptFocusBusinessAction(beforeWhiteboard);
+		QueuePptUiBusinessCommand(PptUiBusinessCommand::Next);const auto duringWhiteboard=pop();
+		RequestWhiteboardActive(true);
+		RequestWhiteboardActive(false);const auto returnedWorkspace=PptInputWorkspaceEpoch();
+		check(returnedWorkspace && returnedWorkspace!=initialWorkspace,"whiteboard-return-advances-page-input-identity");
+		(void)DispatchPptFocusBusinessAction(duringWhiteboard);
+		QueuePptUiBusinessCommand(PptUiBusinessCommand::Next);const auto beforeRoundtrip=pop();
+		RequestWhiteboardActive(true);RequestWhiteboardActive(false);
+		(void)DispatchPptFocusBusinessAction(beforeRoundtrip);
+		check(fake.previous==previousBefore && fake.next==nextBefore && fake.activations==focusBefore,
+			"queued-previous-next-cannot-run-during-or-across-whiteboard-roundtrip");
+		QueuePptUiBusinessCommand(PptUiBusinessCommand::Previous);const auto validPrevious=pop();
+		const auto unchangedWorkspace=PptInputWorkspaceEpoch();RequestWhiteboardActive(false);
+		check(PptInputWorkspaceEpoch()==unchangedWorkspace,"repeated-whiteboard-off-keeps-current-page-input");
+		(void)DispatchPptFocusBusinessAction(validPrevious);
+		fake.state.foreground=external;
+		QueuePptUiBusinessCommand(PptUiBusinessCommand::Next);(void)DispatchPptFocusBusinessAction(pop());
+		check(fake.previous==previousBefore+1 && fake.next==nextBefore+1 && fake.activations==focusBefore+2,
+			"same-session-page-actions-and-focus-remain-valid-after-return");
+		fake.state.foreground=external;
+		QueuePptUiBusinessCommand(PptUiBusinessCommand::Focus);const auto focusRequest=pop();
+		RequestWhiteboardActive(true);RequestWhiteboardActive(false);
+		(void)DispatchPptFocusBusinessAction(focusRequest);
+		check(fake.activations==focusBefore+3,"valid-explicit-focus-is-not-retired-by-page-only-epoch");
 		std::fprintf(stderr, "[PptFocusProduction] failures=%d\n", failures);
 		return failures == 0 ? 0 : 1;
 	}

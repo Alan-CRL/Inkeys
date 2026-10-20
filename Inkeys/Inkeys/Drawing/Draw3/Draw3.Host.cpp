@@ -1,5 +1,6 @@
 #include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Host.h"
+#include "Draw3.HapticDiagnostics.h"
 #include <dxgi.h>
 #include "Draw3.PptTiming.h"
 #include "Draw3.SpeedEraser.h"
@@ -12,6 +13,7 @@ import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.graphics_initialization;
+import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.presentation_auto_save;
 import Inkeys.Drawing.Draw3.renderer;
@@ -372,6 +374,7 @@ namespace Inkeys::Drawing::Draw3
 		std::shared_ptr<const PresentationPersistenceCompletion> pendingPresentationCompletion;
 		ContactInputCoordinator input;
 		WindowController window;
+		Haptics::ClickMailbox hapticClicks;
 		std::mutex commandPublishMutex;
 		mutable std::mutex eraserDiagnosticsMutex;
 		SpeedEraser::Diagnostics eraserDiagnostics;
@@ -400,6 +403,7 @@ namespace Inkeys::Drawing::Draw3
 		RealTimeStylusInput stylus;
 		std::unique_ptr<DrawingController> drawing;
 		std::atomic_bool interruptedStrokeReconnectEnabled = true;
+		std::atomic_bool drawingHapticsEnabled = true;
 		std::jthread drawingThread;
 		std::atomic_bool running = false;
 		std::atomic_bool firstFrameReady = false;
@@ -1038,6 +1042,13 @@ namespace Inkeys::Drawing::Draw3
 			self->PublishRuntimeRevision();
 		}
 
+		static void ObserveWhiteboardThemeEdited(void* context, WhiteboardTheme theme) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (self->runtimeCallbacks.whiteboardThemeEdited)
+				self->runtimeCallbacks.whiteboardThemeEdited(self->runtimeCallbacks.context, theme);
+		}
+
 		static void ObserveWhiteboardExit(void* context, bool durable)
 		{
 			static_cast<Impl*>(context)->whiteboardExitDurable.store(durable, std::memory_order_release);
@@ -1533,6 +1544,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool reconnectEnabled = interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
 			if (drawing && drawing->GetInterruptedStrokeReconnectEnabled() != reconnectEnabled)
 				drawing->SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
+			if (drawing) drawing->SetDrawingHapticsEnabled(drawingHapticsEnabled.load(std::memory_order_acquire));
 			PumpDisplayScale();
 			{
 				std::scoped_lock lock(presentationTargetMutex);
@@ -1793,9 +1805,14 @@ namespace Inkeys::Drawing::Draw3
 				startupCompleted = false;
 				startupSucceeded = false;
 			}
+			hapticClicks.Start();
 			running.store(true, std::memory_order_release);
 			auto runDrawing = [this, failedCleanup](std::stop_token token)
 			{
+				// COM 的创建、调用和析构都留在此 owner；异常/首帧失败同样配对清理。
+				PenHapticFeedback haptics(false);
+				const bool hapticReady = haptics.Initialize();
+				HapticDiagnostics::Log("host", "backend_initialized=%d run=%llu", hapticReady, static_cast<unsigned long long>(hapticClicks.Run()));
 				bool initialized = false;
 				bool graphicsInitialized = false;
 					DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=begin hwnd=0x" << std::hex
@@ -1916,13 +1933,15 @@ namespace Inkeys::Drawing::Draw3
 							observer.whiteboardChanged = &ObserveWhiteboard;
 							observer.whiteboardExitSaved = &ObserveWhiteboardExit;
 							observer.whiteboardRoot = startOptions.autoSaveRoot;
+							observer.whiteboardDefaultTheme = startOptions.whiteboardDefaultTheme;
+							observer.whiteboardThemeEdited = &ObserveWhiteboardThemeEdited;
 							observer.acceptedStrokeBegan = &ObserveAcceptedStroke;
 							observer.acceptedStrokeSceneChanged = &ObserveAcceptedStrokeScene;
 							observer.shortcutContextChanged = &ObserveShortcutContext;
 							observer.shortcutCommandAllowed = &AllowShortcutCommand;
 							observer.shortcutCompleted = &CompleteShortcut;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
-								presentation, configuration, observer, runtimeMetrics.session.get());
+								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
@@ -2015,6 +2034,8 @@ namespace Inkeys::Drawing::Draw3
 				CaptureRuntimeMetricsMetadata(true);
 				// GPU 资源在拥有它们的绘制线程释放，避免跨线程访问 Renderer。
 				if (drawing) drawing.reset();
+				hapticClicks.Stop();
+				haptics.Shutdown();
 				presentation.Shutdown();
 				renderer.ReleaseResources();
 				graphics = {};
@@ -2190,6 +2211,7 @@ namespace Inkeys::Drawing::Draw3
 
 		void Stop() noexcept
 		{
+			hapticClicks.Stop();
 			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
 			if (!attachedWindow.load(std::memory_order_acquire) &&
 				!attachedPresentationWindow.load(std::memory_order_acquire) &&
@@ -2580,6 +2602,28 @@ namespace Inkeys::Drawing::Draw3
 	void Host::SetActivationAllowed(bool enabled) noexcept
 	{
 		impl_->window.SetActivationAllowed(enabled);
+	}
+	Haptics::Context Host::HapticContext() const noexcept
+	{
+		return Haptics::ButtonContext(Running() ? impl_->hapticClicks.Run() : 0);
+	}
+	void Host::SetHapticPreferences(bool drawingEnabled, bool buttonsEnabled) noexcept
+	{
+		impl_->drawingHapticsEnabled.store(drawingEnabled, std::memory_order_release);
+		impl_->hapticClicks.SetEnabled(buttonsEnabled);
+		// 空闲或悬停预设也必须收敛，COM 的停止和恢复仍由绘制 owner 执行。
+		(void)impl_->input.PublishControlWake();
+	}
+	bool Host::PublishHapticClick(const Haptics::Click& source,
+		HostHapticClickDiagnostics* diagnostics) noexcept
+	{
+		const auto context = HapticContext();
+		const auto now = GetTickCount64();
+		if (diagnostics) diagnostics->context = context;
+		if (!impl_->hapticClicks.Publish(source, context, now,
+			diagnostics ? &diagnostics->rejection : nullptr)) return false;
+		(void)impl_->input.PublishControlWake();
+		return true;
 	}
 	Bridge::StateBridge& Host::ProductBridge() noexcept { return impl_->bridge; }
 	void Host::PublishState(const Bridge::ProductState& state) noexcept

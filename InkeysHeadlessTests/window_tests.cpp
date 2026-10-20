@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <functional>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -193,6 +194,20 @@ int RunCanvasPolicyTests()
 	{
 		if (!passed) { ++failures; std::cerr << "FAIL canvas policy: " << name << '\n'; }
 	};
+	unsigned closeRequests = 0;
+	const std::function<void()> close = [&] { ++closeRequests; };
+	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(false, true, close) && closeRequests == 0,
+		"desktop close retains the original window lifecycle");
+	check(Inkeys::Window::DispatchWhiteboardCloseRequest(true, true, close) && closeRequests == 1,
+		"taskbar whiteboard close requests exit while preserving the shared anchor");
+	check(Inkeys::Window::DispatchWhiteboardCloseRequest(true, true, {}),
+		"a missing close callback cannot destroy the whiteboard owner chain");
+	check(Inkeys::Window::DispatchWhiteboardCloseRequest(true, true, [] { throw 1; }),
+		"a failed close request cannot destroy the whiteboard owner chain");
+	check(Inkeys::Window::DispatchWhiteboardCloseRequest(true, false, close) && closeRequests == 1,
+		"late close after leaving whiteboard preserves its owner without replaying exit");
+	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(true, false, {}),
+		"an ordinary unmanaged desktop window keeps the original close policy");
 	const RECT screen{ -1920, -1080, 0, 0 };
 	const HWND generation = reinterpret_cast<HWND>(static_cast<UINT_PTR>(1));
 	CanvasPolicyKey key{ generation, screen, screen, false };

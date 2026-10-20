@@ -252,6 +252,28 @@ namespace
 		}
 	};
 
+	template <>
+	struct JsonValueCodec<Inkeys::WhiteboardThemePreference, void>
+	{
+		static bool TryRead(const Json::Value& value, Inkeys::WhiteboardThemePreference& result)
+		{
+			if (!value.isObject() || !value.isMember("BackgroundRgb") || !value.isMember("Pattern")) return false;
+			const auto& rgb = value["BackgroundRgb"]; const auto& pattern = value["Pattern"];
+			const auto integer = [](const Json::Value& item)
+			{ return item.type() == Json::intValue || item.type() == Json::uintValue; };
+			// 严验原始整数类型与范围；浮点、布尔、超宽或缺项都回退整个主题。
+			if (!integer(rgb) || !rgb.isUInt() || rgb.asUInt() > 0xFFFFFF
+				|| !integer(pattern) || !pattern.isUInt() || pattern.asUInt() > 2) return false;
+			result = { rgb.asUInt(), pattern.asUInt() }; return true;
+		}
+		static Json::Value ToJson(const Inkeys::WhiteboardThemePreference& value)
+		{
+			Json::Value result(Json::objectValue);
+			result["BackgroundRgb"] = value.backgroundRgb; result["Pattern"] = value.pattern;
+			return result;
+		}
+	};
+
 	template <typename ValueT>
 	struct JsonValueCodec<IdtAtomic<ValueT>, void>
 	{
@@ -847,6 +869,13 @@ namespace Inkeys
 		readAllDocument = outputRoot;
 		hasReadAllDocument = true;
 		return true;
+	}
+
+	bool Config::SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept
+	{
+		if (backgroundRgb > 0xFFFFFF || pattern > 2) return false;
+		const WhiteboardThemePreference next{ backgroundRgb, pattern };
+		return Drawing.Whiteboard.DefaultTheme.exchange(next) != next;
 	}
 
 	std::string Config::GetUploadInfo()

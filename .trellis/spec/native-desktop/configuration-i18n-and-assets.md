@@ -528,3 +528,11 @@ Settings原子配置→frame配置快照→完整稳定宽度→受锁约束的s
 - `UI.Bar.UseTaskbarHeightAsScaleBase` 为三态整数、NoUpload：`0`关闭、`1`任务栏基础量、`2`任务栏真实量；仅接受整数0..2，旧JSON bool按false→0、true→2兼容，不能把旧true窄化为1。缺省/非法类型/越界/重置按启动冻结的设备默认分类决定：大屏为1，其余为0。分类沿用 READY 触控且主屏物理面积>=1200cm²或物理信息不可用的现有大屏规则，不读取用户保存或运行中覆盖的 PaintDevice。Config schema 只读已冻结缓存，不在静态初始化查询硬件；构造、Mini、All、Reset 共用此默认。设置页使用三项下拉框，模式与UI倍率改变时同时唤醒Bar和四分页，复用设置写盘队列；传统settingGlobalScale与PPT各自倍率不变。
 - 关闭模式使用真实DPI/96；任务栏基础量固定为`48/80 × DPI/96`，UI倍率100%时80DIP设计主栏的实际高度为48DIP，不读取实际任务栏厚度，Shell缺样时也保持此语义。任务栏真实量延续旧开启行为：本屏任务栏完整厚度/80，上下取高、左右取宽；无本屏任务栏时按主屏厚度×本屏DPI/主屏DPI折算，无可信样本时回退DPI/96。Display的强类型UiScaleBaseMode用于主栏、启动Mini/预览与分页的统一解析，禁止将模式再转bool；只对用户倍率应用既有50%–200%限制，不裁剪基准。
 - 配置验证须包含旧bool兼容、三态整数往返、Mini/全量、冻结默认/复制/重置、非法类型/越界和NoUpload；缩放验证须覆盖多DPI、固定48DIP独立任务栏样本及真实量原有回退。Codex沙箱默认TEMP可能禁止MoveFileEx原子替换（ERROR_ACCESS_DENIED）；可为测试进程将TEMP/TMP指向仓库内scratch，不能修改产品写盘器绕过环境限制。
+
+## 白板新进程默认主题记忆
+
+- `Drawing.Whiteboard.DefaultTheme` 属于 `Inkeys/Config/main.json`，为 NoUpload；`BackgroundRgb` 为 `0..0xFFFFFF` 整数，`Pattern` 为 `0..2` 整数（空白/点阵/网格）。两字段作为同一个原子值发布及冻结，避免异步快照混配。
+- 缺失、缺项、类型或范围非法时整组回退 `#123B32/空白`；不把布尔、浮点或宽整数强制窄化。ReadMini 只影响被选中的路径，Reset 恢复 schema 默认值。
+- 仅有效当前白板页真正接受的主题修改更新偏好；初始化、冷恢复、重复/stale/错页/加载中请求不写回。新进程首张页读取偏好，同进程新页继续继承当前页。
+- 配置经现有 Setting FIFO 异步写盘，跨生产者的完整配置捕获与入队必须在同一短临界区保持同序，锁内不执行文件 I/O；Draw3 不做磁盘 I/O；正常退出先停止 Draw3 再排空配置队列，Window Service 与 RenderPipeline 在 Setting 释放后停止。
+- 回归使用真实配置 roundtrip、新实例重读及 Controller 同源初始化/主题命令门禁；GUI 重启观感需另行明确授权。

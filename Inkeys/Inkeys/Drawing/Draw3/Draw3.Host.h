@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
 #include "Draw3.SpeedEraser.h"
@@ -190,6 +191,13 @@ namespace Inkeys::Drawing::Draw3
 		bool (*setExtendedStyleFlags)(void*, DWORD, DWORD) = nullptr;
 	};
 
+	// 只复制拒绝快照；控制台输出由产品调用方退出生命周期闸门后执行。
+	struct HostHapticClickDiagnostics
+	{
+		const char* rejection = nullptr;
+		Haptics::Context context;
+	};
+
 	struct HostRuntimeCallbacks
 	{
 		void* context = nullptr;
@@ -198,6 +206,7 @@ namespace Inkeys::Drawing::Draw3
 		void (*penWidthContextChanged)(void*,
 			const Inkeys::Business::PenWidth::Context&) noexcept = nullptr;
 		void (*acceptedStrokeBegan)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
+		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
 	};
 
 	enum class HostPresentationMode : std::uint8_t
@@ -244,6 +253,7 @@ namespace Inkeys::Drawing::Draw3
 		bool requirePresentationUiReady = false;
 		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/AutoSave。
 		std::wstring autoSaveRoot;
+		WhiteboardTheme whiteboardDefaultTheme;
 		void* startupContext = nullptr;
 		void (*startupMilestone)(void*, HostStartupStage) noexcept = nullptr;
 		bool enableEraserDiagnostics = false; // 默认关闭；仅发布有界快照，不逐点写日志。
@@ -399,6 +409,10 @@ namespace Inkeys::Drawing::Draw3
 			std::uint32_t timeoutMilliseconds) const noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
+		Haptics::Context HapticContext() const noexcept;
+		void SetHapticPreferences(bool drawingEnabled, bool buttonsEnabled) noexcept;
+		bool PublishHapticClick(const Haptics::Click& source,
+			HostHapticClickDiagnostics* diagnostics = nullptr) noexcept;
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;

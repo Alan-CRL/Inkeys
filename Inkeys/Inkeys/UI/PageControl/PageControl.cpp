@@ -22,6 +22,7 @@ module;
 #include "../../Input/UiPointerInput.h"
 #include "../../Input/MouseHook.Transport.h"
 #include "../../Window/Window.MessageDispatch.h"
+#include "../../Input/KeyboardShortcuts.h"
 
 #include <algorithm>
 #include <array>
@@ -40,9 +41,14 @@ module;
 #include <utility>
 #include <vector>
 
+#ifdef MessageBox
+#undef MessageBox
+#endif
+
 module Inkeys.UI.PageControl;
 
 import Inkeys.UI.Bar;
+import Inkeys.UI.MessageBox;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.EraserAttributeMotion;
@@ -104,6 +110,7 @@ namespace Inkeys::UI::PageControl
 		namespace PointerInput = Inkeys::Input::UiPointer;
 		constexpr UINT PointerWakeMessage = WM_APP + 0x351;
 		constexpr UINT PointerCancelMessage = WM_APP + 0x352;
+		constexpr UINT WhiteboardMenuDismissMessage = WM_APP + 0x354;
 		constexpr UINT_PTR PointerTimer = 0x353;
 
 		constexpr WidgetId DragWidget = 1;
@@ -111,7 +118,7 @@ namespace Inkeys::UI::PageControl
 		constexpr WidgetId PageWidget = 3;
 		constexpr WidgetId NextWidget = 4;
 		constexpr WidgetId MoreWidget = 5;
-		void CloseWhiteboardMenu() noexcept;
+		bool CloseWhiteboardMenu(std::uint64_t expectedEpoch = 0) noexcept;
 		[[nodiscard]] constexpr PptPointerRegion PointerRegionForWidget(
 			WidgetId widget) noexcept
 		{
@@ -405,6 +412,15 @@ namespace Inkeys::UI::PageControl
 		std::array<std::uint64_t, 2> handedOffDragVersions{};
 		WhiteboardState publishedWhiteboard;
 		std::atomic_bool whiteboardMenuOpen = false;
+		std::atomic_uint64_t whiteboardMenuEpoch = 0;
+		std::uint64_t whiteboardMenuSerial = 0;
+		void PublishWhiteboardMenuIdentityLocked() noexcept
+		{
+			const auto epoch = publishedWhiteboard.menu ? ++whiteboardMenuSerial : 0;
+			whiteboardMenuEpoch.store(epoch, std::memory_order_release);
+			whiteboardMenuOpen.store(epoch != 0, std::memory_order_release);
+			Inkeys::Input::KeyboardShortcuts::PublishWhiteboardMenuEpoch(epoch);
+		}
 		PptCallbacks pptCallbacks;
 		WhiteboardCallbacks whiteboardCallbacks;
 		Inkeys::Display::Subscription displaySubscription;
@@ -803,12 +819,13 @@ namespace Inkeys::UI::PageControl
 			if (callback) callback();
 		}
 
-		void CloseWhiteboardMenu() noexcept
+		bool CloseWhiteboardMenu(std::uint64_t expectedEpoch) noexcept
 		{
 			{ std::scoped_lock lock(snapshotMutex);
-			  if(!publishedWhiteboard.menu) return;
-			  publishedWhiteboard.menu=0; whiteboardMenuOpen.store(false,std::memory_order_release); publishedRevision.fetch_add(1,std::memory_order_release); }
+			  if(!publishedWhiteboard.menu || (expectedEpoch && expectedEpoch != whiteboardMenuEpoch.load(std::memory_order_acquire))) return false;
+			  publishedWhiteboard.menu=0; PublishWhiteboardMenuIdentityLocked(); publishedRevision.fetch_add(1,std::memory_order_release); }
 			RequestAll();
+			return true;
 		}
 
 		void InvokeWhiteboardMenu(WidgetId id, const WhiteboardState& pressed)
@@ -820,7 +837,7 @@ namespace Inkeys::UI::PageControl
 			if(id==5 || id==8) {
 				{ std::scoped_lock lock(snapshotMutex);
 				  publishedWhiteboard.menu=id==5 ? (state.menu ? 0:1) : (state.menu==2 ? 1:2);
-				  whiteboardMenuOpen.store(publishedWhiteboard.menu!=0,std::memory_order_release);
+				  PublishWhiteboardMenuIdentityLocked();
 				  publishedRevision.fetch_add(1,std::memory_order_release); }
 				RequestAll(); return;
 			}
@@ -2279,6 +2296,7 @@ namespace Inkeys::UI::PageControl
 			return now-std::chrono::milliseconds(tick>=event.tick?(std::min)(tick-event.tick,0x7fffffffULL):0);
 		}
 
+		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context);
 		void PageControlInputEvent(const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context)
 		{
 			const HWND hwnd=event.window;const auto message=event.message;
@@ -2288,6 +2306,15 @@ namespace Inkeys::UI::PageControl
 				||registration->generation!=inputLifecycle.load(std::memory_order_acquire)))return;
 			const std::size_t index=registration?registration->index:Index(hwnd);
 			if(index>=surfaces.size())return;auto& state=surfaces[index];
+			if(message==WhiteboardMenuDismissMessage){
+				// 键盘意图排队后菜单可能关闭/重开；只取消同一实例，不能触及新菜单或新接触。
+				const auto whiteboard=Snapshot().second;
+				if(event.semanticRevision && whiteboard.active && !whiteboard.switching
+					&& !Inkeys::Window::GetService().WhiteboardWindowGroupMinimized() && !Inkeys::UI::MessageBox::IsShowing()
+					&& event.wParam==reinterpret_cast<WPARAM>(GetForegroundWindow())
+					&& CloseWhiteboardMenu(event.semanticRevision))PageControlInputCancel(event,context);
+				return;
+			}
 			const auto committed=InputSnapshot(index);
 			if(message==WM_LBUTTONDOWN&&event.captureTicket)state.pressedCaptureTicket=event.captureTicket;
 			if((message==WM_KEYDOWN&&wParam==VK_ESCAPE)||message==WM_CANCELMODE||message==WM_CAPTURECHANGED)CloseWhiteboardMenu();
@@ -3723,6 +3750,7 @@ namespace Inkeys::UI::PageControl
 			const auto oldInput=InputSnapshot(0);auto oldSurface=std::move(surfaces[0]);surfaces[0]=SurfaceState{};
 			const auto oldPptCallbacks=pptCallbacks;const auto oldWhiteboardCallbacks=whiteboardCallbacks;
 			const auto oldRevision=publishedRevision.load(std::memory_order_acquire);
+			const auto oldMenuEpoch=whiteboardMenuEpoch.load(std::memory_order_acquire);const auto oldMenuSerial=whiteboardMenuSerial;
 			std::array<PptDragCommitTracker,2> oldDragTrackers;{std::scoped_lock lock(dragCommitMutex);oldDragTrackers=dragCommitTrackers;}
 			unsigned pptNext=0,whiteboardNext=0;
 			pptCallbacks.nextPage=[&]{++pptNext;};whiteboardCallbacks.nextPage=[&]{++whiteboardNext;};
@@ -3782,6 +3810,25 @@ namespace Inkeys::UI::PageControl
 			InputRegistrationContext retired{0,registration.generation-1};publishedWhiteboard.menu=1;
 			event.message=WM_LBUTTONDOWN;PageControlInputEvent(event,&retired);PageControlInputCancel({},&retired);
 			Check(whiteboardNext==1&&publishedWhiteboard.menu==1,"retired lifecycle callbacks cannot cancel or act on the new workspace");
+			// 真实输入 handler 再核菜单实例，旧 Escape 不得取消后来建立的接触。
+			PublishWhiteboardMenuIdentityLocked();const auto escapedMenu=WhiteboardMenuEpoch();
+			Inkeys::UI::Bar::SurfaceInputEvent dismiss;dismiss.message=WhiteboardMenuDismissMessage;dismiss.semanticRevision=escapedMenu;
+			dismiss.wParam=reinterpret_cast<WPARAM>(GetForegroundWindow());
+			PageControlInputEvent(dismiss,&retired);
+			Check(publishedWhiteboard.menu==1,"retired Escape callback cannot dismiss the current lifecycle");
+			PageControlInputEvent(dismiss,context);
+			Check(!publishedWhiteboard.menu&&!WhiteboardMenuEpoch()&&!surfaces[0].pointerActive,
+				"current Escape closes the menu and cancels the same input owner");
+			publishedWhiteboard.menu=1;PublishWhiteboardMenuIdentityLocked();const auto reopenedMenu=WhiteboardMenuEpoch();
+			surfaces[0].pointerActive=true;
+			PageControlInputEvent(dismiss,context);
+			Check(publishedWhiteboard.menu==1&&WhiteboardMenuEpoch()==reopenedMenu&&surfaces[0].pointerActive,
+				"old Escape cannot close a reopened menu or cancel its later contact");
+			dismiss.semanticRevision=reopenedMenu;
+			dismiss.wParam=~reinterpret_cast<WPARAM>(GetForegroundWindow());PageControlInputEvent(dismiss,context);
+			Check(publishedWhiteboard.menu==1&&surfaces[0].pointerActive,"queued Escape rechecks foreground at final input consumption");
+			dismiss.wParam=reinterpret_cast<WPARAM>(GetForegroundWindow());PageControlInputEvent(dismiss,context);
+			Check(!publishedWhiteboard.menu&&!surfaces[0].pointerActive,"new Escape can dismiss the reopened instance");
 			publishedWhiteboard={};++publishedPpt.layout.session;
 			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::PptCompact,{}, {},true,false,publishedPpt.layout.session);}
 			event.semanticRevision=InputSnapshot(0).semanticRevision;++publishedPpt.layout.session;
@@ -3790,6 +3837,8 @@ namespace Inkeys::UI::PageControl
 			PageControlInputEvent(event,context);Check(pptNext==2,"queued Down is rejected after the replacement PPT frame commits");
 			publishedPpt=oldPpt;publishedWhiteboard=oldWhiteboard;pptCallbacks=oldPptCallbacks;whiteboardCallbacks=oldWhiteboardCallbacks;
 			publishedRevision.store(oldRevision,std::memory_order_release);whiteboardMenuOpen.store(oldWhiteboard.menu!=0,std::memory_order_release);
+			whiteboardMenuSerial=oldMenuSerial;whiteboardMenuEpoch.store(oldMenuEpoch,std::memory_order_release);
+			Inkeys::Input::KeyboardShortcuts::PublishWhiteboardMenuEpoch(oldMenuEpoch);
 			{std::scoped_lock lock(dragCommitMutex);dragCommitTrackers=oldDragTrackers;}
 			initialized.store(wasInitialized,std::memory_order_release);
 			{std::scoped_lock lock(inputSnapshotMutex);inputPresentations[0]=oldInput;surfaces[0]=std::move(oldSurface);}
@@ -4472,6 +4521,8 @@ namespace Inkeys::UI::PageControl
 		}
 		referenceCount.store(0, std::memory_order_release);
 		initialized.store(false, std::memory_order_release);
+		whiteboardMenuEpoch.store(0,std::memory_order_release);
+		Inkeys::Input::KeyboardShortcuts::PublishWhiteboardMenuEpoch(0);
 		for(const auto role:Roles)Inkeys::UI::Bar::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
 		wheelInputGeneration.fetch_add(1, std::memory_order_acq_rel);
 		{
@@ -4573,8 +4624,10 @@ namespace Inkeys::UI::PageControl
 				&& state.generation==publishedWhiteboard.generation)
 				next.menu=publishedWhiteboard.menu;
 			if (AreWhiteboardStatesEquivalent(publishedWhiteboard, next)) return;
+			const bool menuIdentityChanged = next.menu != publishedWhiteboard.menu
+				|| next.currentPage != publishedWhiteboard.currentPage || next.generation != publishedWhiteboard.generation;
 			publishedWhiteboard = next;
-			whiteboardMenuOpen.store(next.menu!=0,std::memory_order_release);
+			if(menuIdentityChanged)PublishWhiteboardMenuIdentityLocked();
 			publishedRevision.fetch_add(1, std::memory_order_release);
 		}
 		AcknowledgePage(Snapshot().first, 0);
@@ -4676,12 +4729,26 @@ namespace Inkeys::UI::PageControl
 		RequestAll();
 	}
 
-	bool RequestWhiteboardMenuDismiss() noexcept
+	std::uint64_t WhiteboardMenuEpoch() noexcept
 	{
-		// 低级输入钩子只投递取消，不等待窗口线程或渲染事务。
+		return initialized.load(std::memory_order_acquire) ? whiteboardMenuEpoch.load(std::memory_order_acquire) : 0;
+	}
+
+	bool RequestWhiteboardMenuDismiss(std::uint64_t expectedEpoch, std::uintptr_t expectedForeground) noexcept
+	{
+		// 鼠标钩子仍只投递窗口消息；键盘由普通 Bar owner 传入实例身份并进入同一输入 FIFO。
 		if (!whiteboardMenuOpen.load(std::memory_order_acquire)) return false;
+		if(expectedEpoch && (expectedEpoch != WhiteboardMenuEpoch() || !expectedForeground
+			|| expectedForeground != reinterpret_cast<std::uintptr_t>(GetForegroundWindow())))return false;
 		const HWND hwnd = Inkeys::Window::GetService().Handle(WindowRole::PptBottomLeft);
-		return hwnd && PostMessageW(hwnd, WM_CANCELMODE, 0, 0) != FALSE;
+		if(!hwnd)return false;
+		if(expectedEpoch){
+			Inkeys::UI::Bar::SurfaceInputEvent event;event.window=hwnd;event.message=WhiteboardMenuDismissMessage;
+			event.generation=inputLifecycle.load(std::memory_order_acquire);event.semanticRevision=expectedEpoch;
+			event.wParam=static_cast<WPARAM>(expectedForeground);
+			return Inkeys::UI::Bar::SubmitSurfaceInput(event);
+		}
+		return PostMessageW(hwnd, WM_CANCELMODE, 0, 0) != FALSE;
 	}
 
 	void CancelPointerCapture() noexcept

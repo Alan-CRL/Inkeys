@@ -185,6 +185,7 @@ namespace
 		}
 		if (message == WM_CLOSE)
 		{
+			if (Inkeys::Window::GetService().DispatchWhiteboardClose(hwnd)) return 0;
 			DestroyWindow(hwnd);
 			return 0;
 		}
@@ -551,6 +552,16 @@ namespace Inkeys::Window
 		[[nodiscard]] bool WhiteboardWindowGroupMinimized() const noexcept
 		{
 			return whiteboardGroupMinimized_.load(std::memory_order_acquire);
+		}
+
+		[[nodiscard]] bool DispatchWhiteboardClose(HWND hwnd) noexcept
+		{
+			if (!hwnd || Handle(WindowRole::Freeze) != hwnd
+				|| OwnerThreadId(WindowRole::Freeze) != GetCurrentThreadId()) return false;
+			const auto& spec = records_[RoleIndex(WindowRole::Freeze)].activeSpec;
+			// 离场后迟到的 WM_CLOSE 仍须保留共享 owner；不重复请求已结束的白板事务。
+			return spec ? DispatchWhiteboardCloseRequest(true, WhiteboardWindowMode(), spec->whiteboardCloseRequested)
+				: WhiteboardWindowMode();
 		}
 
 		[[nodiscard]] bool MinimizeWhiteboardWindowGroup()
@@ -2822,6 +2833,10 @@ namespace Inkeys::Window
 		bool Service::WhiteboardWindowGroupMinimized() const noexcept
 		{
 			return impl_->WhiteboardWindowGroupMinimized();
+		}
+		bool Service::DispatchWhiteboardClose(HWND hwnd) noexcept
+		{
+			return impl_->DispatchWhiteboardClose(hwnd);
 		}
 		bool Service::MinimizeWhiteboardWindowGroup()
 		{

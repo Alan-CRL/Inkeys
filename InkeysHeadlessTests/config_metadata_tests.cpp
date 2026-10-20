@@ -547,6 +547,51 @@ int RunConfigMetadataTests()
 		check(scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode,
 			"reset restores both new scale defaults");
 	}
+	{
+		using Inkeys::WhiteboardThemePreference;
+		const auto writeThemeDocument=[&](const Json::Value& document){
+			std::ofstream output(file,std::ios::binary|std::ios::trunc);Json::StreamWriterBuilder themeWriter;
+			output<<Json::writeString(themeWriter,document);check(output.good(),"theme fixture writes isolated main.json");};
+		Inkeys::Config themes;const WhiteboardThemePreference defaultTheme{};
+		writeThemeDocument(Json::Value(Json::objectValue));
+		check(themes.ReadAll()&&themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"missing theme keeps green blank on an existing configuration");
+		for(const auto rgb:{0x123B32u,0x172A46u,0x000000u,0xFFFFFFu,0xE5E7EBu,0xF5F1E6u,0xABCDEFu})
+		for(const std::uint32_t pattern:{0u,1u,2u}){
+			(void)themes.SetWhiteboardThemeDefault(rgb,pattern);
+			check(!themes.SetWhiteboardThemeDefault(rgb,pattern),"unchanged theme preference does not request a write");
+			const auto upload=themes.GetUploadInfo();Inkeys::Config frozenTheme;frozenTheme=themes;
+			(void)themes.SetWhiteboardThemeDefault(rgb^0xFFFFFF,pattern==2?0:pattern+1);
+			check(themes.GetUploadInfo()==upload&&frozenTheme.Drawing.Whiteboard.DefaultTheme.load()==WhiteboardThemePreference{rgb,pattern}
+				&&frozenTheme.Write(),"frozen FIFO payload owns both NoUpload theme fields");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll()&&restarted.Drawing.Whiteboard.DefaultTheme.load()==WhiteboardThemePreference{rgb,pattern},
+				"new Config instance reloads the complete last selected background and pattern");
+			const auto json=ReadJson(file)["Drawing"]["Whiteboard"]["DefaultTheme"];
+			check(json["BackgroundRgb"].isUInt()&&json["BackgroundRgb"].asUInt()==rgb&&json["Pattern"].isUInt()&&json["Pattern"].asUInt()==pattern,
+				"theme serializes as two exact RGB and pattern integers");
+		}
+		Json::Value validTheme(Json::objectValue);validTheme["BackgroundRgb"]=0xFFFFFF;validTheme["Pattern"]=2;
+		for(const char* field:{"BackgroundRgb","Pattern"}){
+			std::vector<Json::Value> invalids{Json::Value(),Json::Value(true),Json::Value(-1),Json::Value(1.0),Json::Value("1"),
+				Json::Value(Json::arrayValue),Json::Value(Json::objectValue),Json::Value(Json::UInt64(0x100000000ULL))};
+			invalids.emplace_back(std::string_view(field)=="Pattern"?3:0x1000000);
+			for(const auto& invalidTheme:invalids){
+				auto document=Json::Value(Json::objectValue);auto theme=validTheme;theme[field]=invalidTheme;
+				document["Drawing"]["Whiteboard"]["DefaultTheme"]=theme;writeThemeDocument(document);
+				check(themes.ReadAll()&&themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"invalid theme component defaults the whole pair without narrowing or coercion");
+				(void)themes.SetWhiteboardThemeDefault(0xFFFFFF,2);themes.UI.Bar.Zoom2=1.25;
+				check(themes.ReadMini({"Drawing.Whiteboard.DefaultTheme"})&&themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme
+					&&themes.UI.Bar.Zoom2.load()==1.25,"Mini theme validation keeps unrelated settings untouched");
+			}
+			auto incomplete=validTheme;incomplete.removeMember(field);Json::Value document(Json::objectValue);
+			document["Drawing"]["Whiteboard"]["DefaultTheme"]=incomplete;writeThemeDocument(document);
+			check(themes.ReadAll()&&themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"partial theme never combines disk and default components");
+		}
+		(void)themes.SetWhiteboardThemeDefault(0xFFFFFF,2);
+		check(!themes.SetWhiteboardThemeDefault(0x1000000,0)&&!themes.SetWhiteboardThemeDefault(0,3)
+			&&themes.Drawing.Whiteboard.DefaultTheme.load()==WhiteboardThemePreference{0xFFFFFF,2},"invalid runtime preference cannot replace the last successful choice");
+		themes.ResetToDefaults();check(themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"reset restores the green blank theme default");
+	}
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;
 }

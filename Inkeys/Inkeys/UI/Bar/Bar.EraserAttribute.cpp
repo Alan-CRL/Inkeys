@@ -472,8 +472,9 @@ void BarEraserAttributePanel::Close(BarUISetClass& owner)
 {
 	owner.barState.eraserAttribute=false;owner.barState.eraserSensitivityOpen=false;pressed_=-1;hovered_=-1;focused_=-1;visible_=false;
 }
-void BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
+bool BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 {
+	bool performed=item>=1 && item<=8;
 	if(item==0)
 	{
 		const auto snapshot=Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
@@ -487,14 +488,15 @@ void BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 			else if(returnMode==BarEraserClearReturnMode::Shape)ChangeStateModeToShape();
 			// 最近一次是橡皮时保持当前橡皮模式；只在命令被接受后收起面板。
 			Close(owner);
-			owner.UpdateRendering();return;
+			owner.UpdateRendering();return true;
 		}
 	}
 	else if(IsSize(item))SetGlobalEraserPreference(static_cast<int>(BaseSizePresets[item-1]));
 	else if(item==4)SetGlobalEraserPreference(-1,-1,GetAutomaticState(EraserPreferencesSnapshot())!=AutomaticState::On);
-	else if(item==5){if(owner.TryBeginToggle(BarToggleChannel::EraserSensitivity))owner.barState.eraserSensitivityOpen=!owner.barState.eraserSensitivityOpen;}
+	else if(item==5){performed=owner.TryBeginToggle(BarToggleChannel::EraserSensitivity);if(performed)owner.barState.eraserSensitivityOpen=!owner.barState.eraserSensitivityOpen;}
 	else if(item>=6 && item<=8)SetGlobalEraserPreference(-1,item-6);
 	owner.UpdateRendering(false);
+	return performed;
 }
 bool BarEraserAttributePanel::ResetPointerFeedback()
 {
@@ -502,8 +504,9 @@ bool BarEraserAttributePanel::ResetPointerFeedback()
 	hovered_=-1;pressed_=-1;
 	return changed;
 }
-bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& message,bool cancelled,bool contactPointer)
+bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& message,bool cancelled,bool contactPointer,bool* accepted)
 {
+	if(accepted)*accepted=false;
 	const auto f=PresentationSnapshot();
 	if(cancelled){const bool owned=ResetPointerFeedback();if(owned)owner.UpdateRendering(false);return owned;}
 	if(!f.panelVisible && pressed_<0)return false;
@@ -555,7 +558,7 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 		pressed_=-1;
 		// 同一整体按钮内跨区释放，仍执行Down时的动作，不改成另一命令。
 		const int action=ResolveEraserAttributeRelease(pressed,hit,inside,cancelled);
-		if(action>=0 && owner.barState.eraserAttribute)Execute(owner,action);
+		if(action>=0 && owner.barState.eraserAttribute){const bool performed=Execute(owner,action);if(accepted)*accepted=performed;}
 		if(contactPointer)ResetPointerFeedback();
 		if(pressed>=0 || contactPointer)owner.UpdateRendering(false);return inside || pressed>=0;
 	}

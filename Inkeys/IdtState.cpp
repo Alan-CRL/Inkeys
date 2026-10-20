@@ -138,6 +138,8 @@ namespace
 	};
 
 	std::atomic_bool whiteboardDesired = false;
+	// 偶数属于可返回的 PPT 意图；奇数先于 desired 发布，封住进入白板时的并发准入缝隙。
+	std::atomic_uint64_t whiteboardInputEpoch = 2;
 	std::atomic_bool whiteboardPreviousRequested = false;
 	std::atomic_bool whiteboardNextRequested = false;
 	std::atomic<WhiteboardPhase> whiteboardPhase = WhiteboardPhase::Inactive;
@@ -840,6 +842,8 @@ void RequestWhiteboardActive(bool active) noexcept
 		else if (whiteboardDesired.load(std::memory_order_acquire))
 			// 保存发起返回时的场次；离场途中结束/重开不能借此聚焦新放映。
 			whiteboardReturnFocus.Begin(Inkeys::Business::CapturePptFocusRequest());
+		if(whiteboardDesired.load(std::memory_order_acquire)!=active)
+			whiteboardInputEpoch.fetch_add(1,std::memory_order_acq_rel);
 		whiteboardDesired.store(active, std::memory_order_release);
 	}
 	if (!active)
@@ -868,6 +872,12 @@ bool WhiteboardTransactionActive() noexcept
 		(whiteboardDesired.load(std::memory_order_acquire) ||
 		whiteboardPhase.load(std::memory_order_acquire) !=
 		WhiteboardPhase::Inactive);
+}
+
+std::uint64_t PptInputWorkspaceEpoch() noexcept
+{
+	const auto epoch=whiteboardInputEpoch.load(std::memory_order_acquire);
+	return (epoch&1U)==0 && !WhiteboardTransactionActive() ? epoch : 0;
 }
 
 void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept
@@ -1248,9 +1258,9 @@ bool ToggleClickThroughFromButton()
 	return ChangeStateModeToClickThroughImpl(true);
 }
 
-void ToggleFreezeFromButton()
+bool ToggleFreezeFromButton()
 {
-	if (!Inkeys::UI::Freeze::IsAvailable()) return;
+	if (!Inkeys::UI::Freeze::IsAvailable()) return false;
 	bool restored = false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
@@ -1268,8 +1278,11 @@ void ToggleFreezeFromButton()
 	if (restored) SyncDraw3State();
 	const bool wasActive = Inkeys::UI::Freeze::IsActive();
 	Inkeys::UI::Freeze::Toggle();
-	if (!wasActive && Inkeys::UI::Freeze::IsActive())
+	const bool isActive = Inkeys::UI::Freeze::IsActive();
+	if (!wasActive && isActive)
 		(void)Inkeys::Window::GetService().RequestTopmostRefresh();
+	// 按下后工作区可能使冻结不可用，仅为真正生效的按钮动作确认反馈。
+	return wasActive != isActive;
 }
 
 bool ChangeStateModeToSelection()
@@ -1537,6 +1550,7 @@ int RunStateModeProductionTest() noexcept
 
 		stage = "ppt-focus-business";
 		require(RunPptFocusProductionTest() == 0, "ppt-focus-business-dispatch");
+		{std::scoped_lock lock(whiteboardReturnFocusMutex);whiteboardReturnFocus.Reset();}
 		{
 			const Inkeys::Business::PptFocusRequest expected{
 				{ 1, 2, 3, 4, 5, 6, true, true, 7 }, { 11, 12 } };
@@ -1878,7 +1892,7 @@ int RunStateModeProductionTest() noexcept
 		Inkeys::UI::Freeze::SetPresentationActive(true);
 		require(ChangeStateModeToClickThrough(), "ppt-clickthrough-still-available");
 		const auto pptClickthrough = GetStateModeVersionedSnapshot();
-		ToggleFreezeFromButton();
+		require(!ToggleFreezeFromButton(), "ppt-freeze-unavailable-rejects-button-feedback");
 		require(StateModeTransitionRevision() == pptClickthrough.revision &&
 			!Inkeys::UI::Freeze::IsActive(), "ppt-freeze-unavailable-no-tool-change");
 		require(ToggleClickThroughFromButton() && !bridge.Snapshot().selectionMode &&

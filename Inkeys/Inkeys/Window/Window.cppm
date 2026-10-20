@@ -80,6 +80,16 @@ export namespace Inkeys::Window
 			|| before.clearExStyle != after.clearExStyle;
 	}
 
+	// 系统关闭只请求业务退出，不能销毁仍承载其他覆盖层的白板锚点。
+	[[nodiscard]] inline bool DispatchWhiteboardCloseRequest(bool managedAnchor, bool whiteboardActive,
+		const std::function<void()>& closeRequested) noexcept
+	{
+		if (!managedAnchor || (!whiteboardActive && !closeRequested)) return false;
+		try { if (whiteboardActive && closeRequested) closeRequested(); }
+		catch (...) {} // 回调异常或未安装也保留共享 HWND，不能落入 DestroyWindow。
+		return true;
+	}
+
 	struct WindowSpec
 	{
 		WindowRole role = WindowRole::Bar;
@@ -108,6 +118,7 @@ export namespace Inkeys::Window
 		// Freeze owner 线程调用业务策略与非阻塞渲染唤醒，窗口层不依赖 UI 模块。
 		std::function<bool()> whiteboardMinimizeAllowed;
 		std::function<void()> whiteboardMinimizedChanged;
+		std::function<void()> whiteboardCloseRequested;
 	};
 
 	class Service
@@ -160,6 +171,8 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool LeaveWhiteboardWindowMode();
 		[[nodiscard]] bool WhiteboardWindowMode() const noexcept;
 		[[nodiscard]] bool WhiteboardWindowGroupMinimized() const noexcept;
+		// 仅由匹配的 Freeze owner WndProc 调用，不跨线程执行退出回调。
+		[[nodiscard]] bool DispatchWhiteboardClose(HWND hwnd) noexcept;
 		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
 		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
 		[[nodiscard]] bool CancelPointerCapture();

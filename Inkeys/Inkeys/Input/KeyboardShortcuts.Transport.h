@@ -11,8 +11,8 @@ namespace Inkeys::Input::KeyboardShortcuts::Transport
 	static_assert(std::atomic_uint64_t::is_always_lock_free);
 	static_assert(std::atomic_size_t::is_always_lock_free);
 	inline constexpr std::uint32_t OwnerLeaseMilliseconds = 250;
-	inline constexpr std::array<unsigned, 12> BootstrapKeys{
-		0xa0U, 0xa1U, 0xa2U, 0xa3U, 0xa4U, 0xa5U, 0x5bU, 0x5cU, 'Z', 'Y', 'Q', 0x2eU };
+	inline constexpr std::array<unsigned, 13> BootstrapKeys{
+		0xa0U, 0xa1U, 0xa2U, 0xa3U, 0xa4U, 0xa5U, 0x5bU, 0x5cU, 'Z', 'Y', 'Q', 0x2eU, 0x1bU };
 	// 同 tick 的新消息宁可舍弃，也不能把配置切换前的全局动作重新认领。
 	[[nodiscard]] constexpr bool HotkeyAfterConfiguration(std::uint32_t eventTime, std::uint32_t configuredAt) noexcept
 	{ return static_cast<std::int32_t>(eventTime - configuredAt) > 0; }
@@ -61,7 +61,8 @@ namespace Inkeys::Input::KeyboardShortcuts::Transport
 			foreground.store(value.foreground, std::memory_order_relaxed);
 			heartbeat.store(value.heartbeatTick, std::memory_order_relaxed);
 			flags.store((value.annotation ? 1U : 0U) | (value.textInput ? 2U : 0U)
-				| (value.modal ? 4U : 0U) | (value.businessReady ? 8U : 0U), std::memory_order_relaxed);
+				| (value.modal ? 4U : 0U) | (value.businessReady ? 8U : 0U)
+				| (value.whiteboardMenuInput ? 16U : 0U), std::memory_order_relaxed);
 			serial.fetch_add(1, std::memory_order_release);
 		}
 		[[nodiscard]] bool TryRead(RouteSnapshot& value) const noexcept
@@ -79,6 +80,7 @@ namespace Inkeys::Input::KeyboardShortcuts::Transport
 			value.textInput = (bits & 2U) != 0;
 			value.modal = (bits & 4U) != 0;
 			value.businessReady = (bits & 8U) != 0;
+			value.whiteboardMenuInput = (bits & 16U) != 0;
 			std::atomic_thread_fence(std::memory_order_acquire);
 			return before == serial.load(std::memory_order_acquire);
 		}
@@ -154,6 +156,7 @@ namespace Inkeys::Input::KeyboardShortcuts::Transport
 			intent.gestureGeneration = gesture;
 			intent.interruptionGeneration = interruption;
 			intent.repeat = repeat;
+			intent.whiteboardMenuEpoch = route.whiteboardMenuEpoch;
 			return intent;
 		}
 	public:
@@ -226,6 +229,18 @@ namespace Inkeys::Input::KeyboardShortcuts::Transport
 			}
 			// Delete 本身不退休同 Ctrl 会话的首击，其它真实终键会退休候选。
 			if (key != 0x2e) { ++gesture; ++interruption; }
+			// Escape 只认领本次新按压；菜单关闭后，已 Owned 的 repeat/Up 仍由上方分支消费。
+			if (key == 0x1b)
+			{
+				if (!wasKnown || !trusted || !fresh || !route.whiteboardMenuInput
+					|| !route.whiteboardMenuEpoch || route.textInput) return result;
+				for (const unsigned modifier : { 0xa0U, 0xa1U, 0xa2U, 0xa3U, 0xa4U, 0xa5U, 0x5bU, 0x5cU })
+					if (keys[modifier].down || injectedModifiers[modifier]) return result;
+				press.owned = true; press.command = Command::DismissWhiteboardMenu;
+				result.consume = result.submit = true;
+				result.intent = MakeIntent(press.command, route, config, service, press.id, false);
+				return result;
+			}
 			Command command;
 			if (!wasKnown || !trusted || !route.annotation || route.textInput || route.modal
 				|| !Match(key, command) || (enabled & Flag(command)) == 0) return result;
@@ -259,6 +274,7 @@ namespace Inkeys::Input::KeyboardShortcuts::Transport
 		SpscRing<Intent, 256> intents;
 		Matcher matcher;
 		RouteSnapshot lastRoute;
+		std::atomic_uint64_t whiteboardMenuEpoch = 0;
 		std::atomic_uint64_t gestureSerial = 0, gestureSession = 0, gestureRevision = 0, interruptionRevision = 0;
 		std::atomic_bool controlDown = false, synchronized = false;
 		std::atomic_uint64_t submitted = 0, dropped = 0, consumed = 0, paused = 0;
@@ -311,6 +327,8 @@ namespace Inkeys::Input::KeyboardShortcuts::Transport
 		}
 		[[nodiscard]] bool Synchronized() const noexcept { return synchronized.load(std::memory_order_acquire); }
 		void PublishRoute(const RouteSnapshot& route) noexcept { routes.Publish(route); }
+		void PublishWhiteboardMenuEpoch(std::uint64_t epoch) noexcept
+		{ whiteboardMenuEpoch.store(epoch, std::memory_order_release); }
 		[[nodiscard]] bool TryPop(Intent& intent) noexcept { return intents.TryPop(intent); }
 		[[nodiscard]] bool HandleKey(const KeyEvent& event, std::uint64_t foreground, std::uint32_t now,
 			std::uint32_t enabled, std::uint64_t config, std::uint64_t service) noexcept
@@ -319,6 +337,7 @@ namespace Inkeys::Input::KeyboardShortcuts::Transport
 			bool fresh = false;
 			const bool trusted = ReadRoute(route, foreground, now, fresh);
 			if (!trusted) route.foreground = foreground;
+			route.whiteboardMenuEpoch = whiteboardMenuEpoch.load(std::memory_order_acquire);
 			const auto decision = matcher.Handle(event, route, trusted, fresh, enabled, config, service);
 			PublishGesture();
 			Submit(decision);

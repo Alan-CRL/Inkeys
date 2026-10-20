@@ -58,6 +58,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include <io.h>
 
 #include "IdtConfiguration.h"
+#include "Inkeys/Drawing/Draw3/Draw3.HapticDiagnostics.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtFreezeFrame.h"
@@ -651,6 +652,41 @@ namespace
 					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
 				{
 					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
+					return 1;
+				}
+			}
+			stage = "whiteboard theme preference";
+			Inkeys::Config themeConfig;
+			if (!themeConfig.SetWhiteboardThemeDefault(0xE5E7EB,2) || !themeConfig.Write()) return 1;
+			Inkeys::Config restartedTheme;
+			if (!restartedTheme.ReadAll()) return 1;
+			const auto rememberedTheme=restartedTheme.Drawing.Whiteboard.DefaultTheme.load();
+			if (rememberedTheme.backgroundRgb!=0xE5E7EB || rememberedTheme.pattern!=2 ||
+				Inkeys::Drawing::Draw3::RunWhiteboardThemePreferenceProductionTest({rememberedTheme.backgroundRgb,
+					static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(rememberedTheme.pattern)})!=0)
+			{
+				std::fputs("[ConfigBoundary] FAIL: persisted theme did not initialize a fresh whiteboard Controller\n",stderr);
+				return 1;
+			}
+			stage = "pen haptic configuration";
+			Inkeys::Config hapticDefaults;
+			if (!hapticDefaults.Drawing.Haptics.Drawing || !hapticDefaults.Drawing.Haptics.Buttons ||
+				!writeBytes(mainConfig, "{}") || !hapticDefaults.ReadAll() ||
+				!hapticDefaults.Drawing.Haptics.Drawing || !hapticDefaults.Drawing.Haptics.Buttons)
+			{
+				std::fputs("[ConfigBoundary] FAIL: pen haptic defaults were not enabled\n", stderr);
+				return 1;
+			}
+			for (const bool drawing : { false, true }) for (const bool buttons : { false, true })
+			{
+				hapticDefaults.Drawing.Haptics.Drawing = drawing;
+				hapticDefaults.Drawing.Haptics.Buttons = buttons;
+				Inkeys::Config restoredHaptics;
+				if (!hapticDefaults.Write() || !restoredHaptics.ReadAll() ||
+					restoredHaptics.Drawing.Haptics.Drawing.load() != drawing ||
+					restoredHaptics.Drawing.Haptics.Buttons.load() != buttons)
+				{
+					std::fputs("[ConfigBoundary] FAIL: independent pen haptic preferences did not round-trip\n", stderr);
 					return 1;
 				}
 			}
@@ -2822,6 +2858,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
 			InitializeEraserInputPreferences();
+			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
+				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
 				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
 			{
@@ -2851,8 +2889,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 			cursorConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.Cursor || win7DiagnosticsEnabled;
+			Inkeys::Drawing::Draw3::HapticDiagnostics::SetEnabled(
+				config.Experimental.Inkeys3.ConsoleOutput.Haptics);
 			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
-				cursorConsoleOutputEnabled)
+				cursorConsoleOutputEnabled || Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled())
 			{
 				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
@@ -3307,6 +3347,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					spec.largeIcon = applicationIcon;
 					spec.smallIcon = applicationIcon;
 					spec.whiteboardMinimizeAllowed = [] { return !Inkeys::UI::Bar::PptPresentationActive(); };
+					spec.whiteboardCloseRequested = [] { RequestWhiteboardActive(false); };
 					spec.whiteboardMinimizedChanged = []
 					{
 						Inkeys::UI::PageControl::NotifyLayoutChanged();
@@ -3457,6 +3498,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 		draw3StartOptions.enableZhaoxinCompatibility =
 			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
+		const auto whiteboardDefault = config.Drawing.Whiteboard.DefaultTheme.load();
+		draw3StartOptions.whiteboardDefaultTheme = { whiteboardDefault.backgroundRgb,
+			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
@@ -3500,6 +3544,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			[](void*, const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& accepted) noexcept
 			{
 				Inkeys::UI::Bar::NotifyCanvasStrokeAccepted(accepted);
+			},
+			[](void*, Inkeys::Drawing::Draw3::WhiteboardTheme theme) noexcept
+			{
+				if (config.SetWhiteboardThemeDefault(theme.backgroundRgb, static_cast<std::uint32_t>(theme.pattern)))
+					Inkeys::UI::Setting::RequestConfigWrite(); // 仅冻结载荷入已有 FIFO，不在绘制线程执行文件 I/O。
 			}
 		};
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,
@@ -3734,9 +3783,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
 	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
 	Inkeys::UI::StartupPreview::Stop();
-	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
 	if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
-	Inkeys::UI::Setting::Shutdown();
 	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
 	if (freezeFrameThread.joinable()) freezeFrameThread.join();
 	if (stateMonitoringThread.joinable()) stateMonitoringThread.join();
@@ -3745,6 +3792,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (topWindowThread.joinable()) topWindowThread.join();
 	// 先停止 Draw3 设备/RTS，再由 Window Service 销毁其拥有的 Drawpad HWND。
 	Inkeys::Drawing::Draw3::StopProduct();
+	// 先停止主题变更生产者，再排空最后的配置 FIFO；窗口服务/渲染管线仍在，供 Setting 完成释放。
+	Inkeys::UI::Setting::Shutdown();
 	Inkeys::Window::GetService().StopAndJoin();
 	Inkeys::UI::RenderPipeline::Shutdown();
 	displaySubscription.Reset();

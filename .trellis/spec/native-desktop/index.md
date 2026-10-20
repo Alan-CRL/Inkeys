@@ -19,6 +19,7 @@
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [canvas-freeze-boundaries.md](canvas-freeze-boundaries.md)：Draw3 标准流隔离、PPT IoError 有限重试、橡皮 idle Move 握手与 Setting 隐藏输入会话。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
+- [pen-haptics.md](pen-haptics.md)：笔触觉 Host 注入、设备绑定、UI3 接触凭据、失败回退与无窗口验证合同。
 - [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。
 - [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
 - [eraser-attributes.md](eraser-attributes.md)：UI3橡皮属性、全局尺寸/灵敏度、五入口事务及Clear回撤/重做合同。

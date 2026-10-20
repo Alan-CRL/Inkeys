@@ -368,6 +368,7 @@ namespace
 	};
 
 	SettingBusinessQueue settingBusinessQueue;
+	mutex configWriteQueueMutex;
 	thread_local bool settingRenderingOnCurrentThread = false;
 
 	struct SettingRenderScope
@@ -443,6 +444,8 @@ namespace
 
 	void QueueConfigWrite()
 	{
+		// 设置渲染与 Draw3 都会提交：捕获到入队保持同序，避免旧主题快照后入队覆盖新值。
+		lock_guard lock(configWriteQueueMutex);
 		QueueBusiness({ SettingBusinessKind::WriteConfig });
 	}
 
@@ -1382,6 +1385,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				bool HapticsConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Haptics;
 				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
 			}Inkeys3;
 		}Experimental;
@@ -4320,6 +4324,43 @@ SettingSessionCoroutine RunSettingSession()
 						while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						ImGui::EndChild();
 						ImGui::EndChild();
+					}
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.6f;
+						ImGui::PushFont(ImFontMain);
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Haptics.N).c_str());
+						ImGui::PopFont();
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("笔震动反馈", { settingItemWidth * settingGlobalScale,120.0f * settingGlobalScale },
+							true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale = 0.6f;
+						ImGui::PushFont(ImFontMain);
+						const auto hapticRow = [&](const char* id, const string& label, IdtAtomic<bool>& preference, float rowY)
+						{
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, rowY * settingGlobalScale });
+							ImGui::TextUnformatted(label.c_str());
+							bool enabled = preference;
+							ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, rowY * settingGlobalScale });
+							Widgets::toggle.ToggleBool(id, &enabled);
+							if (enabled != preference.load())
+							{
+								// 写盘复用配置队列；运行时只发布期望，由绘制 owner 操作触觉设备。
+								preference = enabled;
+								auto& saved = Inkeys::config.Drawing.Haptics;
+								Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(saved.Drawing, saved.Buttons);
+								QueueConfigWrite();
+							}
+						};
+						hapticRow("##绘制时震动反馈", IA(I18nKey.SettingsUI.Draw.Haptics.Drawing), Inkeys::config.Drawing.Haptics.Drawing, 20.0f);
+						hapticRow("##按钮震动反馈", IA(I18nKey.SettingsUI.Draw.Haptics.Buttons), Inkeys::config.Drawing.Haptics.Buttons, 75.0f);
+						ImGui::PopFont();
+						ImGui::EndChild();
+						ImGui::PopStyleColor();
+						ImGui::PopStyleVar(2);
 					}
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
@@ -7923,7 +7964,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
-						inkeys3PanelHeight += 530.0f;
+						inkeys3PanelHeight += 605.0f;
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -7996,6 +8037,15 @@ SettingSessionCoroutine RunSettingSession()
 										Experimental.Inkeys3.Draw3ConsoleOutput;
 									QueueConfigWrite();
 								});
+							drawConsoleOutput("测试触控反馈",
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Haptics.N),
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Haptics.E),
+								Experimental.Inkeys3.HapticsConsoleOutput, [&]
+								{
+								// 与其他控制台诊断一致，保存配置后由下次启动统一创建控制台。
+									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Haptics = Experimental.Inkeys3.HapticsConsoleOutput;
+									QueueConfigWrite();
+							});
 							drawConsoleOutput("光标调试信息",
 								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N),
 								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E),

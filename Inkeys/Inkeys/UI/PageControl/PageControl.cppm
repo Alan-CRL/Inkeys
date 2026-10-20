@@ -1455,7 +1455,8 @@ export namespace Inkeys::UI::PageControl
 	void DrainLocalWheel() noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;
 	void NotifyLayoutChanged() noexcept;
-	bool RequestWhiteboardMenuDismiss() noexcept;
+	[[nodiscard]] std::uint64_t WhiteboardMenuEpoch() noexcept;
+	bool RequestWhiteboardMenuDismiss(std::uint64_t expectedEpoch = 0, std::uintptr_t expectedForeground = 0) noexcept;
 	void CancelPointerCapture() noexcept;
 	struct OffscreenSnapshot
 	{

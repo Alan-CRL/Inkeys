@@ -14,6 +14,7 @@
 #include <string>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
@@ -64,6 +65,7 @@ export namespace Inkeys::Drawing::Draw3
 	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
 	int RunDraw3ContentProofProductionProbe() noexcept;
 	int RunWhiteboardStorageProductionTest() noexcept;
+	int RunWhiteboardThemePreferenceProductionTest(WhiteboardTheme) noexcept;
 
 	struct DrawingControllerRuntimeObserver
 	{
@@ -98,6 +100,8 @@ export namespace Inkeys::Drawing::Draw3
 		Shortcuts::Result (*shortcutCommandAllowed)(void*, const Shortcuts::Request&,
 			const Shortcuts::Context&) noexcept = nullptr;
 		void (*shortcutCompleted)(void*, std::uint64_t, Shortcuts::Result) noexcept = nullptr;
+		WhiteboardTheme whiteboardDefaultTheme;
+		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。
@@ -107,7 +111,8 @@ export namespace Inkeys::Drawing::Draw3
 		DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 			DrawingControllerRuntimeObserver observer = {},
-			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr);
+			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr,
+			Haptics::ClickMailbox* hapticClicks = nullptr);
 		~DrawingController();
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
@@ -115,6 +120,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 控制倒转 Pen 是否在画笔/荧光笔下临时作为橡皮；只影响之后开始的笔画。
 		void SetInvertedPenEraserEnabled(bool enabled) noexcept;
 		bool GetInvertedPenEraserEnabled() const noexcept;
+		void SetDrawingHapticsEnabled(bool enabled) noexcept { drawingHapticsEnabled_ = enabled; }
 		// 即时控制 Touch 断触修正；关闭时已有候选会立即按正常 Up 收尾。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
 		bool GetInterruptedStrokeReconnectEnabled() const noexcept;
@@ -180,7 +186,9 @@ export namespace Inkeys::Drawing::Draw3
 		RuntimeMetricsSession* metrics_ = nullptr;
 		std::unique_ptr<DrawingControllerMetricsState> metricsState_;
 		bool metricsUnavailable_ = false;
+		bool drawingHapticsEnabled_ = true; // 仅绘制 owner 读写。
 		PenHapticFeedback* haptics_ = nullptr;
+		Haptics::ClickMailbox* hapticClicks_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;
 		bool graphicsRecoveryPending_ = false;

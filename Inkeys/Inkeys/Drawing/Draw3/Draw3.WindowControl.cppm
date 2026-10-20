@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -11,6 +12,7 @@
 #include <mutex>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.MouseInput.h"
@@ -241,8 +243,15 @@ export namespace Inkeys::Drawing::Draw3
 		void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept override;
 		void ClearPenCursorSample() noexcept override;
 		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
-		bool ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint);
+		bool ConsumeHapticPointer(Haptics::CanvasPointerRequest& request);
 		bool ConsumeHapticPointerLeave();
+		std::uint64_t HapticPointerRevision() const noexcept { return hapticPointers_.Revision(); }
+		void ResetHapticPointer() noexcept { hapticPointers_.Reset(); }
+		bool BeginHapticContact(uint32_t cursor, uint32_t contact, uint64_t generation, bool trusted, bool anotherPen, const char** reason, uint32_t context, uint64_t sourceGeneration) noexcept
+		{ return hapticPointers_.Begin(cursor, contact, generation, trusted, anotherPen, reason, context, sourceGeneration); }
+		bool EndHapticContact(uint32_t contact, uint64_t generation, bool cancelled, uint32_t context) noexcept
+		{ return hapticPointers_.End(contact, generation, cancelled, context); }
+		bool HapticSurfaceVisible() const noexcept { return hapticSurfaceVisible_.load(std::memory_order_acquire); }
 		// 返回主循环是否应该退出。
 		bool ExitRequested() const;
 
@@ -306,10 +315,19 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> gpuTransparentComposition_ = false;
 		std::atomic<int> pendingResizeWidth_ = 0;
 		std::atomic<int> pendingResizeHeight_ = 0;
-		std::atomic<uint32_t> pendingHapticPointerId_ = 0;
-		std::atomic<bool> pendingHapticPointerEraser_ = false;
-		std::atomic<bool> hapticPointerIdRequested_ = false;
-		std::atomic<bool> hapticPointerLeaveRequested_ = false;
+		void RequestHapticPointerLeave() noexcept;
+		Haptics::CanvasPointerMailbox hapticPointers_;
+		// 仅窗口线程在诊断启用时更新；重复拒绝的 Update 不逐帧输出。
+		struct HapticIngressDiagnostic
+		{
+			bool known = false;
+			uint32_t pointerId = 0, state = 0;
+			uint64_t revision = 0;
+			const char* reason = "none";
+		};
+		std::array<HapticIngressDiagnostic, 8> hapticIngressDiagnostics_{};
+		uint64_t hapticIngressUpdatesOmitted_ = 0;
+		std::atomic_bool hapticSurfaceVisible_ = false;
 		std::atomic<bool> touchPanActive_ = false;
 		std::atomic<bool> realMouseTakeoverDuringTouchPan_ = false;
 		std::atomic<bool> penContactSuppressedForTouchPan_ = false;
@@ -375,10 +393,7 @@ export namespace Inkeys::Drawing::Draw3
 		HWND lastCursorSystemDiagnosticHit_ = nullptr;
 		bool lastCursorSystemDiagnosticApplied_ = false;
 		bool cursorSystemDiagnosticKnown_ = false;
-		uint32_t lastHapticPenInfoPointerId_ = 0;
 		std::atomic<uint32_t> suppressedPenPointerId_ = 0;
-		bool lastHapticPenInfoKnown_ = false;
-		bool lastHapticPenInfoEraser_ = false;
 		bool trackingMouseLeave_ = false;
 		std::atomic<uint64_t> mouseCanvasExitRevision_ = 0;
 	};

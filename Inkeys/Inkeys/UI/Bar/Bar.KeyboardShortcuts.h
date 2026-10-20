@@ -21,6 +21,10 @@ namespace
 		{ return ShortcutCanvas::AcquireProductShortcutLease(expected, content); }
 		static void Release(std::uint64_t id) { ShortcutCanvas::ReleaseProductShortcutLease(id); }
 		static auto Gesture() { return Keyboard::GetGestureState(); }
+		static auto MenuEpoch() { return Inkeys::UI::PageControl::WhiteboardMenuEpoch(); }
+		static bool DismissMenu(std::uint64_t epoch, std::uint64_t expectedForeground)
+		{ return Inkeys::UI::PageControl::RequestWhiteboardMenuDismiss(epoch, static_cast<std::uintptr_t>(expectedForeground)); }
+		static auto Foreground() { return reinterpret_cast<std::uint64_t>(GetForegroundWindow()); }
 		static void UpdateUi()
 		{
 			barUISet.CollapseAuxiliaryPanels(true);
@@ -51,7 +55,7 @@ namespace
 		std::uint64_t scene = 1, generation = 1, ownRevision = 0;
 		std::uint64_t chainSourceRevision = 0;
 		std::uint64_t foreground = 0, configGeneration = 0, lifecycle = 0;
-		bool textInput = false, modal = false, initialized = false;
+		bool textInput = false, modal = false, initialized = false, whiteboardMenuInput = false;
 		std::uint64_t queueDropped = 0, reportedInputDrops = 0, reportedOwnerDrops = 0;
 		std::uint32_t lastDropReportTick = 0;
 
@@ -84,6 +88,13 @@ namespace
 			const auto revision = StateModeTransitionRevision();
 			return intent.modeRevision == revision || (allowToggleChain && chainSourceRevision &&
 				intent.modeRevision == chainSourceRevision && ownRevision == revision);
+		}
+		bool CurrentMenu(const Keyboard::Intent& intent) const
+		{
+			return intent.command == Command::DismissWhiteboardMenu && whiteboardMenuInput && !textInput
+				&& intent.lifecycle == lifecycle && intent.serviceGeneration == lifecycle
+				&& intent.foreground == foreground && foreground == Backend::Foreground()
+				&& intent.whiteboardMenuEpoch && intent.whiteboardMenuEpoch == Backend::MenuEpoch();
 		}
 		bool SameDelete(const Keyboard::Intent& intent) const
 		{
@@ -249,6 +260,11 @@ namespace
 			for (unsigned i = 0; i < 16; ++i)
 			{
 				RefreshCanvas();
+				if(!queue.empty() && queue.front().command == Command::DismissWhiteboardMenu){
+					const auto dismiss=queue.front();queue.pop_front();
+					if(CurrentMenu(dismiss))(void)Backend::DismissMenu(dismiss.whiteboardMenuEpoch,dismiss.foreground);
+					continue;
+				}
 				// 两个 Down 已入队时先形成复合意图，再观察 Ctrl Up；松 Ctrl 不撤销已形成第二步。
 				if (pending.request && pending.firstDelete && !pending.select &&
 					!queue.empty() && SameDelete(queue.front()))
@@ -281,12 +297,14 @@ namespace
 			const auto next = Backend::Capture();
 			const auto status = Keyboard::GetStatus();
 			const auto mode = GetStateModeVersionedSnapshot();
-			const auto nextForeground = reinterpret_cast<std::uint64_t>(GetForegroundWindow());
+			const auto nextForeground = Backend::Foreground();
 			const HWND setting = Inkeys::Window::GetService().Handle(Inkeys::Window::WindowRole::Setting);
 			const HWND active = reinterpret_cast<HWND>(nextForeground);
 			const bool nextTextInput = setting && (active == setting || IsChild(setting, active));
-			const bool nextModal = offSignal || Inkeys::UI::MessageBox::IsShowing() ||
-				WhiteboardTransactionActive();
+			const bool hardModal = offSignal || Inkeys::UI::MessageBox::IsShowing();
+			const bool nextModal = hardModal || WhiteboardTransactionActive();
+			const bool nextWhiteboardMenuInput = !hardModal && !nextTextInput && ::WhiteboardActive()
+				&& !Inkeys::Window::GetService().WhiteboardWindowGroupMinimized();
 			const bool changedScene = initialized && next.scope != context.scope;
 			const bool changedRoute = initialized && (foreground != nextForeground ||
 				textInput != nextTextInput || modal != nextModal ||
@@ -302,16 +320,18 @@ namespace
 			foreground = nextForeground;
 			textInput = nextTextInput;
 			modal = nextModal;
+			whiteboardMenuInput = nextWhiteboardMenuInput;
 			configGeneration = status.configGeneration;
 			lifecycle = status.lifecycleGeneration;
 			ownRevision = mode.revision;
 			initialized = true;
 			Keyboard::PublishRoute({ lifecycle, mode.revision, scene, generation, foreground,
 				GetTickCount(), !IsComputerInteractionMode(mode.state.StateModeSelect), textInput,
-				modal, context.available && !offSignal });
+				modal, context.available && !offSignal, whiteboardMenuInput });
 			Keyboard::Intent intent;
 			for (unsigned i = 0; i < 16 && Keyboard::TryPop(intent); ++i)
-				if (Current(intent, intent.command == Command::ToggleAnnotation, false))
+				if (intent.command == Command::DismissWhiteboardMenu ? CurrentMenu(intent)
+					: Current(intent, intent.command == Command::ToggleAnnotation, false))
 				{
 					if (queue.size() < 128) queue.push_back(intent);
 					else ++queueDropped;
@@ -342,6 +362,8 @@ namespace
 		inline static std::uint64_t request = 0;
 		inline static unsigned clears = 0, undos = 0, redos = 0;
 		inline static bool pauseOnRelease = false;
+		inline static std::uint64_t menuEpoch = 0, foreground = 1;
+		inline static unsigned menuDismisses = 0;
 		static void Reset()
 		{
 			state.BeginHost();
@@ -354,6 +376,7 @@ namespace
 			request = 0;
 			clears = undos = redos = 0;
 			pauseOnRelease = false;
+			menuEpoch = menuDismisses = 0; foreground = 1;
 		}
 		static auto Capture() { return state.Snapshot(); }
 		static auto Publish(ShortcutCanvas::Bridge::CommandType type,
@@ -388,6 +411,10 @@ namespace
 			}
 		}
 		static auto Gesture() { return gesture; }
+		static auto MenuEpoch() { return menuEpoch; }
+		static auto Foreground() { return foreground; }
+		static bool DismissMenu(std::uint64_t epoch, std::uint64_t expectedForeground)
+		{ if(!epoch || epoch!=menuEpoch || expectedForeground!=foreground)return false;++menuDismisses;menuEpoch=0;return true; }
 		static void UpdateUi() {}
 		static void Finish(ShortcutCanvas::Shortcuts::Result result)
 		{
@@ -588,6 +615,23 @@ namespace
 				Backend::Finish(Result::Applied);
 				owner.Drain();
 				require(IsLaserToolActive() && !Backend::state.Lease(), "late-clear-does-not-select-new-page");
+			}
+			{
+				// 同一普通 owner 消费内部意图；白板的普通快捷键暂停不阻断菜单 Escape。
+				BarKeyboardShortcutOwner owner; seed(owner); owner.modal = true; owner.whiteboardMenuInput = true;
+				Backend::menuEpoch = 41;
+				auto dismiss=input(owner, Command::DismissWhiteboardMenu, 90);dismiss.whiteboardMenuEpoch=41;
+				owner.queue.push_back(dismiss); owner.Drain();
+				require(Backend::menuDismisses==1 && !Backend::menuEpoch,"menu-escape-drains-under-whiteboard-shortcut-pause");
+				Backend::menuEpoch=42;owner.queue.push_back(dismiss);owner.Drain();
+				require(Backend::menuDismisses==1 && Backend::menuEpoch==42,"menu-escape-rejects-reopened-instance");
+				dismiss.whiteboardMenuEpoch=42;
+				Backend::foreground=2;owner.queue.push_back(dismiss);owner.Drain();
+				require(Backend::menuDismisses==1,"menu-escape-rejects-foreground-switch-before-dispatch");
+				Backend::foreground=1;owner.whiteboardMenuInput=false;owner.queue.push_back(dismiss);owner.Drain();
+				require(Backend::menuDismisses==1,"menu-escape-rejects-real-modal-or-minimized-route");
+				owner.whiteboardMenuInput=true;++dismiss.serviceGeneration;owner.queue.push_back(dismiss);owner.Drain();
+				require(Backend::menuDismisses==1,"menu-escape-rejects-retired-service");
 			}
 			std::fputs("[ShortcutBusinessProduction] PASS: owner roundtrip, named clear, double Delete, leases, cancellation\n", stderr);
 			return 0;

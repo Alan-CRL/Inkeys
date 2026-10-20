@@ -38,20 +38,32 @@ namespace Inkeys::Drawing::Draw3
   std::uint64_t sequence = 0;
   std::thread thread;
 
-  bool PublishIndex(const std::filesystem::path& file)
+  bool PublishIndex(const std::filesystem::path& file) noexcept
   {
-   const auto temp = root / (L"current-" + std::to_wstring(sequence) + L".tmp");
-   const auto index = root / L"current";
-   HANDLE handle = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr,
-    CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-   if (handle == INVALID_HANDLE_VALUE) return false;
-   const auto name = file.filename().u8string();
-   DWORD written = 0;
-   const bool success = WriteFile(handle, name.data(), static_cast<DWORD>(name.size()), &written, nullptr)
-    && written == name.size() && FlushFileBuffers(handle);
-   CloseHandle(handle);
-   if (!success) return false;
-   return MoveFileExW(temp.c_str(), index.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+   try
+   {
+    const auto temp = root / (L"current-" + std::to_wstring(sequence) + L".tmp");
+    const auto index = root / L"current";
+    const auto name = file.filename().u8string();
+    // 持有 CREATE_NEW 句柄直至发布结束；失败只删除这个文件对象，不再按路径查找。
+    HANDLE handle = CreateFileW(temp.c_str(), GENERIC_WRITE | DELETE, FILE_SHARE_DELETE, nullptr,
+     CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return false;
+    DWORD written = 0;
+    const bool success = WriteFile(handle, name.data(), static_cast<DWORD>(name.size()), &written, nullptr)
+     && written == name.size() && FlushFileBuffers(handle);
+    const bool published = success && MoveFileExW(temp.c_str(), index.c_str(),
+     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+    if (!published)
+    {
+     FILE_DISPOSITION_INFO disposition{}; disposition.DeleteFile = TRUE;
+     if (!SetFileInformationByHandle(handle, FileDispositionInfo, &disposition, sizeof(disposition)))
+      DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Whiteboard.Store] temporary index cleanup failed; retaining owned file\n");
+    }
+    CloseHandle(handle);
+    return published;
+   }
+   catch (...) { return false; }
   }
   void Run()
   {
@@ -96,6 +108,9 @@ namespace Inkeys::Drawing::Draw3
         directory = std::move(saved.directory);
         result.success = true;
        }
+       else if (saved.directory && !draw3::uink::TryRemoveOwnedUInkPageFile(*saved.directory))
+        // 索引未发布的版本没有进入 current/backup；仅凭强 revision 清理本次孤儿版本。
+        DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Whiteboard.Store] uncommitted version cleanup failed; retaining owned file\n");
       }
      }
     }

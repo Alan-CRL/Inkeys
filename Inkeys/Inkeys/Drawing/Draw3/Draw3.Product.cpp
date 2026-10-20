@@ -1,5 +1,6 @@
 #include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Product.h"
+#include "Draw3.HapticDiagnostics.h"
 
 #include <atomic>
 #include <cstdio>
@@ -59,6 +60,36 @@ namespace Inkeys::Drawing::Draw3
 		return !productStopping.load(std::memory_order_acquire) && productHost.Running();
 	}
 
+	Haptics::Context ProductHapticContext() noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return {};
+		std::scoped_lock callLock(productCallMutex);
+		return productStopping.load(std::memory_order_acquire) ? Haptics::Context{} : productHost.HapticContext();
+	}
+
+	bool PublishProductHapticClick(const Haptics::Click& source) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) { HapticDiagnostics::Log("product", "click=drop reason=stopping"); return false; }
+		bool accepted = false;
+		const bool diagnostic = HapticDiagnostics::Enabled();
+		HostHapticClickDiagnostics diagnostics;
+		{
+			std::scoped_lock callLock(productCallMutex);
+			accepted = !productStopping.load(std::memory_order_acquire) &&
+				productHost.PublishHapticClick(source, diagnostic ? &diagnostics : nullptr);
+		}
+		// Host/Click mailbox 和产品生命周期锁均已退出，日志不能阻塞停止闸门。
+		if (diagnostic && !accepted && diagnostics.rejection)
+			HapticDiagnostics::Log("host_click", "reason=%s pointer=%u source_run=%llu source_revision=%llu host_run=%llu host_revision=%llu",
+				diagnostics.rejection, source ? source->pointerId : 0,
+				static_cast<unsigned long long>(source ? source->context.run : 0),
+				static_cast<unsigned long long>(source ? source->context.canvas : 0),
+				static_cast<unsigned long long>(diagnostics.context.run),
+				static_cast<unsigned long long>(diagnostics.context.canvas));
+		HapticDiagnostics::Log("product", "click=%s pointer=%u", accepted ? "published" : "dropped", source ? source->pointerId : 0);
+		return accepted;
+	}
+
 	bool ProductFirstFrameReady() noexcept
 	{
 		return !productStopping.load(std::memory_order_acquire) &&
@@ -90,6 +121,8 @@ namespace Inkeys::Drawing::Draw3
 			return productHost.ForwardMessage(window, message, wParam, lParam);
 		if (productStopping.load(std::memory_order_acquire))
 			return DefWindowProcW(window, message, wParam, lParam);
+		// 先声明日志 scope：正常返回/异常时都先释放生命周期锁，再输出诊断。
+		HapticDiagnostics::ProductMessageOutputScope diagnosticOutput;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire))
 			return DefWindowProcW(window, message, wParam, lParam);

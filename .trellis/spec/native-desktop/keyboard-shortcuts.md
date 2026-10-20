@@ -40,6 +40,7 @@
 | Ctrl+Delete | 一击Clear保留工具，即使空页也不进入Selection；同一持续Ctrl会话内第二独立Delete进入Selection |
 | Ctrl+Q | 批注且Freeze可用时切换；PPT/白板不可用不执行 |
 
+- 白板菜单 Escape 使用内部 DismissWhiteboardMenu 意图，不属于六个可配置开关。菜单 epoch 单独原子发布，LL 仅在可信前台/新鲜路由、无修饰且首次物理 Down 时锁定 Owned；repeat/Up 延续归属，注入不建立或清除物理票据。Bar owner 与 PageControl 实际消费分别复核菜单 epoch、生命周期、前台、真实 modal/设置焦点、白板切换与最小化；旧 Escape 不关闭重开的菜单，也不取消新接触。普通白板快捷键暂停不能禁用这一菜单退出路径；不能调用未编译的旧键盘 hook。
 - 普通五组合按真实 Pen/Shape/Eraser 批注状态归属，空页/栏收起不改变；Selection/ClickThrough放行。设置实际获得键盘焦点与模态输入优先，不能仅因设置后台可见禁用快捷键。
 - 专用全局X在设置普通编辑仍生效；模态/退出期间暂停业务但系统组合仍保留。AltGr可能与Ctrl+Alt重叠，不能后验模拟重放；提供独立关闭及准确说明。
 - 返回保留工具子型、Laser、宽色；退出只按捕获Freeze版本收尾，返回不恢复定格。全局X连续按压按owner合法顺序串行，不把同一旧快照重复解释为清空；前一失败退休其依赖切换。

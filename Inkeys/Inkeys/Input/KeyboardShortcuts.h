@@ -4,7 +4,7 @@
 
 namespace Inkeys::Input::KeyboardShortcuts
 {
-	enum class Command : unsigned char { ToggleAnnotation, Undo, RedoY, RedoShiftZ, Clear, Freeze };
+	enum class Command : unsigned char { ToggleAnnotation, Undo, RedoY, RedoShiftZ, Clear, Freeze, DismissWhiteboardMenu };
 	inline constexpr std::uint32_t AllEnabled = 0x3fU;
 	[[nodiscard]] constexpr std::uint32_t Flag(Command command) noexcept
 	{
@@ -18,6 +18,8 @@ namespace Inkeys::Input::KeyboardShortcuts
 		std::uint64_t contextGeneration = 0, foreground = 0;
 		std::uint32_t heartbeatTick = 0;
 		bool annotation = false, textInput = false, modal = false, businessReady = false;
+		bool whiteboardMenuInput = false;
+		std::uint64_t whiteboardMenuEpoch = 0;
 	};
 	struct Intent
 	{
@@ -27,6 +29,7 @@ namespace Inkeys::Input::KeyboardShortcuts
 		std::uint64_t configGeneration = 0, serviceGeneration = 0;
 		std::uint64_t pressId = 0, ctrlSessionId = 0, gestureGeneration = 0, interruptionGeneration = 0;
 		bool repeat = false;
+		std::uint64_t whiteboardMenuEpoch = 0;
 	};
 	struct GestureState
 	{
@@ -50,6 +53,8 @@ namespace Inkeys::Input::KeyboardShortcuts
 	[[nodiscard]] std::uint32_t GetEnabled() noexcept;
 	[[nodiscard]] Status GetStatus() noexcept;
 	void PublishRoute(const RouteSnapshot& route) noexcept;
+	// UI 在普通 owner 发布身份；LL 只读原子值，不能反向调用分页或窗口服务。
+	void PublishWhiteboardMenuEpoch(std::uint64_t epoch) noexcept;
 	[[nodiscard]] bool TryPop(Intent& intent) noexcept;
 	[[nodiscard]] GestureState GetGestureState() noexcept;
 }
