@@ -1188,9 +1188,9 @@ bool ToggleClickThroughFromButton()
 	return ChangeStateModeToClickThroughImpl(true);
 }
 
-void ToggleFreezeFromButton()
+bool ToggleFreezeFromButton()
 {
-	if (!Inkeys::UI::Freeze::IsAvailable()) return;
+	if (!Inkeys::UI::Freeze::IsAvailable()) return false;
 	bool restored = false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
@@ -1208,8 +1208,11 @@ void ToggleFreezeFromButton()
 	if (restored) SyncDraw3State();
 	const bool wasActive = Inkeys::UI::Freeze::IsActive();
 	Inkeys::UI::Freeze::Toggle();
-	if (!wasActive && Inkeys::UI::Freeze::IsActive())
+	const bool isActive = Inkeys::UI::Freeze::IsActive();
+	if (!wasActive && isActive)
 		(void)Inkeys::Window::GetService().RequestTopmostRefresh();
+	// 按下后工作区可能使冻结不可用，仅为真正生效的按钮动作确认反馈。
+	return wasActive != isActive;
 }
 
 bool ChangeStateModeToSelection()
@@ -1775,7 +1778,7 @@ int RunStateModeProductionTest() noexcept
 		Inkeys::UI::Freeze::SetPresentationActive(true);
 		require(ChangeStateModeToClickThrough(), "ppt-clickthrough-still-available");
 		const auto pptClickthrough = GetStateModeVersionedSnapshot();
-		ToggleFreezeFromButton();
+		require(!ToggleFreezeFromButton(), "ppt-freeze-unavailable-rejects-button-feedback");
 		require(StateModeTransitionRevision() == pptClickthrough.revision &&
 			!Inkeys::UI::Freeze::IsActive(), "ppt-freeze-unavailable-no-tool-change");
 		require(ToggleClickThroughFromButton() && !bridge.Snapshot().selectionMode &&

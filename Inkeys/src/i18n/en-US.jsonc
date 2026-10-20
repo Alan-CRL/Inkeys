@@ -427,6 +427,12 @@
     "Draw":
     {
       "N": "Drawing",
+      "Haptics":
+      {
+        "N": "Pen Haptic Feedback",
+        "Drawing": "Haptic Feedback While Drawing",
+        "Buttons": "Button Haptic Feedback"
+      },
       "Cursor":
       {
         "N": "Cursor",
@@ -517,6 +523,11 @@
       },
       "ConsoleOutput":
       {
+        "Haptics":
+        {
+          "N": "Test pen haptic feedback",
+          "E": "Restart the app after enabling to log pen input, button requests, and haptic device send results."
+        },
         "TouchArea":
         {
           "N": "Input and eraser diagnostics console output",

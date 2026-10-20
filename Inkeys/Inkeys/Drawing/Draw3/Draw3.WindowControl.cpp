@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <mutex>
@@ -21,6 +22,8 @@
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.HapticRequest.h"
+#include "Draw3.HapticDiagnostics.h"
 #include "Draw3.MouseInput.h"
 #include "../../Business/PenWidthPolicy.hpp"
 
@@ -159,12 +162,14 @@ namespace Inkeys::Drawing::Draw3
 			bool typeKnown = false;
 			POINTER_INPUT_TYPE type = PT_POINTER;
 			bool penInfoKnown = false;
+			uint32_t cursorId = 0;
 			bool positionKnown = false;
 			bool primaryKnown = false;
 			bool primary = false;
 			POINT screenPosition = {};
 			bool eraserHint = false;
 			bool inContact = false;
+			bool cancelled = false;
 		};
 
 		PointerDetails QueryPointerDetails(uint32_t pointerId) noexcept
@@ -196,6 +201,7 @@ namespace Inkeys::Drawing::Draw3
 					details.screenPosition = pointerInfo.ptPixelLocation;
 					details.primaryKnown = true;
 					details.primary = (pointerInfo.pointerFlags & POINTER_FLAG_PRIMARY) != 0;
+					details.cancelled = (pointerInfo.pointerFlags & POINTER_FLAG_CANCELED) != 0;
 				}
 			}
 			if (details.type != PT_PEN || !getPointerPenInfo) return details;
@@ -203,7 +209,17 @@ namespace Inkeys::Drawing::Draw3
 			POINTER_PEN_INFO penInfo = {};
 			if (!getPointerPenInfo(pointerId, &penInfo) ||
 				penInfo.pointerInfo.pointerType != PT_PEN) return details;
+			details.cancelled = (penInfo.pointerInfo.pointerFlags & POINTER_FLAG_CANCELED) != 0;
 			details.penInfoKnown = true;
+			// 只被动读取 tablet cursor；旧系统缺少 API 时仅省略触觉，不改输入或光标。
+			using GetPointerCursorIdFunction = BOOL(WINAPI*)(UINT32, UINT32*);
+			static const auto getPointerCursorId = []() noexcept
+			{
+				const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+				return user32 ? reinterpret_cast<GetPointerCursorIdFunction>(GetProcAddress(user32, "GetPointerCursorId")) : nullptr;
+			}();
+			UINT32 cursorId = 0;
+			if (getPointerCursorId && getPointerCursorId(pointerId, &cursorId)) details.cursorId = cursorId;
 			details.positionKnown = true;
 			details.screenPosition = penInfo.pointerInfo.ptPixelLocation;
 			details.eraserHint =
@@ -330,6 +346,8 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 		}
+		hapticSurfaceVisible_.store(IsWindowVisible(window) != FALSE, std::memory_order_release);
+		RequestHapticPointerLeave();
 		exitRequested_.store(false, std::memory_order_release);
 		resizeRequested_.store(false, std::memory_order_release);
 		fullPresentRequested_.store(false, std::memory_order_release);
@@ -368,6 +386,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// 先关闭新消息入口，再清理 HWND 属性和输入状态。
 		const bool wasAttached = externalWindow_.exchange(false, std::memory_order_acq_rel);
+		RequestHapticPointerLeave();
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
 			canvasCommands_.clear();
@@ -903,10 +922,7 @@ namespace Inkeys::Drawing::Draw3
 		if (active)
 		{
 			// Hover 可能已预启动触觉；Pan 期间保留 Pen presence，但隐藏应用光标。
-			hapticPointerIdRequested_.store(false, std::memory_order_release);
-			hapticPointerLeaveRequested_.store(true, std::memory_order_release);
-			pendingHapticPointerId_.store(0, std::memory_order_relaxed);
-			pendingHapticPointerEraser_.store(false, std::memory_order_relaxed);
+			RequestHapticPointerLeave();
 			if (penSample.valid && penSample.inContact)
 				SetPenContactSuppressedForTouchPan(true);
 		}
@@ -932,10 +948,7 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::SuppressPenContactForTouchPan() noexcept
 	{
 		SetPenContactSuppressedForTouchPan(true);
-		hapticPointerIdRequested_.store(false, std::memory_order_release);
-		hapticPointerLeaveRequested_.store(true, std::memory_order_release);
-		pendingHapticPointerId_.store(0, std::memory_order_relaxed);
-		pendingHapticPointerEraser_.store(false, std::memory_order_relaxed);
+		RequestHapticPointerLeave();
 		// Pen presence 独立保留，供兼容 Mouse 判断和 Pan 结束后的 owner 恢复。
 		RequestDrawingCursorRender();
 		QueueSystemCursorRefresh();
@@ -1020,8 +1033,7 @@ namespace Inkeys::Drawing::Draw3
 		#endif
 		if (suppressed)
 		{
-			hapticPointerIdRequested_.store(false, std::memory_order_release);
-			hapticPointerLeaveRequested_.store(true, std::memory_order_release);
+			RequestHapticPointerLeave();
 			RequestControlWake();
 		}
 		RequestDrawingCursorRender();
@@ -1225,12 +1237,10 @@ namespace Inkeys::Drawing::Draw3
 			std::memory_order_acquire);
 		const uint32_t suppressedPointerId = suppressedPenPointerId_.load(
 			std::memory_order_acquire);
-		const uint32_t pendingHapticPointerId = pendingHapticPointerId_.load(
-			std::memory_order_acquire);
-		const bool hapticPointerIdRequested = hapticPointerIdRequested_.load(
-			std::memory_order_acquire);
-		const bool hapticPointerLeaveRequested = hapticPointerLeaveRequested_.load(
-			std::memory_order_acquire);
+		const auto hapticState = hapticPointers_.Inspect();
+		const uint32_t pendingHapticPointerId = hapticState.pending.pointerId;
+		const bool hapticPointerIdRequested = pendingHapticPointerId != 0;
+		const bool hapticPointerLeaveRequested = hapticState.leave;
 		const bool selectionMode = SelectionMode();
 		const bool mouseUsesSystemCursor = selectionMode || mouseUsesSystemCursor_.load(
 			std::memory_order_acquire);
@@ -1425,12 +1435,10 @@ namespace Inkeys::Drawing::Draw3
 			decisionKey = decisionKey * 17u + (mouseUsesSystemCursor ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (touchPanActive ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (realMouseTakeover ? 1u : 0u);
-			decisionKey = decisionKey * 17u + pendingHapticPointerId_.load(
-				std::memory_order_acquire);
-			decisionKey = decisionKey * 17u + (hapticPointerIdRequested_.load(
-				std::memory_order_acquire) ? 1u : 0u);
-			decisionKey = decisionKey * 17u + (hapticPointerLeaveRequested_.load(
-				std::memory_order_acquire) ? 1u : 0u);
+			const auto hapticState = hapticPointers_.Inspect();
+			decisionKey = decisionKey * 17u + hapticState.pending.pointerId;
+			decisionKey = decisionKey * 17u + (hapticState.pending.pointerId ? 1u : 0u);
+			decisionKey = decisionKey * 17u + (hapticState.leave ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (hide ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (appVisualKnown ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (appVisual.visible ? 1u : 0u);
@@ -1462,9 +1470,9 @@ namespace Inkeys::Drawing::Draw3
 					penContactSuppressedForTouchPan_.load(
 						std::memory_order_acquire) ? 1u : 0u,
 					suppressedPenPointerId_.load(std::memory_order_acquire),
-					pendingHapticPointerId_.load(std::memory_order_acquire),
-					hapticPointerIdRequested_.load(std::memory_order_acquire) ? 1u : 0u,
-					hapticPointerLeaveRequested_.load(std::memory_order_acquire) ? 1u : 0u,
+					hapticState.pending.pointerId,
+					hapticState.pending.pointerId ? 1u : 0u,
+					hapticState.leave ? 1u : 0u,
 					penSample.valid ? 1u : 0u, penSample.inContact ? 1u : 0u,
 					penSample.inverted ? 1u : 0u,
 					mouseSample.valid ? 1u : 0u, mouseSample.inContact ? 1u : 0u,
@@ -1488,18 +1496,19 @@ namespace Inkeys::Drawing::Draw3
 #endif
 	}
 
-	bool WindowController::ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint)
+	bool WindowController::ConsumeHapticPointer(Haptics::CanvasPointerRequest& request)
 	{
-		if (!hapticPointerIdRequested_.exchange(false, std::memory_order_acquire))
-			return false;
-		pointerId = pendingHapticPointerId_.load(std::memory_order_relaxed);
-		eraserHint = pendingHapticPointerEraser_.load(std::memory_order_relaxed);
-		return pointerId != 0;
+		return hapticPointers_.Take(request);
 	}
 
 	bool WindowController::ConsumeHapticPointerLeave()
 	{
-		return hapticPointerLeaveRequested_.exchange(false, std::memory_order_acquire);
+		return hapticPointers_.TakeLeave();
+	}
+
+	void WindowController::RequestHapticPointerLeave() noexcept
+	{
+		ResetHapticPointer();
 	}
 
 	bool WindowController::ExitRequested() const
@@ -1604,6 +1613,20 @@ namespace Inkeys::Drawing::Draw3
 			// 与首触前的 property 使用同一策略，关闭系统触摸反馈并保留 RTS 多点。
 			return static_cast<LRESULT>(kTabletInputFlags);
 
+		case WM_POINTERCAPTURECHANGED:
+		case WM_CANCELMODE:
+			RequestHapticPointerLeave();
+			RequestControlWake();
+			if (HapticDiagnostics::Enabled())
+			{
+				hapticIngressDiagnostics_ = {};
+				HapticDiagnostics::Log("canvas_ingress", "message=%u reason=cancel_mode revision=%llu omitted_updates=%llu",
+					message, static_cast<unsigned long long>(HapticPointerRevision()),
+					static_cast<unsigned long long>(hapticIngressUpdatesOmitted_));
+				hapticIngressUpdatesOmitted_ = 0;
+			}
+			break;
+
 		case WM_POINTERLEAVE:
 		{
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
@@ -1644,11 +1667,18 @@ namespace Inkeys::Drawing::Draw3
 				realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire)));
 			if (penPointer)
 			{
-				lastHapticPenInfoPointerId_ = 0;
-				lastHapticPenInfoKnown_ = false;
-				lastHapticPenInfoEraser_ = false;
-				hapticPointerLeaveRequested_.store(true, std::memory_order_release);
+				RequestHapticPointerLeave();
 				RequestControlWake();
+			}
+			if (HapticDiagnostics::Enabled())
+			{
+				for (auto& diagnostic : hapticIngressDiagnostics_)
+					if (diagnostic.known && diagnostic.pointerId == pointerId) diagnostic.known = false;
+				HapticDiagnostics::Log("canvas_ingress", "message=%u pointer=%u type=%u known=%d reason=pointer_leave pen=%d revision=%llu time=%ld omitted_updates=%llu",
+					message, pointerId, static_cast<unsigned>(details.type), details.typeKnown, penPointer,
+					static_cast<unsigned long long>(HapticPointerRevision()), GetMessageTime(),
+					static_cast<unsigned long long>(hapticIngressUpdatesOmitted_));
+				hapticIngressUpdatesOmitted_ = 0;
 			}
 			RecordCursorDiagnostic("pointer-leave id=%u type=%u known=%u owner=%u suppressed=%u penValid=%u",
 				pointerId, static_cast<unsigned>(details.type), details.typeKnown ? 1u : 0u,
@@ -1756,25 +1786,79 @@ namespace Inkeys::Drawing::Draw3
 					PublishPenCursorSample(sample);
 				}
 			}
-			if ((message == WM_POINTERENTER || message == WM_POINTERDOWN) &&
-				pointerId != 0 && penPointer &&
-				!touchPanActive_.load(std::memory_order_acquire) &&
-				!penContactSuppressedForTouchPan_.load(std::memory_order_acquire))
+			if (penPointer && details.cancelled)
 			{
-				if (pointerId != lastHapticPenInfoPointerId_ || !lastHapticPenInfoKnown_)
-				{
-					lastHapticPenInfoPointerId_ = pointerId;
-					lastHapticPenInfoKnown_ = details.penInfoKnown;
-					lastHapticPenInfoEraser_ = details.penInfoKnown && details.eraserHint;
-				}
-				// Pointer 只作为触觉设备绑定/笔尾线索；RTS 仍是唯一绘制输入来源。
-				hapticPointerLeaveRequested_.store(false, std::memory_order_relaxed);
-				pendingHapticPointerId_.store(pointerId, std::memory_order_relaxed);
-				pendingHapticPointerEraser_.store(
-					lastHapticPenInfoKnown_ && lastHapticPenInfoEraser_,
-					std::memory_order_relaxed);
-				hapticPointerIdRequested_.store(true, std::memory_order_release);
+				RequestHapticPointerLeave();
 				RequestControlWake();
+			}
+			bool hapticObserved = false;
+			const bool hapticDiagnostic = HapticDiagnostics::Enabled();
+			const char* hapticReason = nullptr;
+			// 缓存原准入表达式实际读取的门禁值；-1 表示已在更早条件拒绝。
+			int hapticPan = -1, hapticSuppressed = -1;
+			if (message != WM_POINTERUP && pointerId != 0 && details.typeKnown &&
+				details.type == PT_PEN && details.penInfoKnown && !details.cancelled &&
+				!(hapticPan = touchPanActive_.load(std::memory_order_acquire)) &&
+				!(hapticSuppressed = penContactSuppressedForTouchPan_.load(std::memory_order_acquire)))
+			{
+				// 进入范围时保留 tablet cursor，RTS 普通抬笔不销毁范围身份。
+				const auto previousHapticRevision = hapticPointers_.Revision();
+				hapticObserved = hapticPointers_.Observe(pointerId, details.eraserHint,
+					message == WM_POINTERENTER || message == WM_POINTERDOWN, penInContact, details.cursorId,
+					hapticDiagnostic ? &hapticReason : nullptr);
+				if (hapticObserved || previousHapticRevision != hapticPointers_.Revision()) RequestControlWake();
+			}
+			if (hapticDiagnostic)
+			{
+				if (!hapticReason)
+					hapticReason = message == WM_POINTERUP ? "pointer_up"
+					: !pointerId ? "zero_pointer" : !details.typeKnown ? "unknown_type"
+					: details.type != PT_PEN ? "non_pen" : !details.penInfoKnown ? "no_pen_info"
+					: details.cancelled ? "cancelled" : hapticPan > 0 ? "touch_pan" : "pen_suppressed";
+				const auto revision = HapticPointerRevision();
+				const uint32_t state = static_cast<uint32_t>(details.type) |
+					(static_cast<uint32_t>(details.typeKnown) << 4) |
+					(static_cast<uint32_t>(details.penInfoKnown) << 5) |
+					(static_cast<uint32_t>(penInContact) << 6) |
+					(static_cast<uint32_t>(details.cancelled) << 7) |
+					(static_cast<uint32_t>(hapticObserved) << 8) |
+					(static_cast<uint32_t>(hapticPan + 1) << 9) |
+					(static_cast<uint32_t>(hapticSuppressed + 1) << 11);
+				auto diagnostic = std::find_if(hapticIngressDiagnostics_.begin(), hapticIngressDiagnostics_.end(),
+					[&](const auto& value) { return value.known && value.pointerId == pointerId; });
+				if (diagnostic == hapticIngressDiagnostics_.end())
+				{
+					// 末槽预留真实 Pen；满槽不淘汰旧项，避免多指交错 Update 反复变成首次。
+					const auto eligibleEnd = details.typeKnown && details.type == PT_PEN
+						? hapticIngressDiagnostics_.end() : hapticIngressDiagnostics_.end() - 1;
+					const auto free = std::find_if(hapticIngressDiagnostics_.begin(), eligibleEnd,
+						[](const auto& value) { return !value.known; });
+					if (free != eligibleEnd) diagnostic = free;
+				}
+				const bool tracked = diagnostic != hapticIngressDiagnostics_.end();
+				if (message == WM_POINTERUPDATE && !tracked)
+				{
+					if (hapticIngressUpdatesOmitted_ != (std::numeric_limits<uint64_t>::max)())
+						++hapticIngressUpdatesOmitted_;
+				}
+				else
+				{
+					// 边沿始终可见；省略计数只附到本来就要输出的日志，不额外刷屏。
+					if (message != WM_POINTERUPDATE || hapticObserved || !diagnostic->known ||
+						diagnostic->state != state || diagnostic->revision != revision ||
+						std::strcmp(diagnostic->reason, hapticReason) != 0)
+					{
+						HapticDiagnostics::Log("canvas_ingress",
+							"message=%u pointer=%u type=%u known=%d pen_info=%d contact=%d cancelled=%d pan=%d suppressed=%d observed=%d reason=%s revision=%llu time=%ld position_known=%d point=%ld,%ld omitted_updates=%llu",
+							message, pointerId, static_cast<unsigned>(details.type), details.typeKnown,
+							details.penInfoKnown, penInContact, details.cancelled, hapticPan, hapticSuppressed,
+							hapticObserved, hapticReason, static_cast<unsigned long long>(revision),
+							GetMessageTime(), details.positionKnown, details.screenPosition.x, details.screenPosition.y,
+							static_cast<unsigned long long>(hapticIngressUpdatesOmitted_));
+						hapticIngressUpdatesOmitted_ = 0;
+					}
+					if (tracked) *diagnostic = { message != WM_POINTERUP, pointerId, state, revision, hapticReason };
+				}
 			}
 			if (CursorDiagnosticsEnabled())
 				RecordCursorDiagnostic("pointer message=0x%04x id=%u type=%u known=%u positionKnown=%u x=%ld y=%ld penContact=%u eraser=%u owner=%u persistent=%u suppressed=%u touchCount=%u mouseTakeover=%u",
@@ -1861,6 +1945,9 @@ namespace Inkeys::Drawing::Draw3
 			break;
 
 		case WM_SHOWWINDOW:
+			hapticSurfaceVisible_.store(wParam != 0, std::memory_order_release);
+			if (!wParam) RequestHapticPointerLeave();
+			RequestControlWake();
 			QueueSystemCursorRefresh(); // 主画布重现时静止指针也须恢复当前工具策略。
 			[[fallthrough]];
 		case WM_ACTIVATE:
@@ -1870,6 +1957,15 @@ namespace Inkeys::Drawing::Draw3
 		case WM_WINDOWPOSCHANGED:
 		{
 			const auto* position = reinterpret_cast<const WINDOWPOS*>(lParam);
+			if (position)
+			{
+				if (position->flags & (SWP_HIDEWINDOW | SWP_SHOWWINDOW))
+				{
+					hapticSurfaceVisible_.store((position->flags & SWP_HIDEWINDOW) == 0, std::memory_order_release);
+					if (position->flags & SWP_HIDEWINDOW) RequestHapticPointerLeave();
+					RequestControlWake();
+				}
+			}
 			if (gpuTransparent)
 			{
 				if (!position || !(position->flags & SWP_NOMOVE) || !(position->flags & SWP_NOSIZE)) RequestFullPresent(); // 移动或尺寸变化后刷新 DWM 读取内容。

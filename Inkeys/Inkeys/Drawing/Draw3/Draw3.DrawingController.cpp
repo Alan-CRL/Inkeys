@@ -42,6 +42,8 @@
 #include <mmsystem.h>
 
 #include "Draw3.Bridge.h"
+#include "Draw3.HapticRequest.h"
+#include "Draw3.HapticDiagnostics.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.PptTiming.h"
 #include "Draw3.Presentation.h"
@@ -7932,7 +7934,7 @@ namespace Inkeys::Drawing::Draw3
 	DrawingController::DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 		TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 		DrawingControllerRuntimeObserver observer,
-		RuntimeMetricsSession* metrics, PenHapticFeedback* haptics)
+		RuntimeMetricsSession* metrics, PenHapticFeedback* haptics, Haptics::ClickMailbox* hapticClicks)
 		: input_(input), window_(window), renderer_(renderer),
 		presentation_(presentation), configuration_(std::move(configuration)), observer_(observer),
 		inputWidthModeSettings_(configuration_.inputWidthModes),
@@ -7945,7 +7947,7 @@ namespace Inkeys::Drawing::Draw3
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
 			? configuration_.laserHoldDurationSeconds : 1.0), metrics_(metrics),
-			metricsState_(DrawingControllerMetricsState::Prepare(metrics)), haptics_(haptics)
+			metricsState_(DrawingControllerMetricsState::Prepare(metrics)), haptics_(haptics), hapticClicks_(hapticClicks)
 	{
 		// 指标预备失败仅关闭诊断，不能影响正常输入/模型/画质或启动。
 		metricsUnavailable_ = metrics && !metricsState_;
@@ -8315,6 +8317,12 @@ namespace Inkeys::Drawing::Draw3
 
 	void DrawingController::Run()
 	{
+		bool hapticCanvasBound = false;
+		bool previousDrawingHapticsEnabled = drawingHapticsEnabled_;
+		uint64_t hapticCanvasRevision = 0;
+		Haptics::CanvasPointerRequest hapticCanvasPointer;
+		DrawingTool hapticPresetTool = DrawingTool::Pen;
+		Haptics::Click hapticUiSource;
 		if (metricsState_) metricsState_->BeginPrewarm();
 		struct MetricsRunExit
 		{
@@ -8664,6 +8672,18 @@ namespace Inkeys::Drawing::Draw3
 			strokePool.push_back(std::move(runtime)); // 首批模型和 predictor 在接收 Down 前完成分配。
 		}
 		std::vector<RuntimeStroke*> active;
+		const auto hapticPenContacts = [&]() noexcept
+		{
+			return static_cast<unsigned>(std::count_if(active.begin(), active.end(), [](const RuntimeStroke* runtime)
+				{ return runtime && runtime->metricDeviceType == InputDeviceType::Pen && !runtime->ended && !runtime->awaitingReconnect; }));
+		};
+		const auto canvasHapticsAvailable = [&]() noexcept
+		{
+			return drawingHapticsEnabled_ && hapticCanvasBound && hapticCanvasRevision == window_.HapticPointerRevision() && (hapticPenContacts() <= 1) &&
+				Haptics::ContinuousAllowed(window_.SelectionMode(), window_.HapticSurfaceVisible(),
+					window_.ActiveTool() == DrawingTool::Laser, input_.AdmissionBlocked(),
+					input_.HasQuarantinedContacts(), window_.TouchPanActive(), window_.PenContactSuppressedForTouchPan());
+		};
 		uint64_t nextDiagnosticStrokeId = 0;
 		auto publishPenDiagnostics = [&](const RuntimeStroke& runtime,
 			std::span<const InkPoint> visible)
@@ -9201,6 +9221,32 @@ namespace Inkeys::Drawing::Draw3
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
 				const InputDeviceType deviceType = handle.record->DeviceType();
+				if (deviceType == InputDeviceType::Pen && haptics_)
+				{
+					// RTS 和 Pointer 共用 tablet cursor 身份；不依赖 RTS 接管期间缺席的 Pointer Down。
+					if (HapticDiagnostics::Enabled())
+					{
+						// RTS 接触 ID 不是 Pointer ID；只用已有来源、画布坐标和时刻对照。
+						HapticDiagnostics::Log("rts_contact", "phase=down tcid=%u cid=%u generation=%llu sequence=%llu source_kind=%u source_context=%u source_cursor=%u source_generation=%llu canvas_point=%.7g,%.7g inverted=%d qpc=%lld",
+							handle.record->TabletContextId(), handle.record->ContactId(),
+							static_cast<unsigned long long>(handle.generation), static_cast<unsigned long long>(down.sequence),
+							static_cast<unsigned>(down.source.kind), down.source.contextId, down.source.cursorId,
+							static_cast<unsigned long long>(down.source.generation), down.position.x, down.position.y,
+							down.isInvertedCursor, static_cast<long long>(down.qpc));
+						HapticDiagnostics::Log("canvas_contact", "reason=rts_down cid=%u generation=%llu bound=%d revision=%llu tick=%llu",
+							handle.record->ContactId(), static_cast<unsigned long long>(handle.generation), hapticCanvasBound,
+							static_cast<unsigned long long>(window_.HapticPointerRevision()), static_cast<unsigned long long>(GetTickCount64()));
+					}
+					const char* reason = nullptr;
+					const bool trusted = down.source.cursorId && down.source.recognition != SpeedEraser::SourceRecognition::Unknown &&
+						down.source.recognition != SpeedEraser::SourceRecognition::Conflict;
+					const bool matched = window_.BeginHapticContact(down.source.cursorId, handle.record->ContactId(),
+						handle.generation, trusted, hapticPenContacts() != 0, &reason, handle.record->TabletContextId(), down.source.generation);
+					HapticDiagnostics::Log("canvas_identity", "cursor=%u recognition=%u matched=%d reason=%s",
+						down.source.cursorId, static_cast<unsigned>(down.source.recognition), matched, reason);
+					if (!matched) { haptics_->DetachPointer(); hapticCanvasBound = false; }
+					hapticUiSource.reset();
+				}
 				const bool penBeganDuringTouchPan = deviceType == InputDeviceType::Pen &&
 					penDownBelongsToTouchPan(down.qpc);
 				if (deviceType == InputDeviceType::Pen &&
@@ -9667,12 +9713,6 @@ namespace Inkeys::Drawing::Draw3
 						reconnectRuntime->stroke.visualStableFrameCount = 0;
 						if (!reconnectRuntime->stroke.useDisplayTime)
 							reconnectRuntime->stroke.lastMovementInputTime = inputTime;
-						if (haptics_ && reconnectRuntime->hapticEligible)
-						{
-							if (reconnectRuntime->invertedCursor)
-								haptics_->StopFeedback(); // 倒转笔尾需在真正接触后重新提交波形。
-							haptics_->TickContinuous(HapticFeedbackForRuntime(*reconnectRuntime));
-						}
 						DiagnosticOutput::Line() << "[StrokeReconnect] linked device=" << InputDeviceTypeName(deviceType) <<
 							" tool=" << DrawingToolName(tool) <<
 							" new_tcid=" << handle.record->TabletContextId() <<
@@ -9967,12 +10007,6 @@ namespace Inkeys::Drawing::Draw3
 					accepted.kind = CompletedStrokeKindForTool(runtime->tool);
 					observer_.acceptedStrokeBegan(observer_.context, accepted);
 				}
-				if (haptics_ && runtime->hapticEligible)
-				{
-					if (runtime->invertedCursor)
-						haptics_->StopFeedback(); // 倒转笔尾不沿用悬停预热的同波形状态。
-					haptics_->TickContinuous(HapticFeedbackForRuntime(*runtime));
-				}
 				return true;
 			};
 
@@ -10180,6 +10214,29 @@ namespace Inkeys::Drawing::Draw3
 				const float distanceSquared = deltaX * deltaX + deltaY * deltaY;
 				const bool terminal = snapshot.phase == ContactPhase::Up ||
 					snapshot.phase == ContactPhase::Cancelled;
+				if (terminal && runtime.metricDeviceType == InputDeviceType::Pen && haptics_)
+				{
+					// 普通 Up 停止本笔但保留范围；取消和身份失效仍完全解绑。
+					if (HapticDiagnostics::Enabled())
+					{
+						HapticDiagnostics::Log("rts_contact", "phase=%s tcid=%u cid=%u generation=%llu sequence=%llu source_kind=%u source_context=%u source_cursor=%u source_generation=%llu canvas_point=%.7g,%.7g inverted=%d qpc=%lld",
+							snapshot.phase == ContactPhase::Up ? "up" : "cancel", runtime.handle.record->TabletContextId(),
+							runtime.handle.record->ContactId(), static_cast<unsigned long long>(runtime.handle.generation),
+							static_cast<unsigned long long>(snapshot.sequence), static_cast<unsigned>(snapshot.source.kind),
+							snapshot.source.contextId, snapshot.source.cursorId, static_cast<unsigned long long>(snapshot.source.generation),
+							snapshot.position.x, snapshot.position.y, snapshot.isInvertedCursor, static_cast<long long>(snapshot.qpc));
+						HapticDiagnostics::Log("canvas_contact", "reason=rts_terminal cid=%u generation=%llu bound=%d revision=%llu tick=%llu",
+							runtime.handle.record->ContactId(), static_cast<unsigned long long>(runtime.handle.generation), hapticCanvasBound,
+							static_cast<unsigned long long>(window_.HapticPointerRevision()), static_cast<unsigned long long>(GetTickCount64()));
+					}
+					if (window_.EndHapticContact(runtime.handle.record->ContactId(), runtime.handle.generation,
+						snapshot.phase == ContactPhase::Cancelled, runtime.handle.record->TabletContextId()))
+					{
+						haptics_->StopFeedback();
+						if (snapshot.phase == ContactPhase::Cancelled) { haptics_->DetachPointer(); hapticCanvasBound = false; }
+					hapticUiSource.reset();
+				}
+				}
 				if (terminal && runtime.metricDeviceType == InputDeviceType::Touch &&
 					runtime.touchGestureKey != 0)
 					touchGesture.OnTouchUp(runtime.touchGestureKey);
@@ -10387,15 +10444,6 @@ namespace Inkeys::Drawing::Draw3
 							runtime.speedEraserOc.PauseForReconnect(
 								AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency));
 						}
-						const bool anotherPenContactActive = std::any_of(active.begin(), active.end(),
-							[&](const RuntimeStroke* candidate)
-							{
-								return candidate && candidate != &runtime &&
-									candidate->hapticEligible && !candidate->ended &&
-									!candidate->awaitingReconnect;
-							});
-						if (haptics_ && runtime.hapticEligible && !anotherPenContactActive)
-							haptics_->StopFeedback();
 						runtime.reconnectVisualRefresh = true;
 						runtime.deferredUpSnapshot = snapshot;
 						runtime.reconnectDirection = direction;
@@ -10416,7 +10464,6 @@ namespace Inkeys::Drawing::Draw3
 				return positionMoved || stylusStateChanged || shapeRawChanged || deferUp;
 			};
 
-		bool hapticContinuousActive = false;
 		auto sealPresentationContacts = [&]()
 		{
 			const uint64_t revision = input_.AdmissionRevision();
@@ -10447,8 +10494,13 @@ namespace Inkeys::Drawing::Draw3
 			rightMouseSpeedEraser.CancelVisual();
 			penEraserHoverLane.Invalidate();
 			invertedPenEraserHoverLane.Invalidate();
-			if (haptics_) haptics_->StopFeedback();
-			hapticContinuousActive = false;
+			if (haptics_)
+			{
+				window_.ResetHapticPointer();
+				haptics_->DetachPointer();
+			}
+			hapticCanvasBound = false;
+			hapticUiSource.reset();
 			if (metricsState_) metricsState_->ObserveIndependentClear();
 			renderer_.ClearAllLaserCoverage();
 			renderer_.ResetLaserParticles();
@@ -13732,38 +13784,108 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (haptics_)
 			{
-				if (window_.ConsumeHapticPointerLeave())
-				{
-					hapticContinuousActive = false;
+					haptics_->LogDiagnosticsSnapshot();
+				const auto context = Haptics::ButtonContext(hapticClicks_ ? hapticClicks_->Run() : 0);
+				const auto canvasRevision = window_.HapticPointerRevision();
+				const bool continuousAllowed = (hapticPenContacts() <= 1) && Haptics::ContinuousAllowed(window_.SelectionMode(),
+					window_.HapticSurfaceVisible(), window_.ActiveTool() == DrawingTool::Laser,
+					input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), touchGesture.PanActive(),
+					suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan());
+				// 绘制开关不作废范围身份，也不停止独立按钮反馈；恢复时允许重设悬停波形。
+				const bool drawingReenabled = drawingHapticsEnabled_ && !previousDrawingHapticsEnabled;
+				if (!drawingHapticsEnabled_ && previousDrawingHapticsEnabled && hapticCanvasBound)
 					haptics_->StopFeedback();
-				}
-				uint32_t pointerId = 0;
-				bool pointerEraserHint = false;
-				if (window_.ConsumeHapticPointerId(pointerId, pointerEraserHint))
+				previousDrawingHapticsEnabled = drawingHapticsEnabled_;
+				const bool leave = window_.ConsumeHapticPointerLeave();
+					bool sourceCurrent = true;
+				// Hover 预设也属于连续反馈；Selection/隐藏/Laser/Pan 无需等第一笔才停止。
+				if (Haptics::CanvasBindingInvalid(hapticCanvasBound, leave, continuousAllowed,
+						hapticCanvasRevision == canvasRevision) ||
+						(hapticUiSource && !(sourceCurrent = hapticUiSource->Current(context, GetTickCount64()))))
 				{
-					if (input_.AdmissionBlocked() || input_.HasQuarantinedContacts() ||
-						touchGesture.PanActive() || suppressPenUntilRelease ||
-						window_.PenContactSuppressedForTouchPan())
-					{
-						hapticContinuousActive = false;
-						haptics_->StopFeedback();
+						HapticDiagnostics::Log("canvas_detach", "leave=%d allowed=%d bound=%d revision_match=%d tool_match=%d source_current=%d", leave, continuousAllowed, hapticCanvasBound, hapticCanvasRevision == canvasRevision, hapticPresetTool == window_.ActiveTool(), sourceCurrent);
+					haptics_->DetachPointer();
+					hapticCanvasBound = false;
+					hapticUiSource.reset();
+				}
+				Haptics::CanvasPointerRequest pointer;
+				if (window_.ConsumeHapticPointer(pointer))
+				{
+						if (HapticDiagnostics::Enabled()) HapticDiagnostics::Log("canvas_pointer", "pointer=%u contact=%d revision=%llu allowed=%d pen_contacts=%u tick=%llu selection=%d visible=%d laser=%d admission=%d quarantine=%d pan=%d suppressed=%d", pointer.pointerId, pointer.inContact, static_cast<unsigned long long>(pointer.revision), continuousAllowed, hapticPenContacts(), static_cast<unsigned long long>(GetTickCount64()), window_.SelectionMode(), window_.HapticSurfaceVisible(), window_.ActiveTool() == DrawingTool::Laser, input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), touchGesture.PanActive(), suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan());
+						// 同范围 RTS Down 保留悬停时取得的控制器；仅新范围或失败重试重新解析设备。
+						const bool reuseBinding = hapticCanvasBound && Haptics::SameCanvasBinding(hapticCanvasPointer, pointer);
+						if (!reuseBinding) { haptics_->DetachPointer(); hapticCanvasBound = false; }
+					hapticUiSource.reset();
+					hapticPresetTool = window_.ActiveTool();
+						auto feedback = pointer.eraserHint ? HapticContinuousFeedback::InkContinuous :
+						ResolveContinuousHapticFeedback(HapticToolForDrawingTool(hapticPresetTool));
+						bool identityMatches = true;
+						for (const auto* runtime : active)
+						{
+							if (!runtime || runtime->metricDeviceType != InputDeviceType::Pen || runtime->ended || runtime->awaitingReconnect) continue;
+							const auto& source = runtime->lastInputSnapshot.source;
+							identityMatches = identityMatches && runtime->hapticEligible && source.cursorId == pointer.cursorId &&
+								source.recognition != SpeedEraser::SourceRecognition::Unknown && source.recognition != SpeedEraser::SourceRecognition::Conflict;
+							feedback = HapticFeedbackForRuntime(*runtime);
+						}
+						const bool candidate = continuousAllowed && pointer.cursorId && identityMatches &&
+							pointer.revision == window_.HapticPointerRevision();
+						if (HapticDiagnostics::Enabled()) HapticDiagnostics::Log("canvas_gate", "pointer=%u cursor=%u candidate=%d identity_match=%d contacts=%u revision_match=%d", pointer.pointerId, pointer.cursorId, candidate, identityMatches, hapticPenContacts(), pointer.revision == window_.HapticPointerRevision());
+						if (!candidate && reuseBinding) { haptics_->DetachPointer(); hapticCanvasBound = false; }
+						if (candidate && (reuseBinding || haptics_->AttachPointerId(pointer.pointerId)))
+						{
+							hapticCanvasPointer = pointer;
+						hapticCanvasRevision = pointer.revision;
+						hapticCanvasBound = true;
+						if (canvasHapticsAvailable()) haptics_->TickContinuous(feedback);
 					}
-					else if (haptics_->AttachPointerId(pointerId))
+				}
+					if (canvasHapticsAvailable())
 					{
-						if (window_.ActiveTool() == DrawingTool::Laser)
+						for (const auto* runtime : active)
 						{
-							haptics_->StopFeedback();
-							// Laser 只提供视觉反馈，不预启动或维持触觉波形。
+							if (!runtime || runtime->metricDeviceType != InputDeviceType::Pen || runtime->ended || runtime->awaitingReconnect) continue;
+							const auto& source = runtime->lastInputSnapshot.source;
+							if (runtime->hapticEligible && source.cursorId == hapticCanvasPointer.cursorId &&
+								source.recognition != SpeedEraser::SourceRecognition::Unknown && source.recognition != SpeedEraser::SourceRecognition::Conflict)
+								haptics_->TickContinuous(HapticFeedbackForRuntime(*runtime));
+							else
+							{
+								window_.ResetHapticPointer(); haptics_->DetachPointer(); hapticCanvasBound = false;
+							}
 						}
-						else
-						{
-							// 笔尾需在 RTS Down 前预启动橡皮波形，RTS 仍在 Down 时校验真实工具。
-							const HapticContinuousFeedback hapticFeedback = pointerEraserHint
-								? HapticContinuousFeedback::InkContinuous
-								: ResolveContinuousHapticFeedback(
-									HapticToolForDrawingTool(window_.ActiveTool()));
-							haptics_->TickContinuous(hapticFeedback);
-						}
+					}
+					// Up 已停止后，下次匹配的 RTS Down 会重排范围请求；工具变化无需再次等待 Enter。
+					if (canvasHapticsAvailable() && (drawingReenabled || hapticPresetTool != window_.ActiveTool()) && hapticPenContacts() == 0)
+					{
+						hapticPresetTool = window_.ActiveTool();
+						haptics_->TickContinuous(hapticCanvasPointer.eraserHint ? HapticContinuousFeedback::InkContinuous :
+							ResolveContinuousHapticFeedback(HapticToolForDrawingTool(hapticPresetTool)));
+					}
+					// 门禁失效时范围也作废，之后不能仅凭 RTS Down 复活跨场景旧身份。
+					if (!continuousAllowed) window_.ResetHapticPointer();
+				if (hapticClicks_)
+				{
+						for (;;)
+					{
+							Haptics::ClickTakeDiagnostics dropped;
+							auto click = hapticClicks_->Take(context, GetTickCount64(),
+								HapticDiagnostics::Enabled() ? &dropped : nullptr);
+							if (dropped.dropped)
+								HapticDiagnostics::Log("click_drop", "count=%u last_pointer=%u reason=%s",
+									dropped.dropped, dropped.lastPointerId, dropped.lastReason);
+							if (!click) break;
+						// UI 操作不能抢占正在书写的笔或 Pan；独立凭据不成为 RTS 的连续绑定。
+							if (!active.empty() || touchGesture.PanActive() || input_.HasQuarantinedContacts()) { HapticDiagnostics::Log("click_gate", "pointer=%u reason=active_or_pan_or_quarantine", click->pointerId); continue; }
+						haptics_->DetachPointer();
+						hapticCanvasBound = false;
+						hapticUiSource.reset();
+							const bool attached = haptics_->AttachPointerId(click->pointerId);
+							const bool current = attached && click->Current(Haptics::ButtonContext(hapticClicks_->Run()), GetTickCount64());
+							const bool sent = current && haptics_->PlayDiscrete(HapticDiscreteFeedback::Click, kButtonHapticIntensity);
+							HapticDiagnostics::Log("click_consume", "pointer=%u attached=%d current=%d sent=%d", click->pointerId, attached, current, sent);
+							if (sent) hapticUiSource = std::move(click);
+						else haptics_->DetachPointer();
 					}
 				}
 			}
@@ -13928,11 +14050,6 @@ namespace Inkeys::Drawing::Draw3
 				!speedEraserHoverAnimating &&
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty))
 			{
-				if (hapticContinuousActive && haptics_)
-				{
-					haptics_->StopFeedback();
-					hapticContinuousActive = false;
-				}
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
 				if (metricsState_) metricsState_->Finish(); // idle/Hold等待不能混入render wall。
 				lastActiveFrameStartMs = 0.0;
@@ -14863,31 +14980,6 @@ namespace Inkeys::Drawing::Draw3
 					}
 						if (!DrawActiveShapePrimitives(active, renderer_, shapePrimitiveScratch))
 							rasterSubmissionFailed = true;
-				}
-			}
-
-			if (haptics_)
-			{
-				RuntimeStroke* hapticRuntime = nullptr;
-				for (RuntimeStroke* runtime : active)
-				{
-					if (runtime && runtime->hapticEligible &&
-						!runtime->ended && !runtime->awaitingReconnect)
-					{
-						hapticRuntime = runtime;
-						break;
-					}
-				}
-				if (hapticRuntime)
-				{
-					hapticContinuousActive = haptics_->TickContinuous(
-					HapticFeedbackForRuntime(*hapticRuntime)) ||
-						hapticContinuousActive;
-				}
-				else if (hapticContinuousActive)
-				{
-					haptics_->StopFeedback();
-					hapticContinuousActive = false;
 				}
 			}
 

@@ -25,6 +25,8 @@ module;
 #include "Bar.WindowGeometry.h"
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
+#include "Bar.Haptics.h"
+#include "../../Drawing/Draw3/Draw3.HapticDiagnostics.h"
 
 #ifdef MessageBox
 #undef MessageBox
@@ -263,17 +265,67 @@ bool IsBarThicknessPrecisionDragHit(
 		== BarThicknessFineDialHitZone::Drag;
 }
 
+namespace
+{
+	namespace BarHaptics = Inkeys::UI::Bar::Haptics;
+	std::mutex barHapticMutex;
+	BarHaptics::ContactTokens barHapticTokens;
+	thread_local BarHaptics::Click currentHapticMessage;
+
+	void ObserveBarHapticPointer(UINT message, WPARAM wParam) noexcept
+	{
+		struct LastErrorScope { DWORD value = GetLastError(); ~LastErrorScope() { SetLastError(value); } } preserveError;
+		const UINT id = LOWORD(wParam);
+		if (message == WM_DESTROY || message == WM_CANCELMODE ||
+			(message == WM_SHOWWINDOW && !wParam) ||
+			message == WM_POINTERLEAVE || message == WM_POINTERCAPTURECHANGED)
+		{
+			unsigned invalidated = 0;
+			{
+				std::lock_guard lock(barHapticMutex);
+				invalidated = barHapticTokens.Invalidate(
+					message == WM_POINTERLEAVE || message == WM_POINTERCAPTURECHANGED ? id : 0,
+					message == WM_POINTERLEAVE);
+			}
+			// 仅在有效凭据首次失效时输出，且必须离开 token 锁。
+			if (invalidated)
+				Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_invalidate", "pointer=%u count=%u reason=%s", id, invalidated,
+					message == WM_POINTERLEAVE ? "leave" : message == WM_POINTERCAPTURECHANGED ? "capture_changed"
+					: message == WM_DESTROY ? "destroy" : message == WM_CANCELMODE ? "cancel_mode" : "hidden");
+			return;
+		}
+		if (message != WM_POINTERENTER && message != WM_POINTERDOWN &&
+			message != WM_POINTERUPDATE && message != WM_POINTERUP) return;
+		using Info = BOOL(WINAPI*)(UINT32, POINTER_INFO*);
+		using Cursor = BOOL(WINAPI*)(UINT32, UINT32*);
+		static const auto getInfo = reinterpret_cast<Info>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetPointerInfo"));
+		static const auto getCursor = reinterpret_cast<Cursor>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetPointerCursorId"));
+		POINTER_INFO info{};
+		UINT32 cursor = 0;
+		const bool valid = getInfo && getCursor && getInfo(id, &info) && info.pointerType == PT_PEN &&
+			getCursor(id, &cursor) && !(info.pointerFlags & POINTER_FLAG_CANCELED) &&
+			(info.pointerFlags & POINTER_FLAG_INRANGE);
+		const auto context = valid && message == WM_POINTERDOWN
+			? Inkeys::Drawing::Draw3::ProductHapticContext() : BarHaptics::Context{};
+		unsigned invalidated = 0;
+		{
+			std::lock_guard lock(barHapticMutex);
+			if (!valid) invalidated = barHapticTokens.Invalidate(id);
+			else barHapticTokens.Observe(message,
+				{ id, cursor, info.sourceDevice, info.ptPixelLocationRaw, info.dwTime }, context, GetTickCount64());
+		}
+		if (invalidated)
+			Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_invalidate", "pointer=%u count=%u reason=invalid_pointer phase=%u type=%u flags=0x%x cursor=%u", id, invalidated, message, info.pointerType, info.pointerFlags, cursor);
+		if (message == WM_POINTERDOWN || message == WM_POINTERUP)
+			Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_pointer", "phase=%u pointer=%u type=%u valid=%d flags=0x%x cursor=%u source=%p time=%lu point=%ld,%ld run=%llu", message, id, info.pointerType, valid, info.pointerFlags, cursor, info.sourceDevice, info.dwTime, info.ptPixelLocationRaw.x, info.ptPixelLocationRaw.y, static_cast<unsigned long long>(context.run));
+	}
+}
+
 void MarkBarTouchPointerMessage(ExMessage& message, bool cancelled = false,
 	bool directDragScreenSample = false)
 {
-	// 非滚轮鼠标消息不使用 wheel，保留触摸转单指的来源标记。
-	message.wheel = cancelled
-		? (directDragScreenSample
-			? BarTouchCancelScreenMessageMarker
-			: BarTouchCancelMessageMarker)
-		: (directDragScreenSample
-			? BarTouchDirectDragScreenMessageMarker
-			: BarTouchPointerMessageMarker);
+	// wheel 仅保留 dev 的输入来源标记；触觉凭据随 metadata 传递。
+	message.wheel = BarHaptics::Marker(0, cancelled, directDragScreenSample);
 }
 
 bool IsBarTouchPointerMessage(const ExMessage& message)
@@ -425,6 +477,7 @@ namespace
 		Pointer::Sample sample{};
 		std::uint64_t cancelSerial = 0;
 		Pointer::MouseGesture mouseAdmission;
+		BarHaptics::Click haptic;
 	};
 	std::mutex barPointerMetadataMutex;
 	// 大于 4096 条 HiMsg 容量，且为跳过保留 token 后的回绕留余量，避免覆盖未出队样本。
@@ -438,6 +491,8 @@ namespace
 		bool primary = false;
 		POINT point{};
 		std::uint64_t generation = 0;
+		unsigned hapticToken = 0;
+		BarHaptics::Click haptic;
 	} barTouchProducer;
 	std::uint64_t barTouchGeneration = 0;
 	// 原生鼠标代次由窗口线程生成，迟到的 Up 不能结束下一次按下。
@@ -445,6 +500,7 @@ namespace
 	std::uint64_t barNativeMouseActiveGeneration = 0;
 	// 下列会话字段只由交互线程写；窗口线程仅发布 metadata / cancel serial。
 	Pointer::Session barPointerSession;
+	BarHaptics::Click barPointerHapticSession;
 	Pointer::MouseGesture barMouseGesture;
 	Pointer::Sample barPointerLatest{};
 	bool barPointerSampleReady = false;
@@ -487,6 +543,7 @@ namespace
 
 	void PublishBarPointerCancellation()
 	{
+		{ std::lock_guard lock(barHapticMutex); barHapticTokens.Invalidate(); }
 		barPointerCancelSerial.fetch_add(1, std::memory_order_release);
 		barPointerMouse.Cancel();
 	}
@@ -498,7 +555,7 @@ namespace
 	}
 
 	bool EnqueueBarPointerSample(HWND window, ExMessage message,
-		const Pointer::Sample& sample)
+		const Pointer::Sample& sample, const BarHaptics::Click& haptic = {})
 	{
 		if (sample.kind == Pointer::Kind::Down && sample.source == Pointer::Source::Touch)
 			BarAutoCollapseNativeDownSerial.fetch_add(1, std::memory_order_acq_rel);
@@ -506,8 +563,10 @@ namespace
 		const unsigned short token = barPointerNextToken++;
 		if (barPointerNextToken >= 0x4000u) barPointerNextToken = 16;
 		auto& metadata = barPointerMetadata[token % barPointerMetadata.size()];
+		if (metadata.haptic) metadata.haptic->valid.store(false, std::memory_order_release);
 		metadata = { token, sample,
 			barPointerCancelSerial.load(std::memory_order_acquire) };
+		metadata.haptic = haptic;
 		// 仅固化入队时的来源准入；实际会话、业务与 Raw 认领仍只在交互线程推进。
 		if (sample.source == Pointer::Source::Mouse && sample.kind == Pointer::Kind::Down)
 			(void)metadata.mouseAdmission.Begin(sample);
@@ -517,6 +576,8 @@ namespace
 			| (sample.kind == Pointer::Kind::Cancel ? 0x4000u : 0u));
 		message.category = EM_MOUSE;
 		if (Inkeys::Window::Enqueue(window, message)) return true;
+		if (metadata.haptic) metadata.haptic->valid.store(false, std::memory_order_release);
+		metadata = {};
 		barPointerCancelSerial.fetch_add(1, std::memory_order_release);
 		return false;
 	}
@@ -540,7 +601,7 @@ namespace
 			return true;
 		}
 		queued = stored;
-		stored.token = 0;
+		stored = {};
 		if (queued.sample.source == Pointer::Source::Touch)
 			MarkBarTouchPointerMessage(message,
 				queued.sample.kind == Pointer::Kind::Cancel, true);
@@ -554,6 +615,7 @@ namespace
 		if (barMouseArmed) barPointerMouse.FinishMouse();
 		barMouseArmed = false;
 		barPointerActiveOrdinal.store(0, std::memory_order_release);
+		barPointerHapticSession.reset();
 		barPointerSession.Reset();
 		barMouseGesture.Reset();
 	}
@@ -563,6 +625,20 @@ namespace
 		return barPointerSession.Active() || barMouseGesture.Active();
 	}
 
+	// 所有按钮在业务接受点调用；不能以消息被消费、悬停或回调被程序化执行作为凭据。
+	void AcceptBarButtonFeedback()
+	{
+		// 点击/拖动由控件业务判定；不能用系统鼠标拖动阈值否决已接受的笔点击。
+		const auto click = BarHaptics::AcceptedClick(barPointerHapticSession, currentHapticMessage,
+			barPointerLatest.kind == Pointer::Kind::Up ? WM_LBUTTONUP : 0,
+			false);
+		const bool accepted = click && Inkeys::Drawing::Draw3::PublishProductHapticClick(click);
+		Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_click", "accepted=%d pointer=%u reason=%s", accepted,
+			click ? click->pointerId : 0, click ? (accepted ? "queued" : "host_rejected")
+			: !barPointerHapticSession ? "no_pen_session"
+			: !currentHapticMessage ? "no_pen_message"
+			: barPointerLatest.kind != Pointer::Kind::Up ? "not_pointer_up" : "contact_mismatch");
+	}
 	void PrepareBarMouseDragTracking()
 	{
 		if (!barMouseGesture.Active() || barMouseArmed) return;
@@ -578,6 +654,8 @@ namespace
 
 	void MakeBarPointerCancel(ExMessage& message)
 	{
+		if (barPointerHapticSession) barPointerHapticSession->valid.store(false, std::memory_order_release);
+		currentHapticMessage.reset();
 		FinishBarPointerSession();
 		barPointerLatest.kind = Pointer::Kind::Cancel;
 		message = {};
@@ -798,6 +876,8 @@ void BarUISetClass::PollGlobalMouseInput()
 bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 	bool preserveScreenCoordinates, BarTouchScreenSample* screenSample)
 {
+	// 每次消费重新绑定，Raw/鼠标/键盘和无 metadata 消息不能继承上次笔凭据。
+	currentHapticMessage.reset();
 	if (screenSample) screenSample->ready = false;
 	barUISet.PollGlobalMouseInput();
 	if (barKeyboardShortcuts.Poll(false))
@@ -937,6 +1017,7 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 				MakeBarPointerCancel(message);
 				return true;
 			}
+			barPointerHapticSession = queued.haptic;
 			if (touch) (void)barPointerSession.Begin(sample);
 			else if (hasMetadata)
 			{
@@ -985,6 +1066,7 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 			barMouseArmed = false;
 			barPointerActiveOrdinal.store(0, std::memory_order_release);
 		}
+		currentHapticMessage = queued.haptic;
 		barPointerLatest = sample;
 		barPointerSampleReady = true;
 		PrepareBarInteractionMessage(message, preserveScreenCoordinates, screenSample);
@@ -1015,6 +1097,10 @@ bool TryGetBarInteractionMessage(ExMessage* message, BYTE filter,
 void ClearBarInteractionMessages(BYTE filter, HWND)
 {
 	Inkeys::UI::Bar::ObserveAuthorizedFixtureClear(filter, 0);
+	// 正常 Up 后的清理不撤销已接受、等待 owner 消费的反馈。
+	if (barPointerLatest.kind != Pointer::Kind::Up && barPointerHapticSession)
+		barPointerHapticSession->valid.store(false, std::memory_order_release);
+	currentHapticMessage.reset();
 	// 只退休本次会话；不能清掉 HiMsg 中下一次 Down 或另一来源的输入。
 	FinishBarPointerSession();
 }
@@ -1034,6 +1120,8 @@ void QueueBarColorPickerEnd(HWND)
 
 LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	// 被动旁观 Pointer，仍沿原路径交给 DefWindowProc；不改变 capture 或光标。
+	ObserveBarHapticPointer(msg, wParam);
 	if (msg == WM_CREATE)
 	{
 		(void)Pointer::AttachRawMouse(hWnd);
@@ -1349,8 +1437,11 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					translated.x = static_cast<short>(clamp<LONG>(point.x, SHRT_MIN, SHRT_MAX));
 					translated.y = static_cast<short>(clamp<LONG>(point.y, SHRT_MIN, SHRT_MAX));
 					translated.lbutton = kind == Pointer::Kind::Down || kind == Pointer::Kind::Move;
-					if (!EnqueueBarPointerSample(hWnd, translated, sample))
+					if (kind == Pointer::Kind::Cancel && barTouchProducer.haptic)
+						barTouchProducer.haptic->valid.store(false, std::memory_order_release);
+					if (!EnqueueBarPointerSample(hWnd, translated, sample, barTouchProducer.haptic))
 					{
+						if (barTouchProducer.haptic) barTouchProducer.haptic->valid.store(false, std::memory_order_release);
 						barPointerMouse.EndTouch(barTouchProducer.generation);
 						barTouchProducer = {};
 					}
@@ -1372,6 +1463,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					if (barTouchProducer.active && !sameContact)
 					{
 						PublishTouch(Pointer::Kind::Cancel, barTouchProducer.point);
+						if (barTouchProducer.haptic) barTouchProducer.haptic->valid.store(false, std::memory_order_release);
 						barPointerMouse.EndTouch(barTouchProducer.generation);
 						barTouchProducer = {};
 					}
@@ -1381,6 +1473,16 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 						if (!barPointerMouse.BeginTouch(generation)) continue;
 						barTouchProducer = { input.hSource, input.dwID, true,
 							primary, point, generation };
+						const bool diagnostic = Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled();
+						const char* reason = "none";
+						BarHaptics::ContactTokens::MatchDiagnostics matches{};
+						{
+							std::lock_guard lock(barHapticMutex);
+							barTouchProducer.hapticToken = barHapticTokens.BindDown(input, point, GetTickCount64(),
+								diagnostic ? &reason : nullptr, diagnostic ? &matches : nullptr);
+							barTouchProducer.haptic = barHapticTokens.Hold(barTouchProducer.hapticToken);
+						}
+						if (diagnostic) Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_touch", "phase=down touch=%u flags=0x%lx mask=0x%lx source=%p time=%lu point=%ld,%ld token=%u match=%s candidates=%u/%u/%u/%u", input.dwID, input.dwFlags, input.dwMask, input.hSource, input.dwTime, point.x, point.y, barTouchProducer.hapticToken, reason, matches.recent, matches.source, matches.time, matches.point);
 						fallbackLocked = !primary;
 						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
 						PublishTouch(Pointer::Kind::Down, point);
@@ -1390,6 +1492,19 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					|| barTouchProducer.id != input.dwID) continue;
 				if (primary) barTouchProducer.primary = true;
 				barTouchProducer.point = point;
+				if (input.dwFlags & (TOUCHEVENTF_MOVE | TOUCHEVENTF_UP))
+				{
+					const bool up = (input.dwFlags & TOUCHEVENTF_UP) != 0;
+					const bool diagnostic = Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled();
+					const unsigned before = barTouchProducer.hapticToken;
+					const char* reason = "none";
+					{
+						std::lock_guard lock(barHapticMutex);
+						barTouchProducer.hapticToken = barHapticTokens.Touch(before, input, point, up, diagnostic ? &reason : nullptr);
+					}
+					if (diagnostic && (up || (before && !barTouchProducer.hapticToken)))
+						Inkeys::Drawing::Draw3::HapticDiagnostics::Log("bar_touch", "phase=%s touch=%u flags=0x%lx mask=0x%lx source=%p time=%lu point=%ld,%ld token_before=%u token=%u match=%s", up ? "up" : "move", input.dwID, input.dwFlags, input.dwMask, input.hSource, input.dwTime, point.x, point.y, before, barTouchProducer.hapticToken, reason);
+				}
 				if (input.dwFlags & TOUCHEVENTF_MOVE) PublishTouch(Pointer::Kind::Move, point);
 				if (input.dwFlags & TOUCHEVENTF_UP)
 				{
@@ -3070,6 +3185,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					finalColor = GetPenColor();
 				};
 
+			// 连续选色保留轻点限定，仅此控件使用移动门限，不影响普通按钮。
+			BarHaptics::ButtonMotionGate paletteTap;
+			paletteTap.Begin(BarPointerScreenPoint(gestureMessage), GetSystemMetrics(SM_CXDRAG), GetSystemMetrics(SM_CYDRAG));
 			POINT stablePoint = BarPointerScreenPoint(gestureMessage);
 			POINT activeScreenPoint = stablePoint;
 			ULONGLONG stableStartTick = GetTickCount64();
@@ -3130,6 +3248,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				std::this_thread::sleep_for(std::chrono::milliseconds(8));
 				continue;
 			}
+			paletteTap.Observe(BarPointerScreenPoint(gestureMessage));
 			if (IsBarPointerCancelMessage(gestureMessage)
 				|| !ColorPickerAvailable() || !picker.colorPickerOpen) break;
 			if (gestureMessage.message == WM_MOUSEMOVE && gestureMessage.lbutton)
@@ -3160,7 +3279,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		picker.colorPickerHoldLocked = false;
 		picker.colorPickerHoldProgress = 0.0f;
 		if (completed)
+		{
 			SetPenColor(Inkeys::Color::SetAlphaR(finalColor, 255), true);
+			if (paletteTap.IsClick()) AcceptBarButtonFeedback();
+		}
 		UpdateRendering();
 		SuppressHoverUntilPointerMove();
 		ClearBarInteractionMessages(EM_MOUSE, floating_window);
@@ -3785,6 +3907,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
+								AcceptBarButtonFeedback();
 								CloseColorPicker(false);
 								break;
 							}
@@ -3820,6 +3943,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
+								AcceptBarButtonFeedback();
 								barState.drawAttributeBar.colorPickerDarkTone =
 									!static_cast<bool>(barState.drawAttributeBar
 										.colorPickerDarkTone);
@@ -3873,6 +3997,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
+								AcceptBarButtonFeedback();
 								if (barState.drawAttributeBar.colorPickerOpen)
 									CloseColorPicker(false);
 								else
@@ -3975,6 +4100,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						{
 							if (!msg.lbutton)
 							{
+								AcceptBarButtonFeedback();
 								*tooltip.pinned = false;
 								*tooltip.hover = false;
 								break;
@@ -4014,6 +4140,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						{
 							if (!msg.lbutton)
 							{
+								AcceptBarButtonFeedback();
 								*tooltip.pinned = true;
 								// 悬停浮窗已经稳定时没有进度动画，固定后强制补一帧显示关闭按钮。
 								BarAtomic::renderOnceFlag = true;
@@ -4100,6 +4227,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
+								AcceptBarButtonFeedback();
 								clickCompleted = true;
 								ClosePenTypeMenu();
 								break;
@@ -4160,6 +4288,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							if (!moreClose->IsClick(msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
+								AcceptBarButtonFeedback();
 								barState.moreExpanded = false;
 								break;
 							}
@@ -4205,7 +4334,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									// 默认先收起再执行，避免动作打开新窗口时浮层残留。
 									if (button->closeMoreAfterAction)
 										barState.moreExpanded = false;
-									if (button->clickFunc) button->clickFunc();
+									if (button->clickFunc)
+									{
+										BarHaptics::AcceptedClickScope hapticClick(currentHapticMessage);
+										button->clickFunc();
+										if (BarHaptics::buttonActionAccepted) AcceptBarButtonFeedback();
+									}
 									break;
 								}
 							}
@@ -4284,6 +4418,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						if (barUISet.TryBeginToggle(BarToggleChannel::Main))
 						{
 							finiteMutation.MarkBusinessAccepted();
+							AcceptBarButtonFeedback();
 							mainButtonClickPulseSerial.fetch_add(
 								1, std::memory_order_relaxed);
 							finiteMutation.ObserveBusinessWrite();
@@ -4397,6 +4532,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												bool opening = !static_cast<bool>(
 													barState.moreExpanded);
 												barState.moreExpanded = opening;
+												AcceptBarButtonFeedback();
 												if (opening)
 												{
 													CloseDrawAttributeTooltips();
@@ -4408,8 +4544,17 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											}
 										}
 										else if (temp->preset == BarButtonPresetEnum::Clean)
+										{
+											BarHaptics::AcceptedClickScope hapticClick(currentHapticMessage);
 											barButtonSet.ExecuteClearClick(doubleClickContinuation);
-										else if (temp->clickFunc) temp->clickFunc();
+											if (BarHaptics::buttonActionAccepted) AcceptBarButtonFeedback();
+										}
+										else if (temp->clickFunc)
+										{
+											BarHaptics::AcceptedClickScope hapticClick(currentHapticMessage);
+											temp->clickFunc();
+											if (BarHaptics::buttonActionAccepted) AcceptBarButtonFeedback();
+										}
 										// 仅业务动作交还焦点；打开设置/颜色等编辑入口不抢走输入。
 										switch (temp->preset.load())
 										{
@@ -4515,15 +4660,20 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 							if (StateModeTransitionRevision() != geometryAtPress.revision)
 								break;
+								bool buttonAccepted = true;
 								if (button.closePanel)
 									barState.geometryAttribute = false;
 								else if (button.shapeMode.has_value())
 								{
-									SetShapeModeSelectIfRevision(
+									buttonAccepted = SetShapeModeSelectIfRevision(
 										button.shapeMode.value(), geometryAtPress.revision);
+									// 同形状按钮仍是接受操作；setter 的 false 也可能仅表示值未改变。
+									buttonAccepted = buttonAccepted || (geometryAtPress.state.Shape.ModeSelect == button.shapeMode.value()
+										&& StateModeTransitionRevision() == geometryAtPress.revision + 1);
 								}
-								else SetPenWidthPresetIfRevision(button.thicknessPresetIndex,
+								else buttonAccepted = SetPenWidthPresetIfRevision(button.thicknessPresetIndex,
 									geometryAtPress.revision);
+								if (buttonAccepted) AcceptBarButtonFeedback();
 								UpdateRendering();
 								break;
 							}
@@ -5833,6 +5983,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												? ThicknessViewMode::Slider
 												: ThicknessViewMode::Preview;
 									}
+								if (gestureCompleted && !gestureDragged && !fineDialGesture && !fineDragActivationArmed)
+									AcceptBarButtonFeedback();
 								if (gestureCompleted
 									&& !fineDialGesture && !fineDragActivationArmed)
 								{
@@ -5936,6 +6088,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						CancelThicknessFineDialSelection();
 				}
 				const bool changed = ChangeStateModeToPenTool(tool);
+				AcceptBarButtonFeedback();
 				if (changed && !expectedChange)
 				{
 					// PPT 在预检与提交间接管时，仍收尾旧面板；最终工具由锁内事务决定。
@@ -5981,6 +6134,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									ProjectCurrentColorPickerPoint();
 								UpdateRendering();
 							};
+						bool swatchDragged = false;
 						ApplySwatch(activeSwatch);
 						PrepareBarMouseDragTracking();
 						BeginBarMouseDrag(); // 色块拖选按下即改色，结束仅退休连续会话。
@@ -6007,12 +6161,15 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									|| !swatch->IsClick(
 										msg.x, msg.y, barStyle.zoom))
 									continue;
+								// 切换到其他色块即为拖选；返回原色块也不补发点击反馈。
+								swatchDragged = true;
 								activeSwatch = swatch;
 								ApplySwatch(activeSwatch);
 								break;
 							}
 						}
 
+						if (!swatchDragged && activeSwatch->IsClick(msg.x, msg.y, barStyle.zoom)) AcceptBarButtonFeedback();
 						SuppressHoverUntilPointerMove();
 						ClearBarInteractionMessages(EM_MOUSE, floating_window);
 					}
@@ -6101,7 +6258,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											{
 												if (fineDialAtPress)
 													CancelThicknessFineDialSelection();
-												SetPenWidthPresetIfRevision(button.presetIndex, toolRevisionAtPress);
+												if (SetPenWidthPresetIfRevision(button.presetIndex, toolRevisionAtPress)) AcceptBarButtonFeedback();
 											}
 											else
 											{
@@ -6119,6 +6276,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 													{
 														// 抬手时仍是有效 FineDial，才提交并允许 Popup 原地收尾。
 														CommitThicknessFineDialSelection();
+														AcceptBarButtonFeedback();
 														CloseThicknessSlider(false);
 														barState.drawAttributeBar
 															.thicknessFineDialPopupExitLatchRequested = true;
@@ -6133,6 +6291,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												else if (barUISet.TryBeginToggle(
 													BarToggleChannel::ThicknessAdjust))
 												{
+													AcceptBarButtonFeedback();
 													barState.drawAttributeBar
 														.thicknessSliderPinned = !sliderPinnedAtPress;
 													barState.drawAttributeBar.thicknessViewMode =
@@ -6199,7 +6358,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									{
 										if (barUISet.TryBeginToggle(
 											BarToggleChannel::PenTypeMenu))
+										{
 											ClosePenTypeMenu();
+											AcceptBarButtonFeedback();
+										}
 									}
 									else
 									{
@@ -6234,6 +6396,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											}
 											// 同方向快速反向时从当前进度续接。
 											barState.drawAttributeBar.penTypeMenuOpen = true;
+											AcceptBarButtonFeedback();
 										}
 									}
 									break;
@@ -6270,6 +6433,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								ClosePenTypeMenu();
 								CloseThicknessSlider(true);
 								ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+								AcceptBarButtonFeedback();
 								UpdateRendering();
 								break;
 							}
@@ -6455,16 +6619,19 @@ public:
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
 			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
 
-			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg)))
+			bool auxiliaryButtonAccepted = false;
+			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg), &auxiliaryButtonAccepted))
 			{
+				if (auxiliaryButtonAccepted) AcceptBarButtonFeedback();
 				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
 				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
 				continue;
 			}
 			// 撤回属性与橡皮同级早处理；二者互斥，同时最多一个展开。
-			if (barUISet.recallAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg)))
+			if (barUISet.recallAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg), &auxiliaryButtonAccepted))
 			{
+				if (auxiliaryButtonAccepted) AcceptBarButtonFeedback();
 				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
 				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }

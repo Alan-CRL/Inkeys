@@ -17,6 +17,8 @@ namespace Inkeys::Drawing::Draw3
 		HostRuntimeCallbacks runtimeCallbacks = {});
 	void StopProduct() noexcept;
 	bool ProductRunning() noexcept;
+	Haptics::Context ProductHapticContext() noexcept;
+	bool PublishProductHapticClick(const Haptics::Click& source) noexcept;
 	bool ProductFirstFrameReady() noexcept;
 	HostRuntimeSnapshot ProductRuntimeSnapshot() noexcept;
 	bool WaitForProductContentRevision(std::uint64_t revision,

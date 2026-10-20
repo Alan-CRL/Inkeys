@@ -72,6 +72,7 @@
 | 66 | 2026-10-12 | Redo2x2点击暂态主栏扩宽修复 | - | `feature/redo` |
 | 65 | 2026-10-12 | Redo追加：3秒等待与属性身份显示提交 | - | `feature/redo` |
 | 64 | 2026-10-12 | 延续 Redo 弹窗：修复5秒布局保护与灰色动画 | - | `feature/redo` |
+| 63 | 2026-10-11 | 恢复 Inkeys3 笔震动反馈与兼容回退 | - | `bugfix/vibration` |
 | 60 | 2026-10-10 | Windows 发布流水线拆分与 Win32 Harness 修复 | - | `dev` |
 | 59 | 2026-10-10 | Win7 主画布修复验收并归档 | `12d82884cf09928c2ae22eda2fe8851ac8581c9b`, `4011594d103f5b95e77ec923f54058593ce7e549` | `chore/publish` |
 | 55 | 2026-10-09 | Win7 WARP 主画布默认完整 shader 修复 | - | `chore/publish` |
