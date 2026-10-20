@@ -125,6 +125,8 @@ class BarStyleClass
 public:
 	IdtAtomic<bool> darkStyle = true;
 	IdtAtomic<double> dpiZoom = 1.0;
+	// UI 基准独立于真实 DPI，画笔尺寸仍只使用 dpiZoom。
+	IdtAtomic<double> uiBaseZoom = 1.0;
 	IdtAtomic<double> configZoom = 1.0;
 	IdtAtomic<double> zoom = 1.0;
 	IdtAtomic<bool> initialZoomFitPending = false;

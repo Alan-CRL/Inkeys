@@ -423,6 +423,9 @@ struct BarPendingDisplaySnapshot
 	RECT workArea{ 0, 0, 1, 1 };
 	UINT dpi = USER_DEFAULT_SCREEN_DPI;
 	unsigned long long serial = 0;
+	double uiBaseScale = 1.0;
+	double desktopDockLine = 1.0;
+	bool protectBottomEdge = false;
 };
 
 struct BarBottomDockPresentedSnapshot
@@ -447,6 +450,8 @@ struct BarBottomDockPresentedSnapshot
 		RECT workArea{ 0, 0, 1, 1 };
 		UINT dpi = USER_DEFAULT_SCREEN_DPI;
 		unsigned long long displaySerial = 0;
+	double desktopDockLine = 1.0;
+	bool protectBottomEdge = false;
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
@@ -594,7 +599,11 @@ public:
 					pendingWorkAreaRight.load(memory_order_relaxed),
 					pendingWorkAreaBottom.load(memory_order_relaxed) },
 				pendingDisplayDpi.load(memory_order_relaxed),
-				serialBefore };
+				serialBefore,
+				pendingDisplayUiBaseScale.load(memory_order_relaxed),
+				pendingDesktopDockLine.load(memory_order_relaxed),
+				pendingProtectBottomEdge.load(memory_order_relaxed) };
+			std::atomic_thread_fence(memory_order_acquire);
 			if (pendingDisplaySerial.load(memory_order_acquire) == serialBefore)
 				return snapshot;
 		}
@@ -687,6 +696,8 @@ public:
 				snapshot.dpi = bottomDockPresentedDisplayDpi.load(memory_order_relaxed);
 				snapshot.displaySerial =
 				bottomDockPresentedDisplaySerial.load(memory_order_relaxed);
+			snapshot.desktopDockLine = bottomDockPresentedDesktopDockLine.load(memory_order_relaxed);
+			snapshot.protectBottomEdge = bottomDockPresentedProtectBottomEdge.load(memory_order_relaxed);
 			snapshot.directTranslation = POINT{
 				bottomDockPresentedDirectTranslationX.load(memory_order_relaxed),
 				bottomDockPresentedDirectTranslationY.load(memory_order_relaxed) };
@@ -983,6 +994,9 @@ protected:
 	atomic<LONG> pendingWorkAreaRight = 1;
 	atomic<LONG> pendingWorkAreaBottom = 1;
 	atomic<UINT> pendingDisplayDpi = USER_DEFAULT_SCREEN_DPI;
+	atomic<double> pendingDisplayUiBaseScale = 1.0;
+	atomic<double> pendingDesktopDockLine = 1.0;
+	atomic<bool> pendingProtectBottomEdge = false;
 	atomic<LONG> presentedMonitorOriginX = 0;
 	atomic<LONG> presentedMonitorOriginY = 0;
 	// 交互线程发布目标，渲染线程只回写当前视觉偏移与恢复完成状态。
@@ -1036,6 +1050,8 @@ protected:
 		atomic<LONG> bottomDockPresentedWorkAreaBottom = 1;
 		atomic<UINT> bottomDockPresentedDisplayDpi = USER_DEFAULT_SCREEN_DPI;
 		atomic<unsigned long long> bottomDockPresentedDisplaySerial = 0;
+	atomic<double> bottomDockPresentedDesktopDockLine = 1.0;
+	atomic<bool> bottomDockPresentedProtectBottomEdge = false;
 	atomic<LONG> bottomDockPresentedDirectTranslationX = 0;
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;

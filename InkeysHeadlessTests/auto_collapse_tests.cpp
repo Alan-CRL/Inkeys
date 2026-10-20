@@ -141,8 +141,8 @@ int RunAutoCollapseTests()
 			Inkeys::Config restarted;
 			check(restarted.ReadAll() && Policy(restarted, field).load() == candidate, "restart restores each policy value");
 			value = (candidate + 1) % 3;
-			config.UI.Bar.Zoom = 2.5;
-			check(config.ReadMini({ path }) && value.load() == candidate && config.UI.Bar.Zoom.load() == 2.5,
+			config.UI.Bar.Zoom2 = 2.5;
+			check(config.ReadMini({ path }) && value.load() == candidate && config.UI.Bar.Zoom2.load() == 2.5,
 				"ReadMini loads selected policy and preserves unrelated preference");
 		}
 		value = 2;
@@ -159,8 +159,8 @@ int RunAutoCollapseTests()
 		check(WriteJson(file, document) && config.ReadAll() && value.load() == policyDefaults[field],
 			"missing policy falls back independently");
 		value = 2;
-		config.UI.Bar.Zoom = 2.5;
-		check(config.ReadMini({ path }) && value.load() == policyDefaults[field] && config.UI.Bar.Zoom.load() == 2.5,
+		config.UI.Bar.Zoom2 = 2.5;
+		check(config.ReadMini({ path }) && value.load() == policyDefaults[field] && config.UI.Bar.Zoom2.load() == 2.5,
 			"ReadMini resets missing selected policy to its schema default");
 		for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(3),
 			Json::Value(true), Json::Value(false), Json::Value("1"), Json::Value(1.0),
@@ -174,8 +174,8 @@ int RunAutoCollapseTests()
 			for (int sibling = 0; sibling < 4; ++sibling)
 				if (sibling != field) check(Policy(config, sibling).load() == 2, "invalid field does not reset valid sibling policies");
 			value = 2;
-			config.UI.Bar.Zoom = 2.5;
-			check(config.ReadMini({ path }) && value.load() == policyDefaults[field] && config.UI.Bar.Zoom.load() == 2.5,
+			config.UI.Bar.Zoom2 = 2.5;
+			check(config.ReadMini({ path }) && value.load() == policyDefaults[field] && config.UI.Bar.Zoom2.load() == 2.5,
 				"ReadMini uses the same strict codec and only selected policy default");
 		}
 	}

@@ -228,6 +228,24 @@ inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
 
 export namespace Inkeys::ConfigDetail
 {
+	[[nodiscard]] constexpr bool HasReadyTouchDevice(int digitizerStatus) noexcept
+	{
+		return (digitizerStatus & NID_READY)
+			&& (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
+	}
+
+	[[nodiscard]] constexpr bool ResolveDefaultLargeScreenDevice(int digitizerStatus,
+		bool physicalSizeAvailable, int widthCm, int heightCm) noexcept
+	{
+		// 沿用设备缺省判定：可用触控且尺寸未知或面积达到 1200cm² 时视为大屏。
+		return HasReadyTouchDevice(digitizerStatus) && (!physicalSizeAvailable
+			|| static_cast<long long>(widthCm) * heightCm >= 1200);
+	}
+
+	// 启动时冻结硬件缺省；schema 只读缓存，不能触发硬件枚举或读取用户 PaintDevice。
+	void SetDefaultLargeScreenDevice(bool largeScreen) noexcept;
+	[[nodiscard]] bool GetDefaultLargeScreenDevice() noexcept;
+
 	void WriteHiddenConfigValue(Json::Value& parent, const char* name, const Json::Value& value, bool writeFile);
 	void AppendConfigUploadValue(std::string& result, const std::string& key, std::string value, bool writeReferer, bool stripGuidBraces = false);
 
@@ -322,7 +340,8 @@ namespace Inkeys::ConfigDetail
 	) \
 GROUP(UI, \
 			GROUP(Bar, \
-				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom2, 1.0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UseTaskbarHeightAsScaleBase, ConfigDetail::GetDefaultLargeScreenDevice()) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, StartupPlacement, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \

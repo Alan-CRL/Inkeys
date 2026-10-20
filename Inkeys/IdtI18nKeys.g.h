@@ -372,6 +372,11 @@ inline constexpr struct I18nKeyRoot
                     const char* Skip3 = "SettingsUI/Regular/Appearance/Theme/Skip3";
                     const char* Skip4 = "SettingsUI/Regular/Appearance/Theme/Skip4";
                 } Theme{};
+                struct Node__SettingsUI__Regular__Appearance__TaskbarScaleBase
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/TaskbarScaleBase/N";
+                    const char* E = "SettingsUI/Regular/Appearance/TaskbarScaleBase/E";
+                } TaskbarScaleBase{};
                 struct Node__SettingsUI__Regular__Appearance__BarZoom
                 {
                     const char* N = "SettingsUI/Regular/Appearance/BarZoom/N";

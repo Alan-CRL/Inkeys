@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+#include "../Inkeys/Inkeys/Window/Window.CanvasPolicy.h"
 
 import Inkeys.Window;
 
@@ -181,6 +182,262 @@ namespace
 		}
 		return true;
 	}
+}
+
+
+int RunCanvasPolicyTests()
+{
+	using namespace Inkeys::Window::Detail;
+	int failures = 0;
+	auto check = [&](bool passed, const char* name)
+	{
+		if (!passed) { ++failures; std::cerr << "FAIL canvas policy: " << name << '\n'; }
+	};
+	const RECT screen{ -1920, -1080, 0, 0 };
+	const HWND generation = reinterpret_cast<HWND>(static_cast<UINT_PTR>(1));
+	CanvasPolicyKey key{ generation, screen, screen, false };
+	const RECT originalBounds = key.bounds;
+	for (const bool whiteboard : { false, false, true }) // Desktop、PPT、Whiteboard。
+	{
+		key.whiteboard = whiteboard;
+		CanvasRegion region;
+		check(BuildCanvasRegion(key, nullptr, region), "build scene region");
+		check(!region.Get() || PtInRegion(region.Get(), 17, 1078), "penultimate physical row retained");
+		check(whiteboard ? !region.Get() : !PtInRegion(region.Get(), 17, 1079),
+			"only desktop/ppt exclude last physical row");
+		check(CanvasNonRudeValue(whiteboard, nullptr) ==
+			(whiteboard ? nullptr : reinterpret_cast<HANDLE>(TRUE)), "scene NonRude intent");
+		check(EqualRect(&key.bounds, &originalBounds), "policy preserves full HWND/client geometry");
+	}
+	key.whiteboard = false;
+	const RECT expected{ 0, 1079, 1920, 1080 };
+	const RECT excluded = CanvasBottomExclusion(key);
+	check(EqualRect(&excluded, &expected), "negative monitor origin uses window-local physical row");
+	const auto sameKey = key;
+	check(sameKey == key, "desktop/ppt same policy key is idempotent");
+	key.hwnd = reinterpret_cast<HWND>(static_cast<UINT_PTR>(2));
+	check(key != sameKey, "recreated HWND never reuses prior applied generation");
+	key = sameKey;
+	key.bounds.top -= 40;
+	check(key != sameKey && CanvasBottomExclusion(key).top == 1119,
+		"real moved bounds invalidate applied policy without DIP scaling");
+	key = sameKey;
+	key.bounds.bottom = -1;
+	const RECT alreadyExcluded = CanvasBottomExclusion(key);
+	check(IsRectEmpty(&alreadyExcluded), "window already above edge needs no clipping");
+
+	// 原有自定义形状在白板与失败回滚时均保留，不能将其误清成矩形。
+	key = sameKey;
+	CanvasRegion original(CreateRectRgn(8, 12, 1900, 1080));
+	DWORD regionCount = 0;
+	// 先完整预热相同批次，避免 GDI 的延迟初始化/回收使冷启动总数误报。
+	for (int batch = 0; batch < 2; ++batch)
+	{
+		for (int repeat = 0; repeat < 64; ++repeat)
+		{
+			CanvasRegion clipped;
+			check(BuildCanvasRegion(key, original.Get(), clipped)
+				&& !PtInRegion(clipped.Get(), 0, 40) && PtInRegion(clipped.Get(), 16, 1078)
+				&& !PtInRegion(clipped.Get(), 16, 1079), "clip intersects original custom region");
+			CanvasRegion restored;
+			auto whiteboardKey = key;
+			whiteboardKey.whiteboard = true;
+			check(BuildCanvasRegion(whiteboardKey, original.Get(), restored)
+				&& EqualRgn(restored.Get(), original.Get()), "whiteboard copies original shape");
+		}
+		const DWORD currentCount = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+		if (batch == 0) regionCount = currentCount;
+		else check(currentCount == regionCount,
+			"region construction and snapshots release owned GDI resources");
+	}
+	key.bounds = { -2000, -1080, 80, 0 };
+	CanvasRegion spanning;
+	check(BuildCanvasRegion(key, nullptr, spanning)
+		&& PtInRegion(spanning.Get(), 40, 1079)
+		&& !PtInRegion(spanning.Get(), 80, 1079)
+		&& PtInRegion(spanning.Get(), 2000, 1079), "only target monitor row intersection is excluded");
+
+	struct PairOperations
+	{
+		struct WindowState
+		{
+			bool property = true;
+			bool gap = true;
+			bool visible = false;
+			bool operator==(const WindowState&) const = default;
+		};
+		std::array<WindowState, 2> windows{ WindowState{ true, true, true }, WindowState{} };
+		std::array<WindowState, 2> before{};
+		std::vector<int> restoredOrder;
+		int call = 0;
+		int failCall = 0;
+		bool failRollback = false;
+		bool scene = false;
+		bool target = true;
+		bool enteredRollback = false;
+		bool changedWhileVisible = false;
+		int rollbackVisibilityRestores = 0;
+		bool Passed() { return ++call != failCall; }
+		bool Capture(std::size_t i)
+		{
+			before[i] = windows[i];
+			return Passed();
+		}
+		bool Hide(std::size_t i)
+		{
+			if (!Passed()) return false;
+			windows[i].visible = false;
+			return true;
+		}
+		bool Apply(std::size_t i)
+		{
+			changedWhileVisible |= windows[0].visible || windows[1].visible;
+			if (!Passed()) return false;
+			windows[i].property = !target;
+			if (!Passed()) return false;
+			windows[i].gap = !target;
+			return true;
+		}
+		bool ApplyScene()
+		{
+			if (!Passed()) return false;
+			scene = target;
+			return true;
+		}
+		bool RollbackScene() { scene = !target; return true; }
+		bool RestoreVisibility(std::size_t i)
+		{
+			if (!Passed()) return false;
+			if (enteredRollback) ++rollbackVisibilityRestores;
+			windows[i].visible = before[i].visible;
+			return true;
+		}
+		bool Restore(std::size_t i)
+		{
+			enteredRollback = true;
+			restoredOrder.push_back(static_cast<int>(i));
+			if (failRollback) return false;
+			windows[i].property = before[i].property;
+			windows[i].gap = before[i].gap;
+			return true;
+		}
+	};
+	PairOperations success;
+	check(ApplyCanvasPairTransaction(2, success).succeeded && success.scene
+		&& !success.windows[0].gap && !success.windows[1].gap
+		&& !success.windows[0].property && !success.windows[1].property
+		&& success.windows[0].visible && !success.windows[1].visible && !success.changedWhileVisible,
+		"whiteboard commits both shapes/properties before restoring exclusive visibility");
+	const int forwardCalls = success.call;
+	auto whiteboardPolicyKey = sameKey;
+	whiteboardPolicyKey.whiteboard = true;
+	for (int failCall = 1; failCall <= forwardCalls; ++failCall)
+	{
+		PairOperations failure;
+		const auto before = failure.windows;
+		failure.failCall = failCall;
+		const auto result = ApplyCanvasPairTransaction(2, failure);
+		check(!result.succeeded && result.rollbackSucceeded && failure.windows == before && !failure.scene && !failure.changedWhileVisible,
+			"any capture/hide/property/region/style/show step failure restores both canvases");
+		if (failure.enteredRollback)
+			check(failure.restoredOrder == std::vector<int>{ 1, 0 }
+				&& failure.rollbackVisibilityRestores == 2, "trusted pair rollback restores in reverse order and then restores both visibility intents");
+		// 完整恢复旧场景后，owner 的同场景检查必须跳过事务，不能周期性双隐藏/显示。
+		std::optional<CanvasPolicyKey> applied = sameKey;
+		const auto completion = ResolveCanvasPolicyCompletion(result, false, false);
+		completion.UpdateApplied(applied, whiteboardPolicyKey);
+		check(applied && *applied == sameKey && !completion.retry && !completion.dirty
+			&& !CanvasPolicyNeedsUpdate(applied, sameKey),
+			"same-geometry full rollback retains old policy and needs no owner retry or old-scene transaction");
+	}
+	// 首次应用失败不能将从未生效的目标登记为 applied；后续显式请求仍可重新应用。
+	PairOperations firstApplication;
+	firstApplication.failCall = 8;
+	const auto firstResult = ApplyCanvasPairTransaction(2, firstApplication);
+	std::optional<CanvasPolicyKey> initiallyEmpty;
+	const auto firstCompletion = ResolveCanvasPolicyCompletion(firstResult, false, false);
+	firstCompletion.UpdateApplied(initiallyEmpty, whiteboardPolicyKey);
+	check(!initiallyEmpty && !firstCompletion.retry && !firstCompletion.dirty
+		&& CanvasPolicyNeedsUpdate(initiallyEmpty, whiteboardPolicyKey),
+		"initial full rollback keeps empty applied state eligible for a later explicit application");
+	PairOperations changedBounds;
+	changedBounds.failCall = 8;
+	const auto boundsRollback = ApplyCanvasPairTransaction(2, changedBounds, false);
+	check(!boundsRollback.succeeded && boundsRollback.rollbackSucceeded
+		&& !changedBounds.windows[0].visible && !changedBounds.windows[1].visible,
+		"old region rollback after changed bounds stays hidden until new geometry converges");
+	std::optional<CanvasPolicyKey> movedApplied = sameKey;
+	const auto movedCompletion = ResolveCanvasPolicyCompletion(boundsRollback, true, false);
+	movedCompletion.UpdateApplied(movedApplied, whiteboardPolicyKey);
+	check(!movedApplied && movedCompletion.retry && !movedCompletion.dirty
+		&& CanvasPolicyNeedsUpdate(movedApplied, sameKey),
+		"changed bounds invalidate old applied key and retain recovery retry after complete rollback");
+	PairOperations rollbackFailure;
+	rollbackFailure.failCall = 8; // 第二窗 property 已更新、region 失败。
+	rollbackFailure.failRollback = true;
+	const auto failedRollback = ApplyCanvasPairTransaction(2, rollbackFailure);
+	check(!failedRollback.succeeded && !failedRollback.rollbackSucceeded
+		&& !rollbackFailure.windows[0].visible && !rollbackFailure.windows[1].visible,
+		"incomplete rollback never reveals mixed canvas policies");
+	std::optional<CanvasPolicyKey> failedApplied = sameKey;
+	const auto failedCompletion = ResolveCanvasPolicyCompletion(failedRollback, false, false);
+	failedCompletion.UpdateApplied(failedApplied, whiteboardPolicyKey);
+	check(!failedApplied && failedCompletion.retry && failedCompletion.dirty,
+		"incomplete rollback clears applied key and retains scene repair plus owner retry");
+	// 验证回滚过程本身不恢复可见性，不能只在末尾再次 Hide 后检查最终状态。
+	PairOperations dirtyRollback;
+	dirtyRollback.failCall = 8;
+	const auto dirtyResult = ApplyCanvasPairTransaction(2, dirtyRollback, false);
+	check(!dirtyResult.succeeded && dirtyResult.rollbackSucceeded
+		&& dirtyRollback.enteredRollback && dirtyRollback.rollbackVisibilityRestores == 0
+		&& !dirtyRollback.windows[0].visible && !dirtyRollback.windows[1].visible,
+		"untrusted dirty canvas rollback never restores visibility even before owner retry");
+	std::optional<CanvasPolicyKey> dirtyApplied = sameKey;
+	const auto dirtyCompletion = ResolveCanvasPolicyCompletion(dirtyResult, false, true);
+	dirtyCompletion.UpdateApplied(dirtyApplied, whiteboardPolicyKey);
+	check(!dirtyApplied && dirtyCompletion.retry && dirtyCompletion.dirty,
+		"previously dirty scene still needs owner repair after same-geometry complete rollback");
+	// 已在故障隐藏中的旧 region 不可信；捕获失败也不能因未发生写入而停止恢复。
+	PairOperations recoveryCapture;
+	recoveryCapture.failCall = 1;
+	const auto recoveryCaptureResult = ApplyCanvasPairTransaction(2, recoveryCapture, false);
+	check(!recoveryCaptureResult.succeeded && recoveryCaptureResult.rollbackSucceeded,
+		"recovery capture failure leaves transaction unmodified");
+	const auto recoveryCompletion = ResolveCanvasPolicyCompletion(recoveryCaptureResult, true, true);
+	recoveryCompletion.UpdateApplied(failedApplied, whiteboardPolicyKey);
+	check(!failedApplied && recoveryCompletion.retry && recoveryCompletion.dirty,
+		"recovery-hidden or capture-failed state keeps retry and unresolved style until real success");
+	const auto recoveredCompletion = ResolveCanvasPolicyCompletion({ true, true }, true, true);
+	recoveredCompletion.UpdateApplied(failedApplied, whiteboardPolicyKey);
+	check(failedApplied && *failedApplied == whiteboardPolicyKey
+		&& !recoveredCompletion.retry && !recoveredCompletion.dirty
+		&& !CanvasPolicyNeedsUpdate(failedApplied, whiteboardPolicyKey),
+		"successful recovery commits target policy and clears retry plus stale style repair");
+	// 新的隐藏请求覆盖故障前的主表面快照；重试成功也不能重新揭开旧画布。
+	std::optional<bool> recoveryVisible = true;
+	bool recoveryIconic = true;
+	NoteCanvasRecoveryHidden(recoveryVisible, recoveryIconic);
+	PairOperations hiddenRetry;
+	hiddenRetry.windows = rollbackFailure.windows;
+	hiddenRetry.windows[0].visible = recoveryVisible.value_or(false);
+	check(ApplyCanvasPairTransaction(2, hiddenRetry).succeeded
+		&& !hiddenRetry.windows[0].visible && !hiddenRetry.windows[1].visible
+		&& !recoveryIconic, "later Hidden request prevents failed-policy retry revealing old surface");
+	std::optional<bool> noRecovery;
+	NoteCanvasRecoveryHidden(noRecovery, recoveryIconic);
+	check(!noRecovery, "ordinary hide does not fabricate pending recovery visibility");
+	rollbackFailure.failRollback = false;
+	rollbackFailure.before = {};
+	rollbackFailure.windows[0].visible = true;
+	check(ApplyCanvasPairTransaction(2, rollbackFailure).succeeded,
+		"same scene request can reconcile after failed rollback");
+	success.target = false;
+	check(ApplyCanvasPairTransaction(2, success).succeeded && !success.scene
+		&& success.windows[0].gap && success.windows[1].gap
+		&& success.windows[0].property && success.windows[1].property,
+		"whiteboard exit restores desktop/ppt gap and NonRude together");
+	std::cout << "[CanvasPolicy] failures=" << failures << '\n';
+	return failures;
 }
 
 int RunWindowCommandCompletionTests()

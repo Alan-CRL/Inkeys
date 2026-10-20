@@ -1270,8 +1270,9 @@ SettingSessionCoroutine RunSettingSession()
 
 		int SetSkinMode = setlist.SetSkinMode;
 		float SettingGlobalScale = settingGlobalScale;
-		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom.load());
+		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom2.load());
 		bool BarZoomSavePending = false;
+		bool UseTaskbarHeightAsScaleBase = Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load();
 
 		int TopSleepTime = setlist.topSleepTime;
 		bool RightClickClose = setlist.RightClickClose;
@@ -3450,7 +3451,7 @@ SettingSessionCoroutine RunSettingSession()
 						// 子卡片隐藏时同步收紧外观区域，不改写已保存的子项偏好。
 						const bool showAnimationRate = Experimental.Inkeys3.AnimationEnable;
 						const bool showDynamicEdgeLighting = Experimental.Inkeys3.EdgeLightingEnable;
-						const int appearanceCardCount = 4
+						const int appearanceCardCount = 5
 							+ (showAnimationRate ? 1 : 0)
 							+ (showDynamicEdgeLighting ? 1 : 0);
 						const float appearanceHeight = 20.0f + 75.0f * appearanceCardCount;
@@ -3584,6 +3585,16 @@ SettingSessionCoroutine RunSettingSession()
 									QueueConfigWrite();
 								});
 						}
+						drawAppearanceToggle("以任务栏高度作为缩放基础量",
+							IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N),
+							IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E),
+							UseTaskbarHeightAsScaleBase, [&]
+							{
+								Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = UseTaskbarHeightAsScaleBase;
+								// 基准变化即时刷新主栏和分页；选项窗口仍使用自己的缩放。
+								Inkeys::UI::Bar::RefreshScaleBase();
+								QueueConfigWrite();
+							});
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -3616,9 +3627,9 @@ SettingSessionCoroutine RunSettingSession()
 
 								bool isItemActive = ImGui::IsItemActive();
 
-								if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom.load())) > 0.0001f)
+								if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom2.load())) > 0.0001f)
 								{
-									Inkeys::config.UI.Bar.Zoom = static_cast<double>(BarZoom);
+									Inkeys::config.UI.Bar.Zoom2 = static_cast<double>(BarZoom);
 									Inkeys::UI::Bar::SetConfigZoom(static_cast<double>(BarZoom));
 									BarZoomSavePending = true;
 								}

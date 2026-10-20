@@ -74,8 +74,8 @@ int RunKeyboardShortcutConfigTests()
 		frozen = config;
 		*values[i] = true;
 		check(!fields(frozen)[i]->load() && frozen.Write(), "frozen FIFO snapshot retains false");
-		config.UI.Bar.Zoom = 2.5;
-		check(config.ReadMini({ path }) && !values[i]->load() && config.UI.Bar.Zoom.load() == 2.5,
+		config.UI.Bar.Zoom2 = 2.5;
+		check(config.ReadMini({ path }) && !values[i]->load() && config.UI.Bar.Zoom2.load() == 2.5,
 			"ReadMini loads selected bool without changing unrelated values");
 		for (const auto& invalid : { Json::Value(), Json::Value(0), Json::Value(1), Json::Value("false"),
 			Json::Value(1.0), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })

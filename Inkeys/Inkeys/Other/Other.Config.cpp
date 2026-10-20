@@ -3,6 +3,7 @@ module;
 #include "../../IdtMain.h"
 #include "../../PptSettingsPersistence.h"
 
+#include <atomic>
 #include <initializer_list>
 #include <sstream>
 #include <string_view>
@@ -17,6 +18,7 @@ import Inkeys.Conv.Text;
 namespace
 {
 	constexpr LONGLONG kMaxConfigFileBytes = 16LL * 1024 * 1024;
+	constinit std::atomic_bool defaultLargeScreenDevice{ false };
 
 	template <typename T>
 	inline constexpr bool InkeysConfigDependentFalseV = false;
@@ -710,6 +712,16 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 
 namespace Inkeys::ConfigDetail
 {
+	void SetDefaultLargeScreenDevice(bool largeScreen) noexcept
+	{
+		defaultLargeScreenDevice.store(largeScreen, std::memory_order_relaxed);
+	}
+
+	bool GetDefaultLargeScreenDevice() noexcept
+	{
+		return defaultLargeScreenDevice.load(std::memory_order_relaxed);
+	}
+
 	void WriteHiddenConfigValue(Json::Value& parent, const char* name, const Json::Value& value, bool writeFile)
 	{
 		// AutoClean 关闭时也不能保留明确禁止输出的已知 H 键。

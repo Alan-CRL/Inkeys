@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~788 | Active |
+| `journal-2.md` | ~857 | Active |
 | `journal-1.md` | ~2205 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -31,7 +31,9 @@
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
 | 116 | 2026-10-19 | 键盘快捷键与批注往返完成验收 | `97fbe299` | `feature/hook` |
+| 115 | 2026-10-19 | UI3 taskbar docking and canvas policy completed | `3e5bb005`, `277b4956`, `91f36824` | `featrue/zoom` |
 | 114 | 2026-10-19 | 鼠标钩子、PPT滚轮与主栏自动收起完成验收 | `11e45053` | `feature/hook` |
+| 113 | 2026-10-19 | UI3 taskbar scaling implemented and accepted | `bf800e4c`, `f25bccb5` | `featrue/zoom` |
 | 112 | 2026-10-19 | Draw3 光标改动与离笔回弹修复验收归档 | `e9e9b1f5`, `fb5559ff` | `bugfix/cursor` |
 | 111 | 2026-10-19 | PR238审阅修正、dev冲突解决与PPT控件任务结案 | `2791a1cc`, `f3e83110` | `bugfix/pptcom` |
 | 110 | 2026-10-18 | PptCOM 修复提交归档与覆盖层置顶调查 | `0eb1c7c5`, `184cf86e` | `bugfix/pptcom` |

@@ -255,6 +255,7 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 	signature.validMask |= 8;
 	signature.darkStyle = barStyle.darkStyle ? 1u : 0u;
 	signature.validMask |= 16;
+	double uiBaseScale = 0.0;
 	// 环境只做一次非阻塞读取；锁忙/未知display不填零冒充有效mask。
 	{
 		unique_lock displayLock(pendingDisplayPublishMutex, std::try_to_lock);
@@ -266,11 +267,14 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 			{
 				signature.displaySerial = serial;
 				signature.dpi = dpi;
+				uiBaseScale = pendingDisplayUiBaseScale.load(std::memory_order_relaxed);
 				signature.validMask |= 32 | 64;
 			}
 		}
 	}
-	const double configZoom = barStyle.configZoom;
+	// wire 保留原字段名，倍率含 UI 基准/DPI 校正；Source 的 DPI×倍率仍还原真实 UI scale。
+	const double configZoom = uiBaseScale * USER_DEFAULT_SCREEN_DPI
+		/ (signature.dpi ? signature.dpi : USER_DEFAULT_SCREEN_DPI) * barStyle.configZoom;
 	signature.configZoomBits = std::bit_cast<std::uint64_t>(configZoom);
 	if (isfinite(configZoom) && configZoom > 0.0) signature.validMask |= 128;
 	if (Inkeys::UI::Bar::WhiteboardActive() || Inkeys::UI::Bar::PptPresentationActive()) signature.validMask = 0;

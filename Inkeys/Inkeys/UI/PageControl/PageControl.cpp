@@ -41,6 +41,7 @@ import Inkeys.UI.Bar;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
+import Inkeys.Other.Config;
 import Inkeys.Message;
 import Inkeys.Window;
 
@@ -262,6 +263,7 @@ namespace Inkeys::UI::PageControl
 		{
 			RECT monitor{};
 			float dpiScale = 0.0F;
+			float uiScale = 0.0F;
 			std::uint64_t publicationRevision = 0;
 			std::uint64_t directRevision = 0;
 			std::uint64_t deviceGeneration = 0;
@@ -663,21 +665,27 @@ namespace Inkeys::UI::PageControl
 			return result;
 		}
 
-		[[nodiscard]] std::pair<RECT, float> LayoutMonitor() noexcept
+		struct LayoutMonitorInfo { RECT bounds; float dpiScale; float uiScale; };
+
+		[[nodiscard]] LayoutMonitorInfo LayoutMonitor() noexcept
 		{
 			if (hiddenTestMonitorEnabled.load(std::memory_order_acquire))
 				return { { -30000, -30000, -28080, -28920 },
 					static_cast<float>(hiddenTestDpi.load(std::memory_order_relaxed))
-						/ USER_DEFAULT_SCREEN_DPI };
+						/ USER_DEFAULT_SCREEN_DPI,
+					static_cast<float>(hiddenTestDpi.load(std::memory_order_relaxed)) / USER_DEFAULT_SCREEN_DPI };
 			const auto snapshot = Inkeys::Display::GetSnapshot();
 			if (const auto* monitor = snapshot ? snapshot->Primary() : nullptr)
 			{
 				// 分页仍按主屏布局，DPI 必须来自同一显示快照；退场 HWND 可能已移到邻屏。
 				const UINT dpi = monitor->effectiveDpiX
 					? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI;
-				return { monitor->bounds, static_cast<float>(dpi) / USER_DEFAULT_SCREEN_DPI };
+				const double userZoom = std::clamp(static_cast<double>(Inkeys::config.UI.Bar.Zoom2), 0.5, 2.0);
+				const float uiScale = static_cast<float>(Inkeys::Display::ResolveUiScaleBase(
+					*snapshot, *monitor, Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase) * userZoom);
+				return { monitor->bounds, static_cast<float>(dpi) / USER_DEFAULT_SCREEN_DPI, uiScale };
 			}
-			return { { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) }, 1.0F };
+			return { { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) }, 1.0F, 1.0F };
 		}
 
 		[[nodiscard]] std::wstring PageNumber(int value, int maximum)
@@ -869,12 +877,13 @@ namespace Inkeys::UI::PageControl
 		[[nodiscard]] PageControlSurfaceBudget ResolveGroupBudgetLocked(
 			const RenderSnapshot& snapshot, const RECT& monitor, float dpiScale,
 			std::uint64_t directRevision, std::uint64_t deviceGeneration,
-			bool reuseAfterDirectMove) noexcept
+			bool reuseAfterDirectMove, float uiScale) noexcept
 		{
 			if (groupLayoutBudget.valid
 				&& groupLayoutBudget.publicationRevision == snapshot.revision
 				&& groupLayoutBudget.deviceGeneration == deviceGeneration
 				&& groupLayoutBudget.dpiScale == dpiScale
+				&& groupLayoutBudget.uiScale == uiScale
 				&& SameRect(groupLayoutBudget.monitor, monitor)
 				&& (reuseAfterDirectMove
 					|| groupLayoutBudget.directRevision == directRevision))
@@ -896,7 +905,7 @@ namespace Inkeys::UI::PageControl
 				local[0] = { 10.0F, 16384 };
 				local[1] = { 35.0F, 512 };
 			}
-			groupLayoutBudget = { monitor, dpiScale, snapshot.revision,
+			groupLayoutBudget = { monitor, dpiScale, uiScale, snapshot.revision,
 				directRevision, deviceGeneration,
 				ResolvePageControlGroupBudget(local,
 					VisiblePptMask(snapshot.ppt, snapshot.whiteboard)), true };
@@ -1514,14 +1523,15 @@ namespace Inkeys::UI::PageControl
 			auto& ppt = snapshot.ppt;
 			ppt.presentationVisible = true;
 			CopyDragPairPosition(pairIndex, layout, ppt.layout);
-			const auto [monitor, dpiScale] = LayoutMonitor();
+			const auto [monitor, dpiScale, uiScale] = LayoutMonitor();
 			const auto deviceGeneration =
 				Inkeys::UI::RenderPipeline::GetDeviceEpoch().generation;
 			const auto pair = DragPair(pairIndex);
 			std::unique_lock renderLock(renderTransactionMutex);
 			const auto budget = ResolveGroupBudgetLocked(snapshot, monitor,
 				dpiScale, directMoveRevision.load(std::memory_order_acquire),
-				deviceGeneration, true);
+				deviceGeneration, true, uiScale);
+			ppt.uiScale = uiScale;
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				budget.presentationOutsetDip, budget.bitmapLimit);
 			for (const std::size_t surfaceIndex : pair)
@@ -1629,7 +1639,7 @@ namespace Inkeys::UI::PageControl
 				candidate.middlePairWidth += left ? dx : -dx;
 				candidate.middlePairHeight -= dy;
 			}
-			const auto [monitor, dpiScale] = LayoutMonitor();
+			const auto [monitor, dpiScale, uiScale] = LayoutMonitor();
 			const auto snapshot = SnapshotForRender();
 			PptState ppt = snapshot.ppt;
 			if (candidate.session != ppt.layout.session || candidate.epoch != ppt.layout.epoch)
@@ -1641,7 +1651,8 @@ namespace Inkeys::UI::PageControl
 				Inkeys::UI::RenderPipeline::GetDeviceEpoch().generation;
 			const auto budget = ResolveGroupBudgetLocked(snapshot, monitor,
 				dpiScale, directMoveRevision.load(std::memory_order_acquire),
-				deviceGeneration, true);
+				deviceGeneration, true, uiScale);
+			ppt.uiScale = uiScale;
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				budget.presentationOutsetDip, budget.bitmapLimit);
 			const std::size_t pairIndex = bottom ? 0 : 1;
@@ -1878,11 +1889,11 @@ namespace Inkeys::UI::PageControl
 		[[nodiscard]] PageControlSurfaceBudget GroupBudgetForFrame(
 			const RenderSnapshot& snapshot, const RECT& monitor, float dpiScale,
 			std::uint64_t directRevision,
-			std::uint64_t deviceGeneration) noexcept
+			std::uint64_t deviceGeneration, float uiScale) noexcept
 		{
 			std::scoped_lock renderLock(renderTransactionMutex);
 			return ResolveGroupBudgetLocked(snapshot, monitor, dpiScale,
-				directRevision, deviceGeneration, false);
+				directRevision, deviceGeneration, false, uiScale);
 		}
 
 		[[nodiscard]] bool TracePageControlPresentEnabled() noexcept
@@ -2037,13 +2048,14 @@ namespace Inkeys::UI::PageControl
 				directMoveRevision.load(std::memory_order_acquire);
 			const HWND hwnd = service.Handle(Roles[index]);
 			if (!hwnd) return FrameResult::Retry;
-			const auto [monitor, dpiScale] = LayoutMonitor();
+			const auto [monitor, dpiScale, uiScale] = LayoutMonitor();
 			auto renderSnapshot = SnapshotForRender();
 			auto& ppt = renderSnapshot.ppt;
 			const auto& whiteboard = renderSnapshot.whiteboard;
 			const auto groupBudget = GroupBudgetForFrame(renderSnapshot,
 				monitor, dpiScale, frameDirectMoveRevision,
-				frameContext.epoch.generation);
+				frameContext.epoch.generation, uiScale);
+			ppt.uiScale = uiScale;
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				groupBudget.presentationOutsetDip, groupBudget.bitmapLimit);
 			const Surface surface = SurfaceFor(index);
@@ -2538,10 +2550,11 @@ namespace Inkeys::UI::PageControl
 							if (state.dragging && pointer && pointer->source == PointerInput::Source::Mouse)
 								(void)pointerClients[index].mouseGesture.BeginDrag();
 							state.dragStartScreen = screen;
-							const auto [monitor, dpiScale] = LayoutMonitor();
+							const auto [monitor, dpiScale, uiScale] = LayoutMonitor();
 							const auto budget = ResolveGroupBudgetLocked(frame, monitor, dpiScale,
 								directMoveRevision.load(std::memory_order_acquire),
-								Inkeys::UI::RenderPipeline::GetDeviceEpoch().generation, true);
+								Inkeys::UI::RenderPipeline::GetDeviceEpoch().generation, true, uiScale);
+							ppt.uiScale = uiScale;
 							ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 								budget.presentationOutsetDip, budget.bitmapLimit);
 							state.dragStartLayout = state.feasibleLayout = ppt.layout;
