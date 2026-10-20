@@ -992,6 +992,49 @@ namespace Inkeys::Drawing::Draw3
 		redoItems_.clear();
 	}
 
+	std::vector<uint32_t> CanvasRuntimeHistory::RedoIndices() const
+	{
+		std::vector<uint32_t> result;
+		for (const auto id : redoItems_) result.push_back(id.index);
+		return result;
+	}
+
+	bool CanvasRuntimeHistory::RestoreVisibility(std::span<const uint8_t> visibility,
+		std::span<const uint32_t> redo)
+	{
+		if (visibility.size() != items_.size()) return false;
+		std::vector<bool> seen(items_.size());
+		for (auto index : redo)
+		{
+			if (index >= items_.size() || visibility[index] || seen[index]) return false;
+			seen[index] = true;
+		}
+		lastVisibleIndex_.reset();
+		redoItems_.clear();
+		for (size_t index = 0; index < items_.size(); ++index)
+		{
+			auto& item = items_[index];
+			item.previousVisibleIndex = lastVisibleIndex_;
+			if (!visibility[index])
+			{
+				if (!compositionTree_.SetItemVisibility(item.id, false)) return false;
+				RemoveVisibleCompositionTiles(item.compositionTiles);
+				item.visible = false;
+			}
+			else lastVisibleIndex_ = static_cast<uint32_t>(index);
+		}
+		// redo 栈的弹出顺序重建前驱链，排除已被新笔丢弃的隐藏分支。
+		auto predecessor = lastVisibleIndex_;
+		for (auto it = redo.rbegin(); it != redo.rend(); ++it)
+		{
+			items_[*it].previousVisibleIndex = predecessor;
+			predecessor = *it;
+		}
+		for (auto index : redo) redoItems_.push_back(items_[index].id);
+		++revision_;
+		return true;
+	}
+
 	size_t CanvasRuntimeHistory::RedoDepth() const noexcept
 	{
 		return redoItems_.size();

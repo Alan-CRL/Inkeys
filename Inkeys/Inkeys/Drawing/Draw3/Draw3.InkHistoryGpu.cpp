@@ -1537,6 +1537,19 @@ namespace Inkeys::Drawing::Draw3
 		return built.succeeded;
 	}
 
+	InkHistoryGpuResidency InkHistoryGpuCache::Residency() const noexcept
+	{
+		InkHistoryGpuResidency result;
+		if (!impl_) return result;
+		result.undoPages = impl_->undoPages.size();
+		for (const auto& page : impl_->undoPages) result.undoSlices += page.sliceCount;
+		result.compositionPages = impl_->compositionPages.size();
+		for (const auto& page : impl_->compositionPages) result.compositionSlices += page.sliceCount;
+		result.hotEntries = impl_->hotEntries.size();
+		result.residentNodes = impl_->residentNodes.size();
+		return result;
+	}
+
 	void InkHistoryGpuCache::DiscardCompositionCache() noexcept
 	{
 		if (!impl_) return;

@@ -368,6 +368,7 @@ namespace
 	};
 
 	SettingBusinessQueue settingBusinessQueue;
+	mutex configWriteQueueMutex;
 	thread_local bool settingRenderingOnCurrentThread = false;
 
 	struct SettingRenderScope
@@ -443,6 +444,8 @@ namespace
 
 	void QueueConfigWrite()
 	{
+		// 设置渲染与 Draw3 都会提交：捕获到入队保持同序，避免旧主题快照后入队覆盖新值。
+		lock_guard lock(configWriteQueueMutex);
 		QueueBusiness({ SettingBusinessKind::WriteConfig });
 	}
 
@@ -1272,7 +1275,7 @@ SettingSessionCoroutine RunSettingSession()
 		float SettingGlobalScale = settingGlobalScale;
 		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom2.load());
 		bool BarZoomSavePending = false;
-		bool UseTaskbarHeightAsScaleBase = Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load();
+		int UseTaskbarHeightAsScaleBase = Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load();
 
 		int TopSleepTime = setlist.topSleepTime;
 		bool RightClickClose = setlist.RightClickClose;
@@ -3586,16 +3589,54 @@ SettingSessionCoroutine RunSettingSession()
 									QueueConfigWrite();
 								});
 						}
-						drawAppearanceToggle("以任务栏高度作为缩放基础量",
-							IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N),
-							IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E),
-							UseTaskbarHeightAsScaleBase, [&]
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("以任务栏高度作为缩放基础量", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N).c_str());
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale,ImGui::GetCursorPosY() });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E).c_str());
+							ImGui::SetCursorPos({ settingRightComboX * settingGlobalScale,20.0f * settingGlobalScale });
+							ImGui::SetNextItemWidth(200.0f * settingGlobalScale);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+							const string modeNames[] = {
+								IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Off),
+								IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Base),
+								IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Actual)
+							};
+							UseTaskbarHeightAsScaleBase = std::clamp(
+								Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2);
+							const int scaleMode = UseTaskbarHeightAsScaleBase;
+							if (Widgets::combo.Begin("##以任务栏高度作为缩放基础量", modeNames[scaleMode].c_str(), 3))
 							{
-								Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = UseTaskbarHeightAsScaleBase;
-								// 基准变化即时刷新主栏和分页；选项窗口仍使用自己的缩放。
-								Inkeys::UI::Bar::RefreshScaleBase();
-								QueueConfigWrite();
-							});
+								for (int i = 0; i < 3; ++i)
+								{
+									const bool selected = scaleMode == i;
+									if (Widgets::combo.Selectable(modeNames[i].c_str(), selected) && !selected)
+									{
+										UseTaskbarHeightAsScaleBase = i;
+										Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = UseTaskbarHeightAsScaleBase;
+										// 基准变化即时刷新主栏和分页；重复选择不触发写盘。
+										Inkeys::UI::Bar::RefreshScaleBase();
+										QueueConfigWrite();
+									}
+									if (selected) ImGui::SetItemDefaultFocus();
+								}
+								Widgets::combo.End();
+							}
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							ImGui::EndChild();
+						}
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

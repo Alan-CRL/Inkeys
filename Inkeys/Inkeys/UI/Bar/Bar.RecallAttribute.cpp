@@ -62,11 +62,7 @@ namespace
 		const auto c = GetThemeColor(role);
 		return D2D1::ColorF(GetRValue(c) / 255.0f, GetGValue(c) / 255.0f, GetBValue(c) / 255.0f, opacity);
 	}
-	void PushOpacity(ID2D1DeviceContext* context, double opacity)
-	{
-		context->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-			D2D1::IdentityMatrix(), static_cast<float>((std::clamp)(opacity, 0.0, 1.0))), nullptr);
-	}
+
 	wstring RedoButtonLabel()
 	{
 		return I18n::getWOr(I18nKey.UI.Bar.MainButtons.RedoLabel, L"重做");
@@ -215,10 +211,12 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 	}
 	layout_ = ResolveRecallAttributeLayout(input);
 	RecallAttributePresentation next; next.zoom = zoom;
-	next.panelPose = FitRecallSurfacePose(ResolveRecallSurfacePose(layout_.panel, input.anchor, panelMotion_.Geometry(), BarDrawAttributeCompactWidth), layout_.panel, input.work);
-	next.geometry = TransformRecallAttributeLayout(layout_, next.panelPose);
-	next.panelOpacity = panelMotion_.Opacity();
-	next.panelVisible = panelMotion_.Visible() && next.panelOpacity > 0.000001;
+	const auto panelFrame=ResolveBarAttributePanelFrame(panelMotion_,
+		{layout_.panel.left,layout_.panel.top,layout_.panel.right,layout_.panel.bottom},
+		{input.anchor.left,input.anchor.top,input.anchor.right,input.anchor.bottom},BarDrawAttributeCompactWidth);
+	next.panelPose=FitRecallSurfacePose({panelFrame.pose.scale,panelFrame.pose.x,panelFrame.pose.y},layout_.panel,input.work);
+	next.geometry=TransformRecallAttributeLayout(layout_,next.panelPose);
+	next.panelOpacity=panelFrame.opacity;next.panelVisible=panelFrame.visible;
 	changed_ |= frame_.geometry != next.geometry || frame_.zoom != next.zoom || frame_.panelOpacity != next.panelOpacity ||
 		frame_.panelVisible != next.panelVisible ||
 		frame_.panelPose.scale != next.panelPose.scale;
@@ -242,27 +240,30 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 		changed_ = true;
 	}
 	else changed_ |= b.TransitionContent(iconResource, label);
-	// 属性按钮不在主栏注册表中，必须自行推进内容关键帧并保持续帧。
-	const bool iconContentAdvanced = b.icon.AdvanceContentTransition(dt, speed);
-	const bool nameContentAdvanced = b.name.AdvanceContentTransition(dt, speed);
-	changed_ |= iconContentAdvanced || nameContentAdvanced;
-	active_ |= iconContentAdvanced || nameContentAdvanced;
 	const bool presented = frame_.panelVisible;
 	const double scale = frame_.panelPose.scale;
+	const int requestedHover=hovered_.load();
+	if(appliedHover_!=requestedHover){
+		if(appliedHover_>=0)StopBarButtonHoverVisual(redoButton_,false);
+		if(requestedHover>=0)StartBarButtonHoverVisual(redoButton_);
+		appliedHover_=requestedHover;changed_=true;
+	}
 	b.state->state = BarWidgetState::None;
 	SetBarButtonPressedVisual(b, commandEnabled && pressed_ == 0);
-	UpdateBarButtonHoverVisual(b, presented, commandEnabled, BarButtonHoverFadeDurationSeconds);
 	// 与主栏清空/定格共用禁用透明度，仍由现有命令策略处理灰色重复点击。
-	RetargetBarButtonInteractionVisual(b, presented, commandEnabled, false, BarButtonHoverTransitionDuration);
-	b.button.frame->SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	RetargetBarButtonInteractionVisual(b,presented,commandEnabled,false,BarButtonHoverTransitionDuration,
+		std::nullopt,true,std::nullopt,GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 	Place(b.button, g.items[0]);
 	b.button.rw->SetDirect(BarButtonCornerRadiusDip * scale); b.button.rh->SetDirect(BarButtonCornerRadiusDip * scale); b.button.ft->SetDirect(BarButtonFrameThicknessDip * scale);
 	const auto metrics = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
 	b.icon.x.SetDirect(0); b.icon.y.SetDirect(metrics.iconOffsetYDip * scale); b.icon.contentScale = scale;
 	b.name.x.SetDirect(0); b.name.y.SetDirect(metrics.primaryOffsetYDip * scale);
 	b.name.w.SetDirect(metrics.primarySlotWidthDip * scale); b.name.h.SetDirect(metrics.primarySlotHeightDip * scale); b.name.size.SetDirect(metrics.primaryFontSizeDip * scale);
-	advance(b.button.pct); advance(*b.button.fill); advance(*b.button.frame); advance(*b.button.frameLightPct);
-	advance(b.icon.pct); advance(b.name.pct); advance(*b.icon.color1); advance(b.name.color); advance(b.pressScale);
+	BarButtonAnimationContext buttonFrame;
+	buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=BarUiAnimationEnabled;
+	buttonFrame.visible=presented;buttonFrame.hoverAllowed=commandEnabled;
+	const auto advanced=AdvanceBarButtonVisual(b,buttonFrame);
+	changed_|=advanced.changed;active_|=advanced.active;
 	return changed_ || active_;
 }
 
@@ -276,7 +277,7 @@ void BarRecallAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContext*
 	if (!brush_ && FAILED(context->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &brush_))) return;
 	if (!focusStroke_) { ComPtr<ID2D1Factory> factory; context->GetFactory(&factory); auto props = D2D1::StrokeStyleProperties(); props.dashStyle = D2D1_DASH_STYLE_DOT; factory->CreateStrokeStyle(props, nullptr, 0, &focusStroke_); }
 	const auto& g = frame_.geometry;
-	PushOpacity(context, frame_.panelOpacity); renderer.SetFrameDiffuseMaskGeometryScale(1 / frame_.panelPose.scale);
+	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),frame_.panelOpacity); renderer.SetFrameDiffuseMaskGeometryScale(1 / frame_.panelPose.scale);
 	DrawBarBackgroundVisual(renderer, context, surface_, BarUiInheritClass(surface_.inhX, surface_.inhY));
 	context->PushAxisAlignedClip(PixelRect(g.panel, zoom_), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	DrawBarButtonVisual(renderer, context, redoButton_, BarUiInheritClass(redoButton_.button.inhX, redoButton_.button.inhY));
@@ -327,13 +328,13 @@ bool BarRecallAttributePanel::ResetPointerFeedback()
 {
 	const bool changed = hovered_ >= 0 || pressed_ >= 0;
 	hovered_ = -1; pressed_ = -1;
-	StopBarButtonHoverVisual(redoButton_, false);
 	return changed;
 }
 bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled, bool contactPointer, bool* accepted)
 {
 	if (accepted) *accepted = false;
 	const auto f = PresentationSnapshot();
+	if(cancelled){const bool owned=ResetPointerFeedback();if(owned)owner.UpdateRendering(false);return owned;}
 	if (!f.panelVisible && pressed_ < 0) return false;
 	const auto& geometry = f.geometry; const double x = message.x / f.zoom, y = message.y / f.zoom;
 	const bool inside = f.panelVisible && geometry.panel.Width() > 0 && geometry.panel.Height() > 0 &&
@@ -345,12 +346,8 @@ bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& mes
 	{
 		if (hovered_ != hit)
 		{
-			const int old = hovered_; hovered_ = hit; focused_ = -1;
-			if (old != hit)
-			{
-				if (old >= 0) StopBarButtonHoverVisual(redoButton_, false);
-				if (hit >= 0) StartBarButtonHoverVisual(redoButton_);
-			}
+			// 输入只发布目标，悬停/按压动画统一由 Advance 在渲染线程消费。
+			hovered_ = hit; focused_ = -1;
 			owner.UpdateRendering(false);
 		}
 		if (pressed_ >= 0 && cancelled) { pressed_ = -1; owner.UpdateRendering(false); } return inside;

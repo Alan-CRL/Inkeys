@@ -52,7 +52,7 @@ mini config 只读取：
 | `Experimental.Inkeys3.UI3.StartupPreview.Enable` | `true`；设置页改动下次启动生效 |
 | `Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip` | `470.0`；总宽度 DIP |
 | `UI.Bar.Zoom2` | 用户倍率，默认1.0；不迁移旧Zoom |
-| `UI.Bar.UseTaskbarHeightAsScaleBase` | 缺省按启动冻结的设备默认分类：大屏true，其余false；显式bool优先；预览与真实Bar共用任务栏/DPI基准 |
+| `UI.Bar.UseTaskbarHeightAsScaleBase` | 整数0关闭、1任务栏基础量、2任务栏真实量；旧bool false→0/true→2；冻结大屏缺省1、其余0。预览与真实Bar共用DPI/固定48DIP/真实任务栏三态解析，Shell缺样也不得把基础量退回普通DPI |
 | `UI.Bar.StartupPlacement` | 0居中展开底栏、1左下角主按钮、2右下角主按钮；缺失/非法回退0 |
 
 旧 main.json 缺少新字段时使用默认值；曾写入的旧图片/CRC 字段安全忽略。设置页不暴露 cached width。
@@ -238,7 +238,7 @@ if (manualDelayRequested && Inkeys::UI::StartupPreview::IsActive())
 
 ### Contracts
 - Mini阶段冻结唯一选择并传两种UI；ReadAll及设置修改不得重选本次启动。配置I/O仍冻结payload进入FIFO。
-- Preview早期使用真实主屏有效DPI，正式Bar使用同策略Display快照；pixelScale仅一次UIBase×configZoom（关闭任务栏基准或无可信任务栏时UIBase=DPI/96），不用系统DPI替代真实主屏DPI。
+- Preview早期使用真实主屏有效DPI，正式Bar使用同策略Display快照；pixelScale仅一次UIBase×configZoom。关闭时UIBase=DPI/96；基础量固定为48/80×DPI/96，即使无Shell样本也保持；仅真实量在无可信任务栏时回退DPI/96。不用系统DPI替代真实主屏DPI。
 - 角落间距24DIP按可见轮廓测量，排除透明window padding；工作区为有效边界，不可用回退监视器bounds，保留负坐标。
 - 角落在注册渲染前Floating+Free+fold=true；MainBar和子按钮/图标/文字/PNG/描边必须直接初始化透明折叠终态，不能首帧再SetTar收起。
 - 首次布局只应用一次启动位置；左展开向右、右展开向左；后续PPT/白板/拖动吸附保留原策略。corner不以展开栏宽做启动auto-fit而改变按钮与预览缩放。

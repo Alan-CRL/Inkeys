@@ -42,6 +42,12 @@ namespace
 		return bounds.bottom - bounds.top;
 	}
 
+	LONG VisibleBodyBottom(const ResolvedSurfaceLayout& layout, double heightDip) noexcept
+	{
+		return layout.logicalBounds.top + static_cast<LONG>(std::ceil(
+			(heightDip + BarButtonFrameThicknessDip / 2.0) * layout.scale));
+	}
+
 	void TestSharedButtonInheritance()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -266,6 +272,11 @@ namespace
 			&& !ShouldAcceptPageControlClientHit(
 				WorkspaceMode::WhiteboardExpanded, true, false),
 			"transparent rounded corners pass through while PPT background remains draggable");
+		Check(ShouldAcceptPageControlClientHit(WorkspaceMode::WhiteboardExpanded, true, false, true)
+			&& ShouldAcceptPageControlClientHit(WorkspaceMode::WhiteboardExpanded, true, false, false, true)
+			&& !ShouldAcceptPageControlClientHit(WorkspaceMode::WhiteboardExpanded, false, false, true, true)
+			&& !ShouldAcceptPageControlClientHit(WorkspaceMode::PptCompact, true, true, true),
+			"locked whiteboard panel consumes clicks without accepting transparent corners or PPT input");
 		constexpr POINT dragStart{ 100, 100 };
 		Check(!HasExceededPptDragThreshold(
 			dragStart, POINT{ 103, 102 }, 8, 6)
@@ -274,22 +285,31 @@ namespace
 			&& HasExceededPptDragThreshold(
 				dragStart, POINT{ 100, 103 }, 8, 6),
 			"page press converts to drag only after the centered system threshold");
-		Check(!left[1].displaysText && !left[3].displaysText
+		Check(left[1].displaysText && left[3].displaysText
 			&& left[1].invokesBusinessAction && left[3].invokesBusinessAction,
-			"compact arrows contain no labels and keep page actions");
+			"standard PPT arrows expose labels and retain page actions");
 		Check(left[2].displaysText && left[2].invokesBusinessAction
 			&& left[2].primaryTextBold && left[2].secondaryTextNormal
 			&& left[2].immediateTextUpdate,
 			"PPT page button opens preview with mixed page-number weights");
-		Check(left[0].bounds.left == 5.0 && left[3].bounds.right == 160.0
-			&& right[1].bounds.left == 5.0 && right[0].bounds.right == 160.0,
+		Check(left[0].bounds.left == 5.0 && left[3].bounds.right == PptControlLongSideDip-PageControlGapDip
+			&& right[1].bounds.left == 5.0 && right[0].bounds.right == PptControlLongSideDip-PageControlGapDip,
 			"horizontal drag slot stays on the outer edge");
 		Check(left[0].bounds.right == left[1].bounds.left
 			&& right[3].bounds.right == right[0].bounds.left
 			&& side[0].bounds.bottom == side[1].bounds.top,
 			"drag divider lane touches the adjacent arrow without a third gap");
-		Check(side[0].bounds.top == 5.0 && side[3].bounds.bottom == 160.0,
-			"side layout keeps the drag slot above three compact buttons");
+		Check(side[0].bounds.top == 5.0 && side[3].bounds.bottom == PptControlLongSideDip-PageControlGapDip,
+			"side layout keeps the ten DIP drag slot above three standard buttons");
+		Check(!BarPptCompactPaginationEnabled&&PptCompactLongSideDip==165.0&&PptCompactShortSideDip==42.5
+			&&PptControlLongSideDip==240.0&&PptControlShortSideDip==80.0,
+			"legacy geometry remains available while the production compact path is disabled");
+		for(const auto surface:{Surface::BottomLeft,Surface::BottomRight,Surface::MiddleLeft,Surface::MiddleRight}){
+			const auto buttons=ResolvePptWidgetContracts(surface);
+			for(std::size_t id=1;id<buttons.size();++id)Check(buttons[id].bounds.right-buttons[id].bounds.left==BarButtonTwoSideDip
+				&&buttons[id].bounds.bottom-buttons[id].bounds.top==BarButtonTwoSideDip,
+				"every PPT direction and page button occupies the standard two by two square");
+		}
 		const auto pptPrevious = ResolveDirectionContentPolicy(
 			WorkspaceMode::PptCompact, false, false);
 		const auto whiteboardPrevious = ResolveDirectionContentPolicy(
@@ -641,6 +661,7 @@ namespace
 	{
 		constexpr RECT monitor{ 0, 0, 7680, 4320 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showMiddlePair = true;
 		for (const float dpi : { 1.0F, 1.5F, 2.0F, 3.0F, 4.0F })
@@ -675,14 +696,23 @@ namespace
 		WhiteboardState whiteboard;
 		whiteboard.expandedLayoutTarget = whiteboard.active = true;
 		const auto expanded = ResolveSurfaceLayout(Surface::BottomLeft, monitor, 2, ppt, whiteboard);
-		Check(expanded.scale == 2 && Width(expanded.logicalBounds) == 460,
-			"whiteboard never inherits PPT user scale or position");
+		const auto expandedRight = ResolveSurfaceLayout(Surface::BottomRight, monitor, 2, ppt, whiteboard);
+		Check(expanded.scale == 2 && Width(expanded.logicalBounds) == 610
+			&& Height(expanded.logicalBounds) == 160
+			&& expanded.logicalBounds.left == monitor.left + 10
+			&& VisibleBodyBottom(expanded, WhiteboardHeightDip) == monitor.bottom - 10
+			&& expandedRight.scale == 2 && Width(expandedRight.logicalBounds) == 460
+			&& Height(expandedRight.logicalBounds) == 160
+			&& expandedRight.logicalBounds.right == monitor.right - 10
+			&& VisibleBodyBottom(expandedRight, WhiteboardHeightDip) == monitor.bottom - 10,
+			"whiteboard uses independent 305/230 DIP widths and fixed bottom corners without inheriting PPT scale or position");
 	}
 
 	void TestTaskbarUiScale()
 	{
 		constexpr RECT monitor{ -3840, 0, 3840, 4320 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = ppt.layout.showMiddlePair = true;
 		ppt.layout.bottomPairScale = 1.5F;
@@ -700,11 +730,26 @@ namespace
 						const bool middle = surface == Surface::MiddleLeft || surface == Surface::MiddleRight;
 						Check(std::abs(layout.scale - base * user * (middle ? 2.0F : 1.5F)) < 1e-5F,
 							"all four PPT surfaces multiply UI base, global zoom and local zoom exactly once");
+						if (!middle) Check(VisibleBodyBottom(layout, PptControlShortSideDip) == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)),
+							"PPT bottom inset stays five screen DIP across global and local UI scales");
 					}
 					WhiteboardState whiteboard;
 					whiteboard.active = whiteboard.expandedLayoutTarget = true;
-					Check(ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, fitted, whiteboard).scale == dpi,
-						"shared whiteboard surface retains independent DPI scale");
+					const auto expanded=ResolveSurfaceLayout(Surface::BottomLeft,monitor,dpi,fitted,whiteboard);
+					Check(VisibleBodyBottom(expanded, WhiteboardHeightDip) == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)),
+						"whiteboard fill and stroke retain five screen DIP instead of five UI-scaled DIP");
+					auto defaultPpt = fitted;defaultPpt.layout.bottomPairScale = 1.0F;
+					const auto defaultLayout = ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, defaultPpt, {});
+					Check(defaultLayout.logicalBounds.top == expanded.logicalBounds.top
+						&& defaultLayout.logicalBounds.bottom == expanded.logicalBounds.bottom,
+						"default PPT and whiteboard keep the same body Y anchor at every global scale");
+					Check(std::abs(expanded.scale-base*user)<1e-5F,
+						"whiteboard follows the global UI base and zoom without PPT local zoom or a second DPI multiplier");
+					PptState noShow;noShow.uiScale=base*user;noShow.layout.bottomPairScale=3;
+					noShow.layout.bottomPairWidth=noShow.layout.bottomPairHeight=300;
+					const auto standalone=ResolveSurfaceLayout(Surface::BottomLeft,monitor,dpi,noShow,whiteboard);
+					Check(standalone.scale==expanded.scale&&EqualRect(&standalone.logicalBounds,&expanded.logicalBounds),
+						"standalone whiteboard uses the same global scale and corner anchor without an active PPT session");
 					auto candidate = fitted.layout;
 					candidate.middlePairHeight = 21.0F * dpi;
 					Check(!ResolvePptDragCandidate(Surface::MiddleLeft, monitor, dpi, fitted,
@@ -724,6 +769,7 @@ namespace
 	{
 		constexpr RECT monitor{ 0, 0, 7680, 4320 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.bottomPairScale = 3.0F;
@@ -824,6 +870,7 @@ namespace
 		{
 			const int failuresBefore = failureCount;
 			PptState ppt;
+			ppt.presentationActive = true;
 			ppt.presentationVisible = true;
 			ppt.layout.showBottomPair = false;
 			ppt.layout.showMiddlePair = true;
@@ -878,6 +925,7 @@ namespace
 		// 先裁剪再尝试吸附；矮屏能把远候选裁剪进中轴吸附带。
 		constexpr RECT shortMonitor{ -600, -100, 600, 100 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = false;
 		ppt.layout.showMiddlePair = true;
@@ -899,7 +947,7 @@ namespace
 			RECT{ 0, 0, 1920, 1080 }, 1.0F, ppt, candidate, ppt.layout,
 			BarBottomDockThresholdDip);
 		Check(currentScale.clamped && !currentScale.centerSnapped
-			&& currentScale.layout.middlePairHeight == 496.25F
+			&& currentScale.layout.middlePairHeight == 477.5F
 			&& currentScale.layout.middlePairScale == 0.5F,
 			"candidate clamp uses the current fitted scale instead of the old drag-start scale");
 		candidate = ppt.layout;
@@ -920,13 +968,21 @@ namespace
 		for (const auto surface : { Surface::MiddleLeft, Surface::MiddleRight })
 		{
 			PptState ppt;
+			ppt.presentationActive = true;
 			ppt.presentationVisible = true;
 			ppt.layout.showBottomPair = true;
 			ppt.layout.showMiddlePair = true;
 			ppt.layout.middlePairScale = 0.5F;
 			ppt.layout.middlePairWidth = 20.0F;
 			ppt.layout.middlePairHeight = sign * 150.0F;
-			ppt.layout.bottomPairHeight = sign > 0.0F ? 450.0F : 577.0F;
+			auto centerFrame = ppt;
+			centerFrame.layout.middlePairHeight = 0.0F;
+			const auto centerBounds = ResolveSurfaceLayout(surface, monitor, 1.0F, centerFrame, {}).logicalBounds;
+			const auto bottomBounds = ResolveSurfaceLayout(Surface::BottomLeft, monitor, 1.0F, ppt, {}).logicalBounds;
+			// 障碍与当前主体中心重叠 5px，19px 自由候选仍须保留组间隙，不依赖旧 165/42.5 尺寸。
+			ppt.layout.bottomPairHeight = static_cast<float>(sign > 0.0F
+				? bottomBounds.top - centerBounds.bottom + PageControlGapDip
+				: bottomBounds.bottom - centerBounds.top - PageControlGapDip);
 			auto candidate = ppt.layout;
 			candidate.middlePairWidth = 19.0F;
 			candidate.middlePairHeight = sign * 19.0F;
@@ -948,13 +1004,18 @@ namespace
 		}
 
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = true;
 		ppt.layout.middlePairScale = 0.5F;
-		ppt.layout.bottomPairHeight = 450.0F;
 		ppt.layout.middlePairWidth = 20.0F;
 		ppt.layout.middlePairHeight = 150.0F;
+		auto centerFrame = ppt;
+		centerFrame.layout.middlePairHeight = 0.0F;
+		const auto centerBounds = ResolveSurfaceLayout(Surface::MiddleLeft, monitor, 1.0F, centerFrame, {}).logicalBounds;
+		const auto bottomBounds = ResolveSurfaceLayout(Surface::BottomLeft, monitor, 1.0F, ppt, {}).logicalBounds;
+		ppt.layout.bottomPairHeight = static_cast<float>(bottomBounds.top - centerBounds.bottom + PageControlGapDip);
 		auto candidate = ppt.layout;
 		candidate.middlePairWidth = 19.0F;
 		candidate.middlePairHeight = -80.0F;
@@ -982,7 +1043,8 @@ namespace
 		ppt.layout.session = 7;
 		ppt.layout.epoch = 5;
 		ppt.layout.pairVersions = { 21, 22 };
-		ppt.layout.bottomPairHeight = 592.0F;
+		// 新发布把障碍放到中心上方：只阻挡旧采样，自由中心仍保持两倍标准间隙。
+		ppt.layout.bottomPairHeight = static_cast<float>(bottomBounds.bottom - centerBounds.top + PageControlGapDip * 2);
 		PptState obstructedFree = ppt;
 		obstructedFree.layout.middlePairWidth = candidate.middlePairWidth;
 		obstructedFree.layout.middlePairHeight = candidate.middlePairHeight;
@@ -1042,6 +1104,7 @@ namespace
 	void TestDragFrameOwnershipAndGeometry()
 	{
 		PptState frame;
+		frame.presentationActive = true;
 		frame.presentationVisible = true;
 		frame.layout.session = 4;
 		frame.layout.epoch = 8;
@@ -1109,6 +1172,7 @@ namespace
 	{
 		constexpr RECT monitor{ 0, 0, 1920, 1080 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = true;
@@ -1117,14 +1181,14 @@ namespace
 		const auto compact = ResolveSurfaceLayout(Surface::BottomLeft,
 			monitor, 1.0F, ppt, whiteboard);
 		Check(compact.mode == WorkspaceMode::PptCompact && compact.visible
-			&& Width(compact.logicalBounds) == 165
-			&& Height(compact.logicalBounds) == 43,
-			"bottom PPT control resolves compact dimensions");
+			&& Width(compact.logicalBounds) == 240
+			&& Height(compact.logicalBounds) == 80,
+			"bottom PPT control resolves standard two by two dimensions");
 		const auto scaled = ResolveSurfaceLayout(Surface::BottomLeft,
 			monitor, 1.5F, ppt, whiteboard);
-		Check(Width(scaled.logicalBounds) == 248
-			&& Height(scaled.logicalBounds) == 64,
-			"compact dimensions scale with DPI");
+		Check(Width(scaled.logicalBounds) == 360
+			&& Height(scaled.logicalBounds) == 120,
+			"standard dimensions scale with DPI fallback");
 		const auto sideVisible = ResolveSurfaceLayout(Surface::MiddleLeft,
 			monitor, 1.0F, ppt, whiteboard);
 		const auto sideHidden = ResolveHiddenSurfaceBounds(
@@ -1144,15 +1208,16 @@ namespace
 		const auto hiddenSide = ResolveSurfaceLayout(Surface::MiddleLeft,
 			monitor, 1.0F, ppt, whiteboard);
 		Check(expanded.mode == WorkspaceMode::WhiteboardExpanded
-			&& Width(expanded.logicalBounds) == 230
+			&& Width(expanded.logicalBounds) == 305
 			&& Height(expanded.logicalBounds) == 80
 			&& expanded.logicalBounds.left == 5
-			&& expanded.logicalBounds.bottom == monitor.bottom - 5
+			&& VisibleBodyBottom(expanded, WhiteboardHeightDip) == monitor.bottom - 5
 			&& expandedRight.logicalBounds.right == monitor.right - 5,
 			"whiteboard ignores PPT offsets and stays at fixed bottom corners");
 		Check(hiddenSide.mode == WorkspaceMode::Hidden && !hiddenSide.visible,
 			"whiteboard workspace hides PPT side controls");
 
+		ppt.presentationActive = false;
 		ppt.presentationVisible = false;
 		whiteboard.expandedLayoutTarget = false;
 		whiteboard.active = false;
@@ -1164,6 +1229,7 @@ namespace
 	void TestWorkspaceTransitionAndInputPolicy()
 	{
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = false;
@@ -1422,6 +1488,7 @@ namespace
 	void TestWhiteboardLayoutTargetAndReadiness()
 	{
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		WhiteboardState whiteboard;
@@ -1460,6 +1527,40 @@ namespace
 			"reverse re-entry immediately retargets expanded from the current frame");
 	}
 
+	void TestSharedBottomWorkspaceVisibility()
+	{
+		PptState ppt;ppt.presentationActive=true;ppt.presentationVisible=true;
+		ppt.layout.showBottomPair=ppt.layout.showMiddlePair=true;
+		ppt.uiScale=1.5F;ppt.layout.bottomPairScale=3.0F;
+		ppt.layout.bottomPairWidth=ppt.layout.bottomPairHeight=10000;
+		constexpr RECT monitor{0,0,800,600};
+		const auto visible=ResolveRuntimePageControlLayout(monitor,1,ppt);
+		ppt.presentationVisible=false;
+		const auto covered=ResolveRuntimePageControlLayout(monitor,1,ppt);
+		Check(ResolveWorkspaceMode(Surface::BottomLeft,ppt,{})==WorkspaceMode::PptCompact
+			&&ResolveWorkspaceMode(Surface::BottomRight,ppt,{})==WorkspaceMode::PptCompact
+			&&ResolveWorkspaceMode(Surface::MiddleLeft,ppt,{})==WorkspaceMode::Hidden,
+			"live bottom survives the staged whiteboard visibility gap while middle controls hide");
+		Check(covered.layout.bottomPairScale==visible.layout.bottomPairScale
+			&&covered.layout.bottomPairWidth==visible.layout.bottomPairWidth
+			&&covered.layout.bottomPairHeight==visible.layout.bottomPairHeight,
+			"covered live bottom still fits and clamps before presentationVisible is restored");
+		Check(covered.layout.middlePairScale==ppt.layout.middlePairScale
+			&&covered.layout.middlePairWidth==ppt.layout.middlePairWidth
+			&&covered.layout.middlePairHeight==ppt.layout.middlePairHeight,
+			"covered middle pair does not join fitting or collision correction");
+		ppt.layout.showBottomPair=false;
+		Check(ResolveWorkspaceMode(Surface::BottomLeft,ppt,{})==WorkspaceMode::Hidden,
+			"live session never overrides the user's bottom pair visibility setting");
+		WhiteboardState board;board.active=board.expandedLayoutTarget=true;
+		Check(ResolveWorkspaceMode(Surface::BottomLeft,ppt,board)==WorkspaceMode::WhiteboardExpanded
+			&&ResolveWorkspaceMode(Surface::BottomLeft,ppt,board,true)==WorkspaceMode::Hidden,
+			"whiteboard list wins the workspace projection while explicit minimization hides it");
+		ppt.presentationActive=false;ppt.presentationVisible=true;ppt.layout.showBottomPair=true;
+		Check(ResolveWorkspaceMode(Surface::BottomLeft,ppt,{})==WorkspaceMode::Hidden,
+			"a truly ended session cannot revive a bottom pair through stale presentationVisible");
+	}
+
 	void TestDirtyInvalidationDeduplication()
 	{
 		constexpr RECT firstBounds{ 10, 20, 175, 63 };
@@ -1478,6 +1579,10 @@ namespace
 		PptState changedPpt = ppt;
 		Check(ArePptStatesEquivalent(ppt, changedPpt),
 			"identical PPT snapshots are deduplicated");
+		changedPpt.presentationActive = true;
+		Check(!ArePptStatesEquivalent(ppt, changedPpt),
+			"live session changes publish while PPT controls remain hidden by whiteboard");
+		changedPpt = ppt;
 		changedPpt.currentPage = 2;
 		Check(!ArePptStatesEquivalent(ppt, changedPpt),
 			"PPT page changes still publish");
@@ -1527,6 +1632,7 @@ namespace
 	{
 		constexpr RECT monitor{ 0, 0, 800, 600 };
 		PptState ppt;
+		ppt.presentationActive = true;
 		ppt.presentationVisible = true;
 		ppt.layout.showBottomPair = true;
 		ppt.layout.showMiddlePair = true;
@@ -1546,6 +1652,7 @@ namespace
 
 		constexpr RECT tinyMonitor{ -180, -60, 0, 60 };
 		PptState extreme;
+		extreme.presentationActive = true;
 		extreme.presentationVisible = true;
 		extreme.layout.showBottomPair = true;
 		extreme.layout.showMiddlePair = true;
@@ -1571,6 +1678,26 @@ namespace
 		}
 		Check(!PageControlGroupsOverlap(tinyMonitor, 1.5F, fitted, 8),
 			"tiny monitor fitting keeps bottom and side groups separated");
+		for (const float dpi : { 1.0F, 1.5F, 2.0F })
+		{
+			PptState moved;
+			moved.presentationActive = true;
+			moved.presentationVisible = true;
+			moved.uiScale = 0.6F;
+			moved.layout.bottomPairScale = 1.5F;
+			moved.layout.bottomPairWidth = 17;
+			moved.layout.bottomPairHeight = 37;
+			const auto movedLayout = ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, moved, {});
+			Check(VisibleBodyBottom(movedLayout, PptControlShortSideDip) == monitor.bottom - static_cast<LONG>(std::lround(5 * dpi)) - 37
+				&& moved.layout.bottomPairWidth == 17 && moved.layout.bottomPairHeight == 37,
+				"screen-DIP bottom inset preserves saved PPT drag offsets");
+			auto maxDrag = moved.layout;
+			maxDrag.bottomPairHeight = 10000;
+			moved.layout = ClampPageControlLayout(Surface::BottomLeft, monitor, dpi, maxDrag, moved.uiScale);
+			const auto clampedBounds = ResolveSurfaceLayout(Surface::BottomLeft, monitor, dpi, moved, {}).logicalBounds;
+			Check(clampedBounds.top >= monitor.top && clampedBounds.top <= monitor.top + 5,
+				"PPT drag clamp uses the same fixed bottom inset at the opposite screen edge");
+		}
 		Check(extreme.layout.bottomPairWidth == original.layout.bottomPairWidth
 			&& extreme.layout.middlePairHeight == original.layout.middlePairHeight
 			&& extreme.layout.bottomPairScale == original.layout.bottomPairScale
@@ -1582,9 +1709,9 @@ namespace
 		dragged.bottomPairHeight = 10000.0F;
 		const auto clamped = ClampPageControlLayout(Surface::BottomLeft,
 			monitor, 1.0F, dragged);
-		Check(clamped.bottomPairWidth == 230.0F
-			&& clamped.bottomPairHeight == 547.5F,
-			"PPT drag clamp uses compact geometry only");
+		Check(clamped.bottomPairWidth == 155.0F
+			&& clamped.bottomPairHeight == 509.0F,
+			"PPT drag clamp uses its active standard geometry without inheriting whiteboard width");
 	}
 
 	void TestA2ProjectionAndMigration()
@@ -1595,10 +1722,10 @@ namespace
 		const auto whiteboard = ResolveBarA2Projection(true, true);
 		const auto disabledDesktop = ResolveBarA2Projection(false, false, false);
 		const auto disabledPresentation = ResolveBarA2Projection(true, false, false);
-		Check(!desktop.whiteboardTwoTwo && desktop.freezeVisible
+		Check(desktop.whiteboardTwoTwo && desktop.freezeVisible
 			&& !desktop.endShowVisible,
-			"desktop A2 shows two compact buttons");
-		Check(!presentation.whiteboardTwoTwo && !presentation.freezeVisible
+			"desktop A2 keeps a standard 2x2 whiteboard entry");
+		Check(presentation.whiteboardTwoTwo && !presentation.freezeVisible
 			&& presentation.endShowVisible,
 			"PPT A2 hides unavailable Freeze and keeps EndShow");
 		Check(whiteboard.whiteboardTwoTwo && !whiteboard.freezeVisible
@@ -1675,6 +1802,7 @@ int RunPageControlTests()
 	TestWorkspaceTransitionAndInputPolicy();
 	TestTouchTranslationPolicy();
 	TestWhiteboardLayoutTargetAndReadiness();
+	TestSharedBottomWorkspaceVisibility();
 	TestDirtyInvalidationDeduplication();
 	TestRuntimeCollisionFallback();
 	TestA2ProjectionAndMigration();

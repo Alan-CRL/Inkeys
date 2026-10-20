@@ -10,6 +10,7 @@
 - [build-and-compatibility.md](build-and-compatibility.md)：构建入口、Harness 发布边界、artifact 交接合同和 Windows 兼容约束。
 - [cpp-conventions.md](cpp-conventions.md)：命名、模块、注释、共享状态和并发习惯。
 - [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工。
+- [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、UInk分页存储与底栏恢复合同。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [ui-pointer-session.md](ui-pointer-session.md)：Bar/PPT 私有 Raw Mouse、WM_TOUCH 来源会话、窗口外拖动与取消合同。

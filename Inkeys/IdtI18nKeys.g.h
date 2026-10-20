@@ -84,8 +84,22 @@ inline constexpr struct I18nKeyRoot
                 const char* UndoLabel = "UI/Bar/MainButtons/UndoLabel";
                 const char* RedoLabel = "UI/Bar/MainButtons/RedoLabel";
                 const char* ClearLabel = "UI/Bar/MainButtons/ClearLabel";
+                const char* WhiteboardWindowTitle = "UI/Bar/MainButtons/WhiteboardWindowTitle";
+                const char* WhiteboardPreviousLabel = "UI/Bar/MainButtons/WhiteboardPreviousLabel";
+                const char* WhiteboardNextLabel = "UI/Bar/MainButtons/WhiteboardNextLabel";
+                const char* WhiteboardAddPageLabel = "UI/Bar/MainButtons/WhiteboardAddPageLabel";
                 const char* WhiteboardLabel = "UI/Bar/MainButtons/WhiteboardLabel";
+                const char* ResumeWhiteboardLabel = "UI/Bar/MainButtons/ResumeWhiteboardLabel";
                 const char* CloseWhiteboardLabel = "UI/Bar/MainButtons/CloseWhiteboardLabel";
+                const char* ReturnToShowLabel = "UI/Bar/MainButtons/ReturnToShowLabel";
+                const char* MinimizeWhiteboardLabel = "UI/Bar/MainButtons/MinimizeWhiteboardLabel";
+                const char* WhiteboardThemeLabel = "UI/Bar/MainButtons/WhiteboardThemeLabel";
+                const char* WhiteboardBackgroundColorLabel = "UI/Bar/MainButtons/WhiteboardBackgroundColorLabel";
+                const char* WhiteboardBackgroundStyleLabel = "UI/Bar/MainButtons/WhiteboardBackgroundStyleLabel";
+                const char* WhiteboardBlankLabel = "UI/Bar/MainButtons/WhiteboardBlankLabel";
+                const char* WhiteboardDotsLabel = "UI/Bar/MainButtons/WhiteboardDotsLabel";
+                const char* WhiteboardGridLabel = "UI/Bar/MainButtons/WhiteboardGridLabel";
+                const char* WhiteboardUnsavedLabel = "UI/Bar/MainButtons/WhiteboardUnsavedLabel";
                 const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
                 const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
                 const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
@@ -376,6 +390,9 @@ inline constexpr struct I18nKeyRoot
                 {
                     const char* N = "SettingsUI/Regular/Appearance/TaskbarScaleBase/N";
                     const char* E = "SettingsUI/Regular/Appearance/TaskbarScaleBase/E";
+                    const char* Off = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Off";
+                    const char* Base = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Base";
+                    const char* Actual = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Actual";
                 } TaskbarScaleBase{};
                 struct Node__SettingsUI__Regular__Appearance__BarZoom
                 {

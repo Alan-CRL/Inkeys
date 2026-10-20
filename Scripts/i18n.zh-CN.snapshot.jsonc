@@ -81,8 +81,22 @@
         "UndoLabel": "撤回",
         "RedoLabel": "重做",
         "ClearLabel": "清空",
+        "WhiteboardWindowTitle": "Inkeys 白板",
+        "WhiteboardPreviousLabel": "上一页",
+        "WhiteboardNextLabel": "下一页",
+        "WhiteboardAddPageLabel": "加页",
         "WhiteboardLabel": "白板",
+        "ResumeWhiteboardLabel": "返回白板",
         "CloseWhiteboardLabel": "关闭白板",
+        "ReturnToShowLabel": "返回放映",
+        "MinimizeWhiteboardLabel": "最小化白板",
+        "WhiteboardThemeLabel": "主题样式",
+        "WhiteboardBackgroundColorLabel": "背景颜色",
+        "WhiteboardBackgroundStyleLabel": "背景样式",
+        "WhiteboardBlankLabel": "空白",
+        "WhiteboardDotsLabel": "点阵",
+        "WhiteboardGridLabel": "网格",
+        "WhiteboardUnsavedLabel": "部分页面未保存",
         "FreezeLabel": "定格",
         "EndPresentationLabel": "结束放映",
         "SettingsLabel": "设置",
@@ -371,8 +385,11 @@
         },
         "TaskbarScaleBase":
         {
-          "N": "以任务栏高度作为缩放基础量",
-          "E": "100% 时主栏与任务栏等高；竖直任务栏取宽度。"
+          "N": "任务栏缩放基准",
+          "E": "100% 时基础量高 48 DIP；真实量随任务栏厚度。",
+          "Off": "关闭",
+          "Base": "任务栏基础量",
+          "Actual": "任务栏真实量"
         },
         "BarZoom":
         {

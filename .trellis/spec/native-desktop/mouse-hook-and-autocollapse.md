@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-修改低级鼠标 Hook、全局/本地 PPT 滚轮、四项自动收起策略或已接受起笔通知时应用本合同。既有原生 HiMsg 点击、Raw 私有拖动补充和 WM_TOUCH 来源会话继续遵守 [ui-pointer-session.md](ui-pointer-session.md)。
+修改低级鼠标 Hook、全局/本地 PPT 滚轮、四项自动收起策略或已接受起笔通知时应用本合同。既有原生共享邮箱点击、Raw 私有拖动补充和 WM_TOUCH 来源会话继续遵守 [ui-pointer-session.md](ui-pointer-session.md)。
 
 旧 IdtDrawpad.cpp 确有键盘 Hook → ExMessage → 画板 HiMsg → KeyboardInteraction → PPT 翻页；该文件目前不参与编译，Facade 不安装旧键盘 Hook。HiMsg 可以承载转译输入，但入队必须有明确的活动消费者。现行滚轮从 Bar owner 进入 PPT 业务队列，不新增四个 PPT HWND 的 HiMsg 绑定。
 
@@ -19,7 +19,7 @@
 
 - Hook 专用 jthread 消息泵同线程安装/卸载；Start/Stop 串行，先停 producer 再结束 Bar owner。安装失败有一次 owner 日志。回调对负 code、停止、普通 Move 立即链传，不执行 UI/COM/渲染/配置/日志格式化/HiMsg/业务锁/任意业务回调；三个鼠标键缓存用固定原子位，键盘缓存合同保持。
 - 路由载荷全为原子，Hook 只尝试一次稳定读取；不稳直接链传。事件复制点位、时间、delta、来源、路由/生命周期代次和 PPT token，不保留系统 lParam 指针。SPSC 256 槽有效容量255，满/owner超过250ms未续租/停止/零delta/提升wheel不接管；提升点击仍可作为链传的栏外候选。
-- 入队提交是 wheel 抑制的唯一线性化点；失败不得留下稍后执行的副本。Bar 顶层和 Seek/颜色/粗细等嵌套 TryRead/Wait 共用有限批量 drain，沿原轮询消费，不新增后台业务线程或 Hook 定时业务。
+- 入队提交是 wheel 抑制的唯一线性化点；失败不得留下稍后执行的副本。Bar 顶层和 Seek/颜色/粗细等续接共用有限批量 drain，由唯一交互 worker 消费。生产 worker 最长每100ms续租/收包，活动 Bar 手势最多每8ms检查 Raw/桌面；离屏 worker 仍按邮箱/手势期限等待，这些收包不请求渲染。
 - 本地 PageControl 原生 wheel 保留 targetVisible/inputLocked/workspace wheel 门禁及 Selection 语义，进入独立64项有界 mailbox，不能充当 Hook SPSC 的第二 producer。WhiteboardExpanded.wheel=false，不得将旧 PPT wheel 回落白板 callback。
 - 两路累计器的唯一写者为 Bar owner；signed delta 净累计至120，余数保留，多刻度逐次尝试原业务门禁，拒绝不留欠账。模式/路由/会话变化清余数。捕获 token 在 owner 与最终业务线程复验，不得重新 CaptureCurrent 认领旧事件。保留 Previous/Next outstanding；同 token 的 EndShow 至多一个 pending/in-flight，完成/异常/过期/停止释放，旧完成不能释放新 token。COM ABI、焦点策略、确认策略不变。
 - 新三态值固定0=关闭、1=非底栏模式时、2=任何时候；1仅 Floating允许，自由底栏与居中底栏同属 BottomDocked。两个主栏样式均显示且生效。只读写 Inkeys3 main.json，不继承/迁移/双写旧 deploy 的四个 bool。JSON 仅可表示为 int 的整数0..2有效，其余分别回 schema 默认。

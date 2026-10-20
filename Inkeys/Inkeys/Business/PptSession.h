@@ -99,4 +99,71 @@ namespace Inkeys::Business
 			|| (session.processStartTime != 0 && processStartTime != 0
 				&& session.processStartTime != processStartTime));
 	}
+
+	[[nodiscard]] constexpr bool IsFirstPptWindowAcquisition(const PptSessionToken& previous,
+		std::uintptr_t acquiredWindow) noexcept
+	{
+		// 已知锚点因 COM 暂时失效而恢复只刷新窗口，不能把后台轮询当作进入放映。
+		return previous.active && previous.showWindow == 0 && acquiredWindow != 0;
+	}
+	[[nodiscard]] constexpr bool MatchesPptFocusForeground(const PptFocusRequest& request,
+		const PptFocusForeground& foreground) noexcept
+	{
+		return (request.session.showWindow != 0 && foreground.window == request.session.showWindow)
+			|| (request.foreground.window != 0 && request.foreground.processId != 0
+				&& foreground.window == request.foreground.window
+				&& foreground.processId == request.foreground.processId);
+	}
+	struct PptFocusState
+	{
+		PptSessionToken session;
+		PptFocusForeground foreground;
+		bool controlAvailable = false;
+		bool workspaceAllowed = false;
+		bool modalActive = false;
+		bool targetExists = false;
+		bool targetVisible = false;
+		std::uint32_t targetProcessId = 0;
+		std::uint64_t targetProcessStartTime = 0;
+	};
+	[[nodiscard]] constexpr bool CanFocusPptSession(const PptFocusRequest& request,
+		const PptFocusState& state) noexcept
+	{
+		// 无激活控件可从原外部前台显式交接；排队后切走、旧场次及模态期间均拒绝。
+		return MatchesPptSession(request.session, state.session)
+			&& state.controlAvailable && state.workspaceAllowed && !state.modalActive
+			&& request.session.showWindow != 0 && request.session.processId != 0
+			&& state.targetExists && state.targetVisible
+			&& state.targetProcessId == request.session.processId
+			&& !IsPptWindowConfirmedEnded(request.session, state.targetExists,
+				state.targetProcessId, state.targetProcessStartTime)
+			&& MatchesPptFocusForeground(request, state.foreground);
+	}
+	class PptFocusHandoff
+	{
+		std::optional<PptFocusRequest> pending;
+	public:
+		void Begin(const PptFocusRequest& request) noexcept
+		{
+			pending = request.session.active && request.session.showWindow != 0
+				? std::optional<PptFocusRequest>(request) : std::nullopt;
+		}
+		void Reset() noexcept { pending.reset(); }
+		void RebaseAfterWindowTransition(const PptFocusForeground& before,
+			const PptFocusForeground& after, bool allowForegroundFallback = false) noexcept
+		{
+			if (!pending) return;
+			const bool unchanged = before.window == after.window && before.processId == after.processId;
+			// 仅本段实际隐藏的白板前台窗口可回退；外部 A→B 不能被窗口事务重新授权。
+			if (!MatchesPptFocusForeground(*pending, before) || (!unchanged && !allowForegroundFallback))
+				pending.reset();
+			else pending->foreground = after;
+		}
+		[[nodiscard]] std::optional<PptFocusRequest> Take() noexcept
+		{
+			auto result = pending;
+			pending.reset();
+			return result;
+		}
+	};
 }

@@ -219,7 +219,9 @@ enum class BarUiFrameLightOpacitySourceEnum : int
 
 //// 单个形状控件
 // Shape 与独立 surface 共用同一圆角命中，避免只在绘制上看起来一致。
-bool BarUiRoundedRectContainsPoint(int mx, int my, double zoom,
+bool BarUiSuperellipseContainsPoint(double mx, double my, double zoom,
+	double x, double y, double width, double height, double exponent, double epsilon = 1e-6);
+bool BarUiRoundedRectContainsPoint(double mx, double my, double zoom,
 	double leftDip, double topDip, double widthDip, double heightDip,
 	double radiusXDip, double radiusYDip, double epsilon = 1e-6) noexcept;
 

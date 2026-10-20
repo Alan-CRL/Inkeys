@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.MainLayoutPolicy.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
@@ -506,6 +507,10 @@ namespace
 				input.directionLocked = false;
 				Check(ResolveBarMainExpansionSide(input,false), "explicit centerline option retains legacy classification");
 			}
+		Check(!LockCenteredBarExpansion(true, true, BarExpandDirectionAdjustment::WhenSpaceInsufficient)
+			&& LockCenteredBarExpansion(true, false, BarExpandDirectionAdjustment::WhenSpaceInsufficient)
+			&& LockCenteredBarExpansion(true, true, BarExpandDirectionAdjustment::Centerline),
+			"centered whiteboard space policy uses screen edges while other direction locks remain");
 		BarMainExpansionInput edge{0.0,1000.0,600.0,1.0,40.0,10.0,349.5,0.5,0.5};
 		Check(ResolveBarMainExpansionSide(edge,true), "pixel-aligned exact target envelope fits");
 		edge.layoutWidthDip += 0.01;
@@ -526,6 +531,21 @@ namespace
 int RunBarBottomDockTests()
 {
 	using namespace Inkeys::UI::Bar;
+	{
+		int restored = 0, requests = 0;
+		bool requested = true;
+		const auto restore = [&] { ++restored; return false; };
+		const auto request = [&](bool active) { ++requests; requested = active; };
+		DispatchBarWhiteboardButtonAction(requested, true, restore, request);
+		Check(restored == 1 && requests == 0 && requested,
+			"minimized whiteboard restores the current workspace and never falls back on restore failure");
+		DispatchBarWhiteboardButtonAction(requested, false, restore, request);
+		Check(restored == 1 && requests == 1 && !requested,
+			"expanded whiteboard keeps its original close action");
+		DispatchBarWhiteboardButtonAction(requested, false, restore, request);
+		Check(restored == 1 && requests == 2 && requested,
+			"inactive whiteboard keeps its original open action");
+	}
 	// 新桌面线与场景 inset 共享生产策略，输入捕获也必须使用相同线。
 	const RECT taskbarMonitor{ -1920, -200, 0, 880 };
 	const RECT staleBottomWork{ -1920, -200, 0, 832 };
@@ -618,6 +638,28 @@ int RunBarBottomDockTests()
 		Check(Near(ResolveBarBottomDockInsetPixels(5.0, 1.0), 5.0)
 			&& Near(ResolveBarBottomDockInsetPixels(5.0, 1.5), 8.0),
 			"five DIP inset matches page-bar physical margin");
+
+	for (const double dpi : { 1.0, 1.5, 2.0 })
+		for (const LONG taskbarHeight : { 24L, 96L })
+			for (const double zoom : { 0.3, 0.9, 1.8 })
+			{
+				BarPptSceneState show;
+				BarWorkspaceSceneState workspace;
+				(void)show.Publish(1, true);
+				(void)show.Take();
+				Check(workspace.Update(false, show.active) == BarWorkspaceTransition::Enter
+					&& workspace.Update(true, show.active) == BarWorkspaceTransition::Switch
+					&& !show.Take()
+					&& workspace.Update(false, show.active) == BarWorkspaceTransition::Switch,
+					"whiteboard return keeps the live PPT dock scene without replaying a session edge");
+				const RECT work{ monitor.left, monitor.top, monitor.right, monitor.bottom - taskbarHeight };
+				const double line = ResolveBarBottomDockLine(monitor, work,
+					ResolveBarWorkspaceBottomInsetDip(false, false, show.active, false), dpi, work.bottom);
+				const double center = ResolveBarBottomDockCenterScreenY(line, 80, 1, zoom);
+				Check(Near(ResolveBarVisibleBorderBottomScreen(center, 80, 1, zoom),
+					monitor.bottom - std::round(5 * dpi)),
+					"PPT main bar returns below the taskbar dock line at five screen DIP for every UI scale");
+			}
 
 	for (double zoom : { 1.0, 1.5, 1.875 })
 	{

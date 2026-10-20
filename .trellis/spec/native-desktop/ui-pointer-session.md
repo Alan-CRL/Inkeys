@@ -21,8 +21,8 @@
 
 ### 原有入口与可选补充
 
-- Bar 原生鼠标 Down/Move/Up 继续通过 HiMsg 进入交互线程，窗口线程固化完整屏幕点、消息时间与原生按压代次，并以值型 MouseGesture 保存 Down 当时的来源准入快照；交互线程只接纳仍有效的快照，不能让排队 Down 跨已结束的 Touch/Pen 接管复活。实际业务归属和 Raw claim 仍只在交互线程推进。普通按钮不申请 Raw 会话。PageControl 原生消息立即进入自己的 owner 上下文，不等待 Raw Down，也不路由到 Bar 业务线程。
-- `MouseGesture::Begin` 接受非零原生代次的 Down，立即取得业务归属，与 Raw 是否注册、是否收到/匹配 Down 无关。`AcceptNative` 的有效 Up 可以结束点击或拖动。不得在 HiMsg 入队或消费层无条件丢弃原生 Up。
+- Bar 原生鼠标 Down/Move/Up 通过按值 SharedInputEnvelope 进入共享交互 worker，窗口线程固化完整屏幕点、消息时间与原生按压代次，并以值型 MouseGesture 保存 Down 当时的来源准入快照；交互线程只接纳仍有效的快照，不能让排队 Down 跨已结束的 Touch/Pen 接管复活。Bar 业务归属和 Raw claim 只在共享 worker 推进。普通按钮不申请 Raw 会话。PageControl 在 HWND owner 归一化来源、代次和原生采样，再将带精确 captureTicket 的 SurfaceInputEvent 投递同一 worker；业务回调不等待 Raw Down。
+- `MouseGesture::Begin` 接受非零原生代次的 Down，立即取得业务归属，与 Raw 是否注册、是否收到/匹配 Down 无关。`AcceptNative` 的有效 Up 可以结束点击或拖动。不得在共享邮箱入队或消费层无条件丢弃原生 Up。
 - 只在连续交互入口准备可选 `MouseChannel`。主按钮、Page/背景与粗细浮窗等仍按各自原有阈值判定实际拖动；候选阶段可以用 Raw Move 提供越界轨迹，`BeginDrag()` 之前的 Raw Up 不能提交点击、折叠或翻页。已在 Down 开始连续改值的选色板/预设拖选、直接 FineDial 等按原语义进入连续操作。
 - Raw Down 只建立补充身份，不再次执行业务 Down。接受的 Raw 样本通过 `Latest()` 保留原生业务代次/设备/触点身份。客户端必须依据接受后的 Kind、坐标与时间执行业务，Cancel 不得沿用原消息的 WM_LBUTTONUP 提交；实际拖动中比最近移动更旧的 Up 仍结束会话，但位置与时间不回退。
 - 实际拖动的有效原生 Up 与 Raw Up 只能结束一次；结束后忽略迟到终态。旧按压的原生代次和 Raw 身份不得完成下一次按下。结束只退休本会话，不全局 Clear 后续消息。
@@ -41,7 +41,7 @@
 
 ### 触摸与客户端业务
 
-- Bar 触摸保持 WM_TOUCH -> 带来源的 ExMessage -> HiMsg；PageControl 保留本地 WM_TOUCH 转译。活动触点按 hSource+dwID+代次区分，不修改通用 HiMsg；触摸位置来自接受的样本，不能读取系统鼠标替代。
+- Bar 触摸沿 WM_TOUCH -> 带来源的值型消息 -> 共享交互邮箱；PageControl 本地 WM_TOUCH 归一化后也投递同一 worker。活动触点按 hSource+dwID+代次区分，不修改通用 HiMsg；触摸位置来自接受的样本，不能读取系统鼠标替代。
 - Bar 主按钮移栏/停靠、预设拖选、二维选色板、粗细滑轨/预览相对拖动/数值浮窗与 FineDial 复用补充机制，各自保留阈值、即时更新、提交和回退语义。
 - PPT Previous/Next 点击和长按只走原生/本地触摸入口，不申请 Raw；移出按钮、Up、捕获取消或 workspace 失效停止重复。PPT DragHandle 立即拖动，Page/真实圆角背景按系统阈值进入；Whiteboard 不获得 PPT 拖动区。
 - PPT 原生 Up 先验证归属再应用末段位置。漏收旧 Mouse Up 时新的真实 Mouse Down 可以取消旧按压并重新命中，不伪造点击；Touch/Pen 活动期间继续拒绝 Mouse。pair 直移/回退保持 try_lock、latest-wins、pending 和原持久化合同。

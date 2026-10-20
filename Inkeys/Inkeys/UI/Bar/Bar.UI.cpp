@@ -84,7 +84,7 @@ void BarUiShapeClass::Initialization(double xT, double yT, double wT, double hT,
 	if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
 	if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
 }
-bool BarUiRoundedRectContainsPoint(int mx, int my, double zoom,
+bool BarUiRoundedRectContainsPoint(double mx, double my, double zoom,
 	double leftDip, double topDip, double widthDip, double heightDip,
 	double radiusXDip, double radiusYDip, double epsilon) noexcept
 {
@@ -170,14 +170,15 @@ void BarUiSuperellipseClass::Initialization(double xT, double yT, double wT, dou
 	if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
 	if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
 }
-bool BarUiSuperellipseClass::IsClick(int mx, int my, double zoom, double epsilon)
+bool BarUiSuperellipseContainsPoint(double mx, double my, double zoom,
+	double x, double y, double width, double height, double exponent, double epsilon)
 {
-	double left = inhX * zoom;
-	double top = inhY * zoom;
-	double right = left + w.val * zoom;
-	double bottom = top + h.val * zoom;
+	double left = x * zoom;
+	double top = y * zoom;
+	double right = left + width * zoom;
+	double bottom = top + height * zoom;
 	double radius = min(right - left, bottom - top) / 2.0;
-	if (radius <= 0.0 || (!n.has_value() || n.value().val <= 0.0)) return false;
+	if (radius <= 0.0 || exponent <= 0.0) return false;
 
 	double px = static_cast<double>(mx);
 	double py = static_cast<double>(my);
@@ -188,11 +189,17 @@ bool BarUiSuperellipseClass::IsClick(int mx, int my, double zoom, double epsilon
 	double cy = clamp(py, top + radius, bottom - radius);
 	double normx = (px - cx) / radius;
 	double normy = (py - cy) / radius;
-	double val = pow(abs(normx), n.value().val) + pow(abs(normy), n.value().val);
+	double val = pow(abs(normx), exponent) + pow(abs(normy), exponent);
 
 	// 内/边判定
 	if (epsilon > 0.0) return val <= 1.0 + epsilon;
 	return val <= 1.0;
+}
+
+bool BarUiSuperellipseClass::IsClick(int mx,int my,double zoom,double epsilon)
+{
+	return n.has_value() && BarUiSuperellipseContainsPoint(mx,my,zoom,inhX,inhY,
+		w.val,h.val,n->val,epsilon);
 }
 
 //// 单个 SVG 控件

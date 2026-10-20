@@ -847,6 +847,48 @@ namespace
 			"same page in another PPT show cannot execute old shortcut")) ++failures;
 	}
 
+	void TestWhiteboardShortcutCommandOrder(int& failures)
+	{
+		namespace Shortcut = Inkeys::Drawing::Draw3::Shortcuts;
+		using Inkeys::Drawing::Draw3::WhiteboardPattern;
+		using Inkeys::Drawing::Draw3::WhiteboardTheme;
+		StateBridge bridge(3);
+		bridge.PublishWorkspace(Workspace::Whiteboard);
+		auto request = std::make_shared<Shortcut::Request>();
+		request->requestId = 31;
+		request->scope.workspace = Workspace::Whiteboard;
+		request->scope.pageIndex = 2;
+		request->scope.pageEpoch = 7;
+		request->scope.intentEpoch = bridge.Snapshot().shortcutIntentEpoch;
+		const WhiteboardTheme theme{0x172A46u, WhiteboardPattern::Grid};
+		// 两个分支共用命令队列：主题身份不能覆盖快捷键身份，也不能退休页面意图。
+		if (!Expect(bridge.PublishWhiteboardTheme(theme, 9, 2) == CommandResult::Accepted &&
+			bridge.PublishShortcut(CommandType::Clear, request) == CommandResult::Accepted &&
+			bridge.Snapshot().shortcutIntentEpoch == request->scope.intentEpoch &&
+			bridge.StopWithFinalCommand(CommandType::PrepareExitAutoSave),
+			"whiteboard theme and conditional Clear share the queue before the final save barrier")) ++failures;
+		Command command;
+		if (!Expect(bridge.TryConsume(command) && command.type == CommandType::SetWhiteboardTheme &&
+			command.workspace == Workspace::Whiteboard && command.whiteboardTheme == theme &&
+			command.whiteboardGeneration == 9 && command.whiteboardPage == 2 && !command.shortcut,
+			"whiteboard theme retains its own generation and page in FIFO")) ++failures;
+		if (!Expect(bridge.TryConsume(command) && command.type == CommandType::Clear &&
+			command.shortcut == request && command.shortcut->scope.pageEpoch == 7 &&
+			command.whiteboardGeneration == 0,
+			"conditional whiteboard Clear retains its request independently of theme payload")) ++failures;
+		if (!Expect(bridge.TryConsume(command) && command.type == CommandType::PrepareExitAutoSave &&
+			command.workspace == Workspace::Whiteboard && !command.shortcut && !bridge.TryConsume(command),
+			"whiteboard final save barrier follows both accepted branch commands exactly once")) ++failures;
+
+		bridge.Reset();
+		bridge.PublishWorkspace(Workspace::Whiteboard);
+		request->scope.intentEpoch = bridge.Snapshot().shortcutIntentEpoch;
+		bridge.PublishWorkspace(Workspace::Desktop);
+		bridge.PublishWorkspace(Workspace::Whiteboard);
+		if (!Expect(bridge.PublishShortcut(CommandType::Clear, request) == CommandResult::NotRunning,
+			"closing and reopening whiteboard rejects the previous shortcut intent")) ++failures;
+	}
+
 	void TestShortcutBoundedCompletions(int& failures)
 	{
 		namespace Shortcut = Inkeys::Drawing::Draw3::Shortcuts;
@@ -886,6 +928,7 @@ int RunDraw3BridgeTests()
 	int failures = 0;
 	TestProductState(failures);
 	TestConditionalShortcutCommands(failures);
+	TestWhiteboardShortcutCommandOrder(failures);
 	TestShortcutBoundedCompletions(failures);
 	TestMouseCursorToolProjection(failures);
 	TestPresentationSessionIdentity(failures);

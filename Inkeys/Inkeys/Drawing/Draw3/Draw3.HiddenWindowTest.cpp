@@ -1584,8 +1584,38 @@ namespace Inkeys::Drawing::Draw3
 				PublishProductState(whiteboardState);
 				PublishProductWorkspace(Bridge::Workspace::Whiteboard);
 				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().workspace==Bridge::Workspace::Whiteboard;}),"switch to hidden whiteboard",failures);
+				// 真实 Controller/Host 切页：同布尔内容也必须取得新版本，旧页成功帧不能冒充就绪。
+				const auto firstWhiteboardPage = ProductHost().RuntimeSnapshot().currentPageIndex;
+				const auto switchWhiteboardPage = [&](Bridge::CommandType type, std::size_t page,
+					bool hasContent, const char* name)
+				{
+					const auto before = ProductHost().RuntimeSnapshot();
+					if (!Check(PublishProductCommand(type) == Bridge::CommandResult::Accepted,
+						"whiteboard page command accepted", failures)) return false;
+					if (!Check(WaitUntil([before, page, hasContent, whiteboardState]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.currentPageIndex == page && !state.whiteboardLoadPending &&
+							state.currentPageHasContent == hasContent &&
+							state.contentRevision > before.contentRevision &&
+							DrawpadPresentationReady(whiteboardState, state);
+					}), name, failures)) return false;
+					auto stale = ProductHost().RuntimeSnapshot();
+					stale.presentedContentRevision = before.presentedContentRevision;
+					return Check(!DrawpadPresentationReady(whiteboardState, stale),
+						"whiteboard rejects the previous page presented content proof", failures);
+				};
+				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::NextPage,
+					firstWhiteboardPage + 1, false, "empty whiteboard pages advance content revision");
 				postContact(HiddenTestContactPhase::Down,70,80);postContact(HiddenTestContactPhase::Move,110,100);postContact(HiddenTestContactPhase::Up,150,120);
 				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard has independent ink",failures);
+				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::PreviousPage,
+					firstWhiteboardPage, false, "whiteboard returns to its first empty page");
+				postContact(HiddenTestContactPhase::Down,90,90);postContact(HiddenTestContactPhase::Move,130,110);postContact(HiddenTestContactPhase::Up,170,130);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),
+					"first whiteboard page has independent ink", failures);
+				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::NextPage,
+					firstWhiteboardPage + 1, true, "nonempty whiteboard pages advance content revision");
 				PublishProductCommand(Bridge::CommandType::Clear);
 				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear empties annotation",failures);
 				PublishProductCommand(Bridge::CommandType::Undo);

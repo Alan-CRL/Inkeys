@@ -71,11 +71,7 @@ namespace
 	}
 	COLORREF EraserOutlineColor() noexcept
 	{ const auto c=static_cast<BYTE>(std::lround(ERASER_GRIP_OUTLINE_CHANNEL*255));return RGB(c,c,c); }
-	void PushOpacity(ID2D1DeviceContext* context,double opacity)
-	{
-		context->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(),nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-			D2D1::IdentityMatrix(),static_cast<float>((std::clamp)(opacity,0.0,1.0))),nullptr);
-	}
+
 	bool IsSize(int item) noexcept { return item>=1 && item<=3; }
 	bool IsAutomatic(int item) noexcept { return item==4 || item==5; }
 	int ButtonVisual(int item) noexcept { return item==5?4:IsSize(item)?-1:item; }
@@ -267,14 +263,15 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	}
 	layout_=ResolveEraserAttributeLayout(input);if(menuOpen && menuSide_<0)menuSide_=layout_.menuBelow?1:0;
 	EraserAttributePresentation next;next.zoom=zoom;
-	next.panelPose=FitEraserSurfacePose(ResolveEraserSurfacePose(layout_.panel,input.anchor,panelMotion_.Geometry(),BarDrawAttributeCompactWidth),layout_.panel,input.work);
-	const auto child=ResolveEraserSurfacePose(layout_.menu,layout_.automatic,menuMotion_.Geometry(),BarDrawAttributeCompactWidth);
-	next.menuPose=FitEraserSurfacePose(ComposeEraserPose(next.panelPose,child),layout_.menu,input.work);
-	// pose统一正向解析到当前Bar坐标，再交给原Renderer；不额外乘D2D父缩放或重置光源动画。
+	auto panelFrame=ResolveBarAttributePanelFrame(panelMotion_,layout_.panel,input.anchor,BarDrawAttributeCompactWidth);
+	panelFrame.pose=FitEraserSurfacePose(panelFrame.pose,layout_.panel,input.work);
+	auto menuFrame=ResolveBarAttributePanelFrame(menuMotion_,layout_.menu,layout_.automatic,
+		BarDrawAttributeCompactWidth,&panelFrame);
+	menuFrame.pose=FitEraserSurfacePose(menuFrame.pose,layout_.menu,input.work);
+	next.panelPose=panelFrame.pose;next.menuPose=menuFrame.pose;
 	next.geometry=TransformEraserAttributeLayout(layout_,next.panelPose,next.menuPose);
-	next.panelOpacity=panelMotion_.Opacity();next.menuOpacity=next.panelOpacity*menuMotion_.Opacity();
-	next.panelVisible=panelMotion_.Visible() && next.panelOpacity>0.000001;
-	next.menuVisible=next.panelVisible && menuMotion_.Visible() && next.menuOpacity>0.000001;
+	next.panelOpacity=panelFrame.opacity;next.menuOpacity=menuFrame.opacity;
+	next.panelVisible=panelFrame.visible;next.menuVisible=menuFrame.visible;
 	changed_|=frame_.geometry!=next.geometry || frame_.zoom!=next.zoom || frame_.panelOpacity!=next.panelOpacity ||
 		frame_.menuOpacity!=next.menuOpacity || frame_.panelVisible!=next.panelVisible || frame_.menuVisible!=next.menuVisible ||
 		frame_.panelPose.scale!=next.panelPose.scale || frame_.menuPose.scale!=next.menuPose.scale;
@@ -286,6 +283,12 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	changed_|=surface_.fill->val!=GetThemeColor(BarThemeColorEnum::Surface);
 	ConfigureSurface(surface_,g.panel,frame_.panelPose.scale);ConfigureSurface(menu_,g.menu,frame_.menuPose.scale);
 	const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
+	const int requestedHover=ButtonVisual(hovered_.load());
+	if(appliedHover_!=requestedHover){
+		if(appliedHover_>=0)StopBarButtonHoverVisual(buttons_[appliedHover_],false);
+		if(requestedHover>=0 && requestedHover!=9)StartBarButtonHoverVisual(buttons_[requestedHover]);
+		appliedHover_=requestedHover;changed_=true;
+	}
 	for(int i:buttonVisuals)
 	{
 		auto& b=buttons_[i];changed_|=b.name.SetStringImmediate(ButtonLabel(i));
@@ -295,9 +298,9 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		const double scale=i<6?frame_.panelPose.scale:frame_.menuPose.scale;
 		b.state->state=!enabled?BarWidgetState::Disable:selected?BarWidgetState::Selected:BarWidgetState::None;
 		SetBarButtonPressedVisual(b,enabled && ButtonVisual(pressed_)==i);
-		UpdateBarButtonHoverVisual(b,presented,enabled && !selected,BarButtonHoverFadeDurationSeconds);
-		RetargetBarButtonInteractionVisual(b,presented,enabled,selected,BarButtonHoverTransitionDuration);
-		b.button.frame->SetTar(GetThemeColor(selected?BarThemeColorEnum::Accent:BarThemeColorEnum::SurfaceFrame));
+
+		RetargetBarButtonInteractionVisual(b,presented,enabled,selected,BarButtonHoverTransitionDuration,
+			std::nullopt,true,std::nullopt,GetThemeColor(selected?BarThemeColorEnum::Accent:BarThemeColorEnum::SurfaceFrame));
 		Place(b.button,i==4?g.automatic:g.items[i]);
 		b.button.rw->SetDirect(BarButtonCornerRadiusDip*scale);b.button.rh->SetDirect(BarButtonCornerRadiusDip*scale);b.button.ft->SetDirect(BarButtonFrameThicknessDip*scale);
 		const bool large=i==0 || i==4;
@@ -305,8 +308,11 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		b.icon.x.SetDirect(offset*scale);b.icon.y.SetDirect(large?metrics.iconOffsetYDip*scale:0);b.icon.contentScale=scale;
 		b.name.x.SetDirect(offset*scale);b.name.y.SetDirect(large?metrics.primaryOffsetYDip*scale:0);
 		b.name.w.SetDirect(large?metrics.primarySlotWidthDip*scale:static_cast<double>(b.button.w.val));b.name.h.SetDirect(metrics.primarySlotHeightDip*scale);b.name.size.SetDirect(metrics.primaryFontSizeDip*scale);
-		advance(b.button.pct);advance(*b.button.fill);advance(*b.button.frame);advance(*b.button.frameLightPct);
-		advance(b.icon.pct);advance(b.name.pct);advance(*b.icon.color1);advance(b.name.color);advance(b.pressScale);
+		BarButtonAnimationContext buttonFrame;
+		buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=BarUiAnimationEnabled;
+		buttonFrame.visible=presented;buttonFrame.hoverAllowed=enabled && !selected;
+		const auto advanced=AdvanceBarButtonVisual(b,buttonFrame);
+		changed_|=advanced.changed;active_|=advanced.active;
 	}
 	for(size_t i=0;i<3;++i)
 	{
@@ -410,7 +416,7 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 		auto rect=PixelRect(i==4?g.automatic:g.items[i],zoom_);rect.left+=2;rect.right-=2;rect.top+=2;rect.bottom-=2;
 		context->DrawRoundedRectangle(D2D1::RoundedRect(rect,4,4),brush_.Get(),1,focusStroke_.Get());
 	};
-	PushOpacity(context,frame_.panelOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.panelPose.scale);drawSurface(surface_);
+	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),frame_.panelOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.panelPose.scale);drawSurface(surface_);
 	context->PushAxisAlignedClip(PixelRect(g.panel,zoom_),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	drawButton(0);drawButton(4);
 	for(size_t i=0;i<3;++i)DrawPreview(renderer,context,i);
@@ -429,7 +435,7 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	context->PopAxisAlignedClip();context->PopLayer();renderer.SetFrameDiffuseMaskGeometryScale(1);
 	if(frame_.menuVisible)
 	{
-		PushOpacity(context,frame_.menuOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.menuPose.scale);drawSurface(menu_);
+		renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.menu,zoom_),frame_.menuOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.menuPose.scale);drawSurface(menu_);
 		context->PushAxisAlignedClip(PixelRect(g.menu,zoom_),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 		renderer.Word(context,title_,BarUiInheritClass(g.menuTitle.left,g.menuTitle.top),DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
 		for(int i:{6,7,8,9})drawButton(i);if(focus>=6 && focus<=8)focusButton(focus);
@@ -494,15 +500,15 @@ bool BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 }
 bool BarEraserAttributePanel::ResetPointerFeedback()
 {
-	const int old=ButtonVisual(hovered_);const bool changed=hovered_>=0 || pressed_>=0;
+	const bool changed=hovered_>=0 || pressed_>=0;
 	hovered_=-1;pressed_=-1;
-	if(old>=0)StopBarButtonHoverVisual(buttons_[old],false);
 	return changed;
 }
 bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& message,bool cancelled,bool contactPointer,bool* accepted)
 {
 	if(accepted)*accepted=false;
 	const auto f=PresentationSnapshot();
+	if(cancelled){const bool owned=ResetPointerFeedback();if(owned)owner.UpdateRendering(false);return owned;}
 	if(!f.panelVisible && pressed_<0)return false;
 	const auto& geometry=f.geometry;const double x=message.x/f.zoom,y=message.y/f.zoom;
 	auto contains=[&](EraserAttributeRect rect,double scale)
@@ -531,12 +537,8 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 	{
 		if(hovered_!=hit)
 		{
-			const int old=ButtonVisual(hovered_);hovered_=hit;focused_=-1;const int visual=ButtonVisual(hit);
-			if(old!=visual)
-			{
-				if(old>=0)StopBarButtonHoverVisual(buttons_[old],false);
-				if(visual>=0 && visual!=9)StartBarButtonHoverVisual(buttons_[visual]);
-			}
+			// 输入只发布目标，悬停/按压动画统一由 Advance 在渲染线程消费。
+			hovered_=hit;focused_=-1;
 			owner.UpdateRendering(false);
 		}
 		if(pressed_>=0 && cancelled){pressed_=-1;owner.UpdateRendering(false);}return inside;

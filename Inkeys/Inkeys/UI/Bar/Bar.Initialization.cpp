@@ -11,6 +11,7 @@
 #include "../../Input/KeyboardShortcuts.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "../StartupPlacement.h"
+#include "Bar.InteractionWorker.h"
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -77,14 +78,15 @@ bool BarUISetClass::InitializeStartupPlacement(Inkeys::UI::StartupPlacement plac
 void BarUISetClass::PublishDisplaySnapshot(
 	Inkeys::Display::SnapshotPtr snapshot) noexcept
 {
-	const auto* monitor = snapshot && !Inkeys::UI::Bar::WhiteboardActive()
+	const auto* monitor = snapshot
 		? snapshot->Find(Inkeys::UI::Bar::PptSceneMonitor()) : nullptr;
 	if (!monitor && snapshot) monitor = snapshot->Primary();
 	if (!monitor) return;
 	const double desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*monitor);
 	const bool protectBottomEdge = Inkeys::Display::ShouldProtectTaskbarBottomEdge(*monitor);
 	const double uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
-		*snapshot, *monitor, Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase);
+		*snapshot, *monitor, static_cast<Inkeys::Display::UiScaleBaseMode>(
+			Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load()));
 	{
 		lock_guard lock(pendingDisplayPublishMutex);
 		// 其他屏幕或 Shell 重复采样不能重启本栏的位置动画。
@@ -256,6 +258,8 @@ namespace Inkeys::UI::Bar
 		BarAtomic::wait.Notify();
 		Inkeys::UI::RenderPipeline::WakeForStop();
 
+		// 输入 worker 在无手势时无限休眠；退出必须显式唤醒同一个事件邮箱。
+		Inkeys::UI::Bar::WakeInteractionWorker();
 		if (interactionThread.joinable()) interactionThread.join();
 		barUISet.StopDisplayTracking();
 		barUISet.StopRendering();

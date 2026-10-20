@@ -201,14 +201,16 @@ void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
 void ReconcileDraw3Presentation();
 
 // 白板按钮和翻页控件只提交请求，具体工作区事务由 StateMonitoring 串行执行。
-// 发布前临时关闭白板：保留所有实现和配置兼容，发版结束后改为 true 即可恢复入口。
-inline constexpr bool IsWhiteboardFeatureEnabled() noexcept { return false; }
+inline constexpr bool IsWhiteboardFeatureEnabled() noexcept { return true; }
 void RequestWhiteboardActive(bool active) noexcept;
 bool WhiteboardRequested() noexcept;
 bool WhiteboardActive() noexcept;
 bool WhiteboardTransactionActive() noexcept;
+// 0 表示白板事务期间不可准入；非零身份仅随白板意图切换，普通翻页不退休它。
+std::uint64_t PptInputWorkspaceEpoch() noexcept;
 void RequestWhiteboardPreviousPage() noexcept;
 void RequestWhiteboardNextPage() noexcept;
+void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept;
 
 // 显式早期 CLI 仅执行真实状态/bridge 逻辑，不启动窗口或读取、保存配置。
 int RunStateModeProductionTest() noexcept;

@@ -6,6 +6,7 @@
 #include "Draw3.SpeedEraser.h"
 
 import Inkeys.Display;
+import Inkeys.UI.PageControl;
 
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.pen_cursor;
@@ -431,6 +432,15 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::size_t> currentPageIndex = 0;
 		std::atomic<std::size_t> pageCount = 0;
 		std::atomic_bool currentPageHasContent = false;
+		mutable std::mutex whiteboardMutex;
+		WhiteboardTheme whiteboardTheme;
+		std::uint64_t whiteboardGeneration = 0;
+		std::atomic_bool whiteboardLoadPending = false;
+		bool whiteboardUnsaved = false;
+		std::size_t whiteboardPageIndex = 0, whiteboardPageCount = 1;
+		bool whiteboardCanUndo = false, whiteboardCanRedo = false;
+		bool whiteboardHasContent = false;
+		std::uint64_t whiteboardContentRevision = 0;
 		std::atomic_bool canUndo = false;
 		std::atomic_bool canRedo = false;
 		std::atomic<std::uint64_t> contentRevision = 0;
@@ -477,6 +487,7 @@ namespace Inkeys::Drawing::Draw3
 		std::mutex exitAutoSaveMutex;
 		std::condition_variable exitAutoSaveCondition;
 		bool exitAutoSavePrepared = false;
+		std::atomic_bool whiteboardExitDurable = true;
 		bool graphicsReady = false;
 		std::atomic<HostInputMode> inputMode = HostInputMode::Disabled;
 		std::atomic_bool inputStopping = false;
@@ -728,7 +739,9 @@ namespace Inkeys::Drawing::Draw3
 			const auto desired = bridge.Snapshot();
 			const auto expected = desired.presentationTarget
 				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget)) : std::nullopt;
-			return shortcutSelectionHandoffPending || commandScenePending || (desired.workspace == Bridge::Workspace::Presentation
+			return shortcutSelectionHandoffPending || commandScenePending ||
+				(desired.workspace == Bridge::Workspace::Whiteboard && whiteboardLoadPending.load(std::memory_order_acquire)) ||
+				(desired.workspace == Bridge::Workspace::Presentation
 				? !expected || readyPresentationTarget != expected ||
 					suspendedPresentationTarget.has_value() ||
 					(startOptions.requirePresentationUiReady && uiReadyPresentationTarget != expected)
@@ -759,7 +772,9 @@ namespace Inkeys::Drawing::Draw3
 				: std::nullopt;
 			if (suspendedPresentationTarget != expected) suspendedPresentationTarget.reset();
 			if (uiReadyPresentationTarget != expected) uiReadyPresentationTarget.reset();
-			const bool blocked = inputStopping.load(std::memory_order_acquire) || commandScenePending || (desired.workspace == Bridge::Workspace::Presentation
+			const bool blocked = inputStopping.load(std::memory_order_acquire) || commandScenePending ||
+				(desired.workspace == Bridge::Workspace::Whiteboard && whiteboardLoadPending.load(std::memory_order_acquire)) ||
+				(desired.workspace == Bridge::Workspace::Presentation
 				? !expected || readyPresentationTarget != expected ||
 					suspendedPresentationTarget.has_value() ||
 					(startOptions.requirePresentationUiReady && uiReadyPresentationTarget != expected)
@@ -808,6 +823,7 @@ namespace Inkeys::Drawing::Draw3
 			shortcuts.BeginHost();
 			selectionMode.store(true, std::memory_order_release);
 			workspace.store(Bridge::Workspace::Desktop, std::memory_order_release);
+			whiteboardLoadPending.store(false, std::memory_order_release);
 			{
 				std::scoped_lock lock(presentationTargetMutex);
 				readyPresentationTarget.reset();
@@ -1026,6 +1042,44 @@ namespace Inkeys::Drawing::Draw3
 			self->PublishRuntimeRevision();
 		}
 
+		static void ObserveWhiteboardThemeEdited(void* context, WhiteboardTheme theme) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (self->runtimeCallbacks.whiteboardThemeEdited)
+				self->runtimeCallbacks.whiteboardThemeEdited(self->runtimeCallbacks.context, theme);
+		}
+
+		static void ObserveWhiteboardExit(void* context, bool durable)
+		{
+			static_cast<Impl*>(context)->whiteboardExitDurable.store(durable, std::memory_order_release);
+		}
+
+		static void ObserveWhiteboard(void* context, WhiteboardTheme theme,
+			std::uint64_t generation, bool pending, bool unsaved, std::size_t page, std::size_t count,
+			bool hasContent, std::uint64_t contentVersion)
+		{
+			auto* self = static_cast<Impl*>(context);
+			{
+				std::scoped_lock lock(self->whiteboardMutex);
+				self->whiteboardTheme = theme;
+				self->whiteboardGeneration = generation;
+				self->whiteboardLoadPending.store(pending, std::memory_order_release);
+				self->whiteboardUnsaved = unsaved;
+				self->whiteboardPageIndex = page;
+				self->whiteboardPageCount = count;
+				self->whiteboardHasContent = hasContent;
+				self->whiteboardContentRevision = contentVersion;
+				self->whiteboardCanUndo = self->canUndo.load(std::memory_order_acquire);
+				self->whiteboardCanRedo = self->canRedo.load(std::memory_order_acquire);
+			}
+			{
+				// 白板冷加载与 PPT、快捷键租约各自关门，恢复只更新基础准入。
+				std::scoped_lock lock(self->presentationTargetMutex);
+				self->RefreshPresentationInputGateLocked();
+			}
+			self->PublishRuntimeRevision();
+		}
+
 		static void ObserveHistoryAvailability(void* context, bool canUndo, bool canRedo)
 		{
 			auto* self = static_cast<Impl*>(context);
@@ -1052,7 +1106,7 @@ namespace Inkeys::Drawing::Draw3
 			if (presentationTarget) TracePptTiming("canvas_presented",
 				presentationTarget->sessionRevision, presentationTarget->targetRevision);
 			{
-				std::scoped_lock lock(self->presentationTargetMutex);
+				std::scoped_lock lock(self->presentationTargetMutex, self->whiteboardMutex);
 				self->workspace.store(value, std::memory_order_release);
 				self->currentPageIndex.store(currentPage, std::memory_order_release);
 				self->pageCount.store(pages, std::memory_order_release);
@@ -1626,6 +1680,12 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand canvas;
 			switch (command.type)
 			{
+			case Bridge::CommandType::SetWhiteboardTheme:
+				canvas.type = CanvasCommandType::SetWhiteboardTheme;
+				canvas.whiteboardTheme = command.whiteboardTheme;
+				canvas.whiteboardGeneration = command.whiteboardGeneration;
+				canvas.pageIndex = command.whiteboardPage;
+				break;
 			case Bridge::CommandType::Clear: canvas.type = CanvasCommandType::Clear; break;
 			case Bridge::CommandType::Undo: canvas.type = CanvasCommandType::Undo; break;
 			case Bridge::CommandType::Redo: canvas.type = CanvasCommandType::Redo; break;
@@ -1730,6 +1790,7 @@ namespace Inkeys::Drawing::Draw3
 				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=start result=failed\n");
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection || options.enableRuntimeMetrics);
 			if (options.enableRuntimeMetrics) runtimeMetrics.inputBaseline = input.DiagnosticsSnapshot();
+			window.canvasContactDown = [] { Inkeys::UI::PageControl::RequestWhiteboardMenuDismiss(); };
 			window.SetInputCoordinator(&input);
 			window.SetSpeedEraserDisplayScale({});
 			appliedDisplayClientBounds = {};
@@ -1869,6 +1930,11 @@ namespace Inkeys::Drawing::Draw3
 								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
 							};
 							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
+							observer.whiteboardChanged = &ObserveWhiteboard;
+							observer.whiteboardExitSaved = &ObserveWhiteboardExit;
+							observer.whiteboardRoot = startOptions.autoSaveRoot;
+							observer.whiteboardDefaultTheme = startOptions.whiteboardDefaultTheme;
+							observer.whiteboardThemeEdited = &ObserveWhiteboardThemeEdited;
 							observer.acceptedStrokeBegan = &ObserveAcceptedStroke;
 							observer.acceptedStrokeSceneChanged = &ObserveAcceptedStrokeScene;
 							observer.shortcutContextChanged = &ObserveShortcutContext;
@@ -2188,6 +2254,8 @@ namespace Inkeys::Drawing::Draw3
 						return exitAutoSavePrepared ||
 							!running.load(std::memory_order_acquire);
 					});
+				if (exitAutoSavePrepared && !whiteboardExitDurable.load(std::memory_order_acquire))
+					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_barrier result=failed reason=whiteboard_not_durable\n");
 				if (!exitAutoSavePrepared)
 					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_barrier result=failed reason=controller_stopped\n");
 			}
@@ -2298,12 +2366,36 @@ namespace Inkeys::Drawing::Draw3
 		// 再读取布尔值，避免把新 revision 与旧内容拼成不可重试的快照。
 		snapshot.currentPageHasContent =
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
+		{
+			std::scoped_lock lock(impl_->whiteboardMutex);
+			snapshot.whiteboardTheme = impl_->whiteboardTheme;
+			snapshot.whiteboardGeneration = impl_->whiteboardGeneration;
+			snapshot.whiteboardLoadPending = impl_->whiteboardLoadPending;
+			snapshot.whiteboardUnsaved = impl_->whiteboardUnsaved;
+		}
 		snapshot.canUndo = impl_->canUndo.load(std::memory_order_acquire);
 		snapshot.canRedo = impl_->canRedo.load(std::memory_order_acquire);
 		snapshot.completedStrokeKind =
 			impl_->completedStrokeKind.load(std::memory_order_acquire);
 		snapshot.selectionMode = impl_->selectionMode.load(std::memory_order_acquire);
-		snapshot.workspace = impl_->workspace.load(std::memory_order_acquire);
+		// 页码、主题、代次和加载闸门取同一个发布快照。
+		{
+			std::scoped_lock lock(impl_->whiteboardMutex);
+			snapshot.workspace = impl_->workspace.load(std::memory_order_acquire);
+			if (snapshot.workspace == Bridge::Workspace::Whiteboard)
+			{
+				snapshot.currentPageIndex = impl_->whiteboardPageIndex;
+				snapshot.pageCount = impl_->whiteboardPageCount;
+				snapshot.whiteboardTheme = impl_->whiteboardTheme;
+				snapshot.whiteboardGeneration = impl_->whiteboardGeneration;
+				snapshot.whiteboardLoadPending = impl_->whiteboardLoadPending;
+				snapshot.whiteboardUnsaved = impl_->whiteboardUnsaved;
+				snapshot.canUndo = impl_->whiteboardCanUndo;
+				snapshot.canRedo = impl_->whiteboardCanRedo;
+				snapshot.currentPageHasContent = impl_->whiteboardHasContent;
+				snapshot.contentRevision = impl_->whiteboardContentRevision;
+			}
+		}
 		{
 			std::scoped_lock lock(impl_->presentationTargetMutex);
 			snapshot.presentationReady = impl_->readyPresentationTarget;
@@ -2578,6 +2670,17 @@ namespace Inkeys::Drawing::Draw3
 		}
 		impl_->RefreshPresentationInputGateLocked();
 		return true;
+	}
+
+	Bridge::CommandResult Host::PublishWhiteboardTheme(WhiteboardTheme theme,
+		std::uint64_t generation, std::size_t page) noexcept
+	{
+		std::scoped_lock lock(impl_->commandPublishMutex);
+		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
+		const auto result = impl_->bridge.PublishWhiteboardTheme(theme, generation, page);
+		if (result == Bridge::CommandResult::Accepted) impl_->input.PublishReservedCommandWake();
+		else impl_->input.CancelReservedCommandWake();
+		return result;
 	}
 
 	Shortcuts::Context Host::ShortcutContext() const noexcept

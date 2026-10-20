@@ -46,6 +46,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
 #include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
+#include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
 #include "Inkeys/UI/StartupPlacement.h"
 #include "PptSettingsPersistence.h"
 #include "resource.h"
@@ -63,6 +64,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "IdtFreezeFrame.h"
 #include "IdtGuid.h"
 #include "IdtI18n.h"
+#include "IdtI18nKeys.g.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtOther.h"
@@ -653,6 +655,19 @@ namespace
 					return 1;
 				}
 			}
+			stage = "whiteboard theme preference";
+			Inkeys::Config themeConfig;
+			if (!themeConfig.SetWhiteboardThemeDefault(0xE5E7EB,2) || !themeConfig.Write()) return 1;
+			Inkeys::Config restartedTheme;
+			if (!restartedTheme.ReadAll()) return 1;
+			const auto rememberedTheme=restartedTheme.Drawing.Whiteboard.DefaultTheme.load();
+			if (rememberedTheme.backgroundRgb!=0xE5E7EB || rememberedTheme.pattern!=2 ||
+				Inkeys::Drawing::Draw3::RunWhiteboardThemePreferenceProductionTest({rememberedTheme.backgroundRgb,
+					static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(rememberedTheme.pattern)})!=0)
+			{
+				std::fputs("[ConfigBoundary] FAIL: persisted theme did not initialize a fresh whiteboard Controller\n",stderr);
+				return 1;
+			}
 			stage = "pen haptic configuration";
 			Inkeys::Config hapticDefaults;
 			if (!hapticDefaults.Drawing.Haptics.Drawing || !hapticDefaults.Drawing.Haptics.Buttons ||
@@ -736,41 +751,55 @@ namespace
 			for (const bool largeScreen : { false, true })
 			{
 				Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(largeScreen);
+				const int defaultMode = largeScreen ? 1 : 0;
 				Inkeys::Config scaleDefaults;
-				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen)
+				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode)
 					return 1;
-				for (const char* value : { "missing", "0", "1", "1.0", "\"false\"", "null", "{}", "[]" })
+				for (const char* value : { "missing", "-1", "3", "1.0", "2.0", "\"1\"", "\"false\"", "4294967297", "null", "{}", "[]" })
 				{
 					const std::string document = std::string(value) == "missing" ? "{}"
 						: "{\"UI\":{\"Bar\":{\"UseTaskbarHeightAsScaleBase\":" + std::string(value) + "}}}";
 					if (!writeBytes(mainConfig, document)) return 1;
 					scaleDefaults.UI.Bar.Zoom2 = 1.5;
-					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 					if (!scaleDefaults.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
-						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode ||
 						scaleDefaults.UI.Bar.Zoom2.load() != 1.5) return 1;
-					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 					if (!scaleDefaults.ReadAll() ||
-						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen) return 1;
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode) return 1;
 				}
-				for (const bool enabled : { false, true })
+				struct ScaleModeCase final
 				{
-					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = enabled;
+					const char* json;
+					int expected;
+				};
+				for (const auto& test : { ScaleModeCase{ "false", 0 }, ScaleModeCase{ "true", 2 },
+					ScaleModeCase{ "0", 0 }, ScaleModeCase{ "1", 1 }, ScaleModeCase{ "2", 2 } })
+				{
+					const std::string document = "{\"UI\":{\"Bar\":{\"UseTaskbarHeightAsScaleBase\":"
+						+ std::string(test.json) + "}}}";
+					if (!writeBytes(mainConfig, document) || !scaleDefaults.ReadAll() ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
+					if (!scaleDefaults.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
 					Inkeys::Config frozenScale;
 					frozenScale = scaleDefaults;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
 					if (!frozenScale.Write()) return 1;
 					Inkeys::Config restoredScale;
 					if (!restoredScale.ReadAll() ||
-						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != enabled ||
+						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected ||
 						!restoredScale.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
-						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != enabled) return 1;
+						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
 					const auto scaleUpload = restoredScale.GetUploadInfo();
-					restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
+					restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
 					if (restoredScale.GetUploadInfo() != scaleUpload) return 1;
 				}
-				scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = !largeScreen;
+				scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 				scaleDefaults.ResetToDefaults();
-				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != largeScreen) return 1;
+				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode) return 1;
 			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
@@ -1500,6 +1529,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
+	// 多目标 UI3 验收只替换最终 HWND 提交，不创建或显示产品窗口。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-multitarget-benchmark", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3MultiTargetOffscreenBenchmark();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-input-worker-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunSharedInteractionWorkerTests();
 	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-map-test", -1, TRUE) == CSTR_EQUAL)
@@ -1510,6 +1546,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-laser-raster-failure-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunLaserRasterFailureTest(); });
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-whiteboard-storage-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunWhiteboardStorageProductionTest();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-parked-desktop-exit-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunParkedDesktopExitAutoSaveTest(); });
@@ -1559,7 +1598,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	bool draw3ConsoleOutputEnabled = false;
 	bool touchAreaConsoleOutputEnabled = false;
 	bool cursorConsoleOutputEnabled = false;
-	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
+	// 白板入口与启动失败、正常退出清理路径使用同一功能开关。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
 
 	// 路径预处理
@@ -2410,18 +2449,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				CachedStartupBarWidthDip);
 		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom2;
 		previewOptions.dpi = startupDpi;
+		const auto scaleBaseMode = static_cast<Inkeys::Display::UiScaleBaseMode>(
+			startupMiniConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load());
 		if (const auto taskbarMonitor = Inkeys::Display::QueryTaskbarMonitorInfo(primaryMonitor))
 		{
 			// Mini 的基准倍率和贴底线共用一次 Shell 采样，不依赖稍后完整枚举。
 			previewOptions.dpi = taskbarMonitor->effectiveDpiX;
 			previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
 				taskbarMonitor->effectiveDpiX, taskbarMonitor->taskbarThicknessPx, 0, 0,
-				startupMiniConfig.UI.Bar.UseTaskbarHeightAsScaleBase);
+				scaleBaseMode);
 			previewOptions.desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*taskbarMonitor);
 			monitorInfo.rcMonitor = taskbarMonitor->bounds;
 			monitorInfo.rcWork = taskbarMonitor->workArea;
 		}
-		else previewOptions.uiBaseScale = static_cast<double>(startupDpi) / USER_DEFAULT_SCREEN_DPI;
+		else previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
+			startupDpi, 0, 0, 0, scaleBaseMode);
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
 		previewOptions.workArea = monitorInfo.rcWork;
 		previewOptions.contentBounds = Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
@@ -3300,6 +3342,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					if (preferDraw3DirectComposition)
 						spec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
 				}
+				if (role == Inkeys::Window::WindowRole::Freeze)
+				{
+					spec.largeIcon = applicationIcon;
+					spec.smallIcon = applicationIcon;
+					spec.whiteboardMinimizeAllowed = [] { return !Inkeys::UI::Bar::PptPresentationActive(); };
+					spec.whiteboardCloseRequested = [] { RequestWhiteboardActive(false); };
+					spec.whiteboardMinimizedChanged = []
+					{
+						Inkeys::UI::PageControl::NotifyLayoutChanged();
+						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::WhiteboardFreeze);
+					};
+				}
 				spec.windowProc = proc;
 				spec.created = created;
 				if (role >= Inkeys::Window::WindowRole::PptBottomLeft &&
@@ -3324,7 +3379,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				}
 				windowSpecs.push_back(std::move(spec));
 			};
-		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
+		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", IW(I18nKey.UI.Bar.MainButtons.WhiteboardWindowTitle).c_str(),
 			nullptr, WS_EX_TRANSPARENT, {});
 		AddOverlayWindow(Inkeys::Window::WindowRole::DrawpadPresentation,
 			L"Inkeys2.Presentation;", L"Inkeys DrawpadPresentationWindow",
@@ -3443,6 +3498,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 		draw3StartOptions.enableZhaoxinCompatibility =
 			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
+		const auto whiteboardDefault = config.Drawing.Whiteboard.DefaultTheme.load();
+		draw3StartOptions.whiteboardDefaultTheme = { whiteboardDefault.backgroundRgb,
+			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
@@ -3486,6 +3544,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			[](void*, const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& accepted) noexcept
 			{
 				Inkeys::UI::Bar::NotifyCanvasStrokeAccepted(accepted);
+			},
+			[](void*, Inkeys::Drawing::Draw3::WhiteboardTheme theme) noexcept
+			{
+				if (config.SetWhiteboardThemeDefault(theme.backgroundRgb, static_cast<std::uint32_t>(theme.pattern)))
+					Inkeys::UI::Setting::RequestConfigWrite(); // 仅冻结载荷入已有 FIFO，不在绘制线程执行文件 I/O。
 			}
 		};
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,
@@ -3518,6 +3581,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (whiteboardFeatureEnabled && !Inkeys::UI::Whiteboard::Initialize({
 			[] { RequestWhiteboardPreviousPage(); },
 			[] { RequestWhiteboardNextPage(); },
+			[] { RequestWhiteboardActive(false); },
+			[](std::uint32_t rgb, int pattern, std::uint64_t generation, int page) { RequestWhiteboardTheme(rgb, pattern, generation, page); },
 			}))
 		{
 			SetOffSignal(1);
@@ -3718,9 +3783,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
 	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
 	Inkeys::UI::StartupPreview::Stop();
-	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
 	if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
-	Inkeys::UI::Setting::Shutdown();
 	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
 	if (freezeFrameThread.joinable()) freezeFrameThread.join();
 	if (stateMonitoringThread.joinable()) stateMonitoringThread.join();
@@ -3729,6 +3792,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (topWindowThread.joinable()) topWindowThread.join();
 	// 先停止 Draw3 设备/RTS，再由 Window Service 销毁其拥有的 Drawpad HWND。
 	Inkeys::Drawing::Draw3::StopProduct();
+	// 先停止主题变更生产者，再排空最后的配置 FIFO；窗口服务/渲染管线仍在，供 Setting 完成释放。
+	Inkeys::UI::Setting::Shutdown();
 	Inkeys::Window::GetService().StopAndJoin();
 	Inkeys::UI::RenderPipeline::Shutdown();
 	displaySubscription.Reset();

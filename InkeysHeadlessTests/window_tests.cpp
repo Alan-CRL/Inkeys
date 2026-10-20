@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <functional>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -193,6 +194,20 @@ int RunCanvasPolicyTests()
 	{
 		if (!passed) { ++failures; std::cerr << "FAIL canvas policy: " << name << '\n'; }
 	};
+	unsigned closeRequests = 0;
+	const std::function<void()> close = [&] { ++closeRequests; };
+	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(false, true, close) && closeRequests == 0,
+		"desktop close retains the original window lifecycle");
+	check(Inkeys::Window::DispatchWhiteboardCloseRequest(true, true, close) && closeRequests == 1,
+		"taskbar whiteboard close requests exit while preserving the shared anchor");
+	check(Inkeys::Window::DispatchWhiteboardCloseRequest(true, true, {}),
+		"a missing close callback cannot destroy the whiteboard owner chain");
+	check(Inkeys::Window::DispatchWhiteboardCloseRequest(true, true, [] { throw 1; }),
+		"a failed close request cannot destroy the whiteboard owner chain");
+	check(Inkeys::Window::DispatchWhiteboardCloseRequest(true, false, close) && closeRequests == 1,
+		"late close after leaving whiteboard preserves its owner without replaying exit");
+	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(true, false, {}),
+		"an ordinary unmanaged desktop window keeps the original close policy");
 	const RECT screen{ -1920, -1080, 0, 0 };
 	const HWND generation = reinterpret_cast<HWND>(static_cast<UINT_PTR>(1));
 	CanvasPolicyKey key{ generation, screen, screen, false };
@@ -768,6 +783,7 @@ int RunWindowTests()
 			}
 		};
 
+	std::atomic_bool whiteboardMinimizeAllowed = true;
 	// 使用真实 HWND 对照：允许 owner 树的辅助后代，但独立竞争窗夹入仍须被拒绝。
 	{
 		const auto create = [](HWND owner, const wchar_t* title)
@@ -834,7 +850,9 @@ int RunWindowTests()
 	// MagnifierChild 使用系统类，不经过服务注册测试类。
 	magnifierChildSpec.className = L"Static";
 	specs.push_back(std::move(magnifierChildSpec));
-	specs.push_back(makeSpec(WindowRole::Freeze, L"Freeze"));
+	auto freezeSpec = makeSpec(WindowRole::Freeze, L"Freeze");
+	freezeSpec.whiteboardMinimizeAllowed = [&] { return whiteboardMinimizeAllowed.load(); };
+	specs.push_back(std::move(freezeSpec));
 	specs.push_back(makeSpec(WindowRole::DrawpadPresentation, L"DrawpadPresentation"));
 	specs.push_back(makeSpec(WindowRole::Drawpad, L"Drawpad"));
 	specs.push_back(makeSpec(WindowRole::PptBottomLeft, L"PptBottomLeft"));
@@ -1233,16 +1251,26 @@ int RunWindowTests()
 	check((whiteboardDrawpadExStyle & WS_EX_TOOLWINDOW) != 0
 		&& (whiteboardDrawpadExStyle & WS_EX_NOACTIVATE) == 0,
 		"whiteboard Drawpad accepts activation without a taskbar button");
+	whiteboardMinimizeAllowed.store(false);
+	check(!service.MinimizeWhiteboardWindowGroup() && !service.WhiteboardWindowGroupMinimized(),
+		"PPT policy rejects whiteboard minimization");
+	whiteboardMinimizeAllowed.store(true);
 	check(service.MinimizeWhiteboardWindowGroup(), "minimize whiteboard window group");
+	check(service.WhiteboardWindowGroupMinimized(), "minimize publishes minimized state");
+	check(service.Show(WindowRole::PptBottomLeft) && service.Show(WindowRole::Freeze),
+		"stale show requests are safely consumed");
 	check(IsIconic(freeze) && !IsWindowVisible(drawpad)
 		&& !IsWindowVisible(pptBottomLeft) && !IsWindowVisible(pptBottomRight)
-		&& !IsWindowVisible(bar), "minimize hides the complete whiteboard group");
+		&& IsWindowVisible(bar), "minimize hides canvas and pagination while preserving toolbar");
 	check(service.RestoreWhiteboardWindowGroup(), "restore whiteboard window group");
-	check(IsWindowVisible(freeze) && IsWindowVisible(drawpad)
+	check(!service.WhiteboardWindowGroupMinimized() && IsWindowVisible(freeze) && IsWindowVisible(drawpad)
 		&& !IsWindowVisible(drawpadPresentation)
 		&& IsWindowVisible(pptBottomLeft) && IsWindowVisible(pptBottomRight)
 		&& IsWindowVisible(bar), "restore returns the prior whiteboard visible state");
+	check(service.MinimizeWhiteboardWindowGroup(), "minimize before toolbar close");
 	check(service.LeaveWhiteboardWindowMode(), "leave whiteboard window mode");
+	check(!IsIconic(freeze) && !IsWindowVisible(freeze) && !service.WhiteboardWindowGroupMinimized(),
+		"closing minimized whiteboard clears iconic anchor without restoring canvas");
 	check(service.RequestTopmostRefresh() && HasConsistentOwnerBand(overlayOwnerTree, true),
 		"leaving whiteboard root refresh restores complete owner band and order");
 	const auto presentationFreezeExStyle = static_cast<DWORD>(

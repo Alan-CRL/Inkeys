@@ -15,7 +15,7 @@
 - 动态加载系统目录 combase.dll/导出并探测 factory、property、controller。生产不从后台线程创建泛设备 InputHapticsManager；无法明确绑定当前笔时无反馈。
 - Pen/HardPen/Shape 使用 InkContinuous，Highlighter 使用 ChiselMarkerContinuous，Eraser 使用 EraserContinuous，倒转笔尾沿用 InkContinuous 特殊处理；Laser 无连续反馈，默认强度遵从系统。
 - Pointer 范围身份与 RTS 笔划生命周期分开维护：动态 GetPointerCursorId 成功取得 tablet cursor 后核对 RTS 来源；不把 RTS contactId 当 pointerId。匹配的普通 Down/Up 可复用仍有效的同笔范围，Up 停止本笔反馈；离开、取消、来源冲突/歧义和失效代际清理绑定，Selection、隐藏、Laser、Pan/隔离禁止连续反馈。
-- Bar 保持 WM_TOUCH 翻译、dev Pointer session/metadata 及兼容鼠标去重；Click 凭据随既有 metadata 传递，不另占 wheel token。仅被动观察 Pointer，不修改 capture、cursor 或默认消息处理，不调用画布 ForwardProductMessage。
+- Bar 保持 WM_TOUCH 翻译、Pointer 来源会话及兼容鼠标去重；Click 凭据随共享有界输入 FIFO 的按值样本传递，不恢复旧 metadata token 环，也不另占 wheel token。仅被动观察 Pointer，不修改 capture、cursor 或默认消息处理，不调用画布 ForwardProductMessage。
 - 主栏与属性按钮必须在原业务接受点发布 Click；表驱动主栏/形状/粗细按钮共用接受入口。Mouse/Touch、取消、程序化回调无凭据；同一接触 submitted 原子去重。
 - Pointer/Touch 关联要求明确 Pen、同来源、同阶段精确时间值、原始屏幕点且唯一；TIMEFROMSYSTEM 缺失时允许提供方时间参与精确关联，可信新鲜度与有效期仍由本进程单调时钟判断。禁止把 TOUCHINPUT.dwID 当 pointerId。跨 API 关联是应用策略，驱动不匹配时保留原 UI 动作。
 - token 与 mailbox 各 8 槽；消息、按下 session 和 Host 持有共享凭据，取消原子失效不依赖队列空位。Click 在 Up 后 250ms 内、接触总计 5000ms 内有效，并核对独立按钮 run 代际（Host 启停和按钮开关变化均失效）；画布范围代际仅约束连续反馈，不能让切换模式的按钮因自身动作失效。

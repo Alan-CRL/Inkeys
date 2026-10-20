@@ -81,8 +81,22 @@
         "UndoLabel": "Undo",
         "RedoLabel": "Redo",
         "ClearLabel": "Clear",
+        "WhiteboardWindowTitle": "Inkeys Whiteboard",
+        "WhiteboardPreviousLabel": "Previous",
+        "WhiteboardNextLabel": "Next",
+        "WhiteboardAddPageLabel": "Add page",
         "WhiteboardLabel": "Board",
+        "ResumeWhiteboardLabel": "Resume",
         "CloseWhiteboardLabel": "Close",
+        "ReturnToShowLabel": "Resume",
+        "MinimizeWhiteboardLabel": "Minimize whiteboard",
+        "WhiteboardThemeLabel": "Theme",
+        "WhiteboardBackgroundColorLabel": "Background color",
+        "WhiteboardBackgroundStyleLabel": "Background style",
+        "WhiteboardBlankLabel": "Blank",
+        "WhiteboardDotsLabel": "Dots",
+        "WhiteboardGridLabel": "Grid",
+        "WhiteboardUnsavedLabel": "Some pages are not saved",
         "FreezeLabel": "Lock",
         "EndPresentationLabel": "End Show",
         "SettingsLabel": "Settings",
@@ -371,8 +385,11 @@
         },
         "TaskbarScaleBase":
         {
-          "N": "Use taskbar height as scale base",
-          "E": "At 100%, match taskbar thickness."
+          "N": "Taskbar scale base",
+          "E": "At 100%: base is 48 DIP; actual follows taskbar size.",
+          "Off": "Off",
+          "Base": "Taskbar base size",
+          "Actual": "Actual taskbar size"
         },
         "BarZoom":
         {

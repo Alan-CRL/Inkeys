@@ -264,6 +264,88 @@ int RunPptSessionTests()
 			"windowless reentry still requires a new control session");
 	}
 
+	// 执行生产焦点策略和离场交接，全部使用纯窗口身份，不调用 Win32 激活 API。
+	{
+		const PptFocusForeground external{ 1001, 1002 };
+		check(IsFirstPptWindowAcquisition(noWindow, original.showWindow)
+			&& !IsFirstPptWindowAcquisition(original, original.showWindow)
+			&& !IsFirstPptWindowAcquisition(noWindow, 0),
+			"only first trusted HWND acquisition may focus, not known-anchor recovery or repetition");
+		const PptFocusRequest request{ original, external };
+		PptFocusState state{ original, external, true, true, false, true, true,
+			original.processId, original.processStartTime };
+		check(CanFocusPptSession(request, state),
+			"explicit noactivate click can hand off unchanged Explorer foreground");
+		for (int repeat = 0; repeat != 16; ++repeat)
+			check(CanFocusPptSession(request, state),
+				"up move and longpress input do not invalidate unchanged foreground");
+		auto changed = state;
+		changed.foreground.window += 1;
+		check(!CanFocusPptSession(request, changed), "different foreground window rejects queued focus");
+		changed = state; changed.foreground.processId += 1;
+		check(!CanFocusPptSession(request, changed), "reused foreground HWND rejects queued focus");
+		changed = state; changed.foreground = { original.showWindow, original.processId };
+		check(CanFocusPptSession(request, changed), "already focused show needs no activation");
+		changed = state; ++changed.session.localSession;
+		check(!CanFocusPptSession(request, changed), "same show HWND cannot borrow a newer session");
+		changed = state; changed.session.active = false;
+		check(!CanFocusPptSession(request, changed), "ended show cannot regain focus");
+		changed = state; changed.modalActive = true;
+		check(!CanFocusPptSession(request, changed), "settings and modal dialogs block focus");
+		changed = state; changed.workspaceAllowed = false;
+		check(!CanFocusPptSession(request, changed), "background whiteboard and its transaction block focus");
+		changed = state; changed.controlAvailable = false;
+		check(!CanFocusPptSession(request, changed), "untrusted show window cannot focus");
+		changed = state; changed.targetExists = false;
+		check(!CanFocusPptSession(request, changed), "destroyed show HWND cannot focus");
+		changed = state; changed.targetVisible = false;
+		check(!CanFocusPptSession(request, changed), "hidden show window cannot focus");
+		changed = state; ++changed.targetProcessId;
+		check(!CanFocusPptSession(request, changed), "reused show HWND cannot focus another process");
+		changed = state; ++changed.targetProcessStartTime;
+		check(!CanFocusPptSession(request, changed), "reused Office PID cannot inherit focus");
+		changed = state; changed.session = noWindow;
+		check(!CanFocusPptSession({ noWindow, external }, changed), "HWND zero basic controls cannot focus");
+
+		PptFocusHandoff handoff;
+		const PptFocusForeground whiteboard{ 2001, 2002 };
+		handoff.Begin({ original, whiteboard });
+		handoff.RebaseAfterWindowTransition(whiteboard, external, true);
+		const auto returned = handoff.Take();
+		check(returned && MatchesPptSession(returned->session, original)
+			&& returned->foreground.window == external.window
+			&& CanFocusPptSession(*returned, state) && !handoff.Take(),
+			"controlled whiteboard Hide fallback retains old token and queues one valid handoff");
+		handoff.Begin({ original, whiteboard });
+		handoff.RebaseAfterWindowTransition(external, external);
+		check(!handoff.Take(), "user switching away before whiteboard Hide cancels handoff");
+		const PptFocusForeground anotherExternal{ 3001, 3002 };
+		handoff.Begin(request);
+		handoff.RebaseAfterWindowTransition(external, anotherExternal);
+		check(!handoff.Take(), "external A to B during return is not a controlled Hide fallback");
+		handoff.Begin(request);
+		handoff.RebaseAfterWindowTransition(external, { external.window, external.processId + 1 });
+		check(!handoff.Take(), "external HWND PID reuse during return cancels handoff");
+		handoff.Begin({ original, whiteboard });
+		handoff.RebaseAfterWindowTransition(whiteboard, external, true);
+		handoff.RebaseAfterWindowTransition(external, anotherExternal);
+		check(!handoff.Take(), "whiteboard fallback cannot authorize a later external foreground switch");
+		handoff.Begin({ original, whiteboard });
+		handoff.RebaseAfterWindowTransition(whiteboard, external, true);
+		handoff.RebaseAfterWindowTransition(external, external);
+		check(handoff.Take().has_value(), "unchanged external foreground preserves controlled fallback intent");
+		changed = state; changed.foreground.window += 1;
+		check(returned && !CanFocusPptSession(*returned, changed),
+			"user switching after Hide but before dequeue still cancels focus");
+		changed = state; ++changed.session.localSession;
+		check(returned && !CanFocusPptSession(*returned, changed),
+			"new show during whiteboard exit cannot claim old return intent");
+		handoff.Begin({ noWindow, whiteboard });
+		check(!handoff.Take(), "windowless whiteboard return has no focus request");
+		handoff.Begin(request); handoff.Reset();
+		check(!handoff.Take(), "whiteboard reentry cancels pending return focus");
+	}
+
 	BarA2CallbackDispatcher dispatcher;
 	std::uint64_t first = 0, second = 0;
 	dispatcher.SetStamped([&](std::uint64_t id) { first = id; });
@@ -294,20 +376,34 @@ int RunPptSessionTests()
 	check(reentryTransition == std::optional<bool>(false) && rapidReentry.active
 		&& rapidReentry.session == 2 && !rapidReentry.Take(),
 		"pending exit obligation survives newer entry without replaying two animations");
-	check(reentryTransition && ResolveBarPptSceneAction(*reentryTransition, false,
-		BarBottomDockMode::Floating, false) == BarPptSceneAction::CenterDock,
-		"expanded floating bar centers after exit even when next show already started");
-	check(ResolveBarPptSceneAction(true, false, BarBottomDockMode::BottomDocked, false)
-		== BarPptSceneAction::CenterDock, "expanded dock enters centered");
-	check(ResolveBarPptSceneAction(true, false, BarBottomDockMode::Floating, false)
-		== BarPptSceneAction::Keep, "expanded free bar stays free on entry");
-	check(ResolveBarPptSceneAction(true, true, BarBottomDockMode::BottomDocked, false)
-		== BarPptSceneAction::Detach, "folded dock releases constraints without expansion");
-	check(ResolveBarPptSceneAction(false, false, BarBottomDockMode::Floating, false)
-		== BarPptSceneAction::CenterDock, "expanded exit centers even a free bar");
-	check(ResolveBarPptSceneAction(false, true, BarBottomDockMode::Floating, false)
-		== BarPptSceneAction::Keep, "folded exit keeps position");
-	check(ResolveBarPptSceneAction(false, false, BarBottomDockMode::BottomDocked, true)
-		== BarPptSceneAction::Keep, "whiteboard owns geometry when underlying show ends");
+	check(ShouldPlaceBarWorkspaceDock(false, BarBottomDockMode::BottomDocked),
+		"expanded dock follows scene bottom without changing centering mode");
+	check(!ShouldPlaceBarWorkspaceDock(true, BarBottomDockMode::BottomDocked) &&
+		!ShouldPlaceBarWorkspaceDock(false, BarBottomDockMode::Floating) &&
+		!ShouldPlaceBarWorkspaceDock(true, BarBottomDockMode::Floating),
+		"folded and floating bars preserve their geometry on scene entry");
+	check(ResolveBarWorkspaceBottomInsetDip(false, true, false, false) == 5.0
+		&& ResolveBarWorkspaceBottomInsetDip(false, true, false, true) == 0.0
+		&& ResolveBarWorkspaceBottomInsetDip(false, false, true, false) == 5.0
+		&& ResolveBarWorkspaceBottomInsetDip(true, true, false, false) == 0.0,
+		"whiteboard minimize switches to work-area dock without ending scene");
+	BarWorkspaceSceneState workspace;
+	check(workspace.Update(false, true) == BarWorkspaceTransition::Enter,
+		"desktop to presentation captures baseline");
+	check(workspace.Update(true, true) == BarWorkspaceTransition::Switch,
+		"presentation to whiteboard preserves baseline");
+	check(workspace.Update(true, false) == BarWorkspaceTransition::Keep,
+		"background presentation exit cannot restore desktop under whiteboard");
+	check(workspace.Update(false, false) == BarWorkspaceTransition::Leave,
+		"last workspace exit restores desktop baseline");
+	check(workspace.Update(true, false) == BarWorkspaceTransition::Enter,
+		"desktop to whiteboard captures a fresh baseline");
+	check(workspace.Update(false, true) == BarWorkspaceTransition::Switch,
+		"return to a live show preserves baseline");
+	check(workspace.Update(false, true) == BarWorkspaceTransition::Keep,
+		"heartbeat and minimizing do not replay entry");
+	check(workspace.Update(false, false) == BarWorkspaceTransition::Leave &&
+		workspace.Update(false, false) == BarWorkspaceTransition::Keep,
+		"desktop restoration occurs exactly once");
 	return failures;
 }

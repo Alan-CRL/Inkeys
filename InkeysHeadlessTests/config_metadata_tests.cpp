@@ -6,6 +6,7 @@
 #include <iostream>
 #include <thread>
 #include <type_traits>
+#include <utility>
 
 import Inkeys.Other.Config;
 import Inkeys.Conv.Text;
@@ -39,6 +40,7 @@ int RunConfigMetadataTests()
 	using Inkeys::ConfigDetail::BindConfigSource;
 	namespace fs = std::filesystem;
 	static_assert(!std::is_assignable_v<ConfigReadOnlyValue<std::wstring>&, std::wstring>);
+	static_assert(std::is_same_v<decltype(Inkeys::Config{}.UI.Bar.UseTaskbarHeightAsScaleBase.load()), int>);
 	int failures = 0;
 	auto check = [&](bool condition, const char* name)
 	{
@@ -430,88 +432,102 @@ int RunConfigMetadataTests()
 			"production startup classifier retains touch readiness, unknown size and inclusive area threshold");
 	for (const bool defaultLargeScreen : { false, true })
 	{
+		const int defaultMode = defaultLargeScreen ? 1 : 0;
 		// 用户交互模式与硬件缺省相反时，也不能影响 schema 的设备条件缺省。
 		setlist.paintDevice = defaultLargeScreen ? 1 : 0;
 		Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(defaultLargeScreen);
 		// 改名刻意不导入旧倍率；走真实文件和生产 schema，避免测试复制迁移逻辑。
 		Inkeys::Config scaleConfig;
 		check(scaleConfig.UI.Bar.Zoom2.load() == 1.0
-			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen, "scale schema uses 100 percent and frozen device default");
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode, "scale schema uses 100 percent and frozen device default");
 		std::error_code removeError;
 		fs::remove(file, removeError);
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 		check(!scaleConfig.ReadAll()
-			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen,
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode,
 			"missing file ReadAll still applies frozen device default");
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 		scaleConfig.UI.Bar.Zoom2 = 1.5;
 		check(!scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
-			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode
 			&& scaleConfig.UI.Bar.Zoom2.load() == 1.5,
 			"missing file Mini applies only selected device default");
 		Json::Value scaleDocument(Json::objectValue);
 		scaleDocument["UI"]["Bar"]["Zoom"] = 1.75;
 		writeModeDocument(scaleDocument);
 		scaleConfig.UI.Bar.Zoom2 = 2.0;
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 		check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.0
-			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen, "ReadAll ignores old Zoom and supplies new defaults");
+			&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode, "ReadAll ignores old Zoom and supplies new defaults");
 		scaleConfig.UI.Bar.Zoom2 = 2.0;
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 		check(scaleConfig.ReadMini({ "UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase" })
-			&& scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen,
+			&& scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode,
 			"startup Mini ignores old Zoom and resets selected scale fields");
 		check(scaleConfig.Write(), "write scale defaults alongside unknown old Zoom");
 		const auto defaultScaleDocument = ReadJson(file);
 		check(defaultScaleDocument["UI"]["Bar"]["Zoom"].asDouble() == 1.75
 			&& defaultScaleDocument["UI"]["Bar"]["Zoom2"].asDouble() == 1.0
-			&& defaultScaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"].asBool() == defaultLargeScreen,
+			&& defaultScaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"].isInt()
+			&& defaultScaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"].asInt() == defaultMode,
 			"unknown old Zoom is retained without migrating it to Zoom2");
 		scaleDocument["UI"]["Bar"]["Zoom2"] = 1.25;
-		for (const bool enabled : { false, true })
+		const std::pair<Json::Value, int> modeCases[] = {
+			{ Json::Value(false), 0 }, { Json::Value(true), 2 },
+			{ Json::Value(0), 0 }, { Json::Value(1), 1 }, { Json::Value(2), 2 },
+			{ Json::Value(Json::UInt(1)), 1 }, { Json::Value(Json::UInt(2)), 2 }
+		};
+		for (const auto& [modeValue, expectedMode] : modeCases)
 		{
-			scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = enabled;
+			scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = modeValue;
 			writeModeDocument(scaleDocument);
 			check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.Zoom2.load() == 1.25
-				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled,
-				"ReadAll honors new key with both keys present and either taskbar preference");
+				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == expectedMode,
+				"ReadAll maps legacy bool to 0/2 and honors all three integer modes");
 			scaleConfig.UI.Bar.Zoom2 = 1.5;
-			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
+			const int otherMode = (expectedMode + 1) % 3;
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = otherMode;
 			check(scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
-				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled
-				&& scaleConfig.UI.Bar.Zoom2.load() == 1.5, "Mini taskbar preference leaves zoom untouched");
+				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == expectedMode
+				&& scaleConfig.UI.Bar.Zoom2.load() == 1.5, "Mini taskbar mode leaves zoom untouched");
 			check(scaleConfig.ReadMini({ "UI.Bar.Zoom2" }) && scaleConfig.UI.Bar.Zoom2.load() == 1.25
-				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == enabled,
-				"Mini new zoom does not read old key or alter taskbar preference");
+				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == expectedMode,
+				"Mini new zoom does not read old key or alter taskbar mode");
+			check(scaleConfig.Write(), "write normalized taskbar mode");
+			const auto normalized = ReadJson(file)["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"];
+			check(normalized.isInt() && normalized.asInt() == expectedMode,
+				"legacy bool and integer modes serialize as their exact integer mode");
 			const auto scaleUpload = scaleConfig.GetUploadInfo();
 			scaleConfig.UI.Bar.Zoom2 = 1.5;
-			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !enabled;
-			check(scaleConfig.GetUploadInfo() == scaleUpload, "zoom and taskbar preference are NoUpload");
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = otherMode;
+			check(scaleConfig.GetUploadInfo() == scaleUpload, "zoom and taskbar mode are NoUpload");
 			Inkeys::Config frozenScale;
 			frozenScale = scaleConfig;
 			scaleConfig.UI.Bar.Zoom2 = 2.0;
-			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = enabled;
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = expectedMode;
 			check(frozenScale.UI.Bar.Zoom2.load() == 1.5
-				&& frozenScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() == !enabled && frozenScale.Write(),
+				&& frozenScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() == otherMode && frozenScale.Write(),
 				"frozen scale payload retains both independent captured values");
 			Inkeys::Config restarted;
 			check(restarted.ReadAll() && restarted.UI.Bar.Zoom2.load() == 1.5
-				&& restarted.UI.Bar.UseTaskbarHeightAsScaleBase.load() == !enabled,
-				"both scale values round-trip through frozen write and restart");
+				&& restarted.UI.Bar.UseTaskbarHeightAsScaleBase.load() == otherMode,
+				"all scale modes round-trip through frozen write and restart");
 		}
-		for (const Json::Value& invalid : { Json::Value(), Json::Value(0), Json::Value(1), Json::Value(1.0),
-			Json::Value("false"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+		for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(3),
+			Json::Value(1.0), Json::Value(2.0), Json::Value("1"), Json::Value("false"),
+			Json::Value(Json::UInt64(4294967297ULL)), Json::Value(Json::Int64(-4294967296LL)),
+			Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
 		{
 			scaleDocument["UI"]["Bar"]["UseTaskbarHeightAsScaleBase"] = invalid;
 			writeModeDocument(scaleDocument);
-			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
-			check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen,
-				"ReadAll rejects non-boolean taskbar preference and restores device default");
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
+			check(scaleConfig.ReadAll() && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode,
+				"ReadAll rejects invalid taskbar mode and restores device default");
 			scaleConfig.UI.Bar.Zoom2 = 1.5;
-			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+			scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 			check(scaleConfig.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" })
-				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen && scaleConfig.UI.Bar.Zoom2.load() == 1.5,
-				"Mini rejects non-boolean taskbar preference without unrelated changes");
+				&& scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode && scaleConfig.UI.Bar.Zoom2.load() == 1.5,
+				"Mini rejects invalid taskbar mode without unrelated changes");
 		}
 		for (const Json::Value& invalid : { Json::Value(), Json::Value(true), Json::Value("1.5"),
 			Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
@@ -526,10 +542,55 @@ int RunConfigMetadataTests()
 				"Mini invalid Zoom2 defaults instead of falling back to valid old Zoom");
 		}
 		scaleConfig.UI.Bar.Zoom2 = 1.5;
-		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = !defaultLargeScreen;
+		scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
 		scaleConfig.ResetToDefaults();
-		check(scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultLargeScreen,
+		check(scaleConfig.UI.Bar.Zoom2.load() == 1.0 && scaleConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load() == defaultMode,
 			"reset restores both new scale defaults");
+	}
+	{
+		using Inkeys::WhiteboardThemePreference;
+		const auto writeThemeDocument=[&](const Json::Value& document){
+			std::ofstream output(file,std::ios::binary|std::ios::trunc);Json::StreamWriterBuilder themeWriter;
+			output<<Json::writeString(themeWriter,document);check(output.good(),"theme fixture writes isolated main.json");};
+		Inkeys::Config themes;const WhiteboardThemePreference defaultTheme{};
+		writeThemeDocument(Json::Value(Json::objectValue));
+		check(themes.ReadAll()&&themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"missing theme keeps green blank on an existing configuration");
+		for(const auto rgb:{0x123B32u,0x172A46u,0x000000u,0xFFFFFFu,0xE5E7EBu,0xF5F1E6u,0xABCDEFu})
+		for(const std::uint32_t pattern:{0u,1u,2u}){
+			(void)themes.SetWhiteboardThemeDefault(rgb,pattern);
+			check(!themes.SetWhiteboardThemeDefault(rgb,pattern),"unchanged theme preference does not request a write");
+			const auto upload=themes.GetUploadInfo();Inkeys::Config frozenTheme;frozenTheme=themes;
+			(void)themes.SetWhiteboardThemeDefault(rgb^0xFFFFFF,pattern==2?0:pattern+1);
+			check(themes.GetUploadInfo()==upload&&frozenTheme.Drawing.Whiteboard.DefaultTheme.load()==WhiteboardThemePreference{rgb,pattern}
+				&&frozenTheme.Write(),"frozen FIFO payload owns both NoUpload theme fields");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll()&&restarted.Drawing.Whiteboard.DefaultTheme.load()==WhiteboardThemePreference{rgb,pattern},
+				"new Config instance reloads the complete last selected background and pattern");
+			const auto json=ReadJson(file)["Drawing"]["Whiteboard"]["DefaultTheme"];
+			check(json["BackgroundRgb"].isUInt()&&json["BackgroundRgb"].asUInt()==rgb&&json["Pattern"].isUInt()&&json["Pattern"].asUInt()==pattern,
+				"theme serializes as two exact RGB and pattern integers");
+		}
+		Json::Value validTheme(Json::objectValue);validTheme["BackgroundRgb"]=0xFFFFFF;validTheme["Pattern"]=2;
+		for(const char* field:{"BackgroundRgb","Pattern"}){
+			std::vector<Json::Value> invalids{Json::Value(),Json::Value(true),Json::Value(-1),Json::Value(1.0),Json::Value("1"),
+				Json::Value(Json::arrayValue),Json::Value(Json::objectValue),Json::Value(Json::UInt64(0x100000000ULL))};
+			invalids.emplace_back(std::string_view(field)=="Pattern"?3:0x1000000);
+			for(const auto& invalidTheme:invalids){
+				auto document=Json::Value(Json::objectValue);auto theme=validTheme;theme[field]=invalidTheme;
+				document["Drawing"]["Whiteboard"]["DefaultTheme"]=theme;writeThemeDocument(document);
+				check(themes.ReadAll()&&themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"invalid theme component defaults the whole pair without narrowing or coercion");
+				(void)themes.SetWhiteboardThemeDefault(0xFFFFFF,2);themes.UI.Bar.Zoom2=1.25;
+				check(themes.ReadMini({"Drawing.Whiteboard.DefaultTheme"})&&themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme
+					&&themes.UI.Bar.Zoom2.load()==1.25,"Mini theme validation keeps unrelated settings untouched");
+			}
+			auto incomplete=validTheme;incomplete.removeMember(field);Json::Value document(Json::objectValue);
+			document["Drawing"]["Whiteboard"]["DefaultTheme"]=incomplete;writeThemeDocument(document);
+			check(themes.ReadAll()&&themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"partial theme never combines disk and default components");
+		}
+		(void)themes.SetWhiteboardThemeDefault(0xFFFFFF,2);
+		check(!themes.SetWhiteboardThemeDefault(0x1000000,0)&&!themes.SetWhiteboardThemeDefault(0,3)
+			&&themes.Drawing.Whiteboard.DefaultTheme.load()==WhiteboardThemePreference{0xFFFFFF,2},"invalid runtime preference cannot replace the last successful choice");
+		themes.ResetToDefaults();check(themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"reset restores the green blank theme default");
 	}
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;

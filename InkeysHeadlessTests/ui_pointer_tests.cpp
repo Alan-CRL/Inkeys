@@ -756,7 +756,7 @@ int RunUiPointerTests()
         check(queuedAdmission.Begin(native), "UI native Down snapshots source admission before queueing");
         check(otherWindow.BeginTouch(102), "UI queued mouse Down can be superseded by another window");
         otherWindow.EndTouch(102);
-        // Bar metadata copies this value policy across the HiMsg queue, without owning Raw or business.
+        // Bar metadata copies this value policy across the shared mailbox, without owning Raw or business.
         MouseGesture dequeued = queuedAdmission;
         check(dequeued.Active() && dequeued.SourceReplaced(),
             "UI dequeued admission cannot resurrect mouse Down across completed touch takeover");

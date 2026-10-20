@@ -508,6 +508,8 @@ namespace Inkeys::Drawing::Draw3
 			? decltype(mouseInput_)::Right : decltype(mouseInput_)::Left;
 		if (down)
 		{
+			// 鼠标兜底不经过 RTS/Pointer Down，也要通知白板收起菜单。
+			NotifyCanvasContactDown();
 			if (mouseInput_.Down(*coordinator, button, x, y, qpc.QuadPart, SelectionMode()))
 			{
 				(void)SetCapture(window);
@@ -1696,6 +1698,7 @@ namespace Inkeys::Drawing::Draw3
 		case WM_POINTERDOWN:
 		case WM_POINTERUP:
 		{
+			if (message == WM_POINTERDOWN) NotifyCanvasContactDown();
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
 			const PointerDetails details = QueryPointerDetails(pointerId);
 #if defined(DRAW3_RTS_DIAGNOSTICS)

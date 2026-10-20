@@ -81,8 +81,22 @@
         "UndoLabel": "復原",
         "RedoLabel": "重做",
         "ClearLabel": "清空",
+        "WhiteboardWindowTitle": "Inkeys 白板",
+        "WhiteboardPreviousLabel": "上一頁",
+        "WhiteboardNextLabel": "下一頁",
+        "WhiteboardAddPageLabel": "加頁",
         "WhiteboardLabel": "白板",
+        "ResumeWhiteboardLabel": "返回白板",
         "CloseWhiteboardLabel": "關閉白板",
+        "ReturnToShowLabel": "返回放映",
+        "MinimizeWhiteboardLabel": "最小化白板",
+        "WhiteboardThemeLabel": "主題樣式",
+        "WhiteboardBackgroundColorLabel": "背景顏色",
+        "WhiteboardBackgroundStyleLabel": "背景樣式",
+        "WhiteboardBlankLabel": "空白",
+        "WhiteboardDotsLabel": "點陣",
+        "WhiteboardGridLabel": "網格",
+        "WhiteboardUnsavedLabel": "部分頁面未儲存",
         "FreezeLabel": "定格",
         "EndPresentationLabel": "結束放映",
         "SettingsLabel": "設定",
@@ -371,8 +385,11 @@
         },
         "TaskbarScaleBase":
         {
-          "N": "以工作列高度作為縮放基準",
-          "E": "100% 時主欄與工作列等高；垂直工作列取寬度。"
+          "N": "工作列縮放基準",
+          "E": "100% 時基礎量高 48 DIP；真實量依工作列厚度。",
+          "Off": "關閉",
+          "Base": "工作列基礎量",
+          "Actual": "工作列真實量"
         },
         "BarZoom":
         {

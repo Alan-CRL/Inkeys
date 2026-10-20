@@ -1,0 +1,42 @@
+{
+  "id": "whiteboard-v1",
+  "name": "whiteboard-v1",
+  "title": "Whiteboard 初版完整实现",
+  "description": "按已批准方案恢复白板入口、UI3主题菜单、UInk页级持久化和场景恢复",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-15",
+  "completedAt": null,
+  "branch": "feature/whiteboard",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-15-whiteboard-storage",
+    "10-15-whiteboard-theme-menu",
+    "10-15-whiteboard-scene"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "此前白板实现及UI3菜单已提交 dfdc8b8e / d4d42869。本轮已统一实际主栏、分页、固定属性与输入worker，build14功能/像素回归通过。用户确认本轮体验验收完成、比之前好得多，并授权提交当前改动；后续继续修改白板，父任务保持in_progress，不结束或归档、不push。原23/27组超预算的自动性能记录保留，不改写为达标。",
+  "meta": {
+    "approved_plan": "User explicitly requested implementation 2026-10-15",
+    "related_task": "08-17-ui3-whiteboard",
+    "implementation_complete": false,
+    "ui3_shared_runtime": "native ARM64 build14 and input/offscreen/headless passed; production rendering matches complete build12 expanded benchmark; 27 valid runs, 23 budget misses; performance acceptance remains open",
+    "automated_validation": "functional_passed_performance_budget_unmet",
+    "ui3_preview_revision": "2026-10-16: theme/menu/root z-order and matching occlusion, reordered shared palette, full-button 3x3 pattern previews; native ARM64 build and D2D offscreen passed; user manual acceptance passed; performance not rerun; commit authorized; task remains in_progress",
+    "manual_acceptance": "user_confirmed_current_iteration_improved; agent_gui_not_run",
+    "related_tasks": [
+      "08-17-ui3-whiteboard",
+      "08-23-shared-bottom-page-control-windows"
+    ]
+  }
+}

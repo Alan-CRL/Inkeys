@@ -29,6 +29,18 @@ namespace Inkeys::Business
 			&& expected.processId == current.processId
 			&& expected.processStartTime == current.processStartTime;
 	}
+	struct PptFocusForeground
+	{
+		std::uintptr_t window = 0;
+		std::uint32_t processId = 0;
+	};
+	struct PptFocusRequest
+	{
+		PptSessionToken session;
+		PptFocusForeground foreground;
+	};
+	[[nodiscard]] PptFocusRequest CapturePptFocusRequest() noexcept;
+	void QueuePptFocusRequest(const PptFocusRequest& request) noexcept;
 	[[nodiscard]] PptSessionToken CapturePptInputSession() noexcept;
 	[[nodiscard]] bool IsCurrentPptInputSession(const PptSessionToken& token) noexcept;
 	// 仅生成 PPT 业务命令，不经通用工作区回调回落到白板。

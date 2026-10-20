@@ -23,6 +23,7 @@ module;
 #include <memory>
 #include <string>
 #include <thread>
+#include <stop_token>
 #include <utility>
 
 #pragma comment(lib, "dwmapi.lib")
@@ -515,6 +516,7 @@ namespace Inkeys::UI::MessageBox::Detail
 			HANDLE proceedEvent = nullptr;
 			HANDLE hiddenEvent = nullptr;
 			HANDLE ownerRestoredEvent = nullptr;
+			HANDLE cancellationEvent = nullptr;
 			std::atomic_bool preflightSucceeded = false;
 			std::atomic_bool createAllowed = false;
 			std::atomic_bool committed = false;
@@ -1489,7 +1491,7 @@ namespace Inkeys::UI::MessageBox::Detail
 			bool classRegistered = false;
 			try
 			{
-				if (!gdiplus.Start())
+				if (session->request->cancellation.stop_requested() || !gdiplus.Start())
 				{
 					SetEvent(session->preflightEvent);
 					return;
@@ -1505,10 +1507,13 @@ namespace Inkeys::UI::MessageBox::Detail
 					return;
 				}
 				session->Render();
+				if (session->request->cancellation.stop_requested())
+				{ SetEvent(session->preflightEvent); return; }
 				session->preflightSucceeded.store(true, std::memory_order_release);
 				SetEvent(session->preflightEvent);
 				if (WaitForSingleObject(session->proceedEvent, INFINITE) != WAIT_OBJECT_0
-					|| !session->createAllowed.load(std::memory_order_acquire)) return;
+					|| !session->createAllowed.load(std::memory_order_acquire)
+					|| session->request->cancellation.stop_requested()) return;
 
 				session->instance = GetModuleHandleW(nullptr);
 				classRegistered = RegisterDialogClass(*session);
@@ -1550,7 +1555,7 @@ namespace Inkeys::UI::MessageBox::Detail
 					if (menu) EnableMenuItem(menu, SC_CLOSE,
 						MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
 				}
-				if (!RevealPreparedWindow(*session, hwnd, x, y))
+				if (session->request->cancellation.stop_requested() || !RevealPreparedWindow(*session, hwnd, x, y))
 				{
 					if (IsWindowVisible(hwnd)) session->HideWindow();
 					if (!session->hiddenSignaled.exchange(true))
@@ -1582,7 +1587,19 @@ namespace Inkeys::UI::MessageBox::Detail
 				MSG message{};
 				for (;;)
 				{
-					const BOOL value = GetMessageW(&message, nullptr, 0, 0);
+					BOOL value = 0;
+					if (session->cancellationEvent)
+					{
+						const DWORD wait = MsgWaitForMultipleObjectsEx(1, &session->cancellationEvent,
+							INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+						if (wait == WAIT_OBJECT_0 || session->request->cancellation.stop_requested())
+						{ session->abortRequested.store(true, std::memory_order_release); break; }
+						if (wait != WAIT_OBJECT_0 + 1) break;
+						// sent message 唤醒未必留下 posted message，不能再进入不可取消的 GetMessage。
+						if (!PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) continue;
+						value = message.message == WM_QUIT ? 0 : 1;
+					}
+					else value = GetMessageW(&message, nullptr, 0, 0);
 					if (value <= 0) break;
 					TranslateMessage(&message);
 					DispatchMessageW(&message);
@@ -1622,17 +1639,18 @@ namespace Inkeys::UI::MessageBox::Detail
 		}
 
 		[[nodiscard]] bool WaitForDialogHidden(DialogSession& session,
-			HANDLE workerHandle, bool serviceSentMessages) noexcept
+			HANDLE workerHandle, bool serviceSentMessages, bool observeCancellation = true) noexcept
 		{
-			HANDLE handles[2] = { session.hiddenEvent, workerHandle };
+			HANDLE handles[3] = { session.hiddenEvent, workerHandle, session.cancellationEvent };
+			const DWORD count = session.cancellationEvent && observeCancellation ? 3 : 2;
 			for (;;)
 			{
 				DWORD wait = WAIT_FAILED;
 				if (serviceSentMessages)
 				{
-					wait = MsgWaitForMultipleObjectsEx(2, handles, INFINITE,
+					wait = MsgWaitForMultipleObjectsEx(count, handles, INFINITE,
 						QS_SENDMESSAGE, MWMO_INPUTAVAILABLE);
-					if (wait == WAIT_OBJECT_0 + 2)
+					if (wait == WAIT_OBJECT_0 + count)
 					{
 						// PM_NOREMOVE 会服务 sent message，但不会分派 posted/input 队列。
 						MSG pending{};
@@ -1640,10 +1658,11 @@ namespace Inkeys::UI::MessageBox::Detail
 						continue;
 					}
 				}
-				else wait = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+				else wait = WaitForMultipleObjects(count, handles, FALSE, INFINITE);
 				if (wait == WAIT_OBJECT_0) return true;
 				if (wait == WAIT_OBJECT_0 + 1)
 					return session.hiddenSignaled.load(std::memory_order_acquire);
+				if (count == 3 && wait == WAIT_OBJECT_0 + 2) return false;
 				return false;
 			}
 		}
@@ -1664,6 +1683,8 @@ namespace Inkeys::UI::MessageBox::Detail
 		UniqueHandle proceed(CreateEventW(nullptr, TRUE, FALSE, nullptr));
 		UniqueHandle hidden(CreateEventW(nullptr, TRUE, FALSE, nullptr));
 		UniqueHandle restored(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+		UniqueHandle cancelled(request.cancellation.stop_possible() ? CreateEventW(nullptr, TRUE, FALSE, nullptr) : nullptr);
+		if (request.cancellation.stop_possible() && !cancelled) return { true, Result::Failed };
 		if (!preflight || !proceed || !hidden || !restored) return {};
 
 		DialogSession session;
@@ -1672,6 +1693,10 @@ namespace Inkeys::UI::MessageBox::Detail
 		session.proceedEvent = proceed.Get();
 		session.hiddenEvent = hidden.Get();
 		session.ownerRestoredEvent = restored.Get();
+		session.cancellationEvent = cancelled.Get();
+		// callback 只唤醒事件；窗口隐藏、owner 恢复及线程回收仍按原顺序由各 owner 执行。
+		std::stop_callback cancel(request.cancellation, [&] { if (cancelled) SetEvent(cancelled.Get()); });
+		if (request.cancellation.stop_requested()) return { true, Result::Dismissed };
 
 		std::thread worker;
 		try
@@ -1739,10 +1764,16 @@ namespace Inkeys::UI::MessageBox::Detail
 			}
 		}
 
-		session.createAllowed.store(true, std::memory_order_release);
+		session.createAllowed.store(!request.cancellation.stop_requested(), std::memory_order_release);
 		SetEvent(proceed.Get());
-		const bool hiddenObserved = WaitForDialogHidden(session, workerHandle,
+		bool hiddenObserved = WaitForDialogHidden(session, workerHandle,
 			request.owner && ownerThread == GetCurrentThreadId());
+		if (!hiddenObserved && request.cancellation.stop_requested())
+		{
+			// Stop event 已唤醒 UI 消息等待；先等它真正隐藏，再恢复 owner。
+			hiddenObserved = WaitForDialogHidden(session, workerHandle,
+				request.owner && ownerThread == GetCurrentThreadId(), false);
+		}
 		if (!hiddenObserved)
 		{
 			session.abortRequested.store(true, std::memory_order_release);
@@ -1768,6 +1799,7 @@ namespace Inkeys::UI::MessageBox::Detail
 		SetEvent(restored.Get());
 		if (worker.joinable()) worker.join();
 
+		if (request.cancellation.stop_requested()) return { true, Result::Dismissed };
 		if (session.committed.load(std::memory_order_acquire))
 			return { true, session.result.load(std::memory_order_acquire) };
 		return {};

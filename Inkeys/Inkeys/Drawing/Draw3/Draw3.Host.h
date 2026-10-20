@@ -206,6 +206,7 @@ namespace Inkeys::Drawing::Draw3
 		void (*penWidthContextChanged)(void*,
 			const Inkeys::Business::PenWidth::Context&) noexcept = nullptr;
 		void (*acceptedStrokeBegan)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
+		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
 	};
 
 	enum class HostPresentationMode : std::uint8_t
@@ -252,6 +253,7 @@ namespace Inkeys::Drawing::Draw3
 		bool requirePresentationUiReady = false;
 		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/AutoSave。
 		std::wstring autoSaveRoot;
+		WhiteboardTheme whiteboardDefaultTheme;
 		void* startupContext = nullptr;
 		void (*startupMilestone)(void*, HostStartupStage) noexcept = nullptr;
 		bool enableEraserDiagnostics = false; // 默认关闭；仅发布有界快照，不逐点写日志。
@@ -335,6 +337,10 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		WhiteboardTheme whiteboardTheme;
+		std::uint64_t whiteboardGeneration = 0;
+		bool whiteboardLoadPending = false;
+		bool whiteboardUnsaved = false;
 		bool canUndo = false;
 		bool canRedo = false;
 		std::uint64_t contentRevision = 0;
@@ -410,6 +416,7 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
+		Bridge::CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		Shortcuts::Context ShortcutContext() const noexcept;
 		std::uint64_t PublishShortcutCommand(Bridge::CommandType type,
 			const Shortcuts::Scope& expected, std::uint64_t leaseId,

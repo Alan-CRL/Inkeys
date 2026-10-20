@@ -120,6 +120,7 @@ namespace Inkeys::UI::Ppt
 			Inkeys::UI::PageControl::PptState state;
 			{
 				std::scoped_lock lock(stateMutex);
+				state.presentationActive = positions.active;
 				state.presentationVisible = topmostRefresh.presentationVisible;
 				state.longPressEnabled =
 					Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;

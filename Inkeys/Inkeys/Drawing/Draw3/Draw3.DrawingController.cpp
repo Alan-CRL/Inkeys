@@ -17,8 +17,12 @@
 #include <cstring>
 #include <deque>
 #include <d3d11.h>
+#include <dxgi1_2.h>
+#include <wrl/client.h>
 #include <exception>
 #include <filesystem>
+#include <functional>
+#include <stdexcept>
 #include <DirectXMath.h>
 #include <iostream>
 #include <initializer_list>
@@ -54,16 +58,43 @@
 
 module Inkeys.Drawing.Draw3.drawing_controller;
 
+import Inkeys.Drawing.Draw3.whiteboard_store;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.canvas_navigation;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.pen_cursor;
 import draw3.uink_file;
+import draw3.uink_page_file;
 
 namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		std::vector<WhiteboardTheme> InitializeWhiteboardThemes(const DrawingControllerRuntimeObserver& observer)
+		{
+			return {ValidWhiteboardTheme(observer.whiteboardDefaultTheme) ? observer.whiteboardDefaultTheme : WhiteboardTheme{}};
+		}
+
+		void ExtendWhiteboardThemes(std::vector<WhiteboardTheme>& themes, std::size_t target, std::size_t current)
+		{
+			if (target >= themes.size()) themes.resize(target + 1, themes[current]);
+		}
+
+		bool ApplyWhiteboardThemeCommand(const CanvasCommand& command, Bridge::Workspace workspace,
+			bool loading, std::uint64_t generation, std::size_t page, WhiteboardTheme& current,
+			std::uint64_t& revision, const DrawingControllerRuntimeObserver& observer)
+		{
+			// 只有当前页真正接受的变更才记忆默认值；恢复、重复和过期请求都不回写偏好。
+			if (workspace != Bridge::Workspace::Whiteboard || loading || command.whiteboardGeneration != generation
+				|| command.pageIndex != page || !ValidWhiteboardTheme(command.whiteboardTheme)) return false;
+			if (current != command.whiteboardTheme)
+			{
+				current = command.whiteboardTheme; ++revision;
+				if (observer.whiteboardThemeEdited) observer.whiteboardThemeEdited(observer.context, current);
+			}
+			return true;
+		}
+
 		template<class Process>
 		void DrainIngressBatch(ContactInputCoordinator& input, WindowController& window,
 			bool& commandBoundaryPending, Process&& process)
@@ -465,6 +496,171 @@ namespace Inkeys::Drawing::Draw3
 				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.ClearRedo] result=failed reason=cpu_snapshot\n");
 				return {};
 			}
+		}
+
+
+		bool EvictWhiteboardPage(InkCanvasCollection& document,
+			std::vector<CanvasPageRuntimeState>& runtimes, size_t page, size_t current,
+			uint64_t saved, uint64_t revision)
+		{
+			if (page == current || saved != revision || saved == 0 || page >= runtimes.size()) return false;
+			const auto* old = document.PageAt(page); if (!old) return false;
+			InkPage empty(old->PageGuid());
+			if (!empty.GetOrCreateCanvas(kDefaultDeviceKey) || !document.ReplacePage(page, std::move(empty))) return false;
+			runtimes[page] = {};
+			return true;
+		}
+		Json::Value WhiteboardStrokeJson(const InkStroke& stroke)
+		{
+			Json::Value value(Json::objectValue);
+			value["type"] = static_cast<unsigned>(stroke.Style().inkType);
+			value["rgb"] = stroke.Style().fallbackRgb;
+			value["opacity"] = stroke.Style().opacity;
+			value["texture"] = stroke.Style().texture;
+			value["points"] = Json::Value(Json::arrayValue);
+			for (const auto& point : stroke.Points())
+			{
+				Json::Value v(Json::arrayValue); v.append(point.x); v.append(point.y); v.append(point.width);
+				value["points"].append(std::move(v));
+			}
+			return value;
+		}
+		std::optional<InkStroke> WhiteboardStrokeFromJson(const Json::Value& value)
+		{
+			if (!value.isObject() || !value["type"].isUInt() || value["type"].asUInt() > 6 ||
+				!value["points"].isArray() || !value["rgb"].isUInt() || !value["opacity"].isNumeric() ||
+				!value["texture"].isUInt() || value["texture"].asUInt() > 65535) return {};
+			StoredInkStyle style{ static_cast<StoredInkType>(value["type"].asUInt()), value["rgb"].asUInt(),
+				value["opacity"].asFloat(), static_cast<uint16_t>(value["texture"].asUInt()) };
+			std::vector<StoredInkPoint> points;
+			for (const auto& p : value["points"])
+			{
+				if (!p.isArray() || p.size() != 3 || !p[0].isNumeric() || !p[1].isNumeric() || !p[2].isNumeric()) return {};
+				points.push_back({ p[0].asFloat(), p[1].asFloat(), p[2].asFloat() });
+			}
+			InkStroke result(style, std::move(points));
+			if (!result.IsValid()) return {};
+			return result;
+		}
+		Json::Value WhiteboardHistoryJson(const InkPage& page, const CanvasPageRuntimeState& runtime)
+		{
+			Json::Value value(Json::objectValue);
+			value["strokes"] = Json::Value(Json::arrayValue);
+			for (const auto& stroke : page.FindCanvas(kDefaultDeviceKey)->Strokes())
+				value["strokes"].append(WhiteboardStrokeJson(stroke));
+			value["items"] = Json::Value(Json::arrayValue);
+			for (const auto& item : runtime.history.Items())
+			{
+				Json::Value v(Json::arrayValue); v.append(Json::UInt64(item.strokeIndex));
+				v.append(item.visible); v.append(item.compositionBarrier); value["items"].append(std::move(v));
+			}
+			value["redo"] = Json::Value(Json::arrayValue);
+			for (auto index : runtime.history.RedoIndices()) value["redo"].append(index);
+			value["floor"] = Json::UInt64(runtime.undoFloor);
+			value["interval"] = runtime.intervalOrdinal;
+			value["previousClear"] = runtime.previousClearUndoAvailable;
+			value["clearRedo"] = runtime.clearRedoAvailable;
+			if (runtime.boundaryFallback)
+			{
+				value["boundaryInterval"] = runtime.boundaryFallback->intervalOrdinal;
+				value["boundary"] = Json::Value(Json::arrayValue);
+				for (const auto& stroke : runtime.boundaryFallback->strokes)
+				{
+					std::vector<StoredInkPoint> points;
+					for (const auto& p : stroke.points) points.push_back({p.x,p.y,p.width});
+					InkStroke stored({static_cast<StoredInkType>(stroke.style.kind), stroke.style.fallbackRgb,
+						stroke.style.opacity, static_cast<uint16_t>(stroke.style.texture)}, std::move(points));
+					value["boundary"].append(WhiteboardStrokeJson(stored));
+				}
+			}
+			if (runtime.clearRedoContinuation)
+				value["continuation"] = WhiteboardHistoryJson(runtime.clearRedoContinuation->page,
+					runtime.clearRedoContinuation->runtime);
+			return value;
+		}
+		template<typename AllocateToken>
+		bool RestoreWhiteboardHistory(const Json::Value& value, InkPage& page,
+			CanvasPageRuntimeState& runtime, AllocateToken& allocateToken, unsigned depth = 0)
+		{
+			if (depth > 1 || !value["strokes"].isArray() || !value["items"].isArray() ||
+				!value["redo"].isArray() || !value["floor"].isUInt64() ||
+				!value["interval"].isUInt() || !value["previousClear"].isBool() || !value["clearRedo"].isBool()) return false;
+			auto* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
+			if (!canvas) return false;
+			for (const auto& v : value["strokes"])
+			{
+				auto stroke = WhiteboardStrokeFromJson(v);
+				if (!stroke || !canvas->AppendStroke(std::move(*stroke))) return false;
+			}
+			std::vector<uint8_t> visible;
+			std::vector<uint32_t> redo;
+			for (const auto& item : value["items"])
+			{
+				if (!item.isArray() || item.size() != 3 || !item[0].isUInt64() || !item[1].isBool() || !item[2].isBool()) return false;
+				const auto index = item[0].asUInt64();
+				if (index >= canvas->Strokes().size()) return false;
+				auto footprint = BuildStrokeTileFootprint(canvas->Strokes()[index]);
+				if (!footprint || !runtime.history.AppendStroke(index, std::move(*footprint), !item[2].asBool())) return false;
+				visible.push_back(item[1].asBool());
+			}
+			for (const auto& v : value["redo"]) { if (!v.isUInt()) return false; redo.push_back(v.asUInt()); }
+			if (!runtime.history.RestoreVisibility(visible, redo) || value["floor"].asUInt64() > visible.size()) return false;
+			// 冷页重建可见链与 redo 弹出链；丢弃分支不能把相邻 item 序号当作栅格前驱。
+			InkRasterStateToken state = allocateToken();
+			for (const auto isVisible : visible)
+			{
+				runtime.beforeStates.push_back(state);
+				runtime.afterStates.push_back(allocateToken());
+				if (isVisible) state = runtime.afterStates.back();
+			}
+			runtime.rasterState = state;
+			for (auto it = redo.rbegin(); it != redo.rend(); ++it)
+			{
+				runtime.beforeStates[*it] = state;
+				state = runtime.afterStates[*it];
+			}
+			runtime.undoFloor = static_cast<size_t>(value["floor"].asUInt64());
+			runtime.intervalOrdinal = value["interval"].asUInt();
+			runtime.previousClearUndoAvailable = value["previousClear"].asBool();
+			runtime.clearRedoAvailable = value["clearRedo"].asBool();
+			if (value.isMember("boundary"))
+			{
+				if (!value["boundary"].isArray()) return false;
+				draw3::uink::Draw3UInkCanvasSnapshot boundary;
+				boundary.pageGuid = draw3::uink::UInkGuid(page.PageGuid().Bytes());
+				if (!value["boundaryInterval"].isUInt()) return false;
+				boundary.intervalOrdinal = value["boundaryInterval"].asUInt();
+				for (const auto& v : value["boundary"])
+				{
+					auto stroke = WhiteboardStrokeFromJson(v); if (!stroke) return false;
+					draw3::uink::Draw3UInkStrokeSnapshot s;
+					s.style = {static_cast<draw3::uink::Draw3UInkStrokeKind>(stroke->Style().inkType),
+						stroke->Style().opacity, stroke->Style().fallbackRgb, stroke->Style().texture};
+					for (const auto& p : stroke->Points()) s.points.push_back({p.x,p.y,p.width});
+					boundary.strokes.push_back(std::move(s));
+				}
+				runtime.boundaryFallback = std::move(boundary);
+			}
+			if (value.isMember("continuation"))
+			{
+				auto continuation = std::make_shared<ClearRedoContinuation>(ClearRedoContinuation{InkPage(page.PageGuid()), {}});
+				if (!RestoreWhiteboardHistory(value["continuation"], continuation->page, continuation->runtime, allocateToken, depth + 1)) return false;
+				runtime.clearRedoContinuation = std::move(continuation);
+			}
+			return true;
+		}
+
+		bool CanRedoFromRasterState(const CanvasPageRuntimeState& runtime, RenderItemId item) noexcept
+		{
+			return item.index < runtime.beforeStates.size() && item.index < runtime.afterStates.size() &&
+				runtime.rasterState == runtime.beforeStates[item.index];
+		}
+
+		bool CommitRedoRasterState(CanvasPageRuntimeState& runtime, RenderItemId item)
+		{
+			if (!CanRedoFromRasterState(runtime, item) || !runtime.history.RedoLastUndone(item)) return false;
+			runtime.rasterState = runtime.afterStates[item.index];
+			return true;
 		}
 
 		struct DesktopClearRecovery
@@ -5380,6 +5576,378 @@ namespace Inkeys::Drawing::Draw3
 		return failures == 0 ? 0 : 1;
 	}
 
+
+	int RunWhiteboardThemePreferenceProductionTest(WhiteboardTheme initial) noexcept
+	{
+		int failures=0;
+		const auto check=[&](bool ok,const char* label){if(!ok){++failures;std::fprintf(stderr,"[Whiteboard.ThemeTest] FAIL %s\n",label);}};
+		try
+		{
+			struct Capture { unsigned count=0; WhiteboardTheme last; } capture;
+			DrawingControllerRuntimeObserver observer;observer.context=&capture;observer.whiteboardDefaultTheme=initial;
+			observer.whiteboardThemeEdited=[](void* context,WhiteboardTheme theme) noexcept{
+				auto& value=*static_cast<Capture*>(context);++value.count;value.last=theme;};
+			auto themes=InitializeWhiteboardThemes(observer);
+			check(themes.size()==1&&themes[0]==initial&&capture.count==0,"new Controller first page consumes the injected persisted theme without writing it back");
+			const WhiteboardTheme edited{initial.backgroundRgb==0xFFFFFF?0x172A46u:0xFFFFFFu,
+				initial.pattern==WhiteboardPattern::Grid?WhiteboardPattern::Dots:WhiteboardPattern::Grid};
+			CanvasCommand command;command.type=CanvasCommandType::SetWhiteboardTheme;command.whiteboardTheme=edited;
+			command.whiteboardGeneration=9;command.pageIndex=0;std::uint64_t revision=1;
+			check(ApplyWhiteboardThemeCommand(command,Bridge::Workspace::Whiteboard,false,9,0,themes[0],revision,observer)
+				&&themes[0]==edited&&revision==2&&capture.count==1&&capture.last==edited,"accepted theme mutation publishes one successful preference notification");
+			check(ApplyWhiteboardThemeCommand(command,Bridge::Workspace::Whiteboard,false,9,0,themes[0],revision,observer)
+				&&revision==2&&capture.count==1,"unchanged theme command does not persist or dirty the page again");
+			const auto reject=[&](Bridge::Workspace workspace,bool loading,std::uint64_t generation,std::size_t page,WhiteboardTheme requested){
+				auto stale=command;stale.whiteboardTheme=requested;
+				check(!ApplyWhiteboardThemeCommand(stale,workspace,loading,generation,page,themes[0],revision,observer)
+					&&themes[0]==edited&&revision==2&&capture.count==1,"rejected theme request preserves the page and last successful preference");};
+			reject(Bridge::Workspace::Desktop,false,9,0,initial);reject(Bridge::Workspace::Presentation,false,9,0,initial);
+			reject(Bridge::Workspace::Whiteboard,true,9,0,initial);reject(Bridge::Workspace::Whiteboard,false,10,0,initial);
+			reject(Bridge::Workspace::Whiteboard,false,9,1,initial);
+			reject(Bridge::Workspace::Whiteboard,false,9,0,{0x1000000,WhiteboardPattern::Blank});
+			reject(Bridge::Workspace::Whiteboard,false,9,0,{0,static_cast<WhiteboardPattern>(3)});
+			ExtendWhiteboardThemes(themes,1,0);check(themes[1]==edited,"new page inherits the current page theme");
+			command.pageIndex=1;command.whiteboardTheme=initial;
+			check(ApplyWhiteboardThemeCommand(command,Bridge::Workspace::Whiteboard,false,9,1,themes[1],revision,observer)
+				&&capture.count==2&&capture.last==initial,"last successful edit can differ from an older page theme");
+			ExtendWhiteboardThemes(themes,2,0);
+			check(themes[0]==edited&&themes[1]==initial&&themes[2]==edited&&capture.count==2&&capture.last==initial,
+				"adding from an older page preserves existing themes and current-page inheritance without replacing the remembered preference");
+			const auto restarted=InitializeWhiteboardThemes(observer);
+			check(restarted[0]==initial&&capture.count==2,"fresh Controller initialization stays independent of existing page themes");
+			observer.whiteboardDefaultTheme={0x1000000,WhiteboardPattern::Blank};
+			check(InitializeWhiteboardThemes(observer)[0]==WhiteboardTheme{},"invalid injected default falls back to dark green blank");
+		}
+		catch (...) { ++failures; }
+		return failures?1:0;
+	}
+
+	int RunWhiteboardStorageProductionTest() noexcept
+	{
+		int failures = RunWhiteboardThemePreferenceProductionTest({});
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr, "[Whiteboard.StorageTest] FAIL %s\n", label); }
+		};
+		try
+		{
+			const auto id = draw3::uink::CreateUInkGuid();
+			if (!id) return 1;
+			uint64_t nextHistoryRasterStateToken = 1000;
+			auto allocateHistoryRasterStateToken = [&]() { return nextHistoryRasterStateToken++; };
+			const auto undoHistory = [](CanvasPageRuntimeState& state)
+			{
+				const auto item = state.history.LastVisibleItem();
+				if (!item || item->index >= state.beforeStates.size() || !state.history.UndoLastVisible(*item)) return false;
+				state.rasterState = state.beforeStates[item->index];
+				return true;
+			};
+			const auto redoHistory = [](CanvasPageRuntimeState& state)
+			{
+				const auto item = state.history.LastRedoItem();
+				return item && CommitRedoRasterState(state, *item);
+			};
+			// A、B、Undo B、C 保留隐藏旧分支；冷恢复后仍须能沿 A、C 往返，不能按 item 序号拼接。
+			InkPage branch(InkGuid(id->Bytes())); CanvasPageRuntimeState branchRuntime;
+			auto* branchCanvas = branch.GetOrCreateCanvas(kDefaultDeviceKey);
+			if (!branchCanvas) return 1;
+			branchRuntime.rasterState = allocateHistoryRasterStateToken();
+			for (int index = 0; index < 3; ++index)
+			{
+				InkStroke stroke({}, {{float(index),0,2},{float(index+10),10,2}});
+				auto footprint = BuildStrokeTileFootprint(stroke);
+				auto added = branchCanvas->AppendStroke(std::move(stroke));
+				if (!footprint || !added || !branchRuntime.history.AppendStroke(*added, std::move(*footprint))) return 1;
+				branchRuntime.beforeStates.push_back(branchRuntime.rasterState);
+				branchRuntime.afterStates.push_back(allocateHistoryRasterStateToken());
+				branchRuntime.rasterState = branchRuntime.afterStates.back();
+				if (index == 1) check(undoHistory(branchRuntime), "branch fixture undoes B before adding C");
+			}
+			InkPage restoredBranch(branch.PageGuid()); CanvasPageRuntimeState restoredBranchRuntime;
+			check(RestoreWhiteboardHistory(WhiteboardHistoryJson(branch, branchRuntime), restoredBranch,
+				restoredBranchRuntime, allocateHistoryRasterStateToken), "branched cold history restored");
+			check(restoredBranchRuntime.history.Items().size() == 3 && restoredBranchRuntime.history.RedoDepth() == 0,
+				"abandoned B remains hidden without a redo candidate");
+			check(undoHistory(restoredBranchRuntime) && undoHistory(restoredBranchRuntime) &&
+				!restoredBranchRuntime.history.LastVisibleItem(), "cold branch undoes C then A to empty");
+			check(redoHistory(restoredBranchRuntime) && redoHistory(restoredBranchRuntime) &&
+				restoredBranchRuntime.history.LastVisibleItem() && restoredBranchRuntime.history.LastVisibleItem()->index == 2,
+				"production raster guard and commit redo A then C across abandoned B");
+			check(undoHistory(restoredBranchRuntime) && undoHistory(restoredBranchRuntime), "prepare fully undone cold page");
+			InkPage fullyUndone(branch.PageGuid()); CanvasPageRuntimeState fullyUndoneRuntime;
+			check(RestoreWhiteboardHistory(WhiteboardHistoryJson(restoredBranch, restoredBranchRuntime), fullyUndone,
+				fullyUndoneRuntime, allocateHistoryRasterStateToken) && !fullyUndoneRuntime.history.LastVisibleItem() &&
+				fullyUndoneRuntime.history.RedoDepth() == 2 && redoHistory(fullyUndoneRuntime) && redoHistory(fullyUndoneRuntime),
+				"fully undone cold page retains the empty root and complete forward branch");
+			InkPage empty(branch.PageGuid()); CanvasPageRuntimeState emptyRuntime;
+			if (!empty.GetOrCreateCanvas(kDefaultDeviceKey)) return 1;
+			InkPage restoredEmpty(branch.PageGuid()); CanvasPageRuntimeState restoredEmptyRuntime;
+			check(RestoreWhiteboardHistory(WhiteboardHistoryJson(empty, emptyRuntime), restoredEmpty,
+				restoredEmptyRuntime, allocateHistoryRasterStateToken) && restoredEmptyRuntime.rasterState != 0 &&
+				!undoHistory(restoredEmptyRuntime) && !redoHistory(restoredEmptyRuntime), "empty cold page has one valid root and no history operation");
+			// composition swap chain 不绑定 HWND；测试只绘制离屏资源，不 Present。
+			Microsoft::WRL::ComPtr<ID3D11Device> gpuDevice;
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext> gpuContext;
+			D3D_FEATURE_LEVEL featureLevel;
+			if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+				gpuDevice.GetAddressOf(), &featureLevel, gpuContext.GetAddressOf()))) return 1;
+			Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+			Microsoft::WRL::ComPtr<IDXGIAdapter> gpuAdapter;
+			Microsoft::WRL::ComPtr<IDXGIFactory2> gpuFactory;
+			Microsoft::WRL::ComPtr<IDXGISwapChain1> gpuSwapChain;
+			if (FAILED(gpuDevice.As(&dxgiDevice)) || FAILED(dxgiDevice->GetAdapter(gpuAdapter.GetAddressOf())) ||
+				FAILED(gpuAdapter->GetParent(IID_PPV_ARGS(gpuFactory.GetAddressOf())))) return 1;
+			DXGI_SWAP_CHAIN_DESC1 swapDescription = {};
+			swapDescription.Width = 128; swapDescription.Height = 128;
+			swapDescription.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			swapDescription.SampleDesc.Count = 1;
+			swapDescription.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+			swapDescription.BufferCount = 2;
+			swapDescription.Scaling = DXGI_SCALING_STRETCH;
+			swapDescription.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+			swapDescription.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+			if (FAILED(gpuFactory->CreateSwapChainForComposition(gpuDevice.Get(), &swapDescription,
+				nullptr, gpuSwapChain.GetAddressOf()))) return 1;
+			InkRenderer gpuRenderer;
+			if (!gpuRenderer.Init(gpuDevice.Get(), gpuContext.Get(), gpuSwapChain.Get(), 128, 128, D3D_DRIVER_TYPE_WARP, true)) return 1;
+			InkHistoryGpuCache gpuCache;
+			if (!gpuCache.Initialize(gpuRenderer, {kUndoTileBytes, 1}, {kCompositionTileBytes})) return 1;
+			const auto root = std::filesystem::temp_directory_path() /
+				("InkeysWhiteboardTest-" + draw3::uink::FormatUInkGuid(*id));
+			std::filesystem::create_directory(root);
+			{
+				WhiteboardStore store(root.wstring(), {});
+				InkCanvasCollection document(InkGuid(id->Bytes()));
+				std::vector<CanvasPageRuntimeState> runtime;
+				std::vector<draw3::uink::UInkGuid> ordered;
+				for (size_t index = 0; index < 100; ++index)
+				{
+					const auto page = TryAppendBlankPage(document); if (!page) return 1;
+					runtime.emplace_back(); ordered.emplace_back(document.PageAt(index)->PageGuid().Bytes());
+				}
+				for (size_t index = 0; index < 100; ++index)
+				{
+					auto* page = document.PageAt(index); auto* canvas = page->FindCanvas(kDefaultDeviceKey);
+					for (int strokeIndex = 0; strokeIndex < 3; ++strokeIndex)
+					{
+						InkStroke stroke({}, {{float(index),float(strokeIndex),2.0f},{float(index+10),float(strokeIndex+10),2.0f}});
+						auto footprint = BuildStrokeTileFootprint(stroke);
+						auto added = canvas->AppendStroke(std::move(stroke));
+						if (!footprint || !added || !runtime[index].history.AppendStroke(*added,std::move(*footprint))) return 1;
+						runtime[index].beforeStates.push_back(strokeIndex + 1);
+						runtime[index].afterStates.push_back(strokeIndex + 2);
+					}
+					const HistoryCanvasIdentity gpuIdentity{page->PageGuid(), kDefaultDeviceKey};
+					const InkHistoryRasterKey gpuKey{kDefaultDeviceKey, 1.0f, DXGI_FORMAT_B8G8R8A8_UNORM, 1};
+					const std::array<SignedTileCoordinate, 1> gpuTiles{{{0, 0}}};
+					const auto captured = gpuCache.CapturePreimage({gpuIdentity, runtime[index].history.Items().front().id,
+						gpuKey, 1, 2, gpuTiles, 0, 0, 128, 128});
+					check(captured.status == HotPreimageCaptureStatus::Captured && gpuCache.CommitPreimage(captured.ticket), "GPU hot preimage allocated");
+					const auto gpuRoot = runtime[index].history.CompositionTree().RootNode();
+					check(gpuRoot && gpuCache.PrimeCompositionNode(gpuIdentity, gpuKey, *canvas,
+						runtime[index].history, *gpuRoot, gpuTiles[0], 128, 128), "GPU composition node allocated");
+					const auto occupied = gpuCache.Residency();
+					check(occupied.undoPages > 0 && occupied.undoSlices > 0 && occupied.hotEntries > 0 &&
+						occupied.compositionPages > 0 && occupied.compositionSlices > 0 && occupied.residentNodes > 0, "GPU probe starts with real resident resources");
+					// 与生产切页相同的释放入口；只断言缓存持有引用归零，不声称驱动显存立即归还。
+					gpuCache.DiscardHotPreimages();
+					gpuCache.DiscardCompositionCache();
+					const auto released = gpuCache.Residency();
+					check(released.undoPages == 0 && released.undoSlices == 0 && released.hotEntries == 0 &&
+						released.compositionPages == 0 && released.compositionSlices == 0 && released.residentNodes == 0, "GPU page cache references released");
+					check(runtime[index].history.UndoLastVisible().has_value(), "source has redo");
+					if (index == 0)
+					{
+						draw3::uink::Draw3UInkCanvasSnapshot boundary;
+						boundary.pageGuid = ordered[index];
+						draw3::uink::Draw3UInkStrokeSnapshot stroke;
+						stroke.points = {{0,0,2},{10,10,2}}; boundary.strokes.push_back(stroke);
+						runtime[index].boundaryFallback = std::move(boundary);
+						runtime[index].clearRedoContinuation = CaptureClearRedoContinuation(*page,runtime[index]);
+						runtime[index].clearRedoAvailable = true;
+						check(runtime[index].clearRedoContinuation != nullptr,"Clear continuation captured");
+					}
+					Json::Value history = WhiteboardHistoryJson(*page,runtime[index]);
+					history["version"]=1; history["rgb"]=0x123B32u; history["pattern"]=unsigned(index%3);
+					Json::StreamWriterBuilder writer; writer["indentation"]="";
+					WhiteboardStoreRequest request; request.page=index; request.revision=1;
+					request.pages=ordered; request.currentPage=static_cast<uint32_t>(index);
+					request.snapshot.fileGuid=*id; request.snapshot.workspaceGuid=*id; request.snapshot.workspaceType=1;
+					draw3::uink::Draw3UInkCanvasSnapshot saved;
+					saved.pageGuid=ordered[index]; saved.pageNumber=1;
+					saved.extra=draw3::uink::UInkExtra{{draw3::uink::UInkMessagePackValue{std::string("inkeysWhiteboardHistory")},
+						draw3::uink::UInkMessagePackValue{Json::writeString(writer,history)}}};
+					for (const auto& item : runtime[index].history.Items()) if (item.visible)
+					{
+						draw3::uink::Draw3UInkStrokeSnapshot stroke;
+						stroke.undoId=static_cast<uint32_t>(saved.strokes.size());
+						for (const auto& point : canvas->Strokes()[item.strokeIndex].Points()) stroke.points.push_back({point.x,point.y,point.width});
+						saved.strokes.push_back(std::move(stroke));
+					}
+					request.snapshot.canvases.push_back(std::move(saved));
+					if (index == 0)
+					{
+						const auto blocked = root / L"blocked";
+						HANDLE file = CreateFileW(blocked.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+						if (file == INVALID_HANDLE_VALUE) return 1;
+						CloseHandle(file);
+						WhiteboardStore retry(blocked.wstring(), {});
+						check(retry.Save(request),"failed write queued"); retry.Drain();
+						WhiteboardStoreCompletion failure;
+						check(retry.Take(failure) && !failure.success,"write failure explicit");
+						check(!canvas->Strokes().empty(),"failed write retains warm ink");
+						std::filesystem::remove(blocked);
+						check(retry.Save(request),"retry queued"); retry.Drain();
+						check(retry.Take(failure) && failure.success,"retry succeeds after IO recovery");
+						const auto session = std::filesystem::directory_iterator(blocked / L"whiteboard")->path();
+						const auto indexPath = session / L"current";
+						check(retry.Save(request), "establish current and backup"); retry.Drain();
+						check(retry.Take(failure) && failure.success, "two committed versions ready before index failure");
+						std::vector<draw3::uink::UInkPageFileDirectory> previousVersions;
+						for (const auto& entry : std::filesystem::directory_iterator(session)) if (entry.path().extension() == L".uink")
+						{
+							auto version = draw3::uink::ScanUInkPageFile(entry.path().wstring());
+							if (version) previousVersions.push_back(std::move(*version));
+						}
+						check(previousVersions.size() == 2, "current and backup are independently readable");
+						const auto countFiles = [&](const wchar_t* extension)
+						{
+							size_t count = 0;
+							for (const auto& entry : std::filesystem::directory_iterator(session))
+								if (entry.path().extension() == extension) ++count;
+							return count;
+						};
+						const auto oldHistory = std::get<std::string>(request.snapshot.canvases.front().extra->front().second.value);
+						auto edited = request; ++edited.revision;
+						auto editedHistory = history; editedHistory["pattern"] = 1u;
+						const auto newHistory = Json::writeString(writer, editedHistory);
+						edited.snapshot.canvases.front().extra->front().second.value = newHistory;
+						const auto matchesPage = [&](const std::optional<draw3::uink::UInkDocument>& value, const std::string& encoded)
+						{
+							if (!value || value->canvases.size() != 1) return false;
+							const auto& stored = value->canvases.front();
+							if (stored.pageGuid != request.pages[0] || stored.content.size() != 2 || !stored.extra || stored.extra->size() != 2) return false;
+							// 生产导出器在私有历史之外追加 active 标记；逐键验证两项，不能假定 extra 只有历史。
+							bool foundHistory = false, foundPageState = false;
+							for (const auto& pair : *stored.extra)
+							{
+								const auto* key = std::get_if<std::string>(&pair.first.value);
+								const auto* text = std::get_if<std::string>(&pair.second.value);
+								if (!key || !text) return false;
+								if (*key == "inkeysWhiteboardHistory")
+								{
+									if (foundHistory || *text != encoded) return false;
+									foundHistory = true;
+								}
+								else if (*key == "inkeysPageState")
+								{
+									if (foundPageState || *text != "active") return false;
+									foundPageState = true;
+								}
+								else return false;
+							}
+							return foundHistory && foundPageState;
+						};
+						const auto exportedFixture = draw3::uink::ExportDraw3SnapshotToUInk(request.snapshot);
+						check(matchesPage(exportedFixture.document, oldHistory), "index failure fixture matches the production history and active marker");
+						// 拒绝替换已有索引，但保留原索引文件与两个 durable 版本；失败不得积累整文稿孤儿。
+						const auto closeIndex = [](void* handle) { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); };
+						std::unique_ptr<void, decltype(closeIndex)> heldIndex(CreateFileW(indexPath.c_str(), GENERIC_READ,
+							FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr), closeIndex);
+						if (heldIndex.get() == INVALID_HANDLE_VALUE) return 1;
+						std::array<char, 128> indexName{}; DWORD indexNameSize = 0;
+						if (!ReadFile(heldIndex.get(), indexName.data(), static_cast<DWORD>(indexName.size()), &indexNameSize, nullptr) || !indexNameSize) return 1;
+						const auto oldCurrent = draw3::uink::ScanUInkPageFile((session / std::string(indexName.data(), indexNameSize)).wstring());
+						if (!oldCurrent) return 1;
+						for (int attempt = 0; attempt < 3; ++attempt)
+						{
+							check(retry.Save(edited), "index failure queued"); retry.Drain();
+							check(retry.Take(failure) && !failure.success, "index commit failure is not durable");
+							check(countFiles(L".uink") == 2 && countFiles(L".tmp") == 0,
+								"repeated index failures remove only their owned version and temporary index");
+							for (const auto& version : previousVersions)
+							{
+								auto retained = draw3::uink::ReadUInkPageFile(version, request.pages[0]);
+								check(retained.status == draw3::uink::UInkReadStatus::Complete && matchesPage(retained.document, oldHistory),
+									"index failure preserves both previous version identities and content");
+							}
+							retry.Load(0, request.pages[0], 73); retry.Drain();
+							check(retry.Take(failure) && failure.success && matchesPage(failure.document, oldHistory),
+								"failed index publication keeps the worker on its previous directory");
+						}
+						heldIndex.reset();
+						check(retry.Save(edited), "index retry queued"); retry.Drain();
+						check(retry.Take(failure) && failure.success, "index retry durable");
+						check(countFiles(L".uink") == 2 && countFiles(L".tmp") == 0, "successful retry retains only current and backup");
+						const auto retainedCurrent = draw3::uink::ReadUInkPageFile(*oldCurrent, request.pages[0]);
+						check(retainedCurrent.status == draw3::uink::UInkReadStatus::Complete && matchesPage(retainedCurrent.document, oldHistory),
+							"successful retry keeps the old current as a readable backup");
+						retry.Load(0, request.pages[0], 73); retry.Drain();
+						check(retry.Take(failure) && failure.success && failure.generation == 73 && matchesPage(failure.document, newHistory),
+							"index retry publishes the edited page and preserves request generation");
+					}
+					check(store.Save(std::move(request)), "enqueue page"); store.Drain();
+					WhiteboardStoreCompletion result;
+					if (!store.Take(result) || !result.success) { check(false,"durable page save"); break; }
+					check(!EvictWhiteboardPage(document,runtime,index,100,1,2),"stale save retains current mutations");
+					check(!EvictWhiteboardPage(document,runtime,index,index,1,1),"current page retained");
+					check(EvictWhiteboardPage(document,runtime,index,100,1,1),"durable noncurrent page unloaded");
+					check(document.PageAt(index)->FindCanvas(kDefaultDeviceKey)->Strokes().empty() &&
+						runtime[index].history.Items().empty() && runtime[index].beforeStates.empty(),"CPU ink and history released");
+				}
+				for (size_t index = 0; index < 100 && failures == 0; ++index)
+				{
+					check(store.Load(index,ordered[index]),"cold read queued"); store.Drain();
+					WhiteboardStoreCompletion result;
+					if (!store.Take(result) || !result.success || !result.document) { check(false,"cold read succeeds"); break; }
+					const auto& canvas=result.document->canvases.front();
+					check(canvas.content.size()==2,"standard content excludes hidden redo stroke");
+					const auto* encoded=canvas.extra ? std::get_if<std::string>(&canvas.extra->front().second.value) : nullptr;
+					Json::CharReaderBuilder builder; std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+					Json::Value history; std::string error;
+					if (!encoded || !reader->parse(encoded->data(),encoded->data()+encoded->size(),&history,&error)) {check(false,"history JSON");break;}
+					InkPage restored(InkGuid(ordered[index].Bytes())); CanvasPageRuntimeState state;
+					const auto firstFreshToken = nextHistoryRasterStateToken;
+					check(RestoreWhiteboardHistory(history,restored,state,allocateHistoryRasterStateToken),"cold history restored");
+					check(state.rasterState >= firstFreshToken && state.rasterState < nextHistoryRasterStateToken,
+						"restored page receives fresh runtime tokens instead of serialized item ordinals");
+					if (index == 0) check(state.boundaryFallback && state.boundaryFallback->strokes.size() == 1 &&
+						state.clearRedoAvailable && state.clearRedoContinuation &&
+						state.clearRedoContinuation->runtime.history.RedoDepth() == 3,"Clear boundary and continuation survive unload");
+					if (index == 0 && state.clearRedoContinuation)
+					{
+						auto& continuation = state.clearRedoContinuation->runtime;
+						check(redoHistory(continuation) && redoHistory(continuation) && redoHistory(continuation),
+							"cold Clear continuation passes the production raster guard for every forward stroke");
+					}
+					check(state.history.RedoDepth()==1 && state.history.LastRedoItem().has_value(),"redo candidate retained");
+					if (auto redo=state.history.LastRedoItem())
+					{
+						auto stale = state; stale.rasterState = 0;
+						check(!CommitRedoRasterState(stale, *redo) && stale.history.RedoDepth() == 1,
+							"production redo still rejects an unrelated raster without consuming history");
+						check(CanRedoFromRasterState(state, *redo) && CommitRedoRasterState(state, *redo),
+							"saved Undo then cold load passes the production redo guard and commit");
+					}
+					check(undoHistory(state) && redoHistory(state),"cold undo and redo execute repeatedly");
+					check(history["pattern"].asUInt()==index%3,"per-page theme restored");
+				}
+				// 请求未知页不得伪造成功的空页。
+				store.Load(0,*id); store.Drain(); WhiteboardStoreCompletion failed;
+				check(store.Take(failed) && !failed.success,"missing page returns failure");
+			}
+			// 仅删除本测试随机 GUID 目录，避免任何共享 AutoSave 内容。
+			std::filesystem::remove_all(root);
+		}
+		catch (const std::exception& error)
+		{
+			++failures; std::fprintf(stderr,"[Whiteboard.StorageTest] exception %s\n",error.what());
+		}
+		if (!failures) std::fputs("[Whiteboard.StorageTest] PASS 100 pages, CPU/GPU cache references released, cold undo/redo, themes, stale eviction and failure\n",stderr);
+		return failures ? 1 : 0;
+	}
+
 	int RunIgnoredLaserTouchProductionTest() noexcept
 	{
 		int failures = 0;
@@ -8356,8 +8924,32 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<CanvasPageRuntimeState> pageRuntimeStates;
 		pageRuntimeStates.reserve(8);
 		pageRuntimeStates.emplace_back();
+		uint64_t nextRasterStateToken = 1;
+		auto allocateRasterStateToken = [&]()
+		{
+			if (nextRasterStateToken == 0) nextRasterStateToken = 1;
+			return nextRasterStateToken++;
+		};
 		DrawingDocumentSlot desktopSlot;
 		DrawingDocumentSlot whiteboardSlot;
+		auto whiteboardThemes = InitializeWhiteboardThemes(observer_);
+		struct WhiteboardPageState
+		{
+			std::uint64_t revision = 1, queued = 0, saved = 0;
+			bool cold = false, failed = false;
+		};
+		std::vector<WhiteboardPageState> whiteboardPages(1);
+		std::optional<std::size_t> whiteboardLoading;
+		std::uint64_t whiteboardLoadingGeneration = 0;
+		bool whiteboardReadFailed = false;
+		const auto whiteboardFileGuid = draw3::uink::CreateUInkGuid();
+		WhiteboardStore whiteboardStore(observer_.whiteboardRoot, [&]
+		{
+			CanvasCommand completed;
+			completed.type = CanvasCommandType::WhiteboardPersistenceCompleted;
+			window_.EnqueueCanvasCommand(completed);
+		});
+		std::uint64_t whiteboardGeneration = 1;
 		DrawingDocumentSlot isolatedPresentationSlot;
 		std::optional<DesktopClearRecovery> desktopClearRecovery;
 		PresentationParkedSlots presentationSlots;
@@ -8431,6 +9023,8 @@ namespace Inkeys::Drawing::Draw3
 		};
 		auto markPresentationMutation = [&]() noexcept
 		{
+			if (activeWorkspace == Bridge::Workspace::Whiteboard && currentPageIndex_ < whiteboardPages.size())
+				++whiteboardPages[currentPageIndex_].revision;
 			if (activeWorkspace != Bridge::Workspace::Presentation ||
 				!activePresentationKey || !activePresentationTarget) return;
 			activePresentationMutationRevision =
@@ -8456,7 +9050,8 @@ namespace Inkeys::Drawing::Draw3
 			shortcutContext.scope.pageIndex = currentPageIndex_;
 			shortcutContext.scope.presentation = target;
 			shortcutContext.available = page && page->FindCanvas(kDefaultDeviceKey) &&
-				currentPageIndex_ < pageRuntimeStates.size();
+				currentPageIndex_ < pageRuntimeStates.size() &&
+				!(activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading);
 			shortcutContext.hasContent = currentPageIndex_ < pageRuntimeStates.size() &&
 				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
 			if (observer_.shortcutContextChanged)
@@ -8500,12 +9095,8 @@ namespace Inkeys::Drawing::Draw3
 			if (observer_.historyAvailabilityChanged)
 				observer_.historyAvailabilityChanged(observer_.context, canUndo, canRedo);
 		};
-		auto publishCurrentPageContent = [&]()
+		auto publishContentState = [&]()
 		{
-			publishHistoryAvailability();
-			// 与呈现用 bool 修订分离：同页新增第二笔/Undo 也必须退休两击候选。
-			if (++shortcutContext.contentRevision == 0) ++shortcutContext.contentRevision;
-			refreshShortcutContext();
 			const bool hasContent = currentPageHasContent();
 			if (hasContent == publishedCurrentPageHasContent) return;
 			publishedCurrentPageHasContent = hasContent;
@@ -8514,6 +9105,29 @@ namespace Inkeys::Drawing::Draw3
 			if (observer_.currentPageContentChanged)
 				observer_.currentPageContentChanged(
 					observer_.context, hasContent, currentContentRevision_);
+		};
+		auto publishWhiteboard = [&]()
+		{
+			if (activeWorkspace != Bridge::Workspace::Whiteboard) return;
+			publishHistoryAvailability();
+			publishContentState();
+			// 加载/保存与主题回执只刷新可用性，不能伪造墨迹修订并退休两击 Delete。
+			refreshShortcutContext();
+			if (whiteboardThemes.size() <= currentPageIndex_) whiteboardThemes.resize(currentPageIndex_ + 1);
+			if (observer_.whiteboardChanged) observer_.whiteboardChanged(observer_.context,
+				whiteboardThemes[currentPageIndex_], whiteboardGeneration, whiteboardLoading.has_value(),
+				whiteboardReadFailed || std::any_of(whiteboardPages.begin(), whiteboardPages.end(),
+					[](const auto& page) { return page.failed; }), currentPageIndex_, document_ ? document_->Pages().size() : 0,
+				currentPageHasContent(), currentContentRevision_);
+		};
+		auto publishCurrentPageContent = [&]()
+		{
+			publishHistoryAvailability();
+			// 同页第二笔、Undo/Redo 等实际编辑仍须递增，不能只比较非空 bool。
+			if (++shortcutContext.contentRevision == 0) ++shortcutContext.contentRevision;
+			refreshShortcutContext();
+			publishContentState();
+			publishWhiteboard();
 		};
 		auto captureCanvasTail = [&](const InkPage& page,
 			const CanvasPageRuntimeState& runtime, std::uint32_t pageIndex,
@@ -8548,6 +9162,118 @@ namespace Inkeys::Drawing::Draw3
 			}
 			return output;
 		};
+		auto saveWhiteboardPage = [&](std::size_t index) -> bool
+		{
+			auto* doc = activeWorkspace == Bridge::Workspace::Whiteboard ? (document_ ? &*document_ : nullptr)
+				: (whiteboardSlot.document ? &*whiteboardSlot.document : nullptr);
+			auto& runtimes = activeWorkspace == Bridge::Workspace::Whiteboard ? pageRuntimeStates : whiteboardSlot.pageRuntimeStates;
+			if (!doc || !whiteboardFileGuid || index >= whiteboardPages.size() || index >= runtimes.size()) return false;
+			auto& state = whiteboardPages[index];
+			if (state.cold || state.revision == state.saved || state.queued == state.revision) return true;
+			try
+			{
+				const auto* page = doc->PageAt(index); if (!page) return false;
+				auto canvas = captureCanvasTail(*page, runtimes[index], 0); if (!canvas) return false;
+				Json::Value history = WhiteboardHistoryJson(*page, runtimes[index]);
+				history["version"] = 1;
+				history["rgb"] = whiteboardThemes[index].backgroundRgb;
+				history["pattern"] = static_cast<unsigned>(whiteboardThemes[index].pattern);
+				Json::StreamWriterBuilder writer; writer["indentation"] = "";
+				canvas->extra = draw3::uink::UInkExtra{ {
+					draw3::uink::UInkMessagePackValue{std::string("inkeysWhiteboardHistory")},
+					draw3::uink::UInkMessagePackValue{Json::writeString(writer, history)} } };
+				WhiteboardStoreRequest request;
+				request.page = index; request.revision = state.revision;
+				request.snapshot.fileGuid = *whiteboardFileGuid;
+				request.snapshot.workspaceGuid = draw3::uink::UInkGuid(doc->WorkspaceGuid().Bytes());
+				request.snapshot.workspaceName = "Whiteboard";
+				request.snapshot.workspaceType = 1;
+				request.snapshot.workspaceExtra = draw3::uink::UInkExtra{ {
+					draw3::uink::UInkMessagePackValue{std::string("inkeysWorkspace")},
+					draw3::uink::UInkMessagePackValue{std::string("whiteboard")} } };
+				request.snapshot.dpiScale = configuration_.dpiScale;
+				request.snapshot.canvases.push_back(std::move(*canvas));
+				for (const auto& ordered : doc->Pages()) request.pages.emplace_back(ordered.PageGuid().Bytes());
+				request.currentPage = static_cast<uint32_t>(activeWorkspace == Bridge::Workspace::Whiteboard ? currentPageIndex_ : whiteboardSlot.currentPageIndex);
+				if (whiteboardStore.Save(std::move(request))) { state.queued = state.revision; return true; }
+			}
+			catch (...) {}
+			state.failed = true; return false;
+		};
+		auto saveWhiteboard = [&]
+		{
+			for (size_t index = 0; index < whiteboardPages.size(); ++index) (void)saveWhiteboardPage(index);
+		};
+		auto consumeWhiteboardCompletions = [&]
+		{
+			WhiteboardStoreCompletion result;
+			while (whiteboardStore.Take(result))
+			{
+				if (result.page >= whiteboardPages.size()) continue;
+				auto& state = whiteboardPages[result.page];
+				auto* doc = activeWorkspace == Bridge::Workspace::Whiteboard ? (document_ ? &*document_ : nullptr)
+					: (whiteboardSlot.document ? &*whiteboardSlot.document : nullptr);
+				auto& runtimes = activeWorkspace == Bridge::Workspace::Whiteboard ? pageRuntimeStates : whiteboardSlot.pageRuntimeStates;
+				if (!doc || result.page >= runtimes.size()) continue;
+				if (result.load)
+				{
+					if (activeWorkspace != Bridge::Workspace::Whiteboard || !whiteboardLoading ||
+						*whiteboardLoading != result.page || whiteboardLoadingGeneration != whiteboardGeneration || result.generation != whiteboardLoadingGeneration) continue;
+					bool installed = false;
+					try
+					{
+						if (result.success && result.document && result.document->canvases.size() == 1)
+						{
+							const auto& source = result.document->canvases.front();
+							if (source.pageGuid.Bytes() == doc->PageAt(result.page)->PageGuid().Bytes() && source.extra)
+							{
+								const std::string* encoded = nullptr;
+								for (const auto& pair : *source.extra)
+									if (const auto* key = std::get_if<std::string>(&pair.first.value); key && *key == "inkeysWhiteboardHistory")
+									{
+										if (encoded) throw std::runtime_error("duplicate whiteboard history");
+										encoded = std::get_if<std::string>(&pair.second.value);
+									}
+								Json::Value history; Json::CharReaderBuilder builder;
+								builder["rejectDupKeys"] = true;
+								std::unique_ptr<Json::CharReader> reader(builder.newCharReader()); std::string error;
+								if (encoded && reader->parse(encoded->data(), encoded->data() + encoded->size(), &history, &error) &&
+									history["version"].isInt() && history["version"].asInt() == 1 && history["rgb"].isUInt() && history["pattern"].isUInt())
+								{
+									WhiteboardTheme theme{history["rgb"].asUInt(), static_cast<WhiteboardPattern>(history["pattern"].asUInt())};
+									InkPage page(doc->PageAt(result.page)->PageGuid()); CanvasPageRuntimeState runtime;
+									if (history["pattern"].asUInt() <= 2 && ValidWhiteboardTheme(theme) && RestoreWhiteboardHistory(history, page, runtime, allocateRasterStateToken) &&
+										doc->ReplacePage(result.page, std::move(page)))
+									{
+										runtimes[result.page] = std::move(runtime); whiteboardThemes[result.page] = theme;
+										state.cold = false; installed = true;
+										CanvasCommand command; command.type = CanvasCommandType::SetPage; command.pageIndex = result.page;
+										command.whiteboardGeneration = whiteboardGeneration;
+										window_.EnqueueCanvasCommand(command);
+									}
+								}
+							}
+						}
+					}
+					catch (...) {}
+					whiteboardReadFailed = !installed;
+					if (!installed) whiteboardLoading.reset();
+				}
+				else
+				{
+					if (state.queued == result.revision) state.queued = 0;
+					state.failed = !result.success;
+					if (result.success) state.saved = (std::max)(state.saved, result.revision);
+					const auto current = activeWorkspace == Bridge::Workspace::Whiteboard ? currentPageIndex_ : whiteboardSlot.currentPageIndex;
+					if (result.success && result.page != current && whiteboardLoading != result.page && state.saved == state.revision && !state.cold)
+					{
+						// durable 版本一致后才丢弃非当前页全部 CPU 内容与历史。
+						state.cold = EvictWhiteboardPage(*doc, runtimes, result.page, current, state.saved, state.revision);
+					}
+				}
+			}
+			publishWhiteboard();
+		};
 		auto captureDesktopAutoSave = [&](DesktopAutoSaveTrigger trigger,
 			std::optional<draw3::uink::UInkGuid>* acceptedFileGuid = nullptr) -> bool
 		{
@@ -8561,12 +9287,6 @@ namespace Inkeys::Drawing::Draw3
 				configuration_.dpiScale, observer_, acceptedFileGuid);
 		};
 		publishCurrentPageContent();
-		uint64_t nextRasterStateToken = 1;
-		auto allocateRasterStateToken = [&]()
-		{
-			if (nextRasterStateToken == 0) nextRasterStateToken = 1;
-			return nextRasterStateToken++;
-		};
 		pageRuntimeStates.front().rasterState = allocateRasterStateToken();
 		uint64_t rasterPipelineGeneration = 1;
 		auto metricsSignature = [&](int width, int height) noexcept -> ContentMetricRasterSignature
@@ -10545,7 +11265,7 @@ namespace Inkeys::Drawing::Draw3
 					input_.DiscardUntilTerminal(handle);
 					return;
 				}
-				if (Bridge::PresentationInputSuppressed(
+				if ((activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading) || Bridge::PresentationInputSuppressed(
 					activeWorkspace, activePresentationLoadPending ||
 					presentationLoadUnresolved()))
 				{
@@ -11756,6 +12476,18 @@ namespace Inkeys::Drawing::Draw3
 
 		auto captureExitAutoSave = [&](bool fatal, const char* reason)
 		{
+			// 正常退出逐页排空，避免有界队列满时漏掉已关闭的白板脏页。
+			for (size_t index = 0; index < whiteboardPages.size(); ++index)
+			{
+				whiteboardStore.Drain();
+				consumeWhiteboardCompletions();
+				(void)saveWhiteboardPage(index);
+			}
+			whiteboardStore.Drain();
+			consumeWhiteboardCompletions();
+			const bool whiteboardDurable = std::none_of(whiteboardPages.begin(), whiteboardPages.end(),
+				[&](const auto& page) { return (activeWorkspace == Bridge::Workspace::Whiteboard || whiteboardSlot.document) && page.saved != page.revision; });
+			if (observer_.whiteboardExitSaved) observer_.whiteboardExitSaved(observer_.context, whiteboardDurable);
 			size_t eligibleCount = 0;
 			size_t queuedCount = 0;
 			const auto submit = [&](bool eligible, const char* source,
@@ -12274,7 +13006,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const InkRasterStateToken beforeState = runtime.beforeStates[itemId->index];
 			const InkRasterStateToken afterState = runtime.afterStates[itemId->index];
-			if (runtime.rasterState != beforeState)
+			if (!CanRedoFromRasterState(runtime, *itemId))
 			{
 				requestAuthoritativeRecovery();
 				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
@@ -12402,7 +13134,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			// GPU 画面成功后才提交 visibility；失败仍可再次按 6 重试。
-			if (!runtime.history.RedoLastUndone(*itemId))
+			if (!CommitRedoRasterState(runtime, *itemId))
 			{
 				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 					historyGpuCache.CancelPreimage(preimageCapture.ticket);
@@ -12417,7 +13149,6 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 
-			runtime.rasterState = afterState;
 			bool hotRearmed = false;
 			if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 			{
@@ -12551,6 +13282,11 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
+				if (command.type == CanvasCommandType::WhiteboardPersistenceCompleted)
+				{
+					consumeWhiteboardCompletions();
+					continue;
+				}
 				struct ShortcutCompletionGuard
 				{
 					DrawingControllerRuntimeObserver& observer;
@@ -12902,6 +13638,7 @@ namespace Inkeys::Drawing::Draw3
 					(void)capturePresentationAutoSave();
 					pendingWorkspaceReady.reset();
 
+					if (activeWorkspace == Bridge::Workspace::Whiteboard) saveWhiteboard();
 					DrawingDocumentSlot* source = parkedActiveSlot();
 					if (!source) continue;
 					PresentationCpuSwitchResult cpuSwitch =
@@ -12962,6 +13699,14 @@ namespace Inkeys::Drawing::Draw3
 							? &*activePresentationTarget : nullptr);
 					continue;
 				}
+				if (command.type == CanvasCommandType::SetWhiteboardTheme)
+				{
+					if (activeWorkspace == Bridge::Workspace::Whiteboard &&
+						ApplyWhiteboardThemeCommand(command, activeWorkspace, whiteboardLoading.has_value(), whiteboardGeneration,
+						currentPageIndex_, whiteboardThemes[currentPageIndex_], whiteboardPages[currentPageIndex_].revision, observer_))
+						publishWhiteboard();
+					continue;
+				}
 				if (command.type == CanvasCommandType::SetWorkspace)
 				{
 					const auto target = static_cast<Bridge::Workspace>(command.workspace);
@@ -12983,19 +13728,36 @@ namespace Inkeys::Drawing::Draw3
 					if (target == Bridge::Workspace::Presentation)
 						isolatedPresentationSlot = {};
 					if (!createBlankSlot(*destination, 1)) continue;
+					if (activeWorkspace == Bridge::Workspace::Whiteboard) saveWhiteboard();
 					DrawingDocumentSlot* source = parkedActiveSlot();
 					if (!source) continue;
 					swapActiveDocument(*source);
 					swapActiveDocument(*destination);
 					if (previousPresentationLane && canEvictPresentationSlot(*source))
 						presentationSlots.erase(*previousPresentationLane);
+					whiteboardLoading.reset();
 					activeWorkspace = target;
+					++whiteboardGeneration;
+					publishWhiteboard();
 					currentLoadRetry.Cancel();
 					activePresentationKey.reset();
 					activePresentationTarget.reset();
 					restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 						forceFullPresent, width, height);
 					stageWorkspaceReady();
+					continue;
+				}
+				// 冷加载完成命令也带代次；工作区切换不能让迟到 SetPage 改写别的文档。
+				if (command.type == CanvasCommandType::SetPage && command.whiteboardGeneration != 0)
+				{
+					if (activeWorkspace != Bridge::Workspace::Whiteboard || command.whiteboardGeneration != whiteboardGeneration ||
+						whiteboardLoading != command.pageIndex) continue;
+					whiteboardLoading.reset();
+				}
+				if (activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading &&
+					command.type != CanvasCommandType::PrepareExitAutoSave)
+				{
+					shortcutResult.result = Shortcuts::Result::Blocked;
 					continue;
 				}
 				if (Bridge::PresentationCanvasCommandSuppressed(activeWorkspace,
@@ -13092,6 +13854,7 @@ namespace Inkeys::Drawing::Draw3
 							std::move(*preClear);
 					(void)boundaryQueued;
 					// 恢复点建立后再发布真实可用性，避免 Clear 内部空态提前报告不能 Undo。
+					if (cleared && activeWorkspace == Bridge::Workspace::Whiteboard) markPresentationMutation();
 					if (cleared) publishCurrentPageContent();
 					shortcutResult.result = cleared ? Shortcuts::Result::Applied : Shortcuts::Result::Failed;
 					reportCommand(command.type);
@@ -13174,6 +13937,7 @@ namespace Inkeys::Drawing::Draw3
 					}
 					else if (restoredBoundary)
 					{
+						if (activeWorkspace == Bridge::Workspace::Whiteboard) markPresentationMutation();
 						if (activeWorkspace == Bridge::Workspace::Presentation)
 						{
 							markPresentationMutation();
@@ -13304,7 +14068,37 @@ namespace Inkeys::Drawing::Draw3
 				}
 
 				(void)capturePresentationAutoSave();
+				if (activeWorkspace == Bridge::Workspace::Whiteboard)
+				{
+					ExtendWhiteboardThemes(whiteboardThemes, targetPageIndex, currentPageIndex_);
+					whiteboardPages.resize(whiteboardThemes.size());
+					saveWhiteboard();
+					if (whiteboardPages[targetPageIndex].cold)
+					{
+						whiteboardLoading = targetPageIndex;
+						whiteboardLoadingGeneration = whiteboardGeneration;
+						whiteboardReadFailed = false;
+						if (!whiteboardStore.Load(targetPageIndex, draw3::uink::UInkGuid(document_->PageAt(targetPageIndex)->PageGuid().Bytes()), whiteboardLoadingGeneration))
+						{ whiteboardLoading.reset(); whiteboardReadFailed = true; }
+						publishWhiteboard();
+						continue;
+					}
+					++whiteboardGeneration;
+				}
 				currentPageIndex_ = targetPageIndex;
+				if (activeWorkspace == Bridge::Workspace::Whiteboard)
+				{
+					// 即使两页同为空/非空，也须退休旧 Present；完成回执不能先发布旧内容版本。
+					publishedCurrentPageHasContent = !currentPageHasContent();
+					historyGpuCache.DiscardHotPreimages();
+					historyGpuCache.DiscardCompositionCache();
+					compositionMaintenance.clear();
+					consumeWhiteboardCompletions();
+					for (size_t page = 0; page < whiteboardPages.size(); ++page)
+						if (!whiteboardPages[page].cold && EvictWhiteboardPage(*document_, pageRuntimeStates,
+							page, currentPageIndex_, whiteboardPages[page].saved, whiteboardPages[page].revision))
+							whiteboardPages[page].cold = true;
+				}
 				viewportTilePlan = {};
 				viewportTilePlanIndex = 0;
 				viewportRecoveryPending = false;

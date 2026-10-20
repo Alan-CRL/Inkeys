@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.WhiteboardModel.h"
 #include "Draw3.CursorSettings.h"
 #include "../../Business/PenWidthPolicy.hpp"
 
@@ -214,6 +215,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		AutoStraighten,
 		InputTest,
 		PrepareExitAutoSave,
+		SetWhiteboardTheme,
 		ShortcutFence,
 	};
 
@@ -250,6 +252,9 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::uint64_t sequence = 0;
 		Workspace workspace = Workspace::Desktop;
 		std::shared_ptr<const PresentationTarget> presentationTarget;
+		WhiteboardTheme whiteboardTheme;
+		std::uint64_t whiteboardGeneration = 0;
+		std::size_t whiteboardPage = 0;
 		std::shared_ptr<const Shortcuts::Request> shortcut;
 	};
 
@@ -278,6 +283,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
+		CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		CommandResult PublishShortcut(CommandType type,
 			std::shared_ptr<const Shortcuts::Request> request) noexcept;
 		bool TryConsume(Command& command) noexcept;
