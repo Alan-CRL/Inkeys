@@ -283,7 +283,9 @@ namespace
 			unsigned invalidated = 0;
 			{
 				std::lock_guard lock(barHapticMutex);
-				invalidated = barHapticTokens.Invalidate(message == WM_POINTERLEAVE || message == WM_POINTERCAPTURECHANGED ? id : 0);
+				invalidated = barHapticTokens.Invalidate(
+					message == WM_POINTERLEAVE || message == WM_POINTERCAPTURECHANGED ? id : 0,
+					message == WM_POINTERLEAVE);
 			}
 			// 仅在有效凭据首次失效时输出，且必须离开 token 锁。
 			if (invalidated)

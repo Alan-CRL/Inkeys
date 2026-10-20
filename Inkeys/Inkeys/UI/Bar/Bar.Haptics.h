@@ -40,11 +40,13 @@ namespace Inkeys::UI::Bar::Haptics
 			unsigned recent = 0, source = 0, time = 0, point = 0;
 		};
 		// 调用方串行锁只覆盖内存和入/出队记账，不跨业务回调或 WinRT。
-		unsigned Invalidate(UINT pointer = 0) noexcept
+		unsigned Invalidate(UINT pointer = 0, bool keepCompleted = false) noexcept
 		{
 			unsigned invalidated = 0;
+			// 普通 Leave 可晚于 Up、早于业务消费；完成凭据仍受 Up 匹配和有效期约束。
 			for (auto& slot : slots_)
-				if (slot.source && (!pointer || slot.source->pointerId == pointer))
+				if (slot.source && (!pointer || slot.source->pointerId == pointer) &&
+					!(keepCompleted && slot.source->upAt.load(std::memory_order_acquire)))
 					invalidated += slot.source->valid.exchange(false, std::memory_order_acq_rel) ? 1u : 0u;
 			return invalidated;
 		}

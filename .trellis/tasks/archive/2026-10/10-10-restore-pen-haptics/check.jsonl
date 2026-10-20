@@ -3,6 +3,6 @@
 {"reason":"同线程资源清理与失败处理","file":".trellis/spec/native-desktop/errors-logging-and-resources.md"}
 {"reason":"完整ARM64 Solution与可选系统API兼容","file":".trellis/spec/native-desktop/build-and-compatibility.md"}
 {"reason":"跨层副作用、触觉与cursor输入抑制合同","file":".trellis/spec/guides/cross-layer-thinking-guide.md"}
-{"reason":"原始Git回归、波形、backend、线程与悬停停止证据","file":".trellis/tasks/10-10-restore-pen-haptics/research/haptic-history.md"}
-{"file":".trellis/tasks/10-10-restore-pen-haptics/research/guidelines-excerpts.md","reason":"大规范的本任务精确摘录，避免32KiB注入截断丢失输入/Host合同"}
-{"file":".trellis/tasks/10-10-restore-pen-haptics/research/bar-haptic-path.md","reason":"Bar有效按钮接受点、私有token传递、严格来源关联及兼容风险"}
+{"reason":"原始Git回归、波形、backend、线程与悬停停止证据","file":".trellis/tasks/archive/2026-10/10-10-restore-pen-haptics/research/haptic-history.md"}
+{"file":".trellis/tasks/archive/2026-10/10-10-restore-pen-haptics/research/guidelines-excerpts.md","reason":"大规范的本任务精确摘录，避免32KiB注入截断丢失输入/Host合同"}
+{"file":".trellis/tasks/archive/2026-10/10-10-restore-pen-haptics/research/bar-haptic-path.md","reason":"Bar有效按钮接受点、私有token传递、严格来源关联及兼容风险"}

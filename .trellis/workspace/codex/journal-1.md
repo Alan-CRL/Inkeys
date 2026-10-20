@@ -1852,6 +1852,11 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 - 生产绘制线程管理触觉 COM，精确 Pointer 路由与安全无能力回退
 - 保留 WM_TOUCH/光标语义，增加有界接触凭据及取消/代际校验
+
+### Next Steps
+
+- 实体笔、真实 Win7 和跨驱动关联/混合设备验收；未授权 GUI，本轮未执行
+
 ## Session 64: 阶段1：vcpkg Abseil与Modeler源码基线完成
 <!-- trellis-session: v=2 fp=f8686272ba5b8497 -->
 
@@ -1973,7 +1978,6 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Next Steps
 
-- 实体笔、真实 Win7 和跨驱动关联/混合设备验收；未授权 GUI，本轮未执行
 - 阶段1已完成归档；父任务尾段重构继续planning，需要独立实施/验收。GUI/实体笔/Win7真机未执行；无commit/push。
 
 

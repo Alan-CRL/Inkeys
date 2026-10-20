@@ -95,6 +95,57 @@ int RunDraw3HapticTests()
 		check(BH::acceptedClick == held, "real callback has scoped source");
 	}
 	check(!BH::acceptedClick, "programmatic callback has no source");
+
+	// 窗口线程先收到 Up/Leave 时，业务与绘制线程仍可稍后确认这次点击。
+	for (const bool leaveBeforeTouchUp : { false, true })
+	{
+		BH::ContactTokens tracker;
+		Haptics::ClickMailbox clicks;
+		clicks.Start();
+		const auto current = Haptics::ButtonContext(clicks.Run());
+		auto pointer = sample;
+		auto input = touch;
+		input.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_DOWN;
+		tracker.Observe(WM_POINTERDOWN, pointer, current, 2000);
+		const auto token = tracker.BindDown(input, pointer.point, 2001);
+		const auto press = tracker.Hold(token);
+		++pointer.time; input.dwTime = pointer.time;
+		input.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_UP;
+		tracker.Observe(WM_POINTERUP, pointer, current, 2010);
+		if (leaveBeforeTouchUp) check(tracker.Invalidate(pointer.id, true) == 0, "leave preserves completed pointer before Touch Up");
+		check(tracker.Touch(token, input, pointer.point, true) == token, "Touch Up remains strictly matched after pointer leave");
+		check(clicks.Publish(BH::AcceptedClick(press, tracker.Hold(token), WM_LBUTTONUP, false), current, 2011),
+			"completed click publishes after leave");
+		check(tracker.Invalidate(pointer.id, true) == 0 && clicks.Take(current, 2012) == press &&
+			!clicks.Publish(press, current, 2012) && !press->Current(current, 2261),
+			"leave preserves pending click without bypassing consumption, duplication or expiry");
+	}
+	for (unsigned failure = 0; failure < 5; ++failure)
+	{
+		BH::ContactTokens tracker;
+		auto pointer = sample;
+		auto input = touch;
+		input.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_DOWN;
+		tracker.Observe(WM_POINTERDOWN, pointer, context, 2000);
+		const auto token = tracker.BindDown(input, pointer.point, 2001);
+		const auto press = tracker.Hold(token);
+		if (failure == 0) check(tracker.Invalidate(pointer.id, true) == 1, "leave during contact still cancels");
+		++pointer.time; input.dwTime = pointer.time;
+		input.dwFlags = TOUCHEVENTF_PEN | TOUCHEVENTF_UP;
+		tracker.Observe(WM_POINTERUP, pointer, context, 2010);
+		tracker.Invalidate(pointer.id, true);
+		if (failure == 1) tracker.Invalidate(pointer.id); // 捕获变化、隐藏和显式取消不保留完成凭据。
+		if (failure == 2) tracker.Cancel(token);
+		if (failure == 3) ++input.dwTime;
+		if (failure == 4)
+		{
+			++pointer.time;
+			tracker.Observe(WM_POINTERDOWN, pointer, context, 2011);
+		}
+		check(!tracker.Touch(token, input, pointer.point, true) && press &&
+			!mailbox.Publish(press, context, 2012),
+			"leave preservation cannot revive incomplete, cancelled, mismatched or reused contact");
+	}
 	// 实测 Surface 的 mask=0x4 使用提供方时间；Down/Up 必须完整通过原业务凭据链。
 	for (const DWORD mask : { DWORD(TOUCHINPUTMASKF_TIMEFROMSYSTEM), DWORD(TOUCHINPUTMASKF_CONTACTAREA) })
 	{
