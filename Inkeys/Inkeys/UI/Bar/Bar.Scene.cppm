@@ -57,6 +57,9 @@ export namespace Inkeys::UI::Bar
 		BarSurfaceButtonId id = 0;
 		RECT localPixels{};
 		bool visible = false, enabled = false, interactive = false;
+		const void* identity = nullptr;
+		unsigned drawOrder = 0;
+		double contentOpacity = 0;
 	};
 	struct BarPageSurfaceLayout
 	{

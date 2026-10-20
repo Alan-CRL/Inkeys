@@ -3172,7 +3172,21 @@ namespace Inkeys::UI::PageControl
 			Check(layout.scale==scale&&layout.logicalBounds.right-layout.logicalBounds.left==static_cast<LONG>(std::lround(width*scale)),
 				"real Scene uses the resolved global UI scale even for standalone whiteboard menus and themes");
 			Check(surface.SetBounds({200,100,200+static_cast<LONG>(std::lround(width*scale)),100+static_cast<LONG>(std::lround(height*scale))},scale),"base geometry accepts effective scale");
-			for(int frame=0;frame<=45;++frame)(void)surface.Advance(origin+frame*20ms);
+			for(int frame=0;frame<=45;++frame){
+				(void)surface.Advance(origin+frame*20ms);
+				if(frame==0&&(mode==WorkspaceMode::PptCompact||index==1)){
+					const auto firstBounds=surface.PresentationBounds();const UINT firstWidth=firstBounds.right-firstBounds.left;
+					const UINT firstHeight=firstBounds.bottom-firstBounds.top;
+					const HRESULT firstSetup=surface.EnsureDeviceResources(epoch,firstWidth,firstHeight);
+					Check(SUCCEEDED(firstSetup),"initial hidden member frame owns a real target before any settling");
+					if(SUCCEEDED(firstSetup)){auto* firstDc=surface.DeviceContext();auto& firstRenderer=surface.Renderer();
+						firstRenderer.BeginFrameDraw(firstDc,D2D1::RectF(0,0,static_cast<FLOAT>(firstWidth),static_cast<FLOAT>(firstHeight)));
+						(void)surface.Render(firstDc,origin);firstRenderer.FinishFrameDrawCommands(firstDc);
+						Check(SUCCEEDED(firstRenderer.EndFrameDraw(firstDc)),"initial hidden member renders at the first zero-dt clock sample");}
+					const auto more=surface.Layout().buttons[4];
+					Check(!more.visible&&!more.enabled&&more.contentOpacity==0,"initial PPT and right whiteboard frame never flash the stable hidden More");
+				}
+			}
 			Check(!surface.AnimationActive(),"shared button and panel animations settle");
 			const auto bounds=surface.PresentationBounds();
 			const UINT w=bounds.right-bounds.left,h=bounds.bottom-bounds.top;
@@ -3355,8 +3369,8 @@ namespace Inkeys::UI::PageControl
 				return result;
 			};
 			struct TargetPixels {UINT width=0,height=0;std::vector<BYTE> bytes;};
-			const auto readPixels=[&]{
-				TargetPixels result;auto* dc=state.scene.DeviceContext();ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
+			const auto readScenePixels=[&](Scene& scene){
+				TargetPixels result;auto* dc=scene.DeviceContext();ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
 				if(!image||FAILED(image.As(&bitmap)))return result;
 				const auto size=bitmap->GetPixelSize();const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
 					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
@@ -3366,6 +3380,7 @@ namespace Inkeys::UI::PageControl
 				for(UINT y=0;y<size.height;++y)std::copy_n(mapped.bits+y*mapped.pitch,size.width*4,result.bytes.data()+static_cast<std::size_t>(y)*size.width*4);
 				cpu->Unmap();return result;
 			};
+			const auto readPixels=[&]{return readScenePixels(state.scene);};
 			Check(present(true).status==PresentStatus::Success,"initial real transaction commits");
 			const auto committed=state.scene.PresentedGeneration();Check(state.scene.HitTest({265,40})==5,"committed More hit is available");
 			content.menu=2;state.scene.ConfigurePagination(content);time+=20ms;(void)state.scene.Advance(time);
@@ -3532,9 +3547,22 @@ namespace Inkeys::UI::PageControl
 			time+=20ms;(void)state.scene.Advance(time);const auto moving=state.scene.PresentationBounds();
 			Check(!EqualRect(&resumed,&moving),"shared clock advances on the following batch");
 			for(int i=1;i<=45;++i)(void)state.scene.Advance(time+i*20ms);time+=900ms;(void)present(true);
+			const auto beforeExit=state.scene.Layout();
+			const auto samePaginationMembers=[&](const auto& layout){
+				if(layout.buttons.size()!=beforeExit.buttons.size())return false;
+				for(std::size_t i=0;i<5;++i)if(!layout.buttons[i].identity||layout.buttons[i].identity!=beforeExit.buttons[i].identity)return false;
+				return true;
+			};
 			auto compact=BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{});state.scene.ConfigurePagination(compact,LayoutTransitionDurationSeconds());
 			time+=20ms;(void)state.scene.Advance(time);const auto middle=state.scene.Layout();
 			Check(middle.buttons[4].visible&&!middle.buttons[4].enabled,"outgoing More remains drawable while the new PPT layout cannot activate it");
+			const auto& outgoingMore=middle.buttons[4];const auto& outgoingNext=middle.buttons[3];
+			Check(samePaginationMembers(middle)&&outgoingMore.localPixels.right-outgoingMore.localPixels.left>=BarButtonTwoSideDip
+				&&outgoingMore.localPixels.bottom-outgoingMore.localPixels.top>=BarButtonTwoSideDip
+				&&outgoingMore.localPixels.left>=outgoingNext.localPixels.left&&outgoingMore.drawOrder<outgoingNext.drawOrder,
+				"hidden More retains its list identity and standard size while retiring below Next instead of toward an empty origin");
+			Check(outgoingMore.contentOpacity>0&&outgoingMore.contentOpacity<beforeExit.buttons[4].contentOpacity,
+				"hidden More continues the shared content fade rather than disappearing on the workspace switch");
 			Check(present(true).status==PresentStatus::Success&&state.scene.HitTest({265,40})!=5,"intermediate transition commits the matching non-actionable hit frame");
 			unsigned retired=0;const auto retiredBounds=state.scene.PresentationBounds();
 			for(const auto& button:middle.buttons)if(button.id>=6&&button.visible){
@@ -3561,6 +3589,48 @@ namespace Inkeys::UI::PageControl
 			// Cubic起步阶段小于一个像素，逐批推进后验证连续运动，避免把取整平台误判为动画停止。
 			for(int i=0;i<5;++i){time+=20ms;(void)state.scene.Advance(time);}const auto continued=state.scene.Layout();
 			Check(state.scene.AnimationActive()&&!EqualRect(&retained.buttons[1].localPixels,&continued.buttons[1].localPixels),"the original layout morph continues across following shared frames without snapping");
+			Check(continued.buttons[4].localPixels.left<middle.buttons[4].localPixels.left
+				&&continued.buttons[4].localPixels.left>=continued.buttons[3].localPixels.left
+				&&continued.buttons[4].contentOpacity<outgoingMore.contentOpacity,"More moves only toward Next while its shared fade advances");
+			// 反向切回必须续接同一实例的当前值，不能重新入场或瞬间恢复原位。
+			auto expanded=content;expanded.menu=0;state.scene.ConfigurePagination(expanded,LayoutTransitionDurationSeconds());
+			(void)state.scene.Advance(time);const auto reversedMore=state.scene.Layout();
+			Check(samePaginationMembers(reversedMore)&&EqualRect(&continued.buttons[4].localPixels,&reversedMore.buttons[4].localPixels)
+				&&continued.buttons[4].contentOpacity==reversedMore.buttons[4].contentOpacity,"same-frame More reversal preserves the current geometry and opacity");
+			for(int i=1;i<=60;++i)(void)state.scene.Advance(time+i*20ms);time+=1200ms;
+			Check(present(true).status==PresentStatus::Success,"reversed More returns through the production presentation transaction");
+			const auto restoredMore=state.scene.Layout();
+			Check(samePaginationMembers(restoredMore)&&EqualRect(&beforeExit.buttons[4].localPixels,&restoredMore.buttons[4].localPixels)
+				&&restoredMore.buttons[4].contentOpacity==1&&restoredMore.buttons[4].drawOrder>restoredMore.buttons[3].drawOrder
+				&&state.scene.HitTest({265,40})==5,"re-entered whiteboard restores More in the normal list order and hit frame");
+			state.scene.ConfigurePagination(compact,LayoutTransitionDurationSeconds());
+			for(int i=1;i<=60;++i)(void)state.scene.Advance(time+i*20ms);time+=1200ms;
+			state.scene.Renderer().SetFrameLightingSnapshot({});
+			Check(present(true).status==PresentStatus::Success,"final More retirement commits real pixels");
+			const auto retiredMore=state.scene.Layout();const auto& nextRect=retiredMore.buttons[3].localPixels;
+			Check(samePaginationMembers(retiredMore)&&!retiredMore.buttons[4].visible&&!retiredMore.buttons[4].enabled
+				&&retiredMore.buttons[4].contentOpacity==0&&EqualRect(&retiredMore.buttons[4].localPixels,&nextRect)
+				&&!state.scene.AnimationActive()&&state.scene.HitTest({(nextRect.left+nextRect.right)/2,(nextRect.top+nextRect.bottom)/2})==4,
+				"settled hidden More stays a full-size member at Next with zero opacity and no hit");
+			// 与直接进入 PPT 的真实 Scene 像素对照，确认隐藏成员不会在 Next 槽内留下残影。
+			Scene reference;reference.ConfigurePagination(compact);reference.SetBounds(state.scene.LogicalBounds(),1);reference.SetOpacity(1,0);
+			for(int i=0;i<=60;++i)(void)reference.Advance(time+i*20ms);
+			const auto referenceBounds=reference.PresentationBounds();const UINT referenceWidth=referenceBounds.right-referenceBounds.left;
+			const UINT referenceHeight=referenceBounds.bottom-referenceBounds.top;
+			const HRESULT referenceSetup=reference.EnsureDeviceResources(testEpoch,referenceWidth,referenceHeight);
+			Check(SUCCEEDED(referenceSetup),"clean PPT reference owns an independent real target");
+			if(SUCCEEDED(referenceSetup)){
+				auto* dc=reference.DeviceContext();auto& renderer=reference.Renderer();renderer.SetFrameLightingSnapshot({});
+				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(referenceWidth),static_cast<FLOAT>(referenceHeight)));
+				(void)reference.Render(dc,time+1200ms);renderer.FinishFrameDrawCommands(dc);
+				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"clean PPT reference renders through common UI3 drawing");
+				const auto actual=readPixels(),expected=readScenePixels(reference);const auto actualBounds=state.scene.PresentationBounds();
+				bool samePixels=EqualRect(&actualBounds,&referenceBounds)&&!actual.bytes.empty()&&!expected.bytes.empty()
+					&&actual.width>=referenceWidth&&actual.height>=referenceHeight&&expected.width>=referenceWidth&&expected.height>=referenceHeight;
+				if(samePixels)for(UINT y=0;y<referenceHeight;++y)for(UINT x=0;x<referenceWidth*4;++x)
+					if(actual.bytes[static_cast<std::size_t>(y)*actual.width*4+x]!=expected.bytes[static_cast<std::size_t>(y)*expected.width*4+x])samePixels=false;
+				Check(samePixels,"retired More pixels match direct PPT with no residual icon or label");
+			}
 		}
 		{
 			Scene surface;surface.ConfigurePagination(BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{}));surface.SetBounds({200,100,200+static_cast<LONG>(PptControlLongSideDip),100+static_cast<LONG>(PptControlShortSideDip)},1);

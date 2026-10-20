@@ -213,6 +213,14 @@ namespace Inkeys::UI::Bar
 			if(id<=8)return actions[id-6];
 			return previews[id-9];
 		}
+		std::array<BarSurfaceButtonId,4> PaginationDrawOrder() const
+		{
+			const auto buttons=pagination.Snapshot();std::array<BarSurfaceButtonId,4> order{};std::size_t count=0;
+			// 与主栏隐藏成员相同：先画退场成员，再画仍可见的按钮，保留原列表内顺序。
+			for(const bool visible:{false,true})for(std::size_t i=1;i<buttons.size();++i)
+				if(buttons[i]&&buttons[i]->IsVisible()==visible)order[count++]=static_cast<BarSurfaceButtonId>(i+1);
+			return order;
+		}
 		bool PropertyButtonEnabled(BarSurfaceButtonId id) const noexcept
 		{
 			if(id<6)return true;
@@ -393,10 +401,17 @@ namespace Inkeys::UI::Bar
 				pageButtons[i]->hide=(i==0&&wb)||(i==4&&(!wb||!left));
 				pageButtons[i]->size=BarButtonSizeEnum::twoTwo;
 			}
-			if(wb){
-				const auto row=ResolveBarButtonListLayout(pagination.Snapshot(),BarButtonListLayoutKind::SingleRow);
-				for(std::size_t i=0;i<row.placements.size();++i)if(!pageButtons[i]->hide){const auto& item=row.placements[i];
-					rects[i]={item.x-item.width/2,item.y-item.height/2,item.x+item.width/2,item.y+item.height/2};}
+			const auto members=pagination.Snapshot();
+			const auto row=ResolveBarButtonListLayout(members,BarButtonListLayoutKind::SingleRow);
+			for(std::size_t i=1;i<row.placements.size();++i){
+				const auto& item=row.placements[i];
+				if(wb&&members[i]->IsVisible())rects[i]={item.x-item.width/2,item.y-item.height/2,item.x+item.width/2,item.y+item.height/2};
+				if(!members[i]->IsVisible()){
+					// 自定义 Drag 槽只适配可见几何；隐藏成员沿相邻锚点收拢，尺寸仍由公共布局给出。
+					std::size_t anchor=i;while(anchor>1&&!members[anchor-1]->IsVisible())--anchor;
+					if(anchor>1){const auto& target=rects[anchor-1];const double x=EraserRectCenterX(target),y=EraserRectCenterY(target);
+						rects[i]={x-item.width/2,y-item.height/2,x+item.width/2,y+item.height/2};}
+				}
 			}
 			ConfigureButton(*pageButtons[0],BarButtonVisualLayoutKind::Custom,rects[0],L"",L"",0,duration,direct);
 			ConfigureButton(*pageButtons[1],standard?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,
@@ -422,6 +437,12 @@ namespace Inkeys::UI::Bar
 				wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
 				(wb&&next.nextIsAdd)||(!wb&&next.nextIsEndShow)?0:(vertical&&!wb?180:90),duration,direct);
 			ConfigureButton(*pageButtons[4],BarButtonVisualLayoutKind::StandardTwoTwo,rects[4],L"barMenu",next.moreLabel,0,duration,direct);
+			if(direct)for(auto& button:pageButtons)if(!button->IsVisible()){
+				// 首帧没有动画 dt；直接配置的隐藏成员从透明开始，普通退场仍保留当前值渐隐。
+				button->icon.pct.SetDirect(0);button->name.pct.SetDirect(0);button->button.pct.SetDirect(0);
+				if(button->button.framePct)button->button.framePct->SetDirect(0);
+				if(button->button.frameLightPct)button->button.frameLightPct->SetDirect(0);
+			}
 			const wchar_t* icons[]={L"barCloseSmall",L"barMinimize",L"barPalette"};
 			for(std::size_t i=0;i<actions.size();++i){
 				const double y=MenuBounds.top+5+i*(BarButtonOneSideDip+5);
@@ -531,7 +552,7 @@ namespace Inkeys::UI::Bar
 				active|=menuMotion.Active()||themeMotion.Active();
 				UpdateFeedback();
 				for(BarSurfaceButtonId id=1;id<=17;++id){
-					auto& button=Button(id);const bool visible=id<=4 || (id==5&&content.whiteboard&&content.surface==0)
+					auto& button=Button(id);const bool visible=(id<=5&&button.IsVisible())
 						|| (id>=6&&id<=8&&menuMotion.Visible()) || (id>=9&&themeMotion.Visible());
 					bool enabled=!content.switching&&PropertyButtonEnabled(id);if(id>=2&&id<=4)enabled&=content.enabled[id-2];if(id==7)enabled&=!content.pptActive;
 					COLORREF text=GetThemeColor(BarThemeColorEnum::TextPrimary);
@@ -732,9 +753,13 @@ namespace Inkeys::UI::Bar
 	BarPageSurfaceLayout BarPageSurface::Layout() const
 	{
 		BarPageSurfaceLayout result{impl_->logical,impl_->presentation,impl_->scale};
+		const auto members=impl_->pagination.Snapshot();const auto order=impl_->PaginationDrawOrder();
 		for(std::size_t i=0;i<impl_->candidate.buttons.size();++i){const auto& hit=impl_->candidate.buttons[i];
-			result.buttons.push_back({static_cast<BarSurfaceButtonId>(i+1),Pixels({hit.boundsDip.left,hit.boundsDip.top,hit.boundsDip.right,hit.boundsDip.bottom},impl_->scale),
-				hit.visible,hit.enabled,hit.enabled});}
+			const auto id=static_cast<BarSurfaceButtonId>(i+1);const auto found=std::find(order.begin(),order.end(),id);
+			const void* identity=i<impl_->pageButtons.size()?(i<members.size()?members[i].get():nullptr):&impl_->Button(id);
+			result.buttons.push_back({id,Pixels({hit.boundsDip.left,hit.boundsDip.top,hit.boundsDip.right,hit.boundsDip.bottom},impl_->scale),
+				hit.visible,hit.enabled,hit.enabled,identity,found!=order.end()?static_cast<unsigned>(found-order.begin()+1):0,
+				(std::max)(impl_->Button(id).icon.pct.val,impl_->Button(id).name.pct.val)});}
 		return result;
 	}
 	RECT BarPageSurface::LogicalBounds() const noexcept{return impl_->logical;}
@@ -838,7 +863,7 @@ namespace Inkeys::UI::Bar
 				SetShapeBounds(p.dragHandle,{EraserRectCenterX(r)-(vertical?1:10),EraserRectCenterY(r)-(vertical?10:1),
 					EraserRectCenterX(r)+(vertical?1:10),EraserRectCenterY(r)+(vertical?10:1)},0,true);p.DrawShape(dc,p.dragHandle);
 			}
-			for(BarSurfaceButtonId id=2;id<=5;++id)if(id!=5||p.candidate.buttons[4].visible)p.DrawButton(dc,id);
+			for(const auto id:p.PaginationDrawOrder())p.DrawButton(dc,id);
 			if(p.content.whiteboard&&p.content.surface==0&&p.content.unsaved)p.renderer.Word(dc,p.unsaved,{5,-32},DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_LEADING);
 		}
 		if(layer)dc->PopLayer();dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);
