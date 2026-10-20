@@ -508,6 +508,75 @@ int RunSettingSessionStateTests()
 		&& !decision.createPresentation && !decision.render,
 		"hidden generation change rebuilds resident resources")) ++failures;
 
+	// 快速 Hide→Show 清除输入，常驻 context/字体/设备资源不因输入失效而重建。
+	state.SetVisible(true);
+	decision = state.Resolve(2, true, true);
+	if (!Expect(decision.resetInput && !decision.initializeResident
+		&& !decision.rebuildDeviceResources && !decision.releasePresentation && decision.render,
+		"hide then show invalidates input without rebuilding resident resources")) ++failures;
+	state.ConsumeInputReset(state.InputResetSerial());
+	if (!Expect(!state.Resolve(2, true, true).resetInput,
+		"input reset is consumed once")) ++failures;
+
+	state.SetVisible(false);
+	state.SetVisible(false);
+	state.SetVisible(true);
+	decision = state.Resolve(2, true, true);
+	if (!Expect(decision.resetInput && decision.render,
+		"repeated hides preserve input invalidation")) ++failures;
+	state.ConsumeInputReset(state.InputResetSerial());
+	const auto oldResetSerial = state.InputResetSerial();
+	state.SetVisible(false);
+	state.SetVisible(true);
+	state.CommitEpoch(2);
+	state.ConsumeInputReset(oldResetSerial);
+	if (!Expect(state.Resolve(2, true, true).resetInput,
+		"stale frame and epoch commit cannot consume a later hide")) ++failures;
+	state.ConsumeInputReset(state.InputResetSerial());
+
+	// FIFO 的原生 Hide 晚于逻辑 Hide/Show 时，清理新输入但不覆盖新的可见意图。
+	SessionState fifoSession;
+	fifoSession.SetVisible(true);
+	fifoSession.CommitEpoch(1);
+	fifoSession.SetVisible(false);
+	fifoSession.SetVisible(true);
+	fifoSession.ConsumeInputReset(fifoSession.InputResetSerial());
+	fifoSession.InvalidateSession();
+	fifoSession.CommitEpoch(1);
+	decision = fifoSession.Resolve(1, true, true);
+	if (!Expect(fifoSession.IsVisible() && decision.resetInput
+		&& !decision.releasePresentation && !decision.rebuildDeviceResources && decision.render,
+		"delayed native hide preserves show intent and resident resources")) ++failures;
+	const auto nativeHideSerial = fifoSession.InputResetSerial();
+	fifoSession.InvalidateSession();
+	fifoSession.ConsumeInputReset(nativeHideSerial);
+	if (!Expect(fifoSession.Resolve(1, true, true).resetInput,
+		"another native hide after the input snapshot remains pending")) ++failures;
+	fifoSession.ConsumeInputReset(fifoSession.InputResetSerial());
+	if (!Expect(!fifoSession.Resolve(1, true, true).resetInput,
+		"latest native hide is consumed once")) ++failures;
+	fifoSession.SetVisible(false);
+	fifoSession.InvalidateSession();
+	decision = fifoSession.Resolve(1, true, true);
+	if (!Expect(!fifoSession.IsVisible() && decision.resetInput
+		&& decision.releasePresentation && !decision.createPresentation && !decision.render,
+		"native hide preserves a final hidden intent")) ++failures;
+
+	SessionState firstSession;
+	firstSession.SetVisible(false);
+	decision = firstSession.Resolve(1, false, false);
+	if (!Expect(decision.initializeResident && !decision.resetInput && !decision.render,
+		"hide without a session permits hidden resident initialization")) ++failures;
+	firstSession.ReleaseResident();
+	firstSession.SetVisible(true);
+	firstSession.CommitEpoch(1);
+	if (!Expect(!firstSession.Resolve(1, true, false).resetInput,
+		"initial creation consumes historical input invalidation")) ++failures;
+	firstSession.ReleaseResident();
+	firstSession.ReleaseResident();
+	if (!Expect(!firstSession.Resolve(1, false, false).resetInput,
+		"empty resident release stays idempotent")) ++failures;
+
 	using Inkeys::UI::Setting::IsSharedDeviceLoss;
 	if (!Expect(IsSharedDeviceLoss(DXGI_ERROR_DEVICE_REMOVED)
 		&& IsSharedDeviceLoss(DXGI_ERROR_DEVICE_RESET)

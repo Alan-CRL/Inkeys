@@ -187,6 +187,8 @@ namespace Inkeys::UI::Setting::Design
 		bool animation = true;
 		float animationRate = 1.0F;
 		bool dynamicEdgeLighting = false;
+		int startupPlacement = 0;
+		int taskbarScaleBase = 0;
 	};
 
 	struct GeneralEvents
@@ -205,6 +207,8 @@ namespace Inkeys::UI::Setting::Design
 		bool animationChanged = false;
 		bool animationRateActive = false;
 		bool dynamicEdgeLightingChanged = false;
+		bool startupPlacementChanged = false;
+		bool taskbarScaleBaseChanged = false;
 	};
 
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha);

@@ -28,6 +28,8 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
+    outputs:
+      signing_policy_slug: ${{ steps.resolve_policy.outputs.signing_policy_slug }}
     steps:
       - shell: pwsh
         run: |
@@ -75,32 +77,32 @@ jobs:
           "已按手动输入跳过发布标记验证" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
-  build:
-    name: Build
+      # 签名配置说明集中在此文件：GitHub Settings → Secrets and variables → Actions → Variables。
+      # Repository variables：SIGNPATH_INKEYS_ARTIFACT_CONFIGURATION_SLUG=exe；SIGNPATH_PPTCOM_ARTIFACT_CONFIGURATION_SLUG=pptcom-dll。
+      # API token 使用现有 SIGNPATH_API_TOKEN secret；两个 Artifact Configuration 共用现有证书策略。
+      # 配置为空或两者 slug 相同则不提交对应请求；签名失败回退，构建及产物上传/下载失败仍使 job 失败。
+      - name: 选定两次签名共用的证书策略
+        id: resolve_policy
+        shell: pwsh
+        run: |
+          $policy = if ($env:GITHUB_REF_NAME -ieq 'dev') { 'test-signing' } else { 'release-signing' }
+          "signing_policy_slug=$policy" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "DLL / EXE 签名策略: $policy" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+  pptcom:
+    name: PptCOM
     needs: check
-    strategy:
-      matrix:
-        platform: [Win32, x64, ARM64]
-      fail-fast: false
     runs-on: windows-2022
+    outputs:
+      artifact_id: ${{ steps.select_artifact.outputs.artifact_id }}
+      tlb_artifact_id: ${{ steps.upload_tlb.outputs.artifact-id }}
+      signing_status: ${{ steps.select_pptcom.outputs.signing_status }}
 
     steps:
-    - name: Checkout code 
+    - name: Checkout PptCOM code
       uses: actions/checkout@v7
-      with:
-        fetch-depth: 0
-        submodules: recursive
+      # C# 项目不需要拉取 native 子模块或初始化 vcpkg。
 
-    - name: 获取环境信息
-      id: environmentInfo
-      shell: pwsh
-      run: |
-        $os = Get-ComputerInfo | Select-Object -ExpandProperty OsName
-        $ver = Get-ComputerInfo | Select-Object -ExpandProperty OsVersion
-      
-        echo "OS=$os" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        
     - name: Setup MSBuild
       id: setup_msbuild
       shell: pwsh
@@ -123,7 +125,12 @@ jobs:
 
         Split-Path $msbuild -Parent | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         "MSBUILD_PATH=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        $msbuildSearchPath = $env:Path
+        Remove-Item Env:PATH -ErrorAction SilentlyContinue
+        $env:Path = $msbuildSearchPath
+        $env:MSBUILDDISABLENODEREUSE = '1'
         & $msbuild /version
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Setup NuGet
       shell: pwsh
@@ -169,7 +176,179 @@ jobs:
         Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
 
     - name: Restore NuGet packages
-      run: nuget restore "InkeysRepo.sln"
+      shell: pwsh
+      run: |
+        nuget restore "PptCOM/PptCOM.csproj" -PackagesDirectory "Package"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+
+    - name: Build PptCOM once
+      shell: pwsh
+      timeout-minutes: 10
+      run: |
+        $msbuildSearchPath = $env:Path
+        Remove-Item Env:PATH -ErrorAction SilentlyContinue
+        $env:Path = $msbuildSearchPath
+        $env:MSBUILDDISABLENODEREUSE = '1'
+        & '${{ steps.setup_msbuild.outputs.MSBUILD_PATH }}' 'PptCOM/PptCOM.csproj' /p:Configuration=Release /p:Platform=AnyCPU /verbosity:minimal
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Upload PptCOM[Unsigned]
+      id: upload_pptcom_unsigned
+      uses: actions/upload-artifact@v7
+      with:
+        name: PptCOM[Unsigned]
+        path: PptCOM/bin/Release/PptCOM.dll
+        if-no-files-found: error
+        overwrite: true
+
+    - name: Upload PptCOM-TypeLibrary
+      id: upload_tlb
+      uses: actions/upload-artifact@v7
+      with:
+        name: PptCOM-TypeLibrary
+        path: PptCOM/bin/Release/PptCOM.tlb
+        if-no-files-found: error
+        overwrite: true
+
+    - name: Resolve explicit PptCOM artifact configuration
+      id: pptcom_config
+      shell: pwsh
+      env:
+        PPTCOM_CONFIG: ${{ vars.SIGNPATH_PPTCOM_ARTIFACT_CONFIGURATION_SLUG }}
+        EXE_CONFIG: ${{ vars.SIGNPATH_INKEYS_ARTIFACT_CONFIGURATION_SLUG }}
+        SIGN_REQUESTED: ${{ inputs.sign }}
+      run: |
+        # 两次签名分别读取配置；空值或相同 slug 不提交请求，保留未签名回退。
+        $slug = ([string]$env:PPTCOM_CONFIG).Trim()
+        $exeSlug = ([string]$env:EXE_CONFIG).Trim()
+        $configured = -not [string]::IsNullOrWhiteSpace($slug) -and $slug -ne $exeSlug
+        "configured=$($configured.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        if ($configured) {
+          "slug=$slug" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        } elseif ($env:SIGN_REQUESTED -eq 'true') {
+          Write-Host '::warning::请设置 SIGNPATH_PPTCOM_ARTIFACT_CONFIGURATION_SLUG 为 PptCOM DLL 配置 slug，且与 EXE 配置不同；本次 DLL 使用未签名产物。'
+        }
+
+    - name: Sign PptCOM DLL
+      if: ${{ inputs.sign && steps.pptcom_config.outputs.configured == 'true' }}
+      id: sign_pptcom
+      timeout-minutes: 30
+      continue-on-error: true
+      uses: signpath/github-action-submit-signing-request@v1.1
+      with:
+        api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+        organization-id: '95390269-627b-496d-8127-fc47de793284'
+        project-slug: 'Inkeys'
+        signing-policy-slug: '${{ needs.check.outputs.signing_policy_slug }}'
+        artifact-configuration-slug: '${{ steps.pptcom_config.outputs.slug }}'
+        github-artifact-id: '${{ steps.upload_pptcom_unsigned.outputs.artifact-id }}'
+        wait-for-completion: true
+        output-artifact-directory: './signed-pptcom'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Validate PptCOM signing result
+      id: select_pptcom
+      shell: pwsh
+      env:
+        SIGN_REQUESTED: ${{ inputs.sign }}
+        SIGN_OUTCOME: ${{ steps.sign_pptcom.outcome }}
+        SIGNING_POLICY: ${{ needs.check.outputs.signing_policy_slug }}
+        PPTCOM_CONFIG: ${{ steps.pptcom_config.outputs.slug }}
+      run: |
+        . .github/scripts/release-artifacts.ps1
+        $selected = Select-ReleaseSignature -UnsignedDirectory 'PptCOM/bin/Release' -SignedDirectory 'signed-pptcom' -FileNames @('PptCOM.dll') -SignRequested ($env:SIGN_REQUESTED -eq 'true') -SignOutcome $env:SIGN_OUTCOME -SigningPolicySlug $env:SIGNING_POLICY -ArtifactConfigurationSlug $env:PPTCOM_CONFIG
+        "signing_status=$($selected.Status)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "PptCOM DLL 签名: $($selected.Status) — $($selected.Reason)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+    - name: Upload PptCOM[Signed]
+      if: ${{ steps.select_pptcom.outputs.signing_status == 'signed' }}
+      id: upload_pptcom_signed
+      uses: actions/upload-artifact@v7
+      with:
+        name: PptCOM[Signed]
+        path: signed-pptcom/PptCOM.dll
+        if-no-files-found: error
+        overwrite: true
+
+    - name: Select exact PptCOM artifact ID
+      id: select_artifact
+      shell: pwsh
+      env:
+        SIGNING_STATUS: ${{ steps.select_pptcom.outputs.signing_status }}
+        SIGNED_ID: ${{ steps.upload_pptcom_signed.outputs.artifact-id }}
+        UNSIGNED_ID: ${{ steps.upload_pptcom_unsigned.outputs.artifact-id }}
+      run: |
+        $artifactId = if ($env:SIGNING_STATUS -eq 'signed') { $env:SIGNED_ID } else { $env:UNSIGNED_ID }
+        if ($artifactId -notmatch '^\d+$') { throw '选定 DLL 的 artifact ID 无效' }
+        "artifact_id=$artifactId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "选定 DLL artifact: $artifactId ($env:SIGNING_STATUS)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+    - name: Delete unsigned DLL only after signed upload
+      if: ${{ steps.select_pptcom.outputs.signing_status == 'signed' }}
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        UNSIGNED_ID: ${{ steps.upload_pptcom_unsigned.outputs.artifact-id }}
+      run: |
+        . .github/scripts/release-artifacts.ps1
+        Remove-ReleaseArtifact -ArtifactId $env:UNSIGNED_ID -ExpectedName 'PptCOM[Unsigned]'
+
+  build:
+    name: Build
+    needs: [check, pptcom]
+    strategy:
+      matrix:
+        platform: [Win32, x64, ARM64]
+      fail-fast: false
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+        submodules: recursive
+
+    - name: 获取环境信息
+      id: environmentInfo
+      shell: pwsh
+      run: |
+        $os = Get-ComputerInfo | Select-Object -ExpandProperty OsName
+        $ver = Get-ComputerInfo | Select-Object -ExpandProperty OsVersion
+
+        echo "OS=$os" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+    - name: Setup MSBuild
+      id: setup_msbuild
+      shell: pwsh
+      run: |
+        $vswhere = "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (!(Test-Path $vswhere))
+        {
+          throw "找不到 vswhere.exe"
+        }
+
+        $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\amd64\MSBuild.exe' | Select-Object -First 1
+        if (-not $msbuild)
+        {
+          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe' | Select-Object -First 1
+        }
+        if (-not $msbuild)
+        {
+          throw "找不到 MSBuild.exe"
+        }
+
+        Split-Path $msbuild -Parent | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        "MSBUILD_PATH=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        $msbuildSearchPath = $env:Path
+        Remove-Item Env:PATH -ErrorAction SilentlyContinue
+        $env:Path = $msbuildSearchPath
+        $env:MSBUILDDISABLENODEREUSE = '1'
+        & $msbuild /version
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: 填充 CI/CD 变量
       shell: pwsh
@@ -202,7 +381,12 @@ jobs:
         $imageVer = $Env:ImageVersion
         $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
 
-        $msbuildVersion = (msbuild /version) -join "`n"
+        $msbuildSearchPath = $env:Path
+        Remove-Item Env:PATH -ErrorAction SilentlyContinue
+        $env:Path = $msbuildSearchPath
+        $env:MSBUILDDISABLENODEREUSE = '1'
+        $msbuildVersion = (& '${{ steps.setup_msbuild.outputs.MSBUILD_PATH }}' /version) -join "`n"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         $msbuildVersionEscaped = $msbuildVersion -replace "`r?`n",'\n'
         $msbuildVersionEscaped = $msbuildVersionEscaped -replace '"','\"'
       
@@ -251,9 +435,38 @@ jobs:
       shell: pwsh
       run: .\vcpkg\bootstrap-vcpkg.bat
       
+    - name: Download selected PptCOM DLL
+      uses: actions/download-artifact@v8
+      with:
+        artifact-ids: ${{ needs.pptcom.outputs.artifact_id }}
+        merge-multiple: true
+        path: Inkeys
+
+    - name: Download matching PptCOM type library
+      uses: actions/download-artifact@v8
+      with:
+        artifact-ids: ${{ needs.pptcom.outputs.tlb_artifact_id }}
+        merge-multiple: true
+        path: Inkeys
+
     - name: Build Inkeys
-      run: msbuild "InkeysRepo.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /verbosity:minimal
-      shell: cmd
+      shell: pwsh
+      timeout-minutes: 60
+      run: |
+        $msbuildSearchPath = $env:Path
+        Remove-Item Env:PATH -ErrorAction SilentlyContinue
+        $env:Path = $msbuildSearchPath
+        $env:MSBUILDDISABLENODEREUSE = '1'
+        # Win32 也使用 64 位宿主工具；发布构建明确关闭内嵌 Harness。
+        & '${{ steps.setup_msbuild.outputs.MSBUILD_PATH }}' 'Inkeys/Inkeys.vcxproj' /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /p:PreferredToolArchitecture=x64 /p:EnableUi3PresentationHarness=false /verbosity:minimal
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Verify embedded PptCOM DLL and symbols
+      shell: pwsh
+      run: |
+        . .github/scripts/release-artifacts.ps1
+        Assert-EmbeddedPptCom -ExecutablePath 'Build/${{ matrix.platform }}/Release/Inkeys.exe' -DllPath 'Inkeys/PptCOM.dll'
+        $null = Get-Item -LiteralPath 'Build/${{ matrix.platform }}/Release/Inkeys.pdb' -ErrorAction Stop
     
     - name: Upload exe[unsigned] artifact
       uses: actions/upload-artifact@v7
@@ -269,10 +482,14 @@ jobs:
               (matrix.platform == 'x64' && './Build/x64/Release/Inkeys.pdb') ||
               (matrix.platform == 'ARM64' && './Build/ARM64/Release/Inkeys.pdb') }}
           
+        if-no-files-found: error
+        overwrite: true
   package:
     name: Package
     runs-on: windows-2022
-    needs: build
+    needs: [check, pptcom, build]
+    outputs:
+      artifact_id: ${{ steps.upload_package.outputs.artifact-id }}
 
     steps:
       # 获取版本信息
@@ -358,106 +575,128 @@ jobs:
           echo "OS=$os" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      # 下载构建后内容
+      # 先定位当前 run 的唯一产物，再按精确 ID 下载；重跑不消费旧 ID。
+      - name: Resolve native artifact IDs
+        id: native_artifacts
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          . .github/scripts/release-artifacts.ps1
+          $names = @('Inkeys[Unsigned]', 'Inkeys64[Unsigned]', 'InkeysArm64[Unsigned]')
+          $keys = @('win32', 'x64', 'arm64')
+          $artifacts = @(Get-ReleaseRunArtifacts -Names $names)
+          for ($index = 0; $index -lt $keys.Count; $index++) {
+            "$($keys[$index])=$($artifacts[$index].id)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
       - name: Download Inkeys[Unsigned]
         uses: actions/download-artifact@v8
         with:
-          name: Inkeys[Unsigned]
+          artifact-ids: ${{ steps.native_artifacts.outputs.win32 }}
+          merge-multiple: true
           path: download/win32
       - name: Download Inkeys64[Unsigned]
         uses: actions/download-artifact@v8
         with:
-          name: Inkeys64[Unsigned]
+          artifact-ids: ${{ steps.native_artifacts.outputs.x64 }}
+          merge-multiple: true
           path: download/x64
       - name: Download InkeysArm64[Unsigned]
         uses: actions/download-artifact@v8
         with:
-          name: InkeysArm64[Unsigned]
+          artifact-ids: ${{ steps.native_artifacts.outputs.arm64 }}
+          merge-multiple: true
           path: download/arm64
+      - name: Download selected PptCOM for package verification
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.pptcom.outputs.artifact_id }}
+          merge-multiple: true
+          path: download/pptcom
 
       # 打包整理 Package
       - name: Prepare signpath zip folder
+        shell: pwsh
         run: |
-          mkdir signatureUpload
-          mkdir signedUpload
-          mkdir packageUpload
-          copy download\win32\Inkeys.exe signatureUpload\Inkeys.exe
-          copy download\x64\Inkeys.exe signatureUpload\Inkeys64.exe
-          copy download\arm64\Inkeys.exe signatureUpload\InkeysArm64.exe
-          copy download\win32\Inkeys.pdb packageUpload\Inkeys.pdb
-          copy download\x64\Inkeys.pdb packageUpload\Inkeys64.pdb
-          copy download\arm64\Inkeys.pdb packageUpload\InkeysArm64.pdb
-          
+          New-Item -ItemType Directory -Path signatureUpload, signedUpload, packageUpload | Out-Null
+          Copy-Item -LiteralPath 'download/win32/Inkeys.exe' -Destination 'signatureUpload/Inkeys.exe' -ErrorAction Stop
+          Copy-Item -LiteralPath 'download/x64/Inkeys.exe' -Destination 'signatureUpload/Inkeys64.exe' -ErrorAction Stop
+          Copy-Item -LiteralPath 'download/arm64/Inkeys.exe' -Destination 'signatureUpload/InkeysArm64.exe' -ErrorAction Stop
+          Copy-Item -LiteralPath 'download/win32/Inkeys.pdb' -Destination 'packageUpload/Inkeys.pdb' -ErrorAction Stop
+          Copy-Item -LiteralPath 'download/x64/Inkeys.pdb' -Destination 'packageUpload/Inkeys64.pdb' -ErrorAction Stop
+          Copy-Item -LiteralPath 'download/arm64/Inkeys.pdb' -Destination 'packageUpload/InkeysArm64.pdb' -ErrorAction Stop
+
+      - name: Resolve explicit EXE artifact configuration
+        id: exe_config
+        shell: pwsh
+        env:
+          EXE_CONFIG: ${{ vars.SIGNPATH_INKEYS_ARTIFACT_CONFIGURATION_SLUG }}
+          PPTCOM_CONFIG: ${{ vars.SIGNPATH_PPTCOM_ARTIFACT_CONFIGURATION_SLUG }}
+          SIGN_REQUESTED: ${{ inputs.sign }}
+        run: |
+          $slug = ([string]$env:EXE_CONFIG).Trim()
+          $dllSlug = ([string]$env:PPTCOM_CONFIG).Trim()
+          $configured = -not [string]::IsNullOrWhiteSpace($slug) -and $slug -ne $dllSlug
+          "configured=$($configured.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          if ($configured) {
+            "slug=$slug" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } elseif ($env:SIGN_REQUESTED -eq 'true') {
+            Write-Host '::warning::请设置 SIGNPATH_INKEYS_ARTIFACT_CONFIGURATION_SLUG 为 EXE 配置 slug，且与 DLL 配置不同；本次 EXE 使用未签名产物。'
+          }
+
       - name: Upload Signpath[unsigned]
-        if: ${{ inputs.sign }}
-        id: upload-unsigned
+        if: ${{ inputs.sign && steps.exe_config.outputs.configured == 'true' }}
+        id: upload_exe_unsigned
         uses: actions/upload-artifact@v7
         with:
           name: Signpath[unsigned]
           path: signatureUpload/
+          if-no-files-found: error
+          overwrite: true
 
-      - name: 选定签名策略
-        if: ${{ inputs.sign }}
-        id: resolvePolicy
-        shell: pwsh
-        run: |
-          $branchName = $Env:GITHUB_REF_NAME
-
-          if ($branchName -ieq 'dev')
-          {
-            "signing_policy_slug=test-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
-            "**使用测试证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          } 
-          else 
-          {
-            "signing_policy_slug=release-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
-            "**使用正式证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          }
-
-      - name: 提交给 SignPath 签名
-        if: ${{ inputs.sign }}
-        id: signpath
+      - name: Sign Inkeys EXEs
+        if: ${{ inputs.sign && steps.exe_config.outputs.configured == 'true' }}
+        id: sign_inkeys
         timeout-minutes: 30
         uses: signpath/github-action-submit-signing-request@v1.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '95390269-627b-496d-8127-fc47de793284'
           project-slug: 'Inkeys'
-          signing-policy-slug: '${{ steps.resolvePolicy.outputs.signing_policy_slug }}'
-          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          signing-policy-slug: '${{ needs.check.outputs.signing_policy_slug }}'
+          artifact-configuration-slug: '${{ steps.exe_config.outputs.slug }}'
+          github-artifact-id: '${{ steps.upload_exe_unsigned.outputs.artifact-id }}'
           wait-for-completion: true
-          output-artifact-directory: './signed'
+          output-artifact-directory: './signed-exe'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
-        
-      - name: Prepare update folder
-        if: ${{ inputs.sign && steps.signpath.outcome == 'success' }}
-        run: |
-          mkdir signedUpload\Inkeys
-          mkdir signedUpload\Inkeys64
-          mkdir signedUpload\InkeysArm64
-          copy signed\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
-          copy signed\Inkeys64.exe signedUpload\Inkeys64\Inkeys.exe
-          copy signed\InkeysArm64.exe signedUpload\InkeysArm64\Inkeys.exe
-          
-      - name: Prepare update folder
-        if: ${{ !inputs.sign || steps.signpath.outcome != 'success' }}
-        run: |
-          mkdir signedUpload\Inkeys
-          mkdir signedUpload\Inkeys64
-          mkdir signedUpload\InkeysArm64
-          copy download\win32\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
-          copy download\x64\Inkeys.exe signedUpload\Inkeys64\Inkeys.exe
-          copy download\arm64\Inkeys.exe signedUpload\InkeysArm64\Inkeys.exe
-      - if: ${{ inputs.sign && steps.signpath.outcome != 'success' }}
+
+      - name: Select complete EXE set and verify embedded DLL
+        id: select_inkeys
         shell: pwsh
+        env:
+          SIGN_REQUESTED: ${{ inputs.sign }}
+          SIGN_OUTCOME: ${{ steps.sign_inkeys.outcome }}
+          SIGNING_POLICY: ${{ needs.check.outputs.signing_policy_slug }}
+          EXE_CONFIG: ${{ steps.exe_config.outputs.slug }}
+          DLL_SIGNING_STATUS: ${{ needs.pptcom.outputs.signing_status }}
         run: |
-          "**无法完成签名！**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-      - if: ${{ !inputs.sign }}
-        shell: pwsh
-        run: |
-          "**已按手动输入跳过签名，后续包使用未签名 exe。**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          . .github/scripts/release-artifacts.ps1
+          $names = @('Inkeys.exe', 'Inkeys64.exe', 'InkeysArm64.exe')
+          $folders = @('Inkeys', 'Inkeys64', 'InkeysArm64')
+          $selected = Select-ReleaseSignature -UnsignedDirectory 'signatureUpload' -SignedDirectory 'signed-exe' -FileNames $names -SignRequested ($env:SIGN_REQUESTED -eq 'true') -SignOutcome $env:SIGN_OUTCOME -SigningPolicySlug $env:SIGNING_POLICY -ArtifactConfigurationSlug $env:EXE_CONFIG
+          for ($index = 0; $index -lt $names.Count; $index++) {
+            $target = Join-Path 'signedUpload' $folders[$index]
+            New-Item -ItemType Directory -Path $target | Out-Null
+            $exePath = Join-Path $target 'Inkeys.exe'
+            Copy-Item -LiteralPath (Join-Path $selected.Directory $names[$index]) -Destination $exePath -ErrorAction Stop
+            Assert-EmbeddedPptCom -ExecutablePath $exePath -DllPath 'download/pptcom/PptCOM.dll'
+          }
+          "signing_status=$($selected.Status)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "PptCOM DLL 签名: $env:DLL_SIGNING_STATUS" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Inkeys EXE 签名: $($selected.Status) — $($selected.Reason)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - name: Upload Inkeys
         uses: actions/upload-artifact@v7
@@ -466,6 +705,8 @@ jobs:
           path: |
             signedUpload\Inkeys\Inkeys.exe
             download\win32\Inkeys.pdb
+          if-no-files-found: error
+          overwrite: true
       - name: Upload Inkeys64
         uses: actions/upload-artifact@v7
         with:
@@ -473,6 +714,8 @@ jobs:
           path: |
             signedUpload\Inkeys64\Inkeys.exe
             download\x64\Inkeys.pdb
+          if-no-files-found: error
+          overwrite: true
       - name: Upload InkeysArm64
         uses: actions/upload-artifact@v7
         with:
@@ -481,41 +724,18 @@ jobs:
             signedUpload\InkeysArm64\Inkeys.exe
             download\arm64\Inkeys.pdb
 
-      - name: Clean Up
-        shell: pwsh
-        env:
-          ARTIFACT_NAMES: 'Inkeys[Unsigned],Inkeys64[Unsigned],InkeysArm64[Unsigned],Signpath[unsigned]'
-        run: |
-          # 拆分目标 artifact 列表
-          $names = "${env:ARTIFACT_NAMES}".Split(',')
-
-          # 获取 artifact 元信息
-          $repo = "${{ github.repository }}"
-          $url = "https://api.github.com/repos/$repo/actions/artifacts?per_page=100"
-          $headers = @{ Authorization = "Bearer ${{ secrets.GITHUB_TOKEN }}" }
-          $response = Invoke-RestMethod -Uri $url -Headers $headers
-
-          # 批量删除
-          foreach ($name in $names) {
-            $artifact = $response.artifacts | Where-Object { $_.name -eq $name }
-            if ($null -ne $artifact) {
-              Write-Host "Deleting artifact: $($artifact.name) $($artifact.id)"
-              $delete_url = "https://api.github.com/repos/$repo/actions/artifacts/$($artifact.id)"
-              Invoke-RestMethod -Uri $delete_url -Headers $headers -Method Delete
-            } else {
-              Write-Host "Not found: $name"
-            }
-          }
-
+          if-no-files-found: error
+          overwrite: true
+      # 包名使用完整 editionDate；源码改为纯版本号后，日期后缀随之移除。
       - name: Compressed update package 1
         run: |
-          Compress-Archive -Path .\signedUpload\Inkeys\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\Inkeys\Inkeys.exe -DestinationPath ".\packageUpload\UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x86.zip" -CompressionLevel Optimal
       - name: Compressed update package 2
         run: |
-          Compress-Archive -Path .\signedUpload\Inkeys64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!64.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\Inkeys64\Inkeys.exe -DestinationPath ".\packageUpload\UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x64.zip" -CompressionLevel Optimal
       - name: Compressed update package 3
         run: |
-          Compress-Archive -Path .\signedUpload\InkeysArm64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!Arm64.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\InkeysArm64\Inkeys.exe -DestinationPath ".\packageUpload\UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-arm64.zip" -CompressionLevel Optimal
       
       - name: 更新信息编写
         shell: pwsh
@@ -523,9 +743,9 @@ jobs:
           $exeFile1 = 'signedUpload\Inkeys\Inkeys.exe'
           $exeFile2 = 'signedUpload\Inkeys64\Inkeys.exe'
           $exeFile3 = 'signedUpload\InkeysArm64\Inkeys.exe'
-          $uploadFile1 = 'packageUpload\InkeysUpdate2025====!.zip'
-          $uploadFile2 = 'packageUpload\InkeysUpdate2025====!64.zip'
-          $uploadFile3 = 'packageUpload\InkeysUpdate2025====!Arm64.zip'
+          $uploadFile1 = 'packageUpload\UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x86.zip'
+          $uploadFile2 = 'packageUpload\UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x64.zip'
+          $uploadFile3 = 'packageUpload\UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-arm64.zip'
           
           $md5_1 = ((Get-FileHash -Path $exeFile1 -Algorithm MD5   ).Hash).ToLower()
           $md5_2 = ((Get-FileHash -Path $exeFile2 -Algorithm MD5   ).Hash).ToLower()
@@ -551,19 +771,19 @@ jobs:
               "sha256 Arm64": "$sha256_3"
             },
             "path": [
-              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x86.zip",
+              "http://home.alan-crl.top/Inkeys/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x86.zip",
+              "https://vip.123pan.cn/1709404/Inkeys/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x86.zip"
             ],
             "path64": [
-              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x64.zip",
+              "http://home.alan-crl.top/Inkeys/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x64.zip",
+              "https://vip.123pan.cn/1709404/Inkeys/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-x64.zip"
             ],
             "pathArm64": [
-              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-arm64.zip",
+              "http://home.alan-crl.top/Inkeys/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-arm64.zip",
+              "https://vip.123pan.cn/1709404/Inkeys/Version/UpatePackage-Inkeys${{ steps.softwareDate.outputs.VALUE }}-arm64.zip"
             ],
             "size": {
               "file": $size1,
@@ -596,6 +816,11 @@ jobs:
           Runner ImageVersion: $imageVer
 
           Build Time: $nowUtc
+          Signing Policy: ${{ needs.check.outputs.signing_policy_slug }}
+          PptCOM DLL Signing: ${{ needs.pptcom.outputs.signing_status }}
+          Inkeys EXE Signing: ${{ steps.select_inkeys.outputs.signing_status }}
+          PptCOM DLL Artifact ID: ${{ needs.pptcom.outputs.artifact_id }}
+          PptCOM TLB Artifact ID: ${{ needs.pptcom.outputs.tlb_artifact_id }}
           "@
           Set-Content -Path "packageUpload\ci.txt" -Value $content -Encoding UTF8
 
@@ -606,27 +831,44 @@ jobs:
           $imageOS = $Env:ImageOS
           $imageVer = $Env:ImageVersion
 
+          # 可展开 here-string 中双反引号输出 Markdown 的单反引号。
           $content = @"
-          软件使用方法：
-          1. Inkeys.exe 运行文件放置于一个空的文件夹内（exe 名称不能包含非英文字符）
-          2. 双击 Inkeys.exe 运行即可
-          
-          提示：
-          设置桌面快捷方式和开机启动可以进软件选项界面中设置。
-          有疑问吐槽建议等等，加Q群618720802一起讨论，或咨询作者QQ2685549821。
-          
-          -----
-          
-          How to use the software:
-          1. Inkeys.exe runtime file is placed in an empty folder (exe name can not contain non-English characters)
-          2. Double-click Inkeys.exe to run.
-          
-          Tips: 
-          Set desktop shortcuts and boot up can be set into the software options interface.
-          If you have any questions, comments, suggestions, etc., through the software feedback channel for feedback, or consult the author alan-crl@foxmail.com.
-          
-          -----
-          
+          Inkeys / 快速开始
+
+          **01 — 准备**
+
+          将 ``Inkeys.exe`` 放入独立的空文件夹，文件名请勿包含非英文字符。
+
+          **02 — 启动**
+
+          双击 ``Inkeys.exe``，即可开始使用。
+
+          **使用与设置**
+
+          桌面快捷方式、开机自启等选项，可在软件设置中管理。
+
+          更多信息请访问 [https://www.inkeys.top](https://www.inkeys.top)
+
+          ---
+
+          # Inkeys / Getting Started
+
+          **01 — Prepare**
+
+          Place ``Inkeys.exe`` in a dedicated empty folder. Avoid non-English characters in the executable's filename.
+
+          **02 — Launch**
+
+          Double-click ``Inkeys.exe`` to get started.
+
+          **Settings & Preferences**
+
+          Manage desktop shortcuts and launch at Windows startup in the app's settings.
+
+          For more information, visit [https://www.inkeys.top](https://www.inkeys.top)
+
+          ---
+
           Inkeys${{ steps.softwareDate.outputs.VALUE }}
           CI/CD: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -648,61 +890,15 @@ jobs:
           copy tips.txt signedUpload\Inkeys64\Tips.txt
           copy tips.txt signedUpload\InkeysArm64\Tips.txt
 
-      - name: Prepare license notices for release packages
-        shell: pwsh
-        run: |
-          # 完整发布包随附项目与第三方许可；更新包仍仅含待替换的 EXE。
-          foreach ($target in @('signedUpload\Inkeys', 'signedUpload\Inkeys64', 'signedUpload\InkeysArm64')) {
-            Copy-Item -LiteralPath 'LICENSE' -Destination (Join-Path $target 'LICENSE') -ErrorAction Stop
-            Copy-Item -LiteralPath 'NOTICE' -Destination (Join-Path $target 'NOTICE') -ErrorAction Stop
-            Copy-Item -LiteralPath 'ThirdpartyLicenses' -Destination $target -Recurse -ErrorAction Stop
-          }
-
       - name: Compressed release package 1
         run: |
-          Compress-Archive -Path .\signedUpload\Inkeys -DestinationPath ".\packageUpload\32=Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\Inkeys -DestinationPath ".\packageUpload\Inkeys${{ steps.softwareDate.outputs.VALUE }}-x86.zip" -CompressionLevel Optimal
       - name: Compressed release package 2
         run: |
-          Compress-Archive -Path .\signedUpload\Inkeys64 -DestinationPath ".\packageUpload\64=Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\Inkeys64 -DestinationPath ".\packageUpload\Inkeys${{ steps.softwareDate.outputs.VALUE }}-x64.zip" -CompressionLevel Optimal
       - name: Compressed release package 3
         run: |
-          Compress-Archive -Path .\signedUpload\InkeysArm64 -DestinationPath ".\packageUpload\Arm64=Inkeys2025====!.zip" -CompressionLevel Optimal
-
-      - name: 重命名为最终命名 1
-        shell: cmd
-        run: |
-          rename ".\packageUpload\InkeysUpdate2025====!.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\InkeysUpdate2025====!64.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
-          rename ".\packageUpload\InkeysUpdate2025====!Arm64.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
-
-      - name: 重命名为最终命名 2
-        if: steps.softwareChannel.outputs.VALUE == 'Dev'
-        shell: cmd
-        run: |
-          rename ".\packageUpload\32=Inkeys2025====!.zip" "开发版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\64=Inkeys2025====!.zip" "开发版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "开发版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-      - name: 重命名为最终命名 2
-        if: steps.softwareChannel.outputs.VALUE == 'Canary'
-        shell: cmd
-        run: |
-          rename ".\packageUpload\32=Inkeys2025====!.zip" "公测版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\64=Inkeys2025====!.zip" "公测版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "公测版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-      - name: 重命名为最终命名 2
-        if: steps.softwareChannel.outputs.VALUE == 'Insider'
-        shell: cmd
-        run: |
-          rename ".\packageUpload\32=Inkeys2025====!.zip" "预览版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\64=Inkeys2025====!.zip" "预览版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "预览版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-      - name: 重命名为最终命名 2
-        if: steps.softwareChannel.outputs.VALUE == 'LTS' || steps.softwareChannel.outputs.VALUE == 'Main'
-        shell: cmd
-        run: |
-          rename ".\packageUpload\32=Inkeys2025====!.zip" "正式版本-32位-Inkeys${{ steps.softwareVersion.outputs.VALUE }}.zip"
-          rename ".\packageUpload\64=Inkeys2025====!.zip" "正式版本-64位-Inkeys${{ steps.softwareVersion.outputs.VALUE }}.zip"
-          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "正式版本-Arm64-Inkeys${{ steps.softwareVersion.outputs.VALUE }}.zip"
+          Compress-Archive -Path .\signedUpload\InkeysArm64 -DestinationPath ".\packageUpload\Inkeys${{ steps.softwareDate.outputs.VALUE }}-arm64.zip" -CompressionLevel Optimal
 
       # TEST
       - name: Print file tree
@@ -710,11 +906,40 @@ jobs:
         shell: cmd
 
       - name: Upload Package
+        id: upload_package
         uses: actions/upload-artifact@v7
         with:
           name: Package
           compression-level: 9
           path: packageUpload/
+
+          if-no-files-found: error
+          overwrite: true
+      - name: Clean current-run intermediate EXE artifacts
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN32_ID: ${{ steps.native_artifacts.outputs.win32 }}
+          X64_ID: ${{ steps.native_artifacts.outputs.x64 }}
+          ARM64_ID: ${{ steps.native_artifacts.outputs.arm64 }}
+          SIGNING_INPUT_ID: ${{ steps.upload_exe_unsigned.outputs.artifact-id }}
+        run: |
+          . .github/scripts/release-artifacts.ps1
+          # Package 已保存；清理部分完成后失败不能把交付任务变成缺输入的失败重跑。
+          try {
+            Remove-ReleaseArtifact -ArtifactId $env:WIN32_ID -ExpectedName 'Inkeys[Unsigned]'
+            Remove-ReleaseArtifact -ArtifactId $env:X64_ID -ExpectedName 'Inkeys64[Unsigned]'
+            Remove-ReleaseArtifact -ArtifactId $env:ARM64_ID -ExpectedName 'InkeysArm64[Unsigned]'
+            if ($env:SIGNING_INPUT_ID) {
+              Remove-ReleaseArtifact -ArtifactId $env:SIGNING_INPUT_ID -ExpectedName 'Signpath[unsigned]'
+            }
+          } catch {
+            $message = "最终 Package 已保存，EXE 中间产物清理未完成：$($_.Exception.Message)"
+            Write-Host "::warning::$message"
+            $message | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            throw
+          }
 
       - shell: pwsh
         run: |
@@ -734,7 +959,8 @@ jobs:
       - name: Download Package Artifact
         uses: actions/download-artifact@v8
         with:
-          name: Package
+          artifact-ids: ${{ needs.package.outputs.artifact_id }}
+          merge-multiple: true
           path: packageUpload
 
       - name: Prepare History Zip

@@ -46,6 +46,8 @@ void NextPptSlides(int check);
 void PreviousPptSlides();
 void EndPptShow();
 void FocusPptShow();
+// 初始化前无窗口生产探针，焦点/COM sink 仅在本次探针中替换。
+int RunPptFocusProductionTest() noexcept;
 // 可信会话生命周期，不等同于分页控件可见或一次 COM 页数读数。
 bool PptSessionActive();
 

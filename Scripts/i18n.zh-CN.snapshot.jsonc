@@ -65,6 +65,8 @@
       "MainButtons":
       {
         "SelectLabel": "选择",
+        "SelectClearLabel": "选择(清空)",
+        "ClickThroughLabel": "穿透",
         "MoveLabel": "拖动",
         "DrawLabel": "绘制",
         "LaserLabel": "激光笔",
@@ -77,9 +79,24 @@
         "RectangleLabel": "矩形",
         "StraightLineLabel": "直线",
         "UndoLabel": "撤回",
+        "RedoLabel": "重做",
         "ClearLabel": "清空",
+        "WhiteboardWindowTitle": "Inkeys 白板",
+        "WhiteboardPreviousLabel": "上一页",
+        "WhiteboardNextLabel": "下一页",
+        "WhiteboardAddPageLabel": "加页",
         "WhiteboardLabel": "白板",
+        "ResumeWhiteboardLabel": "返回白板",
         "CloseWhiteboardLabel": "关闭白板",
+        "ReturnToShowLabel": "返回放映",
+        "MinimizeWhiteboardLabel": "最小化白板",
+        "WhiteboardThemeLabel": "主题样式",
+        "WhiteboardBackgroundColorLabel": "背景颜色",
+        "WhiteboardBackgroundStyleLabel": "背景样式",
+        "WhiteboardBlankLabel": "空白",
+        "WhiteboardDotsLabel": "点阵",
+        "WhiteboardGridLabel": "网格",
+        "WhiteboardUnsavedLabel": "部分页面未保存",
         "FreezeLabel": "定格",
         "EndPresentationLabel": "结束放映",
         "SettingsLabel": "设置",
@@ -352,6 +369,42 @@
     "Regular":
     {
       "N": "通用",
+      "SelectAndClickThrough":
+      {
+        "N": "选择与穿透",
+        "Combined": "合并式",
+        "Separate": "分离式",
+        "CombinedDescription": "通过「选择」统一操作电脑，涵盖无墨迹和保留墨迹两种状态。",
+        "SeparateDescription": "「选择」清空墨迹后操作电脑；「穿透」保留墨迹并操作下方窗口。",
+        "ClickThrough": "穿透",
+        "ClickThroughDescription": "保留屏幕上的墨迹，让点击和触摸穿过批注层，操作下方窗口。"
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "主栏图标顺序",
+        "FollowMainButton": "跟随主按钮",
+        "FollowMainButtonReverse": "跟随主按钮（反向）",
+        "LeftToRight": "从左到右",
+        "RightToLeft": "从右到左"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "主栏展开方向调整",
+        "Centerline": "中轴线",
+        "WhenSpaceInsufficient": "当位置不足时"
+      },
+      "AutoCollapse":
+      {
+        "N": "自动收起",
+        "Drawing": "绘制时收起主栏",
+        "Erasing": "擦除时收起主栏",
+        "Dragging": "拖动主栏时收起主栏",
+        "OutsideClick": "选择或穿透模式下点击栏外时收起主栏",
+        "Description": "绘制包含画笔、形状和激光笔；底栏模式包含居中底栏。栏外点击不包含主栏及其菜单、属性和弹出面板。",
+        "Off": "关闭",
+        "NonBottom": "非底栏模式时",
+        "Always": "任何时候"
+      },
       "StartUp":
       {
         "N": "开机自启和启动行为",
@@ -385,10 +438,18 @@
           "Skip3": "极简时钟",
           "Skip4": "马年迎新"
         },
+        "TaskbarScaleBase":
+        {
+          "N": "任务栏缩放基准",
+          "E": "100% 时基础量高 48 DIP；真实量随任务栏厚度。",
+          "Off": "关闭",
+          "Base": "任务栏基础量",
+          "Actual": "任务栏真实量"
+        },
         "BarZoom":
         {
           "N": "主栏 UI 缩放",
-          "E": "实时调节主栏和按钮的缩放比例。",
+          "E": "实时调节主栏、按钮和 PPT 控件的缩放比例。",
           "Ind": "{:.2f} 倍缩放"
         },
         "SettingUIScale":
@@ -438,15 +499,40 @@
     "Draw":
     {
       "N": "绘制",
+      "Haptics":
+      {
+        "N": "笔震动反馈",
+        "Drawing": "绘制时震动反馈",
+        "Buttons": "按钮震动反馈"
+      },
+      "Cursor":
+      {
+        "N": "光标",
+        "Description": "鼠标选项仅影响软笔和硬笔；荧光笔始终预览粗细，形状使用系统光标。笔的默认光标为圆形。屏幕笔关闭边缘高亮，数位板和无法识别的笔开启边缘高亮。",
+        "MouseStyle": "鼠标",
+        "PenStyle": "笔",
+        "DefaultStyle": "默认光标",
+        "DrawingStyle": "画笔光标"
+      },
       "Effect":
       {
         "N": "绘图效果优化",
         "Device":
         {
-          "N": "绘图设备",
-          "E": "我们将根据不同设备类型优化使用体验。",
-          "Touch": "触控屏幕",
-          "MousePen": "鼠标、手写笔或数位板"
+          "N": "选择交互模式",
+          "Touch": "大屏触控模式",
+          "MousePen": "桌面交互模式",
+          "TouchE": "适用于教室、会议室等场景，直接在触控大屏上书写和操作。",
+          "MousePenE": "适用于个人电脑、平板及鼠标操控的大屏，兼顾鼠标、触控笔、数位板和触摸操作。"
+        }
+      },
+      "Touch":
+      {
+        "N": "触摸",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "断触接续",
+          "E": "触摸书写时，若屏幕短暂丢失接触后又沿原方向恢复，将尝试把两段笔迹接成一笔，减少断线。关闭后，每次抬起都会结束当前笔画。"
         }
       },
       "Eraser":
@@ -480,10 +566,40 @@
         }
       }
     },
+    "Preset":
+    {
+      "N": "预设",
+      "StartupPlacement":
+      {
+        "N": "启动后位置",
+        "E": "居中底栏会展开显示主栏；左下角或右下角悬浮窗只显示主按钮。更改将在下次启动时生效。",
+        "CenteredBottomBar": "居中底栏",
+        "BottomLeftFloating": "左下角悬浮窗",
+        "BottomRightFloating": "右下角悬浮窗"
+      }
+    },
     "Experimental":
     {
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "启用绘图硬件加速",
+          "E": "使用显卡加速画布绘制，关闭后使用软件绘制。出现绘制异常或严重卡顿时可尝试关闭；重启软件后生效。"
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "为兆芯设备启用兼容模式",
+          "E": "在兆芯 GPU 上使用兼容上传方案，其他 GPU 不受影响。可关闭此项对比绘制性能；重启软件后生效。"
+        }
+      },
       "ConsoleOutput":
       {
+        "Haptics":
+        {
+          "N": "测试触控反馈",
+          "E": "开启后重启软件，输出笔输入、按钮请求及触觉设备发送结果，帮助定位没有震动的原因。"
+        },
         "TouchArea":
         {
           "N": "输入与橡皮诊断 控制台输出",
@@ -611,7 +727,29 @@
     "HotKey":
     {
       "N": "快捷键",
-      "E": "全局快捷键：\nCtrl + Win + Alt 切换选择 / 绘制模式\n\n绘制模式下：\nCtrl + Q 定格\nCtrl + E 穿透\nCtrl + Z 撤回 / 超级恢复\n\n其余快捷键和自定义快捷键正在测试，敬请期待"
+      "E": "当前仅提供以下固定组合，可分别开启或关闭，暂不支持自定义。\n除全局往返外，其余快捷键仅在批注状态有效；设置文本输入和模态对话框优先。选择或穿透状态下交由当前应用处理。\n全局往返在设置普通编辑期间仍生效；应用模态对话框期间暂停动作，但仍保留该组合。国际键盘的 AltGr 可能与 Ctrl + Alt 冲突，可单独关闭全局往返。\n键盘快捷键不接管 PPT 翻页。",
+      "ToggleAnnotationN": "全局往返",
+      "ToggleAnnotationE": "批注与选择之间往返。合并式进入选择时保留墨迹；分离式先清空当前页。返回时恢复最近的批注工具，不恢复定格。",
+      "UndoN": "撤回",
+      "UndoE": "撤回当前页的操作，按住可连续撤回。没有可撤回内容时也不会撤回下层应用。",
+      "RedoYN": "重做",
+      "RedoYE": "重做当前页的操作，按住可连续重做。此组合与 Ctrl + Shift + Z 可独立开关。",
+      "RedoShiftZN": "重做（另一组合）",
+      "RedoShiftZE": "与 Ctrl + Y 执行相同的重做操作，可单独开启或关闭。",
+      "ClearN": "清空当前页",
+      "ClearE": "第一次清空并保持工具，空页也不进入选择。持续按住 Ctrl，松开 Delete 后再按一次即可进入选择，两种样式相同。长按 Delete 不算两次；期间新落笔或执行其它操作会重置两次按压。",
+      "FreezeN": "定格",
+      "FreezeE": "切换屏幕定格。PPT 和白板工作区不可用；不可用时不会触发下层应用的同名快捷键。",
+      "Registering": "正在注册全局往返",
+      "Disabling": "正在关闭全局往返",
+      "UnregisterFailed": "全局往返注销失败，该组合仍被保留",
+      "Registered": "全局往返已生效",
+      "Disabled": "全局往返已关闭",
+      "NotRunning": "键盘服务尚未运行",
+      "RegisterFailed": "全局往返注册失败，组合可能被其它程序占用",
+      "SynchronizationPending": "正在同步按键状态；请在普通权限窗口中松开按键后重试。",
+      "HookReady": "批注快捷键已就绪",
+      "HookFailed": "键盘钩子未安装，批注快捷键不可用"
     },
     "Community":
     {

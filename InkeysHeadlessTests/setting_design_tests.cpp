@@ -1664,7 +1664,8 @@ namespace
 				&& !events.barZoomChanged && !events.barZoomActive && !events.settingZoomActive
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
 				&& !events.safetyModeChanged && !events.startupPreviewChanged && !events.animationChanged
-				&& !events.animationRateActive && !events.dynamicEdgeLightingChanged;
+				&& !events.animationRateActive && !events.dynamicEdgeLightingChanged
+				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged;
 		};
 		const ImVec2 outside(-100, -100);
 		for (auto section : { Design::GeneralSection::Basic, Design::GeneralSection::Appearance, Design::GeneralSection::Interaction })

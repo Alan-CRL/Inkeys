@@ -1,0 +1,14 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Native boundaries and development gates"}
+{"file": ".trellis/tasks/10-19-mouse-hook-autofold/research/spec-contract-excerpts.md", "reason": "Focused exact spec excerpts + source sections; avoids native context truncation, read original relevant chapters before layer changes"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "Minimal diff, modules, ownership, encoding"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "Preserve native/Raw/WM_TOUCH gesture contracts"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 solution and no-window validation"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "PPT session, page readiness, position and business queue gates"}
+{"file": ".trellis/tasks/10-19-mouse-hook-autofold/decisions.md", "reason": "Latest user decisions override initial separated-only and migration proposals"}
+{"file": ".trellis/tasks/10-19-mouse-hook-autofold/research/hook-and-ppt-wheel.md", "reason": "Current hook locks, real wheel call stack and HiMsg absence"}
+{"file": ".trellis/tasks/10-19-mouse-hook-autofold/research/autofold-inventory-and-settings.md", "reason": "Four legacy triggers, new independent defaults, drag-fold and stroke-kind boundaries"}
+{"file": ".trellis/tasks/10-19-mouse-hook-autofold/research/win32-contracts.md", "reason": "Official hook timing/chaining and wheel contracts"}
+{"file": ".trellis/tasks/10-19-mouse-hook-autofold/research/planning-review-hook.md", "reason": "Planning pressure-test and required resolutions; final design and user decisions prevail over older research suggestions"}
+{"file": ".trellis/tasks/10-19-mouse-hook-autofold/research/planning-review-autofold.md", "reason": "Planning pressure-test and required resolutions; final design and user decisions prevail over older research suggestions"}
+{"file": ".trellis/tasks/10-19-mouse-hook-autofold/research/planning-review-resolution.md", "reason": "Planning pressure-test and required resolutions; final design and user decisions prevail over older research suggestions"}
+{"file": ".trellis/spec/native-desktop/mouse-hook-and-autocollapse.md", "reason": "Implemented bounded hook, wheel ingress, independent auto-collapse and accepted-stroke lifecycle contracts"}

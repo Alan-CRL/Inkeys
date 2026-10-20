@@ -7,9 +7,14 @@
 #include <dwrite_1.h>
 #include <wrl/client.h>
 #include <array>
+#include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "Bar.InteractionWorker.h"
+#include "../../Drawing/Draw3/Draw3.Bridge.h"
+#include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
 #include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
 
@@ -18,9 +23,12 @@ export module Inkeys.UI.Bar:Main;
 import :UI;
 import :State;
 import Inkeys.UI.Bar.EraserAttributeMotion;
+import Inkeys.UI.Bar.RecallAttributeMotion;
+export import Inkeys.UI.Bar.RecallChrome;
 import :Button;
 import :Format;
 export import :Rendering;
+export import Inkeys.UI.Bar.Metrics;
 import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
@@ -29,6 +37,7 @@ export import Inkeys.UI.Bar.ToggleClickCoalescer;
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
 import Inkeys.Message;
+import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
 
 // ====================
@@ -85,7 +94,7 @@ public:
 		std::optional<bool> eraserSelected = std::nullopt);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
-	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
 	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
@@ -98,7 +107,7 @@ public:
 	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
 	void Initialize();
-	void Execute(BarUISetClass& owner, int item);
+	bool Execute(BarUISetClass& owner, int item);
 	void DrawPreview(BarUIRendering& renderer, ID2D1DeviceContext* context, size_t index);
 	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::EraserAttributeRect rect, double scale = 1.0);
 	mutable std::mutex presentationMutex_;
@@ -112,6 +121,7 @@ private:
 	double sideSwitchExpandDuration_ = 0;
 	bool previousBelow_ = false, previousReversed_ = false;
 	int menuSide_ = -1;
+	int appliedHover_ = -1; // 仅渲染线程消费输入反馈并操作按钮动画。
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
 	IdtAtomic<bool> visible_ = false;
 	bool returnToSelectionOnClear_ = false;
@@ -132,9 +142,60 @@ private:
 		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;
 };
 
+// 撤回属性：单 70x70 Redo 按钮，开合/换边/命中语义与橡皮属性一致，无子菜单。
+class BarRecallAttributePanel
+{
+public:
+	bool Advance(BarUISetClass& owner, const Inkeys::UI::Bar::RecallChromeView& chrome,
+		bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
+		RECT workArea, POINT origin, double rigidX, double rigidY,
+		const BarUiTimelineClass* parentTimeline = nullptr,
+		bool dragPlacementLocked = false);
+	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
+	void CommitPresented();
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
+	bool ResetPointerFeedback();
+	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
+	void Close(BarUISetClass& owner);
+	RECT Bounds() const;
+	std::array<RECT,3> PresentedRegions() const;
+	Inkeys::UI::Bar::RecallAttributePresentation PresentationSnapshot() const;
+	bool Changed() const noexcept { return changed_; }
+	bool Active() const noexcept { return active_; }
+	bool WantsKeyboard() const noexcept { return visible_.load(); }
+private:
+	void Initialize();
+	bool Execute(BarUISetClass& owner, int item);
+	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::RecallAttributeRect rect, double scale = 1.0);
+	mutable std::mutex presentationMutex_;
+	Inkeys::UI::Bar::RecallAttributeLayout layout_;
+	Inkeys::UI::Bar::RecallAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::RecallAttributeLayoutInput stableLayoutInput_, dragLayoutInput_;
+	double zoom_ = 1;
+	bool initialized_ = false, changed_ = false, active_ = false;
+	bool hasStableLayoutInput_ = false, dragPlacementLocked_ = false;
+	bool releaseSwitchLayoutLocked_ = false, sideSwitchActive_ = false;
+	double sideSwitchExpandDuration_ = 0;
+	bool previousBelow_ = false;
+	int appliedHover_ = -1; // 仅渲染线程消费输入反馈并操作按钮动画。
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	Inkeys::UI::Bar::RecallSurfaceMotion panelMotion_;
+	BarButtonClass redoButton_;
+	BarUiShapeClass surface_;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
+	unsigned long long deviceGeneration_ = 0;
+};
+
 
 namespace Inkeys::UI::Bar
 {
+	// 隐藏按钮继续留在运行时列表，位置跟随来源按钮；渲染与离屏回归共用。
+	void AnchorHiddenBarButton(BarButtonSetClass& buttons, bool folded,
+		BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset,
+		const std::function<void(BarUiValueClass&, double)>& setPositionTarget);
+
 	// Main Bar 与跨 HWND surface 共用这些行为入口，调用方只保留资源和拓扑。
 	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtonHoverStageEnum>* hoverStage);
@@ -144,19 +205,32 @@ namespace Inkeys::UI::Bar
 	bool StartBarButtonHoverVisual(BarButtonClass& button) noexcept;
 	bool StopBarButtonHoverVisual(BarButtonClass& button, bool immediate,
 		bool preserveVisual = false) noexcept;
+	bool UpdateBarButtonHoverVisual(BarUiPctClass& pct, BarUiColorClass* fill,
+		IdtAtomic<BarButtonHoverStageEnum>& stage, bool visible,
+		bool hoverAllowed, double fadeDurationSeconds) noexcept;
 	bool UpdateBarButtonHoverVisual(BarButtonClass& button, bool visible,
 		bool hoverAllowed, double fadeDurationSeconds) noexcept;
 	void SetBarButtonPressedVisual(BarButtonClass& button, bool pressed) noexcept;
 	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
 		bool visible, bool enabled, bool selected,
-		double durationSeconds) noexcept;
+		double durationSeconds, std::optional<COLORREF> contentColor = std::nullopt,
+		bool iconVisible = true, std::optional<COLORREF> fillColorOverride = std::nullopt,
+		std::optional<COLORREF> frameColorOverride = std::nullopt) noexcept;
 
-	struct BarButtonDrawOptions
+	// 固定属性借用已有字段，不复制控件，不进入注册表。
+	struct BarButtonVisualParts
 	{
-		BarUiWordClass* secondary = nullptr;
-		DWRITE_FONT_WEIGHT primaryWeight = DWRITE_FONT_WEIGHT_BOLD;
-		DWRITE_FONT_WEIGHT secondaryWeight = DWRITE_FONT_WEIGHT_NORMAL;
+		BarUiShapeClass& background;
+		BarUiSVGClass* icon = nullptr;
+		BarUiWordClass* primary = nullptr;
+		BarUiValueClass* pressScale = nullptr;
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage = nullptr;
 	};
+	void RetargetBarFixedButtonVisual(const BarButtonVisualParts& parts,
+		bool visible, bool enabled, bool selected, bool pressed, double duration,
+		std::optional<COLORREF> contentColor = std::nullopt, bool iconVisible = true,
+		std::optional<COLORREF> fillColor = std::nullopt,
+		std::optional<COLORREF> frameColor = std::nullopt) noexcept;
 
 	struct BarButtonVisualInheritance
 	{
@@ -165,6 +239,84 @@ namespace Inkeys::UI::Bar
 		BarUiInheritClass primary;
 		std::optional<BarUiInheritClass> secondary;
 	};
+
+	struct BarButtonDrawOptions
+	{
+		BarUiWordClass* secondary = nullptr;
+		DWRITE_FONT_WEIGHT primaryWeight = DWRITE_FONT_WEIGHT_BOLD;
+		DWRITE_FONT_WEIGHT secondaryWeight = DWRITE_FONT_WEIGHT_NORMAL;
+		DWRITE_TEXT_ALIGNMENT primaryAlignment = DWRITE_TEXT_ALIGNMENT_CENTER;
+		bool drawIcon = true;
+		using Content = std::function<bool(BarUIRendering&, ID2D1DeviceContext*,
+			BarButtonClass&, const BarButtonVisualInheritance&)>;
+		Content underlay;
+		Content content;
+	};
+
+	// 所有目标消费同一个渲染批次时间；观察者只接收实际推进结果，不再推进动画。
+	enum class BarButtonAnimationPart { Shape, Icon, Primary, Secondary, Press };
+	enum class BarButtonAnimationProperty { Geometry, Visibility, Color, Content };
+	struct BarButtonAnimationContext
+	{
+		double dtSeconds = 0.0;
+		double speedRate = 1.0;
+		bool animationEnabled = true;
+		bool forceReplace = false;
+		bool visible = true;
+		bool hoverAllowed = true;
+		bool finiteSvgProbe = false;
+		std::function<void(const void*, BarButtonAnimationPart, BarButtonAnimationProperty,
+			bool changed, bool active, bool same)> observe;
+	};
+	struct BarButtonAnimationResult { bool changed = false, active = false; };
+	[[nodiscard]] BarButtonAnimationResult AdvanceBarButtonVisual(
+		BarButtonClass& button, const BarButtonAnimationContext& frame,
+		BarUiWordClass* secondary = nullptr);
+	[[nodiscard]] BarButtonAnimationResult AdvanceBarShapeVisual(
+		BarUiShapeClass&, const BarButtonAnimationContext&);
+	[[nodiscard]] BarButtonAnimationResult AdvanceBarSvgVisual(
+		BarUiSVGClass&, const BarButtonAnimationContext&);
+	[[nodiscard]] BarButtonAnimationResult AdvanceBarWordVisual(
+		BarUiWordClass&, const BarButtonAnimationContext&,
+		BarButtonAnimationPart part = BarButtonAnimationPart::Primary);
+
+	void ConfigureBarButtonVisualTargets(BarButtonClass& button,
+		BarButtonVisualLayoutKind layoutKind, double durationSeconds,
+		double scale = 1.0, bool direct = false,
+		std::optional<double> iconHeightOverride = std::nullopt);
+	enum class BarButtonListLayoutKind { Main, GroupedGrid, SingleRow };
+	struct BarButtonListPlacement
+	{
+		std::shared_ptr<BarButtonClass> button;
+		double x = 0.0, y = 0.0, width = 0.0, height = 0.0;
+		int column = 0, row = 0, columnSpan = 1, rowSpan = 1;
+		bool forced = false;
+	};
+	struct BarButtonListLayout
+	{
+		std::vector<BarButtonListPlacement> placements;
+		double width = 0.0, height = 0.0;
+		int subColumns = 0, explicitRows = 0, totalRows = 0;
+		bool showDivider = false;
+	};
+	[[nodiscard]] BarButtonListLayout ResolveBarButtonListLayout(
+		const std::vector<std::shared_ptr<BarButtonClass>>& buttons,
+		BarButtonListLayoutKind kind,
+		const std::vector<std::shared_ptr<BarButtonClass>>& secondGroup = {});
+
+	struct BarButtonHitSnapshot
+	{
+		D2D1_RECT_F boundsDip{};
+		bool visible = false, enabled = false;
+		double radiusX = 0.0, radiusY = 0.0, superellipseExponent = 0.0;
+	};
+	[[nodiscard]] BarButtonHitSnapshot ResolveBarShapeHitSnapshot(
+		const BarUiShapeClass& shape, const BarUiInheritClass& inherit,
+		bool visible = true, bool enabled = true) noexcept;
+	[[nodiscard]] BarButtonHitSnapshot ResolveBarButtonHitSnapshot(
+		BarButtonClass& button, const BarUiInheritClass& inherit) noexcept;
+	[[nodiscard]] bool HitTestBarButton(const BarButtonHitSnapshot& hit,
+		double xDip, double yDip) noexcept;
 
 	// 显式父坐标是唯一真值；绘制与 dirty 必须先建立同一条继承链。
 	[[nodiscard]] BarButtonVisualInheritance
@@ -176,6 +328,10 @@ namespace Inkeys::UI::Bar
 		ID2D1DeviceContext* deviceContext, BarButtonClass& button,
 		const BarUiInheritClass& inherit,
 		const BarButtonDrawOptions& options = {});
+	bool DrawBarFixedButtonVisual(BarUIRendering& renderer, ID2D1DeviceContext* context,
+		const BarButtonVisualParts& parts, const BarButtonVisualInheritance& inheritance,
+		DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL,
+		DWRITE_TEXT_ALIGNMENT alignment = DWRITE_TEXT_ALIGNMENT_LEADING);
 	bool DrawBarBackgroundVisual(BarUIRendering& renderer,
 		ID2D1DeviceContext* deviceContext, BarUiShapeClass& background,
 		const BarUiInheritClass& inherit, RECT* targetRect = nullptr,
@@ -367,6 +523,9 @@ struct BarPendingDisplaySnapshot
 	RECT workArea{ 0, 0, 1, 1 };
 	UINT dpi = USER_DEFAULT_SCREEN_DPI;
 	unsigned long long serial = 0;
+	double uiBaseScale = 1.0;
+	double desktopDockLine = 1.0;
+	bool protectBottomEdge = false;
 };
 
 struct BarBottomDockPresentedSnapshot
@@ -391,6 +550,8 @@ struct BarBottomDockPresentedSnapshot
 		RECT workArea{ 0, 0, 1, 1 };
 		UINT dpi = USER_DEFAULT_SCREEN_DPI;
 		unsigned long long displaySerial = 0;
+	double desktopDockLine = 1.0;
+	bool protectBottomEdge = false;
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
@@ -416,6 +577,8 @@ public:
 	void StopRendering();
 	// 鼠标交互
 	void Interact();
+	// 仅交互 owner 调用，顶层与嵌套等待共享有限批量的 Hook/策略消费。
+	void PollGlobalMouseInput();
 	// 仅合并已经判定为展开/收起的动作，不拦截状态切换和原始输入。
 	bool TryBeginToggle(Inkeys::UI::Bar::BarToggleChannel channel)
 	{
@@ -443,10 +606,29 @@ public:
 	BarMediaClass barMedia;
 	BarButtonSetClass barButtonSet;
 	BarUIRendering spec;
+	bool HitTestPresentedButton(const BarButtonClass& button,
+		double layoutXDip, double layoutYDip) const;
+	bool HitTestPresentedShape(const BarUiShapeClass& shape,
+		double layoutXDip, double layoutYDip) const;
+	bool HitTestPresentedShape(const BarUiSuperellipseClass& shape,
+		double layoutXDip, double layoutYDip) const;
 
+	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
+	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
+	Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar;
 	BarStateClass barState;
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
+	BarRecallAttributePanel recallAttribute;
+	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
+	std::mutex recallChromeMutex;
+	Inkeys::UI::Bar::RecallChromeState recallChrome{};
+	// 本次统一投影发布的view供布局颜色和弹窗共用，不在getter再次拼实时输入。
+	Inkeys::UI::Bar::RecallChromeView recallChromePresentation{};
+	// 用墙钟期限，不累加动画 dt。主栏休眠时动画时钟会停，并且恢复后的第一帧 dt 为 0。
+	std::chrono::steady_clock::time_point recallChromeIdleDeadline{};
+	bool recallChromeIdleArmed = false;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
@@ -483,6 +665,23 @@ public:
 	Inkeys::UI::Bar::Ui3FiniteSignature ReadFiniteSignature(const StateModeVersionedSnapshot& tool);
 	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
 	void CollapseAuxiliaryPanels(bool cancelCapture = true);
+	// 主栏点击展开对应 2×2；关闭只收面板，布局等 3 秒空闲后调整。
+	void OpenRecallFromUndo();
+	void OpenRecallFromRedo();
+	void NoteRecallPopupRedo();
+	bool ActivateRecallPopupCommand();
+	void NoteRecallPopupDismissed();
+	void ClearRecallForDrawing();
+	void SettleRecallChromeForWorkspace();
+	bool AdvanceRecallChromeIdle(double dtSeconds);
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView();
+	Inkeys::UI::Bar::RecallChromeView RecallChromeView(bool compactSelection);
+	void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
+	void ArmRecallChromeIdleTimer() noexcept;
+	void DisarmRecallChromeIdleTimer() noexcept;
+	void ArmRecallChromeIdleDeadline();
+	// 到期返回 true 并唤醒渲染；未到期时 retryMs 为剩余时间。
+	bool PollRecallChromeIdleTimer(unsigned& retryMs);
 	void StartDisplayTracking();
 	void StopDisplayTracking() noexcept;
 	void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot) noexcept;
@@ -506,7 +705,11 @@ public:
 					pendingWorkAreaRight.load(memory_order_relaxed),
 					pendingWorkAreaBottom.load(memory_order_relaxed) },
 				pendingDisplayDpi.load(memory_order_relaxed),
-				serialBefore };
+				serialBefore,
+				pendingDisplayUiBaseScale.load(memory_order_relaxed),
+				pendingDesktopDockLine.load(memory_order_relaxed),
+				pendingProtectBottomEdge.load(memory_order_relaxed) };
+			std::atomic_thread_fence(memory_order_acquire);
 			if (pendingDisplaySerial.load(memory_order_acquire) == serialBefore)
 				return snapshot;
 		}
@@ -599,6 +802,8 @@ public:
 				snapshot.dpi = bottomDockPresentedDisplayDpi.load(memory_order_relaxed);
 				snapshot.displaySerial =
 				bottomDockPresentedDisplaySerial.load(memory_order_relaxed);
+			snapshot.desktopDockLine = bottomDockPresentedDesktopDockLine.load(memory_order_relaxed);
+			snapshot.protectBottomEdge = bottomDockPresentedProtectBottomEdge.load(memory_order_relaxed);
 			snapshot.directTranslation = POINT{
 				bottomDockPresentedDirectTranslationX.load(memory_order_relaxed),
 				bottomDockPresentedDirectTranslationY.load(memory_order_relaxed) };
@@ -788,6 +993,11 @@ public:
 	}
 
 protected:
+	void PreparePresentedButtonHits();
+	void PublishPresentedButtonHits();
+	mutable std::mutex presentedButtonHitsMutex_;
+	std::unordered_map<const BarButtonClass*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedButtonHits_, candidateButtonHits_;
+	std::unordered_map<const void*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedVisualHits_, candidateVisualHits_;
 	void BeginBottomDockTransition() noexcept
 	{
 		Inkeys::UI::Bar::BeginBarBottomDockTransition(bottomDockTransitionSerial);
@@ -834,7 +1044,7 @@ protected:
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
 	// 拖动交互
-	BarSeekResult Seek(const ExMessage& msg);
+	Inkeys::UI::Bar::InteractionTask<BarSeekResult> Seek(const ExMessage& msg);
 	bool SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled);
 	void ActivateBorderCursorTracking(HWND hWnd);
 	void RegisterBorderCursorLight(HWND hWnd);
@@ -851,6 +1061,7 @@ protected:
 	void ShutdownWindowInput(HWND hWnd);
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
+	bool IsAutoCollapsePointerHit(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 	Inkeys::UI::Bar::BarToggleClickCoalescer toggleClickCoalescer;
 
@@ -894,6 +1105,9 @@ protected:
 	atomic<LONG> pendingWorkAreaRight = 1;
 	atomic<LONG> pendingWorkAreaBottom = 1;
 	atomic<UINT> pendingDisplayDpi = USER_DEFAULT_SCREEN_DPI;
+	atomic<double> pendingDisplayUiBaseScale = 1.0;
+	atomic<double> pendingDesktopDockLine = 1.0;
+	atomic<bool> pendingProtectBottomEdge = false;
 	atomic<LONG> presentedMonitorOriginX = 0;
 	atomic<LONG> presentedMonitorOriginY = 0;
 	// 交互线程发布目标，渲染线程只回写当前视觉偏移与恢复完成状态。
@@ -947,6 +1161,8 @@ protected:
 		atomic<LONG> bottomDockPresentedWorkAreaBottom = 1;
 		atomic<UINT> bottomDockPresentedDisplayDpi = USER_DEFAULT_SCREEN_DPI;
 		atomic<unsigned long long> bottomDockPresentedDisplaySerial = 0;
+	atomic<double> bottomDockPresentedDesktopDockLine = 1.0;
+	atomic<bool> bottomDockPresentedProtectBottomEdge = false;
 	atomic<LONG> bottomDockPresentedDirectTranslationX = 0;
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
@@ -989,11 +1205,17 @@ namespace Inkeys::UI::Bar
 	};
 
 	export WNDPROC WindowProc() noexcept;
+	export std::function<Inkeys::UI::RenderPipeline::FrameResult(
+		const Inkeys::UI::RenderPipeline::FrameContext&)> CreateBarOffscreenRenderCallback(
+		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present);
+	export int RunUi3MultiTargetOffscreenBenchmark();
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
+	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
-	export void Initialization();
+	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =
+		Inkeys::UI::StartupPlacement::CenteredBottomBar);
 	export void RequestPresentationAlpha(std::uint8_t alpha) noexcept;
 	export std::uint8_t CommittedPresentationAlpha() noexcept;
 	export std::uint8_t RequestedPresentationAlpha() noexcept;
@@ -1003,13 +1225,16 @@ namespace Inkeys::UI::Bar
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
+	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
+	export void RefreshToolState() noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
 	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;
 	export std::optional<bool> ConsumePptSceneTransition() noexcept;
 	export HWND PptPresentationWindow() noexcept;
 	export HMONITOR PptSceneMonitor() noexcept;
+	export void UpdateSceneMonitor(HMONITOR monitor) noexcept;
 	export void UpdatePptSceneMonitor(HWND window) noexcept;
 	export double SceneBottomDockInsetDip() noexcept;
 	export void SetBusinessFocusCallback(std::function<void()> callback);
@@ -1030,6 +1255,9 @@ namespace Inkeys::UI::Bar
 	export bool HideWhiteboardSnapIndicator() noexcept;
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
+	export void NotifyCanvasStrokeAccepted(
+		const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& notice) noexcept;
+	export std::uint64_t AutoCollapseSceneRevision() noexcept;
 	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
 
 	bool InitializeWindow(BarUISetClass& barUISet);

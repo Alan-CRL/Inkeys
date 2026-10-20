@@ -23,6 +23,21 @@ namespace Inkeys::UI::Bar
 		bool& boundsReady_;
 	};
 
+	// 排除屏幕最底一物理行；包含尚未被布局吸收的 HWND 直移量。
+	[[nodiscard]] inline RECT ClipBarViewportForTaskbarEdge(RECT viewport,
+		POINT monitorOrigin, POINT translation, LONG screenBottom, bool protect) noexcept
+	{
+		if (protect) viewport.bottom = (std::min)(viewport.bottom,
+			(std::max)(viewport.top, screenBottom - 1 - monitorOrigin.y - translation.y));
+		return viewport;
+	}
+
+	[[nodiscard]] inline bool IsBarWindowAboveTaskbarEdge(const RECT& window,
+		LONG screenBottom, bool protect) noexcept
+	{
+		return !protect || window.bottom <= screenBottom - 1;
+	}
+
 	struct BarWindowScalarRange
 	{
 		double minimum = 0.0;

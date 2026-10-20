@@ -1,0 +1,848 @@
+{
+  "cases": [
+    {
+      "case": "backbuffer.clear",
+      "alpha_nonzero": 16384,
+      "rgb_nonzero": 16384,
+      "result": "PASS",
+      "terminal_line": 23
+    },
+    {
+      "case": "offscreen.clear",
+      "alpha_nonzero": 16384,
+      "rgb_nonzero": 16384,
+      "result": "PASS",
+      "terminal_line": 28
+    },
+    {
+      "case": "backbuffer.cursor.production",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 37,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "offscreen.cursor.production",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 45,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "backbuffer.cursor.blend_disabled",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 53,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "offscreen.cursor.blend_disabled",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 61,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "upload.b0",
+      "result": "PASS",
+      "terminal_line": 69
+    },
+    {
+      "case": "upload.t0",
+      "result": "PASS",
+      "terminal_line": 76
+    },
+    {
+      "case": "diagnostic.constant.blend_disabled",
+      "alpha_nonzero": 1296,
+      "rgb_nonzero": 1296,
+      "result": "PASS",
+      "terminal_line": 86,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "diagnostic.constant.production_blend",
+      "alpha_nonzero": 1296,
+      "rgb_nonzero": 1296,
+      "result": "PASS",
+      "terminal_line": 94,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "diagnostic.fields.blend_disabled",
+      "alpha_nonzero": 1296,
+      "rgb_nonzero": 0,
+      "result": "PASS",
+      "terminal_line": 102,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "diagnostic.cursor_only.blend_disabled",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "result": "PASS",
+      "terminal_line": 111,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "diagnostic.cursor_only.production_blend",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "result": "PASS",
+      "terminal_line": 119,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "sequence.original_after_cursor_only",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 128,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "sequence.full_recompiled",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 142,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "sequence.full_cursor_entry_constant",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 150,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "sequence.full_cursor_ahead",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 158,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "sequence.original_final",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "result": "FAIL",
+      "terminal_line": 166,
+      "ps_invocations": 1368,
+      "vs_invocations": 6
+    },
+    {
+      "case": "matrix.route.CompactIntegerRoute.mask00",
+      "alpha_nonzero": 1296,
+      "rgb_nonzero": 1296,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 239
+    },
+    {
+      "case": "matrix.route.CompactIntegerRoute.mask15",
+      "alpha_nonzero": 1296,
+      "rgb_nonzero": 1296,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 267
+    },
+    {
+      "case": "matrix.route.CompactFloatRoute.mask00",
+      "alpha_nonzero": 1296,
+      "rgb_nonzero": 1296,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 295
+    },
+    {
+      "case": "matrix.route.CompactFloatRoute.mask15",
+      "alpha_nonzero": 1296,
+      "rgb_nonzero": 1296,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 323
+    },
+    {
+      "case": "matrix.route.FullEarlyConstant.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 351
+    },
+    {
+      "case": "matrix.route.FullEarlyConstant.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 379
+    },
+    {
+      "case": "matrix.route.FullFloatRoute.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 407
+    },
+    {
+      "case": "matrix.route.FullFloatRoute.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 435
+    },
+    {
+      "case": "matrix.bind.original.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 463
+    },
+    {
+      "case": "matrix.restore.original.after_mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 491
+    },
+    {
+      "case": "matrix.bind.original.mask01",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 519
+    },
+    {
+      "case": "matrix.restore.original.after_mask01",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 547
+    },
+    {
+      "case": "matrix.bind.original.mask02",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 575
+    },
+    {
+      "case": "matrix.restore.original.after_mask02",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 603
+    },
+    {
+      "case": "matrix.bind.original.mask03",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 631
+    },
+    {
+      "case": "matrix.restore.original.after_mask03",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 659
+    },
+    {
+      "case": "matrix.bind.original.mask04",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 687
+    },
+    {
+      "case": "matrix.restore.original.after_mask04",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 715
+    },
+    {
+      "case": "matrix.bind.original.mask05",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 743
+    },
+    {
+      "case": "matrix.restore.original.after_mask05",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 771
+    },
+    {
+      "case": "matrix.bind.original.mask06",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 799
+    },
+    {
+      "case": "matrix.restore.original.after_mask06",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 827
+    },
+    {
+      "case": "matrix.bind.original.mask07",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 855
+    },
+    {
+      "case": "matrix.restore.original.after_mask07",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 883
+    },
+    {
+      "case": "matrix.bind.original.mask08",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 911
+    },
+    {
+      "case": "matrix.restore.original.after_mask08",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 939
+    },
+    {
+      "case": "matrix.bind.original.mask09",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 967
+    },
+    {
+      "case": "matrix.restore.original.after_mask09",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 995
+    },
+    {
+      "case": "matrix.bind.original.mask10",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1023
+    },
+    {
+      "case": "matrix.restore.original.after_mask10",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1051
+    },
+    {
+      "case": "matrix.bind.original.mask11",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1079
+    },
+    {
+      "case": "matrix.restore.original.after_mask11",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1107
+    },
+    {
+      "case": "matrix.bind.original.mask12",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1135
+    },
+    {
+      "case": "matrix.restore.original.after_mask12",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1163
+    },
+    {
+      "case": "matrix.bind.original.mask13",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1191
+    },
+    {
+      "case": "matrix.restore.original.after_mask13",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1219
+    },
+    {
+      "case": "matrix.bind.original.mask14",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1247
+    },
+    {
+      "case": "matrix.restore.original.after_mask14",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1275
+    },
+    {
+      "case": "matrix.bind.original.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1303
+    },
+    {
+      "case": "matrix.restore.original.after_mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1331
+    },
+    {
+      "case": "matrix.bind.original.finite_laser.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1359
+    },
+    {
+      "case": "matrix.family.CursorFamilyOnly.mask00",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1387
+    },
+    {
+      "case": "matrix.family.CursorFamilyOnly.mask15",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1415
+    },
+    {
+      "case": "matrix.family.CursorWithLaser.mask00",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1443
+    },
+    {
+      "case": "matrix.family.CursorWithLaser.mask15",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1471
+    },
+    {
+      "case": "matrix.family.FullWithoutLaser.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1499
+    },
+    {
+      "case": "matrix.family.FullWithoutLaser.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1527
+    },
+    {
+      "case": "matrix.family.CursorWithOperators.mask00",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1555
+    },
+    {
+      "case": "matrix.family.CursorWithOperators.mask15",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1583
+    },
+    {
+      "case": "matrix.family.FullWithoutOperators.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1611
+    },
+    {
+      "case": "matrix.family.FullWithoutOperators.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1639
+    },
+    {
+      "case": "matrix.family.CursorWithHistory.mask00",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1667
+    },
+    {
+      "case": "matrix.family.CursorWithHistory.mask15",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1695
+    },
+    {
+      "case": "matrix.family.FullWithoutHistory.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1723
+    },
+    {
+      "case": "matrix.family.FullWithoutHistory.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1751
+    },
+    {
+      "case": "matrix.family.CursorWithTrustedSnapshot.mask00",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1779
+    },
+    {
+      "case": "matrix.family.CursorWithTrustedSnapshot.mask15",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1807
+    },
+    {
+      "case": "matrix.family.FullWithoutTrustedSnapshot.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1835
+    },
+    {
+      "case": "matrix.family.FullWithoutTrustedSnapshot.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1863
+    },
+    {
+      "case": "matrix.family.CursorWithShape.mask00",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1891
+    },
+    {
+      "case": "matrix.family.CursorWithShape.mask15",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 1919
+    },
+    {
+      "case": "matrix.family.FullWithoutShape.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1947
+    },
+    {
+      "case": "matrix.family.FullWithoutShape.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 1975
+    },
+    {
+      "case": "matrix.family.CursorWithDefaultInk.mask00",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 2003
+    },
+    {
+      "case": "matrix.family.CursorWithDefaultInk.mask15",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 2031
+    },
+    {
+      "case": "matrix.family.FullWithoutDefaultInk.mask00",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 2059
+    },
+    {
+      "case": "matrix.family.FullWithoutDefaultInk.mask15",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 2087
+    },
+    {
+      "case": "matrix.final.original",
+      "alpha_nonzero": 0,
+      "rgb_nonzero": 0,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "FAIL",
+      "terminal_line": 2115
+    },
+    {
+      "case": "matrix.final.cursor_only",
+      "alpha_nonzero": 848,
+      "rgb_nonzero": 848,
+      "ps_invocations": 1368,
+      "vs_invocations": 6,
+      "binding_status": "PASS",
+      "result": "PASS",
+      "terminal_line": 2143
+    }
+  ],
+  "counts": {
+    "PASS": 28,
+    "FAIL": 59
+  }
+}

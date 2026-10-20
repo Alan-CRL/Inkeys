@@ -1146,6 +1146,41 @@ Clear 与正式 Draw 的对比会定位设备/读回、生产管线或产品实�
 - 等待同Win7现有Run-Win7-PixelTest.cmd六例；如全部通过，再单变量核对生产预热/Grip/dirty Copy。任务保持in_progress。
 
 
+## Session 38: Win7新设备GPU与ULW分界及诊断候选
+<!-- trellis-session: v=2 fp=620bbc65f6574b02 -->
+
+**Date**: 2026-10-04
+**Task**: Win7新设备GPU与ULW分界及诊断候选
+**Branch**: `chore/publish`
+
+### Summary
+
+继续原任务：WARP独立Draw透明；VMware硬件源/DIB有墨但切橡皮才刷新。交付分段shader与全量ULW对照，Win7恢复尚待实测。
+
+### Main Changes
+
+- 保留正式输入、shader与FLIP，新增显式独立上传/PS诊断、ULW控制与阶段耗时、系统DLL文件版本采集。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整ARM64 Debug和x64 Release、两架构13例像素自检与Headless、ARM64 ULW copy、实际WinPS collector、独立审查通过。
+- [OK] 橡皮隐藏测试首次因隔离cwd缺Build而保存失败；预建Build后同EXE默认/全量各exit0，保留原失败输出。
+- [OK] 原六采集、八CSO、旧ZIP共15项hash保持；新包CRC/逐文件核验通过，EXE A18828...EE5D、ZIP 604118...E2B9。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 同Win7运行Run-Win7-PixelTest.cmd；VMware设备对比Collect-Win7.cmd与Run-Win7-Full-ULW.cmd，回传完整目录及切橡皮前后是否可见。
+- 任务保持in_progress；未commit、push、archive，原始现场和旧包保留。
+
+
 ## Session 39: Pen width DIP policy implemented and automatically verified
 <!-- trellis-session: v=2 fp=1714360cd827bc94 -->
 
@@ -1279,6 +1314,72 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 
 - Task completed and archived; release parent and Win7 task remain active. No push or PR.
 
+
+## Session 43: Win7 Collect实测确认完整PS与精简PS分界
+<!-- trellis-session: v=2 fp=8cfe32e4d40f7f7c -->
+
+**Date**: 2026-10-05
+**Task**: Win7 Collect实测确认完整PS与精简PS分界
+**Branch**: `chore/publish`
+
+### Summary
+
+Collect自动跑齐13例；7项新控制全通过，正式PS仍透明。正常程序走WARP，ULW源42次全零。当前设备无需重复旧测试，原任务继续。
+
+### Main Changes
+
+- 仅只读调查和保存原任务研究报告；不修改产品代码或其它任务。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 核对A18828...EE5D候选身份、七控制PASS、完整PS四DrawFAIL及正常输入/像素/耗时证据；原六文件SHA保持，无构建/EXE/GUI运行。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 新探针在对照后恢复完整原PS做交错重复，先排序列效应，再做单变量PS路由分解。
+- 此前硬件非零源VMware设备才补同候选普通/Full-ULW视觉对照；Win7唯一shader指令根因与真实恢复未证明，任务in_progress，无commit/push/archive。
+
+
+## Session 44: Win7 单CMD三阶段诊断候选交付
+<!-- trellis-session: v=2 fp=b9520405f92a989e -->
+
+**Date**: 2026-10-05
+**Task**: Win7 单CMD三阶段诊断候选交付
+**Branch**: `chore/publish`
+
+### Summary
+
+继续Win7主画布任务，交付单CMD候选；18项完整PS序列和普通/完整ULW对照，本机验证通过，Win7视觉待测。
+
+### Main Changes
+
+- 追加原PS反向复验及三个完整PS诊断变体，仅自检使用；单CMD统一probe/普通/full ULW，临时Draw3/Cursor日志。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 两架构完整solution及18项pixel/Headless通过；实际WinPS ProbeOnly、11项mock、2项CMD和独立FXC/review PASS；正式资源、16项资料、ZIP逐文件保持。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 两台Win7各运行Run-Win7-Diagnostics.cmd并回传整个时间目录。任务保持in_progress；无commit/push/archive。
+
+
 ## Session 45: 首发规范审查及最终Release验证收口
 <!-- trellis-session: v=2 fp=63d61fa7f586876f -->
 
@@ -1310,6 +1411,70 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 0811通知遮挡的新配对与共同Present/光学延迟缺口保留；Win7由独立任务处理后需实际最终源码重建与目标机验收，正式CI/签名/上传未执行。不自动追加优化或全仓审查。
+
+
+## Session 46: Win7 224620完整PS失败进一步定位
+<!-- trellis-session: v=2 fp=6d84ff506e42d853 -->
+
+**Date**: 2026-10-06
+**Task**: Win7 224620完整PS失败进一步定位
+**Branch**: `chore/publish`
+
+### Summary
+
+新OneClick EXE日志18项完整：7诊断通过/5sequence全失败；WARP输入保存正常而源透明，完整PS故障边界在ULW之前，仍无唯一opcode。
+
+### Main Changes
+
+- 只读六文件与真实DXBC，保存shader/normal研究和总结；规范记录入口哨兵仍位于typeguard、资源绑定未隔离边界。未改产品或制造新版本。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 现场EXE身份匹配，18项与六文件hash保持；normal 411mouse/9对RTS及10源样本0独立核验；静态实际字节码/资源范围检查，无编译或GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 待微型整数路由与同原PS分组typed绑定反向对照；另台VMware仍缺同包普通/full三阶段及观察。任务in_progress，无commit/push/archive。
+
+
+## Session 47: Win7全面双后端87项单CMD诊断候选
+<!-- trellis-session: v=2 fp=39e5a50ff9762a55 -->
+
+**Date**: 2026-10-06
+**Task**: Win7全面双后端87项单CMD诊断候选
+**Branch**: `chore/publish`
+
+### Summary
+
+继续原任务；完成路由/资源/功能群矩阵和三阶段单入口，Win11检查通过，Win7修复待实测
+
+### Main Changes
+
+- 87项/driver矩阵、Hardware早退与schema/manifest严格采集身份；正式shader保持
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug ARM64 + Release x64 solution、4x87 GPU、Headless、WinPS ProbeOnly/argv/mock、字节与ZIP核验通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 两台Win7各一次完整根目录及两轮视觉观察；不归档、不声明恢复
 
 
 ## Session 48: 0811自动窗口对照与有限证据收尾
@@ -1426,6 +1591,52 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 
 - 通用四子页及旧入口映射，保留原控件配置/FIFO/实时行为。
 - 实现独立箭头、紧凑二次点击菜单、键盘焦点、点击屏障及可反向动画。
+## Session 51: Win7 flip与双源诊断公开证据交叉核验
+<!-- trellis-session: v=2 fp=82023c0927324be3 -->
+
+**Date**: 2026-10-07
+**Task**: Win7 flip与双源诊断公开证据交叉核验
+**Branch**: `chore/publish`
+
+### Summary
+
+公共mpv证据成立但UAV修复不适用；诊断双输出/noBlend合规，新增非零底图Retain覆盖边界，原87包保留待Win7
+
+### Main Changes
+
+- 仅研究与spec判断边界；未修改产品代码、新包、构建或GUI
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 只读源码/DXBC/当前包来源hash、公开原始提交/日志及独立窄审查
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 等两台Win7现有87包三阶段/观察后按可恢复因果修复；任务in_progress
+
+
+## Session 52: Win7全面87项回传定位DefaultInk代码群
+<!-- trellis-session: v=2 fp=cf9bce7abc586b48 -->
+
+**Date**: 2026-10-08
+**Task**: Win7全面87项回传定位DefaultInk代码群
+**Branch**: `chore/publish`
+
+### Summary
+
+真实21文件完整，WARP87项28PASS59FAIL，DefaultInk加入/移除双向分界；正常/full源62采样全零。独立静态候选GuardedDefaultOutput及FullNoThin编译通过，未改生产，Win7修复待验。
+
+### Main Changes
+
+- 记录原始哈希、逐项矩阵、两轮输入/ULW及独立源码DXBC分析，更新现有任务上下文/spec；继续in_progress
 
 ### Git Commits
 
@@ -1434,6 +1645,7 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Testing
 
 - [OK] 完整 Solution Debug|ARM64 exit0；最终 --no-window exit0；三 DPI 各564帧，悬停色0越界，i18n370/370及diff检查通过。
+- [OK] 原始及副本21文件SHA一致，生产HLSL/CSO/probe header保持冻结SHA；FXC两候选成功，JSON及git diff --check --ignore-submodules通过
 
 ### Status
 
@@ -1471,6 +1683,58 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 
 - [OK] 此前完整Debug|ARM64构建与完整--no-window回归通过；本轮仅文档与归档，不重复编译。
 - [OK] 归档上下文校验和暂存差异检查通过。
+- 只隔离DefaultInk尾部控制/薄线输入，验证真实type0/3与非零底图Retain；VMware硬件光学分界仍待该机日志
+
+
+## Session 53: Win7完整guarded shader同EXE原版候选验证包
+<!-- trellis-session: v=2 fp=a5709aa49587677e -->
+
+**Date**: 2026-10-08
+**Task**: Win7完整guarded shader同EXE原版候选验证包
+**Branch**: `chore/publish`
+
+### Summary
+
+交付单CMD完整效果候选；双架构双后端420项、72对照像素delta0、Headless、采集器和ZIP身份通过，Win7验收待用户实测；原任务继续in_progress，不提交。
+
+### Main Changes
+
+# Win7 完整 guarded shader 单入口包验证（2026-10-08）
+
+继续10-02-win7-main-canvas。用户明确要求 shader 效果不变，故候选保留全部数学/细笔补偿/变粗细/AA/光影/所有功能/双源输出，只有 DefaultInk 尾部正向控制块变化。正式 HLSL/CSO及301–304资源不变；旧删除组诊断只在永不显示的fixture运行，正常两轮从不选择。
+
+## 可交付身份
+
+- ZIP：`C:\Users\alan-\.codex\visualizations\2026\10\03\01a100c6-aa67-7cc3-9d01-6cda328f70c3\win7-guarded-20261008\Inkeys-Win7-Guarded-x64-Release.zip`，29300415 bytes，SHA256 `07B744726DE1B3BA8E04AE20F026AF01B2FAE67B03BBAFEB80573DD9D65902A4`。
+- EXE：SHA256 `23D6E5F811821A4E27CFDCD18A00BDF1B996886F2DE1AAE48154D40D63F0C547`；Release|x64，baseline HEAD cdc39044bb35fca6ffbdd176e7ff51a81cc0a481+本任务未提交工作区；没有commit/push。
+- candidate PS：28980 bytes，SHA256 `2171DDA6E709A3F4CD444E6281AB64635C3F969CD71722662B04DA0DD8055384`，实际header字节存在EXE；全部数学、未知type原d=0行为、ISGN/OSGN、17资源声明保持。相关DefaultInk导数/细笔/discard实际在正向if内。
+- 9文件、1CMD；ZIP CRC和逐文件相等核验PASS，旧包不覆盖；diagnostic-manifest记录实际EXE/source/formalresource/verification/质量报告身份。
+
+## 验证证据
+
+- ARM64原生MSBuild完整InkeysRepo.sln Debug|ARM64、Release|x64均exit0，最终增量18.55s/50.61s，900s预算。首次ARM64新增测试代码std::max遇Windows宏，机械括号修正；首轮x64完整224.95s。无shader或工程配置绕过。日志pwsh不存在来自既有vcpkg探测，目标有系统PowerShell回退，未触发双方失败warning；编译退出0并实际CLI运行。
+- 两架构WARP/独立Hardware各105唯一用例PASS，共420；旧matrix69、sequence5、diagnostic7、production4保持。每后端guarded18 reference可用、独立公式正确、全图逐通道max_delta=0，共72次对照；原版效果图没有变化。
+- 两架构Headless --no-window exit0、stderr空；首轮系统TMP中7个atomic/config文件操作失败，root helper只重定向子进程TEMP/TMP到短可写隔离目录后通过，产品代码不改，首轮raw保留。
+- 首轮cursor新增oracle错误把灰描边当全白，使原版/候选均报396formula errors。保留失败raw，仅将fixture独立CPU期望改为正式signed-distance/outer+inner/灰描边+白填充/Retain四通道公式，容差1.01，重编后全PASS。shader/candidate字节未改。
+- 38个formal/旧包/原21份capture资料前后SHA相同；旧23诊断shader数组逐项字节长度/hash相同；两架构EXE正式SHADER301–304逐字节匹配当前正式CSO。
+- 实际Windows PowerShell5.1最终x64EXE ProbeOnly，两后端105/18 PASS、guarded reference_unavailable0、exit0，完整双流和identity，没有启动正常产品GUI或加载普通产品配置。root verifier误把reference_unavailable=0子串当hardware不可用，按identity精确exit3修正后仅重解析已有真实raw，未重跑产品。
+- collector实际WinPS mock47项+冻结3复验PASS，含身份拒绝/异常缺失重复/reference比较矛盾/失败继续/大双流/空格路径/唯一CMD/环境恢复；实际自有child900000ms截止注入，精确PID结束、等待5000ms、Dispose、后续硬件检查继续。不是实际等15min。
+- minimal diff/原编码换行/git diff --check PASS。PRD/design原有LF保留；其他修改保持原BOM和CRLF。task validate通过，旧大input spec自动注入32KiB限制仍有告警，新增报告/合同已明确上下文引用。
+
+## Win7 验收与边界
+
+唯一入口Run-Win7-Diagnostics.cmd，同EXE三阶段：01-pixel-probe（诊断1、guard空、full空）、02-original-shader（guard空）、03-guarded-shader（guard1）；两正常应用都关闭full覆盖。wrapper最终恢复调用者全部三个环境值。创建候选失败不会回退冒充成功。正常启动LoadShaders guarded分支未在本机打开GUI运行，靠源、环境隔离、EXE字节/实际GPU输出及Win7后续初始化日志证明实际选择。
+
+每驱动105=旧87+新增18，查询最坏约618s，collector截止900000ms/15min。Win7原版FAIL仍如实记录并继续两应用阶段；guarded独立PASS不能当采集或真实画布已恢复。105 probe验证直接创建候选和production resolve公式，不覆盖产品MAX/MIN多层累积全部历史；实际撤回重做/定格等必须人工观察。
+
+WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变化、荧光笔、橡皮/激光、撤回重做、选择穿透和定格返回。用户此前VMware硬件非零像素但切橡皮才刷新仍是另一路径，不能用WARP候选通过宣称它已修。分别返回两设备完整Win7-Diagnostics时间目录。
+
+本机为Win11 ARM64；WinPS5.1/mock不是Win7 PS2与光学验收。Task继续in_progress，不archive；下步依据Win7原版/guarded选择日志、18项输出与实际ULW source/DIB及用户观察决定最小生产修复，不删任何效果。
+
+
+### Git Commits
+
+(No commits - planning session)
 
 ### Status
 
@@ -1531,6 +1795,21 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 
 - 版本文字采用相邻图标的TextPrimary，汉堡局部使用subtleHover/subtlePressed，保留原按钮动画与开合逻辑。
 
+## Session 54: H 实时绑定与更新请求元数据完成
+<!-- trellis-session: v=2 fp=db8c1fd6ff3df9f0 -->
+
+**Date**: 2026-10-08
+**Task**: H 实时绑定与更新请求元数据完成
+**Branch**: `chore/publish`
+
+### Summary
+
+用户批准实施。H 支持固定/地址/带锁来源，文件和 Referer 独立输出；ev 落盘，id 去括号上报，ch 实时上报并保存至 main.json，deploy.json 原保存入口继续存在；版本检查 UA 统一为 Inkeys-Updater/3.0。
+
+### Main Changes
+
+- 仅修改 Config 来源/schema/处理器/复制、更新检查 UA、新增 headless 回归及必要登记；记录配置合同。
+
 ### Git Commits
 
 (No commits - planning session)
@@ -1538,6 +1817,9 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Testing
 
 - [OK] 完整InkeysRepo.sln Debug|ARM64 exit0/23.697秒；完整--no-window exit0/120.048秒、stderr空；新增汉堡三倍率各546帧/18场景；i18n、格式与编码通过。
+- [OK] 正常主机 ARM64 headless build exit0；--no-window exit0，Config metadata tests 0 failures，全部 suite PASS。
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 ARM64-native MSBuild exit0，146 warnings/0 errors；本次 Config/下载源码无 warning。
+- [OK] scoped git diff --check、磁盘 BOM/CRLF 基线核对与 task validate 通过。受限 runner 的 PDB/临时文件环境失败原始证据保留，主机原样通过。
 
 ### Status
 
@@ -1698,6 +1980,24 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Main Changes
 
 - WritingEnd两暖帧捕获，单份GPU copy缓存，终态两布局恢复，失效与清理覆盖；不commit/push。
+- 本任务验收完成，按用户规则保留未提交变更；Win7 ULW 任务继续独立进行。123 CDN 实际请求日志未测试。
+
+
+## Session 55: Win7 WARP 主画布默认完整 shader 修复
+<!-- trellis-session: v=2 fp=3c2f3c387aee632c -->
+
+**Date**: 2026-10-09
+**Task**: Win7 WARP 主画布默认完整 shader 修复
+**Branch**: `chore/publish`
+
+### Summary
+
+两Aero真实Win7候选恢复证据与原像素保持；正常OS6.1+WARP自动启用2171完整shader，诊断0/0/1保留原版；完整两架构构建与GPU/headless/PS采集通过，新包已交付，任务in_progress。
+
+### Main Changes
+
+- 传实际D3D_DRIVER_TYPE并复用RtlGetVersion，默认Win7WARP选择同一完整现场字节；正式shader数学/资源保持
+- 保留两份42raw日志，新增现场/VMware路线/实现/独立check/质量门与包身份记录
 
 ### Git Commits
 
@@ -1706,6 +2006,7 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Testing
 
 - [OK] InkeysRepo.sln Debug|ARM64 exit0 87.836s；全套--no-window exit0 304.793s，stderr0；i18n384/384和编码/diff通过。
+- [OK] Debug ARM64 / Release x64完整solution exit0；420GPU+108策略及Headless通过；实际WinPS双105+27，50mock PASS，87不可变和8其他任务文件保持
 
 ### Status
 
@@ -1730,6 +2031,208 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Main Changes
 
 - 单帧1MiB CPU值快照仅S_OK发布，保留CPU Continue与计时，事务/输入/失败强制实际重绘；无新增GPU资源。
+- 新EXE在Win7普通双击默认启动回归；VMware克隆升级v18+/适配Tools与SHA2后独立Hardware；继续定位偶发荧光定格变深及PPT有限回归
+
+
+## Session 59: Win7 主画布修复验收并归档
+<!-- trellis-session: v=2 fp=a87fce144ca57040 -->
+
+**Date**: 2026-10-10
+**Task**: Win7 主画布修复验收并归档
+**Branch**: `chore/publish`
+
+### Summary
+
+真实Win7 WARP/Hardware及正常双击验收通过，完整shader效果保持；完成证据/规范、结项归档及签名提交，残留输入和定格观察独立留档。
+
+### Main Changes
+
+- 完成Win7像素输出分层定位、完整兼容PS自动选择与单CMD原版对照；记录用户正式启动验收。
+- 保存42资料身份及独立实测/收尾审查，归档原任务并修正当前context自路径。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `12d82884cf09928c2ae22eda2fe8851ac8581c9b` | fix: restore Draw3 output on Windows 7 WARP |
+| `4011594d103f5b95e77ec923f54058593ce7e549` | docs: record Win7 WARP and hardware acceptance |
+
+### Testing
+
+- [OK] 既有完整Solution Debug ARM64/Release x64、GPU/共享策略/Headless与collector质量门通过。
+- [OK] 本次真实Win7 54候选PASS、Hardware105PASS、108策略PASS、145限频ULW成功，用户正常启动两后端均正常。
+- [OK] 本轮无产品源码修改；文档diff-check/JSON/context/hash保留与最终独立review通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务已completed；偶发原鼠标X0、未复现荧光定格及未新增PPT专项实测按closure记录后续观察，不自动重开或创建任务。
+
+
+## Session 60: Windows 发布流水线拆分与 Win32 Harness 修复
+<!-- trellis-session: v=2 fp=dff3e14f3b026a17 -->
+
+**Date**: 2026-10-10
+**Task**: Windows 发布流水线拆分与 Win32 Harness 修复
+**Branch**: `dev`
+
+### Summary
+
+完成独立 PptCOM 构建和产物交接；修复 Win32 Harness 构建；保留用户手动维护的已跟踪 DLL/TLB。
+
+### Main Changes
+
+- Release 默认关闭内嵌 Harness，Debug 与显式开启构建保留；独立 native 构建保持资源路径。
+- Windows 2022 PptCOM → native matrix → Package 流水线，按当前运行的精确 artifact ID 传递和清理。
+- 同步编译文档和 Trellis 规范；DLL/TLB 保持跟踪且本地内容未改变。
+
+### Git Commits
+
+收尾阶段用户已授权本次提交，实际 commit 见 git log。
+
+### Testing
+
+- [OK] 独立 PptCOM Release/AnyCPU、Win32 Release 默认关闭及显式开启 Harness、完整 Debug/ARM64 solution 均通过。
+- [OK] ARM64 headless --no-window、工作流及工程静态检查、产物校验和清理模拟全部通过。
+
+- [OK] 最终 PptCOM Release/AnyCPU 完整 Rebuild，0 warnings / 0 errors；新 DLL/TLB 已手动同步到 Inkeys，哈希一致。确定性构建结果与此前字节相同。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在 Actions 验收真实 Windows 2022 三架构链路。
+
+
+## Session 63: 恢复 Inkeys3 笔震动反馈与兼容回退
+<!-- trellis-session: v=2 fp=f1cf333becf0ed95 -->
+
+**Date**: 2026-10-11
+**Task**: 恢复 Inkeys3 笔震动反馈与兼容回退
+**Branch**: `bugfix/vibration`
+
+### Summary
+
+追溯 fc9a8b86 迁移遗漏，恢复 Host 触觉注入、UI3 有效笔按钮 Click 与安全生命周期；独立审阅和完整 ARM64 编译/无窗口测试通过。按用户要求未提交。
+
+### Main Changes
+
+- 生产绘制线程管理触觉 COM，精确 Pointer 路由与安全无能力回退
+- 保留 WM_TOUCH/光标语义，增加有界接触凭据及取消/代际校验
+
+### Next Steps
+
+- 实体笔、真实 Win7 和跨驱动关联/混合设备验收；未授权 GUI，本轮未执行
+
+## Session 64: 阶段1：vcpkg Abseil与Modeler源码基线完成
+<!-- trellis-session: v=2 fp=f8686272ba5b8497 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段1：vcpkg Abseil与Modeler源码基线完成
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+固定vcpkg Abseil20250512.1#0，13个Modeler源码三消费者共享；全部构建/精确回放/三架构30paired性能/Headless/ABI/资源导入检查通过，清理本任务约12GiB可重建缓存。
+
+### Main Changes
+
+- 停止手工Abseil库导入，精确manifest与static-v143/C++20同包头库，Modeler算法/API/参数/几何保持。
+## Session 69: 分页窗口启动显隐冲突修复
+<!-- trellis-session: v=2 fp=747879c574e3e8bf -->
+
+**Date**: 2026-10-12
+**Task**: 分页窗口启动显隐冲突修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+删除 TopWindow 四次分页窗 Show，保持 CRLF/UTF-8；静态审查通过。Debug ARM64 Solution 构建 10 分钟超时，PptCOM 成功，原生结果未完成；无 GUI、无提交，保留原任务 in_progress。
+## Session 64: 延续 Redo 弹窗：修复5秒布局保护与灰色动画
+<!-- trellis-session: v=2 fp=50b5fb3aa499acd9 -->
+
+**Date**: 2026-10-12
+**Task**: 延续 Redo 弹窗：修复5秒布局保护与灰色动画
+**Branch**: `feature/redo`
+
+### Summary
+
+修复异步末步反馈丢失、无hold布局即时切换、关闭绕过保护、弹窗锚点和颜色目标冲突；完整ARM64 Debug构建及headless通过，保留原任务等待实际交互验收。
+
+### Main Changes
+
+- UI3 Recall 独立锁存布局，真实可用性驱动颜色与门禁；连续及灰色点击延长已有5秒保护。
+- 属性面板以当前Undo/Redo主栏按钮为锚点，源级接线回归补足纯状态测试。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 70: 左上角落笔死区用户验收与任务归档
+<!-- trellis-session: v=2 fp=44b1a6bf418e2c6e -->
+
+**Date**: 2026-10-12
+**Task**: 左上角落笔死区用户验收与任务归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认问题解决。修复已提交，原任务归档为 completed；静态审查通过，此前 Debug ARM64 构建 10 分钟超时记录保留。未启动 GUI、未 push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5ccf0fb` | Fix page control startup visibility |
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 MSBuild退出0、0 error；新增及既有headless --no-window沙箱外退出0。
+- [OK] 普通sandbox PDB C1902及TEMP写入失败经同一探针/测试沙箱外对照排除；无源码/配置绕过。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 71: Draw3 RTS 注册前根置顶顺序修复
+<!-- trellis-session: v=2 fp=29c2f1b1de18b8a3 -->
+
+**Date**: 2026-10-12
+**Task**: Draw3 RTS 注册前根置顶顺序修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 重建，失败不启动 RTS。独立审查、完整 Debug ARM64 Solution 构建和 --no-window 测试通过（退出码0）；真实故障场景待验收，无 GUI、无 commit/push。
+### Next Steps
+
+- 保留10-11-redo-popup任务，实际UI连点/5s/颜色视觉验收尚未执行；本轮未commit或push。
+
+
+## Session 65: Redo追加：3秒等待与属性身份显示提交
+<!-- trellis-session: v=2 fp=0bb9eb797f83ff95 -->
+
+**Date**: 2026-10-12
+**Task**: Redo追加：3秒等待与属性身份显示提交
+**Branch**: `feature/redo`
+
+### Summary
+
+仅Undo/Redo计时改3s，属性身份使用既有即时内容事务并补内容动画推进，完整ARM64 Debug及headless通过。
+
+### Main Changes
+
+- 修复主栏Redo时属性仍显示Redo的实际val/缓存未提交问题。
 
 ### Git Commits
 
@@ -1738,6 +2241,9 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Testing
 
 - [OK] 最终InkeysRepo.sln Debug|ARM64 exit0 22.3754s；全套--no-window exit0 278.4643s、stderr0，21新增+39既有benchmark。i18n384/384、精确RGBA、7文件baseline格式与diff通过。
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 exit 0；InkeysHeadlessTests --no-window exit 0；imports/格式/diff 检查通过
+- [OK] 4source和4main Rebuild exit0；4replay19case/128412 bit exact，仅依赖版本metadata变化；3arch各30pairs PASS；Headless no-window0。
+- [OK] 完整InkeysRepo.sln Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check通过。
 
 ### Status
 
@@ -1762,6 +2268,24 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Main Changes
 
 - 保留默认160ms滚动条动效和真实溢出条件；新增CompleteHomeEntryLayout按本帧正文子树native explicit/Trunc/Ideal尺寸检查，至少2提交且实际ready/六次预算，避免8px宽度及thumb高度跳变。
+- 阶段1已完成归档；父任务尾段重构继续planning，需要独立实施/验收。GUI/实体笔/Win7真机未执行；无commit/push。
+
+
+## Session 67: 阶段2：库内终态尾段重构与离线验收完成
+<!-- trellis-session: v=2 fp=b8ee82401437d9c8 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段2：库内终态尾段重构与离线验收完成
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+用户批准创建并开始；独立Modeler本地扩展完成，四配置原API精确保持，96窗尾段/三架构成本通过，产品接入仍后续。
+
+### Main Changes
+
+- 新增有序raw/位移正则尾段模块，硬入口/终点/原子回退，共享14TU，本地来源及可重现CLI；原13源18头未改。
+- 清理3.092GiB任务缓存，冻结47资料不变；记录Win32跨架构数值机制，不改浮点/ABI。
 
 ### Git Commits
 
@@ -1770,6 +2294,24 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Testing
 
 - [OK] 完整InkeysRepo.sln Debug|ARM64 exit0/25.0683s，全套--no-window exit0/226.2471s、stderr0，六例背景diff0、60既有测量完成；i18n384/384、8源码格式和diff通过。
+- [OK] 四配置尾段96窗口116105assert0失败，默认18Apply12改善；原19case128412assert同阶段1位级一致；主Debug+Headless、三架构24case成本、imports资源及checker通过。
+
+## Session 72: RTS 注册前置顶修复核验与任务归档
+<!-- trellis-session: v=2 fp=79c5c3b927d252ae -->
+
+**Date**: 2026-10-12
+**Task**: RTS 注册前置顶修复核验与任务归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认当前任务核验通过，修复与规范已提交，任务归档 completed。完整 Debug ARM64 Solution 构建、无窗口测试和独立审查通过；AI 未执行 GUI。归档上下文引用已校验，无 push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74d7e688` | Restore topmost preparation before RTS startup |
 
 ### Status
 
@@ -1838,6 +2380,31 @@ Completed native Mica/Acrylic surface blending with opaque overlays, preserved f
 - [OK] InkeysRepo.sln Debug ARM64 via native MSBuild: PASS, exit 0.
 - [OK] InkeysHeadlessTests --no-window --setting-home-only: PASS, exit 0, stderr empty.
 - [OK] git diff --check: PASS. Original PptCOM.dll/tlb bytes preserved; no GUI run.
+- 阶段3另建产品完成/Stored/taper/L1接入任务，按真实消费输入验证保护窗口/来源和成本；Touch续接及设备GUI另阶段。
+
+
+## Session 71: 阶段三 Draw3 完成态局部尾段拟合与评估
+<!-- trellis-session: v=2 fp=3127bb714edf1301 -->
+
+**Date**: 2026-10-12
+**Task**: 阶段三 Draw3 完成态局部尾段拟合与评估
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+局部C++拟合、固定64点raw窗口、最终Stored接入；ARM64主/test构建、回放与生产probe通过。GUI/设备未执行，无commit/push。
+
+### Main Changes
+
+- 可选原始输入辅助，稀疏/零辅助仍平滑，修正可覆盖当前L1尾段
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 原API精确，150567尾段检查、331480生产probe、12312基准0fail
 
 ### Status
 
@@ -1846,3 +2413,167 @@ Completed native Mica/Acrylic surface blending with opaque overlays, preserved f
 ### Next Steps
 
 - No pending implementation work; visual tuning may be requested separately.
+- 实体笔和断触完成视觉、GPU重绘体验验证
+
+
+## Session 73: 阶段三人工反馈：临时尾段反色诊断
+<!-- trellis-session: v=2 fp=3c4f87a9e0fb6863 -->
+
+**Date**: 2026-10-13
+**Task**: 阶段三人工反馈：临时尾段反色诊断
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+实际体验无变化原因未确定；仅应用成功且改变位置的尾段反色，保持保存颜色；ARM64主solution和生产331608断言及外部Headless通过；等待人工复测，不结束任务。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 74: 阶段三无反色调查：大弧位移拒绝与有界日志
+<!-- trellis-session: v=2 fp=f34d825b56d793ba -->
+
+**Date**: 2026-10-13
+**Task**: 阶段三无反色调查：大弧位移拒绝与有界日志
+**Branch**: `bugfix/penstroke`
+
+### Summary
+
+真实生产大弧回放确认3px位移门拒绝3.66/12.19px候选；单Up raw导致一点评估窗。新增18场景和有界日志，未调算法。
+
+## Session 73: PPT 退出连贯交接与设置即时层级修复
+<!-- trellis-session: v=2 fp=91200a3823382b76 -->
+
+**Date**: 2026-10-13
+**Task**: PPT 退出连贯交接与设置即时层级修复
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+新建原任务要求的Trellis任务并实施。保留旧帧至目标ready、修复退出后Bar高亮、即时设置root/Z序。独立审查/完整Debug ARM64 Solution/--no-window通过；首次测试快照构造错误已修正。无GUI、无commit/push，待实机验收。
+### Next Steps
+
+- 原任务保留，实际GUI视觉验收未运行；不commit/push。
+
+
+## Session 66: Redo2x2点击暂态主栏扩宽修复
+<!-- trellis-session: v=2 fp=e0c19c01627941cf -->
+
+**Date**: 2026-10-12
+**Task**: Redo2x2点击暂态主栏扩宽修复
+**Branch**: `feature/redo`
+
+### Summary
+
+删除PresetHoming先显示Undo再套布局的中间写入，避免并行宽度扫描新增临时75DIP列；ARM64完整构建/headless通过。
+
+### Main Changes
+
+- 生产只删除两次中间显隐并加中文注释，补生命周期/生产显隐接线回归。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] ARM64 Debug solution和333894断言probe通过；Headless首次调度时序断言失败，相同二进制复测通过；无GUI。
+- [OK] 完整Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check及diff检查通过。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 74: PPT 退出与设置层级人工验收及归档
+<!-- trellis-session: v=2 fp=e6f52f411ea08bec -->
+
+**Date**: 2026-10-13
+**Task**: PPT 退出与设置层级人工验收及归档
+**Branch**: `bugfix/drawpad`
+
+### Summary
+
+用户确认两项问题修复、人工验证通过。源码/测试/规范已提交，任务completed归档。完整Debug ARM64构建、--no-window和独立审查通过；AI未运行GUI，不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4057b8ea` | Fix PPT exit handoff and immediate settings z-order |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 67: 最近 Clear 区间 Undo 与前进 Redo 完整链修复
+<!-- trellis-session: v=2 fp=39978782e6727403 -->
+
+**Date**: 2026-10-12
+**Task**: 最近 Clear 区间 Undo 与前进 Redo 完整链修复
+**Branch**: `feature/redo`
+
+### Summary
+
+延续 redo-popup：保留最近 Clear 后继 CPU 历史，Undo 旧区间到空停止，Redo 穿过 Clear 到最新；完成独立检查、Debug ARM64 与双渲染模式隐藏回归。任务继续 in_progress，本轮未提交。
+
+### Main Changes
+
+- 同页 ClearRedoContinuation 保留隐藏笔画与redo候选；新笔画取消分支，迟到加载按身份与revision拒绝；PPT park和拓扑保留会话历史。
+- 既有隐藏Host测试覆盖完整A→Clear→B逐步历史；落盘严格导入验证canonical根及独立EndScreen，按本run增量核计数。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 最终exit0；headless --no-window exit0；native solution/console exit0；双renderer Desktop+PPT hidden exit0。
+- [OK] git diff --check与原BOM/CRLF检查通过；链接器LNK1000由保留ILK备份重链解决，不改工程。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户复现后读取TEMP尾段日志，定位现场拒绝原因；阶段三人工未通过、不归档。
+- 用户可继续现有Trellis任务；本轮不commit/push、不归档，未做可见产品/Office GUI验证。
+
+
+## Session 68: Redo popup 人工验收通过并归档
+<!-- trellis-session: v=2 fp=927cfa9c5a0d3095 -->
+
+**Date**: 2026-10-12
+**Task**: Redo popup 人工验收通过并归档
+**Branch**: `feature/redo`
+
+### Summary
+
+用户确认人工验证通过。已提交最近 Clear Undo/Redo 完整链修复，并结束、归档 redo-popup；自动化与独立检查结果已记录，未推送远程。
+
+### Main Changes
+
+- 提交修复及相关规格/测试/验证记录，使用既有签名配置。
+- 归档 10-11-redo-popup，任务结束；其余任务不变。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7094cea4` | fix(draw3): preserve redo history across the latest clear boundary |
+
+### Testing
+
+- [OK] 本轮此前ARM64 solution、headless、native与双renderer隐藏测试均通过；用户人工验收通过。
+
+### Status
+
+[OK] **Completed**

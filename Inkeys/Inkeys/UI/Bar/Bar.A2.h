@@ -8,23 +8,48 @@
 
 namespace Inkeys::UI::Bar
 {
+	enum class BarWhiteboardButtonAction { Open, Close, Restore };
+	[[nodiscard]] constexpr BarWhiteboardButtonAction ResolveBarWhiteboardButtonAction(
+		bool requested, bool minimized) noexcept
+	{
+		return minimized ? BarWhiteboardButtonAction::Restore
+			: requested ? BarWhiteboardButtonAction::Close : BarWhiteboardButtonAction::Open;
+	}
+	template<class Restore, class Request>
+	void DispatchBarWhiteboardButtonAction(bool requested, bool minimized,
+		Restore&& restore, Request&& request)
+	{
+		const auto action = ResolveBarWhiteboardButtonAction(requested, minimized);
+		if (action == BarWhiteboardButtonAction::Restore)
+			// 恢复失败也保持原白板，不回落成退出或重新进入事务。
+			std::forward<Restore>(restore)();
+		else std::forward<Request>(request)(action == BarWhiteboardButtonAction::Open);
+	}
 	struct BarA2Projection
 	{
 		bool whiteboardTwoTwo = false;
 		bool freezeVisible = true;
 		bool endShowVisible = false;
+		bool freezeTwoTwo = true;
+		bool pierceVisible = false;
+		bool pierceTwoTwo = false;
 	};
 
 	[[nodiscard]] constexpr BarA2Projection ResolveBarA2Projection(
 		bool presentationActive, bool whiteboardActive,
-		bool whiteboardFeatureEnabled = true) noexcept
+		bool whiteboardFeatureEnabled = true, bool separateMode = false,
+		bool selectionEmpty = false, bool freezeAvailable = true) noexcept
 	{
-		if (!whiteboardFeatureEnabled)
-			return { false, true, presentationActive };
-		if (whiteboardActive) return { true, false, false };
-		// PPT 中保留定格入口，由按钮状态显示为禁用而不是隐藏。
-		if (presentationActive) return { false, true, true };
-		return { false, true, false };
+		if (whiteboardActive) return { whiteboardFeatureEnabled, false, false };
+		BarA2Projection result;
+		result.whiteboardTwoTwo = whiteboardFeatureEnabled;
+		result.freezeVisible = freezeAvailable && !presentationActive;
+		result.endShowVisible = presentationActive;
+		// 穿透依附定格的位置；空页选择不需要穿透，PPT 禁用定格时让穿透独占一格。
+		result.pierceVisible = separateMode && !selectionEmpty;
+		result.freezeTwoTwo = !result.pierceVisible;
+		result.pierceTwoTwo = !result.freezeVisible;
+		return result;
 	}
 
 	[[nodiscard]] constexpr bool IsLegacyBarA2Pair(

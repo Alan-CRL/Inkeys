@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -264,6 +265,7 @@ namespace Inkeys::Drawing::Draw3
 			bool presentSuccessLogged = false;
 			bool presentFailureLogged = false;
 			bool pixelDiagnosticLogged = false;
+			bool forceFullUlwUpdate = false;
 			ULONGLONG lastPixelDiagnosticTick = 0;
 			POINT lastDestination{};
 			SIZE lastDestinationSize{};
@@ -279,7 +281,7 @@ namespace Inkeys::Drawing::Draw3
 				const BOOL rectOk = window && GetWindowRect(window, &windowRect);
 				const BOOL valid = window && IsWindow(window);
 				const BOOL visible = valid && IsWindowVisible(window);
-				std::cout << "[Draw3Diag][ulw] event=" << eventName
+				DiagnosticOutput::Line() << "[Draw3Diag][ulw] event=" << eventName
 					<< " role=" << diagnosticRole
 					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
 					<< " valid=" << std::dec << (valid ? 1 : 0)
@@ -296,6 +298,8 @@ namespace Inkeys::Drawing::Draw3
 					<< " dirty=(" << dirty.left << "," << dirty.top << ","
 					<< dirty.right << "," << dirty.bottom << ")"
 					<< " full=" << (presentFull ? 1 : 0)
+					<< " dirtyParameter=" << (presentFull || forceFullUlwUpdate ? "null" : "rect")
+					<< " fullUpdateOverride=" << (forceFullUlwUpdate ? 1 : 0)
 					<< " dst=(" << lastDestination.x << "," << lastDestination.y << ")"
 					<< " dstSize=" << lastDestinationSize.cx << "x" << lastDestinationSize.cy
 					<< " src=(" << lastSource.x << "," << lastSource.y << ")"
@@ -310,13 +314,17 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			void LogPixelDiagnostic(const UlwPixelDiagnostic& pixels, ULONGLONG tick,
-				RECT dirty, bool presentFull, BOOL updated, DWORD error)
+				RECT dirty, bool presentFull, BOOL updated, DWORD error,
+				ULONGLONG copyMapMs, ULONGLONG rowsMs, ULONGLONG ulwMs)
 			{
-				std::ostringstream line;
+				DiagnosticOutput::Line line;
 				line << "[Draw3Diag][ulw-pixels] role=" << diagnosticRole
 					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window) << std::dec
 					<< " tick=" << tick << " dirty=(" << dirty.left << "," << dirty.top << ","
 					<< dirty.right << "," << dirty.bottom << ") full=" << (presentFull ? 1 : 0)
+					<< " dirtyParameter=" << (presentFull || forceFullUlwUpdate ? "null" : "rect")
+					<< " fullUpdateOverride=" << (forceFullUlwUpdate ? 1 : 0)
+					<< " copy_map_ms=" << copyMapMs << " rows_ms=" << rowsMs << " ulw_ms=" << ulwMs
 					<< " api=" << (updated ? "success" : "failed") << " error=" << error
 					<< " underlay=" << (applyPrimaryHitUnderlay ? 1 : 0) << " pixels=" << pixels.pixelCount;
 				const auto writeStatistics = [&](const char* name, const UlwPixelStatistics& stats)
@@ -343,7 +351,7 @@ namespace Inkeys::Drawing::Draw3
 				};
 				writeSample("sampleSourceBgra", pixels.sampleSourceBgra);
 				writeSample("sampleFinalBgra", pixels.sampleFinalBgra);
-				std::cout << line.str() << std::endl; // 只输出提交证据，不等同于桌面实际可见。
+				line << std::endl; // 只输出提交证据，不等同于桌面实际可见。
 			}
 
 			void ReleaseDib()
@@ -372,6 +380,7 @@ namespace Inkeys::Drawing::Draw3
 				presentSuccessLogged = false;
 				presentFailureLogged = false;
 				pixelDiagnosticLogged = false;
+				forceFullUlwUpdate = false;
 				lastPixelDiagnosticTick = 0;
 			}
 
@@ -393,7 +402,7 @@ namespace Inkeys::Drawing::Draw3
 					stagingTexture.ReleaseAndGetAddressOf());
 				if (FAILED(createResult))
 				{
-					std::cout << "[Draw3Diag][ulw-init] role=" << diagnosticRole
+					DiagnosticOutput::Line() << "[Draw3Diag][ulw-init] role=" << diagnosticRole
 						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
 						<< std::dec << " stage=CreateTexture2D size=" << width << "x" << height
 						<< " hresult=0x" << std::hex
@@ -450,6 +459,13 @@ namespace Inkeys::Drawing::Draw3
 				window = inputWindow;
 				device = inputDevice;
 				context = inputContext;
+				// 显式诊断对照只控制 USER32 的 dirty 参数；不扩大 GPU copy 或改变帧调度。
+				wchar_t fullUpdateValue[2] = {};
+				forceFullUlwUpdate = GetEnvironmentVariableW(L"INKEYS_DRAW3_ULW_FULL_UPDATE",
+					fullUpdateValue, ARRAYSIZE(fullUpdateValue)) == 1 && fullUpdateValue[0] == L'1';
+				if (forceFullUlwUpdate)
+					DiagnosticOutput::Line() << "[Draw3Diag][ulw-control] role=" << diagnosticRole
+						<< " INKEYS_DRAW3_ULW_FULL_UPDATE=1 dirtyParameter=null" << std::endl;
 				return window && device && context && Resize(width, height);
 			}
 
@@ -462,13 +478,13 @@ namespace Inkeys::Drawing::Draw3
 			{
 				lastObservation = {};
 				lastObservation.ulw = true;
-				lastObservation.usedDirtyRect = !presentFull;
+				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
 				const auto fail = [&](const char* stage, DWORD error = ERROR_SUCCESS,
 					HRESULT hresult = S_OK)
 				{
 					if (!presentFailureLogged)
 					{
-						std::cout << "[Draw3Diag][ulw] stage=" << stage
+						DiagnosticOutput::Line() << "[Draw3Diag][ulw] stage=" << stage
 							<< " result=failed hresult=0x" << std::hex
 							<< static_cast<unsigned long>(hresult) << std::dec << std::endl;
 						LogPresentEvent("failure", dirty, presentFull, error, hresult);
@@ -514,12 +530,13 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<UINT>(dirty.left), static_cast<UINT>(dirty.top), 0,
 					static_cast<UINT>(dirty.right), static_cast<UINT>(dirty.bottom), 1
 				};
+				const bool diagnosticsEnabled = StartupEnvironmentDiagnosticsEnabled();
+				const ULONGLONG copyStartedTick = diagnosticsEnabled ? GetTickCount64() : 0;
 				context->CopySubresourceRegion(stagingTexture.Get(), 0, static_cast<UINT>(dirty.left),
 					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从 GPU backbuffer 拷到可读纹理。
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
 				const HRESULT mapResult = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
 				if (FAILED(mapResult)) return fail("map", ERROR_SUCCESS, mapResult);
-				const bool diagnosticsEnabled = StartupEnvironmentDiagnosticsEnabled();
 				const ULONGLONG diagnosticTick = diagnosticsEnabled ? GetTickCount64() : 0;
 				const bool inspectPixels = diagnosticsEnabled &&
 					(!pixelDiagnosticLogged || diagnosticTick - lastPixelDiagnosticTick >= 1000);
@@ -536,6 +553,7 @@ namespace Inkeys::Drawing::Draw3
 				// 非采样帧使用原扫描的模板实例，不执行任何诊断像素统计。
 				const UlwDirtyCopyResult copyResult = inspectPixels ?
 					copyRows.operator()<true>() : copyRows.operator()<false>();
+				const ULONGLONG rowsFinishedTick = inspectPixels ? GetTickCount64() : 0;
 				if (inspectPixels)
 				{
 					pixelDiagnosticLogged = true;
@@ -569,10 +587,12 @@ namespace Inkeys::Drawing::Draw3
 				update.pptSrc = &sourcePoint;
 				update.pblend = &blend;
 				update.dwFlags = ULW_ALPHA;
-				update.prcDirty = presentFull ? nullptr : &dirty; // 非全量时让 USER32 只更新改变区域。
+				update.prcDirty = presentFull || forceFullUlwUpdate ? nullptr : &dirty;
+				const ULONGLONG ulwStartedTick = inspectPixels ? GetTickCount64() : 0;
 				const BOOL updated = UpdateLayeredWindowIndirect(window, &update);
 				const DWORD error = updated ? ERROR_SUCCESS : GetLastError(); // 日志前锁存本次 API 错误。
-				if (inspectPixels) LogPixelDiagnostic(*pixels, diagnosticTick, dirty, presentFull, updated, error);
+				if (inspectPixels) LogPixelDiagnostic(*pixels, diagnosticTick, dirty, presentFull, updated, error,
+					diagnosticTick - copyStartedTick, rowsFinishedTick - diagnosticTick, GetTickCount64() - ulwStartedTick);
 				if (!updated)
 				{
 					return fail("UpdateLayeredWindowIndirect", error,
@@ -837,12 +857,12 @@ namespace Inkeys::Drawing::Draw3
 		{
 			DXGI_SWAP_CHAIN_DESC1 waitableDescription = baseDescription;
 			waitableDescription.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-			std::cout << "Trying waitable swapchain in mode " << TransparentPresentModeName(mode) << "." << std::endl;
+			DiagnosticOutput::Line() << "Trying waitable swapchain in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			HRESULT result = CreateSwapChainForMode(mode, waitableDescription);
 			if (FAILED(result) || !swapChain)
 			{
 				LogHResult(SwapChainCreationStepName(mode, true), result);
-				std::cout << "Waitable swapchain creation failed; fallback to ordinary swapchain." << std::endl;
+				DiagnosticOutput::Line() << "Waitable swapchain creation failed; fallback to ordinary swapchain." << std::endl;
 				swapChain.Reset();
 				return false;
 			}
@@ -853,7 +873,7 @@ namespace Inkeys::Drawing::Draw3
 			if (FAILED(result) || !swapChain2)
 			{
 				LogHResult("IDXGISwapChain1::QueryInterface(IDXGISwapChain2)", result);
-				std::cout << "Waitable swapchain is not usable; fallback to ordinary swapchain." << std::endl;
+				DiagnosticOutput::Line() << "Waitable swapchain is not usable; fallback to ordinary swapchain." << std::endl;
 				swapChain.Reset();
 				return false;
 			}
@@ -862,12 +882,12 @@ namespace Inkeys::Drawing::Draw3
 			if (FAILED(result))
 			{
 				LogHResult("IDXGISwapChain2::SetMaximumFrameLatency(1)", result);
-				std::cout << "Waitable frame latency setup failed; fallback to ordinary swapchain." << std::endl;
+				DiagnosticOutput::Line() << "Waitable frame latency setup failed; fallback to ordinary swapchain." << std::endl;
 				swapChain.Reset();
 				return false;
 			}
 
-			std::cout << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
+			DiagnosticOutput::Line() << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
 			{
 				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain.Get(), "Waitable created");
@@ -897,7 +917,7 @@ namespace Inkeys::Drawing::Draw3
 				LogHResult(SwapChainCreationStepName(mode, false), result);
 				return false;
 			}
-			std::cout << "Ordinary swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
+			DiagnosticOutput::Line() << "Ordinary swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
 			{
 				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain.Get(), "Created");
@@ -947,7 +967,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!IsDirectCompositionMode(mode) && !IsUlwMode(mode))
 			{
 				beginFailure();
-				std::cout << "Transparent present mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line() << "Transparent present mode " << TransparentPresentModeName(mode)
 					<< " is disabled." << std::endl;
 				return false;
 			}
@@ -958,12 +978,12 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 			activeMode = mode;
-			std::cout << "Trying transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
+			DiagnosticOutput::Line() << "Trying transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			if (!ConfigureWindow(mode))
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
-				std::cout << "ConfigureWindow failed in mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line() << "ConfigureWindow failed in mode " << TransparentPresentModeName(mode)
 					<< " exStyle=0x" << std::hex
 					<< static_cast<unsigned long>(GetWindowLongPtrW(primaryWindow, GWL_EXSTYLE))
 					<< std::dec << " lastError=" << initializeError << std::endl;
@@ -973,7 +993,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
-				std::cout << "CreateSwapChain failed in mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line() << "CreateSwapChain failed in mode " << TransparentPresentModeName(mode)
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
@@ -981,11 +1001,13 @@ namespace Inkeys::Drawing::Draw3
 			LogSwapChainRuntimeDescription(TransparentPresentModeName(mode),
 				swapChain.Get(), "Draw3 created");
 
-			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height))
+			// 传递实际创建后端，不用适配器名称或 vendor 猜测 WARP。
+			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height,
+				graphics->driverType, options.enableZhaoxinCompatibility))
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
-				std::cout << "Renderer initialization failed in mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line() << "Renderer initialization failed in mode " << TransparentPresentModeName(mode)
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
@@ -993,11 +1015,11 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
-				std::cout << "Presenter initialization failed in mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line() << "Presenter initialization failed in mode " << TransparentPresentModeName(mode)
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
-			std::cout << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
+			DiagnosticOutput::Line() << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			return true;
 		}
 
@@ -1092,7 +1114,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!terminal)
 					{
 						const size_t nextIndex = TransparentPresentModeIndex(mode) + 1;
-						std::cout << "Transparent present mode " << TransparentPresentModeName(mode)
+						DiagnosticOutput::Line() << "Transparent present mode " << TransparentPresentModeName(mode)
 							<< " failed; fallback to " << TransparentPresentModeName(kTransparentPresentModes[nextIndex]) << "." << std::endl;
 					}
 				}
@@ -1118,7 +1140,7 @@ namespace Inkeys::Drawing::Draw3
 				return true; // 按优先级选第一个可用透明呈现路径。
 		}
 		options.failedCleanup.BeginKnownFailure();
-		std::cout << "All transparent present modes failed." << std::endl;
+		DiagnosticOutput::Line() << "All transparent present modes failed." << std::endl;
 		return false;
 	}
 
@@ -1132,7 +1154,7 @@ namespace Inkeys::Drawing::Draw3
 			++impl_->requestedOutputRevision;
 		if (StartupEnvironmentDiagnosticsEnabled())
 		{
-			std::cout << "[Draw3Diag][target] requested="
+			DiagnosticOutput::Line() << "[Draw3Diag][target] requested="
 				<< (target == TransparentOutputTarget::SelectionUlw
 					? "DrawpadPresentation" : "Drawpad")
 				<< " revision=" << impl_->requestedOutputRevision << std::endl;
@@ -1172,7 +1194,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 所有旧设备引用已由调用方 GPU cache 和 presenter 释放，随后在同一绘制线程重建。
 			*impl_->graphics = {};
-			if (!InitializeGraphicsDevice(*impl_->graphics))
+			if (!InitializeGraphicsDevice(*impl_->graphics, impl_->options.enableHardwareAcceleration))
 			{
 				impl_->lastFailure = failure;
 				return false;
@@ -1263,7 +1285,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (!succeeded || StartupEnvironmentDiagnosticsEnabled())
 				{
-					std::cout << "[Draw3Diag][present] mode="
+					DiagnosticOutput::Line() << "[Draw3Diag][present] mode="
 						<< TransparentPresentModeName(impl_->activeMode)
 						<< " target="
 						<< (target == TransparentOutputTarget::SelectionUlw
@@ -1285,7 +1307,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->lastObservation.presentedContentRevision = contentRevision;
 		if (!succeeded && !impl_->presentFailureLogged)
 		{
-			std::cout << "Present failed in mode " << TransparentPresentModeName(impl_->activeMode) << std::endl;
+			DiagnosticOutput::Line() << "Present failed in mode " << TransparentPresentModeName(impl_->activeMode) << std::endl;
 			impl_->presentFailureLogged = true;
 		}
 		if (succeeded)

@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <windows.h>
 #include <json/json.h>
 
@@ -12,7 +13,8 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cwchar>
-#include <deque>
+#include <list>
+#include <type_traits>
 #include <filesystem>
 #include <limits>
 #include <map>
@@ -144,7 +146,9 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<unsigned long long>(HashPath(*normalized)));
 				handle_ = CreateMutexW(nullptr, FALSE, name);
 				if (!handle_) return false;
-				const DWORD wait = WaitForSingleObject(handle_, INFINITE);
+				// 锁拥有者长期无响应时也必须返回 IoError，让加载重试能收到终态。
+				constexpr DWORD kIndexMutexWaitMilliseconds = 1000;
+				const DWORD wait = WaitForSingleObject(handle_, kIndexMutexWaitMilliseconds);
 				acquired_ = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
 				return acquired_;
 			}
@@ -623,7 +627,7 @@ namespace Inkeys::Drawing::Draw3
 					const auto diagnostic = std::find_if(saved.diagnostics.begin(), saved.diagnostics.end(),
 						[](const auto& value) { return value.systemError != 0; });
 					// 使用原 UInk result 的真实错误，不能拿 caller 的 stale LastError 猜原因。
-					std::fprintf(stderr, "[Draw3.Presentation.TestIo] stage=4 uink_status=%u system_error=%u error_available=%u path_chars=%zu diagnostic_code=%u diagnostic_error=%u\n",
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.Presentation.TestIo] stage=4 uink_status=%u system_error=%u error_available=%u path_chars=%zu diagnostic_code=%u diagnostic_error=%u\n",
 						static_cast<unsigned>(saved.status), saved.systemError, saved.systemError != 0 ? 1u : 0u, path.size(),
 						diagnostic == saved.diagnostics.end() ? 0u : static_cast<unsigned>(diagnostic->code),
 						diagnostic == saved.diagnostics.end() ? 0u : diagnostic->systemError);
@@ -745,7 +749,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 						std::uint32_t error = 0;
 						if (!TryRemoveOwnedUInkVersion(version.authority, error))
-							std::fprintf(stderr, "[Draw3.Presentation] action=collect_version result=retained error=%u\n", error);
+							DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=collect_version result=retained error=%u\n", error);
 					}
 					// 两索引真实 deny-write/delete HANDLE 和目录 leases 均持有到最后一次删除结束。
 				}
@@ -928,7 +932,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			for (std::size_t index = 0; index < selection.tracks.size(); ++index)
 				if (index != selection.selected && !selection.tracks[index].indexValid)
-					std::fprintf(stderr, "[Draw3.Presentation] action=select_track result=retained_invalid track=%u\n",
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=select_track result=retained_invalid track=%u\n",
 						static_cast<unsigned>(selection.tracks[index].track));
 			return true;
 		}
@@ -1149,7 +1153,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// 此三边界未保存原 Win32 error，明确只观测已失败站点，不伪造数值。
 				if (faults.logSaveIoDiagnostics)
-					std::fprintf(stderr, "[Draw3.Presentation.TestIo] stage=%u error_available=0\n", stage);
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.Presentation.TestIo] stage=%u error_available=0\n", stage);
 			};
 			if (faults.writeDelayMilliseconds != 0)
 				Sleep(faults.writeDelayMilliseconds);
@@ -1566,6 +1570,12 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const std::wstring path = JoinPath(root, WidenAscii(found->relativePath));
 			const auto read = ReadUInkFile(path);
+			if (read.status == UInkReadStatus::IoError)
+			{
+				// 暂时读失败不能证明源已变化，交给 Controller 现有的有界退避。
+				completion.status = PresentationPersistenceStatus::IoError;
+				return completion;
+			}
 			if (read.status != UInkReadStatus::Complete || !read.document ||
 				(read.provenance.containsInvalidCompleteBlocks ||
 					read.provenance.contentSequenceRecovered) ||
@@ -1672,12 +1682,42 @@ namespace Inkeys::Drawing::Draw3
 				PresentationPersistenceOperation::Save;
 			PresentationSaveRequest save;
 			PresentationLoadRequest load;
+			std::shared_ptr<PresentationPersistenceCompletion> completion;
+
+			void PrepareCompletion()
+			{
+				completion = std::make_shared<PresentationPersistenceCompletion>();
+				completion->operation = operation;
+#if defined(DRAW3_TESTING)
+				CompletionTestPoint(PresentationCompletionTestStage::RequestIdentity);
+#endif
+				if (operation == PresentationPersistenceOperation::Save)
+				{
+					completion->target = save.target;
+					completion->slotGeneration = save.slotGeneration;
+					completion->fileGuid = save.snapshot.fileGuid;
+					completion->mutationRevision = save.mutationRevision;
+					completion->clearPageGuid = save.clearPageGuid;
+					completion->clearIntervalOrdinal = save.clearIntervalOrdinal;
+				}
+				else
+				{
+					completion->target = load.target;
+					completion->slotGeneration = load.slotGeneration;
+					completion->loadKind = load.kind;
+					completion->pageGuid = load.pageGuid;
+					completion->intervalOrdinal = load.intervalOrdinal;
+				}
+			}
 		};
 
 		mutable std::mutex mutex;
 		std::condition_variable condition;
-		std::deque<WorkItem> queue;
-		std::deque<PresentationPersistenceCompletion> completions;
+		// 同一节点从等待队列 splice 到完成队列，接受后终态交接不再分配。
+		std::list<WorkItem> queue;
+		std::list<WorkItem> completions;
+		// MSVC list 构造也分配哨兵；processing 必须随 service 预建，不能在取出请求后构造。
+		std::list<WorkItem> working;
 		PendingEntries pendingIndexEntries;
 		OwnedPresentationVersions ownedVersions;
 		std::jthread worker;
@@ -1689,28 +1729,51 @@ namespace Inkeys::Drawing::Draw3
 		bool accepting = false;
 		PresentationPersistenceDiagnostics diagnostics;
 
-		void PushCompletion(PresentationPersistenceCompletion completion) noexcept
+		static_assert(std::is_nothrow_move_assignable_v<PresentationPersistenceCompletion>);
+		static_assert(std::is_nothrow_move_assignable_v<WorkItem>);
+		static_assert(std::is_nothrow_default_constructible_v<PresentationSaveRequest>);
+		static_assert(std::is_nothrow_default_constructible_v<PresentationLoadRequest>);
+
+#if defined(DRAW3_TESTING)
+		static void CompletionTestPoint(PresentationCompletionTestStage stage) noexcept
 		{
+			// 只复制不分配的小型 hook；不能用带 string 的完整 fault 快照破坏发布边界。
+			PresentationCompletionTestHook hook = nullptr;
+			void* context = nullptr;
+			{
+				std::scoped_lock lock(testFaultMutex);
+				hook = testFaults.completionHook;
+				context = testFaults.completionContext;
+			}
+			if (hook) hook(context, stage);
+		}
+#endif
+
+		void PushCompletion(std::list<WorkItem>& completed) noexcept
+		{
+			// 终态节点不再需要原保存快照，先释放大 payload，避免等待消费者时占双份墨迹。
+			completed.front().save = {};
+			completed.front().load = {};
 			void* context = nullptr;
 			void (*callback)(void*) noexcept = nullptr;
-			try
+#if defined(DRAW3_TESTING)
+			CompletionTestPoint(PresentationCompletionTestStage::PublishBegin);
+#endif
 			{
 				std::scoped_lock lock(mutex);
-				if (completion.status == PresentationPersistenceStatus::Committed)
+				const auto status = completed.front().completion->status;
+				completions.splice(completions.end(), completed, completed.begin());
+				if (status == PresentationPersistenceStatus::Committed)
 					++diagnostics.committed;
-				else if (completion.status == PresentationPersistenceStatus::Loaded)
+				else if (status == PresentationPersistenceStatus::Loaded)
 					++diagnostics.loaded;
 				else ++diagnostics.failed;
-				completions.push_back(std::move(completion));
 				context = wakeContext;
 				callback = wake;
 			}
-			catch (...)
-			{
-				std::fputs("[Draw3.Presentation] action=completion result=failed reason=exception\n",
-					stderr);
-				return;
-			}
+#if defined(DRAW3_TESTING)
+			CompletionTestPoint(PresentationCompletionTestStage::PublishEnd);
+#endif
 			if (callback) callback(context);
 		}
 
@@ -1718,78 +1781,52 @@ namespace Inkeys::Drawing::Draw3
 		{
 			for (;;)
 			{
-				WorkItem item;
 				{
 					std::unique_lock lock(mutex);
 					condition.wait(lock, [this] { return !queue.empty() || !accepting; });
 					if (queue.empty() && !accepting) return;
-					item = std::move(queue.front());
-					queue.pop_front();
+					working.splice(working.end(), queue, queue.begin());
 				}
+				WorkItem& item = working.front();
+				auto& completion = *item.completion;
 				try
 				{
-					PresentationPersistenceCompletion completion;
-					completion.operation = item.operation;
+					const auto faults = SnapshotTestFaults();
+					if (faults.throwWorkerOperation)
+						throw std::runtime_error("injected presentation worker exception");
+#if defined(DRAW3_TESTING)
+					CompletionTestPoint(PresentationCompletionTestStage::WorkerOperation);
+#endif
 					if (item.operation == PresentationPersistenceOperation::Save)
-					{
-						completion.target = item.save.target;
-						completion.slotGeneration = item.save.slotGeneration;
-						completion.fileGuid = item.save.snapshot.fileGuid;
-						completion.mutationRevision = item.save.mutationRevision;
-						completion.clearPageGuid = item.save.clearPageGuid;
-						completion.clearIntervalOrdinal =
-							item.save.clearIntervalOrdinal;
-					}
+						completion.status = SavePresentation(
+							autoSaveRoot, sessionId, item.save, pendingIndexEntries,
+							ownedVersions, completion.storageTrack);
 					else
-					{
-						completion.target = item.load.target;
-						completion.slotGeneration = item.load.slotGeneration;
-						// 失败回执保留区间加载身份，避免清屏撤销一直等待。
-						completion.loadKind = item.load.kind;
-						completion.pageGuid = item.load.pageGuid;
-						completion.intervalOrdinal = item.load.intervalOrdinal;
-					}
-					try
-					{
-						// 任一工作项异常都必须转换为终态，不能逃出 jthread 触发 terminate。
-						if (SnapshotTestFaults().throwWorkerOperation)
-							throw std::runtime_error("injected presentation worker exception");
-						if (item.operation == PresentationPersistenceOperation::Save)
-							completion.status = SavePresentation(
-								autoSaveRoot, sessionId, item.save, pendingIndexEntries,
-								ownedVersions,
-								completion.storageTrack);
-						else
-							completion = LoadPresentation(
-								autoSaveRoot, sessionId, item.load, pendingIndexEntries,
-								completion.storageTrack);
-					}
-					catch (...)
-					{
-						completion.status = PresentationPersistenceStatus::IoError;
-					}
-					if (completion.operation == PresentationPersistenceOperation::Save &&
-						completion.status != PresentationPersistenceStatus::Committed)
-						std::fprintf(stderr,
-							"[Draw3.Presentation] action=save result=failed status=%s revision=%llu\n",
-							PersistenceStatusName(completion.status),
-							static_cast<unsigned long long>(completion.mutationRevision));
-					else if (completion.operation == PresentationPersistenceOperation::Load &&
-						completion.status != PresentationPersistenceStatus::Loaded &&
-						completion.status != PresentationPersistenceStatus::NotFound)
-						std::fprintf(stderr,
-							"[Draw3.Presentation] action=load result=failed status=%s\n",
-							PersistenceStatusName(completion.status));
-					PushCompletion(std::move(completion));
+						completion = LoadPresentation(
+							autoSaveRoot, sessionId, item.load, pendingIndexEntries,
+							completion.storageTrack);
 				}
 				catch (...)
 				{
-					// 连 completion payload 的复制失败也不能逃出 owned worker。
-					std::fputs("[Draw3.Presentation] action=worker result=failed reason=exception\n",
-						stderr);
+					// 身份在接受请求前已备妥；加载或复制失败也有可匹配的失败终态。
+					completion.status = PresentationPersistenceStatus::IoError;
 				}
+				if (completion.operation == PresentationPersistenceOperation::Save &&
+					completion.status != PresentationPersistenceStatus::Committed)
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+						"[Draw3.Presentation] action=save result=failed status=%s revision=%llu\n",
+						PersistenceStatusName(completion.status),
+						static_cast<unsigned long long>(completion.mutationRevision));
+				else if (completion.operation == PresentationPersistenceOperation::Load &&
+					completion.status != PresentationPersistenceStatus::Loaded &&
+					completion.status != PresentationPersistenceStatus::NotFound)
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+						"[Draw3.Presentation] action=load result=failed status=%s\n",
+						PersistenceStatusName(completion.status));
+				PushCompletion(working);
 			}
 		}
+
 	};
 
 	PresentationAutoSaveService::PresentationAutoSaveService()
@@ -1813,6 +1850,7 @@ namespace Inkeys::Drawing::Draw3
 			std::scoped_lock lock(impl_->mutex);
 			impl_->queue.clear();
 			impl_->completions.clear();
+			impl_->working.clear();
 			// index-commit 自修复状态只跨同一根目录的 Host generation 保留。
 			if (impl_->autoSaveRootKey != *normalizedRootKey)
 				impl_->pendingIndexEntries.clear();
@@ -1842,32 +1880,43 @@ namespace Inkeys::Drawing::Draw3
 			return PresentationPersistenceSubmitStatus::Invalid;
 		std::scoped_lock lock(impl_->mutex);
 		if (!impl_->accepting) return PresentationPersistenceSubmitStatus::Closed;
+		Impl::WorkItem prepared;
+		try
+		{
+			prepared.save = std::move(request);
+#if defined(DRAW3_TESTING)
+			Impl::CompletionTestPoint(PresentationCompletionTestStage::RequestCompletion);
+#endif
+			prepared.PrepareCompletion();
+		}
+		catch (...) { return PresentationPersistenceSubmitStatus::Invalid; }
+		const auto& candidate = prepared.save;
 		for (auto iterator = impl_->queue.rbegin();
-			!request.clearPageGuid && iterator != impl_->queue.rend(); ++iterator)
+			!candidate.clearPageGuid && iterator != impl_->queue.rend(); ++iterator)
 		{
 			if (iterator->operation == PresentationPersistenceOperation::Save &&
-				iterator->save.target.key == request.target.key &&
+				iterator->save.target.key == candidate.target.key &&
 				iterator->save.clearPageGuid) break; // 同文稿任一轨的 Clear 边界均保持 FIFO。
 			if (iterator->operation == PresentationPersistenceOperation::Save &&
-				iterator->save.target.key == request.target.key &&
-				iterator->save.target.sourceIdentity == request.target.sourceIdentity &&
-				iterator->save.target.bindingMode == request.target.bindingMode &&
-				iterator->save.snapshot.fileGuid == request.snapshot.fileGuid &&
-				iterator->save.snapshot.workspaceGuid == request.snapshot.workspaceGuid &&
-				iterator->save.slotGeneration == request.slotGeneration)
+				iterator->save.target.key == candidate.target.key &&
+				iterator->save.target.sourceIdentity == candidate.target.sourceIdentity &&
+				iterator->save.target.bindingMode == candidate.target.bindingMode &&
+				iterator->save.snapshot.fileGuid == candidate.snapshot.fileGuid &&
+				iterator->save.snapshot.workspaceGuid == candidate.snapshot.workspaceGuid &&
+				iterator->save.slotGeneration == candidate.slotGeneration)
 			{
 				// 普通 tail 只在同轨、同文件、同槽代次内合并。
-				iterator->save = std::move(request);
+				*iterator = std::move(prepared);
 				++impl_->diagnostics.replacedPending;
 				return PresentationPersistenceSubmitStatus::ReplacedPending;
 			}
 		}
 		try
 		{
-			Impl::WorkItem item;
-			item.operation = PresentationPersistenceOperation::Save;
-			item.save = std::move(request);
-			impl_->queue.push_back(std::move(item));
+#if defined(DRAW3_TESTING)
+			Impl::CompletionTestPoint(PresentationCompletionTestStage::RequestQueueNode);
+#endif
+			impl_->queue.push_back(std::move(prepared));
 			++impl_->diagnostics.accepted;
 		}
 		catch (...) { return PresentationPersistenceSubmitStatus::Invalid; }
@@ -1891,6 +1940,13 @@ namespace Inkeys::Drawing::Draw3
 			Impl::WorkItem item;
 			item.operation = PresentationPersistenceOperation::Load;
 			item.load = std::move(request);
+#if defined(DRAW3_TESTING)
+			Impl::CompletionTestPoint(PresentationCompletionTestStage::RequestCompletion);
+#endif
+			item.PrepareCompletion();
+#if defined(DRAW3_TESTING)
+			Impl::CompletionTestPoint(PresentationCompletionTestStage::RequestQueueNode);
+#endif
 			impl_->queue.push_back(std::move(item));
 			++impl_->diagnostics.accepted;
 		}
@@ -1904,7 +1960,17 @@ namespace Inkeys::Drawing::Draw3
 	{
 		std::scoped_lock lock(impl_->mutex);
 		if (impl_->completions.empty()) return false;
-		completion = std::move(impl_->completions.front());
+		completion = std::move(*impl_->completions.front().completion);
+		impl_->completions.pop_front();
+		return true;
+	}
+
+	bool PresentationAutoSaveService::TryTakeCompletion(
+		std::shared_ptr<const PresentationPersistenceCompletion>& completion) noexcept
+	{
+		std::scoped_lock lock(impl_->mutex);
+		if (impl_->completions.empty()) return false;
+		completion = std::move(impl_->completions.front().completion);
 		impl_->completions.pop_front();
 		return true;
 	}

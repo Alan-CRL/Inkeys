@@ -34,13 +34,20 @@ import Inkeys.UI.StartupPreview;
 import Inkeys.Startup.Progress;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.graphics_initialization;
+import Inkeys.Drawing.Draw3.renderer;
+import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.transparent_presentation;
 
 #include "IdtMain.h"
+#include "Inkeys/Drawing/Draw3/Draw3.DiagnosticOutput.h"
+#include "Inkeys/Drawing/Draw3/Draw3.PptTiming.h"
 #include "Inkeys/Helper/FailedCleanupDeadline.h"
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
 #include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
+#include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
+#include "Inkeys/UI/StartupPlacement.h"
 #include "PptSettingsPersistence.h"
 #include "resource.h"
 #include <array>
@@ -48,13 +55,16 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <io.h>
 
 #include "IdtConfiguration.h"
+#include "Inkeys/Drawing/Draw3/Draw3.HapticDiagnostics.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtFreezeFrame.h"
 #include "IdtGuid.h"
 #include "IdtI18n.h"
+#include "IdtI18nKeys.g.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtOther.h"
@@ -84,8 +94,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.3981";		// 程序发布版本
-wstring editionDate = L"3.0.0-20260811a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.10216";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261020a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -202,6 +212,55 @@ namespace
 		Inkeys::UI::StartupPreview::Stop();
 	}
 
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	bool RunStartupPreviewRetryFailureForManualTest() noexcept
+	{
+		// 仅测试构建且同时明确开启慢速观察和故障注入；命令行慢速开关不授权故障。
+		if (!Inkeys::UI::StartupPreview::IsActive()) return true;
+		const auto ExactEnvironmentOptIn = [](const wchar_t* name) noexcept
+			{
+				wchar_t enabled[2]{};
+				return GetEnvironmentVariableW(name, enabled, 2) == 1
+					&& enabled[0] == L'1';
+			};
+		if (!ExactEnvironmentOptIn(L"INKEYS_STARTUP_PREVIEW_RETRY_FAILURE")
+			|| !ExactEnvironmentOptIn(L"INKEYS_STARTUP_PREVIEW_MANUAL_DELAY"))
+			return true;
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(800));
+		// 先建立 Close 的15秒监督；重试由下方唯一启动点负责，不能另行 Arm Restart。
+		SetOffSignal(1);
+		if (!LaunchState::warnTry)
+		{
+			if (IDTLogger) IDTLogger->warn(
+				"[主线程][IdtMain] 人工测试阶段首次失败，淡出后以 -WarnTry 重试");
+			// 首次重试保持普通颜色，等 Preview 淡出再启动继承两项环境开关的子进程。
+			Inkeys::UI::StartupPreview::RequestFadeOutForExit();
+			(void)Inkeys::UI::StartupPreview::WaitForFadeOut(
+				std::chrono::milliseconds(500));
+			Inkeys::UI::StartupPreview::Stop();
+			const auto launchResult = reinterpret_cast<INT_PTR>(ShellExecuteW(
+				nullptr, nullptr, GetCurrentExePath().c_str(),
+				L"-WarnTry", nullptr, SW_SHOWNORMAL));
+			if (launchResult <= 32)
+			{
+				if (IDTLogger) IDTLogger->critical(
+					"[主线程][IdtMain] 人工测试重试进程启动失败, shellResult={}",
+					launchResult);
+				PublishFatalStartupFailure(0xD0FEu,
+					L"人工测试：无法启动模拟重试进程，测试已停止。");
+			}
+			return false;
+		}
+
+		if (IDTLogger) IDTLogger->critical(
+			"[主线程][IdtMain] 人工测试阶段重试后仍失败");
+		PublishFatalStartupFailure(0xD0FEu,
+			L"人工测试：模拟初始化阶段重试后仍失败。");
+		return false;
+	}
+#endif
+
 	bool WriteStartupPreviewSmokeReport(const std::wstring& path, bool passed,
 		const Inkeys::UI::StartupPreview::Diagnostics& preview,
 		const Inkeys::UI::Bar::PresentationAlphaDiagnostics& alpha) noexcept
@@ -210,29 +269,29 @@ namespace
 		{
 			if (path.empty()) return false;
 			const std::string report = std::string(passed ? "PASS\r\n" : "FAIL\r\n")
-			+ "totalWidthDip=" + std::to_string(preview.totalWidthDip) + "\r\n"
-			+ "previewFirstAlpha0Committed=" + (preview.firstFrameCommitted ? "1\r\n" : "0\r\n")
-			+ "previewFadeOutCommitted=" + (preview.previewFadeOutCommitted ? "1\r\n" : "0\r\n")
-			+ "barAlpha0Committed=" + (preview.barAlpha0Committed
-				&& alpha.transparentCommitted ? "1\r\n" : "0\r\n")
-			+ "barAlpha255Committed=" + (preview.barAlpha255Committed
-				&& alpha.opaqueCommitted ? "1\r\n" : "0\r\n")
-			+ "automaticStopPosted=" + (preview.automaticStopPosted ? "1\r\n" : "0\r\n")
-			+ "ownerThreadExited=" + (preview.ownerThreadExited ? "1\r\n" : "0\r\n")
-			+ "previewInactive=" + (preview.previewInactive ? "1\r\n" : "0\r\n")
-			+ "recovery=" + (passed ? "visible\r\n"
-				: (!preview.firstFrameCommitted ? "bypassed\r\n" : "fatal\r\n"))
-			+ "requestedAlpha=" + std::to_string(alpha.requested) + "\r\n"
-			+ "committedAlpha=" + std::to_string(alpha.committed) + "\r\n";
-		HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
-			CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (file == INVALID_HANDLE_VALUE) return false;
-		DWORD written = 0;
-		const bool succeeded = WriteFile(file, report.data(),
-			static_cast<DWORD>(report.size()), &written, nullptr) != FALSE
-			&& written == report.size() && FlushFileBuffers(file) != FALSE;
-		CloseHandle(file);
-		return succeeded;
+				+ "totalWidthDip=" + std::to_string(preview.totalWidthDip) + "\r\n"
+				+ "previewFirstAlpha0Committed=" + (preview.firstFrameCommitted ? "1\r\n" : "0\r\n")
+				+ "previewFadeOutCommitted=" + (preview.previewFadeOutCommitted ? "1\r\n" : "0\r\n")
+				+ "barAlpha0Committed=" + (preview.barAlpha0Committed
+					&& alpha.transparentCommitted ? "1\r\n" : "0\r\n")
+				+ "barAlpha255Committed=" + (preview.barAlpha255Committed
+					&& alpha.opaqueCommitted ? "1\r\n" : "0\r\n")
+				+ "automaticStopPosted=" + (preview.automaticStopPosted ? "1\r\n" : "0\r\n")
+				+ "ownerThreadExited=" + (preview.ownerThreadExited ? "1\r\n" : "0\r\n")
+				+ "previewInactive=" + (preview.previewInactive ? "1\r\n" : "0\r\n")
+				+ "recovery=" + (passed ? "visible\r\n"
+					: (!preview.firstFrameCommitted ? "bypassed\r\n" : "fatal\r\n"))
+				+ "requestedAlpha=" + std::to_string(alpha.requested) + "\r\n"
+				+ "committedAlpha=" + std::to_string(alpha.committed) + "\r\n";
+			HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+				CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (file == INVALID_HANDLE_VALUE) return false;
+			DWORD written = 0;
+			const bool succeeded = WriteFile(file, report.data(),
+				static_cast<DWORD>(report.size()), &written, nullptr) != FALSE
+				&& written == report.size() && FlushFileBuffers(file) != FALSE;
+			CloseHandle(file);
+			return succeeded;
 		}
 		catch (...)
 		{
@@ -288,7 +347,7 @@ void SetOffSignal(int signal)
 	Inkeys::Window::GetService().BeginShutdown();
 	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
 		signal == 2 ? Inkeys::Shutdown::Intent::Restart
-			: Inkeys::Shutdown::Intent::Close);
+		: Inkeys::Shutdown::Intent::Close);
 	const DWORD supervisorError = GetLastError();
 	offSignal.store(signal, std::memory_order_release);
 	if (supervisor == Inkeys::Shutdown::ArmResult::Failed)
@@ -297,7 +356,7 @@ void SetOffSignal(int signal)
 		Inkeys::UI::RenderPipeline::WakeForStop();
 		Inkeys::Shutdown::EnforceFailedShutdownDeadline(
 			signal == 2 ? Inkeys::Shutdown::Intent::Restart
-				: Inkeys::Shutdown::Intent::Close);
+			: Inkeys::Shutdown::Intent::Close);
 	}
 	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
 	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
@@ -482,17 +541,17 @@ namespace
 			const auto mainConfig = root / "Inkeys" / "Config" / "main.json";
 			const auto writeBytes = [](const std::filesystem::path& path,
 				const std::string& bytes)
-			{
-				std::ofstream file(path, std::ios::binary | std::ios::trunc);
-				file.write(bytes.data(), bytes.size());
-				return file.good();
-			};
+				{
+					std::ofstream file(path, std::ios::binary | std::ios::trunc);
+					file.write(bytes.data(), bytes.size());
+					return file.good();
+				};
 			const auto readBytes = [](const std::filesystem::path& path)
-			{
-				std::ifstream file(path, std::ios::binary);
-				return std::string(std::istreambuf_iterator<char>(file),
-					std::istreambuf_iterator<char>());
-			};
+				{
+					std::ifstream file(path, std::ios::binary);
+					return std::string(std::istreambuf_iterator<char>(file),
+						std::istreambuf_iterator<char>());
+				};
 			if (!writeBytes(deploy, "{broken") ||
 				!writeBytes(pptConfig, "{broken") ||
 				!writeBytes(mainConfig, "{broken")) return 1;
@@ -575,6 +634,173 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: expanded JSON replaced the last readable file\n", stderr);
 				return 1;
 			}
+			stage = "touch reconnect configuration";
+			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
+			Inkeys::Config reconnectDefaults;
+			if (!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect ||
+				!writeBytes(mainConfig, "{}") || !reconnectDefaults.ReadAll() ||
+				!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect)
+			{
+				std::fputs("[ConfigBoundary] FAIL: touch reconnect default was not enabled\n", stderr);
+				return 1;
+			}
+			for (const bool enabled : { false, true })
+			{
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = enabled;
+				Inkeys::Config restoredReconnect;
+				if (!reconnectDefaults.Write() || !restoredReconnect.ReadAll() ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
+				{
+					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
+					return 1;
+				}
+			}
+			stage = "whiteboard theme preference";
+			Inkeys::Config themeConfig;
+			if (!themeConfig.SetWhiteboardThemeDefault(0xE5E7EB,2) || !themeConfig.Write()) return 1;
+			Inkeys::Config restartedTheme;
+			if (!restartedTheme.ReadAll()) return 1;
+			const auto rememberedTheme=restartedTheme.Drawing.Whiteboard.DefaultTheme.load();
+			if (rememberedTheme.backgroundRgb!=0xE5E7EB || rememberedTheme.pattern!=2 ||
+				Inkeys::Drawing::Draw3::RunWhiteboardThemePreferenceProductionTest({rememberedTheme.backgroundRgb,
+					static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(rememberedTheme.pattern)})!=0)
+			{
+				std::fputs("[ConfigBoundary] FAIL: persisted theme did not initialize a fresh whiteboard Controller\n",stderr);
+				return 1;
+			}
+			stage = "pen haptic configuration";
+			Inkeys::Config hapticDefaults;
+			if (!hapticDefaults.Drawing.Haptics.Drawing || !hapticDefaults.Drawing.Haptics.Buttons ||
+				!writeBytes(mainConfig, "{}") || !hapticDefaults.ReadAll() ||
+				!hapticDefaults.Drawing.Haptics.Drawing || !hapticDefaults.Drawing.Haptics.Buttons)
+			{
+				std::fputs("[ConfigBoundary] FAIL: pen haptic defaults were not enabled\n", stderr);
+				return 1;
+			}
+			for (const bool drawing : { false, true }) for (const bool buttons : { false, true })
+			{
+				hapticDefaults.Drawing.Haptics.Drawing = drawing;
+				hapticDefaults.Drawing.Haptics.Buttons = buttons;
+				Inkeys::Config restoredHaptics;
+				if (!hapticDefaults.Write() || !restoredHaptics.ReadAll() ||
+					restoredHaptics.Drawing.Haptics.Drawing.load() != drawing ||
+					restoredHaptics.Drawing.Haptics.Buttons.load() != buttons)
+				{
+					std::fputs("[ConfigBoundary] FAIL: independent pen haptic preferences did not round-trip\n", stderr);
+					return 1;
+				}
+			}
+			stage = "Draw3 device preferences";
+			Inkeys::Config deviceDefaults;
+			if (!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility ||
+				!writeBytes(mainConfig, "{}") || !deviceDefaults.ReadAll() ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
+			{
+				std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences defaulted off\n", stderr);
+				return 1;
+			}
+			for (const bool hardware : { false, true })
+				for (const bool compatibility : { false, true })
+				{
+					deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = hardware;
+					deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = compatibility;
+					Inkeys::Config restoredDevice;
+					if (!deviceDefaults.Write() || !restoredDevice.ReadAll() ||
+						restoredDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						restoredDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
+					{
+						std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences did not round-trip\n", stderr);
+						return 1;
+					}
+					Inkeys::Config copiedDevice;
+					copiedDevice = restoredDevice;
+					Inkeys::Config miniDevice;
+					if (!miniDevice.ReadMini({ "Experimental.Inkeys3.Draw3.EnableHardwareAcceleration",
+						"Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility" }) ||
+						miniDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						miniDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility ||
+						copiedDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						copiedDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
+						return 1;
+					const auto uploadInfo = restoredDevice.GetUploadInfo();
+					if (uploadInfo.find("EnableHardwareAcceleration") != std::string::npos ||
+						uploadInfo.find("EnableZhaoxinCompatibility") != std::string::npos) return 1;
+				}
+			for (const char* invalid : { "0", "1", "\"false\"", "null", "{}", "[]" })
+			{
+				Inkeys::Config invalidDevice;
+				const std::string invalidJson = "{\"Experimental\":{\"Inkeys3\":{\"Draw3\":{" +
+					std::string("\"EnableHardwareAcceleration\":") + invalid +
+					",\"EnableZhaoxinCompatibility\":" + invalid + "}}}}";
+				if (!writeBytes(mainConfig, invalidJson) || !invalidDevice.ReadAll() ||
+					!invalidDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+					!invalidDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
+				{
+					std::fputs("[ConfigBoundary] FAIL: non-bool Draw3 device preferences were accepted\n", stderr);
+					return 1;
+				}
+			}
+			stage = "taskbar scale device defaults";
+			struct RestoreDeviceDefault final
+			{
+				bool previous = Inkeys::ConfigDetail::GetDefaultLargeScreenDevice();
+				~RestoreDeviceDefault() { Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(previous); }
+			} restoreDeviceDefault;
+			for (const bool largeScreen : { false, true })
+			{
+				Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(largeScreen);
+				const int defaultMode = largeScreen ? 1 : 0;
+				Inkeys::Config scaleDefaults;
+				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode)
+					return 1;
+				for (const char* value : { "missing", "-1", "3", "1.0", "2.0", "\"1\"", "\"false\"", "4294967297", "null", "{}", "[]" })
+				{
+					const std::string document = std::string(value) == "missing" ? "{}"
+						: "{\"UI\":{\"Bar\":{\"UseTaskbarHeightAsScaleBase\":" + std::string(value) + "}}}";
+					if (!writeBytes(mainConfig, document)) return 1;
+					scaleDefaults.UI.Bar.Zoom2 = 1.5;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
+					if (!scaleDefaults.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode ||
+						scaleDefaults.UI.Bar.Zoom2.load() != 1.5) return 1;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
+					if (!scaleDefaults.ReadAll() ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode) return 1;
+				}
+				struct ScaleModeCase final
+				{
+					const char* json;
+					int expected;
+				};
+				for (const auto& test : { ScaleModeCase{ "false", 0 }, ScaleModeCase{ "true", 2 },
+					ScaleModeCase{ "0", 0 }, ScaleModeCase{ "1", 1 }, ScaleModeCase{ "2", 2 } })
+				{
+					const std::string document = "{\"UI\":{\"Bar\":{\"UseTaskbarHeightAsScaleBase\":"
+						+ std::string(test.json) + "}}}";
+					if (!writeBytes(mainConfig, document) || !scaleDefaults.ReadAll() ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
+					if (!scaleDefaults.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
+						scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
+					Inkeys::Config frozenScale;
+					frozenScale = scaleDefaults;
+					scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
+					if (!frozenScale.Write()) return 1;
+					Inkeys::Config restoredScale;
+					if (!restoredScale.ReadAll() ||
+						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected ||
+						!restoredScale.ReadMini({ "UI.Bar.UseTaskbarHeightAsScaleBase" }) ||
+						restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase.load() != test.expected) return 1;
+					const auto scaleUpload = restoredScale.GetUploadInfo();
+					restoredScale.UI.Bar.UseTaskbarHeightAsScaleBase = (test.expected + 1) % 3;
+					if (restoredScale.GetUploadInfo() != scaleUpload) return 1;
+				}
+				scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase = 2;
+				scaleDefaults.ResetToDefaults();
+				if (scaleDefaults.UI.Bar.UseTaskbarHeightAsScaleBase.load() != defaultMode) return 1;
+			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
 			std::filesystem::create_directories(root / "fresh" / "opt");
@@ -585,7 +811,7 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
 				return 1;
 			}
-			std::fputs("[ConfigBoundary] PASS: bounded reads preserve bad files and first-run creation\n", stderr);
+			std::fputs("[ConfigBoundary] PASS: bounded reads, first-run creation, touch reconnect, Draw3 and device-based UI scale defaults\n", stderr);
 			return 0;
 		}
 		catch (...)
@@ -734,6 +960,94 @@ namespace
 		}
 	}
 
+	bool PrepareDraw3WindowTopmost(Inkeys::Window::Service& service, HWND drawpad, const char* phase)
+	{
+		using Role = Inkeys::Window::WindowRole;
+		constexpr std::array<Role, 4> roles{
+			Role::MagnifierHost, Role::Freeze, Role::DrawpadPresentation, Role::Drawpad };
+		constexpr std::array<const char*, 4> names{ "Mag", "Freeze", "Presentation", "Drawpad" };
+		std::array<HWND, 4> windows{}, owners{};
+		std::array<LONG_PTR, 4> styles{};
+		std::array<DWORD, 4> styleErrors{};
+		std::array<bool, 4> valid{};
+		for (size_t i = 0; i != roles.size(); ++i) windows[i] = service.Handle(roles[i]);
+		const HWND root = service.OverlayRoot();
+		const HWND expectedRoot = windows[0] ? windows[0] : windows[1];
+		const bool desktopTopmost = service.OverlayTopmost() && !service.WhiteboardWindowMode();
+		const char* failure = nullptr;
+		const char* failedRole = "Root";
+		if (!desktopTopmost) failure = "desktop-policy";
+		else if (!root || root != expectedRoot) failure = "root-mismatch";
+		else if (!drawpad || drawpad != windows[3]) failure = "drawpad-mismatch";
+
+		// 沿用历史合同：隐藏窗口链必须先完成根置顶，再注册 RTS；策略值不能代替实际 HWND 状态。
+		// 刷新在窗口所属线程同步执行，错误码由服务捕获，不能在此读取跨线程的 GetLastError。
+		constexpr DWORD startupRefreshMilliseconds = 5000;
+		if (!failure && !service.RequestTopmostRefresh(startupRefreshMilliseconds))
+			failure = "root-refresh";
+		for (size_t i = 0; i != roles.size(); ++i)
+		{
+			if (i == 0 && !windows[i]) continue; // Mag 为可选窗口，缺失时 Freeze 是根。
+			valid[i] = IsWindow(windows[i]) != FALSE;
+			if (valid[i])
+			{
+				owners[i] = GetWindow(windows[i], GW_OWNER);
+				SetLastError(ERROR_SUCCESS);
+				styles[i] = GetWindowLongPtrW(windows[i], GWL_EXSTYLE);
+				styleErrors[i] = styles[i] == 0 ? GetLastError() : ERROR_SUCCESS;
+			}
+			const HWND expectedOwner = i == 0 ? nullptr : windows[i - 1];
+			const char* nodeFailure = !valid[i] ? "invalid-window"
+				: styleErrors[i] != ERROR_SUCCESS ? "read-style"
+				: owners[i] != expectedOwner ? "owner-mismatch"
+				: (styles[i] & WS_EX_TOPMOST) == 0 ? "missing-topmost" : nullptr;
+			if (!failure && nodeFailure)
+			{
+				failure = nodeFailure;
+				failedRole = names[i];
+			}
+		}
+		// 启动与重建由主线程串行协调；复核句柄，不能将上一代窗口的成功状态用于新 Host。
+		for (size_t i = 0; i != roles.size(); ++i)
+		{
+			if (!failure && service.Handle(roles[i]) != windows[i])
+			{
+				failure = "window-generation";
+				failedRole = names[i];
+			}
+		}
+		if (!failure && (service.OverlayRoot() != root
+			|| !service.OverlayTopmost() || service.WhiteboardWindowMode()))
+			failure = "root-or-policy-changed";
+
+		// 有限等待失败后先建立独立退场监督，日志和窗口 join 也不能无限阻塞。
+		if (failure) SetOffSignal(1);
+		char message[2048]{};
+		std::snprintf(message, sizeof(message),
+			"[Draw3Topmost] phase=%s result=%s cause=%s role=%s root=%p desktop=%d "
+			"Mag={hwnd=%p owner=%p valid=%d exstyle=0x%llX error=%lu} "
+			"Freeze={hwnd=%p owner=%p valid=%d exstyle=0x%llX error=%lu} "
+			"Presentation={hwnd=%p owner=%p valid=%d exstyle=0x%llX error=%lu} "
+			"Drawpad={hwnd=%p owner=%p valid=%d exstyle=0x%llX error=%lu}",
+			phase, failure ? "failed" : "ready", failure ? failure : "none", failedRole,
+			static_cast<void*>(root), desktopTopmost,
+			static_cast<void*>(windows[0]), static_cast<void*>(owners[0]), valid[0],
+			static_cast<unsigned long long>(styles[0]), styleErrors[0],
+			static_cast<void*>(windows[1]), static_cast<void*>(owners[1]), valid[1],
+			static_cast<unsigned long long>(styles[1]), styleErrors[1],
+			static_cast<void*>(windows[2]), static_cast<void*>(owners[2]), valid[2],
+			static_cast<unsigned long long>(styles[2]), styleErrors[2],
+			static_cast<void*>(windows[3]), static_cast<void*>(owners[3]), valid[3],
+			static_cast<unsigned long long>(styles[3]), styleErrors[3]);
+		if (IDTLogger)
+		{
+			if (failure) IDTLogger->error("{}", message);
+			else IDTLogger->info("{}", message);
+		}
+		else std::fprintf(stderr, "%s\n", message);
+		return failure == nullptr;
+	}
+
 	template <typename StartWindows>
 	bool StartDraw3ProductWithFallback(Inkeys::Window::Service& windowService,
 		std::vector<Inkeys::Window::WindowSpec>& windowSpecs, HWND& drawpad_window,
@@ -743,9 +1057,10 @@ namespace
 		bool preferDraw3DirectComposition, StartWindows&& StartWindowService,
 		Inkeys::Shutdown::CleanupRealPacket* observation = nullptr)
 	{
+		if (!PrepareDraw3WindowTopmost(windowService, drawpad_window, "initial")) return false;
 		Inkeys::Shutdown::FailedCleanupDeadline firstHostCleanup(
 			observation ? &Inkeys::Shutdown::PublishAuthorizedCleanupFatal
-				: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
+			: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
 		firstHostCleanup.PrepareOrFatal();
 		const auto firstHostFailure = firstHostCleanup.Signal();
 		draw3StartOptions.failedCleanup = firstHostFailure;
@@ -763,7 +1078,7 @@ namespace
 				observation->trace.graceDeadline = firstGrace;
 			}
 			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
-			if (!observation) IDTLogger->warn("[主线程][IdtMain] Draw3 DComp 初始化失败，重建隐藏窗口链并回退 ULW");
+			if (!observation) IDTLogger->warn("[主线程][IdtMain] Draw3 Host 启动失败，重建隐藏窗口链并以 ULW 重试");
 			const HWND oldDrawpad = observation ? drawpad_window : nullptr;
 			const HWND oldPresentation = observation ? windowService.Handle(
 				Inkeys::Window::WindowRole::DrawpadPresentation) : nullptr;
@@ -785,9 +1100,10 @@ namespace
 			}
 			if (InterlockedCompareExchange(&offSignalInterop, 0, 0) == 0 && StartWindowService())
 			{
+				if (!PrepareDraw3WindowTopmost(windowService, drawpad_window, "rebuilt-ulw")) return false;
 				Inkeys::Shutdown::FailedCleanupDeadline ulwHostCleanup(
 					observation ? &Inkeys::Shutdown::PublishAuthorizedCleanupFatal
-				: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
+					: &Inkeys::Shutdown::PublishFatalFailedCleanupNoWait);
 				ulwHostCleanup.PrepareOrFatal();
 				draw3StartOptions.failedCleanup = ulwHostCleanup.Signal();
 				draw3StartOptions.allowDirectComposition = false;
@@ -828,17 +1144,17 @@ namespace Inkeys::Shutdown
 		auto& packet = *launch.packet;
 		auto& service = Inkeys::Window::GetService();
 		const auto fail = [&](DWORD error) noexcept
-		{
-			InterlockedExchange(&packet.header.error, error);
-			InterlockedExchange(&packet.header.result, 2);
-			PublishCleanupRealStage(packet, CleanupRealStage::PrerequisiteFailed);
-			SetOffSignal(1); // 错误清理也先走正式15秒保护，不返回释放仍活owner的context。
-			StopProduct();
-			service.StopAndJoin();
-			for (HANDLE owner : oldOwners) if (owner) CloseHandle(owner);
-			oldOwners.fill(nullptr);
-			return static_cast<int>(error);
-		};
+			{
+				InterlockedExchange(&packet.header.error, error);
+				InterlockedExchange(&packet.header.result, 2);
+				PublishCleanupRealStage(packet, CleanupRealStage::PrerequisiteFailed);
+				SetOffSignal(1); // 错误清理也先走正式15秒保护，不返回释放仍活owner的context。
+				StopProduct();
+				service.StopAndJoin();
+				for (HANDLE owner : oldOwners) if (owner) CloseHandle(owner);
+				oldOwners.fill(nullptr);
+				return static_cast<int>(error);
+			};
 		try
 		{
 			if (!ShouldPreconfigureNoRedirectionBitmap()) return fail(91);
@@ -863,61 +1179,61 @@ namespace Inkeys::Shutdown
 				spec.bindMessages = false;
 				spec.visible = false;
 				spec.created = [state, i](HWND window)
-				{
-					state->windows[i].store(window, std::memory_order_release);
-					state->created[i].fetch_add(1, std::memory_order_acq_rel);
-					if (state->generation.load(std::memory_order_acquire) == 1)
-						state->packet->trace.ownerThreadIds[i] = GetCurrentThreadId();
-				};
+					{
+						state->windows[i].store(window, std::memory_order_release);
+						state->created[i].fetch_add(1, std::memory_order_acq_rel);
+						if (state->generation.load(std::memory_order_acquire) == 1)
+							state->packet->trace.ownerThreadIds[i] = GetCurrentThreadId();
+					};
 				spec.destroyed = [state, i]
-				{
-					state->destroyed[i].fetch_add(1, std::memory_order_acq_rel);
-					state->windows[i].store(nullptr, std::memory_order_release);
-				};
+					{
+						state->destroyed[i].fetch_add(1, std::memory_order_acq_rel);
+						state->windows[i].store(nullptr, std::memory_order_release);
+					};
 				specs.push_back(std::move(spec));
 			}
 			HWND drawpad = nullptr;
 			const auto startWindows = [&]
-			{
-				const unsigned generation = state->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
-				FailedCleanupDeadline scope(&PublishAuthorizedCleanupFatal);
-				scope.PrepareOrFatal();
-				const bool started = service.Start(specs, scope.Signal());
-				scope.CompleteOrFatal();
-				if (!started) return false;
-				drawpad = service.Handle(Role::Drawpad);
-				const HWND presentation = service.Handle(Role::DrawpadPresentation);
-				for (unsigned i = 0; i != roles.size(); ++i)
 				{
-					const HWND window = service.Handle(roles[i]);
-					DWORD pid = 0;
-					const DWORD tid = GetWindowThreadProcessId(window, &pid);
-					if (!window || !tid || pid != GetCurrentProcessId() || IsWindowVisible(window)) return false;
+					const unsigned generation = state->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+					FailedCleanupDeadline scope(&PublishAuthorizedCleanupFatal);
+					scope.PrepareOrFatal();
+					const bool started = service.Start(specs, scope.Signal());
+					scope.CompleteOrFatal();
+					if (!started) return false;
+					drawpad = service.Handle(Role::Drawpad);
+					const HWND presentation = service.Handle(Role::DrawpadPresentation);
+					for (unsigned i = 0; i != roles.size(); ++i)
+					{
+						const HWND window = service.Handle(roles[i]);
+						DWORD pid = 0;
+						const DWORD tid = GetWindowThreadProcessId(window, &pid);
+						if (!window || !tid || pid != GetCurrentProcessId() || IsWindowVisible(window)) return false;
+						if (generation == 1)
+						{
+							oldOwners[i] = OpenThread(SYNCHRONIZE, FALSE, tid);
+							if (!oldOwners[i]) return false;
+						}
+					}
 					if (generation == 1)
 					{
-						oldOwners[i] = OpenThread(SYNCHRONIZE, FALSE, tid);
-						if (!oldOwners[i]) return false;
+						packet.trace.oldGeneration = generation;
+						packet.trace.oldDrawpad = reinterpret_cast<ULONG_PTR>(drawpad);
+						packet.trace.oldPresentation = reinterpret_cast<ULONG_PTR>(presentation);
 					}
-				}
-				if (generation == 1)
-				{
-					packet.trace.oldGeneration = generation;
-					packet.trace.oldDrawpad = reinterpret_cast<ULONG_PTR>(drawpad);
-					packet.trace.oldPresentation = reinterpret_cast<ULONG_PTR>(presentation);
-				}
-				else
-				{
-					for (unsigned i = 0; i != roles.size(); ++i)
-						if (WaitForSingleObject(oldOwners[i], 0) != WAIT_OBJECT_0
-							|| state->created[i].load(std::memory_order_acquire) != 2
-							|| state->destroyed[i].load(std::memory_order_acquire) != 1) return false;
-					packet.trace.newGeneration = generation;
-					packet.trace.newDrawpad = reinterpret_cast<ULONG_PTR>(drawpad);
-					packet.trace.newPresentation = reinterpret_cast<ULONG_PTR>(presentation);
-				}
-				PublishCleanupRealStage(packet, CleanupRealStage::WindowReady);
-				return drawpad && presentation;
-			};
+					else
+					{
+						for (unsigned i = 0; i != roles.size(); ++i)
+							if (WaitForSingleObject(oldOwners[i], 0) != WAIT_OBJECT_0
+								|| state->created[i].load(std::memory_order_acquire) != 2
+								|| state->destroyed[i].load(std::memory_order_acquire) != 1) return false;
+						packet.trace.newGeneration = generation;
+						packet.trace.newDrawpad = reinterpret_cast<ULONG_PTR>(drawpad);
+						packet.trace.newPresentation = reinterpret_cast<ULONG_PTR>(presentation);
+					}
+					PublishCleanupRealStage(packet, CleanupRealStage::WindowReady);
+					return drawpad && presentation;
+				};
 			if (!startWindows()) return fail(90);
 			const HostStyleCallbacks styles{ state.get(), [](void* context, DWORD set, DWORD clear) -> bool
 			{
@@ -941,21 +1257,21 @@ namespace Inkeys::Shutdown
 			options.enableHiddenTestContactInjection = true;
 			options.startupContext = state.get();
 			options.startupMilestone = [](void* context, HostStartupStage stage) noexcept
-			{
-				if (stage == HostStartupStage::GraphicsReady)
-					static_cast<State*>(context)->graphicsReady.fetch_add(1, std::memory_order_acq_rel);
-			};
+				{
+					if (stage == HostStartupStage::GraphicsReady)
+						static_cast<State*>(context)->graphicsReady.fetch_add(1, std::memory_order_acq_rel);
+				};
 			if (!StartDraw3ProductWithFallback(service, specs, drawpad, styles, options, {}, true, startWindows, &packet)) return fail(90);
 			InterlockedExchange(&packet.trace.startReturned, 1);
 			if (!state->styleRejected.load(std::memory_order_acquire) || state->graphicsReady.load(std::memory_order_acquire) < 2
 				|| !packet.trace.firstStartFalseTick || !packet.trace.oldSignalCancelled || !packet.trace.oldChainDestroyed
 				|| packet.trace.newGeneration != 2 || InterlockedCompareExchange(GetOffSignalInteropPointer(), 0, 0)) return fail(90);
 			const auto wait = [](auto&& predicate, ULONGLONG milliseconds)
-			{
-				const ULONGLONG start = GetTickCount64();
-				do { if (predicate()) return true; Sleep(10); } while (GetTickCount64() - start < milliseconds);
-				return predicate();
-			};
+				{
+					const ULONGLONG start = GetTickCount64();
+					do { if (predicate()) return true; Sleep(10); } while (GetTickCount64() - start < milliseconds);
+					return predicate();
+				};
 			Bridge::ProductState product;
 			product.tool = Bridge::Tool::Pen;
 			product.widthDip = 6.0f; product.colorRgba = 0xFF3050A0u;
@@ -963,14 +1279,14 @@ namespace Inkeys::Shutdown
 			product.workspace = Bridge::Workspace::Desktop;
 			PublishProductState(product);
 			const auto ready = []
-			{
-				const auto value = ProductRuntimeSnapshot();
-				return value.running && value.firstFrameReady && value.lastPresentSucceeded && !value.selectionMode
-					&& value.presentationMode == HostPresentationMode::UlwDirtyRect
-					&& value.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad
-					&& value.readyOutputTarget == value.requestedOutputTarget && value.readyOutputRevision == value.requestedOutputRevision
-					&& value.presentedContentRevision == value.contentRevision;
-			};
+				{
+					const auto value = ProductRuntimeSnapshot();
+					return value.running && value.firstFrameReady && value.lastPresentSucceeded && !value.selectionMode
+						&& value.presentationMode == HostPresentationMode::UlwDirtyRect
+						&& value.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad
+						&& value.readyOutputTarget == value.requestedOutputTarget && value.readyOutputRevision == value.requestedOutputRevision
+						&& value.presentedContentRevision == value.contentRevision;
+				};
 			if (!wait(ready, 5000) || (static_cast<DWORD>(GetWindowLongPtrW(drawpad, GWL_EXSTYLE))
 				& (WS_EX_NOREDIRECTIONBITMAP | WS_EX_TRANSPARENT))) return fail(90);
 			packet.trace.firstSuccessTick = GetTickCount64();
@@ -980,28 +1296,28 @@ namespace Inkeys::Shutdown
 			if (InterlockedCompareExchange(GetOffSignalInteropPointer(), 0, 0) || !ready()) return fail(90);
 			const auto before = ProductRuntimeSnapshot();
 			const auto post = [&](HiddenTestContactPhase phase, int x, int y)
-			{
-				DWORD pid = 0;
-				return GetWindowThreadProcessId(drawpad, &pid) && pid == GetCurrentProcessId() && !IsWindowVisible(drawpad)
-					&& PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
-						static_cast<WPARAM>(phase) | kHiddenTestIntegratedPenFlag, MAKELPARAM(x, y));
-			};
+				{
+					DWORD pid = 0;
+					return GetWindowThreadProcessId(drawpad, &pid) && pid == GetCurrentProcessId() && !IsWindowVisible(drawpad)
+						&& PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
+							static_cast<WPARAM>(phase) | kHiddenTestIntegratedPenFlag, MAKELPARAM(x, y));
+				};
 			if (!post(HiddenTestContactPhase::Down, 20, 40) || !wait([&]
 				{ const auto value = ProductRuntimeSnapshot(); return value.inputDownPublished == before.inputDownPublished + 1
-					&& value.pen.active && value.pen.inputSequence > before.pen.inputSequence; }, 2000)) return fail(90);
+				&& value.pen.active && value.pen.inputSequence > before.pen.inputSequence; }, 2000)) return fail(90);
 			const auto stroke = ProductRuntimeSnapshot().pen.strokeId;
 			for (int i = 1; i <= 16; ++i)
 			{
 				const auto previous = ProductRuntimeSnapshot();
 				if (!post(HiddenTestContactPhase::Move, 20 + i * 4, 40 + (i % 5) * 3) || !wait([&]
 					{ const auto value = ProductRuntimeSnapshot(); return value.inputMovePublished == previous.inputMovePublished + 1
-						&& value.pen.strokeId == stroke && value.pen.inputSequence > previous.pen.inputSequence; }, 2000)) return fail(90);
+					&& value.pen.strokeId == stroke && value.pen.inputSequence > previous.pen.inputSequence; }, 2000)) return fail(90);
 			}
 			if (!post(HiddenTestContactPhase::Up, 84, 43) || !wait([&]
 				{ const auto value = ProductRuntimeSnapshot(); return value.inputTerminalPublished == before.inputTerminalPublished + 1
-					&& value.inputRecycled >= before.inputRecycled + 1 && value.currentPageHasContent
-					&& value.completedStrokeKind == Bridge::CompletedStrokeKind::Drawing
-					&& value.successfulPresentCount > before.successfulPresentCount && ready(); }, 5000)) return fail(90);
+				&& value.inputRecycled >= before.inputRecycled + 1 && value.currentPageHasContent
+				&& value.completedStrokeKind == Bridge::CompletedStrokeKind::Drawing
+				&& value.successfulPresentCount > before.successfulPresentCount && ready(); }, 5000)) return fail(90);
 			packet.trace.postGraceStrokeTick = GetTickCount64();
 			packet.trace.afterGraceSuccessPresents = ProductRuntimeSnapshot().successfulPresentCount;
 			if (!RunAuthorizedCleanupClose(launch)) return fail(90);
@@ -1040,17 +1356,93 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	int supervisorExitCode = 0;
 	if (Inkeys::Shutdown::TryRunShutdownSupervisorEarly(
 		GetCommandLineW(), supervisorExitCode)) return supervisorExitCode;
+	// 自检沿用启动方的重定向；必要时补齐 CRT stderr 句柄，不创建交互控制台。
+	const auto runDraw3SelfTest = [](auto&& test)
+	{
+		const HANDLE errorHandle = GetStdHandle(STD_ERROR_HANDLE);
+		if (!errorHandle || errorHandle == INVALID_HANDLE_VALUE)
+		{
+			const int descriptor = _fileno(stderr);
+			const intptr_t redirected = descriptor >= 0 ? _get_osfhandle(descriptor) : -1;
+			if (redirected != -1 && redirected != -2)
+				(void)SetStdHandle(STD_ERROR_HANDLE, reinterpret_cast<HANDLE>(redirected));
+		}
+		Inkeys::Drawing::Draw3::DiagnosticOutput::Session diagnostics;
+		(void)diagnostics.Start();
+		const int result = test();
+		(void)diagnostics.Stop();
+		return result;
+	};
 	constexpr wchar_t kHostMetricsSmokeArg[] = L"--draw3-host-metrics-smoke";
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// 诊断输出自检严格早退，harness 关闭时也不能落入普通 GUI。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-diagnostic-output-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::Drawing::Draw3::DiagnosticOutput::RunProductionTest([]() noexcept
+			{
+				using namespace Inkeys::Drawing::Draw3;
+				SetCursorDiagnosticsEnabled(true);
+				RecordCursorDiagnostic("helper=production message=中文 value=%d", 42);
+				FlushCursorDiagnostics();
+				LogFrameTiming(1, 2, 3, 4, 1.25, 16.0, false);
+				LogHResult("[diagnostic-helper]", E_FAIL);
+				LogWin32Error("[diagnostic-helper]", ERROR_INVALID_HANDLE);
+				SetEnvironmentVariableW(L"INKEYS_PPT_TIMING", L"1");
+				TracePptTiming("diagnostic-helper", 1, 2);
+				SetCursorDiagnosticsEnabled(false);
+			});
+#else
+			return 2;
+#endif
+		}
+		// 完成回执自检严格早退，坏参数和关闭harness都不得进入普通窗口。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-ppt-completion-delivery-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPresentationCompletionDeliveryTest(); });
+#else
+			return 2;
+#endif
+		}
+		// 生产策略和上传回归仅使用离屏资源；严格验参后在任何产品 HWND 初始化前返回。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-device-policy-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunGraphicsDeviceSelectionTest(); });
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-renderer-upload-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererUploadValidation(); });
+		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
 		{
 			LocalFree(arguments);
 			if (count != 2) return 2;
-			return Inkeys::Drawing::Draw3::RunRendererPixelTest();
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererPixelTest(); });
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-renderer-pixel-test-hardware", -1, TRUE) == CSTR_EQUAL)
+		{
+			// 硬件探针与 WARP 分开，缺硬件时明确退出，不进入产品初始化。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererHardwarePixelTest(); });
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
@@ -1071,18 +1463,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return state != 0 ? state
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
 		}
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-taper-test") == 0)
+		{
+			// 生产几何自检在配置、单实例和窗口初始化之前退出。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPenTaperProductionProbe(); });
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-width-test") == 0)
 		{
 			LocalFree(arguments);
 			if (count != 2) return 2;
-			return Inkeys::Drawing::Draw3::RunPenWidthProductionProbe();
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPenWidthProductionProbe(); });
 		}
 		// argv 识别也覆盖给 mode 加引号的合法写法；坏形状不能落入普通 GUI。
 		if (count > 1 && wcscmp(arguments[1], kHostMetricsSmokeArg) == 0)
 		{
 			int result = 2;
 			if (count == 4 && wcscmp(arguments[2], L"--output-root") == 0)
-				result = Inkeys::Drawing::Draw3::RunHiddenWindowRuntimeMetricsSmoke(arguments[3]);
+				result = runDraw3SelfTest([&] { return Inkeys::Drawing::Draw3::RunHiddenWindowRuntimeMetricsSmoke(arguments[3]); });
 			LocalFree(arguments);
 			return result;
 		}
@@ -1130,64 +1529,76 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
+	// 多目标 UI3 验收只替换最终 HWND 提交，不创建或显示产品窗口。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-multitarget-benchmark", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3MultiTargetOffscreenBenchmark();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-input-worker-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunSharedInteractionWorkerTests();
 	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-map-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunRendererMapCompatibilityTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererMapCompatibilityTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-commit-failure-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunRendererFailureCommitTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererFailureCommitTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-laser-raster-failure-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunLaserRasterFailureTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunLaserRasterFailureTest(); });
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-whiteboard-storage-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunWhiteboardStorageProductionTest();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-parked-desktop-exit-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunParkedDesktopExitAutoSaveTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunParkedDesktopExitAutoSaveTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-parked-ppt-retained-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunParkedPresentationRetainedSaveTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunParkedPresentationRetainedSaveTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-loaded-retained-install-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunPresentationLoadedRetainedInstallTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPresentationLoadedRetainedInstallTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-pending-topology-load-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunPendingPresentationTopologyLoadTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPendingPresentationTopologyLoadTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-control-fence-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunDraw3ControlFenceProductionProbe();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunDraw3ControlFenceProductionProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-fallback-stable-controller-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunFallbackStableControllerIsolationProbe();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunFallbackStableControllerIsolationProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-fallback-stable-lane-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunFallbackStableControllerLaneProbe();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunFallbackStableControllerLaneProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-ppt-current-load-retry-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunPresentationCurrentLoadRetryProbe();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPresentationCurrentLoadRetryProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-geometry-benchmark", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunDraw3GeometryBenchmark();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunDraw3GeometryBenchmark(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-history-benchmark", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunDraw3HistoryBenchmark();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunDraw3HistoryBenchmark(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-ulw-copy-benchmark", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunUlwDirtyCopyBenchmark();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunUlwDirtyCopyBenchmark(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--page-control-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::PageControl::RunHiddenWindowTests();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-eraser-hidden-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true);
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest();
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
 
+	// 进程级 owner 兜住启动失败返回；Host/RTS 退出后才停止独立输出器。
+	Inkeys::Drawing::Draw3::DiagnosticOutput::Session draw3DiagnosticOutput;
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
 	bool touchAreaConsoleOutputEnabled = false;
 	bool cursorConsoleOutputEnabled = false;
-	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
+	// 白板入口与启动失败、正常退出清理路径使用同一功能开关。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
 
 	// 路径预处理
@@ -1442,22 +1853,22 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					if (!parsed || !updateVal.isObject()) { flag = false; }
 					else
 					{
-					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("representation") && updateVal["representation"].isString()) representation = utf8ToUtf16(updateVal["representation"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
-					{
-						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+						if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
 						else flag = false;
-						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
-						else flag = false;
-					}
-					else flag = false;
 
-					if (updateVal.isMember("old_name") && updateVal["old_name"].isString()) old_name = utf8ToUtf16(updateVal["old_name"].asString());
+						if (updateVal.isMember("representation") && updateVal["representation"].isString()) representation = utf8ToUtf16(updateVal["representation"].asString());
+						else flag = false;
+
+						if (updateVal.isMember("hash") && updateVal["hash"].isObject())
+						{
+							if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+							else flag = false;
+							if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
+							else flag = false;
+						}
+						else flag = false;
+
+						if (updateVal.isMember("old_name") && updateVal["old_name"].isString()) old_name = utf8ToUtf16(updateVal["old_name"].asString());
 					}
 				}
 				catch (const std::exception&) { flag = false; }
@@ -1672,23 +2083,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					if (!parsed || !updateVal.isObject()) { flag = false; }
 					else
 					{
-					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("path") && updateVal["path"].isString()) path = utf8ToUtf16(updateVal["path"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
-					{
-						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+						if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
 						else flag = false;
-						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
-						else flag = false;
-					}
-					else flag = false;
 
-					if (updateVal.isMember("MandatoryUpdate") && updateVal["MandatoryUpdate"].isBool())
-						mandatoryUpdate = updateVal["MandatoryUpdate"].asBool();
+						if (updateVal.isMember("path") && updateVal["path"].isString()) path = utf8ToUtf16(updateVal["path"].asString());
+						else flag = false;
+
+						if (updateVal.isMember("hash") && updateVal["hash"].isObject())
+						{
+							if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+							else flag = false;
+							if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
+							else flag = false;
+						}
+						else flag = false;
+
+						if (updateVal.isMember("MandatoryUpdate") && updateVal["MandatoryUpdate"].isBool())
+							mandatoryUpdate = updateVal["MandatoryUpdate"].asBool();
 					}
 				}
 				catch (const std::exception&) { flag = false; }
@@ -1736,28 +2147,28 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						(installerAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) flag = false;
 					if (flag)
 					{
-					wchar_t temporaryPath[MAX_PATH]{};
-					if (!GetTempFileNameW(installerPath.c_str(), L"IKJ", 0,
+						wchar_t temporaryPath[MAX_PATH]{};
+						if (!GetTempFileNameW(installerPath.c_str(), L"IKJ", 0,
 							temporaryPath)) flag = false;
-					if (flag)
-					{
-						const HANDLE temporary = CreateFileW(temporaryPath, GENERIC_WRITE,
-							0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-						if (temporary == INVALID_HANDLE_VALUE) flag = false;
-						else
-					{
-							DWORD bytesWritten = 0;
-							flag = WriteFile(temporary, nextJson.data(),
-								static_cast<DWORD>(nextJson.size()), &bytesWritten, nullptr) &&
-								bytesWritten == nextJson.size() && FlushFileBuffers(temporary);
-							if (!CloseHandle(temporary)) flag = false;
+						if (flag)
+						{
+							const HANDLE temporary = CreateFileW(temporaryPath, GENERIC_WRITE,
+								0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+							if (temporary == INVALID_HANDLE_VALUE) flag = false;
+							else
+							{
+								DWORD bytesWritten = 0;
+								flag = WriteFile(temporary, nextJson.data(),
+									static_cast<DWORD>(nextJson.size()), &bytesWritten, nullptr) &&
+									bytesWritten == nextJson.size() && FlushFileBuffers(temporary);
+								if (!CloseHandle(temporary)) flag = false;
+							}
+							// 同目录临时指令完整落盘后才替换旧指令；失败保留上次有效文件。
+							if (flag) flag = MoveFileExW(temporaryPath,
+								(globalPath + L"installer\\update.json").c_str(),
+								MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+							if (!flag) DeleteFileW(temporaryPath);
 						}
-						// 同目录临时指令完整落盘后才替换旧指令；失败保留上次有效文件。
-						if (flag) flag = MoveFileExW(temporaryPath,
-							(globalPath + L"installer\\update.json").c_str(),
-							MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
-						if (!flag) DeleteFileW(temporaryPath);
-					}
 					}
 				}
 
@@ -1960,11 +2371,31 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	const bool startupPreviewSmokeRequested =
 		!startupPreviewSmokePath.empty();
+	// Mini 和正式配置共用同一次设备缺省；触控设备提前复用正式显示枚举，避免猜测物理尺寸。
+	const bool startupDpiAwarenessReady = EnsureProcessDpiAwareness();
+	const int startupDigitizerStatus = GetSystemMetrics(SM_DIGITIZER);
+	const bool displayInitializedBeforeMini = startupDpiAwarenessReady
+		&& Inkeys::ConfigDetail::HasReadyTouchDevice(startupDigitizerStatus);
+	const bool earlyDisplayInitializeSucceeded = !displayInitializedBeforeMini
+		|| Inkeys::Display::Initialize();
+	const bool defaultLargeScreenDevice = [&]
+	{
+		const auto snapshot = displayInitializedBeforeMini ? Inkeys::Display::GetSnapshot() : nullptr;
+		const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+		return Inkeys::ConfigDetail::ResolveDefaultLargeScreenDevice(startupDigitizerStatus,
+			monitor && monitor->physicalSize.available,
+			monitor ? monitor->physicalSize.widthCm : 0,
+			monitor ? monitor->physicalSize.heightCm : 0);
+	}();
+	Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(defaultLargeScreenDevice);
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
-		"UI.Bar.Zoom" });
+		"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase", "UI.Bar.StartupPlacement" });
+	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
+	const auto startupPlacement = Inkeys::UI::NormalizeStartupPlacement(
+		startupMiniConfig.UI.Bar.StartupPlacement.load());
 	const bool startupPreviewConfigured = startupPreviewSmokeRequested
 		|| startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.Enable;
 	bool startupPreviewStarted = false;
@@ -1982,8 +2413,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	} startupProgressScope{ &startupProgress };
 	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::SuperTopCrossed);
 	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::MiniConfigRead);
-
-	if (!EnsureProcessDpiAwareness())
+	if (!startupDpiAwarenessReady)
 	{
 		PublishFatalStartupFailure(0xD001u,
 			L"Unable to configure process DPI awareness.\n无法配置进程 DPI 感知，程序无法安全启动。");
@@ -2009,29 +2439,39 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		monitorInfo.cbSize = sizeof(monitorInfo);
 		const HMONITOR primaryMonitor = MonitorFromPoint(POINT{}, MONITOR_DEFAULTTOPRIMARY);
 		(void)GetMonitorInfoW(primaryMonitor, &monitorInfo);
-		UINT startupDpi = USER_DEFAULT_SCREEN_DPI;
-		if (HDC screen = GetDC(nullptr))
-		{
-			const int queriedDpi = GetDeviceCaps(screen, LOGPIXELSX);
-			if (queriedDpi > 0) startupDpi = static_cast<UINT>(queriedDpi);
-			ReleaseDC(nullptr, screen);
-		}
+		const UINT startupDpi = Inkeys::Display::QueryEffectiveDpi(primaryMonitor);
 		Inkeys::UI::StartupPreview::StartOptions previewOptions;
 		previewOptions.instance = hInstance;
+		previewOptions.startupPlacement = startupPlacement;
 		previewOptions.cachedWidthDip =
 			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
 				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.
-					CachedStartupBarWidthDip);
-		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom;
+				CachedStartupBarWidthDip);
+		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom2;
 		previewOptions.dpi = startupDpi;
+		const auto scaleBaseMode = static_cast<Inkeys::Display::UiScaleBaseMode>(
+			startupMiniConfig.UI.Bar.UseTaskbarHeightAsScaleBase.load());
+		if (const auto taskbarMonitor = Inkeys::Display::QueryTaskbarMonitorInfo(primaryMonitor))
+		{
+			// Mini 的基准倍率和贴底线共用一次 Shell 采样，不依赖稍后完整枚举。
+			previewOptions.dpi = taskbarMonitor->effectiveDpiX;
+			previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
+				taskbarMonitor->effectiveDpiX, taskbarMonitor->taskbarThicknessPx, 0, 0,
+				scaleBaseMode);
+			previewOptions.desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*taskbarMonitor);
+			monitorInfo.rcMonitor = taskbarMonitor->bounds;
+			monitorInfo.rcWork = taskbarMonitor->workArea;
+		}
+		else previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
+			startupDpi, 0, 0, 0, scaleBaseMode);
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
 		previewOptions.workArea = monitorInfo.rcWork;
-		previewOptions.contentBounds =
-			Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
-				previewOptions.monitorBounds, previewOptions.workArea,
-				previewOptions.cachedWidthDip,
-				Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
-				previewOptions.dpi, previewOptions.barZoom);
+		previewOptions.contentBounds = Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
+			previewOptions.monitorBounds, previewOptions.workArea,
+			previewOptions.cachedWidthDip,
+			Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
+			previewOptions.dpi, previewOptions.barZoom, startupPlacement, previewOptions.uiBaseScale,
+			previewOptions.desktopDockLine);
 		previewOptions.progress = &startupProgress;
 		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
 			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
@@ -2228,7 +2668,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 显示器信息初始化
 	{
-		if (!Inkeys::Display::Initialize())
+		if (!(displayInitializedBeforeMini ? earlyDisplayInitializeSucceeded
+			: Inkeys::Display::Initialize()))
 			IDTLogger->warn("[主线程][IdtMain] 显示器枚举失败，使用兼容回退信息");
 		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 		if (displaySnapshot && displaySnapshot->monitors.size() > 1)
@@ -2389,17 +2830,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				else setlist.selectLanguage = 0;
 			}
 			{
-				int digitizerStatus = GetSystemMetrics(SM_DIGITIZER);
-				bool hasTouchDevice = (digitizerStatus & NID_READY) && (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
-				if (hasTouchDevice)
-				{
-					const auto displaySnapshot = Inkeys::Display::GetSnapshot();
-					const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
-					if (!monitor || !monitor->physicalSize.available) setlist.paintDevice = 0, setlist.liftStraighten = true;
-					else if (monitor->physicalSize.widthCm * monitor->physicalSize.heightCm >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
-					else setlist.paintDevice = 1;
-				}
-				else setlist.paintDevice = 1;
+				// 用户保存的 PaintDevice 稍后仍可覆盖；缩放开关只使用启动时冻结的设备缺省。
+				setlist.paintDevice = defaultLargeScreenDevice ? 0 : 1;
+				if (defaultLargeScreenDevice) setlist.liftStraighten = true;
 			}
 			{
 				HDC screenDC = GetDC(nullptr);
@@ -2425,6 +2858,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
 			InitializeEraserInputPreferences();
+			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
+				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
+			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
 			{
 				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();
@@ -2435,20 +2872,36 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 			pptComConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
+		#ifndef IDT_RELEASE
+			// 单次 Win7 采集只覆盖局部诊断开关，不写入持久化配置。
+			wchar_t win7DiagnosticsValue[2]{};
+			const bool win7DiagnosticsEnabled =
+				GetEnvironmentVariableW(L"INKEYS_DRAW3_WIN7_DIAGNOSTICS",
+					win7DiagnosticsValue, 2) == 1 && win7DiagnosticsValue[0] == L'1';
+		#else
+			const bool win7DiagnosticsEnabled = false;
+		#endif
 			draw3ConsoleOutputEnabled =
-				config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				config.Experimental.Inkeys3.ConsoleOutput.Draw3 || win7DiagnosticsEnabled;
 			Inkeys::Drawing::Draw3::SetStartupEnvironmentDiagnosticsEnabled(
 				draw3ConsoleOutputEnabled);
 			touchAreaConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 			cursorConsoleOutputEnabled =
-				config.Experimental.Inkeys3.ConsoleOutput.Cursor;
+				config.Experimental.Inkeys3.ConsoleOutput.Cursor || win7DiagnosticsEnabled;
+			Inkeys::Drawing::Draw3::HapticDiagnostics::SetEnabled(
+				config.Experimental.Inkeys3.ConsoleOutput.Haptics);
 			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
-				cursorConsoleOutputEnabled)
+				cursorConsoleOutputEnabled || Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled())
 			{
 				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
 			}
+			(void)draw3DiagnosticOutput.Start();
+			if (win7DiagnosticsEnabled)
+				Inkeys::Drawing::Draw3::DiagnosticOutput::Printf(
+					Inkeys::Drawing::Draw3::DiagnosticOutput::Stream::Error,
+					"[Draw3Win7Diagnostics] enabled=1 draw3=1 cursor=1\n");
 			Inkeys::Drawing::Draw3::SetCursorDiagnosticsEnabled(
 				cursorConsoleOutputEnabled);
 			if (touchAreaConsoleOutputEnabled)
@@ -2665,6 +3118,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::PptComReady);
 	}
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	if (!RunStartupPreviewRetryFailureForManualTest())
+	{
+		// 此处 PptCOM 已激活；与真实初始化失败保持同样的资源清理边界。
+		if (pptComModule) FreeLibrary(pptComModule);
+		if (actCtxActivated) DeactivateActCtx(0, ulCookie);
+		if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
+		if (SUCCEEDED(comInitializeResult)) CoUninitialize();
+		Inkeys::UI::RenderPipeline::Shutdown();
+		return 1;
+	}
+#endif
 	// 自动更新初始化
 	{
 	#ifdef IDT_RELEASE
@@ -2877,6 +3342,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					if (preferDraw3DirectComposition)
 						spec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
 				}
+				if (role == Inkeys::Window::WindowRole::Freeze)
+				{
+					spec.largeIcon = applicationIcon;
+					spec.smallIcon = applicationIcon;
+					spec.whiteboardMinimizeAllowed = [] { return !Inkeys::UI::Bar::PptPresentationActive(); };
+					spec.whiteboardCloseRequested = [] { RequestWhiteboardActive(false); };
+					spec.whiteboardMinimizedChanged = []
+					{
+						Inkeys::UI::PageControl::NotifyLayoutChanged();
+						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::WhiteboardFreeze);
+					};
+				}
 				spec.windowProc = proc;
 				spec.created = created;
 				if (role >= Inkeys::Window::WindowRole::PptBottomLeft &&
@@ -2901,7 +3379,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				}
 				windowSpecs.push_back(std::move(spec));
 			};
-		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
+		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", IW(I18nKey.UI.Bar.MainButtons.WhiteboardWindowTitle).c_str(),
 			nullptr, WS_EX_TRANSPARENT, {});
 		AddOverlayWindow(Inkeys::Window::WindowRole::DrawpadPresentation,
 			L"Inkeys2.Presentation;", L"Inkeys DrawpadPresentationWindow",
@@ -3015,6 +3493,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		// 启动时捕获设备偏好；呈现回退和设备恢复沿用本代快照。
+		draw3StartOptions.enableHardwareAcceleration =
+			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+		draw3StartOptions.enableZhaoxinCompatibility =
+			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
+		const auto whiteboardDefault = config.Drawing.Whiteboard.DefaultTheme.load();
+		draw3StartOptions.whiteboardDefaultTheme = { whiteboardDefault.backgroundRgb,
+			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
@@ -3031,8 +3517,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					Milestone::Draw3GraphicsReady); break;
 				case Stage::PresenterReady: (void)Inkeys::Startup::Report(
 					Milestone::Draw3PresenterReady); break;
-				case Stage::RtsReady: (void)Inkeys::Startup::Report(
-					Milestone::Draw3RtsReady); break;
+				case Stage::InputReady: (void)Inkeys::Startup::Report(
+					Milestone::Draw3InputReady); break;
 				case Stage::ControllerReady: (void)Inkeys::Startup::Report(
 					Milestone::Draw3ControllerReady); break;
 				case Stage::FirstFrameCommitted: (void)Inkeys::Startup::Report(
@@ -3054,6 +3540,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				targetContext.paintDevice = setlist.paintDevice;
 				// Host.Reset 后即使目标未变，也重新发布已恢复的启动偏好。
 				if (!ApplyPenWidthContext(targetContext)) SyncDraw3State();
+			},
+			[](void*, const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& accepted) noexcept
+			{
+				Inkeys::UI::Bar::NotifyCanvasStrokeAccepted(accepted);
+			},
+			[](void*, Inkeys::Drawing::Draw3::WhiteboardTheme theme) noexcept
+			{
+				if (config.SetWhiteboardThemeDefault(theme.backgroundRgb, static_cast<std::uint32_t>(theme.pattern)))
+					Inkeys::UI::Setting::RequestConfigWrite(); // 仅冻结载荷入已有 FIFO，不在绘制线程执行文件 I/O。
 			}
 		};
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,
@@ -3086,6 +3581,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (whiteboardFeatureEnabled && !Inkeys::UI::Whiteboard::Initialize({
 			[] { RequestWhiteboardPreviousPage(); },
 			[] { RequestWhiteboardNextPage(); },
+			[] { RequestWhiteboardActive(false); },
+			[](std::uint32_t rgb, int pattern, std::uint64_t generation, int page) { RequestWhiteboardTheme(rgb, pattern, generation, page); },
 			}))
 		{
 			SetOffSignal(1);
@@ -3156,7 +3653,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (!isolatedStartupFailure)
 	{
 		topWindowThread = jthread(TopWindow);
-		ui3InitializationThread = jthread(Inkeys::UI::Bar::Initialization);
+		ui3InitializationThread = jthread([startupPlacement]()
+			{ Inkeys::UI::Bar::Initialization(startupPlacement); });
 		freezeFrameThread = jthread(FreezeFrameWindow);
 		stateMonitoringThread = jthread(StateMonitoring);
 	}
@@ -3181,6 +3679,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();
+		// 若此前没有输出端，延后控制台建立后保留普通 Draw3 错误输出。
+		(void)draw3DiagnosticOutput.Start();
 	}
 	jthread pptLinkageThread;
 	if (!isolatedStartupFailure) pptLinkageThread = jthread(PPTLinkageMain);
@@ -3283,9 +3783,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
 	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
 	Inkeys::UI::StartupPreview::Stop();
-	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
 	if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
-	Inkeys::UI::Setting::Shutdown();
 	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
 	if (freezeFrameThread.joinable()) freezeFrameThread.join();
 	if (stateMonitoringThread.joinable()) stateMonitoringThread.join();
@@ -3294,10 +3792,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (topWindowThread.joinable()) topWindowThread.join();
 	// 先停止 Draw3 设备/RTS，再由 Window Service 销毁其拥有的 Drawpad HWND。
 	Inkeys::Drawing::Draw3::StopProduct();
+	// 先停止主题变更生产者，再排空最后的配置 FIFO；窗口服务/渲染管线仍在，供 Setting 完成释放。
+	Inkeys::UI::Setting::Shutdown();
 	Inkeys::Window::GetService().StopAndJoin();
 	Inkeys::UI::RenderPipeline::Shutdown();
 	displaySubscription.Reset();
 	Inkeys::Display::Shutdown();
+	(void)draw3DiagnosticOutput.Stop();
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 

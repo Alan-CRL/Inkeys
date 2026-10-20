@@ -1,0 +1,111 @@
+{
+  "source": "G:/Inkeys/Inkeys-Win7-Comprehensive-x64-Release/Inkeys-Win7-Comprehensive-x64-Release/20261007-233715-414",
+  "local_copy": "C:\\Users\\alan-\\.codex\\visualizations\\2026\\10\\03\\01a100c6-aa67-7cc3-9d01-6cda328f70c3\\win7-evidence-20261008\\20261007-233715-414",
+  "files": [
+    {
+      "file": "01-pixel-probe/identity.txt",
+      "bytes": 1580,
+      "sha256": "9DE398C9D5B2DE3F029BA515109A397A87E7F3FF064B00A05D496AC9EDEE6CD6"
+    },
+    {
+      "file": "01-pixel-probe/pixel-test-hardware.stderr.txt",
+      "bytes": 398,
+      "sha256": "F19D514D5E01E3B19DD891976223D7A18D69D24AB94173293DA3AA8CB87DF78D"
+    },
+    {
+      "file": "01-pixel-probe/pixel-test-hardware.stdout.txt",
+      "bytes": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "file": "01-pixel-probe/pixel-test.stderr.txt",
+      "bytes": 300481,
+      "sha256": "E3BF9FF30FEDC26EA76458DB37575347F8ACC5B5A27D69C2FC3539F86923B53E"
+    },
+    {
+      "file": "01-pixel-probe/pixel-test.stdout.txt",
+      "bytes": 1301,
+      "sha256": "73CE9586AC6E1B0501BDA30F2B072F4543DCE32D6A64F7F92ABB47DE9D5D58E2"
+    },
+    {
+      "file": "01-pixel-probe.collector.stderr.txt",
+      "bytes": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "file": "01-pixel-probe.collector.stdout.txt",
+      "bytes": 626,
+      "sha256": "13A0BB318E3ADE60D1B2333CFC99735F1E02AB17D9CED2DC320AB7884420DC6E"
+    },
+    {
+      "file": "02-normal-ulw/console.stderr.txt",
+      "bytes": 115613,
+      "sha256": "1711EC9A93C1004412A1E19F382F42F7469234E742117CD4488594491BA9D539"
+    },
+    {
+      "file": "02-normal-ulw/console.stdout.txt",
+      "bytes": 2318411,
+      "sha256": "4FC383A4122D233205EB1D36F47E0691A060C3A8609661C34CC78E5516272CC3"
+    },
+    {
+      "file": "02-normal-ulw/identity.txt",
+      "bytes": 872,
+      "sha256": "D1790A1E401612BB8A1E797D26E61F8F008D262F61437A3ACAA3CB455189979B"
+    },
+    {
+      "file": "02-normal-ulw/idt1791387439033.log",
+      "bytes": 41601,
+      "sha256": "C58E61B265FC6B91574F2458E8B3FB73544A937583F5ECF7D5CCE8F3F6CC6A68"
+    },
+    {
+      "file": "02-normal-ulw.collector.stderr.txt",
+      "bytes": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "file": "02-normal-ulw.collector.stdout.txt",
+      "bytes": 890,
+      "sha256": "7F4115C89079A59CF4A260A57FC2606A037AB035A532BC7AB2B42CC909386BA7"
+    },
+    {
+      "file": "03-full-ulw/console.stderr.txt",
+      "bytes": 112862,
+      "sha256": "B73F93FCC900CFE5E2EFED8551462531E600A6A5CC369780A2CF12D3F124415B"
+    },
+    {
+      "file": "03-full-ulw/console.stdout.txt",
+      "bytes": 1632857,
+      "sha256": "1FAE5A4649452F66FABC234CBA54371EEF9D527247C826D023111315C1E41702"
+    },
+    {
+      "file": "03-full-ulw/identity.txt",
+      "bytes": 873,
+      "sha256": "AB45DC0314C51D2B69BEF377893E302FEEF008C61E2D2B10F27795E82B2C62F6"
+    },
+    {
+      "file": "03-full-ulw/idt1791387556509.log",
+      "bytes": 49270,
+      "sha256": "1B115D1A5192F515398C98DEB1FA8739B76575CB79DD66729C6708F0F5EC16D7"
+    },
+    {
+      "file": "03-full-ulw.collector.stderr.txt",
+      "bytes": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "file": "03-full-ulw.collector.stdout.txt",
+      "bytes": 886,
+      "sha256": "61CED2798C41716C76A4DC3D7D8A719D4135138B03AB78636F104D9CA17A61B6"
+    },
+    {
+      "file": "observations.txt",
+      "bytes": 312,
+      "sha256": "BB854B34A12434990BB70A2943BBAD308674CB744E47E9B660D6EFC7D46B2E23"
+    },
+    {
+      "file": "summary.txt",
+      "bytes": 2645,
+      "sha256": "FE98E72A7D2D2C1CF4B385C83C036C7D5781A0FE12207D6A7412C8A6E1CC604E"
+    }
+  ]
+}

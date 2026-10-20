@@ -18,8 +18,10 @@ module;
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Input/KeyboardShortcuts.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Setting.SessionState.h"
+#include "../StartupPlacement.h"
 #include "Setting.Pages.h"
 #include "Setting.HomeEntryCache.h"
 #include "Setting.FrameSubmission.h"
@@ -683,6 +685,7 @@ namespace
 	enum class SettingBusinessKind
 	{
 		WriteSetting,
+		SyncDraw3State,
 		WritePptSetting,
 		WriteConfig,
 		ShellExecute,
@@ -801,6 +804,9 @@ namespace
 		{
 			switch (command.kind)
 			{
+			case SettingBusinessKind::SyncDraw3State:
+				::SyncDraw3State();
+				return true;
 			case SettingBusinessKind::WriteSetting:
 				return WriteSettingJson(command.jsonPayload);
 			case SettingBusinessKind::WritePptSetting:
@@ -969,6 +975,15 @@ namespace
 	};
 
 	SettingBusinessQueue settingBusinessQueue;
+	mutex configWriteQueueMutex;
+	thread_local bool settingRenderingOnCurrentThread = false;
+
+	struct SettingRenderScope
+	{
+		bool previous = settingRenderingOnCurrentThread;
+		SettingRenderScope() { settingRenderingOnCurrentThread = true; }
+		~SettingRenderScope() { settingRenderingOnCurrentThread = previous; }
+	};
 
 	void QueueBusiness(SettingBusinessCommand command)
 	{
@@ -1036,6 +1051,8 @@ namespace
 
 	void QueueConfigWrite()
 	{
+		// 设置渲染与 Draw3 都会提交：捕获到入队保持同序，避免旧主题快照后入队覆盖新值。
+		lock_guard lock(configWriteQueueMutex);
 		QueueBusiness({ SettingBusinessKind::WriteConfig });
 	}
 
@@ -1299,8 +1316,23 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-	case WM_CANCELMODE:
+	case WM_SHOWWINDOW:
+		if (!wParam)
+		{
+			{
+				lock_guard stateLock(settingStateMutex);
+				// FIFO 的原生 Hide 可晚于 Show；清旧输入但保留最新显隐意图。
+				settingSessionState.InvalidateSession();
+			}
+			Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+			return 0;
+		}
+		break;
 	case WM_CAPTURECHANGED:
+		// ReleaseCapture 同步重入此消息时不能等待渲染线程的 ImGui 锁。
+		settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
+		return 0;
+	case WM_CANCELMODE:
 		settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
 		break;
 	case WM_NCACTIVATE:
@@ -2036,17 +2068,13 @@ SettingSessionCoroutine RunSettingSession()
 
 		int SetSkinMode = setlist.SetSkinMode;
 		float SettingGlobalScale = settingUserScale;
-		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom.load());
+		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom2.load());
 		bool BarZoomSavePending = false;
 
 		int TopSleepTime = setlist.topSleepTime;
 		bool RightClickClose = setlist.RightClickClose;
-		bool BrushRecover = setlist.BrushRecover;
-		bool RubberRecover = setlist.RubberRecover;
 		struct
 		{
-			bool MoveRecover = setlist.regularSetting.moveRecover;
-			bool ClickRecover = setlist.regularSetting.clickRecover;
 			int TeachingSafetyMode = std::clamp(
 				setlist.regularSetting.teachingSafetyMode.load(), 0, 3);
 		}RegularSetting;
@@ -2057,7 +2085,6 @@ SettingSessionCoroutine RunSettingSession()
 			int SaveDays = setlist.saveSetting.saveDays;
 		}SaveSetting;
 
-		int PaintDevice = setlist.paintDevice;
 		struct
 		{
 			struct
@@ -2145,11 +2172,14 @@ SettingSessionCoroutine RunSettingSession()
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
+				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				bool HapticsConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Haptics;
 				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
 			}Inkeys3;
 		}Experimental;
@@ -2982,7 +3012,9 @@ SettingSessionCoroutine RunSettingSession()
 						TopSleepTime, RightClickClose, RegularSetting.TeachingSafetyMode,
 						Experimental.Inkeys3.StartupPreviewPreferenceState.ConfiguredEnabled(),
 						Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate,
-						Experimental.Inkeys3.DynamicEdgeLighting };
+						Experimental.Inkeys3.DynamicEdgeLighting,
+						static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(Inkeys::config.UI.Bar.StartupPlacement.load())),
+						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
 					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft, destination.section);
 					// 页面只返回一次交互结果，所有副作用继续留在既有 FIFO/配置接线域。
 					if (destination.section == Design::GeneralSection::Basic)
@@ -3019,8 +3051,19 @@ SettingSessionCoroutine RunSettingSession()
 								QueueConfigWrite();
 						}
 					}
+					if (events.startupPlacementChanged)
+					{
+						Inkeys::config.UI.Bar.StartupPlacement = draft.startupPlacement;
+						QueueConfigWrite();
+					}
 					if (destination.section == Design::GeneralSection::Appearance)
 					{
+						if (events.taskbarScaleBaseChanged)
+						{
+							Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = draft.taskbarScaleBase;
+							Inkeys::UI::Bar::RefreshScaleBase();
+							QueueConfigWrite();
+						}
 						Experimental.Inkeys3.AnimationEnable = draft.animation;
 						Experimental.Inkeys3.AnimationSpeedRate = draft.animationRate;
 						if (events.animationChanged)
@@ -3050,9 +3093,9 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 						}
 						BarZoom = draft.barZoom;
-						if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom.load())) > 0.0001F)
+						if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom2.load())) > 0.0001F)
 						{
-							Inkeys::config.UI.Bar.Zoom = static_cast<double>(BarZoom);
+							Inkeys::config.UI.Bar.Zoom2 = static_cast<double>(BarZoom);
 							Inkeys::UI::Bar::SetConfigZoom(static_cast<double>(BarZoom));
 							BarZoomSavePending = true;
 						}
@@ -3070,6 +3113,35 @@ SettingSessionCoroutine RunSettingSession()
 						}
 						SettingGlobalScale = draft.settingZoom;
 						if (!events.settingZoomActive) commitSettingScale();
+
+						const vector<string> layoutTitles{
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
+							IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N) };
+						const vector<vector<string>> layoutOptions{
+							{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
+							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
+							{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
+							IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) } };
+						IdtAtomic<int>* layoutPreferences[]{ &Inkeys::config.UI.Bar.IconOrder,
+							&Inkeys::config.UI.Bar.ExpandDirectionAdjustment };
+						const char* layoutIds[]{ "主栏图标顺序", "主栏展开方向调整" };
+						for (int item = 0; item < 2; ++item)
+						{
+							auto& preference = *layoutPreferences[item];
+							const int stored = preference.load();
+							int value = stored >= 0 && stored < static_cast<int>(layoutOptions[item].size())
+								? stored : (item == 0 ? 0 : 1);
+							if (Design::ComboRow(layoutIds[item], layoutTitles[item].c_str(), nullptr,
+								"\ue8a4", value, layoutOptions[item]))
+							{
+								// 仅唤醒布局，设置渲染线程不等待窗口或绘制 owner。
+								preference = value;
+								barUISet.UpdateRendering(false);
+								QueueConfigWrite();
+							}
+						}
 					}
 					if (destination.section == Design::GeneralSection::Interaction)
 					{
@@ -3093,6 +3165,87 @@ SettingSessionCoroutine RunSettingSession()
 							WriteSetting();
 							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 						}
+
+						const vector<string> modeNames{
+							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Combined),
+							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Separate) };
+						const string modeDescription = modeNames[0] + ": "
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n"
+							+ modeNames[1] + ": " + IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n"
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThrough) + ": "
+							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThroughDescription);
+						int selectMode = GetSelectAndClickThroughMode();
+						if (Design::ComboRow("##选择与穿透", IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str(),
+							modeDescription.c_str(), "\ue8b0", selectMode, modeNames)
+							&& SetSelectAndClickThroughMode(selectMode))
+							QueueConfigWrite();
+
+						Design::SectionHeader(IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str());
+						const string collapseTitles[]{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Drawing),
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.Erasing), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Dragging),
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.OutsideClick) };
+						const vector<string> collapseOptions{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Off),
+							IA(I18nKey.SettingsUI.Regular.AutoCollapse.NonBottom), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Always) };
+						auto& policies = Inkeys::config.UI.Bar.AutoCollapse;
+						IdtAtomic<int>* collapsePreferences[]{ &policies.Drawing, &policies.Erasing, &policies.Dragging, &policies.OutsideClick };
+						const char* collapseIds[]{ "绘制自动收起", "擦除自动收起", "拖动自动收起", "栏外点击自动收起" };
+						for (int item = 0; item < 4; ++item)
+						{
+							auto& preference = *collapsePreferences[item];
+							const int stored = preference.load();
+							int value = stored >= 0 && stored <= 2 ? stored : (item == 0 ? 1 : 0);
+							if (Design::ComboRow(collapseIds[item], collapseTitles[item].c_str(),
+								item == 0 ? IA(I18nKey.SettingsUI.Regular.AutoCollapse.Description).c_str() : nullptr,
+								"\ue70d", value, collapseOptions))
+							{
+								preference = value;
+								QueueConfigWrite();
+							}
+						}
+
+						Design::SectionHeader(IA(I18nKey.SettingsUI.HotKey.N).c_str());
+						Design::Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(), IA(I18nKey.SettingsUI.HotKey.E).c_str());
+						auto& shortcuts = Inkeys::config.Input.Shortcuts;
+						IdtAtomic<bool>* values[]{ &shortcuts.ToggleAnnotation, &shortcuts.Undo, &shortcuts.RedoY,
+							&shortcuts.RedoShiftZ, &shortcuts.Clear, &shortcuts.Freeze };
+						const char* combinations[]{ "Ctrl + Alt + X", "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z", "Ctrl + Delete", "Ctrl + Q" };
+						const string names[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationN), IA(I18nKey.SettingsUI.HotKey.UndoN),
+							IA(I18nKey.SettingsUI.HotKey.RedoYN), IA(I18nKey.SettingsUI.HotKey.RedoShiftZN),
+							IA(I18nKey.SettingsUI.HotKey.ClearN), IA(I18nKey.SettingsUI.HotKey.FreezeN) };
+						const string descriptions[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationE), IA(I18nKey.SettingsUI.HotKey.UndoE),
+							IA(I18nKey.SettingsUI.HotKey.RedoYE), IA(I18nKey.SettingsUI.HotKey.RedoShiftZE),
+							IA(I18nKey.SettingsUI.HotKey.ClearE), IA(I18nKey.SettingsUI.HotKey.FreezeE) };
+						const auto shortcutStatus = Inkeys::Input::KeyboardShortcuts::GetStatus();
+						string globalStatus = !shortcutStatus.running ? IA(I18nKey.SettingsUI.HotKey.NotRunning)
+							: !shortcuts.ToggleAnnotation.load() ? (shortcutStatus.hotkeyRegistered
+								? (shortcutStatus.hotkeyError ? IA(I18nKey.SettingsUI.HotKey.UnregisterFailed) : IA(I18nKey.SettingsUI.HotKey.Disabling))
+								: IA(I18nKey.SettingsUI.HotKey.Disabled))
+							: shortcutStatus.hotkeyRegistered ? IA(I18nKey.SettingsUI.HotKey.Registered)
+							: shortcutStatus.hotkeyError ? IA(I18nKey.SettingsUI.HotKey.RegisterFailed) : IA(I18nKey.SettingsUI.HotKey.Registering);
+						if (shortcutStatus.hotkeyError != 0)
+							globalStatus += " (" + to_string(shortcutStatus.hotkeyError) + ")";
+						string hookStatus = !shortcutStatus.hookInstalled ? IA(I18nKey.SettingsUI.HotKey.HookFailed)
+							: shortcutStatus.synchronizationPending ? IA(I18nKey.SettingsUI.HotKey.SynchronizationPending)
+							: IA(I18nKey.SettingsUI.HotKey.HookReady);
+						if (shortcutStatus.hookError != 0) hookStatus += " (" + to_string(shortcutStatus.hookError) + ")";
+						Design::Notice("##hotkey-status", globalStatus.c_str(), hookStatus.c_str(),
+							shortcutStatus.hotkeyError || shortcutStatus.hookError ? ImFluentInfoSeverity_Warning : ImFluentInfoSeverity_Informational);
+						for (int item = 0; item < 6; ++item)
+						{
+							ImGui::PushID(item);
+							const string title = names[item] + "  (" + combinations[item] + ")";
+							bool enabled = values[item]->load();
+							if (Design::ToggleRow("##启用固定快捷键", title.c_str(), descriptions[item].c_str(), "\ue765", enabled))
+							{
+								*values[item] = enabled;
+								uint32_t mask = 0;
+								for (int i = 0; i < 6; ++i) if (values[i]->load()) mask |= 1U << i;
+								// 注册和卸载由键盘线程完成，设置只异步发布新掩码。
+								Inkeys::Input::KeyboardShortcuts::SetEnabled(mask);
+								QueueConfigWrite();
+							}
+							ImGui::PopID();
+						}
 					}
 					break;
 				}
@@ -3108,10 +3261,14 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.Draw.Effect.Device.Touch),
 							IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePen)
 						};
+						// 后台可同步设备模式，每帧读取原子值，不能沿用常驻会话的旧草稿。
+						int PaintDevice = std::clamp(setlist.paintDevice.load(), 0, 1);
+						const string deviceDescription = devices[0] + ": " + IA(I18nKey.SettingsUI.Draw.Effect.Device.TouchE)
+							+ "\n" + devices[1] + ": " + IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePenE);
 						const int previousPaintDevice = PaintDevice;
 						if (Design::ComboRow("##draw-device",
 							IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str(),
-							IA(I18nKey.SettingsUI.Draw.Effect.Device.E).c_str(), "\ue7f8",
+							deviceDescription.c_str(), "\ue7f8",
 							PaintDevice, devices)
 							&& previousPaintDevice != PaintDevice
 							&& setlist.paintDevice != PaintDevice)
@@ -3122,6 +3279,47 @@ SettingSessionCoroutine RunSettingSession()
 							drawingScale = GetDrawingScale();
 							stopTimingError = GetStopTimingError();
 						}
+					}
+
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
+					bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
+					if (Design::ToggleRow("##断触接续", IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.N).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.E).c_str(), "\ue7c9", reconnectEnabled))
+					{
+						Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = reconnectEnabled;
+						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
+						QueueConfigWrite();
+					}
+
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Haptics.N).c_str());
+					auto& haptics = Inkeys::config.Drawing.Haptics;
+					bool drawingHaptics = haptics.Drawing, buttonHaptics = haptics.Buttons;
+					const bool drawingHapticsChanged = Design::ToggleRow("##绘制时震动反馈",
+						IA(I18nKey.SettingsUI.Draw.Haptics.Drawing).c_str(), nullptr, "\ue877", drawingHaptics);
+					const bool buttonHapticsChanged = Design::ToggleRow("##按钮震动反馈",
+						IA(I18nKey.SettingsUI.Draw.Haptics.Buttons).c_str(), nullptr, "\ue877", buttonHaptics);
+					if (drawingHapticsChanged || buttonHapticsChanged)
+					{
+						haptics.Drawing = drawingHaptics;
+						haptics.Buttons = buttonHaptics;
+						Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(drawingHaptics, buttonHaptics);
+						QueueConfigWrite();
+					}
+
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
+					auto& cursor = Inkeys::config.Drawing.Cursor;
+					const vector<string> cursorStyles{ IA(I18nKey.SettingsUI.Draw.Cursor.DefaultStyle), IA(I18nKey.SettingsUI.Draw.Cursor.DrawingStyle) };
+					int mouseStyle = cursor.MouseStyle.load() == 1 ? 1 : 0, penStyle = cursor.PenStyle.load() == 1 ? 1 : 0;
+					const bool mouseStyleChanged = Design::ComboRow("##鼠标光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.MouseStyle).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Cursor.Description).c_str(), "\ue962", mouseStyle, cursorStyles);
+					const bool penStyleChanged = Design::ComboRow("##笔光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.PenStyle).c_str(),
+						nullptr, "\uedc6", penStyle, cursorStyles);
+					if (mouseStyleChanged || penStyleChanged)
+					{
+						cursor.MouseStyle = mouseStyle;
+						cursor.PenStyle = penStyle;
+						SyncDraw3State();
+						QueueConfigWrite();
 					}
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
@@ -3763,6 +3961,19 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					Design::PageHeader("实验室");
 					Design::SectionHeader("Inkeys3");
+					// 两项均只保存下次启动的设备偏好，不重建当前绘图设备。
+					if (Design::ToggleRow("##draw3-hardware", IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableHardwareAcceleration))
+					{
+						Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = Experimental.Inkeys3.EnableHardwareAcceleration;
+						QueueConfigWrite();
+					}
+					if (Design::ToggleRow("##draw3-zhaoxin", IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableZhaoxinCompatibility))
+					{
+						Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = Experimental.Inkeys3.EnableZhaoxinCompatibility;
+						QueueConfigWrite();
+					}
 					if (Design::ToggleRow("##experimental-dcomp", "在支持的设备上启动 DComp",
 						"重启软件后生效；关闭后使用 ULW 进行测试。", "\ue7f4", Experimental.Inkeys3.EnableDirectComposition))
 					{
@@ -3830,6 +4041,9 @@ SettingSessionCoroutine RunSettingSession()
 					consoleToggle("##console-draw3", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Draw3.N).c_str(),
 						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Draw3.E).c_str(),
 						Experimental.Inkeys3.Draw3ConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3);
+					consoleToggle("测试触控反馈", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Haptics.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Haptics.E).c_str(),
+						Experimental.Inkeys3.HapticsConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Haptics);
 					consoleToggle("##console-cursor", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N).c_str(),
 						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E).c_str(),
 						Experimental.Inkeys3.CursorConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor);
@@ -4207,6 +4421,7 @@ namespace
 		{
 			settingSessionShouldStop.store(true, memory_order_release);
 			lock_guard imguiLock(settingImguiMutex);
+			SettingRenderScope renderScope;
 			settingSession.Resume();
 		}
 		settingSession.Reset();
@@ -4229,7 +4444,7 @@ namespace
 		settingFrameContext = context; // 初始化/重建失败的诊断也使用本次 epoch。
 		Inkeys::UI::Setting::SessionDecision decision;
 		Inkeys::UI::Setting::ResizeSnapshot resize;
-		uint64_t fontRebuildSerial = 0;
+		uint64_t fontRebuildSerial = 0, inputResetSerial = 0;
 		{
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetOccluded(g_SwapChainOccluded);
@@ -4238,6 +4453,7 @@ namespace
 				g_pSwapChain != nullptr);
 			resize = settingSessionState.Resize();
 			fontRebuildSerial = settingSessionState.FontRebuildSerial();
+			inputResetSerial = settingSessionState.InputResetSerial();
 			if (decision.consumeBusinessCompletion)
 			{
 				settingLastBusinessCompletion = settingSessionState.BusinessCompletion();
@@ -4257,6 +4473,11 @@ namespace
 
 		if (decision.initializeResident)
 		{
+			{
+				lock_guard stateLock(settingStateMutex);
+				// 当前没有旧 context；在新建前消费 Hide，之后到达的 Hide 仍须下帧收束。
+				settingSessionState.ReleaseResident();
+			}
 			settingSessionShouldStop.store(false, memory_order_release);
 			settingFrameContext = context;
 			settingFrameResult = FrameResult::Retry;
@@ -4336,6 +4557,25 @@ namespace
 			settingSessionState.ConsumeFontRebuild(fontRebuildSerial);
 		}
 
+		if (decision.resetInput && !settingSession.Done())
+		{
+			lock_guard imguiLock(settingImguiMutex);
+			auto& io = ImGui::GetIO();
+			io.ClearEventsQueue();
+			io.ClearInputKeys();
+			io.ClearInputMouse();
+			// 复用 backend 的释放路径清除内部按键掩码；字体、纹理和 context 继续常驻。
+			for (UINT message : { WM_LBUTTONUP, WM_RBUTTONUP, WM_MBUTTONUP, WM_XBUTTONUP })
+				ImGui_ImplWin32_WndProcHandlerEx(setting_window, message,
+					message == WM_XBUTTONUP ? MAKEWPARAM(0, XBUTTON1) : 0, 0, io);
+			ImGui_ImplWin32_WndProcHandlerEx(setting_window, WM_XBUTTONUP, MAKEWPARAM(0, XBUTTON2), 0, io);
+			ImGui::ClearActiveID();
+			GImGui->MovingWindow = nullptr;
+			settingFrameSubmission.Reset();
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.ConsumeInputReset(inputResetSerial);
+		}
+
 		const uint64_t themeSerial = settingThemeSerial.load(memory_order_acquire);
 		if (!settingSession.Done() && themeSerial != settingConsumedThemeSerial)
 		{
@@ -4389,6 +4629,7 @@ namespace
 
 		{
 			lock_guard imguiLock(settingImguiMutex);
+			SettingRenderScope renderScope;
 			settingSession.Resume();
 		}
 		if (settingSession.Done())
@@ -4412,6 +4653,14 @@ namespace
 namespace Inkeys::UI::Setting
 {
 	void RequestConfigWrite() { QueueConfigWrite(); }
+
+	bool DeferDraw3SyncIfRendering()
+	{
+		if (!settingRenderingOnCurrentThread) return false;
+		// 渲染持有 ImGui 锁，不能同步等待同样需要该锁的 HWND 线程。
+		QueueBusiness({ SettingBusinessKind::SyncDraw3State });
+		return true;
+	}
 
 	bool Initialize()
 	{

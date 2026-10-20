@@ -7,7 +7,7 @@
 | 配置系统 | 文件与磁盘位置 | `【直接确认】`的使用范围 |
 | --- | --- | --- |
 | 传统 `SetListStruct` | `IdtConfiguration.h`；`IdtConfiguration.cpp::ReadSetting/WriteSetting`；`globalPath + L"opt\\deploy.json"` | `IdtMain`、`IdtDraw`/`IdtDrawpad`、`IdtFloating`、`IdtFreezeFrame`、`IdtHistoricalDrawpad`、`IdtMagnification`、`IdtPlug-in`、`IdtRts`、`IdtWindow`、`Net.Update`、`Bar.Main`、`Setting` 等仍有读写 |
-| `Inkeys.Other.Config` | `Inkeys/Inkeys/Other/Other.Config.cppm/.cpp`；`Inkeys::Config` class、全局实例 `Inkeys::config/configOnce`；`Config::ReadAll/ReadMini/Write`；`globalPath + L"Inkeys\\Config\\main.json"` | schema 中可见 `Config.AutoClean`、`Info`、`UI.Bar.Zoom`、`Experimental.Inkeys3.UI3.Animation/EdgeLighting`、`PlugIn.PPTHelper` 等；消费者包括 `IdtConfiguration.cpp`、`IdtMain.cpp`、`IdtPlug-in.cpp`、`Net.Update*`、`Bar.Zoom*`、`Bar.Main*` 和 `Setting*` |
+| `Inkeys.Other.Config` | `Inkeys/Inkeys/Other/Other.Config.cppm/.cpp`；`Inkeys::Config` class、全局实例 `Inkeys::config/configOnce`；`Config::ReadAll/ReadMini/Write`；`globalPath + L"Inkeys\\Config\\main.json"` | schema 中可见 `Config.AutoClean`、`Info`、`UI.Bar.Zoom2`、`UI.Bar.UseTaskbarHeightAsScaleBase`、`Experimental.Inkeys3.UI3.Animation/EdgeLighting`、`PlugIn.PPTHelper` 等；消费者包括 `IdtConfiguration.cpp`、`IdtMain.cpp`、`IdtPlug-in.cpp`、`Net.Update*`、`Bar.Zoom*`、`Bar.Main*` 和 `Setting*` |
 
 `【直接确认】` `INKEYS_CONFIG_SCHEMA` 集中声明新 module 已支持的字段；源码中还把启动读取区标注为“新配置 Test”。这说明新系统正在实际使用，但不足以证明迁移已完成或所有新字段必须进入它。
 
@@ -188,8 +188,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
   - `RegisterButton` 按分区强制上述规则；Extension 仅额外允许已注册官方实体 `Inkeys.Bar.Setting`，布局标识必须走 `RegisterLayoutMarker`；B 区规范化时丢弃未注册官方前缀 ID 与非法点分格式。
 - A1 默认 required 与顺序：Select, Draw, Geometry, Eraser, Recall, Clean（**不含 Divider**）。
-- A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoOne`、`EndShow/twoTwo`；Setting 属于 Extension 的显式 More 项。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。`Pierce` 已退出产品合同，新 A2 配置不接受该 ID。
-- A2 运行时投影固定为：桌面显示 Whiteboard `twoOne` + Freeze `twoOne`；PPT 放映显示 Whiteboard `twoTwo` + EndShow `twoTwo`；全屏 Whiteboard 只显示“关闭白板” `twoTwo`。Freeze 在 PPT/Whiteboard 隐藏，EndShow 在非 PPT 或 Whiteboard 隐藏；这些是运行时 `hide/size`，不改写 A2 持久化顺序。
+- A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoOne`、`EndShow/twoTwo`；Setting 属于 Extension 的显式 More 项。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。旧持久化 `Pierce` ID 仍退休，新 A2 配置不接受该 ID；分离式的独立穿透只作为运行时伴随按钮。
+- A2 的 Freeze/Pierce 按“选择与穿透”合同运行时投影：合并式只显示可用 Freeze `twoTwo`；分离式在同一列显示上 Pierce `twoOne`、下 Freeze `twoOne`。空页 Selection 隐藏 Pierce 并放大可用 Freeze；Freeze 不可用时隐藏并把可用 Pierce 放大。Whiteboard 不提供 Pierce；Whiteboard/EndShow 沿现有工作区投影，隐藏的白板功能入口不因此开放。以上 `hide/size` 不改写 A2 持久化順序。
 - **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。当前虚拟投影始终包含 More 与 Setting，因此主栏恒按 `A1 | Divider | 最多两个 B 实体 | More | Divider | A2` 构建；旧组件全关时仍保留两条 Divider。Divider 保留 `oneTwo` 的两行布局占用，但只绘制 `1x50` DIP、圆角 `0.5` 的 Shape 细线并垂直居中；SurfaceFrame 填充透明度为 `0.30`，不得加载或绘制 SVG；PointLight 关闭主光并复用几何分隔线 `0.30` 的第三鼠标光强度。它不增加主栏横向宽度，而是居中复用上一组尾端已有的 `5` DIP 间隙；前组小按钮留下未填满列时必须先封列，再从新列排下一组，统一横坐标镜像继续保证左右布局对称。
 - **交界分割线交互**：Divider 必须从主栏悬停动画推进、指针扫描及点击/按压命中入口显式排除。遗留 hover、pressed、pressScale 状态应恢复为 `None/None/1.0`；不得通过禁用 Shape 或把可见态 `frameLightPct` 清零来实现不可交互，否则会错误关闭第三鼠标光。
 - **固定 More 入口**：运行时在 B 末尾、`B|A2` Divider 前注入一个硬编码 More 按钮。它不登记到 `ExtensionButtons`，不进入配置；主栏折叠时隐藏，浮层打开时使用普通按钮的 `Selected` 视觉状态。
@@ -207,7 +207,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - A1 仅将 `Select, Draw, Eraser, Geometry, Recall, Clean` 这一精确旧默认顺序迁移为当前默认；其他 required 集合的合法自定义排列保持原顺序。
 - 发版新增 A 区 required 官方按钮：旧配置缺新 ID → 该 A 区整区重置默认；不猜测新按钮插入点。
 - `ConfigSequence<T>` 快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
-- `BarButtonClass::IsVisible()` 是唯一消费入口：`userVisible && !hide`。`PresetHoming` 等运行时仍可临时改 Freeze 尺寸或上下文 `hide`。
+- `BarButtonClass::IsVisible()` 是唯一可见性消费入口。主栏注册/配置的基础尺寸与用户可见性独立于运行时有效 `size/hide`；`Load()` 只更新基准和成员，不能把配置默认写回已显示的动态尺寸。所有主栏有效尺寸、显隐及业务高亮/禁用统一由 `StateUpdate` 的最终计算/应用入口派生，A2几何不受文字/内容styleKey短路。组件、历史、计时器与外部工具刷新先更改数据状态并走统一刷新，不直接覆盖有效属性。构造默认、独立分页/属性按钮、指针反馈和渲染SetTar不属于该主栏业务写入口。
 
 ### 4. Validation & Error Matrix
 
@@ -224,7 +224,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 | B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
 | 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2；Divider 不迁入，交界运行时注入 |
 | 旧 A2 恰好为 Whiteboard/Freeze（任一顺序） | 保留相对顺序，在末尾追加 EndShow 并规范化默认尺寸 |
-| 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃；A2 最终按 Whiteboard/Freeze/EndShow required 集合严校验，不注册 Pierce 实体 |
+| 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃；A2 最终按 Whiteboard/Freeze/EndShow required 集合严校验，不将 Pierce 注册为持久化布局实体 |
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
 | 旧组件全关 | 运行时仍显示 More；浮层仅含远端 Setting，无横向分割线 |
 | 相邻两条 Divider（运行时/配置） | 只保留一条 |
@@ -358,3 +358,187 @@ I18nKey.Dialogs.Common.OK;
 - shader、字体和图像是否全部可重建、哪些随发布包解包，需结合 `vcxproj`、`.rc`、打包脚本逐项确认，不能由目录名外推。
 
 涉及这些文件时应核对来源/许可、架构、配置条件、工程/资源登记和可重建性。`Build/`、`Inkeys/Cache/`、`VcpkgInstalled/`、`PptCOM/obj/` 是生成输出，不进入产品文档变更。
+
+## H 实时信息来源与更新 Referer 合同
+
+### 1. Scope / Trigger
+
+修改 H 来源、输出或 Config 复制时适用。
+
+### 2. Signatures
+
+```cpp
+H(writeFile, writeReferer, refererName, valueType, valueName, source)
+ConfigDetail::ConfigReadOnlyValue<T>::Snapshot() const -> T
+ConfigDetail::BindConfigSource(const T*, std::shared_mutex*)
+```
+
+### 3. Contracts
+
+- H 接受固定值、const T* 或带锁地址。构造不解引用；地址/锁须覆盖使用期，空地址抛 invalid_argument。构造 explicit，普通 T 赋值不能替换绑定。
+- ReadAll/ReadMini/Reset/ApplyDocument 不覆盖 H。Config 复制 X 状态和 H 描述符/固定值，不读写外部来源；configOnce 的 H 仍实时取值。
+- 两开关独立。关闭文件输出须移除已知键，未知键策略不变。Snapshot 仅持共享锁复制；锁序 Config rwMutex -> 来源锁，调用 Config 前须释放来源锁，编码/I/O 不持来源锁。
+- `$Info` 保存原六项及 UpdateChannel。Referer 为 id/ed/pa/we/ch，不含 ev；仅发送副本去 UserId 花括号，再 URL 编码，文件保留原值。
+- ch 绑定 setlist.UpdateChannel/setlistUpdateMutex，main.json 保存副本，deploy.json 沿用原入口；两个更新 GET UA 均为 Inkeys-Updater/3.0。
+
+### 4. Validation & Error Matrix
+
+| 来源/输出 | 行为 |
+| --- | --- |
+| 固定/地址 | 固定值/输出时最新值 |
+| 空地址 | 拒绝，不解引用 |
+| file/referer | 四组合独立，禁用输出不取快照 |
+| 读/重置/复制 | 不写穿来源 |
+
+### 5. Good / Base / Bad Cases
+
+Good：改通道后下次输出即更新。Base：固定 H、普通 X 各自状态。Bad：初始化缓存或回写来源。
+
+### 6. Tests Required
+
+真实 Config headless 覆盖来源、四组合、GUID/ev/ch、读/重置/复制与 X 回归；合成 ID、私有临时目录、并发同锁。完整 solution Debug|ARM64 与 --no-window，不请求真实服务器。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：启动缓存
+H(true, true, "ch", std::string, UpdateChannel, ::setlist.UpdateChannel)
+// Correct：输出时加锁复制
+H(true, true, "ch", std::string, UpdateChannel,
+    ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex))
+```
+
+## 交互模式设置合同
+
+- 设置标题为「选择交互模式／選擇互動模式／Choose an interaction mode」；用户可见名称为「大屏触控模式／大螢幕觸控模式／Large-Screen Touch Mode」与「桌面交互模式／桌面互動模式／Desktop Mode」。
+- 持久化继续使用传统 `opt/deploy.json` 的整数 `PaintDevice`：0 大屏触控，1 桌面交互；不迁移键或数值。内存字段使用已有可复制的 `IdtAtomic<int>`，避免设置线程写入与延后同步worker读取竞争；Sync按单次load快照更新上下文。
+- Setting 使用原有 `Widgets::combo` 下拉样式，每帧读取 `setlist.paintDevice`；变化后发起 `SyncDraw3State()`、设置 FIFO `WriteSetting()` 和绘制参数更新，重复选择不保存。绘制期间的 Sync 必须按设置渲染同步合同转交业务 worker，禁止持 ImGui 锁同步等 HWND。
+- 两条场景说明位于模式选择块上方的独立信息卡片，使用蓝色信息图标、现有圆角边框/内边距，通过 `Device.TouchE/MousePenE` 国际化，并按实际换行高度布局；不得裁切长英文。
+- Surface（含手指触摸）、平板、鼠标操控的大屏及普通投影属于桌面交互的文案场景。2026-10-13 用户明确要求保留现有全部自动启动判定，含“系统有触摸但主屏尺寸未知时默认大屏”；此自动识别与场景定义的差异是后续产品决策，不得借文案修改自动调整启动策略。
+- 验证：无 HWND ImGui 回放覆盖下拉双向选择、三语/缩放卡片布局；另以生产调度边界的线程回归覆盖锁内提交与 FIFO 顺序。只把 Sync 替换为计数器的控件回放不能验证卡死修复。
+
+
+## 启动位置预设配置合同
+- UI.Bar.StartupPlacement 属于main.json，IdtAtomic<int>默认0；0居中底栏展开、1左角主按钮、2右角主按钮。读盘仅接受JSON int/uint且isInt()可表示的0..2；浮点、超宽整数及其他类型直接回退0，不能先窄化后Normalize。NormalizeStartupPlacement统一非法回退0，Mini/正式UI使用同一冻结值。
+- 设置恢复Preset导航页，仅启动后位置说明和现有combo。旧deploy.json的Preset与画笔记忆继续退休，不恢复读写或旧条目；启动动画开关仍常规。
+- 下拉仅更新偏好并QueueConfigWrite冻结副本，明确下次启动生效，不触发本次Bar移动/折叠或锁内窗口同步。
+- 所有新标题/说明/三选项为zh-CN/zh-TW/en-US，通过i18n sync/check生成头与快照。
+- 新增导航必须检测整个侧栏与固定页脚/分隔线边界，不以单个新页面回放替代整体布局验证。
+
+## 选择与穿透操作模式合同
+
+### 1. Scope / Trigger
+修改合并式/分离式配置、Select/Pierce工具身份、Freeze互斥、主栏Clear禁用、说明卡片及三语短标签时适用。仅UI3产品；不恢复旧Draw2穿透共存模型。
+
+### 2. Signatures
+- `UI.Bar.SelectAndClickThroughMode: IdtAtomic<int> = 0`，main.json中仅0（Combined）/1（Separate），不上传。
+- `GetSelectAndClickThroughMode() noexcept -> int`；`SetSelectAndClickThroughMode(int) -> bool`，返回配置是否变化，不直接写盘。
+- `StateModeSelectEnum::IdtClickThrough`末尾追加，既有枚举值不变。
+- `IsComputerInteractionMode(StateModeSelectEnum) noexcept -> bool`判定Selection或ClickThrough。
+- `ChangeStateModeToClickThrough() -> bool`显式幂等进入；`ToggleClickThroughFromButton() -> bool`用户按钮入/出；`ChangeStateModeToSelectionFromButton() -> bool`；`ToggleFreezeFromButton() -> void`。
+
+### 3. Contracts
+- schema缺失或非法值回Combined；读取严格验证JSON整数0/1，不允许大整数窄化误变Separate。
+- 设置每帧取实时模式；先改变配置/工具，沿既有SyncDraw3State的render defer guard同步，再通过Setting FIFO冻结配置payload。重复选择不写盘；不得持ImGui锁同步等待HWND。
+- 设置切Combined→Separate时，当前有墨迹Selection映射ClickThrough；反向ClickThrough映射Selection，始终保留内容；其他工具不变。
+- 决定Selection→ClickThrough映射所需的页面内容在取得stateModeTransitionMutex后按需读取，不能在等锁前预读并传入布尔值。模式锁不阻止Host独立发布新内容；采用提交决策时的最新快照，锁内不发布Draw3命令或调用窗口。
+- Separate Select按钮先通过现有Draw3 Clear事务清当前页，Accepted后进入Selection；拒绝保持工具。空页直接选择。普通系统/可信PPT退出Selection入口保持原语义，不附加清空。
+- ClickThrough独立高亮；用户在穿透时再次点击穿透按钮，退出并恢复lastAnnotationMode记忆的Pen/Shape/Eraser，保留墨迹，不恢复旧Freeze。显式进入穿透的程序入口继续幂等；进入时关闭Freeze。记忆最近Pen/Shape/Eraser顶层模式，具体子工具/笔型/属性留在既有字段。穿透时点Freeze恢复该模式并开启Freeze，墨迹不动，不恢复旧Freeze。
+- backend selectionMode、呈现/输入/设置owner按电脑操作判定处理两工具，但主栏按实际枚举分别高亮。已接受/迟到回调沿既有修订保护。
+- Pierce运行时固定留在Freeze前，shared_ptr稳定持有；不可用时仅hide，不从主栏运行时列表抽离/重插。隐藏按钮保持布局动画定位且不命中，避免显示时从右侧飞入。无需持久化布局注册，不改变A2用户顺序和旧Pierce迁移行为。
+- 常规页标题下/自启区前显示说明卡片和combo，说明在上；复用PPT信息卡片样式，按实际字体/换行测量高度。三段使用单换行以收紧行距，中文工具名使用「选择」/「選擇」/「穿透」；分离式说明仅称选择/Select，不加清空括注。短按钮选择(清空)/Select (Clear)文案独立保持。
+- Separate非Selection文案为“选择(清空)”/“選擇(清空)”/两行Select与(Clear)；Selection显示普通选择。英文穿透可两行Click-与through，仅该标签局部适配字号，不改全局网格。目标为两行时在透明中点换字前先缩到9 DIP；换回短标签时保持小字号到文字替换，再恢复标准字号。
+- SelectClearLabel与ClickThroughLabel的排版换行由各语言资源提供，主栏不比较英文译文字面量。i18n检查仅对这两个最多两行的短标签允许各语言0或1个换行，超出仍拒绝；其余文案继续严格校验与基准相同的换行数。
+
+### 4. Validation & Error Matrix
+|条件|行为|
+|---|---|
+|缺失、非int、超范围或超宽整数模式|Combined|
+|Combined|Pierce隐藏，可用Freeze 2×2|
+|Separate且非空页Selection或其他工具|Pierce上2×1+Freeze下2×1|
+|空页Selection|Pierce隐藏，可用Freeze 2×2|
+|Freeze不可用/PPT|Freeze隐藏，可用Pierce 2×2|
+|白板|不提供Pierce|
+|空页Selection的主栏Clear|Disable统一灰色，不发命令|
+|空页绘制或ClickThrough的主栏Clear|仍可进入Selection，不能提前禁用|
+|首击Clear被拒绝|不切工具，后续继续清空|
+|设置写盘失败|运行时已选模式生效，下次按磁盘恢复|
+
+### 5. Good / Base / Bad Cases
+- Good：Pen→Pierce→再次点击Pierce恢复Pen，再次点击可重入；Eraser/Shape同样恢复。Pierce→Freeze恢复记忆工具并开启Freeze，退出穿透按钮则保持Freeze关闭。
+- Base：旧配置无模式字段，Combined行为保持；PPT隐藏Freeze。
+- Bad：把Pierce重新写进A2、将空画布绘制态Clear禁用、在所有Selection系统入口附加Clear。
+
+### 6. Tests Required
+- 真实配置读写：缺失/非法/0/1、大整数、Mini/复制/默认值，不上传；三语sync/check。
+- 早期无窗口生产状态测试：电脑操作bridge投影、模式双向映射、显式进入穿透幂等、用户按钮入/出/重入及Freeze互斥/三类工具与属性恢复、内容历史保持、Clear拒绝。
+- Headless覆盖A2布局矩阵、清空二击与Disable边界；离屏覆盖Pierce稳定列表身份及反复隐藏/显示的布局位置和命中。空页Selection优先隐藏Undo/Redo，不受历史保护计时影响。DWrite实际测量三语短标签，两种尺寸不截断；说明卡三语换行测高与紧凑行距一致。
+- 完整Debug|ARM64 solution和Headless --no-window。真实点击/触摸/PPT/设置视觉需独立人工证据，不用CLI替代。
+
+### 7. Wrong vs Correct
+```cpp
+// Wrong：把“非Selection”直接当绘图，会令Pierce拦截底层输入。
+state.selectionMode = mode == StateModeSelectEnum::IdtSelection;
+// Correct：复用原穿透呈现链，同时保持独立UI工具身份。
+state.selectionMode = IsComputerInteractionMode(mode);
+```
+
+## 主栏图标顺序与展开方向合同
+
+### 1. Scope / Trigger
+适用于UI3主栏横向图标顺序、展开侧策略、常规设置两个下拉及对应配置；不改按钮ID/持久化A1/A2序列或上下翻转。
+
+### 2. Types / Configuration
+- UI.Bar.IconOrder: IdtAtomic<int>=0、NoUpload；0跟随主按钮、1跟随反向、2固定LTR、3固定RTL。
+- UI.Bar.ExpandDirectionAdjustment: IdtAtomic<int>=1、NoUpload；0中轴线、1仅当空间不足。缺失、非法类型/越界/超宽整数回各自默认，不能窄化误读。
+- Setting仅真正变化后写原子字段、UpdateRendering(false)唤醒、QueueConfigWrite冻结保存；不修改工具/Draw3。
+
+### 3. Contracts
+- 主栏列表始终正序，y从上到下；横坐标镜像表follow=!opensRight、reverse=opensRight、LTR=false、RTL=true。同列2×1不颠倒，Pierce上Freeze下、Redo上Undo下，Divider仍原网格封列。排序不修改列表/A1/A2/按钮身份。
+- 只改排序时不改父栏宽度、展开侧及主按钮位置；排序变化纳入布局批次/缓存/damage/命中和稳定几何版本，隐藏锚点同帧正确。内部finite签名保持原字段/sizeof72/协议版本，复用flags bit8..9编码IconOrder、bit10编码ExpandDirectionAdjustment，producer/frame捕获和合法mask一致；bit7仍未知非法，不将配置变化证明成旧几何。
+- 空间不足模式保持当前侧，当前完整目标包络不fit且对侧完整fit才换；两侧不足不换、不平移/自动缩放。包络含主按钮半宽、10DIP间隔、完整可见网格宽及描边，使用active monitor与zoom，不能看动态ULW包络/Back/pulse实际宽度。
+- 先计算完整目标宽度再判侧再设动画。首次沿startup规则，完整宽可用后评估，fold仍按下一次展开宽。输入无变化时不重复目标或重启动画；切换后fit则保持，收窄和越过中轴均不自动回翻。
+- 中轴线模式保留x<=中心右展、else左展；整体居中和白板首次专用dock锁优先。非居中dock适用设置，primaryBar上下逻辑不改。
+- 两个新卡紧随选择与穿透，自启前，三语最长选项测宽，标题不得重叠；不追加额外说明块。
+
+### 4. Validation Matrix
+| 场景 | 行为 |
+| --- | --- |
+| 当前侧足够，包括两侧都fit | 保持侧 |
+| 当前侧不足且另一侧fit | 换一次后稳定 |
+| 两侧不足 | 保持原侧，允许越界 |
+| 居中/白板锁或无效显示参考 | 保持侧，不影响上下 |
+| 两固定排序 + 两方向 | 屏幕LTR/RTL固定，列表与y不变 |
+| 动画/pulse/回弹，目标几何无变 | 不因临时尺寸换边 |
+
+### 5. Good / Bad
+Good：正序算格、仅X镜像、纯空间策略用稳定目标。Bad：逆转buttonList导致上下颠倒；旧PositionUpdate每帧按中轴覆盖新策略；两侧不足来回切。
+
+### 6. Tests Required
+真实配置读写/严格类型/默认/复制/NoUpload；三语sync/check及实际控件回放；Headless四排序×左右/空间矩阵/边界/负屏坐标/DPI/连续输入；真实Bar离屏排序/隐藏hit/重复动画、底栏居中与白板锁回归；完整Debug|ARM64及Headless --no-window，GUI视觉独立人工记录。
+
+### 7. Data flow
+Settings原子配置→frame配置快照→完整稳定宽度→受锁约束的side策略→独立IconOrder X镜像→统一布局动画/继承/hit/damage。工具和文档状态不变。
+
+## Draw3 绘图设备与兆芯兼容偏好（2026-10-15）
+
+- INKEYS_CONFIG_SCHEMA 新增 Experimental.Inkeys3.Draw3.EnableHardwareAcceleration=true、EnableZhaoxinCompatibility=true，均NoUpload严格bool。缺键/非法类型沿用schema默认true；不迁移传统deploy.json。
+- 实验设置卡片名称为“启用绘图硬件加速”“为兆芯设备启用兼容模式”。仅保存到main.json，说明重启生效；不运行中重建设备、不改变UI RenderPipeline后端或DComp开关。
+- IdtMain 使用configOnce捕获到HostStartOptions，再按值转交TransparentPresentationOptions。初始设备、DComp失败替换与device-lost恢复必须复用同一启动快照，不读取设置页刚写的实时config。
+- hardware=false直接WARP；true先Hardware，失败才WARP。compat=true仅实际Hardware+adapter VendorId0x1D17启用DEFAULT上传，false/其他GPU/WARP使用普通动态路径。
+- GUI前 --draw3-device-policy-test 覆盖生产设备选择helper的调用顺序/回退/失败；--config-boundary-test覆盖默认/四组合真实读写/ReadMini/赋值/NoUpload/非法类型。两入口均不创建HWND。
+
+## UI3 三态缩放基准与倍率新键（2026-10-20）
+
+- `UI.Bar.Zoom2` 取代活动 `Zoom`，默认 `1.0`、NoUpload；旧 `Zoom` 不迁移、不回读。AutoClean=false 时旧键可以按未知数据保留，但初始化、启动 ReadMini、设置、自动 fit 和冻结配置均只使用新键。
+- `UI.Bar.UseTaskbarHeightAsScaleBase` 为三态整数、NoUpload：`0`关闭、`1`任务栏基础量、`2`任务栏真实量；仅接受整数0..2，旧JSON bool按false→0、true→2兼容，不能把旧true窄化为1。缺省/非法类型/越界/重置按启动冻结的设备默认分类决定：大屏为1，其余为0。分类沿用 READY 触控且主屏物理面积>=1200cm²或物理信息不可用的现有大屏规则，不读取用户保存或运行中覆盖的 PaintDevice。Config schema 只读已冻结缓存，不在静态初始化查询硬件；构造、Mini、All、Reset 共用此默认。设置页使用三项下拉框，模式与UI倍率改变时同时唤醒Bar和四分页，复用设置写盘队列；传统settingGlobalScale与PPT各自倍率不变。
+- 关闭模式使用真实DPI/96；任务栏基础量固定为`48/80 × DPI/96`，UI倍率100%时80DIP设计主栏的实际高度为48DIP，不读取实际任务栏厚度，Shell缺样时也保持此语义。任务栏真实量延续旧开启行为：本屏任务栏完整厚度/80，上下取高、左右取宽；无本屏任务栏时按主屏厚度×本屏DPI/主屏DPI折算，无可信样本时回退DPI/96。Display的强类型UiScaleBaseMode用于主栏、启动Mini/预览与分页的统一解析，禁止将模式再转bool；只对用户倍率应用既有50%–200%限制，不裁剪基准。
+- 配置验证须包含旧bool兼容、三态整数往返、Mini/全量、冻结默认/复制/重置、非法类型/越界和NoUpload；缩放验证须覆盖多DPI、固定48DIP独立任务栏样本及真实量原有回退。Codex沙箱默认TEMP可能禁止MoveFileEx原子替换（ERROR_ACCESS_DENIED）；可为测试进程将TEMP/TMP指向仓库内scratch，不能修改产品写盘器绕过环境限制。
+
+## 白板新进程默认主题记忆
+
+- `Drawing.Whiteboard.DefaultTheme` 属于 `Inkeys/Config/main.json`，为 NoUpload；`BackgroundRgb` 为 `0..0xFFFFFF` 整数，`Pattern` 为 `0..2` 整数（空白/点阵/网格）。两字段作为同一个原子值发布及冻结，避免异步快照混配。
+- 缺失、缺项、类型或范围非法时整组回退 `#123B32/空白`；不把布尔、浮点或宽整数强制窄化。ReadMini 只影响被选中的路径，Reset 恢复 schema 默认值。
+- 仅有效当前白板页真正接受的主题修改更新偏好；初始化、冷恢复、重复/stale/错页/加载中请求不写回。新进程首张页读取偏好，同进程新页继续继承当前页。
+- 配置经现有 Setting FIFO 异步写盘，跨生产者的完整配置捕获与入队必须在同一短临界区保持同序，锁内不执行文件 I/O；Draw3 不做磁盘 I/O；正常退出先停止 Draw3 再排空配置队列，Window Service 与 RenderPipeline 在 Setting 释放后停止。
+- 回归使用真实配置 roundtrip、新实例重读及 Controller 同源初始化/主题命令门禁；GUI 重启观感需另行明确授权。

@@ -147,6 +147,7 @@ namespace Inkeys::UI::Setting
 	struct SessionDecision
 	{
 		bool initializeResident = false;
+		bool resetInput = false;
 		bool rebuildDeviceResources = false;
 		bool rebuildFonts = false;
 		bool releasePresentation = false;
@@ -165,10 +166,13 @@ namespace Inkeys::UI::Setting
 			if (visible && !visible_) ++showSerial_;
 			if (!visible && visible_) ++hideSerial_;
 			visible_ = visible;
+			if (!visible) InvalidateSession();
 		}
 		[[nodiscard]] std::uint64_t ShowSerial() const noexcept { return showSerial_; }
 		[[nodiscard]] std::uint64_t HideSerial() const noexcept { return hideSerial_; }
 		[[nodiscard]] bool IsVisible() const noexcept { return visible_; }
+		// 原生 Hide 可能晚于新会话；只失效输入，不覆盖更新的 Show 意图。
+		void InvalidateSession() noexcept { ++inputResetSerial_; }
 		void SetOccluded(bool occluded) noexcept { occluded_ = occluded; }
 		void QueueResize(std::uint32_t width, std::uint32_t height) noexcept
 		{
@@ -192,6 +196,7 @@ namespace Inkeys::UI::Setting
 			SessionDecision decision;
 			const bool epochChanged = hasResident && epoch_ && epoch_ != epoch;
 			decision.initializeResident = !hasResident;
+			decision.resetInput = hasResident && inputResetSerial_ != consumedInputResetSerial_;
 			decision.rebuildDeviceResources = epochChanged;
 			decision.rebuildFonts = hasResident
 				&& fontRebuildSerial_ != consumedFontRebuildSerial_;
@@ -225,6 +230,14 @@ namespace Inkeys::UI::Setting
 			return fontRebuildSerial_;
 		}
 
+		[[nodiscard]] std::uint64_t InputResetSerial() const noexcept { return inputResetSerial_; }
+		void ConsumeInputReset(std::uint64_t serial) noexcept
+		{
+			// 只消费本帧观察的 Hide，后到的原生通知留给下一帧清理。
+			if (serial > consumedInputResetSerial_ && serial <= inputResetSerial_)
+				consumedInputResetSerial_ = serial;
+		}
+
 		void CommitEpoch(std::uint64_t epoch) noexcept
 		{
 			epoch_ = epoch;
@@ -254,6 +267,8 @@ namespace Inkeys::UI::Setting
 		{
 			epoch_ = 0;
 			occluded_ = false;
+			// 只在旧会话已销毁或确认无旧会话的新建边界消费，不由旧帧提交清除。
+			consumedInputResetSerial_ = inputResetSerial_;
 		}
 
 		void ReleasePresentation() noexcept { occluded_ = false; }
@@ -261,6 +276,8 @@ namespace Inkeys::UI::Setting
 	private:
 		bool visible_ = false;
 		bool occluded_ = false;
+		std::uint64_t inputResetSerial_ = 0;
+		std::uint64_t consumedInputResetSerial_ = 0;
 		std::uint64_t epoch_ = 0;
 		std::uint64_t showSerial_ = 0;
 		std::uint64_t hideSerial_ = 0;

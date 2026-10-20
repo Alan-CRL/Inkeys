@@ -1,5 +1,6 @@
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.PageControl;
 import Inkeys.Helper.Thread;
 import Inkeys.Window;
 import Inkeys.Other.Inputs;
@@ -68,6 +69,23 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 
 		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) Inkeys::Inputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, true);
 		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) Inkeys::Inputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, false);
+
+		// 同一次 Escape 的自动重复与抬起也由菜单消费，不能迟到结束后台放映。
+		static bool whiteboardMenuEscapeHeld = false;
+		if (pKeyInfo->vkCode == VK_ESCAPE)
+		{
+			const bool down = wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
+			if (whiteboardMenuEscapeHeld)
+			{
+				if (!down) whiteboardMenuEscapeHeld = false;
+				return 1;
+			}
+			if (down && Inkeys::UI::PageControl::RequestWhiteboardMenuDismiss())
+			{
+				whiteboardMenuEscapeHeld = true;
+				return 1;
+			}
+		}
 
 		// UI3 颜色面板打开时由 Bar 交互线程串行处理方向键/WASD；关闭时完全沿用原快捷键与 PPT 路径。
 		if (Inkeys::UI::Bar::TryQueueColorPickerKeyboardInput(

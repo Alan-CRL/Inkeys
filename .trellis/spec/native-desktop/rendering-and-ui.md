@@ -10,7 +10,7 @@
 | 传统 `IdtFloating` | `【历史/兼容】` 源码暂存但在 `Inkeys.vcxproj` 中为 `None`，生产代码不得 include | 不参与产品编译 | `Inkeys.vcxproj`、`Inkeys.vcxproj.filters` |
 | 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + ImFluent 生成标准 `ImDrawData`，复用共享 WARP D3D11 device/immediate context；Setting 常驻 ImGui context、backend、字体和图片 SRV，仅在可见时持有独占 discard swap chain/RTV | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
 | 主画板 | `【直接确认】` Draw3 已接管 Window Service 的主 Drawpad；选择态使用同一 Host 的 presentation-only 辅助表面 | Draw3 独立 D3D11.1 device、单一 swap chain/final backbuffer，以及主 DComp/DWM/ULW + 辅助 ULW target | `Draw3.Host.*`、`Draw3.TransparentPresentation.*`、`draw3-integration.md` |
-| PPT / Whiteboard 分页控件 | `【直接确认】` `Inkeys.UI.PageControl` 独占四个 owned layered HWND；`PptBottomLeft/PptBottomRight` 在 PPT 与 Whiteboard 间连续切换布局 | 与 Bar/Setting 共享 D3D11 epoch；PageControl 独占四套 Scene/device context/target/GDI interop，PPT 与 Whiteboard 只发布状态和业务回调 | `Inkeys/Inkeys/UI/PageControl/PageControl.*`、`Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/Whiteboard/Whiteboard.*` |
+| PPT / Whiteboard 分页控件 | `【直接确认】` `Inkeys.UI.PageControl` 独占四个 owned layered HWND；`PptBottomLeft/PptBottomRight` 在 PPT 与 Whiteboard 间连续切换布局 | 与 Bar/Setting 共享 D3D11 epoch；PageControl 独占四套 BarPageSurface/device context/target/GDI interop，PPT 与 Whiteboard 只发布状态和业务回调 | `Inkeys/Inkeys/UI/PageControl/PageControl.*`、`Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/Whiteboard/Whiteboard.*` |
 | 冻结帧、放大镜等 | `【直接确认】` Window Service 统一创建，图像承载使用 `DibSurface` | GDI/GDI+、Magnification API | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
 
 `Experimental.Inkeys3.UI3` 名下的 Animation、EdgeLighting 和 Debug 仍是 UI3 功能配置，不是路由开关。旧路由 JSON key 只能清理，不能恢复读取或写入。
@@ -42,9 +42,23 @@
 
 `Bar.RenderLoop.cpp::BarUISetClass::Rendering` 把 Bar 注册为共享 UI3 调度器客户端。Bar 从共享 D2D device 创建自己的 device context 和 GDI-compatible、BGRA premultiplied target bitmap；单帧入口经 `ID2D1GdiInteropRenderTarget::GetDC` 和 `UpdateLayeredWindowIndirect` 提交计算出的脏区，idle 等待与最多 60 FPS 节拍由共享调度器统一负责。
 
+### 公共按钮、固定面板与多目标事务
+
+- 主栏 Main/MainMore 与分页分别持有 `BarButtonListClass`；通过稳定 `Snapshot`、`ResolveBarButtonListLayout`（Main/GroupedGrid/SingleRow）、`ConfigureBarButtonVisualTargets`、`AdvanceBarButtonVisual` 和 `DrawBarButtonVisual` 消费同一套生产能力。固定属性保留字段/数组，使用 `BarButtonVisualParts` 和固定按钮 helper；不引入通用节点树。
+- `BarAttributePanelMotion`、`ResolveBarAttributePanelFrame` 管理既有属性与白板两个面板的目标、回弹及父级继承；同批次使用 `FrameContext::frameTime`，同一按钮每帧只推进一次。Idle 后首帧 dt=0，后续沿共享 `FrameAnimationClock` 推进。同布局的页码/主题更新只处理对应字段、缓存测量与脏区，不重新设置其余按钮或重置进行中的布局目标；同透明度目标保持幂等，显式零时长仍可完成未结束的运动。
+- `BarUIRenderingServices` 显式提供字体与必要状态，分页 renderer 不构造伪 `BarUISetClass`。每个目标保留独立 context/bitmap/SVG/字体缓存，共享设备 epoch。固定面板透明度使用有界 `PushPanelOpacity`，不为每个子按钮叠整幅透明层。
+- `BeginFrameDraw` 在 Clear/绘制前设置 dirty clip；`FinishFrameDrawCommands` 在 GetDC 前退出裁剪；GetDC、ULW、ReleaseDC、`EndFrameDraw` 及必要 HWND 几何交接全部成功后才消费 damage、发布命中和映射。资源/容量重建必须完整重画当前 viewport，不能沿旧局部脏区向空位图提交全窗。
+- 公共 Shape/Word/标准按钮可以在当前设备脏区之外保守跳过绘制；范围必须包含当前变换、缩放、按压及光效边缘。未知自定义内容、无效范围和需要完整 SVG 验证的路径保留原调用。真实部分/完整 BGRA 对照与生产 cull 计数必须同时证明正确性和实际生效。
+- backing capacity 可以保留历史峰值；菜单关闭后 drawClip、清理和提交按当前实际区域裁剪。稳定帧不持续唤醒，不重复创建 SVG/字体/圆角资源。光照通知只唤醒受到旧/新光源影响的目标，订阅者销毁与通知采样必须共用生命周期保护。
+- 既有主栏交互 worker 统一消费主栏及分页有界 FIFO。Move 可相邻合并，Down/Up/Cancel 保序；捕获身份含窗口/指针/按钮。手势等待为可续接状态，不运行嵌套阻塞泵。输入只发布反馈，动画由 render owner 应用；COM、文件和确认对话框走业务续接。
+- 原生 Down 必须在标准化入队前建立捕获并冻结唯一票据；逻辑手势按已准入的 Down 处理，属性 Start 不因原生 Up 提前到达而拒绝快速点击，也不重新夺取捕获。延迟 Stop/取消/释放只能携带本手势票据，由 owner 核对释放。原生已处理的取消只清逻辑状态，不再次投递捕获释放。
+- 队列溢出保留各注册目标最后准入的精确捕获元数据，取消屏障完成前拒绝新事件；被拒的 Down 由 owner 立即释放自己的票据。尚未被 worker 消费的 Down、卸载注册、异常回调及 Cancel 后新接触均需回归；不能用通配释放清理后来取得的捕获。
+- 共享输入业务队列有界且有序，阻塞组件由单一 STA drain 执行；退出先请求可取消对话框的 `std::stop_token`，再排空已接受的保存，取消尚未启动的外部动作。可取消对话框按隐藏、恢复 owner、join 清理；不得用分离线程或丢弃请求来绕过退出屏障，可取消请求失败不能转为无法取消的系统 fallback。
+- 命中只读取最近成功呈现的不可变快照。主栏按钮/固定形状与底栏映射纳入同一 serial 提交；分页命中与 workspace/session/page 门禁同批发布。退场菜单保持绘制但禁用按钮，已呈现快照区分主体与 popup 背景；PPT 背景拖动只接受主体，仍可见的 popup 继续阻挡墨迹。业务身份变化但视觉没有变化时，仍通过现有 forceFullPresentation 完成真实且可重试的提交；不能无提交便确认新身份，也不从 render 额外安排冗余 wake。失败帧保留旧快照和待绘制 dirty，不得提前允许新页交互。
+
 ### 定格状态机合同
 
-`Inkeys.UI.Freeze` 是定格业务状态的唯一所有者。绘制、选择和工具按钮切换不得清除或恢复定格；用户只能通过定格按钮切换状态。PPT 或 Whiteboard 工作区进入时必须关闭定格并禁用主栏定格按钮，退出工作区只解除禁用，不恢复进入前的定格状态。禁用按钮保留可见布局和内容，以现有 `BarButtonDisabledContentOpacity` 呈现，不参与悬停、按压或点击命中。
+`Inkeys.UI.Freeze` 是定格业务状态的唯一所有者。普通绘制、选择和工具按钮切换不清除或恢复定格；独立ClickThrough与Freeze互斥，进入穿透关闭定格；再次点击穿透按钮保留墨迹并恢复记住的Pen/Shape/Eraser，定格继续关闭。穿透时点定格则恢复记忆工具后开启定格，不恢复旧定格状态。PPT或Whiteboard进入时关闭并标记不可用；不可用定格按钮从主栏隐藏，退出工作区只恢复可用性，不恢复进入前状态。合并式/分离式的尺寸与显隐见[选择与穿透合同](configuration-i18n-and-assets.md#选择与穿透操作模式合同)。主栏Clear空页且已Selection时使用同一 `Disable` 和 `BarButtonDisabledContentOpacity`，不参与悬停/按压/点击；空页仍在绘制或穿透工具时保持可点击以进入Selection。
 
 以下仅是对现有 Bar 的 `【合理推断】` 修改约束，不适用于所有窗口：
 
@@ -53,6 +67,73 @@
 - 维持 premultiplied alpha 语义；
 - `GetDC/ReleaseDC`、`BeginDraw/EndDraw` 在成功与失败路径成对；
 - 不在没有线程安全依据时跨线程传递 device context/target。
+
+### 主栏按钮统一状态派生合同
+
+- 范围为主栏A1/B/A2与运行时Pierce/More/Divider。配置/注册基础尺寸、用户可见性、成员顺序是输入；运行时有效size/hide/业务Selected/Disable与相关内容由StateUpdate单一计算/应用入口给出。不同业务事件不能直接覆盖有效字段，组件Load后所有特殊/普通按钮均一致化，不能只修Freeze或只补Recall。
+- 工具、内容、Whiteboard/PPT/Freeze可用性、RecallView、fold/More状态按同组快照计算。内容缓存只抑制重复内容动画，不抑制尺寸/显隐重投影；重复同状态不重启内容或几何动画。 Recall的view与所选锚点可见性在网格锁内捕获到帧对象，主栏颜色和历史属性Advance显式使用同份帧值，不在解锁后重新读全局view或有效hide拼接旧目标。
+- Recall保持3秒steady_clock保护、接受命令前事实、灰色点击延期及popup身份；灰色表观不能以通用Disable拦截所有点击而丢弃延期资格。事件持Recall锁只更新state/deadline，锁外请求；不能在该锁或Draw3回调内盲目同步整套UI更新。
+- 列表重建与投影使用短而明确的同一串行边界。不得持该锁跨D2D呈现、Window Service/SetWindowPos/owner等待；UpdateRendering(false)轻请求与timer不能等待可能同步等待owner的渲染锁。面板Close归位等可重入副作用与纯投影分开，避免锁内Close重新取得Recall/更新锁。
+- 主栏布局失效必须比较稳定成员身份/顺序、有效size/IsVisible以及隐藏成员锚点语义，不能只比较总宽度。等宽的两枚2×1与单枚2×2、成员替换/顺序变化仍进入现有统一批次；扩张曲线继续由实际宽度决定。Selected/Disable、文字/颜色、hover/emph/pressScale/动画val不属于几何指纹。
+- RenderLoop继续持有像素目标SetTar、current/target、CanJoin与换边后半程重开、隐藏锚点、命中和旧新dirty；统一业务入口不得SetDirect跳过动画。主按钮脉冲/停靠及独立Surface/属性按钮保持原所有权，不扩大为全UI属性框架。
+- 真实Bar无窗口回归须调用RegisterBuiltInComponents/SyncLegacyExtensionButtons/Load/UpdateRendering与生产timer/state入口：相同业务styleKey下Separate绘制增删组件仍为Pierce上2×1/Freeze下2×1；覆盖0/1/2/3+组件及overflow、模式/内容/PPT/Whiteboard、历史期限与精简态、等宽转换/动画中途/重复刷新。源码合同只作补充，不以复制逻辑或字符串替代真实生产调用；未启动Draw3 Host/HWND时不能声称验证Accepted命令或系统WM_TIMER投递。
+
+### Undo/Redo 属性与 3 秒布局保护合同
+
+#### 1. Scope / Trigger
+
+修改 UI3 主栏 Recall/Redo、属性弹窗命令身份、Draw3 历史可用性显示或相关布局/颜色动画时适用。
+
+#### 2. Signatures
+
+`Inkeys.UI.Bar.RecallChrome` 提供生产纯策略：
+
+~~~cpp
+RecallChromeState ApplyRecallChromeCommandResult(RecallChromeState state,
+    bool redo, RecallHistoryAvailability clickAvailability, bool accepted) noexcept;
+bool RecallChromeNeedsIdleRestart(RecallChromeState before, RecallChromeState after) noexcept;
+RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelection = false) noexcept;
+// 历史按钮复用 RetargetBarButtonInteractionVisual 的主题与统一禁用透明度。
+~~~
+
+`BarUISetClass` 的 `NoteRecallHistoryAvailability`、`PollRecallChromeIdleTimer`、`AdvanceRecallChromeIdle` 和既有 `ArmRecallChromeIdleDeadline/Timer` 负责发布与唤醒；`RetargetBarButtonInteractionVisual` 可接收 `std::optional<COLORREF>` 最终内容颜色，省略时保留原主题行为。
+
+#### 3. Contracts
+
+- Draw3 真实 `canUndo/canRedo` 只控制即时可用性与颜色。当前 `layout` 独立锁存，静止目标为两者可用时上 Redo/下 Undo 的 2×1、仅 Redo 可用时 2×2 Redo、Redo 不可用时 2×2 Undo。
+- Recall业务事件/计时器只更新历史状态、期限与通知；Undo/Redo最终有效size/hide由主栏统一状态派生入口应用，不得在Load、事件、idle或PresetHoming中另套第二投影。主栏 2×2 Redo 点击没有新增按钮，应保持原单列宽度。该入口使用同组工具/内容/工作区与RecallView，非白板空页Selection精简门禁优先隐藏两按钮，不能被3秒保护、待调整或timer重新显示；不清除历史保护。到期结算与唯一投影必须在该帧目标宽度/布局批次扫描前，不能动画末尾再改变有效尺寸。
+- 主栏 2×1 点击进入所点命令的 2×2 交互及相反命令弹窗。已有展开交互内的命令点击保持主栏/弹窗身份，并延长最后一次点击后的 3 秒保护。
+- 属性面板的同一 `RecallChromeView` 快照须选择当前 2×2 主栏 Redo/Recall；所选按钮同时用于 `IsVisible()` 关闭门禁、几何继承和弹窗锚点。隐藏的另一命令不能触发 `Close`。
+- 点击前在原互斥边界取可用性快照；发布命令后只在 `CommandResult::Accepted` 时确认展开。异步执行末步导致可用性耗尽，不能反过来拒绝本次已接受点击的反馈。
+- `Dismiss/ReturnToDesktop/SuppressPopup` 只关闭面板，保留布局与期限。没有点击的可用性变化也保存 `pendingLayout`，从目标变化起等待 3 秒；同目标逐帧读取不得重启期限。目标回到当前布局时可取消无点击等待。
+- 期限使用 `steady_clock`，主栏 idle 时以既有 `WM_TIMER` 唤醒；有 hold 和无 hold pending 都须被唤醒。不得累加会在 idle 停止的动画 dt 来判定 3 秒。
+- 禁用或发布失败不发送成功点击反馈；若已有待调整布局，点击仍延长保护，保持关闭面板的关闭状态。无 pending 时无效点击不启动新交互。
+- 主栏 Redo 时属性按钮必须为 Undo，反向对称；属性按钮不在主栏注册表，必须自行推进 icon/name 的 `AdvanceContentTransition` 并保持续帧。身份切换以已有 `InitializationFromResource`（SVG val/tar 同步、取消旧内容动画、缓存失效）和 `SetStringImmediate` 同帧提交显示及 preset，避免旧内容与新动作混配。同身份普通内容更新继续使用原动画。
+- 主栏 Undo/Redo 与弹窗历史按钮的不可用效果统一使用主题 `TextPrimary` 和 `BarButtonDisabledContentOpacity=0.30`，与 Clear/Freeze 相同；可用性仅从当前透明度双向过渡，保护时序、点击决策与布局不变。各尺寸分支与交互 helper 每帧提交同一最终目标，不能先回到完整透明度再降低。
+
+#### 4. Validation & Error Matrix
+
+| 场景 | 必须行为 |
+| --- | --- |
+| 最后一次 2×1 Redo 在 Publish 后耗尽 | 仍为 2×2 Redo + 弹窗 Undo，Redo 变灰，3 秒空闲后才调整 |
+| 展开的主栏/弹窗连续交替点击 | 单步命令，位置身份保持，计时从最后点击开始 |
+| 灰色按钮继续连点 | 不发布禁用命令，仅延期已有保护，不新开弹窗 |
+| 无 hold 的历史可用性变化 | 即时变色，保存待调整目标并等待 3 秒 |
+| Escape/其他属性/绘制/工作区切换 | 可立即收面板，不能立即更换受保护几何 |
+| 相同透明度目标逐帧重复设置 | 动画正常收敛，反向从当前显示透明度开始 |
+| 空页Selection且主栏收窄，历史仍有hold/pending | Undo/Redo隐藏且不可命中；计时器到期不重新显示，退出精简态仍沿原历史布局 |
+
+#### 5. Good / Base / Bad Cases
+
+Good：末步前快照认可已接受点击，后续耗尽只改颜色；Base：灰色 2×2 Undo 在无待调整目标时点击无新交互；Bad：关闭面板直接清 hold，或 `Resolve` 从实时 availability 推导几何，或同帧正常色/灰色反复 retarget。
+
+#### 6. Tests Required
+
+`InkeysHeadlessTests --no-window` 中既有 Recall 测试须覆盖 2.99/3 秒、异步末步事件顺序、popup 身份、连续/灰色点击延期、无 hold pending 的重定向与取消、关闭/绘制/工作区保护；透明度须使用统一禁用常量和真实动画，断言中间帧、反向连续与终态，并确认弹窗接入公共视觉 helper。既有测试另检查 `RecallAttribute::Advance` 生产源码的单快照、当前主栏锚点门禁及几何接线，需从仓库源码可访问的位置运行。完整 `InkeysRepo.sln Debug|ARM64` 验证生产入口与 helper 编译接线；纯策略、源级断言与编译均不替代实际 D2D/HWND 定时唤醒及交互视觉验收。
+
+#### 7. Wrong vs Correct
+
+Wrong：`Publish(Redo) -> Close/Refresh -> 读取已耗尽 canRedo 拒绝展开`；Correct：保存点击前可用性，发布成功后用该快照确认交互，再以最新事实更新颜色。Wrong：一帧先正常色、后禁用色；Correct：先解析最终目标，所有调用路径提交同一目标。
 
 ### UI3 idle 唤醒动画时钟合同
 
@@ -349,35 +430,37 @@ constexpr bool IsPptDirectionActionRepeatable(
 #### 3. Contracts
 
 - Main Bar 必须先迁移到共享 Bar 按钮入口，随后 PageControl 才能接入。若 Main Bar 仍使用 RenderLoop/Interaction 局部算法而 PageControl 单独使用新 helper，仍是两套实现。
-- 每个分页 HWND 独立持有 D2D target/`BarUIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 三枚实例跨 `PptCompact/WhiteboardExpanded` 稳定，Middle 只切 `Hidden/PptCompact`。
-- `BarSurfaceScene` 可以保存每窗稳定 `BarButtonClass`、PPT-only DragHandle 和 `hovered/pressed` id 路由，但不得定义另一套视觉算法或分页专用数值。标准按钮的内部位置、hover/press、内容转换、draw、圆角 hit 和动画值必须调用上述 Bar 入口；Scene 只把共享结果映射到本窗 damage/present。
-- Scene 的稳定 Widget 自持 SVG/PNG D2D 上传位图，不属于 `rendererOwner.svgMap/pngMap/barButtonSet`。显式 `ReleaseDeviceResources()` 与成功的 epoch/target 隐式重建都须清理 Widget 位图；创建失败须保留旧 renderer 和旧缓存。只改变内容、尺寸、颜色或设备域时重建相应位图，普通帧不得反复失效。
-- PPT 外框：Bottom `165x42.5 DIP`，Middle `42.5x165 DIP`；Drag slot `10 DIP`、Arrow `32.5x32.5 DIP`、Page 横向 `70x32.5 DIP`/竖向 `32.5x70 DIP`，两侧外边距与真实按钮间距 `5 DIP`。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 外框 `230x80 DIP`，三枚标准 `70x70 DIP` `2x2` 按钮。
+- 每个分页 HWND 独立持有 D2D target/`BarUIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 的 Previous/Page/Next/More 实例及列表成员跨 `PptCompact/WhiteboardExpanded` 稳定，More 使用共享隐藏布局与绘制层级收拢到 Next 下方并渐隐，不能清空目标矩形；退场不命中且反向重入续接当前呈现值。Middle 只切 `Hidden/PptCompact`。
+- `BarPageSurface` 只保存每窗分页列表、固定属性数组、PPT-only DragHandle 和公共指针状态的路由；不得保留动态 Widget 构建或独立视觉算法。标准按钮内部位置、hover/press、内容转换、draw、圆角 hit 和动画值调用上述 Bar 入口，适配器只把共享结果映射到本窗 damage/present。
+- 分页标准按钮的 SVG/PNG 位图与 renderer 字体/遮罩缓存按目标及设备代次持有，不构造完整主栏 owner。显式 `ReleaseDeviceResources()` 与成功的 epoch/target 隐式重建须清理相应设备资源；创建失败保留旧资源和待绘制 damage。只有内容、尺寸、颜色或设备域变化才重建对应资源，普通帧不得反复失效。
+- PPT 横纵分页默认统一使用白板同源的 `70x70 DIP` `2x2` 按钮：Bottom主体 `240x80 DIP`，Middle主体 `80x240 DIP`，保留 `10 DIP` Drag slot及 `5 DIP` 外边距/按钮间距。标准按钮尺寸与槽位来自共享 Bar 尺寸源；当前可见项及 Drag 槽的列表布局共同决定按钮目标和背景目标宽度，背景与按钮使用同一布局批次推进。分页仅在拓扑/尺寸目标变化时重算列表并缓存隐藏优先顺序；PageControl 通过非分配几何读取跟随背景当前尺寸，不维护独立宽高动画；`BarPptCompactPaginationEnabled=false` 禁用原32.5DIP路径，原紧凑布局、字体与分支继续保留。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 主体左侧 `305x80 DIP`（Previous/Page/Next/More）、右侧 `230x80 DIP`（Previous/Page/Next）；左侧菜单另按当前动画向上扩展同一 HWND 包络。
 - 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `BarButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。分页外框和 Main Bar 外框都保持背景 Shape 默认 `frameCursorLightIntensityScale = 1.0`，不得误用按钮的 `BarButtonCursorLightIntensity`。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
 - `DrawBarButtonVisual` 的显式 `inherit` 是按钮父坐标唯一真值。入口必须先同步 `button.inhX/inhY`，再通过 `ResolveBarButtonChildTopLeft` 解析 SVG、主文字和次文字；Main Bar dirty 与最终 draw 调用同一继承准备入口。禁止读取默认或上一帧父缓存后再把显式 `inherit` 只用于背景 Shape。
 - 四个 PageControl HWND 与 Bar HWND 共同构成第三光源的实际消息接收窗口集合。真实鼠标进入分页 HWND 时只通知 Main Bar 激活既有状态机；离开时由 Main Bar 根据 `WindowFromPoint` 决定 `Inside/Grace`。Raw Input 和 5 秒 timer 始终以 Bar HWND 为 owner；分页只发布成功呈现的屏幕边界用于 240px 邻域裁剪，隐藏或提交失败不得发布假边界。
-- Page 在三种形态中是同一实例。横向页码对加粗当前页与常规 `/总页数` 做整体测量并居中；竖向使用上下行并整体居中；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。Page 数值变化必须走共享 Scene 的即时内容策略：取消旧文字 transition、同帧替换主/次字符串，并直接应用本次重新测量的槽位；不得调用 `TransitionToString`。PPT Page 在系统拖动阈值内短按并仍命中时调用既有 `ViewShow` 打开预览，Whiteboard Page 保持 no-op；两者都使用标准 hover/press。Arrow/Add SVG 与语义标签继续使用共享内容转换，不得因即时数字策略被关闭动画。
-- 普通 Previous/Next 始终保留同一 `barMore` SVG 对象，只动画尺寸/位置/角度及 Whiteboard 标签；不得为同资源启动替换。`barMore` 的 `0°` 基准朝上，`MiddleLeft/MiddleRight` 必须统一使用 Previous `0°`（向上）、Next `180°`（向下），不得按左右侧镜像；Bottom PPT/Whiteboard 继续使用 Previous `-90°`、Next `90°`，Whiteboard Add 使用 `0°`。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才用共享内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”，并与几何同批并行推进。
+- Page 在三种形态中是同一实例。PPT横纵分页与Whiteboard默认均使用 `PageTwoTwo` 标准 `2x2` 双行槽；原紧凑横向整体测量及竖向页码分支保留，由同一紧凑开关禁用。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。Page 数值使用公共即时内容更新：取消旧文字 transition、同帧替换主/次字符串，不调用 `TransitionToString`；PPT/WB 模式变化中的文字槽、字号与按钮几何仍按共享动画从当前值连续重定向，不能因替换字符串而跳到终态。PPT Page 在系统拖动阈值内短按并仍命中时调用既有 `ViewShow` 打开预览，Whiteboard Page 保持 no-op；两者都使用标准 hover/press。Arrow/Add SVG 与语义标签继续使用共享内容转换，不得因即时数字策略被关闭动画。
+- 普通 Previous/Next 始终保留同一 `barMore` SVG 对象，只动画尺寸/位置/角度及标准按钮标签；不得为同资源启动替换。`barMore` 的 `0°` 基准朝上，`MiddleLeft/MiddleRight` 必须统一使用 Previous `0°`（向上）、Next `180°`（向下），不得按左右侧镜像；Bottom PPT/Whiteboard 继续使用 Previous `-90°`、Next `90°`，Whiteboard Add 使用 `0°`。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才用共享内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”，并与几何同批并行推进。
 - EndShow A2 与 PageControl 必须共用主栏 `UI/barEndShow` SVG；深色主题由 `TextPrimary` 着色为白色，资源本身遵循主栏 `24x24` 画布、圆角端点/连接和相近线宽，不得继续用固定黑色 `ppt3` PNG。PageControl 仅在 UI 发布态 `totalPage > 0 && currentPage < 0` 时视为结束放映页：Bottom/Middle 的稳定 Next 实例通过现有 Animated 中点内容转换把 `barMore` 切为正向 `0°` 的 `barEndShow`，状态离开结束页后反向切回各 surface 的箭头角度；未知 `-1/-1` 不得误判。同一快照必须让 `ResolvePptDirectionAction` 把结束页 Next 解析为 `EndShow`，并通过 `PptCallbacks::endShow` 直接向 PPT 业务线程退出队列投递，不经过主栏确认 dispatcher；仅主栏 EndShow 点击确认。有效页仍解析为 `NextPage`。会话身份/失败/输入门禁见 [PPT 当前合同](../ppt-interop/native-session-ui3.md)。
-- DragHandle 是 PageControl 自有且仅 PptCompact 存在的 shape/hit region，不属于 Bar 按钮，无 hover/press/click/selected/content 视觉。PPT 成对拖动可从 DragHandle、Page 和未被 Previous/Next 占用的真实圆角背景开始；透明 presentation margin、圆角外像素和 diffuse 光晕继续 `HTTRANSPARENT`，不能把整个矩形 HWND 当作背景。Previous/Next 永远是纯按钮。Page 按下先产生标准 press，超过 `SM_CXDRAG/SM_CYDRAG` 对应系统阈值后取消 press 并转为拖动，阈值内且仍命中 Page 时抬起调用 `ViewShow`，不写位置。Whiteboard 不创建 DragHandle 或 drag candidate。
-- PPT 普通 Arrow 的 Pointer Down 立即投递一次 Previous/Next，并在该次 Down 边界通过 `SPI_GETKEYBOARDDELAY` / `SPI_GETKEYBOARDSPEED` 快照系统键盘重复设置；一次按压中途不得重新读取或改变节奏。`keyboardDelay` 先限制到 `0..3`，首次重复延迟为 `250ms * (delay + 1)`；`keyboardSpeed` 先限制到 `0..31`，按 Windows 文档给出的 `2.5..30 次/秒` 线性换算并取最近毫秒作为后续重复间隔。任一 SPI 查询失败时仅该字段回退到 `delay=1` / `speed=31`，按压仍可继续。只有 PPT 快照发布的 `longPressEnabled=true`、指针仍命中同一 Arrow 且 capture 有效时才重复。首次实际重复以当前帧锚定，保证第二次至少等待完整 interval；第二次起以计划 deadline 推进 repeat anchor，避免 60 FPS 把 `34ms` 等间隔量化成固定 `50ms`。若实际帧已落后计划 deadline 至少一个完整 interval，则只触发一次并以当前时刻重新锚定，不追赶积压。既有 COM outstanding gate 继续合并未完成普通页命令。结束页 Next 在 Down 时只调用一次 EndShow dispatcher，不建立 repeat timing；普通 Next 按住期间若 UI 状态进入结束页，则下一次合法 repeat 改投一次 EndShow 并立即清除 tracking。移出 Arrow、Pointer Up、capture cancel 或 workspace 切换立即停止。Whiteboard 不继承 long-press；键盘 Hook 与 wheel 不得合成 Arrow pressed 闪按，真实 Pointer 的标准 hover/press 保留。
+- DragHandle 是 PageControl 自有且仅 PptCompact 存在的 shape/hit region，不属于 Bar 按钮，无 hover/press/click/selected/content 视觉。PPT 成对拖动可从 DragHandle、Page 和未被 Previous/Next 占用的真实圆角背景开始；透明 presentation margin、圆角外像素和 diffuse 光晕继续 `HTTRANSPARENT`，不能把整个矩形 HWND 当作背景。Previous/Next 永远是纯按钮。Page 按下先产生标准 press，超过 `SM_CXDRAG/SM_CYDRAG` 对应系统阈值后取消 press 并转为拖动，阈值内且仍命中 Page 时抬起调用 `ViewShow`，不写位置。Up 必须先验证来源归属，再使用该事件的完整屏幕点按同一阈值采纳最终候选；只有 Up 才越阈值的 Page/background 也按最终拖动处理，不能误触预览。Whiteboard 不创建 DragHandle 或 drag candidate。
+- Bar 与 PageControl 的原生 Down/Move/Up 均按值进入唯一交互 worker；HWND owner 固化采样时间、来源与精确捕获票据，PageControl 只读取成功呈现快照完成准入，业务由 worker 推进。只有连续/拖动路径准备私有 Raw 补充，原生 Up 与 Raw Up 按同一归属去重；Raw 不可用不能阻断普通点击，未过阈值的 Raw Up 不能点击。来源/失败/时序合同见 [ui-pointer-session.md](ui-pointer-session.md)。
+- PPT 普通 Arrow 的 Pointer Down 立即投递一次 Previous/Next，并在该次 Down 边界通过 `SPI_GETKEYBOARDDELAY` / `SPI_GETKEYBOARDSPEED` 快照系统键盘重复设置；一次按压中途不得重新读取或改变节奏。`keyboardDelay` 先限制到 `0..3`，首次重复延迟为 `250ms * (delay + 1)`；`keyboardSpeed` 先限制到 `0..31`，按 Windows 文档给出的 `2.5..30 次/秒` 线性换算并取最近毫秒作为后续重复间隔。任一 SPI 查询失败时仅该字段回退到 `delay=1` / `speed=31`，按压仍可继续。只有 PPT 快照发布的 `longPressEnabled=true`、指针仍命中同一 Arrow 且所属指针会话有效时才重复。首次实际重复以当前帧锚定，保证第二次至少等待完整 interval；第二次起以计划 deadline 推进 repeat anchor，避免 60 FPS 把 `34ms` 等间隔量化成固定 `50ms`。若实际帧已落后计划 deadline 至少一个完整 interval，则只触发一次并以当前时刻重新锚定，不追赶积压。既有 COM outstanding gate 继续合并未完成普通页命令。结束页 Next 在 Down 时只调用一次 EndShow dispatcher，不建立 repeat timing；普通 Next 按住期间若 UI 状态进入结束页，则下一次合法 repeat 改投一次 EndShow 并立即清除 tracking。移出 Arrow、Pointer Up、会话/capture cancel 或 workspace 切换立即停止。Whiteboard 不继承 long-press；键盘 Hook 与 wheel 不得合成 Arrow pressed 闪按，真实 Pointer 的标准 hover/press 保留。
 - 每个有效 PPT Pointer Down 都调用 `PromotePptWindow(surfaceRole)`，把最近交互窗放到其他 PPT 窗口之上、Bar 正下方，不激活窗口；纯平移继续使用 `SWP_NOZORDER`。
-- Enter 开始即 cancel capture、关闭 DragHandle hit；Window Service 撤销必须广播 Drawpad、四个 PageControl HWND 与 Bar。PageControl 的 `WM_CANCELMODE` 在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后才调用可能重入 `WM_CAPTURECHANGED` 的 `ReleaseCapture`。背景、三枚按钮、Drag slot/opacity、SVG/文字和 HWND bounds 使用同一批次从当前成功呈现值重定向。PPT 底栏可见时同时移动到 Whiteboard 固定 `5 DIP` 角落并形变；不可见时直接用最终几何渐显。Exit 反向返回 PPT 最新运行时位置，稳定 PptCompact 成功呈现后才恢复 DragHandle hit。
-- Surface 首次在 Hidden 配置时必须把当前/目标透明度直接提交为 `0`，不能只留下尚未推进的零时长 target；随后显示必须形成真实 `0 -> 1` 渐显。只要 `layoutTransitionUntil` 尚未到期，无论 Scene/bounds 是否仍报告 active，可见或退场 Surface 都必须返回 `FrameResult::Continue` 并逐帧重算 `inputLocked`；到期帧自行解锁并进入 Idle，不得依赖 Bar 鼠标、共享光源或其他客户端消息再次唤醒。
+- Enter 开始即 cancel capture、关闭 DragHandle hit；Window Service 撤销必须广播 Drawpad、四个 PageControl HWND 与 Bar。PageControl 的 `WM_CANCELMODE` 在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后才调用可能重入 `WM_CAPTURECHANGED` 的 `ReleaseCapture`。Down 的 `SetCapture` 同样必须在该非递归锁外：先完成旧 capture 的同步取消，再在短锁内复核本次 gesture/session/epoch/mode 与命中并建立新 tracking；长按依赖的 `GetCapture` 判断位于捕获完成之后，不能用递归锁掩盖旧 Cancel 覆盖新 tracker。背景、三枚按钮、Drag slot/opacity、SVG/文字和 HWND bounds 使用同一批次从当前成功呈现值重定向。PPT 底栏可见时重定向到 Whiteboard 可见描边外沿距屏幕底边 `5 屏幕 DIP` 的固定角落并形变；同屏默认位置和局部倍率为 1 时保持底部 Y；不可见时直接用最终几何渐显。Exit 反向返回 PPT 最新运行时位置，稳定 PptCompact 成功呈现后才恢复 DragHandle hit。
+- Surface 首次在 Hidden 配置时必须把当前/目标透明度直接提交为 `0`，不能只留下尚未推进的零时长 target；随后显示必须形成真实 `0 -> 1` 渐显。可见或退场 Surface 的续帧由 Scene/bounds 实际动画和待绘制 damage 决定，不增加截止时间锁存；`inputLocked` 逐帧消费实际布局动画及工作区切换事实。布局结束帧自行解除布局锁，各动画与 damage 收敛后进入 Idle，不得依赖 Bar 鼠标、共享光源或其他客户端消息再次唤醒。
 - 四个 PageControl HWND 创建时继续统一执行 `RegisterTouchWindow(hwnd, 0)` 与 `DisableEdgeGestures(hwnd, true)`；WndProc 还必须对 `WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回与 Bar 一致的 press-and-hold、pen tap feedback、Touch UI 和 flick 禁用标志。`WM_TOUCH` 每批优先锁定带 `TOUCHEVENTF_PRIMARY` 的触点；整批没有 primary 标志时锁定第一个 DOWN 作为 fallback。同批处理必须先保序消费 primary、再消费 non-primary，防止旧 fallback 的 Up 在新 primary 替换 cancel 前触发 click。活动触点的 id、是否 primary 和最后 client 坐标必须锁存；新合格 DOWN 替换旧 id 时先取消旧 press/capture（等价于 cancel up，且不得触发 click），再建立新 Down。只有锁定 id 的 Move/Up 可转译，Up/cancel/workspace 切换必须清空锁存；系统生成的兼容 mouse 副本仍由现有来源签名过滤。
 - PPT 碰撞只包含 bottom/middle pair 与屏幕越界。手动拖动不推动另一 pair；自动纠偏 bottom 优先、middle 最近位置/极端运行时缩放回退，且不写保存配置。Bar HWND、MainButton、主栏移动和 Whiteboard 均不参与求解或唤醒。
 - 同一 PPT publication/direct-move/display/device 代的四个 PageControl surface 必须消费同一保守呈现预算：已启用 surface 的最大真实 Scene outset 与最小 bitmap limit。各自旧 Scene scale/context/backing 不能让同一 pair 得出不同最终倍率；旧 backing 超出当前设备上限应缩到上限，若目标完整包络仍超限则拒绝该帧并保留重试，不能静默裁掉左/右控件。合法 Side 屏外入场起点只在动画结束后检查最终主体是否入屏；自动适配不写用户位置/倍率偏好。
 - `ConfigureSurface` 的 Scene 配置、内容更新和 bounds 均成功后才推进 observed revision；ULW/资源/GetDC/ReleaseDC/EndDraw 失败在原调用点保存 HRESULT/`GetLastError`，同阶段重复失败限频并有界退避，恢复无需新的鼠标输入。PPT Window Service 的 Show/Hide/SetBounds 成功必须读回真实可见性/RECT；任一必需 surface 未完成呈现与窗口提交，PageControl UI-ready mask 不能提前确认半对。`INKEYS_PAGECONTROL_PRESENT_TRACE=1` 仅在排障时开启同代四窗阶段与 HWND 日志，默认关闭。
 - PageControl 继续拥有 stable backing、logical/presentation 映射、direct-move revision、ULW/Window 提交与调试覆盖层事务。共享 Bar 运行时返回 animation/damage，不直接调用 Window Service；隐藏生命周期不得被光源动画无限延长。渲染线程可在 `presentationMutex` 内同步等待 Window Service owner，因此 owner WndProc 绝不能阻塞等待该锁。每次拖动采样必须先按原始 drag 起点计算并发布 latest-wins 绝对候选；发布本身不得请求 pair。直移目标必须分别解析上一 feasible layout 与当前 candidate layout，确认尺寸、scale、mode 仅发生平移，再由 candidate logical bounds 加减当前不变的 presentation outset 得到绝对 HWND 目标；不得依赖上一候选已成功提交，也不得为取得目标调用 `ApplySceneBounds`。
-- `presentationMutex.try_lock()` 成功后，owner 依次对两个 HWND 调用 `SetWindowPos`；第一窗失败直接保留 pending，第二窗失败必须把第一窗回滚到 original，并记录 first/second/rollback 阶段及 Win32 error。两窗成功后才对两个 `SurfaceState.bounds` 调用 `SetBoundsDirect`、提交 mailbox/direct-move revision，并立即发布两个 cursor-light 接收边界；mailbox/layout/bounds payload 必须先完整写入，再以 release store 发布单调且由 `dragCommitMutex` 串行的 revision。该热路径不得调用 `ApplySceneBounds`、产生 Scene damage 或请求 pair。只有锁竞争、非纯平移或窗口移动失败走 pair render fallback。较新的候选可以覆盖旧候选，但 fallback 必须保留最新候选，不能依赖另一条可能被合并的 `WM_MOUSEMOVE`。渲染帧以 acquire 读取 revision，取得 `renderTransactionMutex` 后、`ConfigureSurface/PresentScene` 前必须复核，窗口提交后继续第二次复核；任一过期帧均返回 `Retry`，不得先以旧 ULW 拉回 HWND。松手只 `RequestAll` 一次让 Scene/layout 吸收最终位置，并且不得在最新候选成功提交或明确回滚前清除 pending 所有权。
-- 当前 COM→Draw3→页码提交→输入开放、session/target revision、采样/唤醒、位置持久化及有效缩放合同见 [native-session-ui3.md](../ppt-interop/native-session-ui3.md)。Ppt 生命周期不得再由 presentationVisible 派生；成功呈现前不发布 ready，成功页码提交前不开放新页输入。
+- `presentationMutex.try_lock()` 成功后，owner 依次对两个 HWND 调用 `SetWindowPos`；第一窗失败直接保留 pending，第二窗失败必须把第一窗回滚到 original，并记录 first/second/rollback 阶段及 Win32 error。普通最终目标两窗成功后才对两个 `SurfaceState.bounds` 调用 `SetBoundsDirect`、提交 mailbox/direct-move revision，并立即发布两个 cursor-light 接收边界；mailbox/layout/bounds payload 必须先完整写入，再以 release store 发布单调且由 `dragCommitMutex` 串行的 revision。普通完整直移热路径不得调用 `ApplySceneBounds`、产生 Scene damage 或请求 pair。吸附动画的中间直移只推进 direct-move 过期帧屏障，不确认最终 pair，并显式请求 pair 续帧。普通拖动只有锁竞争、非纯平移或窗口移动失败走 pair render fallback。较新的候选可以覆盖旧候选，但 fallback 必须保留最新候选，不能依赖另一条可能被合并的 `WM_MOUSEMOVE`。渲染帧以 acquire 读取 revision，取得 `renderTransactionMutex` 后、`ConfigureSurface/PresentScene` 前必须复核，窗口提交后继续第二次复核；任一过期帧均返回 `Retry`，不得先以旧 ULW 拉回 HWND。松手在合法终点采样后只 `RequestAll` 一次让 Scene/layout 吸收最终位置，并且不得在最新候选成功提交或明确回滚前清除 pending 所有权。正在拖动及 released pending 的同 pair 非吸附纯位置 fallback 必须直接落定，包含同组未设 `dragging` 的另一面；目标相同也必须结束旧位置缓动。只有明确的中轴吸附 Y 修正允许有界短动画，不能恢复普通拖动的旧位置缓动。render 只有实际 logical/presentation 像素几何与本帧拟合目标一致才推进该面 commit，不能以动画中间帧凑满两面 mask；正常显隐、倍率和工作区形变仍沿用原动画。采集 pair ownership 与快照时保持 `dragCommitMutex -> snapshotMutex`，禁止新增反向锁序。
+- 中间竖向 pair 的主体中心吸附屏幕水平中线；`middlePairHeight=0` 即居中，不另加边距/阴影补偿。复用 `BarBottomDockThresholdDip` 的20屏幕DIP，同时要求 `abs(middlePairHeight)` 与 `middlePairWidth` 均不超过阈值，含等号；后者已是主体距对应屏幕侧边扣除既有缩放间隙后的额外距离，不读取阴影/outset，也不强制 X 归零。阈值仅乘同一布局屏幕的归一化DPI，不乘控件倍率。先裁剪原候选，再尝试中心候选；中心碰撞保留可行原候选，否则上一 feasible。仅吸附 Y 修正复用现有 UI3 PageControl 曲线/RenderPipeline 做140ms过渡，两面共享起点时刻和单调采样进度，owner采样已推进后不得被较早的RenderPipeline批次frameTime回退；X及时跟随；重复 Move、页码发布和 Up 不重启，同目标完成后不重播，released pending等两面真实几何到位才提交。过渡不新增 inputLocked，离开任一阈值、真正Cancel、新gesture/session/epoch及模式/显示布局失效可打断；Up后无活动pointer的capture取消不能清掉刚释放的pending吸附。只在用户拖动/合法Up采样吸附，普通页码发布不得重写已存偏移。
+- 当前 COM→Draw3→页码提交→输入开放、session/target revision、采样/唤醒、位置持久化及有效缩放合同见 [native-session-ui3.md](../ppt-interop/native-session-ui3.md)。Ppt 生命周期不得再由 presentationVisible 派生；白板最小化按钮的禁用视觉与业务门禁必须使用独立活动会话事实，不能把白板期间隐藏分页当作放映结束。图标/文字沿共享 UI3 0.30 禁用目标过渡，禁用时无 hover/press/click，活动会话变化须请求分页刷新；成功呈现前不发布 ready，成功页码提交前不开放新页输入。
 
 #### 4. Validation & Error Matrix
 
 | 条件 | 必须行为 |
 | --- | --- |
 | Main Bar 与 PageControl 对相同 button request/state/time 结果不同 | 测试失败；修共享实现，禁止在 PageControl 加补偿常量 |
-| PPT Arrow 进入 Whiteboard Arrow | 保留同一 `barMore` SVG，只缩放/移动并显示标签 |
+| PPT Arrow 进入 Whiteboard Arrow | 保留同一 `barMore` SVG与标准2×2按钮，从当前尺度/位置连续重定向，标签不重建按钮 |
 | Whiteboard Next Arrow↔Add | 同一按钮在同一批次转换 SVG、标签与几何；语义未变不重启 |
 | raw COM 为 `-1/有效总页数`、ready buffer 为 `-1/-1` | UI 解析为 `-1/有效总页数`；四个 surface 的 Next 动画切为 `barEndShow`/`0°`，动作解析为单次 EndShow，buffer 不变 |
 | raw COM 恢复有效、Draw3 尚未 ready | UI 先离开 EndShow 语义并切回各 surface 的 `barMore` 角度；页码保持未知直到 ready |
@@ -420,7 +503,7 @@ constexpr bool IsPptDirectionActionRepeatable(
 - Good：唯一一条 `WM_MOUSEMOVE` 到达时呈现锁正被占用；WndProc 保存最新绝对候选并唤醒 pair，锁释放后无需第二条移动消息也能完成直移。
 - Good：用户键盘设置为 delay 1/speed 31 时，触摸或鼠标长按在约 `500ms` 后首次重复，后续约 `33ms` 一次；轻微帧量化保留计划相位，渲染或 COM 严重迟到只跳过该次机会，不追赶积压。
 - Good：最后一页进入真实 EndScreen 时先为同文稿附加页取得独立 target/ready，成功 Present 后才发布 `-1/12`；PageControl 的稳定 Next 转为 EndShow，并直接投递原有非确认退出业务。主栏 EndShow 点击才进入 A2 确认。返回真实页同样等待对应画布 ready 再发布数字和开放输入。
-- Base：默认 DPI 下 PPT 为紧凑深色 Bar surface，Whiteboard 为固定三枚 `2x2`；普通 Arrow 只缩放，Add 才转换内容。
+- Base：PPT横纵使用三枚标准 `2x2` 按钮及原拖动槽；Whiteboard左侧四枚、右侧三枚 `2x2`，两工作区分页UI均跟随主栏全局尺度。普通Arrow复用同一图标，Add/EndShow语义变化才转换内容。
 - Bad：`BarSurfaceScene` 继续维护 local hover/pressed，PageControl 设置 `18 DIP` icon 或 `±13 DIP` text offset，或者复制主栏曲线后声称“复用”。
 - Bad：把 Whiteboard 拖动条叠在 Page 上、让 Whiteboard 继承 PPT wheel/long-press/persist，或把 Bar HWND 传入碰撞求解。
 - Bad：`presentationMutex.try_lock()` 失败后直接丢弃本次候选，并假定下一条 `WM_MOUSEMOVE` 一定会补偿；消息合并或松手会让控件保持原位。
@@ -433,9 +516,9 @@ constexpr bool IsPptDirectionActionRepeatable(
 - `ppt_ui_tests` 必须直接调用生产 `ResolvePageStateForPublication`，覆盖有效 ready 页、结束页、未知态、非法零页、结束页恢复但 Draw3 未 ready、恢复 ready；PageControl headless 再覆盖稳定实例 ID、横/竖页码测量、背景合同、普通 Arrow SVG 身份不变、Arrow/Add 与 Arrow/EndShow 同批中点转换目标及四 surface 资源/角度矩阵、`PreviousPage/NextPage/EndShow` 动作解析、EndShow 不可重复、DragHandle 时序、首次渐显、反向重入和有限退场。
 - 输入矩阵覆盖 PPT DragHandle/Page/非箭头背景 drag、Arrow 拒绝 drag、系统阈值、Page 预览、long-press/wheel/persist，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。长按测试必须覆盖 delay `0..3`、speed `0/31` 和越界限制、默认回退 `500ms/约33ms`、Down 立即一次、首次 deadline 前无重复、deadline 到达后一次、后续 interval、`34ms` 在 60 FPS 下保留计划相位、落后一个 interval 时跳过积压、配置关闭与移出/Up/cancel 停止；静态确认每次有效 Arrow Down 只快照一次 SPI、不存在 keyboard/wheel 合成 press，并确认有效 PPT Down 调用 `PromotePptWindow`。触摸纯测试覆盖 primary、无 primary fallback、多指忽略、活动 id 替换 cancel、新 id Move/Up、替换后旧 fallback Up 被忽略和 cancel 清理；静态确认同批先保序处理 primary、四窗注册触摸、禁用边缘/Tablet 手势且兼容 mouse 副本仍被过滤。拖动提交仲裁必须断言 publication 不自动请求 pair、纯平移由 candidate logical bounds 与稳定 outset 生成绝对 target，并可注入一次呈现锁竞争，确认 fallback 显式请求 pair且只保存最新候选；还要覆盖两窗 commit、第二窗失败的第一窗回滚、松手 ownership，以及进入 `ConfigureSurface/PresentScene` 前和窗口提交后的两道 stale revision gate。
 - 生命周期 headless 必须让 Hidden→Visible 在没有任何 Bar/光源外部请求时推进到 deadline 后一帧，断言 deadline 活跃期间续帧且输入锁定、到期自行 Idle/解锁；源码审查初始 Hidden 使用直接透明度 `0` 而不是未消费的零时长动画 target。
-- Animation headless 通过生产共用 `ApplyBarImmediateContentUpdate` 覆盖旧 content transition 取消、current/target/pending 同事务替换及取消后不发生旧关键帧回写；Scene 源码审查确认即时 Page 槽位使用 `SetDirect`，而 Arrow/Add 仍走 Animated 中点转换。
+- Animation headless 通过生产共用 `ApplyBarImmediateContentUpdate` 覆盖旧 content transition 取消、current/target/pending 同事务替换及取消后不发生旧关键帧回写；实际离屏回归确认模式切换同一时间戳页码 glyph 区域不跳变，后续几何连续推进，Arrow/Add 仍走公共内容转换。
 - Draw3 headless 通过 Host 实际持有的 `HostRuntimeRevisionSignal` 覆盖 current page/page count 变化推进 revision、唤醒 waiter、稳定值不唤醒及 stop 释放等待；源码审查两个 document observer 都调用该入口。放映期 native 有界 16ms 观测缓存状态、旧 DLL 兼容路径 50ms；正常页及独立 EndScreen 都等待 Draw3 成功 Present 和同目标 UI 回执，`-1` 仅是显示哨兵。
-- PageControl 输入测试覆盖圆角背景门禁策略；源码审查背景命中读取 Scene 当前动画 Shape，Window Service capture 撤销包含四个 PageControl 角色，且 `ReleaseCapture` 位于呈现锁外。
+- PageControl 输入测试覆盖圆角背景门禁策略；背景命中必须读取最近成功呈现的不可变快照，并区分主体与退场 popup。Window Service capture 撤销包含四个 PageControl 角色，原生释放由窗口 owner 按精确票据执行，不在呈现锁内释放。
 - 碰撞覆盖手动 pair 最近可行位置、bottom 优先/middle 回退、极小屏运行时 scale、输入/保存快照不变，并静态断言无 Bar obstacle 参数/查询/通知。
 - Headless 直接断言非零父原点下的标准按钮子内容坐标，以及屏幕光源点到 Surface presentation 点的映射；静态审查分页不再调用本地 cursor-light prepare/reset，且四个 HWND 的进入/离开与成功呈现边界只通知 Main Bar 全局状态机。
 - 回归 EndShow/A2、四窗口生命周期、owner/Z 序、旧 JSON、COM/WPS、`PptInfoStateBuffer` 与页级墨迹；执行完整 `Debug|ARM64` Solution 构建和 ARM64 `--no-window` 测试。
@@ -645,7 +728,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - 只有可改变顶层外框的动画批次才在首帧扩展 viewport 并保留保守扫掠包络；批次内不缩放，最终 idle 帧只收缩一次。普通 hover、按压、帧率文字和光影不得将 HWND 扩到整个容量。预留包络要预先内缩 viewport padding，保证解析后的 `pptSrc + psize` 始终位于 target 内。
 - 粗细 Slider/FineDial 连续手势的完整交互域必须复用 `GetBarThicknessSliderRange(currentPenMode, dpiZoom).max`，在按下/捕获首帧按最大端滑块位置计算完整 Preview Popup。包络同时覆盖 DPI 换算后的最大圆、数字从圆外迁入圆内的最宽 Surface、Slider/FineDial 两个目标位置、Popup Back 极值，以及实际可见描边、PointLight `pointLightDiffuseExtraWidth` 和抗锯齿外扩；捕获、拖动与 FineDial 物理期间保持该预约，候选粗细逐帧增长不得再次 resize。
 - Popup 已可见时，粗细快捷按钮或切换笔型产生的程序化动画必须在首个变化帧按 `drawAttributePenThickness.tar`、滑块归一化目标和 FineDial 目标位置预留紧致包络，并覆盖当前到目标的动画段、数字内外迁移与 Popup 回弹；不得等动画结束后才按实际内容追扩，也不得因此退化为预留当前笔型完整量程。
-- 绘制使用布局坐标，D2D 帧 transform 统一平移 `-capacityOrigin`；ULW 在同一次调用中提交 `pptDst/psize/pptSrc/prcDirty`。Bar 原生鼠标消息必须在窗口线程入队时就用当次 Win32 消息的屏幕位置固化为 monitor-local layout 坐标，然后丢弃 HiMsg 默认 client 副本；合成触摸、Raw Input 和计时器重新命中也必须在生产时转成同一 layout 空间。禁止在交互线程出队时再读取新 viewport 解释旧 client 坐标，否则 resize 恰好夹在入队/出队之间时会出现一次命中跳变。
+- 绘制使用布局坐标，D2D 帧 transform 统一平移 `-capacityOrigin`；ULW 在同一次调用中提交 `pptDst/psize/pptSrc/prcDirty`。Bar 原生鼠标消息必须在窗口线程入队时就用当次 Win32 消息的屏幕位置固化为 monitor-local layout 坐标，然后丢弃 HiMsg 默认 client 副本；触摸/原生消息必须保留采样时的完整屏幕位置；Raw Input 私有样本和计时器重新命中通过统一入口转换到同一 layout 空间。禁止在交互线程出队时再读取新 viewport 解释旧 client 坐标，否则 resize 恰好夹在入队/出队之间时会出现一次命中跳变。
 - 保持单次 GDI interop 链：`GetDC(D2D1_DC_INITIALIZE_MODE_COPY) → UpdateLayeredWindowIndirect → ReleaseDC`。不得在没有端到端数据的情况下加入 CPU staging bitmap、DIB Section、`CopyFromBitmap`、`Map` 或脏行 `memcpy`；这些会引入额外拷贝和更复杂的持久像素一致性。
 - 装饰租约跳帧只延迟提交，不能清除变化键或累计 damage。设备 generation 变化、资源重建失败或呈现事务任一阶段失败都强制下一次全窗口恢复。
 - 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可推进业务 damage、viewport controller、mapping tuple、交互命中边界和调试覆盖快照；失败时保留请求并强制下一帧全脏。ULW 已成功但后续阶段失败时，真实 HWND 已经改变，但任何内部呈现快照仍不推进，下帧继续按旧成功 tuple 判定整窗替换并重新对齐。输入消息已在窗口线程入队时固化为 layout 坐标，不依赖异步 viewport 快照发布。`directWindowDragMutex` 必须覆盖 ULW、EndDraw 到成功窗口边界、direct translation 与底栏快照发布；交互侧不能在 resize 已发生但缓存仍旧时使用旧边界 `SetWindowPos`。ULW 成功而后续阶段失败时，旧成功快照保留，但其窗口位置不可用于直移，直至完整恢复呈现成功。
@@ -768,62 +851,22 @@ if (averages.updated)
 
 ### UI3 共享鼠标光照通知贡献合同
 
-#### 1. Scope / Trigger
+修改 `BarPageSurface::PublishSharedLighting`、光照到局部 damage 的映射或分页订阅时适用。目标是光源与窗口无交集时不唤醒窗口，同时保留擦除旧光的必要帧。
 
-修改 `BarSurfaceScene::PublishSharedLighting`、共享鼠标光照到局部 damage 的映射，或 PageControl 的光照订阅时适用。目标是避免光源与窗口无交集时仍唤醒该窗口，继而触发原有空 damage 整窗回退。
-
-#### 2. Signatures
-
-`Bar.Scene.cpp` 中以下方法均为 `BarSurfaceScene::Impl` 私有实现，公共 Scene API 不变：
-
-~~~cpp
-bool IncludePresentationDamageLocked(const RECT& rect) noexcept;
-bool UpdateCursorLightDamageLocked(bool cursorLightChanged) noexcept;
-bool ApplySharedLightingLocked(const BarSurfaceSharedLighting& lighting,
-    std::uint64_t generation);
-~~~
-
-#### 3. Contracts
-
-- 返回值只表示本次光照处理是否向当前 surface 贡献了真实非空 damage；不能根据旧 `pendingDamage` 是否非空、累计矩形是否改变或 `invalidated` 是否翻转判断。
-- 每个订阅 scene 都保存最新光照、generation 和映射；仅 `ApplySharedLightingLocked()` 返回 true 时收集本次光照 hooks，仍在 registry/scene 锁释放后调用。
-- cursor damage 保持旧贡献与新贡献的并集；光移出、隐藏或强度归零仍要擦旧光。强度改变时即使累计矩形不变，也可返回 true。
-- primary/mapping 变化继续按已有判断保守全脏；不能因 primary 已需重绘就短路跳过 cursor 历史边界更新。
-- 首次订阅/退订的全脏与唤醒保持；布局、业务、动画 Continue、失败 Retry 和调试最终帧仍由原所有者请求。不能把这些旧需求重新混入本次无效光照通知。
-- 本合同只过滤光照源头，不取消 PageControl 的未分类需求全窗兜底，不移动 Render 内的动画推进，不提前消费失败 pending。
-
-#### 4. Validation & Error Matrix
+- `SetSharedLightingSubscribed(bool)` 管理目标订阅；`PublishSharedLighting(const BarSurfaceSharedLighting&)` 保存全局最新值与 revision。注册、移动、Reset 和销毁使用同一注册表锁，锁外只调用复制的 hooks，不能保留裸 impl 指针。
+- `Impl::NeedsLightingUpdate(before, after)` 使用最近成功呈现的可见面板和倍率，检测旧/新 primary/cursor 范围与真实边缘 damage 的交集；已有业务 dirty 不属于本次光照贡献。只有相关变化才收集 hooks，不因其他目标动画唤醒远处目标。
+- Render owner 在共享帧 Advance 中应用最新光照。cursor damage 取旧/新贡献并集；移出、隐藏或强度归零仍擦旧光。mapping/primary 变化按公共规则重绘，同时更新 cursor 历史范围。
+- 布局、业务、动画 Continue、设备重建和失败 Retry 保持各自请求；光照过滤不提前消费失败 damage。无 damage 的稳定回调不执行 GetDC/提交。
+- 实际 `--bar-eraser-offscreen-test` 覆盖远处光移动不唤醒、进入/离开窗口唤醒、Reset 退订与真实呈现事务；多目标基准验证稳定后不持续回调。headless 纯数学测试不能替代这些集成检查。
 
 | 情况 | 必须行为 |
 | --- | --- |
-| cursor 旧、新范围都不影响本窗口 | 更新快照；本次不发光照 wake |
-| cursor 从窗口内移到外部 | 旧光贡献仍进入 damage，通知擦除 |
-| 相同矩形内强度变化、已有全窗 pending | 本次有效变化仍返回 true；不依赖矩形扩大 |
-| 已有业务/失败 pending，cursor 始终在外部 | 保留旧 pending；不将它当成本次光照贡献 |
-| primary 变化与 cursor 变化同时发生 | 全脏，同时推进 cursor 历史边界 |
-| 首次订阅、布局/epoch/显隐、动画结束或失败重试 | 保留独立请求与原成功呈现事务 |
-
-#### 5. Good / Base / Bad Cases
-
-- Good：只移动主栏附近的光源，远处已稳定的分页窗保存光照快照但不重绘。
-- Base：光源离开分页按钮后重绘一次擦除旧光，继续在远处移动不再唤醒该窗。
-- Bad：比较累计 RECT 发现没变就跳过，遗漏同一区域内的亮度变化；或旧 dirty 非空就为每次无关光源变化唤醒。
-
-#### 6. Tests Required
-
-验证真实边缘 damage 算法的旧/新范围、空交集、同区域变化及失败保留；审查三层 bool 到 hooks 的完整生产调用链。当前 headless 只编译 Scene 接口，没有完整 Scene 实现的可实例化 hooks 测试入口；不为此临时导出 Impl，也不能用复制 bool 表达式的测试冒充集成覆盖。完整 `InkeysRepo.sln Debug|ARM64` 验证产品链接；真实通知/呈现次数应在后续允许的运行验证中观察。
-
-#### 7. Wrong vs Correct
-
-~~~cpp
-// Wrong：旧业务 damage 与本次光照通知原因混在一起。
-scene.ApplySharedLightingLocked(lighting, generation);
-if (!IsEmpty(scene.pendingDamage)) hooksToNotify.push_back(scene.hooks);
-
-// Correct：使用本次实际贡献，累计 damage 与最新快照照常保留。
-if (scene.ApplySharedLightingLocked(lighting, generation))
-    hooksToNotify.push_back(scene.hooks);
-~~~
+| cursor 旧、新范围都不影响本目标 | 更新全局快照，不发该目标 wake |
+| cursor 从目标内移到外部 | 旧光贡献进入 damage，安排擦除 |
+| 同一区域亮度变化、已有业务 dirty | 有效光变化仍通知；无效变化不借旧 dirty 唤醒 |
+| primary 与 cursor 同时变化 | 按公共规则重绘，同时推进 cursor 历史范围 |
+| 布局/epoch/显隐、动画或失败重试 | 独立请求与成功呈现合同保持 |
+| 订阅目标同时 Reset/移动/销毁 | 注册表保护生命周期，锁外不解引用已移走的 impl |
 
 ### UI3 Bar 底栏二维吸附事务合同
 
@@ -892,16 +935,17 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 - 这两组偶数/奇数版本快照（期望 `bottomDockTransitionSerial` 与已呈现 `bottomDockPresentedMappingSerial`）的写者在领取奇数后、写 relaxed 载荷前设置 release fence，写完后以 release 发布偶数。读者先 acquire 读偶数，读取全部 relaxed 载荷后设置 acquire fence，再重读版本并仅在相等时接受。新增读取点或写者必须保持这个配对；只靠末尾 acquire load 不能保证载荷先于校验。运行期形态变化仍用原有 deferred barrier 处理，不能把未来 barrier 当成成功呈现。
 - 按住时 Free/Dragging 阶段由输入 tracker 拥有，渲染不得强制写成 Stable 或程序化居中；不一致的折叠/居中候选需等完整新 tuple。显示位置的拖动所有权也读取同帧 `bottomDockDragActive`，不另读实时 direct phase 拼接帧状态。
 - 松手发布 `bottomDockDragActive=false` 后，`directWindowDragPhase` 仍可能短暂为 `Dragging`。只要仍有待吸收直移，渲染线程在取得稳定 release tuple 后必须返回 Retry；下一帧先把 phase 原子切到 `Absorbing`，在 `directWindowDragMutex` 内吸收 translation、重基准成功快照并执行 `PositionUpdate()`，然后才允许释放态布局和既有换向动画。
-- 交互重基准、直接 `SetWindowPos` 失败回滚和下一手势起点只读取最后成功呈现快照。水平 tracker 的输入必须是指针驱动、未形变的主体中心；形态呈现 barrier 只能确认窗口位移已提交，不得用视觉主体中心改写抓取偏移或 tracker 基准。水平捕获与脱离首帧必须从已显示像素播入恢复平移，不能把逻辑锚点切换表现为 HWND 跳变。
+- 交互重基准、直接 `SetWindowPos` 失败回滚和下一手势起点只读取最后成功呈现快照。水平 tracker 的输入必须是指针驱动、未形变的主体中心；形态呈现 barrier 只能确认窗口位移已提交，不得用视觉主体中心改写抓取偏移或 tracker 基准。显示环境重基准也不能用当前 pointer 减已限位/滞后的呈现中心重抓；抓取偏移保持原逻辑点，仅通过 `ScaleBarDragGrabOffsetForZoom` 随实际呈现 zoom 比例缩放。水平捕获与脱离首帧必须从已显示像素播入恢复平移，不能把逻辑锚点切换表现为 HWND 跳变。
 - D2D 几何计算完成后到 ULW 之间，交互线程仍可发布采样。最终目的地必须在 `directWindowDragMutex` 内读取同一稳定偶数 serial 下的目标/实际 translation、最新 deferred barrier 和成功呈现 serial：当前帧已包含尚未上屏的 barrier 时，位图必须与帧内 translation 成对提交，后续普通采样不能迫使首次吸附饥饿；若更新的形态/显示 barrier 晚于当前帧，或提交前读到发布中/不一致 tuple，则放弃 ULW、配对 EndDraw 并保留完整重试，不推进成功快照或伪报 ULW 失败。barrier 已成功呈现后的普通过期帧继续使用实际已呈现 translation，避免拉回已直移 HWND。
 - 主按钮及 Logo 使用水平刚性抓手映射并保留既有竖向果冻；主栏背景、普通按钮、图标和文字使用独立二维主体映射。主栏近端随抓手移动，远端吸附稳定居中边界：右向展开从中心左侧进入时拉伸、越过中心后压缩，左向展开镜像；捕获、脱离和恢复中重新捕获的远端都必须从上一成功像素按新旧 HWND 位移反推。绘制、dirty、viewport/capacity、PointLight 逆映射、第三光源接受区和命中必须按刚性抓手/主体映射分类；竖向普通抓手输入保留 24 DIP 视觉保护；水平 40 DIP 捕获带内的刚性抓手偏移以及从成功像素反推的远端初值必须精确保留，不能按 24 DIP 截断而造成捕获或脱离跳帧。水平弹簧须允许连续从超出常规保护范围的有效初值恢复，保持原频率、阻尼与动画开关语义。水平捕获带、实际抓手/远端恢复范围、Gaussian 外扩和抗锯齿余量都进入保守包络。
 - 纵向捕获只由最后成功呈现的 Floating -> BottomDocked 识别，并以旧 `monitorOrigin + visualBottomDip * zoom + directTranslation` 和新基准底边反推 capture-bottom 初值；不得按上一候选 mode 消费捕获。首次成功捕获帧不推进该弹簧，跳帧或失败需从同一旧成功像素重新播入。20 DIP 输入阈值不能约束上一画面距 dock 的距离，故捕获底端初值可超出 24 DIP；生产 Docked/Recovering 映射须启用 `preserveCaptureBottomOffset`，弹簧用 `preservePresentedOffset` 连续恢复，并把实际捕获范围与原抓手范围纳入 capacity/viewport。
+- 场景入口由渲染线程的 `BarWorkspaceSceneState` 统一处理：首次布局完成后，Desktop 首次进入 PPT/Whiteboard 才捕获位置、显示器、两种展开方向、fold、dock 和 center 基线。仅已展开 BottomDocked 贴目标屏幕底边 `5 DIP`，保留 Centered/Free；浮动或折叠不改变形态。PPT↔Whiteboard 不覆盖桌面基线，最终离开恢复基线；原屏幕消失时按显示快照回退并钳制可见位置。此合同替代旧 PPT 进入/退出强制居中以及白板强制展开/退出折叠策略，用户拖动的水平捕获规则不变。
 - 启动时已有的展开中置底栏发布为稳定居中。折叠时退出居中但不移动主按钮；底栏重新展开时只在最终展开联合外框仍位于 40 DIP 阈值内时无提示捕获。桌面首次放置必须在首次方向分类前初始化为向右展开（主按钮居左），白板入口保持既有方向。稳定居中展开时保持渲染线程当前布局方向，不得因动态 HWND 包络重新换边；离开居中后普通换向仍按既有关键帧执行。
-- 底栏 `PositionUpdate()` 只能把最后成功呈现的水平模式作为方向分类门禁：`Centered` 时保持当前布局方向；非居中时只有有限且大于零的窗口宽度才允许按中轴重新分类。首帧零宽、无效宽度或动态 HWND 包络都不得自行产生新方向。
+- 底栏 `PositionUpdate()` 只能把最后成功呈现的水平模式作为方向分类门禁：`Centered` 时保持当前布局方向；非居中时遵守 `UI.Bar.ExpandDirectionAdjustment`，中轴线模式只有有限且大于零的显示参考宽度才可按中轴分类，空间不足模式在完整稳定目标宽度可用后由主栏布局策略判定。首帧零宽、无效宽度或动态 HWND 包络都不得自行产生新方向。
 - `BottomDocked + Centered + Stable + Expanded` 且无拖拽、水平弹簧或显示切换时，主按钮 X 是稳定居中的唯一根位置。渲染线程必须在主栏、主按钮和按钮动画值推进后，同时在 Popup、颜色面板、粗细面板等下游绝对几何派生前，以主按钮、主栏及两者当前可见描边的联合外框反推 `mainButton.x`，同步 `displayCenterX`，再重新执行 `MainBar.Inherit(Center, MainButton)`；整个既有继承树必须在同一帧消费新根节点。主栏动画不得因每帧居中派生而重启，属性面板、More、Popup 和提示框不得参与中心计算。实际新的主栏布局批次必须同步重定向在途子按钮的位置动画，即使该子按钮目标未变，也不能继续旧批次的进度或曲线而与新父布局叠加成往返；独立按压、悬停与内容动画仍保持各自所有权。捕获、拖拽、脱离、恢复、Free、浮动、折叠、白板放置和显示切换继续由原状态机持有根位置。
 - 稳定居中不得再维护逐帧 layout correction、补偿平移、pending/in-flight rebase、方向锁存或遗留换向清理状态。viewport 预测必须从主栏 `x/w` 和描边的完整动画 range 保守反推根节点 X range，并把该 range 传播给主按钮、主栏及继承子视觉；禁止用全局 correction outset 扩张包络来代替真实父几何范围。
 - 一次二维主体命中必须先捕获一个成功呈现快照，再由同一 tuple 同时逆映射 X/Y；禁止两个轴分别读取 `BottomDockPresentedSnapshot()`，否则并发发布可能组合出从未成功呈现的映射。普通主栏按钮使用主体 X/Y，More 等刚性覆盖层继续使用原始刚性坐标，不能为复用而原地改写消息。
-- 提示资格在手势内锁存：浮动主栏真实进入底栏，或 `Free / Centered` 发生任意双向切换时建立；底栏内起拖但未发生转换时不显示。资格建立后，Free 阶段显示“底栏模式”，Centered 阶段显示“底栏模式 · 居中”；只有松手、折叠、取消或竖向脱离时清除，同一手势重新进入底栏可以再次建立。文案变宽必须先完成外框扩宽再交换文字，变窄必须先完成文字交换再缩窄外框；命中仍只发布成功呈现的实际外框。首次激活帧即使缩放仍为零，也必须把上次成功外框、当前外框和覆盖 Back 峰值、描边、第一/第三光源、Gaussian 与抗锯齿的完整包络并入 damage；失败呈现保留该 damage。
+- 提示资格在手势内锁存，Desktop/PPT/Whiteboard 共用且不按白板场景抑制：浮动主栏真实进入底栏，或 `Free / Centered` 发生任意双向切换时建立；底栏内起拖但未发生转换时不显示。资格建立后，Free 阶段显示“底栏模式”，Centered 阶段显示“底栏模式 · 居中”；只有松手、折叠、取消或竖向脱离时清除，同一手势重新进入底栏可以再次建立。文案变宽必须先完成外框扩宽再交换文字，变窄必须先完成文字交换再缩窄外框；命中仍只发布成功呈现的实际外框。首次激活帧即使缩放仍为零，也必须把上次成功外框、当前外框和覆盖 Back 峰值、描边、第一/第三光源、Gaussian 与抗锯齿的完整包络并入 damage；失败呈现保留该 damage。
 - 指示器的锚点是底栏二维映射的下游几何。映射变化时，只要指示器正在显示、退场或仍有上次成功边界，就必须标记其稳定视觉键并观察同源完整光影包络；不得因指示器自身文字、样式和显隐进度未变而跳过旧新边界 damage。
 - 点击后的悬停抑制以物理屏幕坐标为准：窗口重基准产生的同坐标相对消息不得重新悬停；同一识别区域内只要收到一次真实屏幕坐标变化的 `WM_MOUSEMOVE` 就必须解除抑制，点击不是恢复条件。
 
@@ -1116,17 +1160,18 @@ namespace Inkeys::UI::Bar
 
 #### 3. Contracts
 
-- `Dormant`：第三光源目标透明度为 0，鼠标 Raw Input 必须注销；仅 Bar 或四个 PageControl HWND 自然收到真实 `WM_MOUSEMOVE` 才能进入 `Inside`。触摸/笔生成的兼容 mouse 不得激活。
-- `Inside`：唯一 Bar HWND 注册鼠标 `RIDEV_INPUTSINK`；首次离开 Bar 与四个 PageControl 的实际接收消息区域集合时进入 `Grace`，并记录 `GetTickCount64() + 5000` 的绝对截止时间。PageControl 不得注册第二份 Raw Input 或 timer。
+- `Dormant`：第三光源目标透明度为 0，停止光效观察/渲染唤醒；交互所需 Raw Input 注册继续保留；仅 Bar 或四个 PageControl HWND 自然收到真实 `WM_MOUSEMOVE` 才能进入 `Inside`。触摸/笔生成的兼容 mouse 不得激活。
+- `Inside`：复用唯一 Bar HWND 的共享鼠标 `RIDEV_INPUTSINK` 注册并启用光效观察；首次离开 Bar 与四个 PageControl 的实际接收消息区域集合时进入 `Grace`，并记录 `GetTickCount64() + 5000` 的绝对截止时间。PageControl 不得注册第二份 Raw Input 或第三光源 timer；活动输入会话的取消/取队列计时器不属于光源生命周期。
 - `Grace`：区域外移动不得重置截止时间。第三光源使用独立的 `240 × barStyle.zoom` 径向渐变；已发布 UI 外框只用于判断光圈是否可能命中 UI，从而裁剪渲染唤醒，不得作为全局亮度乘数。
 - 同一控件的同一边框像素上，第三光源贡献只由光标到该像素的距离、生命周期强度和控件固定比例决定；光标是否位于接受消息区域、主栏或其他可见区域内不得改变该贡献。第一光源可独立影响最终合成结果，不属于该一致性契约。
 - `Grace → Inside`：重新进入实际接收消息区域时取消定时器；仅回到 240px 邻域不能从 `Dormant` 唤醒。
-- `Grace → Dormant`：绝对截止时间到达，或画布开始真实绘制时，注销 Raw Input 并从当前强度平滑淡出。落笔时若光标仍在 UI3 接收区，区域内后续移动不得重新激活；必须先收到离开，再由下一次自然进入激活。
+- `Grace → Dormant`：绝对截止时间到达，或画布开始真实绘制时，停止光效观察并从当前强度平滑淡出，不注销交互注册。落笔时若光标仍在 UI3 接收区，区域内后续移动不得重新激活；必须先收到离开，再由下一次自然进入激活。
 - 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
 - Main Bar 每个实际光源帧以屏幕物理像素发布第三光源位置、`240 × barStyle.zoom` 半径、当前生命周期强度和可见性；PageControl 只映射到各自 presentation target。分页本地 hover 与第三光源是两条状态：hover 可快速退出，不能据此清零或重新创建第三光源。
+- 第三光源输入的屏幕物理像素点是跨坐标重基准的唯一位置来源。`PrepareFrameLighting` 必须用当前帧布局屏幕原点（同帧 `monitorOrigin + bottomDockFrameTransitionTranslation`）重新换算局部物理像素点；该 translation 来自布局已捕获的同一稳定偶数 tuple，不另读 live/最后成功呈现位移，也不额外除以 zoom。松手吸收直移、取消/回滚或显示原点改变时，即使 screenPoint 和输入 serial 不变也必须正确换算；不能直接沿用输入线程缓存的旧 layoutPoint、逐帧轮询光标或在吸收分支竞争写回输入缓存。生命周期、共享屏幕快照、主体/刚性逆映射与旧新光源 damage 继续由原入口持有。
 - PageControl 只有在完整 present 与 `SetBounds/Show` 成功后才发布该 HWND 的屏幕边界；成功隐藏发布空边界。该列表只参与 Grace 邻域唤醒裁剪，不能改变亮度、截止时间或 `WindowFromPoint` 的实际接收判断。
 - 并发笔迹由原子 activity count 合并：`0 → 1` 才向 Bar 窗口线程发送 Started。Draw3 controller 必须对聚合 bool 去重，多 contact 不重复发送；Host stop/异常时若仍 active 必须补 false。Ended 只负责把 activity count 安全归零，不维持绘图静默状态。
-- Bar 窗口线程收到有效 Started 时必须无条件让第三光源进入 `Dormant` 并注销 Raw Input。若系统光标仍位于 Bar 或 PageControl 实际接收 HWND，必须建立 wait-for-leave 门禁：区域内后续移动不能重新激活，真实离开后才允许下一次自然进入。后续绘制过程和抬笔不再持续控制光影。
+- Bar 窗口线程收到有效 Started 时必须无条件让第三光源进入 `Dormant` 并停止光效观察，保留交互 Raw Input 注册。若系统光标仍位于 Bar 或 PageControl 实际接收 HWND，必须建立 wait-for-leave 门禁：区域内后续移动不能重新激活，真实离开后才允许下一次自然进入。后续绘制过程和抬笔不再持续控制光影。
 - 首次 Started 复用 Bar 的辅助界面收起路径，关闭绘制/几何属性、更多、笔型、粗细、颜色与提示浮层；不得改变主栏 `fold` 或隐藏 PageControl。多 contact 与后续 Started 不重复执行可见状态转换。
 - 落笔通知不得参与 `BarUiEdgeLightingEnabled`、第一光源、光色过渡或普通 UI 动画门禁；画布线程仍只能通过通知接口请求第三光源休眠，不得直接写 UI、D2D 或 Raw Input 状态。
 
@@ -1134,7 +1179,7 @@ namespace Inkeys::UI::Bar
 
 | 条件 | 必须行为 |
 | --- | --- |
-| `RegisterRawInputDevices` 注册失败 | 第三光源保持隐藏；错误至多记录一次，不影响主光和 UI 交互 |
+| `RegisterRawInputDevices` 注册失败 | 第三光源保持隐藏；错误至多记录一次；触摸、主光及原生/HiMsg 普通点击保持原路径；拖动补充不可用，不回退到按键轮询 |
 | `RIDEV_REMOVE` 注销失败 | 逻辑状态仍进入 `Dormant`，迟到的 `WM_INPUT` 必须被忽略 |
 | 窗口定时器创建失败 | 立即进入 `Dormant`，不得无限保留全局跟踪 |
 | 动画关闭 | 立即隐藏第三光源并请求休眠 |
@@ -1162,6 +1207,7 @@ namespace Inkeys::UI::Bar
 - 分别在 UI 接收区外和 Bar/PageControl 接收区内落笔，确认第三光源立即休眠；区内落笔还必须验证区域内移动不能重新激活、真实离开后下一次自然进入才可激活。整笔持续期间移动并抬笔，第一光源、光色过渡和普通 UI 动画始终不受影响。
 - Headless 覆盖 Draw3 聚合状态 `false→true→true→false` 只发送一次 Start/End、多 contact 去重，以及 Host stop/异常 active 清理补 End；多指和快速连续短笔迹下 activity count 最终归零且不存在绘图静默门禁。
 - Headless 覆盖屏幕点到 PageControl presentation 点的坐标映射；生产静态审查四窗只调用通知/边界发布接口，且不存在 Surface 本地 cursor-light prepare/reset。
+- 无窗口 Bar 离屏回归必须调用真实 `PrepareFrameLighting`：保持屏幕点与 serial 静止，切换非零直移、吸收后的零位移及实际残差原点，断言局部点加同帧原点恒等于屏幕点，光源半径/强度/可见性与分页共享快照不跳变。覆盖正负两轴、负显示器原点、实际 zoom、连续静止帧与原有光照门禁；坐标改变沿既有 lightChanged/damage 链生效。修复前应能确认缓存旧局部点导致失败，修复后通过；不得用手工设置最终光照快照代替真实 Prepare 入口证明修复。
 
 #### 7. Wrong vs Correct
 
@@ -1231,8 +1277,8 @@ Experimental.Inkeys3.UI3.EdgeLighting.Dynamic : bool = true
 
 #### 3. Contracts
 
-- `Enable=false`：第一主光、第三鼠标光和 Gaussian 柔光均不绘制；基础灰边继续绘制；停止仅服务于光影的动画推进，并请求第三光源进入 Dormant、注销 Raw Input。
-- `Enable=true, Dynamic=false`：第一主光和 Gaussian 柔光保持；只有第三鼠标光关闭，禁止注册/处理其 Raw Input。切换关闭时可以沿既有 300ms 淡出收尾。
+- `Enable=false`：第一主光、第三鼠标光和 Gaussian 柔光均不绘制；基础灰边继续绘制；停止仅服务于光影的动画推进，并请求第三光源进入 Dormant、停止光效观察；保留共享交互注册。
+- `Enable=true, Dynamic=false`：第一主光和 Gaussian 柔光保持；只有第三鼠标光关闭，禁止由 Raw Input 推进该光源；共享交互输入仍继续处理。切换关闭时可以沿既有 300ms 淡出收尾。
 - `Enable=true, Dynamic=true`：保持第三光源 `Dormant / Inside / Grace` 状态机；重新开启不主动全局取鼠标，等待自然进入 UI3。
 - Setting 只在 UI3 开启时显示总开关，只在总开关开启时显示动态开关；隐藏动态项不得覆盖其持久化值。
 - schema 是字段声明、默认值和 JSON 读写的唯一来源；不得在 `Other.Config.cpp` 为两个 bool 添加特判。
@@ -1248,7 +1294,7 @@ Experimental.Inkeys3.UI3.EdgeLighting.Dynamic : bool = true
 
 #### 5. Good / Base / Bad Cases
 
-- Good：关闭动态开关后主光仍可见，第三光源完成收尾后不再注册 Raw Input。
+- Good：关闭动态开关后主光仍可见，第三光源完成收尾后不再因 Raw Input 唤醒渲染，交互注册继续保留。
 - Base：关闭总开关后只剩基础灰边；重新开启后恢复主光，并保留此前动态开关选择。
 - Bad：把动态开关乘到全部光影或基础灰边上，导致关闭第三光源时第一主光也消失。
 
@@ -1257,7 +1303,7 @@ Experimental.Inkeys3.UI3.EdgeLighting.Dynamic : bool = true
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
 - 手工验证四种组合：总开关关、总开关开且动态关、两者全开、动态关后重启。
 - 检查 `main.json` 两个路径、旧配置缺失字段默认值、设置卡片条件显示与容器高度。
-- 在动态关闭和总开关关闭时观察 Raw Input 注销及静止/移动 CPU，确认第三光源不再唤醒渲染。
+- 在动态关闭和总开关关闭时观察光效停止唤醒但共享 Raw Input 注册保留，以及静止/移动 CPU，确认第三光源不再唤醒渲染。
 
 #### 7. Wrong vs Correct
 
@@ -1482,7 +1528,7 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 - 只有实际启用 Mica/Acrylic 后，才把 ImFluent `SolidBgBase`、ImGui `WindowBg` 与 D3D clear alpha 设为透明；Solid 必须使用当前主题的不透明背景；自绘标题栏始终单独填充不透明 `Design::AppBase`，避免透明根背景露出系统强调色。`WM_DWMCOMPOSITIONCHANGED` 与主题消息触发重新探测，允许 enabled -> Solid 回退。Setting session 退出时必须在 HWND 最终销毁前撤销 backdrop/margins/Acrylic 并发布 Solid。不得静态链接 Win10 专有 `SetWindowCompositionAttribute`，也不得为此引入 DirectComposition 或修改 ImFluent vendor。
 - Setting 新壳层由 `Setting.Design.h` 统一计算 pane/content 几何，`Setting.Shell.cpp` 组合 ImGui child 与 ImFluent `NavItemEx`；页面和底部动作共用同一图标/文字轴。自有壳层用于准确的宽窗/覆盖语义，不代表另建控件库或渲染后端；所有设置入口保留同一 PageId 路由。旧 NavigationView/SplitView 组合是此前迁移方案，不再作为新壳层的强制调用合同。
 - 业务输入控件继续使用 ImFluent。全部实际设置页使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent 输入控件；Home/General 使用 `Setting.Pages` 的事件接口，其余页面在原 `Setting.cpp` coroutine/FIFO 宏域接业务。`Setting.Widgets` 仅余原chrome/颜色/DIP/样式辅助，不再提供页面或固定比例设置行。标题栏复用同一主题并提供实时切换按钮；更新状态和检查操作仍只在版本页呈现。
-- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`。停止时禁止新命令，并按 FIFO 排空已接收命令。
+- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；普通 I/O worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
 
@@ -1556,6 +1602,8 @@ SetTransparentClear(mode != BackdropMode::Solid);
 
 ## Whiteboard 分页与 workspace 生命周期合同
 
+> 2026-10-15 初版扩展以 [whiteboard.md](whiteboard.md) 为准：左栏含 More 为 305×80 DIP，右栏仍为 230×80 DIP；页面主题和存储独立，退出恢复桌面基线而非强制折叠。以下共享 HWND、呈现事务与窗口组资源合同继续适用。
+
 ### 1. Scope / Trigger
 
 修改 PageControl 的 Whiteboard 布局、页码发布、Draw3 workspace 切换、辅助面板收起、taskbar/activation 或退出恢复时适用。该功能横跨 `IdtState`、Draw3、Bar、PageControl 与 Window Service，任何一层都不得自行推导另一层尚未确认的稳定状态。
@@ -1580,22 +1628,25 @@ Window::Service::RestoreWhiteboardWindowGroup() -> bool;
 
 ### 3. Contracts
 
-- 每侧分页控件固定为 `230x80 DIP`，使用三个稳定的真实 Bar `twoTwo` 按钮。按钮内部布局、SVG、颜色、光效、交互、动画和 visual damage 来自前述共享 Bar 运行时；PageControl 只拥有横向三按钮拓扑、独立资源与 ULW present 映射。页码按钮保持标准交互视觉，但业务命令为 no-op。
+- 白板左侧分页主体为 `305x80 DIP`，在 Next 右侧增加 More；右侧仍为 `230x80 DIP`。Previous/Page/Next 跨工作区保持稳定实例，左侧 More 和菜单按钮也使用共享 Bar `twoTwo`/菜单视觉行为。按钮布局、SVG、颜色、光效、交互、动画和 visual damage 来自共享 Bar 运行时；PageControl 拥有拓扑、独立资源与 ULW present 映射。页码按钮保持标准交互视觉，业务 no-op。
 - `PptBottomLeft/PptBottomRight` 是 Presentation 与 Whiteboard 共用的唯一左右底部分页 HWND；不得恢复 `WhiteboardLeft/WhiteboardRight` 窗口角色、窗口规格或句柄。`Inkeys.UI.PageControl` 是两种工作区唯一的 surface host、输入路由和呈现所有者，PPT/Whiteboard 只发布状态与业务回调；Whiteboard 不创建 DragHandle，也不继承 PPT 的拖动、滚轮、长按、缩放或位置持久化。
-- PageControl 的稳定态为 `Hidden / PptCompact / WhiteboardExpanded`。`WhiteboardState::expandedLayoutTarget` 对底部 surface 的优先级高于 PPT visible，并隐藏两侧；背景 `active` 只表示 Draw3 Whiteboard 首帧已就绪后的 Freeze 目标。两者不一致时 PageControl 必须锁定输入，不再使用 Presentation/Whiteboard 双 renderer owner 或 `TransitionHidden` 中间 owner。
+- PageControl 的稳定态为 `Hidden / PptCompact / WhiteboardExpanded`。Bottom 的放映布局资格使用 `presentationActive && showBottomPair`，Middle 仍使用 `presentationVisible && showMiddlePair`，Fit/Clamp/组碰撞预算使用同源资格；白板最小化继续单独覆盖为 Hidden。进入/退出白板的分步发布不能使原本应连续可见的 Bottom 经 Hidden、整栏淡出和重新入场；业务输入继续沿原可见性、事务与会话门禁。`WhiteboardState::expandedLayoutTarget` 对底部 surface 的优先级高于 PPT 布局资格，并隐藏两侧；背景 `active` 只表示 Draw3 Whiteboard 首帧已就绪后的 Freeze 目标。两者不一致时 PageControl 必须锁定输入，不再使用 Presentation/Whiteboard 双 renderer owner 或 `TransitionHidden` 中间 owner。
 - PageControl 的 render/present 事务锁只保护 D2D、GDI interop、共享 Bar visual state 与 present 快照；同步 `Window::Service::Hide/SetBounds/Show` 必须在该锁外执行。由于只有一个呈现所有者，迟到帧必须消费最新快照后重新定向，不能靠调用方抢先隐藏共享 HWND 仲裁。
-- Enter 先撤销 capture、关闭 PPT DragHandle 命中并进入 Whiteboard window mode；PPT 可见状态保持当前 COM 事实。窗口模式事务成功后立即发布 expanded 目标，使已显示 PPT 底栏从当前实际 HWND 位置同时移动到固定 `5 DIP` Whiteboard 角落、收拢 Drag slot 并连续形变；原本未显示时直接使用 `230x80 DIP` 最终位置/几何渐显。Whiteboard 背景 active 仍须等待 Draw3 Whiteboard 首帧就绪。Exit 先发布 compact 目标并关闭背景 active，反向回到 PPT 最新运行时位置；不得在交接前后显式隐藏两个共享底部 HWND。Exiting 期间反向重入从当前背景、按钮、内容、DragHandle 与 HWND 插值值重新定向，再等待 Draw3/Freeze readiness，期间保持输入锁定。
+- Enter 先撤销 capture、关闭 PPT DragHandle 命中并进入 Whiteboard window mode；PPT 可见状态保持当前 COM 事实。窗口模式事务成功后立即发布 expanded 目标，使已显示 PPT 底栏从当前实际位置重定向到可见描边外沿距屏幕底边 `5 屏幕 DIP` 的 Whiteboard 角落、收拢 Drag slot 并连续形变；同屏默认偏移/局部倍率时主体和箭头的 Y 保持不变；原本未显示时直接使用左 `305x80 DIP`、右 `230x80 DIP` 的最终主体位置/几何渐显。Whiteboard 背景 active 仍须等待 Draw3 Whiteboard 首帧就绪。Exit 先发布 compact 目标并关闭背景 active，反向回到 PPT 最新运行时位置；不得在交接前后显式隐藏两个共享底部 HWND。Exiting 期间反向重入从当前背景、按钮、内容、DragHandle 与 HWND 插值值重新定向，再等待 Draw3/Freeze readiness，期间保持输入锁定。
 - `totalPage` 至少为 1，`currentPage` 限制到 `[1, totalPage]`。首次发布若直接为 `switching=true`，稳定基线必须来自该次真实输入。
-- 进入翻页事务时锁存上一稳定帧的 Previous enabled 与 Add/Arrow；事务中只把三个 `interactive` 置 false，未变化的 SVG 和文字不得重启动画。普通 Arrow 跨工作区保留同一 `barMore` 对象并只缩放；追加页事务全程保持 Add，只有稳定语义真实发生 Arrow/Add 变化时才运行一次同批 SVG/文字转换。
+- 进入翻页事务时锁存上一稳定帧的 Previous enabled 与 Add/Arrow；事务中锁定分页和菜单交互，未变化的 SVG 和文字不得重启动画。普通 Arrow 跨工作区保留同一 `barMore` 对象并只缩放；追加页事务全程保持 Add，只有稳定语义真实发生 Arrow/Add 变化时才运行一次同批 SVG/文字转换。
 - `Inactive / Entering / Active / Exiting` 的每次 workspace 转换都先调用 `CollapseAuxiliaryPanels(true)` 并撤销 Whiteboard capture。进入稳定白板时绘制属性、几何属性、更多、笔菜单和粗细预览均保持关闭。
+- More 在左下同一 HWND 向上展开关闭白板、最小化白板、主题样式；主题内联展开六色与空白/点阵/网格预览。左/底主体锚点固定，窗口大小、命中、阴影及 damage 使用同帧几何；不得新增 popup HWND。菜单外点击、Escape、翻页、最小化和工作区切换关闭菜单。Hook 只异步投递收起请求，排除左侧控件本身，原画布点击继续正常处理。
+- 白板主栏 A2 按钮恢复；有效放映存在时为“返回放映”，否则为“关闭白板”，后台 PPT 结束会同步文案；白板组最小化时主栏优先显示 `barWhiteboard` 和“返回白板”/`Resume`，点击仅恢复原窗口组，最小化/恢复边沿立即刷新图标和文字；主栏非最小化关闭与菜单关闭共用 `RequestWhiteboardActive(false)`。
+- 每页主题及笔迹/历史自动保存到进程会话下的多页 `.uink`，不受桌面自动保存开关影响。新页继承当前主题，主题修改不进墨迹撤销栈。色板、纹理、冷页加载和页级内存合同见 [whiteboard.md](whiteboard.md) 与 [draw3-integration.md](draw3-integration.md#whiteboard-页级-uink-与编辑历史合同)。本次替代此前无保存、固定墨绿的初始范围；仍不支持平移、缩放和历史浏览。
 - Freeze 是 Whiteboard mode 的唯一 `WS_EX_APPWINDOW`、任务栏和 activation anchor；Drawpad 可激活但保留 `WS_EX_TOOLWINDOW`，其余辅助窗口不进入任务栏。整个 owner group 保持 `HWND_NOTOPMOST`，最小化/恢复只恢复此前可见成员。
-- 退出必须恢复 `DrawpadPresentation` click-through、Bar `fold=true` 与 dock request/lock。顺序固定为 `LeaveWhiteboardWindowMode()` 后 `SetOverlayTopmost(true)`；不得让 style 事务覆盖恢复后的 Z 序。
+- 退出必须恢复 `DrawpadPresentation` click-through 并释放白板 dock request/lock；有有效 PPT 则返回放映，没有则回桌面。最终回桌面恢复首次进入前的主栏基线，不再强制 `fold=true`。窗口顺序保持 `LeaveWhiteboardWindowMode()` 后 `SetOverlayTopmost(true)`，不得让 style 事务覆盖恢复后的 Z 序。
 
 ### 4. Validation & Error Matrix
 
 | 条件 | 必须行为 |
 | --- | --- |
-| `3/3 -> 3/4 -> 4/4` 且 switching | 右按钮始终为 Add；三个按钮只锁输入 |
+| `3/3 -> 3/4 -> 4/4` 且 switching | Next 始终为 Add；分页及菜单按钮锁输入，保留既有内容语义 |
 | 普通翻页进入末页 | 事务中保持 Arrow，稳定后才转 Add |
 | 首次发布即 switching | Previous/Add 基线来自真实页码，不从内部 `1/1` 泄漏 |
 | Enter/Exit 中途反向请求 | 先切换 expanded 目标并回到完整的另一状态事务；PageControl 从当前插值值重新定向且共享 HWND 不隐藏，背景 active 不提前发布 |
@@ -1692,13 +1743,15 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、四个 PageControl HWND、Bar、Setting 和 DisplayObserver；Whiteboard 复用两个 `PptBottom*` HWND，不再创建独立左右窗口。创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
+- 四个分页 HWND 的业务显隐只由 PageControl 提交：`Acquire()` 注册客户端后以 `RequestAll()` 唤醒，成功呈现后 `SetBounds/Show`，Hidden 目标使用 `Hide`。`TopWindow()` 不得无条件显示分页窗；`IdtWindowsIsVisible.pptWindow` 只表示客户端注册就绪，否则尚未布局的 `(0,0)` 初始矩形可能滞留左上角并干扰新接触。
 - 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> DrawpadPresentation -> Drawpad -> PPT/Bar`；Mag 缺失时 Freeze 为根。Drawpad 是 DrawpadPresentation 的顶层 owned popup，不是 `WS_CHILD`；该传递链必须保证 Bar/PPT 高于两套画布表面。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；共享底窗或其他 PPT show、`PromotePptWindow` 只把目标窗放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。Win32 会把根的 topmost band 变化传播给 owned popup；刷新后非根出现 `WS_EX_TOPMOST` 不能证明代码对它执行了独立置顶，必须审查 `SetWindowPos` 调用点。白板期间对 Freeze 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除。
 - PPT 可见性 `false -> true` 发布完成后立即请求一次根置顶刷新；成功后连续可见状态去重，失败时保留 pending 并由既有 500ms 发布节拍重试，离开放映取消 pending。PageControl 的 present 成功不代表 HWND 提交完成：`SetBounds/Show/Hide` 任一步失败都返回 RenderPipeline `Retry`。Draw3 surface 切换失败同样保留 reconciliation pending，由既有 250ms 状态节拍重试；只有窗口提交成功后才更新 drawpad ready 事实。
 - 主栏定格按钮在 `Freeze::Toggle()` 前后比较 `IsActive()`；只有 `false -> true` 转换立即显式调用一次 `RequestTopmostRefresh()`。`true -> false` 和 PPT/白板导致的不可用点击不提交。Bar 入口不得持有 HWND 或直接调用 `SetWindowPos`；立即刷新失败不回滚定格状态，由既有周期性根刷新继续收敛。
 - `Inkeys.UI.Freeze` 把业务 flags 与单调 `revision` 放在同一原子状态字中，每次真实 Toggle 或 PPT/Whiteboard 工作区切换发布完整 `StateSnapshot`。observer 只能把 `{revision, active}` 投递到 latest-wins mailbox 并唤醒 `MagnifierThread`，不得直接操作 HWND；迟到通知按 revision 丢弃，失败回退只能调用 `DeactivateIfRevision(request.revision)`，禁止无条件 `Toggle()`。
 - `MagnifierThread` 是桌面定格唯一的 Magnifier 更新/显示协调入口。一次有效 active revision 依次校验 Window Service 当前 Host/Child、保持 Host 透明并显示 Host/Child、从当前角色 HWND 重建并提交排除列表、提交一次 source、invalidate/redraw，最后再校验 revision 与当前句柄后揭开 Host；Reveal 后仍需复查，过期结果必须立即 conceal 且不得提交 applied/visible。过滤、source 或必要显示步骤任一失败都停止成功链、条件撤销对应 Freeze revision，并允许后续新 revision 重试。inactive、工作区切换、停止和退出只透明并隐藏 Magnifier Host/Child，不隐藏 Bar/Drawpad，不改变 owner/topmost/focus/taskbar。`FreezeFrameWindow` 只保留 Freeze/PPT/Recall surface 绘制，不得调用 Magnifier 更新、显隐或 alpha API。
 - 桌面定格不得调用 `SetOverlayFullscreen`：Magnifier 和 Freeze surface 都继续使用显示器高度减 1 像素，Shell fullscreen 标记只属于白板工作区。Window Service 重建 Magnifier 生命周期时先停止旧 coordinator，再在新 `PrepareMagnifierWindow` 生命周期 reset；每次事务重新读取当前 Host/Child 和完整排除集合，不能缓存旧 HWND。
-- Setting 创建时及 `IdtSelection` 选择态的 owner 必须为 null；所有非选择态通过 `SetSettingOwnedByDrawpad(true)` 把 Drawpad 设为 owner，回到选择态通过 `SetSettingOwnedByDrawpad(false)` 清除 owner 并以 `HWND_NOTOPMOST` 退出画布置顶链。owner 修改必须投递到 Setting 所属线程，重复请求幂等；目标 HWND 缺失、Win32 调用失败或最终 `GW_OWNER` 不符合请求时返回 false，部分修改必须回滚原 owner。`SyncDraw3State()` 保存带版本的最新期望值，提交失败后由 `StateMonitoring()` 的 250ms 节拍重试；提交与 applied 写回必须串行，并在持锁后丢弃过期版本，避免旧命令覆盖新模式或产生假收敛。该动态 owner 是 Setting 唯一受控例外，不得直接从工具按钮、快捷键或渲染线程修改。
+- Setting 创建时及 `IdtSelection`/`IdtClickThrough` 透传操作状态的 owner 必须为 null；绘制状态通过 `SetSettingOwnedByDrawpad(true)` 把 Drawpad 设为 owner，回到透传操作状态通过 `SetSettingOwnedByDrawpad(false)` 清除 owner 并以 `HWND_NOTOPMOST` 退出画布置顶链。owner 修改必须投递到 Setting 所属线程，重复请求幂等；目标 HWND 缺失、Win32 调用失败或最终 `GW_OWNER` 不符合请求时返回 false，部分修改必须回滚原 owner。`SyncDraw3State()` 保存带版本的最新期望值，提交失败后由 `StateMonitoring()` 的 250ms 节拍重试；提交与 applied 写回必须串行，并在持锁后丢弃过期版本，避免旧命令覆盖新模式或产生假收敛。该动态 owner 是 Setting 唯一受控例外，不得直接从工具按钮、快捷键或渲染线程修改。
+- Setting owner attach 与 owned Show 必须立即完成根/相对层级并核验位于两块画布上方，不能只设置 GW_OWNER 后等周期刷新。不独立执行 HWND_TOPMOST；根策略造成的 WS_EX_TOPMOST 传播允许变化，其余应用样式保持。重复 owner且实际层级正确时幂等；刷新失败返回 false 保留重试。Setting owner-thread 不得同步等待 overlay 命令造成 USER32 互等，正常业务/状态协调线程在 Setting 命令完成后进行根刷新。
 - 主栏设置按钮调用统一 `UI::Setting::Toggle()`：隐藏时显示并激活；已显示但真实 Setting HWND 不是前台线程的焦点窗口时，只重新提交 Setting `Show` 命令以 restore/foreground/active/focus；仅在已显示且前台窗口与真实焦点 HWND 都是 Setting 时隐藏。Bar 保持 `WS_EX_NOACTIVATE`，只读取焦点状态，不得从 Bar 输入线程直接调用 `ShowWindow`、`SetForegroundWindow`、`SetActiveWindow` 或 `SetFocus`。
 - Setting 创建时 owner 为 null，运行时 owner 遵守发布分支的受控切换；style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`；保留 caption/sizing/system menu 的标准桌面窗口语义，自绘内容替换原生标题区域。ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口保留箭头光标、大小图标和任务栏按钮，普通关闭映射 Hide，只有进程退出时销毁 HWND。WindowSpec 宽高表示客户区，创建时只外扩真实 sizing frame，不重复加入原生 caption 高度，outer rect 夹紧到工作区。
 - Setting 的 sizing frame 仍由 QuerySettingFrameThickness 按系统 DPI 查询，不乘用户 UI 倍率；创建/NCCALCSIZE 用 QuerySettingClientFrameInsets 决定客户区内缩。DWM 开启且恢复态时，只有 top 使用 DWMWA_VISIBLE_FRAME_BORDER_THICKNESS 的实际可见描边，左右/下仍保留完整系统 sizing frame；最大化或 composition 关闭时四边都保持完整 frame。属性不可用使用系统细边框回退，不改变其他窗口角色。DWM 顶部没有左右/下边那段不可见外扩，不能把完整 sizing 高度画成标题栏上方宽带。composition 改变后立即 FRAMECHANGED。自绘标题栏/图标/caption cell/glyph 仍为 32/16/46/10 DIP。
@@ -1766,7 +1819,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Base：Bar/PPT 合成触摸按 `WM_LBUTTONDOWN/MOVE/UP` 投递，消费者按 Mouse filter 取回完全相同字段；普通 HiMsg consumer 不配置 callback 时仍可接收系统转译。
 - Bad：用一个 move/size bool 导致 sizing loop 整段停帧；把 client 内的滚动条当作 resize 区；或直接把目标副屏尺寸写入 primary-based ptMaxSize。
 - Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；Drawpad 以顶层 owned popup 挂到 DrawpadPresentation，根刷新整体抬升单条 owner 树；桌面定格激活发布一次立即的 service refresh，并由唯一 Magnifier coordinator 对该 revision 提交一次减 1 像素 source，不向 Shell 声明全屏。
-- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；非选择态 Setting 作为 Drawpad owned window 随链位于画布之上，选择态清除 owner 后回到普通窗口层级；owner 提交短暂失败时保持最新期望并周期重试；两种状态下标题栏拖动与主栏按钮的失焦恢复行为一致。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
+- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；绘制态 Setting 作为 Drawpad owned window 随链位于画布之上，选择/穿透态清除 owner 后回到普通窗口层级；owner 提交短暂失败时保持最新期望并周期重试；两种状态下标题栏拖动与主栏按钮的失焦恢复行为一致。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
 - Bad：把 DrawpadPresentation 和 Drawpad 都直接挂到 Freeze，会让 Bar 与 selection-only 表面缺少可传递的 Owner 层级保证；定格按钮直接 `SetWindowPos(Freeze, HWND_TOPMOST, ...)` 或把置顶延迟到定格画面准备完成，会分裂链根置顶所有权或让用户误以为定格加载很慢。
 
 ### 6. Tests Required
@@ -1785,7 +1838,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Setting session-state 测试需覆盖主栏按钮三态决策：隐藏状态不受残留 focus 标记影响且总是 ShowAndActivate；可见未聚焦为 Activate；可见已聚焦为 Hide。窗口集成审查需确认两种显示动作都复用 owner-thread `Show(Setting)`。
 - 允许创建隐藏 HWND 时，Window 测试需创建一个 ownerless 外部 topmost 竞争窗：先确认它位于完整 owner 树之上，再刷新根并确认每个 overlay popup 都越过竞争窗；同时断言根保持隐藏、Bar 位于目标 PPT 之上且前台/焦点不变化。禁止用“刷新后非根没有 `WS_EX_TOPMOST`”判断独立置顶，因为该位可由 Win32 owner 传播。
 - RenderPipeline 测试需保留 `Retry` 会再次调度的合同；若没有稳定的 Win32 失败注入边界，PageControl/Draw3 的失败映射通过生产分支静态审查和完整集成构建验证，不得为单测扩大 module 公共 API。
-- 白板全屏实机验收还需确认任务栏按普通全屏窗让出，且主栏/翻页栏底边都距屏幕底边 `5 DIP`。
+- 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。白板全屏必须确认任务栏按普通全屏窗让出，且已展开底栏及白板分页栏底边距屏幕底边 `5 DIP`；浮动和折叠主栏保持进入前形态。
 
 ### 7. Wrong vs Correct
 
@@ -1864,7 +1917,7 @@ SetWindowLongPtrW(setting, GWLP_HWNDPARENT,
 
 // Correct：统一发布最新期望；同步失败由状态线程持续重试到 applied 版本追上。
 const auto desired = PublishSettingOwnerDesiredState(
-    stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection);
+    !IsComputerInteractionMode(stateMode.StateModeSelect));
 ApplySettingOwnerDesiredState(desired);
 ~~~
 
@@ -1976,7 +2029,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 - 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
 - 旧 ImFontMain/Strong 保留给标题栏边界；校准 regular/strong 和独立 icon face 常驻同一 atlas/session，全部内容页和导航使用统一文字角色，离开内容区后恢复原角色。禁止重新引入按页面分支选择旧字体。正文/说明/标题保持14/20、12/16、28/36，字面按1.213×TextOpticalScale（当前0.97）校准；控件文字单独使用ControlText（当前13/20）。
 - 所有普通控件通过 Design 的13 DIP字体wrapper；ButtonWidth与默认Button/AccentButton使用同一天然宽公式，显式尺寸仍由调用者决定。ButtonGroupRow先测各按钮自然宽，再按可用预算换行且每行靠右；Action只在实际绘制时执行。赞助复用普通NavItemEx背景与输入，文字和图标均用与选中条相同的AccentFillDefault亮蓝主题色，选中条统一处理，关闭只覆盖浅深主题criticalText语义色，保持普通背景交互。
-- 调试页“控制台输出”完整迁入TouchArea/PptCOM/Draw3/Cursor四项，原国际化/稳定ID/字段/FIFO保存保持，IDT_RELEASE不隐藏入口或四项；实验页其余条目及其他诊断宏保持。下方RenderEdidCard接收同一Display快照生成的完整诊断文本，保留拓扑和所有监视器字段及不可用原因；按实际内宽、字体换行和padding确定完整高度，不被父可见区域限制成内部滚动框。卡片与当前主题一致，内部ScrollMax为0，超屏由整页滚动承载；宽度/倍率/文本变化重新测量，快照不可用在卡片内提示。
+- 调试页“控制台输出”完整迁入TouchArea/PptCOM/Draw3/Haptics/Cursor五项，原国际化/稳定ID/字段/FIFO保存保持，IDT_RELEASE不隐藏入口或五项；实验页其余条目及其他诊断宏保持。下方RenderEdidCard接收同一Display快照生成的完整诊断文本，保留拓扑和所有监视器字段及不可用原因；按实际内宽、字体换行和padding确定完整高度，不被父可见区域限制成内部滚动框。卡片与当前主题一致，内部ScrollMax为0，超屏由整页滚动承载；宽度/倍率/文本变化重新测量，快照不可用在卡片内提示。
 - Page/Section/SettingRow/Details/Card/Notice/NavigationRow共用文本行框和尾部占位，旧34%操作列禁止恢复。PPT两组缩放等独特内容可专用组合，但仍使用公共控件和真实action测量；缩放按发布行为即时应用、松手保存，同步方向只由本帧真实编辑或加入同步事件决定，不以尚未保存的 Record 值推断。插件详情各自用稳定子页ID保存滚动/展开状态。
 - 滚动条由ApplyScrollbars集中设置：8 DIP完整命中轨道、2 DIPpadding、透明背景和低对比灰thumb，hover/drag增强；每次从DIP重算，不能反复ScaleAllSizes。SetAccentColor后再覆写项目token。设置全部实际竖直滚动宿主共用本地Begin部署，原生ScrollbarSize和thumb三态alpha按window Storage显隐进度过渡，真实溢出决定目标，复用160ms/现有动画开关与速度。正文、导航中段、可滚Card/Details/flyout/Combo必须在items提交前获得同一可用宽和裁剪；固定顶部/底部不变。侧栏native右padding已有4 DIP，不能再叠加RowGap；按钮、父项箭头和内联子项的真实绘制/命中均避让当帧轨道。消失尾帧保留渐退宽与无输入装饰，最终零留白；反向从当前值续接，关闭动画立即归位，不强制常驻条、不重复扣轨道、不产生横条。native child装饰可写parent DrawList，不能靠事后改全页顶点或只读child DrawList实现显隐；退出thumb只做必要常数几何处理，避免全顶点扫描。本地Begin只备份/恢复ScrollbarSize、ScrollbarPadding和三态颜色实际字段，不夹用跨Card/Details vendor Begin/End的Push/Pop栈；Details scope须在content回调前恢复，防止嵌套条进度相乘。
 - 设置内容拖动由BeginDragScrolling/ApplyDragScrolling分阶段接入当前ImGui1.92.7：首次按下在控件提交后确定唯一实际可滚宿主；已取得overlay捕获后于NewFrame后、宿主首次Begin前投递ScrollTarget，使用上一帧有效态与稳定ID校验，让正常Begin同帧更新Scroll/cursor/clip/items/DrawData及蓝条。不能在帧末才投递持续位移或Render后挪顶点；无输入快速返回，持续捕获不重复ButtonBehavior/FocusWindow或全窗口遍历，不引入Win32触摸适配、默认惯性或额外滚动补间。父子只消费一次物理MouseDelta，边界/低速累计/外部scroll目标与反向重基准须验证。主页真实features/common链接Card与长列表Selectable可登记稳定item/host作为内容拖动候选，使用ImGui原有拖动阈值，轻点保留动作、超过阈值转移capture并取消该次点击；Slider/InputText及native scrollbar保持控制权。storage键以稳定window seed计算，不随当前PushID栈变化。固定NoScrollWithMouse、NoMouseInputs、tooltip、隐藏/未提交及关闭Popup排除，精确PopupId和导航关闭/释放/正文门禁保持；整个ImGui外未归属Down移入不强制捕获。状态随context释放，不保留跨session裸window指针。旧ScrollWhenDraggingOnVoid仅为已提交历史基线，本轮用户已授权优化，不能用其ChildWindows fallback与不可改正文限制替代完整主页回归。
@@ -1988,6 +2041,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 - 导航/子列表/浮层/正文/选中条由设置渲染线程推进；动画进度按dt/duration累计，速率中途变化不得回跳，反向从当前可见值开始。同一选中锚点的滚动/布局位移必须同步平移标记坐标与正在运行的补间，不重置进度；真正选中锚点切换才重定向过渡。Debug选中时不绘制侧栏蓝条，并清除旧item/window锚点、停止X/Y补间；返回普通页的首个锚点直接Reset归位，之后普通页之间继续既有切项动画。标题栏点击Debug复用导航流程并关闭overlay/flyout，重复点击不重启切页；Debug页后续可重新展开导航，不能在每帧同步目的地时强制关闭浮层。选中条保持3×16 DIP，用上下半宽圆弧形成完整圆头；ImGui PathRect会将窄条圆角钳制到半宽减1px，不能只设置半宽radius；圆角几何和浅深主题赞助图标/文字颜色用实际DrawData验证。隐藏/跳过绘制后的首帧时钟重基准，低帧率仍按限幅dt推进。子列表动画按实际裁剪与几何命中，正文只运行一套控件并对实际顶点alpha淡入，不混改RGB。
 - 通用各子页仅处理可见控件事件，隐藏字段不从缓存写回。路由切换完成已有滑块待提交值，沿用实时预览/松手保存/FIFO。各子页和插件详情分别用稳定ID保留滚动。
 - GeneralDraft 是 UI 副本，事件由 Setting.cpp 原 coroutine/FIFO 宏域处理。主栏倍率实时通知并松手保存；设置倍率松手才重建字体；置顶/安全模式仍保存原索引并发原运行时通知。页文件不得直接照抄被宏重定向的 ShellExecuteW/WriteSetting/RestartProgram 名称。
+- dev 新设置沿用 Fluent 页面分组：启动位置进入通用/基本，仅影响下次启动；任务栏缩放基准与主栏排列进入外观与动画，主栏倍率使用 `Zoom2`；选择/穿透、自动收起策略和六个固定快捷键进入交互与安全。绘制页包含交互模式、断触接续、独立绘制/按钮触觉和鼠标/笔光标；设备兼容开关在实验页保存下次启动偏好。所有行复用 `Setting.Controls` 的自然测量和完整三语说明，运行时通知及冻结配置继续在 `Setting.cpp` 的 FIFO 宏域处理。
 - Home 所有入口连接真实路由/原外链；非简中 Community 的主页 GitHub discussions 与 footer en.inkeys.top/community.html 差异保留。教程展开使用既有图像纹理；不虚构教程 URL。
 
 #### 4. Validation & Error Matrix
@@ -2224,3 +2278,80 @@ Good：浅深主题下大表面透出原生材质，浮层可读；Base：Solid 
 
 ### 7. Wrong vs Correct
 Wrong：`SolidBgQuarternary = GetPalette().pageSurface`，浮层随正文变透明。Correct：该 token 保持 `PaletteForTheme(IsDarkMode()).pageSurface`，正文仍用材质化表面。
+
+## Setting 绘制期间的 Draw3 同步合同
+
+### 1. Scope / Trigger
+设置会话在 ImGui 临界区内直接或经橡皮等业务 setter 调用 SyncDraw3State 时适用。2026-10-13 卡死源于渲染线程持 ImGui 锁等待 Setting HWND 命令，而 HWND WndProc 正等待同一把锁。
+
+### 2. Signatures
+- `Setting::DeferDraw3SyncIfRendering() -> bool`。
+- `SetListStruct.paintDevice: IdtAtomic<int>`，`CaptureSettingJson`显式load并保持PaintDevice整数；每次Sync只load一次用于比较和赋值。
+- `SettingRenderScope` 标记当前线程正在设置会话 Resume；`settingRenderingOnCurrentThread` 为 thread_local。
+- `SyncDraw3State()` 入口先调用 defer guard；业务 FIFO 增加 `SettingBusinessKind::SyncDraw3State`，worker 调用全局生产 Sync。
+
+### 3. Contracts
+- 设置绘制作用域内 guard 返回 true 并转交现有 FIFO，调用方立即返回；不能持 ImGui 锁同步等 HWND。
+- 非设置绘制线程 guard 返回 false，保持原有同步语义。thread_local 防止 worker 再次延后自己。
+- 选项先更新当前配置，Sync 命令随后按最新状态应用；配置写盘仍在生产者线程冻结 payload，并排在同一 FIFO 中的 Sync 之后。
+- Setting owner 的 HWND 线程所有权、desired/applied 版本与 250ms 重试保持不变，不用 try_lock 丢弃同步或跨线程直接改 HWND。
+- 停止生产后排空已接受命令；停止期拒绝入队沿用现有队列语义，不能回退到锁内执行 Sync。guard 的 true 表示已拦截同步，不等于窗口事务已经应用成功。
+
+### 4. Validation & Error Matrix
+| 条件 | 行为 |
+| --- | --- |
+| Render 持 ImGui 锁，模拟 HWND 正等锁 | 同步提交立即返回；释放 render 锁后 worker 能完成 |
+| 非 render 调用 | 原同步路径执行 |
+| 快速连续修改 | FIFO 保持顺序，应用最新运行时状态，写盘消费各次已冻结 payload |
+| 停止队列 | 已接受命令排空，新命令按既有停止语义拒绝，不在 render 锁内执行 |
+| 窗口 owner 应用失败 | 保留既有 desired/applied 差异及重试 |
+
+### 5. Good / Base / Bad Cases
+- Good：模式下拉或橡皮 setter 发起 Sync 后渲染继续；worker 执行实际 HWND 调度。
+- Base：状态监控、非设置工具入口继续同步应用。
+- Bad：只换 Combo/Radio 控件，仍在 ImGui 锁内等待 Window::Submit 的 future；或只用计数式 Sync 桩测试就宣称卡死已修复。
+
+### 6. Tests Required
+- 使用生产业务 FIFO、render 标记及 defer guard 的无窗口线程回归：锁内提交不阻塞、worker 竞争锁后完成、非render语义、FIFO顺序、重复修改/停止排空。
+- 控件回放另验证三语下拉与信息卡片缩放几何；它不能代替线程调度测试。
+- 完整 ARM64 solution 与 Headless --no-window；受限环境出现已知 PDB/文件权限失败时区分环境并按权限规则复核。
+
+### 7. Wrong vs Correct
+```cpp
+// Wrong：设置会话持 ImGui 锁时进入同步 HWND 等待。
+void SyncDraw3State() { ApplySettingOwnerDesiredState(...); }
+// Correct：只延后设置渲染发起的同步，worker 和其他线程仍走原生产路径。
+void SyncDraw3State() {
+    if (Inkeys::UI::Setting::DeferDraw3SyncIfRendering()) return;
+    // 原有状态/owner/呈现同步。
+}
+```
+
+## 2026-10-15 白板截图反馈修订
+
+白板最新 UI/最小化合同见 [whiteboard.md](whiteboard.md)，覆盖此前同页的旧行为：更多和主题为同 HWND 内分开的上方/右侧矩形，采用共享属性 Back 动画；2×2 分页标签使用主文字槽。最小化隐藏画布和分页但保留主栏，已有展开底栏回到任务栏居中位置；PPT 活动时拒绝最小化。居中白板空间不足换向按屏幕边缘计算。Freeze 使用国际化 Inkeys 标题与 exe 图标。
+
+白板 UI3 统一轮使用公共固定属性面板计算、动态 presentation crop、140×32.5 操作行与完整 2×2 主题按钮；已移除独立 popup clock、递归 pose 和旧 springLayout。尺寸、选中 SVG、同帧坐标及 opacity 目标防振荡合同见 [whiteboard.md](whiteboard.md#ui3-统一菜单与主题合同覆盖截图轮旧尺寸)。
+
+## UI3 任务栏基准与真实 DPI 隔离（2026-10-19）
+
+- `dpiZoom` 保持真实屏幕 DPI/96，用于画笔宽度及屏幕DIP；界面基准独立保存为 `uiBaseZoom`，最终 `zoom=uiBaseZoom*configZoom`。初始化、显示过渡、底栏直移、命中和启动预览必须使用同一 UI 尺度；不把任务栏厚度塞进真实 DPI 字段。
+- 主栏名义主体高取 `BarMainBarHeightDip=80`，不含阴影/透明HWND包络；100%时关闭模式主体为80DIP、任务栏基础量为固定48DIP、任务栏真实量匹配可信任务栏完整厚度，允许像素舍入。仅真实量在无可信样本时回退80DIP；保留启动空间不足时显式降低用户倍率的既有fit行为。
+- Display snapshot包含逐屏 `taskbarThicknessPx`，厚度变化参与语义比较和serial；任务栏低频采样不重复EDID/拓扑枚举，不在渲染或Move热路径查询Shell。自动隐藏用完整矩形而非与屏幕交集或workArea缺口，临时失败仅复用同屏同DPI/几何下可信缓存。
+- finite wire不增加字段：`configZoomBits`历史名称保留，值为`UI基准/真实DPI倍率*用户倍率`，Source以DPI×该值还原UI尺寸；不能再把它当仅用户倍率套用0.5..2裁剪。内部`barStyle.configZoom`仍是用户倍率。
+- 任务栏Shell窗口类只是兼容采样策略；真实自动隐藏、Explorer重建、第三方Shell和跨屏视觉需独立实机证据，无窗口算法测试不能替代。
+
+## 任务栏方向、显隐与主栏贴底（2026-10-19）
+
+- Display 的逐屏 `MonitorInfo.taskbar` 独立发布方向、autoHide、规范化显隐、同屏同几何最近可信状态与稳定 dockTop；完整 `taskbarThicknessPx` 单独维护。隐藏触发条、动画中间矩形或 Unknown 不能当作完整厚度，也不能把主屏 UI 比例回退误作本屏存在任务栏。
+- 桌面顶/左/右任务栏的主栏线为 monitor.bottom-round(5*真实DPI/96)；底部常驻或自动隐藏 Raised 为稳定 taskbar top；底部 autoHide Hidden 为 monitor.bottom-round(5*真实DPI/96)。Unknown 优先同屏同几何可信历史，首次失败按有效 workArea 保守回退。PPT/Whiteboard 原 scene 的 5 屏幕 DIP 优先，不更改业务进入/退出动作。所有线对齐主体描边外沿，不能按透明 HWND 包络计算间隙。
+- 非注入 WinEvent 在既有 DisplayObserver owner 线程安装/卸载，回调只过滤缓存 PID/HWND/object 并排队，不持 refreshMutex、查询 Shell 或通知业务。事件合并 25ms；仅缓存底部 autoHide 存在时以 5 秒间隔轻量矩形兜底，结构复查也为 5 秒，负责设置/Explorer 重建。所有任务栏周期轮询间隔至少 5 秒，事件触发的即时刷新与单次合并计时不受此限制。快路径不枚举 EDID/拓扑/全部窗口或更新完整厚度；同值不发布新 generation。epoch 关门与 owner 清理对称，不从任意 Shutdown 调用线程卸载 hook。
+- 任务栏归属的已知方向与兼容枚举共用确定性候选解析。常驻按对应 dock 外沿判定且距离须小于厚度，拒绝仅接触屏外边界的邻屏矩形（包括单屏 Mini 快照）；自动隐藏保留跨边界候选，不能仅按矩形交叠面积归屏。同距离歧义只使用同 HWND/非零 PID、同屏名称/几何/DPI 的可信旧归属，不覆盖更近的新几何；无可靠信息时返回 Unknown，不依赖屏幕/方向遍历顺序。当前 EX 接口优先，副屏可信逐屏 autoHide 缓存优先于弱全局模式提示。
+- 完整厚度允许真实变矮：主任务栏位置查询的可信完整值可立即更新；兼容副栏完整对齐的结构样本连续确认后更新。禁止用只增不减缓存永久保留旧高度；快显隐采样不改 UI 缩放标尺。
+- Bar 的 desktopDockLine/protectBottomEdge 和 bounds/workArea/DPI/UI基准一起受 pending/presented 偶数 serial 保护。渲染、输入 tracker/重基准/blocked release 及居中启动预览消费同代数据。仅同屏任务栏线变化不重算用户 X、不把浮动栏吸底；稳定底栏复用原 0.4 秒 Y 属性动画与配置，重复目标不重播，反向从最后成功显示 Y 开始。拖动/吸附交接/恢复与 PPT/Whiteboard 优先，不引入第二个 Y 写者。
+- 桌面底部 autoHide 屏幕的 Bar 最终 viewport（包含最终直移量）下界 exclusive<=monitor.bottom-1，保护主体、描边、光影和回弹。source/size 改变用既有完整 ULW 替换清旧像素，稳定恢复 partial dirty；提交前位移改变须重新校验并保留重试。SetWindowPos 直移越界时保留最新输入目标、改走渲染提交，不能把旧位图直接移到底行。此条件策略与双画布 Desktop/PPT 恒定 1px 策略分别维护。
+- 无窗口几何/状态机/真实动画类和失败路径测试不能代替实际 Explorer 动画时序、Shell 触发、UIAccess、多屏、Win7 或视觉性能验收；实际结果写任务 validation，不从配置存在推导支持结论。
+
+## UI3 新按钮的笔震动接入（2026-10-20）
+
+新增主栏注册按钮、形状/粗细表项或独立属性控件时，同时遵守 [pen-haptics.md](pen-haptics.md) 的独立偏好与业务接受点合同。公共按钮使用共享入口自动继承；独立状态机必须报告真实接受，不能把命中/Consumed 当作成功。保持 Pen 凭据、取消/禁用/去重、即时功能开关和可选设备回退，并补充相关回归。

@@ -27,6 +27,7 @@ namespace Inkeys::UI::Bar
 		std::uint32_t flags = 0;
 		std::uint32_t stateMode = 0, penMode = 0, penColorRgb = 0, penWidthBits = 0;
 		std::uint32_t mainSide = 0, primarySide = 0, thicknessView = 0, darkStyle = 0, dpi = 0;
+		// configZoomBits 为 DPI 相对的最终 UI 倍率（UI基准/DPI×用户倍率），不可按用户范围裁剪。
 		std::uint64_t toolRevision = 0, displaySerial = 0, configZoomBits = 0, validMask = 0;
 	};
 	struct Ui3FiniteAccepted

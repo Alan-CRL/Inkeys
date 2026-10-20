@@ -9,6 +9,10 @@ module;
 #include <Windows.h>
 
 #include <algorithm>
+#include <chrono>
+#include <future>
+#include <thread>
+#include <stop_token>
 #include <cstring>
 #include <limits>
 #include <mutex>
@@ -26,7 +30,7 @@ namespace Inkeys::UI::MessageBox
 {
 	namespace
 	{
-		std::mutex admissionMutex;
+		std::timed_mutex admissionMutex;
 		thread_local bool showActiveOnThread = false;
 		std::atomic_uint activeShowRequests = 0;
 #ifdef INKEYS_MESSAGE_BOX_TESTING
@@ -39,8 +43,23 @@ namespace Inkeys::UI::MessageBox
 			~ReentryGuard() { --activeShowRequests; showActiveOnThread = false; }
 		};
 
+		bool AcquireAdmission(std::unique_lock<std::timed_mutex>& admission,
+			const Request& request)
+		{
+			if (request.cancellation.stop_requested()) return false;
+			if (request.reliability == Reliability::CriticalNoWait) return admission.try_lock();
+			if (!request.cancellation.stop_possible()) { admission.lock(); return true; }
+			// 同步 Show 可排队，但生命周期取消不能被另一条模态请求挡住。
+			while (!request.cancellation.stop_requested())
+				if (admission.try_lock_for(std::chrono::milliseconds(20)))
+					return !request.cancellation.stop_requested();
+			return false;
+		}
+
 		Result FallbackToSystem(const Request& request) noexcept
 		{
+			if (request.cancellation.stop_requested()) return Result::Dismissed;
+			if (request.cancellation.stop_possible()) return Result::Failed;
 			if (!request.fallback.enabled) return Result::Failed;
 			HWND owner = request.fallback.owner;
 			if (owner)
@@ -226,6 +245,7 @@ namespace Inkeys::UI::MessageBox
 					output.labels.no = request.labels.no;
 				output.ownerlessTopmostAtCreation = request.ownerlessTopmostAtCreation;
 				output.fallback = request.fallback;
+				output.cancellation = request.cancellation;
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 				output.automation = testAutomation;
 #endif
@@ -256,6 +276,7 @@ namespace Inkeys::UI::MessageBox
 
 	Result Show(const Request& request) noexcept
 	{
+		if (request.cancellation.stop_requested()) return Result::Dismissed;
 		if (showActiveOnThread) return FallbackToSystem(request);
 		ReentryGuard reentryGuard;
 		try
@@ -263,14 +284,7 @@ namespace Inkeys::UI::MessageBox
 			if (!Detail::ValidateRequest(request)) return FallbackToSystem(request);
 
 			std::unique_lock admission(admissionMutex, std::defer_lock);
-			if (request.reliability == Reliability::CriticalNoWait)
-			{
-				if (!admission.try_lock()) return FallbackToSystem(request);
-			}
-			else
-			{
-				admission.lock();
-			}
+			if (!AcquireAdmission(admission, request)) return FallbackToSystem(request);
 
 			Detail::OwnedRequest owned;
 			if (!Detail::CopyRequest(request, owned)) return FallbackToSystem(request);
@@ -288,6 +302,28 @@ namespace Inkeys::UI::MessageBox
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 namespace Inkeys::UI::MessageBox::Test
 {
+	bool VerifyCancellationAdmission() noexcept
+	{
+		try
+		{
+			std::unique_lock held(admissionMutex);
+			std::stop_source stop;
+			std::promise<bool> completed;
+			auto result = completed.get_future();
+			std::jthread waiter([&]
+			{
+				Request request; request.cancellation = stop.get_token();
+				std::unique_lock admission(admissionMutex, std::defer_lock);
+				completed.set_value(AcquireAdmission(admission, request));
+			});
+			stop.request_stop();
+			const bool ready = result.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+			held.unlock();
+			return !result.get() && ready;
+		}
+		catch (...) { return false; }
+	}
+
 	bool Validate(const Request& request) noexcept
 	{
 		return Detail::ValidateRequest(request);

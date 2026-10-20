@@ -549,9 +549,17 @@ namespace Inkeys::UI::Setting::Design
 				{ { "create", create }, { "more", more } });
 			events.createShortcut = shortcutAction == 0;
 			events.shortcutOptions = shortcutAction == 1;
+			// 启动位置只保存下次启动的偏好，沿用通用/基本入口与自然高度卡片。
+			events.startupPlacementChanged = ComboRow("##启动后位置",
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.N).c_str(),
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.E).c_str(), "\ue707", draft.startupPlacement,
+				{ IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) });
 			events.startupPreviewChanged = ToggleRow("startup-preview",
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
 				nullptr, "\ue768", draft.startupPreview);
+
 		}
 		if (section == GeneralSection::Appearance)
 		{
@@ -574,6 +582,12 @@ namespace Inkeys::UI::Setting::Design
 				events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
 					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
 					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
+			events.taskbarScaleBaseChanged = ComboRow("##以任务栏高度作为缩放基础量",
+				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E).c_str(), "\ue737", draft.taskbarScaleBase,
+				{ IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Off),
+				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Base),
+				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Actual) });
 			SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", sliderWidth, 32.0F,
 				[&](const LayoutRect& bounds) { events.barZoomChanged = SliderAction(bounds, draft.barZoom, 0.50F, 2.00F, events.barZoomActive); });
@@ -599,9 +613,6 @@ namespace Inkeys::UI::Setting::Design
 				{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
 				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) });
 
-			SectionHeader(IA(I18nKey.SettingsUI.HotKey.N).c_str());
-			Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(),
-				IA(I18nKey.SettingsUI.HotKey.E).c_str(), ImFluentInfoSeverity_Informational);
 		}
 		return events;
 	}
