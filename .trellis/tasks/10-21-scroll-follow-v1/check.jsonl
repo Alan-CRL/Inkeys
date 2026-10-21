@@ -1,0 +1,11 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"Cross-child integration and final review context"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Cross-child integration and final review context"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Cross-child integration and final review context"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Cross-child integration and final review context"}
+{"file":".trellis/spec/native-desktop/canvas-freeze-boundaries.md","reason":"Cross-child integration and final review context"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Cross-child integration and final review context"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"Cross-child integration and final review context"}
+{"file":".trellis/tasks/10-21-scroll-follow-v1/research/current-architecture.md","reason":"Cross-child integration and final review context"}
+{"file": ".trellis/tasks/10-21-scroll-follow-v1/research/baseline-validation.md", "reason": "Baseline headless passes with writable TEMP; distinguish runner failures from source issues"}
+{"file": ".trellis/spec/native-desktop/scroll-follow-capture.md", "reason": "Capture owner/buffer/timeout/lifetime contract and actual pixel gate; provisional fixture findings must be reconciled with final report"}
+{"file": ".trellis/tasks/10-21-scroll-follow-v1/research/capture-poc.md", "reason": "Final real Mag capture evidence: preheld Freeze lease gate still fails after product STA context alignment; do not begin later stages until resolved"}

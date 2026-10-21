@@ -1,0 +1,10 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
+{"file":".trellis/spec/native-desktop/canvas-freeze-boundaries.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
+{"file":".trellis/tasks/10-21-scroll-follow-v1/research/current-architecture.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
+{"file": ".trellis/tasks/10-21-scroll-follow-v1/research/baseline-validation.md", "reason": "Baseline headless passes with writable TEMP; distinguish runner failures from source issues"}
+{"file": ".trellis/tasks/10-21-scroll-follow-v1/research/capture-poc.md", "reason": "Final real Mag capture evidence: preheld Freeze lease gate still fails after product STA context alignment; do not begin later stages until resolved"}

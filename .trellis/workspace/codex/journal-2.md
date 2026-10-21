@@ -855,3 +855,40 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Next Steps
 
 - 任务完成；未push，不扩大Win7/UIPI/Office实机验证声明。
+
+
+## Session 117: 滚动批注捕获原型与真实门槛调查（未完成）
+<!-- trellis-session: v=2 fp=9647a8ca199510b4 -->
+
+**Date**: 2026-10-21
+**Task**: 滚动批注捕获原型与真实门槛调查（未完成）
+**Branch**: `feature/move`
+
+### Summary
+
+建立父任务和四个分阶段子任务，顺序implement/check完成独立Mag捕获原型及受控PoC；真实共享捕获与最新cold像素门槛失败，后续三阶段未进入。用户要求不commit/push。
+
+### Main Changes
+
+- 新增异步MagCaptureService、动态共享Mag运行库lease，定格仅窄改Prepare/Shutdown寿命管理；加入定向测试与自动关闭fixture。
+- 保留首次全局Initialize/最后lease释放策略，不迁移定格owner、不提前Uninitialize、不采用其他截图技术；补长期native-desktop捕获合同。
+- 研究及最终验收矩阵见.trellis/tasks/10-21-scroll-follow-v1/research/capture-poc.md与10-21-scroll-follow-mag-capture/research/check.md；任务保持in_progress，不归档。
+
+### Git Commits
+
+(No commits - user requested no commit; capture prototype and failed-gate investigation)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64最终exit0，8.68s、0 warning/0 error；ARM64 capture-only和完整no-window均exit0。
+- [OK] bare-lease及真实fresh-hidden/global-once各130结果/0有效、Filter50；check cold55帧NearBlack；生命周期监督/Stop/lease保活/清理通过但末尾有效像素再启失败，整体exit1。
+- [OK] x64首次C1060 compiler heap；唯一命令级CL_MPCount=1重试在Headless链接LNK1140/PDB上限失败。i18n425/425、XML、PE、diff与编码EOL检查通过；详细最终证据在check.md。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 先在Mag方案内解决真实owner/像素更新与有界资源门槛，完整重跑相同fixture后才决定进入Tracker，不能用历史cold成功覆盖最新失败。
+- Tracker、Draw3/主栏、UInk、真实浏览器WordPDF及笔触控/旧Windows矩阵均未实施验收。

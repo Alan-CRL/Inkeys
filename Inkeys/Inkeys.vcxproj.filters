@@ -556,6 +556,8 @@
     <ClInclude Include="Inkeys\Graphics\Surface.hpp">
       <Filter>Modules\Inkeys\Graphics</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Graphics\MagnificationRuntime.h"><Filter>Modules\Inkeys\Graphics</Filter></ClInclude>
+    <ClInclude Include="Inkeys\Graphics\MagCaptureService.h"><Filter>Modules\Inkeys\Graphics</Filter></ClInclude>
     <ClInclude Include="Inkeys\Business\LegacyDrawState.hpp">
       <Filter>Modules\Inkeys\Business</Filter>
     </ClInclude>
@@ -1989,6 +1991,8 @@
     <ClCompile Include="Inkeys\Graphics\Surface.cpp">
       <Filter>Modules\Inkeys\Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Graphics\MagnificationRuntime.cpp"><Filter>Modules\Inkeys\Graphics</Filter></ClCompile>
+    <ClCompile Include="Inkeys\Graphics\MagCaptureService.cpp"><Filter>Modules\Inkeys\Graphics</Filter></ClCompile>
     <ClCompile Include="Inkeys\Graphics\Surface.cppm">
       <Filter>Modules\Inkeys\Graphics</Filter>
     </ClCompile>

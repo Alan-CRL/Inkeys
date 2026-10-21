@@ -4,6 +4,7 @@
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
 #include "Inkeys/UI/Freeze/Freeze.MagnifierCoordinator.h"
+#include "Inkeys/Graphics/MagnificationRuntime.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
 #include <array>
@@ -31,6 +32,7 @@ namespace
 	using Inkeys::Window::WindowRole;
 
 	Coordinator magnifierCoordinator;
+	Inkeys::Graphics::MagnificationRuntimeLease magnifierRuntime;
 
 	[[nodiscard]] const char* StageName(Stage stage) noexcept
 	{
@@ -269,7 +271,8 @@ bool PrepareMagnifierWindow()
 		return false;
 	}
 
-	if (!MagInitialize())
+	// 捕获拥有独立 HWND，但不能与定格互相提前反初始化进程运行库。
+	if (!magnifierRuntime.Acquire())
 	{
 		IDTLogger->error("[放大API线程][MagnifierThread] 初始化 MagInitialize 失败");
 		return false;
@@ -324,7 +327,8 @@ void ShutdownMagnifierWindow()
 	magnificationCreateReady = false;
 	magnifierChild = nullptr;
 	magnifierWindow = nullptr;
-	MagUninitialize();
+	if (!magnifierRuntime.Reset() && IDTLogger)
+		IDTLogger->error("[放大API线程][MagnifierThread] 释放共享 Mag 运行库失败");
 }
 
 void MagnifierThread()
