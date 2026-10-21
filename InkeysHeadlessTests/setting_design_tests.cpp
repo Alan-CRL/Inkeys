@@ -1218,6 +1218,57 @@ namespace
 		Design::ApplyPalette(false);
 	}
 
+	void CheckCompactedSettingPages(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		auto& io = ImGui::GetIO();
+		const auto previousSize = io.DisplaySize;
+		const float previousDelta = io.DeltaTime, previousTimer = io.ConfigMemoryCompactTimer;
+		io.ConfigMemoryCompactTimer = .02F;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		NavigationState navigation;
+		NavigationDestination destination{ PageId::Home };
+		GeneralDraft draft;
+		struct Frame { ImGuiWindow* outer = nullptr; ImGuiWindow* inner = nullptr; };
+		auto draw = [&](NavigationDestination requested, bool reset = false) {
+			destination = NormalizeDestination(requested); NotifyNavigationDestination(navigation, destination);
+			io.DisplaySize = { 960 * scale, 700 * scale }; io.DeltaTime = 1.0F / 60;
+			io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+			ImGui::NewFrame(); BeginDragScrolling(navigation); ConfigureRowAnimations(io.DeltaTime, true, 1);
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##compacted-setting-root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			ImGui::PushID(static_cast<int>(destination.page)); ImGui::PushID(static_cast<int>(destination.section));
+			BeginScrollChild("##setting-content", { 640 * scale, 450 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
+				ImGuiWindowFlags_None, reset);
+			Frame frame; frame.outer = ImGui::GetCurrentWindow();
+			BeginScrollChild("##setting-page-content", { 600 * scale, 0 }, ImGuiChildFlags_AutoResizeY);
+			frame.inner = ImGui::GetCurrentWindow();
+			if (destination.page == PageId::Home) (void)RenderHome({});
+			else (void)RenderGeneral(draft, destination.section);
+			ImGui::EndChild(); ImGui::EndChild(); ImGui::PopID(); ImGui::PopID(); ImGui::End();
+			ApplyDragScrolling(navigation); ImGui::Render();
+			checks.Expect(ImGui::GetDrawData()->Valid, "returning setting pages render valid draw data after native memory compaction");
+			return frame;
+		};
+		const NavigationDestination away{ PageId::General, GeneralSection::Appearance };
+		for (const auto target : { NavigationDestination{ PageId::Home }, NavigationDestination{ PageId::General, GeneralSection::Basic } })
+		{
+			for (bool reset : { false, true })
+			{
+				Frame old; for (int index = 0; index < 4; ++index) old = draw(target);
+				for (int index = 0; index < 8; ++index) draw(away);
+				checks.Expect(old.outer->MemoryCompacted && old.inner->MemoryCompacted
+					&& old.outer->IDStack.empty() && old.inner->IDStack.empty(),
+					"inactive actual home/basic windows have their ID stacks cleared by native ImGui GC");
+				const auto revived = draw(target, reset);
+				checks.Expect(revived.outer == old.outer && revived.inner == old.inner
+					&& !revived.outer->IDStack.empty() && !revived.inner->IDStack.empty(),
+					"ordinary navigation and scroll reset safely revive the same compacted page windows");
+			}
+		}
+		io.DisplaySize = previousSize; io.DeltaTime = previousDelta; io.ConfigMemoryCompactTimer = previousTimer;
+	}
+
 	void CheckComboBoxInteraction(Checks& checks, ImFont* regular, float scale, BackdropMode backdrop)
 	{
 		auto& io = ImGui::GetIO();
@@ -1235,13 +1286,15 @@ namespace
 		std::array<ImRect, 2> bounds{};
 		std::array<ImGuiID, 2> ids{}, popupIds{};
 		bool disabled = false;
+		Design::NavigationState navigation;
 		ImGuiWindow* host = nullptr;
 		const ImVec2 outside(-100, -100);
 		struct Frame { std::array<bool, 2> open{}; ImGuiWindow* popup = nullptr; };
 		auto draw = [&](ImVec2 mouse, bool down) {
 			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
-			ImGui::NewFrame();
+			ImGui::NewFrame(); Design::BeginDragScrolling(navigation);
 			ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::SetNextWindowContentSize(ImVec2(0, 900 * scale));
 			ImGui::Begin("##combo-upgrade-input", nullptr, ImGuiWindowFlags_NoDecoration
 				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
 			host = ImGui::GetCurrentWindow();
@@ -1265,7 +1318,9 @@ namespace
 			for (const auto& popup : GImGui->OpenPopupStack)
 				if (popup.PopupId == popupIds[0] && popup.Window && popup.Window->Active)
 					result.popup = popup.Window;
-			ImGui::End(); ImGui::Render();
+			ImGui::End(); Design::ApplyDragScrolling(navigation); ImGui::Render();
+			for (int index = 0; index < 2; ++index)
+				result.open[index] = ImGui::IsPopupOpen(popupIds[index], ImGuiPopupFlags_AnyPopupLevel);
 			return result;
 		};
 		auto idle = [&](int count = 3) {
@@ -1314,6 +1369,22 @@ namespace
 				&& changes[1] == 0 && !frame.open[0] && !frame.open[1],
 				"clicking an overlapping popup row selects once without opening the combo underneath");
 		}
+		// 弹层开合必须与生产滚动捕获一起测试，普通空白点击不能被捕获吞掉。
+		for (bool arrow : { false, true })
+		{
+			idle(); const auto body = bounds[0];
+			const ImVec2 entry(arrow ? body.Max.x - 12 * scale : body.Min.x + 35 * scale, body.GetCenter().y);
+			frame = click(entry); frame = idle();
+			checks.Expect(frame.open[0], "combo body and chevron both open their owning popup");
+			frame = click(entry);
+			checks.Expect(!frame.open[0] && selected[0] == 0 && changes[0] == 1,
+				"clicking the open combo body or chevron closes without changing its value");
+		}
+		idle(); frame = click(bounds[0].GetCenter()); frame = idle();
+		checks.Expect(frame.open[0], "outside-dismiss scenario starts with a real open popup");
+		frame = click(ImVec2(400 * scale, 250 * scale));
+		checks.Expect(!frame.open[0] && selected[0] == 0 && changes[0] == 1
+			&& GImGui->ActiveId == 0, "blank click closes combo without background scroll capture or value edits");
 		if (!GImGui->OpenPopupStack.empty()) ImGui::ClosePopupToLevel(0, true);
 		idle(); focus();
 		frame = chord(ImFluent::GetActions().TogglePopup);
@@ -4234,6 +4305,7 @@ int RunSettingDesignTests()
 		}
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 		{
+			CheckCompactedSettingPages(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckHierarchicalNavigation(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
 			CheckHomeScrollFollowup(checks, fonts[0], fonts[1], scale);

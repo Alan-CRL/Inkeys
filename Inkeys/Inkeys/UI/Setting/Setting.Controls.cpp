@@ -228,13 +228,19 @@ namespace Inkeys::UI::Setting::Design
 			return !state.BlockContentInput() || (window->ID == state.navigationScrollWindowId && !state.mouseReleaseBarrier);
 		}
 
+		ImGuiID WindowStateId(ImGuiWindow* window, const char* label)
+		{
+			// 未提交页面经 ImGui 内存回收后 IDStack 为空；窗口状态始终以稳定窗口 ID 为种子。
+			return ImHashStr(label, 0, window->ID);
+		}
+
 		void CaptureDrag(ImGuiWindow* owner)
 		{
 			ImGuiContext& g = *GImGui;
-			ImGui::SetActiveID(owner->GetID("##scrolldraggingoverlay"), owner);
+			ImGui::SetActiveID(WindowStateId(owner, "##scrolldraggingoverlay"), owner);
 			g.ActiveIdMouseButton = ImGuiMouseButton_Left;
 			g.MovingWindow = nullptr;
-			owner->StateStorage.SetFloat(owner->GetID("##drag-scroll-position"), owner->Scroll.y);
+			owner->StateStorage.SetFloat(WindowStateId(owner, "##drag-scroll-position"), owner->Scroll.y);
 		}
 
 		ImGuiWindow* ChildWindow(const char* id)
@@ -260,32 +266,32 @@ namespace Inkeys::UI::Setting::Design
 				previousPadding = ImGui::GetStyle().ScrollbarPadding;
 				for (int index = 0; index < 3; ++index) previousColors[index] = ImGui::GetStyle().Colors[ImGuiCol_ScrollbarGrab + index];
 				// 只在本帧真正提交此宿主时消费；未提交/关闭的旧 Popup 不留下 target。
-				if (input && window && GImGui->ActiveIdWindow == window && GImGui->ActiveId == window->GetID("##scrolldraggingoverlay")
-					&& window->StateStorage.GetInt(window->GetID("##drag-scroll-frame"), -2) == GImGui->FrameCount)
+				if (input && window && GImGui->ActiveIdWindow == window && GImGui->ActiveId == WindowStateId(window, "##scrolldraggingoverlay")
+					&& window->StateStorage.GetInt(WindowStateId(window, "##drag-scroll-frame"), -2) == GImGui->FrameCount)
 				{
 					if (window->ScrollTarget.y == FLT_MAX)
-						ImGui::SetScrollY(window, window->StateStorage.GetFloat(window->GetID("##drag-scroll-position")));
-					else window->StateStorage.SetInt(window->GetID("##drag-scroll-rebase"), 1);
-					window->StateStorage.SetInt(window->GetID("##drag-scroll-frame"), -2);
+						ImGui::SetScrollY(window, window->StateStorage.GetFloat(WindowStateId(window, "##drag-scroll-position")));
+					else window->StateStorage.SetInt(WindowStateId(window, "##drag-scroll-rebase"), 1);
+					window->StateStorage.SetInt(WindowStateId(window, "##drag-scroll-frame"), -2);
 				}
 				if (window)
 				{
 					auto& storage = window->StateStorage;
-					NavigationTween tween(storage.GetFloat(window->GetID("##scrollbar-value")));
-					tween.target = storage.GetFloat(window->GetID("##scrollbar-target"));
-					tween.start = storage.GetFloat(window->GetID("##scrollbar-start"));
-					tween.progress = storage.GetFloat(window->GetID("##scrollbar-progress"));
-					const int last = storage.GetInt(window->GetID("##scrollbar-frame"), -2);
+					NavigationTween tween(storage.GetFloat(WindowStateId(window, "##scrollbar-value")));
+					tween.target = storage.GetFloat(WindowStateId(window, "##scrollbar-target"));
+					tween.start = storage.GetFloat(WindowStateId(window, "##scrollbar-start"));
+					tween.progress = storage.GetFloat(WindowStateId(window, "##scrollbar-progress"));
+					const int last = storage.GetInt(WindowStateId(window, "##scrollbar-frame"), -2);
 					// 关闭/未提交后重开从不可见状态开始，不复用旧条的退出装饰。
 					if (settled) tween.Reset(1.0F);
 					else if (last != GImGui->FrameCount && last != GImGui->FrameCount - 1) tween.Reset(0.0F);
 					if (!settled && last != GImGui->FrameCount)
 						tween.Advance(last == GImGui->FrameCount - 1 ? rowAnimationDelta : 0.0F, 0.160F / rowAnimationRate, rowAnimationsEnabled);
 					phase = tween.value;
-					storage.SetFloat(window->GetID("##scrollbar-value"), tween.value);
-					storage.SetFloat(window->GetID("##scrollbar-target"), tween.target);
-					storage.SetFloat(window->GetID("##scrollbar-start"), tween.start);
-					storage.SetFloat(window->GetID("##scrollbar-progress"), tween.progress);
+					storage.SetFloat(WindowStateId(window, "##scrollbar-value"), tween.value);
+					storage.SetFloat(WindowStateId(window, "##scrollbar-target"), tween.target);
+					storage.SetFloat(WindowStateId(window, "##scrollbar-start"), tween.start);
+					storage.SetFloat(WindowStateId(window, "##scrollbar-progress"), tween.progress);
 				}
 				// 关闭动画时首帧也使用完整 native 轨道；开启时由零宽开始。
 				// 入场截图及恢复帧直接使用真实终态轨道，不能把缺席后的零宽补间截进缓存。
@@ -304,23 +310,23 @@ namespace Inkeys::UI::Setting::Design
 				window = actual;
 				auto& storage = window->StateStorage;
 				const float target = window->ScrollbarY ? 1.0F : 0.0F;
-				const float oldTarget = storage.GetFloat(window->GetID("##scrollbar-target"));
+				const float oldTarget = storage.GetFloat(WindowStateId(window, "##scrollbar-target"));
 				if (target != oldTarget)
 				{
-					storage.SetFloat(window->GetID("##scrollbar-start"), phase);
-					storage.SetFloat(window->GetID("##scrollbar-progress"), 0.0F);
+					storage.SetFloat(WindowStateId(window, "##scrollbar-start"), phase);
+					storage.SetFloat(WindowStateId(window, "##scrollbar-progress"), 0.0F);
 				}
-				storage.SetFloat(window->GetID("##scrollbar-target"), target);
-				storage.SetInt(window->GetID("##scrollbar-frame"), GImGui->FrameCount);
+				storage.SetFloat(WindowStateId(window, "##scrollbar-target"), target);
+				storage.SetInt(WindowStateId(window, "##scrollbar-frame"), GImGui->FrameCount);
 				if (settled)
 				{
 					// 无溢出仍由 native 决定不显示；清掉退出装饰，嵌套 child 继承本帧稳定策略。
-					storage.SetFloat(window->GetID("##scrollbar-start"), target);
-					storage.SetFloat(window->GetID("##scrollbar-progress"), 1.0F);
+					storage.SetFloat(WindowStateId(window, "##scrollbar-start"), target);
+					storage.SetFloat(WindowStateId(window, "##scrollbar-progress"), 1.0F);
 				}
-				storage.SetInt(window->GetID("##scrollbar-settled-frame"), settled ? GImGui->FrameCount : -2);
+				storage.SetInt(WindowStateId(window, "##scrollbar-settled-frame"), settled ? GImGui->FrameCount : -2);
 				if (settled || !rowAnimationsEnabled) phase = target;
-				storage.SetFloat(window->GetID("##scrollbar-value"), phase);
+				storage.SetFloat(WindowStateId(window, "##scrollbar-value"), phase);
 				if (window->ScrollbarY && phase > 0.0F)
 				{
 					// 与本库 ScrollbarEx 的几何保持一致；只缓存退出装饰，不扫描正文顶点。
@@ -333,10 +339,10 @@ namespace Inkeys::UI::Setting::Design
 						(std::min)(rail.GetHeight(), ImGui::GetStyle().GrabMinSize), rail.GetHeight())));
 					const float ratio = std::clamp(static_cast<float>(static_cast<ImS64>(window->Scroll.y)) / (std::max)(1.0F, total - visible), 0.0F, 1.0F);
 					const float top = rail.Min.y + ratio * (rail.GetHeight() - height);
-					storage.SetFloat(window->GetID("##scrollbar-thumb-top"), (top - window->Pos.y) / Pixels(1.0F));
-					storage.SetFloat(window->GetID("##scrollbar-thumb-bottom"), (top + height - window->Pos.y) / Pixels(1.0F));
+					storage.SetFloat(WindowStateId(window, "##scrollbar-thumb-top"), (top - window->Pos.y) / Pixels(1.0F));
+					storage.SetFloat(WindowStateId(window, "##scrollbar-thumb-bottom"), (top + height - window->Pos.y) / Pixels(1.0F));
 					const ImGuiID scrollbarId = ImGui::GetWindowScrollbarID(window, ImGuiAxis_Y);
-					storage.SetInt(window->GetID("##scrollbar-thumb-state"), GImGui->ActiveId == scrollbarId ? 2 : GImGui->HoveredId == scrollbarId ? 1 : 0);
+					storage.SetInt(WindowStateId(window, "##scrollbar-thumb-state"), GImGui->ActiveId == scrollbarId ? 2 : GImGui->HoveredId == scrollbarId ? 1 : 0);
 				}
 				else if (!window->ScrollbarY && phase > 0.0001F)
 				{
@@ -352,14 +358,14 @@ namespace Inkeys::UI::Setting::Design
 					}
 					window->InnerClipRect.Max.x = (std::min)(window->InnerClipRect.Max.x,
 						ImFloor(window->InnerRect.Max.x - window->WindowBorderSize * 0.5F));
-					const float top = window->Pos.y + Pixels(storage.GetFloat(window->GetID("##scrollbar-thumb-top")));
+					const float top = window->Pos.y + Pixels(storage.GetFloat(WindowStateId(window, "##scrollbar-thumb-top")));
 					const float bottom = (std::min)(window->Pos.y + window->Size.y,
-						window->Pos.y + Pixels(storage.GetFloat(window->GetID("##scrollbar-thumb-bottom"))));
+						window->Pos.y + Pixels(storage.GetFloat(WindowStateId(window, "##scrollbar-thumb-bottom"))));
 					window->DrawList->PushClipRect(window->OuterRectClipped.Min, window->OuterRectClipped.Max, false);
 					if (bottom > top && reserve > 0.0F)
 						window->DrawList->AddRectFilled({ window->InnerRect.Max.x + ImTrunc(Pixels(ScrollbarPadding) * phase), top },
 							{ window->Pos.x + window->Size.x - ImTrunc(Pixels(ScrollbarPadding) * phase), bottom },
-							ImGui::GetColorU32(static_cast<ImGuiCol>(ImGuiCol_ScrollbarGrab + storage.GetInt(window->GetID("##scrollbar-thumb-state")))), Pixels(2.0F));
+							ImGui::GetColorU32(static_cast<ImGuiCol>(ImGuiCol_ScrollbarGrab + storage.GetInt(WindowStateId(window, "##scrollbar-thumb-state")))), Pixels(2.0F));
 					window->DrawList->PopClipRect();
 					// Begin 已压入 inner clip，内容绘制与真正 item 可用宽一起过渡。
 					if (GImGui->CurrentWindow == window)
@@ -401,36 +407,38 @@ namespace Inkeys::UI::Setting::Design
 			}
 			if (owner) CaptureDrag(owner);
 		}
-		if (!DragEligible(owner, state, false) || g.ActiveId != owner->GetID("##scrolldraggingoverlay")) return;
+		if (!DragEligible(owner, state, false) || g.ActiveId != WindowStateId(owner, "##scrolldraggingoverlay")) return;
 		ImGui::KeepAliveID(g.ActiveId);
 		if (g.IO.MouseDelta.y == 0.0F) return;
-		const ImGuiID sampledId = owner->GetID("##drag-scroll-sampled-frame");
+		const ImGuiID sampledId = WindowStateId(owner, "##drag-scroll-sampled-frame");
 		if (owner->StateStorage.GetInt(sampledId, -2) == g.FrameCount) return;
 		owner->StateStorage.SetInt(sampledId, g.FrameCount);
 		// 原生滚轮/键盘已有目标时先让它消费，本帧不覆盖它，下一帧从真实 Scroll 重基准。
-		const ImGuiID rebaseId = owner->GetID("##drag-scroll-rebase");
+		const ImGuiID rebaseId = WindowStateId(owner, "##drag-scroll-rebase");
 		if (owner->ScrollTarget.y < FLT_MAX) { owner->StateStorage.SetInt(rebaseId, 1); return; }
-		const ImGuiID positionId = owner->GetID("##drag-scroll-position");
+		const ImGuiID positionId = WindowStateId(owner, "##drag-scroll-position");
 		float position = owner->StateStorage.GetFloat(positionId, owner->Scroll.y);
 		if (owner->StateStorage.GetInt(rebaseId) || std::abs((std::min)(ImRound64(position), owner->ScrollMax.y) - owner->Scroll.y) > 0.01F) position = owner->Scroll.y;
 		owner->StateStorage.SetInt(rebaseId, 0);
 		position = std::clamp(position - g.IO.MouseDelta.y, 0.0F, owner->ScrollMax.y);
 		owner->StateStorage.SetFloat(positionId, position);
 		// 暂存单宿主意图；实际首次 Begin 前投递原生目标，不后移光标或顶点。
-		owner->StateStorage.SetInt(owner->GetID("##drag-scroll-frame"), g.FrameCount);
+		owner->StateStorage.SetInt(WindowStateId(owner, "##drag-scroll-frame"), g.FrameCount);
 	}
 
 	void ApplyDragScrolling(const NavigationState& state)
 	{
 		ImGuiContext& g = *GImGui;
 		auto* captured = g.ActiveIdWindow;
-		if (captured && g.ActiveId == captured->GetID("##scrolldraggingoverlay"))
+		if (captured && g.ActiveId == WindowStateId(captured, "##scrolldraggingoverlay"))
 		{
 			if (!g.IO.MouseDown[0] || !DragEligible(captured, state, true)) ImGui::ClearActiveID();
 			else ImGui::KeepAliveID(g.ActiveId);
 			return;
 		}
 		if (!g.IO.MouseClicked[0] || !g.IO.MouseDownOwned[0] || !g.HoveredWindow) return;
+		// 弹层外的按下留给 ImGui 原生关闭流程，不能先取得滚动捕获而阻断 EndFrame 的焦点处理。
+		if (!ImGui::IsWindowContentHoverable(g.HoveredWindow, ImGuiHoveredFlags_None)) return;
 		// 真正业务控件的 ActiveId 保留；child/root 的 MoveId 属于可抓取内容空白。
 		if (g.ActiveId && g.ActiveId != g.HoveredWindow->MoveId
 			&& g.ActiveId != g.HoveredWindow->RootWindow->MoveId) return;
@@ -451,14 +459,14 @@ namespace Inkeys::UI::Setting::Design
 		{
 			// 必须在 Begin 消费旧惯性目标之前归零，第一帧布局直接使用顶部坐标。
 			existing->Scroll.y=0; existing->ScrollTarget.y=FLT_MAX;
-			existing->StateStorage.SetFloat(existing->GetID("##drag-scroll-position"),0);
-			existing->StateStorage.SetInt(existing->GetID("##drag-scroll-frame"),-2);
-			existing->StateStorage.SetInt(existing->GetID("##drag-scroll-sampled-frame"),-2);
-			existing->StateStorage.SetInt(existing->GetID("##drag-scroll-rebase"),1);
+			existing->StateStorage.SetFloat(WindowStateId(existing, "##drag-scroll-position"),0);
+			existing->StateStorage.SetInt(WindowStateId(existing, "##drag-scroll-frame"),-2);
+			existing->StateStorage.SetInt(WindowStateId(existing, "##drag-scroll-sampled-frame"),-2);
+			existing->StateStorage.SetInt(WindowStateId(existing, "##drag-scroll-rebase"),1);
 		}
 		if (resetToTop) ImGui::SetNextWindowScroll({0,0});
 		auto* parent = ImGui::GetCurrentWindow();
-		settleScrollbarLayout |= parent->StateStorage.GetInt(parent->GetID("##scrollbar-settled-frame"), -2) == GImGui->FrameCount;
+		settleScrollbarLayout |= parent->StateStorage.GetInt(WindowStateId(parent, "##scrollbar-settled-frame"), -2) == GImGui->FrameCount;
 		ScrollbarStyleScope scrollbar(existing, !(flags & ImGuiWindowFlags_NoMouseInputs), settleScrollbarLayout);
 		const bool visible = ImGui::BeginChild(id, size, childFlags, flags);
 		scrollbar.Finish(ImGui::GetCurrentWindow());
@@ -1039,10 +1047,11 @@ namespace Inkeys::UI::Setting::Design
 	    const ImGuiID popup_id = ImHashStr( "##fl_cb_popup", 0, id );
 	    const bool popup_open = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
 
-	    // 不能仅按坐标命中：弹出层覆盖下方下拉框时，点击必须留在弹出层。
+	    // 仅自身弹层允许入口再次点击收起；实际 HoveredWindow 仍隔离被弹层覆盖的其他控件。
 	    const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left )
 	        && ImGui::IsMouseHoveringRect( bb.Min, bb.Max, false )
-	        && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem );
+	        && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem
+	            | (popup_open ? ImGuiHoveredFlags_AllowWhenBlockedByPopup : 0) );
 	    const bool nav_activate = ( gctx.NavActivateId == id );
 	    const auto& actions = ImFluent::GetActions();
 	    const bool key_open = !popup_open && !disabled
