@@ -422,8 +422,6 @@
 	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
 	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
 	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
-	<ClInclude Include="Inkeys\Graphics\MagnificationRuntime.h" />
-	<ClInclude Include="Inkeys\Graphics\MagCaptureService.h" />
 	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
 	<ClInclude Include="Inkeys\Business\PenToolState.hpp" />
 	<ClInclude Include="Inkeys\Business\PenWidthPolicy.hpp" />
@@ -881,8 +879,6 @@
   </ItemGroup>
   <ItemGroup>
 	<ClCompile Include="Inkeys\Graphics\Surface.cpp" />
-	<ClCompile Include="Inkeys\Graphics\MagnificationRuntime.cpp" />
-	<ClCompile Include="Inkeys\Graphics\MagCaptureService.cpp" />
 	<ClCompile Include="Inkeys\Graphics\Surface.cppm" />
 	<ClCompile Include="Inkeys\Business\ComponentActions.cpp" />
 	<ClCompile Include="Inkeys\Business\ComponentActions.cppm" />

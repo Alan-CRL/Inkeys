@@ -1,8 +1,8 @@
 {
   "id": "scroll-follow-mag-capture",
   "name": "scroll-follow-mag-capture",
-  "title": "独立 Magnification 连续捕获与 PoC",
-  "description": "实现独立 Capture-Only 窗口、有效性检测和真实受控验证",
+  "title": "共用定格 Mag 的 PrintWindow 读回验证",
+  "description": "移除独立原型，保持既有定格线程，在 Inkeys.exe 内验证 PrintWindow(2) 与回调同步候选",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -21,6 +21,15 @@
   "children": [],
   "parent": "10-21-scroll-follow-v1",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "Current Mag preparation milestone verified: actual Inkeys.exe original Freeze Mag works without scaling callback (cold pair phase1-3/static and restored-null phase7, two fresh processes exit0). Optional callback also registers/triggers. Independent capture/runtime/old tests removed; original Freeze init/create thread, ready promise and normal coordinator preserved. Later stages await next user turn. No new commit/push. See research/freeze-printwindow.md and final check report; continuous service and complete scroll-follow remain outside this narrowed milestone.",
+  "meta": {
+    "mag_preparation": {
+      "status": "verified",
+      "date": "2026-10-21",
+      "no_callback": "passed",
+      "optional_callback": "observed",
+      "next_stages": "not_started",
+      "review": "passed"
+    }
+  }
 }

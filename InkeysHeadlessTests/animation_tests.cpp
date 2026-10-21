@@ -54,9 +54,6 @@ int RunPageControlTests();
 int RunWhiteboardUiTests();
 int RunFreezeStateTests();
 int RunMagnifierCoordinatorTests();
-int RunMagCaptureTests();
-int RunMagCapturePoc(bool warmRuntime, int runtimeExperiment = 0);
-int RunMagCapturePatternChild(const char* mappingName);
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
@@ -1641,23 +1638,6 @@ namespace
 
 int main(int argc, char** argv)
 {
-	// 真实捕获仅由显式 PoC 入口创建自动关闭的专用窗口。
-	if (argc == 2 && std::string_view(argv[1]) == "--mag-capture-only")
-		return RunMagCaptureTests();
-	if (argc == 2 && std::string_view(argv[1]) == "--mag-capture-poc")
-		return RunMagCapturePoc(true);
-	if (argc == 2 && std::string_view(argv[1]) == "--mag-capture-poc-freeze-control")
-		return RunMagCapturePoc(true, 4);
-	if (argc == 2 && std::string_view(argv[1]) == "--mag-capture-poc-cold")
-		return RunMagCapturePoc(false);
-	if (argc == 2 && std::string_view(argv[1]) == "--mag-runtime-thread-poc")
-		return RunMagCapturePoc(false, 1);
-	if (argc == 2 && std::string_view(argv[1]) == "--mag-runtime-owner-poc")
-		return RunMagCapturePoc(false, 2);
-	if (argc == 2 && std::string_view(argv[1]) == "--mag-capture-lifecycle-poc")
-		return RunMagCapturePoc(false, 3);
-	if (argc == 3 && std::string_view(argv[1]) == "--mag-capture-pattern-child")
-		return RunMagCapturePatternChild(argv[2]);
 	if (argc == 2 && std::string_view(argv[1]) == "--shape-recognition-only")
 		return RunDraw3ShapeRecognitionTests();
 	// 窗口契约可单独复跑，避免定位 USER32 交错时重复耗时的算法矩阵。
@@ -1727,7 +1707,6 @@ int main(int argc, char** argv)
 	failureCount += RunWhiteboardUiTests();
 	failureCount += RunFreezeStateTests();
 	failureCount += RunMagnifierCoordinatorTests();
-	failureCount += RunMagCaptureTests();
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
 	failureCount += RunBarBottomDockTests();

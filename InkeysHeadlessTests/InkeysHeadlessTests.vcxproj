@@ -145,9 +145,6 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ShapeRecognition.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ShapeRecognition.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
-    <ClCompile Include="..\Inkeys\Inkeys\Graphics\MagnificationRuntime.cpp" />
-    <ClCompile Include="..\Inkeys\Inkeys\Graphics\MagCaptureService.cpp" />
-    <ClCompile Include="mag_capture_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Helper\FailedCleanupDeadline.cpp" />

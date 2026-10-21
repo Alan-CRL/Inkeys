@@ -1,42 +1,39 @@
-# 独立 Magnification 连续捕获与 PoC设计
+# 共用原定格 Mag 的窄范围读回设计
 
-父设计：../10-21-scroll-follow-v1/design.md，作为本子任务完整契约。开工先阅读父设计和research/current-architecture.md。
+## 当前范围与历史
 
-## 模块边界
-拥有 Graphics/MagCaptureService.*、必要的 MagnificationRuntime.*、IdtMagnification.cpp/.h 的运行库寿命窄修改、新 capture tests 与现有工程登记。不要修改任何 Draw3/Bar/Tracker 生产逻辑。
+本轮用户明确取代独立 Capture-Only 路线：删除 MagCaptureService、MagnificationRuntime lease 及相关旧测试登记，撤回未完成的通用生命周期接线。旧原型与探针仅作为历史证据保存在 research/ 和已提交的 f07b562e 中，不是当前接口合同。
 
-## 接口与失败
-独立实现 MagCaptureService、共享 Mag runtime lease、图像有效性、超时与重复启停、[ScrollFollow]基础日志，并在现有 Headless 工程中提供 no-window 单测及显式真实 PoC。
-必须实现父design相应接口/线程所有权/错误回滚和门槛。记录额外调查与实际接口到本文件，不引入未批准的替代实现。
+只在 Inkeys.exe 内、原定格 Mag 上执行 PrintWindow(2) 诊断。普通 Freeze、WindowService、Draw3、Bar、文档与保存逻辑保持既有分工；不新增连续捕获服务或通用 owner RPC。
 
-## 实际接口与线程合同（2026-10-21）
+## 既有线程设计保持
 
-`Inkeys::Graphics::MagCaptureService` 提供 `Start(MagCaptureOptions, FrameCallback)`、`Stop()`、`Snapshot()`。Start 的 true 仅表示异步请求被接受，不能表示已有有效 F0。参数为非零 session、1..60 FPS（默认20）与 verbose。旧 owner 或 monitor 尚未真正退出时返回 false / `ERROR_BUSY`，不覆盖旧会话状态。
+Inkeys2 的 2025-02-15 提交 0c0aaf0e99a4d5ced0902c1d692855ef61449f96 将初始化与窗口创建封装在 Mag 窗口线程，并用 promise/future 等待就绪；Inkeys3 的 WindowService Overlay STA owner、CreateGroup 和 readyPromise 保留这一关键安排。因此不需要再次修改普通定格线程。
 
-一次 Display 快照固定主屏 sourceRect、workArea、DPI 和 generation；不随会话移动 ROI。帧含借用的 top-down BGRA span、尺寸/stride、source/workArea、session/sequence/display generation、QPC 时间/频率、capture_ms、quality 和 error。alpha 不参与质量判断；span 仅在本次同步回调返回前有效。
+后续 Filter/Source/Redraw 的协调线程分工在 Inkeys2 已存在，本轮也不重排。新增诊断由原 Host 的消息/定时消息运行，保持 owner 消息泵；初始化、创建、回调登记/恢复、读回与反初始化的实际线程 ID 都记录，普通定格前后对照仍走原 MagnifierThread。
 
-独立 Win32 owner 线程先成功初始化 STA COM，再取得 runtime lease，拥有 Host/Child、消息循环与复用 DibSurface。Host 设 alpha=0 后显示，保持不可激活、穿透、不最小化；保留可绘制生命周期。每帧刷新同进程顶层窗口排除表，依次 Filter→Source→Redraw→PrintWindow(child, dc, 2)，没有图像 FIFO。只在同步回调期间借用同一缓冲；慢帧跳过采样周期。
+## 复用与图像
 
-监督线程在启动阶段允许独立5秒 grace；初始化后按最近一次完成结果设置1秒期限。首次 MagInitialize/窗口建立的冷启动耗时与运行中的停滞分别记录，F0前没有绘制穿透或 Viewport 发布，因此启动 grace 不放宽运行时的失效保护。最终 cold PoC 启动耗时109/156ms；生命周期测试中的会话为375/203ms。早期旧1秒总计时曾在初始化尚未返回时失败，日志保留。
+直接调用 PrepareMagnifierWindow、MagnifierHostCreated、MagnifierChildCreated，以及 Win32MagnifierOperations 的 PrepareHidden → SubmitFilter → SubmitSource → Invalidate → Redraw。原角色排除列表覆盖 Mag、双画布、主栏、设置和分页等已登记窗口，不把它描述为枚举所有未知同进程窗口。
 
-Stop/析构不等待同步系统调用或已准入回调。超时或 Stop 关闭发布并请求停止；原 owner 的 HWND、DIB、runtime lease、回调依赖保留到真实返回与清理，monitor 不强杀线程。Snapshot.resourcesReleased 还要求两个原生线程句柄已 signal，防止最后清理标志与真实线程退出之间的再启竞态。调用者在此之前不得释放回调引用的外部依赖。
+Host 先 alpha=0 再显示以保留绘制生命周期；不最小化，不在读回期间 SW_HIDE。读回使用原 child、复用 DibSurface、PrintWindow(child, dc, 2) 与 GdiFlush。记录实际 child client 和 MagGetWindowSource，保留原定格高度少一像素、Source 宽高少一像素的现状，不伪报完整主屏尺寸。
 
-## 有效性与诊断
+无回调更新/等待/读回是必需路径，回调只作可选候选。测试先在未登记回调的原冷窗口完成静止及连续变化图案，再登记候选，最后恢复无回调验证继续更新。
 
-AnalyzeMagFrame 先校验尺寸、stride 与缓冲溢出，再采样约256×144的 luma 网格。`mean<2 && variance<4 && nearBlackRatio>=0.995` 判近黑；`variance<4 || edgeRatio<0.002` 判低信息。暗色纹理可有效，重复静止帧可有效。API失败的帧保留具体 stage/error，不能因 PrintWindow 返回TRUE就判像素有效。
+首次等待较长、稳态短等，以定时消息继续处理更新；固定等待只是延迟策略。无可靠完成信号时不承诺最新帧。同图可以是静止；变化图案须最终读到对应新像素，API 成功不能替代这一检查。
 
-生产日志复用已有 DiagnosticOutput 的有界异步队列，前缀 `[ScrollFollow]`，服务不创建新 Session 或控制台。版本/WOW64门禁只作用于捕获入口，较新能力动态解析，不增加 Windows7 硬导入。当前没有主栏/命令行产品入口。
+## 回调候选
 
-## Mag 与定格的运行库寿命
+动态尝试 MagSetImageScalingCallback / MagGetImageScalingCallback，保存并恢复原回调。回调只进行必要的同格式直通与原子计数，不作为图像来源，不保留借用图像、不等待或写日志。记录登记结果、实际触发线程、进入/退出及 PrintWindow 匹配关系。失败或没有触发则有界等待回退；不关闭 DWM，不新增 Win7 图像导出能力。回调退出计数只用于实验，不能提升为最终整帧呈现保证。
 
-MagnificationRuntimeLease 动态加载函数表，保护进程首次 Initialize / 最后 lease 释放才 Uninitialize；失败清理保留 DLL 并拒绝下一代。定格只替换 Prepare/Shutdown 的取得/释放两处，不改变其窗口、显示、排除和 Source 协调流程。各 owner 仍销毁自己的窗口。
+## 软件内受控验证
 
-该寿命合同只解决提前卸载风险，不是跨 owner 可捕获的证明。最终 fixture 已模拟实际 Window Service 的 STA→CreateGroup→首次 Mag 初始化顺序，记录 HRESULT，COM失败直接退出。预存 Freeze lease 时捕获 owner 的 Filter 仍每帧 FALSE/error50，130结果/0有效；共享运行库真实门槛未通过。
+显式 --freeze-mag-printwindow-test，关闭 harness 或非法参数必须直接退出；普通启动不进入诊断。入口先于配置、单实例及普通产品初始化，不打开用户文档或设置，不写真实配置。使用真实 WindowService 角色和定格回调创建唯一一对 Mag，而非独立复刻初始化。
 
-## 实测边界与后续
+专用源窗口显示唯一阶段的网格纹理；Bar 角色蓝色覆盖窗有屏幕正对照，确保真实遮挡。原 SubmitFilter 后分布核对像素，分别比较未登记回调、登记期间、恢复后的更新；静止重复读回；原定格显示/隐藏前后对照。父 Host 使用原 DefWindowProc，避免与源同色绘制造成假阳性。测试不启动 WGC，不设置禁止捕获属性；专用窗口自动关闭，输出到临时目录。
 
-无预存 lease 的最终服务两轮验证得到真实静止源、4次源 phase 更新、完整同进程窗口排除和重复启停。2880×1920，mean=54.523/64.991ms，p95=67.716/79.128ms，实际10.302/8.491 results/s；20FPS仍是目标，不是本机已达指标。一次历史 cold 复跑曾出现无信息帧和1234ms慢调用触发超时，也保留在报告。
+若普通定格与新增 owner 诊断结果不同，分别报告证据，不修改既有线程使结果看起来一致。初始化、像素、排除、回调和清理失败须各自可追溯。测试进程的最终超时退出不算正常资源清理通过。
 
-对齐 COM 顺序的同 owner 两独立控件原型取得真实像素并通过三轮交替更新，但 private bytes 为310784000→376082432→440078336，尚未证明有界，也未解决阻塞 API 对 UI owner 的影响。每 owner Initialize/提前 Uninitialize 或额外未平衡 Initialize 的实验不满足批准合同，均未落地生产。
+## 交付边界
 
-本阶段保留安全捕获基础与可重复 PoC，等待 trellis-check。Tracker、Draw3、Bar、UInk 后三阶段保持未进入，不把本任务归档为完成。完整证据：[capture-poc.md](../10-21-scroll-follow-v1/research/capture-poc.md)。
+本次是软件内读回验证，不是完整滚动批注或可复用异步捕获会话验收。Tracker、穿透、Draw3、按钮和 UInk 仍未进入。当前实际构建与像素结果写入 implement.md 和 research/；父任务矩阵由主会话维护。本轮不自动 commit/push。

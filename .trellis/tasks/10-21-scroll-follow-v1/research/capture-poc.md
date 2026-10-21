@@ -1,5 +1,7 @@
 # Magnification 捕获 PoC：实现、实测与未通过门槛
 
+> 历史记录：以下独立服务原型已按用户要求移除。当前共用原定格的 Inkeys.exe 软件内测试另见捕获子任务 research/freeze-printwindow.md；旧失败不能替代当前实测结论。
+
 日期：2026-10-21。范围：`scroll-follow-mag-capture`；未接入 Tracker、Draw3 或 Bar。
 
 ## 当前结论
@@ -122,3 +124,13 @@ InkeysHeadlessTests.exe --mag-runtime-owner-poc
 fresh-hidden对照的原控件Stop后首次读回亦为黑帧，API error0。缺少相同样式、完全独立的先验正对照，不能推定独立捕获破坏了定格。冷启动较早成功与本次失败均保留；检查确认新增fixture在cold路径没有额外DLL/窗口调用，Headless新旧PE无Mag硬导入。当前证据不足以将波动归因于某个SDK内部机制、硬件或环境条件。
 
 本轮没有确认生产数据竞态、COM配对或借用缓冲提前释放问题；该审查结论不能替代失败的真实像素门槛。x64首次完整构建在依赖安装及Headless链接成功后因C1060 compiler heap失败；唯一命令级CL_MPCount=1重试11:44.66后在Headless链接LNK1140/PDB上限失败，未改调试信息、源码或项目配置绕过。低并发重试的产品Inkeys.exe成功链接；Headless失败链接删除旧exe，未运行x64测试。ARM64/x64产品PE静态导入均通过；完整solution x64及功能验收仍未通过。详细证据见子任务research/check.md。
+
+## 当轮快速定位补充（用户追加20分钟后收尾）
+
+详见捕获子任务research/quick-probe.md、quick-check.md和computer-use-observation.md，独立探针源码保存在research/probes/。没有修改生产捕获路径，以下不覆盖原生产PoC失败。
+
+- 无WGC小尺寸单点59/60、全屏单点57/60；无效包含首帧灰色及旧phase。全屏PrintWindow最高109ms，未证明20FPS。
+- 修正父Host背景混淆、仅SOURCE更新painted后，90个唯一phase的PrintWindow2/WGCsource/WGCMagHost均为九点90/90匹配；其中透明30、不透明60。只证明采样点的新内容，不代表完整图像每个像素。
+- 排除实效正反对照：单owner九点19/20当前图案（首次无效）；双ownerFilter返回50后20/20采样为蓝色覆盖窗，0/20当前源图案。不能忽略Filter失败继续产品接入。
+- WGC顶层HWND路线实验可用，子Mag HWND返回E_INVALIDARG；没有设置禁止捕获属性，没有改变录屏墨迹可见性。尚无产品替换。
+- Computer Use确实观察了SOURCE与MAG窗口；早期视觉探针Mag下沿异常仍单列，不能与后来的九点通过合并成完整屏幕呈现验收。所有专用窗口已退出，未完成锁屏覆盖测试。

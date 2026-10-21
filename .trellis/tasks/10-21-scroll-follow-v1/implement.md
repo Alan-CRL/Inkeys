@@ -17,10 +17,15 @@
 不 commit/push，不无关重构，不修改第三方子模块，不跑会重写生产文件的无关格式化。修改保持既有编码/BOM/CRLF。归档和会话脚本必须 --no-commit。构建/测试日志写 Build/ 下，不提交生成产物。
 
 
-## 当前阶段结果（捕获门槛未放行）
+## 当前阶段与历史证据
 
-独立冷启动捕获服务曾在两轮专用图案/排除/启停中取得真实像素，最新check复跑55帧全NearBlack；保留定格运行库的bare-lease及实际创建即隐藏的first-owner/global-once对照均Filter50且0有效。原生生命周期实验尚无安全替代；原型保持批准的全局最后使用者才反初始化策略。阶段不能标为完成，后三子任务保持planning。已顺序执行implement/check；ARM64完整solution、基础定向和完整无窗口回归通过，i18n/XML/PE/物理格式检查通过。捕获验收保持失败，x64最终结果见子任务research/check.md；交付原型和真实失败证据，不宣称产品功能完成。
+旧独立原型已完成过 implement/check 并提交 f07b562e，但真实共存门槛未通过。按后续用户指示，本轮删除独立服务/runtime/旧测试，恢复原定格寿命设计，仅增加 Inkeys.exe 内部 PrintWindow(2) 与可选回调验证。实际构建和软件内测试尚须以当前代码重新核对，旧报告不构成当前通过证据。
 
-- research/validation-matrix.md：各验收项当前状态。
-- research/capture-debug-retrospective.md：调试事实、未证明的部分和预防合同。
-- .trellis/spec/native-desktop/scroll-follow-capture.md：长期接口/所有权/失败门槛规范。
+- 捕获子任务 prd/design/implement：当前收窄范围、实际实现与本轮验证。
+- research/validation-matrix.md：持续维护当前结果与原完整需求的区别。
+- 捕获子任务 research/inkeys2-mag-thread-history.md：同线程创建与同步等待的准确历史。
+- .trellis/spec/native-desktop/scroll-follow-capture.md：当前共用原定格的边界与像素验证合同。
+
+## 本轮 Mag 准备验证完成
+
+真实 Inkeys.exe 共用原定格 Mag 的无回调路径已通过两个新进程的冷启动、静止和变化图案验证；恢复空回调后继续正确。可选 scaling callback 也实际触发；原线程设计未重排。完整 ARM64 solution、无窗口回归、i18n与格式检查通过。详细证据见捕获子任务 research/freeze-printwindow.md。按用户最新要求，本轮确认准备后结束，后续阶段下一轮开始；此里程碑不代表完整滚动批注或连续服务已实现。

@@ -1397,6 +1397,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// 定格读回自检先于配置、单实例与普通业务；关闭 harness 或参数错误立即退出。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--freeze-mag-printwindow-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			if (!EnsureProcessDpiAwareness()) return 2;
+			return RunFreezeMagnifierPrintWindowTest();
+#else
+			return 2;
+#endif
+		}
 		// 诊断输出自检严格早退，harness 关闭时也不能落入普通 GUI。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-diagnostic-output-test", -1, TRUE) == CSTR_EQUAL)

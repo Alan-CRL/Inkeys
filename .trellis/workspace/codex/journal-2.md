@@ -892,3 +892,38 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 
 - 先在Mag方案内解决真实owner/像素更新与有界资源门槛，完整重跑相同fixture后才决定进入Tracker，不能用历史cold成功覆盖最新失败。
 - Tracker、Draw3/主栏、UInk、真实浏览器WordPDF及笔触控/旧Windows矩阵均未实施验收。
+
+
+## Session 118: 原定格 Mag 的无回调 PrintWindow 准备验证
+<!-- trellis-session: v=2 fp=02857108d1469ebd -->
+
+**Date**: 2026-10-21
+**Task**: 原定格 Mag 的无回调 PrintWindow 准备验证
+**Branch**: `feature/move`
+
+### Summary
+
+移除独立捕获原型，保持原定格同线程创建与 ready promise；Inkeys.exe 内两轮验证无回调读回可用，按用户要求在此收束当前轮。
+
+### Main Changes
+
+- 删除独立 MagCaptureService、MagnificationRuntime 及旧 capture tests；不重排原 Freeze 线程。
+- 增加显式 harness 内部读回入口与可选 scaling callback 对照，更新 Trellis 当前合同与历史边界。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 Debug ARM64 solution、重建后 --no-window、i18n、坏参数早退、XML/PE/BOM/CRLF/diff 通过。
+- [OK] 两个全新进程无 callback 冷窗口和恢复空 callback 后均读回正确；14张接受图案 PNG 整图核对零差异。
+- [OK] 顺序 trellis-check 已核对实际路径与原始证据，未发现本轮准备工作的阻塞；最终明细见 research/freeze-printwindow-check.md。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本轮 Mag 准备已确认；下一轮按用户指示开始后续阶段，完整滚动批注和连续捕获服务仍未实现。

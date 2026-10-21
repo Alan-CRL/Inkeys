@@ -1,14 +1,23 @@
-# 独立 Magnification 连续捕获与 PoC
+# 共用定格 Mag 的 PrintWindow 读回验证
 
-## 目标
-独立实现 MagCaptureService、共享 Mag runtime lease、图像有效性、超时与重复启停、[ScrollFollow]基础日志，并在现有 Headless 工程中提供 no-window 单测及显式真实 PoC。
+## 当前目标
+
+按用户最新要求，直接共用原定格 Mag，移除独立捕获原型及多余接线；在 Inkeys.exe 内验证 PrintWindow(2) 能否读到真实更新后的画面。此范围取代本阶段最初的独立 Capture-Only 方案。
 
 ## 需求来源
-../10-21-scroll-follow-v1/requirements-source.md 与父prd。用户已明确批准本任务树及design。
+
+父任务原始需求保留在 ../10-21-scroll-follow-v1/requirements-source.md。2026-10-21 后续用户明确收窄：保持原定格设计，只完成共用底层的截图验证；不继续 Tracker、Viewport、主栏和 UInk 集成。
 
 ## 验收
-必须真实验证源图案变化、Host内容不可见、排除叠加窗口、静止帧与重复启动/停止，记录耗时/有效性/清理。失败在Mag方案内调查，不开始tracker/产品接入。
 
-## 边界
-拥有 Graphics/MagCaptureService.*、必要的 MagnificationRuntime.*、IdtMagnification.cpp/.h 的运行库寿命窄修改、新 capture tests 与现有工程登记。不要修改任何 Draw3/Bar/Tracker 生产逻辑。
-遵守父任务批准的feature/move、GUI授权、保守互斥、不commit/push和编码/EOL约束。
+- 保留 Inkeys3 已有的 Mag 初始化与窗口创建同线程、ready promise 同步等待设计；不重排普通定格线程。
+- 使用真实定格函数与 WindowService 创建的原角色窗口，禁止用复制的独立 Mag 程序代替软件内结果。
+- 先更新和重绘，再读 PrintWindow(2)。首帧允许较长等待，后续允许上一帧延迟；静止画面仍可有效，不能把长期不更新当作通过。
+- 以专用变化图案、多点像素及确实在屏幕上的覆盖窗验证更新与排除；如实记录截图返回、实际像素、等待与清理。
+- 无回调是必须通过的可用路径：在尚未登记回调的冷窗口上，更新/等待/PrintWindow 必须最终取得静止和变化画面；恢复为无回调后也须继续工作。允许旧帧和延迟，不能将回调作为功能依赖。
+- 实际尝试 MagSetImageScalingCallback 作为可选同步候选，只以 PrintWindow 得到图像；分别记录登记、触发、恢复和像素关系，不预先假定回调返回保证最终呈现。
+- 完整 solution Debug|ARM64、无窗口回归与格式检查；实际软件内测试的成功与失败分别记录，不以历史原型结果替代。
+
+## 边界与授权
+
+用户授权本任务自己的路径级回退、专用自动关闭测试窗口和临时输出。测试入口在用户配置、单实例及普通业务前早退，不修改真实配置、PPT、自启或捕获排除属性。保持编码/BOM/EOL。当前没有新的 commit/push 授权。原完整滚动批注任务与后三阶段继续保留，不能因本次诊断结束标记为功能完成。

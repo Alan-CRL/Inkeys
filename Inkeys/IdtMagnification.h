@@ -20,3 +20,5 @@ void MagnifierChildCreated(HWND hwnd);
 void StopMagnifierCoordinator() noexcept;
 void ShutdownMagnifierWindow();
 void MagnifierThread();
+// 仅显式内部 harness 入口创建自动关闭的专用测试窗口。
+int RunFreezeMagnifierPrintWindowTest();

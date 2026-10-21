@@ -1,4 +1,23 @@
-# 独立 Magnification 连续捕获与 PoC实施记录
+# 原 Freeze Mag PrintWindow 软件内验证实施记录
+
+## 当前实施：按用户最终收窄范围
+
+本轮已移除独立捕获 service/runtime lease 和旧 Headless capture PoC；恢复原 Freeze 的初始化/窗口对/ready promise 与普通协调线程安排。未完成的 Window/Coordinator 后端接线已撤回，二者无最终 diff。已确认每轮6个无callback样本均63/63匹配；callback仅为可选候选，不是获取画面的依赖。新增能力仅为 harness gated 的 `Inkeys.exe --freeze-mag-printwindow-test` 与原 Host 定时读回；没有产品 Tracker/Draw3/Bar 功能、第二套 Mag 窗口或 owner RPC。
+
+- [x] 读原定格路径和 Inkeys2 历史，并服从最新“现有设计不调整”要求。
+- [x] 按归属选择性回退；删除独立 service/runtime/test 及项目和 runner 登记，保持 BOM/CRLF。
+- [x] 真实 WindowService 原 callbacks/Host/Child + 原过滤/Source/Redraw + PrintWindow(2) 软件内测试；冷 hidden pair 先读，再正常 Freeze 前后 Reveal/Conceal。
+- [x] 800ms 首等待、有限预热、静止重复、7 unique phases、63 分布点、真实蓝覆盖 GetPixel 正对照。
+- [x] callback 真实登记/Get核对/安全直通计数/恢复旧值；本机 DWM=1 各轮6入6出，不当作通用整帧完成保证。
+- [x] 最终新进程两轮 exit0（PID73216/81464）；每轮9个被接受样本63/63，首轮另有1个62/63启动样本被拒绝后重试成功。14张最终 PNG 各5,526,720像素离线逐像素核对 mismatch0。
+- [x] 完整 Debug|ARM64 solution 正常宿主构建 exit0（最终19.09s、3既有warning/0error），重建后 --no-window exit0，i18n425/425 PASS，bad-argv exit2、XML/格式/diff/PE检查通过。
+- [x] 顺序 trellis-check 通过，无需代码修复；核对最终构建、两轮日志、整图像素、XML与BOM/CRLF。见 research/freeze-printwindow-check.md。未commit/push。
+
+详细结果、日志、真实线程/窗口状态、预热历史与限制：[research/freeze-printwindow.md](research/freeze-printwindow.md)。GDI11→13、USER4→5未宣称长期零增长；未做持续采样、其他平台或用户文档测试。
+
+## 以下为已移除的独立原型历史记录
+
+旧复选框、接口、门槛和文件列表仅解释此前实验；本轮当前实现与验证以上述记录和最新报告为准。
 
 ## 顺序
 - [x] 读取父prd/design/implement及本任务规范上下文。

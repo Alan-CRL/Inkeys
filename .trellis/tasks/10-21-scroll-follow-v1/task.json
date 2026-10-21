@@ -2,7 +2,7 @@
   "id": "scroll-follow-v1",
   "name": "scroll-follow-v1",
   "title": "通用滚动批注初版",
-  "description": "基于独立 Magnification 捕获与 OpenCV 可信二维追踪，复用 Draw3 视口并完成主栏和 UInk 集成",
+  "description": "基于原定格 Magnification 读回与 OpenCV 可信二维追踪，后续复用 Draw3 视口并完成主栏和 UInk 集成",
   "status": "planning",
   "dev_type": null,
   "scope": null,
@@ -26,6 +26,15 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-21: capture prototype implemented and sequentially checked. Both STA bare-lease and actual fresh-hidden first-owner/global-once PoCs fail Filter/error50 with zero valid frames; latest cold recheck also NearBlack. Capture remains in_progress; later three tasks planning. No commit/push. See research/capture-poc.md, validation-matrix.md and child research/check.md.",
-  "meta": {}
+  "notes": "Current Mag preparation milestone verified: actual Inkeys.exe original Freeze Mag works without scaling callback (cold pair phase1-3/static and restored-null phase7, two fresh processes exit0). Optional callback also registers/triggers. Independent capture/runtime/old tests removed; original Freeze init/create thread, ready promise and normal coordinator preserved. Later stages await next user turn. No new commit/push. See research/freeze-printwindow.md and final check report; continuous service and complete scroll-follow remain outside this narrowed milestone.",
+  "meta": {
+    "mag_preparation": {
+      "status": "verified",
+      "date": "2026-10-21",
+      "no_callback": "passed",
+      "optional_callback": "observed",
+      "next_stages": "not_started",
+      "review": "passed"
+    }
+  }
 }
