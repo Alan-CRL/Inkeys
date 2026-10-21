@@ -28,7 +28,7 @@ namespace Inkeys::UI::Setting::Design
 		if (destination.page == PageId::Configuration)
 			destination = { PageId::General, GeneralSection::Storage };
 		else if (destination.page == PageId::HotKeys)
-			destination = { PageId::General, GeneralSection::Interaction };
+			destination = { PageId::General, GeneralSection::Shortcuts };
 		if (destination.page != PageId::General) destination.section = GeneralSection::Basic;
 		return destination;
 	}
@@ -189,6 +189,11 @@ namespace Inkeys::UI::Setting::Design
 		bool dynamicEdgeLighting = false;
 		int startupPlacement = 0;
 		int taskbarScaleBase = 0;
+		int selectMode = 0, iconOrder = 0, expansionDirection = 1;
+		std::array<int, 4> autoCollapse{ 1, 0, 0, 0 };
+		std::array<bool, 6> shortcuts{ true, true, true, true, true, true };
+		std::string shortcutGlobalStatus, shortcutHookStatus;
+		bool shortcutStatusWarning = false;
 	};
 
 	struct GeneralEvents
@@ -209,6 +214,9 @@ namespace Inkeys::UI::Setting::Design
 		bool dynamicEdgeLightingChanged = false;
 		bool startupPlacementChanged = false;
 		bool taskbarScaleBaseChanged = false;
+		bool selectModeChanged = false, iconOrderChanged = false, expansionDirectionChanged = false;
+		std::array<bool, 4> autoCollapseChanged{};
+		std::array<bool, 6> shortcutsChanged{};
 	};
 
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha);

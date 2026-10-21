@@ -71,7 +71,8 @@ namespace Inkeys::UI::Setting::Design
 		return result;
 	}
 
-	enum class GeneralSection : int { Basic, Appearance, Interaction, Storage };
+	enum class GeneralSection : int { Basic, Appearance, Interaction, Storage, Shortcuts };
+	inline constexpr size_t GeneralSectionCount = static_cast<size_t>(GeneralSection::Shortcuts) + 1;
 
 	struct NavigationTween
 	{
@@ -130,7 +131,8 @@ namespace Inkeys::UI::Setting::Design
 		GeneralSection contentSection = GeneralSection::Basic;
 		// 真实控件提交后的屏幕像素框，同时供连续帧测试观测，不另写一套命中公式。
 		LayoutRect parentBounds, chevronBounds, flyoutBounds;
-		std::array<LayoutRect, 4> childBounds{}, flyoutChildBounds{}, footerBounds{};
+		std::array<LayoutRect, GeneralSectionCount> childBounds{}, flyoutChildBounds{};
+		std::array<LayoutRect, 4> footerBounds{};
 		std::array<LayoutRect, 6> middleBounds{};
 		std::uint32_t parentItemId = 0;
 		std::uint32_t childFocusId = 0;
@@ -333,7 +335,7 @@ namespace Inkeys::UI::Setting::Design
 		scale = std::isfinite(scale) && scale > 0.0F ? scale : 1.0F;
 		const float margin = 8.0F * scale;
 		const float width = (std::min)(OpenPaneWidth * scale, (std::max)(1.0F, client.Width() - margin * 2.0F));
-		const float height = (std::min)((NavigationRowHeight * 4.0F + RowGap * 3.0F + 16.0F) * scale,
+		const float height = (std::min)((NavigationRowHeight * GeneralSectionCount + RowGap * (GeneralSectionCount - 1) + 16.0F) * scale,
 			(std::max)(1.0F, client.Height() - margin * 2.0F));
 		const float left = std::clamp(anchor.left, client.left + margin,
 			(std::max)(client.left + margin, client.right - margin - width));

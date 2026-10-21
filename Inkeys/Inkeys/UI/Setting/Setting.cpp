@@ -3015,6 +3015,42 @@ SettingSessionCoroutine RunSettingSession()
 						Experimental.Inkeys3.DynamicEdgeLighting,
 						static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(Inkeys::config.UI.Bar.StartupPlacement.load())),
 						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
+					// 每帧冻结本页偏好，页面只产出事件，运行时通知仍留在既有 FIFO 业务域。
+					draft.selectMode = GetSelectAndClickThroughMode();
+					const int iconOrder = Inkeys::config.UI.Bar.IconOrder.load();
+					const int expansionDirection = Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load();
+					draft.iconOrder = iconOrder >= 0 && iconOrder < 4 ? iconOrder : 0;
+					draft.expansionDirection = expansionDirection >= 0 && expansionDirection < 2 ? expansionDirection : 1;
+					auto& policies = Inkeys::config.UI.Bar.AutoCollapse;
+					IdtAtomic<int>* collapsePreferences[]{ &policies.Drawing, &policies.Erasing, &policies.Dragging, &policies.OutsideClick };
+					for (int item = 0; item < 4; ++item)
+					{
+						const int stored = collapsePreferences[item]->load();
+						draft.autoCollapse[item] = stored >= 0 && stored <= 2 ? stored : (item == 0 ? 1 : 0);
+					}
+					auto& shortcuts = Inkeys::config.Input.Shortcuts;
+					IdtAtomic<bool>* shortcutPreferences[]{ &shortcuts.ToggleAnnotation, &shortcuts.Undo, &shortcuts.RedoY,
+						&shortcuts.RedoShiftZ, &shortcuts.Clear, &shortcuts.Freeze };
+					for (int item = 0; item < 6; ++item) draft.shortcuts[item] = shortcutPreferences[item]->load();
+					if (destination.section == Design::GeneralSection::Shortcuts)
+					{
+						const auto shortcutStatus = Inkeys::Input::KeyboardShortcuts::GetStatus();
+						string globalStatus = !shortcutStatus.running ? IA(I18nKey.SettingsUI.HotKey.NotRunning)
+							: !shortcuts.ToggleAnnotation.load() ? (shortcutStatus.hotkeyRegistered
+								? (shortcutStatus.hotkeyError ? IA(I18nKey.SettingsUI.HotKey.UnregisterFailed) : IA(I18nKey.SettingsUI.HotKey.Disabling))
+								: IA(I18nKey.SettingsUI.HotKey.Disabled))
+							: shortcutStatus.hotkeyRegistered ? IA(I18nKey.SettingsUI.HotKey.Registered)
+							: shortcutStatus.hotkeyError ? IA(I18nKey.SettingsUI.HotKey.RegisterFailed) : IA(I18nKey.SettingsUI.HotKey.Registering);
+						if (shortcutStatus.hotkeyError != 0)
+							globalStatus += " (" + to_string(shortcutStatus.hotkeyError) + ")";
+						string hookStatus = !shortcutStatus.hookInstalled ? IA(I18nKey.SettingsUI.HotKey.HookFailed)
+							: shortcutStatus.synchronizationPending ? IA(I18nKey.SettingsUI.HotKey.SynchronizationPending)
+							: IA(I18nKey.SettingsUI.HotKey.HookReady);
+						if (shortcutStatus.hookError != 0) hookStatus += " (" + to_string(shortcutStatus.hookError) + ")";
+						draft.shortcutGlobalStatus = std::move(globalStatus);
+						draft.shortcutHookStatus = std::move(hookStatus);
+						draft.shortcutStatusWarning = shortcutStatus.hotkeyError || shortcutStatus.hookError;
+					}
 					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft, destination.section);
 					// 页面只返回一次交互结果，所有副作用继续留在既有 FIFO/配置接线域。
 					if (destination.section == Design::GeneralSection::Basic)
@@ -3043,13 +3079,6 @@ SettingSessionCoroutine RunSettingSession()
 							settingPlugInTab = settingPlugInTabEnum::tabPlug3;
 							settingTab = settingTabEnum::tab4;
 						}
-						if (events.startupPreviewChanged
-							&& Experimental.Inkeys3.StartupPreviewPreferenceState.SetConfigured(draft.startupPreview))
-						{
-							Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable = draft.startupPreview;
-							if (Experimental.Inkeys3.StartupPreviewPreferenceState.ConsumeWritePending())
-								QueueConfigWrite();
-						}
 					}
 					if (events.startupPlacementChanged)
 					{
@@ -3058,6 +3087,13 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					if (destination.section == Design::GeneralSection::Appearance)
 					{
+						if (events.startupPreviewChanged
+							&& Experimental.Inkeys3.StartupPreviewPreferenceState.SetConfigured(draft.startupPreview))
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable = draft.startupPreview;
+							if (Experimental.Inkeys3.StartupPreviewPreferenceState.ConsumeWritePending())
+								QueueConfigWrite();
+						}
 						if (events.taskbarScaleBaseChanged)
 						{
 							Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = draft.taskbarScaleBase;
@@ -3113,35 +3149,6 @@ SettingSessionCoroutine RunSettingSession()
 						}
 						SettingGlobalScale = draft.settingZoom;
 						if (!events.settingZoomActive) commitSettingScale();
-
-						const vector<string> layoutTitles{
-							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
-							IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N) };
-						const vector<vector<string>> layoutOptions{
-							{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
-							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
-							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
-							IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
-							{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
-							IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) } };
-						IdtAtomic<int>* layoutPreferences[]{ &Inkeys::config.UI.Bar.IconOrder,
-							&Inkeys::config.UI.Bar.ExpandDirectionAdjustment };
-						const char* layoutIds[]{ "主栏图标顺序", "主栏展开方向调整" };
-						for (int item = 0; item < 2; ++item)
-						{
-							auto& preference = *layoutPreferences[item];
-							const int stored = preference.load();
-							int value = stored >= 0 && stored < static_cast<int>(layoutOptions[item].size())
-								? stored : (item == 0 ? 0 : 1);
-							if (Design::ComboRow(layoutIds[item], layoutTitles[item].c_str(), nullptr,
-								"\ue8a4", value, layoutOptions[item]))
-							{
-								// 仅唤醒布局，设置渲染线程不等待窗口或绘制 owner。
-								preference = value;
-								barUISet.UpdateRendering(false);
-								QueueConfigWrite();
-							}
-						}
 					}
 					if (destination.section == Design::GeneralSection::Interaction)
 					{
@@ -3165,87 +3172,36 @@ SettingSessionCoroutine RunSettingSession()
 							WriteSetting();
 							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 						}
-
-						const vector<string> modeNames{
-							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Combined),
-							IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Separate) };
-						const string modeDescription = modeNames[0] + ": "
-							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n"
-							+ modeNames[1] + ": " + IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n"
-							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThrough) + ": "
-							+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThroughDescription);
-						int selectMode = GetSelectAndClickThroughMode();
-						if (Design::ComboRow("##选择与穿透", IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str(),
-							modeDescription.c_str(), "\ue8b0", selectMode, modeNames)
-							&& SetSelectAndClickThroughMode(selectMode))
+					}
+					if (events.selectModeChanged && SetSelectAndClickThroughMode(draft.selectMode))
+						QueueConfigWrite();
+					if (events.iconOrderChanged || events.expansionDirectionChanged)
+					{
+						if (events.iconOrderChanged) Inkeys::config.UI.Bar.IconOrder = draft.iconOrder;
+						if (events.expansionDirectionChanged) Inkeys::config.UI.Bar.ExpandDirectionAdjustment = draft.expansionDirection;
+						barUISet.UpdateRendering(false);
+						QueueConfigWrite();
+					}
+					for (int item = 0; item < 4; ++item)
+						if (events.autoCollapseChanged[item])
+						{
+							*collapsePreferences[item] = draft.autoCollapse[item];
 							QueueConfigWrite();
-
-						Design::SectionHeader(IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str());
-						const string collapseTitles[]{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Drawing),
-							IA(I18nKey.SettingsUI.Regular.AutoCollapse.Erasing), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Dragging),
-							IA(I18nKey.SettingsUI.Regular.AutoCollapse.OutsideClick) };
-						const vector<string> collapseOptions{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Off),
-							IA(I18nKey.SettingsUI.Regular.AutoCollapse.NonBottom), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Always) };
-						auto& policies = Inkeys::config.UI.Bar.AutoCollapse;
-						IdtAtomic<int>* collapsePreferences[]{ &policies.Drawing, &policies.Erasing, &policies.Dragging, &policies.OutsideClick };
-						const char* collapseIds[]{ "绘制自动收起", "擦除自动收起", "拖动自动收起", "栏外点击自动收起" };
-						for (int item = 0; item < 4; ++item)
-						{
-							auto& preference = *collapsePreferences[item];
-							const int stored = preference.load();
-							int value = stored >= 0 && stored <= 2 ? stored : (item == 0 ? 1 : 0);
-							if (Design::ComboRow(collapseIds[item], collapseTitles[item].c_str(),
-								item == 0 ? IA(I18nKey.SettingsUI.Regular.AutoCollapse.Description).c_str() : nullptr,
-								"\ue70d", value, collapseOptions))
-							{
-								preference = value;
-								QueueConfigWrite();
-							}
 						}
-
-						Design::SectionHeader(IA(I18nKey.SettingsUI.HotKey.N).c_str());
-						Design::Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(), IA(I18nKey.SettingsUI.HotKey.E).c_str());
-						auto& shortcuts = Inkeys::config.Input.Shortcuts;
-						IdtAtomic<bool>* values[]{ &shortcuts.ToggleAnnotation, &shortcuts.Undo, &shortcuts.RedoY,
-							&shortcuts.RedoShiftZ, &shortcuts.Clear, &shortcuts.Freeze };
-						const char* combinations[]{ "Ctrl + Alt + X", "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z", "Ctrl + Delete", "Ctrl + Q" };
-						const string names[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationN), IA(I18nKey.SettingsUI.HotKey.UndoN),
-							IA(I18nKey.SettingsUI.HotKey.RedoYN), IA(I18nKey.SettingsUI.HotKey.RedoShiftZN),
-							IA(I18nKey.SettingsUI.HotKey.ClearN), IA(I18nKey.SettingsUI.HotKey.FreezeN) };
-						const string descriptions[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationE), IA(I18nKey.SettingsUI.HotKey.UndoE),
-							IA(I18nKey.SettingsUI.HotKey.RedoYE), IA(I18nKey.SettingsUI.HotKey.RedoShiftZE),
-							IA(I18nKey.SettingsUI.HotKey.ClearE), IA(I18nKey.SettingsUI.HotKey.FreezeE) };
-						const auto shortcutStatus = Inkeys::Input::KeyboardShortcuts::GetStatus();
-						string globalStatus = !shortcutStatus.running ? IA(I18nKey.SettingsUI.HotKey.NotRunning)
-							: !shortcuts.ToggleAnnotation.load() ? (shortcutStatus.hotkeyRegistered
-								? (shortcutStatus.hotkeyError ? IA(I18nKey.SettingsUI.HotKey.UnregisterFailed) : IA(I18nKey.SettingsUI.HotKey.Disabling))
-								: IA(I18nKey.SettingsUI.HotKey.Disabled))
-							: shortcutStatus.hotkeyRegistered ? IA(I18nKey.SettingsUI.HotKey.Registered)
-							: shortcutStatus.hotkeyError ? IA(I18nKey.SettingsUI.HotKey.RegisterFailed) : IA(I18nKey.SettingsUI.HotKey.Registering);
-						if (shortcutStatus.hotkeyError != 0)
-							globalStatus += " (" + to_string(shortcutStatus.hotkeyError) + ")";
-						string hookStatus = !shortcutStatus.hookInstalled ? IA(I18nKey.SettingsUI.HotKey.HookFailed)
-							: shortcutStatus.synchronizationPending ? IA(I18nKey.SettingsUI.HotKey.SynchronizationPending)
-							: IA(I18nKey.SettingsUI.HotKey.HookReady);
-						if (shortcutStatus.hookError != 0) hookStatus += " (" + to_string(shortcutStatus.hookError) + ")";
-						Design::Notice("##hotkey-status", globalStatus.c_str(), hookStatus.c_str(),
-							shortcutStatus.hotkeyError || shortcutStatus.hookError ? ImFluentInfoSeverity_Warning : ImFluentInfoSeverity_Informational);
-						for (int item = 0; item < 6; ++item)
+					bool shortcutsChanged = false;
+					for (int item = 0; item < 6; ++item)
+						if (events.shortcutsChanged[item])
 						{
-							ImGui::PushID(item);
-							const string title = names[item] + "  (" + combinations[item] + ")";
-							bool enabled = values[item]->load();
-							if (Design::ToggleRow("##启用固定快捷键", title.c_str(), descriptions[item].c_str(), "\ue765", enabled))
-							{
-								*values[item] = enabled;
-								uint32_t mask = 0;
-								for (int i = 0; i < 6; ++i) if (values[i]->load()) mask |= 1U << i;
-								// 注册和卸载由键盘线程完成，设置只异步发布新掩码。
-								Inkeys::Input::KeyboardShortcuts::SetEnabled(mask);
-								QueueConfigWrite();
-							}
-							ImGui::PopID();
+							*shortcutPreferences[item] = draft.shortcuts[item];
+							shortcutsChanged = true;
 						}
+					if (shortcutsChanged)
+					{
+						uint32_t mask = 0;
+						for (int item = 0; item < 6; ++item) if (shortcutPreferences[item]->load()) mask |= 1U << item;
+						// 注册和卸载继续由键盘线程异步完成。
+						Inkeys::Input::KeyboardShortcuts::SetEnabled(mask);
+						QueueConfigWrite();
 					}
 					break;
 				}

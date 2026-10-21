@@ -142,8 +142,9 @@ namespace Inkeys::UI::Setting::Design
 		};
 		const std::array childKeys{ I18nKey.SettingsUI.Design.GeneralBasic,
 			I18nKey.SettingsUI.Design.GeneralAppearance, I18nKey.SettingsUI.Design.GeneralInteraction,
-			I18nKey.SettingsUI.Design.GeneralStorage };
-		const std::array childGlyphs{ "\ue713", "\ue790", "\ue72e", "\ue81e" };
+			I18nKey.SettingsUI.Design.GeneralStorage, I18nKey.SettingsUI.HotKey.N };
+		const std::array childGlyphs{ "\ue713", "\ue790", "\ue72e", "\ue81e", "\ue765" };
+		static_assert(childKeys.size() == GeneralSectionCount && childGlyphs.size() == GeneralSectionCount);
 		static_assert(middleEntries.size() == NavigationMiddleItemCount);
 		auto navigate = [&](NavigationDestination destination, bool dismissOverlay = true) {
 			destination = NormalizeDestination(destination);
@@ -329,7 +330,7 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::SetCursorScreenPos({ origin.x, origin.y + Pixels(NavigationRowHeight + RowGap) });
 				if (childReveal > 0.001F && expanded)
 				{
-					const float fullHeight = NavigationRowHeight * 4.0F + RowGap * 3.0F;
+					const float fullHeight = NavigationRowHeight * GeneralSectionCount + RowGap * (GeneralSectionCount - 1);
 					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
 					if (ImGui::BeginChild("##settings-general-children", { 0.0F, Pixels(fullHeight * childReveal) },
 						ImGuiChildFlags_NavFlattened, fixedFlags))
@@ -563,7 +564,7 @@ namespace Inkeys::UI::Setting::Design
 		case NavigationActionKind::Navigate:
 			if (action.destination.page == PageId::General && action.destination.section == GeneralSection::Storage)
 				return static_cast<int>(PageId::Configuration);
-			if (action.destination.page == PageId::General && action.destination.section == GeneralSection::Interaction)
+			if (action.destination.page == PageId::General && action.destination.section == GeneralSection::Shortcuts)
 				return static_cast<int>(PageId::HotKeys);
 			return static_cast<int>(action.destination.page);
 		case NavigationActionKind::Community: return -2;

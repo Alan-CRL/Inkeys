@@ -534,14 +534,53 @@ namespace Inkeys::UI::Setting::Design
 		if (section == GeneralSection::Storage) return events;
 		const char* title = section == GeneralSection::Appearance ? I18nKey.SettingsUI.Design.GeneralAppearance
 			: section == GeneralSection::Interaction ? I18nKey.SettingsUI.Design.GeneralInteraction
+			: section == GeneralSection::Shortcuts ? I18nKey.SettingsUI.HotKey.N
 			: I18nKey.SettingsUI.Design.GeneralBasic;
 		PageHeader(IA(title).c_str());
 		// 仅渲染当前子页；未显示字段继续使用同一草稿，不触发写回或重置。
 		if (section == GeneralSection::Basic)
 		{
+			SectionHeader(IA(I18nKey.SettingsUI.Design.OperationModeSection).c_str());
+			// 操作模式说明独立成蓝色信息卡；选择行保留完整操作空间。
+			const std::vector<std::string> modeNames{
+				IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Combined),
+				IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Separate) };
+			const std::string modeDescription = modeNames[0] + ": "
+				+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n"
+				+ modeNames[1] + ": " + IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n"
+				+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThrough) + ": "
+				+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThroughDescription);
+			Notice("##operation-mode-notice", IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str(),
+				modeDescription.c_str());
+			events.selectModeChanged = ComboRow("##选择与穿透", IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str(),
+				nullptr, "\ue8b0", draft.selectMode, modeNames);
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.IconArrangementSection).c_str());
+			const std::vector<std::string> layoutTitles{
+				IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
+				IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N) };
+			const std::vector<std::vector<std::string>> layoutOptions{
+				{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
+				IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
+				IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
+				IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
+				{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
+				IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) } };
+			events.iconOrderChanged = ComboRow("主栏图标顺序", layoutTitles[0].c_str(), nullptr,
+				"\ue8a4", draft.iconOrder, layoutOptions[0]);
+			events.expansionDirectionChanged = ComboRow("主栏展开方向调整", layoutTitles[1].c_str(), nullptr,
+				"\ue8a4", draft.expansionDirection, layoutOptions[1]);
+
 			SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
 			events.startupChanged = ToggleRow("startup", IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
+			// 启动位置只保存下次启动的偏好，保持当前运行中的主栏位置。
+			events.startupPlacementChanged = ComboRow("##启动后位置",
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.N).c_str(),
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.E).c_str(), "\ue707", draft.startupPlacement,
+				{ IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) });
 			const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
 			const std::string create = IA(I18nKey.Operate.Create);
 			const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
@@ -549,21 +588,10 @@ namespace Inkeys::UI::Setting::Design
 				{ { "create", create }, { "more", more } });
 			events.createShortcut = shortcutAction == 0;
 			events.shortcutOptions = shortcutAction == 1;
-			// 启动位置只保存下次启动的偏好，沿用通用/基本入口与自然高度卡片。
-			events.startupPlacementChanged = ComboRow("##启动后位置",
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.N).c_str(),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.E).c_str(), "\ue707", draft.startupPlacement,
-				{ IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) });
-			events.startupPreviewChanged = ToggleRow("startup-preview",
-				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
-				nullptr, "\ue768", draft.startupPreview);
-
 		}
 		if (section == GeneralSection::Appearance)
 		{
-			SectionHeader(IA(I18nKey.SettingsUI.Regular.Appearance.N).c_str());
+			SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
 			const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
 			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
@@ -576,12 +604,18 @@ namespace Inkeys::UI::Setting::Design
 					0.1F, 5.0F, events.animationRateActive, "%.1fx");
 				draft.animationRate = round(draft.animationRate * 10.0F) / 10.0F;
 			}
+			events.startupPreviewChanged = ToggleRow("startup-preview",
+				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
+				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview);
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.LightingSection).c_str());
 			events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLightingE).c_str(), "\ue706", draft.edgeLighting);
 			if (draft.edgeLighting)
 				events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
 					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
 					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
+			SectionHeader(IA(I18nKey.SettingsUI.Design.ScalingSection).c_str());
 			events.taskbarScaleBaseChanged = ComboRow("##以任务栏高度作为缩放基础量",
 				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E).c_str(), "\ue737", draft.taskbarScaleBase,
@@ -597,7 +631,21 @@ namespace Inkeys::UI::Setting::Design
 		}
 		if (section == GeneralSection::Interaction)
 		{
-			SectionHeader(IA(I18nKey.SettingsUI.Regular.Behavior.N).c_str());
+			SectionHeader(IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str());
+			const std::string collapseTitles[]{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Drawing),
+				IA(I18nKey.SettingsUI.Regular.AutoCollapse.Erasing), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Dragging),
+				IA(I18nKey.SettingsUI.Regular.AutoCollapse.OutsideClick) };
+			const std::vector<std::string> collapseOptions{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Off),
+				IA(I18nKey.SettingsUI.Regular.AutoCollapse.NonBottom), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Always) };
+			// 公共规则在分区顶部说明，四个策略行只负责各自的选择。
+			Notice("##auto-collapse-notice", IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.AutoCollapse.Description).c_str());
+			const char* collapseIds[]{ "绘制自动收起", "擦除自动收起", "拖动自动收起", "栏外点击自动收起" };
+			for (int item = 0; item < 4; ++item)
+				events.autoCollapseChanged[item] = ComboRow(collapseIds[item], collapseTitles[item].c_str(),
+					nullptr, "\ue70d", draft.autoCollapse[item], collapseOptions);
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.WindowBehaviorSection).c_str());
 			events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str(), "\ue922", draft.topInterval,
 				{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
@@ -607,12 +655,36 @@ namespace Inkeys::UI::Setting::Design
 			events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
 
-			SectionHeader(IA(I18nKey.SettingsUI.Regular.Tentative.N).c_str());
+			SectionHeader(IA(I18nKey.SettingsUI.Design.SafetyRecoverySection).c_str());
 			events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
 				{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
 				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) });
-
+		}
+		if (section == GeneralSection::Shortcuts)
+		{
+			Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(), IA(I18nKey.SettingsUI.HotKey.E).c_str());
+			if (!draft.shortcutGlobalStatus.empty() || !draft.shortcutHookStatus.empty())
+				Notice("##hotkey-status", draft.shortcutGlobalStatus.c_str(), draft.shortcutHookStatus.c_str(),
+					draft.shortcutStatusWarning ? ImFluentInfoSeverity_Warning : ImFluentInfoSeverity_Informational);
+			const char* combinations[]{ "Ctrl + Alt + X", "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z", "Ctrl + Delete", "Ctrl + Q" };
+			const std::string names[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationN), IA(I18nKey.SettingsUI.HotKey.UndoN),
+				IA(I18nKey.SettingsUI.HotKey.RedoYN), IA(I18nKey.SettingsUI.HotKey.RedoShiftZN),
+				IA(I18nKey.SettingsUI.HotKey.ClearN), IA(I18nKey.SettingsUI.HotKey.FreezeN) };
+			const std::string descriptions[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationE), IA(I18nKey.SettingsUI.HotKey.UndoE),
+				IA(I18nKey.SettingsUI.HotKey.RedoYE), IA(I18nKey.SettingsUI.HotKey.RedoShiftZE),
+				IA(I18nKey.SettingsUI.HotKey.ClearE), IA(I18nKey.SettingsUI.HotKey.FreezeE) };
+			for (int item = 0; item < 6; ++item)
+			{
+				if (item == 0) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutGlobalSection).c_str());
+				else if (item == 1) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutEditingSection).c_str());
+				else if (item == 5) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutAuxiliarySection).c_str());
+				ImGui::PushID(item);
+				const std::string shortcutTitle = names[item] + "  (" + combinations[item] + ")";
+				events.shortcutsChanged[item] = ToggleRow("##启用固定快捷键", shortcutTitle.c_str(), descriptions[item].c_str(),
+					"\ue765", draft.shortcuts[item]);
+				ImGui::PopID();
+			}
 		}
 		return events;
 	}

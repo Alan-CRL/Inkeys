@@ -226,6 +226,16 @@ inline constexpr struct I18nKeyRoot
             const char* GeneralAppearance = "SettingsUI/Design/GeneralAppearance";
             const char* GeneralInteraction = "SettingsUI/Design/GeneralInteraction";
             const char* GeneralStorage = "SettingsUI/Design/GeneralStorage";
+            const char* OperationModeSection = "SettingsUI/Design/OperationModeSection";
+            const char* IconArrangementSection = "SettingsUI/Design/IconArrangementSection";
+            const char* AnimationSection = "SettingsUI/Design/AnimationSection";
+            const char* LightingSection = "SettingsUI/Design/LightingSection";
+            const char* ScalingSection = "SettingsUI/Design/ScalingSection";
+            const char* WindowBehaviorSection = "SettingsUI/Design/WindowBehaviorSection";
+            const char* SafetyRecoverySection = "SettingsUI/Design/SafetyRecoverySection";
+            const char* ShortcutGlobalSection = "SettingsUI/Design/ShortcutGlobalSection";
+            const char* ShortcutEditingSection = "SettingsUI/Design/ShortcutEditingSection";
+            const char* ShortcutAuxiliarySection = "SettingsUI/Design/ShortcutAuxiliarySection";
             const char* GeneralSubtitle = "SettingsUI/Design/GeneralSubtitle";
             const char* EdgeLighting = "SettingsUI/Design/EdgeLighting";
             const char* EdgeLightingDescription = "SettingsUI/Design/EdgeLightingDescription";
@@ -414,6 +424,7 @@ inline constexpr struct I18nKeyRoot
                 const char* AutoStart = "SettingsUI/Regular/StartUp/AutoStart";
                 const char* AutoStartE = "SettingsUI/Regular/StartUp/AutoStartE";
                 const char* LoadingAnimation = "SettingsUI/Regular/StartUp/LoadingAnimation";
+                const char* LoadingAnimationE = "SettingsUI/Regular/StartUp/LoadingAnimationE";
                 struct Node__SettingsUI__Regular__StartUp__Link
                 {
                     const char* N = "SettingsUI/Regular/StartUp/Link/N";

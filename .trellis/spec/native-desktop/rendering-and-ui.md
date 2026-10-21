@@ -2023,7 +2023,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 
 #### 3. Contracts
 
-- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定；汉堡默认透明无边框，局部将Fluent Button hover/held填充映射为当前palette的subtleHover/subtlePressed，保留真实按钮颜色动画、ID、键盘焦点与开合逻辑，不改全局普通按钮色。中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/交互与安全/存储与配置，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭固定。三处1 DIP细线替代分组标题；Debug使用标题栏Bug图标入口，侧栏不再绘制或预留调试行。ResolveNavigationPaneGeometry先测固定行/分割带，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
+- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定；汉堡默认透明无边框，局部将Fluent Button hover/held填充映射为当前palette的subtleHover/subtlePressed，保留真实按钮颜色动画、ID、键盘焦点与开合逻辑，不改全局普通按钮色。中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/行为与安全/存储与配置/快捷键五个子页；展开树与紧凑浮层的数量、完整高度、命中和滚动均取同一 GeneralSectionCount，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭固定。三处1 DIP细线替代分组标题；Debug使用标题栏Bug图标入口，侧栏不再绘制或预留调试行。ResolveNavigationPaneGeometry先测固定行/分割带，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
 - RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。设置卡片默认标题＋完整多行说明，action 按实际宽度靠右。按当前内容宽度及 action 自然宽度动态判断文字预算：说明区不足280 DIP时采用标题/action在上、说明下方通栏，返回行内保留16 DIP余量；标题区不足160 DIP时沿用极窄控件换行。以上是项目预算，不是WinUI官方断点，不以控件数量/固定单行判断代替测量，不缩小字号、截断或默认折叠完整说明。长文行高由实际字体测量而来；测量不运行 action，一帧只在实际控件绘制时产生事件。
 - 多行说明布局的补间使用当前ImGui窗口与稳定行ID的StateStorage，随context释放；复用NavigationTween、160ms/已有动画速率和设置帧时钟。先使说明下移避开操作，再扩宽；反向先收窄再上移。首次出现按当前预算直接到位，缺席/隐藏后首帧不累计休眠时间，关闭动画即时到位。卡片及下一行的真实ItemSize包含当前换行包络；说明行数随真实宽度离散变化，不靠裁切换取高度平滑，不绘制两套可交互控件或增加配置/线程。置顶间隔完整说明常驻同一卡片，不另设“详细说明”展开块。
 - 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
@@ -2041,7 +2041,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 - 导航/子列表/浮层/正文/选中条由设置渲染线程推进；动画进度按dt/duration累计，速率中途变化不得回跳，反向从当前可见值开始。同一选中锚点的滚动/布局位移必须同步平移标记坐标与正在运行的补间，不重置进度；真正选中锚点切换才重定向过渡。Debug选中时不绘制侧栏蓝条，并清除旧item/window锚点、停止X/Y补间；返回普通页的首个锚点直接Reset归位，之后普通页之间继续既有切项动画。标题栏点击Debug复用导航流程并关闭overlay/flyout，重复点击不重启切页；Debug页后续可重新展开导航，不能在每帧同步目的地时强制关闭浮层。选中条保持3×16 DIP，用上下半宽圆弧形成完整圆头；ImGui PathRect会将窄条圆角钳制到半宽减1px，不能只设置半宽radius；圆角几何和浅深主题赞助图标/文字颜色用实际DrawData验证。隐藏/跳过绘制后的首帧时钟重基准，低帧率仍按限幅dt推进。子列表动画按实际裁剪与几何命中，正文只运行一套控件并对实际顶点alpha淡入，不混改RGB。
 - 通用各子页仅处理可见控件事件，隐藏字段不从缓存写回。路由切换完成已有滑块待提交值，沿用实时预览/松手保存/FIFO。各子页和插件详情分别用稳定ID保留滚动。
 - GeneralDraft 是 UI 副本，事件由 Setting.cpp 原 coroutine/FIFO 宏域处理。主栏倍率实时通知并松手保存；设置倍率松手才重建字体；置顶/安全模式仍保存原索引并发原运行时通知。页文件不得直接照抄被宏重定向的 ShellExecuteW/WriteSetting/RestartProgram 名称。
-- dev 新设置沿用 Fluent 页面分组：启动位置进入通用/基本，仅影响下次启动；任务栏缩放基准与主栏排列进入外观与动画，主栏倍率使用 `Zoom2`；选择/穿透、自动收起策略和六个固定快捷键进入交互与安全。绘制页包含交互模式、断触接续、独立绘制/按钮触觉和鼠标/笔光标；设备兼容开关在实验页保存下次启动偏好。所有行复用 `Setting.Controls` 的自然测量和完整三语说明，运行时通知及冻结配置继续在 `Setting.cpp` 的 FIFO 宏域处理。
+- 通用/基本按操作模式、图标排列、启动排序；选择/穿透的完整说明使用现有浅深主题蓝色信息卡，选项行独立；图标顺序和展开方向同属图标排列。外观与动画按动画、光源、缩放分区，启动加载动画保持独立并仅影响下次启动，不随一般动画开关隐藏；主栏倍率使用 `Zoom2`。行为与安全按自动收起、窗口行为、安全与恢复排序，自动收起公共规则置于分区顶部。快捷键为第五个独立子页，按全局操作、批注编辑、辅助操作分组；旧 PageId::HotKeys 必须重定向到 GeneralSection::Shortcuts。GeneralDraft/GeneralEvents 统一传递页面数据与一次交互事件，业务通知及冻结写盘仍留在 `Setting.cpp` 的 FIFO 宏域。绘制页和实验页的设置归属不变。
 - Home 所有入口连接真实路由/原外链；非简中 Community 的主页 GitHub discussions 与 footer en.inkeys.top/community.html 差异保留。教程展开使用既有图像纹理；不虚构教程 URL。
 
 #### 4. Validation & Error Matrix
