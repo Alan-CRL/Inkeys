@@ -470,6 +470,34 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 		}
 	};
 
+	bool TryAddMissingViewAdjustButton(Json::Value& root)
+	{
+		if (!root.isObject() || !root.isMember("UI") || !root["UI"].isObject()) return false;
+		Json::Value& uiNode = root["UI"];
+		if (!uiNode.isMember("Bar") || !uiNode["Bar"].isObject()) return false;
+		Json::Value& barNode = uiNode["Bar"];
+		if (!barNode.isMember("ExtensionButtons")) return false;
+		Json::Value& entries = barNode["ExtensionButtons"];
+		Inkeys::ConfigSequence<Inkeys::BarExtensionButtonLayoutEntry> parsedEntries;
+		if (!JsonValueCodec<decltype(parsedEntries)>::TryRead(entries, parsedEntries)) return false;
+
+		Json::ArrayIndex settingIndex = entries.size();
+		for (Json::ArrayIndex index = 0; index < entries.size(); ++index)
+		{
+			const std::string id = entries[index]["Id"].asString();
+			if (id == Inkeys::BarButtonId::ViewAdjust) return false;
+			if (id == Inkeys::BarButtonId::Setting && settingIndex == entries.size())
+				settingIndex = index;
+		}
+
+		// 只插入缺少的新官方项，不经过 codec 重写旧项的尺寸、显隐或插件字段。
+		Json::Value entry(Json::objectValue);
+		entry["Id"] = Inkeys::BarButtonId::ViewAdjust;
+		entry["Size"] = BarButtonSizeKindToText(Inkeys::DefaultSizeForBarButtonId(Inkeys::BarButtonId::ViewAdjust));
+		entry["Visible"] = true;
+		return entries.insert(settingIndex, std::move(entry));
+	}
+
 	template <typename ValueT>
 	void AssignConfigValue(ValueT& target, const ValueT& source)
 	{
@@ -908,9 +936,11 @@ namespace Inkeys
 			return false;
 		}
 
-		// 先迁移旧单数组，再套用文档，避免新区默认值挡住拆分结果。
-		// 直接写回完整迁移文档；不能依赖 Bar 后续恰好再次规范化 A1/A2。
-		if (TryMigrateLegacyBarButtonLayout(parsedRoot))
+		// 先拆旧数组，再只补新官方项；保留 B 其它顺序、显隐和插件字段。
+		const bool legacyLayoutMigrated = TryMigrateLegacyBarButtonLayout(parsedRoot);
+		const bool viewAdjustAdded = TryAddMissingViewAdjustButton(parsedRoot);
+		// 直接写原迁移文档，不能等 configOnce 比较或 Bar 再规范化才落盘。
+		if (legacyLayoutMigrated || viewAdjustAdded)
 			(void)WriteDocumentToFile(GetFilePath(), parsedRoot);
 		ApplyDocument(parsedRoot, paths);
 		loadedDocument = parsedRoot;

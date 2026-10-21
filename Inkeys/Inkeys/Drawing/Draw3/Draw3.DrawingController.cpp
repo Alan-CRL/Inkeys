@@ -9041,6 +9041,19 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t whiteboardGeneration = 1;
 		DrawingDocumentSlot isolatedPresentationSlot;
 		std::optional<DesktopClearRecovery> desktopClearRecovery;
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		const auto reportDesktopRecovery = [&](HiddenDesktopRecoveryEvent event) noexcept
+		{
+			if (!observer_.hiddenDesktopRecovery || !desktopClearRecovery || !document_) return;
+			HiddenDesktopRecoveryReceipt receipt;
+			receipt.event = event;
+			if (desktopClearRecovery->fileGuid) receipt.file = desktopClearRecovery->fileGuid->Bytes();
+			receipt.workspace = document_->WorkspaceGuid().Bytes();
+			receipt.page = desktopClearRecovery->pageGuid.Bytes();
+			receipt.cpuFallbackReleased = !desktopClearRecovery->canvas;
+			observer_.hiddenDesktopRecovery(observer_.context, receipt);
+		};
+#endif
 		PresentationParkedSlots presentationSlots;
 		std::uint64_t nextPresentationSlotGeneration = 1;
 		std::optional<Bridge::PresentationKey> activePresentationKey;
@@ -12457,6 +12470,7 @@ namespace Inkeys::Drawing::Draw3
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
 			int width, int height)
 		{
+			if (observer_.follow && observer_.follow->Blocked()) observer_.follow->Fail();
 			// 逻辑换页/工作区/恢复/Clear 立即退休旧起笔，不等待 Present 或物理接触归零。
 			if (++acceptedStrokeSceneGeneration == 0) ++acceptedStrokeSceneGeneration;
 			if (observer_.acceptedStrokeSceneChanged)
@@ -13688,6 +13702,53 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		};
 
+
+		bool followEndPending = false;
+		std::uint64_t followOwnerSession = 0;
+		std::uint64_t followDeviceGeneration = 1;
+		auto followIdentity = [&]()
+		{
+			Follow::Identity result;
+			const auto size = window_.Size();
+			result.host = shortcutContext.scope.hostGeneration;
+			result.scene = acceptedStrokeSceneGeneration; result.device = followDeviceGeneration;
+			result.width = size.width; result.height = size.height;
+			result.geometry = (static_cast<std::uint64_t>(size.width) << 32) | static_cast<std::uint32_t>(size.height);
+			if (document_)
+			{
+				result.workspace = document_->WorkspaceGuid().Bytes();
+				if (const auto* page = document_->PageAt(currentPageIndex_)) result.page = page->PageGuid().Bytes();
+			}
+			return result;
+		};
+		auto applyFollowTarget = [&](bool ending, bool& forceFullPresent)
+		{
+			if (!observer_.follow) return;
+			const auto pending = observer_.follow->Pending(ending);
+			if (!pending) return;
+			const auto current = followIdentity();
+			if (activeWorkspace != Bridge::Workspace::Desktop || current != pending->identity)
+			{ observer_.follow->Fail(pending->session); return; }
+			auto* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+			auto* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (!canvas) { observer_.follow->Fail(); return; }
+			const auto state = observer_.follow->Read();
+			const double requestedX = state.baseX - pending->x, requestedY = state.baseY - pending->y;
+			const double targetX = std::clamp(requestedX, -double(kCanvasViewportLimitDip), double(kCanvasViewportLimitDip));
+			const double targetY = std::clamp(requestedY, -double(kCanvasViewportLimitDip), double(kCanvasViewportLimitDip));
+			CanvasViewportState next{canvas->Viewport().x, canvas->Viewport().y};
+			// Draw3 本来就是 client/canvas px；不要再套 96/DPI。
+			const auto applied = ApplyCanvasContentTranslationChecked(next,
+				{ static_cast<float>(next.x - targetX), static_cast<float>(next.y - targetY) });
+			if (!canvas->SetViewport({next.x, next.y, 1.0f})) { observer_.follow->Fail(); return; }
+			observer_.follow->Applied(pending->session, pending->sequence, next.x, next.y, applied.xClamped || applied.yClamped || requestedX != targetX || requestedY != targetY);
+			if (applied.viewportDelta.x == 0 && applied.viewportDelta.y == 0) return;
+			if (metricsState_) metricsState_->InvalidateRaster();
+			markPresentationMutation();
+			historyGpuCache.DiscardHotPreimages();
+			viewportRefreshPending = true; viewportRefreshClearsTransient = true; forceFullPresent = true;
+		};
+
 		auto processCanvasCommands = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot,
 			bool& forceFullPresent, int width, int height)
@@ -13698,9 +13759,45 @@ namespace Inkeys::Drawing::Draw3
 				observer_.commandProcessed(observer_.context, type, currentPageIndex_,
 					document_ ? document_->Pages().size() : 0);
 			};
+			if (followEndPending)
+			{
+				// Failed旧会话可能已被新Begin替代；旧屏障不能改写或堵住新会话。
+				if (observer_.follow->Read().session == followOwnerSession)
+				{
+					applyFollowTarget(true, forceFullPresent);
+					if (!observer_.follow->BarrierReady()) return;
+				}
+				followEndPending = false;
+				input_.PublishControlWake();
+			}
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
+				if (command.type == CanvasCommandType::FollowBegin)
+				{
+					refreshShortcutContext();
+					auto* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+					auto* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+					if (!observer_.follow || !canvas || activeWorkspace != Bridge::Workspace::Desktop ||
+						!observer_.follow->OwnerBegin(command.followSession, followIdentity(), canvas->Viewport().x, canvas->Viewport().y))
+						{ if (observer_.follow) observer_.follow->Fail(command.followSession); }
+					followOwnerSession = command.followSession;
+					continue;
+				}
+				if (command.type == CanvasCommandType::FollowEnd)
+				{
+					if (observer_.follow && observer_.follow->Read().session == command.followSession)
+					{
+						followOwnerSession = command.followSession;
+						observer_.follow->OwnerEnd(command.followSession); followEndPending = true;
+						applyFollowTarget(true, forceFullPresent);
+						forceFullPresent = true;
+						// commandProcessed 不是完成，跨帧保留后继命令。
+						if (!observer_.follow->BarrierReady()) break;
+						followEndPending = false;
+					}
+					continue;
+				}
 				if (command.type == CanvasCommandType::WhiteboardPersistenceCompleted)
 				{
 					consumeWhiteboardCompletions();
@@ -13748,6 +13845,9 @@ namespace Inkeys::Drawing::Draw3
 							desktopClearRecovery->diskReady = true;
 							// durable 后立即释放 Clear 前的 CPU 墨迹快照。
 							desktopClearRecovery->canvas.reset();
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+							reportDesktopRecovery(HiddenDesktopRecoveryEvent::CommittedConsumed);
+#endif
 						}
 						else desktopClearRecovery->diskSaveRequested = false;
 						continue;
@@ -13768,6 +13868,9 @@ namespace Inkeys::Drawing::Draw3
 							completion.loadedSnapshot->canvases.front(), particleSnapshot,
 							frameDirty, forceFullPresent, width, height))
 					{
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+						reportDesktopRecovery(HiddenDesktopRecoveryEvent::LoadedInstalled);
+#endif
 						desktopClearRecovery.reset();
 						publishCurrentPageContent();
 					}
@@ -14312,7 +14415,13 @@ namespace Inkeys::Drawing::Draw3
 							{
 								restoredBoundary = restoreCurrentPageFromSnapshot(*desktopClearRecovery->canvas,
 									particleSnapshot, frameDirty, forceFullPresent, width, height);
-								if (restoredBoundary) desktopClearRecovery.reset();
+								if (restoredBoundary)
+								{
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+									reportDesktopRecovery(HiddenDesktopRecoveryEvent::MemoryRestored);
+#endif
+									desktopClearRecovery.reset();
+								}
 							}
 							else if (desktopClearRecovery->diskReady &&
 								desktopClearRecovery->fileGuid &&
@@ -14322,7 +14431,12 @@ namespace Inkeys::Drawing::Draw3
 								desktopClearRecovery->loadPending =
 									observer_.desktopLoadRequested(observer_.context, *desktopClearRecovery->fileGuid);
 								if (desktopClearRecovery->loadPending)
+								{
 									desktopClearRecovery->loadHistoryRevision = runtime.history.Revision();
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+									reportDesktopRecovery(HiddenDesktopRecoveryEvent::LoadRequested);
+#endif
+								}
 							}
 						}
 						else if (atFloor && runtime.previousClearUndoAvailable &&
@@ -14683,6 +14797,13 @@ namespace Inkeys::Drawing::Draw3
 			RECT viewportRecoveryDirty = {};
 			if (graphicsRecoveryPending_)
 			{
+				if (observer_.follow && observer_.follow->Blocked())
+				{
+					if (observer_.followRetireRequested) observer_.followRetireRequested(observer_.context);
+					applyFollowTarget(true, forceFullPresent); // GPU退役前仍可提交同页最后可信CPU视口。
+					observer_.follow->Fail();
+				}
+				++followDeviceGeneration;
 				if (metricsState_)
 				{
 					metricsState_->Mark(RuntimeMetricsFrameReason::Recovery);
@@ -14816,6 +14937,10 @@ namespace Inkeys::Drawing::Draw3
 				}
 				window_.RequestFullPresent();
 			}
+			// End 阻挡后继 marker 时仍收敛状态输出，不消费或重排后继业务命令。
+			if (followEndPending && observer_.controlWake) observer_.controlWake(observer_.context, ControlWakeKind::General);
+			if (observer_.follow && observer_.follow->Read().endQueued &&
+				observer_.follow->Read().disposition != Follow::Disposition::Restore) applyFollowTarget(true, forceFullPresent);
 			if (ProcessPendingResize(false))
 			{
 				const WindowSize size = window_.Size();
@@ -14911,6 +15036,8 @@ namespace Inkeys::Drawing::Draw3
 				drainIngressBatch();
 			}
 			sealPresentationContacts();
+			if (active.empty()) applyFollowTarget(followEndPending, forceFullPresent);
+			if (followEndPending) forceFullPresent = true;
 			if (window_.ConsumeFullPresentRequest()) forceFullPresent = true;
 			LARGE_INTEGER navigationQpc = {};
 			QueryPerformanceCounter(&navigationQpc);
@@ -14979,11 +15106,13 @@ namespace Inkeys::Drawing::Draw3
 					viewportTileEwmaMilliseconds });
 				const uint64_t recoveryWakeGeneration = input_.CaptureWakeGeneration();
 				size_t recoveredTiles = 0;
-				while (viewportRecoveryPending && recoveredTiles < recoveryBudget.maximumTiles &&
+				const auto maximumRecoveryTiles = followEndPending && observer_.followTestRecoveryMaximumTiles
+					? (std::min)(recoveryBudget.maximumTiles, static_cast<size_t>(observer_.followTestRecoveryMaximumTiles)) : recoveryBudget.maximumTiles;
+				while (viewportRecoveryPending && recoveredTiles < maximumRecoveryTiles &&
 					viewportTilePlanIndex < viewportTilePlan.tiles.size())
 				{
-					if (input_.HasPendingWork() ||
-						input_.CaptureWakeGeneration() != recoveryWakeGeneration) break;
+					if (!followEndPending && (input_.HasPendingWork() ||
+						input_.CaptureWakeGeneration() != recoveryWakeGeneration)) break;
 					if (!document_ || currentPageIndex_ >= pageRuntimeStates.size()) break;
 					const InkPage* page = document_->PageAt(currentPageIndex_);
 					const InkCanvas* canvas = page
@@ -16448,6 +16577,7 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 			}
+			if (followEndPending && observer_.follow) observer_.follow->RecoveryFrame(followOwnerSession, viewportRecoveryPending || viewportRefreshPending);
 			if (rasterSubmissionFailed)
 			{
 				if (metricsState_)
@@ -16492,7 +16622,10 @@ namespace Inkeys::Drawing::Draw3
 				contentRevisionNeedsPresent = false;
 				// 文稿身份只能在目标 CPU 文档完成重放并成功提交一帧后成为 ready。
 				if (!viewportRecoveryPending && !viewportRefreshPending)
+				{
 					publishWorkspaceReadyAfterPresent();
+					if (followEndPending && forceFullPresent && observer_.follow) observer_.follow->Presented(followOwnerSession);
+				}
 				if (selectionMode &&
 					presentation_.RequestedOutputTarget() ==
 						TransparentOutputTarget::SelectionUlw)

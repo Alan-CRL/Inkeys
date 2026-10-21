@@ -199,6 +199,13 @@ int EraserPenResponsePreference(int entry);
 void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
 // 按当前模式和 Draw3 当前页内容统一同步 Drawpad 显隐、穿透和 Bar。
 void ReconcileDraw3Presentation();
+// 临时跟随投影有自己的版本，不改变真实工具意图。
+std::uint64_t RequestScrollFollowProjection(bool enabled) noexcept;
+std::uint64_t ScrollFollowProjectionEpoch() noexcept;
+bool ScrollFollowPresentationAcknowledged(std::uint64_t epoch, std::uint64_t publishedRevision = 0) noexcept;
+void ResetScrollFollowActionReceipt() noexcept;
+std::uint64_t ScrollFollowActionReceipt() noexcept;
+void RequestScrollFollowPresentationRefresh() noexcept;
 // PPT 事实只切换非白板工具；白板进退由 StateMonitoring 的工作区事务交接。
 void SyncPrimaryWorkspaceStateMode();
 

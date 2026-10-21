@@ -927,3 +927,37 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Next Steps
 
 - 本轮 Mag 准备已确认；下一轮按用户指示开始后续阶段，完整滚动批注和连续捕获服务仍未实现。
+
+
+## Session 119: 滚动批注初版：软件实现与隐藏验收完成，现场门槛待验
+<!-- trellis-session: v=2 fp=bf97035444c87068 -->
+
+**Date**: 2026-10-21
+**Task**: 滚动批注初版：软件实现与隐藏验收完成，现场门槛待验
+**Branch**: `feature/move`
+
+### Summary
+
+完成四阶段软件实施与独立检查；完整ARM64/x64、真实UInk文件及无窗口/全隐藏回归通过，按本轮限制停在正式Mag连续实屏和系统窗口交接验收之前。
+
+### Main Changes
+
+- 共用原Freeze Mag正式取帧、纯视觉接力、Business/Draw3结束屏障与主栏/资源/配置接线；不增加第二套Mag或改UInk格式。
+- 真实Shape/Pen四场景及有限磁盘安装receipt，原点/width/style逐值不变；规范/JSONL/总矩阵/用法和最终构建PE报告已更新。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 最终完整Debug ARM64与x64 solution均exit0；生成ILK/PDB故障仅按核实路径清理或留档后原配置重建。
+- [OK] 最终保存四场景8真UInk exit0；相关ARM64短回归、x64五项纯CLI、i18n426/426、编码/XML/diff、两架构PE通过；旧完整无窗口与失败接管依赖关联记录在check报告。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 仅剩必要正式Mag像素/排除/FPS、真实双窗穿透及浏览器/Word/PDF/笔触控/旧系统现场验收；本轮不可显示或操作桌面，父任务保留in_progress。

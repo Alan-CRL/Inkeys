@@ -102,6 +102,7 @@ inline constexpr struct I18nKeyRoot
                 const char* WhiteboardUnsavedLabel = "UI/Bar/MainButtons/WhiteboardUnsavedLabel";
                 const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
                 const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
+                const char* ViewAdjustLabel = "UI/Bar/MainButtons/ViewAdjustLabel";
                 const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
                 const char* MoreLabel = "UI/Bar/MainButtons/MoreLabel";
             } MainButtons{};

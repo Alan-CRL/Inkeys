@@ -47,6 +47,7 @@ export namespace Inkeys
 		inline constexpr char Freeze[] = "Inkeys.Bar.Freeze";
 		inline constexpr char EndShow[] = "Inkeys.Bar.EndShow";
 		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
+		inline constexpr char ViewAdjust[] = "Inkeys.Bar.ViewAdjust";
 	}
 
 // 与 BarButtonSizeEnum 对应的配置侧尺寸枚举，JSON 使用同名字符串。
@@ -221,6 +222,7 @@ inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
 		{
 			return {
 				{ BarButtonId::MoreBoundary, BarButtonSizeKind::TwoTwo, true },
+				{ BarButtonId::ViewAdjust, BarButtonSizeKind::TwoTwo, true },
 				{ BarButtonId::Setting, BarButtonSizeKind::TwoTwo, true },
 			};
 		}

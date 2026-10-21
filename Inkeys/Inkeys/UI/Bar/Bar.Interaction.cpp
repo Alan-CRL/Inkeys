@@ -7,6 +7,7 @@ module;
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../../Business/LegacyDrawState.hpp"
+#include "../../Business/ScrollFollow.h"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Drawing/Draw3/Draw3.Shortcut.h"
@@ -1361,6 +1362,43 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		std::chrono::duration<Rep, Period> delay) noexcept
 	{
 		return { InteractionClock::now() + delay };
+	}
+
+	namespace FollowBusiness = Inkeys::Business::ScrollFollow;
+	struct FollowActionGuard
+	{
+		FollowBusiness::ActionTicket ticket{};
+		~FollowActionGuard() { if (ticket.id) FollowBusiness::CancelAction(ticket); }
+		void Complete() { if (ticket.id) { FollowBusiness::CompleteAction(ticket, ScrollFollowActionReceipt()); ticket = {}; } }
+	};
+	InteractionTask<bool> AwaitFollowAction(FollowActionGuard& action)
+	{
+		const auto mode = StateModeTransitionRevision();
+		const auto foreground = GetForegroundWindow();
+		const auto prepared = FollowBusiness::PrepareAction(); action.ticket = prepared.ticket;
+		auto state = prepared.state;
+		while (state == FollowBusiness::ActionState::Pending)
+		{
+			co_await InteractionDelay(std::chrono::milliseconds(8));
+			if (offSignal || (mainInteractionAwaitContext && mainInteractionAwaitContext->cancelled) ||
+				StateModeTransitionRevision() != mode || GetForegroundWindow() != foreground || barKeyboardShortcuts.Poll(false)) co_return false;
+			state = FollowBusiness::PollAction(action.ticket);
+		}
+		if (state == FollowBusiness::ActionState::Ready) ResetScrollFollowActionReceipt();
+		co_return state == FollowBusiness::ActionState::Ready;
+	}
+	bool FollowActionRequired(BarButtonPresetEnum preset) noexcept
+	{
+		switch (preset)
+		{
+		case BarButtonPresetEnum::Select: case BarButtonPresetEnum::Draw:
+		case BarButtonPresetEnum::Geometry: case BarButtonPresetEnum::Eraser:
+		case BarButtonPresetEnum::Clean: case BarButtonPresetEnum::Recall:
+		case BarButtonPresetEnum::Redo: case BarButtonPresetEnum::Pierce:
+		case BarButtonPresetEnum::Freeze: case BarButtonPresetEnum::Whiteboard:
+		case BarButtonPresetEnum::EndShow: return true;
+		default: return false;
+		}
 	}
 
 	bool ResumeMainInteraction(MainInteractionAwaitContext& context, InteractionClock::time_point now)
@@ -5647,8 +5685,11 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										barState.moreExpanded = false;
 									if (button->clickFunc)
 									{
-										BarHaptics::AcceptedClickScope hapticClick(currentHapticMessage);
-										button->clickFunc();
+										FollowActionGuard action;
+										const auto clickSource = currentHapticMessage;
+										if (FollowActionRequired(button->preset.load()) && !(co_await AwaitFollowAction(action))) break;
+										BarHaptics::AcceptedClickScope hapticClick(clickSource);
+										button->clickFunc(); action.Complete();
 										if (BarHaptics::buttonActionAccepted) AcceptBarButtonFeedback();
 									}
 									break;
@@ -5841,6 +5882,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) co_return BarInteractionStageResult::Shutdown;
 										Inkeys::UI::Bar::Ui3FiniteMutationScope finiteMutation(
 											Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute, temp->preset == BarButtonPresetEnum::Draw);
+										FollowActionGuard action;
+										const auto clickSource = currentHapticMessage;
+										if (FollowActionRequired(temp->preset.load()) && !(co_await AwaitFollowAction(action))) break;
 										ClosePenTypeMenu();
 										// ClosePenTypeMenu确有写入，后续拒绝不能假称NoBusinessWrite。
 										finiteMutation.ObserveBusinessWrite();
@@ -5865,16 +5909,17 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										}
 										else if (temp->preset == BarButtonPresetEnum::Clean)
 										{
-											BarHaptics::AcceptedClickScope hapticClick(currentHapticMessage);
+											BarHaptics::AcceptedClickScope hapticClick(clickSource);
 											barButtonSet.ExecuteClearClick(doubleClickContinuation);
 											if (BarHaptics::buttonActionAccepted) AcceptBarButtonFeedback();
 										}
 										else if (temp->clickFunc)
 										{
-											BarHaptics::AcceptedClickScope hapticClick(currentHapticMessage);
+											BarHaptics::AcceptedClickScope hapticClick(clickSource);
 											temp->clickFunc();
 											if (BarHaptics::buttonActionAccepted) AcceptBarButtonFeedback();
 										}
+										action.Complete();
 										// 仅业务动作交还焦点；打开设置/颜色等编辑入口不抢走输入。
 										switch (temp->preset.load())
 										{
@@ -7737,10 +7782,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							if (IsBarPointerCancelMessage(msg)) break;
 							if (IsPresentedBarVisualHit(barUISet, obj, msg.x, msg.y) && !msg.lbutton)
 							{
+								FollowActionGuard action;
+								if (!(co_await AwaitFollowAction(action))) break;
 								clickCompleted = true;
 								ClosePenTypeMenu();
 								CloseThicknessSlider(true);
-								ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+								ChangeStateModeToPenTool(PenToolSelectionEnum::Laser); action.Complete();
 								AcceptBarButtonFeedback();
 								UpdateRendering();
 								break;
@@ -7776,7 +7823,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 							if (!msg.lbutton)
 							{
-								SelectPenTool(PenToolSelectionEnum::HardPen);
+								FollowActionGuard action;
+								if (!(co_await AwaitFollowAction(action))) break;
+								SelectPenTool(PenToolSelectionEnum::HardPen); action.Complete();
 
 								break;
 								}
@@ -7811,7 +7860,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								if (!msg.lbutton)
 								{
-									SelectPenTool(PenToolSelectionEnum::SoftPen);
+									FollowActionGuard action;
+								if (!(co_await AwaitFollowAction(action))) break;
+								SelectPenTool(PenToolSelectionEnum::SoftPen); action.Complete();
 									break;
 								}
 							}
@@ -7845,7 +7896,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 							if (!msg.lbutton)
 							{
-								SelectPenTool(PenToolSelectionEnum::Highlighter);
+								FollowActionGuard action;
+								if (!(co_await AwaitFollowAction(action))) break;
+								SelectPenTool(PenToolSelectionEnum::Highlighter); action.Complete();
 
 								break;
 								}

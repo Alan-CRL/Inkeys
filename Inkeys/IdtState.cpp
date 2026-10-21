@@ -7,6 +7,7 @@
 #include "Inkeys/Business/LegacyDrawState.hpp"
 #include "Inkeys/Business/PenToolState.hpp"
 #include "Inkeys/Business/PptSession.h"
+#include "Inkeys/Business/ScrollFollow.h"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
@@ -39,6 +40,10 @@ namespace
 	using Inkeys::Drawing::Draw3::Bridge::Tool;
 	using Inkeys::Drawing::Draw3::Bridge::Workspace;
 	std::mutex draw3PresentationMutex;
+	std::atomic_uint64_t followProjection = 0, followAcknowledged = ~std::uint64_t{0};
+	std::atomic_uint64_t followAckBridge = 0, followAckMode = 0;
+	std::atomic_bool followProjectionDirty = false;
+	thread_local std::uint64_t followActionPublication = 0;
 	std::mutex stateModeTransitionMutex;
 	Workspace stateModeWorkspace = Workspace::Desktop;
 	std::array<std::optional<StateModeClass>, 3> workspaceStateModes;
@@ -60,6 +65,14 @@ namespace
 		result.entries[3].penResponse=RestorePenResponse(saved.PenTipResponse.load(),result.automaticPenSupported);
 		result.entries[4].penResponse=RestorePenResponse(saved.PenTailResponse.load(),result.automaticPenSupported);
 		return result;
+	}
+	bool FollowToolIntentReady() noexcept
+	{
+		if (!Inkeys::Drawing::Draw3::ProductRunning()) return true;
+		if (Inkeys::Business::ScrollFollow::GetSnapshot().state == Inkeys::Business::ScrollFollow::State::Off) return true;
+		// 未走Bar协程的条件生产者保留同步false，原owner可按旧expected重试。
+		Inkeys::Business::ScrollFollow::RequestStop(Inkeys::Business::ScrollFollow::EndReason::ToolIntent);
+		return false;
 	}
 	bool ExitSelectionHandoffPending() noexcept
 	{
@@ -274,9 +287,9 @@ namespace
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.selectionMode =
-			IsComputerInteractionMode(stateMode.StateModeSelect);
+			IsComputerInteractionMode(stateMode.StateModeSelect) || (followProjection.load(std::memory_order_acquire) & 1u);
 		state.autoSaveEnabled = setlist.saveSetting.enable;
-		Inkeys::Drawing::Draw3::PublishProductState(state);
+		followActionPublication = Inkeys::Drawing::Draw3::PublishProductState(state);
 	}
 
 	[[nodiscard]] bool Draw3WorkspaceReady(
@@ -513,12 +526,13 @@ namespace
 			draw3PresentationRetryPending.store(false, std::memory_order_release);
 			return Draw3PresentationReconcileResult::Waiting;
 		}
+		const auto projection = followProjection.load(std::memory_order_acquire);
 		std::uint64_t modeRevision = 0;
 		bool modeSelection = false;
 		{
 			std::scoped_lock modeLock(stateModeTransitionMutex);
 			modeRevision = stateModeTransitionRevision.load(std::memory_order_relaxed);
-			modeSelection = IsComputerInteractionMode(stateMode.StateModeSelect);
+			modeSelection = IsComputerInteractionMode(stateMode.StateModeSelect) || (projection & 1u);
 		}
 		std::scoped_lock lock(draw3PresentationMutex);
 		const auto desired =
@@ -530,7 +544,7 @@ namespace
 			draw3PresentationExitRefreshPending = true;
 		// 新工具已选中但 bridge 尚未发布时，不提交旧画布可见性。
 		if (modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire) ||
-			modeSelection != desired.selectionMode)
+			modeSelection != desired.selectionMode || projection != followProjection.load(std::memory_order_acquire))
 		{
 			LogDraw3PresentationGateWait(
 				Draw3PresentationGateWaitReason::BridgeModeMismatch, runtime,
@@ -543,14 +557,15 @@ namespace
 		const bool selectionMode = runtime.selectionMode;
 		const bool whiteboard = runtime.workspace ==
 			Inkeys::Drawing::Draw3::Bridge::Workspace::Whiteboard;
-		const auto bridgeGuard = [](std::uint64_t revision, bool requireSelection,
+		const auto bridgeGuard = [projection](std::uint64_t revision, bool requireSelection,
 			std::uint64_t expectedModeRevision)
 		{
-			return [revision, requireSelection, expectedModeRevision]() noexcept
+			return [revision, requireSelection, expectedModeRevision, projection]() noexcept
 			{
 				const auto current = Inkeys::Drawing::Draw3::ProductHost()
 					.ProductBridge().Snapshot();
-				return Inkeys::Drawing::Draw3::ProductRunning() &&
+				return Inkeys::Drawing::Draw3::ProductRunning() && !offSignal &&
+					followProjection.load(std::memory_order_acquire) == projection &&
 					current.revision == revision &&
 					(!requireSelection || (current.selectionMode &&
 						current.workspace != Workspace::Whiteboard)) &&
@@ -638,7 +653,7 @@ namespace
 
 		const auto after =
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
-		if (after.revision != desired.revision ||
+		if (after.revision != desired.revision || projection != followProjection.load(std::memory_order_acquire) ||
 			modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire))
 		{
 			// 提交期间目标改变时保留现有画面，下次仅提交最新目标的就绪帧。
@@ -655,6 +670,9 @@ namespace
 			}
 			draw3PresentationExitRefreshPending = false;
 		}
+		followAckBridge.store(desired.revision, std::memory_order_relaxed);
+		followAckMode.store(modeRevision, std::memory_order_relaxed);
+		followAcknowledged.store(projection, std::memory_order_release);
 		LogDraw3PresentationGateReady(runtime, desired.revision, modeRevision);
 		draw3PresentationRetryPending.store(false, std::memory_order_release);
 		if (ExitSelectionHandoffPending() && desired.selectionMode &&
@@ -796,6 +814,32 @@ void SyncDraw3State()
 	ReconcileDraw3Presentation();
 }
 
+std::uint64_t RequestScrollFollowProjection(bool enabled) noexcept
+{
+	auto current = followProjection.load(std::memory_order_acquire);
+	for (;;)
+	{
+		const auto next = ((current & ~std::uint64_t{1}) + 2) | (enabled ? 1u : 0u);
+		if (followProjection.compare_exchange_weak(current, next, std::memory_order_acq_rel))
+		{ RequestScrollFollowPresentationRefresh(); return next; }
+	}
+}
+std::uint64_t ScrollFollowProjectionEpoch() noexcept { return followProjection.load(std::memory_order_acquire); }
+void ResetScrollFollowActionReceipt() noexcept { followActionPublication = 0; }
+std::uint64_t ScrollFollowActionReceipt() noexcept { return followActionPublication; }
+bool ScrollFollowPresentationAcknowledged(std::uint64_t epoch, std::uint64_t publishedRevision) noexcept
+{
+	if (!Inkeys::Drawing::Draw3::ProductRunning()) return true; // Off 的纯状态测试无需窗口交接。
+	return !offSignal && !followProjectionDirty.load(std::memory_order_acquire) &&
+		followAcknowledged.load(std::memory_order_acquire) == epoch && followProjection.load() == epoch &&
+		followAckMode.load() == stateModeTransitionRevision.load() &&
+		followAckBridge.load() >= publishedRevision && followAckBridge.load() == Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision;
+}
+void RequestScrollFollowPresentationRefresh() noexcept
+{
+	followProjectionDirty.store(true, std::memory_order_release);
+	draw3PresentationRetryPending.store(true, std::memory_order_release);
+}
 void ReconcileDraw3Presentation()
 {
 	(void)ReconcileDraw3PresentationState();
@@ -832,6 +876,7 @@ bool IsLaserToolActive() noexcept
 
 void RequestWhiteboardActive(bool active) noexcept
 {
+	Inkeys::Business::ScrollFollow::RetireScene(Inkeys::Business::ScrollFollow::EndReason::Workspace);
 	if (!IsWhiteboardFeatureEnabled())
 	{
 		// 发布前临时拒绝所有入口，避免隐藏主栏后仍有调用方进入白板事务。
@@ -1022,16 +1067,19 @@ void SyncPrimaryWorkspaceStateMode()
 
 bool SetPenWidth(double targetWidth, bool setMemory)
 {
+	if (!FollowToolIntentReady()) return false;
     return SetPenWidthSelectionImpl({ Inkeys::Business::PenWidth::Source::ExplicitDip,
         Inkeys::Business::PenWidth::Preset::Medium, targetWidth }, setMemory, nullptr);
 }
 bool SetPenWidthIfRevision(double targetWidth, std::uint64_t expectedRevision, bool setMemory)
 {
+	if (!FollowToolIntentReady()) return false;
     return SetPenWidthSelectionImpl({ Inkeys::Business::PenWidth::Source::ExplicitDip,
         Inkeys::Business::PenWidth::Preset::Medium, targetWidth }, setMemory, &expectedRevision);
 }
 bool SetPenWidthPresetIfRevision(int index, std::uint64_t expectedRevision, bool setMemory)
 {
+	if (!FollowToolIntentReady()) return false;
     if (index < 0 || index > 2) return false;
     return SetPenWidthSelectionImpl({ Inkeys::Business::PenWidth::Source::Preset,
         static_cast<Inkeys::Business::PenWidth::Preset>(index), 3.0 }, setMemory, &expectedRevision);
@@ -1098,6 +1146,7 @@ void RestorePenWidthSelections(Inkeys::Business::PenWidth::Selection brush,
 
 bool SetPenColor(COLORREF targetColor, bool setMemory)
 {
+	if (!FollowToolIntentReady()) return false;
 	std::unique_lock lock(stateModeTransitionMutex);
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
@@ -1271,6 +1320,7 @@ bool SetSelectAndClickThroughMode(int mode)
 
 bool ChangeStateModeToSelectionFromButton()
 {
+	if (!FollowToolIntentReady()) return false;
 	return ChangeStateModeToSelectionFromButtonImpl(
 		Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent, []
 		{
@@ -1310,16 +1360,19 @@ static bool ChangeStateModeToClickThroughImpl(bool toggle)
 
 bool ChangeStateModeToClickThrough()
 {
+	if (!FollowToolIntentReady()) return false;
 	return ChangeStateModeToClickThroughImpl(false);
 }
 
 bool ToggleClickThroughFromButton()
 {
+	if (!FollowToolIntentReady()) return false;
 	return ChangeStateModeToClickThroughImpl(true);
 }
 
 bool ToggleFreezeFromButton()
 {
+	if (!FollowToolIntentReady()) return false;
 	if (!Inkeys::UI::Freeze::IsAvailable()) return false;
 	bool restored = false;
 	{
@@ -1347,6 +1400,7 @@ bool ToggleFreezeFromButton()
 
 bool ChangeStateModeToSelection()
 {
+	if (!FollowToolIntentReady()) return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		ApplySelectionTransitionLocked();
@@ -1363,6 +1417,7 @@ std::uint64_t StateModeTransitionRevision() noexcept
 bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
 	std::uint64_t expectedRevision, std::uint64_t freezeRevision)
 {
+	if (!FollowToolIntentReady()) return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision ||
@@ -1392,6 +1447,7 @@ bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
 
 bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision)
 {
+	if (!FollowToolIntentReady()) return false;
 	const auto before = GetStateModeVersionedSnapshot();
 	if (before.revision != expectedRevision ||
 		IsComputerInteractionMode(before.state.StateModeSelect) ||
@@ -1409,6 +1465,7 @@ bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision)
 
 bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision)
 {
+	if (!FollowToolIntentReady()) return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision)
@@ -1431,6 +1488,7 @@ bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision)
 
 bool ChangeStateModeToPen()
 {
+	if (!FollowToolIntentReady()) return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		ApplyPenModeTransitionLocked();
@@ -1449,6 +1507,7 @@ bool PenToolSelectionWouldChange(PenToolSelectionEnum tool)
 
 bool ChangeStateModeToPenTool(PenToolSelectionEnum tool)
 {
+	if (!FollowToolIntentReady()) return false;
 	PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenSoftPen;
 	if (!ResolvePenToolMode(tool, penMode)) return false;
 	{
@@ -1470,6 +1529,7 @@ bool ChangeStateModeToPenTool(PenToolSelectionEnum tool)
 
 bool ChangeStateModeToPptAnnotation(PptAnnotationTool tool, std::uint64_t expectedRevision)
 {
+	if (!FollowToolIntentReady()) return false;
 	if (tool != PptAnnotationTool::Pen && tool != PptAnnotationTool::Laser &&
 		tool != PptAnnotationTool::Highlighter) return false;
 	{
@@ -1491,6 +1551,7 @@ bool ChangeStateModeToPptAnnotation(PptAnnotationTool tool, std::uint64_t expect
 
 bool ChangeStateModeToShape()
 {
+	if (!FollowToolIntentReady()) return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
@@ -1527,17 +1588,20 @@ static bool SetShapeModeSelectImpl(ShapeModeSelectEnum shape,
 
 bool SetShapeModeSelect(ShapeModeSelectEnum shape)
 {
+	if (!FollowToolIntentReady()) return false;
 	return SetShapeModeSelectImpl(shape, nullptr);
 }
 
 bool SetShapeModeSelectIfRevision(ShapeModeSelectEnum shape,
 	std::uint64_t expectedRevision)
 {
+	if (!FollowToolIntentReady()) return false;
 	return SetShapeModeSelectImpl(shape, &expectedRevision);
 }
 
 bool ChangeStateModeToEraser()
 {
+	if (!FollowToolIntentReady()) return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtEraser;
@@ -1553,6 +1617,7 @@ bool ChangeStateModeToEraser()
 
 bool ChangeStateModeToTouchTest()
 {
+	if (!FollowToolIntentReady()) return false;
 	// 输入测试尚未接入 Draw3，入口由设置页隐藏。
 	return false;
 }
@@ -2054,6 +2119,18 @@ int RunStateModeProductionTest() noexcept
 		require(ChangeStateModeToSelectionFromButtonImpl(false, [] { return Bridge::CommandResult::NotRunning; }),
 			"empty-selection-does-not-publish-clear");
 		require(SetSelectAndClickThroughMode(0), "restore-default-mode");
+		const auto actual = GetStateModeVersionedSnapshot();
+		const auto originalIntent = bridge.Snapshot().shortcutIntentEpoch;
+		const auto followEpoch = RequestScrollFollowProjection(true);
+		PublishDraw3State();
+		require(bridge.Snapshot().selectionMode && GetStateModeVersionedSnapshot().revision == actual.revision &&
+			sameState(actual.state, GetStateModeSnapshot()) && bridge.Snapshot().shortcutIntentEpoch == originalIntent,
+			"follow-selection-projection-preserves-real-tool-and-intent");
+		const auto restoredEpoch = RequestScrollFollowProjection(false);
+		PublishDraw3State();
+		require(restoredEpoch != followEpoch && GetStateModeVersionedSnapshot().revision == actual.revision &&
+			bridge.Snapshot().selectionMode == IsComputerInteractionMode(actual.state.StateModeSelect) &&
+			bridge.Snapshot().shortcutIntentEpoch == originalIntent, "follow-projection-restores-current-tool-without-real-revision");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
 		std::fputs("[StateModeProduction] PASS: workspace tool isolation, cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough toggle/freezing, shortcut roundtrip, clear transaction\n", stderr);
 		return 0;
@@ -2084,6 +2161,7 @@ void StateMonitoring()
 		// 内容、目标就绪和全帧 clean 共享一个 revision，避免快速切换漏掉握手。
 		(void)Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(revision, 250);
 		if (offSignal) break;
+		if (followProjectionDirty.exchange(false, std::memory_order_acq_rel)) PublishDraw3State();
 		// 同步提交失败时沿用本循环的 250ms cadence，直到最新 owner 期望真正生效。
 		ReconcileSettingOwnerDesiredState();
 		snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();

@@ -1,0 +1,56 @@
+# Desktop 视图调整产品合同
+
+## 范围与证据
+
+本功能在Desktop主屏单一主要内容区域输出二维平移，不启用双指导航，不增加第二套GPU画布，不改Stroke点/历史/PageGUID或UInk v10。捕获和算法分别见scroll-follow-capture.md、scroll-follow-tracking.md。当前实现与结果以10-21-scroll-follow-product-integration的core-implementation/check报告为准；真实Mag worker与系统窗口交接仍必须单独现场验收，隐藏seam不能代替。
+
+## 生产入口与所有者
+
+- Business/ScrollFollow.h/.cpp：Off、Initializing、Tracking、Paused、Stopping；异步RequestToggle/RequestStop与GetSnapshot/Available，ActionTicket和生命周期退休。UI只读选中/未选中，原工具/笔属性保留。
+- 原MagnifierThread的FreezeCapture回调：独占当前Context的Tracker Initialize/Process。借用图像不保存出回调，图像计算不占服务控制锁或目标邮箱锁，不等待Draw3/窗口ACK。Context用shared lifetime保护迟到回调。
+- Draw3唯一owner：Host::BeginFollow、FollowChannel、WakeFollow、EndFollow；Draw3.ScrollFollow.h固定大小Channel保存身份、基准、latest和final。Apply只能由owner改真实Canvas。
+
+Host每次Start必须按commandPublishMutex→presentationTargetMutex保护重建Channel和清零hold；FollowChannel复制走presentation门。窄接口为BeginFollow(session, expectedChannel={})、EndFollow(disposition=Restore, expectedChannel={})和HoldFollowAction(bool, expectedChannel)->bool；hold必须显式传所属Channel并检查是否取得/归还，不能裸减计数。Business Context和Action保存取得所有权时的Channel，Begin/End/Hold及归还均带凭据，Host在同门内核对。旧Host迟到的End或release不得关闭或递减新Host会话；不以可复用数字session替代拥有者凭据。Begin/End无expected只用于既有明确“当前场景”入口，进程整体RequestShutdown保留当前Host语义。
+- 原StateMonitoring/WindowService：临时selection有效输出及双窗交接；控制worker读取精确ACK，不能同步要求UI等待PrintWindow或渲染屏障。
+
+启动按Desktop/Freeze/能力检查、新Down关闭及accepted contact收尾、owner真实基准、有效F0/Tracker、辅助输出ready与实际窗口ACK执行。初始化失败回滚本会话；运行失效保持最后可信位置Paused，无自动恢复。Frame和采样状态必须关联成功Capture::Start返回的session；初始化新会话前不能解释上一轮保留的stop reason/统计。
+
+## 像素、身份与单槽
+
+Tracker.total是原捕获图像px，按Frame.sourcePixelsPerPixelX/Y映射一次到client/canvas px；当前Mag只接受identity transform，比例1。source/client差1px表示裁切，不按宽比重缩放；不乘除96/DPI。固定workArea ROI或显示/client/DPI改变应退休，不能在会话中重选ROI。
+
+Target携带session、严格递增sequence、workspace/page GUID、host/scene/device/geometry与client尺寸。稳定身份不含每帧runtimeRevision，也不含交接会改变的outputRevision。重复/旧代/错场景/非finite拒绝；latest覆盖，不排图像或逐目标FIFO。owner从baseViewport-total求绝对目标，不能把丢中间帧当丢位移。
+
+## 视口与结束屏障
+
+owner复用ApplyCanvasContentTranslationChecked和TranslateViewport尾部：真实Canvas viewport、屏幕热前像失效、Canvas-local合成缓存、可信L2及预算内可见Tile恢复。平移不建Undo项、不清Redo，不改原点或Stroke点。钳制须报告并暂停，不能继续积算成成功跟踪。
+
+Seal与Publish共用短锁，关闭发布并冻结最后成功提交的final；End可靠固定槽与普通命令容量独立，退出最终保存另有原final命令。Begin/End/Presented/Handoff回执都核对session，晚旧End不能改变新会话。Follow命令不走普通命令的场景重放，不能把旧Desktop重新切回来。
+
+正常End跨帧阻止所有后继业务命令执行，仍继续contact终端回收、状态泵和渲染。final写回真实CPU Canvas后，要完成指定viewport的full present及recovery/refresh，再恢复当前真实工具effective output并等窗口成对ACK，才释放该会话准入。commandProcessed和仅outputReady均不能替代。其它输入blocker保留。
+
+RetireScene和Shutdown是单调升级的不同终态，能打断正在等正常显示ACK的End。先撤销发布、在仍有效旧Canvas应用最后可信CPU目标，再执行场景/设备替换或PrepareExitAutoSave；结束进程不能等待已关闭WindowService的可见ACK。同步PW无取消/强杀保证，其占用资源按捕获合同保活。
+
+SetOffSignal的最早退出通知只能调用RequestShutdownNoWait：只发原子撤销/唤醒，不构造控制worker、不取Host或Capture业务锁。必须保留原Window BeginShutdown→ArmShutdownSupervisor→offSignal/失败接管顺序；监督成功并完成原隐藏入队/Wake后，才允许有锁RequestShutdown。不能为了跟随收尾把业务等待插到Arm之前。
+
+## 动作、工具与快捷键
+
+临时selection有独立projection epoch，参与真实IdtState Publish/Reconcile/guard与Bridge输出，不递增真实modeRevision或shortcutIntentEpoch。恢复使用当前真实工具，不覆盖为启动时的过期工具快照。
+
+Bar完整原动作保留原coroutine，PrepareAction/PollAction非阻塞等待End Ready，再执行原setter；同工具early return也必须先处理退出跟随。保留原bool、面板与触觉语义，不能跨等待持有原即时作用域。CompleteAction带该动作真实发布revision receipt，等同projection/同工具代的实际窗口ACK后再释放动作hold；取消、作用域退休和异常要归还自身ticket，不能放行到新场景。
+
+Shortcut保持原owner pending/expected scope/lease/conditional result，先等待Follow End再走原发布。Follow关闭contact准入不能把整个shortcut context.available设false，避免Ctrl+Z等落到底层应用。普通Undo/Redo/Clear命令保留原接纳租约和FIFO，Host中央前置End保证跨帧顺序。
+
+## 资源、诊断与测试边界
+
+官方ViewAdjust ID、More/Setting前补缺及未知插件/自定义顺序保留见configuration-i18n-and-assets.md。Win8.1+与WOW64仅限制可选功能；能力查询动态解析新增入口，不提高Win7主程序硬导入门槛。
+
+--scroll-follow-console和--scroll-follow-verbose复用唯一DiagnosticOutput::Session与有界异步队列。普通启动无新console，默认状态/错误与每秒摘要，verbose逐帧；摘要包含capture accepted/rejected/API/耗时/占用、Tracker reason/confidence/FB/residual/coverage/relay、owner seq/viewport/clamp。可信度为质量分数。
+
+纯protocol测试可纳入--no-window。新实际Host测试必须严格早退、拒坏argv、不读写用户配置/文档，所有自建HWND全程不可见/不激活、不调用真实ShowWindow或前台操作。私有持久化root显式传入；空root的owner退出测试只能证明CPU final，不能宣称落盘。实际输出ready可验证，系统窗口显隐ACK只能用明确标记的seam。名字含hidden的既有旧GUI测试可能仍ShowWindow，不能只凭名字运行。
+
+保存回归必须包含实际Pen/HardPen的Drawing点路径：SolidLine是Shape，两个端点的平移不能替代普通笔验证。A前后点/width/style逐项一致，普通笔B锚点等于client Down加最终viewport；不要求不同时刻两笔的建模采样点完全相同。Eraser沿原蒙版stroke表示保存，不能拿其类型完成就当已擦中。
+
+真实磁盘恢复测试不能以worker的committed计数代替Controller已消费并释放CPUfallback。有限harness观察receipt必须在原file/scene资格分支内、事实发生后发出：CommittedConsumed在diskReady且canvas.reset之后，LoadRequested在原请求实际接纳后，LoadedInstalled在CanInstall及真实restore成功之后，内存恢复另计MemoryRestored。声明/初始化/赋值/读取使用相同harness宏，且只在enableHiddenTestContactInjection绑定；不暴露任意Load或伪completion入口。A与codec零位移往返的x/y/width/style应逐值精确相等，只有实际平移后不同Stroke的浮点比较使用必要容差。
+
+Desktop只改Viewport也应由原Clear/Exit捕获当前canvas.viewport；不为跟随增加逐帧保存。文件/codec往返、现有Clear Undo磁盘恢复、任意冷载Host是不同层级；当前没有通用Desktop冷载替换API，不得以codec Read/Import宣称产品冷载已验。A几何逐点/style/GUID比较，完整快照哈希还含fileGuid和viewport，不能当纯几何摘要。

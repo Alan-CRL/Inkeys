@@ -1,33 +1,35 @@
-# 验收矩阵（持续更新）
+# 验收矩阵（本轮持续更新）
 
-2026-10-21 用户后续将当前交付收窄为：共用原定格 Mag、清理多余原型、验证 Inkeys.exe 内 PrintWindow(2) 与可选回调。本轮软件内诊断与原完整滚动批注的完成状态必须分别记录。旧独立原型的测试不替代当前源码结果。
+基线feature/move / 3ace726b。2026-10-21用户批准全部后续实现；测试仅无窗口或完全不可见HWND，禁止Computer Use、可见内容、前台/置顶。正式实屏必要验收时停止，不自动commit/push。旧诊断和当前正式生产路径分别记录，不相互代替。
 
 | 阶段 | 项目 | 当前状态 / 证据 |
 | --- | --- | --- |
-| 既有设计 | Mag 同线程初始化/创建与就绪等待 | Inkeys3 已保留，原 WindowService / Coordinator 普通线程路线不改；Inkeys2 精确历史见子任务 research/inkeys2-mag-thread-history.md |
-| 清理 | 独立服务、runtime lease、旧测试与复杂生命周期接线 | 已移除本任务自己的独立原型；普通 Window.cpp、Coordinator 与工程登记回原基线 |
-| 本轮构建 | 完整 Debug ARM64 solution | 正常宿主完整构建 exit0，首次40.88s；最终冷启动测试源码增量构建 exit0、19.09s，3 warning/0 error，无 C1902；最终审查结果另见子任务 report |
-| 本轮读回 | 原 hidden pair 冷首帧及持续变化 | 最终两个新进程 run2/run3 均 exit0，7个唯一图案阶段全部读到；run2 首次62/63被拒绝并重试，随后9次63/63；run3 9次63/63。只有 alpha0 准备态，不先 opaque Reveal 预热 |
-| 无回调必需路径 | 冷启动变化与恢复后继续读回 | run2/run3先不登记回调完成phase1–3与静止3次，之后恢复nullptr完成phase7；两轮都取得正确变化图像。允许等待/旧帧，不依赖回调 |
-| 本轮排除 | 蓝覆盖窗与静止图像 | GetPixel 先确认蓝窗确实挡住源，原角色 SubmitFilter 后读到正确网格；每轮静止3次、原定格揭示/隐藏2次均通过；已接受的14张PNG离线逐像素核对均零差异 |
-| 本轮回调 | 登记、触发、退出、恢复 | 两轮均登记成功、6次进入/退出、与 Mag owner 同 TID；3个阶段观察到退出后读回正确当前图案；恢复 nullptr 后仍可读回。只证明本机实测行为，不宣称所有系统最终整帧完成保证 |
-| 本轮耗时 | PrintWindow(2) 本身 | 两轮均值约47ms，31–63ms；首帧策略800ms、稳态100ms，回调信号可提前；没有进行连续20FPS吞吐验收 |
-| 本轮清理 | 原窗口与 Mag 寿命 | 原pair销毁、原owner MagUninitialize 成功，测试进程正常退出；GDI11→13、USER4→5，不能宣称零资源增长或长期有界 |
-| 本轮回归 | --no-window、i18n、XML、diff、编码/EOL | 完整 --no-window exit0，i18n两语言425/425、XML/diff/BOM/EOL及PE检查通过，非法额外参数exit2；顺序check通过，无需代码修复 |
-| 捕获完整阶段 | 连续服务、取消、卡住系统调用、重复启停/异常销毁 | 本轮只做软件内诊断，尚未提供连续捕获会话，原完整阶段不标记完成 |
-| Tracker | 静止300帧、十屏长距离/接力/反向/亚像素、动态干扰/拒绝 | 未进入 |
-| 会话 / Draw3 | latest-only、seq/session/scene拒绝、End屏障、接触/双窗/Tile/Resize/设备/钳制 | 未进入 |
-| 产品 | More按钮、中英繁资源、工具/Freeze/工作区互斥 | 未进入 |
-| 存储 | A→跟随→B→编辑历史→保存读回→再次跟随 | 未进入 |
-| 其他平台 | x64、旧 Windows、WOW64、真实笔/触摸 | 本轮未重建/实跑，不能由 ARM64 结果推定 |
-| 业务GUI | 浏览器/Word/PDF、惯性/长滚动、锁屏与解锁 | 本轮未测；软件内专用图案测试不能代替 |
+| 原Mag设计 | 同线程初始化/窗口创建、readyPromise | 保留原WindowService设计；普通Freeze分工不改，无第二Mag/lease/owner RPC |
+| 基础读回（上轮） | 真Inkeys原Mag无callback冷首帧/变化/静止/排除 | 3ace726b已验证，两新进程全部接受样本63/63、14张PNG整图零差异；允许延迟，非当前worker正式连续证据 |
+| 正式取帧 | Start/Stop/监督/质量/元数据/单DIB/Freeze互斥 | 已实现并顺序check；原MagnifierThread串行PW，不依赖callback。API与边界见production-capture[-check].md |
+| 正式取帧测试 | fake backend、阻塞消费者/超时/迟到/Busy/停止竞态 | 定向exit0约2.48s；原source/client差异但identity映射1:1。新监督idle/active各64次join通过，无HWND |
+| 正式取帧构建/回归 | ARM64完整solution、--no-window、格式 | check最终29.32s exit0/0error，62既有warning；--no-window约109.92s exit0/stderr空；XML/BOM/CRLF/diff通过 |
+| 正式取帧实屏 | 新worker真实变化/排除/持续FPS/资源/异常OS销毁 | 未验收。当前禁止可见内容和操控，上轮owner结果不能代替；已保留最终必要可见门槛 |
+| Tracker | 独立LK/纯平移/可信度/特征接力及严格离线误差 | 实现/独立check通过；6918合法帧全prefix通过，4px误接受修复，ARM64/target/--no-window全exit0；明确1/2px少数运动合并边界 |
+| 隐藏测试基线 | 实际WindowService/Host输入/present/重复Stop | 既有--draw3-host-metrics-smoke exit0，私有日志hidden-baseline-8aa93957a1724173bbe29945f6cc2636，所有自建窗visible0/topmost0 |
+| 会话/Draw3 | Begin/absolute latest槽/seq和scene/End/present/gate/Tile | 实现/独立check通过：实际Tick/Frame/Tracker控制矩阵、全隐藏真Host/跨代/输入/End恢复/clamp/final；新所有权与退出监督问题已修，系统窗口ACK仍seam |
+| 主栏/生命周期 | More按钮/三语SVG/补缺配置/工具工作区退出 | 资源/迁移及Core接线独立check通过，config/state-mode/shortcut纯业务CLI exit0，i18n426/426；实际Bar可见/系统交接仍未验 |
+| 存储/编辑 | A->follow->B->history->真实Exit/Clear保存重载->再follow | 四场景Shape/Pen独立check exit0/4.194s：8真UInk、CPUfallback释放后disk安装、原A/codec点/宽/style逐值相等/GUID、B新视口、真mask覆盖及Undo/Redo，viewport-only最后Publish立即Stop均通过。四组既有storage基线通过；任意跨进程冷载仍非已有产品能力 |
+| 最终检查 | ARM64+x64尝试、全部允许测试、i18n/PE/格式 | 最终ARM64 exit0/8.143s；x64同配置修复生成PDB后完整solution exit0/6.791s及5纯CLI通过；两架构PE/47文本/4XML/i18n/diff通过。产品full --no-window exit0/157.972s及退出8例复用理由见保存check |
+| 必要可见验收 | 正式取帧、桌面穿透/辅助交接/墨迹、浏览器WordPDF/主栏 | 本轮权限不覆盖；到该必要门槛时停止并报告，不标全功能通过 |
+| 硬件/平台 | 笔触控、Win8.1/Win7/WOW64、锁屏/多屏/DPI现场 | 未实测，须分别给补测步骤；不由ARM64或隐藏通过推定 |
 
 ## 当前证据
 
-- 捕获子任务 research/freeze-printwindow.md：当前实现、命令、实际窗口/线程、像素、回调和清理结果。
-- Build/ScrollFollow/freeze-printwindow-final-build-*.log、freeze-printwindow-run2.log、freeze-printwindow-run3.log：最终原始日志（gitignored）。
-- 最终PNG仅保存已经匹配专用图案的帧；不保存无效帧可能包含的桌面内容。
+- 捕获子任务research/production-capture.md与production-capture-check.md：正式接口、线程/寿命、实现/审查结果及实屏边界。
+- research/execution-current.md：当前阶段、每阶段顺序交接和本轮授权。
+- 捕获子任务research/tracker-design-current.md和product-integration-current.md：只读研究与实施建议，不等于测试通过。
+- Build/ScrollFollow/production-capture-*和hidden-baseline-*：当前日志（gitignored）。
 
-## 历史证据
+## 上轮与历史证据
 
-旧独立服务的 cold 曾通过、shared Filter50/NearBlack 失败、x64 C1060/LNK1140 与快速 WGC/PrintWindow 探针，保存在 research/capture-poc.md 与子任务 research/check.md、quick-probe.md、quick-check.md。对应生产服务和旧测试现已移除，不构成当前共用路径仍失败或已全面验收的结论。先前 Computer Use 观察也不等于本轮完整业务GUI测试。
+原Mag owner图案/回调/整图像素详捕获research/freeze-printwindow.md；约47ms读回、首等800ms不等于20FPS通过。旧独立服务shared Filter50/NearBlack、旧cold、快速WGC/PW和x64 C1060/LNK1140保留于capture-poc/check/quick报告，原型生产代码已删除，不构成当前正式服务成功或失败的判断。先前Computer Use授权仅其轮次有效，本轮不使用。
+
+## 最终软件交付
+
+四阶段软件部分与顺序独立check已完成；正式worker实际画面及系统交接仍未验收。交付总说明见delivery-current.md，最终双架构构建/PDB留档/PE见final-build-and-pe.md，使用与具体现场步骤见usage-and-live-acceptance.md。本轮未创建可见/前台窗口、未Computer Use、未commit/push，不归档父任务。

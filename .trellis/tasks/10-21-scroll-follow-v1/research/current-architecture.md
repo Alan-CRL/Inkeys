@@ -1,5 +1,7 @@
 # Research: 当前架构与实施锚点
 
+> 原始规划调查的历史快照：其中“捕获需另一个owner”与“独立Capture-Only”已被用户后续决定取代。当前必须共用原定格窗口，原MagnifierThread串行更新/读回；无callback基础像素已在3ace726b验证。具体接入以最新design、implementation-authorization和后续current research为准。
+
 - Query: 对照用户方案核查 feature/move 实际接入点
 - Scope: internal / external
 - Date: 2026-10-21

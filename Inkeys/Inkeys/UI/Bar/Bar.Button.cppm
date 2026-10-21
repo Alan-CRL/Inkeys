@@ -40,7 +40,8 @@ enum class BarButtonPresetEnum : int
 
 	More,
 	Setting,
-	Pierce
+	Pierce,
+	ViewAdjust
 };
 
 class BarButtonStateClass
@@ -247,7 +248,7 @@ public:
 	unordered_map<int, BarButtonStateClass> barButtonState;
 
 	// 预设按钮模态
-	BarButtonClass* preset[40]{};
+	BarButtonClass* preset[41]{};
 
 public:
 bool RegisterButton(

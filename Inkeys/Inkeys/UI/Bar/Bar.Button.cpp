@@ -7,6 +7,7 @@ module;
 // 历史遗留问题
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Business/ScrollFollow.h"
 
 #include "../../../IdtConfiguration.h"
 #include "../../Window/Window.Legacy.hpp"
@@ -121,7 +122,7 @@ bool BarButtonSetClass::RegisterButton(
 	}
 	else if (!Inkeys::IsExtensionBarButtonId(id)
 		&& !(zone == BarButtonLayoutZoneEnum::Extension
-			&& id == Inkeys::BarButtonId::Setting))
+			&& (id == Inkeys::BarButtonId::Setting || id == Inkeys::BarButtonId::ViewAdjust)))
 	{
 		return false;
 	}
@@ -714,6 +715,22 @@ void BarButtonSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 
+	{
+		auto* obj = new BarButtonClass;
+		obj->preset = BarButtonPresetEnum::ViewAdjust;
+		obj->size = BarButtonSizeEnum::twoTwo; obj->hide = false;
+		obj->name.Initialization(0.0, 0.0, 0.0, 0.0, IW(I18nKey.UI.Bar.MainButtons.ViewAdjustLabel), 0.0);
+		obj->name.enable.Initialization(true);
+		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+		obj->button.enable.Initialization(true);
+		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+		obj->icon.InitializationFromResource(L"UI", L"barViewAdjust");
+		obj->icon.enable.Initialization(true);
+		obj->clickFunc = [] { barUISet.CollapseAuxiliaryPanels(true); Inkeys::Business::ScrollFollow::RequestToggle(); };
+		obj->state = &barButtonState[(int)BarButtonPresetEnum::ViewAdjust];
+		preset[(int)BarButtonPresetEnum::ViewAdjust] = obj;
+	}
+	RegisterButton(Inkeys::BarButtonId::ViewAdjust, preset[(int)BarButtonPresetEnum::ViewAdjust], false, BarButtonLayoutZoneEnum::Extension);
 	// 官方按钮使用稳定 ID；A1/A2 固定区与扩展区在注册时写死分区和默认显隐。
 	RegisterButton(Inkeys::BarButtonId::Select, preset[(int)BarButtonPresetEnum::Select], false, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Draw, preset[(int)BarButtonPresetEnum::Draw], false, BarButtonLayoutZoneEnum::FixedA1);
@@ -1029,6 +1046,13 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 		case BarButtonPresetEnum::More:
 			state = moreOpen ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
+		case BarButtonPresetEnum::ViewAdjust:
+		{
+			const auto follow = Inkeys::Business::ScrollFollow::GetSnapshot();
+			state = follow.state != Inkeys::Business::ScrollFollow::State::Off ? BarWidgetState::Selected
+				: (whiteboard || presentation || freezeActive || !follow.available) ? BarWidgetState::Disable : BarWidgetState::None;
+			break;
+		}
 		case BarButtonPresetEnum::Setting:
 			state = settingVisible ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
@@ -1355,7 +1379,7 @@ vector<shared_ptr<BarButtonClass>> BarButtonSetClass::GetLegacyExtensionButtons(
 		{
 			for (const BarButtonRegistrationClass& registration : registrationsSnapshot)
 				if (registration.kind == BarButtonRegistrationKindEnum::EntityButton
-					&& registration.id != Inkeys::BarButtonId::Setting
+					&& registration.id != Inkeys::BarButtonId::Setting && registration.id != Inkeys::BarButtonId::ViewAdjust
 					&& enabledIds.contains(registration.id))
 					legacyActiveOrder.push_back(registration.id);
 			legacyOrderInitialized = true;
@@ -1459,6 +1483,17 @@ void BarButtonSetClass::Load()
 		else forcedOverflow.push_back(button);
 	}
 	vector<shared_ptr<BarButtonClass>> explicitMore;
+	BarButtonRegistrationClass followRegistration;
+	if (TryGetRegistration(Inkeys::BarButtonId::ViewAdjust, followRegistration) && followRegistration.button)
+	{
+		// 只读新项自己的 Visible，保留旧组件投影和用户其它 B 顺序。
+		bool visible = true;
+		for (const auto& entry : Inkeys::config.UI.Bar.ExtensionButtons.Snapshot())
+			if (entry.Id == Inkeys::BarButtonId::ViewAdjust) { visible = entry.Visible; break; }
+		followRegistration.button->baseUserVisible = visible;
+		followRegistration.button->baseSize = followRegistration.defaultSize;
+		explicitMore.push_back(followRegistration.button);
+	}
 	BarButtonRegistrationClass settingRegistration;
 	if (TryGetRegistration(Inkeys::BarButtonId::Setting, settingRegistration)
 		&& settingRegistration.button)

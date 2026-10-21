@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
@@ -80,6 +81,7 @@ namespace Inkeys::UI::Freeze::MagnifierInternal
 			appliedRevision_ = 0;
 			visible_ = false;
 			stopped_ = false;
+			woken_ = false;
 		}
 
 		void Publish(Request request) noexcept
@@ -109,6 +111,27 @@ namespace Inkeys::UI::Freeze::MagnifierInternal
 					return stopped_ || latest_.revision > processedRevision_;
 				});
 			if (stopped_) return std::nullopt;
+			return latest_;
+		}
+
+		// 捕获与普通定格共用原协调线程；外部只唤醒，不在 UI owner 执行同步读回。
+		void Wake() noexcept
+		{
+			{
+				std::scoped_lock lock(mutex_);
+				woken_ = true;
+			}
+			condition_.notify_one();
+		}
+
+		[[nodiscard]] std::optional<Request> WaitNextFor(std::chrono::milliseconds delay) noexcept
+		{
+			std::unique_lock lock(mutex_);
+			auto ready = [this] { return stopped_ || woken_ || latest_.revision > processedRevision_; };
+			if (delay == std::chrono::milliseconds::max()) condition_.wait(lock, ready);
+			else condition_.wait_for(lock, delay, ready);
+			woken_ = false;
+			if (stopped_ || latest_.revision <= processedRevision_) return std::nullopt;
 			return latest_;
 		}
 
@@ -160,6 +183,7 @@ namespace Inkeys::UI::Freeze::MagnifierInternal
 		std::uint64_t appliedRevision_ = 0;
 		bool visible_ = false;
 		bool stopped_ = false;
+		bool woken_ = false;
 	};
 
 	template <typename Operations>

@@ -24,6 +24,10 @@
 ## 边界
 不做缩放/旋转输出、恢复/校准、UIA/COM/扩展、多区域、SLAM、正式提示与设置页。保留最小扩展接口，不存视觉特征到 UInk。不 commit/push；任务记录和归档使用 --no-commit。
 
-## 当前执行范围
+## 上轮诊断里程碑（范围限制已结束）
 
 用户后续收窄为移除多余原型并完成 Inkeys.exe 内 PrintWindow(2) 验证，保持现有定格线程设计，同时实际尝试图像缩放回调候选。完整追踪、会话、主栏与存储阶段尚未进入；本轮不能宣称滚动批注功能已实现。
+
+## 本轮继续实施（2026-10-21）
+
+用户已批准完成正式取帧及全部后续阶段，上一轮仅诊断的范围限制结束。本轮验证仅无窗口或完全不在屏幕显示的HWND，禁止Computer Use/前台/可见测试；必要可见验收时停止。当前授权见[implementation-authorization.md](../10-21-scroll-follow-v1/research/implementation-authorization.md)，其优先于本文旧轮次边界。原定格Mag的无callback基础验证见research/freeze-printwindow.md（捕获子任务）；后续正式路径须分别验证。本轮不自动commit/push。

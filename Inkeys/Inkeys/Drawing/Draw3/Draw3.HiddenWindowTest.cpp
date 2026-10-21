@@ -1,4 +1,6 @@
 #include "Draw3.HiddenWindowTest.h"
+#include "Draw3.ScrollFollowTest.h"
+#include "Draw3.DesktopPersistenceTest.h"
 #include "Draw3.Product.h"
 #include "Draw3.Presentation.h"
 #include "Draw3.PresentationState.h"
@@ -11,6 +13,7 @@ import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import draw3.uink_file;
 import draw3.uink_draw3_import;
@@ -3708,6 +3711,464 @@ namespace Inkeys::Drawing::Draw3
 		renderer.ReleaseResources();
 		if (failures == 0) Report("PASS", "no-window WARP Laser bake transaction");
 		return failures == 0 ? 0 : 1;
+	}
+
+
+	int RunScrollFollowInvisibleHostTest() noexcept
+	{
+		int failures = 0;
+		try
+		{
+			if (!Check(!ProductRunning(), "SFH isolated Host", failures)) return 1;
+			Inkeys::Window::Service service(64);
+			StyleContext style{&service};
+			struct Cleanup { Inkeys::Window::Service& service; ~Cleanup() { StopProduct(); service.StopAndJoin(); } } cleanup{service};
+			using Role = Inkeys::Window::WindowRole;
+			const auto suffix = std::to_wstring(GetCurrentProcessId()) + L".ScrollFollow";
+			std::vector<Inkeys::Window::WindowSpec> specs;
+			specs.push_back(MakeHiddenSpec(Role::MagnifierHost, L"Inkeys.Hidden.Follow.M." + suffix, DefWindowProcW, 1024, 768));
+			specs.push_back(MakeHiddenSpec(Role::Freeze, L"Inkeys.Hidden.Follow.F." + suffix, DefWindowProcW, 1024, 768));
+			specs.push_back(MakeHiddenSpec(Role::DrawpadPresentation, L"Inkeys.Hidden.Follow.P." + suffix, DefWindowProcW, 1024, 768));
+			specs.push_back(MakeHiddenSpec(Role::Drawpad, L"Inkeys.Hidden.Follow.D." + suffix, DrawpadMsgCallback, 1024, 768));
+			if (!Check(service.Start(specs), "SFH never-visible HWND start", failures)) return 1;
+			const auto invisible = [&]
+			{
+				for (const auto& spec : specs) if (!service.Handle(spec.role) || IsWindowVisible(service.Handle(spec.role))) return false;
+				return true;
+			};
+			if (!Check(invisible(), "SFH all HWND hidden", failures)) return 1;
+			HostStartOptions options{HostPresentationMode::UlwDirtyRect};
+			options.allowDirectComposition = false; options.enableHiddenTestContactInjection = true;
+			options.followTestRecoveryMaximumTiles = 1;
+			options.enableRuntimeMetrics = true; options.runtimeMetricsMaximumSamples = 128;
+			const HWND drawpad = service.Handle(Role::Drawpad);
+			if (!Check(StartProduct(drawpad, service.Handle(Role::DrawpadPresentation), {&style, &ApplyDrawpadStyle}, options), "SFH real ULW Host", failures)) return 1;
+			Bridge::ProductState state; state.selectionMode = false; state.tool = Bridge::Tool::SolidLine; state.widthDip = 4;
+			PublishProductState(state);
+			const auto ready = [&](bool selection)
+			{
+				const auto r = ProductRuntimeSnapshot();
+				return invisible() && r.firstFrameReady && r.selectionMode == selection && r.lastPresentSucceeded &&
+					r.requestedOutputRevision == r.readyOutputRevision && r.requestedOutputTarget == r.readyOutputTarget;
+			};
+			if (!Check(WaitUntil([&] { return ready(false); }, 5s), "SFH primary output ready", failures)) return 1;
+			const auto send = [&](HiddenTestContactPhase phase, int x, int y)
+			{
+				DWORD_PTR accepted = 0;
+				return invisible() && SendMessageTimeoutW(drawpad, kDraw3HiddenTestContactMessage,
+					static_cast<WPARAM>(phase) | kHiddenTestExternalPenFlag, MAKELPARAM(x,y), SMTO_BLOCK | SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT, 2000, &accepted) && accepted == 0;
+			};
+			const auto initial = ProductRuntimeSnapshot();
+			if (!Check(send(HiddenTestContactPhase::Down, 24, 24) && send(HiddenTestContactPhase::Move, 980, 720) && send(HiddenTestContactPhase::Up, 980, 720) &&
+				WaitUntil([&] { return invisible() && ProductRuntimeSnapshot().inputRecycled > initial.inputRecycled && ProductRuntimeSnapshot().canUndo; }, 5s), "SFH actual stroke A", failures)) return 1;
+			auto& host = ProductHost();
+			const auto before = ProductRuntimeSnapshot();
+			Check(!host.BeginFollow(0) && !host.FollowChannel()->Blocked(), "SFH rejected Begin releases only its reservations", failures);
+			if (!Check(host.BeginFollow(101), "SFH reliable Begin", failures)) return 1;
+			auto channel = host.FollowChannel();
+			if (!Check(WaitUntil([&] { return channel->Read().phase == Follow::Phase::Active && invisible(); }, 5s), "SFH owner safe baseline", failures)) return 1;
+			const auto base = channel->Read();
+			state.selectionMode = true; PublishProductState(state);
+			if (!Check(WaitUntil([&] { return ready(true); }, 5s), "SFH actual auxiliary output ready without showing", failures)) return 1;
+			const auto recycled = ProductRuntimeSnapshot().inputRecycled;
+			Check(send(HiddenTestContactPhase::Down, 50, 50) && send(HiddenTestContactPhase::Up, 50, 50) &&
+				WaitUntil([&] { return ProductRuntimeSnapshot().inputRecycled > recycled; }, 5s), "SFH gate rejects Down and drains true Up", failures);
+			Follow::Target target{101, 1, base.identity, -120, 45};
+			Check(channel->Publish(target), "SFH publish absolute", failures);
+			Check(!channel->Publish(target), "SFH duplicate seq rejected", failures);
+			auto stale = target; stale.sequence = 2; ++stale.identity.scene;
+			Check(!channel->Publish(stale), "SFH stale scene rejected", failures);
+			for (unsigned i = 2; i <= 200; ++i) { target.sequence = i; target.x = -120.0 - double(i) / 10.0; Check(channel->Publish(target), "SFH latest overwrite", failures); }
+			host.WakeFollow();
+			// End 自带final，不先等 mailbox 消费；真实Undo留在同一FIFO后方。
+			host.EndFollow();
+			Check(PublishProductCommand(Bridge::CommandType::Undo) == Bridge::CommandResult::Accepted, "SFH ordinary accepted behind End", failures);
+			if (!Check(WaitUntil([&] { const auto s = channel->Read(); return invisible() && s.phase == Follow::Phase::Presented; }, 10s), "SFH final viewport full present after replay", failures)) return 1;
+			const auto end = channel->Read();
+			std::fprintf(stderr, "[ScrollFollowHidden] end_frames=%llu recovery_frames=%llu\n", static_cast<unsigned long long>(end.endFrames), static_cast<unsigned long long>(end.recoveryFrames));
+			Check(end.endFrames > 1 && end.recoveryFrames > 0, "SFH actual replay crosses frames before completion", failures);
+			Check(end.applied == 200 && std::abs(end.viewportX - (base.baseX + 140)) < 0.001 &&
+				std::abs(end.viewportY - (base.baseY - 45)) < 0.001 && !end.clamped, "SFH base-total physical pixel mapping", failures);
+			Check(ProductRuntimeSnapshot().undoCommandCount == before.undoCommandCount &&
+				ProductRuntimeSnapshot().canUndo && !ProductRuntimeSnapshot().canRedo && end.identity == base.identity,
+				"SFH End blocks Undo and preserves original page/history", failures);
+			target.sequence = 201; Check(!channel->Publish(target), "SFH late frame sealed", failures);
+			state.selectionMode = false; PublishProductState(state);
+			if (!Check(WaitUntil([&] { return ready(false); }, 5s), "SFH original output ready", failures)) return 1;
+			// 严格harness seam只代表纯决策ACK；本测试从未调用真实可见显隐，不能证明系统穿透。
+			channel->Handoff(101); host.WakeFollow();
+			Check(WaitUntil([&] { return invisible() && !channel->Blocked() && ProductRuntimeSnapshot().undoCommandCount == before.undoCommandCount + 1; }, 5s), "SFH ACK seam releases original FIFO", failures);
+			Check(ProductRuntimeSnapshot().canRedo, "SFH real Undo only removes A", failures);
+			const auto held = ProductRuntimeSnapshot();
+			Check(send(HiddenTestContactPhase::Down, 64, 64) && send(HiddenTestContactPhase::Move, 300, 300) &&
+				WaitUntil([&] { return ProductRuntimeSnapshot().runtimeMetrics.contactSeen == held.runtimeMetrics.contactSeen + 1; }, 5s),
+				"SFH accepted contact is physically held before Begin", failures);
+			Check(host.BeginFollow(102), "SFH next session", failures);
+			Check(WaitUntil([&] { return channel->Read().phase == Follow::Phase::Active; }, 5s), "SFH next owner", failures);
+			const auto second = channel->Read();
+			Check(ProductRuntimeSnapshot().currentPageHasContent && ProductRuntimeSnapshot().inputRecycled == held.inputRecycled && !ProductRuntimeSnapshot().canRedo,
+				"SFH accepted contact sealed to Stored but quarantined until true Up", failures);
+			Check(send(HiddenTestContactPhase::Up, 300, 300) && WaitUntil([&] { return ProductRuntimeSnapshot().inputRecycled == held.inputRecycled + 1; }, 5s),
+				"SFH quarantined held contact releases on physical Up", failures);
+			Check(channel->Publish({102,1,second.identity,1e100,-1e100}), "SFH finite extreme target", failures);
+			host.WakeFollow();
+			Check(WaitUntil([&] { return channel->Read().applied == 1; }, 5s) && channel->Read().clamped &&
+				channel->Read().viewportX == -1048576.0 && channel->Read().viewportY == 1048576.0,
+				"SFH actual owner reports hard clamp without float overflow", failures);
+			Check(channel->Publish({102,2,second.identity,17,-19}), "SFH shutdown last target", failures);
+			host.EndFollow(Follow::Disposition::Shutdown);
+			StopProduct();
+			Check(invisible() && std::abs(channel->Read().viewportX - (second.baseX - 17)) < 0.001 &&
+				std::abs(channel->Read().viewportY - (second.baseY + 19)) < 0.001, "SFH shutdown CPU final precedes save barrier", failures);
+			// 同一个真实Host重启：旧会话凭据不能封口或归还新代原因。
+			if (!Check(StartProduct(drawpad, service.Handle(Role::DrawpadPresentation), {&style, &ApplyDrawpadStyle}, options), "SFH restart real invisible Host", failures)) return 1;
+			PublishProductState(state);
+			if (!Check(WaitUntil([&] { return ready(false); }, 5s), "SFH restarted output ready", failures)) return 1;
+			const auto newChannel = host.FollowChannel();
+			Check(newChannel != channel && host.HoldFollowAction(true, newChannel), "SFH new Host owns new hold", failures);
+			Check(!host.HoldFollowAction(false, channel) && !host.HoldFollowAction(true, channel) && !host.BeginFollow(103, channel) && !host.BeginFollow(103, newChannel), "SFH stale release/acquire/Begin cannot affect new hold", failures);
+			Check(host.HoldFollowAction(false, newChannel) && host.BeginFollow(103, newChannel), "SFH current hold returns normally", failures);
+			Check(WaitUntil([&] { return invisible() && newChannel->Read().phase == Follow::Phase::Active; }, 5s), "SFH new generation owner active", failures);
+			host.EndFollow(Follow::Disposition::Shutdown, channel);
+			Check(newChannel->Read().publishing && !newChannel->Read().endQueued, "SFH stale End cannot seal current generation", failures);
+			StopProduct();
+			Check(invisible(), "SFH restart never showed a window", failures);
+			service.StopAndJoin();
+		}
+		catch (...) { ++failures; Report("FAIL", "SFH exception"); }
+		if (!failures) Report("PASS", "SFH never-visible real Host, absolute/End/FIFO/shutdown; Window ACK is a strict seam");
+		return failures ? 1 : 0;
+	}
+
+	int RunScrollFollowPersistenceTest() noexcept
+	{
+#if !defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) || !INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		return 2;
+#else
+		int failures = 0;
+		try
+		{
+			using namespace draw3::uink;
+			using Role = Inkeys::Window::WindowRole;
+			if (!Check(!ProductRunning(), "SFP isolated persistence Host", failures)) return 1;
+			const auto directorySafe = [](const std::filesystem::path& path)
+			{
+				const DWORD attributes = GetFileAttributesW(path.c_str());
+				return attributes != INVALID_FILE_ATTRIBUTES &&
+					(attributes & FILE_ATTRIBUTE_DIRECTORY) && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+			};
+			const auto parent = std::filesystem::current_path() / L"Build" / L"ScrollFollow";
+			auto checked = parent.root_path();
+			if (!Check(parent.is_absolute() && directorySafe(checked) &&
+				GetFileAttributesW((std::filesystem::current_path() / L"InkeysRepo.sln").c_str()) != INVALID_FILE_ATTRIBUTES,
+				"SFP repository-only private parent", failures)) return 1;
+			for (const auto& component : parent.relative_path())
+			{
+				checked /= component;
+				if (!Check(directorySafe(checked), "SFP parent is not reparse", failures)) return 1;
+			}
+			const auto suffix = std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
+			const auto output = parent / (L"persistence-" + suffix);
+			if (!Check(output.native().size() < MAX_PATH - 110 &&
+				CreateDirectoryW(output.c_str(), nullptr) && directorySafe(output),
+				"SFP create-new private root", failures)) return 1;
+			std::fprintf(stderr, "[ScrollFollowPersistence] output=%ls\n", output.c_str());
+			Json::Value evidence(Json::objectValue);
+			evidence["windowAck"] = "strict seam; all HWND remain invisible";
+			const auto snapshotJson = [](const Draw3UInkExportSnapshot& snapshot)
+			{
+				Json::Value value(Json::objectValue);
+				value["fileGuid"] = FormatUInkGuid(snapshot.fileGuid);
+				value["workspaceGuid"] = FormatUInkGuid(snapshot.workspaceGuid);
+				value["workspaceType"] = snapshot.workspaceType;
+				for (const auto& canvas : snapshot.canvases)
+				{
+					Json::Value page(Json::objectValue);
+					page["pageGuid"] = FormatUInkGuid(canvas.pageGuid);
+					page["viewportX"] = canvas.viewport.x; page["viewportY"] = canvas.viewport.y;
+					page["scale"] = canvas.viewport.scale;
+					for (const auto& stroke : canvas.strokes)
+					{
+						Json::Value ink(Json::objectValue);
+						ink["kind"] = static_cast<unsigned>(stroke.style.kind);
+						ink["opacity"] = stroke.style.opacity; ink["rgb"] = stroke.style.fallbackRgb;
+						ink["texture"] = stroke.style.texture;
+						for (const auto& point : stroke.points)
+						{
+							Json::Value p(Json::arrayValue); p.append(point.x); p.append(point.y); p.append(point.width);
+							ink["points"].append(std::move(p));
+						}
+						page["strokes"].append(std::move(ink));
+					}
+					value["canvases"].append(std::move(page));
+				}
+				return value;
+			};
+			const auto equalStroke = [](const Draw3UInkStrokeSnapshot& a, const Draw3UInkStrokeSnapshot& b,
+				double dx = 0, double dy = 0)
+			{
+				if (a.style.kind != b.style.kind || a.style.opacity != b.style.opacity ||
+					a.style.fallbackRgb != b.style.fallbackRgb || a.style.texture != b.style.texture || a.points.size() != b.points.size()) return false;
+				for (std::size_t i = 0; i < a.points.size(); ++i)
+				{
+					// 原A与codec往返必须逐值不变；只有另画Shape的平移比较允许浮点容差。
+					const bool samePosition = dx == 0 && dy == 0
+						? a.points[i].x == b.points[i].x && a.points[i].y == b.points[i].y
+						: std::abs(a.points[i].x + dx - b.points[i].x) <= 0.001 && std::abs(a.points[i].y + dy - b.points[i].y) <= 0.001;
+					if (!samePosition || a.points[i].width != b.points[i].width) return false;
+				}
+				return true;
+			};
+			Inkeys::Window::Service service(64);
+			StyleContext style{&service};
+			struct Cleanup { Inkeys::Window::Service& service; ~Cleanup() { StopProduct(); service.StopAndJoin(); } } cleanup{service};
+			std::vector<Inkeys::Window::WindowSpec> specs;
+			specs.push_back(MakeHiddenSpec(Role::MagnifierHost, L"Inkeys.Hidden.Persistence.M." + suffix, DefWindowProcW, 1024, 768));
+			specs.push_back(MakeHiddenSpec(Role::Freeze, L"Inkeys.Hidden.Persistence.F." + suffix, DefWindowProcW, 1024, 768));
+			specs.push_back(MakeHiddenSpec(Role::DrawpadPresentation, L"Inkeys.Hidden.Persistence.P." + suffix, DefWindowProcW, 1024, 768));
+			specs.push_back(MakeHiddenSpec(Role::Drawpad, L"Inkeys.Hidden.Persistence.D." + suffix, DrawpadMsgCallback, 1024, 768));
+			if (!Check(service.Start(specs), "SFP invisible Window Service", failures)) return 1;
+			const auto invisible = [&]
+			{
+				for (const auto& spec : specs)
+				{
+					DWORD process = 0; const HWND window = service.Handle(spec.role);
+					if (!window || !GetWindowThreadProcessId(window, &process) || process != GetCurrentProcessId() || IsWindowVisible(window)) return false;
+				}
+				return true;
+			};
+			if (!Check(invisible(), "SFP owned HWND never visible", failures)) return 1;
+			const HWND drawpad = service.Handle(Role::Drawpad);
+			auto& host = ProductHost();
+			const auto ready = [&](bool selection)
+			{
+				const auto r = ProductRuntimeSnapshot();
+				return invisible() && r.firstFrameReady && r.selectionMode == selection && r.lastPresentSucceeded &&
+					r.requestedOutputRevision == r.readyOutputRevision && r.requestedOutputTarget == r.readyOutputTarget &&
+					r.presentedContentRevision == r.contentRevision;
+			};
+			const auto send = [&](HiddenTestContactPhase phase, int x, int y)
+			{
+				DWORD_PTR accepted = 0;
+				return invisible() && SendMessageTimeoutW(drawpad, kDraw3HiddenTestContactMessage,
+					static_cast<WPARAM>(phase) | kHiddenTestExternalPenFlag, MAKELPARAM(x,y),
+					SMTO_BLOCK | SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT, 2000, &accepted) && accepted == 0;
+			};
+			const auto draw = [&](int x, int y, int endX, int endY, Bridge::CompletedStrokeKind kind)
+			{
+				const auto before = ProductRuntimeSnapshot();
+				const bool completed = send(HiddenTestContactPhase::Down,x,y) && send(HiddenTestContactPhase::Move,endX,endY) && send(HiddenTestContactPhase::Up,endX,endY) &&
+					WaitUntil([&] { const auto r = ProductRuntimeSnapshot(); return ready(false) &&
+						r.inputDownPublished == before.inputDownPublished + 1 && r.inputTerminalPublished == before.inputTerminalPublished + 1 &&
+						r.inputRecycled == before.inputRecycled + 1 && r.runtimeMetrics.contactSeen == before.runtimeMetrics.contactSeen + 1 &&
+						r.successfulPresentCount > before.successfulPresentCount && r.canUndo && r.completedStrokeKind == kind; }, 5s);
+				if (!completed)
+				{
+					const auto r = ProductRuntimeSnapshot();
+					std::fprintf(stderr,"[ScrollFollowPersistence] draw failed ready=%d down=%llu/%llu terminal=%llu/%llu recycled=%llu/%llu contacts=%llu/%llu present=%llu/%llu undo=%d kind=%u/%u content=%llu/%llu output=%llu/%llu\n",
+						ready(false),r.inputDownPublished,before.inputDownPublished,r.inputTerminalPublished,before.inputTerminalPublished,
+						r.inputRecycled,before.inputRecycled,r.runtimeMetrics.contactSeen,before.runtimeMetrics.contactSeen,
+						r.successfulPresentCount,before.successfulPresentCount,r.canUndo,static_cast<unsigned>(r.completedStrokeKind),static_cast<unsigned>(kind),
+						r.presentedContentRevision,r.contentRevision,r.requestedOutputRevision,r.readyOutputRevision);
+				}
+				return Check(completed,"SFP actual mailbox stroke Stored/presented/recycled", failures);
+			};
+			const auto command = [&](Bridge::CommandType type, bool content, bool undo, bool redo)
+			{
+				const auto before = ProductRuntimeSnapshot();
+				return Check(PublishProductCommand(type) == Bridge::CommandResult::Accepted && WaitUntil([&]
+				{
+					const auto r = ProductRuntimeSnapshot();
+					const bool processed = type == Bridge::CommandType::Clear ? r.clearCommandCount == before.clearCommandCount + 1 :
+						type == Bridge::CommandType::Undo ? r.undoCommandCount == before.undoCommandCount + 1 : r.redoCommandCount == before.redoCommandCount + 1;
+					return processed && ready(false) && r.currentPageHasContent == content && r.canUndo == undo && r.canRedo == redo;
+				}, 5s), "SFP real history command/availability/content", failures);
+			};
+			for (unsigned scenario = 0; scenario < 4; ++scenario)
+			{
+				const bool edit = (scenario & 1) != 0;
+				const bool pen = scenario >= 2;
+				const char* name = pen ? (edit ? "pen-edit" : "pen-viewport-only") : (edit ? "shape-edit" : "shape-viewport-only");
+				const auto drawingKind = pen ? Bridge::CompletedStrokeKind::Drawing : Bridge::CompletedStrokeKind::Shape;
+				std::fprintf(stderr, "[ScrollFollowPersistence] scenario=%s begin\n", name);
+				const auto root = output / std::filesystem::path(name);
+				if (!Check(CreateDirectoryW(root.c_str(), nullptr) && directorySafe(root), "SFP create-new scenario root", failures)) return 1;
+				const std::string initialDate = CaptureDesktopAutoSaveTimestamp().localDate;
+				const auto readLatest = [&]
+				{
+					auto receipt = ReadLastCommittedDesktopAutoSaveFixture(root.native(), initialDate);
+					const auto now = CaptureDesktopAutoSaveTimestamp().localDate;
+					if (now != initialDate)
+					{
+						auto current = ReadLastCommittedDesktopAutoSaveFixture(root.native(), now);
+						if (current.status == DesktopPersistenceStatus::Loaded) receipt = std::move(current);
+					}
+					return receipt;
+				};
+				HostStartOptions options{HostPresentationMode::UlwDirtyRect};
+				options.allowDirectComposition = false; options.enableHiddenTestContactInjection = true;
+				// 专测开启小容量真实metrics，另核对contactSeen；普通产品默认不变。
+				options.enableRuntimeMetrics = true; options.runtimeMetricsMaximumSamples = 128;
+				options.autoSaveRoot = root.native();
+				if (!Check(StartProduct(drawpad, service.Handle(Role::DrawpadPresentation), {&style,&ApplyDrawpadStyle}, options), "SFP real private-root ULW Host", failures)) return 1;
+				Bridge::ProductState state; state.selectionMode = false; state.tool = pen ? Bridge::Tool::Pen : Bridge::Tool::SolidLine;
+				state.widthDip = 8; state.colorRgba = 0x2468A0FFu; state.autoSaveEnabled = true;
+				PublishProductState(state);
+				if (!Check(WaitUntil([&] {return ready(false);},5s), "SFP private Desktop output ready", failures) ||
+					!draw(80,100,300,200,drawingKind)) return 1;
+				// 只用真实Clear文件取得A；必须等owner消费Committed并释放fallback，才能证明后续Undo真读磁盘。
+				if (!command(Bridge::CommandType::Clear,false,true,false) || !Check(WaitUntil([&]
+				{
+					const auto p = host.HiddenPersistenceSnapshot(); return invisible() && p && p->desktopRecovery.committedConsumed == 1 &&
+						p->desktopRecovery.last.cpuFallbackReleased && p->desktopRecovery.last.event == HiddenDesktopRecoveryEvent::CommittedConsumed;
+				},5s), "SFP controller consumed durable Clear and released CPU fallback", failures)) return 1;
+				const auto baseline = readLatest();
+				if (!Check(baseline.status == DesktopPersistenceStatus::Loaded && baseline.trigger == DesktopAutoSaveTrigger::Clear && baseline.loadedSnapshot &&
+					baseline.loadedSnapshot->workspaceType == 0 && baseline.loadedSnapshot->canvases.size() == 1 && baseline.loadedSnapshot->canvases[0].strokes.size() == 1,
+					"SFP strict real Clear index/UInk baseline A", failures)) return 1;
+				const auto& savedA = *baseline.loadedSnapshot;
+				const auto& pageA = savedA.canvases.front();
+				if (!Check(pageA.strokes[0].style.kind == (pen ? Draw3UInkStrokeKind::Pen : Draw3UInkStrokeKind::SolidLine) &&
+					pageA.strokes[0].points.size() >= (pen ? 3u : 2u) &&
+					std::abs(pageA.strokes[0].points.front().x - (80 + pageA.viewport.x)) < 0.001 &&
+					std::abs(pageA.strokes[0].points.front().y - (100 + pageA.viewport.y)) < 0.001,
+					"SFP actual Pen/Shape baseline and raw Down world anchor", failures)) return 1;
+				const auto receipt = host.HiddenPersistenceSnapshot()->desktopRecovery.last;
+				if (!Check(receipt.file == baseline.fileGuid.Bytes() && receipt.workspace == savedA.workspaceGuid.Bytes() && receipt.page == pageA.pageGuid.Bytes(),
+					"SFP Committed receipt matches actual file/workspace/page", failures)) return 1;
+				if (!Check(PublishProductCommand(Bridge::CommandType::Undo) == Bridge::CommandResult::Accepted && WaitUntil([&]
+				{
+					const auto p = host.HiddenPersistenceSnapshot(); return ready(false) && p && p->desktopRecovery.loadRequested == 1 &&
+						p->desktopRecovery.loadedInstalled == 1 && p->desktopRecovery.memoryRestored == 0 &&
+						p->desktopRecovery.last.file == baseline.fileGuid.Bytes() && p->desktopRecovery.last.workspace == savedA.workspaceGuid.Bytes() &&
+						p->desktopRecovery.last.page == pageA.pageGuid.Bytes() && p->desktopRecovery.last.cpuFallbackReleased && ProductRuntimeSnapshot().currentPageHasContent;
+				},5s), "SFP real worker Loaded installed A after CPU fallback release", failures)) return 1;
+				evidence[name]["baseline"] = snapshotJson(savedA);
+				evidence[name]["clearPath"] = std::filesystem::path(baseline.relativePath).generic_string();
+				if (edit)
+				{
+					if (!draw(500,400,620,470,drawingKind) ||
+						!command(Bridge::CommandType::Undo,true,true,true)) return 1;
+				}
+				const auto inputBeforeFollow = ProductRuntimeSnapshot();
+				const std::uint64_t session = 301 + scenario;
+				const auto channel = host.FollowChannel();
+				if (!Check(host.BeginFollow(session,channel) && WaitUntil([&] {return invisible() && channel->Read().phase == Follow::Phase::Active;},5s), "SFP owner Begin from restored A", failures)) return 1;
+				const auto base = channel->Read();
+				if (!Check(base.identity.workspace == savedA.workspaceGuid.Bytes() && base.identity.page == pageA.pageGuid.Bytes(), "SFP restored scene identity is real", failures)) return 1;
+				state.selectionMode = true; PublishProductState(state);
+				if (!Check(WaitUntil([&] {return ready(true);},5s), "SFP auxiliary render ready without showing", failures)) return 1;
+				constexpr double totalX = -144, totalY = 64;
+				if (!Check(channel->Publish({session,1,base.identity,totalX,totalY}), "SFP publish absolute final", failures)) return 1;
+				if (edit)
+				{
+					host.EndFollow(Follow::Disposition::Restore,channel);
+					if (!Check(WaitUntil([&] {return invisible() && channel->Read().phase == Follow::Phase::Presented;},10s), "SFP true final full Present/recovery", failures)) return 1;
+					state.selectionMode = false; PublishProductState(state);
+					if (!Check(WaitUntil([&] {return ready(false);},5s), "SFP original drawing output ready", failures)) return 1;
+					// ACK仅fixture接缝，绝不执行真实Window显示；Host/owner/Tile和输出ready仍走生产实现。
+					channel->Handoff(session); host.WakeFollow();
+					if (!Check(WaitUntil([&] {return invisible() && !channel->Blocked();},5s), "SFP strict hidden ACK seam", failures)) return 1;
+					const auto afterFollow = ProductRuntimeSnapshot();
+					if (!Check(afterFollow.canRedo && afterFollow.canUndo && afterFollow.undoCommandCount == inputBeforeFollow.undoCommandCount &&
+						afterFollow.redoCommandCount == inputBeforeFollow.redoCommandCount, "SFP Follow preserves existing Redo and creates no Undo", failures)) return 1;
+					if (!command(Bridge::CommandType::Redo,true,true,false) || !command(Bridge::CommandType::Undo,true,true,true) ||
+						!draw(80,100,300,200,drawingKind)) return 1;
+					if (!Check(!ProductRuntimeSnapshot().canRedo, "SFP new B cancels original Redo branch", failures)) return 1;
+					if (!command(Bridge::CommandType::Undo,true,true,true) || !command(Bridge::CommandType::Undo,false,false,true) ||
+						!command(Bridge::CommandType::Redo,true,true,true) || !command(Bridge::CommandType::Redo,true,true,false)) return 1;
+					// 经真正输出代交接切橡皮，避免固定sleep掩盖尚未消费的工具。
+					state.selectionMode = true; PublishProductState(state);
+					if (!Check(WaitUntil([&] {return ready(true);},5s), "SFP eraser tool handoff begins", failures)) return 1;
+					state.tool = Bridge::Tool::FixedEraser; state.selectionMode = false; PublishProductState(state);
+					if (!Check(WaitUntil([&] {return ready(false);},5s), "SFP eraser tool handoff consumed", failures) ||
+						!draw(200,155,240,173,Bridge::CompletedStrokeKind::Eraser) ||
+						!command(Bridge::CommandType::Undo,true,true,true) || !command(Bridge::CommandType::Redo,true,true,false)) return 1;
+				}
+				// viewport-only不先等待Applied，也不再发Down：Stop必须把同锁冻结的final放在真实退出捕获之前。
+				StopProduct();
+				const auto final = channel->Read();
+				const auto persisted = host.HiddenPersistenceSnapshot();
+				if (!Check(invisible() && final.applied == 1 && !final.clamped && std::abs(final.viewportX-(base.baseX-totalX)) < 0.001 &&
+					std::abs(final.viewportY-(base.baseY-totalY)) < 0.001 && persisted && persisted->desktopAccepted == 2 && persisted->desktopCommitted == 2 &&
+					persisted->desktopFailed == 0 && persisted->desktopPending == 0,
+					"SFP final CPU Viewport then real Exit worker drain", failures)) return 1;
+				if (!edit && !Check(ProductRuntimeSnapshot().inputDownPublished == inputBeforeFollow.inputDownPublished &&
+					ProductRuntimeSnapshot().inputTerminalPublished == inputBeforeFollow.inputTerminalPublished,
+					"SFP loaded A viewport-only has no later contact/B", failures)) return 1;
+				const auto exit = readLatest();
+				if (!Check(exit.status == DesktopPersistenceStatus::Loaded && exit.trigger == DesktopAutoSaveTrigger::Exit && exit.loadedSnapshot && exit.sourceRevision &&
+					exit.storageSession == baseline.storageSession && exit.sequenceInSession == baseline.sequenceInSession+1 && exit.fileGuid != baseline.fileGuid &&
+					exit.loadedSnapshot->workspaceGuid == savedA.workspaceGuid && exit.loadedSnapshot->workspaceType == 0 && exit.loadedSnapshot->canvases.size() == 1,
+					"SFP strict actual Exit index/new file identity", failures)) return 1;
+				const auto& page = exit.loadedSnapshot->canvases.front();
+				if (!Check(page.pageGuid == pageA.pageGuid && page.viewport.scale == 1 && page.viewport.x == static_cast<float>(base.baseX-totalX) &&
+					page.viewport.y == static_cast<float>(base.baseY-totalY) && page.strokes.size() == (edit?3u:1u) && equalStroke(pageA.strokes[0],page.strokes[0]),
+					"SFP actual Exit A exact point/style/GUID and new viewport", failures)) return 1;
+				if (edit)
+				{
+					const auto& strokeB = page.strokes[1]; const auto& eraser = page.strokes[2];
+					// 普通笔的采样/笔宽与真实时序有关；不强求A/B建模数组相同，只核B的真实Down锚点及一次offset。
+					const bool bMapped = pen ? strokeB.style.kind == Draw3UInkStrokeKind::Pen && strokeB.points.size() >= 3 &&
+						std::abs(strokeB.points.front().x - (80 + page.viewport.x)) < 0.001 &&
+						std::abs(strokeB.points.front().y - (100 + page.viewport.y)) < 0.001 &&
+						strokeB.style.opacity == pageA.strokes[0].style.opacity && strokeB.style.fallbackRgb == pageA.strokes[0].style.fallbackRgb &&
+						strokeB.style.texture == pageA.strokes[0].style.texture :
+						equalStroke(pageA.strokes[0],strokeB,page.viewport.x-pageA.viewport.x,page.viewport.y-pageA.viewport.y);
+					if (!Check(bMapped && eraser.style.kind == Draw3UInkStrokeKind::Eraser && !eraser.points.empty(),
+						"SFP final order A/B/eraser mask; actual B Down latches viewport once", failures)) return 1;
+					// Eraser是有序mask Stroke。用实际存盘capsule中心线和半径证明覆盖B，不将工具发布当成擦中。
+					double deepestOverlap = 0;
+					for (const auto& e : eraser.points)
+						for (std::size_t i=1;i<strokeB.points.size();++i)
+						{
+							const auto& p = strokeB.points[i-1]; const auto& q = strokeB.points[i];
+							const double dx=q.x-p.x, dy=q.y-p.y;
+							const double norm=dx*dx+dy*dy;
+							const double t=norm>0 ? std::clamp(((e.x-p.x)*dx+(e.y-p.y)*dy)/norm,0.0,1.0) : 0;
+							const double distance=std::hypot(e.x-(p.x+t*dx),e.y-(p.y+t*dy));
+							deepestOverlap=(std::max)(deepestOverlap,(e.width+(std::min)(p.width,q.width))*0.5-distance);
+						}
+					if (!Check(deepestOverlap>1,"SFP actual stored eraser mask overlaps B by positive capsule margin",failures)) return 1;
+					evidence[name]["eraserMaskOverlapMarginPx"] = deepestOverlap;
+					evidence[name]["bDownWorldX"] = strokeB.points.front().x;
+					evidence[name]["bDownWorldY"] = strokeB.points.front().y;
+				}
+				const auto path = root / L"desktop" / std::filesystem::path(exit.localDate) / exit.relativePath;
+				const auto read = ReadUInkFile(path.native());
+				const auto imported = read.document ? ImportDraw3UInkDocument(*read.document) : Draw3UInkImportResult{};
+				if (!Check(kUInkVersion == 10 && read.status == UInkReadStatus::Complete && read.document &&
+					imported.status == Draw3UInkImportStatus::Success && imported.snapshot && imported.snapshot->canvases.size() == 1 &&
+					imported.snapshot->workspaceGuid == savedA.workspaceGuid && imported.snapshot->canvases[0].pageGuid == page.pageGuid &&
+					imported.snapshot->canvases[0].viewport.x == page.viewport.x && imported.snapshot->canvases[0].viewport.y == page.viewport.y &&
+					imported.snapshot->canvases[0].viewport.scale == 1 && imported.snapshot->canvases[0].strokes.size() == page.strokes.size(),
+					"SFP Complete v10 Read and Success Import preserve viewport", failures)) return 1;
+				for (std::size_t i=0;i<page.strokes.size();++i)
+					if (!Check(equalStroke(page.strokes[i],imported.snapshot->canvases[0].strokes[i]), "SFP codec preserves every real stroke point/style/order", failures)) return 1;
+				evidence[name]["exit"] = snapshotJson(*exit.loadedSnapshot);
+				evidence[name]["exitPath"] = path.generic_string();
+				evidence[name]["codecVersionValidated"] = 10;
+				evidence[name]["controllerCommittedConsumed"] = Json::UInt64(persisted->desktopRecovery.committedConsumed);
+				evidence[name]["controllerDiskLoadRequested"] = Json::UInt64(persisted->desktopRecovery.loadRequested);
+				evidence[name]["controllerDiskLoadedInstalled"] = Json::UInt64(persisted->desktopRecovery.loadedInstalled);
+				evidence[name]["controllerMemoryRestored"] = Json::UInt64(persisted->desktopRecovery.memoryRestored);
+				std::fprintf(stderr, "[ScrollFollowPersistence] scenario=%s pointsA=%zu strokesExit=%zu viewport=(%.3f,%.3f) committed=%llu diskInstalled=%llu visible=0 PASS\n",
+					name,pageA.strokes[0].points.size(),page.strokes.size(),page.viewport.x,page.viewport.y,
+					static_cast<unsigned long long>(persisted->desktopCommitted),static_cast<unsigned long long>(persisted->desktopRecovery.loadedInstalled));
+			}
+			Json::StreamWriterBuilder writer; writer["indentation"] = "  ";
+			const std::string bytes = Json::writeString(writer,evidence);
+			const auto file = output / L"evidence.json";
+			const HANDLE handle = CreateFileW(file.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+			if (!Check(handle != INVALID_HANDLE_VALUE,"SFP create-new evidence file",failures)) return 1;
+			DWORD written = 0; const bool saved = bytes.size() < MAXDWORD && WriteFile(handle,bytes.data(),static_cast<DWORD>(bytes.size()),&written,nullptr) &&
+				written == bytes.size() && FlushFileBuffers(handle); CloseHandle(handle);
+			if (!Check(saved && invisible(),"SFP exact private evidence durable; never shown",failures)) return 1;
+		}
+		catch (...) { ++failures; Report("FAIL","SFP exception"); }
+		if (!failures) Report("PASS","SFP true Clear/disk restore/Follow/B/history/Exit/UInk; HWND invisible and ACK seam only");
+		return failures ? 1 : 0;
+#endif
 	}
 
 	int RunHiddenWindowRuntimeMetricsSmoke(const wchar_t* privateOutputRoot) noexcept

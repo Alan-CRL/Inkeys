@@ -217,6 +217,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		PrepareExitAutoSave,
 		SetWhiteboardTheme,
 		ShortcutFence,
+		FollowBegin,
+		FollowEnd,
 	};
 
 	enum class CommandResult : std::uint8_t
@@ -256,6 +258,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::uint64_t whiteboardGeneration = 0;
 		std::size_t whiteboardPage = 0;
 		std::shared_ptr<const Shortcuts::Request> shortcut;
+		std::uint64_t followSession = 0;
 	};
 
 	constexpr int NormalizeLegacyEraserMode(int value) noexcept
@@ -273,7 +276,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 	public:
 		explicit StateBridge(std::size_t capacity = 256) noexcept;
-		void PublishState(ProductState state) noexcept;
+		std::uint64_t PublishState(ProductState state) noexcept;
 		// workspace 使用独立事务发布，使 Desktop/Whiteboard 能明确清除旧 PPT 页状态。
 		bool PublishWorkspace(Workspace workspace) noexcept;
 		std::optional<std::uint64_t> PublishPresentationTarget(
@@ -282,11 +285,13 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool RequirePresentationTargetRefresh(const PresentationReadyIdentity& expected) noexcept;
 		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
-		CommandResult Publish(CommandType type) noexcept;
+		CommandResult Publish(CommandType type, std::uint64_t followSession = 0) noexcept;
 		CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		CommandResult PublishShortcut(CommandType type,
 			std::shared_ptr<const Shortcuts::Request> request) noexcept;
 		bool TryConsume(Command& command) noexcept;
+		// Begin 预留的独立终态槽，满普通队列仍可可靠结束。
+		bool PublishFollowEnd(std::uint64_t session) noexcept;
 		// 每次 Host 启动前清空旧命令并重新开放桥接。
 		void Reset() noexcept;
 		void Stop() noexcept;
@@ -299,6 +304,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		ProductState state_{};
 		std::deque<Command> commands_;
 		std::optional<Command> finalCommand_;
+		std::optional<Command> followEnd_;
 		std::size_t capacity_ = 256;
 		std::uint64_t nextSequence_ = 1;
 		std::uint64_t nextTargetRevision_ = 1;

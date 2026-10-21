@@ -44,6 +44,7 @@ namespace
 			std::uint64_t request = 0, lease = 0, freezeRevision = 0;
 			bool firstDelete = false, select = false, toggle = false;
 		} pending;
+		Inkeys::Business::ScrollFollow::ActionTicket followAction{};
 		struct DeleteCandidate
 		{
 			Keyboard::Intent intent{};
@@ -66,6 +67,8 @@ namespace
 		}
 		void CancelPending()
 		{
+			if constexpr (std::is_same_v<Backend, BarShortcutBackend>)
+				if (followAction.id) { Inkeys::Business::ScrollFollow::CancelAction(followAction); followAction = {}; }
 			if (pending.request) Backend::Retire(pending.request);
 			if (pending.lease) Backend::Release(pending.lease);
 			pending = {};
@@ -144,6 +147,7 @@ namespace
 				gesture.interruptionGeneration != completed.intent.interruptionGeneration);
 			if (valid && completed.select && !interrupted)
 			{
+				if constexpr (std::is_same_v<Backend, BarShortcutBackend>) ResetScrollFollowActionReceipt();
 				if (completed.lease)
 					selected = Select(completed.intent.modeRevision, completed.freezeRevision);
 				else selected = FinishSecondDelete(completion.resultContext, completed.intent);
@@ -158,6 +162,8 @@ namespace
 				}
 				else candidate = {};
 			}
+			if constexpr (std::is_same_v<Backend, BarShortcutBackend>)
+				if (followAction.id && !pending.request) { Inkeys::Business::ScrollFollow::CompleteAction(followAction, ScrollFollowActionReceipt()); followAction = {}; }
 			if (completed.toggle && (!valid || !selected))
 			{
 				// 后续往返依赖这次退出完成；失败不能把后续 X 解释成又一次清空。
@@ -278,8 +284,24 @@ namespace
 				// Selection 的 Host 交接尚未完成时保留后继 X，等同一作用域重新开放。
 				if (!context.available || queue.empty()) break;
 				intent = queue.front();
+				if constexpr (std::is_same_v<Backend, BarShortcutBackend>)
+				{
+					using namespace Inkeys::Business::ScrollFollow;
+					if (!Current(intent, intent.command == Command::ToggleAnnotation)) { queue.pop_front(); continue; }
+					if (!followAction.id)
+					{
+						const auto prepared = PrepareAction(); followAction = prepared.ticket;
+						if (!followAction.id) { queue.pop_front(); continue; }
+					}
+					const auto state = PollAction(followAction);
+					if (state == ActionState::Pending) break;
+					if (state != ActionState::Ready) { CancelAction(followAction); followAction = {}; queue.pop_front(); continue; }
+				}
 				queue.pop_front();
+				if constexpr (std::is_same_v<Backend, BarShortcutBackend>) ResetScrollFollowActionReceipt();
 				Dispatch(intent);
+				if constexpr (std::is_same_v<Backend, BarShortcutBackend>)
+					if (followAction.id && !pending.request) { Inkeys::Business::ScrollFollow::CompleteAction(followAction, ScrollFollowActionReceipt()); followAction = {}; }
 			}
 			const auto gesture = Backend::Gesture();
 			if (gesture.valid && candidate.valid && !(pending.request && pending.select) &&

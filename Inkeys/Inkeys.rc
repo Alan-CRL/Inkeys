@@ -299,6 +299,8 @@ BARWHITEBOARD           UI                      "src\\UI\\barWhiteboard.svg"
 
 BARDISMISS              UI                      "src\\UI\\barDismiss.svg"
 
+BARVIEWADJUST           UI                      "src\\UI\\BarViewAdjust.svg"
+
 BARSETTING              UI                      "src\\UI\\barSetting.svg"
 
 BARERASER               UI                      "src\\UI\\barEraser.svg"

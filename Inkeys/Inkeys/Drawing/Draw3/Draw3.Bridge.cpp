@@ -28,10 +28,10 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 	}
 
-	void StateBridge::PublishState(ProductState state) noexcept
+	std::uint64_t StateBridge::PublishState(ProductState state) noexcept
 	{
 		std::scoped_lock lock(mutex_);
-		if (!running_) return;
+		if (!running_) return 0;
 		// 普通工具快照不应把 PPT 已发布的绝对页重置到第一页。
 		if (!state.hasPage && state_.hasPage)
 		{
@@ -48,6 +48,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		state.shortcutIntentEpoch = state_.shortcutIntentEpoch + (sceneChanged ? 1 : 0);
 		state.revision = state_.revision + 1;
 		state_ = state;
+		return state_.revision;
 	}
 
 	bool StateBridge::PublishWorkspace(Workspace workspace) noexcept
@@ -135,10 +136,11 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		return state_;
 	}
 
-	CommandResult StateBridge::Publish(CommandType type) noexcept
+	CommandResult StateBridge::Publish(CommandType type, std::uint64_t followSession) noexcept
 	{
 		std::scoped_lock lock(mutex_);
 		if (!running_) return CommandResult::NotRunning;
+		if (type == CommandType::FollowEnd || (type == CommandType::FollowBegin && !followSession)) return CommandResult::Unsupported;
 		// 尚未准备好的能力保留显式空接口，产品入口可据此隐藏。
 		if (type == CommandType::Save || type == CommandType::SuperRecovery ||
 			type == CommandType::AutoStraighten || type == CommandType::InputTest ||
@@ -148,6 +150,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		try
 		{
 			Command command{ type, nextSequence_, state_.workspace };
+			command.followSession = followSession;
 			// 命令固定发布时的文稿身份，避免稍后的 latest state 改变其作用画布。
 			if (state_.workspace == Workspace::Presentation)
 				command.presentationTarget = state_.presentationTarget;
@@ -211,6 +214,10 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	bool StateBridge::TryConsume(Command& command) noexcept
 	{
 		std::scoped_lock lock(mutex_);
+		if (followEnd_ && (commands_.empty() || followEnd_->sequence < commands_.front().sequence))
+		{
+			command = std::move(*followEnd_); followEnd_.reset(); return true;
+		}
 		if (!commands_.empty())
 		{
 			command = std::move(commands_.front());
@@ -223,10 +230,20 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		return true;
 	}
 
+	bool StateBridge::PublishFollowEnd(std::uint64_t session) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_ || followEnd_) return false;
+		followEnd_.emplace(); followEnd_->type = CommandType::FollowEnd;
+		followEnd_->sequence = nextSequence_++; followEnd_->followSession = session;
+		return true;
+	}
+
 	void StateBridge::Reset() noexcept
 	{
 		std::scoped_lock lock(mutex_);
 		commands_.clear();
+		followEnd_.reset();
 		finalCommand_.reset();
 		nextSequence_ = 1;
 		// Host 重启也不复用目标编号，避免旧 UI/ready completion 命中新一代。

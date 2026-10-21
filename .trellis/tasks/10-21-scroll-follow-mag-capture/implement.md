@@ -69,3 +69,35 @@ check只修改测试，不改生产捕获/运行库/定格源码：补完整帧�
 ARM64完整solution exit0（8.68s、0 warning/0 error），--mag-capture-only及完整--no-window均exit0。fresh-hidden服务对照130结果/0valid、全部Filter50；cold55帧NearBlack/0valid；lifecycle监督/Stop/busy/lease保活/清理通过但最后有效像素再启失败，整体exit1。幸存原控件黑帧缺乏相同样式独立正对照，不推定捕获破坏定格。i18n425/425、XML、diff、物理编码换行和静态PE检查通过。历史成功不覆盖最新失败，阶段保持in_progress。
 
 详细检查、构建退出与未覆盖项：[research/check.md](research/check.md)。原始实验与环境：[父research/capture-poc.md](../10-21-scroll-follow-v1/research/capture-poc.md)。
+
+## 本轮继续实施（2026-10-21）
+
+用户已批准完成正式取帧及全部后续阶段，上一轮仅诊断的范围限制结束。本轮验证仅无窗口或完全不在屏幕显示的HWND，禁止Computer Use/前台/可见测试；必要可见验收时停止。当前授权见[implementation-authorization.md](../10-21-scroll-follow-v1/research/implementation-authorization.md)，其优先于本文旧轮次边界。原定格Mag的无callback基础验证见research/freeze-printwindow.md（捕获子任务）；后续正式路径须分别验证。本轮不自动commit/push。
+
+## 正式异步取帧实施（2026-10-21，本轮继续授权）
+
+本轮已完成供后续阶段使用的正式 Capture API，生产/测试源码交给主会话顺序 check；没有把当前完整滚动批注任务标记完成。
+
+- [x] 保留原 MagInitialize/create/readyPromise 与普通 Freeze 分工；由既有 MagnifierThread 串行执行共用控件的 Begin/Update/PrintWindow(2)/End，Coordinator 仅增 timed wait/external wake。
+- [x] 新增 Graphics/FreezeCapture.h/.cpp 的 Start/Stop/GetSnapshot/借用 Frame 与可测 Session/Backend；固定 primary/source/client/workarea/display generation，top-down BGRA、session/sequence/timestamp/quality/stats，无捕获 FIFO、50ms 目标时隙、慢帧跳过。
+- [x] 原 Source/client 少一像素只保留真实几何，不按宽比缩放。生产后端 MagGetWindowTransform 核对 identity，Frame 映射=1:1；不支持其他矩阵即取消。
+- [x] 首次 update 等800ms、有限重试，5s内必须accepted F0；之后1s无有效结果监督撤销。黑/低信息/API拒绝不能延长期限，静止同图有效。quality/rejected/apiFailures可供后续即时Lost检测。
+- [x] Stop/Freeze/超时不等待PW或已准入借用回调；迟到Read不发布；旧Read/回调/实际清理未返回保持occupied并拒绝新Start。Freeze先串行结束capture占用，再执行原事务。
+- [x] 异常Host销毁只关门；inFlight时保留DIB/runtime、跳过MagUninitialize并标记本进程不可再启，不阻塞Overlay owner。正常仍stop -> MagnifierThread join -> WindowService StopAndJoin，由原owner uninit。此窄接口未拦截OS已执行的HWND销毁，不能宣称所有异常系统行为已实测。
+- [x] 两次完整InkeysRepo.sln Debug|ARM64正常宿主构建均exit0（36.00s/20.72s，3个既有hashlib++ C4267、0error），原生ARM64 MSBuild/vswhere/单一Path/禁node reuse/仓库TEMP；未改SDK、依赖、PDB/工具链。
+- [x] `--freeze-capture-only`最终exit0；完整`--no-window`exit0、末尾PASS animation correctness。新增测试无HWND、使用fake backend像素；真实steady_clock监督线程覆盖阻塞消费者1s撤销。
+- [x] 工程XML解析、源文件diff检查、原BOM/CRLF核对通过（Coordinator原无BOM）；新增代码关键中文注释。
+- [ ] 正式MagnifierThread上的真实屏幕像素/排除/持续采样/资源增长及普通Freeze前后可见验收。本轮禁止可见测试，因此没有运行旧`--freeze-mag-printwindow-test`，没有启动普通主程序/Computer Use。旧owner诊断仅为基础证据，不能代替正式跨线程路径。
+
+本阶段文件：Inkeys/IdtMagnification.cpp；Inkeys/Inkeys/Graphics/FreezeCapture.h/.cpp；Inkeys/Inkeys/UI/Freeze/Freeze.MagnifierCoordinator.h；主vcxproj/filters；Headless vcxproj/animation runner/freeze_capture_tests.cpp。未接Tracker/Draw3/Bar，未commit/push。
+
+本轮接口、线程/时间/质量合同、全部日志、测试与未覆盖边界详见[research/production-capture.md](research/production-capture.md)。原始结果位于Build/ScrollFollow/production-capture-build-arm64[-final].log、production-capture-only-final.log、production-capture-headless.log。后续顺序check如改源码，应另外保留其修订和验证，不覆盖本轮实施证据。
+
+## 正式取帧顺序 Check（本轮）
+
+- [x] trellis-check修复窗口ready跨线程atomic与stop通知丢失竞态，保留原Mag/创建线程结构；新增idle/active各64次真实监督stop/join回归。
+- [x] 最终完整ARM64 solution exit0，29.32s，62个既有warning/0error；定向exit0约2.48s，非法参数exit2且输出0B；完整--no-window exit0约109.92s，stderr空。
+- [x] 三份工程XML、十份代码/工程UTF8/原BOM/CRLF及源码diff检查通过，最终验证后源码哈希不变。
+- [ ] 正式MagnifierThread实屏像素、持续采样/排除和系统销毁边界仍未验收；上轮owner诊断不能代替，本轮禁止可见操作。允许进入纯离线Tracker，不将父功能标记完成。
+
+完整审查记录：[research/production-capture-check.md](research/production-capture-check.md)。本轮未commit/push。

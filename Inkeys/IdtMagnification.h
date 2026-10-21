@@ -2,13 +2,14 @@
 #include "IdtMain.h"
 #include "Inkeys/Graphics/Surface.hpp"
 
+#include <atomic>
 #include <magnification.h>
 #pragma comment(lib, "magnification.lib")
 
 extern Inkeys::Graphics::DibSurface MagnificationBackground;
 extern HWND magnifierWindow, magnifierChild;
 
-extern bool magnificationCreateReady;
+extern std::atomic<bool> magnificationCreateReady;
 
 extern shared_mutex MagnificationBackgroundSm;
 extern RECT hostWindowRect;

@@ -376,6 +376,26 @@ namespace Inkeys::Drawing::Draw3
 		WindowController window;
 		Haptics::ClickMailbox hapticClicks;
 		std::mutex commandPublishMutex;
+		std::shared_ptr<Follow::Channel> follow = std::make_shared<Follow::Channel>();
+		bool followEndWakeReserved = false;
+		std::uint32_t followActionHolds = 0;
+		// 调用方已持 commandPublishMutex；禁止从此短门回调 Business/UI。
+		static void RetireFollowFromOwner(void* context) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			std::scoped_lock commandLock(self->commandPublishMutex);
+			self->EnsureFollowEndLocked(Follow::Disposition::RetireScene);
+		}
+		void EnsureFollowEndLocked(Follow::Disposition disposition) noexcept
+		{
+			if (follow->Seal(disposition) && followEndWakeReserved)
+			{
+				if (bridge.PublishFollowEnd(follow->Read().session)) input.PublishReservedCommandWake();
+				else { input.CancelReservedCommandWake(); follow->Fail(); }
+				followEndWakeReserved = false;
+			}
+		}
+
 		mutable std::mutex eraserDiagnosticsMutex;
 		SpeedEraser::Diagnostics eraserDiagnostics;
 		PenRuntimeDiagnostics penDiagnostics;
@@ -480,6 +500,25 @@ namespace Inkeys::Drawing::Draw3
 		HostRuntimeCallbacks runtimeCallbacks = {};
 		HostStartOptions startOptions = {};
 		std::atomic_uint64_t hiddenPresentationNotFound = 0;
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		mutable std::mutex hiddenDesktopRecoveryMutex;
+		HiddenDesktopRecoverySnapshot hiddenDesktopRecovery;
+		static void ObserveHiddenDesktopRecovery(void* context,
+			const HiddenDesktopRecoveryReceipt& receipt) noexcept
+		{
+			auto& self = *static_cast<Impl*>(context);
+			std::scoped_lock lock(self.hiddenDesktopRecoveryMutex);
+			auto& snapshot = self.hiddenDesktopRecovery;
+			switch (receipt.event)
+			{
+			case HiddenDesktopRecoveryEvent::CommittedConsumed: ++snapshot.committedConsumed; break;
+			case HiddenDesktopRecoveryEvent::LoadRequested: ++snapshot.loadRequested; break;
+			case HiddenDesktopRecoveryEvent::LoadedInstalled: ++snapshot.loadedInstalled; break;
+			case HiddenDesktopRecoveryEvent::MemoryRestored: ++snapshot.memoryRestored; break;
+			}
+			snapshot.last = receipt;
+		}
+#endif
 		std::mutex startupMutex;
 		std::condition_variable startupCondition;
 		mutable std::mutex contentMutex;
@@ -773,6 +812,7 @@ namespace Inkeys::Drawing::Draw3
 			if (suspendedPresentationTarget != expected) suspendedPresentationTarget.reset();
 			if (uiReadyPresentationTarget != expected) uiReadyPresentationTarget.reset();
 			const bool blocked = inputStopping.load(std::memory_order_acquire) || commandScenePending ||
+				follow->Blocked() || followActionHolds != 0 ||
 				(desired.workspace == Bridge::Workspace::Whiteboard && whiteboardLoadPending.load(std::memory_order_acquire)) ||
 				(desired.workspace == Bridge::Workspace::Presentation
 				? !expected || readyPresentationTarget != expected ||
@@ -1435,6 +1475,12 @@ namespace Inkeys::Drawing::Draw3
 			SpeedEraser::DisplayScale scale;
 			scale.development = development;
 			window.SetTouchContactAreaAssistance(development.touchContactAreaAssistance);
+			const auto previousDisplay = window.SpeedEraserDisplayScaleSnapshot();
+			if (follow->Blocked() && previousDisplay.generation && snapshot && previousDisplay.generation != snapshot->generation)
+			{
+				std::scoped_lock commandLock(commandPublishMutex);
+				EnsureFollowEndLocked(Follow::Disposition::RetireScene);
+			}
 			scale.development.touchAreaTrace=false;
 			touchAreaTraceEnabled.store(development.touchAreaTrace,std::memory_order_relaxed);
 			scale.development.touchContactAreaAssistance=false; // 面积开关不属于 Mouse/Pen 的显示标尺。
@@ -1551,6 +1597,8 @@ namespace Inkeys::Drawing::Draw3
 				RefreshPresentationInputGateLocked();
 			}
 			const Bridge::ProductState state = bridge.Snapshot();
+			// 场景替换必须排在旧页最后可信 CPU viewport 之后。
+			if (follow->Blocked() && state.workspace != Bridge::Workspace::Desktop) return;
 			if (state.revision == appliedBridgeRevision && !restoreLatestScene) return;
 			appliedBridgeRevision = state.revision;
 
@@ -1675,11 +1723,14 @@ namespace Inkeys::Drawing::Draw3
 				return;
 			}
 			// 每个独立 Command marker 只执行一条 scene-stamped 命令。
-			restoreLatestScene = true;
-			if (!command.shortcut) EnqueueCommandScene(command); // 快捷键只条件执行当前页，禁止重放旧页。
+			const bool followCommand = command.type == Bridge::CommandType::FollowBegin || command.type == Bridge::CommandType::FollowEnd;
+			if (!followCommand) restoreLatestScene = true;
+			if (!command.shortcut && !followCommand) EnqueueCommandScene(command); // 快捷键只条件执行当前页，禁止重放旧页。
 			CanvasCommand canvas;
 			switch (command.type)
 			{
+			case Bridge::CommandType::FollowBegin: canvas.type = CanvasCommandType::FollowBegin; break;
+			case Bridge::CommandType::FollowEnd: canvas.type = CanvasCommandType::FollowEnd; break;
 			case Bridge::CommandType::SetWhiteboardTheme:
 				canvas.type = CanvasCommandType::SetWhiteboardTheme;
 				canvas.whiteboardTheme = command.whiteboardTheme;
@@ -1697,6 +1748,7 @@ namespace Inkeys::Drawing::Draw3
 			default: return;
 			}
 			canvas.shortcut = std::move(command.shortcut);
+			canvas.followSession = command.followSession;
 			window.EnqueueCanvasCommand(canvas);
 		}
 
@@ -1756,13 +1808,24 @@ namespace Inkeys::Drawing::Draw3
 			input.ResetForNextRun();
 			inputMode.store(HostInputMode::Disabled, std::memory_order_release);
 			inputStopping.store(false, std::memory_order_release);
-			bridge.Reset();
+			{
+				// 与外部会话/动作同门换代；旧shared_ptr凭据不能归还新Host的输入原因。
+				std::scoped_lock commandLock(commandPublishMutex);
+				std::scoped_lock sceneLock(presentationTargetMutex);
+				bridge.Reset();
+				follow = std::make_shared<Follow::Channel>();
+				followEndWakeReserved = false;
+				followActionHolds = 0;
+			}
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
 			{std::scoped_lock lock(eraserDiagnosticsMutex);eraserDiagnostics={};penDiagnostics={};}
 			this->styleCallbacks = styleCallbacks;
 			this->runtimeCallbacks = runtimeCallbacks;
 			startOptions = options;
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			{ std::scoped_lock lock(hiddenDesktopRecoveryMutex); hiddenDesktopRecovery = {}; }
+#endif
 			hiddenTestContactInjectionEnabled = options.enableHiddenTestContactInjection;
 			attachedWindow.store(hwnd, std::memory_order_release);
 			attachedPresentationWindow.store(presentationHwnd, std::memory_order_release);
@@ -1940,6 +2003,12 @@ namespace Inkeys::Drawing::Draw3
 							observer.shortcutContextChanged = &ObserveShortcutContext;
 							observer.shortcutCommandAllowed = &AllowShortcutCommand;
 							observer.shortcutCompleted = &CompleteShortcut;
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+							observer.hiddenDesktopRecovery = startOptions.enableHiddenTestContactInjection
+								? &ObserveHiddenDesktopRecovery : nullptr;
+#endif
+							observer.follow = follow; observer.followRetireRequested = &RetireFollowFromOwner;
+							observer.followTestRecoveryMaximumTiles = startOptions.enableHiddenTestContactInjection ? startOptions.followTestRecoveryMaximumTiles : 0;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
@@ -2239,6 +2308,7 @@ namespace Inkeys::Drawing::Draw3
 			bool exitBarrierQueued = false;
 			{
 				std::scoped_lock lock(commandPublishMutex);
+				EnsureFollowEndLocked(Follow::Disposition::Shutdown);
 				if (input.TryReserveCommandWake())
 				{
 					exitBarrierQueued = bridge.StopWithFinalCommand(
@@ -2312,10 +2382,14 @@ namespace Inkeys::Drawing::Draw3
 		if (!impl_->startOptions.enableHiddenTestContactInjection) return std::nullopt;
 		const auto desktop = impl_->autoSave.Diagnostics();
 		const auto presentation = impl_->presentationAutoSave.Diagnostics();
-		return HostHiddenPersistenceSnapshot{ desktop.accepted, desktop.committed,
+		HostHiddenPersistenceSnapshot snapshot{ desktop.accepted, desktop.committed,
 			desktop.failed, desktop.pending, presentation.accepted, presentation.committed,
 			presentation.loaded, presentation.failed,
 			impl_->hiddenPresentationNotFound.load(std::memory_order_acquire) };
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		{ std::scoped_lock lock(impl_->hiddenDesktopRecoveryMutex); snapshot.desktopRecovery = impl_->hiddenDesktopRecovery; }
+#endif
+		return snapshot;
 	}
 
 	bool Host::FirstFrameReady() const noexcept
@@ -2597,9 +2671,11 @@ namespace Inkeys::Drawing::Draw3
 			impl_->hiddenTestContactInjectionEnabled)
 			return PublishHiddenTestContact(wParam, lParam) ? 0 : -1;
 		if (window == impl_->attachedWindow.load(std::memory_order_acquire) &&
-			(message == WM_WINDOWPOSCHANGED || message == WM_DPICHANGED || message == WM_DISPLAYCHANGE))
+			(message == WM_WINDOWPOSCHANGED || message == WM_DPICHANGED || message == WM_DISPLAYCHANGE || message == WM_SIZE))
 		{
 			impl_->displayScaleDirty.store(true, std::memory_order_release);
+			// 只在真正几何消息撤销；Z-order 的 WINDOWPOSCHANGED 由显示快照核对。
+			if (message == WM_DPICHANGED || message == WM_DISPLAYCHANGE || message == WM_SIZE) EndFollow(Follow::Disposition::RetireScene);
 			(void)impl_->input.PublishControlWake();
 		}
 		return impl_->window.HandleExternalMessage(window, message, wParam, lParam);
@@ -2631,15 +2707,17 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 	Bridge::StateBridge& Host::ProductBridge() noexcept { return impl_->bridge; }
-	void Host::PublishState(const Bridge::ProductState& state) noexcept
+	std::uint64_t Host::PublishState(const Bridge::ProductState& state) noexcept
 	{
+		std::uint64_t revision = 0;
 		{
 			std::scoped_lock lock(impl_->presentationTargetMutex);
-			impl_->bridge.PublishState(state);
+			revision = impl_->bridge.PublishState(state);
 			impl_->RefreshPresentationInputGateLocked();
 		}
 		if (impl_->attachedWindow.load(std::memory_order_acquire))
 			(void)impl_->input.PublishControlWake();
+		return revision;
 	}
 	bool Host::PublishPresentationUiReady(
 		const Bridge::PresentationReadyIdentity& identity) noexcept
@@ -2703,6 +2781,7 @@ namespace Inkeys::Drawing::Draw3
 		const auto current = impl_->ShortcutContextLocked();
 		if (!current.available || current.scope != expected || impl_->shortcuts.Lease() != leaseId)
 			return 0;
+		impl_->EnsureFollowEndLocked(Follow::Disposition::Restore);
 		const auto id = impl_->shortcuts.Reserve(expected);
 		if (!id) return 0;
 		if (!impl_->input.TryReserveCommandWake())
@@ -2755,12 +2834,58 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	std::shared_ptr<Follow::Channel> Host::FollowChannel() const noexcept
+	{
+		std::scoped_lock lock(impl_->presentationTargetMutex); return impl_->follow;
+	}
+	bool Host::BeginFollow(std::uint64_t session, const std::shared_ptr<Follow::Channel>& expected) noexcept
+	{
+		std::scoped_lock commandLock(impl_->commandPublishMutex);
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		if ((expected && expected != impl_->follow) || !impl_->running.load() || impl_->followActionHolds || impl_->followEndWakeReserved ||
+			!impl_->ShortcutContextLocked().available || impl_->shortcuts.Lease() != 0 ||
+			impl_->bridge.Snapshot().workspace != Bridge::Workspace::Desktop ||
+			impl_->follow->Blocked() || !impl_->input.TryReserveCommandWake()) return false;
+		// 普通队列256 + 专用End1 + 退出final1，保持原258唤醒预算。
+		if (!impl_->input.TryReserveCommandWake()) { impl_->input.CancelReservedCommandWake(); return false; }
+		if (impl_->bridge.Publish(Bridge::CommandType::FollowBegin, session) != Bridge::CommandResult::Accepted)
+		{
+			impl_->input.CancelReservedCommandWake(); impl_->input.CancelReservedCommandWake(); return false;
+		}
+		if (!impl_->follow->Begin(session)) { impl_->input.CancelReservedCommandWake(); return false; }
+		impl_->followEndWakeReserved = true;
+		impl_->RefreshPresentationInputGateLocked();
+		impl_->input.PublishReservedCommandWake(); return true;
+	}
+	void Host::EndFollow(Follow::Disposition disposition, const std::shared_ptr<Follow::Channel>& expected) noexcept
+	{
+		std::scoped_lock commandLock(impl_->commandPublishMutex);
+		if (expected && expected != impl_->follow) return;
+		impl_->EnsureFollowEndLocked(disposition);
+		impl_->input.PublishControlWake();
+	}
+	void Host::WakeFollow() noexcept
+	{
+		{ std::scoped_lock lock(impl_->presentationTargetMutex); impl_->RefreshPresentationInputGateLocked(); }
+		impl_->input.PublishControlWake();
+	}
+	bool Host::HoldFollowAction(bool hold, const std::shared_ptr<Follow::Channel>& expected) noexcept
+	{
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		if (!expected || expected != impl_->follow) return false;
+		if (hold) ++impl_->followActionHolds;
+		else if (impl_->followActionHolds) --impl_->followActionHolds;
+		impl_->RefreshPresentationInputGateLocked(); impl_->input.PublishControlWake();
+		return true;
+	}
+
 	Bridge::CommandResult Host::PublishCommand(Bridge::CommandType command) noexcept
 	{
 		std::scoped_lock lock(impl_->commandPublishMutex);
 		// 与 Acquire/Release 共用提交门；已接受的旧命令仍按原 FIFO 在 Clear/Fence 之前完成。
 		std::scoped_lock sceneLock(impl_->presentationTargetMutex);
 		if (!impl_->shortcuts.OrdinaryCommandAllowed(command)) return Bridge::CommandResult::QueueFull;
+		impl_->EnsureFollowEndLocked(Follow::Disposition::Restore);
 		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
 		const Bridge::CommandResult result = impl_->bridge.Publish(command);
 		if (result == Bridge::CommandResult::Accepted)

@@ -1,33 +1,59 @@
-# 已批准设计
+# 已批准的滚动批注完整设计
 
-## 基线与复用
-feature/move 1b8cb4b6；已有 opencv4 4.10.0#3 静态 core/imgproc/video，不修改 manifest/triplets/features。Draw3 TranslateViewport、CanvasNavigation、L2 可信快照、屏幕热前像失效和 budgeted visible Tile recovery 为唯一平移恢复路径。Desktop AutoSave 仅 Clear/Exit，UInk v10 viewport 已双向贯通。
+## 当前范围与基线
 
-## Capture（用户后续调整）
+在 feature/move、3ace726b 基础上实施全部后续阶段，不 commit/push。原独立 Mag/runtime lease 试验已删除，历史原因与证据保留在 research。当前只使用原定格 Mag，保留同线程初始化/窗口创建及 readyPromise 和普通 Freeze 分工；不引入 WGC、禁止捕获属性或 DWM 修改。
 
-当前先复用定格现有 Mag Host/Child 与原初始化、角色排除、Source、重绘流程，使用 PrintWindow(2) 读回；不保留独立 MagCaptureService / runtime lease。Inkeys3 已有初始化与窗口创建同线程、ready promise 同步等待设计，普通定格线程安排不再修改。
+用户本轮只允许无窗口或真正不在屏幕显示的 HWND，禁止 Computer Use、前台/置顶和可见测试内容。代码与允许的离线/隐藏验证按阶段完成，真实屏幕必要验收是停止门槛，不能因允许测试全部通过就标父任务完成。最新授权见 research/implementation-authorization.md。
 
-本轮仅搭建 Inkeys.exe 内受控截图测试：首帧允许较长等待，后续旧帧延迟可接受；真实变化像素、实际覆盖窗排除、静止及前后原定格行为必须分别验证。实际尝试 MagSetImageScalingCallback 作为可选候选，登记或触发失败有界回退，不以回调返回或固定等待承诺最新整帧。完整连续捕获/停止/场景身份合同待后续恢复阶段重新细化。
+## 基础能力与捕获
 
-## Tracker
-VisualMotionTracker 仅处理图像，不依赖 HWND/Draw3/UInk/UI。Initialize/Process/Reset，输出 accepted/delta/total/confidence/reason/stats。半分辨率灰度，8x6 网格约 320 角点；goodFeaturesToTrack、LK 21x21/maxLevel3、FB check、空间计权的纯平移鲁棒一致集和内点中位数。不引入 calib3d。用位移场空间变化拒绝显著缩放/旋转/重排。起点：40 有效点、65% 内点、FB约1处理像素、残差约1.5，结合覆盖/跳变/捕获质量输出0..1可信度。接受帧才更新参考/total/补点，拒绝后仍以最后可信帧为参考；补点内容坐标=current_image_point-total，维持累计坐标。高可信零位移接受。严重捕获无效立即 Paused，普通低可信连续3帧 Paused，不自动恢复。
+沿现有 OpenCV4.10.0#3 静态 core/imgproc/video，不改 manifest/triplets/features。正式 Capture 详见捕获子任务 design 与 research/production-capture[-check].md。原 MagnifierThread 串行 Begin/Update/PrintWindow(2)/End 与普通 Freeze；Start/Stop/GetSnapshot 异步，监督只关发布，不操作 HWND/DIB，不等 PW。原 owner 初始化及窗口创建不变；无第二个 Mag、owner RPC 或 runtime lease。
 
-## Session / Draw3
-ScrollFollowService 状态 Off/Initializing/Tracking/Paused/Stopping。启用先 Desktop/模式检查和准入收尾，取 Draw3 基准/场景身份，再 F0/Tracker，最后辅助呈现/穿透握手，成功才 Tracking。失败回滚原工具与窗口状态。
-新增窄 Begin/ApplyTarget/End。单槽 latest-only 目标包含 session/seq/文档页及运行代次，发布绝对累计内容位移。Draw3 owner 以初始 viewport-total 计算目标，像素/DPI只转换一次，复用 ApplyCanvasContentTranslationChecked/TranslateViewport 及原恢复路径。过滤重复 seq、旧 session/scene。End 关闭发布并携带最后可信目标作为可靠屏障，完成呈现后恢复输入。临时穿透参与既有有效 selection/双窗 ready 协调，工具/笔属性不丢失。保持导航门禁 false。
-平移不追加 Undo、不清 Redo、不改点/PageGuid/UInk版本。Canvas-local composition cache 复用、屏幕热前像失效，L2/Tile 恢复沿现有实现。不新增长期GPU状态。
+Frame 为回调限时借用 BGRA、宽高/stride、原主屏/Source/workArea/Display代、时间/session/sequence/质量/统计。后端核验实际 identity Mag transform，source到client为1:1；原 source/client 少1像素不构成缩放。无 callback 必须可用，不把等待/Redraw/callback返回当作最新整帧完成凭据。
 
-## UI / diagnostics / compatibility
-More 面板中 Setting 前加入视图调整，现有布局顺序保留，仅补缺失新按钮。定格 active 禁用；工具/Undo/Redo/Clear/Freeze 先 stop 再执行；白板/PPT/文档/几何DPI/窗口/设备变化 stop。简单选中反馈，补SVG/中英繁体及生成资源。
---scroll-follow-console / --scroll-follow-verbose（后者含console）复用唯一 DiagnosticOutput::Session。状态和错误立即入队，性能/追踪每秒汇总，verbose逐帧；[ScrollFollow]前缀含 session/seq、Mag耗时/有效性、tracked/inliers/FB/residual/coverage/confidence/relay、实际viewport/clamp/recovery和清理结果。
-Win8.1+，WOW64/能力失败安全禁用；不增加 Win7 不可用硬导入，库静态沿用现有配置。
+目标20Hz但不是实测承诺，首等待800ms、重试100ms、稳态等待10ms、无FIFO；启动5s内有有效F0，之后1s无有效结果撤销。API/黑/低信息失败不能续期。Stop拒迟到发布，旧Read/回调/End返回前保持occupied，拒重启。正常join再原owner uninit；异常窗口失效只关门，inFlight保留runtime并禁再启，不强杀线程，不宣称OS销毁与永久阻塞均有界。
 
-## 阶段门槛
-捕获窗口不可见而真实源变化仍连续读回、排除表和重复启停验证通过，才能进入 tracker；否则在 Mag 方案调查并保留可验证成果，不换截图技术，不接入按钮。离线 tracker 通过再接 Draw3。
+上一轮原owner两进程真实无callback变化图案和排除通过，是基础能力证据；本轮正式worker读回仍需单独实屏验收。纯离线Tracker可独立继续；不能把假backend视为实屏通过。
 
+## 独立 Tracker
 
-## 当前执行边界（2026-10-21 后续用户指示）
+VisualMotionTracker::Initialize/Process/Reset只接标准图像/时间数值，无HWND/Draw3/UInk/UI和线程。输出接受、原图double二维delta/total、可信度/原因/统计与暂停锁存。实际接口见 Inkeys/Inkeys/CV/VisualMotionTracker.h。
 
-最初的独立 owner 原型未通过与定格共存门槛，已保留历史报告并按用户要求移除相应生产代码与测试。历史 cold 成功、Filter50 与 NearBlack 不能直接当作当前原定格共用路径的结果。软件内真实验证使用原定格函数与窗口，不以独立探针代替；详情见捕获子任务当前 prd/design/implement 与 research/。
+半分辨率灰度按真实尺寸还原，8x6网格约320GFTT/LK21x21/maxLevel3、FB约1处理px，按网格空间计权纯平移共识。起点至少约40有效/内点、65%一致、残差约1.5处理px；覆盖/存活/FB/跳变及变形诊断作为硬门和可信度，不引入calib3d，不输出旋转缩放。
 
-本轮只交付简化与软件内 PrintWindow 验证，不继续后续三阶段。原始完整需求仍保留，不把本轮诊断完成等同于滚动批注完成。未授权新的 commit/push；不采用 WGC 生产替换、禁止捕获属性或 DWM 设置修改。
+可信帧才事务提交参考/total/特征；短拒仍对最后可信参考，不能漏中间位移。保留固定出生内容锚点，稀疏格可信补点按当前total反算，不重设世界原点。有效同图零位移正常接受，不deadband吞小运动。严重无效立即Paused，普通拒绝连续3帧Paused，保持最后total，无自动恢复。
+
+独立GT按不可变非周期长画布绝对camera生成。静止300帧漂移<=0.5原图px；每个prefix误差<=max(3px,实际路径*0.2%)，覆盖十屏/全初始特征离屏接力/亚像素小步/反向二维/固定UI/动态/拒绝恢复/缩放旋转/低信息/布局与寿命，不放宽误差或用GT干预算法。
+
+## 会话与 Draw3
+
+Business/ScrollFollow为Off -> Initializing -> Tracking/Paused -> Stopping -> Off，UI仅选中/未选中。先Desktop/Freeze/平台检查，关新Down并收尾已准入contact，由owner取得真实基准视口及场景；F0/Tracker成功后临时selection辅助输出ready+双窗owner交接成功才Tracking。失败只撤本会话blocker，不改用户工具和笔属性。
+
+Begin/ApplyAbsolute/End为窄可靠owner协议，session/sequence/Workspace/Page GUID/Host/scene/runtime/几何身份齐全。高频目标单槽latest-only，发布绝对累计量；owner用baseViewport-total求目标，通过current-target差复用ApplyCanvasContentTranslationChecked/TranslateViewport。Draw3原生输入/stored/viewport是client/canvas px，不能再除96/DPI；tracker只还原一次真实降采样。
+
+重复/旧会话/错场景/非finite拒绝。End先关发布并自带最后可信目标，实际viewport恢复和full present成功再回执，不能把commandProcessed当完成。正常结束再恢复用户effective output，等WindowService成对显隐完成才释本会话准入。Shutdown不恢复可见表面，最后viewport必须先于ExitAutoSave，不等已关闭窗口服务。
+
+准入原因并入Host聚合gate，不能被下一次状态泵覆盖；contact沿原seal/quarantine直到真实Up，不Reset输入生产者。临时selection覆盖必须同时参与IdtState Publish/Reconcile/guards和Bridge，不改真实工具。产品动作入口保证End-before-action，同工具early-return也覆盖；白板/PPT/文档/几何DPI/窗口/device/退出撤销并退役身份，无自动恢复。
+
+## GPU、历史与保存
+
+唯一Draw3/辅助ULW输出握手不变，无第二个GPU画布。平移复用raster/hot-preimage失效、Canvas-local composition cache、可信L2、按预算可见Tile恢复；不改Shader/预测/笔锋/渲染参数，不开放双指导航门禁。
+
+跟随不追加Undo、不清Redo、不改Stroke点/Page GUID。新笔划锁存当前viewport，UInk v10原字段viewport双向贯通。Desktop自动保存继续Clear/Exit，不逐帧保存，不更改原codec/schema或保存入口。
+
+## UI、诊断和兼容
+
+More中Setting前添加稳定官方ViewAdjust条目、SVG、中英繁体视图调整/Adjust View/視圖調整。enum追加保旧值，注册白名单、explicitMore、最终selected/disabled全覆盖。配置只补缺新条目，不重排已有顺序/Visible/未知插件或A区，不顺带恢复整个B区自定义。
+
+Freeze active禁用，跟随中工具/橡皮/选择/Undo/Redo/Clear/Freeze先End再原操作，保留shortcutlease及场景门。状态日志复用唯一DiagnosticOutput::Session有界异步队列，[ScrollFollow]前缀；--scroll-follow-console/--scroll-follow-verbose后者含console，普通启动不新弹。状态错误即时，默认每秒捕获/追踪/viewport汇总，verbose逐帧；采样/RTS/绘制不阻塞外部IO。
+
+功能Win8.1+、非WOW64、Mag能力有效；不提高全程序Win7门槛、不新增旧系统不可用API硬导入。沿原依赖和构建链。
+
+## 分阶段与验收
+
+Capture实现/check -> 纯Tracker实现/check -> 产品实现/check -> 保存与完整回归/check。主会话维护跨模块契约/spec，Trellis任务日志不自动提交。
+
+所有允许的测试先完成：完整InkeysRepo.sln Debug ARM64、定向及--no-window、全隐藏Host A->follow->B->history->真实保存重载、x64构建尝试、i18n/PE/diff/物理BOM/EOL。全部不可见Host基线已通过，见 research/execution-current.md；禁止运行实际ShowWindow的旧--draw3-hidden-test/eraser测试。
+
+正式原Mag worker实屏取帧/排除/持续性能、浏览器/Word/PDF滚动、真实双窗交接/穿透/墨迹稳定、主栏视觉、笔触控/旧Windows等无法由隐藏用例代替。必要可见验证时停止并逐项报告；未通过门槛不标完成。完整原始验收与产品规则保留在prd与各子任务。

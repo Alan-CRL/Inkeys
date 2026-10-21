@@ -3,7 +3,7 @@
   "name": "scroll-follow-v1",
   "title": "通用滚动批注初版",
   "description": "基于原定格 Magnification 读回与 OpenCV 可信二维追踪，后续复用 Draw3 视口并完成主栏和 UInk 集成",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -26,14 +26,14 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "Current Mag preparation milestone verified: actual Inkeys.exe original Freeze Mag works without scaling callback (cold pair phase1-3/static and restored-null phase7, two fresh processes exit0). Optional callback also registers/triggers. Independent capture/runtime/old tests removed; original Freeze init/create thread, ready promise and normal coordinator preserved. Later stages await next user turn. No new commit/push. See research/freeze-printwindow.md and final check report; continuous service and complete scroll-follow remain outside this narrowed milestone.",
+  "notes": "四阶段软件实现与顺序独立check通过；最终ARM64/x64完整solution、真实8个UInk、定向/无窗口基线及PE/i18n/格式通过。仅无窗口/完全不可见HWND；已停在必要正式Mag连续实屏/系统交接/真实内容和硬件验收门槛，保留in_progress，2026-10-22已授权本次本地commit；不push、不结束任务。",
   "meta": {
     "mag_preparation": {
       "status": "verified",
       "date": "2026-10-21",
       "no_callback": "passed",
       "optional_callback": "observed",
-      "next_stages": "not_started",
+      "next_stages": "software_checked_live_acceptance_pending",
       "review": "passed"
     }
   }

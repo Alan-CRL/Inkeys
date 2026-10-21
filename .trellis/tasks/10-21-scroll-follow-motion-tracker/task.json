@@ -3,7 +3,7 @@
   "name": "scroll-follow-motion-tracker",
   "title": "可信二维视觉追踪与特征接力",
   "description": "离线验证 LK、鲁棒平移、可信度与长距离特征接力",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-10-21",
   "completedAt": null,
-  "branch": null,
+  "branch": "feature/move",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "10-21-scroll-follow-v1",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "Pure Tracker implementation and independent check completed; final ARM64/target/no-window pass. Live capture and product acceptance remain parent gates; no commit/push.",
   "meta": {}
 }

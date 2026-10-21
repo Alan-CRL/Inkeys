@@ -3,7 +3,7 @@
   "name": "scroll-follow-persistence-regression",
   "title": "滚动批注保存与完整回归",
   "description": "验证 UInk v10、编辑历史、构建及受控 GUI 场景",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-10-21",
   "completedAt": null,
-  "branch": null,
+  "branch": "feature/move",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "10-21-scroll-follow-v1",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "软件实现/独立check通过：四个全隐藏Shape/Pen真实文件场景、A/codec逐值相等、真实磁盘安装、viewport-only最后Publish立即Stop、8真UInk；最终双架构完整构建与PE/短回归通过。现场Mag/系统交接/可见及硬件门槛未放行，2026-10-22已授权本次本地commit；不push、不结束任务。",
   "meta": {}
 }

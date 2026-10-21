@@ -3,8 +3,13 @@
 {"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
 {"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
 {"file":".trellis/spec/native-desktop/canvas-freeze-boundaries.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
-{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
-{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
 {"file":".trellis/tasks/10-21-scroll-follow-v1/research/current-architecture.md","reason":"Approved scroll-follow architecture, ownership, compatibility, diagnostics and minimal-diff contracts"}
-{"file": ".trellis/tasks/10-21-scroll-follow-v1/research/baseline-validation.md", "reason": "Baseline headless passes with writable TEMP; distinguish runner failures from source issues"}
-{"file": ".trellis/tasks/10-21-scroll-follow-v1/research/capture-poc.md", "reason": "Final real Mag capture evidence: preheld Freeze lease gate still fails after product STA context alignment; do not begin later stages until resolved"}
+{"file":".trellis/tasks/10-21-scroll-follow-v1/research/baseline-validation.md","reason":"Baseline headless passes with writable TEMP; distinguish runner failures from source issues"}
+{"file":".trellis/tasks/10-21-scroll-follow-v1/research/implementation-authorization.md","reason":"Latest full implementation authorization and strictly non-visible tests; stop at necessary onscreen acceptance"}
+{"file":".trellis/spec/native-desktop/scroll-follow-capture.md","reason":"Reuse original Freeze Mag and preserve initialization/owner design; no-callback readiness proven"}
+{"file":".trellis/tasks/10-21-scroll-follow-mag-capture/research/freeze-printwindow.md","reason":"Actual original Freeze no-callback PrintWindow readiness evidence; not a completed continuous product capture service"}
+{"file":".trellis/tasks/10-21-scroll-follow-mag-capture/research/tracker-design-current.md","reason":"Concrete pure tracker algorithm, fixed birth anchors, spatial weighting and strict offline acceptance"}
+{"file":".trellis/tasks/10-21-scroll-follow-mag-capture/research/production-capture.md","reason":"Formal shared original Mag API, borrowed frame and lifetime; fake backend evidence boundary"}
+{"file":".trellis/tasks/10-21-scroll-follow-mag-capture/research/production-capture-check.md","reason":"Sequential review fixes and full ARM64/no-window pass; pure offline Tracker may proceed, live production path remains unverified"}
+{"file":".trellis/spec/native-desktop/scroll-follow-tracking.md","reason":"Pure production image API, fixed birth anchor relay, calibrated hard gates and strict offline evidence"}
+{"file":".trellis/tasks/10-21-scroll-follow-motion-tracker/research/implementation-current.md","reason":"Final frozen Tracker API, exact parameters and 6918-prefix offline/ARM64/no-window pass; not live desktop evidence"}

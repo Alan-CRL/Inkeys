@@ -54,6 +54,9 @@ int RunPageControlTests();
 int RunWhiteboardUiTests();
 int RunFreezeStateTests();
 int RunMagnifierCoordinatorTests();
+int RunFreezeCaptureTests();
+int RunVisualMotionTrackerTests();
+namespace Inkeys::Drawing::Draw3 { int RunScrollFollowProtocolTests() noexcept; }
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
@@ -1638,6 +1641,14 @@ namespace
 
 int main(int argc, char** argv)
 {
+	for (int index = 1; index < argc; ++index)
+		if (std::string_view(argv[index]).starts_with("--scroll-follow-only"))
+			return argc == 2 && std::string_view(argv[index]) == "--scroll-follow-only" ? Inkeys::Drawing::Draw3::RunScrollFollowProtocolTests() : 2;
+	for (int index = 1; index < argc; ++index)
+		if (std::string_view(argv[index]) == "--visual-motion-tracker-only")
+			return argc == 2 ? RunVisualMotionTrackerTests() : 2;
+	if (argc >= 2 && std::string_view(argv[1]) == "--freeze-capture-only")
+		return argc == 2 ? RunFreezeCaptureTests() : 2;
 	if (argc == 2 && std::string_view(argv[1]) == "--shape-recognition-only")
 		return RunDraw3ShapeRecognitionTests();
 	// 窗口契约可单独复跑，避免定位 USER32 交错时重复耗时的算法矩阵。
@@ -1707,6 +1718,9 @@ int main(int argc, char** argv)
 	failureCount += RunWhiteboardUiTests();
 	failureCount += RunFreezeStateTests();
 	failureCount += RunMagnifierCoordinatorTests();
+	failureCount += Inkeys::Drawing::Draw3::RunScrollFollowProtocolTests();
+	failureCount += RunFreezeCaptureTests();
+	failureCount += RunVisualMotionTrackerTests();
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
 	failureCount += RunBarBottomDockTests();

@@ -516,6 +516,9 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DesktopPersistenceTest.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -549,6 +552,12 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Graphics\FreezeCapture.h">
+      <Filter>Modules\Inkeys\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\CV\VisualMotionTracker.h">
+      <Filter>Modules\Inkeys\CV</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Graphics\Surface.Core.hpp">
       <Filter>Modules\Inkeys\Graphics</Filter>
@@ -1986,6 +1995,9 @@
     <ClCompile Include="Inkeys\Other\Other.Config.cpp">
       <Filter>Modules\Inkeys\Other</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Graphics\FreezeCapture.cpp">
+      <Filter>Modules\Inkeys\Graphics</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Graphics\Surface.cpp">
       <Filter>Modules\Inkeys\Graphics</Filter>
     </ClCompile>
@@ -2042,6 +2054,9 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Display\Display.cpp">
       <Filter>Modules\Inkeys\Display</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\CV\VisualMotionTracker.cpp">
+      <Filter>Modules\Inkeys\CV</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\CV\ShapeRecognition.cpp">
       <Filter>Modules\Inkeys\CV</Filter>
@@ -2662,4 +2677,14 @@
     </FxCompile>
   </ItemGroup>
   <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.filters.props" />
+  <ItemGroup>
+    <ClInclude Include="Inkeys\Business\ScrollFollow.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollow.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollowTest.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Inkeys\Other\Other.Config.ViewAdjustTest.h"><Filter>头文件</Filter></ClInclude>
+    <ClCompile Include="Inkeys\Business\ScrollFollow.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollowTest.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Inkeys\Other\Other.Config.ViewAdjustTest.cpp"><Filter>源文件</Filter></ClCompile>
+    <None Include="src\UI\BarViewAdjust.svg"><Filter>资源文件</Filter></None>
+  </ItemGroup>
 </Project>

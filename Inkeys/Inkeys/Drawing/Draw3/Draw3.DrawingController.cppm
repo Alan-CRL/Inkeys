@@ -16,6 +16,8 @@
 #include "Draw3.Bridge.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
+#include "Draw3.ScrollFollow.h"
+#include "Draw3.DesktopPersistenceTest.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
 
@@ -100,8 +102,14 @@ export namespace Inkeys::Drawing::Draw3
 		Shortcuts::Result (*shortcutCommandAllowed)(void*, const Shortcuts::Request&,
 			const Shortcuts::Context&) noexcept = nullptr;
 		void (*shortcutCompleted)(void*, std::uint64_t, Shortcuts::Result) noexcept = nullptr;
+		std::shared_ptr<Follow::Channel> follow;
+		std::uint32_t followTestRecoveryMaximumTiles = 0;
+		void (*followRetireRequested)(void*) noexcept = nullptr;
 		WhiteboardTheme whiteboardDefaultTheme;
 		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		void (*hiddenDesktopRecovery)(void*, const HiddenDesktopRecoveryReceipt&) noexcept = nullptr;
+#endif
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

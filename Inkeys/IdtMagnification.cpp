@@ -3,6 +3,7 @@
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
+#include "Inkeys/Graphics/FreezeCapture.h"
 #include "Inkeys/UI/Freeze/Freeze.MagnifierCoordinator.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
@@ -19,13 +20,15 @@
 #include <optional>
 #include <vector>
 
+import Inkeys.Display;
 import Inkeys.UI.Freeze;
 import Inkeys.Window;
 
 HWND magnifierWindow, magnifierChild;
 Inkeys::Graphics::DibSurface MagnificationBackground;
 
-bool magnificationCreateReady;
+// 原 owner 写入就绪，连续捕获及 Start 在其他线程读取。
+std::atomic<bool> magnificationCreateReady = false;
 
 shared_mutex MagnificationBackgroundSm;
 RECT hostWindowRect;
@@ -39,6 +42,10 @@ namespace
 	using Inkeys::Window::WindowRole;
 
 	Coordinator magnifierCoordinator;
+	namespace Capture = Inkeys::Graphics::FreezeCapture;
+	void WakeCaptureWorker() noexcept { magnifierCoordinator.Wake(); }
+	Capture::Session captureSession(&WakeCaptureWorker);
+	std::atomic<bool> magnifierRuntimeAbandoned = false;
 
 	void TraceMagnifierApi(const char* name, HWND hwnd, bool succeeded) noexcept;
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
@@ -176,6 +183,11 @@ namespace
 				GetSystemMetrics(SM_CXSCREEN) - 1,
 				GetSystemMetrics(SM_CYSCREEN) - 1,
 			};
+			return SubmitSource(sourceRect);
+		}
+
+		[[nodiscard]] bool SubmitSource(const RECT& sourceRect) noexcept
+		{
 			const bool succeeded = MagSetWindowSource(targets_.child, sourceRect) != FALSE;
 			TraceMagnifierApi("MagSetWindowSource", targets_.child, succeeded);
 			return succeeded;
@@ -232,6 +244,87 @@ namespace
 		bool cleanupComplete_ = true;
 	};
 
+	[[nodiscard]] Capture::Rect CaptureRect(const RECT& rect) noexcept
+	{
+		return { rect.left, rect.top, rect.right, rect.bottom };
+	}
+
+	class FreezeCaptureBackend final : public Capture::Backend
+	{
+	public:
+		Capture::BackendResult Begin(const Capture::Geometry& geometry) noexcept override
+		{
+			operations_ = Win32MagnifierOperations(CurrentTargets());
+			if (const auto checked = CheckGeometry(geometry, false); !checked.succeeded) return checked;
+			if (!frame_.resize(geometry.width, geometry.height) || !operations_.PrepareHidden()) return {};
+			return { true };
+		}
+
+		Capture::BackendResult Update(const Capture::Geometry& geometry) noexcept override
+		{
+			if (const auto checked = CheckGeometry(geometry, false); !checked.succeeded) return checked;
+			const auto& source = geometry.sourceRect;
+			const RECT sourceRect = { source.left, source.top, source.right, source.bottom };
+			if (!operations_.SubmitFilter() || !operations_.SubmitSource(sourceRect)
+				|| !operations_.Invalidate() || !operations_.Redraw()) return {};
+			return CheckGeometry(geometry, true);
+		}
+
+		Capture::BackendResult Read(const Capture::Geometry& geometry,
+			std::span<const std::uint32_t>& pixels) noexcept override
+		{
+			if (const auto checked = CheckGeometry(geometry, true); !checked.succeeded) return checked;
+			frame_.clear();
+			// 同步 PW 只在原 MagnifierThread，Stop/监督线程不等它，也不释放其 DIB。
+			const bool printed = PrintWindow(operations_.Child(), frame_.dc(), 2) != FALSE;
+			const bool flushed = GdiFlush() != FALSE;
+			if (!printed || !flushed) return {};
+			if (const auto checked = CheckGeometry(geometry, true); !checked.succeeded) return checked;
+			for (auto& pixel : frame_.pixels()) pixel |= 0xFF000000;
+			pixels = frame_.pixels();
+			return { true };
+		}
+
+		bool End(bool accessWindows) noexcept override
+		{
+			const bool concealed = !accessWindows || !operations_.TargetsCurrent()
+				|| (operations_.Conceal() && operations_.CleanupComplete());
+			frame_.reset();
+			return concealed;
+		}
+
+	private:
+		Capture::BackendResult CheckGeometry(const Capture::Geometry& geometry, bool checkSource) const noexcept
+		{
+			if (!operations_.TargetsCurrent()) return { false, Capture::StopReason::Unavailable };
+			const auto display = Inkeys::Display::GetSnapshot();
+			const auto* primary = display ? display->Primary() : nullptr;
+			RECT client{}, source{};
+			MAGTRANSFORM transform{};
+			if (!primary || display->fallback || primary->fallback
+				|| display->generation != geometry.displayGeneration
+				|| CaptureRect(primary->bounds) != geometry.primaryBounds
+				|| CaptureRect(primary->workArea) != geometry.workArea
+				|| GetSystemMetrics(SM_CXSCREEN) != geometry.primaryBounds.right
+				|| GetSystemMetrics(SM_CYSCREEN) != geometry.primaryBounds.bottom
+				|| !GetClientRect(operations_.Child(), &client)
+				|| client.left != 0 || client.top != 0 || client.right != geometry.width || client.bottom != geometry.height)
+				return { false, Capture::StopReason::GeometryChanged };
+			if (checkSource && (!MagGetWindowSource(operations_.Child(), &source)
+				|| CaptureRect(source) != geometry.sourceRect)) return { false, Capture::StopReason::GeometryChanged };
+			// 像素映射由 Mag transform 决定，不能从 source/client 少一像素推导出缩放。
+			if (!MagGetWindowTransform(operations_.Child(), &transform)) return {};
+			for (int row = 0; row < 3; ++row)
+				for (int column = 0; column < 3; ++column)
+					if (transform.v[row][column] != (row == column ? 1.0f : 0.0f))
+						return { false, Capture::StopReason::GeometryChanged };
+			return { true };
+		}
+
+		Win32MagnifierOperations operations_{ {} };
+		Inkeys::Graphics::DibSurface frame_;
+	};
+
 	[[nodiscard]] TransactionResult UpdateMagWindow(
 		Request request, Win32MagnifierOperations& operations) noexcept
 	{
@@ -241,6 +334,7 @@ namespace
 
 	void PublishFreezeState(Inkeys::UI::Freeze::StateSnapshot snapshot) noexcept
 	{
+		captureSession.SetFreezeState(snapshot.revision, snapshot.active, snapshot.available);
 		magnifierCoordinator.Publish({ snapshot.revision, snapshot.active });
 	}
 
@@ -267,8 +361,36 @@ namespace
 	}
 }
 
+namespace Inkeys::Graphics::FreezeCapture
+{
+	StartResult Start(FrameCallback callback) noexcept
+	{
+		const auto freeze = Inkeys::UI::Freeze::Snapshot();
+		captureSession.SetFreezeState(freeze.revision, freeze.active, freeze.available);
+		const auto coordinated = magnifierCoordinator.Snapshot();
+		if (coordinated.stopped) return { StartStatus::NotReady };
+		if (coordinated.visible || coordinated.processedRevision < freeze.revision)
+			return { freeze.active ? StartStatus::FreezeActive : StartStatus::Busy };
+		const auto display = Inkeys::Display::GetSnapshot();
+		const auto* primary = display ? display->Primary() : nullptr;
+		RECT client{};
+		const auto targets = CurrentTargets();
+		if (!primary || display->fallback || primary->fallback || !AreCurrentTargets(targets)
+			|| !GetClientRect(targets.child, &client)) return { StartStatus::NotReady };
+		const Geometry geometry = { CaptureRect(primary->bounds),
+			{ 0, 0, primary->bounds.right - 1, primary->bounds.bottom - 1 },
+			CaptureRect(primary->workArea), display->generation, client.right, client.bottom };
+		return captureSession.Start(geometry, std::move(callback));
+	}
+
+	void Stop(StopReason reason) noexcept { captureSession.Stop(reason); }
+	Snapshot GetSnapshot() noexcept { return captureSession.GetSnapshot(); }
+}
+
 LRESULT CALLBACK MagnifierHostWindowWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	if (uMsg == WM_DESTROY && !captureSession.DisableWindowAccess())
+		magnifierRuntimeAbandoned.store(true);
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 	if (uMsg == magnifierTestMessage || (uMsg == WM_TIMER && wParam == magnifierTestTimer))
 	{
@@ -281,6 +403,8 @@ LRESULT CALLBACK MagnifierHostWindowWndProc(HWND hwnd, UINT uMsg, WPARAM wParam,
 
 bool PrepareMagnifierWindow()
 {
+	// 异常销毁若撞上未返回的读回，不再初始化新一代或释放仍被调用借用的运行库。
+	if (magnifierRuntimeAbandoned.load()) return false;
 	// Window Service 启动回退会销毁并重建整组窗口，新生命周期不能继承旧 stop。
 	magnifierCoordinator.Reset();
 	magnificationCreateReady = false;
@@ -353,15 +477,22 @@ void MagnifierChildCreated(HWND hwnd)
 
 void StopMagnifierCoordinator() noexcept
 {
+	captureSession.SetReady(false);
 	magnifierCoordinator.Stop();
 }
 
 void ShutdownMagnifierWindow()
 {
 	StopMagnifierCoordinator();
+	if (!captureSession.DisableWindowAccess()) magnifierRuntimeAbandoned.store(true);
 	magnificationCreateReady = false;
 	magnifierChild = nullptr;
 	magnifierWindow = nullptr;
+	if (magnifierRuntimeAbandoned.load())
+	{
+		if (IDTLogger) IDTLogger->error("[ScrollFollow] 原 Mag 异常销毁时仍有读回/回调在途，停止发布并保留运行库至进程退出，禁止再次捕获");
+		return;
+	}
 	const bool uninitialized = MagUninitialize() != FALSE;
 	TraceMagnifierApi("MagUninitialize", nullptr, uninitialized);
 }
@@ -369,11 +500,35 @@ void ShutdownMagnifierWindow()
 void MagnifierThread()
 {
 	IDTLogger->info("[放大API线程][MagnifierThread] 定格请求协调器启动");
+	FreezeCaptureBackend captureBackend;
+	std::jthread captureSupervisor;
+	try
+	{
+		captureSupervisor = std::jthread([](std::stop_token stop) { captureSession.RunSupervisor(stop); });
+		captureSession.SetReady(!magnifierCoordinator.IsStopped()
+			&& !magnifierRuntimeAbandoned.load() && AreCurrentTargets(CurrentTargets()));
+	}
+	catch (...)
+	{
+		captureSession.SetReady(false);
+		if (IDTLogger) IDTLogger->error("[ScrollFollow] 捕获监督线程建立失败，禁用捕获");
+	}
 	Inkeys::UI::Freeze::SetStateObserver(&PublishFreezeState);
 	std::optional<Stage> continuousFailure;
 
-	while (const std::optional<Request> next = magnifierCoordinator.WaitNext())
+	while (!magnifierCoordinator.IsStopped())
 	{
+		const auto next = magnifierCoordinator.WaitNextFor(captureSession.NextDelay());
+		if (magnifierCoordinator.IsStopped()) break;
+		if (!next)
+		{
+			captureSession.Drain(captureBackend);
+			captureSession.Pump(captureBackend);
+			continue;
+		}
+		// 普通定格优先：同一串行线程先结束捕获占用，再执行原事务，绝不争用控件。
+		captureSession.Stop(Capture::StopReason::FreezeActive);
+		captureSession.Drain(captureBackend);
 		const Request request = *next;
 		Win32MagnifierOperations operations(CurrentTargets());
 		if (!request.active)
@@ -414,6 +569,13 @@ void MagnifierThread()
 	}
 
 	Inkeys::UI::Freeze::SetStateObserver(nullptr);
+	captureSession.SetReady(false);
+	captureSession.Drain(captureBackend);
+	if (captureSupervisor.joinable())
+	{
+		captureSupervisor.request_stop();
+		captureSupervisor.join();
+	}
 	Win32MagnifierOperations operations(CurrentTargets());
 	(void)operations.Conceal();
 	IDTLogger->info("[放大API线程][MagnifierThread] 定格请求协调器停止");

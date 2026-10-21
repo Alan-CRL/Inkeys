@@ -136,6 +136,8 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\CV\VisualMotionTracker.cpp" />
+	<ClCompile Include="visual_motion_tracker_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\CV\ShapeRecognition.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\CV\ShapeRecognition.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.InkDocument.cpp" />
@@ -144,6 +146,9 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.InkHistory.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ShapeRecognition.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ShapeRecognition.cppm" />
+    <ClCompile Include="..\Inkeys\Inkeys\Graphics\FreezeCapture.cpp" />
+    <ClCompile Include="freeze_capture_tests.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ScrollFollowTest.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
@@ -238,6 +243,8 @@
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Graphics\FreezeCapture.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\CV\VisualMotionTracker.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

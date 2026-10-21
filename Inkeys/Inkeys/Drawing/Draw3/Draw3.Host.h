@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.ScrollFollow.h"
+#include "Draw3.DesktopPersistenceTest.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
@@ -247,6 +249,8 @@ namespace Inkeys::Drawing::Draw3
 		HostPresentationMode requiredPresentationMode = HostPresentationMode::Automatic;
 		// 仅 --draw3-hidden-test 开启合成 mailbox contact 注入，正式产品保持关闭。
 		bool enableHiddenTestContactInjection = false;
+		// 严格不可见专测限定每帧恢复预算；产品默认0。
+		std::uint32_t followTestRecoveryMaximumTiles = 0;
 		// Debug 命令行可显式开启 RTS 数据路径；不与其他控制台开关联动。
 		bool enableRtsTrace = false;
 		// legacy-compatible HWND 重启后禁止再次选择 DComp。
@@ -281,6 +285,9 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t presentationAccepted = 0, presentationCommitted = 0;
 		std::uint64_t presentationLoaded = 0, presentationFailed = 0;
 		std::uint64_t presentationNotFound = 0; // hidden实测Load终态，不能当Save失败。
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		HiddenDesktopRecoverySnapshot desktopRecovery;
+#endif
 	};
 
 	// GPU owner 按值采集；adapter 描述只在启动和释放前复制，快照不持有 COM 对象。
@@ -416,7 +423,12 @@ namespace Inkeys::Drawing::Draw3
 		bool PublishHapticClick(const Haptics::Click& source,
 			HostHapticClickDiagnostics* diagnostics = nullptr) noexcept;
 		Bridge::StateBridge& ProductBridge() noexcept;
-		void PublishState(const Bridge::ProductState& state) noexcept;
+		std::shared_ptr<Follow::Channel> FollowChannel() const noexcept;
+		bool BeginFollow(std::uint64_t session, const std::shared_ptr<Follow::Channel>& expected = {}) noexcept;
+		void EndFollow(Follow::Disposition disposition = Follow::Disposition::Restore, const std::shared_ptr<Follow::Channel>& expected = {}) noexcept;
+		void WakeFollow() noexcept;
+		bool HoldFollowAction(bool hold, const std::shared_ptr<Follow::Channel>& expected) noexcept;
+		std::uint64_t PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
 		Bridge::CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		Shortcuts::Context ShortcutContext() const noexcept;

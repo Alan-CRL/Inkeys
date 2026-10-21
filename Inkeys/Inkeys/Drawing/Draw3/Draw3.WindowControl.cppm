@@ -104,6 +104,8 @@ export namespace Inkeys::Drawing::Draw3
 		SetWhiteboardTheme,
 		WhiteboardPersistenceCompleted,
 		ShortcutFence,
+		FollowBegin,
+		FollowEnd,
 	};
 
 	struct CanvasCommand
@@ -117,6 +119,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::uint64_t whiteboardGeneration = 0;
 		std::shared_ptr<const Bridge::PresentationTarget> presentationTarget;
 		std::shared_ptr<const Shortcuts::Request> shortcut;
+		std::uint64_t followSession = 0;
 		std::shared_ptr<const DesktopPersistenceCompletion>
 			desktopPersistenceCompletion;
 		std::shared_ptr<const PresentationPersistenceCompletion>

@@ -1,23 +1,25 @@
 # 实施与验证
 
-- [x] 用户明确批准创建任务和实施；确认 feature/move、受控 GUI、保守互斥。
-- [x] 只读调查并保存原始需求与研究。
-- [ ] 顺序实施四个子任务；每个子任务启动前 task.py validate/start，implement/check 使用真实规范与研究上下文。
-- [ ] 捕获子任务先真实 PoC（不可见/连续变化/排除/停止失败），通过才开始 tracker。
-- [ ] tracker 合成图至少十屏、反向、静止300帧、原点全离屏、固定UI/动态/缩放旋转、失败暂停。静止误差<=0.5原图px，累计<=max(3px,路程*0.2%)，报告每项误差/接力。
-- [ ] Draw3/主栏：latest-only/重复跳号/旧session和scene/最终屏障/准入收尾、双窗ready、Tile恢复/resize/设备/钳制。
-- [ ] UInk：A->scroll->B->eraser/Undo/Redo->Clear或Exit保存->读回->再次scroll；核对点/viewport/PageGUID，不写视觉状态；回归形状识别/Freeze/白板/PPT。
-- [ ] vswhere定位原生ARM64 MSBuild；同PowerShell Remove-Item Env:PATH -ErrorAction SilentlyContinue；$env:MSBUILDDISABLENODEREUSE='1'；完整 InkeysRepo.sln /m /p:Configuration=Debug /p:Platform=ARM64，允许至少5分钟（依赖安装延长），记录exit和首个有意义错误。
-- [ ] 尝试完整x64构建；静态PE导入/Win7新增硬依赖审查；不通过改配置绕过环境问题。
-- [ ] InkeysHeadlessTests --no-window、定向测试、相关Draw3/UInk CLI、i18n check、git diff --check及编码/BOM/EOL审查。
-- [ ] 受控 GUI 使用 computer-use 技能，专用内容/临时数据/自动清理：浏览器上下/水平/边界/惯性/多屏/主栏/Paused退出；缺失硬件/应用明确未测。
-- [ ] 每阶段将文件、实现、测试和遗留项写入子任务 implement.md/research；最终全范围 check、规范更新并交付。
+以下勾选区分软件交付与必要现场验收；本轮仅允无窗口或全程不可见HWND，不操作桌面、不显示或前置窗口。父任务保留in_progress，未完成真实画面门槛不归档。
+
+- [x] 用户批准本轮全部后续代码，四子任务依次validate/start及implement/check，真实规范与研究进入JSONL。
+- [x] 保留原定格Mag初始化/窗口/readyPromise设计，无第二套Mag。上轮原owner无callback基础PoC已通过；本轮正式MagnifierThread异步服务及状态/寿命无窗口check通过。
+- [x] Tracker严格离线14组6918合法帧每prefix误差通过，静止300帧/长滚动/原特征全离屏/反向水平/干扰/变形拒绝/暂停，记录参数与模型边界。
+- [x] 产品Business/Draw3/Bar接线及独立check：latest absolute、身份/seq、最后目标/跨帧present、准入/真contact收尾、旧Host凭据、生命周期/钳制、工具/动作receipt与独立模式投影；窗口ACK是明确seam。
+- [x] 真实Shape/Pen四场景A->磁盘恢复->Follow->B/编辑->Exit文件回读；viewport-only最后Publish立即Stop。8真UInk、A/codec点/宽/style逐值相等、工作区/PageGUID、Viewport、Redo、真mask覆盖均经独立check。
+- [x] 完整InkeysRepo.sln Debug ARM64与x64均exit0；vswhere ARM64原生MSBuild、同PowerShell规范Path/禁node reuse、>=5分钟期限。生成ILK/PDB故障仅按核实路径清理或留档后原配置重建。
+- [x] 完整--no-window、原8项退出失败接管、4组共享storage CLI已通过；最终ARM64保存/协议/业务/状态/配置/全隐藏/形状短回归与x64五项纯CLI通过。长矩阵复用依据见保存check-current。
+- [x] i18n426/426、47源/工程文本UTF-8/BOM/CRLF/EOF、4XML、diff及最终双架构PE检查通过，不修改依赖/第三方/SDK/渲染参数。
+- [x] 每阶段implementation/check、最终构建/PE、用户用法/现场步骤、规范和总矩阵已记录；本轮不commit/push。
+- [ ] 正式Mag worker真实变化/静止/排除、无callback启停/Freeze前后、持续耗时/FPS/长期资源：须现场可见内容，本轮停止于此。
+- [ ] 真实双窗显隐/穿透、可见墨迹及擦除、底层滚动、主栏/快捷键/Paused退出；专用页面后Edge/Chrome及可用Word/PDF，含惯性/边界/至少十屏。
+- [ ] 真实笔/触控、DPI/多屏/设备事件、锁屏、旧Windows/WOW64等实机补测；缺设备/应用逐项保留未测。
 
 ## 操作约束
 不 commit/push，不无关重构，不修改第三方子模块，不跑会重写生产文件的无关格式化。修改保持既有编码/BOM/CRLF。归档和会话脚本必须 --no-commit。构建/测试日志写 Build/ 下，不提交生成产物。
 
 
-## 当前阶段与历史证据
+## 先前准备阶段与历史证据
 
 旧独立原型已完成过 implement/check 并提交 f07b562e，但真实共存门槛未通过。按后续用户指示，本轮删除独立服务/runtime/旧测试，恢复原定格寿命设计，仅增加 Inkeys.exe 内部 PrintWindow(2) 与可选回调验证。实际构建和软件内测试尚须以当前代码重新核对，旧报告不构成当前通过证据。
 
@@ -26,6 +28,10 @@
 - 捕获子任务 research/inkeys2-mag-thread-history.md：同线程创建与同步等待的准确历史。
 - .trellis/spec/native-desktop/scroll-follow-capture.md：当前共用原定格的边界与像素验证合同。
 
-## 本轮 Mag 准备验证完成
+## 上轮 Mag 准备验证完成
 
 真实 Inkeys.exe 共用原定格 Mag 的无回调路径已通过两个新进程的冷启动、静止和变化图案验证；恢复空回调后继续正确。可选 scaling callback 也实际触发；原线程设计未重排。完整 ARM64 solution、无窗口回归、i18n与格式检查通过。详细证据见捕获子任务 research/freeze-printwindow.md。按用户最新要求，本轮确认准备后结束，后续阶段下一轮开始；此里程碑不代表完整滚动批注或连续服务已实现。
+
+## 本轮继续实施（2026-10-21）
+
+用户已批准完成正式取帧及全部后续阶段，上一轮仅诊断的范围限制结束。本轮验证仅无窗口或完全不在屏幕显示的HWND，禁止Computer Use/前台/可见测试；必要可见验收时停止。当前授权见[implementation-authorization.md](../10-21-scroll-follow-v1/research/implementation-authorization.md)，其优先于本文旧轮次边界。原定格Mag的无callback基础验证见research/freeze-printwindow.md（捕获子任务）；后续正式路径须分别验证。本轮不自动commit/push。

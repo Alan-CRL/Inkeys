@@ -26,7 +26,7 @@ namespace Inkeys::Drawing::Draw3
 	bool WaitForProductRuntimeRevision(std::uint64_t revision,
 		std::uint32_t timeoutMilliseconds) noexcept;
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-	void PublishProductState(const Bridge::ProductState& state) noexcept;
+	std::uint64_t PublishProductState(const Bridge::ProductState& state) noexcept;
 	void PublishProductWorkspace(Bridge::Workspace workspace) noexcept;
 	std::optional<std::uint64_t> PublishProductPresentationTarget(
 		const Bridge::PresentationTarget& target) noexcept;

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 118
+- **Total Sessions**: 119
 - **Last Active**: 2026-10-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~929 | Active |
+| `journal-2.md` | ~963 | Active |
 | `journal-1.md` | ~2226 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 119 | 2026-10-21 | 滚动批注初版：软件实现与隐藏验收完成，现场门槛待验 | - | `feature/move` |
 | 118 | 2026-10-21 | 原定格 Mag 的无回调 PrintWindow 准备验证 | - | `feature/move` |
 | 117 | 2026-10-21 | 滚动批注捕获原型与真实门槛调查（未完成） | - | `feature/move` |
 | 116 | 2026-10-19 | 键盘快捷键与批注往返完成验收 | `97fbe299` | `feature/hook` |

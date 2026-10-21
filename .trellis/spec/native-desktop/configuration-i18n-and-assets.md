@@ -186,7 +186,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - **按钮 ID 命名**：
   - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
-  - `RegisterButton` 按分区强制上述规则；Extension 仅额外允许已注册官方实体 `Inkeys.Bar.Setting`，布局标识必须走 `RegisterLayoutMarker`；B 区规范化时丢弃未注册官方前缀 ID 与非法点分格式。
+  - `RegisterButton` 按分区强制上述规则；Extension 仅额外允许已注册官方实体 `Inkeys.Bar.Setting`、`Inkeys.Bar.ViewAdjust`，布局标识必须走 `RegisterLayoutMarker`；B 区规范化时丢弃未注册官方前缀 ID 与非法点分格式。
 - A1 默认 required 与顺序：Select, Draw, Geometry, Eraser, Recall, Clean（**不含 Divider**）。
 - A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoOne`、`EndShow/twoTwo`；Setting 属于 Extension 的显式 More 项。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。旧持久化 `Pierce` ID 仍退休，新 A2 配置不接受该 ID；分离式的独立穿透只作为运行时伴随按钮。
 - A2 的 Freeze/Pierce 按“选择与穿透”合同运行时投影：合并式只显示可用 Freeze `twoTwo`；分离式在同一列显示上 Pierce `twoOne`、下 Freeze `twoOne`。空页 Selection 隐藏 Pierce 并放大可用 Freeze；Freeze 不可用时隐藏并把可用 Pierce 放大。Whiteboard 不提供 Pierce；Whiteboard/EndShow 沿现有工作区投影，隐藏的白板功能入口不因此开放。以上 `hide/size` 不改写 A2 持久化順序。
@@ -202,12 +202,24 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。配置中的 Divider 在 A 区先剥离再校验。
 - A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值；Geometry 注册默认可见，但选择模式通过运行时 `hide` 隐藏。
 - `Size` 本轮只镜像注册默认；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
-- B 区：顺序 + Visible；符合扩展 ID 规则的未知/已卸载插件 ID **永久保留**且不渲染；未注册的 `Inkeys.*` 与非法 ID 格式误入 B 时剔除；已注册官方 Setting、MoreBoundary 和扩展单例只取第一条。
+- B 区：顺序 + Visible；符合扩展 ID 规则的未知/已卸载插件 ID **永久保留**且不渲染；未注册的 `Inkeys.*` 与非法 ID 格式误入 B 时剔除；已注册官方 Setting、ViewAdjust、MoreBoundary 和扩展单例只取第一条。
 - 旧 `UI.Bar.ButtonLayout` 单数组：仅当三个新字段都缺失时拆分迁移；其中 Divider 丢弃不迁入；迁移后 A 仍走严校验，B 保留扩展项 Visible。
 - A1 仅将 `Select, Draw, Eraser, Geometry, Recall, Clean` 这一精确旧默认顺序迁移为当前默认；其他 required 集合的合法自定义排列保持原顺序。
 - 发版新增 A 区 required 官方按钮：旧配置缺新 ID → 该 A 区整区重置默认；不猜测新按钮插入点。
 - `ConfigSequence<T>` 快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
 - `BarButtonClass::IsVisible()` 是唯一可见性消费入口。主栏注册/配置的基础尺寸与用户可见性独立于运行时有效 `size/hide`；`Load()` 只更新基准和成员，不能把配置默认写回已显示的动态尺寸。所有主栏有效尺寸、显隐及业务高亮/禁用统一由 `StateUpdate` 的最终计算/应用入口派生，A2几何不受文字/内容styleKey短路。组件、历史、计时器与外部工具刷新先更改数据状态并走统一刷新，不直接覆盖有效属性。构造默认、独立分页/属性按钮、指针反馈和渲染SetTar不属于该主栏业务写入口。
+
+### 视图调整官方条目的窄迁移
+
+2026-10-21滚动批注新增 `Inkeys.Bar.ViewAdjust`，Bar preset 在旧枚举尾部追加，不能重编号。默认B为MoreBoundary、ViewAdjust、Setting；运行时仍沿旧组件开关投影，explicitMore在Setting前加入ViewAdjust，不附带恢复整套B自定义。
+
+配置读取与运行时投影职责不同：`Other.Config.cpp` 的 `TryAddMissingViewAdjustButton(Json::Value&)` 在共用ReadImpl原旧布局拆分后，使用生产sequence codec验证现有B，只把缺失ViewAdjust插在首个Setting前，没有Setting则追加。已有ViewAdjust完全不变，保留位置/Size/Visible/原字段；A1/A2和其它B原始项/顺序/未知插件额外字段不被规范化。非法B保持原codec回退；缺整个B继续schema默认，不为迁移额外造新字段。
+
+ReadAll与ReadMini均覆盖，ReadMini未选中的运行时字段仍不读。迁移直接用既有原子写盘器写回原JSON文档，不能依赖configOnce差异或Bar后续Write；写失败沿原旧布局best-effort，后续读可重试。此处只允许新官方条目补缺，与Bar运行时不得写回整个B的合同相容。
+
+资源为 `src/UI/BarViewAdjust.svg` / `BARVIEWADJUST UI`，主题占位沿原SVG，label `UI.Bar.MainButtons.ViewAdjustLabel` 为视图调整/視圖調整/Adjust View。三语源经i18n sync生成header/snapshot，不能手改生成键。实际按钮注册白名单、explicitMore和最终Selected/Disable由Bar唯一最终投影处理。
+
+生产配置专测 `Inkeys::Tests::RunBarViewAdjustConfigTests()` 位于Other.Config.ViewAdjustTest.cpp/.h，只写仓库Build/ScrollFollow私有路径并恢复globalPath，不启动HWND；harness关闭返回2。严格早退CLI/工程登记由产品Core完成，真实二进制测试须统一构建执行，JSON fixture解析不能冒充C++专测通过。
 
 ### 4. Validation & Error Matrix
 
@@ -220,13 +232,13 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 | A/B `Size` 缺省/非法/非注册默认 | 纠正为注册默认，不因 Size 重置 A |
 | B `Visible` 缺失 | `true` |
 | B `Visible` 不是 bool | 整个 ExtensionButtons 字段回退默认（空数组） |
-| B 含未注册的 `Inkeys.*` 或非点分/空段 Id | 剔除；已注册 Setting/MoreBoundary 保留 |
+| B 含未注册的 `Inkeys.*` 或非点分/空段 Id | 剔除；已注册 Setting/ViewAdjust/MoreBoundary 保留 |
 | B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
 | 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2；Divider 不迁入，交界运行时注入 |
 | 旧 A2 恰好为 Whiteboard/Freeze（任一顺序） | 保留相对顺序，在末尾追加 EndShow 并规范化默认尺寸 |
 | 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃；A2 最终按 Whiteboard/Freeze/EndShow required 集合严校验，不将 Pierce 注册为持久化布局实体 |
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
-| 旧组件全关 | 运行时仍显示 More；浮层仅含远端 Setting，无横向分割线 |
+| 旧组件全关 | 运行时仍显示 More；浮层显式组含 ViewAdjust、Setting，无横向分割线 |
 | 相邻两条 Divider（运行时/配置） | 只保留一条 |
 | UI3 并行期且 `ExtensionButtons` 含已有数据 | 运行时忽略该数据且不改写；B 只反映旧组件开关 |
 | 任一旧组件开关 `false -> true` | 完成旧配置写入后，按注册顺序立即加入当前 UI3 B |
@@ -243,7 +255,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 - Good：仅打乱 A1 顺序后启动，顺序保留；B 中插件隐藏后重装仍在原位。
 - Good（并行期）：`ExtensionButtons` 保留未来排序数据，同时 UI3 按 16 个旧开关的固定顺序即时投影多个组件。
-- Base：无新区字段时 A1/A2 使用当前默认序；Geometry 注册默认可见并在选择模式运行时隐藏；旧组件开关全关时主栏无普通 B 实体，但 More 仍提供 Setting。
+- Base：无新区字段时 A1/A2 使用当前默认序；Geometry 注册默认可见并在选择模式运行时隐藏；旧组件开关全关时主栏无普通 B 实体，但 More 仍提供 ViewAdjust 与 Setting。
 - Bad：A1 缺少 Geometry 或混入 Pierce → A1 整区回默认，A2/B 不动。
 - Bad（并行期）：设置页只写旧开关却继续从持久化 `ExtensionButtons` 构建 B，导致 UI 与开关状态分叉。
 

@@ -129,11 +129,11 @@ namespace Inkeys::Drawing::Draw3
 		return productHost.ForwardMessage(window, message, wParam, lParam);
 	}
 
-	void PublishProductState(const Bridge::ProductState& state) noexcept
+	std::uint64_t PublishProductState(const Bridge::ProductState& state) noexcept
 	{
-		if (productStopping.load(std::memory_order_acquire)) return;
+		if (productStopping.load(std::memory_order_acquire)) return 0;
 		std::scoped_lock callLock(productCallMutex);
-		if (productStopping.load(std::memory_order_acquire)) return;
+		if (productStopping.load(std::memory_order_acquire)) return 0;
 		// 工具栏只覆盖绘制属性，页码和工作区由各自事务入口维护。
 		Bridge::ProductState merged = productHost.ProductBridge().Snapshot();
 		merged.tool = state.tool;
@@ -145,7 +145,7 @@ namespace Inkeys::Drawing::Draw3
 		merged.cursorSettings = state.cursorSettings;
 		merged.selectionMode = state.selectionMode;
 		merged.autoSaveEnabled = state.autoSaveEnabled;
-		productHost.PublishState(merged);
+		return productHost.PublishState(merged);
 	}
 
 	void PublishProductWorkspace(Bridge::Workspace workspace) noexcept
@@ -153,6 +153,8 @@ namespace Inkeys::Drawing::Draw3
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire)) return;
+		if (productHost.ProductBridge().Snapshot().workspace != workspace)
+			productHost.EndFollow(Follow::Disposition::RetireScene);
 		if (productHost.ProductBridge().PublishWorkspace(workspace))
 			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}
@@ -164,6 +166,7 @@ namespace Inkeys::Drawing::Draw3
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire) ||
 			!productHost.Running()) return std::nullopt;
+		productHost.EndFollow(Follow::Disposition::RetireScene);
 		bool changed = false;
 		const auto revision = productHost.ProductBridge().PublishPresentationTarget(
 			target, &changed);
@@ -194,6 +197,7 @@ namespace Inkeys::Drawing::Draw3
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire)) return;
+		productHost.EndFollow(Follow::Disposition::RetireScene);
 		if (productHost.ProductBridge().ClearPresentationTarget())
 			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}
@@ -220,6 +224,7 @@ namespace Inkeys::Drawing::Draw3
 				productHost.PublishState(productHost.ProductBridge().Snapshot());
 			return published;
 		}
+		productHost.EndFollow(Follow::Disposition::RetireScene);
 		state.page = page;
 		state.hasPage = true;
 		productHost.PublishState(state);

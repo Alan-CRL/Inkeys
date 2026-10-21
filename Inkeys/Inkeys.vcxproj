@@ -420,6 +420,12 @@
 	<ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h" />
 	<ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h" />
 	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
+	<ClInclude Include="Inkeys\Graphics\FreezeCapture.h" />
+    <ClInclude Include="Inkeys\Business\ScrollFollow.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollow.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollowTest.h" />
+    <ClInclude Include="Inkeys\Other\Other.Config.ViewAdjustTest.h" />
+	<ClInclude Include="Inkeys\CV\VisualMotionTracker.h" />
 	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
 	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
 	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
@@ -506,6 +512,7 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DesktopPersistenceTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
@@ -878,6 +885,10 @@
     <ClInclude Include="additional\ink_stroke_modeler\types.h" />
   </ItemGroup>
   <ItemGroup>
+	<ClCompile Include="Inkeys\Graphics\FreezeCapture.cpp" />
+    <ClCompile Include="Inkeys\Business\ScrollFollow.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollowTest.cpp" />
+    <ClCompile Include="Inkeys\Other\Other.Config.ViewAdjustTest.cpp" />
 	<ClCompile Include="Inkeys\Graphics\Surface.cpp" />
 	<ClCompile Include="Inkeys\Graphics\Surface.cppm" />
 	<ClCompile Include="Inkeys\Business\ComponentActions.cpp" />
@@ -1079,6 +1090,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DrawingController.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="Inkeys\CV\VisualMotionTracker.cpp" />
     <ClCompile Include="Inkeys\CV\ShapeRecognition.cpp" />
     <ClCompile Include="Inkeys\CV\ShapeRecognition.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -1288,6 +1300,7 @@
     <None Include="src\UI\barRedo.svg" />
     <None Include="src\UI\barSelect.svg" />
     <None Include="src\UI\barSetting.svg" />
+    <None Include="src\UI\BarViewAdjust.svg" />
     <None Include="src\UI\color\colorSelect.svg" />
     <Image Include="src\UI\color\colorCustom.png" />
     <None Include="src\UI\Frame 94.svg" />

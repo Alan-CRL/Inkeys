@@ -42,6 +42,10 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 
 #include "IdtMain.h"
 #include "Inkeys/Drawing/Draw3/Draw3.DiagnosticOutput.h"
+#include "Inkeys/Drawing/Draw3/Draw3.ScrollFollowTest.h"
+#include "Inkeys/Drawing/Draw3/Draw3.DesktopPersistenceTest.h"
+#include "Inkeys/Business/ScrollFollow.h"
+#include "Inkeys/Other/Other.Config.ViewAdjustTest.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PptTiming.h"
 #include "Inkeys/Helper/FailedCleanupDeadline.h"
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
@@ -364,6 +368,8 @@ void SetOffSignal(int signal)
 	// 首次请求决定关闭或重启；先建立独立监督，再进入任何可能卡住的清理。
 	if (InterlockedCompareExchange(&offSignalInterop,
 		static_cast<LONG>(signal), 0) != 0) return;
+	// 监督建立前只能原子撤销；Host/Capture短锁也可能被故障线程持有。
+	Inkeys::Business::ScrollFollow::RequestShutdownNoWait();
 	Inkeys::Window::GetService().BeginShutdown();
 	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
 		signal == 2 ? Inkeys::Shutdown::Intent::Restart
@@ -381,6 +387,7 @@ void SetOffSignal(int signal)
 	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
 	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
 	Inkeys::UI::RenderPipeline::WakeForStop();
+	Inkeys::Business::ScrollFollow::RequestShutdown();
 	if (supervisor == Inkeys::Shutdown::ArmResult::FallbackArmed && IDTLogger)
 		IDTLogger->warn("[退出监督] 外部监督未建立；自身15秒退场已启动，不能保证重启，错误码={}",
 			supervisorError);
@@ -398,6 +405,7 @@ namespace Inkeys::Shutdown
 		// 失败清理owner已能自守截止；不能在这里重新建线程、Arm、日志或等待业务清理。
 		LONG intent = InterlockedCompareExchange(&offSignalInterop, 1, 0);
 		if (intent == 0) intent = 1;
+		Inkeys::Business::ScrollFollow::RequestShutdownNoWait();
 		Inkeys::Window::GetService().BeginShutdown();
 		if (intent == 1 || intent == 2)
 			offSignal.store(static_cast<int>(intent), std::memory_order_release);
@@ -1370,6 +1378,37 @@ namespace Inkeys::UI::Bar
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
 {
+	// 扫描整个argv：错位或附带参数的专测也必须早退，harness关闭同样适用。
+	{
+		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
+		if (!arguments) return 2;
+		int selected = 0; bool malformed = false;
+		const wchar_t* flags[] = {L"--scroll-follow-protocol-test", L"--scroll-follow-hidden-test", L"--bar-view-adjust-config-test", L"--scroll-follow-persistence-test"};
+		for (int index = 1; index < count; ++index)
+			for (int test = 0; test < 4; ++test)
+				if (wcslen(arguments[index]) >= wcslen(flags[test]) && CompareStringOrdinal(arguments[index], static_cast<int>(wcslen(flags[test])), flags[test], -1, TRUE) == CSTR_EQUAL)
+				{
+					selected = test + 1;
+					malformed |= CompareStringOrdinal(arguments[index], -1, flags[test], -1, TRUE) != CSTR_EQUAL;
+				}
+		LocalFree(arguments);
+		if (selected)
+		{
+			if (count != 2 || malformed) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			Inkeys::Drawing::Draw3::DiagnosticOutput::Session diagnostics;
+			(void)diagnostics.Start();
+			int result = 2;
+			if (selected == 1) result = Inkeys::Drawing::Draw3::RunScrollFollowProtocolTests() + Inkeys::Business::ScrollFollow::RunScrollFollowControlTests();
+			if (selected == 2 && EnsureProcessDpiAwareness()) result = Inkeys::Drawing::Draw3::RunScrollFollowInvisibleHostTest();
+			if (selected == 3) result = Inkeys::Tests::RunBarViewAdjustConfigTests();
+			if (selected == 4 && EnsureProcessDpiAwareness()) result = Inkeys::Drawing::Draw3::RunScrollFollowPersistenceTest();
+			(void)diagnostics.Stop(); return result;
+#else
+			return 2;
+#endif
+		}
+	}
 	// 内部监督进程和隔离测试必须在配置、单实例与任何 HWND 初始化前退出。
 	int ui3FixtureExitCode = 0;
 	if (Inkeys::UI::Bar::TryRunUi3PresentationFixtureEarly(GetCommandLineW(), ui3FixtureExitCode)) return ui3FixtureExitCode;
@@ -1627,6 +1666,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 进程级 owner 兜住启动失败返回；Host/RTS 退出后才停止独立输出器。
 	Inkeys::Drawing::Draw3::DiagnosticOutput::Session draw3DiagnosticOutput;
+	const bool scrollFollowConsole = HasCommandLineSwitch(L"--scroll-follow-console", L"--scroll-follow-verbose");
+	const bool scrollFollowVerbose = HasCommandLineSwitch(L"--scroll-follow-verbose", L"--scroll-follow-verbose");
+	Inkeys::Business::ScrollFollow::SetDiagnostics(scrollFollowConsole, scrollFollowVerbose);
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
 	bool shapeRecognitionConsoleOutputEnabled = false;
@@ -2937,7 +2979,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.ConsoleOutput.Haptics);
 			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
 				cursorConsoleOutputEnabled || shapeRecognitionConsoleOutputEnabled ||
-				Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled() || rtsTraceCommandLineEnabled)
+				Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled() || rtsTraceCommandLineEnabled || scrollFollowConsole)
 			{
 				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();

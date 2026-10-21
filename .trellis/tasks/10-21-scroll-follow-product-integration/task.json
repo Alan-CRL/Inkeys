@@ -3,7 +3,7 @@
   "name": "scroll-follow-product-integration",
   "title": "滚动批注 Draw3 与主栏接入",
   "description": "实现会话隔离、绝对视口目标、双窗穿透握手和扩展按钮",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-10-21",
   "completedAt": null,
-  "branch": null,
+  "branch": "feature/move",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "10-21-scroll-follow-v1",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "软件实现和独立check通过。修复Host通道所有权和早期退出监督顺序，实际Tick/Frame/Tracker seam与全隐藏Host、ARM64/no-window/原退出8例均通过；系统窗口ACK/实屏待现场。已交保存阶段，无commit/push。",
   "meta": {}
 }
