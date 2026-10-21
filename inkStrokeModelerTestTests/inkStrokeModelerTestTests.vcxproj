@@ -118,11 +118,15 @@
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
 	<ClCompile Include="uink_tests.cpp" />
+	<ClCompile Include="uink_page_file_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" Link="draw3\Draw3.DiagnosticOutput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" Link="draw3\Draw3.AutoSave.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm" Link="draw3\Draw3.AutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" Link="draw3\Draw3.Presentation.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cppm"><CompileAs>CompileAsCppModule</CompileAs></ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp" Link="draw3\Draw3.PresentationAutoSave.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm" Link="draw3\Draw3.PresentationAutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -156,6 +160,8 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm" Link="draw3\uink_codec.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cppm"><CompileAs>CompileAsCppModule</CompileAs></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp" Link="draw3\uink_file.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm" Link="draw3\uink_file.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>

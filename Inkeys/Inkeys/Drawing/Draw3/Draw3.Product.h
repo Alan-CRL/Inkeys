@@ -17,6 +17,8 @@ namespace Inkeys::Drawing::Draw3
 		HostRuntimeCallbacks runtimeCallbacks = {});
 	void StopProduct() noexcept;
 	bool ProductRunning() noexcept;
+	Haptics::Context ProductHapticContext() noexcept;
+	bool PublishProductHapticClick(const Haptics::Click& source) noexcept;
 	bool ProductFirstFrameReady() noexcept;
 	HostRuntimeSnapshot ProductRuntimeSnapshot() noexcept;
 	bool WaitForProductContentRevision(std::uint64_t revision,
@@ -36,6 +38,8 @@ namespace Inkeys::Drawing::Draw3
 	// 仅运行中的 Host 接受页请求；相同绝对页幂等成功，调用方可安全周期复核。
 	bool PublishProductPage(std::uint32_t page) noexcept;
 	Bridge::CommandResult PublishProductCommand(Bridge::CommandType command) noexcept;
+	Bridge::CommandResult RequestWhiteboardTheme(const WhiteboardTheme& theme,
+		std::uint64_t generation, std::size_t page) noexcept;
 	void SetProductActivationAllowed(bool enabled) noexcept;
 }
 

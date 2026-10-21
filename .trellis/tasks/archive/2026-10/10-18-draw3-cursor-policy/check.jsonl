@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "产品边界、窗口/输入所有权及实施前决策门"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "Touch 主光标归属、来源过滤、schema2 与 Win7 shader 合同；长文按阶段主动读取"}
+{"file": ".trellis/spec/native-desktop/draw3-shaders.md", "reason": "正式 HLSL 与 Win7 guarded PS 同步、预乘透明与资源链"}
+{"file": ".trellis/tasks/archive/2026-10/10-18-draw3-cursor-policy/research/win7-official-api-options.md", "reason": "官方最低系统、FORCEOFF 与 HCURSOR/feedback 区分、无全 Win7 零闪保证"}
+{"file": ".trellis/tasks/archive/2026-10/10-18-draw3-cursor-policy/research/settings-and-history.md", "reason": "审查配置唯一真值、历史值兼容、即时同步和三语生成边界"}
+{"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "已实现的配置/来源/透明度/Win7固定策略合同与验收边界"}
+{"file": ".trellis/tasks/archive/2026-10/10-18-draw3-cursor-policy/research/cursor-policy-revision.md", "reason": "覆盖首次规则，必须按当前工具/输入矩阵复查"}
+{"file": ".trellis/tasks/archive/2026-10/10-18-draw3-cursor-policy/research/cursor-geometry-revision.md", "reason": "当前增量：荧光笔左右高亮减半、四个非笔尖圆角，正式/Win7 guarded同步及无GUI验证"}
+{"file": ".trellis/tasks/archive/2026-10/10-18-draw3-cursor-policy/research/pen-mouse-takeover-regression.md", "reason": "当前Win11回归：Pen离开后系统Move不得抢回Mouse，真实设备即时恢复与Win7回退"}

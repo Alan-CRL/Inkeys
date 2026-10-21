@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <stop_token>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -1535,6 +1536,14 @@ int RunMessageBoxTests(bool runWindowTests)
 	TestRequestAndResultContracts();
 	TestLabelsAndScaling();
 	TestPreflightWithoutWindow();
+	Check(MessageBoxTest::VerifyCancellationAdmission(), "cancelled admission returns without waiting for another dialog");
+	std::stop_source stop;
+	Request cancelled; cancelled.fallback.enabled = false; cancelled.cancellation = stop.get_token();
+	stop.request_stop();
+	Check(Show(cancelled) == Result::Dismissed && !IsShowing(), "pre-cancelled request has no dialog or fallback");
+	std::stop_source pendingStop;
+	Request cancellableFailure; cancellableFailure.cancellation = pendingStop.get_token();
+	Check(Show(cancellableFailure) == Result::Failed && !IsShowing(), "cancellable invalid request never opens system fallback");
 	if (runWindowTests)
 	{
 		TestStartupShowStateCannotMaximizeDialog();

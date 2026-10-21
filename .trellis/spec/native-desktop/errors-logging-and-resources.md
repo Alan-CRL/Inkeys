@@ -318,7 +318,8 @@ Window Service、Draw3 Host/RTS/透明 presenter 的外层可观察 bool/catch �
 - Window required callback/class/create/bind/group/catch 的已知失败先 Begin，再日志/promise/rollback/join。Host 启动 false/catch 先 Begin，再握手/RTS清理/GPU释放；启动 options 按值向其 owner 保活。
 - 每个 presenter startup mode 的可恢复失败有局部 Dormant scope，实际失败后跨 ReleaseAttempt 和 fallback log；最后/required mode 向 outer 继承原 tick。成功及已清理可恢复失败都真 Complete 后才能下一模式，Recover/Resize/Present 不混入 startup timer。FLIP/HW-WARP/DComp→ULW/两DWM禁用不变。
 - Main 首 Host 失败 scope 继续跨原 warn、StopProduct 和旧 Window.StopAndJoin，真 Complete 后且意图为空才开始新 Window/ULW scope。旧 Cancelled Signal 不会重新激活新代。
-- RTS Disable/Remove 返回 FAILED 且有有效 publisher 时，在 CloseAll/Release/清 coordinator 前 FailUnprovenProducerStop；临时 removedPlugin 引用保留。SUCCEEDED 仅说明 HRESULT，不证明 provider callbacks/其它窗口 producer 已静止；成功排空与 Reset 的时序仍须真实交错证据。
+- RTS Disable返回FAILED时，沿原失败截止核实get_Enabled：仅成功读回明确FALSE可继续清理；仍启用/状态未知且plugin已加入，或Remove失败时，在CloseAll/Release/清coordinator前FailUnprovenProducerStop，不以是否存在publisher放宽。临时removedPlugin引用保留，callback gate关闭与实际drain仍必需；成功停采不代替在途callback或其它窗口producer排空，Reset时序仍须真实交错证据。
+- RTS扩展/基础X/Y可恢复尝试使用独立scope，清理及日志后真实Complete/join，成功恢复Host signal；不能把旧失败deadline带入健康后端。callback关闭位/在途数同原子，等待最后lease的event通知；候选输入不发布Down。鼠标后端另由owner确认停止/终态/捕获释放，不能用RTS Shutdown冒充；详见input-and-ink的回退合同。
 
 ### 4. Validation & Error Matrix
 

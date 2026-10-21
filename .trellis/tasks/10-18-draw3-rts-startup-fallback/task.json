@@ -1,0 +1,29 @@
+{
+  "id": "draw3-rts-startup-fallback",
+  "name": "draw3-rts-startup-fallback",
+  "title": "Draw3 兼容修复迁移到 dev",
+  "description": "承接已审阅的 RTS/鼠标回退，按用户最新要求提取兆芯兼容和上传修复，排除新增诊断体系，准备面向 dev 的 PR。",
+  "status": "in_progress",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "scope": "draw3",
+  "createdAt": "2026-10-18",
+  "completedAt": null,
+  "branch": "codex/draw3-compatibility-fixes",
+  "base_branch": "dev",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "已完成dev产品移植、独立审查与全部授权内自动验证；准备本地中转提交和pr-body.md。待明确push授权；真实设备/GUI仍待现场验收。",
+  "meta": {
+    "review_status": "approved",
+    "source_commit": "e8dd090c886d34dad6091c5bbd6227fea6d1bf2a",
+    "base_commit": "5d319bbf5c520dec97dcb37ad2fcc7e26d029bbb",
+    "validation_status": "automated_passed_device_pending",
+    "publication_status": "local_prepared"
+  }
+}

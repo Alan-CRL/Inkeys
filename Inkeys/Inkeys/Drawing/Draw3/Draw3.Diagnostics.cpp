@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -32,31 +33,13 @@ namespace Inkeys::Drawing::Draw3
 	namespace
 	{
 		std::atomic<bool> startupEnvironmentDiagnosticsEnabled = false;
-		constexpr size_t kCursorDiagnosticCapacity = 1024;
-		struct CursorDiagnosticLine
-		{
-			uint64_t sequence = 0;
-			uint64_t tickMilliseconds = 0;
-			DWORD threadId = 0;
-			char message[320] = {};
-		};
+		constexpr size_t kCursorDiagnosticCapacity = DiagnosticOutput::RecordCapacity;
 		std::atomic<bool> cursorDiagnosticsEnabled = false;
-		std::mutex cursorDiagnosticMutex;
-		std::array<CursorDiagnosticLine, kCursorDiagnosticCapacity> cursorDiagnosticLines;
-		size_t cursorDiagnosticHead = 0;
-		size_t cursorDiagnosticCount = 0;
-		uint64_t cursorDiagnosticSequence = 0;
-		uint64_t cursorDiagnosticDropped = 0;
+		std::atomic<uint64_t> cursorDiagnosticSequence = 0;
 
 		void WriteFastConsoleLine(const char* text, DWORD length)
 		{
-			static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE); // 缓存控制台句柄，减少每帧日志开销。
-			if (!consoleHandle || consoleHandle == INVALID_HANDLE_VALUE || length == 0) return;
-			DWORD written = 0;
-			if (!WriteConsoleA(consoleHandle, text, length, &written, nullptr))
-			{
-				WriteFile(consoleHandle, text, length, &written, nullptr); // 输出被重定向时 WriteConsoleA 会失败，改用 WriteFile。
-			}
+			DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, text, length);
 		}
 
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -149,7 +132,8 @@ namespace Inkeys::Drawing::Draw3
 		void WriteRtsTraceLine(const char* text, size_t length) noexcept
 		{
 			if (!text || length == 0) return;
-			WriteShapeRecognitionConsoleText(std::string_view(text, length));
+			DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, text, static_cast<std::streamsize>(length));
+			DiagnosticOutput::Wake();
 		}
 
 		RtsContactTraceSlot* FindRtsContactSlot(
@@ -479,13 +463,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		cursorDiagnosticsEnabled.store(false, std::memory_order_release);
 		if (!enabled) return;
-		{
-			std::lock_guard lock(cursorDiagnosticMutex);
-			cursorDiagnosticHead = 0;
-			cursorDiagnosticCount = 0;
-			cursorDiagnosticSequence = 0;
-			cursorDiagnosticDropped = 0;
-		}
+		cursorDiagnosticSequence.store(0, std::memory_order_relaxed);
 		cursorDiagnosticsEnabled.store(true, std::memory_order_release);
 		RecordCursorDiagnostic("enabled schema=2 capacity=%zu rawMode=observe-existing-registration", kCursorDiagnosticCapacity);
 		const DWORD previousError = GetLastError();
@@ -545,79 +523,35 @@ namespace Inkeys::Drawing::Draw3
 
 	void RecordCursorDiagnostic(const char* format, ...) noexcept
 	{
-		if (!CursorDiagnosticsEnabled() || !format) return;
-		CursorDiagnosticLine line;
-		line.tickMilliseconds = GetTickCount64();
-		line.threadId = GetCurrentThreadId();
+		if (!CursorDiagnosticsEnabled() || !format || !DiagnosticOutput::Available()) return;
+		const DWORD previousError = GetLastError();
+		const uint64_t tick = GetTickCount64();
+		const DWORD thread = GetCurrentThreadId();
+		char message[320]{};
 		va_list arguments;
 		va_start(arguments, format);
-		const int length = std::vsnprintf(line.message, sizeof(line.message), format, arguments);
+		const int length = std::vsnprintf(message, sizeof(message), format, arguments);
 		va_end(arguments);
-		if (length <= 0) return;
-		if (static_cast<size_t>(length) >= sizeof(line.message))
+		if (length > 0)
 		{
-			// 日志截断必须可见，避免把缺字段误判成状态未变化。
-			constexpr char suffix[] = " [truncated]";
-			std::memcpy(line.message + sizeof(line.message) - sizeof(suffix), suffix, sizeof(suffix));
+			if (static_cast<size_t>(length) >= sizeof(message))
+			{
+				constexpr char suffix[] = " [truncated]";
+				std::memcpy(message + sizeof(message) - sizeof(suffix), suffix, sizeof(suffix));
+			}
+			// 保留生产者的时间、线程与序号；唯一输出 worker 承担所有 sink 等待。
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
+				"[CURSOR_TRACE] seq=%llu tick=%llu thread=%lu %s\r\n",
+				static_cast<unsigned long long>(cursorDiagnosticSequence.fetch_add(1, std::memory_order_relaxed) + 1),
+				static_cast<unsigned long long>(tick), static_cast<unsigned long>(thread), message);
 		}
-		std::lock_guard lock(cursorDiagnosticMutex);
-		line.sequence = ++cursorDiagnosticSequence;
-		if (cursorDiagnosticCount == kCursorDiagnosticCapacity)
-		{
-			cursorDiagnosticHead = (cursorDiagnosticHead + 1) % kCursorDiagnosticCapacity;
-			--cursorDiagnosticCount;
-			++cursorDiagnosticDropped;
-		}
-		cursorDiagnosticLines[(cursorDiagnosticHead + cursorDiagnosticCount) %
-			kCursorDiagnosticCapacity] = line;
-		++cursorDiagnosticCount;
+		SetLastError(previousError);
 	}
 
 	void FlushCursorDiagnostics() noexcept
 	{
-		if (!CursorDiagnosticsEnabled()) return;
-		std::array<CursorDiagnosticLine, 64> batch;
-		for (size_t pass = 0; pass < 16; ++pass)
-		{
-			size_t count = 0;
-			uint64_t dropped = 0;
-			{
-				std::lock_guard lock(cursorDiagnosticMutex);
-				count = (std::min)(batch.size(), cursorDiagnosticCount);
-				for (size_t index = 0; index < count; ++index)
-					batch[index] = cursorDiagnosticLines[(cursorDiagnosticHead + index) %
-						kCursorDiagnosticCapacity];
-				cursorDiagnosticHead = (cursorDiagnosticHead + count) % kCursorDiagnosticCapacity;
-				cursorDiagnosticCount -= count;
-				dropped = cursorDiagnosticDropped;
-				cursorDiagnosticDropped = 0;
-			}
-			if (dropped)
-			{
-				char warning[128] = {};
-				const int length = std::snprintf(warning, sizeof(warning),
-					"[CURSOR_TRACE] dropped=%llu\r\n",
-					static_cast<unsigned long long>(dropped));
-				if (length > 0) WriteFastConsoleLine(warning,
-					static_cast<DWORD>((std::min)(length, static_cast<int>(sizeof(warning) - 1))));
-			}
-			if (count == 0) break;
-			char output[32768] = {};
-			size_t used = 0;
-			for (size_t index = 0; index < count; ++index)
-			{
-				const CursorDiagnosticLine& line = batch[index];
-				const int length = std::snprintf(output + used, sizeof(output) - used,
-					"[CURSOR_TRACE] seq=%llu tick=%llu thread=%lu %s\r\n",
-					static_cast<unsigned long long>(line.sequence),
-					static_cast<unsigned long long>(line.tickMilliseconds),
-					static_cast<unsigned long>(line.threadId), line.message);
-				if (length > 0 && static_cast<size_t>(length) < sizeof(output) - used)
-					used += static_cast<size_t>(length);
-			}
-			// 批量写入，避免高频触摸测试时每条记录都等待一次控制台调用。
-			if (used) WriteFastConsoleLine(output, static_cast<DWORD>(used));
-		}
+		// 兼容原绘制线程调用；只尝试通知，不在该线程执行任何输出或 drain。
+		if (CursorDiagnosticsEnabled()) DiagnosticOutput::Wake();
 	}
 
 	double GetQpcTimeMilliseconds()
@@ -658,6 +592,8 @@ namespace Inkeys::Drawing::Draw3
 		size_t l0PointCount, double workMs, double previousFrameMs, bool idleFrozen)
 	{
 #if defined(_DEBUG)
+		// 无输出端时跳过帧计时诊断的取时与格式化。
+		if (!DiagnosticOutput::Available()) return;
 		static double nextLogTimeMs = 0.0;
 		const double nowMs = GetQpcTimeMilliseconds();
 		if (nowMs < nextLogTimeMs) return;
@@ -703,8 +639,7 @@ namespace Inkeys::Drawing::Draw3
 		buffer[used] = '\r';
 		buffer[used + 1] = '\n';
 		buffer[used + 2] = '\0';
-		WriteFastConsoleLine(buffer, static_cast<DWORD>(used + 2));
-		OutputDebugStringA(buffer);
+		DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, buffer, used + 2, true);
 	#else
 		(void)format;
 	#endif
@@ -712,13 +647,13 @@ namespace Inkeys::Drawing::Draw3
 
 	void LogHResult(const char* step, HRESULT result)
 	{
-		std::cout << step << " failed. HRESULT=0x" << std::hex
+		DiagnosticOutput::Line() << step << " failed. HRESULT=0x" << std::hex
 			<< static_cast<unsigned long>(result) << std::dec << std::endl;
 	}
 
 	void LogWin32Error(const char* step, DWORD error)
 	{
-		std::cout << step << " failed. GetLastError=" << error << std::endl;
+		DiagnosticOutput::Line() << step << " failed. GetLastError=" << error << std::endl;
 	}
 
 	const char* BoolText(BOOL value)
@@ -746,12 +681,12 @@ namespace Inkeys::Drawing::Draw3
 		const HRESULT result = DwmGetColorizationColor(&colorizationColor, &opaqueBlend);
 		if (FAILED(result))
 		{
-			std::cout << "[" << modeName << "] " << stage
+			DiagnosticOutput::Line() << "[" << modeName << "] " << stage
 				<< " DwmGetColorizationColor failed. HRESULT=0x" << std::hex
 				<< static_cast<unsigned long>(result) << std::dec << std::endl;
 			return false;
 		}
-		std::cout << "[" << modeName << "] " << stage << " DwmColorizationColor=0x"
+		DiagnosticOutput::Line() << "[" << modeName << "] " << stage << " DwmColorizationColor=0x"
 			<< std::hex << static_cast<unsigned long>(colorizationColor) << std::dec
 			<< " opaqueBlend=" << BoolText(opaqueBlend) << std::endl;
 		if (outOpaqueBlend) *outOpaqueBlend = opaqueBlend;
@@ -765,7 +700,7 @@ namespace Inkeys::Drawing::Draw3
 		RECT clientRect = {};
 		GetWindowRect(window, &windowRect); // 同时记录窗口和客户区，排查边框样式导致的尺寸偏差。
 		GetClientRect(window, &clientRect);
-		std::cout << "[" << modeName << "] " << stage
+		DiagnosticOutput::Line() << "[" << modeName << "] " << stage
 			<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
 			<< " style=0x" << static_cast<unsigned long>(GetWindowLongPtr(window, GWL_STYLE))
 			<< " exStyle=0x" << static_cast<unsigned long>(GetWindowLongPtr(window, GWL_EXSTYLE)) << std::dec
@@ -776,7 +711,7 @@ namespace Inkeys::Drawing::Draw3
 		const HRESULT result = DwmIsCompositionEnabled(&compositionEnabled);
 		if (SUCCEEDED(result))
 		{
-			std::cout << "[" << modeName << "] " << stage
+			DiagnosticOutput::Line() << "[" << modeName << "] " << stage
 				<< " DwmIsCompositionEnabled=" << BoolText(compositionEnabled) << std::endl;
 		}
 		else
@@ -788,7 +723,7 @@ namespace Inkeys::Drawing::Draw3
 
 	void LogSwapChainDescription(const char* modeName, const char* stage, const DXGI_SWAP_CHAIN_DESC1& description)
 	{
-		std::cout << "[" << modeName << "] " << stage << " swapchain desc: size="
+		DiagnosticOutput::Line() << "[" << modeName << "] " << stage << " swapchain desc: size="
 			<< description.Width << "x" << description.Height
 			<< " format=" << DxgiFormatName(description.Format) << "(" << static_cast<unsigned int>(description.Format) << ")"
 			<< " bufferCount=" << description.BufferCount
@@ -818,7 +753,7 @@ namespace Inkeys::Drawing::Draw3
 		HRESULT result = adapter->GetDesc(&description);
 		if (SUCCEEDED(result))
 		{
-			std::cout << "DXGI adapter: " << WideToUtf8(description.Description)
+			DiagnosticOutput::Line() << "DXGI adapter: " << WideToUtf8(description.Description)
 				<< " VendorId=0x" << std::hex << description.VendorId
 				<< " DeviceId=0x" << description.DeviceId
 				<< " SubSysId=0x" << description.SubSysId
@@ -836,7 +771,7 @@ namespace Inkeys::Drawing::Draw3
 		result = adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &driverVersion);
 		if (SUCCEEDED(result))
 		{
-			std::cout << "DXGI adapter UMD driver version raw: high=0x" << std::hex
+			DiagnosticOutput::Line() << "DXGI adapter UMD driver version raw: high=0x" << std::hex
 				<< static_cast<unsigned long>(driverVersion.HighPart) << " low=0x"
 				<< static_cast<unsigned long>(driverVersion.LowPart) << std::dec << std::endl;
 		}

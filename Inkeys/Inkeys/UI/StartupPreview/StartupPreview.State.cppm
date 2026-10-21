@@ -57,11 +57,11 @@ export namespace Inkeys::UI::StartupPreview
 		double mainButtonTargetWidthDip, double layoutTotalWidthDip,
 		bool expanded = true) noexcept;
 	[[nodiscard]] double ResolveStartupPreviewScale(double dpi,
-		double barZoom) noexcept;
+		double barZoom, double uiBaseScale = 0.0) noexcept;
 	[[nodiscard]] std::int32_t RoundStartupPreviewDipToPixels(double dip,
-		double dpi, double barZoom) noexcept;
+		double dpi, double barZoom, double uiBaseScale = 0.0) noexcept;
 	[[nodiscard]] StartupPreviewPixelSize ResolveStartupPreviewPixelSize(
-		double widthDip, double dpi, double barZoom) noexcept;
+		double widthDip, double dpi, double barZoom, double uiBaseScale = 0.0) noexcept;
 
 	struct GeometryRect final
 	{

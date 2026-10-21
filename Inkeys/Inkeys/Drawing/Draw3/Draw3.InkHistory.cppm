@@ -196,6 +196,10 @@ export namespace Inkeys::Drawing::Draw3
 		std::vector<RenderItemId> ClearLatestConditionalGroup();
 		void DiscardRedoBranch() noexcept;
 		size_t RedoDepth() const noexcept;
+		std::vector<uint32_t> RedoIndices() const;
+		// 冷页恢复仅重建 CPU 语义，GPU/Tile 缓存由现有恢复路径生成。
+		bool RestoreVisibility(std::span<const uint8_t> visibility,
+			std::span<const uint32_t> redo);
 		bool UpdateItemGeometry(RenderItemId id, StrokeTileFootprint footprint);
 		bool SetItemBarrier(RenderItemId id, bool barrier);
 

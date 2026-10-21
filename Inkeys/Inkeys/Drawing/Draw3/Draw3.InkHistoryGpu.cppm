@@ -140,6 +140,14 @@ export namespace Inkeys::Drawing::Draw3
 	};
 
 	// 绘制线程独占的 GPU cache；全部方法只提交即时上下文命令，不做 readback/wait。
+	// 只统计缓存自身持有的资源引用，不推断驱动实际显存驻留。
+	struct InkHistoryGpuResidency
+	{
+		size_t undoPages = 0, undoSlices = 0;
+		size_t compositionPages = 0, compositionSlices = 0;
+		size_t hotEntries = 0, residentNodes = 0;
+	};
+
 	class InkHistoryGpuCache
 	{
 	public:
@@ -177,6 +185,7 @@ export namespace Inkeys::Drawing::Draw3
 			const CanvasRuntimeHistory& history, CompositionNodeId node,
 			SignedTileCoordinate tile, int canvasWidth, int canvasHeight);
 		void DiscardCompositionCache() noexcept;
+		InkHistoryGpuResidency Residency() const noexcept;
 
 	private:
 		struct Impl;

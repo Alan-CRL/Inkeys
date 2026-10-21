@@ -35,7 +35,7 @@ export namespace Inkeys::Startup
 		Draw3WindowAttached,
 		Draw3GraphicsReady,
 		Draw3PresenterReady,
-		Draw3RtsReady,
+		Draw3InputReady, // RTS 或鼠标兼容后端就绪，保持原进度槽和权重。
 		Draw3ControllerReady,
 		Draw3FirstFrameCommitted,
 		SettingReady,

@@ -133,6 +133,7 @@
 	<ClCompile Include="ppt_session_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\CV\ShapeRecognition.cpp" />
@@ -159,6 +160,17 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
     <ClCompile Include="animation_tests.cpp" />
+    <ClCompile Include="ui_pointer_tests.cpp" />
+    <ClCompile Include="auto_collapse_tests.cpp">
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="auto_collapse_interaction_tests.cpp" />
+    <ClCompile Include="keyboard_shortcut_config_tests.cpp">
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="mouse_hook_transport_tests.cpp" />
+    <ClCompile Include="keyboard_shortcut_input_tests.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\Input\UiPointerInput.cpp" />
 	<ClCompile Include="dirty_region_tests.cpp" />
 	<ClCompile Include="window_geometry_tests.cpp" />
     <ClCompile Include="frame_pacing_tests.cpp" />
@@ -180,8 +192,17 @@
 	<ClCompile Include="bar_display_transition_tests.cpp" />
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
 	<ClCompile Include="draw3_bridge_tests.cpp" />
+	<ClCompile Include="draw3_haptic_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.HapticFeedback.cppm">
+	  <PreprocessorDefinitions>DRAW3_HAPTIC_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.HapticFeedback.cpp">
+	  <PreprocessorDefinitions>DRAW3_HAPTIC_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
 	<ClCompile Include="draw3_contact_tests.cpp" />
 	<ClCompile Include="draw3_shape_recognition_tests.cpp" />
+	<ClCompile Include="draw3_rts_startup_tests.cpp" />
+	<ClCompile Include="draw3_mouse_input_tests.cpp" />
 	<ClCompile Include="update_security_tests.cpp" />
 	<ClCompile Include="speed_eraser_tests.cpp" />
 	<ClCompile Include="pen_width_tests.cpp" />
@@ -197,6 +218,7 @@
     <ClCompile Include="present_decision_tests.cpp" />
 	<ClCompile Include="surface_tests.cpp" />
 	<ClCompile Include="message_tests.cpp" />
+	<ClCompile Include="ui3_input_tests.cpp" />
 	<ClCompile Include="window_tests.cpp" />
 	<ClCompile Include="message_box_tests.cpp" />
     <ClCompile Include="wake_signal_tests.cpp" />
@@ -206,9 +228,12 @@
 	  <ResourceCompile Include="message_box_test.rc" />
 	</ItemGroup>
   <ItemGroup>
+	<ClInclude Include="..\Inkeys\Inkeys\Input\UiPointerInput.h" />
+    <ClInclude Include="..\Inkeys\Inkeys\Window\Window.MessageDispatch.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />

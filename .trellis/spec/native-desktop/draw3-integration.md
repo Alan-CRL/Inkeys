@@ -94,10 +94,10 @@ Wrong：只等 RtsReady/首帧后刷新；Correct：每代窗口准备失败直�
 
 ## 设备与线程
 
-- Draw3 独立创建 D3D11.1 hardware-first/WARP-fallback 设备、context、DXGI factory、交换链和呈现资源，禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
-- Hardware 与 WARP 都可落在 FL11.0；这不保证动态 SRV 的 `WRITE_NO_OVERWRITE`。生产 renderer 必须在当前设备上查 `D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，不支持或查询失败时普通笔与 Shape 逐批 DISCARD 且 buffer offset 为零；支持设备保留环形路径。此上传门禁与 ULW 的 `FLIP_SEQUENTIAL` 独立，不能为修一项而替换交换链模式。
+- Draw3 独立创建 D3D11.1 设备、context、DXGI factory、交换链和呈现资源；默认 hardware-first/WARP-fallback，启动快照 EnableHardwareAcceleration=false 时直接 WARP，回退/恢复复用同一快照。禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
+- Hardware 与 WARP 都可落在 FL11.0；这不保证动态 SRV 的 `WRITE_NO_OVERWRITE`。除实际 Hardware adapter VendorId=0x1D17 且启动 EnableZhaoxinCompatibility=true 时大结构化资源使用 DEFAULT 局部更新外，动态路径的生产 renderer 必须在当前设备上查 `D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，不支持或查询失败时普通笔与 Shape 逐批 DISCARD 且 buffer offset 为零；支持设备保留环形路径。此上传门禁与 ULW 的 `FLIP_SEQUENTIAL` 独立，不能为修一项而替换交换链模式。
 - UI 线程只向 bridge 发布不可变快照和命令；renderer、document、history、RTS 消费只在 Draw3 绘制线程进行。
-- 进程只允许一套 Draw3 Host、绘制线程和 `RealTimeStylusInput` producer；Desktop、Whiteboard 及每个 `PresentationKey` 的 document/history 是该绘制线程独占的独立 slot。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出顺序固定为停止命令生产、停止 RTS、唤醒绘制线程、执行最终保存屏障并排空 worker、释放双 presenter/设备，最后由 Window Service 销毁两窗。
+- 进程只允许一套 Draw3 Host、绘制线程及选定的 RTS 或 Win32Mouse 输入 producer；Desktop、Whiteboard 及每个 `PresentationKey` 的 document/history 是该绘制线程独占的独立 slot。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出先关闭绘制准入并预约最终保存命令，停止并排空选定输入 producer，再唤醒绘制线程、执行最终保存屏障并排空 worker、释放双 presenter/设备，最后由 Window Service 销毁两窗。
 - `DrawingControllerRuntimeObserver::drawingActivityChanged` 只按全部 physical contact 的聚合值发布 `0→1/1→0`；每个命令消费边界与帧末复核，避免 Down 后提前 `continue` 漏报。Host 通过独立 `HostRuntimeCallbacks` 注入产品通知、再次去重，并在 Run 正常返回、异常或 stop/join 后补发一次 false；Draw3 核心不得直接依赖 Bar。
 
 ## 样式与透明度
@@ -111,7 +111,9 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 ## 功能边界
 
-桥接工具固定为 Pen、HardPen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换、Desktop UInk 自动保存及当前进程内的 PPT UInk 自动保存/恢复已接入；手动保存、Whiteboard 自动保存、跨进程 PPT 恢复/冲突交互、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
+桥接工具固定为 Pen、HardPen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换、Desktop UInk 自动保存及当前进程内的 PPT UInk 自动保存/恢复已接入；手动保存、跨进程 PPT 恢复/冲突交互、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
+
+Whiteboard 初版的独立自动保存、按页冷热状态、完整历史恢复和流式 UInk 读写见 [whiteboard.md](whiteboard.md)。其保存不读取 Desktop 开关，也不复用 PPT 整文稿常驻策略。
 
 ## Scenario: Desktop UInk 自动保存事务与退出屏障
 
@@ -228,6 +230,7 @@ ClearCurrentInterval(); // completion durable 后 recovery.canvas.reset()
 - `PageIndexFallback -> StableSlideId` 不能凭路径、页数或完整 SlideID 列表证明旧 ordinal 墨迹的一一对应关系；`CanUpgradePresentationBindingByOrdinal` 必须拒绝。当前会话旧 fallback lane 保留其内容与旧文件，新 Stable lane 建立独立空文稿并保存到独立 track。各 lane 内的稳定 source 可按现有 binding/SlideID 身份恢复；process-local 身份仍要求 exact binding token/revision。
 - 每条 track 的 `index.json(.bak)` 是严格 schema（写 v2、读 v1/v2）：source/key/fileGuid/path 均唯一，entry 恰含 source identity、key、sessionId、file/workspace GUID、relative path、binding mode、processLocal、binding revision、mutation revision、slideIds 和 UInk source revision。稳定模式的 `slideIds` 是已知 active/retained SlideID 并集，保存时只增不删；仅 `sessionId == ProcessSessionId()` 的 entry 可自动恢复。稳定路径 page-index 可在同 session/key/source、相同页数下跨放映 binding 按 ordinal 读写，process-local 必须 exact binding。foreign 或不一致内容返回结构化终态，不弹窗、不删未知文件、不静默覆盖。
 - index commit 失败后的 self-written pending entry 只跨同一规范化 autosave root 的 Host generation 保留；切换 root 清除。I/O 使用保留大小写的绝对路径，folded root key 仅用于等价比较和 named mutex。
+- 已选中 UInk 的 ReadUInkFile IoError 必须保留到 completion，沿用四次退避预算，不先因无 snapshot 变成 SourceChanged/manualOnly；其余严格检查与 foreign track 隔离保持，见 [F2](canvas-freeze-boundaries.md#f2ppt-已提交-uink-的暂时不可读必须保留-ioerror)。
 
 ### 4. Validation & Error Matrix
 
@@ -388,7 +391,7 @@ Correct：`复制 history 预演条件可见性 -> 恢复 footprint union -> 成
 - `stateMode` 只保存产品工具意图；`Pen.Laser.color` 是独立于 Brush/Highlighter 的颜色槽，默认 `RGB(255,16,0)`。`laserActive` 记录最后选择的 Pen 子类型是否为 Laser，不污染已记忆的 `Pen.ModeSelect`；Laser 活动时颜色调节按钮、预设色和自定义颜色窗口只读写该槽。Laser 仅在顶层模式为 Pen 时映射为当前工具；选择、橡皮和图形必须覆盖当前工具但保留该记忆，返回 Pen 时恢复 Laser。
 - bridge 只跨线程传递当前工具的稳定 RGB 和粗细快照；活动笔画在 Down 时锁存 `ProductVisualStyle`，Hover 光标在帧边界跟随最新快照。Laser 的实际轨迹外壳、Hover/Touch 笔尖外壳与 Bar 粗细预览外壳必须使用 Laser RGB，不得回退到固定红色或其他笔的颜色槽。
 - 普通笔光标直径是 `max(widthDip, 5 DIP * dpiScale)`；只有最小光标值按 DPI 缩放，实际笔画粗细不重复缩放。
-- 荧光笔当前绘制几何固定为 `6.25 × 50 px`，光标必须复用该尺寸；最终 alpha 为 `opacity * fillAlpha = 0.35`，Bar 显示同一有效透明度。
+- 产品荧光笔矩形尺寸复用当前 `CanvasDiameterForTool` 和笔尖长宽比，不再引用旧 demo 的固定 `6.25 × 50 px`；最终填充 alpha 为 `opacity * fillAlpha = 0.35`，Bar 显示同一有效透明度。鼠标/笔类型、荧光笔独立预览和固定设备边缘合同见 [draw3-cursors.md](draw3-cursors.md)。
 - Eraser Hover 整体 alpha 为 `0.5`，Contact 为 `1.0`；这一规则同时适用固定/速度橡皮、鼠标和倒转笔橡皮。
 - Touch 速度橡皮的场景、标尺及有效阈值由 Down 时的 `SpeedEraser::Config` 锁存；Host/Controller 的帧级诊断应报告同一 contact 的目标、实际几何和最终光标，不得用光标列表首项代表另一指或鼠标。
 - Laser 使用独立的 `Pen.Laser.width/color`；光标、笔迹与粗细预览必须共用当前 Laser 宽度和颜色语义，固定漫反射宽度仍只由 Draw3 的 DPI 尺寸契约决定。
@@ -413,7 +416,7 @@ Correct：`复制 history 预演条件可见性 -> 恢复 footprint union -> 成
 ### 6. Tests Required
 
 - 纯逻辑测试覆盖荧光笔 `0.35`、橡皮 Hover/Contact、鼠标、倒转笔和 Touch Contact，并断言 Laser 默认红色及其颜色槽与 Brush/Highlighter 隔离。
-- 静态检查普通笔最小 DIP 直径、荧光笔实际 `6.25 × 50 px` 尺寸，以及 Laser 光标/笔迹/粗细预览共享当前 Laser RGB、活动 layer 锁定 Down 样式。
+- 静态检查普通笔最小 DIP 直径、荧光笔矩形复用当前产品宽度，以及 Laser 光标/笔迹/粗细预览共享当前 Laser RGB、活动 layer 锁定 Down 样式。
 - 完整 ARM64 `Debug|ARM64` Solution 构建，再运行 `InkeysHeadlessTests.exe --no-window` 和 `Inkeys.exe --draw3-hidden-test`。
 
 ### 7. Wrong vs Correct
@@ -492,11 +495,11 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 
 以下首发选路合同来自 2026-09-27 用户决定；H0 源码仍含 DWM 自动/强制路径。本次工作区已在源码中禁止该选择，但隐藏 HWND、Win7 与运行期设备故障尚未实测，不能把静态选路当作透明呈现 PASS。
 
-- Draw3 自己创建 D3D11.1 hardware-first/WARP-fallback device/context、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
+- Draw3 自己创建 D3D11.1 device/context（默认 hardware-first/WARP-fallback，硬件加速启动偏好关闭时直接 WARP）、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
 - 首发正式 presenter 模式顺序为 DComp -> ULW；DwmBlurBehind2 与 DwmBlurBehind 在自动回退和强制模式中均不可选。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 保持现有 FLIP_SEQUENTIAL swap chain、premultiplied top-down 32-bit DIB、`1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零。
 - 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。首发实现以用户实测为兼容约束，保留 FLIP，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。
-- 只允许一个绑定主 Drawpad 的 `RealTimeStylusInput` producer；Draw2 RTS 不得初始化或重复发布。退出顺序为停止命令生产 -> 停止 RTS -> 唤醒绘制线程 -> 释放双 presenter/device -> Window Service 销毁两窗。
+- 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。
 
 ## 来源任务与验证状态
 
@@ -517,3 +520,28 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 主产品直接编译共享 `inkStrokeModelerTest/draw3/uink_file.cpp`。SaveUInkFile 的 temp/backup/new-recovery 必须使用规范化最终路径的原同父前缀加独立 GUID36 短叶及固定后缀，不再次拼入最终末名；同目录/同卷原子替换、CREATE_NEW、锁、strong source revision/SHA 和最终格式不变。恢复调用者消费实际返回的 opaque recoveryPath，不能按最终 basename 猜恢复文件名。
 
 此短内部名称不承诺任意最终长路径支持：普通父前缀加最长49字符内部叶仍受 Win32 路径边界约束；不以新 manifest/registry/补丁提升最低平台，不授权按后缀清理未知文件。2026-10-01 shared helper 的合法230首存/更新/predecessor严格回归已真实红绿；主产品原PPT长路径C10、Release三架构与Win7真机仍分别待验证。清理创建/身份归属竞态独立F069，命名修补不能证明其已解决。
+
+## Whiteboard 页级 UInk 与编辑历史合同
+
+`【直接确认：源码；2026-10-15】` 白板使用 `Inkeys.Drawing.Draw3.whiteboard_store` 和共享 `draw3.uink_page_file`，不复用 PPT 的整文稿读写。产品范围见 [whiteboard.md](whiteboard.md)；本节说明实际接口与所有权，测试通过情况以任务验证记录为准。
+
+- `ScanUInkPageFile(path)` 返回 `UInkPageFileDirectory`：路径、完整 `UInkSourceRevision`、不含各页笔迹/extra 的 metadata，以及 `{pageGuid, offset, length}` 目录。扫描、SHA 和自校验流式进行，自校验逐页物化。`peakBufferBytes` 仅是序列化工作缓冲高水位估计，不包含解码模型、调用方快照或分配器余量，不能据此宣称总 RAM 上限。
+- `ReadUInkPageFile(directory, pageGuid)` 打开文件并核对目录绑定的完整 revision 后读取指定页，返回 `pageIndex/currentPageIndex=0` 的单页文档，保留 pageGuid。旧偏移不得套到新版本；文件身份/内容改变、GUID 缺失或页损坏均失败，不用空页替换。
+- `RewriteUInkPageFile(newPath, previous, onePage, orderedPages, currentPageIndex)` 只接受不存在的新路径；旧版本只读，已存在页顺序必须保留且只可追加。目标页重新编码，未修改页按目录分块复制；Flush 和逐页自校验后返回新目录。逻辑 file/workspace/page GUID 保持，UInk 10 标准格式与原桌面/PPT接口不变。
+- `WhiteboardStore::{Save,Load,Take,Drain}` 由单 worker 持有目录及文件 I/O，绘制线程提交不可变单页快照并消费 completion。每进程会话写 `AutoSave/whiteboard/<GUID>/`，`<sequence>.uink` 是同一逻辑白板的物理版本；`current` 索引经临时文件 flush 后原子替换为版本文件名，只有索引发布成功才替换运行期目录。失败保留原目录和 warm 页；同页排队快照合并，保存队列上限为两项，队满页保留 warm 待后续安全点重试。
+- Store 保留当前与一份前版本；清理更旧的本进程版本只能通过 `TryRemoveOwnedUInkPageFile` 校验强 revision 并按同一文件句柄删除，失败保留，不得退化为按路径删除，也不得清理扫描得到的外部文件。新进程不读取旧白板，旧会话保留供未来历史功能。
+- Canvas `extra["inkeysWhiteboardHistory"]` 是版本 1 JSON：`version/rgb/pattern` 加完整 CPU strokes、历史 items（strokeIndex/visible/compositionBarrier）、redo 索引、undo floor、interval、最近 Clear 资格、boundary fallback 及有限 Clear redo continuation。恢复严格验证类型、索引、重复 key、主题范围及 continuation 深度；重建 footprint/raster token，GPU 缓存与句柄不入文件。标准 `content` 只导出当前可见笔迹，通用读取器不应看到隐藏 redo。
+- Load completion 携带页面及运行 generation，安装前再次核对 active workspace、待加载页、generation 和 pageGuid；成功才成对恢复内容/主题并切页。Save completion 以页面 revision 仲裁，只有成功且 saved==当前 mutation、非当前页且非正在加载时才卸载页内容/历史/CPU/GPU。保存失败可翻页，失败页保持 warm；关闭白板不销毁文档，退出屏障还处理 parked dirty 页。
+- 必须验证多页与主题空页 roundtrip、隐藏 redo、Clear continuation、过期 completion、源版本替换/内容损坏、写入和索引失败、快速返回，以及至少 100 个非空页的正常卸载。流式缓冲统计与实际页 runtime 释放分别断言；GUI/PPT/任务栏验收不由这些无窗口测试替代。
+
+## 启动输入回退
+
+完整 RTS → 基础 X/Y RTS → Win32Mouse，每档安全停止/排空后才进入下一档。Host按InputReady放行；RTS与窗口鼠标绘制互斥。鼠标owner线程启停、捕获和最终保存的合同见input-and-ink.md。迁移不新增性能采集或资源探针。
+
+## 双画布底行与非全屏策略（2026-10-19）
+
+- `Drawpad` 与 `DrawpadPresentation` 在 Desktop/PPT 的实际可见/输入区域始终排除目标屏幕最底 1 **物理像素**；不依赖任务栏方向、autoHide、UI 倍率或 DPI。由 Window Service owner 在线程内设置 window region，保留完整 HWND/client、Host/backbuffer、RTS 标尺和文档坐标；区域外笔迹不删除、不改写持久化。
+- 两窗首次显示前设置公开的 `NonRudeHWND` 属性；调用者传入 WS_VISIBLE 也必须先撤掉，策略成功后才显示。`MarkFullscreenWindow(FALSE)` 只撤销显式标记，不能替代禁止 Shell 自动识别全屏的属性。
+- Whiteboard 恢复两画布创建时的原 region/属性，继续由 Freeze/root 作为既有全屏锚点。退出、进入失败和窗口重建均恢复相应场景；selection 固定穿透、单 Host 与 owner 链不变。
+- scene、实际 bounds/monitor 或 HWND 变化才重新应用；两个角色共同隐藏、应用、核对并恢复可见性后才确认白板 mode。失败逆序回滚；原状态可信、几何未变且完整回滚时保留旧 applied key 并停止内部重试，避免对原场景重复隐藏/显示；首次空 key 保持空值，后续显式请求仍可应用。旧 region 不适用于新 bounds、回滚未收敛或已有 dirty/恢复状态时保留双隐藏及原显隐意图，交既有 owner 循环 250ms 失败重试，正常无额外轮询。后来的 Hide/Hidden/HideAll 优先于保存的恢复显隐；连续失败即使已清旧 applied key，也必须保持双隐藏直到真实成功。
+- `Window.CanvasPolicy.h` 的生产区域和双窗事务 helper 由 Headless 无 HWND 测试直接覆盖；测试不证明真实 USER32 重入、DComp/ULW 可见裁剪或 Shell 分类。既有全屏 COM 链仍为 best effort；GUI/Shell/旧系统结果单独记证据。已有 capture 按原输入所有权收尾，不为底行策略擅自取消笔迹。

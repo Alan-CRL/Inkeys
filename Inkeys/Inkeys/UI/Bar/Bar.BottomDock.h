@@ -10,12 +10,13 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <limits>
 
 namespace Inkeys::UI::Bar
 {
 	inline constexpr double BarBottomDockThresholdDip = 20.0;
 	inline constexpr double BarBottomDockCenterThresholdDip = 40.0;
-		inline constexpr double BarWhiteboardBottomInsetDip = 5.0;
+	inline constexpr double BarWhiteboardBottomInsetDip = 5.0;
 	inline constexpr double BarBottomDockVisualLimitDip = 24.0;
 	inline constexpr double BarBottomDockSpringOmega = 18.0;
 	inline constexpr double BarBottomDockSpringDampingRatio = 0.72;
@@ -47,17 +48,33 @@ namespace Inkeys::UI::Bar
 		Recovering,
 	};
 
-	// 放映生命周期与控件显隐分离；重复页发布不能重放场景动画。
-	enum class BarPptSceneAction { Keep, CenterDock, Detach };
-	[[nodiscard]] constexpr BarPptSceneAction ResolveBarPptSceneAction(
-		bool entering, bool folded, BarBottomDockMode mode, bool whiteboard) noexcept
+	// 桌面基线只在第一个覆盖工作区进入时捕获，PPT/白板互切不覆盖它。
+	enum class BarWorkspaceScene { Desktop, Presentation, Whiteboard };
+	enum class BarWorkspaceTransition { Keep, Enter, Switch, Leave };
+	[[nodiscard]] constexpr bool ShouldPlaceBarWorkspaceDock(bool folded, BarBottomDockMode mode) noexcept
 	{
-		if (whiteboard) return BarPptSceneAction::Keep;
-		if (folded) return mode == BarBottomDockMode::BottomDocked
-			? BarPptSceneAction::Detach : BarPptSceneAction::Keep;
-		return !entering || mode == BarBottomDockMode::BottomDocked
-			? BarPptSceneAction::CenterDock : BarPptSceneAction::Keep;
+		return !folded && mode == BarBottomDockMode::BottomDocked;
 	}
+	[[nodiscard]] constexpr double ResolveBarWorkspaceBottomInsetDip(
+		bool folded, bool whiteboard, bool presentation, bool minimized) noexcept
+	{
+		// 最小化只暂停白板全屏停靠，不结束工作区或覆盖桌面基线。
+		return !folded && (whiteboard ? !minimized : presentation) ? BarWhiteboardBottomInsetDip : 0.0;
+	}
+	struct BarWorkspaceSceneState
+	{
+		BarWorkspaceScene scene = BarWorkspaceScene::Desktop;
+		BarWorkspaceTransition Update(bool whiteboard, bool presentation) noexcept
+		{
+			const auto next = whiteboard ? BarWorkspaceScene::Whiteboard
+				: presentation ? BarWorkspaceScene::Presentation : BarWorkspaceScene::Desktop;
+			if (scene == next) return BarWorkspaceTransition::Keep;
+			const auto result = scene == BarWorkspaceScene::Desktop ? BarWorkspaceTransition::Enter
+				: next == BarWorkspaceScene::Desktop ? BarWorkspaceTransition::Leave : BarWorkspaceTransition::Switch;
+			scene = next;
+			return result;
+		}
+	};
 	struct BarPptSceneState
 	{
 		std::uint64_t session = 0;
@@ -248,11 +265,21 @@ namespace Inkeys::UI::Bar
 			double zoom = 1.0;
 			double insetDip = 0.0;
 			double dpiScale = 1.0;
+			double desktopDockLine = std::numeric_limits<double>::quiet_NaN();
 		};
 
 	[[nodiscard]] inline double NormalizeBarBottomDockZoom(double zoom) noexcept
 	{
 		return std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
+	}
+
+	[[nodiscard]] inline double ScaleBarDragGrabOffsetForZoom(
+		double screenOffset, double oldZoom, double newZoom) noexcept
+	{
+		// 抓住的逻辑点不受限位/呈现滞后影响，仅随真正的呈现比例变化缩放。
+		oldZoom = NormalizeBarBottomDockZoom(oldZoom);
+		newZoom = NormalizeBarBottomDockZoom(newZoom);
+		return oldZoom == newZoom ? screenOffset : screenOffset * (newZoom / oldZoom);
 	}
 
 	[[nodiscard]] inline RECT ResolveBarBottomDockIndicatorVisualEnvelope(
@@ -291,7 +318,7 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] inline double ResolveBarBottomDockInteractionZoom(
-		UINT dpi, double configZoom) noexcept
+		UINT dpi, double configZoom, double uiBaseScale = 0.0) noexcept
 	{
 		const double dpiScale = std::clamp(
 			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI)
@@ -300,7 +327,8 @@ namespace Inkeys::UI::Bar
 		if (!std::isfinite(configZoom) || configZoom <= 0.0)
 			configZoom = 1.0;
 		// 交互阈值只消费一次最终 zoom，不能再叠乘窗口 DPI。
-		return NormalizeBarBottomDockZoom(dpiScale * configZoom);
+		return NormalizeBarBottomDockZoom(
+			(std::isfinite(uiBaseScale) && uiBaseScale > 0.0 ? uiBaseScale : dpiScale) * configZoom);
 	}
 
 		[[nodiscard]] inline double ResolveBarBottomDockInsetPixels(
@@ -314,7 +342,8 @@ namespace Inkeys::UI::Bar
 
 		[[nodiscard]] inline double ResolveBarBottomDockLine(
 			const RECT& monitorBounds, const RECT& workArea,
-			double insetDip = 0.0, double dpiScale = 1.0) noexcept
+			double insetDip = 0.0, double dpiScale = 1.0,
+			double desktopDockLine = std::numeric_limits<double>::quiet_NaN()) noexcept
 		{
 			const bool monitorValid = monitorBounds.right > monitorBounds.left
 				&& monitorBounds.bottom > monitorBounds.top;
@@ -325,6 +354,10 @@ namespace Inkeys::UI::Bar
 				// 白板铺满显示器后，底栏贴屏幕底边再上移统一边距，不再跟任务栏工作区。
 				return static_cast<double>(monitorBounds.bottom) - insetPx;
 			}
+			// 桌面任务栏线来自同代 Display 快照；PPT/白板的真实 DIP 场景线优先。
+			if (std::isfinite(desktopDockLine))
+				return std::clamp(desktopDockLine,
+					static_cast<double>(monitorBounds.top), static_cast<double>(monitorBounds.bottom));
 			const bool workAreaValid = workArea.right > workArea.left
 				&& workArea.bottom > workArea.top
 				&& workArea.left >= monitorBounds.left
@@ -675,7 +708,7 @@ namespace Inkeys::UI::Bar
 			const double zoom = NormalizeBarBottomDockZoom(environment.zoom);
 				const double dockLine = ResolveBarBottomDockLine(
 					environment.monitorBounds, environment.workArea,
-					environment.insetDip, environment.dpiScale);
+					environment.insetDip, environment.dpiScale, environment.desktopDockLine);
 			const double thresholdScreen = BarBottomDockThresholdDip * zoom;
 			BarBottomDockDragUpdate result;
 			result.mode = mode_;

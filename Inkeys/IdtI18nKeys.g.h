@@ -84,8 +84,22 @@ inline constexpr struct I18nKeyRoot
                 const char* UndoLabel = "UI/Bar/MainButtons/UndoLabel";
                 const char* RedoLabel = "UI/Bar/MainButtons/RedoLabel";
                 const char* ClearLabel = "UI/Bar/MainButtons/ClearLabel";
+                const char* WhiteboardWindowTitle = "UI/Bar/MainButtons/WhiteboardWindowTitle";
+                const char* WhiteboardPreviousLabel = "UI/Bar/MainButtons/WhiteboardPreviousLabel";
+                const char* WhiteboardNextLabel = "UI/Bar/MainButtons/WhiteboardNextLabel";
+                const char* WhiteboardAddPageLabel = "UI/Bar/MainButtons/WhiteboardAddPageLabel";
                 const char* WhiteboardLabel = "UI/Bar/MainButtons/WhiteboardLabel";
+                const char* ResumeWhiteboardLabel = "UI/Bar/MainButtons/ResumeWhiteboardLabel";
                 const char* CloseWhiteboardLabel = "UI/Bar/MainButtons/CloseWhiteboardLabel";
+                const char* ReturnToShowLabel = "UI/Bar/MainButtons/ReturnToShowLabel";
+                const char* MinimizeWhiteboardLabel = "UI/Bar/MainButtons/MinimizeWhiteboardLabel";
+                const char* WhiteboardThemeLabel = "UI/Bar/MainButtons/WhiteboardThemeLabel";
+                const char* WhiteboardBackgroundColorLabel = "UI/Bar/MainButtons/WhiteboardBackgroundColorLabel";
+                const char* WhiteboardBackgroundStyleLabel = "UI/Bar/MainButtons/WhiteboardBackgroundStyleLabel";
+                const char* WhiteboardBlankLabel = "UI/Bar/MainButtons/WhiteboardBlankLabel";
+                const char* WhiteboardDotsLabel = "UI/Bar/MainButtons/WhiteboardDotsLabel";
+                const char* WhiteboardGridLabel = "UI/Bar/MainButtons/WhiteboardGridLabel";
+                const char* WhiteboardUnsavedLabel = "UI/Bar/MainButtons/WhiteboardUnsavedLabel";
                 const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
                 const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
                 const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
@@ -327,6 +341,18 @@ inline constexpr struct I18nKeyRoot
                 const char* Centerline = "SettingsUI/Regular/ToolbarExpansionDirection/Centerline";
                 const char* WhenSpaceInsufficient = "SettingsUI/Regular/ToolbarExpansionDirection/WhenSpaceInsufficient";
             } ToolbarExpansionDirection{};
+            struct Node__SettingsUI__Regular__AutoCollapse
+            {
+                const char* N = "SettingsUI/Regular/AutoCollapse/N";
+                const char* Drawing = "SettingsUI/Regular/AutoCollapse/Drawing";
+                const char* Erasing = "SettingsUI/Regular/AutoCollapse/Erasing";
+                const char* Dragging = "SettingsUI/Regular/AutoCollapse/Dragging";
+                const char* OutsideClick = "SettingsUI/Regular/AutoCollapse/OutsideClick";
+                const char* Description = "SettingsUI/Regular/AutoCollapse/Description";
+                const char* Off = "SettingsUI/Regular/AutoCollapse/Off";
+                const char* NonBottom = "SettingsUI/Regular/AutoCollapse/NonBottom";
+                const char* Always = "SettingsUI/Regular/AutoCollapse/Always";
+            } AutoCollapse{};
             struct Node__SettingsUI__Regular__StartUp
             {
                 const char* N = "SettingsUI/Regular/StartUp/N";
@@ -360,6 +386,14 @@ inline constexpr struct I18nKeyRoot
                     const char* Skip3 = "SettingsUI/Regular/Appearance/Theme/Skip3";
                     const char* Skip4 = "SettingsUI/Regular/Appearance/Theme/Skip4";
                 } Theme{};
+                struct Node__SettingsUI__Regular__Appearance__TaskbarScaleBase
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/TaskbarScaleBase/N";
+                    const char* E = "SettingsUI/Regular/Appearance/TaskbarScaleBase/E";
+                    const char* Off = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Off";
+                    const char* Base = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Base";
+                    const char* Actual = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Actual";
+                } TaskbarScaleBase{};
                 struct Node__SettingsUI__Regular__Appearance__BarZoom
                 {
                     const char* N = "SettingsUI/Regular/Appearance/BarZoom/N";
@@ -413,6 +447,21 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Draw
         {
             const char* N = "SettingsUI/Draw/N";
+            struct Node__SettingsUI__Draw__Haptics
+            {
+                const char* N = "SettingsUI/Draw/Haptics/N";
+                const char* Drawing = "SettingsUI/Draw/Haptics/Drawing";
+                const char* Buttons = "SettingsUI/Draw/Haptics/Buttons";
+            } Haptics{};
+            struct Node__SettingsUI__Draw__Cursor
+            {
+                const char* N = "SettingsUI/Draw/Cursor/N";
+                const char* Description = "SettingsUI/Draw/Cursor/Description";
+                const char* MouseStyle = "SettingsUI/Draw/Cursor/MouseStyle";
+                const char* PenStyle = "SettingsUI/Draw/Cursor/PenStyle";
+                const char* DefaultStyle = "SettingsUI/Draw/Cursor/DefaultStyle";
+                const char* DrawingStyle = "SettingsUI/Draw/Cursor/DrawingStyle";
+            } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {
                 const char* N = "SettingsUI/Draw/Effect/N";
@@ -479,8 +528,26 @@ inline constexpr struct I18nKeyRoot
         } Preset{};
         struct Node__SettingsUI__Experimental
         {
+            struct Node__SettingsUI__Experimental__Draw3
+            {
+                struct Node__SettingsUI__Experimental__Draw3__HardwareAcceleration
+                {
+                    const char* N = "SettingsUI/Experimental/Draw3/HardwareAcceleration/N";
+                    const char* E = "SettingsUI/Experimental/Draw3/HardwareAcceleration/E";
+                } HardwareAcceleration{};
+                struct Node__SettingsUI__Experimental__Draw3__ZhaoxinCompatibility
+                {
+                    const char* N = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/N";
+                    const char* E = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/E";
+                } ZhaoxinCompatibility{};
+            } Draw3{};
             struct Node__SettingsUI__Experimental__ConsoleOutput
             {
+                struct Node__SettingsUI__Experimental__ConsoleOutput__Haptics
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/Haptics/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/Haptics/E";
+                } Haptics{};
                 struct Node__SettingsUI__Experimental__ConsoleOutput__TouchArea
                 {
                     const char* N = "SettingsUI/Experimental/ConsoleOutput/TouchArea/N";
@@ -609,6 +676,28 @@ inline constexpr struct I18nKeyRoot
         {
             const char* N = "SettingsUI/HotKey/N";
             const char* E = "SettingsUI/HotKey/E";
+            const char* ToggleAnnotationN = "SettingsUI/HotKey/ToggleAnnotationN";
+            const char* ToggleAnnotationE = "SettingsUI/HotKey/ToggleAnnotationE";
+            const char* UndoN = "SettingsUI/HotKey/UndoN";
+            const char* UndoE = "SettingsUI/HotKey/UndoE";
+            const char* RedoYN = "SettingsUI/HotKey/RedoYN";
+            const char* RedoYE = "SettingsUI/HotKey/RedoYE";
+            const char* RedoShiftZN = "SettingsUI/HotKey/RedoShiftZN";
+            const char* RedoShiftZE = "SettingsUI/HotKey/RedoShiftZE";
+            const char* ClearN = "SettingsUI/HotKey/ClearN";
+            const char* ClearE = "SettingsUI/HotKey/ClearE";
+            const char* FreezeN = "SettingsUI/HotKey/FreezeN";
+            const char* FreezeE = "SettingsUI/HotKey/FreezeE";
+            const char* Registering = "SettingsUI/HotKey/Registering";
+            const char* Disabling = "SettingsUI/HotKey/Disabling";
+            const char* UnregisterFailed = "SettingsUI/HotKey/UnregisterFailed";
+            const char* Registered = "SettingsUI/HotKey/Registered";
+            const char* Disabled = "SettingsUI/HotKey/Disabled";
+            const char* NotRunning = "SettingsUI/HotKey/NotRunning";
+            const char* RegisterFailed = "SettingsUI/HotKey/RegisterFailed";
+            const char* SynchronizationPending = "SettingsUI/HotKey/SynchronizationPending";
+            const char* HookReady = "SettingsUI/HotKey/HookReady";
+            const char* HookFailed = "SettingsUI/HotKey/HookFailed";
         } HotKey{};
         struct Node__SettingsUI__Community
         {

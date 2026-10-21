@@ -39,6 +39,7 @@
     <Compile Include="PptCOM.cs" />
     <Compile Include="PresentationDescriptor.cs" />
     <Compile Include="SlideShowSession.cs" />
+    <Compile Include="ComEventConnection.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
