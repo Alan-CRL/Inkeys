@@ -42,10 +42,186 @@ int RunPptSessionTests()
 	check(ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", endTopology)).snapshot.has_value() &&
 		!ParsePptSessionSnapshot(envelope(L"Active", L"Valid", endTopology)).snapshot,
 		"only EndScreen envelope can authorize a zero-current-page stable topology");
+	const auto stableEnd = ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", endTopology));
+	check(stableEnd.snapshot && Inkeys::Drawing::Draw3::ResolveEndScreenTarget(stableEnd.snapshot->descriptor)
+		&& ResolvePptControlPage(*stableEnd.snapshot, -1, 3).known
+		&& !ResolvePptControlPage(*stableEnd.snapshot, 3, 3).known
+		&& !ResolvePptControlPage(*stableEnd.snapshot, -1, 4).known,
+		"stable end topology still requires matching raw end state and total before writable admission");
 	check(ParsePptSessionSnapshot(envelope(L"Unknown", L"Unknown", unavailable)).snapshot.has_value(),
 		"read failures stay unknown instead of exiting the workspace");
 	check(!ParsePptSessionSnapshot(envelope(L"Active", L"Valid", unavailable)).snapshot,
 		"unavailable descriptor cannot open input through valid status");
+	const std::wstring scalarOnly = LR"({"schemaVersion":1,"provider":"PowerPoint","status":"Unavailable","fullName":"","presentationName":"","applicationProcessId":0,"slideShowHwnd":0,"currentPage":2,"totalPage":3,"currentSlideId":null,"slideIds":[],"bindingRevision":9})";
+	const auto parsedBasic = ParsePptSessionSnapshot(envelope(L"Active", L"Unknown", scalarOnly));
+	check(parsedBasic.snapshot && ResolvePptControlPage(*parsedBasic.snapshot, 2, 3).known
+		&& !Inkeys::Drawing::Draw3::ResolvePresentationTarget(parsedBasic.snapshot->descriptor),
+		"real wire parser accepts fresh scalar controls while refusing an ink identity");
+	if (valid.snapshot)
+	{
+		auto windowless = *valid.snapshot;
+		windowless.descriptor.slideShowHwnd = 0;
+		windowless.descriptor.applicationProcessId = 0;
+		const auto basic = ResolvePptControlPage(windowless, 2, 3);
+		check(CanStartPptControlSession(windowless) && basic.known
+			&& basic.currentPage == 2 && basic.totalPage == 3,
+			"fresh owner page keeps basic controls without a typed HWND");
+		check(!ResolvePptControlPage(windowless, 1, 3).known
+			&& !ResolvePptControlPage(windowless, 2, 4).known,
+			"raw and owner page disagreement cannot publish fresh basic numbers");
+		windowless.descriptor.status =
+			Inkeys::Drawing::Draw3::PresentationDescriptorStatus::PageIndexFallback;
+		windowless.descriptor.slideIds.clear();
+		windowless.descriptor.currentSlideId.reset();
+		windowless.descriptor.fullName.clear();
+		windowless.descriptor.presentationName.clear();
+		check(ResolvePptControlPage(windowless, 2, 3).known,
+			"missing metadata and stable IDs do not block basic page controls");
+		windowless.pageStatus = PptPageStatus::Unknown;
+		windowless.descriptor.status =
+			Inkeys::Drawing::Draw3::PresentationDescriptorStatus::Unavailable;
+		check(ResolvePptControlPage(windowless, 2, 3).known,
+			"fresh scalar page evidence survives a metadata-unavailable descriptor");
+		windowless.descriptor.status =
+			Inkeys::Drawing::Draw3::PresentationDescriptorStatus::TransientBusy;
+		check(CanStartPptControlSession(windowless)
+			&& !ResolvePptControlPage(windowless, 2, 3).known,
+			"busy preserves an active scene without making an old raw page fresh");
+		windowless.lifecycle = PptLifecycle::Unknown;
+		check(!CanStartPptControlSession(windowless),
+			"a failed activity probe cannot create a basic control session");
+	}
+	const auto basicEnd = ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", unavailable));
+	check(basicEnd.snapshot && ResolvePptControlPage(*basicEnd.snapshot, -1, 3).known
+		&& !ResolvePptControlPage(*basicEnd.snapshot, 3, 3).known
+		&& !Inkeys::Drawing::Draw3::ResolveEndScreenTarget(basicEnd.snapshot->descriptor),
+		"explicit end state can publish basic controls without fabricating topology");
+	// Done/Count 是本次证据；缺拓扑和 HWND 时也只发布基础结束控制，不生成墨迹目标。
+	const std::wstring scalarEnd = LR"({"schemaVersion":1,"provider":"Wps","status":"Unavailable","fullName":"C:\\Lessons\\Deck.pptx","presentationName":"Deck.pptx","applicationProcessId":0,"slideShowHwnd":0,"currentPage":0,"totalPage":3,"currentSlideId":null,"slideIds":[],"bindingRevision":9})";
+	const auto parsedBasicEnd = ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", scalarEnd));
+	check(parsedBasicEnd.snapshot
+		&& ResolvePptControlPage(*parsedBasicEnd.snapshot, -1, 3).known
+		&& ResolvePptControlPage(*parsedBasicEnd.snapshot, -1, 3).currentPage == -1
+		&& ResolvePptControlPage(*parsedBasicEnd.snapshot, -1, 3).totalPage == 3
+		&& !ResolvePptControlPage(*parsedBasicEnd.snapshot, -1, 4).known
+		&& !Inkeys::Drawing::Draw3::ResolvePresentationTarget(parsedBasicEnd.snapshot->descriptor)
+		&& !Inkeys::Drawing::Draw3::ResolveEndScreenTarget(parsedBasicEnd.snapshot->descriptor),
+		"fresh windowless Done wire keeps basic end controls while refusing all ink targets");
+
+	// 执行生产缓存/Bridge/回执谓词；不创建 HWND，也不模拟 Office 已经呈现。
+	{
+		namespace D3 = Inkeys::Drawing::Draw3;
+		auto desc = valid.snapshot->descriptor;
+		desc.currentPage = 1; desc.currentSlideId = 101;
+		PptTargetCache cache;
+		D3::Bridge::StateBridge bridge;
+		check(cache.Update(true, &desc, true, false, 1) && cache.Current(), "initial target resolves");
+		auto first = bridge.PublishPresentationTarget(*cache.target);
+		cache.target->targetRevision = first.value_or(0);
+		desc.currentPage = 2; desc.currentSlideId = 202;
+		check(!cache.Update(true, &desc, false, false, 1) && !cache.Current(),
+			"raw A with descriptor B retains pending application and rejects stale A");
+		check(cache.Update(false, &desc, true, false, 1) && cache.Current()
+			&& cache.target->pageIndex == 1 && cache.target->slideId == 202,
+			"raw catches up without a new descriptor revision and resolves B");
+		const auto second = bridge.PublishPresentationTarget(*cache.target);
+		cache.target->targetRevision = second.value_or(0);
+		check(second && first && *second != *first
+			&& MatchesPptPageUi(*cache.target, 1, *second, 2, 3)
+			&& !MatchesPptPageUi(*cache.target, 1, *first, 1, 3),
+			"new page accepts only its own UI acknowledgement");
+		for (int tick = 0; tick != 10000; ++tick)
+			check(!cache.Update(false, &desc, true, false, 1) && cache.Current()
+				&& bridge.PublishPresentationTarget(*cache.target) == second,
+				"unchanged heartbeat preserves converged target identity");
+		// raw 先到时仍等待 descriptor；随后多次 descriptor 变化只应用最后可信目标。
+		check(!cache.Update(false, &desc, false, false, 1), "raw-first mismatch does not resolve");
+		desc.currentPage = 3; desc.currentSlideId = 303;
+		check(!cache.Update(true, &desc, false, false, 1), "rapid page C waits for raw");
+		desc.currentPage = 1; desc.currentSlideId = 101;
+		check(cache.Update(true, &desc, true, false, 1) && cache.target->pageIndex == 0,
+			"rapid changes converge to latest trusted descriptor");
+		desc.status = D3::PresentationDescriptorStatus::Unavailable;
+		check(!cache.Update(true, &desc, true, false, 1) && !cache.Current(),
+			"failed resolution cannot publish previous target");
+		desc.status = D3::PresentationDescriptorStatus::StableSlideIds;
+		check(cache.Update(false, &desc, true, false, 1), "failed resolution remains retryable");
+		desc.currentPage = 0; desc.currentSlideId.reset();
+		check(!cache.Update(true, &desc, false, false, 1) &&
+			cache.Update(false, &desc, false, true, 1) && cache.target->pageIndex == 3,
+			"end screen pending update converges without another envelope");
+		cache.target->targetRevision = 9;
+		check(MatchesPptPageUi(*cache.target, 1, 9, -1, 3)
+			&& !MatchesPptPageUi(*cache.target, 1, 9, 3, 3), "end screen requires distinct UI identity");
+		desc.currentPage = 2; desc.currentSlideId = 202;
+		check(cache.Update(true, &desc, true, false, 2) && cache.target->sessionRevision == 2
+			&& !MatchesPptPageUi(*cache.target, 1, 9, 2, 3), "new session rejects previous UI ack");
+		desc.slideIds = {303,202,101};
+		check(cache.Update(true, &desc, true, false, 2) && cache.target->slideIds == desc.slideIds,
+			"same page topology change replaces full target identity");
+		cache.target.reset();
+		check(cache.Update(false, &desc, true, false, 2), "cleared session cache resolves even without notification");
+
+		// UI 没看到暂停占位帧时，原目标曾经 ack 的状态不能吞掉恢复回执。
+		const auto before = bridge.Snapshot().presentationTarget;
+		const auto identity = D3::Bridge::ReadyIdentityFor(*before);
+		for (int tick = 0; tick != 1000; ++tick)
+			check(bridge.RequirePresentationTargetRefresh(identity)
+				&& bridge.Snapshot().presentationTarget->targetRevision == identity.targetRevision,
+				"repeated suspension is idempotent until trusted publication");
+		const auto resumed = bridge.PublishPresentationTarget(*before);
+		check(resumed && *resumed != identity.targetRevision,
+			"same-page resume creates new identity for Present and UI ack");
+		check(!bridge.RequirePresentationTargetRefresh(identity)
+			&& bridge.PublishPresentationTarget(*before) == resumed,
+			"late suspension cannot invalidate resumed page and heartbeat stays stable");
+		const auto resumedTarget = bridge.Snapshot().presentationTarget;
+		check(!MatchesPptPageUi(*resumedTarget, 1, identity.targetRevision, 2, 3)
+			&& MatchesPptPageUi(*resumedTarget, 1, *resumed, 2, 3),
+			"old same-page UI acknowledgement is rejected after resume");
+		const auto resumedIdentity = D3::Bridge::ReadyIdentityFor(*resumedTarget);
+		check(bridge.RequirePresentationTargetRefresh(resumedIdentity), "arm refresh before rejected publication");
+		auto invalid = *resumedTarget;
+		invalid.totalPages = 0;
+		check(!bridge.PublishPresentationTarget(invalid)
+			&& bridge.Snapshot().presentationTarget->targetRevision == *resumed,
+			"invalid publication preserves current target");
+		const auto afterRejected = bridge.PublishPresentationTarget(*resumedTarget);
+		check(afterRejected && *afterRejected != *resumed,
+			"rejected publication retains refresh obligation for valid retry");
+
+		auto beforeClear = bridge.Snapshot().presentationTarget;
+		const auto clearIdentity = D3::Bridge::ReadyIdentityFor(*beforeClear);
+		check(bridge.RequirePresentationTargetRefresh(clearIdentity) && bridge.ClearPresentationTarget()
+			&& !bridge.RequirePresentationTargetRefresh(clearIdentity), "cleared target rejects late refresh");
+		const auto afterClear = bridge.PublishPresentationTarget(*beforeClear);
+		check(afterClear && *afterClear != clearIdentity.targetRevision
+			&& !bridge.RequirePresentationTargetRefresh(clearIdentity)
+			&& bridge.PublishPresentationTarget(*beforeClear) == afterClear,
+			"republication after clear has new stable identity unaffected by old refresh");
+
+		auto beforeReset = bridge.Snapshot().presentationTarget;
+		const auto resetIdentity = D3::Bridge::ReadyIdentityFor(*beforeReset);
+		check(bridge.RequirePresentationTargetRefresh(resetIdentity), "arm refresh before Bridge reset");
+		bridge.Reset();
+		check(!bridge.RequirePresentationTargetRefresh(resetIdentity), "Bridge reset rejects old refresh identity");
+		const auto afterReset = bridge.PublishPresentationTarget(*beforeReset);
+		check(afterReset && *afterReset != resetIdentity.targetRevision
+			&& !bridge.RequirePresentationTargetRefresh(resetIdentity)
+			&& bridge.PublishPresentationTarget(*beforeReset) == afterReset,
+			"Bridge reset preserves revision uniqueness and clears pending refresh");
+
+		const auto previousSession = bridge.Snapshot().presentationTarget;
+		const auto previousIdentity = D3::Bridge::ReadyIdentityFor(*previousSession);
+		check(bridge.RequirePresentationTargetRefresh(previousIdentity), "arm refresh before new session");
+		auto newSession = *previousSession;
+		++newSession.sessionRevision;
+		const auto newRevision = bridge.PublishPresentationTarget(newSession);
+		check(newRevision && *newRevision != previousIdentity.targetRevision
+			&& !bridge.RequirePresentationTargetRefresh(previousIdentity)
+			&& bridge.PublishPresentationTarget(newSession) == newRevision,
+			"new session rejects previous-session refresh and retains stable revision");
+	}
 
 	PptSessionToken original{ 1, 2, 3, 4, 5, 6, true, true };
 	check(MatchesPptSession(original, original), "current request matches exact session");
@@ -56,6 +232,119 @@ int RunPptSessionTests()
 	check(!MatchesPptSession(original, reopened), "new service instance rejects old command");
 	reopened = original; reopened.active = false;
 	check(!MatchesPptSession(original, reopened), "ended show rejects queued command");
+	auto noWindow = original;
+	noWindow.showWindow = 0; noWindow.processId = 0;
+	check(!IsPptWindowConfirmedEnded(noWindow, false, 0)
+		&& MatchesPptSession(noWindow, noWindow),
+		"HWND zero is an unknown window, not proof of COM show exit");
+	check(IsPptWindowConfirmedEnded(original, false, 0)
+		&& IsPptWindowConfirmedEnded(original, true, original.processId + 1)
+		&& !IsPptWindowConfirmedEnded(original, true, 0),
+		"only a destroyed window or successfully observed different owner ends the show");
+	original.processStartTime = 100;
+	check(IsPptWindowConfirmedEnded(original, true, original.processId, 200)
+		&& !IsPptWindowConfirmedEnded(original, true, original.processId, 0),
+		"known process creation identity detects PID reuse without guessing on query failure");
+	if (valid.snapshot)
+	{
+		auto sameShow = *valid.snapshot;
+		auto matching = noWindow;
+		matching.showSessionRevision = sameShow.showSessionRevision;
+		matching.bindingRevision = sameShow.bindingRevision;
+		check(MatchesPptShowSession(matching, matching.serviceGeneration, sameShow),
+			"basic scene identity is independent of a window and drawing readiness");
+		sameShow.lifecycle = PptLifecycle::Unknown;
+		check(MatchesPptShowSession(matching, matching.serviceGeneration, sameShow),
+			"same show read failure may retain the previous suspended display");
+		++sameShow.bindingRevision;
+		check(!MatchesPptShowSession(matching, matching.serviceGeneration, sameShow),
+			"new document cannot borrow an old scene or ink after busy");
+		--sameShow.bindingRevision; ++sameShow.showSessionRevision;
+		check(!MatchesPptShowSession(matching, matching.serviceGeneration, sameShow),
+			"windowless reentry still requires a new control session");
+	}
+
+	// 执行生产焦点策略和离场交接，全部使用纯窗口身份，不调用 Win32 激活 API。
+	{
+		const PptFocusForeground external{ 1001, 1002 };
+		check(IsFirstPptWindowAcquisition(noWindow, original.showWindow)
+			&& !IsFirstPptWindowAcquisition(original, original.showWindow)
+			&& !IsFirstPptWindowAcquisition(noWindow, 0),
+			"only first trusted HWND acquisition may focus, not known-anchor recovery or repetition");
+		const PptFocusRequest request{ original, external };
+		PptFocusState state{ original, external, true, true, false, true, true,
+			original.processId, original.processStartTime };
+		check(CanFocusPptSession(request, state),
+			"explicit noactivate click can hand off unchanged Explorer foreground");
+		for (int repeat = 0; repeat != 16; ++repeat)
+			check(CanFocusPptSession(request, state),
+				"up move and longpress input do not invalidate unchanged foreground");
+		auto changed = state;
+		changed.foreground.window += 1;
+		check(!CanFocusPptSession(request, changed), "different foreground window rejects queued focus");
+		changed = state; changed.foreground.processId += 1;
+		check(!CanFocusPptSession(request, changed), "reused foreground HWND rejects queued focus");
+		changed = state; changed.foreground = { original.showWindow, original.processId };
+		check(CanFocusPptSession(request, changed), "already focused show needs no activation");
+		changed = state; ++changed.session.localSession;
+		check(!CanFocusPptSession(request, changed), "same show HWND cannot borrow a newer session");
+		changed = state; changed.session.active = false;
+		check(!CanFocusPptSession(request, changed), "ended show cannot regain focus");
+		changed = state; changed.modalActive = true;
+		check(!CanFocusPptSession(request, changed), "settings and modal dialogs block focus");
+		changed = state; changed.workspaceAllowed = false;
+		check(!CanFocusPptSession(request, changed), "background whiteboard and its transaction block focus");
+		changed = state; changed.controlAvailable = false;
+		check(!CanFocusPptSession(request, changed), "untrusted show window cannot focus");
+		changed = state; changed.targetExists = false;
+		check(!CanFocusPptSession(request, changed), "destroyed show HWND cannot focus");
+		changed = state; changed.targetVisible = false;
+		check(!CanFocusPptSession(request, changed), "hidden show window cannot focus");
+		changed = state; ++changed.targetProcessId;
+		check(!CanFocusPptSession(request, changed), "reused show HWND cannot focus another process");
+		changed = state; ++changed.targetProcessStartTime;
+		check(!CanFocusPptSession(request, changed), "reused Office PID cannot inherit focus");
+		changed = state; changed.session = noWindow;
+		check(!CanFocusPptSession({ noWindow, external }, changed), "HWND zero basic controls cannot focus");
+
+		PptFocusHandoff handoff;
+		const PptFocusForeground whiteboard{ 2001, 2002 };
+		handoff.Begin({ original, whiteboard });
+		handoff.RebaseAfterWindowTransition(whiteboard, external, true);
+		const auto returned = handoff.Take();
+		check(returned && MatchesPptSession(returned->session, original)
+			&& returned->foreground.window == external.window
+			&& CanFocusPptSession(*returned, state) && !handoff.Take(),
+			"controlled whiteboard Hide fallback retains old token and queues one valid handoff");
+		handoff.Begin({ original, whiteboard });
+		handoff.RebaseAfterWindowTransition(external, external);
+		check(!handoff.Take(), "user switching away before whiteboard Hide cancels handoff");
+		const PptFocusForeground anotherExternal{ 3001, 3002 };
+		handoff.Begin(request);
+		handoff.RebaseAfterWindowTransition(external, anotherExternal);
+		check(!handoff.Take(), "external A to B during return is not a controlled Hide fallback");
+		handoff.Begin(request);
+		handoff.RebaseAfterWindowTransition(external, { external.window, external.processId + 1 });
+		check(!handoff.Take(), "external HWND PID reuse during return cancels handoff");
+		handoff.Begin({ original, whiteboard });
+		handoff.RebaseAfterWindowTransition(whiteboard, external, true);
+		handoff.RebaseAfterWindowTransition(external, anotherExternal);
+		check(!handoff.Take(), "whiteboard fallback cannot authorize a later external foreground switch");
+		handoff.Begin({ original, whiteboard });
+		handoff.RebaseAfterWindowTransition(whiteboard, external, true);
+		handoff.RebaseAfterWindowTransition(external, external);
+		check(handoff.Take().has_value(), "unchanged external foreground preserves controlled fallback intent");
+		changed = state; changed.foreground.window += 1;
+		check(returned && !CanFocusPptSession(*returned, changed),
+			"user switching after Hide but before dequeue still cancels focus");
+		changed = state; ++changed.session.localSession;
+		check(returned && !CanFocusPptSession(*returned, changed),
+			"new show during whiteboard exit cannot claim old return intent");
+		handoff.Begin({ noWindow, whiteboard });
+		check(!handoff.Take(), "windowless whiteboard return has no focus request");
+		handoff.Begin(request); handoff.Reset();
+		check(!handoff.Take(), "whiteboard reentry cancels pending return focus");
+	}
 
 	BarA2CallbackDispatcher dispatcher;
 	std::uint64_t first = 0, second = 0;

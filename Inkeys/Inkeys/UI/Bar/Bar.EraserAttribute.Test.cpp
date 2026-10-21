@@ -54,6 +54,11 @@ namespace Inkeys::UI::Bar
 		const RECT& logicalBounds, LONG presentationOutset) noexcept;
 	namespace
 	{
+		class WhiteboardButtonStyleFixture : public BarButtonSetClass
+		{
+		public:
+			using BarButtonSetClass::UpdateWhiteboardButtonStyle;
+		};
 		class DragCursorLightFixture : public BarUISetClass
 		{
 		public:
@@ -625,6 +630,11 @@ namespace Inkeys::UI::Bar
 				++matrixCases;
 			}
 			report<<"[MainPresentation] componentMatrixCases="<<matrixCases<<'\n';
+			expect(WhiteboardActive() && !HideWhiteboardSnapIndicator()
+				&& ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,true,true,true)
+				&& !ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,false,true,true)
+				&& !ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,true,true,false),
+				"active Whiteboard permits eligible drag feedback while entry and unchanged gestures stay hidden");
 			SetWhiteboardActive(false);Freeze::SetWhiteboardActive(false);
 			SetPptPresentationActive(false);Freeze::SetPresentationActive(false);
 			SetSelectAndClickThroughMode(1);ChangeStateModeToPen();SetCurrentPageHasContent(false);reload(0);
@@ -895,7 +905,7 @@ namespace Inkeys::UI::Bar
 			LocalizedBarCase{L"zh-CN",L"zh-cn",L"HarmonyOS Sans SC",L"zh-cn"},
 			LocalizedBarCase{L"zh-TW",L"zh-tw",L"HarmonyOS Sans TC",L"zh-tw"},
 			LocalizedBarCase{L"en-US",L"en-us",L"HarmonyOS Sans SC",L"en-us"}};
-		const std::array<const char*,20> fixedLabelKeys{
+		const std::array<const char*,21> fixedLabelKeys{
 			I18nKey.UI.Bar.MainButtons.SelectLabel,I18nKey.UI.Bar.MainButtons.MoveLabel,
 			I18nKey.UI.Bar.MainButtons.DrawLabel,I18nKey.UI.Bar.MainButtons.LaserLabel,
 			I18nKey.UI.Bar.MainButtons.HighlighterLabel,I18nKey.UI.Bar.MainButtons.HardPenLabel,
@@ -904,6 +914,7 @@ namespace Inkeys::UI::Bar
 			I18nKey.UI.Bar.MainButtons.RectangleLabel,I18nKey.UI.Bar.MainButtons.StraightLineLabel,
 			I18nKey.UI.Bar.MainButtons.UndoLabel,I18nKey.UI.Bar.MainButtons.ClearLabel,
 			I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel,
+			I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel,
 			I18nKey.UI.Bar.MainButtons.FreezeLabel,I18nKey.UI.Bar.MainButtons.EndPresentationLabel,
 			I18nKey.UI.Bar.MainButtons.SettingsLabel,I18nKey.UI.Bar.MainButtons.MoreLabel};
 		const std::array<const char*,7> penMenuLabelKeys{
@@ -917,6 +928,36 @@ namespace Inkeys::UI::Bar
 			owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
 			expect(owner.spec.GetFontFamily()==language.family && owner.spec.GetTextLocale()==language.locale,
 				"localized font family and DWrite locale match language");
+			{
+				WhiteboardButtonStyleFixture style;
+				auto* button=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Whiteboard];
+				style.preset[(int)BarButtonPresetEnum::Whiteboard]=button;
+				BarUiSVGClass resumeIcon,closeIcon;
+				resumeIcon.InitializationFromResource(L"UI",L"barWhiteboard");
+				closeIcon.InitializationFromResource(L"UI",L"barDismiss");
+				expect(!resumeIcon.svg.GetVal().empty() && !closeIcon.svg.GetVal().empty(),
+					"Whiteboard resume and close SVG resources are available for real content checks");
+				const bool savedFold=owner.barState.fold;
+				const auto geometry=owner.barButtonSet.MainLayoutSnapshot();
+				for(bool folded:{false,true})for(bool minimized:{true,false,true,false})
+				{
+					owner.barState.fold=folded;
+					// 直接消费生产内容更新入口，不投递hover、翻页或任何窗口消息。
+					style.UpdateWhiteboardButtonStyle(true,minimized);
+					button->name.AdvanceContentTransition(1.0,1.0);
+					button->icon.AdvanceContentTransition(1.0,1.0);
+					expect(button->name.content.GetVal()==IW(minimized?I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel
+						:I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
+						&& button->icon.svg.GetVal()==(minimized?resumeIcon.svg.GetVal():closeIcon.svg.GetVal())
+						&& owner.barButtonSet.MainLayoutSnapshot()==geometry,
+						"Whiteboard minimize and restore change real label and SVG without depending on folding or layout changes");
+				}
+				owner.barState.fold=savedFold;
+				style.UpdateWhiteboardButtonStyle(false,true);
+				button->name.AdvanceContentTransition(1.0,1.0);
+				expect(button->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel),
+					"inactive whiteboard ignores a stale minimized flag");
+			}
 			for(const auto* key:fixedLabelKeys)
 				expect(owner.spec.MeasureText(IW(key),metrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=metrics.primarySlotWidthDip+0.5f,
 					"localized fixed label fits the existing 70 DIP slot");

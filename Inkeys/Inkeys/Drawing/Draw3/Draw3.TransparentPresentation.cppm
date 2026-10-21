@@ -53,6 +53,9 @@ export namespace Inkeys::Drawing::Draw3
 		bool allowDirectComposition = true;
 		// startup 专用；运行期 Recover/Resize/Present 不激活这个 scope。
 		Shutdown::FailedCleanupSignal failedCleanup;
+		// 与 Host 启动快照一致，运行中改设置不影响设备恢复。
+		bool enableHardwareAcceleration = true;
+		bool enableZhaoxinCompatibility = true;
 	};
 
 	struct TransparentPresentObservation

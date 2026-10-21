@@ -191,6 +191,9 @@ export namespace Inkeys::Drawing::Draw3
 		RECT rect = {};
 	};
 
+	// 无窗口生产上传/合成验证：只创建 WARP 离屏资源，不创建 HWND 或交换链。
+	int RunRendererUploadValidation() noexcept;
+
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
 	class InkRenderer
 	{
@@ -214,6 +217,8 @@ export namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<ID3D11Buffer> laserStyleCB;
 		Microsoft::WRL::ComPtr<ID3D11Buffer> inkDataBuffer;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> inkDataSRV;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> compositeVertexBuffer;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> compositeVertexSRV;
 		Microsoft::WRL::ComPtr<ID3D11Buffer> highlighterPrimitiveBuffer;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> highlighterPrimitiveSRV;
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> operatorSampler;
@@ -343,7 +348,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 调整交换链和三层画布尺寸，并保留左上角交集内容。
 		bool Resize(IDXGISwapChain1* swapChain, UINT width, UINT height);
 		// 初始化渲染器及其固定资源。
-		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver);
+		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver,
+			bool enableZhaoxinCompatibility);
 
 	private:
 		// 与设备同寿命的独立 shader/b4，以及按当前目标尺寸惰性分配的操作层。
@@ -364,6 +370,11 @@ export namespace Inkeys::Drawing::Draw3
 			::draw3::shapes::RenderData data;
 		};
 		std::vector<ShapeRenderCacheEntry> shapeRenderCache_;
+		friend int RunRendererUploadValidation() noexcept;
+		bool useDefaultStructuredUpload_ = false;
+		bool CreateFixedResources(D3D_DRIVER_TYPE driver);
+		HRESULT UploadStructuredBuffer(ID3D11Buffer* buffer, const void* data, UINT bytes,
+			UINT offset, D3D11_MAP mapType);
 		// 创建 BGRA8 Add 与 R16F Retain 两张尺寸相关纹理。
 		bool CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer);
 		bool CreateLaserCoverageResources(UINT width, UINT height, LaserCoverageResources& layer);

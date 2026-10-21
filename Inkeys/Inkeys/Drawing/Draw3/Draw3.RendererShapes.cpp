@@ -199,20 +199,17 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const size_t count = std::min(capacity, batch.primitives.size() - start);
 			D3D11_MAP mode = D3D11_MAP_WRITE_NO_OVERWRITE;
-			if (!mapNoOverwriteOnDynamicBufferSRV || m_bufferHead + count * 4 > kMaxBufferCapacity)
+			if (useDefaultStructuredUpload_ || !mapNoOverwriteOnDynamicBufferSRV || m_bufferHead + count * 4 > kMaxBufferCapacity)
 			{
 				mode = D3D11_MAP_WRITE_DISCARD;
 				m_bufferHead = 0;
 			}
-			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0, mode, 0, &mapped))) return false;
-			std::memcpy(static_cast<InkPoint*>(mapped.pData) + m_bufferHead,
-				batch.primitives.data() + start, count * sizeof(GpuPrimitive));
-			context->Unmap(inkDataBuffer.Get(), 0);
-			constants.bufferOffset = static_cast<uint32_t>(m_bufferHead);
+			const auto bufferOffset = static_cast<uint32_t>(m_bufferHead);
+			// 与普通墨迹共用上传策略；兼容模式的 DEFAULT 资源不能直接 Map。
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), batch.primitives.data() + start,
+				static_cast<UINT>(count * sizeof(GpuPrimitive)), bufferOffset * sizeof(InkPoint), mode))) return false;
+			constants.bufferOffset = bufferOffset;
 			if (!UploadConstants(context.Get(), shapeCB_.Get(), constants)) return false;
-			// 上传后立即推进；后续失败也不能再次 NO_OVERWRITE 到已经提交的区域。
-			m_bufferHead += count * 4;
 			SetOperatorTarget(shapeMaterialLayer_);
 			context->IASetInputLayout(nullptr);
 			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

@@ -3371,6 +3371,13 @@ void FailNextPresentationCollectionAllocationForTesting() noexcept
 	failNextPresentationCollectionAllocation = true;
 }
 
+bool CancelNextPresentationCollectionAllocationForTesting() noexcept
+{
+	const bool armed = failNextPresentationCollectionAllocation;
+	failNextPresentationCollectionAllocation = false;
+	return armed;
+}
+
 uint64_t PresentationCollectionAllocationFailuresForTesting() noexcept
 {
 	return presentationCollectionAllocationFailures.load(std::memory_order_relaxed);

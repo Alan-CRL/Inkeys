@@ -55,6 +55,7 @@ namespace
 	std::mutex pptBusinessFocusMutex;
 	std::function<void()> pptBusinessFocusCallback;
 	Inkeys::UI::Bar::BarA2CallbackDispatcher endShowDispatcher;
+	std::atomic_uint64_t autoCollapseSceneRevision{ 1 };
 	std::atomic_bool whiteboardActive = false;
 	std::atomic_bool whiteboardBottomDockRequested = false;
 	std::atomic_bool whiteboardDockLockActive = false;
@@ -255,6 +256,7 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 	signature.validMask |= 8;
 	signature.darkStyle = barStyle.darkStyle ? 1u : 0u;
 	signature.validMask |= 16;
+	double uiBaseScale = 0.0;
 	// 环境只做一次非阻塞读取；锁忙/未知display不填零冒充有效mask。
 	{
 		unique_lock displayLock(pendingDisplayPublishMutex, std::try_to_lock);
@@ -266,11 +268,14 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 			{
 				signature.displaySerial = serial;
 				signature.dpi = dpi;
+				uiBaseScale = pendingDisplayUiBaseScale.load(std::memory_order_relaxed);
 				signature.validMask |= 32 | 64;
 			}
 		}
 	}
-	const double configZoom = barStyle.configZoom;
+	// wire 保留原字段名，倍率含 UI 基准/DPI 校正；Source 的 DPI×倍率仍还原真实 UI scale。
+	const double configZoom = uiBaseScale * USER_DEFAULT_SCREEN_DPI
+		/ (signature.dpi ? signature.dpi : USER_DEFAULT_SCREEN_DPI) * barStyle.configZoom;
 	signature.configZoomBits = std::bit_cast<std::uint64_t>(configZoom);
 	if (isfinite(configZoom) && configZoom > 0.0) signature.validMask |= 128;
 	if (Inkeys::UI::Bar::WhiteboardActive() || Inkeys::UI::Bar::PptPresentationActive()) signature.validMask = 0;
@@ -387,20 +392,32 @@ namespace Inkeys::UI::Bar
 		return pptPresentationActive.load(std::memory_order_acquire);
 	}
 
+	std::uint64_t AutoCollapseSceneRevision() noexcept
+	{
+		return autoCollapseSceneRevision.load(std::memory_order_acquire);
+	}
+
 	void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept
 	{
 		bool changed = false;
+		bool windowChanged = false;
 		{
 			std::scoped_lock lock(pptSceneMutex);
 			// 先发布完整载荷，再开放场景边沿；渲染线程不能读到旧窗口或旧 dock 条件。
-			pptPresentationWindow.store(active ? showWindow : nullptr, std::memory_order_release);
+			windowChanged = pptPresentationWindow.exchange(active ? showWindow : nullptr,
+				std::memory_order_acq_rel) != (active ? showWindow : nullptr);
 			changed = pptPresentationActive.exchange(active, std::memory_order_acq_rel) != active;
 			changed = pptSceneState.Publish(session, active) || changed;
 		}
 		if (changed)
 		{
+			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
 			// 进出放映都只收起浮窗。回到桌面时若 Redo 仍可用，显示 2×1，不重新弹出。
 			barUISet.SettleRecallChromeForWorkspace();
+		}
+		// 同场窗口锚变化只刷新布局，不重放场次进入和位置恢复。
+		if (changed || windowChanged)
+		{
 			barUISet.UpdateRendering(
 				contentStateUpdatesReady.load(std::memory_order_acquire));
 		}
@@ -489,6 +506,7 @@ namespace Inkeys::UI::Bar
 			std::memory_order_acq_rel) != active;
 		if (changed)
 		{
+			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
 			// 工作区切换时默认使用拖拽模式，属性浮层保持收起；后续由用户按钮控制展开。
 			barUISet.CollapseAuxiliaryPanels(true);
 		}
@@ -536,7 +554,8 @@ namespace Inkeys::UI::Bar
 
 	bool HideWhiteboardSnapIndicator() noexcept
 	{
-		return WhiteboardActive();
+		// 白板沿用真实拖动的资格门禁；程序入场/恢复不会建立吸附提示资格。
+		return false;
 	}
 
 	void SetContentStateUpdatesReady(bool ready) noexcept

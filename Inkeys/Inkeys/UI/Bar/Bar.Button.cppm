@@ -281,7 +281,7 @@ bool RegisterButton(
 
 	protected:
 		void UpdateDrawButtonStyle(const StateModeClass& stateMode);
-		void UpdateWhiteboardButtonStyle(bool active);
+		void UpdateWhiteboardButtonStyle(bool active, bool minimized);
 		void ApplyMainPresentationLocked(const StateModeClass& stateMode);
 		void UpdateEraserButtonStyle(const StateModeClass& stateMode);
 		void UpdateGeometryButtonStyle(const StateModeClass& stateMode);

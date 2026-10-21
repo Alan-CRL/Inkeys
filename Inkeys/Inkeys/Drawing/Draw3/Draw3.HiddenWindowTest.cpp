@@ -1584,8 +1584,38 @@ namespace Inkeys::Drawing::Draw3
 				PublishProductState(whiteboardState);
 				PublishProductWorkspace(Bridge::Workspace::Whiteboard);
 				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().workspace==Bridge::Workspace::Whiteboard;}),"switch to hidden whiteboard",failures);
+				// 真实 Controller/Host 切页：同布尔内容也必须取得新版本，旧页成功帧不能冒充就绪。
+				const auto firstWhiteboardPage = ProductHost().RuntimeSnapshot().currentPageIndex;
+				const auto switchWhiteboardPage = [&](Bridge::CommandType type, std::size_t page,
+					bool hasContent, const char* name)
+				{
+					const auto before = ProductHost().RuntimeSnapshot();
+					if (!Check(PublishProductCommand(type) == Bridge::CommandResult::Accepted,
+						"whiteboard page command accepted", failures)) return false;
+					if (!Check(WaitUntil([before, page, hasContent, whiteboardState]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.currentPageIndex == page && !state.whiteboardLoadPending &&
+							state.currentPageHasContent == hasContent &&
+							state.contentRevision > before.contentRevision &&
+							DrawpadPresentationReady(whiteboardState, state);
+					}), name, failures)) return false;
+					auto stale = ProductHost().RuntimeSnapshot();
+					stale.presentedContentRevision = before.presentedContentRevision;
+					return Check(!DrawpadPresentationReady(whiteboardState, stale),
+						"whiteboard rejects the previous page presented content proof", failures);
+				};
+				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::NextPage,
+					firstWhiteboardPage + 1, false, "empty whiteboard pages advance content revision");
 				postContact(HiddenTestContactPhase::Down,70,80);postContact(HiddenTestContactPhase::Move,110,100);postContact(HiddenTestContactPhase::Up,150,120);
 				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard has independent ink",failures);
+				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::PreviousPage,
+					firstWhiteboardPage, false, "whiteboard returns to its first empty page");
+				postContact(HiddenTestContactPhase::Down,90,90);postContact(HiddenTestContactPhase::Move,130,110);postContact(HiddenTestContactPhase::Up,170,130);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),
+					"first whiteboard page has independent ink", failures);
+				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::NextPage,
+					firstWhiteboardPage + 1, true, "nonempty whiteboard pages advance content revision");
 				PublishProductCommand(Bridge::CommandType::Clear);
 				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear empties annotation",failures);
 				PublishProductCommand(Bridge::CommandType::Undo);
@@ -2654,7 +2684,8 @@ namespace Inkeys::Drawing::Draw3
 			};
 			clearProbe("backbuffer.clear", backBuffer.Get(), backRtv.Get());
 			clearProbe("offscreen.clear", offscreen.Get(), offscreenRtv.Get());
-			const bool initialized = swapChain && renderer.Init(device.Get(), context.Get(), swapChain.Get(), size, size, driver);
+			// 隔离 fixture 不读取产品配置；显式固定兼容策略，避免依赖 Init 默认参数。
+			const bool initialized = swapChain && renderer.Init(device.Get(), context.Get(), swapChain.Get(), size, size, driver, true);
 			std::fprintf(stderr, "[Draw3PixelTest] renderer_init=%d vs=%p ps=%p ink_buffer=%p global_cb=%p srv=%p\n",
 				initialized, static_cast<void*>(renderer.vertexShader.Get()), static_cast<void*>(renderer.pixelShader.Get()),
 				static_cast<void*>(renderer.inkDataBuffer.Get()), static_cast<void*>(renderer.globalCB.Get()),
@@ -3652,7 +3683,8 @@ namespace Inkeys::Drawing::Draw3
 			"Laser test creates FLIP composition swapchain without HWND", failures)) return 1;
 
 		InkRenderer renderer;
-		if (!Check(renderer.Init(device.Get(), context.Get(), swapChain.Get(), 64, 64, D3D_DRIVER_TYPE_WARP),
+		// 独立 WARP fixture 保持默认兼容偏好；实际 WARP 不启用兆芯专用上传。
+		if (!Check(renderer.Init(device.Get(), context.Get(), swapChain.Get(), 64, 64, D3D_DRIVER_TYPE_WARP, true),
 			"Laser test initializes production renderer and shaders", failures))
 		{
 			context->ClearState();

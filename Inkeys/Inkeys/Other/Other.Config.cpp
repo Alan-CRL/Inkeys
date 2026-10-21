@@ -3,6 +3,7 @@ module;
 #include "../../IdtMain.h"
 #include "../../PptSettingsPersistence.h"
 
+#include <atomic>
 #include <initializer_list>
 #include <sstream>
 #include <string_view>
@@ -17,6 +18,7 @@ import Inkeys.Conv.Text;
 namespace
 {
 	constexpr LONGLONG kMaxConfigFileBytes = 16LL * 1024 * 1024;
+	constinit std::atomic_bool defaultLargeScreenDevice{ false };
 
 	template <typename T>
 	inline constexpr bool InkeysConfigDependentFalseV = false;
@@ -247,6 +249,28 @@ namespace
 		static Json::Value ToJson(const std::wstring& value)
 		{
 			return Json::Value(utf16ToUtf8(value));
+		}
+	};
+
+	template <>
+	struct JsonValueCodec<Inkeys::WhiteboardThemePreference, void>
+	{
+		static bool TryRead(const Json::Value& value, Inkeys::WhiteboardThemePreference& result)
+		{
+			if (!value.isObject() || !value.isMember("BackgroundRgb") || !value.isMember("Pattern")) return false;
+			const auto& rgb = value["BackgroundRgb"]; const auto& pattern = value["Pattern"];
+			const auto integer = [](const Json::Value& item)
+			{ return item.type() == Json::intValue || item.type() == Json::uintValue; };
+			// 严验原始整数类型与范围；浮点、布尔、超宽或缺项都回退整个主题。
+			if (!integer(rgb) || !rgb.isUInt() || rgb.asUInt() > 0xFFFFFF
+				|| !integer(pattern) || !pattern.isUInt() || pattern.asUInt() > 2) return false;
+			result = { rgb.asUInt(), pattern.asUInt() }; return true;
+		}
+		static Json::Value ToJson(const Inkeys::WhiteboardThemePreference& value)
+		{
+			Json::Value result(Json::objectValue);
+			result["BackgroundRgb"] = value.backgroundRgb; result["Pattern"] = value.pattern;
+			return result;
 		}
 	};
 
@@ -546,7 +570,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
+		void HandleValue(const char* name, T& value, const T& defaultValue, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
 		{
 			if (!canReadFromDocument && !includeWriteOnly) return;
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
@@ -574,6 +598,36 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 
 				const auto path = JoinPath(groupPath, name);
+				if (path == "UI.Bar.UseTaskbarHeightAsScaleBase")
+				{
+					// 旧开关 true 必须保留真实任务栏量，不能隐式转成新增的基础量模式 1。
+					if (jsonValue->isBool())
+					{
+						value = jsonValue->asBool() ? 2 : 0;
+						return;
+					}
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : defaultValue.load();
+					return;
+				}
+				if (groupPath.size() == 3 && groupPath[0] == "UI"
+					&& groupPath[1] == "Bar" && groupPath[2] == "AutoCollapse")
+				{
+					// 新策略独立使用 schema 默认值；先验类型与宽度，不能将旧布尔或超宽整数窄化。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : defaultValue.load();
+					return;
+				}
+
+				if (path == "Drawing.Cursor.MouseStyle" || path == "Drawing.Cursor.PenStyle")
+				{
+					// 两种类型只接受整数 0/1；非法值各自恢复系统/圆形默认，不能强转成笔形。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
+					return;
+				}
 				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")
 				{
 					// 先验证 JSON 整数类型与范围，避免超宽整数窄化后成为合法选项。
@@ -693,6 +747,16 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 
 namespace Inkeys::ConfigDetail
 {
+	void SetDefaultLargeScreenDevice(bool largeScreen) noexcept
+	{
+		defaultLargeScreenDevice.store(largeScreen, std::memory_order_relaxed);
+	}
+
+	bool GetDefaultLargeScreenDevice() noexcept
+	{
+		return defaultLargeScreenDevice.load(std::memory_order_relaxed);
+	}
+
 	void WriteHiddenConfigValue(Json::Value& parent, const char* name, const Json::Value& value, bool writeFile)
 	{
 		// AutoClean 关闭时也不能保留明确禁止输出的已知 H 键。
@@ -792,6 +856,11 @@ namespace Inkeys
 
 		Json::Value outputRoot = autoCleanEnabled ? Json::Value(Json::objectValue) : baseRoot;
 		OverlayDocument(outputRoot);
+		// 边缘已改为输入设备固定策略；即使保留未知键，也不再写回已退役的三个开关。
+		auto& cursorNode = outputRoot["Drawing"]["Cursor"];
+		cursorNode.removeMember("MouseHighlightEdge");
+		cursorNode.removeMember("ScreenPenHighlightEdge");
+		cursorNode.removeMember("DigitizerHighlightEdge");
 
 		if (!WriteDocumentToFile(GetFilePath(), outputRoot)) return false;
 
@@ -800,6 +869,13 @@ namespace Inkeys
 		readAllDocument = outputRoot;
 		hasReadAllDocument = true;
 		return true;
+	}
+
+	bool Config::SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept
+	{
+		if (backgroundRgb > 0xFFFFFF || pattern > 2) return false;
+		const WhiteboardThemePreference next{ backgroundRgb, pattern };
+		return Drawing.Whiteboard.DefaultTheme.exchange(next) != next;
 	}
 
 	std::string Config::GetUploadInfo()

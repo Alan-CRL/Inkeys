@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 107
-- **Last Active**: 2026-10-17
+- **Total Sessions**: 116
+- **Last Active**: 2026-10-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~488 | Active |
+| `journal-2.md` | ~882 | Active |
 | `journal-1.md` | ~2205 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,7 +30,19 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 116 | 2026-10-19 | 键盘快捷键与批注往返完成验收 | `97fbe299` | `feature/hook` |
+| 115 | 2026-10-19 | UI3 taskbar docking and canvas policy completed | `3e5bb005`, `277b4956`, `91f36824` | `featrue/zoom` |
+| 114 | 2026-10-19 | 鼠标钩子、PPT滚轮与主栏自动收起完成验收 | `11e45053` | `feature/hook` |
+| 113 | 2026-10-19 | UI3 taskbar scaling implemented and accepted | `bf800e4c`, `f25bccb5` | `featrue/zoom` |
+| 112 | 2026-10-19 | Draw3 光标改动与离笔回弹修复验收归档 | `e9e9b1f5`, `fb5559ff` | `bugfix/cursor` |
+| 111 | 2026-10-19 | PR238审阅修正、dev冲突解决与PPT控件任务结案 | `2791a1cc`, `f3e83110` | `bugfix/pptcom` |
+| 110 | 2026-10-18 | PptCOM 修复提交归档与覆盖层置顶调查 | `0eb1c7c5`, `184cf86e` | `bugfix/pptcom` |
+| 109 | 2026-10-18 | 提交画布卡死修复并归档五个相关任务 | `6b8bc1d73c8b7307528520c28fc952004ee3d8f1`, `83d08514142211ba6ed5ca9c669c42ca9b139f55` | `bugfix/draw3` |
+| 108 | 2026-10-18 | 画布卡死后续修复与最终GUI验收 | - | `bugfix/draw3` |
 | 107 | 2026-10-17 | P2 基础图形 UI3 与预测交付 | - | `feature/shape` |
+| 106 | 2026-10-17 | UI 指针会话与窗口外拖动验收结案 | `f2494f4e5537d4742f8c4c77a30b2442269ea4f5` | `feature/hook` |
+| 104 | 2026-10-15 | 画布 F1–F4 解锁后完整产品 GUI 验收 | - | `bugfix/draw3` |
+| 102 | 2026-10-15 | 画布 F1–F4 修复与生产回归 | - | `bugfix/draw3` |
 | 98 | 2026-10-14 | 完成主栏图标顺序与展开方向任务 | `35afa7ee`, `2dd3b344`, `8515d469`, `bec78a29` | `feature/mode` |
 | 97 | 2026-10-14 | 选择与穿透操作模式完成 | `3f3946cf`, `d444f6a7`, `7d5a003f` | `feature/mode` |
 | 83 | 2026-10-14 | 交互模式与启动预设人工验收结案 | `ecfee6ab`, `18b4c8fb`, `519afa01` | `feature/mode` |
@@ -61,6 +73,7 @@
 | 66 | 2026-10-12 | Redo2x2点击暂态主栏扩宽修复 | - | `feature/redo` |
 | 65 | 2026-10-12 | Redo追加：3秒等待与属性身份显示提交 | - | `feature/redo` |
 | 64 | 2026-10-12 | 延续 Redo 弹窗：修复5秒布局保护与灰色动画 | - | `feature/redo` |
+| 63 | 2026-10-11 | 恢复 Inkeys3 笔震动反馈与兼容回退 | - | `bugfix/vibration` |
 | 60 | 2026-10-10 | Windows 发布流水线拆分与 Win32 Harness 修复 | - | `dev` |
 | 59 | 2026-10-10 | Win7 主画布修复验收并归档 | `12d82884cf09928c2ae22eda2fe8851ac8581c9b`, `4011594d103f5b95e77ec923f54058593ce7e549` | `chore/publish` |
 | 55 | 2026-10-09 | Win7 WARP 主画布默认完整 shader 修复 | - | `chore/publish` |

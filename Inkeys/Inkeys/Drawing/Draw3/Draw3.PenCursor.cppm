@@ -5,6 +5,7 @@
 #endif
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.CursorSettings.h"
 
 #include <atomic>
 #include <cstdint>
@@ -18,7 +19,8 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		Circle,
 		Rectangle,
-		EraserGripCircle
+		EraserGripCircle,
+		PenIcon
 	};
 
 	// 描述应用内瞬态光标外观；颜色分量使用 [0,1]，尺寸使用画布像素。
@@ -36,6 +38,11 @@ export namespace Inkeys::Drawing::Draw3
 		float outlineRed = 184.0f / 255.0f;
 		float outlineGreen = 184.0f / 255.0f;
 		float outlineBlue = 184.0f / 255.0f;
+		// -1 沿用整体 opacity；显式值只控制边缘，不改变半透明工具填充。
+		float outlineOpacity = -1.0f;
+		// 图形中心相对输入热点的偏移；笔形左上尖端仍精确对应原 sample。
+		float centerOffsetX = 0.0f;
+		float centerOffsetY = 0.0f;
 	};
 
 	// 仅表示持久 cursor owner；Touch 只可作为事件类型，不得长期接管 owner。
@@ -145,7 +152,7 @@ export namespace Inkeys::Drawing::Draw3
 		virtual void NotifyCanvasContactDown() noexcept {}
 		// RTS 确认 Touch 接触开始后，使上一设备留下的 Mouse Hover 失效。
 		virtual void NotifyTouchContactBegin() noexcept = 0;
-		// RTS Touch 的 Up/Cancel 仅维护诊断生命周期，不把 Touch 设为持久 owner。
+		// RTS Touch 的 Up/Cancel 维护生命周期并刷新当前隐藏策略，不把 Touch 设为持久 owner。
 		virtual void NotifyTouchContactEnd() noexcept = 0;
 		virtual void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept = 0;
 		virtual void ClearPenCursorSample() noexcept = 0;
@@ -162,7 +169,9 @@ export namespace Inkeys::Drawing::Draw3
 		bool selectedToolIsEraser,
 		bool drawingCursorDuringContactEnabled,
 		bool translucentInkCursorEnabled = false,
-		bool mouseUsesSystemCursor = true) noexcept;
+		bool mouseUsesSystemCursor = true,
+		const CursorSettings* productSettings = nullptr,
+		bool penIconAllowed = false, float dpiScale = 1.0f) noexcept;
 	// Laser 的 Pen/Mouse Hover 都显示发光点，Contact 笔尖由活动 contact 独立生成。
 	DrawingCursorVisual ResolveLaserDrawingCursorVisual(
 		const DrawingCursorSample& penSample,
@@ -220,6 +229,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool touchPositionKnown = false;
 		int touchX = 0, touchY = 0;
 		int mouseX = 0, mouseY = 0;
+		// Pen 清样本后仍保留归属，系统 Move 不能借此恢复旧 Mouse Hover。
+		DrawingCursorPointerAuthority pointerAuthority = DrawingCursorPointerAuthority::Unknown;
 	};
 	struct MouseCursorMessageFilterResult
 	{

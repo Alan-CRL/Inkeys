@@ -50,11 +50,9 @@ namespace Inkeys::UI::Ppt
 		BusinessCallbacks business;
 		PositionState positions;
 		std::uint64_t publicationRevision = 0;
-		std::uint64_t targetRevision = 0;
+		PagePresentationState pageState;
 		TopmostRefreshState topmostRefresh;
 		bool topmostRefreshFailureLogged = false;
-		int currentPage = -1;
-		int totalPage = -1;
 
 		void LogTopmostRefreshState(bool recovered) noexcept
 		{
@@ -122,13 +120,15 @@ namespace Inkeys::UI::Ppt
 			Inkeys::UI::PageControl::PptState state;
 			{
 				std::scoped_lock lock(stateMutex);
+				state.presentationActive = positions.active;
 				state.presentationVisible = topmostRefresh.presentationVisible;
 				state.longPressEnabled =
 					Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
-				state.currentPage = currentPage;
-				state.totalPage = totalPage;
+				state.currentPage = pageState.currentPage;
+				state.totalPage = pageState.totalPage;
 				state.layout = ToPageLayout(positions.configuration);
-				state.targetRevision = targetRevision;
+				state.targetRevision = pageState.targetRevision;
+				state.pageAckEpoch = pageState.pageAckEpoch;
 				state.publicationRevision = ++publicationRevision;
 			}
 			Inkeys::UI::PageControl::PublishPptState(state);
@@ -165,16 +165,13 @@ namespace Inkeys::UI::Ppt
 		}
 
 		void PagePresented(std::uint64_t session, std::uint64_t target,
-			int current, int total)
+			int current, int total, std::uint64_t epoch)
 		{
-			std::function<void(std::uint64_t, std::uint64_t, int, int)> callback;
-			{
-				std::scoped_lock lock(stateMutex);
-				if (!positions.active || session != positions.session
-					|| target != targetRevision || current != currentPage || total != totalPage) return;
-				callback = business.pagePresented;
-			}
-			if (callback) callback(session, target, current, total);
+			std::scoped_lock lock(stateMutex);
+			if (!positions.active || session != positions.session
+				|| !pageState.CanAcknowledge(current, total, target, epoch)) return;
+			// 纯值回执与模式变更串行完成，不能验完旧代次后跨过一次暂停再迟到转发。
+			if (business.pagePresented) business.pagePresented(session, target, current, total);
 		}
 
 	}
@@ -189,11 +186,9 @@ namespace Inkeys::UI::Ppt
 			positions.configuration = SnapshotLegacyConfiguration();
 			(void)SavedPptComPositions();
 			publicationRevision = 0;
-			targetRevision = 0;
+			pageState = {};
 			topmostRefresh = {};
 			topmostRefreshFailureLogged = false;
-			currentPage = -1;
-			totalPage = -1;
 		}
 		if (!Inkeys::UI::PageControl::Acquire())
 		{
@@ -284,14 +279,13 @@ namespace Inkeys::UI::Ppt
 		else if (logRecovery) LogTopmostRefreshState(true);
 	}
 
-	void PublishPageState(int current, int total, std::uint64_t target) noexcept
+	void PublishPageState(int current, int total, std::uint64_t target,
+		PageStateMode mode) noexcept
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
 		{
 			std::scoped_lock lock(stateMutex);
-			currentPage = current;
-			totalPage = total;
-			targetRevision = target;
+			pageState.Publish(current, total, target, mode);
 		}
 		PublishSnapshot();
 	}
@@ -302,6 +296,7 @@ namespace Inkeys::UI::Ppt
 		Inkeys::UI::PageControl::FlushPositionCommits();
 		std::string save;
 		bool changed = false;
+		bool refreshWindow = false;
 		{
 			std::scoped_lock lock(stateMutex);
 			if (session < positions.session) return;
@@ -316,6 +311,7 @@ namespace Inkeys::UI::Ppt
 				baseline.middlePairWidth = saved.middleX;
 				baseline.middlePairHeight = saved.middleY;
 				changed = positions.BeginSession(session, baseline);
+				refreshWindow = positions.active && positions.session == session;
 			}
 			else if (positions.active && positions.session == session)
 			{
@@ -327,13 +323,13 @@ namespace Inkeys::UI::Ppt
 			}
 			if (changed)
 			{
-				currentPage = totalPage = -1;
-				targetRevision = 0;
+				pageState = {};
 			}
 		}
 		DispatchSettings(std::move(save));
-		if (!changed) return;
-		PublishSnapshot();
+		if (!changed && !refreshWindow) return;
+		if (changed) PublishSnapshot();
+		// 同一 COM 场次后来取得窗口时只更新锚点，不重放进入/位置恢复。
 		Inkeys::UI::Bar::PublishPptSession(session, active, showWindow);
 	}
 
@@ -379,12 +375,6 @@ namespace Inkeys::UI::Ppt
 		}
 		DispatchSettings(std::move(save));
 		PublishSnapshot();
-	}
-
-	void QueueGlobalWheel(short delta) noexcept
-	{
-		if (initialized.load(std::memory_order_acquire))
-			Inkeys::UI::PageControl::QueuePptWheel(delta);
 	}
 
 	void SetDebugEnabled(bool enabled) noexcept

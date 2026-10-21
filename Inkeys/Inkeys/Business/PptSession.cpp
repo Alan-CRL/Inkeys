@@ -11,6 +11,27 @@
 
 namespace Inkeys::Business
 {
+	PptControlPage ResolvePptControlPage(const PptSessionSnapshot& state,
+		int rawPage, int rawTotal) noexcept
+	{
+		const auto& descriptor = state.descriptor;
+		if (!CanStartPptControlSession(state) || rawTotal <= 0 || rawTotal > 10000
+			|| descriptor.totalPage != static_cast<std::uint32_t>(rawTotal)
+			|| descriptor.status == Drawing::Draw3::PresentationDescriptorStatus::TransientBusy)
+			return {};
+		// 元数据失败可保留本轮页码，但不能把它提升成文稿/墨迹 ready。
+		const bool pageEvidence = state.pageStatus == PptPageStatus::Valid
+			|| (state.pageStatus == PptPageStatus::Unknown
+				&& descriptor.status == Drawing::Draw3::PresentationDescriptorStatus::Unavailable);
+		if (pageEvidence && rawPage > 0 && rawPage <= rawTotal
+			&& descriptor.currentPage == static_cast<std::uint32_t>(rawPage))
+			return { rawPage, rawTotal, true };
+		if (state.pageStatus == PptPageStatus::EndScreen && rawPage < 0
+			&& descriptor.currentPage == 0 && !descriptor.currentSlideId)
+			return { -1, rawTotal, true };
+		return {};
+	}
+
 	PptSessionParseResult ParsePptSessionSnapshot(std::wstring_view json) noexcept
 	{
 		PptSessionParseResult result;

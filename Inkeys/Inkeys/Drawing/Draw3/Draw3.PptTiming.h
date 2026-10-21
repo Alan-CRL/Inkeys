@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Draw3.DiagnosticOutput.h"
 #include <windows.h>
 #include <cstdint>
 #include <cstdio>
@@ -28,7 +29,6 @@ namespace Inkeys::Drawing::Draw3
 			static_cast<unsigned long long>(target),
 			static_cast<long long>(now.QuadPart),
 			static_cast<long long>(frequency.QuadPart));
-		std::fputs(message, stderr);
-		OutputDebugStringA(message);
+		DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, message, true);
 	}
 }

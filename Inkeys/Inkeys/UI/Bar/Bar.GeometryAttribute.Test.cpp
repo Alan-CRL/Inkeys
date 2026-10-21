@@ -176,18 +176,19 @@ namespace Inkeys::UI::Bar
 			const auto s = GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(p, s.revision);
 			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == p && StateModeTransitionRevision() > s.revision, "tool setter accepts current revision including repeated selection"); tick(90);
 		};
+		bool pointerAccepted = false;
 		auto pointer = [&](USHORT type, int item, bool held, bool contact = false)
 		{
 			const auto f = owner.geometryAttribute.PresentationSnapshot(); const auto r = f.items[item];
 			ExMessage message{}; message.message = type; message.lbutton = held;
 			message.x = static_cast<short>(std::lround(EraserRectCenterX(r) * f.zoom));
 			message.y = static_cast<short>(std::lround(EraserRectCenterY(r) * f.zoom));
-			return owner.geometryAttribute.Pointer(owner, message, false, contact);
+			return owner.geometryAttribute.Pointer(owner, message, false, contact, &pointerAccepted);
 		};
 		auto click = [&](int item, bool contact = false)
 		{
 			expect(pointer(WM_LBUTTONDOWN, item, true, contact), "presented down consumed"); tick(4);
-			expect(pointer(WM_LBUTTONUP, item, false, contact), "presented up consumed"); tick(90);
+			expect(pointer(WM_LBUTTONUP, item, false, contact), "presented up consumed"); expect(pointerAccepted, "accepted shape control reports button feedback including repeated selection"); tick(90);
 		};
 		expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 1200, 800)), "offscreen target setup");
 		owner.spec.SetFrameZoom(1); preset(PresetKind::Line);
@@ -252,7 +253,7 @@ namespace Inkeys::UI::Bar
 			for (bool contact : {false, true})
 			{
 				expect(pointer(WM_LBUTTONDOWN, item, true, contact), "disabled category consumes pointer down instead of canvas fallthrough"); tick(5);
-				expect(pointer(WM_LBUTTONUP, item, false, contact), "disabled category consumes pointer up instead of canvas fallthrough");
+				expect(pointer(WM_LBUTTONUP, item, false, contact), "disabled category consumes pointer up instead of canvas fallthrough"); expect(!pointerAccepted, "disabled category does not report accepted feedback");
 				pointer(WM_LBUTTONDBLCLK, item, true, contact); pointer(WM_LBUTTONUP, item, false, contact);
 				ExMessage lost{}; owner.geometryAttribute.Pointer(owner, lost, true, contact); tick(40);
 				expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "disabled mouse and contact actions preserve all business fields and revision");
@@ -283,14 +284,14 @@ namespace Inkeys::UI::Bar
 		pointer(WM_LBUTTONUP, 1, false); tick(90);
 		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Arrow && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, 1).pressScale.val == 1, "release commits once and rebounds");
 		pointer(WM_LBUTTONDOWN, 2, true); pointer(WM_MOUSEMOVE, 0, true); pointer(WM_MOUSEMOVE, 2, true); pointer(WM_LBUTTONUP, 2, false); tick(60);
-		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Arrow, "drag out remains cancelled after reenter");
+		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Arrow && !pointerAccepted, "drag out remains cancelled after reenter without accepted feedback");
 		pointer(WM_LBUTTONDOWN, 2, true);
 		{ const auto s = GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(PresetKind::Ellipse, s.revision); }
 		pointer(WM_LBUTTONUP, 2, false); tick(60);
-		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse, "stale press cannot overwrite newer tool revision");
+		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && !pointerAccepted, "stale press cannot overwrite newer tool revision or report accepted feedback");
 		pointer(WM_LBUTTONDOWN, 2, true);
 		ExMessage cancel{}; owner.geometryAttribute.Pointer(owner, cancel, true, true); pointer(WM_LBUTTONUP, 2, false, true); tick(60);
-		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse, "capture cancellation leaves tool unchanged");
+		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && !pointerAccepted, "capture cancellation leaves tool unchanged without accepted feedback");
 		for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].preset) { click(i, i % 2 != 0); expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == *catalog[i].preset, "every enabled category commits through normalized pointer path"); }
 		preset(PresetKind::RegularPolygon); // 全类别遍历现在以Pyramid结束，轮播和边数用例须显式选择原目标。
 		expect(!BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute), "selected polygon stops carousel");
@@ -422,6 +423,9 @@ namespace Inkeys::UI::Bar
 				static_cast<unsigned>(receipt.source.x + receipt.size.cx) <= size.width &&
 				static_cast<unsigned>(receipt.source.y + receipt.size.cy) <= size.height;
 			expect(cropValid, "actual ULW source crop stays within production bitmap");
+			if (!cropValid) std::cerr << "[GeometryCrop] source=" << receipt.source.x << ',' << receipt.source.y
+				<< " window=" << receipt.size.cx << ',' << receipt.size.cy << " bitmap=" << size.width << ',' << size.height
+				<< " commit=" << actualCommits << " captured=" << capturedCommit << " context=" << caseContext << std::endl;
 			if (!cropValid) return;
 			const D2D1_RECT_U crop{static_cast<UINT32>(receipt.source.x), static_cast<UINT32>(receipt.source.y),
 				static_cast<UINT32>(receipt.source.x + receipt.size.cx), static_cast<UINT32>(receipt.source.y + receipt.size.cy)};

@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -11,7 +12,10 @@
 #include <mutex>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.HapticRequest.h"
+#include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.MouseInput.h"
 
 export module Inkeys.Drawing.Draw3.window_control;
 
@@ -104,6 +108,7 @@ export namespace Inkeys::Drawing::Draw3
 		SetWhiteboardTheme,
 		WhiteboardPersistenceCompleted,
 		ShapeInteraction,
+		ShortcutFence,
 	};
 
 	struct CanvasCommand
@@ -117,6 +122,7 @@ export namespace Inkeys::Drawing::Draw3
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		std::shared_ptr<const Bridge::PresentationTarget> presentationTarget;
+		std::shared_ptr<const Shortcuts::Request> shortcut;
 		std::shared_ptr<const DesktopPersistenceCompletion>
 			desktopPersistenceCompletion;
 		std::shared_ptr<const PresentationPersistenceCompletion>
@@ -145,6 +151,9 @@ export namespace Inkeys::Drawing::Draw3
 		// Debug 下启用有界 RTS 初始化与回调诊断。
 		void SetRtsTraceEnabled(bool enabled) noexcept;
 #endif
+		// mode 启闭通过 HWND owner 同步确认；返回前旧鼠标 producer 已停止。
+		bool SetMouseCompatibilityEnabled(bool enabled) noexcept;
+		void CloseMouseInputAdmission() noexcept;
 		// 返回窗口句柄。
 		HWND Handle() const;
 		// 返回当前客户区尺寸。
@@ -163,6 +172,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool ConsumeCompositionChangedRequest();
 		// 消费一次合并的瞬态光标重绘请求。
 		bool ConsumeDrawingCursorRenderRequest();
+		// 供产品光标偏好变更发布一次重绘请求，不直接访问 HWND 或 GPU。
+		void RequestDrawingCursorRender() noexcept;
 		// 请求下一帧执行全画布呈现。
 		void RequestFullPresent();
 		// 关联非拥有的输入协调器，使窗口控制请求能唤醒空闲绘制线程。
@@ -205,6 +216,9 @@ export namespace Inkeys::Drawing::Draw3
 			const draw3::shapes::ShapeStyle& shapeStyle = {}) noexcept;
 		ProductVisualStyle ProductVisualStyleSnapshot() const noexcept;
 		void EnqueueCanvasCommand(CanvasCommand command);
+		// 单个预留终态槽不分配；占用时调用者保留 payload，消费后唤醒继续交付。
+		bool TryEnqueuePresentationCompletion(
+			const std::shared_ptr<const PresentationPersistenceCompletion>& completion) noexcept;
 		void RequestExit() noexcept;
 		// 配置基础工具的应用内瞬态光标外观；Shape 统一复用 Pen 外观。
 		bool ConfigureDrawingCursor(DrawingTool tool,
@@ -237,17 +251,27 @@ export namespace Inkeys::Drawing::Draw3
 		void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept override;
 		void ClearPenCursorSample() noexcept override;
 		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
-		bool ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint);
+		bool ConsumeHapticPointer(Haptics::CanvasPointerRequest& request);
 		bool ConsumeHapticPointerLeave();
+		std::uint64_t HapticPointerRevision() const noexcept { return hapticPointers_.Revision(); }
+		void ResetHapticPointer() noexcept { hapticPointers_.Reset(); }
+		bool BeginHapticContact(uint32_t cursor, uint32_t contact, uint64_t generation, bool trusted, bool anotherPen, const char** reason, uint32_t context, uint64_t sourceGeneration) noexcept
+		{ return hapticPointers_.Begin(cursor, contact, generation, trusted, anotherPen, reason, context, sourceGeneration); }
+		bool EndHapticContact(uint32_t contact, uint64_t generation, bool cancelled, uint32_t context) noexcept
+		{ return hapticPointers_.End(contact, generation, cancelled, context); }
+		bool HapticSurfaceVisible() const noexcept { return hapticSurfaceVisible_.load(std::memory_order_acquire); }
 		// 返回主循环是否应该退出。
 		bool ExitRequested() const;
 
 	private:
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+		void CancelMouseInput(HWND window, bool captureLost = false) noexcept;
+		void ReleaseMouseCapture(HWND window) noexcept;
+		void HandleCompatibilityMouse(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
 		void QueueCanvasCommand(CanvasCommand command);
-		void RequestDrawingCursorRender() noexcept;
 		void QueueSystemCursorRefresh() noexcept;
+		void RestoreTabletInputProperty(HWND window) noexcept;
 		void SetDrawingCursorOwner(DrawingCursorPointerAuthority owner) noexcept;
 		void SetTouchCursorSuppressed(bool suppressed) noexcept;
 		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
@@ -259,7 +283,7 @@ export namespace Inkeys::Drawing::Draw3
 			bool penSampleValid, bool touchBarrierKnown,
 			uint32_t mouseMessageTick, uint32_t touchBarrierTick,
 			INPUT_MESSAGE_DEVICE_TYPE inputSource) const noexcept;
-		void ApplyWindowCursor(const char* trigger) noexcept;
+		void ApplyWindowCursor(const char* trigger, bool forceDiagnostic = false) noexcept;
 		void RecordMouseCursorDiagnosticState(uint64_t eventId, const char* phase) const noexcept;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		void TraceCursorState(const char* eventName, uint32_t pointerId,
@@ -272,12 +296,25 @@ export namespace Inkeys::Drawing::Draw3
 			bool accepted, const char* reason) noexcept;
 #endif
 
+		Detail::MouseInputState<ContactInputCoordinator, ContactSnapshot,
+			InputDeviceType, ContactPhase> mouseInput_;
+		std::atomic_bool mouseCompatibilitySelected_ = false;
+		std::atomic_bool mouseOwnerStopped_ = true;
+		std::atomic_bool mouseStartAllowed_ = false;
+		HANDLE mouseOwnerControlEvents_[2] = {};
+		std::atomic_bool mouseOwnerControlSucceeded_[2] = {};
+		unsigned mouseDispatchDepth_ = 0; // 仅 owner；直接停止不能等待自己的外层输入回调。
+		DWORD mouseStartTick_ = 0; // 仅 owner 读写，拒绝模式就绪前已经排队的 Down。
 		std::atomic<HWND> window_ = nullptr;
 		// 外部 HWND 的消息来自 Window Service 线程，绘制线程也会读取该状态。
 		std::atomic<bool> externalWindow_ = false;
+		std::atomic<HANDLE> previousTabletInputProperty_ = nullptr;
+		std::atomic<bool> tabletInputPropertyInstalled_ = false;
 		WindowSize size_ = {};
 		std::mutex canvasCommandMutex_;
 		std::deque<CanvasCommand> canvasCommands_;
+		std::shared_ptr<const PresentationPersistenceCompletion> presentationCompletion_;
+		std::size_t commandsBeforePresentationCompletion_ = 0;
 		std::atomic<bool> resizeRequested_ = false;
 		std::atomic<bool> fullPresentRequested_ = false;
 		std::atomic<bool> compositionChangedRequested_ = false;
@@ -286,10 +323,19 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> gpuTransparentComposition_ = false;
 		std::atomic<int> pendingResizeWidth_ = 0;
 		std::atomic<int> pendingResizeHeight_ = 0;
-		std::atomic<uint32_t> pendingHapticPointerId_ = 0;
-		std::atomic<bool> pendingHapticPointerEraser_ = false;
-		std::atomic<bool> hapticPointerIdRequested_ = false;
-		std::atomic<bool> hapticPointerLeaveRequested_ = false;
+		void RequestHapticPointerLeave() noexcept;
+		Haptics::CanvasPointerMailbox hapticPointers_;
+		// 仅窗口线程在诊断启用时更新；重复拒绝的 Update 不逐帧输出。
+		struct HapticIngressDiagnostic
+		{
+			bool known = false;
+			uint32_t pointerId = 0, state = 0;
+			uint64_t revision = 0;
+			const char* reason = "none";
+		};
+		std::array<HapticIngressDiagnostic, 8> hapticIngressDiagnostics_{};
+		uint64_t hapticIngressUpdatesOmitted_ = 0;
+		std::atomic_bool hapticSurfaceVisible_ = false;
 		std::atomic<bool> touchPanActive_ = false;
 		std::atomic<bool> realMouseTakeoverDuringTouchPan_ = false;
 		std::atomic<bool> penContactSuppressedForTouchPan_ = false;
@@ -351,11 +397,11 @@ export namespace Inkeys::Drawing::Draw3
 		HCURSOR defaultCursor_ = nullptr;
 		// 仅窗口线程使用，避免相同系统光标决策反复刷控制台。
 		uint64_t lastCursorSystemDiagnosticKey_ = 0;
+		uint64_t lastCursorSystemDiagnosticTick_ = 0;
+		HWND lastCursorSystemDiagnosticHit_ = nullptr;
+		bool lastCursorSystemDiagnosticApplied_ = false;
 		bool cursorSystemDiagnosticKnown_ = false;
-		uint32_t lastHapticPenInfoPointerId_ = 0;
 		std::atomic<uint32_t> suppressedPenPointerId_ = 0;
-		bool lastHapticPenInfoKnown_ = false;
-		bool lastHapticPenInfoEraser_ = false;
 		bool trackingMouseLeave_ = false;
 		std::atomic<uint64_t> mouseCanvasExitRevision_ = 0;
 	};

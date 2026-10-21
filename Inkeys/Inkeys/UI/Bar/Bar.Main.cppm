@@ -14,6 +14,7 @@
 #include "Bar.BottomDock.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "Bar.InteractionWorker.h"
+#include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
 #include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
@@ -94,7 +95,7 @@ public:
 		std::optional<bool> eraserSelected = std::nullopt);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
-	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
 	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
@@ -107,7 +108,7 @@ public:
 	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
 	void Initialize();
-	void Execute(BarUISetClass& owner, int item);
+	bool Execute(BarUISetClass& owner, int item);
 	void DrawPreview(BarUIRendering& renderer, ID2D1DeviceContext* context, size_t index);
 	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::EraserAttributeRect rect, double scale = 1.0);
 	mutable std::mutex presentationMutex_;
@@ -153,7 +154,7 @@ public:
 		bool dragPlacementLocked = false);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
-	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
 	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
@@ -165,7 +166,7 @@ public:
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
 	void Initialize();
-	void Execute(BarUISetClass& owner, int item);
+	bool Execute(BarUISetClass& owner, int item);
 	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::RecallAttributeRect rect, double scale = 1.0);
 	mutable std::mutex presentationMutex_;
 	Inkeys::UI::Bar::RecallAttributeLayout layout_;
@@ -431,7 +432,7 @@ public:
 		const BarUiTimelineClass* parentTimeline = nullptr, bool dragPlacementLocked = false);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
-	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	bool ResetPointerFeedback();
 	void Close(BarUISetClass& owner);
@@ -447,7 +448,7 @@ public:
 private:
 	friend class BarGeometryAttributeTestAccess;
 	void Initialize();
-	void Execute(BarUISetClass& owner, int item, std::uint64_t revision);
+	void Execute(BarUISetClass& owner, int item, std::uint64_t revision, bool* accepted = nullptr);
 	void UpdateCarousel(bool enabled);
 	mutable std::mutex presentationMutex_, carouselMutex_;
 	Inkeys::UI::Bar::GeometryAttributePresentation frame_, presented_;
@@ -669,6 +670,9 @@ struct BarPendingDisplaySnapshot
 	RECT workArea{ 0, 0, 1, 1 };
 	UINT dpi = USER_DEFAULT_SCREEN_DPI;
 	unsigned long long serial = 0;
+	double uiBaseScale = 1.0;
+	double desktopDockLine = 1.0;
+	bool protectBottomEdge = false;
 };
 
 struct BarBottomDockPresentedSnapshot
@@ -693,6 +697,8 @@ struct BarBottomDockPresentedSnapshot
 		RECT workArea{ 0, 0, 1, 1 };
 		UINT dpi = USER_DEFAULT_SCREEN_DPI;
 		unsigned long long displaySerial = 0;
+	double desktopDockLine = 1.0;
+	bool protectBottomEdge = false;
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
@@ -718,6 +724,8 @@ public:
 	void StopRendering();
 	// 鼠标交互
 	void Interact();
+	// 仅交互 owner 调用，顶层与嵌套等待共享有限批量的 Hook/策略消费。
+	void PollGlobalMouseInput();
 	// 仅合并已经判定为展开/收起的动作，不拦截状态切换和原始输入。
 	bool TryBeginToggle(Inkeys::UI::Bar::BarToggleChannel channel)
 	{
@@ -846,7 +854,11 @@ public:
 					pendingWorkAreaRight.load(memory_order_relaxed),
 					pendingWorkAreaBottom.load(memory_order_relaxed) },
 				pendingDisplayDpi.load(memory_order_relaxed),
-				serialBefore };
+				serialBefore,
+				pendingDisplayUiBaseScale.load(memory_order_relaxed),
+				pendingDesktopDockLine.load(memory_order_relaxed),
+				pendingProtectBottomEdge.load(memory_order_relaxed) };
+			std::atomic_thread_fence(memory_order_acquire);
 			if (pendingDisplaySerial.load(memory_order_acquire) == serialBefore)
 				return snapshot;
 		}
@@ -939,6 +951,8 @@ public:
 				snapshot.dpi = bottomDockPresentedDisplayDpi.load(memory_order_relaxed);
 				snapshot.displaySerial =
 				bottomDockPresentedDisplaySerial.load(memory_order_relaxed);
+			snapshot.desktopDockLine = bottomDockPresentedDesktopDockLine.load(memory_order_relaxed);
+			snapshot.protectBottomEdge = bottomDockPresentedProtectBottomEdge.load(memory_order_relaxed);
 			snapshot.directTranslation = POINT{
 				bottomDockPresentedDirectTranslationX.load(memory_order_relaxed),
 				bottomDockPresentedDirectTranslationY.load(memory_order_relaxed) };
@@ -1196,6 +1210,7 @@ protected:
 	void ShutdownWindowInput(HWND hWnd);
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
+	bool IsAutoCollapsePointerHit(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 	Inkeys::UI::Bar::BarToggleClickCoalescer toggleClickCoalescer;
 
@@ -1239,6 +1254,9 @@ protected:
 	atomic<LONG> pendingWorkAreaRight = 1;
 	atomic<LONG> pendingWorkAreaBottom = 1;
 	atomic<UINT> pendingDisplayDpi = USER_DEFAULT_SCREEN_DPI;
+	atomic<double> pendingDisplayUiBaseScale = 1.0;
+	atomic<double> pendingDesktopDockLine = 1.0;
+	atomic<bool> pendingProtectBottomEdge = false;
 	atomic<LONG> presentedMonitorOriginX = 0;
 	atomic<LONG> presentedMonitorOriginY = 0;
 	// 交互线程发布目标，渲染线程只回写当前视觉偏移与恢复完成状态。
@@ -1292,6 +1310,8 @@ protected:
 		atomic<LONG> bottomDockPresentedWorkAreaBottom = 1;
 		atomic<UINT> bottomDockPresentedDisplayDpi = USER_DEFAULT_SCREEN_DPI;
 		atomic<unsigned long long> bottomDockPresentedDisplaySerial = 0;
+	atomic<double> bottomDockPresentedDesktopDockLine = 1.0;
+	atomic<bool> bottomDockPresentedProtectBottomEdge = false;
 	atomic<LONG> bottomDockPresentedDirectTranslationX = 0;
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
@@ -1342,6 +1362,7 @@ namespace Inkeys::UI::Bar
 	export int RunGeometryAttributeOffscreenTest();
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
+	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =
@@ -1385,6 +1406,9 @@ namespace Inkeys::UI::Bar
 	export bool HideWhiteboardSnapIndicator() noexcept;
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
+	export void NotifyCanvasStrokeAccepted(
+		const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& notice) noexcept;
+	export std::uint64_t AutoCollapseSceneRevision() noexcept;
 	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
 
 	bool InitializeWindow(BarUISetClass& barUISet);

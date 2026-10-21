@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <windows.h>
 #include <json/json.h>
 
@@ -267,7 +268,9 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<unsigned long long>(hash));
 				handle_ = CreateMutexW(nullptr, FALSE, name);
 				if (!handle_) return false;
-				const DWORD wait = WaitForSingleObject(handle_, INFINITE);
+				// 另一存活实例长期持锁时返回失败，不能让保存/恢复队列无限等待。
+				constexpr DWORD kIndexMutexWaitMilliseconds = 1000;
+				const DWORD wait = WaitForSingleObject(handle_, kIndexMutexWaitMilliseconds);
 				acquired_ = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
 				if (!acquired_)
 				{
@@ -508,7 +511,7 @@ namespace Inkeys::Drawing::Draw3
 				int readState = -1, int backupState = -1) noexcept
 			{
 				if (faults.logIndexCommitDiagnostics)
-					std::fprintf(stderr, "[Draw3.AutoSave.TestIo] stage=%u system_error=%lu read_state=%d backup_state=%d\n",
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave.TestIo] stage=%u system_error=%lu read_state=%d backup_state=%d\n",
 						stage, error, readState, backupState);
 			};
 			const auto signalProbe = [](void* event) noexcept
@@ -803,7 +806,7 @@ namespace Inkeys::Drawing::Draw3
 					if (index == relativeFileName.size()) fileName[index] = '\0';
 					else strcpy_s(fileName, sizeof(fileName), "<non-ascii>");
 				}
-				std::fprintf(stderr,
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 					"[Draw3.AutoSave] action=commit request=%s result=failed "
 					"stage=%s path=desktop/%s/%s\n",
 					request.saveRequestId.c_str(), stage,
@@ -1186,7 +1189,7 @@ namespace Inkeys::Drawing::Draw3
 					continue;
 				}
 				if (!rootReady)
-					std::fprintf(stderr,
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 						"[Draw3.AutoSave] action=commit request=%s result=failed "
 						"stage=root-copy\n", record->request.saveRequestId.c_str());
 				std::wstring committedPath;
@@ -1213,7 +1216,7 @@ namespace Inkeys::Drawing::Draw3
 					completedSnapshot = std::move(record->request.snapshot);
 					record->request.estimatedSnapshotBytes = 0;
 				}
-				std::fprintf(committed ? stdout : stderr,
+				DiagnosticOutput::Printf(committed ? DiagnosticOutput::Stream::Output : DiagnosticOutput::Stream::Error,
 					"[Draw3.AutoSave] action=commit request=%s trigger=%s result=%s\n",
 					record->request.saveRequestId.c_str(), TriggerName(record->request.trigger),
 					committed ? "committed" : "failed");

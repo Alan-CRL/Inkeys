@@ -43,7 +43,7 @@ namespace Inkeys::Drawing::Draw3
 				device.GetAddressOf(), nullptr, context.GetAddressOf())), "no-HWND WARP device")) return 1;
 			InkRenderer renderer;
 			if (!check(renderer.Init(device.Get(), context.Get(), nullptr, 128, 128,
-				D3D_DRIVER_TYPE_WARP), "production renderer + embedded six shader resources")) return 1;
+				D3D_DRIVER_TYPE_WARP, false), "production renderer + embedded six shader resources")) return 1;
 			D3D11_TEXTURE2D_DESC description = {};
 			renderer.layerL0.addTexture->GetDesc(&description);
 			description.Usage = D3D11_USAGE_STAGING;

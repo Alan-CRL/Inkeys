@@ -705,7 +705,7 @@ bool BarGeometryAttributePanel::ResetPointerFeedback()
 	const bool changed = hovered_ >= 0 || pressed_ >= 0 || scrollDragging_;
 	hovered_ = -1; pressed_ = -1; scrollDragging_ = false; pressCancelled_ = true; return changed;
 }
-void BarGeometryAttributePanel::Execute(BarUISetClass& owner, int item, std::uint64_t revision)
+void BarGeometryAttributePanel::Execute(BarUISetClass& owner, int item, std::uint64_t revision, bool* accepted)
 {
 	if (item < 0 || item >= GeometryControlCount || StateModeTransitionRevision() != revision) return;
 	if (item < CategoryCount)
@@ -720,10 +720,13 @@ void BarGeometryAttributePanel::Execute(BarUISetClass& owner, int item, std::uin
 	else if (item >= PatternBegin && item < ThicknessBegin) SetShapeLinePatternIfRevision(static_cast<LinePattern>(item - PatternBegin), revision);
 	else if (item >= ThicknessBegin && item < ThicknessBegin + ThicknessCount) ApplyBarThicknessPresetIfRevision(item - ThicknessBegin, revision);
 	else if (item == CloseButton) Close(owner);
+	// 仅有效动作报告接受；重复选择也推进 revision，不能把面板消费消息当作按钮成功。
+	if (accepted) *accepted = item == CloseButton || StateModeTransitionRevision() == revision + 1;
 	owner.UpdateRendering();
 }
-bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled, bool contactPointer)
+bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled, bool contactPointer, bool* accepted)
 {
+	if (accepted) *accepted = false;
 	if (cancelled) { const bool owned = ResetPointerFeedback(); if (owned) owner.UpdateRendering(false); return owned; }
 	const auto f = PresentationSnapshot(); if (!f.visible && pressed_ < 0 && !scrollDragging_) return false;
 	const double x = message.x / f.zoom, y = message.y / f.zoom;
@@ -793,7 +796,7 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 	if (message.message == WM_LBUTTONUP)
 	{
 		const int pressed = pressed_; pressed_ = -1;
-		if (pressed >= 0 && hit == pressed && !pressCancelled_ && owner.barState.geometryAttribute) Execute(owner, pressed, pressRevision_);
+		if (pressed >= 0 && hit == pressed && !pressCancelled_ && owner.barState.geometryAttribute) Execute(owner, pressed, pressRevision_, accepted);
 		// 接触输入和鼠标都等待新的 Move 恢复悬停，释放回弹不被 hover 抢占。
 		hovered_ = -1; if (contactPointer) focused_ = -1;
 		if (pressed >= 0) owner.UpdateRendering(false); return inside || pressed >= 0;

@@ -58,12 +58,22 @@ export namespace Inkeys::UI::Bar
 		BarSurfaceButtonId id = 0;
 		RECT localPixels{};
 		bool visible = false, enabled = false, interactive = false;
+		const void* identity = nullptr;
+		unsigned drawOrder = 0;
+		double contentOpacity = 0;
 	};
 	struct BarPageSurfaceLayout
 	{
 		RECT logicalBounds{}, presentationBounds{};
 		float dpiScale = 1;
 		std::vector<BarSurfaceButtonLayout> buttons;
+	};
+	struct BarPageSurfaceGeometry
+	{
+		BarSurfaceDipRect bodyBounds{};
+		double opacity = 1, fillOpacity = 1;
+		std::uint64_t layoutRevision = 0;
+		bool layoutAnimating = false;
 	};
 	struct BarSurfacePointerResult
 	{
@@ -122,6 +132,7 @@ export namespace Inkeys::UI::Bar
 		[[nodiscard]] RECT PendingDamage() const noexcept;
 		[[nodiscard]] RECT ConsumeDamage() noexcept;
 		[[nodiscard]] BarPageSurfaceLayout Layout() const;
+		[[nodiscard]] BarPageSurfaceGeometry Geometry() const noexcept;
 		[[nodiscard]] RECT LogicalBounds() const noexcept;
 		[[nodiscard]] RECT PresentationBounds() const noexcept;
 		[[nodiscard]] LONG PresentationOutsetPixels() const noexcept;

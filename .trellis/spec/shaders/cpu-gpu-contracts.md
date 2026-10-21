@@ -16,7 +16,7 @@ float2 position + float radius + float time = 16 bytes
 
 C++ 用 `static_assert(sizeof(InkPoint) == 16)`，D3D buffer 的 `StructureByteStride` 使用 `sizeof(InkPoint)`，HLSL 在 `t0` 读取。
 
-`t0 InkData` 是绑定为 SRV 的动态结构化缓冲区。`D3D11_MAP_WRITE_NO_OVERWRITE` 对这种缓冲区是 D3D11.1 可选设备能力，不能仅凭 FL11.0 或 Platform Update 假定可用；renderer 初始化时查询 `D3D11_FEATURE_D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，查询失败按不支持处理。支持时保持现有环形写入/越界 DISCARD；不支持时每批 `WRITE_DISCARD` 并把 `m_bufferHead` 与 VS `globalBufferOffset` 同步置零，普通笔和 Shape 都适用。荧光笔及 Laser 的现有 DISCARD 路径不因该门禁改动。Win7 SP1+仅 KB2670838 的 Hardware FL11.0/WARP 两格仍需真机验证，不得以 Win11 WARP 测试替代。
+`t0 InkData` 保持结构化 SRV 布局。默认动态上传；当实际 Hardware adapter VendorId=0x1D17 且启动快照 EnableZhaoxinCompatibility=true 时，ink/highlighter 大资源为 DEFAULT+CPUAccessFlags0，逐批 offset0、按实际有效字节 UpdateSubresource，VS globalBufferOffset=0。非兆芯、开关关闭和 WARP 保留动态上传。`D3D11_MAP_WRITE_NO_OVERWRITE` 对这种缓冲区是 D3D11.1 可选设备能力，不能仅凭 FL11.0 或 Platform Update 假定可用；renderer 初始化时查询 `D3D11_FEATURE_D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，查询失败按不支持处理。支持时保持现有环形写入/越界 DISCARD；不支持时每批 `WRITE_DISCARD` 并把 `m_bufferHead` 与 VS `globalBufferOffset` 同步置零，普通笔和 Shape 都适用。荧光笔及 Laser 的现有 DISCARD 路径不因该门禁改动。Win7 SP1+仅 KB2670838 的 Hardware FL11.0/WARP 两格仍需真机验证，不得以 Win11 WARP 测试替代。
 
 ### ShapePrimitive
 
@@ -443,3 +443,10 @@ if (snapshot.hasActive || snapshot.expiredAny || !requests.empty()) {
 if (snapshot.hasActive || !requests.empty()) particleSystem.Draw();
 // Step 内只绑定一次 UAV：update -> emit(request 0..N) -> 统一解绑。
 ```
+
+## 合成矩形独立上传（2026-10-15）
+
+- ApplyOperatorLayers 使用专用256B DYNAMIC structured buffer/SRV，stride16，WRITE_DISCARD仅写两个InkPoint共32B，合成时绑定原t0，offset0；不更改shader或混合公式。
+- 合成不得更新inkDataBuffer或重置m_bufferHead。所有成功的动态ink上传（含Laser/Cursor DISCARD）统一维护已用范围末端；DrawStroke/Shape必须先保存起始offset再上传，避免把更新后的head作为VS起始offset或重复推进。
+- DEFAULT UpdateSubresource 返回void，更新后通过设备状态检查识别失败；不将其伪装成Map结果，设备失效沿用现有设备/呈现失败链。
+- RunRendererUploadValidation 是明确无HWND/swapchain的产品上传/合成离屏读回验证；三种动态DISCARD/动态追加/DEFAULT结果、非同步update/Draw、工具交错与跨容量批次都应核验。它不能代替实机RTS/Present视觉验证。
