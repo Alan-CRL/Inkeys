@@ -12,6 +12,7 @@
 #include "Inkeys/Window/Window.Legacy.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -19,6 +20,7 @@
 #include <cstdint>
 #include <mutex>
 #include <limits>
+#include <optional>
 #include <thread>
 
 import Inkeys.Other.Config;
@@ -38,6 +40,8 @@ namespace
 	using Inkeys::Drawing::Draw3::Bridge::Workspace;
 	std::mutex draw3PresentationMutex;
 	std::mutex stateModeTransitionMutex;
+	Workspace stateModeWorkspace = Workspace::Desktop;
+	std::array<std::optional<StateModeClass>, 3> workspaceStateModes;
 	std::atomic_uint64_t stateModeTransitionRevision = 0;
 	std::atomic_uint64_t draw3ExitSelectionModeRevision = 0;
 	std::mutex eraserPreferencesMutex;
@@ -923,6 +927,57 @@ namespace
         stateMode.Pen.Brush1.widthPreset = static_cast<float>(PresetDip(Preset::Medium, Family::Brush, stateMode.penWidthContext));
         stateMode.Pen.Highlighter1.widthPreset = static_cast<float>(PresetDip(Preset::Medium, Family::Highlighter, stateMode.penWidthContext));
     }
+	bool SwitchWorkspaceStateMode(Workspace workspace, bool primaryOnly = false)
+	{
+		{
+			std::scoped_lock lock(stateModeTransitionMutex);
+			// PPT 后台场次变化不能改写正在进入、使用或退出的白板工具。
+			if ((primaryOnly && WhiteboardTransactionActive()) || stateModeWorkspace == workspace)
+				return false;
+			workspaceStateModes[static_cast<std::size_t>(stateModeWorkspace)] = stateMode;
+			auto& saved = workspaceStateModes[static_cast<std::size_t>(workspace)];
+			if (!saved)
+			{
+				// 新工作区沿用宽色偏好，工具身份独立从默认选择/拖拽态开始。
+				saved = stateMode;
+				saved->StateModeSelect = StateModeSelectEnum::IdtSelection;
+				saved->StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
+				saved->StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+				saved->lastAnnotationMode = StateModeSelectEnum::IdtPen;
+				saved->laserActive = false;
+				saved->Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
+				saved->Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
+			}
+			const bool exitSelectionPending = ExitSelectionHandoffPending();
+			const auto widthContext = stateMode.penWidthContext;
+			stateMode = *saved;
+			// 合成式设置生效后，旧工作区记忆中的独立穿透态也要回落选择。
+			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough &&
+				GetSelectAndClickThroughMode() == 0)
+			{
+				stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+				stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
+				stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+			}
+			// 显示器和设备属于当前环境，不能随旧工具快照退回旧 DPI。
+			stateMode.penWidthContext = widthContext;
+			ResolveWidthSlotsLocked();
+			stateModeWorkspace = workspace;
+			if (IsComputerInteractionMode(stateMode.StateModeSelect) && state == 1.1) state = 1;
+			BackgroundColorMode = IsComputerInteractionMode(stateMode.StateModeSelect) ||
+				stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? 0 :
+				(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
+			const auto revision = stateModeTransitionRevision.load(std::memory_order_relaxed) + 1;
+			if (exitSelectionPending && workspace == Workspace::Desktop &&
+				IsComputerInteractionMode(stateMode.StateModeSelect))
+				draw3ExitSelectionModeRevision.store(revision, std::memory_order_release);
+			stateModeTransitionRevision.store(revision, std::memory_order_release);
+		}
+		SyncDraw3State();
+		// 恢复工具后必须走主栏 update，重新计算高亮、图标和粗细文字。
+		Inkeys::UI::Bar::RefreshToolState();
+		return true;
+	}
     bool SetPenWidthSelectionImpl(Selection selection, bool setMemory,
         const std::uint64_t* expectedRevision)
     {
@@ -958,6 +1013,11 @@ namespace
         PublishDraw3State();
         return true;
     }
+}
+
+void SyncPrimaryWorkspaceStateMode()
+{
+	(void)SwitchWorkspaceStateMode(CurrentPrimaryWorkspace(), true);
 }
 
 bool SetPenWidth(double targetWidth, bool setMemory)
@@ -1414,7 +1474,8 @@ bool ChangeStateModeToPptAnnotation(PptAnnotationTool tool, std::uint64_t expect
 		tool != PptAnnotationTool::Highlighter) return false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
-		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision)
+		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision ||
+			WhiteboardTransactionActive() || stateModeWorkspace == Workspace::Whiteboard)
 			return false;
 		// PPT 接管的笔型和模式在同一次修订中发布，Draw3 不会读到旧工具。
 		stateMode.laserActive = tool == PptAnnotationTool::Laser;
@@ -1591,6 +1652,69 @@ int RunStateModeProductionTest() noexcept
 			RequestWhiteboardActive(false);
 			require(!CompleteWhiteboardReturnFocus(queue), "whiteboard-reentry-cancels-old-return");
 		}
+
+		stage = "workspace-tool-isolation";
+		ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
+		require(SetPenWidth(7.0f, false) && SetPenColor(RGB(17, 31, 47), false), "desktop-tool-memory");
+		const auto desktopTool = GetStateModeVersionedSnapshot();
+		require(SwitchWorkspaceStateMode(Workspace::Whiteboard) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection &&
+			GetStateModeSnapshot().Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen,
+			"first-whiteboard-does-not-inherit-desktop-tool");
+		require(!ChangeStateModeToPptAnnotation(PptAnnotationTool::Laser, desktopTool.revision) &&
+			!ChangeStateModeToPptAnnotation(PptAnnotationTool::Laser, StateModeTransitionRevision()) &&
+			!SetPenWidthIfRevision(30.0, desktopTool.revision, false), "whiteboard-rejects-old-tool-and-ppt");
+		ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+		require(SetPenWidth(18.0f, false) && SetPenColor(RGB(61, 79, 97), false), "whiteboard-tool-memory");
+		const auto whiteboardTool = GetStateModeSnapshot();
+		require(SwitchWorkspaceStateMode(Workspace::Desktop) &&
+			sameState(desktopTool.state, GetStateModeSnapshot()), "whiteboard-restores-desktop-tool");
+		require(SwitchWorkspaceStateMode(Workspace::Presentation) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
+			"first-ppt-has-independent-tool");
+		ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+		require(SetPenWidth(6.0f, false) && SetPenColor(RGB(113, 131, 149), false), "ppt-tool-memory");
+		const auto presentationTool = GetStateModeSnapshot();
+		for (int index = 0; index < 16; ++index)
+		{
+			require(SwitchWorkspaceStateMode(Workspace::Whiteboard) &&
+				sameState(whiteboardTool, GetStateModeSnapshot()), "rapid-reentry-restores-whiteboard");
+			const auto revision = StateModeTransitionRevision();
+			require(!SwitchWorkspaceStateMode(Workspace::Whiteboard) &&
+				StateModeTransitionRevision() == revision, "same-workspace-does-not-resnapshot");
+			require(SwitchWorkspaceStateMode(Workspace::Presentation) &&
+				sameState(presentationTool, GetStateModeSnapshot()), "whiteboard-restores-ppt-tool");
+		}
+		require(SwitchWorkspaceStateMode(Workspace::Whiteboard), "whiteboard-before-background-ppt-end");
+		whiteboardPhase.store(WhiteboardPhase::Active);
+		SyncPrimaryWorkspaceStateMode();
+		require(sameState(whiteboardTool, GetStateModeSnapshot()), "background-ppt-end-preserves-whiteboard-tool");
+		whiteboardPhase.store(WhiteboardPhase::Exiting);
+		require(SwitchWorkspaceStateMode(Workspace::Desktop) &&
+			sameState(desktopTool.state, GetStateModeSnapshot()), "ppt-ended-whiteboard-returns-desktop-tool");
+		whiteboardPhase.store(WhiteboardPhase::Inactive);
+		const auto cancelledEntry = GetStateModeVersionedSnapshot();
+		RequestWhiteboardActive(true);
+		SyncPrimaryWorkspaceStateMode();
+		RequestWhiteboardActive(false);
+		require(sameState(cancelledEntry.state, GetStateModeSnapshot()) &&
+			StateModeTransitionRevision() == cancelledEntry.revision,
+			"cancel-before-whiteboard-entry-preserves-tool");
+		// 旧快照只恢复工具偏好，跨屏/设备上下文继续使用当前值。
+		auto changedWidthContext = GetPenWidthContext();
+		changedWidthContext.effectiveDpi = changedWidthContext.effectiveDpi == 144.0 ? 192.0 : 144.0;
+		require(ApplyPenWidthContext(changedWidthContext) &&
+			SwitchWorkspaceStateMode(Workspace::Whiteboard) &&
+			Inkeys::Business::PenWidth::EquivalentContext(GetPenWidthContext(), changedWidthContext),
+			"whiteboard-restore-keeps-current-display");
+		require(SwitchWorkspaceStateMode(Workspace::Desktop) &&
+			Inkeys::Business::PenWidth::EquivalentContext(GetPenWidthContext(), changedWidthContext) &&
+			GetPenWidth() == 7.0f, "desktop-restore-keeps-width-selection-and-current-display");
+		ChangeStateModeToSelection();
+		require(SwitchWorkspaceStateMode(Workspace::Presentation) &&
+			ChangeStateModeToSelectionIfRevision(StateModeTransitionRevision()) &&
+			SwitchWorkspaceStateMode(Workspace::Desktop) && ExitSelectionHandoffPending(),
+			"ppt-exit-keeps-selection-surface-handoff");
 
 		stage = "cross-entry-equivalence";
 		ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
@@ -1931,7 +2055,7 @@ int RunStateModeProductionTest() noexcept
 			"empty-selection-does-not-publish-clear");
 		require(SetSelectAndClickThroughMode(0), "restore-default-mode");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
-		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough toggle/freezing, shortcut roundtrip, clear transaction\n", stderr);
+		std::fputs("[StateModeProduction] PASS: workspace tool isolation, cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough toggle/freezing, shortcut roundtrip, clear transaction\n", stderr);
 		return 0;
 	}
 	catch (const char* check)
@@ -2000,6 +2124,7 @@ void StateMonitoring()
 				Inkeys::Window::WindowRole::Drawpad, true);
 			Inkeys::UI::Freeze::SetWhiteboardActive(true);
 			FreezePPT = false;
+			(void)SwitchWorkspaceStateMode(Workspace::Whiteboard);
 			Inkeys::Drawing::Draw3::PublishProductWorkspace(
 				Workspace::Whiteboard);
 			continue;
@@ -2018,8 +2143,10 @@ void StateMonitoring()
 					static_cast<int>(snapshot.pageCount), true);
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
 					std::memory_order_release);
+				const auto primaryWorkspace = CurrentPrimaryWorkspace();
+				(void)SwitchWorkspaceStateMode(primaryWorkspace);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					CurrentPrimaryWorkspace());
+					primaryWorkspace);
 				continue;
 			}
 			if (!Draw3WorkspaceReady(snapshot, Workspace::Whiteboard)) continue;
@@ -2050,8 +2177,10 @@ void StateMonitoring()
 				(void)service.SetOverlayFullscreen(false);
 				(void)service.LeaveWhiteboardWindowMode();
 				(void)service.SetOverlayTopmost(true);
+				const auto primaryWorkspace = CurrentPrimaryWorkspace();
+				(void)SwitchWorkspaceStateMode(primaryWorkspace);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					CurrentPrimaryWorkspace());
+					primaryWorkspace);
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
 					std::memory_order_release);
 				continue;
@@ -2080,8 +2209,10 @@ void StateMonitoring()
 				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
 					std::memory_order_release);
+				const auto primaryWorkspace = CurrentPrimaryWorkspace();
+				(void)SwitchWorkspaceStateMode(primaryWorkspace);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					CurrentPrimaryWorkspace());
+					primaryWorkspace);
 				continue;
 			}
 
@@ -2146,6 +2277,7 @@ void StateMonitoring()
 				(void)service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, true);
 				Inkeys::UI::Freeze::SetWhiteboardActive(true);
+				(void)SwitchWorkspaceStateMode(Workspace::Whiteboard);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
 					Workspace::Whiteboard);
 				whiteboardPhase.store(WhiteboardPhase::Entering,
@@ -2154,6 +2286,9 @@ void StateMonitoring()
 			}
 			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
 			const Workspace primaryWorkspace = CurrentPrimaryWorkspace();
+			(void)SwitchWorkspaceStateMode(primaryWorkspace);
+			// 离场等待期间 PPT 可能结束或新开，画布和工具必须跟随同一个返回目标。
+			Inkeys::Drawing::Draw3::PublishProductWorkspace(primaryWorkspace);
 			if (!Draw3WorkspaceReady(snapshot, primaryWorkspace)) continue;
 
 			// Presentation 已有可接管帧后才关闭 Whiteboard，避免 raw COM present 重叠。

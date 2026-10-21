@@ -1136,6 +1136,7 @@ void PptInfo()
 				trustedEndScreen, controlSessionAvailable, windowControlAvailable, basicControl,
 				whiteboard, D3::ProductRunning());
 		}
+		if (!whiteboard && session.active) SyncPrimaryWorkspaceStateMode();
 		const auto bridge = D3::ProductHost().ProductBridge().Snapshot();
 		if (!whiteboard && session.active && !trustedTarget)
 		{
@@ -1168,6 +1169,7 @@ void PptInfo()
 					barUISet.UpdateRendering();
 				}
 			}
+			SyncPrimaryWorkspaceStateMode();
 		}
 		else if (!whiteboard && session.active && trustedTarget)
 		{

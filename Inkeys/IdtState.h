@@ -199,6 +199,8 @@ int EraserPenResponsePreference(int entry);
 void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
 // 按当前模式和 Draw3 当前页内容统一同步 Drawpad 显隐、穿透和 Bar。
 void ReconcileDraw3Presentation();
+// PPT 事实只切换非白板工具；白板进退由 StateMonitoring 的工作区事务交接。
+void SyncPrimaryWorkspaceStateMode();
 
 // 白板按钮和翻页控件只提交请求，具体工作区事务由 StateMonitoring 串行执行。
 inline constexpr bool IsWhiteboardFeatureEnabled() noexcept { return true; }
