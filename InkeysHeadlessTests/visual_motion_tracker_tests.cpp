@@ -8,6 +8,8 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
+#include <type_traits>
 #include <string>
 #include <vector>
 
@@ -611,6 +613,215 @@ namespace
 				DensitySanity(name, initial, scene, swap); DensityReject(name, initial, changed, scene);
 			}
 	}
+
+	bool DebugStageReached(const TrackerDebugSnapshot& debug, TrackerDebugStage stage)
+	{
+		return (debug.reachedStages & (std::uint64_t{ 1 } << static_cast<unsigned>(stage))) != 0;
+	}
+	const TrackerDebugCheck& DebugCheck(const TrackerDebugSnapshot& debug, TrackerDebugCheckId id)
+	{
+		return debug.checks[static_cast<std::size_t>(id)];
+	}
+	void SameMotion(const MotionResult& a, const MotionResult& b, const std::string& name)
+	{
+		// 显式列出全部非计时字段，避免 padding/memcmp 或忽略新阶段的可信事务差异。
+#define SAME(field) Expect(a.field == b.field, name + " exact " #field)
+		SAME(accepted); SAME(state); SAME(reason); SAME(delta.x); SAME(delta.y); SAME(total.x); SAME(total.y); SAME(confidence);
+		SAME(statistics.inputSequence); SAME(statistics.referenceSequence); SAME(statistics.referenceGeneration); SAME(statistics.relayGeneration);
+		SAME(statistics.attempted); SAME(statistics.forward); SAME(statistics.backward); SAME(statistics.fbValid); SAME(statistics.inliers);
+		SAME(statistics.referenceCells); SAME(statistics.occupiedCells); SAME(statistics.inlierCells); SAME(statistics.interiorCells);
+		SAME(statistics.added); SAME(statistics.retained); SAME(statistics.retired); SAME(statistics.initialSurvivors); SAME(statistics.consecutiveRejects);
+		SAME(statistics.pointInlierRatio); SAME(statistics.spatialInlierRatio); SAME(statistics.survivalRatio);
+		SAME(statistics.coverageX); SAME(statistics.coverageY); SAME(statistics.runnerUpRatio);
+		SAME(statistics.fbMedian); SAME(statistics.fbP95); SAME(statistics.residualMedian); SAME(statistics.residualP95);
+		SAME(statistics.affineVariation); SAME(statistics.affineResidual);
+#undef SAME
+	}
+	struct DebugPair
+	{
+		VisualMotionTracker plain, observed;
+		std::unique_ptr<TrackerDebugSnapshot> debug = std::make_unique<TrackerDebugSnapshot>();
+		MotionResult last{};
+		std::string name;
+		explicit DebugPair(std::string label) : name(std::move(label)) {}
+		MotionResult Call(const MotionFrame& frame, bool initialize = false)
+		{
+			const auto previous = last;
+			const auto a = initialize ? plain.Initialize(frame) : plain.Process(frame);
+			const auto b = initialize ? observed.Initialize(frame, debug.get()) : observed.Process(frame, debug.get());
+			SameMotion(a, b, name); SameMotion(b, debug->result, name + " snapshot result");
+			Expect(debug->result.statistics.preprocessMs == b.statistics.preprocessMs && debug->result.statistics.opticalFlowMs == b.statistics.opticalFlowMs
+				&& debug->result.statistics.fitMs == b.statistics.fitMs && debug->result.statistics.refillMs == b.statistics.refillMs, name + " snapshot copies original timings");
+			Expect(debug->inputSequence == frame.sequence && debug->referenceSequenceAfter == b.statistics.referenceSequence
+				&& debug->referenceGenerationAfter == b.statistics.referenceGeneration, name + " input/reference after identity");
+			if (!initialize)
+				Expect(debug->referenceSequenceBefore == previous.statistics.referenceSequence && debug->referenceGenerationBefore == previous.statistics.referenceGeneration,
+					name + " reference before preserved independently of after");
+			Expect(debug->pointCount <= 320 && debug->addedPointCount <= 320 && !debug->truncated, name + " bounded arrays");
+			Expect((debug->completedStages & ~debug->reachedStages) == 0, name + " stage completeness subset");
+			if (debug->ambiguityComplete && b.statistics.runnerUpRatio > 0)
+				Expect(debug->eligibleRunnerUp.valid && debug->eligibleRunnerUp.beyondDoubleRadius
+					&& debug->eligibleRunnerUp.originalCellRatio == b.statistics.runnerUpRatio, name + " eligible runner-up matches exact production ratio");
+			if (b.accepted)
+			{
+				Expect(debug->firstFailure == TrackerDebugCheckId::Count, name + " accepted has no failed gate");
+				Expect(DebugStageReached(*debug, TrackerDebugStage::Commit), name + " accepted commit reached");
+				if (!initialize)
+					Expect(debug->candidateTotalValid && debug->candidateTotal.x == b.total.x && debug->candidateTotal.y == b.total.y
+						&& debug->candidateDelta.x == b.delta.x && debug->candidateDelta.y == b.delta.y, name + " estimated and applied distinguished");
+			}
+			else if (debug->exception == MotionReason::None)
+				Expect(debug->firstFailure != TrackerDebugCheckId::Count, name + " rejection has actual gate");
+			if (DebugStageReached(*debug, TrackerDebugStage::Forward))
+			{
+				int forward = 0, backward = 0, valid = 0, inliers = 0, retained = 0, retired = 0;
+				for (std::size_t i = 0; i < debug->pointCount; ++i)
+				{
+					const auto& p = debug->points[i];
+					forward += p.forwardStatus && p.forwardInsideEvaluated && p.forwardInside;
+					backward += p.backwardStatus && p.backwardFiniteEvaluated && p.backwardFinite;
+					valid += p.fbValid; inliers += p.inlier; retained += p.retained; retired += p.retired;
+					Expect(!p.fbValid || (p.refinedComputed && p.fbComputed && p.refinementDistanceEvaluated && p.fbThresholdEvaluated), name + " FB validity follows real stages");
+					Expect(!p.inlier || p.consensusEvaluated, name + " inliers only after consensus");
+				}
+				Expect(static_cast<int>(debug->pointCount) == b.statistics.attempted && forward == b.statistics.forward
+					&& backward == b.statistics.backward && valid == b.statistics.fbValid && inliers == b.statistics.inliers, name + " point counts match production");
+				Expect(retained == b.statistics.retained && retired == b.statistics.retired, name + " retention matches production");
+				int cellReference = 0, cellForward = 0, cellFb = 0, cellInliers = 0;
+				for (const auto& c : debug->cells) { cellReference += c.reference; cellForward += c.forward; cellFb += c.fbValid; cellInliers += c.inliers; }
+				Expect(cellReference == b.statistics.attempted && cellForward == forward && cellFb == valid && cellInliers == inliers, name + " reference grid evidence counts");
+			}
+			last = b;
+			return b;
+		}
+	};
+	void TestDebugValidAndRelay(const cv::Mat& canvas)
+	{
+		DebugPair pair("debug odd padded BGRA relay");
+		const int width = Width + 1, height = Height + 1;
+		cv::Mat storage(height + 4, width + 17, CV_8UC4, cv::Scalar::all(0));
+		auto roi = storage(cv::Rect(3, 2, width, height));
+		const auto submit = [&](MotionVector camera, std::uint64_t sequence) {
+			auto pixels = Render(canvas, camera, width, height); cv::cvtColor(pixels, pixels, cv::COLOR_GRAY2BGRA);
+			pixels.copyTo(roi);
+			auto frame = Frame(roi, sequence); frame.image.sizeBytes = (height - 1) * roi.step[0] + width * roi.elemSize();
+			const auto result = pair.Call(frame, sequence == 0);
+			Expect(result.accepted, "short debug valid/relay accepted");
+			Expect(pair.debug->processingWidth == width / 2 && pair.debug->processingHeight == height / 2
+				&& pair.debug->scaleX == static_cast<double>(width / 2) / width && pair.debug->scaleY == static_cast<double>(height / 2) / height,
+				"actual odd processing ratio");
+			storage.setTo(0); // 下一调用仍须使用 Tracker 自有参考，而非上次借用缓冲。
+			return result;
+		};
+		(void)submit({ 500, 600 }, 0);
+		(void)submit({ 500.25, 606.5 }, 1); (void)submit({ 498.5, 603.25 }, 2); (void)submit({ 500, 600 }, 3);
+		Expect(!DebugCheck(*pair.debug, TrackerDebugCheckId::AffineVariationHigh).condition
+			&& !DebugCheck(*pair.debug, TrackerDebugCheckId::AffineResidualLow).evaluated
+			&& !DebugCheck(*pair.debug, TrackerDebugCheckId::AffineSupportHigh).evaluated, "normal affine short-circuit leaves later operands unexecuted");
+		bool sawAdded = false;
+		for (std::uint64_t n = 4; n <= 25; ++n)
+		{
+			const auto result = submit({ 500, 600 + (n - 3) * 32.0 }, n); sawAdded = sawAdded || result.statistics.added > 0;
+		}
+		Expect(sawAdded && pair.last.statistics.initialSurvivors == 0, "short relay retires all initial anchors");
+		for (std::size_t i = 0; i < pair.debug->addedPointCount; ++i)
+		{
+			const auto& p = pair.debug->addedPoints[i];
+			Expect(p.committed && p.birthGeneration + 1 == pair.last.statistics.referenceGeneration, "refill born at actual generation");
+		}
+	}
+	void TestDebugRejections(const cv::Mat& canvas)
+	{
+		const auto initial = Render(canvas, { 500, 600 });
+		for (int badCount : { 1, 3 })
+		{
+			DebugPair pair("debug rejection reference and paused"); (void)pair.Call(Frame(initial, 0), true);
+			for (int n = 1; n <= badCount; ++n)
+			{
+				auto changed = Render(canvas, { 500, 600 + n * 8.0 }); const auto opposite = Render(canvas, { 500, 600 - n * 8.0 });
+				opposite(cv::Rect(Width / 2, 0, Width / 2, Height)).copyTo(changed(cv::Rect(Width / 2, 0, Width / 2, Height)));
+				const auto result = pair.Call(Frame(changed, n)); Expect(!result.accepted, "short mixed motion refused");
+				Expect(pair.debug->referenceSequenceBefore == 0 && pair.debug->referenceSequenceAfter == 0, "rejected references remain original");
+			}
+			const auto restored = Render(canvas, { 502, 620 }); const auto result = pair.Call(Frame(restored, badCount + 1));
+			if (badCount == 1)
+				Expect(result.accepted && pair.debug->referenceSequenceBefore == 0 && pair.debug->referenceSequenceAfter == 2 && Distance(result.delta, result.total) == 0,
+					"recovery snapshot contains skipped-reference delta");
+			else
+				Expect(result.reason == MotionReason::Paused && pair.debug->reachedStages == 0 && !pair.debug->mainMotion.valid
+					&& !DebugCheck(*pair.debug, TrackerDebugCheckId::BlackMaximum).evaluated, "paused has no fabricated CV stages");
+		}
+		for (const auto scene : { DensityScene::SparseMinority, DensityScene::OppositeStreams, DensityScene::LocalCoverage })
+		{
+			DebugPair pair("debug density gate"); const auto start = DensityImage(canvas, scene, false, false), changed = DensityImage(canvas, scene, false, true);
+			(void)pair.Call(Frame(start, 0), true); const auto result = pair.Call(Frame(changed, 1));
+			if (scene == DensityScene::LocalCoverage)
+			{
+				Expect(result.reason == MotionReason::InsufficientCoverage && pair.debug->firstFailure == TrackerDebugCheckId::CoverageCells, "actual Coverage gate recorded");
+				Expect(!DebugCheck(*pair.debug, TrackerDebugCheckId::CoverageInterior).evaluated && !DebugCheck(*pair.debug, TrackerDebugCheckId::JumpHigh).evaluated,
+					"Coverage short-circuit and later jump unexecuted");
+			}
+			else
+			{
+				Expect(result.reason == MotionReason::AmbiguousMotion && pair.debug->strongestCompetitor.valid && pair.debug->rejectingCompetitor.valid, "actual evaluated competitor retained");
+				Expect(!DebugCheck(*pair.debug, TrackerDebugCheckId::CoverageCells).evaluated && !pair.debug->candidateTotalValid, "ambiguity early return has no Coverage/anchor claim");
+				if (scene == DensityScene::SparseMinority)
+				{
+					Expect(pair.debug->firstFailure == TrackerDebugCheckId::ZeroModeAmbiguity && !pair.debug->ambiguityComplete, "zero-main early competitor scan explicitly partial");
+					Expect(pair.debug->zeroModeRatioThreshold == 0.15 && pair.debug->rejectingCompetitor.zeroRatioEvaluated
+						&& pair.debug->rejectingCompetitor.originalCellRatio > pair.debug->zeroModeRatioThreshold, "zero-main exposes actual production ratio threshold");
+				}
+				else Expect(pair.debug->firstFailure == TrackerDebugCheckId::RunnerUpHigh && pair.debug->ambiguityComplete, "runner-up gate after completed scan");
+			}
+		}
+		DebugPair pair("debug ForwardBackward failure"); (void)pair.Call(Frame(initial, 0), true);
+		const cv::Mat flat(Height, Width, CV_8UC1, cv::Scalar(127)); const auto fb = pair.Call(Frame(flat, 1));
+		Expect(fb.reason == MotionReason::ForwardBackward && pair.debug->firstFailure == TrackerDebugCheckId::FbPointsLow, "flat reaches real FB rejection");
+		Expect(DebugStageReached(*pair.debug, TrackerDebugStage::Backward) && !pair.debug->mainMotion.valid
+			&& !DebugCheck(*pair.debug, TrackerDebugCheckId::NonTranslation).evaluated, "FB failure preserves only reached LK stages");
+		DebugPair affine("debug affine compound"); (void)affine.Call(Frame(initial, 0), true);
+		const auto matrix = cv::getRotationMatrix2D(cv::Point2f(Width * .5f, Height * .5f), 0, 1.02);
+		cv::Mat deformed; cv::warpAffine(initial, deformed, matrix, initial.size(), cv::INTER_LINEAR, cv::BORDER_REFLECT_101);
+		const auto nonTranslation = affine.Call(Frame(deformed, 1));
+		Expect(nonTranslation.reason == MotionReason::NonTranslation && affine.debug->firstFailure == TrackerDebugCheckId::NonTranslation,
+			"NonTranslation is actual combined gate");
+		Expect(DebugCheck(*affine.debug, TrackerDebugCheckId::AffineVariationHigh).condition && DebugCheck(*affine.debug, TrackerDebugCheckId::AffineResidualLow).condition
+			&& DebugCheck(*affine.debug, TrackerDebugCheckId::AffineSupportHigh).condition && !DebugStageReached(*affine.debug, TrackerDebugStage::Ambiguity), "affine operands and early stop recorded");
+	}
+	void TestDebugInvalid(const cv::Mat& canvas)
+	{
+		const auto image = Render(canvas, { 500, 600 }); const auto valid = Frame(image, 0);
+		std::vector<MotionFrame> invalid;
+		auto frame = valid; frame.image.data = nullptr; invalid.push_back(frame);
+		frame = valid; frame.image.width = 159; invalid.push_back(frame);
+		frame = valid; frame.image.strideBytes = Width - 1; invalid.push_back(frame);
+		frame = valid; frame.image.strideBytes = std::numeric_limits<std::size_t>::max(); invalid.push_back(frame);
+		frame = valid; --frame.image.sizeBytes; invalid.push_back(frame);
+		frame = valid; frame.image.format = static_cast<MotionPixelFormat>(255); invalid.push_back(frame);
+		frame = valid; frame.captureValid = false; invalid.push_back(frame);
+		frame = valid; frame.timestampSeconds = std::numeric_limits<double>::quiet_NaN(); invalid.push_back(frame);
+		for (const auto& bad : invalid)
+		{
+			DebugPair pair("debug validation early return"); const auto result = pair.Call(bad, true);
+			Expect(!result.accepted && result.state == MotionState::Paused && !DebugStageReached(*pair.debug, TrackerDebugStage::Preprocess), "bad input never reaches gray conversion");
+			if (!bad.image.data)
+				Expect(!DebugCheck(*pair.debug, TrackerDebugCheckId::WidthTooSmall).evaluated && !DebugCheck(*pair.debug, TrackerDebugCheckId::BufferTooSmall).evaluated,
+					"invalid image OR short-circuit preserved");
+		}
+		DebugPair pair("debug invalid processing"); (void)pair.Call(valid, true);
+		frame = Frame(image, 1); frame.timestampSeconds = -1; const auto time = pair.Call(frame);
+		Expect(time.reason == MotionReason::InvalidTimestamp && pair.debug->firstFailure == TrackerDebugCheckId::TimestampReversed, "reference timestamp condition source");
+		(void)pair.Call(valid, true);
+		const auto resized = Render(canvas, { 500, 600 }, Width + 1, Height); const auto geometry = pair.Call(Frame(resized, 1));
+		Expect(geometry.reason == MotionReason::GeometryChanged && pair.debug->firstFailure == TrackerDebugCheckId::WidthChanged
+			&& !DebugCheck(*pair.debug, TrackerDebugCheckId::HeightChanged).evaluated, "geometry short-circuit source");
+		const cv::Mat black(Height, Width, CV_8UC1, cv::Scalar(0)); (void)pair.Call(valid, true);
+		const auto dark = pair.Call(Frame(black, 1)); Expect(dark.reason == MotionReason::BlackFrame && pair.debug->firstFailure == TrackerDebugCheckId::BlackMaximum, "actual black maximum");
+		const cv::Mat blank(Height, Width, CV_8UC1, cv::Scalar(127)); const auto noPoints = pair.Call(Frame(blank, 0), true);
+		Expect(noPoints.reason == MotionReason::InsufficientFeatures && pair.debug->firstFailure == TrackerDebugCheckId::InitialPointsLow
+			&& !DebugCheck(*pair.debug, TrackerDebugCheckId::CoverageCells).evaluated, "initial features early return");
+	}
+
 }
 
 int RunVisualMotionTrackerTests()
@@ -630,5 +841,17 @@ int RunVisualMotionTrackerTests()
 	TestDensityGuards(canvas);
 	std::cout << (failures ? "FAIL" : "PASS") << " visual motion tracker failures=" << failures << '\n';
 	std::cout.flags(outputFlags);
+	return failures;
+}
+
+int RunScrollFollowDebugTests()
+{
+	static_assert(std::is_trivially_copyable_v<TrackerDebugSnapshot> && std::is_nothrow_default_constructible_v<TrackerDebugSnapshot>);
+	failures = 0;
+	const auto begin = std::chrono::steady_clock::now(); const auto canvas = Canvas();
+	TestDebugValidAndRelay(canvas); TestDebugRejections(canvas); TestDebugInvalid(canvas);
+	std::cout << (failures ? "FAIL" : "PASS") << " scroll follow debug short failures=" << failures
+		<< " snapshot_bytes=" << sizeof(TrackerDebugSnapshot) << " seconds="
+		<< std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count() << '\n';
 	return failures;
 }

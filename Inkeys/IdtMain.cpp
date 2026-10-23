@@ -53,6 +53,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
 #include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
 #include "Inkeys/UI/StartupPlacement.h"
+#include "Inkeys/UI/ScrollFollowDebug/ScrollFollowDebug.h"
 #include "PptSettingsPersistence.h"
 #include "resource.h"
 #include <array>
@@ -1383,14 +1384,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
 		int selected = 0; bool malformed = false;
-		const wchar_t* flags[] = {L"--scroll-follow-protocol-test", L"--scroll-follow-hidden-test", L"--bar-view-adjust-config-test", L"--scroll-follow-persistence-test", L"--freeze-capture-live-test", L"--scroll-follow-live-test", L"--scroll-follow-live-ink-test", L"--scroll-follow-live-long-test", L"--scroll-follow-live-external-test"};
+		const wchar_t* flags[] = {L"--scroll-follow-protocol-test", L"--scroll-follow-hidden-test", L"--bar-view-adjust-config-test", L"--scroll-follow-persistence-test", L"--freeze-capture-live-test", L"--scroll-follow-live-test", L"--scroll-follow-live-ink-test", L"--scroll-follow-live-long-test", L"--scroll-follow-live-external-test", L"--scroll-follow-debug-exclusion-test", L"--scroll-follow-debug-product-test"};
 		// 已撤销的内部probe只拒绝，防止旧命令误入普通GUI启动。
 		for (int index=1;index<count;++index)
 			if(wcslen(arguments[index])>=wcslen(L"--freeze-capture-live-probe") && CompareStringOrdinal(arguments[index],
 				static_cast<int>(wcslen(L"--freeze-capture-live-probe")),L"--freeze-capture-live-probe",-1,TRUE)==CSTR_EQUAL)
 			{LocalFree(arguments);return 2;}
 		for (int index = 1; index < count; ++index)
-			for (int test = 0; test < 9; ++test)
+			for (int test = 0; test < static_cast<int>(std::size(flags)); ++test)
 				if (wcslen(arguments[index]) >= wcslen(flags[test]) && CompareStringOrdinal(arguments[index], static_cast<int>(wcslen(flags[test])), flags[test], -1, TRUE) == CSTR_EQUAL)
 				{
 					selected = test + 1;
@@ -1413,6 +1414,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (selected == 7 && EnsureProcessDpiAwareness()) result = RunScrollFollowProductLiveInkTest();
 			if (selected == 8 && EnsureProcessDpiAwareness()) result = RunScrollFollowProductLiveLongTest();
 			if (selected == 9 && EnsureProcessDpiAwareness()) result = RunScrollFollowProductLiveExternalTest();
+			if (selected == 10 && EnsureProcessDpiAwareness()) result = RunScrollFollowDebugExclusionTest();
+			if (selected == 11 && EnsureProcessDpiAwareness()) result = RunScrollFollowDebugProductTest();
 			(void)diagnostics.Stop(); return result;
 #else
 			return 2;
@@ -1679,6 +1682,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	const bool scrollFollowConsole = HasCommandLineSwitch(L"--scroll-follow-console", L"--scroll-follow-verbose");
 	const bool scrollFollowVerbose = HasCommandLineSwitch(L"--scroll-follow-verbose", L"--scroll-follow-verbose");
 	Inkeys::Business::ScrollFollow::SetDiagnostics(scrollFollowConsole, scrollFollowVerbose);
+	const bool scrollFollowDebugWindow = HasCommandLineSwitch(
+		L"--scroll-follow-debug-window", L"--scroll-follow-debug-window");
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
 	bool shapeRecognitionConsoleOutputEnabled = false;
@@ -3745,6 +3750,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return 1;
 		}
 
+		// fallback 重建和必需客户端就绪后只打开一次；用户关闭后没有重开入口。
+		if (scrollFollowDebugWindow && !isolatedStartupFailure
+			&& !Inkeys::UI::ScrollFollowDebug::Open(applicationIcon))
+			IDTLogger->warn("[主线程][IdtMain] 可选 Scroll Follow 诊断窗口创建失败");
 		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
 	}
 	// Draw3 Host 已初始化唯一 RTS producer；不再启动 Draw2 RTS/速度线程。
@@ -3901,6 +3910,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// 先停止主题变更生产者，再排空最后的配置 FIFO；窗口服务/渲染管线仍在，供 Setting 完成释放。
 	Inkeys::UI::Setting::Shutdown();
 	Inkeys::Window::GetService().StopAndJoin();
+	// 显式导出 worker 由进程退出路径归还，窗口关闭不阻塞 owner。
+	Inkeys::UI::ScrollFollowDebug::ShutdownExports();
 	Inkeys::UI::RenderPipeline::Shutdown();
 	displaySubscription.Reset();
 	Inkeys::Display::Shutdown();

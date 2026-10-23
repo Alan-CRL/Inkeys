@@ -11,6 +11,7 @@
 
 #include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
 #include "../Inkeys/Inkeys/Window/Window.CanvasPolicy.h"
+#include "../Inkeys/Inkeys/UI/ScrollFollowDebug/ScrollFollowDebug.h"
 
 import Inkeys.Window;
 
@@ -491,6 +492,74 @@ int RunWindowCommandCompletionTests()
 	return failures;
 }
 
+int RunScrollFollowDebugWindowContractTests()
+{
+	using namespace Inkeys::Window;
+	namespace Debug = Inkeys::UI::ScrollFollowDebug;
+	int failures = 0;
+	const auto check = [&](bool condition, const char* name)
+	{
+		if (!condition) { std::cerr << "FAILED debug window: " << name << '\n'; ++failures; }
+	};
+	auto& service = GetService();
+	WindowSpec setting;
+	setting.role = WindowRole::Setting;
+	setting.className = L"Inkeys.Window.DebugContract.Setting";
+	setting.x = -25000; setting.y = -25000; setting.width = 16; setting.height = 16;
+	setting.bindMessages = false;
+	WindowSpec overlay = setting;
+	overlay.role = WindowRole::MagnifierHost;
+	overlay.className = L"Inkeys.Window.DebugContract.Overlay";
+	if (!service.Start({ overlay, setting }))
+	{
+		check(false, "start offscreen service");
+		return failures;
+	}
+	// 复用产品 factory 和 WM_CLOSE；所有显示都严格留在屏幕外，不夺取焦点。
+	const RECT bounds{ -25000, -25000, -24040, -24360 };
+	check(service.OverlayReady() && !service.Ready(WindowRole::ScrollFollowDebug),
+		"absent debugger is not required for readiness");
+	check(Debug::Open(nullptr, &bounds), "open production debugger offscreen");
+	const HWND hwnd = service.Handle(WindowRole::ScrollFollowDebug);
+	check(hwnd && hwnd == Debug::Handle() && IsWindow(hwnd), "production handle published");
+	if (hwnd)
+	{
+		const auto style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+		const auto exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+		check((style & WS_OVERLAPPEDWINDOW) == WS_OVERLAPPEDWINDOW && !(style & WS_CHILD)
+			&& (exStyle & WS_EX_APPWINDOW) && (exStyle & WS_EX_TOPMOST)
+			&& !(exStyle & (WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE))
+			&& !GetWindow(hwnd, GW_OWNER), "resizable unowned topmost window");
+		check(service.OwnerThreadId(WindowRole::ScrollFollowDebug) == service.OwnerThreadId(WindowRole::Setting)
+			&& service.OwnerThreadId(WindowRole::ScrollFollowDebug) != service.OwnerThreadId(WindowRole::MagnifierHost),
+			"debugger shares setting owner only");
+		check(service.SetOverlayTopmost(false) && (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)
+			&& !GetWindow(hwnd, GW_OWNER), "overlay demotion preserves independent topmost debugger");
+		check(service.SetOverlayTopmost(true) && (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)
+			&& !GetWindow(hwnd, GW_OWNER), "overlay promotion cannot adopt debugger");
+		check(service.HideAllUserWindows() && !IsWindowVisible(hwnd), "hide all includes debugger");
+		check(service.Show(WindowRole::ScrollFollowDebug) && IsWindowVisible(hwnd)
+			&& (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) && !GetWindow(hwnd, GW_OWNER),
+			"show uses setting queue and preserves independent topmost");
+		check(service.RequestHideAllUserWindows() && service.Hide(WindowRole::ScrollFollowDebug)
+			&& !IsWindowVisible(hwnd), "async exit hide includes debugger");
+		SendMessageW(hwnd, WM_CLOSE, 0, 0);
+		check(!service.Handle(WindowRole::ScrollFollowDebug) && !service.Ready(WindowRole::ScrollFollowDebug)
+			&& !service.OwnerThreadId(WindowRole::ScrollFollowDebug) && !Debug::Handle() && !IsWindow(hwnd),
+			"close clears service record and production lifetime");
+		check(service.Running() && service.SettingReady() && service.OverlayReady()
+			&& service.RequestTopmostRefresh() && !service.Handle(WindowRole::ScrollFollowDebug),
+			"close keeps owner service alive without reopening");
+	}
+	check(Debug::Open(nullptr, &bounds), "explicit service recreation remains available for contract tests");
+	const HWND recreated = service.Handle(WindowRole::ScrollFollowDebug);
+	service.StopAndJoin();
+	check(!service.Running() && !service.Handle(WindowRole::ScrollFollowDebug) && !Debug::Handle()
+		&& !IsWindow(recreated), "stop destroys diagnostic role and resources");
+	if (!failures) std::cout << "PASS offscreen scroll follow debug window contract" << '\n';
+	return failures;
+}
+
 int RunWindowExitVisibilityTests()
 {
 	using namespace Inkeys::Window;
@@ -627,6 +696,7 @@ int RunWindowExitVisibilityTests()
 		}
 		service.StopAndJoin();
 	}
+	failures += RunScrollFollowDebugWindowContractTests();
 	if (!failures)
 		std::cout << "PASS exit visibility gate" << '\n';
 	return failures;

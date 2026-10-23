@@ -1,4 +1,5 @@
 #include "ScrollFollow.h"
+#include "ScrollFollowDebug.h"
 #include "../CV/VisualMotionTracker.h"
 #include "../Graphics/FreezeCapture.h"
 #include "../Drawing/Draw3/Draw3.Product.h"
@@ -12,6 +13,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <cstdio>
 #include <vector>
@@ -41,6 +43,7 @@ namespace Inkeys::Business::ScrollFollow
 			std::shared_ptr<Draw::Follow::Channel> channel;
 			CV::VisualMotionTracker tracker; // 仅原 Mag 回调串行使用。
 			std::atomic_bool initialized = false, tracking = false, paused = false;
+			std::atomic<Debug::PauseCause> debugPauseCause = Debug::PauseCause::None;
 			std::atomic_uint64_t captureSession = 0;
 			std::uint64_t session = 0;
 			std::mutex resultMutex;
@@ -198,7 +201,7 @@ namespace Inkeys::Business::ScrollFollow
 			const int top = std::max(0, frame.geometry.workArea.top - frame.geometry.sourceRect.top);
 			const int right = std::min(frame.width, frame.geometry.workArea.right - frame.geometry.sourceRect.left);
 			const int bottom = std::min(frame.height, frame.geometry.workArea.bottom - frame.geometry.sourceRect.top);
-			if (right <= left || bottom <= top) { context->paused = true; return; }
+			if (right <= left || bottom <= top) { Debug::LatchPause(context->debugPauseCause, Debug::PauseCause::InvalidRoi); context->paused = true; return; }
 			const auto offset = static_cast<std::size_t>(top) * frame.strideBytes + static_cast<std::size_t>(left) * 4;
 			CV::MotionFrame input;
 			input.image = { reinterpret_cast<const std::uint8_t*>(frame.bgra.data()) + offset,
@@ -206,6 +209,22 @@ namespace Inkeys::Business::ScrollFollow
 			input.timestampSeconds = std::chrono::duration<double>(frame.timestamp.time_since_epoch()).count();
 			input.sequence = frame.sequence;
 			CV::MotionResult result;
+			Debug::ChannelPtr debugChannel;
+			Debug::WriteLease debugLease;
+			std::optional<Debug::FrameMetadata> debugMetadata;
+			double totalTrackerMs = 0;
+			bool targetPublished = false;
+			const auto prepareDebug = [&](Debug::Operation operation) noexcept
+			{
+				if (!Debug::Enabled() || !(debugChannel = Debug::Current())) return;
+				auto& metadata = debugMetadata.emplace();
+				metadata.identity = { debugChannel->Generation(), context->session, frame.session, frame.sequence, frame.geometry.displayGeneration };
+				metadata.operation = operation; metadata.geometry = frame.geometry; metadata.quality = frame.quality; metadata.statistics = frame.statistics;
+				metadata.roi = { left, top, right, bottom }; metadata.captureWidth = frame.width; metadata.captureHeight = frame.height;
+				metadata.captureStrideBytes = frame.strideBytes; metadata.sourcePixelsPerPixelX = frame.sourcePixelsPerPixelX;
+				metadata.sourcePixelsPerPixelY = frame.sourcePixelsPerPixelY; metadata.sampledAt = frame.timestamp; metadata.sampleInterval = frame.sampleInterval;
+				debugLease = debugChannel->BeginFrame(metadata, input.image);
+			};
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 			auto operation = LiveTrace::Operation::AwaitTracking;
 #endif
@@ -214,7 +233,10 @@ namespace Inkeys::Business::ScrollFollow
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 				operation = LiveTrace::Operation::Initialize;
 #endif
-				result = context->tracker.Initialize(input);
+				prepareDebug(Debug::Operation::Initialize);
+				const auto trackerBegan = debugChannel ? Clock::now() : Clock::time_point{};
+				result = context->tracker.Initialize(input, debugLease.Tracker());
+				if (debugChannel) totalTrackerMs = std::chrono::duration<double, std::milli>(Clock::now() - trackerBegan).count();
 				if (result.accepted) context->initialized.store(true);
 			}
 			else if (context->tracking.load())
@@ -222,16 +244,29 @@ namespace Inkeys::Business::ScrollFollow
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 				operation = LiveTrace::Operation::Process;
 #endif
-				result = context->tracker.Process(input);
+				prepareDebug(Debug::Operation::Process);
+				const auto trackerBegan = debugChannel ? Clock::now() : Clock::time_point{};
+				result = context->tracker.Process(input, debugLease.Tracker());
+				if (debugChannel) totalTrackerMs = std::chrono::duration<double, std::milli>(Clock::now() - trackerBegan).count();
 				if (result.accepted)
 				{
 					Draw::Follow::Target target{ context->session, frame.sequence, owner.identity,
 						result.total.x * frame.sourcePixelsPerPixelX, result.total.y * frame.sourcePixelsPerPixelY };
-					if (context->channel->Publish(target)) WakeHost();
+					targetPublished = context->channel->Publish(target);
+					if (targetPublished) WakeHost();
 				}
-				if (result.state == CV::MotionState::Paused) context->paused.store(true);
+				if (result.state == CV::MotionState::Paused)
+				{
+					Debug::LatchPause(context->debugPauseCause, Debug::PauseCause::TrackerPaused); context->paused.store(true);
+				}
 			}
 			{ std::scoped_lock lock(context->resultMutex); context->result = result; }
+			// AwaitTracking 没有执行 CV：仍保留原业务 store，但不能发布成假拒绝。
+			if (debugChannel && debugMetadata)
+			{
+				debugChannel->RecordMotion(*debugMetadata, result, totalTrackerMs);
+				(void)debugLease.Publish(targetPublished, totalTrackerMs);
+			}
 			// 原逐帧诊断只追加现成特征身份统计；relay代次本身不能证明初始点已全部离屏。
 			if (verboseFrames.load()) Draw::DiagnosticOutput::Printf(Draw::DiagnosticOutput::Stream::Error,
 				"[ScrollFollow] session=%llu capture_session=%llu frame=%llu accepted=%d reason=%s total_px=(%.4f,%.4f) confidence=%.4f inliers=%d fb_p95=%.4f residual_p95=%.4f coverage=(%.3f,%.3f) relay=%llu initial_survivors=%d added=%d retained=%d retired=%d pw_us=%lld attempted=%d forward=%d backward=%d fb_valid=%d point_inlier_ratio=%.6f spatial_inlier_ratio=%.6f survival_ratio=%.6f reference_cells=%d occupied_cells=%d inlier_cells=%d interior_cells=%d runner_up_ratio=%.6f affine_variation=%.6f affine_residual=%.6f reference_sequence=%llu consecutive_rejects=%d\n",
@@ -289,12 +324,36 @@ namespace Inkeys::Business::ScrollFollow
 					std::unique_lock lock(mutex);
 					wake.wait_for(lock, std::chrono::milliseconds(16));
 					if (token.stop_requested()) break;
-					try { Tick(); if (shutdown) return; } catch (...) { stop = true; Log("control-failure", context ? context->session : 0); }
+					try { Tick(); if (shutdown) return; } catch (...) { if (context) Debug::LatchPause(context->debugPauseCause, Debug::PauseCause::ControlFailure); stop = true; Log("control-failure", context ? context->session : 0); }
 				}
+			}
+			void PublishDebugStatus(const Debug::ChannelPtr& channel, const Capture::Snapshot* observedCapture = nullptr) noexcept
+			{
+				if (!channel || !channel->Active()) return;
+				Debug::LiveStatus status;
+				status.state = state; status.observedAt = Now();
+				if (context)
+				{
+					status.businessSession = context->session; status.captureSession = context->captureSession.load(std::memory_order_acquire);
+					status.awaitTracking = context->initialized.load() && !context->tracking.load() && state == State::Initializing;
+					status.pauseCause = context->debugPauseCause.load(std::memory_order_acquire);
+					const auto capture = observedCapture ? *observedCapture : CaptureSnapshot();
+					status.ownsCapture = Draw::Follow::OwnsCaptureSession(captureStarted, status.captureSession, capture.session);
+					if (status.ownsCapture) status.capture = capture;
+					const auto owner = context->channel->Read();
+					status.ownerLatestSequence = owner.latest.sequence; status.ownerAppliedSequence = owner.applied;
+					status.viewportX = owner.viewportX; status.viewportY = owner.viewportY; status.viewportClamped = owner.clamped;
+				}
+				channel->UpdateStatus(status);
 			}
 			void Tick()
 			{
 				const auto now = Now();
+				struct DebugOnExit
+				{
+					Service& service; Debug::ChannelPtr channel;
+					~DebugOnExit() { if (channel) service.PublishDebugStatus(channel); }
+				} debugOnExit{ *this, Debug::Enabled() ? Debug::Current() : Debug::ChannelPtr{} };
 				const HostPort host;
 				if (shutdownRequested.load(std::memory_order_acquire)) shutdown = true;
 				if (shutdown)
@@ -339,6 +398,11 @@ namespace Inkeys::Business::ScrollFollow
 				if (owner.disposition != Draw::Follow::Disposition::Restore || (ownsCapture && (capture.reason == Capture::StopReason::GeometryChanged ||
 					capture.reason == Capture::StopReason::FreezeActive || capture.reason == Capture::StopReason::Shutdown || capture.reason == Capture::StopReason::Unavailable)))
 				{
+					// 仅保留本次 backend 的几何/失效故障；owner/Freeze 退休不能冒充捕获拒绝。
+					if (debugOnExit.channel && ownsCapture && capture.statistics.apiFailures != statistics.apiFailures
+						&& (capture.reason == Capture::StopReason::GeometryChanged || capture.reason == Capture::StopReason::Unavailable)
+						&& (capture.failureStage == Capture::FailureStage::Begin || capture.failureStage == Capture::FailureStage::Update || capture.failureStage == Capture::FailureStage::Read))
+						PublishDebugStatus(debugOnExit.channel, &capture);
 					retired = true; stop = true;
 					for (auto& action : actions) if (action.id) action.retired = true;
 					host.EndFollow(Draw::Follow::Disposition::RetireScene, context->channel);
@@ -356,15 +420,35 @@ namespace Inkeys::Business::ScrollFollow
 					{ projection = Project(true); projected = true; }
 					if (projected && Acknowledged(projection))
 					{ context->tracking = true; statistics = ownsCapture ? capture.statistics : Capture::Statistics{}; Change(State::Tracking); }
-					if (now - started > std::chrono::seconds(5)) { Log("initialization-timeout", context->session); stop = true; }
+					if (now - started > std::chrono::seconds(5)) { Debug::LatchPause(context->debugPauseCause, Debug::PauseCause::InitializationTimeout); Log("initialization-timeout", context->session); stop = true; }
 				}
 				if ((state == State::Tracking || state == State::Paused) && !stop && ownsCapture)
 				{
 					// Capture 的无效缓冲/黑图/低信息都是严重捕获失效；普通三拒绝完全由Tracker负责。
-					if (capture.statistics.rejected != statistics.rejected) { context->paused = true; Log("capture-invalid", context->session); }
-					if (capture.statistics.apiFailures != statistics.apiFailures || !capture.publishing || owner.clamped) { context->paused = true; if (state != State::Paused) Log(owner.clamped ? "viewport-clamped" : "capture-unavailable", context->session); }
+					if (capture.statistics.rejected != statistics.rejected)
+					{
+						Debug::LatchPause(context->debugPauseCause, capture.failureStage != Capture::FailureStage::Quality
+							&& capture.statistics.apiFailures != statistics.apiFailures ? Debug::PauseCause::CaptureApi : Debug::PauseCause::CaptureQuality);
+						context->paused = true; Log("capture-invalid", context->session);
+					}
+					if (capture.statistics.apiFailures != statistics.apiFailures || !capture.publishing || owner.clamped)
+					{
+						const auto cause = capture.statistics.apiFailures != statistics.apiFailures ? Debug::PauseCause::CaptureApi
+							: !capture.publishing ? (capture.reason == Capture::StopReason::StartupTimeout ? Debug::PauseCause::CaptureStartupTimeout
+								: capture.reason == Capture::StopReason::ResultTimeout ? Debug::PauseCause::CaptureResultTimeout : Debug::PauseCause::CaptureUnavailable)
+							: Debug::PauseCause::ViewportClamped;
+						Debug::LatchPause(context->debugPauseCause, cause);
+						context->paused = true; if (state != State::Paused) Log(owner.clamped ? "viewport-clamped" : "capture-unavailable", context->session);
+					}
 					statistics = capture.statistics;
-					if (context->paused.load()) { context->tracking = false; StopCapture(); Change(State::Paused); }
+					if (context->paused.load())
+					{
+						context->tracking = false;
+						// Stop 后原 worker 的 End 可覆盖最近故障；先保留本次判定所用的真实快照。
+						if (debugOnExit.channel && capture.failureStage != Capture::FailureStage::None)
+							PublishDebugStatus(debugOnExit.channel, &capture);
+						StopCapture(); Change(State::Paused);
+					}
 				}
 				if (stop && state != State::Stopping)
 				{
@@ -484,6 +568,11 @@ namespace Inkeys::Business::ScrollFollow
 		int failures = 0;
 		const auto check = [&](bool condition, const char* label)
 		{ if (!condition) { ++failures; std::fprintf(stderr, "[ScrollFollowControl] FAIL %s\n", label); } };
+		struct DebugScope
+		{
+			Debug::ChannelPtr channel = Debug::Activate();
+			~DebugScope() { Debug::Deactivate(channel); }
+		};
 		// 本接缝只在当前CLI线程生效；没有替换普通进程绑定、启动Host、窗口或控制worker。
 		struct Environment
 		{
@@ -535,7 +624,8 @@ namespace Inkeys::Business::ScrollFollow
 		try
 		{
 			{
-				Environment e;
+				DebugScope debug; Environment e;
+				check(debug.channel != nullptr, "debug model enabled without HWND");
 				e.ports.capture.reason = Capture::StopReason::GeometryChanged; e.ports.capture.session = 9;
 				e.ports.startStatus = Capture::StartStatus::NotReady; e.Begin();
 				check(e.service.state == State::Initializing && !e.service.captureStarted && e.ports.holds == 1, "old Capture reason cannot retire new Initialize");
@@ -545,6 +635,17 @@ namespace Inkeys::Business::ScrollFollow
 				e.Emit(2,0,0,false,9); check(!e.service.context->initialized, "wrong Capture session frame ignored");
 				e.Emit(3); e.service.Tick();
 				check(e.service.context->initialized && e.service.projected && e.service.state == State::Initializing && !e.service.context->tracking, "real F0 requests selection but waits pair ACK");
+				if (debug.channel)
+				{
+					check(debug.channel->ConsumeLatest() && debug.channel->Displayed()->metadata.identity.sequence == 3, "debug publishes actual F0 cropped input");
+					const auto calls = debug.channel->ReadLive().counters.trackerCalls;
+					e.Emit(31); e.service.Tick();
+					check(e.service.context->result.reason == CV::MotionReason::NotInitialized && debug.channel->ReadLive().counters.trackerCalls == calls
+						&& !debug.channel->ConsumeLatest() && debug.channel->Displayed()->metadata.identity.sequence == 3
+						&& debug.channel->ReadLive().status.awaitTracking, "actual AwaitTracking preserves original store without fake CV frame");
+					check(debug.channel->Displayed()->metadata.roi.left == 16 && debug.channel->Displayed()->metadata.roi.top == 24
+						&& debug.channel->Displayed()->width == 608 && debug.channel->Displayed()->height == 432, "debug exact production WorkArea crop");
+				}
 				e.ports.acknowledged = e.ports.projection - 2; e.service.Tick();
 				check(e.service.state == State::Initializing, "old projection ACK cannot start Tracking");
 				e.ports.acknowledged = e.ports.projection; e.service.Tick(); e.Emit(4,4);
@@ -565,23 +666,86 @@ namespace Inkeys::Business::ScrollFollow
 				check(!Available(), "undrained Capture still prevents restart");
 			}
 			{
-				Environment e; e.Track();
+				DebugScope debug; Environment e; e.Track();
 				e.Emit(2,0,0x12345678u); e.service.Tick();
 				check(e.service.state == State::Tracking && !e.service.context->result.accepted && e.service.context->result.statistics.consecutiveRejects == 1, "ordinary first visual reject retains Tracking");
 				e.Emit(3,0,0x12345678u); e.service.Tick();
 				check(e.service.state == State::Tracking && e.service.context->result.statistics.consecutiveRejects == 2, "ordinary second visual reject retains reference");
 				e.Emit(4,0,0x12345678u); e.service.Tick();
 				check(e.service.state == State::Paused && !e.service.context->tracking && !e.ports.capture.publishing, "third visual reject pauses actual Business");
+				if (debug.channel)
+				{
+					e.service.Tick();
+					check(debug.channel->ConsumeLatest() && debug.channel->Displayed()->metadata.identity.sequence == 4
+						&& !debug.channel->Displayed()->tracker.result.accepted && debug.channel->Displayed()->tracker.result.state == CV::MotionState::Paused
+						&& debug.channel->ReadLive().status.pauseCause == Debug::PauseCause::TrackerPaused, "actual final rejection/cause survive Requested capture stop");
+				}
 				e.Emit(5,4); e.service.Tick(); check(e.service.state == State::Paused && e.ports.channel->Read().latest.sequence == 0, "Paused never auto-recovers");
 				RequestStop(); e.End(); check(e.service.state == State::Off && e.ports.holds == 0, "Paused can end and return hold");
 			}
 			{
-				Environment e; e.Track(); ++e.ports.capture.statistics.rejected; e.service.Tick();
+				DebugScope debug; Environment e; e.Track(); ++e.ports.capture.statistics.rejected; e.ports.capture.failureStage = Capture::FailureStage::Quality; e.service.Tick();
 				check(e.service.state == State::Paused, "one severe rejected capture pauses immediately");
+				e.service.Tick();
+				check(debug.channel && debug.channel->ReadLive().status.pauseCause == Debug::PauseCause::CaptureQuality
+					&& debug.channel->ReadLive().counters.trackerRejected == 0, "actual quality pause is independent from Tracker rejection");
 			}
 			{
-				Environment e; e.Track(); ++e.ports.capture.statistics.apiFailures; e.service.Tick();
-				check(e.service.state == State::Paused, "one new Begin/Update API failure pauses immediately");
+				DebugScope debug; Environment e; e.Track(); ++e.ports.capture.statistics.apiFailures;
+				e.ports.capture.failureStage = Capture::FailureStage::Read; e.ports.capture.nativeError = 123; e.ports.capture.nativeErrorValid = true;
+				e.ports.capture.lastFailureAt = e.ports.now; e.service.Tick();
+				check(e.service.state == State::Paused, "one new Read API failure pauses immediately");
+				e.service.Tick();
+				check(debug.channel && debug.channel->ReadLive().status.pauseCause == Debug::PauseCause::CaptureApi
+					&& debug.channel->ReadLive().status.capture.nativeError == 123 && debug.channel->ReadLive().status.capture.nativeErrorValid,
+					"actual API pause retains source/error after Requested stop");
+				if (debug.channel)
+				{
+					const auto paused = debug.channel->ReadLive();
+					const bool beforeStop = std::any_of(paused.summaries.begin(), paused.summaries.begin() + paused.count, [&](const Debug::NumericSummary& summary)
+					{ return summary.captureFailure.valid && summary.captureFailure.stage == Capture::FailureStage::Read
+						&& summary.captureFailure.reason == Capture::StopReason::None && summary.captureFailure.at == e.ports.now
+						&& summary.captureFailure.nativeErrorValid && summary.captureFailure.nativeError == 123; });
+					check(beforeStop, "actual Tick records original API snapshot before Requested stop");
+					e.ports.capture.failureStage = Capture::FailureStage::End; e.ports.capture.reason = Capture::StopReason::BackendFailure;
+					e.ports.capture.nativeError = 0; e.ports.capture.nativeErrorValid = false; e.service.Tick();
+					const auto ended = debug.channel->ReadLive();
+					check(ended.status.pauseCause == Debug::PauseCause::CaptureApi && ended.status.capture.failureStage == Capture::FailureStage::End
+						&& std::any_of(ended.summaries.begin(), ended.summaries.begin() + ended.count, [](const Debug::NumericSummary& summary)
+						{ return summary.captureFailure.valid && summary.captureFailure.stage == Capture::FailureStage::Read
+							&& summary.captureFailure.reason == Capture::StopReason::None && summary.captureFailure.nativeErrorValid && summary.captureFailure.nativeError == 123; }),
+						"actual Read failure event survives latest End fault");
+				}
+			}
+			{
+				DebugScope debug; Environment e; e.Track(); const auto owner = e.ports.channel->Read();
+				e.ports.channel->Applied(owner.session, owner.applied, owner.viewportX, owner.viewportY, true); e.service.Tick(); e.service.Tick();
+				check(e.service.state == State::Paused && debug.channel && debug.channel->ReadLive().status.pauseCause == Debug::PauseCause::ViewportClamped,
+					"actual viewport clamp first cause");
+			}
+			{
+				DebugScope debug; Environment e; e.Track(); Capture::Frame invalid;
+				invalid.width = 640; invalid.height = 480; invalid.session = e.ports.capture.session; invalid.sequence = 2;
+				invalid.geometry.workArea = {1000,24,1200,456}; e.ports.callback(invalid); e.service.Tick(); e.service.Tick();
+				check(e.service.state == State::Paused && debug.channel && debug.channel->ReadLive().status.pauseCause == Debug::PauseCause::InvalidRoi
+					&& debug.channel->ReadLive().counters.trackerCalls == 1, "actual invalid ROI pauses without fake Tracker result");
+			}
+			{
+				DebugScope debug; Environment e; e.Track(); ++e.ports.capture.statistics.apiFailures; ++e.ports.capture.statistics.rejected;
+				e.ports.capture.reason = Capture::StopReason::GeometryChanged; e.ports.capture.publishing = false;
+				e.ports.capture.failureStage = Capture::FailureStage::Read; e.ports.capture.lastFailureAt = e.ports.now;
+				e.ports.capture.nativeError = 321; e.ports.capture.nativeErrorValid = true; e.service.Tick();
+				if (debug.channel)
+				{
+					const auto live = debug.channel->ReadLive();
+					check(std::any_of(live.summaries.begin(), live.summaries.begin() + live.count, [](const Debug::NumericSummary& summary)
+					{ return summary.captureFailure.valid && summary.captureFailure.stage == Capture::FailureStage::Read
+						&& summary.captureFailure.reason == Capture::StopReason::GeometryChanged && summary.captureFailure.nativeError == 321
+						&& summary.captureFailure.nativeErrorValid && !summary.hasMotion; })
+						&& e.ports.channel->Read().disposition == Draw::Follow::Disposition::RetireScene
+						&& live.status.pauseCause == Debug::PauseCause::None && live.counters.trackerRejected == 0,
+						"actual geometry capture retirement preserves source without fake pause/rejection");
+				}
 			}
 			{
 				Environment e; e.Begin(); e.ports.now += std::chrono::seconds(6); e.service.Tick(); e.End();

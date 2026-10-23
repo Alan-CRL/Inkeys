@@ -26,6 +26,8 @@ int RunFreezeMagnifierPrintWindowTest();
 
 // 专用内容可见，实际正式MagnifierThread采样；不运行旧owner读回。
 int RunFreezeCaptureLiveTest();
+// 最小正式取帧验证：普通诊断窗口覆盖下方专用图案，至少三帧实际像素排除。
+int RunScrollFollowDebugExclusionTest();
 
 // 仅严格早退CLI：真实Business/StateMonitoring/原Mag，私有专用内容。
 int RunScrollFollowProductLiveTest();
@@ -35,3 +37,6 @@ int RunScrollFollowProductLiveInkTest();
 int RunScrollFollowProductLiveLongTest();
 // 私有runner拥有Edge；仅检查真实共享Mag的空页跟随，不声明墨迹验收。
 int RunScrollFollowProductLiveExternalTest();
+
+// 严格短入口：同一真实会话的 absent/open/closed 观测及独立 GUI 控件时段。
+int RunScrollFollowDebugProductTest();

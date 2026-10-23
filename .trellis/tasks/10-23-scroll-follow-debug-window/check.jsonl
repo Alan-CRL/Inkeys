@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Native desktop boundaries and validation"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "Minimal changes, ownership, encoding"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Solution ARM64 build and compatibility"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "Window/GDI/thread lifetime"}
+{"file": ".trellis/spec/native-desktop/scroll-follow-tracking.md", "reason": "Current production tracker invariants"}
+{"file": ".trellis/spec/native-desktop/scroll-follow-capture.md", "reason": "Borrowed frame and Mag worker invariants"}
+{"file": ".trellis/spec/native-desktop/scroll-follow-product.md", "reason": "ViewAdjust/Follow state and output boundaries"}
+{"file": ".trellis/tasks/10-23-scroll-follow-debug-window/research/p0.md", "reason": "Confirmed source investigation and environment"}
+{"file": ".trellis/tasks/10-23-scroll-follow-debug-window/research/gui-verification.md", "reason": "Minimal real Mag exclusion, production GUI and limited performance verification using existing fixture"}
+{"file": ".trellis/spec/native-desktop/scroll-follow-debug-window.md", "reason": "Read-only diagnostics, GDI/Mag window ownership, triple-slot/Freeze/export and evidence boundaries"}
+{"file": ".trellis/tasks/10-23-scroll-follow-debug-window/research/p3-contract.md", "reason": "Stable model/UI contract, timing/coordinate validity and closed-generation lifetime"}

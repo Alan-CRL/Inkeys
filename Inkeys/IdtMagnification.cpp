@@ -6,6 +6,7 @@
 #include "Inkeys/Graphics/FreezeCapture.h"
 #include "Inkeys/UI/Freeze/Freeze.MagnifierCoordinator.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
+#include "Inkeys/UI/ScrollFollowDebug/ScrollFollowDebug.h"
 
 #include <array>
 #include <atomic>
@@ -20,6 +21,7 @@
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Business/ScrollFollow.h"
+#include "Inkeys/Business/ScrollFollowDebug.h"
 #include "Inkeys/CV/VisualMotionTracker.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -120,7 +122,7 @@ namespace
 
 	[[nodiscard]] std::vector<HWND> BuildCurrentFilterList()
 	{
-		static constexpr std::array<WindowRole, 10> filterRoles = {
+		static constexpr std::array<WindowRole, 11> filterRoles = {
 			WindowRole::MagnifierHost,
 			WindowRole::Freeze,
 			WindowRole::DrawpadPresentation,
@@ -131,12 +133,15 @@ namespace
 			WindowRole::PptMiddleRight,
 			WindowRole::Bar,
 			WindowRole::Setting,
+			WindowRole::ScrollFollowDebug,
 		};
 
 		const auto& service = Inkeys::Window::GetService();
-		std::array<HWND, filterRoles.size()> candidates{};
+		std::array<HWND, filterRoles.size() + 1> candidates{};
 		for (std::size_t index = 0; index < filterRoles.size(); ++index)
 			candidates[index] = service.Handle(filterRoles[index]);
+		// 导出目录对话框由独立 STA 持有；每次读取当前句柄，沿同一有效性/进程/去重检查。
+		candidates.back() = Inkeys::UI::ScrollFollowDebug::ExportPickerHandle();
 
 		return Inkeys::UI::Freeze::MagnifierInternal::BuildFilterList<HWND>(
 			candidates, GetCurrentProcessId(),
@@ -165,10 +170,14 @@ namespace
 			return AreCurrentTargets(targets_);
 		}
 
-		[[nodiscard]] bool PrepareHidden() noexcept
+		[[nodiscard]] bool PrepareHidden(Capture::BackendResult* failure = nullptr) noexcept
 		{
 			if (!SetLayeredWindowAttributes(targets_.host, 0, 0, LWA_ALPHA))
+			{
+				const DWORD error = GetLastError();
+				if (failure) *failure = { false, Capture::StopReason::BackendFailure, error, true };
 				return false;
+			}
 			auto& service = Inkeys::Window::GetService();
 			const bool hostShown = service.Show(WindowRole::MagnifierHost);
 			const bool childShown = service.Show(WindowRole::MagnifierChild);
@@ -266,7 +275,9 @@ namespace
 		{
 			operations_ = Win32MagnifierOperations(CurrentTargets());
 			if (const auto checked = CheckGeometry(geometry, false); !checked.succeeded) return checked;
-			if (!frame_.resize(geometry.width, geometry.height) || !operations_.PrepareHidden()) return {};
+			Capture::BackendResult failure{};
+			// DIB/Service 包装失败没有可靠原生错误码，保持 nativeErrorValid=false。
+			if (!frame_.resize(geometry.width, geometry.height) || !operations_.PrepareHidden(&failure)) return failure;
 			return { true };
 		}
 
@@ -275,6 +286,7 @@ namespace
 			if (const auto checked = CheckGeometry(geometry, false); !checked.succeeded) return checked;
 			const auto& source = geometry.sourceRect;
 			const RECT sourceRect = { source.left, source.top, source.right, source.bottom };
+			// 这些 BOOL API 没有 GetLastError 合同，不把残留错误声明为本次原生失败。
 			if (!operations_.SubmitFilter() || !operations_.SubmitSource(sourceRect)
 				|| !operations_.Invalidate() || !operations_.Redraw()) return {};
 			return CheckGeometry(geometry, true);
@@ -288,6 +300,7 @@ namespace
 			// 同步 PW 只在原 MagnifierThread，Stop/监督线程不等它，也不释放其 DIB。
 			const bool printed = PrintWindow(operations_.Child(), frame_.dc(), 2) != FALSE;
 			const bool flushed = GdiFlush() != FALSE;
+			// 两者均未承诺设置 last-error；printed=false 仍执行原 GdiFlush，不伪造错误码。
 			if (!printed || !flushed) return {};
 			if (const auto checked = CheckGeometry(geometry, true); !checked.succeeded) return checked;
 			for (auto& pixel : frame_.pixels()) pixel |= 0xFF000000;
@@ -316,9 +329,11 @@ namespace
 				|| CaptureRect(primary->bounds) != geometry.primaryBounds
 				|| CaptureRect(primary->workArea) != geometry.workArea
 				|| GetSystemMetrics(SM_CXSCREEN) != geometry.primaryBounds.right
-				|| GetSystemMetrics(SM_CYSCREEN) != geometry.primaryBounds.bottom
-				|| !GetClientRect(operations_.Child(), &client)
-				|| client.left != 0 || client.top != 0 || client.right != geometry.width || client.bottom != geometry.height)
+				|| GetSystemMetrics(SM_CYSCREEN) != geometry.primaryBounds.bottom)
+				return { false, Capture::StopReason::GeometryChanged };
+			if (!GetClientRect(operations_.Child(), &client))
+				return { false, Capture::StopReason::GeometryChanged, GetLastError(), true };
+			if (client.left != 0 || client.top != 0 || client.right != geometry.width || client.bottom != geometry.height)
 				return { false, Capture::StopReason::GeometryChanged };
 			if (checkSource && (!MagGetWindowSource(operations_.Child(), &source)
 				|| CaptureRect(source) != geometry.sourceRect)) return { false, Capture::StopReason::GeometryChanged };
@@ -708,10 +723,10 @@ namespace
 		return available;
 	}
 
-	bool LogLiveWindows(const char* stage) noexcept
+	bool LogLiveWindows(const char* stage, WindowRole overlayRole = WindowRole::Bar) noexcept
 	{
 		if(!printWindowTest)return false;const auto& test=*printWindowTest;
-		const HWND overlay=Inkeys::Window::GetService().Handle(WindowRole::Bar);
+		const HWND overlay=Inkeys::Window::GetService().Handle(overlayRole);
 		const HWND hit=WindowFromPoint({test.width/2,test.height/2});
 		DWORD hitProcess=0;(void)GetWindowThreadProcessId(hit,&hitProcess);
 		wchar_t hitClass[128]{},image[MAX_PATH]{};DWORD imageLength=MAX_PATH;
@@ -744,6 +759,7 @@ namespace
 				(GetWindowLongPtrW(window,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0,bounds,r.left,r.top,r.right,r.bottom);
 		};
 		log("source",test.source);log("overlay",overlay);log("host",test.host);log("child",test.child);
+		if(overlayRole==WindowRole::ScrollFollowDebug)return security; // 诊断窗的真实客户区由短夹具单独核验。
 		unsigned patternMatches=0,patternTotal=0,blueMatches=0;
 		const HDC screen=GetDC(nullptr);
 		if(screen)for(int row=0;row<patternRows;++row)for(int column=0;column<patternColumns;++column)
@@ -1216,12 +1232,15 @@ int RunFreezeMagnifierPrintWindowTest()
 	if (cleanupDone) CloseHandle(cleanupDone);
 	return test.result;
 }
-int RunFreezeCaptureLiveTest()
+static int RunFreezeCaptureLiveCase(bool debugExclusion)
 {
 	// 安全层门在任何Display/窗口/屏幕读回之前，不能以同名Default桌面代替此检查。
 	if(LiveSecurityInterfacePresent()) { std::fputs("[FreezeCaptureLive] blocked=security-interface-before-initialization\n",stderr); return 4; }
 	// 只驱动正式Start/Stop和原producer；旧owner定时读回入口不运行。
 	PrintWindowTest test;
+	const WindowRole overlayRole = debugExclusion ? WindowRole::ScrollFollowDebug : WindowRole::Bar;
+	RECT debugBounds{}, debugClient{}, debugPreview{};
+	int captureLeft = 0, captureTop = 0;
 	struct Observations
 	{
 		struct Sample
@@ -1295,7 +1314,7 @@ int RunFreezeCaptureLiveTest()
 		pattern.lpszClassName=L"Inkeys.FreezeCaptureLive.Pattern";
 		if (!RegisterClassW(&pattern)) throw std::runtime_error("pattern-class");
 		patternRegistered=true;
-		test.source=CreateWindowExW(WS_EX_TOPMOST|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,pattern.lpszClassName,L"Inkeys dedicated live capture pattern",WS_POPUP,
+		test.source=CreateWindowExW((debugExclusion?0:WS_EX_TOPMOST)|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,pattern.lpszClassName,L"Inkeys dedicated live capture pattern",WS_POPUP,
 			0,0,test.width,test.height,nullptr,nullptr,pattern.hInstance,nullptr);
 		if (!test.source) throw std::runtime_error("pattern-window");
 		ShowWindow(test.source,SW_SHOWNOACTIVATE); UpdateWindow(test.source);
@@ -1323,29 +1342,111 @@ int RunFreezeCaptureLiveTest()
 			return spec;
 		};
 		auto& service=Inkeys::Window::GetService();
-		if (!service.Start({host,child,placeholder(WindowRole::Freeze,L"Inkeys.FreezeCaptureLive.Freeze"),
+		std::vector<Inkeys::Window::WindowSpec> specs{host,child,placeholder(WindowRole::Freeze,L"Inkeys.FreezeCaptureLive.Freeze"),
 			placeholder(WindowRole::DrawpadPresentation,L"Inkeys.FreezeCaptureLive.Auxiliary"),
-			placeholder(WindowRole::Drawpad,L"Inkeys.FreezeCaptureLive.Drawpad"),overlay}) || !magnificationCreateReady)
+			placeholder(WindowRole::Drawpad,L"Inkeys.FreezeCaptureLive.Drawpad")};
+		if(!debugExclusion)specs.push_back(overlay);
+		if (!service.Start(std::move(specs)) || !magnificationCreateReady)
 			throw std::runtime_error("original-pair-start");
 		serviceStarted=true; test.host=service.Handle(WindowRole::MagnifierHost); test.child=service.Handle(WindowRole::MagnifierChild);
-		const bool overlayShown=service.Show(WindowRole::Bar);
+		const bool overlayShown=debugExclusion || service.Show(overlayRole);
 		const bool overlayTopmost=service.SetOverlayTopmost(true);
 		PrintWindowTestLog("[FreezeCaptureLive] overlay_show=%u overlay_topmost=%u overlay_owner=%p root=%p\n",overlayShown,overlayTopmost,
-			GetWindow(service.Handle(WindowRole::Bar),GW_OWNER),service.OverlayRoot());
+			GetWindow(service.Handle(overlayRole),GW_OWNER),service.OverlayRoot());
 		if (!overlayShown || !overlayTopmost) throw std::runtime_error("overlay-show");
-		if(LogLiveWindows("before-source-order"))throw std::runtime_error("security-interface-blocks-fixture");
+		if(LogLiveWindows("before-source-order",overlayRole))throw std::runtime_error("security-interface-blocks-fixture");
 		// 只激活/提升专用SOURCE，再恢复本组排除层；不改变外部窗口或系统桌面。
 		const bool sourceActivated=SetForegroundWindow(test.source)!=FALSE;
-		const bool sourceRaised=SetWindowPos(test.source,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOOWNERZORDER)!=FALSE;
+		const bool sourceRaised=SetWindowPos(test.source,debugExclusion?HWND_TOP:HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOOWNERZORDER)!=FALSE;
 		const bool ownGroupRaised=service.SetOverlayTopmost(true);
 		PrintWindowTestLog("[FreezeCaptureLive] own_source_activate=%u own_source_raise=%u own_overlay_raise=%u foreground_own_source=%u\n",
 			sourceActivated,sourceRaised,ownGroupRaised,GetForegroundWindow()==test.source);
 		// 专用SOURCE不是产品角色，显式置于本组根之后，避免两个独立TOPMOST链相互盖住；不动用户窗口。
-		const bool sourceBehind=SetWindowPos(test.source,service.OverlayRoot(),0,0,0,0,
+		const bool sourceBehind=SetWindowPos(test.source,debugExclusion?HWND_NOTOPMOST:service.OverlayRoot(),0,0,0,0,
 			SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER)!=FALSE;
 		PrintWindowTestLog("[FreezeCaptureLive] source_behind_own_mag_root=%u error=%lu\n",sourceBehind,sourceBehind?0:GetLastError());
-		LogLiveWindows("after-source-order");
+		LogLiveWindows("after-source-order",overlayRole);
 		if(!sourceBehind)throw std::runtime_error("dedicated-source-order");
+		captureLeft=test.width/2-128;captureTop=test.height/2-96;
+		if(debugExclusion)
+		{
+			// 使用同一个产品 factory；专用 Source 保持非置顶，诊断窗沿用独立置顶属性。
+			if(test.width<960 || test.height<640)throw std::runtime_error("fixture-screen-too-small-for-debug");
+			const RECT bounds{(test.width-960)/2,(test.height-640)/2,(test.width+960)/2,(test.height+640)/2};
+			if(!Inkeys::UI::ScrollFollowDebug::Open(nullptr,&bounds))throw std::runtime_error("production-debug-open");
+			const HWND debug=service.Handle(overlayRole);RECT client{};POINT origin{};
+			// 仅显式摆放夹具自己的置顶诊断窗，再核验真实像素排除。
+			if(!SetWindowPos(debug,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER))
+				throw std::runtime_error("debug-fixture-visible-order");
+			if(LogLiveWindows("debug-before-source-behind",overlayRole))throw std::runtime_error("security-interface-blocks-fixture");
+			// 在 Source 自己的线程保留非置顶带；不把它插入置顶窗之间而升级 Source。
+			if(!SetWindowPos(test.source,HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER))
+				throw std::runtime_error("source-fixture-behind-debug");
+			PrintWindowTestLog("[ScrollFollowDebugExclusion] own_source_behind_debug=1 foreground_source=%u source_previous=%p debug_next=%p\n",GetForegroundWindow()==test.source,GetWindow(test.source,GW_HWNDPREV),GetWindow(debug,GW_HWNDNEXT));
+			if(LogLiveWindows("debug-after-source-behind",overlayRole))throw std::runtime_error("security-interface-blocks-fixture");
+			if(!pumpUntil([]{return Inkeys::UI::ScrollFollowDebug::ReadProbe().paints>0;},3000))
+				throw std::runtime_error("debug-first-production-paint");
+			const auto probe=Inkeys::UI::ScrollFollowDebug::ReadProbe();
+			if(!GetWindowRect(debug,&debugBounds) || !GetClientRect(debug,&client) || !ClientToScreen(debug,&origin))
+				throw std::runtime_error("debug-actual-client-geometry");
+			debugClient={origin.x,origin.y,origin.x+client.right,origin.y+client.bottom};
+			// 实际已绘制布局决定覆盖 ROI，不再依赖 P2 蓝色骨架的固定矩形。
+			debugPreview=probe.previewRect;OffsetRect(&debugPreview,origin.x,origin.y);
+			captureLeft=(debugPreview.left+debugPreview.right)/2-128;
+			captureTop=(debugPreview.top+debugPreview.bottom)/2-96;
+			if(captureLeft<debugPreview.left || captureTop<debugPreview.top || captureLeft+256>debugPreview.right
+				|| captureTop+192>debugPreview.bottom || (debugBounds.left<320 && debugBounds.top<256)
+				|| !(GetWindowLongPtrW(debug,GWL_EXSTYLE)&WS_EX_TOPMOST) || GetWindow(debug,GW_OWNER)
+				|| (GetWindowLongPtrW(test.source,GWL_EXSTYLE)&WS_EX_TOPMOST)
+				|| service.OwnerThreadId(overlayRole)!=GetWindowThreadProcessId(debug,nullptr)
+				|| service.OwnerThreadId(overlayRole)==service.OwnerThreadId(WindowRole::MagnifierHost))
+				throw std::runtime_error("topmost-debug-client-contract");
+			PrintWindowTestLog("[ScrollFollowDebugExclusion] debug=%p owner_thread=%lu topmost=1 owner_null=1 source_topmost=%u client=(%ld,%ld,%ld,%ld) covered_capture_roi=(%d,%d,256,192)\n",
+				debug,service.OwnerThreadId(overlayRole),(GetWindowLongPtrW(test.source,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0,
+				debugClient.left,debugClient.top,debugClient.right,debugClient.bottom,captureLeft,captureTop);
+		}
+		const auto verifySourceScreenRoi=[&](HDC dc,int phase,bool save)
+		{
+			Inkeys::Graphics::DibSurface roi;bool exact=roi.resize(256,192)
+				&& BitBlt(roi.dc(),0,0,256,192,dc,64,64,SRCCOPY)!=FALSE;
+			GdiFlush();
+			if(exact)for(int y=0;y<192;++y)for(int x=0;x<256;++x)
+			{
+				const auto pixel=roi.pixels()[static_cast<std::size_t>(y)*256+x];
+				const auto c=PatternColor(phase,((x+65)*9-1)/test.width,((y+65)*7-1)/test.height);
+				exact &= ((pixel>>16)&255)==GetRValue(c) && ((pixel>>8)&255)==GetGValue(c) && (pixel&255)==GetBValue(c);
+			}
+			if(exact && save){for(auto& pixel:roi.pixels())pixel|=0xFF000000;(void)roi.savePng(test.output+L"/screen-dedicated-roi.png");}
+			return exact;
+		};
+		const auto verifyDebugScreen=[&](int phase)
+		{
+			unsigned outside=0,matched=0,background=0;const HDC dc=GetDC(nullptr);
+			if(!dc)return false;
+			const auto probe=Inkeys::UI::ScrollFollowDebug::ReadProbe();
+			RECT currentBounds{};
+			const bool geometry=GetWindowRect(service.Handle(overlayRole),&currentBounds) && EqualRect(&currentBounds,&debugBounds);
+			for(int row=0;row<patternRows;++row)for(int column=0;column<patternColumns;++column)
+			{
+				const POINT point{(2*column+1)*test.width/(2*patternColumns),(2*row+1)*test.height/(2*patternRows)};
+				if(PtInRect(&debugBounds,point))continue;
+				++outside;matched+=GetPixel(dc,point.x,point.y)==PatternColor(phase,column,row);
+			}
+			for(int row=0;row<3;++row)for(int column=0;column<3;++column)
+				background+=GetPixel(dc,captureLeft+32+96*column,captureTop+24+72*row)==probe.previewBackground;
+			const bool exact=verifySourceScreenRoi(dc,phase,false);
+			ReleaseDC(nullptr,dc);
+			const bool hit=WindowFromPoint({captureLeft+128,captureTop+96})==service.Handle(overlayRole);
+			PrintWindowTestLog("[ScrollFollowDebugExclusion] screen_phase=%d outside_pattern=%u/%u production_preview_background=%u/9 owned_client_hit=%u uncovered_roi_exact=%u painted=%u geometry_stable=%u\n",phase,matched,outside,background,hit,exact,probe.paints>0,geometry);
+			return geometry && probe.open && probe.paints>0 && outside>0 && matched==outside && background==9 && hit && exact;
+		};
+		if(debugExclusion)
+		{
+			if(!pumpUntil([&]{return test.painted.load()==1 && verifyDebugScreen(1);},3000))
+				throw std::runtime_error("debug-visible-or-uncovered-source-GT");
+		}
+		else
+		{
 		COLORREF centerPixel=CLR_INVALID;
 		if (!pumpUntil([&]
 		{
@@ -1369,24 +1470,18 @@ int RunFreezeCaptureLiveTest()
 			const COLORREF expected=blue?RGB(0,0,255):PatternColor(1,column,row);
 			if(GetPixel(screen,x,y)==expected){++screenMatches;if(blue)++screenBlue;}
 		}
-		Inkeys::Graphics::DibSurface screenRoi;bool screenExact=screenRoi.resize(256,192) && BitBlt(screenRoi.dc(),0,0,256,192,screen,64,64,SRCCOPY)!=FALSE;
-		ReleaseDC(nullptr,screen);GdiFlush();
-		if(screenExact)for(int y=0;y<192;++y)for(int x=0;x<256;++x)
-		{
-			const auto pixel=screenRoi.pixels()[static_cast<std::size_t>(y)*256+x];
-			const auto c=PatternColor(1,((x+65)*9-1)/test.width,((y+65)*7-1)/test.height);
-			screenExact &= ((pixel>>16)&255)==GetRValue(c) && ((pixel>>8)&255)==GetGValue(c) && (pixel&255)==GetBValue(c);
-		}
+		const bool screenExact=verifySourceScreenRoi(screen,1,true);
+		ReleaseDC(nullptr,screen);
 		PrintWindowTestLog("[FreezeCaptureLive] screen_gt=%u/63 blue_overlay=%u/9 screen_roi_exact=%u roi=(64,64,256,192)\n",screenMatches,screenBlue,screenExact);
-		if(screenExact){for(auto& p:screenRoi.pixels())p|=0xFF000000;(void)screenRoi.savePng(test.output+L"/screen-dedicated-roi.png");}
 		if(screenMatches!=63 || !screenExact)throw std::runtime_error("dedicated-screen-GT");
+		}
 		const auto filters=BuildCurrentFilterList();
-		if (std::find(filters.begin(),filters.end(),service.Handle(WindowRole::Bar))==filters.end() ||
+		if (std::find(filters.begin(),filters.end(),service.Handle(overlayRole))==filters.end() ||
 			std::find(filters.begin(),filters.end(),test.source)!=filters.end()) throw std::runtime_error("original-filter-list");
 		const auto getCallback=reinterpret_cast<GetScalingCallback>(GetProcAddress(GetModuleHandleW(L"Magnification.dll"),"MagGetImageScalingCallback"));
 		if (getCallback && getCallback(test.child)) throw std::runtime_error("unexpected-scaling-callback");
 		PrintWindowTestLog("[FreezeCaptureLive] owner_tid=%lu host=%p child=%p overlay=%p source=%p primary=%dx%d filters=%zu source_unfiltered=1 cold_alpha0=1 get_callback_null=%u\n",
-			service.OwnerThreadId(WindowRole::MagnifierHost),test.host,test.child,service.Handle(WindowRole::Bar),test.source,test.width,test.height,filters.size(),getCallback?1u:0u);
+			service.OwnerThreadId(WindowRole::MagnifierHost),test.host,test.child,service.Handle(overlayRole),test.source,test.width,test.height,filters.size(),getCallback?1u:0u);
 		worker=std::jthread([&]{observations->worker.store(GetCurrentThreadId());MagnifierThread();});
 		if (!pumpUntil([&]{const auto s=magnifierCoordinator.Snapshot();return Capture::GetSnapshot().ready && !s.visible && s.processedRevision>=Inkeys::UI::Freeze::Snapshot().revision;},3000))
 			throw std::runtime_error("formal-worker-ready");
@@ -1416,7 +1511,7 @@ int RunFreezeCaptureLiveTest()
 					std::vector<std::uint32_t> crop(256*192); bool exact=true;
 					for(int y=0;y<192;++y)for(int x=0;x<256;++x)
 					{
-						const int sx=test.width/2-128+x,sy=test.height/2-96+y;
+						const int sx=captureLeft+x,sy=captureTop+y;
 						const auto pixel=frame.bgra[static_cast<std::size_t>(sy)*frame.width+sx];
 						const auto c=PatternColor(matched,(std::min)(8,((sx+1)*9-1)/test.width),(std::min)(6,((sy+1)*7-1)/test.height));
 						if(abs(int((pixel>>16)&255)-GetRValue(c))>3 || abs(int((pixel>>8)&255)-GetGValue(c))>3 || abs(int(pixel&255)-GetBValue(c))>3)exact=false;
@@ -1445,12 +1540,45 @@ int RunFreezeCaptureLiveTest()
 		const auto started=Capture::Start(receive);
 		PrintWindowTestLog("[FreezeCaptureLive] start_status=%u session=%llu\n",static_cast<unsigned>(started.status),started.session);
 		if(started.status!=Capture::StartStatus::Started)throw std::runtime_error("formal-start");
-		for(int phase=1;phase<=4;++phase)
+		const int phaseCount=debugExclusion?2:4;
+		for(int phase=1;phase<=phaseCount;++phase)
 		{
 			if(phase>1){test.phase.store(phase);SendMessageW(test.source,patternPaintMessage,0,0);}
+			if(debugExclusion && !pumpUntil([&]{return verifyDebugScreen(phase);},3000))
+				throw std::runtime_error("debug-changed-source-screen-GT");
 			if(!pumpUntil([&]{std::scoped_lock lock(observations->mutex);return observations->phases[phase]>=3 && !observations->crops[phase].empty();},5000))
 				throw std::runtime_error("formal-pixels-static-or-changed-phase-timeout");
+			if(debugExclusion && !verifyDebugScreen(phase))
+				throw std::runtime_error("debug-coverage-lost-after-formal-frames");
 		}
+		if(debugExclusion)
+		{
+			Capture::Stop();
+			if(!pumpUntil([]{return !Capture::GetSnapshot().occupied;},3000))throw std::runtime_error("debug-stop-drain");
+			for(int phase=1;phase<=phaseCount;++phase)
+			{
+				Inkeys::Graphics::DibSurface crop;
+				if(!crop.resize(256,192))throw std::runtime_error("debug-roi-dib");
+				std::copy(observations->crops[phase].begin(),observations->crops[phase].end(),crop.pixels().begin());
+				if(!crop.savePng(test.output+L"/debug-phase-"+std::to_wstring(phase)+L"-covered-roi.png"))throw std::runtime_error("debug-roi-png");
+			}
+			const HWND debug=service.Handle(overlayRole);
+			SendMessageW(debug,WM_CLOSE,0,0);
+			const auto closedFilters=BuildCurrentFilterList();
+			if(service.Handle(overlayRole) || Inkeys::UI::ScrollFollowDebug::Handle() || IsWindow(debug)
+				|| std::find(closedFilters.begin(),closedFilters.end(),debug)!=closedFilters.end())
+				throw std::runtime_error("debug-close-stale-filter");
+			if(!Inkeys::UI::ScrollFollowDebug::Open(nullptr,&debugBounds))throw std::runtime_error("debug-explicit-recreate");
+			const HWND recreated=service.Handle(overlayRole);const auto recreatedFilters=BuildCurrentFilterList();
+			if(std::count(recreatedFilters.begin(),recreatedFilters.end(),recreated)!=1
+				|| std::find(recreatedFilters.begin(),recreatedFilters.end(),test.source)!=recreatedFilters.end())
+				throw std::runtime_error("debug-recreated-filter");
+			SendMessageW(recreated,WM_CLOSE,0,0);
+			if(service.Handle(overlayRole) || !service.Running())throw std::runtime_error("debug-final-close");
+			PrintWindowTestLog("[ScrollFollowDebugExclusion] phases=2 matched_frames=(%u,%u) covered_roi_exact=1 close_cleared=1 recreate_filter_current=1 long_tail_skipped=1\n",observations->phases[1],observations->phases[2]);
+		}
+		else
+		{
 		// 目标20Hz不是实测帧率；延长同一静止phase，单独记录真实Read与间隔。
 		const auto staticBegan=Capture::Clock::now();
 		unsigned staticBefore=0;
@@ -1617,6 +1745,7 @@ int RunFreezeCaptureLiveTest()
 		if(invalid.status!=Capture::StartStatus::InvalidArgument || Capture::GetSnapshot().occupied)throw std::runtime_error("invalid-callback-start");
 		PrintWindowTestLog("[FreezeCaptureLive] matrix repeat_cycles=20 resources_stable=1 immediate_cancel_callbacks=0 read_stop_checked=1 freeze_cycles=2 post_freeze_frames=3 invalid_start_status=%u sequence_errors=%u\n",
 			static_cast<unsigned>(invalid.status),observations->sequenceErrors);
+		}
 		if(observations->wrongThread || observations->sequenceErrors || observations->unmatched || test.apiFailures)
 			throw std::runtime_error("formal-thread-sequence-GT-or-api-failure");
 		test.result=0;
@@ -1625,7 +1754,7 @@ int RunFreezeCaptureLiveTest()
 	{
 		const DWORD failureError=GetLastError();
 		const auto s=Capture::GetSnapshot();
-		(void)LiveDesktopAvailable("failure");LogLiveWindows("failure");
+		(void)LiveDesktopAvailable("failure");LogLiveWindows("failure",overlayRole);
 		PrintWindowTestLog("[FreezeCaptureLive] FAIL reason=%s error=%lu ready=%u publishing=%u occupied=%u inflight=%u stop=%u quality=%u mean=%.6f variance=%.6f black=%.6f attempts=%llu accepted=%llu rejected=%llu api=%llu\n",
 			e.what(),failureError,s.ready,s.publishing,s.occupied,s.inFlight,static_cast<unsigned>(s.reason),static_cast<unsigned>(s.quality.status),s.quality.meanLuma,s.quality.variance,s.quality.blackFraction,s.statistics.attempts,s.statistics.accepted,s.statistics.rejected,s.statistics.apiFailures);
 		test.result=1;
@@ -1633,6 +1762,7 @@ int RunFreezeCaptureLiveTest()
 	Capture::Stop(); StopMagnifierCoordinator();
 	if(worker.joinable())worker.join();
 	if(serviceStarted || Inkeys::Window::GetService().Running())Inkeys::Window::GetService().StopAndJoin();
+	Inkeys::UI::ScrollFollowDebug::ShutdownExports();
 	if(test.source)DestroyWindow(test.source);
 	if(patternRegistered)UnregisterClassW(L"Inkeys.FreezeCaptureLive.Pattern",GetModuleHandleW(nullptr));
 	if(displayStarted)Inkeys::Display::Shutdown();
@@ -1649,6 +1779,9 @@ int RunFreezeCaptureLiveTest()
 }
 
 
+int RunFreezeCaptureLiveTest() { return RunFreezeCaptureLiveCase(false); }
+int RunScrollFollowDebugExclusionTest() { return RunFreezeCaptureLiveCase(true); }
+
 #else
 namespace
 {
@@ -1656,6 +1789,7 @@ namespace
 }
 int RunFreezeMagnifierPrintWindowTest() { return 2; }
 int RunFreezeCaptureLiveTest() { return 2; }
+int RunScrollFollowDebugExclusionTest() { return 2; }
 #endif
 
 // 专用产品实屏入口复用上方原Mag及安全助手；关闭harness时只返回2。

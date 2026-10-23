@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <memory>
 
 namespace Inkeys::CV
@@ -59,6 +60,107 @@ namespace Inkeys::CV
 		MotionStatistics statistics{};
 	};
 
+	// 点位置、flow 和 bounds 为处理图像像素，除以 scaleX/scaleY 还原输入；anchor/total/delta 已是原图像素。
+	enum class TrackerDebugStage : std::uint8_t
+	{
+		Validation, Preprocess, Forward, Refinement, Backward, Consensus, NonTranslation,
+		Ambiguity, Consistency, Coverage, Jump, Anchor, Retention, Refill, Commit, Count,
+	};
+	enum class TrackerDebugComparison : std::uint8_t { Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual };
+	enum class TrackerDebugCheckId : std::uint8_t
+	{
+		TrackingState, CaptureInvalid, TimestampNonFinite, ImageDataMissing,
+		WidthTooSmall, HeightTooSmall, WidthTooLarge, HeightTooLarge, PixelFormatInvalid,
+		StrideTooSmall, LayoutOverflow, BufferTooSmall, WidthChanged, HeightChanged, FormatChanged,
+		TimestampReversed, BlackMaximum, InitialPointsLow, ForwardPointsLow, FbPointsLow,
+		AffineCellsLow, AffineSolveFailed, AffineVariationHigh, AffineResidualLow, AffineSupportHigh,
+		NonTranslation, ZeroModeAmbiguity, RunnerUpHigh, InliersLow, SpatialRatioLow, SurvivalRatioLow,
+		CoverageCells, CoverageInterior, CoverageColumns, CoverageRows, CoverageX, CoverageY,
+		JumpHigh, AnchorDisagreement, Count,
+	};
+	struct TrackerDebugCheck
+	{
+		// condition 是原表达式的真值，不代表单项必然导致拒绝；firstFailure 才指向实际失败门。
+		bool evaluated = false, condition = false;
+		double measured = 0, threshold = 0;
+		TrackerDebugComparison comparison = TrackerDebugComparison::Equal;
+	};
+	struct TrackerDebugBounds
+	{
+		bool valid = false;
+		double minX = 0, minY = 0, maxX = 0, maxY = 0;
+	};
+	struct TrackerDebugPoint
+	{
+		MotionVector reference{}, forward{}, refined{}, backward{}, anchor{};
+		std::uint64_t birthGeneration = 0;
+		int referenceCell = -1, currentCell = -1;
+		double fbError = 0, refinementDistance = 0, fitWeight = 0, residual = 0;
+		bool forwardComputed = false, forwardStatus = false, forwardInsideEvaluated = false, forwardInside = false;
+		bool refinedComputed = false, backwardComputed = false, backwardStatus = false;
+		bool backwardFiniteEvaluated = false, backwardFinite = false, fbComputed = false;
+		bool refinedInsideEvaluated = false, refinedInside = false, refinementDistanceEvaluated = false;
+		bool fbThresholdEvaluated = false, fbValid = false, consensusEvaluated = false, inlier = false;
+		bool residualComputed = false, nearStationary = false, competitor = false, retentionEvaluated = false, retained = false, retired = false;
+	};
+	struct TrackerDebugAddedPoint
+	{
+		MotionVector point{}, anchor{};
+		std::uint64_t birthGeneration = 0;
+		int cell = -1;
+		bool committed = false;
+	};
+	struct TrackerDebugCell
+	{
+		// 拟合/网格投票按参考点所在格；retained/added 按提交候选中的当前点所在格。
+		int reference = 0, forward = 0, fbValid = 0, inliers = 0, competitor = 0, nearStationary = 0;
+		int retained = 0, added = 0;
+		double fitWeight = 0, inlierWeight = 0, originalCellWeight = 0;
+		bool affineSampleValid = false;
+		MotionVector affinePosition{}, affineFlow{};
+	};
+	struct TrackerDebugCandidate
+	{
+		bool valid = false;
+		MotionVector flow{};
+		double fitWeight = 0, originalCellRatio = 0, separation = 0;
+		int points = 0, cells = 0, interiorCells = 0;
+		TrackerDebugBounds referenceBounds{}, currentBounds{};
+		bool doubleRadiusEvaluated = false, beyondDoubleRadius = false;
+		bool zeroLengthEvaluated = false, zeroLength = false, zeroRatioEvaluated = false, zeroRatio = false;
+		bool interiorEvaluated = false, enoughInterior = false;
+	};
+	struct TrackerDebugSnapshot
+	{
+		static constexpr std::size_t MaximumPoints = 320, Columns = 8, Rows = 6;
+		std::uint64_t inputSequence = 0, referenceSequenceBefore = 0, referenceSequenceAfter = 0;
+		std::uint64_t referenceGenerationBefore = 0, referenceGenerationAfter = 0;
+		bool initialization = false, referenceBeforeValid = false, referenceAfterValid = false;
+		int inputWidth = 0, inputHeight = 0, processingWidth = 0, processingHeight = 0;
+		int referenceProcessingWidth = 0, referenceProcessingHeight = 0;
+		std::size_t inputStrideBytes = 0, inputSizeBytes = 0;
+		MotionPixelFormat inputFormat = MotionPixelFormat::Gray8;
+		double timestampSeconds = 0, scaleX = 0, scaleY = 0;
+		double pointBorder = 0, consensusRadius = 0, refinementDistanceLimit = 0, fbErrorLimit = 0, nearStationaryLimit = 0;
+		// 与生产零主模式的比较共用，显示端无需另写比例门限。
+		double zeroModeRatioThreshold = 0;
+		bool captureValid = false;
+		std::uint64_t reachedStages = 0, completedStages = 0;
+		TrackerDebugCheckId firstFailure = TrackerDebugCheckId::Count;
+		MotionReason exception = MotionReason::None;
+		std::array<TrackerDebugCheck, static_cast<std::size_t>(TrackerDebugCheckId::Count)> checks{};
+		std::array<TrackerDebugPoint, MaximumPoints> points{};
+		std::array<TrackerDebugAddedPoint, MaximumPoints> addedPoints{};
+		std::array<TrackerDebugCell, Columns * Rows> cells{};
+		std::size_t pointCount = 0, addedPointCount = 0;
+		bool truncated = false, affineModelValid = false, ambiguityComplete = false, candidateTotalValid = false;
+		int consensusCandidatesEvaluated = 0, competitorsEvaluated = 0;
+		TrackerDebugCandidate mainMotion{}, strongestCompetitor{}, eligibleRunnerUp{}, rejectingCompetitor{};
+		MotionVector totalBefore{}, candidateDelta{}, candidateTotal{};
+		// 该结果与返回值完全相同；主共识/候选均不能代替生产实际应用的 delta/total。
+		MotionResult result{};
+	};
+
 	// 单个会话由调用方串行访问；本类不启动线程，也不持有窗口/取屏资源。
 	class VisualMotionTracker
 	{
@@ -67,12 +169,14 @@ namespace Inkeys::CV
 		~VisualMotionTracker();
 		VisualMotionTracker(const VisualMotionTracker&) = delete;
 		VisualMotionTracker& operator=(const VisualMotionTracker&) = delete;
-		[[nodiscard]] MotionResult Initialize(const MotionFrame&) noexcept;
-		[[nodiscard]] MotionResult Process(const MotionFrame&) noexcept;
+		[[nodiscard]] MotionResult Initialize(const MotionFrame&, TrackerDebugSnapshot* debug = nullptr) noexcept;
+		[[nodiscard]] MotionResult Process(const MotionFrame&, TrackerDebugSnapshot* debug = nullptr) noexcept;
 		void Reset() noexcept;
 	private:
 		struct Impl;
 		std::unique_ptr<Impl> impl_;
 	};
 	[[nodiscard]] const char* MotionReasonName(MotionReason) noexcept;
+	[[nodiscard]] const char* TrackerDebugStageName(TrackerDebugStage) noexcept;
+	[[nodiscard]] const char* TrackerDebugCheckName(TrackerDebugCheckId) noexcept;
 }

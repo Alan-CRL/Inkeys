@@ -65,3 +65,9 @@ Default输入桌面名称、WTS Active、IsWindowVisible/Topmost和DWMWA_CLOAKED
 用户本轮允许专用可见GUI、原生操作和截图，禁止Computer Use；具体授权与当前锁屏停止见父任务research/live-test-authorization.md和validation-matrix.md。解锁后原共享Mag/原MagnifierThread正式路径无callback取得12帧，4阶段变化/静止与Bar覆盖排除、5张专用ROI逐像素均通过，详保存子任务research/live-capture-check.md。它只证明本机有限专用图案取帧，不能代替20轮启停、Freeze、墨迹/系统ACK、长期性能或其它OS。Read平均约71ms、短夹具约6.7次/s是当前观测，20Hz仍只是目标；前文不可见权限描述软件交付历史，不覆盖本轮新授权。
 
 无hook测试在观察inFlight后调用Stop存在调度竞态，不能以“观察过在途”或取消前后accepted相等即声称撤销成功。实际Read撤销用例必须核对Stop时accepted为0、排空后仍0、本session回调增量0、lateResults至少1及Requested原因；先提交时标race-missed，排空后有界新session重试，耗尽记未覆盖/失败，不能进入成功汇总。lateResults含义以实际Session为准，不靠测试手写完成；跨session回调计数必须使用独立基线。热身后资源计数稳定也不能称初次初始化零泄漏，Freeze显示状态确认不能替代屏幕像素和真实产品ACK。
+
+## 2026-10-23 只读调试观测
+
+Frame 按值追加本次 Statistics 与真实 sampleInterval，Snapshot 追加 Read 开始/完成、最近 accepted sample、失败时间/阶段及可靠原生错误有效位；不改变调度与返回决定。qualityObserved 只在实际 Analyze 的 Read 成功结果旁设置，在原质量重置处清除，API 失败时不能把默认 Quality 当成实际分析结论。原 lastReadDuration 在 Backend.Read 返回后、Analyze 前结束，包含几何/PW/GdiFlush/alpha repair，不是纯 PW 耗时或 compositor 新鲜度保证。所有错误码只有对应 API 合同保证 last-error 时才有效。
+
+本轮调试窗口和导出选择器沿原 BuildCurrentFilterList 的当前 HWND 校验加入排除；列表通过不替代真实覆盖像素测试。当前跨层有效性、所有权和本轮验证边界见 [scroll-follow-debug-window.md](scroll-follow-debug-window.md) 及调试窗口任务 validation.md。

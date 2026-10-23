@@ -36,6 +36,8 @@ namespace
 			~ExternalState() { if (edge) CloseHandle(edge); if (runner) CloseHandle(runner); }
 		};
 		class MotionTrace;
+		class DebugNumbers;
+		namespace DebugWindow = Inkeys::UI::ScrollFollowDebug;
 		struct Fixture
 		{
 			HANDLE log = INVALID_HANDLE_VALUE;
@@ -56,7 +58,8 @@ namespace
 			std::wstring root;
 			ExternalState external;
 			std::shared_ptr<MotionTrace> trace;
-			bool traceRequested = false;
+			bool traceRequested = false, debuggerProbe = false;
+			std::shared_ptr<DebugNumbers> debugNumbers;
 		};
 
 		void Log(Fixture& f, const char* format, ...) noexcept
@@ -342,6 +345,86 @@ namespace
 			if (!ok || !MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_WRITE_THROUGH)) throw std::runtime_error("external-publish-phase");
 			Log(f,"[ProductLiveExternal] phase=%u session=%llu base=(%.4f,%.4f) no_gt_target_write=1\n",sequence,session,baseX,baseY);
 		}
+
+		// 所有对照阶段共用同一只读数值观察器；不保存图像、不写盘、不格式化逐帧日志。
+		class DebugNumbers final : public Business::LiveTrace::Observer
+		{
+		public:
+			struct Numbers
+			{
+				std::uint64_t frames = 0, calls = 0, accepted = 0, rejected = 0, awaiting = 0;
+				std::uint64_t business = 0, capture = 0;
+				bool changedSession = false;
+				std::array<double, 6> sum{}, maximum{}; // interval/Read/preprocess/LK/fit/refill。
+				std::array<std::uint64_t, 6> count{};
+				double previousTimestamp = 0;
+				void Add(std::size_t index, double value) noexcept
+				{ sum[index] += value; maximum[index] = (std::max)(maximum[index], value); ++count[index]; }
+			};
+			struct Proof
+			{
+				RECT area{};
+				int sourceX = 0, sourceY = 0, maximumError = 0;
+				std::uint64_t session = 0, capture = 0, sequence = 0;
+				unsigned checked = 0;
+				bool pending = false, completed = false, exact = false;
+			};
+			void Phase(int phase) noexcept { phase_.store(phase, std::memory_order_release); }
+			Numbers Read(int phase) noexcept { std::scoped_lock lock(mutex_); return numbers_[phase]; }
+			std::uint64_t Missed() const noexcept { return missed_.load(); }
+			void Arm(RECT area, int x, int y) noexcept
+			{ std::scoped_lock lock(mutex_); proof_ = {}; proof_.area = area; proof_.sourceX = x; proof_.sourceY = y; proof_.pending = true; }
+			Proof ReadProof() noexcept { std::scoped_lock lock(mutex_); return proof_; }
+			void Observe(const Business::LiveTrace::Identity& identity, Business::LiveTrace::Operation operation,
+				const Inkeys::CV::MotionFrame& input, const Inkeys::CV::MotionResult& result) noexcept override
+			{
+				std::unique_lock lock(mutex_, std::try_to_lock);
+				if (!lock.owns_lock()) { missed_.fetch_add(1); return; }
+				const int phase = phase_.load(std::memory_order_acquire);
+				if (phase >= 0 && phase < 3)
+				{
+					auto& n = numbers_[phase];
+					if (!n.frames) { n.business = identity.session; n.capture = identity.captureSession; }
+					else if (n.business != identity.session || n.capture != identity.captureSession) n.changedSession = true;
+					++n.frames;
+					if (n.previousTimestamp > 0) n.Add(0, (input.timestampSeconds - n.previousTimestamp) * 1000);
+					n.previousTimestamp = input.timestampSeconds;
+					const auto capture = LiveCapture::GetSnapshot();
+					if (capture.session == identity.captureSession) n.Add(1, capture.statistics.lastReadDuration.count() / 1000.0);
+					if (operation == Business::LiveTrace::Operation::AwaitTracking) ++n.awaiting;
+					else
+					{
+						++n.calls; result.accepted ? ++n.accepted : ++n.rejected;
+						const auto& t = result.statistics;
+						n.Add(2, t.preprocessMs); n.Add(3, t.opticalFlowMs); n.Add(4, t.fitMs); n.Add(5, t.refillMs);
+					}
+				}
+				if (!proof_.pending) return;
+				// 只在计时窗口以外显式请求一次覆盖 ROI 核验，读取实际借用的 Tracker 输入。
+				proof_.pending = false; proof_.completed = true;
+				proof_.session = identity.session; proof_.capture = identity.captureSession; proof_.sequence = input.sequence;
+				const auto& image = input.image;
+				const int left = proof_.area.left - identity.roiLeft, top = proof_.area.top - identity.roiTop;
+				if (!image.data || image.format != Inkeys::CV::MotionPixelFormat::Bgra32 || left < 0 || top < 0 ||
+					left + 256 > image.width || top + 192 > image.height || image.strideBytes < static_cast<std::size_t>(image.width) * 4 ||
+					static_cast<std::size_t>(top + 191) * image.strideBytes + static_cast<std::size_t>(left + 256) * 4 > image.sizeBytes) return;
+				for (int y = 0; y < 192; ++y) for (int x = 0; x < 256; ++x)
+				{
+					const auto* pixel = image.data + static_cast<std::size_t>(top + y) * image.strideBytes + static_cast<std::size_t>(left + x) * 4;
+					const auto expected = TexturePixel(proof_.area.left + x + proof_.sourceX, proof_.area.top + y + proof_.sourceY);
+					const int error = (std::max)({std::abs(int(pixel[0]) - int(expected & 255)),
+						std::abs(int(pixel[1]) - int((expected >> 8) & 255)), std::abs(int(pixel[2]) - int((expected >> 16) & 255))});
+					proof_.maximumError = (std::max)(proof_.maximumError, error); ++proof_.checked;
+				}
+				proof_.exact = proof_.checked == 256 * 192 && proof_.maximumError <= 3;
+			}
+		private:
+			std::mutex mutex_;
+			std::array<Numbers, 3> numbers_{};
+			Proof proof_{};
+			std::atomic<int> phase_ = -1;
+			std::atomic<std::uint64_t> missed_{};
+		};
 
 		class MotionTrace final : public Business::LiveTrace::Observer
 		{
@@ -666,12 +749,32 @@ namespace
 			}
 			CheckDesktop(f, "after-gt-screen-read");
 			const auto pixels = snapshot.pixels();
-			unsigned matched = 0, mismatchCount = 0;
+			RECT debuggerBounds{}; bool debuggerVisible = false; unsigned debuggerPixels = 0;
+			const HWND debugger = f.debuggerProbe ? Inkeys::Window::GetService().Handle(Role::ScrollFollowDebug) : nullptr;
+			if (debugger)
+			{
+				const auto probe = DebugWindow::ReadProbe(); POINT origin{};
+				if (!IsCurrentProcessWindow(debugger) || !IsWindowVisible(debugger) || !GetWindowRect(debugger, &debuggerBounds) ||
+					!ClientToScreen(debugger, &origin) || !probe.open || !probe.paints ||
+					!(GetWindowLongPtrW(debugger, GWL_EXSTYLE) & WS_EX_TOPMOST) || GetWindow(debugger, GW_OWNER)) return false;
+				const POINT sample{origin.x + probe.paintSamplePoint.x, origin.y + probe.paintSamplePoint.y};
+				if (sample.x < 1 || sample.y < 1 || sample.x + 1 >= f.width || sample.y + 1 >= f.height) return false;
+				for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x)
+				{
+					const auto pixel = pixels[static_cast<std::size_t>(sample.y + y) * f.width + sample.x + x];
+					debuggerPixels += RGB((pixel >> 16) & 255, (pixel >> 8) & 255, pixel & 255) == probe.paintSampleColor;
+				}
+				debuggerVisible = debuggerPixels == 9 && WindowFromPoint(sample) == debugger;
+			}
+			unsigned matched = 0, total = 0, mismatchCount = 0;
 			struct Mismatch { int x{}, y{}; COLORREF actual{}, expected{}; };
 			Mismatch mismatches[3]{};
 			for (int row = 0; row < 9; ++row) for (int col = 0; col < 11; ++col)
 			{
 				const int x = (2 * col + 1) * f.width / 22, y = (2 * row + 1) * f.height / 18;
+				// 只排除当前已证实属于本进程的诊断窗外框，其余专用内容仍逐点核验。
+				if (debugger && PtInRect(&debuggerBounds, {x, y})) continue;
+				++total;
 				const auto p = TexturePixel(x + f.x, y + f.y);
 				const auto sampled = pixels[static_cast<std::size_t>(y)*f.width+x];
 				const COLORREF actual = RGB((sampled>>16)&255,(sampled>>8)&255,sampled&255), expected = RGB((p >> 16) & 255,(p >> 8) & 255,p & 255);
@@ -692,9 +795,12 @@ namespace
 			}
 			QueryPerformanceCounter(&checkedAt);
 			const auto verifyUs = frequency.QuadPart>0 ? (checkedAt.QuadPart-copiedAt.QuadPart)*1000000/frequency.QuadPart : -1;
-			Log(f, "[ProductLive] screen_gt stage=%s samples=%u/99 dedicated_roi_exact=%u roi=(64,64,256,192) batch_copy=1 read_us=%lld verify_us=%lld bytes=%zu\n", stage, matched, exact, readUs, verifyUs, pixels.size_bytes());
+			if (f.debuggerProbe)
+				Log(f, "[ProductLive] screen_gt stage=%s samples=%u/%u dedicated_roi_exact=%u roi=(64,64,256,192) debugger=%p debugger_visible=%u debugger_pixels=%u/9 excluded_owned_bounds=(%ld,%ld,%ld,%ld) batch_copy=1 read_us=%lld verify_us=%lld bytes=%zu\n", stage, matched, total, exact, debugger, debuggerVisible, debuggerPixels, debuggerBounds.left, debuggerBounds.top, debuggerBounds.right, debuggerBounds.bottom, readUs, verifyUs, pixels.size_bytes());
+			else
+				Log(f, "[ProductLive] screen_gt stage=%s samples=%u/99 dedicated_roi_exact=%u roi=(64,64,256,192) batch_copy=1 read_us=%lld verify_us=%lld bytes=%zu\n", stage, matched, exact, readUs, verifyUs, pixels.size_bytes());
 			// 未知画面不落盘；离散99点只作全屏抽样，另存的ROI必须每个像素都属于专用纹理。
-			if (matched != 99 || !exact)
+			if (!total || matched != total || !exact || (debugger && !debuggerVisible))
 			{
 				RECT sourceRect{}; const bool rectOk = GetWindowRect(f.source,&sourceRect) != FALSE;
 				Log(f,"[ProductLive] gt_source stage=%s paint_sequence=%u offset=(%d,%d) painted=(%d,%d) painted_qpc=%lld visible_now=%u rect_ok=%u rect=(%ld,%ld,%ld,%ld)\n",
@@ -922,7 +1028,15 @@ namespace
 		{
 			if (!delta || delta % WHEEL_DELTA || std::abs(delta / WHEEL_DELTA * wheelStep) > 128) throw std::runtime_error("ink-wheel-step-range");
 			if (!ScreenSourceGt(f,stage,nullptr)) throw std::runtime_error("ink-wheel-source-gt");
-			MoveOnOwnedWindow(f,f.source,{f.width/2,f.height/2},true);
+			POINT wheelPoint{f.width/2,f.height/2};
+			if (f.debuggerProbe)
+			{
+				// 完整诊断窗可能盖住主屏中心；只在当前窗口外的专用 Source 左侧注入。
+				wheelPoint = {32, f.height/2}; RECT debugBounds{};
+				if (!GetWindowRect(DebugWindow::Handle(), &debugBounds) || PtInRect(&debugBounds, wheelPoint))
+					throw std::runtime_error("debug-wheel-point-covered");
+			}
+			MoveOnOwnedWindow(f,f.source,wheelPoint,true);
 			CheckDesktop(f,"before-ink-os-wheel"); POINT cursor{};
 			if(f.ownLeftHeld || (GetAsyncKeyState(VK_LBUTTON)&0x8000) || !GetCursorPos(&cursor) || WindowFromPoint(cursor)!=f.source || GetForegroundWindow()!=f.source) throw std::runtime_error("ink-wheel-hit-or-held");
 			const auto accepted=LiveCapture::GetSnapshot().statistics.accepted;
@@ -946,6 +1060,94 @@ namespace
 			// 必须在真实Tracker/owner收敛后检查相同99点与精确ROI，不能用GT目标推动owner。
 			if (!ScreenSourceGt(f,stage,nullptr)) throw std::runtime_error("ink-wheel-settled-source-gt");
 			Log(f,"[ProductLiveInk] wheel_settled stage=%s axis=%s delta=%d source_total=(%d,%d) actual_ack=%u\n",stage,horizontal?"x":"y",delta,f.x-initialX,f.y-initialY,ScrollFollowPresentationAcknowledged(ScrollFollowProjectionEpoch()));
+		}
+
+		void DebugResources(Fixture& f, const char* phase, const char* boundary)
+		{
+			PROCESS_MEMORY_COUNTERS_EX memory{}; memory.cb = sizeof(memory);
+			const bool measured = GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory)) != FALSE;
+			Log(f, "[ScrollFollowDebugProduct] resources phase=%s boundary=%s memory_valid=%u working_set=%zu private_bytes=%zu gdi=%lu user=%lu\n",
+				phase, boundary, measured, measured ? memory.WorkingSetSize : 0, measured ? memory.PrivateUsage : 0,
+				GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS), GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS));
+		}
+
+		void DebugCoveredPixels(Fixture& f, const char* stage)
+		{
+			if (!ScreenSourceGt(f, stage, nullptr)) throw std::runtime_error("debug-production-screen-gt");
+			const HWND debug = Inkeys::Window::GetService().Handle(Role::ScrollFollowDebug);
+			const auto probe = DebugWindow::ReadProbe(); POINT origin{};
+			if (!debug || !probe.hasFrame || !ClientToScreen(debug, &origin)) throw std::runtime_error("debug-production-preview-not-ready");
+			RECT preview = probe.previewRect; OffsetRect(&preview, origin.x, origin.y);
+			const int x = (preview.left + preview.right) / 2 - 128, y = (preview.top + preview.bottom) / 2 - 96;
+			const RECT covered{x, y, x + 256, y + 192};
+			if (covered.left < preview.left || covered.top < preview.top || covered.right > preview.right || covered.bottom > preview.bottom ||
+				WindowFromPoint({x + 128, y + 96}) != debug) throw std::runtime_error("debug-covered-preview-roi");
+			f.debugNumbers->Arm(covered, f.x, f.y);
+			if (!Wait(f, [&] { return f.debugNumbers->ReadProof().completed; }, 3000)) throw std::runtime_error("debug-covered-mag-timeout");
+			const auto proof = f.debugNumbers->ReadProof();
+			Log(f, "[ScrollFollowDebugProduct] exclusion stage=%s business=%llu capture=%llu sequence=%llu roi=(%ld,%ld,256,192) input_pixels=%u max_channel_error=%d tolerance=3 actual_tracker_input=1 exact=%u\n",
+				stage, proof.session, proof.capture, proof.sequence, covered.left, covered.top, proof.checked, proof.maximumError, proof.exact);
+			if (!proof.exact || !ScreenSourceGt(f, "after-debug-covered-mag", nullptr)) throw std::runtime_error("debug-covered-mag-pixel-mismatch");
+		}
+
+		void DebugPhase(Fixture& f, const std::shared_ptr<Draw::Follow::Channel>& channel, int index, const char* phase)
+		{
+			const bool open = index == 1;
+			const auto baseline = channel->Read(); const auto captureSession = LiveCapture::GetSnapshot().session;
+			const auto openPhase = f.debugNumbers->Read(1);
+			if (index == 2 && (openPhase.business != baseline.session || openPhase.capture != captureSession)) throw std::runtime_error("debug-open-closed-session-changed");
+			const auto stable = [&]
+			{
+				const auto capture = LiveCapture::GetSnapshot(); const auto owner = channel->Read();
+				if (Business::GetSnapshot().state != Business::State::Tracking || owner.session != baseline.session ||
+					capture.session != captureSession || !capture.publishing || owner.clamped || Business::Debug::Enabled() != open ||
+					(DebugWindow::Handle() != nullptr) != open) throw std::runtime_error("debug-phase-session-or-enable-changed");
+			};
+			Log(f, "[ScrollFollowDebugProduct] warmup phase=%s duration_ms=1000 outside_timing=1\n", phase);
+			const auto warm = GetTickCount64();
+			if (!Wait(f, [&] { stable(); return GetTickCount64() - warm >= 1000; }, 1500)) throw std::runtime_error("debug-warmup-timeout");
+			if (!ScreenSourceGt(f, phase, nullptr)) throw std::runtime_error("debug-phase-screen-gt");
+			const auto captureBefore = LiveCapture::GetSnapshot(); const auto uiBefore = DebugWindow::ReadProbe();
+			Business::Debug::Counters countersBefore{};
+			if (auto current = Business::Debug::Current()) countersBefore = current->ReadLive().counters;
+			DebugResources(f, phase, "begin");
+			Log(f, "[ScrollFollowDebugProduct] phase_begin phase=%s duration_ms=15000 business=%llu capture=%llu stable_within_phase=1 absent_open_same_session=0 performance_causal_comparison=0 controls_hold=0 image_recording=0\n", phase, baseline.session, captureSession);
+			double ages = 0, copies = 0, totals = 0; unsigned displaySamples = 0;
+			std::uint64_t displayed = 0; ULONGLONG nextSample = 0;
+			const auto began = LiveCapture::Clock::now(); f.debugNumbers->Phase(index);
+			const bool elapsed = Wait(f, [&]
+			{
+				stable();
+				if (open && GetTickCount64() >= nextSample)
+				{
+					nextSample = GetTickCount64() + 100; const auto ui = DebugWindow::ReadProbe();
+					if (!ui.open || !ui.hasFrame || ui.frozen || ui.exportBusy) throw std::runtime_error("debug-controls-during-performance");
+					if (ui.sequence != displayed)
+					{ displayed = ui.sequence; ages += ui.displayAgeMs; copies += ui.copyMs; totals += ui.totalTrackerMs; ++displaySamples; }
+				}
+				return LiveCapture::Clock::now() - began >= std::chrono::seconds(15);
+			}, 16000);
+			f.debugNumbers->Phase(-1);
+			const double seconds = std::chrono::duration<double>(LiveCapture::Clock::now() - began).count();
+			const auto captureAfter = LiveCapture::GetSnapshot(); const auto uiAfter = DebugWindow::ReadProbe();
+			const auto n = f.debugNumbers->Read(index);
+			Business::Debug::Counters countersAfter{};
+			if (auto current = Business::Debug::Current()) countersAfter = current->ReadLive().counters;
+			DebugResources(f, phase, "end");
+			const auto mean = [&](std::size_t i) { return n.count[i] ? n.sum[i] / n.count[i] : -1; };
+			Log(f, "[ScrollFollowDebugProduct] phase_end phase=%s seconds=%.6f capture_accepted=%llu capture_fps=%.6f capture_attempts=%llu capture_rejected=%llu capture_api=%llu capture_skipped=%llu capture_sequence=%llu numeric_frames=%llu tracker_calls=%llu tracker_accepted=%llu tracker_rejected=%llu await_tracking=%llu numeric_drops_total=%llu\n",
+				phase, seconds, captureAfter.statistics.accepted-captureBefore.statistics.accepted, (captureAfter.statistics.accepted-captureBefore.statistics.accepted)/seconds,
+				captureAfter.statistics.attempts-captureBefore.statistics.attempts, captureAfter.statistics.rejected-captureBefore.statistics.rejected, captureAfter.statistics.apiFailures-captureBefore.statistics.apiFailures,
+				captureAfter.statistics.skipped-captureBefore.statistics.skipped, captureAfter.sequence-captureBefore.sequence, n.frames, n.calls, n.accepted, n.rejected, n.awaiting, f.debugNumbers->Missed());
+			Log(f, "[ScrollFollowDebugProduct] timing phase=%s interval_ms=(mean:%.6f,max:%.6f,n:%llu) capture_Read_ms=(mean:%.6f,max:%.6f,n:%llu) tracker_preprocess_ms=(mean:%.6f,max:%.6f) tracker_LK_ms=(mean:%.6f,max:%.6f) tracker_fit_ms=(mean:%.6f,max:%.6f) tracker_refill_ms=(mean:%.6f,max:%.6f) Capture_Read_is_backend_duration=1 Analyze_included=0 PW_is_not_isolated=1\n",
+				phase, mean(0), n.maximum[0], n.count[0], mean(1), n.maximum[1], n.count[1], mean(2), n.maximum[2], mean(3), n.maximum[3], mean(4), n.maximum[4], mean(5), n.maximum[5]);
+			Log(f, "[ScrollFollowDebugProduct] preview phase=%s enabled=%u display_samples=%u copy_ms_mean=%.6f displayed_measured_tracker_total_ms_mean=%.6f display_age_ms_mean=%.6f refresh_hz=%.6f consume_hz=%.6f paint_hz=%.6f publications=%llu overwritten=%llu disabled_metrics_NA=%u finite_same_machine_observation=1\n",
+				phase, open, displaySamples, displaySamples ? copies/displaySamples : -1, displaySamples ? totals/displaySamples : -1, displaySamples ? ages/displaySamples : -1,
+				(uiAfter.refreshes-uiBefore.refreshes)/seconds, (uiAfter.consumed-uiBefore.consumed)/seconds, (uiAfter.paints-uiBefore.paints)/seconds,
+				countersAfter.framesPublished-countersBefore.framesPublished, countersAfter.framesOverwritten-countersBefore.framesOverwritten, !open);
+			if (!elapsed || !n.calls || n.changedSession || n.business != baseline.session || n.capture != captureSession ||
+				captureAfter.statistics.accepted <= captureBefore.statistics.accepted || (open && !displaySamples)) throw std::runtime_error("debug-phase-insufficient-observations");
+			if (!ScreenSourceGt(f, phase, nullptr)) throw std::runtime_error("debug-phase-final-screen-gt");
 		}
 
 		bool LongInkPoseSafe(const Fixture& f, POINT aDown, int aLastX, int totalX, int totalY) noexcept
@@ -1073,6 +1275,46 @@ namespace
 				IsWindowVisible(service.Handle(Role::Drawpad)), IsWindowVisible(service.Handle(Role::DrawpadPresentation)), static_cast<unsigned>(host.inputMode));
 		}
 
+		// 仅失败时读取现有有界数值，不能重跑 Tracker、复制图像或改变原失败条件。
+		void DebugFailureFacts(Fixture& f, const char* stage) noexcept
+		{
+			try
+			{
+				DWORD session = 0; const bool sessionValid = ProcessIdToSessionId(GetCurrentProcessId(), &session) != FALSE;
+				const auto probe = DebugWindow::ReadProbe();
+				Log(f, "[ScrollFollowDebugProduct] failure_probe stage=%s pid=%lu session_valid=%u windows_session=%lu open=%u frozen=%u export_busy=%u painted=%llu generation=%llu business=%llu capture=%llu sequence=%llu reference_before=%llu\n",
+					stage, GetCurrentProcessId(), sessionValid, session, probe.open, probe.frozen, probe.exportBusy, probe.paints,
+					probe.generation, probe.businessSession, probe.captureSession, probe.sequence, probe.referenceSequence);
+				const auto channel = Business::Debug::Current();
+				if (!channel) { Log(f, "[ScrollFollowDebugProduct] failure_live channel=unavailable\n"); return; }
+				const auto snapshot = channel->ReadLive(); const auto& status = snapshot.status;
+				Log(f, "[ScrollFollowDebugProduct] failure_live state=%u pause_cause=%s business=%llu capture=%llu owns_capture=%u capture_stage=%s capture_reason=%u native_valid=%u native_error=%lu quality_observed=%u tracker_calls=%llu tracker_A=%llu tracker_R=%llu history=%zu summary_drops=%llu\n",
+					static_cast<unsigned>(status.state), Business::Debug::PauseCauseName(status.pauseCause), status.businessSession, status.captureSession,
+					status.ownsCapture, LiveCapture::FailureStageName(status.capture.failureStage), static_cast<unsigned>(status.capture.reason),
+					status.capture.nativeErrorValid, static_cast<unsigned long>(status.capture.nativeError), status.capture.qualityObserved,
+					snapshot.counters.trackerCalls, snapshot.counters.trackerAccepted, snapshot.counters.trackerRejected, snapshot.count, snapshot.counters.summaryDrops);
+				const auto count = (std::min)(snapshot.count, snapshot.summaries.size()); std::size_t begin = count, motions = 0;
+				while (begin && motions < 6) if (snapshot.summaries[--begin].hasMotion) ++motions;
+				for (std::size_t i = 0; i < count; ++i)
+				{
+					const auto& event = snapshot.summaries[i]; const auto& failure = event.captureFailure;
+					if (failure.valid)
+						Log(f, "[ScrollFollowDebugProduct] failure_capture_event index=%zu business=%llu capture=%llu stage=%s reason=%u at_us=%lld native_valid=%u native_error=%lu quality_valid=%u quality_status=%d\n",
+							i, event.identity.businessSession, event.identity.captureSession, LiveCapture::FailureStageName(failure.stage), static_cast<unsigned>(failure.reason),
+							static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>(failure.at.time_since_epoch()).count()), failure.nativeErrorValid,
+							static_cast<unsigned long>(failure.nativeError), failure.stage == LiveCapture::FailureStage::Quality,
+							failure.stage == LiveCapture::FailureStage::Quality ? static_cast<int>(failure.quality.status) : -1);
+					if (!event.hasMotion || i < begin) continue;
+					const auto& motion = event.motion; const auto& stats = motion.statistics;
+					Log(f, "[ScrollFollowDebugProduct] failure_motion index=%zu business=%llu capture=%llu sequence=%llu accepted=%u state=%u reason=%s consecutive_rejects=%d input=%llu reference_after=%llu reference_generation_after=%llu relay_generation=%llu total=(%.6f,%.6f) raw_counts=(attempted:%d,forward:%d,backward:%d,fb:%d,inliers:%d) raw_ratios=(point:%.6f,spatial:%.6f,survival:%.6f) raw_p95=(fb:%.6f,residual:%.6f) stage_validity=not_stored_in_numeric_summary raw_values_may_be_uncomputed=1\n",
+						i, event.identity.businessSession, event.identity.captureSession, event.identity.sequence, motion.accepted, static_cast<unsigned>(motion.state), Inkeys::CV::MotionReasonName(motion.reason),
+						stats.consecutiveRejects, stats.inputSequence, stats.referenceSequence, stats.referenceGeneration, stats.relayGeneration, motion.total.x, motion.total.y,
+						stats.attempted, stats.forward, stats.backward, stats.fbValid, stats.inliers, stats.pointInlierRatio, stats.spatialInlierRatio, stats.survivalRatio, stats.fbP95, stats.residualP95);
+				}
+			}
+			catch (...) { Log(f, "[ScrollFollowDebugProduct] failure_numeric_log_unavailable=1\n"); }
+		}
+
 		void CreateRoot(Fixture& f)
 		{
 			const auto cwd = std::filesystem::current_path();
@@ -1094,10 +1336,10 @@ namespace
 	}
 }
 
-static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, bool externalEmpty = false)
+static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, bool externalEmpty = false, bool debuggerProbe = false)
 {
 	using namespace ProductLive;
-	if ((longScroll && !ink) || (externalEmpty && (ink || longScroll))) return 2;
+	if ((longScroll && !ink) || (externalEmpty && (ink || longScroll)) || (debuggerProbe && (ink || longScroll || externalEmpty))) return 2;
 	wchar_t traceToken[34]{};
 	SetLastError(ERROR_SUCCESS);
 	const DWORD traceLength=GetEnvironmentVariableW(L"INKEYS_SCROLL_RECORD_MOTION_FRAMES",traceToken,static_cast<DWORD>(std::size(traceToken)));
@@ -1105,7 +1347,7 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 	if (traceLength && (!externalEmpty || traceLength!=32 || std::wstring_view(traceToken,32).find_first_not_of(L"0123456789abcdef")!=std::wstring_view::npos)) return 2;
 	// 早于Display、COM、source和所有产品HWND；仅查询，不尝试越过安全界面。
 	if (LiveSecurityInterfacePresent()) { std::fputs("[ProductLive] blocked=security-before-initialization\n", stderr); return 4; }
-	Fixture f;
+	Fixture f; f.debuggerProbe = debuggerProbe;
 	const auto oldLogger = IDTLogger;
 	const auto oldGlobalPath = globalPath;
 	std::jthread stateThread, magThread, watchdog;
@@ -1114,7 +1356,7 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 	int result = 1;
 	InkView aBaseline; RECT aRoi{}, bRoi{}; POINT aDown{}, bDown{};
 	std::string initialDate;
-	unsigned expectedWheelCount = ink ? 2u : 1u;
+	unsigned expectedWheelCount = ink || debuggerProbe ? 2u : 1u;
 	const char* stage = "create-root";
 	try
 	{
@@ -1129,13 +1371,13 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 		CreateRoot(f);
 		globalPath = f.root + L"/";
 		IDTLogger = std::make_shared<spdlog::logger>("ScrollFollowProductLive", std::make_shared<spdlog::sinks::null_sink_mt>());
-		Log(f, "[ProductLive] root=%ls pid=%lu main_tid=%lu scope=%s no_test_ports=1 no_manual_follow_target=1 no_manual_ack=1\n", f.root.c_str(), GetCurrentProcessId(), GetCurrentThreadId(), externalEmpty ? "external-edge-empty-page-wheel-off" : longScroll ? "os-ink-long-2d-ten-primary-heights-off-b-exit" : ink ? "os-ink-two-wheel-off-b-exit" : "empty-page-tracking-wheel-off");
+		Log(f, "[ProductLive] root=%ls pid=%lu main_tid=%lu scope=%s no_test_ports=1 no_manual_follow_target=1 no_manual_ack=1\n", f.root.c_str(), GetCurrentProcessId(), GetCurrentThreadId(), debuggerProbe ? "debugger-three-phases-noninteractive-forward-reverse-off" : externalEmpty ? "external-edge-empty-page-wheel-off" : longScroll ? "os-ink-long-2d-ten-primary-heights-off-b-exit" : ink ? "os-ink-two-wheel-off-b-exit" : "empty-page-tracking-wheel-off");
 		cleanupDone = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 		if (!cleanupDone) throw std::runtime_error("cleanup-event");
-		watchdog = std::jthread([cleanupDone, longScroll]
+		watchdog = std::jthread([cleanupDone, longScroll, debuggerProbe]
 		{
 			// 同步PW/owner若永久不返回，只结束本专用进程；这不是正常清理或有界join证明。
-			if (WaitForSingleObject(cleanupDone, longScroll ? 480000 : 90000) != WAIT_OBJECT_0) TerminateProcess(GetCurrentProcess(), 3);
+			if (WaitForSingleObject(cleanupDone, longScroll ? 480000 : debuggerProbe ? 210000 : 90000) != WAIT_OBJECT_0) TerminateProcess(GetCurrentProcess(), 3);
 		});
 		CheckDesktop(f, "before-initialization");
 		const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -1321,18 +1563,112 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 			Business::LiveTrace::Install(f.trace);
 			Log(f,"[MotionTrace] armed=1 limit_frames=64 limit_pixel_bytes=402653184 format=fullres-gray8 observer_overhead_not_normal_capture_performance=1\n");
 		}
+		if (debuggerProbe)
+		{
+			f.debugNumbers = std::make_shared<DebugNumbers>();
+			Business::LiveTrace::Install(f.debugNumbers);
+			Log(f, "[ScrollFollowDebugProduct] numeric_observer=armed_all_phases image_recording=0 watchdog_ms=210000\n");
+		}
 		Business::RequestToggle(); businessBegun = true;
 		if (!Wait(f, [&] { return Business::GetSnapshot().state == Business::State::Tracking; }, 8000))
 			throw std::runtime_error("real-business-initialize-tracker-ack");
-		const auto channel = Draw::ProductHost().FollowChannel();
+		auto channel = Draw::ProductHost().FollowChannel();
 		if (!channel) throw std::runtime_error("real-channel");
-		const auto base = channel->Read();
+		auto base = channel->Read();
 		if (!ScrollFollowPresentationAcknowledged(ScrollFollowProjectionEpoch()) || IsWindowVisible(service.Handle(Role::Drawpad)) ||
 			(IsWindowVisible(service.Handle(Role::DrawpadPresentation)) != FALSE) != ink || Draw::ProductRuntimeSnapshot().currentPageHasContent != ink)
 			throw std::runtime_error("actual-tracking-window-pair");
 		Facts(f, ink ? "tracking-real-ack-ink-pair" : "tracking-real-ack-empty-pair");
-		// 首版只测一小步真实系统滚轮；GT只比较结果，不向Capture/Tracker/Channel写目标。
 		const int beforeX = f.x, beforeY = f.y;
+		if (debuggerProbe)
+		{
+			stage = "debug-absent-phase";
+			DebugPhase(f, channel, 0, "absent");
+			const auto absentBusiness = base.session, absentCapture = LiveCapture::GetSnapshot().session;
+			// 正式启动先开诊断窗再启动 Mag；夹具也先真实 Off/反向 ACK/drain，不能在旧 Read 中动态 Show。
+			stage = "debug-real-off-before-open";
+			Business::RequestStop();
+			if (!Wait(f, [&]
+			{
+				const auto business = Business::GetSnapshot(); const auto capture = LiveCapture::GetSnapshot(); const auto ended = channel->Read();
+				return business.state == Business::State::Off && business.available && !channel->Blocked() &&
+					ended.phase == Draw::Follow::Phase::Complete && ended.handoff && ended.applied == ended.final.sequence && !ended.clamped &&
+					ScrollFollowPresentationAcknowledged(ScrollFollowProjectionEpoch()) && IsWindowVisible(service.Handle(Role::Drawpad)) &&
+					!IsWindowVisible(service.Handle(Role::DrawpadPresentation)) && !capture.publishing && !capture.occupied && !capture.inFlight;
+			}, 10000)) throw std::runtime_error("debug-before-open-real-off-ack-drain");
+			Log(f, "[ScrollFollowDebugProduct] before_open real_off=1 reverse_ack=1 capture_drained=1 previous_business=%llu previous_capture=%llu\n", absentBusiness, absentCapture);
+			stage = "debug-production-open";
+			if (f.width < 1344 || f.height < 720) throw std::runtime_error("debug-primary-too-small");
+			// 贴右下边将下/右阴影移出屏内 GT；后续仍严格校验真实 WorkArea 内的完整覆盖 ROI。
+			const RECT bounds{f.width - 960, f.height - 580, f.width, f.height};
+			CheckDesktop(f, "before-debug-open");
+			// 按独立置顶合同显示诊断窗；专用 Source 保持非置顶带。
+			if (!SetWindowPos(f.source, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) ||
+				!DebugWindow::Open(nullptr, &bounds)) throw std::runtime_error("debug-production-open");
+			const HWND initialDebug = service.Handle(Role::ScrollFollowDebug);
+			if (!SetWindowPos(initialDebug, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) ||
+				!SetWindowPos(f.source, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER))
+				throw std::runtime_error("debug-production-visible-order");
+			Log(f, "[ScrollFollowDebugProduct] own_source_behind_debug=1 stage=initial-open foreground_source=%u source_previous=%p debug_next=%p\n", GetForegroundWindow() == f.source, GetWindow(f.source, GW_HWNDPREV), GetWindow(initialDebug, GW_HWNDNEXT));
+			const auto beforeRestart = LiveCapture::GetSnapshot();
+			if (Business::GetSnapshot().state != Business::State::Off || beforeRestart.publishing || beforeRestart.occupied || beforeRestart.inFlight)
+				throw std::runtime_error("debug-open-must-precede-capture");
+			stage = "debug-real-restart-after-open";
+			Business::RequestToggle();
+			if (!Wait(f, [&]
+			{
+				const auto business = Business::GetSnapshot(); const auto capture = LiveCapture::GetSnapshot();
+				return business.state == Business::State::Tracking && business.session != absentBusiness && capture.session != absentCapture && capture.publishing &&
+					ScrollFollowPresentationAcknowledged(ScrollFollowProjectionEpoch()) && !IsWindowVisible(service.Handle(Role::Drawpad)) &&
+					!IsWindowVisible(service.Handle(Role::DrawpadPresentation));
+			}, 8000)) throw std::runtime_error("debug-restart-real-f0-tracking-ack");
+			channel = Draw::ProductHost().FollowChannel();
+			if (!channel) throw std::runtime_error("debug-restarted-channel");
+			base = channel->Read(); const auto openCapture = LiveCapture::GetSnapshot().session;
+			if (base.session == absentBusiness || base.session != Business::GetSnapshot().session || base.phase != Draw::Follow::Phase::Active)
+				throw std::runtime_error("debug-restarted-channel-identity");
+			Log(f, "[ScrollFollowDebugProduct] comparison_sessions absent_business=%llu absent_capture=%llu open_business=%llu open_capture=%llu open_closed_same_session_required=1 absent_open_same_session=0 performance_causal_comparison=0 startup_open_before_capture=1\n",
+				absentBusiness, absentCapture, base.session, openCapture);
+			if (!Wait(f, [&] { const auto ui = DebugWindow::ReadProbe(); return ui.open && ui.hasFrame && ui.paints > 0 && ui.businessSession == base.session && ui.captureSession == openCapture; }, 5000))
+				throw std::runtime_error("debug-first-tracker-packet");
+			DebugCoveredPixels(f, "open-before-performance");
+			stage = "debug-open-phase";
+			DebugPhase(f, channel, 1, "open");
+			stage = "debug-open-real-wheel-source-focus";
+			CheckDesktop(f, stage);
+			const HWND openDebug = service.Handle(Role::ScrollFollowDebug);
+			(void)SetForegroundWindow(f.source);
+			// 只摆放本进程置顶诊断窗，保留 Source 前台；不改变外部窗口或绕过激活限制。
+			if (!SetWindowPos(openDebug, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) ||
+				!SetWindowPos(f.source, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) ||
+				!Wait(f, [&] { return GetForegroundWindow() == f.source && WindowFromPoint({32, f.height/2}) == f.source; }, 2000))
+				throw std::runtime_error("debug-open-source-focus-or-hit");
+			stage = "debug-open-wheel-forward-32";
+			InkWheel(f, channel, -2 * WHEEL_DELTA, beforeX, beforeY, "debug-open-forward32");
+			DebugCoveredPixels(f, "open-after-forward32");
+			stage = "debug-open-wheel-reverse-16";
+			InkWheel(f, channel, WHEEL_DELTA, beforeX, beforeY, "debug-open-reverse16");
+			DebugCoveredPixels(f, "open-after-reverse16");
+			// 用户选择控件交付人工验证；此短入口只执行非交互性能和生命周期检查。
+			Log(f, "[ScrollFollowDebugProduct] controls_manual_deferred_by_user=1 interactive_controls_tested=0 manual_entry=normal_startup\n");
+			DebugCoveredPixels(f, "open-before-close");
+			stage = "debug-production-close";
+			std::weak_ptr<Business::Debug::Channel> retired = Business::Debug::Current();
+			const HWND debug = service.Handle(Role::ScrollFollowDebug);
+			SendMessageW(debug, WM_CLOSE, 0, 0);
+			if (!Wait(f, [&] { return !service.Handle(Role::ScrollFollowDebug) && !DebugWindow::Handle() &&
+				!Business::Debug::Enabled() && retired.expired(); }, 4000) || IsWindow(debug)) throw std::runtime_error("debug-close-not-drained");
+			// 回到原夹具专用源的层级，所有闭窗阶段恢复完整99点真值检查。
+			if (!SetWindowPos(f.source, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) ||
+				!service.SetOverlayTopmost(true) || !SetWindowPos(f.source, service.OverlayRoot(), 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)) throw std::runtime_error("debug-closed-source-order");
+			(void)SetForegroundWindow(f.source);
+			if (!Wait(f, [&] { return GetForegroundWindow() == f.source; }, 2000)) throw std::runtime_error("debug-closed-source-foreground");
+			Log(f, "[ScrollFollowDebugProduct] close actual_destroy=1 publisher_disabled=1 old_channel_released=1 old_channel_storage_released=1 same_follow_session=%llu\n", channel->Read().session);
+			stage = "debug-closed-phase";
+			DebugPhase(f, channel, 2, "closed");
+		}
+		// GT只比较真实系统滚轮结果，不向Capture/Tracker/Channel写目标。
 		if (externalEmpty)
 		{
 			stage="external-real-os-wheel";
@@ -1396,7 +1732,7 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 				CompareInk(f,aBaseline,returned,-16,"long-returned-2d",-16);
 			}
 		}
-		else
+		else if (!debuggerProbe)
 		{
 			stage = "send-input-wheel";
 			if (!ScreenSourceGt(f, "before-os-input", nullptr)) throw std::runtime_error("pre-input-source-gt");
@@ -1469,6 +1805,22 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 				if (ExternalNumber(ended["after"],key)!=ExternalNumber(f.external.identity["after"],key)) throw std::runtime_error("external-page-moved-after-off");
 		}
 		else if (!ScreenSourceGt(f, "after-off", L"source-after-off.png")) throw std::runtime_error("off-source-screen-gt");
+		if (debuggerProbe)
+		{
+			stage = "debug-no-reopen-off-on";
+			Business::RequestToggle();
+			if (!Wait(f, [&] { return Business::GetSnapshot().state == Business::State::Tracking &&
+				ScrollFollowPresentationAcknowledged(ScrollFollowProjectionEpoch()) && LiveCapture::GetSnapshot().statistics.accepted >= 3; }, 8000))
+				throw std::runtime_error("debug-closed-restart-real-tracking");
+			if (DebugWindow::Handle() || service.Handle(Role::ScrollFollowDebug) || Business::Debug::Enabled()) throw std::runtime_error("debug-unexpected-auto-reopen");
+			Business::RequestStop();
+			if (!Wait(f, [&] { return Business::GetSnapshot().state == Business::State::Off && !channel->Blocked() &&
+				ScrollFollowPresentationAcknowledged(ScrollFollowProjectionEpoch()) && IsWindowVisible(service.Handle(Role::Drawpad)) &&
+				!IsWindowVisible(service.Handle(Role::DrawpadPresentation)) && !LiveCapture::GetSnapshot().occupied; }, 10000))
+				throw std::runtime_error("debug-closed-restart-real-off-ack");
+			if (DebugWindow::Handle() || Business::Debug::Enabled()) throw std::runtime_error("debug-reopened-after-off");
+			Log(f, "[ScrollFollowDebugProduct] off_on_off real_business=1 actual_window_ack=1 capture_drained=1 automatic_reopen=0 final_source_delta=(%d,%d)\n", f.x-beforeX, f.y-beforeY);
+		}
 		if (ink)
 		{
 			stage="ink-off-pixels";
@@ -1499,8 +1851,9 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 	{
 		Log(f, "[ProductLive] FAIL stage=%s reason=%s error=%lu security=%u\n", stage, e.what(), GetLastError(), f.security);
 		if (productStarted) Facts(f, stage);
+		if (debuggerProbe) DebugFailureFacts(f, stage);
 	}
-	catch (...) { Log(f, "[ProductLive] FAIL stage=%s reason=unknown-exception\n", stage); }
+	catch (...) { Log(f, "[ProductLive] FAIL stage=%s reason=unknown-exception\n", stage); if (debuggerProbe) DebugFailureFacts(f, stage); }
 	if (!ReleaseOwnLeft(f)) result = 1;
 	if (f.security) result = 4;
 	// 正常先真实Off；失败/安全层只单调Shutdown，绝不手写ACK或让StateMonitoring再显示窗口。
@@ -1519,6 +1872,8 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 	if (magThread.joinable()) magThread.join();
 	auto& service = Inkeys::Window::GetService();
 	if (serviceStarted || service.Running()) { service.BeginShutdown(); service.StopAndJoin(); }
+	DebugWindow::ShutdownExports();
+	if (f.debugNumbers) { Business::LiveTrace::Install(nullptr); f.debugNumbers.reset(); }
 	if (f.source && !externalEmpty) DestroyWindow(f.source);
 	if (classRegistered) UnregisterClassW(sourceClass, GetModuleHandleW(nullptr));
 	f.texture.reset();
@@ -1551,6 +1906,7 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 	if (cleanupDone) CloseHandle(cleanupDone);
 	return result;
 }
+int RunScrollFollowDebugProductTest() { return RunScrollFollowProductLiveCase(false,false,false,true); }
 int RunScrollFollowProductLiveTest() { return RunScrollFollowProductLiveCase(false); }
 int RunScrollFollowProductLiveInkTest() { return RunScrollFollowProductLiveCase(true); }
 int RunScrollFollowProductLiveLongTest() { return RunScrollFollowProductLiveCase(true,true); }
@@ -1560,6 +1916,7 @@ int RunScrollFollowProductLiveExternalTest()
 	return RunScrollFollowProductLiveCase(false,false,true);
 }
 #else
+int RunScrollFollowDebugProductTest() { return 2; }
 int RunScrollFollowProductLiveTest() { return 2; }
 int RunScrollFollowProductLiveInkTest() { return 2; }
 int RunScrollFollowProductLiveLongTest() { return 2; }

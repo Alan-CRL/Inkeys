@@ -19,6 +19,7 @@
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h"
+#include "../Inkeys/Inkeys/UI/ScrollFollowDebug/ScrollFollowDebug.h"
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.Metrics;
@@ -56,6 +57,8 @@ int RunFreezeStateTests();
 int RunMagnifierCoordinatorTests();
 int RunFreezeCaptureTests();
 int RunVisualMotionTrackerTests();
+int RunScrollFollowDebugTests();
+int RunScrollFollowDebugModelTests();
 namespace Inkeys::Drawing::Draw3 { int RunScrollFollowProtocolTests() noexcept; }
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
@@ -1641,6 +1644,13 @@ namespace
 
 int main(int argc, char** argv)
 {
+	// 严格早退，仅运行短诊断差分矩阵；错参不落入有窗口或长序列测试。
+	for (int index = 1; index < argc; ++index)
+		if (std::string_view(argv[index]).starts_with("--scroll-follow-debug-only"))
+			{
+			if (argc != 2 || std::string_view(argv[index]) != "--scroll-follow-debug-only") return 2;
+			return RunScrollFollowDebugTests() + RunScrollFollowDebugModelTests() + Inkeys::UI::ScrollFollowDebug::RunExportTests();
+		}
 	for (int index = 1; index < argc; ++index)
 		if (std::string_view(argv[index]).starts_with("--scroll-follow-only"))
 			return argc == 2 && std::string_view(argv[index]) == "--scroll-follow-only" ? Inkeys::Drawing::Draw3::RunScrollFollowProtocolTests() : 2;

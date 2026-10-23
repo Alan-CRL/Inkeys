@@ -138,6 +138,8 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\CV\VisualMotionTracker.cpp" />
 	<ClCompile Include="visual_motion_tracker_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Business\ScrollFollowDebug.cpp" />
+	<ClCompile Include="scroll_follow_debug_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\CV\ShapeRecognition.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\CV\ShapeRecognition.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.InkDocument.cpp" />
@@ -162,6 +164,9 @@
 	</ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationProbe.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Presentation.Source.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\ScrollFollowDebug\ScrollFollowDebug.cpp">
+	  <ObjectFileName>$(IntDir)ScrollFollowDebug.UI.obj</ObjectFileName>
+	</ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
     <ClCompile Include="animation_tests.cpp" />
@@ -236,6 +241,7 @@
 	<ClInclude Include="..\Inkeys\Inkeys\Input\UiPointerInput.h" />
     <ClInclude Include="..\Inkeys\Inkeys\Window\Window.MessageDispatch.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\ScrollFollowDebug\ScrollFollowDebug.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
@@ -245,6 +251,7 @@
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Graphics\FreezeCapture.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\CV\VisualMotionTracker.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Business\ScrollFollowDebug.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

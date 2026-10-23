@@ -52,6 +52,12 @@ namespace
 		return role == WindowRole::Setting;
 	}
 
+	// 仅复用设置 owner 的消息队列，不继承 Setting 的样式、焦点和归属策略。
+	[[nodiscard]] constexpr bool UsesSettingThread(WindowRole role) noexcept
+	{
+		return IsSetting(role) || role == WindowRole::ScrollFollowDebug;
+	}
+
 	[[nodiscard]] constexpr bool IsDisplayObserver(WindowRole role) noexcept
 	{
 		return role == WindowRole::DisplayObserver;
@@ -140,6 +146,7 @@ namespace
 		case WindowRole::Bar: return L"Inkeys.Window.Bar";
 		case WindowRole::Setting: return L"Inkeys.Window.Setting";
 		case WindowRole::DisplayObserver: return L"Inkeys.Window.DisplayObserver";
+		case WindowRole::ScrollFollowDebug: return L"Inkeys.Window.ScrollFollowDebug";
 		default: return L"Inkeys.Window.Unknown";
 		}
 	}
@@ -1030,16 +1037,19 @@ namespace Inkeys::Window
 
 			if (settingGroup)
 			{
-				const auto& spec = specs_[RoleIndex(WindowRole::Setting)];
-				if (!spec || CreateStartupWindowFor(*spec, nullptr, threadId, failedCleanup)) return true;
-				if (spec->optional)
+				for (const auto role : { WindowRole::Setting, WindowRole::ScrollFollowDebug })
 				{
-					configured_[RoleIndex(WindowRole::Setting)].store(
-						false, std::memory_order_release);
-					return true;
+					const auto& spec = specs_[RoleIndex(role)];
+					if (!spec || CreateStartupWindowFor(*spec, nullptr, threadId, failedCleanup)) continue;
+					if (spec->optional)
+					{
+						configured_[RoleIndex(role)].store(false, std::memory_order_release);
+						continue;
+					}
+					failedCleanup.BeginKnownFailure();
+					return false;
 				}
-				failedCleanup.BeginKnownFailure();
-				return false;
+				return true;
 			}
 
 			HWND owner = nullptr;
@@ -1191,6 +1201,14 @@ namespace Inkeys::Window
 					~(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
 				owner = nullptr;
 			}
+			else if (spec.role == WindowRole::ScrollFollowDebug)
+			{
+				style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+				// 诊断窗独立置顶，不加入画布 owner 链或跟随其置顶策略降级。
+				exStyle = (exStyle | WS_EX_APPWINDOW | WS_EX_TOPMOST) &
+					~(WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+				owner = nullptr;
+			}
 			else if (IsDisplayObserver(spec.role))
 			{
 				style = 0;
@@ -1328,6 +1346,7 @@ namespace Inkeys::Window
 			};
 			if (settingGroup)
 			{
+				DestroyWindowFor(WindowRole::ScrollFollowDebug);
 				DestroyWindowFor(WindowRole::Setting);
 				return;
 			}
@@ -1431,9 +1450,9 @@ namespace Inkeys::Window
 			command.role = role;
 			if (!running_.load(std::memory_order_acquire) || !IsValidRole(role))
 				return false;
-			CommandQueue& queue = IsSetting(role) ? settingCommands_ : overlayCommands_;
-			HANDLE eventHandle = IsSetting(role) ? settingEvent_ : overlayEvent_;
-			const DWORD ownerThreadId = (IsSetting(role)
+			CommandQueue& queue = UsesSettingThread(role) ? settingCommands_ : overlayCommands_;
+			HANDLE eventHandle = UsesSettingThread(role) ? settingEvent_ : overlayEvent_;
+			const DWORD ownerThreadId = (UsesSettingThread(role)
 				? settingThreadId_ : overlayThreadId_).load(std::memory_order_acquire);
 			if (ownerThreadId && ownerThreadId == GetCurrentThreadId())
 				return Execute(command);
@@ -1459,9 +1478,9 @@ namespace Inkeys::Window
 		{
 			if (!running_.load(std::memory_order_acquire) || !IsValidRole(command.role))
 				return false;
-			CommandQueue& queue = IsSetting(command.role) ? settingCommands_ : overlayCommands_;
-			HANDLE eventHandle = IsSetting(command.role) ? settingEvent_ : overlayEvent_;
-			const DWORD ownerThreadId = (IsSetting(command.role)
+			CommandQueue& queue = UsesSettingThread(command.role) ? settingCommands_ : overlayCommands_;
+			HANDLE eventHandle = UsesSettingThread(command.role) ? settingEvent_ : overlayEvent_;
+			const DWORD ownerThreadId = (UsesSettingThread(command.role)
 				? settingThreadId_ : overlayThreadId_).load(std::memory_order_acquire);
 			// WNDPROC/lifecycle hook 可能在所属线程内调用服务，此时直接执行避免自锁。
 			if (ownerThreadId && ownerThreadId == GetCurrentThreadId())
@@ -1956,7 +1975,7 @@ namespace Inkeys::Window
 			// 启动调用已超时的排队刷新不能在 owner 恢复后重新修改窗口层级。
 			if (Detail::CommandExpired(command.deadline)) return false;
 			if (command.type == CommandType::HideAll)
-				return HideUserWindowsInGroup(IsSetting(command.role));
+				return HideUserWindowsInGroup(UsesSettingThread(command.role));
 			if (shutdownRequested_.load(std::memory_order_acquire))
 			{
 				// 旧队列中的显示事务不能越过正式退出；隐藏和销毁仍可排空。
@@ -2001,7 +2020,7 @@ namespace Inkeys::Window
 			{
 				// 拒绝最小化之前排队的呈现请求，不能重新唤醒画布或翻页控件。
 				if (WhiteboardWindowGroupMinimized() && command.role != WindowRole::Bar
-					&& !IsSetting(command.role)) return true;
+					&& !UsesSettingThread(command.role)) return true;
 				if (IsCanvas(command.role) && !EnsureCanvasPolicy(
 					whiteboardWindowMode_.load(std::memory_order_acquire))) return false;
 				bool succeeded = true;
@@ -2434,9 +2453,11 @@ namespace Inkeys::Window
 		{
 			if (settingGroup)
 			{
-				if (const HWND hwnd = Handle(WindowRole::Setting); hwnd && IsWindow(hwnd))
-					return HideSettingWindow(hwnd);
-				return true;
+				bool hidden = true;
+				for (const auto role : { WindowRole::Setting, WindowRole::ScrollFollowDebug })
+					if (const HWND hwnd = Handle(role); hwnd && IsWindow(hwnd))
+						hidden = HideSettingWindow(hwnd) && hidden;
+				return hidden;
 			}
 
 			constexpr WindowRole overlayRoles[] = {
@@ -2649,7 +2670,7 @@ namespace Inkeys::Window
 				owner = Handle(WindowRole::DrawpadPresentation);
 				if (!owner) return false;
 			}
-			else if (!IsSetting(spec.role))
+			else if (!UsesSettingThread(spec.role))
 			{
 				constexpr WindowRole chain[] = {
 					WindowRole::MagnifierHost,

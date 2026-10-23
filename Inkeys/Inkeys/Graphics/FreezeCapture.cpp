@@ -18,6 +18,17 @@ namespace Inkeys::Graphics::FreezeCapture
 		constexpr auto resultTimeout = 1s;
 	}
 
+	const char* FailureStageName(FailureStage stage) noexcept
+	{
+		switch (stage)
+		{
+#define INKEYS_CAPTURE_STAGE(name) case FailureStage::name: return #name
+			INKEYS_CAPTURE_STAGE(None); INKEYS_CAPTURE_STAGE(Begin); INKEYS_CAPTURE_STAGE(Update); INKEYS_CAPTURE_STAGE(Read);
+			INKEYS_CAPTURE_STAGE(Quality); INKEYS_CAPTURE_STAGE(Callback); INKEYS_CAPTURE_STAGE(End); INKEYS_CAPTURE_STAGE(Timeout);
+#undef INKEYS_CAPTURE_STAGE
+		}
+		return "Unknown";
+	}
 	bool IsValidGeometry(const Geometry& geometry) noexcept
 	{
 		const auto& primary = geometry.primaryBounds;
@@ -75,12 +86,18 @@ namespace Inkeys::Graphics::FreezeCapture
 		if (wake_) wake_();
 	}
 
+	void Session::ObserveFailureLocked(FailureStage stage, TimePoint at, std::uint32_t error, bool valid) noexcept
+	{
+		state_.failureStage = stage; state_.lastFailureAt = at; state_.nativeError = error; state_.nativeErrorValid = valid;
+	}
 	void Session::RevokeLocked(StopReason reason) noexcept
 	{
 		if (state_.publishing)
 		{
 			state_.publishing = false;
 			state_.reason = reason;
+			if (reason == StopReason::StartupTimeout || reason == StopReason::ResultTimeout)
+				ObserveFailureLocked(FailureStage::Timeout, now_());
 		}
 	}
 
@@ -198,6 +215,7 @@ namespace Inkeys::Graphics::FreezeCapture
 				// 清理调用已返回，但未完全收起的控件不再接受新捕获会话。
 				state_.ready = windowAccess_ = false;
 				state_.reason = StopReason::BackendFailure;
+				ObserveFailureLocked(FailureStage::End, now_());
 			}
 			backendBegun_ = false;
 			state_.occupied = false;
@@ -234,9 +252,14 @@ namespace Inkeys::Graphics::FreezeCapture
 			std::scoped_lock lock(mutex_);
 			if (phase == Phase::Read)
 			{
+				state_.lastReadStarted = began;
+				state_.lastSampleInterval = state_.lastReadCompleted == TimePoint{} ? std::chrono::microseconds{}
+					: std::chrono::duration_cast<std::chrono::microseconds>(completed - state_.lastReadCompleted);
+				state_.lastReadCompleted = completed;
 				state_.statistics.lastReadDuration = std::chrono::duration_cast<std::chrono::microseconds>(completed - began);
 				state_.statistics.maxReadDuration = std::max(state_.statistics.maxReadDuration, state_.statistics.lastReadDuration);
 				state_.quality = quality;
+				state_.qualityObserved = result.succeeded;
 			}
 			if (state_.publishing && completed >= DeadlineLocked())
 				RevokeLocked(state_.statistics.accepted ? StopReason::ResultTimeout : StopReason::StartupTimeout);
@@ -249,7 +272,10 @@ namespace Inkeys::Graphics::FreezeCapture
 			if (!result.succeeded)
 			{
 				++state_.statistics.apiFailures;
+				ObserveFailureLocked(phase == Phase::Begin ? FailureStage::Begin : phase == Phase::Update ? FailureStage::Update : FailureStage::Read,
+					completed, result.nativeError, result.nativeErrorValid);
 				state_.quality = {};
+				state_.qualityObserved = false;
 				if (phase == Phase::Read) ++state_.statistics.rejected;
 				if (phase == Phase::Begin || result.failure != StopReason::BackendFailure)
 					RevokeLocked(result.failure);
@@ -275,9 +301,10 @@ namespace Inkeys::Graphics::FreezeCapture
 					++state_.sequence;
 					++state_.statistics.accepted;
 					lastResult_ = completed;
+					state_.lastAcceptedSample = completed;
 					deliver = true;
 				}
-				else ++state_.statistics.rejected;
+				else { ++state_.statistics.rejected; ObserveFailureLocked(FailureStage::Quality, completed); }
 				// 只保留一个 DIB，慢调用跳过已经错过的绝对时隙，不积压待捕获帧。
 				nextSlot_ += frameInterval;
 				if (nextSlot_ <= completed)
@@ -292,7 +319,7 @@ namespace Inkeys::Graphics::FreezeCapture
 					frame = { pixels, geometry.width, geometry.height,
 						static_cast<std::size_t>(geometry.width) * sizeof(std::uint32_t), geometry,
 						1.0, 1.0,
-						completed, state_.session, state_.sequence, quality, state_.statistics };
+						completed, state_.session, state_.sequence, quality, state_.statistics, state_.lastSampleInterval };
 			}
 			if (!deliver) state_.inFlight = false;
 		}
@@ -300,7 +327,11 @@ namespace Inkeys::Graphics::FreezeCapture
 		if (!deliver) return;
 		// 不持状态锁调用消费者；Stop 可立即关门，但已准入的回调必须自然返回。
 		try { callback_(frame); }
-		catch (...) { Stop(StopReason::CallbackFailure); }
+		catch (...)
+		{
+			Stop(StopReason::CallbackFailure);
+			std::scoped_lock lock(mutex_); ObserveFailureLocked(FailureStage::Callback, now_());
+		}
 		{
 			std::scoped_lock lock(mutex_);
 			state_.inFlight = false;

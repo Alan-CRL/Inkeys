@@ -2,7 +2,7 @@
 
 ## 范围与接口
 
-`Inkeys/Inkeys/CV/VisualMotionTracker.h/.cpp`为普通头/Pimpl纯图像模块，公开类型只用标准库和数值。Initialize/Process(MotionFrame)->MotionResult，Reset；不创建线程，不依赖HWND、Mag、Draw3、UInk或主栏。沿原OpenCV4.10.0#3静态core/imgproc/video，不引入calib3d/highgui，不改依赖或OpenCV全局运行策略。
+`Inkeys/Inkeys/CV/VisualMotionTracker.h/.cpp`为普通头/Pimpl纯图像模块，公开类型只用标准库和数值。Initialize/Process(MotionFrame, TrackerDebugSnapshot* = nullptr)->MotionResult，Reset；不创建线程，不依赖HWND、Mag、Draw3、UInk或主栏。沿原OpenCV4.10.0#3静态core/imgproc/video，不引入calib3d/highgui，不改依赖或OpenCV全局运行策略。
 
 MotionFrame的image为top-down Gray8/Bgra32借用data/sizeBytes/strideBytes/宽高/format，加timestampSeconds、sequence、captureValid。借用仅当前调用，内部拥有参考灰度；alpha不参与灰度。先验证尺寸/布局/overflow再构造Mat。MotionResult含accepted、state/reason、原图double delta/total、confidence、参考/特征/覆盖/FB/残差/接力/阶段计时统计。内容向上是负Y；拒绝delta=0、total保持最后可信值。Initialized成功total=0不是已有滚动。
 
@@ -47,3 +47,7 @@ GT必须从不可变非周期长画布按绝对camera一次采样，不递推war
 新增真实像素密度保护：12稀疏运动格/36密集固定格须以原单位格次流.25拒绝零主流；24+24反向流交换密度后均以原单位格次流.5拒绝；仅8密集格保留时即使56个FB点、存活和fit足够仍因Coverage拒绝。每项验证最后可信参考不变、第三次Paused与不自动恢复。形变门是variation/残差/支持率联合条件，不可用单项variation<=1替代；目标reason也必须匹配，不能让低特征早失败冒充保护通过。
 
 测试夹具须确认稀疏真实流经LK/FB后仍有足够格支持。旧±8px双流小patch在BF原算法与候选均会丢一半稀疏格，unit次流.333不足门而选择主流，这是保留的模型边界，不能用原始GFTT点数当FB支持，也不能由此承诺可靠自动选择多个pane。修正夹具的±4px全图运动在半图两流间距4>双半径3，双密度均拒绝；原失败不追溯改判。新模型仍须完整构建/无窗口回归与产品真实输入验收，隔离测试不能直接放行全部功能。
+
+## 2026-10-23 可选只读快照
+
+诊断参数默认空指针，旧调用方式与结果不变；启用时在原检查位置记录有界纯数值快照，保留早退、短路和异常拒绝语义，不重新拟合。checks.condition 是原表达式真值，firstFailure 才是实际拒绝门；未执行值必须显示为未执行。referenceSequenceBefore 是实际匹配的旧可信参考，接受后 statistics.referenceSequence 已更新。点/flow/bounds 除各轴实际处理比例还原，anchor/delta/total 不二次缩放。完整跨层合同见 [scroll-follow-debug-window.md](scroll-follow-debug-window.md)。新增严格 --scroll-follow-debug-only 仅跑本次短差分，不运行原长序列。

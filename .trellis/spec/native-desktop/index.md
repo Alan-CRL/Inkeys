@@ -21,6 +21,7 @@
 - [scroll-follow-capture.md](scroll-follow-capture.md)：共用原定格 Mag 的正式异步取帧、原线程寿命、像素映射、回调候选与验证门槛。
 - [scroll-follow-tracking.md](scroll-follow-tracking.md)：独立图像追踪、固定内容锚点接力、可信事务/暂停及严格离线误差。
 - [scroll-follow-product.md](scroll-follow-product.md)：Desktop会话、单槽绝对视口、跨帧End/动作/双窗ACK及保存验证边界。
+- [scroll-follow-debug-window.md](scroll-follow-debug-window.md)：进程内只读快照、真实输入三槽交接、GDI 窗口/Mag 排除、Freeze 与显式导出及验证边界。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
 - [pen-haptics.md](pen-haptics.md)：笔触觉 Host 注入、设备绑定、UI3 接触凭据、失败回退与无窗口验证合同。
 - [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。

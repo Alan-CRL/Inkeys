@@ -422,6 +422,7 @@
 	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
 	<ClInclude Include="Inkeys\Graphics\FreezeCapture.h" />
     <ClInclude Include="Inkeys\Business\ScrollFollow.h" />
+    <ClInclude Include="Inkeys\Business\ScrollFollowDebug.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollow.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollowTest.h" />
     <ClInclude Include="Inkeys\Other\Other.Config.ViewAdjustTest.h" />
@@ -505,6 +506,7 @@
     <ClInclude Include="IdtStart.h" />
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
+    <ClInclude Include="Inkeys\UI\ScrollFollowDebug\ScrollFollowDebug.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
@@ -887,6 +889,7 @@
   <ItemGroup>
 	<ClCompile Include="Inkeys\Graphics\FreezeCapture.cpp" />
     <ClCompile Include="Inkeys\Business\ScrollFollow.cpp" />
+    <ClCompile Include="Inkeys\Business\ScrollFollowDebug.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ScrollFollowTest.cpp" />
     <ClCompile Include="Inkeys\Other\Other.Config.ViewAdjustTest.cpp" />
 	<ClCompile Include="Inkeys\Graphics\Surface.cpp" />
@@ -1034,6 +1037,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm" />
     <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
+    <ClCompile Include="Inkeys\UI\ScrollFollowDebug\ScrollFollowDebug.cpp">
+      <ObjectFileName>$(IntDir)ScrollFollowDebug.UI.obj</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp" />

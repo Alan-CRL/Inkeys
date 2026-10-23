@@ -31,6 +31,7 @@ export namespace Inkeys::Window
 		Bar,
 		Setting,
 		DisplayObserver,
+		ScrollFollowDebug,
 		Count,
 	};
 
@@ -140,7 +141,7 @@ export namespace Inkeys::Window
 
 		[[nodiscard]] HWND Handle(WindowRole role) const noexcept;
 		[[nodiscard]] bool Ready(WindowRole role) const noexcept;
-		// Overlay ready 不包含独立生命周期的 Setting 窗口。
+		// Overlay ready 不包含独立生命周期的 Setting 和诊断窗口。
 		[[nodiscard]] bool AllReady() const noexcept;
 		[[nodiscard]] bool OverlayReady() const noexcept;
 		[[nodiscard]] bool SettingReady() const noexcept;
