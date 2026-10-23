@@ -1531,9 +1531,10 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 {
 	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
 	if (whiteboard) barUISet.barState.geometryAttribute = false;
-	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+	// 白板内切换工具或折叠主栏时，也要收起已展开的绘制属性。
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible()))
+		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible())
 	{
 		barUISet.barState.drawAttribute = false;
 	}
