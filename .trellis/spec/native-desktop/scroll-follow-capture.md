@@ -53,3 +53,15 @@ Start 起5秒内必须 accepted F0；此后1秒无有效 accepted 结果就撤�
 实际构建用完整 InkeysRepo.sln Debug|ARM64、vswhere 定位 ARM64 原生 MSBuild，同一 PowerShell 规范 Path/PATH并禁 node reuse。sandbox MSVC C1902先核对正常宿主，不改工程/PDB/依赖绕过。保持原BOM/EOL，验证工程XML、diff、物理编码，新增定向测试纳入 `--no-window`。
 
 参考：[PrintWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-printwindow)、[MagSetWindowSource](https://learn.microsoft.com/en-us/windows/win32/api/magnification/nf-magnification-magsetwindowsource)、[MagSetWindowTransform](https://learn.microsoft.com/en-us/windows/win32/api/magnification/nf-magnification-magsetwindowtransform)、[MagSetImageScalingCallback](https://learn.microsoft.com/en-us/windows/win32/api/magnification/nf-magnification-magsetimagescalingcallback)。
+
+
+## 实屏测试安全与证据边界（2026-10-22）
+
+Default输入桌面名称、WTS Active、IsWindowVisible/Topmost和DWMWA_CLOAKED=0都不足证明专用图案实际可见。LockScreenBackstopFrame可在Default/Active条件下作为全屏更高层安全遮挡；发现后停止GUI，不提升到它之上、不隐藏/最小化/解锁。只允许用户手动解锁后重跑。必须用屏幕专用内容GT证明源画面可见，再评判Mag帧；仅蓝中心或WM_PAINT完成不能证明整个source。读回近黑但source屏幕GT未证实时，报告原始观测，不认定PW/Mag刷新/线程根因。owner-only PW、owner-only Flush与owner更新/重绘分别对照；未实际运行不能写通过。
+
+
+## 真实路径检查点与取消验收（2026-10-22补充）
+
+用户本轮允许专用可见GUI、原生操作和截图，禁止Computer Use；具体授权与当前锁屏停止见父任务research/live-test-authorization.md和validation-matrix.md。解锁后原共享Mag/原MagnifierThread正式路径无callback取得12帧，4阶段变化/静止与Bar覆盖排除、5张专用ROI逐像素均通过，详保存子任务research/live-capture-check.md。它只证明本机有限专用图案取帧，不能代替20轮启停、Freeze、墨迹/系统ACK、长期性能或其它OS。Read平均约71ms、短夹具约6.7次/s是当前观测，20Hz仍只是目标；前文不可见权限描述软件交付历史，不覆盖本轮新授权。
+
+无hook测试在观察inFlight后调用Stop存在调度竞态，不能以“观察过在途”或取消前后accepted相等即声称撤销成功。实际Read撤销用例必须核对Stop时accepted为0、排空后仍0、本session回调增量0、lateResults至少1及Requested原因；先提交时标race-missed，排空后有界新session重试，耗尽记未覆盖/失败，不能进入成功汇总。lateResults含义以实际Session为准，不靠测试手写完成；跨session回调计数必须使用独立基线。热身后资源计数稳定也不能称初次初始化零泄漏，Freeze显示状态确认不能替代屏幕像素和真实产品ACK。

@@ -24,3 +24,26 @@ namespace Inkeys::Business::ScrollFollow
 	void RequestShutdownNoWait() noexcept;
 	void SetDiagnostics(bool enabled, bool verbose) noexcept;
 }
+
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+#include <memory>
+namespace Inkeys::CV { struct MotionFrame; struct MotionResult; }
+namespace Inkeys::Business::ScrollFollow::LiveTrace
+{
+	// 仅显式实屏harness只读观察；不连接TestPorts，不提供Target/场景写入口。
+	enum class Operation : std::uint8_t { Initialize, Process, AwaitTracking };
+	struct Identity
+	{
+		std::uint64_t session = 0, captureSession = 0, displayGeneration = 0;
+		int sourceLeft = 0, sourceTop = 0, sourceWidth = 0, sourceHeight = 0, roiLeft = 0, roiTop = 0;
+		int sourceRight = 0, sourceBottom = 0, workAreaLeft = 0, workAreaTop = 0, workAreaRight = 0, workAreaBottom = 0;
+		double pixelsPerPixelX = 1, pixelsPerPixelY = 1;
+	};
+	struct Observer
+	{
+		virtual ~Observer() = default;
+		virtual void Observe(const Identity&, Operation, const CV::MotionFrame&, const CV::MotionResult&) noexcept = 0;
+	};
+	void Install(std::shared_ptr<Observer>) noexcept;
+}
+#endif

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 119
-- **Last Active**: 2026-10-21
+- **Total Sessions**: 125
+- **Last Active**: 2026-10-23
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~963 | Active |
+| `journal-2.md` | ~1156 | Active |
 | `journal-1.md` | ~2226 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,12 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 125 | 2026-10-23 | 实际图像回放定位与稀疏票修正验证 | - | `feature/move` |
+| 124 | 2026-10-23 | 录制版验证与安全停止复核 | - | `feature/move` |
+| 123 | 2026-10-23 | Edge Guest真实滚动定位与有限输入录制准备 | - | `feature/move` |
+| 122 | 2026-10-23 | 真实十屏往返与最终无窗口回归通过 | - | `feature/move` |
+| 121 | 2026-10-23 | 滚动批注原生短流程通过与大步LK校准 | - | `feature/move` |
+| 120 | 2026-10-22 | Scroll follow live capture and final offline regression | - | `feature/move` |
 | 119 | 2026-10-21 | 滚动批注初版：软件实现与隐藏验收完成，现场门槛待验 | - | `feature/move` |
 | 118 | 2026-10-21 | 原定格 Mag 的无回调 PrintWindow 准备验证 | - | `feature/move` |
 | 117 | 2026-10-21 | 滚动批注捕获原型与真实门槛调查（未完成） | - | `feature/move` |

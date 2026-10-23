@@ -26,3 +26,38 @@
 {"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/check-current.md", "reason": "Independent final persistence review: exact no-transform A/codec equality, real disk-install receipts and four hidden actual-file cases pass; final ARM64 and scoped regressions; live Mag/window/old-platform gate pending"}
 {"file": ".trellis/tasks/10-21-scroll-follow-v1/research/delivery-current.md", "reason": "Final four-stage software deliverables, actual parameters and results; necessary live gates explicitly remain incomplete"}
 {"file": ".trellis/tasks/10-21-scroll-follow-v1/research/final-build-and-pe.md", "reason": "Final full ARM64/x64 solution, generated PDB quarantine and original-config retry, five x64 CLI passes and exact PE/platform evidence boundaries"}
+{"file": ".trellis/tasks/10-21-scroll-follow-v1/research/live-test-authorization.md", "reason": "Latest 2026-10-22 authorization permits live windows/native automation/screenshots but prohibits Computer Use; supersedes prior invisible-only boundary, no new commit/push or task finish"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-product-test-design.md", "reason": "Actual singleton service + StateMonitoring are required for real window ACK; early private fixture avoids normal startup registry/hooks/update side effects; actual capture gate first"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-capture-implementation.md", "reason": "Frozen pre-unlock formal live harness and seven raw attempts; complete ARM64/strict argv pass, security stop and exact limits; user has now manually unlocked and checker owns resumed tests"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-capture-check.md", "reason": "解锁后正式无callback共享Mag连续像素通过、安全修复、精确耗时与后续验收边界"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-capture-lifecycle-check.md", "reason": "生命周期最新512A源码及旧2D5A构建/11argv的证据边界，不冒称真实运行"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-product-preparation.md", "reason": "最小真实Business/StateMonitoring/单例双窗ACK夹具、空页边界、严格CLI和私有数据/原线程清理；GUI前以独立安全check为准"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-product-initializing-investigation.md", "reason": "实际Initializing不推进调查：真实worker已有Tick，早期UI裸刷新缺ready保护、原Main MTA与fixture STA差异；AV栈尚未确认，原设计报告有勘误"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-product-runtime-check.md", "reason": "PID53500原始30帧/3PNG/Off实际ACK及二进制关联独立验收"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-ink-input-observation.md", "reason": "禁止Canvas跨线程窥读/预期文件构造；旧hidden保持不可见，真实OS与seam须分案"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-style-ack-investigation.md", "reason": "普通样式setter不会统一补精确ACK；StateMonitoring按stale事实重核避免one-shot丢唤醒，保持250ms/有效run/不重publish；Available不检查ACK"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-style-ack-check.md", "reason": "样式精确ACK过期事实谓词的独立静态/构建检查；锁屏退出不算实际收敛或墨迹通过"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-product-ink-offline-check.md", "reason": "真实OS墨迹输入/像素/Exit文件夹具安全审核及尚未发生Down的失败边界"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-browser-adapter-design.md", "reason": "私有Edge源适配、CDP独立真值与真实屏幕墨迹证据边界；未运行浏览器"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-final-offline-verification.md", "reason": "本轮最终ARM64无窗口156.914s、x64完整构建/五CLI/严格argv、PE与格式独立核验；真实墨迹仍未到Down"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-product-ink-runtime-check.md", "reason": "PID43872真实OS/RTS墨迹、ACK0到1、非空辅助交接及32px像素独立核验；反向前GT失败，总体未通过"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-long-stage-review.md", "reason": "长stage旧基线不可覆盖当前诊断、初始特征统计证据、超时与逐步ACK边界；未应用或运行"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-native-down-oracle.md", "reason": "实际两笔UInk与RTS raw/decoded独立比对；仅受限OS鼠标HIMETRIC量化oracle，不能冒称通用硬件坐标保证"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-ink-oracle-check.md", "reason": "仅夹具已知色边缘与受限native鼠标量化oracle独立审查；当前构建/CLI/实屏状态分别记录"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-product-ink-complete-check.md", "reason": "PID22200完整原生短案例独立通过：8PNG、真实两笔UInk/索引/GUID、受限RTS量化及清理；不外推long/hardware"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-long-runtime-check.md", "reason": "PID16860纵横短步像素通过、首128px三拒绝Paused；capture有效不证明该时Mag像素，十屏/退休/返程未通过"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-large-motion-design.md", "reason": "128px失败后的双向LK收敛/覆盖缺口与有序校准；保留所有可信门、锚点、暂停和性能边界，先重放不凭Capture质量排除Mag"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-native-lk5-calibration-implementation.md", "reason": "双向LK最高层3到5最小校准、原6918与native704及4负例原始收据；小尺寸裁剪限制，不代替实屏"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-lk5-calibration-check.md", "reason": "独立核最小生产差异、旧测试字节不变、新大图正负例及旧L3可检出，放行实屏"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-gt-batch-check.md", "reason": "真实long安全取消/初点退休证据与仅测试GT一次内存快照审查；保留99点、全ROI及所有门槛"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-gt-batch-implementation.md", "reason": "仅GT测试批量快照实施/构建收据，不修改产品FPS或门槛"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-external-minimal-entry.md", "reason": "真实Edge最小空画布入口精确复用边界、私有runner/CDP只读GT、真实OS输入/窗口所有权与严格CLI"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-long-complete-check.md", "reason": "真实302步/19200px去返完整独立通过；626GT、11PNG最大1px、初点退休后1112可信、两Pen实际文件/窗口ACK及资源清理，非外部/硬件验收"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-external-entry-implementation.md", "reason": "严格external-empty入口/私有Edge runner和只读GT；真实输入、所有权、阶段IPC及失败撤销的实现边界"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-external-entry-check.md", "reason": "独立核external入口源码/构建/坏argv/原native回归和各次实际失败；空页不证明外部墨迹"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-word-minimal-test-design.md", "reason": "Word已安装但未启动；单/a私有文档、无既有Word和精确NativeOM身份/只读像素锚点的最小测试合同，多开关组合及私有profile不能假定"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-external-frame-trace-check.md", "reason": "实际200px空间比.611565门定位，有限const完整前缀录制合同/宏/生命周期/Guest及回放等价预审；未实施不标通过"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-external-frame-trace-implementation.md", "reason": "原Tracker实际输入完整Gray8前缀、显式phase/原1919buffer几何、有限内存和原drain后保存；仅实现静态，不代替实测"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-browser-motion-consensus-design.md", "reason": "单位格稀疏证据放大与两个待验证权重方案；不降65数值但统计含义仍会变，保留原歧义证据/必要密度反转负例，未实施"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-density-calibration-check.md", "reason": "实际13帧精确回放、像素对应与隔离密度票校准检查，保留原歧义保护及旧矩阵证据"}
+{"file": ".trellis/tasks/10-21-scroll-follow-persistence-regression/research/live-density-calibration-implementation.md", "reason": "实际重复纹理失败后的最小密度票校准与原单位格歧义保护、新回归用例和生产推广记录"}

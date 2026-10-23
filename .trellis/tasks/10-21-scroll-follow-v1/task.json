@@ -26,7 +26,7 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "四阶段软件实现与顺序独立check通过；最终ARM64/x64完整solution、真实8个UInk、定向/无窗口基线及PE/i18n/格式通过。仅无窗口/完全不可见HWND；已停在必要正式Mag连续实屏/系统交接/真实内容和硬件验收门槛，保留in_progress，2026-10-22已授权本次本地commit；不push、不结束任务。",
+  "notes": "2026-10-23原共享定格Mag不依赖缩放回调，20轮启停/Freeze互斥通过；约6.8FPS未达20目标。LK3→5后原6918+新增704/4负例、完整Headless307.752s、原生302步19200px去返160.123s独立通过；A最大1px、Off/B/真实两PenUInk和清理正确，ARM64/x64完整构建/CLI/PE/i18n通过。Edge晚出UI已视觉识别为自动账号同步提示，未确认或读同步数据；改Guest并观察12s正常。解锁后short33048通过；实际a6ce完整13帧已保存且原算法逐字段精确回放，截图正文确实200px更新、Tracker停49px，24/37空间票64.86%<65%三拒绝Paused。已校准fit稀疏票并独立保持原unit歧义票，旧7622合法帧+4新guard通过；两架构build/CLI/PE及完整新版Headless501287ms通过；新版默认墨迹38824及Guest dd5f真实200px/Off正常通过，外部可见墨迹/Word/PDF仍待测。8旧临时profile清理2成功6拒绝访问未完全清理，不改ACL/用户常用profile/云端。Word已安装但未启动，硬件/旧OS等待测。禁ComputerUse，不commit/push/finish/archive，in_progress。",
   "meta": {
     "mag_preparation": {
       "status": "verified",

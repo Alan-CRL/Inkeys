@@ -54,3 +54,36 @@ Shortcut保持原owner pending/expected scope/lease/conditional result，先等�
 真实磁盘恢复测试不能以worker的committed计数代替Controller已消费并释放CPUfallback。有限harness观察receipt必须在原file/scene资格分支内、事实发生后发出：CommittedConsumed在diskReady且canvas.reset之后，LoadRequested在原请求实际接纳后，LoadedInstalled在CanInstall及真实restore成功之后，内存恢复另计MemoryRestored。声明/初始化/赋值/读取使用相同harness宏，且只在enableHiddenTestContactInjection绑定；不暴露任意Load或伪completion入口。A与codec零位移往返的x/y/width/style应逐值精确相等，只有实际平移后不同Stroke的浮点比较使用必要容差。
 
 Desktop只改Viewport也应由原Clear/Exit捕获当前canvas.viewport；不为跟随增加逐帧保存。文件/codec往返、现有Clear Undo磁盘恢复、任意冷载Host是不同层级；当前没有通用Desktop冷载替换API，不得以codec Read/Import宣称产品冷载已验。A几何逐点/style/GUID比较，完整快照哈希还含fileGuid和viewport，不能当纯几何摘要。
+
+
+## 早期UI生命周期与实屏夹具（2026-10-22）
+
+Business状态转换可先于Bar::InitializeUI发生，Initializing/Stopping/Off的刷新必须使用已有`UI::Bar::RefreshToolState()`就绪入口，不能裸调用`barUISet.UpdateRendering()`。真实contentStateUpdatesReady=false时仍通知渲染但跳过状态/粗细文字对象访问；true时保持原完整UI更新。不得手造wordMap对象或fake ready以通过测试。Service自带16ms worker，不以手工Tick替代正式调度。
+
+早退产品夹具的COM模式必须与普通Main保持MTA；用STA触发RTS RPC_E_CHANGED_MODE只能说明夹具差异，不能称设备不支持RTS。AV的WER异常模块/偏移不能代替线程栈；确定危险代码路径、修复后行为和精确故障指令的证据须分开。
+
+用户单独授权可见/native测试后，旧hidden用例仍保持原不可见约束，另用严格早退入口。系统点击前必须验证专用Source屏幕GT/实际cursor命中自身窗口/取消和安全状态；激活Source的点击不是Pen输入证据。每个成功注入Down保留自身归还凭据、Up有界重试，部分注入或释放未证实不能PASS。正常退出仍走真实Business/StateMonitoring/WindowService ACK，安全层出现立即撤销新Show，不为测试改变前台限制或外部窗口。
+
+空页Tracking按真实规则可pair(0,0)、Off恢复(1,0)，它只能证明协议/滚轮/视口，不能称墨迹可见。除中途settled外，Off后也必须将最终Viewport与实际Source累计GT核对。Capture Mag排除了墨迹，墨迹跟随须用真实屏幕像素；B的世界首点从实际Exit文件核对，不跨线程直接读取Canvas或构造预期文件。
+
+
+## 真实样式与精确窗口回执（2026-10-22）
+
+正常颜色/粗细setter会发布新的mode/bridge，而未必改变内容或runtimeRevision；StateMonitoring不能仅依赖runtimeChanged或一次性retry bool触发精确ACK重核。产品运行期间，当前ScrollFollowProjectionEpoch的真实回执过期也须在原250ms循环进入现有Reconcile/WindowService；稳定ACK一致后停止额外核对。不手写ACK、不额外Publish或改dirty/retry清除协议，不把Available误述为检查ACK。样式修复的静态/构建通过与实际setter→ACK收敛分开记录；安全层初始化前退出不能证明后者通过或失败。
+
+
+实屏有限验证新增：PID43872已观察真实setter后同mode3/bridge5的ACK从0收敛为1，OS注入A被原RTS消费，非空辅助窗交接及32px移动的专用红墨迹core均零误差；它只证明这个案例，不是完整样式并发/硬件笔/退出保存通过。GT后续失配必须停止下一输入，不以Tracker高可信或当前ACK一致覆盖底图真值失败；先记录少量失配像素与实际窗口命中，只保存通过既有专用区域校验的图像。
+
+
+## 原生短案例与测试预期校正（2026-10-23）
+
+PID22200的专用OS鼠标完整短案例已独立核验：真实A/非空辅助交接、正32反16、正常Off、B、唯一实际Exit文件v10读回，viewport(0,16)。这是限定案例，不能外推长程、硬件笔、任意冷载或完整A历史数组。
+
+屏幕测试中，已知笔色与灰底的极小覆盖混色可落在旧色差/背景容差间隙；只允许在既有墨迹走廊、原ink=false且背景失配时，以同覆盖率≤5%、各通道残差≤1解释固定笔色混色。强core、位置、数量、GT门槛保持；不能用允许N个未知像素或统一放宽颜色阈值代替。保存截图仍必须全ROI被解释。
+
+OS整数光标位置与真实RTS解码Down不是同一精度层；专用native鼠标、稳定有效DPI、1:1原点/客户区、原始整数可精确转float等前提成立时，可用一HIMETRIC与推导float运算界校验光标到输入的量化差。Display DPI/2540不是任意RTS设备的解码系数，生产仍用GetPacketDescriptionData结果。文件Viewport .001、身份与codec校验不随输入量化界放宽，确定性hidden点测试不沿用这个界。
+
+长程初始特征退休不得用relayGeneration增加代替；该值每个可信参考帧都增加。使用现有verbose同一帧的session/capture_session/accepted与initial_survivors、added/retained/retired事实，结合真实Source/owner移动及返程像素作离线验收；不新增可变Tracker/目标接缝。初/终真实ACK与每步只观察ACK须分开表述。
+
+
+实屏原因码相同但门槛不同的定位应先复用现有`MotionStatistics`：verbose在原pw_us字段之后追加FB有效数、点/空间内点比例、存活率、格覆盖、次流、affine及参考序号/拒绝计数。保持旧日志前缀、唯一DiagnosticOutput队列和算法决策不变。点内点比例不能替代按格空间比例，coverage未填0也不能单独当确定门槛来源。外部固定标记/DOM位移正确与Capture质量/API成功，不是某个Mag帧逐像素无误的证明。

@@ -53,3 +53,44 @@
 SolidLine在Bridge中是形状工具，真实完成类型为Shape，导出通常只有两个端点；不能把这个用例称作普通笔Drawing/建模点路径通过。保存回归至少包括实际Pen或HardPen，完成Kind Drawing、导出Pen，A的完整点/width/style/GUID在Follow前后及Exit文件保持一致；Follow后普通笔B必须核对client Down与最终viewport对应的真实首点/锚点。普通笔建模受采样时间影响，不强迫A和B整条点数组是完全相同的平移；只分别断言A前后无改写、B锁存当前视口一次。保留Shape严格平移用例可单独证明形状路径。
 
 现有Eraser持久化为蒙版stroke，不必删除A/B原始点。测试应证明真实mask覆盖到目标及Undo/Redo的可见历史语义，不能以工具发布或收到Eraser完成kind本身声称已擦中；最终文件对象数须按既有表示而不是假定删除笔划解释。
+
+
+## 实屏测试继续（2026-10-22）
+
+授权与边界见父research/live-test-authorization.md。顺序：原Mag正式worker专用图案像素/持续更新/排除及启停Freeze门槛 -> 独立check -> 真实Business/WindowService ACK/Draw3专用内容跟随整链 -> 应用及具备条件的现场项。保持原Mag线程设计及私有数据，禁止Computer Use；新增harness不改变生产渲染/保存语义。每一步以实际日志/图片和原始退出码记录；必要harness修改后完整ARM64 solution与最小定向回归，独立check。
+
+
+## 实测驱动的最小 LK 层数校准（2026-10-23）
+
+首long128px步骤失败后，用受控TexturePixel纯生成图及实际主屏ROI尺寸独立重放，原3层稳定复现64/128不一致；L4不足以覆盖128四向，隔离副本L5在本机2880×1808处理前ROI上使128/192四向与姿态路径通过。没有原失败Mag帧，不能宣称唯一还原其根因；这证明的是独立算法能力缺口。小图实际金字塔会被OpenCV限制，960×540/1920×1080仍可拒绝128，不承诺任意屏幕/内容的大步范围。
+
+本次选择仅前后双向LK maxLevel3→5与关键中文注释，不改窗口21、FB/生存/一致性/覆盖/跳变/锚点门、暂停/参考提交、捕获、GPU、DPI或输入/保存。不引入phaseCorrelate/新依赖/配置API；若后续实测仍不能满足，不用降低long步长/总距离求通过。新的原生ROI大步、静止300、长relay/初点0与返程及可复用安全负例补充旧14组6918合法帧，旧断言/阈值不修改。合成正例须能证明旧L3确实失败。全部定向回归/完整ARM64/独立check通过后，先真实short，再同样128阶跃与19200px十屏long。小尺寸失败作为能力边界记录，不烘焙成未来算法必须拒绝合法平移的产品需求。
+
+
+## 可用外部应用的最小验证入口（2026-10-23）
+
+在原生完整长程通过后，按research/live-external-minimal-entry.md实施有限external-empty case。该入口复用现有真实Business/共享Mag/StateMonitoring/WindowService/Draw3 Channel/Off结束屏障；只替换原自建Source的创建、输入和只读GT观察。严格单参CLI，缺私有runner数据直接失败，不回落普通Main。正常native短/long/ink逻辑与全部oracle必须保留。
+
+私有runner独占新Edge app/profile/CDP和真实OS wheel，C++不加入CDP依赖。通过新建、拒reparse的Build/ScrollFollow私有目录，以有界且带run/PID/阶段身份的文件交换browser-ready、tracking-ready、wheel-result、off-ready、final。C++核活进程及精确owned root/content HWND，绝不DestroyWindow外进程窗口；runner只关闭自己的browser。输入前检查安全层、实际前台/命中、无物理按键持有；安全层出现即停止，不自动解锁或保活。
+
+实际滚动差来自同一专用页面只读CDP状态，DPR/物理content尺寸/布局需交叉验证，不能假设滚轮固定像素或重复DPI换算。专用页面小图案与实际屏幕像素独立核对，rAF不冒充DWM更新完成。GT只能断言latest=-delta、viewport=base+delta及稳定序号，绝不写入Tracker/Target/ACK。新case仅验证真实Edge底图带动空画布视口及正常退出，明确不声称浏览器墨迹/存储/普通tab/Word/PDF通过。依旧先审查diff、完整ARM64构建及严格坏argv，再运行拥有私有资源的自动关闭GUI。
+
+
+## 实际Tracker输入的有限只读录制合同（2026-10-23）
+
+Guest相同200px场景出现一败一成后再次失败。最新46cc7129b8cd4621b8a47d1d8842a840/29BB15DD/9110ms，frame9–11空间比例.611565<.65，134/178点内点、存活.611684、3次拒绝，明确触发Coverage之前的一致性门；不是由点数比例75.3%判通过，也未到累计锚点检查。750dddd0的140+60采样一次成功、视口200.000061保留为限定PASS，不把只加日志说成修复。
+
+下一步仅可选、严格external早退harness的只读输入录制，不改正式Mag、Tracker、Target或ROI/门槛。显式runner开关+有限环境标记启用，且须当前自建Guest窗口/身份/安全检查。harness宏内在原Frame使用同一MotionFrame并完成真实Tracker后，observer只接收const input/result/session，复制本次同步借用，不产生或修改图像输入/跟随目标。观察器非原TestPorts，正式业务仍走真实Capture/Host/ACK。
+
+记录从Initialize开始连续全部输入及原result（含尚未Tracking的NotInitialized），原seq/time/尺寸/ROI/会话/阶段及已有统计；不得只录最后可信后重新Initialize冒充精确会话。允许复用同一OpenCV版本COLOR_BGRA2GRAY得完整分辨率Gray8，离线原Tracker Gray8入口仍执行同一resize；不能预先半分辨率再令Tracker二次缩小。最多64帧且像素总内存≤384MiB，溢出/漏帧/异常标明incomplete并使显式诊断失败；不建立生产图像FIFO。复制/转换耗时另计，不把该次性能当正常捕获性能。
+
+同步回调只做有界内存复制，不压缩或写文件；原Stop/drain和所有回调线程退出后才保存自己root内CreateNew的PGM和有限JSON，不保存源借用指针。观察器拥有shared lifetime并原子挂载/卸载，不能迟到访问Fixture或影响新场景；宏关闭时无新引用/导入/链接。默认入口未启用，不新增设置/产品API。保存前仍核本次专用身份/几何、已知区域覆盖和安全；实际外部ROI内容不能由固定标记单独证明逐像素正确，原图用于后续独立比对/回放。
+
+
+## 实际重复纹理的离线候选校准（2026-10-23）
+
+已获actual a6ce完整输入、原算法精确回放及正文正确200px像素证据。原单位格票把底部13个仅有少量错误匹配的格子各算1票，143正确匹配只占24/37票而拒绝；错误流方向相反且与重复段落周期吻合，属于有依据的别名解释，不认定所有历史失败同因。
+
+先在ignored副本检验fit/anchor每点1/max(格内FB有效点数,3)、分母实际fit总票；每格仍最多1票，仍要求.65一致性、40点、原FB/NonTranslation/Coverage/跳变/锚点/事务/三拒绝暂停。原单位格1/n歧义票和occupiedCells分母单独保留，尤其零主流的.15/6中部格和.35门不得因密度降权消失。该权重改变统计含义，不能说数值.65未变就等于原模型。
+
+候选不直接写生产：先原实际13帧与独立200px GT、原封不动6918+704帧和4项大图负例，再有意义的真实像素密度反转/少数真实流/局部密集外点回归。旧trace的expected记录原失败结果；候选回放差异属预期模型变化，不能标exact replay PASS。原算法精确回放器/原数据保持冻结。只有结果支持且经check后才进入生产最小diff与完整构建/必要重测。

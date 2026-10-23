@@ -1383,9 +1383,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
 		int selected = 0; bool malformed = false;
-		const wchar_t* flags[] = {L"--scroll-follow-protocol-test", L"--scroll-follow-hidden-test", L"--bar-view-adjust-config-test", L"--scroll-follow-persistence-test"};
+		const wchar_t* flags[] = {L"--scroll-follow-protocol-test", L"--scroll-follow-hidden-test", L"--bar-view-adjust-config-test", L"--scroll-follow-persistence-test", L"--freeze-capture-live-test", L"--scroll-follow-live-test", L"--scroll-follow-live-ink-test", L"--scroll-follow-live-long-test", L"--scroll-follow-live-external-test"};
+		// 已撤销的内部probe只拒绝，防止旧命令误入普通GUI启动。
+		for (int index=1;index<count;++index)
+			if(wcslen(arguments[index])>=wcslen(L"--freeze-capture-live-probe") && CompareStringOrdinal(arguments[index],
+				static_cast<int>(wcslen(L"--freeze-capture-live-probe")),L"--freeze-capture-live-probe",-1,TRUE)==CSTR_EQUAL)
+			{LocalFree(arguments);return 2;}
 		for (int index = 1; index < count; ++index)
-			for (int test = 0; test < 4; ++test)
+			for (int test = 0; test < 9; ++test)
 				if (wcslen(arguments[index]) >= wcslen(flags[test]) && CompareStringOrdinal(arguments[index], static_cast<int>(wcslen(flags[test])), flags[test], -1, TRUE) == CSTR_EQUAL)
 				{
 					selected = test + 1;
@@ -1403,6 +1408,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (selected == 2 && EnsureProcessDpiAwareness()) result = Inkeys::Drawing::Draw3::RunScrollFollowInvisibleHostTest();
 			if (selected == 3) result = Inkeys::Tests::RunBarViewAdjustConfigTests();
 			if (selected == 4 && EnsureProcessDpiAwareness()) result = Inkeys::Drawing::Draw3::RunScrollFollowPersistenceTest();
+			if (selected == 5 && EnsureProcessDpiAwareness()) result = RunFreezeCaptureLiveTest();
+			if (selected == 6 && EnsureProcessDpiAwareness()) result = RunScrollFollowProductLiveTest();
+			if (selected == 7 && EnsureProcessDpiAwareness()) result = RunScrollFollowProductLiveInkTest();
+			if (selected == 8 && EnsureProcessDpiAwareness()) result = RunScrollFollowProductLiveLongTest();
+			if (selected == 9 && EnsureProcessDpiAwareness()) result = RunScrollFollowProductLiveExternalTest();
 			(void)diagnostics.Stop(); return result;
 #else
 			return 2;

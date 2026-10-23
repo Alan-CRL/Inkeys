@@ -2170,8 +2170,10 @@ void StateMonitoring()
 		{
 			revision = snapshot.runtimeRevision;
 		}
+		// 纯样式发布不一定改变runtime；用当前真实ACK补重核，避免并发发布的请求被旧成功回执吞掉。
 		if (runtimeChanged || draw3PresentationRetryPending.load(
-			std::memory_order_acquire))
+			std::memory_order_acquire) || (Inkeys::Drawing::Draw3::ProductRunning() &&
+			!ScrollFollowPresentationAcknowledged(ScrollFollowProjectionEpoch())))
 		{
 			ReconcileDraw3Presentation();
 		}

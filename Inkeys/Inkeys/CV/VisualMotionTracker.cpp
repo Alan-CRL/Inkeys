@@ -99,6 +99,14 @@ namespace Inkeys::CV
 			for (auto i : indices) weight += matches[i].weight;
 			return weight;
 		}
+		// 歧义检查保留原单位格票，避免稀疏真实运动因拟合降权而被吞掉。
+		double OriginalCellWeight(const std::vector<Match>& matches, const std::vector<std::size_t>& indices,
+			const std::array<int, CellCount>& counts)
+		{
+			double weight = 0;
+			for (const auto i : indices) weight += 1.0 / counts[matches[i].cell];
+			return weight;
+		}
 		double Support(const std::vector<Match>& matches, MotionVector flow)
 		{
 			double weight = 0;
@@ -376,7 +384,8 @@ namespace Inkeys::CV
 			std::vector<unsigned char> forwardStatus, backwardStatus;
 			std::vector<float> errors;
 			const cv::TermCriteria criteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, 0.01);
-			cv::calcOpticalFlowPyrLK(reference, gray, p, q, forwardStatus, errors, cv::Size(21, 21), 3, criteria, 0, 1e-4);
+			// 大屏半分辨率仍需覆盖较大位移；小图由OpenCV自动限制可用金字塔层级。
+			cv::calcOpticalFlowPyrLK(reference, gray, p, q, forwardStatus, errors, cv::Size(21, 21), 5, criteria, 0, 1e-4);
 			std::vector<cv::Point2f> refined;
 			std::vector<std::size_t> sourceIndices;
 			for (std::size_t i = 0; i < p.size(); ++i)
@@ -392,7 +401,7 @@ namespace Inkeys::CV
 			cv::cornerSubPix(gray, refined, cv::Size(3, 3), cv::Size(-1, -1),
 				cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, 0.001));
 			// 细化后重新跑反向光流，不能沿用细化前的 FB 作为同一点凭据。
-			cv::calcOpticalFlowPyrLK(gray, reference, refined, back, backwardStatus, errors, cv::Size(21, 21), 3, criteria, 0, 1e-4);
+			cv::calcOpticalFlowPyrLK(gray, reference, refined, back, backwardStatus, errors, cv::Size(21, 21), 5, criteria, 0, 1e-4);
 			std::vector<Match> matches;
 			std::array<int, CellCount> counts{};
 			std::vector<double> fbErrors;
@@ -413,7 +422,13 @@ namespace Inkeys::CV
 			stats.survivalRatio = static_cast<double>(matches.size()) / tracks.size();
 			if (matches.size() < MinimumPoints) return Reject(MotionReason::ForwardBackward, stats);
 			stats.occupiedCells = static_cast<int>(std::count_if(counts.begin(), counts.end(), [](int n) { return n > 0; }));
-			for (auto& m : matches) m.weight = 1.0 / counts[m.cell];
+			double allFitWeight = 0;
+			// 稀疏格不足3点时不足整票；每格至多一票，拟合与出生锚点使用同一权重。
+			for (auto& m : matches)
+			{
+				m.weight = 1.0 / std::max(counts[m.cell], 3);
+				allFitWeight += m.weight;
+			}
 			const auto fitBegin = Clock::now();
 			const auto rejectFit = [&](MotionReason reason)
 			{
@@ -422,7 +437,7 @@ namespace Inkeys::CV
 			};
 			MotionVector best{};
 			double bestWeight = -1;
-			// 确定性穷举，每个参考格总票为一；不先对全部点取中位数。
+			// 确定性穷举，每个参考格至多一票，稀疏格降权；不先对全部点取中位数。
 			for (const auto& candidate : matches)
 			{
 				const MotionVector flow{ candidate.displacement.x, candidate.displacement.y };
@@ -435,7 +450,7 @@ namespace Inkeys::CV
 			bestWeight = Weight(matches, indices);
 			stats.inliers = static_cast<int>(indices.size());
 			stats.pointInlierRatio = static_cast<double>(indices.size()) / matches.size();
-			stats.spatialInlierRatio = bestWeight / stats.occupiedCells;
+			stats.spatialInlierRatio = bestWeight / allFitWeight;
 			std::vector<double> residuals;
 			for (const auto i : indices) residuals.push_back(Length(matches[i].displacement.x - best.x, matches[i].displacement.y - best.y));
 			stats.residualMedian = Percentile(residuals, 0.5); stats.residualP95 = Percentile(residuals, 0.95);
@@ -445,7 +460,7 @@ namespace Inkeys::CV
 				const double separation = Length(candidate.displacement.x - best.x, candidate.displacement.y - best.y);
 				if (separation <= ConsensusRadius) continue;
 				const auto other = Inliers(matches, { candidate.displacement.x, candidate.displacement.y });
-				const double otherRatio = Weight(matches, other) / stats.occupiedCells;
+				const double otherRatio = OriginalCellWeight(matches, other, counts) / stats.occupiedCells;
 				if (separation > 2 * ConsensusRadius)
 					stats.runnerUpRatio = std::max(stats.runnerUpRatio, otherRatio);
 				// 零主模式也检查已分离但不足双半径的次流，避免把固定多数误当可靠静止。

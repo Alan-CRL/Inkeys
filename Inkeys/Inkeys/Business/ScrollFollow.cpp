@@ -21,6 +21,13 @@ import Inkeys.UI.Bar;
 
 namespace Inkeys::Business::ScrollFollow
 {
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	namespace LiveTrace
+	{
+		namespace { std::atomic<std::shared_ptr<Observer>> observer; }
+		void Install(std::shared_ptr<Observer> value) noexcept { observer.store(std::move(value), std::memory_order_release); }
+	}
+#endif
 	namespace
 	{
 		namespace Draw = Inkeys::Drawing::Draw3;
@@ -162,7 +169,8 @@ namespace Inkeys::Business::ScrollFollow
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 			if (testPorts) return;
 #endif
-			::barUISet.UpdateRendering();
+			// Host可先于Bar资源就绪；沿原刷新入口保留唤醒并保护未初始化的文字对象。
+			Inkeys::UI::Bar::RefreshToolState();
 		}
 		bool Capability() noexcept
 		{
@@ -198,13 +206,22 @@ namespace Inkeys::Business::ScrollFollow
 			input.timestampSeconds = std::chrono::duration<double>(frame.timestamp.time_since_epoch()).count();
 			input.sequence = frame.sequence;
 			CV::MotionResult result;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			auto operation = LiveTrace::Operation::AwaitTracking;
+#endif
 			if (!context->initialized.load())
 			{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+				operation = LiveTrace::Operation::Initialize;
+#endif
 				result = context->tracker.Initialize(input);
 				if (result.accepted) context->initialized.store(true);
 			}
 			else if (context->tracking.load())
 			{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+				operation = LiveTrace::Operation::Process;
+#endif
 				result = context->tracker.Process(input);
 				if (result.accepted)
 				{
@@ -215,11 +232,28 @@ namespace Inkeys::Business::ScrollFollow
 				if (result.state == CV::MotionState::Paused) context->paused.store(true);
 			}
 			{ std::scoped_lock lock(context->resultMutex); context->result = result; }
+			// 原逐帧诊断只追加现成特征身份统计；relay代次本身不能证明初始点已全部离屏。
 			if (verboseFrames.load()) Draw::DiagnosticOutput::Printf(Draw::DiagnosticOutput::Stream::Error,
-				"[ScrollFollow] frame=%llu accepted=%d reason=%s total_px=(%.4f,%.4f) confidence=%.4f inliers=%d fb_p95=%.4f residual_p95=%.4f coverage=(%.3f,%.3f) relay=%llu pw_us=%lld\n",
+				"[ScrollFollow] session=%llu capture_session=%llu frame=%llu accepted=%d reason=%s total_px=(%.4f,%.4f) confidence=%.4f inliers=%d fb_p95=%.4f residual_p95=%.4f coverage=(%.3f,%.3f) relay=%llu initial_survivors=%d added=%d retained=%d retired=%d pw_us=%lld attempted=%d forward=%d backward=%d fb_valid=%d point_inlier_ratio=%.6f spatial_inlier_ratio=%.6f survival_ratio=%.6f reference_cells=%d occupied_cells=%d inlier_cells=%d interior_cells=%d runner_up_ratio=%.6f affine_variation=%.6f affine_residual=%.6f reference_sequence=%llu consecutive_rejects=%d\n",
+				static_cast<unsigned long long>(context->session), static_cast<unsigned long long>(frame.session),
 				static_cast<unsigned long long>(frame.sequence), result.accepted, CV::MotionReasonName(result.reason), result.total.x, result.total.y, result.confidence, result.statistics.inliers,
 				result.statistics.fbP95, result.statistics.residualP95, result.statistics.coverageX, result.statistics.coverageY,
-				static_cast<unsigned long long>(result.statistics.relayGeneration), static_cast<long long>(frame.statistics.lastReadDuration.count()));
+				static_cast<unsigned long long>(result.statistics.relayGeneration), result.statistics.initialSurvivors, result.statistics.added, result.statistics.retained, result.statistics.retired,
+				static_cast<long long>(frame.statistics.lastReadDuration.count()),
+				result.statistics.attempted, result.statistics.forward, result.statistics.backward, result.statistics.fbValid,
+				result.statistics.pointInlierRatio, result.statistics.spatialInlierRatio, result.statistics.survivalRatio,
+				result.statistics.referenceCells, result.statistics.occupiedCells, result.statistics.inlierCells, result.statistics.interiorCells,
+				result.statistics.runnerUpRatio, result.statistics.affineVariation, result.statistics.affineResidual,
+				static_cast<unsigned long long>(result.statistics.referenceSequence), result.statistics.consecutiveRejects);
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			if (auto observer = LiveTrace::observer.load(std::memory_order_acquire))
+				observer->Observe({context->session, frame.session, frame.geometry.displayGeneration,
+					frame.geometry.sourceRect.left, frame.geometry.sourceRect.top, frame.width, frame.height,
+					frame.geometry.sourceRect.left + left, frame.geometry.sourceRect.top + top,
+					frame.geometry.sourceRect.right, frame.geometry.sourceRect.bottom,
+					frame.geometry.workArea.left, frame.geometry.workArea.top, frame.geometry.workArea.right, frame.geometry.workArea.bottom,
+					frame.sourcePixelsPerPixelX, frame.sourcePixelsPerPixelY}, operation, input, result);
+#endif
 		}
 		struct Action { std::uint64_t id = 0; bool completed = false, gated = false, retired = false; std::uint64_t publishedRevision = 0; Draw::Shortcuts::Scope scope{}; std::shared_ptr<Draw::Follow::Channel> channel; };
 		struct Service

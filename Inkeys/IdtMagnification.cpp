@@ -12,8 +12,18 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
+#include <filesystem>
+#include <mutex>
+#include <thread>
 
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+#include "Inkeys/Drawing/Draw3/Draw3.Product.h"
+#include "Inkeys/Business/ScrollFollow.h"
+#include "Inkeys/CV/VisualMotionTracker.h"
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include "IdtState.h"
 #include <spdlog/sinks/null_sink.h>
 #endif
 #include <cstdint>
@@ -610,7 +620,8 @@ namespace
 		PrintWindowTestStep step = PrintWindowTestStep::Start;
 		ULONGLONG deadline = 0, readDue = 0, updateTick = 0;
 		unsigned callbacksAtUpdate = 0, phaseMatches = 0, oldFrames = 0, invalidFrames = 0;
-		unsigned staticFrames = 0, threadMismatches = 0, apiFailures = 0, freezePasses = 0;
+		unsigned staticFrames = 0, freezePasses = 0;
+		std::atomic<unsigned> threadMismatches{}, apiFailures{};
 		int result = 1;
 		bool finished = false, callbackAttempted = false, callbackRestored = true;
 		SetScalingCallback setCallback = nullptr;
@@ -663,6 +674,89 @@ namespace
 		return RGB(32 + (phase * 47 + column * 19 + row * 7) % 192,
 			32 + (phase * 31 + column * 11 + row * 29) % 192,
 			32 + (phase * 61 + column * 23 + row * 13) % 192);
+	}
+
+	bool LiveSecurityInterfacePresent() noexcept
+	{
+		// 只读命中窗口元数据；必须在Display/夹具窗口/屏幕读回之前识别安全层。
+		const HWND hit=WindowFromPoint({GetSystemMetrics(SM_CXSCREEN)/2,GetSystemMetrics(SM_CYSCREEN)/2});
+		wchar_t name[128]{}; (void)GetClassNameW(hit,name,128);
+		if(CompareStringOrdinal(name,-1,L"LockScreenBackstopFrame",-1,TRUE)==CSTR_EQUAL)return true;
+		DWORD pid=0; (void)GetWindowThreadProcessId(hit,&pid);
+		if(!pid || pid==GetCurrentProcessId())return false;
+		const HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid);
+		wchar_t image[MAX_PATH]{};DWORD length=MAX_PATH;
+		const bool queried=process && QueryFullProcessImageNameW(process,0,image,&length)!=FALSE;
+		if(process)CloseHandle(process);
+		if(!queried)return false;
+		const wchar_t* base=wcsrchr(image,L'\\');base=base?base+1:image;
+		for(const wchar_t* security:{L"LockApp.exe",L"Consent.exe",L"CredentialUIBroker.exe",L"LogonUI.exe",L"winlogon.exe"})
+			if(CompareStringOrdinal(base,-1,security,-1,TRUE)==CSTR_EQUAL)return true;
+		return false;
+	}
+
+	bool LiveDesktopAvailable(const char* stage) noexcept
+	{
+		wchar_t current[128]{},input[128]{};DWORD bytes=0;
+		const bool currentRead=GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()),UOI_NAME,current,sizeof(current),&bytes)!=FALSE;
+		HDESK desktop=OpenInputDesktop(0,FALSE,DESKTOP_READOBJECTS);const DWORD error=desktop?0:GetLastError();
+		const bool inputRead=desktop && GetUserObjectInformationW(desktop,UOI_NAME,input,sizeof(input),&bytes)!=FALSE;
+		if(desktop)CloseDesktop(desktop);
+		const bool available=currentRead && inputRead && CompareStringOrdinal(current,-1,input,-1,TRUE)==CSTR_EQUAL;
+		PrintWindowTestLog("[FreezeCaptureLive] desktop stage=%s tid=%lu current=%ls input=%ls current_query=%u input_query=%u open_error=%lu available=%u\n",
+			stage,GetCurrentThreadId(),current,input,currentRead,inputRead,error,available);
+		return available;
+	}
+
+	bool LogLiveWindows(const char* stage) noexcept
+	{
+		if(!printWindowTest)return false;const auto& test=*printWindowTest;
+		const HWND overlay=Inkeys::Window::GetService().Handle(WindowRole::Bar);
+		const HWND hit=WindowFromPoint({test.width/2,test.height/2});
+		DWORD hitProcess=0;(void)GetWindowThreadProcessId(hit,&hitProcess);
+		wchar_t hitClass[128]{},image[MAX_PATH]{};DWORD imageLength=MAX_PATH;
+		(void)GetClassNameW(hit,hitClass,128);
+		const HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,hitProcess);
+		const bool imageRead=process && QueryFullProcessImageNameW(process,0,image,&imageLength)!=FALSE;
+		if(process)CloseHandle(process);
+		const wchar_t* basename=imageRead?(wcsrchr(image,L'\\')?wcsrchr(image,L'\\')+1:image):L"unavailable";
+		// 锁屏backstop仍可位于Default桌面且由explorer持有；桌面同名/未cloak不能当作解锁凭据。
+		bool security=CompareStringOrdinal(hitClass,-1,L"LockScreenBackstopFrame",-1,TRUE)==CSTR_EQUAL;
+		for(const wchar_t* name:{L"LockApp.exe",L"Consent.exe",L"CredentialUIBroker.exe",L"LogonUI.exe",L"winlogon.exe"})
+			security |= CompareStringOrdinal(basename,-1,name,-1,TRUE)==CSTR_EQUAL;
+		RECT hitRect{};const bool hitBounds=GetWindowRect(hit,&hitRect)!=FALSE;
+		PrintWindowTestLog("[FreezeCaptureLive] hit hwnd=%p pid=%lu class=%ls basename=%ls image_query=%u same_process=%u topmost=%u security=%u bounds_ok=%u bounds=(%ld,%ld,%ld,%ld)\n",
+			hit,hitProcess,hitClass,basename,imageRead,hitProcess==GetCurrentProcessId(),(GetWindowLongPtrW(hit,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0,security,
+			hitBounds,hitRect.left,hitRect.top,hitRect.right,hitRect.bottom);
+		if(security)return true; // 已知安全遮挡后不再获取屏幕像素。
+		bool sourceAboveOverlay=false;
+		for(HWND above=GetWindow(overlay,GW_HWNDPREV);above;above=GetWindow(above,GW_HWNDPREV))
+			if(above==test.source){sourceAboveOverlay=true;break;}
+		PrintWindowTestLog("[FreezeCaptureLive] windows stage=%s center_hit=%s source_above_overlay=%u\n",stage,
+			hit==test.source?"source":hit==overlay?"overlay":hit==test.host?"host":hit==test.child?"child":"other",sourceAboveOverlay);
+		const auto log=[&](const char* role,HWND window)
+		{
+			RECT r{};const bool bounds=GetWindowRect(window,&r)!=FALSE;
+			DWORD cloaked=0;const HRESULT cloakResult=DwmGetWindowAttribute(window,DWMWA_CLOAKED,&cloaked,sizeof(cloaked));
+			PrintWindowTestLog("[FreezeCaptureLive] cloak stage=%s role=%s hr=0x%08lX value=%lu\n",stage,role,static_cast<unsigned long>(cloakResult),cloaked);
+			PrintWindowTestLog("[FreezeCaptureLive] window stage=%s role=%s valid=%u visible=%u iconic=%u owner=%p topmost=%u bounds_ok=%u bounds=(%ld,%ld,%ld,%ld)\n",
+				stage,role,IsWindow(window),IsWindowVisible(window),IsIconic(window),GetWindow(window,GW_OWNER),
+				(GetWindowLongPtrW(window,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0,bounds,r.left,r.top,r.right,r.bottom);
+		};
+		log("source",test.source);log("overlay",overlay);log("host",test.host);log("child",test.child);
+		unsigned patternMatches=0,patternTotal=0,blueMatches=0;
+		const HDC screen=GetDC(nullptr);
+		if(screen)for(int row=0;row<patternRows;++row)for(int column=0;column<patternColumns;++column)
+		{
+			const int x=(2*column+1)*test.width/(2*patternColumns),y=(2*row+1)*test.height/(2*patternRows);
+			const bool inOverlay=x>=test.width/3 && x<2*test.width/3 && y>=test.height/3 && y<2*test.height/3;
+			const COLORREF value=GetPixel(screen,x,y);
+			if(inOverlay)blueMatches+=value==RGB(0,0,255);
+			else{++patternTotal;patternMatches+=value==PatternColor(1,column,row);}
+		}
+		if(screen)ReleaseDC(nullptr,screen);
+		PrintWindowTestLog("[FreezeCaptureLive] visibility stage=%s pattern_outside_overlay=%u/%u blue=%u/9 screen_dc=%u\n",stage,patternMatches,patternTotal,blueMatches,screen!=nullptr);
+		return security;
 	}
 
 	LRESULT CALLBACK PrintWindowPatternProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -769,7 +863,7 @@ namespace
 		PrintWindowTestLog("[FreezeMagTest] result=%s reason=%s pixels=%s phases=%u freezePasses=%u/2 static=%u old=%u invalid=%u threadMismatches=%u apiFailures=%u\n",
 			test.result == 0 ? "PASS" : "FAIL", reason, test.phaseMatches == 7 ? "PASS" : "FAIL",
 			test.phaseMatches, test.freezePasses, test.staticFrames,
-			test.oldFrames, test.invalidFrames, test.threadMismatches, test.apiFailures);
+			test.oldFrames, test.invalidFrames, test.threadMismatches.load(), test.apiFailures.load());
 		SetEvent(test.done);
 	}
 
@@ -1122,10 +1216,447 @@ int RunFreezeMagnifierPrintWindowTest()
 	if (cleanupDone) CloseHandle(cleanupDone);
 	return test.result;
 }
+int RunFreezeCaptureLiveTest()
+{
+	// 安全层门在任何Display/窗口/屏幕读回之前，不能以同名Default桌面代替此检查。
+	if(LiveSecurityInterfacePresent()) { std::fputs("[FreezeCaptureLive] blocked=security-interface-before-initialization\n",stderr); return 4; }
+	// 只驱动正式Start/Stop和原producer；旧owner定时读回入口不运行。
+	PrintWindowTest test;
+	struct Observations
+	{
+		struct Sample
+		{
+			std::uint64_t session=0,sequence=0;
+			int matched=0;
+			Capture::TimePoint timestamp{};
+			double readMs=0;
+		};
+		std::mutex mutex;
+		std::vector<Sample> samples;
+		std::array<unsigned, 5> phases{};
+		std::array<std::vector<std::uint32_t>, 5> crops;
+		std::vector<double> readMs;
+		std::atomic<DWORD> worker{};
+		std::atomic<unsigned> cancelledCallbacks{};
+		unsigned unmatched = 0, old = 0, wrongThread = 0, sequenceErrors = 0;
+	};
+	const auto observations = std::make_shared<Observations>();
+	const auto previousLogger = IDTLogger;
+	std::jthread worker, deadlineWorker;
+	HANDLE cleanupDone = nullptr;
+	bool displayStarted = false, serviceStarted = false, patternRegistered = false;
+	DWORD initialGdi = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+	DWORD initialUser = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+	const auto pumpUntil = [](auto&& predicate, DWORD timeout)
+	{
+		const ULONGLONG end = GetTickCount64() + timeout;
+		do
+		{
+			if(LiveSecurityInterfacePresent())throw std::runtime_error("security-interface-appeared");
+			if (predicate()) return true;
+			(void)MsgWaitForMultipleObjects(0, nullptr, FALSE, 10, QS_ALLINPUT);
+			MSG message{};
+			while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) { TranslateMessage(&message); DispatchMessageW(&message); }
+		} while (GetTickCount64() < end);
+		return predicate();
+	};
+	try
+	{
+		const auto parent = std::filesystem::current_path() / L"Build" / L"ScrollFollow";
+		const auto directorySafe = [](const std::filesystem::path& path)
+		{
+			const DWORD a = GetFileAttributesW(path.c_str());
+			return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY) && !(a & FILE_ATTRIBUTE_REPARSE_POINT);
+		};
+		auto checked = parent.root_path();
+		if (!parent.is_absolute() || !directorySafe(checked) ||
+			GetFileAttributesW((std::filesystem::current_path()/L"InkeysRepo.sln").c_str()) == INVALID_FILE_ATTRIBUTES)
+			throw std::runtime_error("private-root");
+		for (const auto& component : parent.relative_path()) { checked /= component; if (!directorySafe(checked)) throw std::runtime_error("reparse-parent"); }
+		test.output = (parent / (L"live-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()))).native();
+		if (test.output.size() >= MAX_PATH-40 || !CreateDirectoryW(test.output.c_str(),nullptr)) throw std::runtime_error("create-new-root");
+		test.log = CreateFileW((test.output+L"/result.log").c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+		cleanupDone = CreateEventW(nullptr,TRUE,FALSE,nullptr);
+		if (test.log == INVALID_HANDLE_VALUE || !cleanupDone) throw std::runtime_error("fixture-log");
+		printWindowTest = &test;
+		IDTLogger = std::make_shared<spdlog::logger>("FreezeCaptureLive",std::make_shared<spdlog::sinks::null_sink_mt>());
+		PrintWindowTestLog("[FreezeCaptureLive] output=%ls pid=%lu main_tid=%lu formal_api=1 callback_registered=0 no_WGC=1 no_affinity=1\n",test.output.c_str(),GetCurrentProcessId(),GetCurrentThreadId());
+		deadlineWorker = std::jthread([cleanupDone]
+		{
+			// 专用进程最终截止只报告失败；不强杀线程/提前释放未返回PW所借资源。
+			if (WaitForSingleObject(cleanupDone,90000) != WAIT_OBJECT_0) TerminateProcess(GetCurrentProcess(),3);
+		});
+		if(!LiveDesktopAvailable("before-windows"))throw std::runtime_error("interactive-desktop-unavailable");
+		if (!Inkeys::Display::Initialize()) throw std::runtime_error("display-initialize");
+		displayStarted = true;
+		test.width = GetSystemMetrics(SM_CXSCREEN); test.height = GetSystemMetrics(SM_CYSCREEN);
+		if(test.width<320 || test.height<257)throw std::runtime_error("fixture-screen-too-small");
+		WNDCLASSW pattern{}; pattern.hInstance=GetModuleHandleW(nullptr); pattern.lpfnWndProc=PrintWindowPatternProc;
+		pattern.lpszClassName=L"Inkeys.FreezeCaptureLive.Pattern";
+		if (!RegisterClassW(&pattern)) throw std::runtime_error("pattern-class");
+		patternRegistered=true;
+		test.source=CreateWindowExW(WS_EX_TOPMOST|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,pattern.lpszClassName,L"Inkeys dedicated live capture pattern",WS_POPUP,
+			0,0,test.width,test.height,nullptr,nullptr,pattern.hInstance,nullptr);
+		if (!test.source) throw std::runtime_error("pattern-window");
+		ShowWindow(test.source,SW_SHOWNOACTIVATE); UpdateWindow(test.source);
+		Inkeys::Window::WindowSpec host;
+		host.role=WindowRole::MagnifierHost; host.className=L"Inkeys.FreezeCaptureLive.Host";
+		host.width=test.width; host.height=test.height-1; host.style=WS_POPUP|WS_CLIPCHILDREN;
+		host.exStyle=WS_EX_LAYERED|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW; host.windowProc=MagnifierHostWindowWndProc;
+		host.bindMessages=false; host.beforeCreate=PrepareMagnifierWindow; host.created=MagnifierHostCreated; host.destroyed=ShutdownMagnifierWindow;
+		Inkeys::Window::WindowSpec child;
+		child.role=WindowRole::MagnifierChild; child.className=WC_MAGNIFIER;
+		child.width=test.width; child.height=test.height-1; child.style=WS_CHILD|WS_VISIBLE|MS_CLIPAROUNDCURSOR;
+		child.exStyle=WS_EX_NOACTIVATE; child.bindMessages=false; child.created=MagnifierChildCreated;
+		Inkeys::Window::WindowSpec overlay;
+		overlay.role=WindowRole::Bar; overlay.className=L"Inkeys.FreezeCaptureLive.Overlay";
+		overlay.x=test.width/3; overlay.y=test.height/3; overlay.width=test.width/3; overlay.height=test.height/3;
+		overlay.style=WS_POPUP; overlay.exStyle=WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW;
+		overlay.windowProc=PrintWindowOverlayProc; overlay.bindMessages=false;
+		// 当前WindowService的Bar owner固定为Drawpad；补全隐藏基础链，不能让专用overlay脱离原根。
+		const auto placeholder=[&](WindowRole role,const wchar_t* name)
+		{
+			Inkeys::Window::WindowSpec spec; spec.role=role;spec.className=name;
+			spec.width=test.width;spec.height=test.height-1;spec.style=WS_POPUP|WS_CLIPCHILDREN;
+			spec.exStyle=WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW;spec.windowProc=DefWindowProcW;spec.bindMessages=false;
+			if(role==WindowRole::DrawpadPresentation)spec.exStyle|=WS_EX_LAYERED|WS_EX_TRANSPARENT;
+			return spec;
+		};
+		auto& service=Inkeys::Window::GetService();
+		if (!service.Start({host,child,placeholder(WindowRole::Freeze,L"Inkeys.FreezeCaptureLive.Freeze"),
+			placeholder(WindowRole::DrawpadPresentation,L"Inkeys.FreezeCaptureLive.Auxiliary"),
+			placeholder(WindowRole::Drawpad,L"Inkeys.FreezeCaptureLive.Drawpad"),overlay}) || !magnificationCreateReady)
+			throw std::runtime_error("original-pair-start");
+		serviceStarted=true; test.host=service.Handle(WindowRole::MagnifierHost); test.child=service.Handle(WindowRole::MagnifierChild);
+		const bool overlayShown=service.Show(WindowRole::Bar);
+		const bool overlayTopmost=service.SetOverlayTopmost(true);
+		PrintWindowTestLog("[FreezeCaptureLive] overlay_show=%u overlay_topmost=%u overlay_owner=%p root=%p\n",overlayShown,overlayTopmost,
+			GetWindow(service.Handle(WindowRole::Bar),GW_OWNER),service.OverlayRoot());
+		if (!overlayShown || !overlayTopmost) throw std::runtime_error("overlay-show");
+		if(LogLiveWindows("before-source-order"))throw std::runtime_error("security-interface-blocks-fixture");
+		// 只激活/提升专用SOURCE，再恢复本组排除层；不改变外部窗口或系统桌面。
+		const bool sourceActivated=SetForegroundWindow(test.source)!=FALSE;
+		const bool sourceRaised=SetWindowPos(test.source,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOOWNERZORDER)!=FALSE;
+		const bool ownGroupRaised=service.SetOverlayTopmost(true);
+		PrintWindowTestLog("[FreezeCaptureLive] own_source_activate=%u own_source_raise=%u own_overlay_raise=%u foreground_own_source=%u\n",
+			sourceActivated,sourceRaised,ownGroupRaised,GetForegroundWindow()==test.source);
+		// 专用SOURCE不是产品角色，显式置于本组根之后，避免两个独立TOPMOST链相互盖住；不动用户窗口。
+		const bool sourceBehind=SetWindowPos(test.source,service.OverlayRoot(),0,0,0,0,
+			SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER)!=FALSE;
+		PrintWindowTestLog("[FreezeCaptureLive] source_behind_own_mag_root=%u error=%lu\n",sourceBehind,sourceBehind?0:GetLastError());
+		LogLiveWindows("after-source-order");
+		if(!sourceBehind)throw std::runtime_error("dedicated-source-order");
+		COLORREF centerPixel=CLR_INVALID;
+		if (!pumpUntil([&]
+		{
+			const HDC screen=GetDC(nullptr); centerPixel=screen?GetPixel(screen,test.width/2,test.height/2):CLR_INVALID;
+			if(screen)ReleaseDC(nullptr,screen); return centerPixel==RGB(0,0,255) && test.painted.load()==1;
+		},3000))
+		{
+			(void)LiveDesktopAvailable("overlay-missing");
+			LogLiveWindows("overlay-missing");
+			PrintWindowTestLog("[FreezeCaptureLive] overlay_missing center_rgb=0x%08lX painted=%d source_valid=%u visible=%u overlay_valid=%u visible=%u\n",
+				centerPixel,test.painted.load(),IsWindow(test.source),IsWindowVisible(test.source),IsWindow(service.Handle(WindowRole::Bar)),IsWindowVisible(service.Handle(WindowRole::Bar)));
+			throw std::runtime_error("dedicated-overlay-not-on-interactive-screen");
+		}
+		unsigned screenMatches=0,screenBlue=0;
+		const HDC screen=GetDC(nullptr);
+		if(!screen)throw std::runtime_error("screen-dc");
+		for(int row=0;row<patternRows;++row)for(int column=0;column<patternColumns;++column)
+		{
+			const int x=(2*column+1)*test.width/(2*patternColumns),y=(2*row+1)*test.height/(2*patternRows);
+			const bool blue=x>=test.width/3 && x<2*test.width/3 && y>=test.height/3 && y<2*test.height/3;
+			const COLORREF expected=blue?RGB(0,0,255):PatternColor(1,column,row);
+			if(GetPixel(screen,x,y)==expected){++screenMatches;if(blue)++screenBlue;}
+		}
+		Inkeys::Graphics::DibSurface screenRoi;bool screenExact=screenRoi.resize(256,192) && BitBlt(screenRoi.dc(),0,0,256,192,screen,64,64,SRCCOPY)!=FALSE;
+		ReleaseDC(nullptr,screen);GdiFlush();
+		if(screenExact)for(int y=0;y<192;++y)for(int x=0;x<256;++x)
+		{
+			const auto pixel=screenRoi.pixels()[static_cast<std::size_t>(y)*256+x];
+			const auto c=PatternColor(1,((x+65)*9-1)/test.width,((y+65)*7-1)/test.height);
+			screenExact &= ((pixel>>16)&255)==GetRValue(c) && ((pixel>>8)&255)==GetGValue(c) && (pixel&255)==GetBValue(c);
+		}
+		PrintWindowTestLog("[FreezeCaptureLive] screen_gt=%u/63 blue_overlay=%u/9 screen_roi_exact=%u roi=(64,64,256,192)\n",screenMatches,screenBlue,screenExact);
+		if(screenExact){for(auto& p:screenRoi.pixels())p|=0xFF000000;(void)screenRoi.savePng(test.output+L"/screen-dedicated-roi.png");}
+		if(screenMatches!=63 || !screenExact)throw std::runtime_error("dedicated-screen-GT");
+		const auto filters=BuildCurrentFilterList();
+		if (std::find(filters.begin(),filters.end(),service.Handle(WindowRole::Bar))==filters.end() ||
+			std::find(filters.begin(),filters.end(),test.source)!=filters.end()) throw std::runtime_error("original-filter-list");
+		const auto getCallback=reinterpret_cast<GetScalingCallback>(GetProcAddress(GetModuleHandleW(L"Magnification.dll"),"MagGetImageScalingCallback"));
+		if (getCallback && getCallback(test.child)) throw std::runtime_error("unexpected-scaling-callback");
+		PrintWindowTestLog("[FreezeCaptureLive] owner_tid=%lu host=%p child=%p overlay=%p source=%p primary=%dx%d filters=%zu source_unfiltered=1 cold_alpha0=1 get_callback_null=%u\n",
+			service.OwnerThreadId(WindowRole::MagnifierHost),test.host,test.child,service.Handle(WindowRole::Bar),test.source,test.width,test.height,filters.size(),getCallback?1u:0u);
+		worker=std::jthread([&]{observations->worker.store(GetCurrentThreadId());MagnifierThread();});
+		if (!pumpUntil([&]{const auto s=magnifierCoordinator.Snapshot();return Capture::GetSnapshot().ready && !s.visible && s.processedRevision>=Inkeys::UI::Freeze::Snapshot().revision;},3000))
+			throw std::runtime_error("formal-worker-ready");
+		const auto began=Capture::Clock::now();
+		const Capture::FrameCallback receive=[&,observations,began](const Capture::Frame& frame)
+		{
+			std::scoped_lock lock(observations->mutex);
+			const int painted=test.painted.load(); int matched=0;
+			for (int phase=1;phase<=4;++phase)
+			{
+				unsigned count=0;
+				for(int row=0;row<patternRows;++row)for(int column=0;column<patternColumns;++column)
+				{
+					const int x=(2*column+1)*test.width/(2*patternColumns), y=(2*row+1)*test.height/(2*patternRows);
+					const auto p=frame.bgra[static_cast<std::size_t>(y)*frame.width+x]; const auto c=PatternColor(phase,column,row);
+					if(abs(int((p>>16)&255)-GetRValue(c))<=3 && abs(int((p>>8)&255)-GetGValue(c))<=3 && abs(int(p&255)-GetBValue(c))<=3)++count;
+				}
+				if(count==63){matched=phase;break;}
+			}
+			if(GetCurrentThreadId()!=observations->worker.load() || GetCurrentThreadId()==test.ownerThread)++observations->wrongThread;
+			if(!matched)++observations->unmatched;
+			else
+			{
+				++observations->phases[matched]; if(matched<painted)++observations->old;
+				if(observations->crops[matched].empty())
+				{
+					std::vector<std::uint32_t> crop(256*192); bool exact=true;
+					for(int y=0;y<192;++y)for(int x=0;x<256;++x)
+					{
+						const int sx=test.width/2-128+x,sy=test.height/2-96+y;
+						const auto pixel=frame.bgra[static_cast<std::size_t>(sy)*frame.width+sx];
+						const auto c=PatternColor(matched,(std::min)(8,((sx+1)*9-1)/test.width),(std::min)(6,((sy+1)*7-1)/test.height));
+						if(abs(int((pixel>>16)&255)-GetRValue(c))>3 || abs(int((pixel>>8)&255)-GetGValue(c))>3 || abs(int(pixel&255)-GetBValue(c))>3)exact=false;
+						crop[static_cast<std::size_t>(y)*256+x]=pixel;
+					}
+					// 只保存逐像素确认是专用内容的ROI；未知/不完整帧不写图像。
+					if(exact)observations->crops[matched]=std::move(crop);
+				}
+			}
+			if(!observations->samples.empty())
+			{
+				const auto& previous=observations->samples.back();
+				if(frame.session<previous.session || (frame.session==previous.session
+					? frame.sequence!=previous.sequence+1 : frame.sequence!=1))++observations->sequenceErrors;
+			}
+			else if(frame.sequence!=1)++observations->sequenceErrors;
+			observations->samples.push_back({frame.session,frame.sequence,matched,frame.timestamp,frame.statistics.lastReadDuration.count()/1000.0});
+			observations->readMs.push_back(frame.statistics.lastReadDuration.count()/1000.0);
+			BYTE alpha=255; DWORD flags=0; COLORREF key=0; (void)GetLayeredWindowAttributes(test.host,&key,&alpha,&flags);
+			PrintWindowTestLog("[FreezeCaptureLive] frame session=%llu seq=%llu tid=%lu worker=%lu owner=%lu sample_ms=%.3f read_ms=%.3f painted=%d matched=%d static_count=%u host_visible=%u child_visible=%u host_alpha=%u quality=%u variance=%.3f accepted=%llu rejected=%llu api=%llu skipped=%llu\n",
+				frame.session,frame.sequence,GetCurrentThreadId(),observations->worker.load(),test.ownerThread,
+				std::chrono::duration<double,std::milli>(frame.timestamp-began).count(),frame.statistics.lastReadDuration.count()/1000.0,
+				painted,matched,matched?observations->phases[matched]:0,IsWindowVisible(test.host),IsWindowVisible(test.child),alpha,
+				static_cast<unsigned>(frame.quality.status),frame.quality.variance,frame.statistics.accepted,frame.statistics.rejected,frame.statistics.apiFailures,frame.statistics.skipped);
+		};
+		const auto started=Capture::Start(receive);
+		PrintWindowTestLog("[FreezeCaptureLive] start_status=%u session=%llu\n",static_cast<unsigned>(started.status),started.session);
+		if(started.status!=Capture::StartStatus::Started)throw std::runtime_error("formal-start");
+		for(int phase=1;phase<=4;++phase)
+		{
+			if(phase>1){test.phase.store(phase);SendMessageW(test.source,patternPaintMessage,0,0);}
+			if(!pumpUntil([&]{std::scoped_lock lock(observations->mutex);return observations->phases[phase]>=3 && !observations->crops[phase].empty();},5000))
+				throw std::runtime_error("formal-pixels-static-or-changed-phase-timeout");
+		}
+		// 目标20Hz不是实测帧率；延长同一静止phase，单独记录真实Read与间隔。
+		const auto staticBegan=Capture::Clock::now();
+		unsigned staticBefore=0;
+		{std::scoped_lock lock(observations->mutex);staticBefore=observations->phases[4];}
+		if(!pumpUntil([&]{std::scoped_lock lock(observations->mutex);return Capture::Clock::now()-staticBegan>=std::chrono::seconds(5)
+			&& observations->phases[4]>=staticBefore+20;},8000))throw std::runtime_error("static-sampling-timeout");
+		Capture::Stop();
+		if(!pumpUntil([]{return !Capture::GetSnapshot().occupied;},3000))throw std::runtime_error("formal-stop-drain");
+		const auto staticSnapshot=Capture::GetSnapshot();
+		std::vector<double> staticReads,staticIntervals;
+		Capture::TimePoint firstStatic{},lastStatic{};
+		{
+			std::scoped_lock lock(observations->mutex);
+			for(const auto& sample:observations->samples)if(sample.session==started.session && sample.timestamp>=staticBegan)
+			{
+				if(sample.matched!=4)throw std::runtime_error("static-frame-GT");
+				staticReads.push_back(sample.readMs);
+				if(lastStatic!=Capture::TimePoint{})staticIntervals.push_back(std::chrono::duration<double,std::milli>(sample.timestamp-lastStatic).count());
+				else firstStatic=sample.timestamp;
+				lastStatic=sample.timestamp;
+			}
+		}
+		const auto reportDistribution=[](const char* name,std::vector<double> values)
+		{
+			if(values.empty())throw std::runtime_error("empty-distribution");
+			double sum=0;for(const double value:values)sum+=value;
+			std::sort(values.begin(),values.end());
+			PrintWindowTestLog("[FreezeCaptureLive] distribution=%s samples=%zu mean_ms=%.3f p50_ms=%.3f p95_ms=%.3f max_ms=%.3f\n",
+				name,values.size(),sum/values.size(),values[(values.size()-1)/2],values[(values.size()-1)*95/100],values.back());
+		};
+		reportDistribution("static-read",staticReads);reportDistribution("static-interval",staticIntervals);
+		PrintWindowTestLog("[FreezeCaptureLive] static_frames=%zu span_ms=%.3f actual_fps=%.3f target_fps=20 skipped=%llu rejected=%llu\n",staticReads.size(),
+			std::chrono::duration<double,std::milli>(lastStatic-firstStatic).count(),(staticReads.size()-1)/std::chrono::duration<double>(lastStatic-firstStatic).count(),
+			staticSnapshot.statistics.skipped,staticSnapshot.statistics.rejected);
+		for(int phase=1;phase<=4;++phase)
+		{
+			Inkeys::Graphics::DibSurface crop;
+			if(!crop.resize(256,192))throw std::runtime_error("roi-dib");
+			std::copy(observations->crops[phase].begin(),observations->crops[phase].end(),crop.pixels().begin());
+			if(!crop.savePng(test.output+L"/phase-"+std::to_wstring(phase)+L"-roi.png"))throw std::runtime_error("roi-png");
+		}
+		std::uint64_t previousSession=started.session;
+		const auto totalFrames=[&]{std::scoped_lock lock(observations->mutex);return observations->samples.size();};
+		const auto paint=[&](int phase){test.phase.store(phase);SendMessageW(test.source,patternPaintMessage,0,0);};
+		const auto waitFrames=[&](std::uint64_t session,int phase,unsigned required)
+		{
+			if(!pumpUntil([&]
+			{
+				std::scoped_lock lock(observations->mutex);unsigned count=0;
+				for(const auto& sample:observations->samples)if(sample.session==session && sample.matched==phase)++count;
+				return count>=required;
+			},5000))throw std::runtime_error("repeat-session-GT-timeout");
+		};
+		const auto verifyIdle=[&](const char* label,std::uint64_t session)
+		{
+			if(!pumpUntil([]{return !Capture::GetSnapshot().occupied;},3000))throw std::runtime_error("repeat-stop-drain");
+			const auto snapshot=Capture::GetSnapshot();const auto count=totalFrames();const auto since=GetTickCount64();
+			if(!pumpUntil([&]{return GetTickCount64()-since>=150;},1000) || totalFrames()!=count)
+				throw std::runtime_error("callback-after-drain");
+			if(snapshot.session!=session || snapshot.publishing || snapshot.inFlight || !snapshot.ready ||
+				IsWindowVisible(test.host) || IsWindowVisible(test.child))throw std::runtime_error("stopped-state-or-conceal");
+			PrintWindowTestLog("[FreezeCaptureLive] idle label=%s session=%llu seq=%llu callbacks=%zu publishing=0 occupied=0 inflight=0 hidden=1 no_late_callback_ms=150 attempts=%llu accepted=%llu rejected=%llu late_results=%llu reason=%u\n",
+				label,session,snapshot.sequence,count,snapshot.statistics.attempts,snapshot.statistics.accepted,snapshot.statistics.rejected,
+				snapshot.statistics.lateResults,static_cast<unsigned>(snapshot.reason));
+		};
+		const auto startSession=[&](const char* label,const Capture::FrameCallback& callback)
+		{
+			if(LiveSecurityInterfacePresent())throw std::runtime_error("security-interface-before-repeat");
+			const auto result=Capture::Start(callback);
+			if(result.status!=Capture::StartStatus::Started || result.session!=previousSession+1 ||
+				service.Handle(WindowRole::MagnifierHost)!=test.host || service.Handle(WindowRole::MagnifierChild)!=test.child ||
+				service.OwnerThreadId(WindowRole::MagnifierHost)!=test.ownerThread)throw std::runtime_error("repeat-start-session-or-original-pair");
+			previousSession=result.session;
+			const auto busy=Capture::Start(receive);
+			if(busy.status!=Capture::StartStatus::Busy || busy.session!=result.session)throw std::runtime_error("repeat-start-not-Busy");
+			PrintWindowTestLog("[FreezeCaptureLive] started label=%s session=%llu busy_status=%u original_pair=1 owner=%lu\n",label,result.session,
+				static_cast<unsigned>(busy.status),test.ownerThread);
+			return result.session;
+		};
+		const auto freezeCycle=[&](const char* label,std::uint64_t activeCapture)
+		{
+			if(Inkeys::UI::Freeze::Snapshot().active)throw std::runtime_error("freeze-already-active");
+			Inkeys::UI::Freeze::Toggle();const auto request=Inkeys::UI::Freeze::Snapshot();
+			if(!request.active)throw std::runtime_error("freeze-toggle-not-active");
+			// 用原状态观察者和原producer排空再Reveal，不直接调用Mag或伪造完成。
+			if(!pumpUntil([&]
+			{
+				const auto coordinated=magnifierCoordinator.Snapshot();const auto capture=Capture::GetSnapshot();
+				return coordinated.visible && coordinated.appliedRevision==request.revision && !capture.occupied && !capture.inFlight;
+			},5000))throw std::runtime_error("original-freeze-reveal-timeout");
+			BYTE alpha=0;DWORD flags=0;COLORREF key=0;
+			const auto revoked=Capture::GetSnapshot();
+			if(!GetLayeredWindowAttributes(test.host,&key,&alpha,&flags) || alpha!=255 || !(flags&LWA_ALPHA) ||
+				!IsWindowVisible(test.host) || !IsWindowVisible(test.child) || revoked.publishing ||
+				(activeCapture && (revoked.session!=activeCapture || revoked.reason!=Capture::StopReason::FreezeActive)))
+				throw std::runtime_error("original-freeze-reveal-or-revoke");
+			const auto blocked=Capture::Start(receive);
+			if(blocked.status!=Capture::StartStatus::FreezeActive)throw std::runtime_error("capture-during-freeze-not-blocked");
+			const auto count=totalFrames();const auto since=GetTickCount64();
+			if(!pumpUntil([&]{return GetTickCount64()-since>=150;},1000) || totalFrames()!=count)throw std::runtime_error("callback-after-freeze-drain");
+			PrintWindowTestLog("[FreezeCaptureLive] freeze label=%s revision=%llu revealed=1 alpha=%u capture_session=%llu capture_drained=1 capture_reason=%u blocked_status=%u no_late_callback_ms=150\n",
+				label,request.revision,alpha,revoked.session,static_cast<unsigned>(revoked.reason),static_cast<unsigned>(blocked.status));
+			Inkeys::UI::Freeze::Toggle();const auto hidden=Inkeys::UI::Freeze::Snapshot();
+			if(hidden.active || !pumpUntil([&]
+			{
+				const auto coordinated=magnifierCoordinator.Snapshot();return !coordinated.visible && coordinated.processedRevision>=hidden.revision
+					&& !IsWindowVisible(test.host) && !IsWindowVisible(test.child);
+			},3000))throw std::runtime_error("original-freeze-conceal-timeout");
+			PrintWindowTestLog("[FreezeCaptureLive] freeze label=%s revision=%llu concealed=1 host_visible=0 child_visible=0\n",label,hidden.revision);
+		};
+		verifyIdle("initial",started.session);
+		freezeCycle("before-repeats",0);
+		DWORD repeatGdi=0,repeatUser=0;unsigned resourceChanges=0;
+		for(unsigned round=1;round<=20;++round)
+		{
+			const int phase=1+round%4;paint(phase);
+			const auto roundBegan=Capture::Clock::now();const auto session=startSession("repeat",receive);
+			waitFrames(session,phase,2);Capture::Stop();verifyIdle("repeat",session);
+			const DWORD gdi=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS),user=GetGuiResources(GetCurrentProcess(),GR_USEROBJECTS);
+			if(round==1){repeatGdi=gdi;repeatUser=user;}
+			else if(gdi!=repeatGdi || user!=repeatUser)++resourceChanges;
+			PrintWindowTestLog("[FreezeCaptureLive] repeat_round=%u/20 session=%llu phase=%d elapsed_ms=%.3f gdi=%lu user=%lu resource_changes=%u\n",
+				round,session,phase,std::chrono::duration<double,std::milli>(Capture::Clock::now()-roundBegan).count(),gdi,user,resourceChanges);
+		}
+		if(resourceChanges)throw std::runtime_error("repeat-resource-count-changed");
+		// Start后立即撤销：F0等待期内不允许产生回调，取消后仍由原producer收尾。
+		const Capture::FrameCallback cancelled=[observations](const Capture::Frame&){observations->cancelledCallbacks.fetch_add(1);};
+		const auto cancelSession=startSession("immediate-stop",cancelled);Capture::Stop();
+		if(Capture::GetSnapshot().publishing)throw std::runtime_error("immediate-stop-still-publishing");
+		verifyIdle("immediate-stop",cancelSession);
+		if(observations->cancelledCallbacks.load()!=0)throw std::runtime_error("immediate-stop-published-F0");
+		// 不加hook：观察在途不等于Stop命中；Read先提交时只记race-missed，排空后有限重试。
+		bool readRevoked=false;
+		for(unsigned attempt=1;attempt<=3 && !readRevoked;++attempt)
+		{
+			if(Capture::GetSnapshot().occupied)throw std::runtime_error("read-stop-retry-not-drained");
+			const unsigned callbacksBefore=observations->cancelledCallbacks.load();
+			const auto readCancelSession=startSession("read-stop",cancelled);
+			if(!pumpUntil([]{const auto capture=Capture::GetSnapshot();return capture.inFlight && capture.statistics.attempts>0 && capture.statistics.accepted==0;},3000))
+				throw std::runtime_error("actual-read-inflight-not-observed");
+			Capture::Stop();const auto revokedRead=Capture::GetSnapshot();
+			verifyIdle("read-stop",readCancelSession);
+			const auto endedRead=Capture::GetSnapshot();
+			const unsigned callbacks=observations->cancelledCallbacks.load()-callbacksBefore;
+			if(endedRead.statistics.accepted!=revokedRead.statistics.accepted || callbacks!=endedRead.statistics.accepted)
+				throw std::runtime_error("read-stop-published-after-revoke");
+			if(revokedRead.statistics.accepted==0)
+			{
+				// lateResults只在Read返回后发现发布已撤销时增加，是实际撤销在途Read的凭据。
+				if(endedRead.statistics.accepted!=0 || callbacks!=0 || endedRead.statistics.lateResults<1 ||
+					revokedRead.reason!=Capture::StopReason::Requested)throw std::runtime_error("read-stop-actual-revoke-unproven");
+				readRevoked=true;
+			}
+			PrintWindowTestLog("[FreezeCaptureLive] read_stop attempt=%u/3 session=%llu observed_inflight=1 actual_read_revoke=%u outcome=%s accepted_at_revoke=%llu accepted_final=%llu callback_count=%u late_results=%llu\n",
+				attempt,readCancelSession,readRevoked,readRevoked?"revoked":"race-missed",revokedRead.statistics.accepted,
+				endedRead.statistics.accepted,callbacks,endedRead.statistics.lateResults);
+		}
+		if(!readRevoked)throw std::runtime_error("read-stop-uncovered-after-race-retries");
+		paint(3);const auto beforeFreeze=startSession("capture-to-freeze",receive);waitFrames(beforeFreeze,3,2);
+		freezeCycle("capture-to-freeze",beforeFreeze);
+		paint(2);const auto afterFreeze=startSession("after-freeze",receive);waitFrames(afterFreeze,2,3);
+		Capture::Stop();verifyIdle("after-freeze",afterFreeze);
+		const auto invalid=Capture::Start({});
+		if(invalid.status!=Capture::StartStatus::InvalidArgument || Capture::GetSnapshot().occupied)throw std::runtime_error("invalid-callback-start");
+		PrintWindowTestLog("[FreezeCaptureLive] matrix repeat_cycles=20 resources_stable=1 immediate_cancel_callbacks=0 read_stop_checked=1 freeze_cycles=2 post_freeze_frames=3 invalid_start_status=%u sequence_errors=%u\n",
+			static_cast<unsigned>(invalid.status),observations->sequenceErrors);
+		if(observations->wrongThread || observations->sequenceErrors || observations->unmatched || test.apiFailures)
+			throw std::runtime_error("formal-thread-sequence-GT-or-api-failure");
+		test.result=0;
+	}
+	catch(const std::exception& e)
+	{
+		const DWORD failureError=GetLastError();
+		const auto s=Capture::GetSnapshot();
+		(void)LiveDesktopAvailable("failure");LogLiveWindows("failure");
+		PrintWindowTestLog("[FreezeCaptureLive] FAIL reason=%s error=%lu ready=%u publishing=%u occupied=%u inflight=%u stop=%u quality=%u mean=%.6f variance=%.6f black=%.6f attempts=%llu accepted=%llu rejected=%llu api=%llu\n",
+			e.what(),failureError,s.ready,s.publishing,s.occupied,s.inFlight,static_cast<unsigned>(s.reason),static_cast<unsigned>(s.quality.status),s.quality.meanLuma,s.quality.variance,s.quality.blackFraction,s.statistics.attempts,s.statistics.accepted,s.statistics.rejected,s.statistics.apiFailures);
+		test.result=1;
+	}
+	Capture::Stop(); StopMagnifierCoordinator();
+	if(worker.joinable())worker.join();
+	if(serviceStarted || Inkeys::Window::GetService().Running())Inkeys::Window::GetService().StopAndJoin();
+	if(test.source)DestroyWindow(test.source);
+	if(patternRegistered)UnregisterClassW(L"Inkeys.FreezeCaptureLive.Pattern",GetModuleHandleW(nullptr));
+	if(displayStarted)Inkeys::Display::Shutdown();
+	if(IsWindow(test.host)||IsWindow(test.child))test.result=1;
+	PrintWindowTestLog("[FreezeCaptureLive] result=%s unmatched=%u old=%u wrongThread=%u apiFailures=%u original_pair_destroyed=%u gdi=%lu->%lu user=%lu->%lu\n",
+		test.result?"FAIL":"PASS",observations->unmatched,observations->old,observations->wrongThread,test.apiFailures.load(),!IsWindow(test.host)&&!IsWindow(test.child),
+		initialGdi,GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS),initialUser,GetGuiResources(GetCurrentProcess(),GR_USEROBJECTS));
+	if(cleanupDone)SetEvent(cleanupDone);
+	if(deadlineWorker.joinable())deadlineWorker.join();
+	IDTLogger=previousLogger; printWindowTest=nullptr;
+	if(test.log!=INVALID_HANDLE_VALUE)CloseHandle(test.log);
+	if(cleanupDone)CloseHandle(cleanupDone);
+	return test.result;
+}
+
+
 #else
 namespace
 {
 	void TraceMagnifierApi(const char*, HWND, bool) noexcept {}
 }
 int RunFreezeMagnifierPrintWindowTest() { return 2; }
+int RunFreezeCaptureLiveTest() { return 2; }
 #endif
+
+// 专用产品实屏入口复用上方原Mag及安全助手；关闭harness时只返回2。
+#include "Inkeys/Drawing/Draw3/Draw3.ProductLiveTest.inl"

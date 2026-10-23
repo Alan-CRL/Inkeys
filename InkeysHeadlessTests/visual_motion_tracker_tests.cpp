@@ -216,6 +216,128 @@ namespace
 		Sequence("bgra", canvas, Line(120, { 1.25, 4.5 }), Decoration::Bgra);
 		Sequence("darkTexture", canvas, Line(120, { 0, 2.25 }), Decoration::Dark);
 	}
+
+	// 原实屏专用内容的不可变世界公式；固定native ROI只测试大图能力，不要求小图接受同一跳变。
+	std::uint32_t NativeTexturePixel(int x, int y) noexcept
+	{
+		// 世界坐标的散列纹理不随帧重置；4px细节和不同位置的L角点避免周期棋盘的多解。
+		std::uint32_t h = static_cast<std::uint32_t>(x / 4) * 0x9e3779b9u ^
+			static_cast<std::uint32_t>(y / 4) * 0x85ebca6bu ^ 0x317bc4edu;
+		h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15;
+		const auto g = 30u + h % 196u;
+		std::uint32_t a = static_cast<std::uint32_t>(x / 96) * 0x45d9f3bu ^
+			static_cast<std::uint32_t>(y / 96) * 0x27d4eb2du;
+		a ^= a >> 16;
+		const int u = x % 96 - (8 + static_cast<int>(a % 40));
+		const int v = y % 96 - (8 + static_cast<int>((a >> 8) % 40));
+		const auto gray = ((u >= 0 && u < 3 && v >= 0 && v < 26) ||
+			(v >= 0 && v < 3 && u >= 0 && u < 26)) ? 8u : g;
+		return 0xff000000u | gray * 0x010101u;
+	}
+	constexpr int NativeWidth = 2880, NativeHeight = 1808;
+	cv::Mat NativeTextureFrame(cv::Point camera)
+	{
+		cv::Mat image(NativeHeight, NativeWidth, CV_8UC4);
+		for (int y=0;y<image.rows;++y)
+		{
+			auto* row=image.ptr<std::uint32_t>(y);
+			for (int x=0;x<image.cols;++x) row[x]=NativeTexturePixel(x+256+camera.x,y+512+48+camera.y);
+		}
+		return image;
+	}
+	void NativeRoiCase(const char* name, const std::vector<cv::Point>& cameras, bool relayRequired = false, bool stationary = false)
+	{
+		VisualMotionTracker tracker;
+		auto image=NativeTextureFrame(cameras.front());
+		auto result=tracker.Initialize(Frame(image,0));
+		Expect(result.accepted,std::string(name)+" native initialize");
+		std::size_t accepted=0, rejected=0, firstRetired=0, acceptedAfterRetired=0;
+		double path=0, maximum=0, maxStep=0, maxStoppedDrift=0;
+		int added=0; std::vector<double> durations;
+		MotionVector previous{};
+		for (std::size_t n=1;n<cameras.size();++n)
+		{
+			const cv::Point delta=cameras[n]-cameras[n-1];
+			path+=std::hypot(static_cast<double>(delta.x),static_cast<double>(delta.y));
+			image=NativeTextureFrame(cameras[n]);
+			const auto started=std::chrono::steady_clock::now();
+			result=tracker.Process(Frame(image,n));
+			durations.push_back(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count());
+			const MotionVector expected{static_cast<double>(cameras.front().x-cameras[n].x),static_cast<double>(cameras.front().y-cameras[n].y)};
+			const double error=Distance(result.total,expected), limit=stationary?.5:std::max(3.0,path*.002);
+			maximum=std::max(maximum,error); maxStep=std::max(maxStep,Distance(result.delta,{-static_cast<double>(delta.x),-static_cast<double>(delta.y)}));
+			accepted+=result.accepted; rejected+=!result.accepted;
+			Expect(result.accepted && result.state==MotionState::Tracking,std::string(name)+" native every frame accepted");
+			Expect(error<=limit,std::string(name)+" native strict prefix error");
+			if (!delta.x && !delta.y)
+			{
+				maxStoppedDrift=std::max(maxStoppedDrift,Distance(result.total,previous));
+				Expect(Distance(result.total,previous)<=.5,std::string(name)+" native sudden stop drift");
+			}
+			if (!result.accepted || error>limit) Dump(name,n,result,error,limit);
+			if (result.accepted && result.statistics.initialSurvivors==0)
+			{
+				if (!firstRetired) firstRetired=n;
+				else ++acceptedAfterRetired;
+			}
+			added+=result.statistics.added; previous=result.total;
+		}
+		if (relayRequired) Expect(firstRetired>0 && acceptedAfterRetired>0 && added>320,std::string(name)+" native birth points retired with continued relay");
+		std::cout<<"motion native sequence="<<name<<" size="<<NativeWidth<<'x'<<NativeHeight<<" frames="<<cameras.size()-1
+			<<" accepted="<<accepted<<" rejected="<<rejected<<" path="<<path<<" max="<<maximum<<" final="<<Distance(result.total)
+			<<" step="<<maxStep<<" stopped_drift="<<maxStoppedDrift<<" initial="<<result.statistics.initialSurvivors
+			<<" first_retired_frame="<<firstRetired<<" accepted_after_retired="<<acceptedAfterRetired<<" added="<<added
+			<<" msMedian/P95="<<Quantile(durations,.5)<<'/'<<Quantile(durations,.95)<<'\n';
+	}
+	void TestNativeRoiRejections()
+	{
+		const auto initial=NativeTextureFrame({0,0});
+		const auto reject=[&](const char* name,const cv::Mat& changed)
+		{
+			VisualMotionTracker tracker; const auto initialized=tracker.Initialize(Frame(initial,0));
+			Expect(initialized.accepted,std::string(name)+" native reject initialize");
+			MotionResult result;
+			for (int n=1;n<=3;++n)
+			{
+				result=tracker.Process(Frame(changed,n));
+				Expect(!result.accepted && Distance(result.total)==0 && Distance(result.delta)==0 && result.statistics.referenceSequence==0 &&
+					result.statistics.referenceGeneration==initialized.statistics.referenceGeneration,std::string(name)+" native reject keeps transaction");
+				Expect((result.state==MotionState::Paused)==(n==3),std::string(name)+" native third reject pauses");
+			}
+			Expect(tracker.Process(Frame(initial,4)).reason==MotionReason::Paused,std::string(name)+" native pause stays latched");
+			std::cout<<"motion native rejection="<<name<<" reason="<<MotionReasonName(result.reason)<<" inliers="<<result.statistics.inliers
+				<<" fb_valid="<<result.statistics.fbValid<<" spatial="<<result.statistics.spatialInlierRatio<<" runner_up="<<result.statistics.runnerUpRatio<<'\n';
+		};
+		// 复用原多数静止/中部次流及仿射负例，只把几何换成可建到第5层的大ROI。
+		auto majorityFixed=initial.clone(); const auto moved=NativeTextureFrame({0,4});
+		const cv::Rect middle(NativeWidth/4,NativeHeight/3,NativeWidth/2,NativeHeight/3);
+		moved(middle).copyTo(majorityFixed(middle)); reject("native-majority-fixed-middle4",majorityFixed);
+		reject("native-new-page-no-overlap",NativeTextureFrame({4096,8192}));
+		for (const auto transform:std::vector<std::pair<double,double>>{{1.02,0},{1,1}})
+		{
+			const auto matrix=cv::getRotationMatrix2D(cv::Point2f(NativeWidth*.5f,NativeHeight*.5f),transform.second,transform.first);
+			cv::Mat changed; cv::warpAffine(initial,changed,matrix,initial.size(),cv::INTER_LINEAR,cv::BORDER_REFLECT_101);
+			reject(transform.first==1?"native-rotation1":"native-scale1.02",changed);
+		}
+	}
+
+	void TestNativeRoiLargeSteps()
+	{
+		NativeRoiCase("native-stationary300",std::vector<cv::Point>(301,{0,0}),false,true);
+		for (const int amplitude:{16,32,64,128,192}) for (int axis=0;axis<2;++axis) for (const int sign:{-1,1})
+		{
+			const cv::Point step(axis?0:sign*amplitude,axis?sign*amplitude:0);
+			const auto name="native-step-"+std::to_string(amplitude)+(axis?"-y":"-x")+(sign<0?"-negative":"-positive");
+			// 先停止再反向，每次真实位移不超过本case幅度；不使用GT给光流初值。
+			NativeRoiCase(name.c_str(),{{0,0},step,step,{0,0},-step,-step,{0,0}});
+		}
+		std::vector<cv::Point> relay{{0,0}};
+		const int count=(NativeHeight*10+127)/128;
+		for (int n=1;n<=count;++n) relay.push_back({0,n*128});
+		for (int n=count-1;n>=0;--n) relay.push_back({0,n*128});
+		NativeRoiCase("native-ten-heights-128-roundtrip",relay,true);
+	}
+
 	void TestRejectionTransactions(const cv::Mat& canvas)
 	{
 		const MotionVector start{ 500, 600 };
@@ -394,6 +516,101 @@ namespace
 				<< " cells=" << stats.inlierCells << '/' << stats.interiorCells << " inliers=" << stats.inliers << '/' << stats.fbValid << '\n';
 		}
 	}
+	enum class DensityScene { SparseMinority, OppositeStreams, LocalCoverage };
+	bool DenseCell(DensityScene scene, int x, int y, bool swap)
+	{
+		if (scene == DensityScene::SparseMinority) return !(x >= 2 && x < 6 && y >= 1 && y < 4);
+		if (scene == DensityScene::LocalCoverage) return x >= 2 && x < 6 && y >= 2 && y < 4;
+		return ((x + y) % 2 == 0) != swap;
+	}
+	cv::Mat DensityImage(const cv::Mat& canvas, DensityScene scene, bool swap, bool changed)
+	{
+		cv::Mat image(Height, Width, CV_8UC1, cv::Scalar(238));
+		for (int y = 0; y < 6; ++y) for (int x = 0; x < 8; ++x)
+		{
+			const bool dense = DenseCell(scene, x, y, swap);
+			if (changed && scene == DensityScene::LocalCoverage && !dense) continue;
+			const int cellX = x * Width / 8, cellY = y * Height / 6;
+			const int cellWidth = (x + 1) * Width / 8 - cellX, cellHeight = (y + 1) * Height / 6 - cellY;
+			const int w = dense ? cellWidth - 32 : 8, h = dense ? cellHeight - 32 : 8;
+			int shiftY = 0;
+			if (changed)
+			{
+				if (scene == DensityScene::SparseMinority) shiftY = dense ? 0 : 8;
+				else if (scene == DensityScene::OppositeStreams) shiftY = (x + y) % 2 ? -4 : 4;
+				else shiftY = -8;
+			}
+			// 每帧从同一不可变Canvas取同一patch，再按独立GT平移整个patch（包含边界）。
+			// 格间留白，避免固定裁切边界制造额外静止角点；单8px patch最多少量独立角点。
+			const auto patch = Render(canvas, {500.0 + x * 140, 600.0 + y * 110}, w, h);
+			const cv::Rect destination(cellX + (cellWidth - w) / 2, cellY + (cellHeight - h) / 2 + shiftY, w, h);
+			patch.copyTo(image(destination));
+		}
+		return image;
+	}
+	void DensitySanity(const char* name, const cv::Mat& initial, DensityScene scene, bool swap)
+	{
+		cv::Mat gray; cv::resize(initial, gray, {Width / 2, Height / 2}, 0, 0, cv::INTER_AREA);
+		std::vector<cv::Point2f> points; cv::goodFeaturesToTrack(gray, points, 10000, .01, 8);
+		int counts[48]{};
+		for (const auto p : points)
+		{
+			const int x = std::clamp(static_cast<int>(p.x * 8 / gray.cols), 0, 7);
+			const int y = std::clamp(static_cast<int>(p.y * 6 / gray.rows), 0, 5);
+			++counts[y * 8 + x];
+		}
+		int sparsePoints = 0, densePoints = 0, sparseCells = 0, denseCells = 0;
+		for (int y = 0; y < 6; ++y) for (int x = 0; x < 8; ++x)
+		{
+			const int n = counts[y * 8 + x]; const bool dense = DenseCell(scene, x, y, swap);
+			Expect(dense ? n >= 6 : n >= 1 && n <= 2, std::string(name) + " real GFTT density cell " + std::to_string(y * 8 + x));
+			if (dense) { densePoints += n; ++denseCells; } else { sparsePoints += n; ++sparseCells; }
+		}
+		std::cout << "density input=" << name << " dense_cells=" << denseCells << " dense_raw_corners=" << densePoints
+			<< " sparse_cells=" << sparseCells << " sparse_raw_corners=" << sparsePoints << " pixel_shift_gt=" << (scene == DensityScene::OppositeStreams ? 4 : 8) << " raw_corner_sanity_not_FB_match_count=1\n";
+	}
+	void DensityReject(const char* name, const cv::Mat& initial, const cv::Mat& changed, DensityScene scene)
+	{
+		VisualMotionTracker tracker; const auto initialized = tracker.Initialize(Frame(initial, 0));
+		Expect(initialized.accepted && initialized.statistics.inlierCells >= 16, std::string(name) + " full spatial initialize");
+		if (!initialized.accepted) { Dump(name, 0, initialized, Distance(initialized.total), 0); return; }
+		for (int n = 1; n <= 3; ++n)
+		{
+			const auto result = tracker.Process(Frame(changed, n)); const auto& s = result.statistics;
+			Expect(!result.accepted && Distance(result.total) == 0 && Distance(result.delta) == 0, std::string(name) + " refuses both zero and any local flow");
+			Expect(s.referenceSequence == 0 && s.referenceGeneration == initialized.statistics.referenceGeneration && s.consecutiveRejects == n,
+				std::string(name) + " original trusted reference transaction");
+			Expect((result.state == MotionState::Paused) == (n == 3), std::string(name) + " exactly third rejection pauses");
+			// 实际FB/生存/fit须先通过；下方明确的目标reason证明NonTranslation联合门已过，不能单独以variation代替它。
+			Expect(s.fbValid >= 40 && s.inliers >= 40 && s.survivalRatio >= .35 && s.spatialInlierRatio >= .65,
+				std::string(name) + " actual FB survival and fit prerequisites");
+			if (scene == DensityScene::LocalCoverage)
+				Expect(result.reason == MotionReason::InsufficientCoverage && s.occupiedCells <= 8 && s.inlierCells < 16,
+					std::string(name) + " dense few cells reaches Coverage rejection");
+			else if (scene == DensityScene::SparseMinority)
+				Expect(result.reason == MotionReason::AmbiguousMotion && s.runnerUpRatio > .15 && s.runnerUpRatio <= .35,
+					std::string(name) + " original zero-mode unit-cell minority and interior gate");
+			else
+				Expect(result.reason == MotionReason::AmbiguousMotion && s.runnerUpRatio > .35,
+					std::string(name) + " opposite streams original unit-cell runner-up gate");
+			Dump(name, n, result, Distance(result.total), 0);
+		}
+		const auto latched = tracker.Process(Frame(initial, 4));
+		Expect(!latched.accepted && latched.reason == MotionReason::Paused && latched.state == MotionState::Paused && Distance(latched.total) == 0 &&
+			Distance(latched.delta) == 0 && latched.statistics.referenceSequence == 0, std::string(name) + " no automatic resume");
+	}
+	void TestDensityGuards(const cv::Mat& canvas)
+	{
+		for (const auto scene : {DensityScene::SparseMinority, DensityScene::OppositeStreams, DensityScene::LocalCoverage})
+			for (const bool swap : {false, true})
+			{
+				if (swap && scene != DensityScene::OppositeStreams) continue;
+				const char* name = scene == DensityScene::SparseMinority ? "sparse12-moving-dense36-fixed" : scene == DensityScene::LocalCoverage ? "dense8-only-coverage" :
+					(swap ? "opposite24x24-swap-density" : "opposite24x24-original-density");
+				const auto initial = DensityImage(canvas, scene, swap, false), changed = DensityImage(canvas, scene, swap, true);
+				DensitySanity(name, initial, scene, swap); DensityReject(name, initial, changed, scene);
+			}
+	}
 }
 
 int RunVisualMotionTrackerTests()
@@ -408,6 +625,9 @@ int RunVisualMotionTrackerTests()
 	TestInvalidAndOwnership(canvas);
 	TestUntrackable(canvas);
 	TestDeformations(canvas);
+	TestNativeRoiLargeSteps();
+	TestNativeRoiRejections();
+	TestDensityGuards(canvas);
 	std::cout << (failures ? "FAIL" : "PASS") << " visual motion tracker failures=" << failures << '\n';
 	std::cout.flags(outputFlags);
 	return failures;

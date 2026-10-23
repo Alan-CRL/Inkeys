@@ -961,3 +961,196 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Next Steps
 
 - 仅剩必要正式Mag像素/排除/FPS、真实双窗穿透及浏览器/Word/PDF/笔触控/旧系统现场验收；本轮不可显示或操作桌面，父任务保留in_progress。
+
+
+## Session 120: Scroll follow live capture and final offline regression
+<!-- trellis-session: v=2 fp=8541fa36df58ba2b -->
+
+**Date**: 2026-10-22
+**Task**: Scroll follow live capture and final offline regression
+**Branch**: `feature/move`
+
+### Summary
+
+Shared Freeze Mag no-callback lifecycle and real empty product chain passed; ink attempt stopped before initialization by security window; final offline checks passed. Task remains in_progress.
+
+### Main Changes
+
+- Business early UI refresh uses existing ready-aware helper; StateMonitoring rechecks stale exact ACK through original reconcile loop; dedicated native live test harness and private evidence only.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Capture: 91 correct callbacks, 20 warm start/stop rounds, real cancellation and Freeze mutual exclusion; measured about 6.8FPS and Read mean67ms.
+- [OK] Real empty product: OS wheel16px, matching tracker/viewport, actual window ACK and normal Off cleanup passed.
+- [OK] Current ARM64 solution and no-window156.914s, x64 solution27.330s plus5CLI/16badargv, i18n426/426 and PE/format checks passed.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Await confirmed usable desktop, run frozen D6 real ink case; only after pass apply staged long-scroll fixture, then private Edge adapter. No Computer Use or lock bypass.
+
+
+## Session 121: 滚动批注原生短流程通过与大步LK校准
+<!-- trellis-session: v=2 fp=c8616e5e71a4cc18 -->
+
+**Date**: 2026-10-23
+**Task**: 滚动批注原生短流程通过与大步LK校准
+**Branch**: `feature/move`
+
+### Summary
+
+共享定格Mag真实短墨迹通过；首128px失败后最小提升双向LK最高层，原6918和新704帧及native4负例通过。新真实短再次通过，long已实证128步及初点退休接力，因逐点GT成本安全取消并准备批量读回。任务继续，不提交或归档。
+
+### Main Changes
+
+- 双向LK maxLevel3→5，其余可信与暂停阈值不变；保留旧测试正文并新增大尺寸正负例。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] ARM64完整构建、tracker完整矩阵334.743s、协议/状态/坏argv通过；新short32848 exit0/37.844s，独立PNG及实际两笔UInk验证通过。
+- [OK] long30628完成16个去程步后自主安全取消，exit1/143.324s；初点退休后仍可信、清理正常，不能标十屏通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 独立审查GT批读差异后构建，以原128px/19200px和480s监督重跑完整实际长程，再进行可用外部应用验证。
+
+
+## Session 122: 真实十屏往返与最终无窗口回归通过
+<!-- trellis-session: v=2 fp=f14cec01b0ae90ba -->
+
+**Date**: 2026-10-23
+**Task**: 真实十屏往返与最终无窗口回归通过
+**Branch**: `feature/move`
+
+### Summary
+
+同128像素最大单步、19200像素去程及返程完整通过，独立核11图和626次GT；完整无窗口更新回归通过。Edge最小空页入口仍在实施，不标总体完成。
+
+### Main Changes
+
+- 仅测试GT改一次内存快照，保留原99点和256×192全部像素、原步长/距离/监督。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 真实long6740 exit0/160.123s；302步十屏去返，初点退休后1112可信帧；视觉核心最大1px，实际保存视口距(16,16)约.00138px，Exit两Pen228/229和窗口交接/清理通过。
+- [OK] 完整Headless --no-window20032/CC3F exit0/307.752s；原6918+新增704正例、native四负例及其他模块检查通过。i18n两语各426/426通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 静态审查Edge external-empty入口与私有runner，完整ARM64/x64构建及实际Edge小步；剩余外部墨迹/Word/PDF/硬件/旧系统分别记录，保持任务进行。
+
+
+## Session 123: Edge Guest真实滚动定位与有限输入录制准备
+<!-- trellis-session: v=2 fp=a9094334638739c5 -->
+
+**Date**: 2026-10-23
+**Task**: Edge Guest真实滚动定位与有限输入录制准备
+**Branch**: `feature/move`
+
+### Summary
+
+延迟Edge界面识别为Windows账号同步通知，未确认/未读同步数据，改Guest；同200px实际滚动一成两败，新增现有Stats定位到spatial .611565<.65，保留失败，准备同实际输入完整Gray8前缀回放。
+
+### Main Changes
+
+- 仅追加既有16项MotionStatistics到verbose；Tracker/ROI/门槛/OSwheel未改，私有runner增加Guest请求及有限setup诊断。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整ARM64 solution exit0/15.728s，29BB15DD；Guest750dddd0实际200px/Off/ACK/cleanup限定PASS，46cc实际空间门三拒绝Paused；原Headless及native十屏通过证据保持。
+- [OK] 2个旧临时profile删除，6个AccessDenied未完全清理；未改ACL/常用profile/云端，不作全进程树静止保证。Word已安装，最小只读方案研究落盘，未启动。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 只读有界记录实际Tracker输入并精确离线回放，确认大步长与固定UI影响后再最小修正；外部墨迹/WordPDF/硬件/旧OS仍未通过。
+
+
+## Session 124: 录制版验证与安全停止复核
+<!-- trellis-session: v=2 fp=0facbc0b86cc775f -->
+
+**Date**: 2026-10-23
+**Task**: 录制版验证与安全停止复核
+**Branch**: `feature/move`
+
+### Summary
+
+实际输入录制版两架构完整构建和CLI/PE已通过，原默认短测试续跑在初始化前安全停止；只读确认全屏LockScreenBackstopFrame，未创建窗口、输入或截图，等待人工解锁。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] ARM64/x64完整build exit0；两架构各35坏argv、protocol/state及18录制token门禁通过；Trellis 61条上下文验证通过；本轮PID38308 exit4/156ms，不判短回归通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 人工解锁后原默认短回归，再一次Guest完整输入录制与实际回放；当前尚无真实帧数据，不改算法门槛、不宣称浏览器已修复。
+
+
+## Session 125: 实际图像回放定位与稀疏票修正验证
+<!-- trellis-session: v=2 fp=829028c561922c08 -->
+
+**Date**: 2026-10-23
+**Task**: 实际图像回放定位与稀疏票修正验证
+**Branch**: `feature/move`
+
+### Summary
+
+共用原定格Mag的13帧实际输入证明正文200px正确更新，原算法离线精确复现停49px；最小校准稀疏格fit票并保留原单位格歧义检查，生产双架构构建、完整无窗口、新墨迹短链及默认Guest专用空页200px实际跟随通过。
+
+### Main Changes
+
+- Tracker7936941A：每点fit及anchor权重1/max(n,3)，spatial除真实fit总票；原歧义单位格票单独保持。testsE72D3158新增4真实像素密度保护用例，旧全部body不改。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 隔离原7622合法帧及4native负例、新4guard通过；完整新版Headless B09 exit0/501287ms；ARM/x64完整build0、CLI/PE/i18n/格式通过。默认native38824和external dd5f真实200px/Off/cleanup通过独立核。V1夹具旧失败及BF对照保留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 浏览器可见墨迹/普通tab/反向水平长程、Word/PDF、物理笔触控与旧系统等仍待测；新版真实十屏需补，不追溯旧模型实测。父子任务保持in_progress，不commit/push/finish/archive。
