@@ -150,7 +150,7 @@ Bar 渲染/交互、MouseHook、PPT 接管或配置保存访问全局 StateModeC
 
 - 模式、Pen/Shape 子型、宽色的生产写入在 stateModeTransitionMutex 下进行；Bar 一帧只取一次值快照，交互每消息更新。长手势按下时同锁取状态和 revision，抬手或惯性提交仍须在锁内核版本。
 - 条件 PPT 入口原有 expected revision 不得替换成无条件 setter。重复选中同笔型可更新意图版本，但无视觉变化时不重复发布 Draw3 命令。
-- 锁内仅复制/修改小型状态，不做 SetMemory 磁盘 I/O、Draw3 bridge、HWND/GPU/COM 调用；这些副作用在解锁后由原 owner 执行。无参 getter 各自安全，但连续调用不能代替同一业务/帧快照。
+- 模式锁内只复制/修改小型状态或提交无 HWND 等待的 Draw3 bridge；工作区门控、工具恢复和 workspace/Presentation target（含清除）发布共用此边界，PPT 不能使用旧白板快照直接发布。不得持锁调用会再次取锁及等待窗口的 SyncDraw3State，也不做 SetMemory 磁盘 I/O、HWND/GPU/COM 调用；这些副作用在解锁后由原 owner 执行。无参 getter 各自安全，但连续调用不能代替同一业务/帧快照。
 
 ### 4. Validation & Error Matrix
 

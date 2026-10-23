@@ -5,6 +5,7 @@
 #include "IdtMain.h"
 
 #include <cstdint>
+#include <optional>
 #include "Inkeys/Business/PenWidthPolicy.hpp"
 
 enum class StateModeSelectEnum
@@ -201,8 +202,12 @@ int EraserPenResponsePreference(int entry);
 void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
 // 按当前模式和 Draw3 当前页内容统一同步 Drawpad 显隐、穿透和 Bar。
 void ReconcileDraw3Presentation();
-// PPT 事实只切换非白板工具；白板进退由 StateMonitoring 的工作区事务交接。
+// PPT 事实同锁同步非白板工具和工作区；白板进退由 StateMonitoring 交接。
 void SyncPrimaryWorkspaceStateMode();
+namespace Inkeys::Drawing::Draw3::Bridge { struct PresentationTarget; }
+// nullptr 撤销旧目标；检查白板门控与 bridge 发布共用模式锁。
+std::optional<std::uint64_t> PublishPrimaryPresentationTarget(
+	const Inkeys::Drawing::Draw3::Bridge::PresentationTarget* target);
 // 同锁保存 PPT 工具、返回 Desktop，仅在退出版本仍有效时进入选择。
 bool CompletePresentationExitStateMode(std::uint64_t expectedRevision);
 

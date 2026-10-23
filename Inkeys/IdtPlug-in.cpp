@@ -1150,7 +1150,7 @@ void PptInfo()
 			else
 			{
 				// 新文稿/基础模式先撤销旧墨迹目标；原始数字不能把旧画布带到新场。
-				D3::ClearProductPresentationTarget();
+				(void)PublishPrimaryPresentationTarget(nullptr);
 				cachedTarget.reset();
 				PptInfoStateBuffer = { -1, -1 };
 			}
@@ -1159,7 +1159,6 @@ void PptInfo()
 		if (!whiteboard && !session.active && (confirmedWindowEnd ||
 			(stateReliable && lifecycle == PptLifecycle::Inactive)))
 		{
-			D3::PublishProductWorkspace(D3::Bridge::Workspace::Desktop);
 			if (exitedThisTick)
 			{
 				// 可信退出只收尾一次；若此后用户主动换工具，旧退出不得覆盖它。
@@ -1173,7 +1172,7 @@ void PptInfo()
 		}
 		else if (!whiteboard && session.active && trustedTarget)
 		{
-			const auto accepted = D3::PublishProductPresentationTarget(*cachedTarget);
+			const auto accepted = PublishPrimaryPresentationTarget(&*cachedTarget);
 			if (!accepted && tracePptGate && IDTLogger && (descriptorChanged || rawChanged))
 			{
 				const auto observedBridge = D3::ProductHost().ProductBridge().Snapshot();
