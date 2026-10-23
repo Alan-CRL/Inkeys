@@ -1114,6 +1114,8 @@ namespace Inkeys::Drawing::Draw3
 					? std::optional<Bridge::PresentationReadyIdentity>(*presentationTarget)
 					: std::nullopt;
 				self->commandScenePending = false;
+				if (value != Bridge::Workspace::Whiteboard)
+					self->whiteboardLoadPending.store(false, std::memory_order_release);
 				self->RefreshPresentationInputGateLocked();
 			}
 			self->requestedProductPage = false;
@@ -1598,6 +1600,9 @@ namespace Inkeys::Drawing::Draw3
 				CanvasCommand workspaceCommand;
 				workspaceCommand.type = CanvasCommandType::SetWorkspace;
 				workspaceCommand.workspace = static_cast<std::uint8_t>(state.workspace);
+				// 原子已经落后于桥时，Controller 可能早已在目标场景；必须补一次 ready。
+				workspaceCommand.sceneClosedAdmission =
+					workspace.load(std::memory_order_acquire) != state.workspace;
 				window.EnqueueCanvasCommand(workspaceCommand);
 				requestedPresentationTargetRevision = 0;
 			}
@@ -1609,6 +1614,13 @@ namespace Inkeys::Drawing::Draw3
 				CanvasCommand targetCommand;
 				targetCommand.type = CanvasCommandType::SetPresentationTarget;
 				targetCommand.presentationTarget = state.presentationTarget;
+				{
+					std::scoped_lock lock(presentationTargetMutex);
+					const auto expected = Bridge::ReadyIdentityFor(*state.presentationTarget);
+					targetCommand.sceneClosedAdmission = commandScenePending ||
+						workspace.load(std::memory_order_acquire) != Bridge::Workspace::Presentation ||
+						!readyPresentationTarget || *readyPresentationTarget != expected;
+				}
 				window.EnqueueCanvasCommand(std::move(targetCommand));
 				requestedPresentationTargetRevision =
 					state.presentationTarget->targetRevision;
@@ -1622,6 +1634,12 @@ namespace Inkeys::Drawing::Draw3
 				workspaceCommand.type = CanvasCommandType::SetWorkspace;
 				workspaceCommand.workspace = static_cast<std::uint8_t>(
 					Bridge::Workspace::Presentation);
+				{
+					std::scoped_lock lock(presentationTargetMutex);
+					workspaceCommand.sceneClosedAdmission =
+						workspace.load(std::memory_order_acquire) != Bridge::Workspace::Presentation ||
+						commandScenePending;
+				}
 				window.EnqueueCanvasCommand(workspaceCommand);
 				requestedPresentationTargetRevision = 0;
 			}
@@ -1632,6 +1650,7 @@ namespace Inkeys::Drawing::Draw3
 
 		void EnqueueCommandScene(const Bridge::Command& command)
 		{
+			bool sceneClosedAdmission = false;
 			{
 				std::scoped_lock lock(presentationTargetMutex);
 				const auto captured = command.presentationTarget
@@ -1645,10 +1664,12 @@ namespace Inkeys::Drawing::Draw3
 					readyPresentationTarget.reset();
 					commandScenePending = true;
 					input.SetAdmissionBlocked(true);
+					sceneClosedAdmission = true;
 					PublishRuntimeRevision();
 				}
 			}
 			CanvasCommand scene;
+			scene.sceneClosedAdmission = sceneClosedAdmission;
 			if (command.workspace == Bridge::Workspace::Presentation &&
 				command.presentationTarget)
 			{

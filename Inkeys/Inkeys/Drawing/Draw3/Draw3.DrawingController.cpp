@@ -13279,6 +13279,18 @@ namespace Inkeys::Drawing::Draw3
 				observer_.commandProcessed(observer_.context, type, currentPageIndex_,
 					document_ ? document_->Pages().size() : 0);
 			};
+			// 关闸命令发现 CPU 已在目标场景时补发当前 ready。加载未完成或文档尚未改到目标时不发布。
+			auto acknowledgeUnchangedScene = [&](const CanvasCommand& command)
+			{
+				if (!command.sceneClosedAdmission) return;
+				if (activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading) return;
+				if (Bridge::PresentationInputSuppressed(activeWorkspace,
+					activePresentationLoadPending || presentationLoadUnresolved())) return;
+				if (activeWorkspace == Bridge::Workspace::Presentation)
+					stageWorkspaceReady(activePresentationTarget ? &*activePresentationTarget : nullptr);
+				else
+					stageWorkspaceReady();
+			};
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
@@ -13630,23 +13642,33 @@ namespace Inkeys::Drawing::Draw3
 								currentLoadRetry.OnIoError(requestedTarget,
 									activePresentationSlotGeneration, GetTickCount64());
 						}
+						acknowledgeUnchangedScene(command);
 						continue;
 					}
 					const Bridge::PresentationTarget target = requestedTarget;
 					if (target.key.IsZero() || !Bridge::ValidPresentationPage(target)) continue;
 					// 同文稿翻页与跨文稿切换都先固定离开侧最新 revision。
 					(void)capturePresentationAutoSave();
+					const auto keepStagedScene = pendingWorkspaceReady;
 					pendingWorkspaceReady.reset();
 
 					if (activeWorkspace == Bridge::Workspace::Whiteboard) saveWhiteboard();
 					DrawingDocumentSlot* source = parkedActiveSlot();
-					if (!source) continue;
+					if (!source)
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						continue;
+					}
 					PresentationCpuSwitchResult cpuSwitch =
 						SwitchPresentationCpuSlot(activeWorkspace, activePresentationKey,
 							activeDocumentSlot, *source, isolatedPresentationSlot,
 							presentationSlots, nextPresentationSlotGeneration,
 							target, allocateRasterStateToken);
-					if (!cpuSwitch.accepted) continue;
+					if (!cpuSwitch.accepted)
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						continue;
+					}
 					if (!cpuSwitch.topologyConflict)
 					{
 						// parked/warm slot 先恢复其旧 target，再按有序 SlideID 重映射。
@@ -13715,8 +13737,13 @@ namespace Inkeys::Drawing::Draw3
 						target != Bridge::Workspace::Whiteboard) ||
 						(target == activeWorkspace && (target != Bridge::Workspace::Presentation ||
 							!activePresentationKey)))
+					{
+						if (target == activeWorkspace)
+							acknowledgeUnchangedScene(command);
 						continue;
+					}
 					(void)capturePresentationAutoSave();
+					const auto keepStagedScene = pendingWorkspaceReady;
 					pendingWorkspaceReady.reset();
 					const std::optional<PresentationLaneKey> previousPresentationLane =
 						activePresentationKey && activePresentationTarget
@@ -13727,10 +13754,18 @@ namespace Inkeys::Drawing::Draw3
 						? &whiteboardSlot : &isolatedPresentationSlot;
 					if (target == Bridge::Workspace::Presentation)
 						isolatedPresentationSlot = {};
-					if (!createBlankSlot(*destination, 1)) continue;
+					if (!createBlankSlot(*destination, 1))
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						continue;
+					}
 					if (activeWorkspace == Bridge::Workspace::Whiteboard) saveWhiteboard();
 					DrawingDocumentSlot* source = parkedActiveSlot();
-					if (!source) continue;
+					if (!source)
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						continue;
+					}
 					swapActiveDocument(*source);
 					swapActiveDocument(*destination);
 					if (previousPresentationLane && canEvictPresentationSlot(*source))

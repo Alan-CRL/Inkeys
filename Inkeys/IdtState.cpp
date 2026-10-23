@@ -500,6 +500,28 @@ namespace
 		}
 	}
 
+	// 主画布穿透只跟当前命中策略走。辅助放映窗保持穿透。窗口重建后不能沿用上一只 HWND 的缓存。
+	bool SyncDrawpadClickThrough(bool primaryClickThrough)
+	{
+		auto& service = Inkeys::Window::GetService();
+		static HWND primaryWindow = nullptr;
+		static HWND auxiliaryWindow = nullptr;
+		static int primary = -1;
+		const HWND presentation = service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation);
+		if (presentation && presentation != auxiliaryWindow &&
+			service.SetClickThrough(Inkeys::Window::WindowRole::DrawpadPresentation, true))
+			auxiliaryWindow = presentation;
+		const HWND drawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
+		const int desired = primaryClickThrough ? 1 : 0;
+		if (!drawpad) return false;
+		if (drawpad == primaryWindow && primary == desired) return true;
+		if (!service.SetClickThrough(Inkeys::Window::WindowRole::Drawpad, primaryClickThrough))
+			return false;
+		primaryWindow = drawpad;
+		primary = desired;
+		return true;
+	}
+
 	[[nodiscard]] Draw3PresentationReconcileResult
 		ReconcileDraw3PresentationState()
 	{
@@ -534,6 +556,9 @@ namespace
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			return Draw3PresentationReconcileResult::Retry;
 		}
+		// 白板进出期间由相位机暂时改穿透；稳定态必须跟当前选择模式，不能停在离场时的那一次。
+		if (!WhiteboardTransactionActive())
+			(void)SyncDrawpadClickThrough(desired.selectionMode);
 		const auto exitSelectionRevision = draw3ExitSelectionModeRevision.load(
 			std::memory_order_acquire);
 		const bool selectionMode = runtime.selectionMode;
@@ -1996,8 +2021,7 @@ void StateMonitoring()
 			// 几何目标不等待 Draw3 首帧；背景 active 仍在 Entering 就绪后发布。
 			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-			(void)service.SetClickThrough(
-				Inkeys::Window::WindowRole::Drawpad, true);
+			(void)SyncDrawpadClickThrough(true);
 			Inkeys::UI::Freeze::SetWhiteboardActive(true);
 			FreezePPT = false;
 			Inkeys::Drawing::Draw3::PublishProductWorkspace(
@@ -2011,8 +2035,7 @@ void StateMonitoring()
 			{
 				Inkeys::UI::Whiteboard::CancelPointerCapture();
 				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
-				(void)service.SetClickThrough(
-					Inkeys::Window::WindowRole::Drawpad, true);
+				(void)SyncDrawpadClickThrough(true);
 				Inkeys::UI::Whiteboard::PublishPageState(
 					static_cast<int>(snapshot.currentPageIndex + 1),
 					static_cast<int>(snapshot.pageCount), true);
@@ -2036,13 +2059,11 @@ void StateMonitoring()
 			const bool whiteboardWindowStateReady =
 				service.SetOverlayFullscreen(true) &&
 				service.SetOverlayTopmost(false) &&
-				service.SetClickThrough(
-					Inkeys::Window::WindowRole::Drawpad, false);
+				SyncDrawpadClickThrough(false);
 			if (!whiteboardWindowStateReady)
 			{
 				// Enter 的窗口状态未完整收敛时回滚 UI/Freeze，再等待下一次请求重试。
-				(void)service.SetClickThrough(
-					Inkeys::Window::WindowRole::Drawpad, true);
+				(void)SyncDrawpadClickThrough(true);
 				Inkeys::UI::Whiteboard::PublishActive(false);
 				SetWhiteboardFreezeSurfaceOwned(false);
 				Inkeys::UI::Freeze::SetWhiteboardActive(false);
@@ -2072,8 +2093,7 @@ void StateMonitoring()
 				// 单一 PageControl 从当前白板帧反向重定向，不插入隐藏帧。
 				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
 				HideWhiteboardForReturn();
-				(void)service.SetClickThrough(
-					Inkeys::Window::WindowRole::Drawpad, true);
+				(void)SyncDrawpadClickThrough(true);
 				Inkeys::UI::Whiteboard::PublishPageState(
 					static_cast<int>(snapshot.currentPageIndex + 1),
 					static_cast<int>(snapshot.pageCount), true);
@@ -2143,8 +2163,7 @@ void StateMonitoring()
 					continue;
 				}
 				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-				(void)service.SetClickThrough(
-					Inkeys::Window::WindowRole::Drawpad, true);
+				(void)SyncDrawpadClickThrough(true);
 				Inkeys::UI::Freeze::SetWhiteboardActive(true);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
 					Workspace::Whiteboard);
@@ -2164,8 +2183,8 @@ void StateMonitoring()
 				static_cast<int>(snapshot.currentPageIndex + 1),
 				static_cast<int>(snapshot.pageCount), false);
 			SetWhiteboardFreezeSurfaceOwned(false);
-			// Presentation 辅助输出始终不参与输入；显式恢复其 click-through，
-			// 防止 Whiteboard 期间的窗口样式切换把旧命中状态带回桌面。
+			// Presentation 辅助输出始终不参与输入；先恢复穿透，再改主画布。
+			// 后面的窗口模式失败不能把白板期间的命中状态留在辅助窗上。
 			(void)service.SetClickThrough(
 				Inkeys::Window::WindowRole::DrawpadPresentation, true);
 			const auto focusBeforeWindowRestore =
@@ -2177,8 +2196,7 @@ void StateMonitoring()
 				service.SetOverlayFullscreen(false) &&
 				service.LeaveWhiteboardWindowMode() &&
 				service.SetOverlayTopmost(true) &&
-				service.SetClickThrough(
-					Inkeys::Window::WindowRole::Drawpad, snapshot.selectionMode);
+				SyncDrawpadClickThrough(snapshot.selectionMode);
 			RebaseWhiteboardReturnFocus(focusBeforeWindowRestore,
 				focusMayFallBack && !service.WhiteboardWindowMode());
 			if (!presentationWindowStateReady) continue;
