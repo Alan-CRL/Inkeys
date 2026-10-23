@@ -1446,7 +1446,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
-			// 先退出启动链；测试中的宽色 setter 不保存，FineDial 只检查失效/取消提交。
+			// 先退出启动链；保存隔离仅用临时目录，FineDial 只检查失效/取消提交。
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			const int stateResult = RunStateModeProductionTest();
