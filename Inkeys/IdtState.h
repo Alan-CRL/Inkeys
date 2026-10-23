@@ -132,6 +132,8 @@ public:
 };
 extern StateModeClass stateMode;
 StateModeClass GetStateModeSnapshot();
+// 非 Desktop 不提供全局偏好保存快照。
+bool TryGetDesktopStateModeSnapshot(StateModeClass& snapshot);
 struct StateModeVersionedSnapshot
 {
 	StateModeClass state;
@@ -201,6 +203,8 @@ void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
 void ReconcileDraw3Presentation();
 // PPT 事实只切换非白板工具；白板进退由 StateMonitoring 的工作区事务交接。
 void SyncPrimaryWorkspaceStateMode();
+// 同锁保存 PPT 工具、返回 Desktop，仅在退出版本仍有效时进入选择。
+bool CompletePresentationExitStateMode(std::uint64_t expectedRevision);
 
 // 白板按钮和翻页控件只提交请求，具体工作区事务由 StateMonitoring 串行执行。
 inline constexpr bool IsWhiteboardFeatureEnabled() noexcept { return true; }
@@ -214,7 +218,7 @@ void RequestWhiteboardPreviousPage() noexcept;
 void RequestWhiteboardNextPage() noexcept;
 void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept;
 
-// 显式早期 CLI 仅执行真实状态/bridge 逻辑，不启动窗口或读取、保存配置。
+// 显式早期 CLI 不启动窗口；保存隔离检查仅使用独立临时目录，不读写用户配置。
 int RunStateModeProductionTest() noexcept;
 
 void StateMonitoring();
