@@ -171,7 +171,9 @@ int GetSelectAndClickThroughMode() noexcept;
 bool SetSelectAndClickThroughMode(int mode);
 bool ToggleFreezeFromButton();
 std::uint64_t StateModeTransitionRevision() noexcept;
-bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision);
+// PPT 真退出额外固定工作区身份；0 保持其它 revision-only 调用的原语义。
+bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision,
+    std::uint64_t expectedPptWorkspaceEpoch = 0);
 // 快捷键事务使用普通选择内核，不登记 PPT 真退出标识；恢复时沿用工具属性。
 bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
 	std::uint64_t expectedRevision, std::uint64_t freezeRevision);
@@ -208,6 +210,8 @@ bool WhiteboardActive() noexcept;
 bool WhiteboardTransactionActive() noexcept;
 // 0 表示白板事务期间不可准入；非零身份仅随白板意图切换，普通翻页不退休它。
 std::uint64_t PptInputWorkspaceEpoch() noexcept;
+// 仅场景事实允许在 Exiting 提前恢复；业务输入仍等待完整离场。
+std::uint64_t PptSceneWorkspaceEpoch() noexcept;
 void RequestWhiteboardPreviousPage() noexcept;
 void RequestWhiteboardNextPage() noexcept;
 void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept;

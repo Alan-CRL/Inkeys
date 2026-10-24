@@ -160,7 +160,8 @@ export namespace Inkeys::Window
 			DrawpadSurfaceVisibility visibility,
 			std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
-		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
+		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled,
+			std::function<bool()> stillDesired = {});
 		// Setting 保持顶层应用窗口，只在自身 owner thread 动态加入或离开 Drawpad owner 链。
 		[[nodiscard]] bool SetSettingOwnedByDrawpad(bool enabled);
 		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。

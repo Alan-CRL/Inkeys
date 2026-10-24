@@ -148,22 +148,26 @@ namespace Inkeys::Drawing::Draw3
 		productHost.PublishState(merged);
 	}
 
-	void PublishProductWorkspace(Bridge::Workspace workspace) noexcept
+	void PublishProductWorkspace(Bridge::Workspace workspace,
+		const std::function<bool()>& stillDesired) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
-		if (productStopping.load(std::memory_order_acquire)) return;
+		// 与白板权威发布共用提交锁；旧采样不能在进入/离开后覆盖当前工作区。
+		if (productStopping.load(std::memory_order_acquire) ||
+			(stillDesired && !stillDesired())) return;
 		if (productHost.ProductBridge().PublishWorkspace(workspace))
 			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}
 
 	std::optional<std::uint64_t> PublishProductPresentationTarget(
-		const Bridge::PresentationTarget& target) noexcept
+		const Bridge::PresentationTarget& target,
+		const std::function<bool()>& stillDesired) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return std::nullopt;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire) ||
-			!productHost.Running()) return std::nullopt;
+			!productHost.Running() || (stillDesired && !stillDesired())) return std::nullopt;
 		bool changed = false;
 		const auto revision = productHost.ProductBridge().PublishPresentationTarget(
 			target, &changed);
@@ -189,11 +193,13 @@ namespace Inkeys::Drawing::Draw3
 			productHost.SetPresentationInputSuspended(expected, suspended);
 	}
 
-	void ClearProductPresentationTarget() noexcept
+	void ClearProductPresentationTarget(
+		const std::function<bool()>& stillDesired) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
-		if (productStopping.load(std::memory_order_acquire)) return;
+		if (productStopping.load(std::memory_order_acquire) ||
+			(stillDesired && !stillDesired())) return;
 		if (productHost.ProductBridge().ClearPresentationTarget())
 			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}

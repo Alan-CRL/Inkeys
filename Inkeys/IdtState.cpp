@@ -500,26 +500,34 @@ namespace
 		}
 	}
 
-	// 主画布穿透只跟当前命中策略走。辅助放映窗保持穿透。窗口重建后不能沿用上一只 HWND 的缓存。
-	bool SyncDrawpadClickThrough(bool primaryClickThrough)
+	std::function<bool()> WhiteboardTransitionGuard(WhiteboardPhase phase, std::uint64_t epoch)
+	{
+		return [phase, epoch]() noexcept
+		{
+			return whiteboardPhase.load(std::memory_order_acquire) == phase &&
+				whiteboardInputEpoch.load(std::memory_order_acquire) == epoch &&
+				whiteboardDesired.load(std::memory_order_acquire) == ((epoch & 1U) != 0);
+		};
+	}
+
+	void PublishWhiteboardPrimaryWorkspace(std::uint64_t epoch)
+	{
+		// 返回 PPT 由 PptInfo 在 Exiting 提交最新完整 target，不能先制造无身份的 Presentation。
+		if (CurrentPrimaryWorkspace() == Workspace::Desktop)
+			Inkeys::Drawing::Draw3::PublishProductWorkspace(Workspace::Desktop,
+				WhiteboardTransitionGuard(WhiteboardPhase::Exiting, epoch));
+	}
+
+	// 样式去重属于窗口 owner；调用方只提交带当前事务身份的意图，不共享 HWND/布尔缓存。
+	bool SyncDrawpadClickThrough(bool primaryClickThrough, std::function<bool()> stillDesired)
 	{
 		auto& service = Inkeys::Window::GetService();
-		static HWND primaryWindow = nullptr;
-		static HWND auxiliaryWindow = nullptr;
-		static int primary = -1;
-		const HWND presentation = service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation);
-		if (presentation && presentation != auxiliaryWindow &&
-			service.SetClickThrough(Inkeys::Window::WindowRole::DrawpadPresentation, true))
-			auxiliaryWindow = presentation;
-		const HWND drawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
-		const int desired = primaryClickThrough ? 1 : 0;
-		if (!drawpad) return false;
-		if (drawpad == primaryWindow && primary == desired) return true;
-		if (!service.SetClickThrough(Inkeys::Window::WindowRole::Drawpad, primaryClickThrough))
-			return false;
-		primaryWindow = drawpad;
-		primary = desired;
-		return true;
+		const bool auxiliary = !service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation) ||
+			service.SetClickThrough(Inkeys::Window::WindowRole::DrawpadPresentation, true);
+		const bool primary = service.SetClickThrough(Inkeys::Window::WindowRole::Drawpad,
+			primaryClickThrough, [guard = std::move(stillDesired)]() noexcept
+			{ return Inkeys::Drawing::Draw3::ProductRunning() && (!guard || guard()); });
+		return auxiliary && primary;
 	}
 
 	[[nodiscard]] Draw3PresentationReconcileResult
@@ -557,8 +565,18 @@ namespace
 			return Draw3PresentationReconcileResult::Retry;
 		}
 		// 白板进出期间由相位机暂时改穿透；稳定态必须跟当前选择模式，不能停在离场时的那一次。
-		if (!WhiteboardTransactionActive())
-			(void)SyncDrawpadClickThrough(desired.selectionMode);
+		if (!WhiteboardTransactionActive() && !SyncDrawpadClickThrough(desired.selectionMode,
+			[revision = desired.revision, modeRevision]() noexcept
+			{
+				return !WhiteboardTransactionActive() &&
+					stateModeTransitionRevision.load(std::memory_order_acquire) == modeRevision &&
+					Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision == revision;
+			}))
+		{
+			// 样式失败也保留 250ms 重试；没有新 runtime revision 时仍能恢复窗口命中。
+			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			return Draw3PresentationReconcileResult::Retry;
+		}
 		const auto exitSelectionRevision = draw3ExitSelectionModeRevision.load(
 			std::memory_order_acquire);
 		const bool selectionMode = runtime.selectionMode;
@@ -853,14 +871,8 @@ bool IsLaserToolActive() noexcept
 
 void RequestWhiteboardActive(bool active) noexcept
 {
-	if (!IsWhiteboardFeatureEnabled())
-	{
-		// 发布前临时拒绝所有入口，避免隐藏主栏后仍有调用方进入白板事务。
-		whiteboardDesired.store(false, std::memory_order_release);
-		whiteboardPreviousRequested.store(false, std::memory_order_release);
-		whiteboardNextRequested.store(false, std::memory_order_release);
-		return;
-	}
+	// 功能关闭也沿同一意图入口退休奇数 epoch，不能只清 desired 留下旧所有权。
+	if (!IsWhiteboardFeatureEnabled()) active = false;
 	{
 		std::scoped_lock lock(whiteboardReturnFocusMutex);
 		if (active) whiteboardReturnFocus.Reset();
@@ -903,6 +915,14 @@ std::uint64_t PptInputWorkspaceEpoch() noexcept
 {
 	const auto epoch=whiteboardInputEpoch.load(std::memory_order_acquire);
 	return (epoch&1U)==0 && !WhiteboardTransactionActive() ? epoch : 0;
+}
+
+std::uint64_t PptSceneWorkspaceEpoch() noexcept
+{
+	const auto epoch = whiteboardInputEpoch.load(std::memory_order_acquire);
+	const auto phase = whiteboardPhase.load(std::memory_order_acquire);
+	return (epoch & 1U) == 0 && !whiteboardDesired.load(std::memory_order_acquire) &&
+		(phase == WhiteboardPhase::Inactive || phase == WhiteboardPhase::Exiting) ? epoch : 0;
 }
 
 void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept
@@ -1372,11 +1392,16 @@ bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision)
 	return true;
 }
 
-bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision)
+bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision,
+	std::uint64_t expectedPptWorkspaceEpoch)
 {
 	{
+		// 与白板新意图共锁确认业务权限；只锁短状态提交，不能跨锁调用窗口/产品同步。
+		std::unique_lock workspaceLock(whiteboardReturnFocusMutex, std::defer_lock);
+		if (expectedPptWorkspaceEpoch != 0) workspaceLock.lock();
 		std::scoped_lock lock(stateModeTransitionMutex);
-		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision)
+		if ((expectedPptWorkspaceEpoch != 0 && PptInputWorkspaceEpoch() != expectedPptWorkspaceEpoch) ||
+			stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision)
 			return false;
 		// 版本比较与模式赋值串行；窗口 owner 提交在锁外执行，避免互等。
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
@@ -1955,6 +1980,60 @@ int RunStateModeProductionTest() noexcept
 		require(ChangeStateModeToSelectionFromButtonImpl(false, [] { return Bridge::CommandResult::NotRunning; }),
 			"empty-selection-does-not-publish-clear");
 		require(SetSelectAndClickThroughMode(0), "restore-default-mode");
+		stage = "scene-publication-ownership";
+		ChangeStateModeToPen();
+		const auto primaryTool = GetStateModeVersionedSnapshot();
+		const auto primaryEpoch = PptSceneWorkspaceEpoch();
+		require(primaryEpoch != 0 && primaryEpoch == PptInputWorkspaceEpoch(),
+			"primary-input-and-scene-share-stable-epoch");
+		const auto oldPrimaryGuard = [primaryEpoch]() noexcept
+		{ return PptSceneWorkspaceEpoch() == primaryEpoch; };
+		RequestWhiteboardActive(true);
+		const auto enteringEpoch = whiteboardInputEpoch.load(std::memory_order_acquire);
+		whiteboardPhase.store(WhiteboardPhase::Entering, std::memory_order_release);
+		require(!ChangeStateModeToSelectionIfRevision(primaryTool.revision, primaryEpoch) &&
+			StateModeTransitionRevision() == primaryTool.revision &&
+			sameState(GetStateModeSnapshot(), primaryTool.state),
+			"late-ppt-exit-cannot-change-tool-after-whiteboard-intent");
+		require(PptSceneWorkspaceEpoch() == 0 && PptInputWorkspaceEpoch() == 0,
+			"whiteboard-entering-retires-primary-scene-and-input");
+		PublishProductWorkspace(Bridge::Workspace::Whiteboard,
+			WhiteboardTransitionGuard(WhiteboardPhase::Entering, enteringEpoch));
+		PublishProductWorkspace(Bridge::Workspace::Desktop, oldPrimaryGuard);
+		ClearProductPresentationTarget(oldPrimaryGuard);
+		require(bridge.Snapshot().workspace == Bridge::Workspace::Whiteboard,
+			"late-desktop-and-clear-cannot-overwrite-whiteboard-at-product-commit");
+		const auto oldWhiteboardGuard = WhiteboardTransitionGuard(WhiteboardPhase::Entering, enteringEpoch);
+		whiteboardPhase.store(WhiteboardPhase::Active, std::memory_order_release);
+		require(!oldWhiteboardGuard() && PptSceneWorkspaceEpoch() == 0,
+			"active-whiteboard-retires-entering-command-without-opening-primary-scene");
+		RequestWhiteboardActive(false);
+		whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
+		const auto returningEpoch = PptSceneWorkspaceEpoch();
+		require(returningEpoch != 0 && returningEpoch != primaryEpoch && PptInputWorkspaceEpoch() == 0,
+			"exiting-accepts-current-primary-scene-while-business-input-remains-closed");
+		require(!ChangeStateModeToSelectionIfRevision(primaryTool.revision, returningEpoch) &&
+			StateModeTransitionRevision() == primaryTool.revision &&
+			sameState(GetStateModeSnapshot(), primaryTool.state),
+			"exiting-scene-authority-does-not-authorize-ppt-tool-tail");
+		PublishProductWorkspace(Bridge::Workspace::Desktop, [returningEpoch]() noexcept
+		{ return PptSceneWorkspaceEpoch() == returningEpoch; });
+		PublishProductWorkspace(Bridge::Workspace::Whiteboard, oldWhiteboardGuard);
+		require(bridge.Snapshot().workspace == Bridge::Workspace::Desktop,
+			"retired-whiteboard-publication-cannot-overwrite-current-return");
+		whiteboardPhase.store(WhiteboardPhase::Inactive, std::memory_order_release);
+		require(PptSceneWorkspaceEpoch() == returningEpoch && PptInputWorkspaceEpoch() == returningEpoch
+			&& !oldPrimaryGuard(), "whiteboard-roundtrip-never-revives-old-primary-publisher");
+		require(!ChangeStateModeToSelectionIfRevision(primaryTool.revision, primaryEpoch) &&
+			StateModeTransitionRevision() == primaryTool.revision,
+			"whiteboard-roundtrip-retires-ppt-exit-tool-effect-with-unchanged-mode-revision");
+		ChangeStateModeToShape();
+		require(!ChangeStateModeToSelectionIfRevision(primaryTool.revision, returningEpoch) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtShape,
+			"current-workspace-does-not-authorize-stale-ppt-exit-tool-revision");
+		require(ChangeStateModeToSelectionIfRevision(StateModeTransitionRevision(), returningEpoch) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
+			"current-primary-ppt-exit-retains-normal-selection-tail");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
 		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough toggle/freezing, shortcut roundtrip, clear transaction\n", stderr);
 		return 0;
@@ -2000,7 +2079,10 @@ void StateMonitoring()
 		}
 
 		WhiteboardPhase phase = whiteboardPhase.load(std::memory_order_acquire);
+		const auto whiteboardEpoch = whiteboardInputEpoch.load(std::memory_order_acquire);
 		const bool desired = whiteboardDesired.load(std::memory_order_acquire);
+		const auto transitionGuard = [whiteboardEpoch](WhiteboardPhase expectedPhase)
+		{ return WhiteboardTransitionGuard(expectedPhase, whiteboardEpoch); };
 		if (phase == WhiteboardPhase::Inactive && desired)
 		{
 			// Enter 先锁住辅助面板和指针，再由 Window Service 统一切换 HWND 样式。
@@ -2021,11 +2103,11 @@ void StateMonitoring()
 			// 几何目标不等待 Draw3 首帧；背景 active 仍在 Entering 就绪后发布。
 			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-			(void)SyncDrawpadClickThrough(true);
+			(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Entering));
 			Inkeys::UI::Freeze::SetWhiteboardActive(true);
 			FreezePPT = false;
 			Inkeys::Drawing::Draw3::PublishProductWorkspace(
-				Workspace::Whiteboard);
+				Workspace::Whiteboard, transitionGuard(WhiteboardPhase::Entering));
 			continue;
 		}
 
@@ -2035,14 +2117,19 @@ void StateMonitoring()
 			{
 				Inkeys::UI::Whiteboard::CancelPointerCapture();
 				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
-				(void)SyncDrawpadClickThrough(true);
+				whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
+				(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Exiting));
 				Inkeys::UI::Whiteboard::PublishPageState(
 					static_cast<int>(snapshot.currentPageIndex + 1),
 					static_cast<int>(snapshot.pageCount), true);
-				whiteboardPhase.store(WhiteboardPhase::Exiting,
-					std::memory_order_release);
-				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					CurrentPrimaryWorkspace());
+				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
+				continue;
+			}
+			if (Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().workspace != Workspace::Whiteboard)
+			{
+				// 等待期间仍保留意图；发现目标偏离便重新收敛，而非永久等待一次旧发布。
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(Workspace::Whiteboard,
+					transitionGuard(WhiteboardPhase::Entering));
 				continue;
 			}
 			if (!Draw3WorkspaceReady(snapshot, Workspace::Whiteboard)) continue;
@@ -2059,11 +2146,11 @@ void StateMonitoring()
 			const bool whiteboardWindowStateReady =
 				service.SetOverlayFullscreen(true) &&
 				service.SetOverlayTopmost(false) &&
-				SyncDrawpadClickThrough(false);
+				SyncDrawpadClickThrough(false, transitionGuard(WhiteboardPhase::Entering));
 			if (!whiteboardWindowStateReady)
 			{
 				// Enter 的窗口状态未完整收敛时回滚 UI/Freeze，再等待下一次请求重试。
-				(void)SyncDrawpadClickThrough(true);
+				(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Entering));
 				Inkeys::UI::Whiteboard::PublishActive(false);
 				SetWhiteboardFreezeSurfaceOwned(false);
 				Inkeys::UI::Freeze::SetWhiteboardActive(false);
@@ -2071,10 +2158,8 @@ void StateMonitoring()
 				(void)service.SetOverlayFullscreen(false);
 				(void)service.LeaveWhiteboardWindowMode();
 				(void)service.SetOverlayTopmost(true);
-				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					CurrentPrimaryWorkspace());
-				whiteboardPhase.store(WhiteboardPhase::Exiting,
-					std::memory_order_release);
+				whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
+				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
 				continue;
 			}
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(true);
@@ -2093,18 +2178,22 @@ void StateMonitoring()
 				// 单一 PageControl 从当前白板帧反向重定向，不插入隐藏帧。
 				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
 				HideWhiteboardForReturn();
-				(void)SyncDrawpadClickThrough(true);
+				whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
+				(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Exiting));
 				Inkeys::UI::Whiteboard::PublishPageState(
 					static_cast<int>(snapshot.currentPageIndex + 1),
 					static_cast<int>(snapshot.pageCount), true);
 				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-				whiteboardPhase.store(WhiteboardPhase::Exiting,
-					std::memory_order_release);
-				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					CurrentPrimaryWorkspace());
+				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
 				continue;
 			}
 
+			if (Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().workspace != Workspace::Whiteboard)
+			{
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(Workspace::Whiteboard,
+					transitionGuard(WhiteboardPhase::Active));
+				continue;
+			}
 			if (pageSwitching)
 			{
 				const std::uint64_t completed = requestedPreviousPage
@@ -2163,16 +2252,21 @@ void StateMonitoring()
 					continue;
 				}
 				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-				(void)SyncDrawpadClickThrough(true);
+				whiteboardPhase.store(WhiteboardPhase::Entering, std::memory_order_release);
+				(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Entering));
 				Inkeys::UI::Freeze::SetWhiteboardActive(true);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					Workspace::Whiteboard);
-				whiteboardPhase.store(WhiteboardPhase::Entering,
-					std::memory_order_release);
+					Workspace::Whiteboard, transitionGuard(WhiteboardPhase::Entering));
 				continue;
 			}
 			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
 			const Workspace primaryWorkspace = CurrentPrimaryWorkspace();
+			const auto primaryDesired = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+			if (primaryDesired.workspace != primaryWorkspace)
+			{
+				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
+				continue;
+			}
 			if (!Draw3WorkspaceReady(snapshot, primaryWorkspace)) continue;
 
 			// Presentation 已有可接管帧后才关闭 Whiteboard，避免 raw COM present 重叠。
@@ -2196,7 +2290,14 @@ void StateMonitoring()
 				service.SetOverlayFullscreen(false) &&
 				service.LeaveWhiteboardWindowMode() &&
 				service.SetOverlayTopmost(true) &&
-				SyncDrawpadClickThrough(snapshot.selectionMode);
+				SyncDrawpadClickThrough(snapshot.selectionMode,
+					[guard = transitionGuard(WhiteboardPhase::Exiting),
+						modeRevision = stateModeTransitionRevision.load(std::memory_order_acquire),
+						selection = snapshot.selectionMode]() noexcept
+					{
+						return guard() && stateModeTransitionRevision.load(std::memory_order_acquire) == modeRevision &&
+							Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().selectionMode == selection;
+					});
 			RebaseWhiteboardReturnFocus(focusBeforeWindowRestore,
 				focusMayFallBack && !service.WhiteboardWindowMode());
 			if (!presentationWindowStateReady) continue;

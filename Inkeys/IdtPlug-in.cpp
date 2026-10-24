@@ -888,6 +888,7 @@ void PptInfo()
 		bool stateReliable = false;
 		bool exitedThisTick = false;
 		std::uint64_t exitModeRevision = 0;
+		std::uint64_t exitWorkspaceEpoch = 0;
 		bool descriptorChanged = false;
 		PptLifecycle lifecycle = PptLifecycle::Unknown;
 		PptPageStatus pageStatus = PptPageStatus::Unknown;
@@ -947,7 +948,12 @@ void PptInfo()
 		{
 			const auto ending = CapturePptSession();
 			exitedThisTick = ending.active;
-			if (ending.active) exitModeRevision = StateModeTransitionRevision();
+			if (ending.active)
+			{
+				// 工具收尾固定退出边沿的权限，不能借稍后场景发布的新 epoch 跨越白板往返。
+				exitWorkspaceEpoch = PptInputWorkspaceEpoch();
+				exitModeRevision = StateModeTransitionRevision();
+			}
 			if (ending.active) TraceTrueExit("inactive", ending);
 			EndSession();
 		}
@@ -983,6 +989,7 @@ void PptInfo()
 			{
 				confirmedWindowEnd = true;
 				exitedThisTick = true;
+				exitWorkspaceEpoch = PptInputWorkspaceEpoch();
 				exitModeRevision = StateModeTransitionRevision();
 				TraceTrueExit(!windowExists ? "show-window-lost" : "show-window-reused", session);
 				EndSession();
@@ -1111,6 +1118,9 @@ void PptInfo()
 			expectedPptUiTarget.reset();
 		}
 		const bool whiteboard = WhiteboardTransactionActive();
+		const auto sceneWorkspaceEpoch = PptSceneWorkspaceEpoch();
+		const auto sceneStillCurrent = [sceneWorkspaceEpoch]() noexcept
+		{ return sceneWorkspaceEpoch != 0 && PptSceneWorkspaceEpoch() == sceneWorkspaceEpoch; };
 		static const bool tracePptGate = []() noexcept
 		{
 			wchar_t value[8]{};
@@ -1137,7 +1147,7 @@ void PptInfo()
 				whiteboard, D3::ProductRunning());
 		}
 		const auto bridge = D3::ProductHost().ProductBridge().Snapshot();
-		if (!whiteboard && session.active && !trustedTarget)
+		if (sceneWorkspaceEpoch != 0 && session.active && !trustedTarget)
 		{
 			const bool sameBinding = currentService && session.serviceGeneration == serviceGeneration
 				&& (!cachedState || MatchesPptShowSession(session, serviceGeneration, *cachedState));
@@ -1149,29 +1159,29 @@ void PptInfo()
 			else
 			{
 				// 新文稿/基础模式先撤销旧墨迹目标；原始数字不能把旧画布带到新场。
-				D3::ClearProductPresentationTarget();
+				D3::ClearProductPresentationTarget(sceneStillCurrent);
 				cachedTarget.reset();
 				PptInfoStateBuffer = { -1, -1 };
 			}
 		}
 		std::uint64_t targetRevision = 0;
-		if (!whiteboard && !session.active && (confirmedWindowEnd ||
+		if (sceneWorkspaceEpoch != 0 && !session.active && (confirmedWindowEnd ||
 			(stateReliable && lifecycle == PptLifecycle::Inactive)))
 		{
-			D3::PublishProductWorkspace(D3::Bridge::Workspace::Desktop);
-			if (exitedThisTick)
+			D3::PublishProductWorkspace(D3::Bridge::Workspace::Desktop, sceneStillCurrent);
+			if (!whiteboard && exitedThisTick && exitWorkspaceEpoch != 0)
 			{
 				// 可信退出只收尾一次；若此后用户主动换工具，旧退出不得覆盖它。
-				if (ChangeStateModeToSelectionIfRevision(exitModeRevision))
+				if (ChangeStateModeToSelectionIfRevision(exitModeRevision, exitWorkspaceEpoch))
 				{
 					// EndSession 的刷新早于模式收尾；成功进入选择后重绘实际工具高亮。
 					barUISet.UpdateRendering();
 				}
 			}
 		}
-		else if (!whiteboard && session.active && trustedTarget)
+		else if (sceneWorkspaceEpoch != 0 && session.active && trustedTarget)
 		{
-			const auto accepted = D3::PublishProductPresentationTarget(*cachedTarget);
+			const auto accepted = D3::PublishProductPresentationTarget(*cachedTarget, sceneStillCurrent);
 			if (!accepted && tracePptGate && IDTLogger && (descriptorChanged || rawChanged))
 			{
 				const auto observedBridge = D3::ProductHost().ProductBridge().Snapshot();
