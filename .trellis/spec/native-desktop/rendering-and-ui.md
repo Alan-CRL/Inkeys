@@ -1983,3 +1983,54 @@ void SyncDraw3State() {
 ## UI3 新按钮的笔震动接入（2026-10-20）
 
 新增主栏注册按钮、形状/粗细表项或独立属性控件时，同时遵守 [pen-haptics.md](pen-haptics.md) 的独立偏好与业务接受点合同。公共按钮使用共享入口自动继承；独立状态机必须报告真实接受，不能把命中/Consumed 当作成功。保持 Pen 凭据、取消/禁用/去重、即时功能开关和可选设备回退，并补充相关回归。
+
+## 主栏与控件字体整数像素字号（2026-10-24）
+
+### 1. Scope / Trigger
+
+UI3主栏、属性面板及共用Bar renderer的PPT/白板分页文字适用；设置ImGui文字与启动预览不在此策略范围。修改字号、内容缩放、D2D变换或独立文字缓存时均须检查。
+
+### 2. Signatures
+
+- `Experimental.Inkeys3.UI3.AllowFractionalFontSize: IdtAtomic<bool> = false`，main.json、NoUpload。
+- `BarUIRendering::UpdateFontRenderingPolicy(bool) -> bool`：render owner切换策略并返回是否变化。
+- `BarUIRendering::ResolveFontSize(ID2D1DeviceContext*, double) const noexcept -> FLOAT`：将最终物理像素字号向下截断后反算DWrite字号。
+- `Detail::ResolveBarFontSize(double fontSize, double pixelsPerUnit, bool allowFractional) noexcept -> float`：生产/Headless共用纯数值实现。
+
+### 3. Contracts
+
+- 开启时保留原字号；关闭时`floor(fontSize * pixelsPerUnit) / pixelsPerUnit`，禁止round或强制至少1px。非有限/非正输入或结果0不绘制；不反向放大文字。
+- Word先合并设计字号、frameZoom和contentScale，再合并当前DC有效Y基向量的设备像素长度。DIP模式比例为`hypot(_21*dpiX/96, _22*dpiY/96)`，PIXELS模式dpi因子为1。frameZoom已包含界面/DPI基准，不能重复乘屏幕DPI。
+- 保留按钮按压、底栏非均匀body变形和popup连续几何；量化字体em高度，不强制字形位置或图标/布局取整，不变更既有抗锯齿和透明合成。
+- 共享Word、细刻度数字、dock指示文字和FPS直接文字均解析最终字号。独立细刻度layout缓存包含最终字号，不能仅以value/zoom复用。
+- MeasureText保留未截断逻辑字号与ceil作为保守布局上界；不随1px字号阶跃重排提示框或缩减旧测量缓存。实际字体只缩不扩。
+- 设置复用冻结FIFO写盘和Bar/四分页轻请求；资源/策略更新在render owner进行。主栏策略变化产生待重画damage与visual retry；分页Scene在相同frameTime早退前比较策略并FullDamage，隐藏后恢复也必须复核。
+- 配置严格bool，缺失或非法值默认false；不增加legacy deploy.json迁移。实验卡中文标题为“允许界面字体以非整数像素尺寸渲染”，三语同步，不改设置字体。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| 13DIP × 0.6 = 7.8px，关闭 | 7px |
+| 相同输入，开启 | 原7.8px |
+| 最终字号不足1px，关闭 | 0，跳过文字 |
+| 字号/设备比例无效 | 不传给DWrite |
+| 同内容/同zoom切换开关 | 实际重画，独立缓存不复用旧字号 |
+| 隐藏分页恢复或相同frameTime | 先比较策略，不能被idle早退吞掉 |
+
+### 5. Good / Base / Bad Cases
+
+Good：量化含pressScale/popup变换后的物理em高度，再还原DWrite格式。Base：开启时保留原小数字号及布局。Bad：只floor设计DIP、在通用GetFormat内无条件截断、清设置线程上的DWrite缓存或仅Request而无damage。
+
+### 6. Tests Required
+
+同源数值回归覆盖48DIP基准、DPI/倍率/内容与DC组合、非均匀Y轴、向下而非四舍五入、整数/不足1px/非法输入及开启还原。真实Config覆盖默认/缺失/非法bool、读写、Mini隔离、复制/冻结、重置和NoUpload；既有无HWND字体离屏入口验证生产解析与策略/缓存切换。完整Debug|ARM64 solution、Headless --no-window、i18n sync/check及编码换行/diff检查。数值与离屏通过不能作为真实大屏清晰度观感结论。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：后续zoom/press/popup仍会重新产生小数像素。
+fontSize = floor(designFontSize) * frameZoom;
+// Correct：rawFontSize已合并字号侧缩放，再按当前DC实际像素比量化。
+fontSize = renderer.ResolveFontSize(deviceContext, rawFontSize);
+```

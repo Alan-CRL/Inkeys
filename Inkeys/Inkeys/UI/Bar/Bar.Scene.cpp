@@ -24,6 +24,7 @@ import :UI;
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.EraserAttributeMotion;
 import Inkeys.UI.Bar.FramePacing;
+import Inkeys.Other.Config;
 
 namespace Inkeys::UI::Bar
 {
@@ -560,6 +561,8 @@ namespace Inkeys::UI::Bar
 		}
 		bool Advance(std::chrono::steady_clock::time_point now)
 		{
+			// 相同 frameTime 或隐藏后恢复也先处理字号策略，不能被 idle 早退吞掉。
+			if(renderer.UpdateFontRenderingPolicy(Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))FullDamage();
 			if(frameSeen&&now==previousFrame)return active;
 			Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
 				Inkeys::UI::RenderPipeline::FrameStage::AdvanceAnimationsAndDeriveLayout);

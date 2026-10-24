@@ -102,6 +102,8 @@ public:
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
 	void ConfigureLocalizedTypography();
+	bool UpdateFontRenderingPolicy(bool allowFractional) noexcept;
+	[[nodiscard]] FLOAT ResolveFontSize(ID2D1DeviceContext* context, double fontSize) const noexcept;
 	[[nodiscard]] const wstring& GetFontFamily() const noexcept
 	{
 		return fontFamily;
@@ -278,6 +280,7 @@ protected:
 	{
 		int value = 0;
 		FLOAT zoom = 0.0F;
+		FLOAT fontSize = 0.0F;
 		D2D1_SIZE_F size{};
 		FLOAT layoutWidth = 0.0F;
 		unsigned long long lastUse = 0;
@@ -318,7 +321,7 @@ protected:
 	ID2D1StrokeStyle* GetRoundStrokeStyle();
 	ID2D1PathGeometry* GetThicknessFineDialSelectorGeometry();
 	ThicknessFineDialLabelCacheClass* GetThicknessFineDialLabelLayout(
-		int value, FLOAT zoom);
+		int value, FLOAT zoom, ID2D1DeviceContext* context = nullptr);
 	ID2D1Geometry* GetSuperellipseGeometry(
 		FLOAT x, FLOAT y, FLOAT width, FLOAT height, FLOAT n, int segments);
 	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
@@ -458,6 +461,7 @@ protected:
 	array<ThicknessFineDialLabelCacheClass, 64>
 		thicknessFineDialLabelCache{};
 	unsigned long long thicknessFineDialLabelUseSerial = 0;
+	bool allowFractionalFontSize = false;
 	wstring fontFamily = L"HarmonyOS Sans SC";
 	wstring textLocale = L"zh-cn";
 	SuperellipseGeometryCacheClass superellipseGeometryCache;

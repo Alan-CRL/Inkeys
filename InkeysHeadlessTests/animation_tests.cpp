@@ -19,6 +19,7 @@
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.FontSize.h"
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.Metrics;
@@ -89,6 +90,35 @@ namespace
 	bool Near(double lhs, double rhs, double epsilon = 0.000001)
 	{
 		return std::abs(lhs - rhs) <= epsilon;
+	}
+
+	void TestFontPixelSizes()
+	{
+		using Inkeys::UI::Bar::Detail::ResolveBarFontSize;
+		Check(ResolveBarFontSize(13.0 * 0.6, 1.0, false) == 7.0F,
+			"48 DIP base truncates 7.8px rather than rounding to 8px");
+		Check(Near(ResolveBarFontSize(7.8, 1.0, true), 7.8),
+			"fractional font preference preserves the original size");
+		for (const double raw : { 1.0, 7.8, 12.0, 13.999, 48.25 })
+			for (const double scale : { 0.6, 0.83, 0.91, 1.0, 1.25, 1.5, 2.0 })
+			{
+				const double actual = ResolveBarFontSize(raw, scale, false);
+				Check(Near(actual * scale, std::floor(raw * scale), 0.00001),
+					"font policy truncates after effective scale including DPI and animation");
+				Check(actual <= raw + 0.000001,
+					"font truncation cannot enlarge the original glyph em size");
+				Check(Near(ResolveBarFontSize(raw, scale, true), raw, 0.00001),
+					"enabled preference ignores pixel quantization at every scale");
+			}
+		Check(ResolveBarFontSize(0.9, 1.0, false) == 0.0F
+			&& ResolveBarFontSize(12.0, 0.01, false) == 0.0F,
+			"subpixel font sizes disappear without being enlarged to one pixel");
+		for (const double invalid : { 0.0, -1.0, std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity() })
+			for (const bool allow : { false, true })
+				Check(ResolveBarFontSize(invalid, 1.0, allow) == 0.0F
+					&& ResolveBarFontSize(12.0, invalid, allow) == 0.0F,
+					"font policy rejects invalid sizes and device scales");
 	}
 
 	void TestLocalizedFormatFallbacks()
@@ -1672,6 +1702,7 @@ int main(int argc, char** argv)
 
 	TestCurvesAndTimelines();
 	TestLocalizedFormatFallbacks();
+	TestFontPixelSizes();
 	TestSharedBarButtonRuntime();
 	TestBarThicknessVisualTransitions();
 	TestColorSwatchThicknessFollowsPanelScale();

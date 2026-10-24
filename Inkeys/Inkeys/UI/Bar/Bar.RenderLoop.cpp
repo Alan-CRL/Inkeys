@@ -10580,7 +10580,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 											&& selectionProgress > 0.000001)
 										{
 											auto* label = state.spec.GetThicknessFineDialLabelLayout(
-												tick, uiZoom);
+												tick, uiZoom, barDeviceContext);
 											if (label && label->layout
 												&& labelCandidateCount
 													< labelCandidates.size())
@@ -12097,13 +12097,19 @@ bool presetButton = button.presetIndex >= 0;
 					static_cast<FLOAT>(dockTargetIndicatorScale) * textScale,
 					static_cast<FLOAT>(dockTargetIndicatorScale) * textScale,
 					indicatorCenter) * originalTransform);
+				IDWriteTextFormat* drawTextFormat = state.barMedia.formatCache->GetFormat(
+					state.spec.GetFontFamily(), state.spec.ResolveFontSize(barDeviceContext,
+						BarButtonTwoTwoLabelFontSizeDip * frameZoom),
+					context.assets.fontCollection.Get(), DWRITE_FONT_WEIGHT_BOLD,
+					DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, state.spec.GetTextLocale(),
+					DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 				if (auto textBrush = state.spec.GetFrameSolidColorBrush(
 					barDeviceContext,
 					GetThemeColor(BarThemeColorEnum::TextPrimary),
-					textOpacity))
+					textOpacity); textBrush && drawTextFormat)
 					(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawTextW(dockModeLabel.c_str(),
 						static_cast<UINT32>(dockModeLabel.size()),
-						dockModeTextFormat, indicatorTextRect, textBrush,
+						drawTextFormat, indicatorTextRect, textBrush,
 						D2D1_DRAW_TEXT_OPTIONS_CLIP);
 				barDeviceContext->SetTransform(originalTransform);
 			}
@@ -12117,7 +12123,7 @@ bool presetButton = button.presetIndex >= 0;
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
 				state.spec.GetFontFamily(),
-				12.0F * tarZoom,
+				state.spec.ResolveFontSize(barDeviceContext, 12.0F * tarZoom),
 				context.assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_NORMAL,
 				DWRITE_FONT_STYLE_NORMAL,
@@ -12731,6 +12737,13 @@ BarRenderLoopCoordinator::RenderFrame(
 	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
 	if (offSignal) return FrameResult::Idle;
 	auto& state = *state_;
+	if (state.spec.UpdateFontRenderingPolicy(
+		Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))
+	{
+		// 策略变化必须产生真实视觉损伤，轻唤醒本身不足以重画静止主栏。
+		state.unclassifiedDamagePending = true;
+		state.presentDecision.RequireVisualRetry();
+	}
 	state.finiteObserver = Inkeys::UI::Bar::ActiveUi3FiniteObserver();
 	state.finiteSvgProbe = state.finiteObserver ? state.finiteObserver->SvgProbe() : nullptr;
 	Inkeys::UI::Bar::SvgObservationScope svgObservation(state.finiteSvgProbe,

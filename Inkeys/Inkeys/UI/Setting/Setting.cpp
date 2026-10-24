@@ -39,6 +39,7 @@ module Inkeys.UI.Setting;
 import Inkeys.Display;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.PageControl;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
@@ -1407,6 +1408,7 @@ SettingSessionCoroutine RunSettingSession()
 		{
 			struct
 			{
+				bool AllowFractionalFontSize = Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize;
 				bool AnimationEnable = Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable;
 				float AnimationSpeedRate = static_cast<float>(clamp(
 					static_cast<double>(Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate), 0.1, 5.0));
@@ -8021,7 +8023,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
-						inkeys3PanelHeight += 605.0f;
+						inkeys3PanelHeight += 720.0f;
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -8067,6 +8069,20 @@ SettingSessionCoroutine RunSettingSession()
 								ImGui::EndChild();
 							};
 
+							Experimental.Inkeys3.AllowFractionalFontSize =
+								Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
+							drawConsoleOutput("界面字体非整数像素尺寸",
+								IA(I18nKey.SettingsUI.Experimental.UI3.AllowFractionalFontSize.N),
+								IA(I18nKey.SettingsUI.Experimental.UI3.AllowFractionalFontSize.E),
+								Experimental.Inkeys3.AllowFractionalFontSize, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize =
+										Experimental.Inkeys3.AllowFractionalFontSize;
+									// 设置锁内只发轻请求，字号缓存和脏区由各渲染 owner 更新。
+									barUISet.UpdateRendering(false);
+									Inkeys::UI::PageControl::NotifyLayoutChanged();
+									QueueConfigWrite();
+								}, 110.0f);
 							drawConsoleOutput("输入与橡皮诊断控制台输出",
 								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.TouchArea.N),
 								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.TouchArea.E),

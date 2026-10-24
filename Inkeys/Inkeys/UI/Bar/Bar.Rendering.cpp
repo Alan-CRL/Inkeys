@@ -20,6 +20,7 @@ module;
 #include <memory>
 #include <bit>
 #include "Bar.PresentationProbe.h"
+#include "Bar.FontSize.h"
 #include "../Superellipse.Geometry.h"
 
 #pragma comment(lib, "dxguid.lib")
@@ -222,6 +223,31 @@ BarFormatCache* BarUIRendering::GetTypographyCache()
 		if (auto factory = SharedDWriteFactory())
 			ownedTypography_ = std::make_unique<BarFormatCache>(factory.Get());
 	return ownedTypography_.get();
+}
+
+bool BarUIRendering::UpdateFontRenderingPolicy(bool allowFractional) noexcept
+{
+	if (allowFractionalFontSize == allowFractional) return false;
+	allowFractionalFontSize = allowFractional;
+	// 只在渲染 owner 更新策略，隐藏后恢复也不能复用旧字号的数字布局。
+	for (auto& cached : thicknessFineDialLabelCache) cached = {};
+	thicknessFineDialLabelUseSerial = 0;
+	return true;
+}
+
+FLOAT BarUIRendering::ResolveFontSize(ID2D1DeviceContext* context, double fontSize) const noexcept
+{
+	if (!context) return 0.0F;
+	D2D1_MATRIX_3X2_F transform{};
+	context->GetTransform(&transform);
+	FLOAT dpiX = 96.0F, dpiY = 96.0F;
+	if (context->GetUnitMode() != D2D1_UNIT_MODE_PIXELS) context->GetDpi(&dpiX, &dpiY);
+	if (!std::isfinite(dpiX) || !std::isfinite(dpiY) || dpiX <= 0.0F || dpiY <= 0.0F) return 0.0F;
+	// frameZoom 已乘进字号；此处只合并 DC 额外变换与单位到设备像素的比例。
+	const double pixelsPerUnit = std::hypot(
+		static_cast<double>(transform._21) * dpiX / 96.0,
+		static_cast<double>(transform._22) * dpiY / 96.0);
+	return Inkeys::UI::Bar::Detail::ResolveBarFontSize(fontSize, pixelsPerUnit, allowFractionalFontSize);
 }
 
 void BarUIRendering::ConfigureLocalizedTypography()
@@ -1564,18 +1590,22 @@ ID2D1PathGeometry* BarUIRendering::GetThicknessFineDialSelectorGeometry()
 }
 
 BarUIRendering::ThicknessFineDialLabelCacheClass*
-BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
+BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom, ID2D1DeviceContext* context)
 {
 	auto dwriteFactory = SharedDWriteFactory();
 	auto fontCollection = SharedFontCollection();
 	if (!dwriteFactory || !GetTypographyCache()
 		|| !isfinite(zoom) || zoom <= 0.0F)
 		return nullptr;
+	const FLOAT fontSize = ResolveFontSize(context ? context : deviceContext.Get(),
+		static_cast<double>(BarThicknessFineDialLabelFontSizeDip) * zoom);
+	if (fontSize <= 0.0F) return nullptr;
 	++thicknessFineDialLabelUseSerial;
 	for (auto& cached : thicknessFineDialLabelCache)
 	{
 		if (cached.valid && cached.value == value
-			&& abs(cached.zoom - zoom) <= 0.0001F && cached.layout)
+			&& abs(cached.zoom - zoom) <= 0.0001F
+			&& cached.fontSize == fontSize && cached.layout)
 		{
 			cached.lastUse = thicknessFineDialLabelUseSerial;
 			return &cached;
@@ -1592,8 +1622,6 @@ BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
 		}
 		if (cached.lastUse < target->lastUse) target = &cached;
 	}
-	FLOAT fontSize = static_cast<FLOAT>(
-		BarThicknessFineDialLabelFontSizeDip) * zoom;
 	IDWriteTextFormat* format =
 		GetTypographyCache()->GetFormat(
 			fontFamily, fontSize,
@@ -1618,6 +1646,7 @@ BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
 	*target = {};
 	target->value = value;
 	target->zoom = zoom;
+	target->fontSize = fontSize;
 	target->size = D2D1::SizeF(
 		ceil(metrics.widthIncludingTrailingWhitespace),
 		ceil(metrics.height));
@@ -3039,7 +3068,8 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	double centerY = tarY + tarH / 2.0;
 	tarW *= contentScale;
 	tarH *= contentScale;
-	tarSize *= contentScale;
+	tarSize = ResolveFontSize(deviceContext, tarSize * contentScale);
+	if (tarSize <= 0.0) return false;
 	tarX = centerX - tarW / 2.0;
 	tarY = centerY - tarH / 2.0;
 	double tarPct = word.pct.val * contentPct; // 布局透明度与内容切换透明度相乘

@@ -24,6 +24,7 @@
 #include <vector>
 #include <bit>
 #include <limits>
+#include <cmath>
 #include "Bar.PresentationProbe.h"
 #include "Bar.MainLayoutPolicy.h"
 #include "../StartupPlacement.h"
@@ -331,6 +332,79 @@ namespace Inkeys::UI::Bar
 		expect(I18n::load(1,L"JSON",L"zh-CN"),"default bundled translation loads");
 		owner.spec.ConfigureLocalizedTypography();
 		owner.barButtonSet.PresetInitialization();owner.barMedia.LoadFormat();
+		// 同一生产 Word 路径对照独立推导的整数字号，不用截图观感代替最终像素尺寸验证。
+		{
+			// 只在离屏测试局部公开受保护的缓存检查入口，生产接口保持不变。
+			struct FontTestRenderer : BarUIRendering
+			{
+				using BarUIRendering::BarUIRendering;
+				using BarUIRendering::GetThicknessFineDialLabelLayout;
+			};
+			FontTestRenderer fonts(&owner), reference(&owner);
+			const bool ready = SUCCEEDED(fonts.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128))
+				&& SUCCEEDED(reference.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128));
+			expect(ready, "font pixel policy creates offscreen targets");
+			if (ready)
+			{
+				struct FontCase { FLOAT dpi, scaleX, scaleY; bool pixels; };
+				for (const auto item : {FontCase{96,1,1,false}, FontCase{144,1.03F,0.91F,false},
+					FontCase{192,0.95F,0.83F,false}, FontCase{192,1.03F,0.91F,true}})
+				{
+					constexpr double zoom = 0.6, contentScale = 0.85;
+					const double deviceScale = item.scaleY * (item.pixels ? 1.0 : item.dpi / 96.0);
+					const double expectedPixels = std::floor(13.0 * zoom * contentScale * deviceScale);
+					const double expectedSize = expectedPixels / deviceScale;
+					const auto draw = [&](BarUIRendering& renderer, bool allow, double logicalSize)
+					{
+						renderer.UpdateFontRenderingPolicy(allow); renderer.SetFrameZoom(zoom);
+						auto* dc = renderer.GetDeviceContext(); dc->SetDpi(item.dpi, item.dpi);
+						dc->SetUnitMode(item.pixels ? D2D1_UNIT_MODE_PIXELS : D2D1_UNIT_MODE_DIPS);
+						dc->SetTransform(D2D1::IdentityMatrix());
+						const float units = item.pixels ? 1.0F : 96.0F / item.dpi;
+						renderer.BeginFrameDraw(dc, D2D1::RectF(0,0,256 * units,128 * units));
+						dc->SetTransform(D2D1::Matrix3x2F::Scale(item.scaleX,item.scaleY)
+							* D2D1::Matrix3x2F::Translation(3.25F,2.75F));
+						BarUiWordClass word(0,0,180,70,L"字号 123",logicalSize,RGB(20,20,20));
+						word.enable.Initialization(true); word.pct.SetDirect(1); word.contentScale=contentScale;
+						const bool drew = renderer.Word(dc,word,{10,10},DWRITE_FONT_WEIGHT_NORMAL);
+						renderer.FinishFrameDrawCommands(dc); dc->SetTransform(D2D1::IdentityMatrix());
+						expect(drew && SUCCEEDED(renderer.EndFrameDraw(dc)), "font Word renders through the real D2D path");
+						return ReadSvgProofPixels(dc,renderer.GetTargetBitmap());
+					};
+					const auto actual=draw(fonts,false,13.0);
+					const auto expected=draw(reference,true,expectedSize/(zoom*contentScale));
+					expect(!actual.empty() && actual==expected,
+						"Word pixels match floor after zoom/content/DPI/nonuniform DC scale");
+					const auto fractional=draw(fonts,true,13.0);
+					expect(fractional!=actual, "fractional preference preserves a distinct untruncated Word render");
+					expect(draw(fonts,false,13.0)==actual, "font preference switches back without stale cached text");
+				}
+				auto* dc=fonts.GetDeviceContext(); dc->SetDpi(96,96); dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);
+				dc->SetTransform(D2D1::IdentityMatrix()); fonts.UpdateFontRenderingPolicy(false);
+				auto* label=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(label && label->layout && static_cast<IDWriteTextFormat*>(label->layout.Get())->GetFontSize()==6.0F,
+					"fine dial uses truncated pixels in its actual DWrite layout");
+				expect(label==fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc),
+					"fine dial reuses the same effective font layout");
+				dc->SetTransform(D2D1::Matrix3x2F::Scale(1.03F,0.91F));
+				auto* scaled=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(scaled && scaled->layout
+					&& std::abs(static_cast<IDWriteTextFormat*>(scaled->layout.Get())->GetFontSize()*0.91-5.0)<0.00001,
+					"fine dial cache keys include final font size after external transform");
+				fonts.UpdateFontRenderingPolicy(true);
+				label=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(label && std::abs(static_cast<IDWriteTextFormat*>(label->layout.Get())->GetFontSize()-6.3F)<0.00001F,
+					"fine dial refreshes layout when fractional fonts are enabled");
+				fonts.UpdateFontRenderingPolicy(false);
+				expect(fonts.ResolveFontSize(dc,0.5)==0.0F, "subpixel font is skipped rather than enlarged");
+				dc->SetDpi(120,192); dc->SetTransform(D2D1::Matrix3x2F(1,0,0.6F,0.8F,0,0));
+				const double rotatedScale=std::hypot(0.6*1.25,0.8*2.0);
+				expect(std::abs(fonts.ResolveFontSize(dc,7.8)*rotatedScale-std::floor(7.8*rotatedScale))<0.00001,
+					"font height includes both axes of rotated/sheared DPI mapping");
+			}
+			fonts.DiscardDeviceResources(); reference.DiscardDeviceResources();
+		}
+
 		// 早期 CLI 未读取配置；准备已规范化的内存布局，避免 Load 触发迁移写盘。
 		auto a2Fixture=Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
 		for(auto& entry:a2Fixture)
@@ -2463,6 +2537,23 @@ namespace Inkeys::UI::Bar
 				&& scene.SetBounds({0,0,305,80},1.0F);
 			(void)scene.Advance(std::chrono::steady_clock::now());
 			expect(configured,"production PageSurface icon configures");
+			const bool savedFractional=Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
+			const auto policyTime=std::chrono::steady_clock::now();
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;
+			(void)scene.Advance(policyTime);(void)scene.ConsumeDamage();
+			expect(!scene.IsInvalidated(),"font policy fixture starts with consumed damage");
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=true;
+			(void)scene.Advance(policyTime);
+			expect(scene.IsInvalidated(),"same-time idle PageSurface invalidates on font policy change");
+			scene.SetOpacity(0,0);
+			(void)scene.Advance(policyTime+std::chrono::milliseconds(1));(void)scene.ConsumeDamage();
+			expect(!scene.IsInvalidated(),"hidden font policy fixture starts without geometry damage");
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;
+			(void)scene.Advance(policyTime+std::chrono::milliseconds(1));
+			expect(scene.IsInvalidated(),"hidden PageSurface applies font policy before restoring visibility");
+			scene.SetOpacity(1,0);
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=savedFractional;
+
 			const RECT presentation=scene.PresentationBounds();
 			const UINT width=static_cast<UINT>(presentation.right-presentation.left);
 			const UINT height=static_cast<UINT>(presentation.bottom-presentation.top);

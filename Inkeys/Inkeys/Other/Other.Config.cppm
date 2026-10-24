@@ -418,6 +418,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
 			) \
 			GROUP(UI3, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AllowFractionalFontSize, false) \
 				GROUP(StartupPreview, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDip, ::StartupPreviewCachedWidthDefaultDip) \
