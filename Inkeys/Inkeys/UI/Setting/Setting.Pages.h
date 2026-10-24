@@ -130,7 +130,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 	// 仅真实 Hide→Show 序号触发；内部返回主页和普通激活不能重播。
 	inline void ConfigureHomeMotion(HomeMotionState& state, bool home, std::uint64_t showSerial,
-		float delta, bool enabled, float rate, bool pointerAllowed = true) noexcept
+		float delta, bool enabled, float rate, bool pointerAllowed = true, bool entryAllowed = true) noexcept
 	{
 		const bool enter=state.showSerial!=showSerial;
 		state.home=home; state.showSerial=showSerial; state.enabled=enabled; state.pointerAllowed=pointerAllowed;
@@ -138,7 +138,8 @@ namespace Inkeys::UI::Setting::Design
 			? std::clamp(delta,0.0F,.05F)*std::clamp(rate,.1F,5.0F) : 0;
 		if (enter)
 		{
-			state.entry=home && enabled ? HomeMotionState::Entry::Pending : HomeMotionState::Entry::Skipped;
+			// 开屏策略只控制本次入场，不关闭主页原有的悬停与视差动效。
+			state.entry=home && enabled && entryAllowed ? HomeMotionState::Entry::Pending : HomeMotionState::Entry::Skipped;
 			state.entryElapsed=0; state.x=state.y=0;
 			state.entryLayoutValidated=false;
 			state.preparation={};
@@ -178,7 +179,6 @@ namespace Inkeys::UI::Setting::Design
 	{
 		bool startup;
 		float barZoom;
-		float settingZoom;
 		bool edgeLighting;
 		int topInterval;
 		bool rightClickClose;
@@ -194,6 +194,7 @@ namespace Inkeys::UI::Setting::Design
 		std::array<bool, 6> shortcuts{ true, true, true, true, true, true };
 		std::string shortcutGlobalStatus, shortcutHookStatus;
 		bool shortcutStatusWarning = false;
+		int settingEntryAnimation = 1;
 	};
 
 	struct GeneralEvents
@@ -203,12 +204,12 @@ namespace Inkeys::UI::Setting::Design
 		bool shortcutOptions = false;
 		bool barZoomChanged = false;
 		bool barZoomActive = false;
-		bool settingZoomActive = false;
 		bool edgeLightingChanged = false;
 		bool topIntervalChanged = false;
 		bool rightClickCloseChanged = false;
 		bool safetyModeChanged = false;
 		bool startupPreviewChanged = false;
+		bool settingEntryAnimationChanged = false;
 		bool animationChanged = false;
 		bool animationRateActive = false;
 		bool dynamicEdgeLightingChanged = false;

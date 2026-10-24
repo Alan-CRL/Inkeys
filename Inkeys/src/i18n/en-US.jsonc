@@ -422,6 +422,14 @@
         "AutoStartE": "Launch 智绘教Inkeys when the user logs in.",
         "LoadingAnimation": "Startup loading animation",
         "LoadingAnimationE": "Show the loading animation the next time Inkeys starts.",
+        "SettingEntryAnimation":
+        {
+          "N": "Settings opening animation",
+          "E": "Control how the Settings opening animation behaves.",
+          "Off": "Off",
+          "First": "First launch",
+          "Always": "Always"
+        },
         "Link":
         {
           "N": "Create Desktop Shortcut",
@@ -461,12 +469,6 @@
         {
           "N": "Bar UI Scale",
           "E": "Adjust the bar, buttons and PPT controls in real time.",
-          "Ind": "{:.2f}x scale"
-        },
-        "SettingUIScale":
-        {
-          "N": "Options UI Scale",
-          "E": "Apply text and control scale when the slider is released. Higher scales use more memory.",
           "Ind": "{:.2f}x scale"
         }
       },

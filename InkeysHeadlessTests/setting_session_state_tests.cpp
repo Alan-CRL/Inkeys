@@ -309,13 +309,42 @@ int RunSettingSessionStateTests()
 		== InteractiveWindowOperation::Size,
 		"interactive move and size inputs resolve independently")) ++failures;
 
-	if (!Expect(Inkeys::UI::Setting::NormalizeUserScale(0.5F) == 1.0F
-		&& Inkeys::UI::Setting::NormalizeUserScale(2.5F) == 2.0F
-		&& Inkeys::UI::Setting::NormalizeUserScale(1.35F) == 1.35F,
-		"user scale clamps to the 1.0-2.0 contract")) ++failures;
-	if (!Expect(std::abs(Inkeys::UI::Setting::EffectiveScale(144U, 1.25F)
-		- 1.875F) < 0.0001F,
-		"effective scale multiplies system DPI and user scale")) ++failures;
+	if (!Expect(Inkeys::UI::Setting::DpiScale(0U) == 1.0F
+		&& Inkeys::UI::Setting::DpiScale(96U) == 1.0F
+		&& Inkeys::UI::Setting::DpiScale(120U) == 1.25F
+		&& Inkeys::UI::Setting::DpiScale(144U) == 1.5F
+		&& Inkeys::UI::Setting::DpiScale(192U) == 2.0F,
+		"setting scale follows system DPI without a user multiplier")) ++failures;
+	{
+		using Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation;
+		SessionState entrySession;
+		if (!Expect(!ShouldPlaySettingEntryAnimation(1, entrySession.ShowSerial())
+			&& !ShouldPlaySettingEntryAnimation(2, entrySession.ShowSerial()),
+			"hidden resident warm-up does not consume or play an entry")) ++failures;
+		entrySession.SetVisible(true);
+		entrySession.SetVisible(true);
+		if (!Expect(entrySession.ShowSerial() == 1
+			&& !ShouldPlaySettingEntryAnimation(0, entrySession.ShowSerial())
+			&& ShouldPlaySettingEntryAnimation(1, entrySession.ShowSerial())
+			&& ShouldPlaySettingEntryAnimation(2, entrySession.ShowSerial())
+			&& ShouldPlaySettingEntryAnimation(-1, entrySession.ShowSerial())
+			&& ShouldPlaySettingEntryAnimation(3, entrySession.ShowSerial()),
+			"entry modes and invalid-mode fallback use the first actual Show; activation does not consume another")) ++failures;
+		// 不报告播放成功，模拟首次尺寸不足、总动画关闭或输入取消。
+		entrySession.SetVisible(false);
+		entrySession.ReleaseResident();
+		entrySession.SetVisible(true);
+		if (!Expect(entrySession.ShowSerial() == 2
+			&& !ShouldPlaySettingEntryAnimation(0, entrySession.ShowSerial())
+			&& !ShouldPlaySettingEntryAnimation(1, entrySession.ShowSerial())
+			&& !ShouldPlaySettingEntryAnimation(3, entrySession.ShowSerial())
+			&& ShouldPlaySettingEntryAnimation(2, entrySession.ShowSerial()),
+			"a skipped first opening stays consumed across Hide and resident rebuild; always may replay")) ++failures;
+		SessionState nextProcess;
+		nextProcess.SetVisible(true);
+		if (!Expect(ShouldPlaySettingEntryAnimation(1, nextProcess.ShowSerial()),
+			"a new process owns a fresh first opening")) ++failures;
+	}
 	if (!Expect(Inkeys::UI::Setting::ResolveWindowExtent(960.0F, 1.5F, 1920)
 		== 1440
 		&& Inkeys::UI::Setting::ResolveWindowExtent(700.0F, 3.0F, 1776)

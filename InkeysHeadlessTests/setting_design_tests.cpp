@@ -7,6 +7,7 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Typography.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Controls.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Pages.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.SessionState.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.FrameSubmission.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.HomeBrand.h"
 #include "../Inkeys/IdtI18n.h"
@@ -1712,7 +1713,7 @@ namespace
 	void CheckGeneralSections(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
 		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
-		Design::GeneralDraft draft{ true, 1.37F, 1.25F, false, 5, true, 2, false, false, 4.7F, true };
+		Design::GeneralDraft draft{ true, 1.37F, false, 5, true, 2, false, false, 4.7F, true };
 		draft.iconOrder = 3; draft.expansionDirection = 0;
 		auto& io = ImGui::GetIO(); const auto previousFlags = io.ConfigFlags;
 		const bool previousTrickle = io.ConfigInputTrickleEventQueue;
@@ -1722,9 +1723,10 @@ namespace
 		{
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
 			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false;
+			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false;
 		};
 		ImGuiWindow* host = nullptr;
-		int modeChanges = 0; std::array<int, 6> shortcutChanges{};
+		int modeChanges = 0, entryAnimationChanges = 0; std::array<int, 6> shortcutChanges{};
 		auto draw = [&](Design::GeneralSection section, ImVec2 mouse, bool down)
 		{
 			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
@@ -1744,10 +1746,13 @@ namespace
 			};
 			frame.operation = rowSeen("##选择与穿透"); frame.layout = rowSeen("主栏图标顺序") && rowSeen("主栏展开方向调整");
 			frame.collapse = rowSeen("栏外点击自动收起"); frame.startupPreview = rowSeen("startup-preview");
+			frame.entryAnimation = rowSeen("setting-entry-animation");
+			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
 			ImGui::PushID(5); frame.shortcuts = rowSeen("##启用固定快捷键"); ImGui::PopID();
 			for (const auto& vertex : host->DrawList->VtxBuffer)
 				if (vertex.col == Design::GetPalette().notice[0]) ++frame.blueVertices;
 			modeChanges += frame.events.selectModeChanged ? 1 : 0;
+			entryAnimationChanges += frame.events.settingEntryAnimationChanged ? 1 : 0;
 			for (int item = 0; item < 6; ++item) shortcutChanges[item] += frame.events.shortcutsChanged[item] ? 1 : 0;
 			ImGui::PopID(); ImFluent::PopFont(); ImGui::End(); ImGui::Render();
 			frame.vertices = ImGui::GetDrawData()->TotalVtxCount;
@@ -1755,7 +1760,7 @@ namespace
 		};
 		auto noEdits = [](const Design::GeneralEvents& events) {
 			return !events.startupChanged && !events.createShortcut && !events.shortcutOptions
-				&& !events.barZoomChanged && !events.barZoomActive && !events.settingZoomActive
+				&& !events.barZoomChanged && !events.barZoomActive && !events.settingEntryAnimationChanged
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
 				&& !events.safetyModeChanged && !events.startupPreviewChanged && !events.animationChanged
 				&& !events.animationRateActive && !events.dynamicEdgeLightingChanged
@@ -1774,11 +1779,13 @@ namespace
 				&& frame.layout == (section == Design::GeneralSection::Basic)
 				&& frame.collapse == (section == Design::GeneralSection::Interaction)
 				&& frame.shortcuts == (section == Design::GeneralSection::Shortcuts)
-				&& frame.startupPreview == (section == Design::GeneralSection::Appearance),
-				"production mode, layout, collapse, shortcut and loading-animation rows belong only to their new pages");
+				&& frame.startupPreview == (section == Design::GeneralSection::Appearance)
+				&& frame.entryAnimation == (section == Design::GeneralSection::Appearance)
+				&& frame.barZoom == (section == Design::GeneralSection::Appearance) && !frame.obsoleteSettingZoom,
+				"general rows stay in their pages with the new entry-animation mode and no separate Settings zoom");
 			if (section == Design::GeneralSection::Basic)
 				checks.Expect(frame.blueVertices > 0, "actual operation-mode explanation draws the themed blue informational card");
-			checks.Expect(draft.startup && Near(draft.barZoom, 1.37F) && Near(draft.settingZoom, 1.25F)
+			checks.Expect(draft.startup && Near(draft.barZoom, 1.37F) && draft.settingEntryAnimation == 1
 				&& !draft.edgeLighting && draft.topInterval == 5 && draft.rightClickClose && draft.safetyMode == 2
 				&& !draft.startupPreview && !draft.animation && Near(draft.animationRate, 4.7F) && draft.dynamicEdgeLighting
 				&& draft.selectMode == 0 && draft.iconOrder == 3 && draft.expansionDirection == 0,
@@ -1809,6 +1816,14 @@ namespace
 		const bool previewChanged = chord(Design::GeneralSection::Appearance, ImGuiKey_Space);
 		checks.Expect(draft.startupPreview && previewChanged && !draft.animation && Near(draft.animationRate, 4.7F),
 			"appearance loading-animation switch remains independently editable while general animations are disabled");
+		draw(Design::GeneralSection::Appearance, outside, false);
+		focus(Design::GeneralSection::Appearance, "setting-entry-animation", "##select");
+		chord(Design::GeneralSection::Appearance, ImGuiKey_F4); chord(Design::GeneralSection::Appearance, ImGuiKey_Home);
+		chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow); chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow);
+		chord(Design::GeneralSection::Appearance, ImGuiKey_Enter);
+		checks.Expect(draft.settingEntryAnimation == 2 && entryAnimationChanges == 1
+			&& draft.startupPreview && !draft.animation && Near(draft.barZoom, 1.37F),
+			"opening-animation combo commits one persistent choice independently of startup preview and the animation switch");
 		draw(Design::GeneralSection::Shortcuts, outside, false);
 		focus(Design::GeneralSection::Shortcuts, "##启用固定快捷键", "##toggle", 5);
 		chord(Design::GeneralSection::Shortcuts, ImGuiKey_Space);
@@ -1828,10 +1843,10 @@ namespace
 		draw(Design::GeneralSection::Appearance, slider, false);
 		const auto dragging = draw(Design::GeneralSection::Appearance, slider, true);
 		const auto committed = draw(Design::GeneralSection::Appearance, slider, false);
-		checks.Expect(dragging.events.settingZoomActive && !committed.events.settingZoomActive
-			&& draft.settingZoom >= 1 && draft.settingZoom <= 2 && !Near(draft.settingZoom, 1.25F)
-			&& Near(draft.barZoom, 1.37F),
-			"actual appearance slider exposes drag/release state and edits only its existing zoom draft");
+		checks.Expect(dragging.events.barZoomActive && !committed.events.barZoomActive
+			&& draft.barZoom >= .5F && draft.barZoom <= 2 && !Near(draft.barZoom, 1.37F)
+			&& draft.settingEntryAnimation == 2,
+			"the remaining appearance scale slider preserves main-bar drag/release behavior");
 		io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
 	}
@@ -3694,6 +3709,7 @@ namespace
 		auto& io=ImGui::GetIO(); io.ConfigInputTrickleEventQueue=false;
 		Design::HomeMotionState motion;
 		std::uint64_t serial=1; bool enabled=true, allowed=true, dark=false, popup=false;
+		int entryMode=2;
 		float delta=1.0F/60, rate=1, scroll=0, viewport=800;
 		bool resetScroll=false;
 		std::uint64_t hideSerial=0,consumedHideSerial=0;
@@ -3712,7 +3728,8 @@ namespace
 			Design::BeginScrollChild("##motion-scroll",{900*scale,viewport*scale},0,0,resetScroll);
 			if (!resetScroll) ImGui::SetScrollY(scroll);
 			resetScroll=false;
-			Design::ConfigureHomeMotion(motion,true,serial,delta,enabled,rate,allowed);
+			Design::ConfigureHomeMotion(motion,true,serial,delta,enabled,rate,allowed,
+				Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(entryMode,serial));
 			const bool entryBlocked=Design::CancelHomeEntryOnInput(motion);
 			const auto actualClip=ImGui::GetCurrentWindow()->ClipRect;
 			Design::ConfigureHomeEntryViewport(motion,{0,32*scale,io.DisplaySize.x,io.DisplaySize.y},
@@ -3904,6 +3921,26 @@ namespace
 			io.AddKeyEvent(key,false); frame(outside);
 			checks.Expect(!motion.EntryActive(),"releasing a held cancellation key cannot replay or activate revealed controls");
 		}
+		// 首次机会在布局验证前消耗；用真实页面的小视口验证第二次符合尺寸也不会补播。
+		motion={}; ++hideSerial; serial=1; entryMode=1; enabled=true; viewport=220; scroll=0; delta=0;
+		frame(outside);
+		checks.Expect(motion.entry==Design::HomeMotionState::Entry::Skipped,
+			"first-only entry skips the first real opening when its viewport is too small");
+		viewport=800; ++serial; frame(outside);
+		checks.Expect(motion.entry==Design::HomeMotionState::Entry::Skipped && motion.enabled && motion.pointerAllowed,
+			"second opening cannot replay a skipped first entry and keeps other home motion enabled");
+		entryMode=2; ++serial; frame(outside);
+		checks.Expect(motion.EntryActive(),"always mode may play a later eligible opening");
+		entryMode=0; ++serial; frame(outside);
+		checks.Expect(!motion.EntryActive() && motion.enabled,"off mode skips only the entry rather than all home animation");
+		motion={}; ++hideSerial; serial=1; entryMode=1; enabled=false; frame(outside);
+		enabled=true; frame(outside); ++serial; frame(outside);
+		checks.Expect(!motion.EntryActive(),"first opening with global animation disabled cannot defer entry to the second opening");
+		motion={}; ++hideSerial; serial=1; frame(outside);
+		checks.Expect(motion.EntryActive(),"first-only mode plays an eligible first opening");
+		++serial; frame(outside);
+		checks.Expect(!motion.EntryActive(),"first-only mode does not play the second opening after an eligible first opening");
+		entryMode=2;
 		const auto previousFlags=io.ConfigFlags; io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard;
 		for (bool withPopup : {false,true})
 		{

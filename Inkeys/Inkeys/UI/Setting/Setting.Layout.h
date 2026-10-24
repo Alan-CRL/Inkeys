@@ -191,21 +191,9 @@ namespace Inkeys::UI::Setting
 		Overlay,
 	};
 
-	[[nodiscard]] inline float NormalizeUserScale(float scale) noexcept
-	{
-		if (!std::isfinite(scale)) return 1.0F;
-		return std::clamp(scale, 1.0F, 2.0F);
-	}
-
 	[[nodiscard]] inline float DpiScale(std::uint32_t dpi) noexcept
 	{
 		return static_cast<float>(dpi ? dpi : 96U) / 96.0F;
-	}
-
-	[[nodiscard]] inline float EffectiveScale(
-		std::uint32_t dpi, float userScale) noexcept
-	{
-		return DpiScale(dpi) * NormalizeUserScale(userScale);
 	}
 
 	[[nodiscard]] inline int ScaleDip(float dip, float effectiveScale) noexcept

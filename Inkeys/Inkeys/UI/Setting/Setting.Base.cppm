@@ -23,8 +23,6 @@ ID3D11ShaderResourceView* TextureSettingSign[11];
 std::array<std::vector<unsigned char>, 11> settingTexturePixels;
 
 export float settingGlobalScale = 1.0f;
-export float settingUserScale = 1.0f;
-export float settingSystemDpiScale = 1.0f;
 
 // Data
 ID3D11Device* g_pd3dDevice = nullptr;

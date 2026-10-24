@@ -57,6 +57,14 @@ namespace Inkeys::UI::Setting
 		bool writePending_ = false;
 	};
 
+	[[nodiscard]] constexpr bool ShouldPlaySettingEntryAnimation(
+		int mode, std::uint64_t showSerial) noexcept
+	{
+		// 首次机会按真实 Show 序号消耗，尺寸跳过、取消及资源重建都不能补播。
+		if (mode < 0 || mode > 2) mode = 1;
+		return showSerial != 0 && (mode == 2 || (mode == 1 && showSerial == 1));
+	}
+
 	struct LinkedPptScaleDraft
 	{
 		float bottom;

@@ -425,6 +425,14 @@ inline constexpr struct I18nKeyRoot
                 const char* AutoStartE = "SettingsUI/Regular/StartUp/AutoStartE";
                 const char* LoadingAnimation = "SettingsUI/Regular/StartUp/LoadingAnimation";
                 const char* LoadingAnimationE = "SettingsUI/Regular/StartUp/LoadingAnimationE";
+                struct Node__SettingsUI__Regular__StartUp__SettingEntryAnimation
+                {
+                    const char* N = "SettingsUI/Regular/StartUp/SettingEntryAnimation/N";
+                    const char* E = "SettingsUI/Regular/StartUp/SettingEntryAnimation/E";
+                    const char* Off = "SettingsUI/Regular/StartUp/SettingEntryAnimation/Off";
+                    const char* First = "SettingsUI/Regular/StartUp/SettingEntryAnimation/First";
+                    const char* Always = "SettingsUI/Regular/StartUp/SettingEntryAnimation/Always";
+                } SettingEntryAnimation{};
                 struct Node__SettingsUI__Regular__StartUp__Link
                 {
                     const char* N = "SettingsUI/Regular/StartUp/Link/N";
@@ -466,12 +474,6 @@ inline constexpr struct I18nKeyRoot
                     const char* E = "SettingsUI/Regular/Appearance/BarZoom/E";
                     const char* Ind = "SettingsUI/Regular/Appearance/BarZoom/Ind";
                 } BarZoom{};
-                struct Node__SettingsUI__Regular__Appearance__SettingUIScale
-                {
-                    const char* N = "SettingsUI/Regular/Appearance/SettingUIScale/N";
-                    const char* E = "SettingsUI/Regular/Appearance/SettingUIScale/E";
-                    const char* Ind = "SettingsUI/Regular/Appearance/SettingUIScale/Ind";
-                } SettingUIScale{};
             } Appearance{};
             struct Node__SettingsUI__Regular__Behavior
             {

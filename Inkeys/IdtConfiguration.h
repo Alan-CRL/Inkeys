@@ -24,8 +24,8 @@ struct SetListStruct
 	bool startUp;
 
 	int SetSkinMode, SkinMode;
-	float settingGlobalScale;
 	bool settingDarkMode = false; // 旧配置默认保持浅色，只影响设置窗口。
+	int settingEntryAnimation = 1; // 0 关闭，1 本进程首次打开，2 始终。
 
 	int topSleepTime;
 	bool RightClickClose;

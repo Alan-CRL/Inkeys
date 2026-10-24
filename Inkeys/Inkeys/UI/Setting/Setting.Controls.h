@@ -60,7 +60,7 @@ namespace Inkeys::UI::Setting::Design
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action,
-		ImU32 fill = Card, ImU32 border = Stroke);
+		ImU32 fill = Card, ImU32 border = Stroke, ImTextureID iconTexture = 0);
 	bool ToggleAction(const LayoutRect& bounds, bool& value);
 	bool SliderAction(const LayoutRect& bounds, float& value, float minimum,
 		float maximum, bool& active);
@@ -119,7 +119,7 @@ namespace Inkeys::UI::Setting::Design
 	int ButtonGroupRow(const char* id, const char* title, const char* description,
 		const char* glyph, std::initializer_list<ButtonSpec> buttons);
 	bool NavigationRow(const char* id, const char* title, const char* description,
-		const char* glyph);
+		const char* glyph, ImTextureID iconTexture = 0);
 	bool Notice(const char* id, const char* title, const char* description,
 		ImFluentInfoSeverity severity = ImFluentInfoSeverity_Informational,
 		const char* actionLabel = nullptr);

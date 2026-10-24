@@ -252,11 +252,16 @@ bool ReadSetting()
 			setlist.selectLanguage = setlistVal["SelectLanguage"].asInt();
 		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
 			setlist.startUp = setlistVal["StartUp"].asBool();
-		if (setlistVal.isMember("SettingGlobalScale") && setlistVal["SettingGlobalScale"].isDouble())
-			setlist.settingGlobalScale = setlistVal["SettingGlobalScale"].asDouble();
 		// 缺项或非布尔值均回退浅色，不接受数字、字符串等隐式转换。
 		setlist.settingDarkMode = setlistVal.isMember("SettingDarkMode")
 			&& setlistVal["SettingDarkMode"].isBool() && setlistVal["SettingDarkMode"].asBool();
+		// 缺项、错误类型和越界值均保持“本进程首次打开”的默认策略。
+		setlist.settingEntryAnimation = 1;
+		if (setlistVal.isMember("SettingEntryAnimation") && setlistVal["SettingEntryAnimation"].isInt())
+		{
+			const int mode = setlistVal["SettingEntryAnimation"].asInt();
+			if (mode >= 0 && mode <= 2) setlist.settingEntryAnimation = mode;
+		}
 
 		if (setlistVal.isMember("SetSkinMode") && setlistVal["SetSkinMode"].isInt())
 			setlist.SetSkinMode = setlistVal["SetSkinMode"].asInt();
@@ -540,8 +545,10 @@ string CaptureSettingJson()
 	{
 		setlistVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
 		setlistVal["StartUp"] = Json::Value(setlist.startUp);
-		setlistVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
 		setlistVal["SettingDarkMode"] = Json::Value(setlist.settingDarkMode);
+		setlistVal["SettingEntryAnimation"] = Json::Value(
+			setlist.settingEntryAnimation >= 0 && setlist.settingEntryAnimation <= 2
+			? setlist.settingEntryAnimation : 1);
 
 		setlistVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 		setlistVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);
@@ -570,6 +577,7 @@ string CaptureSettingJson()
 			setlistVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
 		}
 		// 已删除的旧设置不依赖 AutoClean；每次保存都清除历史 JSON 键。
+		setlistVal.removeMember("SettingGlobalScale");
 		setlistVal["Regular"].removeMember("AvoidFullScreen");
 		setlistVal.removeMember("PointAdsorption");
 		setlistVal.removeMember("SmoothWriting");

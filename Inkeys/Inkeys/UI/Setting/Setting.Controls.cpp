@@ -537,12 +537,12 @@ namespace Inkeys::UI::Setting::Design
 
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
-		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border)
+		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture)
 	{
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		const auto measure = MeasureRow(width / Pixels(1.0F), actionWidthDip,
-			actionHeightDip, glyph && *glyph);
+			actionHeightDip, iconTexture != 0 || (glyph && *glyph));
 		// Tween 保存在当前 ImGui 窗口的稳定行 ID 下，随会话销毁，不残留跨 context 指针。
 		ImGui::PushID(id);
 		auto* storage = ImGui::GetStateStorage();
@@ -586,7 +586,12 @@ namespace Inkeys::UI::Setting::Design
 			Pixels(row.title.Width()));
 		TextAt(description, { origin.x + Pixels(row.description.left), origin.y + Pixels(row.description.top) },
 			Pixels(row.description.Width()), ImFluentTextStyle_Caption, TextSecondary);
-		if (measure.hasIcon)
+		// PNG 复用原图标槽位和会话纹理，不随浅深主题染色。
+		if (iconTexture)
+			draw->AddImage(iconTexture,
+				{ origin.x + Pixels(row.icon.left), origin.y + Pixels(row.icon.top) },
+				{ origin.x + Pixels(row.icon.right), origin.y + Pixels(row.icon.bottom) });
+		else if (measure.hasIcon)
 			ImFluent::DrawIcon(glyph,
 				{ origin.x + Pixels(row.icon.left), origin.y + Pixels(row.icon.top) },
 				{ origin.x + Pixels(row.icon.right), origin.y + Pixels(row.icon.bottom) }, RowGlyphSize, TextPrimary);
@@ -1374,14 +1379,14 @@ namespace Inkeys::UI::Setting::Design
 		return clicked;
 	}
 
-	bool NavigationRow(const char* id, const char* title, const char* description, const char* glyph)
+	bool NavigationRow(const char* id, const char* title, const char* description, const char* glyph, ImTextureID iconTexture)
 	{
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		SettingRow(id, title, description, glyph, 24.0F, 24.0F, [&](const LayoutRect& bounds)
 			{
 				ImFluent::DrawIcon("\ue76c", { bounds.left, bounds.top }, { bounds.right, bounds.bottom }, 12.0F, TextSecondary);
-			});
+			}, Card, Stroke, iconTexture);
 		const ImVec2 next = ImGui::GetCursorScreenPos();
 		ImGui::SetCursorScreenPos(origin);
 		ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));

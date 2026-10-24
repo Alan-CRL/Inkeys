@@ -2847,8 +2847,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
 				}
 
-				// 系统 DPI 由 Setting 运行时单独计算，配置只保存用户倍率。
-				setlist.settingGlobalScale = 1.0F;
 			}
 		}
 

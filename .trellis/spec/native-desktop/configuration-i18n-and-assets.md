@@ -48,9 +48,12 @@
 
 ### 3. Contracts
 
-- `Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。退休 `Preset` 的宽度/记忆字段可按 [pen-width.md](pen-width.md) 仅为保存兼容数据解码、保留迁移证据；当前发布启动读取/恢复已注释禁用，残留旧default/Startup/memory不能覆盖Medium，不得恢复旧设置页或重复按px解释新DIP。
+- `SettingGlobalScale`、`Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。退休 `Preset` 的宽度/记忆字段可按 [pen-width.md](pen-width.md) 仅为保存兼容数据解码、保留迁移证据；当前发布启动读取/恢复已注释禁用，残留旧default/Startup/memory不能覆盖Medium，不得恢复旧设置页或重复按px解释新DIP。
 - PPT `FixedHandWriting` 已退出活动配置合同；PPT 捕获函数构造新对象，省略该字段即完成下一次写回清理。
 - `Save.Enable` 不是废弃键：它继续控制 Draw3 桌面画布在清空和退出时保存非空画布，设置文案必须说明该真实语义。
+- Setting UI 只使用当前窗口 `DpiScale(dpi)`，不叠加用户倍率；主栏 `UI.Bar.Zoom2`、任务栏基础量及 PPT 缩放不随此项改变。
+- `SettingEntryAnimation` 沿用传统 `deploy.json`，整数 0=关闭、1=首次启动时、2=始终，缺项/类型错误/越界回退1；只控制设置开屏，与应用启动预览开关独立，也不关闭主页悬停/视差。
+- 首开按全进程 `SessionState.ShowSerial()==1` 判定，在首次真实隐藏→显示即消耗；不依赖实际播放成功，尺寸不足、总动画关闭、取消和 resident 重建不能让后续 Show 补播。激活已显示窗口不递增序号；系统 DPI 改变仍走既有字体/纹理重建。
 - 删除 UI 不等于删除当前结构体中的所有历史成员；只要成员仍被未编译兼容源码引用，可以保留为非持久化占位，但活动代码不得再读取或写入对应配置。
 
 ### 4. Validation & Error Matrix

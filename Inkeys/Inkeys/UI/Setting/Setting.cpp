@@ -97,8 +97,6 @@ namespace
 	bool settingInitializeCompleted = false;
 	bool settingInitializeSucceeded = false;
 	atomic<uint64_t> settingThemeSerial = 1;
-	atomic<float> settingMinimumUserScale = 1.0F;
-	bool settingMinimumClientPending = false; // 仅 HWND 线程访问。
 	uint64_t settingConsumedThemeSerial = 0;
 	FrameContext settingFrameContext;
 	FrameResult settingFrameResult = FrameResult::Idle;
@@ -224,7 +222,6 @@ namespace
 #endif
 
 	constexpr UINT SettingFrameThemeMessage = WM_APP + 0x531;
-	constexpr UINT SettingEnsureMinimumMessage = WM_APP + 0x532;
 
 	constexpr auto DwmwaLegacyMicaEffect =
 		static_cast<DWMWINDOWATTRIBUTE>(1029);
@@ -383,43 +380,10 @@ namespace
 			static_cast<int>(frame.right), static_cast<int>(frame.bottom) };
 	}
 
-	void EnsureSettingMinimumClient(HWND hwnd) noexcept
-	{
-		if (IsZoomed(hwnd) || IsIconic(hwnd)) return;
-		RECT outer{}, client{};
-		if (!GetWindowRect(hwnd, &outer) || !GetClientRect(hwnd, &client)) return;
-		// 不携带旧倍率；窗口线程读取最新值，并只扩大不足的客户区。
-		const float scale = Inkeys::UI::Setting::EffectiveScale(
-			QuerySettingDpi(hwnd), settingMinimumUserScale.load(memory_order_acquire));
-		const int clientWidth = static_cast<int>(client.right - client.left);
-		const int clientHeight = static_cast<int>(client.bottom - client.top);
-		const int width = (std::max)(clientWidth, Inkeys::UI::Setting::ScaleDip(
-			Inkeys::UI::Setting::MinimumWidthDip, scale));
-		const int height = (std::max)(clientHeight, Inkeys::UI::Setting::ScaleDip(
-			Inkeys::UI::Setting::MinimumHeightDip, scale));
-		if (width == clientWidth && height == clientHeight) return;
-		const auto measuredOuter = FrameRect(outer);
-		const int left = measuredOuter.left + measuredOuter.Width() / 2 - width / 2;
-		const int top = measuredOuter.top + measuredOuter.Height() / 2 - height / 2;
-		MONITORINFO monitor{ sizeof(monitor) };
-		if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor))
-			monitor.rcWork = {};
-		// 复用实际 outer/client 差值，避免重新计入已移除的原生 caption。
-		const auto corrected = Inkeys::UI::Setting::ResolveWindowFrameCreationCorrection(
-			{ left, top, left + width, top + height }, measuredOuter,
-			{ clientWidth, clientHeight }, FrameRect(monitor.rcWork));
-		if (corrected.Width() != measuredOuter.Width() || corrected.Height() != measuredOuter.Height())
-			SetWindowPos(hwnd, nullptr, corrected.left, corrected.top,
-				corrected.Width(), corrected.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
-	}
-
 	void UpdateSettingScale(UINT dpi) noexcept
 	{
-		settingUserScale = Inkeys::UI::Setting::NormalizeUserScale(
-			setlist.settingGlobalScale);
-		settingMinimumUserScale.store(settingUserScale, memory_order_release);
-		settingSystemDpiScale = Inkeys::UI::Setting::DpiScale(dpi);
-		settingGlobalScale = settingSystemDpiScale * settingUserScale;
+		// 设置界面只随系统 DPI 缩放，不再叠加用户倍率。
+		settingGlobalScale = Inkeys::UI::Setting::DpiScale(dpi);
 	}
 
 	void ApplySettingTheme(HWND hwnd) noexcept
@@ -1208,13 +1172,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	// 创建、客户区、最大化及命中使用同一 frame 合同，保留系统 move/size loop。
 	switch (msg)
 	{
-	case SettingEnsureMinimumMessage:
-		if (!settingSessionShouldStop.load(memory_order_acquire))
-		{
-			settingMinimumClientPending = IsZoomed(hWnd) || IsIconic(hWnd);
-			if (!settingMinimumClientPending) EnsureSettingMinimumClient(hWnd);
-		}
-		return 0;
 	case SettingFrameThemeMessage:
 		if (!settingSessionShouldStop.load(memory_order_acquire))
 			ApplySettingFrameTheme(hWnd, wParam != FALSE, static_cast<COLORREF>(lParam));
@@ -1389,8 +1346,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		const bool hasMonitor = GetMonitorInfoW(
 			MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), &monitor) != FALSE;
 		const auto frame = QuerySettingFrameInsets(hWnd);
-		const float scale = Inkeys::UI::Setting::EffectiveScale(
-			QuerySettingDpi(hWnd), settingUserScale);
+		const float scale = Inkeys::UI::Setting::DpiScale(QuerySettingDpi(hWnd));
 		const auto minimum = Inkeys::UI::Setting::ResolveMinimumWindowFrame(
 			Inkeys::UI::Setting::ScaleDip(Inkeys::UI::Setting::MinimumWidthDip, scale),
 			Inkeys::UI::Setting::ScaleDip(Inkeys::UI::Setting::MinimumHeightDip, scale), frame,
@@ -1462,10 +1418,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				static_cast<UINT>(LOWORD(lParam)),
 				static_cast<UINT>(HIWORD(lParam)));
 		}
-		// 最大化/最小化期间的倍率请求留到恢复，再排队一次；普通 resize 不重复扩窗。
-		if (wParam == SIZE_RESTORED && settingMinimumClientPending
-			&& !IsZoomed(hWnd) && PostMessageW(hWnd, SettingEnsureMinimumMessage, 0, 0))
-			settingMinimumClientPending = false;
 		// UI 线程只发布最新尺寸，ResizeBuffers 仍由渲染线程执行。
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
@@ -1508,7 +1460,7 @@ void SettingWindowBegin()
 		const int rawWorkHeight = static_cast<int>(workArea.bottom - workArea.top);
 		const int workWidth = rawWorkWidth > 1 ? rawWorkWidth : 1;
 		const int workHeight = rawWorkHeight > 1 ? rawWorkHeight : 1;
-		// 高 DPI 叠加用户倍率时，启动窗口仍需完整落在工作区内。
+		// 高系统 DPI 下，启动窗口仍需完整落在工作区内。
 		SettingWindowWidth = Inkeys::UI::Setting::ResolveWindowExtent(
 			Inkeys::UI::Setting::DefaultWidthDip, settingGlobalScale, workWidth);
 		SettingWindowHeight = Inkeys::UI::Setting::ResolveWindowExtent(
@@ -2067,7 +2019,6 @@ SettingSessionCoroutine RunSettingSession()
 		bool CorrectLnk = setlist.shortcutAssistant.correctLnk;
 
 		int SetSkinMode = setlist.SetSkinMode;
-		float SettingGlobalScale = settingUserScale;
 		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom2.load());
 		bool BarZoomSavePending = false;
 
@@ -2198,22 +2149,6 @@ SettingSessionCoroutine RunSettingSession()
 #endif
 		std::uint64_t consumedHideSerial=0;
 		bool resetHomeScroll=false;
-		auto commitSettingScale = [&]()
-		{
-			if (SettingGlobalScale != setlist.settingGlobalScale)
-			{
-				setlist.settingGlobalScale = Inkeys::UI::Setting::NormalizeUserScale(SettingGlobalScale);
-				UpdateSettingScale(QuerySettingDpi(setting_window));
-				// 渲染线程只投递请求，窗口尺寸仍由所属 HWND 线程更新。
-				if (setting_window) (void)PostMessageW(setting_window, SettingEnsureMinimumMessage, 0, 0);
-				{
-					lock_guard stateLock(settingStateMutex);
-					settingSessionState.QueueFontRebuild();
-				}
-				Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
-				WriteSetting();
-			}
-		};
 		auto commitGeneralSliders = [&]()
 		{
 			// 导航可能使拖动控件下一帧不再渲染，离页时仍完成已有的释放保存合同。
@@ -2223,7 +2158,6 @@ SettingSessionCoroutine RunSettingSession()
 				BarZoomSavePending = false;
 				Experimental.Inkeys3.AnimationSpeedSavePending = false;
 			}
-			commitSettingScale();
 		};
 		auto navigateTo = [&](Design::NavigationDestination requested)
 		{
@@ -2480,7 +2414,8 @@ SettingSessionCoroutine RunSettingSession()
 				}
 				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
 					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
-					!blockContentInput && settingWindowActive.load(memory_order_acquire));
+					!blockContentInput && settingWindowActive.load(memory_order_acquire),
+					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial));
 				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				blockContentInput|=entryInputBlock;
 				const auto& contentGeometry = shellGeometry.content;
@@ -3008,13 +2943,14 @@ SettingSessionCoroutine RunSettingSession()
 				case settingTabEnum::tab2:
 				{
 					Inkeys::UI::Setting::Design::GeneralDraft draft{
-						StartUp, BarZoom, SettingGlobalScale, Experimental.Inkeys3.EdgeLightingEnable,
+						StartUp, BarZoom, Experimental.Inkeys3.EdgeLightingEnable,
 						TopSleepTime, RightClickClose, RegularSetting.TeachingSafetyMode,
 						Experimental.Inkeys3.StartupPreviewPreferenceState.ConfiguredEnabled(),
 						Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate,
 						Experimental.Inkeys3.DynamicEdgeLighting,
 						static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(Inkeys::config.UI.Bar.StartupPlacement.load())),
 						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
+					draft.settingEntryAnimation = setlist.settingEntryAnimation;
 					// 每帧冻结本页偏好，页面只产出事件，运行时通知仍留在既有 FIFO 业务域。
 					draft.selectMode = GetSelectAndClickThroughMode();
 					const int iconOrder = Inkeys::config.UI.Bar.IconOrder.load();
@@ -3094,6 +3030,11 @@ SettingSessionCoroutine RunSettingSession()
 							if (Experimental.Inkeys3.StartupPreviewPreferenceState.ConsumeWritePending())
 								QueueConfigWrite();
 						}
+						if (events.settingEntryAnimationChanged)
+						{
+							setlist.settingEntryAnimation = draft.settingEntryAnimation;
+							WriteSetting();
+						}
 						if (events.taskbarScaleBaseChanged)
 						{
 							Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = draft.taskbarScaleBase;
@@ -3147,8 +3088,6 @@ SettingSessionCoroutine RunSettingSession()
 							Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, Experimental.Inkeys3.DynamicEdgeLighting);
 							QueueConfigWrite();
 						}
-						SettingGlobalScale = draft.settingZoom;
-						if (!events.settingZoomActive) commitSettingScale();
 					}
 					if (destination.section == Design::GeneralSection::Interaction)
 					{
@@ -3350,13 +3289,15 @@ SettingSessionCoroutine RunSettingSession()
 						};
 					const auto renderPluginOverviewCard = [&](const char* id,
 						const char* title, const string& status, const char* description,
-						const char* glyph, int target)
+						int iconIndex, int target)
 						{
 							string overviewDescription = status;
 							if (!overviewDescription.empty() && description && *description)
 								overviewDescription += "\n";
 							if (description) overviewDescription += description;
-							if (Design::NavigationRow(id, title, overviewDescription.c_str(), glyph))
+							// 沿用 Inkeys2 的四个 PluginFlag PNG 及原有纹理索引。
+							if (Design::NavigationRow(id, title, overviewDescription.c_str(), nullptr,
+								(ImTextureID)(intptr_t)TextureSettingSign[iconIndex]))
 								settingPlugInTab = target;
 						};
 					const auto renderToggleCard = [&](const char* id, const char* title,
@@ -3377,20 +3318,20 @@ SettingSessionCoroutine RunSettingSession()
 							: utf16ToUtf8(pptComVersion);
 						renderPluginOverviewCard("ppt-helper",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(), pptStatus,
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.E).c_str(), "\ue8a5",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.E).c_str(), 5,
 							settingPlugInTabEnum::tabPlug2);
 						renderPluginOverviewCard("super-top",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(), "20260202a",
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.E).c_str(), "\ue922",
+							IA(I18nKey.SettingsUI.PlugIn.SuperTop.E).c_str(), 10,
 							settingPlugInTabEnum::tabSuperTop);
 						renderPluginOverviewCard("ddb",
 							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.N).c_str(),
 							utf16ToUtf8(ddbInteractionSetList.DdbEdition),
-							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.E).c_str(), "\ue7ba",
+							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.E).c_str(), 8,
 							settingPlugInTabEnum::tabPlugDDB);
 						renderPluginOverviewCard("shortcut-helper",
 							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.N).c_str(), "20250223a",
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.E).c_str(), "\ue71b",
+							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.E).c_str(), 6,
 							settingPlugInTabEnum::tabPlug3);
 						break;
 					}

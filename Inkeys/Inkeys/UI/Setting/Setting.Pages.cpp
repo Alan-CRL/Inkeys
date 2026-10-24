@@ -607,6 +607,12 @@ namespace Inkeys::UI::Setting::Design
 			events.startupPreviewChanged = ToggleRow("startup-preview",
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview);
+			events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
+				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,
+				{ IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Off),
+				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.First),
+				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Always) });
 
 			SectionHeader(IA(I18nKey.SettingsUI.Design.LightingSection).c_str());
 			events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
@@ -625,9 +631,6 @@ namespace Inkeys::UI::Setting::Design
 			SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", sliderWidth, 32.0F,
 				[&](const LayoutRect& bounds) { events.barZoomChanged = SliderAction(bounds, draft.barZoom, 0.50F, 2.00F, events.barZoomActive); });
-			SettingRow("setting-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.E).c_str(), "\ue8a9", sliderWidth, 32.0F,
-				[&](const LayoutRect& bounds) { SliderAction(bounds, draft.settingZoom, 1.00F, 2.00F, events.settingZoomActive); });
 		}
 		if (section == GeneralSection::Interaction)
 		{
