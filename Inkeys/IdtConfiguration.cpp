@@ -1173,7 +1173,8 @@ bool SetMemory()
 {
     using namespace Inkeys::Business::PenWidth;
     std::scoped_lock lock(g_penWidthPreferencesMutex);
-    const auto snapshot = GetStateModeSnapshot();
+    StateModeClass snapshot;
+    if (!TryGetDesktopStateModeSnapshot(snapshot)) return true;
     Json::Value root;
     if (!ReadMemoryRoot(MemoryPath(), root)) return false;
     auto preferences = DecodePreferences(root, true, snapshot.penWidthContext);

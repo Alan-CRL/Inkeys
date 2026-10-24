@@ -1133,8 +1133,6 @@ void PptInfo()
 		}
 		const bool whiteboard = WhiteboardTransactionActive();
 		const auto sceneWorkspaceEpoch = PptSceneWorkspaceEpoch();
-		const auto sceneStillCurrent = [sceneWorkspaceEpoch]() noexcept
-		{ return sceneWorkspaceEpoch != 0 && PptSceneWorkspaceEpoch() == sceneWorkspaceEpoch; };
 		static const bool tracePptGate = []() noexcept
 		{
 			wchar_t value[8]{};
@@ -1160,6 +1158,7 @@ void PptInfo()
 				trustedEndScreen, controlSessionAvailable, windowControlAvailable, basicControl,
 				whiteboard, D3::ProductRunning());
 		}
+		if (sceneWorkspaceEpoch != 0 && session.active) SyncPrimaryWorkspaceStateMode(sceneWorkspaceEpoch);
 		const auto bridge = D3::ProductHost().ProductBridge().Snapshot();
 		if (sceneWorkspaceEpoch != 0 && session.active && !trustedTarget)
 		{
@@ -1173,7 +1172,7 @@ void PptInfo()
 			else
 			{
 				// 新文稿/基础模式先撤销旧墨迹目标；原始数字不能把旧画布带到新场。
-				D3::ClearProductPresentationTarget(sceneStillCurrent);
+				(void)PublishPrimaryPresentationTarget(nullptr, sceneWorkspaceEpoch);
 				cachedTarget.reset();
 				PptInfoStateBuffer = { -1, -1 };
 			}
@@ -1182,20 +1181,21 @@ void PptInfo()
 		if (sceneWorkspaceEpoch != 0 && !session.active && (confirmedWindowEnd ||
 			(stateReliable && lifecycle == PptLifecycle::Inactive)))
 		{
-			D3::PublishProductWorkspace(D3::Bridge::Workspace::Desktop, sceneStillCurrent);
-			if (!whiteboard && exitedThisTick && exitWorkspaceEpoch != 0)
+			if (exitedThisTick)
 			{
 				// 可信退出只收尾一次；若此后用户主动换工具，旧退出不得覆盖它。
-				if (ChangeStateModeToSelectionIfRevision(exitModeRevision, exitWorkspaceEpoch))
+				if (!whiteboard && exitWorkspaceEpoch != 0 &&
+					CompletePresentationExitStateMode(exitModeRevision, exitWorkspaceEpoch))
 				{
 					// EndSession 的刷新早于模式收尾；成功进入选择后重绘实际工具高亮。
 					barUISet.UpdateRendering();
 				}
 			}
+			else SyncPrimaryWorkspaceStateMode(sceneWorkspaceEpoch);
 		}
 		else if (sceneWorkspaceEpoch != 0 && session.active && trustedTarget)
 		{
-			const auto accepted = D3::PublishProductPresentationTarget(*cachedTarget, sceneStillCurrent);
+			const auto accepted = PublishPrimaryPresentationTarget(&*cachedTarget, sceneWorkspaceEpoch);
 			if (!accepted && tracePptGate && IDTLogger && (descriptorChanged || rawChanged))
 			{
 				const auto observedBridge = D3::ProductHost().ProductBridge().Snapshot();

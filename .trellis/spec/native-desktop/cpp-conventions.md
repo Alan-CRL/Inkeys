@@ -153,7 +153,7 @@ Bar 渲染/交互、MouseHook、PPT 接管或配置保存访问全局 StateModeC
 
 - 模式、Pen/Shape 子型、宽色的生产写入在 stateModeTransitionMutex 下进行；Bar 一帧只取一次值快照，交互每消息更新。长手势按下时同锁取状态和 revision，抬手或惯性提交仍须在锁内核版本。
 - 条件 PPT 入口原有 expected revision 不得替换成无条件 setter。重复选中同笔型可更新意图版本，但无视觉变化时不重复发布 Draw3 命令。
-- 锁内仅复制/修改小型状态，不做 SetMemory 磁盘 I/O、Draw3 bridge、HWND/GPU/COM 调用；这些副作用在解锁后由原 owner 执行。无参 getter 各自安全，但连续调用不能代替同一业务/帧快照。
+- 模式锁内只复制/修改小型状态或提交无 HWND 等待的 Draw3 bridge；工作区门控、工具恢复和 workspace/Presentation target（含清除）发布共用此边界，锁顺序为白板意图锁 → 模式锁 → product 提交锁；PPT 必须带采样时的 scene epoch，Exiting 可恢复场景，但退出选择仍校验退出边沿的严格 input epoch。恢复 Presentation 工具不单独发布无 target 的工作区。不得持锁调用会再次取锁及等待窗口的 SyncDraw3State，也不做 SetMemory 磁盘 I/O、HWND/GPU/COM 调用；这些副作用在解锁后由原 owner 执行。无参 getter 各自安全，但连续调用不能代替同一业务/帧快照。
 
 ### 4. Validation & Error Matrix
 
@@ -172,7 +172,7 @@ Good：同锁获取 mode、Laser、penMode、宽色及 revision，帧/手势只�
 
 完整 InkeysRepo.sln Debug|ARM64 与适用 Release 构建，InkeysHeadlessTests --no-window；Headless 不直接编译执行 IdtState 入口。
 
-显式 `Inkeys.exe --state-mode-production-test` 在配置、单实例和 HWND 初始化前执行真实 IdtState/bridge 与 BarInteractionSession，成功退出 0，额外参数退出 2。覆盖工具/PPT 等价投影、重复意图 revision+1 但 bridge 不重发、快速切换、旧 revision 的宽度/形状/Selection/PPT 请求拒绝，以及 FineDial 失效 tick、跨代惯性和取消提交。宽色 setter 使用 `setMemory=false`；Cancel 后先断言候选清理才调用空 Commit，失效 Commit 必须被真实版本门拒绝。禁止在未初始化路径的早期检查中执行会保存配置的成功 FineDial Commit。
+显式 `Inkeys.exe --state-mode-production-test` 在配置、单实例和 HWND 初始化前执行真实 IdtState/bridge 与 BarInteractionSession，成功退出 0，额外参数退出 2。覆盖工具/PPT 等价投影、重复意图 revision+1 但 bridge 不重发、快速切换、旧 revision 的宽度/形状/Selection/PPT 请求拒绝，以及 FineDial 失效 tick、跨代惯性和取消提交。常规宽色 setter 使用 `setMemory=false`；工作区保存隔离回归只在独立临时目录调用真实 `SetMemory()`，退出恢复路径并清理本次创建的目录，不读写用户配置。Cancel 后先断言候选清理才调用空 Commit，失效 Commit 必须被真实版本门拒绝。禁止在未初始化路径的早期检查中执行会保存配置的成功 FineDial Commit。
 
 该 CLI 不启动 Host/Window Service、设备、RTS 或保存 worker；不能证明实际 HWND owner、光标、真实 Office 回调、FineDial 成功保存或呈现尾延迟。获 GUI 授权后以私有配置自动操作分别验证这些边界，不把观察器帧交付次数称为产品可见帧率。
 

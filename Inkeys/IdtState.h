@@ -5,6 +5,7 @@
 #include "IdtMain.h"
 
 #include <cstdint>
+#include <optional>
 #include "Inkeys/Business/PenWidthPolicy.hpp"
 
 enum class StateModeSelectEnum
@@ -132,6 +133,8 @@ public:
 };
 extern StateModeClass stateMode;
 StateModeClass GetStateModeSnapshot();
+// 非 Desktop 不提供全局偏好保存快照。
+bool TryGetDesktopStateModeSnapshot(StateModeClass& snapshot);
 struct StateModeVersionedSnapshot
 {
 	StateModeClass state;
@@ -201,6 +204,14 @@ int EraserPenResponsePreference(int entry);
 void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
 // 按当前模式和 Draw3 当前页内容统一同步 Drawpad 显隐、穿透和 Bar。
 void ReconcileDraw3Presentation();
+// PPT 事实同锁同步非白板工具和工作区；白板进退由 StateMonitoring 交接。
+void SyncPrimaryWorkspaceStateMode(std::uint64_t expectedWorkspaceEpoch = 0);
+namespace Inkeys::Drawing::Draw3::Bridge { struct PresentationTarget; }
+// nullptr 撤销旧目标；场景 epoch 门控与发布共锁，Exiting 允许恢复完整目标。
+std::optional<std::uint64_t> PublishPrimaryPresentationTarget(
+	const Inkeys::Drawing::Draw3::Bridge::PresentationTarget* target, std::uint64_t expectedWorkspaceEpoch = 0);
+// 同锁保存 PPT 工具、返回 Desktop，仅在退出版本仍有效时进入选择。
+bool CompletePresentationExitStateMode(std::uint64_t expectedRevision, std::uint64_t expectedPptWorkspaceEpoch = 0);
 
 // 白板按钮和翻页控件只提交请求，具体工作区事务由 StateMonitoring 串行执行。
 inline constexpr bool IsWhiteboardFeatureEnabled() noexcept { return true; }
@@ -216,7 +227,7 @@ void RequestWhiteboardPreviousPage() noexcept;
 void RequestWhiteboardNextPage() noexcept;
 void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept;
 
-// 显式早期 CLI 仅执行真实状态/bridge 逻辑，不启动窗口或读取、保存配置。
+// 显式早期 CLI 不启动窗口；保存隔离检查仅使用独立临时目录，不读写用户配置。
 int RunStateModeProductionTest() noexcept;
 
 void StateMonitoring();
