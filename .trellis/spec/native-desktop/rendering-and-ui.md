@@ -1758,7 +1758,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - 创建前尚无 HWND，SM_CYBORDER 细边框回退可能与实际 DWM 描边不同（本机 192 DPI 为 1px/2px）。只在 Setting 的首次 FRAMECHANGED 后读取实际 outer/client 差，用 ResolveWindowFrameCreationCorrection 恢复请求的客户区尺寸，并按原请求中心和当前工作区夹紧；仅尺寸确有差异时校正一次。不用猜测分数 DPI 下 DWM 的取整，不修改其他窗口角色或最大化字段。
 - WM_NCPAINT/WM_NCACTIVATE 保持默认处理。NCHITTEST 使用实际 screen-space outer/client：只有空白 HTCAPTION 的最上方允许补足系统 sizing 高度，外侧顶角同样保持完整可操作高度；先保护 close/max/min、主题、Debug、版本和系统菜单的整个客户区矩形，其余 client（特别是右侧 scrollbar）不增加 resize 区。左右/下的 resize 仍完全位于 client 外；最大化不返回 resize，outer 外返回 HTNOWHERE。caption button 仍投递标准 WM_SYSCOMMAND，关闭映射 Hide。
 - 系统 modal loop 使用原子 `None/Move/Size` 状态：`WM_NCLBUTTONDOWN` 根据 `HTCAPTION`/八方向 hit 分类，`WM_SYSCOMMAND` 补充 `SC_MOVE/SC_SIZE` 键盘路径，未知 `WM_ENTERSIZEMOVE` 默认为 Size。只有 Move 允许 Settings 回调在 swap-chain 操作与 Present 前返回 `Idle`；Size 中的每个非最小化 `WM_SIZE` 都覆盖 latest resize 并 `Request(Settings)`，渲染线程按自身节拍执行 `ResizeBuffers -> Render -> Present`。`WM_EXITSIZEMOVE`、Hide/Shutdown 清除状态并保证最终请求。
-- RightHeader 显示真实 editionVersion 并路由到 tab6，其右侧依次为 32 DIP 主题按钮、32 DIP Debug Bug图标按钮，再接 caption cells。Debug路由到现有调试页，入口包括IDT_RELEASE始终可见；主题/Debug不提供悬停文字提示，保留hover/pressed，Debug选中有subtle底色。新增Debug槽位只让版本/主题向左让位，caption位置保持。空间不足先隐藏版本入口并让标题文字让位；极窄预算可缩减图标后空白，保留主题/Debug按钮、caption、identity 和至少 96 DIP 拖拽区。版本文字与相邻theme/Debug/caption glyph使用同一TextPrimary语义色，active=1.0、inactive=0.55的透明度差异保持；活动/非活动标题、版本和 caption glyph 保持状态差异；关闭 hover/pressed 为 critical red，其余按钮使用 Fluent subtle fill。
+- RightHeader 显示真实 editionVersion 并路由到 tab6，其右侧依次为 32 DIP 主题、问题反馈、Debug Bug 按钮，再接 caption cells。反馈路由到 Feedback=15 专用页并提供本地化悬停提示，Debug 路由到现有调试页；两入口在 IDT_RELEASE 始终可见，主题/Debug 保留无提示行为，交互和选中使用 subtle fill。新增反馈槽只让版本/主题向左让位，caption 位置保持。空间不足先隐藏版本并让标题文字让位；正常 720-DIP 最小窗保留至少 96 DIP 拖拽区，工作区小于最小尺寸时保留三入口和原 caption、拖动区以剩余物理预算为限（360 DIP 示例剩余 62 DIP）。版本、相邻主题/反馈/Debug/caption glyph 使用同一 TextPrimary，active=1.0/inactive=0.55 保持；关闭 hover/pressed 为 critical red，其余为 Fluent subtle fill。
 - 默认客户区约 960×700 DIP；WM_GETMINMAXINFO 只经 ApplyWindowFrameMinimumTrack 修改约 720×520 DIP client 加一次系统 frame 的最小 track size，工作区过小时限制到可用尺寸。USER32 预填的 ptMaxPosition/ptMaxSize/ptMaxTrackSize 保持不变：它们使用 primary-monitor 协议，系统会向实际显示器补偿，不能直接回填目标 workarea 尺寸导致二次放大。标准 overlapped style 的默认最大化保留任务栏；WM_DPICHANGED 接受建议矩形，Hide/Show 在进程内保留 bounds/最大化状态。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
@@ -1776,7 +1776,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | 指针位于 Setting 边角/边缘 | 恢复态返回对应 resize；仅顶部空白 caption 可补足 sizing 高度，标题控件优先保护；最大化不返回 resize |
 | 指针位于右侧 scrollbar 整个轨道 | 始终 client，不被 resize 热区截走 |
 | 指针位于 Setting 最大化格 | 返回 `HTMAXBUTTON`，由 `DefWindowProcW` 保留最大化/还原和 Windows 11 Snap Layout |
-| 指针位于版本 RightHeader / 主题 / Debug按钮 | 返回 HTCLIENT，分别进入 tab6 / 请求换色 / 进入调试页，不触发窗口拖动 |
+| 指针位于版本 RightHeader / 主题 / 反馈 / Debug按钮 | 返回 HTCLIENT，分别进入 tab6 / 请求换色 / Feedback 页 / 调试页，不触发窗口拖动 |
 | DWM composition 可用 | 系统管理真实 sizing frame、阴影与圆角；应用设置与当前浅深主题一致的中性边框色 |
 | DWM composition 不可用或属性不受支持 | 默认 non-client paint 继续处理保留的 frame，自绘当前主题 caption 不变 |
 | `WM_NCMOUSEMOVE` 的 hit 为 `HTCAPTION` | 直接进入系统 move loop，不请求 Settings 渲染帧；只有 caption button hover/leave 需要刷新 |
@@ -2023,7 +2023,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 
 #### 3. Contracts
 
-- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定；汉堡默认透明无边框，局部将Fluent Button hover/held填充映射为当前palette的subtleHover/subtlePressed，保留真实按钮颜色动画、ID、键盘焦点与开合逻辑，不改全局普通按钮色。中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/行为与安全/存储与配置/快捷键五个子页；展开树与紧凑浮层的数量、完整高度、命中和滚动均取同一 GeneralSectionCount，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭固定。三处1 DIP细线替代分组标题；Debug使用标题栏Bug图标入口，侧栏不再绘制或预留调试行。ResolveNavigationPaneGeometry先测固定行/分割带，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
+- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定；汉堡默认透明无边框，局部将Fluent Button hover/held填充映射为当前palette的subtleHover/subtlePressed，保留真实按钮颜色动画、ID、键盘焦点与开合逻辑，不改全局普通按钮色。中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/行为与安全/存储与配置/快捷键五个子页；展开树与紧凑浮层的数量、完整高度、命中和滚动均取同一 GeneralSectionCount，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭固定。三处1 DIP细线替代分组标题；Debug使用标题栏Bug图标入口，Feedback使用其左侧反馈图标；二者均不在侧栏绘制/预留行，进入时立即清除旧侧栏选中条。ResolveNavigationPaneGeometry先测固定行/分割带，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
 - RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。设置卡片默认标题＋完整多行说明，action 按实际宽度靠右。按当前内容宽度及 action 自然宽度动态判断文字预算：说明区不足280 DIP时采用标题/action在上、说明下方通栏，返回行内保留16 DIP余量；标题区不足160 DIP时沿用极窄控件换行。以上是项目预算，不是WinUI官方断点，不以控件数量/固定单行判断代替测量，不缩小字号、截断或默认折叠完整说明。长文行高由实际字体测量而来；测量不运行 action，一帧只在实际控件绘制时产生事件。
 - 多行说明布局的补间使用当前ImGui窗口与稳定行ID的StateStorage，随context释放；复用NavigationTween、160ms/已有动画速率和设置帧时钟。先使说明下移避开操作，再扩宽；反向先收窄再上移。首次出现按当前预算直接到位，缺席/隐藏后首帧不累计休眠时间，关闭动画即时到位。卡片及下一行的真实ItemSize包含当前换行包络；说明行数随真实宽度离散变化，不靠裁切换取高度平滑，不绘制两套可交互控件或增加配置/线程。置顶间隔完整说明常驻同一卡片，不另设“详细说明”展开块。
 - 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
@@ -2153,7 +2153,7 @@ Design::ApplyPalette(setlist.settingDarkMode);
 
 #### 1. Scope / Trigger
 
-修改 RenderHome 的品牌横幅、版权许可、开源入口与品牌动效时适用。横幅整合字标、标语、分割线及居中开源操作；版权紧随其后，探索、常用设置、作者/反馈与版本区域沿用既有布局。主页书写调整/教程入口及其展开区已移除。
+修改 RenderHome 的品牌横幅、版权许可、开源入口与品牌动效时适用。横幅整合字标、标语、分割线及居中开源操作；版权紧随其后，下方依次为推荐设置、常用设置与作者区域；问题反馈已迁独立页，页脚不再显示版本链接。主页书写调整/教程入口及其展开区已移除。
 
 #### 2. Signatures
 
@@ -2383,3 +2383,61 @@ Good：现代系统外框随系统焦点着色，旧 Aero 只有一套 caption�
 
 ### 7. Wrong vs Correct
 Wrong：在 Win7 恢复态保留现代 1px 顶部并让原生 caption 继续绘制；Correct：旧 Aero 四边原 frame、显式隐藏原生 caption 并保留原生菜单/系统命令。来源与证据见父任务 research/settings-win32-frame-research.md，实机未覆盖处必须标明。
+
+## 设置 CI/CD 元数据与赞助正文布局
+
+### 1. Scope / Trigger
+修改版本页、CI/CD 详情或赞助图片下方说明时适用；不改变更新状态机、实际构建元数据或赞助链接。
+
+### 2. Signatures
+`Design::RenderCicdDetails(const CicdContent&) -> CicdAction` 接收真实 UTF-8 元数据并返回动作；`RenderSponsorThanks(const char*, float widthPixels)` 仅绘制说明并登记高度。
+
+### 3. Contracts
+- CI详情按当前真实文字宽度测完整高度，当前帧明确约束 Card 高度/内容，长工具链由外层页面滚动，不截入内部小视口；不裁掉字段、内部换行或长URL。
+- 外链由 Setting.cpp 消费动作后打开，renderer不 ShellExecute；生产 signal1 注入结构不能残留测试假值，临时元数据仅存在局部测试夹具内存。
+- 版本页先显示更新状态及动作，随后蓝色Informational版本卡；保留真实版本/渠道/CI入口，不用PNG或固定假值代替实际数据。
+- 赞助感谢文字位于图片卡片之外，以图片卡片宽度逐行居中，使用Body与TextPrimary；保留换行/完整高度及浅深主题，不硬编码只适合浅色的纯黑。
+- 隐藏调整入口不等于修改实际功能值：SuperTop指示器只移除UI编辑，PPT加载页则遵守其独立强制禁用合同。
+
+### 4. Validation & Error Matrix
+短/长元数据、宽度变化和语言/字体变化均当帧重测；测试移除长fixture后高度应回缩。无真实CI数据时仍保持手动构建状态，不伪造CI记录。
+
+### 5. Good / Base / Bad Cases
+Good：外层滚动可到达最后MSBuild行，返回链接枚举而不在测试里打开浏览器；Bad：临时填值遗留生产，卡片仅上一帧AutoResize导致截断，或赞助文案仍为次要灰色。
+
+### 6. Tests Required
+既有headless用真实字体/renderer覆盖明暗、三语言、窄/常规宽、DPI、完整长文本/末行可达、真实导航动作、fixture移除重测与赞助文本颜色/逐行居中；完整ARM64 Solution、--no-window、i18n与格式检查。无GUI授权时不启动浏览器或产品窗口。
+
+### 7. Wrong vs Correct
+Wrong：把测试CI值写进settingCICD或让renderer执行外链；Correct：局部CicdContent夹具调用同一生产renderer，真实页面使用CI注入值并在外层消费动作。
+
+## 设置主页推荐与专用反馈路由
+
+### 1. Scope / Trigger
+修改主页推荐/常用入口、社区联系方式或反馈页面/标题栏按钮时适用，保留品牌入场动画、地区链接和会话资源生命周期。
+
+### 2. Signatures
+`PageId::Feedback=15` 追加，不偏移旧路由；`HomeAction::Appearance/Shortcuts/TermsOfUse` 追加在既有枚举末尾；`RenderFeedback(ImTextureID, float, ImTextureID githubTexture=0) -> FeedbackAction` 返回 None/Issues/Questionnaire/Community/Contact（末尾追加）；`RenderFeedbackButton` 与 Debug 使用相同参数和私有标题栏 route button 实现。
+
+### 3. Contracts
+- 推荐设置按 Appearance/Draw；常用设置按 Basic/Shortcuts/Plugins/Feedback，基本说明只能对应操作模式、主栏排列和启动等实际内容，不再声称该页管理缩放。
+- 简中 QQ 群标题与号码同行，号码沿用地区 Community 动作；繁体/英文直接以各自 GitHub Discussions 标题注册链接，不重复下一行地址。作者卡不再含旧问卷链接或 hover 二维码，页脚不再注册 Version 动作。
+- Home 和标题栏反馈均导航到专用页；页内依次 Issues、原问卷、常驻二维码行，文案均说明支持问题和建议。二维码后保留地区社区、作者邮箱和 QQ 联系区；QQ/Discussions 使用相同地区分流，反馈页邮箱保留原 mailto，作者 QQ 点击复制，不伪造个人 QQ 直连。二维码复用原会话 TextureSettingSign[7]，右侧96 DIP宽、按比例定高，左侧一行标题和自然换行说明，扫码行显式 keepDescriptionInline，不能触发通用280 DIP说明退到操作区下方的策略；上/下/右使用同一行内距。原透明PNG模块和alpha不改，原生加载仅转换为白色alpha mask，由TextPrimary随主题着色。
+- 作者卡简介与联系方式留12 DIP间隔，QQ标签、号码和地区社区链接使用Body14；首页 QQ/邮箱、反馈作者 QQ 使用 `CopyHyperlink(id,label,value)`，首页下方仅保留原 Support 赞助动作。共享复制控件在连续悬停内保存成功状态，移出、缺帧或原生隐藏输入重置时恢复提示；`SetCopyLabels` 由 `BindTextFonts` 注入本地化文案，Controls 不引入应用 i18n 聚合头。复制直接走 ImGui 剪贴板，renderer不返回外链动作。
+- Issues 使用真实 GitHub PNG，默认白色alpha mask以TextPrimary着色；彩色插件图标保持默认白色tint。新增slot11纳入12槽的SRV/CPU缓存、预热/释放/设备重建流程，RC及工程图片登记齐全；不得另建资源生命周期。
+- 页脚顺序为使用条款、官方网站、GitHub、Bili频道。TermsOfUse 在原生动作消费者按简中指向 https://www.inkeys.top/tos/zh-cn.html，繁中/英文指向 https://www.inkeys.top/tos/en-us.html；保留其他目标。
+- 普通 SettingRow 与 BeginCard 共用 DrawCardSurface 的铺满背景和1物理像素描边，继续使用同一palette token，分别保留4/8 DIP圆角及原child/padding/滚动scope栈合同。不能在赞助/EDID等页逐项改色或恢复旧Card随DPI取整描边/内缩填充造成的视觉差异。
+- renderer 只返回动作，实际 Issues/问卷外链在 Setting.cpp 消费；页面测量/绘制和无窗口回归不能执行外链。标题栏反馈命中为 HTCLIENT，不能被系统拖窗/缩放格吞掉。
+- Feedback/Debug 都不在侧栏占行；点击标题栏入口关闭紧凑模态浮层或窄窗覆盖导航，保留既有释放屏障，不穿透激活正文；进入时清空蓝色选中条，返回普通页重新锚定。
+
+### 4. Validation & Error Matrix
+窄宽/简繁英/DPI/浅深均重测；QR 纹理缺失时保留说明，异常比例回退 1。全局主题、配置、首页品牌/缓存逻辑不能因新增路由改变。原 CI signal1 继续为空/真实注入，不再次填人工预览数据。
+
+### 5. Good / Base / Bad Cases
+Good：不用 hover 即可扫描反馈卡，用户选择渠道后才触发外链；Bad：标题栏只画图标却未加入 Win32 命中，离开侧栏后旧选中条仍显示，或地区入口统改为同一链接。
+
+### 6. Tests Required
+真实 ImGui item 注册/点击覆盖推荐顺序、四个 common 目的地、地区 Community、Issues/问卷/社区/邮箱四反馈动作与无 hover QR DrawData/比例/宽度；真实导航浮层激活标题栏反馈并清选中；纯几何覆盖三按钮顺序、完整顶边命中、系统 DIP 一次缩放及最小窗/极窄预算。移除链接的回归必须使用原真实 scoped item ID，不能用未注册的任意字符串断言不存在。当前 ImGui 的 NavRectRel 相对 DC.CursorStartPos，取点击矩形必须用 WindowRectRelToAbs，不能只加 window.Pos，避免 CardPadding/scroll 导致小链接点击偏移。CPU 纹理回归仅识别二维码/GitHub显式 user TexRef，不调用未上传动态字库的 ImDrawCmd::GetTexID；不得为检查图片伪造字体 backend 上传状态。复制测试替换 Platform_SetClipboardTextFn 为内存mock，检查准确内容、真实tooltip文案与连续悬停/移出/隐藏重置，不写用户系统剪贴板。按图片顶点之前最近的同DrawList描边primitive核对二维码三边内距，不能用宽Y范围混入相邻卡片；核对主题tint，按描边mesh核对Row/Card在各DPI下的相同物理宽度，不能只比较常量。复用完整 ARM64 Solution、适用 --no-window、i18n 与编码/diff检查；`--setting-copy-only` 可定向检查复制/描边，不替代完整适用设置回归。
+
+### 7. Wrong vs Correct
+Wrong：反馈 HomeAction 继续直接打开问卷、二维码仅在 tooltip 出现；Correct：主页与标题栏进入同一专用页，真实两卡返回独立动作，原二维码在下方常驻。

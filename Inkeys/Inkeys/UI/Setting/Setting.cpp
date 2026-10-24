@@ -537,7 +537,7 @@ namespace
 		if (geometry.close.Contains(x, y)) return HTCLOSE;
 		if (geometry.maximize.Contains(x, y)) return HTMAXBUTTON;
 		if (geometry.minimize.Contains(x, y)) return HTMINBUTTON;
-		if (geometry.themeToggle.Contains(x, y) || geometry.debug.Contains(x, y)
+		if (geometry.themeToggle.Contains(x, y) || geometry.feedback.Contains(x, y) || geometry.debug.Contains(x, y)
 			|| (geometry.versionVisible && geometry.version.Contains(x, y)))
 			return HTCLIENT;
 		if (geometry.icon.Contains(x, y)) return HTSYSMENU;
@@ -1968,18 +1968,10 @@ SettingSessionCoroutine RunSettingSession()
 							{
 								DWORD color = pMem[y * width + x];
 								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
+								// 仅把 RGB 规整为可着色遮罩，原二维码的每个透明度/模块保持不变。
+								data[(y * width + x) * 4 + 0] = 255;
+								data[(y * width + x) * 4 + 1] = 255;
+								data[(y * width + x) * 4 + 2] = 255;
 								data[(y * width + x) * 4 + 3] = alpha;
 							}
 						}
@@ -1988,6 +1980,17 @@ SettingSessionCoroutine RunSettingSession()
 						delete[] data;
 
 						(void)ret;
+					}
+
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SETTING_GITHUB", 64 * settingGlobalScale, 64 * settingGlobalScale);
+					{
+						const int width = SettingSign.width(), height = SettingSign.height();
+						const auto& pixels = SettingSign.pixels();
+						vector<unsigned char> data(static_cast<size_t>(width) * height * 4, 255);
+						// 官方透明白色标记只取原 alpha，正文主题色在绘制时叠加；缓存随既有 epoch 重建。
+						for (size_t index = 0; index < pixels.size(); ++index)
+							data[index * 4 + 3] = static_cast<unsigned char>(pixels[index] >> 24);
+						(void)LoadTextureFromMemory(data.data(), width, height, &TextureSettingSign[11]);
 					}
 
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale);
@@ -2027,7 +2030,7 @@ SettingSessionCoroutine RunSettingSession()
 				}
 			}
 			(void)LoadSettingWindowIconTexture(setting_window);
-			constexpr size_t requiredTextureIndexes[] = { 0, 1, 2, 3, 5, 6, 7, 8, 9, 10 };
+			constexpr size_t requiredTextureIndexes[] = { 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11 };
 			if (ranges::any_of(requiredTextureIndexes,
 				[](size_t index) { return TextureSettingSign[index] == nullptr; }))
 			{
@@ -2115,7 +2118,6 @@ SettingSessionCoroutine RunSettingSession()
 			struct
 			{
 				bool Enable = setlist.plugInSetting.superTop.enable;
-				bool Indicator = setlist.plugInSetting.superTop.indicator;
 			}SuperTop;
 		}PlugInSetting;
 
@@ -2127,7 +2129,6 @@ SettingSessionCoroutine RunSettingSession()
 		bool BottomSideBothWidgetScaleUnifie = true;
 		bool MiddleSideBothWidgetScaleUnifie = true;
 
-		bool PptComShowLoadingScreen = pptComSetlist.showLoadingScreen;
 		bool MemoryWidgetPosition = pptComSetlist.memoryWidgetPosition;
 		bool ShowBottomBoth = pptComSetlist.showBottomBoth;
 		bool ShowMiddleBoth = pptComSetlist.showMiddleBoth;
@@ -2318,6 +2319,7 @@ SettingSessionCoroutine RunSettingSession()
 					tab8,
 					tab9,
 					tabExperimental,
+					tabFeedback = 15,
 				};
 				enum settingPlugInTabEnum
 				{
@@ -2459,6 +2461,9 @@ SettingSessionCoroutine RunSettingSession()
 							themeBounds.Min, themeBounds.Max, Design::NavigationGlyphSize,
 							SettingChromeColor(ImFluentCol_TextPrimary, active ? 1.0F : 0.55F));
 
+						if (Design::RenderFeedbackButton(titleBarGeometry.feedback, destination.page == Design::PageId::Feedback,
+							navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Feedback });
+
 						if (Design::RenderDebugButton(titleBarGeometry.debug, destination.page == Design::PageId::Debug,
 							navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Debug });
 
@@ -2559,12 +2564,16 @@ SettingSessionCoroutine RunSettingSession()
 						static_cast<float>(max(1, settingSign[7].height)) / max(1, settingSign[7].width) }, &homeMotion);
 					switch (action)
 					{
+					case HomeAction::Appearance: navigateTo({ Design::PageId::General, Design::GeneralSection::Appearance }); break;
+					case HomeAction::Shortcuts: navigateTo({ Design::PageId::General, Design::GeneralSection::Shortcuts }); break;
 					case HomeAction::Draw: settingTab = settingTabEnum::tab3; break;
 					case HomeAction::Plugins: settingTab = settingTabEnum::tab4; settingPlugInTab = settingPlugInTabEnum::tabPlug1; break;
 					case HomeAction::General: navigateTo({ Design::PageId::General, Design::GeneralSection::Basic }); break;
 					case HomeAction::Language: settingTab = settingTabEnum::Language; break;
 					case HomeAction::Support: settingTab = settingTabEnum::tab8; break;
 					case HomeAction::Version: settingTab = settingTabEnum::tab6; break;
+					case HomeAction::TermsOfUse:
+						ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://www.inkeys.top/tos/zh-cn.html" : L"https://www.inkeys.top/tos/en-us.html", 0, 0, SW_SHOW); break;
 					case HomeAction::Website:
 						ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://www.inkeys.top" : L"https://en.inkeys.top", 0, 0, SW_SHOW); break;
 					case HomeAction::GitHub:
@@ -2577,12 +2586,28 @@ SettingSessionCoroutine RunSettingSession()
 						ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6" : L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW); break;
 					case HomeAction::Bilibili:
 						ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW); break;
-					case HomeAction::Feedback:
-						ShellExecuteW(0, 0, L"https://www.wjx.cn/vm/mqNTTRL.aspx#", 0, 0, SW_SHOW); break;
+					case HomeAction::Feedback: navigateTo({ Design::PageId::Feedback }); break;
 					case HomeAction::Contact:
 						ShellExecuteW(0, 0, L"mailto:alan-crl@foxmail.com", 0, 0, SW_SHOW); break;
 					default: break;
 					}
+					break;
+				}
+
+				// 反馈入口共享同一页；二维码继续使用常驻会话的原始资源。
+				case settingTabEnum::tabFeedback:
+				{
+					const auto action = Design::RenderFeedback((ImTextureID)(intptr_t)TextureSettingSign[7],
+						static_cast<float>(max(1, settingSign[7].height)) / max(1, settingSign[7].width),
+						(ImTextureID)(intptr_t)TextureSettingSign[11]);
+					if (action == Design::FeedbackAction::Issues)
+						ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys/issues", 0, 0, SW_SHOW);
+					else if (action == Design::FeedbackAction::Questionnaire)
+						ShellExecuteW(0, 0, L"https://www.wjx.cn/vm/mqNTTRL.aspx#", 0, 0, SW_SHOW);
+					else if (action == Design::FeedbackAction::Community)
+						ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6" : L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW);
+					else if (action == Design::FeedbackAction::Contact)
+						ShellExecuteW(0, 0, L"mailto:alan-crl@foxmail.com", 0, 0, SW_SHOW);
 					break;
 				}
 
@@ -2656,133 +2681,7 @@ SettingSessionCoroutine RunSettingSession()
 				case settingTabEnum::tab6:
 				{
 					Design::PageHeader(IA(I18nKey.SettingsUI.Version.N).c_str());
-
-					if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew
-						&& Design::ButtonRow("##version-manual-update", IA(I18nKey.SettingsUI.Version.ManualUpdate.N).c_str(),
-							nullptr, "\ue895", IA(I18nKey.SettingsUI.Version.ManualUpdate.ManualUpdate).c_str()))
-					{
-						mandatoryUpdate = true;
-						AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
-					}
-					if (inconsistentArchitecture)
-					{
-						Design::Notice("##version-architecture-warning",
-							IA(I18nKey.SettingsUI.Version.N).c_str(),
-							IA(I18nKey.SettingsUI.Version.VersionTip).c_str(),
-							ImFluentInfoSeverity_Warning);
-					}
-
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Version.Info.N).c_str());
-					const bool versionCardVisible = Design::BeginCard("##version-info",
-						{ 0.0F, 0.0F }, ImFluentCardStyle_Filled);
-					if (versionCardVisible)
-					{
-						const bool sideBySide = TextureSettingSign[1]
-							&& ImGui::GetContentRegionAvail().x >= Design::Pixels(480.0F);
-						const float logoWidth = min(Design::Pixels(96.0F),
-							ImGui::GetContentRegionAvail().x);
-						if (TextureSettingSign[1])
-						{
-							const float sourceWidth = static_cast<float>(
-								max(1, settingSign[1].width));
-							const float sourceHeight = static_cast<float>(
-								max(1, settingSign[1].height));
-							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[1],
-								{ logoWidth, logoWidth * sourceHeight / sourceWidth });
-						}
-						// 宽卡将原图片与版本文字并排，窄卡按阅读顺序排列并保留原比例。
-						if (sideBySide) ImGui::SameLine(0.0F, Design::Pixels(24.0F));
-						ImGui::BeginGroup();
-						wstring versionText;
-						versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseVersion) + L" "
-							+ editionVersion + L"(" + editionDate + L")\n";
-						versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseDate) + L" "
-							+ buildTime + L"\n";
-						versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseArch) + L" "
-							+ programArchitecture + L" | " + targetArchitecture + L"\n";
-					#ifdef IDT_RELEASE
-						versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseTag);
-					#else
-						versionText += IW(I18nKey.SettingsUI.Version.Info.DebugTag);
-					#endif
-						const string versionTextUtf8 = utf16ToUtf8(versionText);
-						Design::Text(versionTextUtf8.c_str());
-						if (settingCICD.url.empty())
-						{
-							Design::Text(IA(I18nKey.SettingsUI.Version.Info.ManualBuild).c_str(), ImFluentTextStyle_Caption, Design::TextSecondary);
-						}
-						else
-						{
-							Design::Text(IA(I18nKey.SettingsUI.Version.Info.AutoBuild).c_str(), ImFluentTextStyle_Caption, Design::TextSecondary);
-							if (Design::HyperlinkButton(
-								IA(I18nKey.SettingsUI.Version.Info.CICDInfo).c_str()))
-								settingTab = settingTabEnum::tabCICD;
-						}
-						ImGui::EndGroup();
-					}
-					Design::EndCard();
-
-					Design::SectionHeader(
-						IA(I18nKey.SettingsUI.Version.UserInfo.N).c_str());
-					const string userIdDescription = IA(I18nKey.SettingsUI.Version.UserInfo.UserId)
-						+ " " + utf16ToUtf8(userId);
-					{
-						if (Design::ButtonRow("##version-user-id",
-							IA(I18nKey.SettingsUI.Version.UserInfo.CopyUserId).c_str(),
-							userIdDescription.c_str(), "\ue8c8",
-							IA(I18nKey.Operate.Copy).c_str()))
-						{
-							OpenClipboard(nullptr);
-							EmptyClipboard();
-							const size_t size = (userId.length() + 1) * sizeof(wchar_t);
-							HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, size);
-							if (hGlobal)
-							{
-								wchar_t* destination = static_cast<wchar_t*>(GlobalLock(hGlobal));
-								if (destination)
-								{
-									wcscpy_s(destination, userId.length() + 1, userId.c_str());
-									GlobalUnlock(hGlobal);
-									SetClipboardData(CF_UNICODETEXT, hGlobal);
-								}
-								else
-								{
-									GlobalFree(hGlobal);
-								}
-							}
-							CloseClipboard();
-						}
-					}
-
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Version.Repair.N).c_str());
-					{
-						if (Design::ButtonRow("##version-repair",
-							IA(I18nKey.SettingsUI.Version.Repair.RepairSoftware).c_str(),
-							IA(I18nKey.SettingsUI.Version.Repair.RepairSoftwareE).c_str(), "\ue90f",
-							IA(I18nKey.Operate.Repair).c_str()))
-						{
-							if (EnableFixWithChangeArchitecture)
-							{
-								if (targetArchitecture == L"win64") SetUpdateArchitecture("win64");
-								else if (targetArchitecture == L"arm64") SetUpdateArchitecture("arm64");
-								else SetUpdateArchitecture("win32");
-								WriteSetting();
-							}
-							mandatoryUpdate = true;
-							if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNotStarted)
-								QueueAutomaticUpdate();
-							else
-								AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
-						}
-					}
-					{
-						Design::ToggleRow("##version-repair-architecture",
-							IA(I18nKey.SettingsUI.Version.Repair.RepairArch).c_str(),
-							nullptr, "\ue8a9",
-							EnableFixWithChangeArchitecture);
-					}
-
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Version.Update.N).c_str());
+					Design::PageContentStart();
 					{
 						// 原固定底栏的状态和动作移到版本页，仍使用发布版状态机和 FIFO。
 						using enum AutomaticUpdateStateEnum;
@@ -2858,6 +2757,103 @@ SettingSessionCoroutine RunSettingSession()
 						else if (Design::ButtonRow("##update-check", check.c_str(), nullptr, "\ue895", check.c_str()))
 							AutomaticUpdateState = UpdateObtainInformation;
 					}
+					// 更新状态/动作始终位于页首，版本信息使用同一蓝色说明块。
+					wstring versionText;
+					versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseVersion) + L" "
+						+ editionVersion + L"(" + editionDate + L")\n";
+					versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseDate) + L" " + buildTime + L"\n";
+					versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseArch) + L" "
+						+ programArchitecture + L" | " + targetArchitecture + L"\n";
+					versionText += IW(I18nKey.SettingsUI.Version.Update.Channel.N) + L" "
+						+ utf8ToUtf16(GetUpdateChannel()) + L"\n";
+				#ifdef IDT_RELEASE
+					versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseTag);
+				#else
+					versionText += IW(I18nKey.SettingsUI.Version.Info.DebugTag);
+				#endif
+					versionText += L"\n" + IW(settingCICD.url.empty()
+						? I18nKey.SettingsUI.Version.Info.ManualBuild : I18nKey.SettingsUI.Version.Info.AutoBuild);
+					if (Design::Notice("##version-info", IA(I18nKey.SettingsUI.Version.N).c_str(),
+						utf16ToUtf8(versionText).c_str(), ImFluentInfoSeverity_Informational,
+						settingCICD.url.empty() ? nullptr : IA(I18nKey.SettingsUI.Version.Info.CICDInfo).c_str()))
+						settingTab = settingTabEnum::tabCICD;
+
+					if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew
+						&& Design::ButtonRow("##version-manual-update", IA(I18nKey.SettingsUI.Version.ManualUpdate.N).c_str(),
+							nullptr, "\ue895", IA(I18nKey.SettingsUI.Version.ManualUpdate.ManualUpdate).c_str()))
+					{
+						mandatoryUpdate = true;
+						AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+					}
+					if (inconsistentArchitecture)
+					{
+						Design::Notice("##version-architecture-warning",
+							IA(I18nKey.SettingsUI.Version.N).c_str(),
+							IA(I18nKey.SettingsUI.Version.VersionTip).c_str(),
+							ImFluentInfoSeverity_Warning);
+					}
+
+					Design::SectionHeader(
+						IA(I18nKey.SettingsUI.Version.UserInfo.N).c_str());
+					const string userIdDescription = IA(I18nKey.SettingsUI.Version.UserInfo.UserId)
+						+ " " + utf16ToUtf8(userId);
+					{
+						if (Design::ButtonRow("##version-user-id",
+							IA(I18nKey.SettingsUI.Version.UserInfo.CopyUserId).c_str(),
+							userIdDescription.c_str(), "\ue8c8",
+							IA(I18nKey.Operate.Copy).c_str()))
+						{
+							OpenClipboard(nullptr);
+							EmptyClipboard();
+							const size_t size = (userId.length() + 1) * sizeof(wchar_t);
+							HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, size);
+							if (hGlobal)
+							{
+								wchar_t* destination = static_cast<wchar_t*>(GlobalLock(hGlobal));
+								if (destination)
+								{
+									wcscpy_s(destination, userId.length() + 1, userId.c_str());
+									GlobalUnlock(hGlobal);
+									SetClipboardData(CF_UNICODETEXT, hGlobal);
+								}
+								else
+								{
+									GlobalFree(hGlobal);
+								}
+							}
+							CloseClipboard();
+						}
+					}
+
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Version.Repair.N).c_str());
+					{
+						if (Design::ButtonRow("##version-repair",
+							IA(I18nKey.SettingsUI.Version.Repair.RepairSoftware).c_str(),
+							IA(I18nKey.SettingsUI.Version.Repair.RepairSoftwareE).c_str(), "\ue90f",
+							IA(I18nKey.Operate.Repair).c_str()))
+						{
+							if (EnableFixWithChangeArchitecture)
+							{
+								if (targetArchitecture == L"win64") SetUpdateArchitecture("win64");
+								else if (targetArchitecture == L"arm64") SetUpdateArchitecture("arm64");
+								else SetUpdateArchitecture("win32");
+								WriteSetting();
+							}
+							mandatoryUpdate = true;
+							if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNotStarted)
+								QueueAutomaticUpdate();
+							else
+								AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+						}
+					}
+					{
+						Design::ToggleRow("##version-repair-architecture",
+							IA(I18nKey.SettingsUI.Version.Repair.RepairArch).c_str(),
+							nullptr, "\ue8a9",
+							EnableFixWithChangeArchitecture);
+					}
+
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Version.Update.N).c_str());
 					{
 						const bool previousAutoUpdate = EnableAutoUpdate;
 						Design::ToggleRow("##version-auto-update",
@@ -2972,42 +2968,19 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					if (Design::IconButton("##cicd-back", "\ue72b"))
 						settingTab = settingTabEnum::tab6;
-					ImGui::SameLine(0.0F, Design::Pixels(8.0F));
-					if (Design::HyperlinkButton(IA(I18nKey.SettingsUI.Version.N).c_str()))
-						settingTab = settingTabEnum::tab6;
 					Design::PageHeader(IA(I18nKey.SettingsUI.CICD.N).c_str(), "CI/CD");
 					Design::PageContentStart();
 
-					// 链接作为可导航设置行，长URL沿说明区换行，不挤出按钮边界。
-					if (Design::NavigationRow("##cicd-run-link", "CI/CD",
-						utf16ToUtf8(settingCICD.url).c_str(), "\ue71b"))
+					const auto action = Design::RenderCicdDetails({
+						utf16ToUtf8(settingCICD.url), utf16ToUtf8(settingCICD.repoUrl),
+						utf16ToUtf8(settingCICD.branch), utf16ToUtf8(settingCICD.submitter),
+						utf16ToUtf8(settingCICD.buildTime), utf16ToUtf8(settingCICD.buildOS),
+						utf16ToUtf8(settingCICD.buildOSVersion), utf16ToUtf8(settingCICD.buildRunnerImageOS),
+						utf16ToUtf8(settingCICD.buildRunnerImageVersion), utf16ToUtf8(settingCICD.msBuildVersion) });
+					if (action == Design::CicdAction::Run)
 						ShellExecuteW(nullptr, nullptr, settingCICD.url.c_str(), nullptr, nullptr, SW_SHOW);
-					if (Design::NavigationRow("##cicd-repository-link",
-						IA(I18nKey.SettingsUI.CICD.Repository).c_str(),
-						utf16ToUtf8(settingCICD.repoUrl).c_str(), "\ue8a5"))
+					else if (action == Design::CicdAction::Repository)
 						ShellExecuteW(nullptr, nullptr, settingCICD.repoUrl.c_str(), nullptr, nullptr, SW_SHOW);
-					Design::PageContentStart();
-					const bool cicdCardVisible = Design::BeginCard("##cicd-details");
-					if (cicdCardVisible)
-					{
-
-						wstring details;
-						details += IW(I18nKey.SettingsUI.CICD.Branch) + L": " + settingCICD.branch + L"\n";
-						details += IW(I18nKey.SettingsUI.CICD.Submitter) + L": " + settingCICD.submitter + L"\n";
-						details += IW(I18nKey.SettingsUI.CICD.BuildTime) + L": " + settingCICD.buildTime + L"\n\n";
-						details += IW(I18nKey.SettingsUI.CICD.BuildSystem) + L": " + settingCICD.buildOS + L"\n";
-						details += IW(I18nKey.SettingsUI.CICD.BuildSystemVersion) + L": "
-							+ settingCICD.buildOSVersion + L"\n";
-						details += IW(I18nKey.SettingsUI.CICD.RunnerImageSystem) + L": "
-							+ settingCICD.buildRunnerImageOS + L"\n";
-						details += IW(I18nKey.SettingsUI.CICD.RunnerImageVersion) + L": "
-							+ settingCICD.buildRunnerImageVersion + L"\n\n";
-						details += IW(I18nKey.SettingsUI.CICD.MSBuildVersion) + L"\n"
-							+ settingCICD.msBuildVersion;
-						const string detailsUtf8 = utf16ToUtf8(details);
-						Design::Text(detailsUtf8.c_str());
-					}
-					Design::EndCard();
 					break;
 				}
 
@@ -3264,9 +3237,9 @@ SettingSessionCoroutine RunSettingSession()
 					auto& haptics = Inkeys::config.Drawing.Haptics;
 					bool drawingHaptics = haptics.Drawing, buttonHaptics = haptics.Buttons;
 					const bool drawingHapticsChanged = Design::ToggleRow("##绘制时震动反馈",
-						IA(I18nKey.SettingsUI.Draw.Haptics.Drawing).c_str(), nullptr, "\ue877", drawingHaptics);
+						IA(I18nKey.SettingsUI.Draw.Haptics.Drawing).c_str(), nullptr, "\uedc6", drawingHaptics);
 					const bool buttonHapticsChanged = Design::ToggleRow("##按钮震动反馈",
-						IA(I18nKey.SettingsUI.Draw.Haptics.Buttons).c_str(), nullptr, "\ue877", buttonHaptics);
+						IA(I18nKey.SettingsUI.Draw.Haptics.Buttons).c_str(), nullptr, "\uedc6", buttonHaptics);
 					if (drawingHapticsChanged || buttonHapticsChanged)
 					{
 						haptics.Drawing = drawingHaptics;
@@ -3349,9 +3322,6 @@ SettingSessionCoroutine RunSettingSession()
 						const char* subtitle, const wchar_t* sourceUrl = nullptr)
 						{
 							if (Design::IconButton("##plugin-back", "\ue72b"))
-								settingPlugInTab = settingPlugInTabEnum::tabPlug1;
-							ImGui::SameLine(0.0F, Design::Pixels(8.0F));
-							if (Design::HyperlinkButton(IA(I18nKey.SettingsUI.PlugIn.N).c_str()))
 								settingPlugInTab = settingPlugInTabEnum::tabPlug1;
 							Design::PageHeader(title, subtitle);
 							if (sourceUrl)
@@ -3446,20 +3416,17 @@ SettingSessionCoroutine RunSettingSession()
 
 						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.N).c_str());
-						renderToggleCard("##ppt-loading-screen",
+						// 加载页已停用，仅保留说明，不向用户提供失效的开关。
+						Design::SettingRow("##ppt-loading-screen",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage).c_str(),
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE).c_str(),
-							"\ue895", PptComShowLoadingScreen, [&](bool value)
-							{
-								pptComSetlist.showLoadingScreen = value;
-								PptComWriteSetting();
-							});
+							"\ue895", 0.0F, 0.0F, [](const auto&) {});
 
 						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N).c_str());
 						renderToggleCard("##ppt-bottom-pair",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth).c_str(),
-							nullptr, "\ue903", ShowBottomBoth, [&](bool value)
+							nullptr, "\ue90e", ShowBottomBoth, [&](bool value)
 							{
 								pptComSetlist.showBottomBoth = value;
 								PptComWriteSetting();
@@ -3468,7 +3435,7 @@ SettingSessionCoroutine RunSettingSession()
 							});
 						renderToggleCard("##ppt-middle-pair",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth).c_str(),
-							nullptr, "\ue903", ShowMiddleBoth, [&](bool value)
+							nullptr, "\ue90c", ShowMiddleBoth, [&](bool value)
 							{
 								pptComSetlist.showMiddleBoth = value;
 								PptComWriteSetting();
@@ -3593,7 +3560,7 @@ SettingSessionCoroutine RunSettingSession()
 						renderToggleCard("##ppt-auto-takeover",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver).c_str(),
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE).c_str(),
-							"\ue7ba", autoTakeOver, [&](bool value)
+							"\ue8f9", autoTakeOver, [&](bool value)
 							{
 								Inkeys::config.PlugIn.PPTHelper.AutoTakeOver = value;
 								QueueConfigWrite();
@@ -3602,7 +3569,7 @@ SettingSessionCoroutine RunSettingSession()
 						renderToggleCard("##ppt-auto-takeover-once",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce).c_str(),
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE).c_str(),
-							"\ue7ba", autoTakeOverOnce, [&](bool value)
+							"\ue8ed", autoTakeOverOnce, [&](bool value)
 							{
 								Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce = value;
 								QueueConfigWrite();
@@ -3610,7 +3577,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool autoTakeOverExpand = Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand;
 						renderToggleCard("##ppt-auto-takeover-expand",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand).c_str(),
-							nullptr, "\ue7ba", autoTakeOverExpand, [&](bool value)
+							nullptr, "\ue976", autoTakeOverExpand, [&](bool value)
 							{
 								Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand = value;
 								QueueConfigWrite();
@@ -3619,7 +3586,7 @@ SettingSessionCoroutine RunSettingSession()
 							Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
 						renderToggleCard("##ppt-long-press",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress).c_str(),
-							nullptr, "\ue7ba", enableLongPress, [&](bool value)
+							nullptr, "\ue815", enableLongPress, [&](bool value)
 							{
 								Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress = value;
 								QueueConfigWrite();
@@ -3642,20 +3609,17 @@ SettingSessionCoroutine RunSettingSession()
 							: IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2);
 						renderToggleCard("##super-top-enable",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTop).c_str(),
-							superTopDescription.c_str(), "\ue922",
+							superTopDescription.c_str(), "\ue718",
 							PlugInSetting.SuperTop.Enable, [&](bool value)
 							{
 								setlist.plugInSetting.superTop.enable = value;
 								WriteSetting();
 							});
-						renderToggleCard("##super-top-indicator",
+						// 指示器继续使用已有配置，只展示说明，不在此改写实际值。
+						Design::SettingRow("##super-top-indicator",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.Indicator).c_str(),
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.IndicatorE).c_str(),
-							"\ue7ba", PlugInSetting.SuperTop.Indicator, [&](bool value)
-							{
-								setlist.plugInSetting.superTop.indicator = value;
-								WriteSetting();
-							});
+							"\ue841", 0.0F, 0.0F, [](const auto&) {});
 						break;
 					}
 
@@ -3802,7 +3766,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool interceptChanged = false;
 						for (const auto& row : interceptRows)
 						{
-							if (Design::ToggleRow(row.id, row.title, row.description, "\ue7ba", *row.value))
+							if (Design::ToggleRow(row.id, row.title, row.description, "\uecaa", *row.value))
 								interceptChanged = true;
 						}
 						if (interceptChanged)
@@ -3866,7 +3830,7 @@ SettingSessionCoroutine RunSettingSession()
 
 					componentSection("系统");
 					renderComponentToggle("component-desktop", "显示 桌面", nullptr,
-						"\uea14", ComponentShortcutButtonSystemDesktop,
+						"\ue7f4", ComponentShortcutButtonSystemDesktop,
 						setlist.component.shortcutButton.system.desktop);
 					renderComponentToggle("component-lock", "锁屏", nullptr,
 						"\ue72e", ComponentShortcutButtonSystemLockWorkStation,
@@ -3923,7 +3887,7 @@ SettingSessionCoroutine RunSettingSession()
 						setlist.component.shortcutButton.linkage.classislandProfile);
 					renderComponentToggle("component-classisland-swap",
 						"ClassIsland 快速换课",
-						"在 ClassIsland 当前没有加载课表时，此组件不起作用。", "\ue8d7",
+						"在 ClassIsland 当前没有加载课表时，此组件不起作用。", "\ue70f",
 						ComponentShortcutButtonLinkageClassislandClassswap,
 						setlist.component.shortcutButton.linkage.classislandClassswap);
 					break;
@@ -3951,21 +3915,7 @@ SettingSessionCoroutine RunSettingSession()
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition = Experimental.Inkeys3.EnableDirectComposition;
 						QueueConfigWrite();
 					}
-					if (Design::ToggleRow("##experimental-dirty-debug", "脏区调试",
-						"显示 UI3 每帧实际提交的脏区边界。", "\ue90f", Experimental.Inkeys3.DebugMode))
-					{
-						Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable = Experimental.Inkeys3.DebugMode;
-						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
-						QueueConfigWrite();
-					}
-					if (Experimental.Inkeys3.DebugMode
-						&& Design::ToggleRow("##experimental-frame-rate", "显示帧率",
-							"每秒更新上一秒平均帧率和无等待帧率。", "\ue9d9", Experimental.Inkeys3.ShowFrameRate))
-					{
-						Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate = Experimental.Inkeys3.ShowFrameRate;
-						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
-						QueueConfigWrite();
-					}
+
 					break;
 				}
 				case settingTabEnum::tab8:
@@ -3985,14 +3935,30 @@ SettingSessionCoroutine RunSettingSession()
 						const float imageWidth = ImGui::GetContentRegionAvail().x;
 						ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[9],
 							{ imageWidth, imageWidth * sponsorAspect });
-						Design::Text("成功赞助后，可以联系作者将您的昵称和赞助的金额添加到社区名片中以表示感谢。", ImFluentTextStyle_Body, Design::TextSecondary);
 					}
 					Design::EndCard();
+					Design::RenderSponsorThanks("成功赞助后，可以联系作者将您的昵称和赞助的金额添加到社区名片中以表示感谢。", sponsorWidth);
 					break;
 				}
 				case settingTabEnum::tab9:
 				{
 					Design::PageHeader(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str());
+					Design::SectionHeader("UI3 渲染调试");
+					if (Design::ToggleRow("##experimental-dirty-debug", "脏区调试",
+						"显示 UI3 每帧实际提交的脏区边界。", "\ue90f", Experimental.Inkeys3.DebugMode))
+					{
+						Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable = Experimental.Inkeys3.DebugMode;
+						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
+						QueueConfigWrite();
+					}
+					if (Experimental.Inkeys3.DebugMode
+						&& Design::ToggleRow("##experimental-frame-rate", "显示帧率",
+							"每秒更新上一秒平均帧率和无等待帧率。", "\ue9d9", Experimental.Inkeys3.ShowFrameRate))
+					{
+						Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate = Experimental.Inkeys3.ShowFrameRate;
+						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
+						QueueConfigWrite();
+					}
 					Design::SectionHeader("控制台输出");
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)
@@ -4535,6 +4501,8 @@ namespace
 			io.ClearEventsQueue();
 			io.ClearInputKeys();
 			io.ClearInputMouse();
+			// 隐藏期间可没有 ImGui 帧；重开时复制链接不继承上一轮悬停成功状态。
+			GImGui->HoveredId = GImGui->HoveredIdPreviousFrame = 0;
 			// 复用 backend 的释放路径清除内部按键掩码；字体、纹理和 context 继续常驻。
 			for (UINT message : { WM_LBUTTONUP, WM_RBUTTONUP, WM_MBUTTONUP, WM_XBUTTONUP })
 				ImGui_ImplWin32_WndProcHandlerEx(setting_window, message,

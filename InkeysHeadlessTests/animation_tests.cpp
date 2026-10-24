@@ -50,7 +50,7 @@ int RunConfigMetadataTests();
 int RunBarPresentationAlphaTests();
 int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
-int RunSettingDesignTests();
+int RunSettingDesignTests(bool copyOnly = false);
 int RunPptUiTests();
 int RunPptSessionTests();
 int RunPageControlTests();
@@ -1646,6 +1646,7 @@ int main(int argc, char** argv)
 	bool benchmark = false;
 	bool penWidthOnly = false;
 	bool settingHomeOnly = false;
+	bool settingCopyOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
 	bool exitVisibilityGateOnly = false;
@@ -1657,6 +1658,7 @@ int main(int argc, char** argv)
 		benchmark |= argument == "--benchmark";
 		penWidthOnly |= argument == "--pen-width-only";
 		settingHomeOnly |= argument == "--setting-home-only";
+		settingCopyOnly |= argument == "--setting-copy-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
@@ -1690,6 +1692,7 @@ int main(int argc, char** argv)
 #endif
 	}
 
+	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;
 	if (settingHomeOnly) return RunSettingDesignTests()==0 ? 0 : 1;
 
 	TestCurvesAndTimelines();

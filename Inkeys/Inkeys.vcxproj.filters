@@ -2406,6 +2406,9 @@
     <Image Include="src\setting\Home_Feedback.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\setting\GitHubMark.png">
+      <Filter>资源文件</Filter>
+    </Image>
     <Image Include="src\setting\Profile_Picture.png">
       <Filter>资源文件</Filter>
     </Image>

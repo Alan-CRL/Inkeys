@@ -1,0 +1,22 @@
+{
+  "embedded_resource": "DLL/222",
+  "dll_sha256": "aea8a90053cc5b0d0912ac61c33496e29ffc03bd520404bd9322a11e8789f18f",
+  "tlb_sha256": "c652b5dd0603576033b2e0d15869be103f23ffdcaa2a1984e53f3b6a14dba606",
+  "managed_checkcom": "20261024a (Windows PowerShell .NET Framework invocation)",
+  "cicd_signal_block_unchanged": true,
+  "production_fixture_values_absent": true,
+  "validation_exit_codes": {
+    "solution_debug_arm64": 0,
+    "pptcom_release_anycpu": 0,
+    "native_no_window": 0,
+    "managed_mocks": 0,
+    "i18n_check": 0,
+    "diff_check": 0
+  },
+  "format_audit": {
+    "tracked_text_files": 19,
+    "utf8_bom_preserved": true,
+    "crlf_preserved": true,
+    "preexisting_shader_bytes_unchanged": true
+  }
+}

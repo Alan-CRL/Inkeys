@@ -60,7 +60,8 @@ namespace Inkeys::UI::Setting::Design
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action,
-		ImU32 fill = Card, ImU32 border = Stroke, ImTextureID iconTexture = 0);
+		ImU32 fill = Card, ImU32 border = Stroke, ImTextureID iconTexture = 0,
+		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false);
 	bool ToggleAction(const LayoutRect& bounds, bool& value);
 	bool SliderAction(const LayoutRect& bounds, float& value, float minimum,
 		float maximum, bool& active);
@@ -73,6 +74,7 @@ namespace Inkeys::UI::Setting::Design
 	bool CaptionNavigationButton(const char* id, const char* label, bool selected,
 		const ImVec2& size);
 	bool HyperlinkButton(const char* label);
+	bool CopyHyperlink(const char* id, const char* label, const char* value);
 	bool IconButton(const char* id, const char* glyph, const ImVec2& size = ImVec2(0, 0));
 	bool ToggleButton(const char* label, bool* value, const ImVec2& size = ImVec2(0, 0));
 	bool Checkbox(const char* label, bool* value);
@@ -97,6 +99,7 @@ namespace Inkeys::UI::Setting::Design
 	void Details(const char* id, const char* title, const char* description);
 	void Details(const char* id, const char* title, const std::function<void()>& content);
 	void SetStateLabels(const char* onText, const char* offText);
+	void SetCopyLabels(const char* prompt, const char* copied);
 	bool ToggleRow(const char* id, const char* title, const char* description,
 		const char* glyph, bool& value);
 	bool ComboRow(const char* id, const char* title, const char* description,
@@ -119,7 +122,7 @@ namespace Inkeys::UI::Setting::Design
 	int ButtonGroupRow(const char* id, const char* title, const char* description,
 		const char* glyph, std::initializer_list<ButtonSpec> buttons);
 	bool NavigationRow(const char* id, const char* title, const char* description,
-		const char* glyph, ImTextureID iconTexture = 0);
+		const char* glyph, ImTextureID iconTexture = 0, ImU32 iconTint = IM_COL32_WHITE);
 	bool Notice(const char* id, const char* title, const char* description,
 		ImFluentInfoSeverity severity = ImFluentInfoSeverity_Informational,
 		const char* actionLabel = nullptr);

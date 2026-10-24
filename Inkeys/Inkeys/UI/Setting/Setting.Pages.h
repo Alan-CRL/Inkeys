@@ -12,7 +12,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		Home = 0, Language = 1, Build = 2, Configuration = 3, General = 4,
 		Draw = 5, Plugins = 8, Components = 9,
-		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14,
+		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14, Feedback = 15,
 	};
 
 	struct NavigationDestination
@@ -50,7 +50,7 @@ namespace Inkeys::UI::Setting::Design
 		destination = NormalizeDestination(destination);
 		if (destination.page == PageId::General) state.lastGeneralSection = destination.section;
 		if (state.contentPage == static_cast<int>(destination.page) && state.contentSection == destination.section) return;
-		if (destination.page == PageId::Debug) state.ClearIndicator();
+		if (destination.page == PageId::Debug || destination.page == PageId::Feedback) state.ClearIndicator();
 		state.contentPage = static_cast<int>(destination.page);
 		state.contentSection = destination.section;
 		state.contentReveal.Reset(state.animationsEnabled ? 0.0F : 1.0F);
@@ -62,6 +62,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		None, Draw, Plugins, General, Language, Support, Website,
 		GitHub, Community, Bilibili, Feedback, Contact, Version, License, GitCode,
+		Appearance, Shortcuts, TermsOfUse,
 	};
 
 	struct HomeContent
@@ -220,6 +221,17 @@ namespace Inkeys::UI::Setting::Design
 		std::array<bool, 6> shortcutsChanged{};
 	};
 
+	struct CicdContent
+	{
+		std::string url, repoUrl, branch, submitter, buildTime;
+		std::string buildOS, buildOSVersion, buildRunnerImageOS, buildRunnerImageVersion, msBuildVersion;
+	};
+	enum class CicdAction { None, Run, Repository };
+	CicdAction RenderCicdDetails(const CicdContent& content);
+	void RenderSponsorThanks(const char* text, float widthPixels);
+	enum class FeedbackAction { None, Issues, Questionnaire, Community, Contact };
+	FeedbackAction RenderFeedback(ImTextureID qrTexture, float qrAspect, ImTextureID githubTexture = 0);
+
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha);
 	HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion = nullptr);
 	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section = GeneralSection::Basic);
@@ -229,6 +241,7 @@ namespace Inkeys::UI::Setting::Design
 	int RenderNavigationPane(const ShellGeometry& geometry,
 		NavigationState& state, int selectedPage);
 	bool RenderDebugButton(const LayoutRect& bounds, bool selected, NavigationState& state, float foregroundAlpha = 1.0F);
+	bool RenderFeedbackButton(const LayoutRect& bounds, bool selected, NavigationState& state, float foregroundAlpha = 1.0F);
 	void RenderEdidCard(const char* text);
 	void BindTextFonts(ImFont* regular, ImFont* strong);
 }

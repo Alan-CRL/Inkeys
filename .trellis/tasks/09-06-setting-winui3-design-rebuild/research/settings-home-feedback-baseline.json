@@ -1,0 +1,98 @@
+{
+  "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+    "sha256": "e7bbc9ab4a75e910448b1cbf4c2cad94f76c3c3d45187f62c4edcf9f339f945d",
+    "bom": false,
+    "crlf": 4725,
+    "lf": 4725
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.h": {
+    "sha256": "827ea5f1e56370207adf0f5a0a7be0d6d1124da489cf0aa08ef34c38dc906f6c",
+    "bom": false,
+    "crlf": 243,
+    "lf": 243
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": {
+    "sha256": "35cd0ba67d10a0ad30bf23becd6ed20e41302c42bc89791d5befbc93e739ba35",
+    "bom": false,
+    "crlf": 946,
+    "lf": 946
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp": {
+    "sha256": "44a79adb80cfc26f25b69404ba29ae6cc613b9c8049ae61659df78fc7604a772",
+    "bom": false,
+    "crlf": 576,
+    "lf": 576
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Layout.h": {
+    "sha256": "0cd43940c7636619c112efb45c1dfd4cb615de92ae4b2bcbe30d3746b835f010",
+    "bom": false,
+    "crlf": 313,
+    "lf": 313
+  },
+  "Inkeys/IdtI18nKeys.g.h": {
+    "sha256": "fe809e9c1ce43569e3c3a38ba3bdfb0b4f68a6d094e3f74d0c6b0d0ac0970afa",
+    "bom": false,
+    "crlf": 818,
+    "lf": 818
+  },
+  "Inkeys/src/i18n/zh-CN.jsonc": {
+    "sha256": "a25910a99859005f29ba7bcd6cd2705367b85840760f484779ca34f78ad825d6",
+    "bom": false,
+    "crlf": 815,
+    "lf": 815
+  },
+  "Inkeys/src/i18n/zh-TW.jsonc": {
+    "sha256": "9980f3390b7f2991f47fd9ae568610000482e355b57e5d995ce053c450c7fbf4",
+    "bom": false,
+    "crlf": 815,
+    "lf": 815
+  },
+  "Inkeys/src/i18n/en-US.jsonc": {
+    "sha256": "1b0bb3e25bf68b85df8f5934fefb1b9f3eee46969f9facd5469b1a84017c98ae",
+    "bom": false,
+    "crlf": 815,
+    "lf": 815
+  },
+  "Scripts/i18n.zh-CN.snapshot.jsonc": {
+    "sha256": "a25910a99859005f29ba7bcd6cd2705367b85840760f484779ca34f78ad825d6",
+    "bom": false,
+    "crlf": 815,
+    "lf": 815
+  },
+  "InkeysHeadlessTests/setting_design_tests.cpp": {
+    "sha256": "416f6ad11863d12a38497cfd7830803749290c3a226012b7d685aa66dcf7d50e",
+    "bom": false,
+    "crlf": 4457,
+    "lf": 4457
+  },
+  "InkeysHeadlessTests/window_geometry_tests.cpp": {
+    "sha256": "ddaf086b929978f7a9ba19b5b4fa2c950754a77823ff1c501faaf9987377379f",
+    "bom": false,
+    "crlf": 432,
+    "lf": 432
+  },
+  "Inkeys/Inkeys/Drawing/Draw3/Assets/inkPixelShader.cso": {
+    "sha256": "c23556a1103308c123fd8937da0b6e28639d1e302b3be6c68c314be7b62c4032",
+    "bom": false,
+    "crlf": 0,
+    "lf": 546
+  },
+  "Inkeys/Inkeys/Drawing/Draw3/Assets/inkVertexShader.cso": {
+    "sha256": "79ef240a3c6a322f20cb1ba2ceac1e5ce5c7f61a28bf53b53edbc9bb1656c189",
+    "bom": false,
+    "crlf": 0,
+    "lf": 111
+  },
+  ".github/workflows/build-windows.yml": {
+    "sha256": "53652fd2a6267b442cf41d15857eb18b8a941d6eb62f9a2bc044baffee6fe753",
+    "bom": false,
+    "crlf": 1126,
+    "lf": 1126
+  },
+  "InkeysHeadlessTests/setting_session_state_tests.cpp": {
+    "sha256": "6269da576313401ac1dbd63e281f962cea390c25d15a38559d960edee2e44eb3",
+    "bom": false,
+    "crlf": 654,
+    "lf": 654
+  }
+}

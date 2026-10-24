@@ -705,6 +705,8 @@ bool WriteSetting()
 PptComSetListStruct pptComSetlist;
 bool PptComReadSetting()
 {
+	// 加载页暂不开放；缺失/损坏的配置以及旧 true 都不能重新启用。
+	pptComSetlist.showLoadingScreen = false;
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
 	{
@@ -743,8 +745,6 @@ bool PptComReadSetting()
 
 	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
 	{
-		if (updateVal.isMember("ShowLoadingScreen") && updateVal["ShowLoadingScreen"].isBool())
-			pptComSetlist.showLoadingScreen = updateVal["ShowLoadingScreen"].asBool();
 		if (updateVal.isMember("MemoryWidgetPosition") && updateVal["MemoryWidgetPosition"].isBool())
 			pptComSetlist.memoryWidgetPosition = updateVal["MemoryWidgetPosition"].asBool();
 
@@ -852,7 +852,7 @@ static Json::Value CapturePptComSettingValue()
 {
 	Json::Value updateVal;
 	{
-		updateVal["ShowLoadingScreen"] = Json::Value(pptComSetlist.showLoadingScreen);
+		updateVal["ShowLoadingScreen"] = Json::Value(false);
 		updateVal["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
 
 		updateVal["ShowBottomBoth"] = Json::Value(pptComSetlist.showBottomBoth);

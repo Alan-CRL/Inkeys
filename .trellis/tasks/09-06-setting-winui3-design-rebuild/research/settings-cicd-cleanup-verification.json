@@ -1,0 +1,16 @@
+{
+  "source_metadata_matches_head": true,
+  "signal1_marker_count": 2,
+  "empty_metadata_field_count": 10,
+  "workflow_file_unchanged": true,
+  "workflow_pattern_matches": 1,
+  "workflow_template_memory_replacement": "PASS",
+  "memory_simulation_modified_source": false,
+  "back_arrow_retained": true,
+  "software_version_text_link_removed": true,
+  "solution_debug_arm64_exit_code": 0,
+  "compiled_preview_strings_absent": true,
+  "compiled_exe_sha256": "8ee61ff046c33f63bfbf1f095bd465a892894f1df629545c5352c8c1c6698228",
+  "utf8_bom_and_crlf_preserved": true,
+  "preexisting_shaders_unchanged": true
+}

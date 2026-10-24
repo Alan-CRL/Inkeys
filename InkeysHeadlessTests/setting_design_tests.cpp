@@ -11,6 +11,7 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.FrameSubmission.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.HomeBrand.h"
 #include "../Inkeys/IdtI18n.h"
+#include "../Inkeys/IdtI18nKeys.g.h"
 #include "setting_home_warp_tests.h"
 #include "../Inkeys/additional/imfluent/imfluent.h"
 #include "../Inkeys/additional/imfluent/imfluent_internal.h"
@@ -56,6 +57,25 @@ namespace
 			std::cerr << "[SettingDesign] failed: " << name << '\n';
 		}
 	};
+
+	// 所有点击复制都进入内存后端，回归不得覆盖用户系统剪贴板。
+	struct ClipboardProbe
+	{
+		std::vector<std::string> values;
+		decltype(ImGui::GetPlatformIO().Platform_SetClipboardTextFn) previous;
+		inline static ClipboardProbe* active = nullptr;
+		ClipboardProbe* previousProbe = nullptr;
+		ClipboardProbe() : previous(ImGui::GetPlatformIO().Platform_SetClipboardTextFn), previousProbe(active)
+		{
+			active = this;
+			ImGui::GetPlatformIO().Platform_SetClipboardTextFn = [](ImGuiContext*, const char* value) {
+				if (active) active->values.emplace_back(value);
+			};
+		}
+		~ClipboardProbe() { ImGui::GetPlatformIO().Platform_SetClipboardTextFn = previous; active = previousProbe; }
+	};
+
+	void CheckDrawData(Checks& checks);
 
 	bool Near(float left, float right, float tolerance = 0.001F)
 	{
@@ -842,6 +862,274 @@ namespace
 			"a single overlong localized button remains inside the available action width");
 	}
 
+	void CheckCicdAndSponsorContent(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto oldDisplay = io.DisplaySize;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue, oldDark = Design::IsDarkMode();
+		const float oldAlpha = ImGui::GetStyle().Alpha;
+		io.ConfigInputTrickleEventQueue = false; ImGui::GetStyle().Alpha = 1;
+		// 元数据只存在于此无窗口夹具的局部对象中，生产 settingCICD 保持真实值。
+		Design::CicdContent fixture{ "https://example.invalid/actions/runs/20261024",
+			"https://example.invalid/repository", "test/long-metadata-layout", "fixture author",
+			"2026-10-24T00:00:00Z", "Windows", "Windows 11 ARM64", "windows-arm64", "20261024.1",
+			"MSBuild fixture\n" + std::string(240, 'W') + "\n~FINAL_TOOLCHAIN_LINE~" };
+		for (bool dark : { false, true }) for (float widthDip : { 260.0F, 620.0F })
+		{
+			Design::ApplyPalette(dark); Design::ConfigureRowAnimations(0, false, 1);
+			ImGuiWindow* host = nullptr; ImGuiWindow* card = nullptr;
+			ImVec2 origin{}; float cardHeight = 0; LayoutRect tailInk{}; bool tailAvailable = false;
+			auto frame = [&](float scroll, ImVec2 mouse, bool down) {
+				io.DisplaySize = { 900 * scale, 700 * scale };
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##cicd-layout-fixture", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				ImGui::SetNextWindowScroll({ 0, scroll });
+				Design::BeginScrollChild("##cicd-fixture-scroll", { widthDip * scale, 340 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding);
+				host = ImGui::GetCurrentWindow(); origin = ImGui::GetCursorScreenPos();
+				const auto action = Design::RenderCicdDetails(fixture);
+				cardHeight = ImGui::GetItemRectSize().y; card = nullptr;
+				for (auto* candidate : GImGui->Windows)
+					if (candidate->ParentWindow == host && candidate->ChildId == host->GetID("##cicd-details")) card = candidate;
+				tailInk = {}; tailAvailable = false;
+				if (card)
+				{
+					ImFluent::PushFont(ImFluentTextStyle_Body);
+					const auto* tail = ImGui::GetFont()->GetFontBaked(ImGui::GetFontSize())->FindGlyphNoFallback('~');
+					if (tail) { tailInk = GlyphDrawBounds(card->DrawList, 0, *tail); tailAvailable = true; }
+					ImFluent::PopFont();
+				}
+				ImGui::EndChild();
+				ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+				return action;
+			};
+			const ImVec2 outside(-100, -100);
+			for (int pass = 0; pass < 3; ++pass)
+				checks.Expect(frame(0, outside, false) == Design::CicdAction::None, "CI/CD metadata layout never launches or dispatches an idle action");
+			checks.Expect(card && card->ContentSize.y > 0 && card->ScrollMax.y <= 1.0F
+				&& cardHeight > 300 * scale && host->ScrollMax.y > 0,
+				"long CI/CD metadata gets its full card height and uses the outer page scrollbar");
+			const float longHeight = cardHeight;
+			for (int pass = 0; pass < 3; ++pass) frame(host->ScrollMax.y, outside, false);
+			checks.Expect(card && tailAvailable && tailInk.Width() > 0
+				&& tailInk.top >= card->ClipRect.Min.y - 1 && tailInk.bottom <= card->ClipRect.Max.y + 1,
+				"the actual final CI/CD toolchain line can be reached and rendered by scrolling the outer page");
+			for (int pass = 0; pass < 2; ++pass) frame(0, outside, false);
+			const ImVec2 link(origin.x + 24 * scale, origin.y + 24 * scale);
+			frame(0, link, true);
+			checks.Expect(frame(0, link, false) == Design::CicdAction::Run,
+				"actual CI/CD link returns its action without opening a browser inside the renderer");
+			frame(0, outside, false);
+			const auto longVersion = fixture.msBuildVersion; fixture.msBuildVersion = "MSBuild fixture";
+			for (int pass = 0; pass < 3; ++pass) frame(0, outside, false);
+			checks.Expect(card && cardHeight < longHeight && card->ScrollMax.y <= 1.0F,
+				"CI/CD card remeasures when temporary long metadata is removed");
+			fixture.msBuildVersion = longVersion;
+
+			io.DisplaySize = { 900 * scale, 700 * scale };
+			io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+			ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##sponsor-thanks-fixture", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			auto* draw = ImGui::GetWindowDrawList(); const auto textOrigin = ImGui::GetCursorScreenPos();
+			const int first = draw->VtxBuffer.Size;
+			Design::RenderSponsorThanks("感谢支持感谢支持感谢支持感谢支持感谢支持感谢支持感谢支持感谢支持", widthDip * scale);
+			const auto box = LayoutRect{ ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y,
+				ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y };
+			const auto ink = VertexBounds(draw, first, Design::TextPrimary, true);
+			checks.Expect(ink.Width() > 0 && Contains(box, ink) && Near(box.Width(), widthDip * scale, 1),
+				"sponsor thanks uses primary body text and reserves all wrapped ink below its image card");
+			std::array<LayoutRect, 16> lines; std::array<bool, 16> used{};
+			for (auto& line : lines) line = { FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX };
+			for (int index = first; index + 3 < draw->VtxBuffer.Size; index += 4)
+			{
+				const auto& a = draw->VtxBuffer[index]; const auto& c = draw->VtxBuffer[index + 2];
+				if (a.col != Design::TextPrimary) continue;
+				const int line = static_cast<int>(((a.pos.y + c.pos.y) * .5F - textOrigin.y) / (Design::BodyText.lineHeight * scale));
+				if (line < 0 || line >= static_cast<int>(lines.size())) continue;
+				used[line] = true; auto& bounds = lines[line];
+				bounds.left = (std::min)(bounds.left, a.pos.x); bounds.right = (std::max)(bounds.right, c.pos.x);
+			}
+			int lineCount = 0;
+			for (size_t line = 0; line < lines.size(); ++line) if (used[line])
+			{
+				++lineCount; checks.Expect(Near((lines[line].left + lines[line].right) * .5F,
+					textOrigin.x + widthDip * scale * .5F, 2.5F * scale), "each actual sponsor thanks line is horizontally centered");
+			}
+			checks.Expect(lineCount > 0 && (widthDip > 300 || lineCount > 1), "sponsor body copy wraps in a narrow content column");
+			ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+		}
+		fixture = {};
+		io.DisplaySize = oldDisplay; io.ConfigInputTrickleEventQueue = oldTrickle;
+		ImGui::GetStyle().Alpha = oldAlpha; Design::ApplyPalette(oldDark);
+	}
+
+
+	void CheckHomeFeedbackContent(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using Design::HomeAction;
+		using Design::FeedbackAction;
+		ClipboardProbe clipboard;
+		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto oldDisplay = io.DisplaySize;
+		const auto oldFlags = io.ConfigFlags; const bool oldTrickle = io.ConfigInputTrickleEventQueue;
+		const bool oldDark = Design::IsDarkMode();
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100); const ImTextureID qr = static_cast<ImTextureID>(0xFEE1);
+		const ImTextureID github = static_cast<ImTextureID>(0xFEE2);
+		for (bool dark : { false, true }) for (float width : { 360.0F, 900.0F })
+		{
+			Design::ApplyPalette(dark); Design::NavigationState navigation; bool feedbackPage = false;
+			ImGuiWindow* page = nullptr; ImGuiWindow* common = nullptr; ImGuiWindow* author = nullptr;
+			LayoutRect qrInk{}, qrSurface{}; bool qrVisible = false, githubVisible = false, imageTintsValid = true;
+			auto expect = [&](bool condition, const char* name) {
+				if (!condition) std::cerr << "[HomeFeedback] scale=" << scale << " width=" << width << " dark=" << dark << '\n';
+				checks.Expect(condition, name);
+			};
+			auto frame = [&](ImVec2 mouse, bool down) {
+				io.DisplaySize = { (width + 32) * scale, 2600 * scale }; io.DeltaTime = 1.0F / 60;
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); Design::BeginDragScrolling(navigation); Design::ConfigureRowAnimations(0, false, 1);
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##home-feedback-fixture", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				page = ImGui::GetCurrentWindow();
+				std::pair<HomeAction, FeedbackAction> action{ HomeAction::None, FeedbackAction::None };
+				if (feedbackPage) action.second = Design::RenderFeedback(qr, 1.25F, github);
+				else action.first = Design::RenderHome({ 0, 1, "REMOVED_VERSION_LINK", 0, qr, 1.25F });
+				common = author = nullptr;
+				for (auto* candidate : GImGui->Windows) if (candidate->Active)
+				{
+					if (candidate->ParentWindow == page && candidate->ChildId == page->GetID("##home-common")) common = candidate;
+					if (std::strstr(candidate->Name, "##author_")) author = candidate;
+				}
+				ImGui::End(); Design::ApplyDragScrolling(navigation); ImGui::Render(); CheckDrawData(checks);
+				qrVisible = githubVisible = false; imageTintsValid = true; qrInk = { FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX };
+				// CPU 夹具只识别直传二维码 ID，不查询尚未上传的动态字库纹理。
+				const ImDrawList* qrDraw = nullptr; int qrFirstVertex = -1;
+				for (const auto* list : ImGui::GetDrawData()->CmdLists) for (const auto& command : list->CmdBuffer)
+					if (!command.TexRef._TexData && (command.TexRef._TexID == qr || command.TexRef._TexID == github) && command.ElemCount)
+					{
+						const bool isQr = command.TexRef._TexID == qr;
+						qrVisible |= isQr; githubVisible |= !isQr;
+						for (unsigned index = 0; index < command.ElemCount; ++index)
+						{
+							const auto& vertex = list->VtxBuffer[command.VtxOffset + list->IdxBuffer[command.IdxOffset + index]];
+							imageTintsValid &= vertex.col == Design::TextPrimary;
+							if (!isQr) continue;
+							qrDraw = list; const int vertexIndex = static_cast<int>(command.VtxOffset + list->IdxBuffer[command.IdxOffset + index]);
+							if (qrFirstVertex < 0 || vertexIndex < qrFirstVertex) qrFirstVertex = vertexIndex;
+							const auto& pos = vertex.pos;
+							qrInk.left = (std::min)(qrInk.left, pos.x); qrInk.right = (std::max)(qrInk.right, pos.x);
+							qrInk.top = (std::min)(qrInk.top, pos.y); qrInk.bottom = (std::max)(qrInk.bottom, pos.y);
+						}
+					}
+				qrSurface = { FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX };
+				if (qrDraw && qrFirstVertex >= 0)
+				{
+					// 按真实提交顺序取图片之前最近的描边primitive，不能按宽Y范围混入相邻卡片的边。
+					int last = qrFirstVertex - 1;
+					while (last >= 0 && qrDraw->VtxBuffer[last].col != Design::Stroke) --last;
+					int first = last;
+					while (first >= 0 && (qrDraw->VtxBuffer[first].col == Design::Stroke
+						|| qrDraw->VtxBuffer[first].col == (Design::Stroke & ~IM_COL32_A_MASK))) --first;
+					for (int index = first + 1; index <= last; ++index)
+					{
+						const auto& vertex = qrDraw->VtxBuffer[index]; if (vertex.col != Design::Stroke) continue;
+						qrSurface.left = (std::min)(qrSurface.left, vertex.pos.x); qrSurface.right = (std::max)(qrSurface.right, vertex.pos.x);
+						qrSurface.top = (std::min)(qrSurface.top, vertex.pos.y); qrSurface.bottom = (std::max)(qrSurface.bottom, vertex.pos.y);
+					}
+				}
+				return action;
+			};
+			// 用真实导航登记获得 item 矩形，再点击；不复制主页各区块的高度/坐标公式。
+			auto focusRect = [&](ImGuiWindow* window, ImGuiID id) {
+				if (!window) { expect(false, "actual Home content child exists"); return ImRect{}; }
+				ImGui::FocusWindow(window);
+				ImGui::SetNavID(id, ImGuiNavLayer_Main, window->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; frame(outside, false);
+				expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "requested real Home/feedback control registers keyboard navigation");
+				// 当前 ImGui 的导航矩形相对 CursorStartPos，含 padding/scroll，不能只加窗口 Pos。
+				return ImGui::WindowRectRelToAbs(window, window->NavRectRel[ImGuiNavLayer_Main]);
+			};
+			auto click = [&](const ImRect& rect) {
+				const ImVec2 point((rect.Min.x + rect.Max.x) * .5F, (rect.Min.y + rect.Max.y) * .5F);
+				frame(point, false); frame(point, true); auto action = frame(point, false); frame(outside, false); return action;
+			};
+			for (int pass = 0; pass < 3; ++pass) expect(frame(outside, false).first == HomeAction::None, "idle Home never dispatches navigation");
+			std::array<ImRect, 2> features;
+			for (int index = 0; index < 2; ++index)
+			{
+				features[index] = focusRect(page, ImHashStr("##feature", 0, page->GetID(index)));
+				expect(click(features[index]).first == (index == 0 ? HomeAction::Appearance : HomeAction::Draw),
+					"actual recommended cards navigate to appearance first and drawing second");
+			}
+			expect(features[0].Max.x <= features[1].Min.x || features[0].Max.y <= features[1].Min.y,
+				"recommended cards preserve left-to-right or stacked reading order without overlap");
+			const std::array entries{ std::pair{ "home-general", HomeAction::General },
+				std::pair{ "home-shortcuts", HomeAction::Shortcuts }, std::pair{ "home-plugins", HomeAction::Plugins },
+				std::pair{ "home-feedback", HomeAction::Feedback } };
+			float previousBottom = -FLT_MAX;
+			for (const auto& entry : entries)
+			{
+				if (!common) { expect(false, "common settings child is present"); break; }
+				const auto rect = focusRect(common, ImHashStr("##entry", 0, common->GetID(entry.first)));
+				expect(rect.Min.y >= previousBottom, "all four common settings cards appear in their requested order"); previousBottom = rect.Max.y;
+				expect(click(rect).first == entry.second, "actual common setting card returns its distinct destination");
+			}
+			if (author)
+			{
+				const auto id = ImHashStr("###link", 0, author->GetID(static_cast<int>(HomeAction::Community)));
+				expect(click(focusRect(author, id)).first == HomeAction::Community,
+					"localized QQ number or Discussions title remains a real community hyperlink");
+				for (const auto& copy : { std::pair{ "##home-author-qq-copy", "2685549821" },
+					std::pair{ "##home-author-email-copy", "alan-crl@foxmail.com" } })
+				{
+					const auto count = clipboard.values.size();
+					const auto copyId = ImHashStr("###copy-link", 0, author->GetID(copy.first));
+					expect(click(focusRect(author, copyId)).first == HomeAction::None && clipboard.values.size() == count + 1
+						&& clipboard.values.back() == copy.second, "Home author contact copies exactly once without navigating or mailing");
+				}
+				const auto legacyContact = ImHashStr("###link", 0, author->GetID(static_cast<int>(HomeAction::Contact)));
+				ImGui::FocusWindow(author); ImGui::SetNavID(legacyContact, ImGuiNavLayer_Main, author->NavRootFocusScopeId, ImRect{}); frame(outside, false);
+				expect(GImGui->NavId != legacyContact || !GImGui->NavIdIsAlive, "Home author card no longer registers its old contact action");
+				const auto support = ImHashStr("###link", 0, author->GetID(static_cast<int>(HomeAction::Support)));
+				expect(click(focusRect(author, support)).first == HomeAction::Support, "renamed coffee link keeps the original sponsor destination");
+			}
+			else expect(false, "localized author card is present");
+			const auto termsId = ImHashStr("###link", 0, page->GetID(static_cast<int>(HomeAction::TermsOfUse)));
+			expect(click(focusRect(page, termsId)).first == HomeAction::TermsOfUse, "localized Terms of Use footer remains a real separate navigation action");
+			ImGui::FocusWindow(page); const auto versionId = ImHashStr("###link", 0, page->GetID(static_cast<int>(HomeAction::Version)));
+			ImGui::SetNavID(versionId, ImGuiNavLayer_Main, page->NavRootFocusScopeId, ImRect{}); frame(outside, false);
+			expect(GImGui->NavId != versionId || !GImGui->NavIdIsAlive, "Home footer no longer registers the version hyperlink");
+			feedbackPage = true; ImGui::FocusWindow(page);
+			for (int pass = 0; pass < 3; ++pass) expect(frame(outside, false).second == FeedbackAction::None, "idle feedback page never opens an external channel");
+			ImRect questionnaire;
+			for (const auto& target : { std::pair{ "##feedback-issues", FeedbackAction::Issues },
+				std::pair{ "##feedback-questionnaire", FeedbackAction::Questionnaire },
+				std::pair{ "##feedback-community", FeedbackAction::Community }, std::pair{ "##feedback-contact", FeedbackAction::Contact } })
+			{
+				const auto rect = focusRect(page, ImHashStr("##navigate", 0, page->GetID(target.first)));
+				if (target.second == FeedbackAction::Questionnaire) questionnaire = rect;
+				expect(click(rect).second == target.second, "real feedback channel card returns the correct report, questionnaire, community or contact action");
+			}
+			const auto beforeQqCopy = clipboard.values.size();
+			const auto qqScope = ImHashStr("##feedback-author-qq-copy", 0, page->GetID("##feedback-author-qq"));
+			expect(click(focusRect(page, ImHashStr("###copy-link", 0, qqScope))).second == FeedbackAction::None
+				&& clipboard.values.size() == beforeQqCopy + 1 && clipboard.values.back() == "2685549821",
+				"feedback QQ copies through the same platform helper while email retains its distinct mail action");
+			frame(outside, false);
+			expect(githubVisible && imageTintsValid, "actual GitHub PNG and QR use the current light or dark text foreground");
+			expect(qrSurface.Width() > 0 && Near(qrInk.top - qrSurface.top, qrSurface.bottom - qrInk.bottom, 1.5F)
+				&& Near(qrInk.top - qrSurface.top, qrSurface.right - qrInk.right, 1.5F),
+				"compact right-hand QR has equal actual top, bottom and right padding");
+			expect(qrVisible && qrInk.Width() > 0 && Near(qrInk.Height() / qrInk.Width(), 1.25F, .01F)
+				&& qrInk.top > questionnaire.Max.y && qrInk.Width() <= 96 * scale + 1
+				&& qrInk.left >= page->WorkRect.Min.x - 1 && qrInk.right <= page->WorkRect.Max.x + 1,
+				"QR is always rendered below both channels without hovering, fits the page and preserves its image aspect");
+		}
+		io.DisplaySize = oldDisplay; io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle;
+		Design::ApplyPalette(oldDark);
+	}
+
 	void CheckCompositeContainers(Checks& checks, float scale, bool verify)
 	{
 		constexpr const char* description =
@@ -1492,6 +1780,93 @@ namespace
 		return result;
 	}
 
+
+	void CheckCopyAndCardPolish(Checks& checks, ImFont* regular, ImFont* strong, float scale)
+	{
+		ClipboardProbe clipboard; Design::BindTextFonts(regular, strong);
+		auto& io = ImGui::GetIO(); const auto display = io.DisplaySize;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue, oldDark = Design::IsDarkMode();
+		auto& style = ImGui::GetStyle(); const float shortDelay = style.HoverDelayShort, normalDelay = style.HoverDelayNormal, stationary = style.HoverStationaryDelay;
+		style.HoverDelayShort = style.HoverDelayNormal = style.HoverStationaryDelay = 0; io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100);
+		for (bool dark : { false, true })
+		{
+			Design::ApplyPalette(dark); ImRect qq, email;
+			auto frame = [&](ImVec2 mouse, bool down, bool render = true) {
+				io.DisplaySize = { 640 * scale, 480 * scale }; io.DeltaTime = 1.0F / 30;
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##copy-tooltip-fixture", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				ImGui::LogToBuffer();
+				if (render)
+				{
+					ImGui::SetCursorScreenPos({ 40 * scale, 60 * scale });
+					Design::CopyHyperlink("qq", "2685549821", "2685549821");
+					if (mouse.x < 0) { qq = GImGui->LastItemData.Rect;
+						checks.Expect(Near(qq.GetWidth(), Design::TextWidth("2685549821"), 1), "copy contact link uses the same Body text size as its QQ and community labels"); }
+					ImGui::SetCursorScreenPos({ 40 * scale, 120 * scale });
+					Design::CopyHyperlink("email", "alan-crl@foxmail.com", "alan-crl@foxmail.com");
+					if (mouse.x < 0) email = GImGui->LastItemData.Rect;
+				}
+				const std::string tooltip = GImGui->LogBuffer.c_str(); ImGui::LogFinish();
+				ImGui::End(); ImGui::Render(); CheckDrawData(checks); return tooltip;
+			};
+			for (int pass = 0; pass < 3; ++pass) frame(outside, false);
+			auto center = [](const ImRect& r) { return ImVec2((r.Min.x + r.Max.x) * .5F, (r.Min.y + r.Max.y) * .5F); };
+			const auto qqPoint = center(qq), emailPoint = center(email);
+			const auto clickText = IA(I18nKey.SettingsUI.Design.ClickToCopy), successText = IA(I18nKey.SettingsUI.Design.Copied);
+			frame(qqPoint, false); auto tip = frame(qqPoint, false);
+			checks.Expect(tip.find(clickText) != std::string::npos, "real hover tooltip initially says click to copy");
+			const auto count = clipboard.values.size(); frame(qqPoint, true); tip = frame(qqPoint, false);
+			checks.Expect(clipboard.values.size() == count + 1 && clipboard.values.back() == "2685549821"
+				&& tip.find(successText) != std::string::npos, "mouse click copies exact QQ and changes real tooltip to copied");
+			for (int pass = 0; pass < 3; ++pass) checks.Expect(frame(qqPoint, false).find(successText) != std::string::npos,
+				"copy success remains visible for the current continuous hover");
+			frame(outside, false); frame(qqPoint, false);
+			checks.Expect(frame(qqPoint, false).find(clickText) != std::string::npos, "leaving then re-entering restores click-to-copy tooltip");
+			frame(emailPoint, false); frame(emailPoint, true); tip = frame(emailPoint, false);
+			checks.Expect(!clipboard.values.empty() && clipboard.values.back() == "alan-crl@foxmail.com" && tip.find(successText) != std::string::npos,
+				"email copy uses its own contents and hover success state");
+			GImGui->HoveredId = GImGui->HoveredIdPreviousFrame = 0;
+			checks.Expect(frame(emailPoint, false).find(clickText) != std::string::npos, "native frameless hide input reset clears the prior success hover");
+			for (int pass = 0; pass < 3; ++pass) frame(outside, false, false);
+			frame(emailPoint, false);
+			checks.Expect(frame(emailPoint, false).find(clickText) != std::string::npos, "links returning after missing frames do not retain a stale success tooltip");
+
+			// 比较实际描边mesh的纹理行与边界，不只比较两个颜色常量。
+			for (int pass = 0; pass < 3; ++pass)
+			{
+				io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false); ImGui::NewFrame();
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##card-stroke-fixture", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				ImDrawList* rowDraw = ImGui::GetWindowDrawList(); const auto rowOrigin = ImGui::GetCursorScreenPos();
+				const int first = rowDraw->VtxBuffer.Size;
+				Design::SettingRow("##surface-row", "", nullptr, nullptr, 16, 96, [](const auto&) {});
+				const int last = rowDraw->VtxBuffer.Size;
+				ImGui::SetNextWindowSizeConstraints({ 0, 128 * scale }, { FLT_MAX, 128 * scale });
+				Design::BeginCard("##surface-card", { 0, 128 * scale }); auto* card = ImGui::GetCurrentWindow();
+				ImGui::Dummy({ 1, 32 * scale }); Design::EndCard();
+				auto signature = [&](ImDrawList* list, int begin, int end, float top) {
+					std::vector<ImVec2> uv; float minY = FLT_MAX;
+					for (int i = begin; i < end; ++i) if (list->VtxBuffer[i].col == Design::Stroke)
+					{
+						const auto& v = list->VtxBuffer[i]; minY = (std::min)(minY, v.pos.y - top);
+						if (std::none_of(uv.begin(), uv.end(), [&](ImVec2 p) { return p.x == v.uv.x && p.y == v.uv.y; })) uv.push_back(v.uv);
+					}
+					std::sort(uv.begin(), uv.end(), [](ImVec2 a, ImVec2 b) { return a.x == b.x ? a.y < b.y : a.x < b.x; });
+					return std::pair{ minY, uv };
+				};
+				const auto a = signature(rowDraw, first, last, rowOrigin.y), b = signature(card->DrawList, 0, card->DrawList->VtxBuffer.Size, card->Pos.y);
+				bool sameUv = a.second.size() == b.second.size() && !a.second.empty();
+				for (size_t i = 0; sameUv && i < a.second.size(); ++i) sameUv &= a.second[i].x == b.second[i].x && a.second[i].y == b.second[i].y;
+				checks.Expect(sameUv && Near(a.first, b.first, .2F), "Row, sponsor and EDID shared Card surfaces use the same physical stroke mesh and color at this DPI");
+				ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+			}
+		}
+		io.DisplaySize = display; io.ConfigInputTrickleEventQueue = oldTrickle;
+		style.HoverDelayShort = shortDelay; style.HoverDelayNormal = normalDelay; style.HoverStationaryDelay = stationary; Design::ApplyPalette(oldDark);
+	}
+
 	void CheckAnimatedColors(Checks& checks, ImFont* regular, float scale)
 	{
 		struct Capture { ImDrawList* list = nullptr; int first = 0, last = 0; ImRect rect; };
@@ -1874,7 +2249,7 @@ namespace
 			std::array<ImVec2, 2> fixedOrigins{};
 			float paneWidth = 0, scroll = 0, maximumScroll = 0, contentAlpha = 1;
 			unsigned int glyphAlpha = 0, flatAlpha = 0;
-			LayoutRect body, debug;
+			LayoutRect body, feedback, debug;
 			int vertices = 0;
 		};
 		auto& io = ImGui::GetIO();
@@ -1915,6 +2290,12 @@ namespace
 				| ImGuiWindowFlags_NoScrollWithMouse);
 			ImFluent::PushFont(ImFluentTextStyle_Body);
 			const auto title = ResolveTitleBarGeometry(size.x * scale, scale, 46 * scale, 100 * scale, 80 * scale);
+			frame.feedback = title.feedback;
+			if (Design::RenderFeedbackButton(title.feedback, selected.page == PageId::Feedback, state))
+			{
+				if (selected.page != PageId::Feedback) ++navigations;
+				selected = { PageId::Feedback }; Design::NotifyNavigationDestination(state, selected);
+			}
 			frame.debug = title.debug;
 			if (Design::RenderDebugButton(title.debug, selected.page == PageId::Debug, state))
 			{
@@ -2632,6 +3013,15 @@ namespace
 		frame = click(frame.debug);
 		checks.Expect(selected.page == PageId::Debug && !state.IsFlyoutOpen() && !frame.indicatorDrawn,
 			"titlebar debug remains actionable over the real navigation modal and closes it on activation");
+		selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected); frame = idle(20);
+		click(state.parentBounds); frame = idle(12);
+		if (!state.IsFlyoutOpen()) { click(state.parentBounds); frame = idle(12); }
+		checks.Expect(state.IsFlyoutOpen(), "compact navigation modal is open before feedback activation");
+		const int feedbackBodyActions = bodyActions;
+		frame = click(frame.feedback);
+		checks.Expect(selected.page == PageId::Feedback && !state.IsFlyoutOpen() && !frame.indicatorDrawn
+			&& bodyActions == feedbackBodyActions,
+			"feedback titlebar button remains actionable over navigation modal, closes it and clears sidebar selection without body activation");
 		std::cout << "[DebugNavigationDrawData] scale=" << scale << " frames=" << frames - debugStart << '\n';
 		std::cout << "[IndicatorSponsorDrawData] scale=" << scale << " frames=" << frames - originalFrames << '\n';
 		const int menuStart = frames;
@@ -4222,7 +4612,7 @@ namespace
 	}
 }
 
-int RunSettingDesignTests()
+int RunSettingDesignTests(bool copyOnly)
 {
 	Checks checks;
 	CheckNavigation(checks);
@@ -4257,6 +4647,7 @@ int RunSettingDesignTests()
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
 		ImGuiSession session;
+		ClipboardProbe settingsClipboard;
 		ImGui::GetStyle().FontScaleDpi = scale;
 		ImGui::GetIO().DisplaySize = ImVec2(1440.0F * scale, 1000.0F * scale);
 		std::array<ImFont*, 5> fonts{};
@@ -4283,6 +4674,17 @@ int RunSettingDesignTests()
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
+		if (copyOnly)
+		{
+			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
+			{
+				checks.Expect(LoadNavigationLabels(fontDirectory, language), "copy polish loads actual localized resources");
+				const bool traditional = std::strcmp(language, "zh-TW") == 0;
+				CheckCopyAndCardPolish(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], scale);
+				CheckHomeFeedbackContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+			}
+			continue;
+		}
 		// 真正 DX11 backend 必须在 CPU 测试写入模拟 TexID 之前创建和销毁纹理。
 		if (scale==1.0F) checks.failures+=RunSettingHomeWarpProbe(fonts[0],fonts[1],fonts.back());
 		ImGui::NewFrame();
@@ -4337,6 +4739,9 @@ int RunSettingDesignTests()
 				checks.Expect(LoadNavigationLabels(fontDirectory, language), "reorganized settings load actual language resources");
 				const bool traditional = std::strcmp(language, "zh-TW") == 0;
 				CheckGeneralSections(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+				CheckCicdAndSponsorContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+				CheckHomeFeedbackContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+				CheckCopyAndCardPolish(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], scale);
 			}
 			checks.Expect(LoadNavigationLabels(fontDirectory), "reorganized settings restore default language fixtures");
 		}

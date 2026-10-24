@@ -95,7 +95,7 @@ setlistVal.removeMember("Preset");
 
 ### 1. Scope / Trigger
 
-修改 UI3 脏区红框、下方帧率文字、设置页实验室卡片或其启动同步时适用；传统 `IdtFloating` 不在此合同内。
+修改 UI3 脏区红框、下方帧率文字、调试软件页卡片或其启动同步时适用；传统 `IdtFloating` 不在此合同内。
 
 ### 2. Signatures
 
@@ -115,7 +115,7 @@ Experimental.Inkeys3.UI3.Debug.ShowFrameRate : bool = true
 
 ### 3. Contracts
 
-- `Enable` 只控制实际业务脏区红框；设置卡片名称为“脏区调试”。
+- `Enable` 只控制实际业务脏区红框；设置卡片名称为“脏区调试”，与附属帧率行一起位于调试软件页。配置路径仍保留在 Experimental.Inkeys3.UI3.Debug，不因 UI 移页而迁移。
 - `ShowFrameRate` 只控制下方帧率文字和为采样维持的连续帧；其设置卡片只在 `Enable=true` 时显示，隐藏不得覆盖持久化值。
 - 新字段默认 `true`，使旧配置开启调试后继续显示帧率。设置修改先更新 `Inkeys::config`，再调用 `SetDebugOptions` 即时同步运行时，最后 `Config::Write()`。
 - 启动 `ReadAll()` 后必须把两个字段一起传给 Bar；运行时负责用旧/新覆盖层快照清除被关闭的文字或红框。

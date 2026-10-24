@@ -205,15 +205,18 @@
       "HomeGitCodeName": "GitCode",
       "DrawAction": "Customize writing",
       "Tutorial": "Getting started",
-      "Explore": "Explore your tools",
+      "Explore": "Recommended settings",
       "DrawDescription": "Ink and eraser options",
+      "AppearanceDescription": "Animations, lighting and main bar scale",
       "PresetDescription": "Your favorite pens, ready to use",
       "PluginDescription": "Connect presentation and classroom tools",
       "CommonSettings": "Common settings",
-      "GeneralDescription": "Startup behavior and interface scale",
+      "GeneralDescription": "Operation mode, toolbar arrangement and startup",
+      "ShortcutsDescription": "Shortcuts for global actions and annotation editing",
       "DisplayLanguage": "Display language",
       "Improve": "Help improve Inkeys",
       "Contact": "Contact the developer",
+      "TermsOfUse": "Terms of use",
       "Website": "Website",
       "StartupSection": "Startup",
       "AppearanceSection": "Appearance",
@@ -241,17 +244,43 @@
       "AvoidFullscreenSummary": "Restart required. Avoid full screen when not drawing or in click-through mode.",
       "AvoidFullscreenDetails": "Usage notes",
       "Enabled": "On",
-      "Disabled": "Off"
+      "Disabled": "Off",
+      "ClickToCopy": "Click to copy",
+      "Copied": "Copied"
     },
     "Home":
     {
       "N": "Home",
       "Prompt": "This is a preview version of Inkeys 3 and does not represent the final quality.",
       "Developer": "智绘教Inkeys Developer",
-      "Group": "Github Discussions",
+      "Group": "GitHub Discussions",
       "GroupE": "Inkeys/discussions",
       "BilibiliChannel": "Bilibili Channel",
       "FeedBack": "Feedback / Suggestions"
+    },
+    "Feedback":
+    {
+      "N": "Feedback",
+      "Description": "Report problems or suggest improvements to help improve Inkeys.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "Report problems or suggest improvements on GitHub for public discussion and tracking."
+      },
+      "Questionnaire":
+      {
+        "N": "Feedback questionnaire",
+        "E": "Use the feedback questionnaire to report a problem or suggest an improvement."
+      },
+      "Qr":
+      {
+        "N": "Scan to send feedback",
+        "E": "Scan the QR code to report problems or suggest improvements through the questionnaire."
+      },
+      "ContactSection": "Community and developer contact",
+      "CommunityDescription": "Discuss problems or suggestions with the community on GitHub Discussions.",
+      "ContactDescription": "Email the developer with problems or suggestions.",
+      "AuthorQQ": "Developer QQ"
     },
     "Language":
     {
@@ -653,7 +682,7 @@
         {
           "N": "Basic Logic",
           "LoadPage": "Show loading page",
-          "LoadPageE": "Includes the plugin logo, tips, etc., and is shown only once per PPT file."
+          "LoadPageE": "This feature is disabled. PPT loading pages are no longer shown."
         },
         "WidgetDisplay":
         {

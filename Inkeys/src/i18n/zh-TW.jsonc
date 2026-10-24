@@ -205,15 +205,18 @@
       "HomeGitCodeName": "GitCode",
       "DrawAction": "調整書寫體驗",
       "Tutorial": "使用教學",
-      "Explore": "探索你的工具",
+      "Explore": "推薦設定",
       "DrawDescription": "筆跡與橡皮",
+      "AppearanceDescription": "動畫、光影與主欄縮放",
       "PresetDescription": "常用畫筆，隨時取用",
       "PluginDescription": "連接簡報與課堂工具",
       "CommonSettings": "常用設定",
-      "GeneralDescription": "啟動行為與介面縮放",
+      "GeneralDescription": "操作模式、主欄排列與啟動方式",
+      "ShortcutsDescription": "全域操作與註解編輯快捷鍵",
       "DisplayLanguage": "顯示語言",
       "Improve": "一起完善 Inkeys",
       "Contact": "聯絡作者",
+      "TermsOfUse": "使用條款",
       "Website": "官方網站",
       "StartupSection": "啟動",
       "AppearanceSection": "外觀",
@@ -241,17 +244,43 @@
       "AvoidFullscreenSummary": "需要重新啟動軟體。非繪製與穿透模式下避免佔滿螢幕。",
       "AvoidFullscreenDetails": "適用說明",
       "Enabled": "開",
-      "Disabled": "關"
+      "Disabled": "關",
+      "ClickToCopy": "點擊複製",
+      "Copied": "複製成功"
     },
     "Home":
     {
       "N": "主頁",
       "Prompt": "此版本為 Inkeys 3 預覽版本，不代表最終品質。",
       "Developer": "智绘教Inkeys 創始開發者",
-      "Group": "Github Discussions",
+      "Group": "GitHub 討論區",
       "GroupE": "Inkeys/discussions",
       "BilibiliChannel": "Bilibili 宣傳頻道",
       "FeedBack": "問題/建議回饋"
+    },
+    "Feedback":
+    {
+      "N": "問題回饋",
+      "Description": "提交問題或建議，協助改善 Inkeys。",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "在 GitHub 提交問題或建議，方便公開追蹤與交流。"
+      },
+      "Questionnaire":
+      {
+        "N": "問卷回饋",
+        "E": "透過問卷回饋使用時遇到的問題或改善建議。"
+      },
+      "Qr":
+      {
+        "N": "掃碼回饋",
+        "E": "掃描 QR 碼，透過問卷回饋問題或建議。"
+      },
+      "ContactSection": "交流與聯絡作者",
+      "CommunityDescription": "在 GitHub 討論區交流使用時遇到的問題或改善建議。",
+      "ContactDescription": "透過電子郵件向作者回饋問題或建議。",
+      "AuthorQQ": "作者 QQ"
     },
     "Language":
     {
@@ -653,7 +682,7 @@
         {
           "N": "基礎邏輯",
           "LoadPage": "顯示載入頁面",
-          "LoadPageE": "包含插件標識和小提示等，每個 PPT 僅顯示一次。"
+          "LoadPageE": "此功能已停用，不再顯示 PPT 載入頁面。"
         },
         "WidgetDisplay":
         {

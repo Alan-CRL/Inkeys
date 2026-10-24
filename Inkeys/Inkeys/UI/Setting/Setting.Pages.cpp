@@ -210,11 +210,15 @@ namespace Inkeys::UI::Setting::Design
 			return pressed;
 		}
 
-		void Link(const char* /*id*/, const char* label, HomeAction kind, HomeAction& action)
+		void Link(const char* /*id*/, const char* label, HomeAction kind, HomeAction& action, bool bodyFont = false)
 		{
 			ImGui::PushID(static_cast<int>(kind));
 			const std::string stableLabel = std::string(label) + "###link";
-			if (HyperlinkButton(stableLabel.c_str())) action = kind;
+			// 作者联系方式统一正文大小，其他页面链接保留原控件字号与稳定 ID。
+			if (bodyFont) ImFluent::PushFont(ImFluentTextStyle_Body);
+			const bool pressed = bodyFont ? ImFluent::HyperlinkButton(stableLabel.c_str()) : HyperlinkButton(stableLabel.c_str());
+			if (bodyFont) ImFluent::PopFont();
+			if (pressed) action = kind;
 			ImGui::PopID();
 		}
 	}
@@ -527,6 +531,84 @@ namespace Inkeys::UI::Setting::Design
 			ApplyContentAlpha(child, alpha);
 	}
 
+	CicdAction RenderCicdDetails(const CicdContent& content)
+	{
+		CicdAction action = CicdAction::None;
+		if (NavigationRow("##cicd-run-link", "CI/CD", content.url.c_str(), "\ue71b"))
+			action = CicdAction::Run;
+		if (NavigationRow("##cicd-repository-link", IA(I18nKey.SettingsUI.CICD.Repository).c_str(),
+			content.repoUrl.c_str(), "\ue8a5"))
+			action = CicdAction::Repository;
+		PageContentStart();
+		std::string details;
+		details += IA(I18nKey.SettingsUI.CICD.Branch) + ": " + content.branch + "\n";
+		details += IA(I18nKey.SettingsUI.CICD.Submitter) + ": " + content.submitter + "\n";
+		details += IA(I18nKey.SettingsUI.CICD.BuildTime) + ": " + content.buildTime + "\n\n";
+		details += IA(I18nKey.SettingsUI.CICD.BuildSystem) + ": " + content.buildOS + "\n";
+		details += IA(I18nKey.SettingsUI.CICD.BuildSystemVersion) + ": " + content.buildOSVersion + "\n";
+		details += IA(I18nKey.SettingsUI.CICD.RunnerImageSystem) + ": " + content.buildRunnerImageOS + "\n";
+		details += IA(I18nKey.SettingsUI.CICD.RunnerImageVersion) + ": " + content.buildRunnerImageVersion + "\n\n";
+		details += IA(I18nKey.SettingsUI.CICD.MSBuildVersion) + "\n" + content.msBuildVersion;
+		const float width = ImGui::GetContentRegionAvail().x;
+		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
+		const float textHeight = TextHeight(details.c_str(), (std::max)(1.0F, width - padding * 2.0F));
+		const float height = std::ceil(textHeight + padding * 2.0F);
+		// 当前帧按真实完整元数据定高，长工具链输出交给外层页面滚动，不截成内层小视口。
+		ImGui::SetNextWindowSizeConstraints({ 0.0F, height }, { FLT_MAX, height });
+		ImGui::SetNextWindowContentSize({ 0.0F, textHeight });
+		if (BeginCard("##cicd-details", { width, height })) Text(details.c_str());
+		EndCard();
+		return action;
+	}
+
+	void RenderSponsorThanks(const char* text, float widthPixels)
+	{
+		const float width = (std::max)(1.0F, widthPixels);
+		const auto layout = MeasureInline({ { text } }, width, ImFluentTextStyle_Body, true);
+		HomeAction ignored = HomeAction::None;
+		// 复用逐行居中换行，正文色跟随浅深主题，图片卡片之外仍登记完整文字高度。
+		DrawInline("##sponsor-thanks", layout, ImGui::GetCursorScreenPos(), ImFluentTextStyle_Body, TextPrimary, ignored);
+		ImGui::Dummy({ width, layout.height });
+	}
+
+	FeedbackAction RenderFeedback(ImTextureID qrTexture, float qrAspect, ImTextureID githubTexture)
+	{
+		PageHeader(IA(I18nKey.SettingsUI.Feedback.N).c_str(), IA(I18nKey.SettingsUI.Feedback.Description).c_str());
+		PageContentStart();
+		FeedbackAction action = FeedbackAction::None;
+		if (NavigationRow("##feedback-issues", IA(I18nKey.SettingsUI.Feedback.Issues.N).c_str(),
+			IA(I18nKey.SettingsUI.Feedback.Issues.E).c_str(), "\ue943", githubTexture, TextPrimary))
+			action = FeedbackAction::Issues;
+		if (NavigationRow("##feedback-questionnaire", IA(I18nKey.SettingsUI.Feedback.Questionnaire.N).c_str(),
+			IA(I18nKey.SettingsUI.Feedback.Questionnaire.E).c_str(), "\ue70f"))
+			action = FeedbackAction::Questionnaire;
+		const float qrHeight = 96.0F * (std::isfinite(qrAspect) && qrAspect > 0.0F ? qrAspect : 1.0F);
+		SettingRow("##feedback-qr", IA(I18nKey.SettingsUI.Feedback.Qr.N).c_str(),
+			IA(I18nKey.SettingsUI.Feedback.Qr.E).c_str(), nullptr, 96.0F, qrHeight,
+			[&](const LayoutRect& bounds)
+			{
+				// 白色透明 mask 复用同一纹理，主题只改变 tint；三边间距由公共行 padding 保证。
+				if (qrTexture) ImGui::GetWindowDrawList()->AddImage(qrTexture,
+					{ bounds.left, bounds.top }, { bounds.right, bounds.bottom }, { 0, 0 }, { 1, 1 }, TextPrimary);
+			}, Card, Stroke, 0, IM_COL32_WHITE, true);
+		SectionHeader(IA(I18nKey.SettingsUI.Feedback.ContactSection).c_str());
+		std::string community = IA(I18nKey.SettingsUI.Home.Group);
+		if (I18n::isIdentifying(L"zh-CN")) community += " " + IA(I18nKey.SettingsUI.Home.GroupE);
+		if (NavigationRow("##feedback-community", community.c_str(),
+			IA(I18nKey.SettingsUI.Feedback.CommunityDescription).c_str(), "\ue716"))
+			action = FeedbackAction::Community;
+		const std::string emailDescription = "alan-crl@foxmail.com\n"
+			+ IA(I18nKey.SettingsUI.Feedback.ContactDescription);
+		if (NavigationRow("##feedback-contact", IA(I18nKey.SettingsUI.Design.Contact).c_str(),
+			emailDescription.c_str(), "\ue715"))
+			action = FeedbackAction::Contact;
+		const std::string author = "AlanCRL · " + IA(I18nKey.SettingsUI.Feedback.AuthorQQ);
+		SettingRow("##feedback-author-qq", author.c_str(), nullptr, "\ue77b", TextWidth("2685549821") / Pixels(1.0F) + 16.0F,
+			BodyText.size + ImFluent::GetStyle().SpacingXSmall * 2.0F,
+			[](const LayoutRect&) { CopyHyperlink("##feedback-author-qq-copy", "2685549821", "2685549821"); });
+		return action;
+	}
+
 	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section)
 	{
 		GeneralEvents events;
@@ -650,7 +732,7 @@ namespace Inkeys::UI::Setting::Design
 
 			SectionHeader(IA(I18nKey.SettingsUI.Design.WindowBehaviorSection).c_str());
 			events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str(), "\ue922", draft.topInterval,
+				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str(), "\ue916", draft.topInterval,
 				{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s),
 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s),
@@ -776,8 +858,8 @@ namespace Inkeys::UI::Setting::Design
 		SectionHeader(IA(I18nKey.SettingsUI.Design.Explore).c_str());
 		struct Feature { const char* title; const char* description; const char* icon; HomeAction action; ImU32 tint; ImU32 ink; };
 		const std::array features{
-			Feature{ I18nKey.SettingsUI.Draw.N, I18nKey.SettingsUI.Design.DrawDescription, "\uedc6", HomeAction::Draw, palette.featureTint[0], palette.featureInk[0] },
-			Feature{ I18nKey.SettingsUI.PlugIn.N, I18nKey.SettingsUI.Design.PluginDescription, "\uea86", HomeAction::Plugins, palette.featureTint[2], palette.featureInk[2] }
+			Feature{ I18nKey.SettingsUI.Design.GeneralAppearance, I18nKey.SettingsUI.Design.AppearanceDescription, "\ue790", HomeAction::Appearance, palette.featureTint[1], palette.featureInk[1] },
+			Feature{ I18nKey.SettingsUI.Draw.N, I18nKey.SettingsUI.Design.DrawDescription, "\uedc6", HomeAction::Draw, palette.featureTint[0], palette.featureInk[0] }
 		};
 		const bool featureColumns = width >= Pixels(560.0F);
 		const float featureWidth = featureColumns ? (width - Pixels(12.0F)) / 2.0F : width;
@@ -829,10 +911,10 @@ namespace Inkeys::UI::Setting::Design
 			ImFluent::DrawIcon("\ue76c", { origin.x + entryWidth - Pixels(36.0F), origin.y }, { origin.x + entryWidth - Pixels(12.0F), origin.y + height }, 12.0F, TextSecondary);
 			ImGui::PopID();
 		};
-		entry("home-general", IA(I18nKey.SettingsUI.Regular.N).c_str(), IA(I18nKey.SettingsUI.Design.GeneralDescription).c_str(), "\ue713", HomeAction::General);
-		const char* languageKey = I18n::isIdentifying(L"zh-CN") ? I18nKey.SettingsUI.Language.UI.Language.zh_CN
-			: I18n::isIdentifying(L"zh-TW") ? I18nKey.SettingsUI.Language.UI.Language.zh_TW : I18nKey.SettingsUI.Language.UI.Language.en_US;
-		entry("home-language", IA(I18nKey.SettingsUI.Design.DisplayLanguage).c_str(), IA(languageKey).c_str(), "\ue774", HomeAction::Language);
+		entry("home-general", IA(I18nKey.SettingsUI.Design.GeneralBasic).c_str(), IA(I18nKey.SettingsUI.Design.GeneralDescription).c_str(), "\ue713", HomeAction::General);
+		entry("home-shortcuts", IA(I18nKey.SettingsUI.HotKey.N).c_str(), IA(I18nKey.SettingsUI.Design.ShortcutsDescription).c_str(), "\ue765", HomeAction::Shortcuts);
+		entry("home-plugins", IA(I18nKey.SettingsUI.PlugIn.N).c_str(), IA(I18nKey.SettingsUI.Design.PluginDescription).c_str(), "\uea86", HomeAction::Plugins);
+		entry("home-feedback", IA(I18nKey.SettingsUI.Feedback.N).c_str(), IA(I18nKey.SettingsUI.Feedback.Description).c_str(), "\ued15", HomeAction::Feedback);
 		ImGui::EndChild();
 		const float commonBottom = ImGui::GetItemRectMax().y;
 		ImGui::SetCursorScreenPos({ bottomColumns ? bottomOrigin.x + commonWidth + Pixels(20.0F) : bottomOrigin.x,
@@ -857,15 +939,28 @@ namespace Inkeys::UI::Setting::Design
 				ImFluent::DrawIcon("\ue77b", authorOrigin, { authorOrigin.x + Pixels(36.0F), authorOrigin.y + Pixels(36.0F) }, 20.0F, TextSecondary);
 			TextAt("AlanCRL", { authorOrigin.x + Pixels(48.0F), authorOrigin.y }, authorCopyWidth);
 			TextAt(developer.c_str(), { authorOrigin.x + Pixels(48.0F), authorOrigin.y + Pixels(20.0F) }, authorCopyWidth, ImFluentTextStyle_Caption, TextSecondary);
-			Text("QQ: 2685549821", ImFluentTextStyle_Caption, TextSecondary);
-			if (HyperlinkButton("alan-crl@foxmail.com###author-email")) action = HomeAction::Contact;
-			Text(IA(I18nKey.SettingsUI.Home.Group).c_str(), ImFluentTextStyle_Caption, TextSecondary);
-			Link("home-group", IA(I18nKey.SettingsUI.Home.GroupE).c_str(), HomeAction::Community, action);
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(12.0F));
+			const float qqLabelWidth = TextWidth("QQ:");
+			TextAt("QQ:", ImGui::GetCursorScreenPos(), qqLabelWidth, ImFluentTextStyle_Body, TextSecondary);
+			ImGui::Dummy({ qqLabelWidth, Pixels(BodyText.lineHeight) });
+			ImGui::SameLine(0.0F, Pixels(8.0F));
+			CopyHyperlink("##home-author-qq-copy", "2685549821", "2685549821");
+			CopyHyperlink("##home-author-email-copy", "alan-crl@foxmail.com", "alan-crl@foxmail.com");
+			const std::string groupTitle = IA(I18nKey.SettingsUI.Home.Group);
+			if (I18n::isIdentifying(L"zh-CN"))
+			{
+				// 群标题只占自身宽度，让群号链接保持在同一行。
+				const float titleWidth = TextWidth(groupTitle.c_str());
+				TextAt(groupTitle.c_str(), ImGui::GetCursorScreenPos(), titleWidth, ImFluentTextStyle_Body, TextSecondary);
+				ImGui::Dummy({ titleWidth, Pixels(BodyText.lineHeight) });
+				ImGui::SameLine(0.0F, Pixels(8.0F));
+				Link("home-group", IA(I18nKey.SettingsUI.Home.GroupE).c_str(), HomeAction::Community, action, true);
+			}
+			else
+				Link("home-group", groupTitle.c_str(), HomeAction::Community, action, true);
 			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(10.0F));
 			ImFluent::BeginWrapPanel(Pixels(16.0F), Pixels(8.0F));
 			const std::array links{
-				std::pair{ I18nKey.SettingsUI.Design.Contact, HomeAction::Contact },
-				std::pair{ I18nKey.SettingsUI.Home.FeedBack, HomeAction::Feedback },
 				std::pair{ I18nKey.SettingsUI.Sponsor.N, HomeAction::Support }
 			};
 			for (const auto& link : links)
@@ -873,12 +968,7 @@ namespace Inkeys::UI::Setting::Design
 				const std::string label = IA(link.first);
 				ImFluent::WrapPanelNextItem(ControlTextWidth(label.c_str()) + Pixels(16.0F));
 				Link(link.first, label.c_str(), link.second, action);
-				if (link.second == HomeAction::Feedback && ImGui::IsItemHovered() && content.feedbackTexture)
-				{
-					ImGui::BeginTooltip();
-					ImGui::Image(content.feedbackTexture, { Pixels(140.0F), Pixels(140.0F) * content.feedbackAspect });
-					ImGui::EndTooltip();
-				}
+
 			}
 			ImFluent::EndWrapPanel();
 		}
@@ -889,10 +979,10 @@ namespace Inkeys::UI::Setting::Design
 
 		ImFluent::BeginWrapPanel(Pixels(16.0F), Pixels(8.0F));
 		const std::array footer{
+			std::pair{ IA(I18nKey.SettingsUI.Design.TermsOfUse), HomeAction::TermsOfUse },
 			std::pair{ IA(I18nKey.SettingsUI.Design.Website), HomeAction::Website },
 			std::pair{ std::string("GitHub"), HomeAction::GitHub },
-			std::pair{ IA(I18nKey.SettingsUI.Home.BilibiliChannel), HomeAction::Bilibili },
-			std::pair{ std::string(content.version), HomeAction::Version }
+			std::pair{ IA(I18nKey.SettingsUI.Home.BilibiliChannel), HomeAction::Bilibili }
 		};
 		for (const auto& link : footer)
 		{

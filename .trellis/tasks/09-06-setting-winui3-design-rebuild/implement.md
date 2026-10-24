@@ -205,3 +205,37 @@ git diff --check
 - [x] 现代外框恢复系统默认色；旧系统隐藏创建后初始化菜单，再去原生 caption，保留四边 frame 与原有尺寸校正。
 - [x] 显式接回旧系统 Alt+Space、图标/标题栏菜单和系统命令，并增加旧/新 frame 几何与菜单状态回归。
 - [x] 独立审查、完整 ARM64 Solution、--no-window 及编码/diff检查通过；结果登记 research/settings-win32-frame-followup.md，Win7真实外观/菜单交互仍待实机验收。
+
+## 当前增量：设置内容与排版（2026-10-24）
+
+- [x] 确认十项需求、图标真实映射/字库、PPT加载门禁与配置所有写入口，以及CI元数据注入合同。
+- [x] 完成UI/配置/托管源码、独立审查及真实renderer和持久化边界回归源码。
+- [x] 构建PptCOM并手动同步同次DLL/TLB至native资源，SHA-256一致。
+- [x] 完整ARM64 Solution、managed/native无窗口、嵌入DLL版本与资源、i18n、编码/diff检查，登记research/settings-content-layout-followup.md。
+
+## 当前增量：置顶间隔与 CI/CD 人工预览（2026-10-24）
+
+- [x] 定位现有秒表码点 U+E916、构建元数据定义与 url 非空自动切换逻辑；当前字段位于 Setting.cpp，不为此移动到新头文件。
+- [x] 最小修改图标与临时字段初始化，明确标记为本地预览，并独立审查。
+- [x] 完整现有 Debug|ARM64 Solution 编译、字节格式/差异检查，交付可供用户查看的程序；仅数据/图标追加不新写镜像测试。
+- [x] 用户完成实际查看后，已清除 CI/CD 临时值并恢复空字段；见下方清理增量。
+
+## 当前增量：CI/CD 返回链接与测试清理（2026-10-24）
+
+- [x] 定位 CI/CD 标题前的重复文字链接、人工预览字段与 build-windows.yml signal1 替换表达式。
+- [x] 删除文字链接与 SameLine，仅保留返回箭头；signal1 内字段/标记恢复原空定义，独立核对最小差异。
+- [x] 原样元数据和工作流替换内存验证、完整 Debug|ARM64 编译、产物无测试值、编码/CRLF/diff检查；完成上一轮清理待办。
+
+## 当前增量：主页与问题反馈（2026-10-24）
+
+- [x] 核对 Home renderer/动作、General Basic/Appearance/Shortcuts、原问卷/二维码、标题栏几何与命中、语言社区路由。
+- [x] 按 research/settings-home-feedback.md 的接口约定并行完成主页/反馈 renderer+i18n 与 native 路由/标题栏接线，最小修改并保持原文件格式。
+- [x] 补真实控件点击、二维码常驻、多语言/DPI/窄宽布局、标题栏几何及浮层交互无窗口回归，独立代码检查。
+- [x] ARM64 原生 MSBuild 完整 Debug|ARM64 Solution、适用 --no-window、i18n/编码/diff/产物检查；更新相关 spec/验证记录，父任务保持进行中。
+
+## 当前增量：名片复制与反馈卡片精修（2026-10-24）
+
+- [x] 定位作者卡、原黑色透明二维码、通用Card/SettingRow描边路径、Clipboard API和现有反馈/赞助路由。
+- [x] 公共CopyHyperlink/卡片边框、Pages布局/i18n、原生资源加载/实际GitHub图标并行实施，保持格式及最小差异。
+- [x] 真实鼠标/剪贴板mock/tooltip状态、字号/间距、二维码右对齐/三边间隙/主题tint和各类卡片描边回归，独立审查。
+- [x] 完整ARM64 Solution低并发构建、适用无窗口、i18n/字节/diff与产物检查，更新验证和规范；不结束父任务。

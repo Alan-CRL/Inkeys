@@ -210,13 +210,16 @@ inline constexpr struct I18nKeyRoot
             const char* Tutorial = "SettingsUI/Design/Tutorial";
             const char* Explore = "SettingsUI/Design/Explore";
             const char* DrawDescription = "SettingsUI/Design/DrawDescription";
+            const char* AppearanceDescription = "SettingsUI/Design/AppearanceDescription";
             const char* PresetDescription = "SettingsUI/Design/PresetDescription";
             const char* PluginDescription = "SettingsUI/Design/PluginDescription";
             const char* CommonSettings = "SettingsUI/Design/CommonSettings";
             const char* GeneralDescription = "SettingsUI/Design/GeneralDescription";
+            const char* ShortcutsDescription = "SettingsUI/Design/ShortcutsDescription";
             const char* DisplayLanguage = "SettingsUI/Design/DisplayLanguage";
             const char* Improve = "SettingsUI/Design/Improve";
             const char* Contact = "SettingsUI/Design/Contact";
+            const char* TermsOfUse = "SettingsUI/Design/TermsOfUse";
             const char* Website = "SettingsUI/Design/Website";
             const char* StartupSection = "SettingsUI/Design/StartupSection";
             const char* AppearanceSection = "SettingsUI/Design/AppearanceSection";
@@ -245,6 +248,8 @@ inline constexpr struct I18nKeyRoot
             const char* AvoidFullscreenDetails = "SettingsUI/Design/AvoidFullscreenDetails";
             const char* Enabled = "SettingsUI/Design/Enabled";
             const char* Disabled = "SettingsUI/Design/Disabled";
+            const char* ClickToCopy = "SettingsUI/Design/ClickToCopy";
+            const char* Copied = "SettingsUI/Design/Copied";
         } Design{};
         struct Node__SettingsUI__Home
         {
@@ -256,6 +261,30 @@ inline constexpr struct I18nKeyRoot
             const char* BilibiliChannel = "SettingsUI/Home/BilibiliChannel";
             const char* FeedBack = "SettingsUI/Home/FeedBack";
         } Home{};
+        struct Node__SettingsUI__Feedback
+        {
+            const char* N = "SettingsUI/Feedback/N";
+            const char* Description = "SettingsUI/Feedback/Description";
+            struct Node__SettingsUI__Feedback__Issues
+            {
+                const char* N = "SettingsUI/Feedback/Issues/N";
+                const char* E = "SettingsUI/Feedback/Issues/E";
+            } Issues{};
+            struct Node__SettingsUI__Feedback__Questionnaire
+            {
+                const char* N = "SettingsUI/Feedback/Questionnaire/N";
+                const char* E = "SettingsUI/Feedback/Questionnaire/E";
+            } Questionnaire{};
+            struct Node__SettingsUI__Feedback__Qr
+            {
+                const char* N = "SettingsUI/Feedback/Qr/N";
+                const char* E = "SettingsUI/Feedback/Qr/E";
+            } Qr{};
+            const char* ContactSection = "SettingsUI/Feedback/ContactSection";
+            const char* CommunityDescription = "SettingsUI/Feedback/CommunityDescription";
+            const char* ContactDescription = "SettingsUI/Feedback/ContactDescription";
+            const char* AuthorQQ = "SettingsUI/Feedback/AuthorQQ";
+        } Feedback{};
         struct Node__SettingsUI__Language
         {
             const char* N = "SettingsUI/Language/N";

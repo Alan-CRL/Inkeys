@@ -104,7 +104,7 @@ try {
 
 ## `CheckCOM` 的真实作用
 
-`【直接确认】` `PptCOMServer.CheckCOM()` 当前返回常量字符串 `20260627a`。`IdtPlug-in.cpp::CheckPptCom` 会调用并保存返回值，但本轮静态搜索没有找到把它与期望版本比较、拒绝服务或选择兼容分支的代码。
+`【直接确认】` `PptCOMServer.CheckCOM()` 当前返回常量字符串 `20261024a`。`IdtPlug-in.cpp::CheckPptCom` 会调用并保存返回值，但本轮静态搜索没有找到把它与期望版本比较、拒绝服务或选择兼容分支的代码。
 
 因此：
 

@@ -11,6 +11,7 @@ namespace Inkeys::UI::Setting::Design
 	void BindTextFonts(ImFont* regular, ImFont* strong)
 	{
 		SetStateLabels(IA(I18nKey.SettingsUI.Design.Enabled).c_str(), IA(I18nKey.SettingsUI.Design.Disabled).c_str());
+		SetCopyLabels(IA(I18nKey.SettingsUI.Design.ClickToCopy).c_str(), IA(I18nKey.SettingsUI.Design.Copied).c_str());
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Caption, regular, 12.0F);
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, 14.0F);
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, strong, 14.0F);
@@ -47,42 +48,57 @@ namespace Inkeys::UI::Setting::Design
 				color = (color & ~IM_COL32_A_MASK) | (opacity << IM_COL32_A_SHIFT);
 			}
 		}
+
+		// 页内入口共享键鼠与浮层关闭逻辑，反馈和调试不会产生两套交互状态。
+		bool RenderCaptionRouteButton(const LayoutRect& bounds, bool selected, NavigationState& state,
+			float foregroundAlpha, const char* id, const char* glyph, const char* tooltip)
+		{
+			const ImVec2 origin = ImGui::GetWindowPos();
+			const ImVec2 minimum{ origin.x + bounds.left, origin.y + bounds.top };
+			const ImVec2 maximum{ origin.x + bounds.right, origin.y + bounds.bottom };
+			ImGui::SetCursorScreenPos(minimum);
+			auto& context = *GImGui;
+			ImGuiWindow* previousHovered = context.HoveredWindow;
+			const bool flyout = state.IsFlyoutOpen();
+			// 导航模态浮层仍隔离正文，但标题栏入口可以结束该浮层。
+			if (flyout && ImRect(minimum, maximum).Contains(ImGui::GetIO().MousePos))
+				context.HoveredWindow = ImGui::GetCurrentWindow();
+			ImGui::PushItemFlag(ImGuiItemFlags_NoWindowHoverableCheck, flyout);
+			const bool pressed = ImGui::InvisibleButton(id, { bounds.Width(), bounds.Height() },
+				ImGuiButtonFlags_EnableNav | (flyout ? ImGuiButtonFlags_NoFocus : 0));
+			ImGui::PopItemFlag();
+			const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+			context.HoveredWindow = previousHovered;
+			if (selected || pressed || hovered)
+			{
+				const float inset = Pixels(4.0F);
+				ImGui::GetWindowDrawList()->AddRectFilled({ minimum.x, minimum.y + inset },
+					{ maximum.x, maximum.y - inset }, ImFluent::GetColorU32(ImGui::IsItemActive()
+						? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
+			}
+			ImVec4 foreground = ImGui::ColorConvertU32ToFloat4(ImFluent::GetColorU32(ImFluentCol_TextPrimary));
+			foreground.w *= foregroundAlpha;
+			ImFluent::DrawIcon(glyph, minimum, maximum, NavigationGlyphSize, ImGui::GetColorU32(foreground));
+			if (pressed)
+			{
+				state.CloseFlyout(); state.DismissOverlay(); state.flyoutReveal.Reset(0.0F);
+				state.ClearIndicator();
+			}
+			if (hovered && tooltip) ImFluent::SetItemTooltip("%s", tooltip);
+			return pressed;
+		}
 	}
 
 	bool RenderDebugButton(const LayoutRect& bounds, bool selected, NavigationState& state, float foregroundAlpha)
 	{
-		const ImVec2 origin = ImGui::GetWindowPos();
-		const ImVec2 minimum{ origin.x + bounds.left, origin.y + bounds.top };
-		const ImVec2 maximum{ origin.x + bounds.right, origin.y + bounds.bottom };
-		ImGui::SetCursorScreenPos(minimum);
-		auto& context = *GImGui;
-		ImGuiWindow* previousHovered = context.HoveredWindow;
-		const bool flyout = state.IsFlyoutOpen();
-		// 导航模态浮层仍隔离正文，但标题栏入口可以结束该浮层。
-		if (flyout && ImRect(minimum, maximum).Contains(ImGui::GetIO().MousePos))
-			context.HoveredWindow = ImGui::GetCurrentWindow();
-		ImGui::PushItemFlag(ImGuiItemFlags_NoWindowHoverableCheck, flyout);
-		const bool pressed = ImGui::InvisibleButton("##setting-debug", { bounds.Width(), bounds.Height() },
-			ImGuiButtonFlags_EnableNav | (flyout ? ImGuiButtonFlags_NoFocus : 0));
-		ImGui::PopItemFlag();
-		const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
-		context.HoveredWindow = previousHovered;
-		if (selected || pressed || hovered)
-		{
-			const float inset = Pixels(4.0F);
-			ImGui::GetWindowDrawList()->AddRectFilled({ minimum.x, minimum.y + inset },
-				{ maximum.x, maximum.y - inset }, ImFluent::GetColorU32(ImGui::IsItemActive()
-					? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
-		}
-		ImVec4 foreground = ImGui::ColorConvertU32ToFloat4(ImFluent::GetColorU32(ImFluentCol_TextPrimary));
-		foreground.w *= foregroundAlpha;
-		ImFluent::DrawIcon(ImFluentIcon_Bug, minimum, maximum, NavigationGlyphSize, ImGui::GetColorU32(foreground));
-		if (pressed)
-		{
-			state.CloseFlyout(); state.DismissOverlay(); state.flyoutReveal.Reset(0.0F);
-			state.ClearIndicator();
-		}
-		return pressed;
+		return RenderCaptionRouteButton(bounds, selected, state, foregroundAlpha,
+			"##setting-debug", ImFluentIcon_Bug, nullptr);
+	}
+
+	bool RenderFeedbackButton(const LayoutRect& bounds, bool selected, NavigationState& state, float foregroundAlpha)
+	{
+		return RenderCaptionRouteButton(bounds, selected, state, foregroundAlpha,
+			"##setting-feedback", ImFluentIcon_Feedback, IA(I18nKey.SettingsUI.Feedback.N).c_str());
 	}
 
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
@@ -94,7 +110,7 @@ namespace Inkeys::UI::Setting::Design
 		const bool expanded = pane.Width() > CompactPaneWidth + 0.01F;
 		const float childReveal = state.animationsInitialized ? state.groupReveal.value
 			: (state.Expanded() && state.generalExpanded ? 1.0F : 0.0F);
-		if (selected.page == PageId::Debug) state.ClearIndicator();
+		if (selected.page == PageId::Debug || selected.page == PageId::Feedback) state.ClearIndicator();
 		const auto sections = ResolveNavigationPaneGeometry(pane.Width(), pane.Height(),
 			ImFluent::GetStyle().NavItemHeight);
 		NavigationAction result;

@@ -18,9 +18,9 @@ struct SettingSignStruct
 	int width;
 	int height;
 };
-SettingSignStruct settingSign[11];
-ID3D11ShaderResourceView* TextureSettingSign[11];
-std::array<std::vector<unsigned char>, 11> settingTexturePixels;
+SettingSignStruct settingSign[12];
+ID3D11ShaderResourceView* TextureSettingSign[12];
+std::array<std::vector<unsigned char>, 12> settingTexturePixels;
 
 export float settingGlobalScale = 1.0f;
 

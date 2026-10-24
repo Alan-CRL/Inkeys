@@ -1213,6 +1213,7 @@
     <Image Include="src\setting\Home2_zh-CN.png" />
     <Image Include="src\setting\Home2_zh-TW.png" />
     <Image Include="src\setting\Home_Feedback.png" />
+    <Image Include="src\setting\GitHubMark.png" />
     <Image Include="src\setting\Profile-picture.png" />
     <Image Include="src\setting\Profile_Picture.png" />
     <Image Include="src\setting\SettingSponsor.png" />

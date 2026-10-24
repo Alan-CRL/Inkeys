@@ -159,7 +159,7 @@ namespace
 				"blank caption and outer corners retain full system-height top resize grips")) ++failures;
 			const auto title = ResolveTitleBarGeometry(static_cast<float>(client.Width()),
 				1.0F, 46.0F, 100.0F, 120.0F);
-			for (const auto& control : { title.themeToggle, title.debug, title.version, title.minimize, title.maximize, title.close })
+			for (const auto& control : { title.themeToggle, title.feedback, title.debug, title.version, title.minimize, title.maximize, title.close })
 			{
 				const int x = client.left + static_cast<int>((control.left + control.right) * 0.5F);
 				for (const int y : { client.top, client.top + 1, gripBottom - 1 })
@@ -240,14 +240,19 @@ namespace
 				if (!Expect(title.themeToggle.Width() > 0.0F && title.themeToggle.Contains(x, y)
 					&& !title.drag.Contains(x, y) && !title.minimize.Contains(x, y)
 					&& !title.maximize.Contains(x, y) && !title.close.Contains(x, y)
-					&& title.themeToggle.right < title.debug.left
+					&& title.themeToggle.right < title.feedback.left
+					&& title.feedback.right < title.debug.left
 					&& std::abs(title.themeToggle.Width() - 32.0F * scale) < 0.001F
+					&& std::abs(title.feedback.Width() - 32.0F * scale) < 0.001F
+					&& title.feedback.Contains(title.feedback.left + 16.0F * scale, y)
+					&& !title.drag.Contains(title.feedback.left + 16.0F * scale, y)
+					&& title.drag.Width() > 0 && (width < 720 || title.drag.Width() >= 96 * scale)
 					&& std::abs(title.debug.Width() - 32.0F * scale) < 0.001F
 					&& title.debug.right < title.minimize.left
 					&& title.debug.Contains(title.debug.left + 16.0F * scale, y)
 					&& !title.drag.Contains(title.debug.left + 16.0F * scale, y)
 					&& (!title.versionVisible || title.version.right < title.themeToggle.left),
-					"theme and debug caption buttons retain independent 32 DIP non-drag client targets")) ++failures;
+					"theme, feedback and debug retain ordered independent 32 DIP client targets and the available drag budget")) ++failures;
 			}
 		return failures;
 	}
@@ -422,9 +427,11 @@ int RunSettingSessionStateTests()
 		const auto narrowTitleBar = Inkeys::UI::Setting::ResolveTitleBarGeometry(
 			360.0F, 1.0F, 46.0F, 56.0F, 80.0F);
 		if (!Expect(!narrowTitleBar.versionVisible
-			&& narrowTitleBar.drag.Width() >= 96.0F
+			&& narrowTitleBar.drag.Width() > 0.0F
+			&& narrowTitleBar.drag.right < narrowTitleBar.themeToggle.left
+			&& narrowTitleBar.feedback.Width() == 32.0F
 			&& narrowTitleBar.close.right == 360.0F,
-			"narrow titlebar hides version before sacrificing drag or captions"))
+			"sub-minimum titlebar hides version and preserves all three actions, captions and a positive remaining drag area"))
 			++failures;
 
 		const auto scaledTitleBar = Inkeys::UI::Setting::ResolveTitleBarGeometry(
@@ -432,6 +439,7 @@ int RunSettingSessionStateTests()
 		if (!Expect(scaledTitleBar.height == titleBar.height * 2.0F
 			&& scaledTitleBar.icon.Width() == titleBar.icon.Width() * 2.0F
 			&& scaledTitleBar.close.left == titleBar.close.left * 2.0F
+			&& scaledTitleBar.feedback.left == titleBar.feedback.left * 2.0F
 			&& scaledTitleBar.versionVisible,
 			"titlebar geometry scales logical DIP coordinates exactly once"))
 			++failures;

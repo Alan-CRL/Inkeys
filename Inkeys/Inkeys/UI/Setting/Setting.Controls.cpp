@@ -98,6 +98,8 @@ namespace Inkeys::UI::Setting::Design
 
 		std::string stateOn = "On";
 		std::string stateOff = "Off";
+		std::string copyPrompt = "Click to copy";
+		std::string copySuccess = "Copied";
 
 		class ControlFontScope
 		{
@@ -107,6 +109,14 @@ namespace Inkeys::UI::Setting::Design
 			ControlFontScope(const ControlFontScope&) = delete;
 			ControlFontScope& operator=(const ControlFontScope&) = delete;
 		};
+
+		void DrawCardSurface(ImDrawList* draw, const ImVec2& origin, const ImVec2& bottom,
+			ImU32 fill, ImU32 border, float rounding)
+		{
+			// 内容卡沿用普通设置行的铺满背景和 1 物理像素描边，圆角仍由各自布局决定。
+			draw->AddRectFilled(origin, bottom, fill, rounding);
+			draw->AddRect(origin, bottom, border, rounding);
+		}
 
 		ImVec2 ResolveButtonSize(const char* label, const ImVec2& size)
 		{
@@ -537,7 +547,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
-		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture)
+		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline)
 	{
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
@@ -559,7 +569,8 @@ namespace Inkeys::UI::Setting::Design
 		const bool hasDescription = description && *description;
 		const float threshold = DescriptionMinimumWidth
 			+ (tween.target > 0.5F ? DescriptionWidthHysteresis : 0.0F);
-		const bool below = hasDescription && !measure.stacked && measure.actionWidth > 0.0F
+		// 图片内容行可固定说明在左列，避免窄窗通用退让把文字排到二维码下方。
+		const bool below = !keepDescriptionInline && hasDescription && !measure.stacked && measure.actionWidth > 0.0F
 			&& measure.textWidth < threshold;
 		if (previousFrame < 0 || measure.stacked || !hasDescription) tween.Reset(below ? 1.0F : 0.0F);
 		tween.Target(below ? 1.0F : 0.0F);
@@ -580,17 +591,17 @@ namespace Inkeys::UI::Setting::Design
 		ImGui::Dummy({ width, Pixels(row.height + RowGap) });
 		ImDrawList* draw = ImGui::GetWindowDrawList();
 		const ImVec2 bottom(origin.x + width, origin.y + Pixels(row.height));
-		draw->AddRectFilled(origin, bottom, fill, Pixels(4.0F));
-		draw->AddRect(origin, bottom, border, Pixels(4.0F));
+		DrawCardSurface(draw, origin, bottom, fill, border, Pixels(4.0F));
 		TextAt(title, { origin.x + Pixels(row.title.left), origin.y + Pixels(row.title.top) },
 			Pixels(row.title.Width()));
 		TextAt(description, { origin.x + Pixels(row.description.left), origin.y + Pixels(row.description.top) },
 			Pixels(row.description.Width()), ImFluentTextStyle_Caption, TextSecondary);
-		// PNG 复用原图标槽位和会话纹理，不随浅深主题染色。
+		// PNG 默认保留原色，单色透明图案可由调用方显式指定前景色。
 		if (iconTexture)
 			draw->AddImage(iconTexture,
 				{ origin.x + Pixels(row.icon.left), origin.y + Pixels(row.icon.top) },
-				{ origin.x + Pixels(row.icon.right), origin.y + Pixels(row.icon.bottom) });
+				{ origin.x + Pixels(row.icon.right), origin.y + Pixels(row.icon.bottom) },
+				{ 0.0F, 0.0F }, { 1.0F, 1.0F }, iconTint);
 		else if (measure.hasIcon)
 			ImFluent::DrawIcon(glyph,
 				{ origin.x + Pixels(row.icon.left), origin.y + Pixels(row.icon.top) },
@@ -691,6 +702,36 @@ namespace Inkeys::UI::Setting::Design
 	{
 		ControlFontScope font;
 		return ImFluent::HyperlinkButton(label);
+	}
+
+	bool CopyHyperlink(const char* id, const char* label, const char* value)
+	{
+		if (ImGui::GetCurrentWindow()->SkipItems) return false;
+		ImGui::PushID(id);
+		auto* storage = ImGui::GetStateStorage();
+		const ImGuiID copiedId = ImGui::GetID("##copy-completed");
+		const ImGuiID frameId = ImGui::GetID("##copy-render-frame");
+		const int frame = ImGui::GetFrameCount(), previousFrame = storage->GetInt(frameId, -2);
+		// 移页或隐藏期间未连续提交的链接，不继承上次悬停的复制成功状态。
+		bool copied = (previousFrame == frame - 1 || previousFrame == frame) && storage->GetBool(copiedId);
+		const std::string stableLabel = std::string(label) + "###copy-link";
+		ImFluent::PushFont(ImFluentTextStyle_Body, BodyText.size);
+		const bool pressed = ImFluent::HyperlinkButton(stableLabel.c_str());
+		ImFluent::PopFont();
+		const bool hovered = ImGui::IsItemHovered();
+		const ImGuiID linkId = ImGui::GetItemID();
+		if (!hovered || (previousFrame != frame && GImGui->HoveredIdPreviousFrame != linkId)) copied = false;
+		if (pressed)
+		{
+			ImGui::SetClipboardText(value);
+			copied = true;
+		}
+		storage->SetBool(copiedId, copied);
+		storage->SetInt(frameId, frame);
+		ImGui::PopID();
+		// Tooltip 会提交新的 item，交互状态必须在它之前取完。
+		if (hovered) ImFluent::SetItemTooltip("%s", (copied ? copySuccess : copyPrompt).c_str());
+		return pressed;
 	}
 
 	bool IconButton(const char* id, const char* glyph, const ImVec2& requestedSize)
@@ -1231,8 +1272,25 @@ namespace Inkeys::UI::Setting::Design
 	bool BeginCard(const char* id, const ImVec2& size, ImFluentCardStyle style)
 	{
 		ScrollbarStyleScope scrollbar(ChildWindow(id));
-		const bool visible = ImFluent::BeginCard(id, size, style);
-		scrollbar.Finish(ImGui::GetCurrentWindow());
+		const auto& cardStyle = ImFluent::GetStyle();
+		const ImU32 fill = ImFluent::GetColorU32(style == ImFluentCardStyle_Outlined
+			? ImFluentCol_CardBgSecondary : ImFluentCol_CardBgDefault);
+		const ImU32 border = ImFluent::GetColorU32(ImFluentCol_CardStrokeDefault);
+		const float rounding = Pixels(cardStyle.OverlayCornerRadius);
+		// 保留上游 child 的布局/样式栈，只有表面绘制改为与 SettingRow 共用。
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, fill);
+		ImGui::PushStyleColor(ImGuiCol_Border, border);
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, rounding);
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0F);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Pixels(cardStyle.CardPadding), Pixels(cardStyle.CardPadding)));
+		const bool visible = ImGui::BeginChild(id, size, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_NavFlattened
+			| ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoBackground);
+		auto* window = ImGui::GetCurrentWindow();
+		const ImRect rect = window->Rect();
+		window->DrawList->PushClipRect(rect.Min, rect.Max, false);
+		DrawCardSurface(window->DrawList, rect.Min, rect.Max, fill, border, rounding);
+		window->DrawList->PopClipRect();
+		scrollbar.Finish(window);
 		return visible;
 	}
 
@@ -1268,6 +1326,13 @@ namespace Inkeys::UI::Setting::Design
 	{
 		stateOn = onText ? onText : "";
 		stateOff = offText ? offText : "";
+	}
+
+	void SetCopyLabels(const char* prompt, const char* copied)
+	{
+		// 由上层注入本地化文案，基础控件不依赖应用的 i18n 聚合头。
+		copyPrompt = prompt && *prompt ? prompt : "Click to copy";
+		copySuccess = copied && *copied ? copied : "Copied";
 	}
 
 	bool ToggleRow(const char* id, const char* title, const char* description,
@@ -1379,14 +1444,14 @@ namespace Inkeys::UI::Setting::Design
 		return clicked;
 	}
 
-	bool NavigationRow(const char* id, const char* title, const char* description, const char* glyph, ImTextureID iconTexture)
+	bool NavigationRow(const char* id, const char* title, const char* description, const char* glyph, ImTextureID iconTexture, ImU32 iconTint)
 	{
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		SettingRow(id, title, description, glyph, 24.0F, 24.0F, [&](const LayoutRect& bounds)
 			{
 				ImFluent::DrawIcon("\ue76c", { bounds.left, bounds.top }, { bounds.right, bounds.bottom }, 12.0F, TextSecondary);
-			}, Card, Stroke, iconTexture);
+			}, Card, Stroke, iconTexture, iconTint);
 		const ImVec2 next = ImGui::GetCursorScreenPos();
 		ImGui::SetCursorScreenPos(origin);
 		ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));

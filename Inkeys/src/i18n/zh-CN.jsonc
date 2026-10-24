@@ -205,15 +205,18 @@
       "HomeGitCodeName": "GitCode",
       "DrawAction": "调整书写体验",
       "Tutorial": "使用教程",
-      "Explore": "探索你的工具",
+      "Explore": "推荐设置",
       "DrawDescription": "笔迹与橡皮",
+      "AppearanceDescription": "动画、光影与主栏缩放",
       "PresetDescription": "常用画笔，随时取用",
       "PluginDescription": "连接演示与课堂工具",
       "CommonSettings": "常用设置",
-      "GeneralDescription": "启动行为与界面缩放",
+      "GeneralDescription": "操作模式、主栏排列与启动方式",
+      "ShortcutsDescription": "全局操作与批注编辑快捷键",
       "DisplayLanguage": "显示语言",
       "Improve": "一起完善 Inkeys",
       "Contact": "联系作者",
+      "TermsOfUse": "使用条款",
       "Website": "官方网站",
       "StartupSection": "启动",
       "AppearanceSection": "外观",
@@ -241,7 +244,9 @@
       "AvoidFullscreenSummary": "需要重启软件。非绘制与穿透模式下避免占满屏幕。",
       "AvoidFullscreenDetails": "适用说明",
       "Enabled": "开",
-      "Disabled": "关"
+      "Disabled": "关",
+      "ClickToCopy": "点击复制",
+      "Copied": "复制成功"
     },
     "Home":
     {
@@ -252,6 +257,30 @@
       "GroupE": "618720802",
       "BilibiliChannel": "Bilibili 宣发频道",
       "FeedBack": "问题/建议反馈"
+    },
+    "Feedback":
+    {
+      "N": "问题反馈",
+      "Description": "提交问题或建议，帮助改进 Inkeys。",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "在 GitHub 提交问题或建议，便于公开跟进与交流。"
+      },
+      "Questionnaire":
+      {
+        "N": "问卷反馈",
+        "E": "通过问卷反馈使用中遇到的问题或改进建议。"
+      },
+      "Qr":
+      {
+        "N": "扫码反馈",
+        "E": "扫描二维码，通过问卷反馈问题或建议。"
+      },
+      "ContactSection": "交流与联系作者",
+      "CommunityDescription": "加入 QQ 用户群，交流使用中遇到的问题或改进建议。",
+      "ContactDescription": "通过电子邮件向作者反馈问题或建议。",
+      "AuthorQQ": "作者 QQ"
     },
     "Language":
     {
@@ -653,7 +682,7 @@
         {
           "N": "基础逻辑",
           "LoadPage": "显示加载页面",
-          "LoadPageE": "包含插件标识和小提示等，每个 PPT 仅显示一次。"
+          "LoadPageE": "此功能已停用，不再显示 PPT 加载页面。"
         },
         "WidgetDisplay":
         {

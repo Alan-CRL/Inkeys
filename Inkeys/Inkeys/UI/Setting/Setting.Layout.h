@@ -44,6 +44,7 @@ namespace Inkeys::UI::Setting
 		LayoutRect drag;
 		LayoutRect version;
 		LayoutRect themeToggle;
+		LayoutRect feedback;
 		LayoutRect debug;
 		LayoutRect minimize;
 		LayoutRect maximize;
@@ -245,11 +246,14 @@ namespace Inkeys::UI::Setting
 		result.icon = { inset, (height - iconSize) * 0.5F,
 			inset + iconSize, (height + iconSize) * 0.5F };
 
-		// 主题与调试入口始终保留，窄窗先让版本和标题文字让位。
+		// 主题、反馈与调试入口始终保留，窄窗先让版本和标题文字让位。
 		const float debugRight = (std::max)(0.0F, captionStart - rightHeaderSpacing);
 		result.debug = { (std::max)(0.0F,
 			debugRight - TitleBarThemeButtonWidthDip * scale), 0.0F, debugRight, height };
-		const float themeRight = (std::max)(0.0F, result.debug.left - rightHeaderSpacing);
+		const float feedbackRight = (std::max)(0.0F, result.debug.left - rightHeaderSpacing);
+		result.feedback = { (std::max)(0.0F,
+			feedbackRight - TitleBarThemeButtonWidthDip * scale), 0.0F, feedbackRight, height };
+		const float themeRight = (std::max)(0.0F, result.feedback.left - rightHeaderSpacing);
 		result.themeToggle = { (std::max)(0.0F,
 			themeRight - TitleBarThemeButtonWidthDip * scale), 0.0F, themeRight, height };
 		const float identityLeft = result.icon.right + spacing;
@@ -261,7 +265,8 @@ namespace Inkeys::UI::Setting
 		result.identity = { result.icon.left, 0.0F,
 			(std::min)(identityDesiredRight, identityMaximumRight), height };
 
-		// 极窄预算下标题已让位，缩短图标后空白以保留最小系统拖动区。
+		// 极窄物理预算先让标题/版本让位；保留三入口后，拖动区只能使用剩余空间。
+		// 常规 720-DIP 最小窗仍可保留完整的 96-DIP 拖动区。
 		const float dragStart = (std::max)(result.icon.right, (std::min)(
 			(std::max)(identityLeft, result.identity.right), rightHeaderEnd - minimumDragWidth));
 		result.identity.right = (std::min)(result.identity.right, dragStart);
