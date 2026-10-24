@@ -2508,18 +2508,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			}
 			else
 			{
+				// 离开绘制模式只重置下次进入的初始化标记；保留当前视觉随面板收拢、渐隐。
 				state.drawAttributePenThicknessInitialized = false;
 				state.drawAttributePenPreviewMorphInitialized = false;
 				state.drawAttributeThicknessSliderNormalizedInitialized = false;
-				state.drawAttributeLaserShellProgress.SetDirect(0.0);
-				state.drawAttributeLaserCoreWhiteMix.SetDirect(0.0);
-				state.drawAttributeLaserPhase = BarLaserPreviewPhase::NonLaserStable;
-				state.drawAttributeThicknessPresetNumberProgress.SetDirect(0.0);
-				state.drawAttributeThicknessPresetVisualKind =
-					BarThicknessPresetVisualKind::Circle;
-				for (size_t index = 0; index < 3; ++index)
-					state.drawAttributeThicknessPresetCircleDiameter[index]
-						.SetDirect(0.0);
 			}
 		bool mainBarFoldChange = (state.barState.fold && mainBar->x.tar != 0.0)
 			|| (!state.barState.fold && mainBar->x.tar == 0.0);

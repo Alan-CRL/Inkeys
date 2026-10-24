@@ -26,6 +26,8 @@ Bar在96DPI D2D物理画布中使用相同目标metrics；布局zoom只能调整
 
 当前发布隐藏/不支持启动记忆与启动预设，启动只建立共享Medium；旧Preset flags/default、PenWidth.Startup以及memory值/颜色均不得应用。初始化只一次，后续显示/工具/PPT变化保留用户会话值。GetMemory兼容实现不接生产启动；临时提交安全保存身份，不构成本版恢复能力。codec仍保护Legacy/未来schema：旧Brush/Highlighter px无源DPI时估计除一次，旧Laser DIP不除，版本化DIP不再次迁移；仅为兼容数据安全，不改变本版Medium启动。
 
+全局 memory 没有工作区字段；`SetMemory()` 必须经 `TryGetDesktopStateModeSnapshot()` 在同一状态锁内校验 Desktop 身份并取得值，非 Desktop 跳过写盘。颜色、宽度和 FineDial 共用这一保存边界；不能分别检查工作区和读取快照。
+
 memory沿用bounded parse和现成atomic writer，保存失败保留原件，不先截断；未知futureschema原样保留，AutoClean也不能丢弃或降级覆盖。坏字段各槽回退，不吞掉无关配置。
 
 Slider连续double，基础Brush范围1/systemScale～30DIP、荧光min(16,1/systemScale)～100DIP，向当前合法值/预设扩展。FineDial以精确origin+n*1DIP步进；只真实调整提交，进入/取消不改Selection。整数文字只显示四舍五入数字（不带DIP或≈），sub1最小显示1；展示值不反写状态。活动触摸/Slider/FineDial候选发布后，预览canvas宽度动画同帧SetDirect，非交互仍SetTar；不能让core/outer.val缓动追赶或逐帧提交业务。
