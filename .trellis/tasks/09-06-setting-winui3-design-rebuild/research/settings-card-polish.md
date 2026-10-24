@@ -59,3 +59,5 @@ GitHubMark.png 逐字节复制官方 https://brand.github.com/GitHub_Logos.zip �
 本轮未启动GUI/浏览器/Office/Computer Use、未调用实际外链或系统剪贴板，未创建commit/push。没有声称人工窗口观感或相机扫码验证已执行；这是按仓库当前非GUI验证规则保留的实机边界。父任务继续in_progress。
 
 提交前最终文案修正：按用户最新要求，主页/侧栏共用Sponsor.N恢复HEAD原文案（简中“赞助我们”、繁中/英文亦恢复原翻译），同步简中snapshot。该要求覆盖前文咖啡命名；既有跳转不变。遵照用户要求仅运行i18n检查，不再执行编译/额外回归；前述编译/运行结果对应改文案前版本。继续授权commit，不结束/归档任务。
+
+提交后追加小修：用户最终明确仅去除标题栏问题反馈按钮的悬停提示，撤回移除选中状态的要求。RenderFeedbackButton向既有helper传nullptr，不改变selected、点击路由或隔壁调试按钮。该单行可逆显示修正未新增测试/编译或GUI验证；用户授权补充commit，父任务继续in_progress。

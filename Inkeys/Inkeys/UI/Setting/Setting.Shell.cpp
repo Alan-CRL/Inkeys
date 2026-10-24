@@ -98,7 +98,7 @@ namespace Inkeys::UI::Setting::Design
 	bool RenderFeedbackButton(const LayoutRect& bounds, bool selected, NavigationState& state, float foregroundAlpha)
 	{
 		return RenderCaptionRouteButton(bounds, selected, state, foregroundAlpha,
-			"##setting-feedback", ImFluentIcon_Feedback, IA(I18nKey.SettingsUI.Feedback.N).c_str());
+			"##setting-feedback", ImFluentIcon_Feedback, nullptr);
 	}
 
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
