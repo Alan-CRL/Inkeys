@@ -308,6 +308,7 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		b.icon.x.SetDirect(offset*scale);b.icon.y.SetDirect(large?metrics.iconOffsetYDip*scale:0);b.icon.contentScale=scale;
 		b.name.x.SetDirect(offset*scale);b.name.y.SetDirect(large?metrics.primaryOffsetYDip*scale:0);
 		b.name.w.SetDirect(large?metrics.primarySlotWidthDip*scale:static_cast<double>(b.button.w.val));b.name.h.SetDirect(metrics.primarySlotHeightDip*scale);b.name.size.SetDirect(metrics.primaryFontSizeDip*scale);
+		b.name.fontTargetSize=metrics.primaryFontSizeDip*(i<6?panelFrame.targetPose.scale:menuFrame.targetPose.scale);
 		BarButtonAnimationContext buttonFrame;
 		buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=BarUiAnimationEnabled;
 		buttonFrame.visible=presented;buttonFrame.hoverAllowed=enabled && !selected;
@@ -363,6 +364,7 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	const auto& texts=I18nKey.UI.Bar.EraserAttributes;
 	changed_|=title_.SetStringImmediate(I18n::getWOr(texts.SensitivityLabel,L"灵敏度"));
 	title_.w.SetDirect(g.menuTitle.Width());title_.h.SetDirect(g.menuTitle.Height());title_.size.SetDirect(BarButtonTwoTwoLabelFontSizeDip*frame_.menuPose.scale);
+	title_.fontTargetSize=BarButtonTwoTwoLabelFontSizeDip*menuFrame.targetPose.scale;
 	title_.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
 	return changed_ || active_;
 }

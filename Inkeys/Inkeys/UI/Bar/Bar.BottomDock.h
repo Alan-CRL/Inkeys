@@ -1474,6 +1474,14 @@ namespace Inkeys::UI::Bar
 		};
 	}
 
+	// 字体静止目标复用已解析的真实抓手；捕获下端点的独立弹簧仍以零偏移为终点。
+	[[nodiscard]] inline double ResolveBarBottomDockFontTargetScale(
+		const BarBottomDockVerticalMapping& resolved, bool directHold) noexcept
+	{
+		return directHold ? ResolveBarBottomDockVerticalMapping(
+			resolved.baseTopDip, resolved.baseBottomDip, resolved.rigidOverlayTranslationYDip, 0.0, true).scaleY : 1.0;
+	}
+
 	[[nodiscard]] inline BarBottomDockVerticalMapping
 		ResolveBarBottomDockRecoveringVerticalMapping(double baseTopDip,
 			double baseBottomDip, double elasticOffsetDip,

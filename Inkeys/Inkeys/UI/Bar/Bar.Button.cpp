@@ -2056,8 +2056,8 @@ namespace Inkeys::UI::Bar
 		{
 		public:
 			ButtonDrawTransform(BarUIRendering& renderer, ID2D1DeviceContext* context,
-				const BarUiShapeClass& background, const BarUiInheritClass& inherit, double scale)
-				: context_(context)
+				const BarUiShapeClass& background, const BarUiInheritClass& inherit, double scale, double targetScale, double duration)
+				: fontScope_(renderer, targetScale, duration), context_(context)
 			{
 				context_->GetTransform(&original_);
 				if(!std::isfinite(scale) || scale<=0.0)scale=1.0;
@@ -2071,6 +2071,7 @@ namespace Inkeys::UI::Bar
 			}
 			~ButtonDrawTransform(){if(changed_)context_->SetTransform(original_);}
 		private:
+			BarUIRendering::FontTargetScope fontScope_;
 			ID2D1DeviceContext* context_;
 			D2D1_MATRIX_3X2_F original_{};
 			bool changed_=false;
@@ -2086,7 +2087,7 @@ namespace Inkeys::UI::Bar
 		const auto visualInheritance = PrepareBarButtonVisualInheritance(
 			button, inherit, options.secondary);
 		ButtonDrawTransform transform(renderer,deviceContext,button.button,
-			visualInheritance.button,button.pressScale.val);
+			visualInheritance.button,button.pressScale.val,button.pressScale.tar,button.pressScale.dur);
 		// 先更新继承坐标再拒绝绘制，成功呈现后的命中快照仍可读取本帧几何。
 		// 自定义内容没有额外包络合同，不能连同标准按钮一起猜测裁掉。
 		if (!options.underlay && !options.content)
@@ -2138,7 +2139,9 @@ namespace Inkeys::UI::Bar
 	{
 		if(!context)return false;
 		ButtonDrawTransform transform(renderer,context,parts.background,inherit.button,
-			parts.pressScale?static_cast<double>(parts.pressScale->val):1.0);
+			parts.pressScale?static_cast<double>(parts.pressScale->val):1.0,
+			parts.pressScale?static_cast<double>(parts.pressScale->tar):1.0,
+			parts.pressScale?static_cast<double>(parts.pressScale->dur):0.0);
 		const auto bounds = ComputeBarButtonVisualBounds(renderer, parts, inherit);
 		if (bounds && !renderer.ShouldDrawFrameBounds(context, *bounds)) return false;
 		bool rendered=renderer.Shape(context,parts.background,inherit.button);
@@ -2274,6 +2277,7 @@ namespace Inkeys::UI::Bar
 	{
 		ButtonAnimationVisitor v{frame, &word, part};
 		const bool replace = v.Replace(word);
+		if (replace) word.fontCorrection.ForceNext();
 		const bool content = word.AdvanceContentTransition(frame.dtSeconds, frame.speedRate);
 		v.Observe(Property::Content, content, content, !content);
 		v.Advance(word.enable, replace, Property::Visibility);

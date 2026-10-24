@@ -801,6 +801,7 @@ BarUiWordClass::BarUiWordClass(double xT, double yT, double wT, double hT, wstri
 void BarUiWordClass::Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT, BarUiValueModeEnum type)
 {
 	CancelContentTransition();
+	fontCorrection.Reset(); fontTargetSize = -1.0;
 	x.Initialization(xT, type);
 	y.Initialization(yT, type);
 	w.Initialization(wT, type);

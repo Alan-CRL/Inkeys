@@ -20,7 +20,6 @@ module;
 #include <memory>
 #include <bit>
 #include "Bar.PresentationProbe.h"
-#include "Bar.FontSize.h"
 #include "../Superellipse.Geometry.h"
 
 #pragma comment(lib, "dxguid.lib")
@@ -235,9 +234,34 @@ bool BarUIRendering::UpdateFontRenderingPolicy(bool allowFractional) noexcept
 	return true;
 }
 
-FLOAT BarUIRendering::ResolveFontSize(ID2D1DeviceContext* context, double fontSize) const noexcept
+void BarUIRendering::BeginFontFrame(std::chrono::steady_clock::time_point time,
+	const BarUiAnimationAdvanceContextClass& context, double targetZoom)
 {
-	if (!context) return 0.0F;
+	const auto serial = static_cast<std::uint64_t>(time.time_since_epoch().count());
+	if (!fontFrameReady || serial != fontFrameSerial) fontAnimationsActive = false;
+	fontFrameReady = true; fontFrameSerial = serial; fontFrameContext = context;
+	fontTargetZoom = targetZoom; fontTargetTransformReady = false; fontDuration = 0.0;
+}
+
+FLOAT BarUIRendering::ResolveFontSize(ID2D1DeviceContext* context, double fontSize, double nominalTarget)
+{
+	return ResolveAnimatedFontSize(context, fontSize, nominalTarget >= 0.0 ? nominalTarget : fontSize / frameZoom, directFontCorrection);
+}
+
+FLOAT BarUIRendering::ResolveWordFontSize(ID2D1DeviceContext* context, const BarUiWordClass& word,
+	double fontSize, double nominalTarget)
+{
+	if (nominalTarget < 0.0) nominalTarget = word.fontTargetSize >= 0.0
+		? static_cast<double>(word.fontTargetSize) : static_cast<double>(word.size.tar);
+	const double duration = (word.size.val == word.size.tar && !word.size.hasMiddleV) ? 0.0
+		: static_cast<double>(word.size.dur) * (1.0 - static_cast<double>(word.size.progress));
+	return ResolveAnimatedFontSize(context, fontSize, nominalTarget, word.fontCorrection, duration);
+}
+
+FLOAT BarUIRendering::ResolveAnimatedFontSize(ID2D1DeviceContext* context, double fontSize,
+	double nominalTarget, BarUiFontCorrectionClass& correction, double duration)
+{
+	if (!context || !std::isfinite(fontSize) || fontSize <= 0.0) return 0.0F;
 	D2D1_MATRIX_3X2_F transform{};
 	context->GetTransform(&transform);
 	FLOAT dpiX = 96.0F, dpiY = 96.0F;
@@ -247,7 +271,18 @@ FLOAT BarUIRendering::ResolveFontSize(ID2D1DeviceContext* context, double fontSi
 	const double pixelsPerUnit = std::hypot(
 		static_cast<double>(transform._21) * dpiX / 96.0,
 		static_cast<double>(transform._22) * dpiY / 96.0);
-	return Inkeys::UI::Bar::Detail::ResolveBarFontSize(fontSize, pixelsPerUnit, allowFractionalFontSize);
+	if (!std::isfinite(pixelsPerUnit) || pixelsPerUnit <= 0.0) return 0.0F;
+	const double targetZoom = fontTargetZoom > 0.0 ? fontTargetZoom : frameZoom;
+	const double targetPixelsPerUnit = fontTargetTransformReady
+		? std::hypot(fontTargetY[0]*dpiX/96.0,fontTargetY[1]*dpiY/96.0) : pixelsPerUnit;
+	const double targetPixels = nominalTarget * targetZoom * targetPixelsPerUnit;
+	const BarUiAnimationAdvanceContextClass immediate{0.0, 1.0, false, true};
+	const double coefficient = correction.Resolve(targetPixels, allowFractionalFontSize, fontFrameSerial,
+		fontFrameReady ? fontFrameContext : immediate, duration > 0.0 ? duration : fontDuration);
+	fontAnimationsActive |= correction.Active();
+	const double resolved = fontSize * coefficient;
+	return std::isfinite(resolved) && resolved > 0.0
+		&& resolved <= (std::numeric_limits<FLOAT>::max)() ? static_cast<FLOAT>(resolved) : 0.0F;
 }
 
 void BarUIRendering::ConfigureLocalizedTypography()
@@ -1597,8 +1632,9 @@ BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom, ID2D1Devi
 	if (!dwriteFactory || !GetTypographyCache()
 		|| !isfinite(zoom) || zoom <= 0.0F)
 		return nullptr;
-	const FLOAT fontSize = ResolveFontSize(context ? context : deviceContext.Get(),
-		static_cast<double>(BarThicknessFineDialLabelFontSizeDip) * zoom);
+	const FLOAT fontSize = ResolveAnimatedFontSize(context ? context : deviceContext.Get(),
+		static_cast<double>(BarThicknessFineDialLabelFontSizeDip) * zoom,
+		BarThicknessFineDialLabelFontSizeDip*(fontFrameReady?1.0:zoom/frameZoom), fineDialFontCorrection);
 	if (fontSize <= 0.0F) return nullptr;
 	++thicknessFineDialLabelUseSerial;
 	for (auto& cached : thicknessFineDialLabelCache)
@@ -3068,7 +3104,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	double centerY = tarY + tarH / 2.0;
 	tarW *= contentScale;
 	tarH *= contentScale;
-	tarSize = ResolveFontSize(deviceContext, tarSize * contentScale);
+	tarSize = ResolveWordFontSize(deviceContext, word, tarSize * contentScale);
 	if (tarSize <= 0.0) return false;
 	tarX = centerX - tarW / 2.0;
 	tarY = centerY - tarH / 2.0;

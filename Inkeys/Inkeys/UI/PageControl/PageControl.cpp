@@ -962,6 +962,8 @@ namespace Inkeys::UI::PageControl
 			float scale) noexcept
 		{
 			const float normalizedScale = NormalizeScale(scale);
+			// 当前 bounds 仍逐帧插值，字体单独接收同一动画的最终倍率。
+			state.scene.SetFontTargetScale(state.bounds.initialized?state.bounds.targetScale:normalizedScale);
 			if (!ShouldApplyPageControlSceneBounds(
 				state.appliedSceneBoundsReady, state.appliedSceneBounds,
 				state.appliedSceneScale, bounds, normalizedScale)) return true;
@@ -1323,6 +1325,8 @@ namespace Inkeys::UI::PageControl
 				static_cast<FLOAT>(presentDirty.left),static_cast<FLOAT>(presentDirty.top),
 				static_cast<FLOAT>(presentDirty.right),static_cast<FLOAT>(presentDirty.bottom)));
 			(void)state.scene.Render(context.Get(),frameContext.frameTime);
+			// 本帧新启动的字号修正也必须接回调度，不能等下一次外部事件。
+			result.continueRendering |= state.scene.Renderer().FontAnimationsActive();
 			if (showDebugFrames)
 			{
 				// 红/绿框表示本帧 damage，蓝框直接表示当前 HWND 提交边界。
@@ -3424,6 +3428,27 @@ namespace Inkeys::UI::PageControl
 				}
 			}
 			Check(rootOverlaps>0&&menuOverlaps>0&&tripleOverlaps>0,"real opening motion exercises pagination-over-menu, menu-over-theme and three-layer overlaps");
+		}
+		// 字体自身启动/尾段走实际 PageControl 回调和呈现 continue，不依赖其他几何动画续帧。
+		{
+			const bool savedFont=Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
+			const bool savedAnimation=BarUiAnimationEnabled;
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;BarUiAnimationEnabled=true;
+			OffscreenSnapshot fontSnapshot{ppt,wb};fontSnapshot.whiteboard.menu=0;
+			unsigned fontSubmits=0;
+			auto fontCallback=CreatePageControlOffscreenRenderCallback(0,[&]{return fontSnapshot;},{0,0,193,51},0.63F,
+				[&](const UPDATELAYEREDWINDOWINFO& info){++fontSubmits;return info.hdcSrc?TRUE:FALSE;});
+			FrameContext fontFrame;fontFrame.epoch=Inkeys::UI::RenderPipeline::GetDeviceEpoch();fontFrame.frameTime=origin+20s;
+			bool baselineIdle=false;
+			for(int tick=0;tick<90;++tick){fontFrame.frameTime+=16ms;if(fontCallback(fontFrame)==FrameResult::Idle){baselineIdle=true;break;}}
+			Check(baselineIdle,"font-only callback baseline settles before the policy change");
+			const unsigned before=fontSubmits;
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=true;fontFrame.frameTime+=16ms;
+			Check(fontCallback(fontFrame)==FrameResult::Continue,"font-only policy change schedules its continuous correction");
+			bool idle=false;
+			for(int tick=0;tick<90;++tick){fontFrame.frameTime+=16ms;if(fontCallback(fontFrame)==FrameResult::Idle){idle=true;break;}}
+			Check(idle&&fontSubmits>before+2,"font-only PageControl tail submits multiple frames then returns idle");
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=savedFont;BarUiAnimationEnabled=savedAnimation;
 		}
 		// 无 HWND 的故障注入走实际 GetDC/ReleaseDC/EndDraw 事务，不以数学动画冒充呈现。
 		OffscreenSnapshot snapshot{ppt,wb};snapshot.whiteboard.menu=2;

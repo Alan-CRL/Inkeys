@@ -36,8 +36,19 @@
     "InkeysHeadlessTests/animation_tests.cpp",
     "InkeysHeadlessTests/config_metadata_tests.cpp",
     "Scripts/i18n.zh-CN.snapshot.jsonc",
-    "Inkeys/Inkeys/UI/Bar/Bar.FontSize.h"
+    "Inkeys/Inkeys/UI/Bar/Bar.FontSize.h",
+    "Inkeys/Inkeys/UI/Bar/Bar.Animation.cppm",
+    "Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h",
+    "Inkeys/Inkeys/UI/Bar/Bar.Button.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.EraserAttribute.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.EraserAttributeMotion.cppm",
+    "Inkeys/Inkeys/UI/Bar/Bar.RecallAttribute.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.Scene.cppm",
+    "Inkeys/Inkeys/UI/Bar/Bar.UI.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.UI.cppm",
+    "Inkeys/Inkeys/UI/PageControl/PageControl.cpp",
+    "InkeysHeadlessTests/bar_bottom_dock_tests.cpp"
   ],
-  "notes": "2026-10-24：用户已批准规划/实现，并限定主栏及控件UI字体，排除设置文字。实现、Trellis审查、三语、完整Debug|ARM64 solution、Headless与真实D2D离屏验证均完成。修复新增测试C2248，生产API未扩大。沙箱无诊断构建故障已通过同配置沙箱外验证区分；详见research/validation.md。用户后续已明确授权为本次改动创建本地commit，任务保持in_progress，不finish、不归档、不push。",
+  "notes": "2026-10-24：用户已批准规划/实现，并限定主栏及控件UI字体，排除设置文字。实现、Trellis审查、三语、完整Debug|ARM64 solution、Headless与真实D2D离屏验证均完成。修复新增测试C2248，生产API未扩大。沙箱无诊断构建故障已通过同配置沙箱外验证区分；详见research/validation.md。用户后续已明确授权为本次改动创建本地commit，任务保持in_progress，不finish、不归档、不push。 后续动画修订：首轮commit aeb178bc已完成；用户要求仅量化静止字号和动画目标，动画中间帧连续且结束无跳变。沿用同一任务，不自动提交本轮改动。 动画修订已实现并完成完整ARM64构建、Headless及真实D2D离屏回归；静止目标取整、动画中间值连续，详见research/animation-validation.md。保留in_progress，当前修订未commit/push。 用户现已确认改动有效，并明确授权结束当前任务、提交commit及push；之前保持进行中/不自动提交的说明是实施阶段历史，现按最新授权收尾。",
   "meta": {}
 }

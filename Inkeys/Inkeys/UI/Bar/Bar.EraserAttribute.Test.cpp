@@ -352,8 +352,8 @@ namespace Inkeys::UI::Bar
 				{
 					constexpr double zoom = 0.6, contentScale = 0.85;
 					const double deviceScale = item.scaleY * (item.pixels ? 1.0 : item.dpi / 96.0);
-					const double expectedPixels = std::floor(13.0 * zoom * contentScale * deviceScale);
-					const double expectedSize = expectedPixels / deviceScale;
+					const double expectedPixels = std::floor(13.0 * zoom * deviceScale);
+					const double expectedSize = expectedPixels / deviceScale * contentScale;
 					const auto draw = [&](BarUIRendering& renderer, bool allow, double logicalSize)
 					{
 						renderer.UpdateFontRenderingPolicy(allow); renderer.SetFrameZoom(zoom);
@@ -374,7 +374,7 @@ namespace Inkeys::UI::Bar
 					const auto actual=draw(fonts,false,13.0);
 					const auto expected=draw(reference,true,expectedSize/(zoom*contentScale));
 					expect(!actual.empty() && actual==expected,
-						"Word pixels match floor after zoom/content/DPI/nonuniform DC scale");
+						"Word pixels retain continuous content scale around the projected stationary target");
 					const auto fractional=draw(fonts,true,13.0);
 					expect(fractional!=actual, "fractional preference preserves a distinct untruncated Word render");
 					expect(draw(fonts,false,13.0)==actual, "font preference switches back without stale cached text");
@@ -401,6 +401,57 @@ namespace Inkeys::UI::Bar
 				const double rotatedScale=std::hypot(0.6*1.25,0.8*2.0);
 				expect(std::abs(fonts.ResolveFontSize(dc,7.8)*rotatedScale-std::floor(7.8*rotatedScale))<0.00001,
 					"font height includes both axes of rotated/sheared DPI mapping");
+
+				// 真实公共按钮绘制覆盖按压目标和 FLOAT 当前矩阵抵消曾导致的 13px->12px 边界。
+				{
+					dc->SetDpi(96,96);dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);dc->SetTransform(D2D1::IdentityMatrix());
+					fonts.SetFrameZoom(1);fonts.UpdateFontRenderingPolicy(false);
+					BarButtonClass button;
+					button.button.Initialization(0,0,80,80,4,4,1,RGB(240,240,240),RGB(20,20,20));
+					button.button.enable.Initialization(true);button.button.pct.SetDirect(1);
+					button.name.Initialization(0,0,70,24,L"Press",13,RGB(20,20,20));
+					button.name.enable.Initialization(true);button.name.pct.SetDirect(1);
+					BarButtonDrawOptions options;options.drawIcon=false;
+					auto time=std::chrono::steady_clock::now();
+					const auto drawButton=[&](double dt){
+						time+=std::chrono::nanoseconds(1)+std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(dt));
+						fonts.BeginFontFrame(time,{dt,1,true,false},1);fonts.SetFontTargetScale(1);
+						dc->SetTransform(D2D1::IdentityMatrix());fonts.BeginFrameDraw(dc,D2D1::RectF(0,0,256,128));
+						expect(DrawBarButtonVisual(fonts,dc,button,{10,10},options),"real font press button draws");
+						const double first=button.name.fontCorrection.Current();
+						(void)DrawBarButtonVisual(fonts,dc,button,{10,10},options);
+						expect(button.name.fontCorrection.Current()==first,"duplicate real button draw advances font once");
+						fonts.FinishFrameDrawCommands(dc);expect(SUCCEEDED(fonts.EndFrameDraw(dc)),"font press frame commits D2D commands");
+						return 13.0*static_cast<double>(button.pressScale.val)*first;
+					};
+					for(const double current:{1.0,0.95,0.96,0.99,1.01,0.9,1.0}){
+						button.pressScale.SetDirect(current);button.pressScale.SetTar(1,0.2);(void)drawButton(0);
+						expect(button.name.fontCorrection.Target()==1.0,"release target stays exactly 13px across FLOAT press matrices");
+					}
+					button.pressScale.SetDirect(1);button.pressScale.SetTar(0.95,0.2);
+					double previous=13;int intermediate=0;
+					for(int tick=0;tick<30;++tick){
+						if(!button.pressScale.IsSame())(void)BarUiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
+						const double pixel=drawButton(0.01);intermediate+=std::abs(pixel-std::round(pixel))>0.00001;
+						expect(std::abs(pixel-previous)<0.2,"real pressed font follows a continuous fractional trajectory");previous=pixel;
+					}
+					expect(intermediate>10&&std::abs(previous-12.0)<0.00001&&!fonts.FontAnimationsActive(),
+						"pressed hold settles at floor(13*0.95) and font scheduler becomes idle");
+					const double held=previous;button.pressScale.SetTar(1,0.2);
+					expect(std::abs(drawButton(0)-held)<0.00001,"release retarget at zero dt preserves current visible font");
+					for(int tick=0;tick<30;++tick){
+						if(!button.pressScale.IsSame())(void)BarUiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
+						previous=drawButton(0.01);
+					}
+					expect(std::abs(previous-13.0)<0.00001&&std::abs(drawButton(0)-previous)<0.00001,
+						"real release ends at 13px without an idle-frame floor jump");
+					// 字号目标不变时，内容过渡可连续经过小数及 Back 回弹；末尾只回到同一个 c。
+					button.name.contentScale=0.83;const double c=button.name.fontCorrection.Current();(void)drawButton(0.01);
+					expect(button.name.fontCorrection.Current()==c,"content midpoint does not retarget stationary font correction");
+					button.name.contentScale=1.03;(void)drawButton(0.01);button.name.contentScale=1;(void)drawButton(0.01);
+					expect(button.name.fontCorrection.Current()==c,"content overshoot and final frame keep continuous correction");
+				}
+
 			}
 			fonts.DiscardDeviceResources(); reference.DiscardDeviceResources();
 		}

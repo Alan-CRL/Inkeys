@@ -543,7 +543,7 @@
         "AllowFractionalFontSize":
         {
           "N": "Allow interface fonts to render at fractional pixel sizes",
-          "E": "When off, font sizes in the main bar and controls are truncated to whole pixels. This may improve clarity at some scales. Applies immediately."
+          "E": "When off, stationary font sizes in the main bar and controls are truncated to whole pixels. Scaling and transition animations remain smooth. Applies immediately."
         }
       },
       "Draw3":

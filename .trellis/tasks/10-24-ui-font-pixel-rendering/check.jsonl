@@ -6,3 +6,5 @@
 {"file":".trellis/tasks/10-24-ui-font-pixel-rendering/research/font-setting-and-config.md","reason":"实验卡、配置、刷新与回归接入"}
 {"file":".trellis/tasks/10-24-ui-font-pixel-rendering/research/font-rendering-chain.md","reason":"最终字号变换和独立文字入口调查"}
 {"file":".trellis/tasks/10-24-ui-font-pixel-rendering/research/platform-text-rendering.md","reason":"DIP/物理像素与抗锯齿官方依据"}
+{"file":".trellis/tasks/10-24-ui-font-pixel-rendering/research/font-animation-targets.md","reason":"当前动画修订：字号原始目标、连续修正系数状态、共享帧推进与重定向"}
+{"file":".trellis/tasks/10-24-ui-font-pixel-rendering/research/font-animation-scales.md","reason":"当前动画修订：主栏/分页/属性/独立文字的静止目标倍率交接"}

@@ -1,4 +1,4 @@
-# 验证记录
+# 首轮验证记录（动画修订见 research/animation-validation.md）
 
 日期：2026-10-24。用户预先批准规划与实现，并明确排除设置窗口文字渲染。全程仅CLI和无交互窗口验证，未执行commit/push。
 

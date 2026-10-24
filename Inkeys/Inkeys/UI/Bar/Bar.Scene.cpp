@@ -137,6 +137,7 @@ namespace Inkeys::UI::Bar
 		BarSurfaceHooks hooks;
 		RECT logical{0,0,1,1},presentation{0,0,1,1},damage{};
 		float scale=1;
+		double fontTargetScale=0;
 		bool initialized=false,backgroundOnly=false,active=false,invalidated=true,subscribed=false;
 		std::chrono::steady_clock::time_point previousFrame{};
 		FrameAnimationClock animationClock;
@@ -563,7 +564,9 @@ namespace Inkeys::UI::Bar
 		{
 			// 相同 frameTime 或隐藏后恢复也先处理字号策略，不能被 idle 早退吞掉。
 			if(renderer.UpdateFontRenderingPolicy(Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))FullDamage();
-			if(frameSeen&&now==previousFrame)return active;
+			if(frameSeen&&now==previousFrame)return active||renderer.FontAnimationsActive();
+			const bool fontPending=renderer.FontAnimationsActive();
+			if(fontPending)FullDamage();
 			Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
 				Inkeys::UI::RenderPipeline::FrameStage::AdvanceAnimationsAndDeriveLayout);
 			if(!frameSeen){animationClock.Rebase(now);frameSeen=true;}
@@ -573,7 +576,8 @@ namespace Inkeys::UI::Bar
 			}
 			const double speed=(std::max)(0.01,static_cast<double>(BarUiAnimationSpeedRate));
 			const BarUiAnimationAdvanceContextClass frame{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
-			active=false;bool changed=false,panelsChanged=false;
+			renderer.BeginFontFrame(now,frame,fontTargetScale>0?fontTargetScale:scale);
+			active=fontPending;bool changed=false,panelsChanged=false;
 			const auto surface=GetThemeColor(BarThemeColorEnum::Surface);
 			if(appliedSurfaceColor!=surface){
 				// 普通表面跟随主栏样式，预览内部颜色仍由页面主题独立控制。
@@ -623,7 +627,7 @@ namespace Inkeys::UI::Bar
 			RefreshGeometry();
 			if(changed || panelsChanged || oldMenu!=menuPose || oldTheme!=themePose)FullDamage();
 			RefreshLighting();
-			return active;
+			return active||fontPending;
 		}
 		BarSurfacePointerResult Pointer(ButtonPointerEvent event,POINT logicalPoint)
 		{
@@ -637,9 +641,9 @@ namespace Inkeys::UI::Bar
 		}
 		void DrawShape(ID2D1DeviceContext* dc,BarUiShapeClass& shape)
 		{DrawBarBackgroundVisual(renderer,dc,shape,Inherit(shape));}
-		void SetPose(ID2D1DeviceContext* dc,EraserSurfacePose pose)
+		void SetPose(ID2D1DeviceContext* dc,EraserSurfacePose pose,EraserSurfacePose targetPose={})
 		{
-			renderer.SetFrameZoom(scale*pose.scale);renderer.SetFrameDiffuseReferenceZoom(scale);renderer.SetFrameDiffuseMaskGeometryScale(1.0/(std::max)(0.001,pose.scale));
+			renderer.SetFrameZoom(scale*pose.scale);renderer.SetFontTargetScale(1.0);renderer.SetFontTargetZoom((fontTargetScale>0?fontTargetScale:scale)*targetPose.scale);renderer.SetFrameDiffuseReferenceZoom(scale);renderer.SetFrameDiffuseMaskGeometryScale(1.0/(std::max)(0.001,pose.scale));
 			const auto x=static_cast<FLOAT>(logical.left-presentation.left+pose.x*scale),y=static_cast<FLOAT>(logical.top-presentation.top+pose.y*scale);
 			auto light=drawingLighting;light.primaryLight.x-=x;light.primaryLight.y-=y;light.cursorLight.x-=x;light.cursorLight.y-=y;
 			renderer.SetFrameLightingSnapshot(light);dc->SetTransform(D2D1::Matrix3x2F::Translation(x,y));
@@ -670,7 +674,7 @@ namespace Inkeys::UI::Bar
 			const auto pose=child?themePose:menuPose;
 			const double alpha=child?themeFrame.opacity:menuFrame.opacity;
 			if(alpha<=0.0001)return;
-			SetPose(dc,pose);
+			SetPose(dc,pose,child?themeFrame.targetPose:menuFrame.targetPose);
 			const auto bounds=child?ThemeBounds:MenuBounds;
 			const auto pixels=Pixels(bounds,scale*pose.scale);
 			const bool layer=alpha<0.9999;
@@ -730,6 +734,11 @@ namespace Inkeys::UI::Bar
 			Inkeys::UI::RenderPipeline::FrameStage::SubmitTargetsAndLayout);
 		// 几何可在同一 frameTime 的 Advance 后落定；只重映射光源，不再推进动画时钟。
 		p.logical=bounds;p.scale=scale;p.renderer.SetFrameZoom(scale);p.RefreshGeometry();p.RefreshLighting();p.FullDamage();return true;
+	}
+	void BarPageSurface::SetFontTargetScale(double scale) noexcept
+	{
+		if(!std::isfinite(scale)||scale<=0||impl_->fontTargetScale==scale)return;
+		impl_->fontTargetScale=scale;impl_->renderer.SetFontTargetZoom(scale);impl_->FullDamage();
 	}
 	void BarPageSurface::SetOpacity(double value,double duration) noexcept
 	{
@@ -863,7 +872,7 @@ namespace Inkeys::UI::Bar
 	BarSurfacePointerResult BarPageSurface::CancelPointer() noexcept{auto r=impl_->Pointer(ButtonPointerEvent::Cancel,{});impl_->Wake();return r;}
 	bool BarPageSurface::Advance(std::chrono::steady_clock::time_point now) noexcept{return impl_->Advance(now);}
 	void BarPageSurface::SuspendForIdle(std::chrono::steady_clock::time_point now) noexcept{impl_->animationClock.SuspendForIdle(now);}
-	bool BarPageSurface::AnimationActive() const noexcept{return impl_->active;}
+	bool BarPageSurface::AnimationActive() const noexcept{return impl_->active||impl_->renderer.FontAnimationsActive();}
 	bool BarPageSurface::PopupAnimationActive() const noexcept{return impl_->menuMotion.Active()||impl_->themeMotion.Active();}
 	BarSurfaceRenderResult BarPageSurface::Render(ID2D1DeviceContext* dc,std::chrono::steady_clock::time_point now)
 	{
@@ -900,6 +909,6 @@ namespace Inkeys::UI::Bar
 		}
 		if(layer)dc->PopLayer();dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);
 		p.renderer.SetFrameLightingSnapshot(p.drawingLighting);
-		return {true,p.active,p.invalidated,p.damage};
+		return {true,p.active||p.renderer.FontAnimationsActive(),p.invalidated,p.damage};
 	}
 }
