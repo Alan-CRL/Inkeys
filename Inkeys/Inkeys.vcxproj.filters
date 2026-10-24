@@ -516,6 +516,15 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemo.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemoData.g.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.Layout.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
@@ -1863,6 +1872,9 @@
     <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
@@ -2407,6 +2419,12 @@
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\setting\GitHubMark.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\setting\EraserDemoFine.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\setting\EraserDemoSweep.png">
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\setting\Profile_Picture.png">

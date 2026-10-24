@@ -580,7 +580,21 @@
       "Eraser":
       {
         "N": "橡皮擦",
-        "Automatic": "自動粗細總開關",
+        "Automatic": "啟用筆速橡皮",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "精細修改",
+          "DemoFineDescription": "慢速擦除時縮小橡皮，保留相鄰的筆畫。",
+          "DemoSweepTitle": "大範圍擦除",
+          "DemoSweepDescription": "快速移動時放大橡皮，輕鬆清除整片筆跡。",
+          "EntryDescription": "根據繪製意圖智慧調整橡皮擦粗細",
+          "Introduction": "結合裝置尺寸、輸入裝置與移動資訊，智慧判斷擦除意圖，動態調整橡皮擦大小。",
+          "BasicSettings": "基本設定",
+          "EnabledDevices": "啟用裝置",
+          "FineControl": "精細控制",
+          "SizeWarningTitle": "無法取得可靠的螢幕尺寸",
+          "SizeWarningDescription": "目前繪製螢幕缺少可信的實體尺寸，觸控與螢幕筆將使用 DPI 估算，橡皮擦大小可能與擦除意圖不符。"
+        },
         "Input":
         {
           "MouseLeft": "滑鼠左鍵",

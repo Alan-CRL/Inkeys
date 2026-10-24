@@ -125,3 +125,11 @@
 蓝条尺寸及锚点动画保持，真实绘制圆角达到半宽。普通赞助行的文字与图标共用蓝条AccentFillDefault主题色，取代前轮AccentTextPrimary/普通glyph；背景与输入合同不变。
 
 窄条使用上下两个半宽圆弧并PathFillConvex：现有ImGui PathRect会将圆角钳制到半宽减1物理像素，不能仅传半宽radius声称完整圆头。仅改本地绘制，不改vendor；测试取真实极值端头跨度。
+
+## 笔速橡皮详情页设计
+
+采用绘制内部子页、纯 draft/events 与原生 setter 接线；设备常驻复选组，物理尺寸提示复用实际解析器。当前仅介绍卡，不接入图像，后续透明笔迹与离屏擦除另行接续。详见 research/settings-speed-eraser.md。
+
+## 笔速橡皮循环演示
+
+采用真实速度控制器+真实墨迹shader的独立离屏预览，手写场景GPU缓存与可见性播放状态，借用设置设备/线程，不创建HWND。最新架构/边界见 research/settings-eraser-demo.md。

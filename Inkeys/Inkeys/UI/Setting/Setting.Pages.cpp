@@ -561,6 +561,139 @@ namespace Inkeys::UI::Setting::Design
 		return action;
 	}
 
+	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter)
+	{
+		SpeedEraserEvents events;
+		events.back = IconButton("##speed-eraser-back", "\ue72b");
+		PageContentStart();
+		const auto& eraser = I18nKey.SettingsUI.Draw.Eraser;
+		const auto& speed = eraser.SpeedEraser;
+		const std::string introduction = IA(speed.Introduction);
+		const float width = ImGui::GetContentRegionAvail().x;
+		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
+		const float innerWidth = (std::max)(1.0F, width - padding * 2.0F);
+		const float textHeight = TextHeight(introduction.c_str(), innerWidth);
+		float contentHeight = textHeight;
+		const float gap = Pixels(16.0F), smallGap = Pixels(8.0F);
+		const bool stacked = innerWidth < Pixels(600.0F);
+		const float canvasWidth = stacked ? innerWidth : (innerWidth - gap) * 0.5F;
+		const float canvasHeight = canvasWidth * EraserDemoCanvasHeight / EraserDemoCanvasWidth;
+		const std::array<std::string, 2> titles{ IA(speed.DemoFineTitle), IA(speed.DemoSweepTitle) };
+		const std::array<std::string, 2> descriptions{ IA(speed.DemoFineDescription), IA(speed.DemoSweepDescription) };
+		const std::array<std::string, 2> labels{ IA(eraser.Kind.Fixed), IA(eraser.Kind.Speed) };
+		const float titleHeight = (std::max)(TextHeight(titles[0].c_str(), innerWidth, ImFluentTextStyle_Subtitle),
+			TextHeight(titles[1].c_str(), innerWidth, ImFluentTextStyle_Subtitle));
+		const float descriptionHeight = (std::max)(TextHeight(descriptions[0].c_str(), innerWidth),
+			TextHeight(descriptions[1].c_str(), innerWidth));
+		const float labelHeight = (std::max)(TextHeight(labels[0].c_str(), canvasWidth, ImFluentTextStyle_BodyStrong),
+			TextHeight(labels[1].c_str(), canvasWidth, ImFluentTextStyle_BodyStrong));
+		const float headingHeight = titleHeight + smallGap + descriptionHeight + gap;
+		const float boardHeight = labelHeight + smallGap + canvasHeight;
+		const float boardsHeight = stacked ? boardHeight * 2.0F + gap : boardHeight;
+		EraserDemoPresentation demo;
+		bool deferredDemo = false;
+		if (presenter)
+		{
+			// 先用真实字体和画布比例测量，再仅调用一次播放端；被外层滚动裁剪时不初始化/推进。
+			const auto origin = ImGui::GetCursorScreenPos();
+			const auto* window = ImGui::GetCurrentWindow();
+			bool visible = false;
+			for (int board = 0; board < 2; ++board)
+			{
+				const ImVec2 top(origin.x + padding + (stacked ? 0.0F : board * (canvasWidth + gap)),
+					origin.y + padding + headingHeight + labelHeight + smallGap + (stacked ? board * (boardHeight + gap) : 0.0F));
+				visible |= !window->SkipItems && window->ClipRect.Overlaps(ImRect(top, { top.x + canvasWidth, top.y + canvasHeight }));
+			}
+			demo = presenter(visible, canvasWidth);
+			// 首次恢复到已滚动位置时暂未创建纹理，仍保留完整高度，避免压缩页面破坏滚动恢复。
+			deferredDemo = !visible && !demo.texture;
+			if (demo.texture || deferredDemo) contentHeight += headingHeight + boardsHeight + gap + Pixels(8.0F) + gap;
+		}
+		const float height = std::ceil(contentHeight + padding * 2.0F);
+		ImGui::SetNextWindowSizeConstraints({ 0.0F, height }, { FLT_MAX, height });
+		ImGui::SetNextWindowContentSize({ 0.0F, contentHeight });
+		if (BeginCard("##speed-eraser-introduction", { width, height }))
+		{
+			const auto origin = ImGui::GetCursorScreenPos();
+			auto* draw = ImGui::GetWindowDrawList();
+			float y = origin.y;
+			if (demo.texture || deferredDemo)
+			{
+				const int scene = std::clamp(demo.scene, 0, 1);
+				TextAt(titles[scene].c_str(), { origin.x, y }, innerWidth, ImFluentTextStyle_Subtitle);
+				y += titleHeight + smallGap;
+				TextAt(descriptions[scene].c_str(), { origin.x, y }, innerWidth, ImFluentTextStyle_Body, TextSecondary);
+				y = origin.y + headingHeight;
+				const ImU32 tint = IM_COL32(255, 255, 255, static_cast<int>(std::clamp(demo.opacity, 0.0F, 1.0F) * 255));
+				for (int board = 0; board < 2; ++board)
+				{
+					const ImVec2 label(origin.x + (stacked ? 0.0F : board * (canvasWidth + gap)),
+						y + (stacked ? board * (boardHeight + gap) : 0.0F));
+					TextAt(labels[board].c_str(), label, canvasWidth, ImFluentTextStyle_BodyStrong);
+					const ImVec2 top(label.x, label.y + labelHeight + smallGap);
+					const ImVec2 bottom(top.x + canvasWidth, top.y + canvasHeight);
+					const float rounding = Pixels(4.0F);
+					draw->AddRectFilled(top, bottom, IsDarkMode() ? IM_COL32(18, 59, 50, 255) : IM_COL32(247, 248, 250, 255), rounding);
+					if (demo.texture) draw->AddImageRounded(demo.texture, top, bottom, { board * 0.5F, 0 }, { (board + 1) * 0.5F, 1 }, tint, rounding);
+					draw->AddRect(top, bottom, Stroke, rounding, 0, 1.0F);
+				}
+				y += boardsHeight + gap;
+				for (int dot = 0; dot < 2; ++dot)
+					draw->AddCircleFilled({ origin.x + innerWidth * 0.5F + Pixels(dot == 0 ? -6.0F : 6.0F), y + Pixels(4.0F) },
+						Pixels(3.0F), dot == scene ? Accent : Stroke);
+				y += Pixels(8.0F) + gap;
+			}
+			TextAt(introduction.c_str(), { origin.x, y }, innerWidth);
+			// 整卡一次登记完整高度，说明自然换行，内容交给页面滚动而不是卡内滚动。
+			ImGui::Dummy({ innerWidth, contentHeight });
+		}
+		EndCard();
+		if (draft.physicalSizeWarning)
+		{
+			PageContentStart();
+			Notice("##speed-eraser-size-warning", IA(speed.SizeWarningTitle).c_str(),
+				IA(speed.SizeWarningDescription).c_str(), ImFluentInfoSeverity_Warning);
+		}
+
+		SectionHeader(IA(speed.BasicSettings).c_str());
+		events.automaticChanged = ToggleRow("##eraser-automatic", IA(eraser.Automatic).c_str(),
+			nullptr, "\ued62", draft.automaticEnabled);
+		const auto& sensitivity = I18nKey.UI.Bar.EraserAttributes;
+		events.sensitivityChanged = ComboRow("##eraser-sensitivity", IA(sensitivity.SensitivityLabel).c_str(),
+			nullptr, "\ue9e9", draft.sensitivity,
+			{ IA(sensitivity.LowLabel), IA(sensitivity.MediumLabel), IA(sensitivity.HighLabel) });
+		const std::array<std::string, 5> entries{
+			IA(eraser.Input.MouseLeft), IA(eraser.Input.MouseRight), IA(eraser.Input.Touch),
+			IA(eraser.Input.PenTip), IA(eraser.Input.PenTail) };
+		CheckboxGroup("##eraser-devices", IA(speed.EnabledDevices).c_str(), "\ue7f8", {
+			{ entries[0], &draft.enabled[0], &events.enabledChanged[0] },
+			{ entries[1], &draft.enabled[1], &events.enabledChanged[1] },
+			{ entries[2], &draft.enabled[2], &events.enabledChanged[2] },
+			{ entries[3], &draft.enabled[3], &events.enabledChanged[3] },
+			{ entries[4], &draft.enabled[4], &events.enabledChanged[4] } });
+
+		SectionHeader(IA(speed.FineControl).c_str());
+		const std::vector<std::string> responses{ IA(eraser.Response.Auto),
+			IA(eraser.Response.ScreenPen), IA(eraser.Response.Digitizer) };
+		const int first = draft.automaticPenSupported ? 0 : 1;
+		const std::vector<std::string> availableResponses(responses.begin() + first, responses.end());
+		for (int pen = 0; pen < 2; ++pen)
+		{
+			const int entry = pen + 3;
+			if (!draft.automaticEnabled || !draft.enabled[entry]) continue;
+			ImGui::PushID(entry);
+			int response = std::clamp(draft.penResponses[pen], first, 2) - first;
+			events.penResponseChanged[pen] = ComboRow("##eraser-response", entries[entry].c_str(),
+				IA(eraser.ResponseFor).c_str(), "\uedc6", response, availableResponses);
+			// Win7 隐藏 Auto 项后仍返回稳定枚举，只在用户真正选择时更新草稿。
+			if (events.penResponseChanged[pen]) draft.penResponses[pen] = response + first;
+			ImGui::PopID();
+		}
+		events.touchAreaChanged = ToggleRow("##eraser-touch-area", IA(eraser.TouchArea.N).c_str(),
+			IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea);
+		return events;
+	}
+
 	void RenderSponsorThanks(const char* text, float widthPixels)
 	{
 		const float width = (std::max)(1.0F, widthPixels);

@@ -96,6 +96,14 @@ namespace Inkeys::UI::Setting::Design
 	bool BeginCard(const char* id, const ImVec2& size = ImVec2(0, 0),
 		ImFluentCardStyle style = ImFluentCardStyle_Filled);
 	void EndCard();
+	struct CheckboxSpec
+	{
+		std::string label;
+		bool* value;
+		bool* changed;
+	};
+	void CheckboxGroup(const char* id, const char* title, const char* glyph,
+		std::initializer_list<CheckboxSpec> items);
 	void Details(const char* id, const char* title, const char* description);
 	void Details(const char* id, const char* title, const std::function<void()>& content);
 	void SetStateLabels(const char* onText, const char* offText);

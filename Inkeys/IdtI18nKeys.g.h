@@ -584,6 +584,20 @@ inline constexpr struct I18nKeyRoot
             {
                 const char* N = "SettingsUI/Draw/Eraser/N";
                 const char* Automatic = "SettingsUI/Draw/Eraser/Automatic";
+                struct Node__SettingsUI__Draw__Eraser__SpeedEraser
+                {
+                    const char* DemoFineTitle = "SettingsUI/Draw/Eraser/SpeedEraser/DemoFineTitle";
+                    const char* DemoFineDescription = "SettingsUI/Draw/Eraser/SpeedEraser/DemoFineDescription";
+                    const char* DemoSweepTitle = "SettingsUI/Draw/Eraser/SpeedEraser/DemoSweepTitle";
+                    const char* DemoSweepDescription = "SettingsUI/Draw/Eraser/SpeedEraser/DemoSweepDescription";
+                    const char* EntryDescription = "SettingsUI/Draw/Eraser/SpeedEraser/EntryDescription";
+                    const char* Introduction = "SettingsUI/Draw/Eraser/SpeedEraser/Introduction";
+                    const char* BasicSettings = "SettingsUI/Draw/Eraser/SpeedEraser/BasicSettings";
+                    const char* EnabledDevices = "SettingsUI/Draw/Eraser/SpeedEraser/EnabledDevices";
+                    const char* FineControl = "SettingsUI/Draw/Eraser/SpeedEraser/FineControl";
+                    const char* SizeWarningTitle = "SettingsUI/Draw/Eraser/SpeedEraser/SizeWarningTitle";
+                    const char* SizeWarningDescription = "SettingsUI/Draw/Eraser/SpeedEraser/SizeWarningDescription";
+                } SpeedEraser{};
                 struct Node__SettingsUI__Draw__Eraser__Input
                 {
                     const char* MouseLeft = "SettingsUI/Draw/Eraser/Input/MouseLeft";

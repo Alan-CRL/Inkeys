@@ -162,3 +162,11 @@ v1 的 248 DIP 导航、900 DIP 自动阈值、72 DIP 设置行最小高、浅�
 在本轮进行中，用户要求在主页最下方“官方网站”之前增加“使用条款”链接。简体中文目标 https://www.inkeys.top/tos/zh-cn.html；英文和繁体中文目标 https://www.inkeys.top/tos/en-us.html。其他页脚顺序和目标保留。
 
 提交前用户修正：主页和侧栏共用的Sponsor.N恢复原“赞助我们”名称，简繁英均恢复原有翻译；原跳转保持。用户明确仅做i18n检查，不再运行其他测试，继续commit且父任务不结束。
+
+## 笔速橡皮独立页（2026-10-24）
+
+用户批准实施独立设置页，最新追加暂停图片加入。本轮需求、范围及验收见 [research/settings-speed-eraser.md](research/settings-speed-eraser.md)。父任务保持进行中，不 GUI/commit/push。
+
+## 笔速橡皮动态演示（2026-10-24）
+
+用户批准直接实现原生动态手写化学场景/真实擦除与轮播，以 research/settings-eraser-demo.md 替代此前静态图片与暂缓范围。父任务继续，不GUI/commit/push。

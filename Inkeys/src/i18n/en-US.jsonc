@@ -580,7 +580,21 @@
       "Eraser":
       {
         "N": "Eraser",
-        "Automatic": "Automatic thickness",
+        "Automatic": "Enable speed-sensitive eraser",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "Fine corrections",
+          "DemoFineDescription": "Move slowly to erase precisely and preserve nearby strokes.",
+          "DemoSweepTitle": "Clear larger areas",
+          "DemoSweepDescription": "Move faster to widen the eraser and clear more ink.",
+          "EntryDescription": "Intelligently adjust eraser size to match your drawing intent",
+          "Introduction": "Uses device dimensions, input devices, and movement to infer your erasing intent and adjust the eraser size dynamically.",
+          "BasicSettings": "Basic settings",
+          "EnabledDevices": "Enabled devices",
+          "FineControl": "Fine control",
+          "SizeWarningTitle": "Reliable screen dimensions are unavailable",
+          "SizeWarningDescription": "The current drawing screen lacks reliable physical dimensions. Touch and screen pens will use DPI estimates, so eraser size may not match your erasing intent."
+        },
         "Input":
         {
           "MouseLeft": "Left mouse button",

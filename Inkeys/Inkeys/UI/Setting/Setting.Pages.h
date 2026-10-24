@@ -2,6 +2,7 @@
 
 #include "Setting.Controls.h"
 #include "Setting.HomeBrand.h"
+#include "Setting.EraserDemo.h"
 
 struct ImGuiWindow;
 
@@ -175,6 +176,38 @@ namespace Inkeys::UI::Setting::Design
 	// Hide 的重置由唯一渲染线程在排布前消费；同帧 Hide→Show 也不会漏掉。
 	bool ConsumeSettingHomeReset(std::uint64_t resetSerial, std::uint64_t& consumed,
 		NavigationDestination& destination, NavigationState& navigation, HomeMotionState& motion);
+
+	enum class DrawingSubpage : int { Overview, SpeedEraser };
+
+	inline void NavigateDrawingSubpage(NavigationState& navigation, DrawingSubpage& current,
+		DrawingSubpage requested) noexcept
+	{
+		if (current == requested) return;
+		current = requested;
+		// 子页仍属于绘制；独立 child ID 保留滚动，只重播现有正文过渡。
+		navigation.contentReveal.Reset(navigation.animationsEnabled ? 0.0F : 1.0F);
+		navigation.contentReveal.Target(1.0F);
+	}
+
+	struct SpeedEraserDraft
+	{
+		bool automaticEnabled = true;
+		int sensitivity = 1;
+		std::array<bool, 5> enabled{};
+		std::array<int, 2> penResponses{};
+		bool automaticPenSupported = true;
+		bool touchArea = false;
+		bool physicalSizeWarning = false;
+	};
+
+	struct SpeedEraserEvents
+	{
+		bool back = false, automaticChanged = false, sensitivityChanged = false;
+		std::array<bool, 5> enabledChanged{};
+		std::array<bool, 2> penResponseChanged{};
+		bool touchAreaChanged = false;
+	};
+	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter = {});
 
 	struct GeneralDraft
 	{

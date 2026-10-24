@@ -24,6 +24,8 @@ module;
 #include "../StartupPlacement.h"
 #include "Setting.Pages.h"
 #include "Setting.HomeEntryCache.h"
+#include "Setting.EraserDemoGpu.h"
+#include "../../../resource.h"
 #include "Setting.FrameSubmission.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
@@ -102,6 +104,7 @@ namespace
 	FrameResult settingFrameResult = FrameResult::Idle;
 	bool settingNavigationClockIdle = true; // 仅共享渲染线程访问，跳过恢复帧的隐藏/移动耗时。
 	uint64_t settingSessionEpoch = 0;
+	Design::EraserDemoPlayer settingEraserDemo; // 与设置共享设备和线程，演示只播放预计算帧。
 	Design::HomeEntryPageCache settingHomeEntryCache; // 唯一共享渲染线程的临时 GPU 页面快照。
 	Design::FrameSubmissionCache settingFrameSubmission; // 有界的上次成功呈现值快照，不持有 GPU 资源。
 	Inkeys::UI::Setting::SessionState settingSessionState;
@@ -117,7 +120,7 @@ namespace
 	FrameResult ResolveSettingResourceFailure(const char* stage, HRESULT result = E_FAIL)
 	{
 		// 先保存失败与设备原因，再清理 lease；泛化 OOM/E_FAIL 也可能来自已移除的设备。
-		settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
+		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingFrameSubmission.Reset();
 		if (SUCCEEDED(result)) result = E_FAIL;
 		const HRESULT removedReason = g_pd3dDevice ? g_pd3dDevice->GetDeviceRemovedReason() : S_OK;
 		if (result != settingLastResourceFailure || removedReason != settingLastRemovedReason
@@ -1698,7 +1701,7 @@ SettingSessionCoroutine RunSettingSession()
 		if (!AcquireDeviceLease(settingFrameContext.epoch))
 		{
 			settingFrameResult = ResolveSettingResourceFailure("AcquireDeviceLease");
-			settingHomeEntryCache.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
 			CleanupDeviceD3D();
 			co_return;
 		}
@@ -1993,6 +1996,27 @@ SettingSessionCoroutine RunSettingSession()
 						(void)LoadTextureFromMemory(data.data(), width, height, &TextureSettingSign[11]);
 					}
 
+					// 时间遮罩必须保持原始尺寸与通道值；可选演示加载失败不阻断设置页。
+					const int eraserResources[] = { IDR_SETTING_ERASER_DEMO_FINE, IDR_SETTING_ERASER_DEMO_SWEEP };
+					for (size_t scene = 0; scene < std::size(eraserResources); ++scene)
+					{
+						Inkeys::Graphics::DibSurface atlas;
+						if (!LoadSurfaceFromResource(&atlas, L"PNG", MAKEINTRESOURCE(eraserResources[scene]))
+							|| atlas.width() != 2304 || atlas.height() != 432) continue;
+						const auto& pixels = atlas.pixels();
+						vector<unsigned char> data(pixels.size() * 4);
+						for (size_t pixel = 0; pixel < pixels.size(); ++pixel)
+						{
+							const unsigned alpha = pixels[pixel] >> 24;
+							// DibSurface 是预乘 BGRA；还原直通道墨迹，不做二维码那样的单色化。
+							for (unsigned channel = 0; channel < 3; ++channel)
+								data[pixel * 4 + channel] = alpha ? static_cast<unsigned char>(
+									((pixels[pixel] >> (channel * 8)) & 255) * 255 / alpha) : 0;
+							data[pixel * 4 + 3] = static_cast<unsigned char>(alpha);
+						}
+						(void)LoadTextureFromMemory(data.data(), atlas.width(), atlas.height(), &TextureSettingSign[12 + scene]);
+					}
+
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale);
 					{
 						int width = settingSign[9].width = SettingSign.width();
@@ -2037,7 +2061,7 @@ SettingSessionCoroutine RunSettingSession()
 				settingFrameResult = ResolveSettingResourceFailure("ResidentTextures");
 				CleanupSettingTextures();
 				CleanupSettingTextureCache();
-				settingHomeEntryCache.Reset();
+				settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
 				CleanupDeviceD3D();
 				co_return;
 			}
@@ -2068,7 +2092,7 @@ SettingSessionCoroutine RunSettingSession()
 			io.Fonts->Clear();
 			ImFluent::ResetContext();
 			ImGui::DestroyContext();
-			settingHomeEntryCache.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
 			CleanupDeviceD3D();
 			co_return;
 		}
@@ -2216,6 +2240,7 @@ SettingSessionCoroutine RunSettingSession()
 
 		int settingTab = 0;
 		int settingPlugInTab = 0;
+		Design::DrawingSubpage drawingSubpage = Design::DrawingSubpage::Overview;
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
 		Design::HomeMotionState homeMotion;
@@ -2272,6 +2297,7 @@ SettingSessionCoroutine RunSettingSession()
 			ImGui::NewFrame();
 			ImDrawList* entryRootDraw=nullptr; ImDrawList* entryTitleDraw=nullptr;
 			bool entryRootSuppressed=false;
+			bool eraserDemoVisited=false;
 			Design::FrameSubmissionKey submissionKey;
 			const bool submissionInput=!GImGui->InputEventsTrail.empty();
 			if (submissionInput) settingFrameSubmission.Reset();
@@ -2520,9 +2546,10 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
 					{ Widgets::Dip(shellGeometry.gutter), Widgets::Dip(28.0F) });
 				ImGui::PushID(settingTab);
-				// 插件详情及通用子页各自保存滚动/展开状态，标签翻译不参与窗口标识。
+				// 插件/绘制详情及通用子页各自保存滚动状态，标签翻译不参与窗口标识。
 				ImGui::PushID(settingTab == settingTabEnum::tab4 ? settingPlugInTab
-					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section) : 0);
+					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
+					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0);
 				Design::BeginScrollChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
 					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll,
@@ -2566,7 +2593,7 @@ SettingSessionCoroutine RunSettingSession()
 					{
 					case HomeAction::Appearance: navigateTo({ Design::PageId::General, Design::GeneralSection::Appearance }); break;
 					case HomeAction::Shortcuts: navigateTo({ Design::PageId::General, Design::GeneralSection::Shortcuts }); break;
-					case HomeAction::Draw: settingTab = settingTabEnum::tab3; break;
+					case HomeAction::Draw: settingTab = settingTabEnum::tab3; drawingSubpage = Design::DrawingSubpage::Overview; break;
 					case HomeAction::Plugins: settingTab = settingTabEnum::tab4; settingPlugInTab = settingPlugInTabEnum::tabPlug1; break;
 					case HomeAction::General: navigateTo({ Design::PageId::General, Design::GeneralSection::Basic }); break;
 					case HomeAction::Language: settingTab = settingTabEnum::Language; break;
@@ -3195,6 +3222,53 @@ SettingSessionCoroutine RunSettingSession()
 				// 绘制
 				case settingTabEnum::tab3:
 				{
+					if (drawingSubpage == Design::DrawingSubpage::SpeedEraser)
+					{
+						namespace Eraser = Inkeys::Drawing::Draw3::SpeedEraser;
+						// 每帧整表快照与 UI3 共用；总开关关闭不覆盖五入口偏好。
+						const auto preferences = EraserPreferencesSnapshot();
+						auto& host = Inkeys::Drawing::Draw3::ProductHost();
+						auto options = host.EraserDevelopmentOptions();
+						Design::SpeedEraserDraft draft;
+						draft.automaticEnabled = preferences.automaticEnabled;
+						draft.sensitivity = static_cast<int>(preferences.sensitivity);
+						for (int entry = 0; entry < 5; ++entry)
+							draft.enabled[entry] = preferences.entries[entry].kind == Eraser::EraserKind::Speed;
+						for (int pen = 0; pen < 2; ++pen)
+							draft.penResponses[pen] = static_cast<int>(preferences.entries[pen + 3].penResponse);
+						draft.automaticPenSupported = AutomaticPenResponseAvailable();
+						draft.touchArea = options.touchContactAreaAssistance;
+						// 使用绘制 Host 已应用的同代标尺，不能以设置窗口屏幕或待应用标定代替。
+						draft.physicalSizeWarning = Eraser::DirectInputUsesDpiFallback(host.EraserDisplayScaleSnapshot());
+						const auto events = Design::RenderSpeedEraser(draft, [&](bool visible, float canvasWidth) {
+							eraserDemoVisited = true;
+							return settingEraserDemo.Prepare(g_pd3dDevice, g_pd3dDeviceContext,
+								{ TextureSettingSign[12], TextureSettingSign[13] }, visible, canvasWidth, navigationDelta,
+								Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate, Design::IsDarkMode());
+						});
+						if (events.back)
+							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
+						if (events.automaticChanged || events.sensitivityChanged)
+							SetGlobalEraserPreference(-1, events.sensitivityChanged ? draft.sensitivity : -1,
+								events.automaticChanged ? (draft.automaticEnabled ? 1 : 0) : -1);
+						bool saveEntries = false;
+						for (int entry = 0; entry < 5; ++entry)
+						{
+							const bool responseChanged = entry >= 3 && events.penResponseChanged[entry - 3];
+							if (!events.enabledChanged[entry] && !responseChanged) continue;
+							SetEraserInputPreference(entry, draft.enabled[entry] ? 1 : 0,
+								responseChanged ? draft.penResponses[entry - 3] : -1);
+							saveEntries = true;
+						}
+						if (events.touchAreaChanged)
+						{
+							options.touchContactAreaAssistance = draft.touchArea;
+							host.SetEraserDevelopmentOptions(options);
+							Inkeys::config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance = draft.touchArea;
+						}
+						if (saveEntries || events.touchAreaChanged) QueueConfigWrite();
+						break;
+					}
 					Design::PageHeader(IA(I18nKey.SettingsUI.Draw.N).c_str());
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Effect.N).c_str());
@@ -3265,53 +3339,9 @@ SettingSessionCoroutine RunSettingSession()
 					}
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
-					// 五入口与总开关使用同一快照；关闭自动粗细不会覆盖各入口偏好。
-					const auto eraserPreferences = EraserPreferencesSnapshot();
-					bool automatic = eraserPreferences.automaticEnabled;
-					if (Design::ToggleRow("##eraser-automatic", IA(I18nKey.SettingsUI.Draw.Eraser.Automatic).c_str(),
-						nullptr, "\ued62", automatic))
-						SetGlobalEraserPreference(-1, -1, automatic ? 1 : 0);
-					const string entries[]{
-						IA(I18nKey.SettingsUI.Draw.Eraser.Input.MouseLeft), IA(I18nKey.SettingsUI.Draw.Eraser.Input.MouseRight),
-						IA(I18nKey.SettingsUI.Draw.Eraser.Input.Touch), IA(I18nKey.SettingsUI.Draw.Eraser.Input.PenTip),
-						IA(I18nKey.SettingsUI.Draw.Eraser.Input.PenTail) };
-					const vector<string> kinds{ IA(I18nKey.SettingsUI.Draw.Eraser.Kind.Fixed), IA(I18nKey.SettingsUI.Draw.Eraser.Kind.Speed) };
-					const vector<string> responses{ IA(I18nKey.SettingsUI.Draw.Eraser.Response.Auto),
-						IA(I18nKey.SettingsUI.Draw.Eraser.Response.ScreenPen), IA(I18nKey.SettingsUI.Draw.Eraser.Response.Digitizer) };
-					for (int entry = 0; entry < 5; ++entry)
-					{
-						ImGui::PushID(entry);
-						int kind = static_cast<int>(eraserPreferences.entries[entry].kind);
-						if (Design::ComboRow("##eraser-kind", entries[entry].c_str(), nullptr, "\ued62", kind, kinds))
-						{
-							SetEraserInputPreference(entry, kind);
-							QueueConfigWrite();
-						}
-						if (entry >= 3 && kind == 1)
-						{
-							const int first = AutomaticPenResponseAvailable() ? 0 : 1;
-							const vector<string> availableResponses(responses.begin() + first, responses.end());
-							int response = static_cast<int>(eraserPreferences.entries[entry].penResponse) - first;
-							if (Design::ComboRow("##eraser-response", IA(I18nKey.SettingsUI.Draw.Eraser.ResponseFor).c_str(),
-								nullptr, "\ue7f8", response, availableResponses))
-							{
-								// Win7 隐藏 Auto 项后，仍保存原始稳定枚举，不能保存可见下标。
-								SetEraserInputPreference(entry, kind, response + first);
-								QueueConfigWrite();
-							}
-						}
-						ImGui::PopID();
-					}
-					{
-						auto options = Inkeys::Drawing::Draw3::ProductHost().EraserDevelopmentOptions();
-						if (Design::ToggleRow("##eraser-touch-area", IA(I18nKey.SettingsUI.Draw.Eraser.TouchArea.N).c_str(),
-							IA(I18nKey.SettingsUI.Draw.Eraser.TouchArea.E).c_str(), "\ue7c9", options.touchContactAreaAssistance))
-						{
-							Inkeys::Drawing::Draw3::ProductHost().SetEraserDevelopmentOptions(options);
-							Inkeys::config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance = options.touchContactAreaAssistance;
-							QueueConfigWrite();
-						}
-					}
+					if (Design::NavigationRow("##speed-eraser-entry", IA(I18nKey.SettingsUI.Draw.Eraser.Kind.Speed).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.EntryDescription).c_str(), "\ued62"))
+						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
 					break;
 				}
 
@@ -4207,6 +4237,8 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					navigateTo(navigationAction.destination);
 					if (settingTab == settingTabEnum::tab4) settingPlugInTab = settingPlugInTabEnum::tabPlug1;
+					if (settingTab == settingTabEnum::tab3)
+						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
 				}
 				else if (navigationAction.kind == Design::NavigationActionKind::Community)
 					ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://www.inkeys.top/community.html" : L"https://en.inkeys.top/community.html", 0, 0, SW_SHOW);
@@ -4223,6 +4255,11 @@ SettingSessionCoroutine RunSettingSession()
 			// 复用旧设置拖动算法，正文、导航和弹层的位移每帧只交给一个宿主。
 			Design::ApplyDragScrolling(navigationState);
 
+			// 离开子页也显式暂停；重新进入只消费当前帧增量，不追赶离页时间。
+			if (!eraserDemoVisited)
+				(void)settingEraserDemo.Prepare(g_pd3dDevice, g_pd3dDeviceContext,
+					{ TextureSettingSign[12], TextureSettingSign[13] }, false, 0, 0,
+					Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate, Design::IsDarkMode());
 			// 渲染
 			ImFluent::PopFluentStyle();
 			ImGui::EndFrame();
@@ -4237,6 +4274,7 @@ SettingSessionCoroutine RunSettingSession()
 			submissionKey.clear={clearColor[0],clearColor[1],clearColor[2],clearColor[3]};
 			submissionKey.target=reinterpret_cast<std::uintptr_t>(g_mainRenderTargetView);
 			submissionKey.cacheRevision=settingHomeEntryCache.Revision();
+			submissionKey.demoRevision=settingEraserDemo.Revision();
 			const HRESULT frameResources=ImGui_ImplDX11_GetLastResult();
 			const HRESULT frameDevice=g_pd3dDevice->GetDeviceRemovedReason();
 			if (FAILED(frameDevice))
@@ -4307,6 +4345,7 @@ SettingSessionCoroutine RunSettingSession()
 					submissionKey.output.atlasWidth=atlas->Width; submissionKey.output.atlasHeight=atlas->Height;
 				}
 				submissionKey.cacheRevision=settingHomeEntryCache.Revision();
+				submissionKey.demoRevision=settingEraserDemo.Revision();
 				settingFrameSubmission.ConfirmPresented(ImGui::GetDrawData(),submissionKey);
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 				entryProfiler.snapshotBytes=settingFrameSubmission.StoredBytes();
@@ -4337,7 +4376,7 @@ SettingSessionCoroutine RunSettingSession()
 		io.Fonts->Clear();
 		ImFluent::ResetContext();
 		ImGui::DestroyContext();
-		settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
+		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingFrameSubmission.Reset();
 		CleanupDeviceD3D();
 	settingSessionEpoch = 0;
 	#undef CloseProgram
@@ -4401,8 +4440,14 @@ namespace
 
 		if (decision.releasePresentation || decision.rebuildDeviceResources || decision.rebuildFonts || decision.resize)
 		{ settingHomeEntryCache.Reset(); settingFrameSubmission.Reset(); }
+		// 预览自行按画布宽度分桶调整目标纹理，普通窗口缩放不重编译播放着色器。
+		if (decision.rebuildDeviceResources) settingEraserDemo.Reset();
 		if (decision.releasePresentation)
 		{
+			// Hide 只撤销呈现而保留同 epoch 的预览缓存；恢复时不追赶隐藏期间的时间。
+			(void)settingEraserDemo.Prepare(g_pd3dDevice, g_pd3dDeviceContext,
+				{ TextureSettingSign[12], TextureSettingSign[13] }, false, 0, 0,
+				false, 1.0F, false); // invisible 分支只暂停时钟，不读取主题或播放参数。
 			CleanupPresentation();
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.ReleasePresentation();
@@ -4458,7 +4503,7 @@ namespace
 			if (ImGui::GetIO().BackendRendererUserData)
 				ImGui_ImplDX11_Shutdown();
 			CleanupSettingTextures();
-			settingHomeEntryCache.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
 			CleanupDeviceD3D();
 			const bool acquired = AcquireDeviceLease(context.epoch);
 			long backendInitResult = E_FAIL;
@@ -4472,7 +4517,7 @@ namespace
 					backendInitialized ? ImGui_ImplDX11_GetLastResult() : backendInitResult);
 				if (backendInitialized) ImGui_ImplDX11_Shutdown();
 				CleanupSettingTextures();
-				settingHomeEntryCache.Reset();
+				settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
 				CleanupDeviceD3D();
 				return pauseNavigationClock(failure);
 			}

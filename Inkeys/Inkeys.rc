@@ -129,6 +129,8 @@ PROFILE_PICTURE         PNG                     "src\\setting\\Profile_Picture.p
 
 HOME_FEEDBACK           PNG                     "src\\setting\\Home_Feedback.png"
 SETTING_GITHUB          PNG                     "src\\setting\\GitHubMark.png"
+IDR_SETTING_ERASER_DEMO_FINE PNG                 "src\\setting\\EraserDemoFine.png"
+IDR_SETTING_ERASER_DEMO_SWEEP PNG                "src\\setting\\EraserDemoSweep.png"
 
 PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 

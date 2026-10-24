@@ -13,7 +13,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		HomeEntryFrameKey output;
 		std::array<float,4> clear{};
-		std::uint64_t showSerial=0, hideSerial=0, themeSerial=0, cacheRevision=0;
+		std::uint64_t showSerial=0, hideSerial=0, themeSerial=0, cacheRevision=0, demoRevision=0;
 		std::uintptr_t target=0;
 		bool operator==(const FrameSubmissionKey&) const = default;
 	};

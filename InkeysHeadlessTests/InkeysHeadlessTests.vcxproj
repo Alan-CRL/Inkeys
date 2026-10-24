@@ -149,6 +149,8 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
     <ClCompile Include="setting_home_warp_tests.cpp" />
+    <ClCompile Include="setting_eraser_demo_tests.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp" />
     <ClCompile Include="..\Inkeys\additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="..\Inkeys\additional\imgui\imgui.cpp" />
     <ClCompile Include="..\Inkeys\additional\imgui\imgui_draw.cpp" />

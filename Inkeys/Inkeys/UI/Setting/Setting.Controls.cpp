@@ -1296,6 +1296,51 @@ namespace Inkeys::UI::Setting::Design
 
 	void EndCard() { ImFluent::EndCard(); }
 
+	void CheckboxGroup(const char* id, const char* title, const char* glyph,
+		std::initializer_list<CheckboxSpec> items)
+	{
+		const float width = ImGui::GetContentRegionAvail().x;
+		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
+		const float innerWidth = (std::max)(1.0F, width - padding * 2.0F);
+		const float iconWidth = glyph && *glyph ? Pixels(40.0F) : 0.0F;
+		const float headerHeight = (std::max)(Pixels(ControlHeight), TextHeight(title, (std::max)(1.0F, innerWidth - iconWidth)));
+		float widestItem = 0.0F;
+		for (const auto& item : items)
+			widestItem = (std::max)(widestItem, ControlTextWidth(item.label.c_str()) + Pixels(32.0F));
+		const float gap = Pixels(16.0F), rowHeight = Pixels(ControlHeight), rowGap = Pixels(ControlSpacing);
+		const int columns = innerWidth >= (std::max)(Pixels(440.0F), widestItem * 2.0F + gap) ? 2 : 1;
+		const int rows = (static_cast<int>(items.size()) + columns - 1) / columns;
+		const float bodyHeight = rows * rowHeight + (std::max)(0, rows - 1) * rowGap;
+		const float height = std::ceil(headerHeight + bodyHeight + padding * 4.0F);
+		// 只画一个完整外框，标题分隔线属于同一张卡；当前帧明确高度，避免上一帧 AutoResize 裁掉复选项。
+		ImGui::SetNextWindowSizeConstraints({ 0.0F, height }, { FLT_MAX, height });
+		ImGui::SetNextWindowContentSize({ 0.0F, height - padding * 2.0F });
+		if (BeginCard(id, { width, height }))
+		{
+			const ImVec2 origin = ImGui::GetCursorScreenPos();
+			TextAt(title, { origin.x + iconWidth, origin.y + (headerHeight - TextHeight(title,
+				(std::max)(1.0F, innerWidth - iconWidth))) * 0.5F }, (std::max)(1.0F, innerWidth - iconWidth));
+			if (iconWidth > 0.0F)
+				ImFluent::DrawIcon(glyph, { origin.x, origin.y }, { origin.x + Pixels(RowGlyphSize), origin.y + headerHeight }, RowGlyphSize, TextPrimary);
+			const float dividerY = std::round(origin.y + headerHeight + padding);
+			auto* window = ImGui::GetCurrentWindow();
+			window->DrawList->AddLine({ window->Pos.x + 1.0F, dividerY },
+				{ window->Pos.x + window->Size.x - 1.0F, dividerY }, Stroke, 1.0F);
+			const float columnWidth = (innerWidth - gap * (columns - 1)) / columns;
+			int index = 0;
+			for (const auto& item : items)
+			{
+				ImGui::SetCursorScreenPos({ origin.x + (index % columns) * (columnWidth + gap),
+					dividerY + padding + (index / columns) * (rowHeight + rowGap) });
+				ImGui::PushID(index++);
+				const std::string label = item.label + "###device";
+				*item.changed = Checkbox(label.c_str(), item.value);
+				ImGui::PopID();
+			}
+		}
+		EndCard();
+	}
+
 	void Details(const char* id, const char* title, const std::function<void()>& content)
 	{
 		ImGui::PushID(id);

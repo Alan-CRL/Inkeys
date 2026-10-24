@@ -239,3 +239,15 @@ git diff --check
 - [x] 公共CopyHyperlink/卡片边框、Pages布局/i18n、原生资源加载/实际GitHub图标并行实施，保持格式及最小差异。
 - [x] 真实鼠标/剪贴板mock/tooltip状态、字号/间距、二维码右对齐/三边间隙/主题tint和各类卡片描边回归，独立审查。
 - [x] 完整ARM64 Solution低并发构建、适用无窗口、i18n/字节/diff与产物检查，更新验证和规范；不结束父任务。
+
+## 当前增量：笔速橡皮（2026-10-24）
+
+- [x] 页面迁移、内部导航、设备复选组、三语言与现有业务接线。
+- [x] 只读尺寸退化判断及无窗口交互/边界/布局回归。
+- [x] 独立审查、完整 ARM64 Solution、相关 no-window 与 i18n/编码/diff 检查，登记 research/settings-speed-eraser.md；父任务不结束，图片暂停。
+
+## 当前增量：笔速橡皮循环演示
+
+- [x] 手写场景/轨迹/直径/擦除时序离线预计算，atlas缓存、轻量播放shader与页面轮播接线。
+- [x] 真实离屏像素/导出PNG、生命周期/性能和页面无窗口回归。
+- [x] 独立审查、完整ARM64构建、i18n/格式/保护文件检查及证据记录；见 research/settings-eraser-demo-verification.json 和 settings-eraser-demo-review.md，不结束父任务。

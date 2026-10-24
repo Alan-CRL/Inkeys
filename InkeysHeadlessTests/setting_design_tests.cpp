@@ -2085,6 +2085,296 @@ namespace
 		checks.Expect(pixels, "bundled fonts generate CPU atlas pixels");
 	}
 
+	void CheckSpeedEraserPage(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons,
+		float scale, bool exerciseInput)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto oldFlags = io.ConfigFlags;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue; const auto oldSize = io.DisplaySize;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100);
+		for (const bool dark : { false, true }) for (const float width : { 360.0F, 900.0F })
+		{
+			ApplyPalette(dark); NavigationState navigation;
+			SpeedEraserDraft draft; draft.automaticEnabled = false; draft.penResponses = { 1, 2 };
+			struct Frame { SpeedEraserEvents events; std::array<bool, 2> response{};
+				bool automatic = false, sensitivity = false, area = false, warning = false; int warningVertices = 0; };
+			ImGuiWindow* page = nullptr; ImGuiWindow* devices = nullptr;
+			std::array<int, 5> enabledChanges{}; std::array<int, 2> responseChanges{};
+			int automaticChanges = 0, sensitivityChanges = 0, areaChanges = 0, backEvents = 0;
+			auto noEdits = [](const SpeedEraserEvents& events) {
+				return !events.back && !events.automaticChanged && !events.sensitivityChanged && !events.touchAreaChanged
+					&& std::none_of(events.enabledChanged.begin(), events.enabledChanged.end(), [](bool value) { return value; })
+					&& std::none_of(events.penResponseChanged.begin(), events.penResponseChanged.end(), [](bool value) { return value; });
+			};
+			auto draw = [&](ImVec2 mouse, bool down) {
+				io.DisplaySize = { (width + 32) * scale, 2600 * scale };
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); BeginDragScrolling(navigation); ConfigureRowAnimations(0, false, 1);
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##speed-eraser-page-cpu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				page = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+				Frame frame; frame.events = RenderSpeedEraser(draft);
+				auto rowSeen = [&](const char* id) {
+					ImGui::PushID(id); const auto stamp = ImGui::GetID("##description-frame"); ImGui::PopID();
+					return ImGui::GetStateStorage()->GetInt(stamp, -1) == ImGui::GetFrameCount();
+				};
+				frame.automatic = rowSeen("##eraser-automatic"); frame.sensitivity = rowSeen("##eraser-sensitivity");
+				frame.area = rowSeen("##eraser-touch-area"); frame.warning = rowSeen("##speed-eraser-size-warning");
+				for (int index = 0; index < 2; ++index) {
+					ImGui::PushID(index + 3); frame.response[index] = rowSeen("##eraser-response"); ImGui::PopID();
+					responseChanges[index] += frame.events.penResponseChanged[index] ? 1 : 0;
+				}
+				for (int index = 0; index < 5; ++index) enabledChanges[index] += frame.events.enabledChanged[index] ? 1 : 0;
+				automaticChanges += frame.events.automaticChanged ? 1 : 0;
+				sensitivityChanges += frame.events.sensitivityChanged ? 1 : 0;
+				areaChanges += frame.events.touchAreaChanged ? 1 : 0; backEvents += frame.events.back ? 1 : 0;
+				devices = nullptr;
+				for (auto* candidate : GImGui->Windows)
+					if (candidate->Active && candidate->ParentWindow == page && candidate->ChildId == page->GetID("##eraser-devices")) devices = candidate;
+				for (const auto& vertex : page->DrawList->VtxBuffer)
+					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Warning]) ++frame.warningVertices;
+				ImFluent::PopFont(); ImGui::End(); ApplyDragScrolling(navigation); ImGui::Render();
+				return frame;
+			};
+			auto controlId = [&](const char* row, const char* control, int entry = -1) {
+				const ImGuiID seed = entry < 0 ? page->ID : page->GetID(entry);
+				return ImHashStr(control, 0, ImHashStr(row, 0, seed));
+			};
+			auto focusRect = [&](ImGuiWindow* owner, ImGuiID id) {
+				if (!owner) { checks.Expect(false, "speed eraser controls keep a live owner window"); return ImRect{}; }
+				ImGui::FocusWindow(owner);
+				ImGui::SetNavID(id, ImGuiNavLayer_Main, owner->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw(outside, false);
+				checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "actual speed eraser item registers navigation");
+				return ImGui::WindowRectRelToAbs(owner, owner->NavRectRel[ImGuiNavLayer_Main]);
+			};
+			auto click = [&](const ImRect& rect) {
+				const auto point = rect.GetCenter(); draw(point, false); draw(point, true);
+				const auto result = draw(point, false); draw(outside, false); return result;
+			};
+			auto chord = [&](ImGuiKey key) {
+				io.AddKeyEvent(key, true); draw(outside, false); io.AddKeyEvent(key, false); draw(outside, false);
+			};
+			for (int pass = 0; pass < 3; ++pass)
+				checks.Expect(noEdits(draw(outside, false).events), "idle speed eraser page never dispatches configuration edits");
+			checks.Expect(devices && devices->Active && devices->ScrollMax.y <= 1,
+				"device choices are permanently expanded and fit without an inner scroll region");
+			std::array<ImRect, 5> choices;
+			for (int index = 0; index < 5; ++index)
+				choices[index] = focusRect(devices, devices ? ImHashStr("###device", 0, devices->GetID(index)) : 0);
+			if (devices) for (int index = 0; index < 5; ++index)
+			{
+				const auto& rect = choices[index];
+				checks.Expect(rect.GetWidth() > 0 && rect.GetHeight() > 0 && rect.Min.x >= devices->Pos.x
+					&& rect.Max.x <= devices->Pos.x + devices->Size.x && rect.Min.y >= devices->Pos.y
+					&& rect.Max.y <= devices->Pos.y + devices->Size.y,
+					"localized checkbox labels and their hit rectangles remain inside the shared device card");
+				for (int other = index + 1; other < 5; ++other)
+					checks.Expect(!rect.Overlaps(choices[other]), "all five device checkbox hit areas are disjoint");
+			}
+			checks.Expect(width < 500 ? Near(choices[0].Min.x, choices[1].Min.x, 1) && choices[0].Max.y < choices[1].Min.y
+				: Near(choices[0].Min.y, choices[1].Min.y, 1) && choices[0].Max.x < choices[1].Min.x,
+				"actual device card reflows from one column to two columns at the available width");
+			for (const bool automatic : { false, true }) for (int mask = 0; mask < 4; ++mask)
+			{
+				draft.automaticEnabled = automatic; draft.enabled[3] = (mask & 1) != 0; draft.enabled[4] = (mask & 2) != 0;
+				draft.physicalSizeWarning = (mask & 1) != 0; const auto frame = draw(outside, false);
+				checks.Expect(noEdits(frame.events) && frame.automatic && frame.sensitivity && frame.area
+					&& frame.response[0] == (automatic && draft.enabled[3]) && frame.response[1] == (automatic && draft.enabled[4]),
+					"only enabled pen entries expose calculation controls under the master switch; area assistance stays available");
+				checks.Expect(frame.warning == draft.physicalSizeWarning && (frame.warningVertices > 0) == draft.physicalSizeWarning,
+					"real physical-size notice uses the warning surface independently of the master switch");
+			}
+			CheckDrawData(checks);
+			if (!exerciseInput || dark || width < 500) continue;
+			// 真正点击每一设备；总开关关闭时只能改所选偏好，不创建其他字段事件。
+			draft.automaticEnabled = false; draft.enabled.fill(false); draw(outside, false);
+			for (int index = 0; index < 5; ++index)
+			{
+				const auto before = draft.enabled;
+				const auto result = click(focusRect(devices, ImHashStr("###device", 0, devices->GetID(index))));
+				checks.Expect(draft.enabled[index] && result.events.enabledChanged[index] && enabledChanges[index] == 1,
+					"each device remains editable while automatic erasing is disabled and emits exactly one event");
+				for (int other = 0; other < 5; ++other) if (other != index)
+					checks.Expect(draft.enabled[other] == before[other] && !result.events.enabledChanged[other],
+						"a device click preserves the other four input preferences");
+			}
+			focusRect(page, controlId("##eraser-sensitivity", "##select"));
+			chord(ImGuiKey_F4); chord(ImGuiKey_End); chord(ImGuiKey_Enter);
+			checks.Expect(draft.sensitivity == 2 && sensitivityChanges == 1 && !draft.automaticEnabled,
+				"shared low/medium/high sensitivity commits the high enum once while the master switch is off");
+			click(focusRect(page, controlId("##eraser-touch-area", "##toggle")));
+			checks.Expect(draft.touchArea && areaChanges == 1 && !draft.automaticEnabled,
+				"touch contact-area assistance remains independently editable with automatic erasing off");
+			const auto preferences = draft.enabled;
+			click(focusRect(page, controlId("##eraser-automatic", "##toggle")));
+			checks.Expect(draft.automaticEnabled && automaticChanges == 1 && draft.enabled == preferences
+				&& draft.sensitivity == 2 && draft.touchArea,
+				"master toggle preserves per-device, sensitivity and area-assistance preferences");
+			for (int pen = 0; pen < 2; ++pen)
+			{
+				focusRect(page, controlId("##eraser-response", "##select", pen + 3));
+				chord(ImGuiKey_F4); chord(ImGuiKey_Home); chord(ImGuiKey_Enter);
+				checks.Expect(draft.penResponses[pen] == 0 && responseChanges[pen] == 1,
+					"supported pen selector can commit Automatic without changing the other pen entry");
+			}
+			draft.automaticPenSupported = false; draft.penResponses = { 2, 2 }; draw(outside, false);
+			for (int pen = 0; pen < 2; ++pen)
+			{
+				focusRect(page, controlId("##eraser-response", "##select", pen + 3));
+				chord(ImGuiKey_F4); chord(ImGuiKey_Home); chord(ImGuiKey_Enter);
+				checks.Expect(draft.penResponses[pen] == 1 && responseChanges[pen] == 2,
+					"Windows 7 first visible option maps to ScreenPen enum 1 instead of Automatic enum 0");
+				focusRect(page, controlId("##eraser-response", "##select", pen + 3));
+				chord(ImGuiKey_F4); chord(ImGuiKey_End); chord(ImGuiKey_Enter);
+				checks.Expect(draft.penResponses[pen] == 2 && responseChanges[pen] == 3,
+					"Windows 7 last visible option retains Tablet enum 2");
+			}
+			click(focusRect(devices, ImHashStr("###device", 0, devices->GetID(3))));
+			const auto disabledTip = draw(outside, false);
+			checks.Expect(!draft.enabled[3] && enabledChanges[3] == 2 && !disabledTip.response[0] && disabledTip.response[1]
+				&& draft.penResponses == std::array<int, 2>{ 2, 2 },
+				"unchecking pen tip hides only its calculation row and retains its stored calculation choice");
+			const auto backRect = focusRect(page, controlId("##speed-eraser-back", "##icon"));
+			click(backRect);
+			checks.Expect(backEvents == 1 && backRect.Min.y <= page->Pos.y + page->WindowPadding.y + scale,
+				"detail starts with the actual back arrow and returns one navigation event");
+			checks.Expect(noEdits(draw(outside, false).events), "settled speed eraser controls produce no repeated edits");
+		}
+		io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle; io.DisplaySize = oldSize;
+		ApplyPalette(false);
+	}
+
+	void CheckSpeedEraserDemoPage(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto oldSize = io.DisplaySize;
+		for (const bool dark : { false, true }) for (const float width : { 360.0F, 900.0F })
+		{
+			ApplyPalette(dark); NavigationState navigation; SpeedEraserDraft draft;
+			struct Frame { int calls = 0, images = 0; bool visible = false; float width = 0, height = 0, scroll = 0;
+				std::array<ImRect, 2> bounds{}, uv{}; };
+			auto draw = [&](int scene, bool clipped = false, bool failed = false) {
+				Frame result; const auto texture = static_cast<ImTextureID>(0xEA00 + scene);
+				io.DisplaySize = { (width + 32) * scale, 1400 * scale };
+				io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+				ImGui::NewFrame(); BeginDragScrolling(navigation); ConfigureRowAnimations(0, false, 1);
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize); ImGui::SetNextWindowScroll({ 0, 0 });
+				ImGui::Begin("##speed-eraser-demo-page-cpu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				auto* page = ImGui::GetCurrentWindow();
+				if (clipped) ImGui::SetCursorPosY(io.DisplaySize.y + Pixels(100));
+				ImFluent::PushFont(ImFluentTextStyle_Body);
+				(void)RenderSpeedEraser(draft, [&](bool visible, float canvasWidth) {
+					++result.calls; result.visible = visible; result.width = canvasWidth;
+					return EraserDemoPresentation{ failed || !visible ? 0 : texture, scene, 0.85F };
+				});
+				for (auto* candidate : GImGui->Windows)
+					if (candidate->Active && candidate->ParentWindow == page
+						&& candidate->ChildId == page->GetID("##speed-eraser-introduction"))
+					{ result.height = candidate->Size.y; result.scroll = candidate->ScrollMax.y; }
+				ImFluent::PopFont(); ImGui::End(); ApplyDragScrolling(navigation); ImGui::Render();
+				// 只读取显式用户纹理的命令；CPU 字库尚未上传，不能对它调用 backend GetTexID。
+				for (const auto* list : ImGui::GetDrawData()->CmdLists) for (const auto& command : list->CmdBuffer)
+					if (!command.TexRef._TexData && command.TexRef._TexID == texture && command.ElemCount)
+					{
+						ImRect bounds({ FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX });
+						ImRect uv({ FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX });
+						for (unsigned index = command.IdxOffset; index < command.IdxOffset + command.ElemCount; ++index)
+						{
+							const auto& vertex = list->VtxBuffer[command.VtxOffset + list->IdxBuffer[index]];
+							bounds.Add(vertex.pos); uv.Add(vertex.uv);
+						}
+						const int board = uv.Min.x < 0.25F ? 0 : 1;
+						result.bounds[board] = bounds; result.uv[board] = uv; ++result.images;
+					}
+				return result;
+			};
+			for (int warm = 0; warm < 3; ++warm) draw(0);
+			float heroHeight = 0;
+			for (int scene = 0; scene < 2; ++scene)
+			{
+				const auto result = draw(scene);
+				checks.Expect(result.calls == 1 && result.visible && result.width > 0,
+					"actual hero invokes its presenter once after measuring a visible physical canvas");
+				checks.Expect(result.images == 2 && Near(result.uv[0].Min.x, 0) && Near(result.uv[0].Max.x, 0.5F)
+					&& Near(result.uv[1].Min.x, 0.5F) && Near(result.uv[1].Max.x, 1),
+					"both real hero images use distinct halves of the presented fixed/speed texture");
+				for (int board = 0; board < 2; ++board)
+					checks.Expect(Near(result.bounds[board].GetWidth(), result.width, 1)
+						&& Near(result.bounds[board].GetHeight(), result.width * EraserDemoCanvasHeight / EraserDemoCanvasWidth, 1),
+						"presenter width matches actual equal-aspect images under system DPI");
+				checks.Expect(width < 500 ? Near(result.bounds[0].Min.x, result.bounds[1].Min.x, 1)
+					&& result.bounds[0].Max.y < result.bounds[1].Min.y
+					: Near(result.bounds[0].Min.y, result.bounds[1].Min.y, 1) && result.bounds[0].Max.x < result.bounds[1].Min.x,
+					"actual demo stacks at narrow widths and keeps equal columns at wide widths");
+				checks.Expect(result.scroll <= 1 && result.height > result.bounds[1].Max.y - result.bounds[0].Min.y,
+					"whole localized hero and introduction fit one card without inner scrolling");
+				if (scene) checks.Expect(Near(result.height, heroHeight, 1), "carousel title changes preserve card height and page scroll");
+				heroHeight = result.height;
+			}
+			const auto clipped = draw(1, true);
+			checks.Expect(clipped.calls == 1 && !clipped.visible && clipped.images == 0 && Near(clipped.height, heroHeight, 1),
+				"fully clipped preview reports pause once while retaining stable page layout");
+			for (int warm = 0; warm < 3; ++warm) draw(0, false, true);
+			const auto failed = draw(0, false, true);
+			checks.Expect(failed.calls == 1 && failed.images == 0 && failed.height < heroHeight && failed.scroll <= 1,
+				"unavailable optional assets leave the compact readable introduction and settings layout");
+			CheckDrawData(checks);
+		}
+		io.DisplaySize = oldSize; ApplyPalette(false);
+	}
+
+	void CheckDrawingSubpageScroll(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		NavigationState navigation; navigation.animationsEnabled = true;
+		NotifyNavigationDestination(navigation, { PageId::Draw });
+		DrawingSubpage subpage = DrawingSubpage::Overview; SpeedEraserDraft draft;
+		auto& io = ImGui::GetIO(); const auto oldSize = io.DisplaySize;
+		auto draw = [&](DrawingSubpage requested, float scroll = -1.0F) {
+			NavigateDrawingSubpage(navigation, subpage, requested);
+			io.DisplaySize = { 960 * scale, 700 * scale }; io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+			ImGui::NewFrame(); BeginDragScrolling(navigation); ConfigureRowAnimations(0, false, 1);
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##drawing-detail-scroll", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			// 与产品宿主相同的页面/子页 ID；滚动由真正 BeginScrollChild 保存，不复制滚动值到测试模型。
+			ImGui::PushID(static_cast<int>(PageId::Draw)); ImGui::PushID(static_cast<int>(subpage));
+			BeginScrollChild("##setting-content", { 640 * scale, 400 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding);
+			auto* host = ImGui::GetCurrentWindow();
+			if (subpage == DrawingSubpage::SpeedEraser) (void)RenderSpeedEraser(draft);
+			else ImGui::Dummy({ 1, 1600 * scale });
+			if (scroll >= 0) ImGui::SetScrollY(scroll);
+			ImGui::EndChild(); ImGui::PopID(); ImGui::PopID(); ImGui::End();
+			ApplyDragScrolling(navigation); ImGui::Render(); return host;
+		};
+		draw(DrawingSubpage::Overview); draw(DrawingSubpage::Overview, 180 * scale);
+		auto* overview = draw(DrawingSubpage::Overview);
+		const float storedOverview = overview->Scroll.y;
+		auto* detail = draw(DrawingSubpage::SpeedEraser);
+		checks.Expect(navigation.contentPage == static_cast<int>(PageId::Draw) && detail != overview
+			&& Near(navigation.contentReveal.value, 0) && Near(detail->Scroll.y, 0),
+			"drawing detail keeps its sidebar destination and starts an independent scroll host and content transition");
+		draw(DrawingSubpage::SpeedEraser, 80 * scale); detail = draw(DrawingSubpage::SpeedEraser);
+		const float storedDetail = detail->Scroll.y;
+		auto* returned = draw(DrawingSubpage::Overview);
+		checks.Expect(returned == overview && storedOverview > 0 && Near(returned->Scroll.y, storedOverview),
+			"returning from eraser detail restores the actual drawing overview scroll position");
+		auto* revisited = draw(DrawingSubpage::SpeedEraser);
+		checks.Expect(revisited == detail && storedDetail > 0 && Near(revisited->Scroll.y, storedDetail),
+			"reopening eraser detail preserves its own scroll position independently");
+		AdvanceNavigationAnimations(navigation, .05F, true, 1); const float reveal = navigation.contentReveal.value;
+		NavigateDrawingSubpage(navigation, subpage, subpage);
+		checks.Expect(Near(navigation.contentReveal.value, reveal), "same drawing subpage does not restart its transition");
+		navigation.animationsEnabled = false;
+		NavigateDrawingSubpage(navigation, subpage, DrawingSubpage::Overview);
+		checks.Expect(Near(navigation.contentReveal.value, 1), "drawing detail navigation respects disabled animations");
+		io.DisplaySize = oldSize;
+	}
+
 	void CheckGeneralSections(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
 		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
@@ -3947,7 +4237,7 @@ namespace
 		checks.Expect(snapshot.CanSkip(&data,key),"texture indirection compares the actual GetTexID rather than pointer storage");
 		texture.SetTexID(ImTextureID_Invalid); checks.Expect(!snapshot.CanSkip(&data,key),"not-yet-uploaded indirect texture is rejected before GetTexID assertions");
 		texture.SetTexID(31); cmd.TexRef=ImTextureRef(ImTextureID(31)); data.Textures=nullptr;
-		for (int i=0;i<12;++i)
+		for (int i=0;i<13;++i)
 		{
 			auto changed=key;
 			switch(i)
@@ -3957,6 +4247,7 @@ namespace
 			case 4: changed.clear[0]+=.1F; break; case 5: ++changed.cacheRevision; break;
 			case 6: ++changed.target; break; case 7: ++changed.showSerial; break; case 8: ++changed.hideSerial; break;
 			case 9: ++changed.themeSerial; break; case 10: changed.output.geometry[0]+=1; break; case 11: changed.output.material[0]=.5F; break;
+			case 12: ++changed.demoRevision; break;
 			}
 			checks.Expect(!snapshot.CanSkip(&data,changed),"target/session/material/font/cache identities invalidate a duplicate");
 		}
@@ -4612,7 +4903,7 @@ namespace
 	}
 }
 
-int RunSettingDesignTests(bool copyOnly)
+int RunSettingDesignTests(bool copyOnly, bool eraserOnly)
 {
 	Checks checks;
 	CheckNavigation(checks);
@@ -4674,6 +4965,19 @@ int RunSettingDesignTests(bool copyOnly)
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
+		if (eraserOnly)
+		{
+			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
+			{
+				checks.Expect(LoadNavigationLabels(fontDirectory, language), "speed eraser page loads actual localized resources");
+				const bool traditional = std::strcmp(language, "zh-TW") == 0;
+				CheckSpeedEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale,
+					scale == 1.0F || scale == 1.875F);
+				CheckSpeedEraserDemoPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+			}
+			if (scale == 1.0F || scale == 1.875F) CheckDrawingSubpageScroll(checks, fonts[0], fonts[1], fonts.back(), scale);
+			continue;
+		}
 		if (copyOnly)
 		{
 			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
@@ -4739,6 +5043,8 @@ int RunSettingDesignTests(bool copyOnly)
 				checks.Expect(LoadNavigationLabels(fontDirectory, language), "reorganized settings load actual language resources");
 				const bool traditional = std::strcmp(language, "zh-TW") == 0;
 				CheckGeneralSections(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+				CheckSpeedEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale, scale == 1.0F);
+				CheckSpeedEraserDemoPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckCicdAndSponsorContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckHomeFeedbackContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckCopyAndCardPolish(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], scale);
@@ -4748,6 +5054,7 @@ int RunSettingDesignTests(bool copyOnly)
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 		{
 			CheckCompactedSettingPages(checks, fonts[0], fonts[1], fonts.back(), scale);
+			CheckDrawingSubpageScroll(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckHierarchicalNavigation(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
 			CheckHomeScrollFollowup(checks, fonts[0], fonts[1], scale);

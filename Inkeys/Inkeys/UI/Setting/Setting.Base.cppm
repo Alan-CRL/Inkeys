@@ -18,9 +18,9 @@ struct SettingSignStruct
 	int width;
 	int height;
 };
-SettingSignStruct settingSign[12];
-ID3D11ShaderResourceView* TextureSettingSign[12];
-std::array<std::vector<unsigned char>, 12> settingTexturePixels;
+SettingSignStruct settingSign[14];
+ID3D11ShaderResourceView* TextureSettingSign[14];
+std::array<std::vector<unsigned char>, 14> settingTexturePixels;
 
 export float settingGlobalScale = 1.0f;
 
@@ -197,8 +197,8 @@ bool RecreateSettingTextures()
 		const auto& pixels = settingTexturePixels[index];
 		if (pixels.empty()) continue;
 		if (!LoadTextureFromMemory(pixels.data(), settingSign[index].width,
-			settingSign[index].height, &TextureSettingSign[index]))
-			return false;
+			settingSign[index].height, &TextureSettingSign[index]) && index < 12)
+			return false; // 12/13 是可选演示 atlas，重建失败只降级插图。
 	}
 	return true;
 }
