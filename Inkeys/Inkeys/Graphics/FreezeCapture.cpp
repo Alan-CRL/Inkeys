@@ -86,9 +86,24 @@ namespace Inkeys::Graphics::FreezeCapture
 		if (wake_) wake_();
 	}
 
+	void Session::CompleteCycleLocked(TimePoint completed) noexcept
+	{
+		// Update/Read/消费者均计入周期；过载立即开下一轮，不再跳到未来时隙等待。
+		due_ = nextSlot_;
+		if (completed > nextSlot_)
+		{
+			const auto overdue = completed - nextSlot_;
+			const auto missed = overdue / frameInterval + (overdue % frameInterval > Clock::duration::zero() ? 1 : 0);
+			state_.statistics.skipped += static_cast<std::uint64_t>(missed);
+			due_ = completed;
+		}
+	}
+
 	void Session::ObserveFailureLocked(FailureStage stage, TimePoint at, std::uint32_t error, bool valid) noexcept
 	{
 		state_.failureStage = stage; state_.lastFailureAt = at; state_.nativeError = error; state_.nativeErrorValid = valid;
+		state_.failureQualityObserved = stage == FailureStage::Quality && state_.qualityObserved;
+		state_.failureQuality = state_.failureQualityObserved ? state_.quality : Quality{};
 	}
 	void Session::RevokeLocked(StopReason reason) noexcept
 	{
@@ -246,12 +261,23 @@ namespace Inkeys::Graphics::FreezeCapture
 		const auto completed = now_();
 		const Quality quality = phase == Phase::Read && result.succeeded
 			? Analyze(pixels, geometry.width, geometry.height) : Quality{};
+		const auto analyzed = now_();
 		Frame frame;
 		bool deliver = false;
 		{
 			std::scoped_lock lock(mutex_);
+			if (phase == Phase::Update)
+			{
+				state_.statistics.update = { std::chrono::duration_cast<std::chrono::microseconds>(completed - began), true };
+				state_.statistics.backend.redraw = result.timings.redraw;
+			}
 			if (phase == Phase::Read)
 			{
+				state_.statistics.backend.printWindow = result.timings.printWindow;
+				state_.statistics.backend.gdiFlush = result.timings.gdiFlush;
+				state_.statistics.backend.pixelWork = result.timings.pixelWork;
+				state_.statistics.analyze = { result.succeeded ? std::chrono::duration_cast<std::chrono::microseconds>(analyzed - completed)
+					: std::chrono::microseconds{}, result.succeeded };
 				state_.lastReadStarted = began;
 				state_.lastSampleInterval = state_.lastReadCompleted == TimePoint{} ? std::chrono::microseconds{}
 					: std::chrono::duration_cast<std::chrono::microseconds>(completed - state_.lastReadCompleted);
@@ -292,29 +318,29 @@ namespace Inkeys::Graphics::FreezeCapture
 				phase_ = Phase::Read;
 				due_ = completed + (state_.statistics.attempts == 0 ? firstFrameDelay
 					: state_.statistics.accepted == 0 ? retryDelay : steadyDelay);
-				if (state_.statistics.attempts == 0) nextSlot_ = due_;
+				// 首次暖机不记为错过的采样周期；稳态以真实 Update 起点计入全部服务时间。
+				nextSlot_ = (state_.statistics.attempts == 0 ? due_ : began) + frameInterval;
 			}
 			else
 			{
-				if (quality.status == QualityStatus::Valid)
+				if (result.warmup && (quality.status == QualityStatus::Valid || quality.status == QualityStatus::LowInformation))
+				{
+					// 不把预热旧表面算作交付或故障；仍受启动期限、Stop 与原 owner 排空保护。
+					++state_.statistics.warmupReads;
+				}
+				else if (quality.status == QualityStatus::Valid || quality.status == QualityStatus::LowInformation)
 				{
 					++state_.sequence;
 					++state_.statistics.accepted;
+					if (quality.status == QualityStatus::LowInformation) ++state_.statistics.lowInformation;
 					lastResult_ = completed;
 					state_.lastAcceptedSample = completed;
 					deliver = true;
 				}
 				else { ++state_.statistics.rejected; ObserveFailureLocked(FailureStage::Quality, completed); }
-				// 只保留一个 DIB，慢调用跳过已经错过的绝对时隙，不积压待捕获帧。
-				nextSlot_ += frameInterval;
-				if (nextSlot_ <= completed)
-				{
-					const auto missed = (completed - nextSlot_) / frameInterval + 1;
-					nextSlot_ += frameInterval * missed;
-					state_.statistics.skipped += static_cast<std::uint64_t>(missed);
-				}
 				phase_ = Phase::Update;
-				due_ = nextSlot_;
+				due_ = result.warmup ? analyzed : nextSlot_;
+				if (!deliver && !result.warmup) CompleteCycleLocked(analyzed);
 				if (deliver)
 					frame = { pixels, geometry.width, geometry.height,
 						static_cast<std::size_t>(geometry.width) * sizeof(std::uint32_t), geometry,
@@ -326,14 +352,20 @@ namespace Inkeys::Graphics::FreezeCapture
 		monitor_.notify_all();
 		if (!deliver) return;
 		// 不持状态锁调用消费者；Stop 可立即关门，但已准入的回调必须自然返回。
-		try { callback_(frame); }
+		const auto callbackBegan = now_();
+		TimePoint callbackCompleted;
+		try { callback_(frame); callbackCompleted = now_(); }
 		catch (...)
 		{
+			callbackCompleted = now_();
 			Stop(StopReason::CallbackFailure);
 			std::scoped_lock lock(mutex_); ObserveFailureLocked(FailureStage::Callback, now_());
 		}
 		{
 			std::scoped_lock lock(mutex_);
+			state_.statistics.callback = { std::chrono::duration_cast<std::chrono::microseconds>(callbackCompleted - callbackBegan), true };
+			state_.statistics.callbackSequence = frame.sequence;
+			if (state_.publishing) CompleteCycleLocked(callbackCompleted);
 			state_.inFlight = false;
 		}
 		monitor_.notify_all();

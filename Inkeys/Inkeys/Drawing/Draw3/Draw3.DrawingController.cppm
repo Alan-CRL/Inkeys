@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <compare>
+#include <chrono>
 #include <cstddef>
 #include <d3d11.h>
 #include <memory>
@@ -167,7 +168,7 @@ export namespace Inkeys::Drawing::Draw3
 		void Run();
 	private:
 		bool CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
-		bool PresentFrame(RECT dirty, bool presentFull);
+		bool PresentFrame(RECT dirty, bool presentFull, std::chrono::steady_clock::time_point* returnedAt = nullptr);
 
 		ContactInputCoordinator& input_;
 		WindowController& window_;

@@ -98,3 +98,13 @@ ShowFirstFailure(snapshot.firstFailure);
 同样，不能把 `point * 2`、`result.total / scale`、捕获成功计数或 PrintWindow 返回时间分别冒充正确坐标、实际应用运动、Tracker 成功或 compositor 新鲜度。
 
 中途动态Open不是正式路径：旧活动捕获夹具有一次覆盖像素失败（seq113/max_error225），后续范围修正不能追溯证明其根因或改判。任何未来增加重开/中途开窗的需求都需要单独评估在途Read和首次可见排除；导出选择器的首次可见像素验证也独立于主窗启动验证。
+
+## 2026-10-23 局部身份、完整输入录制与同序号呈现
+
+本节更新旧“三次拒绝”和“不实现录制”的历史描述，具体算法合同见 scroll-follow-tracking.md 的局部目标版本。网格只辅助观察，不再表示全屏可靠性门槛。显示目标身份、发现/锁定/恢复阶段、支持范围、真实模板峰/细格反证、成熟目标点与待认证点；粗峰 unique 必须是真实计数，细格反证补充的唯一性用独立 identityDisambiguated 标记。静态背景、无运动假设、候选被拒绝、捕获失败、已发布但未应用/呈现分别解释。
+
+录制默认关闭，只有显式 Arm Recording 后从下一个真实 Initialize 开始，记录每个 Initialize/AwaitTracking/Process 输入。原尺寸无损紧凑 Gray8、时间戳、原输入格式/stride、会话/序号/几何和非计时结果必须配对；录制独立于预览 lease 和 UI 消费。10秒、64帧、256MiB任一上限达到即封存完整前缀；序号断裂、缺结果、身份变化或内存失败标 Failed，不悄悄拼接。只有封存的不可变数据可导出，生产回调不写磁盘。BGRA→Gray8 与生产转换使用同一规则，并要求真实非零 Accepted 的逐帧回放结果一致。
+
+严格入口 --visual-motion-replay <manifest> 保留历史精确重放，并对新 schema Inkeys.ScrollFollowRecording.v1 的全部非运行耗时统计进行审计；独立 --gt <truth> 使用 Inkeys.ScrollFollowGroundTruth.v1 的绝对采样位置。GT 报告全部输入误差/最长未更新、正确更新率与错误提交，不能仅统计 Accepted。没有有效样本、错误格式/顺序、尺寸/限额不符必须失败。旧算法与新算法的字段差异不能冒充 exact audit PASS。
+
+Draw3 Target 携带采样 Read 完成和 Publish 时刻，Applied 必须从实际消费的 Pending 副本取同序号元数据，不能混入并发发布的 latest。Present 返回时立即采样成功时间，再执行回调；ObservePresent 仅关联实际已应用序号且保留其首次成功 Present。UI 的 applied/presented 各有独立序号。Read→Present return、预览图年龄均不等于 compositor 可见滞后；20Hz/80ms目标必须另用专用源时间及可见像素证明。

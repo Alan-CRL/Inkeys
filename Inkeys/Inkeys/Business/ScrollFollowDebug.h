@@ -14,7 +14,7 @@
 namespace Inkeys::Business::ScrollFollow::Debug
 {
 	namespace Capture = Inkeys::Graphics::FreezeCapture;
-	enum class Operation : std::uint8_t { Initialize, Process };
+	enum class Operation : std::uint8_t { Initialize, Process, AwaitTracking };
 	enum class SummaryKind : std::uint8_t { Motion, State, CaptureFailure };
 	enum class PauseCause : std::uint8_t
 	{
@@ -49,6 +49,44 @@ namespace Inkeys::Business::ScrollFollow::Debug
 		double copyMs = 0, totalTrackerMs = 0;
 		bool targetPublished = false;
 	};
+	enum class RecordingState : std::uint8_t { Off, Armed, Recording, Complete, Failed };
+	enum class RecordingStop : std::uint8_t
+	{
+		None, TimeLimit, FrameLimit, ByteLimit, SessionEnded, UserStopped, Closed,
+		InvalidInput, InputGap, IdentityChanged, AllocationFailure, ConcurrentAccess,
+	};
+	struct RecordingInfo
+	{
+		static constexpr std::size_t MaximumFrames = 64, MaximumBytes = 256ULL * 1024 * 1024;
+		static constexpr double MaximumSeconds = 10;
+		RecordingState state = RecordingState::Off;
+		RecordingStop stop = RecordingStop::None;
+		std::uint64_t businessSession = 0;
+		std::size_t frames = 0, pixelBytes = 0;
+		double durationSeconds = 0;
+		bool completePrefix = false; // 仅从 Initialize 起连续保存的有限前缀，可交给离线回放。
+	};
+	struct RecordedInput
+	{
+		FrameMetadata metadata{};
+		int width = 0, height = 0;
+		std::size_t originalStrideBytes = 0, originalSizeBytes = 0;
+		CV::MotionPixelFormat originalFormat = CV::MotionPixelFormat::Bgra32;
+		double timestampSeconds = 0, copyMs = 0;
+		bool captureValid = false, inputLowInformation = false, hasMotion = false;
+		CV::MotionResult motion{};
+		std::vector<std::uint8_t> gray; // 原尺寸、紧凑 Gray8；不存 UI 消费帧，也不提前 resize。
+	};
+	struct RecordingData
+	{
+		RecordingInfo info{};
+		std::vector<RecordedInput> inputs;
+	};
+	struct OwnerTiming
+	{
+		std::uint64_t sequence = 0;
+		Capture::TimePoint readCompletedAt{}, publishedAt{}, appliedAt{}, presentedAt{};
+	};
 	struct LiveStatus
 	{
 		State state = State::Off;
@@ -57,6 +95,7 @@ namespace Inkeys::Business::ScrollFollow::Debug
 		PauseCause pauseCause = PauseCause::None;
 		Capture::Snapshot capture{};
 		std::uint64_t ownerLatestSequence = 0, ownerAppliedSequence = 0;
+		OwnerTiming appliedTiming{}, presentedTiming{}; // 两个序号独立；不能把最新发布当成已显示。
 		double viewportX = 0, viewportY = 0;
 		bool viewportClamped = false;
 		Capture::TimePoint observedAt{};
@@ -67,9 +106,10 @@ namespace Inkeys::Business::ScrollFollow::Debug
 		Capture::FailureStage stage = Capture::FailureStage::None;
 		Capture::StopReason reason = Capture::StopReason::None;
 		Capture::TimePoint at{};
-		Capture::Quality quality{}; // 仅 stage==Quality 时有效。
+		Capture::Quality quality{}; // 仅 stage==Quality 且 qualityObserved 时有效，是故障发生时的副本。
 		std::uint32_t nativeError = 0;
 		bool nativeErrorValid = false;
+		bool qualityObserved = false;
 	};
 	struct NumericSummary
 	{
@@ -126,6 +166,13 @@ namespace Inkeys::Business::ScrollFollow::Debug
 		std::uint64_t Generation() const noexcept;
 		WriteLease BeginFrame(const FrameMetadata&, const CV::MotionImageView&) noexcept;
 		void RecordMotion(const FrameMetadata&, const CV::MotionResult&, double totalTrackerMs) noexcept;
+		// 生产回调每个真实输入调用一次，包含 AwaitTracking；不依赖预览 lease 或 UI 刷新。
+		void RecordInput(const FrameMetadata&, const CV::MotionFrame&, const CV::MotionResult* = nullptr) noexcept;
+		bool ArmRecording() noexcept;
+		void FinishRecording() noexcept;
+		RecordingInfo ReadRecording() const noexcept;
+		std::shared_ptr<const RecordingData> TakeRecording() noexcept; // 封存后共享，导出不复制整段像素。
+
 		void UpdateStatus(const LiveStatus&) noexcept;
 		LiveSnapshot ReadLive() const noexcept;
 		// 仅 UI owner 消费；Freeze 时不调用 ConsumeLatest，front 保持不可变。
@@ -147,4 +194,7 @@ namespace Inkeys::Business::ScrollFollow::Debug
 	// Frame/控制线程只保留首个故障，后续 Stop(Requested) 不得冲掉来源。
 	void LatchPause(std::atomic<PauseCause>&, PauseCause) noexcept;
 	const char* PauseCauseName(PauseCause) noexcept;
+	const char* OperationName(Operation) noexcept;
+	const char* RecordingStateName(RecordingState) noexcept;
+	const char* RecordingStopName(RecordingStop) noexcept;
 }

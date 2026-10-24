@@ -1,0 +1,8 @@
+# Local visual target and continuous scroll tracking
+The human approved the complete proposed plan and explicitly requested implementation. GUI, Computer Use and subagents are authorized. No commit/push/PR. Historical task GUI restrictions are superseded.
+Pure visual target selection: hold on equally plausible regions; no input-position or wheel-distance inference. Ordinary Edge/Word/PDF text, half-width/half-height and quarter-width/quarter-height panes, static UI, reversal/jitter, long scrolling. Translation only; no recovery after latched Paused.
+Baseline current 47b4e742; identical pixels/timestamps and independent GT. Old a6ce 13 frames are regression evidence, not new improvement.
+Targets: correctly updated identifiable inputs >=95%; report all-frame errors and longest gaps. Accepted P95 <=2px/max <=5px; ten-screen endpoint <=5px/return <=3px. Gap <=2 sample intervals and <=350ms. Existing 300-frame drift <=0.5px; live 30-second drift <=1px; no wrong updates on ambiguous inputs.
+Natural trajectories 0.25/0.5/1 viewport per second at 6/10/20Hz; 35%-viewport single step is separate stress. Cover text/periodic ambiguity/two motions/no-overlap/new page/deformation.
+Realtime goal >=20Hz and measured visible latency P95 <=80ms; explicitly fail this gate if unmet. Actual ink, writing after Off, save/restore, Freeze and shutdown need verification.
+Preserve Session/generations, Mag/Freeze ownership, single Draw3 owner, absolute latest-only publication, GPU cache and UInk v10. Never rewrite source ink points. Minimal relevant diff, original BOM/CRLF, concise Chinese code comments.

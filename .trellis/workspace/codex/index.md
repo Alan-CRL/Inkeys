@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 125
-- **Last Active**: 2026-10-23
+- **Total Sessions**: 126
+- **Last Active**: 2026-10-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1156 | Active |
+| `journal-2.md` | ~1195 | Active |
 | `journal-1.md` | ~2226 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 126 | 2026-10-24 | Scroll Follow 局部视觉追踪实现与实屏验证 | - | `feature/move` |
 | 125 | 2026-10-23 | 实际图像回放定位与稀疏票修正验证 | - | `feature/move` |
 | 124 | 2026-10-23 | 录制版验证与安全停止复核 | - | `feature/move` |
 | 123 | 2026-10-23 | Edge Guest真实滚动定位与有限输入录制准备 | - | `feature/move` |

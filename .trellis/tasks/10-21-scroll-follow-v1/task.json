@@ -22,7 +22,8 @@
     "10-21-scroll-follow-mag-capture",
     "10-21-scroll-follow-motion-tracker",
     "10-21-scroll-follow-product-integration",
-    "10-21-scroll-follow-persistence-regression"
+    "10-21-scroll-follow-persistence-regression",
+    "10-23-scroll-follow-visual-tracking"
   ],
   "parent": null,
   "relatedFiles": [],

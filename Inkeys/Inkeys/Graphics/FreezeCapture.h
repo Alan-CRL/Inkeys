@@ -52,12 +52,27 @@ namespace Inkeys::Graphics::FreezeCapture
 		std::uint64_t session = 0;
 	};
 
+	struct TimedStage
+	{
+		std::chrono::microseconds duration{};
+		bool observed = false; // 未执行的阶段不能用默认零值冒充耗时。
+	};
+	struct BackendTimings
+	{
+		TimedStage redraw{}, printWindow{}, gdiFlush{}, pixelWork{};
+	};
 	struct Statistics
 	{
 		std::uint64_t attempts = 0, accepted = 0, rejected = 0, apiFailures = 0;
-		std::uint64_t skipped = 0, lateResults = 0;
+		std::uint64_t skipped = 0, lateResults = 0, warmupReads = 0;
 		std::chrono::microseconds lastReadDuration{};
 		std::chrono::microseconds maxReadDuration{};
+		// accepted 是图像交付/捕获活性，低信息白页仍由 Tracker 判断是否有可信运动。
+		std::uint64_t lowInformation = 0;
+		TimedStage update{}, analyze{}, callback{};
+		BackendTimings backend{};
+		// 回调返回后才完成计时；Frame 中保留的是此前已完成回调，须核对其序号。
+		std::uint64_t callbackSequence = 0;
 	};
 
 	enum class FailureStage : std::uint8_t { None, Begin, Update, Read, Quality, Callback, End, Timeout };
@@ -76,6 +91,9 @@ namespace Inkeys::Graphics::FreezeCapture
 		std::uint32_t nativeError = 0;
 		bool nativeErrorValid = false;
 		bool qualityObserved = false; // 仅在真正 Analyze 后有效，API 失败的默认 Quality 不是分析结果。
+		// 失败现场独立保留，后续有效图像不得覆盖；仅 Quality 失败时有效。
+		Quality failureQuality{};
+		bool failureQualityObserved = false;
 	};
 
 	struct Frame
@@ -102,6 +120,8 @@ namespace Inkeys::Graphics::FreezeCapture
 		// 只能在失败原生 API 返回后立即取得；几何/包装失败没有可靠错误码时保持 false。
 		std::uint32_t nativeError = 0;
 		bool nativeErrorValid = false;
+		BackendTimings timings{};
+		bool warmup = false; // 后端已读回但表面仍在预热；成功交付从下一轮开始。
 	};
 
 	// 全部方法只由原 MagnifierThread 调用；实现不初始化运行库或另建 Mag HWND。
@@ -144,6 +164,7 @@ namespace Inkeys::Graphics::FreezeCapture
 	private:
 		enum class Phase : std::uint8_t { Begin, Update, Read };
 		void RevokeLocked(StopReason) noexcept;
+		void CompleteCycleLocked(TimePoint) noexcept;
 		void ObserveFailureLocked(FailureStage, TimePoint, std::uint32_t error = 0, bool valid = false) noexcept;
 		[[nodiscard]] TimePoint DeadlineLocked() const noexcept;
 		void WakeWorker() const noexcept;

@@ -64,7 +64,7 @@ namespace
 		BackendResult beginResult{ true }, updateResult{ true }, readResult{ true };
 		Gate* readGate = nullptr;
 		int begins = 0, updates = 0, reads = 0, ends = 0;
-		int readDelay = 0;
+		int updateDelay = 0, readDelay = 0;
 		bool endAccess = false, endResult = true;
 		BackendResult Begin(const Geometry& geometry) noexcept override
 		{
@@ -74,7 +74,7 @@ namespace
 				pixels[index] = 0xFF000000 | ((index * 37) & 255) * 0x010101;
 			return beginResult;
 		}
-		BackendResult Update(const Geometry&) noexcept override { ++updates; return updateResult; }
+		BackendResult Update(const Geometry&) noexcept override { ++updates; fakeMilliseconds += updateDelay; return updateResult; }
 		BackendResult Read(const Geometry&, std::span<const std::uint32_t>& result) noexcept override
 		{
 			++reads;
@@ -120,7 +120,7 @@ namespace
 		std::vector<std::uint32_t> pixels(64 * 47, 0xFF000000);
 		Check(Analyze(pixels, 64, 47).status == QualityStatus::NearBlack, "black API success rejected");
 		std::fill(pixels.begin(), pixels.end(), 0xFFF0F0F0);
-		Check(Analyze(pixels, 64, 47).status == QualityStatus::LowInformation, "constant API success rejected");
+		Check(Analyze(pixels, 64, 47).status == QualityStatus::LowInformation, "constant image retains low-information classification");
 		for (std::size_t index = 0; index < pixels.size(); ++index)
 			pixels[index] = 0xFF000000 | static_cast<std::uint32_t>(index % 16) * 0x010101;
 		Check(Analyze(pixels, 64, 47).status == QualityStatus::Valid, "dark texture stays valid");
@@ -159,13 +159,121 @@ namespace
 		Check(callbacks == 4 && session.GetSnapshot().statistics.rejected == 0, "identical static frames remain valid");
 		backend.readDelay = 170;
 		Step(session, backend); Step(session, backend);
-		Check(session.GetSnapshot().statistics.skipped >= 3 && session.NextDelay() > 0ms,
-			"slow read skips absolute slots without backlog");
-		const int readCount = backend.reads;
+		Check(session.GetSnapshot().statistics.skipped >= 3 && session.NextDelay() == 0ms,
+			"slow read counts missed periods and immediately permits the next update");
+		const int readCount = backend.reads, updateCount = backend.updates;
 		session.Pump(backend);
-		Check(backend.reads == readCount, "no FIFO catches up after slow read");
+		Check(backend.reads == readCount && backend.updates == updateCount + 1 && session.NextDelay() == 10ms,
+			"overrun starts one new update and preserves settling instead of catch-up reads");
+		session.Pump(backend);
+		Check(backend.reads == readCount && backend.updates == updateCount + 1, "no FIFO catches up before fresh settling");
 		session.Stop(); session.Drain(backend);
 		Check(!session.GetSnapshot().occupied && backend.ends == 1 && backend.endAccess, "normal cleanup releases original window access");
+	}
+
+	void TestStartupSurfaceWarmup()
+	{
+		fakeMilliseconds = 0; Session session(&Wake, &FakeNow); FakeBackend backend;
+		unsigned delivered = 0; session.SetReady(true);
+		(void)session.Start(TestGeometry(), [&](const Frame& frame) { ++delivered; Check(frame.sequence == 1, "first published sequence excludes warmup read"); });
+		backend.readResult.warmup = true; Prepare(session, backend); Step(session, backend);
+		const auto warm = session.GetSnapshot();
+		Check(backend.reads == 1 && delivered == 0 && warm.statistics.warmupReads == 1 && warm.sequence == 0
+			&& warm.statistics.accepted == 0 && warm.statistics.rejected == 0 && warm.statistics.apiFailures == 0
+			&& !warm.lastAcceptedSample.time_since_epoch().count(), "old startup surface is neither delivered nor trusted as activity");
+		backend.readResult.warmup = false; Step(session, backend); Step(session, backend);
+		Check(delivered == 1 && backend.updates == 2 && backend.reads == 2 && session.GetSnapshot().statistics.accepted == 1,
+			"new update/read establishes first delivered reference after priming");
+		session.Stop(); session.Drain(backend);
+	}
+
+	void TestServiceBudgetAndTimings()
+	{
+		fakeMilliseconds = 0;
+		Session session(&Wake, &FakeNow);
+		FakeBackend backend;
+		backend.updateDelay = 7; backend.readDelay = 20;
+		backend.updateResult.timings.redraw = { 2ms, true };
+		backend.readResult.timings.printWindow = { 12ms, true };
+		backend.readResult.timings.gdiFlush = { 3ms, true };
+		backend.readResult.timings.pixelWork = { 4ms, true };
+		int callbackDelay = 5;
+		Statistics delivered{};
+		session.SetReady(true);
+		(void)session.Start(TestGeometry(), [&](const Frame& frame)
+		{
+			delivered = frame.statistics;
+			fakeMilliseconds += callbackDelay;
+		});
+		Prepare(session, backend); Step(session, backend);
+		Check(session.GetSnapshot().lastReadStarted == TimePoint{} + 807ms,
+			"warmup remains 800ms after the real seven millisecond update");
+		Check(delivered.update.observed && delivered.update.duration == 7ms && delivered.lastReadDuration == 20ms
+			&& delivered.backend.redraw.observed && delivered.backend.redraw.duration == 2ms
+			&& delivered.backend.printWindow.observed && delivered.backend.printWindow.duration == 12ms
+			&& delivered.backend.gdiFlush.observed && delivered.backend.gdiFlush.duration == 3ms
+			&& delivered.backend.pixelWork.observed && delivered.backend.pixelWork.duration == 4ms
+			&& delivered.analyze.observed && !delivered.callback.observed && delivered.callbackSequence == 0,
+			"frame carries reached backend timings and analysis without inventing its unfinished callback");
+		const auto first = session.GetSnapshot();
+		Check(first.statistics.callback.observed && first.statistics.callback.duration == 5ms
+			&& first.statistics.callbackSequence == 1 && first.statistics.skipped == 0,
+			"callback timing appears after return and warmup is not missed work");
+		const auto cycleStart = FakeNow() + session.NextDelay();
+		Step(session, backend); Step(session, backend);
+		Check(FakeNow() - cycleStart == 42ms && session.NextDelay() == 8ms,
+			"seven update plus ten settle plus twenty read plus five callback share one fifty millisecond period");
+		Check(delivered.callback.observed && delivered.callback.duration == 5ms && delivered.callbackSequence == 1
+			&& session.GetSnapshot().statistics.callbackSequence == 2,
+			"borrowed frame identifies previous completed callback instead of mislabeling current work");
+		callbackDelay = 95;
+		Step(session, backend); Step(session, backend);
+		Check(session.NextDelay() == 0ms && session.GetSnapshot().statistics.callback.duration == 95ms
+			&& session.GetSnapshot().statistics.callbackSequence == 3 && session.GetSnapshot().statistics.skipped == 2,
+			"slow consumer counts in service budget and never adds another future-slot wait");
+		callbackDelay = 5;
+		const auto resumed = FakeNow();
+		Step(session, backend); Step(session, backend);
+		Check(FakeNow() - resumed == 42ms && session.NextDelay() == 8ms,
+			"after overload a fresh cycle starts from actual update time without backlog");
+		backend.readResult = {};
+		Step(session, backend); Step(session, backend);
+		const auto failed = session.GetSnapshot();
+		Check(failed.statistics.update.observed && !failed.statistics.analyze.observed
+			&& !failed.statistics.backend.printWindow.observed && !failed.statistics.backend.gdiFlush.observed
+			&& !failed.statistics.backend.pixelWork.observed && failed.statistics.callbackSequence == 4
+			&& failed.statistics.apiFailures == 1 && failed.statistics.rejected == 1,
+			"unreached read stages clear old timing validity and failure does not invent a callback");
+		session.Stop(); session.Drain(backend);
+	}
+
+	void TestLowInformationLiveness()
+	{
+		fakeMilliseconds = 0;
+		Session session(&Wake, &FakeNow);
+		FakeBackend backend;
+		std::uint64_t callbacks = 0;
+		session.SetReady(true);
+		(void)session.Start(TestGeometry(), [&](const Frame& frame)
+		{
+			++callbacks;
+			Check(frame.quality.status == QualityStatus::LowInformation && frame.sequence == callbacks
+				&& frame.statistics.accepted == callbacks && frame.statistics.lowInformation == callbacks,
+				"low-information frames retain quality and strictly increasing delivery identity");
+		});
+		Prepare(session, backend);
+		std::fill(backend.pixels.begin(), backend.pixels.end(), 0xFFFFFFFF);
+		Step(session, backend);
+		for (int index = 0; index < 30; ++index) { Step(session, backend); Step(session, backend); }
+		const auto alive = session.GetSnapshot();
+		Check(alive.publishing && callbacks == 31 && alive.statistics.accepted == 31
+			&& alive.statistics.lowInformation == 31 && alive.statistics.rejected == 0
+			&& alive.statistics.apiFailures == 0 && alive.failureStage == FailureStage::None && !alive.failureQualityObserved,
+			"continued white-page transport stays live beyond one second without claiming motion");
+		fakeMilliseconds += 1000; session.Supervise();
+		Check(!session.GetSnapshot().publishing && session.GetSnapshot().reason == StopReason::ResultTimeout,
+			"one second without any new delivered image still revokes low-information transport");
+		session.Drain(backend);
 	}
 
 	void TestInvalidResultsAndDeadlines()
@@ -188,16 +296,50 @@ namespace
 		Session tracking(&Wake, &FakeNow);
 		FakeBackend low;
 		tracking.SetReady(true);
-		(void)tracking.Start(TestGeometry(), [](const Frame&) {});
+		unsigned deliveries = 0;
+		(void)tracking.Start(TestGeometry(), [&](const Frame&) { ++deliveries; });
 		Prepare(tracking, low); Step(tracking, low);
 		std::fill(low.pixels.begin(), low.pixels.end(), 0xFFF0F0F0);
 		Step(tracking, low); Step(tracking, low);
-		Check(tracking.GetSnapshot().publishing && tracking.GetSnapshot().statistics.rejected == 1
-			&& tracking.GetSnapshot().quality.status == QualityStatus::LowInformation,
-			"invalid tracking result immediately visible in snapshot");
-		fakeMilliseconds = 1800; tracking.Supervise();
-		Check(!tracking.GetSnapshot().publishing && tracking.GetSnapshot().reason == StopReason::ResultTimeout,
-			"invalid results do not refresh one second valid-result deadline");
+		Check(tracking.GetSnapshot().publishing && tracking.GetSnapshot().statistics.rejected == 0
+			&& tracking.GetSnapshot().quality.status == QualityStatus::LowInformation
+			&& tracking.GetSnapshot().statistics.accepted == 2 && tracking.GetSnapshot().statistics.lowInformation == 1
+			&& deliveries == 2, "low-information image is delivered for tracker-owned evidence decisions");
+		std::fill(low.pixels.begin(), low.pixels.end(), 0);
+		Step(tracking, low); Step(tracking, low);
+		const auto blackFailure = tracking.GetSnapshot();
+		Check(blackFailure.statistics.rejected == 1 && blackFailure.statistics.accepted == 2
+			&& blackFailure.quality.status == QualityStatus::NearBlack && deliveries == 2
+			&& blackFailure.failureQualityObserved && blackFailure.failureQuality.status == QualityStatus::NearBlack
+			&& blackFailure.failureQuality.samples == blackFailure.quality.samples && blackFailure.failureQuality.blackFraction == 1,
+			"near-black remains a severe rejected image after low-information delivery");
+		std::fill(low.pixels.begin(), low.pixels.end(), 0xFFF0F0F0);
+		Step(tracking, low); Step(tracking, low);
+		const auto recoveredTransport = tracking.GetSnapshot();
+		Check(recoveredTransport.statistics.accepted == 3 && recoveredTransport.statistics.lowInformation == 2
+			&& recoveredTransport.statistics.rejected == 1 && recoveredTransport.failureStage == FailureStage::Quality
+			&& recoveredTransport.lastFailureAt == blackFailure.lastFailureAt && deliveries == 3,
+			"later low-information delivery never erases earlier severe-failure counters or timestamp");
+		Check(recoveredTransport.qualityObserved && recoveredTransport.quality.status == QualityStatus::LowInformation
+			&& recoveredTransport.failureQualityObserved && recoveredTransport.failureQuality.status == QualityStatus::NearBlack
+			&& recoveredTransport.failureQuality.meanLuma == blackFailure.quality.meanLuma
+			&& recoveredTransport.failureQuality.variance == blackFailure.quality.variance
+			&& recoveredTransport.failureQuality.blackFraction == blackFailure.quality.blackFraction
+			&& recoveredTransport.failureQuality.samples == blackFailure.quality.samples,
+			"one snapshot after black then white keeps failure-time quality separate from latest analyzed quality");
+		low.pixels.clear(); Step(tracking, low); Step(tracking, low);
+		Check(tracking.GetSnapshot().statistics.rejected == 2 && tracking.GetSnapshot().quality.status == QualityStatus::InvalidBuffer
+			&& tracking.GetSnapshot().lastAcceptedSample == recoveredTransport.lastAcceptedSample && deliveries == 3
+			&& tracking.GetSnapshot().failureQualityObserved
+			&& tracking.GetSnapshot().failureQuality.status == QualityStatus::InvalidBuffer
+			&& tracking.GetSnapshot().failureQuality.samples == 0,
+			"invalid buffer cannot refresh liveness or reach the consumer");
+		fakeMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(recoveredTransport.lastAcceptedSample.time_since_epoch()).count() + 999;
+		tracking.Supervise(); Check(tracking.GetSnapshot().publishing, "delivery timeout does not fire early");
+		++fakeMilliseconds; tracking.Supervise();
+		Check(!tracking.GetSnapshot().publishing && tracking.GetSnapshot().reason == StopReason::ResultTimeout
+			&& tracking.GetSnapshot().failureStage == FailureStage::Timeout && !tracking.GetSnapshot().failureQualityObserved,
+			"severe invalid results do not refresh one second delivery deadline");
 		tracking.Drain(low);
 
 		fakeMilliseconds = 0;
@@ -210,12 +352,12 @@ namespace
 		Step(readApi, failedRead); Step(readApi, failedRead);
 		Check(readApi.GetSnapshot().statistics.apiFailures == 1 && readApi.GetSnapshot().statistics.rejected == 1
 			&& readApi.GetSnapshot().statistics.accepted == 1
-			&& readApi.GetSnapshot().quality.status == QualityStatus::InvalidBuffer,
+			&& readApi.GetSnapshot().quality.status == QualityStatus::InvalidBuffer && !readApi.GetSnapshot().failureQualityObserved,
 			"read API failure immediately exposes rejection without reusing valid quality");
 		failedRead.updateResult = {};
 		Step(readApi, failedRead);
 		Check(readApi.GetSnapshot().statistics.apiFailures == 2
-			&& readApi.GetSnapshot().quality.status == QualityStatus::InvalidBuffer,
+			&& readApi.GetSnapshot().quality.status == QualityStatus::InvalidBuffer && !readApi.GetSnapshot().failureQualityObserved,
 			"update API failure immediately exposes failure statistics");
 		readApi.Stop(); readApi.Drain(failedRead);
 
@@ -408,6 +550,8 @@ int RunFreezeCaptureTests()
 {
 	TestQualityAndGeometry();
 	TestWarmupStaticFramesAndSkip();
+	TestServiceBudgetAndTimings(); TestStartupSurfaceWarmup();
+	TestLowInformationLiveness();
 	TestInvalidResultsAndDeadlines();
 	TestFreezeCancellationAndRestart();
 	TestBlockedReadStopAndAbnormalWindowExit();

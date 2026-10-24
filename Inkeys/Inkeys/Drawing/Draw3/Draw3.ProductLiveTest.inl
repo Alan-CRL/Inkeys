@@ -350,13 +350,14 @@ namespace
 		class DebugNumbers final : public Business::LiveTrace::Observer
 		{
 		public:
+			explicit DebugNumbers(Fixture& fixture) : fixture_(fixture), initialX_(fixture.x), initialY_(fixture.y) {}
 			struct Numbers
 			{
 				std::uint64_t frames = 0, calls = 0, accepted = 0, rejected = 0, awaiting = 0;
 				std::uint64_t business = 0, capture = 0;
 				bool changedSession = false;
-				std::array<double, 6> sum{}, maximum{}; // interval/Read/preprocess/LK/fit/refill。
-				std::array<std::uint64_t, 6> count{};
+				std::array<double, 14> sum{}, maximum{}; // interval/Read/preprocess/LK/fit/refill/coarse/verify/Update/Redraw/PW/Flush/pixels/Analyze。
+				std::array<std::uint64_t, 14> count{};
 				double previousTimestamp = 0;
 				void Add(std::size_t index, double value) noexcept
 				{ sum[index] += value; maximum[index] = (std::max)(maximum[index], value); ++count[index]; }
@@ -369,6 +370,7 @@ namespace
 				unsigned checked = 0;
 				bool pending = false, completed = false, exact = false;
 			};
+			void InitialPose(int x, int y) noexcept { std::scoped_lock lock(mutex_); initialX_=x; initialY_=y; }
 			void Phase(int phase) noexcept { phase_.store(phase, std::memory_order_release); }
 			Numbers Read(int phase) noexcept { std::scoped_lock lock(mutex_); return numbers_[phase]; }
 			std::uint64_t Missed() const noexcept { return missed_.load(); }
@@ -380,6 +382,19 @@ namespace
 			{
 				std::unique_lock lock(mutex_, std::try_to_lock);
 				if (!lock.owns_lock()) { missed_.fetch_add(1); return; }
+				// 仅专用实屏夹具的会话首两帧核对独立纹理 GT，定位 F0 新鲜度；不落盘图像。
+				if (input.sequence <= 2 && input.image.format == Inkeys::CV::MotionPixelFormat::Bgra32)
+				{
+					std::uint64_t mismatches = 0; RECT changed{input.image.width,input.image.height,0,0};
+					for (int y=0; y<input.image.height; ++y)
+					{
+						const auto row=reinterpret_cast<const std::uint32_t*>(input.image.data+static_cast<std::size_t>(y)*input.image.strideBytes);
+						for (int x=0; x<input.image.width; ++x) if ((row[x]&0xffffffu)!=(TexturePixel(x+identity.roiLeft+initialX_,y+identity.roiTop+initialY_)&0xffffffu))
+						{ ++mismatches; changed.left=(std::min)(changed.left,LONG(x));changed.top=(std::min)(changed.top,LONG(y));changed.right=(std::max)(changed.right,LONG(x+1));changed.bottom=(std::max)(changed.bottom,LONG(y+1)); }
+					}
+					Log(fixture_,"[ScrollFollowDebugProduct] initial_pixel_gt capture=%llu seq=%llu mismatches=%llu bounds=(%ld,%ld,%ld,%ld) templates=%d candidates=%d blocks=%d/%d reason=%s\n",
+						identity.captureSession,input.sequence,mismatches,changed.left,changed.top,changed.right,changed.bottom,result.statistics.templateCount,result.statistics.candidateCount,result.statistics.verifiedBlocks,result.statistics.expectedBlocks,Inkeys::CV::MotionReasonName(result.reason));
+				}
 				const int phase = phase_.load(std::memory_order_acquire);
 				if (phase >= 0 && phase < 3)
 				{
@@ -390,13 +405,19 @@ namespace
 					if (n.previousTimestamp > 0) n.Add(0, (input.timestampSeconds - n.previousTimestamp) * 1000);
 					n.previousTimestamp = input.timestampSeconds;
 					const auto capture = LiveCapture::GetSnapshot();
-					if (capture.session == identity.captureSession) n.Add(1, capture.statistics.lastReadDuration.count() / 1000.0);
+					if (capture.session == identity.captureSession && capture.sequence == input.sequence)
+					{
+						n.Add(1, capture.statistics.lastReadDuration.count() / 1000.0);
+						const auto add = [&](std::size_t index, const LiveCapture::TimedStage& stage) { if (stage.observed) n.Add(index, stage.duration.count()/1000.0); };
+						add(8,capture.statistics.update); add(9,capture.statistics.backend.redraw); add(10,capture.statistics.backend.printWindow);
+						add(11,capture.statistics.backend.gdiFlush); add(12,capture.statistics.backend.pixelWork); add(13,capture.statistics.analyze);
+					}
 					if (operation == Business::LiveTrace::Operation::AwaitTracking) ++n.awaiting;
 					else
 					{
 						++n.calls; result.accepted ? ++n.accepted : ++n.rejected;
 						const auto& t = result.statistics;
-						n.Add(2, t.preprocessMs); n.Add(3, t.opticalFlowMs); n.Add(4, t.fitMs); n.Add(5, t.refillMs);
+						n.Add(2, t.preprocessMs); n.Add(3, t.opticalFlowMs); n.Add(4, t.fitMs); n.Add(5, t.refillMs); n.Add(6,t.coarseMatchMs); n.Add(7,t.verificationMs);
 					}
 				}
 				if (!proof_.pending) return;
@@ -422,6 +443,7 @@ namespace
 			std::mutex mutex_;
 			std::array<Numbers, 3> numbers_{};
 			Proof proof_{};
+			Fixture& fixture_; int initialX_=0,initialY_=0;
 			std::atomic<int> phase_ = -1;
 			std::atomic<std::uint64_t> missed_{};
 		};
@@ -448,6 +470,7 @@ namespace
 			UINT dpiX_ = 0, dpiY_ = 0; DWORD orientation_ = 0; HMONITOR monitor_ = nullptr;
 			std::vector<Entry> entries_;
 			std::size_t pixelBytes_ = 0;
+			bool limitReached_ = false; const char* stopReason_ = "SessionEnded";
 			std::uint64_t observedCount_ = 0;
 			std::mutex mutex_;
 			std::atomic<const char*> failure_ = nullptr;
@@ -555,7 +578,11 @@ namespace
 			{
 				try
 				{
-					std::scoped_lock lock(mutex_); ++observedCount_; if (Failure()) return;
+					std::scoped_lock lock(mutex_); if (Failure() || limitReached_) return;
+					const auto nextPixels=static_cast<std::uint64_t>((std::max)(0,input.image.width))*static_cast<std::uint64_t>((std::max)(0,input.image.height));
+					if (entries_.size()>=64 || nextPixels>256ull*1024*1024-pixelBytes_ || (!entries_.empty() && input.timestampSeconds-entries_.front().timestamp>=10))
+					{ limitReached_=true; stopReason_=entries_.size()>=64?"FrameLimit":nextPixels>256ull*1024*1024-pixelBytes_?"ByteLimit":"TimeLimit"; return; }
+					++observedCount_;
 					const auto begin=std::chrono::steady_clock::now();
 					if (const auto reason=Guard(true)) { unsafe_.store(true); Fail(reason); return; }
 					const LiveCapture::Geometry geometry{{0,0,width_,height_},
@@ -579,7 +606,7 @@ namespace
 						(input.sequence!=entries_.back().sequence+1 || input.timestampSeconds<entries_.back().timestamp || identity.session!=entries_.front().identity.session || identity.captureSession!=entries_.front().identity.captureSession))
 					{ Fail("trace-prefix-sequence-or-session-gap"); return; }
 					const auto pixels=static_cast<std::size_t>(input.image.width)*input.image.height;
-					if (entries_.size()>=64 || pixels>384ull*1024*1024-pixelBytes_) { Fail("trace-frame-or-memory-limit"); return; }
+					if (entries_.size()>=64 || pixels>256ull*1024*1024-pixelBytes_) { Fail("trace-frame-or-memory-limit"); return; }
 					const auto row=static_cast<std::size_t>(input.image.width)*4;
 					if (input.image.strideBytes<row || input.image.strideBytes>input.image.sizeBytes ||
 						static_cast<std::size_t>(input.image.height-1)>(input.image.sizeBytes-row)/input.image.strideBytes)
@@ -609,7 +636,7 @@ namespace
 					if (path==path.root_path()) break;
 				}
 				Json::Value manifest; manifest["schema"]=1; manifest["kind"]="actual-tracker-input-fullres-gray8"; manifest["productExitBeforeTraceSave"]=productResult;
-				manifest["run"]=run_; manifest["frameLimit"]=64; manifest["pixelByteLimit"]=std::to_string(384ull*1024*1024);
+				manifest["run"]=run_; manifest["frameLimit"]=64; manifest["pixelByteLimit"]=std::to_string(256ull*1024*1024); manifest["secondsLimit"]=10; manifest["stopReason"]=stopReason_; manifest["boundedPrefix"]=true;
 				manifest["recordedCount"]=static_cast<unsigned>(entries_.size()); manifest["observedCount"]=std::to_string(observedCount_);
 				manifest["skippedInputs"]=std::to_string(observedCount_-entries_.size());
 				manifest["pixelBytes"]=std::to_string(pixelBytes_); manifest["originalThreadsDrained"]=drained; manifest["frames"]=Json::arrayValue;
@@ -1093,6 +1120,8 @@ namespace
 		void DebugPhase(Fixture& f, const std::shared_ptr<Draw::Follow::Channel>& channel, int index, const char* phase)
 		{
 			const bool open = index == 1;
+			// 闭窗阶段已由真实正反向滚动锁定目标，连续 30 秒检验静止累计漂移。
+			const unsigned durationMs = index == 2 ? 30000 : 15000; double maximumDrift = 0;
 			const auto baseline = channel->Read(); const auto captureSession = LiveCapture::GetSnapshot().session;
 			const auto openPhase = f.debugNumbers->Read(1);
 			if (index == 2 && (openPhase.business != baseline.session || openPhase.capture != captureSession)) throw std::runtime_error("debug-open-closed-session-changed");
@@ -1102,6 +1131,7 @@ namespace
 				if (Business::GetSnapshot().state != Business::State::Tracking || owner.session != baseline.session ||
 					capture.session != captureSession || !capture.publishing || owner.clamped || Business::Debug::Enabled() != open ||
 					(DebugWindow::Handle() != nullptr) != open) throw std::runtime_error("debug-phase-session-or-enable-changed");
+				if (index == 2) maximumDrift = (std::max)(maximumDrift, std::hypot(owner.latest.x-baseline.latest.x, owner.latest.y-baseline.latest.y));
 			};
 			Log(f, "[ScrollFollowDebugProduct] warmup phase=%s duration_ms=1000 outside_timing=1\n", phase);
 			const auto warm = GetTickCount64();
@@ -1111,7 +1141,7 @@ namespace
 			Business::Debug::Counters countersBefore{};
 			if (auto current = Business::Debug::Current()) countersBefore = current->ReadLive().counters;
 			DebugResources(f, phase, "begin");
-			Log(f, "[ScrollFollowDebugProduct] phase_begin phase=%s duration_ms=15000 business=%llu capture=%llu stable_within_phase=1 absent_open_same_session=0 performance_causal_comparison=0 controls_hold=0 image_recording=0\n", phase, baseline.session, captureSession);
+			Log(f, "[ScrollFollowDebugProduct] phase_begin phase=%s duration_ms=%u business=%llu capture=%llu stable_within_phase=1 absent_open_same_session=0 performance_causal_comparison=0 controls_hold=0 image_recording=0\n", phase, durationMs, baseline.session, captureSession);
 			double ages = 0, copies = 0, totals = 0; unsigned displaySamples = 0;
 			std::uint64_t displayed = 0; ULONGLONG nextSample = 0;
 			const auto began = LiveCapture::Clock::now(); f.debugNumbers->Phase(index);
@@ -1125,8 +1155,8 @@ namespace
 					if (ui.sequence != displayed)
 					{ displayed = ui.sequence; ages += ui.displayAgeMs; copies += ui.copyMs; totals += ui.totalTrackerMs; ++displaySamples; }
 				}
-				return LiveCapture::Clock::now() - began >= std::chrono::seconds(15);
-			}, 16000);
+				return LiveCapture::Clock::now() - began >= std::chrono::milliseconds(durationMs);
+			}, durationMs + 1000);
 			f.debugNumbers->Phase(-1);
 			const double seconds = std::chrono::duration<double>(LiveCapture::Clock::now() - began).count();
 			const auto captureAfter = LiveCapture::GetSnapshot(); const auto uiAfter = DebugWindow::ReadProbe();
@@ -1141,12 +1171,19 @@ namespace
 				captureAfter.statistics.skipped-captureBefore.statistics.skipped, captureAfter.sequence-captureBefore.sequence, n.frames, n.calls, n.accepted, n.rejected, n.awaiting, f.debugNumbers->Missed());
 			Log(f, "[ScrollFollowDebugProduct] timing phase=%s interval_ms=(mean:%.6f,max:%.6f,n:%llu) capture_Read_ms=(mean:%.6f,max:%.6f,n:%llu) tracker_preprocess_ms=(mean:%.6f,max:%.6f) tracker_LK_ms=(mean:%.6f,max:%.6f) tracker_fit_ms=(mean:%.6f,max:%.6f) tracker_refill_ms=(mean:%.6f,max:%.6f) Capture_Read_is_backend_duration=1 Analyze_included=0 PW_is_not_isolated=1\n",
 				phase, mean(0), n.maximum[0], n.count[0], mean(1), n.maximum[1], n.count[1], mean(2), n.maximum[2], mean(3), n.maximum[3], mean(4), n.maximum[4], mean(5), n.maximum[5]);
+			const char* stageNames[]={"coarse","verify","Update","Redraw","PrintWindow","GdiFlush","pixelWork","Analyze"};
+			for(std::size_t i=6;i<14;++i) Log(f,"[ScrollFollowDebugProduct] stage phase=%s name=%s mean_ms=%.6f max_ms=%.6f samples=%llu same_input_sequence=1\n",phase,stageNames[i-6],mean(i),n.maximum[i],n.count[i]);
 			Log(f, "[ScrollFollowDebugProduct] preview phase=%s enabled=%u display_samples=%u copy_ms_mean=%.6f displayed_measured_tracker_total_ms_mean=%.6f display_age_ms_mean=%.6f refresh_hz=%.6f consume_hz=%.6f paint_hz=%.6f publications=%llu overwritten=%llu disabled_metrics_NA=%u finite_same_machine_observation=1\n",
 				phase, open, displaySamples, displaySamples ? copies/displaySamples : -1, displaySamples ? totals/displaySamples : -1, displaySamples ? ages/displaySamples : -1,
 				(uiAfter.refreshes-uiBefore.refreshes)/seconds, (uiAfter.consumed-uiBefore.consumed)/seconds, (uiAfter.paints-uiBefore.paints)/seconds,
 				countersAfter.framesPublished-countersBefore.framesPublished, countersAfter.framesOverwritten-countersBefore.framesOverwritten, !open);
 			if (!elapsed || !n.calls || n.changedSession || n.business != baseline.session || n.capture != captureSession ||
 				captureAfter.statistics.accepted <= captureBefore.statistics.accepted || (open && !displaySamples)) throw std::runtime_error("debug-phase-insufficient-observations");
+			if (index == 2)
+			{
+				Log(f,"[ScrollFollowDebugProduct] stationary_locked seconds=%.6f max_total_drift_px=%.9f accepted=%llu limit_px=1 independent_source_gt=1\n",seconds,maximumDrift,n.accepted);
+				if (maximumDrift > 1 || !n.accepted) throw std::runtime_error("debug-stationary-drift");
+			}
 			if (!ScreenSourceGt(f, phase, nullptr)) throw std::runtime_error("debug-phase-final-screen-gt");
 		}
 
@@ -1561,11 +1598,11 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 			// 在F0之前安装；只复制真实Tracker输入，不改变来源、ROI、目标或暂停规则。
 			f.trace=std::make_shared<MotionTrace>(f);
 			Business::LiveTrace::Install(f.trace);
-			Log(f,"[MotionTrace] armed=1 limit_frames=64 limit_pixel_bytes=402653184 format=fullres-gray8 observer_overhead_not_normal_capture_performance=1\n");
+			Log(f,"[MotionTrace] armed=1 limit_frames=64 limit_pixel_bytes=268435456 limit_seconds=10 format=fullres-gray8 observer_overhead_not_normal_capture_performance=1\n");
 		}
 		if (debuggerProbe)
 		{
-			f.debugNumbers = std::make_shared<DebugNumbers>();
+			f.debugNumbers = std::make_shared<DebugNumbers>(f);
 			Business::LiveTrace::Install(f.debugNumbers);
 			Log(f, "[ScrollFollowDebugProduct] numeric_observer=armed_all_phases image_recording=0 watchdog_ms=210000\n");
 		}
@@ -1600,7 +1637,8 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 			stage = "debug-production-open";
 			if (f.width < 1344 || f.height < 720) throw std::runtime_error("debug-primary-too-small");
 			// 贴右下边将下/右阴影移出屏内 GT；后续仍严格校验真实 WorkArea 内的完整覆盖 ROI。
-			const RECT bounds{f.width - 960, f.height - 580, f.width, f.height};
+			// 两行特征图例和高 DPI 标题栏也要留出原有 256x192 完整像素验收区。
+			const RECT bounds{f.width - 960, f.height - 640, f.width, f.height};
 			CheckDesktop(f, "before-debug-open");
 			// 按独立置顶合同显示诊断窗；专用 Source 保持非置顶带。
 			if (!SetWindowPos(f.source, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) ||
@@ -1649,8 +1687,8 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 			stage = "debug-open-wheel-reverse-16";
 			InkWheel(f, channel, WHEEL_DELTA, beforeX, beforeY, "debug-open-reverse16");
 			DebugCoveredPixels(f, "open-after-reverse16");
-			// 用户选择控件交付人工验证；此短入口只执行非交互性能和生命周期检查。
-			Log(f, "[ScrollFollowDebugProduct] controls_manual_deferred_by_user=1 interactive_controls_tested=0 manual_entry=normal_startup\n");
+			// 此入口验证性能和生命周期；交互控件通过正常启动入口另行验证。
+			Log(f, "[ScrollFollowDebugProduct] interactive_controls_tested=0 manual_entry=normal_startup\n");
 			DebugCoveredPixels(f, "open-before-close");
 			stage = "debug-production-close";
 			std::weak_ptr<Business::Debug::Channel> retired = Business::Debug::Current();
@@ -1808,6 +1846,8 @@ static int RunScrollFollowProductLiveCase(bool ink, bool longScroll = false, boo
 		if (debuggerProbe)
 		{
 			stage = "debug-no-reopen-off-on";
+			// 新会话的独立 GT 使用当前真实文档位置，不能继续比较上一会话的起点。
+			f.debugNumbers->InitialPose(f.x, f.y);
 			Business::RequestToggle();
 			if (!Wait(f, [&] { return Business::GetSnapshot().state == Business::State::Tracking &&
 				ScrollFollowPresentationAcknowledged(ScrollFollowProjectionEpoch()) && LiveCapture::GetSnapshot().statistics.accepted >= 3; }, 8000))

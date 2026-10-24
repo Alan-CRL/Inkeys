@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -20,11 +21,17 @@ namespace Inkeys::Drawing::Draw3::Follow
 		int width = 0, height = 0;
 		friend bool operator==(const Identity&, const Identity&) = default;
 	};
+	struct Timing
+	{
+		std::uint64_t sequence = 0;
+		std::chrono::steady_clock::time_point readCompletedAt{}, publishedAt{}, appliedAt{}, presentedAt{};
+	};
 	struct Target
 	{
 		std::uint64_t session = 0, sequence = 0;
 		Identity identity{};
 		double x = 0, y = 0; // 原图内容位移，已经且仅已经映射一次到 client px。
+		std::chrono::steady_clock::time_point readCompletedAt{}, publishedAt{};
 	};
 	struct Snapshot
 	{
@@ -35,6 +42,7 @@ namespace Inkeys::Drawing::Draw3::Follow
 		Target latest{}, final{};
 		double baseX = 0, baseY = 0, viewportX = 0, viewportY = 0;
 		bool publishing = false, endQueued = false, handoff = false, clamped = false;
+		Timing appliedTiming{}, presentedTiming{};
 	};
 	// 固定大小共享邮箱；图像计算及 HWND/GPU 调用都在此短门之外。
 	class Channel
@@ -66,7 +74,7 @@ namespace Inkeys::Drawing::Draw3::Follow
 				target.identity != state_.identity || target.sequence <= state_.latest.sequence ||
 				!std::isfinite(target.x) || !std::isfinite(target.y))
 			{ ++state_.rejected; return false; }
-			state_.latest = target; return true;
+			state_.latest = target; state_.latest.publishedAt = std::chrono::steady_clock::now(); return true;
 		}
 		// 与 Publish 同锁冻结 final，晚到的 LK 结果没有第三种提交次序。
 		bool Seal(Disposition disposition) noexcept
@@ -92,12 +100,25 @@ namespace Inkeys::Drawing::Draw3::Follow
 				target.session != state_.session || target.sequence <= state_.applied) return {};
 			return target;
 		}
-		void Applied(std::uint64_t session, std::uint64_t sequence, double x, double y, bool clamped) noexcept
+		void Applied(std::uint64_t session, std::uint64_t sequence, double x, double y, bool clamped, const Target* source = nullptr) noexcept
 		{
 			std::scoped_lock lock(mutex_);
 			if (state_.session != session) return;
 			state_.applied = sequence; state_.viewportX = x; state_.viewportY = y;
 			state_.clamped |= clamped;
+			// Pending 后可能已有更新发布，必须使用实际应用的目标，不能读取 latest 冒充同帧。
+			state_.appliedTiming = {}; state_.appliedTiming.sequence = sequence;
+			state_.appliedTiming.appliedAt = std::chrono::steady_clock::now();
+			if (source && source->session == session && source->sequence == sequence)
+			{ state_.appliedTiming.readCompletedAt = source->readCompletedAt; state_.appliedTiming.publishedAt = source->publishedAt; }
+		}
+		void ObservePresent(std::uint64_t session, std::chrono::steady_clock::time_point returnedAt) noexcept
+		{
+			std::scoped_lock lock(mutex_);
+			if (state_.session != session || !state_.applied || state_.presentedTiming.sequence == state_.applied || returnedAt < state_.appliedTiming.appliedAt) return;
+			// 仅绘制 owner 在重放完成且 Present 成功后调用；时间不代表 compositor 的真实显示时刻。
+			state_.presentedTiming = state_.appliedTiming;
+			state_.presentedTiming.presentedAt = returnedAt;
 		}
 		void RecoveryFrame(std::uint64_t session, bool pending) noexcept
 		{

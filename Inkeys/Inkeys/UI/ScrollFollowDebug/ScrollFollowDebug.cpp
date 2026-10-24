@@ -43,7 +43,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 		constexpr COLORREF CanvasBackground = RGB(22, 28, 38), Foreground = RGB(224, 231, 240);
 		constexpr COLORREF InlierColor = RGB(64, 221, 118), StationaryColor = RGB(158, 166, 179);
 		constexpr COLORREF CompetitorColor = RGB(255, 168, 54), ExcludedColor = RGB(255, 91, 100);
-		constexpr COLORREF AddedColor = RGB(61, 219, 239), ForwardColor = RGB(239, 222, 142);
+		constexpr COLORREF AddedColor = RGB(61, 219, 239), ForwardColor = RGB(239, 222, 142), ProvisionalColor = RGB(193, 139, 255);
 		std::atomic<HWND> currentWindow = nullptr, exportPickerWindow = nullptr;
 		std::mutex probeMutex;
 		Probe lastProbe{};
@@ -57,6 +57,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 		struct ExportData
 		{
 			std::unique_ptr<Model::FramePacket> frame;
+			std::shared_ptr<const Model::RecordingData> recording;
 			Model::LiveSnapshot live{};
 			ViewOptions view{};
 			RECT previewRect{};
@@ -192,13 +193,27 @@ namespace Inkeys::UI::ScrollFollowDebug
 			Json::Value result; result["status"] = QualityName(quality.status); result["meanLuma"] = Numeric(quality.meanLuma);
 			result["variance"] = Numeric(quality.variance); result["blackFraction"] = Numeric(quality.blackFraction); result["samples"] = quality.samples; return result;
 		}
+		Json::Value TimedStageJson(const Capture::TimedStage& stage)
+		{
+			Json::Value value; value["observed"]=stage.observed;
+			value["durationUs"]=stage.observed?Numeric(stage.duration.count()):Json::Value(); return value;
+		}
+		std::wstring TimedStageText(const Capture::TimedStage& stage)
+		{
+			return stage.observed?NumberText(stage.duration.count()/1000.0)+L" ms":L"N/A";
+		}
 		Json::Value CaptureStatisticsJson(const Capture::Statistics& statistics)
 		{
 			Json::Value result;
 #define CAPTURE_FIELD(name) result[#name] = Numeric(statistics.name)
-			CAPTURE_FIELD(attempts); CAPTURE_FIELD(accepted); CAPTURE_FIELD(rejected); CAPTURE_FIELD(apiFailures); CAPTURE_FIELD(skipped); CAPTURE_FIELD(lateResults);
+			CAPTURE_FIELD(attempts); CAPTURE_FIELD(accepted); CAPTURE_FIELD(lowInformation); CAPTURE_FIELD(rejected); CAPTURE_FIELD(apiFailures); CAPTURE_FIELD(skipped); CAPTURE_FIELD(lateResults); CAPTURE_FIELD(warmupReads);
 #undef CAPTURE_FIELD
-			result["lastReadDurationUs"] = Numeric(statistics.lastReadDuration.count()); result["maxReadDurationUs"] = Numeric(statistics.maxReadDuration.count()); return result;
+			result["lastReadDurationUs"] = Numeric(statistics.lastReadDuration.count()); result["maxReadDurationUs"] = Numeric(statistics.maxReadDuration.count());
+			result["update"]=TimedStageJson(statistics.update); result["analyze"]=TimedStageJson(statistics.analyze); result["callback"]=TimedStageJson(statistics.callback);
+			result["callbackSequence"]=Numeric(statistics.callbackSequence);
+			result["callbackNote"]="Completed callback only; a delivered Frame contains the previous callback's duration and sequence.";
+			result["backend"]["redraw"]=TimedStageJson(statistics.backend.redraw); result["backend"]["printWindow"]=TimedStageJson(statistics.backend.printWindow);
+			result["backend"]["gdiFlush"]=TimedStageJson(statistics.backend.gdiFlush); result["backend"]["pixelWork"]=TimedStageJson(statistics.backend.pixelWork); return result;
 		}
 		struct StatEntry { const char* name; Json::Value value; bool valid; };
 		std::vector<StatEntry> Statistics(const CV::MotionStatistics& statistics, const CV::TrackerDebugSnapshot* debug)
@@ -207,26 +222,40 @@ namespace Inkeys::UI::ScrollFollowDebug
 			const auto done = [&](TrackerDebugStage stage) { return normal && (!debug || Completed(*debug, stage)); };
 			const auto reached = [&](TrackerDebugStage stage) { return normal && (!debug || Reached(*debug, stage)); };
 			const auto checked = [&](TrackerDebugCheckId id) { return normal && (!debug || Evaluated(*debug, id)); };
-			std::vector<StatEntry> entries; entries.reserve(40);
+			std::vector<StatEntry> entries; entries.reserve(60);
 #define STAT(name, validity) entries.push_back({ #name, Numeric(statistics.name), (validity) })
 			STAT(inputSequence, true); STAT(referenceSequence, true); STAT(referenceGeneration, true); STAT(relayGeneration, true);
 			STAT(attempted, reached(TrackerDebugStage::Forward)); STAT(forward, done(TrackerDebugStage::Forward));
-			STAT(backward, done(TrackerDebugStage::Backward)); STAT(fbValid, checked(TrackerDebugCheckId::FbPointsLow));
+			// 局部算法已移除旧全屏门；诊断有效性必须对应实际完成的计算阶段。
+			STAT(backward, done(TrackerDebugStage::Backward)); STAT(fbValid, done(TrackerDebugStage::Backward));
 			STAT(inliers, done(TrackerDebugStage::Consensus)); STAT(referenceCells, done(TrackerDebugStage::Forward));
-			STAT(occupiedCells, reached(TrackerDebugStage::Consensus)); STAT(inlierCells, checked(TrackerDebugCheckId::CoverageCells));
-			STAT(interiorCells, checked(TrackerDebugCheckId::CoverageCells)); STAT(added, done(TrackerDebugStage::Refill));
+			STAT(occupiedCells, reached(TrackerDebugStage::Consensus)); STAT(inlierCells, done(TrackerDebugStage::Coverage));
+			STAT(interiorCells, done(TrackerDebugStage::Coverage)); STAT(added, done(TrackerDebugStage::Refill));
 			STAT(retained, done(TrackerDebugStage::Retention)); STAT(retired, done(TrackerDebugStage::Retention));
 			STAT(initialSurvivors, done(TrackerDebugStage::Retention) || (debug && debug->initialization && done(TrackerDebugStage::Commit)));
 			STAT(consecutiveRejects, true); STAT(pointInlierRatio, done(TrackerDebugStage::Consensus)); STAT(spatialInlierRatio, done(TrackerDebugStage::Consensus));
-			STAT(survivalRatio, checked(TrackerDebugCheckId::FbPointsLow)); STAT(coverageX, checked(TrackerDebugCheckId::CoverageCells));
-			STAT(coverageY, checked(TrackerDebugCheckId::CoverageCells)); STAT(runnerUpRatio, reached(TrackerDebugStage::Ambiguity));
-			STAT(fbMedian, checked(TrackerDebugCheckId::FbPointsLow)); STAT(fbP95, checked(TrackerDebugCheckId::FbPointsLow));
+			STAT(survivalRatio, reached(TrackerDebugStage::Consensus)); STAT(coverageX, done(TrackerDebugStage::Coverage));
+			STAT(coverageY, done(TrackerDebugStage::Coverage));
+			STAT(runnerUpRatio, normal && (!debug || debug->competitorsEvaluated > 0 || debug->ambiguityComplete));
+			STAT(fbMedian, done(TrackerDebugStage::Backward)); STAT(fbP95, done(TrackerDebugStage::Backward));
 			STAT(residualMedian, done(TrackerDebugStage::Consensus)); STAT(residualP95, done(TrackerDebugStage::Consensus));
 			STAT(affineVariation, normal && (!debug || debug->affineModelValid)); STAT(affineResidual, normal && (!debug || debug->affineModelValid));
 			STAT(preprocessMs, done(TrackerDebugStage::Preprocess));
 			STAT(opticalFlowMs, done(TrackerDebugStage::Backward) || (checked(TrackerDebugCheckId::ForwardPointsLow) && debug && debug->checks[static_cast<std::size_t>(TrackerDebugCheckId::ForwardPointsLow)].condition));
 			STAT(fitMs, reached(TrackerDebugStage::Consensus)); STAT(refillMs, done(TrackerDebugStage::Refill));
+			STAT(targetId, true); STAT(targetPoints, true); STAT(provisionalPoints, true); STAT(referenceAgeSeconds, true); STAT(recoverySeconds, true);
+			STAT(templateCount, reached(TrackerDebugStage::CoarseMatch)); STAT(matchedTemplates, reached(TrackerDebugStage::TargetSelection) && (!debug || debug->mainMotion.valid));
+			STAT(independentBlocks, reached(TrackerDebugStage::TargetSelection) && (!debug || debug->mainMotion.valid)); STAT(candidateCount, done(TrackerDebugStage::CoarseMatch));
+			STAT(ambiguityMargin, reached(TrackerDebugStage::TargetSelection) && (!debug || debug->mainMotion.valid)); STAT(coarseMatchMs, reached(TrackerDebugStage::CoarseMatch));
+			STAT(verificationMs, reached(TrackerDebugStage::PatchVerification));
+			STAT(expectedBlocks, done(TrackerDebugStage::PatchVerification)); STAT(verifiedBlocks, done(TrackerDebugStage::PatchVerification));
+			STAT(identityTiles, done(TrackerDebugStage::PatchVerification)); STAT(identityContradictions, done(TrackerDebugStage::PatchVerification));
+			STAT(identityScore, done(TrackerDebugStage::PatchVerification));
 #undef STAT
+			entries.push_back({"targetPhase",CV::MotionTargetPhaseName(statistics.targetPhase),true});
+			entries.push_back({"primaryReason",CV::MotionReasonName(statistics.primaryReason),true});
+			entries.push_back({"usedKeyframe",statistics.usedKeyframe,true}); entries.push_back({"lowPointFallback",statistics.lowPointFallback,true});
+			entries.push_back({"identityDisambiguated",statistics.identityDisambiguated,done(TrackerDebugStage::PatchVerification) && reached(TrackerDebugStage::TargetSelection)});
 			return entries;
 		}
 		Json::Value MotionJson(const CV::MotionResult& motion, const CV::TrackerDebugSnapshot* debug = nullptr)
@@ -289,6 +318,25 @@ namespace Inkeys::UI::ScrollFollowDebug
 			TRACK_BOOL(initialization); TRACK_BOOL(referenceBeforeValid); TRACK_BOOL(referenceAfterValid); TRACK_BOOL(captureValid); TRACK_BOOL(truncated);
 			TRACK_BOOL(affineModelValid); TRACK_BOOL(ambiguityComplete); TRACK_BOOL(candidateTotalValid);
 #undef TRACK_BOOL
+			result["targetId"]=Numeric(debug.targetId); result["targetPhaseBefore"]=CV::MotionTargetPhaseName(debug.targetPhaseBefore);
+			result["targetPhaseAfter"]=CV::MotionTargetPhaseName(debug.targetPhaseAfter); result["targetSupport"]=BoundsJson(debug.targetSupport);
+			result["patchCount"]=Numeric(debug.patchCount); result["localCandidateCount"]=Numeric(debug.localCandidateCount);
+			for (std::size_t index=0;index<(std::min)(debug.patchCount,debug.patches.size());++index)
+			{
+				const auto& patch=debug.patches[index]; Json::Value item;
+				item["referenceBounds"]=BoundsJson(patch.referenceBounds); item["currentBounds"]=BoundsJson(patch.currentBounds);
+				item["information"]=Numeric(patch.information); item["change"]=Numeric(patch.change); item["peakCount"]=Numeric(patch.peakCount);
+				item["selectedScore"]=patch.selected?Numeric(patch.selectedScore):Json::Value(); item["uniqueness"]=Numeric(patch.uniqueness);
+				item["targetMember"]=patch.targetMember; item["selected"]=patch.selected; item["independent"]=patch.independent;
+				for (std::size_t peak=0;peak<(std::min)(patch.peakCount,patch.peaks.size());++peak)
+				{
+					const auto& candidate=patch.peaks[peak]; Json::Value value; value["valid"]=candidate.valid;
+					value["flow"]=candidate.valid?VectorJson(candidate.flow):Json::Value(); value["score"]=candidate.valid?Numeric(candidate.score):Json::Value(); item["peaks"].append(std::move(value));
+				}
+				result["patches"].append(std::move(item));
+			}
+			for (std::size_t index=0;index<(std::min)(debug.localCandidateCount,debug.localCandidates.size());++index)
+				result["localCandidates"].append(CandidateJson(debug.localCandidates[index],false));
 			result["inputFormat"] = debug.inputFormat == CV::MotionPixelFormat::Bgra32 ? "BGRA32" : "Gray8";
 			result["firstFailure"] = debug.firstFailure == TrackerDebugCheckId::Count ? Json::Value() : Json::Value(CV::TrackerDebugCheckName(debug.firstFailure));
 			result["exception"] = CV::MotionReasonName(debug.exception);
@@ -316,7 +364,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 				POINT_BOOL(forwardComputed); POINT_BOOL(forwardStatus); POINT_BOOL(forwardInsideEvaluated); POINT_BOOL(forwardInside); POINT_BOOL(refinedComputed);
 				POINT_BOOL(backwardComputed); POINT_BOOL(backwardStatus); POINT_BOOL(backwardFiniteEvaluated); POINT_BOOL(backwardFinite); POINT_BOOL(fbComputed);
 				POINT_BOOL(refinedInsideEvaluated); POINT_BOOL(refinedInside); POINT_BOOL(refinementDistanceEvaluated); POINT_BOOL(fbThresholdEvaluated); POINT_BOOL(fbValid);
-				POINT_BOOL(consensusEvaluated); POINT_BOOL(inlier); POINT_BOOL(residualComputed); POINT_BOOL(nearStationary); POINT_BOOL(competitor); POINT_BOOL(retentionEvaluated); POINT_BOOL(retained); POINT_BOOL(retired);
+				POINT_BOOL(consensusEvaluated); POINT_BOOL(inlier); POINT_BOOL(residualComputed); POINT_BOOL(nearStationary); POINT_BOOL(competitor); POINT_BOOL(retentionEvaluated); POINT_BOOL(retained); POINT_BOOL(retired); POINT_BOOL(provisional); POINT_BOOL(targetMember); POINT_BOOL(certified);
 #undef POINT_BOOL
 				result["points"].append(std::move(item));
 			}
@@ -350,6 +398,8 @@ namespace Inkeys::UI::ScrollFollowDebug
 			result["geometry"] = GeometryJson(capture.geometry); result["statistics"] = CaptureStatisticsJson(capture.statistics);
 			const bool qualityObserved=capture.qualityObserved, readObserved=capture.lastReadCompleted!=Capture::TimePoint{};
 			result["qualityObserved"] = qualityObserved; result["quality"] = qualityObserved ? QualityJson(capture.quality) : Json::Value();
+			const bool failureQualityObserved=capture.failureStage==Capture::FailureStage::Quality && capture.failureQualityObserved;
+			result["failureQualityObserved"]=failureQualityObserved; result["failureQuality"]=failureQualityObserved?QualityJson(capture.failureQuality):Json::Value();
 			result["readObserved"] = readObserved;
 			if (!readObserved) { result["statistics"]["lastReadDurationUs"] = Json::Value(); result["statistics"]["maxReadDurationUs"] = Json::Value(); }
 			result["reason"] = StopName(capture.reason); result["ready"] = capture.ready; result["publishing"] = capture.publishing;
@@ -364,8 +414,9 @@ namespace Inkeys::UI::ScrollFollowDebug
 		{
 			if (!failure.valid) return Json::Value();
 			Json::Value result; result["valid"] = true; result["stage"] = Capture::FailureStageName(failure.stage); result["reason"] = StopName(failure.reason);
-			result["atUs"] = TimeJson(failure.at); result["qualityValid"] = failure.stage==Capture::FailureStage::Quality;
-			result["quality"] = failure.stage==Capture::FailureStage::Quality ? QualityJson(failure.quality) : Json::Value();
+			const bool qualityValid=failure.stage==Capture::FailureStage::Quality && failure.qualityObserved;
+			result["atUs"] = TimeJson(failure.at); result["qualityValid"] = qualityValid;
+			result["quality"] = qualityValid ? QualityJson(failure.quality) : Json::Value();
 			result["nativeErrorValid"] = failure.nativeErrorValid; result["nativeError"] = failure.nativeErrorValid ? Numeric(failure.nativeError) : Json::Value(); return result;
 		}
 		std::wstring CaptureFailureText(const Model::CaptureFailureInfo& failure)
@@ -373,8 +424,16 @@ namespace Inkeys::UI::ScrollFollowDebug
 			if (!failure.valid) return L"N/A (no captured failure detail)";
 			std::wstring result=Wide(Capture::FailureStageName(failure.stage))+L" / "+Wide(StopName(failure.reason));
 			result+=L" native="+(failure.nativeErrorValid?Text(failure.nativeError):L"N/A");
-			if (failure.stage==Capture::FailureStage::Quality) result+=L" quality="+Wide(QualityName(failure.quality.status));
+			if (failure.stage==Capture::FailureStage::Quality) result+=L" quality="+(failure.qualityObserved?Wide(QualityName(failure.quality.status)):L"N/A");
 			return result;
+		}
+		Json::Value OwnerTimingJson(const Model::OwnerTiming& timing)
+		{
+			Json::Value value; value["sequence"]=Numeric(timing.sequence); value["readCompletedAtUs"]=TimeJson(timing.readCompletedAt);
+			value["publishedAtUs"]=TimeJson(timing.publishedAt); value["appliedAtUs"]=TimeJson(timing.appliedAt); value["presentedAtUs"]=TimeJson(timing.presentedAt);
+			const auto interval=[](Capture::TimePoint from,Capture::TimePoint to) { return from!=Capture::TimePoint{} && to>=from?Numeric(std::chrono::duration<double,std::milli>(to-from).count()):Json::Value(); };
+			value["publishToApplyMs"]=interval(timing.publishedAt,timing.appliedAt); value["applyToSuccessfulPresentMs"]=interval(timing.appliedAt,timing.presentedAt);
+			value["readToSuccessfulPresentMs"]=interval(timing.readCompletedAt,timing.presentedAt); return value;
 		}
 		Json::Value LiveJson(const Model::LiveSnapshot& live)
 		{
@@ -383,6 +442,8 @@ namespace Inkeys::UI::ScrollFollowDebug
 			current["ownsCapture"] = status.ownsCapture; current["awaitTracking"] = status.awaitTracking; current["pauseCause"] = Model::PauseCauseName(status.pauseCause);
 			current["captureObserved"] = status.ownsCapture; current["capture"] = status.ownsCapture ? CaptureSnapshotJson(status.capture) : Json::Value(); current["ownerLatestSequence"] = Numeric(status.ownerLatestSequence);
 			current["ownerAppliedSequence"] = Numeric(status.ownerAppliedSequence); current["viewportX"] = Numeric(status.viewportX); current["viewportY"] = Numeric(status.viewportY);
+			current["appliedTiming"]=OwnerTimingJson(status.appliedTiming); current["presentedTiming"]=OwnerTimingJson(status.presentedTiming);
+			current["presentationTimingNote"]="Sequence-matched owner apply and successful Present return; not measured physical-screen visibility or input-to-screen latency.";
 			current["viewportClamped"] = status.viewportClamped; current["observedAtUs"] = TimeJson(status.observedAt);
 #define COUNTER(name) result["counters"][#name] = Numeric(live.counters.name)
 			COUNTER(framesPublished); COUNTER(framesOverwritten); COUNTER(framesConsumed); COUNTER(frameDrops); COUNTER(summaryDrops);
@@ -407,20 +468,16 @@ namespace Inkeys::UI::ScrollFollowDebug
 		Json::Value ExportJson(const ExportData& data)
 		{
 			const auto& frame = *data.frame; const auto& metadata = frame.metadata; Json::Value result;
-			result["schema"] = "Inkeys.ScrollFollowDebug.v1"; result["rawImage"] = "raw.png"; result["annotatedImage"] = "preview.png";
+			result["schema"] = "Inkeys.ScrollFollowDebug.v1"; result["recordingFile"]=data.recording?Json::Value("recording.json"):Json::Value(); result["rawImage"] = "raw.png"; result["annotatedImage"] = "preview.png";
 			result["numericEncoding"] = "NaN/+Infinity/-Infinity are explicit strings; unevaluated values are null. Raw MotionStatistics have separate validity flags.";
 			result["timeSemantics"] = "steady-clock microseconds; Capture Read excludes Analyze; includes backend work, not isolated PrintWindow; sample time is backend return, not compositor freshness";
 			result["pointUnits"] = "reference/forward/refined/backward/flow/bounds/cells: processing pixels; divide by actual scaleX/scaleY once";
 			result["worldUnits"] = "anchors, candidate/result delta and total: original ROI/content pixels; never multiply DPI";
 			result["supportSemantics"] = "candidate support bounding boxes are evidence, not automatic ROI; main consensus is not whole-frame acceptance";
-			result["gridSemantics"] = "reference voting grid; retained/added counts use current candidate cells";
+			result["gridSemantics"] = "UI Blocks shows evaluated local patches, their independent support and selected peaks; legacy cells are raw observations, not whole-frame acceptance gates";
 			result["checkSemantics"] = "condition is original expression truth; only firstFailure is actual rejection; unexecuted short-circuits are not failures";
-			result["jointGates"]["NonTranslation"] = "AffineVariationHigh AND AffineResidualLow AND AffineSupportHigh";
-			result["jointGates"]["Coverage"] = "CoverageCells AND CoverageInterior AND CoverageColumns AND CoverageRows AND CoverageX AND CoverageY";
-			result["jointGates"]["ConsistencyReject"] = "InliersLow OR SpatialRatioLow OR SurvivalRatioLow";
-			result["jointGates"]["ZeroModeAmbiguity"] = "evaluated candidate zero-length AND separation AND original-cell ratio AND interior support predicates";
 			auto& meta = result["frame"]["metadata"]; meta["identity"] = IdentityJson(metadata.identity);
-			meta["operation"] = metadata.operation == Model::Operation::Initialize ? "Initialize" : "Process";
+			meta["operation"] = Model::OperationName(metadata.operation);
 			meta["geometry"] = GeometryJson(metadata.geometry); meta["quality"] = QualityJson(metadata.quality); meta["statistics"] = CaptureStatisticsJson(metadata.statistics);
 			meta["roiInCapture"] = RectJson(metadata.roi); meta["captureWidth"] = metadata.captureWidth; meta["captureHeight"] = metadata.captureHeight;
 			meta["captureStrideBytes"] = Numeric(metadata.captureStrideBytes); meta["sourcePixelsPerPixelX"] = Numeric(metadata.sourcePixelsPerPixelX);
@@ -435,7 +492,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 			view["previewClientRect"] = RectJson({data.previewRect.left,data.previewRect.top,data.previewRect.right,data.previewRect.bottom});
 			view["exportMapping"] = "complete ROI at 1:1 original pixels; marker switches/arrow scale retained; interactive view zoom/pan are recorded, not cropped into PNG";
 			result["legend"]["green"] = "main consensus inlier, not frame accepted"; result["legend"]["gray"] = "near-stationary FB-valid";
-			result["legend"]["orange"] = "production-evaluated competitor"; result["legend"]["red"] = "failed/excluded"; result["legend"]["cyan"] = "new point; committed flag separate";
+			result["legend"]["purple"] = "provisional, not yet certified target point"; result["legend"]["orange"] = "production-evaluated competitor"; result["legend"]["red"] = "failed/excluded"; result["legend"]["cyan"] = "new point; committed flag separate";
 			return result;
 		}
 
@@ -534,21 +591,29 @@ namespace Inkeys::UI::ScrollFollowDebug
 			const auto& debug = frame.tracker;
 			// 验证/几何早退没有处理尺寸时只保留真实图像，不能用旧尺寸或默认二倍补出标记。
 			if (debug.processingWidth <= 0 || debug.processingHeight <= 0 || !std::isfinite(debug.scaleX) || !std::isfinite(debug.scaleY) || debug.scaleX <= 0 || debug.scaleY <= 0) return;
-			if (view.grid)
+			if (view.grid) for (std::size_t index=0;index<(std::min)(debug.patchCount,debug.patches.size());++index)
 			{
-				const int width = debug.referenceBeforeValid ? debug.referenceProcessingWidth : debug.processingWidth;
-				const int height = debug.referenceBeforeValid ? debug.referenceProcessingHeight : debug.processingHeight;
-				for (int column = 0; column <= 8; ++column)
-					DrawLine(dc,mapping.Processing({width*column/8.0,0},debug),mapping.Processing({width*column/8.0,static_cast<double>(height)},debug),RGB(83,110,139),1,PS_DOT);
-				for (int row = 0; row <= 6; ++row)
-					DrawLine(dc,mapping.Processing({0,height*row/6.0},debug),mapping.Processing({static_cast<double>(width),height*row/6.0},debug),RGB(83,110,139),1,PS_DOT);
-				for (int row = 0; row < 6; ++row) for (int column = 0; column < 8; ++column)
-				{
-					const auto& cell = debug.cells[static_cast<std::size_t>(row)*8+column]; const POINT point = mapping.Processing({width*column/8.0,height*row/6.0},debug);
-					const auto valid=ValidCells(debug);
-					Label(dc,{point.x+3,point.y+3,point.x+130,point.y+18},L"R"+(valid.reference?Text(cell.reference):L"-")+L" F"+(valid.forward?Text(cell.forward):L"-")+L" FB"+(valid.backward?Text(cell.fbValid):L"-"),RGB(171,194,213));
-					Label(dc,{point.x+3,point.y+18,point.x+130,point.y+33},L"I"+(valid.consensus?Text(cell.inliers):L"-")+L" C"+(valid.ambiguity?Text(cell.competitor):L"-"),RGB(171,194,213));
-				}
+				const auto& patch=debug.patches[index]; CV::TrackerDebugCandidate block;
+				block.valid=patch.referenceBounds.valid; block.referenceBounds=patch.referenceBounds; block.currentBounds=patch.currentBounds;
+				// 选中项可能不是 peaks[0]；用实际参考/当前块中心差，不能把最高峰冒充最终选择。
+				if (patch.selected && patch.referenceBounds.valid && patch.currentBounds.valid)
+					block.flow={(patch.currentBounds.minX+patch.currentBounds.maxX-patch.referenceBounds.minX-patch.referenceBounds.maxX)/2,
+						(patch.currentBounds.minY+patch.currentBounds.maxY-patch.referenceBounds.minY-patch.referenceBounds.maxY)/2};
+				ViewOptions blockView=view; blockView.bounds=true; blockView.flow=view.flow && patch.selected;
+				const auto color=patch.selected?(patch.independent?InlierColor:AddedColor):StationaryColor;
+				const auto label=L"#"+Text(index)+L" "+(patch.selected?NumberText(patch.selectedScore):L"unselected")+L" u="+NumberText(patch.uniqueness);
+				CandidateMarks(dc,block,debug,mapping,blockView,color,label.c_str());
+			}
+			if (view.bounds && debug.targetSupport.valid)
+			{
+				CV::TrackerDebugCandidate target; target.valid=true; target.currentBounds=debug.targetSupport;
+				const auto label=L"Target "+Text(debug.targetId)+L" "+Wide(CV::MotionTargetPhaseName(debug.targetPhaseAfter));
+				CandidateMarks(dc,target,debug,mapping,view,AddedColor,label.c_str());
+			}
+			for (std::size_t index=0;index<(std::min)(debug.localCandidateCount,debug.localCandidates.size());++index)
+			{
+				const auto label=L"Local candidate "+Text(index);
+				CandidateMarks(dc,debug.localCandidates[index],debug,mapping,view,CompetitorColor,label.c_str());
 			}
 			for (std::size_t index = 0; index < (std::min)(debug.pointCount, debug.points.size()); ++index)
 			{
@@ -558,7 +623,8 @@ namespace Inkeys::UI::ScrollFollowDebug
 				if (point.refinedComputed && Finite(point.refined)) { position=point.refined; shape=2; }
 				if (point.fbValid) { shape=3; color=point.nearStationary?StationaryColor:point.inlier?InlierColor:ExcludedColor; }
 				else if (point.backwardComputed) color=ExcludedColor;
-				if (point.competitor) color=CompetitorColor;
+				if (point.provisional && !point.certified) color=ProvisionalColor;
+				if (point.competitor) color=CompetitorColor; // 发现阶段的独立反证仍可能是未认证点。
 				if (view.flow && point.forwardComputed && point.forwardStatus && Finite(position))
 					DrawArrow(dc,mapping.Processing(point.reference,debug),mapping.Processing({point.reference.x+(position.x-point.reference.x)*view.arrowScale,point.reference.y+(position.y-point.reference.y)*view.arrowScale},debug),color);
 				if (view.points) PointShape(dc,mapping.Processing(position,debug),color,shape);
@@ -567,33 +633,92 @@ namespace Inkeys::UI::ScrollFollowDebug
 			{
 				const auto& point = debug.addedPoints[index]; if (Finite(point.point)) PointShape(dc,mapping.Processing(point.point,debug),AddedColor,point.committed?4:2);
 			}
-			CandidateMarks(dc,debug.mainMotion,debug,mapping,view,InlierColor,L"Main Motion Support Bounds");
+			CandidateMarks(dc,debug.mainMotion,debug,mapping,view,InlierColor,L"Target Motion Support");
 			CandidateMarks(dc,debug.strongestCompetitor,debug,mapping,view,CompetitorColor,L"Strongest evaluated competitor");
 			if (debug.rejectingCompetitor.valid && (!debug.strongestCompetitor.valid || debug.rejectingCompetitor.flow.x!=debug.strongestCompetitor.flow.x || debug.rejectingCompetitor.flow.y!=debug.strongestCompetitor.flow.y))
 				CandidateMarks(dc,debug.rejectingCompetitor,debug,mapping,view,RGB(255,118,63),L"Actual rejecting competitor");
+		}
+		Json::Value RecordingJson(const Model::RecordingData& recording)
+		{
+			Json::Value root; root["schema"]="Inkeys.ScrollFollowRecording.v1"; const auto& info=recording.info;
+			root["state"]=Model::RecordingStateName(info.state); root["stopReason"]=Model::RecordingStopName(info.stop);
+			root["completePrefix"]=info.completePrefix; root["businessSession"]=Numeric(info.businessSession); root["frameCount"]=Numeric(info.frames);
+			root["pixelBytes"]=Numeric(info.pixelBytes); root["durationSeconds"]=Numeric(info.durationSeconds);
+			root["limits"]["frames"]=Numeric(Model::RecordingInfo::MaximumFrames); root["limits"]["pixelBytes"]=Numeric(Model::RecordingInfo::MaximumBytes); root["limits"]["seconds"]=Model::RecordingInfo::MaximumSeconds;
+			root["replaySemantics"]="Contiguous Initialize-rooted prefix; AwaitTracking is recorded input but must not call Process. A bounded prefix is not the entire session. Failed recordings are diagnostic only.";
+			root["imageSemantics"]="Full-resolution tightly packed Gray8 in lossless P5 PGM; BGRA uses production OpenCV conversion before any resize.";
+			root["timeSemantics"]="timestampSeconds is the original tracker input timestamp; sampledAtUs is steady-clock capture completion, not compositor freshness.";
+			for (std::size_t index=0;index<recording.inputs.size();++index)
+			{
+				const auto& saved=recording.inputs[index]; const auto& metadata=saved.metadata; Json::Value frame;
+				frame["file"]="input-"+std::to_string(index+1)+".pgm"; frame["seq"]=Numeric(metadata.identity.sequence); frame["operation"]=Model::OperationName(metadata.operation);
+				frame["timestampSeconds"]=Numeric(saved.timestampSeconds); frame["width"]=saved.width; frame["height"]=saved.height; frame["strideBytes"]=saved.width;
+				frame["format"]="Gray8"; frame["originalFormat"]=saved.originalFormat==CV::MotionPixelFormat::Bgra32?"BGRA32":"Gray8";
+				frame["originalStrideBytes"]=Numeric(saved.originalStrideBytes); frame["originalSizeBytes"]=Numeric(saved.originalSizeBytes);
+				frame["captureValid"]=saved.captureValid; frame["inputLowInformation"]=saved.inputLowInformation; frame["copyMs"]=Numeric(saved.copyMs);
+				frame["motion"]=saved.hasMotion?MotionJson(saved.motion):Json::Value(); frame["identity"]=IdentityJson(metadata.identity);
+				frame["geometry"]=GeometryJson(metadata.geometry); frame["quality"]=QualityJson(metadata.quality); frame["statistics"]=CaptureStatisticsJson(metadata.statistics);
+				frame["roiInCapture"]=RectJson(metadata.roi); frame["captureWidth"]=metadata.captureWidth; frame["captureHeight"]=metadata.captureHeight;
+				frame["captureStrideBytes"]=Numeric(metadata.captureStrideBytes); frame["sourcePixelsPerPixelX"]=Numeric(metadata.sourcePixelsPerPixelX); frame["sourcePixelsPerPixelY"]=Numeric(metadata.sourcePixelsPerPixelY);
+				frame["sampledAtUs"]=TimeJson(metadata.sampledAt); frame["sampleIntervalUs"]=Numeric(metadata.sampleInterval.count()); root["frames"].append(std::move(frame));
+			}
+			return root;
+		}
+		bool WriteRecordingArtifacts(const Model::RecordingData& recording,const std::filesystem::path& directory,const std::atomic_bool* cancelled,std::wstring& status)
+		{
+			const auto isCancelled=[&] { return cancelled && cancelled->load(std::memory_order_acquire); };
+			for (std::size_t index=0;index<recording.inputs.size();++index)
+			{
+				if (isCancelled()) { status=L"Export cancelled (partial directory retained)"; return false; }
+				const auto& frame=recording.inputs[index];
+				if (frame.width<=0 || frame.height<=0 || frame.gray.size()!=static_cast<std::size_t>(frame.width)*frame.height || frame.gray.size()>=MAXDWORD)
+				{ status=L"Export failed: recording image layout"; return false; }
+				const auto name=directory/(L"input-"+Text(index+1)+L".pgm");
+				const HANDLE image=CreateFileW(name.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+				if (image==INVALID_HANDLE_VALUE) { status=L"Export failed: create recording PGM"; return false; }
+				const auto header="P5\n"+std::to_string(frame.width)+" "+std::to_string(frame.height)+"\n255\n"; DWORD written=0;
+				const bool okay=WriteFile(image,header.data(),static_cast<DWORD>(header.size()),&written,nullptr) && written==header.size()
+					&& WriteFile(image,frame.gray.data(),static_cast<DWORD>(frame.gray.size()),&written,nullptr) && written==frame.gray.size(); CloseHandle(image);
+				if (!okay) { status=L"Export failed: recording PGM (partial directory retained)"; return false; }
+			}
+			if (isCancelled()) { status=L"Export cancelled (partial directory retained)"; return false; }
+			// 所有无损输入落盘后才发布 manifest；取消/失败不会留下看似完整的可回放记录。
+			Json::StreamWriterBuilder builder; builder["indentation"]="  "; const std::string json=Json::writeString(builder,RecordingJson(recording));
+			const HANDLE file=CreateFileW((directory/L"recording.json").c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+			if (file==INVALID_HANDLE_VALUE) { status=L"Export failed: create recording.json error "+Text(GetLastError()); return false; }
+			DWORD written=0; const bool okay=json.size()<MAXDWORD && WriteFile(file,json.data(),static_cast<DWORD>(json.size()),&written,nullptr) && written==json.size(); CloseHandle(file);
+			if (!okay) { status=L"Export failed: write recording.json"; return false; } return true;
+		}
+		const Model::FrameIdentity& ExportIdentity(const ExportData& data)
+		{
+			return data.frame?data.frame->metadata.identity:data.recording->inputs.front().metadata.identity;
 		}
 		bool WriteArtifacts(const ExportData& data, const std::filesystem::path& directory, const std::atomic_bool* cancelled, std::wstring& status)
 		{
 			const auto isCancelled = [&] { return cancelled && cancelled->load(std::memory_order_acquire); };
 			if (isCancelled()) { status=L"Export cancelled"; return false; }
-			if (!data.frame || !PixelsValid(*data.frame)) { status=L"Export failed: invalid owned input layout"; return false; }
-			const auto& frame = *data.frame; Graphics::DibSurface raw, preview;
-			if (!raw.resize(frame.width,frame.height)) { status=L"Export failed: raw DIB allocation"; return false; }
-			for (int row=0;row<frame.height;++row) std::memcpy(raw.pixels().data()+static_cast<std::size_t>(row)*frame.width,frame.bgra.data()+static_cast<std::size_t>(row)*frame.strideBytes,static_cast<std::size_t>(frame.width)*4);
-			preview=raw; DrawAnnotations(preview.dc(),frame,{1,0,0},data.view); GdiFlush();
-			// GDI 标记写 RGB 时不会维护 DIB alpha；标记 PNG 必须显式成为不透明预览。
-			for (auto& pixel:preview.pixels()) pixel|=0xff000000u;
-			if (isCancelled()) { status=L"Export cancelled"; return false; }
-			if (!raw.savePng((directory/L"raw.png").native())) { status=L"Export failed: raw.png"; return false; }
-			if (isCancelled()) { status=L"Export cancelled (partial directory retained)"; return false; }
-			if (!preview.savePng((directory/L"preview.png").native())) { status=L"Export failed: preview.png (partial directory retained)"; return false; }
-			if (isCancelled()) { status=L"Export cancelled (partial directory retained)"; return false; }
-			Json::StreamWriterBuilder builder; builder["indentation"]="  "; const std::string json=Json::writeString(builder,ExportJson(data));
-			const HANDLE file=CreateFileW((directory/L"snapshot.json").c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
-			if (file==INVALID_HANDLE_VALUE) { status=L"Export failed: create snapshot.json error "+Text(GetLastError()); return false; }
-			DWORD written=0; const bool writtenAll=json.size()<MAXDWORD && WriteFile(file,json.data(),static_cast<DWORD>(json.size()),&written,nullptr) && written==json.size();
-			const DWORD error=writtenAll?0:GetLastError(); CloseHandle(file);
-			if (!writtenAll) { status=L"Export failed: write snapshot.json error "+Text(error); return false; }
+			if ((!data.frame && (!data.recording || data.recording->inputs.empty())) || (data.frame && !PixelsValid(*data.frame))) { status=L"Export failed: invalid owned input layout"; return false; }
+			if (data.frame)
+			{
+				const auto& frame = *data.frame; Graphics::DibSurface raw, preview;
+				if (!raw.resize(frame.width,frame.height)) { status=L"Export failed: raw DIB allocation"; return false; }
+				for (int row=0;row<frame.height;++row) std::memcpy(raw.pixels().data()+static_cast<std::size_t>(row)*frame.width,frame.bgra.data()+static_cast<std::size_t>(row)*frame.strideBytes,static_cast<std::size_t>(frame.width)*4);
+				preview=raw; DrawAnnotations(preview.dc(),frame,{1,0,0},data.view); GdiFlush();
+				// GDI 标记写 RGB 时不会维护 DIB alpha；标记 PNG 必须显式成为不透明预览。
+				for (auto& pixel:preview.pixels()) pixel|=0xff000000u;
+				if (isCancelled()) { status=L"Export cancelled"; return false; }
+				if (!raw.savePng((directory/L"raw.png").native())) { status=L"Export failed: raw.png"; return false; }
+				if (isCancelled()) { status=L"Export cancelled (partial directory retained)"; return false; }
+				if (!preview.savePng((directory/L"preview.png").native())) { status=L"Export failed: preview.png (partial directory retained)"; return false; }
+				if (isCancelled()) { status=L"Export cancelled (partial directory retained)"; return false; }
+				Json::StreamWriterBuilder builder; builder["indentation"]="  "; const std::string json=Json::writeString(builder,ExportJson(data));
+				const HANDLE file=CreateFileW((directory/L"snapshot.json").c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+				if (file==INVALID_HANDLE_VALUE) { status=L"Export failed: create snapshot.json error "+Text(GetLastError()); return false; }
+				DWORD written=0; const bool writtenAll=json.size()<MAXDWORD && WriteFile(file,json.data(),static_cast<DWORD>(json.size()),&written,nullptr) && written==json.size();
+				const DWORD error=writtenAll?0:GetLastError(); CloseHandle(file);
+				if (!writtenAll) { status=L"Export failed: write snapshot.json error "+Text(error); return false; }
+			}
+			if (data.recording && !WriteRecordingArtifacts(*data.recording,directory,cancelled,status)) return false;
 			status=L"Saved: "+directory.native(); return true;
 		}
 
@@ -720,7 +845,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 				std::scoped_lock lock(mutex_);
 				if (shuttingDown_ || (job_ && !job_->done.load(std::memory_order_acquire))) return false;
 				if (worker_.joinable()) worker_.join(); // done 只在 COM/GDI/数据清理完成后发布。
-				auto job=std::make_shared<ExportJob>(); job->generation=data->frame->metadata.identity.windowGeneration; job->data=std::move(data);
+				auto job=std::make_shared<ExportJob>(); job->generation=ExportIdentity(*data).windowGeneration; job->data=std::move(data);
 				worker_=std::thread([job]
 				{
 					try
@@ -730,7 +855,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 						std::filesystem::path parent; std::wstring status;
 						if (PickDirectory(*job,parent,status))
 						{
-							const auto& identity=job->data->frame->metadata.identity;
+							const auto& identity=ExportIdentity(*job->data);
 							const std::wstring stem=L"scroll-follow-"+Text(identity.businessSession)+L"-"+Text(identity.captureSession)+L"-"+Text(identity.sequence)+L"-"+Text(GetTickCount64());
 							std::filesystem::path directory; bool made=false;
 							for (int attempt=0;attempt<8 && !made && !job->cancelled.load(std::memory_order_acquire);++attempt)
@@ -770,7 +895,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 		{
 			HWND hwnd=nullptr; Model::ChannelPtr channel; Model::LiveSnapshot live{};
 			ViewOptions view{}; Graphics::DibSurface backBuffer; HFONT font=nullptr, mono=nullptr;
-			RECT client{}, preview{}, stats{}, history{}, buttons[10]{};
+			RECT client{}, preview{}, stats{}, history{}, buttons[11]{};
 			int contentTop=0, split=0, statsScroll=0, historyScroll=0, statsHeight=0;
 			bool panning=false, resizingSplit=false, scrollingStats=false;
 			POINT lastMouse{}; std::wstring notice;
@@ -786,8 +911,8 @@ namespace Inkeys::UI::ScrollFollowDebug
 		void Layout(UiState& state) noexcept
 		{
 			GetClientRect(state.hwnd,&state.client); const int width=state.client.right, height=state.client.bottom;
-			constexpr int widths[]{76,66,60,60,76,36,36,36,76,88}; int x=12,y=74;
-			for (int index=0;index<10;++index)
+			constexpr int widths[]{76,66,60,60,76,36,36,36,76,88,144}; int x=12,y=96;
+			for (int index=0;index<11;++index)
 			{
 				if (x+widths[index]>width-12) { x=12; y+=30; }
 				state.buttons[index]={x,y,x+widths[index],y+24}; x+=widths[index]+6;
@@ -811,6 +936,11 @@ namespace Inkeys::UI::ScrollFollowDebug
 		{
 			std::vector<std::wstring> lines; const auto* packet=state.channel->Displayed(); const auto& live=state.live.status;
 			const auto add=[&](std::wstring value) { lines.push_back(std::move(value)); };
+			const auto recording=state.channel->ReadRecording();
+			add(L"RECORDING "+Wide(Model::RecordingStateName(recording.state))+L" / "+Wide(Model::RecordingStopName(recording.stop)));
+			add(L"Inputs "+Text(recording.frames)+L"/64 | "+NumberText(recording.pixelBytes/(1024.0*1024))+L"/256 MiB | "+NumberText(recording.durationSeconds)+L"/10 s");
+			add(L"Explicit Arm Next Session; memory only until Export. Re-arm replaces the previous buffer.");
+			add(L"Continuous Initialize prefix="+Text(recording.completePrefix)+L"; not the entire session. Frozen preview does not pause recording.");
 			add(L"LIVE (separate from selected frame)");
 			add(L"State "+Wide(StateName(live.state))+L" | cause "+Wide(Model::PauseCauseName(live.pauseCause)));
 			add(L"Business/capture "+Text(live.businessSession)+L" / "+Text(live.captureSession));
@@ -818,22 +948,35 @@ namespace Inkeys::UI::ScrollFollowDebug
 			add(L"Owner latest/applied "+Text(live.ownerLatestSequence)+L" / "+Text(live.ownerAppliedSequence));
 			add(L"Applied viewport "+VectorText({live.viewportX,live.viewportY})+L" clamp="+Text(live.viewportClamped));
 			add(L"Live status age "+AgeText(live.observedAt));
+			const auto timing=[&](const wchar_t* name,const Model::OwnerTiming& value)
+			{
+				const auto json=OwnerTimingJson(value); const auto interval=[&](const char* key) { return json[key].isNull()?L"N/A":NumberText(json[key].asDouble())+L" ms"; };
+				add(std::wstring(name)+L" seq "+Text(value.sequence)+L" publish->apply "+interval("publishToApplyMs"));
+				add(L"  apply->successful Present "+interval("applyToSuccessfulPresentMs")+L" read->successful Present "+interval("readToSuccessfulPresentMs"));
+			};
+			timing(L"Owner applied",live.appliedTiming); timing(L"Owner presented",live.presentedTiming);
+			add(L"Sequence-matched CPU/Present-return intervals; physical-screen visibility/latency is not measured here.");
 			if (live.ownsCapture)
 			{
 				const bool qualityObserved=live.capture.qualityObserved, readObserved=live.capture.lastReadCompleted!=Capture::TimePoint{};
 				add(L"Capture ready/publishing/occupied/inFlight "+Text(live.capture.ready)+L"/"+Text(live.capture.publishing)+L"/"+Text(live.capture.occupied)+L"/"+Text(live.capture.inFlight));
 				add(L"Capture stop "+Wide(StopName(live.capture.reason))+L" quality "+(qualityObserved?Wide(QualityName(live.capture.quality.status)):L"N/A (no analyzed sample)"));
 				add(L"Capture failure stage "+Wide(Capture::FailureStageName(live.capture.failureStage)));
+				add(L"Original failure quality "+(live.capture.failureStage==Capture::FailureStage::Quality && live.capture.failureQualityObserved?Wide(QualityName(live.capture.failureQuality.status)):L"N/A"));
 				add(L"Native error "+(live.capture.nativeErrorValid?Text(live.capture.nativeError):L"N/A (no native error code)"));
 				add(L"Read completion / accepted age: "+AgeText(live.capture.lastReadCompleted)+L" / "+AgeText(live.capture.lastAcceptedSample));
 				add(L"Last failure age "+AgeText(live.capture.lastFailureAt));
 				add(L"Capture Read "+(readObserved?NumberText(live.capture.statistics.lastReadDuration.count()/1000.0)+L" ms":L"N/A")+L" (backend; excludes Analyze)");
 				add(L"Capture max Read "+(readObserved?NumberText(live.capture.statistics.maxReadDuration.count()/1000.0)+L" ms":L"N/A"));
 				add(L"Return interval "+(live.capture.lastSampleInterval.count()>0?NumberText(live.capture.lastSampleInterval.count()/1000.0)+L" ms / "+NumberText(1000000.0/live.capture.lastSampleInterval.count())+L" Hz":L"N/A"));
+				add(L"Update / Analyze / completed callback "+TimedStageText(live.capture.statistics.update)+L" / "+TimedStageText(live.capture.statistics.analyze)+L" / "+TimedStageText(live.capture.statistics.callback));
+				add(L"Callback measured sequence "+Text(live.capture.statistics.callbackSequence));
+				add(L"Backend Redraw / PrintWindow "+TimedStageText(live.capture.statistics.backend.redraw)+L" / "+TimedStageText(live.capture.statistics.backend.printWindow));
+				add(L"Backend GdiFlush / pixel work "+TimedStageText(live.capture.statistics.backend.gdiFlush)+L" / "+TimedStageText(live.capture.statistics.backend.pixelWork));
 				add(L"Read time does not prove compositor freshness.");
 				add(L"Capture session counts (not Tracker counts):");
 				add(L"attempt/accept/reject/API "+Text(live.capture.statistics.attempts)+L"/"+Text(live.capture.statistics.accepted)+L"/"+Text(live.capture.statistics.rejected)+L"/"+Text(live.capture.statistics.apiFailures));
-				add(L"skipped/late "+Text(live.capture.statistics.skipped)+L"/"+Text(live.capture.statistics.lateResults));
+				add(L"low-info delivered / skipped / late / warmup "+Text(live.capture.statistics.lowInformation)+L" / "+Text(live.capture.statistics.skipped)+L" / "+Text(live.capture.statistics.lateResults)+L" / "+Text(live.capture.statistics.warmupReads));
 			}
 			else add(L"Capture: N/A (no currently owned/matching capture session)");
 			add(L"Window-observed Tracker call/A/R "+Text(state.live.counters.trackerCalls)+L"/"+Text(state.live.counters.trackerAccepted)+L"/"+Text(state.live.counters.trackerRejected));
@@ -847,7 +990,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 				const auto& event=state.live.summaries[index]; if (!event.captureFailure.valid) continue; failureFound=true;
 				add(L"b/c "+Text(event.identity.businessSession)+L"/"+Text(event.identity.captureSession)+L" "+CaptureFailureText(event.captureFailure));
 				add(L"  event age "+AgeText(event.captureFailure.at));
-				if (event.captureFailure.stage==Capture::FailureStage::Quality)
+				if (event.captureFailure.stage==Capture::FailureStage::Quality && event.captureFailure.qualityObserved)
 				{
 					const auto& quality=event.captureFailure.quality;
 					add(L"  mean/variance/black/samples "+NumberText(quality.meanLuma)+L"/"+NumberText(quality.variance)+L"/"+NumberText(quality.blackFraction)+L"/"+Text(quality.samples));
@@ -859,7 +1002,16 @@ namespace Inkeys::UI::ScrollFollowDebug
 			add(L"SELECTED FRAME (fixed while Frozen)");
 			add(L"Window/business/capture/frame "+Text(metadata.identity.windowGeneration)+L"/"+Text(metadata.identity.businessSession)+L"/"+Text(metadata.identity.captureSession)+L"/"+Text(metadata.identity.sequence));
 			add(L"Display generation "+Text(metadata.identity.displayGeneration)+L" | sample age "+NumberText(AgeMs(metadata.sampledAt))+L" ms");
-			add(L"Operation "+std::wstring(metadata.operation==Model::Operation::Initialize?L"Initialize":L"Process"));
+			add(L"Operation "+Wide(Model::OperationName(metadata.operation)));
+			add(L"Target "+Text(frame.targetId)+L" phase "+Wide(CV::MotionTargetPhaseName(frame.targetPhaseBefore))+L" -> "+Wide(CV::MotionTargetPhaseName(frame.targetPhaseAfter)));
+			add(L"Certified / provisional points "+Text(result.statistics.targetPoints)+L" / "+Text(result.statistics.provisionalPoints)+L"; independent blocks "+(Reached(frame,TrackerDebugStage::TargetSelection) && frame.mainMotion.valid?Text(result.statistics.independentBlocks):L"N/A"));
+			add(L"Primary reference reason "+Wide(CV::MotionReasonName(result.statistics.primaryReason)));
+			const bool identityVerified=frame.exception==CV::MotionReason::None && Completed(frame,TrackerDebugStage::PatchVerification);
+			add(L"Expected / verified target blocks "+(identityVerified?Text(result.statistics.expectedBlocks)+L" / "+Text(result.statistics.verifiedBlocks):L"N/A"));
+			add(L"Identity tiles / contradictions / score "+(identityVerified?Text(result.statistics.identityTiles)+L" / "+Text(result.statistics.identityContradictions)+L" / "+NumberText(result.statistics.identityScore):L"N/A"));
+			add(L"Identity supplied uniqueness "+(identityVerified && Reached(frame,TrackerDebugStage::TargetSelection)?Text(result.statistics.identityDisambiguated):L"N/A"));
+			add(L"Reference age / recovery "+NumberText(result.statistics.referenceAgeSeconds)+L" / "+NumberText(result.statistics.recoverySeconds)+L" s; keyframe="+Text(result.statistics.usedKeyframe));
+			add(L"Ambiguity margin "+(Reached(frame,TrackerDebugStage::TargetSelection) && frame.mainMotion.valid?NumberText(result.statistics.ambiguityMargin):L"N/A")+L" low-point fallback="+Text(result.statistics.lowPointFallback));
 			add(L"Reference seq "+Text(frame.referenceSequenceBefore)+L" -> "+Text(frame.referenceSequenceAfter));
 			add(L"Reference generation "+Text(frame.referenceGenerationBefore)+L" -> "+Text(frame.referenceGenerationAfter));
 			add(L"Reference valid before/after "+Text(frame.referenceBeforeValid)+L"/"+Text(frame.referenceAfterValid));
@@ -885,7 +1037,8 @@ namespace Inkeys::UI::ScrollFollowDebug
 			add(L"Black fraction "+NumberText(metadata.quality.blackFraction)+L" samples "+Text(metadata.quality.samples));
 			add(L"Frame Capture Read "+NumberText(metadata.statistics.lastReadDuration.count()/1000.0)+L" ms (excludes Analyze)");
 			add(L"Frame Capture attempts/A/R/API "+Text(metadata.statistics.attempts)+L"/"+Text(metadata.statistics.accepted)+L"/"+Text(metadata.statistics.rejected)+L"/"+Text(metadata.statistics.apiFailures));
-			add(L"Frame Capture skipped/late/maxReadUs "+Text(metadata.statistics.skipped)+L"/"+Text(metadata.statistics.lateResults)+L"/"+Text(metadata.statistics.maxReadDuration.count()));
+			add(L"Frame Capture low-info / skipped / late / warmup "+Text(metadata.statistics.lowInformation)+L" / "+Text(metadata.statistics.skipped)+L" / "+Text(metadata.statistics.lateResults)+L" / "+Text(metadata.statistics.warmupReads));
+			add(L"Frame Analyze "+TimedStageText(metadata.statistics.analyze)+L"; callback "+TimedStageText(metadata.statistics.callback)+L" belongs to completed seq "+Text(metadata.statistics.callbackSequence)+L" (previous callback)");
 			add(L"Frame return interval "+(metadata.sampleInterval.count()>0?NumberText(metadata.sampleInterval.count()/1000.0)+L" ms":L"N/A"));
 			add(L"ROI copy "+NumberText(packet->copyMs)+L" ms | total Tracker "+NumberText(packet->totalTrackerMs)+L" ms");
 			add(L"Total Tracker is measured wall time, not component sum."); add(L"");
@@ -898,9 +1051,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 			}
 			add(L""); add(L"CHECKS: original expression truth, not PASS/FAIL");
 			add(L"Only firstFailure is the actual rejection gate.");
-			add(L"NonTranslation = variation AND residual AND support");
-			add(L"Coverage = cells AND interior AND columns AND rows AND X AND Y");
-			add(L"Consistency reject = inliers OR spatial OR survival");
+			add(L"Only evaluated target/patch/point checks apply; legacy global coverage fields may be N/A.");
 			for (std::size_t index=0;index<frame.checks.size();++index)
 			{
 				const auto& check=frame.checks[index]; const auto id=static_cast<TrackerDebugCheckId>(index);
@@ -910,7 +1061,8 @@ namespace Inkeys::UI::ScrollFollowDebug
 			add(L"Limits (processing px): border="+NumberText(frame.pointBorder)+L" consensus="+NumberText(frame.consensusRadius));
 			add(L"Refine/FB/stationary "+NumberText(frame.refinementDistanceLimit)+L"/"+NumberText(frame.fbErrorLimit)+L"/"+NumberText(frame.nearStationaryLimit));
 			add(L"Zero-mode ratio threshold "+NumberText(frame.zeroModeRatioThreshold));
-			add(L"Candidate scan "+Text(frame.consensusCandidatesEvaluated)+L" / competitors checked "+Text(frame.competitorsEvaluated));
+			add(L"Pixel candidates in Process "+Text(frame.consensusCandidatesEvaluated)+L" / 3 | candidates retained in displayed reference "+Text(frame.localCandidateCount));
+			add(L"Competitors checked "+Text(frame.competitorsEvaluated));
 			add(L"Ambiguity complete="+Text(frame.ambiguityComplete)+L" (false = partial scan)");
 			const auto candidate=[&](const wchar_t* name,const CV::TrackerDebugCandidate& value,bool competitor=true)
 			{
@@ -927,16 +1079,15 @@ namespace Inkeys::UI::ScrollFollowDebug
 			candidate(L"MAIN CONSENSUS (not frame acceptance)",frame.mainMotion,false); candidate(L"STRONGEST ACTUALLY EVALUATED COMPETITOR",frame.strongestCompetitor);
 			candidate(L"ELIGIBLE RUNNER-UP",frame.eligibleRunnerUp); candidate(L"ACTUAL REJECTING COMPETITOR",frame.rejectingCompetitor);
 			add(L"Support boxes are evidence, not automatic ROI; main support is not whole-frame acceptance.");
-			add(L"POINT LEGEND: green main consensus; gray near-static FB-valid; orange evaluated competitor; red failed/excluded; cyan newly added; pale yellow Forward before FB.");
-			add(L"Color priority: evaluated competitor, then near-static, then main inlier; raw point flags remain authoritative.");
-			add(L"Shapes: x failed; square Forward; triangle refine/backward intermediate; circle FB-valid; plus committed refill. Uncommitted refill is triangle.");
-			add(L""); add(L"8x6 GRID: reference voting; retained/added current cells");
-			const auto valid=ValidCells(frame); const auto observed=[](auto value,bool computed) { return computed?Text(value):L"N/A"; };
-			for (std::size_t index=0;index<frame.cells.size();++index)
+			add(L"POINT LEGEND: purple provisional (not certified); green target inlier; gray near-static FB-valid; orange evaluated competitor; red excluded; cyan added.");
+			add(L"Shapes: x failed; square Forward; triangle intermediate; circle FB-valid; plus committed refill.");
+			add(L"LOCAL PATCHES (processing pixels; no whole-frame coverage requirement)");
+			for (std::size_t index=0;index<(std::min)(frame.patchCount,frame.patches.size());++index)
 			{
-				const auto& cell=frame.cells[index]; add(L"["+Text(index%8)+L","+Text(index/8)+L"] ref/F/FB/I/C/static="+observed(cell.reference,valid.reference)+L"/"+observed(cell.forward,valid.forward)+L"/"+observed(cell.fbValid,valid.backward)+L"/"+observed(cell.inliers,valid.consensus)+L"/"+observed(cell.competitor,valid.ambiguity)+L"/"+observed(cell.nearStationary,valid.backward));
-				add(L"  fit/inlier/original W "+observed(cell.fitWeight,valid.weights)+L"/"+observed(cell.inlierWeight,valid.consensus)+L"/"+observed(cell.originalCellWeight,valid.weights)+L" retained/added "+observed(cell.retained,valid.retention)+L"/"+observed(cell.added,valid.refill));
-				if (cell.affineSampleValid) add(L"  affine sample "+VectorText(cell.affinePosition)+L" flow "+VectorText(cell.affineFlow));
+				const auto& patch=frame.patches[index]; add(L"#"+Text(index)+L" target/selected/independent "+Text(patch.targetMember)+L"/"+Text(patch.selected)+L"/"+Text(patch.independent));
+				add(L"  info/change/unique "+NumberText(patch.information)+L" / "+NumberText(patch.change)+L" / "+NumberText(patch.uniqueness));
+				for (std::size_t peak=0;peak<(std::min)(patch.peakCount,patch.peaks.size());++peak)
+					add(L"  peak "+Text(peak)+L" "+(patch.peaks[peak].valid?VectorText(patch.peaks[peak].flow)+L" score="+NumberText(patch.peaks[peak].score):L"N/A"));
 			}
 			add(L"Points "+Text(frame.pointCount)+L" added "+Text(frame.addedPointCount)+L" truncated="+Text(frame.truncated));
 			add(L"Commit completed="+Text(Completed(frame,TrackerDebugStage::Commit))+L"; new points/retention before it are proposals.");
@@ -961,8 +1112,9 @@ namespace Inkeys::UI::ScrollFollowDebug
 			probe.grid=state.view.grid; probe.bounds=state.view.bounds; probe.arrowScale=state.view.arrowScale; probe.zoom=state.view.zoom; probe.panX=state.view.panX; probe.panY=state.view.panY;
 			probe.generation=state.channel->Generation(); probe.refreshes=state.refreshes; probe.consumed=state.consumed; probe.paints=state.paints; probe.previewHz=state.previewHz;
 			probe.ownerAppliedSequence=state.live.status.ownerAppliedSequence; probe.viewportX=state.live.status.viewportX; probe.viewportY=state.live.status.viewportY;
-			probe.previewRect=state.preview; probe.freezeButton=state.buttons[0]; probe.exportButton=state.buttons[9]; probe.resetButton=state.buttons[8];
-			for (int index=0;index<10;++index) probe.buttons[index]=state.buttons[index];
+			const auto recording=state.channel->ReadRecording(); probe.recordingState=static_cast<unsigned>(recording.state); probe.recordedFrames=recording.frames;
+			probe.armRecordingButton=state.buttons[10]; probe.previewRect=state.preview; probe.freezeButton=state.buttons[0]; probe.exportButton=state.buttons[9]; probe.resetButton=state.buttons[8];
+			for (int index=0;index<11;++index) probe.buttons[index]=state.buttons[index];
 			probe.paintSamplePoint={state.client.right-12,12};
 			if (const auto job=exports.Current()) probe.exportBusy=!job->done.load(std::memory_order_acquire);
 			if (const auto* frame=state.channel->Displayed())
@@ -977,9 +1129,9 @@ namespace Inkeys::UI::ScrollFollowDebug
 		void StartExport(UiState& state)
 		{
 			if (const auto active=exports.Current(); active && !active->done.load(std::memory_order_acquire)) { state.notice=L"An export is already active (including a closing window's task)."; return; }
-			auto data=std::make_unique<ExportData>(); data->frame=state.channel->CloneDisplayed();
-			if (!data->frame) { state.notice=L"No displayed frame to export, or snapshot allocation failed."; return; }
-			// 点击时完整深拷贝，目录选择期间仍可消费新帧；worker 不持 Channel/front/HWND。
+			auto data=std::make_unique<ExportData>(); data->frame=state.channel->CloneDisplayed(); data->recording=state.channel->TakeRecording();
+			if (!data->frame && !data->recording) { state.notice=L"No displayed frame or recorded input to export."; return; }
+			// 预览深拷贝、录制封存共享；目录选择期间仍消费新帧，worker 不持 Channel/front/HWND。
 			data->live=state.channel->ReadLive(); data->view=state.view; data->previewRect=state.preview;
 			state.notice=exports.Start(std::move(data))?L"Choosing export directory...":L"Export could not start.";
 		}
@@ -992,6 +1144,14 @@ namespace Inkeys::UI::ScrollFollowDebug
 			case 3: state.view.grid=!state.view.grid; break; case 4: state.view.bounds=!state.view.bounds; break;
 			case 5: state.view.arrowScale=1; break; case 6: state.view.arrowScale=2; break; case 7: state.view.arrowScale=4; break;
 			case 8: state.view.zoom=1; state.view.panX=state.view.panY=0; break; case 9: StartExport(state); break;
+			case 10:
+			{
+				if (const auto active=exports.Current(); active && !active->done.load(std::memory_order_acquire)) { state.notice=L"Wait for export to finish before replacing the recording buffer."; break; }
+				const auto recording=state.channel->ReadRecording();
+				if (recording.state==Model::RecordingState::Armed || recording.state==Model::RecordingState::Recording) { state.channel->FinishRecording(); state.notice=L"Recording sealed in memory; Export saves it explicitly."; }
+				else state.notice=state.channel->ArmRecording()?L"Armed: start the next Scroll Follow session. Replaces the previous recording; no disk writes.":L"Could not arm recording.";
+				break;
+			}
 			default: return;
 			}
 			InvalidateRect(state.hwnd,nullptr,FALSE);
@@ -1001,7 +1161,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 			Layout(state); const int width=state.client.right,height=state.client.bottom;
 			if (width<=0 || height<=0 || !state.backBuffer.resize(width,height)) { Fill(destination,state.client,Background); return; }
 			const HDC dc=state.backBuffer.dc(); const DcScope saved(dc); SelectObject(dc,state.font?reinterpret_cast<HGDIOBJ>(state.font):GetStockObject(DEFAULT_GUI_FONT));
-			Fill(dc,state.client,Background); Fill(dc,{0,0,width,66},Header);
+			Fill(dc,state.client,Background); Fill(dc,{0,0,width,88},Header);
 			const auto* frame=state.channel->Displayed(); const auto& live=state.live.status; const double age=frame?AgeMs(frame->metadata.sampledAt):0;
 			const bool stale=frame && (!std::isfinite(age) || age>1000 || frame->metadata.identity.businessSession!=live.businessSession || !live.ownsCapture || !live.capture.publishing);
 			std::wstring stateLabel=L"LIVE "+Wide(StateName(live.state))+L" b/c="+Text(live.businessSession)+L"/"+Text(live.captureSession);
@@ -1012,9 +1172,11 @@ namespace Inkeys::UI::ScrollFollowDebug
 			Label(dc,{12,5,width-28,24},stateLabel,live.state==Business::ScrollFollow::State::Paused?CompetitorColor:Foreground);
 			Label(dc,{12,25,width-28,44},frame?L"DISPLAY b/c/frame/ref="+Text(frame->metadata.identity.businessSession)+L"/"+Text(frame->metadata.identity.captureSession)+L"/"+Text(frame->metadata.identity.sequence)+L"/"+Text(frame->tracker.referenceSequenceBefore)+L"  age="+NumberText(age)+L" ms  "+Wide(CV::MotionReasonName(frame->tracker.result.reason)):L"DISPLAY: no actual Tracker frame (Capture-only/AwaitTracking do not synthesize results)");
 			Label(dc,{12,45,width-28,64},(live.ownsCapture?L"Capture A/R/API="+Text(live.capture.statistics.accepted)+L"/"+Text(live.capture.statistics.rejected)+L"/"+Text(live.capture.statistics.apiFailures):L"Capture: N/A (no owned session)")+L"  Tracker(window) A/R="+Text(state.live.counters.trackerAccepted)+L"/"+Text(state.live.counters.trackerRejected)+L"  Preview="+NumberText(state.previewHz)+L" Hz / "+Text(state.consumed),RGB(171,194,213));
-			const wchar_t* names[]{state.view.frozen?L"Resume":L"Freeze",L"Points",L"Flow",L"Grid",L"Bounds",L"1x",L"2x",L"4x",L"Reset view",L"Export..."};
-			const bool active[]{state.view.frozen,state.view.points,state.view.flow,state.view.grid,state.view.bounds,state.view.arrowScale==1,state.view.arrowScale==2,state.view.arrowScale==4,false,false};
-			for (int index=0;index<10;++index)
+			const auto recording=state.channel->ReadRecording(); const bool recordingActive=recording.state==Model::RecordingState::Armed || recording.state==Model::RecordingState::Recording;
+			Label(dc,{12,65,width-28,84},L"Record "+Wide(Model::RecordingStateName(recording.state))+L" "+Text(recording.frames)+L"/64 | "+NumberText(recording.durationSeconds)+L"/10 s | "+NumberText(recording.pixelBytes/(1024.0*1024))+L"/256 MiB | "+Wide(Model::RecordingStopName(recording.stop))+L" (memory until Export)",recordingActive?AddedColor:Foreground);
+			const wchar_t* names[]{state.view.frozen?L"Resume":L"Freeze",L"Points",L"Flow",L"Blocks",L"Bounds",L"1x",L"2x",L"4x",L"Reset view",L"Export...",recordingActive?L"Stop recording":L"Arm Next Session"};
+			const bool active[]{state.view.frozen,state.view.points,state.view.flow,state.view.grid,state.view.bounds,state.view.arrowScale==1,state.view.arrowScale==2,state.view.arrowScale==4,false,false,recordingActive};
+			for (int index=0;index<11;++index)
 			{
 				Fill(dc,state.buttons[index],active[index]?RGB(47,91,118):Header);
 				Label(dc,{state.buttons[index].left,state.buttons[index].top+4,state.buttons[index].right,state.buttons[index].bottom},names[index],Foreground,DT_CENTER|DT_SINGLELINE|DT_NOPREFIX);
@@ -1039,7 +1201,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 			Label(dc,{12+legendWidth*2,legendY,state.split-8,legendY+18},L"Orange: competitor",CompetitorColor);
 			Label(dc,{12,legendY+18,12+legendWidth,legendY+36},L"Red: failed/excluded",ExcludedColor);
 			Label(dc,{12+legendWidth,legendY+18,12+legendWidth*2,legendY+36},L"Cyan: new point",AddedColor);
-			Label(dc,{12+legendWidth*2,legendY+18,state.split-8,legendY+36},L"Shapes: see Details",Foreground);
+			Label(dc,{12+legendWidth*2,legendY+18,state.split-8,legendY+36},L"Purple: provisional",ProvisionalColor);
 			Fill(dc,{state.split-2,state.contentTop,state.split+3,state.history.top-24},RGB(67,80,99));
 			Label(dc,{state.stats.left,state.contentTop,state.stats.right,state.contentTop+20},L"Details (wheel / PageUp / PageDown / scrollbar)",RGB(171,194,213));
 			SelectObject(dc,state.mono?reinterpret_cast<HGDIOBJ>(state.mono):GetStockObject(SYSTEM_FIXED_FONT)); const auto details=DetailLines(state);
@@ -1123,7 +1285,7 @@ namespace Inkeys::UI::ScrollFollowDebug
 				case WM_LBUTTONDOWN:
 				{
 					const POINT point{GET_X_LPARAM(lParam),GET_Y_LPARAM(lParam)}; SetFocus(hwnd);
-					for (int index=0;index<10;++index) if (PtInRect(&state->buttons[index],point)) { Button(*state,index); return 0; }
+					for (int index=0;index<11;++index) if (PtInRect(&state->buttons[index],point)) { Button(*state,index); return 0; }
 					state->lastMouse=point; state->resizingSplit=std::abs(point.x-state->split)<=5 && point.y>=state->contentTop && point.y<state->history.top-24;
 					state->scrollingStats=PtInRect(&state->stats,point) && point.x>=state->stats.right-12;
 					state->panning=PtInRect(&state->preview,point);
@@ -1247,7 +1409,26 @@ namespace Inkeys::UI::ScrollFollowDebug
 			point.forwardComputed=point.forwardStatus=point.refinedComputed=point.fbValid=point.consensusEvaluated=point.inlier=true;
 			debug.addedPointCount=1; debug.addedPoints[0].point={100,75.5}; debug.addedPoints[0].committed=true;
 			debug.mainMotion.valid=true; debug.mainMotion.flow={10,0}; debug.mainMotion.referenceBounds={true,10,20,30,40}; debug.mainMotion.currentBounds={true,20,20,40,40};
+			debug.targetId=9; debug.targetPhaseBefore=CV::MotionTargetPhase::Discovering; debug.targetPhaseAfter=CV::MotionTargetPhase::Locked;
+			debug.targetSupport={true,150,105,190,135}; debug.patchCount=1; auto& patch=debug.patches[0];
+			patch.referenceBounds={true,150,105,170,125}; patch.currentBounds={true,160,105,180,125}; patch.peakCount=2;
+			patch.peaks[0]={true,{0,0},.99}; patch.peaks[1]={true,{10,0},.98}; patch.selected=patch.targetMember=patch.independent=true; patch.selectedScore=.98; patch.uniqueness=.12;
+			point.targetMember=point.certified=true; debug.result.statistics.targetId=9; debug.result.statistics.targetPhase=CV::MotionTargetPhase::Locked;
+			debug.result.statistics.provisionalPoints=3; debug.result.statistics.referenceAgeSeconds=.05;
+			debug.completedStages|=std::uint64_t{1}<<static_cast<unsigned>(TrackerDebugStage::PatchVerification);
+			debug.reachedStages=debug.completedStages|(std::uint64_t{1}<<static_cast<unsigned>(TrackerDebugStage::TargetSelection));
+			debug.result.statistics.expectedBlocks=7; debug.result.statistics.verifiedBlocks=6;
+			debug.result.statistics.identityTiles=12; debug.result.statistics.identityContradictions=2; debug.result.statistics.identityScore=.81;
 			ExportData data; data.frame=std::make_unique<Model::FramePacket>(*original); data.view.grid=false; data.view.arrowScale=4; data.view.zoom=2; data.view.panX=37; data.view.panY=-21;
+			auto recording=std::make_shared<Model::RecordingData>(); recording->info={Model::RecordingState::Complete,Model::RecordingStop::FrameLimit,11,2,12,.05,true};
+			Model::RecordedInput recorded; recorded.metadata=original->metadata; recorded.metadata.operation=Model::Operation::Initialize;
+			recorded.width=3; recorded.height=2; recorded.originalStrideBytes=16; recorded.originalSizeBytes=28; recorded.timestampSeconds=12.5;
+			recorded.gray={0,32,64,128,192,255}; recorded.captureValid=recorded.hasMotion=true; recorded.motion=debug.result;
+			recording->inputs.push_back(recorded); recorded.metadata.identity.sequence=18; recorded.metadata.operation=Model::Operation::AwaitTracking;
+			recorded.timestampSeconds=12.55; recorded.hasMotion=false; recorded.inputLowInformation=true; recording->inputs.push_back(recorded); data.recording=recording;
+			data.live.status.appliedTiming={17,Clock::time_point{}+std::chrono::milliseconds(100),Clock::time_point{}+std::chrono::milliseconds(105),Clock::time_point{}+std::chrono::milliseconds(108),{}};
+			data.live.status.presentedTiming={16,Clock::time_point{}+std::chrono::milliseconds(50),Clock::time_point{}+std::chrono::milliseconds(55),Clock::time_point{}+std::chrono::milliseconds(58),Clock::time_point{}+std::chrono::milliseconds(61)};
+			data.frame->metadata.statistics.analyze={std::chrono::microseconds(120),true}; data.frame->metadata.statistics.callback={std::chrono::microseconds(650),true}; data.frame->metadata.statistics.callbackSequence=16;
 			data.live.count=1; data.live.summaries[0].hasMotion=false; data.live.summaries[0].kind=Model::SummaryKind::CaptureFailure; data.live.status.pauseCause=Model::PauseCause::CaptureApi;
 			auto& failure=data.live.summaries[0].captureFailure; failure.valid=true; failure.stage=Capture::FailureStage::Read;
 			failure.reason=Capture::StopReason::BackendFailure; failure.at=Clock::now(); failure.nativeError=5; failure.nativeErrorValid=true;
@@ -1269,9 +1450,57 @@ namespace Inkeys::UI::ScrollFollowDebug
 			Json::Value json; Json::CharReaderBuilder reader; std::string errors; std::ifstream input(directory/L"snapshot.json",std::ios::binary);
 			check(Json::parseFromStream(reader,input,&json,&errors),"export JSON parses");
 			check(json["frame"]["metadata"]["identity"]["windowGeneration"].asUInt64()==7 && json["frame"]["metadata"]["identity"]["sequence"].asUInt64()==17,"selected identity preserved");
+			check(json["frame"]["tracker"]["targetId"].asUInt64()==9 && json["frame"]["tracker"]["targetPhaseAfter"].asString()=="Locked"
+				&& json["frame"]["tracker"]["patches"][0]["peaks"].size()==2 && json["frame"]["tracker"]["points"][0]["certified"].asBool(),"actual target phase patches and certification serialized");
+			check(json["frame"]["metadata"]["statistics"]["callbackSequence"].asUInt64()==16 && json["frame"]["metadata"]["statistics"]["analyze"]["durationUs"].asInt()==120
+				&& json["frame"]["metadata"]["statistics"]["backend"]["printWindow"]["durationUs"].isNull(),"capture timing validity and previous callback identity preserved");
+			check(json["liveAtExportClick"]["status"]["appliedTiming"]["applyToSuccessfulPresentMs"].isNull()
+				&& json["liveAtExportClick"]["status"]["presentedTiming"]["sequence"].asUInt64()==16
+				&& json["liveAtExportClick"]["status"]["presentedTiming"]["readToSuccessfulPresentMs"].asDouble()==11,"presentation intervals retain matching sequence and missing-event validity");
+			Json::Value recordJson; std::ifstream manifest(directory/L"recording.json",std::ios::binary);
+			check(Json::parseFromStream(reader,manifest,&recordJson,&errors) && recordJson["completePrefix"].asBool() && recordJson["frames"].size()==2,"recording manifest parses full prefix");
+			check(recordJson["frames"][1]["operation"].asString()=="AwaitTracking" && recordJson["frames"][1]["motion"].isNull()
+				&& recordJson["frames"][1]["inputLowInformation"].asBool() && recordJson["frames"][0]["timestampSeconds"].asDouble()==12.5
+				&& recordJson["frames"][0]["originalStrideBytes"].asUInt64()==16,"recording preserves operation timestamp quality and original layout");
+			std::ifstream pgm(directory/L"input-1.pgm",std::ios::binary); std::string magic; int pgmWidth=0,pgmHeight=0,maximum=0;
+			pgm>>magic>>pgmWidth>>pgmHeight>>maximum; (void)pgm.get(); std::vector<std::uint8_t> gray(6); pgm.read(reinterpret_cast<char*>(gray.data()),static_cast<std::streamsize>(gray.size()));
+			check(pgm && magic=="P5" && pgmWidth==3 && pgmHeight==2 && maximum==255 && gray==recording->inputs[0].gray,"exported PGM is lossless full-resolution Gray8");
 			check(json["frame"]["tracker"]["result"]["delta"]["x"].asDouble()==5.25 && json["displayOptions"]["arrowScale"].asInt()==4,"display magnification does not change production result");
 			check(json["frame"]["tracker"]["checks"][static_cast<Json::ArrayIndex>(TrackerDebugCheckId::JumpHigh)]["measured"].isNull(),"unevaluated check is null");
-			check(!json["frame"]["tracker"]["result"]["statisticsValidity"]["fbMedian"].asBool(),"FB summary validity requires actual completed checks");
+			check(!json["frame"]["tracker"]["result"]["statisticsValidity"]["fbMedian"].asBool(),"FB summary validity requires completed backward work");
+			{
+				auto observed=std::make_unique<CV::TrackerDebugSnapshot>(); observed->result.statistics.fbValid=7; observed->result.statistics.fbMedian=.2;
+				observed->result.statistics.survivalRatio=.75; observed->result.statistics.inlierCells=4; observed->result.statistics.coverageX=.3;
+				observed->completedStages=std::uint64_t{1}<<static_cast<unsigned>(TrackerDebugStage::Backward); observed->reachedStages=observed->completedStages;
+				const auto backward=MotionJson(observed->result,observed.get());
+				check(backward["statisticsValidity"]["fbValid"].asBool() && backward["statisticsValidity"]["fbMedian"].asBool()
+					&& backward["statisticsValidity"]["fbP95"].asBool() && backward["statistics"]["fbValid"].asInt()==7
+					&& !backward["statisticsValidity"]["survivalRatio"].asBool() && !backward["statisticsValidity"]["coverageX"].asBool(),
+					"completed backward values survive removed FB gate; later calculations stay unavailable");
+				observed->completedStages|=(std::uint64_t{1}<<static_cast<unsigned>(TrackerDebugStage::Consensus))|(std::uint64_t{1}<<static_cast<unsigned>(TrackerDebugStage::Coverage));
+				observed->reachedStages=observed->completedStages; const auto coverage=MotionJson(observed->result,observed.get());
+				check(!observed->checks[static_cast<std::size_t>(TrackerDebugCheckId::FbPointsLow)].evaluated
+					&& !observed->checks[static_cast<std::size_t>(TrackerDebugCheckId::CoverageCells)].evaluated
+					&& coverage["statisticsValidity"]["survivalRatio"].asBool() && coverage["statisticsValidity"]["inlierCells"].asBool()
+					&& coverage["statisticsValidity"]["interiorCells"].asBool() && coverage["statisticsValidity"]["coverageX"].asBool()
+					&& coverage["statisticsValidity"]["coverageY"].asBool() && !coverage["statisticsValidity"]["runnerUpRatio"].asBool(),
+					"actual consensus coverage is valid without legacy gates; unvisited competitors stay unavailable");
+				observed->reachedStages=std::uint64_t{1}<<static_cast<unsigned>(TrackerDebugStage::TargetSelection); observed->completedStages=0;
+				observed->competitorsEvaluated=1; observed->result.statistics.runnerUpRatio=.7;
+				const auto competitor=MotionJson(observed->result,observed.get());
+				check(competitor["statisticsValidity"]["runnerUpRatio"].asBool() && competitor["statistics"]["runnerUpRatio"].asDouble()==.7
+					&& !competitor["statisticsValidity"]["fbValid"].asBool(),"target selection competitor is observable before optical-flow ambiguity stage");
+			}
+			{
+				auto rejected=std::make_unique<CV::TrackerDebugSnapshot>(debug); rejected->mainMotion.valid=false; const auto rejectedJson=MotionJson(rejected->result,rejected.get());
+				check(rejectedJson["statisticsValidity"]["expectedBlocks"].asBool() && rejectedJson["statisticsValidity"]["verifiedBlocks"].asBool()
+					&& rejectedJson["statisticsValidity"]["identityTiles"].asBool() && rejectedJson["statisticsValidity"]["identityContradictions"].asBool()
+					&& rejectedJson["statisticsValidity"]["identityScore"].asBool() && rejectedJson["statistics"]["identityTiles"].asInt()==12
+					&& rejectedJson["statistics"]["identityContradictions"].asInt()==2 && rejectedJson["statistics"]["identityScore"].asDouble()==.81
+					&& rejectedJson["statisticsValidity"]["identityDisambiguated"].asBool() && rejectedJson["statistics"]["identityDisambiguated"].isBool()
+					&& !rejectedJson["statistics"]["identityDisambiguated"].asBool(),
+					"verified identity contradictions remain observable after candidate rejection");
+			}
 			check(json["liveAtExportClick"]["summaries"][0]["motion"].isNull(),"Capture-only summary does not fabricate rejection");
 			check(json["frame"]["tracker"]["mainMotion"]["originalCellRatio"].isNull() && json["frame"]["tracker"]["mainMotion"]["separation"].isNull(),"main support does not fabricate competitor-only values");
 			check(json["frame"]["tracker"]["cells"][0]["forward"].isNull() && json["frame"]["tracker"]["cells"][0]["retained"].isNull()
@@ -1285,7 +1514,9 @@ namespace Inkeys::UI::ScrollFollowDebug
 			check(CaptureSnapshotJson(noSample)["quality"].isNull(),"Read API rejection without Analyze has no fabricated InvalidBuffer quality");
 			noSample.qualityObserved=true; noSample.quality.status=Capture::QualityStatus::NearBlack;
 			check(CaptureSnapshotJson(noSample)["quality"]["status"].asString()=="NearBlack","actual analyzed quality stays observable");
-			Model::CaptureFailureInfo qualityFailure; qualityFailure.valid=true; qualityFailure.stage=Capture::FailureStage::Quality; qualityFailure.quality.status=Capture::QualityStatus::NearBlack;
+			Model::CaptureFailureInfo qualityFailure; qualityFailure.valid=true; qualityFailure.stage=Capture::FailureStage::Quality;
+			check(CaptureFailureJson(qualityFailure)["quality"].isNull() && !CaptureFailureJson(qualityFailure)["qualityValid"].asBool(),"quality failure without observed sample stays N/A");
+			qualityFailure.quality.status=Capture::QualityStatus::NearBlack; qualityFailure.qualityObserved=true;
 			const auto qualityJson=CaptureFailureJson(qualityFailure);
 			check(qualityJson["quality"]["status"].asString()=="NearBlack" && qualityJson["nativeError"].isNull(),"quality event keeps its actual observation without inventing native code");
 			data.frame->tracker.timestampSeconds=std::numeric_limits<double>::quiet_NaN(); data.frame->tracker.checks[0].evaluated=true;
@@ -1296,6 +1527,60 @@ namespace Inkeys::UI::ScrollFollowDebug
 			const auto cancelledDirectory=directory/L"cancelled"; check(CreateDirectoryW(cancelledDirectory.c_str(),nullptr)!=FALSE,"cancel test private directory");
 			std::atomic_bool cancelled=true; check(!WriteArtifacts(data,cancelledDirectory,&cancelled,status)
 				&& GetFileAttributesW((cancelledDirectory/L"raw.png").c_str())==INVALID_FILE_ATTRIBUTES,"cancel before writer creates no image");
+			// 用真实生产录制与writer生成离线审计输入；不申请预览lease，证明Await等所有输入均保留。
+			const auto roundtripDirectory=directory/L"roundtrip";
+			if (!CreateDirectoryW(roundtripDirectory.c_str(),nullptr)) throw std::runtime_error("fresh roundtrip directory");
+			struct RecordingScope
+			{
+				Model::ChannelPtr channel=Model::Activate();
+				~RecordingScope() { Model::Deactivate(channel); }
+			} roundtripScope;
+			if (!roundtripScope.channel) throw std::runtime_error("roundtrip channel activation");
+			check(roundtripScope.channel->ReadRecording().state==Model::RecordingState::Off,"roundtrip remains unrecorded before explicit arm");
+			if (!roundtripScope.channel->ArmRecording()) throw std::runtime_error("roundtrip explicit arm");
+			constexpr int worldWidth=570, worldHeight=430, fixtureWidth=401, fixtureHeight=303;
+			std::vector<std::uint32_t> world(worldWidth*worldHeight,0xffe5e9eeu), pixels(fixtureWidth*fixtureHeight);
+			for (int y=8;y<400;y+=17) for (int x=8;x<540;x+=19)
+			{
+				// 每个世界位置的形状/颜色固定，直接裁剪绝对位置，不依赖Tracker输出或递推warp。
+				std::uint32_t hash=static_cast<std::uint32_t>(x)*0x9e3779b9u ^ static_cast<std::uint32_t>(y)*0x85ebca6bu;
+				hash^=hash>>16; hash*=0x7feb352du; hash^=hash>>15;
+				const int w=5+static_cast<int>((hash>>24)%9), h=5+static_cast<int>((hash>>20)%8), thickness=1+static_cast<int>((hash>>18)%3);
+				const std::uint32_t color=0xff000000u | (10+(hash&255)%160) | ((10+((hash>>8)&255)%160)<<8) | ((10+((hash>>16)&255)%160)<<16);
+				for (int dy=0;dy<h;++dy) for (int dx=0;dx<w;++dx)
+					if (dx<thickness || dy<thickness || dx>=w-thickness || dy>=h-thickness) world[static_cast<std::size_t>(y+dy)*worldWidth+x+dx]=color;
+			}
+			CV::VisualMotionTracker tracker; unsigned acceptedMotion=0;
+			for (int index=0;index<5;++index)
+			{
+				const int offset=index<2?0:index==2?16:24;
+				if (index==4) std::fill(pixels.begin(),pixels.end(),0xffffffffu);
+				else for (int y=0;y<fixtureHeight;++y)
+					std::copy_n(world.data()+static_cast<std::size_t>(30+offset+y)*worldWidth+30,fixtureWidth,pixels.data()+static_cast<std::size_t>(y)*fixtureWidth);
+				Model::FrameMetadata metadata; metadata.identity={roundtripScope.channel->Generation(),11,13,static_cast<std::uint64_t>(index+1),19};
+				metadata.operation=index==0?Model::Operation::Initialize:index==1?Model::Operation::AwaitTracking:Model::Operation::Process;
+				metadata.geometry={{0,0,fixtureWidth,fixtureHeight},{0,0,fixtureWidth,fixtureHeight},{0,0,fixtureWidth,fixtureHeight},19,fixtureWidth,fixtureHeight};
+				metadata.roi={0,0,fixtureWidth,fixtureHeight}; metadata.captureWidth=fixtureWidth; metadata.captureHeight=fixtureHeight; metadata.captureStrideBytes=fixtureWidth*4;
+				metadata.quality=Capture::Analyze(pixels,fixtureWidth,fixtureHeight); metadata.sampleInterval=std::chrono::microseconds(index?50000:0);
+				metadata.sampledAt=Clock::time_point{}+std::chrono::milliseconds(12500+index*50);
+				const CV::MotionFrame frame{{reinterpret_cast<const std::uint8_t*>(pixels.data()),pixels.size()*sizeof(std::uint32_t),fixtureWidth*4,
+					fixtureWidth,fixtureHeight,CV::MotionPixelFormat::Bgra32},12.5+index*.05,metadata.identity.sequence,true,metadata.quality.status==Capture::QualityStatus::LowInformation};
+				if (index==1) roundtripScope.channel->RecordInput(metadata,frame);
+				else
+				{
+					const auto result=index==0?tracker.Initialize(frame):tracker.Process(frame);
+					if (index==0) check(result.accepted,"roundtrip real tracker initialized");
+					if (index>1 && index<4 && result.accepted && std::hypot(result.total.x,result.total.y+offset)<=2 && std::hypot(result.delta.x,result.delta.y)>1) ++acceptedMotion;
+					roundtripScope.channel->RecordInput(metadata,frame,&result);
+				}
+			}
+			ExportData roundtrip; roundtrip.recording=roundtripScope.channel->TakeRecording();
+			check(acceptedMotion>0,"roundtrip includes a real accepted translation with independent absolute-position GT");
+			check(roundtrip.recording && roundtrip.recording->info.completePrefix && roundtrip.recording->inputs.size()==5
+				&& roundtrip.recording->inputs[1].metadata.operation==Model::Operation::AwaitTracking && !roundtrip.recording->inputs[1].hasMotion
+				&& roundtrip.recording->inputs[4].inputLowInformation,"roundtrip records complete Initialize/Await/motion/low-information prefix");
+			check(WriteArtifacts(roundtrip,roundtripDirectory,nullptr,status),"real Channel/Tracker prefix exported by shared writer");
+			std::fprintf(stdout,"Scroll follow roundtrip replay manifest: %ls accepted_motion=%u\n",(roundtripDirectory/L"recording.json").c_str(),acceptedMotion);
 			std::fprintf(stdout,"Scroll follow export writer test directory: %ls\n",directory.c_str());
 		}
 		catch (const std::exception& exception) { std::fprintf(stderr,"FAIL scroll follow export exception: %s\n",exception.what()); ++failures; }

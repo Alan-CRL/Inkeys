@@ -87,3 +87,9 @@ OS整数光标位置与真实RTS解码Down不是同一精度层；专用native�
 
 
 实屏原因码相同但门槛不同的定位应先复用现有`MotionStatistics`：verbose在原pw_us字段之后追加FB有效数、点/空间内点比例、存活率、格覆盖、次流、affine及参考序号/拒绝计数。保持旧日志前缀、唯一DiagnosticOutput队列和算法决策不变。点内点比例不能替代按格空间比例，coverage未填0也不能单独当确定门槛来源。外部固定标记/DOM位移正确与Capture质量/API成功，不是某个Mag帧逐像素无误的证明。
+
+## 2026-10-23 局部追踪集成边界
+
+visual-tracking 保留 Initialize/Process、原图像素 delta/total、绝对目标发布、Draw3 owner/GPU 缓存/UInk 保存协议。Capture LowInformation 保留标记交由 Tracker 判断，不直接作为 Capture 故障暂停。权威参考、内容锚点、支持范围和累计量只随可信结果一起提交；恢复期间 Draw3 保持最后可信绝对位置，不追补未经验证的滚轮量。短恢复不改变公开 MotionState 三态，超时 Paused 后不自动重定位。
+
+应用与成功 Present 的新增计时只观测实际 Pending 的同序号执行，不能改变原 Begin/End/Off/Freeze/drain ACK 或把结束握手 Presented 当作每帧实际呈现。历史协议/持久化和 invisible-HWND 测试仍需通过，且不替代 Edge/Word/PDF 的真实墨迹、Off 后书写、保存恢复、Freeze 和退出的可见验证。准确性通过但实际仍6–10Hz必须明确标记流畅度/端到端未通过，不由离线CV耗时推断达标。

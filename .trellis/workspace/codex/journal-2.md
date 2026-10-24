@@ -1154,3 +1154,42 @@ Shared Freeze Mag no-callback lifecycle and real empty product chain passed; ink
 ### Next Steps
 
 - 浏览器可见墨迹/普通tab/反向水平长程、Word/PDF、物理笔触控与旧系统等仍待测；新版真实十屏需补，不追溯旧模型实测。父子任务保持in_progress，不commit/push/finish/archive。
+
+
+## Session 126: Scroll Follow 局部视觉追踪实现与实屏验证
+<!-- trellis-session: v=2 fp=736ffc34d5f80716 -->
+
+**Date**: 2026-10-24
+**Task**: Scroll Follow 局部视觉追踪实现与实屏验证
+**Branch**: `feature/move`
+
+### Summary
+
+实现局部目标身份、可信接力/短恢复、采集调度与诊断录制；正确性及受控实屏功能通过，流畅度及正常应用端到端验收未通过。
+
+### Main Changes
+
+- 在父任务10-21-scroll-follow-v1下建立子任务10-23-scroll-follow-visual-tracking，冻结47b4e742基线，保留逐轮失败、设计和独立GT证据。
+- 多尺度局部匹配与最多3候选验证、纯视觉目标身份、成熟/待认证点接力、可信关键帧恢复、LowInformation入口及Update起点调度；首次读回预热修复排除窗口F0污染。
+- 增加目标/背景/恢复诊断、同序号阶段时序、显式有界原尺寸灰度录制和独立GT回放；未改写源墨迹或保存格式。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 最终InkeysRepo.sln Debug|ARM64完整构建exit0(25.2s)，一次最终完整--no-window exit0(1671.9s)，Tracker0失败、定向28/28。
+- [OK] 相同输入A/B:117/460至459/460正确，248至0错误提交；一次运动中歧义保持约44.887px全帧误差保留，Accepted最大0.690386px。
+- [OK] 短诊断、5输入精确灰度/BGRA回放、13帧EdgeGT、6项严格CLI、业务协议与UInk持久化均通过。
+- [OK] 实屏受控十屏往返、初始点退出后1007次接力、Off续写/保存恢复、20轮Capture与2轮Freeze、30秒静止漂移0.000022888px通过。
+- [OK] 性能未通过：Debug原尺寸锁定静态2.565860Hz；可见80ms未建立。已有MagHost WGC26帧仅1帧完整像素正确，不接入生产。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务保留in_progress；见任务research/delivery.md。后续需解决20Hz/可见80ms性能，完成Edge/Word/PDF正常窗口及硬件笔/多屏/旧系统验收。
+- 本次无commit、push、PR或归档；正常应用启动无法取得可操作窗口，根因未定，任务创建的测试进程已清理。

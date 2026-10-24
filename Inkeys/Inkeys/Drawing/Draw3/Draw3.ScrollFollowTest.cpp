@@ -68,6 +68,18 @@ namespace Inkeys::Drawing::Draw3
 		check(bridge.TryConsume(command) && command.type == Bridge::CommandType::FollowEnd && command.followSession == 9, "reliable end ordinal");
 		check(bridge.TryConsume(command) && command.type == Bridge::CommandType::Redo, "accepted later fifo");
 		check(bridge.TryConsume(command) && command.type == Bridge::CommandType::PrepareExitAutoSave && !bridge.TryConsume(command), "exit last once");
+		Follow::Channel timed; timed.Begin(20); timed.OwnerBegin(20, identity, 0, 0);
+		Follow::Target first{20, 1, identity, 0, -10}; first.readCompletedAt = std::chrono::steady_clock::now();
+		check(timed.Publish(first), "timed publish"); const auto pending = timed.Pending(false);
+		first.sequence = 2; check(timed.Publish(first), "newer target before apply");
+		timed.Applied(20, 1, 0, 10, false, &*pending);
+		check(timed.Read().appliedTiming.sequence == 1 && timed.Read().presentedTiming.sequence == 0, "apply not present");
+		const auto returnedAt = std::chrono::steady_clock::now();
+		timed.ObservePresent(19, returnedAt); check(timed.Read().presentedTiming.sequence == 0, "stale present session");
+		timed.ObservePresent(20, returnedAt); const auto timing = timed.Read().presentedTiming;
+		check(timing.sequence == 1 && timing.presentedAt == returnedAt && timing.publishedAt == pending->publishedAt && timing.readCompletedAt <= timing.publishedAt &&
+			timing.publishedAt <= timing.appliedAt && timing.appliedAt <= timing.presentedAt, "timing belongs to applied target not overwritten latest");
+		timed.ObservePresent(20, std::chrono::steady_clock::now()); check(timed.Read().presentedTiming.presentedAt == timing.presentedAt, "first successful present retained");
 		// Stop 与晚发布共用短门；无论谁先拿到，final 都是最后成功提交的目标。
 		for (unsigned race = 0; race < 64; ++race)
 		{

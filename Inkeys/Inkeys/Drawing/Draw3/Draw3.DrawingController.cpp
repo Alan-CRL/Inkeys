@@ -8802,7 +8802,7 @@ namespace Inkeys::Drawing::Draw3
 			renderer_.layerL1, renderer_.layerL0, dirty, mergeMode);
 	}
 
-	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
+	bool DrawingController::PresentFrame(RECT dirty, bool presentFull, std::chrono::steady_clock::time_point* returnedAt)
 	{
 		const double presentStartMs = GetQpcTimeMilliseconds();
 		const bool externalFrame = metricsState_ && !metricsState_->runFrameActive;
@@ -8814,6 +8814,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 		const bool succeeded = presentation_.Present(
 			dirty, presentFull, currentContentRevision_);
+		// 同序号追踪计时取真实返回点，不混入后续观察与ready回调。
+		if (returnedAt) *returnedAt = std::chrono::steady_clock::now();
 		LARGE_INTEGER returnQpc = {};
 		if (metricsState_) QueryPerformanceCounter(&returnQpc); // 真返回点，先于观察回调/ready/诊断。
 		lastPresentDurationMs_ = GetQpcTimeMilliseconds() - presentStartMs;
@@ -13741,7 +13743,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto applied = ApplyCanvasContentTranslationChecked(next,
 				{ static_cast<float>(next.x - targetX), static_cast<float>(next.y - targetY) });
 			if (!canvas->SetViewport({next.x, next.y, 1.0f})) { observer_.follow->Fail(); return; }
-			observer_.follow->Applied(pending->session, pending->sequence, next.x, next.y, applied.xClamped || applied.yClamped || requestedX != targetX || requestedY != targetY);
+			observer_.follow->Applied(pending->session, pending->sequence, next.x, next.y, applied.xClamped || applied.yClamped || requestedX != targetX || requestedY != targetY, &*pending);
 			if (applied.viewportDelta.x == 0 && applied.viewportDelta.y == 0) return;
 			if (metricsState_) metricsState_->InvalidateRaster();
 			markPresentationMutation();
@@ -16480,6 +16482,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			geometryCost.Finish();
 			bool presentSucceeded = false;
+			std::chrono::steady_clock::time_point followPresentReturnedAt{};
 			if (!IsEmptyRect(frameDirty) && !rasterSubmissionFailed)
 			{
 				const bool orderedPreview = frameTool == DrawingTool::Pen &&
@@ -16573,7 +16576,7 @@ namespace Inkeys::Drawing::Draw3
 						}
 						compositeCost.Finish();
 						presentSucceeded = PresentFrame(frameDirty,
-							forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
+							forceFullPresent, observer_.follow ? &followPresentReturnedAt : nullptr); // 一帧最多一次 backbuffer 合成和一次 Present。
 					}
 				}
 			}
@@ -16624,6 +16627,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!viewportRecoveryPending && !viewportRefreshPending)
 				{
 					publishWorkspaceReadyAfterPresent();
+					if (observer_.follow) observer_.follow->ObservePresent(followOwnerSession, followPresentReturnedAt);
 					if (followEndPending && forceFullPresent && observer_.follow) observer_.follow->Presented(followOwnerSession);
 				}
 				if (selectionMode &&

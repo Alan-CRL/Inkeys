@@ -22,18 +22,21 @@ namespace Inkeys::CV
 		double timestampSeconds = 0;
 		std::uint64_t sequence = 0;
 		bool captureValid = true;
+		bool inputLowInformation = false;
 	};
 	struct MotionVector
 	{
 		double x = 0, y = 0;
 	};
 	enum class MotionState : std::uint8_t { Uninitialized, Tracking, Paused };
+	enum class MotionTargetPhase : std::uint8_t { Discovering, Locked, Recovering };
 	enum class MotionReason : std::uint8_t
 	{
 		None, Initialized, NotInitialized, InvalidImage, InvalidTimestamp, GeometryChanged,
 		InvalidCapture, BlackFrame, InsufficientFeatures, ForwardBackward,
 		InconsistentTranslation, InsufficientCoverage, NonTranslation, AmbiguousMotion,
 		JumpTooLarge, Paused, OpenCvException, UnexpectedException,
+		AwaitingMotion, TargetAmbiguous, MatchAmbiguous, InsufficientOverlap, RecoveryExpired,
 	};
 	struct MotionStatistics
 	{
@@ -48,6 +51,16 @@ namespace Inkeys::CV
 		double fbMedian = 0, fbP95 = 0, residualMedian = 0, residualP95 = 0;
 		double affineVariation = 0, affineResidual = 0;
 		double preprocessMs = 0, opticalFlowMs = 0, fitMs = 0, refillMs = 0;
+		std::uint64_t targetId = 0;
+		MotionTargetPhase targetPhase = MotionTargetPhase::Discovering;
+		int targetPoints = 0, provisionalPoints = 0, templateCount = 0, matchedTemplates = 0, independentBlocks = 0, candidateCount = 0;
+		double coarseMatchMs = 0, verificationMs = 0, referenceAgeSeconds = 0, recoverySeconds = 0, ambiguityMargin = 0;
+		bool usedKeyframe = false, lowPointFallback = false;
+		MotionReason primaryReason = MotionReason::None;
+		int expectedBlocks = 0, verifiedBlocks = 0;
+		int identityTiles = 0, identityContradictions = 0;
+		double identityScore = 0;
+		bool identityDisambiguated = false;
 	};
 	struct MotionResult
 	{
@@ -64,7 +77,7 @@ namespace Inkeys::CV
 	enum class TrackerDebugStage : std::uint8_t
 	{
 		Validation, Preprocess, Forward, Refinement, Backward, Consensus, NonTranslation,
-		Ambiguity, Consistency, Coverage, Jump, Anchor, Retention, Refill, Commit, Count,
+		Ambiguity, Consistency, Coverage, Jump, Anchor, Retention, Refill, Commit, CoarseMatch, TargetSelection, PatchVerification, Recovery, Count,
 	};
 	enum class TrackerDebugComparison : std::uint8_t { Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual };
 	enum class TrackerDebugCheckId : std::uint8_t
@@ -76,7 +89,7 @@ namespace Inkeys::CV
 		AffineCellsLow, AffineSolveFailed, AffineVariationHigh, AffineResidualLow, AffineSupportHigh,
 		NonTranslation, ZeroModeAmbiguity, RunnerUpHigh, InliersLow, SpatialRatioLow, SurvivalRatioLow,
 		CoverageCells, CoverageInterior, CoverageColumns, CoverageRows, CoverageX, CoverageY,
-		JumpHigh, AnchorDisagreement, Count,
+		JumpHigh, AnchorDisagreement, TemplatesLow, IndependentBlocksLow, MatchScoreLow, MatchUniquenessLow, TargetConflict, RecoveryTimeout, IdentityContradictions, RecoveryFramesLimit, IndependentMotion, IdentitySupportLow, VerificationBudget, Count,
 	};
 	struct TrackerDebugCheck
 	{
@@ -102,6 +115,7 @@ namespace Inkeys::CV
 		bool refinedInsideEvaluated = false, refinedInside = false, refinementDistanceEvaluated = false;
 		bool fbThresholdEvaluated = false, fbValid = false, consensusEvaluated = false, inlier = false;
 		bool residualComputed = false, nearStationary = false, competitor = false, retentionEvaluated = false, retained = false, retired = false;
+		bool provisional = false, targetMember = false, certified = false;
 	};
 	struct TrackerDebugAddedPoint
 	{
@@ -130,6 +144,21 @@ namespace Inkeys::CV
 		bool zeroLengthEvaluated = false, zeroLength = false, zeroRatioEvaluated = false, zeroRatio = false;
 		bool interiorEvaluated = false, enoughInterior = false;
 	};
+	struct TrackerDebugPatchPeak
+	{
+		bool valid = false;
+		MotionVector flow{};
+		double score = 0;
+	};
+	struct TrackerDebugPatch
+	{
+		// 范围与位移均为处理图像像素，和现有 point/bounds 共用 scaleX/scaleY。
+		TrackerDebugBounds referenceBounds{}, currentBounds{};
+		std::array<TrackerDebugPatchPeak, 3> peaks{};
+		std::size_t peakCount = 0;
+		double information = 0, change = 0, selectedScore = 0, uniqueness = 0;
+		bool targetMember = false, selected = false, independent = false;
+	};
 	struct TrackerDebugSnapshot
 	{
 		static constexpr std::size_t MaximumPoints = 320, Columns = 8, Rows = 6;
@@ -157,6 +186,12 @@ namespace Inkeys::CV
 		int consensusCandidatesEvaluated = 0, competitorsEvaluated = 0;
 		TrackerDebugCandidate mainMotion{}, strongestCompetitor{}, eligibleRunnerUp{}, rejectingCompetitor{};
 		MotionVector totalBefore{}, candidateDelta{}, candidateTotal{};
+		MotionTargetPhase targetPhaseBefore = MotionTargetPhase::Discovering, targetPhaseAfter = MotionTargetPhase::Discovering;
+		std::uint64_t targetId = 0;
+		TrackerDebugBounds targetSupport{};
+		std::array<TrackerDebugPatch, 24> patches{};
+		std::array<TrackerDebugCandidate, 3> localCandidates{};
+		std::size_t patchCount = 0, localCandidateCount = 0;
 		// 该结果与返回值完全相同；主共识/候选均不能代替生产实际应用的 delta/total。
 		MotionResult result{};
 	};
@@ -177,6 +212,7 @@ namespace Inkeys::CV
 		std::unique_ptr<Impl> impl_;
 	};
 	[[nodiscard]] const char* MotionReasonName(MotionReason) noexcept;
+	[[nodiscard]] const char* MotionTargetPhaseName(MotionTargetPhase) noexcept;
 	[[nodiscard]] const char* TrackerDebugStageName(TrackerDebugStage) noexcept;
 	[[nodiscard]] const char* TrackerDebugCheckName(TrackerDebugCheckId) noexcept;
 }

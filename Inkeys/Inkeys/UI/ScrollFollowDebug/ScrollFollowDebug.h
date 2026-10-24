@@ -27,9 +27,11 @@ namespace Inkeys::UI::ScrollFollowDebug
 		std::uint64_t generation = 0, businessSession = 0, captureSession = 0, sequence = 0, referenceSequence = 0;
 		std::uint64_t refreshes = 0, consumed = 0, paints = 0, ownerAppliedSequence = 0;
 		double previewHz = 0, displayAgeMs = 0, copyMs = 0, totalTrackerMs = 0, viewportX = 0, viewportY = 0;
-		RECT previewRect{}, imageRect{}, freezeButton{}, exportButton{}, resetButton{};
-		// 顺序：Freeze、Points、Flow、Grid、Bounds、1x、2x、4x、Reset、Export。
-		std::array<RECT, 10> buttons{};
+		RECT previewRect{}, imageRect{}, freezeButton{}, exportButton{}, resetButton{}, armRecordingButton{};
+		unsigned recordingState = 0;
+		std::uint64_t recordedFrames = 0;
+		// 顺序：Freeze、Points、Flow、Blocks、Bounds、1x、2x、4x、Reset、Export、Arm。
+		std::array<RECT, 11> buttons{};
 		COLORREF previewBackground = RGB(22, 28, 38);
 		POINT paintSamplePoint{}; // 顶部文字裁剪区外的普通留白，可核验真实窗口可见。
 		COLORREF paintSampleColor = RGB(28, 34, 46);

@@ -219,10 +219,12 @@ namespace
 			return succeeded;
 		}
 
-		[[nodiscard]] bool Redraw() noexcept
+		[[nodiscard]] bool Redraw(Capture::TimedStage* timing = nullptr) noexcept
 		{
+			const auto began = timing ? Capture::Clock::now() : Capture::TimePoint{};
 			const bool succeeded = RedrawWindow(targets_.child, nullptr, nullptr,
 				RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN) != FALSE;
+			if (timing) *timing = { std::chrono::duration_cast<std::chrono::microseconds>(Capture::Clock::now() - began), true };
 			TraceMagnifierApi("RedrawWindow", targets_.child, succeeded);
 			return succeeded;
 		}
@@ -277,6 +279,7 @@ namespace
 			if (const auto checked = CheckGeometry(geometry, false); !checked.succeeded) return checked;
 			Capture::BackendResult failure{};
 			// DIB/Service 包装失败没有可靠原生错误码，保持 nativeErrorValid=false。
+			primed_ = false;
 			if (!frame_.resize(geometry.width, geometry.height) || !operations_.PrepareHidden(&failure)) return failure;
 			return { true };
 		}
@@ -288,24 +291,45 @@ namespace
 			const RECT sourceRect = { source.left, source.top, source.right, source.bottom };
 			// 这些 BOOL API 没有 GetLastError 合同，不把残留错误声明为本次原生失败。
 			if (!operations_.SubmitFilter() || !operations_.SubmitSource(sourceRect)
-				|| !operations_.Invalidate() || !operations_.Redraw()) return {};
-			return CheckGeometry(geometry, true);
+				|| !operations_.Invalidate()) return {};
+			Capture::TimedStage redraw;
+			const bool redrawn = operations_.Redraw(&redraw);
+			auto result = redrawn ? CheckGeometry(geometry, true) : Capture::BackendResult{};
+			result.timings.redraw = redraw;
+			return result;
 		}
 
 		Capture::BackendResult Read(const Capture::Geometry& geometry,
 			std::span<const std::uint32_t>& pixels) noexcept override
 		{
 			if (const auto checked = CheckGeometry(geometry, true); !checked.succeeded) return checked;
+			Capture::BackendTimings timings;
+			const auto finish = [&](Capture::BackendResult result) noexcept
+			{
+				result.timings = timings;
+				return result;
+			};
+			auto pixelBegan = Capture::Clock::now();
 			frame_.clear();
+			timings.pixelWork = { std::chrono::duration_cast<std::chrono::microseconds>(Capture::Clock::now() - pixelBegan), true };
 			// 同步 PW 只在原 MagnifierThread，Stop/监督线程不等它，也不释放其 DIB。
+			const auto printBegan = Capture::Clock::now();
 			const bool printed = PrintWindow(operations_.Child(), frame_.dc(), 2) != FALSE;
+			timings.printWindow = { std::chrono::duration_cast<std::chrono::microseconds>(Capture::Clock::now() - printBegan), true };
+			const auto flushBegan = Capture::Clock::now();
 			const bool flushed = GdiFlush() != FALSE;
+			timings.gdiFlush = { std::chrono::duration_cast<std::chrono::microseconds>(Capture::Clock::now() - flushBegan), true };
 			// 两者均未承诺设置 last-error；printed=false 仍执行原 GdiFlush，不伪造错误码。
-			if (!printed || !flushed) return {};
-			if (const auto checked = CheckGeometry(geometry, true); !checked.succeeded) return checked;
+			if (!printed || !flushed) return finish({});
+			if (const auto checked = CheckGeometry(geometry, true); !checked.succeeded) return finish(checked);
+			pixelBegan = Capture::Clock::now();
 			for (auto& pixel : frame_.pixels()) pixel |= 0xFF000000;
+			// 像素整理只含清 DIB 与 alpha 修复；几何/API等待仍包含在整体 Read 中。
+			timings.pixelWork.duration += std::chrono::duration_cast<std::chrono::microseconds>(Capture::Clock::now() - pixelBegan);
 			pixels = frame_.pixels();
-			return { true };
+			// 实屏 GT 证实首次 PW 会带旧的排除表面；仅预热，下一轮 Update/Read 才交付 F0。
+			Capture::BackendResult result{true}; result.warmup = !primed_; primed_ = true;
+			return finish(result);
 		}
 
 		bool End(bool accessWindows) noexcept override
@@ -346,6 +370,7 @@ namespace
 			return { true };
 		}
 
+		bool primed_ = false;
 		Win32MagnifierOperations operations_{ {} };
 		Inkeys::Graphics::DibSurface frame_;
 	};
@@ -1698,12 +1723,13 @@ static int RunFreezeCaptureLiveCase(bool debugExclusion)
 			const auto roundBegan=Capture::Clock::now();const auto session=startSession("repeat",receive);
 			waitFrames(session,phase,2);Capture::Stop();verifyIdle("repeat",session);
 			const DWORD gdi=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS),user=GetGuiResources(GetCurrentProcess(),GR_USEROBJECTS);
-			if(round==1){repeatGdi=gdi;repeatUser=user;}
-			else if(gdi!=repeatGdi || user!=repeatUser)++resourceChanges;
+			// 启停泄漏检查关注逐轮增长；异步释放让 USER 计数下降不能误判为泄漏。
+			if(round>1 && (gdi>repeatGdi || user>repeatUser))++resourceChanges;
+			repeatGdi=gdi;repeatUser=user;
 			PrintWindowTestLog("[FreezeCaptureLive] repeat_round=%u/20 session=%llu phase=%d elapsed_ms=%.3f gdi=%lu user=%lu resource_changes=%u\n",
 				round,session,phase,std::chrono::duration<double,std::milli>(Capture::Clock::now()-roundBegan).count(),gdi,user,resourceChanges);
 		}
-		if(resourceChanges)throw std::runtime_error("repeat-resource-count-changed");
+		if(resourceChanges)throw std::runtime_error("repeat-resource-count-increased");
 		// Start后立即撤销：F0等待期内不允许产生回调，取消后仍由原producer收尾。
 		const Capture::FrameCallback cancelled=[observations](const Capture::Frame&){observations->cancelledCallbacks.fetch_add(1);};
 		const auto cancelSession=startSession("immediate-stop",cancelled);Capture::Stop();
@@ -1743,7 +1769,7 @@ static int RunFreezeCaptureLiveCase(bool debugExclusion)
 		Capture::Stop();verifyIdle("after-freeze",afterFreeze);
 		const auto invalid=Capture::Start({});
 		if(invalid.status!=Capture::StartStatus::InvalidArgument || Capture::GetSnapshot().occupied)throw std::runtime_error("invalid-callback-start");
-		PrintWindowTestLog("[FreezeCaptureLive] matrix repeat_cycles=20 resources_stable=1 immediate_cancel_callbacks=0 read_stop_checked=1 freeze_cycles=2 post_freeze_frames=3 invalid_start_status=%u sequence_errors=%u\n",
+		PrintWindowTestLog("[FreezeCaptureLive] matrix repeat_cycles=20 resources_no_growth=1 immediate_cancel_callbacks=0 read_stop_checked=1 freeze_cycles=2 post_freeze_frames=3 invalid_start_status=%u sequence_errors=%u\n",
 			static_cast<unsigned>(invalid.status),observations->sequenceErrors);
 		}
 		if(observations->wrongThread || observations->sequenceErrors || observations->unmatched || test.apiFailures)

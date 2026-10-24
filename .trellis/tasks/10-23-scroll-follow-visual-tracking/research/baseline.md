@@ -1,0 +1,6 @@
+# Baseline
+Local/remote feature/move 47b4e742a16505249891ef202ea2c2e4e5780c9a; initially clean. Submodule git permission restriction: use --ignore-submodules=all and do not touch submodule.
+Build/ScrollFollow/visual-tracking-baseline-47b4e742 contains original tracker cpp/h, existing Inkeys/Headless binaries and sha256.json. Existing binaries are not a new verified build.
+Old artifacts D:/Project/Inkeys/Repo/Inkeys/Build/ScrollFollow: product-live-13172-19751750/motion-trace.json +13 PGM; recorded-motion-replay; analyze_actual_pixels.py; browser-fixture. 1 Initialize/2 AwaitTracking/10 Process: do not Process AwaitTracking. Old exact replay is historical audit, not GT; current HEAD already has floor3. Independent pixel correspondence f1/9=0, f10=-49, f11..13=-200.
+Blockers: global points/coverage, unseeded LK, fixed majority, all-screen refill with content anchors, 3-reject terminal pause, capture LowInformation hard stop. Prior Read mean63-79ms/CV15ms: 6-7FPS is not solely CV. nextSlot advances beyond completed to next50ms boundary, not always an additional50ms sleep.
+Old WGC Mag Host evidence only640x480/~900ms settling/9points90frames, not full-frame realtime; child HWND E_INVALIDARG. Reuse quick_probe_grid concepts, no second owner. Word installed, Edge running; current live verification still pending.

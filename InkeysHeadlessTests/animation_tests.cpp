@@ -57,6 +57,8 @@ int RunFreezeStateTests();
 int RunMagnifierCoordinatorTests();
 int RunFreezeCaptureTests();
 int RunVisualMotionTrackerTests();
+int RunVisualTargetTests();
+int RunVisualMotionReplay(int, char**);
 int RunScrollFollowDebugTests();
 int RunScrollFollowDebugModelTests();
 namespace Inkeys::Drawing::Draw3 { int RunScrollFollowProtocolTests() noexcept; }
@@ -1644,6 +1646,9 @@ namespace
 
 int main(int argc, char** argv)
 {
+	for (int index = 1; index < argc; ++index)
+		if (std::string_view(argv[index]).starts_with("--visual-motion-replay"))
+			return index == 1 && std::string_view(argv[index]) == "--visual-motion-replay" ? RunVisualMotionReplay(argc - 1, argv + 1) : 2;
 	// 严格早退，仅运行短诊断差分矩阵；错参不落入有窗口或长序列测试。
 	for (int index = 1; index < argc; ++index)
 		if (std::string_view(argv[index]).starts_with("--scroll-follow-debug-only"))
@@ -1654,6 +1659,9 @@ int main(int argc, char** argv)
 	for (int index = 1; index < argc; ++index)
 		if (std::string_view(argv[index]).starts_with("--scroll-follow-only"))
 			return argc == 2 && std::string_view(argv[index]) == "--scroll-follow-only" ? Inkeys::Drawing::Draw3::RunScrollFollowProtocolTests() : 2;
+	for (int index = 1; index < argc; ++index)
+		if (std::string_view(argv[index]).starts_with("--visual-target-only"))
+			return argc == 2 && std::string_view(argv[index]) == "--visual-target-only" ? RunVisualTargetTests() : 2;
 	for (int index = 1; index < argc; ++index)
 		if (std::string_view(argv[index]) == "--visual-motion-tracker-only")
 			return argc == 2 ? RunVisualMotionTrackerTests() : 2;
@@ -1731,6 +1739,7 @@ int main(int argc, char** argv)
 	failureCount += Inkeys::Drawing::Draw3::RunScrollFollowProtocolTests();
 	failureCount += RunFreezeCaptureTests();
 	failureCount += RunVisualMotionTrackerTests();
+	failureCount += RunVisualTargetTests();
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
 	failureCount += RunBarBottomDockTests();

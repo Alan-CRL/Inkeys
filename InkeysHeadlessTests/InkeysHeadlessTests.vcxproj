@@ -138,6 +138,8 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\CV\VisualMotionTracker.cpp" />
 	<ClCompile Include="visual_motion_tracker_tests.cpp" />
+	<ClCompile Include="visual_target_tests.cpp" />
+	<ClCompile Include="visual_motion_replay.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Business\ScrollFollowDebug.cpp" />
 	<ClCompile Include="scroll_follow_debug_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\CV\ShapeRecognition.cpp" />

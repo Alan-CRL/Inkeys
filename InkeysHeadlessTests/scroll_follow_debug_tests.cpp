@@ -3,6 +3,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <cmath>
+#include <limits>
+
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -188,6 +193,90 @@ namespace
 		std::atomic<Debug::PauseCause> cause = Debug::PauseCause::None; Debug::LatchPause(cause, Debug::PauseCause::InvalidRoi);
 		Debug::LatchPause(cause, Debug::PauseCause::TrackerPaused); Check(cause.load() == Debug::PauseCause::InvalidRoi, "ROI cause survives later tracker/status changes");
 	}
+	void TestRecordingPrefixAndBounds()
+	{
+		auto channel=Debug::Activate(); if (!channel) { Check(false,"record activation"); return; }
+		Image image; image.Fill(1); auto metadata=Metadata(1); metadata.operation=Debug::Operation::Initialize;
+		auto motion=Motion(1); CV::MotionFrame input{image.View(),.05,1,true};
+		channel->RecordInput(metadata,input,&motion); Check(channel->ReadRecording().state==Debug::RecordingState::Off && !channel->TakeRecording(),"record default off");
+		Debug::LiveStatus live; live.businessSession=41; live.state=Inkeys::Business::ScrollFollow::State::Tracking; channel->UpdateStatus(live);
+		Check(channel->ArmRecording(),"arm next session"); channel->RecordInput(metadata,input,&motion);
+		Check(channel->ReadRecording().state==Debug::RecordingState::Armed && !channel->ReadRecording().frames,"arm excludes current session Initialize");
+		metadata.identity.businessSession=42; channel->RecordInput(metadata,input,&motion);
+		metadata.identity.sequence=input.sequence=2; input.timestampSeconds=.1; metadata.operation=Debug::Operation::AwaitTracking;
+		channel->RecordInput(metadata,input); // 不申请预览 lease、不消费 UI，也必须保留该输入。
+		metadata.identity.sequence=input.sequence=3; input.timestampSeconds=.15; metadata.operation=Debug::Operation::Process; motion=Motion(3);
+		input.inputLowInformation=true; metadata.quality.status=Capture::QualityStatus::LowInformation; channel->RecordInput(metadata,input,&motion);
+		std::fill(image.pixels.begin(),image.pixels.end(),std::uint8_t{0}); channel->FinishRecording(); const auto saved=channel->TakeRecording();
+		Check(saved && saved->info.completePrefix && saved->inputs.size()==3 && saved->info.pixelBytes==3*19*13,"all producer inputs form owned bounded prefix");
+		if (saved)
+		{
+			Check(saved->inputs[0].gray.size()==19*13 && saved->inputs[0].width==19 && saved->inputs[0].height==13
+				&& saved->inputs[0].originalStrideBytes==image.stride && saved->inputs[0].metadata.identity.windowGeneration==channel->Generation(),"full odd padded ROI recording geometry");
+			Check(saved->inputs[1].metadata.operation==Debug::Operation::AwaitTracking && !saved->inputs[1].hasMotion
+				&& saved->inputs[2].inputLowInformation && saved->inputs[2].metadata.quality.status==Capture::QualityStatus::LowInformation
+				&& saved->inputs[2].motion.statistics.inputSequence==3,"operation original quality timestamp and result retained");
+			Check(saved->inputs[2].timestampSeconds==.15 && std::any_of(saved->inputs[0].gray.begin(),saved->inputs[0].gray.end(),[](auto x){return x!=0;}),"borrowed input reused after copy");
+		}
+		image.Fill(7); auto fresh=[&] { (void)channel->ArmRecording(); metadata=Metadata(1); metadata.identity.businessSession=43; metadata.operation=Debug::Operation::Initialize; input={image.View(),0,1,true}; motion=Motion(1); channel->RecordInput(metadata,input,&motion); };
+		fresh();
+		for (std::uint64_t seq=2;seq<=65;++seq) { metadata.identity.sequence=input.sequence=seq; metadata.operation=Debug::Operation::Process; input.timestampSeconds=seq*.01; motion=Motion(seq); channel->RecordInput(metadata,input,&motion); }
+		const auto capped=channel->TakeRecording(); Check(capped && capped->info.stop==Debug::RecordingStop::FrameLimit && capped->inputs.size()==64 && capped->info.completePrefix,"64-input cap preserves complete prefix");
+		fresh(); metadata.identity.sequence=input.sequence=2; metadata.operation=Debug::Operation::Process; input.timestampSeconds=10; motion=Motion(2); channel->RecordInput(metadata,input,&motion);
+		Check(channel->ReadRecording().stop==Debug::RecordingStop::TimeLimit && channel->ReadRecording().frames==1,"10-second limit stops before out-of-window input");
+		fresh(); metadata.identity.sequence=input.sequence=3; metadata.operation=Debug::Operation::Process; input.timestampSeconds=.1; motion=Motion(3); channel->RecordInput(metadata,input,&motion);
+		const auto gap=channel->TakeRecording(); Check(gap && !gap->info.completePrefix && gap->info.state==Debug::RecordingState::Failed && gap->info.stop==Debug::RecordingStop::InputGap,"missing input cannot claim replay-complete prefix");
+		fresh(); metadata.identity.sequence=input.sequence=2; metadata.operation=Debug::Operation::Process; input.timestampSeconds=.1; input.image.height=(std::numeric_limits<int>::min)(); channel->RecordInput(metadata,input,&motion);
+		Check(channel->ReadRecording().stop==Debug::RecordingStop::InvalidInput,"invalid extreme layout fails diagnostic recording safely");
+		Check(saved && saved->inputs.size()==3 && saved->inputs[0].gray.size()==19*13,"sealed export survives explicit re-arm");
+		Debug::Deactivate(channel);
+	}
+	void TestRecordingGrayReplayParity()
+	{
+		auto channel=Debug::Activate(); if (!channel) { Check(false,"record parity activation"); return; }
+		Check(channel->ArmRecording(),"parity arm"); CV::VisualMotionTracker original;
+		cv::Mat canvas(430,570,CV_8UC4,cv::Scalar(238,233,229,255)); cv::RNG rng(0x715a49);
+		for (int y=8;y<400;y+=17) for (int x=8;x<540;x+=19)
+		{
+			const cv::Scalar color(rng.uniform(10,170),rng.uniform(10,170),rng.uniform(10,170),255);
+			cv::rectangle(canvas,{x,y,rng.uniform(5,14),rng.uniform(5,13)},color,rng.uniform(1,3));
+		}
+		int acceptedMotion=0;
+		for (int index=0;index<5;++index)
+		{
+			const int offset=index<2?0:index==2?16:24; cv::Mat pixels=canvas(cv::Rect(30,30+offset,401,303));
+			if (index==4) pixels=cv::Mat(303,401,CV_8UC4,cv::Scalar(255,255,255,255));
+			auto metadata=Metadata(index+1); metadata.operation=index==0?Debug::Operation::Initialize:index==1?Debug::Operation::AwaitTracking:Debug::Operation::Process;
+			metadata.roi={30,30,431,333}; metadata.captureWidth=canvas.cols; metadata.captureHeight=canvas.rows; metadata.captureStrideBytes=canvas.step[0];
+			CV::MotionFrame frame{{pixels.ptr<std::uint8_t>(),pixels.step[0]*(pixels.rows-1)+pixels.cols*4,pixels.step[0],pixels.cols,pixels.rows,CV::MotionPixelFormat::Bgra32},.05*(index+1),static_cast<std::uint64_t>(index+1),true,index==4};
+			if (index==1) channel->RecordInput(metadata,frame);
+			else { const auto result=index==0?original.Initialize(frame):original.Process(frame); if (index>1 && index<4 && result.accepted) ++acceptedMotion; channel->RecordInput(metadata,frame,&result); }
+		}
+		const auto recorded=channel->TakeRecording(); Check(recorded && recorded->info.completePrefix && recorded->inputs.size()==5,"BGRA recording prefix for actual tracker replay");
+		if (recorded)
+		{
+			CV::VisualMotionTracker replay;
+			for (const auto& saved:recorded->inputs)
+			{
+				if (saved.metadata.operation==Debug::Operation::AwaitTracking) continue;
+				const CV::MotionFrame frame{{saved.gray.data(),saved.gray.size(),static_cast<std::size_t>(saved.width),saved.width,saved.height,CV::MotionPixelFormat::Gray8},saved.timestampSeconds,saved.metadata.identity.sequence,saved.captureValid,saved.inputLowInformation};
+				const auto actual=saved.metadata.operation==Debug::Operation::Initialize?replay.Initialize(frame):replay.Process(frame); const auto& expected=saved.motion;
+				const auto& a=actual.statistics; const auto& e=expected.statistics;
+				Check(actual.accepted==expected.accepted && actual.state==expected.state && actual.reason==expected.reason
+					&& std::hypot(actual.total.x-expected.total.x,actual.total.y-expected.total.y)<1e-9
+					&& std::hypot(actual.delta.x-expected.delta.x,actual.delta.y-expected.delta.y)<1e-9 && actual.confidence==expected.confidence
+					&& a.referenceSequence==e.referenceSequence && a.referenceGeneration==e.referenceGeneration && a.relayGeneration==e.relayGeneration
+					&& a.attempted==e.attempted && a.forward==e.forward && a.fbValid==e.fbValid && a.inliers==e.inliers
+					&& a.targetId==e.targetId && a.targetPhase==e.targetPhase && a.targetPoints==e.targetPoints && a.provisionalPoints==e.provisionalPoints
+					&& a.matchedTemplates==e.matchedTemplates && a.independentBlocks==e.independentBlocks && a.candidateCount==e.candidateCount
+					&& a.primaryReason==e.primaryReason && a.expectedBlocks==e.expectedBlocks && a.verifiedBlocks==e.verifiedBlocks
+					&& a.identityTiles==e.identityTiles && a.identityContradictions==e.identityContradictions && a.identityScore==e.identityScore
+					&& a.identityDisambiguated==e.identityDisambiguated,
+					"production BGRA and recorded Gray8 preserve non-timing motion/target result");
+			}
+		}
+		Check(acceptedMotion>0,"gray parity fixture includes accepted motion, not only equal rejects"); Debug::Deactivate(channel);
+	}
 	std::int64_t fakeMs = 1000;
 	Capture::TimePoint FakeNow() noexcept { return Capture::TimePoint{} + std::chrono::milliseconds(fakeMs); }
 	struct Backend final : Capture::Backend
@@ -221,9 +310,26 @@ namespace
 		backend.read = {false, Capture::StopReason::BackendFailure, 123, true}; Due(session, backend); Due(session, backend);
 		const auto api = session.GetSnapshot(); Check(api.failureStage == Capture::FailureStage::Read && api.nativeErrorValid && api.nativeError == 123 && !api.qualityObserved
 			&& api.lastAcceptedSample == second.lastAcceptedSample && api.statistics.apiFailures == 1 && api.statistics.rejected == 1 && api.publishing, "API observation preserves original retry/acceptance");
-		backend.read = {true}; std::fill(backend.pixels.begin(), backend.pixels.end(), 0xFF000000u); Due(session, backend); Due(session, backend);
+		backend.read = {true}; std::fill(backend.pixels.begin(), backend.pixels.end(), 0xFFFFFFFFu); Due(session, backend); Due(session, backend);
+		const auto lowInfo=session.GetSnapshot(); Check(lowInfo.quality.status==Capture::QualityStatus::LowInformation && lowInfo.statistics.accepted==3
+			&& lowInfo.statistics.lowInformation==1 && lowInfo.statistics.rejected==1 && lowInfo.lastAcceptedSample==delivered,"low information is delivered without fake rejection");
+		std::fill(backend.pixels.begin(), backend.pixels.end(), 0xFF000000u); Due(session, backend); Due(session, backend);
 		const auto quality = session.GetSnapshot(); Check(quality.failureStage == Capture::FailureStage::Quality && !quality.nativeErrorValid && quality.qualityObserved
-			&& quality.lastAcceptedSample == second.lastAcceptedSample && quality.statistics.rejected == 2 && quality.statistics.apiFailures == 1, "quality has no stale native error");
+			&& quality.lastAcceptedSample == lowInfo.lastAcceptedSample && quality.statistics.rejected == 2 && quality.statistics.apiFailures == 1, "severe black quality retains last acceptance without stale native error");
+		// 两次真实采样之间不读取Debug状态，晚到的唯一状态通知仍必须保留黑帧失败的原始质量。
+		std::fill(backend.pixels.begin(),backend.pixels.end(),0xffffffffu); Due(session,backend); Due(session,backend);
+		const auto recovered=session.GetSnapshot(); auto history=Debug::Activate(); Check(history!=nullptr,"delayed capture failure history activation");
+		if (history)
+		{
+			Debug::LiveStatus status; status.state=Inkeys::Business::ScrollFollow::State::Tracking; status.businessSession=41;
+			status.captureSession=recovered.session; status.ownsCapture=true; status.capture=recovered; history->UpdateStatus(status);
+			const auto live=history->ReadLive();
+			Check(live.count==1 && live.status.capture.quality.status==Capture::QualityStatus::LowInformation
+				&& live.summaries[0].captureFailure.stage==Capture::FailureStage::Quality && live.summaries[0].captureFailure.qualityObserved
+				&& live.summaries[0].captureFailure.quality.status==Capture::QualityStatus::NearBlack
+				&& live.summaries[0].captureFailure.at==quality.lastFailureAt,"single late UpdateStatus preserves black failure while live sample is white");
+			Debug::Deactivate(history);
+		}
 		session.Stop(); session.Drain(backend); Check(session.GetSnapshot().failureStage == Capture::FailureStage::Quality, "Requested stop preserves failure source");
 		fakeMs = 1000; Capture::Session timeout(nullptr, &FakeNow); Backend timeoutBackend; timeout.SetReady(true);
 		(void)timeout.Start(Geometry(), [](const auto&) {}); timeout.Pump(timeoutBackend); timeout.Pump(timeoutBackend); fakeMs = 6000; timeout.Supervise();
@@ -242,6 +348,6 @@ namespace
 }
 int RunScrollFollowDebugModelTests()
 {
-	failures = 0; TestCopyFreezeAndPause(); TestCaptureFailureHistory(); TestConcurrentLatest(); TestCloseDuringLease(); TestPauseLatch(); TestCaptureObservations();
+	failures = 0; TestCopyFreezeAndPause(); TestCaptureFailureHistory(); TestConcurrentLatest(); TestCloseDuringLease(); TestPauseLatch(); TestRecordingPrefixAndBounds(); TestRecordingGrayReplayParity(); TestCaptureObservations();
 	std::cout << (failures ? "FAIL" : "PASS") << " scroll follow debug model failures=" << failures << '\n'; return failures;
 }

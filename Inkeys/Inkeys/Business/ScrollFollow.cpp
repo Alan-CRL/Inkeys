@@ -208,6 +208,7 @@ namespace Inkeys::Business::ScrollFollow
 				frame.bgra.size_bytes() - offset, frame.strideBytes, right - left, bottom - top, CV::MotionPixelFormat::Bgra32 };
 			input.timestampSeconds = std::chrono::duration<double>(frame.timestamp.time_since_epoch()).count();
 			input.sequence = frame.sequence;
+			input.inputLowInformation = frame.quality.status == Capture::QualityStatus::LowInformation;
 			CV::MotionResult result;
 			Debug::ChannelPtr debugChannel;
 			Debug::WriteLease debugLease;
@@ -223,7 +224,7 @@ namespace Inkeys::Business::ScrollFollow
 				metadata.roi = { left, top, right, bottom }; metadata.captureWidth = frame.width; metadata.captureHeight = frame.height;
 				metadata.captureStrideBytes = frame.strideBytes; metadata.sourcePixelsPerPixelX = frame.sourcePixelsPerPixelX;
 				metadata.sourcePixelsPerPixelY = frame.sourcePixelsPerPixelY; metadata.sampledAt = frame.timestamp; metadata.sampleInterval = frame.sampleInterval;
-				debugLease = debugChannel->BeginFrame(metadata, input.image);
+				if (operation != Debug::Operation::AwaitTracking) debugLease = debugChannel->BeginFrame(metadata, input.image);
 			};
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 			auto operation = LiveTrace::Operation::AwaitTracking;
@@ -237,6 +238,7 @@ namespace Inkeys::Business::ScrollFollow
 				const auto trackerBegan = debugChannel ? Clock::now() : Clock::time_point{};
 				result = context->tracker.Initialize(input, debugLease.Tracker());
 				if (debugChannel) totalTrackerMs = std::chrono::duration<double, std::milli>(Clock::now() - trackerBegan).count();
+				if (debugChannel && debugMetadata) debugChannel->RecordInput(*debugMetadata, input, &result);
 				if (result.accepted) context->initialized.store(true);
 			}
 			else if (context->tracking.load())
@@ -248,10 +250,12 @@ namespace Inkeys::Business::ScrollFollow
 				const auto trackerBegan = debugChannel ? Clock::now() : Clock::time_point{};
 				result = context->tracker.Process(input, debugLease.Tracker());
 				if (debugChannel) totalTrackerMs = std::chrono::duration<double, std::milli>(Clock::now() - trackerBegan).count();
+				if (debugChannel && debugMetadata) debugChannel->RecordInput(*debugMetadata, input, &result);
 				if (result.accepted)
 				{
 					Draw::Follow::Target target{ context->session, frame.sequence, owner.identity,
 						result.total.x * frame.sourcePixelsPerPixelX, result.total.y * frame.sourcePixelsPerPixelY };
+					target.readCompletedAt = frame.timestamp;
 					targetPublished = context->channel->Publish(target);
 					if (targetPublished) WakeHost();
 				}
@@ -260,9 +264,14 @@ namespace Inkeys::Business::ScrollFollow
 					Debug::LatchPause(context->debugPauseCause, Debug::PauseCause::TrackerPaused); context->paused.store(true);
 				}
 			}
+			else
+			{
+				prepareDebug(Debug::Operation::AwaitTracking);
+				if (debugChannel && debugMetadata) debugChannel->RecordInput(*debugMetadata, input);
+			}
 			{ std::scoped_lock lock(context->resultMutex); context->result = result; }
 			// AwaitTracking 没有执行 CV：仍保留原业务 store，但不能发布成假拒绝。
-			if (debugChannel && debugMetadata)
+			if (debugChannel && debugMetadata && debugMetadata->operation != Debug::Operation::AwaitTracking)
 			{
 				debugChannel->RecordMotion(*debugMetadata, result, totalTrackerMs);
 				(void)debugLease.Publish(targetPublished, totalTrackerMs);
@@ -342,6 +351,8 @@ namespace Inkeys::Business::ScrollFollow
 					if (status.ownsCapture) status.capture = capture;
 					const auto owner = context->channel->Read();
 					status.ownerLatestSequence = owner.latest.sequence; status.ownerAppliedSequence = owner.applied;
+					status.appliedTiming = { owner.appliedTiming.sequence, owner.appliedTiming.readCompletedAt, owner.appliedTiming.publishedAt, owner.appliedTiming.appliedAt, owner.appliedTiming.presentedAt };
+					status.presentedTiming = { owner.presentedTiming.sequence, owner.presentedTiming.readCompletedAt, owner.presentedTiming.publishedAt, owner.presentedTiming.appliedAt, owner.presentedTiming.presentedAt };
 					status.viewportX = owner.viewportX; status.viewportY = owner.viewportY; status.viewportClamped = owner.clamped;
 				}
 				channel->UpdateStatus(status);
@@ -424,7 +435,7 @@ namespace Inkeys::Business::ScrollFollow
 				}
 				if ((state == State::Tracking || state == State::Paused) && !stop && ownsCapture)
 				{
-					// Capture 的无效缓冲/黑图/低信息都是严重捕获失效；普通三拒绝完全由Tracker负责。
+					// Capture 仅将无效缓冲/近黑列为质量故障；低信息及短时失配由 Tracker 独立判断与恢复。
 					if (capture.statistics.rejected != statistics.rejected)
 					{
 						Debug::LatchPause(context->debugPauseCause, capture.failureStage != Capture::FailureStage::Quality
@@ -604,7 +615,7 @@ namespace Inkeys::Business::ScrollFollow
 				frame.geometry = {{0,0,640,480},{0,0,640,480},{16,24,624,456},1,640,480};
 				frame.timestamp = ports.now + std::chrono::milliseconds(sequence * 50);
 				frame.sequence = sequence; frame.session = captureSession ? captureSession : ports.capture.session;
-				frame.quality.status = Capture::QualityStatus::Valid;
+				frame.quality.status = blank ? Capture::QualityStatus::LowInformation : Capture::QualityStatus::Valid;
 				if (ports.callback) ports.callback(frame);
 			}
 			void Track() { Begin(); Emit(1); service.Tick(); ports.acknowledged = ports.projection; service.Tick(); }
@@ -672,16 +683,30 @@ namespace Inkeys::Business::ScrollFollow
 				e.Emit(3,0,0x12345678u); e.service.Tick();
 				check(e.service.state == State::Tracking && e.service.context->result.statistics.consecutiveRejects == 2, "ordinary second visual reject retains reference");
 				e.Emit(4,0,0x12345678u); e.service.Tick();
-				check(e.service.state == State::Paused && !e.service.context->tracking && !e.ports.capture.publishing, "third visual reject pauses actual Business");
+				check(e.service.state == State::Tracking, "third ordinary reject remains in bounded recovery");
+				for (unsigned seq=5; seq<=25 && e.service.state==State::Tracking; ++seq) { e.Emit(seq,0,0x12345678u); e.service.Tick(); }
+				check(e.service.state == State::Paused && !e.service.context->tracking && !e.ports.capture.publishing, "recovery timeout pauses actual Business");
 				if (debug.channel)
 				{
 					e.service.Tick();
-					check(debug.channel->ConsumeLatest() && debug.channel->Displayed()->metadata.identity.sequence == 4
+					check(debug.channel->ConsumeLatest() && debug.channel->Displayed()->metadata.identity.sequence >= 20
 						&& !debug.channel->Displayed()->tracker.result.accepted && debug.channel->Displayed()->tracker.result.state == CV::MotionState::Paused
 						&& debug.channel->ReadLive().status.pauseCause == Debug::PauseCause::TrackerPaused, "actual final rejection/cause survive Requested capture stop");
 				}
-				e.Emit(5,4); e.service.Tick(); check(e.service.state == State::Paused && e.ports.channel->Read().latest.sequence == 0, "Paused never auto-recovers");
+				e.Emit(26,4); e.service.Tick(); check(e.service.state == State::Paused && e.ports.channel->Read().latest.sequence == 0, "Paused never auto-recovers");
 				RequestStop(); e.End(); check(e.service.state == State::Off && e.ports.holds == 0, "Paused can end and return hold");
+			}
+			{
+				DebugScope debug; Environment e; check(debug.channel && debug.channel->ArmRecording(), "arm before next session");
+				e.Begin(); e.Emit(1); e.service.Tick(); e.Emit(2);
+				e.ports.acknowledged=e.ports.projection; e.service.Tick(); e.Emit(3,4); e.service.Tick();
+				debug.channel->FinishRecording(); const auto recording=debug.channel->TakeRecording();
+				check(recording && recording->info.completePrefix && recording->inputs.size()==3 &&
+					recording->inputs[0].metadata.operation==Debug::Operation::Initialize && recording->inputs[1].metadata.operation==Debug::Operation::AwaitTracking &&
+					!recording->inputs[1].hasMotion && recording->inputs[2].hasMotion, "actual business records every call type independently of preview");
+				e.Emit(4,0,0,true); ++e.ports.capture.statistics.accepted; ++e.ports.capture.statistics.lowInformation; e.service.Tick();
+				check(e.service.state==State::Tracking && !e.service.context->result.accepted && e.service.context->result.statistics.consecutiveRejects==1,
+					"low-information delivery stays in tracker recovery, not capture failure");
 			}
 			{
 				DebugScope debug; Environment e; e.Track(); ++e.ports.capture.statistics.rejected; e.ports.capture.failureStage = Capture::FailureStage::Quality; e.service.Tick();

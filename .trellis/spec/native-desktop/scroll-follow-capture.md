@@ -71,3 +71,22 @@ Default输入桌面名称、WTS Active、IsWindowVisible/Topmost和DWMWA_CLOAKED
 Frame 按值追加本次 Statistics 与真实 sampleInterval，Snapshot 追加 Read 开始/完成、最近 accepted sample、失败时间/阶段及可靠原生错误有效位；不改变调度与返回决定。qualityObserved 只在实际 Analyze 的 Read 成功结果旁设置，在原质量重置处清除，API 失败时不能把默认 Quality 当成实际分析结论。原 lastReadDuration 在 Backend.Read 返回后、Analyze 前结束，包含几何/PW/GdiFlush/alpha repair，不是纯 PW 耗时或 compositor 新鲜度保证。所有错误码只有对应 API 合同保证 last-error 时才有效。
 
 本轮调试窗口和导出选择器沿原 BuildCurrentFilterList 的当前 HWND 校验加入排除；列表通过不替代真实覆盖像素测试。当前跨层有效性、所有权和本轮验证边界见 [scroll-follow-debug-window.md](scroll-follow-debug-window.md) 及调试窗口任务 validation.md。
+
+## 2026-10-23 局部追踪：交付活性、过载周期与分段计时
+
+本节补充本轮 visual-tracking 合同；前文描述的质量失败/调度旧行为以本节为准。LowInformation 图像仍交付消费者，Frame 保留原质量标记，statistics.lowInformation 独立计数；Capture accepted 只表示有效图像交付和采集活性，不代表位移可信。无效缓冲、近黑、API/几何错误沿用原保护。Tracker 自行决定低信息是否足以恢复或拒绝，不能由 Capture 预先把白页误判为读回故障。
+
+每个采样周期以实际 Backend.Update 开始时刻计算，Update/稳定等待/Read/Analyze/同步消费者的时间全部计入周期。处理超时则立即开始下一次 Update，没有补跑积压帧或新增工作线程。首次800ms、稳定10ms等待未凭推测缩短；调整前仍需专用像素新鲜度对照。
+
+分别记录 Update 总时长、其中 Redraw、PrintWindow、GdiFlush、像素整理、Analyze 及实际采样间隔；分段都有真实有效位，同一序号才可关联。Snapshot.failureQuality/failureQualityObserved 是 Quality 失败当时的副本，后续白帧或正常帧不能覆盖它；最近分析 quality 与原始失败 quality 必须分开显示，其他失败不能伪造质量分析。
+
+用户在 visual-tracking 任务中已明确允许可见 GUI 和 Computer Use，覆盖早期仅无窗口的会话限制。安全界面 gate 仍需用户手动解锁，不得绕过。现有 Mag 顶层 Host 的 WGC 探针仅作有界设备试验，未通过完整像素/排除/新鲜度/Freeze 生命周期和帧率+50%、延迟-30%之前不能接入生产；不增加全程序 Windows 7 导入或门槛。
+
+
+## 2026-10-24 排除窗口首帧预热
+
+实屏独立原尺寸纹理 GT 证明：诊断窗在会话开始前可见时，第一次 PrintWindow 仍可能包含旧排除表面，第二次完整 Update/Read 已正确。提前提交过滤表并不能修复；不能以 Tracker 放宽、失败时更新参考或加长任意等待掩盖 F0 污染。
+
+原 FreezeCaptureBackend 每次 Begin 重置 primed；首次成功 Read 标记 BackendResult.warmup，Session 仍核对几何、质量、启动期限和发布权，但有效预热帧不回调、不加 sequence/accepted、不续活性，也不记图像故障，单独累计 warmupReads。下一轮立即 Update，沿现有未首次交付时的100ms等待 Read，才允许建立 F0。无效缓冲/近黑/API错误保留原保护。Stop、在途借用、Drain、Mag/Freeze owner 与窗口寿命不变。
+
+warmupReads 应在当前统计、帧快照和导出中明确可见。此规则由本机三次会话首两帧完整像素证据支持，不意味着 PrintWindow 已获得 compositor 时间戳，也不能替代其他系统的排除/新鲜度验收。
