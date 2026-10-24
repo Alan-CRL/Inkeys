@@ -9,6 +9,7 @@ module;
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 export module Inkeys.Window;
@@ -121,6 +122,22 @@ export namespace Inkeys::Window
 		std::function<void()> whiteboardCloseRequested;
 	};
 
+	enum class CommandPhase { Queued, Executing, Committed, Rejected, Expired, Cancelled };
+
+	// 回执只持有独立完成状态；Service 停止后仍可确认超时命令是否已经退休。
+	class CommandReceipt
+	{
+	public:
+		CommandReceipt() = default;
+		CommandReceipt(std::function<CommandPhase()> phase, std::function<void()> cancel)
+			: phase_(std::move(phase)), cancel_(std::move(cancel)) {}
+		[[nodiscard]] CommandPhase Phase() const { return phase_ ? phase_() : CommandPhase::Rejected; }
+		void Cancel() const { if (cancel_) cancel_(); }
+	private:
+		std::function<CommandPhase()> phase_;
+		std::function<void()> cancel_;
+	};
+
 	class Service
 	{
 	public:
@@ -168,8 +185,8 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool SetExtendedStyleFlags(
 			WindowRole role, DWORD setMask, DWORD clearMask);
 		// Whiteboard 统一切换 taskbar/activation 样式，所有 HWND 操作仍在 owner thread。
-		[[nodiscard]] bool EnterWhiteboardWindowMode();
-		[[nodiscard]] bool LeaveWhiteboardWindowMode();
+		[[nodiscard]] bool EnterWhiteboardWindowMode(std::function<bool()> stillDesired = {});
+		[[nodiscard]] bool LeaveWhiteboardWindowMode(std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool WhiteboardWindowMode() const noexcept;
 		[[nodiscard]] bool WhiteboardWindowGroupMinimized() const noexcept;
 		// 仅由匹配的 Freeze owner WndProc 调用，不跨线程执行退出回调。
@@ -177,14 +194,15 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
 		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
 		[[nodiscard]] bool CancelPointerCapture();
-			// 启动可指定有限等待预算；普通刷新保留原有同步行为。
-			[[nodiscard]] bool RequestTopmostRefresh(DWORD timeoutMilliseconds = INFINITE);
+			// 所有跨线程命令默认有限等待；false 后可由回执区分仍在撤回的在途操作。
+			[[nodiscard]] bool RequestTopmostRefresh(DWORD timeoutMilliseconds = 1500);
+			[[nodiscard]] CommandReceipt LastCommandReceipt() const;
 			// 成功 refresh 后在内部锁外调用；传空函数可注销并 drain 正在执行的回调。
 			void SetTopmostRefreshObserver(std::function<void()> callback);
-			[[nodiscard]] bool SetOverlayTopmost(bool topmost);
+			[[nodiscard]] bool SetOverlayTopmost(bool topmost, std::function<bool()> stillDesired = {});
 			[[nodiscard]] bool OverlayTopmost() const noexcept;
 			// 无焦点 overlay 不会被 Explorer 当成普通全屏窗；显式标记后任务栏才会让出。
-			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen);
+			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen, std::function<bool()> stillDesired = {});
 			[[nodiscard]] bool OverlayFullscreen() const noexcept;
 			[[nodiscard]] bool PromotePptWindow(WindowRole role);
 

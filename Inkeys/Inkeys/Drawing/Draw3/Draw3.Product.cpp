@@ -60,6 +60,15 @@ namespace Inkeys::Drawing::Draw3
 		return !productStopping.load(std::memory_order_acquire) && productHost.Running();
 	}
 
+	bool RetryProductCanvasRecovery(const CanvasRecoveryState& expected,
+		const std::function<bool()>& stillDesired) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) && (!stillDesired || stillDesired()) &&
+			productHost.RetryCanvasRecovery(expected, stillDesired);
+	}
+
 	Haptics::Context ProductHapticContext() noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return {};

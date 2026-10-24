@@ -10,6 +10,8 @@
 #include <vector>
 
 #include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+#include "../Inkeys/Inkeys/Window/Window.ZOrderPolicy.h"
+#include "../Inkeys/Inkeys/Window/Window.SafetyOverride.h"
 #include "../Inkeys/Inkeys/Window/Window.CanvasPolicy.h"
 
 import Inkeys.Window;
@@ -597,6 +599,77 @@ int RunWindowCommandCompletionTests()
 	auto ordinaryResult = ordinary.get_future();
 	ordinary.set_value(true);
 	check(WaitForCommandResult(ordinaryResult, {}), "ordinary completion unchanged");
+	{
+		CommandCompletion queued(std::chrono::steady_clock::now() - std::chrono::milliseconds(1));
+		check(!queued.Begin() && queued.Phase() == CommandPhase::Expired,
+			"expired queued command never enters native mutation");
+		CommandCompletion cancelled(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		cancelled.Cancel();
+		check(!cancelled.Begin() && cancelled.Phase() == CommandPhase::Cancelled,
+			"cancelled queued command never executes");
+		CommandCompletion executing(std::chrono::steady_clock::now() + std::chrono::milliseconds(10));
+		check(executing.Begin(), "owner begins current command");
+		check(!executing.Wait() && executing.Phase() == CommandPhase::Executing && !executing.Current(),
+			"in-flight timeout retains owner retirement responsibility");
+		check(!executing.Commit(true), "late native success cannot commit expired intent");
+		// 模拟恢复失败：回执不能在物理恢复完成之前变成终态。
+		check(executing.Phase() == CommandPhase::Executing, "failed rollback retains executing receipt");
+		executing.Retired();
+		check(executing.Phase() == CommandPhase::Expired, "successful rollback retires expired command");
+		CommandCompletion normal(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		check(normal.Begin() && normal.Commit(true) && normal.Wait(), "normal command commits once");
+		normal.Cancel();
+		check(normal.Phase() == CommandPhase::Committed, "cancel after commit cannot undo terminal receipt");
+		CommandCompletion old(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		check(old.Begin(), "old command starts before newer intent");
+		old.Cancel();
+		check(!old.Commit(true) && old.Phase() == CommandPhase::Executing,
+			"superseded in-flight operation remains uncommitted until restored");
+		old.Retired();
+		check(old.Phase() == CommandPhase::Cancelled, "superseded operation reaches cancelled after restore");
+	}
+	{
+		ZOrderSnapshot<4> group;
+		for (std::size_t i = 0; i < 4; ++i)
+		{
+			group.windows[i] = reinterpret_cast<HWND>(static_cast<UINT_PTR>(i + 1));
+			group.ordinal[i] = 3 - i;
+			group.owners[i] = i ? group.windows[i-1] : nullptr;
+		}
+		const auto expected = group.owners;
+		check(group.Matches(expected, false), "ordinary group validates all owners and bands");
+		group.topmost[2] = true;
+		check(!group.Matches(expected, false), "ordinary refresh rejects a mixed band below Bar");
+		group.topmost.fill(true);
+		check(group.Matches(expected, true), "topmost group uses identical complete predicate");
+		group.owners[2] = group.windows[0];
+		check(!group.Matches(expected, true), "valid-looking owner chain cannot substitute wrong owner identity");
+		group.owners = expected;
+		group.ordinal[2] = group.ordinal[1] + 1;
+		check(!group.Matches(expected, true), "child below its owner fails order predicate");
+		group.ordinal[2] = 1;
+		group.continuous = false;
+		check(!group.Matches(expected, true), "foreign interleaving fails whole-group continuity");
+		check(group.Above(3, 1), "Setting-like local above predicate ignores unrelated group continuity");
+		group.ordinal[3] = MissingZOrder;
+		check(!group.Above(3, 1) && !group.Matches(expected, true), "missing enumerated target fails finitely");
+	}
+	{
+		WindowSafetyOverride safety;
+		safety.Latch(7, true, false);
+		safety.Latch(7, false, true);
+		check(!safety.Visible(7, true) && (safety.Style(7, 0) & WS_EX_TRANSPARENT),
+			"later safe hide and transparency survive old visible/input snapshot");
+		check(safety.Visible(8, true) && safety.Style(8, 0) == 0,
+			"reused HWND generation does not inherit an old safety override");
+		safety.AllowShow(7);
+		check(safety.Visible(7, true) && safety.ClickThrough(7),
+			"committed newer show clears only visibility protection");
+		safety.AllowInput(8);
+		check(safety.ClickThrough(7), "different generation cannot clear input protection");
+		safety.AllowInput(7);
+		check(!safety.ClickThrough(7), "committed newer input intent can clear matching protection");
+	}
 	std::cout << "[WindowCommandCompletion] failures=" << failures << '\n';
 	return failures;
 }

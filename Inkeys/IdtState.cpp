@@ -295,6 +295,52 @@ namespace
 			runtime.presentedContentRevision == runtime.contentRevision;
 	}
 
+	[[nodiscard]] bool Draw3RecoveryNeedsUiRelease(
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		const Inkeys::Drawing::Draw3::Bridge::ProductState& desired) noexcept
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		const auto status = runtime.recovery.status;
+		return RecoveryMatchesDesired(runtime.recovery, desired) &&
+			(status == CanvasRecoveryStatus::ProtectedConflict ||
+				status == CanvasRecoveryStatus::ManualRetryRequired || status == CanvasRecoveryStatus::Failed);
+	}
+
+	[[nodiscard]] bool Draw3FatalRecoveryMatches(
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		const Inkeys::Drawing::Draw3::Bridge::ProductState& desired) noexcept
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		return runtime.consumerFatal && runtime.recovery.status == CanvasRecoveryStatus::Failed &&
+			runtime.recovery.reason == CanvasRecoveryReason::ConsumerFatal &&
+			RecoveryMatchesDesired(runtime.recovery, desired);
+	}
+
+	bool ReleaseFatalDraw3Surfaces(
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		const Inkeys::Drawing::Draw3::Bridge::ProductState& desired,
+		std::function<bool()> stillDesired)
+	{
+		if (!Draw3FatalRecoveryMatches(runtime, desired)) return false;
+		const auto guard = [expected = runtime.recovery, revision = desired.revision,
+			outer = std::move(stillDesired)]() noexcept
+		{
+			const auto current = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+			const auto latest = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+			return current.recovery == expected && latest.revision == revision &&
+				Draw3FatalRecoveryMatches(current, latest) && (!outer || outer());
+		};
+		// fatal 后消费者可能已结束；仅允许隐藏/穿透清理，不能依赖 Running 重新为真。
+		// 精确故障令牌在 Reset 后失效，旧清理不能触碰新一轮 Host。
+		auto& service = Inkeys::Window::GetService();
+		const bool hidden = service.SetDrawpadSurfaceVisibility(
+			Inkeys::Window::DrawpadSurfaceVisibility::Hidden, guard);
+		const bool auxiliary = !service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation) ||
+			service.SetClickThrough(Inkeys::Window::WindowRole::DrawpadPresentation, true, guard);
+		const bool primary = service.SetClickThrough(Inkeys::Window::WindowRole::Drawpad, true, guard);
+		return hidden && auxiliary && primary;
+	}
+
 	[[nodiscard]] const char* OutputTargetName(
 		Inkeys::Drawing::Draw3::HostOutputTarget target) noexcept
 	{
@@ -533,6 +579,16 @@ namespace
 	[[nodiscard]] Draw3PresentationReconcileResult
 		ReconcileDraw3PresentationState()
 	{
+		const auto failure = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		const auto failureDesired = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+		if (Draw3FatalRecoveryMatches(failure, failureDesired) && !WhiteboardTransactionActive())
+		{
+			std::scoped_lock lock(draw3PresentationMutex);
+			const bool released = ReleaseFatalDraw3Surfaces(failure, failureDesired,
+				[]() noexcept { return !WhiteboardTransactionActive(); });
+			draw3PresentationRetryPending.store(!released, std::memory_order_release);
+			return released ? Draw3PresentationReconcileResult::Applied : Draw3PresentationReconcileResult::Retry;
+		}
 		// 绘图宿主已停时，旧 ready/revision 不得让异步窗口命令重新显示拦截面。
 		if (!Inkeys::Drawing::Draw3::ProductRunning())
 		{
@@ -563,6 +619,24 @@ namespace
 				desired.revision, modeRevision);
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			return Draw3PresentationReconcileResult::Retry;
+		}
+		if (!WhiteboardTransactionActive() && Draw3RecoveryNeedsUiRelease(runtime, desired))
+		{
+			// 受保护的失败不是 ready。隐藏旧场景的拦截面，保留工具栏/分页的恢复入口。
+			const auto guard = [revision = desired.revision, modeRevision, expected = runtime.recovery]() noexcept
+			{
+				return Inkeys::Drawing::Draw3::ProductRunning() && !WhiteboardTransactionActive()
+					&& Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().recovery == expected
+					&& stateModeTransitionRevision.load(std::memory_order_acquire) == modeRevision
+					&& Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision == revision;
+			};
+			auto& service = Inkeys::Window::GetService();
+			const bool hidden = service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden, guard);
+			const bool clickThrough = SyncDrawpadClickThrough(true, guard);
+			const bool released = hidden && clickThrough;
+			draw3PresentationRetryPending.store(!released, std::memory_order_release);
+			return released ? Draw3PresentationReconcileResult::Applied : Draw3PresentationReconcileResult::Retry;
 		}
 		// 白板进出期间由相位机暂时改穿透；稳定态必须跟当前选择模式，不能停在离场时的那一次。
 		if (!WhiteboardTransactionActive() && !SyncDrawpadClickThrough(desired.selectionMode,
@@ -1980,6 +2054,27 @@ int RunStateModeProductionTest() noexcept
 		require(ChangeStateModeToSelectionFromButtonImpl(false, [] { return Bridge::CommandResult::NotRunning; }),
 			"empty-selection-does-not-publish-clear");
 		require(SetSelectAndClickThroughMode(0), "restore-default-mode");
+		stage = "canvas-recovery-ui-release";
+		{
+			HostRuntimeSnapshot failed;
+			Bridge::ProductState desired;
+			desired.workspace = Bridge::Workspace::Desktop;
+			failed.recovery.workspace = desired.workspace;
+			failed.recovery.status = CanvasRecoveryStatus::ProtectedConflict;
+			require(Draw3RecoveryNeedsUiRelease(failed, desired), "terminal-scene-failure-can-release-window-handoff-without-ready");
+			failed.recovery.status = CanvasRecoveryStatus::Retrying;
+			require(!Draw3RecoveryNeedsUiRelease(failed, desired), "normal-retry-retains-ready-handoff");
+			failed.recovery.status = CanvasRecoveryStatus::ManualRetryRequired;
+			failed.recovery.reason = CanvasRecoveryReason::ConsumerFatal;
+			failed.recovery.status = CanvasRecoveryStatus::Failed;
+			failed.consumerFatal = true;
+			require(Draw3FatalRecoveryMatches(failed, desired), "stopped-fatal-consumer-allows-only-safe-surface-release");
+			failed.consumerFatal = false;
+			require(!Draw3FatalRecoveryMatches(failed, desired), "normal-stopped-host-is-not-a-fatal-cleanup-ticket");
+			failed.consumerFatal = true;
+			failed.recovery.workspace = Bridge::Workspace::Whiteboard;
+			require(!Draw3RecoveryNeedsUiRelease(failed, desired), "old-workspace-error-cannot-release-current-window-transaction");
+		}
 		stage = "scene-publication-ownership";
 		ChangeStateModeToPen();
 		const auto primaryTool = GetStateModeVersionedSnapshot();
@@ -2063,6 +2158,9 @@ void StateMonitoring()
 	{
 		// 内容、目标就绪和全帧 clean 共享一个 revision，避免快速切换漏掉握手。
 		(void)Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(revision, 250);
+		// 消费者结束时 revision wait 会立即返回；故障清理仍按原 250ms cadence，避免停止态忙循环。
+		if (!offSignal && !Inkeys::Drawing::Draw3::ProductRunning())
+			std::this_thread::sleep_for(std::chrono::milliseconds(250));
 		if (offSignal) break;
 		// 同步提交失败时沿用本循环的 250ms cadence，直到最新 owner 期望真正生效。
 		ReconcileSettingOwnerDesiredState();
@@ -2091,7 +2189,7 @@ void StateMonitoring()
 			Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
 			Inkeys::UI::Whiteboard::CancelPointerCapture();
 			// PageControl 是共享宿主的唯一所有者；保留 PPT 状态并连续形变。
-			if (!service.EnterWhiteboardWindowMode())
+			if (!service.EnterWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Entering)))
 			{
 				// 样式事务失败时恢复 Presentation 控件，下一轮仍可重试进入。
 				Inkeys::UI::Ppt::PublishPresentationVisible(
@@ -2144,8 +2242,8 @@ void StateMonitoring()
 			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true)) continue;
 			Inkeys::UI::Bar::SetWhiteboardActive(true);
 			const bool whiteboardWindowStateReady =
-				service.SetOverlayFullscreen(true) &&
-				service.SetOverlayTopmost(false) &&
+				service.SetOverlayFullscreen(true, transitionGuard(WhiteboardPhase::Entering)) &&
+				service.SetOverlayTopmost(false, transitionGuard(WhiteboardPhase::Entering)) &&
 				SyncDrawpadClickThrough(false, transitionGuard(WhiteboardPhase::Entering));
 			if (!whiteboardWindowStateReady)
 			{
@@ -2155,9 +2253,9 @@ void StateMonitoring()
 				SetWhiteboardFreezeSurfaceOwned(false);
 				Inkeys::UI::Freeze::SetWhiteboardActive(false);
 				Inkeys::UI::Bar::SetWhiteboardActive(false);
-				(void)service.SetOverlayFullscreen(false);
-				(void)service.LeaveWhiteboardWindowMode();
-				(void)service.SetOverlayTopmost(true);
+				(void)service.SetOverlayFullscreen(false, transitionGuard(WhiteboardPhase::Entering));
+				(void)service.LeaveWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Entering));
+				(void)service.SetOverlayTopmost(true, transitionGuard(WhiteboardPhase::Entering));
 				whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
 				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
 				continue;
@@ -2244,7 +2342,7 @@ void StateMonitoring()
 				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
 				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
 				Inkeys::UI::Whiteboard::CancelPointerCapture();
-				if (!service.EnterWhiteboardWindowMode())
+				if (!service.EnterWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Exiting)))
 				{
 					// 重入也必须等待完整的窗口样式事务，不复用半套状态。
 					whiteboardPhase.store(WhiteboardPhase::Exiting,
@@ -2262,14 +2360,32 @@ void StateMonitoring()
 			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
 			const Workspace primaryWorkspace = CurrentPrimaryWorkspace();
 			const auto primaryDesired = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
-			if (primaryDesired.workspace != primaryWorkspace)
+			const bool fatalRecovery = Draw3FatalRecoveryMatches(snapshot, primaryDesired);
+			if (primaryDesired.workspace != primaryWorkspace && !fatalRecovery)
 			{
 				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
 				continue;
 			}
-			if (!Draw3WorkspaceReady(snapshot, primaryWorkspace)) continue;
+			const bool recoveryBlocked = Draw3RecoveryNeedsUiRelease(snapshot, primaryDesired);
+			if (!recoveryBlocked && !Draw3WorkspaceReady(snapshot, primaryWorkspace)) continue;
+			if (recoveryBlocked)
+			{
+				const auto hideGuard = [revision = primaryDesired.revision, expected = snapshot.recovery,
+					guard = transitionGuard(WhiteboardPhase::Exiting)]() noexcept
+				{
+					return guard() && Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().recovery == expected &&
+						Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision == revision;
+				};
+				// 错误终态只解除白板窗口事务；两画布保持隐藏，Host 的墨迹准入继续关闭。
+				if (fatalRecovery)
+				{
+					if (!ReleaseFatalDraw3Surfaces(snapshot, primaryDesired, hideGuard)) continue;
+				}
+				else if (!service.SetDrawpadSurfaceVisibility(Inkeys::Window::DrawpadSurfaceVisibility::Hidden,
+					hideGuard)) continue;
+			}
 
-			// Presentation 已有可接管帧后才关闭 Whiteboard，避免 raw COM present 重叠。
+			// 正常路径已有可接管帧；受保护失败则已隐藏两画布，均可结束白板背景交接。
 			HideWhiteboardForReturn();
 			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false)) continue;
 
@@ -2287,17 +2403,17 @@ void StateMonitoring()
 				(ForegroundMatchesWindowRole(focusBeforeWindowRestore, Inkeys::Window::WindowRole::Freeze)
 					|| ForegroundMatchesWindowRole(focusBeforeWindowRestore, Inkeys::Window::WindowRole::Drawpad));
 			const bool presentationWindowStateReady =
-				service.SetOverlayFullscreen(false) &&
-				service.LeaveWhiteboardWindowMode() &&
-				service.SetOverlayTopmost(true) &&
-				SyncDrawpadClickThrough(snapshot.selectionMode,
+				service.SetOverlayFullscreen(false, transitionGuard(WhiteboardPhase::Exiting)) &&
+				service.LeaveWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Exiting)) &&
+				service.SetOverlayTopmost(true, transitionGuard(WhiteboardPhase::Exiting)) &&
+				(fatalRecovery || SyncDrawpadClickThrough(recoveryBlocked || snapshot.selectionMode,
 					[guard = transitionGuard(WhiteboardPhase::Exiting),
 						modeRevision = stateModeTransitionRevision.load(std::memory_order_acquire),
 						selection = snapshot.selectionMode]() noexcept
 					{
 						return guard() && stateModeTransitionRevision.load(std::memory_order_acquire) == modeRevision &&
 							Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().selectionMode == selection;
-					});
+					}));
 			RebaseWhiteboardReturnFocus(focusBeforeWindowRestore,
 				focusMayFallBack && !service.WhiteboardWindowMode());
 			if (!presentationWindowStateReady) continue;

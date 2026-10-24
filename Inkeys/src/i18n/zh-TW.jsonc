@@ -137,6 +137,19 @@
         "FrameRateFormat": "幀率: {:.2f} FPS | 無限制幀率: {:.2f} FPS",
         "FrameRateUnavailable": "幀率: -- FPS | 無限制幀率: -- FPS"
       },
+      "CanvasRecovery":
+      {
+        "Conflict": "衝突",
+        "ReadFailed": "讀取",
+        "PresentFailed": "顯示",
+        "Failed": "故障",
+        "Recovering": "復原",
+        "Retry": "重試",
+        "Wait": "稍候",
+        "RetryCanvas": "重試畫布",
+        "ProtectedHint": "文件頁序或身分發生變化，墨跡已受保護。請還原原文件狀態後重試。",
+        "RecoveryHint": "畫布復原尚未完成。重試不會略過墨跡保護。"
+      },
       "Errors":
       {
         "TransparentBackgroundWarning": "軟體遇到透明背景無法正常顯示的問題\n\nexe 內容->停用「使用簡化的色彩模式」\nWindows 7 使用者請啟用 Aero 主題\n\n聯絡開發者->軟體選項首頁\n重新啟動軟體後再試"

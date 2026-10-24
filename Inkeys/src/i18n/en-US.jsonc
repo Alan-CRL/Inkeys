@@ -137,6 +137,19 @@
         "FrameRateFormat": "Frame rate: {:.2f} FPS | Unlimited: {:.2f} FPS",
         "FrameRateUnavailable": "Frame rate: -- FPS | Unlimited: -- FPS"
       },
+      "CanvasRecovery":
+      {
+        "Conflict": "Bind",
+        "ReadFailed": "Read",
+        "PresentFailed": "View",
+        "Failed": "Error",
+        "Recovering": "Busy",
+        "Retry": "Retry",
+        "Wait": "Wait",
+        "RetryCanvas": "Retry canvas",
+        "ProtectedHint": "The document order or identity changed. Existing ink is protected. Restore the original document state, then retry.",
+        "RecoveryHint": "Canvas recovery is incomplete. Retrying will preserve ink protection."
+      },
       "Errors":
       {
         "TransparentBackgroundWarning": "Inkeys cannot display the transparent background correctly.\n\nExecutable properties -> disable simplified color mode\nWindows 7 users: enable the Aero theme\n\nContact the developer from the Options home page.\nRestart Inkeys and try again."

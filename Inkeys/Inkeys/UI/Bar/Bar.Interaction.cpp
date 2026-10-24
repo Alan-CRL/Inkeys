@@ -716,6 +716,10 @@ namespace
 	MainNativeCaptureOwnership mainNativeCaptureOwnership;
 	std::atomic_uint64_t mainSliderCaptureTicket = 0, mainColorPickerCaptureTicket = 0;
 	std::atomic_uint64_t activeMainGestureCaptureTicket = 0;
+	std::mutex mainAttributeCaptureMutex;
+	std::uint64_t retiredMainSliderCaptureTicket = 0, retiredMainColorPickerCaptureTicket = 0;
+	std::uint64_t mainGestureCaptureOrdinal = 0;
+	LRESULT ApplyMainAttributeCapture(HWND window, UINT message, WPARAM action, LPARAM value) noexcept;
 	bool UpdateMainAttributeCapture(std::atomic_uint64_t& attribute, std::uint64_t ticket, bool start) noexcept
 	{
 		if (!ticket) return false;
@@ -732,11 +736,23 @@ namespace
 	std::uint64_t acceptedMainCaptureTicket = 0;
 	thread_local void (*mainCaptureReleaseTestSink)(HWND, std::uint64_t, void*) = nullptr;
 	thread_local void* mainCaptureReleaseTestContext = nullptr;
+	std::atomic_uint64_t pendingMainNativeReleaseTicket = 0;
+	void RetainMainCaptureRelease(std::atomic_uint64_t& pending, std::uint64_t ticket) noexcept
+	{
+		auto current = pending.load(std::memory_order_acquire);
+		while (current < ticket && !pending.compare_exchange_weak(current, ticket,
+			std::memory_order_release, std::memory_order_acquire)) {}
+	}
 	void RequestMainCaptureRelease(HWND window, std::uint64_t ticket) noexcept
 	{
 		if (!window || !ticket) return;
 		if (mainCaptureReleaseTestSink) mainCaptureReleaseTestSink(window, ticket, mainCaptureReleaseTestContext);
-		else PostMessage(window, BarInputReleaseCaptureMessage, static_cast<WPARAM>(ticket), 0);
+		else
+		{
+			// 队列满导致唤醒投递失败时，后续任一原生消息仍会消费保留票据；旧释放不能覆盖新释放。
+			RetainMainCaptureRelease(pendingMainNativeReleaseTicket, ticket);
+			PostMessage(window, BarInputReleaseCaptureMessage, static_cast<WPARAM>(ticket), 0);
+		}
 	}
 	void CancelAcceptedMainCapture() noexcept
 	{
@@ -973,7 +989,9 @@ namespace
 		if (mainInteractionAwaitContext)
 		{
 			mainInteractionAwaitContext->gestureCaptureTicket = mainInteractionAwaitContext->currentCaptureTicket;
+			std::lock_guard lock(mainAttributeCaptureMutex);
 			activeMainGestureCaptureTicket.store(mainInteractionAwaitContext->gestureCaptureTicket, std::memory_order_release);
+			mainGestureCaptureOrdinal = barPointerActiveOrdinal.load(std::memory_order_acquire);
 		}
 	}
 
@@ -2031,7 +2049,6 @@ namespace Inkeys::UI::Bar
 					MainNativeCaptureOwnership owner;
 					std::vector<std::uint64_t> requests, observedDowns;
 					unsigned retired = 0;
-					std::atomic_uint64_t attribute = 0;
 					bool completed = false;
 				} capture;
 				const auto target = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(0x500));
@@ -2056,10 +2073,12 @@ namespace Inkeys::UI::Bar
 					if (!(co_await NextBarInteractionMessage(input, EM_MOUSE, target))) co_return false;
 					BeginMainGestureCapture();
 					capture.observedDowns.push_back(MainGestureCaptureTicket());
-					const bool started = UpdateMainAttributeCapture(capture.attribute, MainGestureCaptureTicket(), true);
+					const bool started = ApplyMainAttributeCapture(target, BarThicknessSliderCaptureMessage,
+						BarThicknessSliderCaptureStart, static_cast<LPARAM>(MainGestureCaptureTicket())) != 0;
 					const bool up = co_await NextBarInteractionMessage(input, EM_MOUSE, target);
-					const bool stopped = UpdateMainAttributeCapture(capture.attribute, MainGestureCaptureTicket(), false);
-					RequestMainCaptureRelease(target, MainGestureCaptureTicket());
+					const bool stopped = mainSliderCaptureTicket.load(std::memory_order_acquire) == MainGestureCaptureTicket();
+					ApplyMainAttributeCapture(target, BarThicknessSliderCaptureMessage,
+						BarThicknessSliderCaptureStop, static_cast<LPARAM>(MainGestureCaptureTicket()));
 					capture.completed = started && stopped && up && input.message == WM_LBUTTONUP;
 					co_return capture.completed;
 				};
@@ -2101,15 +2120,48 @@ namespace Inkeys::UI::Bar
 				context = {};
 				auto replacementGesture = gesture(); replacementGesture.Start();
 				(void)PumpSharedInteraction(context, InteractionClock::now());
-				check(!replacementGesture.Done() && capture.attribute.load() == replacementTicket,
+				check(!replacementGesture.Done() && mainSliderCaptureTicket.load() == replacementTicket,
 					"queued-second-down-survives-first-gesture-completion");
-				check(!UpdateMainAttributeCapture(capture.attribute, fastTicket, false)
-					&& capture.attribute.load() == replacementTicket, "old-attribute-stop-cannot-clear-replacement-state");
+				check(!UpdateMainAttributeCapture(mainSliderCaptureTicket, fastTicket, false)
+					&& mainSliderCaptureTicket.load() == replacementTicket, "old-attribute-stop-cannot-clear-replacement-state");
 				(void)capture.owner.Retire(target, replacementTicket);
 				check(EnqueueMainInteractionMessage(target, up, replacementTicket), "enqueue-replacement-up");
 				(void)PumpSharedInteraction(context, InteractionClock::now());
 				check(replacementGesture.Done() && capture.completed && capture.observedDowns.size() == 4,
 					"native-queued-taps-preserve-both-logical-property-edits");
+				check(!ApplyMainAttributeCapture(target, BarThicknessSliderCaptureMessage,
+					BarThicknessSliderCaptureStart, static_cast<LPARAM>(replacementTicket)),
+					"stopped-main-ticket-cannot-be-revived-by-delayed-start");
+				const auto colorTicket = capture.owner.Begin(target);
+				activeMainGestureCaptureTicket.store(colorTicket, std::memory_order_release);
+				check(ApplyMainAttributeCapture(target, BarColorPickerCaptureMessage,
+					BarColorPickerCaptureStart, static_cast<LPARAM>(colorTicket)) != 0,
+					"color-start-acknowledges-owner-ticket-without-synchronous-window-call");
+				ApplyMainAttributeCapture(target, BarColorPickerCaptureMessage,
+					BarColorPickerCaptureCancel, static_cast<LPARAM>(replacementTicket));
+				check(mainColorPickerCaptureTicket.load() == colorTicket
+					&& barUISet.barState.drawAttributeBar.colorPickerPointerCapture
+					&& capture.owner.Owns(target, colorTicket), "stale-cancel-preserves-new-logical-and-native-capture");
+				ApplyMainAttributeCapture(target, BarColorPickerCaptureMessage,
+					BarColorPickerCaptureCancel, static_cast<LPARAM>(colorTicket));
+				check(!barUISet.barState.drawAttributeBar.colorPickerPointerCapture
+					&& !ApplyMainAttributeCapture(target, BarColorPickerCaptureMessage,
+						BarColorPickerCaptureStart, static_cast<LPARAM>(colorTicket)),
+					"cancelled-color-ticket-releases-exact-owner-and-rejects-late-start");
+				const auto beforeStartTicket = capture.owner.Begin(target);
+				activeMainGestureCaptureTicket.store(beforeStartTicket, std::memory_order_release);
+				ApplyMainAttributeCapture(target, BarThicknessSliderCaptureMessage,
+					BarThicknessSliderCaptureCancel, static_cast<LPARAM>(beforeStartTicket));
+				check(!ApplyMainAttributeCapture(target, BarThicknessSliderCaptureMessage,
+					BarThicknessSliderCaptureStart, static_cast<LPARAM>(beforeStartTicket))
+					&& !barUISet.barState.drawAttributeBar.thicknessSliderCapture,
+					"cancel-before-start-retires-ticket-before-owner-acknowledgement");
+				std::atomic_uint64_t retainedRelease = 0;
+				RetainMainCaptureRelease(retainedRelease, replacementTicket);
+				RetainMainCaptureRelease(retainedRelease, beforeStartTicket);
+				RetainMainCaptureRelease(retainedRelease, replacementTicket);
+				check(retainedRelease.exchange(0) == beforeStartTicket,
+					"lost-wake-release-slot-keeps-newest-ticket-over-delayed-old-release");
 				CancelAcceptedMainCapture();
 				context = {}; receivedMain = false;
 				auto unseenMain = waitForMain(); unseenMain.Start();
@@ -2126,6 +2178,10 @@ namespace Inkeys::UI::Bar
 					"main-overflow-releases-exact-ticket-of-unconsumed-down");
 				check(!sharedInputMailbox.OverflowPending(), "main-overflow-barrier-completes-after-release-request");
 				activeMainGestureCaptureTicket.store(0, std::memory_order_release);
+				mainSliderCaptureTicket.store(0); mainColorPickerCaptureTicket.store(0);
+				retiredMainSliderCaptureTicket = retiredMainColorPickerCaptureTicket = mainGestureCaptureOrdinal = 0;
+				barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
+				barUISet.barState.drawAttributeBar.colorPickerPointerCapture = false;
 				context = {};
 			}
 			{
@@ -2355,14 +2411,50 @@ void ClearBarInteractionMessages(BYTE filter, HWND)
 	FinishBarPointerSession();
 }
 
-void QueueBarThicknessSliderEnd(HWND, std::uint64_t)
+void QueueBarThicknessSliderEnd(HWND, std::uint64_t ticket)
 {
-	RequestBarPointerCancellation();
+	std::lock_guard lock(mainAttributeCaptureMutex);
+	if (ticket && activeMainGestureCaptureTicket.load(std::memory_order_acquire) == ticket
+		&& mainGestureCaptureOrdinal)
+		barPointerRequestedCancel.store(mainGestureCaptureOrdinal, std::memory_order_release);
 }
 
-void QueueBarColorPickerEnd(HWND, std::uint64_t)
+void QueueBarColorPickerEnd(HWND window, std::uint64_t ticket)
 {
-	RequestBarPointerCancellation();
+	QueueBarThicknessSliderEnd(window, ticket);
+}
+
+namespace
+{
+	LRESULT ApplyMainAttributeCapture(HWND window, UINT message, WPARAM action, LPARAM value) noexcept
+	{
+		const auto ticket = static_cast<std::uint64_t>(value);
+		if (!ticket) return 0;
+		const bool slider = message == BarThicknessSliderCaptureMessage;
+		if (!slider && message != BarColorPickerCaptureMessage) return 0;
+		{
+			std::lock_guard lock(mainAttributeCaptureMutex);
+			auto& attribute = slider ? mainSliderCaptureTicket : mainColorPickerCaptureTicket;
+			auto& retired = slider ? retiredMainSliderCaptureTicket : retiredMainColorPickerCaptureTicket;
+			auto& captured = slider ? barUISet.barState.drawAttributeBar.thicknessSliderCapture
+				: barUISet.barState.drawAttributeBar.colorPickerPointerCapture;
+			if (action == BarThicknessSliderCaptureStart)
+			{
+				// Down 已在原生 owner 建立捕获并签发票据；这里只确认 FIFO 的逻辑接触，绝不跨线程发同步消息。
+				if (retired == ticket || !UpdateMainAttributeCapture(attribute, ticket, true)) return 0;
+				captured = true;
+				return 1;
+			}
+			const bool changed = UpdateMainAttributeCapture(attribute, ticket, false);
+			if (!changed && activeMainGestureCaptureTicket.load(std::memory_order_acquire) != ticket) return 0;
+			retired = ticket; // 即使取消先于 Start，也不能让延迟的 Start 复活该票据。
+			if (changed) captured = false;
+		}
+		// 原生释放继续回到窗口 owner，精确票据保证旧 Stop 不会释放下一次 Down。
+		RequestMainCaptureRelease(window, ticket);
+		if (action == BarThicknessSliderCaptureCancel) QueueBarThicknessSliderEnd(window, ticket);
+		return 0;
+	}
 }
 
 // ====================
@@ -2514,6 +2606,8 @@ namespace
 
 LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	if (const auto ticket = pendingMainNativeReleaseTicket.exchange(0, std::memory_order_acq_rel))
+		ReleaseBarNativeCapture(hWnd, ticket);
 	if (msg == BarInputReleaseCaptureMessage)
 	{
 		ReleaseBarNativeCapture(hWnd, static_cast<std::uint64_t>(wParam));
@@ -2638,42 +2732,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	}
 
 	case BarThicknessSliderCaptureMessage:
-	{
-		auto ticket = static_cast<std::uint64_t>(lParam);
-		if (wParam == BarThicknessSliderCaptureStart)
-		{
-			// 复用 Down 在窗口线程建立的捕获；滞后的属性 Start 不能接管新接触。
-			if (!UpdateMainAttributeCapture(mainSliderCaptureTicket, ticket, true)) return 0;
-			barUISet.barState.drawAttributeBar.thicknessSliderCapture = true;
-			return 1;
-		}
-
-		if (!UpdateMainAttributeCapture(mainSliderCaptureTicket, ticket, false)) return 0;
-		barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
-		ReleaseBarNativeCapture(hWnd, ticket);
-		if (wParam == BarThicknessSliderCaptureCancel)
-			QueueBarThicknessSliderEnd(hWnd, ticket);
-		return 0;
-	}
-
 	case BarColorPickerCaptureMessage:
-	{
-		auto ticket = static_cast<std::uint64_t>(lParam);
-		if (wParam == BarColorPickerCaptureStart)
-		{
-			// 与粗细调节一致，只接受本次 Down 的票据，允许拖出色板继续夹紧选色。
-			if (!UpdateMainAttributeCapture(mainColorPickerCaptureTicket, ticket, true)) return 0;
-			barUISet.barState.drawAttributeBar.colorPickerPointerCapture = true;
-			return 1;
-		}
-
-		if (!UpdateMainAttributeCapture(mainColorPickerCaptureTicket, ticket, false)) return 0;
-		barUISet.barState.drawAttributeBar.colorPickerPointerCapture = false;
-		ReleaseBarNativeCapture(hWnd, ticket);
-		if (wParam == BarColorPickerCaptureCancel)
-			QueueBarColorPickerEnd(hWnd, ticket);
-		return 0;
-	}
+		return ApplyMainAttributeCapture(hWnd, msg, wParam, lParam);
 
 	case WM_CAPTURECHANGED:
 	{
@@ -2682,6 +2742,9 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			// 原生捕获仅作兼容；失去捕获不能替 Raw/Touch 伪造成功抬手。
 			const auto ticket = mainNativeCaptureOwnership.Current(hWnd);
 			(void)mainNativeCaptureOwnership.Retire(hWnd, ticket);
+			std::lock_guard lock(mainAttributeCaptureMutex);
+			if (const auto attribute = mainColorPickerCaptureTicket.exchange(0)) retiredMainColorPickerCaptureTicket = attribute;
+			if (const auto attribute = mainSliderCaptureTicket.exchange(0)) retiredMainSliderCaptureTicket = attribute;
 			barUISet.barState.drawAttributeBar.colorPickerPointerCapture = false;
 			barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 		}
@@ -2942,7 +3005,7 @@ void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
 			&& (barState.drawAttributeBar.thicknessSliderCapture
 				|| (cancelCapture && gestureActive)))
 		{
-			SendMessage(floating_window, BarThicknessSliderCaptureMessage,
+			ApplyMainAttributeCapture(floating_window, BarThicknessSliderCaptureMessage,
 				cancelCapture
 					? BarThicknessSliderCaptureCancel
 					: BarThicknessSliderCaptureStop,
@@ -2969,7 +3032,7 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 	{
 		if (picker.colorPickerPointerCapture || (cancelCapture && gestureActive))
 		{
-			SendMessage(floating_window, BarColorPickerCaptureMessage,
+			ApplyMainAttributeCapture(floating_window, BarColorPickerCaptureMessage,
 				cancelCapture
 					? BarColorPickerCaptureCancel
 					: BarColorPickerCaptureStop,
@@ -4573,7 +4636,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		picker.colorPickerHoldLocked = false;
 		picker.colorPickerHoldProgress = 0.0f;
 		ApplyClientPoint(gestureMessage.x, gestureMessage.y);
-		SendMessage(floating_window, BarColorPickerCaptureMessage,
+		ApplyMainAttributeCapture(floating_window, BarColorPickerCaptureMessage,
 			BarColorPickerCaptureStart, static_cast<LPARAM>(MainGestureCaptureTicket()));
 		UpdateRendering();
 
@@ -4610,7 +4673,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 		bool captured = picker.colorPickerPointerCapture;
 		if (captured)
-			SendMessage(floating_window, BarColorPickerCaptureMessage,
+			ApplyMainAttributeCapture(floating_window, BarColorPickerCaptureMessage,
 				BarColorPickerCaptureStop, static_cast<LPARAM>(MainGestureCaptureTicket()));
 		bool completed = captured && !offSignal
 			&& !IsBarPointerCancelMessage(gestureMessage)
@@ -6696,7 +6759,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										hoveredIndependentButton, true, true);
 									hoveredIndependentButton =
 										IndependentHoverTargetEnum::None;
-									SendMessage(floating_window,
+									ApplyMainAttributeCapture(floating_window,
 										BarThicknessSliderCaptureMessage,
 										BarThicknessSliderCaptureStart, static_cast<LPARAM>(MainGestureCaptureTicket()));
 									UpdateRendering(false);
@@ -7158,7 +7221,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									bool gestureCaptured = barState.drawAttributeBar
 										.thicknessSliderCapture;
 									if (gestureCaptured)
-										SendMessage(floating_window,
+										ApplyMainAttributeCapture(floating_window,
 											BarThicknessSliderCaptureMessage,
 											BarThicknessSliderCaptureStop, static_cast<LPARAM>(MainGestureCaptureTicket()));
 									bool holdLockedAtRelease =

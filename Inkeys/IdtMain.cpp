@@ -1453,6 +1453,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return stateResult != 0 ? stateResult
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
 		}
+		if (count > 1 && wcscmp(arguments[1], L"--setting-business-cancellation-test") == 0)
+		{
+			// 无窗口队列取消回归必须先于配置、单实例及产品 HWND 初始化退出。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Setting::RunBusinessCancellationProductionTest();
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--pen-width-production-test") == 0)
 		{
 			LocalFree(arguments);

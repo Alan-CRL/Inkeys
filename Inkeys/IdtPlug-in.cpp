@@ -34,6 +34,7 @@ import Inkeys.Window;
 import Inkeys.Startup.Progress;
 
 #include "IdtPlug-in.h"
+#include "Inkeys/UI/Ppt/Ppt.Recovery.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
@@ -174,6 +175,19 @@ namespace
 		}
 		pptUiBusinessCondition.notify_one();
 	}
+	void RetryPptCanvasRecovery(Inkeys::UI::PptRecovery::State expected)
+	{
+		const auto epoch = PptInputWorkspaceEpoch();
+		if (!epoch || !expected.retryAvailable || !expected.revision) return;
+		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		const auto desired = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+		const auto current = Inkeys::UI::PptRecovery::Project(runtime.recovery, desired,
+			expected.session, false, runtime.consumerFatal);
+		if (!current.CanRetry(expected)) return;
+		(void)Inkeys::Drawing::Draw3::RetryProductCanvasRecovery(runtime.recovery,
+			[epoch]() noexcept { return PptInputWorkspaceEpoch() == epoch; });
+	}
+
 	void AcknowledgePptPageUi(std::uint64_t session, std::uint64_t revision, int page, int total)
 	{
 		std::optional<Inkeys::Drawing::Draw3::Bridge::PresentationReadyIdentity> ready;
@@ -1279,6 +1293,20 @@ void PptInfo()
 			total = publishedTotal;
 		}
 		else { page = -1; total = -1; }
+		const auto recoveryRuntime = D3::ProductRuntimeSnapshot();
+		const auto recoveryDesired = D3::ProductHost().ProductBridge().Snapshot();
+		const auto recoveryView = Inkeys::UI::PptRecovery::Project(recoveryRuntime.recovery,
+			recoveryDesired, session.localSession, whiteboard, recoveryRuntime.consumerFatal);
+		Inkeys::UI::Ppt::PublishCanvasRecovery(recoveryView);
+		if (recoveryView.kind != Inkeys::UI::PptRecovery::Kind::None && recoveryDesired.presentationTarget)
+		{
+			// 故障显示不冒充 InkReady；翻页仍绑定可信目标，重试绑定独立故障令牌。
+			page = recoveryDesired.presentationTarget->pageKind == D3::Bridge::PresentationPageKind::EndScreen
+				? -1 : static_cast<int>(recoveryDesired.presentationTarget->pageIndex + 1);
+			total = static_cast<int>(recoveryDesired.presentationTarget->totalPages);
+			targetRevision = 0;
+			pageMode = Inkeys::UI::Ppt::PageStateMode::Pending;
+		}
 		if (!whiteboard && (page != publishedPage || total != publishedTotal
 			|| targetRevision != publishedTarget || session.localSession != publishedSession
 			|| pageMode != publishedPageMode))
@@ -1345,6 +1373,7 @@ void PPTLinkageMain()
 		[]() { QueuePptUiBusinessCommand(PptUiBusinessCommand::EndShow); },
 		[](std::string payload) { QueuePptUiSettingsPersistence(std::move(payload)); },
 		AcknowledgePptPageUi,
+		RetryPptCanvasRecovery,
 	});
 	if (pptUiReady)
 	{

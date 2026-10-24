@@ -31,6 +31,14 @@ namespace Inkeys::Drawing::Draw3
 					Bridge::ReadyIdentityFor(*desired.presentationTarget)));
 	}
 
+	inline bool CanvasRecoveryRetryMatches(const CanvasRecoveryState& expected,
+		const CanvasRecoveryState& current, const Bridge::ProductState& desired,
+		bool running, bool stopping, bool consumerFatal) noexcept
+	{
+		return running && !stopping && !consumerFatal && expected.revision != 0 &&
+			expected == current && current.retryAvailable && RecoveryMatchesDesired(current, desired);
+	}
+
 	// 最后发出的请求可能仍在 Controller 退避；已呈现工作区相同也必须发送新意图，退休过期请求。
 	inline bool PresentationSceneNeedsDispatch(const Bridge::ProductState& desired,
 		Bridge::Workspace presentedWorkspace, Bridge::Workspace requestedWorkspace,

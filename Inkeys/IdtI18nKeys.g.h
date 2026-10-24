@@ -140,6 +140,19 @@ inline constexpr struct I18nKeyRoot
                 const char* FrameRateFormat = "UI/Bar/Diagnostics/FrameRateFormat";
                 const char* FrameRateUnavailable = "UI/Bar/Diagnostics/FrameRateUnavailable";
             } Diagnostics{};
+            struct Node__UI__Bar__CanvasRecovery
+            {
+                const char* Conflict = "UI/Bar/CanvasRecovery/Conflict";
+                const char* ReadFailed = "UI/Bar/CanvasRecovery/ReadFailed";
+                const char* PresentFailed = "UI/Bar/CanvasRecovery/PresentFailed";
+                const char* Failed = "UI/Bar/CanvasRecovery/Failed";
+                const char* Recovering = "UI/Bar/CanvasRecovery/Recovering";
+                const char* Retry = "UI/Bar/CanvasRecovery/Retry";
+                const char* Wait = "UI/Bar/CanvasRecovery/Wait";
+                const char* RetryCanvas = "UI/Bar/CanvasRecovery/RetryCanvas";
+                const char* ProtectedHint = "UI/Bar/CanvasRecovery/ProtectedHint";
+                const char* RecoveryHint = "UI/Bar/CanvasRecovery/RecoveryHint";
+            } CanvasRecovery{};
             struct Node__UI__Bar__Errors
             {
                 const char* TransparentBackgroundWarning = "UI/Bar/Errors/TransparentBackgroundWarning";

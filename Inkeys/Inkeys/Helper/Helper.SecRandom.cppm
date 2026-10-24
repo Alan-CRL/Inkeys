@@ -8,6 +8,7 @@ module;
 #include <sstream>
 #include <string_view>
 #include <vector>
+#include "SecRandom.PipeIo.h"
 
 #undef max
 #undef min
@@ -147,39 +148,18 @@ namespace
 		return static_cast<DWORD>(remainingMs);
 	}
 
-	bool WaitForPipeOperation(HANDLE pipeHandle, OVERLAPPED& overlapped, DWORD& transferred, const std::chrono::steady_clock::time_point& deadline, const std::wstring& timeoutMessage, const std::wstring& failurePrefix, std::wstring* errorMessage)
-	{
-		const DWORD waitMs = GetRemainingTimeoutMs(deadline);
-		const DWORD waitResult = WaitForSingleObject(overlapped.hEvent, waitMs);
-		if (waitResult == WAIT_OBJECT_0)
-		{
-			if (GetOverlappedResult(pipeHandle, &overlapped, &transferred, FALSE)) return true;
-
-			const DWORD lastError = GetLastError();
-			AssignError(errorMessage, failurePrefix + FormatWindowsErrorDetail(lastError));
-			return false;
-		}
-		if (waitResult == WAIT_TIMEOUT)
-		{
-			CancelIo(pipeHandle);
-			DWORD ignored = 0;
-			GetOverlappedResult(pipeHandle, &overlapped, &ignored, TRUE);
-			AssignError(errorMessage, timeoutMessage);
-			return false;
-		}
-
-		const DWORD lastError = GetLastError();
-		AssignError(errorMessage, failurePrefix + FormatWindowsErrorDetail(lastError));
-		return false;
-	}
-
-	bool ConnectPipe(std::wstring_view ipcName, const std::chrono::steady_clock::time_point& deadline, UniqueHandle& pipeHandle, std::wstring* errorMessage)
+	bool ConnectPipe(std::wstring_view ipcName, const std::chrono::steady_clock::time_point& deadline, UniqueHandle& pipeHandle, const Inkeys::SecRandom::Detail::PipeCancellation& cancellation, std::wstring* errorMessage)
 	{
 		const std::wstring pipePath = BuildPipePath(ipcName);
 		const DWORD pipeClientFlags = FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION;
 
 		while (true)
 		{
+			if (cancellation.Requested())
+			{
+				AssignError(errorMessage, L"SecRandom IPC 请求已取消。", false);
+				return false;
+			}
 			HANDLE rawHandle = CreateFileW(pipePath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, pipeClientFlags, nullptr);
 			if (rawHandle != INVALID_HANDLE_VALUE)
 			{
@@ -223,12 +203,12 @@ namespace
 			}
 
 			const DWORD remainingMs = GetRemainingTimeoutMs(deadline);
-			DWORD waitSlice = remainingMs > 1000 ? 1000 : remainingMs;
+			DWORD waitSlice = remainingMs > 50 ? 50 : remainingMs;
 			if (waitSlice == 0) waitSlice = 1;
 
 			if (lastError == ERROR_FILE_NOT_FOUND)
 			{
-				Sleep(waitSlice);
+				WaitForSingleObject(cancellation.Event(), waitSlice);
 				continue;
 			}
 
@@ -244,121 +224,52 @@ namespace
 		}
 	}
 
-	bool WriteAll(HANDLE pipeHandle, const char* buffer, size_t length, const std::chrono::steady_clock::time_point& deadline, std::wstring* errorMessage)
+	bool WriteAll(HANDLE pipeHandle, const char* buffer, size_t length,
+		const std::chrono::steady_clock::time_point& deadline,
+		const Inkeys::SecRandom::Detail::PipeCancellation& cancellation, std::wstring* errorMessage)
 	{
 		size_t offset = 0;
 		while (offset < length)
 		{
-			if (GetRemainingTimeoutMs(deadline) == 0)
+			auto result = Inkeys::SecRandom::Detail::TransferPipe(pipeHandle,
+				buffer + offset, length - offset, deadline, cancellation);
+			if (result.error != ERROR_SUCCESS || result.transferred == 0)
 			{
-				AssignError(errorMessage, L"写入 SecRandom IPC 管道超时。");
+				AssignError(errorMessage, L"写入 SecRandom IPC 管道失败: "
+					+ FormatWindowsErrorDetail(result.error == ERROR_SUCCESS ? ERROR_WRITE_FAULT : result.error)
+					+ (result.quarantined ? L"；取消仍未完成，已隔离请求并暂停新 I/O。" : L""),
+					result.quarantined || result.error != ERROR_OPERATION_ABORTED);
 				return false;
 			}
-
-			UniqueHandle eventHandle(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-			if (!eventHandle)
-			{
-				AssignError(errorMessage, L"创建 SecRandom IPC 写入事件失败: " + FormatWindowsErrorDetail(GetLastError()));
-				return false;
-			}
-
-			OVERLAPPED overlapped = {};
-			overlapped.hEvent = eventHandle.Get();
-
-			DWORD written = 0;
-			DWORD chunkLength = static_cast<DWORD>(min<size_t>(length - offset, numeric_limits<DWORD>::max()));
-			if (!WriteFile(pipeHandle, buffer + offset, chunkLength, nullptr, &overlapped))
-			{
-				const DWORD lastError = GetLastError();
-				if (lastError == ERROR_IO_PENDING)
-				{
-					if (!WaitForPipeOperation(pipeHandle, overlapped, written, deadline, L"写入 SecRandom IPC 管道超时。", L"写入 SecRandom IPC 管道失败: ", errorMessage)) return false;
-				}
-				else
-				{
-					AssignError(errorMessage, L"写入 SecRandom IPC 管道失败: " + FormatWindowsErrorDetail(lastError));
-					return false;
-				}
-			}
-			else if (!GetOverlappedResult(pipeHandle, &overlapped, &written, FALSE))
-			{
-				AssignError(errorMessage, L"写入 SecRandom IPC 管道失败: " + FormatWindowsErrorDetail(GetLastError()));
-				return false;
-			}
-			if (written == 0)
-			{
-				AssignError(errorMessage, L"写入 SecRandom IPC 管道失败: 写入了 0 字节。");
-				return false;
-			}
-			offset += written;
+			offset += result.transferred;
 		}
 		return true;
 	}
 
-	bool ReadResponseLine(HANDLE pipeHandle, std::string& responseLine, const std::chrono::steady_clock::time_point& deadline, std::wstring* errorMessage)
+	bool ReadResponseLine(HANDLE pipeHandle, std::string& responseLine,
+		const std::chrono::steady_clock::time_point& deadline,
+		const Inkeys::SecRandom::Detail::PipeCancellation& cancellation, std::wstring* errorMessage)
 	{
 		responseLine.clear();
-		vector<char> chunk(512);
-
 		while (true)
 		{
-			if (GetRemainingTimeoutMs(deadline) == 0)
+			auto result = Inkeys::SecRandom::Detail::TransferPipe(pipeHandle,
+				nullptr, 512, deadline, cancellation);
+			if (!result.data.empty())
 			{
-				AssignError(errorMessage, L"读取 SecRandom IPC 响应超时。");
-				return false;
-			}
-
-			UniqueHandle eventHandle(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-			if (!eventHandle)
-			{
-				AssignError(errorMessage, L"创建 SecRandom IPC 读取事件失败: " + FormatWindowsErrorDetail(GetLastError()));
-				return false;
-			}
-
-			OVERLAPPED overlapped = {};
-			overlapped.hEvent = eventHandle.Get();
-
-			DWORD readBytes = 0;
-			BOOL readOk = ReadFile(pipeHandle, chunk.data(), static_cast<DWORD>(chunk.size()), nullptr, &overlapped);
-			DWORD lastError = readOk ? ERROR_SUCCESS : GetLastError();
-
-			if (!readOk && lastError == ERROR_IO_PENDING)
-			{
-				if (!WaitForPipeOperation(pipeHandle, overlapped, readBytes, deadline, L"读取 SecRandom IPC 响应超时。", L"读取 SecRandom IPC 响应失败: ", errorMessage)) return false;
-				lastError = ERROR_SUCCESS;
-				readOk = TRUE;
-			}
-			else if (readOk)
-			{
-				if (!GetOverlappedResult(pipeHandle, &overlapped, &readBytes, FALSE))
-				{
-					lastError = GetLastError();
-					readOk = FALSE;
-				}
-			}
-
-			if (readBytes != 0)
-			{
-				responseLine.append(chunk.data(), chunk.data() + readBytes);
+				responseLine.append(result.data.data(), result.data.size());
 				if (responseLine.find('\n') != string::npos) break;
 			}
-
-			if (readOk)
+			if (result.error == ERROR_SUCCESS)
 			{
-				if (readBytes == 0) break;
+				if (result.transferred == 0) break;
 				continue;
 			}
-
-			if (lastError == ERROR_MORE_DATA)
-			{
-				continue;
-			}
-			if (lastError == ERROR_BROKEN_PIPE)
-			{
-				break;
-			}
-
-			AssignError(errorMessage, L"读取 SecRandom IPC 响应失败: " + FormatWindowsErrorDetail(lastError));
+			if (result.error == ERROR_MORE_DATA) continue;
+			if (result.error == ERROR_BROKEN_PIPE) break;
+			AssignError(errorMessage, L"读取 SecRandom IPC 响应失败: " + FormatWindowsErrorDetail(result.error)
+				+ (result.quarantined ? L"；取消仍未完成，已隔离请求并暂停新 I/O。" : L""),
+				result.quarantined || result.error != ERROR_OPERATION_ABORTED);
 			return false;
 		}
 
@@ -383,11 +294,17 @@ namespace
 
 export namespace Inkeys::SecRandom
 {
-	bool SendUrl(std::wstring_view url, std::wstring* errorMessage = nullptr, DWORD timeoutMs = 5000)
+	bool SendUrl(std::wstring_view url, std::wstring* errorMessage = nullptr, DWORD timeoutMs = 5000, std::stop_token token = {})
 	{
+		Inkeys::SecRandom::Detail::PipeCancellation cancellation(token);
+		if (!cancellation.Valid())
+		{
+			AssignError(errorMessage, L"创建 SecRandom IPC 取消事件失败。");
+			return false;
+		}
 		UniqueHandle pipeHandle;
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-		if (!ConnectPipe(kDefaultIpcName, deadline, pipeHandle, errorMessage)) return false;
+		if (!ConnectPipe(kDefaultIpcName, deadline, pipeHandle, cancellation, errorMessage)) return false;
 
 		Json::Value request(Json::objectValue);
 		request["type"] = Json::Value("url");
@@ -398,10 +315,10 @@ export namespace Inkeys::SecRandom
 		std::string requestJson = Json::writeString(writer, request);
 		requestJson.push_back('\n');
 
-		if (!WriteAll(pipeHandle.Get(), requestJson.data(), requestJson.size(), deadline, errorMessage)) return false;
+		if (!WriteAll(pipeHandle.Get(), requestJson.data(), requestJson.size(), deadline, cancellation, errorMessage)) return false;
 
 		std::string responseJson;
-		if (!ReadResponseLine(pipeHandle.Get(), responseJson, deadline, errorMessage)) return false;
+		if (!ReadResponseLine(pipeHandle.Get(), responseJson, deadline, cancellation, errorMessage)) return false;
 
 		Json::CharReaderBuilder reader;
 		reader["collectComments"] = false;
@@ -431,8 +348,8 @@ export namespace Inkeys::SecRandom
 		return true;
 	}
 
-	bool OpenQuickDraw(std::wstring* errorMessage = nullptr, DWORD timeoutMs = 5000)
+	bool OpenQuickDraw(std::wstring* errorMessage = nullptr, DWORD timeoutMs = 5000, std::stop_token token = {})
 	{
-		return SendUrl(kDefaultQuickDrawUrl, errorMessage, timeoutMs);
+		return SendUrl(kDefaultQuickDrawUrl, errorMessage, timeoutMs, token);
 	}
 }

@@ -541,6 +541,76 @@ namespace
 			Workspace::Desktop, 0, false), "host lifecycle reset starts with a settled desktop request")) ++failures;
 	}
 
+	void TestCanvasRecoveryTokens(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		desired.workspace = Workspace::Presentation;
+		PresentationTarget target{};
+		target.key.bytes[0] = 27; target.totalPages = 2;
+		target.targetRevision = 4; target.sessionRevision = 7;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		CanvasRecoveryState current;
+		current.workspace = Workspace::Presentation;
+		current.presentationTarget = ReadyIdentityFor(target);
+		current.status = CanvasRecoveryStatus::ProtectedConflict;
+		current.reason = CanvasRecoveryReason::TopologyConflict;
+		current.retryAvailable = true; current.revision = 12;
+		if (!Expect(RecoveryMatchesDesired(current, desired) &&
+			CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"exact failed target and current recovery token admit an explicit safe retry")) ++failures;
+		auto stale = current; --stale.revision;
+		if (!Expect(!CanvasRecoveryRetryMatches(stale, current, desired, true, false, false),
+			"stale or duplicated UI recovery token cannot retry a newer recovery attempt")) ++failures;
+		if (!Expect(!CanvasRecoveryRetryMatches(current, current, desired, true, false, true) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, true, true, false) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, false, false, false),
+			"consumer fatal, stopping, and stopped Host never accept manual recovery")) ++failures;
+		desired.workspace = Workspace::Whiteboard; desired.presentationTarget.reset();
+		if (!Expect(!RecoveryMatchesDesired(current, desired) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"old PPT failure cannot override or retry after a new workspace intent")) ++failures;
+		current.workspace = Workspace::Whiteboard; current.presentationTarget.reset();
+		current.status = CanvasRecoveryStatus::ManualRetryRequired;
+		current.reason = CanvasRecoveryReason::PresentFailure;
+		if (!Expect(CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"workspace-only presentation failures use the same exact recovery token contract")) ++failures;
+	}
+
+	void TestMergedRecoveryIntentProjection(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		for (const auto origin : { Workspace::Desktop, Workspace::Whiteboard })
+		{
+			ProductState desired{}; desired.workspace = origin;
+			CanvasRecoveryState reported;
+			reported.workspace = origin;
+			reported.status = CanvasRecoveryStatus::ManualRetryRequired;
+			reported.reason = CanvasRecoveryReason::PresentFailure;
+			reported.retryAvailable = true;
+			auto projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == reported.status && projected.retryAvailable,
+				"current owner failure exposes explicit recovery")) ++failures;
+			desired.workspace = origin == Workspace::Desktop ? Workspace::Whiteboard : Workspace::Desktop;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == CanvasRecoveryStatus::None &&
+				CanvasRecoveryBlocksAdmission(projected, &reported),
+				"temporary other intent hides old failure but cannot reopen an unrecovered owner")) ++failures;
+			desired.workspace = origin;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == reported.status && projected.retryAvailable,
+				"owner failure survives intent round trip merged before Controller consumes it")) ++failures;
+			reported.status = CanvasRecoveryStatus::None; reported.retryAvailable = false;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(!CanvasRecoveryBlocksAdmission(projected, &reported),
+				"only an actual recovered owner report releases the recovery gate")) ++failures;
+			projected = ProjectCanvasRecovery(&reported, desired, true);
+			if (!Expect(projected.status == CanvasRecoveryStatus::Failed &&
+				projected.reason == CanvasRecoveryReason::ConsumerFatal && !projected.retryAvailable,
+				"fatal admission overrides normal projection and never offers retry")) ++failures;
+		}
+	}
+
 	void TestDrawpadPresentationPlan(int& failures)
 	{
 		using namespace Inkeys::Drawing::Draw3;
@@ -1062,6 +1132,8 @@ int RunDraw3BridgeTests()
 	TestDrawpadPresentationPlan(failures);
 	TestSceneReadyHandoff(failures);
 	TestSceneDispatchResponsibility(failures);
+	TestCanvasRecoveryTokens(failures);
+	TestMergedRecoveryIntentProjection(failures);
 	TestPageRuntimeRevisionPolicy(failures);
 	TestDrawingActivityLifecycle(failures);
 	TestAcceptedStrokeNoticeLifecycle(failures);

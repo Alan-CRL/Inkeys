@@ -1774,6 +1774,35 @@ namespace
 
 namespace
 {
+	void TestConsumerFatalAdmissionGate(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ContactInputCoordinator input;
+		input.SetConsumerFatal();
+		const auto fatalRevision = input.AdmissionRevision();
+		input.SetAdmissionBlocked(false);
+		input.SetShortcutAdmissionBlocked(true);
+		input.SetShortcutAdmissionBlocked(false);
+		if (!Expect(input.ConsumerFatal() && input.AdmissionBlocked() &&
+			!input.BaseAdmissionBlocked() && input.AdmissionRevision() == fatalRevision,
+			"consumer fatal survives ordinary scene refresh and shortcut release")) ++failures;
+		input.SetConsumerFatal();
+		if (!Expect(input.AdmissionRevision() == fatalRevision,
+			"repeated fatal transition is monotonic and idempotent")) ++failures;
+		input.PublishDown(89, 1, InputDeviceType::Pen, MakeSnapshot(1, 1, ContactPhase::Down));
+		ContactRecord* record = nullptr;
+		while (input.TryDequeue(record) && !record) input.AcknowledgeControlWake();
+		const ContactHandle blocked{ record, record ? record->Generation() : 0 };
+		if (!Expect(record && !input.ContactAdmitted(blocked),
+			"real new Down cannot draw after fatal even when all ordinary gates are open")) ++failures;
+		input.PublishUp(89, 1, MakeSnapshot(1, 1, ContactPhase::Up));
+		if (record) input.Recycle(blocked);
+		input.ResetForNextRun(); // 本夹具无并发 producer/consumer，模拟真正停止的生命周期边界。
+		if (!Expect(!input.ConsumerFatal() && !input.AdmissionBlocked() &&
+			input.AdmissionRevision() > fatalRevision,
+			"only stopped lifecycle reset clears consumer fatal and advances admission generation")) ++failures;
+	}
+
 	void TestShortcutAdmissionGateComposition(int& failures)
 	{
 		using namespace Inkeys::Drawing::Draw3;
@@ -1811,6 +1840,7 @@ int RunDraw3ContactInputTests()
 	int failures = 0;
 	TestContactLifecycle(failures);
 	TestShortcutAdmissionGateComposition(failures);
+	TestConsumerFatalAdmissionGate(failures);
 	TestInvalidAndWakeContracts(failures);
 	TestIdleMoveWakeSubscription(failures);
 	TestConcurrentIdleMoveBurst(failures);

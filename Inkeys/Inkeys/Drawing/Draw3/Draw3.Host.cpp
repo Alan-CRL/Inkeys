@@ -455,6 +455,10 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<Bridge::PresentationReadyIdentity> suspendedPresentationTarget;
 		bool commandScenePending = false;
 		std::uint32_t inputGateReasons = 0;
+		CanvasRecoveryState recovery;
+		CanvasRecoveryState reportedRecovery;
+		bool recoveryReportAvailable = false;
+		std::uint64_t recoveryRevision = 0;
 		bool shortcutSelectionHandoffPending = false;
 		bool restoreLatestScene = false;
 		std::atomic<HostOutputTarget> requestedOutputTarget =
@@ -767,10 +771,45 @@ namespace Inkeys::Drawing::Draw3
 			return shortcuts.Snapshot();
 		}
 
+		void RetireRecoveryForDesiredLocked(const Bridge::ProductState& desired)
+		{
+			// Bridge 可在 owner 消费前合并 D→W→D；仅投影当前身份，不丢弃 owner 仍承担的故障报告。
+			auto next = ProjectCanvasRecovery(recoveryReportAvailable ? &reportedRecovery : nullptr,
+				desired, input.ConsumerFatal());
+			next.revision = recovery.revision;
+			if (next == recovery) return;
+			next.revision = ++recoveryRevision;
+			recovery = next;
+			PublishRuntimeRevision();
+		}
+
+		static void ObserveRecovery(void* context, const CanvasRecoveryState& value) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			std::scoped_lock lock(self->presentationTargetMutex);
+			self->reportedRecovery = value;
+			self->reportedRecovery.revision = 0;
+			self->recoveryReportAvailable = true;
+			// 旧业务报告可以保留在 owner 侧；对外只暴露与当前 Bridge 精确匹配的状态。
+			self->RefreshPresentationInputGateLocked();
+		}
+
+		static bool RecoveryRetryAllowed(void* context, std::uint64_t revision) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return false;
+			std::scoped_lock lock(self->presentationTargetMutex);
+			return revision == self->recovery.revision && CanvasRecoveryRetryMatches(self->recovery,
+				self->recovery, self->bridge.Snapshot(), self->running.load(std::memory_order_acquire),
+				self->inputStopping.load(std::memory_order_acquire), self->input.ConsumerFatal());
+		}
+
 		// 调用方持有 presentationTargetMutex；发布、ready 和 UI ack 共用这一交接门。
 		void RefreshPresentationInputGateLocked()
 		{
 			const auto desired = bridge.Snapshot();
+			RetireRecoveryForDesiredLocked(desired);
 			const auto expected = desired.presentationTarget
 				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget))
 				: std::nullopt;
@@ -780,6 +819,9 @@ namespace Inkeys::Drawing::Draw3
 			std::uint32_t reasons = 0;
 			if (inputStopping.load(std::memory_order_acquire)) reasons |= 1u;
 			if (commandScenePending) reasons |= 2u;
+			if (input.ConsumerFatal()) reasons |= 256u;
+			if (CanvasRecoveryBlocksAdmission(recovery,
+				recoveryReportAvailable ? &reportedRecovery : nullptr)) reasons |= 512u;
 			if (desired.workspace == Bridge::Workspace::Whiteboard &&
 				whiteboardLoadPending.load(std::memory_order_acquire)) reasons |= 4u;
 			if (desired.workspace == Bridge::Workspace::Presentation)
@@ -858,6 +900,10 @@ namespace Inkeys::Drawing::Draw3
 				shortcutSelectionHandoffPending = false;
 				commandScenePending = false;
 				inputGateReasons = 0;
+				recovery = {};
+				reportedRecovery = {};
+				recoveryReportAvailable = false;
+				recovery.revision = ++recoveryRevision;
 				restoreLatestScene = false;
 			}
 			requestedOutputTarget.store(
@@ -1998,6 +2044,8 @@ namespace Inkeys::Drawing::Draw3
 							observer.shortcutContextChanged = &ObserveShortcutContext;
 							observer.shortcutCommandAllowed = &AllowShortcutCommand;
 							observer.shortcutCompleted = &CompleteShortcut;
+							observer.recoveryChanged = &ObserveRecovery;
+							observer.recoveryRetryAllowed = &RecoveryRetryAllowed;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
@@ -2460,6 +2508,8 @@ namespace Inkeys::Drawing::Draw3
 			snapshot.presentationUiReady = impl_->uiReadyPresentationTarget;
 			snapshot.presentationSuspended = impl_->suspendedPresentationTarget;
 			snapshot.commandScenePending = impl_->commandScenePending;
+			snapshot.consumerFatal = impl_->input.ConsumerFatal();
+			snapshot.recovery = impl_->recovery;
 			snapshot.presentationInputReady = !impl_->input.AdmissionBlocked();
 		}
 		snapshot.requestedOutputTarget =
@@ -2657,6 +2707,28 @@ namespace Inkeys::Drawing::Draw3
 		}
 		return impl_->window.HandleExternalMessage(window, message, wParam, lParam);
 	}
+	bool Host::RetryCanvasRecovery(const CanvasRecoveryState& expected,
+		const std::function<bool()>& stillDesired) noexcept
+	{
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		const auto desired = impl_->bridge.Snapshot();
+		if ((stillDesired && !stillDesired()) || !CanvasRecoveryRetryMatches(expected, impl_->recovery, desired, Running(),
+			impl_->inputStopping.load(std::memory_order_acquire), impl_->input.ConsumerFatal())) return false;
+		CanvasCommand command;
+		command.type = desired.workspace == Bridge::Workspace::Presentation && desired.presentationTarget
+			? CanvasCommandType::SetPresentationTarget : CanvasCommandType::SetWorkspace;
+		command.workspace = static_cast<std::uint8_t>(desired.workspace);
+		command.presentationTarget = desired.presentationTarget;
+		command.sceneClosedAdmission = true;
+		command.explicitRecoveryRetry = true;
+		command.recoveryRevision = expected.revision;
+		try { impl_->window.EnqueueCanvasCommand(std::move(command)); }
+		catch (...) { return false; }
+		// 当前恢复状态已经关闸；仅成功呈现能解除，队列中的旧 token 不额外制造场景债务。
+		impl_->PublishRuntimeRevision();
+		return true;
+	}
+
 	void Host::SetActivationAllowed(bool enabled) noexcept
 	{
 		impl_->window.SetActivationAllowed(enabled);

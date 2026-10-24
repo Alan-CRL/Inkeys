@@ -125,6 +125,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool sceneClosedAdmission = false;
 		// 普通业务绑定已接受时的场景；前缀准备失败时不得改动其他文稿。
 		bool requireSceneMatch = false;
+		bool explicitRecoveryRetry = false;
+		std::uint64_t recoveryRevision = 0;
 	};
 
 	using SetExtendedStyleFlagsCallback = bool(*)(

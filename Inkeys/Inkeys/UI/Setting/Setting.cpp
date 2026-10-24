@@ -26,6 +26,8 @@ module;
 #include <coroutine>
 #include <deque>
 #include <mutex>
+#include <stop_token>
+#include <atomic>
 #pragma comment(lib, "shlwapi.lib")
 
 #ifdef MessageBox
@@ -79,6 +81,7 @@ namespace
 	{
 		WriteSetting,
 		SyncDraw3State,
+		RetryCanvasRecovery,
 		WritePptSetting,
 		WriteConfig,
 		ShellExecute,
@@ -112,6 +115,7 @@ namespace
 		string ddbCloseJsonPayload;
 		string ddbOpenJsonPayload;
 		shared_ptr<Inkeys::Config> configSnapshot;
+		Inkeys::Drawing::Draw3::CanvasRecoveryState recovery;
 		bool flag = false;
 		bool secondaryFlag = false;
 		int showCommand = SW_SHOW;
@@ -120,6 +124,9 @@ namespace
 	class SettingBusinessQueue
 	{
 	public:
+		using ExecuteOverride = bool (*)(const SettingBusinessCommand&, stop_token, void*);
+		explicit SettingBusinessQueue(ExecuteOverride execute = nullptr, void* context = nullptr)
+			: executeOverride_(execute), executeContext_(context) {}
 		bool Start()
 		{
 			lock_guard lock(mutex_);
@@ -142,6 +149,8 @@ namespace
 				lock_guard lock(mutex_);
 				stopping_ = true;
 			}
+			// 先取消正在显示的对话框，再等待 FIFO；已接受的持久化命令仍需排空。
+			worker_.request_stop();
 			condition_.notify_all();
 			if (worker_.joinable())
 			{
@@ -168,6 +177,7 @@ namespace
 			for (;;)
 			{
 				SettingBusinessCommand command;
+				bool cancelExternal = false;
 				{
 					unique_lock lock(mutex_);
 					condition_.wait(lock, token, [this]
@@ -177,10 +187,17 @@ namespace
 					if (commands_.empty()) continue;
 					command = std::move(commands_.front());
 					commands_.pop_front();
+					cancelExternal = stopping_ || token.stop_requested();
 				}
 				bool succeeded = false;
-				try { succeeded = Execute(command); }
+				try
+				{
+					if (!cancelExternal || MustDrain(command.kind))
+						succeeded = executeOverride_ ? executeOverride_(command, token, executeContext_)
+							: Execute(command, token);
+				}
 				catch (...) { succeeded = false; }
+				if (executeOverride_) continue; // 无窗口生产探针不发布真实 UI 状态。
 				{
 					lock_guard stateLock(settingStateMutex);
 					const auto nextSerial =
@@ -193,10 +210,22 @@ namespace
 			}
 		}
 
-		static bool Execute(const SettingBusinessCommand& command)
+		static bool MustDrain(SettingBusinessKind kind) noexcept
 		{
+			return kind == SettingBusinessKind::WriteSetting || kind == SettingBusinessKind::WritePptSetting
+				|| kind == SettingBusinessKind::WriteConfig || kind == SettingBusinessKind::WriteDdb
+				|| kind == SettingBusinessKind::ConfigureDdb || kind == SettingBusinessKind::RestartDdb
+				|| kind == SettingBusinessKind::ClearInstallerAndSetAutoUpdate
+				|| kind == SettingBusinessKind::ClearInstallerAndSetChannel
+				|| kind == SettingBusinessKind::ClearInstallerAndSetArchitecture;
+		}
+		static bool Execute(const SettingBusinessCommand& command, stop_token token)
+		{
+			if (token.stop_requested() && !MustDrain(command.kind)) return false;
 			switch (command.kind)
 			{
+			case SettingBusinessKind::RetryCanvasRecovery:
+				return Inkeys::Drawing::Draw3::RetryProductCanvasRecovery(command.recovery);
 			case SettingBusinessKind::SyncDraw3State:
 				::SyncDraw3State();
 				return true;
@@ -222,6 +251,7 @@ namespace
 				auto request = Inkeys::UI::MessageBox::MakeOkRequest(
 					title.c_str(), command.text.c_str());
 				request.language = I18n::languageId();
+				request.cancellation = token;
 				request.labels.ok = okLabel.c_str();
 				request.owner = Inkeys::Window::GetService().Handle(
 					Inkeys::Window::WindowRole::Setting);
@@ -242,6 +272,7 @@ namespace
 				auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
 					title.c_str(), command.text.c_str());
 				request.language = I18n::languageId();
+				request.cancellation = token;
 				request.labels.ok = okLabel.c_str();
 				request.labels.cancel = cancelLabel.c_str();
 				request.owner = Inkeys::Window::GetService().Handle(
@@ -250,7 +281,7 @@ namespace
 				request.fallback.modality =
 					Inkeys::UI::MessageBox::SystemModality::System;
 				if (Inkeys::UI::MessageBox::Show(request)
-					== Inkeys::UI::MessageBox::Result::Ok)
+					== Inkeys::UI::MessageBox::Result::Ok && !token.stop_requested())
 					RestartProgram();
 				return true;
 			}
@@ -290,6 +321,7 @@ namespace
 					command.directory != pluginPath + L"DesktopDrawpadBlocker" ||
 					command.digest != ddbInteractionSetList.DdbSHA256) return false;
 				const bool configWritten = WriteSettingJson(command.jsonPayload);
+				if (token.stop_requested()) return configWritten;
 				if (command.flag)
 				{
 					if (!configWritten) return false;
@@ -312,12 +344,14 @@ namespace
 						if (extract && isProcessRunning(executable.c_str()))
 						{
 							WriteDdbInteractionJson(command.ddbCloseJsonPayload);
-							for (int i = 0; i < 20 && isProcessRunning(executable.c_str()); ++i)
+							for (int i = 0; i < 20 && !token.stop_requested() && isProcessRunning(executable.c_str()); ++i)
 								this_thread::sleep_for(chrono::milliseconds(500));
 						}
 					}
+					if (token.stop_requested()) return configWritten;
 					if (extract && !Inkeys::Load::ExtractResourceFile(
 						executable, L"EXE", MAKEINTRESOURCE(237))) return false;
+					if (token.stop_requested()) return configWritten;
 					if (!isProcessRunning(executable.c_str()))
 					{
 						WriteDdbInteractionJson(command.ddbOpenJsonPayload);
@@ -337,12 +371,14 @@ namespace
 				if (command.text != pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe")
 					return false;
 				const bool configWritten = WriteSettingJson(command.jsonPayload);
+				if (token.stop_requested()) return configWritten;
 				// 提升必须先持久化；降权即使写盘失败仍优先降低本次权限。
 				if (!configWritten && command.flag) return false;
 				if (!isProcessRunning(command.text.c_str())) return configWritten;
 				WriteDdbInteractionJson(command.ddbCloseJsonPayload);
-				for (int i = 0; i < 25 && isProcessRunning(command.text.c_str()); ++i)
+				for (int i = 0; i < 25 && !token.stop_requested() && isProcessRunning(command.text.c_str()); ++i)
 					this_thread::sleep_for(chrono::milliseconds(500));
+				if (token.stop_requested()) return configWritten;
 				if (isProcessRunning(command.text.c_str())) return false;
 				WriteDdbInteractionJson(command.ddbOpenJsonPayload);
 				return LaunchVerifiedDesktopDrawpadBlocker(command.flag) && configWritten;
@@ -360,6 +396,8 @@ namespace
 			return false;
 		}
 
+		ExecuteOverride executeOverride_ = nullptr;
+		void* executeContext_ = nullptr;
 		mutex mutex_;
 		condition_variable_any condition_;
 		deque<SettingBusinessCommand> commands_;
@@ -4054,6 +4092,25 @@ SettingSessionCoroutine RunSettingSession()
 						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
 						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.N).c_str());
+					}
+
+					const auto canvasRuntime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+					if (canvasRuntime.recovery.status != Inkeys::Drawing::Draw3::CanvasRecoveryStatus::None)
+					{
+						const bool protectedConflict = canvasRuntime.recovery.status ==
+							Inkeys::Drawing::Draw3::CanvasRecoveryStatus::ProtectedConflict;
+						ImGui::TextWrapped("%s", IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.ProtectedHint
+							: I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str());
+						ImGui::BeginDisabled(canvasRuntime.consumerFatal || !canvasRuntime.recovery.retryAvailable);
+						if (ImGui::Button((IA(I18nKey.UI.Bar.CanvasRecovery.RetryCanvas) + "##canvas-recovery").c_str()))
+						{
+							// 捕获当前呈现的令牌；业务执行时再次核验，旧点击不能重试后来场景。
+							SettingBusinessCommand retry;
+							retry.kind = SettingBusinessKind::RetryCanvasRecovery;
+							retry.recovery = canvasRuntime.recovery;
+							QueueBusiness(std::move(retry));
+						}
+						ImGui::EndDisabled();
 					}
 
 					{
@@ -9234,4 +9291,60 @@ namespace Inkeys::UI::Setting
 WNDPROC SettingWindowProc() noexcept
 {
 	return Inkeys::UI::Setting::WindowProc();
+}
+
+namespace Inkeys::UI::Setting
+{
+	int RunBusinessCancellationProductionTest() noexcept
+	{
+		if (settingInitialized.load() || Inkeys::Window::GetService().Running()) return 2;
+		struct Probe
+		{
+			mutex mutex;
+			condition_variable_any entered;
+			bool dialog = false;
+			atomic_uint writes = 0, external = 0;
+			atomic_bool cancelled = false;
+		} probe;
+		const auto execute = +[](const SettingBusinessCommand& command, stop_token token, void* opaque)
+		{
+			auto& probe = *static_cast<Probe*>(opaque);
+			if (command.kind == SettingBusinessKind::Information)
+			{
+				unique_lock lock(probe.mutex);
+				probe.dialog = true; probe.entered.notify_all();
+				probe.entered.wait_until(lock, token, chrono::steady_clock::now() + chrono::seconds(2), [] { return false; });
+				probe.cancelled = token.stop_requested();
+			}
+			else if (command.kind == SettingBusinessKind::WriteSetting || command.kind == SettingBusinessKind::WritePptSetting)
+				++probe.writes;
+			else ++probe.external;
+			return true;
+		};
+		try
+		{
+			SettingBusinessQueue queue(execute, &probe);
+			if (!queue.Start()) return 1;
+			SettingBusinessCommand dialog; dialog.kind = SettingBusinessKind::Information; queue.Enqueue(dialog);
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.entered.wait_for(lock, chrono::seconds(2), [&] { return probe.dialog; }))
+				{ lock.unlock(); queue.Stop(); return 1; }
+			}
+			SettingBusinessCommand write; write.kind = SettingBusinessKind::WriteSetting; queue.Enqueue(write);
+			SettingBusinessCommand external; external.kind = SettingBusinessKind::ShellExecute; queue.Enqueue(external);
+			write.kind = SettingBusinessKind::WritePptSetting; queue.Enqueue(write);
+			const auto started = chrono::steady_clock::now();
+			queue.Stop();
+			const bool bounded = chrono::steady_clock::now() - started < chrono::seconds(1);
+			queue.Enqueue(write);
+			const bool drained = probe.writes == 2 && probe.external == 0;
+			if (!queue.Start()) return 1;
+			queue.Enqueue(write); queue.Stop();
+			const bool passed = bounded && drained && probe.cancelled && probe.writes == 3;
+			std::fprintf(stderr, "[SettingBusinessCancellation] %s: dialog stop, durable FIFO drain, external cancellation, restart\n", passed ? "PASS" : "FAIL");
+			return passed ? 0 : 1;
+		}
+		catch (...) { return 1; }
+	}
 }
