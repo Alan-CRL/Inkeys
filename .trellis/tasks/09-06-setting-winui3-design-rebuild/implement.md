@@ -198,3 +198,10 @@ git diff --check
 - [x] 复用传统设置配置及 SessionState.ShowSerial，接入首开策略而不影响其他主页动画。
 - [x] 三语言生成链、通用页交互、首开/重复激活/重建及真实尺寸边界回归已更新。
 - [x] 独立审查、完整 ARM64 Solution、无窗口测试及编码/diff最终检查通过；结果登记 research/settings-scale-entry-policy.md。
+
+## 当前增量：Win32 外框与 Win7 Aero（2026-10-24）
+
+- [x] 核对用户截图、固定灰色边框、原生 caption 样式与 DWM/USER32 API 文档。
+- [x] 现代外框恢复系统默认色；旧系统隐藏创建后初始化菜单，再去原生 caption，保留四边 frame 与原有尺寸校正。
+- [x] 显式接回旧系统 Alt+Space、图标/标题栏菜单和系统命令，并增加旧/新 frame 几何与菜单状态回归。
+- [x] 独立审查、完整 ARM64 Solution、--no-window 及编码/diff检查通过；结果登记 research/settings-win32-frame-followup.md，Win7真实外观/菜单交互仍待实机验收。

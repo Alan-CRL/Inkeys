@@ -3,6 +3,7 @@ module;
 #include <objbase.h>
 #include <shobjidl.h>
 #include <windows.h>
+#include <winternl.h>
 #include <dwmapi.h>
 #include "../UI/Setting/Setting.Layout.h"
 #pragma comment(lib, "dwmapi.lib")
@@ -1292,6 +1293,32 @@ namespace Inkeys::Window
 
 			record.hwnd.store(hwnd, std::memory_order_release);
 			record.threadId.store(threadId, std::memory_order_release);
+			if (IsSetting(spec.role) && UsesLegacySettingFrame())
+			{
+				// 隐藏态先按标准 caption 建立 HWND 自有系统菜单，再去掉旧 Aero 原生标题栏。
+				// 保留 sizing/min/max/sysmenu；后续统一 FRAMECHANGED 校正，不改变现代 DWM 样式。
+				SetLastError(ERROR_SUCCESS);
+				const HMENU menu = GetSystemMenu(hwnd, FALSE);
+				DWORD frameError = menu ? ERROR_SUCCESS : GetLastError();
+				if (menu)
+				{
+					const LONG_PTR frameStyle = GetWindowLongPtrW(hwnd, GWL_STYLE)
+						& ~static_cast<LONG_PTR>(WS_CAPTION);
+					SetLastError(ERROR_SUCCESS);
+					if (!SetWindowLongPtrW(hwnd, GWL_STYLE, frameStyle))
+						frameError = GetLastError();
+				}
+				if (!menu || frameError != ERROR_SUCCESS)
+				{
+					if (frameError == ERROR_SUCCESS) frameError = ERROR_INVALID_MENU_HANDLE;
+					wchar_t diagnostic[128]{};
+					swprintf_s(diagnostic, L"Inkeys.Window legacy setting frame failed: error=%lu\n", frameError);
+					OutputDebugStringW(diagnostic);
+					std::fwprintf(stderr, L"%s", diagnostic);
+					RollbackCreation(record, failedCleanup);
+					return false;
+				}
+			}
 			if (spec.bindMessages && record.channel)
 			{
 				record.messagesBound = record.channel->Bind(hwnd, spec.messageOptions);
@@ -2855,6 +2882,25 @@ namespace Inkeys::Window
 			GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER) };
 	}
 
+	bool UsesLegacySettingFrame() noexcept
+	{
+		static const bool legacy = []() noexcept
+		{
+			// 不依赖启动信息或版本清单；旧 Aero 与现代 DWM 的顶部 frame 合同不同。
+			using RtlGetVersionProc = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
+			const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+			const auto rtlGetVersion = ntdll
+				? reinterpret_cast<RtlGetVersionProc>(GetProcAddress(ntdll, "RtlGetVersion"))
+				: nullptr;
+			RTL_OSVERSIONINFOW version{};
+			version.dwOSVersionInfoSize = sizeof(version);
+			if (!rtlGetVersion || rtlGetVersion(&version) != 0) return true;
+			return version.dwMajorVersion < 6
+				|| (version.dwMajorVersion == 6 && version.dwMinorVersion < 2);
+		}();
+		return legacy;
+	}
+
 	RECT QuerySettingClientFrameInsets(HWND hwnd, bool maximized, UINT dpi) noexcept
 	{
 		if (!dpi && hwnd)
@@ -2885,11 +2931,11 @@ namespace Inkeys::Window
 				&dwmBorder, sizeof(dwmBorder))) && dwmBorder > 0)
 				visibleBorder = dwmBorder;
 		}
-		// 创建时无 HWND、旧 DWM 无该属性时使用系统细边框；关闭 composition 保持经典 frame。
+		// Win7 Aero 保留四周 sizing frame；现代 DWM 只在恢复态收薄顶部，经典外框保持原样。
 		const auto frame = Inkeys::UI::Setting::ResolveVisibleWindowFrameInsets(
 			{ static_cast<int>(sizing.cx), static_cast<int>(sizing.cy),
 				static_cast<int>(sizing.cx), static_cast<int>(sizing.cy) },
-			maximized, compositionEnabled != FALSE, static_cast<int>(visibleBorder));
+			maximized, compositionEnabled != FALSE, static_cast<int>(visibleBorder), !UsesLegacySettingFrame());
 		return { frame.left, frame.top, frame.right, frame.bottom };
 	}
 

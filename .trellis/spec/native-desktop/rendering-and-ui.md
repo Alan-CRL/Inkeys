@@ -2356,3 +2356,30 @@ void SyncDraw3State() {
 ## UI3 新按钮的笔震动接入（2026-10-20）
 
 新增主栏注册按钮、形状/粗细表项或独立属性控件时，同时遵守 [pen-haptics.md](pen-haptics.md) 的独立偏好与业务接受点合同。公共按钮使用共享入口自动继承；独立状态机必须报告真实接受，不能把命中/Consumed 当作成功。保持 Pen 凭据、取消/禁用/去重、即时功能开关和可选设备回退，并补充相关回归。
+
+## 设置原生外框的系统颜色与旧 Aero 合同
+
+### 1. Scope / Trigger
+设置原生外框颜色、caption、NCCALCSIZE、菜单与 Windows 7 兼容改动时适用，不扩展到主栏或其他窗口角色。
+
+### 2. Signatures
+`Window::UsesLegacySettingFrame()` 动态、缓存 RtlGetVersion 的 <6.2 判定；查询失败保守用旧 frame。`ResolveVisibleWindowFrameInsets(..., useThinTopBorder=true)` 仅现代恢复态可收薄顶部。
+
+### 3. Contracts
+- 设置外框 `DWMWA_BORDER_COLOR=DWMWA_COLOR_DEFAULT`，由系统处理获焦/失焦与用户边框着色偏好；不能用设置浅/深主题的固定灰色覆盖。
+- 旧 Aero 标准隐藏创建后先 `GetSystemMenu(FALSE)` 建立 HWND 自有菜单，再仅清除 `WS_CAPTION`，保留 THICKFRAME/SYSMENU/MIN/MAX；复用既有 FRAMECHANGED/真实尺寸校正后才显示。现代 style 不变。
+- 旧系统保留完整四周 sizing frame，不套用现代薄顶；不禁用 composition 或 DWM NC rendering 来掩盖按钮重复。
+- captionless 旧窗口显式把 Alt+Space、图标菜单和标题栏右键接回 HWND 原生本地化系统菜单，按还原/最大化/最小化和窗口能力设置菜单项；命令仍走 WM_SYSCOMMAND，SC_CLOSE 隐藏设置。
+- 菜单及 HWND 样式仅在窗口线程处理，不持 ImGui/render 锁进入 TrackPopupMenuEx；不使用 WTNCA_NOSYSMENU 破坏系统菜单，也不新增 Win7 缺失的 DLL 导入。
+
+### 4. Validation & Error Matrix
+菜单初始化/样式设置失败记录错误码并走既有创建回滚；首次创建、NCCALCSIZE 与最小尺寸共用同一几何。DPI/主题/composition 变化保留既有重算；本地菜单使用窗口持有副本，不调用 GetSystemMenu(TRUE) 重置。
+
+### 5. Good / Base / Bad Cases
+Good：现代系统外框随系统焦点着色，旧 Aero 只有一套 caption；Base：系统未启用强调边框时保留系统中性色；Bad：固定灰覆盖系统色、整个禁用 DWM，或删除 caption 后仍假定默认过程会显示菜单。
+
+### 6. Tests Required
+完整 Debug|ARM64 Solution 与 --no-window；旧/新 frame 的 round-trip、minimum、八方向 resize/client 边界和系统菜单状态回归。真实 HWND 样式/菜单用既有窗口测试，但仅有明确 GUI 授权才执行；Win11/headless 不能替代 Win7 Aero、焦点、Shell/Snap 和实际菜单视觉验收。
+
+### 7. Wrong vs Correct
+Wrong：在 Win7 恢复态保留现代 1px 顶部并让原生 caption 继续绘制；Correct：旧 Aero 四边原 frame、显式隐藏原生 caption 并保留原生菜单/系统命令。来源与证据见父任务 research/settings-win32-frame-research.md，实机未覆盖处必须标明。

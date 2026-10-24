@@ -22,6 +22,19 @@ namespace Inkeys::UI::Setting
 			: BarButtonClickAction::Activate;
 	}
 
+	struct SettingSystemMenuState
+	{
+		bool restore, move, size, minimize, maximize;
+	};
+
+	[[nodiscard]] constexpr SettingSystemMenuState ResolveSettingSystemMenuState(
+		bool minimized, bool maximized, bool canSize, bool canMinimize, bool canMaximize) noexcept
+	{
+		const bool normal = !minimized && !maximized;
+		return { !normal, normal, normal && canSize,
+			!minimized && canMinimize, !maximized && canMaximize };
+	}
+
 	class StartupPreviewPreference final
 	{
 	public:

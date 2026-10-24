@@ -34,10 +34,11 @@ export namespace Inkeys::Window
 		Count,
 	};
 
-	// 保留桌面窗口的最大化、Snap 和系统菜单语义，标题内容由 Setting 自绘。
+	// 先按标准桌面样式创建；旧 Aero 建立系统菜单后仅移除 caption，现代 DWM 保持原样。
 	inline constexpr DWORD SettingWindowStyle = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
 	inline constexpr DWORD SettingWindowExStyle = WS_EX_APPWINDOW;
 	[[nodiscard]] SIZE QuerySettingFrameThickness(UINT dpi = 0) noexcept;
+	[[nodiscard]] bool UsesLegacySettingFrame() noexcept;
 	// RECT 四字段表示正向 inset；客户区和 resize 热区分别使用各自的度量。
 	[[nodiscard]] RECT QuerySettingClientFrameInsets(HWND hwnd = nullptr,
 		bool maximized = false, UINT dpi = 0) noexcept;

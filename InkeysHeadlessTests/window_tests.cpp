@@ -1044,9 +1044,19 @@ int RunWindowTests()
 
 	const auto settingStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_STYLE));
 	const auto settingExStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_EXSTYLE));
-	check((settingStyle & SettingWindowStyle) == SettingWindowStyle
-		&& (settingStyle & WS_CAPTION) == WS_CAPTION && (settingStyle & WS_POPUP) == 0,
-		"setting uses native overlapped caption and sizing semantics");
+	const bool legacySettingFrame = UsesLegacySettingFrame();
+	const DWORD expectedSettingStyle = legacySettingFrame
+		? SettingWindowStyle & ~WS_CAPTION : SettingWindowStyle;
+	check((settingStyle & expectedSettingStyle) == expectedSettingStyle
+		&& (settingStyle & WS_CAPTION) == (legacySettingFrame ? 0U : WS_CAPTION)
+		&& (settingStyle & WS_POPUP) == 0,
+		"setting keeps native sizing semantics and only legacy Aero removes caption drawing");
+	const HMENU settingSystemMenu = GetSystemMenu(setting, FALSE);
+	check(settingSystemMenu && IsMenu(settingSystemMenu)
+		&& GetMenuState(settingSystemMenu, SC_CLOSE, MF_BYCOMMAND) != static_cast<UINT>(-1)
+		&& GetMenuState(settingSystemMenu, SC_MINIMIZE, MF_BYCOMMAND) != static_cast<UINT>(-1)
+		&& GetMenuState(settingSystemMenu, SC_MAXIMIZE, MF_BYCOMMAND) != static_cast<UINT>(-1),
+		"setting retains its HWND-owned native close/minimize/maximize system menu after caption policy");
 	check((settingExStyle & WS_EX_APPWINDOW) != 0
 		&& (settingExStyle & (WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) == 0,
 		"setting app ex-style");

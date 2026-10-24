@@ -90,10 +90,10 @@ namespace Inkeys::UI::Setting
 
 	[[nodiscard]] inline WindowFrameInsets ResolveVisibleWindowFrameInsets(
 		WindowFrameInsets sizingFrame, bool maximized, bool compositionEnabled,
-		int visibleBorderPixels) noexcept
+		int visibleBorderPixels, bool useThinTopBorder = true) noexcept
 	{
-		// DWM 的顶部没有左右/下边那段不可见外扩；恢复态只保留实际可见描边。
-		if (!maximized && compositionEnabled)
+		// 仅现代 DWM 收薄恢复态顶部；旧 Aero 的四边 frame 必须完整保留。
+		if (!maximized && compositionEnabled && useThinTopBorder)
 			sizingFrame.top = std::clamp(visibleBorderPixels, 0, sizingFrame.top);
 		return sizingFrame;
 	}

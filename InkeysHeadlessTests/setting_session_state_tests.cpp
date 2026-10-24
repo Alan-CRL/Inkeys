@@ -122,8 +122,23 @@ namespace
 			const auto restored = ResolveVisibleWindowFrameInsets(sizing, false, true, visibleBorder);
 			const auto maximized = ResolveVisibleWindowFrameInsets(sizing, true, true, visibleBorder);
 			const auto classic = ResolveVisibleWindowFrameInsets(sizing, false, false, visibleBorder);
+			const auto legacy = ResolveVisibleWindowFrameInsets(sizing, false, true, visibleBorder, false);
 			const WindowFrameRect outer{ -1600, -900, -600, -200 };
 			const auto client = InsetWindowFrameRect(outer, restored);
+			const auto legacyClient = InsetWindowFrameRect(outer, legacy);
+			const auto legacyMinimum = ResolveMinimumWindowFrame(720, 520, legacy, 1920, 1040);
+			if (!Expect(legacyClient.top - outer.top == framePixels
+				&& legacyClient.left - outer.left == framePixels
+				&& outer.right - legacyClient.right == framePixels
+				&& outer.bottom - legacyClient.bottom == framePixels
+				&& SameFrameRect(ExpandWindowFrameRect(legacyClient, legacy), outer)
+				&& legacyMinimum.width == 720 + framePixels * 2
+				&& legacyMinimum.height == 520 + framePixels * 2
+				&& HitTestWindowFrame(outer, legacyClient, -1100, legacyClient.top - 1, false, framePixels)
+					== WindowFrameHit::Top
+				&& HitTestWindowFrame(outer, legacyClient, -1100, legacyClient.top, false, framePixels)
+					== WindowFrameHit::Client,
+				"legacy Aero keeps all native frame insets, minimum extents and resize/client boundary")) ++failures;
 			if (!Expect(client.top - outer.top == visibleBorder
 				&& restored.left == sizing.left && restored.right == sizing.right
 				&& restored.bottom == sizing.bottom && maximized.top == sizing.top
@@ -296,6 +311,21 @@ int RunSettingSessionStateTests()
 	int failures = 0;
 	failures += CheckSettingWindowFrame();
 	failures += CheckLinkedPptScaleDraft();
+	{
+		using Inkeys::UI::Setting::ResolveSettingSystemMenuState;
+		const auto normal = ResolveSettingSystemMenuState(false, false, true, true, true);
+		const auto maximized = ResolveSettingSystemMenuState(false, true, true, true, true);
+		const auto minimized = ResolveSettingSystemMenuState(true, false, true, true, true);
+		const auto fixed = ResolveSettingSystemMenuState(false, false, false, false, false);
+		if (!Expect(!normal.restore && normal.move && normal.size && normal.minimize && normal.maximize,
+			"restored legacy system menu offers move, resize, minimize and maximize")) ++failures;
+		if (!Expect(maximized.restore && !maximized.move && !maximized.size && maximized.minimize && !maximized.maximize,
+			"maximized legacy system menu restores and minimizes without impossible resize or repeated maximize")) ++failures;
+		if (!Expect(minimized.restore && !minimized.move && !minimized.size && !minimized.minimize && minimized.maximize,
+			"minimized legacy system menu restores and maximizes without repeated minimize")) ++failures;
+		if (!Expect(!fixed.restore && fixed.move && !fixed.size && !fixed.minimize && !fixed.maximize,
+			"system menu respects missing sizing and caption-command capabilities")) ++failures;
+	}
 
 	if (!Expect(Inkeys::UI::Setting::InteractiveOperationFromHitTest(HTCAPTION)
 		== InteractiveWindowOperation::Move

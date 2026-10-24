@@ -419,7 +419,8 @@ namespace
 			&captionColor, sizeof(captionColor));
 		const COLORREF textColor = darkMode ? RGB(243, 243, 243) : RGB(32, 32, 32);
 		(void)DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, &textColor, sizeof(textColor));
-		const COLORREF borderColor = darkMode ? RGB(66, 66, 66) : RGB(213, 213, 213);
+		// 外框交回系统，保留获焦主题色与失焦/系统着色偏好，不用固定灰覆盖。
+		const COLORREF borderColor = DWMWA_COLOR_DEFAULT;
 		(void)DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &borderColor, sizeof(borderColor));
 		const auto backdrop = ApplySettingBackdrop(hwnd, darkMode);
 		if (settingBackdropMode.exchange(backdrop, memory_order_acq_rel) != backdrop)
@@ -644,6 +645,40 @@ namespace
 		default:
 			break;
 		}
+	}
+
+	void UpdateLegacySettingSystemMenu(HWND hwnd, HMENU menu) noexcept
+	{
+		const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+		const auto state = Inkeys::UI::Setting::ResolveSettingSystemMenuState(
+			IsIconic(hwnd) != FALSE, IsZoomed(hwnd) != FALSE, (style & WS_THICKFRAME) != 0,
+			(style & WS_MINIMIZEBOX) != 0, (style & WS_MAXIMIZEBOX) != 0);
+		const auto enable = [&](UINT command, bool available)
+			{ (void)EnableMenuItem(menu, command, MF_BYCOMMAND | (available ? MF_ENABLED : MF_GRAYED)); };
+		enable(SC_RESTORE, state.restore); enable(SC_MOVE, state.move); enable(SC_SIZE, state.size);
+		enable(SC_MINIMIZE, state.minimize); enable(SC_MAXIMIZE, state.maximize);
+	}
+
+	void ShowLegacySettingSystemMenu(HWND hwnd, const POINT* location = nullptr) noexcept
+	{
+		// 旧 Aero 去掉原生 caption 后仍展示 HWND 自带的本地化系统菜单，不另造菜单资源。
+		HMENU menu = GetSystemMenu(hwnd, FALSE);
+		if (!menu) return;
+		POINT point{};
+		if (location) point = *location;
+		else
+		{
+			const auto geometry = ResolveSettingTitleBarGeometry(hwnd);
+			point = { static_cast<LONG>(geometry.icon.left), static_cast<LONG>(geometry.height) };
+			if (!ClientToScreen(hwnd, &point)) return;
+		}
+		settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
+		(void)SetForegroundWindow(hwnd);
+		UpdateLegacySettingSystemMenu(hwnd, menu);
+		const UINT command = static_cast<UINT>(TrackPopupMenuEx(menu,
+			TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, hwnd, nullptr));
+		// 所有动作仍回到既有系统命令路径，SC_CLOSE 继续隐藏设置而不退出软件。
+		if (command) (void)PostMessageW(hwnd, WM_SYSCOMMAND, command, 0);
 	}
 
 	enum class SettingBusinessKind
@@ -1218,9 +1253,29 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 	}
 
+	case WM_SYSKEYDOWN:
+		if (wParam == VK_SPACE && Inkeys::Window::UsesLegacySettingFrame())
+		{
+			ShowLegacySettingSystemMenu(hWnd);
+			return 0;
+		}
+		break;
+	case WM_INITMENU:
+		if (Inkeys::Window::UsesLegacySettingFrame()
+			&& reinterpret_cast<HMENU>(wParam) == GetSystemMenu(hWnd, FALSE))
+		{
+			UpdateLegacySettingSystemMenu(hWnd, reinterpret_cast<HMENU>(wParam));
+			return 0;
+		}
+		break;
 	case WM_NCLBUTTONDOWN:
 	{
 		const LRESULT hit = static_cast<LRESULT>(wParam);
+		if (hit == HTSYSMENU && Inkeys::Window::UsesLegacySettingFrame())
+		{
+			ShowLegacySettingSystemMenu(hWnd);
+			return 0;
+		}
 		const auto operation =
 			Inkeys::UI::Setting::InteractiveOperationFromHitTest(hit);
 		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None)
@@ -1259,8 +1314,21 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 	case WM_NCLBUTTONDBLCLK:
+		if (wParam == HTSYSMENU && Inkeys::Window::UsesLegacySettingFrame())
+		{
+			(void)PostMessageW(hWnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+			return 0;
+		}
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 	case WM_NCRBUTTONDOWN:
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 	case WM_NCRBUTTONUP:
+		if ((wParam == HTCAPTION || wParam == HTSYSMENU) && Inkeys::Window::UsesLegacySettingFrame())
+		{
+			const POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+			ShowLegacySettingSystemMenu(hWnd, &point);
+			return 0;
+		}
 		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 	case WM_NCMOUSEMOVE:
 		// 拖窗时不持续唤醒 D3D11；仅 caption button hover 需要刷新。
@@ -1299,6 +1367,12 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 	case WM_SYSCOMMAND:
 	{
+		if ((wParam & 0xFFF0) == SC_KEYMENU && lParam == VK_SPACE
+			&& Inkeys::Window::UsesLegacySettingFrame())
+		{
+			ShowLegacySettingSystemMenu(hWnd);
+			return 0;
+		}
 		const auto operation =
 			Inkeys::UI::Setting::InteractiveOperationFromSystemCommand(wParam);
 		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None)
