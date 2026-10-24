@@ -538,6 +538,14 @@
     },
     "Experimental":
     {
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "允许界面字体以非整数像素尺寸渲染",
+          "E": "关闭时，主栏和控件静止状态的字体像素尺寸向下取整；缩放和过渡动画仍连续变化。立即生效。"
+        }
+      },
       "Draw3":
       {
         "HardwareAcceleration":

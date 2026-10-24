@@ -102,6 +102,36 @@ public:
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
 	void ConfigureLocalizedTypography();
+	bool UpdateFontRenderingPolicy(bool allowFractional) noexcept;
+	[[nodiscard]] FLOAT ResolveFontSize(ID2D1DeviceContext* context, double fontSize, double nominalTarget = -1.0);
+	[[nodiscard]] FLOAT ResolveWordFontSize(ID2D1DeviceContext* context, const BarUiWordClass& word,
+		double fontSize, double nominalTarget = -1.0);
+	void BeginFontFrame(std::chrono::steady_clock::time_point time,
+		const BarUiAnimationAdvanceContextClass& context, double targetZoom);
+	void SetFontTargetZoom(double zoom) noexcept { fontTargetZoom = zoom; }
+	void SetFontTargetScale(double scale) noexcept { fontTargetY = {0.0,scale}; fontTargetTransformReady = true; }
+	[[nodiscard]] bool FontAnimationsActive() const noexcept { return fontAnimationsActive; }
+	class FontTargetScope
+	{
+	public:
+		FontTargetScope(BarUIRendering& owner, double targetScale, double duration = 0.0) noexcept
+			: owner_(owner), targetY_(owner.fontTargetY), ready_(owner.fontTargetTransformReady), duration_(owner.fontDuration)
+		{
+			if (!owner_.fontTargetTransformReady && owner_.deviceContext)
+			{
+				D2D1_MATRIX_3X2_F matrix{}; owner_.deviceContext->GetTransform(&matrix);
+				owner_.fontTargetY = {matrix._21,matrix._22};
+			}
+			// 显式组合目标向量，避免用 FLOAT 当前矩阵除 double 当前倍率使整数目标失真。
+			if (std::isfinite(targetScale) && targetScale >= 0.0)
+				for (double& axis : owner_.fontTargetY) axis *= targetScale;
+			owner_.fontTargetTransformReady = true;
+			if (duration > 0.0) owner_.fontDuration = duration;
+		}
+		~FontTargetScope() { owner_.fontTargetY = targetY_; owner_.fontTargetTransformReady = ready_; owner_.fontDuration = duration_; }
+	private:
+		BarUIRendering& owner_; std::array<double,2> targetY_; bool ready_; double duration_;
+	};
 	[[nodiscard]] const wstring& GetFontFamily() const noexcept
 	{
 		return fontFamily;
@@ -278,6 +308,7 @@ protected:
 	{
 		int value = 0;
 		FLOAT zoom = 0.0F;
+		FLOAT fontSize = 0.0F;
 		D2D1_SIZE_F size{};
 		FLOAT layoutWidth = 0.0F;
 		unsigned long long lastUse = 0;
@@ -318,7 +349,7 @@ protected:
 	ID2D1StrokeStyle* GetRoundStrokeStyle();
 	ID2D1PathGeometry* GetThicknessFineDialSelectorGeometry();
 	ThicknessFineDialLabelCacheClass* GetThicknessFineDialLabelLayout(
-		int value, FLOAT zoom);
+		int value, FLOAT zoom, ID2D1DeviceContext* context = nullptr);
 	ID2D1Geometry* GetSuperellipseGeometry(
 		FLOAT x, FLOAT y, FLOAT width, FLOAT height, FLOAT n, int segments);
 	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
@@ -458,6 +489,16 @@ protected:
 	array<ThicknessFineDialLabelCacheClass, 64>
 		thicknessFineDialLabelCache{};
 	unsigned long long thicknessFineDialLabelUseSerial = 0;
+	FLOAT ResolveAnimatedFontSize(ID2D1DeviceContext*, double currentSize, double nominalTarget,
+		BarUiFontCorrectionClass&, double duration = 0.0);
+	bool allowFractionalFontSize = false;
+	bool fontFrameReady = false, fontAnimationsActive = false;
+	std::uint64_t fontFrameSerial = 0;
+	double fontTargetZoom = 0.0, fontDuration = 0.0;
+	std::array<double,2> fontTargetY{0.0,1.0};
+	bool fontTargetTransformReady = false;
+	BarUiAnimationAdvanceContextClass fontFrameContext;
+	BarUiFontCorrectionClass directFontCorrection, fineDialFontCorrection;
 	wstring fontFamily = L"HarmonyOS Sans SC";
 	wstring textLocale = L"zh-cn";
 	SuperellipseGeometryCacheClass superellipseGeometryCache;

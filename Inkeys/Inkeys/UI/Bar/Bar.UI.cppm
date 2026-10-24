@@ -424,6 +424,9 @@ public:
 
 	// 字号
 	BarUiValueClass size;
+	// 派生姿态每帧 SetDirect 时显式保留静止字号目标；-1 使用原 size.tar。
+	IdtAtomic<double> fontTargetSize = -1.0;
+	mutable BarUiFontCorrectionClass fontCorrection;
 
 	// 颜色
 	BarUiColorClass color;

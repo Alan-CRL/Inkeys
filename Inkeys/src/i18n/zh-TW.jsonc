@@ -538,6 +538,14 @@
     },
     "Experimental":
     {
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "允許介面字型以非整數像素尺寸繪製",
+          "E": "關閉時，主列和控制項靜止狀態的字型像素尺寸向下取整；縮放及轉場動畫仍連續變化。立即生效。"
+        }
+      },
       "Draw3":
       {
         "HardwareAcceleration":

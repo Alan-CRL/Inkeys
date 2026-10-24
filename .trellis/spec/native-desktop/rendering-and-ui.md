@@ -1983,3 +1983,63 @@ void SyncDraw3State() {
 ## UI3 新按钮的笔震动接入（2026-10-20）
 
 新增主栏注册按钮、形状/粗细表项或独立属性控件时，同时遵守 [pen-haptics.md](pen-haptics.md) 的独立偏好与业务接受点合同。公共按钮使用共享入口自动继承；独立状态机必须报告真实接受，不能把命中/Consumed 当作成功。保持 Pen 凭据、取消/禁用/去重、即时功能开关和可选设备回退，并补充相关回归。
+
+## 主栏与控件静止字号及连续动画目标（2026-10-24）
+
+### 1. Scope / Trigger
+
+UI3主栏、属性面板及共用Bar renderer的PPT/白板分页文字适用；设置ImGui文字与启动预览排除。本节覆盖初版逐帧floor：用户后续要求仅静止字号/动画目标取整，动画中允许小数，结束时不能追加取整。
+
+### 2. Signatures
+
+- `Experimental.Inkeys3.UI3.AllowFractionalFontSize: IdtAtomic<bool> = false`，main.json、严格bool、NoUpload，key/默认不变。
+- `BarUiFontCorrectionClass::Resolve(targetPixels, allowFractional, frame, context, duration)`：固定状态中的连续修正动画。
+- `BarUIRendering::BeginFontFrame(time, context, targetZoom)`、`FontAnimationsActive()`：共享帧推进与有限续帧。
+- `ResolveWordFontSize(context, word, currentSize, nominalTarget)`、`SetFontTargetZoom/Scale`、`FontTargetScope`：当前绘制轨迹与静止目标元数据分离。
+- `BarPageSurface::SetFontTargetScale(double)`：接收PageControl缩放动画最终倍率。
+- Word保留原始`size.val/tar`；`fontTargetSize`仅为逐帧派生SetDirect路径提供独立名义目标，`fontCorrection`由render owner持有。
+
+### 3. Contracts
+
+- T为原始最终静止物理字号：名义字号目标×目标frameZoom×目标Y向量的设备像素长度。关闭时Q=floor(T)、cTarget=Q/T；开启时cTarget=1。原始当前字号/内容/几何轨迹乘连续cCurrent，不对当前帧floor。
+- 只有真实目标变化才重定向，c从当前动画值继续，同目标不重启。首次/禁动画/forceReplace可直达目标；共享dt=0保持当前值，同一word/固定样式每帧至多推进一次。原raw字号/中点/曲线/幂等保持，不用新的独立时钟或无界map。
+- T=0的退出几何已自然归零，保留当前有效c避免除0及再打开额外放大；0<T<1的静止目标Q=0则修正到0。动画中间字号允许小于1px，不强行钳到1px。
+- 当前DC仅描述实际连续轨迹；动画终点显式组合绝对目标Y向量。禁止用当前FLOAT矩阵与double目标/当前比值反推终点：13×float(0.95)/0.95可能得到12.999999836…并误截断12。不得加epsilon或round掩盖，静态默认入口可用实际DC。
+- DIP目标向量的物理长度为hypot(targetY.x*dpiX/96,targetY.y*dpiY/96)，PIXELS模式DPI因子为1；frameZoom已含屏幕/UI基准，不重复乘显示器DPI。
+- 公共/固定/手工按钮传press.tar，按住的静止端点也取整；contentScale只乘连续当前值，其换字终点为1，不用中点反复生成目标。父/子panel用目标pose组合，Eraser/Recall等SetDirect(nominal*currentPose)另供nominal*targetPose。
+- 主栏显示倍率用displayUiBaseScale.tar×configZoom；分页由AnimatedBounds.targetScale交给Scene。Advance→SetBounds→同now Render顺序也须同步最新目标，不冻结旧scale。tooltip/dock用源progress.tar，不能从派生SetDirect的radius.tar猜终点。
+- body恢复目标Y为1，直接拖住通过ResolveBarBottomDockFontTargetScale消费已解析mapping中的rigidOverlayTranslationYDip（即真实抓手偏移），不能再读未经重基准的frame输入；捕获下端点弹簧目标保持0。纯X变形不影响字号高度。dock使用自身word修正状态，FPS和细刻度分别用固定有界样式状态；细刻度字体未乘面板动画scale，不重复添加。
+- 修正活动必须进入绘制前的demand/damage及Continue判断，源几何结束后仍推进c尾段，落定后回idle。隐藏/不可绘制内容不无限唤醒；同frame重复draw、失败重试、资源重建不能重复推进或重置c到新目标。
+- MeasureText仍用未截断逻辑字号和ceil作为保守布局上界，不随字号阶跃重排；文字格式与细刻度cache key使用实际本帧字号。图标/几何、抗锯齿和透明合成不变。
+- 实验标题仍为“允许界面字体以非整数像素尺寸渲染”，三语说明明确静止字号取整、动画连续；设置文字自身的渲染方式不改，保存/轻唤醒沿用既有路径。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| 13DIP×0.6静止目标，关闭 | 7px |
+| 原始字号13→15DIP，zoom=0.6 | 7→9px，动画中允许连续小数 |
+| 相同目标重复提交/同frame重复draw | 不重启、不重复推进 |
+| 动画中改目标或反向 | 当前c作为起点，dt=0不跳 |
+| 源几何已落定、c仍在途 | 持续damage/Continue至修正完成 |
+| 动画结束至首idle帧 | 同一最终整数值，不再floor |
+| 禁动画/强制替换 | 直接到相同静止目标 |
+| 13px释放目标、FLOAT当前0.95 | 目标保持13，不误截断12 |
+
+### 5. Good / Base / Bad Cases
+
+Good：原始轨迹×连续目标修正，静止末态自动落到Q。Base：开启时目标系数1，保留原始目标和曲线。Bad：floor(current)、全窗animating时放行后末帧补floor、修改raw size.tar、从每帧派生SetDirect猜终点、仅Word内推进而绘制前idle已早退。
+
+### 6. Tests Required
+
+真实生产修正动画覆盖中间小数/两端整数、dt=0重定向、重复目标/同帧、末帧至idle、禁动画与0目标退出再打开。真实D2D覆盖按压按住/释放、内容缩放、panel当前/目标pose、显示/分页目标倍率、DPI/PIXELS/非均匀变换及13px整数边界。生产调度验证c尾段Continue/damage，不能只测试helper返回值。复用完整Debug|ARM64 solution、Headless --no-window、既有无HWND字体离屏入口、三语及编码/diff检查；实机观感另行观察。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：动画当前采样跨整数档，或者结束时突然补截断。
+fontSize = floor(currentSize * currentPixelsPerUnit) / currentPixelsPerUnit;
+// Correct：动画内部投影稳定目标，原始采样乘连续修正值。
+coefficient = correction.Resolve(stableTargetPixels, allowFractional, frame, context, duration);
+fontSize = currentSize * coefficient;
+```

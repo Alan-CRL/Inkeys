@@ -5618,6 +5618,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		auto previewGeometry = CalculateBarThicknessPreviewGeometry(
 			*panel, *region, regionInherit, *adjust, adjustInherit);
 		double panelScale = previewGeometry.panelScale;
+		const double fontPanelTargetScale=static_cast<double>(panel->w.tar)/BarDrawAttributeExpandedWidth;
 		double panelExpandedProgress = clamp(
 			(panelScale - BarDrawAttributeCompactScale)
 			/ (1.0 - BarDrawAttributeCompactScale), 0.0, 1.0);
@@ -6205,6 +6206,7 @@ double baseThumbDiameter =
 				* panelScale));
 		menuFreeWord->h.SetDirect(menuRowHeight);
 		menuFreeWord->size.SetDirect(12.0 * panelScale);
+		menuFreeWord->fontTargetSize=12.0*fontPanelTargetScale;
 		menuFreeWord->pct.SetDirect(menuVisualVisible ? contentOpacity * menuOpacity : 0.0);
 		menuFreeWord->Inherit(BarUiInheritEnum::TopLeft, *panel);
 		auto menuCheck = state.svgMap[
@@ -6239,6 +6241,7 @@ double baseThumbDiameter =
 				* panelScale * menuProgress));
 		annotationLabel->h.SetDirect(menuRowHeight);
 		annotationLabel->size.SetDirect(13.0 * panelScale);
+		annotationLabel->fontTargetSize=13.0*fontPanelTargetScale;
 		annotationLabel->pct.SetDirect(annotationOpacity);
 		annotationLabel->color.SetDirect(RGB(160, 160, 160));
 		annotationLabel->Inherit(BarUiInheritEnum::TopLeft, *panel);
@@ -6319,6 +6322,7 @@ double baseThumbDiameter =
 			holdLockLabel->w.SetDirect(holdLabelW);
 			holdLockLabel->h.SetDirect(holdLabelHeight);
 			holdLockLabel->size.SetDirect(13.0 * panelScale);
+		holdLockLabel->fontTargetSize=13.0*fontPanelTargetScale;
 			holdLockLabel->pct.SetDirect(holdHintOpacity);
 			holdLockLabel->contentScale = max(0.0, static_cast<double>(
 				state.drawAttributeThicknessHoldGroupScale.val));
@@ -6595,6 +6599,7 @@ double closeButtonSize =
 		// 从色块锚点的紧凑态展开，放大几何变化以完整复用绘制属性窗口的回弹。
 		double pickerScale = max(0.01, BarColorPickerCompactScale
 			+ (1.0 - BarColorPickerCompactScale) * pickerProgress);
+		const double fontPickerTargetScale=max(0.01,BarColorPickerCompactScale+(1.0-BarColorPickerCompactScale)*state.drawAttributeColorPickerProgress.tar);
 		double pickerWidth = max(1.0,
 			BarColorPickerCompactWidth
 			+ (BarColorPickerPanelWidth - BarColorPickerCompactWidth)
@@ -6800,6 +6805,7 @@ double closeButtonSize =
 			word.w.SetDirect(wordW);
 			word.h.SetDirect(footerHeight);
 			word.size.SetDirect(13.0 * pickerScale);
+			word.fontTargetSize=13.0*fontPickerTargetScale;
 			word.pct.SetDirect(pickerOpacity);
 			word.UpInh(BarUiInheritClass(wordX, footerTop));
 		};
@@ -6855,6 +6861,7 @@ double closeButtonSize =
 	pickerHoldWord->w.SetDirect(holdWidth - 24.0 * pickerScale);
 	pickerHoldWord->h.SetDirect(holdHeight);
 	pickerHoldWord->size.SetDirect(12.0 * pickerScale);
+	pickerHoldWord->fontTargetSize=12.0*fontPickerTargetScale;
 	pickerHoldWord->pct.SetDirect(holdOpacity);
 	COLORREF colorPickerHoldGrayColor = MixBarUiColor(
 		GetThemeColor(BarThemeColorEnum::TextPrimary),
@@ -9463,6 +9470,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.bottomDockMapping.visualTopDip
 			- state.bottomDockMapping.baseTopDip
 				* state.bottomDockMapping.scaleY) * frameZoom);
+		const double fontBodyTargetY = Inkeys::UI::Bar::ResolveBarBottomDockFontTargetScale(
+			state.bottomDockMapping,frame.bottomDockMode==BarBottomDockMode::BottomDocked && frame.bottomDockDragActive);
 		const D2D1_MATRIX_3X2_F bodyTransform =
 			D2D1::Matrix3x2F::Scale(bodyScaleX, bodyScaleY)
 			* D2D1::Matrix3x2F::Translation(bodyTranslationX, bodyTranslationY)
@@ -9505,6 +9514,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					state.spec.frameCursorLight,
 					D2D1::SizeF(state.spec.frameCursorLightRadius,
 						state.spec.frameCursorLightRadius));
+				state.spec.SetFontTargetScale(1.0);
 				barDeviceContext->SetTransform(baseTransform);
 			};
 		auto SetBodyTransform = [&]()
@@ -9514,6 +9524,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						static_cast<FLOAT>(bodyCursorLight.centerY)),
 					D2D1::SizeF(static_cast<FLOAT>(bodyCursorLight.radiusX),
 						static_cast<FLOAT>(bodyCursorLight.radiusY)));
+				state.spec.SetFontTargetScale(fontBodyTargetY);
 				barDeviceContext->SetTransform(bodyTransform);
 			};
 		auto SetGripTransform = [&]()
@@ -9523,6 +9534,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						static_cast<FLOAT>(gripCursorLight.centerY)),
 					D2D1::SizeF(static_cast<FLOAT>(gripCursorLight.radiusX),
 						static_cast<FLOAT>(gripCursorLight.radiusY)));
+				state.spec.SetFontTargetScale(fontBodyTargetY);
 				barDeviceContext->SetTransform(gripTransform);
 			};
 		auto SetRigidTransform = [&]()
@@ -9532,6 +9544,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						static_cast<FLOAT>(rigidCursorLight.centerY)),
 					D2D1::SizeF(static_cast<FLOAT>(rigidCursorLight.radiusX),
 						static_cast<FLOAT>(rigidCursorLight.radiusY)));
+				state.spec.SetFontTargetScale(1.0);
 				barDeviceContext->SetTransform(rigidTransform);
 			};
 		SetBaseTransform();
@@ -10580,7 +10593,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 											&& selectionProgress > 0.000001)
 										{
 											auto* label = state.spec.GetThicknessFineDialLabelLayout(
-												tick, uiZoom);
+												tick, uiZoom, barDeviceContext);
 											if (label && label->layout
 												&& labelCandidateCount
 													< labelCandidates.size())
@@ -10766,6 +10779,7 @@ bool presetButton = button.presetIndex >= 0;
 									* originalTransform);
 							}
 
+							BarUIRendering::FontTargetScope fontPress(state.spec,button.pressScale->tar,button.pressScale->dur);
 							state.spec.Shape(barDeviceContext, *shape, shapeInherit);
 							if (!presetButton)
 							{
@@ -11323,7 +11337,7 @@ bool presetButton = button.presetIndex >= 0;
 					BarUISetShapeEnum closeHitType,
 					BarUISetSvgEnum closeSvgType,
 					BarUISetShapeEnum anchorBadgeType,
-					BarUiValueClass& closePressScale)
+					BarUiValueClass& closePressScale, const BarUiValueClass& popupProgress)
 				{
 					auto popup = state.shapeMap[popupShapeType];
 					auto popupTitle = state.wordMap[popupTitleType];
@@ -11410,7 +11424,10 @@ bool presetButton = button.presetIndex >= 0;
 								static_cast<FLOAT>(anchorX * frameZoom),
 								static_cast<FLOAT>(anchorY * frameZoom)))
 						* originalTransform);
-					// 文字和 SVG 使用完整尺寸资源再整体缩放，避免动画每帧创建新字号格式。
+					BarUIRendering::FontTargetScope fontPopup(state.spec,popupProgress.tar,popupProgress.dur);
+					// 原始几何继续整体缩放，文字只把源进度的静止目标交给修正动画。
+					popupTitle->fontTargetSize=BarThicknessTooltipTitleFontSize;
+					popupBody->fontTargetSize=BarThicknessTooltipBodyFontSize;
 					state.spec.Word(barDeviceContext, *popupTitle,
 						BarUiInheritClass(
 							UnscaleCoordinate(titleInherit.x, anchorX),
@@ -11529,10 +11546,14 @@ bool presetButton = button.presetIndex >= 0;
 				freeLineRow->Inherit(TopLeft, *panel));
 			state.spec.Svg(barDeviceContext, *menuCheck,
 				menuCheck->Inherit(TopLeft, *panel));
+			{
+			BarUIRendering::FontTargetScope fontPress(state.spec,
+				state.drawAttributePenTypeFreeLinePressScale.tar,state.drawAttributePenTypeFreeLinePressScale.dur);
 			state.spec.Word(barDeviceContext, *freeLineWord,
 				freeLineWord->Inherit(TopLeft, *panel),
 				DWRITE_FONT_WEIGHT_NORMAL,
 				DWRITE_TEXT_ALIGNMENT_LEADING);
+			}
 			barDeviceContext->SetTransform(menuTransform);
 
 			auto annotationLabel = state.wordMap[
@@ -11553,7 +11574,7 @@ bool presetButton = button.presetIndex >= 0;
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge,
-				state.drawAttributeOverflowClosePressScale);
+				state.drawAttributeOverflowClosePressScale,state.drawAttributeOverflowPopupProgress);
 			// 菜单内 [?] 的帮助 Tooltip 始终位于其他绘制属性浮层之上。
 			DrawThicknessPopup(
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
@@ -11562,7 +11583,7 @@ bool presetButton = button.presetIndex >= 0;
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
-				state.drawAttributeAnnotationClosePressScale);
+				state.drawAttributeAnnotationClosePressScale,state.drawAttributeAnnotationPopupProgress);
 			};
 
 			// 静止保持提示：圆环在左、文字在右；锁定后圆环淡出，文字可保留并变白。
@@ -11958,7 +11979,9 @@ bool presetButton = button.presetIndex >= 0;
 							state.drawAttributeThicknessPreviewPopupAnchor.y
 								* static_cast<FLOAT>(frameZoom)))
 					* originalTransform);
-				// 数字始终使用完整字号格式，仅通过整体变换完成展开和位置迁移。
+				BarUIRendering::FontTargetScope fontPopup(state.spec,state.drawAttributeThicknessPreviewPopupProgress.tar,
+					state.drawAttributeThicknessPreviewPopupProgress.dur);
+				// 数字保持原始整体变换轨迹，字号修正只追随其静止目标。
 				state.spec.Word(barDeviceContext, *popupNumber,
 					BarUiInheritClass(
 						state.drawAttributeThicknessPreviewNumberRect.left,
@@ -12097,13 +12120,22 @@ bool presetButton = button.presetIndex >= 0;
 					static_cast<FLOAT>(dockTargetIndicatorScale) * textScale,
 					static_cast<FLOAT>(dockTargetIndicatorScale) * textScale,
 					indicatorCenter) * originalTransform);
+				BarUIRendering::FontTargetScope fontIndicator(state.spec,
+					state.bottomDockTargetIndicatorProgress.tar,
+					state.bottomDockTargetIndicatorProgress.dur);
+				IDWriteTextFormat* drawTextFormat = state.barMedia.formatCache->GetFormat(
+					state.spec.GetFontFamily(), state.spec.ResolveWordFontSize(barDeviceContext,state.bottomDockIndicatorWord,
+						BarButtonTwoTwoLabelFontSizeDip * frameZoom,BarButtonTwoTwoLabelFontSizeDip),
+					context.assets.fontCollection.Get(), DWRITE_FONT_WEIGHT_BOLD,
+					DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, state.spec.GetTextLocale(),
+					DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 				if (auto textBrush = state.spec.GetFrameSolidColorBrush(
 					barDeviceContext,
 					GetThemeColor(BarThemeColorEnum::TextPrimary),
-					textOpacity))
+					textOpacity); textBrush && drawTextFormat)
 					(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawTextW(dockModeLabel.c_str(),
 						static_cast<UINT32>(dockModeLabel.size()),
-						dockModeTextFormat, indicatorTextRect, textBrush,
+						drawTextFormat, indicatorTextRect, textBrush,
 						D2D1_DRAW_TEXT_OPTIONS_CLIP);
 				barDeviceContext->SetTransform(originalTransform);
 			}
@@ -12117,7 +12149,7 @@ bool presetButton = button.presetIndex >= 0;
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
 				state.spec.GetFontFamily(),
-				12.0F * tarZoom,
+				state.spec.ResolveFontSize(barDeviceContext, 12.0F * tarZoom, 12.0),
 				context.assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_NORMAL,
 				DWRITE_FONT_STYLE_NORMAL,
@@ -12731,6 +12763,13 @@ BarRenderLoopCoordinator::RenderFrame(
 	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
 	if (offSignal) return FrameResult::Idle;
 	auto& state = *state_;
+	if (state.spec.UpdateFontRenderingPolicy(
+		Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))
+	{
+		// 策略变化必须产生真实视觉损伤，轻唤醒本身不足以重画静止主栏。
+		state.unclassifiedDamagePending = true;
+		state.presentDecision.RequireVisualRetry();
+	}
 	state.finiteObserver = Inkeys::UI::Bar::ActiveUi3FiniteObserver();
 	state.finiteSvgProbe = state.finiteObserver ? state.finiteObserver->SvgProbe() : nullptr;
 	Inkeys::UI::Bar::SvgObservationScope svgObservation(state.finiteSvgProbe,
@@ -13034,7 +13073,12 @@ BarRenderLoopCoordinator::RenderFrame(
 	displayTransitionTimer.Stop();
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
+	const bool fontPending = state.spec.FontAnimationsActive();
 	state.spec.SetFrameZoom(frame.zoom);
+	state.spec.BeginFontFrame(frame.frameTime,
+		{frame.animationDtSeconds,frame.animationSpeedRate,static_cast<bool>(BarUiAnimationEnabled),false},
+		static_cast<double>(state.displayUiBaseScale.tar)*static_cast<double>(state.barStyle.configZoom));
+	if (fontPending) { state.unclassifiedDamagePending = true; state.presentDecision.RequireVisualRetry(); }
 	if (diagnostics)
 	{
 		diagnostics->zoom = frame.zoom;

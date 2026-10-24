@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.FontSize.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.MainLayoutPolicy.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
@@ -32,6 +33,32 @@ namespace
 	bool Near(double lhs, double rhs, double epsilon = 0.000001)
 	{
 		return std::abs(lhs - rhs) <= epsilon;
+	}
+
+	void TestFontTargetUsesResolvedGrip()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (const double zoom : { 0.6, 1.0, 1.5, 2.0 })
+		{
+			// 输入仍保存重基准前 5DIP；render owner 已按实际屏幕抓手解析出 6DIP。
+			const double resolvedOffset = ResolveBarBottomDockElasticOffsetForScreenGrip(
+				1000.0 + 6.0 * zoom, 1000.0, zoom);
+			const auto held = ResolveBarBottomDockVerticalMapping(0.0, 80.0, resolvedOffset);
+			const double targetScale = ResolveBarBottomDockFontTargetScale(held, true);
+			const double targetPixels = 13.0 * zoom * targetScale;
+			const double coefficient = Detail::ResolveBarFontCorrectionTarget(targetPixels, false);
+			Check(Near(targetScale, held.scaleY)
+				&& Near(13.0 * zoom * held.scaleY * coefficient, std::floor(targetPixels)),
+				"held font target shares the render owner's resolved physical grip");
+			const auto stale = ResolveBarBottomDockVerticalMapping(0.0, 80.0, 5.0);
+			const double staleCoefficient = Detail::ResolveBarFontCorrectionTarget(13.0 * zoom * stale.scaleY, false);
+			Check(!Near(13.0 * zoom * held.scaleY * staleCoefficient, std::floor(targetPixels)),
+				"stale input offset is a distinct fractional-font regression witness");
+			const auto captureMoving = ResolveBarBottomDockVerticalMapping(0.0, 80.0, resolvedOffset, 9.0, true);
+			Check(Near(ResolveBarBottomDockFontTargetScale(captureMoving, true), targetScale)
+				&& ResolveBarBottomDockFontTargetScale(captureMoving, false) == 1.0,
+				"font target excludes the capture spring sample and restores unit scale on release");
+		}
 	}
 
 	void TestHorizontalCapturePresentedSequence()
@@ -603,6 +630,7 @@ int RunBarBottomDockTests()
 		}
 	}
 	TestMainToolbarLayoutPolicy();
+	TestFontTargetUsesResolvedGrip();
 	TestHorizontalCapturePresentedSequence();
 	TestFirstCapturePresentationAcrossNewSamples();
 	TestOldFloatingFrameCannotAcknowledgeCapture();

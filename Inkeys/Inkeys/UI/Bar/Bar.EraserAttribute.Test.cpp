@@ -24,6 +24,7 @@
 #include <vector>
 #include <bit>
 #include <limits>
+#include <cmath>
 #include "Bar.PresentationProbe.h"
 #include "Bar.MainLayoutPolicy.h"
 #include "../StartupPlacement.h"
@@ -331,6 +332,130 @@ namespace Inkeys::UI::Bar
 		expect(I18n::load(1,L"JSON",L"zh-CN"),"default bundled translation loads");
 		owner.spec.ConfigureLocalizedTypography();
 		owner.barButtonSet.PresetInitialization();owner.barMedia.LoadFormat();
+		// 同一生产 Word 路径对照独立推导的整数字号，不用截图观感代替最终像素尺寸验证。
+		{
+			// 只在离屏测试局部公开受保护的缓存检查入口，生产接口保持不变。
+			struct FontTestRenderer : BarUIRendering
+			{
+				using BarUIRendering::BarUIRendering;
+				using BarUIRendering::GetThicknessFineDialLabelLayout;
+			};
+			FontTestRenderer fonts(&owner), reference(&owner);
+			const bool ready = SUCCEEDED(fonts.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128))
+				&& SUCCEEDED(reference.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128));
+			expect(ready, "font pixel policy creates offscreen targets");
+			if (ready)
+			{
+				struct FontCase { FLOAT dpi, scaleX, scaleY; bool pixels; };
+				for (const auto item : {FontCase{96,1,1,false}, FontCase{144,1.03F,0.91F,false},
+					FontCase{192,0.95F,0.83F,false}, FontCase{192,1.03F,0.91F,true}})
+				{
+					constexpr double zoom = 0.6, contentScale = 0.85;
+					const double deviceScale = item.scaleY * (item.pixels ? 1.0 : item.dpi / 96.0);
+					const double expectedPixels = std::floor(13.0 * zoom * deviceScale);
+					const double expectedSize = expectedPixels / deviceScale * contentScale;
+					const auto draw = [&](BarUIRendering& renderer, bool allow, double logicalSize)
+					{
+						renderer.UpdateFontRenderingPolicy(allow); renderer.SetFrameZoom(zoom);
+						auto* dc = renderer.GetDeviceContext(); dc->SetDpi(item.dpi, item.dpi);
+						dc->SetUnitMode(item.pixels ? D2D1_UNIT_MODE_PIXELS : D2D1_UNIT_MODE_DIPS);
+						dc->SetTransform(D2D1::IdentityMatrix());
+						const float units = item.pixels ? 1.0F : 96.0F / item.dpi;
+						renderer.BeginFrameDraw(dc, D2D1::RectF(0,0,256 * units,128 * units));
+						dc->SetTransform(D2D1::Matrix3x2F::Scale(item.scaleX,item.scaleY)
+							* D2D1::Matrix3x2F::Translation(3.25F,2.75F));
+						BarUiWordClass word(0,0,180,70,L"字号 123",logicalSize,RGB(20,20,20));
+						word.enable.Initialization(true); word.pct.SetDirect(1); word.contentScale=contentScale;
+						const bool drew = renderer.Word(dc,word,{10,10},DWRITE_FONT_WEIGHT_NORMAL);
+						renderer.FinishFrameDrawCommands(dc); dc->SetTransform(D2D1::IdentityMatrix());
+						expect(drew && SUCCEEDED(renderer.EndFrameDraw(dc)), "font Word renders through the real D2D path");
+						return ReadSvgProofPixels(dc,renderer.GetTargetBitmap());
+					};
+					const auto actual=draw(fonts,false,13.0);
+					const auto expected=draw(reference,true,expectedSize/(zoom*contentScale));
+					expect(!actual.empty() && actual==expected,
+						"Word pixels retain continuous content scale around the projected stationary target");
+					const auto fractional=draw(fonts,true,13.0);
+					expect(fractional!=actual, "fractional preference preserves a distinct untruncated Word render");
+					expect(draw(fonts,false,13.0)==actual, "font preference switches back without stale cached text");
+				}
+				auto* dc=fonts.GetDeviceContext(); dc->SetDpi(96,96); dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);
+				dc->SetTransform(D2D1::IdentityMatrix()); fonts.UpdateFontRenderingPolicy(false);
+				auto* label=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(label && label->layout && static_cast<IDWriteTextFormat*>(label->layout.Get())->GetFontSize()==6.0F,
+					"fine dial uses truncated pixels in its actual DWrite layout");
+				expect(label==fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc),
+					"fine dial reuses the same effective font layout");
+				dc->SetTransform(D2D1::Matrix3x2F::Scale(1.03F,0.91F));
+				auto* scaled=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(scaled && scaled->layout
+					&& std::abs(static_cast<IDWriteTextFormat*>(scaled->layout.Get())->GetFontSize()*0.91-5.0)<0.00001,
+					"fine dial cache keys include final font size after external transform");
+				fonts.UpdateFontRenderingPolicy(true);
+				label=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(label && std::abs(static_cast<IDWriteTextFormat*>(label->layout.Get())->GetFontSize()-6.3F)<0.00001F,
+					"fine dial refreshes layout when fractional fonts are enabled");
+				fonts.UpdateFontRenderingPolicy(false);
+				expect(fonts.ResolveFontSize(dc,0.5)==0.0F, "subpixel font is skipped rather than enlarged");
+				dc->SetDpi(120,192); dc->SetTransform(D2D1::Matrix3x2F(1,0,0.6F,0.8F,0,0));
+				const double rotatedScale=std::hypot(0.6*1.25,0.8*2.0);
+				expect(std::abs(fonts.ResolveFontSize(dc,7.8)*rotatedScale-std::floor(7.8*rotatedScale))<0.00001,
+					"font height includes both axes of rotated/sheared DPI mapping");
+
+				// 真实公共按钮绘制覆盖按压目标和 FLOAT 当前矩阵抵消曾导致的 13px->12px 边界。
+				{
+					dc->SetDpi(96,96);dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);dc->SetTransform(D2D1::IdentityMatrix());
+					fonts.SetFrameZoom(1);fonts.UpdateFontRenderingPolicy(false);
+					BarButtonClass button;
+					button.button.Initialization(0,0,80,80,4,4,1,RGB(240,240,240),RGB(20,20,20));
+					button.button.enable.Initialization(true);button.button.pct.SetDirect(1);
+					button.name.Initialization(0,0,70,24,L"Press",13,RGB(20,20,20));
+					button.name.enable.Initialization(true);button.name.pct.SetDirect(1);
+					BarButtonDrawOptions options;options.drawIcon=false;
+					auto time=std::chrono::steady_clock::now();
+					const auto drawButton=[&](double dt){
+						time+=std::chrono::nanoseconds(1)+std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(dt));
+						fonts.BeginFontFrame(time,{dt,1,true,false},1);fonts.SetFontTargetScale(1);
+						dc->SetTransform(D2D1::IdentityMatrix());fonts.BeginFrameDraw(dc,D2D1::RectF(0,0,256,128));
+						expect(DrawBarButtonVisual(fonts,dc,button,{10,10},options),"real font press button draws");
+						const double first=button.name.fontCorrection.Current();
+						(void)DrawBarButtonVisual(fonts,dc,button,{10,10},options);
+						expect(button.name.fontCorrection.Current()==first,"duplicate real button draw advances font once");
+						fonts.FinishFrameDrawCommands(dc);expect(SUCCEEDED(fonts.EndFrameDraw(dc)),"font press frame commits D2D commands");
+						return 13.0*static_cast<double>(button.pressScale.val)*first;
+					};
+					for(const double current:{1.0,0.95,0.96,0.99,1.01,0.9,1.0}){
+						button.pressScale.SetDirect(current);button.pressScale.SetTar(1,0.2);(void)drawButton(0);
+						expect(button.name.fontCorrection.Target()==1.0,"release target stays exactly 13px across FLOAT press matrices");
+					}
+					button.pressScale.SetDirect(1);button.pressScale.SetTar(0.95,0.2);
+					double previous=13;int intermediate=0;
+					for(int tick=0;tick<30;++tick){
+						if(!button.pressScale.IsSame())(void)BarUiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
+						const double pixel=drawButton(0.01);intermediate+=std::abs(pixel-std::round(pixel))>0.00001;
+						expect(std::abs(pixel-previous)<0.2,"real pressed font follows a continuous fractional trajectory");previous=pixel;
+					}
+					expect(intermediate>10&&std::abs(previous-12.0)<0.00001&&!fonts.FontAnimationsActive(),
+						"pressed hold settles at floor(13*0.95) and font scheduler becomes idle");
+					const double held=previous;button.pressScale.SetTar(1,0.2);
+					expect(std::abs(drawButton(0)-held)<0.00001,"release retarget at zero dt preserves current visible font");
+					for(int tick=0;tick<30;++tick){
+						if(!button.pressScale.IsSame())(void)BarUiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
+						previous=drawButton(0.01);
+					}
+					expect(std::abs(previous-13.0)<0.00001&&std::abs(drawButton(0)-previous)<0.00001,
+						"real release ends at 13px without an idle-frame floor jump");
+					// 字号目标不变时，内容过渡可连续经过小数及 Back 回弹；末尾只回到同一个 c。
+					button.name.contentScale=0.83;const double c=button.name.fontCorrection.Current();(void)drawButton(0.01);
+					expect(button.name.fontCorrection.Current()==c,"content midpoint does not retarget stationary font correction");
+					button.name.contentScale=1.03;(void)drawButton(0.01);button.name.contentScale=1;(void)drawButton(0.01);
+					expect(button.name.fontCorrection.Current()==c,"content overshoot and final frame keep continuous correction");
+				}
+
+			}
+			fonts.DiscardDeviceResources(); reference.DiscardDeviceResources();
+		}
+
 		// 早期 CLI 未读取配置；准备已规范化的内存布局，避免 Load 触发迁移写盘。
 		auto a2Fixture=Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
 		for(auto& entry:a2Fixture)
@@ -2463,6 +2588,23 @@ namespace Inkeys::UI::Bar
 				&& scene.SetBounds({0,0,305,80},1.0F);
 			(void)scene.Advance(std::chrono::steady_clock::now());
 			expect(configured,"production PageSurface icon configures");
+			const bool savedFractional=Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
+			const auto policyTime=std::chrono::steady_clock::now();
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;
+			(void)scene.Advance(policyTime);(void)scene.ConsumeDamage();
+			expect(!scene.IsInvalidated(),"font policy fixture starts with consumed damage");
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=true;
+			(void)scene.Advance(policyTime);
+			expect(scene.IsInvalidated(),"same-time idle PageSurface invalidates on font policy change");
+			scene.SetOpacity(0,0);
+			(void)scene.Advance(policyTime+std::chrono::milliseconds(1));(void)scene.ConsumeDamage();
+			expect(!scene.IsInvalidated(),"hidden font policy fixture starts without geometry damage");
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;
+			(void)scene.Advance(policyTime+std::chrono::milliseconds(1));
+			expect(scene.IsInvalidated(),"hidden PageSurface applies font policy before restoring visibility");
+			scene.SetOpacity(1,0);
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=savedFractional;
+
 			const RECT presentation=scene.PresentationBounds();
 			const UINT width=static_cast<UINT>(presentation.right-presentation.left);
 			const UINT height=static_cast<UINT>(presentation.bottom-presentation.top);

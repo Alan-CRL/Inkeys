@@ -538,6 +538,14 @@
     },
     "Experimental":
     {
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "Allow interface fonts to render at fractional pixel sizes",
+          "E": "When off, stationary font sizes in the main bar and controls are truncated to whole pixels. Scaling and transition animations remain smooth. Applies immediately."
+        }
+      },
       "Draw3":
       {
         "HardwareAcceleration":

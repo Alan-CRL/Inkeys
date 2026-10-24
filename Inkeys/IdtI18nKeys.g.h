@@ -541,6 +541,14 @@ inline constexpr struct I18nKeyRoot
         } Preset{};
         struct Node__SettingsUI__Experimental
         {
+            struct Node__SettingsUI__Experimental__UI3
+            {
+                struct Node__SettingsUI__Experimental__UI3__AllowFractionalFontSize
+                {
+                    const char* N = "SettingsUI/Experimental/UI3/AllowFractionalFontSize/N";
+                    const char* E = "SettingsUI/Experimental/UI3/AllowFractionalFontSize/E";
+                } AllowFractionalFontSize{};
+            } UI3{};
             struct Node__SettingsUI__Experimental__Draw3
             {
                 struct Node__SettingsUI__Experimental__Draw3__HardwareAcceleration
