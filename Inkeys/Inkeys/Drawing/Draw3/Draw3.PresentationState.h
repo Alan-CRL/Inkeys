@@ -31,6 +31,43 @@ namespace Inkeys::Drawing::Draw3
 					Bridge::ReadyIdentityFor(*desired.presentationTarget)));
 	}
 
+	// 最后发出的请求可能仍在 Controller 退避；已呈现工作区相同也必须发送新意图，退休过期请求。
+	inline bool PresentationSceneNeedsDispatch(const Bridge::ProductState& desired,
+		Bridge::Workspace presentedWorkspace, Bridge::Workspace requestedWorkspace,
+		std::uint64_t requestedTargetRevision, bool restoreLatestScene) noexcept
+	{
+		if (restoreLatestScene || requestedWorkspace != desired.workspace) return true;
+		if (desired.workspace == Bridge::Workspace::Presentation)
+			return desired.presentationTarget
+				? desired.presentationTarget->targetRevision != requestedTargetRevision
+				: presentedWorkspace != desired.workspace || requestedTargetRevision != 0;
+		return presentedWorkspace != desired.workspace;
+	}
+
+	// 回执责任与工作区是否变化独立：旧场景重放失败后，同一桌面也可能仍欠 ready。
+	inline bool PresentationSceneNeedsReady(const Bridge::ProductState& desired,
+		Bridge::Workspace presentedWorkspace,
+		const std::optional<Bridge::PresentationReadyIdentity>& presentedTarget,
+		bool commandScenePending) noexcept
+	{
+		return commandScenePending || presentedWorkspace != desired.workspace ||
+			(desired.workspace == Bridge::Workspace::Presentation && desired.presentationTarget &&
+				presentedTarget != Bridge::ReadyIdentityFor(*desired.presentationTarget));
+	}
+
+	// UI 的真实提交可以先于 CPU ready；最终准入仍须等待两种回执同时匹配。
+	inline bool TryLatchPresentationUiReady(const Bridge::ProductState& desired,
+		const std::optional<Bridge::PresentationReadyIdentity>& suspended,
+		const Bridge::PresentationReadyIdentity& identity,
+		std::optional<Bridge::PresentationReadyIdentity>& uiReady) noexcept
+	{
+		if (desired.workspace != Bridge::Workspace::Presentation || !desired.presentationTarget ||
+			Bridge::ReadyIdentityFor(*desired.presentationTarget) != identity || suspended == identity)
+			return false;
+		uiReady = identity;
+		return true;
+	}
+
 	constexpr DrawpadPresentationSurface ResolveDrawpadPresentationSurface(
 		bool selectionMode, bool currentPageHasContent,
 		bool auxiliaryFullFrameClean) noexcept

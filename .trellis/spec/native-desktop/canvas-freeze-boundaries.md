@@ -299,3 +299,44 @@ Good：设置经过周期刷新后仍能获取自身 capture，隐藏后新笔�
 ### 7. Wrong vs Correct
 
 Wrong：以 SetWindowPos 返回值或 root 单一 bit 推定全树正确；只因旧断言失败便删掉 owner/capture 合同。Correct：读取实际状态、保留严格全树检查、用原生对照区分错误假设，再以最终产品点击与墨迹验证收尾。
+## 场景准入与白板交接（2026-10-24）
+
+### Scope / Trigger
+
+修改主画布穿透、PPT/白板场景发布、CPU 文稿切换、成功呈现回执或 UI-ready 准入时适用。用户报告“白板往返后恢复”不能单独证明线程死锁或某个现场根因。
+
+### Signatures / Ownership
+
+- `Window::Service::SetClickThrough(role, enabled, stillDesired={})` 在窗口 owner 内核对实际样式并应用；`Window.CanvasPolicy.h` 的生产策略保留未完成的 FRAMECHANGED。调用方不得用共享 HWND/布尔缓存替代真实样式。
+- `PublishProductWorkspace`、`PublishProductPresentationTarget`、`ClearProductPresentationTarget` 的可选 guard 在共享 `productCallMutex` 内执行，与白板权威发布使用同一提交边界。
+- `PptSceneWorkspaceEpoch()` 仅允许 Inactive / Exiting 且没有白板进入意图的偶数 epoch 发布完整 PPT 场景；既有 `PptInputWorkspaceEpoch()` 继续在整个白板事务期间拒绝业务输入。UI 显隐仍依照白板事务，不把场景恢复权限当成控件交互权限。
+- `PresentationSceneNeedsReady()` 包含已有 commandScenePending；`TryLatchPresentationUiReady()` 只锁存当前精确身份的真实 UI commit。Host 在 presentationTargetMutex 内调用，最终 gate 仍需 CPU、UI、加载、停止及事务条件全部满足。
+- 绘制 owner 的 `requestedWorkspace` 与 `requestedPresentationTargetRevision` 只记录最后实际入队的场景，不由旧 ready 回写；`PresentationSceneNeedsDispatch()` 同时核对已呈现工作区与最后请求，返回原场景也能退休过期请求。
+- `CanvasCommand::requireSceneMatch` 仅为普通业务绑定接受时的 workspace/target；最终 PrepareExit 不受其阻塞。
+
+### Contracts
+
+1. 稳定态窗口样式失败保留现有 250ms 协调重试。guard 失效不应用旧期望；样式位已写但 FRAMECHANGED 失败时，下次即使读到相同位也必须完成刷新。成功必须读取实际结果，不能用入队/函数缓存推断。同 role 的样式调用尚未退栈时，嵌套请求只能报告未完成并保留重试，不能在旧写位之前提前确认新相位；applying 状态以 RAII 退栈，仅在 owner 停止后重置。
+2. 白板 Entering/Exiting 保留当前意图，等待时发现 Bridge 偏离应重新收敛。迟到 PPT Desktop/target/clear 必须在提交点拒绝；完整白板往返不能让旧 epoch 复活。所有 desired 写入维护同一 epoch，包括功能关闭路径。PPT 退出后的工具收尾仍受非白板事务限制，在真实退出边沿先采严格 input epoch 再采工具 revision，提交时在白板意图锁与模式锁内核验；不得使用尾部晚采样的场景 epoch。PPT 调用方必须先拒绝 epoch=0（参数默认0保留其它 revision-only 调用语义）；窗口/产品同步必须在锁外。
+3. `SwitchPresentationCpuSlot` 的完整拓扑候选、运行时/文档页数及目标页校验在权威 swap 前完成；候选失败不消耗旧文稿、target、历史 fallback。target 相等本身不表示完整切换成功；same-target 回执和业务检查也必须检查实际页及完整文档。
+4. PreviousInterval 活动终态（成功或失败）解除加载后，只有已初始化且完整有效的活动 CPU 场景可以 stage 其实际 target；停放槽不替活动场景回 ready。补发回执须推动实际 Present，仍只在成功呈现路径 publish，不能硬填 Bridge 期望身份。
+5. CPU 场景应用失败只保留一份最新待重试场景，250/500/1000/2000ms 封顶退避，并合并 Run idle deadline。新场景/最终退出取消旧责任；最新意图返回已经呈现的原工作区时，也必须根据最后请求下发恢复命令，不能只比较 Host 已呈现值。它与既有 current-load 四次 I/O 预算独立，不能重置或放宽文件保护。
+6. 正常业务维持既有 FIFO。若场景前缀因故障未完整应用，绑定该场景的 Clear/Undo 等普通业务明确失败，不能落到其他文稿或随重试重复执行；记录非阻塞取消诊断，并报告 processed 终态，避免页面控制方无限等待计数。最终退出 ACK 必须可达。
+7. UI 与 CPU 的 ready 到达顺序可以交换。真实 UI commit 先到则独立保存，commandScenePending 或 CPU 未成功呈现仍保持关闸；旧 session/target、暂停和其他 workspace 的回执不能恢复旧目标。
+8. 准入原因日志只在条件变化时发布到既有非阻塞诊断输出器，不记录文稿路径/标题。`reasons` 位为：1 停止、2 场景交接、4 白板加载、8 缺可信 PPT target、16 CPU 身份未就绪、32 暂停、64 UI 身份未就绪、128 正在离开 PPT。日志不是完整可靠事件流。
+
+### Validation / Failure Matrix
+
+| 条件 | 必须行为 |
+|---|---|
+| 穿透请求交错、旧 guard、一次写入/FRAMECHANGED 失败 | 最新意图收敛；失败保留刷新责任；不依赖白板往返恢复 |
+| 旧 PPT 发布越过白板进入/完整往返 | 提交点拒绝旧 epoch；Exiting 恢复最新完整目标 |
+| same/parked lane 重绑失败、候选页数不一致 | 权威 CPU/旧墨迹不变；同 target 不能伪造成功；资源恢复后稳定目标可重试 |
+| PreviousInterval 成功/失败，切走/切回，active/parked | 当前有效活动目标在真实 Present 后 ready；旧页/停放 completion 不确认别的场景 |
+| 一次 UI commit 遇到短暂 CPU 未就绪 | 回执保留，CPU 恢复后无须 UI 重发或工作区切换即可开放 |
+| 桌面 no-op 仍欠 commandScenePending | 补一次成功呈现回执并清理债务 |
+| Desktop/Whiteboard → 失败或未 ready 的 PPT → 原工作区 | 即使 Host 仍报告原工作区，也发恢复命令；旧场景重试退休，不等待过期文稿的加载 |
+| PPT 退出尾部遇到白板 Exiting、进入意图或完整往返 | 场景恢复权限不能授权工具切换；旧 workspace epoch 即使工具 revision 未变也必须拒绝 |
+| 持续无效文档/损坏/身份冲突/停止 | 保持保护，不能伪造空白或超时开放输入 |
+
+复用现有 no-window CanvasPolicy/桥接回归与 `--draw3-fallback-stable-lane-test` 生产 CLI；无窗口提取探针只证明其实际生产块及模型，不代替完整模块编译或 Win32/Office/GPU 端到端验证。完整构建遵守根 AGENTS 的 solution、Debug|ARM64、ARM64 原生 MSBuild 与 Path/PATH 环境规范。GUI/隐藏 HWND 测试仍须用户明确授权。

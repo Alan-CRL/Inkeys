@@ -248,7 +248,22 @@ export namespace Inkeys::Display
 	// 启动 Mini 阶段只查询目标屏的有效 DPI，不枚举拓扑/EDID，也不发布显示快照。
 	[[nodiscard]] UINT QueryEffectiveDpi(HMONITOR monitor) noexcept;
 	[[nodiscard]] bool Initialize();
+	// 同线程消息重入只登记延后请求并返回 false；普通调用同步完成采样/发布。
 	[[nodiscard]] bool Refresh(ChangeReason reason = ChangeReason::Manual);
+#ifdef INKEYS_DISPLAY_TESTING
+	namespace Testing
+	{
+		struct RefreshHooks
+		{
+			std::function<std::optional<Snapshot>()> enumerate;
+			std::function<void(Snapshot&, bool visibilityOnly)> sampleTaskbars;
+		};
+		// 仅替代硬件采样；测试仍经过生产 Refresh 的加锁、合并与发布路径。
+		void SetRefreshHooks(const RefreshHooks* hooks) noexcept;
+		[[nodiscard]] bool DrainDeferredRefresh();
+		[[nodiscard]] bool HasDeferredRefresh() noexcept;
+	}
+#endif
 	void Shutdown() noexcept;
 	[[nodiscard]] SnapshotPtr GetSnapshot() noexcept;
 	[[nodiscard]] Subscription Subscribe(ChangeCallback callback);

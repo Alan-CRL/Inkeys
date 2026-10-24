@@ -90,6 +90,13 @@ namespace
 	};
 
 	std::mutex refreshMutex;
+	std::atomic<unsigned> pendingRefreshRequests{ 0 };
+	std::atomic<ULONG_PTR> deferredRefreshEpoch{ 0 };
+	thread_local bool refreshActive = false;
+	thread_local bool drainingDeferredRefresh = false;
+#ifdef INKEYS_DISPLAY_TESTING
+	thread_local const Testing::RefreshHooks* refreshHooks = nullptr;
+#endif
 	std::mutex subscriberMutex;
 	std::mutex publicationMutex;
 	std::atomic<SnapshotPtr> currentSnapshot;
@@ -99,6 +106,45 @@ namespace
 	std::uint64_t nextGeneration = 1;
 	bool shuttingDown = false;
 	thread_local Subscriber* executingSubscriber = nullptr;
+
+	[[nodiscard]] unsigned RefreshRequest(ChangeReason reason) noexcept
+	{
+		return reason == ChangeReason::TaskbarVisibility ? 1u
+			: reason == ChangeReason::Taskbar ? 2u : 4u;
+	}
+
+	[[nodiscard]] ChangeReason MergeRefreshRequests(ChangeReason reason, unsigned requests) noexcept
+	{
+		const unsigned merged = RefreshRequest(reason) | requests;
+		return merged & 4u ? (RefreshRequest(reason) == 4u ? reason : ChangeReason::Manual)
+			: merged & 2u ? ChangeReason::Taskbar : ChangeReason::TaskbarVisibility;
+	}
+
+	void ScheduleDeferredRefresh() noexcept;
+
+	class RefreshScope final
+	{
+	public:
+		RefreshScope() noexcept { refreshActive = true; }
+		~RefreshScope()
+		{
+			refreshActive = false;
+			if (!drainingDeferredRefresh) ScheduleDeferredRefresh();
+		}
+	};
+
+	[[nodiscard]] bool ProcessDeferredRefresh()
+	{
+		const unsigned requests = pendingRefreshRequests.load(std::memory_order_acquire);
+		if (!requests) return false;
+		struct DeferredScope
+		{
+			bool previous = std::exchange(drainingDeferredRefresh, true);
+			~DeferredScope() { drainingDeferredRefresh = previous; }
+		} scope;
+		// 延后补采仍有消息重入时，保留请求给下次外部刷新/5 秒兜底，避免自投递风暴。
+		return Refresh(MergeRefreshRequests(ChangeReason::TaskbarVisibility, requests));
+	}
 
 	[[nodiscard]] bool EqualLuid(const LUID& left, const LUID& right) noexcept
 	{
@@ -398,9 +444,34 @@ namespace
 	constexpr UINT syncTaskbarObserver = WM_APP + 0x354;
 	constexpr UINT taskbarEventPending = WM_APP + 0x355;
 	constexpr UINT stopTaskbarObserver = WM_APP + 0x356;
+	constexpr UINT deferredDisplayRefresh = WM_APP + 0x357;
 	std::atomic<HWND> observerWindow{ nullptr };
 	std::atomic<ULONG_PTR> observerEpoch{ 0 };
 	std::atomic<ULONG_PTR> nextObserverEpoch{ 1 };
+
+	void ScheduleDeferredRefresh() noexcept
+	{
+		if (!pendingRefreshRequests.load(std::memory_order_acquire)) return;
+		const HWND hwnd = observerWindow.load(std::memory_order_acquire);
+		const auto epoch = observerEpoch.load(std::memory_order_acquire);
+		if (!hwnd || !epoch) return;
+		auto queuedEpoch = deferredRefreshEpoch.load(std::memory_order_acquire);
+		while (queuedEpoch != epoch)
+		{
+			// 旧 observer 的投递不能占住新 epoch 的唯一唤醒名额。
+			if (observerEpoch.load(std::memory_order_acquire) != epoch
+				|| observerWindow.load(std::memory_order_acquire) != hwnd) return;
+			if (!deferredRefreshEpoch.compare_exchange_weak(queuedEpoch, epoch,
+				std::memory_order_acq_rel)) continue;
+			if (!PostMessageW(hwnd, deferredDisplayRefresh, epoch, 0))
+			{
+				auto expected = epoch;
+				(void)deferredRefreshEpoch.compare_exchange_strong(expected, 0,
+					std::memory_order_acq_rel);
+			}
+			return;
+		}
+	}
 
 	bool SameMonitorGeometry(const MonitorInfo& value, const MonitorInfo* old) noexcept
 	{
@@ -914,11 +985,17 @@ namespace
 			observerWindow.store(hwnd, std::memory_order_release);
 			SetTimer(hwnd, taskbarStructureTimer, 5000, nullptr);
 			SyncTaskbarObserver(state);
+			ScheduleDeferredRefresh();
 		}
 		else if (message == WM_DESTROY && state.hwnd == hwnd)
 		{
 			HWND expected = hwnd;
-			if (observerWindow.compare_exchange_strong(expected, nullptr)) observerEpoch.store(0);
+			if (observerWindow.compare_exchange_strong(expected, nullptr))
+			{
+				observerEpoch.store(0);
+				auto queuedEpoch = state.epoch;
+				(void)deferredRefreshEpoch.compare_exchange_strong(queuedEpoch, 0, std::memory_order_acq_rel);
+			}
 			StopTaskbarObservation(state);
 		}
 		else if (message == stopTaskbarObserver && wParam == state.epoch)
@@ -927,6 +1004,12 @@ namespace
 			&& state.epoch == observerEpoch.load(std::memory_order_acquire))
 		{
 			if (message == syncTaskbarObserver && wParam == state.epoch) SyncTaskbarObserver(state);
+			else if (message == deferredDisplayRefresh && wParam == state.epoch)
+			{
+				auto queuedEpoch = state.epoch;
+				(void)deferredRefreshEpoch.compare_exchange_strong(queuedEpoch, 0, std::memory_order_acq_rel);
+				(void)ProcessDeferredRefresh();
+			}
 			else if (message == taskbarEventPending && wParam == state.epoch)
 			{
 				if (state.batch.BeginCoalescing(state.epoch)
@@ -1371,35 +1454,63 @@ namespace Inkeys::Display
 
 	bool Refresh(ChangeReason reason)
 	{
+		// Shell/Win32 查询会同步派发窗口消息；同线程重入只合并请求，不再获取非递归锁。
+		if (refreshActive)
+		{
+			pendingRefreshRequests.fetch_or(RefreshRequest(reason), std::memory_order_release);
+			return false;
+		}
 		SnapshotPtr published;
 		bool enumerationSucceeded = false;
 		bool drainPublications = false;
 		{
+			RefreshScope scope;
 			std::scoped_lock refreshLock(refreshMutex);
 			{
 				std::scoped_lock lock(subscriberMutex);
 				if (shuttingDown) return false;
 			}
 
+			reason = MergeRefreshRequests(reason, pendingRefreshRequests.exchange(0, std::memory_order_acq_rel));
 			const auto previous = currentSnapshot.load(std::memory_order_acquire);
-			if (reason == ChangeReason::TaskbarVisibility && !previous) return false;
-			auto next = (reason == ChangeReason::Taskbar || reason == ChangeReason::TaskbarVisibility) && previous
-				? std::optional<Snapshot>(*previous) : EnumerateSnapshot();
-			enumerationSucceeded = next.has_value();
-			if (next)
+			std::optional<Snapshot> next;
+			// 同步最多补采一次；末次查询后的拓扑请求保留到 observer，不能按已覆盖丢弃。
+			for (unsigned pass = 0; pass < 2; ++pass)
 			{
-				if (reason == ChangeReason::TaskbarVisibility && previous) SampleCachedTaskbars(*next, *previous);
-				else
+				const auto* source = next ? &*next : previous.get();
+				if (reason == ChangeReason::TaskbarVisibility && !source) return false;
+				auto candidate = (reason == ChangeReason::Taskbar || reason == ChangeReason::TaskbarVisibility) && source
+					? std::optional<Snapshot>(*source)
+#ifdef INKEYS_DISPLAY_TESTING
+					: refreshHooks && refreshHooks->enumerate ? refreshHooks->enumerate()
+#endif
+					: EnumerateSnapshot();
+				enumerationSucceeded = candidate.has_value();
+				if (candidate)
 				{
-					SampleTaskbars(*next, previous.get(), &taskbarTargets);
-					if (const HWND hwnd = observerWindow.load(std::memory_order_acquire))
-						PostMessageW(hwnd, syncTaskbarObserver, observerEpoch.load(std::memory_order_acquire), 0);
+#ifdef INKEYS_DISPLAY_TESTING
+					if (refreshHooks && refreshHooks->sampleTaskbars)
+						refreshHooks->sampleTaskbars(*candidate, reason == ChangeReason::TaskbarVisibility);
+					else
+#endif
+					if (reason == ChangeReason::TaskbarVisibility && source) SampleCachedTaskbars(*candidate, *source);
+					else
+					{
+						SampleTaskbars(*candidate, source, &taskbarTargets);
+						if (const HWND hwnd = observerWindow.load(std::memory_order_acquire))
+							PostMessageW(hwnd, syncTaskbarObserver, observerEpoch.load(std::memory_order_acquire), 0);
+					}
 				}
-			}
-			if (!next)
-			{
-				// 几何枚举失败仍立即撤销旧物理标尺，像素/DPI保留给兼容消费者。
-				next = previous ? InvalidatePhysicalSize(*previous) : MakeFallbackSnapshot();
+				if (!candidate)
+				{
+					// 几何枚举失败仍立即撤销旧物理标尺，像素/DPI保留给兼容消费者。
+					candidate = source ? InvalidatePhysicalSize(*source) : MakeFallbackSnapshot();
+				}
+				next = std::move(candidate);
+				if (pass != 0) break;
+				const unsigned requests = pendingRefreshRequests.exchange(0, std::memory_order_acq_rel);
+				if (!requests) break;
+				reason = MergeRefreshRequests(reason, requests);
 			}
 			if (previous && previous->SemanticallyEquals(*next))
 				return enumerationSucceeded;
@@ -1424,6 +1535,8 @@ namespace Inkeys::Display
 			PostMessageW(hwnd, stopTaskbarObserver, stoppedEpoch, 0);
 		{
 			std::scoped_lock refreshLock(refreshMutex);
+			pendingRefreshRequests.store(0, std::memory_order_release);
+			deferredRefreshEpoch.store(0, std::memory_order_release);
 			taskbarTargets.clear();
 			{
 				std::scoped_lock lock(subscriberMutex);
@@ -1473,6 +1586,18 @@ namespace Inkeys::Display
 		if (drainPublications) DrainPublications();
 		return Subscription(subscriber);
 	}
+
+#ifdef INKEYS_DISPLAY_TESTING
+	namespace Testing
+	{
+		void SetRefreshHooks(const RefreshHooks* hooks) noexcept { refreshHooks = hooks; }
+		bool DrainDeferredRefresh() { return ProcessDeferredRefresh(); }
+		bool HasDeferredRefresh() noexcept
+		{
+			return pendingRefreshRequests.load(std::memory_order_acquire) != 0;
+		}
+	}
+#endif
 
 	WNDPROC WindowProc() noexcept { return DisplayWindowProc; }
 }

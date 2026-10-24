@@ -194,6 +194,116 @@ int RunCanvasPolicyTests()
 	{
 		if (!passed) { ++failures; std::cerr << "FAIL canvas policy: " << name << '\n'; }
 	};
+	// 不创建 HWND，故障点与 owner 执行的是同一个实际样式事务。
+	struct ClickThroughState
+	{
+		LONG_PTR style = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+		bool pending = false, applying = false;
+		std::uint64_t epoch = 1;
+	};
+	struct ClickThroughOperations
+	{
+		ClickThroughState& state;
+		std::uint64_t epoch = 1;
+		bool failRead = false, failWrite = false, failCommit = false;
+		unsigned writes = 0, commits = 0;
+		std::function<void()> beforeWrite;
+		std::function<void()> afterWrite;
+		std::function<void()> afterCommit;
+		bool StillDesired() const { return epoch == state.epoch; }
+		bool ReadStyle(LONG_PTR& value) const { value = state.style; return !failRead; }
+		bool WriteStyle(LONG_PTR value)
+		{
+			++writes;
+			if (failWrite) return false;
+			if (beforeWrite) beforeWrite();
+			state.style = value;
+			if (afterWrite) afterWrite();
+			return true;
+		}
+		bool CommitStyle()
+		{
+			++commits;
+			if (afterCommit) afterCommit();
+			return !failCommit;
+		}
+	};
+	ClickThroughState clickState;
+	ClickThroughOperations click{ clickState };
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && !click.writes && !click.commits,
+		"same actual style performs no redundant Win32 mutation");
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && click.writes == 1
+		&& click.commits == 1 && clickState.style == WS_EX_NOACTIVATE && !clickState.pending,
+		"clear click-through preserves unrelated extended styles");
+	clickState.style |= WS_EX_TRANSPARENT;
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && click.writes == 2,
+		"external style drift is repaired without stale HWND or bool cache");
+	click.failRead = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && click.writes == 2,
+		"failed actual style read never fabricates success");
+	click.failRead = false; click.failWrite = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && clickState.pending,
+		"failed style write retains retry responsibility");
+	click.failWrite = false; click.failCommit = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && clickState.pending,
+		"failed FRAMECHANGED retains retry responsibility after style bit changed");
+	const auto writesBeforeRetry = click.writes;
+	const auto commitsBeforeRetry = click.commits;
+	click.failCommit = false;
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && !clickState.pending
+		&& click.writes == writesBeforeRetry && click.commits == commitsBeforeRetry + 1,
+		"same-valued retry completes previously failed FRAMECHANGED");
+	++clickState.epoch;
+	check(!ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click)
+		&& (clickState.style & WS_EX_TRANSPARENT) && click.writes == writesBeforeRetry,
+		"retired tool or whiteboard request cannot mutate current owner style");
+	click.epoch = clickState.epoch;
+	click.afterCommit = [&] { clickState.style |= WS_EX_TRANSPARENT; };
+	check(!ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && clickState.pending,
+		"successful APIs with mismatched actual style keep retry pending");
+	click.afterCommit = {};
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && !clickState.pending,
+		"later retry verifies and completes actual writable state");
+	// 三个真实同步重入窗口：WM_STYLECHANGING、WM_STYLECHANGED、FRAMECHANGED。
+	for (int boundary = 0; boundary < 3; ++boundary)
+	{
+		click.epoch = clickState.epoch;
+		bool nestedApplied = true;
+		const auto reenter = [&]
+		{
+			++clickState.epoch;
+			ClickThroughOperations latest{ clickState, clickState.epoch };
+			nestedApplied = ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, latest);
+		};
+		if (boundary == 0) click.beforeWrite = reenter;
+		else if (boundary == 1) click.afterWrite = reenter;
+		else click.afterCommit = reenter;
+		check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click)
+			&& !nestedApplied && !clickState.applying && clickState.pending,
+			"nested owner request cannot acknowledge before outer style API returns");
+		click.beforeWrite = {}; click.afterWrite = {}; click.afterCommit = {};
+		ClickThroughOperations latest{ clickState, clickState.epoch };
+		check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, latest)
+			&& !(clickState.style & WS_EX_TRANSPARENT) && !clickState.pending && !clickState.applying,
+			"latest writable intent retries after outer owner frame retires");
+	}
+	click.epoch = clickState.epoch;
+	click.afterWrite = [] { throw 1; };
+	bool interrupted = false;
+	try { (void)ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click); }
+	catch (...) { interrupted = true; }
+	check(interrupted && !clickState.applying && clickState.pending,
+		"owner exception clears applying scope while preserving unfinished style responsibility");
+	click.afterWrite = {};
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click),
+		"owner can retry after exception without a permanently latched applying flag");
+	ClickThroughState otherRole;
+	ClickThroughOperations other{ otherRole };
+	bool otherApplied = false;
+	click.beforeWrite = [&]
+	{ otherApplied = ApplyCanvasClickThrough(false, otherRole.pending, otherRole.applying, other); };
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && otherApplied,
+		"independent HWND roles do not share a global reentry gate");
 	unsigned closeRequests = 0;
 	const std::function<void()> close = [&] { ++closeRequests; };
 	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(false, true, close) && closeRequests == 0,

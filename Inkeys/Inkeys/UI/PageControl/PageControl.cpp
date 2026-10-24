@@ -3126,7 +3126,8 @@ namespace Inkeys::UI::PageControl
 				Inkeys::UI::Bar::UnregisterInteractionSurface(fixture->identity);
 				if(!Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks()){
 					// 即便调用方在共享 worker 释放最后引用，也要等当前 callback 返回后再销毁。
-					if(!QueueUserWorkItem(+[](void* context)->DWORD{
+					// 按 WINAPI 回调类型转换，避免一元 + 在 Win32 下固定为 __cdecl。
+					if(!QueueUserWorkItem([](void* context)->DWORD{
 						if(Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())delete static_cast<Fixture*>(context);
 						return 0;},fixture,WT_EXECUTEDEFAULT))OutputDebugStringA("[PageControlUI3] deferred fixture cleanup could not be queued\n");
 					return;
@@ -4558,7 +4559,7 @@ namespace Inkeys::UI::PageControl
 		if(Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())reset();
 		else{
 			// 窗口 owner 不能等待可能正在向它提交窗口效果的 worker；排空后再销毁内部对象。
-			(void)QueueUserWorkItem(+[](void*)->DWORD{
+			(void)QueueUserWorkItem([](void*)->DWORD{
 				std::scoped_lock lifecycleLock(lifecycleMutex);
 				if(referenceCount.load(std::memory_order_acquire)!=0)return 0;
 				if(!Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())return 0;

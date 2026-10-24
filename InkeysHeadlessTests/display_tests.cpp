@@ -15,8 +15,10 @@
 #include <numeric>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 import Inkeys.Display;
@@ -64,6 +66,184 @@ namespace
 		target.targetAdapterId = target.sourceAdapterId;
 		target.targetId = targetId;
 		return target;
+	}
+	void RunRefreshReentrancyTests()
+	{
+		using namespace Inkeys::Display;
+		Shutdown();
+		Snapshot hardware;
+		hardware.topology = DisplayTopology::Single;
+		hardware.virtualBounds = { 0, 0, 1920, 1080 };
+		auto& monitor = hardware.monitors.emplace_back();
+		monitor.handle = reinterpret_cast<HMONITOR>(1);
+		monitor.primary = true;
+		monitor.bounds = hardware.virtualBounds;
+		monitor.workArea = { 0, 0, 1920, 1032 };
+		monitor.pixelWidth = 1920;
+		monitor.pixelHeight = 1080;
+		monitor.physicalSize = { true, 50, 30, PhysicalSizeUnavailableReason::None };
+		int enumerations = 0;
+		int samples = 0;
+		bool nestedDeferred = true;
+		Testing::RefreshHooks hooks;
+		hooks.enumerate = [&]() -> std::optional<Snapshot> { ++enumerations; return hardware; };
+		const auto queue = [&](ChangeReason reason) { nestedDeferred = !Refresh(reason) && nestedDeferred; };
+		const auto sampleOnly = [&](Snapshot&, bool) { ++samples; };
+		Testing::SetRefreshHooks(&hooks);
+
+		// 在生产 Refresh 持锁采样处直接重入，模拟 SHAppBarMessage 同步派发消息。
+		bool startupUnpublished = true;
+		hooks.sampleTaskbars = [&](Snapshot&, bool)
+		{
+			++samples;
+			startupUnpublished = !GetSnapshot() && startupUnpublished;
+			if (samples == 1)
+			{
+				monitor.bounds.right = monitor.pixelWidth = hardware.virtualBounds.right = 2020;
+				monitor.workArea.right = 2020;
+			}
+			for (int repeat = 0; repeat < 8; ++repeat) queue(ChangeReason::Settings);
+		};
+		Check(Initialize() && GetSnapshot() && GetSnapshot()->Primary()->pixelWidth == 2020
+			&& enumerations == 2 && samples == 2 && startupUnpublished && nestedDeferred,
+			"startup coalesces Shell message reentry under refresh lock and publishes final snapshot synchronously");
+		Check(Testing::HasDeferredRefresh(), "startup retains overflow before observer creation");
+		hooks.sampleTaskbars = sampleOnly;
+		enumerations = samples = 0;
+		Check(Testing::DrainDeferredRefresh() && enumerations == 1 && samples == 1
+			&& !Testing::HasDeferredRefresh(), "deferred startup work is consumed without an HWND");
+
+		int callbacks = 0;
+		auto subscription = Subscribe([&](SnapshotPtr) { ++callbacks; });
+		const auto unchangedGeneration = GetSnapshot()->generation;
+		hooks.sampleTaskbars = [&](Snapshot&, bool)
+		{
+			++samples;
+			queue(ChangeReason::Settings);
+		};
+		enumerations = samples = 0;
+		Check(Refresh(ChangeReason::Manual) && enumerations == 2 && samples == 2
+			&& GetSnapshot()->generation == unchangedGeneration && callbacks == 1
+			&& Testing::HasDeferredRefresh(),
+			"semantic no-change still consumes one reentrant follow-up without duplicate generation or callbacks");
+		enumerations = samples = 0;
+		Check(Testing::DrainDeferredRefresh() && enumerations == 2 && samples == 2
+			&& Testing::HasDeferredRefresh(),
+			"persistent Shell notifications leave bounded deferred work instead of retrying forever");
+		hooks.sampleTaskbars = sampleOnly;
+		(void)Testing::DrainDeferredRefresh();
+
+		const int oldWidth = monitor.pixelWidth;
+		hooks.sampleTaskbars = [&](Snapshot&, bool)
+		{
+			++samples;
+			queue(ChangeReason::Settings);
+			if (samples == 2)
+			{
+				// 末次完整枚举之后才来的拓扑变化，必须由延后请求重新枚举。
+				monitor.bounds.right = monitor.pixelWidth = hardware.virtualBounds.right = oldWidth + 80;
+				monitor.workArea.right = monitor.pixelWidth;
+				queue(ChangeReason::Display);
+			}
+		};
+		enumerations = samples = 0;
+		Check(Refresh(ChangeReason::Settings) && enumerations == 2 && samples == 2
+			&& GetSnapshot()->Primary()->pixelWidth == oldWidth && Testing::HasDeferredRefresh(),
+			"late topology change during final full sample remains pending");
+		hooks.sampleTaskbars = sampleOnly;
+		enumerations = samples = 0;
+		Check(Testing::DrainDeferredRefresh() && enumerations == 1 && samples == 1
+			&& GetSnapshot()->Primary()->pixelWidth == oldWidth + 80 && !Testing::HasDeferredRefresh(),
+			"deferred drain really enumerates and publishes topology missed by final Shell sample");
+
+		hooks.sampleTaskbars = [&](Snapshot&, bool visibilityOnly)
+		{
+			++samples;
+			if (samples == 1)
+			{
+				Check(visibilityOnly, "visibility refresh starts on cached path");
+				++monitor.workArea.top;
+				queue(ChangeReason::Settings);
+				queue(ChangeReason::Display);
+			}
+			else Check(!visibilityOnly, "nested Settings/Display upgrades cached follow-up to full sampling");
+		};
+		enumerations = samples = 0;
+		Check(Refresh(ChangeReason::TaskbarVisibility) && enumerations == 1 && samples == 2
+			&& GetSnapshot()->Primary()->workArea.top == monitor.workArea.top && !Testing::HasDeferredRefresh(),
+			"nested full requests are merged while taskbar visibility sampling is active");
+
+		hooks.sampleTaskbars = [&](Snapshot&, bool visibilityOnly)
+		{
+			++samples;
+			Check(visibilityOnly == (samples == 1), "taskbar structure upgrades cached sampler without topology enumeration");
+			if (samples == 1) queue(ChangeReason::Taskbar);
+		};
+		enumerations = samples = 0;
+		Check(Refresh(ChangeReason::TaskbarVisibility) && enumerations == 0 && samples == 2
+			&& !Testing::HasDeferredRefresh(), "nested taskbar structure request retains its intermediate scope");
+		hooks.sampleTaskbars = [&](Snapshot&, bool visibilityOnly)
+		{
+			++samples;
+			Check(visibilityOnly, "bounded cached follow-up remains visibility-only until upgrade arrives");
+			queue(samples == 1 ? ChangeReason::TaskbarVisibility : ChangeReason::Display);
+		};
+		enumerations = samples = 0;
+		Check(Refresh(ChangeReason::TaskbarVisibility) && enumerations == 0 && samples == 2
+			&& Testing::HasDeferredRefresh(), "stronger request during bounded cached follow-up is retained");
+		hooks.sampleTaskbars = sampleOnly;
+		enumerations = samples = 0;
+		Check(Testing::DrainDeferredRefresh() && enumerations == 1 && samples == 1,
+			"deferred stronger request uses topology enumeration rather than cached visibility");
+
+		hooks.enumerate = [&]() -> std::optional<Snapshot> { ++enumerations; return std::nullopt; };
+		hooks.sampleTaskbars = [&](Snapshot&, bool) { ++samples; queue(ChangeReason::Display); };
+		enumerations = samples = 0;
+		Check(!Refresh(ChangeReason::TaskbarVisibility) && enumerations == 1 && samples == 1
+			&& GetSnapshot()->Primary()->pixelWidth == monitor.pixelWidth
+			&& !GetSnapshot()->Primary()->physicalSize.available
+			&& GetSnapshot()->topology == DisplayTopology::Unknown,
+			"failed upgraded enumeration reports failure and invalidates physical size without losing geometry");
+		hooks.enumerate = [&]() -> std::optional<Snapshot> { ++enumerations; return hardware; };
+		hooks.sampleTaskbars = [&](Snapshot&, bool)
+		{
+			queue(ChangeReason::Display);
+			throw std::runtime_error("injected sampler failure");
+		};
+		const auto beforeException = GetSnapshot();
+		bool caught = false;
+		try { (void)Refresh(ChangeReason::Manual); }
+		catch (const std::runtime_error&) { caught = true; }
+		hooks.sampleTaskbars = sampleOnly;
+		Check(caught && GetSnapshot() == beforeException && Refresh(ChangeReason::Manual)
+			&& !Testing::HasDeferredRefresh(), "sampler exception releases refresh lock and reentry scope without partial publication");
+
+		bool refreshFromCallback = false;
+		bool callbackRefreshSucceeded = false;
+		auto callbackSubscription = Subscribe([&](SnapshotPtr)
+		{
+			if (!std::exchange(refreshFromCallback, false)) return;
+			callbackRefreshSucceeded = Refresh(ChangeReason::Manual);
+		});
+		refreshFromCallback = true;
+		++monitor.workArea.top;
+		enumerations = samples = 0;
+		Check(Refresh(ChangeReason::Manual) && callbackRefreshSucceeded && enumerations == 2 && samples == 2,
+			"subscriber callback can synchronously refresh after internal reentry scope has ended");
+		callbackSubscription.Reset();
+		subscription.Reset();
+		hooks.sampleTaskbars = [&](Snapshot&, bool) { queue(ChangeReason::Settings); };
+		(void)Refresh(ChangeReason::Manual);
+		Check(Testing::HasDeferredRefresh(), "shutdown fixture has deferred work");
+		Shutdown();
+		Check(!Testing::HasDeferredRefresh() && !Refresh(ChangeReason::Manual) && !GetSnapshot(),
+			"shutdown clears pending reentrant work and blocks later publication");
+		hooks.sampleTaskbars = sampleOnly;
+		enumerations = samples = 0;
+		Check(Initialize() && enumerations == 1 && samples == 1 && !Testing::HasDeferredRefresh(),
+			"reinitialize does not replay requests from the stopped observer lifetime");
+		Testing::SetRefreshHooks(nullptr);
+		Shutdown();
 	}
 }
 
@@ -502,6 +682,8 @@ int RunDisplayTests()
 	equivalent.activeTargets[0].edid.rawBytes[20] ^= 1;
 	Check(!snapshot.SemanticallyEquals(equivalent),
 		"active target EDID changes are semantic snapshot changes");
+
+	RunRefreshReentrancyTests();
 
 	Shutdown();
 	const bool enumerated = Initialize();

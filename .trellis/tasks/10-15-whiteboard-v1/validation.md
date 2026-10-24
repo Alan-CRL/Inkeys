@@ -147,3 +147,22 @@ build12修正启动fixture的完整27组已保留 baseline-expanded/（含exe SH
 
 ### 本轮人工验收与提交授权
 用户确认上述菜单层级、颜色顺序与预览调整人工核验通过，并授权提交当前改动。白板父任务继续保持in_progress，不结束、不归档、不push。既有自动性能预算记录保持原结论。
+
+## 2026-10-24 PR #247 审阅与冲突集成
+
+- 最新审阅（review 5628486408）适用：保存隔离回归的颜色/宽度 setter 显式传 `false`，保留独立真实 `SetMemory()`。
+- 当前 `feature/whiteboard` HEAD 为 `43522f30`，只读 GitHub API 确认 dev 为 `89d1237d`、PR head 未变化。SSH fetch 因 agent 签名失败停止；未修改 SSH/签名配置。已有本地引用与 API 一致。
+- 以 `git merge --no-commit --no-ff origin/dev` 集成，解决 `IdtState.cpp`、`IdtPlug-in.cpp` 冲突。工作区工具恢复保留；场景发布带 scene epoch，在 Exiting 恢复完整 PPT 目标；工具退出独立核验退出边沿 input epoch。意图锁 → 模式锁 → product 提交锁，窗口同步在锁外。Presentation 工具恢复不裸发布无身份场景。
+- Trellis-check 两轮只读独立检查未发现剩余阻塞问题。补充生产入口回归：完整目标前不裸发布 Presentation、旧 scene epoch 不得覆盖白板、旧 input epoch/Exiting 不得授权工具收尾。
+
+| 验证 | 本轮结果 | 日志（`TestResults/pr247-review-2026-10-24/`） |
+| --- | --- | --- |
+| ARM64 原生 MSBuild，完整 `InkeysRepo.sln Debug|ARM64` | 退出 0，耗时 4:50，0 error；389 条既有/第三方警告未扩大清理 | `build-final.log` |
+| `InkeysHeadlessTests --no-window` | 退出 0，78.89 秒 | `headless-verified.log` |
+| `Inkeys.exe --state-mode-production-test` | 退出 0，工作区/epoch/保存隔离及 FineDial 全部通过 | `state-mode-production.log` |
+| `Inkeys.exe --draw3-fallback-stable-lane-test` | 退出 0，CPU 场景恢复/失败重试回归通过 | `fallback-stable-lane.log` |
+| 差异、冲突、格式 | `git diff --check` 通过，未合并索引条目为空；原工作树 CRLF 和 UTF-8/BOM 保留 | 最终命令输出 |
+
+环境区分：首轮沙箱构建有 C1902，沙箱外消失；原 PATH workaround 在当前 PowerShell 同时清空 Path/PATH，vcpkg 报 Value was null。仅在构建进程内先保留原 Path、移除再重建单一 Path 并设置 MSBUILDDISABLENODEREUSE 后解决。未修改工程、SDK、依赖或全局环境。沙箱内 headless 的配置/原子文件写入失败（退出 1，567 failures）在沙箱外同参数全部通过，保留原失败日志，不将其视为源码失败。
+
+未运行 GUI/Computer Use、真实 Office 或 HWND 交互。Host 未启动的生产 CLI 不能证明完整 PPT target 实际呈现。没有创建 commit、push 或远程评论/resolve；合并在本地已解决并等待提交，远程 PR 状态尚未更新。父任务保持 in_progress，不结束、不归档。

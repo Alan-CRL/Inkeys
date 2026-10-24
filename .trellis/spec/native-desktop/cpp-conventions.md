@@ -75,6 +75,9 @@
 - 每次业务操作或渲染帧只保留一个 `SnapshotPtr`，从同一快照读取 bounds、workArea、DPI、方向和 EDID；不得分别调用或缓存字段后拼出跨 generation 状态。
 - 刷新先在局部完整构造候选快照；只有语义变化才递增 generation。新快照原子发布后，首次订阅通知和后续刷新通知都进入同一串行 publication 队列；单个订阅者不得重复或倒序收到 generation。
 - publication 回调在 Display 内部锁外执行。回调只发布目标或请求 UI 客户端，不直接操作 HWND/D2D 资源，也不能要求调用方持有 Display 内部锁。
+- Shell/Win32 采样可能同步派发窗口消息。`Refresh` 在加锁前检测同线程重入，只合并请求并返回 `false`；完整拓扑刷新必须覆盖任务栏结构/可见性刷新。普通调用仍同步采样，最多两轮后一次性发布，离开重入作用域和内部锁后才 drain 订阅回调。
+- 末轮采样后到达的请求必须保留，由带 observer epoch 的合并消息处理；延后处理自身不无限自投递，持续溢出的请求由下一次外部刷新或现有 5 秒轮询消费。Shutdown 清空旧生命周期请求，旧 epoch 投递不得占住新 observer 的唤醒名额。
+- `INKEYS_DISPLAY_TESTING` 仅在 headless 目标开放采样替身；回归必须经过生产 `Refresh` 的加锁、请求合并和发布路径，不用复制合并算法代替崩溃路径验证。
 - `Subscription::Reset()` 与 `Shutdown()` 返回前必须等待该订阅者正在执行的回调退出；回调自行注销时不得等待自身。Shutdown 先禁止新刷新并清空发布状态，再在刷新锁外 drain 回调，避免回调重入 `Refresh()` 时死锁。
 - 后续枚举失败保留最后一个快照的几何、DPI和原始诊断数据，但必须发布 `TopologyUnknown` 物理失效状态；首次失败发布显式 `fallback`，其 EDID 仍为 unknown。不得用系统指标伪造物理尺寸。
 
@@ -150,7 +153,7 @@ Bar 渲染/交互、MouseHook、PPT 接管或配置保存访问全局 StateModeC
 
 - 模式、Pen/Shape 子型、宽色的生产写入在 stateModeTransitionMutex 下进行；Bar 一帧只取一次值快照，交互每消息更新。长手势按下时同锁取状态和 revision，抬手或惯性提交仍须在锁内核版本。
 - 条件 PPT 入口原有 expected revision 不得替换成无条件 setter。重复选中同笔型可更新意图版本，但无视觉变化时不重复发布 Draw3 命令。
-- 模式锁内只复制/修改小型状态或提交无 HWND 等待的 Draw3 bridge；工作区门控、工具恢复和 workspace/Presentation target（含清除）发布共用此边界，PPT 不能使用旧白板快照直接发布。不得持锁调用会再次取锁及等待窗口的 SyncDraw3State，也不做 SetMemory 磁盘 I/O、HWND/GPU/COM 调用；这些副作用在解锁后由原 owner 执行。无参 getter 各自安全，但连续调用不能代替同一业务/帧快照。
+- 模式锁内只复制/修改小型状态或提交无 HWND 等待的 Draw3 bridge；工作区门控、工具恢复和 workspace/Presentation target（含清除）发布共用此边界，锁顺序为白板意图锁 → 模式锁 → product 提交锁；PPT 必须带采样时的 scene epoch，Exiting 可恢复场景，但退出选择仍校验退出边沿的严格 input epoch。恢复 Presentation 工具不单独发布无 target 的工作区。不得持锁调用会再次取锁及等待窗口的 SyncDraw3State，也不做 SetMemory 磁盘 I/O、HWND/GPU/COM 调用；这些副作用在解锁后由原 owner 执行。无参 getter 各自安全，但连续调用不能代替同一业务/帧快照。
 
 ### 4. Validation & Error Matrix
 

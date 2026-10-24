@@ -5,6 +5,7 @@ module;
 #include <windows.h>
 
 #include "../Helper/FailedCleanupDeadline.h"
+#include "../Drawing/Draw3/Draw3.DiagnosticOutput.h"
 #include "Window.CommandCompletion.h"
 #include "Window.CanvasPolicy.h"
 #include "Window.MessageDispatch.h"
@@ -432,12 +433,14 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
-		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled)
+		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled,
+			std::function<bool()> stillDesired)
 		{
 			Command command;
 			command.type = CommandType::SetClickThrough;
 			command.role = role;
 			command.enabled = enabled;
+			command.stillDesired = std::move(stillDesired);
 			return Submit(std::move(command));
 		}
 
@@ -751,6 +754,8 @@ namespace Inkeys::Window
 			bool lifecycleActive = false;
 			std::wstring className;
 			CanvasWindowPolicy canvasPolicy;
+			bool clickThroughFramePending = false; // 仅本窗口 owner 使用，不缓存期望值。
+			bool clickThroughApplying = false;
 		};
 
 		[[nodiscard]] WindowRecord* Record(WindowRole role) noexcept
@@ -768,7 +773,7 @@ namespace Inkeys::Window
 		{
 			return type == CommandType::Show || type == CommandType::Hide ||
 				type == CommandType::SetDrawpadSurfaceVisibility ||
-				type == CommandType::SetBounds ||
+				type == CommandType::SetBounds || type == CommandType::SetClickThrough ||
 				type == CommandType::SetSettingOwnedByDrawpad ||
 				type == CommandType::RaiseOwnedSetting ||
 				type == CommandType::RefreshTopmost ||
@@ -785,6 +790,7 @@ namespace Inkeys::Window
 			case CommandType::SetDrawpadSurfaceVisibility:
 				return L"SetDrawpadSurfaceVisibility";
 			case CommandType::SetBounds: return L"SetBounds";
+			case CommandType::SetClickThrough: return L"SetClickThrough";
 			case CommandType::SetSettingOwnedByDrawpad:
 				return L"SetSettingOwnedByDrawpad";
 			case CommandType::RaiseOwnedSetting: return L"RaiseOwnedSetting";
@@ -813,6 +819,17 @@ namespace Inkeys::Window
 				failureActive = true;
 			}
 
+			if (command.type == CommandType::SetClickThrough)
+			{
+				// 穿透失败/恢复不能在窗口 owner 同步写标准流，否则会阻塞下一次样式收敛。
+				using namespace Inkeys::Drawing::Draw3;
+				DiagnosticOutput::Line(DiagnosticOutput::Stream::Error, true)
+					<< "[Window.ClickThrough] result=" << (recovered ? "recovered" : "failed")
+					<< " role=" << static_cast<unsigned>(command.role) << " error=" << error
+					<< " requested=" << command.enabled << " actual="
+					<< (hwnd && (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0) << '\n';
+				return;
+			}
 			RECT bounds{};
 			if (hwnd) (void)GetWindowRect(hwnd, &bounds);
 			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
@@ -862,6 +879,8 @@ namespace Inkeys::Window
 				record.lifecycleActive = false;
 				record.className.clear();
 				record.canvasPolicy = {};
+				record.clickThroughFramePending = false;
+				record.clickThroughApplying = false;
 			}
 			for (auto& commandFailures : commandFailureActive_)
 				commandFailures.fill(false);
@@ -1362,6 +1381,7 @@ namespace Inkeys::Window
 					role == WindowRole::DrawpadPresentation
 						? nullptr : Handle(WindowRole::DrawpadPresentation));
 			record.hwnd.store(nullptr, std::memory_order_release);
+			record.clickThroughFramePending = false;
 			record.threadId.store(0, std::memory_order_release);
 			if (record.channel)
 			{
@@ -1392,6 +1412,7 @@ namespace Inkeys::Window
 			if (hwnd && IsWindow(hwnd))
 				(void)DestroyWindow(hwnd);
 			record.hwnd.store(nullptr, std::memory_order_release);
+			record.clickThroughFramePending = false;
 			record.threadId.store(0, std::memory_order_release);
 			if (record.channel)
 			{
@@ -2128,17 +2149,40 @@ namespace Inkeys::Window
 			}
 			case CommandType::SetClickThrough:
 			{
-				LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-				if (command.enabled) exStyle |= WS_EX_TRANSPARENT;
-				else exStyle &= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
-				SetLastError(ERROR_SUCCESS);
-				const LONG_PTR previous = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exStyle);
-				if (!previous && GetLastError() != ERROR_SUCCESS)
-					return false;
-				return SetWindowPos(
-					hwnd, nullptr, 0, 0, 0, 0,
-					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-					SWP_NOACTIVATE | SWP_FRAMECHANGED) != FALSE;
+				struct Operations
+				{
+					HWND hwnd;
+					const Command& command;
+					bool StillDesired() const
+					{
+						if (!command.stillDesired || command.stillDesired()) return true;
+						SetLastError(ERROR_CANCELLED);
+						return false;
+					}
+					bool ReadStyle(LONG_PTR& style) const noexcept
+					{
+						SetLastError(ERROR_SUCCESS);
+						style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+						return style != 0 || GetLastError() == ERROR_SUCCESS;
+					}
+					bool WriteStyle(LONG_PTR style) const noexcept
+					{
+						SetLastError(ERROR_SUCCESS);
+						return SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style) != 0
+							|| GetLastError() == ERROR_SUCCESS;
+					}
+					bool CommitStyle() const noexcept
+					{
+						return SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+							SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+							SWP_NOACTIVATE | SWP_FRAMECHANGED) != FALSE;
+					}
+				} operations{ hwnd, command };
+				const bool applied = Detail::ApplyCanvasClickThrough(command.enabled,
+					record->clickThroughFramePending, record->clickThroughApplying, operations);
+				const DWORD error = applied ? ERROR_SUCCESS : GetLastError();
+				ReportCommandResult(command, applied, !applied && !error ? ERROR_GEN_FAILURE : error, hwnd);
+				return applied;
 			}
 			case CommandType::RaiseOwnedSetting:
 			{
@@ -2809,7 +2853,9 @@ namespace Inkeys::Window
 			std::move(stillDesired));
 	}
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
-	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }
+	bool Service::SetClickThrough(WindowRole role, bool enabled,
+		std::function<bool()> stillDesired)
+	{ return impl_->SetClickThrough(role, enabled, std::move(stillDesired)); }
 	bool Service::SetSettingOwnedByDrawpad(bool enabled)
 	{
 		return impl_->SetSettingOwnedByDrawpad(enabled);
