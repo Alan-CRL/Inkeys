@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 116
-- **Last Active**: 2026-10-19
+- **Total Sessions**: 128
+- **Last Active**: 2026-10-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,8 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~857 | Active |
-| `journal-1.md` | ~2205 | Archived |
+| `journal-2.md` | ~896 | Active |
+| `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 128 | 2026-10-25 | 设置视觉重建与笔速橡皮精修验收归档 | `bc494cd384d783b39156aba77dbbf8f5f2f769cc`, `e4beb2ca8cf83bb1fad12ae466daec812add58cf` | `fluent` |
 | 116 | 2026-10-19 | 键盘快捷键与批注往返完成验收 | `97fbe299` | `feature/hook` |
 | 115 | 2026-10-19 | UI3 taskbar docking and canvas policy completed | `3e5bb005`, `277b4956`, `91f36824` | `featrue/zoom` |
 | 114 | 2026-10-19 | 鼠标钩子、PPT滚轮与主栏自动收起完成验收 | `11e45053` | `feature/hook` |
