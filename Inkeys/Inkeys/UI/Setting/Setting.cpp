@@ -1752,80 +1752,7 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					Inkeys::Graphics::DibSurface SettingSign;
 
-					if (I18n::isIdentifying(L"zh-CN")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale);
-					else if (I18n::isIdentifying(L"zh-TW")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home1_zh-TW", 700 * settingGlobalScale, 215 * settingGlobalScale);
-					else LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 215 * settingGlobalScale);
-					{
-						int width = settingSign[1].width = SettingSign.width();
-						int height = settingSign[1].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
-						delete[] data;
-
-						(void)ret;
-					}
-
-					if (I18n::isIdentifying(L"zh-CN")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale);
-					else if (I18n::isIdentifying(L"zh-TW")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home2_zh-TW", 770 * settingGlobalScale, 390 * settingGlobalScale);
-					else LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale);
-					{
-						int width = settingSign[2].width = SettingSign.width();
-						int height = settingSign[2].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
-						delete[] data;
-
-						(void)ret;
-					}
-
+					// 主页改由矢量品牌动效绘制，不再解码旧 SettingUI2 的整页 PNG。
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale);
 					{
 						int width = settingSign[5].width = SettingSign.width();
@@ -2093,7 +2020,8 @@ SettingSessionCoroutine RunSettingSession()
 				}
 			}
 			(void)LoadSettingWindowIconTexture(setting_window);
-			constexpr size_t requiredTextureIndexes[] = { 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11 };
+			// 1/2 是已退役的旧主页槽位；保留其他共享纹理的既有编号。
+			constexpr size_t requiredTextureIndexes[] = { 0, 3, 5, 6, 7, 8, 9, 10, 11 };
 			if (ranges::any_of(requiredTextureIndexes,
 				[](size_t index) { return TextureSettingSign[index] == nullptr; }))
 			{

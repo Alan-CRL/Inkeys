@@ -2841,20 +2841,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				setlist.paintDevice = defaultLargeScreenDevice ? 0 : 1;
 				if (defaultLargeScreenDevice) setlist.liftStraighten = true;
 			}
-			{
-				HDC screenDC = GetDC(nullptr);
-				double scale = 1.0;
-
-				if (screenDC)
-				{
-					int dpiX = GetDeviceCaps(screenDC, LOGPIXELSX);
-					ReleaseDC(nullptr, screenDC);
-
-					// 转换为缩放倍率
-					scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
-				}
-
-			}
 		}
 
 		// 读取配置

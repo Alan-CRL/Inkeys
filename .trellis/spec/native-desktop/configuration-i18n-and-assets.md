@@ -91,6 +91,12 @@ setlistVal.removeMember("Performance");
 setlistVal.removeMember("Preset");
 ```
 
+## UI2/旧设置资源退役边界
+
+- 按活动工程、RC 和真实加载/绘制消费者确认归属，不能只因资源名含 UI2 或位于旧目录就删除。保留 UI3 共用的四个 PluginFlag、CUSTOMIZEICO 快捷操作、头像、反馈码、赞助图、SIGN4 定格标识及当前 SVG/字体/演示 atlas。
+- 旧首页 Home1/Home2 整图不再由 Setting 初始化或列入 requiredTextureIndexes；保留 1/2 槽位编号，避免改动其他共享纹理索引和设备重建合同。旧 UI2 专用资源从 RC、项目项和历史加载调用同步退役；已不存在的资源项目项也一并清除。
+- 用户要求移入回收站时使用原生 recycle-on-delete，不永久删除；操作前核对仓库内绝对路径/清单/哈希，操作后核对实际回收站副本。验证保留 RC 文件、项目筛选器及生成 EXE 的嵌入内容，不以编译通过代替资源完整性检查。
+
 ## UI3 脏区调试与帧率显示配置合同
 
 ### 1. Scope / Trigger
