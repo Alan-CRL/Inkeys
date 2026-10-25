@@ -37,17 +37,17 @@ void throw_win32_error()
 
 // 判断当前进程是否具有提升权限（管理员权限）
 bool isElevated(HANDLE tok) {
-	DWORD  ret_len;
-	TOKEN_ELEVATION_TYPE elevation;
-	GetTokenInformation(tok, TokenElevationType, &elevation, sizeof(elevation), &ret_len);  // 获取权限信息
-	return elevation == TokenElevationTypeFull;  // 如果权限类型为完全提升，返回 true
+	DWORD ret_len = 0;
+	TOKEN_ELEVATION_TYPE elevation = TokenElevationTypeDefault;
+	return !GetTokenInformation(tok, TokenElevationType, &elevation,
+		sizeof(elevation), &ret_len) || elevation == TokenElevationTypeFull;
 }
 // 判断进程句柄是否具有 UI 访问权限
 bool hasUiAccess(HANDLE tok) {
-	DWORD  ret_len;
-	BOOL ui_access;
-	GetTokenInformation(tok, TokenUIAccess, &ui_access, sizeof(ui_access), &ret_len);  // 获取 UI 访问权限信息
-	return ui_access;  // 返回 UI 访问权限的值
+	DWORD ret_len = 0;
+	BOOL ui_access = FALSE;
+	return GetTokenInformation(tok, TokenUIAccess, &ui_access,
+		sizeof(ui_access), &ret_len) && ui_access;
 }
 
 int RunSuperTopTokenFailureTest() noexcept
@@ -83,7 +83,80 @@ int RunSuperTopTokenFailureTest() noexcept
 		std::fputs("[SuperTopToken] FAIL: failed UIAccess update retained thread token\n", stderr);
 		return 1;
 	}
-	std::fputs("[SuperTopToken] PASS: failed UIAccess update reverted thread token\n", stderr);
+	const auto fail = [](const char* detail)
+	{
+		std::fprintf(stderr, "[SuperTopToken] FAIL: %s\n", detail);
+		return 1;
+	};
+	if (hasUiAccess(nullptr) || !isElevated(nullptr) ||
+		UiAccess::DetermineToken::hasUiAccess(invalidTarget) ||
+		!UiAccess::DetermineToken::isElevated(invalidTarget))
+		return fail("invalid token query did not fail closed");
+	DWORD returned = 0;
+	BOOL expectedUiAccess = FALSE;
+	TOKEN_ELEVATION_TYPE expectedElevation = TokenElevationTypeDefault;
+	if (!GetTokenInformation(processToken.get(), TokenUIAccess, &expectedUiAccess,
+		sizeof(expectedUiAccess), &returned) ||
+		!GetTokenInformation(processToken.get(), TokenElevationType, &expectedElevation,
+			sizeof(expectedElevation), &returned) ||
+		hasUiAccess(processToken.get()) != (expectedUiAccess != FALSE) ||
+		UiAccess::DetermineToken::hasUiAccess(processToken) != (expectedUiAccess != FALSE) ||
+		isElevated(processToken.get()) != (expectedElevation == TokenElevationTypeFull) ||
+		UiAccess::DetermineToken::isElevated(processToken) != (expectedElevation == TokenElevationTypeFull))
+		return fail("valid token query changed its result");
+	{
+		IdtHandle process, token;
+		if (UiAccess::GetToken::GetProcessToken(0, process, token) || process || token)
+			return fail("invalid parent PID published handles");
+		if (!UiAccess::GetToken::GetProcessToken(GetCurrentProcessId(), process, token) ||
+			GetProcessId(process.get()) != GetCurrentProcessId() ||
+			hasUiAccess(token.get()) != (expectedUiAccess != FALSE))
+			return fail("normal parent token duplication failed");
+	}
+	DWORD handlesBefore = 0, handlesAfter = 0;
+	if (!GetProcessHandleCount(GetCurrentProcess(), &handlesBefore)) return 1;
+	for (unsigned i = 0; i < 64; ++i)
+	{
+		IdtHandle process, token;
+		if (!UiAccess::GetToken::GetProcessToken(GetCurrentProcessId(), process, token))
+			return fail("repeated parent token duplication failed");
+	}
+	if (!GetProcessHandleCount(GetCurrentProcess(), &handlesAfter) || handlesAfter != handlesBefore)
+		return fail("parent process or token handle leaked");
+
+	// 只创建无窗口的暂停 cmd 子进程，覆盖真实恢复、超时和确认/恢复失败，不触发 UAC。
+	wchar_t systemDirectory[MAX_PATH]{};
+	const UINT length = GetSystemDirectoryW(systemDirectory, MAX_PATH);
+	if (!length || length >= MAX_PATH) return 1;
+	const wstring executable = wstring(systemDirectory) + L"\\cmd.exe";
+	for (unsigned mode = 0; mode < 5; ++mode)
+	{
+		wstring command = L"\"" + executable + L"\" /d /c exit 0";
+		STARTUPINFOW startup{ sizeof(startup) };
+		PROCESS_INFORMATION created{};
+		if (!CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, FALSE,
+			CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr, &startup, &created))
+			return fail("could not create isolated suspended child");
+		IdtHandle child(created.hProcess), thread(created.hThread);
+		IdtHandle parent(CreateEventW(nullptr, TRUE, mode != 1, nullptr));
+		IdtHandle ready(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+		IdtHandle accepted(CreateEventW(nullptr, TRUE, mode != 4, nullptr));
+		if (!parent || !ready || !accepted)
+		{
+			TerminateProcess(child.get(), ERROR_CANCELLED);
+			(void)WaitForSingleObject(child.get(), 1000);
+			return fail("could not create handoff test events");
+		}
+		const bool resumed = UiAccess::RunToken::ResumeAfterParentExit(child.get(),
+			mode == 2 ? nullptr : thread.get(), parent.get(), mode == 3 ? nullptr : ready.get(), accepted.get(), 0);
+		DWORD childExit = STILL_ACTIVE;
+		if (resumed != (mode == 0) || WaitForSingleObject(child.get(), 5000) != WAIT_OBJECT_0 ||
+			!GetExitCodeProcess(child.get(), &childExit) || childExit != (mode == 0 ? 0u : ERROR_CANCELLED))
+			return fail("handoff did not resume or cancel the child correctly");
+		if (WaitForSingleObject(ready.get(), 0) != (mode == 3 ? WAIT_TIMEOUT : WAIT_OBJECT_0))
+			return fail("handoff readiness was not published correctly");
+	}
+	std::fputs("[SuperTopToken] PASS: token guards, handle ownership, suspended handoff and impersonation cleanup\n", stderr);
 	return 0;
 }
 
@@ -100,6 +173,7 @@ void SurperTopMain(wstring lpCmdLine)
 	int useUiAccess = 1; // 0/1 是否设置
 	int usePermission = 0; // 0 使用自身；1 使用 PID；2 降权使用普通用户
 	DWORD inkeysPid = 0;
+	wstring readyEventName;
 
 	cout << utf16ToUtf8(lpCmdLine) << endl;
 
@@ -153,6 +227,8 @@ void SurperTopMain(wstring lpCmdLine)
 					catch (const invalid_argument&) {}
 				}
 			}
+			else if (commandLine.rfind(L"-ReadyEvent=", 0) == 0)
+				readyEventName = commandLine.substr(12);
 			else if (commandLine.substr(0, 4) == L"-Pid")
 			{
 				wregex pattern(LR"(^.*=(-?[0-9]+)$)");
@@ -174,7 +250,13 @@ void SurperTopMain(wstring lpCmdLine)
 
 	// 准备工作
 
-	IdtHandle inkeysToken;
+	IdtHandle inkeysToken, parentProcess, readyEvent, acceptedEvent;
+	if (!readyEventName.empty())
+	{
+		readyEvent.reset(OpenEventW(EVENT_MODIFY_STATE, FALSE, readyEventName.c_str()));
+		acceptedEvent.reset(OpenEventW(SYNCHRONIZE, FALSE, (readyEventName + L".Accepted").c_str()));
+		if (!readyEvent || !acceptedEvent) return;
+	}
 
 	// 获取当前进程的令牌
 	if (usePermission == 0)
@@ -189,13 +271,8 @@ void SurperTopMain(wstring lpCmdLine)
 	{
 		if (inkeysPid)
 		{
-			HANDLE proc_ref = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, inkeysPid);
-			HANDLE tok_parent, tInkeysToken;
-			try_win32(OpenProcessToken(proc_ref, TOKEN_DUPLICATE, &tok_parent));
-			try_win32(DuplicateTokenEx(tok_parent, TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID, NULL, SecurityAnonymous, TokenPrimary, &tInkeysToken));
-
-			IdtHandle uDup(tInkeysToken);
-			inkeysToken = std::move(uDup);
+			if (!UiAccess::GetToken::GetProcessToken(inkeysPid, parentProcess, inkeysToken))
+				return;
 		}
 		else usePermission++;
 	}
@@ -206,14 +283,6 @@ void SurperTopMain(wstring lpCmdLine)
 		{
 			usePermission++;
 		}
-	}
-
-	// 标识准备工作完成
-	// 例如可能需要获取之前智绘教进程的令牌，现在原来的智绘教则可以关闭
-	{
-		HANDLE fileHandle = NULL;
-		OccupyFileForWrite(&fileHandle, globalPath + L"superTop_wait.signal");
-		UnOccupyFile(&fileHandle);
 	}
 
 	// UiAccess 操作
@@ -235,17 +304,14 @@ void SurperTopMain(wstring lpCmdLine)
 
 	// 启动新进程
 
-	// 等待原先 智绘教 退出
-	for (int i = 1; i <= 60; i++)
-	{
-		this_thread::sleep_for(chrono::milliseconds(50));
-		if (!filesystem::exists(globalPath + L"superTop_wait.signal")) break;
-	}
-
 	wstring param = L"\"" + GetCurrentExePath() + L"\" -SuperTopComplete " + inkeysCmdLine;
-	if (!UiAccess::RunToken::RunTokenProgram(inkeysToken, param))
+	if (!UiAccess::RunToken::RunTokenProgram(inkeysToken, param,
+		readyEvent ? parentProcess.get() : nullptr, readyEvent.get(), acceptedEvent.get()))
 	{
 		cout << "RunTokenProgram Fail" << endl;
+		// 旧实例仍存活时由它统一提示并降级；避免超时 helper 再弹出第二份提示。
+		if (readyEvent && WaitForSingleObject(parentProcess.get(), 0) != WAIT_OBJECT_0)
+			return;
 
 		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
 			L"Inkeys Tips",
@@ -262,7 +328,29 @@ void SurperTopMain(wstring lpCmdLine)
 IdtAtomic<bool> hasSuperTop;
 void LaunchSurperTop(wstring cmdLine)
 {
+	const auto reportFailure = []
+	{
+		auto request = Inkeys::UI::MessageBox::MakeOkRequest(L"Inkeys Tips",
+			L"Inkeys SuperTop failed. Inkeys will continue without SuperTop.");
+		request.ownerlessTopmostAtCreation = true;
+		request.fallback.modality = Inkeys::UI::MessageBox::SystemModality::System;
+		(void)Inkeys::UI::MessageBox::Show(request);
+	};
 	wstring pid = to_wstring(GetCurrentProcessId());
+	const wstring readyEventName = L"Local\\Inkeys.SuperTop.Ready." + pid +
+		L"." + to_wstring(GetTickCount64());
+	IdtHandle readyEvent(CreateEventW(nullptr, TRUE, FALSE, readyEventName.c_str()));
+	if (!readyEvent || GetLastError() == ERROR_ALREADY_EXISTS)
+	{
+		reportFailure();
+		return;
+	}
+	IdtHandle acceptedEvent(CreateEventW(nullptr, TRUE, FALSE, (readyEventName + L".Accepted").c_str()));
+	if (!acceptedEvent || GetLastError() == ERROR_ALREADY_EXISTS)
+	{
+		reportFailure();
+		return;
+	}
 	wstring useUiAccess = L"1"; // 0/1 是否设置
 	wstring usePermission = L"1"; // 0 使用自身；1 使用 PID；2 降权使用普通用户
 
@@ -270,25 +358,30 @@ void LaunchSurperTop(wstring cmdLine)
 	launchLine += L"-CmdLine=?" + cmdLine + L"? ";
 	launchLine += L"-UiAccess=" + useUiAccess + L" ";
 	launchLine += L"-Permission=" + usePermission + L" ";
-	launchLine += L"-Pid=" + pid;
+	launchLine += L"-Pid=" + pid + L" ";
+	launchLine += L"-ReadyEvent=" + readyEventName;
 	launchLine += L"*";
 
-	error_code ec;
-	if (filesystem::exists(globalPath + L"superTop_wait.signal"))
-		filesystem::remove(globalPath + L"superTop_wait.signal", ec);
-
-	HINSTANCE hResult = ShellExecuteW(NULL, L"runas", GetCurrentExePath().c_str(), launchLine.c_str(), NULL, SW_SHOWNORMAL);
-
-	if ((INT_PTR)hResult <= 32) return;
-	else
+	const wstring executable = GetCurrentExePath();
+	SHELLEXECUTEINFOW execute{ sizeof(execute) };
+	execute.fMask = SEE_MASK_NOCLOSEPROCESS;
+	execute.lpVerb = L"runas";
+	execute.lpFile = executable.c_str();
+	execute.lpParameters = launchLine.c_str();
+	execute.nShow = SW_SHOWNORMAL;
+	if (!ShellExecuteExW(&execute))
 	{
-		for (int i = 1; i <= 60; i++)
-		{
-			if (filesystem::exists(globalPath + L"superTop_wait.signal"))break;
-			this_thread::sleep_for(chrono::milliseconds(50));
-		}
-		filesystem::remove(globalPath + L"superTop_wait.signal", ec);
-
-		exit(0);
+		if (GetLastError() != ERROR_CANCELLED) reportFailure();
+		return;
 	}
+	IdtHandle helperProcess(execute.hProcess);
+	if (helperProcess)
+	{
+		const HANDLE waits[]{ readyEvent.get(), helperProcess.get() };
+		// helper 退出或等待超时均保留旧实例；只有替代进程已暂停就绪才交接。
+		if (WaitForMultipleObjects(2, waits, FALSE, 10000) == WAIT_OBJECT_0
+			&& SetEvent(acceptedEvent.get()))
+			exit(0);
+	}
+	reportFailure();
 }

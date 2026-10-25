@@ -2199,10 +2199,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReadSettingMini();
 
 		HANDLE proc_self = GetCurrentProcess();
-		HANDLE tok_self;
-		OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self);
+		HANDLE tok_self = nullptr;
+		const bool tokenReady = OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self) != FALSE;
 
-		if (setlist.plugInSetting.superTop.enable && !hasUiAccess(tok_self))
+		if (setlist.plugInSetting.superTop.enable && tokenReady && !hasUiAccess(tok_self))
 		{
 			while (true)
 			{
@@ -2343,7 +2343,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		error_code ec;
 		filesystem::remove(globalPath + L"superTop_try.signal", ec);
 
-		hasSuperTop = hasUiAccess(tok_self);
+		hasSuperTop = tokenReady && hasUiAccess(tok_self);
+		if (tok_self) CloseHandle(tok_self);
 	}
 
 	// 只有最终进程越过 SuperTop 分支后，才建立唯一 T0 与启动状态。
