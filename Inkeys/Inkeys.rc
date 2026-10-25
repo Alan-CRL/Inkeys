@@ -53,83 +53,51 @@ END
 
 IDR_MESSAGE_BOX_ERROR   PNG                     "src\\message_box\\error.png"
 
-ICON1                   PNG                     "src\\write.png"
 
-SIGN1                   PNG                     "src\\sign.png"
 
-ICON2                   PNG                     "src\\rubber.png"
 
-ICON0                   PNG                     "src\\choose.png"
 
-ICON3                   PNG                     "src\\undo.png"
 
-ICON4                   PNG                     "src\\scale.png"
 
-ICON5                   PNG                     "src\\more.png"
 
-ICON6                   PNG                     "src\\perspective.png"
 
-ICON10                  PNG                     "src\\choice.png"
 
-ICON11                  PNG                     "src\\highlighter_brush.png"
 
-ICON12                  PNG                     "src\\paint_brush.png"
 
-ICON13                  PNG                     "src\\curve.png"
 
-ICON14                  PNG                     "src\\line.png"
 
-ICON15                  PNG                     "src\\rectangle.png"
 
-ICON16                  PNG                     "src\\ms_ppt.png"
 
-PPT3                    PNG                     "src\\ppt\\end_show.png"
 
-PPT1                    PNG                     "src\\ppt\\arrow_left.png"
 
-PPT2                    PNG                     "src\\ppt\\arrow_right.png"
 
-ICON17                  PNG                     "src\\tick.png"
 
-ICON7                   PNG                     "src\\option.png"
 
-ICON8                   PNG                     "src\\freeze-frame.png"
 
-ICON18                  PNG                     "src\\seewo_camera.png"
 
-SKIN1                   PNG                     "src\\skin\\dragon.png"
 
-SKIN1-2                 PNG                     "src\\skin\\dragon_sign.png"
 
-SKIN1-3                 PNG                     "src\\skin\\dragon_background.png"
 
-ICON19                  PNG                     "src\\choose_clear.png"
 
-ICON20                  PNG                     "src\\wps_wpp.png"
 
 PLUGINFLAG1             PNG                     "src\\PluginFlag1.png"
 
 PLUGINFLAG2             PNG                     "src\\PluginFlag2.png"
 
-PPT5                    PNG                     "src\\ppt\\arrow_down.png"
 
-PPT4                    PNG                     "src\\ppt\\arrow_up.png"
 
-HOME1_EN-US             PNG                     "src\\setting\\Home1_en-US.png"
 
-HOME2_EN-US             PNG                     "src\\setting\\Home2_en-US.png"
 
-HOME1_ZH-CN             PNG                     "src\\setting\\Home1_zh-CN.png"
 
-HOME2_ZH-CN             PNG                     "src\\setting\\Home2_zh-CN.png"
 
 SIGN4                   PNG                     "src\\sign3.png"
 
 PROFILE_PICTURE         PNG                     "src\\setting\\Profile_Picture.png"
 
-HOME_BACKGROUNG         PNG                     "src\\setting\\Home_Backgroung.png"
-
 HOME_FEEDBACK           PNG                     "src\\setting\\Home_Feedback.png"
+SETTING_GITHUB          PNG                     "src\\setting\\GitHubMark.png"
+IDR_SETTING_ERASER_DEMO_FINE PNG                 "src\\setting\\EraserDemoFine.png"
+IDR_SETTING_ERASER_DEMO_SWEEP PNG                "src\\setting\\EraserDemoSweep.png"
 
 PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 
@@ -155,11 +123,8 @@ CUSTOMIZEICO9           PNG                     "src\\quick\\taskmgr.png"
 
 PLUGINFLAG4             PNG                     "src\\PluginFlag4.png"
 
-ICON21                  PNG                     "src\\pin.png"
 
-HOME1_ZH-TW             PNG                     "src\\setting\\Home1_zh-TW.png"
 
-HOME2_ZH-TW             PNG                     "src\\setting\\Home2_zh-TW.png"
 
 CUSTOMIZEICO11          PNG                     "src\\NamePicker.png"
 

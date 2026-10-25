@@ -8,6 +8,8 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <crtdbg.h>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -49,6 +51,8 @@ int RunConfigMetadataTests();
 int RunBarPresentationAlphaTests();
 int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
+int RunSettingEraserDemoTests();
+int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false);
 int RunPptUiTests();
 int RunPptSessionTests();
 int RunPageControlTests();
@@ -1703,6 +1707,10 @@ int main(int argc, char** argv)
 		return RunWindowTests();
 	bool benchmark = false;
 	bool penWidthOnly = false;
+	bool settingHomeOnly = false;
+	bool settingCopyOnly = false;
+	bool settingEraserOnly = false;
+	bool settingEraserDemoOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
 	bool exitVisibilityGateOnly = false;
@@ -1713,6 +1721,10 @@ int main(int argc, char** argv)
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
 		penWidthOnly |= argument == "--pen-width-only";
+		settingHomeOnly |= argument == "--setting-home-only";
+		settingCopyOnly |= argument == "--setting-copy-only";
+		settingEraserOnly |= argument == "--setting-eraser-only";
+		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
@@ -1730,6 +1742,37 @@ int main(int argc, char** argv)
 		return RunDraw3ContactInputBenchmarks();
 	if (exitVisibilityGateOnly)
 		return RunWindowExitVisibilityTests();
+
+	if (!runWindowTests)
+	{
+		// 无窗口模式下第三方断言也只写 stderr，不弹出 CRT 或系统错误对话框。
+		SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+		_set_error_mode(_OUT_TO_STDERR);
+		_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#ifdef _DEBUG
+		for (const int report : { _CRT_WARN, _CRT_ERROR, _CRT_ASSERT })
+		{
+			_CrtSetReportMode(report, _CRTDBG_MODE_FILE);
+			_CrtSetReportFile(report, _CRTDBG_FILE_STDERR);
+		}
+#endif
+	}
+
+	if (settingEraserDemoOnly)
+	{
+		const int settings = RunSettingDesignTests(false, true), demo = RunSettingEraserDemoTests();
+		std::cout << "[SettingEraserDemo] settings=" << settings << " demo=" << demo << '\n';
+		return settings + demo == 0 ? 0 : 1;
+	}
+	if (settingEraserOnly)
+	{
+		const int settings = RunSettingDesignTests(false, true);
+		const int speed = RunSpeedEraserTests(), attributes = RunEraserAttributeTests();
+		std::cout << "[SettingEraser] settings=" << settings << " speed=" << speed << " attributes=" << attributes << '\n';
+		return settings + speed + attributes == 0 ? 0 : 1;
+	}
+	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;
+	if (settingHomeOnly) return RunSettingDesignTests()==0 ? 0 : 1;
 
 	TestCurvesAndTimelines();
 	TestLocalizedFormatFallbacks();
@@ -1760,6 +1803,8 @@ int main(int argc, char** argv)
 	failureCount += RunBarPresentationAlphaTests();
 	failureCount += RunUi3HarnessDisabledTests();
 	failureCount += RunSettingSessionStateTests();
+	failureCount += RunSettingDesignTests();
+	failureCount += RunSettingEraserDemoTests();
 	failureCount += RunPptUiTests();
 	failureCount += RunPptSessionTests();
 	failureCount += RunPageControlTests();

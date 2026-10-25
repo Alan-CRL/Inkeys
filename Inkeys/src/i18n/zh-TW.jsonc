@@ -191,15 +191,109 @@
   "SettingsUI":
   {
     "N": "智绘教Inkeys 選項",
+    "Design":
+    {
+      "NavigationTitle": "設定",
+      "SwitchToDark": "切換為深色主題",
+      "SwitchToLight": "切換為淺色主題",
+      "Preferences": "偏好設定",
+      "SupportGroup": "支援與維護",
+      "Experimental": "實驗選項",
+      "HomeWelcome": "歡迎使用 Inkeys3",
+      "HeroTitle": "讓螢幕上的書寫行雲流水，",
+      "HeroJoin": "",
+      "HeroDescription": "讓每一次操作都賞心悅目。",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL(陳潤林) 工作室",
+      "HomeLicensePrefix": "本程式遵循 ",
+      "HomeLicenseSuffix": " 開源授權條款。",
+      "HomeRedistribution": "任何人都可以檢視、修改及散布此程式碼。",
+      "HomeOpenSourceTitle": "開源且免費，為你而造",
+      "HomeRepositoryPrefix": "Inkeys 的程式碼託管於 ",
+      "HomeRepositoryJoin": " 與 ",
+      "HomeRepositorySuffix": "。",
+      "HomeStarAction": "為儲存庫點亮 Star",
+      "HomeSponsorAction": "贊助Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "調整書寫體驗",
+      "Tutorial": "使用教學",
+      "Explore": "推薦設定",
+      "DrawDescription": "筆跡與橡皮",
+      "AppearanceDescription": "動畫、光影與主欄縮放",
+      "PresetDescription": "常用畫筆，隨時取用",
+      "PluginDescription": "連接簡報與課堂工具",
+      "CommonSettings": "常用設定",
+      "GeneralDescription": "操作模式、主欄排列與啟動方式",
+      "ShortcutsDescription": "全域操作與註解編輯快捷鍵",
+      "DisplayLanguage": "顯示語言",
+      "Improve": "一起完善 Inkeys",
+      "Contact": "聯絡作者",
+      "TermsOfUse": "使用條款",
+      "Website": "官方網站",
+      "StartupSection": "啟動",
+      "AppearanceSection": "外觀",
+      "BehaviorSection": "使用行為",
+      "CompatibilitySection": "相容性",
+      "GeneralBasic": "基本",
+      "GeneralAppearance": "外觀與動畫",
+      "GeneralInteraction": "行為與安全",
+      "GeneralStorage": "儲存與設定",
+      "OperationModeSection": "操作模式",
+      "IconArrangementSection": "圖示排列",
+      "AnimationSection": "動畫",
+      "LightingSection": "光源",
+      "ScalingSection": "縮放",
+      "WindowBehaviorSection": "視窗行為",
+      "SafetyRecoverySection": "安全與復原",
+      "ShortcutGlobalSection": "全域操作",
+      "ShortcutEditingSection": "註解編輯",
+      "ShortcutAuxiliarySection": "輔助操作",
+      "GeneralSubtitle": "啟動方式、介面大小與日常使用偏好。",
+      "EdgeLighting": "啟用邊緣光影",
+      "EdgeLightingDescription": "關閉後僅保留基本邊框，停用點光與柔光效果。",
+      "TopWindowSummary": "控制非繪製狀態下的視窗置頂頻率。",
+      "TopWindowDetails": "詳細說明",
+      "AvoidFullscreenSummary": "需要重新啟動軟體。非繪製與穿透模式下避免佔滿螢幕。",
+      "AvoidFullscreenDetails": "適用說明",
+      "Enabled": "開",
+      "Disabled": "關",
+      "ClickToCopy": "點擊複製",
+      "Copied": "複製成功"
+    },
     "Home":
     {
       "N": "主頁",
       "Prompt": "此版本為 Inkeys 3 預覽版本，不代表最終品質。",
       "Developer": "智绘教Inkeys 創始開發者",
-      "Group": "Github Discussions",
+      "Group": "GitHub 討論區",
       "GroupE": "Inkeys/discussions",
       "BilibiliChannel": "Bilibili 宣傳頻道",
       "FeedBack": "問題/建議回饋"
+    },
+    "Feedback":
+    {
+      "N": "問題回饋",
+      "Description": "提交問題或建議，協助改善 Inkeys。",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "在 GitHub 提交問題或建議，方便公開追蹤與交流。"
+      },
+      "Questionnaire":
+      {
+        "N": "問卷回饋",
+        "E": "透過問卷回饋使用時遇到的問題或改善建議。"
+      },
+      "Qr":
+      {
+        "N": "掃碼回饋",
+        "E": "掃描 QR 碼，透過問卷回饋問題或建議。"
+      },
+      "ContactSection": "交流與聯絡作者",
+      "CommunityDescription": "在 GitHub 討論區交流使用時遇到的問題或改善建議。",
+      "ContactDescription": "透過電子郵件向作者回饋問題或建議。",
+      "AuthorQQ": "作者 QQ"
     },
     "Language":
     {
@@ -326,7 +420,7 @@
     },
     "Regular":
     {
-      "N": "常規",
+      "N": "通用",
       "SelectAndClickThrough":
       {
         "N": "選擇與穿透",
@@ -369,6 +463,15 @@
         "AutoStart": "開機自動啟動",
         "AutoStartE": "設為目前用戶帳戶開機時啟動 智绘教Inkeys。",
         "LoadingAnimation": "啟動載入動畫",
+        "LoadingAnimationE": "控制下次啟動時是否顯示載入動畫。",
+        "SettingEntryAnimation":
+        {
+          "N": "設定介面開屏動畫",
+          "E": "控制設定介面開屏動畫行為",
+          "Off": "關閉",
+          "First": "首次啟動時",
+          "Always": "始終"
+        },
         "Link":
         {
           "N": "建立桌面捷徑",
@@ -380,9 +483,9 @@
       {
         "N": "外觀樣式",
         "AnimationEnable": "啟用動畫",
-        "AnimationEnableE": "關閉後，UI3 主列動畫將立即完成。",
+        "AnimationEnableE": "關閉後，UI3 主列與設定介面的導覽及頁面動畫將立即完成。",
         "AnimationRate": "動畫速率",
-        "AnimationRateE": "調整 UI3 主列動畫速率，範圍為 0.1x–5.0x。",
+        "AnimationRateE": "調整 UI3 主列與設定介面的動畫速率，範圍為 0.1x–5.0x。",
         "EdgeLighting": "邊緣光影",
         "EdgeLightingE": "關閉後僅保留基礎邊框，停用點光與柔光效果。",
         "DynamicEdgeLighting": "動態邊緣光影",
@@ -408,12 +511,6 @@
         {
           "N": "主欄 UI 縮放",
           "E": "即時調整主欄、按鈕和 PPT 控制項的縮放比例。",
-          "Ind": "{:.2f} 倍縮放"
-        },
-        "SettingUIScale":
-        {
-          "N": "選項介面 UI 縮放",
-          "E": "[需要重啟軟體]縮放比例過高將會佔用大量記憶體空間。",
           "Ind": "{:.2f} 倍縮放"
         }
       },
@@ -496,7 +593,21 @@
       "Eraser":
       {
         "N": "橡皮擦",
-        "Automatic": "自動粗細總開關",
+        "Automatic": "啟用筆速橡皮",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "精細擦除",
+          "DemoFineDescription": "沿輔助線緩慢擦除，保留鄰近的標記和線段。",
+          "DemoSweepTitle": "大範圍擦除",
+          "DemoSweepDescription": "連續往返擦除時逐漸增粗，更快清除大片筆跡。",
+          "EntryDescription": "根據繪製意圖智慧調整橡皮擦粗細",
+          "Introduction": "結合裝置尺寸、輸入裝置與移動資訊，智慧判斷擦除意圖，動態調整橡皮擦大小。",
+          "BasicSettings": "基本設定",
+          "EnabledDevices": "啟用裝置",
+          "FineControl": "精細控制",
+          "SizeWarningTitle": "無法取得可靠的螢幕尺寸",
+          "SizeWarningDescription": "目前繪製螢幕缺少可信的實體尺寸，觸控與螢幕筆將使用 DPI 估算，橡皮擦大小可能與擦除意圖不符。"
+        },
         "Input":
         {
           "MouseLeft": "滑鼠左鍵",
@@ -606,7 +717,7 @@
         {
           "N": "基礎邏輯",
           "LoadPage": "顯示載入頁面",
-          "LoadPageE": "包含插件標識和小提示等，每個 PPT 僅顯示一次。"
+          "LoadPageE": "此功能已停用，不再顯示 PPT 載入頁面。"
         },
         "WidgetDisplay":
         {

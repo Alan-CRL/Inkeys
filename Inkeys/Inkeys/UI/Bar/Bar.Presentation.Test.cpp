@@ -623,7 +623,7 @@ namespace Inkeys::UI::Bar
 			setlist.updateArchitecture = "win32";
 			#endif
 			setlist.selectLanguage = 1; setlist.startUp = false;
-			setlist.SetSkinMode = 0; setlist.SkinMode = 1; setlist.settingGlobalScale = 1.0f;
+			setlist.SetSkinMode = 0; setlist.SkinMode = 1;
 			setlist.topSleepTime = 3; setlist.RightClickClose = false;
 			setlist.BrushRecover = true; setlist.RubberRecover = false;
 			setlist.regularSetting.moveRecover = false; setlist.regularSetting.clickRecover = false;

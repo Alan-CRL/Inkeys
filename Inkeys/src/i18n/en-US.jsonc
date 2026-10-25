@@ -191,15 +191,109 @@
   "SettingsUI":
   {
     "N": "智绘教Inkeys Options",
+    "Design":
+    {
+      "NavigationTitle": "Settings",
+      "SwitchToDark": "Switch to dark theme",
+      "SwitchToLight": "Switch to light theme",
+      "Preferences": "Preferences",
+      "SupportGroup": "Support and maintenance",
+      "Experimental": "Experimental options",
+      "HomeWelcome": "Welcome to Inkeys3",
+      "HeroTitle": "Fluid ink. Beautiful motion.",
+      "HeroJoin": " ",
+      "HeroDescription": "Screen annotation that feels as good as it looks.",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
+      "HomeLicensePrefix": "This program is licensed under the ",
+      "HomeLicenseSuffix": ".",
+      "HomeRedistribution": "Anyone can view, modify, and distribute this code.",
+      "HomeOpenSourceTitle": "Open source and free, made for you",
+      "HomeRepositoryPrefix": "Inkeys code is hosted on ",
+      "HomeRepositoryJoin": " and ",
+      "HomeRepositorySuffix": ".",
+      "HomeStarAction": "Star on GitHub",
+      "HomeSponsorAction": "Sponsor Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "Customize writing",
+      "Tutorial": "Getting started",
+      "Explore": "Recommended settings",
+      "DrawDescription": "Ink and eraser options",
+      "AppearanceDescription": "Animations, lighting and main bar scale",
+      "PresetDescription": "Your favorite pens, ready to use",
+      "PluginDescription": "Connect presentation and classroom tools",
+      "CommonSettings": "Common settings",
+      "GeneralDescription": "Operation mode, toolbar arrangement and startup",
+      "ShortcutsDescription": "Shortcuts for global actions and annotation editing",
+      "DisplayLanguage": "Display language",
+      "Improve": "Help improve Inkeys",
+      "Contact": "Contact the developer",
+      "TermsOfUse": "Terms of use",
+      "Website": "Website",
+      "StartupSection": "Startup",
+      "AppearanceSection": "Appearance",
+      "BehaviorSection": "Behavior",
+      "CompatibilitySection": "Compatibility",
+      "GeneralBasic": "Basic",
+      "GeneralAppearance": "Appearance and animations",
+      "GeneralInteraction": "Behavior & safety",
+      "GeneralStorage": "Storage and configuration",
+      "OperationModeSection": "Operation mode",
+      "IconArrangementSection": "Icon arrangement",
+      "AnimationSection": "Animations",
+      "LightingSection": "Lighting",
+      "ScalingSection": "Scaling",
+      "WindowBehaviorSection": "Window behavior",
+      "SafetyRecoverySection": "Safety and recovery",
+      "ShortcutGlobalSection": "Global actions",
+      "ShortcutEditingSection": "Annotation editing",
+      "ShortcutAuxiliarySection": "Additional actions",
+      "GeneralSubtitle": "Startup, interface size and everyday preferences.",
+      "EdgeLighting": "Enable edge lighting",
+      "EdgeLightingDescription": "When off, keep the basic border without point or soft lighting.",
+      "TopWindowSummary": "How often the window stays on top while not drawing.",
+      "TopWindowDetails": "Details",
+      "AvoidFullscreenSummary": "Restart required. Avoid full screen when not drawing or in click-through mode.",
+      "AvoidFullscreenDetails": "Usage notes",
+      "Enabled": "On",
+      "Disabled": "Off",
+      "ClickToCopy": "Click to copy",
+      "Copied": "Copied"
+    },
     "Home":
     {
       "N": "Home",
       "Prompt": "This is a preview version of Inkeys 3 and does not represent the final quality.",
       "Developer": "智绘教Inkeys Developer",
-      "Group": "Github Discussions",
+      "Group": "GitHub Discussions",
       "GroupE": "Inkeys/discussions",
       "BilibiliChannel": "Bilibili Channel",
       "FeedBack": "Feedback / Suggestions"
+    },
+    "Feedback":
+    {
+      "N": "Feedback",
+      "Description": "Report problems or suggest improvements to help improve Inkeys.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "Report problems or suggest improvements on GitHub for public discussion and tracking."
+      },
+      "Questionnaire":
+      {
+        "N": "Feedback questionnaire",
+        "E": "Use the feedback questionnaire to report a problem or suggest an improvement."
+      },
+      "Qr":
+      {
+        "N": "Scan to send feedback",
+        "E": "Scan the QR code to report problems or suggest improvements through the questionnaire."
+      },
+      "ContactSection": "Community and developer contact",
+      "CommunityDescription": "Discuss problems or suggestions with the community on GitHub Discussions.",
+      "ContactDescription": "Email the developer with problems or suggestions.",
+      "AuthorQQ": "Developer QQ"
     },
     "Language":
     {
@@ -369,6 +463,15 @@
         "AutoStart": "Auto start on login",
         "AutoStartE": "Launch 智绘教Inkeys when the user logs in.",
         "LoadingAnimation": "Startup loading animation",
+        "LoadingAnimationE": "Show the loading animation the next time Inkeys starts.",
+        "SettingEntryAnimation":
+        {
+          "N": "Settings opening animation",
+          "E": "Control how the Settings opening animation behaves.",
+          "Off": "Off",
+          "First": "First launch",
+          "Always": "Always"
+        },
         "Link":
         {
           "N": "Create Desktop Shortcut",
@@ -380,9 +483,9 @@
       {
         "N": "Appearance",
         "AnimationEnable": "Enable animations",
-        "AnimationEnableE": "When disabled, UI3 main bar animations complete immediately.",
+        "AnimationEnableE": "When disabled, animations in the UI3 main bar and Settings navigation and pages complete immediately.",
         "AnimationRate": "Animation rate",
-        "AnimationRateE": "Adjust the UI3 main bar animation rate from 0.1x to 5.0x.",
+        "AnimationRateE": "Adjust animations in the UI3 main bar and Settings from 0.1x to 5.0x.",
         "EdgeLighting": "Edge lighting",
         "EdgeLightingE": "When disabled, only the basic border remains; point lights and soft glow effects are turned off.",
         "DynamicEdgeLighting": "Dynamic edge lighting",
@@ -408,12 +511,6 @@
         {
           "N": "Bar UI Scale",
           "E": "Adjust the bar, buttons and PPT controls in real time.",
-          "Ind": "{:.2f}x scale"
-        },
-        "SettingUIScale":
-        {
-          "N": "Options UI Scale",
-          "E": "[Restart Required] Higher scale uses more memory.",
           "Ind": "{:.2f}x scale"
         }
       },
@@ -496,7 +593,21 @@
       "Eraser":
       {
         "N": "Eraser",
-        "Automatic": "Automatic thickness",
+        "Automatic": "Enable speed-sensitive eraser",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "Precise erasing",
+          "DemoFineDescription": "Slowly erase the construction line while keeping nearby labels and edges intact.",
+          "DemoSweepTitle": "Clear larger areas",
+          "DemoSweepDescription": "Repeated strokes gradually widen the eraser to clear large areas faster.",
+          "EntryDescription": "Intelligently adjust eraser size to match your drawing intent",
+          "Introduction": "Uses device dimensions, input devices, and movement to infer your erasing intent and adjust the eraser size dynamically.",
+          "BasicSettings": "Basic settings",
+          "EnabledDevices": "Enabled devices",
+          "FineControl": "Fine control",
+          "SizeWarningTitle": "Reliable screen dimensions are unavailable",
+          "SizeWarningDescription": "The current drawing screen lacks reliable physical dimensions. Touch and screen pens will use DPI estimates, so eraser size may not match your erasing intent."
+        },
         "Input":
         {
           "MouseLeft": "Left mouse button",
@@ -606,7 +717,7 @@
         {
           "N": "Basic Logic",
           "LoadPage": "Show loading page",
-          "LoadPageE": "Includes the plugin logo, tips, etc., and is shown only once per PPT file."
+          "LoadPageE": "This feature is disabled. PPT loading pages are no longer shown."
         },
         "WidgetDisplay":
         {

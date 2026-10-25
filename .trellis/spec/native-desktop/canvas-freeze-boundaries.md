@@ -133,14 +133,14 @@ Wrong：复查后捕获新的 generation，再等待；或任何 Move 都发内�
 
 ### 2. Signatures
 
-`Window::Service` 的 Setting owner-thread 隐藏事务；`SessionState::SetVisible(bool)`、`InvalidateSession()`、`Resolve(epoch, hasSession)`、`CommitEpoch(epoch)`、`Release()`；Setting WndProc 的早期 `WM_CAPTURECHANGED`、`WM_SHOWWINDOW(FALSE)` 分支。
+`Window::Service` 的 Setting owner-thread 隐藏事务；`SessionState::SetVisible(bool)`、`InvalidateSession()`、`Resolve(epoch, hasResident, hasPresentation)`、`InputResetSerial()`、`ConsumeInputReset(serial)`、`CommitEpoch(epoch)`、`ReleaseResident()`；Setting WndProc 的早期 `WM_CAPTURECHANGED`、`WM_SHOWWINDOW(FALSE)` 分支。
 
 ### 3. Contracts
 
 - Hide、HideAll 与 Show 遇到 shutdown 的回退均在真实 HWND owner thread 检查 `GetCapture() == settingHwnd` 才 `ReleaseCapture()`；helper 不主动释放其他 HWND 的捕获，不全局取消 Draw3/RTS contact。可见 owned Setting 的原生 `SW_HIDE` 可能因系统激活切换取消同输入队列捕获，测试须与同条件原生隐藏对照；已经隐藏后重复 Hide 则必须保留其他 HWND 后来获得的新捕获。
 - ReleaseCapture 可同步重入 WM_CAPTURECHANGED，该消息在 ImGui guard 前返回。原生隐藏消息也在该 guard 前处理，只用短状态锁 InvalidateSession，锁外请求 Settings 帧，不新增 owner 等待 render 的边。
 - 逻辑 Hide 锁存失效；Show 和旧帧 CommitEpoch 不能清掉。迟到的实际 native Hide 也失效当前 session，但不覆盖更晚的逻辑 Show 意图。
-- 旧 backend/context/SRV/呈现资源仍由原渲染 owner drain/destroy。只有旧会话销毁或确认无旧 context 的新建边界才能 Release 消费失效，随后建立干净输入会话，不在 HWND owner 直接改 ImGui 全局 IO。
+- 输入失效通过独立序号传递：原渲染 owner 清理 IO 队列、键鼠与 ActiveId，并经 Win32 backend 的按键释放路径清除内部掩码，再消费本次观察的序号。后到的 Hide 留待下一帧，普通隐藏仍保留 context/backend/字体/SRV；呈现和设备资源按常驻会话合同管理。不在 HWND owner 直接改 ImGui 全局 IO。
 
 ### 4. Validation & Error Matrix
 
@@ -148,7 +148,7 @@ Wrong：复查后捕获新的 generation，再等待；或任何 Move 都发内�
 | --- | --- |
 | 内容区 Down，按住时 Alt+F4，再正常 Up | 隐藏后不再捕获；同位置工具点击立即生效 |
 | 捕获已经转移其他 HWND | 隐藏设置不释放其他窗口的捕获 |
-| Hide→Show 合并或旧 Resolve 后才 Hide | 旧会话必须 drain，旧 Commit 不能吞失效 |
+| Hide→Show 合并或旧 Resolve 后才 Hide | 输入状态必须清理，旧 Commit 或旧输入序号不能吞掉新失效 |
 | 新会话已建立，旧 FIFO native Hide 才到达 | 再次失效输入，保留更新的 Show 意图 |
 | 退出时按住或重复 Hide | 幂等清理，不新增跨线程等待 |
 
@@ -162,7 +162,7 @@ Good：按住设置时关闭仍能点选橡皮，重开首次点击正常。Base
 
 ### 7. Wrong vs Correct
 
-Wrong：owner 持 ImGui 锁清 IO，或 Show 直接清失效而复用旧 session。Correct：owner 只结束自己的捕获并发布失效，原渲染线程完成旧会话销毁，新的会话边界消费失效。
+Wrong：owner 持 ImGui 锁清 IO，或 Show 直接清失效而复用旧 session。Correct：owner 只结束自己的捕获并发布失效，原渲染线程清理旧输入并消费观察到的序号；常驻会话不为 Hide/Show 重建。
 
 
 ## PPT 暂停恢复、目标应用与存储等待（2026-10-17）

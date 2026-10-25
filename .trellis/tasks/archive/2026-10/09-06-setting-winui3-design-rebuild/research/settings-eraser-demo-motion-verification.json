@@ -1,0 +1,182 @@
+{
+  "base_commit": "ff6fb4e12cd1ce016eecf3e8cce00744098d5b3a",
+  "status": "implemented_verified",
+  "protected_sha256": {
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkPixelShader.cso": "c23556a1103308c123fd8937da0b6e28639d1e302b3be6c68c314be7b62c4032",
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkVertexShader.cso": "79ef240a3c6a322f20cb1ba2ceac1e5ce5c7f61a28bf53b53edbc9bb1656c189",
+    "Inkeys/PptCOM.dll": "aea8a90053cc5b0d0912ac61c33496e29ffc03bd520404bd9322a11e8789f18f",
+    "Inkeys/PptCOM.tlb": "c652b5dd0603576033b2e0d15869be103f23ffdcaa2a1984e53f3b6a14dba606",
+    ".github/workflows/build-windows.yml": "53652fd2a6267b442cf41d15857eb18b8a941d6eb62f9a2bc044baffee6fe753",
+    "Inkeys/src/setting/Home_Feedback.png": "b980e7a63e6b206b81fc0a00509f7693d097aa01595f4125a57a3a1fbc0a28a7",
+    "Inkeys/src/setting/GitHubMark.png": "0d4c235fef9efec54174a7c005fc0fe0ce2d63d35c21898ab5148587111397a9"
+  },
+  "scope": "Geometry auxiliary-line fine erasure; diagonal reciprocal chemistry wiping with delayed adaptive growth and independent completion.",
+  "commit": false,
+  "push": false,
+  "gui": false,
+  "parent_status": "in_progress",
+  "verification_date": "2026-10-25",
+  "build": {
+    "solution": "InkeysRepo.sln",
+    "configuration": "Debug|ARM64",
+    "native_arm64_msbuild": true,
+    "exit_code": 0,
+    "elapsed_seconds": 168.73,
+    "errors": 0,
+    "warnings": 96,
+    "log": "settings-eraser-demo-motion-build.log"
+  },
+  "headless": {
+    "command": "Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window --setting-eraser-demo-only",
+    "exit_code": 0,
+    "settings_failures": 0,
+    "demo_failures": 0,
+    "warp_render_count": 20,
+    "warp_completion_ms": 89.817,
+    "max_render_target": [
+      1536,
+      432
+    ],
+    "log": "settings-eraser-demo-motion-tests.log"
+  },
+  "i18n": {
+    "en-US": "518/518",
+    "zh-TW": "518/518",
+    "check": "passed"
+  },
+  "offline_generation": {
+    "checks": {
+      "fine_target_speed_erased": 1.0,
+      "fine_target_fixed_erased": 1.0,
+      "fine_letter_speed_erased": 0.0,
+      "fine_letter_fixed_erased": 0.17435316735947293,
+      "fine_line_speed_erased": 0.0,
+      "fine_line_fixed_erased": 1.0,
+      "fine_all_auxiliary_speed_erased": 1.0,
+      "fine_all_protected_speed_erased": 0.0,
+      "sweep_candidate_speed_erased": 1.0,
+      "sweep_candidate_fixed_erased": 0.7732030295957999,
+      "sweep_corner_speed_erased": 1.0,
+      "sweep_corner_fixed_erased": 0.3334640655868954,
+      "sweep_context_speed_erased": 0.0,
+      "sweep_context_fixed_erased": 0.0,
+      "sweep_early_speed_erased": 0.7323603235102724,
+      "sweep_late_speed_erased_at_warmup": 0.0,
+      "sweep_candidate_speed_at_speed_finish": 1.0,
+      "sweep_early_fixed_erased": 0.9212642532483512,
+      "sweep_late_fixed_erased_at_warmup": 0.0,
+      "sweep_candidate_fixed_at_speed_finish": 0.6021940766198489,
+      "scene_0_fixed_largest_step": 4.082257446478261,
+      "scene_0_speed_largest_step": 4.082257446478261,
+      "scene_1_fixed_largest_step": 23.112548920677963,
+      "scene_1_speed_largest_step": 23.112548920677963
+    },
+    "sha256": {
+      "Inkeys\\src\\setting\\EraserDemoFine.png": "ac8433933e4ade23333d4411ad57670cae2cd01dd1233a171eddd6e6206c6385",
+      "Inkeys\\src\\setting\\EraserDemoSweep.png": "785fd19db600d7ec13e678ff76214399fbd716013f541e190c73bca5d1b2e261",
+      "Inkeys\\Inkeys\\UI\\Setting\\Setting.EraserDemoData.g.h": "57a9c5fd1b71c00245e89dd944ad0d4be3382dd7a08184dc6934f918e59e7671"
+    },
+    "deterministic": true
+  },
+  "time_mask_audit": {
+    "sample_count": 36,
+    "max_weighted_alpha_error": 0.007830557999341502,
+    "max_premature_alpha": 0.0017744204334198077,
+    "record": "eraser-demo-motion-visuals/mask-errors.json"
+  },
+  "visual_review": [
+    "eraser-demo-motion-visuals/scene-0-light.png",
+    "eraser-demo-motion-visuals/scene-1-dark.png",
+    "eraser-demo-visuals/fine-active.png",
+    "eraser-demo-visuals/sweep-active.png",
+    "eraser-demo-visuals/sweep-speed-finished.png"
+  ],
+  "independent_review": {
+    "result": "no unresolved findings",
+    "record": "settings-eraser-demo-motion-review.md"
+  },
+  "protected_resources_unchanged": true,
+  "source_sha256": {
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoData.g.h": "57a9c5fd1b71c00245e89dd944ad0d4be3382dd7a08184dc6934f918e59e7671",
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoGpu.cpp": "815577e3db94ef6b098e3daa3e5192b7b120c0d4aff46a7a1a8d4885a028f095",
+    "Inkeys/src/i18n/en-US.jsonc": "f0c16fa6acb06d55859b25cab01c42734fb19822e4115f3802eca742295c4d70",
+    "Inkeys/src/i18n/zh-CN.jsonc": "bf024140d85a260fb3e7500ed44f4eb94968915e87d37124fd7def4023d48944",
+    "Inkeys/src/i18n/zh-TW.jsonc": "70fce2e59d8d9a83c2b971844ba160ebd7a62c67474d7512ee16c728a52ad47b",
+    "Inkeys/src/setting/EraserDemoFine.png": "ac8433933e4ade23333d4411ad57670cae2cd01dd1233a171eddd6e6206c6385",
+    "Inkeys/src/setting/EraserDemoSweep.png": "785fd19db600d7ec13e678ff76214399fbd716013f541e190c73bca5d1b2e261",
+    "InkeysHeadlessTests/setting_eraser_demo_tests.cpp": "3767d5f25dff74b58bb72a4211c4666e6d23ec635111582dbdc76c87fc0fa925",
+    "Scripts/generate_eraser_demo.py": "844b784ef511060fcf375b4b70061c7cd2710dcc52968183ed1ab7a712df8b6a",
+    "Scripts/i18n.zh-CN.snapshot.jsonc": "bf024140d85a260fb3e7500ed44f4eb94968915e87d37124fd7def4023d48944"
+  },
+  "build_artifact_sha256": {
+    "Build/ARM64/Debug/Inkeys.exe": "cbbee500a4ddb175fc2259275043dfa8ed99381bf9c7c1cf104b460a5e5b0b21",
+    "Build/ARM64/Debug/InkeysHeadlessTests.exe": "72ebe0dc95b997d4398de9f620cd2ced01c66c36d431a1bab29af49ffd8bc13a"
+  },
+  "file_formats": {
+    ".trellis/spec/native-desktop/eraser-attributes.md": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/check.jsonl": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/design.md": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/implement.jsonl": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/implement.md": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/prd.md": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/settings-eraser-demo.md": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoData.g.h": {
+      "encoding": "UTF-8 BOM",
+      "newline": "CRLF"
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoGpu.cpp": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    "Inkeys/src/i18n/en-US.jsonc": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    "Inkeys/src/i18n/zh-CN.jsonc": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    "Inkeys/src/i18n/zh-TW.jsonc": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    "InkeysHeadlessTests/setting_eraser_demo_tests.cpp": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    "Scripts/generate_eraser_demo.py": {
+      "encoding": "UTF-8",
+      "newline": "LF"
+    },
+    "Scripts/i18n.zh-CN.snapshot.jsonc": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    }
+  },
+  "limitations": [
+    "No interactive GUI or physical-input test was launched.",
+    "WARP timings describe the offscreen test workload, not real hardware frame-rate or input latency.",
+    "Time masks retain bounded antialiasing/time quantization; real eraser algorithms and preferences are unchanged."
+  ]
+}

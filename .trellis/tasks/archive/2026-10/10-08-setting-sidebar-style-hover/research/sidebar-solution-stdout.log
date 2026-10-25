@@ -1,0 +1,91 @@
+
+  PptCOM -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+
+  Assembly exported to 'C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+  Scanning sources for module dependencies...
+  Setting.Pages.cpp
+  Setting.Controls.cpp
+  imfluent.cpp
+  Setting.Shell.cpp
+  IdtPlug-in.cpp
+  Setting.cpp
+  Compiling...
+  imfluent.cpp
+  IdtPlug-in.cpp
+  Setting.Pages.cpp
+  Setting.cpp
+  Setting.Shell.cpp
+  Setting.Controls.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(1302,39): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1536,133): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1536,107): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1537,138): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1537,112): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1538,103): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1538,77): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1573,133): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1573,107): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1574,138): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1574,112): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1575,103): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1575,77): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1610,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1610,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1644,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1644,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1678,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1678,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1712,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1712,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1747,100): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1747,75): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1781,100): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1781,74): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1816,101): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1816,75): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Inkeys.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Build\ARM64\Debug\Inkeys.exe
+  PptCOM.Tests -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  setting_design_tests.cpp
+  Compiling...
+  setting_design_tests.cpp
+  LINK : C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Build\ARM64\Debug\InkeysHeadlessTests.exe not found or not built by the last incremental link; performing full link
+  InkeysHeadlessTests.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Build\ARM64\Debug\InkeysHeadlessTests.exe

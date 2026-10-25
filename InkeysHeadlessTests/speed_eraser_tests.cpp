@@ -510,11 +510,101 @@ namespace
 		return failures;
 	}
 
+	int RunDirectInputScaleWarningTests()
+	{
+		int failures = 0, cases = 0;
+		const auto expect = [&](const DisplayScale& display, bool warning, const char* name)
+		{
+			++cases;
+			if (DirectInputUsesDpiFallback(display) != warning)
+			{
+				++failures;
+				std::cerr << "[EraserScaleWarning] failed: " << name << '\n';
+			}
+		};
+		expect({}, false, "no drawing output is not an EDID failure");
+		DisplayScale physical;
+		physical.monitor = 42;
+		physical.logicalOutputKnown = physical.physicalAvailable = true;
+		physical.pixelWidth = 1920; physical.pixelHeight = 1080;
+		physical.cmPerPixelX = 30.0f / 1920; physical.cmPerPixelY = 20.0f / 1080;
+		expect(physical, false, "trusted physical dimensions support both direct models");
+		for (float dpi : { 96.0f, 144.0f, 240.0f })
+		{
+			auto display = physical;
+			display.dipPerPixelX = display.dipPerPixelY = 96.0f / dpi;
+			expect(display, false, "system DPI does not invalidate trusted dimensions");
+		}
+		// 间接设备正常使用 DIP；提醒只关注同一屏上的触摸/屏幕笔可用标尺。
+		for (auto kind : { SourceKind::Mouse, SourceKind::ExternalPen })
+		{
+			const auto config = ResolveConfig(physical, DeviceMode::Automatic, MappedSource(kind, physical));
+			++cases;
+			if (config.motionSource != ScaleSource::DipOnly || DirectInputUsesDpiFallback(physical))
+			{
+				++failures;
+				std::cerr << "[EraserScaleWarning] failed: normal indirect DIP is not a warning\n";
+			}
+		}
+		auto missing = physical; missing.physicalAvailable = false;
+		expect(missing, true, "missing or untrusted physical dimensions use DPI");
+		auto unknown = physical; unknown.logicalOutputKnown = false;
+		expect(unknown, true, "logical output ambiguity rejects otherwise valid physical dimensions");
+		for (float invalid : { 0.0f, -0.1f, 0.000001f, 100.0f,
+			std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity() })
+		{
+			auto display = physical; display.cmPerPixelX = invalid;
+			expect(display, true, "nonfinite or physically unusable density still falls back");
+		}
+		auto manual = missing;
+		manual.development.scale = ScaleOverride::ManualSurface;
+		manual.development.calibration = { manual.monitor, 30.0f, 20.0f, 0 };
+		expect(manual, false, "valid manual calibration replaces missing EDID");
+		auto rotated = manual; rotated.orientation = 1;
+		std::swap(rotated.pixelWidth, rotated.pixelHeight);
+		expect(rotated, false, "manual calibration follows output rotation");
+		auto other = manual; other.monitor = 43;
+		expect(other, true, "calibration cannot leak to a different drawing monitor");
+		expect(manual, false, "return to calibrated drawing monitor clears warning");
+		for (float invalid : { 0.0f, 4.9f, 1000.1f,
+			std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity() })
+		{
+			auto display = manual; display.development.calibration.widthCm = invalid;
+			expect(display, true, "invalid manual dimensions cannot suppress warning");
+		}
+		auto badDensity = manual; badDensity.pixelWidth = badDensity.pixelHeight = 1000000;
+		expect(badDensity, true, "nominal manual dimensions with invalid rho still fall back");
+		auto unmapped = manual; unmapped.logicalOutputKnown = false;
+		expect(unmapped, true, "manual calibration requires a known logical output");
+		auto disabled = manual; disabled.development.scale = ScaleOverride::Automatic;
+		expect(disabled, true, "stored but inactive calibration cannot suppress warning");
+		auto forced = physical; forced.development.scale = ScaleOverride::ForceUnavailable;
+		expect(forced, true, "forced unavailable scale follows resolution/DPI fallback");
+		for (auto response : { ResponseOverride::ScreenPenHybrid, ResponseOverride::DirectTouch })
+		{
+			auto display = missing; display.development.response = response;
+			expect(display, true, "direct response override still needs physical dimensions");
+			display.physicalAvailable = true;
+			expect(display, false, "direct response override accepts trusted dimensions");
+		}
+		auto indirect = missing; indirect.development.response = ResponseOverride::IndirectDip;
+		expect(indirect, false, "explicit indirect response is not a direct-model scale fallback");
+		const auto unchanged = manual;
+		(void)DirectInputUsesDpiFallback(manual);
+		++cases;
+		if (!(manual == unchanged))
+		{
+			++failures;
+			std::cerr << "[EraserScaleWarning] failed: inspection changed the published display snapshot\n";
+		}
+		std::cout << "[EraserScaleWarning] cases=" << cases << " failures=" << failures << '\n';
+		return failures;
+	}
 }
 
 int RunSpeedEraserTests()
 {
-	int failures = RunFineBandRegressions();
+	int failures = RunFineBandRegressions() + RunDirectInputScaleWarningTests();
 	auto expect = [&](bool condition, const char* name)
 	{
 		if (!condition) { ++failures; std::cerr << "[SpeedEraser] failed: " << name << '\n'; }

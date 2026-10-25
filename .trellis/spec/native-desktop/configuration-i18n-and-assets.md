@@ -48,9 +48,12 @@
 
 ### 3. Contracts
 
-- `Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。退休 `Preset` 的宽度/记忆字段可按 [pen-width.md](pen-width.md) 仅为保存兼容数据解码、保留迁移证据；当前发布启动读取/恢复已注释禁用，残留旧default/Startup/memory不能覆盖Medium，不得恢复旧设置页或重复按px解释新DIP。
+- `SettingGlobalScale`、`Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。退休 `Preset` 的宽度/记忆字段可按 [pen-width.md](pen-width.md) 仅为保存兼容数据解码、保留迁移证据；当前发布启动读取/恢复已注释禁用，残留旧default/Startup/memory不能覆盖Medium，不得恢复旧设置页或重复按px解释新DIP。
 - PPT `FixedHandWriting` 已退出活动配置合同；PPT 捕获函数构造新对象，省略该字段即完成下一次写回清理。
 - `Save.Enable` 不是废弃键：它继续控制 Draw3 桌面画布在清空和退出时保存非空画布，设置文案必须说明该真实语义。
+- Setting UI 只使用当前窗口 `DpiScale(dpi)`，不叠加用户倍率；主栏 `UI.Bar.Zoom2`、任务栏基础量及 PPT 缩放不随此项改变。
+- `SettingEntryAnimation` 沿用传统 `deploy.json`，整数 0=关闭、1=首次启动时、2=始终，缺项/类型错误/越界回退1；只控制设置开屏，与应用启动预览开关独立，也不关闭主页悬停/视差。
+- 首开按全进程 `SessionState.ShowSerial()==1` 判定，在首次真实隐藏→显示即消耗；不依赖实际播放成功，尺寸不足、总动画关闭、取消和 resident 重建不能让后续 Show 补播。激活已显示窗口不递增序号；系统 DPI 改变仍走既有字体/纹理重建。
 - 删除 UI 不等于删除当前结构体中的所有历史成员；只要成员仍被未编译兼容源码引用，可以保留为非持久化占位，但活动代码不得再读取或写入对应配置。
 
 ### 4. Validation & Error Matrix
@@ -88,11 +91,17 @@ setlistVal.removeMember("Performance");
 setlistVal.removeMember("Preset");
 ```
 
+## UI2/旧设置资源退役边界
+
+- 按活动工程、RC 和真实加载/绘制消费者确认归属，不能只因资源名含 UI2 或位于旧目录就删除。保留 UI3 共用的四个 PluginFlag、CUSTOMIZEICO 快捷操作、头像、反馈码、赞助图、SIGN4 定格标识及当前 SVG/字体/演示 atlas。
+- 旧首页 Home1/Home2 整图不再由 Setting 初始化或列入 requiredTextureIndexes；保留 1/2 槽位编号，避免改动其他共享纹理索引和设备重建合同。旧 UI2 专用资源从 RC、项目项和历史加载调用同步退役；已不存在的资源项目项也一并清除。
+- 用户要求移入回收站时使用原生 recycle-on-delete，不永久删除；操作前核对仓库内绝对路径/清单/哈希，操作后核对实际回收站副本。验证保留 RC 文件、项目筛选器及生成 EXE 的嵌入内容，不以编译通过代替资源完整性检查。
+
 ## UI3 脏区调试与帧率显示配置合同
 
 ### 1. Scope / Trigger
 
-修改 UI3 脏区红框、下方帧率文字、设置页实验室卡片或其启动同步时适用；传统 `IdtFloating` 不在此合同内。
+修改 UI3 脏区红框、下方帧率文字、调试软件页卡片或其启动同步时适用；传统 `IdtFloating` 不在此合同内。
 
 ### 2. Signatures
 
@@ -112,7 +121,7 @@ Experimental.Inkeys3.UI3.Debug.ShowFrameRate : bool = true
 
 ### 3. Contracts
 
-- `Enable` 只控制实际业务脏区红框；设置卡片名称为“脏区调试”。
+- `Enable` 只控制实际业务脏区红框；设置卡片名称为“脏区调试”，与附属帧率行一起位于调试软件页。配置路径仍保留在 Experimental.Inkeys3.UI3.Debug，不因 UI 移页而迁移。
 - `ShowFrameRate` 只控制下方帧率文字和为采样维持的连续帧；其设置卡片只在 `Enable=true` 时显示，隐藏不得覆盖持久化值。
 - 新字段默认 `true`，使旧配置开启调试后继续显示帧率。设置修改先更新 `Inkeys::config`，再调用 `SetDebugOptions` 即时同步运行时，最后 `Config::Write()`。
 - 启动 `ReadAll()` 后必须把两个字段一起传给 Bar；运行时负责用旧/新覆盖层快照清除被关闭的文字或红框。
@@ -265,6 +274,10 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - Wrong（UI2/UI3 并行期）：组件 toggle 改变时写入或重排持久化 `ExtensionButtons`。
 - Correct（UI2/UI3 并行期）：旧开关仍是唯一持久化来源，UI3 只重建当前进程的 B 序列；移除 UI2 后再恢复持久化 B 排序。
 
+## Setting 主题偏好
+
+`【直接确认】` `SetListStruct::settingDarkMode` 与 SettingGlobalScale 位于同一旧配置路径，映射 `opt/deploy.json` 的 `SettingDarkMode`。默认 false；ReadSetting 对缺项和非 bool 回退 false，CaptureSettingJson 写 bool。设置标题栏切换先更新运行时，再按原 FIFO 冻结快照保存，不改变 Windows/Bar 主题；配置失败沿用原错误处理。完整主题/窗口线程与测试合同见 [rendering-and-ui.md](rendering-and-ui.md) 的“Setting 实时浅深主题合同”。
+
 ## 国际化源与生成物
 
 | 路径 | `【直接确认】`的角色 |
@@ -279,6 +292,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 `【直接确认】` `Scripts/i18n.ps1 sync` 以 `zh-CN.jsonc` 为基准，更新其他语言结构、快照和 `IdtI18nKeys.g.h`；生成 header 带有 “Do not edit manually” 标记。
 
 因此，文案变更应：先改基准 JSONC，再按任务授权运行 `sync`、处理翻译标记、运行 `check`，并审查所有生成差异。只审计时使用 `check`；`sync` 会写文件，不能在未授权的只读/文档任务中执行。不要手工编辑 `IdtI18nKeys.g.h`。
+
+`【直接确认】` 本地化连接符允许有意空串：仅当基准节点本身为 `""` 时，目标语言显式 `""` 通过 `sync/check`（例如中文 HeroJoin，英文对应空格）。缺失或非字符串节点、非空基准的空翻译、明确待翻译标记及基准变更仍沿用原校验；不得把所有空翻译一律视为完成。
 
 实验选项的控制台诊断由旧 `SettingsUI/Experimental/ConsoleOutput/TouchArea` 文案键和 `Experimental.Inkeys3.ConsoleOutput.TouchArea` 保存键继续承载；扩大输出内容时只更新三语言可见名称/说明，不改键以保留已有用户选择。
 
@@ -414,7 +429,7 @@ H(true, true, "ch", std::string, UpdateChannel,
 
 ## 启动位置预设配置合同
 - UI.Bar.StartupPlacement 属于main.json，IdtAtomic<int>默认0；0居中底栏展开、1左角主按钮、2右角主按钮。读盘仅接受JSON int/uint且isInt()可表示的0..2；浮点、超宽整数及其他类型直接回退0，不能先窄化后Normalize。NormalizeStartupPlacement统一非法回退0，Mini/正式UI使用同一冻结值。
-- 设置恢复Preset导航页，仅启动后位置说明和现有combo。旧deploy.json的Preset与画笔记忆继续退休，不恢复读写或旧条目；启动动画开关仍常规。
+- 启动后位置说明和现有combo位于通用→基本的启动行为分类，不提供Preset导航页。旧deploy.json的Preset与画笔记忆继续退休，不恢复读写或旧条目；启动动画开关仍常规。
 - 下拉仅更新偏好并QueueConfigWrite冻结副本，明确下次启动生效，不触发本次Bar移动/折叠或锁内窗口同步。
 - 所有新标题/说明/三选项为zh-CN/zh-TW/en-US，通过i18n sync/check生成头与快照。
 - 新增导航必须检测整个侧栏与固定页脚/分隔线边界，不以单个新页面回放替代整体布局验证。

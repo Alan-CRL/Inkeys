@@ -1,0 +1,3377 @@
+{
+  "source_scope": {
+    "publish": "e2c212d4d9cd68367c08363c450d392e9d63bcef",
+    "fluent": "834307a4"
+  },
+  "caveats": [
+    "Lexical extraction, not a full C++ preprocessor/parser. Excludes comments and #if 0 bodies. Other conditional variants are retained together. Counts do not prove UI/action equivalence. Source key families may be absent in fluent Setting.cpp because moved to Setting.Pages.cpp."
+  ],
+  "sources": {
+    "publish": [
+      {
+        "path": "Inkeys/Cache/SettingBaseline/publish/Inkeys/IdtConfiguration.cpp",
+        "sha256": "f2931f111995c15cc3588f353140738a1d03c8043f21d625aa3b4cd4445dcdd6",
+        "line_count": 1400,
+        "pages": [],
+        "all_keys": []
+      },
+      {
+        "path": "Inkeys/Cache/SettingBaseline/publish/Inkeys/Inkeys/Other/Other.Config.cpp",
+        "sha256": "158c81c39fa0bc3e43aba5b42a3f2e2a1bcf3f4500dbbd3eea7396949f3df695",
+        "line_count": 930,
+        "pages": [],
+        "all_keys": []
+      },
+      {
+        "path": "Inkeys/Cache/SettingBaseline/publish/Inkeys/Inkeys/UI/Setting/Setting.cpp",
+        "sha256": "b7c286fb5d6f5ba9febc4e4b175feda63bc8f5b2c58d23694f5b58aeed699dfc",
+        "line_count": 8618,
+        "pages": [
+          {
+            "page": "settingTabEnum::tab1",
+            "line": 1612,
+            "i18n_keys": [
+              "SettingsUI.Home.BilibiliChannel",
+              "SettingsUI.Home.Developer",
+              "SettingsUI.Home.FeedBack",
+              "SettingsUI.Home.Group",
+              "SettingsUI.Home.GroupE",
+              "SettingsUI.Home.Prompt"
+            ],
+            "configuration_refs": [],
+            "business_calls": [
+              "ShellExecuteW"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Home.Prompt",
+                "line": 1632
+              },
+              {
+                "value": "SettingsUI.Home.Developer",
+                "line": 1727
+              },
+              {
+                "value": "SettingsUI.Home.Group",
+                "line": 1764
+              },
+              {
+                "value": "SettingsUI.Home.GroupE",
+                "line": 1769
+              },
+              {
+                "value": "SettingsUI.Home.BilibiliChannel",
+                "line": 1784
+              },
+              {
+                "value": "SettingsUI.Home.FeedBack",
+                "line": 1798
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::Language",
+            "line": 1832,
+            "i18n_keys": [
+              "SettingsUI.Language.N",
+              "SettingsUI.Language.UI.Language.en_US",
+              "SettingsUI.Language.UI.Language.zh_CN",
+              "SettingsUI.Language.UI.Language.zh_TW",
+              "SettingsUI.Language.UI.N",
+              "SettingsUI.Language.UI.Select",
+              "SettingsUI.Language.UI.SelectE",
+              "SettingsUI.Language.UI.Warn"
+            ],
+            "configuration_refs": [
+              "setlist.selectLanguage"
+            ],
+            "business_calls": [
+              "QueueConfirmRestart",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Language.N",
+                "line": 1843
+              },
+              {
+                "value": "SettingsUI.Language.UI.N",
+                "line": 1857
+              },
+              {
+                "value": "SettingsUI.Language.UI.Select",
+                "line": 1872
+              },
+              {
+                "value": "SettingsUI.Language.UI.SelectE",
+                "line": 1878
+              },
+              {
+                "value": "SettingsUI.Language.UI.Language.en_US",
+                "line": 1893
+              },
+              {
+                "value": "SettingsUI.Language.UI.Language.zh_CN",
+                "line": 1894
+              },
+              {
+                "value": "SettingsUI.Language.UI.Language.zh_TW",
+                "line": 1895
+              },
+              {
+                "value": "SettingsUI.Language.UI.Warn",
+                "line": 1917
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabConfiguration",
+            "line": 1956,
+            "i18n_keys": [
+              "SettingsUI.Configuration.CanvasSave.Enable",
+              "SettingsUI.Configuration.CanvasSave.EnableE",
+              "SettingsUI.Configuration.CanvasSave.N",
+              "SettingsUI.Configuration.Clean.Enable",
+              "SettingsUI.Configuration.Clean.EnableE",
+              "SettingsUI.Configuration.Clean.N",
+              "SettingsUI.Configuration.N"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.Config.AutoClean",
+              "setlist.saveSetting.enable"
+            ],
+            "business_calls": [
+              "QueueConfigWrite",
+              "SyncDraw3State",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Configuration.N",
+                "line": 1967
+              },
+              {
+                "value": "SettingsUI.Configuration.Clean.N",
+                "line": 1981
+              },
+              {
+                "value": "SettingsUI.Configuration.Clean.Enable",
+                "line": 1996
+              },
+              {
+                "value": "SettingsUI.Configuration.Clean.EnableE",
+                "line": 2022
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.N",
+                "line": 2060
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.Enable",
+                "line": 2075
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.EnableE",
+                "line": 2081
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab6",
+            "line": 2191,
+            "i18n_keys": [
+              "Operate.Copy",
+              "Operate.Repair",
+              "SettingsUI.Version.Info.AutoBuild",
+              "SettingsUI.Version.Info.CICDInfo",
+              "SettingsUI.Version.Info.DebugTag",
+              "SettingsUI.Version.Info.ManualBuild",
+              "SettingsUI.Version.Info.N",
+              "SettingsUI.Version.Info.ReleaseArch",
+              "SettingsUI.Version.Info.ReleaseDate",
+              "SettingsUI.Version.Info.ReleaseTag",
+              "SettingsUI.Version.Info.ReleaseVersion",
+              "SettingsUI.Version.ManualUpdate.ManualUpdate",
+              "SettingsUI.Version.ManualUpdate.N",
+              "SettingsUI.Version.N",
+              "SettingsUI.Version.Repair.N",
+              "SettingsUI.Version.Repair.RepairArch",
+              "SettingsUI.Version.Repair.RepairSoftware",
+              "SettingsUI.Version.Repair.RepairSoftwareE",
+              "SettingsUI.Version.Update.Arch.Arm64",
+              "SettingsUI.Version.Update.Arch.E",
+              "SettingsUI.Version.Update.Arch.K_32",
+              "SettingsUI.Version.Update.Arch.K_64",
+              "SettingsUI.Version.Update.Arch.N",
+              "SettingsUI.Version.Update.AutoUpate",
+              "SettingsUI.Version.Update.Channel.Canary",
+              "SettingsUI.Version.Update.Channel.Insider",
+              "SettingsUI.Version.Update.Channel.LTS",
+              "SettingsUI.Version.Update.Channel.N",
+              "SettingsUI.Version.Update.ChannelTip",
+              "SettingsUI.Version.Update.N",
+              "SettingsUI.Version.UserInfo.CopyUserId",
+              "SettingsUI.Version.UserInfo.N",
+              "SettingsUI.Version.UserInfo.UserId",
+              "SettingsUI.Version.VersionTip"
+            ],
+            "configuration_refs": [],
+            "business_calls": [
+              "CloseClipboard",
+              "EmptyClipboard",
+              "GetUpdateArchitecture",
+              "GetUpdateChannel",
+              "GlobalAlloc",
+              "GlobalLock",
+              "GlobalUnlock",
+              "OpenClipboard",
+              "QueueAutomaticUpdate",
+              "QueueBusiness",
+              "SetClipboardData",
+              "SetEnableAutoUpdate",
+              "SetUpdateArchitecture",
+              "SetUpdateChannel",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Version.N",
+                "line": 2202
+              },
+              {
+                "value": "SettingsUI.Version.ManualUpdate.N",
+                "line": 2223
+              },
+              {
+                "value": "SettingsUI.Version.ManualUpdate.ManualUpdate",
+                "line": 2228
+              },
+              {
+                "value": "SettingsUI.Version.VersionTip",
+                "line": 2267
+              },
+              {
+                "value": "SettingsUI.Version.Info.N",
+                "line": 2296
+              },
+              {
+                "value": "SettingsUI.Version.Info.ReleaseVersion",
+                "line": 2314
+              },
+              {
+                "value": "SettingsUI.Version.Info.ReleaseDate",
+                "line": 2315
+              },
+              {
+                "value": "SettingsUI.Version.Info.ReleaseArch",
+                "line": 2316
+              },
+              {
+                "value": "SettingsUI.Version.Info.ReleaseTag",
+                "line": 2318
+              },
+              {
+                "value": "SettingsUI.Version.Info.DebugTag",
+                "line": 2320
+              },
+              {
+                "value": "SettingsUI.Version.Info.ManualBuild",
+                "line": 2365
+              },
+              {
+                "value": "SettingsUI.Version.Info.AutoBuild",
+                "line": 2376
+              },
+              {
+                "value": "SettingsUI.Version.Info.CICDInfo",
+                "line": 2377
+              },
+              {
+                "value": "SettingsUI.Version.UserInfo.N",
+                "line": 2420
+              },
+              {
+                "value": "SettingsUI.Version.UserInfo.CopyUserId",
+                "line": 2435
+              },
+              {
+                "value": "SettingsUI.Version.UserInfo.UserId",
+                "line": 2442
+              },
+              {
+                "value": "Operate.Copy",
+                "line": 2447
+              },
+              {
+                "value": "SettingsUI.Version.Repair.N",
+                "line": 2487
+              },
+              {
+                "value": "SettingsUI.Version.Repair.RepairSoftware",
+                "line": 2502
+              },
+              {
+                "value": "SettingsUI.Version.Repair.RepairSoftwareE",
+                "line": 2509
+              },
+              {
+                "value": "Operate.Repair",
+                "line": 2514
+              },
+              {
+                "value": "SettingsUI.Version.Repair.RepairArch",
+                "line": 2549
+              },
+              {
+                "value": "SettingsUI.Version.Update.N",
+                "line": 2582
+              },
+              {
+                "value": "SettingsUI.Version.Update.AutoUpate",
+                "line": 2597
+              },
+              {
+                "value": "SettingsUI.Version.Update.ChannelTip",
+                "line": 2657
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.N",
+                "line": 2687
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.LTS",
+                "line": 2698
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.Insider",
+                "line": 2699
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.Canary",
+                "line": 2700
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.N",
+                "line": 2771
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.E",
+                "line": 2777
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.K_64",
+                "line": 2786
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.K_32",
+                "line": 2787
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.Arm64",
+                "line": 2788
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabCICD",
+            "line": 2869,
+            "i18n_keys": [
+              "SettingsUI.CICD.Branch",
+              "SettingsUI.CICD.BuildSystem",
+              "SettingsUI.CICD.BuildSystemVersion",
+              "SettingsUI.CICD.BuildTime",
+              "SettingsUI.CICD.MSBuildVersion",
+              "SettingsUI.CICD.N",
+              "SettingsUI.CICD.Repository",
+              "SettingsUI.CICD.RunnerImageSystem",
+              "SettingsUI.CICD.RunnerImageVersion",
+              "SettingsUI.CICD.Submitter"
+            ],
+            "configuration_refs": [],
+            "business_calls": [
+              "ShellExecuteW"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.CICD.N",
+                "line": 2889
+              },
+              {
+                "value": "SettingsUI.CICD.Repository",
+                "line": 2933
+              },
+              {
+                "value": "SettingsUI.CICD.Branch",
+                "line": 2951
+              },
+              {
+                "value": "SettingsUI.CICD.Submitter",
+                "line": 2952
+              },
+              {
+                "value": "SettingsUI.CICD.BuildTime",
+                "line": 2953
+              },
+              {
+                "value": "SettingsUI.CICD.BuildSystem",
+                "line": 2955
+              },
+              {
+                "value": "SettingsUI.CICD.BuildSystemVersion",
+                "line": 2956
+              },
+              {
+                "value": "SettingsUI.CICD.RunnerImageSystem",
+                "line": 2957
+              },
+              {
+                "value": "SettingsUI.CICD.RunnerImageVersion",
+                "line": 2958
+              },
+              {
+                "value": "SettingsUI.CICD.MSBuildVersion",
+                "line": 2960
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab2",
+            "line": 3023,
+            "i18n_keys": [
+              "Operate.Create",
+              "SettingsUI.Regular.Appearance.AnimationEnable",
+              "SettingsUI.Regular.Appearance.AnimationEnableE",
+              "SettingsUI.Regular.Appearance.AnimationRate",
+              "SettingsUI.Regular.Appearance.AnimationRateE",
+              "SettingsUI.Regular.Appearance.BarZoom.E",
+              "SettingsUI.Regular.Appearance.BarZoom.Ind",
+              "SettingsUI.Regular.Appearance.BarZoom.N",
+              "SettingsUI.Regular.Appearance.DynamicEdgeLighting",
+              "SettingsUI.Regular.Appearance.DynamicEdgeLightingE",
+              "SettingsUI.Regular.Appearance.EdgeLighting",
+              "SettingsUI.Regular.Appearance.EdgeLightingE",
+              "SettingsUI.Regular.Appearance.N",
+              "SettingsUI.Regular.Appearance.SettingUIScale.E",
+              "SettingsUI.Regular.Appearance.SettingUIScale.Ind",
+              "SettingsUI.Regular.Appearance.SettingUIScale.N",
+              "SettingsUI.Regular.Behavior.N",
+              "SettingsUI.Regular.Behavior.RightClickClose",
+              "SettingsUI.Regular.Behavior.RightClickCloseE",
+              "SettingsUI.Regular.Behavior.TopWindow.E",
+              "SettingsUI.Regular.Behavior.TopWindow.K_100ms",
+              "SettingsUI.Regular.Behavior.TopWindow.K_10s",
+              "SettingsUI.Regular.Behavior.TopWindow.K_1s",
+              "SettingsUI.Regular.Behavior.TopWindow.K_30s",
+              "SettingsUI.Regular.Behavior.TopWindow.K_3s",
+              "SettingsUI.Regular.Behavior.TopWindow.K_500ms",
+              "SettingsUI.Regular.Behavior.TopWindow.K_5s",
+              "SettingsUI.Regular.Behavior.TopWindow.N",
+              "SettingsUI.Regular.N",
+              "SettingsUI.Regular.StartUp.AutoStart",
+              "SettingsUI.Regular.StartUp.AutoStartE",
+              "SettingsUI.Regular.StartUp.Link.E",
+              "SettingsUI.Regular.StartUp.Link.More",
+              "SettingsUI.Regular.StartUp.Link.N",
+              "SettingsUI.Regular.StartUp.LoadingAnimation",
+              "SettingsUI.Regular.StartUp.N",
+              "SettingsUI.Regular.Tentative.N",
+              "SettingsUI.Regular.Tentative.SafeMode.E",
+              "SettingsUI.Regular.Tentative.SafeMode.Mode1",
+              "SettingsUI.Regular.Tentative.SafeMode.Mode2",
+              "SettingsUI.Regular.Tentative.SafeMode.Mode3",
+              "SettingsUI.Regular.Tentative.SafeMode.Mode4",
+              "SettingsUI.Regular.Tentative.SafeMode.N",
+              "Widget.LnkName"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable",
+              "Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate",
+              "Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load",
+              "Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic",
+              "Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable",
+              "Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable",
+              "Inkeys::config.UI.Bar.Zoom",
+              "Inkeys::config.UI.Bar.Zoom.load",
+              "setlist.RightClickClose",
+              "setlist.regularSetting.teachingSafetyMode",
+              "setlist.settingGlobalScale",
+              "setlist.startUp",
+              "setlist.topSleepTime"
+            ],
+            "business_calls": [
+              "CrashHandler::SetFlag",
+              "Inkeys::UI::Bar::SetAnimationOptions",
+              "Inkeys::UI::Bar::SetConfigZoom",
+              "Inkeys::UI::Bar::SetEdgeLightingOptions",
+              "QueueBusiness",
+              "QueueConfigWrite",
+              "SetConfigured",
+              "SetStartupState",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Regular.N",
+                "line": 3034
+              },
+              {
+                "value": "SettingsUI.Regular.StartUp.N",
+                "line": 3048
+              },
+              {
+                "value": "SettingsUI.Regular.StartUp.AutoStart",
+                "line": 3063
+              },
+              {
+                "value": "SettingsUI.Regular.StartUp.AutoStartE",
+                "line": 3069
+              },
+              {
+                "value": "SettingsUI.Regular.StartUp.Link.N",
+                "line": 3103
+              },
+              {
+                "value": "SettingsUI.Regular.StartUp.Link.E",
+                "line": 3110
+              },
+              {
+                "value": "Operate.Create",
+                "line": 3115
+              },
+              {
+                "value": "Widget.LnkName",
+                "line": 3124
+              },
+              {
+                "value": "SettingsUI.Regular.StartUp.Link.More",
+                "line": 3133
+              },
+              {
+                "value": "SettingsUI.Regular.StartUp.LoadingAnimation",
+                "line": 3158
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.N",
+                "line": 3204
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.AnimationEnable",
+                "line": 3239
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.AnimationEnableE",
+                "line": 3240
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.AnimationRate",
+                "line": 3261
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.AnimationRateE",
+                "line": 3265
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.EdgeLighting",
+                "line": 3302
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.EdgeLightingE",
+                "line": 3303
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.DynamicEdgeLighting",
+                "line": 3315
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.DynamicEdgeLightingE",
+                "line": 3316
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.BarZoom.N",
+                "line": 3338
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.BarZoom.E",
+                "line": 3344
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.BarZoom.Ind",
+                "line": 3377
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.BarZoom.Ind",
+                "line": 3391
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.SettingUIScale.N",
+                "line": 3417
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.SettingUIScale.E",
+                "line": 3423
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.SettingUIScale.Ind",
+                "line": 3450
+              },
+              {
+                "value": "SettingsUI.Regular.Appearance.SettingUIScale.Ind",
+                "line": 3464
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.N",
+                "line": 3497
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.N",
+                "line": 3512
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.E",
+                "line": 3526
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.K_100ms",
+                "line": 3545
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.K_500ms",
+                "line": 3546
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.K_1s",
+                "line": 3547
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.K_3s",
+                "line": 3548
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.K_5s",
+                "line": 3549
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.K_10s",
+                "line": 3550
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.TopWindow.K_30s",
+                "line": 3551
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.RightClickClose",
+                "line": 3597
+              },
+              {
+                "value": "SettingsUI.Regular.Behavior.RightClickCloseE",
+                "line": 3603
+              },
+              {
+                "value": "SettingsUI.Regular.Tentative.N",
+                "line": 3641
+              },
+              {
+                "value": "SettingsUI.Regular.Tentative.SafeMode.N",
+                "line": 3656
+              },
+              {
+                "value": "SettingsUI.Regular.Tentative.SafeMode.E",
+                "line": 3662
+              },
+              {
+                "value": "SettingsUI.Regular.Tentative.SafeMode.Mode1",
+                "line": 3671
+              },
+              {
+                "value": "SettingsUI.Regular.Tentative.SafeMode.Mode2",
+                "line": 3672
+              },
+              {
+                "value": "SettingsUI.Regular.Tentative.SafeMode.Mode3",
+                "line": 3673
+              },
+              {
+                "value": "SettingsUI.Regular.Tentative.SafeMode.Mode4",
+                "line": 3674
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab3",
+            "line": 3731,
+            "i18n_keys": [
+              "SettingsUI.Draw.Effect.Device.E",
+              "SettingsUI.Draw.Effect.Device.MousePen",
+              "SettingsUI.Draw.Effect.Device.N",
+              "SettingsUI.Draw.Effect.Device.Touch",
+              "SettingsUI.Draw.Effect.N",
+              "SettingsUI.Draw.Eraser.Automatic",
+              "SettingsUI.Draw.Eraser.Input.MouseLeft",
+              "SettingsUI.Draw.Eraser.Input.MouseRight",
+              "SettingsUI.Draw.Eraser.Input.PenTail",
+              "SettingsUI.Draw.Eraser.Input.PenTip",
+              "SettingsUI.Draw.Eraser.Input.Touch",
+              "SettingsUI.Draw.Eraser.Kind.Fixed",
+              "SettingsUI.Draw.Eraser.Kind.Speed",
+              "SettingsUI.Draw.Eraser.N",
+              "SettingsUI.Draw.Eraser.Response.Auto",
+              "SettingsUI.Draw.Eraser.Response.Digitizer",
+              "SettingsUI.Draw.Eraser.Response.ScreenPen",
+              "SettingsUI.Draw.Eraser.ResponseFor",
+              "SettingsUI.Draw.Eraser.TouchArea.E",
+              "SettingsUI.Draw.Eraser.TouchArea.N",
+              "SettingsUI.Draw.N"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance",
+              "setlist.paintDevice"
+            ],
+            "business_calls": [
+              "AutomaticPenResponseAvailable",
+              "EraserPreferencesSnapshot",
+              "Inkeys::Drawing::Draw3::ProductHost",
+              "QueueConfigWrite",
+              "SetEraserDevelopmentOptions",
+              "SetEraserInputPreference",
+              "SetGlobalEraserPreference",
+              "SyncDraw3State",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Draw.N",
+                "line": 3742
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.N",
+                "line": 3756
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.Device.N",
+                "line": 3771
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.Device.E",
+                "line": 3777
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.Device.Touch",
+                "line": 3786
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.Device.MousePen",
+                "line": 3787
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.N",
+                "line": 3855
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Input.MouseLeft",
+                "line": 3857
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Input.MouseRight",
+                "line": 3858
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Input.Touch",
+                "line": 3859
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Input.PenTip",
+                "line": 3860
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Input.PenTail",
+                "line": 3861
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Kind.Fixed",
+                "line": 3863
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Kind.Speed",
+                "line": 3864
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Response.Auto",
+                "line": 3866
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Response.ScreenPen",
+                "line": 3867
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Response.Digitizer",
+                "line": 3868
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.Automatic",
+                "line": 3879
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.ResponseFor",
+                "line": 3920
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.TouchArea.N",
+                "line": 3946
+              },
+              {
+                "value": "SettingsUI.Draw.Eraser.TouchArea.E",
+                "line": 3951
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab4",
+            "line": 3984,
+            "i18n_keys": [],
+            "configuration_refs": [],
+            "business_calls": [],
+            "key_occurrences": []
+          },
+          {
+            "page": "settingPlugInTabEnum::tabPlug1",
+            "line": 3989,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.DesktopDrawpadBlocker.E",
+              "SettingsUI.PlugIn.DesktopDrawpadBlocker.N",
+              "SettingsUI.PlugIn.LnkHelper.E",
+              "SettingsUI.PlugIn.LnkHelper.N",
+              "SettingsUI.PlugIn.N",
+              "SettingsUI.PlugIn.PPTHelper.E",
+              "SettingsUI.PlugIn.PPTHelper.N",
+              "SettingsUI.PlugIn.PPTHelper.VersionError",
+              "SettingsUI.PlugIn.SuperTop.E",
+              "SettingsUI.PlugIn.SuperTop.N"
+            ],
+            "configuration_refs": [
+              "ddbInteractionSetList.DdbEdition"
+            ],
+            "business_calls": [],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.N",
+                "line": 3998
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.N",
+                "line": 4015
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.VersionError",
+                "line": 4022
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.E",
+                "line": 4043
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.N",
+                "line": 4076
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.E",
+                "line": 4101
+              },
+              {
+                "value": "SettingsUI.PlugIn.DesktopDrawpadBlocker.N",
+                "line": 4134
+              },
+              {
+                "value": "SettingsUI.PlugIn.DesktopDrawpadBlocker.E",
+                "line": 4159
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.N",
+                "line": 4192
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.E",
+                "line": 4217
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabPlug2",
+            "line": 4250,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage",
+              "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE",
+              "SettingsUI.PlugIn.PPTHelper.BasicLogic.N",
+              "SettingsUI.PlugIn.PPTHelper.Error",
+              "SettingsUI.PlugIn.PPTHelper.N",
+              "SettingsUI.PlugIn.PPTHelper.Reset",
+              "SettingsUI.PlugIn.PPTHelper.Solve",
+              "SettingsUI.PlugIn.PPTHelper.Sync",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.N",
+              "SettingsUI.PlugIn.PPTHelper.Tip",
+              "SettingsUI.PlugIn.PPTHelper.VersionError",
+              "SettingsUI.PlugIn.PPTHelper.Warn",
+              "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth",
+              "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth",
+              "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N",
+              "SettingsUI.PlugIn.PPTHelper.WidgetPosition.N",
+              "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember",
+              "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.N",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.PlugIn.PPTHelper.AutoTakeOver",
+              "Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand",
+              "Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce",
+              "Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress",
+              "pptComSetlist.bottomSideBothWidgetScale",
+              "pptComSetlist.memoryWidgetPosition",
+              "pptComSetlist.middleSideBothWidgetScale",
+              "pptComSetlist.setAdmin",
+              "pptComSetlist.showBottomBoth",
+              "pptComSetlist.showLoadingScreen",
+              "pptComSetlist.showMiddleBoth"
+            ],
+            "business_calls": [
+              "Inkeys::UI::Ppt::NotifyConfigurationChanged",
+              "Inkeys::UI::Ppt::ResetPositions",
+              "PptComWriteSetting",
+              "QueueConfigWrite",
+              "ShellExecuteW"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.N",
+                "line": 4268
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.VersionError",
+                "line": 4275
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Error",
+                "line": 4312
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tip",
+                "line": 4354
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Solve",
+                "line": 4367
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Warn",
+                "line": 4405
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Solve",
+                "line": 4418
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.BasicLogic.N",
+                "line": 4444
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage",
+                "line": 4459
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE",
+                "line": 4465
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N",
+                "line": 4504
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth",
+                "line": 4519
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth",
+                "line": 4548
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetPosition.N",
+                "line": 4590
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset",
+                "line": 4605
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Reset",
+                "line": 4610
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember",
+                "line": 4638
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.N",
+                "line": 4677
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth",
+                "line": 4695
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+                "line": 4723
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+                "line": 4746
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Reset",
+                "line": 4755
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Sync",
+                "line": 4769
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth",
+                "line": 4798
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+                "line": 4826
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+                "line": 4849
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Reset",
+                "line": 4858
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Sync",
+                "line": 4872
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.N",
+                "line": 5015
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver",
+                "line": 5030
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE",
+                "line": 5036
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce",
+                "line": 5064
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE",
+                "line": 5070
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand",
+                "line": 5098
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress",
+                "line": 5133
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabSuperTop",
+            "line": 5187,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.SuperTop.Capability.Indicator",
+              "SettingsUI.PlugIn.SuperTop.Capability.IndicatorE",
+              "SettingsUI.PlugIn.SuperTop.Capability.N",
+              "SettingsUI.PlugIn.SuperTop.Capability.SuperTop",
+              "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1",
+              "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2",
+              "SettingsUI.PlugIn.SuperTop.N",
+              "SettingsUI.PlugIn.SuperTop.Warn"
+            ],
+            "configuration_refs": [
+              "setlist.plugInSetting.superTop.enable",
+              "setlist.plugInSetting.superTop.indicator"
+            ],
+            "business_calls": [
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.N",
+                "line": 5205
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Warn",
+                "line": 5244
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.N",
+                "line": 5273
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.SuperTop",
+                "line": 5288
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1",
+                "line": 5313
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2",
+                "line": 5314
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.Indicator",
+                "line": 5344
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.IndicatorE",
+                "line": 5350
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabPlug3",
+            "line": 5400,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.LnkHelper.Capability.FixLnk",
+              "SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE",
+              "SettingsUI.PlugIn.LnkHelper.Capability.N",
+              "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk",
+              "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE",
+              "SettingsUI.PlugIn.LnkHelper.Expansion.N",
+              "SettingsUI.PlugIn.LnkHelper.N"
+            ],
+            "configuration_refs": [
+              "setlist.shortcutAssistant.correctLnk",
+              "setlist.shortcutAssistant.createLnk"
+            ],
+            "business_calls": [
+              "SetShortcut",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.N",
+                "line": 5418
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Capability.N",
+                "line": 5444
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Capability.FixLnk",
+                "line": 5459
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE",
+                "line": 5486
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Expansion.N",
+                "line": 5523
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk",
+                "line": 5538
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE",
+                "line": 5544
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabPlugDDB",
+            "line": 5596,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.DesktopDrawpadBlocker.N"
+            ],
+            "configuration_refs": [
+              "ddbInteractionSetList.DdbEdition",
+              "ddbInteractionSetList.DdbSHA256",
+              "ddbInteractionSetList.enable",
+              "ddbInteractionSetList.intercept.AiClassFloating",
+              "ddbInteractionSetList.intercept.ChangYan5Floating",
+              "ddbInteractionSetList.intercept.ChangYanFloating",
+              "ddbInteractionSetList.intercept.ClassInXFloating",
+              "ddbInteractionSetList.intercept.Iclass30Floating",
+              "ddbInteractionSetList.intercept.Iclass30SidebarFloating",
+              "ddbInteractionSetList.intercept.IntelligentClassFloating",
+              "ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating",
+              "ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating",
+              "ddbInteractionSetList.intercept.SeewoIwbAssistantFloating",
+              "ddbInteractionSetList.intercept.SeewoPPTFloating",
+              "ddbInteractionSetList.intercept.SeewoPincoDrawingFloating",
+              "ddbInteractionSetList.intercept.SeewoPincoSideBarFloating",
+              "ddbInteractionSetList.intercept.SeewoWhiteboard3Floating",
+              "ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating",
+              "ddbInteractionSetList.intercept.SeewoWhiteboard5Floating",
+              "ddbInteractionSetList.intercept.YiouBoardFloating",
+              "ddbInteractionSetList.runAsAdmin",
+              "ddbInteractionSetList.sleepTime"
+            ],
+            "business_calls": [
+              "QueueBusiness",
+              "QueueDdbWriteInteraction",
+              "ShellExecuteW",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.DesktopDrawpadBlocker.N",
+                "line": 5614
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabComponent",
+            "line": 6545,
+            "i18n_keys": [],
+            "configuration_refs": [
+              "setlist.component.shortcutButton.appliance.control",
+              "setlist.component.shortcutButton.appliance.explorer",
+              "setlist.component.shortcutButton.appliance.taskmgr",
+              "setlist.component.shortcutButton.keyboard.keyboardAltF4",
+              "setlist.component.shortcutButton.keyboard.keyboardesc",
+              "setlist.component.shortcutButton.linkage.classislandClassswap",
+              "setlist.component.shortcutButton.linkage.classislandProfile",
+              "setlist.component.shortcutButton.linkage.classislandSettings",
+              "setlist.component.shortcutButton.rollCall.IslandCaller1",
+              "setlist.component.shortcutButton.rollCall.IslandCaller2",
+              "setlist.component.shortcutButton.rollCall.NamePicker",
+              "setlist.component.shortcutButton.rollCall.SecRandom1",
+              "setlist.component.shortcutButton.rollCall.SecRandom2",
+              "setlist.component.shortcutButton.rollCall.SecRandom2Compat",
+              "setlist.component.shortcutButton.system.desktop",
+              "setlist.component.shortcutButton.system.lockWorkStation"
+            ],
+            "business_calls": [
+              "SyncUi3BuiltInComponents",
+              "WriteSetting"
+            ],
+            "key_occurrences": []
+          },
+          {
+            "page": "settingTabEnum::tab5",
+            "line": 7285,
+            "i18n_keys": [
+              "SettingsUI.HotKey.E",
+              "SettingsUI.HotKey.N"
+            ],
+            "configuration_refs": [],
+            "business_calls": [],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.HotKey.N",
+                "line": 7296
+              },
+              {
+                "value": "SettingsUI.HotKey.E",
+                "line": 7311
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabExperimental",
+            "line": 7375,
+            "i18n_keys": [
+              "SettingsUI.Experimental.ConsoleOutput.Cursor.E",
+              "SettingsUI.Experimental.ConsoleOutput.Cursor.N",
+              "SettingsUI.Experimental.ConsoleOutput.Draw3.E",
+              "SettingsUI.Experimental.ConsoleOutput.Draw3.N",
+              "SettingsUI.Experimental.ConsoleOutput.PptCOM.E",
+              "SettingsUI.Experimental.ConsoleOutput.PptCOM.N",
+              "SettingsUI.Experimental.ConsoleOutput.TouchArea.E",
+              "SettingsUI.Experimental.ConsoleOutput.TouchArea.N"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor",
+              "Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3",
+              "Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM",
+              "Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea",
+              "Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition",
+              "Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable",
+              "Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate"
+            ],
+            "business_calls": [
+              "Inkeys::UI::Bar::SetDebugOptions",
+              "QueueConfigWrite"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Experimental.ConsoleOutput.TouchArea.N",
+                "line": 7437
+              },
+              {
+                "value": "SettingsUI.Experimental.ConsoleOutput.TouchArea.E",
+                "line": 7438
+              },
+              {
+                "value": "SettingsUI.Experimental.ConsoleOutput.PptCOM.N",
+                "line": 7446
+              },
+              {
+                "value": "SettingsUI.Experimental.ConsoleOutput.PptCOM.E",
+                "line": 7447
+              },
+              {
+                "value": "SettingsUI.Experimental.ConsoleOutput.Draw3.N",
+                "line": 7455
+              },
+              {
+                "value": "SettingsUI.Experimental.ConsoleOutput.Draw3.E",
+                "line": 7456
+              },
+              {
+                "value": "SettingsUI.Experimental.ConsoleOutput.Cursor.N",
+                "line": 7464
+              },
+              {
+                "value": "SettingsUI.Experimental.ConsoleOutput.Cursor.E",
+                "line": 7465
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab8",
+            "line": 7612,
+            "i18n_keys": [],
+            "configuration_refs": [],
+            "business_calls": [],
+            "key_occurrences": []
+          },
+          {
+            "page": "settingTabEnum::tab9",
+            "line": 7680,
+            "i18n_keys": [
+              "Dialogs.UpdateModuleUnavailable.Body",
+              "SettingsUI.Update.Channel.Canary",
+              "SettingsUI.Update.Channel.Dev",
+              "SettingsUI.Update.Channel.Insider",
+              "SettingsUI.Update.Channel.LTS",
+              "SettingsUI.Update.Channel.Other",
+              "SettingsUI.Update.Check",
+              "SettingsUI.Update.DownloadDamage",
+              "SettingsUI.Update.DownloadFail",
+              "SettingsUI.Update.Downloading",
+              "SettingsUI.Update.InformationDamage",
+              "SettingsUI.Update.InformationFail",
+              "SettingsUI.Update.InformationUnStandardized",
+              "SettingsUI.Update.Latest",
+              "SettingsUI.Update.ManualDownload",
+              "SettingsUI.Update.New",
+              "SettingsUI.Update.Newer",
+              "SettingsUI.Update.NotStarted",
+              "SettingsUI.Update.ObtainInformation",
+              "SettingsUI.Update.Repair",
+              "SettingsUI.Update.Restart",
+              "SettingsUI.Update.UpdateNow"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance"
+            ],
+            "business_calls": [
+              "Clear",
+              "ClearRenderTargetView",
+              "GetUpdateChannel",
+              "Hide",
+              "ProductHost",
+              "ProductRuntimeSnapshot",
+              "QueueConfigWrite",
+              "QueueInformation",
+              "SetEraserDevelopmentOptions",
+              "SetOccluded",
+              "SetVisible",
+              "SettingWindowProc",
+              "ShellExecuteW",
+              "Show",
+              "Start"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Update.NotStarted",
+                "line": 7881
+              },
+              {
+                "value": "SettingsUI.Update.Repair",
+                "line": 7886
+              },
+              {
+                "value": "Dialogs.UpdateModuleUnavailable.Body",
+                "line": 7889
+              },
+              {
+                "value": "SettingsUI.Update.ManualDownload",
+                "line": 7896
+              },
+              {
+                "value": "SettingsUI.Update.ObtainInformation",
+                "line": 7928
+              },
+              {
+                "value": "SettingsUI.Update.ManualDownload",
+                "line": 7933
+              },
+              {
+                "value": "SettingsUI.Update.InformationFail",
+                "line": 7965
+              },
+              {
+                "value": "SettingsUI.Update.ManualDownload",
+                "line": 7970
+              },
+              {
+                "value": "SettingsUI.Update.InformationDamage",
+                "line": 8002
+              },
+              {
+                "value": "SettingsUI.Update.ManualDownload",
+                "line": 8007
+              },
+              {
+                "value": "SettingsUI.Update.InformationUnStandardized",
+                "line": 8039
+              },
+              {
+                "value": "SettingsUI.Update.ManualDownload",
+                "line": 8044
+              },
+              {
+                "value": "SettingsUI.Update.Downloading",
+                "line": 8078
+              },
+              {
+                "value": "SettingsUI.Update.Downloading",
+                "line": 8082
+              },
+              {
+                "value": "SettingsUI.Update.DownloadFail",
+                "line": 8125
+              },
+              {
+                "value": "SettingsUI.Update.ManualDownload",
+                "line": 8130
+              },
+              {
+                "value": "SettingsUI.Update.DownloadDamage",
+                "line": 8162
+              },
+              {
+                "value": "SettingsUI.Update.ManualDownload",
+                "line": 8167
+              },
+              {
+                "value": "SettingsUI.Update.Restart",
+                "line": 8199
+              },
+              {
+                "value": "SettingsUI.Update.Channel.Other",
+                "line": 8228
+              },
+              {
+                "value": "SettingsUI.Update.Channel.LTS",
+                "line": 8230
+              },
+              {
+                "value": "SettingsUI.Update.Channel.Insider",
+                "line": 8231
+              },
+              {
+                "value": "SettingsUI.Update.Channel.Dev",
+                "line": 8232
+              },
+              {
+                "value": "SettingsUI.Update.Channel.Canary",
+                "line": 8233
+              },
+              {
+                "value": "SettingsUI.Update.Latest",
+                "line": 8235
+              },
+              {
+                "value": "SettingsUI.Update.Channel.Other",
+                "line": 8264
+              },
+              {
+                "value": "SettingsUI.Update.Channel.LTS",
+                "line": 8266
+              },
+              {
+                "value": "SettingsUI.Update.Channel.Insider",
+                "line": 8267
+              },
+              {
+                "value": "SettingsUI.Update.Channel.Dev",
+                "line": 8268
+              },
+              {
+                "value": "SettingsUI.Update.Channel.Canary",
+                "line": 8269
+              },
+              {
+                "value": "SettingsUI.Update.Newer",
+                "line": 8271
+              },
+              {
+                "value": "SettingsUI.Update.New",
+                "line": 8300
+              },
+              {
+                "value": "SettingsUI.Update.UpdateNow",
+                "line": 8305
+              },
+              {
+                "value": "SettingsUI.Update.Check",
+                "line": 8323
+              },
+              {
+                "value": "Dialogs.UpdateModuleUnavailable.Body",
+                "line": 8328
+              }
+            ]
+          }
+        ],
+        "all_keys": [
+          "Dialogs.Common.Cancel",
+          "Dialogs.Common.OK",
+          "Dialogs.Common.TipsTitle",
+          "Dialogs.UpdateModuleUnavailable.Body",
+          "Operate.Copy",
+          "Operate.Create",
+          "Operate.Repair",
+          "SettingsUI.CICD.Branch",
+          "SettingsUI.CICD.BuildSystem",
+          "SettingsUI.CICD.BuildSystemVersion",
+          "SettingsUI.CICD.BuildTime",
+          "SettingsUI.CICD.MSBuildVersion",
+          "SettingsUI.CICD.N",
+          "SettingsUI.CICD.Repository",
+          "SettingsUI.CICD.RunnerImageSystem",
+          "SettingsUI.CICD.RunnerImageVersion",
+          "SettingsUI.CICD.Submitter",
+          "SettingsUI.Community.N",
+          "SettingsUI.Component.N",
+          "SettingsUI.Configuration.CanvasSave.Enable",
+          "SettingsUI.Configuration.CanvasSave.EnableE",
+          "SettingsUI.Configuration.CanvasSave.N",
+          "SettingsUI.Configuration.Clean.Enable",
+          "SettingsUI.Configuration.Clean.EnableE",
+          "SettingsUI.Configuration.Clean.N",
+          "SettingsUI.Configuration.N",
+          "SettingsUI.DebugSoftware.N",
+          "SettingsUI.Draw.Effect.Device.E",
+          "SettingsUI.Draw.Effect.Device.MousePen",
+          "SettingsUI.Draw.Effect.Device.N",
+          "SettingsUI.Draw.Effect.Device.Touch",
+          "SettingsUI.Draw.Effect.N",
+          "SettingsUI.Draw.Eraser.Automatic",
+          "SettingsUI.Draw.Eraser.Input.MouseLeft",
+          "SettingsUI.Draw.Eraser.Input.MouseRight",
+          "SettingsUI.Draw.Eraser.Input.PenTail",
+          "SettingsUI.Draw.Eraser.Input.PenTip",
+          "SettingsUI.Draw.Eraser.Input.Touch",
+          "SettingsUI.Draw.Eraser.Kind.Fixed",
+          "SettingsUI.Draw.Eraser.Kind.Speed",
+          "SettingsUI.Draw.Eraser.N",
+          "SettingsUI.Draw.Eraser.Response.Auto",
+          "SettingsUI.Draw.Eraser.Response.Digitizer",
+          "SettingsUI.Draw.Eraser.Response.ScreenPen",
+          "SettingsUI.Draw.Eraser.ResponseFor",
+          "SettingsUI.Draw.Eraser.TouchArea.E",
+          "SettingsUI.Draw.Eraser.TouchArea.N",
+          "SettingsUI.Draw.N",
+          "SettingsUI.ExitSoftware.N",
+          "SettingsUI.Experimental.ConsoleOutput.Cursor.E",
+          "SettingsUI.Experimental.ConsoleOutput.Cursor.N",
+          "SettingsUI.Experimental.ConsoleOutput.Draw3.E",
+          "SettingsUI.Experimental.ConsoleOutput.Draw3.N",
+          "SettingsUI.Experimental.ConsoleOutput.PptCOM.E",
+          "SettingsUI.Experimental.ConsoleOutput.PptCOM.N",
+          "SettingsUI.Experimental.ConsoleOutput.TouchArea.E",
+          "SettingsUI.Experimental.ConsoleOutput.TouchArea.N",
+          "SettingsUI.Home.BilibiliChannel",
+          "SettingsUI.Home.Developer",
+          "SettingsUI.Home.FeedBack",
+          "SettingsUI.Home.Group",
+          "SettingsUI.Home.GroupE",
+          "SettingsUI.Home.N",
+          "SettingsUI.Home.Prompt",
+          "SettingsUI.HotKey.E",
+          "SettingsUI.HotKey.N",
+          "SettingsUI.Language.N",
+          "SettingsUI.Language.UI.Language.en_US",
+          "SettingsUI.Language.UI.Language.zh_CN",
+          "SettingsUI.Language.UI.Language.zh_TW",
+          "SettingsUI.Language.UI.N",
+          "SettingsUI.Language.UI.Select",
+          "SettingsUI.Language.UI.SelectE",
+          "SettingsUI.Language.UI.Warn",
+          "SettingsUI.N",
+          "SettingsUI.PlugIn.DesktopDrawpadBlocker.E",
+          "SettingsUI.PlugIn.DesktopDrawpadBlocker.N",
+          "SettingsUI.PlugIn.LnkHelper.Capability.FixLnk",
+          "SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE",
+          "SettingsUI.PlugIn.LnkHelper.Capability.N",
+          "SettingsUI.PlugIn.LnkHelper.E",
+          "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk",
+          "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE",
+          "SettingsUI.PlugIn.LnkHelper.Expansion.N",
+          "SettingsUI.PlugIn.LnkHelper.N",
+          "SettingsUI.PlugIn.N",
+          "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage",
+          "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE",
+          "SettingsUI.PlugIn.PPTHelper.BasicLogic.N",
+          "SettingsUI.PlugIn.PPTHelper.E",
+          "SettingsUI.PlugIn.PPTHelper.Error",
+          "SettingsUI.PlugIn.PPTHelper.N",
+          "SettingsUI.PlugIn.PPTHelper.Reset",
+          "SettingsUI.PlugIn.PPTHelper.Solve",
+          "SettingsUI.PlugIn.PPTHelper.Sync",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.N",
+          "SettingsUI.PlugIn.PPTHelper.Tip",
+          "SettingsUI.PlugIn.PPTHelper.VersionError",
+          "SettingsUI.PlugIn.PPTHelper.Warn",
+          "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth",
+          "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth",
+          "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N",
+          "SettingsUI.PlugIn.PPTHelper.WidgetPosition.N",
+          "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember",
+          "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.N",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth",
+          "SettingsUI.PlugIn.SuperTop.Capability.Indicator",
+          "SettingsUI.PlugIn.SuperTop.Capability.IndicatorE",
+          "SettingsUI.PlugIn.SuperTop.Capability.N",
+          "SettingsUI.PlugIn.SuperTop.Capability.SuperTop",
+          "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1",
+          "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2",
+          "SettingsUI.PlugIn.SuperTop.E",
+          "SettingsUI.PlugIn.SuperTop.N",
+          "SettingsUI.PlugIn.SuperTop.Warn",
+          "SettingsUI.Regular.Appearance.AnimationEnable",
+          "SettingsUI.Regular.Appearance.AnimationEnableE",
+          "SettingsUI.Regular.Appearance.AnimationRate",
+          "SettingsUI.Regular.Appearance.AnimationRateE",
+          "SettingsUI.Regular.Appearance.BarZoom.E",
+          "SettingsUI.Regular.Appearance.BarZoom.Ind",
+          "SettingsUI.Regular.Appearance.BarZoom.N",
+          "SettingsUI.Regular.Appearance.DynamicEdgeLighting",
+          "SettingsUI.Regular.Appearance.DynamicEdgeLightingE",
+          "SettingsUI.Regular.Appearance.EdgeLighting",
+          "SettingsUI.Regular.Appearance.EdgeLightingE",
+          "SettingsUI.Regular.Appearance.N",
+          "SettingsUI.Regular.Appearance.SettingUIScale.E",
+          "SettingsUI.Regular.Appearance.SettingUIScale.Ind",
+          "SettingsUI.Regular.Appearance.SettingUIScale.N",
+          "SettingsUI.Regular.Behavior.N",
+          "SettingsUI.Regular.Behavior.RightClickClose",
+          "SettingsUI.Regular.Behavior.RightClickCloseE",
+          "SettingsUI.Regular.Behavior.TopWindow.E",
+          "SettingsUI.Regular.Behavior.TopWindow.K_100ms",
+          "SettingsUI.Regular.Behavior.TopWindow.K_10s",
+          "SettingsUI.Regular.Behavior.TopWindow.K_1s",
+          "SettingsUI.Regular.Behavior.TopWindow.K_30s",
+          "SettingsUI.Regular.Behavior.TopWindow.K_3s",
+          "SettingsUI.Regular.Behavior.TopWindow.K_500ms",
+          "SettingsUI.Regular.Behavior.TopWindow.K_5s",
+          "SettingsUI.Regular.Behavior.TopWindow.N",
+          "SettingsUI.Regular.N",
+          "SettingsUI.Regular.StartUp.AutoStart",
+          "SettingsUI.Regular.StartUp.AutoStartE",
+          "SettingsUI.Regular.StartUp.Link.E",
+          "SettingsUI.Regular.StartUp.Link.More",
+          "SettingsUI.Regular.StartUp.Link.N",
+          "SettingsUI.Regular.StartUp.LoadingAnimation",
+          "SettingsUI.Regular.StartUp.N",
+          "SettingsUI.Regular.Tentative.N",
+          "SettingsUI.Regular.Tentative.SafeMode.E",
+          "SettingsUI.Regular.Tentative.SafeMode.Mode1",
+          "SettingsUI.Regular.Tentative.SafeMode.Mode2",
+          "SettingsUI.Regular.Tentative.SafeMode.Mode3",
+          "SettingsUI.Regular.Tentative.SafeMode.Mode4",
+          "SettingsUI.Regular.Tentative.SafeMode.N",
+          "SettingsUI.RestartSoftware.N",
+          "SettingsUI.Sponsor.N",
+          "SettingsUI.Update.Channel.Canary",
+          "SettingsUI.Update.Channel.Dev",
+          "SettingsUI.Update.Channel.Insider",
+          "SettingsUI.Update.Channel.LTS",
+          "SettingsUI.Update.Channel.Other",
+          "SettingsUI.Update.Check",
+          "SettingsUI.Update.DownloadDamage",
+          "SettingsUI.Update.DownloadFail",
+          "SettingsUI.Update.Downloading",
+          "SettingsUI.Update.InformationDamage",
+          "SettingsUI.Update.InformationFail",
+          "SettingsUI.Update.InformationUnStandardized",
+          "SettingsUI.Update.Latest",
+          "SettingsUI.Update.ManualDownload",
+          "SettingsUI.Update.New",
+          "SettingsUI.Update.Newer",
+          "SettingsUI.Update.NotStarted",
+          "SettingsUI.Update.ObtainInformation",
+          "SettingsUI.Update.Repair",
+          "SettingsUI.Update.Restart",
+          "SettingsUI.Update.UpdateNow",
+          "SettingsUI.Version.Info.AutoBuild",
+          "SettingsUI.Version.Info.CICDInfo",
+          "SettingsUI.Version.Info.DebugTag",
+          "SettingsUI.Version.Info.ManualBuild",
+          "SettingsUI.Version.Info.N",
+          "SettingsUI.Version.Info.ReleaseArch",
+          "SettingsUI.Version.Info.ReleaseDate",
+          "SettingsUI.Version.Info.ReleaseTag",
+          "SettingsUI.Version.Info.ReleaseVersion",
+          "SettingsUI.Version.ManualUpdate.ManualUpdate",
+          "SettingsUI.Version.ManualUpdate.N",
+          "SettingsUI.Version.N",
+          "SettingsUI.Version.Repair.N",
+          "SettingsUI.Version.Repair.RepairArch",
+          "SettingsUI.Version.Repair.RepairSoftware",
+          "SettingsUI.Version.Repair.RepairSoftwareE",
+          "SettingsUI.Version.Update.Arch.Arm64",
+          "SettingsUI.Version.Update.Arch.E",
+          "SettingsUI.Version.Update.Arch.K_32",
+          "SettingsUI.Version.Update.Arch.K_64",
+          "SettingsUI.Version.Update.Arch.N",
+          "SettingsUI.Version.Update.AutoUpate",
+          "SettingsUI.Version.Update.Channel.Canary",
+          "SettingsUI.Version.Update.Channel.Insider",
+          "SettingsUI.Version.Update.Channel.LTS",
+          "SettingsUI.Version.Update.Channel.N",
+          "SettingsUI.Version.Update.ChannelTip",
+          "SettingsUI.Version.Update.N",
+          "SettingsUI.Version.UserInfo.CopyUserId",
+          "SettingsUI.Version.UserInfo.N",
+          "SettingsUI.Version.UserInfo.UserId",
+          "SettingsUI.Version.VersionTip",
+          "Widget.LnkName"
+        ]
+      }
+    ],
+    "fluent": [
+      {
+        "path": "Inkeys/Cache/SettingBaseline/fluent/Inkeys/IdtConfiguration.cpp",
+        "sha256": "958ecd8915d86d6ef8530615550bea1f0f49dbb9d34c6592708265ef7f14dba1",
+        "line_count": 1151,
+        "pages": [],
+        "all_keys": []
+      },
+      {
+        "path": "Inkeys/Cache/SettingBaseline/fluent/Inkeys/Inkeys/Other/Other.Config.cpp",
+        "sha256": "26f811b4c4afe425c21bfbb8df91c7bcc60e5a0342a04dbaddf52ea3966a455e",
+        "line_count": 944,
+        "pages": [],
+        "all_keys": []
+      },
+      {
+        "path": "Inkeys/Cache/SettingBaseline/fluent/Inkeys/Inkeys/UI/Setting/Setting.cpp",
+        "sha256": "5acb2d8337f699840465f904b704f3447a08a1dddbae213c0323ea750a35bf37",
+        "line_count": 4190,
+        "pages": [
+          {
+            "page": "settingTabEnum::tab1",
+            "line": 2167,
+            "i18n_keys": [],
+            "configuration_refs": [],
+            "business_calls": [
+              "ShellExecuteW"
+            ],
+            "key_occurrences": []
+          },
+          {
+            "page": "settingTabEnum::Language",
+            "line": 2201,
+            "i18n_keys": [
+              "SettingsUI.Language.N",
+              "SettingsUI.Language.UI.Language.en_US",
+              "SettingsUI.Language.UI.Language.zh_CN",
+              "SettingsUI.Language.UI.Language.zh_TW",
+              "SettingsUI.Language.UI.N",
+              "SettingsUI.Language.UI.Select",
+              "SettingsUI.Language.UI.SelectE",
+              "SettingsUI.Language.UI.Warn"
+            ],
+            "configuration_refs": [
+              "setlist.selectLanguage"
+            ],
+            "business_calls": [
+              "QueueConfirmRestart",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Language.N",
+                "line": 2203
+              },
+              {
+                "value": "SettingsUI.Language.UI.N",
+                "line": 2204
+              },
+              {
+                "value": "SettingsUI.Language.UI.Language.en_US",
+                "line": 2208
+              },
+              {
+                "value": "SettingsUI.Language.UI.Language.zh_CN",
+                "line": 2209
+              },
+              {
+                "value": "SettingsUI.Language.UI.Language.zh_TW",
+                "line": 2210
+              },
+              {
+                "value": "SettingsUI.Language.UI.Select",
+                "line": 2214
+              },
+              {
+                "value": "SettingsUI.Language.UI.SelectE",
+                "line": 2215
+              },
+              {
+                "value": "SettingsUI.Language.UI.Warn",
+                "line": 2225
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabConfiguration",
+            "line": 2231,
+            "i18n_keys": [
+              "SettingsUI.Configuration.CanvasSave.Enable",
+              "SettingsUI.Configuration.CanvasSave.EnableE",
+              "SettingsUI.Configuration.CanvasSave.N",
+              "SettingsUI.Configuration.CanvasSave.SaveTime.E",
+              "SettingsUI.Configuration.CanvasSave.SaveTime.K_10d",
+              "SettingsUI.Configuration.CanvasSave.SaveTime.K_1d",
+              "SettingsUI.Configuration.CanvasSave.SaveTime.K_30d",
+              "SettingsUI.Configuration.CanvasSave.SaveTime.K_3d",
+              "SettingsUI.Configuration.CanvasSave.SaveTime.K_5d",
+              "SettingsUI.Configuration.CanvasSave.SaveTime.N",
+              "SettingsUI.Configuration.CanvasSave.SaveTime.Never",
+              "SettingsUI.Configuration.Clean.Enable",
+              "SettingsUI.Configuration.Clean.EnableE",
+              "SettingsUI.Configuration.Clean.N",
+              "SettingsUI.Configuration.N"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.Config.AutoClean",
+              "setlist.saveSetting.enable",
+              "setlist.saveSetting.saveDays"
+            ],
+            "business_calls": [
+              "QueueConfigWrite",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Configuration.N",
+                "line": 2233
+              },
+              {
+                "value": "SettingsUI.Configuration.Clean.N",
+                "line": 2234
+              },
+              {
+                "value": "SettingsUI.Configuration.Clean.Enable",
+                "line": 2238
+              },
+              {
+                "value": "SettingsUI.Configuration.Clean.EnableE",
+                "line": 2239
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.N",
+                "line": 2250
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.Enable",
+                "line": 2253
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.EnableE",
+                "line": 2254
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.SaveTime.K_1d",
+                "line": 2265
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.SaveTime.K_3d",
+                "line": 2266
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.SaveTime.K_5d",
+                "line": 2267
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.SaveTime.K_10d",
+                "line": 2268
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.SaveTime.K_30d",
+                "line": 2269
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.SaveTime.Never",
+                "line": 2270
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.SaveTime.N",
+                "line": 2274
+              },
+              {
+                "value": "SettingsUI.Configuration.CanvasSave.SaveTime.E",
+                "line": 2275
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab6",
+            "line": 2287,
+            "i18n_keys": [
+              "Operate.Copy",
+              "Operate.Repair",
+              "SettingsUI.Version.Info.AutoBuild",
+              "SettingsUI.Version.Info.CICDInfo",
+              "SettingsUI.Version.Info.DebugTag",
+              "SettingsUI.Version.Info.ManualBuild",
+              "SettingsUI.Version.Info.N",
+              "SettingsUI.Version.Info.ReleaseArch",
+              "SettingsUI.Version.Info.ReleaseDate",
+              "SettingsUI.Version.Info.ReleaseTag",
+              "SettingsUI.Version.Info.ReleaseVersion",
+              "SettingsUI.Version.ManualUpdate.ManualUpdate",
+              "SettingsUI.Version.ManualUpdate.N",
+              "SettingsUI.Version.N",
+              "SettingsUI.Version.Repair.N",
+              "SettingsUI.Version.Repair.RepairArch",
+              "SettingsUI.Version.Repair.RepairSoftware",
+              "SettingsUI.Version.Repair.RepairSoftwareE",
+              "SettingsUI.Version.Update.Arch.Arm64",
+              "SettingsUI.Version.Update.Arch.E",
+              "SettingsUI.Version.Update.Arch.K_32",
+              "SettingsUI.Version.Update.Arch.K_64",
+              "SettingsUI.Version.Update.Arch.N",
+              "SettingsUI.Version.Update.AutoUpate",
+              "SettingsUI.Version.Update.Channel.Canary",
+              "SettingsUI.Version.Update.Channel.Insider",
+              "SettingsUI.Version.Update.Channel.LTS",
+              "SettingsUI.Version.Update.Channel.N",
+              "SettingsUI.Version.Update.ChannelTip",
+              "SettingsUI.Version.Update.N",
+              "SettingsUI.Version.UserInfo.CopyUserId",
+              "SettingsUI.Version.UserInfo.N",
+              "SettingsUI.Version.UserInfo.UserId",
+              "SettingsUI.Version.VersionTip"
+            ],
+            "configuration_refs": [],
+            "business_calls": [
+              "CloseClipboard",
+              "EmptyClipboard",
+              "GetUpdateArchitecture",
+              "GetUpdateChannel",
+              "GlobalAlloc",
+              "GlobalFree",
+              "GlobalLock",
+              "GlobalUnlock",
+              "OpenClipboard",
+              "QueueAutomaticUpdate",
+              "QueueBusiness",
+              "SetClipboardData",
+              "SetEnableAutoUpdate",
+              "SetUpdateArchitecture",
+              "SetUpdateChannel",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Version.N",
+                "line": 2289
+              },
+              {
+                "value": "SettingsUI.Version.ManualUpdate.N",
+                "line": 2293
+              },
+              {
+                "value": "SettingsUI.Version.ManualUpdate.ManualUpdate",
+                "line": 2296
+              },
+              {
+                "value": "SettingsUI.Version.N",
+                "line": 2304
+              },
+              {
+                "value": "SettingsUI.Version.VersionTip",
+                "line": 2305
+              },
+              {
+                "value": "SettingsUI.Version.Info.N",
+                "line": 2309
+              },
+              {
+                "value": "SettingsUI.Version.Info.ReleaseVersion",
+                "line": 2331
+              },
+              {
+                "value": "SettingsUI.Version.Info.ReleaseDate",
+                "line": 2333
+              },
+              {
+                "value": "SettingsUI.Version.Info.ReleaseArch",
+                "line": 2335
+              },
+              {
+                "value": "SettingsUI.Version.Info.ReleaseTag",
+                "line": 2338
+              },
+              {
+                "value": "SettingsUI.Version.Info.DebugTag",
+                "line": 2340
+              },
+              {
+                "value": "SettingsUI.Version.Info.ManualBuild",
+                "line": 2346
+              },
+              {
+                "value": "SettingsUI.Version.Info.AutoBuild",
+                "line": 2350
+              },
+              {
+                "value": "SettingsUI.Version.Info.CICDInfo",
+                "line": 2352
+              },
+              {
+                "value": "SettingsUI.Version.UserInfo.N",
+                "line": 2360
+              },
+              {
+                "value": "SettingsUI.Version.UserInfo.UserId",
+                "line": 2361
+              },
+              {
+                "value": "SettingsUI.Version.UserInfo.CopyUserId",
+                "line": 2365
+              },
+              {
+                "value": "Operate.Copy",
+                "line": 2367
+              },
+              {
+                "value": "SettingsUI.Version.Repair.N",
+                "line": 2391
+              },
+              {
+                "value": "SettingsUI.Version.Repair.RepairSoftware",
+                "line": 2394
+              },
+              {
+                "value": "SettingsUI.Version.Repair.RepairSoftwareE",
+                "line": 2395
+              },
+              {
+                "value": "Operate.Repair",
+                "line": 2396
+              },
+              {
+                "value": "SettingsUI.Version.Repair.RepairArch",
+                "line": 2414
+              },
+              {
+                "value": "SettingsUI.Version.Update.N",
+                "line": 2419
+              },
+              {
+                "value": "SettingsUI.Version.Update.AutoUpate",
+                "line": 2423
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.N",
+                "line": 2448
+              },
+              {
+                "value": "SettingsUI.Version.Update.ChannelTip",
+                "line": 2449
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.LTS",
+                "line": 2453
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.Insider",
+                "line": 2454
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.Canary",
+                "line": 2455
+              },
+              {
+                "value": "SettingsUI.Version.Update.Channel.N",
+                "line": 2462
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.K_64",
+                "line": 2490
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.K_32",
+                "line": 2491
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.Arm64",
+                "line": 2492
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.N",
+                "line": 2499
+              },
+              {
+                "value": "SettingsUI.Version.Update.Arch.E",
+                "line": 2500
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabCICD",
+            "line": 2530,
+            "i18n_keys": [
+              "SettingsUI.CICD.Branch",
+              "SettingsUI.CICD.BuildSystem",
+              "SettingsUI.CICD.BuildSystemVersion",
+              "SettingsUI.CICD.BuildTime",
+              "SettingsUI.CICD.MSBuildVersion",
+              "SettingsUI.CICD.N",
+              "SettingsUI.CICD.Repository",
+              "SettingsUI.CICD.RunnerImageSystem",
+              "SettingsUI.CICD.RunnerImageVersion",
+              "SettingsUI.CICD.Submitter",
+              "SettingsUI.Version.N"
+            ],
+            "configuration_refs": [],
+            "business_calls": [
+              "ShellExecuteW"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Version.N",
+                "line": 2535
+              },
+              {
+                "value": "SettingsUI.CICD.N",
+                "line": 2537
+              },
+              {
+                "value": "SettingsUI.CICD.Repository",
+                "line": 2545
+              },
+              {
+                "value": "SettingsUI.CICD.Branch",
+                "line": 2554
+              },
+              {
+                "value": "SettingsUI.CICD.Submitter",
+                "line": 2555
+              },
+              {
+                "value": "SettingsUI.CICD.BuildTime",
+                "line": 2556
+              },
+              {
+                "value": "SettingsUI.CICD.BuildSystem",
+                "line": 2557
+              },
+              {
+                "value": "SettingsUI.CICD.BuildSystemVersion",
+                "line": 2558
+              },
+              {
+                "value": "SettingsUI.CICD.RunnerImageSystem",
+                "line": 2560
+              },
+              {
+                "value": "SettingsUI.CICD.RunnerImageVersion",
+                "line": 2562
+              },
+              {
+                "value": "SettingsUI.CICD.MSBuildVersion",
+                "line": 2564
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab2",
+            "line": 2576,
+            "i18n_keys": [
+              "Widget.LnkName"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable",
+              "Inkeys::config.UI.Bar.Zoom",
+              "Inkeys::config.UI.Bar.Zoom.load",
+              "setlist.RightClickClose",
+              "setlist.regularSetting.avoidFullScreen",
+              "setlist.regularSetting.teachingSafetyMode",
+              "setlist.settingGlobalScale",
+              "setlist.startUp",
+              "setlist.topSleepTime"
+            ],
+            "business_calls": [
+              "CrashHandler::SetFlag",
+              "Inkeys::UI::Bar::SetConfigZoom",
+              "Inkeys::UI::Bar::SetEdgeLightingOptions",
+              "QueueBusiness",
+              "QueueConfigWrite",
+              "QueueFontRebuild",
+              "SetStartupState",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "Widget.LnkName",
+                "line": 2597
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab3",
+            "line": 2668,
+            "i18n_keys": [
+              "SettingsUI.Draw.AIDraw.EndpointAdsorption",
+              "SettingsUI.Draw.AIDraw.EndpointAdsorptionE",
+              "SettingsUI.Draw.AIDraw.N",
+              "SettingsUI.Draw.AIDraw.PenStay",
+              "SettingsUI.Draw.AIDraw.PenStayE",
+              "SettingsUI.Draw.AIDraw.PenUp",
+              "SettingsUI.Draw.AIDraw.PenUpE",
+              "SettingsUI.Draw.DrawBehavior.N",
+              "SettingsUI.Draw.DrawBehavior.SoomthWriting",
+              "SettingsUI.Draw.Effect.Device.E",
+              "SettingsUI.Draw.Effect.Device.MousePen",
+              "SettingsUI.Draw.Effect.Device.N",
+              "SettingsUI.Draw.Effect.Device.Touch",
+              "SettingsUI.Draw.Effect.N",
+              "SettingsUI.Draw.N",
+              "SettingsUI.Draw.RubberThickness.Calc.E",
+              "SettingsUI.Draw.RubberThickness.Calc.Mode1",
+              "SettingsUI.Draw.RubberThickness.Calc.Mode2",
+              "SettingsUI.Draw.RubberThickness.Calc.Mode3",
+              "SettingsUI.Draw.RubberThickness.Calc.N",
+              "SettingsUI.Draw.RubberThickness.N",
+              "SettingsUI.Draw.Tentative.HideCursor",
+              "SettingsUI.Draw.Tentative.HideCursorE",
+              "SettingsUI.Draw.Tentative.N",
+              "SettingsUI.Performance.DrawMode.N",
+              "SettingsUI.Performance.DrawMode.Prepare.E",
+              "SettingsUI.Performance.DrawMode.Prepare.N",
+              "SettingsUI.Performance.DrawMode.SuperDraw",
+              "SettingsUI.Performance.DrawMode.SuperDrawE"
+            ],
+            "configuration_refs": [
+              "setlist.eraserSetting.eraserMode",
+              "setlist.hideTouchPointer",
+              "setlist.liftStraighten",
+              "setlist.paintDevice",
+              "setlist.performanceSetting.preparationQuantity",
+              "setlist.performanceSetting.superDraw",
+              "setlist.pointAdsorption",
+              "setlist.smoothWriting",
+              "setlist.waitStraighten"
+            ],
+            "business_calls": [
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Draw.N",
+                "line": 2670
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.N",
+                "line": 2672
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.Device.Touch",
+                "line": 2675
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.Device.MousePen",
+                "line": 2676
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.Device.N",
+                "line": 2680
+              },
+              {
+                "value": "SettingsUI.Draw.Effect.Device.E",
+                "line": 2681
+              },
+              {
+                "value": "SettingsUI.Draw.AIDraw.N",
+                "line": 2693
+              },
+              {
+                "value": "SettingsUI.Draw.AIDraw.PenUp",
+                "line": 2696
+              },
+              {
+                "value": "SettingsUI.Draw.AIDraw.PenUpE",
+                "line": 2697
+              },
+              {
+                "value": "SettingsUI.Draw.AIDraw.PenStay",
+                "line": 2707
+              },
+              {
+                "value": "SettingsUI.Draw.AIDraw.PenStayE",
+                "line": 2708
+              },
+              {
+                "value": "SettingsUI.Draw.AIDraw.EndpointAdsorption",
+                "line": 2718
+              },
+              {
+                "value": "SettingsUI.Draw.AIDraw.EndpointAdsorptionE",
+                "line": 2719
+              },
+              {
+                "value": "SettingsUI.Draw.DrawBehavior.N",
+                "line": 2728
+              },
+              {
+                "value": "SettingsUI.Draw.DrawBehavior.SoomthWriting",
+                "line": 2731
+              },
+              {
+                "value": "SettingsUI.Draw.RubberThickness.N",
+                "line": 2742
+              },
+              {
+                "value": "SettingsUI.Draw.RubberThickness.Calc.Mode3",
+                "line": 2745
+              },
+              {
+                "value": "SettingsUI.Draw.RubberThickness.Calc.Mode2",
+                "line": 2746
+              },
+              {
+                "value": "SettingsUI.Draw.RubberThickness.Calc.Mode1",
+                "line": 2747
+              },
+              {
+                "value": "SettingsUI.Draw.RubberThickness.Calc.N",
+                "line": 2751
+              },
+              {
+                "value": "SettingsUI.Draw.RubberThickness.Calc.E",
+                "line": 2752
+              },
+              {
+                "value": "SettingsUI.Performance.DrawMode.N",
+                "line": 2763
+              },
+              {
+                "value": "SettingsUI.Performance.DrawMode.Prepare.N",
+                "line": 2767
+              },
+              {
+                "value": "SettingsUI.Performance.DrawMode.Prepare.E",
+                "line": 2768
+              },
+              {
+                "value": "SettingsUI.Performance.DrawMode.SuperDraw",
+                "line": 2780
+              },
+              {
+                "value": "SettingsUI.Performance.DrawMode.SuperDrawE",
+                "line": 2781
+              },
+              {
+                "value": "SettingsUI.Draw.Tentative.N",
+                "line": 2790
+              },
+              {
+                "value": "SettingsUI.Draw.Tentative.HideCursor",
+                "line": 2793
+              },
+              {
+                "value": "SettingsUI.Draw.Tentative.HideCursorE",
+                "line": 2794
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabPreset",
+            "line": 2805,
+            "i18n_keys": [
+              "SettingsUI.Preset.Memory.Color",
+              "SettingsUI.Preset.Memory.ColorE",
+              "SettingsUI.Preset.Memory.N",
+              "SettingsUI.Preset.Memory.Thickness",
+              "SettingsUI.Preset.Memory.ThicknessE",
+              "SettingsUI.Preset.N",
+              "SettingsUI.Preset.Preset.AutoThickness",
+              "SettingsUI.Preset.Preset.AutoThicknessE",
+              "SettingsUI.Preset.Preset.Highlighter",
+              "SettingsUI.Preset.Preset.N",
+              "SettingsUI.Preset.Preset.Pen"
+            ],
+            "configuration_refs": [
+              "setlist.presetSetting.autoDefaultWidth",
+              "setlist.presetSetting.defaultBrush1Width",
+              "setlist.presetSetting.defaultHighlighter1Width",
+              "setlist.presetSetting.memoryColor",
+              "setlist.presetSetting.memoryWidth"
+            ],
+            "business_calls": [
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Preset.N",
+                "line": 2807
+              },
+              {
+                "value": "SettingsUI.Preset.Memory.N",
+                "line": 2808
+              },
+              {
+                "value": "SettingsUI.Preset.Memory.Thickness",
+                "line": 2811
+              },
+              {
+                "value": "SettingsUI.Preset.Memory.ThicknessE",
+                "line": 2812
+              },
+              {
+                "value": "SettingsUI.Preset.Memory.Color",
+                "line": 2822
+              },
+              {
+                "value": "SettingsUI.Preset.Memory.ColorE",
+                "line": 2823
+              },
+              {
+                "value": "SettingsUI.Preset.Preset.N",
+                "line": 2832
+              },
+              {
+                "value": "SettingsUI.Preset.Preset.AutoThicknessE",
+                "line": 2837
+              },
+              {
+                "value": "SettingsUI.Preset.Preset.AutoThickness",
+                "line": 2841
+              },
+              {
+                "value": "SettingsUI.Preset.Preset.Pen",
+                "line": 2855
+              },
+              {
+                "value": "SettingsUI.Preset.Preset.Highlighter",
+                "line": 2872
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab4",
+            "line": 2889,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.N"
+            ],
+            "configuration_refs": [],
+            "business_calls": [
+              "ShellExecuteW"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.N",
+                "line": 2897
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabPlug1",
+            "line": 2927,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.DesktopDrawpadBlocker.E",
+              "SettingsUI.PlugIn.DesktopDrawpadBlocker.N",
+              "SettingsUI.PlugIn.LnkHelper.E",
+              "SettingsUI.PlugIn.LnkHelper.N",
+              "SettingsUI.PlugIn.N",
+              "SettingsUI.PlugIn.PPTHelper.E",
+              "SettingsUI.PlugIn.PPTHelper.N",
+              "SettingsUI.PlugIn.PPTHelper.VersionError",
+              "SettingsUI.PlugIn.SuperTop.E",
+              "SettingsUI.PlugIn.SuperTop.N"
+            ],
+            "configuration_refs": [
+              "ddbInteractionSetList.DdbEdition"
+            ],
+            "business_calls": [],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.N",
+                "line": 2929
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.VersionError",
+                "line": 2932
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.N",
+                "line": 2935
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.E",
+                "line": 2936
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.N",
+                "line": 2939
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.E",
+                "line": 2940
+              },
+              {
+                "value": "SettingsUI.PlugIn.DesktopDrawpadBlocker.N",
+                "line": 2943
+              },
+              {
+                "value": "SettingsUI.PlugIn.DesktopDrawpadBlocker.E",
+                "line": 2945
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.N",
+                "line": 2948
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.E",
+                "line": 2949
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabPlug2",
+            "line": 2954,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixation",
+              "SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixationE",
+              "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage",
+              "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE",
+              "SettingsUI.PlugIn.PPTHelper.BasicLogic.N",
+              "SettingsUI.PlugIn.PPTHelper.Error",
+              "SettingsUI.PlugIn.PPTHelper.N",
+              "SettingsUI.PlugIn.PPTHelper.Reset",
+              "SettingsUI.PlugIn.PPTHelper.Solve",
+              "SettingsUI.PlugIn.PPTHelper.Sync",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress",
+              "SettingsUI.PlugIn.PPTHelper.Tentative.N",
+              "SettingsUI.PlugIn.PPTHelper.Tip",
+              "SettingsUI.PlugIn.PPTHelper.VersionError",
+              "SettingsUI.PlugIn.PPTHelper.Warn",
+              "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth",
+              "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomMiddle",
+              "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth",
+              "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N",
+              "SettingsUI.PlugIn.PPTHelper.WidgetPosition.N",
+              "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember",
+              "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.N",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth",
+              "SettingsUI.PlugIn.PPTHelper.WidgetScale.State.BottomSideMiddle"
+            ],
+            "configuration_refs": [
+              "Inkeys::config.PlugIn.PPTHelper.AutoTakeOver",
+              "Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand",
+              "Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce",
+              "Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress",
+              "pptComSetlist.bottomBothHeight",
+              "pptComSetlist.bottomBothWidth",
+              "pptComSetlist.bottomMiddleHeight",
+              "pptComSetlist.bottomMiddleWidth",
+              "pptComSetlist.bottomSideBothWidgetScale",
+              "pptComSetlist.bottomSideMiddleWidgetScale",
+              "pptComSetlist.fixedHandWriting",
+              "pptComSetlist.memoryWidgetPosition",
+              "pptComSetlist.middleBothHeight",
+              "pptComSetlist.middleBothWidth",
+              "pptComSetlist.middleSideBothWidgetScale",
+              "pptComSetlist.setAdmin",
+              "pptComSetlist.showBottomBoth",
+              "pptComSetlist.showBottomMiddle",
+              "pptComSetlist.showLoadingScreen",
+              "pptComSetlist.showMiddleBoth"
+            ],
+            "business_calls": [
+              "Design::SettingRow",
+              "Inkeys::UI::Ppt::NotifyConfigurationChanged",
+              "PptComWriteSetting",
+              "QueueConfigWrite",
+              "ShellExecuteW"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.VersionError",
+                "line": 2957
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.N",
+                "line": 2959
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Error",
+                "line": 2963
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.VersionError",
+                "line": 2966
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.N",
+                "line": 2971
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tip",
+                "line": 2972
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Solve",
+                "line": 2974
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.N",
+                "line": 2980
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Warn",
+                "line": 2981
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Solve",
+                "line": 2983
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.BasicLogic.N",
+                "line": 2989
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixation",
+                "line": 2991
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixationE",
+                "line": 2992
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage",
+                "line": 2999
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE",
+                "line": 3000
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N",
+                "line": 3008
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth",
+                "line": 3010
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth",
+                "line": 3019
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomMiddle",
+                "line": 3028
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetPosition.N",
+                "line": 3038
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset",
+                "line": 3041
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Reset",
+                "line": 3043
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember",
+                "line": 3057
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.N",
+                "line": 3065
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Reset",
+                "line": 3073
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Sync",
+                "line": 3074
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+                "line": 3076
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth",
+                "line": 3108
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth",
+                "line": 3112
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.WidgetScale.State.BottomSideMiddle",
+                "line": 3116
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.N",
+                "line": 3194
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver",
+                "line": 3197
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE",
+                "line": 3198
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce",
+                "line": 3206
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE",
+                "line": 3207
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand",
+                "line": 3215
+              },
+              {
+                "value": "SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress",
+                "line": 3224
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabSuperTop",
+            "line": 3233,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.SuperTop.Capability.Indicator",
+              "SettingsUI.PlugIn.SuperTop.Capability.IndicatorE",
+              "SettingsUI.PlugIn.SuperTop.Capability.N",
+              "SettingsUI.PlugIn.SuperTop.Capability.SuperTop",
+              "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1",
+              "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2",
+              "SettingsUI.PlugIn.SuperTop.N",
+              "SettingsUI.PlugIn.SuperTop.Warn"
+            ],
+            "configuration_refs": [
+              "setlist.plugInSetting.superTop.enable",
+              "setlist.plugInSetting.superTop.indicator"
+            ],
+            "business_calls": [
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.N",
+                "line": 3235
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.N",
+                "line": 3238
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Warn",
+                "line": 3239
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.N",
+                "line": 3242
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1",
+                "line": 3244
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2",
+                "line": 3245
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.SuperTop",
+                "line": 3247
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.Indicator",
+                "line": 3255
+              },
+              {
+                "value": "SettingsUI.PlugIn.SuperTop.Capability.IndicatorE",
+                "line": 3256
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabPlug3",
+            "line": 3265,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.LnkHelper.Capability.FixLnk",
+              "SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE",
+              "SettingsUI.PlugIn.LnkHelper.Capability.N",
+              "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk",
+              "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE",
+              "SettingsUI.PlugIn.LnkHelper.Expansion.N",
+              "SettingsUI.PlugIn.LnkHelper.N"
+            ],
+            "configuration_refs": [
+              "setlist.shortcutAssistant.correctLnk",
+              "setlist.shortcutAssistant.createLnk"
+            ],
+            "business_calls": [
+              "SetShortcut",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.N",
+                "line": 3267
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Capability.N",
+                "line": 3270
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Capability.FixLnk",
+                "line": 3272
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE",
+                "line": 3273
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Expansion.N",
+                "line": 3281
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk",
+                "line": 3283
+              },
+              {
+                "value": "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE",
+                "line": 3284
+              }
+            ]
+          },
+          {
+            "page": "settingPlugInTabEnum::tabPlugDDB",
+            "line": 3295,
+            "i18n_keys": [
+              "SettingsUI.PlugIn.DesktopDrawpadBlocker.N"
+            ],
+            "configuration_refs": [
+              "ddbInteractionSetList.DdbEdition",
+              "ddbInteractionSetList.DdbSHA256",
+              "ddbInteractionSetList.enable",
+              "ddbInteractionSetList.intercept",
+              "ddbInteractionSetList.runAsAdmin",
+              "ddbInteractionSetList.sleepTime"
+            ],
+            "business_calls": [
+              "QueueBusiness",
+              "QueueDdbWriteInteraction",
+              "WriteSetting"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.PlugIn.DesktopDrawpadBlocker.N",
+                "line": 3298
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabComponent",
+            "line": 3447,
+            "i18n_keys": [],
+            "configuration_refs": [
+              "setlist.component.shortcutButton.appliance.control",
+              "setlist.component.shortcutButton.appliance.explorer",
+              "setlist.component.shortcutButton.appliance.taskmgr",
+              "setlist.component.shortcutButton.keyboard.keyboardAltF4",
+              "setlist.component.shortcutButton.keyboard.keyboardesc",
+              "setlist.component.shortcutButton.linkage.classislandClassswap",
+              "setlist.component.shortcutButton.linkage.classislandProfile",
+              "setlist.component.shortcutButton.linkage.classislandSettings",
+              "setlist.component.shortcutButton.rollCall.IslandCaller1",
+              "setlist.component.shortcutButton.rollCall.IslandCaller2",
+              "setlist.component.shortcutButton.rollCall.NamePicker",
+              "setlist.component.shortcutButton.rollCall.SecRandom1",
+              "setlist.component.shortcutButton.rollCall.SecRandom2",
+              "setlist.component.shortcutButton.rollCall.SecRandom2Compat",
+              "setlist.component.shortcutButton.system.desktop",
+              "setlist.component.shortcutButton.system.lockWorkStation"
+            ],
+            "business_calls": [
+              "SyncUi3BuiltInComponents",
+              "WriteSetting"
+            ],
+            "key_occurrences": []
+          },
+          {
+            "page": "settingTabEnum::tab5",
+            "line": 3541,
+            "i18n_keys": [
+              "SettingsUI.HotKey.E",
+              "SettingsUI.HotKey.N"
+            ],
+            "configuration_refs": [],
+            "business_calls": [],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.HotKey.N",
+                "line": 3543
+              },
+              {
+                "value": "SettingsUI.HotKey.E",
+                "line": 3546
+              },
+              {
+                "value": "SettingsUI.HotKey.N",
+                "line": 3548
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tabExperimental",
+            "line": 3553,
+            "i18n_keys": [],
+            "configuration_refs": [
+              "Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable",
+              "Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate",
+              "Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load",
+              "Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable",
+              "Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate",
+              "Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic"
+            ],
+            "business_calls": [
+              "Inkeys::UI::Bar::SetAnimationOptions",
+              "Inkeys::UI::Bar::SetDebugOptions",
+              "Inkeys::UI::Bar::SetEdgeLightingOptions",
+              "QueueConfigWrite"
+            ],
+            "key_occurrences": []
+          },
+          {
+            "page": "settingTabEnum::tab8",
+            "line": 3655,
+            "i18n_keys": [
+              "SettingsUI.Sponsor.N"
+            ],
+            "configuration_refs": [],
+            "business_calls": [],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.Sponsor.N",
+                "line": 3657
+              }
+            ]
+          },
+          {
+            "page": "settingTabEnum::tab9",
+            "line": 3677,
+            "i18n_keys": [
+              "SettingsUI.DebugSoftware.N"
+            ],
+            "configuration_refs": [],
+            "business_calls": [
+              "ApplyGlobal",
+              "ApplySettingTheme",
+              "ChangeStateModeToTouchTest",
+              "Clear",
+              "ClearRenderTargetView",
+              "CloseProgram",
+              "DisableSettingBackdrop",
+              "Hide",
+              "Inkeys::UI::Setting::Design::ApplyScrollbars",
+              "Inkeys::UI::Setting::Hide",
+              "QueueResize",
+              "RestartProgram",
+              "SetOccluded",
+              "SetVisible",
+              "SettingWindowProc",
+              "ShellExecuteW",
+              "Show",
+              "Start"
+            ],
+            "key_occurrences": [
+              {
+                "value": "SettingsUI.DebugSoftware.N",
+                "line": 3679
+              }
+            ]
+          }
+        ],
+        "all_keys": [
+          "Operate.Copy",
+          "Operate.Repair",
+          "SettingsUI.CICD.Branch",
+          "SettingsUI.CICD.BuildSystem",
+          "SettingsUI.CICD.BuildSystemVersion",
+          "SettingsUI.CICD.BuildTime",
+          "SettingsUI.CICD.MSBuildVersion",
+          "SettingsUI.CICD.N",
+          "SettingsUI.CICD.Repository",
+          "SettingsUI.CICD.RunnerImageSystem",
+          "SettingsUI.CICD.RunnerImageVersion",
+          "SettingsUI.CICD.Submitter",
+          "SettingsUI.Configuration.CanvasSave.Enable",
+          "SettingsUI.Configuration.CanvasSave.EnableE",
+          "SettingsUI.Configuration.CanvasSave.N",
+          "SettingsUI.Configuration.CanvasSave.SaveTime.E",
+          "SettingsUI.Configuration.CanvasSave.SaveTime.K_10d",
+          "SettingsUI.Configuration.CanvasSave.SaveTime.K_1d",
+          "SettingsUI.Configuration.CanvasSave.SaveTime.K_30d",
+          "SettingsUI.Configuration.CanvasSave.SaveTime.K_3d",
+          "SettingsUI.Configuration.CanvasSave.SaveTime.K_5d",
+          "SettingsUI.Configuration.CanvasSave.SaveTime.N",
+          "SettingsUI.Configuration.CanvasSave.SaveTime.Never",
+          "SettingsUI.Configuration.Clean.Enable",
+          "SettingsUI.Configuration.Clean.EnableE",
+          "SettingsUI.Configuration.Clean.N",
+          "SettingsUI.Configuration.N",
+          "SettingsUI.DebugSoftware.N",
+          "SettingsUI.Design.SwitchToDark",
+          "SettingsUI.Design.SwitchToLight",
+          "SettingsUI.Draw.AIDraw.EndpointAdsorption",
+          "SettingsUI.Draw.AIDraw.EndpointAdsorptionE",
+          "SettingsUI.Draw.AIDraw.N",
+          "SettingsUI.Draw.AIDraw.PenStay",
+          "SettingsUI.Draw.AIDraw.PenStayE",
+          "SettingsUI.Draw.AIDraw.PenUp",
+          "SettingsUI.Draw.AIDraw.PenUpE",
+          "SettingsUI.Draw.DrawBehavior.N",
+          "SettingsUI.Draw.DrawBehavior.SoomthWriting",
+          "SettingsUI.Draw.Effect.Device.E",
+          "SettingsUI.Draw.Effect.Device.MousePen",
+          "SettingsUI.Draw.Effect.Device.N",
+          "SettingsUI.Draw.Effect.Device.Touch",
+          "SettingsUI.Draw.Effect.N",
+          "SettingsUI.Draw.N",
+          "SettingsUI.Draw.RubberThickness.Calc.E",
+          "SettingsUI.Draw.RubberThickness.Calc.Mode1",
+          "SettingsUI.Draw.RubberThickness.Calc.Mode2",
+          "SettingsUI.Draw.RubberThickness.Calc.Mode3",
+          "SettingsUI.Draw.RubberThickness.Calc.N",
+          "SettingsUI.Draw.RubberThickness.N",
+          "SettingsUI.Draw.Tentative.HideCursor",
+          "SettingsUI.Draw.Tentative.HideCursorE",
+          "SettingsUI.Draw.Tentative.N",
+          "SettingsUI.HotKey.E",
+          "SettingsUI.HotKey.N",
+          "SettingsUI.Language.N",
+          "SettingsUI.Language.UI.Language.en_US",
+          "SettingsUI.Language.UI.Language.zh_CN",
+          "SettingsUI.Language.UI.Language.zh_TW",
+          "SettingsUI.Language.UI.N",
+          "SettingsUI.Language.UI.Select",
+          "SettingsUI.Language.UI.SelectE",
+          "SettingsUI.Language.UI.Warn",
+          "SettingsUI.N",
+          "SettingsUI.Performance.DrawMode.N",
+          "SettingsUI.Performance.DrawMode.Prepare.E",
+          "SettingsUI.Performance.DrawMode.Prepare.N",
+          "SettingsUI.Performance.DrawMode.SuperDraw",
+          "SettingsUI.Performance.DrawMode.SuperDrawE",
+          "SettingsUI.PlugIn.DesktopDrawpadBlocker.E",
+          "SettingsUI.PlugIn.DesktopDrawpadBlocker.N",
+          "SettingsUI.PlugIn.LnkHelper.Capability.FixLnk",
+          "SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE",
+          "SettingsUI.PlugIn.LnkHelper.Capability.N",
+          "SettingsUI.PlugIn.LnkHelper.E",
+          "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk",
+          "SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE",
+          "SettingsUI.PlugIn.LnkHelper.Expansion.N",
+          "SettingsUI.PlugIn.LnkHelper.N",
+          "SettingsUI.PlugIn.N",
+          "SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixation",
+          "SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixationE",
+          "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage",
+          "SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE",
+          "SettingsUI.PlugIn.PPTHelper.BasicLogic.N",
+          "SettingsUI.PlugIn.PPTHelper.E",
+          "SettingsUI.PlugIn.PPTHelper.Error",
+          "SettingsUI.PlugIn.PPTHelper.N",
+          "SettingsUI.PlugIn.PPTHelper.Reset",
+          "SettingsUI.PlugIn.PPTHelper.Solve",
+          "SettingsUI.PlugIn.PPTHelper.Sync",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress",
+          "SettingsUI.PlugIn.PPTHelper.Tentative.N",
+          "SettingsUI.PlugIn.PPTHelper.Tip",
+          "SettingsUI.PlugIn.PPTHelper.VersionError",
+          "SettingsUI.PlugIn.PPTHelper.Warn",
+          "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth",
+          "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomMiddle",
+          "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth",
+          "SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N",
+          "SettingsUI.PlugIn.PPTHelper.WidgetPosition.N",
+          "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember",
+          "SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.N",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth",
+          "SettingsUI.PlugIn.PPTHelper.WidgetScale.State.BottomSideMiddle",
+          "SettingsUI.PlugIn.SuperTop.Capability.Indicator",
+          "SettingsUI.PlugIn.SuperTop.Capability.IndicatorE",
+          "SettingsUI.PlugIn.SuperTop.Capability.N",
+          "SettingsUI.PlugIn.SuperTop.Capability.SuperTop",
+          "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1",
+          "SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2",
+          "SettingsUI.PlugIn.SuperTop.E",
+          "SettingsUI.PlugIn.SuperTop.N",
+          "SettingsUI.PlugIn.SuperTop.Warn",
+          "SettingsUI.Preset.Memory.Color",
+          "SettingsUI.Preset.Memory.ColorE",
+          "SettingsUI.Preset.Memory.N",
+          "SettingsUI.Preset.Memory.Thickness",
+          "SettingsUI.Preset.Memory.ThicknessE",
+          "SettingsUI.Preset.N",
+          "SettingsUI.Preset.Preset.AutoThickness",
+          "SettingsUI.Preset.Preset.AutoThicknessE",
+          "SettingsUI.Preset.Preset.Highlighter",
+          "SettingsUI.Preset.Preset.N",
+          "SettingsUI.Preset.Preset.Pen",
+          "SettingsUI.Sponsor.N",
+          "SettingsUI.Version.Info.AutoBuild",
+          "SettingsUI.Version.Info.CICDInfo",
+          "SettingsUI.Version.Info.DebugTag",
+          "SettingsUI.Version.Info.ManualBuild",
+          "SettingsUI.Version.Info.N",
+          "SettingsUI.Version.Info.ReleaseArch",
+          "SettingsUI.Version.Info.ReleaseDate",
+          "SettingsUI.Version.Info.ReleaseTag",
+          "SettingsUI.Version.Info.ReleaseVersion",
+          "SettingsUI.Version.ManualUpdate.ManualUpdate",
+          "SettingsUI.Version.ManualUpdate.N",
+          "SettingsUI.Version.N",
+          "SettingsUI.Version.Repair.N",
+          "SettingsUI.Version.Repair.RepairArch",
+          "SettingsUI.Version.Repair.RepairSoftware",
+          "SettingsUI.Version.Repair.RepairSoftwareE",
+          "SettingsUI.Version.Update.Arch.Arm64",
+          "SettingsUI.Version.Update.Arch.E",
+          "SettingsUI.Version.Update.Arch.K_32",
+          "SettingsUI.Version.Update.Arch.K_64",
+          "SettingsUI.Version.Update.Arch.N",
+          "SettingsUI.Version.Update.AutoUpate",
+          "SettingsUI.Version.Update.Channel.Canary",
+          "SettingsUI.Version.Update.Channel.Insider",
+          "SettingsUI.Version.Update.Channel.LTS",
+          "SettingsUI.Version.Update.Channel.N",
+          "SettingsUI.Version.Update.ChannelTip",
+          "SettingsUI.Version.Update.N",
+          "SettingsUI.Version.UserInfo.CopyUserId",
+          "SettingsUI.Version.UserInfo.N",
+          "SettingsUI.Version.UserInfo.UserId",
+          "SettingsUI.Version.VersionTip",
+          "Widget.LnkName"
+        ]
+      },
+      {
+        "path": "Inkeys/Cache/SettingBaseline/fluent/Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
+        "sha256": "dd70e5ebd5c336225c13a7969992006bfeae4cd4b41c8e2fb254e75c0c1e125b",
+        "line_count": 266,
+        "pages": [],
+        "all_keys": [
+          "Operate.Create",
+          "SettingsUI.Community.N",
+          "SettingsUI.Design.AppearanceSection",
+          "SettingsUI.Design.AvoidFullscreenDetails",
+          "SettingsUI.Design.AvoidFullscreenSummary",
+          "SettingsUI.Design.BehaviorSection",
+          "SettingsUI.Design.CommonSettings",
+          "SettingsUI.Design.CompatibilitySection",
+          "SettingsUI.Design.Contact",
+          "SettingsUI.Design.DisplayLanguage",
+          "SettingsUI.Design.DrawAction",
+          "SettingsUI.Design.DrawDescription",
+          "SettingsUI.Design.EdgeLighting",
+          "SettingsUI.Design.EdgeLightingDescription",
+          "SettingsUI.Design.Explore",
+          "SettingsUI.Design.GeneralDescription",
+          "SettingsUI.Design.GeneralSubtitle",
+          "SettingsUI.Design.HeroDescription",
+          "SettingsUI.Design.HeroTitle",
+          "SettingsUI.Design.HomeWelcome",
+          "SettingsUI.Design.Improve",
+          "SettingsUI.Design.PluginDescription",
+          "SettingsUI.Design.PresetDescription",
+          "SettingsUI.Design.StartupSection",
+          "SettingsUI.Design.TopWindowDetails",
+          "SettingsUI.Design.TopWindowSummary",
+          "SettingsUI.Design.Tutorial",
+          "SettingsUI.Design.Website",
+          "SettingsUI.Draw.N",
+          "SettingsUI.Home.Developer",
+          "SettingsUI.Home.FeedBack",
+          "SettingsUI.Home.N",
+          "SettingsUI.Home.Prompt",
+          "SettingsUI.Language.UI.Language.en_US",
+          "SettingsUI.Language.UI.Language.zh_CN",
+          "SettingsUI.Language.UI.Language.zh_TW",
+          "SettingsUI.PlugIn.N",
+          "SettingsUI.Preset.N",
+          "SettingsUI.Regular.Appearance.BarZoom.E",
+          "SettingsUI.Regular.Appearance.BarZoom.N",
+          "SettingsUI.Regular.Appearance.SettingUIScale.E",
+          "SettingsUI.Regular.Appearance.SettingUIScale.N",
+          "SettingsUI.Regular.Behavior.RightClickClose",
+          "SettingsUI.Regular.Behavior.RightClickCloseE",
+          "SettingsUI.Regular.Behavior.TopWindow.E",
+          "SettingsUI.Regular.Behavior.TopWindow.K_100ms",
+          "SettingsUI.Regular.Behavior.TopWindow.K_10s",
+          "SettingsUI.Regular.Behavior.TopWindow.K_1s",
+          "SettingsUI.Regular.Behavior.TopWindow.K_30s",
+          "SettingsUI.Regular.Behavior.TopWindow.K_3s",
+          "SettingsUI.Regular.Behavior.TopWindow.K_500ms",
+          "SettingsUI.Regular.Behavior.TopWindow.K_5s",
+          "SettingsUI.Regular.Behavior.TopWindow.N",
+          "SettingsUI.Regular.N",
+          "SettingsUI.Regular.StartUp.AutoStart",
+          "SettingsUI.Regular.StartUp.AutoStartE",
+          "SettingsUI.Regular.StartUp.Link.E",
+          "SettingsUI.Regular.StartUp.Link.More",
+          "SettingsUI.Regular.StartUp.Link.N",
+          "SettingsUI.Regular.Tentative.AvoidFulScreen",
+          "SettingsUI.Regular.Tentative.AvoidFulScreenE",
+          "SettingsUI.Regular.Tentative.SafeMode.E",
+          "SettingsUI.Regular.Tentative.SafeMode.Mode1",
+          "SettingsUI.Regular.Tentative.SafeMode.Mode2",
+          "SettingsUI.Regular.Tentative.SafeMode.Mode3",
+          "SettingsUI.Regular.Tentative.SafeMode.Mode4",
+          "SettingsUI.Regular.Tentative.SafeMode.N",
+          "SettingsUI.Sponsor.N"
+        ]
+      },
+      {
+        "path": "Inkeys/Cache/SettingBaseline/fluent/Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp",
+        "sha256": "ffed74f05bdd0abe2a236223eedfa0d0da34284c0dc9d4f5ae1f14a684855c53",
+        "line_count": 107,
+        "pages": [],
+        "all_keys": [
+          "SettingsUI.Community.N",
+          "SettingsUI.Component.N",
+          "SettingsUI.Configuration.N",
+          "SettingsUI.DebugSoftware.N",
+          "SettingsUI.Design.Disabled",
+          "SettingsUI.Design.Enabled",
+          "SettingsUI.Design.Experimental",
+          "SettingsUI.Design.NavigationTitle",
+          "SettingsUI.Design.Preferences",
+          "SettingsUI.Design.SupportGroup",
+          "SettingsUI.Draw.N",
+          "SettingsUI.ExitSoftware.N",
+          "SettingsUI.Home.N",
+          "SettingsUI.HotKey.N",
+          "SettingsUI.Language.N",
+          "SettingsUI.PlugIn.N",
+          "SettingsUI.Preset.N",
+          "SettingsUI.Regular.N",
+          "SettingsUI.RestartSoftware.N",
+          "SettingsUI.Sponsor.N",
+          "SettingsUI.Version.N"
+        ]
+      }
+    ]
+  },
+  "published_global_update_status": {
+    "line": 7858,
+    "states": [
+      "UpdateDownloadDamage",
+      "UpdateDownloadFail",
+      "UpdateDownloading",
+      "UpdateInformationDamage",
+      "UpdateInformationFail",
+      "UpdateInformationUnStandardized",
+      "UpdateLatest",
+      "UpdateNew",
+      "UpdateNewer",
+      "UpdateNotStarted",
+      "UpdateObtainInformation",
+      "UpdateRestart"
+    ],
+    "i18n_keys": [
+      "Dialogs.UpdateModuleUnavailable.Body",
+      "SettingsUI.Update.Channel.Canary",
+      "SettingsUI.Update.Channel.Dev",
+      "SettingsUI.Update.Channel.Insider",
+      "SettingsUI.Update.Channel.LTS",
+      "SettingsUI.Update.Channel.Other",
+      "SettingsUI.Update.Check",
+      "SettingsUI.Update.DownloadDamage",
+      "SettingsUI.Update.DownloadFail",
+      "SettingsUI.Update.Downloading",
+      "SettingsUI.Update.InformationDamage",
+      "SettingsUI.Update.InformationFail",
+      "SettingsUI.Update.InformationUnStandardized",
+      "SettingsUI.Update.Latest",
+      "SettingsUI.Update.ManualDownload",
+      "SettingsUI.Update.New",
+      "SettingsUI.Update.Newer",
+      "SettingsUI.Update.NotStarted",
+      "SettingsUI.Update.ObtainInformation",
+      "SettingsUI.Update.Repair",
+      "SettingsUI.Update.Restart",
+      "SettingsUI.Update.UpdateNow"
+    ],
+    "business_calls": [
+      "GetUpdateChannel",
+      "QueueInformation",
+      "ShellExecuteW"
+    ]
+  }
+}

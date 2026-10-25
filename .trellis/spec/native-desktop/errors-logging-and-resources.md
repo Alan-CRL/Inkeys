@@ -348,3 +348,12 @@ LogFailure(); JoinOwner(); failure.BeginKnownFailure();
 // 对：共同原 tick 跨全部该次已知失败清理，真结束后才取消。
 (void)failure.BeginKnownFailure(); LogFailure(); JoinOwner(); scope.CompleteOrFatal();
 ~~~
+
+## 模态弹窗归属与已确认业务（2026-10-25）
+
+- 自绘 MessageBox 隐藏时保留 owner 的 topmost band、Z序与可见性；只有无owner的独立故障框先退出topmost。隐藏/退band均使用SWP_NOOWNERZORDER，不能把owned弹窗设为HWND_NOTOPMOST而连带降低设置/主栏链。由弹窗UI线程先恢复本框禁用的owner enabled，在前台仍属于本框时恢复可激活owner的同band顺序和前台，再隐藏；调用线程保留幂等enabled兜底和销毁前回收屏障。[SetWindowPos官方语义](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos)。
+- EnableWindow(owner,FALSE)会发WM_CANCELMODE；这是模态输入交接，不能撤销用户随后明确确认的业务。主按钮右键退出的OK校验与CloseProgram提交在同一已接纳业务请求内执行；指针等待协程可以先取消/销毁，生命周期stop token与offSignal仍必须拦截退出。Cancel、X、失败和取消不启动退场监督。[EnableWindow官方语义](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enablewindow)。
+- 无HWND回归调用实际隐藏操作模板检查owner/ownerless与topmost组合；生产交互探针通过真实FIFO、协程和mailbox的WM_CANCELMODE取消等待，再完成模拟确认，核对一次提交/非OK拒绝/生命周期取消。关闭动作以计数器替身验证，不能在测试中真实关闭进程。
+- 完整Debug|ARM64 Solution、--no-window及初始化前--ui3-input-worker-test；不启动GUI/隐藏HWND时，不声称已完成实际桌面Z序或弹窗点击验收。
+
+- 2026-10-25实机反馈证明仅保留band不足：不能先隐藏活动弹窗，再由后台线程按旧ownerWasForeground快照补前台。关闭时按弹窗实际前台归属判断；不显示/还原已隐藏或最小化owner，不激活WS_EX_NOACTIVATE窗口，用户已切走或生命周期取消时不抢焦点。操作序列回归明确要求Enable→Foreground→Hide，不以最终enabled正确代替中途焦点未落到下层的证明。

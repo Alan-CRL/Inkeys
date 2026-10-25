@@ -3,6 +3,10 @@ module;
 #include <objbase.h>
 #include <shobjidl.h>
 #include <windows.h>
+#include <winternl.h>
+#include <dwmapi.h>
+#include "../UI/Setting/Setting.Layout.h"
+#pragma comment(lib, "dwmapi.lib")
 
 #include "../Helper/FailedCleanupDeadline.h"
 #include "../Drawing/Draw3/Draw3.DiagnosticOutput.h"
@@ -1271,12 +1275,54 @@ namespace Inkeys::Window
 
 			DWORD style = spec.style;
 			DWORD exStyle = spec.exStyle;
+			int windowX = spec.x;
+			int windowY = spec.y;
+			int windowWidth = spec.width;
+			int windowHeight = spec.height;
 			if (IsSetting(spec.role))
 			{
-				style = WS_POPUP | WS_CLIPCHILDREN;
-				exStyle = (exStyle | WS_EX_APPWINDOW) &
+				// Windows 拥有 sizing frame，Setting 只在客户区绘制 caption。
+				style = SettingWindowStyle;
+				exStyle = (exStyle | SettingWindowExStyle) &
 					~(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
 				owner = nullptr;
+
+				// 自绘标题栏已属于客户区，只外扩系统 sizing frame，不重复预留原生 caption。
+				const RECT frame = QuerySettingClientFrameInsets();
+				const RECT adjusted{ -frame.left, -frame.top,
+					spec.width + frame.right, spec.height + frame.bottom };
+				{
+					windowWidth = adjusted.right - adjusted.left;
+					windowHeight = adjusted.bottom - adjusted.top;
+					const POINT center{
+						spec.x + spec.width / 2,
+						spec.y + spec.height / 2 };
+					windowX = center.x - windowWidth / 2;
+					windowY = center.y - windowHeight / 2;
+
+					const HMONITOR monitor = MonitorFromPoint(
+						center, MONITOR_DEFAULTTONEAREST);
+					MONITORINFO monitorInfo{ sizeof(monitorInfo) };
+					if (monitor && GetMonitorInfoW(monitor, &monitorInfo))
+					{
+						const int workWidth = monitorInfo.rcWork.right
+							- monitorInfo.rcWork.left;
+						const int workHeight = monitorInfo.rcWork.bottom
+							- monitorInfo.rcWork.top;
+						if (windowWidth > workWidth) windowWidth = workWidth;
+						if (windowHeight > workHeight) windowHeight = workHeight;
+						windowX = center.x - windowWidth / 2;
+						windowY = center.y - windowHeight / 2;
+						if (windowX < monitorInfo.rcWork.left)
+							windowX = monitorInfo.rcWork.left;
+						if (windowY < monitorInfo.rcWork.top)
+							windowY = monitorInfo.rcWork.top;
+						if (windowX + windowWidth > monitorInfo.rcWork.right)
+							windowX = monitorInfo.rcWork.right - windowWidth;
+						if (windowY + windowHeight > monitorInfo.rcWork.bottom)
+							windowY = monitorInfo.rcWork.bottom - windowHeight;
+					}
+				}
 			}
 			else if (IsDisplayObserver(spec.role))
 			{
@@ -1303,10 +1349,10 @@ namespace Inkeys::Window
 				record.className.c_str(),
 				spec.title.c_str(),
 				style,
-				spec.x,
-				spec.y,
-				spec.width,
-				spec.height,
+				windowX,
+				windowY,
+				windowWidth,
+				windowHeight,
 				owner,
 				nullptr,
 				instance,
@@ -1335,6 +1381,32 @@ namespace Inkeys::Window
 			(void)SetPropW(hwnd, Detail::WindowGenerationProperty, reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(record.generation.load(std::memory_order_acquire))));
 			record.hwnd.store(hwnd, std::memory_order_release);
 			record.threadId.store(threadId, std::memory_order_release);
+			if (IsSetting(spec.role) && UsesLegacySettingFrame())
+			{
+				// 隐藏态先按标准 caption 建立 HWND 自有系统菜单，再去掉旧 Aero 原生标题栏。
+				// 保留 sizing/min/max/sysmenu；后续统一 FRAMECHANGED 校正，不改变现代 DWM 样式。
+				SetLastError(ERROR_SUCCESS);
+				const HMENU menu = GetSystemMenu(hwnd, FALSE);
+				DWORD frameError = menu ? ERROR_SUCCESS : GetLastError();
+				if (menu)
+				{
+					const LONG_PTR frameStyle = GetWindowLongPtrW(hwnd, GWL_STYLE)
+						& ~static_cast<LONG_PTR>(WS_CAPTION);
+					SetLastError(ERROR_SUCCESS);
+					if (!SetWindowLongPtrW(hwnd, GWL_STYLE, frameStyle))
+						frameError = GetLastError();
+				}
+				if (!menu || frameError != ERROR_SUCCESS)
+				{
+					if (frameError == ERROR_SUCCESS) frameError = ERROR_INVALID_MENU_HANDLE;
+					wchar_t diagnostic[128]{};
+					swprintf_s(diagnostic, L"Inkeys.Window legacy setting frame failed: error=%lu\n", frameError);
+					OutputDebugStringW(diagnostic);
+					std::fwprintf(stderr, L"%s", diagnostic);
+					RollbackCreation(record, failedCleanup);
+					return false;
+				}
+			}
 			if (spec.bindMessages && record.channel)
 			{
 				record.messagesBound = record.channel->Bind(hwnd, spec.messageOptions);
@@ -1365,6 +1437,34 @@ namespace Inkeys::Window
 			}
 			if (IsSetting(spec.role) || spec.role == WindowRole::Freeze)
 			{
+				// 外框校正只用于设置，Freeze 保持原来的无边框尺寸。
+				if (IsSetting(spec.role))
+				{
+					// 创建后重新计算一次自定义非客户区，避免首帧保留系统 caption 的旧几何。
+					SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+						SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+					RECT actualOuter{}, actualClient{};
+					if (GetWindowRect(hwnd, &actualOuter) && GetClientRect(hwnd, &actualClient))
+					{
+						// DWM 的真实描边在创建后才可查询；仍按原请求中心和当前工作区只校正一次。
+						MONITORINFO monitorInfo{ sizeof(monitorInfo) };
+						const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+						if (!monitor || !GetMonitorInfoW(monitor, &monitorInfo))
+							monitorInfo.rcWork = {};
+						const auto corrected = Inkeys::UI::Setting::ResolveWindowFrameCreationCorrection(
+							{ spec.x, spec.y, spec.x + spec.width, spec.y + spec.height },
+							{ static_cast<int>(actualOuter.left), static_cast<int>(actualOuter.top),
+								static_cast<int>(actualOuter.right), static_cast<int>(actualOuter.bottom) },
+							{ static_cast<int>(actualClient.right - actualClient.left),
+								static_cast<int>(actualClient.bottom - actualClient.top) },
+							{ static_cast<int>(monitorInfo.rcWork.left), static_cast<int>(monitorInfo.rcWork.top),
+								static_cast<int>(monitorInfo.rcWork.right), static_cast<int>(monitorInfo.rcWork.bottom) });
+						if (corrected.Width() != actualOuter.right - actualOuter.left
+							|| corrected.Height() != actualOuter.bottom - actualOuter.top)
+							SetWindowPos(hwnd, nullptr, corrected.left, corrected.top,
+								corrected.Width(), corrected.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
+					}
+				}
 				SendMessageW(hwnd, WM_SETICON, ICON_BIG,
 					reinterpret_cast<LPARAM>(windowClass.hIcon));
 				SendMessageW(hwnd, WM_SETICON, ICON_SMALL,
@@ -2815,7 +2915,7 @@ namespace Inkeys::Window
 				DWORD error = ERROR_SUCCESS;
 				if (previousOwner != desiredOwner)
 				{
-					// GWLP_HWNDPARENT 对顶层 WS_POPUP 修改的是 owner；命令固定在 Setting 线程执行。
+					// GWLP_HWNDPARENT 对顶层窗口修改的是 owner，保留 Fluent frame；命令在 Setting 线程执行。
 					SetLastError(ERROR_SUCCESS);
 					const LONG_PTR previous = SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT,
 						reinterpret_cast<LONG_PTR>(desiredOwner));
@@ -3250,6 +3350,86 @@ namespace Inkeys::Window
 	thread_local bool Service::Impl::topmostObserverExecuting_ = false;
 	thread_local const Service::Impl* Service::Impl::receiptOwner_ = nullptr;
 	thread_local std::shared_ptr<Detail::CommandCompletion> Service::Impl::lastReceipt_;
+
+	SIZE QuerySettingFrameThickness(UINT dpi) noexcept
+	{
+		if (!dpi)
+		{
+			HDC screen = GetDC(nullptr);
+			dpi = screen ? static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX)) : 96U;
+			if (screen) ReleaseDC(nullptr, screen);
+		}
+		using AdjustForDpiProc = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+		static const auto adjustForDpi = reinterpret_cast<AdjustForDpiProc>(
+			GetProcAddress(GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi"));
+		RECT frame{};
+		// 去掉 caption 后只查询四周 resize frame；不使用用户 UI 缩放倍率。
+		const DWORD sizingStyle = SettingWindowStyle & ~WS_CAPTION;
+		const BOOL adjusted = adjustForDpi
+			? adjustForDpi(&frame, sizingStyle, FALSE, SettingWindowExStyle, dpi ? dpi : 96U)
+			: AdjustWindowRectEx(&frame, sizingStyle, FALSE, SettingWindowExStyle);
+		if (adjusted && frame.left < 0 && frame.top < 0)
+			return { -frame.left, -frame.top };
+		return { GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
+			GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER) };
+	}
+
+	bool UsesLegacySettingFrame() noexcept
+	{
+		static const bool legacy = []() noexcept
+		{
+			// 不依赖启动信息或版本清单；旧 Aero 与现代 DWM 的顶部 frame 合同不同。
+			using RtlGetVersionProc = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
+			const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+			const auto rtlGetVersion = ntdll
+				? reinterpret_cast<RtlGetVersionProc>(GetProcAddress(ntdll, "RtlGetVersion"))
+				: nullptr;
+			RTL_OSVERSIONINFOW version{};
+			version.dwOSVersionInfoSize = sizeof(version);
+			if (!rtlGetVersion || rtlGetVersion(&version) != 0) return true;
+			return version.dwMajorVersion < 6
+				|| (version.dwMajorVersion == 6 && version.dwMinorVersion < 2);
+		}();
+		return legacy;
+	}
+
+	RECT QuerySettingClientFrameInsets(HWND hwnd, bool maximized, UINT dpi) noexcept
+	{
+		if (!dpi && hwnd)
+		{
+			using GetDpiForWindowProc = UINT(WINAPI*)(HWND);
+			static const auto getDpi = reinterpret_cast<GetDpiForWindowProc>(
+				GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+			if (getDpi) dpi = getDpi(hwnd);
+		}
+		if (!dpi)
+		{
+			HDC screen = GetDC(nullptr);
+			dpi = screen ? static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX)) : 96U;
+			if (screen) ReleaseDC(nullptr, screen);
+		}
+		const SIZE sizing = QuerySettingFrameThickness(dpi);
+		BOOL compositionEnabled = FALSE;
+		(void)DwmIsCompositionEnabled(&compositionEnabled);
+		using GetMetricForDpiProc = int(WINAPI*)(int, UINT);
+		static const auto getMetric = reinterpret_cast<GetMetricForDpiProc>(
+			GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetSystemMetricsForDpi"));
+		UINT visibleBorder = static_cast<UINT>((std::max)(0, getMetric
+			? getMetric(SM_CYBORDER, dpi ? dpi : 96U) : GetSystemMetrics(SM_CYBORDER)));
+		if (hwnd && compositionEnabled && !IsZoomed(hwnd))
+		{
+			UINT dwmBorder = 0;
+			if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
+				&dwmBorder, sizeof(dwmBorder))) && dwmBorder > 0)
+				visibleBorder = dwmBorder;
+		}
+		// Win7 Aero 保留四周 sizing frame；现代 DWM 只在恢复态收薄顶部，经典外框保持原样。
+		const auto frame = Inkeys::UI::Setting::ResolveVisibleWindowFrameInsets(
+			{ static_cast<int>(sizing.cx), static_cast<int>(sizing.cy),
+				static_cast<int>(sizing.cx), static_cast<int>(sizing.cy) },
+			maximized, compositionEnabled != FALSE, static_cast<int>(visibleBorder), !UsesLegacySettingFrame());
+		return { frame.left, frame.top, frame.right, frame.bottom };
+	}
 
 	Service::Service(std::size_t messageCapacity)
 		: impl_(std::make_unique<Impl>(messageCapacity))

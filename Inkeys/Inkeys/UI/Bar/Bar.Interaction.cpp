@@ -1703,6 +1703,17 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		return accepted;
 	}
 
+	template<class AskConfirmation, class CloseApplication>
+	bool RunMainCloseConfirmation(std::stop_token cancellation,
+		AskConfirmation&& ask, CloseApplication&& close)
+	{
+		if (offSignal || cancellation.stop_requested()) return false;
+		const auto result = ask();
+		if (result != Inkeys::UI::MessageBox::Result::Ok || offSignal || cancellation.stop_requested()) return false;
+		close();
+		return true;
+	}
+
 	template<class Action> InteractionTask<std::invoke_result_t<Action>> RunInteractionBusiness(Action action)
 	{
 		using Result = std::invoke_result_t<Action>;
@@ -2358,6 +2369,49 @@ namespace Inkeys::UI::Bar
 			check(businessOrder == std::vector<unsigned>{ 1, 2, 3 }, "shutdown-cancels-dialog-drains-save-skips-pending-launch");
 			check(!QueueInteractionComponentAction([] {}), "shutdown-rejects-new-external-action");
 			check(ResetInteractionBusiness(), "business-context-fully-joined-before-reuse");
+			for (const auto [result, stopDuringDialog] : {
+				std::pair{ Inkeys::UI::MessageBox::Result::Ok, false },
+				std::pair{ Inkeys::UI::MessageBox::Result::Cancel, false },
+				std::pair{ Inkeys::UI::MessageBox::Result::Dismissed, false },
+				std::pair{ Inkeys::UI::MessageBox::Result::Failed, false },
+				std::pair{ Inkeys::UI::MessageBox::Result::Ok, true } })
+			{
+				struct ModalProbe
+				{
+					std::promise<void> entered, released;
+					std::shared_future<void> release = released.get_future().share();
+					std::atomic_uint closes = 0;
+				};
+				auto probe = std::make_shared<ModalProbe>(); auto started = probe->entered.get_future();
+				const auto cancellation = InteractionBusinessCancellation(); context = {};
+				auto confirm = [probe, result, cancellation]() -> InteractionTask<bool>
+				{
+					co_return co_await RunInteractionBusiness([probe, result, cancellation]
+					{
+						return RunMainCloseConfirmation(cancellation, [probe, result]
+						{
+							probe->entered.set_value();
+							return probe->release.wait_for(std::chrono::seconds(2)) == std::future_status::ready
+								? result : Inkeys::UI::MessageBox::Result::Failed;
+						}, [probe] { ++probe->closes; });
+					});
+				};
+				{
+					auto pending = confirm(); pending.Start();
+					check(started.wait_for(std::chrono::seconds(2)) == std::future_status::ready, "close-confirmation-business-enters");
+					ExMessage cancel{}; cancel.message = WM_CANCELMODE;
+					check(EnqueueMainInteractionMessage(nullptr, cancel), "modal-disable-enqueues-native-cancel");
+					(void)PumpSharedInteraction(context, InteractionClock::now());
+					check(context.cancelled && pending.Done() && probe->closes == 0, "modal-disable-retires-waiting-gesture-before-confirmation");
+					pending.Rethrow();
+				}
+				// 等待协程已销毁；业务仍持有确认请求，取消/X/失败及生命周期停止不得退出。
+				if (stopDuringDialog) CancelInteractionBusiness();
+				probe->released.set_value(); DrainInteractionBusiness();
+				check(probe->closes == (result == Inkeys::UI::MessageBox::Result::Ok && !stopDuringDialog ? 1u : 0u),
+					"close-confirmation-commits-once-after-gesture-cancel-and-honors-lifecycle-stop");
+				context = {}; check(ResetInteractionBusiness(), "close-confirmation-business-resets-after-drain");
+			}
 			{
 				auto scope = CreateOffscreenInteractionWorker();
 				check(scope != nullptr, "offscreen-factory-starts-production-pump");
@@ -5823,7 +5877,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 				if (msg.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 				{
-					const bool shouldClose = co_await RunInteractionBusiness([cancellation = InteractionBusinessCancellation()]() -> bool
+					co_await RunInteractionBusiness([cancellation = InteractionBusinessCancellation()]() -> bool
 					{
 					const auto title = I18n::getWOr(
 						I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
@@ -5844,9 +5898,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					request.fallback.owner = floating_window;
 					request.fallback.modality =
 						Inkeys::UI::MessageBox::SystemModality::System;
-					return Inkeys::UI::MessageBox::Show(request) == Inkeys::UI::MessageBox::Result::Ok;
+					// 模态禁用会取消指针协程；明确确认后的退出由本次业务请求负责提交。
+					return RunMainCloseConfirmation(cancellation,
+						[&] { return Inkeys::UI::MessageBox::Show(request); }, [] { CloseProgram(); });
 					});
-					if (shouldClose && !offSignal && !InteractionCancelled()) CloseProgram();
 
 					ClearBarInteractionMessages(EM_MOUSE, floating_window);
 				}

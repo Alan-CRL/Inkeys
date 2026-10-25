@@ -123,7 +123,7 @@ CommitVersionedPairPosition(); // 始终；仅 toggle/end/reset 冻结保存请�
 - `PptComService` owner 每次维护时读取 `SlideShowWindow.View`，释放本次获取的 View；跨线程 getter 只读按 session/binding/window 配对的纯值缓存。WPS 可有活动会话但 typed HWND 为 0，managed仍维护基础控制与工具缓存；native自动接管须另外取得当前可靠窗口和已呈现的可信墨迹目标，避免退出Office笔后没有可用画布。
 - 标准 `PointerType=Pen` 映射画笔；可用的 `LaserPointerEnabled=true` 优先映射激光笔。当前 PIA 无此属性，激光状态按名称 late-bound；荧光笔仅在提供方明确返回其名称时映射，不猜测未知整数，也不把标准 Pen 推断成荧光笔。
 - 退出原生工具请求走同一 owner 邮箱，超时请求不能稍后执行；owner 重读工具、关激光/复位指针并确认已退出。native 仅在同一 service/session 且原生退出成功、用户工具 revision 未变化后接管，成功才消耗 `AutoTakeOverOnce`。
-- `kPptLoadingPageEnabled=false` 同时隐藏设置卡片和阻断 `FreezePPT` 触发；旧配置值及加载画面实现仍保留。
+- `kPptLoadingPageEnabled=false` 阻断 `FreezePPT` 触发；设置页保留停用说明卡但不提供 toggle，加载画面实现仍保留。读取时忽略本地 ShowLoadingScreen 并固定内存 false；完整设置快照与 WriteJournal 公共序列化边界（含仅位置写回）均固定输出布尔 false。
 
 ### 4. Validation & Error Matrix
 
@@ -132,7 +132,7 @@ CommitVersionedPairPosition(); // 始终；仅 toggle/end/reset 冻结保存请�
 | Office 忙碌、未知工具或 native 原生退出失败 | 不切换 Draw3，不消耗一次性接管；下一次维护可重试 |
 | 退出请求等待时换场或用户换工具 | 拒绝迟到接管，不覆盖新场次/新工具 |
 | WPS Active 但 typed HWND 为 0 | 依靠 session/binding 缓存保留基础控制；窗口与墨迹目标未获证实时不自动接管 Office 笔、不抢焦点 |
-| `ShowLoadingScreen=true` 的旧文件 | 设置入口不可见且本场不触发加载页，磁盘值不被改写 |
+| `ShowLoadingScreen=true` 的旧文件 | 说明块可见但无编辑器、本场不触发加载页；下次任意设置/位置写回规范为 false |
 
 ### 5. Good / Base / Bad Cases
 

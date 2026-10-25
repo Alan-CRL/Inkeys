@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "../Inkeys/Inkeys/UI/Setting/Setting.Layout.h"
 
 #include <array>
 #include <atomic>
@@ -18,14 +19,37 @@ import Inkeys.Window;
 
 namespace
 {
+	thread_local SIZE settingNativeMinimumTrack{};
 	constexpr UINT kSettingOwnerProbe = WM_APP + 74;
-	LRESULT CALLBACK SettingOwnerProbeProc(HWND hwnd, UINT message,
-		WPARAM wParam, LPARAM lParam)
+
+	LRESULT CALLBACK SettingFrameTestProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		if (message == kSettingOwnerProbe)
 		{
 			auto* service = reinterpret_cast<Inkeys::Window::Service*>(lParam);
 			return service->SetSettingOwnedByDrawpad(wParam != 0);
+		}
+		if (message == WM_GETMINMAXINFO && lParam)
+		{
+			auto& limits = *reinterpret_cast<MINMAXINFO*>(lParam);
+			settingNativeMinimumTrack = { limits.ptMinTrackSize.x, limits.ptMinTrackSize.y };
+			// 此小窗口只测客户区创建合同，隔离原生 caption 的最小宽度；产品最小尺寸不变。
+			Inkeys::UI::Setting::ApplyWindowFrameMinimumTrack(limits, { 1, 1 });
+			return 0;
+		}
+		if (message == WM_NCCALCSIZE && lParam)
+		{
+			// 测试复用产品 frame 度量，不能让默认原生 caption 再占一次客户区高度。
+			RECT& rect = wParam ? reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam)->rgrc[0]
+				: *reinterpret_cast<RECT*>(lParam);
+			const RECT frame = Inkeys::Window::QuerySettingClientFrameInsets(hwnd, IsZoomed(hwnd) != FALSE);
+			const auto client = Inkeys::UI::Setting::InsetWindowFrameRect(
+				{ static_cast<int>(rect.left), static_cast<int>(rect.top),
+					static_cast<int>(rect.right), static_cast<int>(rect.bottom) },
+				{ static_cast<int>(frame.left), static_cast<int>(frame.top),
+					static_cast<int>(frame.right), static_cast<int>(frame.bottom) });
+			rect = { client.left, client.top, client.right, client.bottom };
+			return 0;
 		}
 		return DefWindowProcW(hwnd, message, wParam, lParam);
 	}
@@ -1043,9 +1067,43 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleRight, L"PptMiddleRight"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
+	RECT settingClient{}, settingOuter{};
+	SIZE settingMinimumTrack{};
+	UINT settingDpi = 0;
+	bool settingClientMeasured = false;
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
-	settingSpec.windowProc = SettingOwnerProbeProc;
+	const auto settingCreated = settingSpec.created;
+	settingSpec.created = [&, settingCreated](HWND hwnd)
+		{
+			settingCreated(hwnd);
+			// 在创建线程量客户区，避免跨 DPI awareness 调用产生坐标虚拟化。
+			settingClientMeasured = GetClientRect(hwnd, &settingClient) != FALSE;
+			GetWindowRect(hwnd, &settingOuter);
+			settingMinimumTrack = settingNativeMinimumTrack;
+			using GetDpiForWindowProc = UINT(WINAPI*)(HWND);
+			const auto getDpi = reinterpret_cast<GetDpiForWindowProc>(
+				GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+			if (getDpi) settingDpi = getDpi(hwnd);
+		};
+	// 仅设置窗口的专用线程使用产品 DPI 模式，不改变其余测试窗口或测试进程。
+	using SetThreadDpiContextProc = DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT);
+	const auto setThreadDpiContext = reinterpret_cast<SetThreadDpiContextProc>(
+		GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetThreadDpiAwarenessContext"));
+	DPI_AWARENESS_CONTEXT previousSettingDpiContext = nullptr;
+	settingSpec.beforeCreate = [&]
+		{
+			if (!setThreadDpiContext) return true;
+			previousSettingDpiContext = setThreadDpiContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
+			return previousSettingDpiContext != nullptr;
+		};
+	settingSpec.destroyed = [&]
+		{
+			if (setThreadDpiContext && previousSettingDpiContext)
+				setThreadDpiContext(previousSettingDpiContext);
+		};
+	// 故意传旧 popup 样式，确认 Setting 角色会恢复独立应用窗口合同。
 	settingSpec.style = WS_POPUP;
+	settingSpec.windowProc = SettingFrameTestProc;
 	settingSpec.exStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 	specs.push_back(std::move(settingSpec));
 	auto observerSpec = makeSpec(WindowRole::DisplayObserver, L"DisplayObserver");
@@ -1169,14 +1227,32 @@ int RunWindowTests()
 
 	const auto settingStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_STYLE));
 	const auto settingExStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_EXSTYLE));
-	check((settingStyle & (WS_POPUP | WS_CLIPCHILDREN)) ==
-		(WS_POPUP | WS_CLIPCHILDREN)
-		&& (settingStyle & (WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
-			WS_MAXIMIZEBOX | WS_SYSMENU)) == 0,
-		"setting fixed borderless style");
+	const bool legacySettingFrame = UsesLegacySettingFrame();
+	const DWORD expectedSettingStyle = legacySettingFrame
+		? SettingWindowStyle & ~WS_CAPTION : SettingWindowStyle;
+	check((settingStyle & expectedSettingStyle) == expectedSettingStyle
+		&& (settingStyle & WS_CAPTION) == (legacySettingFrame ? 0U : WS_CAPTION)
+		&& (settingStyle & WS_POPUP) == 0,
+		"setting keeps native sizing semantics and only legacy Aero removes caption drawing");
+	const HMENU settingSystemMenu = GetSystemMenu(setting, FALSE);
+	check(settingSystemMenu && IsMenu(settingSystemMenu)
+		&& GetMenuState(settingSystemMenu, SC_CLOSE, MF_BYCOMMAND) != static_cast<UINT>(-1)
+		&& GetMenuState(settingSystemMenu, SC_MINIMIZE, MF_BYCOMMAND) != static_cast<UINT>(-1)
+		&& GetMenuState(settingSystemMenu, SC_MAXIMIZE, MF_BYCOMMAND) != static_cast<UINT>(-1),
+		"setting retains its HWND-owned native close/minimize/maximize system menu after caption policy");
 	check((settingExStyle & WS_EX_APPWINDOW) != 0
 		&& (settingExStyle & (WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) == 0,
 		"setting app ex-style");
+	const bool settingClientMatches = settingClientMeasured
+		&& settingClient.right - settingClient.left == 160
+		&& settingClient.bottom - settingClient.top == 90;
+	if (!settingClientMatches)
+		std::cerr << "Setting creation geometry: client="
+			<< settingClient.right - settingClient.left << 'x' << settingClient.bottom - settingClient.top
+			<< " outer=" << settingOuter.right - settingOuter.left << 'x' << settingOuter.bottom - settingOuter.top
+			<< " dpi=" << settingDpi << " native-min-track="
+			<< settingMinimumTrack.cx << 'x' << settingMinimumTrack.cy << '\n';
+	check(settingClientMatches, "setting spec dimensions describe the client area");
 	check(reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0)) != nullptr,
 		"setting icon");
 	check(service.Title(WindowRole::Setting) == L"Window test Setting", "title helper");

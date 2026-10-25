@@ -845,33 +845,12 @@ void DrawScreen()
 	{
 		//媒体资源读取
 		{
-			idtLoadImage(&floating_icon[0], L"PNG", L"icon0", 40, 40, true);
-			idtLoadImage(&floating_icon[19], L"PNG", L"icon19", 15, 15, true);
 
-			idtLoadImage(&floating_icon[1], L"PNG", L"icon1", 40, 40, true);
-			idtLoadImage(&floating_icon[2], L"PNG", L"icon2", 40, 40, true);
-			idtLoadImage(&floating_icon[3], L"PNG", L"icon3", 30, 30, true);
-			idtLoadImage(&floating_icon[4], L"PNG", L"icon4");
-			idtLoadImage(&floating_icon[5], L"PNG", L"icon5");
 
-			idtLoadImage(&floating_icon[7], L"PNG", L"icon7");
-			idtLoadImage(&floating_icon[10], L"PNG", L"icon10");
 
-			idtLoadImage(&floating_icon[6], L"PNG", L"icon6", 30, 30, true);
-			idtLoadImage(&floating_icon[8], L"PNG", L"icon8", 30, 30, true);
 
-			idtLoadImage(&floating_icon[11], L"PNG", L"icon11", 20, 20, true);
-			idtLoadImage(&floating_icon[12], L"PNG", L"icon12", 20, 20, true);
-			idtLoadImage(&floating_icon[13], L"PNG", L"icon13", 20, 20, true);
-			idtLoadImage(&floating_icon[14], L"PNG", L"icon14", 20, 20, true);
-			idtLoadImage(&floating_icon[15], L"PNG", L"icon15", 20, 20, true);
 
-			idtLoadImage(&floating_icon[16], L"PNG", L"icon16", 20, 20, true);
-			idtLoadImage(&floating_icon[18], L"PNG", L"icon18", 20, 20, true);
-			idtLoadImage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
-			idtLoadImage(&floating_icon[20], L"PNG", L"icon20", 20, 20, true);
 
-			idtLoadImage(&floating_icon[30], L"PNG", L"icon21"); // SuperTop
 
 			idtLoadImage(&floating_icon[21], L"PNG", L"CustomizeIco1", 40, 40, true); // CI
 			idtLoadImage(&floating_icon[22], L"PNG", L"CustomizeIco2", 40, 40, true); // CI isc
@@ -886,11 +865,7 @@ void DrawScreen()
 			idtLoadImage(&floating_icon[31], L"PNG", L"CustomizeIco10", 40, 40, true); // SecRandom
 			idtLoadImage(&floating_icon[32], L"PNG", L"CustomizeIco11", 40, 40, true); // NamePicker
 
-			idtLoadImage(&sign, L"PNG", L"sign1", 30, 30, true);
 
-			idtLoadImage(&skin[1], L"PNG", L"skin1");
-			idtLoadImage(&skin[2], L"PNG", L"skin1-2");
-			idtLoadImage(&skin[3], L"PNG", L"skin1-3");
 
 			bskin3 = IMAGEToBitmap(&skin[3]);
 		}

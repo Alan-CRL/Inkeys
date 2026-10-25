@@ -1,0 +1,111 @@
+{
+  "status": "implemented_verified",
+  "base_commit": "ff6fb4e12cd1ce016eecf3e8cce00744098d5b3a",
+  "protected_sha256": {
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkPixelShader.cso": "c23556a1103308c123fd8937da0b6e28639d1e302b3be6c68c314be7b62c4032",
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkVertexShader.cso": "79ef240a3c6a322f20cb1ba2ceac1e5ce5c7f61a28bf53b53edbc9bb1656c189",
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoData.g.h": "57a9c5fd1b71c00245e89dd944ad0d4be3382dd7a08184dc6934f918e59e7671",
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoGpu.cpp": "815577e3db94ef6b098e3daa3e5192b7b120c0d4aff46a7a1a8d4885a028f095",
+    "Inkeys/src/i18n/en-US.jsonc": "f0c16fa6acb06d55859b25cab01c42734fb19822e4115f3802eca742295c4d70",
+    "Inkeys/src/i18n/zh-CN.jsonc": "bf024140d85a260fb3e7500ed44f4eb94968915e87d37124fd7def4023d48944",
+    "Inkeys/src/i18n/zh-TW.jsonc": "70fce2e59d8d9a83c2b971844ba160ebd7a62c67474d7512ee16c728a52ad47b",
+    "Inkeys/src/setting/EraserDemoFine.png": "ac8433933e4ade23333d4411ad57670cae2cd01dd1233a171eddd6e6206c6385",
+    "Inkeys/src/setting/EraserDemoSweep.png": "785fd19db600d7ec13e678ff76214399fbd716013f541e190c73bca5d1b2e261",
+    "InkeysHeadlessTests/setting_eraser_demo_tests.cpp": "3767d5f25dff74b58bb72a4211c4666e6d23ec635111582dbdc76c87fc0fa925",
+    "Scripts/generate_eraser_demo.py": "844b784ef511060fcf375b4b70061c7cd2710dcc52968183ed1ab7a712df8b6a",
+    "Scripts/i18n.zh-CN.snapshot.jsonc": "bf024140d85a260fb3e7500ed44f4eb94968915e87d37124fd7def4023d48944",
+    "Inkeys/PptCOM.dll": "aea8a90053cc5b0d0912ac61c33496e29ffc03bd520404bd9322a11e8789f18f",
+    "Inkeys/PptCOM.tlb": "c652b5dd0603576033b2e0d15869be103f23ffdcaa2a1984e53f3b6a14dba606",
+    ".github/workflows/build-windows.yml": "53652fd2a6267b442cf41d15857eb18b8a941d6eb62f9a2bc044baffee6fe753",
+    "Inkeys/src/setting/Home_Feedback.png": "b980e7a63e6b206b81fc0a00509f7693d097aa01595f4125a57a3a1fbc0a28a7",
+    "Inkeys/src/setting/GitHubMark.png": "0d4c235fef9efec54174a7c005fc0fe0ce2d63d35c21898ab5148587111397a9"
+  },
+  "commit": false,
+  "push": false,
+  "gui": false,
+  "parent_status": "in_progress",
+  "verification_date": "2026-10-25",
+  "build": {
+    "solution": "InkeysRepo.sln",
+    "configuration": "Debug|ARM64",
+    "native_arm64_msbuild": true,
+    "exit_code": 0,
+    "errors": 0,
+    "warnings": 46,
+    "elapsed_seconds": 61.85,
+    "log": "settings-speed-eraser-polish-build.log"
+  },
+  "tests": {
+    "command": "Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window --setting-home-only",
+    "exit_code": 0,
+    "log": "settings-speed-eraser-polish-tests.log",
+    "coverage": [
+      "8 touch/pen-tip/pen-tail masks under both master states",
+      "same-frame master and touch off/on visibility",
+      "no empty fine-control section; hidden preferences retained without edits",
+      "existing sensitivity, Win7 stable enums, return/navigation and scrolling",
+      "home copy IDs/values, clipboard mock, localized community routing and layout",
+      "existing light/dark and language/DPI matrix, offscreen home regression"
+    ]
+  },
+  "i18n": {
+    "en-US": "518/518",
+    "zh-TW": "518/518",
+    "check": "passed",
+    "new_keys": false
+  },
+  "static_order": {
+    "order": [
+      "Effect",
+      "Eraser",
+      "Cursor",
+      "Touch",
+      "Haptics"
+    ],
+    "moved_section_contents_identical": true
+  },
+  "review": {
+    "result": "no actionable findings",
+    "independent": true,
+    "record": "settings-speed-eraser-polish-review.md"
+  },
+  "protected_files_unchanged": true,
+  "file_formats": {
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    "InkeysHeadlessTests/setting_design_tests.cpp": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    ".trellis/spec/native-desktop/rendering-and-ui.md": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    },
+    ".trellis/spec/native-desktop/eraser-attributes.md": {
+      "encoding": "UTF-8",
+      "newline": "CRLF"
+    }
+  },
+  "source_sha256": {
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": "d2c44f412d5407a84d47a7ac19b21342207411313b6bd2bf748b120d64ab1270",
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp": "5fa78598d9b5672c49bf3e3287ac64e2ada5cfd54430a650fd93b53b2356610d",
+    "InkeysHeadlessTests/setting_design_tests.cpp": "b81fb20a09695971b0324ee51748cc20b08bc5439d6b3b1aad7ba260a772dc32"
+  },
+  "build_artifact_sha256": {
+    "Build/ARM64/Debug/Inkeys.exe": "21a0c8e8086f1994a39ecc9c7bb3e3a49d67d84c3d73f29100306e3fc1b79d0c",
+    "Build/ARM64/Debug/InkeysHeadlessTests.exe": "2ee2f787952f800bebcd8b3cd1f66a4924f0056615a108614e65597c48482c89"
+  },
+  "trellis_context": {
+    "validation": "passed; 22 entries each",
+    "existing_warning": "Large rendering/configuration specs exceed context injection limit; relevant sections explicitly read."
+  },
+  "limitations": [
+    "No interactive GUI, physical touch/pen or real Windows 7 testing was launched."
+  ]
+}

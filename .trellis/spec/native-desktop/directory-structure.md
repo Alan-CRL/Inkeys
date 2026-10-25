@@ -14,6 +14,8 @@
 
 **【直接确认】** Inkeys.vcxproj 显式列出 ClCompile、ClInclude、ResourceCompile、Manifest、Font 等项目项。新增或移动源码时应同步检查项目文件；这是对当前显式项目清单的保守维护要求。
 
+**【直接确认】** Solution Explorer 分类由 Inkeys.vcxproj.filters 与导入的 ink_stroke_modeler.filters.props 共同决定。第一方 Inkeys\ 下文件进入 Modules\Inkeys\ 对应目录；外部保留的 draw3 存储源码进入同一 Drawing\Draw3 分类。第三方实现、头文件和随附文档统一放在“头文件\Additional\独立库”中（保持已有 ImGui/ImFluent 等标签），Ink Stroke Modeler 的导入项也遵守此规则，不在项目根创建独立顶层分类。新增项目项时同时登记非空且已定义的 Filter；审核需展开 props 中的源清单，不能只比较主 XML。此分类不改变物理路径、编译类型或排除条件。
+
 ## 仓库一级目录
 
 | 目录 | 当前职责 |
@@ -47,7 +49,7 @@
 | Inkeys/SuperTop/ | UIAccess/置顶辅助相关代码和 token 声明 |
 | Inkeys/src/i18n/ | zh-CN、zh-TW、en-US JSONC 文案 |
 | Inkeys/src/ppt/ | PPT 控件相关图像资源 |
-| Inkeys/src/quick/、setting/、skin/、ttf/、UI/ | 快捷操作、设置、皮肤、字体和 UI 资源 |
+| Inkeys/src/quick/、setting/、ttf/、UI/ | UI3 共用快捷操作、当前设置图片、字体和 SVG 资源；UI2 专用图标、旧首页整图及 skin/ppt PNG 已退役 |
 | Inkeys/exe/、binarypackage/ | 已存在 DesktopDrawpadBlocker.exe 等随附二进制；EasyX 分架构静态库已删除 |
 | Inkeys/additional/ | Dear ImGui 后端、stb、WinToast、zip、hash 等随附第三方代码 |
 | Inkeys/additional/HiMsg/ | Win32 消息队列 Git submodule；主仓只固定上游 commit，不嵌套其 Vcpkg |

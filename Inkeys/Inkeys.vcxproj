@@ -183,7 +183,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -223,7 +223,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -263,7 +263,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -300,7 +300,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -340,7 +340,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -380,7 +380,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -457,14 +457,12 @@
     <ClInclude Include="additional\imgui\imgui_impl_win32.h" />
     <ClInclude Include="additional\imgui\imgui_internal.h" />
     <ClInclude Include="additional\imgui\imgui_offset_rect.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_math.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_palette.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_presets.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_renderer.h" />
     <ClInclude Include="additional\imgui\imstb_rectpack.h" />
     <ClInclude Include="additional\imgui\imstb_textedit.h" />
     <ClInclude Include="additional\imgui\imstb_truetype.h" />
+    <ClInclude Include="additional\imfluent\imfluent.h" />
+    <ClInclude Include="additional\imfluent\imfluent_icons.h" />
+    <ClInclude Include="additional\imfluent\imfluent_internal.h" />
     <ClInclude Include="additional\stbimage\stb_image.h" />
     <ClInclude Include="additional\stbimage\stb_image_resize.h" />
     <ClInclude Include="additional\stbimage\stb_image_write.h" />
@@ -496,6 +494,16 @@
     <ClInclude Include="IdtSysNotifications.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Design.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemo.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemoData.g.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Layout.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
@@ -922,11 +930,8 @@
     <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="additional\imgui\imgui_tables.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_palette.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_presets.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_renderer.cpp" />
     <ClCompile Include="additional\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="additional\imfluent\imfluent.cpp" />
     <ClCompile Include="additional\wintoastlib\wintoastlib.cpp" />
     <ClCompile Include="additional\ziputils\unzip.cpp" />
     <ClCompile Include="additional\ziputils\zip.cpp" />
@@ -1018,7 +1023,13 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm" />
     <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
-    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">INKEYS_SETTING_ENTRY_PROFILE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm" />
@@ -1148,43 +1159,14 @@
   </ItemGroup>
   <ItemGroup>
 	<Image Include="src\message_box\error.png" />
-    <Image Include="src\bug.png" />
-    <Image Include="src\choice.png" />
-    <Image Include="src\choose.png" />
-    <Image Include="src\choose_clear.png" />
     <Image Include="src\ClassIsland.png" />
-    <Image Include="src\curve.png" />
-    <Image Include="src\endshow.png" />
-    <Image Include="src\freeze-frame.png" />
-    <Image Include="src\gwxq.png" />
-    <Image Include="src\highlighter_brush.png" />
-    <Image Include="src\home.png" />
-    <Image Include="src\i18n\Home1_en-US.png" />
-    <Image Include="src\i18n\Home1_zh-CN.png" />
-    <Image Include="src\i18n\Home2_en-US.png" />
-    <Image Include="src\i18n\Home2_zh-CN.png" />
     <Image Include="src\icon.ico" />
-    <Image Include="src\icon.png" />
-    <Image Include="src\info.png" />
     <Image Include="src\IslandCaller.png" />
-    <Image Include="src\left.png" />
-    <Image Include="src\line.png" />
-    <Image Include="src\more.png" />
-    <Image Include="src\ms_ppt.png" />
     <Image Include="src\NamePicker.png" />
-    <Image Include="src\option.png" />
-    <Image Include="src\paint_brush.png" />
-    <Image Include="src\perspective.png" />
-    <Image Include="src\pin.png" />
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
     <Image Include="src\PluginFlag3.png" />
     <Image Include="src\PluginFlag4.png" />
-    <Image Include="src\ppt\arrow_down.png" />
-    <Image Include="src\ppt\arrow_left.png" />
-    <Image Include="src\ppt\arrow_right.png" />
-    <Image Include="src\ppt\arrow_up.png" />
-    <Image Include="src\ppt\end_show.png" />
     <Image Include="src\quick\altf4.png" />
     <Image Include="src\quick\control.png" />
     <Image Include="src\quick\desktop.png" />
@@ -1192,45 +1174,22 @@
     <Image Include="src\quick\keyboardesc.png" />
     <Image Include="src\quick\lockworkstation.png" />
     <Image Include="src\quick\taskmgr.png" />
-    <Image Include="src\rectangle.png" />
-    <Image Include="src\right.png" />
-    <Image Include="src\rubber.png" />
-    <Image Include="src\scale.png" />
     <Image Include="src\SecRandom.png" />
-    <Image Include="src\seewo_camera.png" />
-    <Image Include="src\setting\Community-picture.png" />
-    <Image Include="src\setting\Home1_en-US.png" />
-    <Image Include="src\setting\Home1_zh-CN.png" />
-    <Image Include="src\setting\Home1_zh-TW.png" />
-    <Image Include="src\setting\Home2_en-US.png" />
-    <Image Include="src\setting\Home2_zh-CN.png" />
-    <Image Include="src\setting\Home2_zh-TW.png" />
-    <Image Include="src\setting\Home_Backgroung.png" />
     <Image Include="src\setting\Home_Feedback.png" />
-    <Image Include="src\setting\Profile-picture.png" />
+    <Image Include="src\setting\GitHubMark.png" />
+    <Image Include="src\setting\EraserDemoFine.png" />
+    <Image Include="src\setting\EraserDemoSweep.png" />
     <Image Include="src\setting\Profile_Picture.png" />
     <Image Include="src\setting\SettingSponsor.png" />
-    <Image Include="src\sign.png" />
-    <Image Include="src\sign1.png" />
-    <Image Include="src\sign2.png" />
     <Image Include="src\sign3.png" />
-    <Image Include="src\sign4.png" />
-    <Image Include="src\sign5.png" />
-    <Image Include="src\skin\dragon.png" />
-    <Image Include="src\skin\dragon_background.png" />
-    <Image Include="src\skin\dragon_sign.png" />
-    <Image Include="src\tick.png" />
-    <Image Include="src\undo.png" />
-    <Image Include="src\weather\png00001.png" />
-    <Image Include="src\weather\weather3.png" />
-    <Image Include="src\wps_wpp.png" />
-    <Image Include="src\write.png" />
   </ItemGroup>
   <ItemGroup>
 	<None Include="IdtFloating.cpp" />
 	<None Include="IdtFloating.h" />
 	<None Include="IdtWindow.cpp" />
 	<None Include="IdtWindow.h" />
+	<None Include="additional\imfluent\LICENSE" />
+	<None Include="additional\imfluent\UPSTREAM.md" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />
@@ -1250,7 +1209,6 @@
     <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
-    <None Include="src\ui1.bin" />
     <None Include="src\UI\barBrush1.svg" />
     <None Include="src\UI\barBrush2.svg" />
     <None Include="src\UI\barPaintBrush.svg" />
@@ -1259,6 +1217,15 @@
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barAutoEraser.svg" />
+    <None Include="src\UI\barShapeStraightLine.svg" />
+    <None Include="src\UI\barShapeRectangle.svg" />
+    <None Include="src\UI\color\colorSun.svg" />
+    <None Include="src\UI\color\colorMoon.svg" />
+    <None Include="src\UI\barMore.svg" />
+    <None Include="src\UI\barMinimize.svg" />
+    <None Include="src\UI\barPalette.svg" />
+    <None Include="src\UI\barEndShow.svg" />
+    <None Include="src\UI\barAdd.svg" />
     <None Include="src\UI\barFreeze.svg" />
     <None Include="src\UI\barWhiteboard.svg" />
     <None Include="src\UI\barMenu.svg" />

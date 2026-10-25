@@ -70,21 +70,22 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-	  <PreprocessorDefinitions>INKEYS_MESSAGE_BOX_TESTING;DRAW3_CONTACT_TESTING;INKEYS_DISPLAY_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	  <PreprocessorDefinitions>INKEYS_MESSAGE_BOX_TESTING;DRAW3_CONTACT_TESTING;INKEYS_IMGUI_DX11_TESTING;INKEYS_DISPLAY_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Platform)'=='ARM64'">IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\Inkeys\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\Inkeys\additional;$(ProjectDir)..\Inkeys\additional\imgui;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Debug'">$(VcpkgInstalledDir)$(VcpkgTriplet)\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Release'">$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>jsoncpp.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>jsoncpp.lib;setupapi.lib;d3d11.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -147,6 +148,22 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Presentation.Source.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
+    <ClCompile Include="setting_home_warp_tests.cpp" />
+    <ClCompile Include="setting_eraser_demo_tests.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui_impl_dx11.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imfluent\imfluent.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.Controls.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.Shell.cpp">
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.Pages.cpp">
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="animation_tests.cpp" />
     <ClCompile Include="ui_pointer_tests.cpp" />
     <ClCompile Include="auto_collapse_tests.cpp">
@@ -171,6 +188,9 @@
 	</ClCompile>
 	<ClCompile Include="bar_presentation_alpha_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
+	<ClCompile Include="setting_design_tests.cpp">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
 	<ClCompile Include="ppt_ui_tests.cpp" />
 	<ClCompile Include="page_control_tests.cpp" />
 	<ClCompile Include="whiteboard_ui_tests.cpp" />
@@ -213,12 +233,17 @@
 	<ItemGroup>
 	  <ClInclude Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
 	  <ResourceCompile Include="message_box_test.rc" />
+	  <ResourceCompile Include="setting_home_warp_tests.rc" />
+	  <ClInclude Include="setting_home_warp_tests.h" />
 	</ItemGroup>
   <ItemGroup>
 	<ClInclude Include="..\Inkeys\Inkeys\Input\UiPointerInput.h" />
     <ClInclude Include="..\Inkeys\Inkeys\Window\Window.MessageDispatch.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Design.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Typography.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Controls.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />

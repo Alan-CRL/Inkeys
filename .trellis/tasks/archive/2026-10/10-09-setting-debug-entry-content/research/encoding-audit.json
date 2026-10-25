@@ -1,0 +1,72 @@
+[
+  {
+    "path": ".trellis/spec/native-desktop/rendering-and-ui.md",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 2080,
+    "bare_lf": 0
+  },
+  {
+    "path": ".trellis/tasks/09-06-setting-winui3-design-rebuild/task.json",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 48,
+    "bare_lf": 0
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 748,
+    "bare_lf": 0
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Design.h",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 457,
+    "bare_lf": 0
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Layout.h",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 325,
+    "bare_lf": 0
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Pages.h",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 120,
+    "bare_lf": 0
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 564,
+    "bare_lf": 0
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 4273,
+    "bare_lf": 0
+  },
+  {
+    "path": "InkeysHeadlessTests/setting_design_tests.cpp",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 2533,
+    "bare_lf": 0
+  },
+  {
+    "path": "InkeysHeadlessTests/setting_session_state_tests.cpp",
+    "utf8_valid": true,
+    "bom_preserved": true,
+    "crlf": 512,
+    "bare_lf": 0
+  }
+]

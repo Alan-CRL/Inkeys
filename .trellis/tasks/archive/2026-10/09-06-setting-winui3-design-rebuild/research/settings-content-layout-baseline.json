@@ -1,0 +1,68 @@
+{
+  "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+    "sha256": "2bc35cdb97df4eeadeae4d2b865894573d9bd22926b73bce1574f36a74f68b91",
+    "bom": false,
+    "crlf": 4728,
+    "lf": 4728
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.h": {
+    "sha256": "827ea5f1e56370207adf0f5a0a7be0d6d1124da489cf0aa08ef34c38dc906f6c",
+    "bom": false,
+    "crlf": 243,
+    "lf": 243
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": {
+    "sha256": "35484960f75ae3f50049659e3ee8b27c080c8c555cfc8fa4b6e329fd43a2045c",
+    "bom": false,
+    "crlf": 946,
+    "lf": 946
+  },
+  "Inkeys/IdtConfiguration.h": {
+    "sha256": "90b6c559fe6720ee70cc74f9e6031f883d43a65eaeec59db0dbe07d394026044",
+    "bom": false,
+    "crlf": 324,
+    "lf": 324
+  },
+  "Inkeys/IdtConfiguration.cpp": {
+    "sha256": "cf689123d0b874ba522e75b7b9e1cff14902eae0e7b8b3cd9761c8bc8681b0f8",
+    "bom": false,
+    "crlf": 1411,
+    "lf": 1411
+  },
+  "Inkeys/PptSettingsPersistence.h": {
+    "sha256": "29c6300a535c3904fd3e8b39748ce8f12348e7cbf1724a4b8180eae2b2fb7bd4",
+    "bom": false,
+    "crlf": 184,
+    "lf": 184
+  },
+  "PptCOM/PptCOM.cs": {
+    "sha256": "113b46e74ee07739f633df8ba1f91b33205cec213d221b1be449edd604516fb3",
+    "bom": true,
+    "crlf": 1762,
+    "lf": 1762
+  },
+  "InkeysHeadlessTests/setting_design_tests.cpp": {
+    "sha256": "f888fab0225db5d3b0d822d991fd31e26aca557fe5ff5869e6c52b6b292525d6",
+    "bom": false,
+    "crlf": 4455,
+    "lf": 4455
+  },
+  "InkeysHeadlessTests/ppt_ui_tests.cpp": {
+    "sha256": "6aa6b298159d98a08c525043aa340d9f60a939fe2a69d55bd66596d8db272850",
+    "bom": false,
+    "crlf": 496,
+    "lf": 496
+  },
+  "Inkeys/Inkeys/Drawing/Draw3/Assets/inkPixelShader.cso": {
+    "sha256": "c23556a1103308c123fd8937da0b6e28639d1e302b3be6c68c314be7b62c4032",
+    "bom": false,
+    "crlf": 0,
+    "lf": 546
+  },
+  "Inkeys/Inkeys/Drawing/Draw3/Assets/inkVertexShader.cso": {
+    "sha256": "79ef240a3c6a322f20cb1ba2ceac1e5ce5c7f61a28bf53b53edbc9bb1656c189",
+    "bom": false,
+    "crlf": 0,
+    "lf": 111
+  }
+}

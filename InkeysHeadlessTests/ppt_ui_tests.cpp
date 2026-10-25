@@ -408,6 +408,46 @@ namespace
 			"a new process restores actual disk data and never invents success of a failed prior save");
 	}
 
+	void TestDisabledLoadingPagePersistence()
+	{
+		using namespace Inkeys::PptSettings;
+		for (int oldValue = 0; oldValue < 4; ++oldValue)
+		{
+			Json::Value legacy;
+			if (oldValue == 1) legacy["ShowLoadingScreen"] = true;
+			else if (oldValue == 2) legacy["ShowLoadingScreen"] = false;
+			else if (oldValue == 3) legacy["ShowLoadingScreen"] = "true";
+			legacy["MemoryWidgetPosition"] = true;
+			legacy["ShowBottomBoth"] = false;
+			legacy["Unrelated"] = "keep";
+			SetPositions(legacy, { 1, 2, 3, 4 });
+			WriteJournal journal;
+			journal.Initialize(legacy);
+			const auto verify = [&](const std::string& payload, bool remember)
+			{
+				bool wrote = false;
+				Check(journal.Commit(payload, [&](const std::string& content)
+				{
+					wrote = true;
+					std::istringstream input(content.substr(3));
+					Json::CharReaderBuilder reader;
+					Json::Value actual;
+					std::string error;
+					const bool parsed = Json::parseFromStream(reader, input, &actual, &error);
+					const auto positions = ReadPositions(actual);
+					Check(parsed && actual["ShowLoadingScreen"].isBool() && !actual["ShowLoadingScreen"].asBool()
+						&& actual["MemoryWidgetPosition"].asBool() == remember
+						&& !actual["ShowBottomBoth"].asBool() && actual["Unrelated"].asString() == "keep"
+						&& positions.bottomX == 5 && positions.bottomY == 6 && positions.middleX == 7 && positions.middleY == 8,
+						"legacy loading-page values stay disabled across settings and position writes without losing other data");
+					return true;
+				}) && wrote, "loading-page normalization reaches the actual prepared writer snapshot");
+			};
+			verify(journal.CapturePositions({ 5, 6, 7, 8 }, false), false);
+			verify(journal.CaptureSettings(legacy), true);
+		}
+	}
+
 	void TestAtomicPositionFile()
 	{
 		using namespace Inkeys::PptSettings;
@@ -445,6 +485,7 @@ int RunPptUiTests()
 	TestPositionSessionsAndPersistence();
 	TestRapidReentryBeforeSaveCompletion();
 	TestAtomicPositionFile();
+	TestDisabledLoadingPagePersistence();
 	TestLayoutAndDpi();
 	TestAnimationAndDrag();
 	TestDamageTransactions();

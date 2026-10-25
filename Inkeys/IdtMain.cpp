@@ -2841,22 +2841,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				setlist.paintDevice = defaultLargeScreenDevice ? 0 : 1;
 				if (defaultLargeScreenDevice) setlist.liftStraighten = true;
 			}
-			{
-				HDC screenDC = GetDC(nullptr);
-				double scale = 1.0;
-
-				if (screenDC)
-				{
-					int dpiX = GetDeviceCaps(screenDC, LOGPIXELSX);
-					ReleaseDC(nullptr, screenDC);
-
-					// 转换为缩放倍率
-					scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
-				}
-
-				// 限制范围 1.0 ~ 1.5
-				setlist.settingGlobalScale = static_cast<float>(clamp(scale, 1.0, 1.5));
-			}
 		}
 
 		// 读取配置
@@ -3421,8 +3405,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		settingSpec.y = SettingWindowY;
 		settingSpec.width = SettingWindowWidth;
 		settingSpec.height = SettingWindowHeight;
-		settingSpec.style = WS_POPUP | WS_CLIPCHILDREN;
-		settingSpec.exStyle = WS_EX_APPWINDOW;
+		settingSpec.style = Inkeys::Window::SettingWindowStyle;
+		settingSpec.exStyle = Inkeys::Window::SettingWindowExStyle;
 		settingSpec.windowProc = Inkeys::UI::Setting::WindowProc();
 		settingSpec.largeIcon = applicationIcon;
 		settingSpec.smallIcon = applicationIcon;

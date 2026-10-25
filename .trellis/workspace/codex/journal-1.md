@@ -1576,6 +1576,21 @@ Collect自动跑齐13例；7项新控制全通过，正式PS仍透明。正常�
 - 本任务结束，Win7修复与正式发布执行独立处理
 
 
+## Session 51: Fluent 分层侧栏与通用四页
+<!-- trellis-session: v=2 fp=d27e0014fa0ae56b -->
+
+**Date**: 2026-10-08
+**Task**: Fluent 分层侧栏与通用四页
+**Branch**: `fluent`
+
+### Summary
+
+直接 fluent 完成通用拆分、分层侧栏和软件动画；自动检查通过，实机验收保留。
+
+### Main Changes
+
+- 通用四子页及旧入口映射，保留原控件配置/FIFO/实时行为。
+- 实现独立箭头、紧凑二次点击菜单、键盘焦点、点击屏障及可反向动画。
 ## Session 51: Win7 flip与双源诊断公开证据交叉核验
 <!-- trellis-session: v=2 fp=82023c0927324be3 -->
 
@@ -1629,6 +1644,7 @@ Collect自动跑齐13例；7项新控制全通过，正式PS仍透明。正常�
 
 ### Testing
 
+- [OK] 完整 Solution Debug|ARM64 exit0；最终 --no-window exit0；三 DPI 各564帧，悬停色0越界，i18n370/370及diff检查通过。
 - [OK] 原始及副本21文件SHA一致，生产HLSL/CSO/probe header保持冻结SHA；FXC两候选成功，JSON及git diff --check --ignore-submodules通过
 
 ### Status
@@ -1637,6 +1653,36 @@ Collect自动跑齐13例；7项新控制全通过，正式PS仍透明。正常�
 
 ### Next Steps
 
+- 父任务继续实机鼠标/截图/DPI/业务副作用及窗口常驻会话验收；本轮不 GUI/commit/push。
+
+
+## Session 52: 动态多行说明卡片人工验收与归档
+<!-- trellis-session: v=2 fp=6d65b0c73ec2d4b8 -->
+
+**Date**: 2026-10-09
+**Task**: 动态多行说明卡片人工验收与归档
+**Branch**: `fluent`
+
+### Summary
+
+2026-10-09用户确认人工验证完成并授权结束及commit；动态卡片子任务已归档，父任务继续进行中，不push。
+
+### Main Changes
+
+- 实现已提交5aaf7690；收尾验收与归档提交f5c71da9，完成日期2026-10-09。
+- 人工验收来源为用户确认，未补写具体操作或截图；代理未启动GUI。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5aaf7690` | feat(settings): add responsive multiline description cards |
+| `f5c71da9` | chore(trellis): archive accepted multiline card task |
+
+### Testing
+
+- [OK] 此前完整Debug|ARM64构建与完整--no-window回归通过；本轮仅文档与归档，不重复编译。
+- [OK] 归档上下文校验和暂存差异检查通过。
 - 只隔离DefaultInk尾部控制/薄线输入，验证真实type0/3与非零底图Retain；VMware硬件光学分界仍待该机日志
 
 
@@ -1694,6 +1740,60 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 [OK] **Completed**
 
+### Next Steps
+
+- 继续由setting-winui3-design-rebuild父任务承载其他设置界面工作；本子任务已结束。
+
+
+## Session 53: 调试入口与内容任务验收收尾
+<!-- trellis-session: v=2 fp=08857f9adab99244 -->
+
+**Date**: 2026-10-09
+**Task**: 调试入口与内容任务验收收尾
+**Branch**: `fluent`
+
+### Summary
+
+用户接受调试入口与内容调整；实现及归档已签名提交，父任务继续进行中，不push。后续版本文字色和汉堡反馈另行修改，不继承commit授权。
+
+### Main Changes
+
+- 标题栏Bug入口、蓝条Debug切换、四控制台迁移和完整EDID卡片已交付
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `926db4d0` | feat(settings): move debug entry to titlebar and group diagnostics |
+| `76e33791` | chore(trellis): archive accepted debug entry task |
+
+### Testing
+
+- [OK] 完整ARM64 Solution、完整--no-window、国际化与格式、独立检查通过；用户确认本轮满意
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 沿用设置重建父任务处理版本文字色和汉堡反馈，不GUI，不自动commit/push
+
+
+## Session 54: 标题栏版本同色与汉堡反馈
+<!-- trellis-session: v=2 fp=2f1640d98bc6b72e -->
+
+**Date**: 2026-10-09
+**Task**: 标题栏版本同色与汉堡反馈
+**Branch**: `fluent`
+
+### Summary
+
+在已提交归档的调试子任务之后完成两处小修；新改动未提交，父任务继续进行中。
+
+### Main Changes
+
+- 版本文字采用相邻图标的TextPrimary，汉堡局部使用subtleHover/subtlePressed，保留原按钮动画与开合逻辑。
 
 ## Session 54: H 实时绑定与更新请求元数据完成
 <!-- trellis-session: v=2 fp=db8c1fd6ff3df9f0 -->
@@ -1716,6 +1816,7 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 ### Testing
 
+- [OK] 完整InkeysRepo.sln Debug|ARM64 exit0/23.697秒；完整--no-window exit0/120.048秒、stderr空；新增汉堡三倍率各546帧/18场景；i18n、格式与编码通过。
 - [OK] 正常主机 ARM64 headless build exit0；--no-window exit0，Config metadata tests 0 failures，全部 suite PASS。
 - [OK] 完整 InkeysRepo.sln Debug|ARM64 ARM64-native MSBuild exit0，146 warnings/0 errors；本次 Config/下载源码无 warning。
 - [OK] scoped git diff --check、磁盘 BOM/CRLF 基线核对与 task validate 通过。受限 runner 的 PDB/临时文件环境失败原始证据保留，主机原样通过。
@@ -1726,6 +1827,159 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 ### Next Steps
 
+- 新改动保留未提交，不push/GUI；最终窗口观感待人工验收，父任务保持in_progress。
+
+
+## Session 55: 提交版本同色与汉堡反馈增量
+<!-- trellis-session: v=2 fp=25453b3d3602faa7 -->
+
+**Date**: 2026-10-09
+**Task**: 提交版本同色与汉堡反馈增量
+**Branch**: `fluent`
+
+### Summary
+
+用户授权提交本轮已验证改动；实现和规范已提交，父任务继续进行中，不push。
+
+### Main Changes
+
+- 提交版本文字TextPrimary与汉堡subtleHover/subtlePressed局部反馈、真实DrawData测试和规范/验证记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `636c93d5` | fix(settings): align titlebar version color and restore menu feedback |
+
+### Testing
+
+- [OK] 复核已通过的完整Debug|ARM64构建、完整--no-window及独立审查；提交前diff --check通过，源码未再变更，无需重复编译。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 父任务继续in_progress，保留其他验收工作；未执行push或GUI。
+
+
+## Session 56: 侧栏统一滚动条与旧内容拖动复用
+<!-- trellis-session: v=2 fp=a8d7682b1e680703 -->
+
+**Date**: 2026-10-09
+**Task**: 侧栏统一滚动条与旧内容拖动复用
+**Branch**: `fluent`
+
+### Summary
+
+新子任务按用户批准方案实施并完成自动验证；父子任务继续进行中，修改未提交。
+
+### Main Changes
+
+- 中段自动主题滚动条与4DIP按钮命中间距；原ScrollWhenDraggingOnVoid正文保持，正文/导航/实际可滚浮层和Combo唯一owner接入，保留原输入消息与控件行为。
+
+### Git Commits
+
+(No commits - implementation verified; manual acceptance pending)
+
+### Testing
+
+- [OK] 完整Debug|ARM64 Solution exit0/25.915秒；正常用户完整--no-window exit0/122.897秒/stderr空；三倍率nav各317帧、generic各208帧；i18n、UTF8/BOM/CRLF、diff检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 独立审查记录与规范已同步；真实桌面触摸/观感待人工验收，不GUI/commit/push，不自动归档。
+
+
+## Session 57: 设置滚动条动画与内容拖动同帧响应
+<!-- trellis-session: v=2 fp=92ef85d0d624629e -->
+
+**Date**: 2026-10-09
+**Task**: 设置滚动条动画与内容拖动同帧响应
+**Branch**: `fluent`
+
+### Summary
+
+先完成用户授权的上一轮基线提交b8beea0b；本轮四项增量已验证，纳入同批授权commit，不push/GUI，父子继续in_progress。
+
+### Main Changes
+
+- 真实Home及全部实际竖直宿主支持按住内容拖动；移除重复4DIP gap，统一原生条width/alpha显隐；首次Begin前提交持续位移，真实DrawData减少一绘制帧。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b8beea0b` | feat(settings): add navigation scrollbar and reuse content drag scrolling |
+
+### Testing
+
+- [OK] 完整Solution Debug ARM64 exit0/65.726秒，完整--no-window exit0/125.807秒/stderr空；浅深/三倍率真实Home/Nav/Combo/Card/Details连续帧及legacy对照通过；i18n370/370、格式和独立审查通过。
+- [OK] 整页CPU100 idle及100 held样本/路径/倍率，无一致CPU下降结论；原生1.875倍率0.5px真溢出保留，独立empty fixture严格zero endpoint通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 真实触屏、鼠标跟手感及DX11视觉待人工验收，父子任务不自动归档；本轮授权提交包含代码、规范与记录，不push。
+
+
+## Session 58: 结束并归档滚动条与内容拖动子任务
+<!-- trellis-session: v=2 fp=1180fd3a3d7908b2 -->
+
+**Date**: 2026-10-09
+**Task**: 结束并归档滚动条与内容拖动子任务
+**Branch**: `fluent`
+
+### Summary
+
+用户明确授权结束子任务并提交收尾；子任务已completed并归档，父任务继续in_progress，不push。
+
+### Main Changes
+
+- 归档10-09-setting-scrollbar-drag-scroll至archive/2026-10，登记实现commit与结束授权，修复归档后jsonl及验证记录路径；父任务保留其他工作。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4df1f0b6` | fix(settings): animate scrollbars and improve content drag response |
+| `c45bcd64` | chore(trellis): archive setting scrollbar and drag scroll task |
+
+### Testing
+
+- [OK] 归档上下文implement/check各6条PASS，18份文件checkout编码/BOM/CRLF/末换行检查通过，git暂存diff --check通过；产品代码未改，沿用完整ARM64与no-window既有通过结果。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本子任务已结束；父任务继续进行中。没有新增实机鼠标/触屏/DX11验证，不GUI/Computer Use/push。
+
+
+## Session 98: 设置开屏 GPU 页面缓存与无限制离屏性能
+<!-- trellis-session: v=2 fp=3938b28797561516 -->
+
+**Date**: 2026-10-14
+**Task**: 设置开屏 GPU 页面缓存与无限制离屏性能
+**Branch**: `fluent`
+
+### Summary
+
+延续fluent开屏任务，确认旧Inkeys工作树/stash无遗漏；实现无字标GPU页面截图与渐退归位复用，完整ARM64构建和无窗口回归通过。39组WARP/Adreno测量确认默认WARP是瓶颈，正常仍有60Hz调度及垂直同步。
+
+### Main Changes
+
+- WritingEnd两暖帧捕获，单份GPU copy缓存，终态两布局恢复，失效与清理覆盖；不commit/push。
 - 本任务验收完成，按用户规则保留未提交变更；Win7 ULW 任务继续独立进行。123 CDN 实际请求日志未测试。
 
 
@@ -1751,6 +2005,7 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 ### Testing
 
+- [OK] InkeysRepo.sln Debug|ARM64 exit0 87.836s；全套--no-window exit0 304.793s，stderr0；i18n384/384和编码/diff通过。
 - [OK] Debug ARM64 / Release x64完整solution exit0；420GPU+108策略及Headless通过；实际WinPS双105+27，50mock PASS，87不可变和8其他任务文件保持
 
 ### Status
@@ -1759,6 +2014,23 @@ WARP真实恢复优先验证普通笔立即出墨、亚像素细笔、粗细变�
 
 ### Next Steps
 
+- 用户审阅validation.md；如继续优化，优先评估共享WARP策略或做字标/蒙版消融，不直接改限帧。
+
+
+## Session 99: 设置静止帧跳过提交与WARP组件消融
+<!-- trellis-session: v=2 fp=684af92ec7dfcd3b -->
+
+**Date**: 2026-10-14
+**Task**: 设置静止帧跳过提交与WARP组件消融
+**Branch**: `fluent`
+
+### Summary
+
+保留共享WARP/独立Draw架构，实现精确重复提交跳过与不透明省copy；全套离屏测试和60组测量通过，省Clear无稳定收益撤回产品。
+
+### Main Changes
+
+- 单帧1MiB CPU值快照仅S_OK发布，保留CPU Continue与计时，事务/输入/失败强制实际重绘；无新增GPU资源。
 - 新EXE在Win7普通双击默认启动回归；VMware克隆升级v18+/适配Tools与SHA2后独立Hardware；继续定位偶发荧光定格变深及PPT有限回归
 
 
@@ -1968,6 +2240,7 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Testing
 
+- [OK] 最终InkeysRepo.sln Debug|ARM64 exit0 22.3754s；全套--no-window exit0 278.4643s、stderr0，21新增+39既有benchmark。i18n384/384、精确RGBA、7文件baseline格式与diff通过。
 - [OK] 完整 InkeysRepo.sln Debug|ARM64 exit 0；InkeysHeadlessTests --no-window exit 0；imports/格式/diff 检查通过
 - [OK] 4source和4main Rebuild exit0；4replay19case/128412 bit exact，仅依赖版本metadata变化；3arch各30pairs PASS；Headless no-window0。
 - [OK] 完整InkeysRepo.sln Debug|ARM64退出0、0error；headless --no-window退出0、Recall failures=0；独立check通过。
@@ -1978,6 +2251,23 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Next Steps
 
+- 查看submission-validation.md；产品仍16.666667ms共享调度与Present(1,0)，未GUI/Win7实机/commit/push，保留当前任务供审阅。
+
+
+## Session 100: 设置开屏缓存滚动条与终态布局连续性修复
+<!-- trellis-session: v=2 fp=1fa8c69b335838ec -->
+
+**Date**: 2026-10-14
+**Task**: 设置开屏缓存滚动条与终态布局连续性修复
+**Branch**: `fluent`
+
+### Summary
+
+开屏准备/恢复使用稳定滚动条尺寸，并以当帧native内容尺寸就绪门禁截图与恢复；浅深六例首实时背景精确RGBA一致，全套无窗口验证通过。
+
+### Main Changes
+
+- 保留默认160ms滚动条动效和真实溢出条件；新增CompleteHomeEntryLayout按本帧正文子树native explicit/Trunc/Ideal尺寸检查，至少2提交且实际ready/六次预算，避免8px宽度及thumb高度跳变。
 - 阶段1已完成归档；父任务尾段重构继续planning，需要独立实施/验收。GUI/实体笔/Win7真机未执行；无commit/push。
 
 
@@ -2003,6 +2293,7 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Testing
 
+- [OK] 完整InkeysRepo.sln Debug|ARM64 exit0/25.0683s，全套--no-window exit0/226.2471s、stderr0，六例背景diff0、60既有测量完成；i18n384/384、8源码格式和diff通过。
 - [OK] 四配置尾段96窗口116105assert0失败，默认18Apply12改善；原19case128412assert同阶段1位级一致；主Debug+Headless、三架构24case成本、imports资源及checker通过。
 
 ## Session 72: RTS 注册前置顶修复核验与任务归档
@@ -2028,6 +2319,67 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Next Steps
 
+- 任务继续in_progress；本轮不commit/push/归档，不GUI。查看scrollbar-validation.md继续人工审阅或后续修复。
+
+
+## Session 101: 设置开屏缓存任务完成与归档
+<!-- trellis-session: v=2 fp=f185321da3ef78c6 -->
+
+**Date**: 2026-10-14
+**Task**: 设置开屏缓存任务完成与归档
+**Branch**: `fluent`
+
+### Summary
+
+用户确认滚动条跳变修复有效；三轮优化及离屏验证完成，修复已提交，任务已归档。
+
+### Main Changes
+
+- 缓存与首个实时帧使用一致滚动条宽度及已收敛的原生内容尺寸；自然无溢出布局保持无滚动条。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a4bdd89` | perf(setting): cache entrance page and skip duplicate submissions |
+| `c7effa54` | fix(setting): stabilize cached entrance scrollbar layout |
+
+### Testing
+
+- [OK] 完整Debug ARM64 solution构建通过；无窗口全套测试通过，浅深六例背景精确像素差异为0；保留原有PptCOM.dll修改。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 105: Complete native material surface adaptation
+<!-- trellis-session: v=2 fp=a58899bcc39b4494 -->
+
+**Date**: 2026-10-16
+**Task**: Complete native material surface adaptation
+**Branch**: `fluent`
+
+### Summary
+
+Completed native Mica/Acrylic surface blending with opaque overlays, preserved foregrounds and borders, validated ARM64 build and headless settings tests; user approved commit and task completion.
+
+### Main Changes
+
+- Blend sidebar/page/card surfaces only when native materials are available; retain exact Solid fallback and opaque caption/popups.
+- Added DPI/material popup DrawData and exact cached/full RGBA regressions; recorded material contracts.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0b6c1d23` | feat(setting): blend surfaces with native window materials |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug ARM64 via native MSBuild: PASS, exit 0.
+- [OK] InkeysHeadlessTests --no-window --setting-home-only: PASS, exit 0, stderr empty.
+- [OK] git diff --check: PASS. Original PptCOM.dll/tlb bytes preserved; no GUI run.
 - 阶段3另建产品完成/Stored/taper/L1接入任务，按真实消费输入验证保护窗口/来源和成本；Touch续接及设备GUI另阶段。
 
 
@@ -2060,6 +2412,7 @@ IdtMain 私有准备检查每代窗口 root/owner/topmost，覆盖首次和 ULW 
 
 ### Next Steps
 
+- No pending implementation work; visual tuning may be requested separately.
 - 实体笔和断触完成视觉、GPU重绘体验验证
 
 

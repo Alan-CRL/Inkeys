@@ -1,0 +1,98 @@
+{
+  "transfer": {
+    "target_branch": "fluent",
+    "target_worktree": "D:/Project/Inkeys/Repo/Inkeys",
+    "source_branch": "codex/fluent-setting-sidebar",
+    "source_worktree": "C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys",
+    "HEAD": "834307a4b21cc4b58d6f34a6572af6f401096218",
+    "MERGE_HEAD": "e2c212d4d9cd68367c08363c450d392e9d63bcef",
+    "source_index_tree": "5dfa2fe547a3225d74f7f57c3d33498da9047c32",
+    "transferred_index_tree": "5dfa2fe547a3225d74f7f57c3d33498da9047c32",
+    "exact_validated_tree_transferred": true,
+    "original_files_backup": "D:/Project/Inkeys/Repo/Inkeys/Inkeys/Cache/fluent-integration-20261008/original-files",
+    "IdtMain_h_unchanged": true,
+    "PptCOM_dll_updated_to_validated_runtime": true,
+    "original_PptCOM_tests_outputs_preserved": true,
+    "commit_created": false,
+    "push_executed": false
+  },
+  "build": {
+    "native_msbuild": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+    "configuration": "Debug|ARM64",
+    "timeout_seconds": 1800,
+    "elapsed_seconds": 381.8,
+    "exit": 0,
+    "path_key_count": 1
+  },
+  "no_window": {
+    "exit": 0,
+    "initial_sandbox_exit": 1,
+    "initial_failure_count": 7,
+    "initial_failures": "atomic temporary file replacement: PPT5, Config2; identical executable passes with normal user permission",
+    "gui": false,
+    "samples": [
+      {
+        "scale": 1.0,
+        "frames": 328,
+        "samples": 315,
+        "violations": 0,
+        "worst": 0.000492036
+      },
+      {
+        "scale": 1.875,
+        "frames": 328,
+        "samples": 315,
+        "violations": 0,
+        "worst": 0.000492036
+      }
+    ]
+  },
+  "i18n": {
+    "exit": 0,
+    "en-US": "366/366",
+    "zh-TW": "366/366"
+  },
+  "preservation": {
+    "protected_existing_outputs": 13,
+    "restored_after_build": [
+      "PptCOM.Tests/obj/Release/PptCOM.Tests.csproj.AssemblyReference.cache"
+    ],
+    "all_original_header_and_test_hashes_preserved": true,
+    "old_production_dll_sha256": "88b3e7aed2502a1280974a1d36cffe758ddf3526b2f381736b050a93f995d2fb",
+    "current_production_dll_sha256": "dffb30ea3345aafff8ff07c9ed40ab284033416df590b42ac530a4d5dcfda067",
+    "old_production_dll_backed_up": true,
+    "restored_after_final_test": [
+      "PptCOM.Tests/obj/Release/PptCOM.Tests.csproj.AssemblyReference.cache"
+    ],
+    "final_reference_cache_sha256": "67f4b8c2a06b33d065de01a46a38e30a6657bd71b61ad49d7fd151b73118fcc5"
+  },
+  "primary_binary": {
+    "path": "D:/Project/Inkeys/Repo/Inkeys/Build/ARM64/Debug/Inkeys.exe",
+    "sha256": "53e376c3b8fbaca6c04a948ecc33275128cea23a21950429088babbafcd313e2"
+  },
+  "raw_logs_cache": "D:/Project/Inkeys/Repo/Inkeys/Inkeys/Cache/fluent-integration-20261008",
+  "branch_cleanup": {
+    "temporary_branch_deleted": true,
+    "temporary_worktree_removed": true,
+    "current_branch": "fluent",
+    "remaining_worktrees": [
+      "D:/Project/Inkeys/Repo/Inkeys",
+      "D:/Project/Inkeys/Repo/Inkeys-draw"
+    ],
+    "source_publish_unchanged": true
+  },
+  "final_diff": {
+    "own_diff_check_exit": 0,
+    "whole_merge_diff_check_exit": 2,
+    "inherited_whitespace_files": 29,
+    "all_inherited_blobs_identical_to_publish": true,
+    "unstaged_files": 0,
+    "untracked_files": 0,
+    "unmerged_files": 0,
+    "original_header_and_test_hashes_unchanged": true,
+    "HEAD": "834307a4b21cc4b58d6f34a6572af6f401096218",
+    "MERGE_HEAD": "e2c212d4d9cd68367c08363c450d392e9d63bcef",
+    "commit_created": false,
+    "push_executed": false
+  }
+}
