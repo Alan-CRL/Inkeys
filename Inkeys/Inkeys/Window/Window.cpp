@@ -1437,29 +1437,33 @@ namespace Inkeys::Window
 			}
 			if (IsSetting(spec.role) || spec.role == WindowRole::Freeze)
 			{
-				// 创建后重新计算一次自定义非客户区，避免首帧保留系统 caption 的旧几何。
-				SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-					SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-				RECT actualOuter{}, actualClient{};
-				if (GetWindowRect(hwnd, &actualOuter) && GetClientRect(hwnd, &actualClient))
+				// 外框校正只用于设置，Freeze 保持原来的无边框尺寸。
+				if (IsSetting(spec.role))
 				{
-					// DWM 的真实描边在创建后才可查询；仍按原请求中心和当前工作区只校正一次。
-					MONITORINFO monitorInfo{ sizeof(monitorInfo) };
-					const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-					if (!monitor || !GetMonitorInfoW(monitor, &monitorInfo))
-						monitorInfo.rcWork = {};
-					const auto corrected = Inkeys::UI::Setting::ResolveWindowFrameCreationCorrection(
-						{ spec.x, spec.y, spec.x + spec.width, spec.y + spec.height },
-						{ static_cast<int>(actualOuter.left), static_cast<int>(actualOuter.top),
-							static_cast<int>(actualOuter.right), static_cast<int>(actualOuter.bottom) },
-						{ static_cast<int>(actualClient.right - actualClient.left),
-							static_cast<int>(actualClient.bottom - actualClient.top) },
-						{ static_cast<int>(monitorInfo.rcWork.left), static_cast<int>(monitorInfo.rcWork.top),
-							static_cast<int>(monitorInfo.rcWork.right), static_cast<int>(monitorInfo.rcWork.bottom) });
-					if (corrected.Width() != actualOuter.right - actualOuter.left
-						|| corrected.Height() != actualOuter.bottom - actualOuter.top)
-						SetWindowPos(hwnd, nullptr, corrected.left, corrected.top,
-							corrected.Width(), corrected.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
+					// 创建后重新计算一次自定义非客户区，避免首帧保留系统 caption 的旧几何。
+					SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+						SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+					RECT actualOuter{}, actualClient{};
+					if (GetWindowRect(hwnd, &actualOuter) && GetClientRect(hwnd, &actualClient))
+					{
+						// DWM 的真实描边在创建后才可查询；仍按原请求中心和当前工作区只校正一次。
+						MONITORINFO monitorInfo{ sizeof(monitorInfo) };
+						const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+						if (!monitor || !GetMonitorInfoW(monitor, &monitorInfo))
+							monitorInfo.rcWork = {};
+						const auto corrected = Inkeys::UI::Setting::ResolveWindowFrameCreationCorrection(
+							{ spec.x, spec.y, spec.x + spec.width, spec.y + spec.height },
+							{ static_cast<int>(actualOuter.left), static_cast<int>(actualOuter.top),
+								static_cast<int>(actualOuter.right), static_cast<int>(actualOuter.bottom) },
+							{ static_cast<int>(actualClient.right - actualClient.left),
+								static_cast<int>(actualClient.bottom - actualClient.top) },
+							{ static_cast<int>(monitorInfo.rcWork.left), static_cast<int>(monitorInfo.rcWork.top),
+								static_cast<int>(monitorInfo.rcWork.right), static_cast<int>(monitorInfo.rcWork.bottom) });
+						if (corrected.Width() != actualOuter.right - actualOuter.left
+							|| corrected.Height() != actualOuter.bottom - actualOuter.top)
+							SetWindowPos(hwnd, nullptr, corrected.left, corrected.top,
+								corrected.Width(), corrected.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
+					}
 				}
 				SendMessageW(hwnd, WM_SETICON, ICON_BIG,
 					reinterpret_cast<LPARAM>(windowClass.hIcon));
