@@ -2526,7 +2526,57 @@
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </FxCompile>
   </ItemGroup>
-  <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.filters.props" />
+  <!-- 在主 filters 中显式归类，避免 Visual Studio 将导入的源码显示在项目根目录。 -->
+  <ItemGroup>
+    <Filter Include="头文件\Additional\ink_stroke_modeler">
+      <UniqueIdentifier>{DA4B8C83-A524-4EFD-9923-77B54A3E2414}</UniqueIdentifier>
+    </Filter>
+    <ClInclude Include="additional\ink_stroke_modeler\terminal_tail_reconstructor.h">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\params.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\types.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\internal_types.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\loop_contraction_mitigation_modeler.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\position_modeler.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\utils.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\wobble_smoother.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\terminal_tail_reconstructor.cc">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClCompile>
+  </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h">
       <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
