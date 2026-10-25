@@ -2284,6 +2284,7 @@ SettingSessionCoroutine RunSettingSession()
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
 		Design::HomeMotionState homeMotion;
+		Design::SettingOpenNavigation openNavigation;
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 		SettingEntryProfiler entryProfiler;
 #endif
@@ -2345,11 +2346,15 @@ SettingSessionCoroutine RunSettingSession()
 			const auto entryBackdrop=settingBackdropMode.load(memory_order_acquire);
 			const bool transparentBackdrop=entryBackdrop!=Inkeys::UI::Setting::BackdropMode::Solid;
 			const ImVec4 clearColorValue=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
-			std::uint64_t hideSerial;
+			std::uint64_t hideSerial, showSerial;
+			bool settingVisible;
+			Inkeys::UI::Setting::SettingOpenRequest openRequest;
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 			std::uint64_t entryProfileShowSerial;
 #endif
 			{ lock_guard stateLock(settingStateMutex); hideSerial=settingSessionState.HideSerial();
+				showSerial=settingSessionState.ShowSerial(); settingVisible=settingSessionState.IsVisible();
+				openRequest=settingSessionState.GetOpenRequest();
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 				entryProfileShowSerial=settingSessionState.ShowSerial();
 #endif
@@ -2361,6 +2366,21 @@ SettingSessionCoroutine RunSettingSession()
 			if (Design::ConsumeSettingHomeReset(hideSerial,consumedHideSerial,destination,navigationState,homeMotion))
 			{
 				settingTab=0; resetHomeScroll=true; settingFrameSubmission.Reset();
+			}
+			const auto openAction = openNavigation.Consume(openRequest, settingVisible, showSerial, hideSerial,
+				Experimental.Inkeys3.AnimationEnable
+				&& Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial));
+			if (openAction == Design::SettingOpenNavigation::Action::Home)
+			{
+				navigateTo({ Design::PageId::Home }); resetHomeScroll = true;
+			}
+			if (openAction == Design::SettingOpenNavigation::Action::SpeedEraser
+				|| openNavigation.Complete(homeMotion, destination.page == Design::PageId::Home))
+			{
+				// 导航只由渲染 owner 消费；有开屏时等原流程结束，再交接到目标子页。
+				navigateTo({ Design::PageId::Draw });
+				Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
+				settingFrameSubmission.Reset();
 			}
 			Design::BeginDragScrolling(navigationState);
 			// 所有页面默认使用 ImFluent Body 字体，局部字号只通过 scoped PushFont 切换。
@@ -2551,10 +2571,9 @@ SettingSessionCoroutine RunSettingSession()
 				synchronizeDestination();
 				const float contentAlpha = Design::ContentAlpha(navigationState);
 				bool blockContentInput = navigationState.BlockContentInput();
-				std::uint64_t showSerial, entryFontSerial;
+				std::uint64_t entryFontSerial;
 				{
 					lock_guard stateLock(settingStateMutex);
-					showSerial=settingSessionState.ShowSerial();
 					entryFontSerial=settingSessionState.FontRebuildSerial();
 				}
 				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
@@ -4706,6 +4725,18 @@ namespace
 		if (settingFrameResult != FrameResult::Continue) settingNavigationClockIdle = true;
 		return settingFrameResult;
 	}
+
+	void ShowSetting(Inkeys::UI::Setting::SettingOpenTarget target)
+	{
+		if (!settingInitialized.load(memory_order_acquire)) return;
+		{
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.RequestShow(target);
+		}
+		// 复用 HWND owner 线程的恢复与激活；不能从 Bar 输入线程直接操作 ImGui 或窗口。
+		settingBusinessQueue.Enqueue({ SettingBusinessKind::ShowWindow });
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+	}
 }
 
 namespace Inkeys::UI::Setting
@@ -4800,17 +4831,9 @@ namespace Inkeys::UI::Setting
 		settingBusinessQueue.Stop();
 	}
 
-	void Show()
-	{
-		if (!settingInitialized.load(memory_order_acquire)) return;
-		{
-			lock_guard stateLock(settingStateMutex);
-			settingSessionState.SetVisible(true);
-		}
-		settingBusinessQueue.Enqueue({ SettingBusinessKind::ShowWindow });
-		Inkeys::UI::RenderPipeline::Request(
-			Inkeys::UI::RenderPipeline::Client::Settings);
-	}
+	void Show() { ShowSetting(SettingOpenTarget::Current); }
+
+	void ShowSpeedEraser() { ShowSetting(SettingOpenTarget::SpeedEraser); }
 
 	void Hide()
 	{

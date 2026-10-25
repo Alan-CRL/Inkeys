@@ -19,6 +19,8 @@ export namespace Inkeys::UI::Setting
 	// 仅设置渲染线程把阻塞窗口同步交给已有 FIFO，其他调用保持同步。
 	[[nodiscard]] bool DeferDraw3SyncIfRendering();
 	void Show();
+	// 从橡皮属性直达详情，仍走同一 Show、激活与开屏策略。
+	void ShowSpeedEraser();
 	void Hide();
 	void Toggle();
 	[[nodiscard]] bool IsVisible() noexcept;

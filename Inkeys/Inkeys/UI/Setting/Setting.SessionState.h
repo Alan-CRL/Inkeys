@@ -179,6 +179,14 @@ namespace Inkeys::UI::Setting
 		bool consumeBusinessCompletion = false;
 	};
 
+	enum class SettingOpenTarget : std::uint8_t { Current, SpeedEraser };
+	struct SettingOpenRequest
+	{
+		std::uint64_t serial = 0, showSerial = 0, hideSerial = 0;
+		SettingOpenTarget target = SettingOpenTarget::Current;
+		bool opening = false;
+	};
+
 	class SessionState
 	{
 	public:
@@ -189,6 +197,14 @@ namespace Inkeys::UI::Setting
 			visible_ = visible;
 			if (!visible) InvalidateSession();
 		}
+		void RequestShow(SettingOpenTarget target) noexcept
+		{
+			const bool opening = !visible_;
+			SetVisible(true);
+			// 目标与真实 Show/Hide 身份同批发布；普通激活不额外消耗开屏机会。
+			openRequest_ = { openRequest_.serial + 1, showSerial_, hideSerial_, target, opening };
+		}
+		[[nodiscard]] SettingOpenRequest GetOpenRequest() const noexcept { return openRequest_; }
 		[[nodiscard]] std::uint64_t ShowSerial() const noexcept { return showSerial_; }
 		[[nodiscard]] std::uint64_t HideSerial() const noexcept { return hideSerial_; }
 		[[nodiscard]] bool IsVisible() const noexcept { return visible_; }
@@ -295,6 +311,7 @@ namespace Inkeys::UI::Setting
 		void ReleasePresentation() noexcept { occluded_ = false; }
 
 	private:
+		SettingOpenRequest openRequest_;
 		bool visible_ = false;
 		bool occluded_ = false;
 		std::uint64_t inputResetSerial_ = 0;

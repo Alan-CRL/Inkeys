@@ -2,6 +2,7 @@
 
 #include "Setting.Controls.h"
 #include "Setting.HomeBrand.h"
+#include "Setting.SessionState.h"
 #include "Setting.EraserDemo.h"
 
 struct ImGuiWindow;
@@ -176,6 +177,36 @@ namespace Inkeys::UI::Setting::Design
 	// Hide 的重置由唯一渲染线程在排布前消费；同帧 Hide→Show 也不会漏掉。
 	bool ConsumeSettingHomeReset(std::uint64_t resetSerial, std::uint64_t& consumed,
 		NavigationDestination& destination, NavigationState& navigation, HomeMotionState& motion);
+
+	struct SettingOpenNavigation
+	{
+		enum class Action { None, Home, SpeedEraser };
+		std::uint64_t consumed = 0, showSerial = 0, hideSerial = 0;
+		bool pending = false;
+
+		Action Consume(const SettingOpenRequest& request, bool visible,
+			std::uint64_t currentShow, std::uint64_t currentHide, bool entryAllowed) noexcept
+		{
+			if (!visible || showSerial != currentShow || hideSerial != currentHide) pending = false;
+			if (request.serial == consumed) return Action::None;
+			consumed = request.serial; pending = false;
+			if (!visible || request.showSerial != currentShow || request.hideSerial != currentHide
+				|| request.target != SettingOpenTarget::SpeedEraser) return Action::None;
+			showSerial = currentShow; hideSerial = currentHide;
+			pending = request.opening && entryAllowed;
+			return pending ? Action::Home : Action::SpeedEraser;
+		}
+
+		bool Complete(const HomeMotionState& motion, bool home) noexcept
+		{
+			if (!home) pending = false;
+			if (!pending || motion.showSerial != showSerial || motion.EntryActive()
+				|| motion.entry == HomeMotionState::Entry::Pending) return false;
+			// 完成、尺寸跳过或输入取消均只交接一次，不重播或补偿首次机会。
+			pending = false;
+			return true;
+		}
+	};
 
 	enum class DrawingSubpage : int { Overview, SpeedEraser };
 

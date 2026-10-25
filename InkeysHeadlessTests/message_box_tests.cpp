@@ -1537,6 +1537,7 @@ int RunMessageBoxTests(bool runWindowTests)
 	TestLabelsAndScaling();
 	TestPreflightWithoutWindow();
 	Check(MessageBoxTest::VerifyCancellationAdmission(), "cancelled admission returns without waiting for another dialog");
+	Check(MessageBoxTest::VerifyDialogHideOwnerPolicy(), "dialog cleanup enables and returns foreground to owner before hiding without stealing external focus");
 	std::stop_source stop;
 	Request cancelled; cancelled.fallback.enabled = false; cancelled.cancellation = stop.get_token();
 	stop.request_stop();

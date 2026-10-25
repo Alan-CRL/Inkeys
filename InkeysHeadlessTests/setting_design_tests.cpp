@@ -2353,6 +2353,66 @@ namespace
 		io.DisplaySize = oldSize; ApplyPalette(false);
 	}
 
+	void CheckSettingOpenNavigation(Checks& checks)
+	{
+		using namespace Inkeys::UI::Setting;
+		using Action = Design::SettingOpenNavigation::Action;
+		for (int mode : { 0, 1, 2 })
+		{
+			SessionState session; Design::SettingOpenNavigation navigation;
+			for (int opening = 1; opening <= 2; ++opening)
+			{
+				session.RequestShow(SettingOpenTarget::SpeedEraser);
+				const auto request = session.GetOpenRequest();
+				const auto action = navigation.Consume(request, session.IsVisible(), session.ShowSerial(), session.HideSerial(),
+					ShouldPlaySettingEntryAnimation(mode, session.ShowSerial()));
+				checks.Expect(session.ShowSerial() == opening && request.opening
+					&& action == ((mode == 2 || (mode == 1 && opening == 1)) ? Action::Home : Action::SpeedEraser),
+					"eraser entry uses the real Show count for off/first/always policies");
+				session.SetVisible(false);
+			}
+		}
+		for (const auto terminal : { Design::HomeMotionState::Entry::Finished, Design::HomeMotionState::Entry::Skipped })
+		{
+			SessionState session; Design::SettingOpenNavigation navigation; Design::HomeMotionState motion;
+			session.RequestShow(SettingOpenTarget::SpeedEraser);
+			checks.Expect(navigation.Consume(session.GetOpenRequest(), true, session.ShowSerial(), session.HideSerial(), true) == Action::Home
+				&& !navigation.Complete(motion, true), "new eraser opening waits for this Show's entry rather than an old terminal state");
+			Design::ConfigureHomeMotion(motion, true, session.ShowSerial(), 0, true, 1);
+			checks.Expect(!navigation.Complete(motion, true), "pending entry preparation retains the eraser destination");
+			motion.entry = Design::HomeMotionState::Entry::Playing;
+			checks.Expect(!navigation.Complete(motion, true), "playing entry does not navigate underneath the overlay");
+			motion.entry = terminal;
+			checks.Expect(navigation.Complete(motion, true) && !navigation.Complete(motion, true),
+				"completed/cancelled or dimension-skipped entry hands off to eraser exactly once");
+		}
+		SessionState session; Design::SettingOpenNavigation navigation; Design::HomeMotionState motion;
+		auto consume = [&](bool entryAllowed = true) {
+			return navigation.Consume(session.GetOpenRequest(), session.IsVisible(), session.ShowSerial(), session.HideSerial(), entryAllowed);
+		};
+		session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
+		session.RequestShow(SettingOpenTarget::SpeedEraser);
+		checks.Expect(consume() == Action::SpeedEraser && session.ShowSerial() == 1 && !session.GetOpenRequest().opening,
+			"visible eraser shortcut activates and navigates directly without a new Show or replay");
+		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
+		session.RequestShow(SettingOpenTarget::Current);
+		checks.Expect(consume() == Action::None && !navigation.pending, "newer ordinary Show cancels a delayed eraser route");
+		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
+		const auto stale = session.GetOpenRequest();
+		session.SetVisible(false);
+		checks.Expect(consume() == Action::None && !navigation.pending, "Hide cancels an unfinished eraser entry");
+		session.RequestShow(SettingOpenTarget::Current); (void)consume();
+		checks.Expect(navigation.Consume(stale, true, session.ShowSerial(), session.HideSerial(), true) == Action::None,
+			"a stale route cannot cross Hide/Show identities");
+		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser);
+		checks.Expect(consume(false) == Action::SpeedEraser, "disabled animations route directly even when the entry policy allows playback");
+		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
+		Design::ConfigureHomeMotion(motion, true, session.ShowSerial(), 0, true, 1);
+		Design::FinishHomeEntry(motion);
+		checks.Expect(!navigation.Complete(motion, false) && !navigation.Complete(motion, true),
+			"explicit navigation away prevents a delayed eraser jump");
+	}
+
 	void CheckDrawingSubpageScroll(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
 		using namespace Design;
@@ -4932,6 +4992,7 @@ namespace
 int RunSettingDesignTests(bool copyOnly, bool eraserOnly)
 {
 	Checks checks;
+	CheckSettingOpenNavigation(checks);
 	CheckNavigation(checks);
 	CheckNavigationPaneGeometry(checks);
 	CheckFrameSubmission(checks);

@@ -1303,10 +1303,15 @@ namespace Inkeys::UI::Bar
 				{
 					const auto rect=layout.items[id];ExMessage m{};m.x=static_cast<short>((rect.left+rect.right)/2);m.y=static_cast<short>((rect.top+rect.bottom)/2);
 					m.message=WM_LBUTTONDOWN;m.lbutton=true;expect(owner.eraserAttribute.Pointer(owner,m),"control accepts down");
-					m.message=WM_LBUTTONUP;m.lbutton=false;expect(owner.eraserAttribute.Pointer(owner,m,cancel),"control accepts up");
+					bool accepted=false;
+					m.message=WM_LBUTTONUP;m.lbutton=false;expect(owner.eraserAttribute.Pointer(owner,m,cancel,false,&accepted),"control accepts up");
+					return accepted;
 				};
 				click(8);expect(EraserPreferencesSnapshot().sensitivity==Inkeys::Drawing::Draw3::SpeedEraser::Sensitivity::High && owner.barState.eraserSensitivityOpen,"sensitivity updates without closing menu");
-				click(9);expect(owner.barState.eraserSensitivityOpen,"disabled settings does nothing");
+				expect(!click(9,true),"cancelled settings gesture is not accepted");
+				expect(click(9) && owner.barState.eraserSensitivityOpen
+					&& EraserPreferencesSnapshot().sensitivity==Inkeys::Drawing::Draw3::SpeedEraser::Sensitivity::High,
+					"enabled settings accepts the pointer without changing eraser preferences");
 				const auto beforeCorner=EraserPreferencesSnapshot().baseSize;const auto smallHit=layout.items[1];ExMessage corner{};
 				corner.x=static_cast<short>(smallHit.left+0.5);corner.y=static_cast<short>(smallHit.top+0.5);
 				corner.message=WM_LBUTTONDOWN;corner.lbutton=true;owner.eraserAttribute.Pointer(owner,corner);
