@@ -916,3 +916,25 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 
 - 当前任务已完成；独立10-10-setting-home-design保留既有状态。
 - 按用户授权推送bugfix/font分支，不改动其他任务。
+
+
+## Session 129: Draw3 DComp 交接与激光过期修复
+<!-- trellis-session: v=2 fp=d4ca8a0e103dfbaa -->
+
+**Date**: 2026-10-25
+**Task**: Draw3 DComp 交接与激光过期修复
+**Branch**: `bugfix/cut`
+
+### Summary
+
+修复 DComp/ULW 交接 Present 后过早 ready 导致旧帧回闪，交接全帧增加 DwmFlush 屏障；修复激光第二次生命周期求值进入 Inactive 时漏清瞬态资源及 idle 跳过边界。补充确定性回归和项目规范，ARM64 Debug 构建、无窗口与隐藏 HWND 测试通过，用户完成真实桌面验收。任务已归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dffdd2ac` | fix(draw3): synchronize canvas handoff and laser expiry |
+
+### Status
+
+[OK] **Completed**
