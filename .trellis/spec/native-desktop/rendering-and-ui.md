@@ -2423,7 +2423,7 @@ Wrong：把测试CI值写进settingCICD或让renderer执行外链；Correct：�
 - 推荐设置按 Appearance/Draw；常用设置按 Basic/Shortcuts/Plugins/Feedback，基本说明只能对应操作模式、主栏排列和启动等实际内容，不再声称该页管理缩放。
 - 简中 QQ 群标题与号码同行，号码沿用地区 Community 动作；繁体/英文直接以各自 GitHub Discussions 标题注册链接，不重复下一行地址。作者卡不再含旧问卷链接或 hover 二维码，页脚不再注册 Version 动作。
 - Home 和标题栏反馈均导航到专用页；页内依次 Issues、原问卷、常驻二维码行，文案均说明支持问题和建议。二维码后保留地区社区、作者邮箱和 QQ 联系区；QQ/Discussions 使用相同地区分流，反馈页邮箱保留原 mailto，作者 QQ 点击复制，不伪造个人 QQ 直连。二维码复用原会话 TextureSettingSign[7]，右侧96 DIP宽、按比例定高，左侧一行标题和自然换行说明，扫码行显式 keepDescriptionInline，不能触发通用280 DIP说明退到操作区下方的策略；上/下/右使用同一行内距。原透明PNG模块和alpha不改，原生加载仅转换为白色alpha mask，由TextPrimary随主题着色。
-- 作者卡简介与联系方式留12 DIP间隔，QQ标签、号码和地区社区链接使用Body14；首页 QQ/邮箱、反馈作者 QQ 使用 `CopyHyperlink(id,label,value)`，首页下方仅保留原 Support 赞助动作。共享复制控件在连续悬停内保存成功状态，移出、缺帧或原生隐藏输入重置时恢复提示；`SetCopyLabels` 由 `BindTextFonts` 注入本地化文案，Controls 不引入应用 i18n 聚合头。复制直接走 ImGui 剪贴板，renderer不返回外链动作。
+- 作者卡简介与联系方式留12 DIP间隔，QQ和Email行使用无冒号的类型标签，标签/号码/邮箱和地区社区链接使用Body14与相同的8 DIP行内间距；首页 QQ/邮箱、反馈作者 QQ 使用 `CopyHyperlink(id,label,value)`，首页下方仅保留原 Support 赞助动作。共享复制控件在连续悬停内保存成功状态，移出、缺帧或原生隐藏输入重置时恢复提示；`SetCopyLabels` 由 `BindTextFonts` 注入本地化文案，Controls 不引入应用 i18n 聚合头。复制直接走 ImGui 剪贴板，renderer不返回外链动作。
 - Issues 使用真实 GitHub PNG，默认白色alpha mask以TextPrimary着色；彩色插件图标保持默认白色tint。新增slot11纳入12槽的SRV/CPU缓存、预热/释放/设备重建流程，RC及工程图片登记齐全；不得另建资源生命周期。
 - 页脚顺序为使用条款、官方网站、GitHub、Bili频道。TermsOfUse 在原生动作消费者按简中指向 https://www.inkeys.top/tos/zh-cn.html，繁中/英文指向 https://www.inkeys.top/tos/en-us.html；保留其他目标。
 - 普通 SettingRow 与 BeginCard 共用 DrawCardSurface 的铺满背景和1物理像素描边，继续使用同一palette token，分别保留4/8 DIP圆角及原child/padding/滚动scope栈合同。不能在赞助/EDID等页逐项改色或恢复旧Card随DPI取整描边/内缩填充造成的视觉差异。

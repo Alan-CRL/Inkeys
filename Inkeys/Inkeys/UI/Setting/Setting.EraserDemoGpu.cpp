@@ -27,6 +27,7 @@ cbuffer Playback : register(b0)
 {
     float4 cursor; // x, y, fixed diameter, speed diameter
     float4 playback; // erase progress, cursor alpha, dark, source pixels per output pixel
+    float4 speedPose; // independent speed cursor x, y, alpha
     float4 grip; // outline, stripe radius, stripe half height, stripe offset
     float4 material; // opacity, outline gray
 };
@@ -74,20 +75,21 @@ float4 PS(Vertex input) : SV_Target
     }
     float3 result = lerp(background,color,ink.a*(1-erased));
     float diameter = side > 0.5 ? cursor.w : cursor.z;
-    float2 local = pixel-cursor.xy;
-    [branch] if (playback.y > 0 && max(abs(local.x),abs(local.y)) < diameter*0.5+playback.w)
+    float cursorAlpha = side > 0.5 ? speedPose.z : playback.y;
+    float2 local = pixel-(side > 0.5 ? speedPose.xy : cursor.xy);
+    [branch] if (cursorAlpha > 0 && max(abs(local.x),abs(local.y)) < diameter*0.5+playback.w)
     {
         float distance = length(local)-diameter*0.5;
         float outer = Coverage(distance), inner = Coverage(distance+diameter*grip.x);
-        float outlineAlpha = max(0,outer-inner)*material.x*playback.y;
-        float fillAlpha = inner*material.x*playback.y;
+        float outlineAlpha = max(0,outer-inner)*material.x*cursorAlpha;
+        float fillAlpha = inner*material.x*cursorAlpha;
         float alpha = outlineAlpha+fillAlpha;
         float3 rgb = alpha > 0 ? (outlineAlpha*material.y+fillAlpha)/alpha : 0;
         float stripe = min(inner,max(
             Coverage(Capsule(local-float2(-diameter*grip.w,0),diameter*grip.y,diameter*grip.z)),
             Coverage(Capsule(local-float2(diameter*grip.w,0),diameter*grip.y,diameter*grip.z))));
         rgb += stripe*(material.y-rgb);
-        alpha += stripe*(material.x*playback.y-alpha);
+        alpha += stripe*(material.x*cursorAlpha-alpha);
         result = rgb*alpha+result*(1-alpha);
     }
     return float4(result,1);
@@ -164,23 +166,26 @@ float4 PS(Vertex input) : SV_Target
 
 		struct Constants
 		{
-			float cursor[4], playback[4];
+			float cursor[4], playback[4], speedPose[4];
 			float grip[4]{ERASER_GRIP_OUTLINE_RATIO,ERASER_GRIP_STRIPE_RADIUS_RATIO,
 				ERASER_GRIP_STRIPE_HALF_HEIGHT_RATIO,ERASER_GRIP_STRIPE_OFFSET_RATIO};
 			float material[4]{ERASER_GRIP_OPACITY,ERASER_GRIP_OUTLINE_CHANNEL,0,0};
 		};
 		bool SamePixels(const EraserDemoData::Frame& left, const EraserDemoData::Frame& right)
 		{
-			if (left.eraseProgress!=right.eraseProgress || left.cursorAlpha!=right.cursorAlpha) return false;
-			return left.cursorAlpha==0 || (left.x==right.x && left.y==right.y
-				&& left.fixedDiameter==right.fixedDiameter && left.speedDiameter==right.speedDiameter);
+			if (left.eraseProgress!=right.eraseProgress || left.cursorAlpha!=right.cursorAlpha
+				|| left.speedCursorAlpha!=right.speedCursorAlpha) return false;
+			// 左右各自抬起后忽略其不可见位置；完成较早的一侧不再跟随另一侧补擦。
+			return (left.cursorAlpha==0 || (left.x==right.x && left.y==right.y && left.fixedDiameter==right.fixedDiameter))
+				&& (left.speedCursorAlpha==0 || (left.speedX==right.speedX && left.speedY==right.speedY
+					&& left.speedDiameter==right.speedDiameter));
 		}
 		constexpr int FinalFrame()
 		{
 			for (int i=EraserDemoData::FramesPerScene-1;i>=0;--i)
 			{
 				const auto& frame=EraserDemoData::Frames[0][i];
-				if (frame.eraseProgress>=1 && frame.cursorAlpha==0 && frame.opacity==1) return i;
+				if (frame.eraseProgress>=1 && frame.cursorAlpha==0 && frame.speedCursorAlpha==0 && frame.opacity==1) return i;
 			}
 			return EraserDemoData::FramesPerScene-1;
 		}
@@ -287,7 +292,8 @@ float4 PS(Vertex input) : SV_Target
 		HRESULT Render(ID3D11DeviceContext* context, int scene, const EraserDemoData::Frame& frame, bool dark)
 		{
 			Constants values{{frame.x,frame.y,frame.fixedDiameter,frame.speedDiameter},
-				{frame.eraseProgress,frame.cursorAlpha,dark ? 1.0F : 0.0F,SourceWidth/(stats.width*0.5F)}};
+				{frame.eraseProgress,frame.cursorAlpha,dark ? 1.0F : 0.0F,SourceWidth/(stats.width*0.5F)},
+				{frame.speedX,frame.speedY,frame.speedCursorAlpha,0}};
 			D3D11_MAPPED_SUBRESOURCE mapped{};
 			HRESULT status=context->Map(constants.Get(),0,D3D11_MAP_WRITE_DISCARD,0,&mapped);
 			if (FAILED(status)) return status;

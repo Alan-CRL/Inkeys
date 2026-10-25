@@ -19,7 +19,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 WIDTH, HEIGHT = 768, 432
 FPS, FRAME_COUNT = 30, 240
-ERASE_BEGIN, ERASE_END = 1.35, 4.45
+ERASE_BEGIN, ERASE_END = .95, 6.10
+FINE_FINISH, SPEED_FINISH, FIXED_FINISH = 4.30, 4.70, 6.10
 INK = (28, 35, 42)
 BLUE = (30, 112, 179)
 ORANGE = (202, 112, 29)
@@ -174,6 +175,24 @@ GLYPHS = {
 }
 
 
+GLYPHS.update({
+    "D": [[(.13, .04), (.10, .51), (.06, .99)],
+          [(.13, .04), (1.15, -.09), (1.17, 1.04), (.06, .99)]],
+    "E": [[(.89, .04), (.52, .02), (.16, .05)],
+          [(.16, .05), (.11, .52), (.06, .98)],
+          [(.11, .51), (.46, .47), (.77, .49)],
+          [(.06, .98), (.47, .97), (.87, .94)]],
+    "F": [[(.15, 1), (.19, .52), (.22, .04)],
+          [(.22, .04), (.58, .02), (.96, .04)],
+          [(.19, .50), (.51, .47), (.84, .48)]],
+    "G": [[(.91, .16), (.11, -.18), (-.13, .88), (.38, 1)],
+          [(.38, 1), (.83, 1.07), (.99, .79), (.96, .56)],
+          [(.96, .56), (.74, .57), (.59, .57)]],
+    "P": [[(.15, 1), (.16, .48), (.19, .04)],
+          [(.19, .04), (1.13, -.12), (1.11, .64), (.17, .52)]],
+})
+
+
 def glyph(canvas, char, x, y, width, height, color=INK, pen=3.2):
     for index, points in enumerate(GLYPHS[char]):
         path = [(x + px * width, y + py * height) for px, py in points]
@@ -237,18 +256,39 @@ def reaction(canvas):
     glyph(canvas, "B", 484, 213, 22, 30, BLUE, 2.5)
 
 
+def edge(canvas, begin, end, hidden=False):
+    a, b = np.asarray(begin, np.float64), np.asarray(end, np.float64)
+    if hidden:
+        length = np.linalg.norm(b - a)
+        for distance in np.arange(0.0, length, 17.0):
+            first, last = a + (b - a) * (distance / length), a + (b - a) * min(1.0, (distance + 9.0) / length)
+            canvas.curve([first, (first + last) * .5 + (.1, -.2), last], INK, 2.1)
+    else:
+        canvas.curve([a, (a + b) * .5 + (.4, -.3), b], INK, 3.15)
+
+
+def geometry(canvas):
+    # 斜投影长方体：蓝色辅助线位于前面，和下棱约相距20px，保留真实可精确擦除的间隙。
+    a, b, c, d = (180, 335), (465, 365), (465, 160), (180, 130)
+    e, f, g, h = (305, 260), (590, 290), (590, 85), (305, 55)
+    for first, last in ((a, b), (b, c), (c, d), (d, a), (d, h), (h, g), (g, c), (g, f), (f, b)):
+        edge(canvas, first, last)
+    for first, last in ((a, e), (e, f), (e, h)):
+        edge(canvas, first, last, True)
+    for letter, x, y, size in (("A", 144, 331, 29), ("B", 471, 374, 28),
+                              ("C", 438, 130, 26), ("D", 146, 108, 27),
+                              ("E", 286, 263, 24), ("F", 600, 278, 27),
+                              ("G", 599, 64, 27), ("H", 287, 19, 26)):
+        glyph(canvas, letter, x, y, size * .66, size, INK, 2.65)
+    glyph(canvas, "P", 335, 292, 22, 26, INK, 2.65)
+    canvas.curve([(329, 316), (329.05, 316.05)], INK, 3.6)
+    canvas.curve([(235, 321.2), (298, 327.5), (365, 334.2), (432, 342)], BLUE, 3.0)
+
+
 def make_scene(scene):
     canvas = InkCanvas()
     if scene == 0:
-        reaction(canvas)
-        formula(canvas, "C7H8O", 99, 285, 43, INK, 3.3)
-        # 数字 8 置于邻字之间：16px 可完整擦除，32px 会触及 H/O。
-        glyph(canvas, "C", 465, 280, 28, 46)
-        glyph(canvas, "7", 495, 307, 13, 22, pen=2.65)
-        glyph(canvas, "H", 510, 280, 30, 46)
-        glyph(canvas, "8", 542, 307, 13, 22, pen=2.55)
-        glyph(canvas, "O", 559, 280, 30, 46)
-        glyph(canvas, "?", 622, 289, 19, 31, ORANGE, 2.8)
+        geometry(canvas)
     else:
         reaction(canvas)
         structure(canvas, 382, 326, 45, "CH2OH", 34)
@@ -257,57 +297,124 @@ def make_scene(scene):
     return canvas.rgba()
 
 
-def contact_pose(scene, progress):
-    progress = float(np.clip(progress, 0.0, 1.0))
+FINE_PATH = ((ERASE_BEGIN, 232.5, 320.9), (2.50, 317, 329.6), (FINE_FINISH, 434, 342.2))
+# 首个斜向往返保持一致；之后固定橡皮继续找边角，笔速橡皮以宽扫更早结束。
+FIXED_PATH = ((ERASE_BEGIN, 315, 361), (1.60, 548, 299), (2.28, 319, 368),
+              (3.10, 577, 330), (3.95, 330, 399), (4.75, 584, 373),
+              (5.55, 335, 306), (FIXED_FINISH, 420, 289))
+SPEED_PATH = ((ERASE_BEGIN, 315, 361), (1.60, 548, 299), (2.28, 319, 368),
+              (3.10, 556, 337), (3.90, 321, 341), (SPEED_FINISH, 564, 340))
+REGIONS = {
+    "FineTargetRegion": (222, 317, 287, 330),
+    "FineLetterRegion": (332, 290, 360, 320),
+    "FineLineRegion": (280, 344, 390, 360),
+    "SweepTargetRegion": (280, 270, 610, 405),
+    "SweepCornerRegion": (550, 278, 590, 313),
+    "SweepProtectedRegion": (0, 0, WIDTH, 250),
+    "SweepEarlyErasedRegion": (455, 297, 540, 328),
+    "SweepLateRegion": (350, 385, 567, 396),
+}
+KEYFRAMES = {"FineActiveFrame": 90, "FineSettledFrame": 144, "SweepWarmupFrame": 65, "SweepGrowingFrame": 96,
+             "SweepSpeedFinishedFrame": 156, "SweepFixedFinishedFrame": 198, "ResultFrame": 216}
+
+
+def path_at(knots, time):
+    if time <= knots[0][0]:
+        return np.asarray(knots[0][1:], np.float64)
+    for index, (first, last) in enumerate(zip(knots, knots[1:])):
+        if time <= last[0]:
+            u = np.clip((time - first[0]) / (last[0] - first[0]), 0.0, 1.0)
+            # 五次缓入缓出让换向速度和加速度连续，斜扫中保留轻微手腕弧线。
+            v = u * u * u * (u * (u * 6.0 - 15.0) + 10.0)
+            a, b = np.asarray(first[1:], np.float64), np.asarray(last[1:], np.float64)
+            normal = np.array((-(b - a)[1], (b - a)[0]))
+            normal /= max(np.linalg.norm(normal), 1.0)
+            bow = (.40 if knots is FINE_PATH else (1.6 if index % 2 == 0 else -2.3))
+            return a + (b - a) * v + normal * (bow * math.sin(math.pi * v) ** 2)
+    return np.asarray(knots[-1][1:], np.float64)
+
+
+def erase_end(scene):
+    return FINE_FINISH if scene == 0 else ERASE_END
+
+
+def contact_pose(scene, progress, speed):
+    time = ERASE_BEGIN + float(np.clip(progress, 0.0, 1.0)) * (erase_end(scene) - ERASE_BEGIN)
+    knots = FINE_PATH if scene == 0 else (SPEED_PATH if speed else FIXED_PATH)
+    x, y = path_at(knots, time)
     if scene == 0:
-        distance = float(smooth(progress))
-        return 548.2 + .60 * math.sin(math.pi * distance), 308.0 + 17.7 * distance, 16.0
-    distance = float(smooth(progress))
-    x = 300.0 + 280.0 * distance
-    y = 339.0 - 7.0 * math.sin(math.pi * distance)
-    diameter = 16.0 + 144.0 * float(smooth(progress / .39))
-    return x, y, diameter
+        diameter = 16.0 if speed else 48.0
+    elif speed:
+        # 一次完整往返后才积累出清扫意图，约1.45秒平滑增粗，不能刚接触就长到最大。
+        diameter = 24.0 + 136.0 * float(smooth((time - 2.45) / 1.45))
+    else:
+        diameter = 32.0
+    return x, y, diameter, time <= knots[-1][0] + 1e-8
+
+
+def cursor_pose(scene, time, speed):
+    progress = float(np.clip((time - ERASE_BEGIN) / (erase_end(scene) - ERASE_BEGIN), 0.0, 1.0))
+    x, y, diameter, _ = contact_pose(scene, progress, speed)
+    finish = FINE_FINISH if scene == 0 else (SPEED_FINISH if speed else FIXED_FINISH)
+    if time < ERASE_BEGIN:
+        approach = 1.0 - float(smooth((time - .40) / (ERASE_BEGIN - .40)))
+        x -= 18.0 * approach
+        y -= 25.0 * approach
+        if speed:
+            diameter += (32.0 - diameter) * approach
+    # 抬起只小幅收手后淡出，保证两侧独立完成时没有瞬移或额外擦除。
+    lift = float(smooth((time - finish) / .35))
+    x += 7.0 * lift
+    y -= 9.0 * lift
+    alpha = float(smooth((time - .35) / .35)) * (1.0 - float(smooth((time - finish - .04) / .36)))
+    return x, y, diameter, alpha
 
 
 def frame_at(scene, index):
     time = index / FPS
-    progress = float(np.clip((time - ERASE_BEGIN) / (ERASE_END - ERASE_BEGIN), 0.0, 1.0))
-    x, y, speed = contact_pose(scene, progress)
-    # 悬停到接触之间连续衔接；抬起后只淡出，不从未擦除的位置跳走。
-    if time < ERASE_BEGIN:
-        approach = 1.0 - float(smooth((time - .50) / (ERASE_BEGIN - .50)))
-        y -= 26.0 * approach
-        x -= 10.0 * approach
-        speed += 16.0 * approach
-    cursor_alpha = float(smooth((time - .45) / .40)) * (1.0 - float(smooth((time - 4.80) / .45)))
+    progress = float(np.clip((time - ERASE_BEGIN) / (erase_end(scene) - ERASE_BEGIN), 0.0, 1.0))
+    x, y, fixed, alpha = cursor_pose(scene, time, False)
+    sx, sy, speed, speed_alpha = cursor_pose(scene, time, True)
     opacity = float(smooth(time / .40)) * (1.0 - float(smooth((time - 7.55) / .45)))
-    return x, y, 32.0, speed, cursor_alpha, progress, opacity
+    return x, y, fixed, speed, alpha, progress, opacity, sx, sy, speed_alpha
+
+
+def erase_segments(scene, speed):
+    # 高密度离线采样；实际擦除覆盖连续的变半径胶囊，抬起后不扫过收手路径。
+    count = 1024
+    previous = contact_pose(scene, 0.0, speed)
+    for index in range(1, count + 1):
+        progress = index / count
+        current = contact_pose(scene, progress, speed)
+        if previous[3] and current[3]:
+            rect, segment = capsule_coverage(previous[:2], current[:2], previous[2] * .5, current[2] * .5)
+            yield progress, rect, segment
+        previous = current
 
 
 def bake_mask(scene, speed):
-    partial_time = np.ones((HEIGHT, WIDTH), np.float32)
-    complete_time = np.ones((HEIGHT, WIDTH), np.float32)
     coverage = np.zeros((HEIGHT, WIDTH), np.float32)
-    # 预计算采用高于播放帧率的采样；扫过段是连续变半径胶囊，不能只画离散圆点。
-    count = 384
-    previous = contact_pose(scene, 0.0)
-    for index in range(1, count + 1):
-        progress = index / count
-        current = contact_pose(scene, progress)
-        r1 = previous[2] * .5 if speed else 16.0
-        r2 = current[2] * .5 if speed else 16.0
-        rect, segment = capsule_coverage(previous[:2], current[:2], r1, r2)
-        old = coverage[rect]
-        newly_touched = (segment > (1.0 / 255.0)) & (old <= (1.0 / 255.0))
-        partial_time[rect] = np.where(newly_touched, progress, partial_time[rect])
-        increased = segment > old + (1.0 / 65535.0)
-        complete_time[rect] = np.where(increased, progress, complete_time[rect])
-        # 同一擦除笔画按几何并集累积，重叠采样不重复削薄抗锯齿边缘。
-        coverage[rect] = np.maximum(old, segment)
-        previous = current
+    for _, rect, segment in erase_segments(scene, speed):
+        coverage[rect] = np.maximum(coverage[rect], segment)
+    partial = np.ones((HEIGHT, WIDTH), np.float32)
+    strong = np.ones((HEIGHT, WIDTH), np.float32)
+    complete = np.ones((HEIGHT, WIDTH), np.float32)
+    for progress, rect, segment in erase_segments(scene, speed):
+        maximum = coverage[rect]
+        touched = (segment > 1.0 / 255.0) & (maximum > 1.0 / 255.0)
+        partial[rect] = np.where(touched, np.minimum(partial[rect], progress), partial[rect])
+        strong[rect] = np.where(touched & (segment >= maximum * .50), np.minimum(strong[rect], progress), strong[rect])
+        # 记录最早完成，而不是最后一次经过；否则往返会让已经擦掉的像素延迟消失。
+        complete[rect] = np.where(touched & (segment >= maximum - .5 / 255.0), np.minimum(complete[rect], progress), complete[rect])
+    # 一张时间遮罩只表示一次过渡。极少量先擦到AA边缘、很久后再次经过的像素，
+    # 选择首次明确覆盖的短过渡，避免在光标离开时慢慢淡掉；偏差限制在抗锯齿边缘。
+    window = .06 / (erase_end(scene) - ERASE_BEGIN)
+    complete = np.where(complete - strong > window, strong, complete)
+    partial = np.maximum(partial, complete - window)
     mask = np.zeros((HEIGHT, WIDTH, 4), np.uint8)
-    mask[..., 0] = np.uint8(np.clip(np.rint(partial_time * 255.0), 1, 255))
-    mask[..., 1] = np.maximum(mask[..., 0], np.uint8(np.rint(complete_time * 255.0)))
+    # 开始时间向后量化，快速斜扫时也不能提前擦掉尚未触及的笔迹。
+    mask[..., 0] = np.uint8(np.clip(np.ceil(partial * 255.0), 1, 255))
+    mask[..., 1] = np.maximum(mask[..., 0], np.uint8(np.ceil(complete * 255.0)))
     mask[..., 2] = np.uint8(np.rint(coverage * 255.0))
     mask[..., 3] = 255
     return mask
@@ -336,38 +443,65 @@ def paint(ink, mask, progress, dark=False):
     return pixels
 
 
-def erased_fraction(ink, mask, rect):
+def erased_fraction(ink, mask, rect, progress=1.0):
     x0, y0, x1, y1 = rect
     alpha = ink[y0:y1, x0:x1, 3].astype(np.float64)
-    erased = mask[y0:y1, x0:x1, 2].astype(np.float64) / 255.0
+    region = mask[y0:y1, x0:x1].astype(np.float64) / 255.0
+    erased = region[..., 2]
+    if progress < 1.0:
+        erased *= np.clip((progress - region[..., 0]) / np.maximum(region[..., 1] - region[..., 0], 1.0 / 255.0), 0.0, 1.0)
     return float(np.sum(alpha * erased) / max(np.sum(alpha), 1e-8))
 
 
 def validate(scenes):
     checks = {}
-    fine_ink, fixed, speed = scenes[0]
-    checks["fine_target_speed_erased"] = erased_fraction(fine_ink, speed, (541, 304, 557, 333))
-    checks["fine_neighbor_speed_erased"] = erased_fraction(fine_ink, speed, (558, 280, 594, 330))
-    checks["fine_neighbor_fixed_erased"] = erased_fraction(fine_ink, fixed, (558, 280, 594, 330))
-    broad_ink, fixed, speed = scenes[1]
-    checks["sweep_candidate_speed_erased"] = erased_fraction(broad_ink, speed, (320, 270, 610, 405))
-    checks["sweep_candidate_fixed_erased"] = erased_fraction(broad_ink, fixed, (320, 270, 610, 405))
-    checks["sweep_context_speed_erased"] = erased_fraction(broad_ink, speed, (0, 0, WIDTH, 250))
+    fine, fixed, speed = scenes[0]
+    for label, region in (("target", "FineTargetRegion"), ("letter", "FineLetterRegion"), ("line", "FineLineRegion")):
+        for name, mask in (("speed", speed), ("fixed", fixed)):
+            checks[f"fine_{label}_{name}_erased"] = erased_fraction(fine, mask, REGIONS[region])
+    blue = (fine[..., 2].astype(float) > fine[..., 0].astype(float) + 30) * fine[..., 3].astype(float)
+    checks["fine_all_auxiliary_speed_erased"] = float(np.sum(blue * speed[..., 2] / 255.0) / np.sum(blue))
+    protected = fine[..., 3].astype(float) - blue
+    checks["fine_all_protected_speed_erased"] = float(np.sum(protected * speed[..., 2] / 255.0) / np.sum(protected))
+    broad, fixed, speed = scenes[1]
+    warmup = frame_at(1, KEYFRAMES["SweepWarmupFrame"])[5]
+    finish = frame_at(1, KEYFRAMES["SweepSpeedFinishedFrame"])[5]
+    for label, region in (("candidate", "SweepTargetRegion"), ("corner", "SweepCornerRegion"),
+                          ("context", "SweepProtectedRegion")):
+        for name, mask in (("speed", speed), ("fixed", fixed)):
+            checks[f"sweep_{label}_{name}_erased"] = erased_fraction(broad, mask, REGIONS[region])
+    for name, mask in (("speed", speed), ("fixed", fixed)):
+        checks[f"sweep_early_{name}_erased"] = erased_fraction(broad, mask, REGIONS["SweepEarlyErasedRegion"], warmup)
+        checks[f"sweep_late_{name}_erased_at_warmup"] = erased_fraction(broad, mask, REGIONS["SweepLateRegion"], warmup)
+        checks[f"sweep_candidate_{name}_at_speed_finish"] = erased_fraction(broad, mask, REGIONS["SweepTargetRegion"], finish)
+    assert checks["fine_all_auxiliary_speed_erased"] > .995, checks
     assert checks["fine_target_speed_erased"] > .995, checks
-    assert checks["fine_neighbor_speed_erased"] < .01, checks
-    assert checks["fine_neighbor_fixed_erased"] > .10, checks
+    assert checks["fine_all_protected_speed_erased"] < .001, checks
+    assert checks["fine_letter_speed_erased"] < .01 and checks["fine_line_speed_erased"] < .01, checks
+    assert checks["fine_letter_fixed_erased"] > .1 and checks["fine_line_fixed_erased"] > .5, checks
     assert checks["sweep_candidate_speed_erased"] > .995, checks
-    assert checks["sweep_candidate_fixed_erased"] < .65, checks
+    assert .75 < checks["sweep_candidate_fixed_erased"] < .96, checks
     assert checks["sweep_context_speed_erased"] < .001, checks
+    assert checks["sweep_early_speed_erased"] > .1, checks
+    assert checks["sweep_late_speed_erased_at_warmup"] < .01, checks
+    assert checks["sweep_candidate_speed_at_speed_finish"] > .995, checks
     for scene, (ink, fixed, speed) in enumerate(scenes):
         for mask in (fixed, speed):
-            assert np.all(mask[..., 0] <= mask[..., 1])
-            assert np.all(mask[..., 3] == 255)
+            assert np.all(mask[..., 0] <= mask[..., 1]) and np.all(mask[..., 3] == 255)
         frames = np.asarray([frame_at(scene, i) for i in range(FRAME_COUNT)])
-        assert np.isfinite(frames).all()
-        assert np.all((frames[:, 3] >= 16.0) & (frames[:, 3] <= 160.0))
+        assert np.isfinite(frames).all() and np.all((frames[:, 3] >= 16.0) & (frames[:, 3] <= 160.0))
         assert np.all(np.diff(frames[:, 5]) >= 0.0)
         assert frames[0, 6] == 0.0 and frames[-1, 6] < .02
+        for name, positions in (("fixed", frames[:, :2]), ("speed", frames[:, 7:9])):
+            jumps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+            checks[f"scene_{scene}_{name}_largest_step"] = float(np.max(jumps))
+            assert np.max(jumps) < 25, checks
+        assert np.max(np.abs(np.diff(frames[:, 3]))) < 5.0, checks
+        if scene == 0:
+            assert np.all(frames[KEYFRAMES["FineSettledFrame"]:227] == frames[KEYFRAMES["FineSettledFrame"]]), "fine result must stop changing after lift"
+    assert frame_at(1, KEYFRAMES["SweepWarmupFrame"])[3] == 24.0
+    assert frame_at(1, KEYFRAMES["SweepSpeedFinishedFrame"])[9] == 0.0
+    assert frame_at(1, KEYFRAMES["SweepSpeedFinishedFrame"])[4] > .99
     return checks
 
 
@@ -378,9 +512,11 @@ def emit_header(path):
         "namespace Inkeys::UI::Setting::Design::EraserDemoData {", "",
         "struct Frame {", "    float x;", "    float y;", "    float fixedDiameter;",
         "    float speedDiameter;", "    float cursorAlpha;", "    float eraseProgress;",
-        "    float opacity;", "};", "",
+        "    float opacity;", "    float speedX;", "    float speedY;", "    float speedCursorAlpha;", "};", "",
         f"inline constexpr int FramesPerScene = {FRAME_COUNT};",
         f"inline constexpr int FramesPerSecond = {FPS};", "",
+        *[f"inline constexpr int {name} = {value};" for name, value in KEYFRAMES.items()], "",
+        *[f"inline constexpr std::array<unsigned,4> {name} = {{{','.join(map(str, region))}}};" for name, region in REGIONS.items()], "",
         "inline constexpr std::array<std::array<Frame, FramesPerScene>, 2> Frames = {{",
     ]
     for scene in range(2):
@@ -409,7 +545,9 @@ def main():
         for scene, (ink, fixed, speed) in enumerate(scenes):
             for dark in (False, True):
                 rows = []
-                for progress in (0.0, .45, 1.0):
+                for frame in (0, KEYFRAMES["FineActiveFrame"] if scene == 0 else KEYFRAMES["SweepWarmupFrame"],
+                              KEYFRAMES["SweepSpeedFinishedFrame"], KEYFRAMES["ResultFrame"]):
+                    progress = frame_at(scene, frame)[5]
                     rows.append(np.concatenate((paint(ink, fixed, progress, dark), paint(ink, speed, progress, dark)), axis=1))
                 write_png(args.preview_dir / f"scene-{scene}-{'dark' if dark else 'light'}.png", np.concatenate(rows, axis=0))
     print(json.dumps(checks, indent=2))

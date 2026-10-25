@@ -583,10 +583,10 @@
         "Automatic": "启用笔速橡皮",
         "SpeedEraser":
         {
-          "DemoFineTitle": "精细修改",
-          "DemoFineDescription": "慢速擦除时缩小橡皮，保留相邻的笔画。",
+          "DemoFineTitle": "精细擦除",
+          "DemoFineDescription": "沿辅助线缓慢擦除，保留邻近的标记和线段。",
           "DemoSweepTitle": "大面积擦除",
-          "DemoSweepDescription": "快速移动时扩大橡皮，轻松清除整片笔迹。",
+          "DemoSweepDescription": "连续往返擦除时逐渐增粗，更快清除大片笔迹。",
           "EntryDescription": "根据绘制意图智能调整橡皮擦粗细",
           "Introduction": "结合设备尺寸、输入设备和运动信息，智能推断擦除意图，动态调整橡皮大小。",
           "BasicSettings": "基本设置",

@@ -564,9 +564,10 @@ namespace Inkeys::UI::Setting::Design
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter)
 	{
 		SpeedEraserEvents events;
-		events.back = IconButton("##speed-eraser-back", "\ue72b");
-		PageContentStart();
 		const auto& eraser = I18nKey.SettingsUI.Draw.Eraser;
+		events.back = IconButton("##speed-eraser-back", "\ue72b");
+		PageHeader(IA(eraser.Kind.Speed).c_str());
+		PageContentStart();
 		const auto& speed = eraser.SpeedEraser;
 		const std::string introduction = IA(speed.Introduction);
 		const float width = ImGui::GetContentRegionAvail().x;
@@ -672,25 +673,30 @@ namespace Inkeys::UI::Setting::Design
 			{ entries[3], &draft.enabled[3], &events.enabledChanged[3] },
 			{ entries[4], &draft.enabled[4], &events.enabledChanged[4] } });
 
-		SectionHeader(IA(speed.FineControl).c_str());
-		const std::vector<std::string> responses{ IA(eraser.Response.Auto),
-			IA(eraser.Response.ScreenPen), IA(eraser.Response.Digitizer) };
-		const int first = draft.automaticPenSupported ? 0 : 1;
-		const std::vector<std::string> availableResponses(responses.begin() + first, responses.end());
-		for (int pen = 0; pen < 2; ++pen)
+		// 显示条件只跟随本帧开关与设备选择，隐藏时保留原有精细偏好。
+		if (draft.automaticEnabled && (draft.enabled[2] || draft.enabled[3] || draft.enabled[4]))
 		{
-			const int entry = pen + 3;
-			if (!draft.automaticEnabled || !draft.enabled[entry]) continue;
-			ImGui::PushID(entry);
-			int response = std::clamp(draft.penResponses[pen], first, 2) - first;
-			events.penResponseChanged[pen] = ComboRow("##eraser-response", entries[entry].c_str(),
-				IA(eraser.ResponseFor).c_str(), "\uedc6", response, availableResponses);
-			// Win7 隐藏 Auto 项后仍返回稳定枚举，只在用户真正选择时更新草稿。
-			if (events.penResponseChanged[pen]) draft.penResponses[pen] = response + first;
-			ImGui::PopID();
+			SectionHeader(IA(speed.FineControl).c_str());
+			const std::vector<std::string> responses{ IA(eraser.Response.Auto),
+				IA(eraser.Response.ScreenPen), IA(eraser.Response.Digitizer) };
+			const int first = draft.automaticPenSupported ? 0 : 1;
+			const std::vector<std::string> availableResponses(responses.begin() + first, responses.end());
+			for (int pen = 0; pen < 2; ++pen)
+			{
+				const int entry = pen + 3;
+				if (!draft.enabled[entry]) continue;
+				ImGui::PushID(entry);
+				int response = std::clamp(draft.penResponses[pen], first, 2) - first;
+				events.penResponseChanged[pen] = ComboRow("##eraser-response", entries[entry].c_str(),
+					IA(eraser.ResponseFor).c_str(), "\uedc6", response, availableResponses);
+				// Win7 隐藏 Auto 项后仍返回稳定枚举，只在用户真正选择时更新草稿。
+				if (events.penResponseChanged[pen]) draft.penResponses[pen] = response + first;
+				ImGui::PopID();
+			}
+			if (draft.enabled[2])
+				events.touchAreaChanged = ToggleRow("##eraser-touch-area", IA(eraser.TouchArea.N).c_str(),
+					IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea);
 		}
-		events.touchAreaChanged = ToggleRow("##eraser-touch-area", IA(eraser.TouchArea.N).c_str(),
-			IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea);
 		return events;
 	}
 
@@ -1073,11 +1079,15 @@ namespace Inkeys::UI::Setting::Design
 			TextAt("AlanCRL", { authorOrigin.x + Pixels(48.0F), authorOrigin.y }, authorCopyWidth);
 			TextAt(developer.c_str(), { authorOrigin.x + Pixels(48.0F), authorOrigin.y + Pixels(20.0F) }, authorCopyWidth, ImFluentTextStyle_Caption, TextSecondary);
 			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(12.0F));
-			const float qqLabelWidth = TextWidth("QQ:");
-			TextAt("QQ:", ImGui::GetCursorScreenPos(), qqLabelWidth, ImFluentTextStyle_Body, TextSecondary);
+			const float qqLabelWidth = TextWidth("QQ");
+			TextAt("QQ", ImGui::GetCursorScreenPos(), qqLabelWidth, ImFluentTextStyle_Body, TextSecondary);
 			ImGui::Dummy({ qqLabelWidth, Pixels(BodyText.lineHeight) });
 			ImGui::SameLine(0.0F, Pixels(8.0F));
 			CopyHyperlink("##home-author-qq-copy", "2685549821", "2685549821");
+			const float emailLabelWidth = TextWidth("Email");
+			TextAt("Email", ImGui::GetCursorScreenPos(), emailLabelWidth, ImFluentTextStyle_Body, TextSecondary);
+			ImGui::Dummy({ emailLabelWidth, Pixels(BodyText.lineHeight) });
+			ImGui::SameLine(0.0F, Pixels(8.0F));
 			CopyHyperlink("##home-author-email-copy", "alan-crl@foxmail.com", "alan-crl@foxmail.com");
 			const std::string groupTitle = IA(I18nKey.SettingsUI.Home.Group);
 			if (I18n::isIdentifying(L"zh-CN"))

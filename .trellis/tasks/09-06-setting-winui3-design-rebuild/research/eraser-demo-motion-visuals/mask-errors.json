@@ -1,0 +1,151 @@
+{
+  "generator_sha256": "844b784ef511060fcf375b4b70061c7cd2710dcc52968183ed1ab7a712df8b6a",
+  "samples": {
+    "Fine_fixed_31": {
+      "weighted_error": 0.0004270378022916766,
+      "premature": 0.00027882480266774905
+    },
+    "Fine_fixed_45": {
+      "weighted_error": 0.0004990554972247283,
+      "premature": 1.4263246673656156e-06
+    },
+    "Fine_fixed_65": {
+      "weighted_error": 0.0004200159418919936,
+      "premature": 1.456154640602757e-06
+    },
+    "Fine_fixed_90": {
+      "weighted_error": 0.0003887051879548014,
+      "premature": 4.387022446294814e-05
+    },
+    "Fine_fixed_111": {
+      "weighted_error": 0.0004109284788103716,
+      "premature": 5.035181694021229e-06
+    },
+    "Fine_fixed_126": {
+      "weighted_error": 6.683371688653203e-05,
+      "premature": 6.52504697495467e-05
+    },
+    "Fine_fixed_156": {
+      "weighted_error": 4.0103215217912634e-06,
+      "premature": 2.9892060175649983e-06
+    },
+    "Fine_fixed_198": {
+      "weighted_error": 4.0103215217912634e-06,
+      "premature": 2.9892060175649983e-06
+    },
+    "Fine_fixed_216": {
+      "weighted_error": 4.0103215217912634e-06,
+      "premature": 2.9892060175649983e-06
+    },
+    "Fine_speed_31": {
+      "weighted_error": 0.0001114783105504885,
+      "premature": 0.00010819993380171445
+    },
+    "Fine_speed_45": {
+      "weighted_error": 0.0001893076982769882,
+      "premature": 0.0
+    },
+    "Fine_speed_65": {
+      "weighted_error": 8.681170619121743e-05,
+      "premature": 0.0
+    },
+    "Fine_speed_90": {
+      "weighted_error": 0.00019352898044031346,
+      "premature": 0.0
+    },
+    "Fine_speed_111": {
+      "weighted_error": 0.00023089137741887287,
+      "premature": 1.0217761590952854e-07
+    },
+    "Fine_speed_126": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    },
+    "Fine_speed_156": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    },
+    "Fine_speed_198": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    },
+    "Fine_speed_216": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    },
+    "Sweep_fixed_31": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    },
+    "Sweep_fixed_45": {
+      "weighted_error": 0.003743950268269394,
+      "premature": 0.000859378261375399
+    },
+    "Sweep_fixed_65": {
+      "weighted_error": 0.0008996081692022858,
+      "premature": 0.00048196352749869833
+    },
+    "Sweep_fixed_90": {
+      "weighted_error": 0.000420094971276552,
+      "premature": 0.00012729534796987848
+    },
+    "Sweep_fixed_111": {
+      "weighted_error": 0.0024104473386301365,
+      "premature": 0.0003033945625416995
+    },
+    "Sweep_fixed_126": {
+      "weighted_error": 0.0005999112627275813,
+      "premature": 0.00027365663233272687
+    },
+    "Sweep_fixed_156": {
+      "weighted_error": 0.00028226246718641117,
+      "premature": 0.0002758274115752867
+    },
+    "Sweep_fixed_198": {
+      "weighted_error": 1.8053072464650804e-05,
+      "premature": 8.808487593654118e-06
+    },
+    "Sweep_fixed_216": {
+      "weighted_error": 1.8053072464650804e-05,
+      "premature": 8.808487593654118e-06
+    },
+    "Sweep_speed_31": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    },
+    "Sweep_speed_45": {
+      "weighted_error": 0.007830557999341502,
+      "premature": 0.0012957912544105167
+    },
+    "Sweep_speed_65": {
+      "weighted_error": 0.0035781242123618935,
+      "premature": 0.0017744204334198077
+    },
+    "Sweep_speed_90": {
+      "weighted_error": 0.003534880503743015,
+      "premature": 0.0010782574878061577
+    },
+    "Sweep_speed_111": {
+      "weighted_error": 0.000950284427639823,
+      "premature": 0.0005105746729121544
+    },
+    "Sweep_speed_126": {
+      "weighted_error": 0.000950284427639823,
+      "premature": 0.0005105746729121544
+    },
+    "Sweep_speed_156": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    },
+    "Sweep_speed_198": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    },
+    "Sweep_speed_216": {
+      "weighted_error": 0.0,
+      "premature": 0.0
+    }
+  },
+  "max_weighted_error": 0.007830557999341502,
+  "max_premature": 0.0017744204334198077
+}

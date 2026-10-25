@@ -583,10 +583,10 @@
         "Automatic": "Enable speed-sensitive eraser",
         "SpeedEraser":
         {
-          "DemoFineTitle": "Fine corrections",
-          "DemoFineDescription": "Move slowly to erase precisely and preserve nearby strokes.",
+          "DemoFineTitle": "Precise erasing",
+          "DemoFineDescription": "Slowly erase the construction line while keeping nearby labels and edges intact.",
           "DemoSweepTitle": "Clear larger areas",
-          "DemoSweepDescription": "Move faster to widen the eraser and clear more ink.",
+          "DemoSweepDescription": "Repeated strokes gradually widen the eraser to clear large areas faster.",
           "EntryDescription": "Intelligently adjust eraser size to match your drawing intent",
           "Introduction": "Uses device dimensions, input devices, and movement to infer your erasing intent and adjust the eraser size dynamically.",
           "BasicSettings": "Basic settings",

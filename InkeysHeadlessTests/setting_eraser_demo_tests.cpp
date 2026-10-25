@@ -8,6 +8,7 @@
 #include "setting_eraser_demo_tests.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.EraserDemoGpu.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.EraserDemoData.g.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Assets/EraserGripVisual.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -149,10 +150,10 @@ namespace
 			&& checks.Result(frame->Commit(),"commit PNG frame") && checks.Result(encoder->Commit(),"commit PNG image");
 	}
 
-	void CheckComposite(Checks& checks, const Image& image, const Atlas& atlas, int frameIndex, bool dark)
+	void CheckComposite(Checks& checks, const Image& image, const Atlas& atlas, int scene, int frameIndex, bool dark)
 	{
 		if (!checks.Expect(image.width==CanvasWidth*2 && image.height==CanvasHeight,"pixel audit uses full native source resolution")) return;
-		const auto& frame=Data::Frames[0][frameIndex];
+		const auto& frame=Data::Frames[scene][frameIndex];
 		const std::array<double,3> background=dark ? std::array<double,3>{18,59,50} : std::array<double,3>{247,248,250};
 		size_t mismatch=0, opaque=0, checked=0;
 		for (unsigned side=0;side<2;++side)
@@ -161,8 +162,6 @@ namespace
 				{
 					const auto* output=image.At(x+side*CanvasWidth,y);
 					opaque+=output[3]!=255;
-					const double radius=(side ? frame.speedDiameter : frame.fixedDiameter)*0.5+2;
-					if (frame.cursorAlpha>0 && std::abs(x+0.5-frame.x)<radius && std::abs(y+0.5-frame.y)<radius) continue;
 					const auto* ink=atlas.source.At(x,y); const auto* mask=atlas.source.At(x+(side+1)*CanvasWidth,y);
 					double erased=0;
 					if (frame.eraseProgress>=1) erased=mask[2]/255.0;
@@ -171,17 +170,42 @@ namespace
 					std::array<double,3> color{static_cast<double>(ink[0]),static_cast<double>(ink[1]),static_cast<double>(ink[2])};
 					if (dark) color=ink[2]>ink[0]+0.15*255 ? std::array<double,3>{111,200,236}
 						: (ink[0]>ink[2]+0.25*255 ? std::array<double,3>{242,192,104} : std::array<double,3>{234,242,239});
+					// 审计左右独立的光标位置、尺寸与抬起透明度，包含光标像素而不再跳过整块区域。
+					const double diameter=side ? frame.speedDiameter : frame.fixedDiameter;
+					const double localX=x+0.5-(side ? frame.speedX : frame.x), localY=y+0.5-(side ? frame.speedY : frame.y);
+					const double cursorOpacity=(side ? frame.speedCursorAlpha : frame.cursorAlpha)*ERASER_GRIP_OPACITY;
+					double cursorAlpha=0, cursorColor=0;
+					if (cursorOpacity>0 && std::max(std::abs(localX),std::abs(localY))<diameter*0.5+1)
+					{
+						const double distance=std::hypot(localX,localY)-diameter*0.5;
+						const double outer=std::clamp(0.5-distance,0.0,1.0);
+						const double inner=std::clamp(0.5-distance-diameter*ERASER_GRIP_OUTLINE_RATIO,0.0,1.0);
+						const double outlineAlpha=(outer-inner)*cursorOpacity, fillAlpha=inner*cursorOpacity;
+						cursorAlpha=outlineAlpha+fillAlpha;
+						cursorColor=cursorAlpha>0 ? (outlineAlpha*ERASER_GRIP_OUTLINE_CHANNEL+fillAlpha)/cursorAlpha : 0;
+						const double radius=diameter*ERASER_GRIP_STRIPE_RADIUS_RATIO;
+						const double halfSegment=diameter*(ERASER_GRIP_STRIPE_HALF_HEIGHT_RATIO-ERASER_GRIP_STRIPE_RADIUS_RATIO);
+						const double stripeY=localY-std::clamp(localY,-halfSegment,halfSegment);
+						auto stripeCoverage=[&](double offset) {
+							return std::clamp(0.5-std::hypot(localX-offset,stripeY)+radius,0.0,1.0);
+						};
+						const double stripe=std::min(inner,std::max(stripeCoverage(-diameter*ERASER_GRIP_STRIPE_OFFSET_RATIO),
+							stripeCoverage(diameter*ERASER_GRIP_STRIPE_OFFSET_RATIO)));
+						cursorColor+=stripe*(ERASER_GRIP_OUTLINE_CHANNEL-cursorColor);
+						cursorAlpha+=stripe*(cursorOpacity-cursorAlpha);
+					}
 					bool bad=false;
 					for (unsigned channel=0;channel<3;++channel)
 					{
-						const double expected=background[channel]+(color[channel]-background[channel])*ink[3]/255.0*(1-erased);
+						const double inkComposite=background[channel]+(color[channel]-background[channel])*ink[3]/255.0*(1-erased);
+						const double expected=cursorColor*255*cursorAlpha+inkComposite*(1-cursorAlpha);
 						bad|=std::abs(output[channel]-expected)>2.1;
 					}
 					mismatch+=bad; ++checked;
 				}
 		checks.Expect(opaque==0,"composite always preserves an opaque board including erased pixels");
 		if (mismatch) std::cerr << "[EraserDemo] pixel mismatches=" << mismatch << '/' << checked << '\n';
-		checks.Expect(mismatch==0,"GPU erasure and palette match the baked atlas at every non-cursor pixel");
+		checks.Expect(mismatch==0,"GPU ink, erasure, palette and both independent cursors match the baked frame");
 	}
 
 	double InkEnergy(const Image& image, unsigned side, std::array<unsigned,4> rectangle)
@@ -198,6 +222,116 @@ namespace
 	double RemovedFraction(const Image& before, const Image& after, unsigned side, std::array<unsigned,4> rectangle)
 	{
 		return 1-InkEnergy(after,side,rectangle)/std::max(1.0,InkEnergy(before,side,rectangle));
+	}
+
+	void CheckNoEarlyErasure(Checks& checks, const Image& image, const Atlas& atlas, int scene, int frameIndex)
+	{
+		// 独立于时间遮罩，用已经走过的光标包络排除“尚未经过却提前淡掉”的像素。
+		const auto& frames=Data::Frames[scene]; const auto& current=frames[frameIndex];
+		size_t ahead=0;
+		for (unsigned side=0;side<2;++side)
+			for (unsigned y=0;y<CanvasHeight;++y)
+				for (unsigned x=0;x<CanvasWidth;++x)
+				{
+					const auto* ink=atlas.source.At(x,y); if (ink[3]<64) continue;
+					const double cursorX=side ? current.speedX : current.x, cursorY=side ? current.speedY : current.y;
+					const double cursorRadius=(side ? current.speedDiameter : current.fixedDiameter)*0.5+2;
+					if ((side ? current.speedCursorAlpha : current.cursorAlpha)>0
+						&& std::abs(x+0.5-cursorX)<cursorRadius && std::abs(y+0.5-cursorY)<cursorRadius) continue;
+					const auto* actual=image.At(x+side*CanvasWidth,y);
+					const double original=(std::abs(247-static_cast<int>(ink[0]))+std::abs(248-static_cast<int>(ink[1]))
+						+std::abs(250-static_cast<int>(ink[2])))*ink[3]/255.0;
+					const double remaining=std::abs(247-static_cast<int>(actual[0]))+std::abs(248-static_cast<int>(actual[1]))
+						+std::abs(250-static_cast<int>(actual[2]));
+					if (original-remaining<12) continue;
+					bool covered=false;
+					for (int i=1;i<=frameIndex && !covered;++i)
+					{
+						const auto& a=frames[i-1]; const auto& b=frames[i];
+						if (b.eraseProgress<=0 || (side ? b.speedCursorAlpha : b.cursorAlpha)<=0) continue;
+						const double ax=side ? a.speedX : a.x, ay=side ? a.speedY : a.y;
+						const double dx=(side ? b.speedX : b.x)-ax, dy=(side ? b.speedY : b.y)-ay;
+						const double lengthSquared=dx*dx+dy*dy;
+						const double along=lengthSquared>0 ? std::clamp(((x+0.5-ax)*dx+(y+0.5-ay)*dy)/lengthSquared,0.0,1.0) : 0;
+						const double radius=(side ? std::max(a.speedDiameter,b.speedDiameter) : std::max(a.fixedDiameter,b.fixedDiameter))*0.5;
+						// 3px 覆盖离线 1.5*fwidth AA 和密集轨迹相对 30Hz 帧表的曲率差。
+						covered=std::hypot(x+0.5-ax-along*dx,y+0.5-ay-along*dy)<=radius+3;
+					}
+					ahead+=!covered;
+				}
+		if (ahead) std::cerr << "[EraserDemo] prematurely erased pixels=" << ahead << " scene=" << scene << " frame=" << frameIndex << '\n';
+		checks.Expect(ahead==0,"no ink disappears ahead of either side's already traversed erase path");
+	}
+
+	void CheckFineProtectedInk(Checks& checks, const Image& result, const Atlas& atlas)
+	{
+		size_t changed=0; unsigned firstX=0, firstY=0;
+		const int background[]{247,248,250};
+		for (unsigned y=0;y<CanvasHeight;++y)
+			for (unsigned x=0;x<CanvasWidth;++x)
+			{
+				const auto* ink=atlas.source.At(x,y);
+				if (ink[3]==0 || ink[2]>ink[0]+0.15*255) continue;
+				const auto* actual=result.At(x+CanvasWidth,y);
+				bool different=false;
+				for (unsigned channel=0;channel<3;++channel)
+				{
+					const double expected=background[channel]+(static_cast<int>(ink[channel])-background[channel])*ink[3]/255.0;
+					different|=std::abs(actual[channel]-expected)>2.1;
+				}
+				if (different && changed++==0) { firstX=x; firstY=y; }
+			}
+		if (changed) std::cerr << "[EraserDemo] non-target geometry pixels changed=" << changed << " first=" << firstX << ',' << firstY << '\n';
+		checks.Expect(changed==0,"fine speed erasure preserves every non-blue geometric stroke and label");
+	}
+
+	void CheckMotionFrames(Checks& checks)
+	{
+		const auto& fine=Data::Frames[0]; const auto& sweep=Data::Frames[1];
+		checks.Expect(fine[Data::FineActiveFrame].fixedDiameter>=fine[Data::FineActiveFrame].speedDiameter*2,
+			"fine comparison uses a visibly thicker fixed eraser");
+		checks.Expect(fine[Data::FineSettledFrame].eraseProgress==1 && fine[Data::FineSettledFrame].cursorAlpha==0
+			&& fine[Data::FineSettledFrame].speedCursorAlpha==0,"named fine hold starts after both erasers finish and lift");
+		const float initialDiameter=sweep.front().speedDiameter;
+		int firstGrowth=-1, previousDirection=0, reversalsBeforeGrowth=0;
+		double maxStep=0, maxDiameterStep=0, independentDistance=0;
+		for (int i=1;i<Data::FramesPerScene;++i)
+		{
+			const auto& previous=sweep[i-1]; const auto& frame=sweep[i];
+			if (firstGrowth<0 && frame.speedDiameter>initialDiameter+0.5F) firstGrowth=i;
+			if (firstGrowth<0 && frame.eraseProgress>0 && frame.speedCursorAlpha>0)
+			{
+				const float delta=frame.speedX-previous.speedX;
+				const int direction=delta>0.25F ? 1 : (delta<-0.25F ? -1 : 0);
+				if (direction && previousDirection && direction!=previousDirection) ++reversalsBeforeGrowth;
+				if (direction) previousDirection=direction;
+			}
+			if (frame.cursorAlpha>0 && frame.speedCursorAlpha>0)
+				independentDistance=std::max(independentDistance,std::hypot(static_cast<double>(frame.x)-frame.speedX,frame.y-frame.speedY));
+			for (unsigned side=0;side<2;++side)
+			{
+				const float opacity=side ? frame.speedCursorAlpha : frame.cursorAlpha;
+				const float beforeOpacity=side ? previous.speedCursorAlpha : previous.cursorAlpha;
+				if (opacity<=0 || beforeOpacity<=0 || previous.eraseProgress<=0) continue;
+				const double dx=side ? frame.speedX-previous.speedX : frame.x-previous.x;
+				const double dy=side ? frame.speedY-previous.speedY : frame.y-previous.y;
+				maxStep=std::max(maxStep,std::hypot(dx,dy));
+			}
+			maxDiameterStep=std::max(maxDiameterStep,std::abs(static_cast<double>(frame.speedDiameter)-previous.speedDiameter));
+		}
+		checks.Expect(firstGrowth>Data::SweepWarmupFrame && firstGrowth<Data::SweepGrowingFrame && reversalsBeforeGrowth>=1,
+			"speed eraser remains small through an initial return pass before gradually growing");
+		checks.Expect(sweep[Data::SweepWarmupFrame].speedDiameter<=initialDiameter+0.5F
+			&& sweep[Data::SweepGrowingFrame].speedDiameter>initialDiameter*2,"named warmup and growth frames expose delayed adaptation");
+		checks.Expect(maxStep<32 && maxDiameterStep<12,"baked cursor movement and diameter changes have bounded frame-to-frame steps");
+		checks.Expect(independentDistance>20,"fixed patching and speed erasing have independently authored paths");
+		checks.Expect(sweep[Data::SweepSpeedFinishedFrame].speedCursorAlpha==0 && sweep[Data::SweepSpeedFinishedFrame].cursorAlpha>0,
+			"speed eraser lifts while fixed eraser still patches missed areas");
+		checks.Expect(sweep[Data::SweepFixedFinishedFrame].cursorAlpha==0 && sweep[Data::SweepFixedFinishedFrame].speedCursorAlpha==0,
+			"both cursors lift before the readable final hold");
+		for (const auto& scene : Data::Frames)
+			checks.Expect(scene[Data::ResultFrame].eraseProgress==1 && scene[Data::ResultFrame].cursorAlpha==0
+				&& scene[Data::ResultFrame].speedCursorAlpha==0 && scene[Data::ResultFrame].opacity==1,"result keyframe is a fully visible settled result");
 	}
 
 	bool ContextRestored(Checks& checks, ID3D11Device* device, ID3D11DeviceContext* context,
@@ -272,37 +406,74 @@ int RunSettingEraserDemoTests()
 		std::cerr << "[EraserDemo] " << player.LastError() << '\n'; return checks.failures;
 	}
 	checks.Expect(player.Stats().renders==1 && player.Stats().shaderBuilds==1 && player.Stats().targetAllocations==1,"single initial pipeline and output allocation");
-	Image fineStart, fineActive, fineResult, sweepStart, sweepActive, sweepResult, darkResult, loop;
+	CheckMotionFrames(checks);
+	Image fineStart, fineActive, fineResult, sweepStart, sweepWarmup, sweepActive, sweepSpeedFinished,
+		sweepFixedFinished, sweepResult, darkResult, loop;
 	if (!Readback(checks,device.Get(),context.Get(),presentation,fineStart)) return checks.failures;
-	Save(checks,factory.Get(),output/L"fine-start.png",fineStart); CheckComposite(checks,fineStart,atlases[0],0,false);
+	Save(checks,factory.Get(),output/L"fine-start.png",fineStart); CheckComposite(checks,fineStart,atlases[0],0,0,false);
 	const auto initialRevision=player.Revision();
 	for (int i=0;i<200;++i) prepare(0);
 	checks.Expect(player.Revision()==initialRevision && player.Stats().renders==1,"unchanged frame performs no GPU work");
-	for (int i=1;i<=75;++i) presentation=prepare();
+	int playbackFrame=0;
+	auto advanceTo=[&](int absoluteFrame) {
+		while (playbackFrame<absoluteFrame) { presentation=prepare(); ++playbackFrame; }
+	};
+	advanceTo(Data::FineActiveFrame);
 	if (Readback(checks,device.Get(),context.Get(),presentation,fineActive))
 	{
 		Save(checks,factory.Get(),output/L"fine-active.png",fineActive);
-		CheckComposite(checks,fineActive,atlases[0],75,false);
+		CheckComposite(checks,fineActive,atlases[0],0,Data::FineActiveFrame,false);
+		CheckNoEarlyErasure(checks,fineActive,atlases[0],0,Data::FineActiveFrame);
 	}
-	for (int i=76;i<=226;++i) presentation=prepare();
+	advanceTo(Data::FineSettledFrame); const auto fineHoldRenders=player.Stats().renders;
+	advanceTo(Data::ResultFrame);
+	checks.Expect(Data::FineSettledFrame<Data::SweepFixedFinishedFrame && player.Stats().renders==fineHoldRenders,
+		"fine result hold stops output rendering before the longer broad scene finishes");
 	if (!Readback(checks,device.Get(),context.Get(),presentation,fineResult)) return checks.failures;
-	Save(checks,factory.Get(),output/L"fine-result.png",fineResult); CheckComposite(checks,fineResult,atlases[0],226,false);
-	checks.Expect(RemovedFraction(fineStart,fineResult,1,{541,304,557,333})>0.98,"speed eraser removes the intended fine subscript");
-	checks.Expect(RemovedFraction(fineStart,fineResult,1,{558,280,594,330})<0.005,"speed eraser preserves neighboring O");
-	checks.Expect(RemovedFraction(fineStart,fineResult,0,{558,280,594,330})>0.15,"fixed eraser demonstrates collateral erasure of neighboring O");
-	for (int i=227;i<=240;++i) presentation=prepare();
+	Save(checks,factory.Get(),output/L"fine-result.png",fineResult); CheckComposite(checks,fineResult,atlases[0],0,Data::ResultFrame,false);
+	checks.Expect(RemovedFraction(fineStart,fineResult,1,Data::FineTargetRegion)>0.98,"speed eraser removes the geometric construction line");
+	checks.Expect(RemovedFraction(fineStart,fineResult,1,Data::FineLetterRegion)<0.005,"speed eraser preserves the neighboring geometric label");
+	checks.Expect(RemovedFraction(fineStart,fineResult,0,Data::FineLetterRegion)>0.05,"thicker fixed eraser damages the neighboring geometric label");
+	checks.Expect(RemovedFraction(fineStart,fineResult,1,Data::FineLineRegion)<0.005,"speed eraser preserves the unrelated lower geometric edge");
+	checks.Expect(RemovedFraction(fineStart,fineResult,0,Data::FineLineRegion)>0.15,"thicker fixed eraser damages the unrelated lower geometric edge");
+	CheckFineProtectedInk(checks,fineResult,atlases[0]);
+	advanceTo(Data::FramesPerScene);
 	checks.Expect(presentation.scene==1 && player.Stats().frame==0,"carousel switches to the second baked scene");
 	if (!Readback(checks,device.Get(),context.Get(),presentation,sweepStart)) return checks.failures;
 	Save(checks,factory.Get(),output/L"sweep-start.png",sweepStart);
-	for (int i=1;i<=110;++i) presentation=prepare();
-	if (Readback(checks,device.Get(),context.Get(),presentation,sweepActive)) Save(checks,factory.Get(),output/L"sweep-active.png",sweepActive);
-	for (int i=111;i<=226;++i) presentation=prepare();
+	advanceTo(Data::FramesPerScene+Data::SweepWarmupFrame);
+	if (!Readback(checks,device.Get(),context.Get(),presentation,sweepWarmup)) return checks.failures;
+	Save(checks,factory.Get(),output/L"sweep-warmup.png",sweepWarmup);
+	CheckComposite(checks,sweepWarmup,atlases[1],1,Data::SweepWarmupFrame,false);
+	CheckNoEarlyErasure(checks,sweepWarmup,atlases[1],1,Data::SweepWarmupFrame);
+	checks.Expect(RemovedFraction(sweepStart,sweepWarmup,0,Data::SweepEarlyErasedRegion)>0.6
+		&& RemovedFraction(sweepStart,sweepWarmup,1,Data::SweepEarlyErasedRegion)>0.6,"both early passes already erase crossed ink before a future revisit");
+	checks.Expect(RemovedFraction(sweepStart,sweepWarmup,1,Data::SweepLateRegion)<0.03,"initial small passes do not erase the still-unvisited corner");
+	advanceTo(Data::FramesPerScene+Data::SweepGrowingFrame);
+	if (!Readback(checks,device.Get(),context.Get(),presentation,sweepActive)) return checks.failures;
+	Save(checks,factory.Get(),output/L"sweep-active.png",sweepActive);
+	CheckComposite(checks,sweepActive,atlases[1],1,Data::SweepGrowingFrame,false);
+	CheckNoEarlyErasure(checks,sweepActive,atlases[1],1,Data::SweepGrowingFrame);
+	advanceTo(Data::FramesPerScene+Data::SweepSpeedFinishedFrame);
+	if (!Readback(checks,device.Get(),context.Get(),presentation,sweepSpeedFinished)) return checks.failures;
+	Save(checks,factory.Get(),output/L"sweep-speed-finished.png",sweepSpeedFinished);
+	CheckComposite(checks,sweepSpeedFinished,atlases[1],1,Data::SweepSpeedFinishedFrame,false);
+	checks.Expect(RemovedFraction(sweepStart,sweepSpeedFinished,1,Data::SweepTargetRegion)>0.995,"speed eraser clears the full candidate before fixed patching finishes");
+	checks.Expect(RemovedFraction(sweepStart,sweepSpeedFinished,0,Data::SweepTargetRegion)<0.97,"fixed side still contains visible missed ink when speed side finishes");
+	advanceTo(Data::FramesPerScene+Data::SweepFixedFinishedFrame);
+	if (!Readback(checks,device.Get(),context.Get(),presentation,sweepFixedFinished)) return checks.failures;
+	Save(checks,factory.Get(),output/L"sweep-fixed-finished.png",sweepFixedFinished);
+	CheckComposite(checks,sweepFixedFinished,atlases[1],1,Data::SweepFixedFinishedFrame,false);
+	checks.Expect(InkEnergy(sweepSpeedFinished,0,Data::SweepTargetRegion)-InkEnergy(sweepFixedFinished,0,Data::SweepTargetRegion)
+		>InkEnergy(sweepStart,0,Data::SweepTargetRegion)*0.01,"fixed eraser continues meaningful patching after the speed side has lifted");
+	advanceTo(Data::FramesPerScene+Data::ResultFrame);
 	if (!Readback(checks,device.Get(),context.Get(),presentation,sweepResult)) return checks.failures;
-	Save(checks,factory.Get(),output/L"sweep-result.png",sweepResult); CheckComposite(checks,sweepResult,atlases[1],226,false);
-	checks.Expect(RemovedFraction(sweepStart,sweepResult,1,{320,270,610,405})>0.995,"speed eraser fully clears the large candidate structure");
-	checks.Expect(RemovedFraction(sweepStart,sweepResult,0,{320,270,610,405})<0.3,"fixed eraser leaves substantial candidate structure fragments");
-	checks.Expect(RemovedFraction(sweepStart,sweepResult,1,{0,0,768,250})<0.005,"large eraser preserves the protected explanation above");
-	for (int i=227;i<=240;++i) presentation=prepare();
+	Save(checks,factory.Get(),output/L"sweep-result.png",sweepResult); CheckComposite(checks,sweepResult,atlases[1],1,Data::ResultFrame,false);
+	checks.Expect(RemovedFraction(sweepStart,sweepResult,1,Data::SweepTargetRegion)>0.995,"speed eraser fully clears the large candidate structure");
+	checks.Expect(RemovedFraction(sweepStart,sweepResult,0,Data::SweepTargetRegion)<0.95,"fixed side retains meaningful missed ink after its longer patching sequence");
+	checks.Expect(RemovedFraction(sweepStart,sweepResult,0,Data::SweepCornerRegion)<0.9,"fixed eraser leaves visible corner fragments despite extra patching");
+	checks.Expect(RemovedFraction(sweepStart,sweepResult,1,Data::SweepProtectedRegion)<0.005,"large eraser preserves the protected explanation above");
+	advanceTo(Data::FramesPerScene*2);
 	if (Readback(checks,device.Get(),context.Get(),presentation,loop))
 		checks.Expect(loop.pixels==fineStart.pixels && presentation.scene==0,"full loop restores identical original ink with no accumulated erasure");
 	presentation=prepare(0,false);
@@ -314,7 +485,7 @@ int RunSettingEraserDemoTests()
 	presentation=prepare(0,false,1,true);
 	if (Readback(checks,device.Get(),context.Get(),presentation,darkResult))
 	{
-		Save(checks,factory.Get(),output/L"fine-dark-result.png",darkResult); CheckComposite(checks,darkResult,atlases[0],226,true);
+		Save(checks,factory.Get(),output/L"fine-dark-result.png",darkResult); CheckComposite(checks,darkResult,atlases[0],0,Data::ResultFrame,true);
 	}
 	checks.Expect(player.Stats().shaderBuilds==1 && player.Stats().targetAllocations==1,"theme and scene changes reuse the pipeline and target");
 	presentation=prepare(0,true,0); baseline=player.Stats();

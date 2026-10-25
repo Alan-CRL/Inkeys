@@ -3297,6 +3297,27 @@ SettingSessionCoroutine RunSettingSession()
 						}
 					}
 
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
+					if (Design::NavigationRow("##speed-eraser-entry", IA(I18nKey.SettingsUI.Draw.Eraser.Kind.Speed).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.EntryDescription).c_str(), "\ued62"))
+						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
+
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
+					auto& cursor = Inkeys::config.Drawing.Cursor;
+					const vector<string> cursorStyles{ IA(I18nKey.SettingsUI.Draw.Cursor.DefaultStyle), IA(I18nKey.SettingsUI.Draw.Cursor.DrawingStyle) };
+					int mouseStyle = cursor.MouseStyle.load() == 1 ? 1 : 0, penStyle = cursor.PenStyle.load() == 1 ? 1 : 0;
+					const bool mouseStyleChanged = Design::ComboRow("##鼠标光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.MouseStyle).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Cursor.Description).c_str(), "\ue962", mouseStyle, cursorStyles);
+					const bool penStyleChanged = Design::ComboRow("##笔光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.PenStyle).c_str(),
+						nullptr, "\uedc6", penStyle, cursorStyles);
+					if (mouseStyleChanged || penStyleChanged)
+					{
+						cursor.MouseStyle = mouseStyle;
+						cursor.PenStyle = penStyle;
+						SyncDraw3State();
+						QueueConfigWrite();
+					}
+
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
 					bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
 					if (Design::ToggleRow("##断触接续", IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.N).c_str(),
@@ -3321,27 +3342,6 @@ SettingSessionCoroutine RunSettingSession()
 						Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(drawingHaptics, buttonHaptics);
 						QueueConfigWrite();
 					}
-
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
-					auto& cursor = Inkeys::config.Drawing.Cursor;
-					const vector<string> cursorStyles{ IA(I18nKey.SettingsUI.Draw.Cursor.DefaultStyle), IA(I18nKey.SettingsUI.Draw.Cursor.DrawingStyle) };
-					int mouseStyle = cursor.MouseStyle.load() == 1 ? 1 : 0, penStyle = cursor.PenStyle.load() == 1 ? 1 : 0;
-					const bool mouseStyleChanged = Design::ComboRow("##鼠标光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.MouseStyle).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Cursor.Description).c_str(), "\ue962", mouseStyle, cursorStyles);
-					const bool penStyleChanged = Design::ComboRow("##笔光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.PenStyle).c_str(),
-						nullptr, "\uedc6", penStyle, cursorStyles);
-					if (mouseStyleChanged || penStyleChanged)
-					{
-						cursor.MouseStyle = mouseStyle;
-						cursor.PenStyle = penStyle;
-						SyncDraw3State();
-						QueueConfigWrite();
-					}
-
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
-					if (Design::NavigationRow("##speed-eraser-entry", IA(I18nKey.SettingsUI.Draw.Eraser.Kind.Speed).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.EntryDescription).c_str(), "\ued62"))
-						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
 					break;
 				}
 

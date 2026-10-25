@@ -103,15 +103,15 @@ Correct：保持342 DIP自然布局、正常5/16 DIP留白和真实控件尺寸�
 
 ## 8. 笔速橡皮设置详情页
 
-- 绘制主页面的橡皮擦分类仅提供“笔速橡皮”整行入口。`DrawingSubpage::Overview/SpeedEraser` 是绘制内部状态，不能占用已退休根路由；每个子页用稳定的独立 content child ID 保留滚动。`NavigateDrawingSubpage` 只在子页实际变化时重启现有正文过渡，侧栏仍选中 Draw；点击侧栏绘制或主页绘制入口回 Overview。
+- 绘制主页面按绘图设备、橡皮擦、光标、触摸、笔触觉排列；橡皮擦分类仅提供“笔速橡皮”整行入口。`DrawingSubpage::Overview/SpeedEraser` 是绘制内部状态，不能占用已退休根路由；每个子页用稳定的独立 content child ID 保留滚动。`NavigateDrawingSubpage` 只在子页实际变化时重启现有正文过渡，侧栏仍选中 Draw；点击侧栏绘制或主页绘制入口回 Overview。
 - `RenderSpeedEraser(SpeedEraserDraft&, const EraserDemoPresenter& = {}) -> SpeedEraserEvents` 只生成界面与一次编辑事件。原生层每帧读一份 `EraserPreferencesSnapshot`，复用现有 setter；`SetGlobalEraserPreference` 已自行排队保存，不额外重复 QueueConfigWrite；设备与面积事件沿用设置页队列。
-- 灵敏度复用 UI3 三档键和同一配置。总开关关闭仍允许编辑灵敏度和五设备偏好；复选勾选=Speed/取消=Fixed。笔尖/笔尾计算方式仅在总开关开启且对应入口启用时显示，隐藏不改变保存值；Win7 去除 Auto 后仍保存 1/2 稳定枚举，不能写可见下标 0/1。面积辅助始终可见且可编辑。
-- 设备复选组为常驻展开的标题条与内联区，共用现有 `BeginCard` / `DrawCardSurface` 单外框和1物理像素分隔线；按真实标题/文字尺寸与DIP预算选择两列或一列，不引入内滚动或新配置。顶部只有返回箭头，无标题/返回文字链接。
+- 灵敏度复用 UI3 三档键和同一配置。总开关关闭仍允许编辑灵敏度和五设备偏好；复选勾选=Speed/取消=Fixed。笔尖/笔尾计算方式仅在总开关开启且对应入口启用时显示，隐藏不改变保存值；Win7 去除 Auto 后仍保存 1/2 稳定枚举，不能写可见下标 0/1。接触面积辅助仅在总开关开启且触摸入口勾选时显示；三个精细项均无可见项时，整个精细控制分类隐藏。隐藏不修改设备计算方式或面积辅助的保存值。
+- 设备复选组为常驻展开的标题条与内联区，共用现有 `BeginCard` / `DrawCardSurface` 单外框和1物理像素分隔线；按真实标题/文字尺寸与DIP预算选择两列或一列，不引入内滚动或新配置。顶部返回箭头后使用现有PageHeader显示“笔速橡皮”标题，无副标题、版本或返回文字链接。
 - `SpeedEraser::DirectInputUsesDpiFallback(const DisplayScale&)` 是只读提示判断，复用 `ResolveConfig` 探测当前绘制屏幕直接输入的标尺。输入必须是 `ProductHost().EraserDisplayScaleSnapshot()` 的完整已应用快照；不可读取设置 HWND 屏幕、仅看原始 EDID valid，或用待应用的 development 配置覆盖快照。真实输出逻辑映射不可信时同样可能退化；monitor==0 的未发布状态不推断 EDID 故障。
 - 提醒覆盖 DipOnly 与 ResolutionDpiHeuristic；真实可用的手动标定按解析器的旋转、监视器、尺寸和密度校验免于提示。鼠标/数位板及显式 IndirectDip 模型的正常 DIP 不作为退化原因。提示独立于总开关，复用 Warning Notice 的棕黄色背景和 i 图标，不改变算法或设备身份。
 - 2026-10-24 用户暂停演示图接入：本轮顶部仅按真实文本高度显示介绍，不放占位图片。后续素材方向为透明底手写笔迹，画布与实际擦除由离屏生产绘制处理；不能将本轮视为四张图已经交付。
 
-验证入口：`InkeysHeadlessTests.exe --no-window --setting-eraser-only` 使用真实生产控件及相关笔速/属性回归；多语言、浅深、窄宽、7个DPI，真实鼠标/键盘编辑与按下释放，门控/枚举/常驻面积/Notice，以及独立子窗口滚动。CPU导航夹具复用生产子页helper和child ID，但不链接原生 Setting.cpp，不能据此声称实际HWND导航、触屏或Win7实机通过。
+验证入口：`InkeysHeadlessTests.exe --no-window --setting-eraser-only` 使用真实生产控件及相关笔速/属性回归；多语言、浅深、窄宽、7个DPI，真实鼠标/键盘编辑与按下释放，门控/枚举/触摸面积显隐/Notice，以及独立子窗口滚动。CPU导航夹具复用生产子页helper和child ID，但不链接原生 Setting.cpp，不能据此声称实际HWND导航、触屏或Win7实机通过。
 
 ## 9. 设置页预计算擦除演示
 
@@ -122,6 +122,8 @@ Correct：保持342 DIP自然布局、正常5/16 DIP留白和真实控件尺寸�
 - 单侧输出按32像素分档，最大768×432。动画速率仅改变播放时间，离屏更新按未缩放时间最多30Hz；静止、禁用动画和重复帧不重复绘制。关闭动画显示精细修改结果。普通大小/字体变化和隐藏不重编译管线，device epoch/session销毁才reset。
 - 真实图片区域完全被裁剪、离页或隐藏时暂停且不积累时间；初次被裁剪而未创建纹理时仍保留完整卡片高度，不能破坏滚动恢复。可见的资源准备失败仅降级介绍文字，不阻断其他设置；新增资源不可列入设置窗口必需纹理集合。
 - 原生 `FrameSubmissionKey::demoRevision` 记录纹理内容变化；相同播放帧仍保留既有省提交路径。不能仅依赖稳定SRV指针判断画面不变，也不能安装每帧用户callback强迫重复提交。
-- 两个场景共享固定/笔速的笔迹和移动路径，标签、说明、轮播圆点由UI绘制并本地化；窄窗上下排列、真实字体测量，不增加卡内滚动。
+- 两侧共享场景笔迹及擦除目标；精细场景为立体几何辅助线，固定48px/笔速16px，对照字母标记与非目标棱线的保留。化学大块场景先小幅斜向往返，再逐渐增粗；固定侧继续补擦，笔速侧独立提前抬起。标签、说明、轮播圆点由UI本地化；窄窗上下排列、真实字体测量，不增加卡内滚动。
+- 帧表的x/y、cursorAlpha表示固定侧；speedX/speedY/speedCursorAlpha独立表示笔速侧。GPU仅增加位置/alpha常量，不计算路径；缓存比较分别忽略已抬起光标的不可见位置。每个场景的eraseProgress在该场景擦除结束时收敛，不能为了另一个更长场景而重复绘制静止结果。
+- 往返时间遮罩记录最早完成覆盖，不能被后续经过推迟。离线时间近似只限抗锯齿边缘的短过渡；测试须检查早期已擦区域、尚未到达区域，以及整幅几何中所有非辅助线墨迹，不能只用局部ROI掩盖误擦。
 
 验证入口：`InkeysHeadlessTests.exe --no-window --setting-eraser-demo-only` 使用真实ImGui布局与WARP播放shader，离屏读回/PNG检查擦除目标、相邻笔迹、主题、背景、光标和循环，检查停留、禁用、暂停、分档、30Hz、共享状态及设备重建。时间压力测试是模拟可见时间与离屏WARP耗时，不代表实机GUI帧率或硬件书写测试。

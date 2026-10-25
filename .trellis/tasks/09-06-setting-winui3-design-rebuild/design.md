@@ -133,3 +133,11 @@
 ## 笔速橡皮循环演示
 
 采用真实速度控制器+真实墨迹shader的独立离屏预览，手写场景GPU缓存与可见性播放状态，借用设置设备/线程，不创建HWND。最新架构/边界见 research/settings-eraser-demo.md。
+
+## 演示动作精修
+
+采用 research/settings-eraser-demo-motion.md 的独立左右轨迹、延迟增粗和预计算时序，原页面及播放性能边界保持。
+
+## 2026-10-25 笔速橡皮与联系方式
+
+参见 research/settings-speed-eraser-polish.md。只改变生产renderer显示门控和标题、绘制分类顺序、作者联系标签，复用原状态/配置/控件及i18n。

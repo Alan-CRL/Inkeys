@@ -2099,7 +2099,7 @@ namespace
 			ApplyPalette(dark); NavigationState navigation;
 			SpeedEraserDraft draft; draft.automaticEnabled = false; draft.penResponses = { 1, 2 };
 			struct Frame { SpeedEraserEvents events; std::array<bool, 2> response{};
-				bool automatic = false, sensitivity = false, area = false, warning = false; int warningVertices = 0; };
+				bool automatic = false, sensitivity = false, area = false, warning = false; int warningVertices = 0; float fineSpace = 0; };
 			ImGuiWindow* page = nullptr; ImGuiWindow* devices = nullptr;
 			std::array<int, 5> enabledChanges{}; std::array<int, 2> responseChanges{};
 			int automaticChanges = 0, sensitivityChanges = 0, areaChanges = 0, backEvents = 0;
@@ -2133,6 +2133,7 @@ namespace
 				devices = nullptr;
 				for (auto* candidate : GImGui->Windows)
 					if (candidate->Active && candidate->ParentWindow == page && candidate->ChildId == page->GetID("##eraser-devices")) devices = candidate;
+				if (devices) frame.fineSpace = ImGui::GetCursorScreenPos().y - (devices->Pos.y + devices->Size.y);
 				for (const auto& vertex : page->DrawList->VtxBuffer)
 					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Warning]) ++frame.warningVertices;
 				ImFluent::PopFont(); ImGui::End(); ApplyDragScrolling(navigation); ImGui::Render();
@@ -2177,13 +2178,20 @@ namespace
 			checks.Expect(width < 500 ? Near(choices[0].Min.x, choices[1].Min.x, 1) && choices[0].Max.y < choices[1].Min.y
 				: Near(choices[0].Min.y, choices[1].Min.y, 1) && choices[0].Max.x < choices[1].Min.x,
 				"actual device card reflows from one column to two columns at the available width");
-			for (const bool automatic : { false, true }) for (int mask = 0; mask < 4; ++mask)
+			const float hiddenFineSpace = draw(outside, false).fineSpace;
+			for (const bool automatic : { false, true }) for (int mask = 0; mask < 8; ++mask)
 			{
-				draft.automaticEnabled = automatic; draft.enabled[3] = (mask & 1) != 0; draft.enabled[4] = (mask & 2) != 0;
+				draft.automaticEnabled = automatic; draft.enabled[2] = (mask & 4) != 0;
+				draft.enabled[3] = (mask & 1) != 0; draft.enabled[4] = (mask & 2) != 0;
 				draft.physicalSizeWarning = (mask & 1) != 0; const auto frame = draw(outside, false);
-				checks.Expect(noEdits(frame.events) && frame.automatic && frame.sensitivity && frame.area
-					&& frame.response[0] == (automatic && draft.enabled[3]) && frame.response[1] == (automatic && draft.enabled[4]),
-					"only enabled pen entries expose calculation controls under the master switch; area assistance stays available");
+				checks.Expect(noEdits(frame.events) && frame.automatic && frame.sensitivity
+					&& frame.area == (automatic && draft.enabled[2])
+					&& frame.response[0] == (automatic && draft.enabled[3]) && frame.response[1] == (automatic && draft.enabled[4])
+					&& draft.penResponses == std::array<int, 2>{ 1, 2 } && !draft.touchArea,
+					"fine controls follow their enabled device and master switch without changing hidden preferences");
+				checks.Expect(automatic && mask != 0 ? frame.fineSpace > hiddenFineSpace + scale
+					: Near(frame.fineSpace, hiddenFineSpace, 1),
+					"the complete fine-control section consumes no space when its three controls are hidden");
 				checks.Expect(frame.warning == draft.physicalSizeWarning && (frame.warningVertices > 0) == draft.physicalSizeWarning,
 					"real physical-size notice uses the warning surface independently of the master switch");
 			}
@@ -2205,14 +2213,32 @@ namespace
 			chord(ImGuiKey_F4); chord(ImGuiKey_End); chord(ImGuiKey_Enter);
 			checks.Expect(draft.sensitivity == 2 && sensitivityChanges == 1 && !draft.automaticEnabled,
 				"shared low/medium/high sensitivity commits the high enum once while the master switch is off");
-			click(focusRect(page, controlId("##eraser-touch-area", "##toggle")));
-			checks.Expect(draft.touchArea && areaChanges == 1 && !draft.automaticEnabled,
-				"touch contact-area assistance remains independently editable with automatic erasing off");
+			checks.Expect(!draw(outside, false).area && !draft.touchArea && areaChanges == 0,
+				"disabled automatic erasing hides contact-area assistance without editing its value");
 			const auto preferences = draft.enabled;
-			click(focusRect(page, controlId("##eraser-automatic", "##toggle")));
+			const auto masterOn = click(focusRect(page, controlId("##eraser-automatic", "##toggle")));
 			checks.Expect(draft.automaticEnabled && automaticChanges == 1 && draft.enabled == preferences
-				&& draft.sensitivity == 2 && draft.touchArea,
-				"master toggle preserves per-device, sensitivity and area-assistance preferences");
+				&& draft.sensitivity == 2 && !draft.touchArea && masterOn.area && masterOn.response[0] && masterOn.response[1],
+				"master activation exposes the selected fine controls in the same frame and preserves preferences");
+			click(focusRect(page, controlId("##eraser-touch-area", "##toggle")));
+			checks.Expect(draft.touchArea && areaChanges == 1, "enabled touch contact-area assistance commits exactly one edit");
+			const auto withoutTouch = click(focusRect(devices, ImHashStr("###device", 0, devices->GetID(2))));
+			checks.Expect(!draft.enabled[2] && !withoutTouch.area && withoutTouch.response[0] && withoutTouch.response[1]
+				&& draft.touchArea && areaChanges == 1 && !withoutTouch.events.touchAreaChanged,
+				"unchecking touch immediately hides only its fine control and retains contact-area assistance");
+			const auto withTouch = click(focusRect(devices, ImHashStr("###device", 0, devices->GetID(2))));
+			checks.Expect(draft.enabled[2] && withTouch.area && draft.touchArea && enabledChanges[2] == 3 && areaChanges == 1,
+				"rechecking touch restores its fine control with the saved value and no extra area edit");
+			const auto savedResponses = draft.penResponses;
+			const auto masterOff = click(focusRect(page, controlId("##eraser-automatic", "##toggle")));
+			checks.Expect(!draft.automaticEnabled && !masterOff.area && !masterOff.response[0] && !masterOff.response[1]
+				&& Near(masterOff.fineSpace, hiddenFineSpace, 1) && draft.enabled == preferences && draft.touchArea
+				&& draft.penResponses == savedResponses && areaChanges == 1,
+				"master deactivation removes the whole fine section immediately without clearing its saved choices");
+			const auto restored = click(focusRect(page, controlId("##eraser-automatic", "##toggle")));
+			checks.Expect(draft.automaticEnabled && automaticChanges == 3 && restored.area && restored.response[0] && restored.response[1]
+				&& draft.touchArea && draft.penResponses == savedResponses,
+				"reactivating automatic erasing restores all selected fine controls without resetting them");
 			for (int pen = 0; pen < 2; ++pen)
 			{
 				focusRect(page, controlId("##eraser-response", "##select", pen + 3));
