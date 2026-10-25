@@ -78,6 +78,7 @@ struct ImGui_ImplDX11_Data
     ID3D11InputLayout*          pInputLayout;
     ID3D11Buffer*               pVertexConstantBuffer;
     ID3D11PixelShader*          pPixelShader;
+    ID3D11Buffer*               pPixelConstantBuffer;
     ID3D11SamplerState*         pTexSamplerLinear;
     ID3D11SamplerState*         pTexSamplerNearest;
     ID3D11RasterizerState*      pRasterizerState;
@@ -192,6 +193,7 @@ static void ImGui_ImplDX11_SetupRenderState(const ImDrawData* draw_data, ID3D11D
     device_ctx->VSSetShader(bd->pVertexShader, nullptr, 0);
     device_ctx->VSSetConstantBuffers(0, 1, &bd->pVertexConstantBuffer);
     device_ctx->PSSetShader(bd->pPixelShader, nullptr, 0);
+    device_ctx->PSSetConstantBuffers(1, 1, &bd->pPixelConstantBuffer);
     device_ctx->PSSetSamplers(0, 1, &bd->pTexSamplerLinear);
     device_ctx->GSSetShader(nullptr, nullptr, 0);
     device_ctx->HSSetShader(nullptr, nullptr, 0); // In theory we should backup and restore this as well.. very infrequently used..
@@ -215,7 +217,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
     ID3D11DeviceContext* device = bd->pd3dDeviceContext;
     // NewFrame 的资源创建失败时不提交残缺状态，下次 NewFrame 再按原调度重试。
-    if (!bd->pVertexShader || !bd->pInputLayout || !bd->pVertexConstantBuffer || !bd->pPixelShader
+    if (!bd->pVertexShader || !bd->pInputLayout || !bd->pVertexConstantBuffer || !bd->pPixelShader || !bd->pPixelConstantBuffer
         || !bd->pBlendState || !bd->pRasterizerState || !bd->pDepthStencilState
         || !bd->pTexSamplerLinear || !bd->pTexSamplerNearest)
     {
@@ -310,7 +312,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
         UINT                        PSInstancesCount, VSInstancesCount, GSInstancesCount;
         ID3D11ClassInstance         *PSInstances[256], *VSInstances[256], *GSInstances[256];   // 256 is max according to PSSetShader documentation
         D3D11_PRIMITIVE_TOPOLOGY    PrimitiveTopology;
-        ID3D11Buffer*               IndexBuffer, *VertexBuffer, *VSConstantBuffer;
+        ID3D11Buffer*               IndexBuffer, *VertexBuffer, *VSConstantBuffer, *PSConstantBuffer;
         UINT                        IndexBufferOffset, VertexBufferStride, VertexBufferOffset;
         DXGI_FORMAT                 IndexBufferFormat;
         ID3D11InputLayout*          InputLayout;
@@ -324,6 +326,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     device->OMGetDepthStencilState(&old.DepthStencilState, &old.StencilRef);
     device->PSGetShaderResources(0, 1, &old.PSShaderResource);
     device->PSGetSamplers(0, 1, &old.PSSampler);
+    device->PSGetConstantBuffers(1, 1, &old.PSConstantBuffer);
     old.PSInstancesCount = old.VSInstancesCount = old.GSInstancesCount = 256;
     device->PSGetShader(&old.PS, old.PSInstances, &old.PSInstancesCount);
     device->VSGetShader(&old.VS, old.VSInstances, &old.VSInstancesCount);
@@ -400,6 +403,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     device->OMSetDepthStencilState(old.DepthStencilState, old.StencilRef); if (old.DepthStencilState) old.DepthStencilState->Release();
     device->PSSetShaderResources(0, 1, &old.PSShaderResource); if (old.PSShaderResource) old.PSShaderResource->Release();
     device->PSSetSamplers(0, 1, &old.PSSampler); if (old.PSSampler) old.PSSampler->Release();
+    device->PSSetConstantBuffers(1, 1, &old.PSConstantBuffer); if (old.PSConstantBuffer) old.PSConstantBuffer->Release();
     device->PSSetShader(old.PS, old.PSInstances, old.PSInstancesCount); if (old.PS) old.PS->Release();
     for (UINT i = 0; i < old.PSInstancesCount; i++) if (old.PSInstances[i]) old.PSInstances[i]->Release();
     device->VSSetShader(old.VS, old.VSInstances, old.VSInstancesCount); if (old.VS) old.VS->Release();
@@ -588,6 +592,19 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         ImGui_ImplDX11_InvalidateDeviceObjects();
         return false;
     }
+    // 零参数显式选择普通 ImGui 模式，并在提交后恢复宿主的 PS b1。
+    const float pixel_constants[20] = {};
+    D3D11_BUFFER_DESC pixel_buffer_desc = {};
+    pixel_buffer_desc.ByteWidth = sizeof(pixel_constants);
+    pixel_buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
+    pixel_buffer_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    D3D11_SUBRESOURCE_DATA pixel_buffer_data = {};
+    pixel_buffer_data.pSysMem = pixel_constants;
+    if (!ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateBuffer(&pixel_buffer_desc, &pixel_buffer_data, &bd->pPixelConstantBuffer)))
+    {
+        ImGui_ImplDX11_InvalidateDeviceObjects();
+        return false;
+    }
     // [Inkeys] 自定义结束
 
     // Create the blending setup
@@ -676,6 +693,7 @@ void    ImGui_ImplDX11_InvalidateDeviceObjects()
     if (bd->pDepthStencilState)     { bd->pDepthStencilState->Release(); bd->pDepthStencilState = nullptr; }
     if (bd->pRasterizerState)       { bd->pRasterizerState->Release(); bd->pRasterizerState = nullptr; }
     if (bd->pPixelShader)           { bd->pPixelShader->Release(); bd->pPixelShader = nullptr; }
+    if (bd->pPixelConstantBuffer)   { bd->pPixelConstantBuffer->Release(); bd->pPixelConstantBuffer = nullptr; }
     if (bd->pVertexConstantBuffer)  { bd->pVertexConstantBuffer->Release(); bd->pVertexConstantBuffer = nullptr; }
     if (bd->pInputLayout)           { bd->pInputLayout->Release(); bd->pInputLayout = nullptr; }
     if (bd->pVertexShader)          { bd->pVertexShader->Release(); bd->pVertexShader = nullptr; }

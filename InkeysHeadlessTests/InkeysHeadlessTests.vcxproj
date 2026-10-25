@@ -233,7 +233,9 @@
 	<ItemGroup>
 	  <ClInclude Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
 	  <ResourceCompile Include="message_box_test.rc" />
-	  <ResourceCompile Include="setting_home_warp_tests.rc" />
+	  <ResourceCompile Include="setting_home_warp_tests.rc">
+	    <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+	  </ResourceCompile>
 	  <ClInclude Include="setting_home_warp_tests.h" />
 	</ItemGroup>
   <ItemGroup>
@@ -250,6 +252,22 @@
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <ShaderModel>4.0</ShaderModel>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <ObjectFileOutput>$(IntDir)imgui_vs.cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <ShaderModel>4.0</ShaderModel>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <ObjectFileOutput>$(IntDir)imgui_ps.cso</ObjectFileOutput>
+    </FxCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

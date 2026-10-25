@@ -4602,7 +4602,8 @@ namespace
 				return pauseNavigationClock(ResolveSettingResourceFailure("CreatePresentation"));
 		}
 
-		if (!decision.render || settingSession.Done() || !g_pSwapChain)
+		// 遮挡帧仍需探测；探测成功后继续本帧，不能因旧 render=false 停止调度。
+		if (!decision.HasPresentationWork() || settingSession.Done() || !g_pSwapChain)
 			return pauseNavigationClock(FrameResult::Idle);
 
 		if (decision.probeOcclusion && g_pSwapChain)

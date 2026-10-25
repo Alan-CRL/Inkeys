@@ -531,6 +531,26 @@ namespace
 		std::cout << "[HomeWARP] texture lifecycle: real E_INVALIDARG, both-phase injected OOM/removed/reset, legacy null partial, repeated teardown, Map rollback and recreation checked; device removal is simulated.\n";
 	}
 
+	void CheckSharedShaderMode(Checks& checks, Offscreen& renderer)
+	{
+		Frame(nullptr, Away);
+		Pixels reference, actual;
+		renderer.Submit(checks,ImGui::GetDrawData(),&reference);
+		// 宿主残留演示模式时，普通 ImGui 提交仍应逐像素一致，并归还原来的 PS b1。
+		float values[20]{}; values[7]=1; values[18]=1;
+		D3D11_BUFFER_DESC desc{}; desc.ByteWidth=sizeof(values);
+		desc.Usage=D3D11_USAGE_IMMUTABLE; desc.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
+		D3D11_SUBRESOURCE_DATA initial{}; initial.pSysMem=values;
+		ComPtr<ID3D11Buffer> mode;
+		if (!checks.Result(renderer.device->CreateBuffer(&desc,&initial,mode.GetAddressOf()),"create foreign demo mode buffer")) return;
+		renderer.context->PSSetConstantBuffers(1,1,mode.GetAddressOf());
+		renderer.Submit(checks,ImGui::GetDrawData(),&actual);
+		ComPtr<ID3D11Buffer> restored; renderer.context->PSGetConstantBuffers(1,1,restored.GetAddressOf());
+		checks.Expect(!reference.empty() && reference==actual,"normal ImGui pixels ignore a foreign eraser demo mode");
+		checks.Expect(restored.Get()==mode.Get(),"normal ImGui submission restores the foreign PS b1 buffer");
+		ID3D11Buffer* empty=nullptr; renderer.context->PSSetConstantBuffers(1,1,&empty);
+	}
+
 	void CheckColdEntry(Checks& checks, Offscreen& renderer)
 	{
 		// 首次动态字体/AutoResizeY 尚未测量；不先用静态帧掩盖首开字形与提交准备。
@@ -1588,6 +1608,7 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 	Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 	CheckColdEntry(checks, renderer);
 	CheckBackendFailures(checks, renderer);
+	CheckSharedShaderMode(checks, renderer);
 	CheckEntryScrollbarContinuity(checks,renderer);
 	for (bool dark : { false, true })
 	{

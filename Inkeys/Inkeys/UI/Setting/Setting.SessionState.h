@@ -177,6 +177,11 @@ namespace Inkeys::UI::Setting
 		bool probeOcclusion = false;
 		bool render = false;
 		bool consumeBusinessCompletion = false;
+
+		[[nodiscard]] constexpr bool HasPresentationWork() const noexcept
+		{
+			return render || probeOcclusion;
+		}
 	};
 
 	enum class SettingOpenTarget : std::uint8_t { Current, SpeedEraser };

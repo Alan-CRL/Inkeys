@@ -350,26 +350,39 @@ namespace
 		ComPtr<ID3D11Buffer> constants;
 		D3D11_BUFFER_DESC buffer{}; buffer.ByteWidth=32; buffer.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
 		if (!checks.Result(device->CreateBuffer(&buffer,nullptr,constants.GetAddressOf()),"create sentinel constants")) return false;
+		ComPtr<ID3D11Buffer> vertices;
+		buffer.ByteWidth=64; buffer.BindFlags=D3D11_BIND_VERTEX_BUFFER;
+		if (!checks.Result(device->CreateBuffer(&buffer,nullptr,vertices.GetAddressOf()),"create sentinel vertices")) return false;
+		const UINT stride=24, offset=4;
+		context->IASetVertexBuffers(0,1,vertices.GetAddressOf(),&stride,&offset);
 		const D3D11_VIEWPORT viewport{1,2,6,4,0.25F,0.75F};
 		context->OMSetRenderTargets(1,view.GetAddressOf(),nullptr); context->RSSetViewports(1,&viewport);
 		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
 		context->PSSetShaderResources(0,1,&images[1]); context->PSSetSamplers(0,1,sampler.GetAddressOf());
 		context->PSSetConstantBuffers(0,1,constants.GetAddressOf());
+		context->PSSetConstantBuffers(1,1,constants.GetAddressOf());
+		context->VSSetConstantBuffers(0,1,constants.GetAddressOf());
 		const auto result=player.Prepare(device,context,images,true,768,0,false,1,true);
 		checks.Expect(result.texture!=0,"offscreen rendering succeeds with existing host state");
 		ComPtr<ID3D11RenderTargetView> actualView; ComPtr<ID3D11ShaderResourceView> actualImage;
-		ComPtr<ID3D11SamplerState> actualSampler; ComPtr<ID3D11Buffer> actualConstants;
+		ComPtr<ID3D11SamplerState> actualSampler; ComPtr<ID3D11Buffer> actualConstants, actualMode, actualProjection, actualVertices;
 		ComPtr<ID3D11PixelShader> actualPixel; ComPtr<ID3D11VertexShader> actualVertex;
 		context->OMGetRenderTargets(1,actualView.GetAddressOf(),nullptr);
 		context->PSGetShaderResources(0,1,actualImage.GetAddressOf()); context->PSGetSamplers(0,1,actualSampler.GetAddressOf());
 		context->PSGetConstantBuffers(0,1,actualConstants.GetAddressOf());
+		context->PSGetConstantBuffers(1,1,actualMode.GetAddressOf());
+		context->VSGetConstantBuffers(0,1,actualProjection.GetAddressOf());
+		UINT actualStride=0, actualOffset=0;
+		context->IAGetVertexBuffers(0,1,actualVertices.GetAddressOf(),&actualStride,&actualOffset);
 		context->PSGetShader(actualPixel.GetAddressOf(),nullptr,nullptr); context->VSGetShader(actualVertex.GetAddressOf(),nullptr,nullptr);
 		D3D11_VIEWPORT actualViewport{}; UINT count=1; context->RSGetViewports(&count,&actualViewport);
 		D3D11_PRIMITIVE_TOPOLOGY topology{}; context->IAGetPrimitiveTopology(&topology);
 		const bool restored=checks.Expect(actualView.Get()==view.Get() && actualImage.Get()==images[1]
 			&& actualSampler.Get()==sampler.Get() && actualConstants.Get()==constants.Get()
+			&& actualMode.Get()==constants.Get() && actualProjection.Get()==constants.Get()
+			&& actualVertices.Get()==vertices.Get() && actualStride==stride && actualOffset==offset
 			&& !actualPixel && !actualVertex && count==1 && std::memcmp(&viewport,&actualViewport,sizeof(viewport))==0
-			&& topology==D3D11_PRIMITIVE_TOPOLOGY_LINELIST,"shared context targets, shaders, resources, viewport and topology are restored");
+			&& topology==D3D11_PRIMITIVE_TOPOLOGY_LINELIST,"shared context targets, shaders, resources, VS b0, PS b1, vertices, viewport and topology are restored");
 		context->ClearState(); return restored;
 	}
 }

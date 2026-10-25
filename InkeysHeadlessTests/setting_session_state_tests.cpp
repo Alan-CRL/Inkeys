@@ -494,7 +494,7 @@ int RunSettingSessionStateTests()
 
 	auto decision = state.Resolve(1, false, false);
 	if (!Expect(decision.initializeResident && !decision.createPresentation
-		&& !decision.render, "hidden initialization builds resident resources"))
+		&& !decision.render && !decision.HasPresentationWork(), "hidden initialization builds resident resources"))
 		++failures;
 	state.CommitEpoch(1);
 
@@ -506,7 +506,7 @@ int RunSettingSessionStateTests()
 
 	decision = state.Resolve(1, true, true);
 	if (!Expect(!decision.initializeResident && !decision.rebuildDeviceResources
-		&& !decision.releasePresentation && decision.render,
+		&& !decision.releasePresentation && decision.render && decision.HasPresentationWork(),
 		"stable visible session renders")) ++failures;
 
 	state.QueueResize(960, 700);
@@ -537,9 +537,27 @@ int RunSettingSessionStateTests()
 
 	state.SetOccluded(true);
 	decision = state.Resolve(1, true, true);
-	if (!Expect(decision.probeOcclusion && !decision.render,
-		"occlusion probes without rendering")) ++failures;
+	if (!Expect(decision.probeOcclusion && !decision.render && decision.HasPresentationWork(),
+		"occlusion keeps the production presentation gate open for probing")) ++failures;
+	const auto occludedShowSerial = state.ShowSerial();
+	state.QueueResize(1200, 800);
+	const auto occludedResize = state.Resize();
+	for (int retry = 0; retry < 3; ++retry)
+	{
+		decision = state.Resolve(1, true, true);
+		if (!Expect(decision.HasPresentationWork() && decision.probeOcclusion && !decision.render
+			&& decision.resize && state.Resize().serial == occludedResize.serial,
+			"occluded retries keep probing and preserve the pending resize")) ++failures;
+	}
+	// 成功探测清除遮挡后，已经准入的帧继续提交；下一帧也恢复普通绘制。
 	state.SetOccluded(false);
+	if (!Expect(decision.HasPresentationWork() && !decision.render,
+		"the admitted probe frame remains eligible after occlusion clears")) ++failures;
+	decision = state.Resolve(1, true, true);
+	if (!Expect(decision.HasPresentationWork() && decision.render && !decision.probeOcclusion
+		&& decision.resize && state.ShowSerial() == occludedShowSerial,
+		"recovery resumes rendering and resize without reopening settings")) ++failures;
+	state.ConsumeResize(occludedResize.serial);
 
 	state.PublishBusinessCompletion(1, false);
 	decision = state.Resolve(1, true, true);
@@ -551,18 +569,22 @@ int RunSettingSessionStateTests()
 	if (!Expect(!state.Resolve(1, true, true).consumeBusinessCompletion,
 		"business completion is consumed once")) ++failures;
 
+	state.SetOccluded(true);
 	decision = state.Resolve(2, true, true);
 	if (!Expect(!decision.initializeResident && decision.rebuildDeviceResources
 		&& decision.releasePresentation && decision.createPresentation
-		&& decision.render, "generation change rebuilds both layers")) ++failures;
+		&& decision.render && decision.HasPresentationWork() && !decision.probeOcclusion,
+		"generation change replaces an occluded presentation and resumes rendering")) ++failures;
 	state.ReleaseResident();
 	state.CommitEpoch(2);
 
+	state.SetOccluded(true);
 	state.SetVisible(false);
 	decision = state.Resolve(2, true, true);
 	if (!Expect(!decision.initializeResident && !decision.rebuildDeviceResources
 		&& decision.releasePresentation && !decision.createPresentation
-		&& !decision.render, "hide keeps resident resources and becomes idle"))
+		&& !decision.render && !decision.probeOcclusion && !decision.HasPresentationWork(),
+		"hide stops both rendering and occlusion probes while retaining resident resources"))
 		++failures;
 	state.ReleasePresentation();
 	decision = state.Resolve(2, true, false);
