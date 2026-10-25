@@ -2594,6 +2594,8 @@ void StateMonitoring()
 				continue;
 			}
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(true);
+			// 首帧与窗口组就绪后只激活一次，不能依赖用户再点击任务栏完成打开。
+			(void)service.RequestWhiteboardActivation(transitionGuard(WhiteboardPhase::Entering));
 			whiteboardPhase.store(WhiteboardPhase::Active,
 				std::memory_order_release);
 			continue;

@@ -593,6 +593,15 @@ namespace Inkeys::Window
 			return Submit(WindowRole::Freeze, CommandType::RestoreWhiteboardGroup);
 		}
 
+		[[nodiscard]] bool RequestWhiteboardActivation(std::function<bool()> stillDesired)
+		{
+			Command command;
+			command.role = WindowRole::Freeze;
+			command.type = CommandType::ActivateWhiteboard;
+			command.stillDesired = std::move(stillDesired);
+			return Submit(std::move(command));
+		}
+
 		[[nodiscard]] bool CancelPointerCapture()
 		{
 			return Submit(WindowRole::Freeze, CommandType::CancelPointerCapture);
@@ -741,6 +750,7 @@ namespace Inkeys::Window
 			SetOverlayFullscreen,
 			MinimizeWhiteboardGroup,
 			RestoreWhiteboardGroup,
+			ActivateWhiteboard,
 			CancelPointerCapture,
 			RefreshTopmost,
 			PromotePpt,
@@ -2667,6 +2677,7 @@ namespace Inkeys::Window
 					command.type == CommandType::Create ||
 					command.type == CommandType::SetWhiteboardWindowMode ||
 					command.type == CommandType::RestoreWhiteboardGroup ||
+					command.type == CommandType::ActivateWhiteboard ||
 					(command.type == CommandType::SetDrawpadSurfaceVisibility &&
 						command.drawpadVisibility != DrawpadSurfaceVisibility::Hidden))
 					return false;
@@ -2711,6 +2722,24 @@ namespace Inkeys::Window
 			case CommandType::SetOverlayTopmost:
 			case CommandType::SetOverlayFullscreen:
 				return false;
+			case CommandType::ActivateWhiteboard:
+			{
+				const auto canActivate = [&]
+				{
+					return CommandCurrent(command) && !shutdownRequested_.load(std::memory_order_acquire)
+						&& WhiteboardWindowMode() && !WhiteboardWindowGroupMinimized()
+						&& !SafetyHidden(hwnd) && IsWindowVisible(hwnd) && !IsIconic(hwnd);
+				};
+				if (!canActivate()) return false;
+				// 普通背景 Show 必须保持不激活；打开时才把唯一任务栏锚点带到前台。
+				(void)SetForegroundWindow(hwnd);
+				if (!canActivate()) return false; // 激活消息可能同步取消本次进入。
+				(void)SetActiveWindow(hwnd);
+				if (!canActivate()) return false;
+				(void)SetFocus(hwnd);
+				// Windows 可拒绝前台切换；不能因此无限等待就绪或持续重试抢焦点。
+				return true;
+			}
 			case CommandType::Show:
 			{
 				// 拒绝最小化之前排队的呈现请求，不能重新唤醒画布或翻页控件。
@@ -3516,6 +3545,10 @@ namespace Inkeys::Window
 		bool Service::RestoreWhiteboardWindowGroup()
 		{
 			return impl_->RestoreWhiteboardWindowGroup();
+		}
+		bool Service::RequestWhiteboardActivation(std::function<bool()> stillDesired)
+		{
+			return impl_->RequestWhiteboardActivation(std::move(stillDesired));
 		}
 		bool Service::CancelPointerCapture()
 		{

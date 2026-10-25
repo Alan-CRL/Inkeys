@@ -1497,6 +1497,7 @@ int RunWindowTests()
 		check(service.Show(role), "show whiteboard group member");
 	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Primary),
 		"show primary drawpad for whiteboard group");
+	check(!service.RequestWhiteboardActivation(), "presentation mode rejects whiteboard activation");
 	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
 	check(service.RequestTopmostRefresh() && HasConsistentOwnerBand(overlayOwnerTree, false),
 		"whiteboard root refresh preserves normal owner band and order");
@@ -1510,12 +1511,25 @@ int RunWindowTests()
 	check((whiteboardDrawpadExStyle & WS_EX_TOOLWINDOW) != 0
 		&& (whiteboardDrawpadExStyle & WS_EX_NOACTIVATE) == 0,
 		"whiteboard Drawpad accepts activation without a taskbar button");
+	const HWND focusBeforeWhiteboardActivation = Service::LastFocusWindow();
+	check(!service.RequestWhiteboardActivation([] { return false; })
+		&& Service::LastFocusWindow() == focusBeforeWhiteboardActivation,
+		"cancelled whiteboard entry cannot activate its anchor");
+	check(service.Hide(WindowRole::Freeze) && !service.RequestWhiteboardActivation()
+		&& !IsWindowVisible(freeze), "activation cannot revive a hidden anchor");
+	check(service.Show(WindowRole::Freeze) && service.RequestWhiteboardActivation(),
+		"ready whiteboard processes its explicit activation request");
+	GUITHREADINFO whiteboardThreadInfo{ sizeof(GUITHREADINFO) };
+	check(GetGUIThreadInfo(overlayThread, &whiteboardThreadInfo)
+		&& whiteboardThreadInfo.hwndActive == freeze && whiteboardThreadInfo.hwndFocus == freeze,
+		"whiteboard activation and keyboard focus belong to the Freeze owner thread");
 	whiteboardMinimizeAllowed.store(false);
 	check(!service.MinimizeWhiteboardWindowGroup() && !service.WhiteboardWindowGroupMinimized(),
 		"PPT policy rejects whiteboard minimization");
 	whiteboardMinimizeAllowed.store(true);
 	check(service.MinimizeWhiteboardWindowGroup(), "minimize whiteboard window group");
 	check(service.WhiteboardWindowGroupMinimized(), "minimize publishes minimized state");
+	check(!service.RequestWhiteboardActivation(), "activation cannot restore a minimized whiteboard");
 	check(service.Show(WindowRole::PptBottomLeft) && service.Show(WindowRole::Freeze),
 		"stale show requests are safely consumed");
 	check(IsIconic(freeze) && !IsWindowVisible(drawpad)
