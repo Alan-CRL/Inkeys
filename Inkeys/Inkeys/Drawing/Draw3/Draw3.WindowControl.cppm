@@ -121,6 +121,12 @@ export namespace Inkeys::Drawing::Draw3
 			desktopPersistenceCompletion;
 		std::shared_ptr<const PresentationPersistenceCompletion>
 			presentationPersistenceCompletion;
+		// 为真时，CPU 已在目标场景也要补发 ready。普通同场景命令保持假，避免每次撤销都补发。
+		bool sceneClosedAdmission = false;
+		// 普通业务绑定已接受时的场景；前缀准备失败时不得改动其他文稿。
+		bool requireSceneMatch = false;
+		bool explicitRecoveryRetry = false;
+		std::uint64_t recoveryRevision = 0;
 	};
 
 	using SetExtendedStyleFlagsCallback = bool(*)(

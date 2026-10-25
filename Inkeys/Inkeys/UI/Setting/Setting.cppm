@@ -13,6 +13,7 @@ export namespace Inkeys::UI::Setting
 {
 	[[nodiscard]] bool Initialize();
 	void Shutdown() noexcept;
+	int RunBusinessCancellationProductionTest() noexcept;
 	// 复用已启动的业务FIFO，不打开设置窗口。
 	void RequestConfigWrite();
 	// 仅设置渲染线程把阻塞窗口同步交给已有 FIFO，其他调用保持同步。

@@ -84,6 +84,7 @@ export namespace Inkeys::UI::Bar
 		bool Active() const noexcept { return timeline_.IsActive(); }
 		bool Visible() const noexcept { return requested_ || timeline_.IsActive() || static_cast<double>(opacity_.val)>0; }
 		double Geometry() const noexcept { return geometry_.val; }
+		double TargetGeometry() const noexcept { return geometry_.tar; }
 		double Opacity() const noexcept { return (std::clamp)(static_cast<double>(opacity_.val),0.0,1.0); }
 		const BarUiTimelineClass& Timeline() const noexcept { return timeline_; }
 	private:
@@ -95,7 +96,7 @@ export namespace Inkeys::UI::Bar
 	using EraserSurfaceMotion = BarAttributePanelMotion;
 	struct BarAttributePanelFrame
 	{
-		EraserSurfacePose pose;
+		EraserSurfacePose pose, targetPose;
 		double opacity = 0.0;
 		bool visible = false;
 	};
@@ -107,11 +108,13 @@ export namespace Inkeys::UI::Bar
 	{
 		BarAttributePanelFrame frame;
 		frame.pose = ResolveEraserSurfacePose(panel, anchor, motion.Geometry(), compactWidth);
+		frame.targetPose = ResolveEraserSurfacePose(panel, anchor, motion.TargetGeometry(), compactWidth);
 		frame.opacity = motion.Opacity();
 		frame.visible = motion.Visible() && frame.opacity > 0.000001;
 		if (parent)
 		{
 			frame.pose = ComposeEraserPose(parent->pose, frame.pose);
+			frame.targetPose = ComposeEraserPose(parent->targetPose, frame.targetPose);
 			frame.opacity *= parent->opacity;
 			frame.visible = frame.visible && parent->visible && frame.opacity > 0.000001;
 		}

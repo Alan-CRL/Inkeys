@@ -418,6 +418,199 @@ namespace
 			"successful retry receives exactly one matching end")) ++failures;
 	}
 
+	void TestSceneReadyHandoff(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		std::optional<PresentationReadyIdentity> none;
+		for (const auto workspace : { Workspace::Desktop, Workspace::Whiteboard, Workspace::Presentation })
+		{
+			desired.workspace = workspace;
+			if (!Expect(PresentationSceneNeedsReady(desired, workspace, none, true),
+				"same workspace retains outstanding command-scene ready responsibility")) ++failures;
+			if (!Expect(!PresentationSceneNeedsReady(desired, workspace, none, false),
+				"settled workspace does not create a spurious ready responsibility")) ++failures;
+		}
+		PresentationTarget target{};
+		target.key.bytes[0] = 7;
+		target.totalPages = 2;
+		target.sessionRevision = 9;
+		target.targetRevision = 3;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		const auto identity = ReadyIdentityFor(target);
+		if (!Expect(PresentationSceneNeedsReady(desired, Workspace::Presentation, none, false),
+			"missing CPU identity requires ready even in the same presentation workspace")) ++failures;
+		if (!Expect(!PresentationSceneNeedsReady(desired, Workspace::Presentation, identity, false),
+			"matching CPU identity settles the scene handoff")) ++failures;
+		std::optional<PresentationReadyIdentity> ui;
+		if (!Expect(TryLatchPresentationUiReady(desired, none, identity, ui) && ui == identity,
+			"actual UI commit is retained before CPU ready, including temporary old-scene replay")) ++failures;
+		if (!Expect(PresentationSceneNeedsReady(desired, Workspace::Presentation, none, true),
+			"early UI commit does not settle the independent CPU/command scene obligation")) ++failures;
+		auto stale = identity;
+		--stale.targetRevision;
+		if (!Expect(!TryLatchPresentationUiReady(desired, none, stale, ui) && ui == identity,
+			"stale UI target cannot overwrite the retained current commit")) ++failures;
+		ui.reset();
+		if (!Expect(!TryLatchPresentationUiReady(desired, identity, identity, ui) && !ui,
+			"suspended target cannot latch a UI commit")) ++failures;
+		desired.workspace = Workspace::Whiteboard;
+		if (!Expect(!TryLatchPresentationUiReady(desired, none, identity, ui) && !ui,
+			"presentation UI commit cannot cross into whiteboard")) ++failures;
+		desired.workspace = Workspace::Presentation;
+		desired.presentationTarget.reset();
+		if (!Expect(!TryLatchPresentationUiReady(desired, none, identity, ui),
+			"presentation without a trusted target cannot accept old UI commit")) ++failures;
+	}
+
+	void TestSceneDispatchResponsibility(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		if (!Expect(!PresentationSceneNeedsDispatch(desired, Workspace::Desktop,
+			Workspace::Desktop, 0, false), "settled desktop heartbeat does not dispatch")) ++failures;
+		PresentationTarget target{};
+		target.key.bytes[0] = 17;
+		target.sourceIdentity = "path:c:\\scene-dispatch.pptx";
+		target.totalPages = 2;
+		target.targetRevision = 4;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		for (const auto origin : { Workspace::Desktop, Workspace::Whiteboard })
+		{
+			desired.workspace = Workspace::Presentation;
+			if (!Expect(PresentationSceneNeedsDispatch(desired, origin, origin, 0, false),
+				"PPT request dispatches from desktop and whiteboard")) ++failures;
+			if (!Expect(!PresentationSceneNeedsDispatch(desired, origin,
+				Workspace::Presentation, target.targetRevision, false),
+				"same pending PPT heartbeat leaves the single Controller retry in charge")) ++failures;
+			desired.workspace = origin;
+			desired.presentationTarget.reset();
+			if (!Expect(PresentationSceneNeedsDispatch(desired, origin,
+				Workspace::Presentation, target.targetRevision, false),
+				"return to presented origin dispatches to retire a failed PPT request")) ++failures;
+			if (!Expect(!PresentationSceneNeedsDispatch(desired, origin, origin, 0, false),
+				"retired PPT request does not cause repeated origin dispatch")) ++failures;
+			desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		}
+		desired.presentationTarget.reset();
+		for (const auto origin : { Workspace::Desktop, Workspace::Whiteboard, Workspace::Presentation })
+		{
+			desired.workspace = origin;
+			const auto failed = origin == Workspace::Whiteboard ? Workspace::Desktop : Workspace::Whiteboard;
+			if (!Expect(PresentationSceneNeedsDispatch(desired, origin, failed, 0, false),
+				"workspace-only failed request retires even without a PPT target revision")) ++failures;
+			if (!Expect(!PresentationSceneNeedsDispatch(desired, origin, origin, 0, false),
+				"targetless workspace heartbeat remains deduplicated")) ++failures;
+		}
+		desired.workspace = Workspace::Presentation;
+		if (!Expect(PresentationSceneNeedsDispatch(desired, Workspace::Presentation,
+			Workspace::Presentation, target.targetRevision, false),
+			"targetless PPT retires a previous full target in the same workspace")) ++failures;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		if (!Expect(PresentationSceneNeedsDispatch(desired, Workspace::Presentation,
+			Workspace::Presentation, target.targetRevision - 1, false),
+			"full PPT target revision still controls page dispatch")) ++failures;
+		if (!Expect(PresentationSceneNeedsDispatch(desired, Workspace::Presentation,
+			Workspace::Whiteboard, target.targetRevision, false),
+			"full PPT re-entry retires a workspace request even when the target revision matches")) ++failures;
+
+		if (!Expect(PresentationSceneNeedsDispatch(desired, Workspace::Presentation,
+			Workspace::Presentation, target.targetRevision, true),
+			"restoreLatest forces dispatch even when both workspace and target match")) ++failures;
+
+		StateBridge bridge;
+		if (!Expect(bridge.PublishPresentationTarget(target).has_value(),
+			"FIFO fixture accepts PPT target")) ++failures;
+		const auto accepted = bridge.Snapshot();
+		bridge.Publish(CommandType::Clear);
+		bridge.Publish(CommandType::Undo);
+		bridge.PublishWorkspace(Workspace::Desktop);
+		Command command;
+		for (const auto type : { CommandType::Clear, CommandType::Undo })
+		{
+			if (!Expect(bridge.TryConsume(command) && command.type == type &&
+				command.workspace == Workspace::Presentation &&
+				command.presentationTarget == accepted.presentationTarget,
+				"accepted business keeps captured PPT scene and FIFO through desktop return")) ++failures;
+			if (!Expect(command.presentationTarget &&
+				PresentationSceneNeedsDispatch(bridge.Snapshot(), Workspace::Desktop,
+					command.workspace, command.presentationTarget->targetRevision, true),
+				"restoreLatest follows each old business prefix despite the unchanged presented desktop")) ++failures;
+		}
+		if (!Expect(!PresentationSceneNeedsDispatch(bridge.Snapshot(), Workspace::Desktop,
+			Workspace::Desktop, 0, false), "host lifecycle reset starts with a settled desktop request")) ++failures;
+	}
+
+	void TestCanvasRecoveryTokens(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		desired.workspace = Workspace::Presentation;
+		PresentationTarget target{};
+		target.key.bytes[0] = 27; target.totalPages = 2;
+		target.targetRevision = 4; target.sessionRevision = 7;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		CanvasRecoveryState current;
+		current.workspace = Workspace::Presentation;
+		current.presentationTarget = ReadyIdentityFor(target);
+		current.status = CanvasRecoveryStatus::ProtectedConflict;
+		current.reason = CanvasRecoveryReason::TopologyConflict;
+		current.retryAvailable = true; current.revision = 12;
+		if (!Expect(RecoveryMatchesDesired(current, desired) &&
+			CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"exact failed target and current recovery token admit an explicit safe retry")) ++failures;
+		auto stale = current; --stale.revision;
+		if (!Expect(!CanvasRecoveryRetryMatches(stale, current, desired, true, false, false),
+			"stale or duplicated UI recovery token cannot retry a newer recovery attempt")) ++failures;
+		if (!Expect(!CanvasRecoveryRetryMatches(current, current, desired, true, false, true) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, true, true, false) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, false, false, false),
+			"consumer fatal, stopping, and stopped Host never accept manual recovery")) ++failures;
+		desired.workspace = Workspace::Whiteboard; desired.presentationTarget.reset();
+		if (!Expect(!RecoveryMatchesDesired(current, desired) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"old PPT failure cannot override or retry after a new workspace intent")) ++failures;
+		current.workspace = Workspace::Whiteboard; current.presentationTarget.reset();
+		current.status = CanvasRecoveryStatus::ManualRetryRequired;
+		current.reason = CanvasRecoveryReason::PresentFailure;
+		if (!Expect(CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"workspace-only presentation failures use the same exact recovery token contract")) ++failures;
+	}
+
+	void TestMergedRecoveryIntentProjection(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		for (const auto origin : { Workspace::Desktop, Workspace::Whiteboard })
+		{
+			ProductState desired{}; desired.workspace = origin;
+			CanvasRecoveryState reported;
+			reported.workspace = origin;
+			reported.status = CanvasRecoveryStatus::ManualRetryRequired;
+			reported.reason = CanvasRecoveryReason::PresentFailure;
+			reported.retryAvailable = true;
+			auto projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == reported.status && projected.retryAvailable,
+				"current owner failure exposes explicit recovery")) ++failures;
+			desired.workspace = origin == Workspace::Desktop ? Workspace::Whiteboard : Workspace::Desktop;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == CanvasRecoveryStatus::None &&
+				CanvasRecoveryBlocksAdmission(projected, &reported),
+				"temporary other intent hides old failure but cannot reopen an unrecovered owner")) ++failures;
+			desired.workspace = origin;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == reported.status && projected.retryAvailable,
+				"owner failure survives intent round trip merged before Controller consumes it")) ++failures;
+			reported.status = CanvasRecoveryStatus::None; reported.retryAvailable = false;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(!CanvasRecoveryBlocksAdmission(projected, &reported),
+				"only an actual recovered owner report releases the recovery gate")) ++failures;
+			projected = ProjectCanvasRecovery(&reported, desired, true);
+			if (!Expect(projected.status == CanvasRecoveryStatus::Failed &&
+				projected.reason == CanvasRecoveryReason::ConsumerFatal && !projected.retryAvailable,
+				"fatal admission overrides normal projection and never offers retry")) ++failures;
+		}
+	}
+
 	void TestDrawpadPresentationPlan(int& failures)
 	{
 		using namespace Inkeys::Drawing::Draw3;
@@ -937,6 +1130,10 @@ int RunDraw3BridgeTests()
 	TestEraserModeMapping(failures);
 	TestTimerPeriodController(failures);
 	TestDrawpadPresentationPlan(failures);
+	TestSceneReadyHandoff(failures);
+	TestSceneDispatchResponsibility(failures);
+	TestCanvasRecoveryTokens(failures);
+	TestMergedRecoveryIntentProjection(failures);
 	TestPageRuntimeRevisionPolicy(failures);
 	TestDrawingActivityLifecycle(failures);
 	TestAcceptedStrokeNoticeLifecycle(failures);

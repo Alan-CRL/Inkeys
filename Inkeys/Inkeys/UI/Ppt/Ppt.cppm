@@ -1,6 +1,7 @@
 module;
 
 #include <windows.h>
+#include "Ppt.Recovery.h"
 
 #include <algorithm>
 #include <array>
@@ -544,6 +545,7 @@ export namespace Inkeys::UI::Ppt
 		std::function<void()> endShow;
 		std::function<void(std::string)> persistSettings;
 		std::function<void(std::uint64_t, std::uint64_t, int, int)> pagePresented;
+		std::function<void(PptRecovery::State)> retryCanvas;
 	};
 
 	// 初始化只注册渲染客户端；窗口本身仍由 Window Service 创建和销毁。
@@ -556,6 +558,7 @@ export namespace Inkeys::UI::Ppt
 	void PublishPageState(int currentPage, int totalPage,
 		std::uint64_t targetRevision = 0,
 		PageStateMode mode = PageStateMode::InkReady) noexcept;
+	void PublishCanvasRecovery(PptRecovery::State recovery) noexcept;
 	void ResetPositions() noexcept;
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;

@@ -559,6 +559,24 @@ namespace
 			"new native session accepts a restarted facade with smaller local revisions");
 	}
 
+	void TestCanvasRecoveryPresentationCommit()
+	{
+		PptState frame;
+		frame.layout.session = 7; frame.targetRevision = 9; frame.currentPage = 1; frame.totalPage = 2;
+		frame.pageAckEpoch = 1;
+		frame.recovery.kind = decltype(frame.recovery.kind)::Conflict;
+		frame.recovery.session = 7; frame.recovery.targetRevision = 9;
+		frame.recovery.revision = 11; frame.recovery.retryAvailable = true;
+		PptPageCommitState commit;
+		commit.Publish(frame, 1);
+		Check(!commit.Commit(frame, 1), "fault labels cannot emit a normal ink UI-ready ack");
+		auto ready = frame; ready.recovery = {};
+		commit.Publish(ready, 1);
+		Check(!commit.Commit(frame, 1) && commit.Commit(ready, 1) && !commit.Commit(ready, 1),
+			"clearing fault requires one real normal frame and rejects stale fault frame");
+		Check(!ArePptStatesEquivalent(frame, ready), "recovery publication invalidates page rendering equality");
+	}
+
 	void TestPagePresentationCommit()
 	{
 		PptState page;
@@ -1789,6 +1807,7 @@ int RunPageControlTests()
 	TestVersionedDragPublication();
 	TestInterleavedPairFrameCommit();
 	TestPagePresentationCommit();
+	TestCanvasRecoveryPresentationCommit();
 	TestHideAndPageCommitRace();
 	TestEffectiveScaleAndResources();
 	TestTaskbarUiScale();

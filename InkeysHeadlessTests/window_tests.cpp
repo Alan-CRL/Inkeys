@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+#include "../Inkeys/Inkeys/Window/Window.ZOrderPolicy.h"
+#include "../Inkeys/Inkeys/Window/Window.SafetyOverride.h"
 #include "../Inkeys/Inkeys/Window/Window.CanvasPolicy.h"
 
 import Inkeys.Window;
@@ -218,6 +220,116 @@ int RunCanvasPolicyTests()
 	{
 		if (!passed) { ++failures; std::cerr << "FAIL canvas policy: " << name << '\n'; }
 	};
+	// 不创建 HWND，故障点与 owner 执行的是同一个实际样式事务。
+	struct ClickThroughState
+	{
+		LONG_PTR style = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+		bool pending = false, applying = false;
+		std::uint64_t epoch = 1;
+	};
+	struct ClickThroughOperations
+	{
+		ClickThroughState& state;
+		std::uint64_t epoch = 1;
+		bool failRead = false, failWrite = false, failCommit = false;
+		unsigned writes = 0, commits = 0;
+		std::function<void()> beforeWrite;
+		std::function<void()> afterWrite;
+		std::function<void()> afterCommit;
+		bool StillDesired() const { return epoch == state.epoch; }
+		bool ReadStyle(LONG_PTR& value) const { value = state.style; return !failRead; }
+		bool WriteStyle(LONG_PTR value)
+		{
+			++writes;
+			if (failWrite) return false;
+			if (beforeWrite) beforeWrite();
+			state.style = value;
+			if (afterWrite) afterWrite();
+			return true;
+		}
+		bool CommitStyle()
+		{
+			++commits;
+			if (afterCommit) afterCommit();
+			return !failCommit;
+		}
+	};
+	ClickThroughState clickState;
+	ClickThroughOperations click{ clickState };
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && !click.writes && !click.commits,
+		"same actual style performs no redundant Win32 mutation");
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && click.writes == 1
+		&& click.commits == 1 && clickState.style == WS_EX_NOACTIVATE && !clickState.pending,
+		"clear click-through preserves unrelated extended styles");
+	clickState.style |= WS_EX_TRANSPARENT;
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && click.writes == 2,
+		"external style drift is repaired without stale HWND or bool cache");
+	click.failRead = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && click.writes == 2,
+		"failed actual style read never fabricates success");
+	click.failRead = false; click.failWrite = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && clickState.pending,
+		"failed style write retains retry responsibility");
+	click.failWrite = false; click.failCommit = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && clickState.pending,
+		"failed FRAMECHANGED retains retry responsibility after style bit changed");
+	const auto writesBeforeRetry = click.writes;
+	const auto commitsBeforeRetry = click.commits;
+	click.failCommit = false;
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && !clickState.pending
+		&& click.writes == writesBeforeRetry && click.commits == commitsBeforeRetry + 1,
+		"same-valued retry completes previously failed FRAMECHANGED");
+	++clickState.epoch;
+	check(!ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click)
+		&& (clickState.style & WS_EX_TRANSPARENT) && click.writes == writesBeforeRetry,
+		"retired tool or whiteboard request cannot mutate current owner style");
+	click.epoch = clickState.epoch;
+	click.afterCommit = [&] { clickState.style |= WS_EX_TRANSPARENT; };
+	check(!ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && clickState.pending,
+		"successful APIs with mismatched actual style keep retry pending");
+	click.afterCommit = {};
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && !clickState.pending,
+		"later retry verifies and completes actual writable state");
+	// 三个真实同步重入窗口：WM_STYLECHANGING、WM_STYLECHANGED、FRAMECHANGED。
+	for (int boundary = 0; boundary < 3; ++boundary)
+	{
+		click.epoch = clickState.epoch;
+		bool nestedApplied = true;
+		const auto reenter = [&]
+		{
+			++clickState.epoch;
+			ClickThroughOperations latest{ clickState, clickState.epoch };
+			nestedApplied = ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, latest);
+		};
+		if (boundary == 0) click.beforeWrite = reenter;
+		else if (boundary == 1) click.afterWrite = reenter;
+		else click.afterCommit = reenter;
+		check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click)
+			&& !nestedApplied && !clickState.applying && clickState.pending,
+			"nested owner request cannot acknowledge before outer style API returns");
+		click.beforeWrite = {}; click.afterWrite = {}; click.afterCommit = {};
+		ClickThroughOperations latest{ clickState, clickState.epoch };
+		check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, latest)
+			&& !(clickState.style & WS_EX_TRANSPARENT) && !clickState.pending && !clickState.applying,
+			"latest writable intent retries after outer owner frame retires");
+	}
+	click.epoch = clickState.epoch;
+	click.afterWrite = [] { throw 1; };
+	bool interrupted = false;
+	try { (void)ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click); }
+	catch (...) { interrupted = true; }
+	check(interrupted && !clickState.applying && clickState.pending,
+		"owner exception clears applying scope while preserving unfinished style responsibility");
+	click.afterWrite = {};
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click),
+		"owner can retry after exception without a permanently latched applying flag");
+	ClickThroughState otherRole;
+	ClickThroughOperations other{ otherRole };
+	bool otherApplied = false;
+	click.beforeWrite = [&]
+	{ otherApplied = ApplyCanvasClickThrough(false, otherRole.pending, otherRole.applying, other); };
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && otherApplied,
+		"independent HWND roles do not share a global reentry gate");
 	unsigned closeRequests = 0;
 	const std::function<void()> close = [&] { ++closeRequests; };
 	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(false, true, close) && closeRequests == 0,
@@ -511,6 +623,77 @@ int RunWindowCommandCompletionTests()
 	auto ordinaryResult = ordinary.get_future();
 	ordinary.set_value(true);
 	check(WaitForCommandResult(ordinaryResult, {}), "ordinary completion unchanged");
+	{
+		CommandCompletion queued(std::chrono::steady_clock::now() - std::chrono::milliseconds(1));
+		check(!queued.Begin() && queued.Phase() == CommandPhase::Expired,
+			"expired queued command never enters native mutation");
+		CommandCompletion cancelled(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		cancelled.Cancel();
+		check(!cancelled.Begin() && cancelled.Phase() == CommandPhase::Cancelled,
+			"cancelled queued command never executes");
+		CommandCompletion executing(std::chrono::steady_clock::now() + std::chrono::milliseconds(10));
+		check(executing.Begin(), "owner begins current command");
+		check(!executing.Wait() && executing.Phase() == CommandPhase::Executing && !executing.Current(),
+			"in-flight timeout retains owner retirement responsibility");
+		check(!executing.Commit(true), "late native success cannot commit expired intent");
+		// 模拟恢复失败：回执不能在物理恢复完成之前变成终态。
+		check(executing.Phase() == CommandPhase::Executing, "failed rollback retains executing receipt");
+		executing.Retired();
+		check(executing.Phase() == CommandPhase::Expired, "successful rollback retires expired command");
+		CommandCompletion normal(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		check(normal.Begin() && normal.Commit(true) && normal.Wait(), "normal command commits once");
+		normal.Cancel();
+		check(normal.Phase() == CommandPhase::Committed, "cancel after commit cannot undo terminal receipt");
+		CommandCompletion old(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		check(old.Begin(), "old command starts before newer intent");
+		old.Cancel();
+		check(!old.Commit(true) && old.Phase() == CommandPhase::Executing,
+			"superseded in-flight operation remains uncommitted until restored");
+		old.Retired();
+		check(old.Phase() == CommandPhase::Cancelled, "superseded operation reaches cancelled after restore");
+	}
+	{
+		ZOrderSnapshot<4> group;
+		for (std::size_t i = 0; i < 4; ++i)
+		{
+			group.windows[i] = reinterpret_cast<HWND>(static_cast<UINT_PTR>(i + 1));
+			group.ordinal[i] = 3 - i;
+			group.owners[i] = i ? group.windows[i-1] : nullptr;
+		}
+		const auto expected = group.owners;
+		check(group.Matches(expected, false), "ordinary group validates all owners and bands");
+		group.topmost[2] = true;
+		check(!group.Matches(expected, false), "ordinary refresh rejects a mixed band below Bar");
+		group.topmost.fill(true);
+		check(group.Matches(expected, true), "topmost group uses identical complete predicate");
+		group.owners[2] = group.windows[0];
+		check(!group.Matches(expected, true), "valid-looking owner chain cannot substitute wrong owner identity");
+		group.owners = expected;
+		group.ordinal[2] = group.ordinal[1] + 1;
+		check(!group.Matches(expected, true), "child below its owner fails order predicate");
+		group.ordinal[2] = 1;
+		group.continuous = false;
+		check(!group.Matches(expected, true), "foreign interleaving fails whole-group continuity");
+		check(group.Above(3, 1), "Setting-like local above predicate ignores unrelated group continuity");
+		group.ordinal[3] = MissingZOrder;
+		check(!group.Above(3, 1) && !group.Matches(expected, true), "missing enumerated target fails finitely");
+	}
+	{
+		WindowSafetyOverride safety;
+		safety.Latch(7, true, false);
+		safety.Latch(7, false, true);
+		check(!safety.Visible(7, true) && (safety.Style(7, 0) & WS_EX_TRANSPARENT),
+			"later safe hide and transparency survive old visible/input snapshot");
+		check(safety.Visible(8, true) && safety.Style(8, 0) == 0,
+			"reused HWND generation does not inherit an old safety override");
+		safety.AllowShow(7);
+		check(safety.Visible(7, true) && safety.ClickThrough(7),
+			"committed newer show clears only visibility protection");
+		safety.AllowInput(8);
+		check(safety.ClickThrough(7), "different generation cannot clear input protection");
+		safety.AllowInput(7);
+		check(!safety.ClickThrough(7), "committed newer input intent can clear matching protection");
+	}
 	std::cout << "[WindowCommandCompletion] failures=" << failures << '\n';
 	return failures;
 }

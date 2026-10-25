@@ -4,6 +4,9 @@
 #include <array>
 #include <iostream>
 #include <string_view>
+#include "../Inkeys/Inkeys/Helper/SecRandom.PipeIo.h"
+#include "../Inkeys/Inkeys/UI/Ppt/Ppt.Recovery.h"
+#include <thread>
 
 namespace
 {
@@ -23,6 +26,36 @@ namespace
 		return previous.kind == ButtonPointerEvent::Move && next.kind == ButtonPointerEvent::Move
 			&& previous.surface == next.surface && previous.contact == next.contact;
 	}
+	void TestCanvasRecoveryProjection()
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		using namespace Inkeys::UI;
+		Bridge::ProductState desired;
+		desired.workspace = Bridge::Workspace::Presentation;
+		Bridge::PresentationTarget target;
+		target.key.bytes[0] = 1; target.sessionRevision = 7; target.targetRevision = 9;
+		target.sourceIdentity = "path:c:\\recovery.pptx"; target.totalPages = 2;
+		desired.presentationTarget = std::make_shared<const Bridge::PresentationTarget>(target);
+		CanvasRecoveryState fault;
+		fault.status = CanvasRecoveryStatus::ProtectedConflict;
+		fault.reason = CanvasRecoveryReason::TopologyConflict;
+		fault.workspace = desired.workspace; fault.presentationTarget = Bridge::ReadyIdentityFor(target);
+		fault.revision = 11; fault.retryAvailable = true;
+		const auto view = PptRecovery::Project(fault, desired, 7, false, false);
+		Check(view.kind == PptRecovery::Kind::Conflict && view.CanRetry(view), "current conflict has an exact retry token");
+		Check(PptRecovery::Project(fault, desired, 7, true, false).kind == PptRecovery::Kind::None,
+			"whiteboard transaction cannot publish PPT recovery interaction");
+		Check(PptRecovery::Project(fault, desired, 8, false, false).kind == PptRecovery::Kind::None,
+			"old presentation session cannot publish current fault");
+		Check(!PptRecovery::Project(fault, desired, 7, false, true).CanRetry(view), "fatal consumer cannot be restarted by UI retry");
+		auto newer = view; ++newer.revision;
+		Check(!newer.CanRetry(view), "late retry click cannot claim a newer fault");
+		++target.targetRevision;
+		desired.presentationTarget = std::make_shared<const Bridge::PresentationTarget>(target);
+		Check(PptRecovery::Project(fault, desired, 7, false, false).kind == PptRecovery::Kind::None,
+			"new target retires old recovery UI");
+	}
+
 	void TestMailboxBoundaries()
 	{
 		InteractionMailbox<Input, 8> mailbox;
@@ -96,10 +129,105 @@ namespace
 		{ auto cancelled = ParentGesture(cancelledWait, frames, unused); cancelled.Start(); }
 		Check(frames == 2, "ui3 shutdown destroys suspended child gesture frame");
 	}
+	void TestPipeCancellation()
+	{
+		using namespace Inkeys::SecRandom::Detail;
+		struct PipePair
+		{
+			HANDLE server = INVALID_HANDLE_VALUE, client = INVALID_HANDLE_VALUE;
+			PipePair()
+			{
+				const auto name = L"\\\\.\\pipe\\Inkeys-SecRandom-test-" + std::to_wstring(GetCurrentProcessId())
+					+ L"-" + std::to_wstring(GetTickCount64());
+				server = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX,
+					PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 1000, nullptr);
+				if (server == INVALID_HANDLE_VALUE) return;
+				client = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+					OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+				if (client != INVALID_HANDLE_VALUE) (void)ConnectNamedPipe(server, nullptr);
+			}
+			~PipePair()
+			{
+				if (client != INVALID_HANDLE_VALUE) CloseHandle(client);
+				if (server != INVALID_HANDLE_VALUE) CloseHandle(server);
+			}
+			bool Write(std::string_view value)
+			{
+				DWORD written = 0;
+				return WriteFile(server, value.data(), static_cast<DWORD>(value.size()), &written, nullptr)
+					&& written == value.size();
+			}
+		} pipe;
+		Check(pipe.client != INVALID_HANDLE_VALUE, "SecRandom no-window named-pipe fixture opens");
+		if (pipe.client == INVALID_HANDLE_VALUE) return;
+		const auto deadline = [] { return std::chrono::steady_clock::now() + std::chrono::seconds(2); };
+		PipeCancellation idle({});
+		Check(pipe.Write("reply\n"), "SecRandom fixture supplies response");
+		auto read = TransferPipe(pipe.client, nullptr, 512, deadline(), idle);
+		Check(read.error == ERROR_SUCCESS && std::string(read.data.begin(), read.data.end()) == "reply\n",
+			"SecRandom production read copies completed owned buffer");
+		auto write = TransferPipe(pipe.client, "request\n", 8, deadline(), idle);
+		Check(write.error == ERROR_SUCCESS && write.transferred == 8, "SecRandom production overlapped write completes");
+		if (write.error == ERROR_SUCCESS)
+		{
+			char received[8]{}; DWORD bytes = 0;
+			Check(ReadFile(pipe.server, received, sizeof(received), &bytes, nullptr) && bytes == 8
+				&& std::string_view(received, bytes) == "request\n", "SecRandom server observes complete owned request");
+		}
+		std::stop_source stop;
+		PipeCancellation cancel(stop.get_token());
+		std::jthread cancelSoon([&] { std::this_thread::sleep_for(std::chrono::milliseconds(20)); stop.request_stop(); });
+		const auto before = std::chrono::steady_clock::now();
+		read = TransferPipe(pipe.client, nullptr, 512, deadline(), cancel);
+		Check(read.error == ERROR_OPERATION_ABORTED && !read.quarantined
+			&& std::chrono::steady_clock::now() - before < std::chrono::seconds(1),
+			"SecRandom pending read observes stop and actual cancellation completion");
+		Check(PipeOperationRegistry::Instance().Outstanding() == 0, "SecRandom completed cancellation releases all records");
+		std::stop_source stopReaders;
+		PipeCancellation cancelReaders(stopReaders.get_token());
+		std::array<std::jthread, 4> readers;
+		std::array<DWORD, 4> readerErrors{};
+		for (size_t index = 0; index != readers.size(); ++index)
+			readers[index] = std::jthread([&, index]
+			{ readerErrors[index] = TransferPipe(pipe.client, nullptr, 512, deadline(), cancelReaders).error; });
+		const auto capacityDeadline = deadline();
+		while (PipeOperationRegistry::Instance().Outstanding() != readers.size()
+			&& std::chrono::steady_clock::now() < capacityDeadline)
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		const bool full = PipeOperationRegistry::Instance().Outstanding() == readers.size();
+		const auto fifth = TransferPipe(pipe.client, nullptr, 512, deadline(), idle);
+		stopReaders.request_stop();
+		for (auto& reader : readers) reader.join();
+		Check(full && fifth.error == ERROR_BUSY, "SecRandom registry caps all simultaneous operations at four");
+		Check(std::all_of(readerErrors.begin(), readerErrors.end(), [](DWORD error) { return error == ERROR_OPERATION_ABORTED; })
+			&& PipeOperationRegistry::Instance().Outstanding() == 0, "SecRandom exact cancellation drains all four concurrent reads");
+		// 模拟驱动忽略取消：必须保留内核借用的地址，禁止继续累积请求；随后真正完成才能回收。
+		PipeIoCancellationPolicy deferred;
+		deferred.graceMs = 0;
+		deferred.cancel = +[](HANDLE, LPOVERLAPPED) -> BOOL { return TRUE; };
+		read = TransferPipe(pipe.client, nullptr, 512,
+			std::chrono::steady_clock::now() + std::chrono::milliseconds(20), idle, deferred);
+		Check(read.error == ERROR_TIMEOUT && read.quarantined
+			&& PipeOperationRegistry::Instance().Outstanding() == 1, "SecRandom incomplete cancellation is retained in fixed registry");
+		const auto blocked = TransferPipe(pipe.client, nullptr, 512, deadline(), idle);
+		Check(blocked.error == ERROR_BUSY && PipeOperationRegistry::Instance().Outstanding() == 1,
+			"SecRandom quarantined request blocks unbounded new operations");
+		Check(pipe.Write("late"), "SecRandom delayed kernel operation is allowed to finish");
+		const auto reapDeadline = deadline();
+		while (PipeOperationRegistry::Instance().Outstanding() && std::chrono::steady_clock::now() < reapDeadline)
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		Check(PipeOperationRegistry::Instance().Outstanding() == 0, "SecRandom quarantine reaps only after actual completion");
+		Check(pipe.Write("again"), "SecRandom fixture provides post-quarantine response");
+		read = TransferPipe(pipe.client, nullptr, 512, deadline(), idle);
+		Check(read.error == ERROR_SUCCESS && read.transferred == 5,
+			"SecRandom operations recover after quarantined completion");
+	}
+
 }
 
 int RunUi3InputTests()
 {
-	TestMailboxBoundaries(); TestPointerState(); TestContinuations();
+	TestCanvasRecoveryProjection();
+	TestMailboxBoundaries(); TestPointerState(); TestContinuations(); TestPipeCancellation();
 	return failures;
 }

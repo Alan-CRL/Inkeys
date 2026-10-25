@@ -873,6 +873,21 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 - 几何辅助线细擦与化学往返大块擦除离线预计算，保持轻量播放及独立完成。
 - 设备门控隐藏精细控制且保留偏好，新增详情标题，调整绘制顺序及主页联系标签。
 - 按用户验收归档当前父任务；其他子任务保留原状态，既有shader二进制和本地日志未纳入提交。
+## Session 127: 界面字体整数目标与连续动画收尾
+<!-- trellis-session: v=2 fp=eddef2fcb5851dd9 -->
+
+**Date**: 2026-10-24
+**Task**: 界面字体整数目标与连续动画收尾
+**Branch**: `bugfix/font`
+
+### Summary
+
+用户确认字体渲染及动画修订有效，授权结束任务并commit/push。默认关闭非整数静止字号，动画目标投影后连续过渡；仅主栏和控件，设置字体不变。
+
+### Main Changes
+
+- 完成实验开关、静止像素目标截断、连续字号修正、目标倍率交接及字体独立续帧；更新三语和code-spec。
+- 修复底栏抓手重基准目标来源，补充13px精度边界和真实PageControl空闲基线回归；仅归档当前任务。
 
 ### Git Commits
 
@@ -886,6 +901,12 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 - [OK] 完整InkeysRepo.sln Debug|ARM64两轮构建通过；当前最后一轮0错误/46条既有警告。
 - [OK] --no-window --setting-eraser-demo-only 与 --no-window --setting-home-only 均退出0；i18n英文/繁中518/518。
 - [OK] 独立审查、格式/diff、源码和保护资源哈希通过，未启动GUI；见归档任务research的验证记录。
+| `aeb178bc` | fix(ui): truncate font rendering to whole pixels by default |
+| `3d9d04d5` | fix(ui): keep font animations continuous with integer targets |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过；Headless --no-window通过；真实D2D无HWND离屏通过；三语437/437、diff及编码换行检查通过。
 
 ### Status
 
@@ -894,3 +915,4 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Next Steps
 
 - 当前任务已完成；独立10-10-setting-home-design保留既有状态。
+- 按用户授权推送bugfix/font分支，不改动其他任务。

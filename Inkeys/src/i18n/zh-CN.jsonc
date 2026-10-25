@@ -137,6 +137,19 @@
         "FrameRateFormat": "帧率: {:.2f} FPS | 无限制帧率: {:.2f} FPS",
         "FrameRateUnavailable": "帧率: -- FPS | 无限制帧率: -- FPS"
       },
+      "CanvasRecovery":
+      {
+        "Conflict": "冲突",
+        "ReadFailed": "读取",
+        "PresentFailed": "显示",
+        "Failed": "故障",
+        "Recovering": "恢复",
+        "Retry": "重试",
+        "Wait": "稍候",
+        "RetryCanvas": "重试画布",
+        "ProtectedHint": "文稿页序或身份发生变化，墨迹已受保护。请恢复原文稿状态后重试。",
+        "RecoveryHint": "画布恢复未完成。重试不会跳过墨迹保护。"
+      },
       "Errors":
       {
         "TransparentBackgroundWarning": "软件遇到透明背景无法正常显示的故障\n\nexe属性->关闭使用简化的颜色模式\nWindows7用户请开启Aero主题\n\n联系开发者->软件选项主页中\n重启软件试试"
@@ -636,6 +649,14 @@
     },
     "Experimental":
     {
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "允许界面字体以非整数像素尺寸渲染",
+          "E": "关闭时，主栏和控件静止状态的字体像素尺寸向下取整；缩放和过渡动画仍连续变化。立即生效。"
+        }
+      },
       "Draw3":
       {
         "HardwareAcceleration":

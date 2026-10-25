@@ -22,6 +22,38 @@ namespace Inkeys::Window::Detail
 		iconic = false;
 	}
 
+	// 由 HWND owner 串行读取实际样式；失败的 FRAMECHANGED 不能被同值重试误当成已完成。
+	template<typename Ops>
+	[[nodiscard]] bool ApplyCanvasClickThrough(bool enabled, bool& framePending, bool& applying, Ops& ops)
+	{
+		// USER32 可在实际写位之前同步重入；嵌套请求不能凭旧样式报告成功并推进白板相位。
+		if (applying) { SetLastError(ERROR_BUSY); return false; }
+		applying = true;
+		struct ApplyScope
+		{
+			bool& applying;
+			~ApplyScope() { applying = false; }
+		} scope{ applying };
+		if (!ops.StillDesired()) return false;
+		LONG_PTR actual = 0;
+		if (!ops.ReadStyle(actual)) return false;
+		const LONG_PTR desired = enabled ? actual | WS_EX_TRANSPARENT
+			: actual & ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
+		if (!ops.StillDesired()) return false;
+		if (desired != actual)
+		{
+			// 先保留 FRAMECHANGED 责任；同步重入只能失败并在外层退栈后重试。
+			framePending = true;
+			if (!ops.WriteStyle(desired)) return false;
+		}
+		if (!ops.StillDesired()) return false;
+		if (framePending && !ops.CommitStyle()) return false;
+		if (!ops.ReadStyle(actual) || !ops.StillDesired()
+			|| ((actual & WS_EX_TRANSPARENT) != 0) != enabled) return false;
+		framePending = false;
+		return true;
+	}
+
 	struct CanvasPolicyKey
 	{
 		HWND hwnd = nullptr;

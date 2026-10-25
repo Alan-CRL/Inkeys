@@ -259,6 +259,7 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 	b.icon.x.SetDirect(0); b.icon.y.SetDirect(metrics.iconOffsetYDip * scale); b.icon.contentScale = scale;
 	b.name.x.SetDirect(0); b.name.y.SetDirect(metrics.primaryOffsetYDip * scale);
 	b.name.w.SetDirect(metrics.primarySlotWidthDip * scale); b.name.h.SetDirect(metrics.primarySlotHeightDip * scale); b.name.size.SetDirect(metrics.primaryFontSizeDip * scale);
+	b.name.fontTargetSize=metrics.primaryFontSizeDip*panelFrame.targetPose.scale;
 	BarButtonAnimationContext buttonFrame;
 	buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=BarUiAnimationEnabled;
 	buttonFrame.visible=presented;buttonFrame.hoverAllowed=commandEnabled;

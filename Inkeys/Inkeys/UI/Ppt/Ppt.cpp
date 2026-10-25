@@ -1,6 +1,7 @@
 module;
 
 #include <windows.h>
+#include "Ppt.Recovery.h"
 
 #include <atomic>
 #include <cwchar>
@@ -51,6 +52,7 @@ namespace Inkeys::UI::Ppt
 		PositionState positions;
 		std::uint64_t publicationRevision = 0;
 		PagePresentationState pageState;
+		PptRecovery::State pageRecovery;
 		TopmostRefreshState topmostRefresh;
 		bool topmostRefreshFailureLogged = false;
 
@@ -129,6 +131,7 @@ namespace Inkeys::UI::Ppt
 				state.layout = ToPageLayout(positions.configuration);
 				state.targetRevision = pageState.targetRevision;
 				state.pageAckEpoch = pageState.pageAckEpoch;
+				state.recovery = pageRecovery.session == positions.session ? pageRecovery : PptRecovery::State{};
 				state.publicationRevision = ++publicationRevision;
 			}
 			Inkeys::UI::PageControl::PublishPptState(state);
@@ -169,9 +172,23 @@ namespace Inkeys::UI::Ppt
 		{
 			std::scoped_lock lock(stateMutex);
 			if (!positions.active || session != positions.session
+				|| pageRecovery.kind != PptRecovery::Kind::None
 				|| !pageState.CanAcknowledge(current, total, target, epoch)) return;
 			// 纯值回执与模式变更串行完成，不能验完旧代次后跨过一次暂停再迟到转发。
 			if (business.pagePresented) business.pagePresented(session, target, current, total);
+		}
+
+		void RetryCanvas(PptRecovery::State expected)
+		{
+			std::function<void(PptRecovery::State)> callback;
+			{
+				std::scoped_lock lock(stateMutex);
+				if (!positions.active || !topmostRefresh.presentationVisible
+					|| positions.session != expected.session || !pageRecovery.CanRetry(expected)) return;
+				callback = business.retryCanvas;
+			}
+			// 产品重试不能跨 UI 状态锁；最终由 Host 再核验实际故障令牌。
+			if (callback) callback(expected);
 		}
 
 	}
@@ -187,6 +204,7 @@ namespace Inkeys::UI::Ppt
 			(void)SavedPptComPositions();
 			publicationRevision = 0;
 			pageState = {};
+			pageRecovery = {};
 			topmostRefresh = {};
 			topmostRefreshFailureLogged = false;
 		}
@@ -209,6 +227,7 @@ namespace Inkeys::UI::Ppt
 			std::move(callbackSnapshot.endShow),
 			CommitPageLayout,
 			PagePresented,
+			RetryCanvas,
 		});
 		PublishSnapshot();
 		return true;
@@ -290,6 +309,22 @@ namespace Inkeys::UI::Ppt
 		PublishSnapshot();
 	}
 
+	void PublishCanvasRecovery(PptRecovery::State recovery) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		{
+			std::scoped_lock lock(stateMutex);
+			if (recovery.kind != PptRecovery::Kind::None &&
+				(!positions.active || recovery.session != positions.session || !recovery.revision
+					|| !recovery.targetRevision)) return;
+			if (recovery.kind != PptRecovery::Kind::None && pageRecovery.session == recovery.session
+				&& recovery.revision < pageRecovery.revision) return;
+			if (pageRecovery == recovery) return;
+			pageRecovery = recovery;
+		}
+		PublishSnapshot();
+	}
+
 	void PublishSession(std::uint64_t session, bool active, HWND showWindow) noexcept
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
@@ -324,6 +359,7 @@ namespace Inkeys::UI::Ppt
 			if (changed)
 			{
 				pageState = {};
+				pageRecovery = {};
 			}
 		}
 		DispatchSettings(std::move(save));

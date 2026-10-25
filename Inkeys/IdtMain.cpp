@@ -94,8 +94,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.10216";	// 程序发布版本
-wstring editionDate = L"3.0.0-20261020a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.10218";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261021a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -1446,12 +1446,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
-			// 先退出启动链；测试中的宽色 setter 不保存，FineDial 只检查失效/取消提交。
+			// 先退出启动链；保存隔离仅用临时目录，FineDial 只检查失效/取消提交。
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			const int stateResult = RunStateModeProductionTest();
 			return stateResult != 0 ? stateResult
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--setting-business-cancellation-test") == 0)
+		{
+			// 无窗口队列取消回归必须先于配置、单实例及产品 HWND 初始化退出。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Setting::RunBusinessCancellationProductionTest();
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--pen-width-production-test") == 0)
 		{
