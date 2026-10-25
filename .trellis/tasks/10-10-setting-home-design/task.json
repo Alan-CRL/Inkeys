@@ -21,7 +21,7 @@
   "children": [
     "10-14-setting-entrance-cache"
   ],
-  "parent": "09-06-setting-winui3-design-rebuild",
+  "parent": null,
   "relatedFiles": [
     "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
     "Inkeys/Inkeys/UI/Setting/Setting.Pages.h",
