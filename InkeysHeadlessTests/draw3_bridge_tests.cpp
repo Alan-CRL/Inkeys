@@ -2,6 +2,7 @@
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Shortcut.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TimerPeriod.h"
 
 #include <atomic>
@@ -611,6 +612,68 @@ namespace
 		}
 	}
 
+	void TestDCompHandoffBarrier(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::DCompHandoffBarrierState;
+		DCompHandoffBarrierState barrier;
+		int flushCount = 0;
+		bool ready = false;
+
+		// 普通 DComp 帧及 ULW 即使全帧成功也不取得交接屏障。
+		if (!Expect(!barrier.Consume(true, true, true, 1) &&
+			!barrier.Consume(false, true, true, 1) && flushCount == 0,
+			"ordinary DComp and ULW presents never wait")) ++failures;
+
+		barrier.Arm(7);
+		// Present1 已返回，但 DwmFlush 尚未完成时 observer/Host 仍不能发布 ready。
+		const bool wait = barrier.Consume(true, true, true, 7);
+		if (wait) ++flushCount;
+		if (!Expect(wait && flushCount == 1 && !ready,
+			"successful handoff Present stays unready before the barrier")) ++failures;
+		const bool flushSucceeded = false;
+		ready = !wait || flushSucceeded;
+		if (!Expect(!ready && flushCount == 1,
+			"barrier failure rejects ready")) ++failures;
+		barrier.Arm(7); // 生产失败路径保留 revision，恢复后仍需成功屏障。
+		const bool retryWait = barrier.Consume(true, true, true, 7);
+		if (retryWait) ++flushCount;
+		ready = retryWait;
+		if (!Expect(ready && flushCount == 2 &&
+			!barrier.Consume(true, true, true, 7) && flushCount == 2,
+			"recovered frame completes the barrier before one ready publication")) ++failures;
+
+		barrier.Arm(8);
+		ready = false;
+		const bool successfulWait = barrier.Consume(true, true, true, 8);
+		if (successfulWait) ++flushCount;
+		if (!Expect(successfulWait && !ready,
+			"the next output revision has its own ordered barrier")) ++failures;
+		ready = successfulWait; // 模拟 DwmFlush 成功返回后才调用成功 observer。
+		if (!Expect(ready && flushCount == 3 &&
+			!barrier.Consume(true, true, true, 8) && flushCount == 3,
+			"successful barrier publishes ready exactly once")) ++failures;
+
+		barrier.Arm(9);
+		if (!Expect(!barrier.Consume(true, false, true, 9) &&
+			!barrier.Consume(true, true, false, 9) && flushCount == 3,
+			"partial or failed Present does not execute the barrier")) ++failures;
+		const bool presentRetryWait = barrier.Consume(true, true, true, 9);
+		if (presentRetryWait) ++flushCount;
+		if (!Expect(presentRetryWait && flushCount == 4,
+			"a failed Present retains the same barrier for its full-frame retry")) ++failures;
+		barrier.Arm(10);
+		barrier.Cancel();
+		barrier.Arm(11);
+		if (!Expect(!barrier.Consume(false, true, true, 10) &&
+			!barrier.Consume(true, true, true, 10) && flushCount == 4,
+			"rapid DComp ULW DComp switching rejects the superseded revision")) ++failures;
+		const bool latestTargetWait = barrier.Consume(true, true, true, 11);
+		if (latestTargetWait) ++flushCount;
+		if (!Expect(latestTargetWait && flushCount == 5 &&
+			!barrier.Consume(true, true, true, 11),
+			"only the latest target revision completes its handoff barrier")) ++failures;
+	}
+
 	void TestDrawpadPresentationPlan(int& failures)
 	{
 		using namespace Inkeys::Drawing::Draw3;
@@ -1129,6 +1192,7 @@ int RunDraw3BridgeTests()
 	TestUnsupportedAndLifecycle(failures);
 	TestEraserModeMapping(failures);
 	TestTimerPeriodController(failures);
+	TestDCompHandoffBarrier(failures);
 	TestDrawpadPresentationPlan(failures);
 	TestSceneReadyHandoff(failures);
 	TestSceneDispatchResponsibility(failures);

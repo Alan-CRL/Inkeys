@@ -5,6 +5,7 @@
 #endif
 
 #include "Draw3.DiagnosticOutput.h"
+#include "Draw3.Presentation.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -769,6 +770,7 @@ namespace Inkeys::Drawing::Draw3
 		TransparentOutputTarget requestedOutputTarget =
 			TransparentOutputTarget::PrimaryDrawpad;
 		std::uint64_t requestedOutputRevision = 0;
+		DCompHandoffBarrierState dcompHandoffBarrier{};
 		TransparentPresentObservation lastObservation{};
 		UlwDirtyRectPresenter primaryUlwPresenter;
 		UlwDirtyRectPresenter selectionUlwPresenter;
@@ -1062,6 +1064,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->options = {};
 		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		impl_->requestedOutputRevision = 0;
+		impl_->dcompHandoffBarrier = {};
 		impl_->lastObservation = {};
 		impl_->recoveryPending = false;
 		impl_->lastFailure = S_OK;
@@ -1087,6 +1090,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->lastFailure = S_OK;
 		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		impl_->requestedOutputRevision = 0;
+		impl_->dcompHandoffBarrier = {};
 		impl_->lastObservation = {};
 		impl_->presentFailureLogged = false;
 		impl_->presentSuccessLogged = false;
@@ -1152,6 +1156,10 @@ namespace Inkeys::Drawing::Draw3
 		impl_->requestedOutputTarget = target;
 		if (++impl_->requestedOutputRevision == 0)
 			++impl_->requestedOutputRevision;
+		if (target == TransparentOutputTarget::PrimaryDrawpad)
+			impl_->dcompHandoffBarrier.Arm(impl_->requestedOutputRevision);
+		else
+			impl_->dcompHandoffBarrier.Cancel();
 		if (StartupEnvironmentDiagnosticsEnabled())
 		{
 			DiagnosticOutput::Line() << "[Draw3Diag][target] requested="
@@ -1273,11 +1281,30 @@ namespace Inkeys::Drawing::Draw3
 			succeeded = impl_->primaryUlwPresenter.Present(
 				impl_->renderer->backBufferTexture.Get(), dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
 			impl_->lastObservation = impl_->primaryUlwPresenter.lastObservation;
-			if (!succeeded) impl_->SetFailure(E_FAIL);
+			if (succeeded) impl_->dcompHandoffBarrier.Cancel();
+			else impl_->SetFailure(E_FAIL);
 		}
 		else
 		{
-			const HRESULT result = impl_->PresentSwapChain(dirty, presentFull); // GPU 路径直接 Present1，DWM 读取 alpha。
+			HRESULT result = impl_->PresentSwapChain(dirty, presentFull); // GPU 路径直接 Present1，DWM 读取 alpha。
+			if (impl_->dcompHandoffBarrier.Consume(
+				IsDirectCompositionMode(impl_->activeMode), presentFull,
+				SUCCEEDED(result), impl_->requestedOutputRevision))
+			{
+				// 仅输出交接的全帧等待 DWM 上屏；普通帧和 ULW 不进入此屏障。
+				result = DwmFlush();
+				if (FAILED(result))
+				{
+					// 恢复后的同 revision 全帧仍须建立屏障，不能把失败帧当作已上屏。
+					impl_->dcompHandoffBarrier.Arm(impl_->requestedOutputRevision);
+					DiagnosticOutput::Line() << "[Draw3Diag][handoff] DwmFlush failed"
+						<< " target=Drawpad"
+						<< " revision=" << impl_->requestedOutputRevision
+						<< " contentRevision=" << contentRevision
+						<< " result=0x" << std::hex << static_cast<unsigned long>(result)
+						<< std::dec << std::endl;
+				}
+			}
 			succeeded = SUCCEEDED(result);
 			impl_->lastObservation = {};
 			if (!succeeded || impl_->presentFailureLogged || !impl_->presentSuccessLogged ||
