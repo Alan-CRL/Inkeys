@@ -835,6 +835,117 @@ namespace Inkeys::UI::Bar
 		}
 	};
 
+	struct BarBottomDockGrabAnchor
+	{
+		double normalizedY = 0.5;
+		bool valid = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockGrabAnchor ResolveBarBottomDockGrabAnchor(
+		const BarBottomDockVerticalMapping& mapping, double rootYDip,
+		double actualHeightDip, double pointerScreenY, double screenOriginY,
+		double translationY, double zoom) noexcept
+	{
+		if (!std::isfinite(actualHeightDip) || actualHeightDip <= 0.0
+			|| !std::isfinite(rootYDip) || !std::isfinite(pointerScreenY)) return {};
+		const double logical = mapping.UnmapY((pointerScreenY - screenOriginY - translationY)
+			/ NormalizeBarBottomDockZoom(zoom));
+		const double normalized = (logical - rootYDip) / actualHeightDip + 0.5;
+		return { normalized, std::isfinite(normalized) };
+	}
+
+	struct BarBottomDockShiftedShape
+	{
+		double topDip = 0.0;
+		double bottomDip = 0.0;
+		double grabDip = 0.0;
+		bool valid = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockShiftedShape ResolveBarBottomDockShiftedShape(
+		const BarBottomDockVerticalMapping& presented, double presentedLogicalGrabDip,
+		double presentedOriginY, double presentedTranslationY, double presentedZoom,
+		double nextOriginY, double nextTranslationY, double nextZoom,
+		double nextEffectiveGrabScreenY) noexcept
+	{
+		if (!std::isfinite(presentedLogicalGrabDip)
+			|| !std::isfinite(nextEffectiveGrabScreenY)) return {};
+		const double oldZoom = NormalizeBarBottomDockZoom(presentedZoom);
+		const double zoom = NormalizeBarBottomDockZoom(nextZoom);
+		const double presentedGrab = presentedOriginY + presentedTranslationY
+			+ presented.MapY(presentedLogicalGrabDip) * oldZoom;
+		const double shift = nextEffectiveGrabScreenY - presentedGrab;
+		const auto nextDip = [&](double screenY)
+		{ return (screenY + shift - nextOriginY - nextTranslationY) / zoom; };
+		const double top = nextDip(presentedOriginY + presentedTranslationY
+			+ presented.visualTopDip * oldZoom);
+		const double bottom = nextDip(presentedOriginY + presentedTranslationY
+			+ presented.visualBottomDip * oldZoom);
+		const double grab = (nextEffectiveGrabScreenY - nextOriginY - nextTranslationY) / zoom;
+		return { top, bottom, grab, std::isfinite(top) && std::isfinite(bottom)
+			&& std::isfinite(grab) && bottom > top };
+	}
+
+	struct BarBottomDockAnchoredVerticalMappingResult
+	{
+		BarBottomDockVerticalMapping mapping{};
+		double shapeOffsetDip = 0.0;
+		bool constrained = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockAnchoredVerticalMappingResult
+		ResolveBarBottomDockAnchoredVerticalMapping(
+			double baseTopDip, double baseBottomDip,
+			double logicalGrabDip, double desiredGrabDip,
+			double desiredBottomDip, double fallbackHeightDip,
+			bool pinBottom, double boundaryGrabToleranceDip = 0.0) noexcept
+	{
+		if (!std::isfinite(baseTopDip)) baseTopDip = 0.0;
+		if (!std::isfinite(baseBottomDip) || baseBottomDip <= baseTopDip)
+			baseBottomDip = baseTopDip + 1.0;
+		const double baseHeight = baseBottomDip - baseTopDip;
+		const double minimumHeight = baseHeight * 0.000001;
+		if (!std::isfinite(logicalGrabDip)) logicalGrabDip = (baseTopDip + baseBottomDip) / 2.0;
+		if (!std::isfinite(desiredGrabDip)) desiredGrabDip = logicalGrabDip;
+		if (!std::isfinite(desiredBottomDip)) desiredBottomDip = baseBottomDip;
+		if (!std::isfinite(fallbackHeightDip)) fallbackHeightDip = baseHeight;
+		if (!std::isfinite(boundaryGrabToleranceDip) || boundaryGrabToleranceDip < 0.0)
+			boundaryGrabToleranceDip = 0.0;
+		double height = (std::max)(minimumHeight, fallbackHeightDip);
+		double ratio = (logicalGrabDip - baseTopDip) / baseHeight;
+		if (!std::isfinite(ratio)) ratio = 0.5;
+		const double boundaryTolerance = (std::max)(baseHeight * 0.000000000001,
+			boundaryGrabToleranceDip);
+		const bool bottomGrab = pinBottom
+			&& std::abs(1.0 - ratio) * baseHeight <= boundaryTolerance;
+		bool constrained = !pinBottom && fallbackHeightDip < minimumHeight;
+		if (pinBottom)
+		{
+			if (!bottomGrab)
+			{
+				const double solved = (desiredBottomDip - desiredGrabDip) / (1.0 - ratio);
+				if (std::isfinite(solved) && solved >= minimumHeight)
+				{
+					height = solved;
+					constrained = false;
+				}
+				else { height = minimumHeight; constrained = true; }
+			}
+			else
+			{
+				// 底边抓点与底端偏移冗余；形状弹簧改存高度偏移，才能继续收敛。
+				constrained = fallbackHeightDip < minimumHeight;
+			}
+		}
+		const double top = desiredGrabDip - ratio * height;
+		const double bottom = top + height;
+		const double elastic = pinBottom ? top - baseTopDip : 0.0;
+		return { { baseTopDip, baseBottomDip, top, bottom, height / baseHeight,
+			(baseTopDip + baseBottomDip) / 2.0 + elastic, elastic },
+			bottomGrab || !pinBottom ? height - baseHeight : bottom - baseBottomDip,
+			constrained };
+	}
+
 	struct BarBottomDockHorizontalMapping
 	{
 		double baseLeftDip = 0.0;
@@ -1441,6 +1552,23 @@ namespace Inkeys::UI::Bar
 		return { ResolveBarBottomDockFrameTranslation(frameTransitionSerial,
 			observedSerialBefore, observedSerialAfter,
 			latestTranslation, presentedTranslation), false };
+	}
+
+	[[nodiscard]] inline bool ShouldDeferBarDirectWindowMove(
+		unsigned long long awaitedTransitionSerial,
+		unsigned long long candidateTransitionSerial,
+		unsigned long long observedSerialBefore,
+		unsigned long long observedSerialAfter,
+		unsigned long long deferredTransitionSerial,
+		unsigned long long presentedTransitionSerial) noexcept
+	{
+		// 局部门禁之外，还必须确认当前稳定 tuple 已包含所有未呈现屏障。
+		return awaitedTransitionSerial != 0
+			|| deferredTransitionSerial > presentedTransitionSerial
+			|| deferredTransitionSerial > candidateTransitionSerial
+			|| (candidateTransitionSerial & 1ULL) != 0
+			|| observedSerialBefore != candidateTransitionSerial
+			|| observedSerialAfter != candidateTransitionSerial;
 	}
 
 	[[nodiscard]] inline BarBottomDockVerticalMapping

@@ -544,6 +544,9 @@ struct BarBottomDockPresentedSnapshot
 	double centerElasticOffsetDip = 0.0;
 	double elasticOffsetDip = 0.0;
 	double rigidTranslationDip = 0.0;
+	double mainButtonVisibleHeightDip = 81.0;
+	bool grabAnchorValid = false;
+	unsigned long long dragSession = 0;
 	double zoom = 1.0;
 		POINT monitorOrigin{};
 		RECT monitorBounds{ 0, 0, 1, 1 };
@@ -760,6 +763,11 @@ public:
 				memory_order_relaxed);
 			snapshot.rigidTranslationDip =
 				bottomDockPresentedRigidTranslationDip.load(memory_order_relaxed);
+			snapshot.mainButtonVisibleHeightDip =
+				bottomDockPresentedMainButtonVisibleHeightDip.load(memory_order_relaxed);
+			snapshot.grabAnchorValid =
+				bottomDockPresentedGrabAnchorValid.load(memory_order_relaxed);
+			snapshot.dragSession = bottomDockPresentedDragSession.load(memory_order_relaxed);
 			snapshot.mapping.rigidOverlayTranslationYDip =
 				snapshot.rigidTranslationDip;
 			snapshot.centerMode = bottomDockPresentedCenterMode.load(
@@ -1205,6 +1213,9 @@ protected:
 	atomic<double> bottomDockPresentedBodyCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedVisualBodyCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedRawBodyCenterScreenX = 0.0;
+	atomic<double> bottomDockPresentedMainButtonVisibleHeightDip = 81.0;
+	atomic<bool> bottomDockPresentedGrabAnchorValid = false;
+	atomic<unsigned long long> bottomDockPresentedDragSession = 0;
 	atomic<bool> bottomDockIndicatorPresentedVisible = false;
 	atomic<bool> bottomDockIndicatorPresentedOccluding = false;
 	atomic<LONG> bottomDockIndicatorPresentedLeft = 0;
@@ -1214,6 +1225,10 @@ protected:
 	atomic<bool> bottomDockDragActive = false;
 	atomic<double> bottomDockDragRigidGripScreenX = 0.0;
 	atomic<double> bottomDockDragRigidGripScreenY = 0.0;
+	atomic<double> bottomDockDragEffectivePointerScreenY = 0.0;
+	atomic<double> bottomDockDragGrabBaseRatio = 0.5;
+	atomic<bool> bottomDockDragGrabAnchorValid = false;
+	atomic<unsigned long long> bottomDockDragSession = 0;
 	atomic<bool> bottomDockRecoveryActive = false;
 	atomic<unsigned long long> bottomDockTransitionSerial = 0;
 	atomic<unsigned long long> bottomDockDeferredTransitionSerial = 0;
@@ -1246,7 +1261,10 @@ namespace Inkeys::UI::Bar
 	export int RunUi3WorkspaceCenteringTest();
 	export int RunUi3BottomDockTransitionTest();
 	bool RunUi3BottomDockInteractionSequence(BarUISetClass& owner,
-		const std::function<bool(const char*, POINT)>& render);
+		const std::function<bool(const char*, POINT)>& render,
+		double downNormalizedY,
+		const std::function<BOOL(HWND, int, int)>& directMove,
+		const std::function<void(const char*)>& beforeMove = {});
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;

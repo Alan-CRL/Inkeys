@@ -1,6 +1,20 @@
 # UI3 底栏几何修复 — 居中阶段交接
 
-## 0. 2026-10-26 最新接力结果（优先于下方历史停止点）
+## -2. 2026-10-26 最新修复与全量验证（当前状态）
+
+- 已按后续审阅完成手动捕获有效输入播种、真实归一化抓点、直移本地＋全局屏障及底边高度恢复；保留此前脱离、吸收、容量、居中和 Freeze 修复。不要重复实现或覆盖这些修改。
+- 最新证据为 `../10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md`：19 组吸附离屏、居中场景、相关回归、完整 ARM64 Solution 和 full-scope `trellis-check` 均通过；1196 行样本中最大抓点误差 `2.27374e-13 px`，50 次合法直移、19 次屏障后放行，提前直移为 0。
+- 主会话已完成完整 `InkeysHeadlessTests --no-window`：退出 0，359.523 秒，末尾 `PASS animation correctness`。此前“全量未完成”记录以此最终结果为准。
+- `.trellis/spec/native-desktop/rendering-and-ui.md` 与 `../10-25-ui3-bottom-dock-transition-clipping/research/break-loop-2026-10-26.md` 已更新。父/吸附任务 `software=passed`，但真实 GUI/Office/WPS/ULW-DWM、多屏和主观手感仍未验证，继续保持 `in_progress`，不归档。
+- 下一 agent 只需考虑经用户授权的真实视觉验收或新的实际缺陷，不要只重跑旧测试后再次宣称 GUI 已完成。
+
+## -1. 2026-10-26 后续审阅（历史缺口，已由上方最新修复覆盖）
+
+- 接管提交 `1ba08698` 的吸附验收已被最新审阅撤回：手动捕获旧底边 seed 可用历史实机数值复现错误，真实局部抓点未修，离屏绕过 `SetWindowPos` 且缺位置断言。
+- 下一 agent 必须先读 `.trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md`。父/吸附任务 `software=review_failed`，当前任务指针为 none；不要只依据下方 integration PASS 继续宣称完成。
+- 本轮用户选择仅静态审阅，未启动 GUI；后续针对性修复与回归方案见审阅文档。
+
+## 0. 2026-10-26 接力结果（历史记录，吸附 PASS 不等于验收）
 
 - 原 6 文件居中修改已复核，无产品 DPI/zoom 策略改动；完整 no-window 已补齐并在最终测试产物再次退出 0（337.813s）。
 - 用户追加 Freeze 隐藏退场已修复：保留 List 身份，通用前驱锚点和既有批次，隐藏成员在可见成员下层；两种 A2 顺序、合并/分离、左右展开及 100%/150% 共 1248 帧通过。

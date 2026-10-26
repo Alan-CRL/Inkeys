@@ -1,8 +1,8 @@
 # UI3 底栏居中与吸附帧几何修复 — 集成执行计划
 
-> 2026-10-26 接力：本计划已获本会话授权并完成代码与自动化，最新证据见父任务 `research/final-integration-validation.md`；原文未来式保留作历史设计。GUI/真实系统呈现验收待授权，任务未归档。
+> 2026-10-26 最新状态：审阅后修复及全部自动化已完成，父/吸附任务 `software=passed`；完整 `--no-window` 退出 0（359.523 秒），full-scope `trellis-check` 已完成。先读 `handoff.md` 与 `../10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md`，真实 GUI 未验证，保持 `in_progress`。下文为集成计划，当前进度以最新交接为准。
 
-> 交接状态（2026-10-25）：居中窄修复及离屏/质量检查已完成，吸附尚未开始；完整 `--no-window` 与真实视觉验收待接力。必须先读 `handoff.md`，下文为集成计划，当前进度以交接记录为准。
+> 历史审阅：`research/review-2026-10-26.md` 记录了接管提交 `1ba08698` 当时的手动捕获、真实抓点和直移缺口，后续修复依据与结果见上述最新验证。
 
 ## 有序实施清单
 

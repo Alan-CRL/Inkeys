@@ -285,6 +285,10 @@ struct BarRenderFrameSnapshot
 	bool bottomDockIndicatorGestureEligible = false;
 	double bottomDockDragRigidGripScreenX = 0.0;
 	double bottomDockDragRigidGripScreenY = 0.0;
+	double bottomDockDragEffectivePointerScreenY = 0.0;
+	double bottomDockDragGrabBaseRatio = 0.5;
+	bool bottomDockDragGrabAnchorValid = false;
+	unsigned long long bottomDockDragSession = 0;
 	POINT bottomDockTransitionTranslation{};
 	unsigned long long bottomDockTransitionSerial = 0;
 };
@@ -630,6 +634,7 @@ struct BarRenderLoopState
 		BarBottomDockCenterMode::Centered;
 	BarBottomDockPhase bottomDockFrameCenterPhase = BarBottomDockPhase::Stable;
 	bool bottomDockFrameRecoveryActive = false;
+	bool bottomDockFrameGrabAnchorValid = false;
 	bool bottomDockFrameTransitionInvalidated = false;
 	unsigned long long bottomDockFrameTransitionSerial = 0;
 	POINT bottomDockFrameTransitionTranslation{};
@@ -6929,6 +6934,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockFrameCenterMode = centerMode;
 		state.bottomDockFrameCenterPhase = centerPhase;
 		state.bottomDockFrameRecoveryActive = floatingRecoveryActive;
+		state.bottomDockFrameGrabAnchorValid = frame.bottomDockDragGrabAnchorValid;
 		auto TryBeginFrameTransition = [&]()
 			{
 				if (Inkeys::UI::Bar::TryBeginBarBottomDockFrameTransition(
@@ -6945,98 +6951,205 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.bottomDockCenterSpring.positionDip;
 		const double previousCenterCaptureFarEdgeDip =
 			state.bottomDockCenterCaptureFarEdgeSpring.positionDip;
-		const auto detachButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-		const double detachStroke = detachButton->ft.has_value()
-			? max(0.0, static_cast<double>(detachButton->ft->val)) : 0.0;
-		const double detachHalfHeight = (state.mainButtonBaseSize + detachStroke) / 2.0;
-		const auto presentedY = [&](double dip)
-			{ return presentedDockSnapshot.monitorOrigin.y + dip * presentedDockSnapshot.zoom
-				+ presentedDockSnapshot.directTranslation.y; };
-		const bool detachJustSeeded = Inkeys::UI::Bar::SeedBarBottomDockDetach(
-			state.bottomDockSpring, state.bottomDockCaptureBottomSpring,
-			presentedDockSnapshot.mode, dockMode,
-			presentedY(presentedDockSnapshot.mapping.baseTopDip),
-			presentedY(presentedDockSnapshot.mapping.visualTopDip),
-			presentedY(presentedDockSnapshot.mapping.visualBottomDip),
-			state.monitorOrigin.y + (detachButton->y.val - detachHalfHeight) * frameZoom + frameTransitionTranslation.y,
-			state.monitorOrigin.y + (detachButton->y.val + detachHalfHeight) * frameZoom + frameTransitionTranslation.y,
-			frameZoom, true == BarUiAnimationEnabled);
-		bool springActive = false;
-		if (detachJustSeeded)
-		{
-			state.bottomDockRecoverySeeded = true;
-			state.bottomDockPreviousDirectOffsetDip = state.bottomDockSpring.positionDip;
-			springActive = abs(state.bottomDockSpring.positionDip) > BarBottomDockSettleDistanceDip;
-			state.bottomDockCaptureBottomActive = abs(state.bottomDockCaptureBottomSpring.positionDip)
-				> BarBottomDockSettleDistanceDip;
-		}
-		else if (dockMode == BarBottomDockMode::BottomDocked && dockDragActive)
-		{
-			state.bottomDockRecoverySeeded = false;
-			const auto dockMainButton = state.superellipseMap[
-				BarUISetSuperellipseEnum::MainButton];
-			const double dockCenterScreenY = state.monitorOrigin.y
-				+ dockMainButton->y.val * frameZoom
-				+ frameTransitionTranslation.y;
-			const double directOffsetDip =
-				ResolveBarBottomDockElasticOffsetForScreenGrip(
-					dragRigidGripScreenY, dockCenterScreenY, frameZoom);
-			if (animationDtSeconds > 0.000001)
-				state.bottomDockSpring.velocityDipPerSecond = clamp(
-					(directOffsetDip - state.bottomDockPreviousDirectOffsetDip)
-						/ animationDtSeconds,
-					-2400.0, 2400.0);
-			state.bottomDockSpring.positionDip = directOffsetDip;
-			state.bottomDockPreviousDirectOffsetDip = directOffsetDip;
-		}
-		else
-		{
-			const bool recoveryNeedsSeed =
-				(dockMode == BarBottomDockMode::BottomDocked
-					&& dockPhase == BarBottomDockPhase::Recovering)
-				|| (dockMode == BarBottomDockMode::Floating
-					&& floatingRecoveryActive);
-			if (recoveryNeedsSeed && !state.bottomDockRecoverySeeded)
-			{
-				// 输入可能在两帧之间完成捕获与脱离，恢复首帧必须直接接住最后形变量。
-				state.bottomDockSpring.positionDip = inputOffsetDip;
-				state.bottomDockPreviousDirectOffsetDip = inputOffsetDip;
-				state.bottomDockRecoverySeeded = true;
-			}
-			const auto spring = AdvanceBarBottomDockSpring(
-				state.bottomDockSpring, 0.0, animationDtSeconds,
-				true == BarUiAnimationEnabled, dockMode == BarBottomDockMode::Floating && floatingRecoveryActive);
-			springActive = spring.active;
-			state.bottomDockPreviousDirectOffsetDip = spring.positionDip;
-		}
 		const auto captureMainButton = state.superellipseMap[
 			BarUISetSuperellipseEnum::MainButton];
 		const double captureStrokeDip = captureMainButton->ft.has_value()
 			? max(0.0, static_cast<double>(captureMainButton->ft->val)) : 0.0;
-		const double presentedBottomScreenY = presentedDockSnapshot.monitorOrigin.y
-			+ presentedDockSnapshot.mapping.visualBottomDip * presentedDockSnapshot.zoom
-			+ presentedDockSnapshot.directTranslation.y;
-		const double nextBaseBottomScreenY = state.monitorOrigin.y
-			+ (captureMainButton->y.val + (state.mainButtonBaseSize + captureStrokeDip) / 2.0)
-				* frameZoom + frameTransitionTranslation.y;
-		const bool captureBottomJustSeeded = Inkeys::UI::Bar::SeedBarBottomDockCaptureBottom(
-			state.bottomDockCaptureBottomSpring, presentedDockSnapshot.mode, dockMode,
-			presentedBottomScreenY, nextBaseBottomScreenY, frameZoom,
-			true == BarUiAnimationEnabled);
-		if (captureBottomJustSeeded)
-			state.bottomDockCaptureBottomActive = abs(state.bottomDockCaptureBottomSpring.positionDip)
-				> BarBottomDockSettleDistanceDip;
-		bool captureBottomSpringActive = state.bottomDockCaptureBottomActive;
-		// 首个成功捕获帧保留旧下端点；跳帧和失败重试不提前消费弹簧时间。
-		if (state.bottomDockCaptureBottomActive && !captureBottomJustSeeded && !detachJustSeeded)
+		const double nextBaseTopDip = captureMainButton->y.val
+			- (state.mainButtonBaseSize + captureStrokeDip) / 2.0;
+		const double nextBaseBottomDip = captureMainButton->y.val
+			+ (state.mainButtonBaseSize + captureStrokeDip) / 2.0;
+		const auto presentedY = [&](double dip)
+			{ return presentedDockSnapshot.monitorOrigin.y + dip * presentedDockSnapshot.zoom
+				+ presentedDockSnapshot.directTranslation.y; };
+		bool springActive = false;
+		bool captureBottomSpringActive = false;
+		bool anchorVertical = frame.bottomDockDragGrabAnchorValid;
+		Inkeys::UI::Bar::BarBottomDockAnchoredVerticalMappingResult anchoredMapping{};
+		if (anchorVertical)
 		{
-			const auto captureBottomSpring = AdvanceBarBottomDockSpring(
-				state.bottomDockCaptureBottomSpring, 0.0,
-				animationDtSeconds, true == BarUiAnimationEnabled, true);
-			captureBottomSpringActive = captureBottomSpring.active;
-			state.bottomDockCaptureBottomActive = captureBottomSpring.active;
+			const double baseHeightDip = nextBaseBottomDip - nextBaseTopDip;
+			const double logicalGrabDip = nextBaseTopDip
+				+ frame.bottomDockDragGrabBaseRatio * baseHeightDip;
+			const double presentedBaseHeight = presentedDockSnapshot.mapping.baseBottomDip
+				- presentedDockSnapshot.mapping.baseTopDip;
+			const double presentedLogicalGrab = presentedDockSnapshot.mapping.baseTopDip
+				+ frame.bottomDockDragGrabBaseRatio * presentedBaseHeight;
+			const bool verticalHandoff = presentedDockSnapshot.mode != dockMode
+				|| presentedDockSnapshot.dragSession != frame.bottomDockDragSession
+				|| !presentedDockSnapshot.grabAnchorValid
+				|| abs(presentedDockSnapshot.zoom - frameZoom) > 0.000001
+				|| presentedDockSnapshot.displaySerial != state.observedDisplaySerial;
+			double effectivePointerScreenY = frame.bottomDockDragEffectivePointerScreenY;
+			if (verticalHandoff && !dockDragActive)
+			{
+				// 无指针交接不消费陈旧输入；从同一锁存逻辑抓点原样恢复。
+				effectivePointerScreenY = presentedY(
+					presentedDockSnapshot.mapping.MapY(presentedLogicalGrab));
+			}
+			Inkeys::UI::Bar::BarBottomDockShiftedShape shifted;
+			if (verticalHandoff)
+			{
+				shifted = Inkeys::UI::Bar::ResolveBarBottomDockShiftedShape(
+					presentedDockSnapshot.mapping, presentedLogicalGrab,
+					presentedDockSnapshot.monitorOrigin.y,
+					presentedDockSnapshot.directTranslation.y, presentedDockSnapshot.zoom,
+					state.monitorOrigin.y, frameTransitionTranslation.y, frameZoom,
+					effectivePointerScreenY);
+				if (!shifted.valid) anchorVertical = false;
+			}
+			if (anchorVertical)
+			{
+				const double effectiveGrabDip = (effectivePointerScreenY
+					- state.monitorOrigin.y - frameTransitionTranslation.y) / frameZoom;
+				if (verticalHandoff)
+				{
+					// 成功形状先随当前有效抓点平移；失败候选和跨模式速度都不能污染交接。
+					state.bottomDockSpring.positionDip = BarUiAnimationEnabled || dockDragActive
+						? shifted.grabDip - logicalGrabDip : 0.0;
+					state.bottomDockCaptureBottomSpring.positionDip = !BarUiAnimationEnabled ? 0.0
+						: dockMode == BarBottomDockMode::BottomDocked
+							? shifted.bottomDip - nextBaseBottomDip
+							: shifted.bottomDip - shifted.topDip - baseHeightDip;
+					state.bottomDockSpring.velocityDipPerSecond = 0.0;
+					state.bottomDockCaptureBottomSpring.velocityDipPerSecond = 0.0;
+					state.bottomDockPreviousDirectOffsetDip = state.bottomDockSpring.positionDip;
+				}
+				Inkeys::UI::Bar::BarBottomDockSpringResult gripSpring{};
+				Inkeys::UI::Bar::BarBottomDockSpringResult shapeSpring{};
+				if (dockDragActive)
+				{
+					const double directGripDip = effectiveGrabDip - logicalGrabDip;
+					if (!verticalHandoff && animationDtSeconds > 0.000001
+						&& presentedDockSnapshot.mode == dockMode)
+						state.bottomDockSpring.velocityDipPerSecond = clamp(
+							(directGripDip - state.bottomDockPreviousDirectOffsetDip)
+								/ animationDtSeconds, -2400.0, 2400.0);
+					else if (verticalHandoff) state.bottomDockSpring.velocityDipPerSecond = 0.0;
+					state.bottomDockSpring.positionDip = directGripDip;
+					state.bottomDockPreviousDirectOffsetDip = directGripDip;
+				}
+				else if (!verticalHandoff)
+				{
+					gripSpring = AdvanceBarBottomDockSpring(state.bottomDockSpring,
+						0.0, animationDtSeconds, true == BarUiAnimationEnabled, true);
+					state.bottomDockPreviousDirectOffsetDip = state.bottomDockSpring.positionDip;
+				}
+				if (!verticalHandoff)
+					shapeSpring = AdvanceBarBottomDockSpring(state.bottomDockCaptureBottomSpring,
+						0.0, animationDtSeconds, true == BarUiAnimationEnabled, true);
+				const double desiredGrabDip = dockDragActive
+					? effectiveGrabDip : logicalGrabDip + state.bottomDockSpring.positionDip;
+				const double desiredBottomDip = nextBaseBottomDip
+					+ state.bottomDockCaptureBottomSpring.positionDip;
+				const double affineGrabRatio = (logicalGrabDip - nextBaseTopDip) / baseHeightDip;
+				const double boundaryGrabToleranceDip = 1.0 / frameZoom;
+				const bool bottomGrab = dockMode == BarBottomDockMode::BottomDocked
+					&& abs(1.0 - affineGrabRatio) * baseHeightDip
+						<= (std::max)(baseHeightDip * 0.000000000001, boundaryGrabToleranceDip);
+				const double previousHeightDip = verticalHandoff
+					? shifted.bottomDip - shifted.topDip
+					: state.bottomDockMapping.visualBottomDip - state.bottomDockMapping.visualTopDip;
+				const double fallbackHeightDip = dockMode == BarBottomDockMode::Floating
+					? baseHeightDip + state.bottomDockCaptureBottomSpring.positionDip
+					: verticalHandoff || !bottomGrab ? previousHeightDip
+						: baseHeightDip + state.bottomDockCaptureBottomSpring.positionDip;
+				anchoredMapping = Inkeys::UI::Bar::ResolveBarBottomDockAnchoredVerticalMapping(
+					nextBaseTopDip, nextBaseBottomDip, logicalGrabDip, desiredGrabDip,
+					desiredBottomDip, fallbackHeightDip,
+					dockMode == BarBottomDockMode::BottomDocked, boundaryGrabToleranceDip);
+				if (bottomGrab)
+					state.bottomDockCaptureBottomSpring.positionDip = anchoredMapping.shapeOffsetDip;
+				if (anchoredMapping.constrained)
+				{
+					// 正高度约束时重基同一形状弹簧，不累积另一坐标系速度。
+					state.bottomDockCaptureBottomSpring.positionDip = anchoredMapping.shapeOffsetDip;
+					state.bottomDockCaptureBottomSpring.velocityDipPerSecond = 0.0;
+				}
+				springActive = !dockDragActive && (gripSpring.active
+					|| abs(state.bottomDockSpring.positionDip) > BarBottomDockSettleDistanceDip);
+				captureBottomSpringActive = shapeSpring.active || (BarUiAnimationEnabled
+					&& abs(state.bottomDockCaptureBottomSpring.positionDip) > BarBottomDockSettleDistanceDip);
+				if (anchoredMapping.constrained && dockDragActive && !bottomGrab)
+					captureBottomSpringActive = false;
+				state.bottomDockCaptureBottomActive = captureBottomSpringActive;
+				state.bottomDockRecoverySeeded = !dockDragActive;
+			}
 		}
-		else if (!captureBottomJustSeeded && !detachJustSeeded) state.bottomDockCaptureBottomSpring.positionDip = 0.0;
+		if (!anchorVertical)
+		{
+			const double detachHalfHeight = (state.mainButtonBaseSize + captureStrokeDip) / 2.0;
+			const bool detachJustSeeded = Inkeys::UI::Bar::SeedBarBottomDockDetach(
+				state.bottomDockSpring, state.bottomDockCaptureBottomSpring,
+				presentedDockSnapshot.mode, dockMode,
+				presentedY(presentedDockSnapshot.mapping.baseTopDip),
+				presentedY(presentedDockSnapshot.mapping.visualTopDip),
+				presentedY(presentedDockSnapshot.mapping.visualBottomDip),
+				state.monitorOrigin.y + (captureMainButton->y.val - detachHalfHeight) * frameZoom + frameTransitionTranslation.y,
+				state.monitorOrigin.y + (captureMainButton->y.val + detachHalfHeight) * frameZoom + frameTransitionTranslation.y,
+				frameZoom, true == BarUiAnimationEnabled);
+			if (detachJustSeeded)
+			{
+				state.bottomDockRecoverySeeded = true;
+				state.bottomDockPreviousDirectOffsetDip = state.bottomDockSpring.positionDip;
+				springActive = abs(state.bottomDockSpring.positionDip) > BarBottomDockSettleDistanceDip;
+				state.bottomDockCaptureBottomActive = abs(state.bottomDockCaptureBottomSpring.positionDip)
+					> BarBottomDockSettleDistanceDip;
+			}
+			else if (dockMode == BarBottomDockMode::BottomDocked && dockDragActive)
+			{
+				state.bottomDockRecoverySeeded = false;
+				const double dockCenterScreenY = state.monitorOrigin.y
+					+ captureMainButton->y.val * frameZoom + frameTransitionTranslation.y;
+				const double directOffsetDip = ResolveBarBottomDockElasticOffsetForScreenGrip(
+					dragRigidGripScreenY, dockCenterScreenY, frameZoom);
+				if (animationDtSeconds > 0.000001)
+					state.bottomDockSpring.velocityDipPerSecond = clamp(
+						(directOffsetDip - state.bottomDockPreviousDirectOffsetDip)
+							/ animationDtSeconds, -2400.0, 2400.0);
+				state.bottomDockSpring.positionDip = directOffsetDip;
+				state.bottomDockPreviousDirectOffsetDip = directOffsetDip;
+			}
+			else
+			{
+				const bool recoveryNeedsSeed =
+					(dockMode == BarBottomDockMode::BottomDocked
+						&& dockPhase == BarBottomDockPhase::Recovering)
+					|| (dockMode == BarBottomDockMode::Floating && floatingRecoveryActive);
+				if (recoveryNeedsSeed && !state.bottomDockRecoverySeeded)
+				{
+					state.bottomDockSpring.positionDip = inputOffsetDip;
+					state.bottomDockPreviousDirectOffsetDip = inputOffsetDip;
+					state.bottomDockRecoverySeeded = true;
+				}
+				const auto spring = AdvanceBarBottomDockSpring(
+					state.bottomDockSpring, 0.0, animationDtSeconds,
+					true == BarUiAnimationEnabled, dockMode == BarBottomDockMode::Floating && floatingRecoveryActive);
+				springActive = spring.active;
+				state.bottomDockPreviousDirectOffsetDip = spring.positionDip;
+			}
+			const double presentedBottomScreenY = presentedY(presentedDockSnapshot.mapping.visualBottomDip);
+			const double nextBaseBottomScreenY = state.monitorOrigin.y
+				+ nextBaseBottomDip * frameZoom + frameTransitionTranslation.y;
+			const bool captureBottomJustSeeded = Inkeys::UI::Bar::SeedBarBottomDockCaptureBottom(
+				state.bottomDockCaptureBottomSpring, presentedDockSnapshot.mode, dockMode,
+				presentedBottomScreenY, nextBaseBottomScreenY, frameZoom,
+				true == BarUiAnimationEnabled);
+			if (captureBottomJustSeeded)
+				state.bottomDockCaptureBottomActive = abs(state.bottomDockCaptureBottomSpring.positionDip)
+					> BarBottomDockSettleDistanceDip;
+			captureBottomSpringActive = state.bottomDockCaptureBottomActive;
+			if (state.bottomDockCaptureBottomActive && !captureBottomJustSeeded && !detachJustSeeded)
+			{
+				const auto captureBottomSpring = AdvanceBarBottomDockSpring(
+					state.bottomDockCaptureBottomSpring, 0.0,
+					animationDtSeconds, true == BarUiAnimationEnabled, true);
+				captureBottomSpringActive = captureBottomSpring.active;
+				state.bottomDockCaptureBottomActive = captureBottomSpring.active;
+			}
+			else if (!captureBottomJustSeeded && !detachJustSeeded)
+				state.bottomDockCaptureBottomSpring.positionDip = 0.0;
+		}
 		bool indicatorTarget = ResolveBarBottomDockIndicatorTarget(
 			dockMode, dockDragActive, !state.barState.fold,
 			frame.bottomDockIndicatorGestureEligible);
@@ -7310,15 +7423,16 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		}
 		state.bottomDockFrameCenterMode = centerMode;
 		state.bottomDockFrameCenterPhase = centerPhase;
-		state.bottomDockMapping = dockMode == BarBottomDockMode::BottomDocked
-			? ResolveBarBottomDockVerticalMapping(
-				baseTopDip, baseBottomDip,
-				state.bottomDockSpring.positionDip,
-				state.bottomDockCaptureBottomSpring.positionDip, true)
-			: ResolveBarBottomDockRecoveringVerticalMapping(
-				baseTopDip, baseBottomDip,
-				state.bottomDockSpring.positionDip,
-				state.bottomDockCaptureBottomSpring.positionDip, true, true);
+		state.bottomDockMapping = anchorVertical ? anchoredMapping.mapping
+			: dockMode == BarBottomDockMode::BottomDocked
+				? ResolveBarBottomDockVerticalMapping(
+					baseTopDip, baseBottomDip,
+					state.bottomDockSpring.positionDip,
+					state.bottomDockCaptureBottomSpring.positionDip, true)
+				: ResolveBarBottomDockRecoveringVerticalMapping(
+					baseTopDip, baseBottomDip,
+					state.bottomDockSpring.positionDip,
+					state.bottomDockCaptureBottomSpring.positionDip, true, true);
 		state.bottomDockVisualActive = springActive
 			|| captureBottomSpringActive
 			|| abs(state.bottomDockSpring.positionDip) > 0.000001
@@ -7366,7 +7480,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			const bool clearFloatingRecovery =
 				dockMode == BarBottomDockMode::Floating
 				&& owner_.bottomDockRecoveryActive.load(memory_order_acquire);
-			if (settleVerticalPhase || settleCenterPhase || clearFloatingRecovery)
+			const bool clearGrabAnchor = frame.bottomDockDragGrabAnchorValid;
+			if (settleVerticalPhase || settleCenterPhase || clearFloatingRecovery || clearGrabAnchor)
 			{
 				// 阶段收敛也属于两轴 tuple，必须在同一偶数 serial 中发布。
 				if (!TryBeginFrameTransition()) return true;
@@ -7378,6 +7493,11 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 						BarBottomDockPhase::Stable, memory_order_relaxed);
 				if (clearFloatingRecovery)
 					owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
+				if (clearGrabAnchor)
+				{
+					owner_.bottomDockDragGrabAnchorValid.store(false, memory_order_relaxed);
+					state.bottomDockFrameGrabAnchorValid = false;
+				}
 				state.bottomDockFrameTransitionSerial = owner_.FinishBottomDockTransition();
 				// 阶段刚收敛时至少再消费一帧，不能让待处理任务栏目标随零形变一起 idle。
 				if (state.taskbarDockRetargetPending) needRendering = true;
@@ -8845,8 +8965,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			BarBottomDockCenterThresholdDip,
 			abs(state.bottomDockHorizontalMapping.rigidGripTranslationXDip),
 			abs(state.bottomDockCenterCaptureFarEdgeSpring.positionDip) });
-		const double verticalDockOutsetDip = max(BarBottomDockVisualLimitDip,
-			abs(state.bottomDockSpring.positionDip)) + abs(state.bottomDockCaptureBottomSpring.positionDip);
+		const double verticalDockOutsetDip = max({
+			max(BarBottomDockVisualLimitDip, abs(state.bottomDockSpring.positionDip))
+				+ abs(state.bottomDockCaptureBottomSpring.positionDip),
+			abs(state.bottomDockMapping.visualTopDip - state.bottomDockMapping.baseTopDip),
+			abs(state.bottomDockMapping.visualBottomDip - state.bottomDockMapping.baseBottomDip) });
 		const bool reserveBottomDockCapacity =
 			frame.bottomDockDragActive
 			|| frame.bottomDockRecoveryActive
@@ -12527,6 +12650,13 @@ bool presetButton = button.presetIndex >= 0;
 			owner_.bottomDockPresentedRigidTranslationDip.store(
 				state.bottomDockMapping.rigidOverlayTranslationYDip,
 				memory_order_relaxed);
+			owner_.bottomDockPresentedMainButtonVisibleHeightDip.store(
+				dockMainButtonVisibleBounds.bottomDip - dockMainButtonVisibleBounds.topDip,
+				memory_order_relaxed);
+			owner_.bottomDockPresentedGrabAnchorValid.store(
+				state.bottomDockFrameGrabAnchorValid, memory_order_relaxed);
+			owner_.bottomDockPresentedDragSession.store(
+				frame.bottomDockDragSession, memory_order_relaxed);
 			owner_.bottomDockPresentedCenterMode.store(
 				state.bottomDockFrameCenterMode, memory_order_relaxed);
 			owner_.bottomDockPresentedCenterPhase.store(
@@ -13079,6 +13209,13 @@ BarRenderLoopCoordinator::RenderFrame(
 			owner_.bottomDockDragRigidGripScreenX.load(memory_order_relaxed);
 		frame.bottomDockDragRigidGripScreenY =
 			owner_.bottomDockDragRigidGripScreenY.load(memory_order_relaxed);
+		frame.bottomDockDragEffectivePointerScreenY =
+			owner_.bottomDockDragEffectivePointerScreenY.load(memory_order_relaxed);
+		frame.bottomDockDragGrabBaseRatio =
+			owner_.bottomDockDragGrabBaseRatio.load(memory_order_relaxed);
+		frame.bottomDockDragGrabAnchorValid =
+			owner_.bottomDockDragGrabAnchorValid.load(memory_order_relaxed);
+		frame.bottomDockDragSession = owner_.bottomDockDragSession.load(memory_order_relaxed);
 		frame.bottomDockTransitionTranslation = POINT{
 			owner_.directWindowDragTranslationX.load(memory_order_relaxed),
 			owner_.directWindowDragTranslationY.load(memory_order_relaxed) };

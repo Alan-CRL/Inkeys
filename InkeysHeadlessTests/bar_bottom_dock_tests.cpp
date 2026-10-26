@@ -35,6 +35,128 @@ namespace
 		return std::abs(lhs - rhs) <= epsilon;
 	}
 
+	void TestEffectiveInputCaptureAndNormalizedGrab()
+	{
+		using namespace Inkeys::UI::Bar;
+		constexpr double zoom = 2.0, baseBottom = 912.0, baseTop = baseBottom - 81.0;
+		constexpr double oldBaseBottom = 1773.0 / zoom, oldBaseTop = oldBaseBottom - 81.0;
+		const auto old = ResolveBarBottomDockRecoveringVerticalMapping(
+			oldBaseTop, oldBaseBottom, 0.0, 0.0);
+		constexpr double r = 38.0 / 81.0;
+		const double oldRoot = (oldBaseTop + oldBaseBottom) / 2.0;
+		const double oldLogical = oldRoot + (r - 0.5) * 81.0;
+		const double oldGrab = old.MapY(oldLogical) * zoom;
+		const double effectiveGrab = oldGrab + 47.0;
+		const auto shifted = ResolveBarBottomDockShiftedShape(old,
+			oldLogical, 0.0, 0.0, zoom, 0.0, 0.0, zoom, effectiveGrab);
+		Check(shifted.valid && Near(shifted.bottomDip * zoom, 1820.0),
+			"manual capture shifts the successful floating bottom by the effective 47 px input");
+		const double elastic = shifted.topDip - baseTop;
+		const double capture = shifted.bottomDip - baseBottom;
+		Check(Near(elastic, -2.0) && Near(capture, -2.0),
+			"historical rigid equal-base vector yields e=c=-2 without hard-coded constants");
+		const double nextRoot = (baseTop + baseBottom) / 2.0;
+		const double nextLogical = nextRoot + (r - 0.5) * 81.0;
+		const auto anchored = ResolveBarBottomDockAnchoredVerticalMapping(
+			baseTop, baseBottom, nextLogical, effectiveGrab / zoom,
+			baseBottom + capture, shifted.bottomDip - shifted.topDip, true);
+		Check(Near(anchored.mapping.visualBottomDip * zoom, 1820.0)
+			&& Near(anchored.mapping.MapY(nextLogical) * zoom, effectiveGrab),
+			"first manual capture presents the effective bottom and the actual local grab together");
+
+		BarBottomDockSpringState legacy;
+		(void)SeedBarBottomDockCaptureBottom(legacy, BarBottomDockMode::Floating,
+			BarBottomDockMode::BottomDocked, 1773.0, 1824.0, zoom, true);
+		Check(Near(legacy.positionDip, -25.5)
+			&& Near(1824.0 + legacy.positionDip * zoom, 1773.0),
+			"legacy absolute-bottom seed remains the historical negative witness");
+
+		for (const double ratio : { 0.0, 33.0 / 81.0, r, 0.5, 1.0 })
+		{
+			const auto deformed = ResolveBarBottomDockRecoveringVerticalMapping(
+				200.0, 281.0, -14.0, 23.0, true, true);
+			const double root = 240.0;
+			const double logical = root + (ratio - 0.5) * 81.0;
+			const double pointer = -240.0 + deformed.MapY(logical) * 1.5 - 13.0;
+			const auto anchor = ResolveBarBottomDockGrabAnchor(deformed,
+				root, 81.0, pointer, -240.0, -13.0, 1.5);
+			Check(anchor.valid && Near(anchor.normalizedY, ratio),
+				"Down uses the last successful MapY/UnmapY and actual button height");
+			const double nextEffective = pointer + 37.0;
+			const auto moved = ResolveBarBottomDockShiftedShape(deformed,
+				logical, -240.0, -13.0, 1.5, 120.0, 71.0, 0.75, nextEffective);
+			const double expectedTop = (deformed.visualTopDip * 1.5 - 253.0 + 37.0 - 191.0) / 0.75;
+			const double expectedBottom = (deformed.visualBottomDip * 1.5 - 253.0 + 37.0 - 191.0) / 0.75;
+			Check(moved.valid && Near(moved.topDip, expectedTop)
+				&& Near(moved.bottomDip, expectedBottom),
+				"general capture handoff preserves deformed endpoints across origin zoom and translation");
+			for (const bool docked : { false, true })
+			{
+				const double desiredBottom = docked ? 430.0 : 0.0;
+				const double desiredGrab = docked && ratio == 1.0 ? desiredBottom : 410.0;
+				const auto mapping = ResolveBarBottomDockAnchoredVerticalMapping(
+					300.0, 381.0, 340.5 + (ratio - 0.5) * 81.0,
+					desiredGrab, desiredBottom, 95.0, docked);
+				const double logicalNow = 340.5 + (ratio - 0.5) * 81.0;
+				const double handoffBaseRatio = (logical - deformed.baseTopDip)
+					/ (deformed.baseBottomDip - deformed.baseTopDip);
+				const double logicalHandoff = 300.0 + handoffBaseRatio * 81.0;
+				const auto handoff = ResolveBarBottomDockAnchoredVerticalMapping(
+					300.0, 381.0, logicalHandoff, moved.grabDip, moved.bottomDip,
+					moved.bottomDip - moved.topDip, docked);
+				Check(Near(handoff.mapping.visualTopDip, moved.topDip)
+					&& Near(handoff.mapping.visualBottomDip, moved.bottomDip)
+					&& Near(handoff.mapping.MapY(logicalHandoff), moved.grabDip),
+					"composed handoff restores shifted deformed endpoints and the latched logical grab");
+				Check(Near(mapping.mapping.MapY(logicalNow), desiredGrab)
+					&& mapping.mapping.visualBottomDip > mapping.mapping.visualTopDip
+					&& Near(mapping.mapping.visualBottomDip - mapping.mapping.visualTopDip,
+						docked && ratio != 1.0 ? (desiredBottom - desiredGrab) / (1.0 - ratio) : 95.0),
+					"anchored mapping keeps center off-center and boundary grabs on the effective input");
+				if (docked && ratio != 1.0)
+					Check(Near(mapping.mapping.visualBottomDip, desiredBottom),
+						"docked anchored mapping independently preserves the capture-bottom spring");
+			}
+		}
+		const auto bottomGrab = ResolveBarBottomDockAnchoredVerticalMapping(
+			300.0, 381.0, 381.0, 430.0, 420.0, 120.0, true);
+		Check(Near(bottomGrab.mapping.visualBottomDip, 430.0)
+			&& Near(bottomGrab.mapping.visualTopDip, 310.0)
+			&& Near(bottomGrab.shapeOffsetDip, 39.0) && !bottomGrab.constrained,
+			"bottom-edge grab uses the shape spring as a recoverable height offset");
+		const auto roundedBottomGrab = ResolveBarBottomDockAnchoredVerticalMapping(
+			300.0, 381.0, 381.4, 430.4, 420.0, 120.0, true, 1.0);
+		Check(Near(roundedBottomGrab.mapping.MapY(381.4), 430.4)
+			&& Near(roundedBottomGrab.mapping.visualBottomDip
+				- roundedBottomGrab.mapping.visualTopDip, 120.0)
+			&& Near(roundedBottomGrab.shapeOffsetDip, 39.0)
+			&& !roundedBottomGrab.constrained,
+			"pixel-rounded bottom grabs keep the exact input and a recoverable positive height");
+		const auto collapsed = ResolveBarBottomDockAnchoredVerticalMapping(
+			300.0, 381.0, 340.5, 410.0, 0.0, -20.0, false);
+		Check(collapsed.constrained
+			&& Near(collapsed.mapping.visualBottomDip - collapsed.mapping.visualTopDip,
+				81.0 * 0.000001),
+			"negative fallback height reports the constraint so production can rebase its spring");
+	}
+
+	void TestDirectWindowMovePresentationBarrier()
+	{
+		using namespace Inkeys::UI::Bar;
+		Check(!ShouldDeferBarDirectWindowMove(0, 12, 12, 12, 10, 10),
+			"stable tuple with all barriers presented allows direct window movement");
+		Check(ShouldDeferBarDirectWindowMove(12, 12, 12, 12, 10, 10),
+			"local awaited serial still blocks direct window movement");
+		Check(ShouldDeferBarDirectWindowMove(0, 12, 12, 12, 12, 10),
+			"global deferred barrier blocks direct movement even when local awaited is zero");
+		Check(ShouldDeferBarDirectWindowMove(0, 12, 10, 10, 10, 10),
+			"a newer global deferred serial must belong to the current tuple");
+		Check(ShouldDeferBarDirectWindowMove(0, 12, 11, 11, 10, 10)
+			&& ShouldDeferBarDirectWindowMove(0, 12, 12, 14, 10, 10)
+			&& ShouldDeferBarDirectWindowMove(0, 12, 12, 12, 14, 10),
+			"in-flight odd serial stale candidates and mismatched tuples cannot move old pixels");
+	}
+
 	void TestDetachSeedFromSuccessfulShape()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -607,6 +729,8 @@ namespace
 
 int RunBarBottomDockTests()
 {
+	TestEffectiveInputCaptureAndNormalizedGrab();
+	TestDirectWindowMovePresentationBarrier();
 	TestDetachSeedFromSuccessfulShape();
 	using namespace Inkeys::UI::Bar;
 	{

@@ -1,8 +1,8 @@
 # UI3 底栏吸附切换跳变与提示裁剪修复 — 执行计划
 
-> 2026-10-26 接力：本计划已获本会话授权并完成代码与自动化，最新证据见父任务 `research/final-integration-validation.md`；原文未来式保留作历史设计。GUI/真实系统呈现验收待授权，任务未归档。
+> 2026-10-26 最新状态：审阅后修复及全部自动化已完成，`software=passed`；完整 `--no-window` 退出 0（359.523 秒），full-scope `trellis-check` 已完成。先读 `research/review-fix-validation-2026-10-26.md` 和 `research/break-loop-2026-10-26.md`，真实 GUI 未验证，保持 `in_progress`。下方原审阅/实施记录保留作历史，不再作为当前待办。
 
-> 接力前必读 `../10-25-ui3-bar-centering-dock-geometry/handoff.md`。居中窄修复及离屏/质量检查已完成，共享文件已有未提交修改，不得重做或覆盖；本任务仍 `planning`，尚未实施。静态调查未把间歇三帧现象唯一归因，后续实施必须保留逐帧判因与真实视觉验收门禁。
+> 历史审阅：接管提交 `1ba08698` 的脱离、吸收和容量修复应保留，但吸附位置跳变当时未闭环；`research/review-2026-10-26.md` 记录了该缺口及后续修复依据。
 
 ## 1. 建立真实复现与失败回归
 

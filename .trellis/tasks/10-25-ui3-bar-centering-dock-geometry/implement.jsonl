@@ -10,3 +10,6 @@
 {"file":".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/handoff.md","reason":"接力时首先确认居中修改、验证证据、未完成事项和正确实施顺序。"}
 {"file":".trellis/tasks/10-25-ui3-centered-bar-dynamic-centering/research/implementation-validation.md","reason":"保留居中实际实现、先红后绿证据、质量检查和剩余验证边界。"}
 {"file": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md", "reason": "最终接力、DPI/范围审计、两个子任务组合及软件/GUI 验收边界"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md","reason":"优先阅读最新审阅：手动捕获旧底边、真实抓点、直移测试盲区及针对性修复方案，撤回旧 software=passed 结论。"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md","reason":"当前最新修复与全量验证证据，包括旧红新绿、质量审查和 359.523 秒完整 no-window 通过。"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/break-loop-2026-10-26.md","reason":"理解反复修复失败的跨层合同和测试自证教训，保持后续真实视觉边界。"}

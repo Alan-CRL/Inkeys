@@ -485,6 +485,16 @@ namespace Inkeys::UI::Bar
 			RECT dirty{};
 			bool fullReplacement = false;
 		};
+		struct WorkspaceWindowEvent
+		{
+			unsigned long long order = 0;
+			bool directMove = false;
+			POINT position{};
+			unsigned long long transitionSerial = 0;
+			unsigned long long deferredSerial = 0;
+			unsigned long long presentedSerial = 0;
+			std::string phase;
+		};
 		struct WorkspaceCenteringStats
 		{
 			unsigned presented = 0;
@@ -567,15 +577,73 @@ namespace Inkeys::UI::Bar
 					for (unsigned frame = 0; frame < 5; ++frame)
 						if (!Step("CombinedEnter", nullptr, frame, true)) return failures_;
 				}
-				unsigned detached = 0, absorbed = 0, shownIndicators = 0, successes = 0;
+				const std::array<double, 3> grabRatios{ 33.0 / 81.0, 38.0 / 81.0, 0.5 };
+				grabRatio_ = grabRatios[workspace % grabRatios.size()];
+				if (!left_ && workspace == 2) grabRatio_ = 1.0;
+				if (left_ && workspace == 2) grabRatio_ = 0.0;
+				if (negativeOrigin_ && workspace == 2) grabRatio_ = 1.0;
+				if (!BarUiAnimationEnabled) grabRatio_ = 38.0 / 81.0;
+				activeGrabRatio_ = grabRatio_;
+				const auto mainButton = owner_->superellipseMap[BarUISetSuperellipseEnum::MainButton];
+				const double initialStroke = mainButton->ft.has_value()
+					? (std::max)(0.0, static_cast<double>(mainButton->ft->val)) : 0.0;
+				presentedVisibleHeight_ = mainButton->h.val + initialStroke;
+				const auto initialPresented = owner_->BottomDockPresentedSnapshot();
+				const double initialBaseHeight = initialPresented.mapping.baseBottomDip
+					- initialPresented.mapping.baseTopDip;
+				activeBaseRatio_ = 0.5 + (grabRatio_ - 0.5)
+					* presentedVisibleHeight_ / initialBaseHeight;
+				const double downBaseRatio = activeBaseRatio_;
+				windowEvents_.clear();
+				windowEventOrdinal_ = 0;
+				activeWindowPhase_ = nullptr;
+				directMoveCount_ = 0;
+				prematureDirectMoves_ = 0;
+				globalBarrierInjections_ = 0;
+				unsigned captured = 0, detached = 0, absorbed = 0, shownIndicators = 0, successes = 0;
+				unsigned bottomGrabRecoveryAttempts = 0, bottomGrabRecoveryPresented = 0;
+				double bottomGrabRecoveryHeightError = 0.0;
 				bool retryNeedsFullReplacement = false;
 				const auto screenY = [](const auto& snapshot, double y)
 					{ return snapshot.monitorOrigin.y + y * snapshot.zoom + snapshot.directTranslation.y; };
 				const auto screenX = [](const auto& snapshot, double x)
 					{ return snapshot.monitorOrigin.x + x * snapshot.zoom + snapshot.directTranslation.x; };
+				const auto directMove = [&](HWND, int x, int y) -> BOOL
+				{
+					RecordWindowEvent(true, POINT{ x, y });
+					return TRUE;
+				};
+				const auto beforeMove = [&](const char* phase)
+				{
+					activeWindowPhase_ = phase;
+					if (std::string_view(phase) == "DirectMoveGlobalBarrier")
+					{
+						// 本手势没有 awaited；另一个写者只发布全局 deferred，不改变两轴候选。
+						Access::PublishDeferred(*owner_);
+						++globalBarrierInjections_;
+					}
+				};
 				const bool sequence = RunUi3BottomDockInteractionSequence(*owner_, [&](const char* phase, POINT pointer)
 				{
+					activeWindowPhase_ = phase;
 					const auto before = owner_->BottomDockPresentedSnapshot();
+					const double beforeRoot = (before.mapping.baseTopDip + before.mapping.baseBottomDip) / 2.0;
+					const double beforeBaseHeight = before.mapping.baseBottomDip - before.mapping.baseTopDip;
+					if (std::string_view(phase) == "Begin" || std::string_view(phase) == "ReleaseRetry")
+					{
+						const auto actualAnchor = ResolveBarBottomDockGrabAnchor(before.mapping,
+							beforeRoot, presentedVisibleHeight_, pointer.y, before.monitorOrigin.y,
+							before.directTranslation.y, before.zoom);
+						if (!actualAnchor.valid) return Fail("dock Down did not resolve the actual normalized grab");
+						activeGrabRatio_ = actualAnchor.normalizedY;
+						const double actualLogicalGrab = beforeRoot + (activeGrabRatio_ - 0.5)
+							* presentedVisibleHeight_;
+						activeBaseRatio_ = (actualLogicalGrab - before.mapping.baseTopDip)
+							/ beforeBaseHeight;
+					}
+					const double beforeLogicalGrab = before.mapping.baseTopDip
+						+ activeBaseRatio_ * beforeBaseHeight;
+					const double beforeGrab = screenY(before, before.mapping.MapY(beforeLogicalGrab));
 					const bool injecting = std::string_view(phase).ends_with("Failure");
 					failNextPresent_ = injecting;
 					presentedUlw_.reset(); attemptedUlw_.reset();
@@ -613,17 +681,63 @@ namespace Inkeys::UI::Bar
 					const double bottom = screenY(after, after.mapping.visualBottomDip);
 					const double oldHeight = (before.mapping.visualBottomDip - before.mapping.visualTopDip) * before.zoom;
 					const double heightError = bottom - top - oldHeight;
-					if (successful && before.mode == BarBottomDockMode::BottomDocked
-						&& after.mode == BarBottomDockMode::Floating)
+					const auto afterButton = owner_->superellipseMap[BarUISetSuperellipseEnum::MainButton];
+					const double afterStroke = afterButton->ft.has_value()
+						? (std::max)(0.0, static_cast<double>(afterButton->ft->val)) : 0.0;
+					const double afterVisibleHeight = afterButton->h.val + afterStroke;
+					const double afterBaseHeight = after.mapping.baseBottomDip - after.mapping.baseTopDip;
+					const double afterLogicalGrab = after.mapping.baseTopDip
+						+ activeBaseRatio_ * afterBaseHeight;
+					const double actualGrab = screenY(after, after.mapping.MapY(afterLogicalGrab));
+					const double grabError = actualGrab - pointer.y;
+					const bool dragFrame = std::string_view(phase) != "ReleaseAbsorbFailure"
+						&& std::string_view(phase) != "FinalRelease";
+					if (successful && dragFrame && std::abs(grabError) > WorkspaceCenteringTolerance)
 					{
-						++detached;
-						const double expectedError = BarUiAnimationEnabled ? heightError
-							: bottom - top - (after.mapping.baseBottomDip - after.mapping.baseTopDip) * after.zoom;
-						if (std::abs(expectedError) > WorkspaceCenteringTolerance)
+						++failures_;
+						std::fprintf(stderr, "[UI3BottomDock] case=%s phase=%s grab=%.9f grabError=%.9f\n",
+							caseName_.c_str(), phase, activeGrabRatio_, grabError);
+					}
+					if (std::string_view(phase) == "BottomGrabRecovery")
+					{
+						++bottomGrabRecoveryAttempts;
+						if (successful) ++bottomGrabRecoveryPresented;
+						bottomGrabRecoveryHeightError = std::abs((after.mapping.visualBottomDip
+							- after.mapping.visualTopDip - afterBaseHeight) * after.zoom);
+					}
+					double transitionTopError = 0.0, transitionBottomError = 0.0;
+					if (successful && before.mode != after.mode)
+					{
+						const bool detaching = before.mode == BarBottomDockMode::BottomDocked
+							&& after.mode == BarBottomDockMode::Floating;
+						if (detaching) ++detached;
+						else if (before.mode == BarBottomDockMode::Floating
+							&& after.mode == BarBottomDockMode::BottomDocked) ++captured;
+						const double effectiveShift = pointer.y - beforeGrab;
+						transitionTopError = top - (screenY(before, before.mapping.visualTopDip) + effectiveShift);
+						transitionBottomError = bottom - (screenY(before, before.mapping.visualBottomDip) + effectiveShift);
+						const double expectedError = BarUiAnimationEnabled
+							? (std::max)(std::abs(transitionTopError), std::abs(transitionBottomError))
+							: detaching ? std::abs(bottom - top
+								- (after.mapping.baseBottomDip - after.mapping.baseTopDip) * after.zoom) : 0.0;
+						if (expectedError > WorkspaceCenteringTolerance)
 						{
 							++failures_;
-							std::fprintf(stderr, "[UI3BottomDock] case=%s phase=%s detachHeightError=%.9f\n", caseName_.c_str(), phase, expectedError);
+							std::fprintf(stderr, "[UI3BottomDock] case=%s phase=%s transitionTopError=%.9f transitionBottomError=%.9f heightError=%.9f\n",
+								caseName_.c_str(), phase, transitionTopError, transitionBottomError, heightError);
 						}
+					}
+					if (successful && !BarUiAnimationEnabled
+						&& std::string_view(phase) == "FinalRelease")
+					{
+						const bool settled = after.phase == BarBottomDockPhase::Stable
+							&& !after.recoveryActive && !after.grabAnchorValid
+							&& std::abs(after.mapping.visualTopDip - after.mapping.baseTopDip)
+								<= WorkspaceCenteringTolerance
+							&& std::abs(after.mapping.visualBottomDip - after.mapping.baseBottomDip)
+								<= WorkspaceCenteringTolerance
+							&& std::abs(after.elasticOffsetDip) <= WorkspaceCenteringTolerance;
+						if (!settled) return Fail("animations-off release did not settle to the base mapping");
 					}
 					if (std::string_view(phase) == "ReleaseAbsorbFailure")
 					{
@@ -650,6 +764,7 @@ namespace Inkeys::UI::Bar
 								after.monitorOrigin.y + after.directTranslation.y })))
 							return Fail("visible indicator escapes submitted window");
 					}
+					if (successful) presentedVisibleHeight_ = afterVisibleHeight;
 					const auto target = owner_->spec.GetTargetBitmapSize();
 					const auto ulw = attemptedUlw_.value_or(WorkspaceCenteringUlw{});
 					samples_ << caseName_ << ',' << phase << ',' << after.serial << ',' << after.transitionSerial
@@ -663,18 +778,86 @@ namespace Inkeys::UI::Bar
 						<< ',' << static_cast<unsigned>(after.phase) << ',' << static_cast<unsigned>(after.centerPhase)
 						<< ',' << std::chrono::duration<double, std::milli>(frameTime_ - frameOrigin_).count() - 16.0
 						<< ',' << static_cast<double>(owner_->shapeMap[BarUISetShapeEnum::MainBar]->w.val)
-						<< ',' << static_cast<bool>(BarUiAnimationEnabled) << '\n';
+						<< ',' << static_cast<bool>(BarUiAnimationEnabled)
+						<< ',' << activeGrabRatio_ << ',' << actualGrab << ',' << grabError
+						<< ',' << transitionTopError << ',' << transitionBottomError << '\n';
 					return true;
-				});
-				if (!sequence || detached < 2 || absorbed != 1 || !shownIndicators || successes < 20
-					|| injectedPresentFailures_ != 2 || retryNeedsFullReplacement)
+				}, grabRatio_, directMove, beforeMove);
+				std::ofstream events(std::filesystem::path(L"TestResults/ui3-bottom-dock")
+					/ (caseName_ + "-window-events.csv"));
+				events << "order,kind,x,y,transition_serial,deferred_serial,presented_serial,phase\n";
+				for (const auto& event : windowEvents_)
+					events << event.order << ',' << (event.directMove ? "SetWindowPos" : "ULW")
+						<< ',' << event.position.x << ',' << event.position.y << ',' << event.transitionSerial
+						<< ',' << event.deferredSerial << ',' << event.presentedSerial << ',' << event.phase << '\n';
+				const auto directAfterBarrier = std::count_if(windowEvents_.begin(), windowEvents_.end(),
+					[](const auto& event)
+					{ return event.directMove && event.phase == "DirectMoveAfterBarrier"; });
+				const bool bottomGrabRecovered = grabRatio_ != 1.0
+					|| (bottomGrabRecoveryAttempts == 90 && bottomGrabRecoveryPresented
+						&& bottomGrabRecoveryHeightError <= 0.01);
+				if (!bottomGrabRecovered)
+				{
+					std::fprintf(stderr, "[UI3BottomDock] case=%s bottomGrabAttempts=%u bottomGrabPresented=%u bottomGrabHeightError=%.9f baseRatio=%.17g\n",
+						caseName_.c_str(), bottomGrabRecoveryAttempts, bottomGrabRecoveryPresented,
+						bottomGrabRecoveryHeightError, downBaseRatio);
+					Fail("bottom-edge grab shape did not recover to its positive base height");
+				}
+				if (!sequence || !captured || detached < 2 || absorbed != 1 || !shownIndicators || successes < 20
+					|| injectedPresentFailures_ != 3 || retryNeedsFullReplacement || !events
+					|| !directMoveCount_ || !directAfterBarrier || prematureDirectMoves_
+					|| globalBarrierInjections_ != 1)
 					Fail("dock production sequence did not cover its required stages");
-				std::fprintf(stderr, "[UI3BottomDock] case=%s detach=%u absorb=%u indicator=%u successes=%u failures=%d\n",
-					caseName_.c_str(), detached, absorbed, shownIndicators, successes, failures_);
+				std::fprintf(stderr, "[UI3BottomDock] case=%s capture=%u detach=%u absorb=%u indicator=%u direct=%u premature=%u successes=%u failures=%d\n",
+					caseName_.c_str(), captured, detached, absorbed, shownIndicators, directMoveCount_,
+					prematureDirectMoves_, successes, failures_);
 				return failures_;
 			}
 
 		private:
+			struct Access : BarUISetClass
+			{
+				static void PublishDeferred(BarUISetClass& bar)
+				{
+					(bar.*&Access::BeginBottomDockTransition)();
+					(void)(bar.*&Access::FinishBottomDockTransition)(true);
+				}
+				static unsigned long long Transition(BarUISetClass& bar)
+				{
+					return (bar.*&Access::bottomDockTransitionSerial).load(std::memory_order_acquire);
+				}
+				static unsigned long long Deferred(BarUISetClass& bar)
+				{
+					return (bar.*&Access::bottomDockDeferredTransitionSerial).load(std::memory_order_acquire);
+				}
+				static unsigned long long Presented(BarUISetClass& bar)
+				{
+					return (bar.*&Access::bottomDockPresentedTransitionSerial).load(std::memory_order_acquire);
+				}
+			};
+
+			void RecordWindowEvent(bool directMove, POINT position)
+			{
+				WorkspaceWindowEvent event;
+				event.order = ++windowEventOrdinal_;
+				event.directMove = directMove;
+				event.position = position;
+				event.transitionSerial = Access::Transition(*owner_);
+				event.deferredSerial = Access::Deferred(*owner_);
+				event.presentedSerial = Access::Presented(*owner_);
+				event.phase = activeWindowPhase_ ? activeWindowPhase_ : "";
+				windowEvents_.push_back(event);
+				if (!directMove) return;
+				++directMoveCount_;
+				if (event.deferredSerial > event.presentedSerial)
+				{
+					++prematureDirectMoves_;
+					++failures_;
+					std::fprintf(stderr, "[UI3BottomDock] case=%s prematureSetWindowPos order=%llu deferred=%llu presented=%llu\n",
+						caseName_.c_str(), event.order, event.deferredSerial, event.presentedSerial);
+				}
+			}
+
 			bool Fail(const char* reason)
 			{
 				++failures_;
@@ -914,6 +1097,7 @@ namespace Inkeys::UI::Bar
 							return FALSE;
 						}
 						attemptedUlw_ = sample;
+						RecordWindowEvent(false, sample.destination);
 						if (failNextPresent_)
 						{
 							failNextPresent_ = false;
@@ -1205,6 +1389,16 @@ namespace Inkeys::UI::Bar
 			int failures_ = 0;
 			bool failNextPresent_ = false;
 			bool verifyFullReplacementRetry_ = false;
+			double grabRatio_ = 0.5;
+			double activeGrabRatio_ = 0.5;
+			double activeBaseRatio_ = 0.5;
+			double presentedVisibleHeight_ = 81.0;
+			std::vector<WorkspaceWindowEvent> windowEvents_;
+			unsigned long long windowEventOrdinal_ = 0;
+			const char* activeWindowPhase_ = nullptr;
+			unsigned directMoveCount_ = 0;
+			unsigned prematureDirectMoves_ = 0;
+			unsigned globalBarrierInjections_ = 0;
 		};
 	}
 
@@ -1228,7 +1422,7 @@ namespace Inkeys::UI::Bar
 		globalPath = (std::filesystem::absolute(directory) / L"runtime-config").wstring() + L"\\";
 		std::filesystem::create_directories(std::filesystem::path(globalPath) / L"Inkeys/Config");
 		std::ofstream samples(directory / L"samples.csv");
-		if (bottomDock) samples << "case,phase,serial,transition_serial,successful,mode,center_mode,elastic,top,bottom,height_error,pointer_x,pointer_y,direct_x,direct_y,source_x,source_y,window_w,window_h,target_w,target_h,full_replacement,dest_x,dest_y,dirty_left,dirty_top,dirty_right,dirty_bottom,present_attempted,dock_phase,center_phase,frame_time_ms,main_bar_width,animations_enabled\n";
+		if (bottomDock) samples << "case,phase,serial,transition_serial,successful,mode,center_mode,elastic,top,bottom,height_error,pointer_x,pointer_y,direct_x,direct_y,source_x,source_y,window_w,window_h,target_w,target_h,full_replacement,dest_x,dest_y,dirty_left,dirty_top,dirty_right,dirty_bottom,present_attempted,dock_phase,center_phase,frame_time_ms,main_bar_width,animations_enabled,grab_ratio,actual_grab,grab_error,transition_top_error,transition_bottom_error\n";
 		else samples << "case,phase,phase_frame,attempt,frame_time_ms,animation_dt_s,presented_serial,transition_serial,display_serial,mode,center_mode,center_phase,center_error_px,visual_center_px,expected_center_px,main_center_x,main_center_y,main_button_x,main_bar_x,main_bar_width,zoom,direct_x,direct_y,dest_x,dest_y,source_x,source_y,window_w,window_h,target_w,target_h,full_replacement,dirty_left,dirty_top,dirty_right,dirty_bottom\n";
 		BarUiAnimationEnabled = true;
 		BarUiAnimationSpeedRate = 1.0;
