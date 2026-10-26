@@ -10,3 +10,5 @@
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md","reason":"检查时必须覆盖最新审阅指出的直移绕过、位置断言缺失和历史实机反例，撤回旧 software=passed 结论。"}
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md","reason":"审查最新修复及完整自动化结果，区分软件通过与 GUI 未验证。"}
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/break-loop-2026-10-26.md","reason":"检查位置/真实抓点/合法直移和完整回归，防止再次只修相邻缺陷。"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md","reason":"审查必须加入顶边不动和整个手势窗口尺寸/source 稳定，不得复用错误抓点验收。"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md","reason":"检查真实复现证据和复现前禁止产品修复的门禁，不以离屏结果代替。"}

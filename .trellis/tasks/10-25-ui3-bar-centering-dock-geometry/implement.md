@@ -1,6 +1,8 @@
 # UI3 底栏居中与吸附帧几何修复 — 集成执行计划
 
-> 2026-10-26 最新状态：审阅后修复及全部自动化已完成，父/吸附任务 `software=passed`；完整 `--no-window` 退出 0（359.523 秒），full-scope `trellis-check` 已完成。先读 `handoff.md` 与 `../10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md`，真实 GUI 未验证，保持 `in_progress`。下文为集成计划，当前进度以最新交接为准。
+> 2026-10-26 当前执行授权：用户要求提交当前改动，完成后允许一轮原生竖直Logo拖动，肉眼观察后结束本轮。先完成commit，再编译本次版本、等待用户准备并重放；不运行自动单测、不push、不归档。测试结果不能由下方历史PASS或静态审查代替。
+
+> 2026-10-26 最新实测：用户发现 `a7dc3a08` 引入顶边上移回归且闪烁仍在，父/吸附任务 `software=historical_tests_passed_symptom_unresolved`、`gui=authorized_pending_live_reproduction`。必须先读 `handoff.md`、`../10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md` 和 `live-reproduction-2026-10-26.md`。原生重放尚未确认原始剧烈闪烁，复现前禁止产品修复；解除该门后，才按“恢复顶边不动及正确验收、独立 Down 完整手势包络/容量预留”的顺序实施。下文为集成计划，当前进度以最新调查为准。
 
 > 历史审阅：`research/review-2026-10-26.md` 记录了接管提交 `1ba08698` 当时的手动捕获、真实抓点和直移缺口，后续修复依据与结果见上述最新验证。
 

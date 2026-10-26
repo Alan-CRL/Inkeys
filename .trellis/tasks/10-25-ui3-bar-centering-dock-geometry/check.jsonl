@@ -12,3 +12,5 @@
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md","reason":"质量检查必须覆盖最新发现的手动捕获与真实抓点缺陷，不能只重跑有盲区的旧离屏测试。"}
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md","reason":"审查最新真实抓点、底边恢复和直移顺序的最终证据及剩余 GUI 风险。"}
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/break-loop-2026-10-26.md","reason":"质量门必须包含位置、真实抓点、合法直移放行和完整 no-window，防止测试自证。"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md","reason":"审查必须加入顶边不动和整个手势窗口尺寸/source 稳定，不得复用错误抓点验收。"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md","reason":"检查真实复现证据和复现前禁止产品修复的门禁，不以离屏结果代替。"}

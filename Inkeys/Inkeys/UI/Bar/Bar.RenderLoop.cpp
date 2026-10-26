@@ -285,9 +285,8 @@ struct BarRenderFrameSnapshot
 	bool bottomDockIndicatorGestureEligible = false;
 	double bottomDockDragRigidGripScreenX = 0.0;
 	double bottomDockDragRigidGripScreenY = 0.0;
-	double bottomDockDragEffectivePointerScreenY = 0.0;
-	double bottomDockDragGrabBaseRatio = 0.5;
-	bool bottomDockDragGrabAnchorValid = false;
+	double bottomDockDragTopScreenY = 0.0;
+	bool bottomDockDragTopAnchorValid = false;
 	unsigned long long bottomDockDragSession = 0;
 	POINT bottomDockTransitionTranslation{};
 	unsigned long long bottomDockTransitionSerial = 0;
@@ -634,7 +633,7 @@ struct BarRenderLoopState
 		BarBottomDockCenterMode::Centered;
 	BarBottomDockPhase bottomDockFrameCenterPhase = BarBottomDockPhase::Stable;
 	bool bottomDockFrameRecoveryActive = false;
-	bool bottomDockFrameGrabAnchorValid = false;
+	bool bottomDockFrameTopAnchorValid = false;
 	bool bottomDockFrameTransitionInvalidated = false;
 	unsigned long long bottomDockFrameTransitionSerial = 0;
 	POINT bottomDockFrameTransitionTranslation{};
@@ -6902,7 +6901,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		pickerPreview->fill->SetDirect(RGB(displayR, displayG, displayB));
 		}
 
-	// 抓取点直接跟手；捕获下端点和松手形变分别由独立弹簧恢复。
+	// 按住时顶边只随有效输入平移；底端捕获和松手恢复使用独立弹簧。
 	{
 		const BarBottomDockMode dockMode = frame.bottomDockMode;
 		const BarBottomDockPhase dockPhase = frame.bottomDockPhase;
@@ -6934,7 +6933,6 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockFrameCenterMode = centerMode;
 		state.bottomDockFrameCenterPhase = centerPhase;
 		state.bottomDockFrameRecoveryActive = floatingRecoveryActive;
-		state.bottomDockFrameGrabAnchorValid = frame.bottomDockDragGrabAnchorValid;
 		auto TryBeginFrameTransition = [&]()
 			{
 				if (Inkeys::UI::Bar::TryBeginBarBottomDockFrameTransition(
@@ -6964,118 +6962,79 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				+ presentedDockSnapshot.directTranslation.y; };
 		bool springActive = false;
 		bool captureBottomSpringActive = false;
-		bool anchorVertical = frame.bottomDockDragGrabAnchorValid;
+		bool anchorVertical = frame.bottomDockDragTopAnchorValid;
 		Inkeys::UI::Bar::BarBottomDockAnchoredVerticalMappingResult anchoredMapping{};
 		if (anchorVertical)
 		{
 			const double baseHeightDip = nextBaseBottomDip - nextBaseTopDip;
-			const double logicalGrabDip = nextBaseTopDip
-				+ frame.bottomDockDragGrabBaseRatio * baseHeightDip;
-			const double presentedBaseHeight = presentedDockSnapshot.mapping.baseBottomDip
-				- presentedDockSnapshot.mapping.baseTopDip;
-			const double presentedLogicalGrab = presentedDockSnapshot.mapping.baseTopDip
-				+ frame.bottomDockDragGrabBaseRatio * presentedBaseHeight;
 			const bool verticalHandoff = presentedDockSnapshot.mode != dockMode
 				|| presentedDockSnapshot.dragSession != frame.bottomDockDragSession
-				|| !presentedDockSnapshot.grabAnchorValid
+				|| presentedDockSnapshot.dragActive != dockDragActive
 				|| abs(presentedDockSnapshot.zoom - frameZoom) > 0.000001
 				|| presentedDockSnapshot.displaySerial != state.observedDisplaySerial;
-			double effectivePointerScreenY = frame.bottomDockDragEffectivePointerScreenY;
-			if (verticalHandoff && !dockDragActive)
-			{
-				// 无指针交接不消费陈旧输入；从同一锁存逻辑抓点原样恢复。
-				effectivePointerScreenY = presentedY(
-					presentedDockSnapshot.mapping.MapY(presentedLogicalGrab));
-			}
+			const double targetTopScreenY = dockDragActive ? frame.bottomDockDragTopScreenY
+				: presentedY(presentedDockSnapshot.mapping.visualTopDip);
 			Inkeys::UI::Bar::BarBottomDockShiftedShape shifted;
 			if (verticalHandoff)
 			{
 				shifted = Inkeys::UI::Bar::ResolveBarBottomDockShiftedShape(
-					presentedDockSnapshot.mapping, presentedLogicalGrab,
+					presentedDockSnapshot.mapping,
 					presentedDockSnapshot.monitorOrigin.y,
 					presentedDockSnapshot.directTranslation.y, presentedDockSnapshot.zoom,
 					state.monitorOrigin.y, frameTransitionTranslation.y, frameZoom,
-					effectivePointerScreenY);
+					targetTopScreenY);
 				if (!shifted.valid) anchorVertical = false;
 			}
 			if (anchorVertical)
 			{
-				const double effectiveGrabDip = (effectivePointerScreenY
-					- state.monitorOrigin.y - frameTransitionTranslation.y) / frameZoom;
 				if (verticalHandoff)
 				{
-					// 成功形状先随当前有效抓点平移；失败候选和跨模式速度都不能污染交接。
+					// 交接和松手均从成功形状播种；失败候选不能污染首次成功帧。
 					state.bottomDockSpring.positionDip = BarUiAnimationEnabled || dockDragActive
-						? shifted.grabDip - logicalGrabDip : 0.0;
+						? shifted.topDip - nextBaseTopDip : 0.0;
 					state.bottomDockCaptureBottomSpring.positionDip = !BarUiAnimationEnabled ? 0.0
 						: dockMode == BarBottomDockMode::BottomDocked
 							? shifted.bottomDip - nextBaseBottomDip
 							: shifted.bottomDip - shifted.topDip - baseHeightDip;
 					state.bottomDockSpring.velocityDipPerSecond = 0.0;
 					state.bottomDockCaptureBottomSpring.velocityDipPerSecond = 0.0;
-					state.bottomDockPreviousDirectOffsetDip = state.bottomDockSpring.positionDip;
 				}
-				Inkeys::UI::Bar::BarBottomDockSpringResult gripSpring{};
+				Inkeys::UI::Bar::BarBottomDockSpringResult topSpring{};
 				Inkeys::UI::Bar::BarBottomDockSpringResult shapeSpring{};
 				if (dockDragActive)
-				{
-					const double directGripDip = effectiveGrabDip - logicalGrabDip;
-					if (!verticalHandoff && animationDtSeconds > 0.000001
-						&& presentedDockSnapshot.mode == dockMode)
-						state.bottomDockSpring.velocityDipPerSecond = clamp(
-							(directGripDip - state.bottomDockPreviousDirectOffsetDip)
-								/ animationDtSeconds, -2400.0, 2400.0);
-					else if (verticalHandoff) state.bottomDockSpring.velocityDipPerSecond = 0.0;
-					state.bottomDockSpring.positionDip = directGripDip;
-					state.bottomDockPreviousDirectOffsetDip = directGripDip;
-				}
+					state.bottomDockSpring.positionDip = (targetTopScreenY - state.monitorOrigin.y
+						- frameTransitionTranslation.y) / frameZoom - nextBaseTopDip;
 				else if (!verticalHandoff)
 				{
-					gripSpring = AdvanceBarBottomDockSpring(state.bottomDockSpring,
+					topSpring = AdvanceBarBottomDockSpring(state.bottomDockSpring,
 						0.0, animationDtSeconds, true == BarUiAnimationEnabled, true);
-					state.bottomDockPreviousDirectOffsetDip = state.bottomDockSpring.positionDip;
 				}
 				if (!verticalHandoff)
 					shapeSpring = AdvanceBarBottomDockSpring(state.bottomDockCaptureBottomSpring,
 						0.0, animationDtSeconds, true == BarUiAnimationEnabled, true);
-				const double desiredGrabDip = dockDragActive
-					? effectiveGrabDip : logicalGrabDip + state.bottomDockSpring.positionDip;
-				const double desiredBottomDip = nextBaseBottomDip
-					+ state.bottomDockCaptureBottomSpring.positionDip;
-				const double affineGrabRatio = (logicalGrabDip - nextBaseTopDip) / baseHeightDip;
-				const double boundaryGrabToleranceDip = 1.0 / frameZoom;
-				const bool bottomGrab = dockMode == BarBottomDockMode::BottomDocked
-					&& abs(1.0 - affineGrabRatio) * baseHeightDip
-						<= (std::max)(baseHeightDip * 0.000000000001, boundaryGrabToleranceDip);
-				const double previousHeightDip = verticalHandoff
-					? shifted.bottomDip - shifted.topDip
-					: state.bottomDockMapping.visualBottomDip - state.bottomDockMapping.visualTopDip;
-				const double fallbackHeightDip = dockMode == BarBottomDockMode::Floating
-					? baseHeightDip + state.bottomDockCaptureBottomSpring.positionDip
-					: verticalHandoff || !bottomGrab ? previousHeightDip
-						: baseHeightDip + state.bottomDockCaptureBottomSpring.positionDip;
+				const double desiredTopDip = nextBaseTopDip + state.bottomDockSpring.positionDip;
+				const double desiredBottomDip = dockMode == BarBottomDockMode::BottomDocked
+					? nextBaseBottomDip + state.bottomDockCaptureBottomSpring.positionDip
+					: desiredTopDip + baseHeightDip + state.bottomDockCaptureBottomSpring.positionDip;
 				anchoredMapping = Inkeys::UI::Bar::ResolveBarBottomDockAnchoredVerticalMapping(
-					nextBaseTopDip, nextBaseBottomDip, logicalGrabDip, desiredGrabDip,
-					desiredBottomDip, fallbackHeightDip,
-					dockMode == BarBottomDockMode::BottomDocked, boundaryGrabToleranceDip);
-				if (bottomGrab)
-					state.bottomDockCaptureBottomSpring.positionDip = anchoredMapping.shapeOffsetDip;
+					nextBaseTopDip, nextBaseBottomDip, desiredTopDip, desiredBottomDip,
+					dockMode == BarBottomDockMode::BottomDocked);
 				if (anchoredMapping.constrained)
 				{
-					// 正高度约束时重基同一形状弹簧，不累积另一坐标系速度。
+					// 只重基底端/高度弹簧，顶边目标不受正高度保护反推。
 					state.bottomDockCaptureBottomSpring.positionDip = anchoredMapping.shapeOffsetDip;
 					state.bottomDockCaptureBottomSpring.velocityDipPerSecond = 0.0;
 				}
-				springActive = !dockDragActive && (gripSpring.active
+				springActive = !dockDragActive && (topSpring.active
 					|| abs(state.bottomDockSpring.positionDip) > BarBottomDockSettleDistanceDip);
 				captureBottomSpringActive = shapeSpring.active || (BarUiAnimationEnabled
 					&& abs(state.bottomDockCaptureBottomSpring.positionDip) > BarBottomDockSettleDistanceDip);
-				if (anchoredMapping.constrained && dockDragActive && !bottomGrab)
-					captureBottomSpringActive = false;
+				if (anchoredMapping.constrained && dockDragActive) captureBottomSpringActive = false;
 				state.bottomDockCaptureBottomActive = captureBottomSpringActive;
 				state.bottomDockRecoverySeeded = !dockDragActive;
 			}
 		}
+		state.bottomDockFrameTopAnchorValid = anchorVertical;
 		if (!anchorVertical)
 		{
 			const double detachHalfHeight = (state.mainButtonBaseSize + captureStrokeDip) / 2.0;
@@ -7480,8 +7439,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			const bool clearFloatingRecovery =
 				dockMode == BarBottomDockMode::Floating
 				&& owner_.bottomDockRecoveryActive.load(memory_order_acquire);
-			const bool clearGrabAnchor = frame.bottomDockDragGrabAnchorValid;
-			if (settleVerticalPhase || settleCenterPhase || clearFloatingRecovery || clearGrabAnchor)
+			const bool clearTopAnchor = frame.bottomDockDragTopAnchorValid;
+			if (settleVerticalPhase || settleCenterPhase || clearFloatingRecovery || clearTopAnchor)
 			{
 				// 阶段收敛也属于两轴 tuple，必须在同一偶数 serial 中发布。
 				if (!TryBeginFrameTransition()) return true;
@@ -7493,10 +7452,10 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 						BarBottomDockPhase::Stable, memory_order_relaxed);
 				if (clearFloatingRecovery)
 					owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
-				if (clearGrabAnchor)
+				if (clearTopAnchor)
 				{
-					owner_.bottomDockDragGrabAnchorValid.store(false, memory_order_relaxed);
-					state.bottomDockFrameGrabAnchorValid = false;
+					owner_.bottomDockDragTopAnchorValid.store(false, memory_order_relaxed);
+					state.bottomDockFrameTopAnchorValid = false;
 				}
 				state.bottomDockFrameTransitionSerial = owner_.FinishBottomDockTransition();
 				// 阶段刚收敛时至少再消费一帧，不能让待处理任务栏目标随零形变一起 idle。
@@ -8965,11 +8924,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			BarBottomDockCenterThresholdDip,
 			abs(state.bottomDockHorizontalMapping.rigidGripTranslationXDip),
 			abs(state.bottomDockCenterCaptureFarEdgeSpring.positionDip) });
-		const double verticalDockOutsetDip = max({
-			max(BarBottomDockVisualLimitDip, abs(state.bottomDockSpring.positionDip))
-				+ abs(state.bottomDockCaptureBottomSpring.positionDip),
-			abs(state.bottomDockMapping.visualTopDip - state.bottomDockMapping.baseTopDip),
-			abs(state.bottomDockMapping.visualBottomDip - state.bottomDockMapping.baseBottomDip) });
+		const double verticalDockOutsetDip = max(BarBottomDockVisualLimitDip,
+			abs(state.bottomDockSpring.positionDip)) + abs(state.bottomDockCaptureBottomSpring.positionDip);
 		const bool reserveBottomDockCapacity =
 			frame.bottomDockDragActive
 			|| frame.bottomDockRecoveryActive
@@ -9613,7 +9569,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			// alpha-only demand 只要求整窗 ULW，不虚构业务 scene dirty。
 			if (!alphaOnlyDemand)
 			{
-				state.dirtyRegionTracker.ForceFullDamage();
+				// 这里只扩大绘制范围；晚置全脏会在提交时丢失未观察对象的旧边界。
 				businessDirty = candidateViewport;
 			}
 			presentDirty = candidateViewport;
@@ -12653,8 +12609,8 @@ bool presetButton = button.presetIndex >= 0;
 			owner_.bottomDockPresentedMainButtonVisibleHeightDip.store(
 				dockMainButtonVisibleBounds.bottomDip - dockMainButtonVisibleBounds.topDip,
 				memory_order_relaxed);
-			owner_.bottomDockPresentedGrabAnchorValid.store(
-				state.bottomDockFrameGrabAnchorValid, memory_order_relaxed);
+			owner_.bottomDockPresentedDragActive.store(
+				frame.bottomDockDragActive && state.bottomDockFrameTopAnchorValid, memory_order_relaxed);
 			owner_.bottomDockPresentedDragSession.store(
 				frame.bottomDockDragSession, memory_order_relaxed);
 			owner_.bottomDockPresentedCenterMode.store(
@@ -13209,12 +13165,10 @@ BarRenderLoopCoordinator::RenderFrame(
 			owner_.bottomDockDragRigidGripScreenX.load(memory_order_relaxed);
 		frame.bottomDockDragRigidGripScreenY =
 			owner_.bottomDockDragRigidGripScreenY.load(memory_order_relaxed);
-		frame.bottomDockDragEffectivePointerScreenY =
-			owner_.bottomDockDragEffectivePointerScreenY.load(memory_order_relaxed);
-		frame.bottomDockDragGrabBaseRatio =
-			owner_.bottomDockDragGrabBaseRatio.load(memory_order_relaxed);
-		frame.bottomDockDragGrabAnchorValid =
-			owner_.bottomDockDragGrabAnchorValid.load(memory_order_relaxed);
+		frame.bottomDockDragTopScreenY =
+			owner_.bottomDockDragTopScreenY.load(memory_order_relaxed);
+		frame.bottomDockDragTopAnchorValid =
+			owner_.bottomDockDragTopAnchorValid.load(memory_order_relaxed);
 		frame.bottomDockDragSession = owner_.bottomDockDragSession.load(memory_order_relaxed);
 		frame.bottomDockTransitionTranslation = POINT{
 			owner_.directWindowDragTranslationX.load(memory_order_relaxed),

@@ -2013,9 +2013,6 @@ namespace Inkeys::UI::Bar
 			|| !move(-35, -8, "CenterCaptureLeft", 3)
 			|| !move(60, -45, "BothDetach", 3)
 			|| !move(0, -8, "BothCapture", 3)) return false;
-		if (downNormalizedY == 1.0)
-			for (unsigned frame = 0; frame < 90; ++frame)
-				if (!render("BottomGrabRecovery", pointer)) return false;
 		if (!move(65, -48, "ReleaseFloatingOffset", 2)
 			|| !enqueue(WM_LBUTTONUP) || !routine.Done()) return false;
 		routine.Rethrow();
@@ -8857,7 +8854,9 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 		|| bottomDockCenterMode.load(memory_order_acquire) != initialCenterMode
 		|| bottomDockCenterPhase.load(memory_order_acquire) != initialCenterPhase
 		|| abs(bottomDockCenterElasticOffsetDip.load(memory_order_acquire)
-			- initialPresentedCenterElasticDip) > 0.000001;
+			- initialPresentedCenterElasticDip) > 0.000001
+		|| directWindowDragTranslationX.load(memory_order_acquire) != initialPresentedTranslation.x
+		|| directWindowDragTranslationY.load(memory_order_acquire) != initialPresentedTranslation.y;
 	if (presentedStateRebaseRequired)
 	{
 		// 上一手势可能尚未提交 ULW；新手势先撤回到同一份已呈现 tuple。
@@ -8942,20 +8941,13 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 		initialRootY, initialVisibleHeight, startPointer.y,
 		initialPresentedSnapshot.monitorOrigin.y,
 		initialPresentedSnapshot.directTranslation.y, presentedZoom);
-	const double initialBaseHeight = initialPresentedSnapshot.mapping.baseBottomDip
-		- initialPresentedSnapshot.mapping.baseTopDip;
-	const double initialLogicalGrab = initialRootY
-		+ (grabAnchor.normalizedY - 0.5) * initialVisibleHeight;
-	const double grabBaseRatio = initialBaseHeight > 0.0
-		? (initialLogicalGrab - initialPresentedSnapshot.mapping.baseTopDip) / initialBaseHeight
-		: std::numeric_limits<double>::quiet_NaN();
-	if (!grabAnchor.valid || !std::isfinite(grabBaseRatio))
+	if (!grabAnchor.valid)
 	{
 		result.allowClick = false;
 		FinishDirectWindowDrag();
 		co_return result;
 	}
-	// 阈值使用未形变主体；Down 的逻辑 q0/base 比例由同一成功快照锁存，不随后续高度动画重算。
+	// 阈值继续使用未形变主体；实际顶边从同一成功快照开始，只随有效输入平移。
 	double grabOffsetScreenY = (grabAnchor.normalizedY - 0.5)
 		* (bodyHeightDip + strokeWidthDip) * interactionZoom;
 	const double initialFloatingVisibleBottomScreenY =
@@ -8978,6 +8970,11 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			static_cast<double>(environment.monitorBounds.top),
 			static_cast<double>(environment.monitorBounds.bottom))
 		: initialNormalCenterY + grabOffsetScreenY;
+	double dragTopScreenY = initialPresentedSnapshot.monitorOrigin.y
+		+ initialPresentedSnapshot.mapping.visualTopDip * presentedZoom
+		+ initialPresentedSnapshot.directTranslation.y;
+	// 浮动直移也对齐成功图像顶边，不能用未形变中心放大再次起拖的首个输入。
+	double floatingTopBaselineScreenY = dragTopScreenY - initialPresentedTranslation.y;
 	BarBottomDockDragTracker dockTracker;
 	dockTracker.Begin(initialMode, startPointer.y,
 		initialFloatingVisibleBottomScreenY,
@@ -8993,9 +8990,8 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 		startPointer.x - grabOffsetScreenX, memory_order_relaxed);
 	bottomDockDragRigidGripScreenY.store(
 		startPointer.y - grabOffsetScreenY, memory_order_relaxed);
-	bottomDockDragEffectivePointerScreenY.store(effectivePointerScreenY, memory_order_relaxed);
-	bottomDockDragGrabBaseRatio.store(grabBaseRatio, memory_order_relaxed);
-	bottomDockDragGrabAnchorValid.store(true, memory_order_relaxed);
+	bottomDockDragTopScreenY.store(dragTopScreenY, memory_order_relaxed);
+	bottomDockDragTopAnchorValid.store(true, memory_order_relaxed);
 	bottomDockDragSession.fetch_add(1, memory_order_acq_rel);
 	bottomDockIndicatorGestureEligible.store(false, memory_order_relaxed);
 	bottomDockDragActive.store(true, memory_order_relaxed);
@@ -9177,6 +9173,8 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 						- presented.horizontalMapping.rigidGripTranslationXDip * presented.zoom;
 					baseMainCenterScreenY = presented.mainCenterScreenY
 						- presented.directTranslation.y;
+					floatingTopBaselineScreenY = presented.monitorOrigin.y
+						+ presented.mapping.visualTopDip * presented.zoom;
 					bodyToMainCenterScreenX = presented.rawBodyCenterScreenX
 						- presented.rawMainCenterScreenX;
 					const double floatingBottom = pointer.y - grabOffsetScreenY
@@ -9324,18 +9322,23 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			}
 			if (dockUpdate.mode == BarBottomDockMode::BottomDocked)
 				downwardDetachBlockedAtRelease = false;
-			effectivePointerScreenY = dockUpdate.mode == BarBottomDockMode::BottomDocked
+			const double nextEffectivePointerScreenY = dockUpdate.mode == BarBottomDockMode::BottomDocked
 				? clamp(static_cast<double>(pointer.y),
 					static_cast<double>(environment.monitorBounds.top),
 					static_cast<double>(environment.monitorBounds.bottom))
 				: desiredMainCenterScreenY + grabOffsetScreenY;
+			// 不从形变后的 MapY(grab) 回算输入，避免底边恢复带动顶边漂移。
+			dragTopScreenY += nextEffectivePointerScreenY - effectivePointerScreenY;
+			effectivePointerScreenY = nextEffectivePointerScreenY;
 
 			diagnosticDesiredCenterX = desiredMainCenterScreenX;
 			diagnosticDesiredCenterY = desiredMainCenterScreenY;
 			const LONG pixelDeltaX = static_cast<LONG>(lround(
 				desiredMainCenterScreenX - baseMainCenterScreenX));
 			const LONG pixelDeltaY = static_cast<LONG>(lround(
-				desiredMainCenterScreenY - baseMainCenterScreenY));
+				dockUpdate.mode == BarBottomDockMode::Floating
+					? dragTopScreenY - floatingTopBaselineScreenY
+					: desiredMainCenterScreenY - baseMainCenterScreenY));
 			const bool translationChanged = pixelDeltaX != appliedDeltaX
 				|| pixelDeltaY != appliedDeltaY;
 			const bool anyModeChanged = dockUpdate.modeChanged
@@ -9346,9 +9349,8 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 				pointer.x - grabOffsetScreenX, memory_order_relaxed);
 			bottomDockDragRigidGripScreenY.store(
 				pointer.y - grabOffsetScreenY, memory_order_relaxed);
-			bottomDockDragEffectivePointerScreenY.store(
-				effectivePointerScreenY, memory_order_relaxed);
-			bottomDockDragGrabBaseRatio.store(grabBaseRatio, memory_order_relaxed);
+			bottomDockDragTopScreenY.store(
+				dragTopScreenY, memory_order_relaxed);
 			if (translationChanged)
 			{
 				directWindowDragTranslationX.store(

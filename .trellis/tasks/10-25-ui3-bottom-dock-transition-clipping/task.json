@@ -21,14 +21,19 @@
   "children": [],
   "parent": "10-25-ui3-bar-centering-dock-geometry",
   "relatedFiles": [],
-  "notes": "2026-10-26：手动捕获、真实抓点、直移屏障及底边恢复已完成修复与 full-scope 检查；19 组离屏、居中、完整构建和 359.523 秒完整 no-window 均通过。真实 GUI 未验证，保持 in_progress。",
+  "notes": "2026-10-26 用户已人工确认竖直吸附脏区外漏清修复；顶边独立目标、a7dc错误抓点约束清理及形变中再次Down直移基准修正已完成静态审查。用户本轮明确授权提交当前改动，成功后编译并进行一轮原生竖直Logo拖动，由其肉眼观察后结束本轮；不运行自动单测、不push、不归档。测试结果尚待本轮实际执行，脏区内跳变不预先宣称解决。详见子任务top-edge-fix-review与live-reproduction。",
   "meta": {
     "verification": {
-      "software": "passed",
-      "gui": "not_run_static_review",
+      "software": "static_reviewed_commit_authorized_build_pending",
+      "gui": "manual_vertical_drag_authorized_after_commit_pending",
       "report": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
       "reviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md",
-      "fixValidationReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md"
+      "fixValidationReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md",
+      "regressionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md",
+      "liveReproductionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md",
+      "upperBorderRegression": "fix_applied_manual_validation_pending",
+      "insideDirtyJump": "still_reported_not_claimed_fixed",
+      "topEdgeFixReviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md"
     }
   }
 }

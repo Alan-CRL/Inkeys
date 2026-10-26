@@ -1,6 +1,17 @@
 # UI3 底栏几何修复 — 居中阶段交接
 
-## -2. 2026-10-26 最新修复与全量验证（当前状态）
+> 2026-10-26 当前执行授权：用户要求提交当前改动，完成后允许一轮原生竖直Logo拖动，肉眼观察后结束本轮。先完成commit，再编译本次版本、等待用户准备并重放；不运行自动单测、不push、不归档。测试结果不能由下方历史PASS或静态审查代替。
+
+> 2026-10-26 最新：用户人工确认吸附脏区外残影已修复。子任务已实现独立顶边目标、a7dc错误抓点约束清理与形变中再次Down直移基准修正，完成静态交叉审查；按要求未编译/运行自动测试或GUI，等用户人工验证，脏区内跳变尚未闭环。详见 `../10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md`；以下旧PASS/停止点不代表当前修复通过。
+
+## -3. 2026-10-26 用户实测回归与闪烁调查（当前最高优先级）
+
+- 用户实测确认 `a7dc3a08` 引入上端回归且闪烁仍在。当前 anchored Docked 映射会为了抓点和底端反推顶边，违反用户明确的“顶边不动、底边独立果冻”设计；现有测试又错误要求 `actualGrab == pointer`，没有该顶边不变量。
+- 捕获时 `window_h/pptSrc` 确实会改变，backing target 在同 case 内不变；提示峰值只在 `maximumIndicatorScale>0` 后才加入 predicted viewport，是旧的呈现触发点。Down 时预留完整手势包络可行，但不能用扩窗掩盖内容错误。
+- 最新静态调查为 `../10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md`。父/吸附任务 `software=historical_tests_passed_symptom_unresolved`、`gui=authorized_pending_live_reproduction`，继续保持 `in_progress`，不得按下方旧 PASS 宣称完成。
+- 另一路 `research/live-reproduction-2026-10-26.md` 尚未确认原始剧烈闪烁复现，并明确要求观察到相同症状前禁止产品修复。复现门解除后的候选顺序才是：恢复顶边不变量及测试、独立实施 Down 完整包络/容量预留，再验证整个手势的窗口尺寸/source 稳定及真实视觉效果。
+
+## -2. 2026-10-26 修复与全量验证（历史记录，已被用户实测否决）
 
 - 已按后续审阅完成手动捕获有效输入播种、真实归一化抓点、直移本地＋全局屏障及底边高度恢复；保留此前脱离、吸收、容量、居中和 Freeze 修复。不要重复实现或覆盖这些修改。
 - 最新证据为 `../10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md`：19 组吸附离屏、居中场景、相关回归、完整 ARM64 Solution 和 full-scope `trellis-check` 均通过；1196 行样本中最大抓点误差 `2.27374e-13 px`，50 次合法直移、19 次屏障后放行，提前直移为 0。
