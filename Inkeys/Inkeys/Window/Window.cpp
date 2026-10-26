@@ -962,6 +962,7 @@ namespace Inkeys::Window
 			settingThread_.request_stop();
 			if (overlayEvent_) SetEvent(overlayEvent_);
 			if (settingEvent_) SetEvent(settingEvent_);
+			WakeSettingModalLoop(); // stop 后不再接收命令，但仍须唤醒 USER32 的嵌套移动循环。
 			if (overlayThread_.joinable()) overlayThread_.join();
 			if (settingThread_.joinable()) settingThread_.join();
 
@@ -1070,8 +1071,16 @@ namespace Inkeys::Window
 					if (message.message == WM_QUIT)
 						break;
 					TranslateMessage(&message);
-					const MessageDispatch::Scope dispatchScope(message);
-					DispatchMessageW(&message);
+					{
+						const MessageDispatch::Scope dispatchScope(message);
+						DispatchMessageW(&message);
+					}
+					// 私有 wake 可能先于 native loop 被消费；退栈后先排空隐藏，再取下一条鼠标消息。
+					if (settingGroup && eventHandle && WaitForSingleObject(eventHandle, 0) == WAIT_OBJECT_0)
+					{
+						ResetEvent(eventHandle);
+						if (!token.stop_requested()) DrainCommands(queue);
+					}
 				}
 				if (!eventHandle)
 					DrainCommands(queue);
@@ -1627,6 +1636,16 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
+		void WakeSettingModalLoop() noexcept
+		{
+			const auto& record = records_[RoleIndex(WindowRole::Setting)];
+			const auto generation = record.generation.load(std::memory_order_acquire);
+			const HWND hwnd = record.hwnd.load(std::memory_order_acquire);
+			if (hwnd && generation && generation == record.generation.load(std::memory_order_acquire))
+				(void)PostMessageW(hwnd, MessageDispatch::SettingCancelModalMessage,
+					static_cast<WPARAM>(generation), 0);
+		}
+
 		[[nodiscard]] bool SubmitNoWait(WindowRole role, CommandType type)
 		{
 			Command command;
@@ -1646,6 +1665,8 @@ namespace Inkeys::Window
 				queue.commands.push_back(std::move(command));
 			}
 			if (eventHandle) SetEvent(eventHandle);
+			if (IsSetting(role) && (type == CommandType::Hide || type == CommandType::HideAll))
+				WakeSettingModalLoop();
 			return true;
 		}
 
@@ -1724,6 +1745,9 @@ namespace Inkeys::Window
 			// WndProc 重入不能越过尚未退栈的原生写入并提前报告新意图成功。
 			if (ownerThreadId && ownerThreadId == GetCurrentThreadId()) return ExecuteTracked(command);
 			if (eventHandle) SetEvent(eventHandle);
+			if (IsSetting(command.role)
+				&& (command.type == CommandType::Hide || command.type == CommandType::HideAll))
+				WakeSettingModalLoop();
 			return wait ? completion->Wait() : true;
 		}
 
@@ -3403,11 +3427,11 @@ namespace Inkeys::Window
 			GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER) };
 	}
 
-	bool UsesLegacySettingFrame() noexcept
+	SettingPlatformCapabilities QuerySettingPlatformCapabilities() noexcept
 	{
-		static const bool legacy = []() noexcept
+		static const auto platform = []() noexcept -> SettingPlatformCapabilities
 		{
-			// 不依赖启动信息或版本清单；旧 Aero 与现代 DWM 的顶部 frame 合同不同。
+			// 不依赖兼容性清单；Win8+ 的 DWM 查询可能为旧程序返回兼容 FALSE。
 			using RtlGetVersionProc = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
 			const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
 			const auto rtlGetVersion = ntdll
@@ -3415,11 +3439,25 @@ namespace Inkeys::Window
 				: nullptr;
 			RTL_OSVERSIONINFOW version{};
 			version.dwOSVersionInfoSize = sizeof(version);
-			if (!rtlGetVersion || rtlGetVersion(&version) != 0) return true;
-			return version.dwMajorVersion < 6
-				|| (version.dwMajorVersion == 6 && version.dwMinorVersion < 2);
+			if (!rtlGetVersion || rtlGetVersion(&version) != 0) return {};
+			return ResolveSettingPlatformCapabilities(version.dwMajorVersion,
+				version.dwMinorVersion, version.dwBuildNumber);
 		}();
-		return legacy;
+		return platform;
+	}
+
+	bool UsesLegacySettingFrame() noexcept
+	{
+		return QuerySettingPlatformCapabilities().legacyFrame;
+	}
+
+	bool IsSettingCompositionEnabled() noexcept
+	{
+		const auto platform = QuerySettingPlatformCapabilities();
+		if (platform.compositionAlwaysEnabled) return true;
+		BOOL enabled = FALSE;
+		const HRESULT result = DwmIsCompositionEnabled(&enabled);
+		return ResolveSettingCompositionEnabled(platform, SUCCEEDED(result), enabled != FALSE);
 	}
 
 	RECT QuerySettingClientFrameInsets(HWND hwnd, bool maximized, UINT dpi) noexcept
@@ -3438,13 +3476,9 @@ namespace Inkeys::Window
 			if (screen) ReleaseDC(nullptr, screen);
 		}
 		const SIZE sizing = QuerySettingFrameThickness(dpi);
-		BOOL compositionEnabled = FALSE;
-		(void)DwmIsCompositionEnabled(&compositionEnabled);
-		using GetMetricForDpiProc = int(WINAPI*)(int, UINT);
-		static const auto getMetric = reinterpret_cast<GetMetricForDpiProc>(
-			GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetSystemMetricsForDpi"));
-		UINT visibleBorder = static_cast<UINT>((std::max)(0, getMetric
-			? getMetric(SM_CYBORDER, dpi ? dpi : 96U) : GetSystemMetrics(SM_CYBORDER)));
+		const bool compositionEnabled = IsSettingCompositionEnabled();
+		// Win10 不支持可见边框属性；保留非零顶部会让 DWM 在自绘窗口外重画系统标题栏。
+		UINT visibleBorder = 0;
 		if (hwnd && compositionEnabled && !IsZoomed(hwnd))
 		{
 			UINT dwmBorder = 0;
@@ -3458,6 +3492,15 @@ namespace Inkeys::Window
 				static_cast<int>(sizing.cx), static_cast<int>(sizing.cy) },
 			maximized, compositionEnabled != FALSE, static_cast<int>(visibleBorder), !UsesLegacySettingFrame());
 		return { frame.left, frame.top, frame.right, frame.bottom };
+	}
+
+	bool IsSettingModalWakeCurrent(HWND hwnd, std::uintptr_t generation) noexcept
+	{
+		// Handle 读取实际记录，不依赖 running；Stop 的 wake 也必须通过代际验证。
+		return MessageDispatch::MatchesSettingModalWake(
+			hwnd && hwnd == GetService().Handle(WindowRole::Setting),
+			hwnd && GetWindowThreadProcessId(hwnd, nullptr) == GetCurrentThreadId(), generation,
+			hwnd ? reinterpret_cast<std::uintptr_t>(GetPropW(hwnd, Detail::WindowGenerationProperty)) : 0);
 	}
 
 	Service::Service(std::size_t messageCapacity)

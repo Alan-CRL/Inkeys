@@ -1,9 +1,12 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.SessionState.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Layout.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Theme.h"
+#include "../Inkeys/Inkeys/Window/Window.MessageDispatch.h"
 
 #include <cmath>
 #include <iostream>
+
+import Inkeys.Window;
 
 namespace
 {
@@ -179,12 +182,12 @@ namespace
 				"maximized frame never exposes the restored top or corner grips")) ++failures;
 		}
 
-		// 创建前细边框估算为 1px，实际 DWM 为 2px 时仍恢复请求的客户区高度。
+		// 创建前顶部估算为 0，实际 DWM 为 2px 时仍恢复请求的客户区高度。
 		const WindowFrameRect requestedClient{ 200, 200, 2120, 1600 };
-		const WindowFrameRect initialOuter{ 188, 194, 2132, 1607 };
+		const WindowFrameRect initialOuter{ 188, 194, 2132, 1606 };
 		const WindowFrameRect desktopWork{ 0, 0, 2880, 1800 };
 		const auto corrected = ResolveWindowFrameCreationCorrection(
-			requestedClient, initialOuter, { 1920, 1399 }, desktopWork);
+			requestedClient, initialOuter, { 1920, 1398 }, desktopWork);
 		if (!Expect(corrected.Width() - 24 == 1920 && corrected.Height() - 14 == 1400
 			&& corrected.left + corrected.Width() / 2 == 1160
 			&& corrected.top + corrected.Height() / 2 == 900,
@@ -221,6 +224,36 @@ namespace
 			currentScaleOuter, { 960, 700 }, { 0, 0, 1000, 800 }), { 0, 0, 1000, 800 }),
 			"scale minimum yields to a work area smaller than the required fixed sidebar")) ++failures;
 
+		// 无 HWND 的生产查询也走属性不可用分支，不创建任何测试窗口。
+		if (!Inkeys::Window::UsesLegacySettingFrame()
+			&& Inkeys::Window::IsSettingCompositionEnabled())
+		{
+			const auto unknownBorder = Inkeys::Window::QuerySettingClientFrameInsets(nullptr, false, 96);
+			const auto sizing = Inkeys::Window::QuerySettingFrameThickness(96);
+			if (!Expect(unknownBorder.top == 0 && unknownBorder.left == sizing.cx
+				&& unknownBorder.right == sizing.cx && unknownBorder.bottom == sizing.cy,
+				"production frame query without a supported DWM border never substitutes SM_CYBORDER")) ++failures;
+		}
+
+		// Win10 不支持可见描边属性：顶部必须为零，但系统 resize 命中与其他三边不变。
+		for (const int framePixels : { 8, 10, 12, 16 })
+		{
+			const WindowFrameInsets sizing{ framePixels, framePixels, framePixels, framePixels };
+			const auto frame10 = ResolveVisibleWindowFrameInsets(sizing, false, true, 0);
+			const WindowFrameRect outer{ -1600, -900, -600, -200 };
+			const auto client = InsetWindowFrameRect(outer, frame10);
+			if (!Expect(client.top == outer.top && frame10.left == framePixels
+				&& frame10.right == framePixels && frame10.bottom == framePixels
+				&& SameFrameRect(ExpandWindowFrameRect(client, frame10), outer)
+				&& HitTestWindowFrame(outer, client, -1100, outer.top, false, framePixels) == WindowFrameHit::Top
+				&& HitTestWindowFrame(outer, client, outer.left, outer.top, false, framePixels) == WindowFrameHit::TopLeft
+				&& HitTestWindowFrame(outer, client, outer.right - 1, outer.top, false, framePixels) == WindowFrameHit::TopRight
+				&& HitTestWindowFrame(outer, client, -1100, outer.top, false, framePixels, true) == WindowFrameHit::Client
+				&& ResolveVisibleWindowFrameInsets(sizing, true, true, 0).top == framePixels
+				&& ResolveVisibleWindowFrameInsets(sizing, false, true, 0, false).top == framePixels,
+				"Win10 zero top removes the system caption without changing resize grips, controls, max or legacy")) ++failures;
+		}
+
 		const WindowFrameInsets frame{ 12, 12, 12, 12 };
 		const auto normalMinimum = ResolveMinimumWindowFrame(720, 520, frame, 1920, 1040);
 		const auto enlargedMinimum = ResolveMinimumWindowFrame(1440, 1040, frame, 3840, 2080);
@@ -256,6 +289,95 @@ namespace
 			}
 		return failures;
 	}
+	int CheckSettingPlatformCompatibility()
+	{
+		using namespace Inkeys::Window;
+		using namespace Inkeys::UI::Setting;
+		int failures = 0;
+		struct PlatformCase { DWORD major, minor, build; bool legacy, alwaysDwm, acrylic; };
+		for (const auto& version : { PlatformCase{ 6, 1, 7601, true, false, false },
+			PlatformCase{ 6, 2, 9200, false, true, false }, PlatformCase{ 6, 3, 9600, false, true, false },
+			PlatformCase{ 10, 0, 10240, false, true, false }, PlatformCase{ 10, 0, 17133, false, true, false },
+			PlatformCase{ 10, 0, 17134, false, true, true }, PlatformCase{ 10, 0, 19045, false, true, true },
+			PlatformCase{ 10, 0, 22000, false, true, true }, PlatformCase{ 10, 0, 26100, false, true, true } })
+		{
+			const auto platform = ResolveSettingPlatformCapabilities(version.major, version.minor, version.build);
+			if (!Expect(platform.legacyFrame == version.legacy && platform.compositionAlwaysEnabled == version.alwaysDwm
+				&& platform.acrylic == version.acrylic,
+				"Windows 7, 8, 8.1 and Windows 10 build boundaries select only available Settings capabilities")) ++failures;
+			for (const bool succeeded : { false, true }) for (const bool enabled : { false, true })
+				if (!Expect(ResolveSettingCompositionEnabled(platform, succeeded, enabled)
+					== (version.alwaysDwm || (succeeded && enabled)),
+					"Win8+ ignores manifest compatibility FALSE; Win7 still respects actual composition query and switch")) ++failures;
+		}
+		if (!Expect(ResolveSettingClientDpi(192, 144, 120, 96) == 192
+			&& ResolveSettingClientDpi(0, 192, 96, 96) == 192
+			&& ResolveSettingClientDpi(0, 0, 144, 96) == 144
+			&& ResolveSettingClientDpi(0, 0, 0, 120) == 120
+			&& ResolveSettingClientDpi(0, 0, 0, 0) == 96,
+			"client DPI prefers modern HWND API, latest Win8.1 message, initial monitor, then system defaults")) ++failures;
+		for (const UINT messageDpi : { 120U, 144U, 192U })
+		{
+			const float scale = DpiScale(ResolveSettingClientDpi(0, messageDpi, 96, 96));
+			// 旧 AdjustWindowRectEx 的 NC 仍是系统物理度量，不跟随客户区 DPI 再乘倍率。
+			const WindowFrameInsets systemFrame{ 8, 0, 8, 8 };
+			const auto minimum = ResolveMinimumWindowFrame(ScaleDip(720, scale), ScaleDip(520, scale),
+				systemFrame, 0, 0);
+			const auto title = ResolveTitleBarGeometry(960 * scale, scale, 46 * scale, 100 * scale, 120 * scale);
+			if (!Expect(minimum.width == ScaleDip(720, scale) + 16
+				&& minimum.height == ScaleDip(520, scale) + 8 && title.height == 32 * scale,
+				"Win8.1 latest message scales client minimum and title together without scaling the native frame")) ++failures;
+		}
+		using Inkeys::Window::MessageDispatch::MatchesSettingModalWake;
+		if (!Expect(MatchesSettingModalWake(true, true, 17, 17)
+			&& !MatchesSettingModalWake(false, true, 17, 17)
+			&& !MatchesSettingModalWake(true, false, 17, 17)
+			&& !MatchesSettingModalWake(true, true, 16, 17)
+			&& !MatchesSettingModalWake(true, true, 0, 0)
+			&& !IsSettingImGuiInputMessage(Inkeys::Window::MessageDispatch::SettingCancelModalMessage, 17, 0),
+			"modal wake requires the current Settings HWND, owner and generation, independently of running state")) ++failures;
+		return failures;
+	}
+
+	int CheckSettingNativeMessageRouting()
+	{
+		using namespace Inkeys::UI::Setting;
+		int failures = 0;
+		for (const UINT message : { WM_MOVE, WM_MOVING, WM_SIZE, WM_SIZING,
+			WM_WINDOWPOSCHANGING, WM_WINDOWPOSCHANGED, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE,
+			WM_GETMINMAXINFO, WM_NCCALCSIZE, WM_NCPAINT, WM_CANCELMODE, WM_SHOWWINDOW,
+			WM_DPICHANGED, WM_THEMECHANGED, WM_SETTINGCHANGE, WM_PAINT })
+			if (!Expect(!IsSettingImGuiInputMessage(message, 0, 0),
+				"native window transactions bypass ImGui IO and cannot wait for rendering")) ++failures;
+		for (const auto hit : { HTCAPTION, HTLEFT, HTRIGHT, HTTOP, HTBOTTOM, HTTOPLEFT,
+			HTTOPRIGHT, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTMINBUTTON, HTMAXBUTTON, HTCLOSE })
+			if (!Expect(!IsSettingImGuiInputMessage(WM_SETCURSOR, 0, MAKELPARAM(hit, WM_MOUSEMOVE)),
+				"native move, resize and caption cursors never acquire the IO lock")) ++failures;
+		for (const UINT message : { WM_MOUSEMOVE, WM_MOUSELEAVE, WM_LBUTTONDOWN, WM_LBUTTONUP,
+			WM_RBUTTONDOWN, WM_RBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
+			WM_MOUSEWHEEL, WM_MOUSEHWHEEL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+			WM_CHAR, WM_IME_CHAR, WM_IME_COMPOSITION, WM_SETFOCUS, WM_KILLFOCUS, WM_INPUTLANGCHANGE })
+			if (!Expect(IsSettingImGuiInputMessage(message, VK_SPACE, 0),
+				"mouse, keyboard, Alt-Space, text, IME and focus still reach the synchronized backend")) ++failures;
+		if (!Expect(IsSettingImGuiInputMessage(WM_SETCURSOR, 0, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE))
+			&& IsSettingImGuiInputMessage(WM_DEVICECHANGE, DBT_DEVNODES_CHANGED, 0)
+			&& !IsSettingImGuiInputMessage(WM_DEVICECHANGE, DBT_DEVICEARRIVAL, 0)
+			&& !IsSettingImGuiInputMessage(WM_KEYDOWN, 256, 0),
+			"cursor and device notifications synchronize only backend-supported parameter branches")) ++failures;
+
+		using Op = InteractiveWindowOperation;
+		for (const auto operation : { Op::Move, Op::Size })
+		{
+			// 同一策略也用于 loop 中的主题重应用；取消、隐藏和 EXIT 都回到 None。
+			if (!Expect(ResolveSettingAccentState(true, Op::None) == SettingAccentState::AcrylicBlurBehind
+				&& ResolveSettingAccentState(true, operation) == SettingAccentState::BlurBehind
+				&& ResolveSettingAccentState(false, operation) == SettingAccentState::Disabled
+				&& ResolveSettingAccentState(true, Op::None) == SettingAccentState::AcrylicBlurBehind,
+				"Acrylic move/size and theme reapplication use light blur; exit restores Acrylic and disabled stays disabled")) ++failures;
+		}
+		return failures;
+	}
+
 	int CheckLinkedPptScaleDraft()
 	{
 		using Inkeys::UI::Setting::LinkedPptScaleDraft;
@@ -315,6 +437,8 @@ int RunSettingSessionStateTests()
 	using Inkeys::UI::Setting::BackdropMode;
 	int failures = 0;
 	failures += CheckSettingWindowFrame();
+	failures += CheckSettingNativeMessageRouting();
+	failures += CheckSettingPlatformCompatibility();
 	failures += CheckLinkedPptScaleDraft();
 	{
 		using Inkeys::UI::Setting::ResolveSettingSystemMenuState;

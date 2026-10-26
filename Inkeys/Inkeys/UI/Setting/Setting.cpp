@@ -20,6 +20,7 @@ module;
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Input/KeyboardShortcuts.h"
 #include "../../Window/Window.Legacy.hpp"
+#include "../../Window/Window.MessageDispatch.h"
 #include "Setting.SessionState.h"
 #include "../StartupPlacement.h"
 #include "Setting.Pages.h"
@@ -228,15 +229,13 @@ namespace
 #endif
 
 	constexpr UINT SettingFrameThemeMessage = WM_APP + 0x531;
+	constexpr wchar_t SettingClientDpiProperty[] = L"Inkeys.Setting.ClientDpi";
 
 	constexpr auto DwmwaLegacyMicaEffect =
 		static_cast<DWMWINDOWATTRIBUTE>(1029);
 
-	enum class SettingAccentState : int
-	{
-		Disabled = 0,
-		AcrylicBlurBehind = 4,
-	};
+	using Inkeys::UI::Setting::SettingAccentState;
+	bool settingFrameDarkMode = false; // 仅 HWND owner 读取/更新，交互结束恢复同一主题。
 
 	struct SettingAccentPolicy
 	{
@@ -265,22 +264,33 @@ namespace
 		return function;
 	}
 
-	void SetSettingAcrylic(HWND hwnd, bool enabled, bool darkMode = false) noexcept
+	bool SetSettingAcrylic(HWND hwnd, bool enabled, bool darkMode = false) noexcept
 	{
 		const auto setCompositionAttribute =
 			QuerySetWindowCompositionAttribute();
-		if (!hwnd || !setCompositionAttribute) return;
+		if (!hwnd || !setCompositionAttribute) return false;
 
 		SettingAccentPolicy policy{};
-		policy.state = enabled
-			? SettingAccentState::AcrylicBlurBehind
-			: SettingAccentState::Disabled;
+		// Win10 Acrylic 在拖动中反复重模糊；暂用普通 Blur，保留缓存画面的透明合成。
+		policy.state = Inkeys::UI::Setting::ResolveSettingAccentState(enabled,
+			settingInteractiveOperation.load(memory_order_acquire));
 		// GradientColor 使用 AABBGGRR；窗口线程消费已解析的主题快照。
 		policy.gradientColor = enabled ? (darkMode ? 0xCC202020U : 0xCCF7F7F7U) : 0U;
 		SettingWindowCompositionAttributeData data{};
 		data.data = &policy;
 		data.size = sizeof(policy);
-		(void)setCompositionAttribute(hwnd, &data);
+		return setCompositionAttribute(hwnd, &data) != FALSE;
+	}
+
+	void SetSettingInteractiveOperation(HWND hwnd,
+		Inkeys::UI::Setting::InteractiveWindowOperation operation, bool refreshBackdrop = false) noexcept
+	{
+		const auto previous = settingInteractiveOperation.exchange(operation, memory_order_acq_rel);
+		// 仅入口/退出及取消收尾改材质；WM_MOVE/NCHITTEST 不触发 DWM 重设。
+		if ((previous != operation || refreshBackdrop)
+			&& !settingSessionShouldStop.load(memory_order_acquire)
+			&& settingBackdropMode.load(memory_order_acquire) == Inkeys::UI::Setting::BackdropMode::Acrylic)
+			(void)SetSettingAcrylic(hwnd, true, settingFrameDarkMode);
 	}
 
 	void DisableSettingBackdrop(HWND hwnd) noexcept
@@ -304,9 +314,13 @@ namespace
 		ApplySettingBackdrop(HWND hwnd, bool darkMode) noexcept
 	{
 		DisableSettingBackdrop(hwnd);
-		BOOL compositionEnabled = FALSE;
-		if (!hwnd || FAILED(DwmIsCompositionEnabled(&compositionEnabled))
-			|| !compositionEnabled)
+		// Win8/8.1 不支持内部 Acrylic policy；仅 Win10 RS4+ 尝试可选材质。
+		if (!hwnd || !Inkeys::Window::IsSettingCompositionEnabled()
+			|| !Inkeys::Window::QuerySettingPlatformCapabilities().acrylic)
+			return Inkeys::UI::Setting::BackdropMode::Solid;
+		HIGHCONTRASTW highContrast{ sizeof(highContrast) };
+		if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast), &highContrast, 0)
+			&& (highContrast.dwFlags & HCF_HIGHCONTRASTON))
 			return Inkeys::UI::Setting::BackdropMode::Solid;
 
 		const MARGINS fullClientFrame{ -1, -1, -1, -1 };
@@ -339,19 +353,8 @@ namespace
 			&disableLegacyMica, sizeof(disableLegacyMica));
 		const MARGINS noMargins{};
 		(void)DwmExtendFrameIntoClientArea(hwnd, &noMargins);
-		const auto setCompositionAttribute =
-			QuerySetWindowCompositionAttribute();
-		if (setCompositionAttribute)
-		{
-			SettingAccentPolicy policy{};
-			policy.state = SettingAccentState::AcrylicBlurBehind;
-			policy.gradientColor = darkMode ? 0xCC202020U : 0xCCF7F7F7U;
-			SettingWindowCompositionAttributeData data{};
-			data.data = &policy;
-			data.size = sizeof(policy);
-			if (setCompositionAttribute(hwnd, &data))
-				return Inkeys::UI::Setting::BackdropMode::Acrylic;
-		}
+		if (SetSettingAcrylic(hwnd, true, darkMode))
+			return Inkeys::UI::Setting::BackdropMode::Acrylic;
 
 		DisableSettingBackdrop(hwnd);
 		return Inkeys::UI::Setting::BackdropMode::Solid;
@@ -363,12 +366,20 @@ namespace
 		static const auto getDpiForWindow = reinterpret_cast<GetDpiForWindowProc>(
 			GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
 		const UINT dpi = getDpiForWindow && hwnd ? getDpiForWindow(hwnd) : 0;
-		if (dpi) return dpi;
+		// 属性属于真实 HWND；Win8.1 最新消息优先于可能尚未刷新的显示快照。
+		const UINT messageDpi = hwnd ? static_cast<UINT>(reinterpret_cast<UINT_PTR>(
+			GetPropW(hwnd, SettingClientDpiProperty))) : 0;
+		if (dpi || messageDpi)
+			return Inkeys::UI::Setting::ResolveSettingClientDpi(dpi, messageDpi, 0, 0);
+		const auto snapshot = hwnd ? Inkeys::Display::GetSnapshot() : nullptr;
+		const auto* monitor = snapshot ? snapshot->Find(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)) : nullptr;
+		const UINT monitorDpi = monitor ? monitor->effectiveDpiX : 0;
+		if (monitorDpi) return Inkeys::UI::Setting::ResolveSettingClientDpi(0, 0, monitorDpi, 0);
 		HDC screen = GetDC(nullptr);
 		const UINT fallback = screen
 			? static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX)) : USER_DEFAULT_SCREEN_DPI;
 		if (screen) ReleaseDC(nullptr, screen);
-		return fallback ? fallback : USER_DEFAULT_SCREEN_DPI;
+		return Inkeys::UI::Setting::ResolveSettingClientDpi(0, 0, 0, fallback);
 	}
 
 	[[nodiscard]] Inkeys::UI::Setting::WindowFrameRect FrameRect(const RECT& rect) noexcept
@@ -418,6 +429,7 @@ namespace
 
 	void ApplySettingFrameTheme(HWND hwnd, bool darkMode, COLORREF captionColor) noexcept
 	{
+		settingFrameDarkMode = darkMode;
 		const BOOL darkFrame = darkMode;
 		(void)DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
 			&darkFrame, sizeof(darkFrame));
@@ -1249,6 +1261,18 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	// 创建、客户区、最大化及命中使用同一 frame 合同，保留系统 move/size loop。
 	switch (msg)
 	{
+	case Inkeys::Window::MessageDispatch::SettingCancelModalMessage:
+	{
+		if (lParam != 0 || !Inkeys::Window::IsSettingModalWakeCurrent(hWnd, static_cast<std::uintptr_t>(wParam)))
+			return 0;
+		GUITHREADINFO information{ sizeof(information) };
+		if (GetGUIThreadInfo(GetCurrentThreadId(), &information)
+			&& (((information.flags & GUI_INMOVESIZE) && information.hwndMoveSize == hWnd)
+				|| ((information.flags & (GUI_INMENUMODE | GUI_POPUPMENUMODE)) && information.hwndMenuOwner == hWnd)))
+			// 只取消本代 Setting 的移动/系统菜单循环，不取消别的 HWND，也不重入命令队列。
+			return ImGuiWndProc(hWnd, WM_CANCELMODE, 0, 0);
+		return 0;
+	}
 	case SettingFrameThemeMessage:
 		if (!settingSessionShouldStop.load(memory_order_acquire))
 			ApplySettingFrameTheme(hWnd, wParam != FALSE, static_cast<COLORREF>(lParam));
@@ -1321,7 +1345,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		const auto operation =
 			Inkeys::UI::Setting::InteractiveOperationFromHitTest(hit);
 		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None)
-			settingInteractiveOperation.store(operation, memory_order_release);
+			SetSettingInteractiveOperation(hWnd, operation);
 		if (IsSettingCaptionHit(hit))
 		{
 			settingCaptionPressedHit.store(hit, memory_order_release);
@@ -1333,9 +1357,8 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None
 			&& settingInteractiveOperation.load(memory_order_acquire) == operation)
 		{
-			settingInteractiveOperation.store(
-				Inkeys::UI::Setting::InteractiveWindowOperation::None,
-				memory_order_release);
+			SetSettingInteractiveOperation(hWnd,
+				Inkeys::UI::Setting::InteractiveWindowOperation::None);
 			Inkeys::UI::RenderPipeline::Request(
 				Inkeys::UI::RenderPipeline::Client::Settings);
 		}
@@ -1386,6 +1409,9 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_SHOWWINDOW:
 		if (!wParam)
 		{
+			// Hide 的外部意图可能已清空 operation，仍须恢复 owner 上的临时材质。
+			SetSettingInteractiveOperation(hWnd,
+				Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
 			{
 				lock_guard stateLock(settingStateMutex);
 				// FIFO 的原生 Hide 可晚于 Show；清旧输入但保留最新显隐意图。
@@ -1395,12 +1421,18 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			return 0;
 		}
 		break;
+	case WM_NCDESTROY:
+		(void)RemovePropW(hWnd, SettingClientDpiProperty);
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 	case WM_CAPTURECHANGED:
 		// ReleaseCapture 同步重入此消息时不能等待渲染线程的 ImGui 锁。
 		settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
 		return 0;
 	case WM_CANCELMODE:
 		settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
+		SetSettingInteractiveOperation(hWnd,
+			Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
 		break;
 	case WM_NCACTIVATE:
 		settingWindowActive.store(wParam != FALSE, memory_order_release);
@@ -1418,7 +1450,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		const auto operation =
 			Inkeys::UI::Setting::InteractiveOperationFromSystemCommand(wParam);
 		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None)
-			settingInteractiveOperation.store(operation, memory_order_release);
+			SetSettingInteractiveOperation(hWnd, operation);
 		if ((wParam & 0xFFF0) == SC_CLOSE)
 		{
 			Inkeys::UI::Setting::Hide();
@@ -1428,9 +1460,8 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None
 			&& settingInteractiveOperation.load(memory_order_acquire) == operation)
 		{
-			settingInteractiveOperation.store(
-				Inkeys::UI::Setting::InteractiveWindowOperation::None,
-				memory_order_release);
+			SetSettingInteractiveOperation(hWnd,
+				Inkeys::UI::Setting::InteractiveWindowOperation::None);
 			Inkeys::UI::RenderPipeline::Request(
 				Inkeys::UI::RenderPipeline::Client::Settings);
 		}
@@ -1440,9 +1471,10 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		break;
 	}
 
-	if (Inkeys::UI::Setting::IsVisible())
+	if (Inkeys::UI::Setting::IsSettingImGuiInputMessage(msg, wParam, lParam)
+		&& Inkeys::UI::Setting::IsVisible())
 	{
-		// HWND 线程只更新 IO；context/backend/draw/present 仍由渲染线程拥有。
+		// 原生 move/size/cursor 消息绕过 IO 锁，不等待整帧绘制或 Present。
 		lock_guard lock(settingImguiMutex);
 		if (ImGui::GetCurrentContext()
 			&& ImGui_ImplWin32_WndProcHandlerEx(
@@ -1477,20 +1509,21 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		// 未知入口默认按 Size 处理，优先保证 live resize 不停帧。
 		if (settingInteractiveOperation.load(memory_order_acquire)
 			== Inkeys::UI::Setting::InteractiveWindowOperation::None)
-			settingInteractiveOperation.store(
-				Inkeys::UI::Setting::InteractiveWindowOperation::Size,
-				memory_order_release);
+			SetSettingInteractiveOperation(hWnd,
+				Inkeys::UI::Setting::InteractiveWindowOperation::Size);
 		return 0;
 	case WM_EXITSIZEMOVE:
-		settingInteractiveOperation.store(
-			Inkeys::UI::Setting::InteractiveWindowOperation::None,
-			memory_order_release);
+		SetSettingInteractiveOperation(hWnd,
+			Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		return 0;
 	case WM_DPICHANGED:
 	{
-		UpdateSettingScale(LOWORD(wParam));
+		const UINT dpi = LOWORD(wParam);
+		if (dpi) (void)SetPropW(hWnd, SettingClientDpiProperty,
+			reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(dpi)));
+		UpdateSettingScale(dpi ? dpi : QuerySettingDpi(hWnd));
 		{
 			lock_guard stateLock(settingStateMutex);
 			// DPI 变化只请求字体图集重建，普通窗口缩放不触碰字体资源。
@@ -1543,9 +1576,8 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	case WM_DESTROY:
 	{
-		settingInteractiveOperation.store(
-			Inkeys::UI::Setting::InteractiveWindowOperation::None,
-			memory_order_release);
+		SetSettingInteractiveOperation(hWnd,
+			Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
 		// 防御其他流氓软件关闭我的窗口
 		return 0;
 	}

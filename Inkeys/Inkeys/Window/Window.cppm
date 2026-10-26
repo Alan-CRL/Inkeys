@@ -40,6 +40,26 @@ export namespace Inkeys::Window
 	inline constexpr DWORD SettingWindowExStyle = WS_EX_APPWINDOW;
 	[[nodiscard]] SIZE QuerySettingFrameThickness(UINT dpi = 0) noexcept;
 	[[nodiscard]] bool UsesLegacySettingFrame() noexcept;
+	struct SettingPlatformCapabilities
+	{
+		bool legacyFrame = true;
+		bool compositionAlwaysEnabled = false;
+		bool acrylic = false;
+	};
+	[[nodiscard]] constexpr SettingPlatformCapabilities ResolveSettingPlatformCapabilities(
+		DWORD major, DWORD minor, DWORD build) noexcept
+	{
+		const bool modernDwm = major > 6 || (major == 6 && minor >= 2);
+		return { !modernDwm, modernDwm, major > 10 || (major == 10 && build >= 17134) };
+	}
+	[[nodiscard]] constexpr bool ResolveSettingCompositionEnabled(
+		SettingPlatformCapabilities platform, bool querySucceeded, bool queriedEnabled) noexcept
+	{
+		return platform.compositionAlwaysEnabled || (querySucceeded && queriedEnabled);
+	}
+	[[nodiscard]] SettingPlatformCapabilities QuerySettingPlatformCapabilities() noexcept;
+	[[nodiscard]] bool IsSettingCompositionEnabled() noexcept;
+	[[nodiscard]] bool IsSettingModalWakeCurrent(HWND hwnd, std::uintptr_t generation) noexcept;
 	// RECT 四字段表示正向 inset；客户区和 resize 热区分别使用各自的度量。
 	[[nodiscard]] RECT QuerySettingClientFrameInsets(HWND hwnd = nullptr,
 		bool maximized = false, UINT dpi = 0) noexcept;

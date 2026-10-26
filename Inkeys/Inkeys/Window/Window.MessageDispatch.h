@@ -1,9 +1,19 @@
 #pragma once
 
 #include <Windows.h>
+#include <cstdint>
 
 namespace Inkeys::Window::MessageDispatch
 {
+    inline constexpr UINT SettingCancelModalMessage = WM_APP + 0x532;
+
+    [[nodiscard]] constexpr bool MatchesSettingModalWake(bool currentSetting, bool ownerThread,
+        std::uintptr_t postedGeneration, std::uintptr_t windowGeneration) noexcept
+    {
+        return currentSetting && ownerThread && postedGeneration != 0
+            && postedGeneration == windowGeneration;
+    }
+
     struct Sample
     {
         POINT screen{};
