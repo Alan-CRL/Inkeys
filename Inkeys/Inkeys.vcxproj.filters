@@ -2417,6 +2417,9 @@
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.cso">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </None>
     <None Include="src\i18n\en-US.jsonc">
       <Filter>资源文件</Filter>
     </None>
@@ -2511,6 +2514,9 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.hlsl">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </FxCompile>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">

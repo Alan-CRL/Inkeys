@@ -1193,6 +1193,7 @@
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />
     <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli" />
     <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl" />
@@ -1268,6 +1269,26 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>

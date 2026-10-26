@@ -1485,6 +1485,7 @@ DrawCore(coreBrush);
 - 设置图片使用 `ID3D11ShaderResourceView*` 作为 `ImTextureID`；`DibSurface` 的 BGRA 字节上传为 `DXGI_FORMAT_B8G8R8A8_UNORM` immutable texture/SRV；
 - `Inkeys/Inkeys.vcxproj` 编译 `additional/imgui/imgui_impl_win32.cpp` 与 `imgui_impl_dx11.cpp`，仓库不再随附 ImGui DX9 backend；
 - DX11 backend 不在运行时调用 `D3DCompile`：`IDR_SHADERS2` 是 VS、`IDR_SHADERS1` 是 PS，两个预编译 CSO 位于 `UI/RenderPipeline/Assets/ImGui` 并由 `Inkeys.rc` 嵌入 EXE。
+- 普通 ImGui PS 仅采样纹理并乘顶点颜色，不包含演示模式分支或 PS 常量缓冲；橡皮演示单独使用 `IDR_SETTING_ERASER_DEMO_PS=309` / `imgui_eraser_demo_ps.cso`，继续共用 `IDR_SHADERS2` 的 VS。三份 shader 均由 FxCompile 预编译为 SM4.0；演示独占并恢复 PS b1，普通 backend 不触碰该槽位，隐藏/静止播放继续复用缓存。
 
 `【合理推断】` 设置 UI 的局部改动应复用 `Setting.Widgets`、`Setting.Wrap` 及现有字体/纹理路径；普通设置功能不得顺带更换 device、swap-chain、shader 或 SRV 所有权。
 

@@ -21,7 +21,7 @@ namespace Inkeys::UI::Setting::Design
 		using Microsoft::WRL::ComPtr;
 		constexpr double FrameInterval = 1.0 / EraserDemoData::FramesPerSecond;
 		constexpr unsigned SourceWidth = 768, SourceHeight = 432;
-		// 与 ImGui 共用预编译 VS/PS 资源；运行时只读取字节码，不依赖 D3DCompiler DLL。
+		// 与 ImGui 共用预编译 VS，PS 使用演示专用资源；运行时不依赖 D3DCompiler DLL。
 		HRESULT LoadShaderResource(UINT id, const void*& bytecode, DWORD& size)
 		{
 			const HMODULE module = GetModuleHandleW(nullptr);
@@ -112,9 +112,9 @@ namespace Inkeys::UI::Setting::Design
 			float cursor[4], playback[4], speedPose[4];
 			float grip[4]{ERASER_GRIP_OUTLINE_RATIO,ERASER_GRIP_STRIPE_RADIUS_RATIO,
 				ERASER_GRIP_STRIPE_HALF_HEIGHT_RATIO,ERASER_GRIP_STRIPE_OFFSET_RATIO};
-			float material[4]{ERASER_GRIP_OPACITY,ERASER_GRIP_OUTLINE_CHANNEL,1,0};
+			float material[4]{ERASER_GRIP_OPACITY,ERASER_GRIP_OUTLINE_CHANNEL,0,0};
 		};
-		static_assert(sizeof(Constants)==80, "Match the shared ImGui pixel shader buffer.");
+		static_assert(sizeof(Constants)==80, "Match the eraser demo pixel shader buffer.");
 		bool SamePixels(const EraserDemoData::Frame& left, const EraserDemoData::Frame& right)
 		{
 			if (left.eraseProgress!=right.eraseProgress || left.cursorAlpha!=right.cursorAlpha
@@ -176,8 +176,8 @@ namespace Inkeys::UI::Setting::Design
 				{"COLOR",0,DXGI_FORMAT_R8G8B8A8_UNORM,0,offsetof(ImDrawVert,col),D3D11_INPUT_PER_VERTEX_DATA,0}
 			};
 			status=device->CreateInputLayout(elements,3,bytecode,size,layout.GetAddressOf()); if (FAILED(status)) return status;
-			status=LoadShaderResource(IDR_SHADERS1,bytecode,size);
-			if (FAILED(status)) { error="Missing embedded ImGui pixel shader."; return status; }
+			status=LoadShaderResource(IDR_SETTING_ERASER_DEMO_PS,bytecode,size);
+			if (FAILED(status)) { error="Missing embedded eraser demo pixel shader."; return status; }
 			status=device->CreatePixelShader(bytecode,size,nullptr,pixel.GetAddressOf());
 			if (FAILED(status)) return status;
 			// 标准 ImDrawVert 全屏三角形配合单位投影，直接复用 ImGui VS 的输入合同。

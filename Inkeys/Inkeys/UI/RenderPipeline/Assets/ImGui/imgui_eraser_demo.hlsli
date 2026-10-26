@@ -1,11 +1,11 @@
-// 与普通 ImGui 绘制共用纹理和采样器；仅演示模式使用这些参数。
+// 仅供橡皮演示的预编译 PS 使用，普通 ImGui 不引用演示参数。
 cbuffer EraserDemo : register(b1)
 {
     float4 cursor; // x, y, fixed diameter, speed diameter
     float4 playback; // erase progress, cursor alpha, dark, source pixels per output pixel
     float4 speedPose; // independent speed cursor x, y, alpha
     float4 grip; // outline, stripe radius, stripe half height, stripe offset
-    float4 material; // opacity, outline gray, demo mode
+    float4 material; // opacity, outline gray, padding
 };
 float2 AtlasUv(float2 pixel, float column)
 {
