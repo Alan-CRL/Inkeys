@@ -876,14 +876,16 @@ namespace Inkeys::UI::Bar
 		bool verticallyDocked, BarBottomDockCenterMode centerMode,
 		BarBottomDockPhase centerPhase, bool dragActive,
 		bool mainBarExpanded, bool centerSpringActive,
-		bool farEdgeSpringActive, bool displayTransitionActive) noexcept
+		bool farEdgeSpringActive, bool displayTransitionActive,
+		bool workspacePlacementActive) noexcept
 	{
 		return verticallyDocked
 			&& centerMode == BarBottomDockCenterMode::Centered
 			&& centerPhase == BarBottomDockPhase::Stable
 			&& !dragActive && mainBarExpanded
 			&& !centerSpringActive && !farEdgeSpringActive
-			&& !displayTransitionActive;
+			// 场景放置仅把 Y 留给 displayCenterY；普通显示过渡仍持有根 X。
+			&& (!displayTransitionActive || workspacePlacementActive);
 	}
 
 	[[nodiscard]] inline BarBottomDockCenteredRootPlacement
@@ -1486,14 +1488,16 @@ namespace Inkeys::UI::Bar
 		ResolveBarBottomDockRecoveringVerticalMapping(double baseTopDip,
 			double baseBottomDip, double elasticOffsetDip,
 			double captureBottomOffsetDip = 0.0,
-		bool preserveCaptureBottomOffset = false) noexcept
+		bool preserveCaptureBottomOffset = false,
+		bool preserveElasticOffset = false) noexcept
 	{
 		if (!std::isfinite(baseTopDip)) baseTopDip = 0.0;
 		if (!std::isfinite(baseBottomDip) || baseBottomDip <= baseTopDip)
 			baseBottomDip = baseTopDip + 1.0;
-		elasticOffsetDip = std::clamp(
-			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
-			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		elasticOffsetDip = std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0;
+		if (!preserveElasticOffset)
+			elasticOffsetDip = std::clamp(elasticOffsetDip,
+				-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
 		captureBottomOffsetDip = std::isfinite(captureBottomOffsetDip) ? captureBottomOffsetDip : 0.0;
 		// 仅成功像素的捕获初值可超出常规保护，不能在映射阶段再次截断。
 		if (!preserveCaptureBottomOffset)
@@ -1532,6 +1536,26 @@ namespace Inkeys::UI::Bar
 			/ NormalizeBarBottomDockZoom(zoom);
 		spring.positionDip = animationsEnabled && std::isfinite(offset) ? offset : 0.0;
 		spring.velocityDipPerSecond = 0.0;
+		return true;
+	}
+
+	[[nodiscard]] inline bool SeedBarBottomDockDetach(
+		BarBottomDockSpringState& spring, BarBottomDockSpringState& captureBottom,
+		BarBottomDockMode presentedMode, BarBottomDockMode nextMode,
+		double presentedBaseTopScreenY, double presentedTopScreenY, double presentedBottomScreenY,
+		double nextBaseTopScreenY, double nextBaseBottomScreenY,
+		double zoom, bool animationsEnabled) noexcept
+	{
+		if (presentedMode != BarBottomDockMode::BottomDocked
+			|| nextMode != BarBottomDockMode::Floating) return false;
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		const double elastic = (presentedTopScreenY - presentedBaseTopScreenY) / zoom;
+		// Floating 顶端由当前指针平移持有；底端跟随同一平移，保留成功帧完整高度。
+		const double normalMove = nextBaseTopScreenY - presentedTopScreenY;
+		const double capture = elastic
+			+ (presentedBottomScreenY + normalMove - nextBaseBottomScreenY) / zoom;
+		spring = { animationsEnabled && std::isfinite(elastic) ? elastic : 0.0, 0.0 };
+		captureBottom = { animationsEnabled && std::isfinite(capture) ? capture : 0.0, 0.0 };
 		return true;
 	}
 

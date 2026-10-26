@@ -365,6 +365,39 @@ namespace
 			"capacity source remains valid for content near a monitor edge");
 	}
 
+	void TestPredictedViewportExpandsCapacity()
+	{
+		constexpr RECT layout{ 0, 0, 1920, 1080 }, content{ 900, 900, 1080, 1010 };
+		constexpr RECT predicted{ 600, 650, 1350, 1045 };
+		constexpr POINT anchor{ 960, 980 };
+		BarWindowViewportController controller;
+		const auto viewport = controller.Resolve(content, predicted, layout, 2, false).viewport;
+		const auto oldOrder = ResolveBarWindowCapacity(SIZE{ 400, 240 }, anchor, content, layout, 2);
+		const RECT oldBounds{ oldOrder.origin.x, oldOrder.origin.y,
+			oldOrder.origin.x + oldOrder.size.cx, oldOrder.origin.y + oldOrder.size.cy };
+		Check(!ContainsBarWindowRect(oldBounds, viewport),
+			"fixture reproduces capacity-before-prediction escaping the real source bitmap");
+		const auto capacity = ResolveBarWindowCapacity(SIZE{ 400, 240 }, anchor, content, layout, 2, viewport);
+		const POINT source{ viewport.left - capacity.origin.x, viewport.top - capacity.origin.y };
+		Check(capacity.sizeChanged && IsBarWindowSourceContained(source,
+			SIZE{ viewport.right - viewport.left, viewport.bottom - viewport.top }, capacity.size),
+			"capacity includes the full predicted viewport before computing the source");
+		const auto stable = ResolveBarWindowCapacity(capacity.size, anchor, content, layout, 2, viewport);
+		Check(!stable.sizeChanged && stable.origin.x == capacity.origin.x && stable.origin.y == capacity.origin.y,
+			"repeating the same prediction does not rebuild or grow capacity");
+		controller.Commit(viewport);
+		const auto settled = controller.Resolve(content, RECT{}, layout, 2, true).viewport;
+		const auto idle = ResolveBarWindowCapacity(capacity.size, anchor, content, layout, 2, settled);
+		Check(!idle.sizeChanged && settled.right - settled.left < viewport.right - viewport.left,
+			"idle tightens the HWND once while retaining the existing target high-water mark");
+		Check(IsBarWindowSourceContained(POINT{ 2, 3 }, SIZE{ 8, 7 }, SIZE{ 10, 10 })
+			&& !IsBarWindowSourceContained(POINT{ -1, 0 }, SIZE{ 10, 10 }, SIZE{ 10, 10 })
+			&& !IsBarWindowSourceContained(POINT{ 0, 0 }, SIZE{ 0, 10 }, SIZE{ 10, 10 })
+			&& !IsBarWindowSourceContained(POINT{ 3, 0 }, SIZE{ 8, 10 }, SIZE{ 10, 10 })
+			&& !IsBarWindowSourceContained(POINT{ LONG_MAX, 0 }, SIZE{ 2, 1 }, SIZE{ LONG_MAX, 10 }),
+			"final source guard rejects negative, empty, oversized and overflowing tuples");
+	}
+
 	void TestReservedEnvelopeStaysInsideCapacity()
 	{
 		constexpr RECT layoutBounds{ 0, 0, 1920, 1080 };
@@ -427,6 +460,7 @@ int RunWindowGeometryTests()
 	TestBottomDockDragDefersViewportSettle();
 	TestLayoutClipping();
 	TestCapacityFallbackExpansion();
+	TestPredictedViewportExpandsCapacity();
 	TestReservedEnvelopeStaysInsideCapacity();
 	return failureCount;
 }

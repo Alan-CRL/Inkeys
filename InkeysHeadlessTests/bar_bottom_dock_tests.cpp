@@ -35,6 +35,56 @@ namespace
 		return std::abs(lhs - rhs) <= epsilon;
 	}
 
+	void TestDetachSeedFromSuccessfulShape()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (const double oldZoom : { 1.0, 1.5 })
+			for (const double nextZoom : { 0.6, 1.0, 2.0 })
+				for (const double elastic : { -20.0, 17.0 })
+					for (const double capture : { -8.0, 45.0 })
+					{
+						const auto old = ResolveBarBottomDockVerticalMapping(10.0, 91.0, elastic, capture, true);
+						const auto oldY = [&](double y) { return -240.0 + y * oldZoom - 13.0; };
+						const double nextTop = 430.0, nextBottom = 513.0;
+						const auto nextY = [&](double y) { return 120.0 + y * nextZoom + 71.0; };
+						BarBottomDockSpringState spring{ 999.0, -700.0 }, bottom{ -999.0, 800.0 };
+						const auto seed = [&]
+						{
+							return SeedBarBottomDockDetach(spring, bottom, BarBottomDockMode::BottomDocked,
+								BarBottomDockMode::Floating, oldY(old.baseTopDip), oldY(old.visualTopDip),
+								oldY(old.visualBottomDip), nextY(nextTop), nextY(nextBottom), nextZoom, true);
+						};
+						Check(seed(), "detach seeds only the successful Docked to Floating handoff");
+						const double seededElastic = spring.positionDip, seededBottom = bottom.positionDip;
+						const auto mapped = ResolveBarBottomDockRecoveringVerticalMapping(
+							nextTop, nextBottom, spring.positionDip, bottom.positionDip, true, true);
+						const double normalMove = nextY(nextTop) - oldY(old.visualTopDip);
+						Check(Near(nextY(mapped.visualTopDip), oldY(old.visualTopDip) + normalMove)
+							&& Near(nextY(mapped.visualBottomDip), oldY(old.visualBottomDip) + normalMove),
+							"detach preserves both screen endpoints after the normal pointer translation");
+						// 失败候选的积分和速度污染不能成为下一次重试的基线。
+						(void)AdvanceBarBottomDockSpring(spring, 0.0, 1.0 / 60.0, true, true);
+						(void)AdvanceBarBottomDockSpring(bottom, 0.0, 1.0 / 60.0, true, true);
+						Check(seed() && Near(spring.positionDip, seededElastic) && Near(bottom.positionDip, seededBottom)
+							&& spring.velocityDipPerSecond == 0.0 && bottom.velocityDipPerSecond == 0.0,
+							"failed detach candidates re-seed the exact successful shape including offsets beyond 24 DIP");
+						for (unsigned frame = 0; frame < 360; ++frame)
+						{
+							(void)AdvanceBarBottomDockSpring(spring, 0.0, 1.0 / 60.0, true, true);
+							(void)AdvanceBarBottomDockSpring(bottom, 0.0, 1.0 / 60.0, true, true);
+						}
+						Check(spring.positionDip == 0.0 && bottom.positionDip == 0.0,
+							"detach uses the existing bounded spring to settle without widening the input threshold");
+					}
+		BarBottomDockSpringState spring{ 9.0, 1.0 }, bottom{ 8.0, 2.0 };
+		Check(!SeedBarBottomDockDetach(spring, bottom, BarBottomDockMode::Floating, BarBottomDockMode::Floating,
+			0, 0, 80, 0, 80, 1, true) && spring.positionDip == 9.0 && bottom.positionDip == 8.0,
+			"ordinary Floating frames do not consume a detach seed");
+		Check(SeedBarBottomDockDetach(spring, bottom, BarBottomDockMode::BottomDocked, BarBottomDockMode::Floating,
+			0, -20, 80, 0, 80, 1, false) && spring.positionDip == 0 && bottom.positionDip == 0,
+			"animation-disabled detach keeps the existing immediate completion semantics");
+	}
+
 	void TestFontTargetUsesResolvedGrip()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -557,6 +607,7 @@ namespace
 
 int RunBarBottomDockTests()
 {
+	TestDetachSeedFromSuccessfulShape();
 	using namespace Inkeys::UI::Bar;
 	{
 		int restored = 0, requests = 0;
@@ -1165,40 +1216,73 @@ int RunBarBottomDockTests()
 	Check(ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			false, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Free,
 			BarBottomDockPhase::Stable, false, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Capturing, false, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, true, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, false,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			true, false, false)
+			true, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			false, true, false)
+			false, true, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			false, false, true),
+			false, false, true, false),
 		"only a stable idle centered bottom dock derives the root position");
+	Check(ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			false, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Free,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Capturing, false, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, true, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, false,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			true, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, true, true),
+		"workspace placement derives only X under the same full centered ownership gate");
 	const auto centeredRight = ResolveBarBottomDockCenteredRootPlacement(
 		960.0, 80.0, 250.0, 400.0);
 	const auto centeredLeft = ResolveBarBottomDockCenteredRootPlacement(
@@ -1233,6 +1317,37 @@ int RunBarBottomDockTests()
 		&& centeredStroke.mainCenterDip <= centeredRootRange.maximumDip
 		&& !invalidCenteredRootRange.valid,
 		"centered root range conservatively reserves the full animated parent travel");
+	bool continuousWorkspaceGeometry = ShouldDeriveBarBottomDockCenteredRoot(
+		true, BarBottomDockCenterMode::Centered, BarBottomDockPhase::Stable,
+		false, true, false, false, true, true);
+	for (int index = 0; index <= 32; ++index)
+	{
+		const double stroke = static_cast<double>(index % 3);
+		const double buttonWidth = 80.0 + stroke;
+		const double barWidth = 120.0 + static_cast<double>(index) * 12.5;
+		const double offset = 50.0 + barWidth / 2.0;
+		const double monitorCenter = index % 2 ? 960.0 : -960.0;
+		const auto right = ResolveBarBottomDockCenteredRootPlacement(
+			monitorCenter, buttonWidth, offset, barWidth);
+		const auto left = ResolveBarBottomDockCenteredRootPlacement(
+			monitorCenter, buttonWidth, -offset, barWidth);
+		const auto range = ResolveBarBottomDockCenteredRootRange(
+			monitorCenter, buttonWidth, buttonWidth, -offset, offset,
+			barWidth, barWidth);
+		continuousWorkspaceGeometry &= right.valid && left.valid && range.valid
+			&& Near((right.bodyLeftDip + right.bodyRightDip) / 2.0, monitorCenter)
+			&& Near((left.bodyLeftDip + left.bodyRightDip) / 2.0, monitorCenter)
+			&& right.mainCenterDip >= range.minimumDip
+			&& right.mainCenterDip <= range.maximumDip
+			&& left.mainCenterDip >= range.minimumDip
+			&& left.mainCenterDip <= range.maximumDip;
+	}
+	Check(continuousWorkspaceGeometry
+		&& !ResolveBarBottomDockCenteredRootPlacement(960.0, 80.0,
+			std::numeric_limits<double>::infinity(), 400.0).valid
+		&& !ResolveBarBottomDockCenteredRootRange(960.0, 80.0, 80.0,
+			250.0, 250.0, -1.0, 400.0).valid,
+		"shared workspace gate keeps actual root and viewport range centered over continuous widths");
 	Check(ResolveBarBottomDockInitialMainBarSide(false, false)
 		&& ResolveBarBottomDockInitialMainBarSide(false, true)
 		&& !ResolveBarBottomDockInitialMainBarSide(true, false)

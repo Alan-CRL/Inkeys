@@ -1912,6 +1912,105 @@ namespace Inkeys::UI::Bar
 		}
 	}
 
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	bool RunUi3BottomDockInteractionSequence(BarUISetClass& owner,
+		const std::function<bool(const char*, POINT)>& render)
+	{
+		if (interactionWorkerRunning.load(std::memory_order_acquire) || floating_window || offSignal) return false;
+		// 与生产 worker 共用 mailbox、续接泵和真实 Seek；不创建 HWND 或另一套拖动算法。
+		struct Access : BarUISetClass
+		{
+			static auto SeekEntry() { return &Access::Seek; }
+			static void RenderOnly(BarUISetClass& bar)
+			{
+				std::lock_guard lock(bar.*&Access::directWindowDragMutex);
+				bar.*&Access::committedWindowScreenBoundsReady = false;
+			}
+		};
+		MainInteractionAwaitContext context;
+		auto* previousContext = mainInteractionAwaitContext;
+		mainInteractionAwaitContext = &context;
+		InteractionTask<BarSeekResult> routine;
+		struct Restore
+		{
+			MainInteractionAwaitContext& context;
+			MainInteractionAwaitContext* previous;
+			InteractionTask<BarSeekResult>& routine;
+			~Restore()
+			{
+				context.cancelled = true;
+				if (!routine.Done()) (void)ResumeMainInteraction(context, InteractionClock::now());
+				FinishBarPointerSession(); pendingMainInput.clear();
+				mainInteractionAwaitContext = previous;
+			}
+		} restore{ context, previousContext, routine };
+		const auto start = owner.BottomDockPresentedSnapshot();
+		POINT pointer{ static_cast<LONG>(std::lround(start.mainCenterScreenX)),
+			static_cast<LONG>(std::lround(start.mainCenterScreenY + start.rigidTranslationDip * start.zoom)) };
+		const auto enqueue = [&](UINT message)
+		{
+			Access::RenderOnly(owner); // 无真实 HWND 时将普通直移交回完整渲染。
+			ExMessage input{}; input.category = EM_MOUSE; input.message = message;
+			input.lbutton = message != WM_LBUTTONUP;
+			input.x = static_cast<short>(pointer.x); input.y = static_cast<short>(pointer.y);
+			MarkBarTouchPointerMessage(input, false, true);
+			if (!EnqueueMainInteractionMessage(nullptr, input)) return false;
+			(void)PumpSharedInteraction(context, InteractionClock::now());
+			return true;
+		};
+		if (!enqueue(WM_LBUTTONDOWN)) return false;
+		ExMessage down{};
+		if (!TryReadBarPointerMessage(down, EM_MOUSE, nullptr, true, nullptr)) return false;
+		routine = (owner.*Access::SeekEntry())(down);
+		routine.Start();
+		if (routine.Done() || !render("Begin", pointer)) return false;
+		// 按下取在途成功位置；后续捕获采样相对真实场景 dock 线，不能沿用桌面 Y。
+		const double dockLine = ResolveBarBottomDockLine(start.monitorBounds, start.workArea,
+			SceneBottomDockInsetDip(), static_cast<double>(start.dpi) / USER_DEFAULT_SCREEN_DPI,
+			start.desktopDockLine);
+		const double dockCenter = ResolveBarBottomDockCenterScreenY(dockLine,
+			start.mapping.baseBottomDip - start.mapping.baseTopDip, 0.0, start.zoom);
+		const POINT origin{ pointer.x, pointer.y + static_cast<LONG>(std::lround(dockCenter
+			- start.mainCenterScreenY - start.rigidTranslationDip * start.zoom)) };
+		const auto move = [&](double x, double y, const char* phase, unsigned frames)
+		{
+			pointer = { origin.x + static_cast<LONG>(std::lround(x * start.zoom)),
+				origin.y + static_cast<LONG>(std::lround(y * start.zoom)) };
+			if (!enqueue(WM_MOUSEMOVE) || routine.Done()) return false;
+			for (unsigned frame = 0; frame < frames; ++frame)
+				if (!render(phase, pointer)) return false;
+			return true;
+		};
+		// 首张脱离候选失败后不换输入：重试仍必须从同一成功形状播种。
+		if (!move(0, -12, "DockStretch", 3)
+			|| !move(0, -35, "DetachFailure", 1)
+			|| !render("DetachRetry", pointer)
+			|| !render("Detached", pointer)
+			|| !move(0, -8, "Recapture", 3)
+			|| !move(60, -8, "CenterDetachRight", 3)
+			|| !move(35, -8, "CenterCaptureRight", 3)
+			|| !move(-60, -8, "CenterDetachLeft", 3)
+			|| !move(-35, -8, "CenterCaptureLeft", 3)
+			|| !move(60, -45, "BothDetach", 3)
+			|| !move(0, -8, "BothCapture", 3)
+			|| !move(65, -48, "ReleaseFloatingOffset", 2)) return false;
+		if (!enqueue(WM_LBUTTONUP) || !routine.Done()) return false;
+		routine.Rethrow();
+		if (!render("ReleaseAbsorbFailure", pointer)) return false;
+		// 吸收后立刻再按下，仍由同一生产 Seek 从成功快照建立下一手势。
+		context = {};
+		if (!enqueue(WM_LBUTTONDOWN)) return false;
+		if (!TryReadBarPointerMessage(down, EM_MOUSE, nullptr, true, nullptr)) return false;
+		routine = (owner.*Access::SeekEntry())(down); routine.Start();
+		if (routine.Done() || !render("ReleaseRetry", pointer)
+			|| !move(0, 0, "ImmediateCapture", 2)
+			|| !move(0, -50, "ImmediateDetach", 3)
+			|| !enqueue(WM_LBUTTONUP) || !routine.Done()) return false;
+		routine.Rethrow();
+		return render("FinalRelease", pointer);
+	}
+#endif
+
 	int RunSharedInteractionWorkerTests() noexcept
 	{
 		if (interactionWorkerRunning.load(std::memory_order_acquire)) return 2;

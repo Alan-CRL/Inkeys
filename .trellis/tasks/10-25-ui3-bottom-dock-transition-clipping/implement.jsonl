@@ -1,0 +1,10 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认当前 UI3 生产边界和线程所有权。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"遵守二维吸附、首帧弹簧播种、提示包络、viewport、dirty 和 ULW 事务合同。"}
+{"file":".trellis/spec/native-desktop/ui3-render-diagnostics.md","reason":"复用成功呈现诊断并避免以无窗口结果替代视觉验证。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"按完整 Solution 和本机原生架构验证。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对输入、渲染、直移、窗口提交和失败恢复边界。"}
+{"file":".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md","reason":"遵守共享屏幕像素连续性和完整包络不变量。"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/dock-transition-clipping-investigation.md","reason":"实现前阅读已定位的未保护分支、历史与修复边界。"}
+{"file":".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/handoff.md","reason":"接力首先确认居中已有修改、未完成回归和吸附实施顺序。"}
+{"file":".trellis/tasks/10-25-ui3-centered-bar-dynamic-centering/research/implementation-validation.md","reason":"了解共享文件的居中修改、离屏断言和不能重复或覆盖的验证证据。"}
+{"file": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/implementation-validation.md", "reason": "三个窄修复先红后绿、19 组组合、完整成功事务和最终验证边界"}

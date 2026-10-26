@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"审查生产路线与桌面质量要求。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"核对两轴原子发布、首帧连续性、提示包络、dirty 和真实窗口区域。"}
+{"file":".trellis/spec/native-desktop/ui3-render-diagnostics.md","reason":"审查逐帧证据与失败重试是否来自真实成功呈现事务。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核对标准构建和运行验证边界。"}
+{"file":".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md","reason":"按共享连续性和完整包络不变量执行集成审查。"}
+{"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/dock-transition-clipping-investigation.md","reason":"确保测试命中原缺陷分支而非重复已有理想模型覆盖。"}
+{"file":".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/handoff.md","reason":"审查前确认停止点、已有居中修改和未完成的验证门。"}
+{"file":".trellis/tasks/10-25-ui3-centered-bar-dynamic-centering/research/implementation-validation.md","reason":"检查共享文件时保留居中质量证据并识别剩余风险。"}
+{"file": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/implementation-validation.md", "reason": "三个窄修复先红后绿、19 组组合、完整成功事务和最终验证边界"}

@@ -1541,6 +1541,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--ui3-multitarget-benchmark", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunUi3MultiTargetOffscreenBenchmark();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-workspace-centering-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3WorkspaceCenteringTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-bottom-dock-transition-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3BottomDockTransitionTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--ui3-input-worker-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunSharedInteractionWorkerTests();
 	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。

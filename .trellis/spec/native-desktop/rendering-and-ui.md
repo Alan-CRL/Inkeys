@@ -75,6 +75,7 @@
 - Recall保持3秒steady_clock保护、接受命令前事实、灰色点击延期及popup身份；灰色表观不能以通用Disable拦截所有点击而丢弃延期资格。事件持Recall锁只更新state/deadline，锁外请求；不能在该锁或Draw3回调内盲目同步整套UI更新。
 - 列表重建与投影使用短而明确的同一串行边界。不得持该锁跨D2D呈现、Window Service/SetWindowPos/owner等待；UpdateRendering(false)轻请求与timer不能等待可能同步等待owner的渲染锁。面板Close归位等可重入副作用与纯投影分开，避免锁内Close重新取得Recall/更新锁。
 - 主栏布局失效必须比较稳定成员身份/顺序、有效size/IsVisible以及隐藏成员锚点语义，不能只比较总宽度。等宽的两枚2×1与单枚2×2、成员替换/顺序变化仍进入现有统一批次；扩张曲线继续由实际宽度决定。Selected/Disable、文字/颜色、hover/emph/pressScale/动画val不属于几何指纹。
+- Freeze 在 PPT/Whiteboard 不可用时仅设置 hide，保留同一 List 身份/顺序；收窄时复用 `AnchorHiddenBarButton` 按本帧前一可见成员的目标加入现有布局批次，不保留旧右侧坐标或另写动画。退场成员先绘制，可见成员随后覆盖，使用表现锁内取得的本帧显隐指纹决定 Z 序，不能在两次绘制遍历之间重新读取实时 hide。
 - RenderLoop继续持有像素目标SetTar、current/target、CanJoin与换边后半程重开、隐藏锚点、命中和旧新dirty；统一业务入口不得SetDirect跳过动画。主按钮脉冲/停靠及独立Surface/属性按钮保持原所有权，不扩大为全UI属性框架。
 - 真实Bar无窗口回归须调用RegisterBuiltInComponents/SyncLegacyExtensionButtons/Load/UpdateRendering与生产timer/state入口：相同业务styleKey下Separate绘制增删组件仍为Pierce上2×1/Freeze下2×1；覆盖0/1/2/3+组件及overflow、模式/内容/PPT/Whiteboard、历史期限与精简态、等宽转换/动画中途/重复刷新。源码合同只作补充，不以复制逻辑或字符串替代真实生产调用；未启动Draw3 Host/HWND时不能声称验证Accepted命令或系统WM_TIMER投递。
 
@@ -648,7 +649,8 @@ BarWindowCapacityDecision ResolveBarWindowCapacity(
 	POINT anchor,
 	const RECT& currentContentBounds,
 	const RECT& layoutBounds,
-	LONG padding) noexcept;
+	LONG padding, const RECT& requiredViewport = {}) noexcept;
+bool IsBarWindowSourceContained(POINT source, SIZE size, SIZE target) noexcept;
 
 BarWindowViewportDecision BarWindowViewportController::Resolve(
 	const RECT& currentContentBounds,
@@ -720,12 +722,12 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 #### 3. Contracts
 
 - 标准 Shape/SVG/PNG/Word 使用稳定对象键记录边界；父布局、粗细/色板/弹窗等自绘内容使用稳定功能组键。变化项的 damage 是上次成功呈现边界与本帧边界的并集，覆盖移动、缩放、出现和消失；所有 damage 最终合并、裁剪为一个 `RECT`。
-- 每帧顺序固定为：推进动画并 `MarkChanged` → 完成继承布局并 `Observe` 当前边界 → `ResolveDamage` → 解析容量/viewport → 加入调试文字和红/绿/蓝框旧新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与稳定映射帧的 `UPDATELAYEREDWINDOWINFO::prcDirty`。首次呈现，或 `pptSrc`、`psize`、target capacity、device generation 任一字段相对上次成功 tuple 改变时，必须清除完整候选 HWND 范围并令 `prcDirty=nullptr` 执行整窗替换；viewport 相对 committed anchor 的解释变化必须与 present-mapping tracker 合并为同一个 `forceFullWindowReplacement`，同一布尔值控制业务/调试 damage、`presentDirty` 和 `prcDirty`。只有两类映射都稳定的帧允许局部 dirty。居中重排改变主按钮根节点时，capacityOrigin 与 viewport 可以同向平移而保持 source/size 数值不变；该类真实布局移动仍必须整窗替换，清除被新缓冲区原点重新解释的旧右端像素。纯直移吸收继续沿用既有成功快照重基准并复用容量；用本帧稳定居中根节点实际派生变化标识触发此项整窗替换，不能把普通直拖误判为居中重排。
+- 每帧顺序固定为：推进动画并 `MarkChanged` → 完成继承布局并 `Observe` 当前边界 → 完整预测 viewport → 最终 capacity → `ResolveDamage` → 加入调试文字和红/绿/蓝框旧新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与稳定映射帧的 `UPDATELAYEREDWINDOWINFO::prcDirty`。首次呈现，或 `pptSrc`、`psize`、target capacity、device generation 任一字段相对上次成功 tuple 改变时，必须清除完整候选 HWND 范围并令 `prcDirty=nullptr` 执行整窗替换；viewport 相对 committed anchor 的解释变化必须与 present-mapping tracker 合并为同一个 `forceFullWindowReplacement`，同一布尔值控制业务/调试 damage、`presentDirty` 和 `prcDirty`。只有两类映射都稳定的帧允许局部 dirty。呈现失败后必须重画完整候选窗口；映射稳定时可以提交覆盖整窗的 client dirty，映射变化时仍必须 `prcDirty=nullptr`。居中重排改变主按钮根节点时，capacityOrigin 与 viewport 可以同向平移而保持 source/size 数值不变；该类真实布局移动仍必须整窗替换，清除被新缓冲区原点重新解释的旧右端像素。纯直移吸收继续沿用既有成功快照重基准并复用容量；用本帧稳定居中根节点实际派生变化标识触发此项整窗替换，不能把普通直拖误判为居中重排。
 - `BarUiAdvanceAnimation` 的 `changed || active` 必须标记所属控件或功能组。直接拖动、保持环、色板/粗细自绘等绕过标准动画的路径必须显式标脏；存在非调试呈现请求却没有分类 damage 时必须回退全窗口。
 - 主光和鼠标光必须独立报告变化，静止的一路不得因另一路移动而被标脏。每路先计算包含径向半径、`pointLightDiffuseExtraWidth * zoom` Gaussian 外扩和抗锯齿余量的影响矩形，再只与实际可见 `PointLight` 边框的上/下/左/右影响带求交；光圈内部没有边框像素贡献的区域不得进入 damage。关闭光影时当前边界为空，旧边界仍参与清除。
 - Tracker 为稳定视觉键复用记录，并复用变化键/观察键容器；普通帧只通过 `ShouldObserve()` 采集变化项、所需功能组和光源的边界，成功后只推进本帧实际观察记录。全可见内容边界只在首帧、DPI/容量纪元、顶层外框动画、整栏拖动和最终 idle 帧重算，普通 hover/按压/光影帧复用缓存。禁止逐帧清空并重建哈希节点、复制完整快照，或为动态缩窗在普通高频帧遍历全部 SVG/PNG/Word 内容。
 - D2D target 容量以主按钮为稳定锚点，启动、DPI/显示器纪元或真实内容突破容量才重建；整栏拖动只平移 `capacityOrigin` 和 viewport，同尺寸不重建 target。容量突破要保守对称扩容并强制全脏，不得为追求立即缩小而频繁重建。
-- 只有可改变顶层外框的动画批次才在首帧扩展 viewport 并保留保守扫掠包络；批次内不缩放，最终 idle 帧只收缩一次。普通 hover、按压、帧率文字和光影不得将 HWND 扩到整个容量。预留包络要预先内缩 viewport padding，保证解析后的 `pptSrc + psize` 始终位于 target 内。
+- 只有可改变顶层外框的动画批次才在首帧扩展 viewport 并保留保守扫掠包络；批次内不缩放，最终 idle 帧只收缩一次。普通 hover、按压、帧率文字和光影不得将 HWND 扩到整个容量。完整 predicted envelope 与既有 committed viewport 先参与候选 viewport，再将该完整范围传给 `ResolveBarWindowCapacity(..., requiredViewport)`，最后 `EnsureDeviceResources` 并按最终 origin 重算 source。GetDC 前以 `IsBarWindowSourceContained` 校验 source 非负、size 为正、source+size 位于实际 bitmap 内，使用宽整数避免加法溢出；无效时保留全脏及成功快照并沿既有资源失败退避重算，禁止钳 source 后提交裁剪帧。提示的 Back/描边/Gaussian/AA 完整包络同时须包含于 viewport。
 - 粗细 Slider/FineDial 连续手势的完整交互域必须复用 `GetBarThicknessSliderRange(currentPenMode, dpiZoom).max`，在按下/捕获首帧按最大端滑块位置计算完整 Preview Popup。包络同时覆盖 DPI 换算后的最大圆、数字从圆外迁入圆内的最宽 Surface、Slider/FineDial 两个目标位置、Popup Back 极值，以及实际可见描边、PointLight `pointLightDiffuseExtraWidth` 和抗锯齿外扩；捕获、拖动与 FineDial 物理期间保持该预约，候选粗细逐帧增长不得再次 resize。
 - Popup 已可见时，粗细快捷按钮或切换笔型产生的程序化动画必须在首个变化帧按 `drawAttributePenThickness.tar`、滑块归一化目标和 FineDial 目标位置预留紧致包络，并覆盖当前到目标的动画段、数字内外迁移与 Popup 回弹；不得等动画结束后才按实际内容追扩，也不得因此退化为预留当前笔型完整量程。
 - 绘制使用布局坐标，D2D 帧 transform 统一平移 `-capacityOrigin`；ULW 在同一次调用中提交 `pptDst/psize/pptSrc/prcDirty`。Bar 原生鼠标消息必须在窗口线程入队时就用当次 Win32 消息的屏幕位置固化为 monitor-local layout 坐标，然后丢弃 HiMsg 默认 client 副本；触摸/原生消息必须保留采样时的完整屏幕位置；Raw Input 私有样本和计时器重新命中通过统一入口转换到同一 layout 空间。禁止在交互线程出队时再读取新 viewport 解释旧 client 坐标，否则 resize 恰好夹在入队/出队之间时会出现一次命中跳变。
@@ -914,12 +916,22 @@ bool SeedBarBottomDockCaptureBottom(
 	BarBottomDockMode presentedMode, BarBottomDockMode nextMode,
 	double presentedBottomScreenY, double nextBaseBottomScreenY,
 	double zoom, bool animationsEnabled) noexcept;
+bool SeedBarBottomDockDetach(
+	BarBottomDockSpringState& spring, BarBottomDockSpringState& captureBottom,
+	BarBottomDockMode presentedMode, BarBottomDockMode nextMode,
+	double presentedBaseTopScreenY, double presentedTopScreenY, double presentedBottomScreenY,
+	double nextBaseTopScreenY, double nextBaseBottomScreenY,
+	double zoom, bool animationsEnabled) noexcept;
+// 调用方持有 directWindowDragMutex；layoutTranslation 是被吸收的布局像素。
+void BarUISetClass::RebaseBottomDockPresentedWindow(
+	POINT directTranslation, POINT screenDelta = {}, POINT layoutTranslation = {}) noexcept;
 BarBottomDockVerticalMapping ResolveBarBottomDockVerticalMapping(
 	double baseTopDip, double baseBottomDip, double elasticOffsetDip,
 	double captureBottomOffsetDip = 0.0, bool preserveCaptureBottomOffset = false) noexcept;
 BarBottomDockVerticalMapping ResolveBarBottomDockRecoveringVerticalMapping(
 	double baseTopDip, double baseBottomDip, double elasticOffsetDip,
-	double captureBottomOffsetDip = 0.0, bool preserveCaptureBottomOffset = false) noexcept;
+	double captureBottomOffsetDip = 0.0, bool preserveCaptureBottomOffset = false,
+	bool preserveElasticOffset = false) noexcept;
 RECT ResolveBarBottomDockCapacityEnvelope(
 	const RECT& elasticBaseBounds, double zoom,
 	double horizontalOutsetDip = BarBottomDockVisualLimitDip,
@@ -939,10 +951,12 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 - D2D 几何计算完成后到 ULW 之间，交互线程仍可发布采样。最终目的地必须在 `directWindowDragMutex` 内读取同一稳定偶数 serial 下的目标/实际 translation、最新 deferred barrier 和成功呈现 serial：当前帧已包含尚未上屏的 barrier 时，位图必须与帧内 translation 成对提交，后续普通采样不能迫使首次吸附饥饿；若更新的形态/显示 barrier 晚于当前帧，或提交前读到发布中/不一致 tuple，则放弃 ULW、配对 EndDraw 并保留完整重试，不推进成功快照或伪报 ULW 失败。barrier 已成功呈现后的普通过期帧继续使用实际已呈现 translation，避免拉回已直移 HWND。
 - 主按钮及 Logo 使用水平刚性抓手映射并保留既有竖向果冻；主栏背景、普通按钮、图标和文字使用独立二维主体映射。主栏近端随抓手移动，远端吸附稳定居中边界：右向展开从中心左侧进入时拉伸、越过中心后压缩，左向展开镜像；捕获、脱离和恢复中重新捕获的远端都必须从上一成功像素按新旧 HWND 位移反推。绘制、dirty、viewport/capacity、PointLight 逆映射、第三光源接受区和命中必须按刚性抓手/主体映射分类；竖向普通抓手输入保留 24 DIP 视觉保护；水平 40 DIP 捕获带内的刚性抓手偏移以及从成功像素反推的远端初值必须精确保留，不能按 24 DIP 截断而造成捕获或脱离跳帧。水平弹簧须允许连续从超出常规保护范围的有效初值恢复，保持原频率、阻尼与动画开关语义。水平捕获带、实际抓手/远端恢复范围、Gaussian 外扩和抗锯齿余量都进入保守包络。
 - 纵向捕获只由最后成功呈现的 Floating -> BottomDocked 识别，并以旧 `monitorOrigin + visualBottomDip * zoom + directTranslation` 和新基准底边反推 capture-bottom 初值；不得按上一候选 mode 消费捕获。首次成功捕获帧不推进该弹簧，跳帧或失败需从同一旧成功像素重新播入。20 DIP 输入阈值不能约束上一画面距 dock 的距离，故捕获底端初值可超出 24 DIP；生产 Docked/Recovering 映射须启用 `preserveCaptureBottomOffset`，弹簧用 `preservePresentedOffset` 连续恢复，并把实际捕获范围与原抓手范围纳入 capacity/viewport。
+- 纵向脱离仅由最后成功的 BottomDocked -> Floating 触发 `SeedBarBottomDockDetach`，按成功屏幕顶/底和候选 base 反推普通/底端弹簧位置，保留当前指针正常平移后的完整高度。首个脱离候选不积分任一弹簧，失败/跳帧仍从同一成功形状重新播种；Recovering 的成功初值可用 `preserveElasticOffset` 超过 24 DIP，既有频率/阻尼及普通输入保护不变，真实范围进入容量预测。
+- 释放吸收将布局移动 A 像素、实际 residual translation 减去 A，成功快照必须同步移动两轴 base/visual/grip 绝对 DIP 端点 A/其成功 zoom。indicatorBounds 是布局像素，按钮/shape hit bounds 是绝对 DIP，二者随吸收平移；scale 和相对弹性/刚性 offset 不平移。吸收不改变屏幕中心；真实 `screenDelta` 才移动 main/raw/body/visual center。保持既有奇偶 serial 和几何锁到命中发布的事务，不用真实 HWND 移动补偿内部坐标。
 - 场景入口由渲染线程的 `BarWorkspaceSceneState` 统一处理：首次布局完成后，Desktop 首次进入 PPT/Whiteboard 才捕获位置、显示器、两种展开方向、fold、dock 和 center 基线。仅已展开 BottomDocked 贴目标屏幕底边 `5 DIP`，保留 Centered/Free；浮动或折叠不改变形态。PPT↔Whiteboard 不覆盖桌面基线，最终离开恢复基线；原屏幕消失时按显示快照回退并钳制可见位置。此合同替代旧 PPT 进入/退出强制居中以及白板强制展开/退出折叠策略，用户拖动的水平捕获规则不变。
 - 启动时已有的展开中置底栏发布为稳定居中。折叠时退出居中但不移动主按钮；底栏重新展开时只在最终展开联合外框仍位于 40 DIP 阈值内时无提示捕获。桌面首次放置必须在首次方向分类前初始化为向右展开（主按钮居左），白板入口保持既有方向。稳定居中展开时保持渲染线程当前布局方向，不得因动态 HWND 包络重新换边；离开居中后普通换向仍按既有关键帧执行。
 - 底栏 `PositionUpdate()` 只能把最后成功呈现的水平模式作为方向分类门禁：`Centered` 时保持当前布局方向；非居中时遵守 `UI.Bar.ExpandDirectionAdjustment`，中轴线模式只有有限且大于零的显示参考宽度才可按中轴分类，空间不足模式在完整稳定目标宽度可用后由主栏布局策略判定。首帧零宽、无效宽度或动态 HWND 包络都不得自行产生新方向。
-- `BottomDocked + Centered + Stable + Expanded` 且无拖拽、水平弹簧或显示切换时，主按钮 X 是稳定居中的唯一根位置。渲染线程必须在主栏、主按钮和按钮动画值推进后，同时在 Popup、颜色面板、粗细面板等下游绝对几何派生前，以主按钮、主栏及两者当前可见描边的联合外框反推 `mainButton.x`，同步 `displayCenterX`，再重新执行 `MainBar.Inherit(Center, MainButton)`；整个既有继承树必须在同一帧消费新根节点。主栏动画不得因每帧居中派生而重启，属性面板、More、Popup 和提示框不得参与中心计算。实际新的主栏布局批次必须同步重定向在途子按钮的位置动画，即使该子按钮目标未变，也不能继续旧批次的进度或曲线而与新父布局叠加成往返；独立按压、悬停与内容动画仍保持各自所有权。捕获、拖拽、脱离、恢复、Free、浮动、折叠、白板放置和显示切换继续由原状态机持有根位置。
+- `BottomDocked + Centered + Stable + Expanded` 且无拖拽、水平弹簧或普通显示环境切换时，主按钮 X 是稳定居中的唯一根位置。渲染线程必须在主栏、主按钮和按钮动画值推进后，同时在 Popup、颜色面板、粗细面板等下游绝对几何派生前，以主按钮、主栏及两者当前可见描边的联合外框反推 `mainButton.x`，同步 `displayCenterX`，再重新执行 `MainBar.Inherit(Center, MainButton)`；整个既有继承树必须在同一帧消费新根节点。主栏动画不得因每帧居中派生而重启，属性面板、More、Popup 和提示框不得参与中心计算。实际新的主栏布局批次必须同步重定向在途子按钮的位置动画，即使该子按钮目标未变，也不能继续旧批次的进度或曲线而与新父布局叠加成往返；独立按压、悬停与内容动画仍保持各自所有权。PPT/Whiteboard Enter/Switch 的竖直就位由既有 `whiteboardDockAnimationActive` 识别，只把 Y 留给 `displayCenterY`；X 继续按当前联合几何反推。实际根反推和 viewport 根范围共用 `ShouldDeriveBarBottomDockCenteredRoot(..., displayTransitionActive, workspacePlacementActive)` 的完整门禁。捕获、拖拽、脱离、恢复、Free、浮动、折叠和普通显示切换继续由原状态机持有根位置；最终 Leave 保留既有独立恢复路径。
 - 稳定居中不得再维护逐帧 layout correction、补偿平移、pending/in-flight rebase、方向锁存或遗留换向清理状态。viewport 预测必须从主栏 `x/w` 和描边的完整动画 range 保守反推根节点 X range，并把该 range 传播给主按钮、主栏及继承子视觉；禁止用全局 correction outset 扩张包络来代替真实父几何范围。
 - 一次二维主体命中必须先捕获一个成功呈现快照，再由同一 tuple 同时逆映射 X/Y；禁止两个轴分别读取 `BottomDockPresentedSnapshot()`，否则并发发布可能组合出从未成功呈现的映射。普通主栏按钮使用主体 X/Y，More 等刚性覆盖层继续使用原始刚性坐标，不能为复用而原地改写消息。
 - 提示资格在手势内锁存，Desktop/PPT/Whiteboard 共用且不按白板场景抑制：浮动主栏真实进入底栏，或 `Free / Centered` 发生任意双向切换时建立；底栏内起拖但未发生转换时不显示。资格建立后，Free 阶段显示“底栏模式”，Centered 阶段显示“底栏模式 · 居中”；只有松手、折叠、取消或竖向脱离时清除，同一手势重新进入底栏可以再次建立。文案变宽必须先完成外框扩宽再交换文字，变窄必须先完成文字交换再缩窄外框；命中仍只发布成功呈现的实际外框。首次激活帧即使缩放仍为零，也必须把上次成功外框、当前外框和覆盖 Back 峰值、描边、第一/第三光源、Gaussian 与抗锯齿的完整包络并入 damage；失败呈现保留该 damage。
@@ -957,6 +971,9 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 | release tuple 已稳定，但直移 phase 仍为 `Dragging` 且 translation 非零 | 当前帧 Retry；下一帧吸收并 `PositionUpdate()` 后才执行释放布局 |
 | 浮动旧帧后夹入新捕获/按下/释放，再尝试渲染自动写回 | CAS 失败，旧帧不得确认新 barrier；后续微小 X 移动不能把未形变旧位图直移到 dock |
 | 持续抓取的 Free/Dragging 帧 | 保留 tracker 阶段，不能逐帧 Stable 写回或自动居中 |
+| 脱离候选失败后重试 | 首次成功前从相同旧屏幕形状重新播种，两弹簧都不提前积分 |
+| 释放吸收后、完整重试前立即再按下 | 绝对映射与命中已重基准，屏幕端点及中心不变 |
+| 完整 predicted viewport 超出旧 capacity | 先覆盖候选 viewport 再分配；source 必须落在实际 target 内 |
 | 首次捕获候选未上屏或上一成功底边在 24 DIP 外 | 按成功像素重新播入精确底端；首帧不提前积分或裁短初值 |
 | 当前帧已包含未上屏 barrier，后续普通采样推进 serial | 位图与 frame translation 成对提交，保持首次形变连续 |
 | 最新 barrier 晚于当前帧，或提交时 tuple 仍在发布 | 跳过 ULW，配对 EndDraw 并保留完整重试；不推进成功快照 |
@@ -983,6 +1000,7 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 
 - Headless 覆盖水平 `-40/0/+40 DIP` 边界、严格越界、高速跨带、横纵同帧捕获、折叠门禁、展开自动捕获、左右展开联合外框和 100%/150% DPI；竖向 20 DIP 边界另行保持。
 - Headless 覆盖稳定居中根节点所有权矩阵、左右展开、可见描边、无效几何、Draw → Selection 宽度单调与逐帧联合中心不变量、桌面/白板初始方向、零宽/非有限宽度方向保持、主体 X/Y 非恒等映射往返、扩展面板锚点、首次显现完整光影包络、失败快照、release handoff 门禁、当前/过期/发布中帧的实际 HWND translation 解析，以及浮动进入/底栏双向切换/未切换手势的提示资格。
+- `--ui3-workspace-centering-test` 运行真实 RenderLoop/离屏 ULW，覆盖 Enter/Switch/Leave、快速反向、左右展开、合成 DPI/负原点以及有内容桌面→空 PPT 的 Freeze 成员/隐藏锚点/渐隐。`--ui3-bottom-dock-transition-test` 用真实 mailbox/Pump/Seek 和同一 RenderLoop 覆盖成功形状交接、失败重试、释放吸收与命中往返、PPT/Whiteboard 动画中拖动、提示及动画关闭；仅替换最终 HWND sink。两个入口在 harness 关闭时初始化产品窗口前返回 2。软件通过不代表真实 ULW/DWM、Office、最小化/恢复或手感已验收。
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`；手工检查横纵果冻叠加、脏区调试、动画关闭和多显示器切换。
 
 #### 7. Wrong vs Correct
@@ -1028,6 +1046,13 @@ const auto presentation = ResolveBarBottomDockFramePresentation(
 	deferredSerial, presentedSerial, latestTranslation, presentedTranslation);
 // deferred 时不调用 ULW；仍配对 EndDraw、保留完整重试，不能推进成功快照。
 const POINT destination = presentation.translation;
+~~~
+
+~~~cpp
+// Wrong：吸收后只减 residual translation，旧绝对端点会伪造屏幕位移。
+RebaseBottomDockPresentedWindow(presentedAfterAbsorb);
+// Correct：同锁重基准成功映射、布局命中与 residual；真实屏幕位置保持。
+RebaseBottomDockPresentedWindow(presentedAfterAbsorb, {}, absorbedLayoutPixels);
 ~~~
 
 ### UI3 共享设备、串行帧与光影缓存契约

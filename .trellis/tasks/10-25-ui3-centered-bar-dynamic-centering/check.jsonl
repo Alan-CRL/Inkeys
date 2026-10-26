@@ -1,0 +1,7 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"审查生产路线与桌面质量要求。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"核对每个动画帧的根位置、联合中心、dirty 和 viewport 是否一致。"}
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"核对场景切换与桌面恢复无回归。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核对标准构建和运行证据边界。"}
+{"file":".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md","reason":"按共享居中不变量审查实际证据。"}
+{"file":".trellis/tasks/10-25-ui3-centered-bar-dynamic-centering/research/centering-investigation.md","reason":"确保测试复现原缺陷并验证对应生产路径。"}
+{"file": ".trellis/tasks/10-25-ui3-centered-bar-dynamic-centering/research/resume-audit.md", "reason": "接力复核、Freeze 隐藏前驱退场、最终完整无窗口验证和 GUI 待授权"}

@@ -340,6 +340,14 @@ namespace Inkeys::UI::Bar
 				&& outer.right >= inner.right && outer.bottom >= inner.bottom);
 	}
 
+	[[nodiscard]] constexpr bool IsBarWindowSourceContained(
+		POINT source, SIZE size, SIZE target) noexcept
+	{
+		return source.x >= 0 && source.y >= 0 && size.cx > 0 && size.cy > 0
+			&& static_cast<long long>(source.x) + size.cx <= target.cx
+			&& static_cast<long long>(source.y) + size.cy <= target.cy;
+	}
+
 	struct BarWindowCapacityDecision
 	{
 		POINT origin{};
@@ -353,13 +361,14 @@ namespace Inkeys::UI::Bar
 		POINT anchor,
 		const RECT& currentContentBounds,
 		const RECT& layoutBounds,
-		LONG padding) noexcept
+		LONG padding, const RECT& requiredViewport = {}) noexcept
 	{
 		const SIZE previousSize = currentSize;
 		currentSize.cx = (std::max)(1L, currentSize.cx);
 		currentSize.cy = (std::max)(1L, currentSize.cy);
 		RECT requiredBounds = InflateAndClipBarWindowRect(
 			currentContentBounds, padding, layoutBounds);
+		UnionBarWindowRect(requiredBounds, IntersectBarWindowRect(requiredViewport, layoutBounds));
 		if (!IsBarWindowRectEmpty(requiredBounds))
 		{
 			const LONG horizontalReach = (std::max)(
