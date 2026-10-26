@@ -24,7 +24,7 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-26 用户已人工确认竖直吸附脏区外漏清修复；顶边独立目标、a7dc错误抓点约束清理及形变中再次Down直移基准修正已完成静态审查。用户本轮明确授权提交当前改动，成功后编译并进行一轮原生竖直Logo拖动，由其肉眼观察后结束本轮；不运行自动单测、不push、不归档。测试结果尚待本轮实际执行，脏区内跳变不预先宣称解决。详见子任务top-edge-fix-review与live-reproduction。",
+  "notes": "2026-10-26 居中移动子任务已按用户要求完成并归档至.trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering，实现提交bc493667；完整ARM64构建及场景/底栏离屏通过，真实PPT视觉未自动验证。吸附闪动子任务继续in_progress：拖动已正常，静止后松手仍闪，后续隔离release viewport归位；父任务保留开启。",
   "meta": {
     "verification": {
       "software": "static_reviewed_commit_authorized_build_pending",

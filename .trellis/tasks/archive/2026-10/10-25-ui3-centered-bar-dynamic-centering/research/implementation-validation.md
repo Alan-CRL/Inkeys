@@ -1,7 +1,7 @@
 # UI3 centered bar dynamic centering — implementation validation
 
 - Date: 2026-10-25
-- Task: `.trellis/tasks/10-25-ui3-centered-bar-dynamic-centering`
+- Task: `.trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering`
 - Scope: 仅居中子任务；未修改吸附子任务、spec、父任务文档或 `09-06-setting-winui3-design-rebuild`。
 - 验证边界：未启动 GUI，未运行 Office/WPS，未声称真实 ULW/DWM 光学呈现已验证。
 

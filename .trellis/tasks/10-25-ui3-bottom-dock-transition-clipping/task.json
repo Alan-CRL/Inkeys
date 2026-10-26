@@ -21,7 +21,7 @@
   "children": [],
   "parent": "10-25-ui3-bar-centering-dock-geometry",
   "relatedFiles": [],
-  "notes": "906251ee已提交。用户后续确认拖动无跳变、静止片刻后松手仍闪。只读检查发现Up恢复普通viewport屏幕包含逻辑，既有离屏中native原点/source同步上移43/149px而pointer/UI世界top不变，等于越屏量。剩余释放交接待实机隔离；任务保持in_progress，不继承commit授权。",
+  "notes": "906251ee已提交。用户后续确认拖动无跳变、静止片刻后松手仍闪。只读检查发现Up恢复普通viewport屏幕包含逻辑，既有离屏中native原点/source同步上移43/149px而pointer/UI世界top不变，等于越屏量。剩余释放交接待实机隔离；任务保持in_progress，不继承commit授权。 居中移动兄弟子任务已按用户要求完成归档，本任务继续in_progress且仍为当前活动任务。",
   "meta": {
     "verification": {
       "software": "fixed_gesture_surface_full_solution_and_app_regressions_headless_passed",
