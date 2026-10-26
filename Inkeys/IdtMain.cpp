@@ -94,7 +94,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.11201";	// 程序发布版本
+wstring editionVersion = L"3.0.0-dev.11202";	// 程序发布版本
 wstring editionDate = L"3.0.0-20261026a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
