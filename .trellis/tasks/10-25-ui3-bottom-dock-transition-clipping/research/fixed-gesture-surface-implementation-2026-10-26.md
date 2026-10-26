@@ -46,3 +46,22 @@
 复核最终全部改动：7个产品/测试文件SHA256均与已验证 manifest 一致，UTF-8无BOM及CRLF保持；构建和4个软件测试入口的exit记录均为0，用户36秒V人工结果已记录。最终检查仅补齐提交授权、历史阶段标记及任务继续状态，未改已验证代码，未重复启动GUI或测试。
 
 工作提交包含本次修复、回归、V字重放工具、规范及3份相关研究记录；未识别的设置窗口任务目录不进入提交。完整测试日志与二进制保留在本地TestResults，不纳入Git。
+
+## 提交后补充：剩余松手闪动
+
+用户在906251ee后补充：拖动期间已无位置跳变，但松手仍闪；先停止移动、按住静止片刻再松手也会出现。此前人工结果须限定为拖动段通过，不能外推松手交接已修复。任务仍进行中，本轮新观察不继承上一次commit授权。
+
+只读检查找到具体触发机制：固定几何仅在dragActive时使用；Up后恢复普通capacity/viewport求解和屏幕包含限制，ViewportController会在旧包络越过layoutBounds时保持宽高、上移整个viewport，source随之改变。此时UI世界坐标按反向补偿保持不变，但native几何有阶跃。
+
+同一真实Seek+RenderLoop的既有离屏记录（不是新实机合成帧证据）：
+
+| case | 前后pointer | HWND top | source Y | size | UI世界top |
+| --- | --- | --- | --- | --- | --- |
+| right-100 | (615,942)不变 | 759→716 (-43) | 282→239 (-43) | 1198×364不变 | 909不变 |
+| right-100-whiteboard | (630,1025)不变 | 722→573 (-149) | 211→62 (-149) | 1255×507不变 | 943.573不变 |
+
+两组旧窗口bottom分别1123/1229，超过该fixture的1080底边43/149px，恰好对应归位幅度。具体配对保存在TestResults/ui3-release-handoff-2026-10-26/offline-release-pairs.json。代码证据是Bar.WindowGeometry.h的BarWindowViewportController::Resolve中bottom>layoutBounds.bottom时整框上移，以及RenderLoop中dragActive=false后恢复该路径。
+
+用户提出“同时移动窗口与ULW刷新”有可能描述触发条件，但当前拖动时仍有ULW同时提交destination与像素且不闪，因此不能直接断言这种组合必然有问题或Windows内部根因已证实。微软UPDATELAYEREDWINDOWINFO本身同时携带position/size/source/content参数：https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-updatelayeredwindowinfo 。
+
+验证缺口：独立V重放工具在ReleaseMouse后导出CSV，没有继续采样松手后的呈现/收拢；旧离屏测试也只证明世界坐标数学连续，不能证明真实ULW/DWM显示连续。下一轮应先补松手后的观察时段，并隔离“Up继续保持真实窗口origin/source/size与存储基准，仅UI恢复”的对照；若闪动消失，再设计最终收拢，避免只是把同一阶跃延后到动画末尾。当前不改已验证的拖动实现，不新启GUI，不提交、不结束任务。

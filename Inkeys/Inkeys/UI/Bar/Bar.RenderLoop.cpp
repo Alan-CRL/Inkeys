@@ -13146,7 +13146,8 @@ BarRenderLoopCoordinator::RenderFrame(
 				state.displayCenterY.SetDirect(state.displayCenterY.val);
 			state.taskbarDockAnimationActive = false;
 			state.taskbarDockRetargetPending = false;
-			if (transition == BarWorkspaceTransition::Enter)
+			// 返回动画未完成又进入工作区时，仍保留首次进入前的桌面基线。
+			if (transition == BarWorkspaceTransition::Enter && !state.whiteboardDockAnimationActive)
 			{
 				state.desktopDockMode = owner_.bottomDockMode.load(memory_order_acquire);
 				state.desktopCenterMode = owner_.bottomDockCenterMode.load(memory_order_acquire);
@@ -13296,11 +13297,18 @@ BarRenderLoopCoordinator::RenderFrame(
 		const double y = clamp(state.desktopScreenY, state.activeWorkArea.top + half,
 			max(state.activeWorkArea.top + half, state.activeWorkArea.bottom - half));
 		state.displayCenterX.SetDirect(x - state.monitorOrigin.x);
-		state.displayCenterY.SetDirect(y - state.monitorOrigin.y);
+		// ApplyDisplayTransition 可能已写入桌面目标；返回动画必须从最后成功显示的 Y 接续。
+		const auto presented = owner_.BottomDockPresentedSnapshot();
+		state.displayCenterY.SetDirect(presented.serial != 0
+			? presented.mainCenterScreenY - state.monitorOrigin.y
+			: main->y.val * zoom);
+		if (BarUiAnimationEnabled) state.displayCenterY.SetTar(y - state.monitorOrigin.y, 0.4);
+		else state.displayCenterY.SetDirect(y - state.monitorOrigin.y);
 		main->x.SetDirect((x - state.monitorOrigin.x) / zoom);
-		main->y.SetDirect((y - state.monitorOrigin.y) / zoom);
-		state.displayTransitionActive = false;
-		state.whiteboardDockAnimationActive = false;
+		main->y.SetDirect(state.displayCenterY.val / zoom);
+		// 复用场景 Y 所有权，避免下一帧吸附归位截断动画；居中 X 仍按当前宽度反推。
+		state.whiteboardDockAnimationActive = !state.displayCenterY.IsSame();
+		state.displayTransitionActive = state.whiteboardDockAnimationActive;
 		state.desktopRestorePending = false;
 	}
 

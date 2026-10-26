@@ -21,24 +21,26 @@
   "children": [],
   "parent": "10-25-ui3-bar-centering-dock-geometry",
   "relatedFiles": [],
-  "notes": "2026-10-26 固定手势表面方案实现完成。完整ARM64构建、底栏19组合离屏、输入worker、workspace居中和workspace TEMP全量headless均通过；同一36秒V实机完成12轮，用户明确确认未见位置跳变、顶边与果冻正常。当前同屏同DPI路线验收通过，测试窗口正常关闭；用户现授权收尾并提交本轮改动，任务仍保持in_progress；不finish、不归档、不推送。",
+  "notes": "906251ee已提交。用户后续确认拖动无跳变、静止片刻后松手仍闪。只读检查发现Up恢复普通viewport屏幕包含逻辑，既有离屏中native原点/source同步上移43/149px而pointer/UI世界top不变，等于越屏量。剩余释放交接待实机隔离；任务保持in_progress，不继承commit授权。",
   "meta": {
     "verification": {
       "software": "fixed_gesture_surface_full_solution_and_app_regressions_headless_passed",
-      "gui": "user_confirmed_no_position_jump_top_and_jelly_normal_36s_v",
+      "gui": "dragging_user_confirmed_normal_release_flicker_still_present",
       "report": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
       "reviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md",
       "fixValidationReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md",
       "regressionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md",
       "liveReproductionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md",
       "upperBorderRegression": "user_confirmed_normal_in_fixed_gesture_surface_36s_v",
-      "insideDirtyJump": "not_seen_in_fixed_gesture_surface_user_36s_v_validation",
+      "insideDirtyJump": "dragging_not_seen_release_flicker_user_confirmed",
       "topEdgeFixReviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md",
       "vRouteReport": "TestResults/ui3-v-drag-2026-10-26/manifest.json",
       "originDiagnosisReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/origin-handoff-diagnosis-2026-10-26.md",
       "fixedSurfaceAssessment": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/gesture-fixed-surface-assessment-2026-10-26.md",
       "fixedSurfaceImplementation": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/fixed-gesture-surface-implementation-2026-10-26.md",
-      "fixedSurfaceLiveEvidence": "TestResults/ui3-fixed-gesture-2026-10-26/live-v-01-summary.json"
+      "fixedSurfaceLiveEvidence": "TestResults/ui3-fixed-gesture-2026-10-26/live-v-01-summary.json",
+      "releaseHandoff": "stationary_pointer_release_flickers_viewport_reclamp_evidence_found",
+      "releaseOfflineEvidence": "TestResults/ui3-release-handoff-2026-10-26/offline-release-pairs.json"
     }
   }
 }

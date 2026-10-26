@@ -507,6 +507,8 @@ namespace Inkeys::UI::Bar
 			double maximumWidth = 0.0;
 			double minimumY = std::numeric_limits<double>::infinity();
 			double maximumY = 0.0;
+			unsigned verticalMovingFrames = 0;
+			double firstIdleYJump = 0.0, maximumYStep = 0.0;
 		};
 
 		class WorkspaceCenteringFixture
@@ -545,7 +547,7 @@ namespace Inkeys::UI::Bar
 				if (!RunPhase("PptToWhiteboard", [&] { SetWhiteboardActive(true); }, false)) return failures_;
 				if (!RunPhase("WhiteboardToPpt", [&] { SetWhiteboardActive(false); }, false)) return failures_;
 				if (!RunPhase("FinalLeavePpt", [&] { PublishPptSession(1, false, nullptr); }, true)) return failures_;
-				if (!RunRapidReverse()) return failures_;
+				if (!RunRapidReverse() || !RunRestoreAnimationsOff()) return failures_;
 				std::fprintf(stderr, "[UI3WorkspaceCentering] case=%s complete failures=%d\n",
 					caseName_.c_str(), failures_);
 				return failures_;
@@ -1328,6 +1330,10 @@ namespace Inkeys::UI::Bar
 				const auto mainButton = owner_->superellipseMap[BarUISetSuperellipseEnum::MainButton];
 				const auto mainBar = owner_->shapeMap[BarUISetShapeEnum::MainBar];
 				if (!mainButton || !mainBar) return Fail("main geometry missing after present");
+				const double yStep = std::abs(after.mainCenterScreenY - before.mainCenterScreenY);
+				if (stats->presented == 0 && resumedFromIdle) stats->firstIdleYJump = yStep;
+				if (yStep > 0.01) ++stats->verticalMovingFrames;
+				stats->maximumYStep = (std::max)(stats->maximumYStep, yStep);
 				++stats->presented;
 				const double expected = ResolveBarBottomDockMonitorCenterScreenX(after.monitorBounds);
 				const double error = after.visualBodyCenterScreenX - expected;
@@ -1385,12 +1391,16 @@ namespace Inkeys::UI::Bar
 					&& stats.maximumError <= WorkspaceCenteringTolerance
 					&& (!requireGeometry || stats.intermediatePresented > 0)
 					&& (!requireGeometry || widthTravel > 0.01)
-					&& (!expectVerticalMovement || verticalTravel > 0.01);
+					&& (!expectVerticalMovement || (verticalTravel > 0.01
+						&& stats.verticalMovingFrames >= 2
+						&& stats.firstIdleYJump <= WorkspaceCenteringTolerance
+						&& stats.maximumYStep <= verticalTravel * 0.25 + WorkspaceCenteringTolerance));
 				if (!passed) ++failures_;
 				std::fprintf(stderr,
-					"[UI3WorkspaceCentering] case=%s phase=%s presents=%u intermediatePresents=%u widthTravel=%.6f yTravel=%.6f maxCenterError=%.9f intermediateError=%.9f worstFrame=%u mappingFailures=%u result=%s\n",
+					"[UI3WorkspaceCentering] case=%s phase=%s presents=%u intermediatePresents=%u widthTravel=%.6f yTravel=%.6f yMovingFrames=%u firstIdleYJump=%.6f maxYStep=%.6f maxCenterError=%.9f intermediateError=%.9f worstFrame=%u mappingFailures=%u result=%s\n",
 					caseName_.c_str(), phase, stats.presented, stats.intermediatePresented,
-					widthTravel, verticalTravel, stats.maximumError, stats.maximumIntermediateError,
+					widthTravel, verticalTravel, stats.verticalMovingFrames, stats.firstIdleYJump,
+					stats.maximumYStep, stats.maximumError, stats.maximumIntermediateError,
 					stats.worstFrame, stats.mappingFailures, passed ? "PASS" : "FAIL");
 			}
 
@@ -1399,7 +1409,7 @@ namespace Inkeys::UI::Bar
 			{
 				if (!SetTool(false) || !Settle()) return false;
 				WorkspaceCenteringStats stats;
-				// Leave 可在首个成功帧直接恢复桌面 Y；行程必须包含激活前的最后成功帧。
+				// 行程从最后成功帧开始；还须检查多个 Y 移动帧，不能把首帧瞬移算作动画。
 				const auto before = owner_->BottomDockPresentedSnapshot();
 				stats.minimumY = stats.maximumY = before.mainCenterScreenY;
 				if (const auto mainBar = owner_->shapeMap[BarUISetShapeEnum::MainBar])
@@ -1429,14 +1439,38 @@ namespace Inkeys::UI::Bar
 						activate();
 						for (unsigned frame = 0; frame < frames; ++frame)
 							if (!Step(phase, &stats, frame, true)) return false;
-						Report(phase, stats, false, false);
+						const bool finalLeave = std::string_view(phase).starts_with("RapidFinalLeave");
+						Report(phase, stats, false, finalLeave);
 						return true;
 					};
 				if (!runShort("RapidEnterPpt", [&] { PublishPptSession(1, true, nullptr); }, 6)) return false;
 				if (!runShort("RapidPptToWhiteboard", [&] { SetWhiteboardActive(true); }, 6)) return false;
 				if (!runShort("RapidWhiteboardToPpt", [&] { SetWhiteboardActive(false); }, 6)) return false;
 				if (!runShort("RapidFinalLeave", [&] { PublishPptSession(1, false, nullptr); }, 52)) return false;
+				if (!runShort("RapidReenterPpt", [&] { PublishPptSession(1, true, nullptr); }, 6)) return false;
+				if (!runShort("RapidLeaveBeforeReenter", [&] { PublishPptSession(1, false, nullptr); }, 6)) return false;
+				if (!runShort("RapidReenterDuringLeave", [&] { PublishPptSession(1, true, nullptr); }, 6)) return false;
+				if (!runShort("RapidFinalLeaveAfterReenter", [&] { PublishPptSession(1, false, nullptr); }, 52)) return false;
 				return SetTool(false) && Settle();
+			}
+
+			bool RunRestoreAnimationsOff()
+			{
+				if (!SetTool(false) || !Settle()) return false;
+				const double desktopY = owner_->BottomDockPresentedSnapshot().mainCenterScreenY;
+				struct RestoreAnimation
+				{
+					bool enabled = static_cast<bool>(BarUiAnimationEnabled);
+					~RestoreAnimation() { BarUiAnimationEnabled = enabled; }
+				} restoreAnimation;
+				BarUiAnimationEnabled = false;
+				PublishPptSession(1, true, nullptr);
+				if (!Settle()) return false;
+				PublishPptSession(1, false, nullptr);
+				if (!Step("AnimationsOffLeave", nullptr, 0, false)) return false;
+				if (std::abs(owner_->BottomDockPresentedSnapshot().mainCenterScreenY - desktopY)
+					> WorkspaceCenteringTolerance) return Fail("animations-off Leave did not restore Y immediately");
+				return Settle();
 			}
 
 			double scale_ = 1.0;

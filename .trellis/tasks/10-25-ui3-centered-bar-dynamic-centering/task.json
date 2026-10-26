@@ -21,12 +21,13 @@
   "children": [],
   "parent": "10-25-ui3-bar-centering-dock-geometry",
   "relatedFiles": [],
-  "notes": "2026-10-26：接力代码和自动化完成，见父任务 research/final-integration-validation.md。GUI/真实视觉待明确授权；保持 in_progress，不 commit/push/archive。",
+  "notes": "2026-10-26 用户追加恢复退出PPT竖直动画：已从成功Y恢复0.4秒场景动画并保留动态居中，修正快速再进入的桌面快照。完整Debug ARM64 solution、增强workspace-centering及底栏19组合离屏通过；真实GUI待人工验证。未提交/推送/归档；松手闪动实验仍待后续。 用户现已授权提交本轮代码后结束并归档该居中移动子任务；吸附闪动保持开启。",
   "meta": {
     "verification": {
-      "software": "passed",
-      "gui": "pending_authorization",
-      "report": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md"
+      "software": "workspace_leave_y_animation_build_and_offscreen_passed",
+      "gui": "ppt_leave_vertical_animation_pending_manual_validation",
+      "report": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
+      "workspaceReturnReport": ".trellis/tasks/10-25-ui3-centered-bar-dynamic-centering/research/workspace-return-animation-2026-10-26.md"
     }
   }
 }
