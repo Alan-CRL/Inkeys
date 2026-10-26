@@ -4808,6 +4808,9 @@ for (size_t i = 0; i < 3; ++i)
 		// 根面板从 More 按钮中心的紧凑态展开，和绘制属性/几何面板共享锚点语义。
 		double scale = max(0.01, BarMorePanelCompactScale
 			+ (1.0 - BarMorePanelCompactScale) * rawProgress);
+		// 字号取整只看面板最终姿态，不能追逐每帧 SetDirect 的当前展开尺寸。
+		const double fontTargetScale = max(0.01, BarMorePanelCompactScale
+			+ (1.0 - BarMorePanelCompactScale) * state.morePanelProgress.tar);
 		double logicalWindowWidth = frameZoom > 0.0
 			? static_cast<double>(state.barWindow.w) / frameZoom : panelWidth;
 		double logicalWindowHeight = frameZoom > 0.0
@@ -4952,7 +4955,7 @@ for (size_t i = 0; i < 3; ++i)
 				: button->size == BarButtonSizeEnum::twoOne
 					? BarButtonVisualLayoutKind::StandardTwoOne : BarButtonVisualLayoutKind::StandardTwoTwo;
 			Inkeys::UI::Bar::ConfigureBarButtonVisualTargets(*button, kind,
-				BarUiDefaultOperationDur, scale, true);
+				BarUiDefaultOperationDur, scale, true, nullopt, fontTargetScale);
 			const bool enabled = button->state->state != BarWidgetState::Disable;
 			const bool selected = button->state->state == BarWidgetState::Selected;
 			Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(*button, open,

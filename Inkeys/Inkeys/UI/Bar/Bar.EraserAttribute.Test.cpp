@@ -452,6 +452,74 @@ namespace Inkeys::UI::Bar
 					expect(button.name.fontCorrection.Current()==c,"content overshoot and final frame keep continuous correction");
 				}
 
+
+				// 更多的派生尺寸逐帧变化，但文字必须从首帧就使用最终字号目标。
+				for (const auto kind : {BarButtonVisualLayoutKind::StandardTwoTwo,
+					BarButtonVisualLayoutKind::StandardTwoOne})
+				for (const double zoom : {1.0, 0.6})
+				for (const bool allowFractional : {false, true})
+				{
+					const double nominal=ResolveBarButtonVisualMetrics(kind).primaryFontSizeDip;
+					const double expected=allowFractional?nominal*zoom:std::floor(nominal*zoom);
+					const double duration=BarUiDefaultOperationDur,dt=duration/32.0;
+					fonts.SetFrameZoom(zoom);fonts.UpdateFontRenderingPolicy(allowFractional);
+					dc->SetDpi(96,96);dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);dc->SetTransform(D2D1::IdentityMatrix());
+					BarButtonClass button;
+					button.button.Initialization(0,0,70,70,4,4,1,RGB(240,240,240),RGB(20,20,20));
+					button.button.enable.Initialization(true);button.button.pct.SetDirect(1);
+					button.name.Initialization(0,0,70,24,kind==BarButtonVisualLayoutKind::StandardTwoTwo?L"设置":L"组件",nominal,RGB(20,20,20));
+					button.name.enable.Initialization(true);button.name.pct.SetDirect(1);
+					BarButtonDrawOptions options;options.drawIcon=false;
+					auto time=std::chrono::steady_clock::now();
+					const auto drawFrame=[&](double elapsed){
+						time+=std::chrono::nanoseconds(1)+std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(elapsed));
+						fonts.BeginFontFrame(time,{elapsed,1,true,false},zoom);fonts.SetFontTargetScale(1);
+						dc->SetTransform(D2D1::IdentityMatrix());fonts.BeginFrameDraw(dc,D2D1::RectF(0,0,256,128));
+						expect(DrawBarButtonVisual(fonts,dc,button,{10,10},options),"More label draws through the production button path");
+						const double size=fonts.ResolveWordFontSize(dc,button.name,button.name.size.val*zoom);
+						fonts.FinishFrameDrawCommands(dc);expect(SUCCEEDED(fonts.EndFrameDraw(dc)),"More font frame commits D2D commands");
+						return size;
+					};
+					BarUiValueClass scale{0.01};
+					const BarUiCurveSpecClass opening{BarUiCurveEnum::EaseOutBack,BarUiCurveEnum::EaseOutBack,0,false};
+					const BarUiCurveSpecClass closing{BarUiCurveEnum::EaseInBack,BarUiCurveEnum::EaseInBack,0,false};
+					const auto moreFrame=[&](double elapsed){
+						ConfigureBarButtonVisualTargets(button,kind,duration,scale.val,true,std::nullopt,scale.tar);
+						return drawFrame(elapsed);
+					};
+					// 隐藏布局不消费字体修正；覆盖首次可见尺寸尚不足 1px 的边界。
+					ConfigureBarButtonVisualTargets(button,kind,duration,0.01,true,std::nullopt,0.01);
+					scale.SetTar(1,duration,std::nullopt,false,opening);
+					expect(std::abs(moreFrame(0)-expected*0.01)<0.00001,"first visible More label projects the final size even below one pixel");
+					bool overshoot=false;
+					double settled=0;
+					for(int tick=0;tick<36;++tick){
+						if(!scale.IsSame())(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});
+						overshoot|=scale.val>1;settled=moreFrame(dt);
+						expect(std::abs(settled-expected*static_cast<double>(scale.val))<0.00001,
+							"More opening retains its raw scale curve without a second font-growth animation");
+					}
+					expect(overshoot&&scale.IsSame()&&!fonts.FontAnimationsActive()
+						&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
+						"More opening and overshoot settle at the final font size with no idle-frame growth");
+					scale.SetTar(0.16,duration,std::nullopt,false,closing);
+					for(int tick=0;tick<8;++tick){(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});(void)moreFrame(dt);}
+					const double interrupted=moreFrame(0);
+					scale.SetTar(1,duration,std::nullopt,false,opening);
+					expect(std::abs(moreFrame(0)-interrupted)<0.00001,"reopening More at zero dt preserves the current label size");
+					for(int tick=0;tick<36;++tick){
+						if(!scale.IsSame())(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});
+						settled=moreFrame(dt);
+					}
+					expect(!fonts.FontAnimationsActive()&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
+						"reversed More opening has no font growth after the panel settles");
+					// 同一溢出按钮回到主栏时，不得沿用紧凑面板的静止字号覆盖。
+					scale.SetDirect(0.16);(void)moreFrame(duration);
+					ConfigureBarButtonVisualTargets(button,kind,duration,1,false);
+					button.name.size.SetDirect(button.name.size.tar);
+					expect(button.name.fontTargetSize<0&&std::abs(drawFrame(duration)-expected)<0.00001,
+						"moving a More button back to the main bar restores its ordinary font target");
+				}
 			}
 			fonts.DiscardDeviceResources(); reference.DiscardDeviceResources();
 		}

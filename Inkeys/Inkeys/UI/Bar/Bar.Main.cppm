@@ -283,7 +283,8 @@ namespace Inkeys::UI::Bar
 	void ConfigureBarButtonVisualTargets(BarButtonClass& button,
 		BarButtonVisualLayoutKind layoutKind, double durationSeconds,
 		double scale = 1.0, bool direct = false,
-		std::optional<double> iconHeightOverride = std::nullopt);
+		std::optional<double> iconHeightOverride = std::nullopt,
+		std::optional<double> fontTargetScale = std::nullopt);
 	enum class BarButtonListLayoutKind { Main, GroupedGrid, SingleRow };
 	struct BarButtonListPlacement
 	{
