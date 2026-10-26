@@ -775,6 +775,27 @@ namespace
 
 namespace Inkeys::UI::Bar
 {
+	void RequestBarDragCancellation(unsigned long long expectedSession,
+		const std::atomic<unsigned long long>& serial,
+		const std::atomic<unsigned long long>& activeSession,
+		const std::atomic<bool>& active) noexcept
+	{
+		// 先冻结指针代次，再验证对应拖动 tuple；异步取消不能转而命中新 Down。
+		const auto ordinal = barPointerActiveOrdinal.load(std::memory_order_acquire);
+		const auto before = serial.load(std::memory_order_acquire);
+		if (!ordinal || !expectedSession || (before & 1ULL) != 0) return;
+		const bool dragging = active.load(std::memory_order_relaxed);
+		const auto session = activeSession.load(std::memory_order_relaxed);
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (serial.load(std::memory_order_acquire) != before
+			|| !dragging || session != expectedSession) return;
+		// 延迟的旧请求不能覆盖已经登记的更新取消代次。
+		auto requested = barPointerRequestedCancel.load(std::memory_order_acquire);
+		while (requested < ordinal && !barPointerRequestedCancel.compare_exchange_weak(
+			requested, ordinal, std::memory_order_acq_rel, std::memory_order_acquire)) {}
+		WakeInteractionWorker();
+	}
+
 	Message::Reply DispatchAuthorizedFixtureIndex(HWND window, UINT message, WPARAM index, LPARAM extra) noexcept
 	{
 		if (message == Ui3FixtureIndexMessage)
@@ -2084,6 +2105,41 @@ namespace Inkeys::UI::Bar
 				std::lock_guard lock(interactionRegistrationMutex);
 				if (!interactionRegistrations.empty())
 				{ mainInteractionAwaitContext = previousContext; return 2; }
+			}
+			{
+				// 调用真实取消入口，测试后恢复现有原子，不能污染后续手势回归。
+				struct RestoreCancellation
+				{
+					std::uint64_t active = barPointerActiveOrdinal.load();
+					std::uint64_t requested = barPointerRequestedCancel.load();
+					~RestoreCancellation()
+					{
+						barPointerActiveOrdinal.store(active);
+						barPointerRequestedCancel.store(requested);
+					}
+				} restoreCancellation;
+				std::atomic<unsigned long long> serial{ 2 }, session{ 7 };
+				std::atomic<bool> active{ true };
+				barPointerActiveOrdinal.store(101); barPointerRequestedCancel.store(0);
+				RequestBarDragCancellation(7, serial, session, active);
+				check(barPointerRequestedCancel.load() == 101, "drag-cancel-targets-matching-pointer-session");
+				active.store(false); barPointerActiveOrdinal.store(102);
+				RequestBarDragCancellation(7, serial, session, active);
+				check(barPointerRequestedCancel.load() == 101, "drag-cancel-ignores-released-session");
+				active.store(true); serial.store(3);
+				RequestBarDragCancellation(7, serial, session, active);
+				check(barPointerRequestedCancel.load() == 101, "drag-cancel-ignores-publishing-tuple");
+				serial.store(4); session.store(8); barPointerActiveOrdinal.store(103);
+				RequestBarDragCancellation(7, serial, session, active);
+				check(barPointerRequestedCancel.load() == 101, "old-drag-cancel-does-not-retire-new-down");
+				RequestBarDragCancellation(8, serial, session, active);
+				check(barPointerRequestedCancel.load() == 103, "new-drag-can-request-its-own-cancellation");
+				barPointerRequestedCancel.store(105);
+				RequestBarDragCancellation(8, serial, session, active);
+				check(barPointerRequestedCancel.load() == 105, "late-drag-cancel-cannot-overwrite-newer-request");
+				barPointerActiveOrdinal.store(0);
+				RequestBarDragCancellation(8, serial, session, active);
+				check(barPointerRequestedCancel.load() == 105, "drag-cancel-ignores-missing-pointer-session");
 			}
 			for (std::size_t index = 0; index != probes.size(); ++index)
 				check(RegisterInteractionSurface(reinterpret_cast<HWND>(index + 1), 7,
@@ -8877,13 +8933,6 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			initialPresentedTranslation.y, memory_order_relaxed);
 		(void)FinishBottomDockTransition(true);
 	}
-	double baseMainCenterScreenX =
-		initialPresentedSnapshot.rawMainCenterScreenX
-		- initialPresentedTranslation.x
-		- initialPresentedSnapshot.horizontalMapping.rigidGripTranslationXDip * presentedZoom;
-	double baseMainCenterScreenY =
-		initialPresentedSnapshot.mainCenterScreenY
-		- initialPresentedTranslation.y;
 	double bodyToMainCenterScreenX =
 		initialPresentedSnapshot.rawBodyCenterScreenX
 			- initialPresentedSnapshot.rawMainCenterScreenX;
@@ -8965,16 +9014,17 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 		static_cast<double>(environment.monitorBounds.bottom) - VisibleHalfHeightScreen());
 	const double initialNormalCenterY = clamp(startPointer.y - grabOffsetScreenY,
 		minimumCenterY, maximumCenterY);
-	double effectivePointerScreenY = initialMode == BarBottomDockMode::BottomDocked
-		? clamp(static_cast<double>(startPointer.y),
-			static_cast<double>(environment.monitorBounds.top),
-			static_cast<double>(environment.monitorBounds.bottom))
-		: initialNormalCenterY + grabOffsetScreenY;
+	double effectivePointerScreenY = initialNormalCenterY + grabOffsetScreenY;
+	double effectiveGripScreenX = ClampBarBottomDockMainCenterScreenX(
+		actualMainCenterScreenX, environment.monitorBounds,
+		visibleHalfWidthDip, interactionZoom);
+	double dragGripScreenX = actualMainCenterScreenX;
 	double dragTopScreenY = initialPresentedSnapshot.monitorOrigin.y
 		+ initialPresentedSnapshot.mapping.visualTopDip * presentedZoom
 		+ initialPresentedSnapshot.directTranslation.y;
-	// 浮动直移也对齐成功图像顶边，不能用未形变中心放大再次起拖的首个输入。
-	double floatingTopBaselineScreenY = dragTopScreenY - initialPresentedTranslation.y;
+	// 两轴只累计同一有效输入差；吸附/脱离不能重设 HWND 位移基准。
+	double nativeGripBaselineScreenX = dragGripScreenX - initialPresentedTranslation.x;
+	double nativeTopBaselineScreenY = dragTopScreenY - initialPresentedTranslation.y;
 	BarBottomDockDragTracker dockTracker;
 	dockTracker.Begin(initialMode, startPointer.y,
 		initialFloatingVisibleBottomScreenY,
@@ -9016,15 +9066,11 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 	bool gestureCancelled = false;
 	DragCollapseGate dragCollapseGate;
 	unsigned long long awaitedTransitionSerial = grabTransitionSerial;
-	auto PublishPresentationBarrier = [&](POINT pointer)
+	auto PublishPresentationBarrier = [&]()
 		{
 			// 缩放或显示参数改变时，先让 ULW 提交新尺寸，再允许直移旧位图。
 			BeginBottomDockTransition();
-			// 显示屏障也成对发布抓手坐标，不能让首帧混用旧 X 和新 Y。
-			bottomDockDragRigidGripScreenX.store(
-				pointer.x - grabOffsetScreenX, memory_order_relaxed);
-			bottomDockDragRigidGripScreenY.store(
-				pointer.y - grabOffsetScreenY, memory_order_relaxed);
+			// 此处只标记屏障；抓手、顶边和位移由当前输入样本在下方整组发布。
 			const auto barrierSerial = FinishBottomDockTransition(true);
 			awaitedTransitionSerial = barrierSerial;
 			UpdateRendering(false);
@@ -9167,14 +9213,20 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			previousPointer = pointer;
 			auto RebasePointerForPresentedEnvironment = [&](const auto& presented)
 				{
-					// 显示环境只更新布局基准；受限或滞后的呈现位置不能重设抓住的逻辑点。
-					baseMainCenterScreenX = presented.rawMainCenterScreenX
-						- presented.directTranslation.x
-						- presented.horizontalMapping.rigidGripTranslationXDip * presented.zoom;
-					baseMainCenterScreenY = presented.mainCenterScreenY
-						- presented.directTranslation.y;
-					floatingTopBaselineScreenY = presented.monitorOrigin.y
-						+ presented.mapping.visualTopDip * presented.zoom;
+					// 环境交接只从同一成功图像开启新的连续输入基准。
+					dragGripScreenX = presented.mainCenterScreenX;
+					effectiveGripScreenX = ClampBarBottomDockMainCenterScreenX(
+						whiteboardDockLocked ? dragGripScreenX : pointer.x - grabOffsetScreenX,
+						environment.monitorBounds, visibleHalfWidthDip, interactionZoom);
+					nativeGripBaselineScreenX = dragGripScreenX - presented.directTranslation.x;
+					dragTopScreenY = presented.monitorOrigin.y
+						+ presented.mapping.visualTopDip * presented.zoom + presented.directTranslation.y;
+					nativeTopBaselineScreenY = dragTopScreenY - presented.directTranslation.y;
+					const double minimumY = environment.monitorBounds.top + VisibleHalfHeightScreen();
+					const double maximumY = max(minimumY,
+						static_cast<double>(environment.monitorBounds.bottom) - VisibleHalfHeightScreen());
+					effectivePointerScreenY = clamp(pointer.y - grabOffsetScreenY,
+						minimumY, maximumY) + grabOffsetScreenY;
 					bodyToMainCenterScreenX = presented.rawBodyCenterScreenX
 						- presented.rawMainCenterScreenX;
 					const double floatingBottom = pointer.y - grabOffsetScreenY
@@ -9259,7 +9311,7 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 				requestedDisplaySerial = latestDisplaySnapshot.serial;
 				requestedDisplayZoom = latestZoom;
 				displayEnvironmentAwaited = true;
-				PublishPresentationBarrier(pointer);
+				PublishPresentationBarrier();
 			}
 
 			const double floatingVisibleBottomScreenY =
@@ -9284,16 +9336,21 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 				// 手动离开或重新捕获底栏后即恢复普通拖动，不再保留专用横向锁。
 				ClearWhiteboardDockLock();
 				whiteboardDockLocked = false;
+				// 解除横向锁只接续此刻成功位置，不补加锁定期间积累的指针路程。
+				dragGripScreenX = presented.mainCenterScreenX;
+				effectiveGripScreenX = ClampBarBottomDockMainCenterScreenX(
+					pointer.x - grabOffsetScreenX, environment.monitorBounds,
+					visibleHalfWidthDip, interactionZoom);
+				nativeGripBaselineScreenX = dragGripScreenX - presented.directTranslation.x;
 			}
 
-			double desiredMainCenterScreenX = whiteboardDockLocked
-				? actualMainCenterScreenX : pointer.x - grabOffsetScreenX;
-			if (centerUpdate.mode == BarBottomDockCenterMode::Centered)
-				desiredMainCenterScreenX = centerUpdate.constrainedCenterScreenX
-					- bodyToMainCenterScreenX;
-			desiredMainCenterScreenX = ClampBarBottomDockMainCenterScreenX(
-				desiredMainCenterScreenX, environment.monitorBounds,
-				visibleHalfWidthDip, interactionZoom);
+			const double nextEffectiveGripScreenX = whiteboardDockLocked
+				? effectiveGripScreenX : ClampBarBottomDockMainCenterScreenX(
+					pointer.x - grabOffsetScreenX, environment.monitorBounds,
+					visibleHalfWidthDip, interactionZoom);
+			dragGripScreenX += nextEffectiveGripScreenX - effectiveGripScreenX;
+			effectiveGripScreenX = nextEffectiveGripScreenX;
+			const double desiredMainCenterScreenX = dragGripScreenX;
 			double desiredMainCenterScreenY = 0.0;
 			if (dockUpdate.mode == BarBottomDockMode::BottomDocked)
 				desiredMainCenterScreenY =
@@ -9322,11 +9379,11 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			}
 			if (dockUpdate.mode == BarBottomDockMode::BottomDocked)
 				downwardDetachBlockedAtRelease = false;
-			const double nextEffectivePointerScreenY = dockUpdate.mode == BarBottomDockMode::BottomDocked
-				? clamp(static_cast<double>(pointer.y),
-					static_cast<double>(environment.monitorBounds.top),
-					static_cast<double>(environment.monitorBounds.bottom))
-				: desiredMainCenterScreenY + grabOffsetScreenY;
+			const double minimumEffectiveY = environment.monitorBounds.top + VisibleHalfHeightScreen();
+			const double maximumEffectiveY = max(minimumEffectiveY,
+				static_cast<double>(environment.monitorBounds.bottom) - VisibleHalfHeightScreen());
+			const double nextEffectivePointerScreenY = clamp(pointer.y - grabOffsetScreenY,
+				minimumEffectiveY, maximumEffectiveY) + grabOffsetScreenY;
 			// 不从形变后的 MapY(grab) 回算输入，避免底边恢复带动顶边漂移。
 			dragTopScreenY += nextEffectivePointerScreenY - effectivePointerScreenY;
 			effectivePointerScreenY = nextEffectivePointerScreenY;
@@ -9334,11 +9391,9 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			diagnosticDesiredCenterX = desiredMainCenterScreenX;
 			diagnosticDesiredCenterY = desiredMainCenterScreenY;
 			const LONG pixelDeltaX = static_cast<LONG>(lround(
-				desiredMainCenterScreenX - baseMainCenterScreenX));
+				dragGripScreenX - nativeGripBaselineScreenX));
 			const LONG pixelDeltaY = static_cast<LONG>(lround(
-				dockUpdate.mode == BarBottomDockMode::Floating
-					? dragTopScreenY - floatingTopBaselineScreenY
-					: desiredMainCenterScreenY - baseMainCenterScreenY));
+				dragTopScreenY - nativeTopBaselineScreenY));
 			const bool translationChanged = pixelDeltaX != appliedDeltaX
 				|| pixelDeltaY != appliedDeltaY;
 			const bool anyModeChanged = dockUpdate.modeChanged
@@ -9346,7 +9401,7 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			// 每个采样都用同一个 seqlock tuple 发布抓手、两轴映射和窗口位移。
 			BeginBottomDockTransition();
 			bottomDockDragRigidGripScreenX.store(
-				pointer.x - grabOffsetScreenX, memory_order_relaxed);
+				dragGripScreenX, memory_order_relaxed);
 			bottomDockDragRigidGripScreenY.store(
 				pointer.y - grabOffsetScreenY, memory_order_relaxed);
 			bottomDockDragTopScreenY.store(
@@ -9366,10 +9421,16 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 				// 在此之前禁止当前或后续采样用 SetWindowPos 移动上一帧位图。
 				awaitedTransitionSerial = publication.transitionSerial;
 			}
-			bool requestRendering = publication.visualChanged;
+			// 固定表面内的 dock/center 端点要抵消连续 HWND 位移，不能按纯平移漏掉重绘。
+			bool requestRendering = publication.visualChanged || (translationChanged
+				&& (dockUpdate.mode == BarBottomDockMode::BottomDocked
+					|| centerUpdate.mode == BarBottomDockCenterMode::Centered));
 			if (translationChanged)
 			{
-				bool deferDirectMove = awaitedTransitionSerial != 0;
+				// 吸附端点固定在世界坐标，必须由 ULW 同帧提交位置和抵消后的新像素。
+				bool deferDirectMove = awaitedTransitionSerial != 0
+					|| dockUpdate.mode == BarBottomDockMode::BottomDocked
+					|| centerUpdate.mode == BarBottomDockCenterMode::Centered;
 				if (!deferDirectMove)
 				{
 					unique_lock lock(directWindowDragMutex, try_to_lock);
@@ -9393,18 +9454,7 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 							directWindowPresentedTranslationY.load(memory_order_acquire) };
 						const POINT moveDelta = ResolveBarDirectWindowMoveDelta(
 							desiredTranslation, presentedTranslation);
-						const RECT targetWindow = TranslateBarWindowRect(currentWindowRect, moveDelta);
-						const auto display = PendingDisplaySnapshot();
-						const bool protect = display.protectBottomEdge && ResolveDockInsetDip() <= 0.0;
-						if (!Inkeys::UI::Bar::IsBarWindowAboveTaskbarEdge(targetWindow, display.bounds.bottom, protect))
-						{
-							// 旧位图不能越过底行；保留输入位移，让下一次 ULW 同时更新裁剪和位置。
-							appliedDeltaX = pixelDeltaX;
-							appliedDeltaY = pixelDeltaY;
-							lock.unlock();
-							UpdateRendering(false);
-							return true;
-						}
+						// held 表面已在 Down 预留；透明 HWND 可越屏，UI 底端由世界目标约束。
 						auto MoveFloatingWindow = [&]() -> BOOL
 						{
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
@@ -9520,13 +9570,15 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			: (releasePresented.mapping.visualBottomDip - releasePresented.mapping.visualTopDip)
 				- (releasePresented.mapping.baseBottomDip - releasePresented.mapping.baseTopDip);
 		const bool needsRecovery = abs(currentVisualOffset) > BarBottomDockSettleDistanceDip
-			|| abs(currentShapeOffset) > BarBottomDockSettleDistanceDip
-			|| abs(dockTracker.ElasticOffsetDip()) > BarBottomDockSettleDistanceDip;
+			|| abs(currentShapeOffset) > BarBottomDockSettleDistanceDip;
 		const BarBottomDockCenterMode finalCenterMode =
 			finalMode == BarBottomDockMode::BottomDocked && !barState.fold
 				? centerTracker.Mode() : BarBottomDockCenterMode::Free;
-		const bool centerNeedsRecovery = abs(
-			centerTracker.ElasticOffsetDip()) > BarBottomDockSettleDistanceDip;
+		const auto& releaseHorizontal = releasePresented.horizontalMapping;
+		const double currentCenterOffset = releaseHorizontal.rigidGripTranslationXDip;
+		const bool centerNeedsRecovery = abs(currentCenterOffset) > BarBottomDockSettleDistanceDip
+			|| abs(releaseHorizontal.visualLeftDip - releaseHorizontal.baseLeftDip) > BarBottomDockSettleDistanceDip
+			|| abs(releaseHorizontal.visualRightDip - releaseHorizontal.baseRightDip) > BarBottomDockSettleDistanceDip;
 		const bool releaseModeChanged = bottomDockMode.load(
 			memory_order_acquire) != finalMode
 			|| bottomDockCenterMode.load(memory_order_acquire)
@@ -9536,8 +9588,9 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 		bottomDockPhase.store(needsRecovery
 			? BarBottomDockPhase::Recovering
 			: BarBottomDockPhase::Stable, memory_order_release);
+		// 松手只发布成功形状的偏移；渲染端归位 root 后从同一成功端点接续。
 		bottomDockElasticOffsetDip.store(needsRecovery
-			? dockTracker.ElasticOffsetDip() : 0.0, memory_order_release);
+			? currentVisualOffset : 0.0, memory_order_release);
 		bottomDockRecoveryActive.store(
 			finalMode == BarBottomDockMode::Floating && needsRecovery,
 			memory_order_release);
@@ -9546,7 +9599,7 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			? BarBottomDockPhase::Recovering : BarBottomDockPhase::Stable,
 			memory_order_release);
 		bottomDockCenterElasticOffsetDip.store(centerNeedsRecovery
-			? centerTracker.ElasticOffsetDip() : 0.0, memory_order_release);
+			? currentCenterOffset : 0.0, memory_order_release);
 		bottomDockDragActive.store(false, memory_order_relaxed);
 		bottomDockIndicatorGestureEligible.store(false, memory_order_relaxed);
 		(void)FinishBottomDockTransition(releaseModeChanged);

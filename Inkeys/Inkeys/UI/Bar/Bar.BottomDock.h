@@ -273,6 +273,16 @@ namespace Inkeys::UI::Bar
 		return std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
 	}
 
+	// 世界端点先扣除同帧原点与连续直移量，不能让固定目标随 HWND 一起移动。
+	[[nodiscard]] inline double ResolveBarBottomDockWorldTargetDip(
+		double worldPx, double originPx, double translationPx, double zoom) noexcept
+	{
+		if (!std::isfinite(worldPx) || !std::isfinite(originPx) || !std::isfinite(translationPx))
+			return std::numeric_limits<double>::quiet_NaN();
+		const double local = (worldPx - originPx - translationPx) / NormalizeBarBottomDockZoom(zoom);
+		return std::isfinite(local) ? local : std::numeric_limits<double>::quiet_NaN();
+	}
+
 	[[nodiscard]] inline double ScaleBarDragGrabOffsetForZoom(
 		double screenOffset, double oldZoom, double newZoom) noexcept
 	{
@@ -931,6 +941,40 @@ namespace Inkeys::UI::Bar
 		}
 	};
 
+	struct BarBottomDockShiftedHorizontalShape
+	{
+		double gripOffsetDip = 0.0;
+		double farErrorDip = 0.0;
+		bool valid = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockShiftedHorizontalShape ResolveBarBottomDockShiftedHorizontalShape(
+		const BarBottomDockHorizontalMapping& presented,
+		double presentedOriginX, double presentedTranslationX, double presentedZoom,
+		double presentedGripScreenX,
+		double nextOriginX, double nextTranslationX, double nextZoom,
+		double nextGripScreenX, double nextBaseMainXDip, bool opensRight,
+		double nextFarTargetDip) noexcept
+	{
+		if (!std::isfinite(presentedOriginX) || !std::isfinite(presentedTranslationX)
+			|| !std::isfinite(presentedZoom) || presentedZoom <= 0.0
+			|| !std::isfinite(presentedGripScreenX) || !std::isfinite(presented.visualLeftDip)
+			|| !std::isfinite(presented.visualRightDip) || presented.visualRightDip <= presented.visualLeftDip
+			|| !std::isfinite(nextOriginX) || !std::isfinite(nextTranslationX)
+			|| !std::isfinite(nextZoom) || nextZoom <= 0.0 || !std::isfinite(nextGripScreenX)
+			|| !std::isfinite(nextBaseMainXDip) || !std::isfinite(nextFarTargetDip)) return {};
+		const double presentedFarDip = opensRight ? presented.visualRightDip : presented.visualLeftDip;
+		const double shift = nextGripScreenX - presentedGripScreenX;
+		// 模式交接随未显示的正常输入同移；松手使用成功抓手位置，shift 为零。
+		const double nextFarScreenX = presentedOriginX + presentedTranslationX
+			+ presentedFarDip * presentedZoom + shift;
+		const double grip = ResolveBarBottomDockWorldTargetDip(
+			nextGripScreenX, nextOriginX, nextTranslationX, nextZoom) - nextBaseMainXDip;
+		const double farError = ResolveBarBottomDockWorldTargetDip(
+			nextFarScreenX, nextOriginX, nextTranslationX, nextZoom) - nextFarTargetDip;
+		return { grip, farError, std::isfinite(grip) && std::isfinite(farError) };
+	}
+
 	struct BarBottomDockCenteredRootPlacement
 	{
 		double mainCenterDip = 0.0;
@@ -1501,7 +1545,8 @@ namespace Inkeys::UI::Bar
 			unsigned long long observedSerialAfter,
 			unsigned long long deferredTransitionSerial,
 			unsigned long long presentedTransitionSerial,
-			POINT latestTranslation, POINT presentedTranslation) noexcept
+			POINT latestTranslation, POINT presentedTranslation,
+			bool requireFrameTranslation = false) noexcept
 	{
 		// 尚未完成的发布无法区分普通采样与新形态，不能提交混合 tuple。
 		if ((frameTransitionSerial & 1ULL) != 0
@@ -1512,6 +1557,8 @@ namespace Inkeys::UI::Bar
 		// 首张转换位图已包含此屏障：使用配套位移，后续普通采样不能使其饥饿。
 		if (deferredTransitionSerial > presentedTransitionSerial)
 			return { frameTranslation, false };
+		// 屏幕吸附端点已按本帧直移量反算，不能再搭配较新的 HWND 位移。
+		if (requireFrameTranslation) return { frameTranslation, false };
 		return { ResolveBarBottomDockFrameTranslation(frameTransitionSerial,
 			observedSerialBefore, observedSerialAfter,
 			latestTranslation, presentedTranslation), false };

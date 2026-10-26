@@ -595,8 +595,30 @@ namespace Inkeys::UI::Bar
 				prematureDirectMoves_ = 0;
 				globalBarrierInjections_ = 0;
 				unsigned captured = 0, detached = 0, absorbed = 0, shownIndicators = 0, successes = 0;
+				struct FixedSurfaceFrame
+				{
+					unsigned long long session = 0, displaySerial = 0;
+					double zoom = 0.0;
+					WorkspaceCenteringUlw ulw;
+					SIZE target{};
+					POINT pointer{};
+					bool pointerUnclamped = false;
+				};
+				std::optional<FixedSurfaceFrame> fixedSurface;
+				unsigned fixedFrames = 0, fixedOriginChecks = 0, fixedDownPrepares = 0;
+				unsigned fixedPartialPresents = 0, fixedBothTransitions = 0, fixedReleaseCommits = 0;
+				double downGrabOffsetX = 0.0, downGrabOffsetY = 0.0;
+				double downHalfWidth = 0.0, downHalfHeight = 0.0;
 				double downTopPointerOffset = 0.0;
 				double lastSuccessfulPointerY = 0.0, lastSuccessfulTop = 0.0;
+				const auto effectivePointerY = [&](LONG rawY, const RECT& monitorBounds)
+				{
+					// 独立按未形变主体和 Down 抓点计算屏幕钳制，不从已呈现映射反推输入。
+					const double minimum = monitorBounds.top + downHalfHeight;
+					const double maximum = (std::max)(minimum, monitorBounds.bottom - downHalfHeight);
+					return std::clamp(static_cast<double>(rawY) - downGrabOffsetY, minimum, maximum)
+						+ downGrabOffsetY;
+				};
 				bool retryNeedsFullReplacement = false;
 				const auto screenY = [](const auto& snapshot, double y)
 					{ return snapshot.monitorOrigin.y + y * snapshot.zoom + snapshot.directTranslation.y; };
@@ -630,9 +652,17 @@ namespace Inkeys::UI::Bar
 							before.directTranslation.y, before.zoom);
 						if (!actualAnchor.valid) return Fail("dock Down did not resolve the actual normalized grab");
 						activeGrabRatio_ = actualAnchor.normalizedY;
-						// 独立保存 Down 的屏幕顶边偏移，不从生产候选的抓点仿射反推期望值。
-						downTopPointerOffset = beforeTop - pointer.y;
-						lastSuccessfulPointerY = pointer.y;
+						fixedSurface.reset();
+						downGrabOffsetX = pointer.x - before.mainCenterScreenX;
+						const double stroke = mainButton->ft.has_value()
+							? (std::max)(0.0, static_cast<double>(mainButton->ft->tar)) : 0.0;
+						downHalfWidth = (mainButton->GetW() + stroke) * before.zoom / 2.0;
+						downHalfHeight = (before.mapping.baseBottomDip - before.mapping.baseTopDip) * before.zoom / 2.0;
+						downGrabOffsetY = (actualAnchor.normalizedY - 0.5) * downHalfHeight * 2.0;
+						// 独立保存 Down 顶边相对有效输入的偏移；贴屏幕边缘时 raw pointer 可能已被钳制。
+						const double effectiveDownY = effectivePointerY(pointer.y, before.monitorBounds);
+						downTopPointerOffset = beforeTop - effectiveDownY;
+						lastSuccessfulPointerY = effectiveDownY;
 						lastSuccessfulTop = beforeTop;
 					}
 					const bool injecting = std::string_view(phase).ends_with("Failure");
@@ -676,10 +706,67 @@ namespace Inkeys::UI::Bar
 					const double afterStroke = afterButton->ft.has_value()
 						? (std::max)(0.0, static_cast<double>(afterButton->ft->val)) : 0.0;
 					const double afterVisibleHeight = afterButton->h.val + afterStroke;
-					const double expectedTop = pointer.y + downTopPointerOffset;
+					const double effectiveY = effectivePointerY(pointer.y, after.monitorBounds);
+					const double expectedTop = effectiveY + downTopPointerOffset;
 					const double topError = top - expectedTop;
 					const bool dragFrame = std::string_view(phase) != "ReleaseAbsorbFailure"
 						&& std::string_view(phase) != "FinalRelease";
+					const bool downFrame = std::string_view(phase) == "Begin"
+						|| std::string_view(phase) == "ReleaseRetry";
+					if (downFrame && (!successful || !after.dragActive))
+						return Fail("Down did not commit the prepared fixed drag surface");
+					if (successful && dragFrame)
+					{
+						if (!after.dragActive) return Fail("held frame lost its active drag identity");
+						const auto& ulw = *presentedUlw_;
+						const auto pixels = owner_->spec.GetTargetBitmapSize();
+						const SIZE target{ static_cast<LONG>(pixels.width), static_cast<LONG>(pixels.height) };
+						// 原点期望只取独立输入差；屏幕钳制段不套用未经钳制的 pointer 公式。
+						const double rawCenterX = pointer.x - downGrabOffsetX;
+						const double rawCenterY = pointer.y - downGrabOffsetY;
+						const bool unclamped = rawCenterX >= after.monitorBounds.left + downHalfWidth
+							&& rawCenterX <= after.monitorBounds.right - downHalfWidth
+							&& rawCenterY >= after.monitorBounds.top + downHalfHeight
+							&& rawCenterY <= after.monitorBounds.bottom - downHalfHeight;
+						const bool sameSurface = fixedSurface && fixedSurface->session == after.dragSession
+							&& fixedSurface->displaySerial == after.displaySerial
+							&& std::abs(fixedSurface->zoom - after.zoom) <= 0.000001;
+						if (!sameSurface)
+							fixedSurface = FixedSurfaceFrame{ after.dragSession, after.displaySerial,
+								after.zoom, ulw, target, pointer, unclamped };
+						else
+						{
+							const auto& first = *fixedSurface;
+							if (ulw.source.x != first.ulw.source.x || ulw.source.y != first.ulw.source.y
+								|| ulw.size.cx != first.ulw.size.cx || ulw.size.cy != first.ulw.size.cy
+								|| target.cx != first.target.cx || target.cy != first.target.cy)
+								return Fail("held source, window size or target capacity changed within one fixed surface");
+							if (unclamped && first.pointerUnclamped)
+							{
+								const long long expectedX = static_cast<long long>(first.ulw.destination.x)
+									+ pointer.x - first.pointer.x;
+								const long long expectedY = static_cast<long long>(first.ulw.destination.y)
+									+ pointer.y - first.pointer.y;
+								if (ulw.destination.x != expectedX || ulw.destination.y != expectedY)
+								{
+									std::fprintf(stderr, "[UI3BottomDock] case=%s phase=%s fixedOriginError=(%lld,%lld)\n",
+										caseName_.c_str(), phase, ulw.destination.x - expectedX, ulw.destination.y - expectedY);
+									return Fail("native origin did not follow independent pointer displacement");
+								}
+								++fixedOriginChecks;
+							}
+							if (!ulw.fullReplacement) ++fixedPartialPresents;
+						}
+						++fixedFrames;
+						if (downFrame) ++fixedDownPrepares;
+						if (std::string_view(phase) == "BothDetach") fixedBothTransitions |= 1u;
+						if (std::string_view(phase) == "BothCapture") fixedBothTransitions |= 2u;
+					}
+					if (successful && std::string_view(phase) == "FinalRelease")
+					{
+						if (after.dragActive) return Fail("Up did not commit the released surface identity");
+						++fixedReleaseCommits;
+					}
 					if (successful && dragFrame && std::abs(topError) > WorkspaceCenteringTolerance)
 					{
 						++failures_;
@@ -695,7 +782,7 @@ namespace Inkeys::UI::Bar
 						else if (before.mode == BarBottomDockMode::Floating
 							&& after.mode == BarBottomDockMode::BottomDocked) ++captured;
 						// before 可能已随 SetWindowPos 平移；仅补上尚未显示的真实指针位移。
-						const double inputShift = pointer.y - lastSuccessfulPointerY;
+						const double inputShift = effectiveY - lastSuccessfulPointerY;
 						const double displayedShift = beforeTop - lastSuccessfulTop;
 						const double effectiveShift = inputShift - displayedShift;
 						transitionTopError = top - (beforeTop + effectiveShift);
@@ -751,7 +838,7 @@ namespace Inkeys::UI::Bar
 					if (successful)
 					{
 						presentedVisibleHeight_ = afterVisibleHeight;
-						lastSuccessfulPointerY = pointer.y;
+						lastSuccessfulPointerY = effectiveY;
 						lastSuccessfulTop = top;
 					}
 					const auto target = owner_->spec.GetTargetBitmapSize();
@@ -785,8 +872,13 @@ namespace Inkeys::UI::Bar
 				if (!sequence || !captured || detached < 2 || absorbed != 1 || !shownIndicators || successes < 20
 					|| injectedPresentFailures_ != 3 || retryNeedsFullReplacement || !events
 					|| !directMoveCount_ || !directAfterBarrier || prematureDirectMoves_
-					|| globalBarrierInjections_ != 1)
+					|| globalBarrierInjections_ != 1 || fixedDownPrepares != 2 || fixedFrames < 20
+					|| fixedOriginChecks < 10 || !fixedPartialPresents || fixedBothTransitions != 3
+					|| fixedReleaseCommits != 1)
 					Fail("dock production sequence did not cover its required stages");
+				std::fprintf(stderr, "[UI3FixedDrag] case=%s frames=%u down=%u pointerChecks=%u partial=%u both=%u up=%u\n",
+					caseName_.c_str(), fixedFrames, fixedDownPrepares, fixedOriginChecks,
+					fixedPartialPresents, fixedBothTransitions, fixedReleaseCommits);
 				std::fprintf(stderr, "[UI3BottomDock] case=%s capture=%u detach=%u absorb=%u indicator=%u direct=%u premature=%u successes=%u failures=%d\n",
 					caseName_.c_str(), captured, detached, absorbed, shownIndicators, directMoveCount_,
 					prematureDirectMoves_, successes, failures_);

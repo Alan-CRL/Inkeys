@@ -8,6 +8,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <cmath>
@@ -263,6 +264,7 @@ struct Sample
 	RECT rect{};
 	unsigned inputSequence = 0;
 	int cycle = -1, phase = 0;
+	double routeElapsedUs = -1.0;
 	bool pointerValid = false, rectValid = false, inputPending = false, leftButtonDown = false;
 };
 
@@ -273,7 +275,7 @@ void WriteCsv(const std::filesystem::path& path, const std::vector<Sample>& samp
 	if (!stream) throw std::runtime_error("cannot open output CSV");
 	stream << "qpc,qpc_frequency,elapsed_us,read_end_qpc,pid,hwnd,pointer_valid,pointer_x,pointer_y,left_button_down,"
 		"rect_valid,left,top,right,bottom,width,height,requested_x,requested_y,input_sequence,"
-		"input_pending,cycle,phase,result\n";
+		"input_pending,cycle,phase,result,route_elapsed_us\n";
 	for (const auto& sample : samples)
 		stream << sample.qpc << ',' << frequency << ',' << std::fixed << std::setprecision(3)
 			<< (sample.qpc - origin) * 1000000.0 / frequency << ',' << sample.readEndQpc
@@ -284,7 +286,8 @@ void WriteCsv(const std::filesystem::path& path, const std::vector<Sample>& samp
 			<< ',' << sample.rect.right << ',' << sample.rect.bottom << ','
 			<< sample.rect.right - sample.rect.left << ',' << sample.rect.bottom - sample.rect.top
 			<< ',' << sample.requested.x << ',' << sample.requested.y << ',' << sample.inputSequence
-			<< ',' << sample.inputPending << ',' << sample.cycle << ',' << sample.phase << ',' << result << '\n';
+			<< ',' << sample.inputPending << ',' << sample.cycle << ',' << sample.phase << ',' << result
+			<< ',' << sample.routeElapsedUs << '\n';
 	stream.flush();
 	if (!stream) throw std::runtime_error("CSV write failed");
 }
@@ -301,19 +304,62 @@ bool StartPointBelongsToBar(HWND hwnd, DWORD processId, POINT point)
 		&& (hit == hwnd || (GetAncestor(hit, GA_ROOT) == hwnd && IsChild(hwnd, hit)));
 }
 
-int Replay(int argc, wchar_t** argv)
+constexpr int VCycles = 12, VLegMs = 750, VBoundaryHoldMs = 30;
+constexpr int VDurationMs = VCycles * 4 * VLegMs;
+constexpr int VPrepareMoveMs = 600, VPrepareHoldMs = 300;
+
+std::array<POINT, 5> MakeVRoute(POINT centerEntry, LONG halfBand)
 {
-	if (argc != 11) throw std::runtime_error("replay requires PID startX startY endX endY cycles halfPeriodMs holdMs outputCsv");
+	const auto point = [&](long long dx, long long dy)
+	{
+		const long long x = static_cast<long long>(centerEntry.x) + dx;
+		const long long y = static_cast<long long>(centerEntry.y) + dy;
+		if (x < std::numeric_limits<LONG>::min() || x > std::numeric_limits<LONG>::max()
+			|| y < std::numeric_limits<LONG>::min() || y > std::numeric_limits<LONG>::max())
+			throw std::runtime_error("V-route coordinate overflow");
+		return POINT{ static_cast<LONG>(x), static_cast<LONG>(y) };
+	};
+	const POINT left = point(-2LL * halfBand, -halfBand);
+	const POINT vertex = point(0, halfBand), right = point(2LL * halfBand, -halfBand);
+	return { left, vertex, right, vertex, left };
+}
+
+void PrintVPlan(const std::array<POINT, 5>& route)
+{
+	std::cout << "point,x,y,planned_ms,leg_ms,boundary_hold_ms\n";
+	const auto row = [&](const char* name, POINT point)
+	{
+		std::cout << name << ',' << point.x << ',' << point.y << ',' << VDurationMs
+			<< ',' << VLegMs << ',' << VBoundaryHoldMs << '\n';
+	};
+	row("left", route[0]);
+	row("left_boundary", { route[0].x + (route[1].x - route[0].x) / 2,
+		route[0].y + (route[1].y - route[0].y) / 2 });
+	row("vertex", route[1]);
+	row("right_boundary", { route[1].x + (route[2].x - route[1].x) / 2,
+		route[1].y + (route[2].y - route[1].y) / 2 });
+	row("right", route[2]);
+}
+
+int Replay(int argc, wchar_t** argv, bool vRoute = false)
+{
+	if ((!vRoute && argc != 11) || (vRoute && argc != 9))
+		throw std::runtime_error(vRoute
+			? "replay-v requires PID gripX gripY centerPointerX entryY halfBandPx outputCsv"
+			: "replay requires PID startX startY endX endY cycles halfPeriodMs holdMs outputCsv");
 	const DWORD processId = Pid(argv[2]);
 	const POINT start{ Coordinate(argv[3]), Coordinate(argv[4]) };
-	const POINT end{ Coordinate(argv[5]), Coordinate(argv[6]) };
-	const int cycles = static_cast<int>(ParseInteger(argv[7], 1, 1000));
-	const int halfMs = static_cast<int>(ParseInteger(argv[8], 10, 30000));
-	const int holdMs = static_cast<int>(ParseInteger(argv[9], 0, 30000));
-	const long long cycleMs = 2LL * (halfMs + holdMs);
+	std::array<POINT, 5> vPoints{};
+	if (vRoute) vPoints = MakeVRoute({ Coordinate(argv[5]), Coordinate(argv[6]) },
+		static_cast<LONG>(ParseInteger(argv[7], 1, 10000)));
+	const POINT end = vRoute ? vPoints[0] : POINT{ Coordinate(argv[5]), Coordinate(argv[6]) };
+	const int cycles = vRoute ? VCycles : static_cast<int>(ParseInteger(argv[7], 1, 1000));
+	const int halfMs = vRoute ? VLegMs : static_cast<int>(ParseInteger(argv[8], 10, 30000));
+	const int holdMs = vRoute ? 0 : static_cast<int>(ParseInteger(argv[9], 0, 30000));
+	const long long cycleMs = vRoute ? 4LL * VLegMs : 2LL * (halfMs + holdMs);
 	if (cycleMs * cycles > 59000)
 		throw std::runtime_error("planned replay exceeds 59 seconds (60-second hard deadline includes preflight)");
-	const std::filesystem::path output(argv[10]);
+	const std::filesystem::path output(argv[vRoute ? 8 : 10]);
 	if (std::filesystem::exists(output)) throw std::runtime_error("output CSV exists; choose a fresh path");
 	if (!output.parent_path().empty() && !std::filesystem::is_directory(output.parent_path()))
 		throw std::runtime_error("output CSV parent directory does not exist");
@@ -322,6 +368,9 @@ int Replay(int argc, wchar_t** argv)
 	if (screen.right - screen.left < 2 || screen.bottom - screen.top < 2
 		|| !Within(start, screen) || !Within(end, screen))
 		throw std::runtime_error("start/end must be inside the current virtual screen");
+	if (vRoute)
+		for (const POINT point : vPoints)
+			if (!Within(point, screen)) throw std::runtime_error("V-route leaves the virtual screen");
 	if (!StartPointBelongsToBar(hwnd, processId, start))
 		throw std::runtime_error("start point is not currently owned by the explicit PID's Bar");
 	if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) || (GetAsyncKeyState(VK_RBUTTON) & 0x8000)
@@ -332,12 +381,12 @@ int Replay(int argc, wchar_t** argv)
 	LARGE_INTEGER frequency{};
 	QueryPerformanceFrequency(&frequency);
 	const long long origin = Qpc();
-	long long lastSentQpc = origin, phaseOrigin = origin;
+	long long lastSentQpc = origin, phaseOrigin = origin, routeOrigin = 0, boundaryQpc = 0;
 	POINT requested{}, acknowledged{};
 	if (!GetCursorPos(&acknowledged)) throw std::runtime_error("GetCursorPos failed before replay");
 	requested = acknowledged;
 	bool pending = false, started = false;
-	int cycle = 0, phase = 0;
+	int cycle = 0, phase = 0, vLeg = 0;
 	unsigned inputSequence = 0;
 	std::vector<Sample> samples;
 	samples.reserve(65000);
@@ -346,7 +395,9 @@ int Replay(int argc, wchar_t** argv)
 	MouseReleaseGuard release;
 	std::wcout << L"sampling_us=1500 high_resolution_timer=" << waiter.highResolution
 		<< L" planned_ms=" << cycleMs * cycles << L"; Escape or >20px manual movement aborts.\n";
+	if (vRoute) PrintVPlan(vPoints);
 	std::wcout.flush();
+	std::cout.flush();
 	try
 	{
 		while (true)
@@ -361,13 +412,17 @@ int Replay(int argc, wchar_t** argv)
 			sample.inputSequence = inputSequence;
 			sample.inputPending = pending;
 			const double phaseMs = (sample.qpc - phaseOrigin) * 1000.0 / frequency.QuadPart;
-			sample.cycle = started ? cycle : -1;
+			sample.cycle = started && (!vRoute || routeOrigin) ? cycle : -1;
 			sample.phase = phase;
+			if (routeOrigin) sample.routeElapsedUs = (sample.qpc - routeOrigin) * 1000000.0 / frequency.QuadPart;
 			samples.push_back(sample);
 			if (stopRequested.load() || (GetAsyncKeyState(VK_ESCAPE) & 0x8000))
 			{ result = "operator_abort"; code = 3; break; }
 			if ((sample.qpc - origin) / static_cast<double>(frequency.QuadPart) >= MaximumSeconds)
 			{ result = "deadline"; code = 3; break; }
+			// 用同一正式路线时钟限制36秒；确认延迟不能逐段累计成更长测试。
+			if (vRoute && sample.routeElapsedUs > (VDurationMs + 100) * 1000.0)
+			{ result = "v_schedule_overrun"; code = 3; break; }
 			DWORD owner = 0;
 			GetWindowThreadProcessId(hwnd, &owner);
 			// 某些启动器隔离进程枚举视图；原生 HWND 所属 PID 是这里的操作边界。
@@ -399,8 +454,69 @@ int Replay(int argc, wchar_t** argv)
 					{ result = "start_hit_changed"; code = 3; break; }
 					if (!PressMouse()) { result = "mouse_down_failed"; code = 4; break; }
 					started = true;
-					phase = 1;
+					phase = vRoute ? 10 : 1;
 					phaseOrigin = Qpc();
+					if (!vRoute) routeOrigin = phaseOrigin;
+				}
+				else if (started && vRoute)
+				{
+					const auto same = [](POINT a, POINT b) { return a.x == b.x && a.y == b.y; };
+					// 从当前Logo移到左上起点只作准备，不占用正式36秒。
+					if (phase == 10)
+					{
+						const double progress = (std::min)(1.0, phaseMs / VPrepareMoveMs);
+						next = { static_cast<LONG>(std::llround(start.x + (static_cast<double>(end.x) - start.x) * progress)),
+							static_cast<LONG>(std::llround(start.y + (static_cast<double>(end.y) - start.y) * progress)) };
+						if (phaseMs >= VPrepareMoveMs && same(requested, end) && same(sample.pointer, end))
+						{ phase = 11; phaseOrigin = sample.qpc; }
+						if (phaseMs > VPrepareMoveMs + 100 && same(requested, end) && !same(sample.pointer, end))
+						{ result = "v_prepare_not_exact"; code = 3; break; }
+					}
+					if (phase == 11)
+					{
+						next = end;
+						if ((sample.qpc - phaseOrigin) * 1000.0 / frequency.QuadPart >= VPrepareHoldMs)
+						{ phase = 20; routeOrigin = sample.qpc; }
+					}
+					if (routeOrigin)
+					{
+						const double elapsedMs = (sample.qpc - routeOrigin) * 1000.0 / frequency.QuadPart;
+						double legMs = elapsedMs - (cycle * 4 + vLeg) * VLegMs;
+						if (legMs >= VLegMs && boundaryQpc && same(requested, vPoints[vLeg + 1])
+							&& same(sample.pointer, vPoints[vLeg + 1]))
+						{
+							if (++vLeg == 4)
+							{
+								vLeg = 0;
+								if (++cycle == cycles) break;
+							}
+							phase = 20 + vLeg;
+							boundaryQpc = 0;
+							legMs = elapsedMs - (cycle * 4 + vLeg) * VLegMs;
+						}
+						if (legMs > VLegMs + 100 && same(requested, vPoints[vLeg + 1])
+							&& !same(sample.pointer, vPoints[vLeg + 1]))
+						{ result = "v_endpoint_not_exact"; code = 3; break; }
+						const POINT a = vPoints[vLeg], z = vPoints[vLeg + 1];
+						const POINT crossing{ a.x + (z.x - a.x) / 2, a.y + (z.y - a.y) / 2 };
+						if (!boundaryQpc && same(requested, crossing) && same(sample.pointer, crossing))
+							boundaryQpc = sample.qpc;
+						const double halfMoveMs = (VLegMs - VBoundaryHoldMs) / 2.0;
+						double progress = legMs < halfMoveMs ? legMs / halfMoveMs * 0.5
+							: legMs < halfMoveMs + VBoundaryHoldMs ? 0.5
+							: 0.5 + (legMs - halfMoveMs - VBoundaryHoldMs) / halfMoveMs * 0.5;
+						// 分界点必须真正到达并短暂停留；时间仍计入本腿750ms。
+						if (progress >= 0.5 && (!boundaryQpc
+							|| (sample.qpc - boundaryQpc) * 1000.0 / frequency.QuadPart < VBoundaryHoldMs))
+							progress = 0.5;
+						if (!boundaryQpc && same(requested, crossing)
+							&& (sample.qpc - lastSentQpc) / static_cast<double>(frequency.QuadPart) > InputAckTimeoutSeconds)
+						{ result = "v_boundary_not_exact"; code = 3; break; }
+						const LONG step = static_cast<LONG>(std::llround(std::abs(z.x - a.x)
+							* std::clamp(progress, 0.0, 1.0)));
+						// 两轴共用一个整数步长，保持物理像素中的45度，不分别舍入。
+						next = { a.x + (z.x > a.x ? step : -step), a.y + (z.y > a.y ? step : -step) };
+					}
 				}
 				else if (started)
 				{
@@ -447,6 +563,9 @@ int Replay(int argc, wchar_t** argv)
 	ReleaseMouse();
 	// 手势结束并释放后才进行磁盘写入，避免日志 I/O 改变竞态窗口。
 	WriteCsv(output, samples, frequency.QuadPart, origin, processId, hwnd, result);
+	if (vRoute && routeOrigin && !samples.empty())
+		std::cout << "v_route_ms=" << (samples.back().qpc - routeOrigin) * 1000.0 / frequency.QuadPart
+			<< " completed_cycles=" << cycle << " preparation_excluded=1\n";
 	std::cout << "result=" << result << " samples=" << samples.size() << " moves=" << inputSequence
 		<< " (HWND geometry only; no visual flicker verdict)\n";
 	return code;
@@ -569,6 +688,8 @@ void Usage()
 	std::wcout << L"live-dock-probe inspect [PID]\n"
 		L"live-dock-probe hit x y\n"
 		L"live-dock-probe replay PID startX startY endX endY cycles halfPeriodMs holdMs outputCsv\n"
+		L"live-dock-probe plan-v centerPointerX entryY halfBandPx\n"
+		L"live-dock-probe replay-v PID gripX gripY centerPointerX entryY halfBandPx outputCsv\n"
 		L"live-dock-probe observe PID durationMs outputCsv\n"
 		L"live-dock-probe capture bar PID paddingPx outputBmp\n"
 		L"live-dock-probe capture rect left top right bottom outputBmp\n"
@@ -576,6 +697,8 @@ void Usage()
 		L"Replay keeps one left-button press across all cycles; each end has holdMs. Max 60 s.\n"
 		L"Escape/manual pointer deviation >20 px/Ctrl+C abort and release. Output paths must be fresh.\n"
 		L"CSV phases: 0 preflight, 1 outbound, 2 end hold, 3 inbound, 4 start hold, 5 observe.\n"
+		L"V: 12 cycles L-vertex-R-vertex-L, 750ms/leg, total 36s; 30ms crossing hold is included.\n"
+		L"V phases: 10 prepare, 11 settle, 20..23 legs; route_elapsed_us excludes preparation.\n"
 		L"Observe injects no input; requested/input_sequence stay zero. Left-button state is polled in both modes.\n"
 		L"Samples describe HWND geometry, not composited screen pixels or a flicker verdict.\n";
 }
@@ -618,6 +741,14 @@ int wmain(int argc, wchar_t** argv)
 			return count ? 0 : 1;
 		}
 		if (command == L"replay") return Replay(argc, argv);
+		if (command == L"plan-v")
+		{
+			if (argc != 5) throw std::runtime_error("plan-v requires centerPointerX entryY halfBandPx");
+			PrintVPlan(MakeVRoute({ Coordinate(argv[2]), Coordinate(argv[3]) },
+				static_cast<LONG>(ParseInteger(argv[4], 1, 10000))));
+			return 0;
+		}
+		if (command == L"replay-v") return Replay(argc, argv, true);
 		if (command == L"observe") return Observe(argc, argv);
 		if (command == L"capture" && argc >= 3)
 		{

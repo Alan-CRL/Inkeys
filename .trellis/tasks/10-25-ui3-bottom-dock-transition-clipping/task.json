@@ -21,19 +21,24 @@
   "children": [],
   "parent": "10-25-ui3-bar-centering-dock-geometry",
   "relatedFiles": [],
-  "notes": "2026-10-26 用户已人工确认竖直吸附脏区外漏清修复；顶边独立目标、a7dc错误抓点约束清理及形变中再次Down直移基准修正已完成静态审查。用户本轮明确授权提交当前改动，成功后编译并进行一轮原生竖直Logo拖动，由其肉眼观察后结束本轮；不运行自动单测、不push、不归档。测试结果尚待本轮实际执行，脏区内跳变不预先宣称解决。详见子任务top-edge-fix-review与live-reproduction。",
+  "notes": "2026-10-26 固定手势表面方案实现完成。完整ARM64构建、底栏19组合离屏、输入worker、workspace居中和workspace TEMP全量headless均通过；同一36秒V实机完成12轮，用户明确确认未见位置跳变、顶边与果冻正常。当前同屏同DPI路线验收通过，测试窗口正常关闭；用户现授权收尾并提交本轮改动，任务仍保持in_progress；不finish、不归档、不推送。",
   "meta": {
     "verification": {
-      "software": "static_reviewed_commit_authorized_build_pending",
-      "gui": "manual_vertical_drag_authorized_after_commit_pending",
+      "software": "fixed_gesture_surface_full_solution_and_app_regressions_headless_passed",
+      "gui": "user_confirmed_no_position_jump_top_and_jelly_normal_36s_v",
       "report": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
       "reviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md",
       "fixValidationReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md",
       "regressionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md",
       "liveReproductionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md",
-      "upperBorderRegression": "fix_applied_manual_validation_pending",
-      "insideDirtyJump": "still_reported_not_claimed_fixed",
-      "topEdgeFixReviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md"
+      "upperBorderRegression": "user_confirmed_normal_in_fixed_gesture_surface_36s_v",
+      "insideDirtyJump": "not_seen_in_fixed_gesture_surface_user_36s_v_validation",
+      "topEdgeFixReviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md",
+      "vRouteReport": "TestResults/ui3-v-drag-2026-10-26/manifest.json",
+      "originDiagnosisReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/origin-handoff-diagnosis-2026-10-26.md",
+      "fixedSurfaceAssessment": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/gesture-fixed-surface-assessment-2026-10-26.md",
+      "fixedSurfaceImplementation": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/fixed-gesture-surface-implementation-2026-10-26.md",
+      "fixedSurfaceLiveEvidence": "TestResults/ui3-fixed-gesture-2026-10-26/live-v-01-summary.json"
     }
   }
 }

@@ -35,6 +35,131 @@ namespace
 		return std::abs(lhs - rhs) <= epsilon;
 	}
 
+	void TestFixedSurfaceWorldTargets()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (const double zoom : { 0.6, 1.0, 1.5, 2.0 })
+			for (const double origin : { -1920.0, 0.0, 120.0 })
+				for (const double translation : { -160.0, -80.0, 0.0, 40.0, 160.0 })
+				{
+					const double bottom = ResolveBarBottomDockWorldTargetDip(1856.0, origin, translation, zoom);
+					const double farTargetDip = ResolveBarBottomDockWorldTargetDip(1984.0, origin, translation, zoom);
+					Check(Near(origin + translation + bottom * zoom, 1856.0)
+						&& Near(origin + translation + farTargetDip * zoom, 1984.0),
+						"fixed-surface dock and far endpoints stay at world targets under continuous native movement");
+					const double captureError = 17.0, farError = -11.0;
+					Check(Near(origin + translation + (bottom + captureError) * zoom, 1856.0 + 17.0 * zoom)
+						&& Near(origin + translation + (farTargetDip + farError) * zoom, 1984.0 - 11.0 * zoom),
+						"world-relative spring errors do not absorb the native translation a second time");
+					const double top = ResolveBarBottomDockWorldTargetDip(1654.0, origin, translation, zoom);
+					const auto shape = ResolveBarBottomDockAnchoredVerticalMapping(100.0, 181.0, top, bottom, true);
+					Check(Near(origin + translation + shape.mapping.visualTopDip * zoom, 1654.0)
+						&& Near(origin + translation + shape.mapping.visualBottomDip * zoom, 1856.0),
+						"fixed-surface bottom conversion preserves the independent top rather than solving a normalized grab");
+				}
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		Check(!std::isfinite(ResolveBarBottomDockWorldTargetDip(nan, 0, 0, 1))
+			&& !std::isfinite(ResolveBarBottomDockWorldTargetDip(10, nan, 0, 1))
+			&& !std::isfinite(ResolveBarBottomDockWorldTargetDip(10, 0, nan, 1)),
+			"non-finite world coordinates cannot become a valid fixed-surface endpoint");
+		Check(Near(ResolveBarBottomDockWorldTargetDip(20, 3, 7, 0), 10.0),
+			"world conversion retains the common invalid-zoom normalization contract");
+	}
+
+	void TestFixedSurfaceFramePresentation()
+	{
+		using namespace Inkeys::UI::Bar;
+		const POINT frameTranslation{ 20, 30 }, latestTranslation{ 25, 35 }, presentedTranslation{ 22, 32 };
+		const auto pinned = ResolveBarBottomDockFramePresentation(
+			10, frameTranslation, 12, 12, 8, 10, latestTranslation, presentedTranslation, true);
+		const auto ordinary = ResolveBarBottomDockFramePresentation(
+			10, frameTranslation, 12, 12, 8, 10, latestTranslation, presentedTranslation);
+		Check(!pinned.deferred && pinned.translation.x == frameTranslation.x
+			&& pinned.translation.y == frameTranslation.y
+			&& !ordinary.deferred && ordinary.translation.x == presentedTranslation.x
+			&& ordinary.translation.y == presentedTranslation.y,
+			"fixed world geometry pairs with its own frame translation while ordinary movement retains the old policy");
+		for (const double zoom : { 0.6, 1.0, 2.0 })
+		{
+			const double bottom = ResolveBarBottomDockWorldTargetDip(1856.0, -200.0, frameTranslation.y, zoom);
+			const double farTarget = ResolveBarBottomDockWorldTargetDip(1984.0, -1200.0, frameTranslation.x, zoom);
+			Check(Near(-200.0 + pinned.translation.y + bottom * zoom, 1856.0)
+				&& Near(-1200.0 + pinned.translation.x + farTarget * zoom, 1984.0),
+				"a later ordinary pointer sample cannot displace already rasterized world targets");
+		}
+		Check(ResolveBarBottomDockFramePresentation(
+			10, frameTranslation, 11, 11, 8, 10, latestTranslation, presentedTranslation, true).deferred
+			&& ResolveBarBottomDockFramePresentation(
+				10, frameTranslation, 10, 12, 8, 10, latestTranslation, presentedTranslation, true).deferred
+			&& ResolveBarBottomDockFramePresentation(
+				10, frameTranslation, 12, 12, 12, 10, latestTranslation, presentedTranslation, true).deferred,
+			"fixed-frame pairing retains publishing and newer shape barrier rejection");
+		const auto firstBarrier = ResolveBarBottomDockFramePresentation(
+			10, frameTranslation, 12, 12, 10, 8, latestTranslation, presentedTranslation, true);
+		Check(!firstBarrier.deferred && firstBarrier.translation.x == frameTranslation.x
+			&& firstBarrier.translation.y == frameTranslation.y,
+			"fixed-frame first barrier cannot be starved by subsequent ordinary input");
+	}
+
+	void TestFixedSurfaceHorizontalHandoff()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (const bool opensRight : { false, true })
+			for (const double oldZoom : { 0.6, 1.0, 2.0 })
+				for (const double nextZoom : { 0.8, 1.0, 1.5, 2.0 })
+					for (const double inputShift : { -80.0, -2.0, 0.0, 40.0 })
+					{
+						const auto old = ResolveBarBottomDockHorizontalMapping(100.0, 400.0,
+							opensRight, 35.0, -17.0);
+						const double oldOrigin = -1200.0, oldTranslation = 37.0;
+						const double oldMain = opensRight ? 60.0 : 440.0;
+						const double oldGrip = oldOrigin + oldTranslation
+							+ (oldMain + old.rigidGripTranslationXDip) * oldZoom;
+						const double oldFar = oldOrigin + oldTranslation
+							+ (opensRight ? old.visualRightDip : old.visualLeftDip) * oldZoom;
+						const double nextOrigin = 240.0, nextTranslation = -80.0;
+						const double nextMain = 300.0, nextFarTarget = opensRight ? 900.0 : 40.0;
+						const auto next = ResolveBarBottomDockShiftedHorizontalShape(old,
+							oldOrigin, oldTranslation, oldZoom, oldGrip,
+							nextOrigin, nextTranslation, nextZoom, oldGrip + inputShift,
+							nextMain, opensRight, nextFarTarget);
+						Check(next.valid
+							&& Near(nextOrigin + nextTranslation + (nextMain + next.gripOffsetDip) * nextZoom,
+								oldGrip + inputShift)
+							&& Near(nextOrigin + nextTranslation + (nextFarTarget + next.farErrorDip) * nextZoom,
+								oldFar + inputShift),
+							"deformed horizontal handoff preserves successful grip and far pixels across origin translation and zoom");
+					}
+		const auto held = ResolveBarBottomDockHorizontalMapping(140, 500, true, 0, -30);
+		for (const double nextMain : { 100.0, 130.0 })
+		{
+			// 吸收布局或回归居中root都从同一成功图像交接，不再读取raw elastic。
+			const auto release = ResolveBarBottomDockShiftedHorizontalShape(held,
+				0, 60, 2, 260, 0, 0, 2, 260, nextMain, true, nextMain + 400);
+			const auto mapped = ResolveBarBottomDockHorizontalMapping(nextMain + 40, nextMain + 400,
+				true, release.gripOffsetDip, release.farErrorDip);
+			Check(release.valid && Near((nextMain + mapped.rigidGripTranslationXDip) * 2, 260)
+				&& Near(mapped.visualLeftDip * 2, 340) && Near(mapped.visualRightDip * 2, 1000),
+				"release canonical-root and layout-absorb paths preserve the same successful world shape");
+			if (nextMain == 130.0)
+				Check(Near(release.gripOffsetDip, 0.0),
+					"absorbed native movement is not applied again as raw release elastic");
+			const auto retry = ResolveBarBottomDockShiftedHorizontalShape(held,
+				0, 60, 2, 260, 0, 0, 2, 260, nextMain, true, nextMain + 400);
+			Check(retry.valid && Near(retry.gripOffsetDip, release.gripOffsetDip)
+				&& Near(retry.farErrorDip, release.farErrorDip),
+				"horizontal release retry reuses the successful shape without accumulating compensation");
+		}
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		Check(!ResolveBarBottomDockShiftedHorizontalShape(held, 0, 60, 2, nan,
+			0, 0, 2, 260, 100, true, 500).valid
+			&& !ResolveBarBottomDockShiftedHorizontalShape(held, 0, 60, 2, 260,
+				0, 0, 0, 260, 100, true, 500).valid
+			&& !ResolveBarBottomDockShiftedHorizontalShape(held, 0, 60, 2, 260,
+				0, 0, 2, 260, 100, true, nan).valid,
+			"invalid horizontal handoff inputs are rejected rather than publishing a mixed shape");
+	}
+
 	void TestEffectiveInputCaptureAndNormalizedGrab()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -706,6 +831,9 @@ namespace
 
 int RunBarBottomDockTests()
 {
+	TestFixedSurfaceWorldTargets();
+	TestFixedSurfaceFramePresentation();
+	TestFixedSurfaceHorizontalHandoff();
 	TestEffectiveInputCaptureAndNormalizedGrab();
 	TestDirectWindowMovePresentationBarrier();
 	TestDetachSeedFromSuccessfulShape();

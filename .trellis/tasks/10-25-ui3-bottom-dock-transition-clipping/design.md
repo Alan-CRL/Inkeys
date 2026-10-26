@@ -119,3 +119,53 @@
 - 必要文件：Bar.BottomDock.h（简化映射/交接helper）、Bar.Interaction.cpp（发布top、撤临时trace）、Bar.Main.cppm（删除比例槽、同槽明确语义）、Bar.RenderLoop.cpp（消费top/统一恢复/撤trace）；两份既有测试同步删除错误约束，rendering-and-ui.md纠正合同。
 - 保留已人工确认的empty-dirty修复、source/target包含、串行屏障和成功呈现/命中事务。审核a7dc的其他内容只删除可证明冗余或由错误抓点模型产生的代码，不回退已存在的防护。
 - 不扩展窗口预留、不改变弹簧频率/阻尼、不做其他性能重构、不创建新测试框架；所有运行和视觉结论留给用户人工验证。静态审查只确认结构与调用一致性，不能记作运行PASS。
+
+## 36秒 V 字输入重放（2026-10-26 当前范围）
+
+- 仅扩展research/live-dock-probe.cpp；产品保持8ba46740及上一轮已构建EXE，不改动画、输入处理或窗口算法，不创建新构建系统。
+- 增加replay-v与只输出计划的plan-v命令；保留原直线replay入口和PID/命中/锁屏/接管/释放保护。36秒仅计正式V路线，握住Logo移至左上起点的准备阶段单列。
+- 固定fixture：相同私有StartupPlacement=0、展开、启动稳定、zoom=2、monitor 2880x1920。main center=(975,1775)取此前真实begin记录；rawBodyX=1440来自稳定居中root合同，不冒充实测。当前窗口/DPI/配置须在启动后核对。
+- 水平阈值40DIP=80px、竖直阈值20DIP=40px；计划交点(895,1735)/(1055,1735)，V顶点(975,1815)，左右上端(815,1655)/(1135,1655)。每条腿|dx|=|dy|=160，按单一整数步长生成两轴坐标，避免各轴舍入让轨迹偏离45度。
+- 路线L→V→R→V→L，12轮、每腿750ms，正式时间使用同一绝对QPC原点，共36000ms；在边界点的短暂停留纳入腿时长，并必须实际确认该输入点后继续，端点不跳过。超过允许的输入确认尾差则报告未完整执行，不能拉长测试冒充36秒完成。
+- 只编译独立ARM64工具，先无输入检查计划，再用同一产品版本启动私有窗口。用户确认准备好后运行一次，记录其肉眼结果；不使用Computer Use、不抓屏、不提交新commit。
+
+## 剩余单帧原点错配：当前诊断边界
+
+- 窗口提交链为输入线程发布tuple/直移 → 渲染线程绘制 → directWindowDragMutex → GetDC/ULW/ReleaseDC/EndDraw → 成功发布。蓝框也是位图内容，不能当作同步真实HWND证据。
+- 尚无证据证明现有barrier被绕过；ordinary stale fallback保留真实直移，不能直接更换。需要同帧frame/live/selected translation、source/viewport/capacity、真实HWND前后和API时间点。
+- 仅临时新增Bar.LiveOriginTrace.h并接入Bar.RenderLoop.cpp，不改输入、调度、动画或窗口调用参数。仅harness构建且显式环境变量目录时启用，固定8192条/手势；热段只存内存，松手后在几何锁释放后导出。每手势独立session/QPC，防止旧one-shot误配；不抓屏、不DwmFlush。
+- 先标准ARM64 Solution构建和关闭/开启诊断的无窗口冒烟，再在用户准备好后同一V轨迹复现。未启用时无缓冲分配、无QPC/额外窗口采样。诊断不能代替最终最小修复；定位完成后移除或收回测试边界。
+
+## 候选最小修复：原点变化时ULW完整表面提交
+
+第二轮诊断已复现同症状且源DC读回51张Logo位置正确，所用坐标/前后HWND一致，错误出现在提交/显示交接链。只读公式检查和源像素证据均未指向动画或窗口容量。
+
+先做单变量：最终ULW在既有几何mutex内，将destination与成功窗口缓存比较；原点变化或缓存不ready时传prcDirty=nullptr，其他帧保持现有dirty。仅Bar.RenderLoop.cpp这一条件改变产品行为；不新增窗口API、D2D全绘、资源或状态。现有bitmap维护合同保证候选viewport内未变像素仍有效。诊断full列改记实际ULW参数。
+
+这是待实机证实的候选，不将非空prcDirty自行宣判为Windows缺陷。先标准完整Solution构建/既有离屏吸附验证，再用户同轨迹肉眼A/B；仍复现则撤回此条件，继续定位，不能宣称完成。原点不变的普通位移、命中、失败恢复和source/size改变规则保留。通过视觉后删除临时诊断并复核性能范围。
+
+## 当前实验：整体上移200px隔离物理边缘
+
+原点整窗提交候选实机无效，条件已撤回。用户补充四象限跳变均为native原点迁移的反方向；普通拖动起始无此症状，并提出窗口超屏/任务栏边缘假设。三轮真HWND没有bottom>1920、没有postULW自动拉回，但多次触及1920且位于1856工作区外。
+
+仅在Bar.Initialization.cpp显式INKEYS_UI3_DIAGNOSTIC_RAISE=1下，将发布给Bar的monitor/work-area矩形和desktopDockLine整体y−200；保持矩形宽高、DPI、UIScale、handle与任务栏属性不变，不改全局Display或系统任务栏。render/input消费同一发布tuple，因此原有状态、弹簧、source和相对输入可保持不变，真实窗口/UI/重放路线整体上移200。预期启动rect[876,1476,2004,1674]，grip975/1575，V entry1535，left815/1455、vertex975/1615、right1135/1455。
+
+必要文件仅Initialization的测试开关及既有诊断/任务记录；无新的产品修复、配置键或呈现策略。先完整Solution构建，核对fixture，再用户准备后36秒V对照。必须检查实际trace显示monitorOrigin−200、source/size/relative输入与基线等价且真实HWND.bottom<=1720，才能将仍复现作为排除真实底边/任务栏接触的必要性证据。若未等价或未复现，不作定论。
+
+## 固定手势表面：评估结论（尚未实施）
+
+用户上移对照仍同强跳变，实际底边接触不是必要条件。新出路评估见research/gesture-fixed-surface-assessment-2026-10-26.md：Down一次完整包络准备并成功后冻结V0/C0/source/size，nativeOrigin由成功基线加连续输入差得到；底边/居中远端以稳定世界目标减nativeOrigin求local，误差弹簧独立恢复；Up从最后成功完整形状交接并收拢。不要仅改native T两行，也不固定形变中的所有像素。
+
+预留不随累计路程扩大，但需覆盖本手势形状全集、已有合法大seed、提示/光效/退场内容；跨DPI/布局/跨屏钳制是需收口边界。建议首个原型在当前单屏同DPI路线验证机制，通用兼容仍需后续验证。性能保留partial dirty、复用已有backing，不把整个capacity当HWND。
+
+本轮只有评估/研究和诊断清理：产品两文件恢复HEAD，临时诊断头已移至TestResults/diagnostic-source-snapshot；本任务仍in_progress，不把方案可行标作修复。没有新编译/拖动或commit。
+
+## 已批准实施边界
+
+当前实现和本轮验收已完成：用户36秒V字12轮后确认未见位置跳变、顶边与果冻正常；固定窗口17348个held样本均为1608×504。具体改动、软件检查、环境问题和原生证据见 `research/fixed-gesture-surface-implementation-2026-10-26.md`；下文是对应批准范围，不是待实现状态。
+
+用户已在最新回复批准上述方案。Interaction负责成功Down基线+同一连续有效输入差的native T和发布top/grip；WindowGeometry纯helper由render owner在完整成功后冻结同identity表面；RenderLoop负责world-target误差转换、固定几何、Down容量、Up规范root和成功形状交接。现有屏幕/UI可见性clamp仅作为与mode无关的有效输入限制，held透明HWND不做底行截短。
+
+必要产品文件限定Interaction/RenderLoop/BottomDock/WindowGeometry，既有纯算法和真实RenderLoop测试验证source/size/anchor恒定、底端目标、释放/失败。单屏同DPI原型；环境serial/zoom变化通过成功屏障重准备新段，不能在相同段悄悄增长。适用spec已阅读；无新线程/绘制后端/配置/构建系统。
+
+用户最新要求：本轮完成收尾并提交工作改动，Trellis任务保持in_progress，不执行finish/archive或推送。
