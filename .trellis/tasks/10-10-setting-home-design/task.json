@@ -1,0 +1,192 @@
+{
+  "id": "setting-home-design",
+  "name": "setting-home-design",
+  "title": "主页品牌横幅、版权信息与开源名片设计",
+  "description": "实现居中彩色手写字标、三语言欢迎语与标语、完整版权许可链接，以及 GitHub/GitCode 开源名片与 Star/赞助入口。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-10",
+  "completedAt": null,
+  "branch": "fluent",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-14-setting-entrance-cache"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.HomeBrand.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "Inkeys/src/i18n/zh-CN.jsonc",
+    "Inkeys/src/i18n/zh-TW.jsonc",
+    "Inkeys/src/i18n/en-US.jsonc",
+    "Inkeys/IdtI18nKeys.g.h",
+    "Scripts/i18n.zh-CN.snapshot.jsonc",
+    "Inkeys/Inkeys.vcxproj",
+    "Inkeys/Inkeys.vcxproj.filters",
+    "InkeysHeadlessTests/setting_design_tests.cpp",
+    ".trellis/spec/native-desktop/rendering-and-ui.md",
+    "Inkeys/Inkeys/UI/Setting/Setting.SessionState.h",
+    "InkeysHeadlessTests/setting_session_state_tests.cpp",
+    "InkeysHeadlessTests/setting_home_warp_tests.cpp",
+    "InkeysHeadlessTests/setting_home_warp_tests.h",
+    "InkeysHeadlessTests/setting_home_warp_tests.rc",
+    "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj",
+    "Scripts/i18n.ps1",
+    ".trellis/spec/native-desktop/configuration-i18n-and-assets.md",
+    "Inkeys/additional/imgui/imgui_impl_dx11.cpp",
+    "Inkeys/additional/imgui/imgui_impl_dx11.h"
+  ],
+  "notes": "第八轮实现和既有验收完成：2.66s时序、遮罩下首帧准备及有界快路径；完整ARM64构建、headless/WARP和必要native性能测试通过，无Computer Use。用户2026-10-12明确授权提交本轮改动并要求不结束任务；任务保持in_progress，后续继续性能优化和人工测试，以及Win7/真实设备失效验收。详见research/entry-performance-validation.md。",
+  "meta": {
+    "validation": {
+      "build": "Debug|ARM64 PASS; Exit0; 79.7518292s; 0 errors",
+      "headless": "--no-window PASS; Exit0; 273.9630156s; stderr0",
+      "i18n": "384/384 PASS; no visible source strings changed",
+      "warp": "FL11.0 production backend exact preparation/first-transparent/static RGBA + light/dark Solid 8 phases + 3 fallback PASS; same Frame 20warm/100samples pairs",
+      "manualNativeVisual": "Windows11 ARM64 SC/light native cold+3warm finished; small Show skipped; restore no replay; normal closing log and PID exited; no Computer Use",
+      "nativeFrameCallbackMedianMs": [
+        17.7048,
+        18.0849
+      ],
+      "nativeFrameCallbackP95Ms": [
+        24.4313,
+        28.7855
+      ],
+      "nativeSolidSuppressedCount": 0,
+      "nativeBackdrop": "Mica fallback; no native Solid gain claim",
+      "preparationBytes": 160,
+      "debugProfileSamplesBytes": 32768,
+      "initialDeviceRemovalCause": "unknown",
+      "win7Machine": "not run",
+      "validationRecord": "research/entry-performance-validation.md"
+    },
+    "motionRevision": "implemented_verified_pending_manual",
+    "firstRevisionValidation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "383/383 PASS",
+      "manualNativeVisual": "pending"
+    },
+    "rippleRevision": "implemented_verified_pending_manual",
+    "motionRevisionValidation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "384/384 PASS",
+      "warp": "Windows 11 ARM64 FL11.0 pixels/performance PASS",
+      "manualNativeVisual": "pending",
+      "win7Machine": "not run"
+    },
+    "commitAttempt": {
+      "status": "failed",
+      "reason": "1Password: failed to fill whole buffer; fatal: failed to write commit object",
+      "message": "feat(settings): redesign home branding and fix logo caps",
+      "stagedBaselinePreserved": true
+    },
+    "softSheenRevision": "implemented_verified_pending_manual",
+    "rippleRevisionValidation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "384/384 PASS",
+      "warp": "Windows 11 ARM64 FL11.0 cap/ripple pixels/performance PASS",
+      "manualNativeVisual": "pending",
+      "win7Machine": "not run"
+    },
+    "brandEntryRevision": "implemented_verified_pending_manual",
+    "previousWorkCommit": "a3b22667",
+    "brandEntryRevisionValidation": {
+      "build": "Debug|ARM64 PASS",
+      "headless": "--no-window PASS",
+      "i18n": "384/384 PASS",
+      "warp": "Windows 11 ARM64 FL11.0 native writing/Hold/curve/cap/pixels/performance PASS",
+      "manualNativeVisual": "Windows11 ARM64 native smoke PASS; three languages/light-dark/Show-Hide/resize; real DeviceRemoved and Win7 not run",
+      "win7Machine": "not run",
+      "validationRecord": "research/brand-entry-validation.md"
+    },
+    "textureCrashRevision": "implemented_verified_native_smoke_pass",
+    "textureCrashRevisionValidation": {
+      "build": "Debug|ARM64 PASS; Exit0; 27.2498582s",
+      "headless": "--no-window PASS; Exit0; 172.6073485s; stderr0",
+      "i18n": "384/384 PASS",
+      "warp": "FL11.0 production backend real E_INVALIDARG/pixels/lifecycle PASS; removed/reset HRESULT injection only",
+      "initialDeviceRemovalCause": "unknown",
+      "manualNativeVisual": "Windows11 ARM64 native smoke PASS; three languages/light-dark/Show-Hide/resize; real DeviceRemoved and Win7 not run",
+      "win7Machine": "not run",
+      "validationRecord": "research/texture-crash-validation.md"
+    },
+    "nativeRuntimeValidation": {
+      "coldStarts": 3,
+      "languages": [
+        "en-US",
+        "zh-CN",
+        "zh-TW"
+      ],
+      "languageThemeCombinations": 6,
+      "businessShowsObservedTotal": 14,
+      "businessShowsLogged": 13,
+      "additionalConsecutiveHideShowCycles": 6,
+      "normalExitRecords": 3,
+      "nativeDpi": 192,
+      "nativeClientDipSizes": [
+        [
+          720,
+          520
+        ],
+        [
+          960,
+          700
+        ],
+        [
+          1441,
+          889
+        ]
+      ],
+      "sourceConfigUnchanged": true,
+      "crashReproduced": false,
+      "actualDeviceRemovalTriggered": false,
+      "win7MachineRun": false,
+      "record": "research/native-runtime-validation.md",
+      "computerUseOperatedWindows": false
+    },
+    "remainingWork": [
+      "继续开屏动画与设置渲染的性能优化，并保留同机实测对照",
+      "人工确认最终原生动画观感与真实设备失效恢复",
+      "Win7 SP1+KB2670838实机验证"
+    ],
+    "entryPerformanceRevision": "implemented_verified_native_performance_pass",
+    "entryPerformanceRevisionValidation": {
+      "build": "Debug|ARM64 PASS; Exit0; 79.7518292s; 0 errors",
+      "headless": "--no-window PASS; Exit0; 273.9630156s; stderr0",
+      "i18n": "384/384 PASS; no visible source strings changed",
+      "warp": "FL11.0 production backend exact preparation/first-transparent/static RGBA + light/dark Solid 8 phases + 3 fallback PASS; same Frame 20warm/100samples pairs",
+      "manualNativeVisual": "Windows11 ARM64 SC/light native cold+3warm finished; small Show skipped; restore no replay; normal closing log and PID exited; no Computer Use",
+      "nativeFrameCallbackMedianMs": [
+        17.7048,
+        18.0849
+      ],
+      "nativeFrameCallbackP95Ms": [
+        24.4313,
+        28.7855
+      ],
+      "nativeSolidSuppressedCount": 0,
+      "nativeBackdrop": "Mica fallback; no native Solid gain claim",
+      "preparationBytes": 160,
+      "debugProfileSamplesBytes": 32768,
+      "initialDeviceRemovalCause": "unknown",
+      "win7Machine": "not run",
+      "validationRecord": "research/entry-performance-validation.md"
+    }
+  }
+}

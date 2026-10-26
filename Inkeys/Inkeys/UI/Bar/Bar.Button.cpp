@@ -1531,9 +1531,10 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 {
 	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
 	if (whiteboard) barUISet.barState.geometryAttribute = false;
-	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+	// 白板内切换工具或折叠主栏时，也要收起已展开的绘制属性。
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible()))
+		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible())
 	{
 		barUISet.barState.drawAttribute = false;
 	}
@@ -2055,8 +2056,8 @@ namespace Inkeys::UI::Bar
 		{
 		public:
 			ButtonDrawTransform(BarUIRendering& renderer, ID2D1DeviceContext* context,
-				const BarUiShapeClass& background, const BarUiInheritClass& inherit, double scale)
-				: context_(context)
+				const BarUiShapeClass& background, const BarUiInheritClass& inherit, double scale, double targetScale, double duration)
+				: fontScope_(renderer, targetScale, duration), context_(context)
 			{
 				context_->GetTransform(&original_);
 				if(!std::isfinite(scale) || scale<=0.0)scale=1.0;
@@ -2070,6 +2071,7 @@ namespace Inkeys::UI::Bar
 			}
 			~ButtonDrawTransform(){if(changed_)context_->SetTransform(original_);}
 		private:
+			BarUIRendering::FontTargetScope fontScope_;
 			ID2D1DeviceContext* context_;
 			D2D1_MATRIX_3X2_F original_{};
 			bool changed_=false;
@@ -2085,7 +2087,7 @@ namespace Inkeys::UI::Bar
 		const auto visualInheritance = PrepareBarButtonVisualInheritance(
 			button, inherit, options.secondary);
 		ButtonDrawTransform transform(renderer,deviceContext,button.button,
-			visualInheritance.button,button.pressScale.val);
+			visualInheritance.button,button.pressScale.val,button.pressScale.tar,button.pressScale.dur);
 		// 先更新继承坐标再拒绝绘制，成功呈现后的命中快照仍可读取本帧几何。
 		// 自定义内容没有额外包络合同，不能连同标准按钮一起猜测裁掉。
 		if (!options.underlay && !options.content)
@@ -2137,7 +2139,9 @@ namespace Inkeys::UI::Bar
 	{
 		if(!context)return false;
 		ButtonDrawTransform transform(renderer,context,parts.background,inherit.button,
-			parts.pressScale?static_cast<double>(parts.pressScale->val):1.0);
+			parts.pressScale?static_cast<double>(parts.pressScale->val):1.0,
+			parts.pressScale?static_cast<double>(parts.pressScale->tar):1.0,
+			parts.pressScale?static_cast<double>(parts.pressScale->dur):0.0);
 		const auto bounds = ComputeBarButtonVisualBounds(renderer, parts, inherit);
 		if (bounds && !renderer.ShouldDrawFrameBounds(context, *bounds)) return false;
 		bool rendered=renderer.Shape(context,parts.background,inherit.button);
@@ -2160,7 +2164,7 @@ namespace Inkeys::UI::Bar
 {
 	void ConfigureBarButtonVisualTargets(BarButtonClass& button,
 		BarButtonVisualLayoutKind layoutKind,double duration,double scale,bool direct,
-		std::optional<double> iconHeightOverride)
+		std::optional<double> iconHeightOverride,std::optional<double> fontTargetScale)
 	{
 		const auto metrics = ResolveBarButtonVisualMetrics(layoutKind);
 		if (!std::isfinite(scale) || scale <= 0.0) scale = 1.0;
@@ -2189,7 +2193,10 @@ namespace Inkeys::UI::Bar
 		Set(button.name.y, metrics.primaryOffsetYDip);
 		Set(button.name.w, metrics.primarySlotWidthDip);
 		Set(button.name.h, metrics.primarySlotHeightDip);
-		Set(button.name.size, button.LabelFontSize(metrics.primaryFontSizeDip));
+		const double labelSize = button.LabelFontSize(metrics.primaryFontSizeDip);
+		Set(button.name.size, labelSize);
+		// 派生布局传入最终倍率；回到普通布局时清除覆盖，恢复原 size.tar 目标。
+		button.name.fontTargetSize = fontTargetScale ? labelSize * *fontTargetScale : -1.0;
 	}
 
 	namespace
@@ -2273,6 +2280,7 @@ namespace Inkeys::UI::Bar
 	{
 		ButtonAnimationVisitor v{frame, &word, part};
 		const bool replace = v.Replace(word);
+		if (replace) word.fontCorrection.ForceNext();
 		const bool content = word.AdvanceContentTransition(frame.dtSeconds, frame.speedRate);
 		v.Observe(Property::Content, content, content, !content);
 		v.Advance(word.enable, replace, Property::Visibility);

@@ -1,0 +1,15 @@
+{
+  "protected_file_count": 15,
+  "all_hashes_unchanged": true,
+  "status_unchanged": true,
+  "original_status": " M Inkeys/IdtMain.h\n M Inkeys/PptCOM.dll\n?? PptCOM.Tests/\n",
+  "fluent": "834307a4b21cc4b58d6f34a6572af6f401096218",
+  "publish": "e2c212d4d9cd68367c08363c450d392e9d63bcef",
+  "isolated_branch": "codex/fluent-setting-sidebar",
+  "HEAD": "834307a4b21cc4b58d6f34a6572af6f401096218",
+  "MERGE_HEAD": "e2c212d4d9cd68367c08363c450d392e9d63bcef",
+  "unmerged_paths": "",
+  "gui_executed": false,
+  "commit_created": false,
+  "push_executed": false
+}

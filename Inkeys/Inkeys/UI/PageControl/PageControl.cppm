@@ -6,6 +6,7 @@ module;
 
 #include <windows.h>
 #include "../../Business/PptSessionToken.h"
+#include "../Ppt/Ppt.Recovery.h"
 
 #include <algorithm>
 #include <array>
@@ -579,6 +580,7 @@ export namespace Inkeys::UI::PageControl
 		std::uint64_t publicationRevision = 0;
 		std::uint64_t targetRevision = 0;
 		std::uint64_t pageAckEpoch = 0;
+		PptRecovery::State recovery;
 		// 白板期间放映控件不可见，但场次仍存活；菜单可用性不能由可见位推断。
 		bool presentationActive = false;
 		bool presentationVisible = false;
@@ -670,6 +672,7 @@ export namespace Inkeys::UI::PageControl
 		bool acknowledged = false;
 		std::uint8_t presentedPpt = 0;
 		std::uint8_t pendingPptPresentation = 0;
+		PptRecovery::State recovery;
 
 		void BeginSurface(std::uint8_t mask) noexcept
 		{
@@ -687,7 +690,7 @@ export namespace Inkeys::UI::PageControl
 		{
 			if (session != state.layout.session || target != state.targetRevision
 				|| current != state.currentPage || total != state.totalPage
-				|| pageAckEpoch != state.pageAckEpoch)
+				|| pageAckEpoch != state.pageAckEpoch || recovery != state.recovery)
 			{
 				const auto visible = presentedPpt;
 				const auto pending = pendingPptPresentation;
@@ -695,6 +698,7 @@ export namespace Inkeys::UI::PageControl
 					state.currentPage, state.totalPage, state.pageAckEpoch };
 				presentedPpt = visible;
 				pendingPptPresentation = pending;
+				recovery = state.recovery;
 			}
 			// 隐藏目标不是 HWND 已隐藏；淡出旧数字或未完成的呈现仍须交接。
 			const auto requiredMask = static_cast<std::uint8_t>(visibleMask
@@ -707,7 +711,8 @@ export namespace Inkeys::UI::PageControl
 		{
 			if (session != state.layout.session || target != state.targetRevision
 				|| current != state.currentPage || total != state.totalPage
-				|| pageAckEpoch != state.pageAckEpoch) return false;
+				|| pageAckEpoch != state.pageAckEpoch || recovery != state.recovery
+				|| state.recovery.kind != PptRecovery::Kind::None || state.recovery.revision != 0) return false;
 			committed |= mask;
 			if (acknowledged || session == 0 || target == 0
 				|| current == 0 || current < -1 || total <= 0 ||
@@ -750,6 +755,7 @@ export namespace Inkeys::UI::PageControl
 			};
 		return left.targetRevision == right.targetRevision
 			&& left.pageAckEpoch == right.pageAckEpoch
+			&& left.recovery == right.recovery
 			&& left.layout.session == right.layout.session
 			&& left.layout.epoch == right.layout.epoch
 			&& left.layout.pairVersions == right.layout.pairVersions
@@ -803,6 +809,7 @@ export namespace Inkeys::UI::PageControl
 		std::function<void()> endShow;
 		std::function<void(std::size_t, PptLayoutState)> commitPosition;
 		std::function<void(std::uint64_t, std::uint64_t, int, int, std::uint64_t)> pagePresented;
+		std::function<void(PptRecovery::State)> retryCanvas;
 	};
 
 	struct WhiteboardCallbacks

@@ -381,6 +381,28 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		return config;
 	}
 
+	bool DirectInputUsesDpiFallback(const DisplayScale& display) noexcept
+	{
+		// Host 尚未发布绘制输出时不推测；逻辑映射未知的真实输出仍须按解析器提示退化。
+		if (display.monitor == 0) return false;
+		InputSource source;
+		source.mappedMonitor = display.monitor;
+		source.mappedLeft = display.desktopLeft;
+		source.mappedTop = display.desktopTop;
+		source.mappedWidth = display.pixelWidth;
+		source.mappedHeight = display.pixelHeight;
+		// 仅探测该屏幕的直接输入能力，不写入真实设备身份，也不重复标定/旋转/密度校验。
+		for (const auto kind : { SourceKind::Touch, SourceKind::IntegratedPen })
+		{
+			source.kind = kind;
+			const auto config = ResolveConfig(display, DeviceMode::Automatic, source);
+			if (config.response != ResponseModel::IndirectDip &&
+				(config.motionSource == ScaleSource::DipOnly || config.motionSource == ScaleSource::ResolutionDpiHeuristic))
+				return true;
+		}
+		return false;
+	}
+
 	ResolvedInput ResolveInput(const DisplayScale& display,DeviceMode mode,const InputSource& source,
 		InputEntry entry,const InputSettings& settings,EraserToolPolicy policy) noexcept
 	{

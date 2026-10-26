@@ -1,0 +1,7 @@
+
+  Scanning sources for module dependencies...
+  setting_design_tests.cpp
+  Compiling...
+  setting_design_tests.cpp
+  LINK : C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\Build\ARM64\Debug\InkeysHeadlessTests.exe not found or not built by the last incremental link; performing full link
+  InkeysHeadlessTests.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\Build\ARM64\Debug\InkeysHeadlessTests.exe

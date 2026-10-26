@@ -1,0 +1,3 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"原生工程边界和无窗口验证要求"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"编码换行、显示快照/订阅/Shutdown合同"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"复用现有 solution 和原生 ARM64 MSBuild 验证"}

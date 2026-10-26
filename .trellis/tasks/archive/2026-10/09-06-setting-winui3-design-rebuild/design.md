@@ -1,0 +1,143 @@
+# WinUI 3 桌面设置设计方案 · v1
+
+状态：历史页面、窗口与发布整合已完成；当前按 research/approved-hierarchical-nav.md 实现分层导航和通用拆分，禁止 GUI/Computer Use，不自动 commit/push。目标是 WinUI 3 桌面应用的结构和视觉质量；继续使用 ImGui + ImFluent，不迁移到 XAML，也不改共享渲染架构。
+
+## 视觉方向
+
+以用户给出的 Windows 设置页为主要依据：浅灰应用底、安静的内容层、白色细边框设置卡、清晰标题层级和稳定的右侧操作列。浅色 v1 参考第三张图的导航轨道与内容关系；本轮新增与同一结构一致的深色 palette。主页借用控件画廊的信息组织方式，使用轻量静态书写插画和功能入口，不设置伪造的统计卡或状态面板。
+
+效果稿使用实际内嵌 HarmonyOS Sans SC Regular/Bold 和 Segoe Fluent Icons。标题的 Bold 是现有字体资产约束下的 v1 选择，不声称等于 WinUI Semibold；如审查认为太重，优先用 Regular 调整标题，不伪造描边字重或擅自换字库。
+
+## 尺寸提案（全部为逻辑 DIP）
+
+| 区域 | v1 提案 | 归属 |
+| --- | --- | --- |
+| 标题栏 | 32 高，主题按钮 32 宽，caption cell 46 宽 | 本轮窗口增量复用原 DIP 节奏 |
+| 展开导航 / 收起轨道 | 248 / 48 宽 | 项目选值 |
+| 导航 item | 36 高，4 的行间距和左右 inset；图标中心 x=24 固定 | 项目选值，已有 ImFluent 尺寸可复用 |
+| 选中条 | 3×16；与图标/文字纵向居中 | 复用轻量 WinUI 视觉 |
+| 汉堡按钮 | 可见区 40×36，左 x=4；展开/收起不变为返回箭头 | 导航 toggle，不表示返回 |
+| 内容 gutter | 宽窗 40；960 默认窗 24；720 最小窗 24 | 项目响应式选值 |
+| 内容宽上限 | 1040，超宽窗在内容区域内居中 | 项目选值；所有标题、分组、卡片共用这一轴 |
+| 页面标题 / 行高 | 28/36 | 官方 Windows type ramp |
+| 小标题 / 主文案 | 14/20；区块标题 Strong，行标题 Regular | 官方层级，具体使用由项目决定 |
+| 次要说明 | 12/16；关键信息不降为次要灰字 | 官方层级 |
+| 分组 | 前间距 28，标题到卡片 8 | 前者项目选值，后者官方布局依据 |
+| 设置行 | 双行文案最小高 72；上下/左右 padding 16；相邻卡片 gap 4 | 项目选值；长文自动增高 |
+| 行内图标 | 24 的槽位，20 的绘制大小；与标题/说明整体居中 | 与文字字体独立 |
+| 文案 → action 间距 | >=16（布局测量后保留）；action 实际宽度，不固定占总宽 34% | 新布局合同 |
+| 按钮 / 下拉 | 标准高 32，按钮组 gap 8；右边缘按实际尺寸对齐 | 高度来自已用 ImFluent，间距参考官方 |
+| 开关 | 40×20，状态文本在左，gap 12 | 复用现有库尺寸 |
+| 圆角 | 控件/设置行 4；主页内容卡和顶层内容面板 8 | 项目 v1 选择 |
+
+颜色是浅色方案的具名 token：AppBase `#F3F3F3`，PageSurface `#FAFAFA`，Card `#FFFFFF`，Stroke `#E5E5E5`，Text `#202020`，TextSecondary `#616161`，Accent `#0067C0`，NavSelection `#E7E7E7`。普通设置页主要靠明度与边框分层，不给每个图标配彩色底、不大量使用强调按钮。蓝色用于启用、选择、链接和首页主操作。
+
+## 导航合同
+
+1. 一份带稳定 PageId 的条目表负责菜单、选中和路由；标题文字不作为状态 ID。
+2. 默认 `>=900` 展开；`<900` 紧凑轨道。在当前最小窗口 720 DIP 下仍保留轨道，打开导航覆盖内容。900 是为 960 默认窗口定制的阈值，不冒充原生 NavigationView 默认断点。
+3. 宽窗手动收起后内容重排占用释放空间；图标和汉堡 x 轴不动，只隐藏标签。窄窗展开时内容宽度/x 不动，打开 248 宽覆盖面板，点击遮罩、Esc 或选择条目关闭。
+4. 用户的宽窗收起偏好、自动模式、overlayOpen 分别保存；一次 resize 不覆盖用户偏好。切回宽窗恢复宽窗偏好。
+5. 导航列表独立滚动；底部社区/重启/退出固定，主菜单与底栏用同一水平 inset。收起状态可用 tooltip/可访问名称识别条目；tooltip 出现才加载文案不应成为资源开销。
+6. 插件详情通过页内 breadcrumb 返回；返回按钮与汉堡分工清晰，不在切换主页分类时假装存在历史返回栈。
+
+## 设置行与文字布局合同
+
+新的 SettingsRow 负责测量、排列和绘制；页面提交文案、图标、控件类型/内容和状态，不提供像素 cursor 坐标。
+
+基本模式为 `Icon | Text（可伸展） | Action（按内容测量并靠右） | 可选 Chevron`。纯导航行、开关行、单按钮/按钮组、下拉、滑块、折叠详情与复杂编辑器为明确变体，不强塞进同一个 Begin/End 兼容包装。action 存在时与尾部 inset 对齐，有 chevron 时其左侧再保留 16。
+
+测量顺序：获取可用宽度 → 估算/测量 action 自然宽度与最大宽度 → 分配正文宽 → 按真实字体/语言测量文案 → 算行高 → 统一安排文字块、图标与 action 中心 → 提交 ImFluent 控件。重要公式为 `rowHeight=max(minHeight, textHeight+2*padding, actionHeight+2*padding)`；不能从绘制后的 cursor.y 推测完整文本边界。
+
+默认使用同一卡片的标题＋完整多行说明，action在右侧。按实际文字/操作预算动态切换标题与action在上、说明下方通栏；极窄再将控件换行，不缩小字号、截断或折叠完整说明。方案一/二切换复用既有动画开关和速率，支持中途反向并始终保留真实文字包络。置顶间隔完整说明常驻，移除独立“详细说明”展开块；真实子设置/其他长文的Details用途不统一删除。最新批准及实现合同见子任务 ../10-08-setting-multiline-card-layout/design.md，替代此处历史摘要/折叠详情方案。
+
+字体分别管理 semanticSize、glyphScale、lineHeight、baselineOffset；1.213 是 STB 与 em 换算研究起点。`ExtraSizeScale` 不同步改布局 ascent，必须和基线/行框一并验证。原生行框高固定于语义层级而非 TTF 内部留白；屏幕像素对齐发生在最后一步。以代表性字符串集合校准固定基线，不按每条文本可见包围盒重新居中，避免不同字形导致跳动。图标改用独立字体绑定/绘制槽，不能继续靠正文 MergeMode 的 10/4 偏移碰运气。
+
+## 主页提案
+
+- 页头“主页”与欢迎语。
+- 静态产品引导区：书写示意、进入绘制设置的主操作、教程入口。插画为审查稿内的轻量矢量，不要求新增媒体运行库。
+- 三个功能入口：绘制、预设、插件；与真实已有页面对应。
+- 常用设置：常规、语言；作者/反馈/支持开发作为较轻的信息区域。
+- 现有官网、GitHub、社区、Bilibili、反馈、联系作者均保留；更新状态继续在软件版本页。
+- 本稿不增加搜索、账户、统计、推荐算法或尚未存在的快捷键编辑功能。示例控件状态与文案不是新增配置默认值。
+
+## 技术边界与建议文件划分
+
+保留 `Setting.cppm` 的公开生命周期/窗口接口、`Setting.Base.cppm` 的 resident session 与 backend/device 关系、`Setting.SessionState.h` 的生命周期合同以及 RenderPipeline 的共享 device epoch/串行调度。只在必要位置接入新的页面入口与字体构建。
+
+建议逐步形成：
+
+- `Setting.Shell`：导航、内容 viewport、breadcrumb、滚动恢复；标题栏调用原实现。
+- `Setting.DesignTokens` / `Setting.Typography`：尺寸/颜色/字面/基线，单一 DPI 换算入口。
+- `Setting.RowLayout`：无渲染依赖的测量排列结果，返回 text/icon/action/chevron rects；支持长文与复合 action。
+- `Setting.Controls`：基于 ImFluent Button/Toggle/Combo/Slider 等的设置行组合。优先利用已有库能力；公开 API 缺口确实阻碍基线/导航时允许最小本地补丁，必须记录 UPSTREAM。
+- `Setting.Pages.*`：主页、常规、绘制、配置、插件等显式页面函数。复杂页保留专用组合，不强行抽成一张万能 schema 表。
+- `Setting.ViewState` / `Setting.Actions`：页状态与 UI 事件出口。桥接原有 state、FIFO worker、异步 completion，不重写业务服务。
+
+这些是建议职责，不要求一次生成所有文件；实施中按实际依赖拆分，避免空壳架构。迁移时保留旧页面作为尚未迁移路由的入口，新页面通过内部路由选择接入，最终移除本轮替代的旧页面代码，不留下两个可见设置系统。
+
+## 配置与副作用合同
+
+页面只读 UI snapshot / draft，用户实际改变值时触发 typed action；绝不每帧写配置。桥接保持原 `setlist` / `Inkeys::config` 的字段、范围、默认、写盘和即时同步时机。
+
+具体例子：主栏缩放拖动实时调用 Bar 的既有缩放入口，释放时保存；设置缩放按现有提交时机重建字体与请求帧；语言变更保留加载/写盘/重启提示；创建快捷方式、更新、修复、模态确认和文件 IO 继续投递 FIFO，不能在唯一渲染线程阻塞；PPT 配置保留托管写入和运行时通知。所有副作用按 stable settingId/actionId 去重，不因测量重排调用两次。
+
+## 为未来预留的边界
+
+稳定 item ID、纯布局结果、独立交互状态为未来动画与脏区提供可比较输入。本轮不实现新动画、不创建第二个渲染循环、不为触摸扩展输入协议、不增加新 D3D device/独立后台线程。字体/纹理沿用预热和 epoch 生命周期，避免后续重新接线。
+
+## 风险与回退
+
+最大风险是字体字面放大后上/下延伸超出原控件 clip，以及迁移遗失配置副作用；其次是 ImFluent 带静态上下文、即时布局的公开 API 与精确图标/基线要求不匹配。用原生离屏样张和一个完整“常规”纵向切片先消除风险，再扩展页面。
+
+以页面为回退粒度，通过内部映射暂时回到旧页面；不回退 resident 生命周期或共享渲染管线。全部页面映射核对完成后再删旧 wrapper/switch 分支。若必须大改 ImFluent 或更换文字渲染引擎，先补充技术方案，不能以本轮视觉规划当作整体后端替换授权。
+
+
+## 第二轮结构收口
+
+统一Typography/ControlText/Icon/Scrollbar token，公共Page/Section/Row/Action/Details组合承担尺寸与对齐，页面只提供文案、控件数据及真实业务回调。阶段1落定共享接口后，阶段2迁移所有实际路由；不保留旧34%操作列。独特内容使用专用容器但共享文本行距、边框和控件规则。字体role全页统一后移除仅Home/General条件绑定，标题栏保持原边界。
+
+
+## 窗口与深色设计增量
+
+以research/approved-window-dark.md为当前权威范围：Setting顶层窗口真实frame/client分离、工作区最大化、标题栏独立主题切换命中区；主题颜色通过共享token更新，默认浅色，SettingDarkMode在原配置保存。不替换渲染链。
+
+## 旧任务合同接管（2026-10-08）
+
+本任务承接 archive/2026-10 下两个 08-13 任务的后续设置工作与剩余验收，完整证据入口见 research/task-handover.md。共享 WARP/串行线程/CSO/FIFO、resident/presentation、设备 epoch 和公开窗口接口沿用现行实现。旧固定浅色与旧窗口/导航方案已被本任务后续批准设计替代；既有 DWM 能力回退仅补验证，不新增材质引擎。
+
+
+## 当前设计：分层导航
+
+本轮交互、尺寸、内部路由、动画和兼容合同以 [research/approved-hierarchical-nav.md](research/approved-hierarchical-nav.md) 为准，替代历史平面菜单与不实施动画的约束。
+
+## 父行交互追加（2026-10-08）
+
+新会话通用子列表和groupReveal初始均为折叠。非紧凑父行点击采用展开状态toggle：收起只保留原目的地，展开导航到lastGeneralSection（首次Basic）。纯收起不触发正文transition；动画沿用现有render线程，反向续接当前值。具体当前要求见 `research/approved-hierarchical-nav.md` 末节。
+
+## 滚动与赞助追加（2026-10-08）
+
+选中项以稳定item锚点区分semantic变化与scroll/layout变化：同锚点的位移作用于正在运行的动画坐标，不重置进度，切换锚点仍使用原过渡。赞助复用普通NavItemEx背景与输入、蓝色label和正常glyph，中央蓝条统一处理；当前用户要求见 `research/approved-hierarchical-nav.md` 末节。
+
+## 圆头与亮蓝追加（2026-10-08）
+
+蓝条尺寸及锚点动画保持，真实绘制圆角达到半宽。普通赞助行的文字与图标共用蓝条AccentFillDefault主题色，取代前轮AccentTextPrimary/普通glyph；背景与输入合同不变。
+
+窄条使用上下两个半宽圆弧并PathFillConvex：现有ImGui PathRect会将圆角钳制到半宽减1物理像素，不能仅传半宽radius声称完整圆头。仅改本地绘制，不改vendor；测试取真实极值端头跨度。
+
+## 笔速橡皮详情页设计
+
+采用绘制内部子页、纯 draft/events 与原生 setter 接线；设备常驻复选组，物理尺寸提示复用实际解析器。当前仅介绍卡，不接入图像，后续透明笔迹与离屏擦除另行接续。详见 research/settings-speed-eraser.md。
+
+## 笔速橡皮循环演示
+
+采用真实速度控制器+真实墨迹shader的独立离屏预览，手写场景GPU缓存与可见性播放状态，借用设置设备/线程，不创建HWND。最新架构/边界见 research/settings-eraser-demo.md。
+
+## 演示动作精修
+
+采用 research/settings-eraser-demo-motion.md 的独立左右轨迹、延迟增粗和预计算时序，原页面及播放性能边界保持。
+
+## 2026-10-25 笔速橡皮与联系方式
+
+参见 research/settings-speed-eraser-polish.md。只改变生产renderer显示门控和标题、绘制分类顺序、作者联系标签，复用原状态/配置/控件及i18n。

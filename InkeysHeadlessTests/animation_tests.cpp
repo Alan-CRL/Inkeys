@@ -8,6 +8,8 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <crtdbg.h>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -19,6 +21,7 @@
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.FontSize.h"
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.Metrics;
@@ -48,6 +51,8 @@ int RunConfigMetadataTests();
 int RunBarPresentationAlphaTests();
 int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
+int RunSettingEraserDemoTests();
+int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false);
 int RunPptUiTests();
 int RunPptSessionTests();
 int RunPageControlTests();
@@ -89,6 +94,66 @@ namespace
 	bool Near(double lhs, double rhs, double epsilon = 0.000001)
 	{
 		return std::abs(lhs - rhs) <= epsilon;
+	}
+
+	void TestFontPixelSizes()
+	{
+		using Inkeys::UI::Bar::Detail::ResolveBarFontCorrectionTarget;
+		Check(Near(ResolveBarFontCorrectionTarget(7.8,false)*7.8,7.0),
+			"48 DIP target truncates 7.8px without rounding to 8px");
+		for(const double target:{0.1,0.9,1.0,7.8,13.0,48.25})
+		{
+			const double c=ResolveBarFontCorrectionTarget(target,false);
+			Check(c>=0.0 && c<=1.0 && Near(target*c,std::floor(target)),"target coefficient never enlarges stationary text");
+			Check(ResolveBarFontCorrectionTarget(target,true)==1.0,"allow preference keeps original target");
+		}
+		for(const double invalid:{0.0,-1.0,std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::infinity()})
+			Check(ResolveBarFontCorrectionTarget(invalid,false)==0.0,"invalid font target is rejected");
+
+		BarUiValueClass raw(13.0);
+		BarUiFontCorrectionClass c;
+		std::uint64_t serial=1;
+		const auto sample=[&](double dt,bool allow=false){
+			const BarUiAnimationAdvanceContextClass frame{dt,1.0,true,false};
+			if(!raw.IsSame())(void)BarUiAdvanceAnimation(raw,frame);
+			return static_cast<double>(raw.val)*0.6*c.Resolve(raw.tar*0.6,allow,serial++,frame,0.4);
+		};
+		Check(Near(sample(0),7.0),"font correction starts at the projected stationary endpoint");
+		raw.SetTar(15.0,0.4);
+		double previous=7.0;int fractional=0;
+		for(int tick=0;tick<100;++tick)
+		{
+			const double pixel=sample(0.005);
+			fractional+=std::abs(pixel-std::round(pixel))>0.00001;
+			Check(std::abs(pixel-previous)<0.1,"font size trajectory stays continuous through its final frame");
+			previous=pixel;
+		}
+		Check(fractional>30 && Near(previous,9.0) && !c.Active() && raw.tar==15.0,
+			"intermediate font sizes stay fractional and converge without changing raw target");
+		Check(Near(sample(0),previous),"first idle font frame has no additional floor jump");
+		raw.SetTar(13.0,0.4);for(int tick=0;tick<30;++tick)(void)sample(0.004);
+		const double before=static_cast<double>(raw.val)*0.6*c.Current();
+		raw.SetTar(11.7,0.4);
+		Check(Near(sample(0),before),"mid-animation retarget preserves the current visible font at zero dt");
+		const auto sameSerial=serial++;
+		const BarUiAnimationAdvanceContextClass frame{0.01,1.0,true,false};
+		const double first=c.Resolve(11.7*0.6,false,sameSerial,frame,0.4);
+		Check(c.Resolve(11.7*0.6,false,sameSerial,frame,0.4)==first,"same-frame duplicate text draw never advances twice");
+		for(int tick=0;tick<160;++tick){raw.SetTar(11.7,0.4);(void)sample(0.005);}
+		Check(Near(static_cast<double>(raw.val)*0.6*c.Current(),7.0)&&!c.Active(),
+			"repeated nominal targets do not restart correction or source animation");
+		raw.SetTar(13.0,0.4,12.0,true);
+		(void)c.Resolve(7.8,false,serial++,{0,1,true,false},0.4);
+		Check(raw.hasMiddleV&&raw.middleV==12.0&&raw.tar==13.0,"font correction preserves raw two-segment animation metadata");
+		const double kept=c.Current();
+		Check(c.Resolve(0.0,false,serial++,{0,1,true,false},0.4)==kept,
+			"zero geometry exit preserves coefficient instead of forcing an extra collapse");
+		(void)c.Resolve(7.8,false,serial++,{0,1,false,false},0.4);
+		Check(Near(c.Current()*7.8,7.0)&&!c.Active(),"disabled animations directly land on the same projected target");
+		(void)c.Resolve(7.8,true,serial++,{0,1,true,false},0.4);
+		Check(Near(c.Current()*7.8,7.0)&&c.Active(),"enabling fractional fonts retargets from the current coefficient");
+		c.ForceNext();(void)c.Resolve(7.8,true,serial++,{0,1,true,false},0.4);
+		Check(c.Current()==1.0&&!c.Active(),"force replacement directly restores the allowed target");
 	}
 
 	void TestLocalizedFormatFallbacks()
@@ -1642,6 +1707,10 @@ int main(int argc, char** argv)
 		return RunWindowTests();
 	bool benchmark = false;
 	bool penWidthOnly = false;
+	bool settingHomeOnly = false;
+	bool settingCopyOnly = false;
+	bool settingEraserOnly = false;
+	bool settingEraserDemoOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
 	bool exitVisibilityGateOnly = false;
@@ -1652,6 +1721,10 @@ int main(int argc, char** argv)
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
 		penWidthOnly |= argument == "--pen-width-only";
+		settingHomeOnly |= argument == "--setting-home-only";
+		settingCopyOnly |= argument == "--setting-copy-only";
+		settingEraserOnly |= argument == "--setting-eraser-only";
+		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
@@ -1670,8 +1743,40 @@ int main(int argc, char** argv)
 	if (exitVisibilityGateOnly)
 		return RunWindowExitVisibilityTests();
 
+	if (!runWindowTests)
+	{
+		// 无窗口模式下第三方断言也只写 stderr，不弹出 CRT 或系统错误对话框。
+		SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+		_set_error_mode(_OUT_TO_STDERR);
+		_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#ifdef _DEBUG
+		for (const int report : { _CRT_WARN, _CRT_ERROR, _CRT_ASSERT })
+		{
+			_CrtSetReportMode(report, _CRTDBG_MODE_FILE);
+			_CrtSetReportFile(report, _CRTDBG_FILE_STDERR);
+		}
+#endif
+	}
+
+	if (settingEraserDemoOnly)
+	{
+		const int settings = RunSettingDesignTests(false, true), demo = RunSettingEraserDemoTests();
+		std::cout << "[SettingEraserDemo] settings=" << settings << " demo=" << demo << '\n';
+		return settings + demo == 0 ? 0 : 1;
+	}
+	if (settingEraserOnly)
+	{
+		const int settings = RunSettingDesignTests(false, true);
+		const int speed = RunSpeedEraserTests(), attributes = RunEraserAttributeTests();
+		std::cout << "[SettingEraser] settings=" << settings << " speed=" << speed << " attributes=" << attributes << '\n';
+		return settings + speed + attributes == 0 ? 0 : 1;
+	}
+	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;
+	if (settingHomeOnly) return RunSettingDesignTests()==0 ? 0 : 1;
+
 	TestCurvesAndTimelines();
 	TestLocalizedFormatFallbacks();
+	TestFontPixelSizes();
 	TestSharedBarButtonRuntime();
 	TestBarThicknessVisualTransitions();
 	TestColorSwatchThicknessFollowsPanelScale();
@@ -1698,6 +1803,8 @@ int main(int argc, char** argv)
 	failureCount += RunBarPresentationAlphaTests();
 	failureCount += RunUi3HarnessDisabledTests();
 	failureCount += RunSettingSessionStateTests();
+	failureCount += RunSettingDesignTests();
+	failureCount += RunSettingEraserDemoTests();
 	failureCount += RunPptUiTests();
 	failureCount += RunPptSessionTests();
 	failureCount += RunPageControlTests();

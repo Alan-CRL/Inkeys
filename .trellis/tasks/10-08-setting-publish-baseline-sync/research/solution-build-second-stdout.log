@@ -1,0 +1,1794 @@
+
+  PptCOM -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+
+  Assembly exported to 'C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+ROSLYNCODETASKFACTORYCSHARPCOMPILER : warning CS1668: Invalid search path 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\atlmfc\lib\ARM64' specified in 'LIB environment variable' -- 'directory does not exist' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+ROSLYNCODETASKFACTORYCSHARPCOMPILER : warning CS1668: Invalid search path 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\atlmfc\lib\ARM64' specified in 'LIB environment variable' -- 'directory does not exist' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Installing vcpkg dependencies to C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\
+  "C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\vcpkg\vcpkg.exe" install  --x-wait-for-lock --triplet "arm64-windows-static-v143" --vcpkg-root "C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\vcpkg\\" "--x-manifest-root=C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\\" "--x-install-root=C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\\"
+  Detecting compiler hash for triplet arm64-windows...
+  Compiler found: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/cl.exe
+  Detecting compiler hash for triplet arm64-windows-static-v143...
+  Compiler found: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.44.35207/bin/Hostarm64/arm64/cl.exe
+  The following packages will be rebuilt:
+    * brotli:arm64-windows-static-v143@1.2.0
+      concurrentqueue:arm64-windows-static-v143@1.0.4#1
+      cpp-httplib[brotli,core]:arm64-windows-static-v143@0.22.0
+    * fmt:arm64-windows-static-v143@12.1.0
+      jsoncpp:arm64-windows-static-v143@1.9.6
+      libcuckoo:arm64-windows-static-v143@0.3.1
+      lunasvg:arm64-windows-static-v143@3.5.0
+      magic-enum:arm64-windows-static-v143@0.9.7#1
+      openssl:arm64-windows-static-v143@3.0.8#2
+    * plutovg:arm64-windows-static-v143@1.3.2
+      spdlog[core,fmt,tz-offset]:arm64-windows-static-v143@1.17.0
+      unordered-dense:arm64-windows-static-v143@4.7.0
+    * vcpkg-cmake:arm64-windows@2024-04-23
+    * vcpkg-cmake-config:arm64-windows@2024-05-23
+    * vcpkg-cmake-get-vars:arm64-windows@2025-05-29
+  The following packages will be built and installed:
+      msgpack:arm64-windows-static-v143@7.0.0
+  Additional packages (*) will be modified to complete this operation.
+  Restored 3 package(s) from C:\Users\alan-\AppData\Local\vcpkg\archives in 105 ms. Use --debug to see more details.
+  Removing 1/31 unordered-dense:arm64-windows-static-v143
+  Elapsed time to handle unordered-dense:arm64-windows-static-v143: 8.56 ms
+  Removing 2/31 spdlog:arm64-windows-static-v143
+  Elapsed time to handle spdlog:arm64-windows-static-v143: 37.8 ms
+  Removing 3/31 fmt:arm64-windows-static-v143
+  Elapsed time to handle fmt:arm64-windows-static-v143: 14.5 ms
+  Removing 4/31 openssl:arm64-windows-static-v143
+  Elapsed time to handle openssl:arm64-windows-static-v143: 41.3 ms
+  Removing 5/31 vcpkg-cmake-get-vars:arm64-windows
+  Elapsed time to handle vcpkg-cmake-get-vars:arm64-windows: 5.29 ms
+  Removing 6/31 magic-enum:arm64-windows-static-v143
+  Elapsed time to handle magic-enum:arm64-windows-static-v143: 10.8 ms
+  Removing 7/31 lunasvg:arm64-windows-static-v143
+  Elapsed time to handle lunasvg:arm64-windows-static-v143: 9.79 ms
+  Removing 8/31 plutovg:arm64-windows-static-v143
+  Elapsed time to handle plutovg:arm64-windows-static-v143: 9.1 ms
+  Removing 9/31 libcuckoo:arm64-windows-static-v143
+  Elapsed time to handle libcuckoo:arm64-windows-static-v143: 7.24 ms
+  Removing 10/31 jsoncpp:arm64-windows-static-v143
+  Elapsed time to handle jsoncpp:arm64-windows-static-v143: 9.8 ms
+  Removing 11/31 cpp-httplib:arm64-windows-static-v143
+  Elapsed time to handle cpp-httplib:arm64-windows-static-v143: 8.21 ms
+  Removing 12/31 brotli:arm64-windows-static-v143
+  Elapsed time to handle brotli:arm64-windows-static-v143: 12.3 ms
+  Removing 13/31 concurrentqueue:arm64-windows-static-v143
+  Elapsed time to handle concurrentqueue:arm64-windows-static-v143: 8.9 ms
+  Removing 14/31 vcpkg-cmake:arm64-windows
+  Elapsed time to handle vcpkg-cmake:arm64-windows: 4.41 ms
+  Removing 15/31 vcpkg-cmake-config:arm64-windows
+  Elapsed time to handle vcpkg-cmake-config:arm64-windows: 4.09 ms
+  Installing 16/31 vcpkg-cmake-config:arm64-windows@2024-05-23...
+  vcpkg-cmake-config:arm64-windows@2024-05-23 package ABI: 135571160727d45fcfb5ae54b09561118be7f84ec7228d00abc2aca1ff7e2286
+  Elapsed time to handle vcpkg-cmake-config:arm64-windows: 28.3 ms
+  Installing 17/31 vcpkg-cmake:arm64-windows@2024-04-23...
+  vcpkg-cmake:arm64-windows@2024-04-23 package ABI: 4b530a5fa04a86537f228505dc5b2d549fbdfc15f189bf33a0fe75d42bb2f091
+  Elapsed time to handle vcpkg-cmake:arm64-windows: 46.4 ms
+  Installing 18/31 concurrentqueue:arm64-windows-static-v143@1.0.4#1...
+  concurrentqueue:arm64-windows-static-v143@1.0.4#1 package ABI: 3bda7be4cb443884ba3dbc793496c9d8796015db5b8db6d596a3bc413e45d305
+  Building concurrentqueue:arm64-windows-static-v143@1.0.4#1...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/cameron314/concurrentqueue/archive/v1.0.4.tar.gz -> cameron314-concurrentqueue-v1.0.4.tar.gz
+  Successfully downloaded cameron314-concurrentqueue-v1.0.4.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/cameron314-concurrentqueue-v1.0.4.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/concurrentqueue/src/v1.0.4-ec5e592afa.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-rel
+  -- Performing post-build validation
+  Starting submission of concurrentqueue:arm64-windows-static-v143@1.0.4#1 to 1 binary cache(s) in the background
+  Elapsed time to handle concurrentqueue:arm64-windows-static-v143: 6.5 s
+  Installing 19/31 brotli:arm64-windows-static-v143@1.2.0...
+  brotli:arm64-windows-static-v143@1.2.0 package ABI: d917eebc7f95d5bc24cf347f7d5dd879388b14fb2e068da8d8d1362dd8a9456f
+  Building brotli:arm64-windows-static-v143@1.2.0...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/google/brotli/archive/v1.2.0.tar.gz -> google-brotli-v1.2.0.tar.gz
+  Successfully downloaded google-brotli-v1.2.0.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/google-brotli-v1.2.0.tar.gz
+  -- Applying patch install.patch
+  -- Applying patch pkgconfig.patch
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/brotli/src/v1.2.0-7af7ca71ad.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-rel
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/brotli_arm64-windows-static-v143/lib/pkgconfig/libbrotlicommon.pc
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/brotli_arm64-windows-static-v143/lib/pkgconfig/libbrotlidec.pc
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/brotli_arm64-windows-static-v143/lib/pkgconfig/libbrotlienc.pc
+  Downloading msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst, trying https://mirror.msys2.org/mingw/clangarm64/mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  Successfully downloaded msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  Downloading msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst, trying https://mirror.msys2.org/msys/x86_64/msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  Successfully downloaded msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  -- Using msys root at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/tools/msys2/e6bbf98b46cdea91
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/brotli_arm64-windows-static-v143/debug/lib/pkgconfig/libbrotlicommon.pc
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/brotli_arm64-windows-static-v143/debug/lib/pkgconfig/libbrotlidec.pc
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/brotli_arm64-windows-static-v143/debug/lib/pkgconfig/libbrotlienc.pc
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/brotli_arm64-windows-static-v143/share/brotli/usage
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/brotli_arm64-windows-static-v143/share/brotli/copyright
+  -- Performing post-build validation
+  Starting submission of brotli:arm64-windows-static-v143@1.2.0 to 1 binary cache(s) in the background
+  Elapsed time to handle brotli:arm64-windows-static-v143: 20 s
+  Completed submission of concurrentqueue:arm64-windows-static-v143@1.0.4#1 to 1 binary cache(s) in 90.5 ms
+  Installing 20/31 cpp-httplib[brotli,core]:arm64-windows-static-v143@0.22.0...
+  cpp-httplib[brotli,core]:arm64-windows-static-v143@0.22.0 package ABI: d587f02861ddf9fc7eee657df2d69897ea8da77333991d23da675f637094afe9
+  Building cpp-httplib[brotli,core]:arm64-windows-static-v143@0.22.0...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/yhirose/cpp-httplib/archive/v0.22.0.tar.gz -> yhirose-cpp-httplib-v0.22.0.tar.gz
+  Successfully downloaded yhirose-cpp-httplib-v0.22.0.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/yhirose-cpp-httplib-v0.22.0.tar.gz
+  -- Applying patch fix-find-brotli.patch
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/cpp-httplib/src/v0.22.0-a7335e64cf.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-rel
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/cpp-httplib_arm64-windows-static-v143/share/cpp-httplib/copyright
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/cpp-httplib_arm64-windows-static-v143/share/cpp-httplib/usage
+  -- Performing post-build validation
+  Starting submission of cpp-httplib[brotli,core]:arm64-windows-static-v143@0.22.0 to 1 binary cache(s) in the background
+  Elapsed time to handle cpp-httplib:arm64-windows-static-v143: 6.7 s
+  Completed submission of brotli:arm64-windows-static-v143@1.2.0 to 1 binary cache(s) in 474 ms
+  Installing 21/31 jsoncpp:arm64-windows-static-v143@1.9.6...
+  jsoncpp:arm64-windows-static-v143@1.9.6 package ABI: 0fe1f617e50037ddf2494958b62821e2422ce7f3bffedf9009b0a3639a09ae99
+  Building jsoncpp:arm64-windows-static-v143@1.9.6...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/open-source-parsers/jsoncpp/archive/1.9.6.tar.gz -> open-source-parsers-jsoncpp-1.9.6.tar.gz
+  Successfully downloaded open-source-parsers-jsoncpp-1.9.6.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/open-source-parsers-jsoncpp-1.9.6.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/jsoncpp/src/1.9.6-29ceffc35f.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-rel
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/jsoncpp_arm64-windows-static-v143/lib/pkgconfig/jsoncpp.pc
+  -- Using cached msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  -- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  -- Using msys root at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/tools/msys2/e6bbf98b46cdea91
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/jsoncpp_arm64-windows-static-v143/debug/lib/pkgconfig/jsoncpp.pc
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/jsoncpp_arm64-windows-static-v143/share/jsoncpp/copyright
+  -- Performing post-build validation
+  Starting submission of jsoncpp:arm64-windows-static-v143@1.9.6 to 1 binary cache(s) in the background
+  Elapsed time to handle jsoncpp:arm64-windows-static-v143: 14 s
+  Completed submission of cpp-httplib[brotli,core]:arm64-windows-static-v143@0.22.0 to 1 binary cache(s) in 128 ms
+  Installing 22/31 libcuckoo:arm64-windows-static-v143@0.3.1...
+  libcuckoo:arm64-windows-static-v143@0.3.1 package ABI: 92a509899888a926b1e127ed06322fe9d0d47e668b359f683d617c853bf9fb0a
+  Building libcuckoo:arm64-windows-static-v143@0.3.1...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/efficient/libcuckoo/archive/ea8c36c65bf9cf83aaf6b0db971248c6ae3686cf.tar.gz -> efficient-libcuckoo-ea8c36c65bf9cf83aaf6b0db971248c6ae3686cf.tar.gz
+  Successfully downloaded efficient-libcuckoo-ea8c36c65bf9cf83aaf6b0db971248c6ae3686cf.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/efficient-libcuckoo-ea8c36c65bf9cf83aaf6b0db971248c6ae3686cf.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/libcuckoo/src/c6ae3686cf-094578debb.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-rel
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/libcuckoo_arm64-windows-static-v143/share/libcuckoo/copyright
+  -- Performing post-build validation
+  Starting submission of libcuckoo:arm64-windows-static-v143@0.3.1 to 1 binary cache(s) in the background
+  Elapsed time to handle libcuckoo:arm64-windows-static-v143: 5.5 s
+  Completed submission of jsoncpp:arm64-windows-static-v143@1.9.6 to 1 binary cache(s) in 821 ms
+  Installing 23/31 plutovg:arm64-windows-static-v143@1.3.2...
+  plutovg:arm64-windows-static-v143@1.3.2 package ABI: 1a481581e987c6bebe9e303c03a895f407eb377becd00b9b534081abd69195a9
+  Building plutovg:arm64-windows-static-v143@1.3.2...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/sammycage/plutovg/archive/v1.3.2.tar.gz -> sammycage-plutovg-v1.3.2.tar.gz
+  Successfully downloaded sammycage-plutovg-v1.3.2.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/sammycage-plutovg-v1.3.2.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/plutovg/src/v1.3.2-886e588bf3.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-rel
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/plutovg_arm64-windows-static-v143/lib/pkgconfig/plutovg.pc
+  -- Using cached msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  -- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  -- Using msys root at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/tools/msys2/e6bbf98b46cdea91
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/plutovg_arm64-windows-static-v143/debug/lib/pkgconfig/plutovg.pc
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/plutovg_arm64-windows-static-v143/share/plutovg/copyright
+  -- Performing post-build validation
+  Starting submission of plutovg:arm64-windows-static-v143@1.3.2 to 1 binary cache(s) in the background
+  Elapsed time to handle plutovg:arm64-windows-static-v143: 9.8 s
+  Completed submission of libcuckoo:arm64-windows-static-v143@0.3.1 to 1 binary cache(s) in 73.3 ms
+  Installing 24/31 lunasvg:arm64-windows-static-v143@3.5.0...
+  lunasvg:arm64-windows-static-v143@3.5.0 package ABI: 3cfbc5c17a8aaa0ef042d8865d2c1c4b9ec522ce7b6fff6ad6c67bc069a40db7
+  Building lunasvg:arm64-windows-static-v143@3.5.0...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/sammycage/lunasvg/archive/v3.5.0.tar.gz -> sammycage-lunasvg-v3.5.0.tar.gz
+  Successfully downloaded sammycage-lunasvg-v3.5.0.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/sammycage-lunasvg-v3.5.0.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/lunasvg/src/v3.5.0-7ba8a56531.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-rel
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/lunasvg_arm64-windows-static-v143/lib/pkgconfig/lunasvg.pc
+  -- Using cached msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  -- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  -- Using msys root at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/tools/msys2/e6bbf98b46cdea91
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/lunasvg_arm64-windows-static-v143/debug/lib/pkgconfig/lunasvg.pc
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/lunasvg_arm64-windows-static-v143/share/lunasvg/copyright
+  -- Performing post-build validation
+  Starting submission of lunasvg:arm64-windows-static-v143@3.5.0 to 1 binary cache(s) in the background
+  Elapsed time to handle lunasvg:arm64-windows-static-v143: 9.1 s
+  Completed submission of plutovg:arm64-windows-static-v143@1.3.2 to 1 binary cache(s) in 262 ms
+  Installing 25/31 magic-enum:arm64-windows-static-v143@0.9.7#1...
+  magic-enum:arm64-windows-static-v143@0.9.7#1 package ABI: 201b46004df587af160129b49a96c80f02883300d2774560a3edd23c951a1a50
+  Building magic-enum:arm64-windows-static-v143@0.9.7#1...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/Neargye/magic_enum/archive/v0.9.7.tar.gz -> Neargye-magic_enum-v0.9.7.tar.gz
+  Successfully downloaded Neargye-magic_enum-v0.9.7.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/Neargye-magic_enum-v0.9.7.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/magic-enum/src/v0.9.7-05685ee05c.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-rel
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/magic-enum_arm64-windows-static-v143/share/pkgconfig/magic_enum.pc
+  -- Using cached msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  -- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  -- Using msys root at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/tools/msys2/e6bbf98b46cdea91
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/magic-enum_arm64-windows-static-v143/share/magic-enum/copyright
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/magic-enum_arm64-windows-static-v143/share/magic-enum/usage
+  -- Performing post-build validation
+  Starting submission of magic-enum:arm64-windows-static-v143@0.9.7#1 to 1 binary cache(s) in the background
+  Elapsed time to handle magic-enum:arm64-windows-static-v143: 5.2 s
+  Completed submission of lunasvg:arm64-windows-static-v143@3.5.0 to 1 binary cache(s) in 1.5 s
+  Installing 26/31 msgpack:arm64-windows-static-v143@7.0.0...
+  msgpack:arm64-windows-static-v143@7.0.0 package ABI: cc16aeb74811ea1f1c6beb2d10141be3863dfef1126af3780182fdd7e78c5ad0
+  Building msgpack:arm64-windows-static-v143@7.0.0...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/msgpack/msgpack-c/archive/cpp-7.0.0.tar.gz -> msgpack-msgpack-c-cpp-7.0.0.tar.gz
+  Successfully downloaded msgpack-msgpack-c-cpp-7.0.0.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/msgpack-msgpack-c-cpp-7.0.0.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/msgpack/src/cpp-7.0.0-1db566b272.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-rel
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/msgpack_arm64-windows-static-v143/share/msgpack/copyright
+  -- Performing post-build validation
+  Starting submission of msgpack:arm64-windows-static-v143@7.0.0 to 1 binary cache(s) in the background
+  Elapsed time to handle msgpack:arm64-windows-static-v143: 13 s
+  Completed submission of magic-enum:arm64-windows-static-v143@0.9.7#1 to 1 binary cache(s) in 62 ms
+  Installing 27/31 vcpkg-cmake-get-vars:arm64-windows@2025-05-29...
+  vcpkg-cmake-get-vars:arm64-windows@2025-05-29 package ABI: 6610bb1d965f1f0d739d5bd42c05bcb73eeecad87ccaad112297825588a59ec3
+  Elapsed time to handle vcpkg-cmake-get-vars:arm64-windows: 50 ms
+  Installing 28/31 openssl:arm64-windows-static-v143@3.0.8#2...
+  openssl:arm64-windows-static-v143@3.0.8#2 package ABI: 2d433821de52ffcb24142c86e75fda44f3efa2c091e189b8b960d64ecfc4b3f1
+  Building openssl:arm64-windows-static-v143@3.0.8#2...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/openssl/openssl/archive/openssl-3.0.8.tar.gz -> openssl-openssl-openssl-3.0.8.tar.gz
+  Successfully downloaded openssl-openssl-openssl-3.0.8.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/openssl-openssl-openssl-3.0.8.tar.gz
+  -- Applying patch disable-apps.patch
+  -- Applying patch disable-install-docs.patch
+  -- Applying patch script-prefix.patch
+  -- Applying patch windows/install-layout.patch
+  -- Applying patch windows/install-pdbs.patch
+  -- Applying patch windows/umul128-arm64.patch
+  -- Applying patch unix/android-cc.patch
+  -- Applying patch unix/move-openssldir.patch
+  -- Applying patch unix/no-empty-dirs.patch
+  -- Applying patch unix/no-static-libs-for-shared.patch
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/openssl/src/nssl-3.0.8-1c0004bf25.clean
+  -- Getting CMake variables for arm64-windows-static-v143
+  -- Loading CMake variables from C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/openssl/cmake-get-vars_C_CXX-arm64-windows-static-v143.cmake.log
+  -- Getting CMake variables for arm64-windows-static-v143
+  -- Prerunning arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-dbg
+  -- Prerunning arm64-windows-static-v143-rel
+  -- Building arm64-windows-static-v143-rel
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/openssl_arm64-windows-static-v143/lib/pkgconfig/libcrypto.pc
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/openssl_arm64-windows-static-v143/lib/pkgconfig/libssl.pc
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/openssl_arm64-windows-static-v143/lib/pkgconfig/openssl.pc
+  -- Using cached msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  -- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  -- Using msys root at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/tools/msys2/e6bbf98b46cdea91
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/openssl_arm64-windows-static-v143/debug/lib/pkgconfig/libcrypto.pc
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/openssl_arm64-windows-static-v143/debug/lib/pkgconfig/libssl.pc
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/openssl_arm64-windows-static-v143/debug/lib/pkgconfig/openssl.pc
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/openssl_arm64-windows-static-v143/share/openssl/usage
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/openssl_arm64-windows-static-v143/share/openssl/copyright
+  -- Performing post-build validation
+  Starting submission of openssl:arm64-windows-static-v143@3.0.8#2 to 1 binary cache(s) in the background
+  Elapsed time to handle openssl:arm64-windows-static-v143: 3.3 min
+  Completed submission of msgpack:arm64-windows-static-v143@7.0.0 to 1 binary cache(s) in 248 ms
+  Installing 29/31 fmt:arm64-windows-static-v143@12.1.0...
+  fmt:arm64-windows-static-v143@12.1.0 package ABI: f5f52101a50460b5bd7ea0e576a5c9a930fbaa0e2e9bc3b0032de84856ac4697
+  Building fmt:arm64-windows-static-v143@12.1.0...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/fmtlib/fmt/archive/12.1.0.tar.gz -> fmtlib-fmt-12.1.0.tar.gz
+  Successfully downloaded fmtlib-fmt-12.1.0.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/fmtlib-fmt-12.1.0.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/fmt/src/12.1.0-54f1f91231.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-rel
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/fmt_arm64-windows-static-v143/lib/pkgconfig/fmt.pc
+  -- Using cached msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  -- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  -- Using msys root at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/tools/msys2/e6bbf98b46cdea91
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/fmt_arm64-windows-static-v143/debug/lib/pkgconfig/fmt.pc
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/fmt_arm64-windows-static-v143/share/fmt/usage
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/fmt_arm64-windows-static-v143/share/fmt/copyright
+  -- Performing post-build validation
+  Starting submission of fmt:arm64-windows-static-v143@12.1.0 to 1 binary cache(s) in the background
+  Elapsed time to handle fmt:arm64-windows-static-v143: 8.2 s
+  Completed submission of openssl:arm64-windows-static-v143@3.0.8#2 to 1 binary cache(s) in 5.6 s
+  Installing 30/31 spdlog[core,fmt,tz-offset]:arm64-windows-static-v143@1.17.0...
+  spdlog[core,fmt,tz-offset]:arm64-windows-static-v143@1.17.0 package ABI: b12c67bc88a958906072010770bf7188c731cdad9b30194530255a32f8ad7763
+  Building spdlog[core,fmt,tz-offset]:arm64-windows-static-v143@1.17.0...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/gabime/spdlog/archive/v1.17.0.tar.gz -> gabime-spdlog-v1.17.0.tar.gz
+  Successfully downloaded gabime-spdlog-v1.17.0.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/gabime-spdlog-v1.17.0.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/spdlog/src/v1.17.0-2617b3696e.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-rel
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/spdlog_arm64-windows-static-v143/lib/pkgconfig/spdlog.pc
+  -- Using cached msys2-mingw-w64-clang-aarch64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+  -- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+  -- Using msys root at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/tools/msys2/e6bbf98b46cdea91
+  -- Fixing pkgconfig file: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/spdlog_arm64-windows-static-v143/debug/lib/pkgconfig/spdlog.pc
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/spdlog_arm64-windows-static-v143/share/spdlog/usage
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/spdlog_arm64-windows-static-v143/share/spdlog/copyright
+  -- Performing post-build validation
+  Starting submission of spdlog[core,fmt,tz-offset]:arm64-windows-static-v143@1.17.0 to 1 binary cache(s) in the background
+  Elapsed time to handle spdlog:arm64-windows-static-v143: 12 s
+  Completed submission of fmt:arm64-windows-static-v143@12.1.0 to 1 binary cache(s) in 433 ms
+  Installing 31/31 unordered-dense:arm64-windows-static-v143@4.7.0...
+  unordered-dense:arm64-windows-static-v143@4.7.0 package ABI: adbcf43a1d0f55beba61622c68975f57530f85cb5db5e8ef20dfc7a7fb161d9a
+  Building unordered-dense:arm64-windows-static-v143@4.7.0...
+  C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgTriplets\arm64-windows-static-v143.cmake: info: loaded overlay triplet from here
+  Downloading https://github.com/martinus/unordered_dense/archive/v4.7.0.tar.gz -> martinus-unordered_dense-v4.7.0.tar.gz
+  Successfully downloaded martinus-unordered_dense-v4.7.0.tar.gz
+  -- Extracting source C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/downloads/martinus-unordered_dense-v4.7.0.tar.gz
+  -- Using source at C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/buildtrees/unordered-dense/src/v4.7.0-e9e33590c2.clean
+  -- Configuring arm64-windows-static-v143
+  -- Building arm64-windows-static-v143-dbg
+  -- Building arm64-windows-static-v143-rel
+  -- Installing: C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys/Vcpkg/packages/unordered-dense_arm64-windows-static-v143/share/unordered-dense/copyright
+  -- Performing post-build validation
+  Starting submission of unordered-dense:arm64-windows-static-v143@4.7.0 to 1 binary cache(s) in the background
+  Elapsed time to handle unordered-dense:arm64-windows-static-v143: 7.8 s
+  Installed contents are licensed to you by owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.
+  Packages installed in this vcpkg installation declare the following licenses:
+  (BSD-2-Clause OR BSL-1.0)
+  Apache-2.0
+  BSL-1.0
+  MIT
+  concurrentqueue provides CMake targets:
+
+    # this is heuristically generated, and may not be correct
+    find_package(concurrentqueue CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE concurrentqueue::concurrentqueue)
+
+  cpp-httplib provides CMake targets:
+
+      find_package(httplib CONFIG REQUIRED)
+      target_link_libraries(main PRIVATE httplib::httplib)
+
+  jsoncpp provides CMake targets:
+
+    # this is heuristically generated, and may not be correct
+    find_package(jsoncpp CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE JsonCpp::JsonCpp)
+
+  jsoncpp provides pkg-config modules:
+
+    # A C++ library for interacting with JSON
+    jsoncpp
+
+  libcuckoo provides CMake targets:
+
+    # this is heuristically generated, and may not be correct
+    find_package(libcuckoo CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE libcuckoo::libcuckoo)
+
+  lunasvg provides CMake targets:
+
+    # this is heuristically generated, and may not be correct
+    find_package(lunasvg CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE lunasvg::lunasvg)
+
+  lunasvg provides pkg-config modules:
+
+    # SVG rendering and manipulation library
+    lunasvg
+
+  magic-enum provides CMake targets:
+
+      find_package(magic_enum CONFIG REQUIRED)
+      target_link_libraries(main PRIVATE magic_enum::magic_enum)
+
+  msgpack provides CMake targets:
+
+    # this is heuristically generated, and may not be correct
+    find_package(msgpack-cxx CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE msgpack-cxx)
+
+  The package openssl is compatible with built-in CMake targets:
+
+      find_package(OpenSSL REQUIRED)
+      target_link_libraries(main PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+
+  The package spdlog provides CMake targets:
+
+      find_package(spdlog CONFIG REQUIRED)
+      target_link_libraries(main PRIVATE spdlog::spdlog)
+
+      # Or use the header-only version
+      find_package(spdlog CONFIG REQUIRED)
+      target_link_libraries(main PRIVATE spdlog::spdlog_header_only)
+
+  unordered-dense provides CMake targets:
+
+    # this is heuristically generated, and may not be correct
+    find_package(unordered_dense CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unordered_dense::unordered_dense)
+
+  Completed submission of spdlog[core,fmt,tz-offset]:arm64-windows-static-v143@1.17.0 to 1 binary cache(s) in 1.8 s
+  Completed submission of unordered-dense:arm64-windows-static-v143@4.7.0 to 1 binary cache(s) in 66.4 ms
+  All requested installations completed successfully in: 5.2 min
+  Scanning sources for module dependencies...
+  Surface.cppm
+  Message.cpp
+  Surface.cpp
+  Display.cppm
+  MouseHook.cppm
+  Display.cpp
+  Message.cppm
+  ComponentActions.cpp
+  LegacyDrawState.cpp
+  ComponentActions.cppm
+  MouseHook.cpp
+  Window.cpp
+  Window.cppm
+  RenderPipeline.cpp
+  RenderPipeline.cppm
+  Startup.Progress.cppm
+  Startup.Progress.cpp
+  StartupPreview.State.cppm
+  StartupPreview.State.cpp
+  StartupPreview.cppm
+  StartupPreview.cpp
+  PageControl.cppm
+  PageControl.cpp
+  Ppt.cpp
+  Ppt.cppm
+  Whiteboard.cpp
+  Whiteboard.cppm
+  MessageBox.cpp
+  MessageBox.Layout.cpp
+  MessageBox.cppm
+  MessageBox.Window.cpp
+  Window.Legacy.cpp
+  hl_md5wrapper.cpp
+  hl_sha1wrapper.cpp
+  hl_sha256.cpp
+  hl_md5.cpp
+  hl_sha1.cpp
+  hl_sha256wrapper.cpp
+  hl_sha2ext.cpp
+  hl_wrapperfactory.cpp
+  hl_sha512wrapper.cpp
+  imgui.cpp
+  hl_sha384wrapper.cpp
+  imgui_draw.cpp
+  imgui_impl_dx11.cpp
+  imgui_impl_win32.cpp
+  imgui_tables.cpp
+  imgui_widgets.cpp
+  imfluent.cpp
+  wintoastlib.cpp
+  IdtConfiguration.cpp
+  ExtraInclude.cpp
+  IdtDraw.h
+  unzip.cpp
+  zip.cpp
+  IdtDraw.cpp
+  IdtFreezeFrame.cpp
+  IdtI18n.cpp
+  IdtGuid.cpp
+  IdtImage.cpp
+  IdtStart.cpp
+  IdtState.cpp
+  IdtMagnification.cpp
+  IdtDrawpadFacade.cpp
+  IdtMain.cpp
+  IdtSysNotifications.cpp
+  IdtPlug-in.cpp
+  Conv.Color.cppm
+  Conv.Text.cppm
+  Helper.CrashHandler.cpp
+  IdtOther.cpp
+  IdtTime.cpp
+  FailedCleanupDeadline.cpp
+  ShutdownSupervisor.cpp
+  Ui3PresentationFixtureAuth.cpp
+  Helper.Enum.cppm
+  Helper.SecRandom.cppm
+  Helper.Thread.cppm
+  Net.Update.Download.cpp
+  Net.Update.cppm
+  Load.cppm
+  Net.Update.cpp
+  Net.Update.Download.cppm
+  Other.Config.cpp
+  Helper.CrashHandler.cppm
+  Other.Config.cppm
+  Other.Gesture.cppm
+  Other.Json.cppm
+  Other.Inputs.cppm
+  Text.Font.cppm
+  Bar.Atomic.cppm
+  Text.Split.cppm
+  Bar.Animation.cpp
+  Text.Font.cpp
+  Bar.Button.cppm
+  Bar.Animation.cppm
+  Bar.WakeSignal.cppm
+  Bar.ToggleClickCoalescer.cppm
+  Bar.FramePacing.cppm
+  Bar.SurfaceLayout.cppm
+  Bar.Scene.cppm
+  Bar.Format.cppm
+  Bar.cppm
+  Bar.cpp
+  Bar.Scene.cpp
+  Bar.Button.cpp
+  Bar.Initialization.cpp
+  Bar.EraserAttribute.cpp
+  Bar.EraserAttributeMotion.cppm
+  Bar.EraserAttributeLayout.cppm
+  Bar.EraserAttribute.Test.cpp
+  Bar.Layout.cppm
+  Bar.Interaction.cpp
+  Bar.Metrics.cppm
+  Bar.PresentationProbe.cpp
+  Bar.Main.cpp
+  Bar.Presentation.Source.cpp
+  Bar.RenderLoop.cpp
+  Bar.Presentation.Test.cpp
+  Bar.Main.cppm
+  Bar.Rendering.cpp
+  Bar.State.cppm
+  Bar.State.cpp
+  Bar.Theme.cppm
+  Bar.RenderingAttribute.cppm
+  Bar.Rendering.cppm
+  Bar.UI.cpp
+  Bar.UI.cppm
+  Bar.Zoom.cppm
+  Freeze.cppm
+  Setting.Base.cppm
+  Setting.Controls.cpp
+  Setting.Pages.cpp
+  Setting.Shell.cpp
+  Setting.cpp
+  Setting.Widgets.cpp
+  Setting.cppm
+  Setting.Widgets.cppm
+  IdtSuperTop.cpp
+  IdtLaunchState.cpp
+  Draw3.CanvasNavigation.cpp
+  Draw3.CanvasNavigation.cppm
+  uink_codec.cpp
+  uink_model.cppm
+  uink_model.cpp
+  uink_codec_encode.cpp
+  uink_codec.cppm
+  uink_file.cpp
+  uink_file.cppm
+  uink_draw3_export.cpp
+  uink_draw3_export.cppm
+  uink_draw3_import.cpp
+  uink_draw3_import.cppm
+  Draw3.AutoSave.cpp
+  Draw3.AutoSave.cppm
+  Draw3.PresentationAutoSave.cpp
+  Draw3.ContactInput.cpp
+  Draw3.PresentationAutoSave.cppm
+  Draw3.ContactInput.cppm
+  Draw3.Diagnostics.cpp
+  Draw3.DrawingController.cpp
+  Draw3.Diagnostics.cppm
+  Draw3.DrawingController.cppm
+  Draw3.GraphicsInitialization.cpp
+  Draw3.GraphicsInitialization.cppm
+  Draw3.HapticFeedback.cpp
+  Draw3.HapticFeedback.cppm
+  Draw3.InkDocument.cpp
+  Draw3.InkDocument.cppm
+  Draw3.InkHistoryGpu.cpp
+  Draw3.InkHistory.cppm
+  Draw3.InkHistory.cpp
+  Draw3.InkHistoryGpu.cppm
+  Draw3.InkPrediction.cpp
+  Draw3.LaserParticles.cpp
+  Draw3.InkPrediction.cppm
+  Draw3.LaserParticleSystem.cpp
+  Draw3.PenCursor.cppm
+  Draw3.PenCursor.cpp
+  Draw3.LaserParticles.cppm
+  Draw3.RealtimeStylus.cppm
+  Draw3.RealtimeStylus.cpp
+  Draw3.Renderer.cpp
+  Draw3.Renderer.cppm
+  Draw3.RendererLaser.cpp
+  Draw3.RendererSnapshot.cpp
+  Draw3.StrokeGeometry.cpp
+  Draw3.RuntimeMetrics.cpp
+  Draw3.RuntimeMetrics.cppm
+  Draw3.SpeedEraser.cpp
+  Draw3.TransparentPresentation.cpp
+  Draw3.RendererPrimitives.cpp
+  Draw3.Win7Compat.cpp
+  Draw3.TransparentPresentation.cppm
+  Draw3.WindowControl.cpp
+  Draw3.WindowControl.cppm
+  Draw3.Bridge.cpp
+  Draw3.HistoryProbe.cpp
+  Draw3.HiddenWindowTest.cpp
+  Draw3.PerformanceProbe.cpp
+  Draw3.FailedCleanupFixture.cpp
+  Draw3.Host.cpp
+  PptSession.cpp
+  Draw3.Presentation.cpp
+  Draw3.Product.cpp
+  magic_enum.hpp
+  ranges
+  sstream
+  iostream
+  windows.h
+  string
+  vector
+  dwrite.h
+  array
+  atomic
+  Compiling...
+  windows.h
+  Surface.cpp
+  atomic
+  magic_enum.hpp
+  vector
+  dwrite.h
+  iostream
+  array
+  Surface.cppm
+  string
+  sstream
+  ranges
+  ComponentActions.cppm
+  LegacyDrawState.cpp
+  MouseHook.cppm
+  RenderPipeline.cppm
+  Startup.Progress.cppm
+  Ppt.cppm
+  MessageBox.cppm
+  hl_md5.cpp
+  Whiteboard.cppm
+  hl_md5wrapper.cpp
+  Display.cppm
+  Message.cppm
+  PageControl.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_md5wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_md5wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_md5wrapper.cpp')
+
+  hl_sha1.cpp
+  hl_sha1wrapper.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha1wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha1wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha1wrapper.cpp')
+
+  hl_sha256.cpp
+  hl_sha2ext.cpp
+  hl_wrapperfactory.cpp
+  hl_sha512wrapper.cpp
+  hl_sha384wrapper.cpp
+  imgui_draw.cpp
+  imgui.cpp
+  imgui_impl_dx11.cpp
+  hl_sha256wrapper.cpp
+  imgui_impl_win32.cpp
+  imgui_tables.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_wrapperfactory.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_wrapperfactory.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_wrapperfactory.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha384wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha384wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha384wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha512wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha512wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha512wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha256wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha256wrapper.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/hashlib++/hl_sha256wrapper.cpp')
+
+  imgui_widgets.cpp
+  imfluent.cpp
+  unzip.cpp
+  zip.cpp
+  wintoastlib.cpp
+  IdtImage.cpp
+  IdtDrawpadFacade.cpp
+  ExtraInclude.cpp
+  IdtDraw.h
+  IdtTime.cpp
+  IdtSysNotifications.cpp
+  IdtOther.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(1293,39): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ziputils\zip.cpp(2602,42): warning C4311: 'type cast': pointer truncation from 'HWND' to 'unsigned long' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ziputils\zip.cpp(2602,42): warning C4302: 'type cast': truncation from 'HWND' to 'unsigned long' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Conv.Color.cppm
+  Conv.Text.cppm
+  FailedCleanupDeadline.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDrawpadFacade.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDrawpadFacade.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtImage.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtImage.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtImage.cpp')
+
+  (compiling source file 'IdtDrawpadFacade.cpp')
+
+  Helper.Thread.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtTime.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtTime.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtTime.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtOther.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtOther.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtOther.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Conv/Conv.Color.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Conv/Conv.Color.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Conv/Conv.Color.cppm')
+
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\msinkaut.h(1613,12): warning C5260: the constant variable 'InkMinTransparencyValue' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\msinkaut.h(1615,12): warning C5260: the constant variable 'InkMaxTransparencyValue' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\msinkaut.h(1627,12): warning C5260: the constant variable 'InkCollectorClipInkToMargin' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\msinkaut.h(1629,12): warning C5260: the constant variable 'InkCollectorDefaultMargin' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+  (compiling source file 'Inkeys/Helper/Helper.Thread.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.Thread.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.Thread.cppm')
+
+  Net.Update.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\libcuckoo\cuckoohash_config.hh(12,18): warning C5260: the constant variable 'libcuckoo::DEFAULT_SLOT_PER_BUCKET' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\libcuckoo\cuckoohash_config.hh(15,18): warning C5260: the constant variable 'libcuckoo::DEFAULT_SIZE' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\libcuckoo\cuckoohash_config.hh(22,18): warning C5260: the constant variable 'libcuckoo::DEFAULT_MINIMUM_LOAD_FACTOR' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Other.Gesture.cppm
+  (compiling source file 'IdtDraw.h')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\libcuckoo\cuckoohash_config.hh(27,18): warning C5260: the constant variable 'libcuckoo::NO_MAXIMUM_HASHPOWER' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\GdiplusEnums.h(27,13): warning C5260: the constant variable 'Gdiplus::FlatnessDefault' has internal linkage in an included header file context, but external linkage in imported header unit context; consider declaring it 'inline' as well if it will be shared across translation units, or 'static' to express intent to use it local to this translation unit [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.h')
+
+  Other.Inputs.cppm
+  Text.Font.cppm
+  Bar.Animation.cppm
+  Bar.FramePacing.cppm
+  Bar.ToggleClickCoalescer.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Net/Net.Update.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Net/Net.Update.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Gesture.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Gesture.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Gesture.cppm')
+
+  (compiling source file 'Inkeys/Net/Net.Update.cppm')
+
+  Bar.PresentationProbe.cpp
+  Bar.Presentation.Source.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Inputs.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Inputs.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Inputs.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Text/Text.Font.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Text/Text.Font.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Text/Text.Font.cppm')
+
+  Bar.WakeSignal.cppm
+  Bar.Metrics.cppm
+  Bar.State.cppm
+  Freeze.cppm
+  Setting.Controls.cpp
+  Setting.Pages.cpp
+  Setting.Shell.cpp
+  IdtLaunchState.cpp
+  Draw3.CanvasNavigation.cppm
+  uink_model.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cppm')
+
+  Draw3.Diagnostics.cppm
+  Draw3.ContactInput.cppm
+  Draw3.GraphicsInitialization.cppm
+  Draw3.HapticFeedback.cppm
+  Draw3.LaserParticles.cppm
+  Draw3.InkDocument.cppm
+  Draw3.PenCursor.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+  Draw3.SpeedEraser.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Launch/IdtLaunchState.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Draw3.Win7Compat.cpp
+  (compiling source file 'Launch/IdtLaunchState.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Launch/IdtLaunchState.cpp')
+
+  Draw3.Bridge.cpp
+  PptSession.cpp
+  Draw3.Presentation.cpp
+  MouseHook.cpp
+  Draw3.Product.cpp
+  Message.cpp
+  Display.cpp
+  Window.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Input/MouseHook.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Input/MouseHook.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Input/MouseHook.cpp')
+
+  RenderPipeline.cpp
+  StartupPreview.State.cppm
+  Startup.Progress.cpp
+  MessageBox.cpp
+  MessageBox.Window.cpp
+  IdtDraw.cpp
+  MessageBox.Layout.cpp
+  IdtGuid.cpp
+  Window.cpp
+  IdtStart.cpp
+  Helper.Enum.cppm
+  Helper.SecRandom.cppm
+  Load.cppm
+  Ui3PresentationFixtureAuth.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDraw.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtGuid.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtGuid.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtGuid.cpp')
+
+  Net.Update.Download.cppm
+  Other.Json.cppm
+  Other.Config.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtDraw.cpp(309,8): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtDraw.cpp(384,12): warning C4244: 'return': conversion from 'const _Ty' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtDraw.cpp(384,12): warning C4244:         with [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtDraw.cpp(384,12): warning C4244:         [ [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtDraw.cpp(384,12): warning C4244:             _Ty=float [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtDraw.cpp(384,12): warning C4244:         ] [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Bar.Atomic.cppm
+  Text.Split.cppm
+  Text.Font.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtStart.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtStart.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtStart.cpp')
+
+  StartupPreview.State.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.SecRandom.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.SecRandom.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.SecRandom.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Config.cppm')
+
+  IdtFreezeFrame.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Text/Text.Font.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Text/Text.Font.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Text/Text.Font.cpp')
+
+  StartupPreview.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Atomic.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Atomic.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Atomic.cppm')
+
+  Bar.Animation.cpp
+  Bar.SurfaceLayout.cppm
+  Bar.Format.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtFreezeFrame.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtFreezeFrame.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtFreezeFrame.cpp')
+
+  Bar.EraserAttributeLayout.cppm
+  Bar.Theme.cppm
+  Setting.Base.cppm
+  Bar.UI.cppm
+  IdtI18n.cpp
+  Draw3.CanvasNavigation.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Format.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Format.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Format.cppm')
+
+  uink_codec.cppm
+  uink_model.cpp
+  uink_draw3_export.cppm
+  Draw3.Diagnostics.cpp
+  Draw3.ContactInput.cpp
+  Draw3.GraphicsInitialization.cpp
+  Draw3.InkDocument.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtI18n.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtI18n.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtI18n.cpp')
+
+  Draw3.HapticFeedback.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Base.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Base.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Base.cppm')
+
+  Draw3.InkHistory.cppm
+  Draw3.LaserParticleSystem.cpp
+  Draw3.LaserParticles.cpp
+  Draw3.RealtimeStylus.cppm
+  IdtMagnification.cpp
+  Draw3.PenCursor.cpp
+  Draw3.Renderer.cppm
+  Draw3.RuntimeMetrics.cppm
+  ComponentActions.cpp
+  StartupPreview.cpp
+  Net.Update.Download.cpp
+  Net.Update.cpp
+  IdtConfiguration.cpp
+  Helper.CrashHandler.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMagnification.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMagnification.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMagnification.cpp')
+
+  Other.Config.cpp
+  Bar.Scene.cppm
+  Bar.EraserAttributeMotion.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Net/Net.Update.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Net/Net.Update.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Net/Net.Update.cpp')
+
+  IdtSuperTop.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtConfiguration.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtConfiguration.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtConfiguration.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtConfiguration.cpp(256,74): warning C4244: '=': conversion from 'double' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  uink_codec_encode.cpp
+  Bar.Button.cppm
+  uink_file.cppm
+  uink_codec.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'SuperTop/IdtSuperTop.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'SuperTop/IdtSuperTop.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'SuperTop/IdtSuperTop.cpp')
+
+  Setting.Widgets.cppm
+  Bar.Layout.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cppm')
+
+  uink_draw3_import.cppm
+  uink_draw3_export.cpp
+  Draw3.InkHistoryGpu.cppm
+  Draw3.HistoryProbe.cpp
+  Draw3.InkHistory.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Layout.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Layout.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Layout.cppm')
+
+  Window.Legacy.cpp
+  Draw3.RendererLaser.cpp
+  Draw3.RendererPrimitives.cpp
+  Draw3.InkPrediction.cppm
+  Draw3.Renderer.cpp
+  Draw3.RendererSnapshot.cpp
+  Helper.CrashHandler.cpp
+  Bar.RenderingAttribute.cppm
+  Draw3.TransparentPresentation.cppm
+  ShutdownSupervisor.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Window/Window.Legacy.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Window/Window.Legacy.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Window/Window.Legacy.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cpp')
+
+  Setting.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Helper\Helper.CrashHandler.cpp(15,31): warning C5202: a global module fragment can only contain preprocessor directives [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  uink_draw3_import.cpp
+  uink_file.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderingAttribute.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderingAttribute.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderingAttribute.cppm')
+
+  Draw3.PresentationAutoSave.cppm
+  Draw3.AutoSave.cppm
+  Draw3.InkHistoryGpu.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cppm')
+
+  Draw3.TransparentPresentation.cpp
+  Draw3.PresentationAutoSave.cpp
+  Draw3.AutoSave.cpp
+  Draw3.RealtimeStylus.cpp
+  Draw3.StrokeGeometry.cpp
+  Draw3.PerformanceProbe.cpp
+  Draw3.FailedCleanupFixture.cpp
+  Draw3.WindowControl.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+
+  Draw3.WindowControl.cpp
+  Setting.Widgets.cpp
+  Draw3.DrawingController.cppm
+  Draw3.RuntimeMetrics.cpp
+  Draw3.InkPrediction.cpp
+  Bar.Rendering.cppm
+C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18): warning C4244: '=': conversion from 'const wchar_t' to 'char', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.FailedCleanupFixture.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18):
+      the template instantiation context (the oldest one first) is
+          C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.FailedCleanupFixture.cpp(1254,28):
+          see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_const_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+          with
+          [
+              _Elem=wchar_t,
+              _Iter=std::_String_const_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+              _Alloc=std::allocator<char>
+          ]
+              C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.FailedCleanupFixture.cpp(1254,5):
+              see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'Inkeys::Shutdown::`anonymous-namespace'::CheckDesktopReaderBoundaries'
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(812,17):
+          see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<const wchar_t*,const wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+          with
+          [
+              _Size_type=unsigned __int64,
+              _Iter=const wchar_t *,
+              _Sent=const wchar_t *,
+              _Size=unsigned __int64
+          ]
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(968,18):
+          see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<const wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+          with
+          [
+              _OutIt=char *,
+              _Size=unsigned __int64,
+              _InIt=const wchar_t *,
+              _SizeTy=unsigned __int64
+          ]
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cpp')
+
+  Draw3.DrawingController.cpp
+  Draw3.Host.cpp
+  Draw3.HiddenWindowTest.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(5581,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(5586,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(5588,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(5712,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Bar.Main.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+
+  Bar.Zoom.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+
+  Bar.cppm
+  IdtPlug-in.cpp
+  Bar.Initialization.cpp
+  IdtMain.cpp
+  Bar.EraserAttribute.cpp
+  Bar.Interaction.cpp
+  Whiteboard.cpp
+  Bar.Button.cpp
+  PageControl.cpp
+  Ppt.cpp
+  Bar.cpp
+  Bar.Scene.cpp
+  IdtState.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+
+  (compiling source file 'IdtMain.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(929,24): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(930,24): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(935,23): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(936,23): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(951,24): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(952,24): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(957,23): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(958,23): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(975,24): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(976,24): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(981,23): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Interaction.cpp(982,23): warning C4244: '=': conversion from 'LONG' to 'short', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtMain.cpp(2562,26): warning C4244: '=': conversion from 'const _Ty' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtMain.cpp(2562,26): warning C4244:         with [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtMain.cpp(2562,26): warning C4244:         [ [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtMain.cpp(2562,26): warning C4244:             _Ty=float [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\IdtMain.cpp(2562,26): warning C4244:         ] [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Bar.EraserAttribute.Test.cpp
+  Bar.Main.cpp
+  Bar.Rendering.cpp
+  Bar.UI.cpp
+  Bar.Presentation.Test.cpp
+  Bar.RenderLoop.cpp
+  Bar.State.cpp
+  Setting.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1491,133): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1491,107): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1492,138): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1492,112): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1493,103): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1493,77): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1528,133): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1528,107): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1529,138): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1529,112): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1530,103): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1530,77): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1565,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1565,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1599,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1599,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1633,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1633,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1667,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1667,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1702,100): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1702,75): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1736,100): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1736,74): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1771,101): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(1771,75): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(1629,43): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(1787,42): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(2233,43): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(2981,4): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(3012,10): warning C4267: 'argument': conversion from 'size_t' to 'UINT32', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Inkeys.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Build\ARM64\Debug\Inkeys.exe
+  PptCOM.Tests -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  Other.Config.cppm
+  Other.Config.cpp
+  Conv.Text.cppm
+  setting_session_state_tests.cpp
+  Compiling...
+  setting_session_state_tests.cpp
+  Other.Config.cppm
+  Conv.Text.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+  startup_preview_state_tests.cpp
+  speed_eraser_tests.cpp
+  Other.Config.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1383,14): warning C4456: declaration of 'hover' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1292,13):
+      see declaration of 'hover'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1597,14): warning C4456: declaration of 'contact' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1295,13):
+      see declaration of 'contact'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1698,14): warning C4456: declaration of 'x' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1256,9):
+      see declaration of 'x'
+
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1768,14): warning C4456: declaration of 'area' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1066,13):
+      see declaration of 'area'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1785,14): warning C4456: declaration of 'x' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1256,9):
+      see declaration of 'x'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1787,14): warning C4456: declaration of 'area' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1066,13):
+      see declaration of 'area'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1793,14): warning C4456: declaration of 'rotated' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1119,15):
+      see declaration of 'rotated'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1794,14): warning C4456: declaration of 'rotatedConfig' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1121,13):
+      see declaration of 'rotatedConfig'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1878,63): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1878,51): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1884,59): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1884,49): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2001,61): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2001,50): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2068,44): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(297,1): warning C4702: unreachable code [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  InkeysHeadlessTests.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Build\ARM64\Debug\InkeysHeadlessTests.exe

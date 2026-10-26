@@ -120,6 +120,7 @@ export namespace Inkeys::UI::Bar
 		bool ConfigurePagination(const BarPageSurfaceContent&, double durationSeconds = 0);
 		bool ConfigureBackground(const BarSurfaceBackgroundSpec&);
 		bool SetBounds(RECT, float) noexcept;
+		void SetFontTargetScale(double) noexcept;
 		void SetOpacity(double, double durationSeconds = 0.2) noexcept;
 		void SetHooks(BarSurfaceHooks);
 		void SetSharedLightingSubscribed(bool) noexcept;

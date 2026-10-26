@@ -1,0 +1,278 @@
+{
+  ".trellis/spec/native-desktop/build-and-compatibility.md": {
+    "bom": false,
+    "crlf": 98,
+    "lf": 98,
+    "size": 7534
+  },
+  ".trellis/spec/native-desktop/configuration-i18n-and-assets.md": {
+    "bom": false,
+    "crlf": 248,
+    "lf": 248,
+    "size": 24028
+  },
+  ".trellis/spec/native-desktop/cpp-conventions.md": {
+    "bom": false,
+    "crlf": 72,
+    "lf": 72,
+    "size": 5970
+  },
+  ".trellis/spec/native-desktop/directory-structure.md": {
+    "bom": false,
+    "crlf": 73,
+    "lf": 77,
+    "size": 5193
+  },
+  ".trellis/spec/native-desktop/errors-logging-and-resources.md": {
+    "bom": false,
+    "crlf": 162,
+    "lf": 162,
+    "size": 10560
+  },
+  ".trellis/spec/native-desktop/index.md": {
+    "bom": false,
+    "crlf": 47,
+    "lf": 47,
+    "size": 4511
+  },
+  ".trellis/spec/native-desktop/input-and-ink.md": {
+    "bom": false,
+    "crlf": 83,
+    "lf": 83,
+    "size": 6184
+  },
+  ".trellis/spec/native-desktop/rendering-and-ui.md": {
+    "bom": false,
+    "crlf": 1032,
+    "lf": 1032,
+    "size": 82889
+  },
+  ".trellis/workspace/AlanCRL/index.md": {
+    "bom": false,
+    "crlf": 66,
+    "lf": 66,
+    "size": 3499
+  },
+  ".trellis/workspace/AlanCRL/journal-1.md": {
+    "bom": false,
+    "crlf": 693,
+    "lf": 693,
+    "size": 16571
+  },
+  "Inkeys/IdtI18nKeys.g.h": {
+    "bom": false,
+    "crlf": 504,
+    "lf": 504,
+    "size": 28359
+  },
+  "Inkeys/Inkeys.vcxproj": {
+    "bom": false,
+    "crlf": 794,
+    "lf": 794,
+    "size": 44449
+  },
+  "Inkeys/Inkeys.vcxproj.filters": {
+    "bom": false,
+    "crlf": 1026,
+    "lf": 1026,
+    "size": 38671
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Base.cppm": {
+    "bom": false,
+    "crlf": 207,
+    "lf": 207,
+    "size": 6196
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Layout.h": {
+    "bom": false,
+    "crlf": 181,
+    "lf": 181,
+    "size": 6502
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.SessionState.h": {
+    "bom": false,
+    "crlf": 188,
+    "lf": 188,
+    "size": 5148
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Theme.h": {
+    "bom": false,
+    "crlf": 35,
+    "lf": 35,
+    "size": 752
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Widgets.cpp": {
+    "bom": false,
+    "crlf": 170,
+    "lf": 170,
+    "size": 5511
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Widgets.cppm": {
+    "bom": false,
+    "crlf": 41,
+    "lf": 41,
+    "size": 931
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Wrap.h": {
+    "bom": false,
+    "crlf": 24,
+    "lf": 24,
+    "size": 607
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+    "bom": false,
+    "crlf": 4444,
+    "lf": 4444,
+    "size": 175274
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.cppm": {
+    "bom": false,
+    "crlf": 31,
+    "lf": 31,
+    "size": 710
+  },
+  "Inkeys/additional/imfluent/LICENSE": {
+    "bom": false,
+    "crlf": 20,
+    "lf": 20,
+    "size": 1083
+  },
+  "Inkeys/additional/imfluent/UPSTREAM.md": {
+    "bom": false,
+    "crlf": 39,
+    "lf": 39,
+    "size": 1678
+  },
+  "Inkeys/additional/imfluent/imfluent.cpp": {
+    "bom": false,
+    "crlf": 7149,
+    "lf": 7149,
+    "size": 315177
+  },
+  "Inkeys/additional/imfluent/imfluent.h": {
+    "bom": false,
+    "crlf": 579,
+    "lf": 579,
+    "size": 24984
+  },
+  "Inkeys/additional/imfluent/imfluent_icons.h": {
+    "bom": false,
+    "crlf": 1535,
+    "lf": 1535,
+    "size": 77440
+  },
+  "Inkeys/additional/imfluent/imfluent_internal.h": {
+    "bom": false,
+    "crlf": 140,
+    "lf": 140,
+    "size": 3331
+  },
+  "Inkeys/src/i18n/en-US.jsonc": {
+    "bom": false,
+    "crlf": 501,
+    "lf": 501,
+    "size": 19676
+  },
+  "Inkeys/src/i18n/zh-CN.jsonc": {
+    "bom": false,
+    "crlf": 501,
+    "lf": 501,
+    "size": 20320
+  },
+  "Inkeys/src/i18n/zh-TW.jsonc": {
+    "bom": false,
+    "crlf": 501,
+    "lf": 501,
+    "size": 20250
+  },
+  "Scripts/i18n.zh-CN.snapshot.jsonc": {
+    "bom": false,
+    "crlf": 501,
+    "lf": 501,
+    "size": 20320
+  },
+  "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj": {
+    "bom": false,
+    "crlf": 119,
+    "lf": 119,
+    "size": 6020
+  },
+  "InkeysHeadlessTests/animation_tests.cpp": {
+    "bom": false,
+    "crlf": 908,
+    "lf": 908,
+    "size": 33913
+  },
+  "InkeysHeadlessTests/dirty_region_tests.cpp": {
+    "bom": false,
+    "crlf": 308,
+    "lf": 308,
+    "size": 11533
+  },
+  "InkeysHeadlessTests/frame_pacing_tests.cpp": {
+    "bom": true,
+    "crlf": 528,
+    "lf": 528,
+    "size": 20734
+  },
+  "InkeysHeadlessTests/message_tests.cpp": {
+    "bom": false,
+    "crlf": 137,
+    "lf": 137,
+    "size": 4733
+  },
+  "InkeysHeadlessTests/ppt_ui_tests.cpp": {
+    "bom": false,
+    "crlf": 180,
+    "lf": 180,
+    "size": 7247
+  },
+  "InkeysHeadlessTests/present_decision_tests.cpp": {
+    "bom": false,
+    "crlf": 299,
+    "lf": 299,
+    "size": 11297
+  },
+  "InkeysHeadlessTests/render_scheduler_tests.cpp": {
+    "bom": false,
+    "crlf": 558,
+    "lf": 558,
+    "size": 17320
+  },
+  "InkeysHeadlessTests/setting_session_state_tests.cpp": {
+    "bom": false,
+    "crlf": 219,
+    "lf": 219,
+    "size": 9748
+  },
+  "InkeysHeadlessTests/surface_tests.cpp": {
+    "bom": false,
+    "crlf": 0,
+    "lf": 67,
+    "size": 2377
+  },
+  "InkeysHeadlessTests/toggle_click_coalescer_tests.cpp": {
+    "bom": false,
+    "crlf": 73,
+    "lf": 73,
+    "size": 2318
+  },
+  "InkeysHeadlessTests/wake_signal_tests.cpp": {
+    "bom": false,
+    "crlf": 255,
+    "lf": 255,
+    "size": 8475
+  },
+  "InkeysHeadlessTests/window_geometry_tests.cpp": {
+    "bom": false,
+    "crlf": 295,
+    "lf": 295,
+    "size": 12037
+  },
+  "InkeysHeadlessTests/window_tests.cpp": {
+    "bom": false,
+    "crlf": 249,
+    "lf": 249,
+    "size": 11661
+  }
+}

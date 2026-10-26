@@ -1,0 +1,34 @@
+{
+  "checks": {
+    "fine_target_speed_erased": 1.0,
+    "fine_target_fixed_erased": 1.0,
+    "fine_letter_speed_erased": 0.0,
+    "fine_letter_fixed_erased": 0.17435316735947293,
+    "fine_line_speed_erased": 0.0,
+    "fine_line_fixed_erased": 1.0,
+    "fine_all_auxiliary_speed_erased": 1.0,
+    "fine_all_protected_speed_erased": 0.0,
+    "sweep_candidate_speed_erased": 1.0,
+    "sweep_candidate_fixed_erased": 0.7732030295957999,
+    "sweep_corner_speed_erased": 1.0,
+    "sweep_corner_fixed_erased": 0.3334640655868954,
+    "sweep_context_speed_erased": 0.0,
+    "sweep_context_fixed_erased": 0.0,
+    "sweep_early_speed_erased": 0.7323603235102724,
+    "sweep_late_speed_erased_at_warmup": 0.0,
+    "sweep_candidate_speed_at_speed_finish": 1.0,
+    "sweep_early_fixed_erased": 0.9212642532483512,
+    "sweep_late_fixed_erased_at_warmup": 0.0,
+    "sweep_candidate_fixed_at_speed_finish": 0.6021940766198489,
+    "scene_0_fixed_largest_step": 4.082257446478261,
+    "scene_0_speed_largest_step": 4.082257446478261,
+    "scene_1_fixed_largest_step": 23.112548920677963,
+    "scene_1_speed_largest_step": 23.112548920677963
+  },
+  "sha256": {
+    "Inkeys\\src\\setting\\EraserDemoFine.png": "ac8433933e4ade23333d4411ad57670cae2cd01dd1233a171eddd6e6206c6385",
+    "Inkeys\\src\\setting\\EraserDemoSweep.png": "785fd19db600d7ec13e678ff76214399fbd716013f541e190c73bca5d1b2e261",
+    "Inkeys\\Inkeys\\UI\\Setting\\Setting.EraserDemoData.g.h": "57a9c5fd1b71c00245e89dd944ad0d4be3382dd7a08184dc6934f918e59e7671"
+  },
+  "deterministic": true
+}

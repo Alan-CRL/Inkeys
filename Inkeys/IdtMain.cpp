@@ -94,8 +94,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.10217";	// 程序发布版本
-wstring editionDate = L"3.0.0-20261021a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.11201";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261026a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -1446,12 +1446,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
-			// 先退出启动链；测试中的宽色 setter 不保存，FineDial 只检查失效/取消提交。
+			// 先退出启动链；保存隔离仅用临时目录，FineDial 只检查失效/取消提交。
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			const int stateResult = RunStateModeProductionTest();
 			return stateResult != 0 ? stateResult
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--setting-business-cancellation-test") == 0)
+		{
+			// 无窗口队列取消回归必须先于配置、单实例及产品 HWND 初始化退出。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Setting::RunBusinessCancellationProductionTest();
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--pen-width-production-test") == 0)
 		{
@@ -2192,10 +2199,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReadSettingMini();
 
 		HANDLE proc_self = GetCurrentProcess();
-		HANDLE tok_self;
-		OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self);
+		HANDLE tok_self = nullptr;
+		const bool tokenReady = OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self) != FALSE;
 
-		if (setlist.plugInSetting.superTop.enable && !hasUiAccess(tok_self))
+		if (setlist.plugInSetting.superTop.enable && tokenReady && !hasUiAccess(tok_self))
 		{
 			while (true)
 			{
@@ -2336,7 +2343,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		error_code ec;
 		filesystem::remove(globalPath + L"superTop_try.signal", ec);
 
-		hasSuperTop = hasUiAccess(tok_self);
+		hasSuperTop = tokenReady && hasUiAccess(tok_self);
+		if (tok_self) CloseHandle(tok_self);
 	}
 
 	// 只有最终进程越过 SuperTop 分支后，才建立唯一 T0 与启动状态。
@@ -2833,22 +2841,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				// 用户保存的 PaintDevice 稍后仍可覆盖；缩放开关只使用启动时冻结的设备缺省。
 				setlist.paintDevice = defaultLargeScreenDevice ? 0 : 1;
 				if (defaultLargeScreenDevice) setlist.liftStraighten = true;
-			}
-			{
-				HDC screenDC = GetDC(nullptr);
-				double scale = 1.0;
-
-				if (screenDC)
-				{
-					int dpiX = GetDeviceCaps(screenDC, LOGPIXELSX);
-					ReleaseDC(nullptr, screenDC);
-
-					// 转换为缩放倍率
-					scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
-				}
-
-				// 限制范围 1.0 ~ 1.5
-				setlist.settingGlobalScale = static_cast<float>(clamp(scale, 1.0, 1.5));
 			}
 		}
 
@@ -3414,8 +3406,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		settingSpec.y = SettingWindowY;
 		settingSpec.width = SettingWindowWidth;
 		settingSpec.height = SettingWindowHeight;
-		settingSpec.style = WS_POPUP | WS_CLIPCHILDREN;
-		settingSpec.exStyle = WS_EX_APPWINDOW;
+		settingSpec.style = Inkeys::Window::SettingWindowStyle;
+		settingSpec.exStyle = Inkeys::Window::SettingWindowExStyle;
 		settingSpec.windowProc = Inkeys::UI::Setting::WindowProc();
 		settingSpec.largeIcon = applicationIcon;
 		settingSpec.smallIcon = applicationIcon;

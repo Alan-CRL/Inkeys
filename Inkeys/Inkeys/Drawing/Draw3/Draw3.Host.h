@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.Recovery.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
@@ -15,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <condition_variable>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -352,6 +354,8 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<Bridge::PresentationReadyIdentity> presentationUiReady;
 		std::optional<Bridge::PresentationReadyIdentity> presentationSuspended;
 		bool commandScenePending = false;
+		bool consumerFatal = false;
+		CanvasRecoveryState recovery;
 		bool presentationInputReady = false;
 		HostOutputTarget requestedOutputTarget = HostOutputTarget::PrimaryDrawpad;
 		std::uint64_t requestedOutputRevision = 0;
@@ -391,6 +395,8 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		bool RetryCanvasRecovery(const CanvasRecoveryState& expected,
+			const std::function<bool()>& stillDesired = {}) noexcept;
 		// 异步 UI 起笔通知只验证场景/生命周期；短笔结束后同场景仍有效。
 		bool IsAcceptedStrokeCurrent(const Bridge::AcceptedStrokeBegin& accepted) const noexcept;
 		// Caller 仅在成功 Start 后且不并行下一 Start 时读取；未启用 hidden 则 nullopt。

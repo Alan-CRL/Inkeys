@@ -34,6 +34,7 @@ import Inkeys.Window;
 import Inkeys.Startup.Progress;
 
 #include "IdtPlug-in.h"
+#include "Inkeys/UI/Ppt/Ppt.Recovery.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
@@ -174,6 +175,19 @@ namespace
 		}
 		pptUiBusinessCondition.notify_one();
 	}
+	void RetryPptCanvasRecovery(Inkeys::UI::PptRecovery::State expected)
+	{
+		const auto epoch = PptInputWorkspaceEpoch();
+		if (!epoch || !expected.retryAvailable || !expected.revision) return;
+		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		const auto desired = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+		const auto current = Inkeys::UI::PptRecovery::Project(runtime.recovery, desired,
+			expected.session, false, runtime.consumerFatal);
+		if (!current.CanRetry(expected)) return;
+		(void)Inkeys::Drawing::Draw3::RetryProductCanvasRecovery(runtime.recovery,
+			[epoch]() noexcept { return PptInputWorkspaceEpoch() == epoch; });
+	}
+
 	void AcknowledgePptPageUi(std::uint64_t session, std::uint64_t revision, int page, int total)
 	{
 		std::optional<Inkeys::Drawing::Draw3::Bridge::PresentationReadyIdentity> ready;
@@ -888,6 +902,7 @@ void PptInfo()
 		bool stateReliable = false;
 		bool exitedThisTick = false;
 		std::uint64_t exitModeRevision = 0;
+		std::uint64_t exitWorkspaceEpoch = 0;
 		bool descriptorChanged = false;
 		PptLifecycle lifecycle = PptLifecycle::Unknown;
 		PptPageStatus pageStatus = PptPageStatus::Unknown;
@@ -947,7 +962,12 @@ void PptInfo()
 		{
 			const auto ending = CapturePptSession();
 			exitedThisTick = ending.active;
-			if (ending.active) exitModeRevision = StateModeTransitionRevision();
+			if (ending.active)
+			{
+				// 工具收尾固定退出边沿的权限，不能借稍后场景发布的新 epoch 跨越白板往返。
+				exitWorkspaceEpoch = PptInputWorkspaceEpoch();
+				exitModeRevision = StateModeTransitionRevision();
+			}
 			if (ending.active) TraceTrueExit("inactive", ending);
 			EndSession();
 		}
@@ -983,6 +1003,7 @@ void PptInfo()
 			{
 				confirmedWindowEnd = true;
 				exitedThisTick = true;
+				exitWorkspaceEpoch = PptInputWorkspaceEpoch();
 				exitModeRevision = StateModeTransitionRevision();
 				TraceTrueExit(!windowExists ? "show-window-lost" : "show-window-reused", session);
 				EndSession();
@@ -1111,6 +1132,7 @@ void PptInfo()
 			expectedPptUiTarget.reset();
 		}
 		const bool whiteboard = WhiteboardTransactionActive();
+		const auto sceneWorkspaceEpoch = PptSceneWorkspaceEpoch();
 		static const bool tracePptGate = []() noexcept
 		{
 			wchar_t value[8]{};
@@ -1136,8 +1158,9 @@ void PptInfo()
 				trustedEndScreen, controlSessionAvailable, windowControlAvailable, basicControl,
 				whiteboard, D3::ProductRunning());
 		}
+		if (sceneWorkspaceEpoch != 0 && session.active) SyncPrimaryWorkspaceStateMode(sceneWorkspaceEpoch);
 		const auto bridge = D3::ProductHost().ProductBridge().Snapshot();
-		if (!whiteboard && session.active && !trustedTarget)
+		if (sceneWorkspaceEpoch != 0 && session.active && !trustedTarget)
 		{
 			const bool sameBinding = currentService && session.serviceGeneration == serviceGeneration
 				&& (!cachedState || MatchesPptShowSession(session, serviceGeneration, *cachedState));
@@ -1149,29 +1172,30 @@ void PptInfo()
 			else
 			{
 				// 新文稿/基础模式先撤销旧墨迹目标；原始数字不能把旧画布带到新场。
-				D3::ClearProductPresentationTarget();
+				(void)PublishPrimaryPresentationTarget(nullptr, sceneWorkspaceEpoch);
 				cachedTarget.reset();
 				PptInfoStateBuffer = { -1, -1 };
 			}
 		}
 		std::uint64_t targetRevision = 0;
-		if (!whiteboard && !session.active && (confirmedWindowEnd ||
+		if (sceneWorkspaceEpoch != 0 && !session.active && (confirmedWindowEnd ||
 			(stateReliable && lifecycle == PptLifecycle::Inactive)))
 		{
-			D3::PublishProductWorkspace(D3::Bridge::Workspace::Desktop);
 			if (exitedThisTick)
 			{
 				// 可信退出只收尾一次；若此后用户主动换工具，旧退出不得覆盖它。
-				if (ChangeStateModeToSelectionIfRevision(exitModeRevision))
+				if (!whiteboard && exitWorkspaceEpoch != 0 &&
+					CompletePresentationExitStateMode(exitModeRevision, exitWorkspaceEpoch))
 				{
 					// EndSession 的刷新早于模式收尾；成功进入选择后重绘实际工具高亮。
 					barUISet.UpdateRendering();
 				}
 			}
+			else SyncPrimaryWorkspaceStateMode(sceneWorkspaceEpoch);
 		}
-		else if (!whiteboard && session.active && trustedTarget)
+		else if (sceneWorkspaceEpoch != 0 && session.active && trustedTarget)
 		{
-			const auto accepted = D3::PublishProductPresentationTarget(*cachedTarget);
+			const auto accepted = PublishPrimaryPresentationTarget(&*cachedTarget, sceneWorkspaceEpoch);
 			if (!accepted && tracePptGate && IDTLogger && (descriptorChanged || rawChanged))
 			{
 				const auto observedBridge = D3::ProductHost().ProductBridge().Snapshot();
@@ -1269,6 +1293,20 @@ void PptInfo()
 			total = publishedTotal;
 		}
 		else { page = -1; total = -1; }
+		const auto recoveryRuntime = D3::ProductRuntimeSnapshot();
+		const auto recoveryDesired = D3::ProductHost().ProductBridge().Snapshot();
+		const auto recoveryView = Inkeys::UI::PptRecovery::Project(recoveryRuntime.recovery,
+			recoveryDesired, session.localSession, whiteboard, recoveryRuntime.consumerFatal);
+		Inkeys::UI::Ppt::PublishCanvasRecovery(recoveryView);
+		if (recoveryView.kind != Inkeys::UI::PptRecovery::Kind::None && recoveryDesired.presentationTarget)
+		{
+			// 故障显示不冒充 InkReady；翻页仍绑定可信目标，重试绑定独立故障令牌。
+			page = recoveryDesired.presentationTarget->pageKind == D3::Bridge::PresentationPageKind::EndScreen
+				? -1 : static_cast<int>(recoveryDesired.presentationTarget->pageIndex + 1);
+			total = static_cast<int>(recoveryDesired.presentationTarget->totalPages);
+			targetRevision = 0;
+			pageMode = Inkeys::UI::Ppt::PageStateMode::Pending;
+		}
 		if (!whiteboard && (page != publishedPage || total != publishedTotal
 			|| targetRevision != publishedTarget || session.localSession != publishedSession
 			|| pageMode != publishedPageMode))
@@ -1335,6 +1373,7 @@ void PPTLinkageMain()
 		[]() { QueuePptUiBusinessCommand(PptUiBusinessCommand::EndShow); },
 		[](std::string payload) { QueuePptUiSettingsPersistence(std::move(payload)); },
 		AcknowledgePptPageUi,
+		RetryPptCanvasRecovery,
 	});
 	if (pptUiReady)
 	{

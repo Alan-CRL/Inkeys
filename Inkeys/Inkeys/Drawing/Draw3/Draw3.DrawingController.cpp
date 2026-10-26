@@ -46,6 +46,7 @@
 #include <mmsystem.h>
 
 #include "Draw3.Bridge.h"
+#include "Draw3.Recovery.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.HapticDiagnostics.h"
 #include "Draw3.Shortcut.h"
@@ -713,6 +714,7 @@ namespace Inkeys::Drawing::Draw3
 			std::uint64_t queuedRevision = 0;
 			std::uint64_t committedRevision = 0;
 			bool persistenceInitialized = false;
+			bool emptyLaneVerified = false;
 			bool loadPending = false;
 			std::uint64_t slotGeneration = 0;
 		};
@@ -759,6 +761,7 @@ namespace Inkeys::Drawing::Draw3
 			std::uint64_t& queuedRevision;
 			std::uint64_t& committedRevision;
 			bool& persistenceInitialized;
+			bool& emptyLaneVerified;
 			bool& loadPending;
 			std::uint64_t& slotGeneration;
 		};
@@ -777,6 +780,7 @@ namespace Inkeys::Drawing::Draw3
 			swap(active.queuedRevision, parked.queuedRevision);
 			swap(active.committedRevision, parked.committedRevision);
 			swap(active.persistenceInitialized, parked.persistenceInitialized);
+			swap(active.emptyLaneVerified, parked.emptyLaneVerified);
 			swap(active.loadPending, parked.loadPending);
 			swap(active.slotGeneration, parked.slotGeneration);
 		}
@@ -812,14 +816,97 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		ActivePresentationSlotRefs DocumentSlotRefs(DrawingDocumentSlot& slot) noexcept
+		{
+			return { slot.document, slot.pageRuntimeStates, slot.retainedSlides,
+				slot.currentPageIndex, slot.presentationTarget, slot.fileGuid,
+				slot.mutationRevision, slot.queuedRevision, slot.committedRevision,
+				slot.persistenceInitialized, slot.emptyLaneVerified, slot.loadPending, slot.slotGeneration };
+		}
+
+		bool PresentationSlotFits(ActivePresentationSlotRefs slot,
+			const Bridge::PresentationTarget& target) noexcept
+		{
+			const auto count = Bridge::PresentationDocumentPageCount(target);
+			return slot.document && slot.document->Pages().size() == count &&
+				slot.pageRuntimeStates.size() == count &&
+				slot.document->PageAt(target.pageIndex);
+		}
+
+		bool PresentationSceneMatches(Bridge::Workspace workspace,
+			const std::optional<Bridge::PresentationKey>& key,
+			ActivePresentationSlotRefs slot,
+			const Bridge::PresentationTarget& target) noexcept
+		{
+			return workspace == Bridge::Workspace::Presentation && key &&
+				*key == target.key && slot.target && *slot.target == target &&
+				slot.currentPageIndex == target.pageIndex &&
+				PresentationSlotFits(slot, target);
+		}
+
+		bool CanvasCommandSceneMatches(const CanvasCommand& command,
+			Bridge::Workspace workspace,
+			const std::optional<Bridge::PresentationKey>& key,
+			ActivePresentationSlotRefs slot) noexcept
+		{
+			if (!command.requireSceneMatch || command.type == CanvasCommandType::PrepareExitAutoSave)
+				return true;
+			return static_cast<Bridge::Workspace>(command.workspace) == workspace &&
+				(workspace != Bridge::Workspace::Presentation ||
+					(command.presentationTarget && PresentationSceneMatches(workspace, key,
+						slot, *command.presentationTarget)));
+		}
+
+		template <typename Stage>
+		bool StageResolvedPresentationScene(Bridge::Workspace workspace,
+			const std::optional<Bridge::PresentationKey>& key,
+			ActivePresentationSlotRefs slot, Stage&& stage)
+		{
+			if (slot.loadPending || !slot.persistenceInitialized || !slot.target ||
+				!PresentationSceneMatches(workspace, key, slot, *slot.target)) return false;
+			stage(&*slot.target);
+			return true;
+		}
+
+		struct KeepPresentationTopology
+		{
+			bool operator()(ActivePresentationSlotRefs,
+				const Bridge::PresentationTarget&,
+				std::optional<DrawingDocumentSlot>&) const noexcept { return true; }
+		};
+
+		// 空 lane 的退休必须以真实严格 NotFound 为依据；“没有可见笔迹”并不等于没有历史或在途所有权。
+		bool CanRetireEmptyPresentationLane(ActivePresentationSlotRefs slot) noexcept
+		{
+			if (!slot.target || !PresentationSlotFits(slot, *slot.target) ||
+				!slot.emptyLaneVerified || !slot.persistenceInitialized || slot.loadPending ||
+				slot.fileGuid || slot.mutationRevision || slot.queuedRevision || slot.committedRevision ||
+				!slot.retainedSlides.empty() || !slot.document ||
+				slot.pageRuntimeStates.size() != slot.document->Pages().size()) return false;
+			for (const auto& page : slot.document->Pages())
+				for (const auto& canvas : page.Canvases())
+					if (!canvas.Strokes().empty()) return false;
+			return std::none_of(slot.pageRuntimeStates.begin(), slot.pageRuntimeStates.end(),
+				[](const auto& runtime)
+				{
+					return !runtime.history.Items().empty() || runtime.history.LastRedoItem() ||
+						!runtime.beforeStates.empty() || !runtime.afterStates.empty() || runtime.undoFloor ||
+						runtime.intervalOrdinal || runtime.intervalLoadPending || runtime.boundaryFallback ||
+						runtime.clearRedoAvailable || runtime.clearRedoContinuation;
+				});
+		}
+
+		enum class PresentationCpuSwitchOutcome : std::uint8_t { Failed, Applied, ProtectedConflict };
+
 		struct PresentationCpuSwitchResult
 		{
 			bool accepted = false;
 			bool topologyConflict = false;
+			PresentationCpuSwitchOutcome outcome = PresentationCpuSwitchOutcome::Failed;
 			std::optional<Bridge::PresentationTarget> preparedTarget;
 		};
 
-		template <typename AllocateToken>
+		template <typename AllocateToken, typename Prepare = KeepPresentationTopology>
 		PresentationCpuSwitchResult SwitchPresentationCpuSlot(
 			Bridge::Workspace& activeWorkspace,
 			std::optional<Bridge::PresentationKey>& activeKey,
@@ -828,9 +915,11 @@ namespace Inkeys::Drawing::Draw3
 			PresentationParkedSlots& parkedSlots,
 			std::uint64_t& nextSlotGeneration,
 			const Bridge::PresentationTarget& target,
-			AllocateToken&& allocateRasterStateToken)
+			AllocateToken&& allocateRasterStateToken, Prepare prepare = {})
 		{
+			(void)isolated;
 			static_assert(std::is_nothrow_move_assignable_v<DrawingDocumentSlot>);
+			static_assert(std::is_nothrow_move_assignable_v<std::optional<Bridge::PresentationTarget>>);
 			PresentationCpuSwitchResult result;
 			try { result.preparedTarget.emplace(target); }
 			catch (...) { return result; }
@@ -838,79 +927,78 @@ namespace Inkeys::Drawing::Draw3
 				activeKey && *activeKey == target.key && active.target &&
 				active.target->bindingMode == target.bindingMode;
 			const auto previousLane = activeKey && active.target
-				? std::optional<PresentationLaneKey>(LaneFor(*active.target))
-				: std::nullopt;
-			bool topologyConflict = sameLane &&
-				!CanReusePresentationDocumentSlot(*active.target, target,
-					active.document ? active.document->Pages().size() : 0);
-			if (!sameLane || topologyConflict)
+				? std::optional<PresentationLaneKey>(LaneFor(*active.target)) : std::nullopt;
+			DrawingDocumentSlot* destination = nullptr;
+			bool inserted = false, replaceEmpty = false;
+			DrawingDocumentSlot prepared;
+			std::optional<DrawingDocumentSlot> rebound;
+			try
 			{
-				DrawingDocumentSlot* destination = nullptr;
-				bool inserted = false;
-				if (!topologyConflict)
+				if (!sameLane)
 				{
-					try
-					{
-						auto [found, wasInserted] = parkedSlots.try_emplace(LaneFor(target));
-						inserted = wasInserted;
-						destination = &found->second;
-					}
-					catch (...) { return {}; }
-					if (destination->presentationTarget &&
-						!CanReusePresentationDocumentSlot(*destination->presentationTarget,
-							target, destination->document
-								? destination->document->Pages().size()
-								: Bridge::PresentationDocumentPageCount(target)))
-					{
-						topologyConflict = true;
-						destination = nullptr;
-					}
+					auto [found, wasInserted] = parkedSlots.try_emplace(LaneFor(target));
+					inserted = wasInserted;
+					destination = &found->second;
 				}
-				DrawingDocumentSlot prepared;
+				const auto prior = destination ? DocumentSlotRefs(*destination) : active;
+				const bool topologyConflict = prior.target && (!prior.document ||
+					!CanReusePresentationDocumentSlot(*prior.target, target,
+						prior.document->Pages().size()));
 				if (topologyConflict)
 				{
-					if (!TryCreateBlankDocumentSlot(prepared,
-						Bridge::PresentationDocumentPageCount(target),
-						allocateRasterStateToken)) return {};
+					if (!CanRetireEmptyPresentationLane(prior))
+					{
+						// 冲突不是成功切换：完整保留旧 lane，向 Host 报告被拒目标，等待明确重试/兼容新目标。
+						result.topologyConflict = true;
+						result.outcome = PresentationCpuSwitchOutcome::ProtectedConflict;
+						if (inserted) parkedSlots.erase(LaneFor(target));
+						return result;
+					}
+					replaceEmpty = true;
 				}
-				else if (!destination->document)
+				if (replaceEmpty || !prior.document)
 				{
-					if (!TryCreateBlankDocumentSlot(prepared,
-						Bridge::PresentationDocumentPageCount(target),
-						allocateRasterStateToken) || nextSlotGeneration == 0 ||
-						nextSlotGeneration == UINT64_MAX)
+					if (nextSlotGeneration == 0 || nextSlotGeneration == UINT64_MAX ||
+						!TryCreateBlankDocumentSlot(prepared, Bridge::PresentationDocumentPageCount(target),
+							allocateRasterStateToken))
 					{
 						if (inserted) parkedSlots.erase(LaneFor(target));
 						return {};
 					}
-					try { prepared.presentationTarget = *result.preparedTarget; }
-					catch (...)
-					{
-						if (inserted) parkedSlots.erase(LaneFor(target));
-						return {};
-					}
+					prepared.presentationTarget = *result.preparedTarget;
 					prepared.slotGeneration = nextSlotGeneration++;
-					*destination = std::move(prepared);
 				}
-				else if (destination->slotGeneration == 0) return {};
-				// 完整候选与 target 复制先成功，再以不抛异常的成组 swap 换权威槽。
-				SwapActiveDocumentSlot(active, source);
-				if (topologyConflict)
+				else if (prior.slotGeneration == 0) return {};
+				const auto candidate = prepared.document ? DocumentSlotRefs(prepared) : prior;
+				if (!prepare(candidate, target, rebound) ||
+					!PresentationSlotFits(rebound ? DocumentSlotRefs(*rebound) : candidate, target))
 				{
-					isolated = std::move(prepared);
-					destination = &isolated;
-					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=switch result=isolated reason=topology_conflict\n");
+					if (inserted) parkedSlots.erase(LaneFor(target));
+					return {};
 				}
+				if (rebound) SwapActiveDocumentSlot(candidate, *rebound);
+			}
+			catch (...)
+			{
+				if (inserted) parkedSlots.erase(LaneFor(target));
+				return {};
+			}
+			// 所有可能失败的准备均已结束。只有已证实空 lane 才能被新代次替换，随后仍走真实 Load/Present。
+			if (sameLane && replaceEmpty) SwapActiveDocumentSlot(active, prepared);
+			else if (!sameLane)
+			{
+				if (prepared.document) *destination = std::move(prepared);
+				SwapActiveDocumentSlot(active, source);
 				SwapActiveDocumentSlot(active, *destination);
 				if (previousLane && source.document && CanEvictPresentationCpuSlot(source))
 					parkedSlots.erase(*previousLane);
-				activeKey = topologyConflict
-					? std::nullopt : std::optional<Bridge::PresentationKey>(target.key);
 			}
+			activeKey = target.key;
 			activeWorkspace = Bridge::Workspace::Presentation;
-			if (topologyConflict) active.target.reset();
+			active.target = std::move(result.preparedTarget);
+			active.currentPageIndex = target.pageIndex;
 			result.accepted = true;
-			result.topologyConflict = topologyConflict;
+			result.outcome = PresentationCpuSwitchOutcome::Applied;
 			return result;
 		}
 
@@ -1015,11 +1103,53 @@ namespace Inkeys::Drawing::Draw3
 			catch (...) { return false; }
 		}
 
+		struct SceneApplicationRetry
+		{
+			void Cancel() noexcept { command_.reset(); attempt_ = 0; deadlineMs_ = 0; }
+			void Schedule(CanvasCommand command, std::uint64_t nowMs) noexcept
+			{
+				static_assert(std::is_nothrow_move_assignable_v<CanvasCommand>);
+				constexpr std::array<std::uint64_t, 4> delays = { 250, 500, 1000, 2000 };
+				const auto delay = delays[attempt_];
+				if (attempt_ + 1 < delays.size()) ++attempt_;
+				deadlineMs_ = nowMs > UINT64_MAX - delay ? UINT64_MAX : nowMs + delay;
+				command.sceneClosedAdmission = true;
+				// UI 令牌只在外部首次消费；后续退避已由 owner 持有，不能重验已经失效的旧令牌。
+				command.explicitRecoveryRetry = false;
+				command.recoveryRevision = 0;
+				command_ = std::move(command);
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					"[Draw3.Scene] action=apply result=retry delay_ms=%llu\n",
+					static_cast<unsigned long long>(delay));
+			}
+			bool TryTake(std::uint64_t nowMs, CanvasCommand& command) noexcept
+			{
+				if (!command_ || nowMs < deadlineMs_) return false;
+				command = std::move(*command_);
+				command_.reset();
+				return true;
+			}
+			std::optional<double> RemainingWaitMilliseconds(std::uint64_t nowMs) const noexcept
+			{
+				if (!command_) return std::nullopt;
+				return static_cast<double>((std::max)(std::uint64_t{ 1 },
+					deadlineMs_ > nowMs ? deadlineMs_ - nowMs : 0));
+			}
+		private:
+			std::optional<CanvasCommand> command_;
+			std::size_t attempt_ = 0;
+			std::uint64_t deadlineMs_ = 0;
+		};
+
 		struct PresentationCurrentLoadRetry
 		{
 			static constexpr std::array<std::uint64_t, 4> kDelaysMs =
 				{ 250, 500, 1000, 2000 };
 			bool ExitPrepared() const noexcept { return exitPrepared_; }
+			bool ManualOnly() const noexcept { return manualOnly_; }
+			bool Scheduled() const noexcept { return scheduled_; }
+			unsigned Attempts() const noexcept { return automaticAttempts_; }
+			bool HasRequest() const noexcept { return target_.has_value() || scheduled_ || manualOnly_; }
 			bool AllowsLoad(bool exitRequested) const noexcept
 			{
 				return !exitPrepared_ && !exitRequested;
@@ -3387,7 +3517,7 @@ namespace Inkeys::Drawing::Draw3
 		void StopFatalInputConsumer(ContactInputCoordinator& input) noexcept
 		{
 			// fatal 后绘制线程不再消费旧 route；只封闭新 admission，终态由 Host/RTS 收拢。
-			input.SetAdmissionBlocked(true);
+			input.SetConsumerFatal();
 		}
 
 		void RejectStrokeInitialization(ContactInputCoordinator& input, ContactHandle handle,
@@ -4891,6 +5021,7 @@ namespace Inkeys::Drawing::Draw3
 			std::uint64_t queuedRevision = 2;
 			std::uint64_t committedRevision = 1;
 			bool initialized = true;
+			bool emptyLaneVerified = false;
 			bool loadPending = false;
 			std::uint64_t generation = 1;
 			Bridge::Workspace workspace = Bridge::Workspace::Presentation;
@@ -4905,7 +5036,7 @@ namespace Inkeys::Drawing::Draw3
 			{ return ++nextRasterToken; };
 			const ActivePresentationSlotRefs active{ document, runtimes, retained,
 				pageIndex, activeTarget, fileGuid, mutationRevision, queuedRevision,
-				committedRevision, initialized, loadPending, generation };
+				committedRevision, initialized, emptyLaneVerified, loadPending, generation };
 			const auto switched = SwitchPresentationCpuSlot(workspace, activeKey,
 				active, source->second, isolated, parked, nextSlotGeneration,
 				stable, allocate);
@@ -5073,6 +5204,186 @@ namespace Inkeys::Drawing::Draw3
 						"candidate allocation failure keeps authoritative slot unchanged");
 				}
 			}
+
+			// 同 lane 与已停放 lane 均在候选准备失败时保留原权威文稿。
+			const auto originalGuid = document->WorkspaceGuid().Bytes();
+			const auto originalTarget = activeTarget;
+			const auto originalGeneration = generation;
+			const auto originalPage = pageIndex;
+			auto* currentSource = &parked.at(LaneFor(*activeTarget));
+			auto requested = *activeTarget;
+			++requested.targetRevision;
+			const auto rebindFailure = [](ActivePresentationSlotRefs,
+				const Bridge::PresentationTarget&,
+				std::optional<DrawingDocumentSlot>&) { return false; };
+			const auto unchanged = [&]()
+			{
+				return document && document->WorkspaceGuid().Bytes() == originalGuid &&
+					activeTarget == originalTarget && generation == originalGeneration &&
+					pageIndex == originalPage;
+			};
+			const auto failedRebind = SwitchPresentationCpuSlot(workspace, activeKey,
+				active, *currentSource, isolated, parked, nextSlotGeneration,
+				requested, allocate, rebindFailure);
+			check(!failedRebind.accepted && unchanged(),
+				"same lane rebind failure changes neither CPU document nor target");
+			const auto malformed = [](ActivePresentationSlotRefs,
+				const Bridge::PresentationTarget&, std::optional<DrawingDocumentSlot>& candidate)
+			{ candidate.emplace(); return true; };
+			const auto failedCount = SwitchPresentationCpuSlot(workspace, activeKey,
+				active, *currentSource, isolated, parked, nextSlotGeneration,
+				requested, allocate, malformed);
+			check(!failedCount.accepted && unchanged(),
+				"candidate page count failure cannot commit target equality");
+			auto other = requested.bindingMode == Bridge::SlideBindingMode::StableSlideId
+				? fallback : stable;
+			const auto otherSlot = parked.find(LaneFor(other));
+			if (otherSlot != parked.end() && otherSlot->second.document)
+			{
+				const auto parkedGuid = otherSlot->second.document->WorkspaceGuid().Bytes();
+				const auto failedParked = SwitchPresentationCpuSlot(workspace, activeKey,
+					active, *currentSource, isolated, parked, nextSlotGeneration,
+					other, allocate, rebindFailure);
+				check(!failedParked.accepted && unchanged() && otherSlot->second.document &&
+					otherSlot->second.document->WorkspaceGuid().Bytes() == parkedGuid,
+					"parked lane preparation failure preserves both lanes before swap");
+			}
+			const auto recovered = SwitchPresentationCpuSlot(workspace, activeKey,
+				active, *currentSource, isolated, parked, nextSlotGeneration,
+				requested, allocate);
+			check(recovered.accepted && PresentationSceneMatches(workspace, activeKey,
+				active, requested) && document->WorkspaceGuid().Bytes() == originalGuid,
+				"same stable revision retries successfully without discarding old ink");
+			runtimes.emplace_back();
+			check(!PresentationSceneMatches(workspace, activeKey, active, requested),
+				"equal target with invalid runtime count cannot acknowledge or execute business");
+			runtimes.pop_back();
+
+			CanvasCommand business;
+			business.type = CanvasCommandType::Clear;
+			business.requireSceneMatch = true;
+			business.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Presentation);
+			business.presentationTarget = std::make_shared<Bridge::PresentationTarget>(requested);
+			check(CanvasCommandSceneMatches(business, workspace, activeKey, active),
+				"fully committed matching prefix allows business once");
+			check(!CanvasCommandSceneMatches(business, Bridge::Workspace::Desktop, activeKey, active),
+				"failed PPT prefix cannot Clear the old desktop");
+			business.presentationTarget = std::make_shared<Bridge::PresentationTarget>(*originalTarget);
+			check(!CanvasCommandSceneMatches(business, workspace, activeKey, active),
+				"old full target cannot mutate a newer CPU scene");
+			business.type = CanvasCommandType::PrepareExitAutoSave;
+			check(CanvasCommandSceneMatches(business, Bridge::Workspace::Desktop, activeKey, active),
+				"final save barrier remains admissible regardless of failed prefix");
+
+			SceneApplicationRetry sceneRetry;
+			CanvasCommand scene;
+			scene.type = CanvasCommandType::SetPresentationTarget;
+			scene.presentationTarget = std::make_shared<Bridge::PresentationTarget>(requested);
+			CanvasCommand retryCommand;
+			std::uint64_t nowMs = 100;
+			for (const auto delay : { 250, 500, 1000, 2000, 2000 })
+			{
+				sceneRetry.Schedule(scene, nowMs);
+				check(sceneRetry.RemainingWaitMilliseconds(nowMs) == delay &&
+					!sceneRetry.TryTake(nowMs + delay - 1, retryCommand),
+					"CPU retry respects capped backoff without polling");
+				nowMs += delay;
+				check(sceneRetry.TryTake(nowMs, retryCommand) &&
+					retryCommand.type == CanvasCommandType::SetPresentationTarget &&
+					retryCommand.sceneClosedAdmission && !sceneRetry.TryTake(nowMs, retryCommand),
+					"retry yields exactly one scene and requires successful-present acknowledgment");
+			}
+			scene.explicitRecoveryRetry = true;
+			scene.recoveryRevision = 12;
+			sceneRetry.Schedule(scene, nowMs);
+			check(sceneRetry.TryTake(nowMs + 2000, retryCommand) &&
+				!retryCommand.explicitRecoveryRetry && retryCommand.recoveryRevision == 0,
+				"first preparation failure transfers explicit request to token-free owner retry");
+			sceneRetry.Schedule(retryCommand, nowMs + 2000);
+			check(sceneRetry.TryTake(nowMs + 4000, retryCommand) &&
+				!retryCommand.explicitRecoveryRetry && retryCommand.recoveryRevision == 0,
+				"second preparation failure retains owner responsibility after UI token revision changes");
+			sceneRetry.Schedule(scene, nowMs);
+			sceneRetry.Cancel();
+			check(!sceneRetry.RemainingWaitMilliseconds(nowMs) &&
+				!sceneRetry.TryTake(UINT64_MAX, retryCommand),
+				"new scene or final Exit cancels old retry responsibility");
+
+			// PreviousInterval 的终态不携带新页身份；回执始终取真实活动目标而非旧 completion。
+			std::optional<Bridge::PresentationReadyIdentity> staged;
+			const auto stage = [&](const Bridge::PresentationTarget* value)
+			{ staged = value ? std::optional(Bridge::ReadyIdentityFor(*value)) : std::nullopt; };
+			initialized = true;
+			loadPending = true;
+			check(!StageResolvedPresentationScene(workspace, activeKey, active, stage) && !staged,
+				"pending history load cannot stage ready for a new page");
+			loadPending = false;
+			check(StageResolvedPresentationScene(workspace, activeKey, active, stage) &&
+				staged == Bridge::ReadyIdentityFor(requested),
+				"success or failure terminal stages current actual target after history load");
+			staged.reset();
+			check(!StageResolvedPresentationScene(Bridge::Workspace::Desktop, activeKey,
+				active, stage) && !staged,
+				"parked history completion cannot acknowledge the active desktop");
+			initialized = false;
+			check(!StageResolvedPresentationScene(workspace, activeKey, active, stage) && !staged,
+				"uninitialized current document stays blocked after history load");
+			// A1：拓扑冲突不能 accepted 后丢失 target/load/ready；真实 NotFound 的完整空 lane 才能退休。
+			DrawingDocumentSlot conflict;
+			check(TryCreateBlankDocumentSlot(conflict, 3, allocate), "build empty fallback conflict lane");
+			conflict.presentationTarget = fallback; conflict.slotGeneration = 41;
+			conflict.persistenceInitialized = true;
+			Bridge::Workspace conflictWorkspace = Bridge::Workspace::Presentation;
+			std::optional<Bridge::PresentationKey> conflictKey = fallback.key;
+			PresentationParkedSlots conflictParked;
+			auto& conflictSource = conflictParked[LaneFor(fallback)];
+			DrawingDocumentSlot unused;
+			std::uint64_t conflictGeneration = 42;
+			auto expanded = fallback; expanded.totalPages = 3; expanded.targetRevision = 30;
+			const auto conflictGuid = conflict.document->WorkspaceGuid();
+			auto denied = SwitchPresentationCpuSlot(conflictWorkspace, conflictKey, DocumentSlotRefs(conflict),
+				conflictSource, unused, conflictParked, conflictGeneration, expanded, allocate);
+			check(!denied.accepted && denied.outcome == PresentationCpuSwitchOutcome::ProtectedConflict &&
+				conflict.document->WorkspaceGuid() == conflictGuid && conflict.presentationTarget == fallback,
+				"unverified empty conflict preserves complete old lane instead of entering isolated blank");
+			conflict.emptyLaneVerified = true;
+			check(CanRetireEmptyPresentationLane(DocumentSlotRefs(conflict)),
+				"strict NotFound plus fully empty lane establishes retirement proof");
+			for (unsigned condition = 0; condition != 9; ++condition)
+			{
+				auto protectedSlot = conflict;
+				switch (condition)
+				{
+				case 0: protectedSlot.loadPending = true; break;
+				case 1: protectedSlot.queuedRevision = 1; break;
+				case 2: protectedSlot.mutationRevision = 1; break;
+				case 3: protectedSlot.pageRuntimeStates[0].clearRedoAvailable = true; break;
+				case 4: protectedSlot.pageRuntimeStates[0].boundaryFallback.emplace(); break;
+				case 5: protectedSlot.retainedSlides.emplace(101, draw3::uink::Draw3UInkCanvasSnapshot{}); break;
+				case 6: protectedSlot.document->PageAt(0)->GetOrCreateCanvas(kDefaultDeviceKey)->AppendStroke(
+					InkStroke({}, { { 1.f, 1.f, 2.f }, { 2.f, 2.f, 2.f } })); break;
+				case 7: protectedSlot.fileGuid = draw3::uink::UInkGuid(guid(0x71).Bytes()); break;
+				case 8:
+				{
+					InkStroke stroke({}, { { 1.f, 1.f, 2.f }, { 2.f, 2.f, 2.f } });
+					const auto coverage = BuildStrokeTileFootprint(stroke);
+					if (coverage) (void)protectedSlot.pageRuntimeStates[0].history.AppendStroke(0, *coverage, true);
+					break;
+				}
+				}
+				check(!CanRetireEmptyPresentationLane(DocumentSlotRefs(protectedSlot)),
+					"load, queued save, mutation, redo, fallback, retained or hidden ink protects conflict lane");
+			}
+			const auto fresh = SwitchPresentationCpuSlot(conflictWorkspace, conflictKey, DocumentSlotRefs(conflict),
+				conflictSource, unused, conflictParked, conflictGeneration, expanded, allocate);
+			check(fresh.accepted && conflict.presentationTarget == expanded && conflict.slotGeneration == 42 &&
+				conflict.document->Pages().size() == 4 && !conflict.persistenceInitialized &&
+				!conflict.emptyLaneVerified && !conflict.loadPending,
+				"verified empty conflict prepares a fresh generation and valid target but still requires real Load");
+			bool earlyReady = false;
+			check(!StageResolvedPresentationScene(conflictWorkspace, conflictKey, DocumentSlotRefs(conflict),
+				[&](auto*) { earlyReady = true; }) && !earlyReady,
+				"retired empty lane never fabricates initialization or ready before strict new-target Load");
 		}
 		catch (...)
 		{
@@ -8962,15 +9273,17 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t activePresentationQueuedRevision = 0;
 		std::uint64_t activePresentationCommittedRevision = 0;
 		bool activePresentationPersistenceInitialized = false;
+		bool activePresentationEmptyLaneVerified = false;
 		bool activePresentationLoadPending = false;
 		std::uint64_t activePresentationSlotGeneration = 0;
 		PresentationCurrentLoadRetry currentLoadRetry;
+		SceneApplicationRetry sceneApplyRetry;
 		const ActivePresentationSlotRefs activeDocumentSlot{
 			document_, pageRuntimeStates, activeRetainedSlides, currentPageIndex_,
 			activePresentationTarget, activePresentationFileGuid,
 			activePresentationMutationRevision, activePresentationQueuedRevision,
 			activePresentationCommittedRevision,
-			activePresentationPersistenceInitialized,
+			activePresentationPersistenceInitialized, activePresentationEmptyLaneVerified,
 			activePresentationLoadPending, activePresentationSlotGeneration };
 		const auto presentationLoadUnresolved = [&]() noexcept
 		{
@@ -8980,14 +9293,17 @@ namespace Inkeys::Drawing::Draw3
 		};
 		const auto currentLoadRetryWait = [&]() noexcept -> std::optional<double>
 		{
-			if (activeWorkspace != Bridge::Workspace::Presentation ||
-				!activePresentationTarget || !observer_.presentationLoadRequested ||
-				activePresentationMutationRevision != 0 ||
-				activePresentationQueuedRevision != 0)
-				return std::nullopt;
-			return currentLoadRetry.RemainingWaitMilliseconds(
-				*activePresentationTarget, activePresentationSlotGeneration,
-				GetTickCount64());
+			const auto nowMs = GetTickCount64();
+			if (window_.ExitRequested() || currentLoadRetry.ExitPrepared()) sceneApplyRetry.Cancel();
+			auto wait = sceneApplyRetry.RemainingWaitMilliseconds(nowMs);
+			if (activeWorkspace == Bridge::Workspace::Presentation &&
+				activePresentationTarget && observer_.presentationLoadRequested &&
+				activePresentationMutationRevision == 0 &&
+				activePresentationQueuedRevision == 0)
+				if (const auto loadWait = currentLoadRetry.RemainingWaitMilliseconds(
+					*activePresentationTarget, activePresentationSlotGeneration, nowMs))
+					wait = wait ? (std::min)(*wait, *loadWait) : *loadWait;
+			return wait;
 		};
 		std::uint64_t acceptedStrokeSceneGeneration = 1;
 		auto acceptedStrokeScene = [&]() noexcept
@@ -9002,6 +9318,68 @@ namespace Inkeys::Drawing::Draw3
 		};
 		if (observer_.acceptedStrokeSceneChanged)
 			observer_.acceptedStrokeSceneChanged(observer_.context, acceptedStrokeScene());
+		CanvasRecoveryState recoveryRequest;
+		CanvasRecoveryState publishedRecovery;
+		std::uint32_t scenePreparationFailures = 0;
+		std::uint32_t presentationFailures = 0;
+		auto publishRecovery = [&](CanvasRecoveryState value)
+		{
+			if (publishedRecovery == value) return;
+			publishedRecovery = value;
+			if (observer_.recoveryChanged) observer_.recoveryChanged(observer_.context, value);
+		};
+		auto recoveryForCommand = [](const CanvasCommand& command)
+		{
+			CanvasRecoveryState value;
+			value.workspace = command.type == CanvasCommandType::SetPresentationTarget
+				? Bridge::Workspace::Presentation : static_cast<Bridge::Workspace>(command.workspace);
+			if (value.workspace == Bridge::Workspace::Presentation && command.presentationTarget)
+				value.presentationTarget = Bridge::ReadyIdentityFor(*command.presentationTarget);
+			return value;
+		};
+		auto recoveryMatchesActive = [&]()
+		{
+			return recoveryRequest.workspace == activeWorkspace && recoveryRequest.presentationTarget ==
+				(activeWorkspace == Bridge::Workspace::Presentation && activePresentationTarget
+					? std::optional(Bridge::ReadyIdentityFor(*activePresentationTarget)) : std::nullopt) &&
+				(activeWorkspace != Bridge::Workspace::Presentation || (activePresentationTarget &&
+					PresentationSceneMatches(activeWorkspace, activePresentationKey, activeDocumentSlot,
+						*activePresentationTarget)));
+		};
+		auto publishRecoveryProgress = [&](CanvasRecoveryStatus status, CanvasRecoveryReason reason,
+			std::uint32_t attempts = 0, bool retryAvailable = false)
+		{
+			auto value = recoveryRequest;
+			value.status = status; value.reason = reason;
+			value.attempts = attempts; value.retryAvailable = retryAvailable;
+			publishRecovery(value);
+		};
+		auto publishCurrentLoadProgress = [&]()
+		{
+			if (!recoveryMatchesActive() || activeWorkspace != Bridge::Workspace::Presentation ||
+				activePresentationPersistenceInitialized || !activePresentationTarget ||
+				!PresentationSceneMatches(activeWorkspace, activePresentationKey, activeDocumentSlot,
+					*activePresentationTarget)) return;
+			if (currentLoadRetry.ManualOnly())
+				publishRecoveryProgress(CanvasRecoveryStatus::ManualRetryRequired,
+					currentLoadRetry.Attempts() == PresentationCurrentLoadRetry::kDelaysMs.size()
+						? CanvasRecoveryReason::CurrentLoadIoError : CanvasRecoveryReason::CurrentLoadRejected,
+					currentLoadRetry.Attempts(), true);
+			else
+				publishRecoveryProgress(currentLoadRetry.Scheduled() ? CanvasRecoveryStatus::Retrying :
+					CanvasRecoveryStatus::Recovering, currentLoadRetry.Scheduled()
+						? CanvasRecoveryReason::CurrentLoadIoError : CanvasRecoveryReason::None,
+					currentLoadRetry.Attempts());
+		};
+		auto retryScenePreparation = [&](CanvasCommand command)
+		{
+			if (scenePreparationFailures < 4) ++scenePreparationFailures;
+			// 资源准备继续有界退避推进；达到提示阈值后明确暴露可重试终态，不再只有日志。
+			publishRecoveryProgress(scenePreparationFailures >= 4 ? CanvasRecoveryStatus::ManualRetryRequired :
+				CanvasRecoveryStatus::Retrying, CanvasRecoveryReason::ScenePreparation,
+				scenePreparationFailures, scenePreparationFailures >= 4);
+			sceneApplyRetry.Schedule(std::move(command), GetTickCount64());
+		};
 		std::optional<PendingWorkspaceReady> pendingWorkspaceReady;
 		auto stageWorkspaceReady = [&](const Bridge::PresentationTarget* target = nullptr)
 		{
@@ -9017,6 +9395,8 @@ namespace Inkeys::Drawing::Draw3
 			if (!pendingWorkspaceReady || !observer_.workspaceChanged) return;
 			const PendingWorkspaceReady ready = std::move(*pendingWorkspaceReady);
 			pendingWorkspaceReady.reset();
+			if (recoveryMatchesActive())
+				publishRecoveryProgress(CanvasRecoveryStatus::None, CanvasRecoveryReason::None);
 			observer_.workspaceChanged(observer_.context, ready.workspace,
 				ready.currentPageIndex, ready.pageCount,
 				ready.presentationTarget ? &*ready.presentationTarget : nullptr);
@@ -12561,6 +12941,7 @@ namespace Inkeys::Drawing::Draw3
 			if (fatalCaptureAttempted) return;
 			fatalCaptureAttempted = true;
 			StopFatalInputConsumer(input_);
+			publishRecoveryProgress(CanvasRecoveryStatus::Failed, CanvasRecoveryReason::ConsumerFatal);
 			if (metricsState_)
 			{
 				metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
@@ -12701,19 +13082,19 @@ namespace Inkeys::Drawing::Draw3
 				committedRevision, allocateRasterStateToken);
 		};
 
-		auto RebindStablePresentationTopology = [&](const Bridge::PresentationTarget& next)
-			-> bool
+		auto RebindStablePresentationTopology = [&](ActivePresentationSlotRefs candidate,
+			const Bridge::PresentationTarget& next)
+			-> std::optional<DrawingDocumentSlot>
 		{
-			if (activeWorkspace != Bridge::Workspace::Presentation ||
-				!activePresentationTarget ||
-				activePresentationTarget->bindingMode != Bridge::SlideBindingMode::StableSlideId ||
-				next.bindingMode != Bridge::SlideBindingMode::StableSlideId || !document_)
-				return false;
-			auto captured = BuildPresentationSaveRequest(*document_, pageRuntimeStates,
-				currentPageIndex_, *activePresentationTarget, activePresentationFileGuid,
-				activePresentationMutationRevision, configuration_.dpiScale,
-				activeRetainedSlides);
-			if (!captured) return false;
+			if (!candidate.target ||
+				candidate.target->bindingMode != Bridge::SlideBindingMode::StableSlideId ||
+				next.bindingMode != Bridge::SlideBindingMode::StableSlideId || !candidate.document)
+				return std::nullopt;
+			auto captured = BuildPresentationSaveRequest(*candidate.document, candidate.pageRuntimeStates,
+				candidate.currentPageIndex, *candidate.target, candidate.fileGuid,
+				candidate.mutationRevision, configuration_.dpiScale,
+				candidate.retainedSlides);
+			if (!captured) return std::nullopt;
 			std::map<std::int32_t, draw3::uink::Draw3UInkCanvasSnapshot> known;
 			for (const auto& canvas : captured->snapshot.activeCanvases)
 				if (canvas.slideId) known.emplace(*canvas.slideId, canvas);
@@ -12736,7 +13117,7 @@ namespace Inkeys::Drawing::Draw3
 					continue;
 				}
 				const auto pageGuid = draw3::uink::CreateUInkGuid();
-				if (!pageGuid) return false;
+				if (!pageGuid) return std::nullopt;
 				draw3::uink::Draw3UInkCanvasSnapshot blank;
 				blank.pageGuid = *pageGuid;
 				blank.slideId = slideId;
@@ -12753,7 +13134,7 @@ namespace Inkeys::Drawing::Draw3
 					return draw3::uink::InkeysPageKind(canvas.extra) ==
 						draw3::uink::UInkInkeysPageKind::EndScreen;
 				});
-			if (previousEnd == captured->snapshot.activeCanvases.end()) return false;
+			if (previousEnd == captured->snapshot.activeCanvases.end()) return std::nullopt;
 			remapped.activeCanvases.push_back(*previousEnd);
 			for (auto& [slideId, canvas] : known)
 			{
@@ -12762,12 +13143,12 @@ namespace Inkeys::Drawing::Draw3
 				remapped.retainedCanvases.push_back(std::move(canvas));
 			}
 			auto rebuilt = materializePresentationSlot(remapped, next,
-				activePresentationCommittedRevision);
-			if (!rebuilt || !rebuilt->document) return false;
+				candidate.committedRevision);
+			if (!rebuilt || !rebuilt->document) return std::nullopt;
 			std::map<std::array<std::uint8_t, 16>, std::size_t> oldRuntimeByPage;
-			for (std::size_t index = 0; index < document_->Pages().size() &&
-				index < pageRuntimeStates.size(); ++index)
-				if (const InkPage* page = document_->PageAt(index))
+			for (std::size_t index = 0; index < candidate.document->Pages().size() &&
+				index < candidate.pageRuntimeStates.size(); ++index)
+				if (const InkPage* page = candidate.document->PageAt(index))
 					oldRuntimeByPage.emplace(page->PageGuid().Bytes(), index);
 			for (std::size_t index = 0; index < rebuilt->document->Pages().size() &&
 				index < rebuilt->pageRuntimeStates.size(); ++index)
@@ -12776,13 +13157,13 @@ namespace Inkeys::Drawing::Draw3
 				const auto found = page
 					? oldRuntimeByPage.find(page->PageGuid().Bytes()) : oldRuntimeByPage.end();
 				if (found == oldRuntimeByPage.end()) continue;
-				CanvasPageRuntimeState& source = pageRuntimeStates[found->second];
+				CanvasPageRuntimeState& source = candidate.pageRuntimeStates[found->second];
 				CanvasPageRuntimeState& destination = rebuilt->pageRuntimeStates[index];
 				if (source.clearRedoContinuation || source.history.LastRedoItem())
 				{
 					// 拓扑重排的 visible 导出会丢隐藏候选，仅前向分支页沿 GUID 保留完整值。
-					const InkPage* original = document_->PageAt(found->second);
-					if (!original || !rebuilt->document->ReplacePage(index, *original)) return false;
+					const InkPage* original = candidate.document->PageAt(found->second);
+					if (!original || !rebuilt->document->ReplacePage(index, *original)) return std::nullopt;
 					destination = source;
 					continue;
 				}
@@ -12793,24 +13174,17 @@ namespace Inkeys::Drawing::Draw3
 				destination.previousClearUndoAvailable =
 					source.previousClearUndoAvailable;
 				destination.clearRedoAvailable = source.clearRedoAvailable;
-				destination.boundaryFallback = std::move(source.boundaryFallback);
+				destination.boundaryFallback = source.boundaryFallback;
 			}
-			const auto oldMutation = activePresentationMutationRevision;
-			const auto oldQueued = activePresentationQueuedRevision;
-			const auto oldCommitted = activePresentationCommittedRevision;
-			const auto oldPersistence = activePresentationPersistenceInitialized;
-			const auto oldLoadPending = activePresentationLoadPending;
-			document_ = std::move(rebuilt->document);
-			pageRuntimeStates = std::move(rebuilt->pageRuntimeStates);
-			if (metricsState_) metricsScene(true);
-			activeRetainedSlides = std::move(rebuilt->retainedSlides);
-			activePresentationFileGuid = rebuilt->fileGuid;
-			activePresentationMutationRevision = oldMutation;
-			activePresentationQueuedRevision = oldQueued;
-			activePresentationCommittedRevision = oldCommitted;
-			activePresentationPersistenceInitialized = oldPersistence;
-			activePresentationLoadPending = oldLoadPending;
-			return true;
+			// 完整复制历史候选后才由 CPU switch 成组换入；任何分配失败均保留原页与恢复点。
+			rebuilt->mutationRevision = candidate.mutationRevision;
+			rebuilt->queuedRevision = candidate.queuedRevision;
+			rebuilt->committedRevision = candidate.committedRevision;
+			rebuilt->persistenceInitialized = candidate.persistenceInitialized;
+			rebuilt->emptyLaneVerified = candidate.emptyLaneVerified;
+			rebuilt->loadPending = candidate.loadPending;
+			rebuilt->slotGeneration = candidate.slotGeneration;
+			return rebuilt;
 		};
 
 			auto undoCurrentPage = [&](RECT& frameDirty) -> bool
@@ -13279,9 +13653,55 @@ namespace Inkeys::Drawing::Draw3
 				observer_.commandProcessed(observer_.context, type, currentPageIndex_,
 					document_ ? document_->Pages().size() : 0);
 			};
-			CanvasCommand command;
-			while (active.empty() && window_.TryDequeueCanvasCommand(command))
+			// 关闸命令发现 CPU 已在目标场景时补发当前 ready。加载未完成或文档尚未改到目标时不发布。
+			auto acknowledgeUnchangedScene = [&](const CanvasCommand& command)
 			{
+				if (!command.sceneClosedAdmission) return;
+				if (activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading) return;
+				if (Bridge::PresentationInputSuppressed(activeWorkspace,
+					activePresentationLoadPending || presentationLoadUnresolved())) return;
+				if (activeWorkspace == Bridge::Workspace::Presentation)
+				{
+					if (!activePresentationTarget || !PresentationSceneMatches(activeWorkspace,
+						activePresentationKey, activeDocumentSlot, *activePresentationTarget)) return;
+					stageWorkspaceReady(&*activePresentationTarget);
+				}
+				else
+					stageWorkspaceReady();
+				// 旧准入代次的全帧请求可能早已消费；补回执本身也必须推动一次真实 Present。
+				forceFullPresent = true;
+			};
+			CanvasCommand command;
+			while (active.empty())
+			{
+				if (window_.TryDequeueCanvasCommand(command))
+				{
+					if (command.type == CanvasCommandType::SetPresentationTarget ||
+						command.type == CanvasCommandType::SetWorkspace ||
+						command.type == CanvasCommandType::PrepareExitAutoSave)
+						sceneApplyRetry.Cancel();
+				}
+				else
+				{
+					if (window_.ExitRequested() || currentLoadRetry.ExitPrepared()) sceneApplyRetry.Cancel();
+					if (!sceneApplyRetry.TryTake(GetTickCount64(), command)) break;
+				}
+				if (command.explicitRecoveryRetry && (!observer_.recoveryRetryAllowed ||
+					!observer_.recoveryRetryAllowed(observer_.context, command.recoveryRevision))) continue;
+				if (command.type == CanvasCommandType::SetPresentationTarget || command.type == CanvasCommandType::SetWorkspace)
+				{
+					const auto next = recoveryForCommand(command);
+					if (command.explicitRecoveryRetry || next.workspace != recoveryRequest.workspace ||
+						next.presentationTarget != recoveryRequest.presentationTarget)
+					{
+						recoveryRequest = next;
+						// 新建恢复债务后，即使 CPU 已在目标，也必须用真实 Present 回执结算。
+						command.sceneClosedAdmission = true;
+						scenePreparationFailures = 0;
+						presentationFailures = 0;
+						publishRecoveryProgress(CanvasRecoveryStatus::Recovering, CanvasRecoveryReason::None);
+					}
+				}
 				if (command.type == CanvasCommandType::WhiteboardPersistenceCompleted)
 				{
 					consumeWhiteboardCompletions();
@@ -13493,6 +13913,10 @@ namespace Inkeys::Drawing::Draw3
 									restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 										forceFullPresent, width, height);
 							}
+							// 历史加载可能跨过同 lane 翻页；成功或失败终态都交回当前实际页，停放槽不发回执。
+							if (StageResolvedPresentationScene(activeWorkspace, activePresentationKey,
+								activeDocumentSlot, stageWorkspaceReady))
+								forceFullPresent = true;
 						}
 						else if (parked)
 						{
@@ -13550,6 +13974,7 @@ namespace Inkeys::Drawing::Draw3
 									static_cast<unsigned>(completion.status),
 									static_cast<unsigned long long>(activePresentationSlotGeneration));
 							}
+							publishCurrentLoadProgress();
 							continue;
 						}
 						if (loadedVerified)
@@ -13569,10 +13994,12 @@ namespace Inkeys::Drawing::Draw3
 								DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 									"[Draw3.Presentation] action=current_load result=manual_required status=install_failed generation=%llu\n",
 									static_cast<unsigned long long>(activePresentationSlotGeneration));
+								publishCurrentLoadProgress();
 								continue;
 							}
 						}
 						activePresentationPersistenceInitialized = true;
+						activePresentationEmptyLaneVerified = emptyVerified;
 						currentLoadRetry.Cancel();
 						restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 							forceFullPresent, width, height);
@@ -13598,6 +14025,7 @@ namespace Inkeys::Drawing::Draw3
 							*parked = std::move(*loaded);
 						}
 						parked->persistenceInitialized = true;
+						parked->emptyLaneVerified = emptyVerified;
 						if (canEvictPresentationSlot(*parked) && route.parkedLane)
 							presentationSlots.erase(*route.parkedLane);
 					}
@@ -13608,17 +14036,18 @@ namespace Inkeys::Drawing::Draw3
 					if (!command.presentationTarget) continue;
 					const Bridge::PresentationTarget& requestedTarget =
 						*command.presentationTarget;
-					if (activeWorkspace == Bridge::Workspace::Presentation &&
-						activePresentationTarget && *activePresentationTarget == requestedTarget)
+					if (PresentationSceneMatches(activeWorkspace, activePresentationKey,
+						activeDocumentSlot, requestedTarget))
 					{
 						if (!activePresentationPersistenceInitialized &&
+							(!currentLoadRetry.HasRequest() || command.explicitRecoveryRetry) &&
 							!activePresentationLoadPending &&
 							activePresentationMutationRevision == 0 &&
 							activePresentationQueuedRevision == 0 &&
 							observer_.presentationLoadRequested &&
 							currentLoadRetry.AllowsLoad(window_.ExitRequested()))
 						{
-							currentLoadRetry.Cancel(); // 外部明确重发同一 target，允许安全重读。
+							currentLoadRetry.Cancel(); // 仅首次请求或带精确令牌的用户显式重试可重置预算。
 							activePresentationLoadPending = SubmitCurrentPresentationLoad(
 								requestedTarget, activePresentationSlotGeneration,
 								[&](PresentationLoadRequest&& request)
@@ -13630,43 +14059,53 @@ namespace Inkeys::Drawing::Draw3
 								currentLoadRetry.OnIoError(requestedTarget,
 									activePresentationSlotGeneration, GetTickCount64());
 						}
+						acknowledgeUnchangedScene(command);
+						sceneApplyRetry.Cancel();
 						continue;
 					}
-					const Bridge::PresentationTarget target = requestedTarget;
+					const Bridge::PresentationTarget& target = requestedTarget;
 					if (target.key.IsZero() || !Bridge::ValidPresentationPage(target)) continue;
 					// 同文稿翻页与跨文稿切换都先固定离开侧最新 revision。
 					(void)capturePresentationAutoSave();
+					const auto keepStagedScene = pendingWorkspaceReady;
 					pendingWorkspaceReady.reset();
 
 					if (activeWorkspace == Bridge::Workspace::Whiteboard) saveWhiteboard();
 					DrawingDocumentSlot* source = parkedActiveSlot();
-					if (!source) continue;
+					if (!source)
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						retryScenePreparation(std::move(command));
+						continue;
+					}
 					PresentationCpuSwitchResult cpuSwitch =
 						SwitchPresentationCpuSlot(activeWorkspace, activePresentationKey,
 							activeDocumentSlot, *source, isolatedPresentationSlot,
 							presentationSlots, nextPresentationSlotGeneration,
-							target, allocateRasterStateToken);
-					if (!cpuSwitch.accepted) continue;
-					if (!cpuSwitch.topologyConflict)
+							target, allocateRasterStateToken,
+							[&](ActivePresentationSlotRefs candidate,
+								const Bridge::PresentationTarget& next,
+								std::optional<DrawingDocumentSlot>& rebound)
+							{
+								if (!candidate.target ||
+									!StablePresentationTopologyChanged(*candidate.target, next)) return true;
+								rebound = RebindStablePresentationTopology(candidate, next);
+								return rebound.has_value();
+							});
+					if (!cpuSwitch.accepted)
 					{
-						// parked/warm slot 先恢复其旧 target，再按有序 SlideID 重映射。
-						const bool stableTopologyChange = activePresentationTarget &&
-							StablePresentationTopologyChanged(*activePresentationTarget, target);
-						if (stableTopologyChange && !RebindStablePresentationTopology(target))
+						pendingWorkspaceReady = keepStagedScene;
+						if (cpuSwitch.outcome == PresentationCpuSwitchOutcome::ProtectedConflict)
 						{
-							DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=rebind result=failed\n");
+							sceneApplyRetry.Cancel();
+							publishRecoveryProgress(CanvasRecoveryStatus::ProtectedConflict,
+								CanvasRecoveryReason::TopologyConflict, 0, true);
 							continue;
 						}
-						activePresentationTarget = std::move(cpuSwitch.preparedTarget);
-					}
-					if (!document_ || pageRuntimeStates.size() !=
-						Bridge::PresentationDocumentPageCount(target) ||
-						document_->Pages().size() != Bridge::PresentationDocumentPageCount(target))
-					{
-						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=switch result=isolated reason=page_count\n");
+						retryScenePreparation(std::move(command));
 						continue;
 					}
-					currentPageIndex_ = target.pageIndex;
+					sceneApplyRetry.Cancel();
 					currentLoadRetry.Cancel(); // 页/场次/代次变化取消上一目标的计时请求。
 					TracePptTiming("document_switched", target.sessionRevision, target.targetRevision);
 					restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
@@ -13715,8 +14154,14 @@ namespace Inkeys::Drawing::Draw3
 						target != Bridge::Workspace::Whiteboard) ||
 						(target == activeWorkspace && (target != Bridge::Workspace::Presentation ||
 							!activePresentationKey)))
+					{
+						if (target == activeWorkspace)
+							acknowledgeUnchangedScene(command);
+						sceneApplyRetry.Cancel();
 						continue;
+					}
 					(void)capturePresentationAutoSave();
+					const auto keepStagedScene = pendingWorkspaceReady;
 					pendingWorkspaceReady.reset();
 					const std::optional<PresentationLaneKey> previousPresentationLane =
 						activePresentationKey && activePresentationTarget
@@ -13727,10 +14172,20 @@ namespace Inkeys::Drawing::Draw3
 						? &whiteboardSlot : &isolatedPresentationSlot;
 					if (target == Bridge::Workspace::Presentation)
 						isolatedPresentationSlot = {};
-					if (!createBlankSlot(*destination, 1)) continue;
+					if (!createBlankSlot(*destination, 1))
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						retryScenePreparation(std::move(command));
+						continue;
+					}
 					if (activeWorkspace == Bridge::Workspace::Whiteboard) saveWhiteboard();
 					DrawingDocumentSlot* source = parkedActiveSlot();
-					if (!source) continue;
+					if (!source)
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						retryScenePreparation(std::move(command));
+						continue;
+					}
 					swapActiveDocument(*source);
 					swapActiveDocument(*destination);
 					if (previousPresentationLane && canEvictPresentationSlot(*source))
@@ -13745,6 +14200,18 @@ namespace Inkeys::Drawing::Draw3
 					restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 						forceFullPresent, width, height);
 					stageWorkspaceReady();
+					sceneApplyRetry.Cancel();
+					continue;
+				}
+				if (!CanvasCommandSceneMatches(command, activeWorkspace,
+					activePresentationKey, activeDocumentSlot))
+				{
+					// 前缀失败时业务明确失败，不在旧文稿执行，也不随场景退避重复 Clear/Undo。
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+						"[Draw3.Scene] action=command result=cancelled reason=scene_not_applied command=%u\n",
+						static_cast<unsigned>(command.type));
+					shortcutResult.result = Shortcuts::Result::Blocked;
+					reportCommand(command.type); // processed 终态仍推进，避免页导航调用方永久等待。
 					continue;
 				}
 				// 冷加载完成命令也带代次；工作区切换不能让迟到 SetPage 改写别的文档。
@@ -13862,6 +14329,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (command.type == CanvasCommandType::PrepareExitAutoSave)
 				{
+					sceneApplyRetry.Cancel();
+					publishRecoveryProgress(CanvasRecoveryStatus::None, CanvasRecoveryReason::None);
 					// 回执只表示最终快照已提交给 worker；durable 结果仍由 worker 决定。
 					ProcessPresentationExitBarrier(currentLoadRetry,
 						[&] { captureExitAutoSave(false, "normal_exit"); },
@@ -14805,6 +15274,7 @@ namespace Inkeys::Drawing::Draw3
 							return observer_.presentationLoadRequested(observer_.context,
 								std::move(request));
 						});
+				publishCurrentLoadProgress();
 			}
 			const bool navigationActive = touchGesture.PanActive() ||
 				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
@@ -16007,6 +16477,14 @@ namespace Inkeys::Drawing::Draw3
 				consecutiveRasterFailures = 0;
 				activeLayerRebuildPending = false;
 			}
+			if ((rasterSubmissionFailed || (!presentSucceeded && !IsEmptyRect(frameDirty))) && recoveryMatchesActive() &&
+				!presentationLoadUnresolved() && !activePresentationLoadPending && !whiteboardLoading)
+			{
+				if (presentationFailures < 4) ++presentationFailures;
+				publishRecoveryProgress(presentationFailures >= 4 ? CanvasRecoveryStatus::ManualRetryRequired :
+					CanvasRecoveryStatus::Retrying, CanvasRecoveryReason::PresentFailure,
+					presentationFailures, presentationFailures >= 4);
+			}
 			if (cursorVisualDiagnosticRecorded)
 				RecordCursorDiagnostic("present success=%u visuals=%zu laserTips=%zu dirty=(%ld,%ld,%ld,%ld)",
 					presentSucceeded ? 1u : 0u, currentCursorVisuals.size(),
@@ -16014,6 +16492,13 @@ namespace Inkeys::Drawing::Draw3
 					frameDirty.right, frameDirty.bottom);
 			if (presentSucceeded)
 			{
+				presentationFailures = 0;
+				if (recoveryMatchesActive() && !presentationLoadUnresolved() && !activePresentationLoadPending &&
+					!whiteboardLoading && !viewportRecoveryPending && !viewportRefreshPending &&
+					(activeWorkspace != Bridge::Workspace::Presentation || (activePresentationTarget &&
+						PresentationSceneMatches(activeWorkspace, activePresentationKey, activeDocumentSlot,
+							*activePresentationTarget))))
+					publishRecoveryProgress(CanvasRecoveryStatus::None, CanvasRecoveryReason::None);
 				contentRevisionNeedsPresent = false;
 				// 文稿身份只能在目标 CPU 文档完成重放并成功提交一帧后成为 ready。
 				if (!viewportRecoveryPending && !viewportRefreshPending)

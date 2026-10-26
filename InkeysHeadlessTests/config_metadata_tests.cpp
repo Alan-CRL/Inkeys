@@ -238,6 +238,51 @@ int RunConfigMetadataTests()
 		output << Json::writeString(builder, document);
 		check(static_cast<bool>(output), "write mode input fixture");
 	};
+	// 使用真实 schema 和写盘链验证字体实验偏好，不接受数值/字符串伪装成 bool。
+	{
+		constexpr const char* fontPath = "Experimental.Inkeys3.UI3.AllowFractionalFontSize";
+		Inkeys::Config fonts;
+		auto& preference = fonts.Experimental.Inkeys3.UI3.AllowFractionalFontSize;
+		check(!preference.load(), "fractional fonts default off");
+		const auto upload = fonts.GetUploadInfo();
+		for (const bool allowed : { true, false })
+		{
+			preference = allowed;
+			check(fonts.Write()
+				&& ReadJson(file)["Experimental"]["Inkeys3"]["UI3"]["AllowFractionalFontSize"].asBool() == allowed,
+				"fractional font policy persists as a JSON bool");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && restarted.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load() == allowed,
+				"new process configuration restores fractional font policy");
+			check(fonts.GetUploadInfo() == upload, "fractional font preference is not uploaded");
+			preference = !allowed; fonts.UI.Bar.Zoom2 = 1.25;
+			check(fonts.ReadMini({fontPath}) && preference.load() == allowed && fonts.UI.Bar.Zoom2.load() == 1.25,
+				"font Mini read updates only the selected preference");
+		}
+		preference = true;
+		Inkeys::Config frozen; frozen = fonts; preference = false;
+		check(frozen.Write() && ReadJson(file)["Experimental"]["Inkeys3"]["UI3"]["AllowFractionalFontSize"].asBool(),
+			"frozen font configuration retains its captured preference");
+		preference = true; fonts.ResetToDefaults();
+		check(!preference.load(), "font preference reset restores default off");
+		writeModeDocument(Json::Value(Json::objectValue)); preference = true;
+		check(fonts.ReadAll() && !preference.load(), "old configuration missing font preference defaults off");
+		preference = true; fonts.UI.Bar.Zoom2 = 1.25;
+		check(fonts.ReadMini({fontPath}) && !preference.load() && fonts.UI.Bar.Zoom2.load() == 1.25,
+			"Mini missing font preference resets only the selected field");
+		for (const Json::Value& invalid : {Json::Value(), Json::Value(0), Json::Value(1), Json::Value(1.0),
+			Json::Value("true"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue)})
+		{
+			Json::Value document(Json::objectValue);
+			document["Experimental"]["Inkeys3"]["UI3"]["AllowFractionalFontSize"] = invalid;
+			writeModeDocument(document); preference = true;
+			check(fonts.ReadAll() && !preference.load(), "invalid font preference type defaults off");
+			preference = true; fonts.UI.Bar.Zoom2 = 1.25;
+			check(fonts.ReadMini({fontPath}) && !preference.load() && fonts.UI.Bar.Zoom2.load() == 1.25,
+				"Mini rejects invalid font preference without unrelated changes");
+		}
+	}
+
 	// 使用真实配置验证两个类型独立恢复，退役高亮键不能重建可选边缘策略。
 	Inkeys::Config cursorConfig;
 	const auto cursorUpload = cursorConfig.GetUploadInfo();

@@ -17,6 +17,7 @@ module;
 #include "../Whiteboard/Whiteboard.Theme.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
+#include "../Ppt/Ppt.Recovery.h"
 #include "../Bar/Bar.BottomDock.h"
 #include "../../Drawing/Draw3/Draw3.PptTiming.h"
 #include "../../Input/UiPointerInput.h"
@@ -249,6 +250,7 @@ namespace Inkeys::UI::PageControl
 			WorkspaceMode pressedMode=WorkspaceMode::Hidden;
 			std::uint64_t pressedPptSession=0;
 			std::uint64_t pressedPptLayoutEpoch=0;
+			PptRecovery::State pressedPptRecovery;
 			SIZE backingCapacity{ 1, 1 };
 			SIZE committedPresentationSize{};
 			SIZE committedBackingCapacity{};
@@ -361,6 +363,7 @@ namespace Inkeys::UI::PageControl
 			PageControlSurfaceBudget budget;
 			bool visible=false,locked=true;
 			std::uint64_t pptSession=0,semanticRevision=0,pptLayoutEpoch=0;
+			PptRecovery::State pptRecovery;
 		};
 		std::mutex inputSnapshotMutex;
 		std::array<InputPresentation,4> inputPresentations;
@@ -370,14 +373,14 @@ namespace Inkeys::UI::PageControl
 		std::vector<std::unique_ptr<InputRegistrationContext>> inputContexts;
 		std::uint64_t inputSemanticRevision=0;
 		void CommitInputPresentationLocked(std::size_t index,WorkspaceMode mode,const WhiteboardState& whiteboard,
-			const PageControlSurfaceBudget& budget,bool visible,bool locked,std::uint64_t pptSession,std::uint64_t pptLayoutEpoch=0)
+			const PageControlSurfaceBudget& budget,bool visible,bool locked,std::uint64_t pptSession,std::uint64_t pptLayoutEpoch=0,PptRecovery::State pptRecovery={})
 		{
 			const auto& previous=inputPresentations[index];
 			const bool same=previous.mode==mode
 				&&(mode!=WorkspaceMode::WhiteboardExpanded||(previous.whiteboard.generation==whiteboard.generation&&previous.whiteboard.currentPage==whiteboard.currentPage))
-				&&(mode!=WorkspaceMode::PptCompact||(previous.pptSession==pptSession&&previous.pptLayoutEpoch==pptLayoutEpoch));
+				&&(mode!=WorkspaceMode::PptCompact||(previous.pptSession==pptSession&&previous.pptLayoutEpoch==pptLayoutEpoch&&previous.pptRecovery==pptRecovery));
 			const auto identity=same&&previous.semanticRevision?previous.semanticRevision:++inputSemanticRevision;
-			inputPresentations[index]={mode,whiteboard,budget,visible,locked,pptSession,identity,pptLayoutEpoch};
+			inputPresentations[index]={mode,whiteboard,budget,visible,locked,pptSession,identity,pptLayoutEpoch,pptRecovery};
 		}
 		InputPresentation InputSnapshot(std::size_t index)
 		{std::scoped_lock lock(inputSnapshotMutex);return inputPresentations[index];}
@@ -809,8 +812,18 @@ namespace Inkeys::UI::PageControl
 			if (callback) callback();
 		}
 
-		void InvokePptPreview()
+		void InvokePptPreview(PptRecovery::State pressedRecovery = {})
 		{
+			const auto [ppt, whiteboard] = Snapshot();
+			if (whiteboard.active || whiteboard.switching || !ppt.presentationVisible) return;
+			if (pressedRecovery.revision || ppt.recovery.revision)
+			{
+				if (!ppt.recovery.CanRetry(pressedRecovery)) return;
+				std::function<void(PptRecovery::State)> retry;
+				{ std::scoped_lock lock(callbackMutex); retry = pptCallbacks.retryCanvas; }
+				if (retry) retry(pressedRecovery);
+				return;
+			}
 			std::function<void()> callback;
 			{
 				std::scoped_lock lock(callbackMutex);
@@ -869,6 +882,22 @@ namespace Inkeys::UI::PageControl
 			}else{
 				const int maximum=index>=2?999:9999;
 				content.currentPage=PageNumber(ppt.currentPage,maximum);content.totalPage=L"/"+PageNumber(ppt.totalPage,maximum);
+				if (ppt.recovery.kind != PptRecovery::Kind::None)
+				{
+					const auto& labels = I18nKey.UI.Bar.CanvasRecovery;
+					const char* key = labels.Failed;
+					switch (ppt.recovery.kind)
+					{
+					case PptRecovery::Kind::Conflict: key = labels.Conflict; break;
+					case PptRecovery::Kind::ReadFailed: key = labels.ReadFailed; break;
+					case PptRecovery::Kind::PresentFailed: key = labels.PresentFailed; break;
+					case PptRecovery::Kind::Recovering: key = labels.Recovering; break;
+					default: break;
+					}
+					content.currentPage = IW(key);
+					content.totalPage = IW(ppt.recovery.retryAvailable ? labels.Retry : labels.Wait);
+					content.interactive[1] = ppt.recovery.retryAvailable;
+				}
 			}
 			content.previousLabel=IW(I18nKey.UI.Bar.MainButtons.WhiteboardPreviousLabel);
 			content.nextLabel=IW(content.whiteboard&&whiteboard.nextIsAdd?I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel:
@@ -933,6 +962,8 @@ namespace Inkeys::UI::PageControl
 			float scale) noexcept
 		{
 			const float normalizedScale = NormalizeScale(scale);
+			// 当前 bounds 仍逐帧插值，字体单独接收同一动画的最终倍率。
+			state.scene.SetFontTargetScale(state.bounds.initialized?state.bounds.targetScale:normalizedScale);
 			if (!ShouldApplyPageControlSceneBounds(
 				state.appliedSceneBoundsReady, state.appliedSceneBounds,
 				state.appliedSceneScale, bounds, normalizedScale)) return true;
@@ -1294,6 +1325,8 @@ namespace Inkeys::UI::PageControl
 				static_cast<FLOAT>(presentDirty.left),static_cast<FLOAT>(presentDirty.top),
 				static_cast<FLOAT>(presentDirty.right),static_cast<FLOAT>(presentDirty.bottom)));
 			(void)state.scene.Render(context.Get(),frameContext.frameTime);
+			// 本帧新启动的字号修正也必须接回调度，不能等下一次外部事件。
+			result.continueRendering |= state.scene.Renderer().FontAnimationsActive();
 			if (showDebugFrames)
 			{
 				// 红/绿框表示本帧 damage，蓝框直接表示当前 HWND 提交边界。
@@ -2259,7 +2292,7 @@ namespace Inkeys::UI::PageControl
 				state.debugOverlayRefreshPending=false;(void)state.debugFrameSleepLatch.CommitPresented();
 				state.scene.CommitPresented(shouldShow&&!state.inputLocked);
 			}else if(!shouldShow)state.scene.CommitPresented(false);
-			CommitInputPresentationLocked(index,state.configuredMode,whiteboard,groupBudget,state.targetVisible,state.inputLocked,ppt.layout.session,ppt.layout.epoch);
+			CommitInputPresentationLocked(index,state.configuredMode,whiteboard,groupBudget,state.targetVisible,state.inputLocked,ppt.layout.session,ppt.layout.epoch,ppt.recovery);
 			inputCommitLock.unlock();
 			const auto dragCommit = CommitDragSurface(index, ppt, dragGeometryAtTarget);
 			if (dragCommit.matched)
@@ -2323,7 +2356,7 @@ namespace Inkeys::UI::PageControl
 				const auto [livePpt,liveWhiteboard]=Snapshot();
 				if(state.pointerActive&&(state.pressedMode!=committed.mode||WhiteboardWorkspaceSwitching(liveWhiteboard)
 					||(state.pressedMode==WorkspaceMode::PptCompact&&(state.pressedPptSession!=livePpt.layout.session
-						||state.pressedPptLayoutEpoch!=livePpt.layout.epoch)))){
+						||state.pressedPptLayoutEpoch!=livePpt.layout.epoch||state.pressedPptRecovery!=livePpt.recovery)))){
 					auto cancel=event;cancel.message=WM_CANCELMODE;PageControlInputEvent(cancel,context);return;
 				}
 				const POINT screen=event.screenPoint;
@@ -2402,7 +2435,7 @@ namespace Inkeys::UI::PageControl
 				const auto [livePpt,liveWhiteboard]=Snapshot();
 				if(ResolveWorkspaceMode(SurfaceFor(index),livePpt,liveWhiteboard)!=committed.mode
 					||WhiteboardWorkspaceSwitching(liveWhiteboard)
-					||(committed.mode==WorkspaceMode::PptCompact&&(committed.pptSession!=livePpt.layout.session||committed.pptLayoutEpoch!=livePpt.layout.epoch))
+					||(committed.mode==WorkspaceMode::PptCompact&&(committed.pptSession!=livePpt.layout.session||committed.pptLayoutEpoch!=livePpt.layout.epoch||committed.pptRecovery!=livePpt.recovery))
 					||(committed.mode==WorkspaceMode::WhiteboardExpanded
 						&&(committed.whiteboard.generation!=liveWhiteboard.generation||committed.whiteboard.currentPage!=liveWhiteboard.currentPage)))return;
 				bool promotePpt = false;
@@ -2428,6 +2461,7 @@ namespace Inkeys::UI::PageControl
 					state.pressedWhiteboard = committed.whiteboard;state.pressedMode=committed.mode;
 					state.pressedPptSession=livePpt.layout.session;
 					state.pressedPptLayoutEpoch=livePpt.layout.epoch;
+					state.pressedPptRecovery=committed.pptRecovery;
 					state.pointerActive=true;state.dragRegion=region;
 					if(index>=2){PublishMiddleSnapRequest({},false,{});RequestDragPair(1);}
 
@@ -2508,7 +2542,7 @@ namespace Inkeys::UI::PageControl
 					const bool acceptInput = !committed.locked&&committed.visible&&state.pressedMode==committed.mode
 						&&ResolveWorkspaceMode(SurfaceFor(index),livePpt,liveWhiteboard)==state.pressedMode
 						&&!WhiteboardWorkspaceSwitching(liveWhiteboard)
-						&&(state.pressedMode!=WorkspaceMode::PptCompact||(state.pressedPptSession==livePpt.layout.session&&state.pressedPptLayoutEpoch==livePpt.layout.epoch))
+						&&(state.pressedMode!=WorkspaceMode::PptCompact||(state.pressedPptSession==livePpt.layout.session&&state.pressedPptLayoutEpoch==livePpt.layout.epoch&&state.pressedPptRecovery==livePpt.recovery))
 						&&(state.pressedMode!=WorkspaceMode::WhiteboardExpanded
 							||(state.pressedWhiteboard.generation==liveWhiteboard.generation&&state.pressedWhiteboard.currentPage==liveWhiteboard.currentPage));
 					const bool sameLayout=state.dragStartLayout.session==livePpt.layout.session
@@ -2557,7 +2591,7 @@ namespace Inkeys::UI::PageControl
 				}
 				if (shouldInvokeClick && releasedMode == WorkspaceMode::PptCompact
 					&& clicked == PageWidget)
-					InvokePptPreview();
+					InvokePptPreview(state.pressedPptRecovery);
 				else if (shouldInvokeClick
 					&& releasedMode != WorkspaceMode::PptCompact
 					&& (clicked == PreviousWidget || clicked == NextWidget))
@@ -2705,7 +2739,7 @@ namespace Inkeys::UI::PageControl
 			return input.visible&&!input.locked&&input.semanticRevision==pointerClients[index].semanticRevision
 				&&ResolveWorkspaceMode(SurfaceFor(index),ppt,whiteboard)==input.mode
 				&&!WhiteboardWorkspaceSwitching(whiteboard)
-				&&(input.mode!=WorkspaceMode::PptCompact||(input.pptSession==ppt.layout.session&&input.pptLayoutEpoch==ppt.layout.epoch));
+				&&(input.mode!=WorkspaceMode::PptCompact||(input.pptSession==ppt.layout.session&&input.pptLayoutEpoch==ppt.layout.epoch&&input.pptRecovery==ppt.recovery));
 		}
 
 		void DrainPointerMouse(HWND hwnd, std::size_t index)
@@ -3394,6 +3428,27 @@ namespace Inkeys::UI::PageControl
 				}
 			}
 			Check(rootOverlaps>0&&menuOverlaps>0&&tripleOverlaps>0,"real opening motion exercises pagination-over-menu, menu-over-theme and three-layer overlaps");
+		}
+		// 字体自身启动/尾段走实际 PageControl 回调和呈现 continue，不依赖其他几何动画续帧。
+		{
+			const bool savedFont=Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
+			const bool savedAnimation=BarUiAnimationEnabled;
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;BarUiAnimationEnabled=true;
+			OffscreenSnapshot fontSnapshot{ppt,wb};fontSnapshot.whiteboard.menu=0;
+			unsigned fontSubmits=0;
+			auto fontCallback=CreatePageControlOffscreenRenderCallback(0,[&]{return fontSnapshot;},{0,0,193,51},0.63F,
+				[&](const UPDATELAYEREDWINDOWINFO& info){++fontSubmits;return info.hdcSrc?TRUE:FALSE;});
+			FrameContext fontFrame;fontFrame.epoch=Inkeys::UI::RenderPipeline::GetDeviceEpoch();fontFrame.frameTime=origin+20s;
+			bool baselineIdle=false;
+			for(int tick=0;tick<90;++tick){fontFrame.frameTime+=16ms;if(fontCallback(fontFrame)==FrameResult::Idle){baselineIdle=true;break;}}
+			Check(baselineIdle,"font-only callback baseline settles before the policy change");
+			const unsigned before=fontSubmits;
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=true;fontFrame.frameTime+=16ms;
+			Check(fontCallback(fontFrame)==FrameResult::Continue,"font-only policy change schedules its continuous correction");
+			bool idle=false;
+			for(int tick=0;tick<90;++tick){fontFrame.frameTime+=16ms;if(fontCallback(fontFrame)==FrameResult::Idle){idle=true;break;}}
+			Check(idle&&fontSubmits>before+2,"font-only PageControl tail submits multiple frames then returns idle");
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=savedFont;BarUiAnimationEnabled=savedAnimation;
 		}
 		// 无 HWND 的故障注入走实际 GetDC/ReleaseDC/EndDraw 事务，不以数学动画冒充呈现。
 		OffscreenSnapshot snapshot{ppt,wb};snapshot.whiteboard.menu=2;

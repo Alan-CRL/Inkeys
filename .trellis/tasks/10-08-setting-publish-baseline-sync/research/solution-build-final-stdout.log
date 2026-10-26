@@ -1,0 +1,34 @@
+
+  PptCOM -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+
+  Assembly exported to 'C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+  Scanning sources for module dependencies...
+  IdtPlug-in.cpp
+  Setting.Pages.cpp
+  Compiling...
+  Setting.Pages.cpp
+  IdtPlug-in.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+
+  (compiling source file 'IdtPlug-in.cpp')
+
+  Inkeys.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Build\ARM64\Debug\Inkeys.exe
+  PptCOM.Tests -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  InkeysHeadlessTests.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Build\ARM64\Debug\InkeysHeadlessTests.exe

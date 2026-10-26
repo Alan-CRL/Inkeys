@@ -137,6 +137,19 @@
         "FrameRateFormat": "帧率: {:.2f} FPS | 无限制帧率: {:.2f} FPS",
         "FrameRateUnavailable": "帧率: -- FPS | 无限制帧率: -- FPS"
       },
+      "CanvasRecovery":
+      {
+        "Conflict": "冲突",
+        "ReadFailed": "读取",
+        "PresentFailed": "显示",
+        "Failed": "故障",
+        "Recovering": "恢复",
+        "Retry": "重试",
+        "Wait": "稍候",
+        "RetryCanvas": "重试画布",
+        "ProtectedHint": "文稿页序或身份发生变化，墨迹已受保护。请恢复原文稿状态后重试。",
+        "RecoveryHint": "画布恢复未完成。重试不会跳过墨迹保护。"
+      },
       "Errors":
       {
         "TransparentBackgroundWarning": "软件遇到透明背景无法正常显示的故障\n\nexe属性->关闭使用简化的颜色模式\nWindows7用户请开启Aero主题\n\n联系开发者->软件选项主页中\n重启软件试试"
@@ -178,6 +191,76 @@
   "SettingsUI":
   {
     "N": "智绘教Inkeys 选项",
+    "Design":
+    {
+      "NavigationTitle": "设置",
+      "SwitchToDark": "切换为深色主题",
+      "SwitchToLight": "切换为浅色主题",
+      "Preferences": "偏好设置",
+      "SupportGroup": "支持与维护",
+      "Experimental": "实验选项",
+      "HomeWelcome": "欢迎使用 智绘教Inkeys 3",
+      "HeroTitle": "让屏幕上的书写行云流水，",
+      "HeroJoin": "",
+      "HeroDescription": "让每一次操作都赏心悦目。",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL(陈润林) 工作室",
+      "HomeLicensePrefix": "本程序遵循 ",
+      "HomeLicenseSuffix": " 开源协议。",
+      "HomeRedistribution": "任何人都可以查看、修改和分发此代码。",
+      "HomeOpenSourceTitle": "开源且免费，为你而造",
+      "HomeRepositoryPrefix": "Inkeys 的代码托管于 ",
+      "HomeRepositoryJoin": " 与 ",
+      "HomeRepositorySuffix": "。",
+      "HomeStarAction": "为仓库点亮 Star",
+      "HomeSponsorAction": "赞助Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "调整书写体验",
+      "Tutorial": "使用教程",
+      "Explore": "推荐设置",
+      "DrawDescription": "笔迹与橡皮",
+      "AppearanceDescription": "动画、光影与主栏缩放",
+      "PresetDescription": "常用画笔，随时取用",
+      "PluginDescription": "连接演示与课堂工具",
+      "CommonSettings": "常用设置",
+      "GeneralDescription": "操作模式、主栏排列与启动方式",
+      "ShortcutsDescription": "全局操作与批注编辑快捷键",
+      "DisplayLanguage": "显示语言",
+      "Improve": "一起完善 Inkeys",
+      "Contact": "联系作者",
+      "TermsOfUse": "使用条款",
+      "Website": "官方网站",
+      "StartupSection": "启动",
+      "AppearanceSection": "外观",
+      "BehaviorSection": "使用行为",
+      "CompatibilitySection": "兼容性",
+      "GeneralBasic": "基本",
+      "GeneralAppearance": "外观与动画",
+      "GeneralInteraction": "行为与安全",
+      "GeneralStorage": "存储与配置",
+      "OperationModeSection": "操作模式",
+      "IconArrangementSection": "图标排列",
+      "AnimationSection": "动画",
+      "LightingSection": "光源",
+      "ScalingSection": "缩放",
+      "WindowBehaviorSection": "窗口行为",
+      "SafetyRecoverySection": "安全与恢复",
+      "ShortcutGlobalSection": "全局操作",
+      "ShortcutEditingSection": "批注编辑",
+      "ShortcutAuxiliarySection": "辅助操作",
+      "GeneralSubtitle": "启动方式、界面大小与日常使用偏好。",
+      "EdgeLighting": "启用边缘光影",
+      "EdgeLightingDescription": "关闭后仅保留基础边框，停用点光与柔光效果。",
+      "TopWindowSummary": "控制非绘制状态下的窗口置顶频率。",
+      "TopWindowDetails": "详细说明",
+      "AvoidFullscreenSummary": "需要重启软件。非绘制与穿透模式下避免占满屏幕。",
+      "AvoidFullscreenDetails": "适用说明",
+      "Enabled": "开",
+      "Disabled": "关",
+      "ClickToCopy": "点击复制",
+      "Copied": "复制成功"
+    },
     "Home":
     {
       "N": "主页",
@@ -187,6 +270,30 @@
       "GroupE": "618720802",
       "BilibiliChannel": "Bilibili 宣发频道",
       "FeedBack": "问题/建议反馈"
+    },
+    "Feedback":
+    {
+      "N": "问题反馈",
+      "Description": "提交问题或建议，帮助改进 Inkeys。",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "在 GitHub 提交问题或建议，便于公开跟进与交流。"
+      },
+      "Questionnaire":
+      {
+        "N": "问卷反馈",
+        "E": "通过问卷反馈使用中遇到的问题或改进建议。"
+      },
+      "Qr":
+      {
+        "N": "扫码反馈",
+        "E": "扫描二维码，通过问卷反馈问题或建议。"
+      },
+      "ContactSection": "交流与联系作者",
+      "CommunityDescription": "加入 QQ 用户群，交流使用中遇到的问题或改进建议。",
+      "ContactDescription": "通过电子邮件向作者反馈问题或建议。",
+      "AuthorQQ": "作者 QQ"
     },
     "Language":
     {
@@ -313,7 +420,7 @@
     },
     "Regular":
     {
-      "N": "常规",
+      "N": "通用",
       "SelectAndClickThrough":
       {
         "N": "选择与穿透",
@@ -356,6 +463,15 @@
         "AutoStart": "开机自动启动",
         "AutoStartE": "设置当前用户账户开机时启动 智绘教Inkeys。",
         "LoadingAnimation": "启动加载动画",
+        "LoadingAnimationE": "控制下次启动时是否显示加载动画。",
+        "SettingEntryAnimation":
+        {
+          "N": "设置界面开屏动画",
+          "E": "控制设置界面开屏动画行为",
+          "Off": "关闭",
+          "First": "首次启动时",
+          "Always": "始终"
+        },
         "Link":
         {
           "N": "创建桌面快捷方式",
@@ -367,9 +483,9 @@
       {
         "N": "外观样式",
         "AnimationEnable": "启用动画",
-        "AnimationEnableE": "关闭后，UI3 主栏动画将立即完成。",
+        "AnimationEnableE": "关闭后，UI3 主栏与设置界面的导航及页面动画将立即完成。",
         "AnimationRate": "动画速率",
-        "AnimationRateE": "调整 UI3 主栏动画速率，范围为 0.1x–5.0x。",
+        "AnimationRateE": "调整 UI3 主栏与设置界面的动画速率，范围为 0.1x–5.0x。",
         "EdgeLighting": "边缘光影",
         "EdgeLightingE": "关闭后仅保留基础边框，停用点光与柔光效果。",
         "DynamicEdgeLighting": "动态边缘光影",
@@ -395,12 +511,6 @@
         {
           "N": "主栏 UI 缩放",
           "E": "实时调节主栏、按钮和 PPT 控件的缩放比例。",
-          "Ind": "{:.2f} 倍缩放"
-        },
-        "SettingUIScale":
-        {
-          "N": "选项界面 UI 缩放",
-          "E": "[需要重启软件]缩放比例高将会占用大量内存空间。",
           "Ind": "{:.2f} 倍缩放"
         }
       },
@@ -483,7 +593,21 @@
       "Eraser":
       {
         "N": "橡皮擦",
-        "Automatic": "自动粗细总开关",
+        "Automatic": "启用笔速橡皮",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "精细擦除",
+          "DemoFineDescription": "沿辅助线缓慢擦除，保留邻近的标记和线段。",
+          "DemoSweepTitle": "大面积擦除",
+          "DemoSweepDescription": "连续往返擦除时逐渐增粗，更快清除大片笔迹。",
+          "EntryDescription": "根据绘制意图智能调整橡皮擦粗细",
+          "Introduction": "结合设备尺寸、输入设备和运动信息，智能推断擦除意图，动态调整橡皮大小。",
+          "BasicSettings": "基本设置",
+          "EnabledDevices": "启用设备",
+          "FineControl": "精细控制",
+          "SizeWarningTitle": "无法获取可靠的屏幕尺寸",
+          "SizeWarningDescription": "当前绘制屏幕缺少可信的物理尺寸，触摸和屏幕笔将使用 DPI 估算，橡皮大小可能与擦除意图不符。"
+        },
         "Input":
         {
           "MouseLeft": "鼠标左键",
@@ -525,6 +649,14 @@
     },
     "Experimental":
     {
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "允许界面字体以非整数像素尺寸渲染",
+          "E": "关闭时，主栏和控件静止状态的字体像素尺寸向下取整；缩放和过渡动画仍连续变化。立即生效。"
+        }
+      },
       "Draw3":
       {
         "HardwareAcceleration":
@@ -585,7 +717,7 @@
         {
           "N": "基础逻辑",
           "LoadPage": "显示加载页面",
-          "LoadPageE": "包含插件标识和小提示等，每个 PPT 仅显示一次。"
+          "LoadPageE": "此功能已停用，不再显示 PPT 加载页面。"
         },
         "WidgetDisplay":
         {

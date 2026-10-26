@@ -14,6 +14,7 @@
 #include <string>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.Recovery.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
@@ -102,6 +103,8 @@ export namespace Inkeys::Drawing::Draw3
 		void (*shortcutCompleted)(void*, std::uint64_t, Shortcuts::Result) noexcept = nullptr;
 		WhiteboardTheme whiteboardDefaultTheme;
 		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
+		void (*recoveryChanged)(void*, const CanvasRecoveryState&) noexcept = nullptr;
+		bool (*recoveryRetryAllowed)(void*, std::uint64_t) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

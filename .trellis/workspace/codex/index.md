@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 116
-- **Last Active**: 2026-10-19
+- **Total Sessions**: 128
+- **Last Active**: 2026-10-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,8 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~857 | Active |
-| `journal-1.md` | ~2205 | Archived |
+| `journal-2.md` | ~918 | Active |
+| `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -30,6 +30,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 128 | 2026-10-25 | 设置视觉重建与笔速橡皮精修验收归档 | `bc494cd384d783b39156aba77dbbf8f5f2f769cc`, `e4beb2ca8cf83bb1fad12ae466daec812add58cf` | `fluent` |
+| 127 | 2026-10-24 | 界面字体整数目标与连续动画收尾 | `aeb178bc`, `3d9d04d5` | `bugfix/font` |
 | 116 | 2026-10-19 | 键盘快捷键与批注往返完成验收 | `97fbe299` | `feature/hook` |
 | 115 | 2026-10-19 | UI3 taskbar docking and canvas policy completed | `3e5bb005`, `277b4956`, `91f36824` | `featrue/zoom` |
 | 114 | 2026-10-19 | 鼠标钩子、PPT滚轮与主栏自动收起完成验收 | `11e45053` | `feature/hook` |
@@ -80,6 +82,19 @@
 | 53 | 2026-10-08 | Win7完整guarded shader同EXE原版候选验证包 | - | `chore/publish` |
 | 52 | 2026-10-08 | Win7全面87项回传定位DefaultInk代码群 | - | `chore/publish` |
 | 51 | 2026-10-07 | Win7 flip与双源诊断公开证据交叉核验 | - | `chore/publish` |
+| 105 | 2026-10-16 | Complete native material surface adaptation | `0b6c1d23` | `fluent` |
+| 101 | 2026-10-14 | 设置开屏缓存任务完成与归档 | `8a4bdd89`, `c7effa54` | `fluent` |
+| 100 | 2026-10-14 | 设置开屏缓存滚动条与终态布局连续性修复 | - | `fluent` |
+| 99 | 2026-10-14 | 设置静止帧跳过提交与WARP组件消融 | - | `fluent` |
+| 98 | 2026-10-14 | 设置开屏 GPU 页面缓存与无限制离屏性能 | - | `fluent` |
+| 58 | 2026-10-09 | 结束并归档滚动条与内容拖动子任务 | `4df1f0b6`, `c45bcd64` | `fluent` |
+| 57 | 2026-10-09 | 设置滚动条动画与内容拖动同帧响应 | `b8beea0b` | `fluent` |
+| 56 | 2026-10-09 | 侧栏统一滚动条与旧内容拖动复用 | - | `fluent` |
+| 55 | 2026-10-09 | 提交版本同色与汉堡反馈增量 | `636c93d5` | `fluent` |
+| 54 | 2026-10-09 | 标题栏版本同色与汉堡反馈 | - | `fluent` |
+| 53 | 2026-10-09 | 调试入口与内容任务验收收尾 | `926db4d0`, `76e33791` | `fluent` |
+| 52 | 2026-10-09 | 动态多行说明卡片人工验收与归档 | `5aaf7690`, `f5c71da9` | `fluent` |
+| 51 | 2026-10-08 | Fluent 分层侧栏与通用四页 | - | `fluent` |
 | 50 | 2026-10-07 | 首发工程任务提交并归档完成 | `79521e64` | `chore/publish` |
 | 49 | 2026-10-07 | 首发工程任务完成，签名阻塞提交 | - | `chore/publish` |
 | 48 | 2026-10-06 | 0811自动窗口对照与有限证据收尾 | - | `chore/publish` |

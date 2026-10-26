@@ -849,6 +849,15 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 [OK] **Completed**
 
 
+## Session 27: 完善设置窗口样式并固定浅色主题
+
+**Date**: 2026-08-16
+**Task**: 完善设置窗口样式并固定浅色主题
+**Branch**: `fluent`
+
+### Summary
+
+同步 Setting native frame、Move/Size 与浅色主题合同，固定 ImFluent Light preset，补齐 headless 断言并通过 ARM64 Debug 完整构建和无窗口测试。
 ## Session 27: 恢复 UI3 Whiteboard Trellis 记录并审计近两日提交
 
 **Date**: 2026-08-20
@@ -923,6 +932,36 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 
 | Hash | Message |
 |------|---------|
+| `5a237ddf` | (see git log) |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 28: Setting WinUI 3 首批：导航、主页与常规页
+
+**Date**: 2026-09-06
+**Task**: Setting WinUI 3 首批：导航、主页与常规页
+**Branch**: `fluent`
+
+### Summary
+
+用户审查后批准首批实现；完成新导航、主页、常规页及字体隔离校准，保留原业务FIFO与共享渲染。
+
+### Main Changes
+
+- 新增 Design/Typography/Controls/Pages/Shell，接回原有配置与真实入口；其余页面后续迁移。
+- 修复字体行框、导航右侧间距、Expander裁切和分数DPI末行断言，更新UI规范与UPSTREAM。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64：ARM64 host，0 errors；集成 --no-window exit0。
+- [OK] 真实ImGui字体/控件CPU回归、i18n304/304、编码CRLF和git diff --check通过。
 | `b7edaa81` | feat: add startup preview fast display |
 | `70081123` | fix: refresh startup preview layered surface |
 | `1e563c30` | fix: show startup preview progress reliably |
@@ -944,4 +983,75 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 
 ### Next Steps
 
+- 用户审阅首批实际视觉并反馈小调整；后续再逐批迁移其他页面。未启动窗口、未commit。
+
+
+## Session 29: Setting 全页设计迁移与公共视觉校准
+
+**Date**: 2026-09-06
+**Task**: Setting 全页设计迁移与公共视觉校准
+**Branch**: `fluent`
+
+### Summary
+
+完成两阶段代码：统一文字/按钮/导航图标/滚动条，全部实际页迁入公共设计；构建和无窗口验证通过，锁屏阻挡真实截图待解锁。
+
+### Main Changes
+
+- 补齐typed Row、ButtonGroup、Details、Notice、Card、NavigationRow和统一控件字体；旧34%列退出。
+- 保留全部配置及FIFO行为；完成全差异审查和全页规范同步。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] ARM64 host完整Debug|ARM64 Solution 0 errors；集成--no-window、CPU控件回归、i18n304/304、编码和diff检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户解锁桌面后，启动Build/SettingVisualReview/app/Inkeys.exe，用research/window-review.py进行全页真实截图并迭代。禁止Computer Use，不自动commit。
+
+
+## Session 30: Setting 窗口框架与实时浅深主题
+
+**Date**: 2026-09-07
+**Task**: Setting 窗口框架与实时浅深主题
+**Branch**: `fluent`
+
+### Summary
+
+基于89770357修复真实sizing frame/client命中、标准最大化和标题栏颜色，新增实时浅深切换及SettingDarkMode FIFO保存。最终ARM64完整Solution、集成无窗口、六倍率CPU控件和i18n306/306通过；独立审查修复副屏最大化二次补偿问题。GUI因锁屏待验收，任务保留in_progress；按用户要求仅暂存不自动commit。详见任务research/window-dark-validation.md。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 31: 修正选项窗口顶部可见边框
+
+**Date**: 2026-09-08
+**Task**: 修正选项窗口顶部可见边框
+**Branch**: `fluent`
+
+### Summary
+
+仅修复选项窗口顶部粗条，主栏和主按钮未改。实际读取用户窗口确认顶部12→2px，保留顶边/顶角、标题按钮与scrollbar命中；首次创建按真实frame校正一像素差。独立OutDir完整ARM64Solution、--no-window及真实HWND集成回归通过。未使用Computer Use；拖动/截图因会话锁定待验。详情见任务research/top-border-validation.md；不自动commit。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
 - 功能稳定运行一段时间后，移除 INKEYS_STARTUP_PREVIEW_MANUAL_DELAY 和 INKEYS_STARTUP_PREVIEW_RETRY_FAILURE 对应的临时调试解析、分支与测试。

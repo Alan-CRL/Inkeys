@@ -13,6 +13,7 @@
 module Inkeys.UI.Bar;
 import :Main;
 import :Theme;
+import Inkeys.UI.Setting;
 
 using namespace Inkeys::UI::Bar;
 using namespace Inkeys::Drawing::Draw3::SpeedEraser;
@@ -286,20 +287,19 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	const int requestedHover=ButtonVisual(hovered_.load());
 	if(appliedHover_!=requestedHover){
 		if(appliedHover_>=0)StopBarButtonHoverVisual(buttons_[appliedHover_],false);
-		if(requestedHover>=0 && requestedHover!=9)StartBarButtonHoverVisual(buttons_[requestedHover]);
+		if(requestedHover>=0)StartBarButtonHoverVisual(buttons_[requestedHover]);
 		appliedHover_=requestedHover;changed_=true;
 	}
 	for(int i:buttonVisuals)
 	{
 		auto& b=buttons_[i];changed_|=b.name.SetStringImmediate(ButtonLabel(i));
-		const bool enabled=i!=9;
 		const bool selected=(i==4 && automatic_==AutomaticState::On) || (i>=6 && i<=8 && sensitivity_==i-6);
 		const bool presented=i<6?frame_.panelVisible:frame_.menuVisible;
 		const double scale=i<6?frame_.panelPose.scale:frame_.menuPose.scale;
-		b.state->state=!enabled?BarWidgetState::Disable:selected?BarWidgetState::Selected:BarWidgetState::None;
-		SetBarButtonPressedVisual(b,enabled && ButtonVisual(pressed_)==i);
+		b.state->state=selected?BarWidgetState::Selected:BarWidgetState::None;
+		SetBarButtonPressedVisual(b,ButtonVisual(pressed_)==i);
 
-		RetargetBarButtonInteractionVisual(b,presented,enabled,selected,BarButtonHoverTransitionDuration,
+		RetargetBarButtonInteractionVisual(b,presented,true,selected,BarButtonHoverTransitionDuration,
 			std::nullopt,true,std::nullopt,GetThemeColor(selected?BarThemeColorEnum::Accent:BarThemeColorEnum::SurfaceFrame));
 		Place(b.button,i==4?g.automatic:g.items[i]);
 		b.button.rw->SetDirect(BarButtonCornerRadiusDip*scale);b.button.rh->SetDirect(BarButtonCornerRadiusDip*scale);b.button.ft->SetDirect(BarButtonFrameThicknessDip*scale);
@@ -308,9 +308,10 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		b.icon.x.SetDirect(offset*scale);b.icon.y.SetDirect(large?metrics.iconOffsetYDip*scale:0);b.icon.contentScale=scale;
 		b.name.x.SetDirect(offset*scale);b.name.y.SetDirect(large?metrics.primaryOffsetYDip*scale:0);
 		b.name.w.SetDirect(large?metrics.primarySlotWidthDip*scale:static_cast<double>(b.button.w.val));b.name.h.SetDirect(metrics.primarySlotHeightDip*scale);b.name.size.SetDirect(metrics.primaryFontSizeDip*scale);
+		b.name.fontTargetSize=metrics.primaryFontSizeDip*(i<6?panelFrame.targetPose.scale:menuFrame.targetPose.scale);
 		BarButtonAnimationContext buttonFrame;
 		buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=BarUiAnimationEnabled;
-		buttonFrame.visible=presented;buttonFrame.hoverAllowed=enabled && !selected;
+		buttonFrame.visible=presented;buttonFrame.hoverAllowed=!selected;
 		const auto advanced=AdvanceBarButtonVisual(b,buttonFrame);
 		changed_|=advanced.changed;active_|=advanced.active;
 	}
@@ -363,6 +364,7 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	const auto& texts=I18nKey.UI.Bar.EraserAttributes;
 	changed_|=title_.SetStringImmediate(I18n::getWOr(texts.SensitivityLabel,L"灵敏度"));
 	title_.w.SetDirect(g.menuTitle.Width());title_.h.SetDirect(g.menuTitle.Height());title_.size.SetDirect(BarButtonTwoTwoLabelFontSizeDip*frame_.menuPose.scale);
+	title_.fontTargetSize=BarButtonTwoTwoLabelFontSizeDip*menuFrame.targetPose.scale;
 	title_.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
 	return changed_ || active_;
 }
@@ -474,7 +476,7 @@ void BarEraserAttributePanel::Close(BarUISetClass& owner)
 }
 bool BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 {
-	bool performed=item>=1 && item<=8;
+	bool performed=item>=1 && item<=9;
 	if(item==0)
 	{
 		const auto snapshot=Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
@@ -495,6 +497,7 @@ bool BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 	else if(item==4)SetGlobalEraserPreference(-1,-1,GetAutomaticState(EraserPreferencesSnapshot())!=AutomaticState::On);
 	else if(item==5){performed=owner.TryBeginToggle(BarToggleChannel::EraserSensitivity);if(performed)owner.barState.eraserSensitivityOpen=!owner.barState.eraserSensitivityOpen;}
 	else if(item>=6 && item<=8)SetGlobalEraserPreference(-1,item-6);
+	else if(item==9)Inkeys::UI::Setting::ShowSpeedEraser();
 	owner.UpdateRendering(false);
 	return performed;
 }
@@ -547,9 +550,8 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 	if(down)
 	{
 		if(owner.barState.eraserSensitivityOpen && !overMenu && hit!=5){owner.barState.eraserSensitivityOpen=false;owner.UpdateRendering(false);}
-		const bool enabled=hit!=9;
 		// 必须是面板收到的新Down才能建立动作票据；主栏开栏的那次Up不能落到中央Clear。
-		pressed_=inside && enabled && owner.barState.eraserAttribute && !cancelled?hit:-1;
+		pressed_=inside && owner.barState.eraserAttribute && !cancelled?hit:-1;
 		focused_=-1;owner.UpdateRendering(false);return inside;
 	}
 	if(message.message==WM_LBUTTONUP)
@@ -574,7 +576,7 @@ bool BarEraserAttributePanel::Keyboard(BarUISetClass& owner,BYTE key,bool down)
 	if(key!=VK_TAB && key!=VK_LEFT && key!=VK_RIGHT && key!=VK_RETURN && key!=VK_SPACE)return false;
 	if(!down)return true;
 	if(key==VK_RETURN || key==VK_SPACE){if(focused_>=0)Execute(owner,focused_);return true;}
-	const int first=owner.barState.eraserSensitivityOpen?6:0,last=owner.barState.eraserSensitivityOpen?8:5;
+	const int first=owner.barState.eraserSensitivityOpen?6:0,last=owner.barState.eraserSensitivityOpen?9:5;
 	const int delta=key==VK_LEFT || (key==VK_TAB && (GetKeyState(VK_SHIFT)&0x8000))?-1:1;
 	int focus=focused_;if(focus<first || focus>last)focus=first;else focus=first+(focus-first+delta+last-first+1)%(last-first+1);
 	focused_=focus;hovered_=-1;owner.UpdateRendering(false);return true;

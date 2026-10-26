@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "../Inkeys/Inkeys/UI/Setting/Setting.Layout.h"
 
 #include <array>
 #include <atomic>
@@ -10,20 +11,45 @@
 #include <vector>
 
 #include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+#include "../Inkeys/Inkeys/Window/Window.ZOrderPolicy.h"
+#include "../Inkeys/Inkeys/Window/Window.SafetyOverride.h"
 #include "../Inkeys/Inkeys/Window/Window.CanvasPolicy.h"
 
 import Inkeys.Window;
 
 namespace
 {
+	thread_local SIZE settingNativeMinimumTrack{};
 	constexpr UINT kSettingOwnerProbe = WM_APP + 74;
-	LRESULT CALLBACK SettingOwnerProbeProc(HWND hwnd, UINT message,
-		WPARAM wParam, LPARAM lParam)
+
+	LRESULT CALLBACK SettingFrameTestProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		if (message == kSettingOwnerProbe)
 		{
 			auto* service = reinterpret_cast<Inkeys::Window::Service*>(lParam);
 			return service->SetSettingOwnedByDrawpad(wParam != 0);
+		}
+		if (message == WM_GETMINMAXINFO && lParam)
+		{
+			auto& limits = *reinterpret_cast<MINMAXINFO*>(lParam);
+			settingNativeMinimumTrack = { limits.ptMinTrackSize.x, limits.ptMinTrackSize.y };
+			// 此小窗口只测客户区创建合同，隔离原生 caption 的最小宽度；产品最小尺寸不变。
+			Inkeys::UI::Setting::ApplyWindowFrameMinimumTrack(limits, { 1, 1 });
+			return 0;
+		}
+		if (message == WM_NCCALCSIZE && lParam)
+		{
+			// 测试复用产品 frame 度量，不能让默认原生 caption 再占一次客户区高度。
+			RECT& rect = wParam ? reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam)->rgrc[0]
+				: *reinterpret_cast<RECT*>(lParam);
+			const RECT frame = Inkeys::Window::QuerySettingClientFrameInsets(hwnd, IsZoomed(hwnd) != FALSE);
+			const auto client = Inkeys::UI::Setting::InsetWindowFrameRect(
+				{ static_cast<int>(rect.left), static_cast<int>(rect.top),
+					static_cast<int>(rect.right), static_cast<int>(rect.bottom) },
+				{ static_cast<int>(frame.left), static_cast<int>(frame.top),
+					static_cast<int>(frame.right), static_cast<int>(frame.bottom) });
+			rect = { client.left, client.top, client.right, client.bottom };
+			return 0;
 		}
 		return DefWindowProcW(hwnd, message, wParam, lParam);
 	}
@@ -194,6 +220,116 @@ int RunCanvasPolicyTests()
 	{
 		if (!passed) { ++failures; std::cerr << "FAIL canvas policy: " << name << '\n'; }
 	};
+	// 不创建 HWND，故障点与 owner 执行的是同一个实际样式事务。
+	struct ClickThroughState
+	{
+		LONG_PTR style = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+		bool pending = false, applying = false;
+		std::uint64_t epoch = 1;
+	};
+	struct ClickThroughOperations
+	{
+		ClickThroughState& state;
+		std::uint64_t epoch = 1;
+		bool failRead = false, failWrite = false, failCommit = false;
+		unsigned writes = 0, commits = 0;
+		std::function<void()> beforeWrite;
+		std::function<void()> afterWrite;
+		std::function<void()> afterCommit;
+		bool StillDesired() const { return epoch == state.epoch; }
+		bool ReadStyle(LONG_PTR& value) const { value = state.style; return !failRead; }
+		bool WriteStyle(LONG_PTR value)
+		{
+			++writes;
+			if (failWrite) return false;
+			if (beforeWrite) beforeWrite();
+			state.style = value;
+			if (afterWrite) afterWrite();
+			return true;
+		}
+		bool CommitStyle()
+		{
+			++commits;
+			if (afterCommit) afterCommit();
+			return !failCommit;
+		}
+	};
+	ClickThroughState clickState;
+	ClickThroughOperations click{ clickState };
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && !click.writes && !click.commits,
+		"same actual style performs no redundant Win32 mutation");
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && click.writes == 1
+		&& click.commits == 1 && clickState.style == WS_EX_NOACTIVATE && !clickState.pending,
+		"clear click-through preserves unrelated extended styles");
+	clickState.style |= WS_EX_TRANSPARENT;
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && click.writes == 2,
+		"external style drift is repaired without stale HWND or bool cache");
+	click.failRead = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && click.writes == 2,
+		"failed actual style read never fabricates success");
+	click.failRead = false; click.failWrite = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && clickState.pending,
+		"failed style write retains retry responsibility");
+	click.failWrite = false; click.failCommit = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && clickState.pending,
+		"failed FRAMECHANGED retains retry responsibility after style bit changed");
+	const auto writesBeforeRetry = click.writes;
+	const auto commitsBeforeRetry = click.commits;
+	click.failCommit = false;
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && !clickState.pending
+		&& click.writes == writesBeforeRetry && click.commits == commitsBeforeRetry + 1,
+		"same-valued retry completes previously failed FRAMECHANGED");
+	++clickState.epoch;
+	check(!ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click)
+		&& (clickState.style & WS_EX_TRANSPARENT) && click.writes == writesBeforeRetry,
+		"retired tool or whiteboard request cannot mutate current owner style");
+	click.epoch = clickState.epoch;
+	click.afterCommit = [&] { clickState.style |= WS_EX_TRANSPARENT; };
+	check(!ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && clickState.pending,
+		"successful APIs with mismatched actual style keep retry pending");
+	click.afterCommit = {};
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && !clickState.pending,
+		"later retry verifies and completes actual writable state");
+	// 三个真实同步重入窗口：WM_STYLECHANGING、WM_STYLECHANGED、FRAMECHANGED。
+	for (int boundary = 0; boundary < 3; ++boundary)
+	{
+		click.epoch = clickState.epoch;
+		bool nestedApplied = true;
+		const auto reenter = [&]
+		{
+			++clickState.epoch;
+			ClickThroughOperations latest{ clickState, clickState.epoch };
+			nestedApplied = ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, latest);
+		};
+		if (boundary == 0) click.beforeWrite = reenter;
+		else if (boundary == 1) click.afterWrite = reenter;
+		else click.afterCommit = reenter;
+		check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click)
+			&& !nestedApplied && !clickState.applying && clickState.pending,
+			"nested owner request cannot acknowledge before outer style API returns");
+		click.beforeWrite = {}; click.afterWrite = {}; click.afterCommit = {};
+		ClickThroughOperations latest{ clickState, clickState.epoch };
+		check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, latest)
+			&& !(clickState.style & WS_EX_TRANSPARENT) && !clickState.pending && !clickState.applying,
+			"latest writable intent retries after outer owner frame retires");
+	}
+	click.epoch = clickState.epoch;
+	click.afterWrite = [] { throw 1; };
+	bool interrupted = false;
+	try { (void)ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click); }
+	catch (...) { interrupted = true; }
+	check(interrupted && !clickState.applying && clickState.pending,
+		"owner exception clears applying scope while preserving unfinished style responsibility");
+	click.afterWrite = {};
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click),
+		"owner can retry after exception without a permanently latched applying flag");
+	ClickThroughState otherRole;
+	ClickThroughOperations other{ otherRole };
+	bool otherApplied = false;
+	click.beforeWrite = [&]
+	{ otherApplied = ApplyCanvasClickThrough(false, otherRole.pending, otherRole.applying, other); };
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && otherApplied,
+		"independent HWND roles do not share a global reentry gate");
 	unsigned closeRequests = 0;
 	const std::function<void()> close = [&] { ++closeRequests; };
 	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(false, true, close) && closeRequests == 0,
@@ -487,6 +623,77 @@ int RunWindowCommandCompletionTests()
 	auto ordinaryResult = ordinary.get_future();
 	ordinary.set_value(true);
 	check(WaitForCommandResult(ordinaryResult, {}), "ordinary completion unchanged");
+	{
+		CommandCompletion queued(std::chrono::steady_clock::now() - std::chrono::milliseconds(1));
+		check(!queued.Begin() && queued.Phase() == CommandPhase::Expired,
+			"expired queued command never enters native mutation");
+		CommandCompletion cancelled(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		cancelled.Cancel();
+		check(!cancelled.Begin() && cancelled.Phase() == CommandPhase::Cancelled,
+			"cancelled queued command never executes");
+		CommandCompletion executing(std::chrono::steady_clock::now() + std::chrono::milliseconds(10));
+		check(executing.Begin(), "owner begins current command");
+		check(!executing.Wait() && executing.Phase() == CommandPhase::Executing && !executing.Current(),
+			"in-flight timeout retains owner retirement responsibility");
+		check(!executing.Commit(true), "late native success cannot commit expired intent");
+		// 模拟恢复失败：回执不能在物理恢复完成之前变成终态。
+		check(executing.Phase() == CommandPhase::Executing, "failed rollback retains executing receipt");
+		executing.Retired();
+		check(executing.Phase() == CommandPhase::Expired, "successful rollback retires expired command");
+		CommandCompletion normal(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		check(normal.Begin() && normal.Commit(true) && normal.Wait(), "normal command commits once");
+		normal.Cancel();
+		check(normal.Phase() == CommandPhase::Committed, "cancel after commit cannot undo terminal receipt");
+		CommandCompletion old(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		check(old.Begin(), "old command starts before newer intent");
+		old.Cancel();
+		check(!old.Commit(true) && old.Phase() == CommandPhase::Executing,
+			"superseded in-flight operation remains uncommitted until restored");
+		old.Retired();
+		check(old.Phase() == CommandPhase::Cancelled, "superseded operation reaches cancelled after restore");
+	}
+	{
+		ZOrderSnapshot<4> group;
+		for (std::size_t i = 0; i < 4; ++i)
+		{
+			group.windows[i] = reinterpret_cast<HWND>(static_cast<UINT_PTR>(i + 1));
+			group.ordinal[i] = 3 - i;
+			group.owners[i] = i ? group.windows[i-1] : nullptr;
+		}
+		const auto expected = group.owners;
+		check(group.Matches(expected, false), "ordinary group validates all owners and bands");
+		group.topmost[2] = true;
+		check(!group.Matches(expected, false), "ordinary refresh rejects a mixed band below Bar");
+		group.topmost.fill(true);
+		check(group.Matches(expected, true), "topmost group uses identical complete predicate");
+		group.owners[2] = group.windows[0];
+		check(!group.Matches(expected, true), "valid-looking owner chain cannot substitute wrong owner identity");
+		group.owners = expected;
+		group.ordinal[2] = group.ordinal[1] + 1;
+		check(!group.Matches(expected, true), "child below its owner fails order predicate");
+		group.ordinal[2] = 1;
+		group.continuous = false;
+		check(!group.Matches(expected, true), "foreign interleaving fails whole-group continuity");
+		check(group.Above(3, 1), "Setting-like local above predicate ignores unrelated group continuity");
+		group.ordinal[3] = MissingZOrder;
+		check(!group.Above(3, 1) && !group.Matches(expected, true), "missing enumerated target fails finitely");
+	}
+	{
+		WindowSafetyOverride safety;
+		safety.Latch(7, true, false);
+		safety.Latch(7, false, true);
+		check(!safety.Visible(7, true) && (safety.Style(7, 0) & WS_EX_TRANSPARENT),
+			"later safe hide and transparency survive old visible/input snapshot");
+		check(safety.Visible(8, true) && safety.Style(8, 0) == 0,
+			"reused HWND generation does not inherit an old safety override");
+		safety.AllowShow(7);
+		check(safety.Visible(7, true) && safety.ClickThrough(7),
+			"committed newer show clears only visibility protection");
+		safety.AllowInput(8);
+		check(safety.ClickThrough(7), "different generation cannot clear input protection");
+		safety.AllowInput(7);
+		check(!safety.ClickThrough(7), "committed newer input intent can clear matching protection");
+	}
 	std::cout << "[WindowCommandCompletion] failures=" << failures << '\n';
 	return failures;
 }
@@ -860,9 +1067,43 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleRight, L"PptMiddleRight"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
+	RECT settingClient{}, settingOuter{};
+	SIZE settingMinimumTrack{};
+	UINT settingDpi = 0;
+	bool settingClientMeasured = false;
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
-	settingSpec.windowProc = SettingOwnerProbeProc;
+	const auto settingCreated = settingSpec.created;
+	settingSpec.created = [&, settingCreated](HWND hwnd)
+		{
+			settingCreated(hwnd);
+			// 在创建线程量客户区，避免跨 DPI awareness 调用产生坐标虚拟化。
+			settingClientMeasured = GetClientRect(hwnd, &settingClient) != FALSE;
+			GetWindowRect(hwnd, &settingOuter);
+			settingMinimumTrack = settingNativeMinimumTrack;
+			using GetDpiForWindowProc = UINT(WINAPI*)(HWND);
+			const auto getDpi = reinterpret_cast<GetDpiForWindowProc>(
+				GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+			if (getDpi) settingDpi = getDpi(hwnd);
+		};
+	// 仅设置窗口的专用线程使用产品 DPI 模式，不改变其余测试窗口或测试进程。
+	using SetThreadDpiContextProc = DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT);
+	const auto setThreadDpiContext = reinterpret_cast<SetThreadDpiContextProc>(
+		GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetThreadDpiAwarenessContext"));
+	DPI_AWARENESS_CONTEXT previousSettingDpiContext = nullptr;
+	settingSpec.beforeCreate = [&]
+		{
+			if (!setThreadDpiContext) return true;
+			previousSettingDpiContext = setThreadDpiContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
+			return previousSettingDpiContext != nullptr;
+		};
+	settingSpec.destroyed = [&]
+		{
+			if (setThreadDpiContext && previousSettingDpiContext)
+				setThreadDpiContext(previousSettingDpiContext);
+		};
+	// 故意传旧 popup 样式，确认 Setting 角色会恢复独立应用窗口合同。
 	settingSpec.style = WS_POPUP;
+	settingSpec.windowProc = SettingFrameTestProc;
 	settingSpec.exStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 	specs.push_back(std::move(settingSpec));
 	auto observerSpec = makeSpec(WindowRole::DisplayObserver, L"DisplayObserver");
@@ -986,14 +1227,32 @@ int RunWindowTests()
 
 	const auto settingStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_STYLE));
 	const auto settingExStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_EXSTYLE));
-	check((settingStyle & (WS_POPUP | WS_CLIPCHILDREN)) ==
-		(WS_POPUP | WS_CLIPCHILDREN)
-		&& (settingStyle & (WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
-			WS_MAXIMIZEBOX | WS_SYSMENU)) == 0,
-		"setting fixed borderless style");
+	const bool legacySettingFrame = UsesLegacySettingFrame();
+	const DWORD expectedSettingStyle = legacySettingFrame
+		? SettingWindowStyle & ~WS_CAPTION : SettingWindowStyle;
+	check((settingStyle & expectedSettingStyle) == expectedSettingStyle
+		&& (settingStyle & WS_CAPTION) == (legacySettingFrame ? 0U : WS_CAPTION)
+		&& (settingStyle & WS_POPUP) == 0,
+		"setting keeps native sizing semantics and only legacy Aero removes caption drawing");
+	const HMENU settingSystemMenu = GetSystemMenu(setting, FALSE);
+	check(settingSystemMenu && IsMenu(settingSystemMenu)
+		&& GetMenuState(settingSystemMenu, SC_CLOSE, MF_BYCOMMAND) != static_cast<UINT>(-1)
+		&& GetMenuState(settingSystemMenu, SC_MINIMIZE, MF_BYCOMMAND) != static_cast<UINT>(-1)
+		&& GetMenuState(settingSystemMenu, SC_MAXIMIZE, MF_BYCOMMAND) != static_cast<UINT>(-1),
+		"setting retains its HWND-owned native close/minimize/maximize system menu after caption policy");
 	check((settingExStyle & WS_EX_APPWINDOW) != 0
 		&& (settingExStyle & (WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) == 0,
 		"setting app ex-style");
+	const bool settingClientMatches = settingClientMeasured
+		&& settingClient.right - settingClient.left == 160
+		&& settingClient.bottom - settingClient.top == 90;
+	if (!settingClientMatches)
+		std::cerr << "Setting creation geometry: client="
+			<< settingClient.right - settingClient.left << 'x' << settingClient.bottom - settingClient.top
+			<< " outer=" << settingOuter.right - settingOuter.left << 'x' << settingOuter.bottom - settingOuter.top
+			<< " dpi=" << settingDpi << " native-min-track="
+			<< settingMinimumTrack.cx << 'x' << settingMinimumTrack.cy << '\n';
+	check(settingClientMatches, "setting spec dimensions describe the client area");
 	check(reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0)) != nullptr,
 		"setting icon");
 	check(service.Title(WindowRole::Setting) == L"Window test Setting", "title helper");
@@ -1238,6 +1497,7 @@ int RunWindowTests()
 		check(service.Show(role), "show whiteboard group member");
 	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Primary),
 		"show primary drawpad for whiteboard group");
+	check(!service.RequestWhiteboardActivation(), "presentation mode rejects whiteboard activation");
 	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
 	check(service.RequestTopmostRefresh() && HasConsistentOwnerBand(overlayOwnerTree, false),
 		"whiteboard root refresh preserves normal owner band and order");
@@ -1251,12 +1511,25 @@ int RunWindowTests()
 	check((whiteboardDrawpadExStyle & WS_EX_TOOLWINDOW) != 0
 		&& (whiteboardDrawpadExStyle & WS_EX_NOACTIVATE) == 0,
 		"whiteboard Drawpad accepts activation without a taskbar button");
+	const HWND focusBeforeWhiteboardActivation = Service::LastFocusWindow();
+	check(!service.RequestWhiteboardActivation([] { return false; })
+		&& Service::LastFocusWindow() == focusBeforeWhiteboardActivation,
+		"cancelled whiteboard entry cannot activate its anchor");
+	check(service.Hide(WindowRole::Freeze) && !service.RequestWhiteboardActivation()
+		&& !IsWindowVisible(freeze), "activation cannot revive a hidden anchor");
+	check(service.Show(WindowRole::Freeze) && service.RequestWhiteboardActivation(),
+		"ready whiteboard processes its explicit activation request");
+	GUITHREADINFO whiteboardThreadInfo{ sizeof(GUITHREADINFO) };
+	check(GetGUIThreadInfo(overlayThread, &whiteboardThreadInfo)
+		&& whiteboardThreadInfo.hwndActive == freeze && whiteboardThreadInfo.hwndFocus == freeze,
+		"whiteboard activation and keyboard focus belong to the Freeze owner thread");
 	whiteboardMinimizeAllowed.store(false);
 	check(!service.MinimizeWhiteboardWindowGroup() && !service.WhiteboardWindowGroupMinimized(),
 		"PPT policy rejects whiteboard minimization");
 	whiteboardMinimizeAllowed.store(true);
 	check(service.MinimizeWhiteboardWindowGroup(), "minimize whiteboard window group");
 	check(service.WhiteboardWindowGroupMinimized(), "minimize publishes minimized state");
+	check(!service.RequestWhiteboardActivation(), "activation cannot restore a minimized whiteboard");
 	check(service.Show(WindowRole::PptBottomLeft) && service.Show(WindowRole::Freeze),
 		"stale show requests are safely consumed");
 	check(IsIconic(freeze) && !IsWindowVisible(drawpad)

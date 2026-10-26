@@ -1,0 +1,447 @@
+diff --git a/.trellis/spec/native-desktop/rendering-and-ui.md b/.trellis/spec/native-desktop/rendering-and-ui.md
+index 3abd4dbd..11b9dc25 100644
+--- a/.trellis/spec/native-desktop/rendering-and-ui.md
++++ b/.trellis/spec/native-desktop/rendering-and-ui.md
+@@ -1949,6 +1949,9 @@ struct NavigationState; // desktopCompact / narrow / overlayOpen
+ ShellGeometry ResolveShellGeometry(float widthDip, float heightDip, const NavigationState&);
+ RowMeasure MeasureRow(float width, float actionWidth, float actionHeight, bool hasIcon = true);
+ RowGeometry ResolveRowLayout(const RowMeasure&, float textHeight);
++MultilineRowGeometry ResolveMultilineRowLayout(const RowMeasure&, float titleHeight,
++    float descriptionHeight, float inlineDescriptionHeight, float reveal);
++void ConfigureRowAnimations(float delta, bool enabled, float rate);
+ ImFontConfig HarmonyFontConfig(float rasterizerDensity);
+ float TextHeight(const char*, float widthPixels, ImFluentTextStyle);
+ void TextAt(const char*, ImVec2, float widthPixels, ImFluentTextStyle, ImU32);
+@@ -1960,7 +1963,8 @@ GeneralEvents RenderGeneral(GeneralDraft&);
+ #### 3. Contracts
+ 
+ - NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定，中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/交互与安全/存储与配置，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭/调试固定。三处1 DIP细线替代分组标题；Debug只展开显示（含overlay），无图标、居中自然宽、Caption12 DIP、28 DIP高。ResolveNavigationPaneGeometry先测固定行/分割带/Debug，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
+-- RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。action 按实际宽度靠右，正文预算不足时纵排，长文行高由实际字体测量而来。测量不运行 action；一帧只在实际控件绘制时产生事件。
++- RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。设置卡片默认标题＋完整多行说明，action 按实际宽度靠右。根据当前内容宽度和 action 自然宽度动态判断说明区预算；预算不足时先采用标题/action 在上、说明下方通栏，极窄时再将 action 换行。不得以控件数量或固定单行限制代替预算测量，不缩小字号、截断或默认折叠完整说明。长文行高由实际字体测量而来；测量不运行 action，一帧只在实际控件绘制时产生事件。
++- 行内/通栏说明切换使用稳定行 ID 的会话态并复用现有动画开关、速率和渲染线程；重定向从当前可见值继续，关闭动画即时到位，隐藏后不累计休眠时间。过渡中正文/操作必须保持不重叠，完整卡片高度与后续布局包含当前换行包络；不得以绘制两套可交互控件完成过渡，不新增持久化配置或调度线程。置顶间隔完整说明在同一卡片常驻，不再另设“详细说明”展开块。
+ - 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
+ - 旧 ImFontMain/Strong 保留给标题栏边界；校准 regular/strong 和独立 icon face 常驻同一 atlas/session，全部内容页和导航使用统一文字角色，离开内容区后恢复原角色。禁止重新引入按页面分支选择旧字体。正文/说明/标题保持14/20、12/16、28/36，字面按1.213×TextOpticalScale（当前0.97）校准；控件文字单独使用ControlText（当前13/20）。
+ - 所有普通控件通过 Design 的13 DIP字体wrapper；ButtonWidth与默认Button/AccentButton使用同一天然宽公式，显式尺寸仍由调用者决定。ButtonGroupRow先测各按钮自然宽，再按可用预算换行且每行靠右；Action只在实际绘制时执行。导航Debug文字按钮是Caption12 DIP例外；赞助复用普通NavItemEx背景与输入，文字和图标均用与选中条相同的AccentFillDefault亮蓝主题色，选中条统一处理，关闭只覆盖浅深主题criticalText语义色，保持普通背景交互。
+@@ -1982,7 +1986,8 @@ GeneralEvents RenderGeneral(GeneralDraft&);
+ | --- | --- |
+ | 宽窗手动收起 → 窄窗 → 宽窗 | 恢复手动收起，不被自动模式覆盖 |
+ | 窄窗打开/关闭 overlay | 正文位置和宽度不变，点击遮罩/Esc/选项可关闭 |
+-| 长说明 / 英文按钮组 / 小内容预算 | 文案和 action 不重叠，必要时 action 下移并保持右对齐 |
++| 长说明 / 英文按钮组 / 小内容预算 | 动态采用行内、下方通栏说明或极窄控件换行，文案和 action 不重叠且 action 右对齐 |
++| 说明布局切换 / 动画中反向 / 关闭动画 | 以当前状态续接，当前文字包络完整可见、后续卡片不重叠，每帧 action 只运行一次；关闭即时到位 |
+ | 校准字形超过原名义 FontSize | 使用明确行框；旧页继续原 face，不把新校准全局套进旧 TextWrapped |
+ | 最后一张 SettingRow 后直接 EndChild | 无 SetCursor 扩边断言，滚动范围包含整卡与尾 gap |
+ | expander 标题过长或 body 被裁剪 | 标题不占用 chevron，完整标题可获知，Begin/End 栈匹配 |
+diff --git a/.trellis/tasks/09-06-setting-winui3-design-rebuild/check.jsonl b/.trellis/tasks/09-06-setting-winui3-design-rebuild/check.jsonl
+index 570d7009..e3720c2a 100644
+--- a/.trellis/tasks/09-06-setting-winui3-design-rebuild/check.jsonl
++++ b/.trellis/tasks/09-06-setting-winui3-design-rebuild/check.jsonl
+@@ -15,3 +15,4 @@
+ {"file": ".trellis/tasks/archive/2026-10/08-13-setting-fluent2-responsive-ui/implement.md", "reason": "首轮迁移与resident/DWM验证证据；当前范围以接管记录为准"}
+ {"file": ".trellis/tasks/archive/2026-10/08-13-unified-render-pipeline-setting/prd.md", "reason": "已完成共享渲染合同及自动化验收基线"}
+ {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-hierarchical-nav.md", "reason": "当前用户批准的分类、交互、动画与禁止GUI/commit范围；优先于历史授权"}
++{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-multiline-cards.md", "reason": "最新用户批准：完整多行说明常驻、动态通栏 fallback 与切换动画，替代历史折叠规则"}
+diff --git a/.trellis/tasks/09-06-setting-winui3-design-rebuild/design.md b/.trellis/tasks/09-06-setting-winui3-design-rebuild/design.md
+index 5f45ae32..2503f932 100644
+--- a/.trellis/tasks/09-06-setting-winui3-design-rebuild/design.md
++++ b/.trellis/tasks/09-06-setting-winui3-design-rebuild/design.md
+@@ -49,7 +49,7 @@
+ 
+ 测量顺序：获取可用宽度 → 估算/测量 action 自然宽度与最大宽度 → 分配正文宽 → 按真实字体/语言测量文案 → 算行高 → 统一安排文字块、图标与 action 中心 → 提交 ImFluent 控件。重要公式为 `rowHeight=max(minHeight, textHeight+2*padding, actionHeight+2*padding)`；不能从绘制后的 cursor.y 推测完整文本边界。
+ 
+-若正文可用宽度不足，先让按钮组换行/下拉约束宽度，再采用文字在上、action 下一行靠右的纵向布局；不以整体缩小字体解决。长解释留在可展开详情，保留警告、适用条件和资源代价；原始关键信息不得因美化而删除。草图“置顶间隔”示范了短摘要与完整解释分层。
++默认使用标题＋完整多行说明的同一卡片布局，action 在右侧。按右侧操作的实际宽度及剩余说明预算，动态切换为标题/操作在上、说明下方通栏的方案二；极窄时再将操作换行靠右。方案一/二切换复用现有动画开关和速率，从当前状态连续过渡并支持中途反向，卡片高度与后续内容同步重排；不通过缩小字号、截断或折叠说明挤入。置顶间隔移除独立“详细说明”展开块并常驻完整原文。真实长文或子设置是否需要 Details 另按内容决定，不再以超过一行作为折叠理由。当前批准详见 research/approved-multiline-cards.md。
+ 
+ 字体分别管理 semanticSize、glyphScale、lineHeight、baselineOffset；1.213 是 STB 与 em 换算研究起点。`ExtraSizeScale` 不同步改布局 ascent，必须和基线/行框一并验证。原生行框高固定于语义层级而非 TTF 内部留白；屏幕像素对齐发生在最后一步。以代表性字符串集合校准固定基线，不按每条文本可见包围盒重新居中，避免不同字形导致跳动。图标改用独立字体绑定/绘制槽，不能继续靠正文 MergeMode 的 10/4 偏移碰运气。
+ 
+diff --git a/.trellis/tasks/09-06-setting-winui3-design-rebuild/implement.jsonl b/.trellis/tasks/09-06-setting-winui3-design-rebuild/implement.jsonl
+index 570d7009..e3720c2a 100644
+--- a/.trellis/tasks/09-06-setting-winui3-design-rebuild/implement.jsonl
++++ b/.trellis/tasks/09-06-setting-winui3-design-rebuild/implement.jsonl
+@@ -15,3 +15,4 @@
+ {"file": ".trellis/tasks/archive/2026-10/08-13-setting-fluent2-responsive-ui/implement.md", "reason": "首轮迁移与resident/DWM验证证据；当前范围以接管记录为准"}
+ {"file": ".trellis/tasks/archive/2026-10/08-13-unified-render-pipeline-setting/prd.md", "reason": "已完成共享渲染合同及自动化验收基线"}
+ {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-hierarchical-nav.md", "reason": "当前用户批准的分类、交互、动画与禁止GUI/commit范围；优先于历史授权"}
++{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-multiline-cards.md", "reason": "最新用户批准：完整多行说明常驻、动态通栏 fallback 与切换动画，替代历史折叠规则"}
+diff --git a/.trellis/tasks/09-06-setting-winui3-design-rebuild/implement.md b/.trellis/tasks/09-06-setting-winui3-design-rebuild/implement.md
+index 7e813c7b..81a43892 100644
+--- a/.trellis/tasks/09-06-setting-winui3-design-rebuild/implement.md
++++ b/.trellis/tasks/09-06-setting-winui3-design-rebuild/implement.md
+@@ -191,3 +191,7 @@ git diff --check
+ ## 侧栏子任务收尾（2026-10-08）
+ 
+ 用户确认侧栏任务结束：实现已提交2f10f402，本次归档10-08-setting-sidebar-style-hover至archive/2026-10并提交收尾记录。通用分类/分层导航、默认折叠、滚动同步与圆头/亮蓝增量交付完成；剩余真实鼠标/截图、全页/DPI、窗口/常驻会话验收仍在父任务，父任务保持in_progress。本次不改源码、不push。
++
++## 多行说明与动态重排追加（2026-10-08）
++
++按 [research/approved-multiline-cards.md](research/approved-multiline-cards.md) 实施：置顶间隔恢复常驻完整说明；公共设置行按实际预算动态切换行内/下方通栏说明并复用既有动画策略；补连续帧与中途反向无窗口回归，独立检查后完整 Debug|ARM64 Solution 验证。保留原编码/换行与配置行为，不 GUI/commit/push，不结束父任务。
+diff --git a/.trellis/tasks/09-06-setting-winui3-design-rebuild/prd.md b/.trellis/tasks/09-06-setting-winui3-design-rebuild/prd.md
+index 6ce91c80..68398217 100644
+--- a/.trellis/tasks/09-06-setting-winui3-design-rebuild/prd.md
++++ b/.trellis/tasks/09-06-setting-winui3-design-rebuild/prd.md
+@@ -17,7 +17,7 @@
+ 
+ - R1 视觉目标：以 Windows 设置与 WinUI 3 桌面应用为参照，统一浅色页面底、卡片、文字、边框和强调色层级；不以控件库 demo 默认值代替整体设计。
+ - R2 导航：展开与收起使用稳定图标轴和对称内边距；汉堡始终表示导航展开/收起；自动模式与用户偏好分别管理；窄窗展开覆盖内容；主菜单可滚动、底部动作固定且同轴。新排序是 v1 审查提案，所有原入口保留。
+-- R3 内容布局：页头、分组、卡片共用内容边界；按可用宽度排版；标签左对齐，按钮/开关/选择器/滑块按实际 action 右对齐；长文本和按钮组可增高/换行，不能重叠或靠缩小字号挤入。
++- R3 内容布局：页头、分组、卡片共用内容边界；按可用宽度排版；标签左对齐，按钮/开关/选择器/滑块按实际 action 右对齐；完整多行说明默认常驻同一卡片，操作占宽时动态切换下方通栏说明并有连续可反向动画；长文本和按钮组可增高/换行，不能重叠或靠缩小字号挤入。
+ - R4 字体：保留 HarmonyOS Sans 简繁体与实际可用字重；以 Windows 语义字号/行高为基准校准字面和基线，图标独立度量；在控件、卡片、导航间保持一致，不依赖每页补丁。
+ - R5 主页：重组为静态产品引导、已有功能入口、常用设置、作者/反馈区域，保留现有教程和外链；现代而克制，不添加虚构统计、账户或搜索功能。
+ - R6 内容完整：保留现有 14 个顶层实际页面 case 与 4 个插件详情页面的功能、信息、状态、条件禁用和提示；快捷键页目前仅说明，不扩展完整编辑器。
+diff --git a/Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp b/Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp
+index 19086ef2..63f1c3fc 100644
+--- a/Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp
++++ b/Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp
+@@ -89,6 +89,9 @@ namespace Inkeys::UI::Setting::Design
+ 		Palette activePalette = lightPalette;
+ 		bool activeDarkMode = false;
+ 
++		float rowAnimationDelta = 0.0F, rowAnimationRate = 1.0F;
++		bool rowAnimationsEnabled = false;
++
+ 		std::string stateOn = "On";
+ 		std::string stateOff = "Off";
+ 
+@@ -237,6 +240,13 @@ namespace Inkeys::UI::Setting::Design
+ 		return (std::max)(72.0F, ControlTextWidth(label) / Pixels(1.0F) + 32.0F);
+ 	}
+ 
++	void ConfigureRowAnimations(float delta, bool enabled, float rate)
++	{
++		rowAnimationDelta = std::isfinite(delta) ? std::clamp(delta, 0.0F, 0.25F) : 0.0F;
++		rowAnimationRate = std::isfinite(rate) ? std::clamp(rate, 0.1F, 5.0F) : 1.0F;
++		rowAnimationsEnabled = enabled;
++	}
++
+ 	void SettingRow(const char* id, const char* title, const char* description,
+ 		const char* glyph, float actionWidthDip, float actionHeightDip,
+ 		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border)
+@@ -245,20 +255,49 @@ namespace Inkeys::UI::Setting::Design
+ 		const float width = ImGui::GetContentRegionAvail().x;
+ 		const auto measure = MeasureRow(width / Pixels(1.0F), actionWidthDip,
+ 			actionHeightDip, glyph && *glyph);
++		// Tween 保存在当前 ImGui 窗口的稳定行 ID 下，随会话销毁，不残留跨 context 指针。
++		ImGui::PushID(id);
++		auto* storage = ImGui::GetStateStorage();
++		const auto valueId = ImGui::GetID("##description-value");
++		const auto targetId = ImGui::GetID("##description-target");
++		const auto startId = ImGui::GetID("##description-start");
++		const auto progressId = ImGui::GetID("##description-progress");
++		const auto frameId = ImGui::GetID("##description-frame");
++		NavigationTween tween(storage->GetFloat(valueId));
++		tween.target = storage->GetFloat(targetId);
++		tween.start = storage->GetFloat(startId);
++		tween.progress = storage->GetFloat(progressId);
++		const int frame = ImGui::GetFrameCount(), previousFrame = storage->GetInt(frameId, -2);
++		const bool hasDescription = description && *description;
++		const float threshold = DescriptionMinimumWidth
++			+ (tween.target > 0.5F ? DescriptionWidthHysteresis : 0.0F);
++		const bool below = hasDescription && !measure.stacked && measure.actionWidth > 0.0F
++			&& measure.textWidth < threshold;
++		if (previousFrame < 0 || measure.stacked || !hasDescription) tween.Reset(below ? 1.0F : 0.0F);
++		tween.Target(below ? 1.0F : 0.0F);
++		// 页切换/隐藏期间不计入动画时长；同一帧重复测量不会推进两次。
++		tween.Advance(previousFrame == frame - 1 ? rowAnimationDelta : 0.0F,
++			0.160F / rowAnimationRate, rowAnimationsEnabled);
++		storage->SetFloat(valueId, tween.value); storage->SetFloat(targetId, tween.target);
++		storage->SetFloat(startId, tween.start); storage->SetFloat(progressId, tween.progress);
++		storage->SetInt(frameId, frame);
++		ImGui::PopID();
+ 		const float titleHeight = TextHeight(title, Pixels(measure.textWidth));
+-		const float descriptionHeight = TextHeight(description, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
+-		const auto row = ResolveRowLayout(measure,
+-			(titleHeight + descriptionHeight) / Pixels(1.0F));
++		const float inlineDescriptionHeight = TextHeight(description, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
++		const float descriptionHeight = TextHeight(description,
++			Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption);
++		const auto row = ResolveMultilineRowLayout(measure, titleHeight / Pixels(1.0F),
++			descriptionHeight / Pixels(1.0F), inlineDescriptionHeight / Pixels(1.0F), tween.value);
+ 		// 整行占位同时登记尾部间隙，最后一行后直接 EndChild 也不会越过内容边界。
+ 		ImGui::Dummy({ width, Pixels(row.height + RowGap) });
+ 		ImDrawList* draw = ImGui::GetWindowDrawList();
+ 		const ImVec2 bottom(origin.x + width, origin.y + Pixels(row.height));
+ 		draw->AddRectFilled(origin, bottom, fill, Pixels(4.0F));
+ 		draw->AddRect(origin, bottom, border, Pixels(4.0F));
+-		TextAt(title, { origin.x + Pixels(row.text.left), origin.y + Pixels(row.text.top) },
+-			Pixels(row.text.Width()));
+-		TextAt(description, { origin.x + Pixels(row.text.left), origin.y + Pixels(row.text.top) + titleHeight },
+-			Pixels(row.text.Width()), ImFluentTextStyle_Caption, TextSecondary);
++		TextAt(title, { origin.x + Pixels(row.title.left), origin.y + Pixels(row.title.top) },
++			Pixels(row.title.Width()));
++		TextAt(description, { origin.x + Pixels(row.description.left), origin.y + Pixels(row.description.top) },
++			Pixels(row.description.Width()), ImFluentTextStyle_Caption, TextSecondary);
+ 		if (measure.hasIcon)
+ 			ImFluent::DrawIcon(glyph,
+ 				{ origin.x + Pixels(row.icon.left), origin.y + Pixels(row.icon.top) },
+diff --git a/Inkeys/Inkeys/UI/Setting/Setting.Controls.h b/Inkeys/Inkeys/UI/Setting/Setting.Controls.h
+index f938e05c..19c51cfa 100644
+--- a/Inkeys/Inkeys/UI/Setting/Setting.Controls.h
++++ b/Inkeys/Inkeys/UI/Setting/Setting.Controls.h
+@@ -50,6 +50,8 @@ namespace Inkeys::UI::Setting::Design
+ 	void PageContentStart();
+ 	float ControlTextWidth(const char* text);
+ 	float ButtonWidth(const char* label);
++	// 由现有会话在帧边界提供时钟和软件动画偏好，不新增计时器或持久化状态。
++	void ConfigureRowAnimations(float delta, bool enabled, float rate);
+ 	void SettingRow(const char* id, const char* title, const char* description,
+ 		const char* glyph, float actionWidthDip, float actionHeightDip,
+ 		const std::function<void(const LayoutRect&)>& action,
+diff --git a/Inkeys/Inkeys/UI/Setting/Setting.Design.h b/Inkeys/Inkeys/UI/Setting/Setting.Design.h
+index c1bbc849..ad5f2b2c 100644
+--- a/Inkeys/Inkeys/UI/Setting/Setting.Design.h
++++ b/Inkeys/Inkeys/UI/Setting/Setting.Design.h
+@@ -413,4 +413,54 @@ namespace Inkeys::UI::Setting::Design
+ 			actionRight, actionY + measure.actionHeight };
+ 		return result;
+ 	}
++	inline constexpr float DescriptionMinimumWidth = 280.0F;
++	inline constexpr float DescriptionWidthHysteresis = 16.0F;
++
++	struct MultilineRowGeometry
++	{
++		LayoutRect title, description, icon, action;
++		float height = 72.0F;
++	};
++
++	[[nodiscard]] inline float DescriptionWidth(const RowMeasure& measure, float reveal) noexcept
++	{
++		const float fullWidth = measure.width - measure.padding - measure.textLeft;
++		const float expansion = std::clamp(reveal * 2.0F - 1.0F, 0.0F, 1.0F);
++		return measure.textWidth + (fullWidth - measure.textWidth) * expansion;
++	}
++
++	// 先下移说明，再扩展宽度；反向先收窄，保证过渡中的文字始终避开操作区。
++	[[nodiscard]] inline MultilineRowGeometry ResolveMultilineRowLayout(const RowMeasure& measure,
++		float titleHeight, float descriptionHeight, float inlineDescriptionHeight, float reveal) noexcept
++	{
++		const auto inlineRow = ResolveRowLayout(measure, titleHeight + inlineDescriptionHeight);
++		MultilineRowGeometry result;
++		result.icon = inlineRow.icon;
++		result.action = inlineRow.action;
++		result.title = { inlineRow.text.left, inlineRow.text.top, inlineRow.text.right,
++			inlineRow.text.top + titleHeight };
++		result.description = { inlineRow.text.left, result.title.bottom,
++			inlineRow.text.left + DescriptionWidth(measure, reveal), result.title.bottom + descriptionHeight };
++		result.height = inlineRow.height;
++		if (measure.stacked || descriptionHeight == 0.0F) return result;
++		const float movement = std::clamp(reveal * 2.0F, 0.0F, 1.0F);
++		const float headerHeight = (std::max)(titleHeight, measure.actionHeight);
++		auto move = [movement](float from, float to) { return from + (to - from) * movement; };
++		result.title.top = move(result.title.top, measure.padding + (headerHeight - titleHeight) * 0.5F);
++		result.title.bottom = result.title.top + titleHeight;
++		result.action.top = move(result.action.top, measure.padding + (headerHeight - measure.actionHeight) * 0.5F);
++		result.action.bottom = result.action.top + measure.actionHeight;
++		result.description.top = move(inlineRow.text.top + titleHeight, measure.padding + headerHeight + 8.0F);
++		result.description.bottom = result.description.top + descriptionHeight;
++		if (measure.hasIcon)
++		{
++			result.icon.top = move(result.icon.top, measure.padding + (headerHeight - 24.0F) * 0.5F);
++			result.icon.bottom = result.icon.top + 24.0F;
++		}
++		// 卡片和后续行使用当前排版的实际高度，换行期间不裁掉仍然可见的文字。
++		result.height = (std::max)(72.0F, (std::max)({ result.description.bottom,
++			result.title.bottom, result.action.bottom, result.icon.bottom }) + measure.padding);
++		return result;
++	}
++
+ }
+diff --git a/Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp b/Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp
+index 5d6bc88b..4ce722d2 100644
+--- a/Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp
++++ b/Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp
+@@ -96,6 +96,7 @@ namespace Inkeys::UI::Setting::Design
+ 			const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
+ 			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
+ 				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
++			if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
+ 			// 总开关只控制可见性，隐藏子项时保留它们的保存值。
+ 			if (draft.animation)
+ 			{
+@@ -121,13 +122,11 @@ namespace Inkeys::UI::Setting::Design
+ 		{
+ 			SectionHeader(IA(I18nKey.SettingsUI.Regular.Behavior.N).c_str());
+ 			events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
+-				IA(I18nKey.SettingsUI.Design.TopWindowSummary).c_str(), "\ue922", draft.topInterval,
++				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str(), "\ue922", draft.topInterval,
+ 				{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
+ 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s),
+ 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s),
+ 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s) });
+-			Details("top-interval-details", IA(I18nKey.SettingsUI.Design.TopWindowDetails).c_str(),
+-				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str());
+ 			events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
+ 				IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
+ 
+diff --git a/Inkeys/Inkeys/UI/Setting/Setting.cpp b/Inkeys/Inkeys/UI/Setting/Setting.cpp
+index ec45a9f2..bf27278c 100644
+--- a/Inkeys/Inkeys/UI/Setting/Setting.cpp
++++ b/Inkeys/Inkeys/UI/Setting/Setting.cpp
+@@ -2145,6 +2145,8 @@ SettingSessionCoroutine RunSettingSession()
+ 				settingNavigationClockIdle = false;
+ 				Design::AdvanceNavigationAnimations(navigationState, navigationDelta,
+ 					Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate);
++				Design::ConfigureRowAnimations(navigationDelta,
++					Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate);
+ 				const auto shellGeometry = Inkeys::UI::Setting::Design::ResolveShellGeometry(
+ 					widthDip, static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
+ 
+diff --git a/InkeysHeadlessTests/setting_design_tests.cpp b/InkeysHeadlessTests/setting_design_tests.cpp
+index 17b2c6ca..0f4d85f7 100644
+--- a/InkeysHeadlessTests/setting_design_tests.cpp
++++ b/InkeysHeadlessTests/setting_design_tests.cpp
+@@ -321,6 +321,147 @@ namespace
+ 			"text-only rows reclaim icon and action space");
+ 	}
+ 
++	void CheckMultilineRowAnimations(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
++	{
++		Design::BindTextFonts(regular, strong);
++		ImFluent::SetIconFont(icons);
++		constexpr const char* title = "完整说明 Agpqy";
++		constexpr const char* description = "在非绘制状态下按间隔置顶窗口，落笔时暂停。\n"
++			"A shorter interval reduces interference but increases CPU use.\n"
++			"若其他软件持续干扰，使用插件超级置顶。";
++		struct Sample { float reveal, target, height; LayoutRect description, action; };
++		int calls = 0;
++		float value = 1.25F;
++		int selected = 0;
++		auto draw = [&](float width, float actionWidth, bool enabled, float rate, bool visible = true,
++			float delta = 1.0F / 120.0F) {
++			Design::ApplyPalette();
++			Design::ConfigureRowAnimations(delta, enabled, rate);
++			ImGui::GetIO().DeltaTime = (std::max)(delta, 0.001F);
++			ImGui::GetIO().DisplaySize = { 1440 * scale, 1000 * scale };
++			ImGui::NewFrame();
++			ImGui::SetNextWindowPos({ 0, 0 });
++			ImGui::SetNextWindowSize({ width * scale, 900 * scale });
++			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
++			ImGui::Begin("##multiline-transition", nullptr, ImGuiWindowFlags_NoDecoration
++				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
++			ImGui::PopStyleVar();
++			Sample sample{};
++			if (visible)
++			{
++				const ImVec2 origin = ImGui::GetCursorScreenPos();
++				const float actualWidth = ImGui::GetContentRegionAvail().x / scale;
++				const int firstVertex = ImGui::GetWindowDrawList()->VtxBuffer.Size;
++				const int previousCalls = calls;
++				Design::SettingRow("responsive", title, description, "\ue922", actionWidth, 32,
++					[&](const LayoutRect& bounds) {
++						++calls;
++						sample.action = bounds;
++						bool active = false;
++						if (actionWidth == 240) Design::SliderAction(bounds, value, 0.5F, 2, active);
++						else if (actionWidth == 320)
++						{
++							Design::Button("重置", { 72 * scale, bounds.Height() });
++							ImGui::SetCursorScreenPos({ bounds.left + 80 * scale, bounds.top });
++							ImGui::SetNextItemWidth(bounds.Width() - 80 * scale);
++							const char* options[]{ "中等(3s)", "较长(10s)" };
++							Design::ComboBox("##choice", &selected, options, 2);
++						}
++						else Design::Button("操作", { bounds.Width(), bounds.Height() });
++					});
++				checks.Expect(calls == previousCalls + 1, "each animated frame invokes its real action exactly once");
++				ImGui::PushID("responsive");
++				const auto* storage = ImGui::GetStateStorage();
++				sample.reveal = storage->GetFloat(ImGui::GetID("##description-value"));
++				sample.target = storage->GetFloat(ImGui::GetID("##description-target"));
++				ImGui::PopID();
++				const auto measure = Design::MeasureRow(actualWidth, actionWidth, 32);
++				const auto geometry = Design::ResolveMultilineRowLayout(measure,
++					Design::TextHeight(title, measure.textWidth * scale) / scale,
++					Design::TextHeight(description, Design::DescriptionWidth(measure, sample.reveal) * scale,
++						ImFluentTextStyle_Caption) / scale,
++					Design::TextHeight(description, measure.textWidth * scale, ImFluentTextStyle_Caption) / scale,
++					sample.reveal);
++				sample.description = geometry.description;
++				sample.height = geometry.height;
++				const LayoutRect card{ 0, 0, actualWidth, geometry.height };
++				checks.Expect(Contains(card, geometry.title) && Contains(card, geometry.description)
++					&& Contains(card, geometry.action) && Contains(card, geometry.icon)
++					&& Disjoint(geometry.title, geometry.action) && Disjoint(geometry.description, geometry.action),
++					"every live multiline transition frame contains disjoint header/description/actions");
++				checks.Expect(Near(ImGui::GetCursorScreenPos().y,
++					origin.y + (geometry.height + Design::RowGap) * scale, 1),
++					"downstream cursor follows current animated card height including live wrapped text");
++				LayoutRect ink{ FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX };
++				const auto* list = ImGui::GetWindowDrawList();
++				int captionVertices = 0;
++				for (int vertex = firstVertex; vertex < list->VtxBuffer.Size; ++vertex)
++					if (list->VtxBuffer[vertex].col == Design::TextSecondary)
++					{
++						++captionVertices;
++						const auto point = list->VtxBuffer[vertex].pos;
++						ink.left = (std::min)(ink.left, point.x); ink.right = (std::max)(ink.right, point.x);
++						ink.top = (std::min)(ink.top, point.y); ink.bottom = (std::max)(ink.bottom, point.y);
++					}
++				int visibleGlyphs = 0;
++				ImFluent::PushFont(ImFluentTextStyle_Caption);
++				for (const char* cursor = description; *cursor;)
++				{
++					unsigned int codepoint;
++					cursor += ImTextCharFromUtf8(&codepoint, cursor, nullptr);
++					const auto* glyph = ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(codepoint));
++					if (codepoint != '\n' && glyph && glyph->Visible) ++visibleGlyphs;
++				}
++				ImFluent::PopFont();
++				checks.Expect(captionVertices == visibleGlyphs * 4,
++					"every non-space description glyph is emitted without clipping, folding or truncation");
++				checks.Expect(ink.Width() > 0 && ink.left >= origin.x + geometry.description.left * scale - scale
++					&& ink.right <= origin.x + geometry.description.right * scale + scale
++					&& ink.top >= origin.y + geometry.description.top * scale - scale
++					&& ink.bottom <= origin.y + geometry.description.bottom * scale + scale
++					&& Disjoint(ink, sample.action),
++					"real complete multiline caption vertices remain visible within live text budget and avoid controls");
++			}
++			ImGui::End(); ImGui::Render();
++			return sample;
++		};
++		const auto initialBelow = draw(548, 240, true, 1);
++		checks.Expect(Near(initialBelow.reveal, 1), "first appearance initializes directly to the current responsive mode");
++		for (float actionWidth : { 160.0F, 240.0F, 320.0F })
++		{
++			const float narrowWidth = actionWidth + 72 + 16 + 220;
++			const auto wide = draw(800, actionWidth, false, 1);
++			checks.Expect(Near(wide.reveal, 0), "wide card uses the complete inline description");
++			const auto moving = draw(narrowWidth, actionWidth, true, 1);
++			checks.Expect(moving.reveal > 0 && moving.reveal < 1 && Near(moving.target, 1),
++				"real resize starts an intermediate scheme-one to scheme-two transition");
++			const auto reverse = draw(800, actionWidth, true, 1);
++			checks.Expect(reverse.reveal < moving.reveal && reverse.reveal > 0 && Near(reverse.target, 0),
++				"mid-transition resize reverses from current visible progress");
++			for (int frame = 0; frame < 24; ++frame) draw(narrowWidth, actionWidth, true, 1);
++			const auto below = draw(narrowWidth, actionWidth, true, 1);
++			checks.Expect(Near(below.reveal, 1) && below.description.top >= 56
++				&& below.description.Width() > moving.description.Width(),
++				"settled fallback keeps title/actions above a full-width description");
++			const auto hysteresis = draw(actionWidth + 72 + 16 + 288, actionWidth, true, 1);
++			checks.Expect(Near(hysteresis.target, 1), "small resize jitter does not retarget the description layout");
++			const auto immediate = draw(800, actionWidth, false, 1);
++			checks.Expect(Near(immediate.reveal, 0), "animation disabled settles layout in the current frame");
++			const auto beforeHide = draw(narrowWidth, actionWidth, true, 0.1F);
++			draw(narrowWidth, actionWidth, true, 0.1F, false);
++			const auto resumed = draw(narrowWidth, actionWidth, true, 0.1F, true, 0.25F);
++			checks.Expect(Near(beforeHide.reveal, resumed.reveal), "absent-page clock is excluded on the first visible frame");
++			const auto fast = draw(narrowWidth, actionWidth, true, 5);
++			checks.Expect(fast.reveal > resumed.reveal, "existing animation speed affects responsive card advancement");
++			const auto stacked = draw(300, actionWidth, false, 1);
++			checks.Expect(stacked.action.top / scale >= stacked.description.bottom + 12,
++				"extremely narrow card puts actions below the complete description");
++		}
++		checks.Expect(calls > 70 && Near(value, 1.25F) && selected == 0,
++			"continuous layout frames submit one action without changing slider or combo values");
++		Design::ConfigureRowAnimations(0, false, 1);
++	}
++
+ 	void CheckGlyphs(Checks& checks, ImFont* font, const char* face,
+ 		Design::TypographyMetrics metrics, float scale)
+ 	{
+@@ -2152,6 +2293,7 @@ int RunSettingDesignTests()
+ 		ImGui::End();
+ 		ImGui::Render();
+ 		CheckDrawData(checks);
++		CheckMultilineRowAnimations(checks, fonts[0], fonts[1], fonts.back(), scale);
+ 		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);
+ 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
+ 			CheckGeneralSections(checks, fonts[0], fonts[1], fonts.back(), scale);

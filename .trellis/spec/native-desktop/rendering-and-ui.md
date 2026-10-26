@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 无条件启动 UI3；不存在 UI2/UI3 运行时分支 | `Inkeys.UI.RenderPipeline` 的共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 是独立客户端，经自己的 device context、GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*`、`Bar.RenderLoop.cpp` |
 | 传统 `IdtFloating` | `【历史/兼容】` 源码暂存但在 `Inkeys.vcxproj` 中为 `None`，生产代码不得 include | 不参与产品编译 | `Inkeys.vcxproj`、`Inkeys.vcxproj.filters` |
-| 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + 共享 WARP D3D11 device/immediate context；Setting 独占传统 discard swap chain、RTV、SRV 和 ImGui session | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
+| 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + ImFluent 生成标准 `ImDrawData`，复用共享 WARP D3D11 device/immediate context；Setting 常驻 ImGui context、backend、字体和图片 SRV，仅在可见时持有独占 discard swap chain/RTV | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
 | 主画板 | `【直接确认】` Draw3 已接管 Window Service 的主 Drawpad；选择态使用同一 Host 的 presentation-only 辅助表面 | Draw3 独立 D3D11.1 device、单一 swap chain/final backbuffer，以及主 DComp/DWM/ULW + 辅助 ULW target | `Draw3.Host.*`、`Draw3.TransparentPresentation.*`、`draw3-integration.md` |
 | PPT / Whiteboard 分页控件 | `【直接确认】` `Inkeys.UI.PageControl` 独占四个 owned layered HWND；`PptBottomLeft/PptBottomRight` 在 PPT 与 Whiteboard 间连续切换布局 | 与 Bar/Setting 共享 D3D11 epoch；PageControl 独占四套 BarPageSurface/device context/target/GDI interop，PPT 与 Whiteboard 只发布状态和业务回调 | `Inkeys/Inkeys/UI/PageControl/PageControl.*`、`Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/Whiteboard/Whiteboard.*` |
 | 冻结帧、放大镜等 | `【直接确认】` Window Service 统一创建，图像承载使用 `DibSurface` | GDI/GDI+、Magnification API | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
@@ -31,7 +31,7 @@
 
 - `DeviceEpoch` 由 Bar、PageControl 四个分页客户端、Whiteboard Freeze 和 Setting 共用；每个客户端仍持有自己的 D2D device context、target bitmap 和 GDI interop，共享底部 HWND 只有 PageControl 一个呈现所有者；
 - `SharedAssets` 中的 D2D 1.1 factory、DWrite factory/font collection 被 Bar/PPT 文字资源使用；
-- Setting 借用同一 D3D11 device/immediate context，但独占 discard swap chain、RTV、纹理 SRV 和 ImGui backend/session；
+- Setting 借用同一 D3D11 device/immediate context；ImGui context、Win32/DX11 backend、字体和图片资源从 `Initialize()` 到 `Shutdown()` 常驻，discard swap chain/RTV 仅在窗口可见时存在；
 - 主画板不是 D2D target。
 
 `【直接确认】` `IdtD2DPreparation.*`、旧图形全局和 `Inkeys.UI.RenderScheduler` 已从产品工程移除。新增 Bar/PPT/Setting/Whiteboard UI 图形资产必须沿用 RenderPipeline 的共享生命周期；Draw2、legacy Freeze 和其他背景窗口不因本合同自动迁移。
@@ -1481,17 +1481,18 @@ DrawCore(coreBrush);
 `【直接确认】`：
 
 - `Setting.Base.cppm::CreateDeviceD3D` 借用 `FrameContext::epoch` 的共享 WARP device/immediate context，并通过传统 `IDXGIFactory::CreateSwapChain` 创建 Setting 独占的 discard swap chain 和 RTV；
-- `Setting.cpp` 的持久协程 session 调用 `ImGui_ImplWin32_Init`、`ImGui_ImplDX11_Init/NewFrame/RenderDrawData/Shutdown`；`WM_SIZE` 只排队宽高，渲染线程释放 RTV、`ResizeBuffers` 后重建，遮挡时用 `DXGI_PRESENT_TEST`；
+- `Setting.cpp` 的持久协程 session 在渲染线程建立 ImGui context、Win32/DX11 backend、字体图集和图片 SRV；`WM_SIZE` 只排队宽高，渲染线程释放 RTV、`ResizeBuffers` 后重建，遮挡时用 `DXGI_PRESENT_TEST`；
 - 设置图片使用 `ID3D11ShaderResourceView*` 作为 `ImTextureID`；`DibSurface` 的 BGRA 字节上传为 `DXGI_FORMAT_B8G8R8A8_UNORM` immutable texture/SRV；
 - `Inkeys/Inkeys.vcxproj` 编译 `additional/imgui/imgui_impl_win32.cpp` 与 `imgui_impl_dx11.cpp`，仓库不再随附 ImGui DX9 backend；
 - DX11 backend 不在运行时调用 `D3DCompile`：`IDR_SHADERS2` 是 VS、`IDR_SHADERS1` 是 PS，两个预编译 CSO 位于 `UI/RenderPipeline/Assets/ImGui` 并由 `Inkeys.rc` 嵌入 EXE。
+- 普通 ImGui PS 仅采样纹理并乘顶点颜色，不包含演示模式分支或 PS 常量缓冲；橡皮演示单独使用 `IDR_SETTING_ERASER_DEMO_PS=309` / `imgui_eraser_demo_ps.cso`，继续共用 `IDR_SHADERS2` 的 VS。三份 shader 均由 FxCompile 预编译为 SM4.0；演示独占并恢复 PS b1，普通 backend 不触碰该槽位，隐藏/静止播放继续复用缓存。
 
 `【合理推断】` 设置 UI 的局部改动应复用 `Setting.Widgets`、`Setting.Wrap` 及现有字体/纹理路径；普通设置功能不得顺带更换 device、swap-chain、shader 或 SRV 所有权。
 
 ### Setting 外观条件卡片约定
 
 - “动画速率”只在 `Experimental.Inkeys3.UI3.Animation.Enable=true` 时显示；“动态边缘光影”只在 `Experimental.Inkeys3.UI3.EdgeLighting.Enable=true` 时显示。隐藏只影响布局，不得覆盖 `SpeedRate` 或 `EdgeLighting.Dynamic` 的持久化值。
-- 外观容器高度和两个条件卡片的渲染门禁必须读取同一份帧开始快照，按 `5 + showAnimationRate + showDynamicEdgeLighting` 张卡片计算（含任务栏缩放基准三项下拉框）；不得分别读取切换前后的 bool，否则同一帧会出现空白或裁剪。
+- 两个条件设置行的渲染门禁必须读取同一份帧开始 draft；Fluent Design 按实际行内容自然累计高度，不恢复旧固定坐标容器的 `4 + 条件项` 高度预算。隐藏仅改变布局，不覆盖保存值，避免同一帧混用切换前后的 bool。
 - 用户可见标题走 i18n；改标题时保持不可见 ImGui ID 稳定，避免无必要地重置控件身份。
 
 ### Setting 统一渲染与业务队列合同
@@ -1511,14 +1512,24 @@ void Setting::Toggle();
 bool Setting::IsVisible() noexcept;
 WNDPROC Setting::WindowProc() noexcept;
 FrameResult RenderSettingFrame(const FrameContext&);
+BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acrylic) noexcept;
 ~~~
 
 #### 3. Contracts
 
 - HWND 所属线程只处理 capture/cursor/IME、生命周期和 `ImGui_ImplWin32_WndProcHandlerEx`；专用 recursive mutex 串行访问 ImGui IO，因为 Win32 backend 的 `SetCapture`/`ReleaseCapture`/IME 调用可能同步重入同一 WndProc。ImGui context、DX11 backend、NewFrame/draw/Present 只由 RenderPipeline 线程使用。
-- Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；隐藏时逆序释放 backend、SRV、swap chain/RTV，返回 `Idle`。resize、遮挡和 epoch 变化由 `SessionState` 决策，不在 WndProc 直接操作 D3D。
-- Setting 隐藏在 HWND owner 只释放自己的 capture；逻辑/原生 Hide 锁存输入会话失效，Show 和旧 CommitEpoch 不清除，原渲染 owner drain 后才建立新会话；早期消息与迟到 native Hide 合同见 [F4](canvas-freeze-boundaries.md#f4设置隐藏必须结束原生捕获和旧-imgui-输入会话)。
-- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；配置 I/O 命令的 worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`；绘图状态同步命令按下文专用合同读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
+- `Initialize()` 注册 Settings 客户端后，必须同步等待渲染线程建立 ImGui context、Win32/DX11 backend、内嵌字体图集、解码图片缓存和全部图片 SRV；任一步失败都按相反顺序回滚并返回 `false`，不得留下已初始化 backend、device lease 或半套 SRV。
+- Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；`Hide()` 只停止连续绘制并释放 swap chain/RTV，context、backend、字体、解码图片和 SRV 保持常驻。`Show()` 恢复窗口和呈现资源；只有 `Shutdown()` 才逆序释放全部常驻资源并调用 `ImFluent::ResetContext()`。
+- device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品；健康设备上的普通资源失败返回 `Retry`，已移除设备返回 `DeviceLost`，后续重试不能对未初始化 backend 重复 `Shutdown`。
+- 动态字体纹理必须按 texture→SRV 事务创建，仅两阶段成功后发布 `TexID`、`BackendUserData` 和 `Status_OK`。任一步实际 HRESULT 失败须撤销半成品、保留可重试请求并停止该帧绘制/Present；销毁支持空或部分 COM 资源及重复清理，不能靠断言处理运行时资源失败。项目定制 DX11 后端保留原 void API，`ImGui_ImplDX11_GetLastResult()` 按已发布的当前 ImGui context 提供创建/提交结果；兼容的 `Init(..., long*)` 重载在尚未发布 backend owner 时也向调用方保留实际初始化 HRESULT，不能用无 owner 时的通用 E_FAIL 冒充具体 factory 错误。
+- 初始化、字体/设备重建、纹理/缓冲上传、Present/probe/resize 失败时，在释放 device lease 前读取 `GetDeviceRemovedReason()`，与原资源 HRESULT 分别记录；FAILED 的移除原因（含 HUNG/INVALID_CALL）必须交给唯一共享管线恢复 epoch，不能反复重试旧设备。诊断按 stage/code/reason/epoch 去重；VB Map 成功后 IB Map 失败也必须 Unmap VB。
+- `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。WinUI 3 设置壳层按客户区逻辑 DIP 判定：`>=900` 使用宽窗偏好（默认展开），`<900` 显示紧凑轨道并以覆盖方式展开。`Setting.Layout.h` 的旧三档 helper 暂留历史调用/测试；产品新壳层以 `Setting.Design.h::NavigationState` 为准。
+- Setting 主题由 `ResolveThemeMode(bool settingDarkMode)` 解析独立偏好；默认 Light，显式 true 使用 Dark。系统主题消息可唤醒样式刷新，但不覆盖用户选择；配置和帧边界换色合同见下文“Setting 实时浅深主题合同”。
+- Setting 背景能力顺序固定为 Win11 `DWMWA_SYSTEMBACKDROP_TYPE/DWMSBT_MAINWINDOW`、旧 Win11 Mica attribute 1029、动态解析的 Win10 `SetWindowCompositionAttribute` Acrylic、Solid。每次应用先撤销旧状态；DWM composition 关闭、属性/API 缺失或调用失败都必须继续级联并最终无错误回到 Solid，不能让可选视觉效果阻断 Initialize/Show。
+- 只有实际启用 Mica/Acrylic 后，才把 ImFluent `SolidBgBase`、ImGui `WindowBg` 与 D3D clear alpha 设为透明；Solid 必须使用当前主题的不透明背景；自绘标题栏始终单独填充不透明 `Design::AppBase`，避免透明根背景露出系统强调色。`WM_DWMCOMPOSITIONCHANGED` 与主题消息触发重新探测，允许 enabled -> Solid 回退。Setting session 退出时必须在 HWND 最终销毁前撤销 backdrop/margins/Acrylic 并发布 Solid。不得静态链接 Win10 专有 `SetWindowCompositionAttribute`，也不得为此引入 DirectComposition 或修改 ImFluent vendor。
+- Setting 新壳层由 `Setting.Design.h` 统一计算 pane/content 几何，`Setting.Shell.cpp` 组合 ImGui child 与 ImFluent `NavItemEx`；页面和底部动作共用同一图标/文字轴。自有壳层用于准确的宽窗/覆盖语义，不代表另建控件库或渲染后端；所有设置入口保留同一 PageId 路由。旧 NavigationView/SplitView 组合是此前迁移方案，不再作为新壳层的强制调用合同。
+- 业务输入控件继续使用 ImFluent。全部实际设置页使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent 输入控件；Home/General 使用 `Setting.Pages` 的事件接口，其余页面在原 `Setting.cpp` coroutine/FIFO 宏域接业务。`Setting.Widgets` 仅余原chrome/颜色/DIP/样式辅助，不再提供页面或固定比例设置行。标题栏复用同一主题并提供实时切换按钮；更新状态和检查操作仍只在版本页呈现。
+- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；普通 I/O worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
 
@@ -1527,23 +1538,37 @@ FrameResult RenderSettingFrame(const FrameContext&);
 | 条件 | 必须行为 |
 | --- | --- |
 | `Present` / `ResizeBuffers` 返回 device removed/reset/internal error | 返回 `DeviceLost`，由唯一管线线程恢复 epoch |
-| 普通 Present/resize 失败 | 只返回 `Retry` 并重建 Setting session，不影响 Bar/PPT |
+| 普通 Present/resize 失败且 device reason 为 S_OK | 只返回 `Retry` 并重建 Setting presentation resources，不销毁常驻 ImGui/backend/font/SRV，也不影响 Bar/PPT |
+| 动态 atlas texture 或 SRV 创建失败 | 不发布 OK/部分 backend 数据，释放本次资源并中止绘制/Present；按原 HRESULT 和 device reason 仲裁 Retry/DeviceLost |
+| 初始化/重建返回泛化 E_FAIL/OOM 但 device reason 已失败 | 先保存两种错误再清理，返回 DeviceLost 供共享 epoch 恢复 |
 | `DXGI_STATUS_OCCLUDED` | 后续帧用 `DXGI_PRESENT_TEST` 探测，成功后恢复绘制 |
-| 隐藏或 generation 变化 | 在渲染线程逆序释放旧 session；可见时按新 epoch 重建 |
+| Hide | 释放 swap chain/RTV 并返回 `Idle`；常驻资源继续有效且不提交帧 |
+| 隐藏时 generation 变化 | 立即重建 backend device objects 和图片 SRV；保持无 swap chain/RTV |
+| 可见时 generation 变化 | 重建 backend device objects、图片 SRV、swap chain 和 RTV；失败路径不遗留半成品 |
+| DPI 或用户倍率变化 | 消费 font rebuild serial 并重建图集；用户倍率先限制到 `[1.0, 2.0]` |
+| Windows 明暗或高对比状态变化 | 可重应用 resident style，保持 SettingDarkMode 的显式偏好 |
+| system backdrop 成功 | 发布 Mica，启用全客户区 frame/透明根背景与 clear |
+| system backdrop 失败、legacy Mica 成功 | 发布 Mica，其他行为与现代属性一致 |
+| 两种 Mica 均失败、动态 Acrylic 成功 | 发布 Acrylic，不把它记录为原生 Mica |
+| DWM 关闭、API 缺失或全部失败 | 撤销可选属性和透明状态，继续使用 Solid；不得返回初始化/呈现错误 |
+| `WM_DWMCOMPOSITIONCHANGED` | 重新执行能力级联；若能力消失，从透明背景恢复不透明 Solid |
 | 业务命令完成 | 发布不可变 completion snapshot 并只请求 Settings |
 | 退出时 FIFO 尚有配置写盘 | 排空后 join，不得 request_stop 后清空未执行命令 |
 | Bar 在 Setting drain 前观察到 `offSignal` | Bar 返回 `Idle`，不得以 `Stop` 提前结束共享线程 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：Setting 连续绘制时 Bar/PPT 保持 idle；隐藏后 session 释放且管线无限等待，最后一次配置仍写盘。
-- Base：show→resize→occluded→visible→hide→show，epoch 不变时复用共享 device 并重建 Setting 私有呈现资源。
-- Bad：在渲染回调直接 `Write()`/`MessageBox`，或 worker 到退出时清空尚未执行的 FIFO；前者阻塞所有 UI，后者丢配置。
+- Good：Setting 连续绘制时 Bar/PPT 保持 idle；隐藏后仅呈现资源释放且管线无限等待，再次显示不加载图片或重建字体。
+- Base：show→resize→occluded→visible→hide→epoch change→show；隐藏期间完成 device-dependent 常驻资源恢复，显示时只补 presentation resources。
+- Bad：Hide 时销毁 ImGui context/backend/font/SRV，或 epoch 重建失败后保留新 lease/半初始化 backend；前者造成再次显示卡顿，后者使重试进入双重初始化/释放。
 
 #### 6. Tests Required
 
-- Headless 覆盖显隐、resize、occlusion、generation、业务完成快照和 device loss 分类；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
+- Headless 覆盖初始化隐藏常驻、Show 创建 presentation、Hide 仅释放 presentation、隐藏/显示 epoch 重建、失败回滚、Shutdown 全释放、resize/font serial、倍率边界、DPI 乘积、导航断点，以及显式 false/true 分别解析为 Light/Dark；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
+- Headless 覆盖 backdrop 优先级与 Solid fallback；静态审计 Windows 10 Acrylic 入口只能动态解析，透明 clear 必须由已发布的非 Solid 状态门控。
+- 动态 atlas 故障回归复用生产 DX11 后端与无 HWND FL11.0 WARP：真实非法纹理尺寸失败、两阶段 OOM/移除错误的明确故障注入、截图式 NULL/部分资源重复清理、Map 失败撤销及 backend 重建后的真实像素恢复。注入的 HRESULT 不能冒充实际 WARP device removal，独立离屏设备通过不能替代共享 native 窗口现场验证。
 - 完整 Solution `Debug|ARM64` 构建，静态审计旧 hardware device、24 FPS、`SettingMain`、`test.select`、运行时 `D3DCompile` 和 flip/DirectComposition 均不存在于活动路径。
+- Setting 页面样式迁移需静态审计导航/content、SplitView、Card/SettingsCard、ScrollView/WrapPanel/StackPanel 的 Begin/End 配对；产品路径不得重新引入 `imgui_toggle`、页面级原生 ImGui Button/Combo/Slider/Toggle 或 `ImFluent::ShowDemoWindow()`。
 - GUI 受限任务只运行 `InkeysHeadlessTests.exe --no-window`。Win7 SP1 + KB2670838 只可声明传统 CreateSwapChain/discard/FL11.0 fallback 的静态兼容，未经实机不得声称已验证。
 
 #### 7. Wrong vs Correct
@@ -1556,6 +1581,24 @@ queue.push({ .kind = WriteConfig });
 // Correct：入队前冻结值，worker 只消费 owned payload。
 command.configSnapshot = std::make_shared<Inkeys::Config>(Inkeys::config);
 queue.push(std::move(command));
+
+// Wrong：普通 Hide 销毁常驻资源，下一次 Show 再读盘和建图集。
+DestroyImguiContextAndDeviceResources();
+
+// Correct：Hide 只撤销呈现状态；常驻资源留到 Shutdown。
+sessionState.SetVisible(false);
+ReleasePresentation();
+~~~
+
+~~~cpp
+// Wrong：属性失败后仍透明清屏，旧系统会显示黑色或不可读背景。
+SetTransparentClear(true);
+DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &type, sizeof(type));
+
+// Correct：先按能力级联，只有成功发布非 Solid 后才透明清屏。
+const BackdropMode mode = ApplySettingBackdrop(hwnd);
+settingBackdropMode.store(mode);
+SetTransparentClear(mode != BackdropMode::Solid);
 ~~~
 
 ## Whiteboard 分页与 workspace 生命周期合同
@@ -1673,6 +1716,17 @@ Window::Service::SetSettingOwnedByDrawpad(bool enabled) -> bool;
 Window::Service::PromotePptWindow(WindowRole) -> bool;
 Window::Service::Enqueue(WindowRole, Message::Message) -> bool;
 Window::Service::StopAndJoin() noexcept;
+SIZE Window::QuerySettingFrameThickness(UINT dpi = 0) noexcept;
+RECT Window::QuerySettingClientFrameInsets(HWND hwnd = nullptr, bool maximized = false, UINT dpi = 0) noexcept;
+WindowFrameRect InsetWindowFrameRect(const WindowFrameRect&, const WindowFrameInsets&) noexcept;
+WindowFrameHit HitTestWindowFrame(const WindowFrameRect& outer, const WindowFrameRect& client,
+    int x, int y, bool maximized, int topResizePixels = 0,
+    bool protectClientControl = false) noexcept;
+WindowFrameRect ResolveWindowFrameCreationCorrection(const WindowFrameRect& requestedClient,
+    const WindowFrameRect& actualOuter, const WindowFrameSize& actualClient,
+    const WindowFrameRect& workArea) noexcept;
+template<class MinMaxInfo> void ApplyWindowFrameMinimumTrack(
+    MinMaxInfo&, const WindowFrameSize& minimum) noexcept;
 UI::Setting::Toggle() -> void;
 UI::Freeze::StateSnapshot { uint64_t revision; bool active; bool available; };
 UI::Freeze::Snapshot() noexcept -> StateSnapshot;
@@ -1697,11 +1751,16 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - `Inkeys.UI.Freeze` 把业务 flags 与单调 `revision` 放在同一原子状态字中，每次真实 Toggle 或 PPT/Whiteboard 工作区切换发布完整 `StateSnapshot`。observer 只能把 `{revision, active}` 投递到 latest-wins mailbox 并唤醒 `MagnifierThread`，不得直接操作 HWND；迟到通知按 revision 丢弃，失败回退只能调用 `DeactivateIfRevision(request.revision)`，禁止无条件 `Toggle()`。
 - `MagnifierThread` 是桌面定格唯一的 Magnifier 更新/显示协调入口。一次有效 active revision 依次校验 Window Service 当前 Host/Child、保持 Host 透明并显示 Host/Child、从当前角色 HWND 重建并提交排除列表、提交一次 source、invalidate/redraw，最后再校验 revision 与当前句柄后揭开 Host；Reveal 后仍需复查，过期结果必须立即 conceal 且不得提交 applied/visible。过滤、source 或必要显示步骤任一失败都停止成功链、条件撤销对应 Freeze revision，并允许后续新 revision 重试。inactive、工作区切换、停止和退出只透明并隐藏 Magnifier Host/Child，不隐藏 Bar/Drawpad，不改变 owner/topmost/focus/taskbar。`FreezeFrameWindow` 只保留 Freeze/PPT/Recall surface 绘制，不得调用 Magnifier 更新、显隐或 alpha API。
 - 桌面定格不得调用 `SetOverlayFullscreen`：Magnifier 和 Freeze surface 都继续使用显示器高度减 1 像素，Shell fullscreen 标记只属于白板工作区。Window Service 重建 Magnifier 生命周期时先停止旧 coordinator，再在新 `PrepareMagnifierWindow` 生命周期 reset；每次事务重新读取当前 Host/Child 和完整排除集合，不能缓存旧 HWND。
-- Setting 创建时及电脑操作状态（`IdtSelection`/`IdtClickThrough`）的 owner 必须为 null；绘制状态通过 `SetSettingOwnedByDrawpad(true)` 把 Drawpad 设为 owner，回到电脑操作状态通过 `SetSettingOwnedByDrawpad(false)` 清除 owner 并以 `HWND_NOTOPMOST` 退出画布置顶链。owner 修改必须投递到 Setting 所属线程，重复请求幂等；目标 HWND 缺失、Win32 调用失败或最终 `GW_OWNER` 不符合请求时返回 false，部分修改必须回滚原 owner。`SyncDraw3State()` 保存带版本的最新期望值，提交失败后由 `StateMonitoring()` 的 250ms 节拍重试；提交与 applied 写回必须串行，并在持锁后丢弃过期版本，避免旧命令覆盖新模式或产生假收敛。该动态 owner 是 Setting 唯一受控例外，不得直接从工具按钮、快捷键或渲染线程修改。
+- Setting 创建时及 `IdtSelection`/`IdtClickThrough` 透传操作状态的 owner 必须为 null；绘制状态通过 `SetSettingOwnedByDrawpad(true)` 把 Drawpad 设为 owner，回到透传操作状态通过 `SetSettingOwnedByDrawpad(false)` 清除 owner 并以 `HWND_NOTOPMOST` 退出画布置顶链。owner 修改必须投递到 Setting 所属线程，重复请求幂等；目标 HWND 缺失、Win32 调用失败或最终 `GW_OWNER` 不符合请求时返回 false，部分修改必须回滚原 owner。`SyncDraw3State()` 保存带版本的最新期望值，提交失败后由 `StateMonitoring()` 的 250ms 节拍重试；提交与 applied 写回必须串行，并在持锁后丢弃过期版本，避免旧命令覆盖新模式或产生假收敛。该动态 owner 是 Setting 唯一受控例外，不得直接从工具按钮、快捷键或渲染线程修改。
 - Setting owner attach 与 owned Show 必须立即完成根/相对层级并核验位于两块画布上方，不能只设置 GW_OWNER 后等周期刷新。不独立执行 HWND_TOPMOST；根策略造成的 WS_EX_TOPMOST 传播允许变化，其余应用样式保持。重复 owner且实际层级正确时幂等；刷新失败返回 false 保留重试。Setting owner-thread 不得同步等待 overlay 命令造成 USER32 互等，正常业务/状态协调线程在 Setting 命令完成后进行根刷新。
-- Setting 始终是可激活的顶层 owned/unowned popup，而不是真正的子窗口：style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除独立 topmost/layered/noactivate/toolwindow。owner 切换不得改变 style、除根传播 TOPMOST 外的 ex-style、图标、窗口线程或任务栏按钮；显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
-- Setting 自绘标题栏的可拖动空白区必须在 ImGui 消息转发前处理 `WM_NCHITTEST` 并返回 `HTCAPTION`，由 Win32 非客户区移动循环负责拖窗；当前几何为缩放后的 `0 <= y < 32 DIP` 且 `0 <= x < 914 DIP`。右侧 `914..960 DIP` 关闭按钮和正文返回 `HTCLIENT`，继续由 ImGui 处理隐藏与内容交互。该命中合同不得因 Setting 是否拥有 Drawpad owner 而分支，`WM_MOVE` 继续记录最终位置。
 - 主栏设置按钮调用统一 `UI::Setting::Toggle()`：隐藏时显示并激活；已显示但真实 Setting HWND 不是前台线程的焦点窗口时，只重新提交 Setting `Show` 命令以 restore/foreground/active/focus；仅在已显示且前台窗口与真实焦点 HWND 都是 Setting 时隐藏。Bar 保持 `WS_EX_NOACTIVATE`，只读取焦点状态，不得从 Bar 输入线程直接调用 `ShowWindow`、`SetForegroundWindow`、`SetActiveWindow` 或 `SetFocus`。
+- Setting 创建时 owner 为 null，运行时 owner 遵守发布分支的受控切换；style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`；保留 caption/sizing/system menu 的标准桌面窗口语义，自绘内容替换原生标题区域。ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口保留箭头光标、大小图标和任务栏按钮，普通关闭映射 Hide，只有进程退出时销毁 HWND。WindowSpec 宽高表示客户区，创建时只外扩真实 sizing frame，不重复加入原生 caption 高度，outer rect 夹紧到工作区。
+- Setting 的 sizing frame 仍由 QuerySettingFrameThickness 按系统 DPI 查询，不乘用户 UI 倍率；创建/NCCALCSIZE 用 QuerySettingClientFrameInsets 决定客户区内缩。DWM 开启且恢复态时，只有 top 使用 DWMWA_VISIBLE_FRAME_BORDER_THICKNESS 的实际可见描边，左右/下仍保留完整系统 sizing frame；最大化或 composition 关闭时四边都保持完整 frame。属性不可用使用系统细边框回退，不改变其他窗口角色。DWM 顶部没有左右/下边那段不可见外扩，不能把完整 sizing 高度画成标题栏上方宽带。composition 改变后立即 FRAMECHANGED。自绘标题栏/图标/caption cell/glyph 仍为 32/16/46/10 DIP。
+- 创建前尚无 HWND，SM_CYBORDER 细边框回退可能与实际 DWM 描边不同（本机 192 DPI 为 1px/2px）。只在 Setting 的首次 FRAMECHANGED 后读取实际 outer/client 差，用 ResolveWindowFrameCreationCorrection 恢复请求的客户区尺寸；对应创建校正必须显式由 IsSetting 门控，不能因 Setting/Freeze 共用图标初始化块而对 Freeze 发 FRAMECHANGED 或套用设置尺寸校正，并按原请求中心和当前工作区夹紧；仅尺寸确有差异时校正一次。不用猜测分数 DPI 下 DWM 的取整，不修改其他窗口角色或最大化字段。
+- WM_NCPAINT/WM_NCACTIVATE 保持默认处理。NCHITTEST 使用实际 screen-space outer/client：只有空白 HTCAPTION 的最上方允许补足系统 sizing 高度，外侧顶角同样保持完整可操作高度；先保护 close/max/min、主题、Debug、版本和系统菜单的整个客户区矩形，其余 client（特别是右侧 scrollbar）不增加 resize 区。左右/下的 resize 仍完全位于 client 外；最大化不返回 resize，outer 外返回 HTNOWHERE。caption button 仍投递标准 WM_SYSCOMMAND，关闭映射 Hide。
+- 系统 modal loop 使用原子 `None/Move/Size` 状态：`WM_NCLBUTTONDOWN` 根据 `HTCAPTION`/八方向 hit 分类，`WM_SYSCOMMAND` 补充 `SC_MOVE/SC_SIZE` 键盘路径，未知 `WM_ENTERSIZEMOVE` 默认为 Size。只有 Move 允许 Settings 回调在 swap-chain 操作与 Present 前返回 `Idle`；Size 中的每个非最小化 `WM_SIZE` 都覆盖 latest resize 并 `Request(Settings)`，渲染线程按自身节拍执行 `ResizeBuffers -> Render -> Present`。`WM_EXITSIZEMOVE`、Hide/Shutdown 清除状态并保证最终请求。
+- RightHeader 显示真实 editionVersion 并路由到 tab6，其右侧依次为 32 DIP 主题、问题反馈、Debug Bug 按钮，再接 caption cells。反馈路由到 Feedback=15 专用页并提供本地化悬停提示，Debug 路由到现有调试页；两入口在 IDT_RELEASE 始终可见，主题/Debug 保留无提示行为，交互和选中使用 subtle fill。新增反馈槽只让版本/主题向左让位，caption 位置保持。空间不足先隐藏版本并让标题文字让位；正常 720-DIP 最小窗保留至少 96 DIP 拖拽区，工作区小于最小尺寸时保留三入口和原 caption、拖动区以剩余物理预算为限（360 DIP 示例剩余 62 DIP）。版本、相邻主题/反馈/Debug/caption glyph 使用同一 TextPrimary，active=1.0/inactive=0.55 保持；关闭 hover/pressed 为 critical red，其余为 Fluent subtle fill。
+- 默认客户区约 960×700 DIP；WM_GETMINMAXINFO 只经 ApplyWindowFrameMinimumTrack 修改约 720×520 DIP client 加一次系统 frame 的最小 track size，工作区过小时限制到可用尺寸。USER32 预填的 ptMaxPosition/ptMaxSize/ptMaxTrackSize 保持不变：它们使用 primary-monitor 协议，系统会向实际显示器补偿，不能直接回填目标 workarea 尺寸导致二次放大。标准 overlapped style 的默认最大化保留任务栏；WM_DPICHANGED 接受建议矩形，Hide/Show 在进程内保留 bounds/最大化状态。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
 - HiMsg 默认接受 Win32 系统生成的触摸兼容 mouse；这是公共库行为。只有已经自行处理 `WM_TOUCH` 并合成单指输入的 Inkeys Bar/PPT binding 才设置 `WindowSpec::messageCallback`，在 HiMsg subclass 自动入队前对 `IsTouchGeneratedMouseMessage(message, GetMessageExtraInfo())` 返回 `Action::Discard`。该 callback 仍继续原 WndProc；真实鼠标和不带 touch flag 的笔兼容 mouse 必须保留。
@@ -1714,6 +1773,18 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | `beforeCreate`、注册类、CreateWindow、HiMsg bind 或 `created` 失败 | 回滚 HWND、channel、class、thread id 和已激活 lifecycle；optional role 不拖垮同组 |
 | 动态重建窗口 | 当前 `activeSpec` 决定 cleanup；不得调用旧 spec 的 `destroyed` |
 | Mag 创建失败 | 跳过 Mag child，Freeze 成为 overlay root |
+| Setting 传入旧 popup 或 overlay style | Service 强制归一化为 WS_OVERLAPPEDWINDOW 普通 app window |
+| 指针位于 Setting 边角/边缘 | 恢复态返回对应 resize；仅顶部空白 caption 可补足 sizing 高度，标题控件优先保护；最大化不返回 resize |
+| 指针位于右侧 scrollbar 整个轨道 | 始终 client，不被 resize 热区截走 |
+| 指针位于 Setting 最大化格 | 返回 `HTMAXBUTTON`，由 `DefWindowProcW` 保留最大化/还原和 Windows 11 Snap Layout |
+| 指针位于版本 RightHeader / 主题 / 反馈 / Debug按钮 | 返回 HTCLIENT，分别进入 tab6 / 请求换色 / Feedback 页 / 调试页，不触发窗口拖动 |
+| DWM composition 可用 | 系统管理真实 sizing frame、阴影与圆角；应用设置与当前浅深主题一致的中性边框色 |
+| DWM composition 不可用或属性不受支持 | 默认 non-client paint 继续处理保留的 frame，自绘当前主题 caption 不变 |
+| `WM_NCMOUSEMOVE` 的 hit 为 `HTCAPTION` | 直接进入系统 move loop，不请求 Settings 渲染帧；只有 caption button hover/leave 需要刷新 |
+| Interactive Move | 在 swap-chain create/probe/resize 与 Resume/Present 前返回 `Idle`，退出 modal loop 后显式请求最终帧 |
+| Interactive Size | 高频 `WM_SIZE` 只保留 latest serial 但每次唤醒 Settings，渲染线程持续 `ResizeBuffers/Render/Present` |
+| Setting 最大化或还原 | 保留 Windows 默认 maximize geometry，不自定义 `ptMaxPosition/ptMaxSize` |
+| Setting 普通关闭 | 调用 `Hide()`，保留 HWND、窗口状态和常驻 ImGui 资源 |
 | 静态或动态创建双画布 | `GW_OWNER(DrawpadPresentation)=Freeze`，`GW_OWNER(Drawpad)=DrawpadPresentation`；两者仍为顶层 popup |
 | Whiteboard window mode 切换失败 | 回滚已修改成员的 style/visibility，不发布稳定 workspace 状态 |
 | Whiteboard group 收到最小化/恢复 | 保存成员可见性；恢复时只显示此前可见成员，不激活辅助窗 |
@@ -1723,8 +1794,6 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | Setting owner 同步提交失败 | 保留 desired/applied 版本差异，按 250ms 状态节拍重试直至最新模式生效；失败日志由 Window Service 去重 |
 | owner 提交等待期间发布了新模式 | 旧请求持锁后若已过期则不提交；若调用期间才过期，记录实际应用的旧版本，使下一轮继续收敛到新版本 |
 | `SetSettingOwnedByDrawpad(false)` 成功 | owner=null，执行 `HWND_NOTOPMOST`；窗口仍保留 `WS_EX_APPWINDOW`、激活能力与图标 |
-| Setting `WM_NCHITTEST` 位于缩放后的标题栏空白区 | 在 ImGui 前返回 `HTCAPTION`，进入系统 move loop |
-| Setting `WM_NCHITTEST` 位于关闭按钮或正文 | 返回 `HTCLIENT`，不得截断既有 ImGui 点击/隐藏路径 |
 | 主栏设置按钮：Setting 隐藏 | 提交 `Show(Setting)`，显示并激活 |
 | 主栏设置按钮：Setting 可见但未拥有前台焦点 | 再次提交 `Show(Setting)` 恢复并聚焦，不隐藏 |
 | 主栏设置按钮：Setting 可见且拥有前台焦点 | 提交 Hide，关闭设置窗口 |
@@ -1747,22 +1816,26 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 5. Good / Base / Bad Cases
 
+- Good：Setting 移动时复用最后一帧，拖动 native border 时 ImGui 与 swap chain 按渲染管线节拍连续跟随；最大化/还原使用系统 geometry。
+- Base：Bar/PPT 合成触摸按 `WM_LBUTTONDOWN/MOVE/UP` 投递，消费者按 Mouse filter 取回完全相同字段；普通 HiMsg consumer 不配置 callback 时仍可接收系统转译。
+- Bad：用一个 move/size bool 导致 sizing loop 整段停帧；把 client 内的滚动条当作 resize 区；或直接把目标副屏尺寸写入 primary-based ptMaxSize。
 - Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；Drawpad 以顶层 owned popup 挂到 DrawpadPresentation，根刷新整体抬升单条 owner 树；桌面定格激活发布一次立即的 service refresh，并由唯一 Magnifier coordinator 对该 revision 提交一次减 1 像素 source，不向 Shell 声明全屏。
-- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；绘制态 Setting 作为 Drawpad owned popup 随链位于画布之上，选择/穿透态清除 owner 后回到普通窗口层级；owner 提交短暂失败时保持最新期望并周期重试；两种状态下标题栏拖动与主栏按钮的失焦恢复行为一致。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
+- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；绘制态 Setting 作为 Drawpad owned window 随链位于画布之上，选择/穿透态清除 owner 后回到普通窗口层级；owner 提交短暂失败时保持最新期望并周期重试；两种状态下标题栏拖动与主栏按钮的失焦恢复行为一致。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
 - Bad：把 DrawpadPresentation 和 Drawpad 都直接挂到 Freeze，会让 Bar 与 selection-only 表面缺少可传递的 Owner 层级保证；定格按钮直接 `SetWindowPos(Freeze, HWND_TOPMOST, ...)` 或把置顶延迟到定格画面准备完成，会分裂链根置顶所有权或让用户误以为定格加载很慢。
 
 ### 6. Tests Required
 
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
-- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style、动态创建失败回滚与 stop 后无 HWND/jthread。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，Window 合同仅做编译和静态检查。
+- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption/RightHeader/主题/Debug/拖拽互斥、窄宽版本隐藏、八方向 frame 与整个 scrollbar client 区、不同 DPI 的最小尺寸、创建估计/实际边框差一像素时的客户区校正与工作区夹紧、真实 MINMAXINFO 的 max 字段保留，以及 DPI 建议矩形与响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
+- 静态审查必须确认仅 Move guard 位于 swap-chain create/probe/resize 与 coroutine resume/Present 之前；Size 不经过该 guard，`WM_SIZE` 仍 `QueueResize + Request`。真实 resize 流畅度、Snap Layout、active/accent border 和多显示器 DPI 仍只能在允许 GUI 的阶段人工验收。
+- 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
 - Window 测试还需覆盖持久 `SetOverlayTopmost`、白板专用 `SetOverlayFullscreen`、Whiteboard activation style 和 group minimize/restore；fullscreen 不得自行改变 topmost 位，退出白板或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。静态审查需确认 `IdtFreezeFrame` 的桌面定格路径不调用 `SetOverlayFullscreen`。
 - Window 测试必须分别断言静态与动态创建的 `Freeze -> DrawpadPresentation -> Drawpad -> Bar/PPT` Owner 链，并在 Presentation/Primary 互斥显隐切换后断言 Bar 保持可见且 Z 序高于两个 Drawpad HWND。
 - 若主栏定格点击建立稳定测试接缝，必须通过 topmost refresh observer 断言 inactive->active 立即发布一次，active->inactive 和 unavailable no-op 发布零次；在当前 Bar 生产文件未进入 headless target 且无注入边界时，以生产分支静态审查和完整 Solution 构建验证，不得只为计数测试扩大公共 API。
 - Magnifier coordinator headless 测试必须复用生产事务边界，覆盖单次 source、filter/source/invalidate/redraw/reveal 失败阻断、失败后新 revision 恢复、开启→关闭→开启、准备中取消、Reveal 后迟到取消、PPT/Whiteboard 状态切换、停止/重建生命周期以及 conceal 失败不产生假 visible/applied。排除列表测试需覆盖 null、销毁、跨进程、`WS_CHILD`、重复 HWND、可选 Setting 缺失和下一请求读取新 HWND。
 - Window 测试还需覆盖 Setting 初始 owner=null、attach/detach 与重复请求幂等、缺失 HWND 安全失败、独立窗口线程不变、style/ex-style/icon 不变；detach 后断言 owner=null、退出 topmost 链并落到独立 topmost 竞争窗之下。
 - Setting owner 状态同步需覆盖失败后 desired/applied 不相等并由 250ms 状态节拍重试，以及“旧请求等待/执行期间发布新模式”最终仍以最新模式为准；若没有稳定失败注入边界，必须以并发路径静态审查、Window Service 失败测试和完整集成构建共同验证，不得扩大公共 API 只为测试内部 token。
-- Setting WndProc 可被测试目标链接时，需覆盖缩放后的标题中央为 `HTCAPTION`、`x=914 DIP` 起的关闭按钮及 `y=32 DIP` 起的正文为 `HTCLIENT`，并验证 owned/unowned 返回一致；未建立稳定链接边界时不得只为该断言扩大公共 API，改由完整构建、静态审查和 GUI 拖窗验收覆盖。
 - Setting session-state 测试需覆盖主栏按钮三态决策：隐藏状态不受残留 focus 标记影响且总是 ShowAndActivate；可见未聚焦为 Activate；可见已聚焦为 Hide。窗口集成审查需确认两种显示动作都复用 owner-thread `Show(Setting)`。
 - 允许创建隐藏 HWND 时，Window 测试需创建一个 ownerless 外部 topmost 竞争窗：先确认它位于完整 owner 树之上，再刷新根并确认每个 overlay popup 都越过竞争窗；同时断言根保持隐藏、Bar 位于目标 PPT 之上且前台/焦点不变化。禁止用“刷新后非根没有 `WS_EX_TOPMOST`”判断独立置顶，因为该位可由 Win32 owner 传播。
 - RenderPipeline 测试需保留 `Retry` 会再次调度的合同；若没有稳定的 Win32 失败注入边界，PageControl/Draw3 的失败映射通过生产分支静态审查和完整集成构建验证，不得为单测扩大 module 公共 API。
@@ -1873,6 +1946,20 @@ case ShowAndActivate: Setting::Show(); break;
 ~~~
 
 ~~~cpp
+// Wrong：目标副屏尺寸可能再次被 USER32 按 primary->target 差额补偿。
+limits.ptMaxSize = targetWorkAreaSize;
+// Correct：保留系统最大化协议，只写应用自己的最小尺寸。
+ApplyWindowFrameMinimumTrack(limits, minimum);
+
+// Wrong：Move 和 Size 共用停帧 bool。
+if (interactiveMoveSize.load()) return FrameResult::Idle;
+
+// Correct：仅 Move 复用 compositor 缓存，Size 继续呈现。
+if (interactiveOperation.load() == InteractiveWindowOperation::Move)
+    return FrameResult::Idle;
+~~~
+
+~~~cpp
 // Wrong：在 HiMsg 公共实现中全局丢弃系统触摸转译，其他 consumer 会失去默认输入。
 if (IsTouchGeneratedMouseMessage(message, GetMessageExtraInfo())) return;
 
@@ -1906,6 +1993,293 @@ Bar、PPT 与 Setting 共享 RenderPipeline device epoch 和调度线程；Bar/P
 - 画板的基础层、活动笔画、撤销/恢复和 PPT 换页合成；
 - UI3 Bar 是唯一悬浮栏路径；不得把 UI2 源码重新加入产品回归矩阵。
 
+
+### Setting WinUI 3 全页设计与字体合同
+
+#### 1. Scope / Trigger
+
+修改任何设置页面、导航、SettingsRow、控制文本、滚动条或 ImFluent 本地图标扩展时适用。全量实际页面统一设计；HWND/DWM 边界另遵守窗口合同，不新增触摸/动态脏区。设置导航及正文动画复用软件现有动画开关和速率，不新增持久化字段或调度线程。
+
+#### 2. Signatures
+
+```cpp
+namespace Inkeys::UI::Setting::Design {
+struct NavigationState; // desktopCompact / narrow / overlayOpen
+ShellGeometry ResolveShellGeometry(float widthDip, float heightDip, const NavigationState&);
+RowMeasure MeasureRow(float width, float actionWidth, float actionHeight, bool hasIcon = true);
+RowGeometry ResolveRowLayout(const RowMeasure&, float textHeight);
+MultilineRowGeometry ResolveMultilineRowLayout(const RowMeasure&, float titleHeight,
+    float descriptionHeight, float inlineDescriptionHeight, float reveal);
+void ConfigureRowAnimations(float delta, bool enabled, float rate);
+ImFontConfig HarmonyFontConfig(float rasterizerDensity);
+float TextHeight(const char*, float widthPixels, ImFluentTextStyle);
+void TextAt(const char*, ImVec2, float widthPixels, ImFluentTextStyle, ImU32);
+HomeAction RenderHome(const HomeContent&);
+void RenderEdidCard(const char* text);
+void BeginDragScrolling(const NavigationState&); // NewFrame 后、任何窗口首次 Begin 前一次
+void ApplyDragScrolling(const NavigationState&); // 本帧 UI 提交后仅捕获/释放
+GeneralEvents RenderGeneral(GeneralDraft&);
+}
+```
+
+#### 3. Contracts
+
+- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定；汉堡默认透明无边框，局部将Fluent Button hover/held填充映射为当前palette的subtleHover/subtlePressed，保留真实按钮颜色动画、ID、键盘焦点与开合逻辑，不改全局普通按钮色。中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/行为与安全/存储与配置/快捷键五个子页；展开树与紧凑浮层的数量、完整高度、命中和滚动均取同一 GeneralSectionCount，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭固定。三处1 DIP细线替代分组标题；Debug使用标题栏Bug图标入口，Feedback使用其左侧反馈图标；二者均不在侧栏绘制/预留行，进入时立即清除旧侧栏选中条。ResolveNavigationPaneGeometry先测固定行/分割带，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
+- RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。设置卡片默认标题＋完整多行说明，action 按实际宽度靠右。按当前内容宽度及 action 自然宽度动态判断文字预算：说明区不足280 DIP时采用标题/action在上、说明下方通栏，返回行内保留16 DIP余量；标题区不足160 DIP时沿用极窄控件换行。以上是项目预算，不是WinUI官方断点，不以控件数量/固定单行判断代替测量，不缩小字号、截断或默认折叠完整说明。长文行高由实际字体测量而来；测量不运行 action，一帧只在实际控件绘制时产生事件。
+- 多行说明布局的补间使用当前ImGui窗口与稳定行ID的StateStorage，随context释放；复用NavigationTween、160ms/已有动画速率和设置帧时钟。先使说明下移避开操作，再扩宽；反向先收窄再上移。首次出现按当前预算直接到位，缺席/隐藏后首帧不累计休眠时间，关闭动画即时到位。卡片及下一行的真实ItemSize包含当前换行包络；说明行数随真实宽度离散变化，不靠裁切换取高度平滑，不绘制两套可交互控件或增加配置/线程。置顶间隔完整说明常驻同一卡片，不另设“详细说明”展开块。
+- 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
+- 旧 ImFontMain/Strong 保留给标题栏边界；校准 regular/strong 和独立 icon face 常驻同一 atlas/session，全部内容页和导航使用统一文字角色，离开内容区后恢复原角色。禁止重新引入按页面分支选择旧字体。正文/说明/标题保持14/20、12/16、28/36，字面按1.213×TextOpticalScale（当前0.97）校准；控件文字单独使用ControlText（当前13/20）。
+- 所有普通控件通过 Design 的13 DIP字体wrapper；ButtonWidth与默认Button/AccentButton使用同一天然宽公式，显式尺寸仍由调用者决定。ButtonGroupRow先测各按钮自然宽，再按可用预算换行且每行靠右；Action只在实际绘制时执行。赞助复用普通NavItemEx背景与输入，文字和图标均用与选中条相同的AccentFillDefault亮蓝主题色，选中条统一处理，关闭只覆盖浅深主题criticalText语义色，保持普通背景交互。
+- 调试页“控制台输出”完整迁入TouchArea/PptCOM/Draw3/Haptics/Cursor五项，原国际化/稳定ID/字段/FIFO保存保持，IDT_RELEASE不隐藏入口或五项；实验页其余条目及其他诊断宏保持。下方RenderEdidCard接收同一Display快照生成的完整诊断文本，保留拓扑和所有监视器字段及不可用原因；按实际内宽、字体换行和padding确定完整高度，不被父可见区域限制成内部滚动框。卡片与当前主题一致，内部ScrollMax为0，超屏由整页滚动承载；宽度/倍率/文本变化重新测量，快照不可用在卡片内提示。
+- Page/Section/SettingRow/Details/Card/Notice/NavigationRow共用文本行框和尾部占位，旧34%操作列禁止恢复。PPT两组缩放等独特内容可专用组合，但仍使用公共控件和真实action测量；缩放按发布行为即时应用、松手保存，同步方向只由本帧真实编辑或加入同步事件决定，不以尚未保存的 Record 值推断。插件详情各自用稳定子页ID保存滚动/展开状态。
+- 滚动条由ApplyScrollbars集中设置：8 DIP完整命中轨道、2 DIPpadding、透明背景和低对比灰thumb，hover/drag增强；每次从DIP重算，不能反复ScaleAllSizes。SetAccentColor后再覆写项目token。设置全部实际竖直滚动宿主共用本地Begin部署，原生ScrollbarSize和thumb三态alpha按window Storage显隐进度过渡，真实溢出决定目标，复用160ms/现有动画开关与速度。正文、导航中段、可滚Card/Details/flyout/Combo必须在items提交前获得同一可用宽和裁剪；固定顶部/底部不变。侧栏native右padding已有4 DIP，不能再叠加RowGap；按钮、父项箭头和内联子项的真实绘制/命中均避让当帧轨道。消失尾帧保留渐退宽与无输入装饰，最终零留白；反向从当前值续接，关闭动画立即归位，不强制常驻条、不重复扣轨道、不产生横条。native child装饰可写parent DrawList，不能靠事后改全页顶点或只读child DrawList实现显隐；退出thumb只做必要常数几何处理，避免全顶点扫描。本地Begin只备份/恢复ScrollbarSize、ScrollbarPadding和三态颜色实际字段，不夹用跨Card/Details vendor Begin/End的Push/Pop栈；Details scope须在content回调前恢复，防止嵌套条进度相乘。
+- 设置内容拖动由BeginDragScrolling/ApplyDragScrolling分阶段接入当前ImGui1.92.7：首次按下在控件提交后确定唯一实际可滚宿主；已取得overlay捕获后于NewFrame后、宿主首次Begin前投递ScrollTarget，使用上一帧有效态与稳定ID校验，让正常Begin同帧更新Scroll/cursor/clip/items/DrawData及蓝条。不能在帧末才投递持续位移或Render后挪顶点；无输入快速返回，持续捕获不重复ButtonBehavior/FocusWindow或全窗口遍历，不引入Win32触摸适配、默认惯性或额外滚动补间。父子只消费一次物理MouseDelta，边界/低速累计/外部scroll目标与反向重基准须验证。主页真实features/common链接Card与长列表Selectable可登记稳定item/host作为内容拖动候选，使用ImGui原有拖动阈值，轻点保留动作、超过阈值转移capture并取消该次点击；Slider/InputText及native scrollbar保持控制权。storage键以稳定window seed计算，不随当前PushID栈变化。固定NoScrollWithMouse、NoMouseInputs、tooltip、隐藏/未提交及关闭Popup排除，精确PopupId和导航关闭/释放/正文门禁保持；整个ImGui外未归属Down移入不强制捕获。状态随context释放，不保留跨session裸window指针。旧ScrollWhenDraggingOnVoid仅为已提交历史基线，本轮用户已授权优化，不能用其ChildWindows fallback与不可改正文限制替代完整主页回归。
+- SetIconFont/DrawIcon 与 NavItemEx 是有 UPSTREAM 记录的 ImFluent 小扩展；图标用其真实 glyph bounds 在固定槽内居中，不混入正文基线。
+- ImFluent共享颜色动画在RGB插值时按两端alpha加权，最终仍返回普通RGBA供现有绘制混合；不能把透明黑/白端点的无效RGB直接参与可见色插值，也不能靠关闭动画或改浅目标色规避。保持原时长/状态/目标，UPSTREAM记录本地补丁；回归须用真实控件连续帧DrawData合成取样，覆盖导航/按钮/Combo主体和选项、进出/按下/弹层重开/主题切换。
+- Setting用户倍率松手应用后只投递私有ensure-minimum消息；HWND所属线程用最新倍率、既有720×520逻辑minimum及实际outer/client差值，只必要时扩展普通窗并夹紧workarea，不改公开接口、owner/style、最大化几何及原DPI建议路径。最大化/最小化时仅由HWND线程保留pending，恢复普通窗后一次投递重试。工作区小于逻辑最小尺寸时存在物理容纳限制，不能把无窗口几何通过当作全部固定项实机可见。
+- SettingRow 必须用真正 item（Dummy/ItemSize）登记完整卡片和尾部 gap；仅 SetCursorScreenPos 到下一行会在 ImGui 1.92 的末项 End/EndChild 时触发边界断言。最终 cursor 必须与 ImGui ItemSize 使用一致的物理像素取整，避免 1.875 等分数倍率下半像素越过 CursorMaxPos。
+- 分层导航使用稳定复合目的地，旧Configuration/HotKeys分别映射通用Storage/Interaction，PageId编号不变。新会话子列表默认折叠（groupReveal同步为0）；父行点击在开合间切换，展开时进入最近子页（首次Basic），收起只保留当前正文/最近子页且不重启正文淡入；窄窗父行展开保留overlay，真正选择叶页才关闭overlay。箭头只切展开；紧凑父项首次进入、再次弹出子项；Hide/Show不清空已选择的展开偏好。浮层优先下方、夹紧客户区，关闭点击和鼠标释放期间保持输入屏障，焦点回父项；固定区不随中段滚动。无窗口菜单外点击测试必须确认真实点击点在浮层之外，并断言业务值、目的地、最近子页和导航次数都不变，不能只看菜单关闭。
+- 导航/子列表/浮层/正文/选中条由设置渲染线程推进；动画进度按dt/duration累计，速率中途变化不得回跳，反向从当前可见值开始。同一选中锚点的滚动/布局位移必须同步平移标记坐标与正在运行的补间，不重置进度；真正选中锚点切换才重定向过渡。Debug选中时不绘制侧栏蓝条，并清除旧item/window锚点、停止X/Y补间；返回普通页的首个锚点直接Reset归位，之后普通页之间继续既有切项动画。标题栏点击Debug复用导航流程并关闭overlay/flyout，重复点击不重启切页；Debug页后续可重新展开导航，不能在每帧同步目的地时强制关闭浮层。选中条保持3×16 DIP，用上下半宽圆弧形成完整圆头；ImGui PathRect会将窄条圆角钳制到半宽减1px，不能只设置半宽radius；圆角几何和浅深主题赞助图标/文字颜色用实际DrawData验证。隐藏/跳过绘制后的首帧时钟重基准，低帧率仍按限幅dt推进。子列表动画按实际裁剪与几何命中，正文只运行一套控件并对实际顶点alpha淡入，不混改RGB。
+- 设置滚动宿主在 Begin 前恢复状态时，所有窗口级 storage/capture 键必须以 `ImHashStr(label, 0, window->ID)` 派生；离页闲置后 ImGui GC 会清空 IDStack，不能提前调用 `window->GetID`。无窗口回归需让真实主页/基本页经历 native memory compaction，再分别验证普通返回和 resetToTop 返回。Combo 已展开时允许点击自身入口及箭头收起，但仍按真实 HoveredWindow 隔离被浮层覆盖的控件；弹层外按下不能先被内容滚动捕获，应留给 ImGui 原生关闭及焦点流程。
+- 通用各子页仅处理可见控件事件，隐藏字段不从缓存写回。路由切换完成已有滑块待提交值，沿用实时预览/松手保存/FIFO。各子页和插件详情分别用稳定ID保留滚动。
+- GeneralDraft 是 UI 副本，事件由 Setting.cpp 原 coroutine/FIFO 宏域处理。主栏倍率实时通知并松手保存；设置倍率松手才重建字体；置顶/安全模式仍保存原索引并发原运行时通知。页文件不得直接照抄被宏重定向的 ShellExecuteW/WriteSetting/RestartProgram 名称。
+- 通用/基本按操作模式、图标排列、启动排序；选择/穿透的完整说明使用现有浅深主题蓝色信息卡，选项行独立；图标顺序和展开方向同属图标排列。外观与动画按动画、光源、缩放分区，启动加载动画保持独立并仅影响下次启动，不随一般动画开关隐藏；主栏倍率使用 `Zoom2`。行为与安全按自动收起、窗口行为、安全与恢复排序，自动收起公共规则置于分区顶部。快捷键为第五个独立子页，按全局操作、批注编辑、辅助操作分组；旧 PageId::HotKeys 必须重定向到 GeneralSection::Shortcuts。GeneralDraft/GeneralEvents 统一传递页面数据与一次交互事件，业务通知及冻结写盘仍留在 `Setting.cpp` 的 FIFO 宏域。绘制页和实验页的设置归属不变。
+- Home 所有入口连接真实路由/原外链；非简中 Community 的主页 GitHub discussions 与 footer en.inkeys.top/community.html 差异保留。教程展开使用既有图像纹理；不虚构教程 URL。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 宽窗手动收起 → 窄窗 → 宽窗 | 恢复手动收起，不被自动模式覆盖 |
+| 窄窗打开/关闭 overlay | 正文位置和宽度不变，点击遮罩/Esc/选项可关闭 |
+| 长说明 / 英文按钮组 / 小内容预算 | 动态采用行内、下方通栏说明或极窄控件换行，完整文案和 action 不重叠且 action 右对齐 |
+| 说明切换 / 扩宽中反向 / 关闭动画 / 缺席恢复 | 从当前值续接，文字完整可见且不覆盖操作；下一行占位跟随当前文字包络，动作每帧一次 |
+| 校准字形超过原名义 FontSize | 使用明确行框；旧页继续原 face，不把新校准全局套进旧 TextWrapped |
+| 最后一张 SettingRow 后直接 EndChild | 无 SetCursor 扩边断言，滚动范围包含整卡与尾 gap |
+| expander 标题过长或 body 被裁剪 | 标题不占用 chevron，完整标题可获知，Begin/End 栈匹配 |
+| 页面重排但无交互 | 不写盘、不发送业务事件 |
+| 普通页 → Debug → 普通页，含动画中途切换 | Debug无侧栏蓝条；返回蓝条首帧直接归位，随后正常切页动画保留 |
+| EDID卡片文本超过视口 | 卡片容纳完整换行文本且内部无滚动；整页可滚动，宽度/字体/数量变化重新测量 |
+| 侧栏中段溢出/折叠/resize | 自动条与当帧真实按钮命中留间距，普通/父箭头/子项一起避让；轨道有实际滚动且不路由，紧凑glyph/focus与固定区正确 |
+| 鼠标/触摸来源按住内容拖动 | 真实Home/Card/Combo轻点与拖动仲裁正确，稳定capture单宿主；持续输入同帧实际Scroll/items/顶点同步，低速/反向/边界/释放及Popup门禁正确 |
+| 竖直条显隐/快速反向/动画关闭 | 实际width和thumb alpha连续过渡，4DIP间距及真实hit/clip正确，退出无输入且最终无留白；全部竖直宿主与动画速率变化覆盖 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：320 DIP 内容预算中长文自动增高，按钮组在下一行靠右；鼠标拖动倍率只实时更新对应 UI，松手保存。
+- Base：960×700 默认窗的全部实际设置页使用统一行和控件；PPT复合缩放、版本与长详情等特殊布局保留业务逻辑。
+- Bad：只放大字体再为每张卡移动 cursor，或在独立页面编译单元直接调用原宏同名的写盘/Shell 函数。
+
+#### 6. Tests Required
+
+`RunSettingDesignTests` 复用实际 Design/Typography/Controls 和 ImGui/ImFluent CPU core，无 HWND、无 DX11 backend。多行说明回归用实际简/繁/英资源、浅深主题和六倍率连续帧，包含真实滑动条、按钮加下拉框、较高自然宽换行组及下一张卡片。说明顶点在action回调入口截取；Combo箭头也使用TextSecondary，不能在整卡结束后仅按颜色采样冒充说明字形。覆盖导航往返与 overlay、真实中英文测量、action 右锚/重排、SC/TC regular/bold 字形与多行 TextAt 顶点、NavItemEx 图标轴、真实控件 DrawData、末项 SettingRow 后 End。动态 atlas 纹理仅在 CPU 测试中模拟完成，不将测试纹理 ID 传入产品。EDID卡片回归须验证首次帧、文本/宽度变化及超视口完整高度、内部ScrollMax为0和整页滚动；字形采样同时限定实际TextPrimary颜色与字体纹理，纹理化抗锯齿卡片边框不能仅按非whiteUV当作字形。完整 Solution Debug|ARM64 后运行 `InkeysHeadlessTests.exe --no-window`，仍不声称验证了实际 DX11 呈现或窗口交互。
+
+新增内容拖动/竖直条回归使用生产BeginDragScrolling/ApplyDragScrolling、RenderHome、RenderNavigationPane及本地滚动Begin/Combo/Details，观察真实ScrollbarRect、ItemBounds、thumb DrawData、Scroll/ScrollTarget、ActiveId/key owner和输入队列。Mouse/TouchScreen经既有ImGui输入队列，不声称实机触屏已验收。覆盖三pane模式/浅深/倍率/动态显隐与边缘稳定性、轨道及gap不路由、正文AutoResize与双range/fixed child、flyout/长Combo/已关闭Popup/释放屏障、主页header/hero/features/common/author跨child拖动和真实轻点业务、低速位移/上下界/快速反向/离窗/释放、Slider/Input/native轨道所有权，以及生产root flags。动画必须取实际DrawData alpha和item可用宽全过程，不能只查style值；性能用真实基线与当前输入到绘制帧对照及准确CPU采样，绝对耗时不作脆弱门槛，不因测到ScrollTarget就声称视觉已更新。不得在headless添加产品没有的NoMove或复制算法替身声称通过。
+
+#### 7. Wrong vs Correct
+
+```cpp
+// Wrong：只移动 cursor，末项后结束 child 会触发 ImGui 1.92 扩边检查。
+ImGui::SetCursorScreenPos({origin.x, bottom + gap});
+// Correct：先登记真实占位，测量和滚动边界都包含整行，再排放内容。
+ImGui::Dummy({width, rowHeight + gap});
+```
+
+
+### 全页视觉验收授权边界
+
+默认遵守当前任务最新的窗口操作授权。2026-09-07 的 Computer Use 许可已被 2026-10-11 用户“不要 Computer Use、可以启动窗口测试”的要求覆盖；本轮仅允许命令行原生窗口测试，不扩大到登录/解锁或无关系统操作。使用记录 PID、可执行路径和启动时间的独立测试副本保留原用户配置，输入及截图前检查 owner、桌面解锁和遮挡；锁屏时请求用户解锁，不绕过锁屏。构建和 CPU 测试通过不能代替整页 D3D 视觉验收。
+
+设置入场/资源呈现测试必须经正常 Bar Setting::Toggle→Show 业务入口；裸 Win32 ShowWindow 只改变 HWND 可见性，不推进会话 ShowSerial，不能代替正常打开。Bar 普通鼠标位置取 GetMessagePos，单独 PostMessage 的 client lParam 不等价真实鼠标点击；DX11 的 PrintWindow 空白也不能单独证明产品白屏。日志无错误且 epoch 稳定仅证明本次正常路径未复现失效，不等于实际 DeviceRemoved 恢复或 Win7 实机通过。
+
+### Setting 实时浅深主题合同
+
+#### 1. Scope / Trigger
+
+修改 Setting 主题按钮、颜色、标题栏主题接线或主题偏好持久化时适用。用户于 2026-09-07 批准本范围；该偏好只影响设置窗口，不跟随或修改 Windows/Bar 的主题。
+
+#### 2. Signatures
+
+```cpp
+ThemeMode ResolveThemeMode(bool settingDarkMode) noexcept;
+const Design::Palette& Design::PaletteForTheme(bool darkMode) noexcept;
+const Design::Palette& Design::GetPalette() noexcept;
+bool Design::IsDarkMode() noexcept;
+void Design::ApplyPalette(bool darkMode);
+// SetListStruct / opt/deploy.json
+bool settingDarkMode = false; // JSON: SettingDarkMode
+```
+
+#### 3. Contracts
+
+- `SettingDarkMode` 与原 SettingGlobalScale 同属 `SetListStruct` / `opt/deploy.json`。ReadSetting 严格接收 JSON bool，缺项或非 bool 置 false；CaptureSettingJson 写 JSON bool，不另建配置文件或隐式迁移系统。
+- 标题栏主题按钮占独立 32 DIP client 区；实际点击时切换偏好、按原 WriteSetting 宏冻结配置并入 FIFO、递增 theme serial 请求 Settings 帧。空闲绘制不写盘；主题变更不递增字体重建 serial。
+- 渲染线程在帧边界、PushFluentStyle 前应用 palette：先 ImFluent preset、再 SetAccentColor、最后项目颜色和滚动条。字体绑定、DPI/main 倍率、atlas/纹理/设备保持不变；不调用 ScaleAllSizes 累乘。
+- AppBase/Card/Text 等旧具名 token 引用稳定的 activePalette 成员，控件默认参数在调用时读当前颜色。Notice 四种状态、弹层、选区、表格、滚动条和主页插画均用共享 palette；原教程/赞助图片不重着色。
+- 渲染线程以 PostMessage 发送不可变明暗/颜色值；HWND 线程设置 DWM caption/text/border/dark 属性和可选 backdrop。材质能力变化只发布 backdrop 状态并请求样式帧；不得在持有 ImGui IO mutex 时同步跨线程调用窗口样式消息。
+- 初始应用前读取 theme serial 快照，应用后只消费该快照，避免窗口线程期间发布的 backdrop 变更被吞掉。自绘标题栏填充永远不透明，根背景透明仅由实际 backdrop 成功状态门控。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 旧配置无字段 / null / 数字 / 字符串 | false，保持旧版浅色默认 |
+| 明确 bool true / false | 下次启动分别为深色 / 浅色 |
+| 用户点击主题按钮 | 下一帧全页换色，只入队一次配置快照 |
+| Windows 主题消息 / 普通 resize | 保持用户主题，不重建字体 |
+| DWM 属性或 backdrop 失败 | 继续自绘当前主题；材质失败使用不透明 Solid |
+| 配置写入失败 | 当前进程主题仍生效，下次启动按磁盘结果恢复 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：同一常驻 ImGui session 浅→深→浅，按钮、说明、弹层、标题栏和首页同步换色，文本度量不变。
+- Base：旧 deploy.json 初次打开仍浅色，窄窗口保留标题栏主题入口。
+- Bad：只换页面底色，或从 Windows 主题消息覆盖用户偏好；用重建 atlas/device 实现换色。
+
+#### 6. Tests Required
+
+RunSettingDesignTests 在六倍率中执行浅→深→浅，检查真实 Header/Button/TextBox/Combo/Notice 的顶点颜色、滚动条透明轨道、字体绑定/文本测量/atlas 地址与数量保持；RunSettingSessionStateTests 覆盖 bool 解析及主题按钮与拖拽/caption 的互斥。配置真实读写入口须静态审计，不能在测试中复制解析式冒充集成验证。实机另验按钮点击、弹出层、重启偏好和 DWM 状态，未执行必须明确记录。
+
+#### 7. Wrong vs Correct
+
+```cpp
+// Wrong：强调色调用重建 preset，覆盖刚设置的项目颜色。
+style.Colors[ImFluentCol_CardBgDefault] = card;
+ImFluent::SetAccentColor(accent);
+// Correct：统一入口按 preset -> accent -> 项目 token -> scrollbar 应用。
+Design::ApplyPalette(setlist.settingDarkMode);
+```
+
+### Setting 首页品牌、版权与开源动效合同
+
+#### 1. Scope / Trigger
+
+修改 RenderHome 的品牌横幅、版权许可、开源入口与品牌动效时适用。横幅整合字标、标语、分割线及居中开源操作；版权紧随其后，下方依次为推荐设置、常用设置与作者区域；问题反馈已迁独立页，页脚不再显示版本链接。主页书写调整/教程入口及其展开区已移除。
+
+#### 2. Signatures
+
+```cpp
+HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion = nullptr);
+bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags = 0,
+    ImGuiWindowFlags flags = 0, bool resetToTop = false, bool settleScrollbarLayout = false);
+void ConfigureHomeMotion(HomeMotionState& state, bool home, uint64_t showSerial,
+    float delta, bool enabled, float rate, bool pointerAllowed = true);
+// SessionState::ShowSerial()/HideSerial() 分别只在 false -> true / true -> false 时递增。
+void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip);
+HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state);
+void RenderHomeEntryOverlay(const HomeMotionState& state);
+// 完整页有限预热与不透明快路径使用当前帧的值键及提交结果。
+bool BeginHomeEntryFrame(HomeMotionState& state, const HomeEntryFrameKey& key, bool allowFreeze = true);
+// 在完整正文子树已提交、outer EndChild之前检查当帧真实 native 尺寸。
+void CompleteHomeEntryLayout(HomeMotionState& state);
+void CompleteHomeEntryFrame(HomeMotionState& state, bool submitted, bool texturesReady, bool captured = false);
+bool HomeEntryTexturesReady(const ImDrawData* data);
+bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
+    float styleAlpha, ImVec4 windowBackground) noexcept;
+void FilterHomeEntryDrawData(const HomeMotionState& state, ImDrawData* data,
+    ImDrawList* root, ImDrawList* titlebar, ImDrawList* foreground);
+// 精确重复提交仅保存有界值字节，不保存跨帧 DrawList 指针。
+bool RequiresHomeEntrySubmission(const HomeMotionState& state) noexcept;
+bool FrameSubmissionCache::CanSkip(const ImDrawData* data,
+    const FrameSubmissionKey& current, bool force = false) const noexcept;
+void FrameSubmissionCache::ConfirmPresented(const ImDrawData* data, const FrameSubmissionKey& current) noexcept;
+void FrameSubmissionCache::Reset() noexcept;
+bool HomeEntryPageCache::NeedsCopy(const HomeMotionState& state, float styleAlpha,
+    const ImDrawData* data = nullptr) noexcept;
+bool CancelHomeEntryOnInput(HomeMotionState& state);
+bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
+    NavigationDestination& destination, NavigationState& navigation, HomeMotionState& motion);
+// License / GitCode 追加在既有 HomeAction 末尾；GitHub / Support 复用现有动作。
+```
+
+#### 3. Contracts
+
+- 手写字标来自网站 NewHome3 曲线与弧长彩虹色，完整包含连笔和 y 下伸。本地一次缓存曲线轮廓与归一化位置；由原 ImDrawList 管线提交透明抗锯齿网格。真端头用定向半圆共用笔画截面顶点，该端头接合的 AA 仅在外轮廓；首尾重合的回折笔画统一接合宽度和截面方向，沿短弧长平滑过渡并避免重复端头，不能把完整圆盘的透明外环叠到笔画内部。禁止逐帧采样贝塞尔或新增 shader/设备/线程/定时器/额外帧请求；开屏允许同设备单份临时页面纹理，仅通过GPU copy复用真实页面像素。
+- 横幅局部浅蓝/薄荷/淡紫与深色对应色不改变全局控件。700 DIP 宽窄分界，左右 28/20、顶部 56/40、底部 28 DIP；字标宽为可用内宽 80%、上限 520 DIP，预留变换包络、保持 8 DIP 圆角及完整下伸。
+- 字标下 32 DIP 的标语统一 14 DIP 正文、字重与颜色。用同一真实字体测量两个语义段及本地化 HeroJoin，能容纳全文时一行，不能时优先语义两行并允许段内自然换行；中文连接符为空，英文为空格，不缩字号。分割线与开源标题/说明/按钮全居中，标题 16/22 DIP，说明 12 DIP；按钮等宽 36 DIP 高、最小 156 DIP，放不下时上下排列。版权字号保持，横幅后 16 DIP、段间 4/2 DIP。
+- 版权和代码托管说明是三语言真实文本；完整许可证名以及 GitHub/GitCode 分别具备独立链接语义。换行片段需要稳定 ID 和完整可点击覆盖；只有相应名称是链接，前后说明保持普通文字，不烘焙到图片。
+- HomeMotionState 由常驻设置会话持有，仅 ShowSerial 的真实隐藏→显示触发入场；内部导航返回主页不重播。时序统一由HomeEntryTiming定义：速率1时先稳定240ms、六笔并行写出1060ms、完整字标原地停留600ms，再同时启动背景渐退与540ms三次Bezier空间曲线归位、220ms小幅落定，共2.66s逻辑动画时间；有限准备帧另计且不消耗书写时间。书写/停留期间客户内容区覆盖层alpha=1，标题栏排除在外；前景只绘制一份字标，横幅字标保留布局但不提交。全局动画禁用/离页/实际输入直接稳定终态，取消帧仍阻断输入，不能点穿不可见操作。重复Show/激活/主页点击、resize、主题/字体/设备重建、滚动与鼠标靠近均不重播；缺省空上下文静态绘制。旧反光/水波不再播放。delta沿用设置时钟重基准、总开关与速率，不新增计时器。
+- 动态atlas的Build不代表真实字号/语言字形已预热。生产会话先在不透明覆盖下生成完整页与导航，两个不同全帧backend+Present成功且字体事务就绪后才推进书写；准备尝试有六帧预算，失败回滚该帧时间并沿原HRESULT Retry/DeviceLost路径收束，不能形成永久加载遮罩。完全不透明且值键稳定时暂停底层页/导航生成；当前帧DrawData只保留root标题栏clip、titlebar与foreground，Textures队列仍交生产DX11后端。书写完成（WritingEnd）后仍保持完全不透明，至少两个成功完整布局帧且当帧layoutReady后，先提交不含foreground的真实主页/导航，再CopyResource到同设备单份临时纹理，最后绘制唯一遮罩/字标。捕获成功与字体事务就绪后才发布revealReady。Hold后段、渐退和归位暂停正文/导航CPU生成，Clear后CopySubresourceRegion原样回写客户内容，再提交标题栏/foreground；不能用AddImage再次混合预乘RGBA。终态前在缓存遮挡下恢复至少两个真实child布局帧且layoutReady，再恢复正常整页并释放缓存。不得跨帧保存裸DrawList、ImFontBaked或旧字体UV。
+- 主页Pending/Playing完整准备、截图及终态恢复帧向外层BeginScrollChild传settleScrollbarLayout=true，native在Begin前使用完整8 DIP轨道/2 DIPpadding/三态alpha，Finish依据实际ScrollbarY写回value/target/start/progress的0或1。只沿当帧父子窗口标记继承给嵌套正文，不影响其他窗口和后续普通帧；无溢出不保留退出装饰或空白。缺席后的160ms条宽补间会改变WorkRect和hero目标，不能把过渡宽度截进缓存。默认false保持正常滚动条显隐动效，不用AlwaysVerticalScrollbar或额外等待帧掩盖。NoInputs仍只按导航阻断/取消首帧决定，不能为了视觉一致解除输入屏障。
+- CompleteHomeEntryLayout仅递归当前真正提交的正文子树，在outer EndChild前按vendored CalcWindowContentSizes的collapsed/hidden保留、ContentSizeExplicit及ImTrunc64规则检查当前ContentSize与ContentSizeIdeal是否消费本帧CursorMax/IdealMax测量；不能把字体准备或固定两帧等同于nested AutoResize尺寸稳定。Begin每帧清layoutReady，失败/key/cache失效撤销；实际GPU捕获和revealReady发布均检查该帧ready。恢复同样至少两次成功提交且ready；capture/restore各自六次不收敛则收束动画，不能永久遮挡或靠猜测增加固定暖帧常量。准备期间不消费书写/归位时间。
+- 活动主页入场且Solid backdrop、style.Alpha和WindowBg.w精确为1、RGB有限且在0..1时，可以SetNextWindowBgAlpha(0)省去已由同色不透明Clear建立的根背景填充。根Begin前读取同份backdrop/WindowBg快照供门禁和最终Clear；保留原flags、外框、caption、child与输入。不能使用会同时删除外框的NoBackground；Mica/Acrylic、部分alpha或静态终态保持旧路径。必须在真实同色Solid clear下对浅深八阶段full/suppressed精确RGBA及title/border比对，并单独报告透明/部分alpha回退与配对性能，不能将Solid收益推广至Mica。
+- HomeEntryFrameKey涵盖客户/内容矩形、FramebufferScale、DIP倍率、字体/atlas身份与序号、语言、主题、设备epoch、atlas UniqueID及尺寸、backdrop透明模式和style.Alpha/WindowBg RGBA五个材质值；任一变化撤销缓存并强制完整页准备并重验实际可见包络，同次Show不重播。弹层/真实输入取消时使用完整页并保留取消帧屏障，普通Tab/点击/滚动不因快路径失效。隐藏/最小化/遮挡继续复用既有调度和时钟重基准，临时页面纹理仅由设置共享渲染线程持有；Hide、尺寸/字体/epoch切换、输入取消、终态和失败均撤销，清理须能从RenderSettingFrame同步执行，不能依赖隐藏协程恢复。无新线程、timer或额外帧请求。
+- CPU侧仍逐帧NewFrame、布局、输入、tooltip/menu延迟、caret、下载文字轮询与动画时钟；最终DrawData精确等于上次成功呈现时，可在Clear之前跳过cache copy/backend/Present，但必须返回Continue。不能从连续两帧相同推导整个设置客户端Idle；共享FrameInterval和Present策略保持。准备/捕获/恢复由RequiresHomeEntrySubmission强制实际提交，skip不调用CompleteHomeEntryFrame或虚增暖帧成功。
+- FrameSubmissionCache单帧存储预算1MiB，只存顶点/索引和命令实际渲染字段的值；ImDrawVert无padding须static_assert，命令逐字段比较ClipRect/GetTexID/VtxOffset/IdxOffset/ElemCount，不比较命令padding，不靠hash。FrameSubmissionKey含HomeEntryFrameKey、clear RGBA、Show/Hide/主题serial、target RTV和页面cache revision。只有backend成功且真实Present==S_OK后ConfirmPresented；热duplicate只memcmp，不复制/扩容，超预算或分配失败回退提交。callback、非OK纹理事务、输入、旧backend失败和所有入场准备事务强制提交；device removed沿旧恢复路径。旧backend Map错误不能在RenderDrawData重置LastResult之前反复提前退出。失败/occluded/Hide/resize/fonts/主题/epoch/teardown撤销基准。
+- 已有页面cache在覆盖opacity与style alpha精确1、客户矩形经DisplayPos/FramebufferScale映射后四边全为整数像素时可省copy；部分透明、分数边界或缺失DrawData仍copy，截图保留待渐退。每个实际提交仍正常ClearRenderTargetView，不依赖discard backbuffer内容。省Clear的完整覆盖实验无稳定收益，门禁只保留在离屏测试局部，不加入生产API或提交键。
+- 完整归位后仅字标参与4°/6 DIP、1200 DIP透视与约160ms跟随；用未变换布局框和框外120 DIP衰减计算目标。只接受真实鼠标；触摸、笔、按住/拖动、弹层和失焦回正。字标包络完全离屏时不推进姿态或提交字标网格，滚回不制造新Show事件。原彩虹与透明AA保持，文字、按钮和命中矩形不参与运动；一次性按钮装饰仅在hover上升沿触发，不循环。
+- 原曲线轮廓、六组笔画截面/书写时间/索引区块在首次Build缓存；书写按每笔完整前缀选择索引，活动定向半圆共用截面，禁止任意截断全局索引或提前显示终端帽。写完立即复用原完整网格，最终RGBA与静态一致。视差缓存仍以姿态/宽度/DPI/主题为键，入场时钟不进入该键；热路径无重新采样/几何扩容。临时笔头为有界额外顶点，覆盖层与单份字标只增加一个前景批次；不新增Shader、设备、线程或额外渲染请求；页面截图独立于字标网格缓存，只允许一张同设备copy-only纹理。
+- 首次有效实际布局决定本次Show是否可播放：完整横幅必须在主内容clip内，中央起点、目标字标和整条曲线包络在客户内容区内保留安全边距。按真实三语言/font/DPI/用户倍率/导航宽度判定，不用固定分辨率代替；首帧AutoResize内层clip尚为空时使用有效外层viewport及实际测量，不能先闪正常页面再覆盖。门禁按viewport/contentClip/hero/brand/DPI缓存，稳定帧不重复计算路径包络；布局变化重验，变小不安全即取消，本次放大不能补播。
+- HideSerial由窗口状态同步持有，渲染线程在下一次可渲染帧NewFrame后、导航/拖动/布局前消费，共享复位函数回Home并清弹层/焦点/内容reveal；BeginScrollChild(resetToTop)在Begin和旧拖动目标消费前清Scroll、ScrollTarget及拖动storage。隐藏期间不强行Resume无RTV协程；即使Hide→Show间没有渲染帧，重开首次布局仍在主页最顶端。最小化/遮挡不递增Hide或Show，恢复delta重基准。弹层关闭只在栈非空时执行；从首层弹层保存的导航窗回溯到设置root，清旧NavLastIds/child记忆后FocusWindow(root)+NavInitWindow(root,true)。不能仅FocusWindow(nullptr)：无缺帧重开根窗不Appearing时Tab会失去入口。输入取消还需检查IsKeyDown，不能漏掉Show前已按住的导航键。
+- RenderHome 仅返回动作；许可证与 GitCode 和其他外链一样由 Setting.cpp 现有异步 Shell 队列处理，Star 复用 GitHub，Sponsor 复用 Support。绘制和测量不得执行 Shell 或写配置。i18n 使用源 JSONC → sync → check，不手改生成头。
+- inline 名称链接采用 InvisibleButton 的 EnableNav 与内建焦点绘制，不重复追加 RenderNavCursor。键盘回归先用真实 Tab 从鼠标模式进入键盘模式，再发 Enter/Space；不直接赋值 NavActivateId。换行验收基于真实字体测量。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 英文长署名 / 完整 GPL 名称 / 窄内容宽 | 完整自然换行，所有链接片段可点，不横向溢出 |
+| 标语 / 两按钮预算不够 | 语义换行 / 按钮纵排，横幅和滚动占位随内容增长 |
+| 浅深切换 / DPI 或用户倍率变化 | 同比缩放、主题即时变化，不重采样原曲线、不重播入口 |
+| 首帧 AutoResizeY clip 尚不可见 | 有效外层viewport与真实测量判定，不消费额外时间、不闪旧页面；实际不足直接静态 |
+| 写完后的600ms | 同一居中字标、完整原网格、覆盖alpha=1；之后淡退和空间曲线同时开始 |
+| 关闭后立即重开 / 已滚主页或其他页 | 先消费Hide复位再布局，Home且Scroll=0，真实Show可重新播放 |
+| 首次尺寸不足 / 播放中缩小 / 后来放大 | 跳过或收束后不补播，本次Show已消费 |
+| touch / pen / 拖动 / 弹层 / 失焦 | 非零鼠标倾斜归零，不触发额外进入 |
+| 链接或按钮轻点 / 按住拖动 | 前者返回一次正确动作，后者只滚内容且不路由 |
+| 主页无输入 / 仅测量 | 返回 None，不发起外链或配置写入 |
+| 精确duplicate / 完整字标Hold | 保留CPU计时与Continue，跳过实际Clear/copy/backend/Present；不计暖帧成功 |
+| 无后续输入的tooltip/caret / 后台文字变化 | 每帧CPU继续，首次变化即实际提交 |
+| callback / 纹理事务 / 准备捕获恢复 / 上次backend失败 | 强制实际提交；失败后相同下一帧仍能真实重试 |
+| 整数像素不透明覆盖 / 分数边界或部分alpha | 前者可省cache copy，后者保持copy；实际提交均保留Clear |
+| 冷child/缺席后截图与恢复 / 无内容溢出 | 入场完整帧用稳定轨道且等待本帧native尺寸就绪，缓存和终态首帧WorkRect/hero/正文一致；无溢出保持无条/无额外留白 |
+| 已提交两帧但native ContentSize仍旧 / 六次不收敛 | 不捕获/不发布ready、不消费相应动画时间；预算到达收束，不永久等待 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：完整GPL名称分行，所有片段返回同一License动作；隐藏后重开在顶部并行书写，写完Hold600ms，内部切回主页保持静态。
+- Base：动画关闭时保留三语言自适应布局、透明字标和完整开源操作。
+- Bad：依据缺席帧猜进入、直接从窗口线程改ImGui、隐藏时额外无RTV绘制、直线插值冒充曲线路径，或每帧重采样/重验固定包络。
+
+#### 6. Tests Required
+
+生产RenderHome、真实SC/TC/en-US字体/文案、实际ImGui输入与DrawData覆盖三窗口/额外窄宽、导航展开/收起、浅深和七倍率；验证单行/语义两行、下伸/透明AA、四角视差、并行前缀及活动圆头、600ms完整静止Hold、曲线偏离直线且背景同时渐退、结束单份字标与固定命中区域。生命周期覆盖Show/重复Show/导航返回、Hide→Show无中间帧/其他页/旧滚动、窗口尺寸/速率/开关中途变化、输入取消及旧tap/Tab/Enter/Space/拖动/滚动；触摸/笔各自在非零鼠标目标下验回正。
+
+无窗口WARP明确请求FL11.0，使用现有imgui_impl_dx11和生产CSO，离屏读取实际导航+主页+前景DrawData。书写首/中/完整Hold/Dock/终态分别读回；Hold各帧RGBA相同，覆盖不越标题栏，底层真实字体的几何/UV/颜色和按钮命中保持，终态精确回到静态。圆头接合带使用真实WARP在1/1.875/4倍采样，不能只测圆心或误报正常外缘AA。记录同机同配置静态/静止/移动/回正/书写/Hold/Dock/落定CPU median/p95、完成提交（含copy/Map等待）、顶点/批次及缓存扩容/ImGui分配。该分配计数不代表整页std::string/vector或驱动分配，不能声称整页零分配。 无限速离屏吞吐使用有界D3D11_QUERY_EVENT+Flush/GetData确认绘制/缓存copy完成，热采样不做staging读回、不Sleep/Present；分别报告CPU生成、backend调用、完成等待及同一帧total，FPS由total样本换算。像素回归另用Copy/Map。默认生产WARP与独立hardware诊断分列，注明Debug配置/面积；wait/write不可人为提前捕获cache后回拨时钟。正常共享FrameInterval=16,666,667ns及设置Present(1,0)保持，离屏吞吐不能当屏幕FPS。新增快路径必须以同一个真实Frame分别完整背景与生产Begin/Complete/Filter对照，检查冷字形、两次暖帧、首透明RGBA与终态精确一致，并报告同机同面积书写/Hold/Dock/落定CPU与提交完成median/p95、顶点/索引/批次和有界准备状态。原生必要测量将CPU生成、backend调用、Present等待、回调间隔与Present返回间隔分别记录；离屏copy/Map与Present返回均不能冒充屏幕实际显示FPS。Debug仅Setting.cpp条件编译的INKEYS_SETTING_ENTRY_PROFILE且显式环境变量=1才采样固定512帧，结束一次汇总、超限计dropped，记录真实solid-root-suppressed总体/分阶段计数，不逐帧分配/格式化/写盘；Release不编译该诊断。完整Debug|ARM64 Solution、--no-window、i18n及格式/diff检查；Windows11 WARP、Win7 SP1+KB2670838静态兼容审计与实机/原生观感分别记录。
+
+精确提交回归须调用生产FrameSubmissionCache：17绘制字段和12输出键变化、预算/callback/texture事务、失败与实际Map重试；浅深静态首提交后12次skip整帧RGBA相同，Hold十次skip仍推进时钟且Dock/恢复实际提交。真实Fluent hover/延迟tooltip、InputText字符与至少1.2s caret、caption和业务文字变化都须重新提交。七材质/边界×四时刻×浅深精确RGBA检查省copy与局部省Clear实验，目标预先污染，不能依赖旧像素。固定同帧full/no-ink/no-cover/copy-title消融保留同字体/面积/真实网格；区分CPU仍生成后裁剪的测试开销。报告actual-submits/skips/clears/copies和快照字节；skip没有EVENT或显示FPS。Debug诊断把submitted/skipped/backend-failures分列，只有真实Present产生返回间隔，不将失败backendEnd填入Present样本。
+
+冷布局缓存回归必须开启真实ConfigureRowAnimations(delta,true,rate)，按生产实际条件传NoInputs；不能用关闭条宽动画的夹具声称入场终态一致。覆盖浅深、倍率/窄宽及溢出与无条窗口，记录捕获时ScrollbarY/ScrollbarSizes/WorkRect/hero目标；缓存背景与首个实时帧排除字标后精确RGBA一致。普通动效控制应能复现缺席后条宽未到位，修复路径捕获与恢复稳定；回归故意保留多层AutoResize高度传播，验证至少两次+实际ready门禁与六次不收敛边界，不能忽略WorkRect的Y轴或排除右侧thumb像素。正常滚动和取消输入保持原合同。
+
+#### 7. Wrong vs Correct
+
+- Wrong：两个CPU帧相同就返回Idle，或对skip调用CompleteHomeEntryFrame(true)推进准备；在上一帧Map失败的GetLastResult上永久continue。
+- Correct：精确值比较在Clear之前，保留Continue和时钟，事务帧强制实际提交，只在Present==S_OK发布快照；旧backend失败进入真实Render重试。
+- Wrong：用缩字号隐藏英文版权，或以持续 hover 每帧重置装饰动效。
+- Correct：真实字体决定换行和区域高度；仅 hover 上升沿触发一次，缓存稳定后复用，操作命中区域不随图标运动。
+
+## 设置原生材质表面合同
+
+### 1. Scope / Trigger
+修改 Setting 主题、大表面透明度、浮层或主页缓存时适用；不将 ImFluent 壁纸 backdrop 接入已有原生 Mica/Acrylic。
+
+### 2. Signatures
+`Design::ApplyPalette(bool darkMode = false, BackdropMode backdrop = BackdropMode::Solid)` 仅在渲染线程帧边界调用。默认参数保持旧的纯色调用语义。
+
+### 3. Contracts
+Solid 原样复制 `PaletteForTheme`。原生 Mica/Acrylic 仅改变 appBase/pageSurface/card/cardSecondary alpha 为 204/230/245/245，RGB、文字、图标、按钮边框、焦点和全局 style.Alpha 保持不变。标题栏和菜单/弹出层使用基础实色；特别是 ComboBox 与上游 flyout 局部覆盖的 SolidBgQuarternary 必须不透明，不能仅保证全局 PopupBg。正文直接使用材质化 PageSurface。
+
+### 4. Validation & Error Matrix
+原生材质成功或回退后更新 settingThemeSerial，由渲染线程重新调色并使提交缓存失效；主页 key 的 dark/backdrop/material 区分当前帧。材质不可用时恢复完整纯色填充，不沿用旧 alpha。不得降低整个控件透明度模拟材质。
+
+### 5. Good / Base / Bad Cases
+Good：浅深主题下大表面透出原生材质，浮层可读；Base：Solid 与原配色完全一致；Bad：只改 PopupBg，但 ComboBox 局部覆盖仍使用半透明 PageSurface token。
+
+### 6. Tests Required
+现有 DPI 夹具覆盖三个背景模式、RGB/alpha、前景边框不变、实际 popup 填充、材质与纯色往返；离屏 WARP 对真实 Mica/Acrylic 调色板执行缓存重放与完整渲染 RGBA 比较。完整 Debug ARM64 solution 与 --no-window --setting-home-only；GUI 仅在用户明确授权时运行。
+
+### 7. Wrong vs Correct
+Wrong：`SolidBgQuarternary = GetPalette().pageSurface`，浮层随正文变透明。Correct：该 token 保持 `PaletteForTheme(IsDarkMode()).pageSurface`，正文仍用材质化表面。
 
 ## Setting 绘制期间的 Draw3 同步合同
 
@@ -1983,3 +2357,148 @@ void SyncDraw3State() {
 ## UI3 新按钮的笔震动接入（2026-10-20）
 
 新增主栏注册按钮、形状/粗细表项或独立属性控件时，同时遵守 [pen-haptics.md](pen-haptics.md) 的独立偏好与业务接受点合同。公共按钮使用共享入口自动继承；独立状态机必须报告真实接受，不能把命中/Consumed 当作成功。保持 Pen 凭据、取消/禁用/去重、即时功能开关和可选设备回退，并补充相关回归。
+
+## 设置原生外框的系统颜色与旧 Aero 合同
+
+### 1. Scope / Trigger
+设置原生外框颜色、caption、NCCALCSIZE、菜单与 Windows 7 兼容改动时适用，不扩展到主栏或其他窗口角色。
+
+### 2. Signatures
+`Window::UsesLegacySettingFrame()` 动态、缓存 RtlGetVersion 的 <6.2 判定；查询失败保守用旧 frame。`ResolveVisibleWindowFrameInsets(..., useThinTopBorder=true)` 仅现代恢复态可收薄顶部。
+
+### 3. Contracts
+- 设置外框 `DWMWA_BORDER_COLOR=DWMWA_COLOR_DEFAULT`，由系统处理获焦/失焦与用户边框着色偏好；不能用设置浅/深主题的固定灰色覆盖。
+- 旧 Aero 标准隐藏创建后先 `GetSystemMenu(FALSE)` 建立 HWND 自有菜单，再仅清除 `WS_CAPTION`，保留 THICKFRAME/SYSMENU/MIN/MAX；复用既有 FRAMECHANGED/真实尺寸校正后才显示。现代 style 不变。
+- 旧系统保留完整四周 sizing frame，不套用现代薄顶；不禁用 composition 或 DWM NC rendering 来掩盖按钮重复。
+- captionless 旧窗口显式把 Alt+Space、图标菜单和标题栏右键接回 HWND 原生本地化系统菜单，按还原/最大化/最小化和窗口能力设置菜单项；命令仍走 WM_SYSCOMMAND，SC_CLOSE 隐藏设置。
+- 菜单及 HWND 样式仅在窗口线程处理，不持 ImGui/render 锁进入 TrackPopupMenuEx；不使用 WTNCA_NOSYSMENU 破坏系统菜单，也不新增 Win7 缺失的 DLL 导入。
+
+### 4. Validation & Error Matrix
+菜单初始化/样式设置失败记录错误码并走既有创建回滚；首次创建、NCCALCSIZE 与最小尺寸共用同一几何。DPI/主题/composition 变化保留既有重算；本地菜单使用窗口持有副本，不调用 GetSystemMenu(TRUE) 重置。
+
+### 5. Good / Base / Bad Cases
+Good：现代系统外框随系统焦点着色，旧 Aero 只有一套 caption；Base：系统未启用强调边框时保留系统中性色；Bad：固定灰覆盖系统色、整个禁用 DWM，或删除 caption 后仍假定默认过程会显示菜单。
+
+### 6. Tests Required
+完整 Debug|ARM64 Solution 与 --no-window；旧/新 frame 的 round-trip、minimum、八方向 resize/client 边界和系统菜单状态回归。真实 HWND 样式/菜单用既有窗口测试，但仅有明确 GUI 授权才执行；Win11/headless 不能替代 Win7 Aero、焦点、Shell/Snap 和实际菜单视觉验收。
+
+### 7. Wrong vs Correct
+Wrong：在 Win7 恢复态保留现代 1px 顶部并让原生 caption 继续绘制；Correct：旧 Aero 四边原 frame、显式隐藏原生 caption 并保留原生菜单/系统命令。来源与证据见父任务 research/settings-win32-frame-research.md，实机未覆盖处必须标明。
+
+## 设置 CI/CD 元数据与赞助正文布局
+
+### 1. Scope / Trigger
+修改版本页、CI/CD 详情或赞助图片下方说明时适用；不改变更新状态机、实际构建元数据或赞助链接。
+
+### 2. Signatures
+`Design::RenderCicdDetails(const CicdContent&) -> CicdAction` 接收真实 UTF-8 元数据并返回动作；`RenderSponsorThanks(const char*, float widthPixels)` 仅绘制说明并登记高度。
+
+### 3. Contracts
+- CI详情按当前真实文字宽度测完整高度，当前帧明确约束 Card 高度/内容，长工具链由外层页面滚动，不截入内部小视口；不裁掉字段、内部换行或长URL。
+- 外链由 Setting.cpp 消费动作后打开，renderer不 ShellExecute；生产 signal1 注入结构不能残留测试假值，临时元数据仅存在局部测试夹具内存。
+- 版本页先显示更新状态及动作，随后蓝色Informational版本卡；保留真实版本/渠道/CI入口，不用PNG或固定假值代替实际数据。
+- 赞助感谢文字位于图片卡片之外，以图片卡片宽度逐行居中，使用Body与TextPrimary；保留换行/完整高度及浅深主题，不硬编码只适合浅色的纯黑。
+- 隐藏调整入口不等于修改实际功能值：SuperTop指示器只移除UI编辑，PPT加载页则遵守其独立强制禁用合同。
+
+### 4. Validation & Error Matrix
+短/长元数据、宽度变化和语言/字体变化均当帧重测；测试移除长fixture后高度应回缩。无真实CI数据时仍保持手动构建状态，不伪造CI记录。
+
+### 5. Good / Base / Bad Cases
+Good：外层滚动可到达最后MSBuild行，返回链接枚举而不在测试里打开浏览器；Bad：临时填值遗留生产，卡片仅上一帧AutoResize导致截断，或赞助文案仍为次要灰色。
+
+### 6. Tests Required
+既有headless用真实字体/renderer覆盖明暗、三语言、窄/常规宽、DPI、完整长文本/末行可达、真实导航动作、fixture移除重测与赞助文本颜色/逐行居中；完整ARM64 Solution、--no-window、i18n与格式检查。无GUI授权时不启动浏览器或产品窗口。
+
+### 7. Wrong vs Correct
+Wrong：把测试CI值写进settingCICD或让renderer执行外链；Correct：局部CicdContent夹具调用同一生产renderer，真实页面使用CI注入值并在外层消费动作。
+
+## 设置主页推荐与专用反馈路由
+
+### 1. Scope / Trigger
+修改主页推荐/常用入口、社区联系方式或反馈页面/标题栏按钮时适用，保留品牌入场动画、地区链接和会话资源生命周期。
+
+### 2. Signatures
+`PageId::Feedback=15` 追加，不偏移旧路由；`HomeAction::Appearance/Shortcuts/TermsOfUse` 追加在既有枚举末尾；`RenderFeedback(ImTextureID, float, ImTextureID githubTexture=0) -> FeedbackAction` 返回 None/Issues/Questionnaire/Community/Contact（末尾追加）；`RenderFeedbackButton` 与 Debug 使用相同参数和私有标题栏 route button 实现。
+
+### 3. Contracts
+- 推荐设置按 Appearance/Draw；常用设置按 Basic/Shortcuts/Plugins/Feedback，基本说明只能对应操作模式、主栏排列和启动等实际内容，不再声称该页管理缩放。
+- 简中 QQ 群标题与号码同行，号码沿用地区 Community 动作；繁体/英文直接以各自 GitHub Discussions 标题注册链接，不重复下一行地址。作者卡不再含旧问卷链接或 hover 二维码，页脚不再注册 Version 动作。
+- Home 和标题栏反馈均导航到专用页；页内依次 Issues、原问卷、常驻二维码行，文案均说明支持问题和建议。二维码后保留地区社区、作者邮箱和 QQ 联系区；QQ/Discussions 使用相同地区分流，反馈页邮箱保留原 mailto，作者 QQ 点击复制，不伪造个人 QQ 直连。二维码复用原会话 TextureSettingSign[7]，右侧96 DIP宽、按比例定高，左侧一行标题和自然换行说明，扫码行显式 keepDescriptionInline，不能触发通用280 DIP说明退到操作区下方的策略；上/下/右使用同一行内距。原透明PNG模块和alpha不改，原生加载仅转换为白色alpha mask，由TextPrimary随主题着色。
+- 作者卡简介与联系方式留12 DIP间隔，QQ和Email行使用无冒号的类型标签，标签/号码/邮箱和地区社区链接使用Body14与相同的8 DIP行内间距；首页 QQ/邮箱、反馈作者 QQ 使用 `CopyHyperlink(id,label,value)`，首页下方仅保留原 Support 赞助动作。共享复制控件在连续悬停内保存成功状态，移出、缺帧或原生隐藏输入重置时恢复提示；`SetCopyLabels` 由 `BindTextFonts` 注入本地化文案，Controls 不引入应用 i18n 聚合头。复制直接走 ImGui 剪贴板，renderer不返回外链动作。
+- Issues 使用真实 GitHub PNG，默认白色alpha mask以TextPrimary着色；彩色插件图标保持默认白色tint。新增slot11纳入12槽的SRV/CPU缓存、预热/释放/设备重建流程，RC及工程图片登记齐全；不得另建资源生命周期。
+- 页脚顺序为使用条款、官方网站、GitHub、Bili频道。TermsOfUse 在原生动作消费者按简中指向 https://www.inkeys.top/tos/zh-cn.html，繁中/英文指向 https://www.inkeys.top/tos/en-us.html；保留其他目标。
+- 普通 SettingRow 与 BeginCard 共用 DrawCardSurface 的铺满背景和1物理像素描边，继续使用同一palette token，分别保留4/8 DIP圆角及原child/padding/滚动scope栈合同。不能在赞助/EDID等页逐项改色或恢复旧Card随DPI取整描边/内缩填充造成的视觉差异。
+- renderer 只返回动作，实际 Issues/问卷外链在 Setting.cpp 消费；页面测量/绘制和无窗口回归不能执行外链。标题栏反馈命中为 HTCLIENT，不能被系统拖窗/缩放格吞掉。
+- Feedback/Debug 都不在侧栏占行；点击标题栏入口关闭紧凑模态浮层或窄窗覆盖导航，保留既有释放屏障，不穿透激活正文；进入时清空蓝色选中条，返回普通页重新锚定。
+
+### 4. Validation & Error Matrix
+窄宽/简繁英/DPI/浅深均重测；QR 纹理缺失时保留说明，异常比例回退 1。全局主题、配置、首页品牌/缓存逻辑不能因新增路由改变。原 CI signal1 继续为空/真实注入，不再次填人工预览数据。
+
+### 5. Good / Base / Bad Cases
+Good：不用 hover 即可扫描反馈卡，用户选择渠道后才触发外链；Bad：标题栏只画图标却未加入 Win32 命中，离开侧栏后旧选中条仍显示，或地区入口统改为同一链接。
+
+### 6. Tests Required
+真实 ImGui item 注册/点击覆盖推荐顺序、四个 common 目的地、地区 Community、Issues/问卷/社区/邮箱四反馈动作与无 hover QR DrawData/比例/宽度；真实导航浮层激活标题栏反馈并清选中；纯几何覆盖三按钮顺序、完整顶边命中、系统 DIP 一次缩放及最小窗/极窄预算。移除链接的回归必须使用原真实 scoped item ID，不能用未注册的任意字符串断言不存在。当前 ImGui 的 NavRectRel 相对 DC.CursorStartPos，取点击矩形必须用 WindowRectRelToAbs，不能只加 window.Pos，避免 CardPadding/scroll 导致小链接点击偏移。CPU 纹理回归仅识别二维码/GitHub显式 user TexRef，不调用未上传动态字库的 ImDrawCmd::GetTexID；不得为检查图片伪造字体 backend 上传状态。复制测试替换 Platform_SetClipboardTextFn 为内存mock，检查准确内容、真实tooltip文案与连续悬停/移出/隐藏重置，不写用户系统剪贴板。按图片顶点之前最近的同DrawList描边primitive核对二维码三边内距，不能用宽Y范围混入相邻卡片；核对主题tint，按描边mesh核对Row/Card在各DPI下的相同物理宽度，不能只比较常量。复用完整 ARM64 Solution、适用 --no-window、i18n 与编码/diff检查；`--setting-copy-only` 可定向检查复制/描边，不替代完整适用设置回归。
+
+### 7. Wrong vs Correct
+Wrong：反馈 HomeAction 继续直接打开问卷、二维码仅在 tooltip 出现；Correct：主页与标题栏进入同一专用页，真实两卡返回独立动作，原二维码在下方常驻。
+
+## 主栏与控件静止字号及连续动画目标（2026-10-24）
+
+### 1. Scope / Trigger
+
+UI3主栏、属性面板及共用Bar renderer的PPT/白板分页文字适用；设置ImGui文字与启动预览排除。本节覆盖初版逐帧floor：用户后续要求仅静止字号/动画目标取整，动画中允许小数，结束时不能追加取整。
+
+### 2. Signatures
+
+- `Experimental.Inkeys3.UI3.AllowFractionalFontSize: IdtAtomic<bool> = false`，main.json、严格bool、NoUpload，key/默认不变。
+- `BarUiFontCorrectionClass::Resolve(targetPixels, allowFractional, frame, context, duration)`：固定状态中的连续修正动画。
+- `BarUIRendering::BeginFontFrame(time, context, targetZoom)`、`FontAnimationsActive()`：共享帧推进与有限续帧。
+- `ResolveWordFontSize(context, word, currentSize, nominalTarget)`、`SetFontTargetZoom/Scale`、`FontTargetScope`：当前绘制轨迹与静止目标元数据分离。
+- `BarPageSurface::SetFontTargetScale(double)`：接收PageControl缩放动画最终倍率。
+- Word保留原始`size.val/tar`；`fontTargetSize`仅为逐帧派生SetDirect路径提供独立名义目标，`fontCorrection`由render owner持有。
+
+### 3. Contracts
+
+- T为原始最终静止物理字号：名义字号目标×目标frameZoom×目标Y向量的设备像素长度。关闭时Q=floor(T)、cTarget=Q/T；开启时cTarget=1。原始当前字号/内容/几何轨迹乘连续cCurrent，不对当前帧floor。
+- 只有真实目标变化才重定向，c从当前动画值继续，同目标不重启。首次/禁动画/forceReplace可直达目标；共享dt=0保持当前值，同一word/固定样式每帧至多推进一次。原raw字号/中点/曲线/幂等保持，不用新的独立时钟或无界map。
+- T=0的退出几何已自然归零，保留当前有效c避免除0及再打开额外放大；0<T<1的静止目标Q=0则修正到0。动画中间字号允许小于1px，不强行钳到1px。
+- 当前DC仅描述实际连续轨迹；动画终点显式组合绝对目标Y向量。禁止用当前FLOAT矩阵与double目标/当前比值反推终点：13×float(0.95)/0.95可能得到12.999999836…并误截断12。不得加epsilon或round掩盖，静态默认入口可用实际DC。
+- DIP目标向量的物理长度为hypot(targetY.x*dpiX/96,targetY.y*dpiY/96)，PIXELS模式DPI因子为1；frameZoom已含屏幕/UI基准，不重复乘显示器DPI。
+- 公共/固定/手工按钮传press.tar，按住的静止端点也取整；contentScale只乘连续当前值，其换字终点为1，不用中点反复生成目标。父/子panel用目标pose组合，Eraser/Recall等SetDirect(nominal*currentPose)另供nominal*targetPose。
+- 主栏显示倍率用displayUiBaseScale.tar×configZoom；分页由AnimatedBounds.targetScale交给Scene。Advance→SetBounds→同now Render顺序也须同步最新目标，不冻结旧scale。tooltip/dock用源progress.tar，不能从派生SetDirect的radius.tar猜终点。
+- body恢复目标Y为1，直接拖住通过ResolveBarBottomDockFontTargetScale消费已解析mapping中的rigidOverlayTranslationYDip（即真实抓手偏移），不能再读未经重基准的frame输入；捕获下端点弹簧目标保持0。纯X变形不影响字号高度。dock使用自身word修正状态，FPS和细刻度分别用固定有界样式状态；细刻度字体未乘面板动画scale，不重复添加。
+- 修正活动必须进入绘制前的demand/damage及Continue判断，源几何结束后仍推进c尾段，落定后回idle。隐藏/不可绘制内容不无限唤醒；同frame重复draw、失败重试、资源重建不能重复推进或重置c到新目标。
+- MeasureText仍用未截断逻辑字号和ceil作为保守布局上界，不随字号阶跃重排；文字格式与细刻度cache key使用实际本帧字号。图标/几何、抗锯齿和透明合成不变。
+- 实验标题仍为“允许界面字体以非整数像素尺寸渲染”，三语说明明确静止字号取整、动画连续；设置文字自身的渲染方式不改，保存/轻唤醒沿用既有路径。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| 13DIP×0.6静止目标，关闭 | 7px |
+| 原始字号13→15DIP，zoom=0.6 | 7→9px，动画中允许连续小数 |
+| 相同目标重复提交/同frame重复draw | 不重启、不重复推进 |
+| 动画中改目标或反向 | 当前c作为起点，dt=0不跳 |
+| 源几何已落定、c仍在途 | 持续damage/Continue至修正完成 |
+| 动画结束至首idle帧 | 同一最终整数值，不再floor |
+| 禁动画/强制替换 | 直接到相同静止目标 |
+| 13px释放目标、FLOAT当前0.95 | 目标保持13，不误截断12 |
+
+### 5. Good / Base / Bad Cases
+
+Good：原始轨迹×连续目标修正，静止末态自动落到Q。Base：开启时目标系数1，保留原始目标和曲线。Bad：floor(current)、全窗animating时放行后末帧补floor、修改raw size.tar、从每帧派生SetDirect猜终点、仅Word内推进而绘制前idle已早退。
+
+### 6. Tests Required
+
+真实生产修正动画覆盖中间小数/两端整数、dt=0重定向、重复目标/同帧、末帧至idle、禁动画与0目标退出再打开。真实D2D覆盖按压按住/释放、内容缩放、panel当前/目标pose、显示/分页目标倍率、DPI/PIXELS/非均匀变换及13px整数边界。生产调度验证c尾段Continue/damage，不能只测试helper返回值。复用完整Debug|ARM64 solution、Headless --no-window、既有无HWND字体离屏入口、三语及编码/diff检查；实机观感另行观察。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：动画当前采样跨整数档，或者结束时突然补截断。
+fontSize = floor(currentSize * currentPixelsPerUnit) / currentPixelsPerUnit;
+// Correct：动画内部投影稳定目标，原始采样乘连续修正值。
+coefficient = correction.Resolve(stableTargetPixels, allowFractional, frame, context, duration);
+fontSize = currentSize * coefficient;
+```

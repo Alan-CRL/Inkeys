@@ -1,5 +1,6 @@
 #include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Host.h"
+#include "Draw3.PresentationState.h"
 #include "Draw3.HapticDiagnostics.h"
 #include <dxgi.h>
 #include "Draw3.PptTiming.h"
@@ -453,6 +454,11 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<Bridge::PresentationReadyIdentity> uiReadyPresentationTarget;
 		std::optional<Bridge::PresentationReadyIdentity> suspendedPresentationTarget;
 		bool commandScenePending = false;
+		std::uint32_t inputGateReasons = 0;
+		CanvasRecoveryState recovery;
+		CanvasRecoveryState reportedRecovery;
+		bool recoveryReportAvailable = false;
+		std::uint64_t recoveryRevision = 0;
 		bool shortcutSelectionHandoffPending = false;
 		bool restoreLatestScene = false;
 		std::atomic<HostOutputTarget> requestedOutputTarget =
@@ -475,6 +481,8 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t appliedBridgeRevision = (std::numeric_limits<std::uint64_t>::max)();
 		bool requestedProductPage = false;
 		std::uint32_t requestedProductPageIndex = 0;
+		// 绘制 owner 记录最后实际入队的场景，不能用尚未前进的 presented workspace 代替。
+		Bridge::Workspace requestedWorkspace = Bridge::Workspace::Desktop;
 		std::uint64_t requestedPresentationTargetRevision = 0;
 		HostStyleCallbacks styleCallbacks = {};
 		HostRuntimeCallbacks runtimeCallbacks = {};
@@ -763,24 +771,82 @@ namespace Inkeys::Drawing::Draw3
 			return shortcuts.Snapshot();
 		}
 
+		void RetireRecoveryForDesiredLocked(const Bridge::ProductState& desired)
+		{
+			// Bridge 可在 owner 消费前合并 D→W→D；仅投影当前身份，不丢弃 owner 仍承担的故障报告。
+			auto next = ProjectCanvasRecovery(recoveryReportAvailable ? &reportedRecovery : nullptr,
+				desired, input.ConsumerFatal());
+			next.revision = recovery.revision;
+			if (next == recovery) return;
+			next.revision = ++recoveryRevision;
+			recovery = next;
+			PublishRuntimeRevision();
+		}
+
+		static void ObserveRecovery(void* context, const CanvasRecoveryState& value) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			std::scoped_lock lock(self->presentationTargetMutex);
+			self->reportedRecovery = value;
+			self->reportedRecovery.revision = 0;
+			self->recoveryReportAvailable = true;
+			// 旧业务报告可以保留在 owner 侧；对外只暴露与当前 Bridge 精确匹配的状态。
+			self->RefreshPresentationInputGateLocked();
+		}
+
+		static bool RecoveryRetryAllowed(void* context, std::uint64_t revision) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return false;
+			std::scoped_lock lock(self->presentationTargetMutex);
+			return revision == self->recovery.revision && CanvasRecoveryRetryMatches(self->recovery,
+				self->recovery, self->bridge.Snapshot(), self->running.load(std::memory_order_acquire),
+				self->inputStopping.load(std::memory_order_acquire), self->input.ConsumerFatal());
+		}
+
 		// 调用方持有 presentationTargetMutex；发布、ready 和 UI ack 共用这一交接门。
 		void RefreshPresentationInputGateLocked()
 		{
 			const auto desired = bridge.Snapshot();
+			RetireRecoveryForDesiredLocked(desired);
 			const auto expected = desired.presentationTarget
 				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget))
 				: std::nullopt;
 			if (suspendedPresentationTarget != expected) suspendedPresentationTarget.reset();
 			if (uiReadyPresentationTarget != expected) uiReadyPresentationTarget.reset();
-			const bool blocked = inputStopping.load(std::memory_order_acquire) || commandScenePending ||
-				(desired.workspace == Bridge::Workspace::Whiteboard && whiteboardLoadPending.load(std::memory_order_acquire)) ||
-				(desired.workspace == Bridge::Workspace::Presentation
-				? !expected || readyPresentationTarget != expected ||
-					suspendedPresentationTarget.has_value() ||
-					(startOptions.requirePresentationUiReady && uiReadyPresentationTarget != expected)
-				: workspace.load(std::memory_order_acquire) == Bridge::Workspace::Presentation);
+			// 原有准入条件分别记录原因，持续关闸时也能观察阻塞从加载转为 UI 等待。
+			std::uint32_t reasons = 0;
+			if (inputStopping.load(std::memory_order_acquire)) reasons |= 1u;
+			if (commandScenePending) reasons |= 2u;
+			if (input.ConsumerFatal()) reasons |= 256u;
+			if (CanvasRecoveryBlocksAdmission(recovery,
+				recoveryReportAvailable ? &reportedRecovery : nullptr)) reasons |= 512u;
+			if (desired.workspace == Bridge::Workspace::Whiteboard &&
+				whiteboardLoadPending.load(std::memory_order_acquire)) reasons |= 4u;
+			if (desired.workspace == Bridge::Workspace::Presentation)
+			{
+				if (!expected) reasons |= 8u;
+				if (readyPresentationTarget != expected) reasons |= 16u;
+				if (suspendedPresentationTarget) reasons |= 32u;
+				if (startOptions.requirePresentationUiReady && uiReadyPresentationTarget != expected)
+					reasons |= 64u;
+			}
+			else if (workspace.load(std::memory_order_acquire) == Bridge::Workspace::Presentation)
+				reasons |= 128u;
+			const bool blocked = reasons != 0;
 			const bool changed = input.BaseAdmissionBlocked() != blocked;
 			input.SetAdmissionBlocked(blocked);
+			if (reasons != inputGateReasons)
+			{
+				inputGateReasons = reasons;
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
+					"[Draw3.Input] action=admission reasons=%u desired=%u actual=%u session=%llu target=%llu\n",
+					reasons, static_cast<unsigned>(desired.workspace),
+					static_cast<unsigned>(workspace.load(std::memory_order_acquire)),
+					static_cast<unsigned long long>(expected ? expected->sessionRevision : 0),
+					static_cast<unsigned long long>(expected ? expected->targetRevision : 0));
+			}
 			if (changed)
 			{
 				if (expected) TracePptTiming(blocked ? "input_closed" : "input_open",
@@ -833,6 +899,11 @@ namespace Inkeys::Drawing::Draw3
 				input.SetShortcutAdmissionBlocked(false);
 				shortcutSelectionHandoffPending = false;
 				commandScenePending = false;
+				inputGateReasons = 0;
+				recovery = {};
+				reportedRecovery = {};
+				recoveryReportAvailable = false;
+				recovery.revision = ++recoveryRevision;
 				restoreLatestScene = false;
 			}
 			requestedOutputTarget.store(
@@ -852,6 +923,7 @@ namespace Inkeys::Drawing::Draw3
 			appliedBridgeRevision = (std::numeric_limits<std::uint64_t>::max)();
 			requestedProductPage = false;
 			requestedProductPageIndex = 0;
+			requestedWorkspace = Bridge::Workspace::Desktop;
 			requestedPresentationTargetRevision = 0;
 			{
 				std::scoped_lock lock(exitAutoSaveMutex);
@@ -1114,11 +1186,11 @@ namespace Inkeys::Drawing::Draw3
 					? std::optional<Bridge::PresentationReadyIdentity>(*presentationTarget)
 					: std::nullopt;
 				self->commandScenePending = false;
+				if (value != Bridge::Workspace::Whiteboard)
+					self->whiteboardLoadPending.store(false, std::memory_order_release);
 				self->RefreshPresentationInputGateLocked();
 			}
 			self->requestedProductPage = false;
-			self->requestedPresentationTargetRevision = presentationTarget
-				? presentationTarget->targetRevision : 0;
 			self->PublishRuntimeRevision();
 			const Bridge::ProductState desiredState = self->bridge.Snapshot();
 			const Bridge::Workspace desired = desiredState.workspace;
@@ -1128,7 +1200,10 @@ namespace Inkeys::Drawing::Draw3
 				CanvasCommand workspaceCommand;
 				workspaceCommand.type = CanvasCommandType::SetWorkspace;
 				workspaceCommand.workspace = static_cast<std::uint8_t>(desired);
+				workspaceCommand.sceneClosedAdmission = true;
 				self->window.EnqueueCanvasCommand(workspaceCommand);
+				self->requestedWorkspace = desired;
+				self->requestedPresentationTargetRevision = 0;
 			}
 			else if (desired == Bridge::Workspace::Presentation &&
 				desiredState.presentationTarget && (!presentationTarget ||
@@ -1138,7 +1213,10 @@ namespace Inkeys::Drawing::Draw3
 				CanvasCommand targetCommand;
 				targetCommand.type = CanvasCommandType::SetPresentationTarget;
 				targetCommand.presentationTarget = desiredState.presentationTarget;
+				targetCommand.sceneClosedAdmission = true;
 				self->window.EnqueueCanvasCommand(std::move(targetCommand));
+				self->requestedWorkspace = desired;
+				self->requestedPresentationTargetRevision = desiredState.presentationTarget->targetRevision;
 			}
 		}
 
@@ -1592,37 +1670,53 @@ namespace Inkeys::Drawing::Draw3
 			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
 				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext);
-			if (state.workspace != Bridge::Workspace::Presentation &&
-				(workspace.load(std::memory_order_acquire) != state.workspace || restoreLatestScene))
+			const bool dispatchScene = PresentationSceneNeedsDispatch(state,
+				workspace.load(std::memory_order_acquire), requestedWorkspace,
+				requestedPresentationTargetRevision, restoreLatestScene);
+			if (state.workspace != Bridge::Workspace::Presentation && dispatchScene)
 			{
 				CanvasCommand workspaceCommand;
 				workspaceCommand.type = CanvasCommandType::SetWorkspace;
 				workspaceCommand.workspace = static_cast<std::uint8_t>(state.workspace);
+				{
+					std::scoped_lock lock(presentationTargetMutex);
+					workspaceCommand.sceneClosedAdmission = PresentationSceneNeedsReady(state,
+						workspace.load(std::memory_order_acquire), readyPresentationTarget, commandScenePending);
+				}
 				window.EnqueueCanvasCommand(workspaceCommand);
+				requestedWorkspace = state.workspace;
 				requestedPresentationTargetRevision = 0;
 			}
 			if (state.workspace == Bridge::Workspace::Presentation &&
-				state.presentationTarget &&
-				(state.presentationTarget->targetRevision !=
-					requestedPresentationTargetRevision || restoreLatestScene))
+				state.presentationTarget && dispatchScene)
 			{
 				CanvasCommand targetCommand;
 				targetCommand.type = CanvasCommandType::SetPresentationTarget;
 				targetCommand.presentationTarget = state.presentationTarget;
+				{
+					std::scoped_lock lock(presentationTargetMutex);
+					targetCommand.sceneClosedAdmission = PresentationSceneNeedsReady(state,
+						workspace.load(std::memory_order_acquire), readyPresentationTarget, commandScenePending);
+				}
 				window.EnqueueCanvasCommand(std::move(targetCommand));
+				requestedWorkspace = state.workspace;
 				requestedPresentationTargetRevision =
 					state.presentationTarget->targetRevision;
 			}
 			else if (state.workspace == Bridge::Workspace::Presentation &&
-				!state.presentationTarget && (workspace.load(
-					std::memory_order_acquire) != Bridge::Workspace::Presentation ||
-					requestedPresentationTargetRevision != 0 || restoreLatestScene))
+				!state.presentationTarget && dispatchScene)
 			{
 				CanvasCommand workspaceCommand;
 				workspaceCommand.type = CanvasCommandType::SetWorkspace;
 				workspaceCommand.workspace = static_cast<std::uint8_t>(
 					Bridge::Workspace::Presentation);
+				{
+					std::scoped_lock lock(presentationTargetMutex);
+					workspaceCommand.sceneClosedAdmission = PresentationSceneNeedsReady(state,
+						workspace.load(std::memory_order_acquire), readyPresentationTarget, commandScenePending);
+				}
 				window.EnqueueCanvasCommand(workspaceCommand);
+				requestedWorkspace = state.workspace;
 				requestedPresentationTargetRevision = 0;
 			}
 			restoreLatestScene = false;
@@ -1632,6 +1726,7 @@ namespace Inkeys::Drawing::Draw3
 
 		void EnqueueCommandScene(const Bridge::Command& command)
 		{
+			bool sceneClosedAdmission = false;
 			{
 				std::scoped_lock lock(presentationTargetMutex);
 				const auto captured = command.presentationTarget
@@ -1645,25 +1740,27 @@ namespace Inkeys::Drawing::Draw3
 					readyPresentationTarget.reset();
 					commandScenePending = true;
 					input.SetAdmissionBlocked(true);
+					sceneClosedAdmission = true;
 					PublishRuntimeRevision();
 				}
 			}
 			CanvasCommand scene;
+			scene.sceneClosedAdmission = sceneClosedAdmission;
 			if (command.workspace == Bridge::Workspace::Presentation &&
 				command.presentationTarget)
 			{
 				scene.type = CanvasCommandType::SetPresentationTarget;
 				scene.presentationTarget = command.presentationTarget;
-				requestedPresentationTargetRevision =
-					command.presentationTarget->targetRevision;
 			}
 			else
 			{
 				scene.type = CanvasCommandType::SetWorkspace;
 				scene.workspace = static_cast<std::uint8_t>(command.workspace);
-				requestedPresentationTargetRevision = 0;
 			}
 			window.EnqueueCanvasCommand(std::move(scene));
+			requestedWorkspace = command.workspace;
+			requestedPresentationTargetRevision = command.workspace == Bridge::Workspace::Presentation &&
+				command.presentationTarget ? command.presentationTarget->targetRevision : 0;
 		}
 
 		void PumpOneBridgeCommand()
@@ -1697,6 +1794,13 @@ namespace Inkeys::Drawing::Draw3
 			default: return;
 			}
 			canvas.shortcut = std::move(command.shortcut);
+			if (!canvas.shortcut && canvas.type != CanvasCommandType::PrepareExitAutoSave)
+			{
+				// 场景前缀若准备失败，业务命令必须明确失败，不能落到别的文稿。
+				canvas.requireSceneMatch = true;
+				canvas.workspace = static_cast<std::uint8_t>(command.workspace);
+				canvas.presentationTarget = std::move(command.presentationTarget);
+			}
 			window.EnqueueCanvasCommand(canvas);
 		}
 
@@ -1940,6 +2044,8 @@ namespace Inkeys::Drawing::Draw3
 							observer.shortcutContextChanged = &ObserveShortcutContext;
 							observer.shortcutCommandAllowed = &AllowShortcutCommand;
 							observer.shortcutCompleted = &CompleteShortcut;
+							observer.recoveryChanged = &ObserveRecovery;
+							observer.recoveryRetryAllowed = &RecoveryRetryAllowed;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
@@ -2402,6 +2508,8 @@ namespace Inkeys::Drawing::Draw3
 			snapshot.presentationUiReady = impl_->uiReadyPresentationTarget;
 			snapshot.presentationSuspended = impl_->suspendedPresentationTarget;
 			snapshot.commandScenePending = impl_->commandScenePending;
+			snapshot.consumerFatal = impl_->input.ConsumerFatal();
+			snapshot.recovery = impl_->recovery;
 			snapshot.presentationInputReady = !impl_->input.AdmissionBlocked();
 		}
 		snapshot.requestedOutputTarget =
@@ -2599,6 +2707,28 @@ namespace Inkeys::Drawing::Draw3
 		}
 		return impl_->window.HandleExternalMessage(window, message, wParam, lParam);
 	}
+	bool Host::RetryCanvasRecovery(const CanvasRecoveryState& expected,
+		const std::function<bool()>& stillDesired) noexcept
+	{
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		const auto desired = impl_->bridge.Snapshot();
+		if ((stillDesired && !stillDesired()) || !CanvasRecoveryRetryMatches(expected, impl_->recovery, desired, Running(),
+			impl_->inputStopping.load(std::memory_order_acquire), impl_->input.ConsumerFatal())) return false;
+		CanvasCommand command;
+		command.type = desired.workspace == Bridge::Workspace::Presentation && desired.presentationTarget
+			? CanvasCommandType::SetPresentationTarget : CanvasCommandType::SetWorkspace;
+		command.workspace = static_cast<std::uint8_t>(desired.workspace);
+		command.presentationTarget = desired.presentationTarget;
+		command.sceneClosedAdmission = true;
+		command.explicitRecoveryRetry = true;
+		command.recoveryRevision = expected.revision;
+		try { impl_->window.EnqueueCanvasCommand(std::move(command)); }
+		catch (...) { return false; }
+		// 当前恢复状态已经关闸；仅成功呈现能解除，队列中的旧 token 不额外制造场景债务。
+		impl_->PublishRuntimeRevision();
+		return true;
+	}
+
 	void Host::SetActivationAllowed(bool enabled) noexcept
 	{
 		impl_->window.SetActivationAllowed(enabled);
@@ -2642,11 +2772,8 @@ namespace Inkeys::Drawing::Draw3
 		if (!Running()) return false;
 		std::scoped_lock lock(impl_->presentationTargetMutex);
 		const auto state = impl_->bridge.Snapshot();
-		if (state.workspace != Bridge::Workspace::Presentation || !state.presentationTarget ||
-			Bridge::ReadyIdentityFor(*state.presentationTarget) != identity ||
-			impl_->readyPresentationTarget != identity ||
-			impl_->suspendedPresentationTarget == identity) return false;
-		impl_->uiReadyPresentationTarget = identity;
+		if (!TryLatchPresentationUiReady(state, impl_->suspendedPresentationTarget,
+			identity, impl_->uiReadyPresentationTarget)) return false;
 		TracePptTiming("page_ui_ack", identity.sessionRevision, identity.targetRevision);
 		impl_->RefreshPresentationInputGateLocked();
 		return true;

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
-- **Last Active**: 2026-09-04
+- **Total Sessions**: 48
+- **Last Active**: 2026-09-08
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,16 +19,23 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~937 | Active |
+| `journal-1.md` | ~1057 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
 
 ## Session History
 
+合并后的会话总数按实际记录统计；分支历史原编号保留，重复编号以日期、标题及分支区分。
+
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 31 | 2026-09-08 | 修正选项窗口顶部可见边框 | - | `fluent` |
+| 30 | 2026-09-07 | Setting 窗口框架与实时浅深主题 | - | `fluent` |
+| 29 | 2026-09-06 | Setting 全页设计迁移与公共视觉校准 | - | `fluent` |
+| 28 | 2026-09-06 | Setting WinUI 3 首批：导航、主页与常规页 | - | `fluent` |
+| 27 | 2026-08-16 | 完善设置窗口样式并固定浅色主题 | `5a237ddf` | `fluent` |
 | 28 | 2026-09-04 | 完成启动预览与快速显示主栏 | `b7edaa81`, `70081123`, `1e563c30`, `a0835ba3`, `4fcd398b`, `9e27bd26`, `b9397105`, `d9346c3f`, `96bf8c8c` | `draw` |
 | 27 | 2026-08-24 | Draw3 可撤回清空与选择语义 | `b44dec66` | `chore/draw3` |
 | 26 | 2026-08-13 | UI3 Bar dynamic viewport and drag completion | `6ded57c` | `draw` |

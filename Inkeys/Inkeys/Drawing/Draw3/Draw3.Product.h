@@ -5,6 +5,8 @@
 
 #include <windows.h>
 
+#include <functional>
+
 namespace Inkeys::Drawing::Draw3
 {
 	// 产品只允许这一份 Host；Window Service 仍拥有 Drawpad HWND。
@@ -17,6 +19,8 @@ namespace Inkeys::Drawing::Draw3
 		HostRuntimeCallbacks runtimeCallbacks = {});
 	void StopProduct() noexcept;
 	bool ProductRunning() noexcept;
+	bool RetryProductCanvasRecovery(const CanvasRecoveryState& expected,
+		const std::function<bool()>& stillDesired = {}) noexcept;
 	Haptics::Context ProductHapticContext() noexcept;
 	bool PublishProductHapticClick(const Haptics::Click& source) noexcept;
 	bool ProductFirstFrameReady() noexcept;
@@ -27,10 +31,13 @@ namespace Inkeys::Drawing::Draw3
 		std::uint32_t timeoutMilliseconds) noexcept;
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 	void PublishProductState(const Bridge::ProductState& state) noexcept;
-	void PublishProductWorkspace(Bridge::Workspace workspace) noexcept;
+	void PublishProductWorkspace(Bridge::Workspace workspace,
+		const std::function<bool()>& stillDesired = {}) noexcept;
 	std::optional<std::uint64_t> PublishProductPresentationTarget(
-		const Bridge::PresentationTarget& target) noexcept;
-	void ClearProductPresentationTarget() noexcept;
+		const Bridge::PresentationTarget& target,
+		const std::function<bool()>& stillDesired = {}) noexcept;
+	void ClearProductPresentationTarget(
+		const std::function<bool()>& stillDesired = {}) noexcept;
 	bool PublishProductPresentationUiReady(
 		const Bridge::PresentationReadyIdentity& identity) noexcept;
 	bool SetProductPresentationInputSuspended(

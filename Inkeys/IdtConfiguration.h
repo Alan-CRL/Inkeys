@@ -24,7 +24,8 @@ struct SetListStruct
 	bool startUp;
 
 	int SetSkinMode, SkinMode;
-	float settingGlobalScale;
+	bool settingDarkMode = false; // 旧配置默认保持浅色，只影响设置窗口。
+	int settingEntryAnimation = 1; // 0 关闭，1 本进程首次打开，2 始终。
 
 	int topSleepTime;
 	bool RightClickClose;
@@ -159,7 +160,7 @@ string CaptureSettingJson();
 bool WriteSettingJson(const string& jsonContent);
 bool WriteSetting();
 
-// PPT 加载页的配置和实现保留，样式重做前统一禁用。
+// PPT 加载页实现保留且固定禁用，旧配置不能重新开启。
 inline constexpr bool kPptLoadingPageEnabled = false;
 
 struct PptComSetListStruct
