@@ -938,3 +938,37 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Status
 
 [OK] **Completed**
+
+
+## Session 130: UI3 吸附释放交接与最终收窗收尾归档
+<!-- trellis-session: v=2 fp=0577a678e8618603 -->
+
+**Date**: 2026-10-27
+**Task**: UI3 吸附释放交接与最终收窗收尾归档
+**Branch**: `bugfix/cut`
+
+### Summary
+
+完成释放末笔交接、临时固定表面及最终idle收窗；关闭吸附子任务和居中吸附父任务，保留用户接受的收窗闪动限制。
+
+### Main Changes
+
+- Down以成功真实content预留，避免透明viewport递归扩窗；Up先提交未呈现末笔，恢复结束的最后idle收窗。
+- 修复/测试/规范已提交，两个相关任务归档至.trellis/tasks/archive/2026-10；已归档居中任务引用同步，当前任务指针清除。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48dda087` | fix(ui): stabilize dock release and restore idle window shrink |
+| `b7f237f0` | chore(trellis): archive completed toolbar geometry tasks |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64及吸附19组合、workspace-centering、input-worker、完整InkeysHeadlessTests --no-window均exit0，最终PASS animation correctness。
+- [OK] 独立CSV核对190次最终收窗、57次末笔补交、21375连续恢复采样；旧候选171次连续释放均未收窗，可检出原回归。
+- [OK] 先前36秒V拖动由用户确认无跳变、顶边果冻正常；6次释放无闪属于恢复收窗前版本。最终收窗版未新做GUI，收窗闪动可能返回为用户接受的设计/性能取舍，未证明Windows内部根因。
+
+### Status
+
+[OK] **Completed**
