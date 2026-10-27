@@ -485,6 +485,11 @@ namespace Inkeys::UI::Bar
 			RECT dirty{};
 			bool fullReplacement = false;
 		};
+		struct WorkspaceReleaseWindow
+		{
+			RECT bounds{};
+			POINT pending{}, presented{};
+		};
 		struct WorkspaceWindowEvent
 		{
 			unsigned long long order = 0;
@@ -607,6 +612,7 @@ namespace Inkeys::UI::Bar
 					bool pointerUnclamped = false;
 				};
 				std::optional<FixedSurfaceFrame> fixedSurface;
+				std::optional<WorkspaceCenteringUlw> lastHeldUlw;
 				unsigned fixedFrames = 0, fixedOriginChecks = 0, fixedDownPrepares = 0;
 				unsigned fixedPartialPresents = 0, fixedBothTransitions = 0, fixedReleaseCommits = 0;
 				double downGrabOffsetX = 0.0, downGrabOffsetY = 0.0;
@@ -640,6 +646,136 @@ namespace Inkeys::UI::Bar
 						Access::PublishDeferred(*owner_);
 						++globalBarrierInjections_;
 					}
+				};
+				std::array<std::optional<SIZE>, 3> repeatedDownSizes;
+				std::optional<WorkspaceCenteringUlw> repeatedDown, repeatedRelease;
+				SIZE repeatedTarget{}, firstRoundMaximumTarget{};
+				RECT repeatedExpectedWindow{};
+				WorkspaceReleaseWindow repeatedReleaseInput;
+				bool repeatedFlushPending = false;
+				unsigned repeatedReleases = 0, repeatedFlushCommits = 0, repeatedTailCommits = 0, repeatedTailFrames = 0;
+				unsigned initialTailFrames = 0, initialTailCommits = 0, repeatedShrinks = 0;
+				std::optional<WorkspaceCenteringUlw> initialTailLast, repeatedTailLast;
+				const auto windowShrank = [](const auto& held, const auto& settled)
+				{
+					return held && settled && settled->size.cx <= held->size.cx && settled->size.cy <= held->size.cy
+						&& (settled->size.cx < held->size.cx || settled->size.cy < held->size.cy);
+				};
+				std::ofstream tail(std::filesystem::path(L"TestResults/ui3-bottom-dock") / (caseName_ + "-release-tail.csv"));
+				tail << "frame,committed,dst_x,dst_y,src_x,src_y,w,h,target_w,target_h,top,bottom\n";
+				std::ofstream repeats(std::filesystem::path(L"TestResults/ui3-bottom-dock") / (caseName_ + "-repeated-releases.csv"));
+				repeats << "trial,phase,committed,pointer_x,pointer_y,mode,center_mode,dst_x,dst_y,src_x,src_y,w,h,target_w,target_h,warmup,pending_x,pending_y,presented_x,presented_y,expected_x,expected_y,before_root_x,before_root_y,drag_active\n";
+				const auto repeatRelease = [&](unsigned trial, const char* phase, POINT pointer)
+				{
+					activeWindowPhase_ = phase;
+					const std::string_view step(phase);
+					const auto before = owner_->BottomDockPresentedSnapshot();
+					if (step == "RepeatRelease")
+					{
+						// 由独立采样的窗口和 pending/presented 差确定末笔终点，不从呈现结果回算。
+						repeatedReleaseInput = Access::ReleaseWindow(*owner_);
+						const POINT delta{ repeatedReleaseInput.pending.x - repeatedReleaseInput.presented.x,
+							repeatedReleaseInput.pending.y - repeatedReleaseInput.presented.y };
+						repeatedExpectedWindow = TranslateBarWindowRect(repeatedReleaseInput.bounds, delta);
+						repeatedFlushPending = delta.x != 0 || delta.y != 0;
+					}
+					presentedUlw_.reset(); attemptedUlw_.reset();
+					owner_->UpdateRendering(false);
+					lastResult_ = mainFrame_(Pipeline::FrameContext{
+						Pipeline::GetDeviceEpoch(), Pipeline::GetSharedAssets(), frameTime_ });
+					frameTime_ += std::chrono::milliseconds(16);
+					const auto after = owner_->BottomDockPresentedSnapshot();
+					const auto target = owner_->spec.GetTargetBitmapSize();
+					const bool committed = presentedUlw_ && after.serial != before.serial
+						&& lastResult_ == Pipeline::FrameResult::Continue;
+					if (lastResult_ == Pipeline::FrameResult::DeviceLost || rejectedMappingAttempts_)
+						return Fail("repeated release lost device or submitted invalid geometry");
+					const auto ulw = presentedUlw_.value_or(WorkspaceCenteringUlw{});
+					if (step == "RepeatSettle" && trial == 0)
+					{
+						// 完整恢复期必须真的收窗；不能只验证 Up 不闪而永久保留透明预留。
+						if (committed)
+						{
+							++initialTailCommits;
+							if (after.dragActive) return Fail("release recovery restored an active drag");
+							initialTailLast = ulw;
+						}
+						tail << initialTailFrames++ << ',' << committed << ',' << ulw.destination.x << ',' << ulw.destination.y
+							<< ',' << ulw.source.x << ',' << ulw.source.y << ',' << ulw.size.cx << ',' << ulw.size.cy
+							<< ',' << target.width << ',' << target.height << ',' << screenY(after, after.mapping.visualTopDip)
+							<< ',' << screenY(after, after.mapping.visualBottomDip) << '\n';
+					}
+					if (step == "RepeatDown")
+					{
+						if (!committed || !after.dragActive) return Fail("repeated Down did not prepare its surface");
+						repeatedDown = ulw;
+						repeatedTarget = { static_cast<LONG>(target.width), static_cast<LONG>(target.height) };
+						if (trial >= 3 && trial < 6)
+						{
+							repeatedDownSizes[trial % 3] = ulw.size;
+							firstRoundMaximumTarget.cx = (std::max)(firstRoundMaximumTarget.cx, repeatedTarget.cx);
+							firstRoundMaximumTarget.cy = (std::max)(firstRoundMaximumTarget.cy, repeatedTarget.cy);
+						}
+						else if (trial >= 6 && (ulw.size.cx > repeatedDownSizes[trial % 3]->cx
+							|| ulw.size.cy > repeatedDownSizes[trial % 3]->cy
+							|| repeatedTarget.cx > firstRoundMaximumTarget.cx || repeatedTarget.cy > firstRoundMaximumTarget.cy))
+							return Fail("identical repeated gesture accumulated transparent viewport or backing capacity");
+					}
+					if (step == "RepeatRelease" || step == "RepeatReleased")
+					{
+						if (!committed || !repeatedDown)
+							return Fail("repeated Up did not commit its final input or released identity");
+						if (ulw.destination.x != repeatedExpectedWindow.left || ulw.destination.y != repeatedExpectedWindow.top
+							|| ulw.size.cx != repeatedExpectedWindow.right - repeatedExpectedWindow.left
+							|| ulw.size.cy != repeatedExpectedWindow.bottom - repeatedExpectedWindow.top
+							|| ulw.source.x != repeatedDown->source.x || ulw.source.y != repeatedDown->source.y
+							|| target.width != static_cast<UINT32>(repeatedTarget.cx)
+							|| target.height != static_cast<UINT32>(repeatedTarget.cy))
+							return Fail("final input or Up changed its independently expected native geometry");
+						if (step == "RepeatRelease" && after.dragActive != repeatedFlushPending)
+							return Fail("pending final input did not precede the released identity by one held commit");
+						if (step == "RepeatReleased" && (!repeatedFlushPending || after.dragActive))
+							return Fail("final input flush did not hand off exactly once to the released identity");
+						if (after.dragActive) ++repeatedFlushCommits;
+						const unsigned goal = trial % 3;
+						if ((goal == 2 && after.mode != BarBottomDockMode::Floating)
+							|| (goal != 2 && after.mode != BarBottomDockMode::BottomDocked)
+							|| (goal == 0 && after.centerMode != BarBottomDockCenterMode::Centered)
+							|| (goal == 1 && after.centerMode != BarBottomDockCenterMode::Free))
+							return Fail("repeated release did not cover Centered, Free and Floating targets");
+						if (!after.dragActive)
+						{
+							repeatedRelease = ulw;
+							repeatedTailFrames = repeatedTailCommits = 0;
+							repeatedTailLast.reset();
+							++repeatedReleases;
+						}
+					}
+					if (step == "RepeatTail")
+					{
+						++repeatedTailFrames;
+						if (committed)
+						{
+							++repeatedTailCommits;
+							if (after.dragActive) return Fail("repeated recovery restored an active drag");
+							repeatedTailLast = ulw;
+						}
+					}
+					if (step == "RepeatTail" && repeatedTailFrames == 125)
+					{
+						if (!windowShrank(repeatedDown, repeatedTailLast))
+							return Fail("completed release retained the oversized drag window");
+						++repeatedShrinks;
+					}
+					repeats << trial << ',' << phase << ',' << committed << ',' << pointer.x << ',' << pointer.y
+						<< ',' << static_cast<unsigned>(after.mode) << ',' << static_cast<unsigned>(after.centerMode)
+						<< ',' << ulw.destination.x << ',' << ulw.destination.y << ',' << ulw.source.x << ',' << ulw.source.y
+						<< ',' << ulw.size.cx << ',' << ulw.size.cy << ',' << target.width << ',' << target.height
+						<< ',' << (trial < 3) << ',' << repeatedReleaseInput.pending.x << ',' << repeatedReleaseInput.pending.y
+						<< ',' << repeatedReleaseInput.presented.x << ',' << repeatedReleaseInput.presented.y
+						<< ',' << repeatedExpectedWindow.left << ',' << repeatedExpectedWindow.top
+						<< ',' << before.mainCenterScreenX << ',' << before.mainCenterScreenY << ',' << after.dragActive << '\n';
+					return true;
 				};
 				const bool sequence = RunUi3BottomDockInteractionSequence(*owner_, [&](const char* phase, POINT pointer)
 				{
@@ -759,6 +895,7 @@ namespace Inkeys::UI::Bar
 							}
 							if (!ulw.fullReplacement) ++fixedPartialPresents;
 						}
+						lastHeldUlw = ulw;
 						++fixedFrames;
 						if (downFrame) ++fixedDownPrepares;
 						if (std::string_view(phase) == "BothDetach") fixedBothTransitions |= 1u;
@@ -767,6 +904,17 @@ namespace Inkeys::UI::Bar
 					if (successful && std::string_view(phase) == "FinalRelease")
 					{
 						if (after.dragActive) return Fail("Up did not commit the released surface identity");
+						const auto releasedPixels = owner_->spec.GetTargetBitmapSize();
+						if (!lastHeldUlw || !fixedSurface
+							|| releasedPixels.width != static_cast<UINT32>(fixedSurface->target.cx)
+							|| releasedPixels.height != static_cast<UINT32>(fixedSurface->target.cy)
+							|| presentedUlw_->destination.x != lastHeldUlw->destination.x
+							|| presentedUlw_->destination.y != lastHeldUlw->destination.y
+							|| presentedUlw_->source.x != lastHeldUlw->source.x
+							|| presentedUlw_->source.y != lastHeldUlw->source.y
+							|| presentedUlw_->size.cx != lastHeldUlw->size.cx
+							|| presentedUlw_->size.cy != lastHeldUlw->size.cy)
+							return Fail("Up changed the retained native origin, source or size");
 						++fixedReleaseCommits;
 					}
 					if (successful && dragFrame && std::abs(topError) > WorkspaceCenteringTolerance)
@@ -860,7 +1008,17 @@ namespace Inkeys::UI::Bar
 						<< ',' << activeGrabRatio_ << ',' << expectedTop << ',' << topError
 						<< ',' << transitionTopError << ',' << transitionBottomError << '\n';
 					return true;
-				}, grabRatio_, directMove, beforeMove);
+				}, grabRatio_, directMove, beforeMove, repeatRelease);
+				if (!tail || initialTailFrames != 125 || initialTailCommits < (BarUiAnimationEnabled ? 2u : 1u)
+					|| !windowShrank(lastHeldUlw, initialTailLast))
+					Fail("release tail did not cover successful recovery frames");
+				std::fprintf(stderr, "[UI3ReleaseSurface] case=%s tailFrames=%u commits=%u\n", caseName_.c_str(), initialTailFrames, initialTailCommits);
+				if (!repeats || repeatedReleases != 9 || repeatedFlushCommits != 3 || repeatedTailFrames != 125 || repeatedShrinks != 9)
+					Fail("repeated release sequence did not cover warmup, final-input flush and six measured recoveries");
+				std::fprintf(stderr, "[UI3RepeatedRelease] case=%s warmup=3 ups=%u flush=%u lastTailFrames=%u lastTailCommits=%u\n",
+					caseName_.c_str(), repeatedReleases, repeatedFlushCommits, repeatedTailFrames, repeatedTailCommits);
+				std::fprintf(stderr, "[UI3ReleaseShrink] case=%s initial=%u repeated=%u\n",
+					caseName_.c_str(), windowShrank(lastHeldUlw, initialTailLast) ? 1u : 0u, repeatedShrinks);
 				std::ofstream events(std::filesystem::path(L"TestResults/ui3-bottom-dock")
 					/ (caseName_ + "-window-events.csv"));
 				events << "order,kind,x,y,transition_serial,deferred_serial,presented_serial,phase\n";
@@ -890,6 +1048,15 @@ namespace Inkeys::UI::Bar
 		private:
 			struct Access : BarUISetClass
 			{
+				static WorkspaceReleaseWindow ReleaseWindow(BarUISetClass& bar)
+				{
+					std::lock_guard lock(bar.*&Access::directWindowDragMutex);
+					return { bar.*&Access::committedWindowScreenBounds,
+						POINT{ (bar.*&Access::directWindowDragTranslationX).load(std::memory_order_acquire),
+							(bar.*&Access::directWindowDragTranslationY).load(std::memory_order_acquire) },
+						POINT{ (bar.*&Access::directWindowPresentedTranslationX).load(std::memory_order_acquire),
+							(bar.*&Access::directWindowPresentedTranslationY).load(std::memory_order_acquire) } };
+				}
 				static void PublishDeferred(BarUISetClass& bar)
 				{
 					(bar.*&Access::BeginBottomDockTransition)();

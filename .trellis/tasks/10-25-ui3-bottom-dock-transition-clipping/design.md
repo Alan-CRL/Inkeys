@@ -169,3 +169,30 @@
 必要产品文件限定Interaction/RenderLoop/BottomDock/WindowGeometry，既有纯算法和真实RenderLoop测试验证source/size/anchor恒定、底端目标、释放/失败。单屏同DPI原型；环境serial/zoom变化通过成功屏障重准备新段，不能在相同段悄悄增长。适用spec已阅读；无新线程/绘制后端/配置/构建系统。
 
 用户最新要求：本轮完成收尾并提交工作改动，Trellis任务保持in_progress，不执行finish/archive或推送。
+
+## 松手固定表面对照（当前阶段）
+
+用户授权继续。最小边界、W/source/backing重基准公式、默认关闭的Harness开关、失败/环境失效合同与本轮软件检查见research/release-surface-control-2026-10-26.md。候选只隔离Up原点/source阶跃；不在恢复末尾收拢，不宣称正式修复。36秒V加静止松手尾段等待用户准备后实机观察，任务保持in_progress，不commit/archive。
+
+正式版本代码、软件检查及2026-10-27短实机复核已完成：释放保留默认启用；Down按真实成功content重准备；Up前待呈现末笔先在同一表面完成，短API事务RAII保护新Down。19组合×9次释放及完整no-window通过。正式版6次立即/停住后松手由用户确认均未见闪动；6次held尺寸均1608×504，无累计扩窗。详情见上述research末节；任务继续in_progress，不commit/archive。
+
+## 2026-10-27 当前变更边界：恢复结束后收窗
+
+- 缺口位于RenderLoop的releasedWindowSurface生命周期：Up冻结成功后只在下一Down/环境失效退出，没有在正常动画结束时退休，最终idle仍绕过原有ViewportController收缩。
+- 仅在CalculateDirtyAndDrawPresent沿既有ShouldSettleBarWindowViewport/DebugFrameSleepLatch最后idle帧清除释放保留，后续仍由原viewport/capacity/source/dirty成功事务处理。不改held规则、根位置、弹簧参数、输入后端、渲染后端或画布。
+- 必要源码为Bar.RenderLoop.cpp及已有Bar.MultiTarget.Test.cpp：保留Up/末笔断言，将恢复期恒定窗口断言改为最终必须收窗，覆盖原始FinalRelease及同owner连续9次Centered/Free/Floating释放。收窗允许窗口原点/source改变，也接受此时闪烁可能返回；不为消闪无限扩大HWND。
+- 复用完整Debug|ARM64 Solution与既有离屏吸附/居中/输入/headless入口；本轮无新GUI授权，不重放鼠标，不commit/archive。证据保存TestResults/ui3-release-shrink-2026-10-27，旧候选源码与旧测试数据保留供对比。
+
+本轮验证完成：Debug|ARM64完整Solution、19组吸附、workspace-centering、input-worker及完整InkeysHeadlessTests --no-window均exit0，最终PASS animation correctness。190次原始/连续释放均收窗，旧候选171次连续释放未收窗由同一CSV比较确认；21,375个连续释放恢复点和57次末笔补交仍覆盖。见TestResults/ui3-release-shrink-2026-10-27/validation-summary.json。源码CRLF/BOM与git diff --check检查通过；未新开GUI、不提交、不归档，收窗闪烁留待人工观察。
+
+## 2026-10-27 最终收尾与归档范围
+
+用户已明确要求结束本任务、相关父任务并归档提交。以下为本次最终范围，覆盖此前“保持开启/不提交”的阶段说明；历史验收清单保留其原含义，不将未确认项一律勾为通过。
+
+- [x] 固定手势表面已由36秒V实机确认拖动无位置跳变，顶边与果冻正常；既有提示/脏区外修复结论保持。
+- [x] 释放末笔先在成功表面完成，再交接恢复；恢复期暂保留窗口，最后idle必须按内容收窗；新Down用成功真实content避免递归扩窗。
+- [x] 最新完整ARM64 Solution、吸附19组合、居中、输入与完整no-window均exit0，最终PASS animation correctness；190次收窗、57次末笔补交、21375连续恢复采样通过。
+- [x] 6次短释放无闪是恢复idle收窗前的实机结果；最终收窗版没有新GUI验证。用户明确接受为保留原设计/绘制性能而可能重新出现收窗闪动，不宣称ULW/DWM系统根因已被证明或所有环境完全消闪。
+- [x] 本次归档当前吸附子任务与10-25-ui3-bar-centering-dock-geometry父任务；已归档居中子任务维持原状，不触及不相关任务。
+
+源码/EXE核对仍对应TestResults/ui3-release-shrink-2026-10-27/validation-summary.json，EXE SHA256 DADDFFD3137A1AAE78F25B1316138E9BDF689402E69379BE9DE372EAF031BEBA。最终合同已写入rendering-and-ui.md。收尾只修改文档和任务状态，不重新运行无相关改动的构建，不自动推送。

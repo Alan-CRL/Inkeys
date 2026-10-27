@@ -263,8 +263,8 @@ struct Sample
 	POINT pointer{}, requested{};
 	RECT rect{};
 	unsigned inputSequence = 0;
-	int cycle = -1, phase = 0;
-	double routeElapsedUs = -1.0;
+	int cycle = -1, phase = 0, trial = -1;
+	double routeElapsedUs = -1.0, releaseElapsedUs = -1.0, endpointAckToUpUs = -1.0;
 	bool pointerValid = false, rectValid = false, inputPending = false, leftButtonDown = false;
 };
 
@@ -275,7 +275,7 @@ void WriteCsv(const std::filesystem::path& path, const std::vector<Sample>& samp
 	if (!stream) throw std::runtime_error("cannot open output CSV");
 	stream << "qpc,qpc_frequency,elapsed_us,read_end_qpc,pid,hwnd,pointer_valid,pointer_x,pointer_y,left_button_down,"
 		"rect_valid,left,top,right,bottom,width,height,requested_x,requested_y,input_sequence,"
-		"input_pending,cycle,phase,result,route_elapsed_us\n";
+		"input_pending,cycle,phase,result,route_elapsed_us,release_elapsed_us,trial,endpoint_ack_to_up_us\n";
 	for (const auto& sample : samples)
 		stream << sample.qpc << ',' << frequency << ',' << std::fixed << std::setprecision(3)
 			<< (sample.qpc - origin) * 1000000.0 / frequency << ',' << sample.readEndQpc
@@ -287,7 +287,8 @@ void WriteCsv(const std::filesystem::path& path, const std::vector<Sample>& samp
 			<< sample.rect.right - sample.rect.left << ',' << sample.rect.bottom - sample.rect.top
 			<< ',' << sample.requested.x << ',' << sample.requested.y << ',' << sample.inputSequence
 			<< ',' << sample.inputPending << ',' << sample.cycle << ',' << sample.phase << ',' << result
-			<< ',' << sample.routeElapsedUs << '\n';
+			<< ',' << sample.routeElapsedUs << ',' << sample.releaseElapsedUs
+			<< ',' << sample.trial << ',' << sample.endpointAckToUpUs << '\n';
 	stream.flush();
 	if (!stream) throw std::runtime_error("CSV write failed");
 }
@@ -307,6 +308,7 @@ bool StartPointBelongsToBar(HWND hwnd, DWORD processId, POINT point)
 constexpr int VCycles = 12, VLegMs = 750, VBoundaryHoldMs = 30;
 constexpr int VDurationMs = VCycles * 4 * VLegMs;
 constexpr int VPrepareMoveMs = 600, VPrepareHoldMs = 300;
+constexpr int VReleaseMoveMs = 750, VReleaseHoldMs = 1200, VPostReleaseMs = 2000;
 
 std::array<POINT, 5> MakeVRoute(POINT centerEntry, LONG halfBand)
 {
@@ -343,10 +345,13 @@ void PrintVPlan(const std::array<POINT, 5>& route)
 
 int Replay(int argc, wchar_t** argv, bool vRoute = false)
 {
-	if ((!vRoute && argc != 11) || (vRoute && argc != 9))
+	if ((!vRoute && argc != 11) || (vRoute && argc != 9 && argc != 10))
 		throw std::runtime_error(vRoute
-			? "replay-v requires PID gripX gripY centerPointerX entryY halfBandPx outputCsv"
+			? "replay-v requires PID gripX gripY centerPointerX entryY halfBandPx outputCsv [release-at-vertex]"
 			: "replay requires PID startX startY endX endY cycles halfPeriodMs holdMs outputCsv");
+	const bool releaseAtVertex = vRoute && argc == 10;
+	if (releaseAtVertex && std::wstring_view(argv[9]) != L"release-at-vertex")
+		throw std::runtime_error("unknown replay-v release option");
 	const DWORD processId = Pid(argv[2]);
 	const POINT start{ Coordinate(argv[3]), Coordinate(argv[4]) };
 	std::array<POINT, 5> vPoints{};
@@ -382,6 +387,7 @@ int Replay(int argc, wchar_t** argv, bool vRoute = false)
 	QueryPerformanceFrequency(&frequency);
 	const long long origin = Qpc();
 	long long lastSentQpc = origin, phaseOrigin = origin, routeOrigin = 0, boundaryQpc = 0;
+	long long routeFinishQpc = 0, releaseQpc = 0;
 	POINT requested{}, acknowledged{};
 	if (!GetCursorPos(&acknowledged)) throw std::runtime_error("GetCursorPos failed before replay");
 	requested = acknowledged;
@@ -395,7 +401,13 @@ int Replay(int argc, wchar_t** argv, bool vRoute = false)
 	MouseReleaseGuard release;
 	std::wcout << L"sampling_us=1500 high_resolution_timer=" << waiter.highResolution
 		<< L" planned_ms=" << cycleMs * cycles << L"; Escape or >20px manual movement aborts.\n";
-	if (vRoute) PrintVPlan(vPoints);
+	if (vRoute)
+	{
+		PrintVPlan(vPoints);
+		std::cout << "release_move_ms=" << (releaseAtVertex ? VReleaseMoveMs : 0)
+			<< " pre_up_hold_ms=" << VReleaseHoldMs << " post_up_observe_ms=" << VPostReleaseMs
+			<< " release_at_vertex=" << releaseAtVertex << " (excluded from formal route)\n";
+	}
 	std::wcout.flush();
 	std::cout.flush();
 	try
@@ -414,14 +426,16 @@ int Replay(int argc, wchar_t** argv, bool vRoute = false)
 			const double phaseMs = (sample.qpc - phaseOrigin) * 1000.0 / frequency.QuadPart;
 			sample.cycle = started && (!vRoute || routeOrigin) ? cycle : -1;
 			sample.phase = phase;
-			if (routeOrigin) sample.routeElapsedUs = (sample.qpc - routeOrigin) * 1000000.0 / frequency.QuadPart;
+			if (routeOrigin) sample.routeElapsedUs = ((routeFinishQpc ? routeFinishQpc : sample.qpc) - routeOrigin)
+				* 1000000.0 / frequency.QuadPart;
+			if (releaseQpc) sample.releaseElapsedUs = (sample.qpc - releaseQpc) * 1000000.0 / frequency.QuadPart;
 			samples.push_back(sample);
 			if (stopRequested.load() || (GetAsyncKeyState(VK_ESCAPE) & 0x8000))
 			{ result = "operator_abort"; code = 3; break; }
 			if ((sample.qpc - origin) / static_cast<double>(frequency.QuadPart) >= MaximumSeconds)
 			{ result = "deadline"; code = 3; break; }
 			// 用同一正式路线时钟限制36秒；确认延迟不能逐段累计成更长测试。
-			if (vRoute && sample.routeElapsedUs > (VDurationMs + 100) * 1000.0)
+			if (vRoute && !routeFinishQpc && sample.routeElapsedUs > (VDurationMs + 100) * 1000.0)
 			{ result = "v_schedule_overrun"; code = 3; break; }
 			DWORD owner = 0;
 			GetWindowThreadProcessId(hwnd, &owner);
@@ -478,7 +492,7 @@ int Replay(int argc, wchar_t** argv, bool vRoute = false)
 						if ((sample.qpc - phaseOrigin) * 1000.0 / frequency.QuadPart >= VPrepareHoldMs)
 						{ phase = 20; routeOrigin = sample.qpc; }
 					}
-					if (routeOrigin)
+					if (routeOrigin && phase >= 20 && phase <= 23)
 					{
 						const double elapsedMs = (sample.qpc - routeOrigin) * 1000.0 / frequency.QuadPart;
 						double legMs = elapsedMs - (cycle * 4 + vLeg) * VLegMs;
@@ -488,34 +502,75 @@ int Replay(int argc, wchar_t** argv, bool vRoute = false)
 							if (++vLeg == 4)
 							{
 								vLeg = 0;
-								if (++cycle == cycles) break;
+								if (++cycle == cycles)
+								{
+									// 正式路线在这里结束；后续静止/释放观察不计入36秒。
+									routeFinishQpc = sample.qpc;
+									phase = releaseAtVertex ? 30 : 31;
+									phaseOrigin = sample.qpc;
+								}
 							}
-							phase = 20 + vLeg;
+							if (!routeFinishQpc) phase = 20 + vLeg;
 							boundaryQpc = 0;
 							legMs = elapsedMs - (cycle * 4 + vLeg) * VLegMs;
 						}
-						if (legMs > VLegMs + 100 && same(requested, vPoints[vLeg + 1])
-							&& !same(sample.pointer, vPoints[vLeg + 1]))
-						{ result = "v_endpoint_not_exact"; code = 3; break; }
-						const POINT a = vPoints[vLeg], z = vPoints[vLeg + 1];
-						const POINT crossing{ a.x + (z.x - a.x) / 2, a.y + (z.y - a.y) / 2 };
-						if (!boundaryQpc && same(requested, crossing) && same(sample.pointer, crossing))
-							boundaryQpc = sample.qpc;
-						const double halfMoveMs = (VLegMs - VBoundaryHoldMs) / 2.0;
-						double progress = legMs < halfMoveMs ? legMs / halfMoveMs * 0.5
-							: legMs < halfMoveMs + VBoundaryHoldMs ? 0.5
-							: 0.5 + (legMs - halfMoveMs - VBoundaryHoldMs) / halfMoveMs * 0.5;
-						// 分界点必须真正到达并短暂停留；时间仍计入本腿750ms。
-						if (progress >= 0.5 && (!boundaryQpc
-							|| (sample.qpc - boundaryQpc) * 1000.0 / frequency.QuadPart < VBoundaryHoldMs))
-							progress = 0.5;
-						if (!boundaryQpc && same(requested, crossing)
-							&& (sample.qpc - lastSentQpc) / static_cast<double>(frequency.QuadPart) > InputAckTimeoutSeconds)
-						{ result = "v_boundary_not_exact"; code = 3; break; }
-						const LONG step = static_cast<LONG>(std::llround(std::abs(z.x - a.x)
-							* std::clamp(progress, 0.0, 1.0)));
-						// 两轴共用一个整数步长，保持物理像素中的45度，不分别舍入。
-						next = { a.x + (z.x > a.x ? step : -step), a.y + (z.y > a.y ? step : -step) };
+						if (!routeFinishQpc)
+						{
+							if (legMs > VLegMs + 100 && same(requested, vPoints[vLeg + 1])
+								&& !same(sample.pointer, vPoints[vLeg + 1]))
+							{ result = "v_endpoint_not_exact"; code = 3; break; }
+							const POINT a = vPoints[vLeg], z = vPoints[vLeg + 1];
+							const POINT crossing{ a.x + (z.x - a.x) / 2, a.y + (z.y - a.y) / 2 };
+							if (!boundaryQpc && same(requested, crossing) && same(sample.pointer, crossing))
+								boundaryQpc = sample.qpc;
+							const double halfMoveMs = (VLegMs - VBoundaryHoldMs) / 2.0;
+							double progress = legMs < halfMoveMs ? legMs / halfMoveMs * 0.5
+								: legMs < halfMoveMs + VBoundaryHoldMs ? 0.5
+								: 0.5 + (legMs - halfMoveMs - VBoundaryHoldMs) / halfMoveMs * 0.5;
+							// 分界点必须真正到达并短暂停留；时间仍计入本腿750ms。
+							if (progress >= 0.5 && (!boundaryQpc
+								|| (sample.qpc - boundaryQpc) * 1000.0 / frequency.QuadPart < VBoundaryHoldMs))
+								progress = 0.5;
+							if (!boundaryQpc && same(requested, crossing)
+								&& (sample.qpc - lastSentQpc) / static_cast<double>(frequency.QuadPart) > InputAckTimeoutSeconds)
+							{ result = "v_boundary_not_exact"; code = 3; break; }
+							const LONG step = static_cast<LONG>(std::llround(std::abs(z.x - a.x)
+								* std::clamp(progress, 0.0, 1.0)));
+							// 两轴共用一个整数步长，保持物理像素中的45度，不分别舍入。
+							next = { a.x + (z.x > a.x ? step : -step), a.y + (z.y > a.y ? step : -step) };
+						}
+					}
+					if (phase == 30)
+					{
+						const double moveMs = (sample.qpc - phaseOrigin) * 1000.0 / frequency.QuadPart;
+						const POINT a = vPoints[0], z = vPoints[1];
+						const LONG step = static_cast<LONG>(std::llround((z.x - a.x)
+							* (std::min)(1.0, moveMs / VReleaseMoveMs)));
+						next = { a.x + step, a.y + step };
+						if (moveMs >= VReleaseMoveMs && same(requested, z) && same(sample.pointer, z))
+						{ phase = 31; phaseOrigin = sample.qpc; }
+						if (moveMs > VReleaseMoveMs + 100 && !same(sample.pointer, z))
+						{ result = "v_release_endpoint_not_exact"; code = 3; break; }
+					}
+					if (phase == 31)
+					{
+						next = releaseAtVertex ? vPoints[1] : vPoints[0];
+						if ((sample.qpc - phaseOrigin) * 1000.0 / frequency.QuadPart >= VReleaseHoldMs)
+						{
+							ReleaseMouse();
+							{
+								std::lock_guard lock(inputMutex);
+								if (mouseHeld) { result = "mouse_up_failed"; code = 4; break; }
+							}
+							releaseQpc = Qpc();
+							phase = 32;
+						}
+					}
+					if (phase == 32)
+					{
+						// Up后只采样，不再移动指针；仍保留锁屏/接管/窗口有效性检查。
+						next = requested;
+						if (sample.releaseElapsedUs >= VPostReleaseMs * 1000.0) break;
 					}
 				}
 				else if (started)
@@ -564,10 +619,225 @@ int Replay(int argc, wchar_t** argv, bool vRoute = false)
 	// 手势结束并释放后才进行磁盘写入，避免日志 I/O 改变竞态窗口。
 	WriteCsv(output, samples, frequency.QuadPart, origin, processId, hwnd, result);
 	if (vRoute && routeOrigin && !samples.empty())
-		std::cout << "v_route_ms=" << (samples.back().qpc - routeOrigin) * 1000.0 / frequency.QuadPart
-			<< " completed_cycles=" << cycle << " preparation_excluded=1\n";
+		std::cout << "v_route_ms=" << ((routeFinishQpc ? routeFinishQpc : samples.back().qpc) - routeOrigin)
+			* 1000.0 / frequency.QuadPart
+			<< " completed_cycles=" << cycle << " preparation_excluded=1 release_tail_excluded=1"
+			<< " pre_up_hold_ms=" << VReleaseHoldMs << " post_up_observe_ms=" << VPostReleaseMs << '\n';
 	std::cout << "result=" << result << " samples=" << samples.size() << " moves=" << inputSequence
 		<< " (HWND geometry only; no visual flicker verdict)\n";
+	return code;
+}
+
+struct ReleaseTrial
+{
+	int upperIndex, holdMs;
+};
+constexpr int ReleaseUpperMoveMs = 300, ReleaseTargetMoveMs = 450, ReleaseObserveMs = 1200;
+constexpr std::array<ReleaseTrial, 6> ReleaseTrials{ {
+	{ 0, 0 }, { 2, 900 }, { 0, 900 }, { 2, 0 }, { 0, 0 }, { 2, 900 }
+} };
+
+void PrintReleasePlan(const std::array<POINT, 5>& points)
+{
+	std::cout << "trial,upper_x,upper_y,target_x,target_y,upper_move_ms,target_move_ms,pre_up_hold_ms,post_up_ms\n";
+	for (size_t i = 0; i < ReleaseTrials.size(); ++i)
+	{
+		const auto trial = ReleaseTrials[i];
+		const POINT upper = points[trial.upperIndex], target = points[1];
+		std::cout << i + 1 << ',' << upper.x << ',' << upper.y << ',' << target.x << ',' << target.y
+			<< ',' << ReleaseUpperMoveMs << ',' << ReleaseTargetMoveMs << ',' << trial.holdMs
+			<< ',' << ReleaseObserveMs << '\n';
+	}
+}
+
+int ReplayReleaseCycles(int argc, wchar_t** argv)
+{
+	if (argc != 9)
+		throw std::runtime_error("release-cycles requires PID gripX gripY centerPointerX entryY halfBandPx outputCsv");
+	const DWORD processId = Pid(argv[2]);
+	const POINT grip{ Coordinate(argv[3]), Coordinate(argv[4]) };
+	const auto points = MakeVRoute({ Coordinate(argv[5]), Coordinate(argv[6]) },
+		static_cast<LONG>(ParseInteger(argv[7], 1, 10000)));
+	const std::filesystem::path output(argv[8]);
+	if (std::filesystem::exists(output)) throw std::runtime_error("output CSV exists; choose a fresh path");
+	if (!output.parent_path().empty() && !std::filesystem::is_directory(output.parent_path()))
+		throw std::runtime_error("output CSV parent directory does not exist");
+	const HWND hwnd = FindBar(processId);
+	const RECT screen = VirtualScreen();
+	if (screen.right - screen.left < 2 || screen.bottom - screen.top < 2 || !Within(grip, screen))
+		throw std::runtime_error("grip must be inside the current virtual screen");
+	for (const POINT point : points)
+		if (!Within(point, screen)) throw std::runtime_error("release route leaves the virtual screen");
+	if (!StartPointBelongsToBar(hwnd, processId, grip))
+		throw std::runtime_error("grip is not currently owned by the explicit PID's Bar");
+	if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) || (GetAsyncKeyState(VK_RBUTTON) & 0x8000)
+		|| (GetAsyncKeyState(VK_MBUTTON) & 0x8000) || (GetAsyncKeyState(VK_ESCAPE) & 0x8000))
+		throw std::runtime_error("release mouse buttons and Escape before replay");
+	PrintBar(hwnd);
+	PrintReleasePlan(points);
+	TickWaiter waiter;
+	LARGE_INTEGER frequency{};
+	QueryPerformanceFrequency(&frequency);
+	const long long origin = Qpc();
+	long long phaseOrigin = origin, lastSentQpc = origin, downQpc = 0, endpointAckQpc = 0, releaseQpc = 0;
+	POINT requested{}, acknowledged{};
+	if (!GetCursorPos(&acknowledged)) throw std::runtime_error("GetCursorPos failed before replay");
+	requested = acknowledged;
+	bool pending = false;
+	int phase = 40, completed = 0;
+	size_t trialIndex = 0;
+	unsigned inputSequence = 0;
+	double endpointAckToUpUs = -1.0;
+	std::vector<Sample> samples;
+	samples.reserve(65000);
+	const char* result = "complete";
+	int code = 0;
+	MouseReleaseGuard release;
+	std::cout << "release_trials=" << ReleaseTrials.size() << " sampling_us=1500 high_resolution_timer="
+		<< waiter.highResolution << "; each trial rechecks the fixed grip; Escape or >20px movement aborts.\n";
+	std::wcout.flush();
+	std::cout.flush();
+	const auto same = [](POINT a, POINT b) { return a.x == b.x && a.y == b.y; };
+	const auto ms = [&](long long ticks) { return ticks * 1000.0 / frequency.QuadPart; };
+	const auto interpolate = [](POINT a, POINT z, double progress)
+	{
+		return POINT{ static_cast<LONG>(std::llround(a.x + (static_cast<double>(z.x) - a.x) * progress)),
+			static_cast<LONG>(std::llround(a.y + (static_cast<double>(z.y) - a.y) * progress)) };
+	};
+	try
+	{
+		while (true)
+		{
+			Sample sample{};
+			sample.qpc = Qpc();
+			sample.pointerValid = GetCursorPos(&sample.pointer) != FALSE;
+			sample.rectValid = GetWindowRect(hwnd, &sample.rect) != FALSE;
+			sample.leftButtonDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+			sample.readEndQpc = Qpc();
+			sample.requested = requested;
+			sample.inputSequence = inputSequence;
+			sample.inputPending = pending;
+			sample.phase = phase;
+			sample.trial = static_cast<int>(trialIndex + 1);
+			sample.endpointAckToUpUs = endpointAckToUpUs;
+			if (releaseQpc) sample.releaseElapsedUs = ms(sample.qpc - releaseQpc) * 1000.0;
+			samples.push_back(sample);
+			if (stopRequested.load() || (GetAsyncKeyState(VK_ESCAPE) & 0x8000))
+			{ result = "operator_abort"; code = 3; break; }
+			if (ms(sample.qpc - origin) >= MaximumSeconds * 1000.0)
+			{ result = "deadline"; code = 3; break; }
+			DWORD owner = 0;
+			GetWindowThreadProcessId(hwnd, &owner);
+			if (!sample.pointerValid || !sample.rectValid || owner != processId || !IsWindowVisible(hwnd))
+			{ result = "target_or_pointer_unavailable"; code = 3; break; }
+			if (IsLockScreenAt(sample.pointer))
+			{ result = "lock_screen"; code = 3; break; }
+			const double distance = Distance(sample.pointer, requested);
+			if (pending && distance <= 2.0)
+			{ acknowledged = sample.pointer; pending = false; }
+			const bool stillOldPosition = pending && Distance(sample.pointer, acknowledged) <= 2.0;
+			if (distance > TakeoverDistancePx && !stillOldPosition)
+			{ result = "manual_pointer_takeover"; code = 3; break; }
+			if (pending && ms(sample.qpc - lastSentQpc) > InputAckTimeoutSeconds * 1000.0)
+			{ result = "input_ack_timeout"; code = 3; break; }
+			if (phase >= 41 && phase <= 43 && ms(sample.qpc - downQpc) > 100.0 && !sample.leftButtonDown)
+			{ result = "button_released_during_trial"; code = 3; break; }
+			if (samples.size() == samples.capacity())
+			{ result = "sample_capacity"; code = 3; break; }
+			if (!pending)
+			{
+				const auto trial = ReleaseTrials[trialIndex];
+				const POINT upper = points[trial.upperIndex], target = points[1];
+				POINT next = requested;
+				if (phase == 40)
+				{
+					// 每次按下前都验证固定Logo点；回弹未回到预期处时停止，不能盲点。
+					if (!StartPointBelongsToBar(hwnd, processId, grip))
+					{ result = "trial_grip_hit_changed"; code = 3; break; }
+					next = grip;
+					if (inputSequence && same(requested, grip) && same(sample.pointer, grip))
+					{
+						if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) || (GetAsyncKeyState(VK_RBUTTON) & 0x8000)
+							|| (GetAsyncKeyState(VK_MBUTTON) & 0x8000))
+						{ result = "buttons_down_before_trial"; code = 3; break; }
+						if (!PressMouse()) { result = "mouse_down_failed"; code = 4; break; }
+						downQpc = phaseOrigin = Qpc();
+						phase = 41;
+					}
+				}
+				else if (phase == 41)
+				{
+					const double elapsedMs = ms(sample.qpc - phaseOrigin);
+					next = interpolate(grip, upper, (std::min)(1.0, elapsedMs / ReleaseUpperMoveMs));
+					if (elapsedMs >= ReleaseUpperMoveMs && same(requested, upper) && same(sample.pointer, upper))
+					{ phase = 42; phaseOrigin = sample.readEndQpc; }
+				}
+				else if (phase == 42)
+				{
+					const double elapsedMs = ms(sample.qpc - phaseOrigin);
+					next = interpolate(upper, target, (std::min)(1.0, elapsedMs / ReleaseTargetMoveMs));
+					if (elapsedMs >= ReleaseTargetMoveMs && same(requested, target) && same(sample.pointer, target))
+					{
+						// 只等原生光标精确确认终点；立即Up不额外等待渲染线程。
+						endpointAckQpc = phaseOrigin = Qpc();
+						phase = 43;
+					}
+				}
+				if (phase == 43)
+				{
+					next = target;
+					if (Distance(sample.pointer, target) > 2.0)
+					{ result = "release_hold_pointer_changed"; code = 3; break; }
+					if (ms(Qpc() - endpointAckQpc) >= trial.holdMs)
+					{
+						ReleaseMouse();
+						{
+							std::lock_guard lock(inputMutex);
+							if (mouseHeld) { result = "mouse_up_failed"; code = 4; break; }
+						}
+						releaseQpc = Qpc();
+						endpointAckToUpUs = ms(releaseQpc - endpointAckQpc) * 1000.0;
+						phase = 44;
+					}
+				}
+				if (phase == 44)
+				{
+					// 松手后只采样；下一次Down前重新命中，绝不沿用上一轮归属。
+					next = requested;
+					if (sample.releaseElapsedUs >= ReleaseObserveMs * 1000.0)
+					{
+						if (++completed == static_cast<int>(ReleaseTrials.size())) break;
+						++trialIndex;
+						phase = 40;
+						phaseOrigin = sample.qpc;
+						endpointAckQpc = releaseQpc = 0;
+						endpointAckToUpUs = -1.0;
+					}
+				}
+				if (inputSequence == 0 || !same(next, requested))
+				{
+					acknowledged = sample.pointer;
+					if (!MoveMouse(next, screen)) { result = "mouse_move_failed"; code = 4; break; }
+					requested = next;
+					lastSentQpc = Qpc();
+					pending = true;
+					++inputSequence;
+				}
+			}
+			waiter.Wait();
+		}
+	}
+	catch (const std::exception& error)
+	{
+		result = "sampling_exception";
+		code = 4;
+		ReleaseMouse();
+		std::cerr << error.what() << '\n';
+	}
+	ReleaseMouse();
+	WriteCsv(output, samples, frequency.QuadPart, origin, processId, hwnd, result);
+	std::cout << "result=" << result << " completed_trials=" << completed << " samples=" << samples.size()
+		<< " moves=" << inputSequence << " (HWND geometry only; no visual flicker verdict)\n";
 	return code;
 }
 
@@ -689,7 +959,9 @@ void Usage()
 		L"live-dock-probe hit x y\n"
 		L"live-dock-probe replay PID startX startY endX endY cycles halfPeriodMs holdMs outputCsv\n"
 		L"live-dock-probe plan-v centerPointerX entryY halfBandPx\n"
-		L"live-dock-probe replay-v PID gripX gripY centerPointerX entryY halfBandPx outputCsv\n"
+		L"live-dock-probe replay-v PID gripX gripY centerPointerX entryY halfBandPx outputCsv [release-at-vertex]\n"
+		L"live-dock-probe plan-release centerPointerX entryY halfBandPx\n"
+		L"live-dock-probe release-cycles PID gripX gripY centerPointerX entryY halfBandPx outputCsv\n"
 		L"live-dock-probe observe PID durationMs outputCsv\n"
 		L"live-dock-probe capture bar PID paddingPx outputBmp\n"
 		L"live-dock-probe capture rect left top right bottom outputBmp\n"
@@ -698,7 +970,12 @@ void Usage()
 		L"Escape/manual pointer deviation >20 px/Ctrl+C abort and release. Output paths must be fresh.\n"
 		L"CSV phases: 0 preflight, 1 outbound, 2 end hold, 3 inbound, 4 start hold, 5 observe.\n"
 		L"V: 12 cycles L-vertex-R-vertex-L, 750ms/leg, total 36s; 30ms crossing hold is included.\n"
-		L"V phases: 10 prepare, 11 settle, 20..23 legs; route_elapsed_us excludes preparation.\n"
+		L"V phases: 10 prepare, 11 settle, 20..23 formal legs, 30 optional vertex move (750ms),\n"
+		L"31 stationary pre-Up hold (1200ms), 32 post-Up observation (2000ms); no disk I/O during sampling.\n"
+		L"route_elapsed_us freezes at formal end; release_elapsed_us starts after Up; tails are outside 36s.\n"
+		L"Release phases: 40 recheck grip, 41 move to upper (300ms), 42 move to target (450ms),\n"
+		L"43 immediate/900ms hold then Up, 44 post-Up observation (1200ms); trial is one-based.\n"
+		L"endpoint_ack_to_up_us measures cursor endpoint acknowledgement to SendInput Up return.\n"
 		L"Observe injects no input; requested/input_sequence stay zero. Left-button state is polled in both modes.\n"
 		L"Samples describe HWND geometry, not composited screen pixels or a flicker verdict.\n";
 }
@@ -749,6 +1026,14 @@ int wmain(int argc, wchar_t** argv)
 			return 0;
 		}
 		if (command == L"replay-v") return Replay(argc, argv, true);
+		if (command == L"plan-release")
+		{
+			if (argc != 5) throw std::runtime_error("plan-release requires centerPointerX entryY halfBandPx");
+			PrintReleasePlan(MakeVRoute({ Coordinate(argv[2]), Coordinate(argv[3]) },
+				static_cast<LONG>(ParseInteger(argv[4], 1, 10000))));
+			return 0;
+		}
+		if (command == L"release-cycles") return ReplayReleaseCycles(argc, argv);
 		if (command == L"observe") return Observe(argc, argv);
 		if (command == L"capture" && argc >= 3)
 		{

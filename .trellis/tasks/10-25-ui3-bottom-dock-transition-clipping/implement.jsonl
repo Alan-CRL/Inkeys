@@ -13,3 +13,4 @@
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/break-loop-2026-10-26.md","reason":"后续修改须遵守一般形状交接和避免测试自证的复盘合同。"}
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md","reason":"优先阅读顶边回归、错误抓点验收、捕获 viewport 变化及 Down 预扩窗的适用边界。"}
 {"file":".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md","reason":"实施前必须遵守原生复现状态和复现前禁止产品修复的门禁。"}
+{"file": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/release-surface-control-2026-10-26.md", "reason": "Release-only geometry control and validation"}

@@ -1264,7 +1264,8 @@ namespace Inkeys::UI::Bar
 		const std::function<bool(const char*, POINT)>& render,
 		double downNormalizedY,
 		const std::function<BOOL(HWND, int, int)>& directMove,
-		const std::function<void(const char*)>& beforeMove = {});
+		const std::function<void(const char*)>& beforeMove = {},
+		const std::function<bool(unsigned, const char*, POINT)>& repeatRelease = {});
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;

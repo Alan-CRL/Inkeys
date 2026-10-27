@@ -1941,7 +1941,8 @@ namespace Inkeys::UI::Bar
 		const std::function<bool(const char*, POINT)>& render,
 		double downNormalizedY,
 		const std::function<BOOL(HWND, int, int)>& directMove,
-		const std::function<void(const char*)>& beforeMove)
+		const std::function<void(const char*)>& beforeMove,
+		const std::function<bool(unsigned, const char*, POINT)>& repeatRelease)
 	{
 		if (interactionWorkerRunning.load(std::memory_order_acquire) || floating_window || offSignal
 			|| !directMove || !std::isfinite(downNormalizedY)
@@ -2048,7 +2049,57 @@ namespace Inkeys::UI::Bar
 			|| !move(0, -50, "ImmediateDetach", 3)
 			|| !enqueue(WM_LBUTTONUP) || !routine.Done()) return false;
 		routine.Rethrow();
-		return render("FinalRelease", pointer);
+		if (!render("FinalRelease", pointer)) return false;
+		if (!repeatRelease) return true;
+		// 继续复用同一 owner/成功表面；每轮都从真实 Seek 按下，不能重建 fixture 隐藏累计扩窗。
+		// 首轮三个目标作真实手势预热，后两轮从相同稳定状态比较，不混入legacy极端抓点。
+		for (unsigned trial = 0; trial < 9; ++trial)
+		{
+			if (trial == 0)
+				for (unsigned frame = 0; frame < 125; ++frame)
+					if (!repeatRelease(trial, "RepeatSettle", pointer)) return false;
+			const auto settled = owner.BottomDockPresentedSnapshot();
+			const double settledRootY = (settled.mapping.baseTopDip + settled.mapping.baseBottomDip) / 2.0;
+			pointer = { static_cast<LONG>(std::lround(settled.mainCenterScreenX)),
+				static_cast<LONG>(std::lround(settled.monitorOrigin.y
+					+ settled.mapping.MapY(settledRootY) * settled.zoom + settled.directTranslation.y)) };
+			context = {};
+			if (!enqueue(WM_LBUTTONDOWN)
+				|| !TryReadBarPointerMessage(down, EM_MOUSE, nullptr, true, nullptr)) return false;
+			routine = (owner.*Access::SeekEntry())(down); routine.Start();
+			if (routine.Done() || !repeatRelease(trial, "RepeatDown", pointer)) return false;
+			const double centeredGripX = settled.mainCenterScreenX
+				+ (static_cast<double>(settled.monitorBounds.left) + settled.monitorBounds.right) / 2.0
+				- settled.rawBodyCenterScreenX;
+			const double repeatDockLine = ResolveBarBottomDockLine(settled.monitorBounds, settled.workArea,
+				SceneBottomDockInsetDip(), static_cast<double>(settled.dpi) / USER_DEFAULT_SCREEN_DPI,
+				settled.desktopDockLine);
+			const double repeatDockCenter = ResolveBarBottomDockCenterScreenY(repeatDockLine,
+				settled.mapping.baseBottomDip - settled.mapping.baseTopDip, 0.0, settled.zoom);
+			pointer = { static_cast<LONG>(std::lround(centeredGripX - 80.0 * settled.zoom)),
+				static_cast<LONG>(std::lround(repeatDockCenter - 60.0 * settled.zoom)) };
+			if (!enqueue(WM_MOUSEMOVE) || routine.Done()) return false;
+			for (unsigned frame = 0; frame < 3; ++frame)
+				if (!repeatRelease(trial, "RepeatOutside", pointer)) return false;
+			const unsigned target = trial % 3;
+			pointer = { static_cast<LONG>(std::lround(centeredGripX + (target == 1 ? 65.0 : 0.0) * settled.zoom)),
+				static_cast<LONG>(std::lround(repeatDockCenter + (target == 2 ? -50.0 : 12.0) * settled.zoom)) };
+			if (!enqueue(WM_MOUSEMOVE) || routine.Done()) return false;
+			// 偶数轮终点和 Up 之间不运行 render；奇数轮先呈现并静止，覆盖两种交接时序。
+			if (trial % 2)
+				for (unsigned frame = 0; frame < 60; ++frame)
+					if (!repeatRelease(trial, "RepeatHold", pointer)) return false;
+			if (!enqueue(WM_LBUTTONUP) || !routine.Done()) return false;
+			routine.Rethrow();
+			if (!repeatRelease(trial, "RepeatRelease", pointer)) return false;
+			// 立即Up可先提交一张末笔held，再真正交接Up；最多这两个明确阶段，不循环掩盖停滞。
+			if (owner.BottomDockPresentedSnapshot().dragActive
+				&& !repeatRelease(trial, "RepeatReleased", pointer)) return false;
+			if (owner.BottomDockPresentedSnapshot().dragActive) return false;
+			for (unsigned frame = 0; frame < 125; ++frame)
+				if (!repeatRelease(trial, "RepeatTail", pointer)) return false;
+		}
+		return true;
 	}
 #endif
 
@@ -8852,7 +8903,7 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			return ResolveBarBottomDockInteractionZoom(snapshot.dpi,
 				static_cast<double>(barStyle.configZoom), snapshot.uiBaseScale);
 		};
-	// 吸收阶段不含 ULW；若恰好撞上，只等待这段极短的布局接管。
+	// 几何交接或末笔呈现时等待所有权，异步让出 worker，不阻塞窗口线程。
 	for (;;)
 	{
 		BarDirectWindowDragPhase expected = BarDirectWindowDragPhase::Idle;

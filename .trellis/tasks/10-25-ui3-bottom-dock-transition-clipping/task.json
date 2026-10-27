@@ -21,26 +21,32 @@
   "children": [],
   "parent": "10-25-ui3-bar-centering-dock-geometry",
   "relatedFiles": [],
-  "notes": "906251ee已提交。用户后续确认拖动无跳变、静止片刻后松手仍闪。只读检查发现Up恢复普通viewport屏幕包含逻辑，既有离屏中native原点/source同步上移43/149px而pointer/UI世界top不变，等于越屏量。剩余释放交接待实机隔离；任务保持in_progress，不继承commit授权。 居中移动兄弟子任务已按用户要求完成归档，本任务继续in_progress且仍为当前活动任务。",
+  "notes": "2026-10-27用户明确授权完成收尾、结束相关任务并归档提交。居中子任务已归档；固定拖动实机正常。最终释放表面仅保留至恢复结束，最后idle收窗；完整ARM64构建、190次收窗及吸附/居中/输入/完整no-window均通过。最终收窗版未新做GUI验证，收窗闪动可能返回是用户接受的性能/设计取舍；不宣称系统根因或所有环境完全消闪。",
   "meta": {
     "verification": {
-      "software": "fixed_gesture_surface_full_solution_and_app_regressions_headless_passed",
-      "gui": "dragging_user_confirmed_normal_release_flicker_still_present",
+      "software": "final_arm64_solution_bottom_dock_centering_input_worker_full_headless_passed_190_window_shrinks",
+      "gui": "dragging_user_confirmed_normal_final_idle_shrink_not_visually_retested_residual_tradeoff_accepted",
       "report": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
       "reviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md",
       "fixValidationReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md",
       "regressionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md",
       "liveReproductionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md",
       "upperBorderRegression": "user_confirmed_normal_in_fixed_gesture_surface_36s_v",
-      "insideDirtyJump": "dragging_not_seen_release_flicker_user_confirmed",
+      "insideDirtyJump": "dragging_previously_accepted_release_idle_shrink_not_visually_retested",
       "topEdgeFixReviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md",
       "vRouteReport": "TestResults/ui3-v-drag-2026-10-26/manifest.json",
       "originDiagnosisReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/origin-handoff-diagnosis-2026-10-26.md",
       "fixedSurfaceAssessment": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/gesture-fixed-surface-assessment-2026-10-26.md",
       "fixedSurfaceImplementation": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/fixed-gesture-surface-implementation-2026-10-26.md",
       "fixedSurfaceLiveEvidence": "TestResults/ui3-fixed-gesture-2026-10-26/live-v-01-summary.json",
-      "releaseHandoff": "stationary_pointer_release_flickers_viewport_reclamp_evidence_found",
-      "releaseOfflineEvidence": "TestResults/ui3-release-handoff-2026-10-26/offline-release-pairs.json"
+      "releaseHandoff": "temporary_release_surface_must_retire_at_final_idle_shrink_required",
+      "releaseOfflineEvidence": "TestResults/ui3-release-handoff-2026-10-26/offline-release-pairs.json",
+      "releaseFormalReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/release-surface-control-2026-10-26.md",
+      "releaseFormalEvidence": "TestResults/ui3-release-formal-2026-10-26/validation-summary.json",
+      "releaseFormalLiveEvidence": "TestResults/ui3-release-formal-2026-10-26/live-release-cycles-01-summary.json",
+      "releaseShrinkEvidence": "TestResults/ui3-release-shrink-2026-10-27/validation-summary.json",
+      "finalClosure": "user_authorized_archive_2026_10_27_with_documented_idle_shrink_flicker_limit",
+      "finalReleaseEvidence": "TestResults/ui3-release-shrink-2026-10-27/validation-summary.json"
     }
   }
 }

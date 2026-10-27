@@ -952,6 +952,10 @@ bool ShouldDeferBarDirectWindowMove(
 	unsigned long long observedSerialAfter,
 	unsigned long long deferredTransitionSerial,
 	unsigned long long presentedTransitionSerial) noexcept;
+RECT ResolveBarFixedDragEnvelope(
+    const RECT& currentContentBounds, const RECT& predictedEnvelope,
+    const RECT& presentedContentBounds, double zoom,
+    double horizontalMarginDip, double verticalMarginDip, LONG paddingPx = 0) noexcept;
 RECT ResolveBarBottomDockCapacityEnvelope(
 	const RECT& elasticBaseBounds, double zoom,
 	double horizontalOutsetDip = BarBottomDockVisualLimitDip,
@@ -962,14 +966,14 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 
 - 水平捕获目标是当前显示器 `monitorBounds` 的水平中点；参与居中的几何只包含主按钮、主栏及可见描边的联合外框。扩展面板不参与中心计算或拉伸，只按其按钮锚点的二维映射差值刚性跟随。
 - 水平捕获只在竖向已 `BottomDocked`、主栏展开且联合外框中心进入 `BarBottomDockCenterThresholdDip = 40 DIP` 时生效；边界值允许捕获，严格越界立即脱离。竖向继续使用 `BarBottomDockThresholdDip = 20 DIP`；折叠或竖向脱离必须结束水平捕获。
-- Down：`ResolveBarFixedDragEnvelope` 一次覆盖当前/成功形状、两轴完整捕获与恢复范围、提示/光影包络；四 API 完整成功后才由 `BarFixedDragSurface::Freeze` 冻结本 session/display/zoom 的 viewport、capacityOrigin/size、source 和 HWND size。透明 HWND 允许越屏，不扩大真实 UI 的可见边界或任务栏目标；失败不冻结，未知包络溢出须取消手势，不能在 held 内追扩。
+- Down：`ResolveBarFixedDragEnvelope` 一次覆盖当前内容、同环境最后成功的真实 content seed、两轴捕获/恢复及提示光影预测；旧透明 viewport 不作为 padding 输入，否则每个新 session 都会累计扩窗。`lastPresentedContentBounds` 与 `committedAnchor` 只在完整成功后同步保存，吸收时不单独平移，按 anchor 差提供保守 seed；实际成功形状交接/当前内容/预测仍负责完整包含。四 API 成功后 `BarFixedDragSurface::Freeze` 冻结本 session/display/zoom 的 viewport、capacityOrigin/size、source 和 HWND size，并退休上次释放表面；准备失败不能提前退休。透明 HWND 允许越屏，不扩大 UI 自身可见边界；held 包络溢出须取消手势，不能追扩。
 - Held：native translation 从 Down 成功值加连续有效输入差生成，clamp 坐标不随吸附 mode 改变，抓手/顶边与 T 同 tuple 发布。底端/居中远端误差相对稳定世界目标恢复，再用 `ResolveBarBottomDockWorldTargetDip` 扣同帧 monitor origin、T 与 zoom；不能让世界目标随 HWND 平移，稳定映射继续保留 partial dirty。
-- Up/Cancel：含 T=0 都必须从最后完整成功 shape 归位规范 root；首次候选只播种、不积分，禁止重复使用 raw tracker elastic。失败重试保留成功 shape 和冻结记录，完整成功后才退出冻结并收拢；显示环境改变是新的成功形状交接段，不能把旧 source/size 视为新环境已准备。
+- Up/Cancel：若最后正常输入 pendingT 尚未等于 presentedT，先在同一成功 held session/环境的固定表面提交它：只按 pendingT−presentedT 移动 W，S/size/target 不变，真实指针仍已释放；失败不吸收、不推进成功。稳定 tuple 与最终 ULW 屏障都确认 session/serial；该次末笔在最终几何锁内CAS取得phase并RAII持有至四API/成功snapshot发布，防止新Down预发布窗口读旧抓点。workspace/minimize延后到此步成功，下一帧才进入释放交接；零T也须等原phase交接。含 T=0 的正式释放都从最后完整成功 shape 恢复规范 root，首候选只播种不积分。几何锁内保存成功 HWND 绝对矩形 W、source S 和 capacity size；释放后的 layout viewport V=W−monitorOrigin−frameT、capacityOrigin C=V−S，窗口位置/source/size 保持，只让内部 UI 恢复。Up 恢复期间暂时保留该基准；恢复结束的最后 idle 帧必须解除释放表面保留，重新走原有 ViewportController 与屏幕包含规则收缩 HWND，允许此时原点/source 改变。不得用长期保留大窗口规避闪烁，以免增加下层绘制负担。失败不推进冻结基准，同一释放 session 只捕获一次；最后 idle 帧收窗或下次 Down 成功时退休。display/zoom、workspace/minimize 或内容超出保留表面时显式失效并重准备，不能以已结束手势的 Cancel 形成无限重试。
 - 横纵 mode、phase、elastic offset、直接窗口位移和显示环境共用 `bottomDockTransitionSerial` 的同一发布事务。交互线程必须先计算完整两轴候选，再发布偶数稳定 serial；渲染线程不得提交只包含一轴新状态的帧。 deferred barrier 必须在偶数 serial 发布前写入；屏幕抓手 X/Y、top 和 T 整组发布。显示屏障只标记 barrier 或发布整组载荷，不能半组改写抓手；首次抓取与普通采样也不能在稳定 serial 之外补写其中一轴或 barrier。
 - 输入、折叠和白板请求的写者必须先通过 `BeginBarBottomDockTransition` CAS 独占奇数 serial，禁止多个 `fetch_add` 写者重叠形成伪稳定偶数。渲染自动写回必须用 `TryBeginBarBottomDockFrameTransition` 同时满足未抓取且 serial 仍等于本帧已消费版本；资格失效就丢弃候选并保留 dirty 重试，不得替旧位图升级到更新输入的 serial。在 PrepareLightingAndDemand 之前作废候选时，必须调用 `BarPresentDecision::RequireVisualRetry()` 同时补 visual demand 和 full dirty；仅 RetainForRetry/RequireFullDirtyRetry 不会令 ShouldPresent 为真，不能保证静止后的正确帧上屏。写事务仅包含短暂本地/原子更新，不跨 D2D 呈现或外部锁。
 - 这两组偶数/奇数版本快照（期望 `bottomDockTransitionSerial` 与已呈现 `bottomDockPresentedMappingSerial`）的写者在领取奇数后、写 relaxed 载荷前设置 release fence，写完后以 release 发布偶数。读者先 acquire 读偶数，读取全部 relaxed 载荷后设置 acquire fence，再重读版本并仅在相等时接受。新增读取点或写者必须保持这个配对；只靠末尾 acquire load 不能保证载荷先于校验。运行期形态变化仍用原有 deferred barrier 处理，不能把未来 barrier 当成成功呈现。
 - 按住时 Free/Dragging 阶段由输入 tracker 拥有，渲染不得强制写成 Stable 或程序化居中；不一致的折叠/居中候选需等完整新 tuple。显示位置的拖动所有权也读取同帧 `bottomDockDragActive`，不另读实时 direct phase 拼接帧状态。
-- 松手发布 `bottomDockDragActive=false` 后，`directWindowDragPhase` 仍可能短暂为 `Dragging`。只要仍有待吸收直移或上一成功帧仍为 held（包括 T=0），渲染线程在取得稳定 release tuple 后必须返回 Retry；下一帧先把 phase 原子切到 `Absorbing`，在 `directWindowDragMutex` 内吸收 translation、重基准成功快照并执行 `PositionUpdate()`，然后才允许释放态布局和既有换向动画。
+- 松手发布 `bottomDockDragActive=false` 后，`directWindowDragPhase` 仍可能短暂为 `Dragging`。只要仍有待吸收直移或上一成功帧仍为 held（包括 T=0），渲染线程在取得稳定 release tuple 后必须返回 Retry；phase 空闲后先完成上述末笔正常位移提交，再把 phase 原子切到 `Absorbing`，在 `directWindowDragMutex` 内吸收 translation、重基准成功快照并执行 `PositionUpdate()`，然后才允许释放态布局和既有换向动画。
 - 交互重基准、直接 `SetWindowPos` 失败回滚和下一手势起点只读取最后成功呈现快照。水平 tracker 的输入必须是指针驱动、未形变的主体中心；形态呈现 barrier 只能确认窗口位移已提交，不得用视觉主体中心改写抓取偏移或 tracker 基准。显示环境重基准也不能用当前 pointer 减已限位/滞后的呈现中心重抓；抓取偏移保持原逻辑点，仅通过 `ScaleBarDragGrabOffsetForZoom` 随实际呈现 zoom 比例缩放。水平捕获与脱离首帧必须从已显示像素播入恢复平移，不能把逻辑锚点切换表现为 HWND 跳变。
 - D2D 几何计算完成后到 ULW 之间，交互线程仍可发布采样。最终目的地必须在 `directWindowDragMutex` 内读取同一稳定偶数 serial 下的目标/实际 translation、最新 deferred barrier 和成功呈现 serial：当前帧已包含尚未上屏的 barrier 时，位图必须与帧内 translation 成对提交，后续普通采样不能迫使首次吸附饥饿；若更新的形态/显示 barrier 晚于当前帧，或提交前读到发布中/不一致 tuple，则放弃 ULW、配对 EndDraw 并保留完整重试，不推进成功快照或伪报 ULW 失败。held Docked/Centered 的像素始终配对 frame translation，不能在绘制后换用旧实际 T；只有纯 Floating 的普通过期帧继续使用实际已呈现 translation，避免拉回已直移 HWND。
 - 交互侧 `SetWindowPos` 前必须调用 `ShouldDeferBarDirectWindowMove`，同时满足本地 `awaitedTransitionSerial == 0`、全局 `deferredTransitionSerial <= presentedTransitionSerial` 和 candidate/前后 serial 为同一稳定偶数，不能用本地 awaited 代替全局屏障。屏障未呈现时只能让完整渲染接管；纯 Floating 在屏障解除且 tuple 稳定时必须允许合法直移；Docked/Centered 禁止先搬旧位图，必须由 ULW 同帧提交位置和抵消后的新像素。不能用禁用全部直移或每输入清 `committedWindowScreenBoundsReady` 伪造通过。测试 sink 仅在 `INKEYS_ENABLE_UI3_PRESENTATION_HARNESS` 下替换最终移动 API，生产默认仍调用 Win32 `SetWindowPos`。
@@ -1002,6 +1006,10 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 | 释放吸收后、完整重试前立即再按下 | 绝对映射与命中已重基准，屏幕端点及中心不变 |
 | 非固定 held 段的完整 predicted viewport 超出旧 capacity | 先覆盖候选 viewport 再分配；source 必须落在实际 target 内 |
 | 同 session/display/zoom 的固定 held 内容超出 Down 包络 | 取消手势并从成功 shape 退出；不能增大窗口、改 source 或提交裁剪候选 |
+| 静止 Up、立即 Up 与恢复期 | 暂保留成功 W/source/size/target；立即 Up 先呈现末笔正常输入 |
+| 恢复动画结束的最后 idle 帧 | 解除释放保留，由原viewport控制器按当前内容收窗；不可长期保留拖动透明预留，允许原点/source改变 |
+| 连续新 Down/Up、环境相同且内容稳定 | fresh 内容包络不递归旧透明余量；重复同一手势尺寸不逐次增长 |
+| 保留的释放表面不再包含当前内容 | 清除保留状态，保留 full dirty 并要求 visual retry；同 session 不重捕获旧表面 |
 | 首次捕获候选未上屏或上一成功底边在 24 DIP 外 | 按成功像素重新播入精确底端；首帧不提前积分或裁短初值 |
 | 手动重捕获旧底边 1773、基准 1824、zoom=2、有效指针已前进 47 | 成功形状先随有效抓点平移，首帧底边 1820；不得冻结在 1773，`c=e=-2` 仅是本例结果 |
 | 指针静止且底边果冻继续，或抓在底边/取整邻域 | 顶边保持同一屏幕目标，底端独立收敛；不要求形变后实际抓点仍等于指针，不再有抓点奇点特判 |
@@ -1032,12 +1040,19 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 
 - Headless 覆盖水平 `-40/0/+40 DIP` 边界、严格越界、高速跨带、横纵同帧捕获、折叠门禁、展开自动捕获、左右展开联合外框和 100%/150% DPI；竖向 20 DIP 边界另行保持。
 - Headless 覆盖稳定居中根节点所有权矩阵、左右展开、可见描边、无效几何、Draw → Selection 宽度单调与逐帧联合中心不变量、桌面/白板初始方向、零宽/非有限宽度方向保持、主体 X/Y 非恒等映射往返、扩展面板锚点、首次显现完整光影包络、失败快照、release handoff 门禁、当前/过期/发布中帧的实际 HWND translation 解析，以及浮动进入/底栏双向切换/未切换手势的提示资格。
-- 固定手势回归通过真实 Seek/RenderLoop 检查 Down 成功后 source/size/capacity/viewport 不变、跨带 T 连续、Docked/Centered 无旧图直移、partial dirty 保留，以及零 T Up/Cancel、失败重试与包络溢出取消；离屏 PASS 不等于肉眼跳变已修复。
+- 固定手势回归通过真实 Seek/RenderLoop 检查 Down 成功后 source/size/capacity/viewport 不变、跨带 T 连续、Docked/Centered 无旧图直移、partial dirty 保留，以及零 T Up/Cancel、失败重试与包络溢出取消。Up 首帧保持成功表面，随后125帧恢复尾段必须观察到 HWND 相对 held 预留严格缩小（含动画关闭）；同 owner 先3次真实手势warmup，再连续6次立即/静止释放覆盖 Docked/Centered/Floating，不重新 Initialize；严格验证末笔正常位移、每次最终收窗及重复同一稳定手势无尺寸递增。真实短重放每次重新核对 PID/Logo 命中并区分 endpoint cursor ack 与成功画面；离屏 PASS 不等于肉眼跳变已修复。
 - 几何验收覆盖 `r=0、33/81、38/81、0.5、1` 的 Down 逆映射和成功形状交接；固定输入时底端从1820到1824 px，顶边须始终为1658 px，而非旧求解器的1654.465116 px。输入再前进4 px时顶边只前进4 px；跨 zoom/origin/base/translation、正高度冲突、松手/失败重试分别保持同一端点合同。按住时不要求恢复基准高度，松手后才恢复布局；真实可见边框仍需人工验证。
 - `--ui3-workspace-centering-test` 运行真实 RenderLoop/离屏 ULW，覆盖 Enter/Switch/Leave、快速反向、左右展开、合成 DPI/负原点以及有内容桌面→空 PPT 的 Freeze 成员/隐藏锚点/渐隐。`--ui3-bottom-dock-transition-test` 用真实 mailbox/Pump/Seek 和同一 RenderLoop 覆盖成功形状交接、真实抓点与位置、失败重试、释放吸收与命中往返、PPT/Whiteboard 动画中拖动、提示及动画关闭；仅替换最终 ULW 与生产直移 sink，其余生产路径不变，并记录 SetWindowPos/ULW 顺序。两个入口在 harness 关闭时初始化产品窗口前返回 2。场景返回还须验证 dt=0 首帧不跳、多个成功 Y 移动帧、逐帧联合居中、返回中再次进入不污染桌面目标，以及动画关闭时首帧到位；仅终点有位移或宽度仍在动画不能证明 Y 动画存在。软件通过不代表真实 ULW/DWM、Office、最小化/恢复或手感已验收。
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`，并完成完整 `InkeysHeadlessTests --no-window`；达到超时上限、只有选择集或缺少最终 PASS 都不能记为全量通过。手工检查横纵果冻叠加、脏区调试、动画关闭和多显示器切换。
 
 #### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：旧窗口已经有透明预留，下一次又给它加边会跨手势累计增长。
+ResolveBarFixedDragEnvelope(current, prediction, oldViewport, zoom, marginX, marginY);
+// Correct：seed只含同环境最后成功内容；Up恢复期暂保留，最后idle必须收窗，下一Down重新预留。
+ResolveBarFixedDragEnvelope(current, prediction, successfulContentSeed, zoom, marginX, marginY);
+~~~
 
 ~~~cpp
 // Wrong：分别发布横纵模式，渲染线程可能观察到半个吸附转换。

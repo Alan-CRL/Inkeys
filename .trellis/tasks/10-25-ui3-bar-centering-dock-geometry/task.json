@@ -24,17 +24,19 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-26 居中移动子任务已按用户要求完成并归档至.trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering，实现提交bc493667；完整ARM64构建及场景/底栏离屏通过，真实PPT视觉未自动验证。吸附闪动子任务继续in_progress：拖动已正常，静止后松手仍闪，后续隔离release viewport归位；父任务保留开启。",
+  "notes": "2026-10-27用户明确授权完成收尾、结束相关任务并归档提交。居中子任务已归档；固定拖动实机正常。最终释放表面仅保留至恢复结束，最后idle收窗；完整ARM64构建、190次收窗及吸附/居中/输入/完整no-window均通过。最终收窗版未新做GUI验证，收窗闪动可能返回是用户接受的性能/设计取舍；不宣称系统根因或所有环境完全消闪。",
   "meta": {
     "verification": {
-      "software": "static_reviewed_commit_authorized_build_pending",
-      "gui": "manual_vertical_drag_authorized_after_commit_pending",
+      "software": "final_arm64_solution_bottom_dock_centering_input_worker_full_headless_passed_190_window_shrinks",
+      "gui": "dragging_user_confirmed_normal_final_idle_shrink_not_visually_retested_residual_tradeoff_accepted",
       "report": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
       "reviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md",
       "fixValidationReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md",
       "regressionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md",
       "liveReproductionReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md",
-      "topEdgeFixReviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md"
+      "topEdgeFixReviewReport": ".trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md",
+      "finalClosure": "user_authorized_archive_2026_10_27_with_documented_idle_shrink_flicker_limit",
+      "finalReleaseEvidence": "TestResults/ui3-release-shrink-2026-10-27/validation-summary.json"
     }
   }
 }

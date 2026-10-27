@@ -352,7 +352,7 @@ namespace Inkeys::UI::Bar
 	// 包络属于手势表面的存储坐标；允许越过屏幕，不改变 UI 自身的屏幕定位范围。
 	[[nodiscard]] inline RECT ResolveBarFixedDragEnvelope(
 		const RECT& currentContentBounds, const RECT& predictedEnvelope,
-		const RECT& presentedViewport, double zoom,
+		const RECT& presentedContentBounds, double zoom,
 		double horizontalMarginDip, double verticalMarginDip, LONG paddingPx = 0) noexcept
 	{
 		if (!std::isfinite(zoom) || zoom <= 0.0
@@ -361,7 +361,7 @@ namespace Inkeys::UI::Bar
 			|| paddingPx < 0) return {};
 		RECT bounds = currentContentBounds;
 		UnionBarWindowRect(bounds, predictedEnvelope);
-		UnionBarWindowRect(bounds, presentedViewport);
+		UnionBarWindowRect(bounds, presentedContentBounds);
 		if (IsBarWindowRectEmpty(bounds)) return {};
 		const double horizontalPadding = std::ceil(horizontalMarginDip * zoom) + paddingPx;
 		const double verticalPadding = std::ceil(verticalMarginDip * zoom) + paddingPx;
