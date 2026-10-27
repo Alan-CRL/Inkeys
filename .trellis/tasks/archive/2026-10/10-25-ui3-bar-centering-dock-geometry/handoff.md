@@ -22,7 +22,7 @@
 ## -1. 2026-10-26 后续审阅（历史缺口，已由上方最新修复覆盖）
 
 - 接管提交 `1ba08698` 的吸附验收已被最新审阅撤回：手动捕获旧底边 seed 可用历史实机数值复现错误，真实局部抓点未修，离屏绕过 `SetWindowPos` 且缺位置断言。
-- 下一 agent 必须先读 `.trellis/tasks/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md`。父/吸附任务 `software=review_failed`，当前任务指针为 none；不要只依据下方 integration PASS 继续宣称完成。
+- 下一 agent 必须先读 `.trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md`。父/吸附任务 `software=review_failed`，当前任务指针为 none；不要只依据下方 integration PASS 继续宣称完成。
 - 本轮用户选择仅静态审阅，未启动 GUI；后续针对性修复与回归方案见审阅文档。
 
 ## 0. 2026-10-26 接力结果（历史记录，吸附 PASS 不等于验收）

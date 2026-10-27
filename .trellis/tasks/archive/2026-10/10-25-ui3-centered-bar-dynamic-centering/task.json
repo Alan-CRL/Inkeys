@@ -26,7 +26,7 @@
     "verification": {
       "software": "workspace_leave_y_animation_build_and_offscreen_passed",
       "gui": "ppt_leave_vertical_animation_pending_manual_validation",
-      "report": ".trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
+      "report": ".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
       "workspaceReturnReport": ".trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering/research/workspace-return-animation-2026-10-26.md"
     }
   }

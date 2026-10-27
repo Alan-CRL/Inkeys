@@ -1,0 +1,16 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"审查是否限定在当前 UI3 生产实现并满足桌面质量门槛。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"逐项核对居中、吸附、脏区、窗口外框和成功快照合同。"}
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"核对场景进入退出是否保持桌面基线与 Centered/Free 状态。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核对完整 Solution、原生架构和兼容验证边界。"}
+{"file":".trellis/spec/native-desktop/ui3-render-diagnostics.md","reason":"核对诊断证据真实性及无窗口验证的局限。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md","reason":"使用共享不变量执行最终集成审查。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering/research/centering-investigation.md","reason":"验证居中修复覆盖已定位根因而非仅终态。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/dock-transition-clipping-investigation.md","reason":"验证跳变和裁剪修复覆盖实际未保护分支。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/handoff.md","reason":"集成审查前确认当前停止点、已有修改和不得误判的未验证项。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering/research/implementation-validation.md","reason":"核对居中最终断言、实际测试结果和待接力验证。"}
+{"file": ".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md", "reason": "最终接力、DPI/范围审计、两个子任务组合及软件/GUI 验收边界"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md","reason":"质量检查必须覆盖最新发现的手动捕获与真实抓点缺陷，不能只重跑有盲区的旧离屏测试。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md","reason":"审查最新真实抓点、底边恢复和直移顺序的最终证据及剩余 GUI 风险。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/break-loop-2026-10-26.md","reason":"质量门必须包含位置、真实抓点、合法直移放行和完整 no-window，防止测试自证。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md","reason":"审查必须加入顶边不动和整个手势窗口尺寸/source 稳定，不得复用错误抓点验收。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md","reason":"检查真实复现证据和复现前禁止产品修复的门禁，不以离屏结果代替。"}

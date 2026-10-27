@@ -257,7 +257,7 @@ Leave 路径是本次调查的关键反差：当前静态代码并未显示与 E
 - `.trellis/spec/native-desktop/rendering-and-ui.md:871-1031`：二维 dock、稳定根节点、workspace 场景和测试要求。
 - `.trellis/spec/native-desktop/whiteboard.md:23-35,52-62`：场景基线、5 DIP、离屏与 GUI 验证边界。
 - `.trellis/spec/native-desktop/ui3-render-diagnostics.md:30-47,95-103`：成功提交诊断与无窗口验证限制。
-- `.trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md`：父任务的共享成功帧不变量和跨子任务验证边界；它是并行研究，不作为本报告的产品证据来源。
+- `.trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md`：父任务的共享成功帧不变量和跨子任务验证边界；它是并行研究，不作为本报告的产品证据来源。
 
 ## Caveats / Not Found
 

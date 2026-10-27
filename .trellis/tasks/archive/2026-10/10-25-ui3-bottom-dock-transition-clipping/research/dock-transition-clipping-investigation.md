@@ -226,7 +226,7 @@
 | `window_geometry_tests.cpp:368-395` | 已位于容量内的预留包络可得到合法 source | 前提人工保证包含，无法发现生产越界 |
 | `dirty_region_tests.cpp` | dirty 旧新并集、重试、映射变化、调试覆盖 | 不含提示首次 reveal 的完整窗口/D2D/ULW 链 |
 
-父任务随后已用原生 ARM64 MSBuild 对当前 HEAD 构建完整 `InkeysRepo.sln Debug|ARM64`，结果 0 警告/0 错误且目标均 up-to-date；同一 `Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window` 产物退出 0（见 `.trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md`）。**本研究代理未重新构建或运行测试；更重要的是，即使全绿也没有复现本问题的完整视觉场景。**
+父任务随后已用原生 ARM64 MSBuild 对当前 HEAD 构建完整 `InkeysRepo.sln Debug|ARM64`，结果 0 警告/0 错误且目标均 up-to-date；同一 `Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window` 产物退出 0（见 `.trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md`）。**本研究代理未重新构建或运行测试；更重要的是，即使全绿也没有复现本问题的完整视觉场景。**
 
 ### 5.2 最小自动化回归（后续实现阶段）
 
@@ -293,7 +293,7 @@
 - `.trellis/spec/native-desktop/index.md:5,48-60`：生产 UI3 唯一路线、共享渲染与测试边界。
 - `.trellis/spec/native-desktop/rendering-and-ui.md:603-850`：dirty/capacity/viewport/成功事务；`:871-1031`：二维吸附、捕获 seed、提示和验证矩阵。
 - `.trellis/spec/native-desktop/ui3-render-diagnostics.md:30-47,95-103`：raw capture 约束及无窗口/真实 ULW 的证据分界。
-- `.trellis/tasks/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md`：父任务共享不变量与基线结果。
+- `.trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md`：父任务共享不变量与基线结果。
 
 ### External References
 
