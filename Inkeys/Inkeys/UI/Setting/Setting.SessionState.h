@@ -4,10 +4,26 @@
 #include <dbt.h>
 
 #include <cstdint>
+#include <mutex>
 #include <utility>
 
 namespace Inkeys::UI::Setting
 {
+	template <typename Callback>
+	decltype(auto) WithSettingInputUnlocked(
+		std::unique_lock<std::recursive_mutex>& inputLock, Callback&& callback)
+	{
+		struct RestoreInputLock
+		{
+			std::unique_lock<std::recursive_mutex>& lock;
+			~RestoreInputLock() { lock.lock(); }
+		};
+		// DXGI Present 可能等待窗口线程；释放 IO 锁让焦点/输入消息完成，返回后再读 ImGui。
+		inputLock.unlock();
+		const RestoreInputLock restore{ inputLock };
+		return std::forward<Callback>(callback)();
+	}
+
 	enum class BarButtonClickAction : std::uint8_t
 	{
 		ShowAndActivate,

@@ -1181,6 +1181,7 @@ namespace
 	{
 		struct promise_type
 		{
+			unique_lock<recursive_mutex>* inputLock = nullptr;
 			SettingSessionCoroutine get_return_object() noexcept
 			{
 				return SettingSessionCoroutine(
@@ -1208,9 +1209,24 @@ namespace
 		SettingSessionCoroutine(const SettingSessionCoroutine&) = delete;
 		SettingSessionCoroutine& operator=(const SettingSessionCoroutine&) = delete;
 
-		void Resume()
+		void Resume(unique_lock<recursive_mutex>& inputLock)
 		{
-			if (handle && !handle.done()) handle.resume();
+			if (!handle || handle.done()) return;
+			struct ResumeLockScope
+			{
+				unique_lock<recursive_mutex>*& activeLock;
+				unique_lock<recursive_mutex>* previous;
+				~ResumeLockScope() { activeLock = previous; }
+			};
+			// 只借用本次 Resume 的锁；挂起/返回后清除，不能跨帧保存调用栈引用。
+			auto& activeLock = handle.promise().inputLock;
+			const ResumeLockScope scope{ activeLock, exchange(activeLock, &inputLock) };
+			handle.resume();
+		}
+		HRESULT Present(IDXGISwapChain* swapChain)
+		{
+			return Inkeys::UI::Setting::WithSettingInputUnlocked(
+				*handle.promise().inputLock, [swapChain] { return swapChain->Present(1, 0); });
 		}
 		[[nodiscard]] bool Done() const noexcept { return !handle || handle.done(); }
 		void Reset() noexcept
@@ -4381,7 +4397,7 @@ SettingSessionCoroutine RunSettingSession()
 				co_await suspend_always{};
 				continue;
 			}
-			const HRESULT result = g_pSwapChain->Present(1, 0);
+			const HRESULT result = settingSession.Present(g_pSwapChain);
 			g_SwapChainOccluded = (result == DXGI_STATUS_OCCLUDED);
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 			if (entryProfiler.active) entryProfiler.Record(entryFrameBegin,entryCpuEnd,entryBackendEnd,SettingEntryProfiler::Clock::now(),homeMotion,ImGui::GetDrawData(),entryRootSuppressed);
@@ -4449,9 +4465,9 @@ namespace
 		if (!settingSession.Done())
 		{
 			settingSessionShouldStop.store(true, memory_order_release);
-			lock_guard imguiLock(settingImguiMutex);
+			unique_lock imguiLock(settingImguiMutex);
 			SettingRenderScope renderScope;
-			settingSession.Resume();
+			settingSession.Resume(imguiLock);
 		}
 		settingSession.Reset();
 		settingSessionEpoch = 0;
@@ -4522,8 +4538,8 @@ namespace
 				settingSessionDrained = false;
 			}
 			{
-				lock_guard imguiLock(settingImguiMutex);
-				settingSession.Resume();
+				unique_lock imguiLock(settingImguiMutex);
+				settingSession.Resume(imguiLock);
 			}
 
 			const bool succeeded = !settingSession.Done();
@@ -4666,9 +4682,9 @@ namespace
 		settingFrameContext = context;
 
 		{
-			lock_guard imguiLock(settingImguiMutex);
+			unique_lock imguiLock(settingImguiMutex);
 			SettingRenderScope renderScope;
-			settingSession.Resume();
+			settingSession.Resume(imguiLock);
 		}
 		if (settingSession.Done())
 		{

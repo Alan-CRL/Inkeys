@@ -1517,7 +1517,7 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 
 #### 3. Contracts
 
-- HWND 所属线程只处理 capture/cursor/IME、生命周期和 `ImGui_ImplWin32_WndProcHandlerEx`；只有 Win32 backend 实际处理的输入、焦点、IME、设备变化消息才取得专用 recursive mutex 串行访问 ImGui IO；非客户区 `WM_SETCURSOR`、移动/尺寸/位置及系统生命周期消息不得无条件等待该锁。Win32 backend 的 `SetCapture`/`ReleaseCapture`/IME 调用可能同步重入同一 WndProc。ImGui context、DX11 backend、NewFrame/draw/Present 只由 RenderPipeline 线程使用。
+- HWND 所属线程只处理 capture/cursor/IME、生命周期和 `ImGui_ImplWin32_WndProcHandlerEx`；只有 Win32 backend 实际处理的输入、焦点、IME、设备变化消息才取得专用 recursive mutex 串行访问 ImGui IO；非客户区 `WM_SETCURSOR`、移动/尺寸/位置及系统生命周期消息不得无条件等待该锁。Win32 backend 的 `SetCapture`/`ReleaseCapture`/IME 调用可能同步重入同一 WndProc。ImGui context、DX11 backend、NewFrame/draw/Present 只由 RenderPipeline 线程使用。实际 DXGI Present 期间必须完整释放输入锁，返回或抛异常后先重新取得锁，再读取 DrawData、完成入场帧和确认呈现；否则 Present 等待窗口消息线程时可能与焦点消息互等。协程只在当前 Resume 的动态作用域借用外层 unique_lock，挂起/返回后不得保留该引用。
 - `Initialize()` 注册 Settings 客户端后，必须同步等待渲染线程建立 ImGui context、Win32/DX11 backend、内嵌字体图集、解码图片缓存和全部图片 SRV；任一步失败都按相反顺序回滚并返回 `false`，不得留下已初始化 backend、device lease 或半套 SRV。
 - Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；`Hide()` 只停止连续绘制并释放 swap chain/RTV，context、backend、字体、解码图片和 SRV 保持常驻。`Show()` 恢复窗口和呈现资源；只有 `Shutdown()` 才逆序释放全部常驻资源并调用 `ImFluent::ResetContext()`。
 - device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品；健康设备上的普通资源失败返回 `Retry`，已移除设备返回 `DeviceLost`，后续重试不能对未初始化 backend 重复 `Shutdown`。
@@ -1640,7 +1640,7 @@ Window::Service::RestoreWhiteboardWindowGroup() -> bool;
 - More 在左下同一 HWND 向上展开关闭白板、最小化白板、主题样式；主题内联展开六色与空白/点阵/网格预览。左/底主体锚点固定，窗口大小、命中、阴影及 damage 使用同帧几何；不得新增 popup HWND。菜单外点击、Escape、翻页、最小化和工作区切换关闭菜单。Hook 只异步投递收起请求，排除左侧控件本身，原画布点击继续正常处理。
 - 白板主栏 A2 按钮恢复；有效放映存在时为“返回放映”，否则为“关闭白板”，后台 PPT 结束会同步文案；白板组最小化时主栏优先显示 `barWhiteboard` 和“返回白板”/`Resume`，点击仅恢复原窗口组，最小化/恢复边沿立即刷新图标和文字；主栏非最小化关闭与菜单关闭共用 `RequestWhiteboardActive(false)`。
 - 每页主题及笔迹/历史自动保存到进程会话下的多页 `.uink`，不受桌面自动保存开关影响。新页继承当前主题，主题修改不进墨迹撤销栈。色板、纹理、冷页加载和页级内存合同见 [whiteboard.md](whiteboard.md) 与 [draw3-integration.md](draw3-integration.md#whiteboard-页级-uink-与编辑历史合同)。本次替代此前无保存、固定墨绿的初始范围；仍不支持平移、缩放和历史浏览。
-- Freeze 是 Whiteboard mode 的唯一 `WS_EX_APPWINDOW`、任务栏和 activation anchor；Drawpad 可激活但保留 `WS_EX_TOOLWINDOW`，其余辅助窗口不进入任务栏。整个 owner group 保持 `HWND_NOTOPMOST`，最小化/恢复只恢复此前可见成员。
+- Freeze 是 Whiteboard mode 的唯一 `WS_EX_APPWINDOW`、任务栏和 activation anchor；Drawpad 可激活但保留 `WS_EX_TOOLWINDOW`，其余辅助窗口不进入任务栏。整个 owner group 保持 `HWND_NOTOPMOST`，最小化/恢复只恢复此前可见成员。白板仍等待 Draw3 对应输出/内容版本的真实首帧、背景提交及必要窗口事务完成，随后先发布 Active，再异步尝试一次激活。Freeze SetBounds/Show 必须读回目标 RECT、真实可见且非最小化；minimized 时被抑制的请求返回未提交，不得确认背景 Active，恢复通知驱动一次新的真实提交。前台分配失败不阻止后台进入，不周期抢焦点。异步请求仅在同 epoch 且仍为 Entering/Active 的白板意图下执行，退出、新 epoch、隐藏、最小化和停机均拒绝过期激活。
 - 退出必须恢复 `DrawpadPresentation` click-through 并释放白板 dock request/lock；有有效 PPT 则返回放映，没有则回桌面。最终回桌面恢复首次进入前的主栏基线，不再强制 `fold=true`。窗口顺序保持 `LeaveWhiteboardWindowMode()` 后 `SetOverlayTopmost(true)`，不得让 style 事务覆盖恢复后的 Z 序。
 
 ### 4. Validation & Error Matrix
@@ -1653,7 +1653,8 @@ Window::Service::RestoreWhiteboardWindowGroup() -> bool;
 | Enter/Exit 中途反向请求 | 先切换 expanded 目标并回到完整的另一状态事务；PageControl 从当前插值值重新定向且共享 HWND 不隐藏，背景 active 不提前发布 |
 | `EnterWhiteboardWindowMode()` 失败 | Window Service 回滚 Presentation style；PPT 可见性按当前 COM 页数恢复 |
 | PageControl present 与 `PublishActive(false)` 交错 | present 先结算 D2D 事务；下一帧按最新快照反向重定向，且不在 Scene 锁内同步调用 Window Service |
-| Whiteboard group 最小化/恢复 | Freeze 作为组锚点；仅恢复快照中可见的成员 |
+| Whiteboard group 最小化/恢复 | Freeze 作为组锚点；仅恢复快照中可见的成员，并清除/恢复两面 Shell 全屏标记 |
+| 前台分配失败或 Setting 保持前台 | 真实首帧和背景就绪后仍进入 Active；激活请求不阻塞状态线程 |
 | 窗口状态调用失败 | phase 不发布假稳定态，下一轮继续收敛或回滚 Presentation |
 
 ### 5. Good / Base / Bad Cases
@@ -1745,7 +1746,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、四个 PageControl HWND、Bar、Setting 和 DisplayObserver；Whiteboard 复用两个 `PptBottom*` HWND，不再创建独立左右窗口。创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
 - 四个分页 HWND 的业务显隐只由 PageControl 提交：`Acquire()` 注册客户端后以 `RequestAll()` 唤醒，成功呈现后 `SetBounds/Show`，Hidden 目标使用 `Hide`。`TopWindow()` 不得无条件显示分页窗；`IdtWindowsIsVisible.pptWindow` 只表示客户端注册就绪，否则尚未布局的 `(0,0)` 初始矩形可能滞留左上角并干扰新接触。
-- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> DrawpadPresentation -> Drawpad -> PPT/Bar`；Mag 缺失时 Freeze 为根。Drawpad 是 DrawpadPresentation 的顶层 owned popup，不是 `WS_CHILD`；该传递链必须保证 Bar/PPT 高于两套画布表面。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；共享底窗或其他 PPT show、`PromotePptWindow` 只把目标窗放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。Win32 会把根的 topmost band 变化传播给 owned popup；刷新后非根出现 `WS_EX_TOPMOST` 不能证明代码对它执行了独立置顶，必须审查 `SetWindowPos` 调用点。白板期间对 Freeze 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除。
+- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> DrawpadPresentation -> Drawpad -> PPT/Bar`；Mag 缺失时 Freeze 为根。Drawpad 是 DrawpadPresentation 的顶层 owned popup，不是 `WS_CHILD`；该传递链必须保证 Bar/PPT 高于两套画布表面。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；共享底窗或其他 PPT show、`PromotePptWindow` 只把目标窗放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。Win32 会把根的 topmost band 变化传播给 owned popup；刷新后非根出现 `WS_EX_TOPMOST` 不能证明代码对它执行了独立置顶，必须审查 `SetWindowPos` 调用点。白板期间对可激活的 Freeze 和 Drawpad 调用 `ITaskbarList2::MarkFullscreenWindow`；任一面激活时仅使 Shell 邮箱失效并由独立 worker 重申，最小化、退出和销毁前清除，恢复时重新发布。不得将 Setting 标记全屏或独立置顶。
 - PPT 可见性 `false -> true` 发布完成后立即请求一次根置顶刷新；成功后连续可见状态去重，失败时保留 pending 并由既有 500ms 发布节拍重试，离开放映取消 pending。PageControl 的 present 成功不代表 HWND 提交完成：`SetBounds/Show/Hide` 任一步失败都返回 RenderPipeline `Retry`。Draw3 surface 切换失败同样保留 reconciliation pending，由既有 250ms 状态节拍重试；只有窗口提交成功后才更新 drawpad ready 事实。
 - 主栏定格按钮在 `Freeze::Toggle()` 前后比较 `IsActive()`；只有 `false -> true` 转换立即显式调用一次 `RequestTopmostRefresh()`。`true -> false` 和 PPT/白板导致的不可用点击不提交。Bar 入口不得持有 HWND 或直接调用 `SetWindowPos`；立即刷新失败不回滚定格状态，由既有周期性根刷新继续收敛。
 - `Inkeys.UI.Freeze` 把业务 flags 与单调 `revision` 放在同一原子状态字中，每次真实 Toggle 或 PPT/Whiteboard 工作区切换发布完整 `StateSnapshot`。observer 只能把 `{revision, active}` 投递到 latest-wins mailbox 并唤醒 `MagnifierThread`，不得直接操作 HWND；迟到通知按 revision 丢弃，失败回退只能调用 `DeactivateIfRevision(request.revision)`，禁止无条件 `Toggle()`。
@@ -1830,6 +1831,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption/RightHeader/主题/Debug/拖拽互斥、窄宽版本隐藏、八方向 frame 与整个 scrollbar client 区、不同 DPI 的最小尺寸、创建估计/实际边框差一像素时的客户区校正与工作区夹紧、真实 MINMAXINFO 的 max 字段保留，以及 DPI 建议矩形与响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
 - 静态审查必须确认仅 Move guard 位于 swap-chain create/probe/resize 与 coroutine resume/Present 之前；Size 不经过该 guard，`WM_SIZE` 仍 `QueueResize + Request`。真实 resize 流畅度、Snap Layout、active/accent border 和多显示器 DPI 仍只能在允许 GUI 的阶段人工验收。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
+- 白板后台相对排序与纯 Z 恢复的无窗口测试须调用生产策略，覆盖隐藏 Middle 在 Bar 上方、拒绝全局 TOP、写后重新采样、HWND/generation 变化、原 PPT 序恢复及零 Canvas/显隐写入；正常 Desktop/PPT 刷新政策保持。相关合同见 [canvas-freeze-boundaries.md](canvas-freeze-boundaries.md#纯层级命令的恢复写集2026-10-27)。禁止 GUI 时仅记录该层验证，不声称真实 USER32 或各系统实测。
 - Window 测试还需覆盖持久 `SetOverlayTopmost`、白板专用 `SetOverlayFullscreen`、Whiteboard activation style 和 group minimize/restore；fullscreen 不得自行改变 topmost 位，退出白板或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。静态审查需确认 `IdtFreezeFrame` 的桌面定格路径不调用 `SetOverlayFullscreen`。
 - Window 测试必须分别断言静态与动态创建的 `Freeze -> DrawpadPresentation -> Drawpad -> Bar/PPT` Owner 链，并在 Presentation/Primary 互斥显隐切换后断言 Bar 保持可见且 Z 序高于两个 Drawpad HWND。
 - 若主栏定格点击建立稳定测试接缝，必须通过 topmost refresh observer 断言 inactive->active 立即发布一次，active->inactive 和 unavailable no-op 发布零次；在当前 Bar 生产文件未进入 headless target 且无注入边界时，以生产分支静态审查和完整 Solution 构建验证，不得只为计数测试扩大公共 API。

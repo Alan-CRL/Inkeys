@@ -142,6 +142,31 @@ namespace
 		Exiting,
 	};
 
+	struct WhiteboardEntryAttempt
+	{
+		using Clock = std::chrono::steady_clock;
+		std::uint64_t preparedEpoch = 0;
+		Clock::time_point retryAt{};
+
+		[[nodiscard]] bool Ready(std::uint64_t epoch, bool desired, Clock::time_point now) const noexcept
+		{
+			// 仅限制同一进入意图的原生重试，取消和新的 epoch 不等待旧期限。
+			return !desired || preparedEpoch != epoch || now >= retryAt;
+		}
+		template<class Prepare>
+		void PrepareOnce(std::uint64_t epoch, Prepare&& prepare)
+		{
+			if (preparedEpoch == epoch) return;
+			prepare();
+			preparedEpoch = epoch;
+			retryAt = {};
+		}
+		void Failed(Clock::time_point now) noexcept
+		{
+			retryAt = now + std::chrono::milliseconds(250);
+		}
+	};
+
 	std::atomic_bool whiteboardDesired = false;
 	// 偶数属于可返回的 PPT 意图；奇数先于 desired 发布，封住进入白板时的并发准入缝隙。
 	std::atomic_uint64_t whiteboardInputEpoch = 2;
@@ -563,6 +588,18 @@ namespace
 			return whiteboardPhase.load(std::memory_order_acquire) == phase &&
 				whiteboardInputEpoch.load(std::memory_order_acquire) == epoch &&
 				whiteboardDesired.load(std::memory_order_acquire) == ((epoch & 1U) != 0);
+		};
+	}
+
+	std::function<bool()> WhiteboardActivationGuard(std::uint64_t epoch)
+	{
+		return [epoch]() noexcept
+		{
+			const auto phase = whiteboardPhase.load(std::memory_order_acquire);
+			// 激活异步执行时，真实就绪可能已从 Entering 提交到 Active；退出或新意图仍必须失效。
+			return (phase == WhiteboardPhase::Entering || phase == WhiteboardPhase::Active) &&
+				whiteboardInputEpoch.load(std::memory_order_acquire) == epoch &&
+				whiteboardDesired.load(std::memory_order_acquire) && (epoch & 1U) != 0;
 		};
 	}
 
@@ -1803,6 +1840,42 @@ int RunStateModeProductionTest() noexcept
 				snapshot.state.StateModeSelect == snapshot.state.StateModeSelectEcho, "mode-projection");
 		};
 
+		stage = "whiteboard-entry-retry";
+		{
+			WhiteboardEntryAttempt entry;
+			auto now = WhiteboardEntryAttempt::Clock::time_point{};
+			int collapsed = 0;
+			int cancelled = 0;
+			const auto prepare = [&] { ++collapsed; ++cancelled; };
+			for (int failure = 0; failure < 4; ++failure)
+			{
+				require(entry.Ready(3, true, now), "entry-native-retry-opens-at-steady-deadline");
+				entry.PrepareOnce(3, prepare);
+				entry.Failed(now);
+				require(!entry.Ready(3, true, now + std::chrono::milliseconds(1)) &&
+					!entry.Ready(3, true, now + std::chrono::milliseconds(249)),
+					"early-runtime-wakes-cannot-reenter-native-mode-before-250ms");
+				require(entry.Ready(3, false, now) && entry.Ready(4, false, now),
+					"cancelled-entry-bypasses-native-backoff-immediately");
+				require(collapsed == 1 && cancelled == 1,
+					"same-entry-epoch-prepares-ui-once-through-repeated-native-failures");
+				now += std::chrono::milliseconds(250);
+			}
+			// 同一进入意图也可能经 Exiting 回滚后重入，不能再次收起用户刚打开的面板。
+			entry.PrepareOnce(3, prepare);
+			require(collapsed == 1 && cancelled == 1, "same-epoch-reentry-keeps-ui-preparation");
+			entry.Failed(now);
+			require(!entry.Ready(3, true, now) && entry.Ready(5, true, now),
+				"new-entry-epoch-bypasses-previous-native-deadline");
+			entry.PrepareOnce(5, prepare);
+			require(collapsed == 2 && cancelled == 2 && entry.Ready(5, true, now),
+				"new-entry-prepares-once-and-retires-previous-backoff");
+			entry.Failed(now + std::chrono::milliseconds(40));
+			require(!entry.Ready(5, true, now + std::chrono::milliseconds(289)) &&
+				entry.Ready(5, true, now + std::chrono::milliseconds(290)),
+				"native-retry-deadline-starts-at-failure-completion");
+		}
+
 		stage = "ppt-focus-business";
 		require(RunPptFocusProductionTest() == 0, "ppt-focus-business-dispatch");
 		{std::scoped_lock lock(whiteboardReturnFocusMutex);whiteboardReturnFocus.Reset();}
@@ -2395,6 +2468,29 @@ int RunStateModeProductionTest() noexcept
 			failed.recovery.workspace = Bridge::Workspace::Whiteboard;
 			require(!Draw3RecoveryNeedsUiRelease(failed, desired), "old-workspace-error-cannot-release-current-window-transaction");
 		}
+		stage = "whiteboard-background-readiness";
+		{
+			HostRuntimeSnapshot ready;
+			ready.workspace = Workspace::Whiteboard;
+			ready.firstFrameReady = true;
+			ready.requestedOutputTarget = ready.readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
+			ready.requestedOutputRevision = ready.readyOutputRevision = 7;
+			ready.contentRevision = ready.presentedContentRevision = 9;
+			require(!Inkeys::Window::GetService().RequestWhiteboardActivation() &&
+				Draw3WorkspaceReady(ready, Workspace::Whiteboard),
+				"activation-request-rejection-does-not-revoke-real-frame-readiness");
+			ready.selectionMode = true;
+			require(Draw3WorkspaceReady(ready, Workspace::Whiteboard),
+				"background-whiteboard-selection-still-uses-presented-primary-surface");
+			ready.firstFrameReady = false;
+			require(!Draw3WorkspaceReady(ready, Workspace::Whiteboard), "background-entry-still-waits-real-first-frame");
+			ready.firstFrameReady = true;
+			--ready.readyOutputRevision;
+			require(!Draw3WorkspaceReady(ready, Workspace::Whiteboard), "background-entry-rejects-old-output");
+			++ready.readyOutputRevision;
+			--ready.presentedContentRevision;
+			require(!Draw3WorkspaceReady(ready, Workspace::Whiteboard), "background-entry-rejects-old-content");
+		}
 		stage = "scene-publication-ownership";
 		ChangeStateModeToPen();
 		const auto primaryTool = GetStateModeVersionedSnapshot();
@@ -2419,11 +2515,21 @@ int RunStateModeProductionTest() noexcept
 		require(bridge.Snapshot().workspace == Bridge::Workspace::Whiteboard,
 			"late-desktop-and-clear-cannot-overwrite-whiteboard-at-product-commit");
 		const auto oldWhiteboardGuard = WhiteboardTransitionGuard(WhiteboardPhase::Entering, enteringEpoch);
+		const auto activationGuard = WhiteboardActivationGuard(enteringEpoch);
+		require(activationGuard(), "current-entry-accepts-its-activation-intent");
 		whiteboardPhase.store(WhiteboardPhase::Active, std::memory_order_release);
-		require(!oldWhiteboardGuard() && PptSceneWorkspaceEpoch() == 0,
-			"active-whiteboard-retires-entering-command-without-opening-primary-scene");
+		require(!oldWhiteboardGuard() && activationGuard() && PptSceneWorkspaceEpoch() == 0,
+			"active-whiteboard-keeps-queued-activation-without-reviving-entering-command");
+		RequestWhiteboardActive(false);
+		require(!activationGuard(), "close-intent-rejects-queued-activation-before-phase-handoff");
+		RequestWhiteboardActive(true);
+		require(!activationGuard() && WhiteboardActivationGuard(
+			whiteboardInputEpoch.load(std::memory_order_acquire))(),
+			"new-whiteboard-epoch-cannot-revive-old-activation");
 		RequestWhiteboardActive(false);
 		whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
+		require(!activationGuard() && !WhiteboardActivationGuard(
+			whiteboardInputEpoch.load(std::memory_order_acquire))(), "exiting-whiteboard-rejects-activation");
 		const auto returningEpoch = PptSceneWorkspaceEpoch();
 		require(returningEpoch != 0 && returningEpoch != primaryEpoch && PptInputWorkspaceEpoch() == 0,
 			"exiting-accepts-current-primary-scene-while-business-input-remains-closed");
@@ -2485,6 +2591,12 @@ void StateMonitoring()
 	bool requestedPreviousPage = false;
 	std::size_t requestedPageIndex = 0;
 	std::uint64_t pageCommandCountBeforeRequest = 0;
+	WhiteboardEntryAttempt whiteboardEntry;
+	const auto prepareWhiteboardEntry = []
+	{
+		Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
+		Inkeys::UI::Whiteboard::CancelPointerCapture();
+	};
 	auto& service = Inkeys::Window::GetService();
 	ReconcileDraw3Presentation();
 	while (!offSignal)
@@ -2512,19 +2624,22 @@ void StateMonitoring()
 		WhiteboardPhase phase = whiteboardPhase.load(std::memory_order_acquire);
 		const auto whiteboardEpoch = whiteboardInputEpoch.load(std::memory_order_acquire);
 		const bool desired = whiteboardDesired.load(std::memory_order_acquire);
+		const bool entryReady = whiteboardEntry.Ready(whiteboardEpoch, desired,
+			WhiteboardEntryAttempt::Clock::now());
 		const auto transitionGuard = [whiteboardEpoch](WhiteboardPhase expectedPhase)
 		{ return WhiteboardTransitionGuard(expectedPhase, whiteboardEpoch); };
 		if (phase == WhiteboardPhase::Inactive && desired)
 		{
-			// Enter 先锁住辅助面板和指针，再由 Window Service 统一切换 HWND 样式。
+			// 提前唤醒不能反复进入相位或收起面板；新意图才准备一次辅助面板和指针。
+			if (!entryReady) continue;
 			whiteboardPhase.store(WhiteboardPhase::Entering,
 				std::memory_order_release);
-			Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
-			Inkeys::UI::Whiteboard::CancelPointerCapture();
+			whiteboardEntry.PrepareOnce(whiteboardEpoch, prepareWhiteboardEntry);
 			// PageControl 是共享宿主的唯一所有者；保留 PPT 状态并连续形变。
 			if (!service.EnterWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Entering)))
 			{
-				// 样式事务失败时恢复 Presentation 控件，下一轮仍可重试进入。
+				// 样式事务失败时恢复 Presentation 控件，保留同意图并按单调时钟有限重试。
+				whiteboardEntry.Failed(WhiteboardEntryAttempt::Clock::now());
 				Inkeys::UI::Ppt::PublishPresentationVisible(
 					PptSessionActive());
 				whiteboardPhase.store(WhiteboardPhase::Inactive,
@@ -2594,10 +2709,10 @@ void StateMonitoring()
 				continue;
 			}
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(true);
-			// 首帧与窗口组就绪后只激活一次，不能依赖用户再点击任务栏完成打开。
-			(void)service.RequestWhiteboardActivation(transitionGuard(WhiteboardPhase::Entering));
 			whiteboardPhase.store(WhiteboardPhase::Active,
 				std::memory_order_release);
+			// 首帧、背景与窗口事务完成后只异步请求一次激活；前台被拒绝也已完成进入。
+			(void)service.RequestWhiteboardActivation(WhiteboardActivationGuard(whiteboardEpoch));
 			continue;
 		}
 
@@ -2673,13 +2788,14 @@ void StateMonitoring()
 		{
 			if (desired)
 			{
+				if (!entryReady) continue;
 				// 先从当前插值帧重定向；背景仍等待 Draw3 Whiteboard 首帧。
 				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
-				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
-				Inkeys::UI::Whiteboard::CancelPointerCapture();
+				whiteboardEntry.PrepareOnce(whiteboardEpoch, prepareWhiteboardEntry);
 				if (!service.EnterWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Exiting)))
 				{
 					// 重入也必须等待完整的窗口样式事务，不复用半套状态。
+					whiteboardEntry.Failed(WhiteboardEntryAttempt::Clock::now());
 					whiteboardPhase.store(WhiteboardPhase::Exiting,
 						std::memory_order_release);
 					continue;

@@ -149,6 +149,22 @@ namespace
 		logWindow(L"DrawpadPresentation", presentation);
 	}
 
+	void LogWhiteboardAnchorState(const wchar_t* eventName, HWND hwnd,
+		bool groupMinimized) noexcept
+	{
+		RECT bounds{};
+		const bool boundsValid = hwnd && GetWindowRect(hwnd, &bounds);
+		wchar_t diagnostic[384]{};
+		swprintf_s(diagnostic,
+			L"[WhiteboardWindow] event=%s hwnd=0x%llX visible=%u iconic=%u groupMinimized=%u "
+			L"boundsOk=%u bounds=(%ld,%ld,%ld,%ld)\n", eventName,
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
+			hwnd && IsWindowVisible(hwnd) ? 1u : 0u, hwnd && IsIconic(hwnd) ? 1u : 0u,
+			groupMinimized ? 1u : 0u, boundsValid ? 1u : 0u,
+			bounds.left, bounds.top, bounds.right, bounds.bottom);
+		WriteWindowDiagnostic(diagnostic, false);
+	}
+
 	[[nodiscard]] const wchar_t* DefaultClassName(WindowRole role) noexcept
 	{
 		switch (role)
@@ -189,16 +205,22 @@ namespace
 					const UINT command = static_cast<UINT>(wParam & 0xfff0u);
 					if (command == SC_MINIMIZE)
 					{
+						LogWhiteboardAnchorState(L"system-command-minimize", hwnd,
+							service.WhiteboardWindowGroupMinimized());
 						(void)service.MinimizeWhiteboardWindowGroup();
 						return 0;
 					}
 					else if (command == SC_RESTORE)
 					{
+						LogWhiteboardAnchorState(L"system-command-restore", hwnd,
+							service.WhiteboardWindowGroupMinimized());
 						if (service.RestoreWhiteboardWindowGroup()) return 0;
 					}
 				}
 				else if (wParam == SIZE_MINIMIZED)
 				{
+					LogWhiteboardAnchorState(L"native-size-minimized", hwnd,
+						service.WhiteboardWindowGroupMinimized());
 					if (service.MinimizeWhiteboardWindowGroup()) return 0;
 					// ShowWindow 可绕过 SC_MINIMIZE；业务拒绝后立即撤销系统已发生的最小化。
 					// SIZE_RESTORED 只读取未最小化的组状态，不会再次调用 ShowWindow。
@@ -207,6 +229,8 @@ namespace
 				}
 				else if (wParam == SIZE_RESTORED)
 				{
+					LogWhiteboardAnchorState(L"native-size-restored", hwnd,
+						service.WhiteboardWindowGroupMinimized());
 					if (service.RestoreWhiteboardWindowGroup()) return 0;
 				}
 			}
@@ -599,7 +623,12 @@ namespace Inkeys::Window
 			command.role = WindowRole::Freeze;
 			command.type = CommandType::ActivateWhiteboard;
 			command.stillDesired = std::move(stillDesired);
-			return Submit(std::move(command));
+			const HWND anchor = Handle(WindowRole::Freeze);
+			if (!CommandCurrent(command) || shutdownRequested_.load(std::memory_order_acquire)
+				|| !WhiteboardWindowMode() || WhiteboardWindowGroupMinimized()
+				|| !anchor || !IsWindowVisible(anchor) || IsIconic(anchor)) return false;
+			// 原生前台调用可能同步进入 owned Setting；状态线程不能等待它才能完成白板进入。
+			return Submit(std::move(command), false);
 		}
 
 		[[nodiscard]] bool CancelPointerCapture()
@@ -1263,7 +1292,20 @@ namespace Inkeys::Window
 			}
 			if (!record.channel)
 				record.channel = std::make_unique<Message::Channel>(messageCapacity_);
-			if (spec.messageCallback)
+			if (spec.role == WindowRole::Freeze || spec.role == WindowRole::Drawpad)
+			{
+				record.channel->SetCallback([this, role = spec.role, callback = spec.messageCallback](
+					HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+				{
+					if (message == WM_ACTIVATE && LOWORD(wParam) != WA_INACTIVE
+						&& Handle(role) == hwnd && WhiteboardWindowMode()
+						&& !WhiteboardWindowGroupMinimized() && shellFullscreen_)
+						// 两个可激活白板表面共用一个绝对状态邮箱，WndProc 不等待 Explorer。
+						shellFullscreen_->Invalidate();
+					return callback ? callback(hwnd, message, wParam, lParam) : Message::Reply{};
+				});
+			}
+			else if (spec.messageCallback)
 				record.channel->SetCallback(spec.messageCallback);
 			else
 				record.channel->ClearCallback();
@@ -1546,6 +1588,8 @@ namespace Inkeys::Window
 		{
 			auto& record = records_[RoleIndex(role)];
 			const HWND hwnd = record.hwnd.load(std::memory_order_acquire);
+			if (role == WindowRole::Freeze || role == WindowRole::Drawpad || hwnd == OverlayRoot())
+				ApplyOverlayFullscreen(OverlayRoot(), true);
 			record.ready.store(false, std::memory_order_release);
 			if (hwnd && record.messagesBound && record.channel)
 			{
@@ -1740,10 +1784,12 @@ namespace Inkeys::Window
 							it = queue.commands.erase(it);
 						}
 						else ++it;
-				if (!ownerThreadId || ownerThreadId != GetCurrentThreadId()) queue.commands.push_back(command);
+				if (!ownerThreadId || ownerThreadId != GetCurrentThreadId()
+					|| command.type == CommandType::ActivateWhiteboard) queue.commands.push_back(command);
 			}
 			// WndProc 重入不能越过尚未退栈的原生写入并提前报告新意图成功。
-			if (ownerThreadId && ownerThreadId == GetCurrentThreadId()) return ExecuteTracked(command);
+			if (ownerThreadId && ownerThreadId == GetCurrentThreadId()
+				&& command.type != CommandType::ActivateWhiteboard) return ExecuteTracked(command);
 			if (eventHandle) SetEvent(eventHandle);
 			if (IsSetting(command.role)
 				&& (command.type == CommandType::Hide || command.type == CommandType::HideAll))
@@ -1769,14 +1815,14 @@ namespace Inkeys::Window
 		[[nodiscard]] std::optional<GroupSnapshot> CaptureGroupZOrder(HWND setting = nullptr) const noexcept
 		{
 			GroupSnapshot snapshot;
-			std::array<std::uint64_t, 10> generations{};
 			for (std::size_t i = 0; i < GroupRoles.size(); ++i)
 			{
 				snapshot.windows[i] = Handle(GroupRoles[i]);
-				generations[i] = records_[RoleIndex(GroupRoles[i])].generation.load(std::memory_order_acquire);
+				snapshot.generations[i] = snapshot.windows[i]
+					? records_[RoleIndex(GroupRoles[i])].generation.load(std::memory_order_acquire) : 0;
 			}
 			snapshot.windows[9] = setting;
-			generations[9] = records_[RoleIndex(WindowRole::Setting)].generation.load(std::memory_order_acquire);
+			snapshot.generations[9] = setting ? records_[RoleIndex(WindowRole::Setting)].generation.load(std::memory_order_acquire) : 0;
 			struct Enumeration
 			{
 				GroupSnapshot& snapshot;
@@ -1824,7 +1870,7 @@ namespace Inkeys::Window
 				const auto role = i == 9 ? WindowRole::Setting : GroupRoles[i];
 				const HWND hwnd = snapshot.windows[i];
 				if (!hwnd) continue;
-				if (hwnd != Handle(role) || generations[i] != records_[RoleIndex(role)].generation.load(std::memory_order_acquire)
+				if (hwnd != Handle(role) || snapshot.generations[i] != records_[RoleIndex(role)].generation.load(std::memory_order_acquire)
 					|| !IsWindow(hwnd) || snapshot.ordinal[i] == Detail::MissingZOrder) return {};
 				snapshot.owners[i] = GetWindow(hwnd, GW_OWNER);
 				snapshot.topmost[i] = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
@@ -1854,6 +1900,74 @@ namespace Inkeys::Window
 			return true;
 		}
 
+		[[nodiscard]] bool ReconcileRelativeOverlayGroup(const GroupSnapshot& identity,
+			const Detail::PptZOrder& order, const Command* command = nullptr, bool survivingOnly = false)
+		{
+			const auto expected = ExpectedGroupOwners(identity);
+			HWND bandRoot = nullptr;
+			for (std::size_t i = 0; i < GroupRoles.size(); ++i)
+				if (identity.windows[i] && !expected[i]) { bandRoot = identity.windows[i]; break; }
+			struct Operations
+			{
+				Impl& service;
+				const GroupSnapshot& identity;
+				const Command* command;
+				bool survivingOnly;
+				HWND bandRoot;
+				bool Current() const
+				{
+					if (!service.running_.load(std::memory_order_acquire)
+						|| service.shutdownRequested_.load(std::memory_order_acquire)
+						|| (command && !service.CommandCurrent(*command))) return false;
+					for (std::size_t i = 0; i < GroupRoles.size(); ++i)
+					{
+						if (!identity.windows[i] && survivingOnly) continue;
+						if (service.Handle(GroupRoles[i]) != identity.windows[i]) return false;
+						if (identity.windows[i] && (!IsWindow(identity.windows[i]) || identity.generations[i] !=
+							service.records_[RoleIndex(GroupRoles[i])].generation.load(std::memory_order_acquire))) return false;
+					}
+					return true;
+				}
+				bool Read(GroupSnapshot& result) const
+				{
+					const auto actual = service.CaptureGroupZOrder();
+					if (!actual) return false;
+					result = *actual;
+					if (survivingOnly)
+						for (std::size_t i = 0; i < GroupRoles.size(); ++i)
+							if (!identity.windows[i])
+							{
+								result.windows[i] = result.owners[i] = nullptr;
+								result.generations[i] = 0;
+								result.ordinal[i] = Detail::MissingZOrder;
+							}
+					return true;
+				}
+				bool SetOwner(std::size_t i, HWND owner) const
+				{
+					if (!Current()) return false;
+					SetLastError(ERROR_SUCCESS);
+					const auto previous = SetWindowLongPtrW(identity.windows[i], GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(owner));
+					return (previous || GetLastError() == ERROR_SUCCESS) && Current();
+				}
+				bool SetBand(std::size_t i, bool topmost, bool noOwner) const
+				{
+					if (!Current() || !bandRoot) return false;
+					// 只有固定旧代际 root 显式切 band；其余成员从它继承，不能单独抬到全局 TOPMOST。
+					const HWND after = identity.windows[i] == bandRoot ? (topmost ? HWND_TOPMOST : HWND_NOTOPMOST) : bandRoot;
+					return SetWindowPos(identity.windows[i], after, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | (noOwner ? SWP_NOOWNERZORDER : 0)) && Current();
+				}
+				bool PlaceAfter(std::size_t i, std::size_t anchor) const
+				{
+					return Current() && SetWindowPos(identity.windows[i], identity.windows[anchor], 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) && Current();
+				}
+			} operations{ *this, identity, command, survivingOnly, bandRoot };
+			return Detail::ReconcileRelativeOverlayZOrder(identity, expected,
+				overlayTopmost_.load(std::memory_order_acquire) && !WhiteboardWindowMode(), order, operations);
+		}
+
 		[[nodiscard]] bool RefreshOverlayGroup(const Command* command = nullptr, HWND promoted = nullptr)
 		{
 			const auto current = [&] { return !command || CommandCurrent(*command); };
@@ -1861,6 +1975,13 @@ namespace Inkeys::Window
 			const HWND root = OverlayRoot();
 			const auto before = CaptureGroupZOrder();
 			if (!before || !root || !current() || (promoted && !before->windows[8])) return false;
+			if (WhiteboardWindowMode())
+			{
+				// 后台 Bar 未获前台许可时不能依靠全组 HWND_TOP；只下调挡在它上方的 PPT。
+				if (!ReconcileRelativeOverlayGroup(*before, Detail::CapturePptZOrder(*before, promoted), command)) return false;
+				ApplyOverlayFullscreen(root);
+				return current();
+			}
 			std::array<HWND, 4> ppt{};
 			std::size_t count = 0;
 			for (std::size_t i = 4; i < 8; ++i) if (before->windows[i]) ppt[count++] = before->windows[i];
@@ -1885,7 +2006,8 @@ namespace Inkeys::Window
 				{
 					const HWND member = before->windows[i];
 					if (!member) continue;
-					if (!current() || member != Handle(GroupRoles[i]) || !IsWindow(member)) return false;
+					if (!current() || member != Handle(GroupRoles[i]) || !IsWindow(member)
+						|| before->generations[i] != records_[RoleIndex(GroupRoles[i])].generation.load(std::memory_order_acquire)) return false;
 					if (GetWindow(member, GW_OWNER) != expected[i])
 					{
 						SetLastError(ERROR_SUCCESS);
@@ -2307,6 +2429,7 @@ namespace Inkeys::Window
 			if (!anchor || !IsWindow(anchor)) return false;
 			// 先锁存状态再触发 WM_SIZE，避免系统消息重入时再次递归最小化。
 			whiteboardGroupMinimized_.store(true, std::memory_order_release);
+			ApplyOverlayFullscreen(OverlayRoot());
 			(void)ApplyCancelPointerCapture();
 			ShowWindow(anchor, SW_MINIMIZE);
 			for (const WindowRole role : roles)
@@ -2356,6 +2479,7 @@ namespace Inkeys::Window
 			}
 			// Windows 自动隐藏 owned popup，显式恢复主栏以保留工作区入口。
 			if (const HWND bar = Handle(WindowRole::Bar)) ShowWindow(bar, SafetyHidden(bar) ? SW_HIDE : SW_SHOWNOACTIVATE);
+			ApplyOverlayFullscreen(OverlayRoot());
 			NotifyWhiteboardMinimizedChanged();
 			return true;
 		}
@@ -2396,6 +2520,7 @@ namespace Inkeys::Window
 			bool fullscreen = false;
 			bool group = false;
 			bool canvas = false;
+			std::optional<GroupSnapshot> zOrder;
 			bool minimized = false;
 			std::array<bool, RoleCount> visibleBeforeMinimize{};
 			std::optional<WindowSpec> destroyedSpec;
@@ -2406,6 +2531,12 @@ namespace Inkeys::Window
 			std::function<bool()> restore;
 			std::shared_ptr<Detail::CommandCompletion> completion;
 		};
+
+		[[nodiscard]] static bool IsZOrderOnlyCommand(CommandType type) noexcept
+		{
+			return type == CommandType::RefreshTopmost || type == CommandType::PromotePpt
+				|| type == CommandType::SetOverlayTopmost || type == CommandType::SetOverlayFullscreen;
+		}
 
 		[[nodiscard]] CommandSnapshot CaptureCommandSnapshot(const Command& command)
 		{
@@ -2420,8 +2551,14 @@ namespace Inkeys::Window
 				|| command.type == CommandType::SetOverlayTopmost || command.type == CommandType::SetOverlayFullscreen
 				|| command.type == CommandType::RefreshTopmost || command.type == CommandType::PromotePpt
 				|| command.type == CommandType::MinimizeWhiteboardGroup || command.type == CommandType::RestoreWhiteboardGroup;
-			snapshot.canvas = snapshot.group || command.type == CommandType::SetDrawpadSurfaceVisibility
+			snapshot.canvas = (snapshot.group && !IsZOrderOnlyCommand(command.type)) || command.type == CommandType::SetDrawpadSurfaceVisibility
 				|| (command.type == CommandType::SetBounds && IsCanvas(command.role));
+			if (IsZOrderOnlyCommand(command.type))
+			{
+				snapshot.zOrder = CaptureGroupZOrder();
+				if (!snapshot.zOrder) throw std::runtime_error("z-order snapshot");
+				return snapshot;
+			}
 			const auto capture = [&](WindowRole role)
 			{
 				const HWND hwnd = Handle(role);
@@ -2448,8 +2585,27 @@ namespace Inkeys::Window
 			return snapshot;
 		}
 
+		[[nodiscard]] bool RestoreZOrderSnapshot(const CommandSnapshot& snapshot, CommandType type)
+		{
+			if (!snapshot.zOrder || shutdownRequested_.load(std::memory_order_acquire)) return false;
+			const auto actual = CaptureGroupZOrder();
+			if (!actual) return false;
+			if (type == CommandType::SetOverlayTopmost) overlayTopmost_.store(snapshot.topmost, std::memory_order_release);
+			if (type == CommandType::SetOverlayFullscreen) overlayFullscreen_.store(snapshot.fullscreen, std::memory_order_release);
+			const auto identity = Detail::RetainSurvivingZOrder(*snapshot.zOrder, *actual,
+				ExpectedGroupOwners(*snapshot.zOrder));
+			// identity 保留请求前的 ordinal；不能从部分失败后的现场重新取 PPT 兄弟序。
+			const auto order = Detail::CapturePptZOrder(identity);
+			// 回滚使用当前物理身份，不受原请求已过期的 Current guard 阻止；保留失败回执。
+			if (!ReconcileRelativeOverlayGroup(identity, order, nullptr, true)) return false;
+			ApplyOverlayFullscreen(OverlayRoot());
+			return true;
+		}
+
 		[[nodiscard]] bool RestoreCommandSnapshot(const CommandSnapshot& snapshot, CommandType type, WindowRole role)
 		{
+			// 纯层级命令从未写画布/几何/显隐，必须在公共 FRAMECHANGED/Show 路径之前分流。
+			if (IsZOrderOnlyCommand(type)) return RestoreZOrderSnapshot(snapshot, type);
 			if (type == CommandType::Create) return snapshot.originalWindow || !Handle(role) || DestroyDynamic(role);
 			if (type == CommandType::Destroy)
 				return Handle(role) || !snapshot.destroyedSpec || CreateDynamic(*snapshot.destroyedSpec);
@@ -2756,19 +2912,24 @@ namespace Inkeys::Window
 				};
 				if (!canActivate()) return false;
 				// 普通背景 Show 必须保持不激活；打开时才把唯一任务栏锚点带到前台。
-				(void)SetForegroundWindow(hwnd);
+				const bool foreground = SetForegroundWindow(hwnd) != FALSE;
 				if (!canActivate()) return false; // 激活消息可能同步取消本次进入。
-				(void)SetActiveWindow(hwnd);
-				if (!canActivate()) return false;
-				(void)SetFocus(hwnd);
-				// Windows 可拒绝前台切换；不能因此无限等待就绪或持续重试抢焦点。
+				// 系统拒绝前台时保留后台白板，不能继续改动其他应用的键盘焦点。
+				if (foreground && GetForegroundWindow() == hwnd)
+				{
+					(void)SetActiveWindow(hwnd);
+					if (!canActivate()) return false;
+					if (GetForegroundWindow() == hwnd) (void)SetFocus(hwnd);
+				}
+				// 全屏标记是持久状态；激活边沿补发以便任务栏重新核对白板两面。
+				ApplyOverlayFullscreen(OverlayRoot(), false, true);
 				return true;
 			}
 			case CommandType::Show:
 			{
-				// 拒绝最小化之前排队的呈现请求，不能重新唤醒画布或翻页控件。
+				// 最小化前的分页/画布请求只被抑制；Freeze 必须区分未提交与显示成功。
 				if (WhiteboardWindowGroupMinimized() && command.role != WindowRole::Bar
-					&& !IsSetting(command.role)) return true;
+					&& !IsSetting(command.role)) return command.role != WindowRole::Freeze;
 				if (IsCanvas(command.role) && !EnsureCanvasPolicy(
 					whiteboardWindowMode_.load(std::memory_order_acquire))) return false;
 				bool succeeded = true;
@@ -2804,8 +2965,8 @@ namespace Inkeys::Window
 						if (!succeeded) error = GetLastError();
 					}
 
-					if (succeeded && IsPpt(command.role)
-						&& !IsWindowVisible(hwnd))
+					if (succeeded && (IsPpt(command.role) || command.role == WindowRole::Freeze)
+						&& (!IsWindowVisible(hwnd) || (command.role == WindowRole::Freeze && IsIconic(hwnd))))
 					{
 						succeeded = false;
 						error = ERROR_GEN_FAILURE;
@@ -2817,6 +2978,8 @@ namespace Inkeys::Window
 					else ShowWindow(hwnd, SW_HIDE);
 					return false;
 				}
+				if (succeeded && (command.role == WindowRole::Freeze || command.role == WindowRole::Drawpad))
+					ApplyOverlayFullscreen(OverlayRoot());
 				ReportCommandResult(command, succeeded,
 					error == ERROR_SUCCESS && !succeeded ? ERROR_GEN_FAILURE : error,
 					hwnd);
@@ -2834,6 +2997,8 @@ namespace Inkeys::Window
 					return hidden;
 				}
 				ShowWindow(hwnd, SW_HIDE);
+				if (command.role == WindowRole::Freeze || command.role == WindowRole::Drawpad)
+					ApplyOverlayFullscreen(OverlayRoot());
 				if (IsPpt(command.role) && IsWindowVisible(hwnd))
 				{
 					ReportCommandResult(command, false, ERROR_GEN_FAILURE, hwnd);
@@ -2859,7 +3024,7 @@ namespace Inkeys::Window
 			}
 			case CommandType::SetBounds:
 			{
-				if (WhiteboardWindowGroupMinimized() && command.role == WindowRole::Freeze) return true;
+				if (WhiteboardWindowGroupMinimized() && command.role == WindowRole::Freeze) return false;
 				SetLastError(ERROR_SUCCESS);
 				const bool succeeded = command.role == WindowRole::Drawpad
 					? ApplyDrawpadBounds(command.bounds)
@@ -2869,7 +3034,7 @@ namespace Inkeys::Window
 						SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
 				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
 				bool applied = succeeded;
-				if (applied && IsPpt(command.role))
+				if (applied && (IsPpt(command.role) || command.role == WindowRole::Freeze))
 				{
 					RECT actual{};
 					applied = GetWindowRect(hwnd, &actual) != FALSE
@@ -3116,6 +3281,7 @@ namespace Inkeys::Window
 					if (IsWindowVisible(hwnd)) hidden = false;
 				}
 			}
+			ApplyOverlayFullscreen(OverlayRoot(), true);
 			return hidden;
 		}
 
@@ -3133,6 +3299,7 @@ namespace Inkeys::Window
 				const bool changed = wasPrimaryVisible !=
 					(primary && IsWindowVisible(primary)) || wasPresentationVisible !=
 					(presentation && IsWindowVisible(presentation));
+				if (changed) ApplyOverlayFullscreen(OverlayRoot());
 				if (!succeeded || changed)
 					LogDrawpadSurfaceState(succeeded ? L"visibility-applied"
 						: L"visibility-failed", visibility, error, primary, presentation);
@@ -3321,15 +3488,30 @@ namespace Inkeys::Window
 			return true;
 		}
 
-			void ApplyOverlayFullscreen(HWND root) noexcept
+			void ApplyOverlayFullscreen(HWND root, bool forceDisabled = false, bool invalidate = false) noexcept
 			{
-				HWND target = Handle(WindowRole::Freeze);
-				if (!target || !IsWindow(target)) target = root;
-				if (!target || !IsWindow(target) || !shellFullscreen_) return;
-				// owner 只发布绝对值；Explorer/COM 故障不能阻塞画布窗口消息泵。
-				shellFullscreen_->Publish(target,
-					reinterpret_cast<std::uintptr_t>(GetPropW(target, Detail::WindowGenerationProperty)),
-					overlayFullscreen_.load(std::memory_order_acquire) && !WhiteboardWindowGroupMinimized());
+				if (!shellFullscreen_) return;
+				const auto capture = [](HWND hwnd) noexcept
+				{
+					Detail::ShellFullscreenState::Target target;
+					target.hwnd = hwnd;
+					if (hwnd)
+					{
+						target.generation = reinterpret_cast<std::uintptr_t>(GetPropW(hwnd, Detail::WindowGenerationProperty));
+						target.thread = GetWindowThreadProcessId(hwnd, &target.process);
+					}
+					return target;
+				};
+				const bool enabled = !forceDisabled && !shutdownRequested_.load(std::memory_order_acquire)
+					&& overlayFullscreen_.load(std::memory_order_acquire);
+				auto targets = Detail::ShellFullscreenState::ResolveTargets(capture(root),
+					capture(Handle(WindowRole::Freeze)), capture(Handle(WindowRole::Drawpad)),
+					WhiteboardWindowMode(), enabled, WhiteboardWindowGroupMinimized());
+				for (auto& target : targets)
+					target.enabled = target.enabled && target.hwnd && IsWindowVisible(target.hwnd)
+						&& !IsIconic(target.hwnd) && !SafetyHidden(target.hwnd);
+				// 一批固定目标共用版本：旧 TRUE 迟到后也必须对同一组重发最新 FALSE。
+				shellFullscreen_->Publish(targets, invalidate);
 			}
 
 			[[nodiscard]] bool CanChangeChainRole(WindowRole role) const noexcept

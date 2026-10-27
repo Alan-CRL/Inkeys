@@ -1,0 +1,15 @@
+{
+  "buildAndRunExitCode": 0,
+  "guiExecuted": false,
+  "nativeWindowsCreated": 0,
+  "compilerToolset": "v143 ARM64 14.44.35207",
+  "header": "Inkeys/Inkeys/Window/Window.ZOrderPolicy.h",
+  "headerSha256": "C26D2DD439383D2FA71DD25E042DBA3EEDBCA3837EAF27971289E2815C23BB4E",
+  "output": {
+    "productionHeader": "Window.ZOrderPolicy.h",
+    "allKnownOwnersBandsAndRelativeOrderMatch": true,
+    "sameMembersWithForeignGapAccepted": false,
+    "nativeWindowsCreated": 0
+  },
+  "artifactDirectory": "Build/WhiteboardInvestigation20261027"
+}

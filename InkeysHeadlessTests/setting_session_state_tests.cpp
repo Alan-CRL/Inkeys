@@ -3,8 +3,11 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Theme.h"
 #include "../Inkeys/Inkeys/Window/Window.MessageDispatch.h"
 
+#include <chrono>
 #include <cmath>
+#include <future>
 #include <iostream>
+#include <thread>
 
 import Inkeys.Window;
 
@@ -378,6 +381,69 @@ namespace
 		return failures;
 	}
 
+	int CheckSettingPresentInputLock()
+	{
+		using Inkeys::UI::Setting::WithSettingInputUnlocked;
+		using namespace std::chrono_literals;
+		struct PresentException {};
+		int failures = 0;
+		const HRESULT outcomes[] = { S_OK, DXGI_STATUS_OCCLUDED, DXGI_ERROR_DEVICE_REMOVED, E_FAIL };
+		for (unsigned path = 0; path < 4; ++path)
+		{
+			const bool throwOnPresent = path == 3;
+			std::recursive_mutex inputMutex;
+			std::unique_lock inputLock(inputMutex);
+			std::promise<void> presentStarted, focusHandled, probeRequested;
+			std::promise<bool> probeResult;
+			auto presentReady = presentStarted.get_future();
+			auto focusReady = focusHandled.get_future();
+			auto probeReady = probeRequested.get_future();
+			auto probeDone = probeResult.get_future();
+			int processedInputs = 0;
+			std::thread windowThread([&]
+			{
+				if (presentReady.wait_for(2s) != std::future_status::ready) return;
+				{
+					std::lock_guard inputGuard(inputMutex);
+					++processedInputs;
+				}
+				focusHandled.set_value();
+				if (probeReady.wait_for(2s) != std::future_status::ready) return;
+				const bool acquired = inputMutex.try_lock();
+				if (acquired) inputMutex.unlock();
+				probeResult.set_value(acquired);
+			});
+			bool focusServicedDuringPresent = false, caught = false;
+			HRESULT result = E_UNEXPECTED;
+			try
+			{
+				result = WithSettingInputUnlocked(inputLock, [&]() -> HRESULT
+				{
+					// 模拟 DXGI 等待真实窗口线程处理焦点消息；旧的持锁 Present 路径会超时。
+					presentStarted.set_value();
+					focusServicedDuringPresent = focusReady.wait_for(2s) == std::future_status::ready;
+					if (throwOnPresent) throw PresentException{};
+					return outcomes[path];
+				});
+			}
+			catch (const PresentException&) { caught = true; }
+			const bool ownsOnResume = inputLock.owns_lock();
+			probeRequested.set_value();
+			const bool probedOnResume = probeDone.wait_for(2s) == std::future_status::ready;
+			const bool acquiredOnResume = probedOnResume ? probeDone.get() : true;
+			// 即使回归导致握手失败，也先放锁再 join，避免测试自身永久挂起。
+			if (inputLock.owns_lock()) inputLock.unlock();
+			windowThread.join();
+			if (!Expect(focusServicedDuringPresent && processedInputs == 1,
+				"Present allows the waiting window thread to process synchronized focus input")) ++failures;
+			if (!Expect(ownsOnResume && probedOnResume && !acquiredOnResume,
+				"Present reacquires the real input mutex before the caller resumes")) ++failures;
+			if (!Expect(throwOnPresent ? caught : !caught && result == outcomes[path],
+				"success, occlusion, device failure and exception paths retain their original result")) ++failures;
+		}
+		return failures;
+	}
+
 	int CheckLinkedPptScaleDraft()
 	{
 		using Inkeys::UI::Setting::LinkedPptScaleDraft;
@@ -438,6 +504,7 @@ int RunSettingSessionStateTests()
 	int failures = 0;
 	failures += CheckSettingWindowFrame();
 	failures += CheckSettingNativeMessageRouting();
+	failures += CheckSettingPresentInputLock();
 	failures += CheckSettingPlatformCompatibility();
 	failures += CheckLinkedPptScaleDraft();
 	{

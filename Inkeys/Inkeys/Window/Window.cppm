@@ -221,7 +221,7 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool DispatchWhiteboardClose(HWND hwnd) noexcept;
 		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
 		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
-		// 仅在打开白板时请求一次激活；返回请求已处理，不保证系统授予前台。
+		// 仅在打开白板时异步排队一次激活；true 只表示已接纳，不等待或保证系统授予前台。
 		[[nodiscard]] bool RequestWhiteboardActivation(std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool CancelPointerCapture();
 			// 所有跨线程命令默认有限等待；false 后可由回执区分仍在撤回的在途操作。
