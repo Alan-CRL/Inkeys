@@ -546,6 +546,7 @@ struct BarRenderLoopState
 	std::atomic<unsigned long long>& mainButtonClickPulseSerial;
 	// 初始化和逐帧更新均从模式锁内复制，绘制阶段只读本帧值。
 	StateModeClass stateModeSnapshot = GetStateModeSnapshot();
+	WorkspaceSceneSnapshot workspaceSnapshot = GetWorkspaceSceneSnapshot();
 
 	unsigned long long barDeviceResourceFailureGeneration = 0;
 	bool barPresentFailureLogged = false;
@@ -1172,8 +1173,14 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	{
 		state.finiteToolSnapshot = GetStateModeVersionedSnapshot();
 		state.stateModeSnapshot = state.finiteToolSnapshot.state; // raw revision 0原样保留，不造版本。
+		state.workspaceSnapshot = GetWorkspaceSceneSnapshot();
 	}
-	else state.stateModeSnapshot = GetStateModeSnapshot();
+	else
+	{
+		const auto committed = GetCommittedWorkspaceStateSnapshot();
+		state.stateModeSnapshot = committed.state;
+		state.workspaceSnapshot = committed.workspace;
+	}
 	const auto& stateMode = state.stateModeSnapshot;
 	frame.stateMode = stateMode.StateModeSelect;
 	frame.penMode = stateMode.Pen.ModeSelect;
@@ -12913,7 +12920,9 @@ BarRenderLoopCoordinator::RenderFrame(
 		(void)Inkeys::UI::Bar::ConsumePptSceneTransition();
 		(void)Inkeys::UI::Bar::ConsumeWhiteboardBottomDockRequest();
 		using namespace Inkeys::UI::Bar;
-		const auto transition = state.workspaceScene.Update(Inkeys::UI::Bar::WhiteboardActive(), PptPresentationActive());
+		const auto workspace = state.workspaceSnapshot;
+		const auto transition = state.workspaceScene.Update(workspace.committed == WorkspaceScene::Whiteboard,
+			workspace.committed == WorkspaceScene::Presentation);
 		if (transition != BarWorkspaceTransition::Keep)
 		{
 			if (state.taskbarDockAnimationActive)
@@ -12966,8 +12975,7 @@ BarRenderLoopCoordinator::RenderFrame(
 			state.unclassifiedDamagePending = true;
 			state.presentDecision.RequireVisualRetry();
 		}
-		const bool minimized = Inkeys::UI::Bar::WhiteboardActive()
-			&& Inkeys::Window::GetService().WhiteboardWindowGroupMinimized();
+		const bool minimized = workspace.committed == WorkspaceScene::Whiteboard && workspace.committedMinimized;
 		if (state.whiteboardMinimized != minimized)
 		{
 			if (state.taskbarDockAnimationActive)

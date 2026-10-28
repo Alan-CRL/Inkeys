@@ -466,3 +466,13 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 - Whiteboard 恢复两画布创建时的原 region/属性，继续由 Freeze/root 作为既有全屏锚点。退出、进入失败和窗口重建均恢复相应场景；selection 固定穿透、单 Host 与 owner 链不变。
 - scene、实际 bounds/monitor 或 HWND 变化才重新应用；两个角色共同隐藏、应用、核对并恢复可见性后才确认白板 mode。失败逆序回滚；原状态可信、几何未变且完整回滚时保留旧 applied key 并停止内部重试，避免对原场景重复隐藏/显示；首次空 key 保持空值，后续显式请求仍可应用。旧 region 不适用于新 bounds、回滚未收敛或已有 dirty/恢复状态时保留双隐藏及原显隐意图，交既有 owner 循环 250ms 失败重试，正常无额外轮询。后来的 Hide/Hidden/HideAll 优先于保存的恢复显隐；连续失败即使已清旧 applied key，也必须保持双隐藏直到真实成功。
 - `Window.CanvasPolicy.h` 的生产区域和双窗事务 helper 由 Headless 无 HWND 测试直接覆盖；测试不证明真实 USER32 重入、DComp/ULW 可见裁剪或 Shell 分类。既有全屏 COM 链仍为 best effort；GUI/Shell/旧系统结果单独记证据。已有 capture 按原输入所有权收尾，不为底行策略擅自取消笔迹。
+
+## 三态过渡与实际选择态准入（2026-10-27）
+
+- Host接纳工作区Pending时先关闭基础新Down门，以当前协调epoch绑定；只同epoch完成可撤其自身原因，旧false不能开放新pending。同epoch已退休的旧true也不能复活。停止/新run按实际生命周期复位，不用业务版本替代Host代际。
+- Pending原因OR到现有stop/fatal/recovery/load/scene/UI-ready，不能整体清AdmissionBlocked。墨迹shortcut baseline也不得绕过这些适用原因；Release、ControlWake、目标准备、成功帧/UI回执与真实终态drain不受此新门阻挡。BasicControl和系统/Bar安全动作保持各自资格。
+- 物理鼠标可在RTS成功路径以TDK_Mouse进入MouseLeft/Right；Win32 fallback的选择态拒绝不足以覆盖它。DrawingController对所有workspace的实际Selection新Down统一DiscardUntilTerminal，不能仅限白板，不能因稍后切Pen补画旧尾事件；正常非Selection工具/临时擦除语义不变。
+- 产品已发布的工具不等于绘制owner已应用。协调使用真实已应用产品/工具/选择凭据与Host代际，UI稳定工具按Committed对应记忆，不能仅看ActiveTool=Pen推断选择尚未应用。
+- 生产无窗口probe只证明实际共用拒收操作、ContactInputCoordinator/DrainIngressBatch或Host实际准入接缝；私有Run/Service未动态执行部分另做源码审查，不冒充真实Win32/RTS设备/任务栏实测。
+
+- 过渡准入setter绑定真实HostGeneration及请求epoch：旧run的相同数字epoch不能设置或撤销新Host的门。完成只撤自身Pending原因，不能清加载、恢复、停止或fatal原因；最小化Whiteboard继续闭门，恢复使用新视图版本。工具完成凭据读取owner实际appliedProductRevision/appliedTool，不用Bridge已发布revision冒充应用成功。

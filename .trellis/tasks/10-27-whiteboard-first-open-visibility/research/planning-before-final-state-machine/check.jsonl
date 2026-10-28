@@ -1,0 +1,16 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "最终质量检查和适用验证边界"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "核对完整构建入口和产物边界"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "核对白板可见性、恢复和激活验收"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "核对窗口与渲染线程所有权"}
+{"file": ".trellis/spec/native-desktop/canvas-freeze-boundaries.md", "reason": "核对失败回执、恢复和 Shell 状态"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/previous-changes-and-current-evidence.md", "reason": "防止重复上一轮无效验收"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/review-current-failure-20261027.md", "reason": "按真实冷启动和消息归属检查，不以既有headless通过替代故障复现"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/detailed-investigation-20261027.md", "reason": "核对后台进入合同、恢复屏障、状态去重和隐藏ACK，不把策略探针当原生复现"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/authorized-gui-evidence-20261027.md", "reason": "最新禁止GUI边界、已保存现场和77f76038确定历史因果；以修订design/implement范围为准"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/history-native-order.md", "reason": "最新禁止GUI边界、已保存现场和77f76038确定历史因果；以修订design/implement范围为准"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/history-window-recovery.md", "reason": "最新禁止GUI边界、已保存现场和77f76038确定历史因果；以修订design/implement范围为准"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/no-window-regression-design.md", "reason": "真实生产helper故障注入矩阵和无窗口接线边界；严格仅本轮三项回归"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/exit-investigation-summary.md", "reason": "用户新反馈退出异常：确定控制流、首要候选、点击/工具未证实边界及生产顺序回归要求；禁止GUI"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "三态切换保持可信PPT会话、页码与实际UI-ready"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/state-machine-workspace-contracts.md", "reason": "最终三态设计的工具/文档/存储/ACK与失败取消合同"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/state-machine-fullscreen-contracts.md", "reason": "当前背景本已完整rcMonitor、1px范围、固定owner链和Shell/焦点官方边界"}

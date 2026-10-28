@@ -274,7 +274,7 @@ Wrong：用成功计数或 worker 已处理来推定 Controller 已收到终态�
 - 根调用后读回实际 band。实际不匹配才进行有限的根校正与原生传播；不得改成无界重试或每帧无限等待。
 - Desktop/PPT 正常刷新按 Freeze、Presentation、Drawpad、原相对顺序的四个 PPT 窗、Bar 补齐基础 owner 顺序。白板保留 Bar 的全局位置，只将越过期望前驱的 PPT 相对下调，包含隐藏 Middle；不得因后台无法全局抬顶而阻止进入。实际遗漏的基础节点从同一有效根继承 band，再读回核验；不逐节点显式设置 MOST，不操作任意 IME/驱动辅助窗。
 - 已知基础组用有限 EnumWindows 快照核验 owner、band、相对顺序；跨操作保留 HWND+generation，每次相对写入后重新采样。Desktop/PPT 正常刷新保留外部连续性要求；白板及纯 Z 物理恢复只核验内部合同，允许外部窗口穿插。四个 PPT 保留原相对顺序，显式 Promote 仅改变目标子序列；缺失目标或代际改变必须失败，不能边重排边遍历全局窗口链。
-- Desktop/PPT 正常刷新中基础节点的 HWND_TOP 保留原生 owner 联动，不能使用 NOOWNERZORDER 把 Drawpad 推到已显示 owned Setting 之上。白板内部排序仅使用带 NOACTIVATE|NOOWNERZORDER 的 PPT 相对下调；无 Bar 时用首个 PPT 作锚，不能以 owner 为锚把 owned PPT 放到其下方。Setting 不加入白板排序写入；band 继承步骤与 Setting 自身带内 Raise 保持原合同。
+- Desktop/PPT 正常刷新中基础节点的 HWND_TOP 保留原生 owner 联动，不能使用 NOOWNERZORDER 把 Drawpad 推到已显示 owned Setting 之上。白板及场景物理交接的内部排序仅使用带 NOACTIVATE|NOOWNERZORDER 的相对插入；基础 owner 链反转时按子到父将错位 owner 下移，再执行 PPT 相对下调，不能只修 Bar/PPT 而让基础链永久读回失败。无 Bar 时用首个 PPT 作锚，不能以 owner 为锚把 owned PPT 放到其下方。Setting 不加入白板排序写入；band 继承步骤与 Setting 自身带内 Raise 保持原合同。
 - 不为 Overlay 刷新增加等待 Setting 的命令，避免与 Setting 等待根的原合同形成环。原生同步消息边界仍由真实 HWND/产品 GUI 验证。
 
 ### 4. Validation & Error Matrix
@@ -372,3 +372,11 @@ Wrong：以 SetWindowPos 返回值或 root 单一 bit 推定全树正确；只�
 `InkeysHeadlessTests --no-window` 覆盖 fatal 门、恢复身份/ACK、有限命令回执、混合 band 快照，以及真实 pipe 读写、取消和固定容量隔离；实际 HWND band/owner 传播仍属于明确授权后的窗口合同测试。现有生产 CLI `--draw3-fallback-stable-lane-test`、`--draw3-ppt-current-load-retry-test`、`--draw3-pending-topology-load-test`、`--draw3-control-fence-test`、`--state-mode-production-test`、`--ui3-input-worker-test` 与严格早退的 `--setting-business-cancellation-test` 验证产品路径。
 
 不得把上述检查宣称为所有 Win32/COM/GPU/磁盘调用永不挂起的证明。Host Start/Stop 的最终保存、WhiteboardStore drain、GPU Map 和真实 join 仍保留资源所有权；不通过超时析构、借用 Host 的 detached thread 或提前启动第二实例逃离。最终退出沿用既有进程监督，真实 Office/WPS、桌面 z-order 与设备现场另行验收。
+
+## 场景窗口政策与恢复写集（2026-10-27）
+
+- 同一工作区政策以Prepare原生回执→Render/Host/UI实际ACK→Complete原生回执交错推进。owner返回消息循环，不持协调/窗口锁等待渲染。目标输出身份改变必须重准备，不能用旧帧完成新几何。
+- Prepare/Complete绑定同政策版本和捕获的Freeze/主辅表面身份、实际几何与目标显示上下文；Display全局generation变化只触发相关事实重验，无关任务栏/别屏变化不应直接使政策失败。
+- 内部保留撤全屏→离开白板样式→返回band/穿透顺序，只写实际需要变化的字段。全局刷新、Setting带内Raise与Shell worker仍独立，失败不撤销已完成workspace。
+- 新场景政策恢复只处理其实际修改对象，不恢复Bar/PPT无关几何/显隐。补偿绑定旧HWND/generation/region/property，不得重新按当前role取新pair执行旧CanvasPolicy；同owner重入、取消后在途回执和安全覆盖保持真实责任。
+- 不相交的Bar/PPT几何与capture取消可继续；普通Show/关穿透/新政策仍不得越过旧Canvas恢复。设置页的协调故障重试使用点击时捕获的当前workspace失败版本，不能伪装成Host CanvasRecovery token，也不能旧按钮重试新请求。

@@ -138,6 +138,20 @@ namespace Inkeys::Window::Detail
 			for (std::size_t i = 0; i < 9; ++i)
 				if (identity.windows[i] && actual.topmost[i] != topmost)
 					if (!ops.Current() || !ops.SetBand(i, topmost, true) || !read()) return false;
+			const auto repairOwnedAbove = [&](std::size_t begin, std::size_t end)
+			{
+				for (std::size_t i = begin; i-- > end;)
+				{
+					if (!identity.windows[i] || !expectedOwners[i]) continue;
+					std::size_t owner = Count;
+					for (std::size_t j = 0; j < i; ++j)
+						if (identity.windows[j] == expectedOwners[i]) { owner = j; break; }
+					if (owner == Count || actual.Above(i, owner)) continue;
+					if (!ops.Current() || !ops.PlaceAfter(owner, i) || !read()) return false;
+				}
+				return true;
+			};
+			if (!repairOwnedAbove(4, 1) || !repairOwnedAbove(9, 4)) return false;
 			std::size_t anchor = identity.windows[8] ? 8 : Count;
 			for (std::size_t i = 0; i < order.count; ++i)
 			{
@@ -157,5 +171,17 @@ namespace Inkeys::Window::Detail
 			if (ordered && ops.Current()) return true;
 		}
 		return false;
+	}
+
+	// 政策交接只提交真实内部关系；全局置前仍由普通 Refresh 独立处理。
+	template<class Capture, class Reconcile, class Publish, class Current>
+	[[nodiscard]] bool CommitOverlayGroupPolicy(Capture capture, Reconcile reconcile,
+		Publish publish, Current current, HWND promoted = nullptr)
+	{
+		const auto identity = capture();
+		if (!identity || !current() || (promoted && !identity->windows[8])) return false;
+		if (!reconcile(*identity, CapturePptZOrder(*identity, promoted)) || !current()) return false;
+		publish();
+		return current();
 	}
 }

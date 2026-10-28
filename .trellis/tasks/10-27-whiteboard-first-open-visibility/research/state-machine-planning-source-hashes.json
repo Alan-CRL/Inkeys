@@ -1,0 +1,42 @@
+[
+  {
+    "path": "Inkeys/Inkeys/Window/Window.cpp",
+    "sha256": "7373c13477d72f9fb8f1e9e317a2f86d868b29901905cb124cb9dea670d82ede"
+  },
+  {
+    "path": "Inkeys/Inkeys/Window/Window.ZOrderPolicy.h",
+    "sha256": "3e4f3a0303727cf98e010b89f08c9c466ec9491c54a1c39b20d552e905ef02bf"
+  },
+  {
+    "path": "InkeysHeadlessTests/window_tests.cpp",
+    "sha256": "0fff325eac7fe43bd1959f7ce03313afb812884609e696d1dc4af9c5c39fac19"
+  },
+  {
+    "path": "Inkeys/IdtState.cpp",
+    "sha256": "b1c920bdd054e701f926c55c2b98e5950411c4fac2802c78127eabdf2ac0a1ea"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Whiteboard/Whiteboard.cpp",
+    "sha256": "310c218343d8a848da1234b0778989319644d622a2cbda2a6b05716342d732d9"
+  },
+  {
+    "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp",
+    "sha256": "81cb0a37929bd20b933af0b7a103ab467ccebd459af4f00228f32e2be895be3b"
+  },
+  {
+    "path": "Inkeys/Inkeys/Window/Window.CanvasPolicy.h",
+    "sha256": "77561d0438b96eee77a7c01cc249f2eb045c31a6c7cffdb089e88a3b523d0282"
+  },
+  {
+    "path": "Inkeys/Inkeys/Window/Window.cppm",
+    "sha256": "9ed761230d9645c2fdd12e41de0be30309ea35189c2feb50ff5f83c7ec53a11f"
+  },
+  {
+    "path": "Inkeys/Inkeys/Drawing/Draw3/Assets/inkPixelShader.cso",
+    "sha256": "c23556a1103308c123fd8937da0b6e28639d1e302b3be6c68c314be7b62c4032"
+  },
+  {
+    "path": "Inkeys/Inkeys/Drawing/Draw3/Assets/inkVertexShader.cso",
+    "sha256": "79ef240a3c6a322f20cb1ba2ceac1e5ce5c7f61a28bf53b53edbc9bb1656c189"
+  }
+]

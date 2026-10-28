@@ -791,11 +791,13 @@ namespace Inkeys::UI::Bar
 			const auto savedA1=Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot();
 			const auto savedA2=Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
 			int matrixCases=0;
+			Inkeys::Testing::WorkspaceSceneScope workspaceScope;
 			for(int count:{0,1,2,3,4,2,1,0})
 			for(int mode:{0,1})for(int scene:{0,1,2})for(bool content:{false,true})
 			for(const auto tool:{StateModeSelectEnum::IdtSelection,StateModeSelectEnum::IdtPen,
 				StateModeSelectEnum::IdtShape,StateModeSelectEnum::IdtEraser,StateModeSelectEnum::IdtClickThrough})
 			{
+				(void)workspaceScope.Set(scene==2 ? WorkspaceScene::Whiteboard : scene==1 ? WorkspaceScene::Presentation : WorkspaceScene::Desktop);
 				SetWhiteboardActive(scene==2);Freeze::SetWhiteboardActive(scene==2);
 				SetPptPresentationActive(scene==1);Freeze::SetPresentationActive(scene==1);
 				SetSelectAndClickThroughMode(mode);SetCurrentPageHasContent(content);switchTool(tool);
@@ -829,6 +831,7 @@ namespace Inkeys::UI::Bar
 				&& !ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,false,true,true)
 				&& !ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,true,true,false),
 				"active Whiteboard permits eligible drag feedback while entry and unchanged gestures stay hidden");
+			(void)workspaceScope.Set(WorkspaceScene::Desktop);
 			SetWhiteboardActive(false);Freeze::SetWhiteboardActive(false);
 			SetPptPresentationActive(false);Freeze::SetPresentationActive(false);
 			SetSelectAndClickThroughMode(1);ChangeStateModeToPen();SetCurrentPageHasContent(false);reload(0);

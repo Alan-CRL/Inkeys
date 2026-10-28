@@ -15,6 +15,7 @@
 #include "../Inkeys/Inkeys/Window/Window.SafetyOverride.h"
 #include "../Inkeys/Inkeys/Window/Window.ShellFullscreen.h"
 #include "../Inkeys/Inkeys/Window/Window.CanvasPolicy.h"
+#include "../Inkeys/Inkeys/UI/Whiteboard/Whiteboard.BackgroundState.h"
 
 import Inkeys.Window;
 
@@ -331,6 +332,17 @@ int RunCanvasPolicyTests()
 	{ otherApplied = ApplyCanvasClickThrough(false, otherRole.pending, otherRole.applying, other); };
 	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && otherApplied,
 		"independent HWND roles do not share a global reentry gate");
+	unsigned viewRequests = 0;
+	bool requestedMinimized = false;
+	const std::function<void(bool)> requestView = [&](bool minimized) { ++viewRequests; requestedMinimized = minimized; };
+	check(Inkeys::Window::DispatchWhiteboardViewIntent(true, true, true, true, requestView)
+		&& viewRequests == 1 && requestedMinimized, "system minimize submits a view intent without native Show");
+	check(!Inkeys::Window::DispatchWhiteboardViewIntent(true, false, true, true, requestView)
+		&& viewRequests == 1, "inactive Freeze owner keeps native minimize behavior outside Whiteboard");
+	check(Inkeys::Window::DispatchWhiteboardViewIntent(true, true, true, false, requestView) && viewRequests == 1,
+		"active presentation consumes a disabled system minimize without changing workspace");
+	check(Inkeys::Window::DispatchWhiteboardViewIntent(true, true, false, false, requestView)
+		&& viewRequests == 2 && !requestedMinimized, "system restore submits the same coordinated view intent");
 	unsigned closeRequests = 0;
 	const std::function<void()> close = [&] { ++closeRequests; };
 	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(false, true, close) && closeRequests == 0,
@@ -815,8 +827,28 @@ int RunWindowCommandCompletionTests()
 		RelativeOperations badBase;
 		std::swap(badBase.stack[7], badBase.stack[8]);
 		const auto invalidBase = capture(badBase);
-		check(!reconcile(badBase, invalidBase, CapturePptZOrder(invalidBase)),
-			"correct owner identity cannot hide a child physically below its owner");
+		check(reconcile(badBase, invalidBase, CapturePptZOrder(invalidBase))
+			&& capture(badBase).Matches(invalidBase.owners, false, false),
+			"child physically below its owner is repaired instead of rejecting a valid owner identity");
+		RelativeOperations inverted;
+		inverted.stack.clear();
+		for (std::size_t i = 0; i < 9; ++i) inverted.stack.push_back(inverted.state.windows[i]);
+		inverted.state.topmost.fill(true);
+		inverted.state.continuous = false;
+		inverted.stack.insert(inverted.stack.begin() + 2, external);
+		const auto invertedBefore = capture(inverted);
+		check(ReconcileRelativeOverlayZOrder(invertedBefore, invertedBefore.owners, true,
+			CapturePptZOrder(invertedBefore), inverted), "desktop exit repairs a fully inverted owner chain");
+		const auto invertedAfter = capture(inverted);
+		check(invertedAfter.Matches(invertedBefore.owners, true, false)
+			&& std::find(inverted.stack.begin(), inverted.stack.end(), external) < inverted.stack.end(),
+			"owner-chain repair accepts foreign gaps while preserving actual topmost bands");
+		for (std::size_t i = 4; i < 8; ++i)
+			check(invertedAfter.Above(8, i), "desktop exit restores Bar above every PPT window after owner-chain repair");
+		const auto invertedMoves = inverted.moved.size();
+		check(ReconcileRelativeOverlayZOrder(invertedAfter, invertedBefore.owners, true,
+			CapturePptZOrder(invertedAfter), inverted) && inverted.moved.size() == invertedMoves,
+			"repaired owner chain is idempotent without global TOP operations");
 		RelativeOperations mutation;
 		const auto mutationBefore = capture(mutation);
 		mutation.state.owners[6] = nullptr;
@@ -900,6 +932,196 @@ int RunWindowCommandCompletionTests()
 		check(!reconcile(shutdown, stoppingSnapshot, originalOrder) && shutdown.moved.empty(),
 			"shutdown forbids stale physical ordering writes");
 		check(!CapturePptZOrder(saved, external).valid, "unknown promoted HWND is rejected");
+
+		// 实际政策提交接缝调用相同物理算法；不复制 Service 的 mode/回滚状态机。
+		const auto commitPolicy = [](RelativeOperations& ops, bool mode, bool requestedTopmost,
+			std::function<void()> publish)
+		{
+			return CommitOverlayGroupPolicy([&]() -> std::optional<Snapshot>
+				{ Snapshot identity; if (!ops.Read(identity)) return {}; return identity; },
+				[&](const Snapshot& identity, const PptZOrder& order)
+				{ return ReconcileRelativeOverlayZOrder(identity, ops.identity.owners, requestedTopmost && !mode, order, ops); },
+				publish, [&] { return ops.Current(); });
+		};
+		RelativeOperations desktopExit;
+		desktopExit.stack.insert(desktopExit.stack.begin() + 2, external);
+		desktopExit.state.continuous = false;
+		const auto exitBefore = capture(desktopExit);
+		unsigned policyPublications = 0;
+		const auto publishPolicy = [&] { ++policyPublications; };
+		check(commitPolicy(desktopExit, false, false, publishPolicy) && policyPublications == 1,
+			"mode=false non-topmost physical policy commits hidden PPT with foreign gaps and no global TOP operation");
+		const auto exitAfter = capture(desktopExit);
+		check(!exitAfter.Matches(exitAfter.owners, false) && exitAfter.Matches(exitAfter.owners, false, false)
+			&& CapturePptZOrder(exitBefore).members == CapturePptZOrder(exitAfter).members,
+			"policy commit keeps PPT siblings while strict ordinary global predicate remains unchanged");
+		const auto exitMoves = desktopExit.moved.size();
+		check(commitPolicy(desktopExit, false, false, publishPolicy) && desktopExit.moved.size() == exitMoves,
+			"same mode=false policy is idempotent without repeating ordering writes");
+		desktopExit.ignoreBand = true;
+		check(!commitPolicy(desktopExit, false, true, publishPolicy) && policyPublications == 2,
+			"post-Leave topmost readback failure remains false and does not publish completion");
+		desktopExit.ignoreBand = false;
+		check(commitPolicy(desktopExit, false, false, publishPolicy)
+			&& commitPolicy(desktopExit, false, false, publishPolicy)
+			&& commitPolicy(desktopExit, false, true, publishPolicy),
+			"mode=false retry of fullscreen/Leave/topmost physical commits recovers after later band failure");
+		check(commitPolicy(desktopExit, false, true, publishPolicy),
+			"policy repeat after a later caller failure still uses the same physical contract");
+		// 完整 Restore 的最后提交也使用此函数；Canvas/逐窗回滚和私有分派另经静态审阅。
+		check(commitPolicy(desktopExit, false, false, publishPolicy)
+			&& capture(desktopExit).Matches(desktopExit.identity.owners, false, false),
+			"mode=false full-group restore tail can commit actual internal state without global continuity");
+		RelativeOperations commitSuccess;
+		commitSuccess.state.owners[6] = nullptr;
+		commitSuccess.state.topmost[7] = true;
+		check(commitPolicy(commitSuccess, false, false, [] {}), "prepare real policy commit failure boundaries");
+		for (unsigned failedCall = 1; failedCall <= commitSuccess.calls; ++failedCall)
+		{
+			RelativeOperations commitFailure;
+			commitFailure.state.owners[6] = nullptr;
+			commitFailure.state.topmost[7] = true;
+			commitFailure.failAt = failedCall;
+			unsigned published = 0;
+			check(!commitPolicy(commitFailure, false, false, [&] { ++published; }) && !published,
+				"capture/owner/band/move failure cannot publish a successful physical policy commit");
+		}
+		for (int ignored = 0; ignored < 3; ++ignored)
+		{
+			RelativeOperations uncommitted;
+			uncommitted.ignoreMove = ignored == 0;
+			uncommitted.ignoreOwner = ignored == 1;
+			uncommitted.ignoreBand = ignored == 2;
+			if (ignored == 1) uncommitted.state.owners[6] = nullptr;
+			if (ignored == 2) uncommitted.state.topmost[7] = true;
+			unsigned published = 0;
+			check(!commitPolicy(uncommitted, false, false, [&] { ++published; }) && !published,
+				"BOOL success without owner/band/order readback cannot commit a physical policy");
+		}
+		for (const bool generationChange : { false, true })
+		{
+			RelativeOperations cancelledPolicy;
+			cancelledPolicy.afterWrite = [&]
+			{ if (generationChange) ++cancelledPolicy.state.generations[6]; else cancelledPolicy.current = false; };
+			unsigned published = 0;
+			check(!commitPolicy(cancelledPolicy, false, false, [&] { ++published; }) && !published
+				&& cancelledPolicy.moved.size() == 1,
+				"identity change or cancellation during a policy commit stops before publication and further writes");
+		}
+		// 生产两次 owner 调用的步骤编排；原生几何/region/显隐的 Service 接线仍由源码复审。
+		struct WorkspaceSteps
+		{
+			RelativeOperations& windows;
+			std::vector<int> steps;
+			int fail = -1;
+			bool current = true;
+			std::uint64_t safetyRevision = 0;
+			std::optional<std::uint64_t> preparedSafety;
+			bool Current() const { return current && windows.Current() && (!preparedSafety || *preparedSafety == safetyRevision); }
+			bool Step(int step) { steps.push_back(step); return fail != step; }
+			bool WithdrawFullscreen() { return Step(0); }
+			bool PrepareGeometry() { return Step(1); }
+			bool ApplyMode() { return Step(2); }
+			bool ApplyBand()
+			{
+				if (!Step(3)) return false;
+				Snapshot snapshot;
+				return windows.Read(snapshot) && ReconcileRelativeOverlayZOrder(snapshot, windows.identity.owners,
+					false, CapturePptZOrder(snapshot), windows);
+			}
+			bool BlockInput() { return Step(4); }
+			bool CapturePrepared() { if (!Step(5)) return false; preparedSafety = safetyRevision; return true; }
+			bool ValidatePrepared() { return Step(6); }
+			bool ApplyInput() { return Step(7); }
+			bool ApplyVisibility() { return Step(8); }
+			bool PublishFullscreen() { return Step(9); }
+		};
+		RelativeOperations stagedWindows;
+		stagedWindows.state.continuous = false;
+		WorkspaceSteps staged{stagedWindows};
+		check(PrepareWorkspacePolicy(staged) && staged.steps == std::vector<int>({0,1,2,3,4,5})
+			&& stagedWindows.moved == std::vector<std::size_t>({7,6,5,4}),
+			"owner preparation returns after actual relative policy without showing or waiting on rendering");
+		staged.steps.clear();
+		check(CompleteWorkspacePolicy(staged) && staged.steps == std::vector<int>({6,7,8,9}),
+			"same request completion validates before input/visibility and publishes fullscreen last");
+		for (int failure = 0; failure < 10; ++failure)
+		{
+			RelativeOperations windows;
+			WorkspaceSteps failing{windows}; failing.fail = failure;
+			const bool succeeded = failure < 6 ? PrepareWorkspacePolicy(failing) : CompleteWorkspacePolicy(failing);
+			check(!succeeded && !failing.steps.empty() && failing.steps.back() == failure,
+				"failed native stage stops later owner writes and never fabricates a prepared/completed receipt");
+		}
+		RelativeOperations cancelledStage;
+		WorkspaceSteps staleStage{cancelledStage};
+		cancelledStage.afterWrite = [&] { ++cancelledStage.state.generations[6]; };
+		check(!PrepareWorkspacePolicy(staleStage) && staleStage.steps.back() == 3,
+			"replacement generation during preparation cannot reach capture or final visibility");
+		for (int cleanup = 0; cleanup < 2; ++cleanup)
+		{
+			RelativeOperations windows;
+			WorkspaceSteps oldPrepared{windows};
+			check(PrepareWorkspacePolicy(oldPrepared), "prepare captures safety coverage identity");
+			oldPrepared.steps.clear(); ++oldPrepared.safetyRevision;
+			check(!CompleteWorkspacePolicy(oldPrepared) && oldPrepared.steps.empty(),
+				"Hide or transparency accepted after prepare rejects old completion before input, Show or coverage clearing");
+		}
+		RelativeOperations retiredAtPublication;
+		check(!commitPolicy(retiredAtPublication, false, false, [&] { retiredAtPublication.current = false; }),
+			"intent retired at publication is not reported as a committed policy");
+	}
+	{
+		using namespace Inkeys::UI::WhiteboardDetail;
+		BackgroundState background;
+		background.Reset();
+		unsigned hides = 0;
+		check(CompleteBackgroundInactive(background, background.Desired(), [&](const BackgroundState::Surface&) { ++hides; return true; }) && !hides,
+			"initial inactive baseline does not hide the shared Desktop/PPT Freeze");
+		check(background.Publish(true, 3), "current background request is accepted");
+		const auto first = background.Desired();
+		check(background.Prepare({first, reinterpret_cast<HWND>(1), 7, {-1920,-1080,0,0}})
+			&& background.Prepared(3).has_value() && !background.InactiveCommitted(first),
+			"pixel preparation records request, full negative-origin bounds and native identity without fabricating visibility");
+		check(background.Publish(false, 4), "inactive request supersedes prepared pixels");
+		const auto closing = background.Desired();
+		check(!CompleteBackgroundInactive(background, closing, [&](const BackgroundState::Surface&) { ++hides; return false; })
+			&& !background.InactiveCommitted(closing), "failed real Hide cannot acknowledge inactive even if minimized");
+		check(CompleteBackgroundInactive(background, closing, [&](const BackgroundState::Surface&) { ++hides; return true; })
+			&& background.InactiveCommitted(closing), "successful inactive Hide is acknowledged without requiring Restore");
+		const auto hideCount = hides;
+		check(CompleteBackgroundInactive(background, closing, [&](const BackgroundState::Surface&) { ++hides; return true; }) && hides == hideCount,
+			"already committed inactive never hides a later Desktop shared surface again");
+		check(background.Publish(false, 6) && CompleteBackgroundInactive(background, background.Desired(),
+			[&](const BackgroundState::Surface&) { ++hides; return true; }) && hides == hideCount,
+			"later Desktop inactive revision after real close does not hide the reused shared Freeze");
+		check(background.Publish(true, 7) && !background.Prepare({first, reinterpret_cast<HWND>(1), 7, {}})
+			&& !background.CommitInactive(closing), "old Show/frame/Hide ACK cannot confirm a new same-valued active request");
+		const auto reopened = background.Desired();
+		check(!background.Publish(false, 4) && !background.Publish(false, 0) && !background.Publish(true, 0) && background.Current(reopened), "old revision cannot replace a later background request");
+		background.Reset();
+		check(background.Publish(true, 0) && background.Publish(false, 0), "explicit lifecycle Reset permits legacy baseline again");
+		check(!background.Current(reopened) && !background.Prepare({reopened, reinterpret_cast<HWND>(1), 7, {}}),
+			"new lifecycle retires background frame even if external revision is reused");
+		(void)background.Publish(true, 5);
+		check(background.Bind(background.Desired(), {reinterpret_cast<HWND>(1), 7}), "active renderer binds exact held native generation");
+		(void)background.Publish(false, 6);
+		const auto interrupted = background.Desired();
+		check(!CompleteBackgroundInactive(background, interrupted, [&](const BackgroundState::Surface&) { (void)background.Publish(true, 7); return true; })
+			&& !background.InactiveCommitted(interrupted), "native Hide finishing after reopen cannot commit stale inactive ACK");
+		const auto owning = background.Desired();
+		const BackgroundState::Surface oldSurface{reinterpret_cast<HWND>(1), 7};
+		check(background.Bind(owning, oldSurface) && background.Prepare({owning, oldSurface.hwnd, oldSurface.generation, {0,0,1920,1080}}),
+			"renderer prepares only its bound generation");
+		background.RetireHeld(oldSurface);
+		check(!background.Prepared(7) && background.Bind(owning, {oldSurface.hwnd, 8}) && !background.Prepared(7),
+			"retired or rebound same-HWND generation invalidates prepared pixels for a required full repaint");
+		(void)background.Publish(false, 8);
+		background.RetireHeld({oldSurface.hwnd, 8});
+		const auto retiredClose = background.Desired();
+		check(CompleteBackgroundInactive(background, retiredClose, [&](const BackgroundState::Surface&) { ++hides; return true; })
+			&& !background.Held() && !background.Prepared(8) && hides == hideCount,
+			"retiring old background responsibility does not hide or acknowledge pixels on a replacement Freeze");
 	}
 	{
 		WindowSafetyOverride safety;

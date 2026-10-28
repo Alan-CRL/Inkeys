@@ -704,6 +704,8 @@ namespace
 		WriteSetting,
 		SyncDraw3State,
 		RetryCanvasRecovery,
+		RetryWorkspaceTransition,
+		WorkspaceTransitionFailureNotice,
 		WritePptSetting,
 		WriteConfig,
 		ShellExecute,
@@ -738,6 +740,7 @@ namespace
 		string ddbOpenJsonPayload;
 		shared_ptr<Inkeys::Config> configSnapshot;
 		Inkeys::Drawing::Draw3::CanvasRecoveryState recovery;
+		std::uint64_t workspaceFailureRevision = 0;
 		bool flag = false;
 		bool secondaryFlag = false;
 		int showCommand = SW_SHOW;
@@ -848,6 +851,8 @@ namespace
 			{
 			case SettingBusinessKind::RetryCanvasRecovery:
 				return Inkeys::Drawing::Draw3::RetryProductCanvasRecovery(command.recovery);
+			case SettingBusinessKind::RetryWorkspaceTransition:
+				return RetryWorkspaceTransitionIfRevision(command.workspaceFailureRevision);
 			case SettingBusinessKind::SyncDraw3State:
 				::SyncDraw3State();
 				return true;
@@ -864,6 +869,10 @@ namespace
 					command.parameters.empty() ? nullptr : command.parameters.c_str(),
 					command.directory.empty() ? nullptr : command.directory.c_str(),
 					command.showCommand)) > 32;
+			case SettingBusinessKind::WorkspaceTransitionFailureNotice:
+				// 排队期间可能已取消或成功重试；旧故障不能再弹提示。
+				if (WorkspaceTransitionFailureRevision() != command.workspaceFailureRevision) return false;
+				[[fallthrough]];
 			case SettingBusinessKind::Information:
 			{
 				const auto title = I18n::getWOr(
@@ -3306,6 +3315,18 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					Design::PageHeader(IA(I18nKey.SettingsUI.Draw.N).c_str());
 
+					const auto workspaceFailure = WorkspaceTransitionFailureRevision();
+					if (workspaceFailure != 0 && Design::Notice("##workspace-recovery",
+						IA(I18nKey.UI.Bar.CanvasRecovery.Failed).c_str(),
+						IA(I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str(),
+						ImFluentInfoSeverity_Warning, IA(I18nKey.UI.Bar.CanvasRecovery.RetryCanvas).c_str()))
+					{
+						// 按钮携带用户看到的协调故障版本，不借用 Host 故障令牌或执行时的新版本。
+						SettingBusinessCommand retry;
+						retry.kind = SettingBusinessKind::RetryWorkspaceTransition;
+						retry.workspaceFailureRevision = workspaceFailure;
+						QueueBusiness(std::move(retry));
+					}
 					const auto canvasRuntime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 					if (canvasRuntime.recovery.status != Inkeys::Drawing::Draw3::CanvasRecoveryStatus::None)
 					{
@@ -4718,6 +4739,18 @@ namespace
 
 namespace Inkeys::UI::Setting
 {
+	void QueueWorkspaceTransitionFailureNotice(std::uint64_t revision, bool whiteboardTarget, bool whiteboardInvolved)
+	{
+		SettingBusinessCommand notice;
+		notice.kind = SettingBusinessKind::WorkspaceTransitionFailureNotice;
+		notice.workspaceFailureRevision = revision;
+		const auto key = whiteboardTarget ? I18nKey.Dialogs.WorkspaceTransitionFailure.Whiteboard :
+			whiteboardInvolved ? I18nKey.Dialogs.WorkspaceTransitionFailure.Return : I18nKey.Dialogs.WorkspaceTransitionFailure.Primary;
+		notice.text = I18n::getWOr(key,
+			L"工作区切换未完成，已停止自动重试。请前往设置的绘图页重试。");
+		QueueBusiness(std::move(notice));
+	}
+
 	void RequestConfigWrite() { QueueConfigWrite(); }
 
 	bool DeferDraw3SyncIfRendering()

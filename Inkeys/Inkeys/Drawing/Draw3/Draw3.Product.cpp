@@ -157,6 +157,15 @@ namespace Inkeys::Drawing::Draw3
 		productHost.PublishState(merged);
 	}
 
+	bool SetProductWorkspaceTransitionPending(std::uint64_t epoch, bool pending,
+		std::uint64_t expectedHostGeneration) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) &&
+			productHost.SetWorkspaceTransitionPending(epoch, pending, expectedHostGeneration);
+	}
+
 	void PublishProductWorkspace(Bridge::Workspace workspace,
 		const std::function<bool()>& stillDesired) noexcept
 	{

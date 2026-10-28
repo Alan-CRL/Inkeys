@@ -67,3 +67,15 @@
 - 同一目标内从后向前绘制：主题面板、更多菜单、分页栏；重叠命中遵守相同可见层级，面板背景遮挡不能点击到其后的按钮。位置和共享展开动画不变。
 - 主题样式纹理覆盖完整70×70按钮，文字绘制在纹理上方，不能按标签槽缩短纹理区域。点阵为中心对称3×3九点，网格为三横三竖九交点；与画布共用纹理绘制规则，画布24DIP密度保持不变。
 - 色板显示、选中和点击请求使用同一顺序映射，第三项黑色为#000000。
+
+## 三工作区统一交接（2026-10-27）
+
+本轮已批准合同；实现和执行证据见任务 whiteboard-first-open-visibility 的最终报告，不能由本规范推定实机通过。
+
+- Desktop/Presentation/Whiteboard是三个稳定业务态。最新Desired、已完成Committed和仍有实际责任的Pending区分；最小化/焦点不是第四工作区。统一协调快照是业务权威，主栏稳定工作区、工具和Desktop基线按Committed投影，背景/分页可按Pending准备但不能据旧ACK开放业务。
+- 接纳切换先真实关闭Host新Down，工具/场景准备和ControlWake、Frame/UI ACK、终态排空仍继续。实际目标工具/选择、匹配输出、必要背景与原生Prepare/Complete结果就绪后统一提交；foreground、Shell COM成功和全局TOP/连续性不进入完成门。
+- 业务epoch复用现有奇偶模型，白板显示/最小化语义变化也退休旧ACK；普通PPT页/工具/输出变化不推进工作区epoch。业务版本不替代session/target、slot、tool、device/output/content或HWND代际。
+- 白板背景复用Freeze并保持完整主屏rcMonitor，尺寸与DPI读同一Display快照；Desktop/PPT双画布底部1物理像素及旧定格/放大镜规则独立不变。BackgroundPrepared仅证明当前请求像素，实际Active仍需真实visible/bounds/非iconic；inactive必须真实Hide后确认，且优先于minimized暂停。
+- 白板最小化仍保留页/历史/工具/基线；系统确认只确认当前视图，不另发意图让在途请求自失效。最小化后可直接关闭。后台PPT变化只更新最新Primary事实，不能抢走白板。
+- 普通失败停止无限重复显示/隐藏，保留owner真实责任；当前协调故障版本的显式重试和安全取消可用。受保护/fatal只可在当前完整token及真实安全清理后退场，不等待已停消费者普通帧、不清fatal或伪造ready。
+- Settings/安全UI与画布恢复的阻挡按实际写集区分；新场景Show/关穿透不得越过旧恢复，旧补偿不能作用于新HWND代际。保存/加载和失败warm数据规则不变。

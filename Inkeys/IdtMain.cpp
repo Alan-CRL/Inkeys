@@ -3339,9 +3339,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					spec.largeIcon = applicationIcon;
 					spec.smallIcon = applicationIcon;
 					spec.whiteboardMinimizeAllowed = [] { return !Inkeys::UI::Bar::PptPresentationActive(); };
-					spec.whiteboardCloseRequested = [] { RequestWhiteboardActive(false); };
+					spec.whiteboardCloseRequested = [] { NotifyWhiteboardWindowCloseRequested(); };
+					spec.whiteboardViewRequested = [](bool minimized) { NotifyWhiteboardWindowViewRequested(minimized); };
 					spec.whiteboardMinimizedChanged = []
 					{
+						NotifyWhiteboardWindowMinimizedChanged();
 						Inkeys::UI::PageControl::NotifyLayoutChanged();
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::WhiteboardFreeze);

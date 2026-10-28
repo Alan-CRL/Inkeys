@@ -1,13 +1,13 @@
-{"file": ".trellis/spec/native-desktop/index.md", "reason": "原生桌面修改前的线程、工程与质量边界"}
-{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "保持现有模块、并发和最小变更风格"}
-{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 Solution、原生 ARM64 host 和验证要求"}
-{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板首帧、背景、激活和最小化合同"}
-{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Window Service、RenderPipeline 和 Setting 输入锁边界"}
-{"file": ".trellis/spec/native-desktop/canvas-freeze-boundaries.md", "reason": "窗口命令回执、恢复与 Shell 全屏状态合同"}
-{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/previous-changes-and-current-evidence.md", "reason": "既有改动、确定缺陷和未验证边界"}
-{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/review-current-failure-20261027.md", "reason": "复审确认的重试清UI、最小化退出闭环、冷启动测试缺口与尚未证实的原生失败点"}
-{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/detailed-investigation-20261027.md", "reason": "详细调查、生产纯策略探针、白板局部排序和物理恢复方案及证据边界"}
-{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/authorized-gui-evidence-20261027.md", "reason": "最新禁止GUI边界、已保存现场和77f76038确定历史因果；以修订design/implement范围为准"}
-{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/history-native-order.md", "reason": "最新禁止GUI边界、已保存现场和77f76038确定历史因果；以修订design/implement范围为准"}
-{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/history-window-recovery.md", "reason": "最新禁止GUI边界、已保存现场和77f76038确定历史因果；以修订design/implement范围为准"}
-{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/no-window-regression-design.md", "reason": "真实生产helper故障注入矩阵和无窗口接线边界；严格仅本轮三项回归"}
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "原生模块归属、线程与质量边界"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "最小修改、编码和共享状态"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "原生ARM64完整Solution及验证约束"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "工具/历史/基线/最小化及同进程页保存"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "重点读取Window owner、白板窗口与离场顺序章节；文件注入截断时必须按路径补读"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "单Host、三槽、Frame/Selection、PPT加载及1px；注入截断时必须按路径补读相关章节"}
+{"file": ".trellis/spec/native-desktop/canvas-freeze-boundaries.md", "reason": "窗口回执、实际恢复责任、安全覆盖和Protected/fatal退场"}
+{"file": ".trellis/spec/ppt-interop/index.md", "reason": "保留PPT/WPS边界，不改托管ABI或支持范围"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "可信场次、BasicControl/Unknown、实际UI-ready和返回规则"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/state-machine-workspace-contracts.md", "reason": "最终三工作区合同及不可删除的底层身份/ACK"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/state-machine-fullscreen-contracts.md", "reason": "白板本已完整rcMonitor、其他1px范围、固定owner和Shell/焦点边界"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/exit-desktop-mouse-followup.md", "reason": "物理鼠标经RTS及所有工作区Selection不落笔的依据"}
+{"file": ".trellis/tasks/10-27-whiteboard-first-open-visibility/research/final-state-machine-design-review.md", "reason": "最终设计复审结论；通过设计不等于获得用户实施授权"}

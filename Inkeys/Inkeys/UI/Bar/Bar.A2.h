@@ -25,6 +25,14 @@ namespace Inkeys::UI::Bar
 			std::forward<Restore>(restore)();
 		else std::forward<Request>(request)(action == BarWhiteboardButtonAction::Open);
 	}
+	template<class Restore, class Request, class CancelFailure>
+	void DispatchBarWhiteboardButtonAction(bool requested, bool minimized, std::uint64_t failureRevision,
+		Restore&& restore, Request&& request, CancelFailure&& cancel)
+	{
+		// 失败恢复仍可能实际最小化；此时按钮优先取消捕获的故障，不再重复无效 Resume。
+		if (requested && failureRevision) { std::forward<CancelFailure>(cancel)(failureRevision); return; }
+		DispatchBarWhiteboardButtonAction(requested, minimized, std::forward<Restore>(restore), std::forward<Request>(request));
+	}
 	struct BarA2Projection
 	{
 		bool whiteboardTwoTwo = false;

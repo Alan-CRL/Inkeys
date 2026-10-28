@@ -1,8 +1,8 @@
 {
   "id": "whiteboard-first-open-visibility",
   "name": "whiteboard-first-open-visibility",
-  "title": "修复首次白板打开不可见与 UI 卡死",
-  "description": "修复相对20261021a新增的首次白板不可见、主栏交互反复重置及后台持续闪烁；基于已保存现场与历史证据实施，仅离屏/无窗口验证，不再GUI测试。",
+  "title": "白板三工作区状态机与全屏交接设计",
+  "description": "实施已批准的Desktop/Presentation/Whiteboard统一状态机与全屏交接，修复白板首开/退出/最小化/输入等直接相关遗留问题。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -15,12 +15,12 @@
   "branch": "dev",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "ab79dcb9a6466236f1170469104964b0cafab711",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-27：白板首开不可见、后台闪烁已通过用户人工确认；最终Debug|ARM64完整solution、生产state-mode CLI、--no-window全套退出0。用户已授权提交本轮已验证改动，不push；新反馈退出后主栏/任务栏跳变将在该提交后单独调查，保持禁止GUI限制。9份CSO和10份旧任务PNG内容及时间保持。",
+  "notes": "用户已明确批准最终设计并开始实施；围绕白板及三工作区尽可能修复相关遗留问题。仍禁止GUI/运行时采样；未请求本轮commit/push。优先统一交接与Host输入fence，复用现有窗口/Host/设备并保留Trellis身份/数据/故障合同。",
   "meta": {}
 }

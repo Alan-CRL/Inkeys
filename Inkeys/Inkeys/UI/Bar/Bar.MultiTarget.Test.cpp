@@ -169,6 +169,9 @@ namespace Inkeys::UI::Bar
 			std::ofstream& summary, const std::filesystem::path& directory, bool& presetsInitialized)
 		{
 			auto& owner = barUISet;
+			Inkeys::Testing::WorkspaceSceneScope workspaceScope(workload == Workload::Whiteboard ? WorkspaceScene::Whiteboard :
+				workload == Workload::Ppt ? WorkspaceScene::Presentation : WorkspaceScene::Desktop);
+			if (!workspaceScope) return 1;
 			// 使用生产全局 owner，兼容仍由 BarState 消费的主栏业务状态；不调用窗口初始化。
 			owner.barState.fold = false;
 			owner.barState.drawAttribute = owner.barState.moreExpanded = false;
