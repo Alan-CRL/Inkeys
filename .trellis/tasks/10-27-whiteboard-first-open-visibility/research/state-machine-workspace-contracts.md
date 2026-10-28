@@ -88,7 +88,7 @@ Whiteboard 最小化/恢复虽然不换 Workspace，也不能让旧 Show 在 Hid
 
 ### 6. 工具、文档与 CPU slots 的硬合同
 
-**工具隔离**：`IdtState.cpp:44–45,1126–1176` 现有三槽记忆不能变成一个全局工具。离开场景只保存一次旧工具，目标工具可在准备阶段作为候选交给 Host，但 Bar/全局已提交工作区应等统一提交；失败重试不能把目标候选反向记进来源槽。初次进入未建工具槽默认 Selection，同时保留宽度、颜色等偏好。白板退出不是无条件选择；PPT 真退出才按旧 mode revision 条件收尾，且必须先保存 Presentation 工具再恢复 Desktop（PPT spec:15,38）。
+**工具隔离**：`IdtState.cpp:44–45,1126–1176` 现有三槽记忆不能变成一个全局工具。离开场景只保存一次旧工具，目标工具可在准备阶段作为候选交给 Host，但 Bar/全局已提交工作区应等统一提交；失败重试不能把目标候选反向记进来源槽。初次进入未建工具槽时 Whiteboard 默认 SoftPen 绘制，Desktop/Presentation 默认 Selection，同时保留宽度、颜色等偏好。白板退出不是无条件选择；PPT 真退出才按旧 mode revision 条件收尾，且必须先保存 Presentation 工具再恢复 Desktop（PPT spec:15,38）。
 
 **单 Host 与独立文档**：Draw3 spec:217 及 `DrawingDocumentSlot:704–785` 明确：Desktop singleton、Whiteboard singleton、按 `(PresentationKey, SlideBindingMode)` 分 lane 的 PPT slots。每槽包含 document、页 runtime/history、当前页、retained slides、fileGuid、slot generation 及保存 revision。切换准备目标 lane，再 park/swap 整槽并完整 GPU reset/replay；不能只切 workspace enum、清屏后借另一槽，也不能为简化创建多个 Host/输入 producer。
 

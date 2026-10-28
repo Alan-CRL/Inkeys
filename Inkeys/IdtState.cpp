@@ -1441,11 +1441,13 @@ namespace
 		auto& saved = workspaceStateModes[static_cast<std::size_t>(workspace)];
 		if (!saved)
 		{
-			// 新工作区沿用宽色偏好，工具身份独立从默认选择/拖拽态开始。
+			// 新工作区沿用宽色偏好；白板默认绘制，其他工作区默认选择/拖拽。
 			saved = stateMode;
-			saved->StateModeSelect = StateModeSelectEnum::IdtSelection;
-			saved->StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-			saved->StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+			const auto defaultMode = workspace == Workspace::Whiteboard
+				? StateModeSelectEnum::IdtPen : StateModeSelectEnum::IdtSelection;
+			saved->StateModeSelect = defaultMode;
+			saved->StateModeSelectTarget = defaultMode;
+			saved->StateModeSelectEcho = defaultMode;
 			saved->lastAnnotationMode = StateModeSelectEnum::IdtPen;
 			saved->laserActive = false;
 			saved->Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
@@ -2573,9 +2575,9 @@ int RunStateModeProductionTest() noexcept
 		require(SetPenWidth(7.0f, false) && SetPenColor(RGB(17, 31, 47), false), "desktop-tool-memory");
 		const auto desktopTool = GetStateModeVersionedSnapshot();
 		require(SwitchWorkspaceStateMode(Workspace::Whiteboard) &&
-			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen &&
 			GetStateModeSnapshot().Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen,
-			"first-whiteboard-does-not-inherit-desktop-tool");
+			"first-whiteboard-defaults-to-soft-pen-without-inheriting-desktop-tool");
 		require(!ChangeStateModeToPptAnnotation(PptAnnotationTool::Laser, desktopTool.revision) &&
 			!ChangeStateModeToPptAnnotation(PptAnnotationTool::Laser, StateModeTransitionRevision()) &&
 			!SetPenWidthIfRevision(30.0, desktopTool.revision, false), "whiteboard-rejects-old-tool-and-ppt");
