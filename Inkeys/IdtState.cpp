@@ -10,6 +10,7 @@
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
+#include "Inkeys/UI/Bar/Bar.A2.h"
 
 #include <algorithm>
 #include <array>
@@ -142,14 +143,219 @@ namespace
 		Exiting,
 	};
 
+
 	std::atomic_bool whiteboardDesired = false;
 	// 偶数属于可返回的 PPT 意图；奇数先于 desired 发布，封住进入白板时的并发准入缝隙。
 	std::atomic_uint64_t whiteboardInputEpoch = 2;
 	std::atomic_bool whiteboardPreviousRequested = false;
 	std::atomic_bool whiteboardNextRequested = false;
 	std::atomic<WhiteboardPhase> whiteboardPhase = WhiteboardPhase::Inactive;
+	// 只有本协调快照决定稳定工作区；旧 phase/desired 是对外兼容投影。
+	struct WorkspaceHandoff
+	{
+		using Clock = std::chrono::steady_clock;
+		Workspace desired = Workspace::Desktop;
+		Workspace committed = Workspace::Desktop;
+		std::uint64_t revision = 2;
+		std::uint64_t hostGeneration = 0;
+		bool pending = false;
+		bool minimized = false;
+		bool committedMinimized = false;
+		bool whiteboardInvolved = false;
+		unsigned failures = 0;
+		Clock::time_point retryAt{};
+		bool failed = false;
+		bool activate = false;
+
+		bool Request(Workspace target, bool viewMinimized = false, bool force = false, bool allowActivation = true) noexcept
+		{
+			viewMinimized = target == Workspace::Whiteboard && viewMinimized;
+			if (!force && desired == target && minimized == viewMinimized) return false;
+			whiteboardInvolved = whiteboardInvolved || desired == Workspace::Whiteboard ||
+				committed == Workspace::Whiteboard || target == Workspace::Whiteboard;
+			activate = allowActivation && target == Workspace::Whiteboard && !viewMinimized &&
+				((pending && activate && desired == target) || desired != Workspace::Whiteboard || minimized);
+			desired = target;
+			minimized = viewMinimized;
+			revision = ((revision + 2) & ~std::uint64_t{ 1 }) |
+				(target == Workspace::Whiteboard ? 1U : 0U);
+			hostGeneration = 0;
+			pending = true; // 取消回到 committed 也仍欠旧物理操作的退休。
+			failures = 0;
+			retryAt = {};
+			failed = false;
+			return true;
+		}
+		bool Commit(std::uint64_t expected, bool targetReady, bool backgroundReady, bool nativeReady) noexcept
+		{
+			if (!pending || failed || revision != expected || !targetReady || !backgroundReady || !nativeReady) return false;
+			committed = desired;
+			committedMinimized = minimized;
+			whiteboardInvolved = committed == Workspace::Whiteboard;
+			pending = false;
+			return true;
+		}
+		bool Fail(std::uint64_t expected, Clock::time_point now) noexcept
+		{
+			if (!pending || revision != expected || failed) return false;
+			if (++failures >= 4) { failed = true; return true; }
+			retryAt = now + std::chrono::milliseconds(250U << (failures - 1));
+			return false;
+		}
+		bool Ready(Clock::time_point now) const noexcept { return pending && !failed && now >= retryAt; }
+		bool Retry(std::uint64_t expected) noexcept
+		{
+			if (!pending || !failed || revision != expected) return false;
+			// 显式重试是新请求；退休 fence 的旧版本不能再次打开。
+			return Request(desired, minimized, true);
+		}
+	};
+	std::mutex workspaceHandoffMutex;
+	WorkspaceHandoff workspaceHandoff;
+	std::atomic_bool whiteboardViewChanged = false;
+	enum class NativeWhiteboardRequest : std::uint64_t { Restore = 1, Minimize = 2, Close = 3 };
+	std::atomic_uint64_t whiteboardNativeRequest = 0;
+	std::atomic_uint64_t whiteboardNativeViewProjection = 2U << 1;
+	std::optional<Inkeys::Business::PptSessionToken> basicControlSession;
+
+	WorkspaceHandoff ReadWorkspaceHandoff() noexcept
+	{
+		std::scoped_lock lock(workspaceHandoffMutex);
+		return workspaceHandoff;
+	}
+	void ProjectWorkspaceHandoffLocked() noexcept
+	{
+		whiteboardInputEpoch.store(workspaceHandoff.revision, std::memory_order_release);
+		whiteboardDesired.store(workspaceHandoff.desired == Workspace::Whiteboard, std::memory_order_release);
+		const auto phase = workspaceHandoff.pending
+			? (workspaceHandoff.desired == Workspace::Whiteboard ? WhiteboardPhase::Entering
+				: workspaceHandoff.whiteboardInvolved ? WhiteboardPhase::Exiting : WhiteboardPhase::Inactive)
+			: workspaceHandoff.committed == Workspace::Whiteboard ? WhiteboardPhase::Active : WhiteboardPhase::Inactive;
+		whiteboardPhase.store(phase, std::memory_order_release);
+		whiteboardNativeViewProjection.store((workspaceHandoff.revision << 1) | (workspaceHandoff.minimized ? 1U : 0U), std::memory_order_release);
+	}
+	WorkspaceHandoff RequestWorkspace(Workspace target, bool minimized = false, bool force = false, bool allowActivation = true) noexcept
+	{
+		std::scoped_lock lock(workspaceHandoffMutex);
+		workspaceHandoff.Request(target, minimized, force, allowActivation);
+		ProjectWorkspaceHandoffLocked();
+		return workspaceHandoff;
+	}
+	std::optional<WorkspaceHandoff> RequestWorkspaceIfRevision(Workspace target, bool minimized,
+		bool force, std::uint64_t expectedRevision) noexcept
+	{
+		std::scoped_lock lock(workspaceHandoffMutex);
+		if (workspaceHandoff.revision != expectedRevision) return std::nullopt;
+		workspaceHandoff.Request(target, minimized, force);
+		ProjectWorkspaceHandoffLocked();
+		return workspaceHandoff;
+	}
+	bool WorkspaceRequestCurrent(std::uint64_t revision) noexcept
+	{
+		const auto queued = whiteboardNativeRequest.load(std::memory_order_acquire);
+		return whiteboardInputEpoch.load(std::memory_order_acquire) == revision && (!queued || (queued >> 2) != revision);
+	}
+	void RetireNativeWhiteboardRequest(std::uint64_t captured) noexcept
+	{
+		if (captured) (void)whiteboardNativeRequest.compare_exchange_strong(captured, 0,
+			std::memory_order_acq_rel, std::memory_order_acquire);
+	}
+	void QueueNativeWhiteboardRequest(NativeWhiteboardRequest action) noexcept
+	{
+		const auto projected = whiteboardNativeViewProjection.load(std::memory_order_acquire);
+		const auto epoch = projected >> 1;
+		if (!(epoch & 1U) || whiteboardInputEpoch.load(std::memory_order_acquire) != epoch) return;
+		auto queued = whiteboardNativeRequest.load(std::memory_order_acquire);
+		for (;;)
+		{
+			const auto desiredAction = (projected & 1U) ? NativeWhiteboardRequest::Minimize : NativeWhiteboardRequest::Restore;
+			const bool oppositeQueued = queued && (queued >> 2) == epoch &&
+				static_cast<NativeWhiteboardRequest>(queued & 3U) != action;
+			// 相同视图只在撤销尚未消费的相反意图时排队；普通重复 SC 保持幂等。
+			if (action != NativeWhiteboardRequest::Close && action == desiredAction && !oppositeQueued) return;
+			if (whiteboardNativeViewProjection.load(std::memory_order_acquire) != projected ||
+				whiteboardInputEpoch.load(std::memory_order_acquire) != epoch) return;
+			const auto next = (epoch << 2) | static_cast<std::uint64_t>(action);
+			if (queued == next || whiteboardNativeRequest.compare_exchange_weak(queued, next,
+				std::memory_order_acq_rel, std::memory_order_acquire)) return;
+		}
+	}
+	bool CloseWorkspaceAdmission(const WorkspaceHandoff& request) noexcept
+	{
+		if (!request.pending) return true;
+		const auto hostGeneration = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().hostGeneration;
+		// 绝不持协调锁进入 Product；旧 run 的同数字 epoch 也没有新 Host 的开关权限。
+		if (!Inkeys::Drawing::Draw3::SetProductWorkspaceTransitionPending(request.revision, true, hostGeneration)) return false;
+		std::scoped_lock lock(workspaceHandoffMutex);
+		if (workspaceHandoff.revision != request.revision || !workspaceHandoff.pending) return false;
+		workspaceHandoff.hostGeneration = hostGeneration;
+		return true;
+	}
+
+	template<class PublishNotice>
+	void FailWorkspaceRequestImpl(std::uint64_t revision, PublishNotice&& publish)
+	{
+		bool firstFailure = false;
+		bool whiteboard = false, involved = false;
+		{
+			std::scoped_lock lock(workspaceHandoffMutex);
+			firstFailure = workspaceHandoff.Fail(revision, WorkspaceHandoff::Clock::now());
+			whiteboard = workspaceHandoff.desired == Workspace::Whiteboard;
+			involved = workspaceHandoff.whiteboardInvolved;
+		}
+		// 通知仅当前故障边沿一次，且不能持协调锁进入既有 UI FIFO。
+		if (firstFailure) publish(revision, whiteboard, involved);
+	}
+	void FailWorkspaceRequest(std::uint64_t revision) noexcept
+	{
+		try
+		{
+			FailWorkspaceRequestImpl(revision, [](auto token, bool whiteboard, bool involved)
+			{ Inkeys::UI::Setting::QueueWorkspaceTransitionFailureNotice(token, whiteboard, involved); });
+		}
+		catch (...) { if (IDTLogger) IDTLogger->warn("[Workspace] failure notice queue rejected"); }
+	}
+
 	std::mutex whiteboardReturnFocusMutex;
 	Inkeys::Business::PptFocusHandoff whiteboardReturnFocus;
+
+	WorkspaceHandoff ConsumeNativeWhiteboardRequests()
+	{
+		auto request = ReadWorkspaceHandoff();
+		auto captured = whiteboardNativeRequest.load(std::memory_order_acquire);
+		const auto sourceRevision = request.revision;
+		if (!captured) return request;
+		if ((captured >> 2) != sourceRevision || request.desired != Workspace::Whiteboard)
+		{
+			RetireNativeWhiteboardRequest(captured);
+			return request;
+		}
+		for (;;)
+		{
+			const auto action = static_cast<NativeWhiteboardRequest>(captured & 3U);
+			const bool close = action == NativeWhiteboardRequest::Close;
+			const bool minimize = action == NativeWhiteboardRequest::Minimize;
+			const bool allowed = !minimize || !PptSessionActive();
+			const auto target = close ? CurrentPrimaryWorkspace() : Workspace::Whiteboard;
+			const bool targetMinimized = close ? false : allowed ? minimize : request.minimized;
+			const auto next = RequestWorkspaceIfRevision(target, targetMinimized,
+				target == request.desired && targetMinimized == request.minimized, request.revision);
+			if (!next) return ReadWorkspaceHandoff(); // 并发 public 请求已胜出，旧批不能覆盖它。
+			request = *next;
+			if (close)
+			{
+				std::scoped_lock lock(whiteboardReturnFocusMutex);
+				whiteboardReturnFocus.Begin(Inkeys::Business::CapturePptFocusRequest());
+			}
+			auto expected = captured;
+			if (whiteboardNativeRequest.compare_exchange_strong(expected, 0,
+				std::memory_order_acq_rel, std::memory_order_acquire)) return request;
+			// 接受旧包期间到达的同来源新意图仍属本批；在任何窗口写入前合并它。
+			// 不清新来源包，它由下一轮按自己的当前 epoch 消费。
+			if (!expected || (expected >> 2) != sourceRevision) return ReadWorkspaceHandoff();
+			captured = expected;
+		}
+	}
 
 	bool ForegroundMatchesWindowRole(const Inkeys::Business::PptFocusForeground& foreground,
 		Inkeys::Window::WindowRole role)
@@ -165,15 +371,7 @@ namespace
 		std::scoped_lock lock(whiteboardReturnFocusMutex);
 		whiteboardReturnFocus.RebaseAfterWindowTransition(before, after, allowForegroundFallback);
 	}
-	void HideWhiteboardForReturn()
-	{
-		const auto before = Inkeys::Business::CapturePptFocusRequest().foreground;
-		const bool mayFallBack = ForegroundMatchesWindowRole(before, Inkeys::Window::WindowRole::Freeze);
-		Inkeys::UI::Whiteboard::PublishActive(false);
-		// 同步完成本次 Hide 再记录系统回退前台，异步绘制不再改变这段交接身份。
-		const bool hidden = Inkeys::Window::GetService().Hide(Inkeys::Window::WindowRole::Freeze);
-		RebaseWhiteboardReturnFocus(before, mayFallBack && hidden);
-	}
+
 	template<class Queue>
 	bool CompleteWhiteboardReturnFocus(Queue&& queue)
 	{
@@ -324,6 +522,45 @@ namespace
 		return runtime.consumerFatal && runtime.recovery.status == CanvasRecoveryStatus::Failed &&
 			runtime.recovery.reason == CanvasRecoveryReason::ConsumerFatal &&
 			RecoveryMatchesDesired(runtime.recovery, desired);
+	}
+
+	bool WorkspaceTargetReady(const WorkspaceHandoff& request, const ProductState& desired,
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime, bool basicControl,
+		bool safeRelease, const RECT& output) noexcept
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		if (safeRelease)
+			return request.desired != Workspace::Whiteboard && runtime.hostGeneration != 0 && runtime.recovery.revision != 0 &&
+				Draw3RecoveryNeedsUiRelease(runtime, desired);
+		if (!runtime.running || runtime.consumerFatal || desired.workspace != request.desired ||
+			(request.hostGeneration != 0 && runtime.hostGeneration != request.hostGeneration)) return false;
+		if (request.minimized)
+			return request.committed == Workspace::Whiteboard && request.desired == Workspace::Whiteboard;
+		if (basicControl)
+			return request.desired == Workspace::Presentation && !desired.presentationTarget;
+		return runtime.recovery.status == CanvasRecoveryStatus::None &&
+			(request.desired != Workspace::Whiteboard || !runtime.whiteboardLoadPending) &&
+			runtime.committedWidth == output.right - output.left && runtime.committedHeight == output.bottom - output.top &&
+			Draw3WorkspaceReady(runtime, request.desired) && runtime.selectionMode == desired.selectionMode &&
+			runtime.appliedProductRevision == desired.revision && runtime.appliedTool == desired.tool &&
+			DrawpadPresentationReady(desired, runtime) &&
+			(request.desired != Workspace::Presentation || (desired.presentationTarget &&
+				runtime.presentationUiReady == Bridge::ReadyIdentityFor(*desired.presentationTarget) &&
+				runtime.presentationSuspended != Bridge::ReadyIdentityFor(*desired.presentationTarget)));
+	}
+
+	bool WorkspacePrimaryIdentityMatches(const WorkspaceHandoff& request, const ProductState& desired,
+		const std::optional<Inkeys::Business::PptSessionToken>& preparedSession,
+		const Inkeys::Business::PptSessionToken& current) noexcept
+	{
+		if (request.desired == Workspace::Whiteboard) return true;
+		if (request.desired != (current.active ? Workspace::Presentation : Workspace::Desktop)) return false;
+		if (request.desired != Workspace::Presentation) return true;
+		if (!preparedSession || !Inkeys::Business::MatchesPptSession(*preparedSession, current)) return false;
+		// 可信墨迹 target 仍须属于当前场次；BasicControl 没有 target，使用完整控制 token。
+		return desired.workspace != Workspace::Presentation || !desired.presentationTarget ||
+			(desired.presentationTarget->sessionRevision == current.localSession &&
+				desired.presentationTarget->bindingRevision == current.bindingRevision);
 	}
 
 	bool ReleaseFatalDraw3Surfaces(
@@ -566,6 +803,18 @@ namespace
 		};
 	}
 
+	std::function<bool()> WhiteboardActivationGuard(std::uint64_t epoch)
+	{
+		return [epoch]() noexcept
+		{
+			const auto phase = whiteboardPhase.load(std::memory_order_acquire);
+			// 激活异步执行时，真实就绪可能已从 Entering 提交到 Active；退出或新意图仍必须失效。
+			return (phase == WhiteboardPhase::Entering || phase == WhiteboardPhase::Active) &&
+				WorkspaceRequestCurrent(epoch) &&
+				whiteboardDesired.load(std::memory_order_acquire) && (epoch & 1U) != 0;
+		};
+	}
+
 	// 样式去重属于窗口 owner；调用方只提交带当前事务身份的意图，不共享 HWND/布尔缓存。
 	bool SyncDrawpadClickThrough(bool primaryClickThrough, std::function<bool()> stillDesired)
 	{
@@ -581,6 +830,9 @@ namespace
 	[[nodiscard]] Draw3PresentationReconcileResult
 		ReconcileDraw3PresentationState()
 	{
+		const auto scene = ReadWorkspaceHandoff();
+		if (scene.pending || (scene.committed == Workspace::Whiteboard && scene.committedMinimized))
+			return Draw3PresentationReconcileResult::Waiting;
 		const auto failure = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 		const auto failureDesired = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
 		if (Draw3FatalRecoveryMatches(failure, failureDesired) && !WhiteboardTransactionActive())
@@ -906,7 +1158,7 @@ void SyncDraw3State()
 		settingOwnerState = PublishSettingOwnerDesiredState(
 			!IsComputerInteractionMode(stateMode.StateModeSelect));
 	}
-	ApplySettingOwnerDesiredState(settingOwnerState);
+	if (!ReadWorkspaceHandoff().pending) ApplySettingOwnerDesiredState(settingOwnerState);
 	PublishDraw3State();
 	ReconcileDraw3Presentation();
 }
@@ -954,20 +1206,134 @@ bool IsLaserToolActive() noexcept
 	return IsLaserToolActive(GetStateModeSnapshot());
 }
 
+WorkspaceSceneSnapshot GetWorkspaceSceneSnapshot() noexcept
+{
+	const auto scene = ReadWorkspaceHandoff();
+	const auto project = [](Workspace workspace) noexcept
+	{
+		return workspace == Workspace::Whiteboard ? WorkspaceScene::Whiteboard :
+			workspace == Workspace::Presentation ? WorkspaceScene::Presentation : WorkspaceScene::Desktop;
+	};
+	return { project(scene.desired), project(scene.committed),
+		scene.revision, scene.pending, scene.minimized, scene.committedMinimized };
+}
+
+CommittedWorkspaceStateSnapshot GetCommittedWorkspaceStateSnapshot()
+{
+	const auto scene = GetWorkspaceSceneSnapshot();
+	const auto committed = scene.committed == WorkspaceScene::Whiteboard ? Workspace::Whiteboard :
+		scene.committed == WorkspaceScene::Presentation ? Workspace::Presentation : Workspace::Desktop;
+	// 不跨两个锁：工具锁下读取指定已提交工作区的现有记忆，同一渲染帧沿用这份场景身份。
+	std::scoped_lock lock(stateModeTransitionMutex);
+	if (stateModeWorkspace == committed) return { scene, stateMode };
+	const auto& saved = workspaceStateModes[static_cast<std::size_t>(committed)];
+	return { scene, saved ? *saved : stateMode };
+}
+
+StateModeClass GetCommittedStateModeSnapshot()
+{
+	return GetCommittedWorkspaceStateSnapshot().state;
+}
+
+std::uint64_t WorkspaceTransitionFailureRevision() noexcept
+{
+	const auto request = ReadWorkspaceHandoff();
+	return request.pending && request.failed ? request.revision : 0;
+}
+
+bool RetryWorkspaceTransitionIfRevision(std::uint64_t revision) noexcept
+{
+	WorkspaceHandoff request;
+	{
+		std::scoped_lock lock(workspaceHandoffMutex);
+		if (!workspaceHandoff.Retry(revision)) return false;
+		ProjectWorkspaceHandoffLocked();
+		request = workspaceHandoff;
+	}
+	(void)CloseWorkspaceAdmission(request);
+	Inkeys::UI::Bar::RefreshToolState();
+	return true;
+}
+
+bool CancelFailedWhiteboardTransitionIfRevision(std::uint64_t revision) noexcept
+{
+	const auto captured = whiteboardNativeRequest.load(std::memory_order_acquire);
+	const auto primary = CurrentPrimaryWorkspace();
+	WorkspaceHandoff request;
+	{
+		std::scoped_lock lock(workspaceHandoffMutex);
+		if (!revision || workspaceHandoff.revision != revision || !workspaceHandoff.pending ||
+			!workspaceHandoff.failed || workspaceHandoff.desired != Workspace::Whiteboard) return false;
+		workspaceHandoff.Request(primary);
+		ProjectWorkspaceHandoffLocked();
+		request = workspaceHandoff;
+	}
+	RetireNativeWhiteboardRequest(captured);
+	{ std::scoped_lock lock(whiteboardReturnFocusMutex); whiteboardReturnFocus.Begin(Inkeys::Business::CapturePptFocusRequest()); }
+	whiteboardPreviousRequested.store(false, std::memory_order_release);
+	whiteboardNextRequested.store(false, std::memory_order_release);
+	(void)CloseWorkspaceAdmission(request);
+	return true;
+}
+
+void NotifyWhiteboardWindowViewRequested(bool minimized) noexcept
+{
+	QueueNativeWhiteboardRequest(minimized ? NativeWhiteboardRequest::Minimize : NativeWhiteboardRequest::Restore);
+}
+
+void NotifyWhiteboardWindowCloseRequested() noexcept
+{
+	QueueNativeWhiteboardRequest(NativeWhiteboardRequest::Close);
+}
+
+bool RequestWhiteboardWindowView(bool minimized) noexcept
+{
+	const auto captured = whiteboardNativeRequest.load(std::memory_order_acquire);
+	const auto before = ReadWorkspaceHandoff();
+	if (before.desired != Workspace::Whiteboard || (minimized && PptSessionActive())) return false;
+	const bool cancelQueued = captured && (captured >> 2) == before.revision;
+	const auto request = RequestWorkspace(Workspace::Whiteboard, minimized, cancelQueued);
+	// 先发布新版本再清捕获的旧投递，旧 guard 中间也不能复活；新投递不被覆盖。
+	RetireNativeWhiteboardRequest(captured);
+	return CloseWorkspaceAdmission(request);
+}
+
+void NotifyWhiteboardWindowMinimizedChanged() noexcept
+{
+	// WndProc 只发通知；禁止在窗口 owner 内等待 Product 的控制锁。
+	whiteboardViewChanged.store(true, std::memory_order_release);
+}
+
+bool PptScenePreparationAllowed() noexcept
+{
+	return ReadWorkspaceHandoff().desired != Workspace::Whiteboard;
+}
+
+void PublishPptWorkspaceControlState(const Inkeys::Business::PptSessionToken& session,
+	bool basicControl) noexcept
+{
+	if (!Inkeys::Business::MatchesPptSession(session, Inkeys::Business::CapturePptInputSession())) return;
+	std::scoped_lock lock(workspaceHandoffMutex);
+	basicControlSession = basicControl ? std::optional(session) : std::nullopt;
+}
+
 void RequestWhiteboardActive(bool active) noexcept
 {
-	// 功能关闭也沿同一意图入口退休奇数 epoch，不能只清 desired 留下旧所有权。
+	const auto captured = whiteboardNativeRequest.load(std::memory_order_acquire);
 	if (!IsWhiteboardFeatureEnabled()) active = false;
+	const auto before = ReadWorkspaceHandoff();
 	{
 		std::scoped_lock lock(whiteboardReturnFocusMutex);
-		if (active) whiteboardReturnFocus.Reset();
-		else if (whiteboardDesired.load(std::memory_order_acquire))
-			// 保存发起返回时的场次；离场途中结束/重开不能借此聚焦新放映。
+		if (active && before.desired != Workspace::Whiteboard) whiteboardReturnFocus.Reset();
+		else if (!active && before.desired == Workspace::Whiteboard)
 			whiteboardReturnFocus.Begin(Inkeys::Business::CapturePptFocusRequest());
-		if(whiteboardDesired.load(std::memory_order_acquire)!=active)
-			whiteboardInputEpoch.fetch_add(1,std::memory_order_acq_rel);
-		whiteboardDesired.store(active, std::memory_order_release);
 	}
+	const auto request = RequestWorkspace(active ? Workspace::Whiteboard : CurrentPrimaryWorkspace(),
+		active && before.desired == Workspace::Whiteboard && before.minimized,
+		captured && (captured >> 2) == before.revision);
+	RetireNativeWhiteboardRequest(captured);
+	// 请求先真正关 Host Down，再允许监视线程发布任何目标和工具。
+	(void)CloseWorkspaceAdmission(request);
 	if (!active)
 	{
 		whiteboardPreviousRequested.store(false, std::memory_order_release);
@@ -999,7 +1365,7 @@ bool WhiteboardTransactionActive() noexcept
 std::uint64_t PptInputWorkspaceEpoch() noexcept
 {
 	const auto epoch=whiteboardInputEpoch.load(std::memory_order_acquire);
-	return (epoch&1U)==0 && !WhiteboardTransactionActive() ? epoch : 0;
+	return (epoch&1U)==0 && !ReadWorkspaceHandoff().pending && !WhiteboardTransactionActive() ? epoch : 0;
 }
 
 std::uint64_t PptSceneWorkspaceEpoch() noexcept
@@ -1067,6 +1433,71 @@ namespace
 		draw3ExitSelectionModeRevision.store(nextRevision, std::memory_order_release);
 		stateModeTransitionRevision.store(nextRevision, std::memory_order_release);
 	}
+	// 调用方持模式锁；这里只迁移工具记忆/所属工作区，不发布 Bridge 或执行窗口同步。
+	bool RestoreWorkspaceStateModeLocked(Workspace workspace)
+	{
+		if (stateModeWorkspace == workspace) return false;
+		workspaceStateModes[static_cast<std::size_t>(stateModeWorkspace)] = stateMode;
+		auto& saved = workspaceStateModes[static_cast<std::size_t>(workspace)];
+		if (!saved)
+		{
+			// 新工作区沿用宽色偏好；白板默认绘制，其他工作区默认选择/拖拽。
+			saved = stateMode;
+			const auto defaultMode = workspace == Workspace::Whiteboard
+				? StateModeSelectEnum::IdtPen : StateModeSelectEnum::IdtSelection;
+			saved->StateModeSelect = defaultMode;
+			saved->StateModeSelectTarget = defaultMode;
+			saved->StateModeSelectEcho = defaultMode;
+			saved->lastAnnotationMode = StateModeSelectEnum::IdtPen;
+			saved->laserActive = false;
+			saved->Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
+			saved->Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
+		}
+		const bool exitSelectionPending = ExitSelectionHandoffPending();
+		const auto widthContext = stateMode.penWidthContext;
+		stateMode = *saved;
+		// 合成式设置生效后，旧工作区记忆中的独立穿透态也要回落选择。
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough &&
+			GetSelectAndClickThroughMode() == 0)
+		{
+			stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+			stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
+			stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+		}
+		// 显示器和设备属于当前环境，不能随旧工具快照退回旧 DPI。
+		stateMode.penWidthContext = widthContext;
+		ResolveWidthSlotsLocked();
+		stateModeWorkspace = workspace;
+		if (IsComputerInteractionMode(stateMode.StateModeSelect) && state == 1.1) state = 1;
+		BackgroundColorMode = IsComputerInteractionMode(stateMode.StateModeSelect) ||
+			stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? 0 :
+			(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
+		const auto revision = stateModeTransitionRevision.load(std::memory_order_relaxed) + 1;
+		if (exitSelectionPending && workspace == Workspace::Desktop &&
+			IsComputerInteractionMode(stateMode.StateModeSelect))
+			draw3ExitSelectionModeRevision.store(revision, std::memory_order_release);
+		stateModeTransitionRevision.store(revision, std::memory_order_release);
+		return true;
+	}
+
+	bool CommitWorkspaceHandoffLocked(std::uint64_t revision, bool targetReady,
+		bool backgroundReady, bool nativeReady, bool restoreToolOwner)
+	{
+		// 调用方已持模式锁；安全退场必须在同一逻辑提交里迁移真实工具 owner。
+		// Bridge 和当前完整故障身份继续保留给 Host 恢复，不能用 Sync 伪造目标已应用。
+		std::scoped_lock lock(workspaceHandoffMutex);
+		if (!WorkspaceRequestCurrent(revision) || !workspaceHandoff.pending || workspaceHandoff.failed ||
+			workspaceHandoff.revision != revision || !targetReady || !backgroundReady || !nativeReady) return false;
+		if (restoreToolOwner)
+		{
+			(void)RestoreWorkspaceStateModeLocked(workspaceHandoff.desired);
+			(void)PublishSettingOwnerDesiredState(!IsComputerInteractionMode(stateMode.StateModeSelect));
+		}
+		if (!workspaceHandoff.Commit(revision, targetReady, backgroundReady, nativeReady)) return false;
+		ProjectWorkspaceHandoffLocked();
+		return true;
+	}
+
 	bool SwitchWorkspaceStateMode(Workspace workspace, bool primaryOnly = false,
 		const std::uint64_t* exitRevision = nullptr, bool* exitSelected = nullptr,
 		const std::function<bool()>& stillDesired = {}, std::uint64_t expectedPptWorkspaceEpoch = 0)
@@ -1086,47 +1517,7 @@ namespace
 			const bool selectOnExit = exitRevision &&
 				stateModeTransitionRevision.load(std::memory_order_relaxed) == *exitRevision;
 			const bool changed = stateModeWorkspace != workspace || selectOnExit;
-			if (stateModeWorkspace != workspace)
-			{
-				workspaceStateModes[static_cast<std::size_t>(stateModeWorkspace)] = stateMode;
-				auto& saved = workspaceStateModes[static_cast<std::size_t>(workspace)];
-				if (!saved)
-				{
-					// 新工作区沿用宽色偏好，工具身份独立从默认选择/拖拽态开始。
-					saved = stateMode;
-					saved->StateModeSelect = StateModeSelectEnum::IdtSelection;
-					saved->StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-					saved->StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-					saved->lastAnnotationMode = StateModeSelectEnum::IdtPen;
-					saved->laserActive = false;
-					saved->Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
-					saved->Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
-				}
-				const bool exitSelectionPending = ExitSelectionHandoffPending();
-				const auto widthContext = stateMode.penWidthContext;
-				stateMode = *saved;
-				// 合成式设置生效后，旧工作区记忆中的独立穿透态也要回落选择。
-				if (stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough &&
-					GetSelectAndClickThroughMode() == 0)
-				{
-					stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-					stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-					stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-				}
-				// 显示器和设备属于当前环境，不能随旧工具快照退回旧 DPI。
-				stateMode.penWidthContext = widthContext;
-				ResolveWidthSlotsLocked();
-				stateModeWorkspace = workspace;
-				if (IsComputerInteractionMode(stateMode.StateModeSelect) && state == 1.1) state = 1;
-				BackgroundColorMode = IsComputerInteractionMode(stateMode.StateModeSelect) ||
-					stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? 0 :
-					(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
-				const auto revision = stateModeTransitionRevision.load(std::memory_order_relaxed) + 1;
-				if (exitSelectionPending && workspace == Workspace::Desktop &&
-					IsComputerInteractionMode(stateMode.StateModeSelect))
-					draw3ExitSelectionModeRevision.store(revision, std::memory_order_release);
-				stateModeTransitionRevision.store(revision, std::memory_order_release);
-			}
+			(void)RestoreWorkspaceStateModeLocked(workspace);
 			if (selectOnExit)
 			{
 				ApplyExitSelectionLocked();
@@ -1144,11 +1535,7 @@ namespace
 		Inkeys::UI::Bar::RefreshToolState();
 		return true;
 	}
-	void PublishWhiteboardPrimaryWorkspace(std::uint64_t epoch)
-	{
-		(void)SwitchWorkspaceStateMode(CurrentPrimaryWorkspace(), false, nullptr, nullptr,
-			WhiteboardTransitionGuard(WhiteboardPhase::Exiting, epoch));
-	}
+
     bool SetPenWidthSelectionImpl(Selection selection, bool setMemory,
         const std::uint64_t* expectedRevision)
     {
@@ -1189,8 +1576,12 @@ namespace
 void SyncPrimaryWorkspaceStateMode(std::uint64_t expectedWorkspaceEpoch)
 {
 	if (expectedWorkspaceEpoch == 0) expectedWorkspaceEpoch = PptSceneWorkspaceEpoch();
-	if (expectedWorkspaceEpoch == 0) return;
-	(void)SwitchWorkspaceStateMode(CurrentPrimaryWorkspace(), false, nullptr, nullptr,
+	if (expectedWorkspaceEpoch == 0 || PptSceneWorkspaceEpoch() != expectedWorkspaceEpoch) return;
+	const auto before = ReadWorkspaceHandoff();
+	if (before.desired == Workspace::Whiteboard) return;
+	const auto request = RequestWorkspace(CurrentPrimaryWorkspace());
+	if (!CloseWorkspaceAdmission(request) || request.revision != expectedWorkspaceEpoch) return;
+	(void)SwitchWorkspaceStateMode(request.desired, false, nullptr, nullptr,
 		[expectedWorkspaceEpoch]() noexcept { return PptSceneWorkspaceEpoch() == expectedWorkspaceEpoch; });
 }
 
@@ -1200,6 +1591,8 @@ std::optional<std::uint64_t> PublishPrimaryPresentationTarget(
 	if (expectedWorkspaceEpoch == 0) expectedWorkspaceEpoch = PptSceneWorkspaceEpoch();
 	const auto stillDesired = [expectedWorkspaceEpoch]() noexcept
 	{ return expectedWorkspaceEpoch != 0 && PptSceneWorkspaceEpoch() == expectedWorkspaceEpoch; };
+	const auto handoff = ReadWorkspaceHandoff();
+	if (handoff.pending && !CloseWorkspaceAdmission(handoff)) return std::nullopt;
 	std::scoped_lock workspaceLock(whiteboardReturnFocusMutex);
 	std::scoped_lock lock(stateModeTransitionMutex);
 	// Exiting 可以恢复场景；完整往返后的旧 epoch 仍不得发布或清除目标。
@@ -1212,10 +1605,13 @@ std::optional<std::uint64_t> PublishPrimaryPresentationTarget(
 
 bool CompletePresentationExitStateMode(std::uint64_t expectedRevision, std::uint64_t expectedPptWorkspaceEpoch)
 {
-	// false 仅表示未强制选择；合法旧版本仍可返回 Desktop，白板/新放映则不发布。
+	if (expectedPptWorkspaceEpoch != 0 && PptInputWorkspaceEpoch() != expectedPptWorkspaceEpoch) return false;
+	if (WhiteboardTransactionActive() || CurrentPrimaryWorkspace() != Workspace::Desktop) return false;
+	const auto request = RequestWorkspace(Workspace::Desktop);
+	if (!CloseWorkspaceAdmission(request)) return false;
 	bool selected = false;
 	(void)SwitchWorkspaceStateMode(Workspace::Desktop, true, &expectedRevision, &selected,
-		{}, expectedPptWorkspaceEpoch);
+		[revision = request.revision]() noexcept { return WorkspaceRequestCurrent(revision); });
 	return selected;
 }
 
@@ -1751,6 +2147,63 @@ bool ChangeStateModeToTouchTest()
 	return false;
 }
 
+struct Inkeys::Testing::WorkspaceSceneScope::Impl
+{
+	WorkspaceHandoff coordinator = ReadWorkspaceHandoff();
+	StateModeClass mode;
+	Workspace workspace;
+	std::array<std::optional<StateModeClass>, 3> memories;
+	std::uint64_t modeRevision;
+	std::uint64_t exitRevision;
+	ProductState bridge;
+	Impl()
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		mode = stateMode; workspace = stateModeWorkspace; memories = workspaceStateModes;
+		modeRevision = stateModeTransitionRevision.load(std::memory_order_acquire);
+		exitRevision = draw3ExitSelectionModeRevision.load(std::memory_order_acquire);
+		bridge = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+	}
+};
+
+Inkeys::Testing::WorkspaceSceneScope::WorkspaceSceneScope(WorkspaceScene scene)
+{
+	if (Inkeys::Drawing::Draw3::ProductRunning() || Inkeys::Window::GetService().Running()) return;
+	impl_ = std::make_unique<Impl>();
+	(void)Set(scene);
+}
+
+Inkeys::Testing::WorkspaceSceneScope::~WorkspaceSceneScope()
+{
+	if (!impl_ || Inkeys::Drawing::Draw3::ProductRunning() || Inkeys::Window::GetService().Running()) return;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		stateMode = impl_->mode; stateModeWorkspace = impl_->workspace; workspaceStateModes = impl_->memories;
+		stateModeTransitionRevision.store(impl_->modeRevision, std::memory_order_release);
+		draw3ExitSelectionModeRevision.store(impl_->exitRevision, std::memory_order_release);
+	}
+	{ std::scoped_lock lock(workspaceHandoffMutex); workspaceHandoff = impl_->coordinator; ProjectWorkspaceHandoffLocked(); }
+	Inkeys::Drawing::Draw3::ProductHost().ProductBridge().PublishState(impl_->bridge);
+}
+
+Inkeys::Testing::WorkspaceSceneScope::operator bool() const noexcept { return impl_ != nullptr; }
+
+bool Inkeys::Testing::WorkspaceSceneScope::Set(WorkspaceScene scene)
+{
+	if (!impl_ || Inkeys::Drawing::Draw3::ProductRunning() || Inkeys::Window::GetService().Running()) return false;
+	const auto target = scene == WorkspaceScene::Whiteboard ? Workspace::Whiteboard :
+		scene == WorkspaceScene::Presentation ? Workspace::Presentation : Workspace::Desktop;
+	const auto request = RequestWorkspace(target);
+	(void)SwitchWorkspaceStateMode(target);
+	{
+		std::scoped_lock lock(workspaceHandoffMutex);
+		// 这是明确无 HWND/Host 的 fixture 布置，不作为真实窗口或帧验证的成功凭据。
+		if (workspaceHandoff.pending) (void)workspaceHandoff.Commit(request.revision, true, true, true);
+		ProjectWorkspaceHandoffLocked();
+	}
+	return true;
+}
+
 int RunStateModeProductionTest() noexcept
 {
 	const char* stage = "startup-isolation";
@@ -1763,6 +2216,26 @@ int RunStateModeProductionTest() noexcept
 		const auto require = [](bool passed, const char* check)
 		{
 			if (!passed) throw check;
+		};
+		const auto setProbePhase = [](WhiteboardPhase phase)
+		{
+			// 无窗口工具/焦点用例只布置 canonical fixture；物理完成由下列真实协调 helper 另测。
+			std::scoped_lock lock(workspaceHandoffMutex);
+			const bool whiteboard = phase == WhiteboardPhase::Entering || phase == WhiteboardPhase::Active;
+			const auto target = whiteboard ? Workspace::Whiteboard : CurrentPrimaryWorkspace();
+			workspaceHandoff.Request(target);
+			if (phase == WhiteboardPhase::Entering || phase == WhiteboardPhase::Exiting)
+			{
+				workspaceHandoff.pending = true;
+				workspaceHandoff.whiteboardInvolved = true;
+			}
+			else
+			{
+				workspaceHandoff.committed = target;
+				workspaceHandoff.pending = false;
+				workspaceHandoff.whiteboardInvolved = whiteboard;
+			}
+			ProjectWorkspaceHandoffLocked();
 		};
 		const auto sameState = [](const StateModeClass& a, const StateModeClass& b)
 		{
@@ -1803,6 +2276,255 @@ int RunStateModeProductionTest() noexcept
 				snapshot.state.StateModeSelect == snapshot.state.StateModeSelectEcho, "mode-projection");
 		};
 
+		stage = "workspace-handoff-production";
+		{
+			for (const auto source : { Workspace::Desktop, Workspace::Presentation, Workspace::Whiteboard })
+			for (const auto target : { Workspace::Desktop, Workspace::Presentation, Workspace::Whiteboard })
+			{
+				WorkspaceHandoff handoff;
+				handoff.desired = handoff.committed = source;
+				handoff.revision = source == Workspace::Whiteboard ? 3 : 2;
+				const auto old = handoff.revision;
+				const bool changed = handoff.Request(target);
+				require(changed == (source != target), "three-workspace-directed-and-same-target-requests");
+				if (!changed) { require(!handoff.pending && handoff.revision == old, "same-target-no-new-handoff"); continue; }
+				const auto current = handoff.revision;
+				require(handoff.committed == source && handoff.pending && !handoff.Request(target) && handoff.revision == current,
+					"pending-keeps-source-and-repeated-request-is-idempotent");
+				require(!handoff.Commit(old, true, true, true) && !handoff.Commit(current, false, true, true) &&
+					!handoff.Commit(current, true, false, true) && !handoff.Commit(current, true, true, false),
+					"old-ack-or-missing-real-owner-receipt-cannot-commit");
+				require(handoff.Commit(current, true, true, true) && handoff.committed == target && !handoff.pending &&
+					!handoff.Commit(current, true, true, true), "complete-once-without-next-input");
+			}
+			WorkspaceHandoff cancel;
+			cancel.Request(Workspace::Whiteboard); const auto entering = cancel.revision;
+			cancel.Request(Workspace::Desktop);
+			require(cancel.desired == cancel.committed && cancel.pending && cancel.whiteboardInvolved &&
+				!cancel.Commit(entering, true, true, true), "cancel-to-source-retains-old-native-obligation");
+			require(cancel.Commit(cancel.revision, true, true, true), "cancel-retires-only-after-real-completion");
+			WorkspaceHandoff view;
+			view.Request(Workspace::Whiteboard); view.Commit(view.revision, true, true, true);
+			view.Request(Workspace::Whiteboard, true); const auto hidden = view.revision;
+			require((hidden & 1U) && view.Commit(hidden, true, true, true) && view.committedMinimized && !view.pending,
+				"minimized-remains-whiteboard-and-keeps-current-page");
+			view.Request(Workspace::Whiteboard, false);
+			require(view.revision != hidden && (view.revision & 1U) && !view.Commit(hidden, true, true, true) && view.activate,
+				"restore-gets-new-view-version-and-rejects-old-hide");
+			for (const auto target : { Workspace::Whiteboard, Workspace::Desktop })
+			{
+				WorkspaceHandoff failed;
+				if (target == Workspace::Desktop) { failed.Request(Workspace::Whiteboard); failed.Commit(failed.revision, true, true, true); }
+				failed.Request(target); const auto ticket = failed.revision;
+				auto now = WorkspaceHandoff::Clock::time_point{};
+				for (unsigned attempt = 0; attempt != 4; ++attempt)
+				{
+					require(failed.Ready(now), "entry-and-exit-have-finite-native-attempts");
+					failed.Fail(ticket, now);
+					if (attempt != 3) require(!failed.Ready(now + std::chrono::milliseconds(249)), "native-backoff-ignores-early-runtime-wake");
+					now += std::chrono::seconds(2);
+				}
+				require(failed.failed && failed.pending && !failed.Ready(now) && !failed.Commit(ticket, true, true, true),
+					"budget-exhaustion-retains-responsibility-without-repeating-native-show-hide");
+				require(!failed.Retry(ticket - 2) && failed.Retry(ticket) && failed.revision != ticket && !failed.failed,
+					"only-current-failure-token-retries-as-new-request");
+			}
+			WorkspaceHandoff ink; ink.Request(Workspace::Whiteboard); ink.hostGeneration = 7;
+			ProductState inkDesired; inkDesired.workspace = Workspace::Whiteboard; inkDesired.revision = 12;
+			inkDesired.selectionMode = false; inkDesired.tool = Tool::HardPen;
+			HostRuntimeSnapshot inkReady; inkReady.running = true; inkReady.hostGeneration = 7; inkReady.workspace = Workspace::Whiteboard;
+			inkReady.selectionMode = false; inkReady.firstFrameReady = true;
+			inkReady.committedWidth = 800; inkReady.committedHeight = 600;
+			inkReady.appliedProductRevision = 12; inkReady.appliedTool = Tool::HardPen;
+			inkReady.requestedOutputRevision = inkReady.readyOutputRevision = 8;
+			inkReady.contentRevision = inkReady.presentedContentRevision = 5;
+			const RECT inkOutput{0, 0, 800, 600};
+			require(WorkspaceTargetReady(ink, inkDesired, inkReady, false, false, inkOutput), "actual-tool-frame-and-host-ready-without-input");
+			inkReady.appliedTool = Tool::Pen;
+			require(!WorkspaceTargetReady(ink, inkDesired, inkReady, false, false, inkOutput), "bridge-tool-does-not-stand-in-for-owner-applied-tool");
+			inkReady.appliedTool = Tool::HardPen; --inkReady.appliedProductRevision;
+			require(!WorkspaceTargetReady(ink, inkDesired, inkReady, false, false, inkOutput), "old-applied-product-revision-rejected");
+			++inkReady.appliedProductRevision; ++inkReady.hostGeneration;
+			require(!WorkspaceTargetReady(ink, inkDesired, inkReady, false, false, inkOutput), "old-host-run-frame-rejected");
+			--inkReady.hostGeneration; --inkReady.presentedContentRevision;
+			require(!WorkspaceTargetReady(ink, inkDesired, inkReady, false, false, inkOutput), "terminal-contact-content-needs-current-present");
+			++inkReady.presentedContentRevision;
+			ink.desired = Workspace::Presentation; inkDesired.workspace = inkReady.workspace = Workspace::Presentation;
+			auto inkTarget = std::make_shared<Bridge::PresentationTarget>();
+			inkTarget->sessionRevision = 2;
+			inkTarget->targetRevision = 3;
+			inkDesired.presentationTarget = std::move(inkTarget);
+			inkReady.presentationReady = Bridge::ReadyIdentityFor(*inkDesired.presentationTarget);
+			require(!WorkspaceTargetReady(ink, inkDesired, inkReady, false, false, inkOutput), "ppt-pending-prepares-ui-before-committed-scene");
+			inkReady.presentationUiReady = inkReady.presentationReady;
+			require(WorkspaceTargetReady(ink, inkDesired, inkReady, false, false, inkOutput), "ppt-real-ui-ready-completes-without-scene-wait-cycle");
+			WorkspaceHandoff controls; controls.Request(Workspace::Presentation);
+			ProductState desired; desired.workspace = Workspace::Presentation;
+			HostRuntimeSnapshot unavailable; unavailable.running = true;
+			const RECT output{0, 0, 800, 600};
+			require(!WorkspaceTargetReady(controls, desired, unavailable, false, false, output) &&
+				WorkspaceTargetReady(controls, desired, unavailable, true, false, output) &&
+				!controls.Commit(controls.revision, true, true, false),
+				"basic-control-needs-real-hidden-native-ack-not-nonexistent-inkready");
+			unavailable.consumerFatal = true; unavailable.hostGeneration = 1;
+			unavailable.recovery.revision = 1;
+			unavailable.recovery.workspace = desired.workspace;
+			unavailable.recovery.status = CanvasRecoveryStatus::Failed;
+			unavailable.recovery.reason = CanvasRecoveryReason::ConsumerFatal;
+			require(WorkspaceTargetReady(controls, desired, unavailable, false, true, output), "matching-fatal-may-safe-exit-without-running-frame");
+			unavailable.recovery.workspace = Workspace::Whiteboard;
+			require(!WorkspaceTargetReady(controls, desired, unavailable, false, true, output), "stale-fault-never-authorizes-safe-exit");
+			Inkeys::Business::PptSessionToken controlToken{11, 12, 13, 14, 15, 16, true, true, 17};
+			const std::optional preparedControl = controlToken;
+			require(WorkspacePrimaryIdentityMatches(controls, desired, preparedControl, controlToken), "basic-control-terminal-identity-matches-current-session");
+			auto replacedControl = controlToken; ++replacedControl.localSession;
+			require(!WorkspacePrimaryIdentityMatches(controls, desired, preparedControl, replacedControl), "old-basic-control-native-complete-rejects-replaced-session");
+			auto endedControl = controlToken; endedControl.active = false;
+			require(!WorkspacePrimaryIdentityMatches(controls, desired, preparedControl, endedControl), "old-basic-control-native-complete-rejects-ended-primary");
+			WorkspaceHandoff desktopPrimary;
+			require(!WorkspacePrimaryIdentityMatches(desktopPrimary, desired, {}, controlToken), "desktop-final-commit-rejects-newly-active-presentation");
+			const auto savedCoordinator = ReadWorkspaceHandoff();
+			const auto injected = RequestWorkspace(Workspace::Whiteboard);
+			int noticeEdges = 0;
+			const auto notice = [&](auto token, bool target, bool involved) { require(token == injected.revision && target && involved, "failure-notice-captures-exact-scene"); ++noticeEdges; };
+			for (unsigned i = 0; i != 8; ++i) FailWorkspaceRequestImpl(injected.revision, notice);
+			require(noticeEdges == 1, "failure-notice-edge-deduplicates-after-four-real-failures");
+			require(WorkspaceTransitionFailureRevision() == injected.revision &&
+				!RetryWorkspaceTransitionIfRevision(injected.revision - 2) && RetryWorkspaceTransitionIfRevision(injected.revision) &&
+				WorkspaceTransitionFailureRevision() == 0 && ReadWorkspaceHandoff().pending,
+				"settings-business-retry-captures-and-revalidates-visible-failure-token");
+			const auto latestShow = ReadWorkspaceHandoff().revision;
+			const auto oldActivation = WhiteboardActivationGuard(latestShow);
+			NotifyWhiteboardWindowViewRequested(true);
+			require(!WorkspaceRequestCurrent(latestShow) && !oldActivation(), "queued-system-min-cancels-old-show-and-activation");
+			const auto queuedView = whiteboardNativeRequest.load();
+			(void)RequestWorkspace(Workspace::Whiteboard, true);
+			require(!oldActivation(), "old-guard-stays-false-before-native-packet-retirement");
+			NotifyWhiteboardWindowViewRequested(false); // 新 epoch 的新包先到，清理旧包不能覆盖它。
+			const auto newerView = whiteboardNativeRequest.load();
+			RetireNativeWhiteboardRequest(queuedView);
+			require(whiteboardNativeRequest.load() == newerView && !oldActivation(), "cas-retirement-preserves-new-packet-and-never-revives-old-guard");
+			(void)ConsumeNativeWhiteboardRequests();
+			const auto showing = ReadWorkspaceHandoff();
+			require(!showing.minimized && whiteboardNativeRequest.load() == 0 && !oldActivation(), "new-view-consumes-without-clearing-before-new-revision");
+			NotifyWhiteboardWindowViewRequested(false);
+			require(whiteboardNativeRequest.load() == 0 && ReadWorkspaceHandoff().revision == showing.revision, "same-desired-system-view-is-idempotent");
+			for (bool initialMinimized : {false, true})
+			{
+				(void)RequestWorkspace(Workspace::Whiteboard, initialMinimized);
+				const auto beforeCancel = ReadWorkspaceHandoff().revision;
+				NotifyWhiteboardWindowViewRequested(!initialMinimized);
+				NotifyWhiteboardWindowViewRequested(initialMinimized);
+				(void)ConsumeNativeWhiteboardRequests();
+				require(ReadWorkspaceHandoff().minimized == initialMinimized && ReadWorkspaceHandoff().revision != beforeCancel &&
+					!WorkspaceRequestCurrent(beforeCancel), "latest-opposite-system-intent-cancels-unconsumed-min-or-restore");
+			}
+			(void)RequestWorkspace(Workspace::Whiteboard, false);
+			const auto publicCancel = ReadWorkspaceHandoff().revision;
+			NotifyWhiteboardWindowViewRequested(true);
+			RequestWhiteboardActive(true);
+			require(!WorkspaceRequestCurrent(publicCancel) && whiteboardNativeRequest.load() == 0 && !ReadWorkspaceHandoff().minimized,
+				"public-same-target-cancel-retires-queued-opposite-before-cas-cleanup");
+			const auto publicViewCancel = ReadWorkspaceHandoff().revision;
+			NotifyWhiteboardWindowViewRequested(true);
+			(void)RequestWhiteboardWindowView(false);
+			require(!WorkspaceRequestCurrent(publicViewCancel) && whiteboardNativeRequest.load() == 0, "public-view-cancel-does-not-open-aba-gap");
+			NotifyWhiteboardWindowCloseRequested();
+			(void)ConsumeNativeWhiteboardRequests();
+			require(ReadWorkspaceHandoff().desired == Workspace::Desktop, "window-close-only-queues-until-coordinator-accepts");
+			NotifyWhiteboardWindowViewRequested(true);
+			require(whiteboardNativeRequest.load() == 0, "native-view-callback-rejects-even-primary-epoch");
+			{ std::scoped_lock lock(workspaceHandoffMutex); workspaceHandoff = savedCoordinator; ProjectWorkspaceHandoffLocked(); }
+			WorkspaceHandoff background; background.Request(Workspace::Whiteboard); background.Commit(background.revision, true, true, true);
+			const auto wbRevision = background.revision;
+			require(!background.Request(Workspace::Whiteboard) && background.revision == wbRevision,
+				"background-ppt-facts-cannot-retire-active-whiteboard");
+		}
+
+		stage = "whiteboard-button-failed-restore-cancel";
+		{
+			Inkeys::Testing::WorkspaceSceneScope fixture(WorkspaceScene::Whiteboard);
+			const auto minimized = RequestWorkspace(Workspace::Whiteboard, true);
+			{ std::scoped_lock lock(stateModeTransitionMutex); require(CommitWorkspaceHandoffLocked(minimized.revision, true, true, true, false), "button-minimized-fixture"); }
+			const auto restoring = RequestWorkspace(Workspace::Whiteboard, false);
+			const auto silentNotice = [](auto, bool, bool) {};
+			for (int i = 0; i != 4; ++i) FailWorkspaceRequestImpl(restoring.revision, silentNotice);
+			int restores = 0, requests = 0, cancels = 0;
+			const auto restore = [&] { ++restores; };
+			const auto request = [&](bool) { ++requests; };
+			const auto cancel = [&](std::uint64_t token) { if (CancelFailedWhiteboardTransitionIfRevision(token)) ++cancels; };
+			Inkeys::UI::Bar::DispatchBarWhiteboardButtonAction(true, true, restoring.revision, restore, request, cancel);
+			require(cancels == 1 && restores == 0 && requests == 0 && ReadWorkspaceHandoff().desired != Workspace::Whiteboard,
+				"failed-restore-button-cancels-exact-ticket-before-physical-min-resume");
+			const auto newer = RequestWorkspace(Workspace::Whiteboard, false);
+			for (int i = 0; i != 4; ++i) FailWorkspaceRequestImpl(newer.revision, silentNotice);
+			cancel(restoring.revision);
+			require(cancels == 1 && WorkspaceTransitionFailureRevision() == newer.revision, "stale-button-failure-token-cannot-cancel-new-transition");
+			const auto stableMin = RequestWorkspace(Workspace::Whiteboard, true);
+			{ std::scoped_lock lock(stateModeTransitionMutex); require(CommitWorkspaceHandoffLocked(stableMin.revision, true, true, true, false), "button-stable-minimized-fixture"); }
+			Inkeys::UI::Bar::DispatchBarWhiteboardButtonAction(true, true, WorkspaceTransitionFailureRevision(), restore, request, cancel);
+			require(restores == 1 && requests == 0 && cancels == 1, "stable-minimized-button-keeps-normal-resume-contract");
+		}
+
+		stage = "workspace-protected-commit-tool-owner";
+		for (const auto target : {Workspace::Desktop, Workspace::Presentation})
+		{
+			Inkeys::Testing::WorkspaceSceneScope fixture;
+			require(static_cast<bool>(fixture), "safe-commit-fixture-requires-no-host-or-window");
+			ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
+			require(SetPenWidth(7.0, false), "safe-source-desktop-width-memory");
+			(void)SetPenColor(RGB(37, 71, 109), false);
+			const auto desktopMemory = GetStateModeSnapshot();
+			require(fixture.Set(WorkspaceScene::Whiteboard), "safe-commit-source-whiteboard");
+			ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+			require(SetPenWidth(18.0, false), "safe-source-whiteboard-width-memory");
+			(void)SetPenColor(RGB(101, 53, 19), false);
+			const auto whiteboardMemory = GetStateModeSnapshot();
+			if (target == Workspace::Presentation)
+			{
+				std::scoped_lock lock(stateModeTransitionMutex);
+				workspaceStateModes[static_cast<std::size_t>(target)].reset();
+			}
+			const auto bridgeBefore = bridge.Snapshot();
+			const auto runtimeBefore = ProductRuntimeSnapshot();
+			const auto request = RequestWorkspace(target);
+			HostRuntimeSnapshot fatal;
+			fatal.hostGeneration = 1; fatal.consumerFatal = true;
+			fatal.recovery = {CanvasRecoveryStatus::Failed, CanvasRecoveryReason::ConsumerFatal,
+				bridgeBefore.workspace, {}, 0, false, 7};
+			const RECT hiddenOutput{};
+			require(WorkspaceTargetReady(request, bridgeBefore, fatal, false, true, hiddenOutput),
+				"matching-fatal-token-allows-safe-retirement-without-normal-frame");
+			{
+				std::scoped_lock lock(stateModeTransitionMutex);
+				require(!CommitWorkspaceHandoffLocked(request.revision, true, true, false, true) &&
+					stateModeWorkspace == Workspace::Whiteboard, "missing-native-safety-ack-keeps-source-tool-owner");
+				require(CommitWorkspaceHandoffLocked(request.revision, true, true, true, true),
+					"safe-final-commit-moves-real-tool-owner-under-mode-lock");
+			}
+			const auto after = GetStateModeSnapshot();
+			require(stateModeWorkspace == target && !ReadWorkspaceHandoff().pending &&
+				ReadWorkspaceHandoff().committed == target, "committed-and-real-tool-owner-match-after-safe-exit");
+			require(target == Workspace::Desktop ? sameState(after, desktopMemory) :
+				after.StateModeSelect == StateModeSelectEnum::IdtSelection,
+				"safe-exit-restores-memory-or-new-target-default-selection");
+			require(bridge.Snapshot().revision == bridgeBefore.revision && sameProjection(bridge.Snapshot(), bridgeBefore) &&
+				ProductRuntimeSnapshot().recovery == runtimeBefore.recovery &&
+				ProductRuntimeSnapshot().consumerFatal == runtimeBefore.consumerFatal &&
+				ProductRuntimeSnapshot().hostGeneration == runtimeBefore.hostGeneration,
+				"pure-safe-commit-preserves-bridge-and-full-host-recovery-identity");
+			require((settingOwnerDesiredState.load(std::memory_order_acquire) & 1U) ==
+				static_cast<std::uint64_t>(!IsComputerInteractionMode(after.StateModeSelect)),
+				"safe-tool-owner-migration-recomputes-setting-owner-intent-without-window-sync");
+			StateModeClass desktop;
+			require(TryGetDesktopStateModeSnapshot(desktop) == (target == Workspace::Desktop),
+				"safe-desktop-commit-restores-real-save-eligibility");
+			ChangeStateModeToPen();
+			require(stateModeWorkspace == target, "following-tool-change-belongs-to-returned-workspace");
+			require(fixture.Set(WorkspaceScene::Whiteboard) && sameState(GetStateModeSnapshot(), whiteboardMemory),
+				"following-target-tool-change-cannot-overwrite-whiteboard-memory");
+		}
+
 		stage = "ppt-focus-business";
 		require(RunPptFocusProductionTest() == 0, "ppt-focus-business-dispatch");
 		{std::scoped_lock lock(whiteboardReturnFocusMutex);whiteboardReturnFocus.Reset();}
@@ -1817,10 +2539,10 @@ int RunStateModeProductionTest() noexcept
 				++queued;
 			};
 			whiteboardReturnFocus.Begin(expected);
-			whiteboardPhase.store(WhiteboardPhase::Exiting);
+			setProbePhase(WhiteboardPhase::Exiting);
 			require(!CompleteWhiteboardReturnFocus(queue) && queued == 0,
 				"whiteboard-return-waits-for-inactive");
-			whiteboardPhase.store(WhiteboardPhase::Inactive);
+			setProbePhase(WhiteboardPhase::Inactive);
 			require(CompleteWhiteboardReturnFocus(queue) && queued == 1
 				&& !CompleteWhiteboardReturnFocus(queue), "whiteboard-return-one-queue");
 			auto inactive = expected;
@@ -1845,6 +2567,7 @@ int RunStateModeProductionTest() noexcept
 			RequestWhiteboardActive(true);
 			RequestWhiteboardActive(false);
 			require(!CompleteWhiteboardReturnFocus(queue), "whiteboard-reentry-cancels-old-return");
+			setProbePhase(WhiteboardPhase::Inactive);
 		}
 
 		stage = "workspace-tool-isolation";
@@ -1852,9 +2575,9 @@ int RunStateModeProductionTest() noexcept
 		require(SetPenWidth(7.0f, false) && SetPenColor(RGB(17, 31, 47), false), "desktop-tool-memory");
 		const auto desktopTool = GetStateModeVersionedSnapshot();
 		require(SwitchWorkspaceStateMode(Workspace::Whiteboard) &&
-			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen &&
 			GetStateModeSnapshot().Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen,
-			"first-whiteboard-does-not-inherit-desktop-tool");
+			"first-whiteboard-defaults-to-soft-pen-without-inheriting-desktop-tool");
 		require(!ChangeStateModeToPptAnnotation(PptAnnotationTool::Laser, desktopTool.revision) &&
 			!ChangeStateModeToPptAnnotation(PptAnnotationTool::Laser, StateModeTransitionRevision()) &&
 			!SetPenWidthIfRevision(30.0, desktopTool.revision, false), "whiteboard-rejects-old-tool-and-ppt");
@@ -1881,13 +2604,13 @@ int RunStateModeProductionTest() noexcept
 				sameState(presentationTool, GetStateModeSnapshot()), "whiteboard-restores-ppt-tool");
 		}
 		require(SwitchWorkspaceStateMode(Workspace::Whiteboard), "whiteboard-before-background-ppt-end");
-		whiteboardPhase.store(WhiteboardPhase::Active);
+		setProbePhase(WhiteboardPhase::Active);
 		SyncPrimaryWorkspaceStateMode();
 		require(sameState(whiteboardTool, GetStateModeSnapshot()), "background-ppt-end-preserves-whiteboard-tool");
-		whiteboardPhase.store(WhiteboardPhase::Exiting);
+		setProbePhase(WhiteboardPhase::Exiting);
 		require(SwitchWorkspaceStateMode(Workspace::Desktop) &&
 			sameState(desktopTool.state, GetStateModeSnapshot()), "ppt-ended-whiteboard-returns-desktop-tool");
-		whiteboardPhase.store(WhiteboardPhase::Inactive);
+		setProbePhase(WhiteboardPhase::Inactive);
 		const auto cancelledEntry = GetStateModeVersionedSnapshot();
 		RequestWhiteboardActive(true);
 		SyncPrimaryWorkspaceStateMode();
@@ -1895,6 +2618,7 @@ int RunStateModeProductionTest() noexcept
 		require(sameState(cancelledEntry.state, GetStateModeSnapshot()) &&
 			StateModeTransitionRevision() == cancelledEntry.revision,
 			"cancel-before-whiteboard-entry-preserves-tool");
+		setProbePhase(WhiteboardPhase::Inactive);
 		// 旧快照只恢复工具偏好，跨屏/设备上下文继续使用当前值。
 		auto changedWidthContext = GetPenWidthContext();
 		changedWidthContext.effectiveDpi = changedWidthContext.effectiveDpi == 144.0 ? 192.0 : 144.0;
@@ -1929,12 +2653,12 @@ int RunStateModeProductionTest() noexcept
 		require(SwitchWorkspaceStateMode(Workspace::Presentation) &&
 			sameState(newPresentationTool, GetStateModeSnapshot()), "old-exit-keeps-new-ppt-tool");
 		require(SwitchWorkspaceStateMode(Workspace::Whiteboard), "whiteboard-before-exit-callback");
-		whiteboardPhase.store(WhiteboardPhase::Active);
+		setProbePhase(WhiteboardPhase::Active);
 		const auto protectedWhiteboard = GetStateModeVersionedSnapshot();
 		require(!CompletePresentationExitStateMode(protectedWhiteboard.revision) &&
 			sameState(protectedWhiteboard.state, GetStateModeSnapshot()) &&
 			StateModeTransitionRevision() == protectedWhiteboard.revision, "ppt-exit-preserves-whiteboard-transaction");
-		whiteboardPhase.store(WhiteboardPhase::Inactive);
+		setProbePhase(WhiteboardPhase::Inactive);
 		require(SwitchWorkspaceStateMode(Workspace::Desktop), "restore-desktop-after-exit-tests");
 
 		stage = "workspace-publication-race";
@@ -1956,7 +2680,7 @@ int RunStateModeProductionTest() noexcept
 			RequestWhiteboardActive(true);
 			require(!staleWhiteboard && SwitchWorkspaceStateMode(Workspace::Whiteboard),
 				"whiteboard-after-ppt-snapshot");
-			whiteboardPhase.store(phase);
+			setProbePhase(phase);
 			if (phase == WhiteboardPhase::Exiting) RequestWhiteboardActive(false);
 			const auto protectedState = GetStateModeVersionedSnapshot();
 			const auto protectedBridge = bridge.Snapshot();
@@ -1977,7 +2701,7 @@ int RunStateModeProductionTest() noexcept
 				bridge.Snapshot().revision == protectedBridge.revision,
 				"stale-ppt-publish-cannot-overwrite-whiteboard");
 			RequestWhiteboardActive(false);
-			whiteboardPhase.store(WhiteboardPhase::Inactive);
+			setProbePhase(WhiteboardPhase::Inactive);
 			require(SwitchWorkspaceStateMode(Workspace::Desktop), "restore-desktop-after-publish-race");
 		}
 
@@ -2353,6 +3077,7 @@ int RunStateModeProductionTest() noexcept
 			require(!WhiteboardRequested() && !WhiteboardTransactionActive() && ChangeStateModeToClickThrough(),
 				"closed-whiteboard-gate-preserves-desktop-clickthrough");
 		RequestWhiteboardActive(false);
+		setProbePhase(WhiteboardPhase::Inactive);
 		ChangeStateModeToClickThrough();
 		const auto clearRejected = GetStateModeVersionedSnapshot();
 		require(!ChangeStateModeToSelectionFromButtonImpl(true, [] { return Bridge::CommandResult::QueueFull; }) &&
@@ -2395,6 +3120,29 @@ int RunStateModeProductionTest() noexcept
 			failed.recovery.workspace = Bridge::Workspace::Whiteboard;
 			require(!Draw3RecoveryNeedsUiRelease(failed, desired), "old-workspace-error-cannot-release-current-window-transaction");
 		}
+		stage = "whiteboard-background-readiness";
+		{
+			HostRuntimeSnapshot ready;
+			ready.workspace = Workspace::Whiteboard;
+			ready.firstFrameReady = true;
+			ready.requestedOutputTarget = ready.readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
+			ready.requestedOutputRevision = ready.readyOutputRevision = 7;
+			ready.contentRevision = ready.presentedContentRevision = 9;
+			require(!Inkeys::Window::GetService().RequestWhiteboardActivation() &&
+				Draw3WorkspaceReady(ready, Workspace::Whiteboard),
+				"activation-request-rejection-does-not-revoke-real-frame-readiness");
+			ready.selectionMode = true;
+			require(Draw3WorkspaceReady(ready, Workspace::Whiteboard),
+				"background-whiteboard-selection-still-uses-presented-primary-surface");
+			ready.firstFrameReady = false;
+			require(!Draw3WorkspaceReady(ready, Workspace::Whiteboard), "background-entry-still-waits-real-first-frame");
+			ready.firstFrameReady = true;
+			--ready.readyOutputRevision;
+			require(!Draw3WorkspaceReady(ready, Workspace::Whiteboard), "background-entry-rejects-old-output");
+			++ready.readyOutputRevision;
+			--ready.presentedContentRevision;
+			require(!Draw3WorkspaceReady(ready, Workspace::Whiteboard), "background-entry-rejects-old-content");
+		}
 		stage = "scene-publication-ownership";
 		ChangeStateModeToPen();
 		const auto primaryTool = GetStateModeVersionedSnapshot();
@@ -2405,7 +3153,7 @@ int RunStateModeProductionTest() noexcept
 		{ return PptSceneWorkspaceEpoch() == primaryEpoch; };
 		RequestWhiteboardActive(true);
 		const auto enteringEpoch = whiteboardInputEpoch.load(std::memory_order_acquire);
-		whiteboardPhase.store(WhiteboardPhase::Entering, std::memory_order_release);
+		setProbePhase(WhiteboardPhase::Entering);
 		require(!ChangeStateModeToSelectionIfRevision(primaryTool.revision, primaryEpoch) &&
 			StateModeTransitionRevision() == primaryTool.revision &&
 			sameState(GetStateModeSnapshot(), primaryTool.state),
@@ -2419,11 +3167,21 @@ int RunStateModeProductionTest() noexcept
 		require(bridge.Snapshot().workspace == Bridge::Workspace::Whiteboard,
 			"late-desktop-and-clear-cannot-overwrite-whiteboard-at-product-commit");
 		const auto oldWhiteboardGuard = WhiteboardTransitionGuard(WhiteboardPhase::Entering, enteringEpoch);
-		whiteboardPhase.store(WhiteboardPhase::Active, std::memory_order_release);
-		require(!oldWhiteboardGuard() && PptSceneWorkspaceEpoch() == 0,
-			"active-whiteboard-retires-entering-command-without-opening-primary-scene");
+		const auto activationGuard = WhiteboardActivationGuard(enteringEpoch);
+		require(activationGuard(), "current-entry-accepts-its-activation-intent");
+		setProbePhase(WhiteboardPhase::Active);
+		require(!oldWhiteboardGuard() && activationGuard() && PptSceneWorkspaceEpoch() == 0,
+			"active-whiteboard-keeps-queued-activation-without-reviving-entering-command");
 		RequestWhiteboardActive(false);
-		whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
+		require(!activationGuard(), "close-intent-rejects-queued-activation-before-phase-handoff");
+		RequestWhiteboardActive(true);
+		require(!activationGuard() && WhiteboardActivationGuard(
+			whiteboardInputEpoch.load(std::memory_order_acquire))(),
+			"new-whiteboard-epoch-cannot-revive-old-activation");
+		RequestWhiteboardActive(false);
+		setProbePhase(WhiteboardPhase::Exiting);
+		require(!activationGuard() && !WhiteboardActivationGuard(
+			whiteboardInputEpoch.load(std::memory_order_acquire))(), "exiting-whiteboard-rejects-activation");
 		const auto returningEpoch = PptSceneWorkspaceEpoch();
 		require(returningEpoch != 0 && returningEpoch != primaryEpoch && PptInputWorkspaceEpoch() == 0,
 			"exiting-accepts-current-primary-scene-while-business-input-remains-closed");
@@ -2437,7 +3195,7 @@ int RunStateModeProductionTest() noexcept
 		PublishProductWorkspace(Bridge::Workspace::Whiteboard, oldWhiteboardGuard);
 		require(bridge.Snapshot().workspace == Bridge::Workspace::Desktop,
 			"retired-whiteboard-publication-cannot-overwrite-current-return");
-		whiteboardPhase.store(WhiteboardPhase::Inactive, std::memory_order_release);
+		setProbePhase(WhiteboardPhase::Inactive);
 		require(PptSceneWorkspaceEpoch() == returningEpoch && PptInputWorkspaceEpoch() == returningEpoch
 			&& !oldPrimaryGuard(), "whiteboard-roundtrip-never-revives-old-primary-publisher");
 		require(!CompletePresentationExitStateMode(primaryTool.revision, primaryEpoch) &&
@@ -2452,15 +3210,15 @@ int RunStateModeProductionTest() noexcept
 			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
 			"current-primary-ppt-exit-retains-normal-selection-tail");
 		// 返回 PPT 时先恢复工具，再由带当前场景身份的 target/clear 提交 Presentation。
-		whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
+		setProbePhase(WhiteboardPhase::Exiting);
 		require(SwitchWorkspaceStateMode(Workspace::Presentation, false, nullptr, nullptr,
 			[returningEpoch]() noexcept { return PptSceneWorkspaceEpoch() == returningEpoch; }) &&
 			bridge.Snapshot().workspace == Workspace::Desktop,
 			"exiting-restores-ppt-tool-before-complete-scene");
 		(void)PublishPrimaryPresentationTarget(nullptr, returningEpoch);
-		require(bridge.Snapshot().workspace == Workspace::Presentation &&
-			!bridge.Snapshot().presentationTarget, "exiting-allows-current-presentation-target-clear");
-		whiteboardPhase.store(WhiteboardPhase::Inactive, std::memory_order_release);
+		require(bridge.Snapshot().workspace == Workspace::Desktop &&
+			!bridge.Snapshot().presentationTarget, "stopped-host-cannot-publish-target-without-real-transition-fence");
+		setProbePhase(WhiteboardPhase::Inactive);
 		require(SwitchWorkspaceStateMode(Workspace::Desktop), "restore-desktop-after-scene-tests");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
 		std::fputs("[StateModeProduction] PASS: workspace tool isolation, cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory, operation modes, clickthrough toggle/freezing, shortcut roundtrip, clear transaction\n", stderr);
@@ -2479,152 +3237,53 @@ int RunStateModeProductionTest() noexcept
 
 void StateMonitoring()
 {
-	auto snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-	std::uint64_t revision = snapshot.runtimeRevision;
+	using namespace Inkeys::Drawing::Draw3;
+	using namespace Inkeys::Window;
+	auto snapshot = ProductRuntimeSnapshot();
+	std::uint64_t runtimeRevision = snapshot.runtimeRevision;
+	std::uint64_t observedHostGeneration = 0;
+	std::uint64_t preparedRevision = 0;
+	std::uint64_t preparedProductRevision = 0;
+	std::uint64_t preparedHostGeneration = 0;
+	std::uint64_t uiPreparedRevision = 0;
+	std::optional<WorkspaceWindowPrepared> prepared;
 	bool pageSwitching = false;
 	bool requestedPreviousPage = false;
 	std::size_t requestedPageIndex = 0;
 	std::uint64_t pageCommandCountBeforeRequest = 0;
-	auto& service = Inkeys::Window::GetService();
-	ReconcileDraw3Presentation();
+	auto& service = GetService();
 	while (!offSignal)
 	{
-		// 内容、目标就绪和全帧 clean 共享一个 revision，避免快速切换漏掉握手。
-		(void)Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(revision, 250);
-		// 消费者结束时 revision wait 会立即返回；故障清理仍按原 250ms cadence，避免停止态忙循环。
-		if (!offSignal && !Inkeys::Drawing::Draw3::ProductRunning())
+		(void)WaitForProductRuntimeRevision(runtimeRevision, 250);
+		if (!offSignal && !ProductRunning())
 			std::this_thread::sleep_for(std::chrono::milliseconds(250));
 		if (offSignal) break;
-		// 同步提交失败时沿用本循环的 250ms cadence，直到最新 owner 期望真正生效。
-		ReconcileSettingOwnerDesiredState();
-		snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-		const bool runtimeChanged = snapshot.runtimeRevision != revision;
-		if (runtimeChanged)
+		if (!ReadWorkspaceHandoff().pending) ReconcileSettingOwnerDesiredState();
+		snapshot = ProductRuntimeSnapshot();
+		const bool runtimeChanged = snapshot.runtimeRevision != runtimeRevision;
+		runtimeRevision = snapshot.runtimeRevision;
+		auto request = ConsumeNativeWhiteboardRequests();
+		// Host 重启不能继承旧消费者的 Frame/工具/fence 回执。
+		if (ProductRunning() && snapshot.hostGeneration != observedHostGeneration)
 		{
-			revision = snapshot.runtimeRevision;
+			observedHostGeneration = snapshot.hostGeneration;
+			request = RequestWorkspace(request.desired, request.minimized, true);
 		}
-		if (runtimeChanged || draw3PresentationRetryPending.load(
-			std::memory_order_acquire))
+		if (request.desired != Workspace::Whiteboard && request.desired != CurrentPrimaryWorkspace())
+			request = RequestWorkspace(CurrentPrimaryWorkspace());
+		// PPT 恰在最小化请求后开始时，撤销尚未实际执行的最小化，保持原白板视图；不抢前台。
+		if (request.pending && request.desired == Workspace::Whiteboard && request.minimized &&
+			PptSessionActive() && !service.WhiteboardWindowGroupMinimized())
+			request = RequestWorkspace(Workspace::Whiteboard, false, false, false);
+		if (whiteboardViewChanged.exchange(false, std::memory_order_acq_rel) && !request.pending &&
+			request.desired == Workspace::Whiteboard)
+			request = RequestWorkspace(Workspace::Whiteboard, service.WhiteboardWindowGroupMinimized());
+
+		if (!request.pending)
 		{
-			ReconcileDraw3Presentation();
-		}
-
-		WhiteboardPhase phase = whiteboardPhase.load(std::memory_order_acquire);
-		const auto whiteboardEpoch = whiteboardInputEpoch.load(std::memory_order_acquire);
-		const bool desired = whiteboardDesired.load(std::memory_order_acquire);
-		const auto transitionGuard = [whiteboardEpoch](WhiteboardPhase expectedPhase)
-		{ return WhiteboardTransitionGuard(expectedPhase, whiteboardEpoch); };
-		if (phase == WhiteboardPhase::Inactive && desired)
-		{
-			// Enter 先锁住辅助面板和指针，再由 Window Service 统一切换 HWND 样式。
-			whiteboardPhase.store(WhiteboardPhase::Entering,
-				std::memory_order_release);
-			Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
-			Inkeys::UI::Whiteboard::CancelPointerCapture();
-			// PageControl 是共享宿主的唯一所有者；保留 PPT 状态并连续形变。
-			if (!service.EnterWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Entering)))
-			{
-				// 样式事务失败时恢复 Presentation 控件，下一轮仍可重试进入。
-				Inkeys::UI::Ppt::PublishPresentationVisible(
-					PptSessionActive());
-				whiteboardPhase.store(WhiteboardPhase::Inactive,
-					std::memory_order_release);
-				continue;
-			}
-			// 几何目标不等待 Draw3 首帧；背景 active 仍在 Entering 就绪后发布。
-			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
-			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-			(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Entering));
-			Inkeys::UI::Freeze::SetWhiteboardActive(true);
-			FreezePPT = false;
-			(void)SwitchWorkspaceStateMode(Workspace::Whiteboard, false, nullptr, nullptr,
-					transitionGuard(WhiteboardPhase::Entering));
-			continue;
-		}
-
-		if (phase == WhiteboardPhase::Entering)
-		{
-			if (!desired)
-			{
-				Inkeys::UI::Whiteboard::CancelPointerCapture();
-				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
-				whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
-				(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Exiting));
-				Inkeys::UI::Whiteboard::PublishPageState(
-					static_cast<int>(snapshot.currentPageIndex + 1),
-					static_cast<int>(snapshot.pageCount), true);
-				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
-				continue;
-			}
-			if (Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().workspace != Workspace::Whiteboard)
-			{
-				// 等待期间仍保留意图；发现目标偏离便重新收敛，而非永久等待一次旧发布。
-				(void)SwitchWorkspaceStateMode(Workspace::Whiteboard, false, nullptr, nullptr,
-					transitionGuard(WhiteboardPhase::Entering));
-				continue;
-			}
-			if (!Draw3WorkspaceReady(snapshot, Workspace::Whiteboard)) continue;
-
-			SetWhiteboardFreezeSurfaceOwned(true);
-			Inkeys::UI::Whiteboard::PublishPageSnapshot(
-				static_cast<int>(snapshot.currentPageIndex + 1),
-				static_cast<int>(snapshot.pageCount), false,
-				snapshot.whiteboardTheme.backgroundRgb, static_cast<int>(snapshot.whiteboardTheme.pattern),
-				snapshot.whiteboardUnsaved, snapshot.whiteboardGeneration);
-			Inkeys::UI::Whiteboard::PublishActive(true);
-			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true)) continue;
-			Inkeys::UI::Bar::SetWhiteboardActive(true);
-			const bool whiteboardWindowStateReady =
-				service.SetOverlayFullscreen(true, transitionGuard(WhiteboardPhase::Entering)) &&
-				service.SetOverlayTopmost(false, transitionGuard(WhiteboardPhase::Entering)) &&
-				SyncDrawpadClickThrough(false, transitionGuard(WhiteboardPhase::Entering));
-			if (!whiteboardWindowStateReady)
-			{
-				// Enter 的窗口状态未完整收敛时回滚 UI/Freeze，再等待下一次请求重试。
-				(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Entering));
-				Inkeys::UI::Whiteboard::PublishActive(false);
-				SetWhiteboardFreezeSurfaceOwned(false);
-				Inkeys::UI::Freeze::SetWhiteboardActive(false);
-				Inkeys::UI::Bar::SetWhiteboardActive(false);
-				(void)service.SetOverlayFullscreen(false, transitionGuard(WhiteboardPhase::Entering));
-				(void)service.LeaveWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Entering));
-				(void)service.SetOverlayTopmost(true, transitionGuard(WhiteboardPhase::Entering));
-				whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
-				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
-				continue;
-			}
-			Inkeys::Drawing::Draw3::SetProductActivationAllowed(true);
-			whiteboardPhase.store(WhiteboardPhase::Active,
-				std::memory_order_release);
-			continue;
-		}
-
-		if (phase == WhiteboardPhase::Active)
-		{
-			if (!desired)
-			{
-				pageSwitching = false;
-				Inkeys::UI::Whiteboard::CancelPointerCapture();
-				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
-				// 单一 PageControl 从当前白板帧反向重定向，不插入隐藏帧。
-				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
-				HideWhiteboardForReturn();
-				whiteboardPhase.store(WhiteboardPhase::Exiting, std::memory_order_release);
-				(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Exiting));
-				Inkeys::UI::Whiteboard::PublishPageState(
-					static_cast<int>(snapshot.currentPageIndex + 1),
-					static_cast<int>(snapshot.pageCount), true);
-				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
-				continue;
-			}
-
-			if (Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().workspace != Workspace::Whiteboard)
-			{
-				(void)SwitchWorkspaceStateMode(Workspace::Whiteboard, false, nullptr, nullptr,
-					transitionGuard(WhiteboardPhase::Active));
-				continue;
-			}
+			if (runtimeChanged || draw3PresentationRetryPending.load(std::memory_order_acquire))
+				ReconcileDraw3Presentation();
+			if (request.committed != Workspace::Whiteboard || request.committedMinimized) continue;
 			if (pageSwitching)
 			{
 				const std::uint64_t completed = requestedPreviousPage
@@ -2667,103 +3326,153 @@ void StateMonitoring()
 			continue;
 		}
 
-		if (phase == WhiteboardPhase::Exiting)
+		const auto guard = [epoch = request.revision]() noexcept { return WorkspaceRequestCurrent(epoch); };
+		if (!request.Ready(WorkspaceHandoff::Clock::now())) continue;
+		if (preparedRevision != request.revision)
 		{
-			if (desired)
-			{
-				// 先从当前插值帧重定向；背景仍等待 Draw3 Whiteboard 首帧。
-				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
-				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
-				Inkeys::UI::Whiteboard::CancelPointerCapture();
-				if (!service.EnterWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Exiting)))
-				{
-					// 重入也必须等待完整的窗口样式事务，不复用半套状态。
-					whiteboardPhase.store(WhiteboardPhase::Exiting,
-						std::memory_order_release);
-					continue;
-				}
-				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-				whiteboardPhase.store(WhiteboardPhase::Entering, std::memory_order_release);
-				(void)SyncDrawpadClickThrough(true, transitionGuard(WhiteboardPhase::Entering));
-				Inkeys::UI::Freeze::SetWhiteboardActive(true);
-				(void)SwitchWorkspaceStateMode(Workspace::Whiteboard, false, nullptr, nullptr,
-					transitionGuard(WhiteboardPhase::Entering));
-				continue;
-			}
-			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
-			const Workspace primaryWorkspace = CurrentPrimaryWorkspace();
-			// 离场期间 PPT 可能结束或新开，工具与最新返回场景一起收敛。
-			PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
-			const auto primaryDesired = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
-			const bool fatalRecovery = Draw3FatalRecoveryMatches(snapshot, primaryDesired);
-			if (primaryDesired.workspace != primaryWorkspace && !fatalRecovery)
-			{
-				PublishWhiteboardPrimaryWorkspace(whiteboardEpoch);
-				continue;
-			}
-			const bool recoveryBlocked = Draw3RecoveryNeedsUiRelease(snapshot, primaryDesired);
-			if (!recoveryBlocked && !Draw3WorkspaceReady(snapshot, primaryWorkspace)) continue;
-			if (recoveryBlocked)
-			{
-				const auto hideGuard = [revision = primaryDesired.revision, expected = snapshot.recovery,
-					guard = transitionGuard(WhiteboardPhase::Exiting)]() noexcept
-				{
-					return guard() && Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().recovery == expected &&
-						Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision == revision;
-				};
-				// 错误终态只解除白板窗口事务；两画布保持隐藏，Host 的墨迹准入继续关闭。
-				if (fatalRecovery)
-				{
-					if (!ReleaseFatalDraw3Surfaces(snapshot, primaryDesired, hideGuard)) continue;
-				}
-				else if (!service.SetDrawpadSurfaceVisibility(Inkeys::Window::DrawpadSurfaceVisibility::Hidden,
-					hideGuard)) continue;
-			}
-
-			// 正常路径已有可接管帧；受保护失败则已隐藏两画布，均可结束白板背景交接。
-			HideWhiteboardForReturn();
-			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false)) continue;
-
-			Inkeys::UI::Whiteboard::PublishPageState(
-				static_cast<int>(snapshot.currentPageIndex + 1),
-				static_cast<int>(snapshot.pageCount), false);
-			SetWhiteboardFreezeSurfaceOwned(false);
-			// Presentation 辅助输出始终不参与输入；先恢复穿透，再改主画布。
-			// 后面的窗口模式失败不能把白板期间的命中状态留在辅助窗上。
-			(void)service.SetClickThrough(
-				Inkeys::Window::WindowRole::DrawpadPresentation, true);
-			const auto focusBeforeWindowRestore =
-				Inkeys::Business::CapturePptFocusRequest().foreground;
-			const bool focusMayFallBack = service.WhiteboardWindowMode() &&
-				(ForegroundMatchesWindowRole(focusBeforeWindowRestore, Inkeys::Window::WindowRole::Freeze)
-					|| ForegroundMatchesWindowRole(focusBeforeWindowRestore, Inkeys::Window::WindowRole::Drawpad));
-			const bool presentationWindowStateReady =
-				service.SetOverlayFullscreen(false, transitionGuard(WhiteboardPhase::Exiting)) &&
-				service.LeaveWhiteboardWindowMode(transitionGuard(WhiteboardPhase::Exiting)) &&
-				service.SetOverlayTopmost(true, transitionGuard(WhiteboardPhase::Exiting)) &&
-				(fatalRecovery || SyncDrawpadClickThrough(recoveryBlocked || snapshot.selectionMode,
-					[guard = transitionGuard(WhiteboardPhase::Exiting),
-						modeRevision = stateModeTransitionRevision.load(std::memory_order_acquire),
-						selection = snapshot.selectionMode]() noexcept
-					{
-						return guard() && stateModeTransitionRevision.load(std::memory_order_acquire) == modeRevision &&
-							Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().selectionMode == selection;
-					}));
-			RebaseWhiteboardReturnFocus(focusBeforeWindowRestore,
-				focusMayFallBack && !service.WhiteboardWindowMode());
-			if (!presentationWindowStateReady) continue;
-			Inkeys::UI::Freeze::SetWhiteboardActive(false);
-			Inkeys::UI::Bar::SetWhiteboardActive(false);
-			// window mode 恢复后重发 COM 事实；PageControl 始终是共享宿主唯一所有者。
-			Inkeys::UI::Ppt::PublishPresentationVisible(
-				PptSessionActive());
-			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
-			whiteboardPhase.store(WhiteboardPhase::Inactive,
-				std::memory_order_release);
-			ReconcileDraw3Presentation();
-			// 完整离场后只入队一次；业务线程再验证旧 token 和当前前台。
-			(void)CompleteWhiteboardReturnFocus(Inkeys::Business::QueuePptFocusRequest);
+			prepared.reset();
+			preparedRevision = request.revision;
+			preparedProductRevision = 0;
 		}
+		// fatal 消费者可能已停：当前完整故障 token 允许安全隐藏退场，不能假装 normal ready。
+		auto desired = ProductHost().ProductBridge().Snapshot();
+		const bool currentFault = request.desired != Workspace::Whiteboard && snapshot.hostGeneration != 0 && snapshot.recovery.revision != 0;
+		const bool fatalSafetyExit = currentFault && Draw3FatalRecoveryMatches(snapshot, desired);
+		const bool stoppedSafetyExit = currentFault && !ProductRunning() && Draw3RecoveryNeedsUiRelease(snapshot, desired);
+		const bool stoppedOrFatalSafetyExit = fatalSafetyExit || stoppedSafetyExit;
+		if (!CloseWorkspaceAdmission(request) && !stoppedOrFatalSafetyExit) continue;
+		const auto admitted = ReadWorkspaceHandoff();
+		if (admitted.revision != request.revision) continue;
+		request.hostGeneration = admitted.hostGeneration;
+		if (!stoppedOrFatalSafetyExit && (request.hostGeneration == 0 || snapshot.hostGeneration != request.hostGeneration)) continue;
+		if (preparedHostGeneration != request.hostGeneration)
+		{
+			prepared.reset();
+			preparedHostGeneration = request.hostGeneration;
+		}
+		if (!guard()) continue;
+
+		if (uiPreparedRevision != request.revision)
+		{
+			// 新意图只收尾一次；同 ticket 的原生失败不反复折叠用户打开的面板。
+			Inkeys::UI::Whiteboard::CancelPointerCapture();
+			Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
+			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(request.desired == Workspace::Whiteboard);
+			if (request.whiteboardInvolved)
+				Inkeys::UI::Whiteboard::PublishPageState(static_cast<int>(snapshot.currentPageIndex + 1), static_cast<int>(snapshot.pageCount), true);
+			SetProductActivationAllowed(false);
+			pageSwitching = false;
+			uiPreparedRevision = request.revision;
+		}
+		if (!stoppedOrFatalSafetyExit)
+		{
+			(void)SwitchWorkspaceStateMode(request.desired, false, nullptr, nullptr, guard);
+			desired = ProductHost().ProductBridge().Snapshot();
+			if (desired.workspace != request.desired) continue; // PPT 由可信 session/target 发布。
+		}
+		bool basicControl = false;
+		std::optional<Inkeys::Business::PptSessionToken> preparedSession;
+		if (request.desired == Workspace::Presentation) preparedSession = Inkeys::Business::CapturePptInputSession();
+		if (request.desired == Workspace::Presentation && !desired.presentationTarget)
+		{
+			std::optional<Inkeys::Business::PptSessionToken> control;
+			{ std::scoped_lock lock(workspaceHandoffMutex); control = basicControlSession; }
+			basicControl = control && preparedSession && Inkeys::Business::MatchesPptSession(*control, *preparedSession);
+			if (basicControl) preparedSession = control;
+		}
+		const bool protectedExit = request.desired != Workspace::Whiteboard &&
+			Draw3RecoveryNeedsUiRelease(snapshot, desired);
+		const bool safeRelease = stoppedOrFatalSafetyExit || protectedExit;
+		const WorkspaceWindowPolicy policy{ request.revision, request.desired == Workspace::Whiteboard,
+			desired.selectionMode, basicControl || safeRelease || (!request.minimized && request.desired != Workspace::Whiteboard &&
+				desired.selectionMode && snapshot.workspace == request.desired && !snapshot.currentPageHasContent && snapshot.auxiliaryFullFrameClean), request.minimized };
+		const auto nativeGuard = [epoch = request.revision, safeRelease, expected = snapshot.recovery,
+			revision = desired.revision, generation = snapshot.hostGeneration, request, desired, preparedSession]() noexcept
+		{
+			if (!WorkspaceRequestCurrent(epoch)) return false;
+			if (request.desired != Workspace::Whiteboard && !WorkspacePrimaryIdentityMatches(request, desired, preparedSession,
+				Inkeys::Business::CapturePptInputSession())) return false;
+			const auto current = ProductRuntimeSnapshot();
+			return current.hostGeneration == generation && current.recovery == expected &&
+				(safeRelease || (current.running && !current.consumerFatal)) &&
+				ProductHost().ProductBridge().Snapshot().revision == revision;
+		};
+		const auto nativeFailed = [&]
+		{
+			if (!guard()) return;
+			const auto phase = service.LastCommandReceipt().Phase();
+			// 取消/真实几何变化只欠重新准备，不属于当前 Native API 故障预算。
+			if (phase != CommandPhase::Cancelled && phase != CommandPhase::Expired)
+				FailWorkspaceRequest(request.revision);
+			prepared.reset();
+		};
+		if (!policy.whiteboard)
+		{
+			Inkeys::UI::Whiteboard::PublishActive(false, request.revision);
+			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false, request.revision)) continue;
+		}
+		if (prepared && (prepared->policy != policy || preparedProductRevision != desired.revision))
+			prepared.reset();
+		if (!prepared)
+		{
+			if (policy.whiteboard)
+			{
+				SetWhiteboardFreezeSurfaceOwned(true);
+				Inkeys::UI::Freeze::SetWhiteboardActive(true);
+				FreezePPT = false;
+			}
+			prepared = service.PrepareWorkspaceWindowPolicy(policy, nativeGuard);
+			if (!prepared) { nativeFailed(); continue; }
+			preparedProductRevision = desired.revision;
+			// Prepare 已真实改变目标 geometry；Host 的窗口通知主动处理输出，不等待下一笔。
+		}
+		if (!guard()) continue;
+
+		const auto& output = Bridge::SelectionUsesAuxiliaryOutput(desired.selectionMode, request.desired)
+			? prepared->presentation.bounds : prepared->primary.bounds;
+		if (!WorkspaceTargetReady(request, desired, snapshot, basicControl, safeRelease, output)) continue;
+
+		if (policy.whiteboard)
+		{
+			Inkeys::UI::Whiteboard::PublishPageSnapshot(static_cast<int>(snapshot.currentPageIndex + 1),
+				static_cast<int>(snapshot.pageCount), true, snapshot.whiteboardTheme.backgroundRgb,
+				static_cast<int>(snapshot.whiteboardTheme.pattern), snapshot.whiteboardUnsaved, snapshot.whiteboardGeneration);
+			Inkeys::UI::Whiteboard::PublishActive(true, request.revision);
+			if (!request.minimized && !Inkeys::UI::Whiteboard::BackgroundPrepared(request.revision)) continue;
+		}
+		else if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false, request.revision)) continue;
+		const auto focusBefore = Inkeys::Business::CapturePptFocusRequest().foreground;
+		const bool focusMayFallBack = !policy.whiteboard && service.WhiteboardWindowMode() &&
+			(ForegroundMatchesWindowRole(focusBefore, WindowRole::Freeze) || ForegroundMatchesWindowRole(focusBefore, WindowRole::Drawpad));
+		if (!service.CompleteWorkspaceWindowPolicy(policy, *prepared, nativeGuard)) { nativeFailed(); continue; }
+		if (!policy.whiteboard) RebaseWhiteboardReturnFocus(focusBefore, focusMayFallBack);
+		if (policy.whiteboard && !request.minimized &&
+			!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true, request.revision)) continue;
+		std::unique_lock finalModeLock(stateModeTransitionMutex);
+		if (!nativeGuard() || (!safeRelease && ProductHost().ProductBridge().Snapshot().revision != desired.revision)) continue;
+		const auto completedRuntime = ProductRuntimeSnapshot();
+		const bool completedTargetReady = (request.desired == Workspace::Whiteboard ||
+			WorkspacePrimaryIdentityMatches(request, desired, preparedSession, Inkeys::Business::CapturePptInputSession())) &&
+			WorkspaceTargetReady(request, desired, completedRuntime, basicControl, safeRelease, output);
+		// 一个提交点：Bar/工具/基线观察同一版本；新请求在锁外继续保留其自己的 fence。
+		if (!CommitWorkspaceHandoffLocked(request.revision, completedTargetReady, true, true,
+			stoppedOrFatalSafetyExit)) continue;
+		finalModeLock.unlock();
+		Inkeys::UI::Whiteboard::PublishPageState(static_cast<int>(completedRuntime.currentPageIndex + 1),
+			static_cast<int>(completedRuntime.pageCount), false);
+		Inkeys::UI::Bar::SetWhiteboardActive(policy.whiteboard);
+		Inkeys::UI::Bar::RefreshToolState();
+		Inkeys::UI::Freeze::SetWhiteboardActive(policy.whiteboard);
+		if (!policy.whiteboard) SetWhiteboardFreezeSurfaceOwned(false);
+		Inkeys::UI::Ppt::PublishPresentationVisible(request.desired == Workspace::Presentation);
+		SetProductActivationAllowed(policy.whiteboard && !request.minimized);
+		// 最小化继续禁止新 Down；恢复会获得新的奇数版本并重取真实输出。
+		if (!request.minimized) (void)SetProductWorkspaceTransitionPending(request.revision, false, request.hostGeneration);
+		if (request.activate && !request.minimized)
+			(void)service.RequestWhiteboardActivation(WhiteboardActivationGuard(request.revision));
+		if (!policy.whiteboard)
+			(void)CompleteWhiteboardReturnFocus(Inkeys::Business::QueuePptFocusRequest);
+		prepared.reset();
 	}
 }
 

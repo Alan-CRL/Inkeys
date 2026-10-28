@@ -454,6 +454,10 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<Bridge::PresentationReadyIdentity> uiReadyPresentationTarget;
 		std::optional<Bridge::PresentationReadyIdentity> suspendedPresentationTarget;
 		bool commandScenePending = false;
+		std::uint64_t workspaceTransitionEpoch = 0;
+		bool workspaceTransitionPending = false;
+		std::uint64_t appliedProductRevision = 0;
+		Bridge::Tool appliedTool = Bridge::Tool::Pen;
 		std::uint32_t inputGateReasons = 0;
 		CanvasRecoveryState recovery;
 		CanvasRecoveryState reportedRecovery;
@@ -747,7 +751,10 @@ namespace Inkeys::Drawing::Draw3
 			const auto desired = bridge.Snapshot();
 			const auto expected = desired.presentationTarget
 				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget)) : std::nullopt;
-			return shortcutSelectionHandoffPending || commandScenePending ||
+			return workspaceTransitionPending || inputStopping.load(std::memory_order_acquire) ||
+				input.ConsumerFatal() || CanvasRecoveryBlocksAdmission(recovery,
+					recoveryReportAvailable ? &reportedRecovery : nullptr) ||
+				shortcutSelectionHandoffPending || commandScenePending ||
 				(desired.workspace == Bridge::Workspace::Whiteboard && whiteboardLoadPending.load(std::memory_order_acquire)) ||
 				(desired.workspace == Bridge::Workspace::Presentation
 				? !expected || readyPresentationTarget != expected ||
@@ -819,6 +826,7 @@ namespace Inkeys::Drawing::Draw3
 			std::uint32_t reasons = 0;
 			if (inputStopping.load(std::memory_order_acquire)) reasons |= 1u;
 			if (commandScenePending) reasons |= 2u;
+			if (workspaceTransitionPending) reasons |= 1024u;
 			if (input.ConsumerFatal()) reasons |= 256u;
 			if (CanvasRecoveryBlocksAdmission(recovery,
 				recoveryReportAvailable ? &reportedRecovery : nullptr)) reasons |= 512u;
@@ -899,6 +907,10 @@ namespace Inkeys::Drawing::Draw3
 				input.SetShortcutAdmissionBlocked(false);
 				shortcutSelectionHandoffPending = false;
 				commandScenePending = false;
+				workspaceTransitionEpoch = 0;
+				workspaceTransitionPending = false;
+				appliedProductRevision = 0;
+				appliedTool = Bridge::Tool::Pen;
 				inputGateReasons = 0;
 				recovery = {};
 				reportedRecovery = {};
@@ -1720,8 +1732,15 @@ namespace Inkeys::Drawing::Draw3
 				requestedPresentationTargetRevision = 0;
 			}
 			restoreLatestScene = false;
-			// 显隐线程观察到新模式前，工具、橡皮模式和样式必须已完整应用。
-			if (selectionChanged) PublishRuntimeRevision();
+			bool preferencesChanged;
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				// 只确认 owner 已完整应用的版本；Bridge 发布目标不等于实际工具已就绪。
+				preferencesChanged = appliedProductRevision != state.revision || appliedTool != state.tool;
+				appliedProductRevision = state.revision;
+				appliedTool = state.tool;
+			}
+			if (selectionChanged || preferencesChanged) PublishRuntimeRevision();
 		}
 
 		void EnqueueCommandScene(const Bridge::Command& command)
@@ -2299,6 +2318,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				std::scoped_lock lock(presentationTargetMutex);
 				inputStopping.store(true, std::memory_order_release);
+				workspaceTransitionEpoch = 0;
+				workspaceTransitionPending = false;
 				RefreshPresentationInputGateLocked();
 			}
 		}
@@ -2504,6 +2525,9 @@ namespace Inkeys::Drawing::Draw3
 		}
 		{
 			std::scoped_lock lock(impl_->presentationTargetMutex);
+			snapshot.hostGeneration = impl_->acceptedStrokes.HostGeneration();
+			snapshot.appliedProductRevision = impl_->appliedProductRevision;
+			snapshot.appliedTool = impl_->appliedTool;
 			snapshot.presentationReady = impl_->readyPresentationTarget;
 			snapshot.presentationUiReady = impl_->uiReadyPresentationTarget;
 			snapshot.presentationSuspended = impl_->suspendedPresentationTarget;
@@ -2766,6 +2790,249 @@ namespace Inkeys::Drawing::Draw3
 		if (impl_->attachedWindow.load(std::memory_order_acquire))
 			(void)impl_->input.PublishControlWake();
 	}
+	bool Host::SetWorkspaceTransitionPending(std::uint64_t epoch, bool pending,
+		std::uint64_t expectedHostGeneration) noexcept
+	{
+		if (!epoch || !expectedHostGeneration) return false;
+		{
+			std::scoped_lock lock(impl_->presentationTargetMutex);
+			if (!Running() || impl_->inputStopping.load(std::memory_order_acquire) ||
+				expectedHostGeneration != impl_->acceptedStrokes.HostGeneration() ||
+				epoch < impl_->workspaceTransitionEpoch ||
+				(!pending && epoch != impl_->workspaceTransitionEpoch) ||
+				(pending && epoch == impl_->workspaceTransitionEpoch && !impl_->workspaceTransitionPending))
+				return false;
+			if (epoch == impl_->workspaceTransitionEpoch && pending == impl_->workspaceTransitionPending)
+				return true;
+			// 新意图先同步关闸；Host 重启和同 run 的旧版本都不能覆盖当前原因。
+			impl_->workspaceTransitionEpoch = epoch;
+			impl_->workspaceTransitionPending = pending;
+			impl_->RefreshPresentationInputGateLocked();
+		}
+		// 准入只拦新 Down，目标应用、实际帧和终态仍由原 owner 主动推进。
+		(void)impl_->input.PublishControlWake();
+		impl_->PublishRuntimeRevision();
+		return true;
+	}
+
+	int RunHostWorkspaceTransitionInputProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3WorkspaceTransition] FAIL: %s\n", name);
+		};
+		try
+		{
+			Host host;
+			auto& state = *host.impl_;
+			check(!host.SetWorkspaceTransitionPending(1, true, 1), "stopped Host refuses transition publication");
+			// 只建立准入所需运行前提；使用真实 Impl/Coordinator，不 Start、附着 HWND 或启动 owner。
+			state.input.ResetForNextRun();
+			state.bridge.Reset();
+			state.ResetRuntimeDiagnostics();
+			state.startOptions.requirePresentationUiReady = true;
+			state.running.store(true, std::memory_order_release);
+			struct RestoreStopped
+			{
+				std::atomic_bool& running;
+				~RestoreStopped() { running.store(false, std::memory_order_release); }
+			} restore{ state.running };
+			state.input.EnableDiagnostics(true);
+			const auto firstRun = host.RuntimeSnapshot();
+			Bridge::ProductState preferences;
+			preferences.tool = Bridge::Tool::HardPen; preferences.selectionMode = false;
+			host.PublishState(preferences);
+			const auto preferenceRevision = state.bridge.Snapshot().revision;
+			check(firstRun.hostGeneration != 0 && firstRun.appliedProductRevision == 0 &&
+				host.RuntimeSnapshot().appliedProductRevision == 0,
+				"Bridge publication cannot forge an applied tool acknowledgement");
+			state.PumpBridgeState();
+			const auto applied = host.RuntimeSnapshot();
+			check(applied.hostGeneration == firstRun.hostGeneration &&
+				applied.appliedProductRevision == preferenceRevision && applied.appliedTool == Bridge::Tool::HardPen &&
+				applied.runtimeRevision > firstRun.runtimeRevision &&
+				state.window.ActiveTool() == DrawingTool::HardPen && !state.window.SelectionMode(),
+				"actual owner preference application publishes its exact tool and ProductState revision");
+			int controlWakes = 0;
+			const auto takeDown = [&]() -> ContactHandle
+			{
+				ContactRecord* record = nullptr;
+				while (state.input.TryDequeue(record))
+				{
+					if (record) return { record, record->Generation() };
+					++controlWakes;
+					state.input.AcknowledgeControlWake();
+				}
+				return {};
+			};
+			ContactSnapshot sample;
+			sample.position = { 1.0f, 1.0f }; sample.qpc = 1;
+			check(state.input.PublishDown(0xF501, 1, InputDeviceType::MouseLeft, sample),
+				"source contact enters before the transition");
+			const auto source = takeDown();
+			const auto beforeTransitionWake = state.input.CaptureWakeGeneration();
+			const auto beforeTransitionRevision = state.runtimeRevision.Revision();
+			check(state.input.ContactAdmitted(source) && host.SetWorkspaceTransitionPending(1, true, firstRun.hostGeneration) &&
+				state.input.CaptureWakeGeneration() != beforeTransitionWake &&
+				state.runtimeRevision.Revision() > beforeTransitionRevision &&
+				state.input.AdmissionBlocked() && !state.input.ContactAdmitted(source),
+				"new pending synchronously closes real admission and invalidates earlier queued Down");
+			check(state.input.PublishMove(0xF501, 1, sample) && state.input.PublishUp(0xF501, 1, sample),
+				"existing producer Move and physical terminal continue while pending");
+			ContactSnapshot terminal;
+			check(state.input.TryReadSnapshot(source, terminal) && terminal.phase == ContactPhase::Up,
+				"pending keeps the source contact terminal readable for drain");
+			state.input.Recycle(source);
+			check(state.input.PublishDown(0xF501, 2, InputDeviceType::MouseRight, sample),
+				"producer may queue a Down while admission is closed");
+			const auto duringPending = takeDown();
+			check(duringPending && controlWakes != 0 && !state.input.ContactAdmitted(duringPending),
+				"control wake continues and transition Down is not admitted");
+			Bridge::PresentationTarget target;
+			target.key.bytes[0] = 0xF5;
+			target.sourceIdentity = "path:c:\\tests\\transition.pptx";
+			target.totalPages = 1; target.bindingRevision = 1; target.sessionRevision = 1;
+			check(state.bridge.PublishPresentationTarget(target).has_value(), "pending permits target publication");
+			const auto desired = state.bridge.Snapshot();
+			if (!desired.presentationTarget) return failures + 1;
+			host.PublishState(desired);
+			const auto ready = Bridge::ReadyIdentityFor(*desired.presentationTarget);
+			Host::Impl::ObserveWorkspace(&state, Bridge::Workspace::Presentation, 0, 1, &ready);
+			check(host.PublishPresentationUiReady(ready) && state.inputGateReasons == 1024u &&
+				state.input.AdmissionBlocked(), "CPU scene and UI ACK cannot retire the workspace fence");
+			check(host.SetWorkspaceTransitionPending(2, true, firstRun.hostGeneration) && host.SetWorkspaceTransitionPending(2, true, firstRun.hostGeneration) &&
+				!host.SetWorkspaceTransitionPending(1, false, firstRun.hostGeneration) && !host.SetWorkspaceTransitionPending(1, true, firstRun.hostGeneration) &&
+				!host.SetWorkspaceTransitionPending(3, false, firstRun.hostGeneration) && state.input.AdmissionBlocked(),
+				"new epoch supersedes pending and stale or unmatched retirement cannot clear it");
+			check(host.SetWorkspaceTransitionPending(2, false, firstRun.hostGeneration) && host.SetWorkspaceTransitionPending(2, false, firstRun.hostGeneration) &&
+				!host.SetWorkspaceTransitionPending(2, true, firstRun.hostGeneration) && !state.input.AdmissionBlocked() &&
+				!state.input.ContactAdmitted(duringPending),
+				"only matching retirement opens its own reason; old Down and late Begin remain rejected");
+			state.input.DiscardUntilTerminal(duringPending);
+			check(state.input.PublishUp(0xF501, 2, sample) && !state.input.HasQuarantinedContacts(),
+				"rejected transition Down still retires through its real terminal");
+			check(state.input.PublishDown(0xF501, 2, InputDeviceType::MouseRight, sample),
+				"new contact can follow matching transition retirement");
+			const auto next = takeDown();
+			check(state.input.ContactAdmitted(next) && state.input.PublishUp(0xF501, 2, sample),
+				"new generation uses the reopened admission revision");
+			state.input.Recycle(next);
+			Bridge::ProductState desktop;
+			host.PublishState(desktop);
+			state.PumpBridgeState();
+			Host::Impl::ObserveWorkspace(&state, Bridge::Workspace::Desktop, 0, 1, nullptr);
+			Shortcuts::Context inkShortcut;
+			inkShortcut.scope.pageEpoch = 1;
+			inkShortcut.available = true; inkShortcut.hasContent = true;
+			Host::Impl::ObserveShortcutContext(&state, inkShortcut);
+			const auto shortcutBefore = host.ShortcutContext();
+			const auto oldLease = host.AcquireShortcutLease(shortcutBefore, false);
+			check(shortcutBefore.available && oldLease && host.SetWorkspaceTransitionPending(3, true, firstRun.hostGeneration),
+				"ink shortcut lease can predate workspace pending");
+			host.ReleaseShortcutLease(oldLease);
+			check(!state.shortcuts.Lease() && state.input.BaseAdmissionBlocked() &&
+				!host.ShortcutContext().available && !host.AcquireShortcutLease(shortcutBefore, false),
+				"old shortcut release completes while pending prevents a new ink scope and lease");
+			check(host.SetWorkspaceTransitionPending(3, false, firstRun.hostGeneration) && host.ShortcutContext().available,
+				"matching retirement restores an otherwise eligible ink shortcut scope");
+			std::uint64_t epoch = 4;
+			for (const auto reason : { 2u, 4u, 512u })
+			{
+				Bridge::ProductState baseline;
+				baseline.workspace = reason == 4u ? Bridge::Workspace::Whiteboard : Bridge::Workspace::Desktop;
+				host.PublishState(baseline);
+				Host::Impl::ObserveWorkspace(&state, baseline.workspace, 0, 1, nullptr);
+				check(host.SetWorkspaceTransitionPending(epoch, true, firstRun.hostGeneration), "next gate fixture begins a real transition");
+				if (reason == 2u) state.commandScenePending = true;
+				if (reason == 4u) state.whiteboardLoadPending.store(true, std::memory_order_release);
+				if (reason == 512u)
+				{
+					CanvasRecoveryState recovery; recovery.status = CanvasRecoveryStatus::Retrying;
+					Host::Impl::ObserveRecovery(&state, recovery);
+				}
+				{ std::scoped_lock lock(state.presentationTargetMutex); state.RefreshPresentationInputGateLocked(); }
+				check(host.SetWorkspaceTransitionPending(epoch++, false, firstRun.hostGeneration) && state.input.AdmissionBlocked() &&
+					(state.inputGateReasons & reason) != 0,
+					"retirement preserves independent scene, whiteboard load and owner recovery reasons");
+				inkShortcut.scope.workspace = baseline.workspace;
+				Host::Impl::ObserveShortcutContext(&state, inkShortcut);
+				const auto blockedShortcut = host.ShortcutContext();
+				check(!blockedShortcut.available && !host.AcquireShortcutLease(blockedShortcut, false),
+					"scene, load and recovery still refuse new ink shortcuts after pending retires");
+				state.commandScenePending = false;
+				state.whiteboardLoadPending.store(false, std::memory_order_release);
+				Host::Impl::ObserveRecovery(&state, {});
+				check(!state.input.AdmissionBlocked(), "original owner can later clear its own reason");
+			}
+			const auto minimizedEpoch = epoch | std::uint64_t{ 1 };
+			check(host.SetWorkspaceTransitionPending(minimizedEpoch, true, firstRun.hostGeneration),
+				"minimize begins with the existing workspace admission reason");
+			Bridge::ProductState whiteboard;
+			whiteboard.workspace = Bridge::Workspace::Whiteboard; whiteboard.selectionMode = false;
+			host.PublishState(whiteboard); state.PumpBridgeState();
+			Host::Impl::ObserveWorkspace(&state, Bridge::Workspace::Whiteboard, 0, 1, nullptr);
+			// 稳定最小化只退休协调 Pending，不撤销同一个 Host 原因。
+			check(host.SetWorkspaceTransitionPending(minimizedEpoch, true, firstRun.hostGeneration) &&
+				state.input.AdmissionBlocked() && state.inputGateReasons == 1024u,
+				"ready and repeated stable-minimized publication keep Pen admission closed");
+			const auto restoreEpoch = minimizedEpoch + 2;
+			check(host.SetWorkspaceTransitionPending(restoreEpoch, true, firstRun.hostGeneration) &&
+				!host.SetWorkspaceTransitionPending(minimizedEpoch, false, firstRun.hostGeneration) &&
+				state.input.AdmissionBlocked(), "restore takes a new odd epoch and an old minimize retirement cannot open it");
+			Host::Impl::ObserveWorkspace(&state, Bridge::Workspace::Whiteboard, 0, 1, nullptr);
+			check(state.input.AdmissionBlocked() &&
+				host.SetWorkspaceTransitionPending(restoreEpoch, false, firstRun.hostGeneration) &&
+				!state.input.AdmissionBlocked(), "only matching restore retirement reopens otherwise ready Pen admission");
+			host.PublishState(desktop); state.PumpBridgeState();
+			Host::Impl::ObserveWorkspace(&state, Bridge::Workspace::Desktop, 0, 1, nullptr);
+			inkShortcut.scope.workspace = Bridge::Workspace::Desktop;
+			Host::Impl::ObserveShortcutContext(&state, inkShortcut);
+			epoch = restoreEpoch + 1;
+			check(host.SetWorkspaceTransitionPending(epoch, true, firstRun.hostGeneration), "shortcut fixture begins transition");
+			state.input.SetShortcutAdmissionBlocked(true);
+			check(host.SetWorkspaceTransitionPending(epoch++, false, firstRun.hostGeneration) && state.input.AdmissionBlocked() &&
+				!state.input.BaseAdmissionBlocked(), "transition retirement does not clear the separate shortcut OR gate");
+			state.input.SetShortcutAdmissionBlocked(false);
+			check(host.SetWorkspaceTransitionPending(epoch, true, firstRun.hostGeneration), "fatal fixture begins transition");
+			state.input.SetConsumerFatal();
+			check(host.SetWorkspaceTransitionPending(epoch, false, firstRun.hostGeneration) && state.input.ConsumerFatal() &&
+				state.input.AdmissionBlocked() && !host.ShortcutContext().available &&
+				!host.AcquireShortcutLease(host.ShortcutContext(), false),
+				"transition retirement cannot reopen a fatal consumer or its ink shortcuts");
+			// 与 Start 相同的无 producer reset；旧 pending/fatal 不泄漏到下一 run。
+			state.input.ResetForNextRun(); state.bridge.Reset(); state.ResetRuntimeDiagnostics();
+			const auto restarted = host.RuntimeSnapshot();
+			check(!state.input.AdmissionBlocked() && !state.input.ConsumerFatal() &&
+				restarted.hostGeneration != firstRun.hostGeneration && restarted.appliedProductRevision == 0 &&
+				!host.SetWorkspaceTransitionPending(1, true, firstRun.hostGeneration) && !state.input.AdmissionBlocked(),
+				"new run advances Host identity and rejects an old-run Begin without resurrecting its fence");
+			check(host.SetWorkspaceTransitionPending(1, true, restarted.hostGeneration) &&
+				!host.SetWorkspaceTransitionPending(1, false, firstRun.hostGeneration) &&
+				!host.SetWorkspaceTransitionPending(2, true, firstRun.hostGeneration) && state.input.AdmissionBlocked(),
+				"same numeric scene epoch in a new run cannot be cleared or replaced by old-run publications");
+			check(host.SetWorkspaceTransitionPending(1, false, restarted.hostGeneration) &&
+				!state.input.AdmissionBlocked() && !host.SetWorkspaceTransitionPending(2, true, firstRun.hostGeneration) &&
+				!state.input.AdmissionBlocked() && host.SetWorkspaceTransitionPending(3, true, restarted.hostGeneration),
+				"new-run owner alone retires and reopens its fence; late old Begin cannot close a stable scene");
+			inkShortcut.scope.workspace = Bridge::Workspace::Desktop;
+			Host::Impl::ObserveShortcutContext(&state, inkShortcut);
+			state.CloseInputAdmission();
+			check(state.input.AdmissionBlocked() && !state.workspaceTransitionPending &&
+				state.workspaceTransitionEpoch == 0 && state.inputGateReasons == 1u &&
+				!host.SetWorkspaceTransitionPending(3, false, restarted.hostGeneration) &&
+				!host.SetWorkspaceTransitionPending(4, true, restarted.hostGeneration) && !host.ShortcutContext().available &&
+				!host.AcquireShortcutLease(host.ShortcutContext(), false),
+				"stop retires its fence and refuses reopen or new ink shortcuts while preserving stop admission");
+			check(state.input.DiagnosticsSnapshot().occupiedSlots == 0, "all real contact routes are released");
+		}
+		catch (...) { check(false, "workspace transition production fixture completes without exception"); }
+		if (!failures) std::fputs("[Draw3WorkspaceTransition] PASS: epoch fence, owner ACK, independent reasons and real contact drain\n", stderr);
+		return failures;
+	}
+
 	bool Host::PublishPresentationUiReady(
 		const Bridge::PresentationReadyIdentity& identity) noexcept
 	{

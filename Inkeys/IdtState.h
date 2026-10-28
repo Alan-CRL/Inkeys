@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <memory>
 #include "Inkeys/Business/PenWidthPolicy.hpp"
 
 enum class StateModeSelectEnum
@@ -133,6 +134,36 @@ public:
 };
 extern StateModeClass stateMode;
 StateModeClass GetStateModeSnapshot();
+// 稳定主栏外观读取已提交工作区的既有工具记忆，准备目标仍用普通 getter。
+StateModeClass GetCommittedStateModeSnapshot();
+enum class WorkspaceScene : std::uint8_t { Desktop, Presentation, Whiteboard };
+struct WorkspaceSceneSnapshot
+{
+	WorkspaceScene desired;
+	WorkspaceScene committed;
+	std::uint64_t revision;
+	bool pending;
+	bool minimized;
+	bool committedMinimized;
+};
+WorkspaceSceneSnapshot GetWorkspaceSceneSnapshot() noexcept;
+struct CommittedWorkspaceStateSnapshot
+{
+	WorkspaceSceneSnapshot workspace;
+	StateModeClass state;
+};
+CommittedWorkspaceStateSnapshot GetCommittedWorkspaceStateSnapshot();
+std::uint64_t WorkspaceTransitionFailureRevision() noexcept;
+bool RetryWorkspaceTransitionIfRevision(std::uint64_t revision) noexcept;
+bool CancelFailedWhiteboardTransitionIfRevision(std::uint64_t revision) noexcept;
+bool RequestWhiteboardWindowView(bool minimized) noexcept;
+void NotifyWhiteboardWindowMinimizedChanged() noexcept;
+void NotifyWhiteboardWindowViewRequested(bool minimized) noexcept;
+void NotifyWhiteboardWindowCloseRequested() noexcept;
+bool PptScenePreparationAllowed() noexcept;
+namespace Inkeys::Business { struct PptSessionToken; }
+void PublishPptWorkspaceControlState(const Inkeys::Business::PptSessionToken& session, bool basicControl) noexcept;
+
 // 非 Desktop 不提供全局偏好保存快照。
 bool TryGetDesktopStateModeSnapshot(StateModeClass& snapshot);
 struct StateModeVersionedSnapshot
@@ -226,6 +257,24 @@ std::uint64_t PptSceneWorkspaceEpoch() noexcept;
 void RequestWhiteboardPreviousPage() noexcept;
 void RequestWhiteboardNextPage() noexcept;
 void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept;
+
+// 离屏 fixture 只布置真实协调结果/工具记忆；Host 或窗口 owner 已运行时拒绝使用。
+namespace Inkeys::Testing
+{
+	class WorkspaceSceneScope
+	{
+	public:
+		explicit WorkspaceSceneScope(WorkspaceScene scene = WorkspaceScene::Desktop);
+		~WorkspaceSceneScope();
+		WorkspaceSceneScope(const WorkspaceSceneScope&) = delete;
+		WorkspaceSceneScope& operator=(const WorkspaceSceneScope&) = delete;
+		explicit operator bool() const noexcept;
+		bool Set(WorkspaceScene scene);
+	private:
+		struct Impl;
+		std::unique_ptr<Impl> impl_;
+	};
+}
 
 // 显式早期 CLI 不启动窗口；保存隔离检查仅使用独立临时目录，不读写用户配置。
 int RunStateModeProductionTest() noexcept;

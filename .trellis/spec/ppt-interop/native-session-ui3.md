@@ -164,3 +164,11 @@ if (ExitPptSlideShowAnnotationTool(server) && SameSession() && SameModeRevision(
 - 四分页使用布局屏幕的主栏三态缩放基准（关闭/DPI、48DIP基础量、任务栏真实量）×`UI.Bar.Zoom2`×各自控件倍率，当前仍按主屏布局；`PptState.uiScale`为帧内派生值，不属于保存位置或控件偏好。Bar内结束放映按钮继承Bar尺度，不恢复旧独立退出窗口或兼容exitScale。
 - PageControl几何、运行fit、Clamp、拖动及呈现共用有效UI尺度；PPT 与白板底部主体的可见描边外沿默认距屏幕底边 `5×真实DPI/96` 像素（按整数坐标保守舍入），底部布局/fit/Clamp/拖动反算共用此底距与含半描边的可见高度；仅 PPT 继续叠加用户保存的 bottomPairHeight 偏移；左右侧和 middle 既有间距仍随控件尺度变化，20屏幕DIP中轴吸附阈值与组间碰撞间隙继续仅使用真实DPI。同屏工作区转换的底部列表、背景宽度和按钮位置沿同一批次动画；保留内容不参与整栏淡出，窗口包络跟随 Scene 实际几何。底部活动会话资格与中部放映可见资格分别用于布局/适配/预算，输入仍按原门禁执行。全局倍率不写回PPT各自倍率；白板展开也使用同一主栏任务栏/DPI基准×`UI.Bar.Zoom2`，保留独立位置且不叠加PPT局部倍率。
 - 全局倍率/基准模式变化显式RequestAll，PPT与白板均不能依赖后续翻页唤醒；页码提交、pair版本和实际几何到位门禁保持原合同。横纵PPT默认使用70×70DIP标准按钮及双行页码，原32.5DIP紧凑布局由共享编译期开关禁用并保留源码。
+
+## 三工作区交接中的放映准备（2026-10-27）
+
+- Desktop／Presentation／Whiteboard的稳定业务投影统一读取协调层Committed；尚未退休的Pending用于准备目标呈现，不提前改变稳定主栏、工具记忆或Desktop基线。
+- Whiteboard返回Presentation时，当前版本的目标页码允许先按Pending实际呈现并发布既有UI-ready，不能等待Committed先成为Presentation；分页命中、墨迹和会话操作仍逐项遵守原有权限，准备呈现不等于接纳输入。旧会话、旧target或旧工作区版本的回执不可确认新交接。
+- 合法BasicControl以及Unknown会话事实沿用既有资格；缺少可信墨迹target/HWND时可在真实隐藏并穿透画布后完成仅控制呈现，不伪造InkReady，不为不存在的墨迹target永久等待。受保护/fatal安全退场仍核对完整故障身份，不清独立故障门。
+- 白板内的放映开始、结束和换文稿更新后台可信会话事实；关闭白板时按最新事实返回Presentation或Desktop，不恢复已经结束的旧会话。普通翻页不推进工作区交接版本，继续使用session/target、slot、输出及UI-ready身份。
+- 验证须覆盖W→P的实际页码准备、PPT结束后W→D、过期UI-ready、BasicControl和Unknown；离屏测试不代表Office/WPS及系统任务栏实机验收。

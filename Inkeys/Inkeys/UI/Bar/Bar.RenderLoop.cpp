@@ -554,6 +554,7 @@ struct BarRenderLoopState
 	std::atomic<unsigned long long>& mainButtonClickPulseSerial;
 	// 初始化和逐帧更新均从模式锁内复制，绘制阶段只读本帧值。
 	StateModeClass stateModeSnapshot = GetStateModeSnapshot();
+	WorkspaceSceneSnapshot workspaceSnapshot = GetWorkspaceSceneSnapshot();
 
 	unsigned long long barDeviceResourceFailureGeneration = 0;
 	bool barPresentFailureLogged = false;
@@ -1189,8 +1190,14 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	{
 		state.finiteToolSnapshot = GetStateModeVersionedSnapshot();
 		state.stateModeSnapshot = state.finiteToolSnapshot.state; // raw revision 0原样保留，不造版本。
+		state.workspaceSnapshot = GetWorkspaceSceneSnapshot();
 	}
-	else state.stateModeSnapshot = GetStateModeSnapshot();
+	else
+	{
+		const auto committed = GetCommittedWorkspaceStateSnapshot();
+		state.stateModeSnapshot = committed.state;
+		state.workspaceSnapshot = committed.workspace;
+	}
 	const auto& stateMode = state.stateModeSnapshot;
 	frame.stateMode = stateMode.StateModeSelect;
 	frame.penMode = stateMode.Pen.ModeSelect;
@@ -4827,6 +4834,9 @@ for (size_t i = 0; i < 3; ++i)
 		// 根面板从 More 按钮中心的紧凑态展开，和绘制属性/几何面板共享锚点语义。
 		double scale = max(0.01, BarMorePanelCompactScale
 			+ (1.0 - BarMorePanelCompactScale) * rawProgress);
+		// 字号取整只看面板最终姿态，不能追逐每帧 SetDirect 的当前展开尺寸。
+		const double fontTargetScale = max(0.01, BarMorePanelCompactScale
+			+ (1.0 - BarMorePanelCompactScale) * state.morePanelProgress.tar);
 		double logicalWindowWidth = frameZoom > 0.0
 			? static_cast<double>(state.barWindow.w) / frameZoom : panelWidth;
 		double logicalWindowHeight = frameZoom > 0.0
@@ -4971,7 +4981,7 @@ for (size_t i = 0; i < 3; ++i)
 				: button->size == BarButtonSizeEnum::twoOne
 					? BarButtonVisualLayoutKind::StandardTwoOne : BarButtonVisualLayoutKind::StandardTwoTwo;
 			Inkeys::UI::Bar::ConfigureBarButtonVisualTargets(*button, kind,
-				BarUiDefaultOperationDur, scale, true);
+				BarUiDefaultOperationDur, scale, true, nullopt, fontTargetScale);
 			const bool enabled = button->state->state != BarWidgetState::Disable;
 			const bool selected = button->state->state == BarWidgetState::Selected;
 			Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(*button, open,
@@ -13243,7 +13253,9 @@ BarRenderLoopCoordinator::RenderFrame(
 		(void)Inkeys::UI::Bar::ConsumePptSceneTransition();
 		(void)Inkeys::UI::Bar::ConsumeWhiteboardBottomDockRequest();
 		using namespace Inkeys::UI::Bar;
-		const auto transition = state.workspaceScene.Update(Inkeys::UI::Bar::WhiteboardActive(), PptPresentationActive());
+		const auto workspace = state.workspaceSnapshot;
+		const auto transition = state.workspaceScene.Update(workspace.committed == WorkspaceScene::Whiteboard,
+			workspace.committed == WorkspaceScene::Presentation);
 		if (transition != BarWorkspaceTransition::Keep)
 		{
 			state.releasedWindowSurface.Reset();
@@ -13298,8 +13310,7 @@ BarRenderLoopCoordinator::RenderFrame(
 			state.unclassifiedDamagePending = true;
 			state.presentDecision.RequireVisualRetry();
 		}
-		const bool minimized = Inkeys::UI::Bar::WhiteboardActive()
-			&& Inkeys::Window::GetService().WhiteboardWindowGroupMinimized();
+		const bool minimized = workspace.committed == WorkspaceScene::Whiteboard && workspace.committedMinimized;
 		if (state.whiteboardMinimized != minimized)
 		{
 			state.releasedWindowSurface.Reset();
@@ -13417,7 +13428,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		// ApplyDisplayTransition 可能已写入桌面目标；返回动画必须从最后成功显示的 Y 接续。
 		const auto presented = owner_.BottomDockPresentedSnapshot();
 		state.displayCenterY.SetDirect(presented.serial != 0
-			? presented.mainCenterScreenY - state.monitorOrigin.y
+			? presented.mainCenterScreenY - state.monitorOrigin.y - presented.directTranslation.y
 			: main->y.val * zoom);
 		if (BarUiAnimationEnabled) state.displayCenterY.SetTar(y - state.monitorOrigin.y, 0.4);
 		else state.displayCenterY.SetDirect(y - state.monitorOrigin.y);

@@ -33,18 +33,19 @@ namespace UiAccess
 		// 判断提升
 		static bool isElevated(const IdtHandle& token)
 		{
-			DWORD  ret_len;
-			TOKEN_ELEVATION_TYPE elevation;
-			GetTokenInformation(token.get(), TokenElevationType, &elevation, sizeof(elevation), &ret_len);
-			return elevation == TokenElevationTypeFull;
+			DWORD ret_len = 0;
+			TOKEN_ELEVATION_TYPE elevation = TokenElevationTypeDefault;
+			// 无法确认已降权时拒绝候选令牌，不能把查询失败当成普通权限。
+			return !GetTokenInformation(token.get(), TokenElevationType,
+				&elevation, sizeof(elevation), &ret_len) || elevation == TokenElevationTypeFull;
 		}
 		// 判断UI访问
 		static bool hasUiAccess(const IdtHandle& token)
 		{
-			DWORD  ret_len;
+			DWORD ret_len = 0;
 			BOOL ui_access = FALSE;
-			GetTokenInformation(token.get(), TokenUIAccess, &ui_access, sizeof(ui_access), &ret_len);
-			return !!ui_access;
+			return GetTokenInformation(token.get(), TokenUIAccess,
+				&ui_access, sizeof(ui_access), &ret_len) && ui_access;
 		}
 	private:
 		DetermineToken() = delete;
@@ -60,6 +61,22 @@ namespace UiAccess
 			if (!DuplicateTokenEx(openToken.get(), TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID, NULL, SecurityAnonymous, TokenPrimary, &hRetToken))
 				return false;
 			ret.reset(hRetToken);
+			return true;
+		}
+		static bool GetProcessToken(DWORD pid, IdtHandle& process, IdtHandle& ret)
+		{
+			IdtHandle source(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+				FALSE, pid));
+			if (!source) return false;
+			HANDLE rawToken = nullptr, rawDuplicate = nullptr;
+			if (!OpenProcessToken(source.get(), TOKEN_DUPLICATE, &rawToken)) return false;
+			IdtHandle token(rawToken);
+			if (!DuplicateTokenEx(token.get(), TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE |
+				TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID,
+				nullptr, SecurityAnonymous, TokenPrimary, &rawDuplicate)) return false;
+			// 原进程句柄保留到交接结束；每个成功取得的句柄只有一个所有者。
+			ret.reset(rawDuplicate);
+			process = std::move(source);
 			return true;
 		}
 		static bool GetUserToken(IdtHandle& ret, bool forSimulate = false)
@@ -86,8 +103,7 @@ namespace UiAccess
 
 						HANDLE hTokenRaw = nullptr;
 						bool success = false;
-						if (forSimulate == false) success = OpenProcessToken(hProc.get(), TOKEN_DUPLICATE, &hTokenRaw);
-						else success = OpenProcessToken(hProc.get(), TOKEN_QUERY | TOKEN_DUPLICATE, &hTokenRaw);
+						success = OpenProcessToken(hProc.get(), TOKEN_QUERY | TOKEN_DUPLICATE, &hTokenRaw);
 						if (!success) continue;
 						IdtHandle hToken(hTokenRaw);
 
@@ -219,9 +235,21 @@ namespace UiAccess
 	class RunToken
 	{
 	public:
-		static bool RunTokenProgram(const IdtHandle& token, wstring param)
+		static bool ResumeAfterParentExit(HANDLE process, HANDLE thread,
+			HANDLE parent, HANDLE ready, HANDLE accepted, DWORD timeout = 10000)
 		{
-			if (!token) return false;
+			// 创建成功才确认交接；超时的 helper 不能迟到启动第二个实例。
+			if (SetEvent(ready) && WaitForSingleObject(accepted, timeout) == WAIT_OBJECT_0
+				&& WaitForSingleObject(parent, timeout) == WAIT_OBJECT_0
+				&& ResumeThread(thread) != static_cast<DWORD>(-1)) return true;
+			TerminateProcess(process, ERROR_CANCELLED);
+			(void)WaitForSingleObject(process, 1000);
+			return false;
+		}
+		static bool RunTokenProgram(const IdtHandle& token, wstring param,
+			HANDLE parent = nullptr, HANDLE ready = nullptr, HANDLE accepted = nullptr)
+		{
+			if (!token || (!!parent != !!ready) || (!!parent != !!accepted)) return false;
 
 			vector<wchar_t> buffer(param.begin(), param.end());
 			buffer.push_back(L'\0');
@@ -236,7 +264,7 @@ namespace UiAccess
 				LOGON_WITH_PROFILE,
 				NULL,
 				buffer.data(),
-				CREATE_NEW_CONSOLE,
+				CREATE_NEW_CONSOLE | (parent ? CREATE_SUSPENDED : 0),
 				NULL,
 				NULL,
 				&si,
@@ -245,9 +273,10 @@ namespace UiAccess
 
 			if (ok)
 			{
+				IdtHandle process(pi.hProcess), thread(pi.hThread);
+				if (parent && !ResumeAfterParentExit(process.get(), thread.get(), parent, ready, accepted))
+					return false;
 				wcout << L"已降权启动同目录下的 Inkeys.exe！\n";// system("pause");
-				CloseHandle(pi.hProcess); // 这些也是WIN句柄
-				CloseHandle(pi.hThread);
 				return true;
 			}
 			else

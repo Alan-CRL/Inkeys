@@ -16,6 +16,8 @@ export namespace Inkeys::UI::Setting
 	int RunBusinessCancellationProductionTest() noexcept;
 	// 复用已启动的业务FIFO，不打开设置窗口。
 	void RequestConfigWrite();
+	// 故障边沿投递既有Information FIFO，执行时复核捕获的协调版本。
+	void QueueWorkspaceTransitionFailureNotice(std::uint64_t revision, bool whiteboardTarget, bool whiteboardInvolved);
 	// 仅设置渲染线程把阻塞窗口同步交给已有 FIFO，其他调用保持同步。
 	[[nodiscard]] bool DeferDraw3SyncIfRendering();
 	void Show();

@@ -145,6 +145,11 @@ namespace Inkeys::Drawing::Draw3
 				std::scoped_lock lock(mutex_);
 				accepted.hostGeneration = hostGeneration_;
 			}
+			[[nodiscard]] std::uint64_t HostGeneration() const noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				return hostGeneration_;
+			}
 			[[nodiscard]] bool IsCurrent(const Bridge::AcceptedStrokeBegin& accepted,
 				const HostAcceptedStrokeContext& current) const noexcept
 			{
@@ -314,6 +319,9 @@ namespace Inkeys::Drawing::Draw3
 	struct HostRuntimeSnapshot
 	{
 		bool running = false;
+		std::uint64_t hostGeneration = 0;
+		std::uint64_t appliedProductRevision = 0;
+		Bridge::Tool appliedTool = Bridge::Tool::Pen;
 		bool firstFrameReady = false;
 		bool lastPresentSucceeded = false;
 		HostPresentationMode presentationMode = HostPresentationMode::Automatic;
@@ -376,6 +384,9 @@ namespace Inkeys::Drawing::Draw3
 	int RunPresentationCompletionDeliveryTest() noexcept;
 #endif
 
+	// 无窗口生产接缝：真实 Host 准入与 contact 生命周期，不启动设备或附着 HWND。
+	int RunHostWorkspaceTransitionInputProductionProbe() noexcept;
+
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
 	class Host
 	{
@@ -421,6 +432,8 @@ namespace Inkeys::Drawing::Draw3
 			HostHapticClickDiagnostics* diagnostics = nullptr) noexcept;
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
+		bool SetWorkspaceTransitionPending(std::uint64_t epoch, bool pending,
+			std::uint64_t expectedHostGeneration) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
 		Bridge::CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		Shortcuts::Context ShortcutContext() const noexcept;
@@ -440,6 +453,7 @@ namespace Inkeys::Drawing::Draw3
 			const Bridge::PresentationReadyIdentity& expected, bool suspended) noexcept;
 
 	private:
+		friend int RunHostWorkspaceTransitionInputProductionProbe() noexcept;
 		bool PublishHiddenTestContact(WPARAM phase, LPARAM position) noexcept;
 
 		struct Impl;

@@ -3,9 +3,12 @@
 #endif
 #include <Windows.h>
 #include <d3d11.h>
+#include <d3d11shader.h>
+#include <d3dcompiler.h>
 #include <wrl/client.h>
 
 #include "setting_home_warp_tests.h"
+#include "../Inkeys/resource.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Pages.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.HomeEntryCache.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.FrameSubmission.h"
@@ -24,6 +27,8 @@
 #include <fstream>
 #include <utility>
 #include <vector>
+
+#pragma comment(lib, "d3dcompiler.lib")
 
 namespace
 {
@@ -529,6 +534,65 @@ namespace
 				"real homepage and font atlas render again after backend recreation");
 		}
 		std::cout << "[HomeWARP] texture lifecycle: real E_INVALIDARG, both-phase injected OOM/removed/reset, legacy null partial, repeated teardown, Map rollback and recreation checked; device removal is simulated.\n";
+	}
+
+	void CheckSplitShaderResources(Checks& checks)
+	{
+		// 直接检查本轮源码编译后嵌入的字节码，普通 PS 不能重新依赖演示常量或分支。
+		struct ShaderResource { UINT id, type; };
+		for (const auto shader : { ShaderResource{IDR_SHADERS1,D3D11_SHVER_PIXEL_SHADER},
+			ShaderResource{IDR_SHADERS2,D3D11_SHVER_VERTEX_SHADER},
+			ShaderResource{IDR_SETTING_ERASER_DEMO_PS,D3D11_SHVER_PIXEL_SHADER} })
+		{
+			const HMODULE module=GetModuleHandleW(nullptr);
+			const HRSRC resource=FindResourceW(module,MAKEINTRESOURCEW(shader.id),L"SHADERS");
+			if (!checks.Expect(resource!=nullptr,"all split shader resources are embedded")) continue;
+			const HGLOBAL loaded=LoadResource(module,resource);
+			const void* bytecode=loaded?LockResource(loaded):nullptr;
+			const DWORD size=SizeofResource(module,resource);
+			if (!checks.Expect(bytecode && size,"split shader bytecode is readable")) continue;
+			ComPtr<ID3D11ShaderReflection> reflection;
+			if (!checks.Result(D3DReflect(bytecode,size,IID_PPV_ARGS(reflection.GetAddressOf())),"reflect actual embedded shader")) continue;
+			D3D11_SHADER_DESC desc{};
+			if (!checks.Result(reflection->GetDesc(&desc),"read actual shader profile and resources")) continue;
+			const UINT major=D3D11_SHVER_GET_MAJOR(desc.Version),minor=D3D11_SHVER_GET_MINOR(desc.Version);
+			checks.Expect(D3D11_SHVER_GET_TYPE(desc.Version)==shader.type
+				&& major>=4 && (major<5 || (major==5 && minor==0)),"shared VS and both PS resources stay within Shader Model 5.0");
+			if (shader.id==IDR_SHADERS1)
+				checks.Expect(desc.ConstantBuffers==0 && desc.BoundResources==2 && desc.DynamicFlowControlCount==0,
+					"ordinary ImGui PS only binds texture/sampler with no demo constants or dynamic branch");
+			else if (shader.id==IDR_SETTING_ERASER_DEMO_PS)
+			{
+				bool demoConstants=false;
+				for (UINT index=0;index<desc.BoundResources;++index)
+				{
+					D3D11_SHADER_INPUT_BIND_DESC binding{};
+					if (checks.Result(reflection->GetResourceBindingDesc(index,&binding),"read dedicated demo resource binding"))
+						demoConstants|=binding.Type==D3D_SIT_CBUFFER && binding.BindPoint==1 && binding.BindCount==1;
+				}
+				checks.Expect(desc.ConstantBuffers==1 && demoConstants,"dedicated eraser PS retains its own PS b1 parameters");
+			}
+		}
+	}
+
+	void CheckIndependentPixelShader(Checks& checks, Offscreen& renderer)
+	{
+		Frame(nullptr, Away);
+		Pixels reference, actual;
+		renderer.Submit(checks,ImGui::GetDrawData(),&reference);
+		// 宿主 b1 可保留任意值；普通 PS 不读取此槽，后端也不应修改它。
+		float values[20]{}; values[7]=1; values[18]=1;
+		D3D11_BUFFER_DESC desc{}; desc.ByteWidth=sizeof(values);
+		desc.Usage=D3D11_USAGE_IMMUTABLE; desc.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
+		D3D11_SUBRESOURCE_DATA initial{}; initial.pSysMem=values;
+		ComPtr<ID3D11Buffer> mode;
+		if (!checks.Result(renderer.device->CreateBuffer(&desc,&initial,mode.GetAddressOf()),"create foreign demo mode buffer")) return;
+		renderer.context->PSSetConstantBuffers(1,1,mode.GetAddressOf());
+		renderer.Submit(checks,ImGui::GetDrawData(),&actual);
+		ComPtr<ID3D11Buffer> restored; renderer.context->PSGetConstantBuffers(1,1,restored.GetAddressOf());
+		checks.Expect(!reference.empty() && reference==actual,"ordinary ImGui pixels ignore foreign PS b1 data");
+		checks.Expect(restored.Get()==mode.Get(),"ordinary ImGui submission leaves the foreign PS b1 buffer unchanged");
+		ID3D11Buffer* empty=nullptr; renderer.context->PSSetConstantBuffers(1,1,&empty);
 	}
 
 	void CheckColdEntry(Checks& checks, Offscreen& renderer)
@@ -1581,6 +1645,7 @@ namespace
 int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 {
 	Checks checks;
+	CheckSplitShaderResources(checks);
 	{
 	Offscreen renderer;
 	if (!checks.Expect(ImGui::GetIO().BackendRendererUserData == nullptr && ImGui::GetFrameCount() == 0,
@@ -1588,6 +1653,7 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 	Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 	CheckColdEntry(checks, renderer);
 	CheckBackendFailures(checks, renderer);
+	CheckIndependentPixelShader(checks, renderer);
 	CheckEntryScrollbarContinuity(checks,renderer);
 	for (bool dark : { false, true })
 	{

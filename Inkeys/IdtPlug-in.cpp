@@ -639,6 +639,8 @@ int RunPptFocusProductionTest() noexcept
 	{
 		if (Inkeys::Window::GetService().Running() || Inkeys::Drawing::Draw3::ProductRunning()
 			|| pptFocusTestHooks || WhiteboardTransactionActive()) return 2;
+		Inkeys::Testing::WorkspaceSceneScope sceneFixture;
+		if (!sceneFixture) return 2;
 		{
 			lock_guard lock(pptUiBusinessMutex);
 			if (!pptUiBusinessCommands.empty()) return 2;
@@ -681,6 +683,7 @@ int RunPptFocusProductionTest() noexcept
 		pptControlAvailable = true;
 		pptWindowControlAvailable = true;
 		PptInfoState = { 2, 3 };
+		if (!sceneFixture.Set(WorkspaceScene::Presentation)) return 2;
 		const auto pop = [&]
 		{
 			PptUiBusinessRequest request;
@@ -764,11 +767,14 @@ int RunPptFocusProductionTest() noexcept
 		(void)DispatchPptFocusBusinessAction(beforeWhiteboard);
 		QueuePptUiBusinessCommand(PptUiBusinessCommand::Next);const auto duringWhiteboard=pop();
 		RequestWhiteboardActive(true);
-		RequestWhiteboardActive(false);const auto returnedWorkspace=PptInputWorkspaceEpoch();
+		RequestWhiteboardActive(false);
+		check(sceneFixture.Set(WorkspaceScene::Presentation),"fixture-commits-primary-after-whiteboard-return");
+		const auto returnedWorkspace=PptInputWorkspaceEpoch();
 		check(returnedWorkspace && returnedWorkspace!=initialWorkspace,"whiteboard-return-advances-page-input-identity");
 		(void)DispatchPptFocusBusinessAction(duringWhiteboard);
 		QueuePptUiBusinessCommand(PptUiBusinessCommand::Next);const auto beforeRoundtrip=pop();
 		RequestWhiteboardActive(true);RequestWhiteboardActive(false);
+		check(sceneFixture.Set(WorkspaceScene::Presentation),"fixture-commits-primary-after-page-roundtrip");
 		(void)DispatchPptFocusBusinessAction(beforeRoundtrip);
 		check(fake.previous==previousBefore && fake.next==nextBefore && fake.activations==focusBefore,
 			"queued-previous-next-cannot-run-during-or-across-whiteboard-roundtrip");
@@ -783,6 +789,7 @@ int RunPptFocusProductionTest() noexcept
 		fake.state.foreground=external;
 		QueuePptUiBusinessCommand(PptUiBusinessCommand::Focus);const auto focusRequest=pop();
 		RequestWhiteboardActive(true);RequestWhiteboardActive(false);
+		check(sceneFixture.Set(WorkspaceScene::Presentation),"fixture-commits-primary-after-focus-roundtrip");
 		(void)DispatchPptFocusBusinessAction(focusRequest);
 		check(fake.activations==focusBefore+3,"valid-explicit-focus-is-not-retired-by-page-only-epoch");
 		std::fprintf(stderr, "[PptFocusProduction] failures=%d\n", failures);
@@ -1131,7 +1138,9 @@ void PptInfo()
 			lock_guard lock(pptSessionMutex);
 			expectedPptUiTarget.reset();
 		}
-		const bool whiteboard = WhiteboardTransactionActive();
+		// 这里只决定目标准备呈现；墨迹/破坏性业务仍由 PptInputWorkspaceEpoch 门控。
+		const bool whiteboard = !PptScenePreparationAllowed();
+		PublishPptWorkspaceControlState(session, basicControl);
 		const auto sceneWorkspaceEpoch = PptSceneWorkspaceEpoch();
 		static const bool tracePptGate = []() noexcept
 		{

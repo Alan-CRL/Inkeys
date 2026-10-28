@@ -583,9 +583,10 @@ void BarButtonSetClass::PresetInitialization()
 				{
 					auto& service = Inkeys::Window::GetService();
 					Inkeys::UI::Bar::DispatchBarWhiteboardButtonAction(WhiteboardRequested(),
-						Inkeys::UI::Bar::WhiteboardActive() && service.WhiteboardWindowGroupMinimized(),
-						[&service] { if (!service.RestoreWhiteboardWindowGroup()) Inkeys::UI::Bar::Haptics::RejectButtonAction(); },
-						[](bool active) { RequestWhiteboardActive(active); });
+						Inkeys::UI::Bar::WhiteboardActive() && service.WhiteboardWindowGroupMinimized(), WorkspaceTransitionFailureRevision(),
+						[] { if (!RequestWhiteboardWindowView(false)) Inkeys::UI::Bar::Haptics::RejectButtonAction(); },
+						[](bool active) { RequestWhiteboardActive(active); },
+						[](std::uint64_t failure) { (void)CancelFailedWhiteboardTransitionIfRevision(failure); });
 				};
 		}
 
@@ -2164,7 +2165,7 @@ namespace Inkeys::UI::Bar
 {
 	void ConfigureBarButtonVisualTargets(BarButtonClass& button,
 		BarButtonVisualLayoutKind layoutKind,double duration,double scale,bool direct,
-		std::optional<double> iconHeightOverride)
+		std::optional<double> iconHeightOverride,std::optional<double> fontTargetScale)
 	{
 		const auto metrics = ResolveBarButtonVisualMetrics(layoutKind);
 		if (!std::isfinite(scale) || scale <= 0.0) scale = 1.0;
@@ -2193,7 +2194,10 @@ namespace Inkeys::UI::Bar
 		Set(button.name.y, metrics.primaryOffsetYDip);
 		Set(button.name.w, metrics.primarySlotWidthDip);
 		Set(button.name.h, metrics.primarySlotHeightDip);
-		Set(button.name.size, button.LabelFontSize(metrics.primaryFontSizeDip));
+		const double labelSize = button.LabelFontSize(metrics.primaryFontSizeDip);
+		Set(button.name.size, labelSize);
+		// 派生布局传入最终倍率；回到普通布局时清除覆盖，恢复原 size.tar 目标。
+		button.name.fontTargetSize = fontTargetScale ? labelSize * *fontTargetScale : -1.0;
 	}
 
 	namespace

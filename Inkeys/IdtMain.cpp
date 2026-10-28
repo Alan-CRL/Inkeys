@@ -94,8 +94,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.10218";	// 程序发布版本
-wstring editionDate = L"3.0.0-20261021a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.11202";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261026a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -2205,10 +2205,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReadSettingMini();
 
 		HANDLE proc_self = GetCurrentProcess();
-		HANDLE tok_self;
-		OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self);
+		HANDLE tok_self = nullptr;
+		const bool tokenReady = OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self) != FALSE;
 
-		if (setlist.plugInSetting.superTop.enable && !hasUiAccess(tok_self))
+		if (setlist.plugInSetting.superTop.enable && tokenReady && !hasUiAccess(tok_self))
 		{
 			while (true)
 			{
@@ -2349,7 +2349,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		error_code ec;
 		filesystem::remove(globalPath + L"superTop_try.signal", ec);
 
-		hasSuperTop = hasUiAccess(tok_self);
+		hasSuperTop = tokenReady && hasUiAccess(tok_self);
+		if (tok_self) CloseHandle(tok_self);
 	}
 
 	// 只有最终进程越过 SuperTop 分支后，才建立唯一 T0 与启动状态。
@@ -3344,9 +3345,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					spec.largeIcon = applicationIcon;
 					spec.smallIcon = applicationIcon;
 					spec.whiteboardMinimizeAllowed = [] { return !Inkeys::UI::Bar::PptPresentationActive(); };
-					spec.whiteboardCloseRequested = [] { RequestWhiteboardActive(false); };
+					spec.whiteboardCloseRequested = [] { NotifyWhiteboardWindowCloseRequested(); };
+					spec.whiteboardViewRequested = [](bool minimized) { NotifyWhiteboardWindowViewRequested(minimized); };
 					spec.whiteboardMinimizedChanged = []
 					{
+						NotifyWhiteboardWindowMinimizedChanged();
 						Inkeys::UI::PageControl::NotifyLayoutChanged();
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::WhiteboardFreeze);

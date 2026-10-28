@@ -16,6 +16,7 @@ module;
 #include "../Bar/Bar.InteractionWorker.h"
 #include "../Whiteboard/Whiteboard.Theme.h"
 #include "../../../IdtI18n.h"
+#include "../../../IdtState.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../Ppt/Ppt.Recovery.h"
 #include "../Bar/Bar.BottomDock.h"
@@ -858,7 +859,7 @@ namespace Inkeys::UI::PageControl
 				if(id==7 && Snapshot().first.presentationActive) return;
 				CloseWhiteboardMenu();
 				if(id==6 && callbacks.closeWhiteboard) callbacks.closeWhiteboard();
-				if(id==7) (void)Inkeys::Window::GetService().MinimizeWhiteboardWindowGroup();
+				if(id==7) (void)RequestWhiteboardWindowView(true);
 			}
 			constexpr auto& colors=WhiteboardVisual::ThemeColors;
 			if(id>=9 && id<=17 && callbacks.changeTheme)

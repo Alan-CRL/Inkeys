@@ -1,5 +1,6 @@
 #include "../Inkeys/resource.h"
 
 // 使用产品后端相同的资源 ID 和预编译 shader，不引入另一条绘制管线。
-IDR_SHADERS1 SHADERS "../Inkeys/Inkeys/UI/RenderPipeline/Assets/ImGui/imgui_ps.cso"
-IDR_SHADERS2 SHADERS "../Inkeys/Inkeys/UI/RenderPipeline/Assets/ImGui/imgui_vs.cso"
+IDR_SHADERS1 SHADERS "imgui_ps.cso"
+IDR_SHADERS2 SHADERS "imgui_vs.cso"
+IDR_SETTING_ERASER_DEMO_PS SHADERS "imgui_eraser_demo_ps.cso"

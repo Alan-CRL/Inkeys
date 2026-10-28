@@ -1,12 +1,29 @@
 #pragma once
 
 #include <dxgi.h>
+#include <dbt.h>
 
 #include <cstdint>
+#include <mutex>
 #include <utility>
 
 namespace Inkeys::UI::Setting
 {
+	template <typename Callback>
+	decltype(auto) WithSettingInputUnlocked(
+		std::unique_lock<std::recursive_mutex>& inputLock, Callback&& callback)
+	{
+		struct RestoreInputLock
+		{
+			std::unique_lock<std::recursive_mutex>& lock;
+			~RestoreInputLock() { lock.lock(); }
+		};
+		// DXGI Present 可能等待窗口线程；释放 IO 锁让焦点/输入消息完成，返回后再读 ImGui。
+		inputLock.unlock();
+		const RestoreInputLock restore{ inputLock };
+		return std::forward<Callback>(callback)();
+	}
+
 	enum class BarButtonClickAction : std::uint8_t
 	{
 		ShowAndActivate,
@@ -20,6 +37,15 @@ namespace Inkeys::UI::Setting
 		if (!visible) return BarButtonClickAction::ShowAndActivate;
 		return focused ? BarButtonClickAction::Hide
 			: BarButtonClickAction::Activate;
+	}
+
+	[[nodiscard]] constexpr UINT ResolveSettingClientDpi(
+		UINT windowDpi, UINT messageDpi, UINT monitorDpi, UINT systemDpi) noexcept
+	{
+		if (windowDpi) return windowDpi;
+		if (messageDpi) return messageDpi;
+		if (monitorDpi) return monitorDpi;
+		return systemDpi ? systemDpi : USER_DEFAULT_SCREEN_DPI;
 	}
 
 	struct SettingSystemMenuState
@@ -121,6 +147,49 @@ namespace Inkeys::UI::Setting
 		Size,
 	};
 
+	enum class SettingAccentState : int
+	{
+		Disabled = 0,
+		BlurBehind = 3,
+		AcrylicBlurBehind = 4,
+	};
+
+	[[nodiscard]] constexpr SettingAccentState ResolveSettingAccentState(
+		bool enabled, InteractiveWindowOperation operation) noexcept
+	{
+		if (!enabled) return SettingAccentState::Disabled;
+		return operation == InteractiveWindowOperation::None
+			? SettingAccentState::AcrylicBlurBehind : SettingAccentState::BlurBehind;
+	}
+
+	[[nodiscard]] constexpr bool IsSettingImGuiInputMessage(
+		UINT message, WPARAM wParam, LPARAM lParam) noexcept
+	{
+		// 只允许真实 backend 输入访问 IO；移动/尺寸等原生消息不得等待渲染锁。
+		switch (message)
+		{
+		case WM_MOUSEMOVE: case WM_NCMOUSEMOVE:
+		case WM_MOUSELEAVE: case WM_NCMOUSELEAVE:
+		case WM_DESTROY:
+		case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_LBUTTONUP:
+		case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK: case WM_RBUTTONUP:
+		case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK: case WM_MBUTTONUP:
+		case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK: case WM_XBUTTONUP:
+		case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
+		case WM_SETFOCUS: case WM_KILLFOCUS: case WM_INPUTLANGCHANGE:
+		case WM_CHAR: case WM_IME_COMPOSITION: case WM_IME_CHAR:
+			return true;
+		case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP:
+			return wParam < 256;
+		case WM_SETCURSOR:
+			return LOWORD(lParam) == HTCLIENT;
+		case WM_DEVICECHANGE:
+			return wParam == DBT_DEVNODES_CHANGED;
+		default:
+			return false;
+		}
+	}
+
 	[[nodiscard]] constexpr InteractiveWindowOperation
 		InteractiveOperationFromHitTest(LRESULT hit) noexcept
 	{
@@ -177,6 +246,11 @@ namespace Inkeys::UI::Setting
 		bool probeOcclusion = false;
 		bool render = false;
 		bool consumeBusinessCompletion = false;
+
+		[[nodiscard]] constexpr bool HasPresentationWork() const noexcept
+		{
+			return render || probeOcclusion;
+		}
 	};
 
 	enum class SettingOpenTarget : std::uint8_t { Current, SpeedEraser };

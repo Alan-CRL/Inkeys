@@ -5,7 +5,7 @@
 #include "Setting.EraserDemoData.g.h"
 #include "../../Drawing/Draw3/Assets/EraserGripVisual.h"
 #include <d3d11.h>
-#include <d3dcompiler.h>
+#include "../../../resource.h"
 #include <wrl/client.h>
 #include <algorithm>
 #include <cmath>
@@ -13,7 +13,6 @@
 #include <string>
 
 #pragma comment(lib, "d3d11.lib")
-#pragma comment(lib, "d3dcompiler.lib")
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -22,79 +21,18 @@ namespace Inkeys::UI::Setting::Design
 		using Microsoft::WRL::ComPtr;
 		constexpr double FrameInterval = 1.0 / EraserDemoData::FramesPerSecond;
 		constexpr unsigned SourceWidth = 768, SourceHeight = 432;
-		constexpr const char* Shader = R"hlsl(
-cbuffer Playback : register(b0)
-{
-    float4 cursor; // x, y, fixed diameter, speed diameter
-    float4 playback; // erase progress, cursor alpha, dark, source pixels per output pixel
-    float4 speedPose; // independent speed cursor x, y, alpha
-    float4 grip; // outline, stripe radius, stripe half height, stripe offset
-    float4 material; // opacity, outline gray
-};
-Texture2D atlas : register(t0);
-SamplerState linearClamp : register(s0);
-struct Vertex { float4 position : SV_Position; float2 uv : TEXCOORD0; };
-Vertex VS(uint id : SV_VertexID)
-{
-    Vertex result;
-    result.uv = float2((id << 1) & 2, id & 2);
-    result.position = float4(result.uv * float2(2,-2) + float2(-1,1),0,1);
-    return result;
-}
-float2 AtlasUv(float2 pixel, float column)
-{
-    return (clamp(pixel,float2(0.5,0.5),float2(767.5,431.5)) + float2(column*768,0)) / float2(2304,432);
-}
-float Coverage(float distance)
-{
-    return saturate(0.5-distance/playback.w);
-}
-float Capsule(float2 p, float radius, float halfHeight)
-{
-    p.y -= clamp(p.y,-max(halfHeight-radius,0),max(halfHeight-radius,0));
-    return length(p)-radius;
-}
-float4 PS(Vertex input) : SV_Target
-{
-    float side = input.uv.x >= 0.5 ? 1 : 0;
-    float2 pixel = float2(input.uv.x*2-side,input.uv.y)*float2(768,432);
-    float4 ink = atlas.SampleLevel(linearClamp,AtlasUv(pixel,0),0);
-    float erased = 0;
-    [branch] if (playback.x > 0)
-    {
-        float4 mask = atlas.SampleLevel(linearClamp,AtlasUv(pixel,side+1),0);
-        erased = playback.x >= 1 ? mask.b
-            : mask.b*saturate((playback.x-mask.r)/max(mask.g-mask.r,1.0/255.0));
-    }
-    float3 background = playback.z > 0.5 ? float3(18,59,50)/255 : float3(247,248,250)/255;
-    float3 color = ink.rgb;
-    if (playback.z > 0.5)
-    {
-        color = ink.b > ink.r+0.15 ? float3(111,200,236)/255
-            : (ink.r > ink.b+0.25 ? float3(242,192,104)/255 : float3(234,242,239)/255);
-    }
-    float3 result = lerp(background,color,ink.a*(1-erased));
-    float diameter = side > 0.5 ? cursor.w : cursor.z;
-    float cursorAlpha = side > 0.5 ? speedPose.z : playback.y;
-    float2 local = pixel-(side > 0.5 ? speedPose.xy : cursor.xy);
-    [branch] if (cursorAlpha > 0 && max(abs(local.x),abs(local.y)) < diameter*0.5+playback.w)
-    {
-        float distance = length(local)-diameter*0.5;
-        float outer = Coverage(distance), inner = Coverage(distance+diameter*grip.x);
-        float outlineAlpha = max(0,outer-inner)*material.x*cursorAlpha;
-        float fillAlpha = inner*material.x*cursorAlpha;
-        float alpha = outlineAlpha+fillAlpha;
-        float3 rgb = alpha > 0 ? (outlineAlpha*material.y+fillAlpha)/alpha : 0;
-        float stripe = min(inner,max(
-            Coverage(Capsule(local-float2(-diameter*grip.w,0),diameter*grip.y,diameter*grip.z)),
-            Coverage(Capsule(local-float2(diameter*grip.w,0),diameter*grip.y,diameter*grip.z))));
-        rgb += stripe*(material.y-rgb);
-        alpha += stripe*(material.x*cursorAlpha-alpha);
-        result = rgb*alpha+result*(1-alpha);
-    }
-    return float4(result,1);
-}
-)hlsl";
+		// 与 ImGui 共用预编译 VS，PS 使用演示专用资源；运行时不依赖 D3DCompiler DLL。
+		HRESULT LoadShaderResource(UINT id, const void*& bytecode, DWORD& size)
+		{
+			const HMODULE module = GetModuleHandleW(nullptr);
+			const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(id), L"SHADERS");
+			if (!resource) return HRESULT_FROM_WIN32(GetLastError());
+			const HGLOBAL loaded = LoadResource(module, resource);
+			if (!loaded) return HRESULT_FROM_WIN32(GetLastError());
+			bytecode = LockResource(loaded);
+			size = SizeofResource(module, resource);
+			return bytecode && size ? S_OK : E_FAIL;
+		}
 
 		// 不依赖后续 ImGui 恰好覆盖状态；恢复共享 immediate context 的所有本次修改项。
 		struct ContextScope
@@ -113,7 +51,8 @@ float4 PS(Vertex input) : SV_Target
 			ComPtr<ID3D11DomainShader> domain;
 			ID3D11ClassInstance* classes[5][256]{};
 			UINT classCounts[5]{256,256,256,256,256};
-			ComPtr<ID3D11Buffer> constants;
+			ComPtr<ID3D11Buffer> constants, projection, vertexBuffer;
+			UINT vertexStride = 0, vertexOffset = 0;
 			ComPtr<ID3D11ShaderResourceView> image;
 			ComPtr<ID3D11SamplerState> sampler;
 			ComPtr<ID3D11Predicate> predicate;
@@ -130,12 +69,14 @@ float4 PS(Vertex input) : SV_Target
 				context->OMGetDepthStencilState(depth.GetAddressOf(),&stencilRef);
 				context->RSGetState(raster.GetAddressOf()); context->RSGetViewports(&viewportCount,viewports);
 				context->IAGetInputLayout(layout.GetAddressOf()); context->IAGetPrimitiveTopology(&topology);
+				context->IAGetVertexBuffers(0,1,vertexBuffer.GetAddressOf(),&vertexStride,&vertexOffset);
+				context->VSGetConstantBuffers(0,1,projection.GetAddressOf());
 				context->VSGetShader(vertex.GetAddressOf(),classes[0],&classCounts[0]);
 				context->PSGetShader(pixel.GetAddressOf(),classes[1],&classCounts[1]);
 				context->GSGetShader(geometry.GetAddressOf(),classes[2],&classCounts[2]);
 				context->HSGetShader(hull.GetAddressOf(),classes[3],&classCounts[3]);
 				context->DSGetShader(domain.GetAddressOf(),classes[4],&classCounts[4]);
-				context->PSGetConstantBuffers(0,1,constants.GetAddressOf());
+				context->PSGetConstantBuffers(1,1,constants.GetAddressOf());
 				context->PSGetShaderResources(0,1,image.GetAddressOf());
 				context->PSGetSamplers(0,1,sampler.GetAddressOf());
 				context->GetPredication(predicate.GetAddressOf(),&predicateValue);
@@ -149,12 +90,14 @@ float4 PS(Vertex input) : SV_Target
 				context->OMSetDepthStencilState(depth.Get(),stencilRef);
 				context->RSSetState(raster.Get()); context->RSSetViewports(viewportCount,viewports);
 				context->IASetInputLayout(layout.Get()); context->IASetPrimitiveTopology(topology);
+				context->IASetVertexBuffers(0,1,vertexBuffer.GetAddressOf(),&vertexStride,&vertexOffset);
+				context->VSSetConstantBuffers(0,1,projection.GetAddressOf());
 				context->VSSetShader(vertex.Get(),classes[0],classCounts[0]);
 				context->PSSetShader(pixel.Get(),classes[1],classCounts[1]);
 				context->GSSetShader(geometry.Get(),classes[2],classCounts[2]);
 				context->HSSetShader(hull.Get(),classes[3],classCounts[3]);
 				context->DSSetShader(domain.Get(),classes[4],classCounts[4]);
-				context->PSSetConstantBuffers(0,1,constants.GetAddressOf());
+				context->PSSetConstantBuffers(1,1,constants.GetAddressOf());
 				context->PSSetShaderResources(0,1,image.GetAddressOf());
 				context->PSSetSamplers(0,1,sampler.GetAddressOf());
 				context->SetPredication(predicate.Get(),predicateValue);
@@ -171,6 +114,7 @@ float4 PS(Vertex input) : SV_Target
 				ERASER_GRIP_STRIPE_HALF_HEIGHT_RATIO,ERASER_GRIP_STRIPE_OFFSET_RATIO};
 			float material[4]{ERASER_GRIP_OPACITY,ERASER_GRIP_OUTLINE_CHANNEL,0,0};
 		};
+		static_assert(sizeof(Constants)==80, "Match the eraser demo pixel shader buffer.");
 		bool SamePixels(const EraserDemoData::Frame& left, const EraserDemoData::Frame& right)
 		{
 			if (left.eraseProgress!=right.eraseProgress || left.cursorAlpha!=right.cursorAlpha
@@ -197,7 +141,8 @@ float4 PS(Vertex input) : SV_Target
 		ComPtr<ID3D11Device> device;
 		ComPtr<ID3D11VertexShader> vertex;
 		ComPtr<ID3D11PixelShader> pixel;
-		ComPtr<ID3D11Buffer> constants;
+		ComPtr<ID3D11InputLayout> layout;
+		ComPtr<ID3D11Buffer> constants, projection, vertices;
 		ComPtr<ID3D11SamplerState> sampler;
 		ComPtr<ID3D11RasterizerState> raster;
 		ComPtr<ID3D11DepthStencilState> depth;
@@ -219,21 +164,33 @@ float4 PS(Vertex input) : SV_Target
 		HRESULT Initialize()
 		{
 			triedInitialize=true; ++stats.shaderBuilds;
-			ComPtr<ID3DBlob> vs, ps, errors;
-			auto compile=[&](const char* entry, const char* profile, ID3DBlob** output) {
-				errors.Reset();
-				const HRESULT status=D3DCompile(Shader,std::strlen(Shader),"Setting.EraserDemo",nullptr,nullptr,entry,
-					profile,D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,output,errors.GetAddressOf());
-				if (FAILED(status) && errors) error.assign(static_cast<const char*>(errors->GetBufferPointer()),errors->GetBufferSize());
-				return status;
+			const void* bytecode = nullptr;
+			DWORD size = 0;
+			HRESULT status=LoadShaderResource(IDR_SHADERS2,bytecode,size);
+			if (FAILED(status)) { error="Missing embedded ImGui vertex shader."; return status; }
+			status=device->CreateVertexShader(bytecode,size,nullptr,vertex.GetAddressOf());
+			if (FAILED(status)) return status;
+			const D3D11_INPUT_ELEMENT_DESC elements[] = {
+				{"POSITION",0,DXGI_FORMAT_R32G32_FLOAT,0,offsetof(ImDrawVert,pos),D3D11_INPUT_PER_VERTEX_DATA,0},
+				{"TEXCOORD",0,DXGI_FORMAT_R32G32_FLOAT,0,offsetof(ImDrawVert,uv),D3D11_INPUT_PER_VERTEX_DATA,0},
+				{"COLOR",0,DXGI_FORMAT_R8G8B8A8_UNORM,0,offsetof(ImDrawVert,col),D3D11_INPUT_PER_VERTEX_DATA,0}
 			};
-			HRESULT status=compile("VS","vs_4_0",vs.GetAddressOf()); if (FAILED(status)) return status;
-			status=compile("PS","ps_4_0",ps.GetAddressOf()); if (FAILED(status)) return status;
-			status=device->CreateVertexShader(vs->GetBufferPointer(),vs->GetBufferSize(),nullptr,vertex.GetAddressOf());
+			status=device->CreateInputLayout(elements,3,bytecode,size,layout.GetAddressOf()); if (FAILED(status)) return status;
+			status=LoadShaderResource(IDR_SETTING_ERASER_DEMO_PS,bytecode,size);
+			if (FAILED(status)) { error="Missing embedded eraser demo pixel shader."; return status; }
+			status=device->CreatePixelShader(bytecode,size,nullptr,pixel.GetAddressOf());
 			if (FAILED(status)) return status;
-			status=device->CreatePixelShader(ps->GetBufferPointer(),ps->GetBufferSize(),nullptr,pixel.GetAddressOf());
-			if (FAILED(status)) return status;
-			D3D11_BUFFER_DESC buffer{};
+			// 标准 ImDrawVert 全屏三角形配合单位投影，直接复用 ImGui VS 的输入合同。
+			const ImDrawVert triangle[] = {
+				{{-1,1},{0,0},IM_COL32_WHITE}, {{3,1},{2,0},IM_COL32_WHITE}, {{-1,-3},{0,2},IM_COL32_WHITE}
+			};
+			D3D11_BUFFER_DESC buffer{}; buffer.ByteWidth=sizeof(triangle);
+			buffer.Usage=D3D11_USAGE_IMMUTABLE; buffer.BindFlags=D3D11_BIND_VERTEX_BUFFER;
+			D3D11_SUBRESOURCE_DATA initial{}; initial.pSysMem=triangle;
+			status=device->CreateBuffer(&buffer,&initial,vertices.GetAddressOf()); if (FAILED(status)) return status;
+			const float identity[4][4] = {{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}};
+			buffer.ByteWidth=sizeof(identity); buffer.BindFlags=D3D11_BIND_CONSTANT_BUFFER; initial.pSysMem=identity;
+			status=device->CreateBuffer(&buffer,&initial,projection.GetAddressOf()); if (FAILED(status)) return status;
 			buffer.ByteWidth=sizeof(Constants); buffer.Usage=D3D11_USAGE_DYNAMIC;
 			buffer.BindFlags=D3D11_BIND_CONSTANT_BUFFER; buffer.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE;
 			status=device->CreateBuffer(&buffer,nullptr,constants.GetAddressOf()); if (FAILED(status)) return status;
@@ -307,10 +264,13 @@ float4 PS(Vertex input) : SV_Target
 			context->RSSetState(raster.Get());
 			const D3D11_VIEWPORT viewport{0,0,static_cast<float>(stats.width),static_cast<float>(stats.height),0,1};
 			context->RSSetViewports(1,&viewport);
-			context->IASetInputLayout(nullptr); context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			const UINT stride=sizeof(ImDrawVert), offset=0;
+			context->IASetInputLayout(layout.Get()); context->IASetVertexBuffers(0,1,vertices.GetAddressOf(),&stride,&offset);
+			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			context->VSSetConstantBuffers(0,1,projection.GetAddressOf());
 			context->VSSetShader(vertex.Get(),nullptr,0); context->PSSetShader(pixel.Get(),nullptr,0);
 			context->GSSetShader(nullptr,nullptr,0); context->HSSetShader(nullptr,nullptr,0); context->DSSetShader(nullptr,nullptr,0);
-			context->PSSetConstantBuffers(0,1,constants.GetAddressOf());
+			context->PSSetConstantBuffers(1,1,constants.GetAddressOf());
 			context->PSSetSamplers(0,1,sampler.GetAddressOf());
 			context->PSSetShaderResources(0,1,&atlasKey[scene]);
 			context->SetPredication(nullptr,FALSE);
@@ -348,8 +308,9 @@ float4 PS(Vertex input) : SV_Target
 		if (!current.ValidateAtlases(atlases)) { current.result=E_INVALIDARG; return {}; }
 		if (!current.triedInitialize) current.result=current.Initialize();
 		if (FAILED(current.result) && !current.pixel) return {};
-		// 初始化失败仅在显式 Reset 或新 epoch 后重试，避免每帧编译 shader 或重复分配。
-		if (!current.vertex || !current.pixel || !current.constants || !current.sampler || !current.raster || !current.depth) return {};
+		// 初始化失败仅在显式 Reset 或新 epoch 后重试，避免每帧重复创建资源。
+		if (!current.vertex || !current.pixel || !current.layout || !current.vertices || !current.projection
+			|| !current.constants || !current.sampler || !current.raster || !current.depth) return {};
 		const float boundedWidth=std::clamp(std::isfinite(canvasWidthPixels) ? canvasWidthPixels : 256.0F,256.0F,768.0F);
 		const unsigned width=std::min(768u,static_cast<unsigned>(std::ceil(boundedWidth/32.0F))*32u);
 		if (current.failedRender && current.stats.width==width*2) return {};
