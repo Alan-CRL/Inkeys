@@ -1265,7 +1265,8 @@ namespace Inkeys::UI::Bar
 		double downNormalizedY,
 		const std::function<BOOL(HWND, int, int)>& directMove,
 		const std::function<void(const char*)>& beforeMove = {},
-		const std::function<bool(unsigned, const char*, POINT)>& repeatRelease = {});
+		const std::function<bool(unsigned, const char*, POINT)>& repeatRelease = {},
+		bool expandAfterClick = false);
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;

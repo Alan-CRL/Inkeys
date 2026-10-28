@@ -558,6 +558,69 @@ namespace Inkeys::UI::Bar
 				return failures_;
 			}
 
+			int RunFoldedClickRelease()
+			{
+				if (!Initialize()) return failures_;
+				caseName_ += "-folded-click-no-animation";
+				owner_->barState.fold = true;
+				owner_->ClearBottomDockCenterForFold();
+				owner_->UpdateRendering(false);
+				if (!Settle()) return failures_;
+				if (owner_->BottomDockPresentedSnapshot().mode != BarBottomDockMode::BottomDocked)
+				{
+					Fail("folded click fixture is not vertically docked");
+					return failures_;
+				}
+				std::optional<WorkspaceCenteringUlw> prepared;
+				unsigned releaseCommits = 0;
+				bool pendingObserved = false;
+				const bool sequence = RunUi3BottomDockInteractionSequence(*owner_, [&](const char* phase, POINT)
+				{
+					activeWindowPhase_ = phase;
+					const std::string_view step(phase);
+					if (step == "ClickExpandRelease")
+					{
+						const auto input = Access::ReleaseWindow(*owner_);
+						pendingObserved = input.pending.x - input.presented.x == 1
+							&& input.pending.y == input.presented.y && !owner_->barState.fold;
+						if (!pendingObserved) return Fail("micro-click did not leave its final input pending before expansion");
+					}
+					const auto before = owner_->BottomDockPresentedSnapshot();
+					const auto inputBefore = Access::ReleaseWindow(*owner_);
+					if (!Step(phase, nullptr, 0, false)) return false;
+					const auto after = owner_->BottomDockPresentedSnapshot();
+					if (step == "ClickExpandRelease")
+					{
+						// 越界补帧只能放弃旧表面，不能丢掉尾输入或推进成功快照来伪装释放完成。
+						const auto inputAfter = Access::ReleaseWindow(*owner_);
+						if (presentedUlw_ || after.serial != before.serial
+							|| inputAfter.pending.x != inputBefore.pending.x || inputAfter.pending.y != inputBefore.pending.y
+							|| inputAfter.presented.x != inputBefore.presented.x || inputAfter.presented.y != inputBefore.presented.y)
+							return Fail("overflow flush consumed input or published an unsuccessful frame");
+					}
+					if (step == "Begin")
+					{
+						if (!presentedUlw_ || !after.dragActive) return Fail("folded Down did not freeze its surface");
+						prepared = *presentedUlw_;
+					}
+					else if (after.serial != before.serial && !after.dragActive) ++releaseCommits;
+					return true;
+				}, 0.5, [](HWND, int, int) -> BOOL { return TRUE; }, {}, {}, true);
+				const auto final = owner_->BottomDockPresentedSnapshot();
+				const auto input = Access::ReleaseWindow(*owner_);
+				const auto mainBar = owner_->shapeMap[BarUISetShapeEnum::MainBar];
+				const LONG finalWidth = input.bounds.right - input.bounds.left;
+				if (!sequence || !pendingObserved || !prepared || !releaseCommits || final.dragActive
+					|| owner_->barState.fold || mainBar->w.val < mainBar->w.tar - 0.001
+					|| finalWidth <= prepared->size.cx || input.pending.x != 0 || input.pending.y != 0
+					|| lastResult_ != Pipeline::FrameResult::Idle)
+					Fail("folded micro-click did not finish release, expand beyond its old envelope and return idle");
+				std::fprintf(stderr, "[UI3FoldedClickRelease] case=%s pending=%u released=%u active=%u preparedW=%ld finalW=%ld idle=%u failures=%d\n",
+					caseName_.c_str(), pendingObserved ? 1u : 0u, releaseCommits, final.dragActive ? 1u : 0u,
+					prepared ? prepared->size.cx : 0, finalWidth, lastResult_ == Pipeline::FrameResult::Idle ? 1u : 0u, failures_);
+				return failures_;
+			}
+
 			int RunDockTransitions(unsigned workspace = 0)
 			{
 				if (negativeOrigin_)
@@ -1702,6 +1765,13 @@ namespace Inkeys::UI::Bar
 		BarUiDebugModeEnabled = false;
 		bool presetsInitialized = false;
 		int failures = FAILED(fontResult) || !I18n::load(1, L"JSON", L"zh-CN") || !samples ? 1 : 0;
+		if (bottomDock && !failures)
+		{
+			BarUiAnimationEnabled = false;
+			WorkspaceCenteringFixture fixture(1.0, false, presetsInitialized, samples);
+			failures += fixture.RunFoldedClickRelease();
+			BarUiAnimationEnabled = true;
+		}
 		if (!failures)
 			for (const double scale : { 1.0, 1.5 })
 				for (const bool left : { false, true })

@@ -9581,8 +9581,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			&& (!fixedSurfaceGeometry || Inkeys::UI::Bar::ContainsBarWindowRect(candidateViewport, currentContentBounds));
 		if (!candidateGeometryValid)
 		{
-			if (fixedReleaseGeometry)
+			if (fixedReleaseGeometry || frame.bottomDockReleaseInputFlush)
 			{
+				// Up 后展开可能超出旧 held 表面；撤销后由下一帧正常吸收未提交位移，不能取消已结束的手势。
+				if (frame.bottomDockReleaseInputFlush) state.fixedDragSurface.Reset();
 				// 布局超出保留表面时重准备；attempted session 防止未成功 Up 帧反复捕获旧表面。
 				state.releasedWindowSurface.Reset();
 				state.presentationAlpha.CompleteAttempt(false);

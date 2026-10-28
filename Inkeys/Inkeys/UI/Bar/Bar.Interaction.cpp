@@ -1942,7 +1942,8 @@ namespace Inkeys::UI::Bar
 		double downNormalizedY,
 		const std::function<BOOL(HWND, int, int)>& directMove,
 		const std::function<void(const char*)>& beforeMove,
-		const std::function<bool(unsigned, const char*, POINT)>& repeatRelease)
+		const std::function<bool(unsigned, const char*, POINT)>& repeatRelease,
+		bool expandAfterClick)
 	{
 		if (interactionWorkerRunning.load(std::memory_order_acquire) || floating_window || offSignal
 			|| !directMove || !std::isfinite(downNormalizedY)
@@ -2000,6 +2001,22 @@ namespace Inkeys::UI::Bar
 		routine = (owner.*Access::SeekEntry())(down);
 		routine.Start();
 		if (routine.Done() || !render("Begin", pointer)) return false;
+		if (expandAfterClick)
+		{
+			// 微移与 Up 之间不渲染，复用真实 Seek 的点击判定，再执行调用方的展开业务。
+			if (!owner.barState.fold) return false;
+			++pointer.x;
+			if (!enqueue(WM_LBUTTONUP) || !routine.Done()) return false;
+			const auto click = routine.operator co_await().await_resume();
+			if (!click.allowClick) return false;
+			owner.barState.fold = false;
+			owner.RequestBottomDockCenterAfterExpand();
+			owner.UpdateRendering(false);
+			if (!render("ClickExpandRelease", pointer)) return false;
+			for (unsigned frame = 0; frame < 125; ++frame)
+				if (!render("ClickExpandRecovery", pointer)) return false;
+			return render("ClickExpandDone", pointer);
+		}
 		// 按下取在途成功位置；后续捕获采样相对真实场景 dock 线，不能沿用桌面 Y。
 		const double dockLine = ResolveBarBottomDockLine(start.monitorBounds, start.workArea,
 			SceneBottomDockInsetDip(), static_cast<double>(start.dpi) / USER_DEFAULT_SCREEN_DPI,
