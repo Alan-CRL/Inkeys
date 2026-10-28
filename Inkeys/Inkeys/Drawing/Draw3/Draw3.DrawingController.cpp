@@ -1,4 +1,4 @@
-﻿module;
+module;
 #include "Draw3.DiagnosticOutput.h"
 #include "Assets/EraserGripVisual.h"
 
@@ -13057,12 +13057,14 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 		bool fatalCaptureAttempted = false;
-		auto captureGraphicsFatalExit = [&](const char* reason)
+		auto captureGraphicsFatalExit = [&](const char* reason, bool allowLegacyRestart = true)
 		{
 			if (fatalCaptureAttempted) return;
 			fatalCaptureAttempted = true;
 			StopFatalInputConsumer(input_);
 			publishRecoveryProgress(CanvasRecoveryStatus::Failed, CanvasRecoveryReason::ConsumerFatal);
+			if (allowLegacyRestart && std::string_view(reason) == "presenter_recovery" && observer_.legacyWindowRebuildRequested)
+				observer_.legacyWindowRebuildRequested(observer_.context);
 			if (metricsState_)
 			{
 				metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
@@ -14819,7 +14821,7 @@ namespace Inkeys::Drawing::Draw3
 					DiagnosticOutput::Line() << "Failed to recover Draw3 graphics after HRESULT 0x" <<
 						std::hex << static_cast<unsigned long>(failure) << std::dec << std::endl;
 					// 绘制线程仍持有已完成文档；先交给原保存 worker，再退出失效设备。
-					captureGraphicsFatalExit("presenter_recovery");
+					captureGraphicsFatalExit("presenter_recovery", failure != HRESULT_FROM_WIN32(ERROR_TIMEOUT));
 					window_.RequestExit();
 					break;
 				}

@@ -1,4 +1,4 @@
-﻿#include "IdtState.h"
+#include "IdtState.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
@@ -208,6 +208,48 @@ namespace
 			if (!pending || !failed || revision != expected) return false;
 			// 显式重试是新请求；退休 fence 的旧版本不能再次打开。
 			return Request(desired, minimized, true);
+		}
+	};
+	[[nodiscard]] bool ShouldRestoreWhiteboardSourcePreview(const WorkspaceHandoff& request,
+		Inkeys::Window::CommandPhase phase) noexcept
+	{
+		return phase == Inkeys::Window::CommandPhase::Rejected &&
+			request.committed == Workspace::Whiteboard && !request.committedMinimized;
+	}
+	enum class WorkspaceWaitStage : std::uint8_t
+	{
+		None,
+		BackgroundInactive,
+		TargetReady,
+		BackgroundPrepared,
+		FinalBackgroundActive,
+	};
+	struct WorkspaceWaitTracker
+	{
+		WorkspaceWaitStage stage = WorkspaceWaitStage::None;
+		std::uint64_t outputRevision = 0;
+		std::uint64_t contentRevision = 0;
+		std::optional<Inkeys::Drawing::Draw3::Bridge::PresentationReadyIdentity> presentation;
+		std::uint64_t backgroundRevision = 0;
+		bool backgroundReady = false;
+
+		[[nodiscard]] bool Stalled(WorkspaceWaitStage next,
+			const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+			std::uint64_t nextBackgroundRevision, bool nextBackgroundReady) noexcept
+		{
+			const bool changed = stage != next || outputRevision != runtime.readyOutputRevision ||
+				contentRevision != runtime.presentedContentRevision || presentation != runtime.presentationUiReady ||
+				backgroundRevision != nextBackgroundRevision || backgroundReady != nextBackgroundReady;
+			if (changed)
+			{
+				stage = next;
+				outputRevision = runtime.readyOutputRevision;
+				contentRevision = runtime.presentedContentRevision;
+				presentation = runtime.presentationUiReady;
+				backgroundRevision = nextBackgroundRevision;
+				backgroundReady = nextBackgroundReady;
+			}
+			return !changed;
 		}
 	};
 	std::mutex workspaceHandoffMutex;
@@ -3218,6 +3260,52 @@ int RunStateModeProductionTest() noexcept
 		(void)PublishPrimaryPresentationTarget(nullptr, returningEpoch);
 		require(bridge.Snapshot().workspace == Workspace::Desktop &&
 			!bridge.Snapshot().presentationTarget, "stopped-host-cannot-publish-target-without-real-transition-fence");
+		stage = "workspace-failure-wait-and-source-preview";
+		{
+			WorkspaceHandoff source;
+			source.committed = Workspace::Whiteboard;
+			require(!ShouldRestoreWhiteboardSourcePreview(source, Inkeys::Window::CommandPhase::Executing) &&
+				ShouldRestoreWhiteboardSourcePreview(source, Inkeys::Window::CommandPhase::Rejected),
+				"source-preview-restores-only-after-owner-rollback-retires");
+			source.committedMinimized = true;
+			require(!ShouldRestoreWhiteboardSourcePreview(source, Inkeys::Window::CommandPhase::Rejected),
+				"minimized-source-does-not-force-background-visible");
+			source.committed = Workspace::Desktop;
+			require(!ShouldRestoreWhiteboardSourcePreview(source, Inkeys::Window::CommandPhase::Rejected),
+				"desktop-source-does-not-create-whiteboard-preview");
+
+			HostRuntimeSnapshot progress;
+			progress.readyOutputRevision = 4;
+			progress.presentedContentRevision = 7;
+			WorkspaceWaitTracker tracker;
+			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false) &&
+				tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false),
+				"unchanged-target-and-background-counts-as-no-progress");
+			++progress.presentedContentRevision;
+			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false),
+				"new-presented-content-resets-wait-progress");
+			require(tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false),
+				"same-new-content-remains-stalled");
+			progress.presentationUiReady = Bridge::PresentationReadyIdentity{};
+			progress.presentationUiReady->targetRevision = 9;
+			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false),
+				"ppt-ui-ready-identity-is-real-progress");
+			require(!tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, false),
+				"background-stage-change-does-not-fail-in-place");
+			require(!tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, true),
+				"background-ready-change-resets-wait-progress");
+		}
+		stage = "workspace-legacy-restart-callback";
+		{
+			unsigned restarts = 0;
+			ConfigureProductLegacyRestart([&] { ++restarts; return true; });
+			RequestProductLegacyRecovery(nullptr);
+			require(TryProductLegacyRestart() && restarts == 1 && !TryProductLegacyRestart(),
+				"stopped-host-legacy-restart-runs-once-and-retires-request");
+			ConfigureProductLegacyRestart([] { return false; });
+			RequestProductLegacyRecovery(nullptr);
+			require(!TryProductLegacyRestart(), "failed-legacy-restart-retains-failure-instead-of-faking-ready");
+		}
 		setProbePhase(WhiteboardPhase::Inactive);
 		require(SwitchWorkspaceStateMode(Workspace::Desktop), "restore-desktop-after-scene-tests");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
@@ -3247,6 +3335,7 @@ void StateMonitoring()
 	std::uint64_t preparedHostGeneration = 0;
 	std::uint64_t uiPreparedRevision = 0;
 	std::optional<WorkspaceWindowPrepared> prepared;
+	WorkspaceWaitTracker waitTracker;
 	bool pageSwitching = false;
 	bool requestedPreviousPage = false;
 	std::size_t requestedPageIndex = 0;
@@ -3340,6 +3429,13 @@ void StateMonitoring()
 		const bool fatalSafetyExit = currentFault && Draw3FatalRecoveryMatches(snapshot, desired);
 		const bool stoppedSafetyExit = currentFault && !ProductRunning() && Draw3RecoveryNeedsUiRelease(snapshot, desired);
 		const bool stoppedOrFatalSafetyExit = fatalSafetyExit || stoppedSafetyExit;
+		if (stoppedSafetyExit && TryProductLegacyRestart())
+		{
+			snapshot = ProductRuntimeSnapshot();
+			observedHostGeneration = 0;
+			request = RequestWorkspace(request.desired, request.minimized, true);
+			continue;
+		}
 		if (!CloseWorkspaceAdmission(request) && !stoppedOrFatalSafetyExit) continue;
 		const auto admitted = ReadWorkspaceHandoff();
 		if (admitted.revision != request.revision) continue;
@@ -3405,11 +3501,24 @@ void StateMonitoring()
 			if (phase != CommandPhase::Cancelled && phase != CommandPhase::Expired)
 				FailWorkspaceRequest(request.revision);
 			prepared.reset();
+			if (ShouldRestoreWhiteboardSourcePreview(request, phase))
+			{
+				SetWhiteboardFreezeSurfaceOwned(true);
+				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
+				Inkeys::UI::Whiteboard::PublishPageSnapshot(
+					static_cast<int>(snapshot.currentPageIndex + 1), static_cast<int>(snapshot.pageCount), false,
+					snapshot.whiteboardTheme.backgroundRgb, static_cast<int>(snapshot.whiteboardTheme.pattern),
+					snapshot.whiteboardUnsaved, snapshot.whiteboardGeneration);
+				Inkeys::UI::Whiteboard::PublishActive(true, request.revision);
+			}
 		};
 		if (!policy.whiteboard)
 		{
 			Inkeys::UI::Whiteboard::PublishActive(false, request.revision);
-			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false, request.revision)) continue;
+			const bool backgroundReady = Inkeys::UI::Whiteboard::BackgroundMatchesActive(false, request.revision);
+			if (!backgroundReady && waitTracker.Stalled(WorkspaceWaitStage::BackgroundInactive,
+				snapshot, request.revision, backgroundReady)) FailWorkspaceRequest(request.revision);
+			if (!backgroundReady) continue;
 		}
 		if (prepared && (prepared->policy != policy || preparedProductRevision != desired.revision))
 			prepared.reset();
@@ -3430,7 +3539,12 @@ void StateMonitoring()
 
 		const auto& output = Bridge::SelectionUsesAuxiliaryOutput(desired.selectionMode, request.desired)
 			? prepared->presentation.bounds : prepared->primary.bounds;
-		if (!WorkspaceTargetReady(request, desired, snapshot, basicControl, safeRelease, output)) continue;
+		if (!WorkspaceTargetReady(request, desired, snapshot, basicControl, safeRelease, output))
+		{
+			if (waitTracker.Stalled(WorkspaceWaitStage::TargetReady, snapshot, request.revision, false))
+				FailWorkspaceRequest(request.revision);
+			continue;
+		}
 
 		if (policy.whiteboard)
 		{
@@ -3438,7 +3552,10 @@ void StateMonitoring()
 				static_cast<int>(snapshot.pageCount), true, snapshot.whiteboardTheme.backgroundRgb,
 				static_cast<int>(snapshot.whiteboardTheme.pattern), snapshot.whiteboardUnsaved, snapshot.whiteboardGeneration);
 			Inkeys::UI::Whiteboard::PublishActive(true, request.revision);
-			if (!request.minimized && !Inkeys::UI::Whiteboard::BackgroundPrepared(request.revision)) continue;
+			const bool backgroundReady = request.minimized || Inkeys::UI::Whiteboard::BackgroundPrepared(request.revision);
+			if (!backgroundReady && waitTracker.Stalled(WorkspaceWaitStage::BackgroundPrepared,
+				snapshot, request.revision, backgroundReady)) FailWorkspaceRequest(request.revision);
+			if (!backgroundReady) continue;
 		}
 		else if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false, request.revision)) continue;
 		const auto focusBefore = Inkeys::Business::CapturePptFocusRequest().foreground;
@@ -3447,7 +3564,12 @@ void StateMonitoring()
 		if (!service.CompleteWorkspaceWindowPolicy(policy, *prepared, nativeGuard)) { nativeFailed(); continue; }
 		if (!policy.whiteboard) RebaseWhiteboardReturnFocus(focusBefore, focusMayFallBack);
 		if (policy.whiteboard && !request.minimized &&
-			!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true, request.revision)) continue;
+			!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true, request.revision))
+		{
+			if (waitTracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, snapshot, request.revision, false))
+				FailWorkspaceRequest(request.revision);
+			continue;
+		}
 		std::unique_lock finalModeLock(stateModeTransitionMutex);
 		if (!nativeGuard() || (!safeRelease && ProductHost().ProductBridge().Snapshot().revision != desired.revision)) continue;
 		const auto completedRuntime = ProductRuntimeSnapshot();

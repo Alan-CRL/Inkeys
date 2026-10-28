@@ -1,0 +1,7 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"原生桌面模块、线程所有权和验证边界"}
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"三态统一交接、背景和输入合同"}
+{"file":".trellis/spec/native-desktop/canvas-freeze-boundaries.md","reason":"窗口政策恢复写集、DComp 和失败责任"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"单 Host、输出目标、DComp/ULW 和文档身份"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"窗口 owner、渲染和 Prepare/Complete 合同"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"完整 Solution、架构和平台验证要求"}
+{"file":".trellis/tasks/10-28-workspace-failure-recovery/research/failure-baseline.md","reason":"四项问题的当前代码证据和现有回退路径"}

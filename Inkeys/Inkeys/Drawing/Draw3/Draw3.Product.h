@@ -51,6 +51,9 @@ namespace Inkeys::Drawing::Draw3
 	Bridge::CommandResult RequestWhiteboardTheme(const WhiteboardTheme& theme,
 		std::uint64_t generation, std::size_t page) noexcept;
 	void SetProductActivationAllowed(bool enabled) noexcept;
+	void RequestProductLegacyRecovery(void*) noexcept;
+	void ConfigureProductLegacyRestart(std::function<bool()> restart) noexcept;
+	bool TryProductLegacyRestart() noexcept;
 }
 
 // Window Service 的 Drawpad WndProc 入口；不创建或销毁 HWND。

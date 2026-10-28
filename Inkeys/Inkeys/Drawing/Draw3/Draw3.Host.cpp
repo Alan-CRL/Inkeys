@@ -2,6 +2,7 @@
 #include "Draw3.Host.h"
 #include "Draw3.PresentationState.h"
 #include "Draw3.HapticDiagnostics.h"
+#include "Draw3.Product.h"
 #include <dxgi.h>
 #include "Draw3.PptTiming.h"
 #include "Draw3.SpeedEraser.h"
@@ -2065,6 +2066,7 @@ namespace Inkeys::Drawing::Draw3
 							observer.shortcutCompleted = &CompleteShortcut;
 							observer.recoveryChanged = &ObserveRecovery;
 							observer.recoveryRetryAllowed = &RecoveryRetryAllowed;
+							observer.legacyWindowRebuildRequested = &RequestProductLegacyRecovery;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。

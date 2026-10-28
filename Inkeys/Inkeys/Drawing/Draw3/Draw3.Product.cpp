@@ -14,6 +14,8 @@ namespace
 	// SetWindowPos 会同步重入 Drawpad WndProc，调用闸门必须允许同一 owner 线程嵌套。
 	std::recursive_mutex productCallMutex;
 	std::atomic_bool productStopping = false;
+	std::atomic_bool productLegacyRecoveryRequested = false;
+	std::function<bool()> productLegacyRestart;
 }
 
 namespace Inkeys::Drawing::Draw3
@@ -58,6 +60,31 @@ namespace Inkeys::Drawing::Draw3
 	bool ProductRunning() noexcept
 	{
 		return !productStopping.load(std::memory_order_acquire) && productHost.Running();
+	}
+
+	void RequestProductLegacyRecovery(void*) noexcept
+	{
+		productLegacyRecoveryRequested.store(true, std::memory_order_release);
+	}
+	void ConfigureProductLegacyRestart(std::function<bool()> restart) noexcept
+	{
+		std::scoped_lock lock(productMutex);
+		productLegacyRestart = std::move(restart);
+	}
+	bool TryProductLegacyRestart() noexcept
+	{
+		if (!productLegacyRecoveryRequested.load(std::memory_order_acquire) || ProductRunning()) return false;
+		std::function<bool()> restart;
+		{
+			std::scoped_lock lock(productMutex);
+			restart = productLegacyRestart;
+		}
+		if (!restart) return false;
+		bool succeeded = false;
+		try { succeeded = restart(); }
+		catch (...) { succeeded = false; }
+		if (succeeded) productLegacyRecoveryRequested.store(false, std::memory_order_release);
+		return succeeded;
 	}
 
 	bool RetryProductCanvasRecovery(const CanvasRecoveryState& expected,

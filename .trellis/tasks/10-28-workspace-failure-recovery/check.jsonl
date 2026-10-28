@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"核对三态补偿、背景和输入是否被破坏"}
+{"file":".trellis/spec/native-desktop/canvas-freeze-boundaries.md","reason":"核对恢复写集、DComp 退休和失败责任"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"核对 Host、输出、文档和新 generation"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"核对窗口/渲染所有权和验证边界"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核对完整构建和分平台证据边界"}
+{"file":".trellis/tasks/10-28-workspace-failure-recovery/research/failure-baseline.md","reason":"核对修复是否覆盖四项原始问题"}

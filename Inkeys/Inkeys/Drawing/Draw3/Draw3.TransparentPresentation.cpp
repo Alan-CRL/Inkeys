@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -620,24 +620,28 @@ namespace Inkeys::Drawing::Draw3
 
 			~DirectCompositionPresenter()
 			{
-				Reset();
-				if (dcompModule) FreeLibrary(dcompModule);
+				if (Reset() && dcompModule) FreeLibrary(dcompModule);
 			}
 
-			void Reset()
+			bool Reset()
 			{
 				if (compositionTarget)
 					(void)compositionTarget->SetRoot(nullptr);
 				if (compositionDevice)
 				{
-					// 先把 visual tree 从外部 HWND 解挂并等待提交完成，避免后续 DWM/ULW 样式切换仍被旧 DComp target 占用。
-					if (SUCCEEDED(compositionDevice->Commit()))
-						(void)compositionDevice->WaitForCommitCompletion();
+					// 先把 visual tree 从外部 HWND 解挂；退休等待有界，超时不得复用旧表面或启动第二退休 worker。
+					const auto device = compositionDevice;
+					const auto retired = WaitForDCompRetirement([device]
+					{
+						return SUCCEEDED(device->Commit()) && SUCCEEDED(device->WaitForCommitCompletion());
+					});
+					if (retired != DCompRetirementResult::Completed) return false;
 				}
 				rootVisual.Reset();
 				compositionTarget.Reset();
 				compositionDevice.Reset();
 				window = nullptr;
+				return true;
 			}
 
 			bool Initialize(HWND inputWindow, IDXGIDevice* dxgiDevice, IDXGISwapChain1* swapChain,
@@ -778,16 +782,17 @@ namespace Inkeys::Drawing::Draw3
 		DwmBlurBehindPresenter dwmBlurPresenter;
 		DwmExtendedFramePresenter dwmExtendedPresenter;
 
-		void ResetPresenters()
+		bool ResetPresenters()
 		{
 			primaryUlwPresenter.Reset();
 			selectionUlwPresenter.Reset();
-			directCompositionPresenter.Reset();
+			const bool retired = directCompositionPresenter.Reset();
 			dwmBlurPresenter.Reset();
 			dwmExtendedPresenter.Reset();
 			presentFailureLogged = false;
 			presentSuccessLogged = false;
 			lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
+			return retired;
 		}
 
 		HRESULT DeviceFailureOr(HRESULT fallback) const noexcept
@@ -806,11 +811,12 @@ namespace Inkeys::Drawing::Draw3
 			recoveryPending = true;
 		}
 
-		void ReleaseAttempt()
+		bool ReleaseAttempt()
 		{
-			ResetPresenters();
+			const bool retired = ResetPresenters();
 			if (renderer) renderer->ReleaseResources();
 			swapChain.Reset();
+			return retired;
 		}
 
 		bool ConfigureWindow(TransparentPresentMode mode)
@@ -964,7 +970,11 @@ namespace Inkeys::Drawing::Draw3
 				const ULONGLONG deadline = releaseSignal.BeginKnownFailure();
 				terminalOuterSignal.BeginKnownFailure(deadline);
 			};
-			ReleaseAttempt(); // 每次尝试前清掉上一条路径留下的交换链和 presenter。
+			if (!ReleaseAttempt())
+			{
+				beginFailure();
+				return false; // 旧 DComp 未退休前禁止任何后续模式初始化。
+			}
 			// 自动、强制及恢复共用此入口；首发禁用两种历史 DWM 透明模式。
 			if (!IsDirectCompositionMode(mode) && !IsUlwMode(mode))
 			{
@@ -1114,7 +1124,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!initialized)
 				{
 					outerSignal.BeginKnownFailure(releaseSignal.BeginKnownFailure());
-					impl_->ReleaseAttempt();
+					if (!impl_->ReleaseAttempt()) return false;
 					if (!terminal)
 					{
 						const size_t nextIndex = TransparentPresentModeIndex(mode) + 1;
@@ -1189,7 +1199,11 @@ namespace Inkeys::Drawing::Draw3
 		const bool deviceLost = IsGraphicsDeviceLostError(failure);
 		const TransparentPresentMode failedMode = impl_->activeMode;
 		impl_->recoveryPending = false;
-		impl_->ReleaseAttempt();
+		if (!impl_->ReleaseAttempt())
+		{
+			impl_->lastFailure = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+			return false;
+		}
 		RECT clientRect = {};
 		if (GetClientRect(impl_->primaryWindow, &clientRect) &&
 			clientRect.right > clientRect.left && clientRect.bottom > clientRect.top)

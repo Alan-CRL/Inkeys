@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <future>
 #include <iostream>
 #include <thread>
 
@@ -612,6 +613,35 @@ namespace
 		}
 	}
 
+	void TestDCompRetirement(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::DCompRetirementResult;
+		using Inkeys::Drawing::Draw3::GetDCompRetirementSlot;
+		using Inkeys::Drawing::Draw3::WaitForDCompRetirement;
+		using namespace std::chrono_literals;
+		if (!Expect(WaitForDCompRetirement([] { return true; }, 50ms) == DCompRetirementResult::Completed,
+			"successful DComp retirement completes")) ++failures;
+		if (!Expect(WaitForDCompRetirement([] { return false; }, 50ms) == DCompRetirementResult::Failed,
+			"failed DComp retirement reports failure")) ++failures;
+
+		std::promise<void> blockedPromise;
+		auto blocked = blockedPromise.get_future();
+		const auto timeout = WaitForDCompRetirement([&] { blocked.wait(); return true; }, 10ms);
+		if (!Expect(timeout == DCompRetirementResult::Timeout,
+			"blocked DComp retirement returns within its deadline")) ++failures;
+		if (!Expect(WaitForDCompRetirement([] { return true; }, 1ms) == DCompRetirementResult::Busy,
+			"pending retirement rejects a second worker")) ++failures;
+		blockedPromise.set_value();
+		auto& slot = GetDCompRetirementSlot();
+		{
+			std::unique_lock lock(slot.mutex);
+			if (!Expect(slot.wake.wait_for(lock, 100ms, [&] { return !slot.active; }),
+				"late retirement releases the isolated slot")) ++failures;
+		}
+		if (!Expect(WaitForDCompRetirement([] { return true; }, 50ms) == DCompRetirementResult::Completed,
+			"late completion permits the next retirement")) ++failures;
+	}
+
 	void TestDCompHandoffBarrier(int& failures)
 	{
 		using Inkeys::Drawing::Draw3::DCompHandoffBarrierState;
@@ -1192,6 +1222,7 @@ int RunDraw3BridgeTests()
 	TestUnsupportedAndLifecycle(failures);
 	TestEraserModeMapping(failures);
 	TestTimerPeriodController(failures);
+	TestDCompRetirement(failures);
 	TestDCompHandoffBarrier(failures);
 	TestDrawpadPresentationPlan(failures);
 	TestSceneReadyHandoff(failures);

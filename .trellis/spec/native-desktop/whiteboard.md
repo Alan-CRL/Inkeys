@@ -78,5 +78,6 @@
 - 业务epoch复用现有奇偶模型，白板显示/最小化语义变化也退休旧ACK；普通PPT页/工具/输出变化不推进工作区epoch。业务版本不替代session/target、slot、tool、device/output/content或HWND代际。
 - 白板背景复用Freeze并保持完整主屏rcMonitor，尺寸与DPI读同一Display快照；Desktop/PPT双画布底部1物理像素及旧定格/放大镜规则独立不变。BackgroundPrepared仅证明当前请求像素，实际Active仍需真实visible/bounds/非iconic；inactive必须真实Hide后确认，且优先于minimized暂停。
 - 白板最小化仍保留页/历史/工具/基线；系统确认只确认当前视图，不另发意图让在途请求自失效。最小化后可直接关闭。后台PPT变化只更新最新Primary事实，不能抢走白板。
-- 普通失败停止无限重复显示/隐藏，保留owner真实责任；当前协调故障版本的显式重试和安全取消可用。受保护/fatal只可在当前完整token及真实安全清理后退场，不等待已停消费者普通帧、不清fatal或伪造ready。
+- 普通失败停止无限重复显示/隐藏，保留owner真实责任；只有Rejected证明owner恢复已退休后才恢复Whiteboard源背景/分页，Pending/failed和输入fence继续保留，不能用源预览伪装切换成功。背景ACK、Draw3/PPT ready及背景prepared/final active的无进展等待进入同一可重试失败预算，实际输出/内容/背景进展才重置等待。
+- DComp退休采用共享有界等待，超时/忙碌禁止第二worker、ULW和新HWND；能清除样式才走原ULW，否则经完整legacy窗口链重建并禁止再次选择DComp。旧generation的帧/completion不得确认新恢复，受保护/fatal只可在完整token及真实安全清理后退场，不等待已停消费者普通帧、不清fatal或伪造ready。
 - Settings/安全UI与画布恢复的阻挡按实际写集区分；新场景Show/关穿透不得越过旧恢复，旧补偿不能作用于新HWND代际。保存/加载和失败warm数据规则不变。
