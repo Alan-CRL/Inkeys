@@ -583,9 +583,10 @@ void BarButtonSetClass::PresetInitialization()
 				{
 					auto& service = Inkeys::Window::GetService();
 					Inkeys::UI::Bar::DispatchBarWhiteboardButtonAction(WhiteboardRequested(),
-						Inkeys::UI::Bar::WhiteboardActive() && service.WhiteboardWindowGroupMinimized(),
-						[&service] { if (!service.RestoreWhiteboardWindowGroup()) Inkeys::UI::Bar::Haptics::RejectButtonAction(); },
-						[](bool active) { RequestWhiteboardActive(active); });
+						Inkeys::UI::Bar::WhiteboardActive() && service.WhiteboardWindowGroupMinimized(), WorkspaceTransitionFailureRevision(),
+						[] { if (!RequestWhiteboardWindowView(false)) Inkeys::UI::Bar::Haptics::RejectButtonAction(); },
+						[](bool active) { RequestWhiteboardActive(active); },
+						[](std::uint64_t failure) { (void)CancelFailedWhiteboardTransitionIfRevision(failure); });
 				};
 		}
 

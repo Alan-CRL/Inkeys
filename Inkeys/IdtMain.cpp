@@ -94,8 +94,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.11201";	// 程序发布版本
-wstring editionDate = L"3.0.0-20261026a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.12111";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261028a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -1540,6 +1540,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--ui3-multitarget-benchmark", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunUi3MultiTargetOffscreenBenchmark();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-workspace-centering-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3WorkspaceCenteringTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-bottom-dock-transition-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3BottomDockTransitionTest();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--ui3-input-worker-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunSharedInteractionWorkerTests();
@@ -3339,9 +3345,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					spec.largeIcon = applicationIcon;
 					spec.smallIcon = applicationIcon;
 					spec.whiteboardMinimizeAllowed = [] { return !Inkeys::UI::Bar::PptPresentationActive(); };
-					spec.whiteboardCloseRequested = [] { RequestWhiteboardActive(false); };
+					spec.whiteboardCloseRequested = [] { NotifyWhiteboardWindowCloseRequested(); };
+					spec.whiteboardViewRequested = [](bool minimized) { NotifyWhiteboardWindowViewRequested(minimized); };
 					spec.whiteboardMinimizedChanged = []
 					{
+						NotifyWhiteboardWindowMinimizedChanged();
 						Inkeys::UI::PageControl::NotifyLayoutChanged();
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::WhiteboardFreeze);

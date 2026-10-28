@@ -272,9 +272,9 @@ Wrong：用成功计数或 worker 已处理来推定 Controller 已收到终态�
 
 - 显式 TOPMOST/NOTOPMOST 只施加于当前 OverlayRoot。策略仍是 overlayTopmost 且非 whiteboard；普通/白板模式不得被周期刷新提升为置顶。
 - 根调用后读回实际 band。实际不匹配才进行有限的根校正与原生传播；不得改成无界重试或每帧无限等待。
-- 两种 band 均按 Freeze、Presentation、Drawpad、原相对顺序的四个 PPT 窗、Bar 补齐基础 owner 顺序。实际遗漏的基础节点从同一有效根继承 band，再读回核验；不逐节点显式设置 MOST，不操作任意 IME/驱动辅助窗。
-- 已知基础组使用一次有限 EnumWindows 快照，核验 owner、band、相对顺序与外部窗口穿插；四个 PPT 窗保留原相对顺序。缺失目标必须失败报告，不能边重排边遍历全局窗口链。
-- 基础节点最后的 HWND_TOP 必须保留原生 owner 联动，不能使用 NOOWNERZORDER 把 Drawpad 推到已显示 owned Setting 之上。band 继承步骤与 Setting 自身带内 Raise 可保留 NOOWNERZORDER。
+- Desktop/PPT 正常刷新按 Freeze、Presentation、Drawpad、原相对顺序的四个 PPT 窗、Bar 补齐基础 owner 顺序。白板保留 Bar 的全局位置，只将越过期望前驱的 PPT 相对下调，包含隐藏 Middle；不得因后台无法全局抬顶而阻止进入。实际遗漏的基础节点从同一有效根继承 band，再读回核验；不逐节点显式设置 MOST，不操作任意 IME/驱动辅助窗。
+- 已知基础组用有限 EnumWindows 快照核验 owner、band、相对顺序；跨操作保留 HWND+generation，每次相对写入后重新采样。Desktop/PPT 正常刷新保留外部连续性要求；白板及纯 Z 物理恢复只核验内部合同，允许外部窗口穿插。四个 PPT 保留原相对顺序，显式 Promote 仅改变目标子序列；缺失目标或代际改变必须失败，不能边重排边遍历全局窗口链。
+- Desktop/PPT 正常刷新中基础节点的 HWND_TOP 保留原生 owner 联动，不能使用 NOOWNERZORDER 把 Drawpad 推到已显示 owned Setting 之上。白板及场景物理交接的内部排序仅使用带 NOACTIVATE|NOOWNERZORDER 的相对插入；基础 owner 链反转时按子到父将错位 owner 下移，再执行 PPT 相对下调，不能只修 Bar/PPT 而让基础链永久读回失败。无 Bar 时用首个 PPT 作锚，不能以 owner 为锚把 owned PPT 放到其下方。Setting 不加入白板排序写入；band 继承步骤与 Setting 自身带内 Raise 保持原合同。
 - 不为 Overlay 刷新增加等待 Setting 的命令，避免与 Setting 等待根的原合同形成环。原生同步消息边界仍由真实 HWND/产品 GUI 验证。
 
 ### 4. Validation & Error Matrix
@@ -286,7 +286,7 @@ Wrong：用成功计数或 worker 已处理来推定 Controller 已收到终态�
 | 预先置顶 owner、Most/普通切换、PPT 提升后刷新 | owner 连续、全部 band 正确、PPT 原相对顺序保持 |
 | Setting 隐藏附加、Show/Reshow 后再次根刷新 | owner=Drawpad、设置高于两画布；实际内容点击可达 |
 | 白板 Enter/Leave 后强制外部刷新 | 保持普通 band 与完整 owner 顺序 |
-| 独立同 PID 非 owned 窗插入 | 连续性检查必须失败；合法 owned 辅助窗可接受 |
+| 独立同 PID 非 owned 窗插入 | Desktop/PPT 正常刷新连续性检查失败；白板/物理 Z 恢复允许外部穿插，内部 owner/band/顺序仍严格 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -294,11 +294,18 @@ Good：设置经过周期刷新后仍能获取自身 capture，隐藏后新笔�
 
 ### 6. Tests Required
 
-保留原 11 项失败断言的意图，补全基础树/Setting band 与 owner 顺序、PPT 提升和白板生命周期。连续性只允许确属该 owner 树的辅助窗，并有独立同 PID 窗负例。capture 用真实可见 SW_HIDE 对照和已隐藏重复 Hide 对照，不能要求 Win32 原生隐藏从不取消别窗捕获。最终清理探针后重建，运行重复专项、默认全套及真实设置/Explorer/PPT/按住退出。无窗口测试不能代替这些 GUI 边界。
+保留原 11 项失败断言的意图，补全基础树/Setting band 与 owner 顺序、PPT 提升和白板生命周期。Desktop/PPT 正常刷新连续性只允许确属该 owner 树的辅助窗，并有独立同 PID 窗负例；白板必须覆盖 continuous=true 但隐藏 Middle 高于 Bar 的现场序列及后台拒绝 Bar 全局 TOP，验证真实生产相对排序 helper。capture 用真实可见 SW_HIDE 对照和已隐藏重复 Hide 对照，不能要求 Win32 原生隐藏从不取消别窗捕获。最终清理探针后重建，运行重复专项、默认全套及真实设置/Explorer/PPT/按住退出。无窗口测试不能代替这些 GUI 边界。
 
 ### 7. Wrong vs Correct
 
 Wrong：以 SetWindowPos 返回值或 root 单一 bit 推定全树正确；只因旧断言失败便删掉 owner/capture 合同。Correct：读取实际状态、保留严格全树检查、用原生对照区分错误假设，再以最终产品点击与墨迹验证收尾。
+## 纯层级命令的恢复写集（2026-10-27）
+
+- RefreshTopmost、PromotePpt、SetOverlayTopmost、SetOverlayFullscreen 在任何公共逐窗 FRAMECHANGED/CanvasPolicy/Show 之前分流到纯 Z 恢复；仅令 canvas=false 不足以隔离。
+- 保存固定 HWND/generation、owner/band、原 PPT 兄弟序；仅对应 Set 命令恢复其 topmost 或 fullscreen 政策，不写 mode/minimized、几何、显隐、region、激活或其他 ex-style。PPT 原序恢复仍须满足 Bar>PPT，不能恢复已知非法前态。
+- 真实物理恢复失败继续保留唯一责任；原命令过期不能阻止必要回滚，也不能将失败改成成功或因超时丢弃屏障。后到 Hide/穿透、窗口退休/新代际和停机保护保持，Shell 只发布最新绝对状态。
+- 纯 Z 多次失败/恢复无窗口回归调用生产 helper，禁止 Hide/Show/FRAMECHANGED/CanvasPolicy/几何写入；完整 mode/Canvas 事务仍保留原成对策略与严格恢复。私有 dispatch 的早分流接线须另做源码审查，不能用 helper 动态测试冒充完整 Service 执行或 GUI 通过。
+
 ## 场景准入与白板交接（2026-10-24）
 
 ### Scope / Trigger
@@ -355,8 +362,8 @@ Wrong：以 SetWindowPos 返回值或 root 单一 bit 推定全树正确；只�
 4. 场景准备/呈现连续失败进入可见恢复状态，平台期 attempts 封顶、等价发布去重，避免后台重试不断使 UI token 失效。加载未决时保留 load 故障归属。保留最新场景的后台恢复责任；本次新建 Recovering 时同场景 no-op 也取得实际 stage/Present 责任，不能留下无帧触发的恢复债务。真实成功 Present 才可发布 ready 和清除对应状态。
 5. PPT 故障文本不是普通数字的 UI-ready。错误状态参与渲染和输入呈现身份，Down/Move/Up 及重试均拒绝旧 token；正常数字重新真实呈现后才允许 ACK。设置绘图页提供同一 token 的有序重试入口。受保护失败不能靠超时或按钮解除墨迹准入。
 6. 白板 Exiting 遇到当前目标的受保护失败，可在实际隐藏两画布后结束窗口/UI 交接，保留工具栏/分页恢复入口；不能伪造 firstFrame、content revision 或 UI-ready。普通恢复中的场景仍等待真实帧，窗口 guard 在物理提交处校验相位和 epoch。已停止的 fatal 消费者仅凭完整故障令牌允许隐藏/穿透清理，不依赖 Running 再次为真；Reset 后旧清理失效，停止态清理保持 250ms cadence。
-7. 跨线程同步窗口命令默认 1500ms，区分 Queued/Executing/Committed/Rejected/Expired/Cancelled。停止等待不表示操作未发生；在途失效后由 owner 撤回物理副作用，撤回失败保留唯一恢复责任并阻止新事务越过。周期刷新合并排队责任；同 owner 重入不能越过未完成原生写入提前报成功。原生最小化/恢复的同次 WM_SIZE 确认不得建立新 intent 使外层命令自我失效。恢复屏障期间只允许按 HWND generation 锁存的隐藏/开启穿透覆盖，旧 snapshot 与 CanvasPolicy 不能撤销；Show/关闭穿透仍须通过屏障并真实成功。原生 SetWindowPos/owner 联动仍可能同步进入其他窗口过程，期限不能抢占这些系统调用。
-8. Shell 全屏 COM 只在独立 worker 中调用，持有私有共享状态，按 HWND generation/thread/process 和最新版本过滤；不借用 Service 或 owner 栈。停止/过期尝试 COM 取消，无法结束时仅保留固定一组后台状态，不启动第二组；窗口样式成功不依赖 Explorer 返回。窗口 owner 的 stderr/debug 诊断使用既有非阻塞输出与固定缓冲 UTF-8 转换，不在恢复路径回退同步写流。
+7. 跨线程同步窗口命令默认 1500ms，区分 Queued/Executing/Committed/Rejected/Expired/Cancelled。停止等待不表示操作未发生；在途失效后由 owner 撤回物理副作用，撤回失败保留唯一恢复责任并阻止新事务越过。周期刷新合并排队责任；同 owner 重入不能越过未完成原生写入提前报成功。原生最小化/恢复的同次 WM_SIZE 确认不得建立新 intent 使外层命令自我失效。恢复屏障期间只允许按 HWND generation 锁存的隐藏/开启穿透覆盖，旧 snapshot 与 CanvasPolicy 不能撤销；Show/关闭穿透仍须通过屏障并真实成功。白板 minimized 时被抑制的 Freeze SetBounds/Show 必须 Rejected，不能未执行便报告成功；恢复后由既有背景唤醒重新提交并读回 RECT、visible 和非 iconic。原生 SetWindowPos/owner 联动仍可能同步进入其他窗口过程，期限不能抢占这些系统调用。
+8. Shell 全屏 COM 只在独立 worker 中调用，持有私有共享状态，按 HWND generation/thread/process 和最新版本过滤；不借用 Service 或 owner 栈。普通 overlay 根与白板 Freeze/Drawpad 使用固定有界目标批次和同一 revision，重复 HWND 去重；白板两面激活仅使该邮箱失效，最小化/退出的最新 FALSE 必须补偿迟到旧 TRUE，不能由旧批次确认新状态。停止/过期尝试 COM 取消，无法结束时仅保留固定一组后台状态，不启动第二组；窗口样式成功不依赖 Explorer 返回。窗口 owner 的 stderr/debug 诊断使用既有非阻塞输出与固定缓冲 UTF-8 转换，不在恢复路径回退同步写流。
 9. Setting Stop 先传播取消到活动弹窗，再排空已接纳的持久化，未开始的外部操作不继续启动。QuickDraw pipe connect/read/write 观察同一 stop token，join 不持有状态锁。取消后最多等 250ms；未完成的 OVERLAPPED、句柄和 buffer 独立保活，最多四项、每项 64KiB，有隔离项就拒绝新请求，真实完成后可回收。不得用栈 buffer 或静态析构释放内核仍引用的地址。
 10. Bar 属性捕获 Start 只确认原生 Down 签发的逻辑票据；不跨线程 SendMessage 等待窗口。Stop/Cancel 与异步原生释放绑定精确票据，先取消后迟到 Start 不得复活，旧释放不能碰新 Down，投递失败保留释放责任。
 
@@ -365,3 +372,11 @@ Wrong：以 SetWindowPos 返回值或 root 单一 bit 推定全树正确；只�
 `InkeysHeadlessTests --no-window` 覆盖 fatal 门、恢复身份/ACK、有限命令回执、混合 band 快照，以及真实 pipe 读写、取消和固定容量隔离；实际 HWND band/owner 传播仍属于明确授权后的窗口合同测试。现有生产 CLI `--draw3-fallback-stable-lane-test`、`--draw3-ppt-current-load-retry-test`、`--draw3-pending-topology-load-test`、`--draw3-control-fence-test`、`--state-mode-production-test`、`--ui3-input-worker-test` 与严格早退的 `--setting-business-cancellation-test` 验证产品路径。
 
 不得把上述检查宣称为所有 Win32/COM/GPU/磁盘调用永不挂起的证明。Host Start/Stop 的最终保存、WhiteboardStore drain、GPU Map 和真实 join 仍保留资源所有权；不通过超时析构、借用 Host 的 detached thread 或提前启动第二实例逃离。最终退出沿用既有进程监督，真实 Office/WPS、桌面 z-order 与设备现场另行验收。
+
+## 场景窗口政策与恢复写集（2026-10-27）
+
+- 同一工作区政策以Prepare原生回执→Render/Host/UI实际ACK→Complete原生回执交错推进。owner返回消息循环，不持协调/窗口锁等待渲染。目标输出身份改变必须重准备，不能用旧帧完成新几何。
+- Prepare/Complete绑定同政策版本和捕获的Freeze/主辅表面身份、实际几何与目标显示上下文；Display全局generation变化只触发相关事实重验，无关任务栏/别屏变化不应直接使政策失败。
+- 内部保留撤全屏→离开白板样式→返回band/穿透顺序，只写实际需要变化的字段。全局刷新、Setting带内Raise与Shell worker仍独立，失败不撤销已完成workspace。
+- 新场景政策恢复只处理其实际修改对象，不恢复Bar/PPT无关几何/显隐。补偿绑定旧HWND/generation/region/property，不得重新按当前role取新pair执行旧CanvasPolicy；同owner重入、取消后在途回执和安全覆盖保持真实责任。
+- 不相交的Bar/PPT几何与capture取消可继续；普通Show/关穿透/新政策仍不得越过旧Canvas恢复。设置页的协调故障重试使用点击时捕获的当前workspace失败版本，不能伪装成Host CanvasRecovery token，也不能旧按钮重试新请求。

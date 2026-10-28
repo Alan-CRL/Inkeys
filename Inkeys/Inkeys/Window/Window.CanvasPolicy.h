@@ -136,6 +136,21 @@ namespace Inkeys::Window::Detail
 			&& CombineRgn(result.Get(), result.Get(), row.Get(), RGN_DIFF) != ERROR;
 	}
 
+	// 只编排 owner 实际操作，不等待 Render；准备和完成使用同一个业务请求。
+	template<class Ops>
+	[[nodiscard]] bool PrepareWorkspacePolicy(Ops& ops)
+	{
+		return ops.Current() && ops.WithdrawFullscreen() && ops.Current()
+			&& ops.PrepareGeometry() && ops.Current() && ops.ApplyMode() && ops.Current()
+			&& ops.ApplyBand() && ops.Current() && ops.BlockInput() && ops.Current() && ops.CapturePrepared();
+	}
+	template<class Ops>
+	[[nodiscard]] bool CompleteWorkspacePolicy(Ops& ops)
+	{
+		return ops.Current() && ops.ValidatePrepared() && ops.ApplyInput() && ops.Current()
+			&& ops.ApplyVisibility() && ops.Current() && ops.PublishFullscreen() && ops.Current();
+	}
+
 	struct CanvasTransactionResult
 	{
 		bool succeeded = false;

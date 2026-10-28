@@ -161,6 +161,12 @@ inline constexpr struct I18nKeyRoot
     } UI{};
     struct Node__Dialogs
     {
+        struct Node__Dialogs__WorkspaceTransitionFailure
+        {
+            const char* Whiteboard = "Dialogs/WorkspaceTransitionFailure/Whiteboard";
+            const char* Return = "Dialogs/WorkspaceTransitionFailure/Return";
+            const char* Primary = "Dialogs/WorkspaceTransitionFailure/Primary";
+        } WorkspaceTransitionFailure{};
         struct Node__Dialogs__Common
         {
             const char* TipsTitle = "Dialogs/Common/TipsTitle";

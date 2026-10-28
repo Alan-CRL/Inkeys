@@ -158,6 +158,12 @@
   },
   "Dialogs":
   {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "The whiteboard window transition did not finish. Automatic retries have stopped. Click the whiteboard button on the main toolbar again to cancel this transition, or retry from the Drawing page in Settings.",
+      "Return": "Exiting the whiteboard did not finish. Automatic retries have stopped. Click the whiteboard button on the main toolbar again to return to the whiteboard, or retry from the Drawing page in Settings.",
+      "Primary": "Switching between the desktop and presentation workspaces did not finish. Automatic retries have stopped. Retry from the Drawing page in Settings."
+    },
     "Common":
     {
       "TipsTitle": "Inkeys Tips",

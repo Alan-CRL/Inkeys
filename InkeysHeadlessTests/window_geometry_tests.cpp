@@ -365,6 +365,100 @@ namespace
 			"capacity source remains valid for content near a monitor edge");
 	}
 
+	void TestPredictedViewportExpandsCapacity()
+	{
+		constexpr RECT layout{ 0, 0, 1920, 1080 }, content{ 900, 900, 1080, 1010 };
+		constexpr RECT predicted{ 600, 650, 1350, 1045 };
+		constexpr POINT anchor{ 960, 980 };
+		BarWindowViewportController controller;
+		const auto viewport = controller.Resolve(content, predicted, layout, 2, false).viewport;
+		const auto oldOrder = ResolveBarWindowCapacity(SIZE{ 400, 240 }, anchor, content, layout, 2);
+		const RECT oldBounds{ oldOrder.origin.x, oldOrder.origin.y,
+			oldOrder.origin.x + oldOrder.size.cx, oldOrder.origin.y + oldOrder.size.cy };
+		Check(!ContainsBarWindowRect(oldBounds, viewport),
+			"fixture reproduces capacity-before-prediction escaping the real source bitmap");
+		const auto capacity = ResolveBarWindowCapacity(SIZE{ 400, 240 }, anchor, content, layout, 2, viewport);
+		const POINT source{ viewport.left - capacity.origin.x, viewport.top - capacity.origin.y };
+		Check(capacity.sizeChanged && IsBarWindowSourceContained(source,
+			SIZE{ viewport.right - viewport.left, viewport.bottom - viewport.top }, capacity.size),
+			"capacity includes the full predicted viewport before computing the source");
+		const auto stable = ResolveBarWindowCapacity(capacity.size, anchor, content, layout, 2, viewport);
+		Check(!stable.sizeChanged && stable.origin.x == capacity.origin.x && stable.origin.y == capacity.origin.y,
+			"repeating the same prediction does not rebuild or grow capacity");
+		controller.Commit(viewport);
+		const auto settled = controller.Resolve(content, RECT{}, layout, 2, true).viewport;
+		const auto idle = ResolveBarWindowCapacity(capacity.size, anchor, content, layout, 2, settled);
+		Check(!idle.sizeChanged && settled.right - settled.left < viewport.right - viewport.left,
+			"idle tightens the HWND once while retaining the existing target high-water mark");
+		Check(IsBarWindowSourceContained(POINT{ 2, 3 }, SIZE{ 8, 7 }, SIZE{ 10, 10 })
+			&& !IsBarWindowSourceContained(POINT{ -1, 0 }, SIZE{ 10, 10 }, SIZE{ 10, 10 })
+			&& !IsBarWindowSourceContained(POINT{ 0, 0 }, SIZE{ 0, 10 }, SIZE{ 10, 10 })
+			&& !IsBarWindowSourceContained(POINT{ 3, 0 }, SIZE{ 8, 10 }, SIZE{ 10, 10 })
+			&& !IsBarWindowSourceContained(POINT{ LONG_MAX, 0 }, SIZE{ 2, 1 }, SIZE{ LONG_MAX, 10 }),
+			"final source guard rejects negative, empty, oversized and overflowing tuples");
+	}
+
+	void TestFixedDragSurfaceEnvelopeAndCommit()
+	{
+		const RECT current{ 100, 200, 300, 400 };
+		const RECT predicted{ 80, 180, 340, 430 };
+		const RECT presented{ -20, 170, 310, 460 };
+		const RECT envelope = ResolveBarFixedDragEnvelope(current, predicted, presented,
+			2.0, 2.0 * BarBottomDockCenterThresholdDip,
+			BarBottomDockThresholdDip + BarBottomDockVisualLimitDip, 2);
+		Check(SameBarWindowRect(envelope, RECT{ -182, 80, 502, 550 }),
+			"fixed drag envelope covers current, prediction, successful seed and independent axis margins");
+		Check(ContainsBarWindowRect(envelope, current) && ContainsBarWindowRect(envelope, presented),
+			"fixed envelope preserves already visible deformed content outside the screen");
+		Check(IsBarWindowRectEmpty(ResolveBarFixedDragEnvelope({}, {}, {}, 2.0, 80.0, 44.0))
+			&& IsBarWindowRectEmpty(ResolveBarFixedDragEnvelope(current, {}, {}, 0.0, 80.0, 44.0))
+			&& IsBarWindowRectEmpty(ResolveBarFixedDragEnvelope(current, {}, {}, 2.0, -1.0, 44.0))
+			&& IsBarWindowRectEmpty(ResolveBarFixedDragEnvelope(
+				RECT{ LONG_MIN, 0, 10, 10 }, {}, {}, 2.0, 80.0, 44.0)),
+			"invalid or unrepresentable fixed envelopes fail without clipping their required bounds");
+
+		BarFixedDragSurface surface;
+		// 计算/绘制候选本身不提交；首次 prepare 失败时仍没有冻结状态。
+		Check(!surface.Matches(1, 2, 2.0) && IsBarWindowRectEmpty(surface.Viewport()),
+			"preparing a fixed envelope cannot publish a surface before presentation succeeds");
+		Check(!surface.Freeze(1, 2, 2.0, envelope, POINT{ 0, 0 }, SIZE{ 900, 800 })
+			&& !surface.Matches(1, 2, 2.0),
+			"negative ULW source is rejected rather than clamped during a failed prepare");
+		const RECT viewport{ -160, -80, 1460, 1180 };
+		const POINT capacityOrigin{ -256, -128 };
+		const SIZE capacitySize{ 1800, 1400 };
+		Check(surface.Freeze(1, 2, 2.0, viewport, capacityOrigin, capacitySize)
+			&& surface.Matches(1, 2, 2.0),
+			"successful fixed surface can cross monitor edges with a negative capacity origin");
+		Check(surface.Source().x == 96 && surface.Source().y == 48
+			&& IsBarWindowSourceContained(surface.Source(), SIZE{ 1620, 1260 }, surface.CapacitySize()),
+			"offscreen fixed storage still maps to a valid nonnegative ULW bitmap source");
+
+		bool stable = true;
+		for (unsigned frame = 0; frame < 10000; ++frame)
+		{
+			const LONG shift = frame % 2 ? 50 : -50;
+			const RECT laterRequest{ -500 + shift, -400, 3000 + shift, 2300 };
+			stable = surface.Freeze(1, 2, 2.0, laterRequest, POINT{ -600, -500 }, SIZE{ 4000, 3000 })
+				&& surface.Matches(1, 2, 2.0) && SameBarWindowRect(surface.Viewport(), viewport)
+				&& surface.CapacityOrigin().x == capacityOrigin.x && surface.CapacityOrigin().y == capacityOrigin.y
+				&& surface.CapacitySize().cx == capacitySize.cx && surface.CapacitySize().cy == capacitySize.cy
+				&& surface.Source().x == 96 && surface.Source().y == 48 && stable;
+		}
+		Check(stable, "repeated requests cannot grow or drift an already committed gesture surface");
+		Check(!surface.Matches(2, 2, 2.0) && !surface.Matches(1, 4, 2.0)
+			&& !surface.Matches(1, 2, 1.5),
+			"new gestures, display generations and zoom require a fresh surface preparation");
+		Check(!surface.Freeze(2, 2, 2.0, viewport, capacityOrigin, SIZE{ 100, 100 })
+			&& surface.Matches(1, 2, 2.0) && SameBarWindowRect(surface.Viewport(), viewport),
+			"failed replacement cannot retire the prior successful gesture surface");
+		surface.Reset();
+		Check(!surface.Matches(1, 2, 2.0) && IsBarWindowRectEmpty(surface.Viewport())
+			&& surface.Freeze(2, 4, 1.5, RECT{ 20, 30, 120, 130 }, POINT{ 0, 0 }, SIZE{ 200, 200 })
+			&& surface.Matches(2, 4, 1.5),
+			"successful release resets the fixed surface before a different gesture commits");
+	}
+
 	void TestReservedEnvelopeStaysInsideCapacity()
 	{
 		constexpr RECT layoutBounds{ 0, 0, 1920, 1080 };
@@ -427,6 +521,8 @@ int RunWindowGeometryTests()
 	TestBottomDockDragDefersViewportSettle();
 	TestLayoutClipping();
 	TestCapacityFallbackExpansion();
+	TestPredictedViewportExpandsCapacity();
+	TestFixedDragSurfaceEnvelopeAndCommit();
 	TestReservedEnvelopeStaysInsideCapacity();
 	return failureCount;
 }

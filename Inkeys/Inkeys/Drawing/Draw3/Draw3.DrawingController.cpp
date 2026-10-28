@@ -46,6 +46,7 @@
 #include <mmsystem.h>
 
 #include "Draw3.Bridge.h"
+#include "Draw3.Host.h"
 #include "Draw3.Recovery.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.HapticDiagnostics.h"
@@ -3527,6 +3528,15 @@ namespace Inkeys::Drawing::Draw3
 			input.DiscardUntilTerminal(handle);
 		}
 
+		bool DiscardSelectionDown(ContactInputCoordinator& input, ContactHandle handle,
+			bool selectionMode) noexcept
+		{
+			if (!selectionMode) return false;
+			// 三工作区的选择都是电脑操作；RTS 鼠标也不得绕过穿透而初始化笔迹。
+			input.DiscardUntilTerminal(handle);
+			return true;
+		}
+
 		bool IgnoreAdditionalLaserTouch(ContactInputCoordinator& input, ContactHandle handle,
 			DrawingTool batchTool, InputDeviceType deviceType,
 			bool hasActiveLaserTouchContact, bool laserMultiTouchEnabled) noexcept
@@ -4863,6 +4873,50 @@ namespace Inkeys::Drawing::Draw3
 		};
 		CheckTailInputDiagnosticContract(check);
 		failures += RunEraserIdleWakeProductionProbe();
+		failures += RunHostWorkspaceTransitionInputProductionProbe();
+		{
+			constexpr int64_t frequency = 1000;
+			constexpr int64_t upQpc = 100;
+			LaserTrailLifecycle lifecycle;
+			BeginLaserContact(lifecycle);
+			EndLaserContact(lifecycle, upQpc);
+			LaserTrailPhase frameInitialPhase = lifecycle.phase;
+			int coverageClearCount = 0;
+			RECT stableBounds{ 1, 2, 30, 40 };
+			RECT liveBounds{ 5, 6, 50, 60 };
+			std::vector<int> strokeLayers{ 1 };
+			const auto retireFinalExpiry = [&]
+			{
+				if (!LaserTrailExpiredThisFrame(frameInitialPhase, lifecycle.phase)) return;
+				++coverageClearCount;
+				stableBounds = {};
+				liveBounds = {};
+				strokeLayers.clear();
+			};
+			const float firstOpacity = EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency, frequency, 1.0);
+			retireFinalExpiry();
+			check(lifecycle.phase == LaserTrailPhase::Fade && firstOpacity == 1.0f &&
+				coverageClearCount == 0 && strokeLayers.size() == 1,
+				"first Fade evaluation retains the final-frame laser resources");
+			(void)EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency * 2, frequency, 1.0);
+			retireFinalExpiry();
+			check(lifecycle.phase == LaserTrailPhase::Inactive && coverageClearCount == 1 &&
+				strokeLayers.empty() && stableBounds.left == stableBounds.right &&
+				liveBounds.left == liveBounds.right,
+				"second evaluation expiry retires coverage bounds and stroke layers immediately");
+			frameInitialPhase = lifecycle.phase; // 下一帧重新采样帧首相位。
+			(void)EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency * 2, frequency, 1.0);
+			retireFinalExpiry();
+			check(coverageClearCount == 1, "next frame does not repeat final laser expiry cleanup");
+			BeginLaserContact(lifecycle);
+			check(EvaluateLaserTrailOpacity(lifecycle,
+				upQpc + frequency * 2 + 1, frequency, 1.0) == 1.0f &&
+				lifecycle.phase == LaserTrailPhase::Active && coverageClearCount == 1,
+				"new laser Down retains the existing Active semantics");
+		}
 		ContactInputCoordinator input;
 		WindowController window;
 		const auto snapshot = [](ContactPhase phase)
@@ -4918,6 +4972,79 @@ namespace Inkeys::Drawing::Draw3
 		DrainIngressBatch(input, window, commandBoundaryPending, process);
 		check(observed == std::vector<int>{ 1, 0, 2 },
 			"new Down resumes after Clear has left the canvas queue");
+		struct SelectionInputCase
+		{
+			InputDeviceType device;
+			bool inverted;
+		};
+		const SelectionInputCase selectionInputs[] = {
+			{ InputDeviceType::MouseLeft, false }, { InputDeviceType::MouseRight, false },
+			{ InputDeviceType::Touch, false }, { InputDeviceType::Pen, false },
+			{ InputDeviceType::Pen, true }
+		};
+		// 共用操作不按 workspace 分支；各场景独立真实 route，包含 RTS 鼠标和笔尾元数据。
+		for (const auto workspace : { Bridge::Workspace::Desktop,
+			Bridge::Workspace::Presentation, Bridge::Workspace::Whiteboard })
+			for (const auto& source : selectionInputs)
+			{
+				ContactInputCoordinator selectionInput;
+				selectionInput.EnableDiagnostics(true);
+				WindowController selectionWindow;
+				selectionWindow.SetSelectionMode(true);
+				const std::uint32_t tablet = 0xF400 + static_cast<std::uint32_t>(workspace);
+				auto down = snapshot(ContactPhase::Down);
+				down.isInvertedCursor = source.inverted;
+				ContactHandle rejected, accepted;
+				int rejectedDowns = 0, passedDowns = 0;
+				bool boundary = false;
+				const auto consume = [&](ContactRecord* record)
+				{
+					if (!record) { selectionInput.AcknowledgeControlWake(); return; }
+					const ContactHandle handle{ record, record->Generation() };
+					check(record->DeviceType() == source.device &&
+						record->DownSnapshot().isInvertedCursor == source.inverted,
+						"selection fixture retains actual device and inverted metadata");
+					if (DiscardSelectionDown(selectionInput, handle, selectionWindow.SelectionMode()))
+					{
+						rejected = handle; ++rejectedDowns;
+						return;
+					}
+					accepted = handle; ++passedDowns;
+				};
+				check(selectionInput.PublishDown(tablet, 1, source.device, down),
+					"selection Down enters the real coordinator");
+				DrainIngressBatch(selectionInput, selectionWindow, boundary, consume);
+				ContactSnapshot current;
+				check(rejected && rejectedDowns == 1 && passedDowns == 0 &&
+					selectionInput.HasQuarantinedContacts() &&
+					!selectionInput.TryReadSnapshot(rejected, current),
+					"actual Selection discards Down and retains its physical route until terminal");
+				selectionWindow.SetActiveTool(DrawingTool::Pen);
+				selectionWindow.SetSelectionMode(false);
+				check(!selectionInput.PublishMove(tablet, 1, snapshot(ContactPhase::Move)) &&
+					selectionInput.PublishUp(tablet, 1, snapshot(ContactPhase::Up)),
+					"switching to Pen does not revive rejected Move and still accepts real Up");
+				DrainIngressBatch(selectionInput, selectionWindow, boundary, consume);
+				check(passedDowns == 0 && !selectionInput.HasQuarantinedContacts() &&
+					selectionInput.DiagnosticsSnapshot().occupiedSlots == 0,
+					"rejected Selection contact drains without replaying Down after tool switch");
+				check(selectionInput.PublishDown(tablet, 1, source.device, down),
+					"next physical Down is published after rejected terminal");
+				DrainIngressBatch(selectionInput, selectionWindow, boundary, consume);
+				check(accepted && passedDowns == 1 && rejectedDowns == 1 &&
+					(accepted.record != rejected.record || accepted.generation != rejected.generation) &&
+					selectionInput.ContactAdmitted(accepted),
+					"new non-Selection generation passes the same production rejection operation");
+				check(selectionInput.PublishMove(tablet, 1, snapshot(ContactPhase::Move)) &&
+					selectionInput.TryReadSnapshot(accepted, current) && current.phase == ContactPhase::Move &&
+					selectionInput.PublishUp(tablet, 1, snapshot(ContactPhase::Up)) &&
+					selectionInput.TryReadSnapshot(accepted, current) && current.phase == ContactPhase::Up,
+					"normal device Move and terminal remain readable after non-Selection Down");
+				selectionInput.Recycle(accepted);
+				check(selectionInput.DiagnosticsSnapshot().occupiedSlots == 0 &&
+					selectionInput.DiagnosticsSnapshot().recycled == 2,
+					"rejected and accepted generations each release their real slot once");
+			}
 		return failures;
 	}
 
@@ -11638,13 +11765,7 @@ namespace Inkeys::Drawing::Draw3
 					input_.DiscardUntilTerminal(handle);
 					return;
 				}
-				if (activeWorkspace == Bridge::Workspace::Whiteboard &&
-					window_.SelectionMode())
-				{
-					// 白板“拖动”暂不启用平移，也不能让主 Drawpad 继续落笔。
-					input_.DiscardUntilTerminal(handle);
-					return;
-				}
+				if (DiscardSelectionDown(input_, handle, window_.SelectionMode())) return;
 				if ((activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading) || Bridge::PresentationInputSuppressed(
 					activeWorkspace, activePresentationLoadPending ||
 					presentationLoadUnresolved()))
@@ -15178,8 +15299,6 @@ namespace Inkeys::Drawing::Draw3
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				animationQpc.QuadPart, qpcFrequency, animationLaserHold);
 			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
-			const bool laserExpired = previousLaserPhase != LaserTrailPhase::Inactive &&
-				laserLifecycle.phase == LaserTrailPhase::Inactive;
 			const bool laserFadeActive = laserLifecycle.phase == LaserTrailPhase::Fade;
 			bool laserOpacityChanged =
 				std::abs(previousLaserOpacity - laserOpacity) > 0.0001f;
@@ -15234,22 +15353,12 @@ namespace Inkeys::Drawing::Draw3
 				// 最后一帧瞬态内容结束后做全帧 ULW 校验，不能按局部脏区推断窗口已净。
 				forceFullPresent = true;
 			}
-			if (laserOpacityChanged)
+			if (laserOpacityChanged ||
+				LaserTrailExpiredThisFrame(previousLaserPhase, laserLifecycle.phase))
 			{
+				// 即使末段 opacity 变化低于阈值，首次过期也不能在最终清理前进入 idle。
 				UnionRectInPlace(frameDirty, laserStableBounds);
 				UnionRectInPlace(frameDirty, laserLiveBounds);
-			}
-			if (laserExpired)
-			{
-				if (metricsState_) metricsState_->ObserveLaserExpiry(laserStableBounds, laserLiveBounds,
-					previousLaserParticleBounds, currentLaserParticleBounds);
-				UnionRectInPlace(frameDirty, laserStableBounds);
-				UnionRectInPlace(frameDirty, laserLiveBounds);
-				renderer_.ClearAllLaserCoverage();
-				laserStableBounds = {};
-				laserLiveBounds = {};
-				laserStrokeLayers.clear();
-				laserCoverageMode = LaserCoverageMode::Inactive;
 			}
 			if (active.empty())
 			{
@@ -15555,6 +15664,21 @@ namespace Inkeys::Drawing::Draw3
 			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
 			laserOpacityChanged = laserOpacityChanged ||
 				std::abs(preInputLaserOpacity - laserOpacity) > 0.0001f;
+			const bool laserExpired = LaserTrailExpiredThisFrame(
+				previousLaserPhase, laserLifecycle.phase);
+			if (laserExpired)
+			{
+				// 第二次求值也可能进入 Inactive；按本帧最终边沿只清理一次。
+				if (metricsState_) metricsState_->ObserveLaserExpiry(laserStableBounds, laserLiveBounds,
+					previousLaserParticleBounds, currentLaserParticleBounds);
+				UnionRectInPlace(frameDirty, laserStableBounds);
+				UnionRectInPlace(frameDirty, laserLiveBounds);
+				renderer_.ClearAllLaserCoverage();
+				laserStableBounds = {};
+				laserLiveBounds = {};
+				laserStrokeLayers.clear();
+				laserCoverageMode = LaserCoverageMode::Inactive;
+			}
 			// Up 后同帧新 Down 可能刚完成旧批次 Bake；必须在本帧基础合成前消费该 dirty。
 			UnionRectInPlace(frameDirty, pendingLaserBakeDirty);
 			pendingLaserBakeDirty = {};

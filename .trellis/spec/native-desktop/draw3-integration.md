@@ -422,6 +422,55 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。
 - 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。
 
+## Scenario: DComp 交接上屏屏障与 Laser 最终过期
+
+### 1. Scope / Trigger
+
+修改 Primary DComp 与 Selection ULW 输出切换、Present/ready 发布、窗口显隐交接，或 Laser 生命周期多次求值与瞬态资源清理时适用。`Present1` 返回不代表 DWM 已显示新帧；隐藏主 HWND 也不清除其最后已显示内容，过早 ready 会在重新显示时露出旧 Laser 或旧笔迹。
+
+### 2. Signatures
+
+- `TransparentPresentationController::SetOutputTarget(target)` 生成单调 output revision；`Present(dirty, presentFull, contentRevision)` 是交接屏障所有者。
+- `DCompHandoffBarrierState::{Arm,Cancel,Consume}` 记录待上屏 revision；`DrawingController::PresentFrame` 只在 `Present` 整体成功后调用 `observer_.presented`。
+- `LaserTrailExpiredThisFrame(previous, final)` 以帧首和本帧最终 `LaserTrailPhase` 判定唯一过期边沿。
+
+### 3. Contracts
+
+- 切回 Primary 时 arm 最新 revision；仅该 revision 的 DComp 全帧 `Present1` 成功后执行一次 `DwmFlush`，其成功返回后才允许 Host 发布 handoff ready。普通 DComp 帧和 ULW 不执行此等待。
+- `Present1` 失败不消费屏障；`DwmFlush` 失败必须恢复同 revision pending、不得成功 ready，并记录 target/output/content revision 与 HRESULT，沿用现有恢复。切到 ULW 或快速产生新 revision 时淘汰旧等待，不能为旧目标补 ready。
+- Laser 一帧可先在动画阶段、再在输入阶段求值。最终相位仍为 Active/Hold/Fade 时不清资源；最终进入 Inactive 时当帧清理 coverage、stable/live bounds、stroke layers 和 coverage mode，下一帧不重复。首次过期即使 opacity 增量低于 dirty 阈值，也必须 union 旧 bounds，保证不被 idle/maintenance 提前跳过。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| DComp 普通或 partial 帧 | 不调用交接屏障 |
+| 交接 Present 失败 | 不等待、不 ready，同 revision 全帧重试仍可取得屏障 |
+| `DwmFlush` 失败 | 不 ready，保留 pending 并进入恢复 |
+| DComp→ULW→DComp 快速往返 | 旧 revision 被拒绝，仅最新目标等待一次 |
+| Laser 第二次求值才 Inactive | 当帧最终清理一次 |
+| 同帧新 Down 回到 Active | 不误清旧批次，沿用既有生命周期 |
+| 末段 opacity 变化低于阈值 | 旧 bounds 仍 dirty，清理不被 idle 跳过 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：全帧 Present → DWM 上屏屏障 → ready → owner-thread 成对显隐。
+- Base：连续书写和普通 ULW 呈现保持原有无额外 `DwmFlush` 路径。
+- Bad：用固定 Sleep/重复 Present 代替同步，或只在第一次 Laser 求值后计算过期并可能永久丢失清理。
+
+### 6. Tests Required
+
+- 纯状态测试覆盖屏障成功、失败、Present 重试、普通/ULW/partial 不等待、成功后不重复和快速 revision 往返；这些只证明顺序，不冒充真实 DWM 视觉证据。
+- Laser 探针覆盖第二次求值才过期、下一帧不重复及新 Down；检查生产代码先强制旧 bounds dirty、再在最终相位后清理。
+- 完整 Solution 原生 Debug 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-control-fence-test`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`。
+- 真实桌面必须反复验证 Laser→Selection→消失→绘制及普通笔迹快速往返；未执行可见视觉验收时保持设备待验收。
+
+### 7. Wrong vs Correct
+
+Wrong：`Present1(...) == S_OK -> observer.presented(success) -> ShowWindow(primary)`；或 `laserExpired` 只在第一次相位求值后计算。
+
+Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`；Laser 用 `LaserTrailExpiredThisFrame(frameInitial, finalAfterInput)` 驱动最终清理，首次过期预先保留 dirty。
+
 ## 来源任务与验证状态
 
 - 源任务历史统一保存到 `.trellis/tasks/archive/2026-08/draw3-source/`；其中 `active/` 保留源快照的 `in_progress` 状态但不进入目标 active task 列表，原 2026-07/08 归档按月份保留。
@@ -466,3 +515,13 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 - Whiteboard 恢复两画布创建时的原 region/属性，继续由 Freeze/root 作为既有全屏锚点。退出、进入失败和窗口重建均恢复相应场景；selection 固定穿透、单 Host 与 owner 链不变。
 - scene、实际 bounds/monitor 或 HWND 变化才重新应用；两个角色共同隐藏、应用、核对并恢复可见性后才确认白板 mode。失败逆序回滚；原状态可信、几何未变且完整回滚时保留旧 applied key 并停止内部重试，避免对原场景重复隐藏/显示；首次空 key 保持空值，后续显式请求仍可应用。旧 region 不适用于新 bounds、回滚未收敛或已有 dirty/恢复状态时保留双隐藏及原显隐意图，交既有 owner 循环 250ms 失败重试，正常无额外轮询。后来的 Hide/Hidden/HideAll 优先于保存的恢复显隐；连续失败即使已清旧 applied key，也必须保持双隐藏直到真实成功。
 - `Window.CanvasPolicy.h` 的生产区域和双窗事务 helper 由 Headless 无 HWND 测试直接覆盖；测试不证明真实 USER32 重入、DComp/ULW 可见裁剪或 Shell 分类。既有全屏 COM 链仍为 best effort；GUI/Shell/旧系统结果单独记证据。已有 capture 按原输入所有权收尾，不为底行策略擅自取消笔迹。
+
+## 三态过渡与实际选择态准入（2026-10-27）
+
+- Host接纳工作区Pending时先关闭基础新Down门，以当前协调epoch绑定；只同epoch完成可撤其自身原因，旧false不能开放新pending。同epoch已退休的旧true也不能复活。停止/新run按实际生命周期复位，不用业务版本替代Host代际。
+- Pending原因OR到现有stop/fatal/recovery/load/scene/UI-ready，不能整体清AdmissionBlocked。墨迹shortcut baseline也不得绕过这些适用原因；Release、ControlWake、目标准备、成功帧/UI回执与真实终态drain不受此新门阻挡。BasicControl和系统/Bar安全动作保持各自资格。
+- 物理鼠标可在RTS成功路径以TDK_Mouse进入MouseLeft/Right；Win32 fallback的选择态拒绝不足以覆盖它。DrawingController对所有workspace的实际Selection新Down统一DiscardUntilTerminal，不能仅限白板，不能因稍后切Pen补画旧尾事件；正常非Selection工具/临时擦除语义不变。
+- 产品已发布的工具不等于绘制owner已应用。协调使用真实已应用产品/工具/选择凭据与Host代际，UI稳定工具按Committed对应记忆，不能仅看ActiveTool=Pen推断选择尚未应用。
+- 生产无窗口probe只证明实际共用拒收操作、ContactInputCoordinator/DrainIngressBatch或Host实际准入接缝；私有Run/Service未动态执行部分另做源码审查，不冒充真实Win32/RTS设备/任务栏实测。
+
+- 过渡准入setter绑定真实HostGeneration及请求epoch：旧run的相同数字epoch不能设置或撤销新Host的门。完成只撤自身Pending原因，不能清加载、恢复、停止或fatal原因；最小化Whiteboard继续闭门，恢复使用新视图版本。工具完成凭据读取owner实际appliedProductRevision/appliedTool，不用Bridge已发布revision冒充应用成功。

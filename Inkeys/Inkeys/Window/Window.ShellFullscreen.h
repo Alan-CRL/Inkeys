@@ -3,6 +3,7 @@
 #include <objbase.h>
 #include <shobjidl.h>
 #include <windows.h>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -22,10 +23,16 @@ namespace Inkeys::Window::Detail
 			DWORD thread = 0;
 			DWORD process = 0;
 			bool enabled = false;
+			bool operator==(const Target&) const noexcept = default;
+		};
+		using Targets = std::array<Target, 3>;
+		struct Request
+		{
+			Targets targets{};
 			std::uint64_t revision = 0;
 		};
 		std::mutex mutex;
-		Target desired;
+		Request desired;
 		std::atomic_bool stopping = false;
 		std::atomic_bool calling = false;
 		std::atomic<DWORD> workerId = 0;
@@ -37,16 +44,31 @@ namespace Inkeys::Window::Detail
 		HANDLE cancelWake = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 		~ShellFullscreenState() { if (wake) CloseHandle(wake); if (cancelWake) CloseHandle(cancelWake); }
 
-		void Publish(HWND hwnd, std::uintptr_t generation, bool enabled, bool invalidate = false) noexcept
+		[[nodiscard]] static Targets ResolveTargets(Target root, Target freeze, Target drawpad,
+			bool whiteboard, bool enabled, bool minimized) noexcept
 		{
-			DWORD process = 0;
-			const DWORD thread = hwnd ? GetWindowThreadProcessId(hwnd, &process) : 0;
+			enabled &= !minimized;
+			root.enabled = enabled && !whiteboard;
+			freeze.enabled = drawpad.enabled = enabled && whiteboard;
+			Targets targets{ root, freeze, drawpad };
+			// root 可能就是 Freeze/Drawpad；同一代 HWND 只通知一次，不能用随后 FALSE 抹掉 TRUE。
+			for (std::size_t i = 0; i < targets.size(); ++i)
+				for (std::size_t j = 0; targets[i].hwnd && j < i; ++j)
+					if (targets[i].hwnd == targets[j].hwnd && targets[i].generation == targets[j].generation
+						&& targets[i].thread == targets[j].thread && targets[i].process == targets[j].process)
+					{
+						targets[j].enabled |= targets[i].enabled;
+						targets[i] = {};
+					}
+			return targets;
+		}
+		void Publish(const Targets& targets, bool invalidate = false) noexcept
+		{
 			{
 				std::scoped_lock lock(mutex);
 				if (stopping.load(std::memory_order_acquire)) return;
-				if (!invalidate && desired.hwnd == hwnd && desired.generation == generation
-					&& desired.thread == thread && desired.process == process && desired.enabled == enabled) return;
-				desired = { hwnd, generation, thread, process, enabled, desired.revision + 1 };
+				if (!invalidate && desired.targets == targets) return;
+				desired = { targets, desired.revision + 1 };
 			}
 			if (wake) SetEvent(wake);
 			if (cancelWake) SetEvent(cancelWake);
@@ -61,6 +83,11 @@ namespace Inkeys::Window::Detail
 			if (wake) SetEvent(wake);
 			if (cancelWake) SetEvent(cancelWake);
 		}
+		[[nodiscard]] Request Snapshot() noexcept
+		{
+			std::scoped_lock lock(mutex);
+			return desired;
+		}
 		[[nodiscard]] bool TargetAlive(const Target& target) const noexcept
 		{
 			DWORD process = 0;
@@ -68,18 +95,18 @@ namespace Inkeys::Window::Detail
 				&& GetWindowThreadProcessId(target.hwnd, &process) == target.thread && process == target.process
 				&& reinterpret_cast<std::uintptr_t>(GetPropW(target.hwnd, WindowGenerationProperty)) == target.generation;
 		}
-		[[nodiscard]] bool Current(const Target& target) noexcept
+		[[nodiscard]] bool Current(const Request& request) noexcept
 		{
 			std::scoped_lock lock(mutex);
-			return !stopping.load(std::memory_order_acquire) && desired.revision == target.revision && TargetAlive(target);
+			return !stopping.load(std::memory_order_acquire) && desired.revision == request.revision;
 		}
-		[[nodiscard]] bool Complete(const Target& target, HRESULT result) noexcept
+		[[nodiscard]] bool Complete(const Request& request, HRESULT result) noexcept
 		{
-			// 版本检查与确认共用邮箱锁，不能让迟到成功替随后发布的绝对状态记账。
+			// 整批版本检查与确认共用邮箱锁，不能让迟到 TRUE 替随后全组 FALSE 记账。
 			std::scoped_lock lock(mutex);
-			if (stopping.load(std::memory_order_acquire) || desired.revision != target.revision || !TargetAlive(target)) return false;
+			if (stopping.load(std::memory_order_acquire) || desired.revision != request.revision) return false;
 			lastResult.store(result, std::memory_order_release);
-			if (SUCCEEDED(result)) confirmedRevision.store(target.revision, std::memory_order_release);
+			if (SUCCEEDED(result)) confirmedRevision.store(request.revision, std::memory_order_release);
 			return true;
 		}
 
@@ -121,27 +148,33 @@ namespace Inkeys::Window::Detail
 		{
 			(void)WaitForSingleObject(state->wake, delay);
 			ResetEvent(state->wake);
-			ShellFullscreenState::Target target;
-			{ std::scoped_lock lock(state->mutex); target = state->desired; }
+			const auto request = state->Snapshot();
 			if (state->stopping.load(std::memory_order_acquire)) break;
-			if (!target.revision || applied == target.revision || !state->Current(target)) { delay = INFINITE; continue; }
+			if (!request.revision || applied == request.revision || !state->Current(request)) { delay = INFINITE; continue; }
 			state->callDeadline.store(GetTickCount64() + 1000, std::memory_order_release);
-			state->callRevision.store(target.revision, std::memory_order_release);
+			state->callRevision.store(request.revision, std::memory_order_release);
 			state->calling.store(true, std::memory_order_release);
 			SetEvent(state->cancelWake);
 			ITaskbarList2* taskbar = nullptr;
 			HRESULT result = CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
 				__uuidof(ITaskbarList2), reinterpret_cast<void**>(&taskbar));
 			if (SUCCEEDED(result) && !taskbar) result = E_NOINTERFACE;
-			if (SUCCEEDED(result) && taskbar && state->Current(target)) result = taskbar->HrInit();
-			if (SUCCEEDED(result) && taskbar && state->Current(target))
-				result = taskbar->MarkFullscreenWindow(target.hwnd, target.enabled ? TRUE : FALSE);
+			if (SUCCEEDED(result) && taskbar && state->Current(request)) result = taskbar->HrInit();
+			if (SUCCEEDED(result) && taskbar)
+				for (const auto& target : request.targets)
+				{
+					if (!state->Current(request)) break;
+					if (!state->TargetAlive(target)) continue;
+					result = taskbar->MarkFullscreenWindow(target.hwnd, target.enabled ? TRUE : FALSE);
+					if (FAILED(result)) break;
+					if (!state->TargetAlive(target)) { result = HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE); break; }
+				}
 			if (taskbar) taskbar->Release();
 			state->calling.store(false, std::memory_order_release);
 			SetEvent(state->cancelWake);
-			if (state->Complete(target, result))
+			if (state->Complete(request, result))
 			{
-				if (SUCCEEDED(result)) { applied = target.revision; failures = 0; delay = INFINITE; }
+				if (SUCCEEDED(result)) { applied = request.revision; failures = 0; delay = INFINITE; }
 				else { if (failures < 3) ++failures; delay = 250u << failures; }
 			}
 			else

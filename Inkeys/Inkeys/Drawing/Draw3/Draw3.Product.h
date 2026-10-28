@@ -31,6 +31,9 @@ namespace Inkeys::Drawing::Draw3
 		std::uint32_t timeoutMilliseconds) noexcept;
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 	void PublishProductState(const Bridge::ProductState& state) noexcept;
+	// 协调者先关新 Down 再发布目标；只有同一 Host 代际和交接版本能够撤销自己的原因。
+	bool SetProductWorkspaceTransitionPending(std::uint64_t epoch, bool pending,
+		std::uint64_t expectedHostGeneration) noexcept;
 	void PublishProductWorkspace(Bridge::Workspace workspace,
 		const std::function<bool()>& stillDesired = {}) noexcept;
 	std::optional<std::uint64_t> PublishProductPresentationTarget(
